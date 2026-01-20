@@ -310,6 +310,7 @@ struct dp_mon_tx_ppdu_info {
 #define WEIGHTED_AVG_IN(x)  (AVG_MUL((x), AVG_MULTIPLIER))
 #define AVG(x, y) ((((x) << 2) + (y) - (x)) >> 2)
 #define WEIGHTED_AVG_UPDATE(x, y) ((x) = AVG((x), WEIGHTED_AVG_IN(y)))
+#define MAX_PPDU_ID_HIST 128
 
 struct ath12k_pdev_mon_stats {
 	u32 status_ppdu_state;
@@ -319,13 +320,24 @@ struct ath12k_pdev_mon_stats {
 	u32 status_ppdu_start_mis;
 	u32 status_ppdu_end_mis;
 	u32 status_ppdu_done;
+	u32 status_desc_invalid;
+	u32 status_tlv_tag_err;
+	u32 status_buf_done_war;
+	u32 rx_err_desc_sanity_fail;
 	u32 dest_ppdu_done;
 	u32 dest_mpdu_done;
 	u32 dest_mpdu_drop;
 	u32 dup_mon_linkdesc_cnt;
 	u32 dup_mon_buf_cnt;
+	u32 empty_mon_sw_desc_cnt;
 	u32 dest_mon_stuck;
 	u32 dest_mon_not_reaped;
+	u32 invalid_msdu_cnt;
+	u32 ppdu_id_mismatch;
+	u32 ppdu_id_match;
+	u32 status_ring_ppdu_id_hist[MAX_PPDU_ID_HIST];
+	u32 dest_ring_ppdu_id_hist[MAX_PPDU_ID_HIST];
+	u32 ppdu_id_hist_idx;
 };
 
 #define DP_MON_MAX_STATUS_BUF 32

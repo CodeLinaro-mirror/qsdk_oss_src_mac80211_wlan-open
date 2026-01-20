@@ -7150,10 +7150,11 @@ static ssize_t ath12k_dump_dp_mon_pdev_stats(struct file *file, char __user *use
 	struct ath12k_base *ab = file->private_data;
 	struct ath12k *ar;
 	struct ath12k_pdev_mon_dp_stats *mon_stats = NULL;
+	struct ath12k_pdev_mon_stats *rx_mon_stats = NULL;
 	struct ath12k_pdev *pdev;
 	struct ath12k_dp_mon *dp_mon = ab->dp->dp_mon;
 	u32 tot_used_frags = 0, tot_free_frags = dp_mon->num_frag_free;
-	int len = 0, i, ret, size = 2048;
+	int len = 0, i, j, ret, size = 2048, ppdu_id;
 	u8 *buf;
 
 	buf = kzalloc(size, GFP_KERNEL);
@@ -7169,82 +7170,163 @@ static ssize_t ath12k_dump_dp_mon_pdev_stats(struct file *file, char __user *use
 			continue;
 
 		mon_stats = &ar->dp.dp_mon_pdev->mon_stats;
+		rx_mon_stats = &ar->dp.dp_mon_pdev->mon_data.rx_mon_stats;
+
 		len += scnprintf(buf + len, size - len,
 				 "*******************radio[%u]*****************\n", i);
-		len += scnprintf(buf + len, size - len,
-				 "status frags reap: %u process: %u free: %u\n",
-				 mon_stats->status_buf_reaped,
-				 mon_stats->status_buf_processed,
-				 mon_stats->status_buf_free);
-		len += scnprintf(buf + len, size - len,
-				 "pkt frags proc %u free %u to_mac80211 %u truncated %u\n"
-				 , mon_stats->pkt_tlv_processed,
-				 mon_stats->pkt_tlv_free,
-				 mon_stats->pkt_tlv_to_mac80211,
-				 mon_stats->pkt_tlv_truncated);
-		len += scnprintf(buf + len, size - len,
-				 "Ring desc empty: %u flush %u truncated %u droptlv %u\n",
-				 mon_stats->ring_desc_empty,
-				 mon_stats->ring_desc_flush,
-				 mon_stats->ring_desc_trunc,
-				 mon_stats->drop_tlv);
-		len += scnprintf(buf + len, size - len,
-				 "skb alloc: %u free: %u to_mac80211: %u\n",
-				 mon_stats->num_skb_alloc,
-				 mon_stats->num_skb_free,
-				 mon_stats->num_skb_to_mac80211);
-		len += scnprintf(buf + len, size - len,
-				 "raw mode skb: %u frag %u eth mode skb: %u frag:%u\n",
-				 mon_stats->num_skb_raw,
-				 mon_stats->num_frag_raw,
-				 mon_stats->num_skb_eth,
-				 mon_stats->num_frag_eth);
-		len += scnprintf(buf + len, size - len,
-				 "Num of PPDU reaped %u processed %u\n",
-				 mon_stats->num_ppdu_reaped,
-				 mon_stats->num_ppdu_processed);
-		len += scnprintf(buf + len, size - len,
-				 "Empty desc free list: %u\n",
-				 mon_stats->ppdu_desc_free_list_empty_cnt);
-		len += scnprintf(buf + len, size - len,
-				 "Insufficient restitch frags cnt %u\n",
-				 mon_stats->restitch_insuff_frags_cnt);
 
-		tot_used_frags +=
-			mon_stats->status_buf_processed + mon_stats->pkt_tlv_processed;
+		if (ab->hw_params->quad_ring_monitor_support) {
+			len += scnprintf(buf + len, size - len,
+					 "monitor type: quad ring\n");
+			/* Status ring summary */
+			len += scnprintf(buf + len, size - len, "\n");
+			len += scnprintf(buf + len, size - len,
+					 "STATUS RING:\n");
+			len += scnprintf(buf + len, size - len,
+					 "ppdu_done %u invalid_desc %u tlv_tag_err %u buf_done_war %u\n",
+					 rx_mon_stats->status_ppdu_done,
+					 rx_mon_stats->status_desc_invalid,
+					 rx_mon_stats->status_tlv_tag_err,
+					 rx_mon_stats->status_buf_done_war);
+			len += scnprintf(buf + len, size - len,
+					 "rx_err_desc_sanity_fail %u\n",
+					 rx_mon_stats->rx_err_desc_sanity_fail);
+			/* Destination ring summary */
+			len += scnprintf(buf + len, size - len, "\n");
+			len += scnprintf(buf + len, size - len,
+					 "DEST RING:\n");
+			len += scnprintf(buf + len, size - len,
+					 "ppdu_done %u mpdu_done %u mpdu_drop %u\n",
+					 rx_mon_stats->dest_ppdu_done,
+					 rx_mon_stats->dest_mpdu_done,
+					 rx_mon_stats->dest_mpdu_drop);
+			len += scnprintf(buf + len, size - len,
+					 "dup_linkdesc %u dup_buf %u empty_sw_desc %u\n",
+					 rx_mon_stats->dup_mon_linkdesc_cnt,
+					 rx_mon_stats->dup_mon_buf_cnt,
+					 rx_mon_stats->empty_mon_sw_desc_cnt);
+			len += scnprintf(buf + len, size - len,
+					 "stuck %u not_reaped %u invalid_msdu %u\n",
+					 rx_mon_stats->dest_mon_stuck,
+					 rx_mon_stats->dest_mon_not_reaped,
+					 rx_mon_stats->invalid_msdu_cnt);
+			/* PPDU ID correlation */
+			len += scnprintf(buf + len, size - len, "\n");
+			len += scnprintf(buf + len, size - len,
+					 "PPDU ID CORRELATION:\n");
+			len += scnprintf(buf + len, size - len,
+					 "match %u mismatch %u (hist_idx %u)\n",
+					 rx_mon_stats->ppdu_id_match,
+					 rx_mon_stats->ppdu_id_mismatch,
+					 rx_mon_stats->ppdu_id_hist_idx);
+			len += scnprintf(buf + len, size - len,
+					 "status_ring_ppdu_id_hist (MISMATCH context):\n");
+			for (j = 0; j < MAX_PPDU_ID_HIST; j++) {
+				ppdu_id = rx_mon_stats->status_ring_ppdu_id_hist[j];
+				len += scnprintf(buf + len, size - len, "%u%s",
+						 ppdu_id,
+						 ((j + 1) % 16) ? " " : "\n");
+				if (len >= size - 64)
+					break;
+			}
+			len += scnprintf(buf + len, size - len,
+					 "\ndest_ring_ppdu_id_hist (MISMATCH context):\n");
+			for (j = 0; j < MAX_PPDU_ID_HIST; j++) {
+				ppdu_id = rx_mon_stats->dest_ring_ppdu_id_hist[j];
+				len += scnprintf(buf + len, size - len, "%u%s",
+						 ppdu_id,
+						 ((j + 1) % 16) ? " " : "\n");
+				if (len >= size - 64)
+					break;
+			}
+			len += scnprintf(buf + len, size - len, "\n");
+		} else {
+			len += scnprintf(buf + len, size - len,
+					 "monitor type: dual ring\n");
+			len += scnprintf(buf + len, size - len,
+					 "status frags reap: %u process: %u free: %u\n",
+					 mon_stats->status_buf_reaped,
+					 mon_stats->status_buf_processed,
+					 mon_stats->status_buf_free);
+			len += scnprintf(buf + len, size - len,
+					 "pkt frags proc %u free %u to_mac80211 %u truncated %u\n"
+					 , mon_stats->pkt_tlv_processed,
+					 mon_stats->pkt_tlv_free,
+					 mon_stats->pkt_tlv_to_mac80211,
+					 mon_stats->pkt_tlv_truncated);
+			len += scnprintf(buf + len, size - len,
+					 "Ring desc empty: %u flush %u truncated %u droptlv %u\n",
+					 mon_stats->ring_desc_empty,
+					 mon_stats->ring_desc_flush,
+					 mon_stats->ring_desc_trunc,
+					 mon_stats->drop_tlv);
+			len += scnprintf(buf + len, size - len,
+					 "skb alloc: %u free: %u to_mac80211: %u\n",
+					 mon_stats->num_skb_alloc,
+					 mon_stats->num_skb_free,
+					 mon_stats->num_skb_to_mac80211);
+			len += scnprintf(buf + len, size - len,
+					 "raw mode skb: %u frag %u eth mode skb: %u frag:%u\n",
+					 mon_stats->num_skb_raw,
+					 mon_stats->num_frag_raw,
+					 mon_stats->num_skb_eth,
+					 mon_stats->num_frag_eth);
+			len += scnprintf(buf + len, size - len,
+					 "Num of PPDU reaped %u processed %u\n",
+					 mon_stats->num_ppdu_reaped,
+					 mon_stats->num_ppdu_processed);
+			len += scnprintf(buf + len, size - len,
+					"Empty desc free list: %u\n",
+					 mon_stats->ppdu_desc_free_list_empty_cnt);
+			len += scnprintf(buf + len, size - len,
+					 "Insufficient restitch frags cnt %u\n",
+					 mon_stats->restitch_insuff_frags_cnt);
 
-		tot_free_frags +=
-			mon_stats->status_buf_free + mon_stats->pkt_tlv_free +
-			mon_stats->pkt_tlv_to_mac80211;
+			tot_used_frags += mon_stats->status_buf_processed +
+					  mon_stats->pkt_tlv_processed;
+
+			tot_free_frags +=
+				mon_stats->status_buf_free + mon_stats->pkt_tlv_free +
+				mon_stats->pkt_tlv_to_mac80211;
+		}
 	}
 
-	len += scnprintf(buf + len, size - len,
-			 "frags replenished_cnt: %u used cnt %u tot_free_frags %u\n",
-			 dp_mon->num_frag_replenish, tot_used_frags, tot_free_frags);
+	if (!ab->hw_params->quad_ring_monitor_support) {
+		len += scnprintf(buf + len, size - len,
+				 "frags replenished_cnt: %u used cnt %u tot_free_frags %u\n",
+				 dp_mon->num_frag_replenish,
+				 tot_used_frags,
+				 tot_free_frags);
 
-	tot_used_frags = mon_stats->status_buf_reaped + mon_stats->pkt_tlv_processed +
-			 dp_mon->num_frag_free;
-	len += scnprintf(buf + len, size - len, "\nFrags hold by HW: %u\n",
-			 dp_mon->num_frag_replenish - tot_used_frags);
+		tot_used_frags = mon_stats->status_buf_reaped +
+				 mon_stats->pkt_tlv_processed +
+				 dp_mon->num_frag_free;
+		len += scnprintf(buf + len, size - len,
+				 "\nFrags hold by HW: %u\n",
+				 dp_mon->num_frag_replenish - tot_used_frags);
 
-	tot_used_frags = mon_stats->status_buf_reaped + mon_stats->pkt_tlv_processed;
-	tot_free_frags = mon_stats->status_buf_free + mon_stats->pkt_tlv_free +
-			 mon_stats->pkt_tlv_to_mac80211;
-	len += scnprintf(buf + len, size - len, "\nFrags hold by SW: %u\n",
-			 (tot_used_frags - tot_free_frags));
+		tot_used_frags = mon_stats->status_buf_reaped +
+				 mon_stats->pkt_tlv_processed;
+		tot_free_frags = mon_stats->status_buf_free +
+				 mon_stats->pkt_tlv_free +
+				 mon_stats->pkt_tlv_to_mac80211;
+		len += scnprintf(buf + len, size - len, "\nFrags hold by SW: %u\n",
+				 (tot_used_frags - tot_free_frags));
 
-	len += scnprintf(buf + len, size - len, "\n SKBs hold by SW: %u\n",
-			 mon_stats->num_skb_alloc -
-			 (mon_stats->num_skb_free + mon_stats->num_skb_to_mac80211));
+		len += scnprintf(buf + len, size - len, "\n SKBs hold by SW: %u\n",
+				 mon_stats->num_skb_alloc -
+				 (mon_stats->num_skb_free +
+				  mon_stats->num_skb_to_mac80211));
 
-	len += scnprintf(buf + len, size - len, "\n ppdu_desc_used: %u\n",
-			 mon_stats->ppdu_desc_used);
+		len += scnprintf(buf + len, size - len, "\n ppdu_desc_used: %u\n",
+				 mon_stats->ppdu_desc_used);
 
-	len += scnprintf(buf + len, size - len, "\n ppdu_desc_proc: %u\n",
-			 mon_stats->ppdu_desc_proc);
+		len += scnprintf(buf + len, size - len, "\n ppdu_desc_proc: %u\n",
+				 mon_stats->ppdu_desc_proc);
 
-	len += scnprintf(buf + len, size - len, "\n ppdu_desc_free: %u\n",
-			 mon_stats->ppdu_desc_free);
+		len += scnprintf(buf + len, size - len, "\n ppdu_desc_free: %u\n",
+				 mon_stats->ppdu_desc_free);
+	}
 
 	ret = simple_read_from_buffer(user_buf, count, ppos, buf, len);
 	kfree(buf);
@@ -7258,6 +7340,7 @@ ath12k_debugfs_write_dp_mon_stats(struct file *file, const char __user *user_buf
 {
 	struct ath12k_base *ab = file->private_data;
 	struct ath12k_pdev_mon_dp_stats *mon_stats;
+	struct ath12k_pdev_mon_stats *rx_mon_stats;
 	struct ath12k *ar;
 	struct ath12k_pdev *pdev;
 	struct ath12k_dp_mon *dp_mon = ab->dp->dp_mon;
@@ -7279,7 +7362,9 @@ ath12k_debugfs_write_dp_mon_stats(struct file *file, const char __user *user_buf
 			ar = pdev->ar;
 			if (ar) {
 				mon_stats = &ar->dp.dp_mon_pdev->mon_stats;
+				rx_mon_stats = &ar->dp.dp_mon_pdev->mon_data.rx_mon_stats;
 				memset(mon_stats, 0, sizeof(*mon_stats));
+				memset(rx_mon_stats, 0, sizeof(*rx_mon_stats));
 			}
 		}
 	}
