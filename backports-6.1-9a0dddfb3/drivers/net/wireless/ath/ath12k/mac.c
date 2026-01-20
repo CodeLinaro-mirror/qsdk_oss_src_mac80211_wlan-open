@@ -22674,6 +22674,26 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 			link_peer->dp_peer->stats[link_sta->link_id].wbm_err.rxdma_error[HAL_REO_ENTR_RING_RXDMA_ECODE_DECRYPT_ERR];
 		stats_valid = true;
 	}
+
+	 /* In non offload modes (e.g., SFE), mac80211 double counts RX
+	  * packets because they are accounted for in both the regular Rx path
+	  * and via the monitor path.
+	  *
+	  * To fix this, override mac80211 counters with the driver's internal
+	  * peer statistics (derived from firmware) when extended RX stats
+	  * are enabled.
+	  */
+
+	if (ath12k_extd_rx_stats_enabled(ar)) {
+		if (link_peer && link_peer->peer_stats.rx_stats) {
+			link_sinfo->rx_packets +=
+				link_peer->peer_stats.rx_stats->num_msdu;
+			link_sinfo->rx_bytes +=
+				link_peer->peer_stats.rx_stats->num_msdu_bytes;
+			link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_PACKETS) |
+					      BIT_ULL(NL80211_STA_INFO_RX_BYTES);
+		}
+	}
 	spin_unlock_bh(&dp->dp_lock);
 
 	if (stats_valid) {
