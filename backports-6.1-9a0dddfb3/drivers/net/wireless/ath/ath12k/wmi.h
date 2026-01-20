@@ -26,6 +26,7 @@
 struct ath12k_base;
 struct ath12k;
 struct ath12k_link_vif;
+struct ath12k_sta;
 struct ath12k_fw_stats;
 struct ath12k_reg_tpc_power_info;
 struct ath12k_qos_params;
@@ -9046,7 +9047,7 @@ int ath12k_wmi_set_sta_ps_param(struct ath12k *ar, u32 vdev_id,
 int ath12k_wmi_force_fw_hang_cmd(struct ath12k *ar, u32 type, u32 delay_time_ms, bool nowait);
 int ath12k_wmi_send_peer_delete_cmd(struct ath12k *ar,
 				    const u8 *peer_addr, u8 vdev_id,
-				    u32 mlo_hw_link_id_bitmap);
+				    struct ath12k_sta *ahsta);
 int ath12k_wmi_vdev_delete(struct ath12k *ar, u8 vdev_id);
 void ath12k_wmi_start_scan_init(struct ath12k *ar,
 				struct ath12k_wmi_scan_req_arg *arg,
