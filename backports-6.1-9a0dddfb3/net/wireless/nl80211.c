@@ -672,6 +672,7 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_WIPHY_TXQ_PARAMS] = { .type = NLA_NESTED },
 
 	[NL80211_ATTR_WIPHY_FREQ] = { .type = NLA_U32 },
+	[NL80211_ATTR_BITRATE] = { .type = NLA_U16 },
 	[NL80211_ATTR_WIPHY_CHANNEL_TYPE] = { .type = NLA_U32 },
 	[NL80211_ATTR_WIPHY_EDMG_CHANNELS] = NLA_POLICY_RANGE(NLA_U8,
 						NL80211_EDMG_CHANNELS_MIN,
@@ -22492,6 +22493,8 @@ int nl80211_send_mgmt(struct cfg80211_registered_device *rdev,
 			      NL80211_ATTR_PAD) ||
 	    (info->have_link_id &&
 	     nla_put_u8(msg, NL80211_ATTR_MLO_LINK_ID, info->link_id)) ||
+	    (info->bitrate &&
+	     nla_put_u16(msg, NL80211_ATTR_BITRATE, info->bitrate)) ||
 	    nla_put_u32(msg, NL80211_ATTR_WIPHY_FREQ, KHZ_TO_MHZ(info->freq)) ||
 	    nla_put_u32(msg, NL80211_ATTR_WIPHY_FREQ_OFFSET, info->freq % 1000) ||
 	    (info->sig_dbm &&

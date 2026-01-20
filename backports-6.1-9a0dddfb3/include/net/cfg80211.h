@@ -9600,6 +9600,7 @@ struct cfg80211_rx_info {
 	bool critical_update;
 	bool link_removal_update;
 	bool ttlm_expec_dur_update;
+	u16 bitrate;
 };
 
 /**
