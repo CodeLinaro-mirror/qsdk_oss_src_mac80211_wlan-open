@@ -203,6 +203,65 @@ void ath12k_dp_aggr_rx_peer_stats(struct ath12k_rx_peer_stats *dst,
 				for (l = 0; l <= HAL_RX_MAX_MCS_HT; l++)
 					dst->byte_stats.rx_rate[i][j][k][l] +=
 						src->byte_stats.rx_rate[i][j][k][l];
+
+	dst->num_msdu_bytes += src->num_msdu_bytes;
+	dst->num_msdu_retry_count += src->num_msdu_retry_count;
+	dst->num_mpdus += src->num_mpdus;
+	dst->num_mpdu_retry_count += src->num_mpdu_retry_count;
+	dst->num_ppdus += src->num_ppdus;
+	dst->num_ppdu_duration += src->num_ppdu_duration;
+
+	dst->num_bar += src->num_bar;
+	dst->num_ndpa += src->num_ndpa;
+
+	for (i = 0; i < MAX_MCS; i++)
+		dst->num_mpdu_count[i] += src->num_mpdu_count[i];
+
+	for (i = 0; i < HAL_RX_RECEPTION_TYPE_MAX; i++)
+		dst->ppdu_reception[i] += src->ppdu_reception[i];
+
+	for (i = 0; i < HAL_RX_MAX_NSS; i++)
+		dst->ppdu_nss[i] += src->ppdu_nss[i];
+
+	for (i = 0; i < DOT11_MAX; i++) {
+		for (j = 0; j < MAX_MCS; j++) {
+			dst->proto_type[i].mcs_count[j] +=
+				src->proto_type[i].mcs_count[j];
+		}
+	}
+
+	for (i = 0; i < WME_NUM_AC; i++) {
+		dst->wme_ac_type[i].total_pkts += src->wme_ac_type[i].total_pkts;
+		dst->wme_ac_type[i].total_bytes += src->wme_ac_type[i].total_bytes;
+	}
+
+	for (i = 0; i < DOT11_MAX; i++) {
+		for (j = 0; j < MAX_MCS; j++)
+			dst->su_ppdu_count[i].mcs_count[j] +=
+				src->su_ppdu_count[i].mcs_count[j];
+	}
+
+	for (i = 0; i < MAX_PUNCTURED_MODE; i++)
+		dst->punc_bw[i] += src->punc_bw[i];
+
+	for (i = 0; i < DOT11_MAX; i++) {
+		for (j = 0; j < TXRX_TYPE_MU_MAX; j++) {
+			dst->rx_mu[i][j].mpdu_cnt_fcs_ok +=
+				src->rx_mu[i][j].mpdu_cnt_fcs_ok;
+			dst->rx_mu[i][j].mpdu_cnt_fcs_err +=
+				src->rx_mu[i][j].mpdu_cnt_fcs_err;
+
+			for (k = 0; k < HAL_RX_MAX_NSS; k++) {
+				dst->rx_mu[i][j].ppdu_nss[k] +=
+					src->rx_mu[i][j].ppdu_nss[k];
+			}
+
+			for (k = 0; k < MAX_MCS; k++) {
+				dst->rx_mu[i][j].ppdu.mcs_count[k] +=
+					src->rx_mu[i][j].ppdu.mcs_count[k];
+			}
+		}
+	}
 }
 
 /**
