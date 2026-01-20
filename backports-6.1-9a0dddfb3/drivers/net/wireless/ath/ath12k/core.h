@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause-Clear */
 /*
- * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2021, 2026 The Linux Foundation. All rights reserved.
  * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
@@ -618,6 +618,7 @@ struct ath12k_vap_cfg {
 	u32 gtx_enable;
 	u32 hwcts2self_ofdma;
 	u8 bcn_tx_power;
+	u32 ampdu_aggr_size;
 };
 
 struct ath12k_rssi_deauth_config {
