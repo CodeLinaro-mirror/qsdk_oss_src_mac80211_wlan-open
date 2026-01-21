@@ -13218,15 +13218,26 @@ static ssize_t ath12k_write_htt_stats_type(struct file *file,
 	struct ath12k *ar = file->private_data;
 	enum ath12k_dbg_htt_ext_stats_type type;
 	unsigned int cfg_param[4] = {0};
-	const int size = 32;
 	int num_args;
 
-	char *buf __free(kfree) = kzalloc(size, GFP_KERNEL);
+
+	/* Validate count to prevent buffer over-read and excessive allocation.
+	 * sscanf will parse up to 5 integers, so we need reasonable minimum size.
+	 * Minimum: "1" (1 byte) is technically valid with null termination.
+	 * Maximum: PAGE_SIZE to prevent DoS via excessive allocation.
+	 */
+	if (count < 1 || count > PAGE_SIZE)
+		return -EINVAL;
+
+	char *buf __free(kfree) = kzalloc(count + 1, GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
 
 	if (copy_from_user(buf, user_buf, count))
 		return -EFAULT;
+
+	/* Ensure null termination to prevent sscanf from reading beyond buffer */
+	buf[count] = '\0';
 
 	num_args = sscanf(buf, "%u %u %u %u %u\n", &type, &cfg_param[0],
 			  &cfg_param[1], &cfg_param[2], &cfg_param[3]);
