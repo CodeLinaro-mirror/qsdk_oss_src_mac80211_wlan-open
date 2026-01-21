@@ -72,6 +72,7 @@ enum qca_nl80211_vendor_subcmds {
 	/* Wi-Fi configuration subcommand */
 	QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION = 74,
 	QCA_NL80211_VENDOR_SUBCMD_GET_WIFI_CONFIGURATION = 75,
+	QCA_NL80211_VENDOR_SUBCMD_GET_RROP_INFO = 163,
 	QCA_NL80211_VENDOR_SUBCMD_WIFI_PARAMS = 200,
 	QCA_NL80211_VENDOR_SUBCMD_RM_GENERIC = 206,
 	QCA_NL80211_VENDOR_SUBCMD_SCS_RULE_CONFIG = 218,
@@ -3769,6 +3770,63 @@ enum qca_wlan_vendor_attr_dcs {
 	QCA_WLAN_VENDOR_ATTR_DCS_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_DCS_MAX =
 		QCA_WLAN_VENDOR_ATTR_DCS_AFTER_LAST - 1
+};
+
+/*
+ * enum qca_wlan_vendor_attr_rrop_info - Specifies vendor specific
+ * Representative RF Operating Parameter (RROP) information. It is sent for the
+ * vendor command QCA_NL80211_VENDOR_SUBCMD_GET_RROP_INFO. This information is
+ * intended for use by external Auto Channel Selection applications. It provides
+ * guidance values for some RF parameters that are used by the system during
+ * operation. These values could vary by channel, band, radio, and so on.
+ */
+enum qca_wlan_vendor_attr_rrop_info {
+	QCA_WLAN_VENDOR_ATTR_RROP_INFO_INVALID = 0,
+
+	/* Representative Tx Power List (RTPL) which has an array of nested
+	 * values as per attributes in enum qca_wlan_vendor_attr_rtplinst.
+	 */
+	QCA_WLAN_VENDOR_ATTR_RROP_INFO_RTPL = 1,
+
+	QCA_WLAN_VENDOR_ATTR_RROP_INFO_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_RROP_INFO_MAX =
+	QCA_WLAN_VENDOR_ATTR_RROP_INFO_AFTER_LAST - 1
+};
+
+/**
+ * enum qca_wlan_vendor_attr_rtplinst - Specifies attributes for individual list
+ * entry instances in the Representative Tx Power List (RTPL). It provides
+ * simplified power values intended for helping external Auto channel Selection
+ * applications compare potential Tx power performance between channels, other
+ * operating conditions remaining identical. These values are not necessarily
+ * the actual Tx power values that will be used by the system. They are also not
+ * necessarily the max or average values that will be used. Instead, they are
+ * relative, summarized keys for algorithmic use computed by the driver or
+ * underlying firmware considering a number of vendor specific factors.
+ */
+enum qca_wlan_vendor_attr_rtplinst {
+	QCA_WLAN_VENDOR_ATTR_RTPLINST_INVALID = 0,
+
+	/* Primary channel number (u8).
+	 * Note: If both the driver and user space application support the
+	 * 6 GHz band, this attribute is deprecated and
+	 * QCA_WLAN_VENDOR_ATTR_RTPLINST_PRIMARY_FREQUENCY should be used. To
+	 * maintain backward compatibility,
+	 * QCA_WLAN_VENDOR_ATTR_RTPLINST_PRIMARY is still used if either the
+	 * driver or user space application or both do not support the 6 GHz
+	 * band.
+	 */
+	QCA_WLAN_VENDOR_ATTR_RTPLINST_PRIMARY = 1,
+	/* Representative Tx power in dBm (s32) with emphasis on throughput. */
+	QCA_WLAN_VENDOR_ATTR_RTPLINST_TXPOWER_THROUGHPUT = 2,
+	/* Representative Tx power in dBm (s32) with emphasis on range. */
+	QCA_WLAN_VENDOR_ATTR_RTPLINST_TXPOWER_RANGE = 3,
+	/* Primary channel center frequency (u32) in MHz */
+	QCA_WLAN_VENDOR_ATTR_RTPLINST_PRIMARY_FREQUENCY = 4,
+
+	QCA_WLAN_VENDOR_ATTR_RTPLINST_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_RTPLINST_MAX =
+		QCA_WLAN_VENDOR_ATTR_RTPLINST_AFTER_LAST - 1,
 };
 
 #define ATH12K_VENDOR_PUT(vendor_event, type, attr, param)             \

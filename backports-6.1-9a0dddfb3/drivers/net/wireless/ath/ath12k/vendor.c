@@ -9775,6 +9775,14 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 #ifdef CPTCFG_QCN_EXTN
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_GET_RROP_INFO,
+		.doit = ath12k_vendor_get_rropinfo,
+		.policy = ath12k_rrop_info_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_CONFIG_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
 		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_240MHZ_INFO,
 		.doit = ath12k_vendor_get_sta_240mhz_info,
 		.policy = ath12k_240mhz_sta_info_policy,
