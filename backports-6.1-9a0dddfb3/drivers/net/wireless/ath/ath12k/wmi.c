@@ -3217,6 +3217,22 @@ static u32 ath12k_wmi_get_emlsr_trans_timeout_us(u16 eml_cap)
 	return trans_timeout_us[timeout];
 }
 
+static void *ath12k_wmi_peer_assoc_v2_cmd(struct ath12k *ar,
+					  void *ptr,
+					  struct ath12k_wmi_peer_assoc_arg *arg,
+					  enum wmi_tlv_cmd_id *cmd_id)
+{
+	if (test_bit(WMI_SERVICE_EXT_TLV_SUPPORT,
+		     ar->ab->wmi_ab.svc_map))
+		*cmd_id = WMI_PEER_ASSOC_V2_CMDID;
+
+	/*
+	 * Fill the tlv here for WMI_PEER_ASSOC_V2_CMDID
+	 */
+
+	return ptr;
+}
+
 int ath12k_wmi_send_peer_assoc_cmd(struct ath12k *ar,
 				   struct ath12k_wmi_peer_assoc_arg *arg)
 {
@@ -3232,6 +3248,7 @@ int ath12k_wmi_send_peer_assoc_cmd(struct ath12k *ar,
 	struct wmi_peer_assoc_msduq_params *msduq_params;
 	struct wmi_peer_assoc_mpduq_params *mpduq_params;
 	struct wmi_peer_assoc_hol_q_params *holq_params;
+	enum wmi_tlv_cmd_id cmd_id = WMI_PEER_ASSOC_CMDID;
 	struct sk_buff *skb;
 	struct wmi_tlv *tlv;
 	void *ptr;
@@ -3651,6 +3668,8 @@ send_holq:
 	ptr += sizeof(*holq_params);
 
 send:
+	ptr = ath12k_wmi_peer_assoc_v2_cmd(ar, ptr, arg, &cmd_id);
+
 	ath12k_dbg(ar->ab, ATH12K_DBG_WMI | ATH12K_DBG_MLME,
 		   "wmi peer assoc vdev id %d assoc id %d peer mac %pM peer_flags %x rate_caps %x peer_caps %x listen_intval %d ht_caps %x max_mpdu %d nss %d phymode %d peer_mpdu_density %d vht_caps %x he cap_info %x he ops %x he cap_info_ext %x he phy %x %x %x peer_bw_rxnss_override %x peer_flags_ext %x eht mac_cap %x %x eht phy_cap %x %x %x peer_eht_ops %x\n",
 		   cmd->vdev_id, cmd->peer_associd, arg->peer_mac,
@@ -3667,7 +3686,7 @@ send:
 		   cmd->peer_eht_cap_phy[0], cmd->peer_eht_cap_phy[1],
 		   cmd->peer_eht_cap_phy[2], cmd->peer_eht_ops);
 
-	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_PEER_ASSOC_CMDID);
+	ret = ath12k_wmi_cmd_send(wmi, skb, cmd_id);
 	if (ret) {
 		ath12k_warn(ar->ab,
 			    "failed to send WMI_PEER_ASSOC_CMDID\n");
