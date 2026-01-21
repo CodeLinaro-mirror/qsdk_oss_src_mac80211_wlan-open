@@ -831,7 +831,7 @@ ath12k_update_extd_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 
 	/* Advanced stats */
 	if (!ath12k_dp_stats_enabled(dp_pdev) &&
-			!ath12k_dp_debug_stats_enabled(dp_pdev))
+			!ath12k_dp_advance_stats_enabled(dp_pdev))
 		return;
 
 	is_ppdu_cookie_valid =

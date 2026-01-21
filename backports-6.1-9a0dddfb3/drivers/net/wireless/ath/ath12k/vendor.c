@@ -3177,7 +3177,7 @@ ath12k_fill_peer_tx_ext_htt_stats_attr(struct ath12k *ar, struct sk_buff *vendor
 	}
 	nla_nest_end(vendor_event, attr);
 
-	if (!ath12k_dp_debug_stats_enabled(&ar->dp))
+	if (!ath12k_dp_advance_stats_enabled(&ar->dp))
 		return 0;
 
 	/* DEBUG/ADV - STBC */
