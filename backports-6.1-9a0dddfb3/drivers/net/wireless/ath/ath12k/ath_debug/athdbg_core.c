@@ -9,6 +9,7 @@
 #include <linux/init.h>
 #include "athdbg_minidump.h"
 #include "athdbg_core.h"
+#include "athdbg_wmi_recording.h"
 #include "../debug.h"
 
 MODULE_SOFTDEP("post: ath12k ath12k_wifi7");
@@ -106,6 +107,13 @@ static void athdbg_process_request(struct work_struct *work)
 				pr_warn("athdbg_core: Failed to stop QDSS: %d\n", ret);
 		}
 			break;
+
+		case ATH_DBG_REQ_WMI_ENABLE:
+		case ATH_DBG_REQ_WMI_DUMP:
+		case ATH_DBG_REQ_WMI_VERBOSITY:
+			athdbg_process_wmi_request(dbg_req->ab, dbg_req);
+			break;
+
 		case ATH_DBG_REQ_UNKNOWN:
 			pr_err("athdbg_core: Unknown Request");
 			break;

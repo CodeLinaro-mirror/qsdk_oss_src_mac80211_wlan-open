@@ -5,4 +5,5 @@ ath_debug-y += athdbg_core.o \
 			athdbg_mem.o \
 			athdbg_qmi.o \
 			athdbg_qdss.o \
+			athdbg_wmi_recording.o \
 			athdbg_mhi.o

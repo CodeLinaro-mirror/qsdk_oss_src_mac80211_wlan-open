@@ -16857,9 +16857,27 @@ int ath12k_wmi_connect(struct ath12k_base *ab)
 
 static void ath12k_wmi_pdev_detach(struct ath12k_base *ab, u8 pdev_id)
 {
+	struct ath12k_wmi_pdev *wmi_handle;
+	struct wmi_cmd_debug *cmd_log;
+	struct wmi_cmd_comp_debug *tx_cmp_log;
+	struct wmi_event_debug *evt_log;
+
 	if (WARN_ON(pdev_id >= MAX_RADIOS))
 		return;
 
+	wmi_handle = &ab->wmi_ab.wmi[pdev_id];
+
+	wmi_handle->wmi_recording_enabled = false;
+	cmd_log = rcu_access_pointer(wmi_handle->wmi_cmd_log);
+	tx_cmp_log = rcu_access_pointer(wmi_handle->wmi_cmd_tx_cmp_log);
+	evt_log = rcu_access_pointer(wmi_handle->wmi_evt_log);
+	rcu_assign_pointer(wmi_handle->wmi_cmd_log, NULL);
+	rcu_assign_pointer(wmi_handle->wmi_cmd_tx_cmp_log, NULL);
+	rcu_assign_pointer(wmi_handle->wmi_evt_log, NULL);
+	synchronize_rcu();
+	kfree(wmi_handle->wmi_cmd_log);
+	kfree(wmi_handle->wmi_cmd_tx_cmp_log);
+	kfree(wmi_handle->wmi_evt_log);
 	/* TODO: Deinit any pdev specific wmi resource */
 }
 
@@ -16867,18 +16885,57 @@ int ath12k_wmi_pdev_attach(struct ath12k_base *ab,
 			   u8 pdev_id)
 {
 	struct ath12k_wmi_pdev *wmi_handle;
+	struct wmi_cmd_debug *wmi_cmd_log = NULL;
+	struct wmi_cmd_comp_debug *wmi_cmd_tx_cmp_log = NULL;
+	struct wmi_event_debug *wmi_evt_log = NULL;
+	size_t cmd_bytes, txcmp_bytes, evt_bytes;
+	u32 wmi_common_log_entries = 1024;
 
 	if (pdev_id >= ab->hw_params->max_radios)
 		return -EINVAL;
 
 	wmi_handle = &ab->wmi_ab.wmi[pdev_id];
-
 	wmi_handle->wmi_ab = &ab->wmi_ab;
-
 	ab->wmi_ab.ab = ab;
+
+	cmd_bytes = wmi_common_log_entries * sizeof(*wmi_handle->wmi_cmd_log);
+	txcmp_bytes = wmi_common_log_entries * sizeof(*wmi_handle->wmi_cmd_tx_cmp_log);
+	evt_bytes = wmi_common_log_entries * sizeof(*wmi_handle->wmi_evt_log);
+
+	wmi_cmd_log = kzalloc(cmd_bytes, GFP_KERNEL);
+	if (!wmi_cmd_log)
+		goto err;
+	wmi_cmd_tx_cmp_log = kzalloc(txcmp_bytes, GFP_KERNEL);
+	if (!wmi_cmd_tx_cmp_log)
+		goto err;
+	wmi_evt_log = kzalloc(evt_bytes, GFP_KERNEL);
+	if (!wmi_evt_log)
+		goto err;
+
+	rcu_assign_pointer(wmi_handle->wmi_cmd_log, wmi_cmd_log);
+	rcu_assign_pointer(wmi_handle->wmi_cmd_tx_cmp_log, wmi_cmd_tx_cmp_log);
+	rcu_assign_pointer(wmi_handle->wmi_evt_log, wmi_evt_log);
+	wmi_handle->wmi_cmd_log_size = wmi_common_log_entries;
+	wmi_handle->wmi_cmd_tx_cmp_log_size = wmi_common_log_entries;
+	wmi_handle->wmi_evt_log_size = wmi_common_log_entries;
+	wmi_handle->dbg_cmd_tail_idx = 0;
+	wmi_handle->dbg_cmd_tx_cmp_tail_idx = 0;
+	wmi_handle->dbg_evt_tail_idx = 0;
+	wmi_handle->verbosity = 1;
+	wmi_handle->wmi_recording_enabled = true;
 	/* TODO: Init remaining resource specific to pdev */
 
 	return 0;
+err:
+
+	kfree(wmi_evt_log);
+	kfree(wmi_cmd_tx_cmp_log);
+	kfree(wmi_cmd_log);
+	wmi_handle->wmi_recording_enabled = false;
+	ath12k_err(ab, "WMI Recording Failure : Memory Allocation\n");
+
+	return 0;
+
 }
 
 int ath12k_wmi_attach(struct ath12k_base *ab)

@@ -5,6 +5,7 @@
 
 #include "athdbg_core.h"
 #include "athdbg_minidump.h"
+#include "athdbg_wmi_recording.h"
 
 extern struct ath_debug_base *athdbg_base;
 const struct file_operations debugfs_req_fops;
@@ -345,3 +346,109 @@ const struct file_operations debugfs_qdss_collect_fops = {
 	.owner = THIS_MODULE,
 };
 EXPORT_SYMBOL(debugfs_qdss_collect_fops);
+
+static ssize_t athdbg_wmi_common_read(struct file *file, char __user *user_buf,
+				      size_t count, loff_t *ppos)
+{
+	static const char usage[] =
+		"Usage:\n"
+		"1. Enable/Disable Recording\n"
+		"   echo 0 > enable        : Disable recording\n"
+		"   echo 1 > enable        : Enable (Default size 1024)\n"
+		"   echo NNNN > enable     : Enable with buffer size NNNN\n"
+		"\n"
+		"2. Control Verbosity Level of Logs\n"
+		"   echo 0 > verbosity     : Minimal (Header only)\n"
+		"   echo 1 > verbosity     : Standard (Header + 8 bytes data)\n"
+		"   echo 2 > verbosity     : Full (Header + 16 bytes data)\n"
+		"\n"
+		"3. Print Logs to Console\n"
+		"   echo 1 > dump          : Dump WMI Commands\n"
+		"   echo 2 > dump          : Dump WMI Events\n"
+		"   echo 3 > dump          : Dump WMI TX Completions\n";
+
+	return simple_read_from_buffer(user_buf, count, ppos, usage, sizeof(usage));
+}
+
+static ssize_t athdbg_wmi_common_write(struct file *file,
+				       const char __user *user_buf,
+				       size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	enum athdbg_wmi_request wmi_req;
+	struct athdbg_request *dbg_req;
+	char buf[128] = {0};
+	int len;
+
+	if (!ab)
+		return -EINVAL;
+
+	len = simple_write_to_buffer(buf, sizeof(buf) - 1, ppos, user_buf, count);
+	if (len <= 0)
+		return count;
+
+	buf[len] = '\0';
+	strim(buf);
+
+	dbg_req = kzalloc(sizeof(*dbg_req), GFP_ATOMIC);
+	if (!dbg_req)
+		return -ENOMEM;
+
+	dbg_req->input_buf = kstrdup(buf, GFP_ATOMIC);
+	if (!dbg_req->input_buf) {
+		kfree(dbg_req);
+		return -ENOMEM;
+	}
+
+	dbg_req->ab = ab;
+	wmi_req = athdbg_wmi_get_req_from_name(file->f_path.dentry->d_name.name);
+
+	switch (wmi_req) {
+	case ATHDBG_WMI_REQ_ENABLE:
+		dbg_req->req_type = ATH_DBG_REQ_WMI_ENABLE;
+		break;
+	case ATHDBG_WMI_REQ_VERBOSITY:
+		dbg_req->req_type = ATH_DBG_REQ_WMI_VERBOSITY;
+		break;
+	case ATHDBG_WMI_REQ_DUMP:
+		dbg_req->req_type = ATH_DBG_REQ_WMI_DUMP;
+		break;
+	default:
+		dbg_req->req_type = ATH_DBG_REQ_UNKNOWN;
+		break;
+	}
+
+	mutex_lock(&athdbg_base->req_lock);
+	list_add_tail(&dbg_req->req_list, &athdbg_base->req_list);
+	mutex_unlock(&athdbg_base->req_lock);
+
+	queue_work(athdbg_base->dbg_wq, &athdbg_base->dbg_wk);
+
+	return count;
+}
+
+const struct file_operations debugfs_wmi_common_fops = {
+	.owner = THIS_MODULE,
+	.open  = simple_open,
+	.read  = athdbg_wmi_common_read,
+	.write = athdbg_wmi_common_write,
+};
+EXPORT_SYMBOL(debugfs_wmi_common_fops);
+
+void athdbg_create_wmi_debugfs(struct dentry *dbg_dir, struct ath12k_base *drv_ab)
+{
+	struct dentry *wmi_dir;
+
+	wmi_dir = debugfs_create_dir("wmi_recording", dbg_dir);
+	if (IS_ERR_OR_NULL(wmi_dir))
+		return;
+
+	debugfs_create_file("enable", 0644, wmi_dir, drv_ab,
+			    &debugfs_wmi_common_fops);
+	debugfs_create_file("dump", 0200, wmi_dir, drv_ab,
+			    &debugfs_wmi_common_fops);
+	debugfs_create_file("verbosity", 0644, wmi_dir, drv_ab,
+			    &debugfs_wmi_common_fops);
+}
+EXPORT_SYMBOL(athdbg_create_wmi_debugfs);
+
