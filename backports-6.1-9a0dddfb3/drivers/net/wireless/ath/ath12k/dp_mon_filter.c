@@ -391,6 +391,8 @@ void ath12k_dp_mon_rx_prepare_filter(struct ath12k_dp *dp,
 		dst_tlv_filter->rx_mon_enable_hdr_per_ppdu |=
 					src_tlv_filter->rx_mon_enable_hdr_per_ppdu;
 
+		dst_tlv_filter->sw0_buf_src_ppdu_hdr_en |=
+					src_tlv_filter->sw0_buf_src_ppdu_hdr_en;
 		dst_tlv_filter->mo_ppdu_hdr_en |=
 					src_tlv_filter->mo_ppdu_hdr_en;
 		dst_tlv_filter->md_ppdu_hdr_en |=

@@ -3020,7 +3020,9 @@ int ath12k_dp_tx_htt_rx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 	cmd->info4 |= le32_encode_bits(tlv_filter->rx_mon_enable_hdr_per_ppdu,
 			HTT_RX_RING_SEL_CFG_CMD_INFO4_RXMON_ENABLE_HDR_PER_PPDU);
 
-	cmd->info5 = le32_encode_bits(tlv_filter->mo_ppdu_hdr_en,
+	cmd->info5 = le32_encode_bits(tlv_filter->sw0_buf_src_ppdu_hdr_en,
+			HTT_RX_RING_SEL_CFG_CMD_INFO5_SW0_BUF_SRC_HDR_EN);
+	cmd->info5 |= le32_encode_bits(tlv_filter->mo_ppdu_hdr_en,
 			HTT_RX_RING_SEL_CFG_CMD_INFO5_MO_HDR_EN);
 	cmd->info5 |= le32_encode_bits(tlv_filter->md_ppdu_hdr_en,
 			HTT_RX_RING_SEL_CFG_CMD_INFO5_MD_HDR_EN);
