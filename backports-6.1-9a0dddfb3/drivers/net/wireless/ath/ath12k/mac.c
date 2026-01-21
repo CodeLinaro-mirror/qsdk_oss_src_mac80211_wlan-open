@@ -11644,6 +11644,18 @@ static int ath12k_mac_station_assoc(struct ath12k *ar,
 		spin_unlock_bh(&dp->dp_lock);
 		return -EINVAL;
 	}
+
+	/*
+	 * Extract the Peer DMS Capability basing on it's phy_mode.
+	 */
+	if (peer && peer_arg) {
+		spin_lock_bh(&ar->ah->dp_hw.peer_lock);
+		if (peer->dp_peer) {
+			peer->dp_peer->dms_capable =
+				!(peer_arg->peer_phymode <= MODE_11NA_HT40);
+		}
+		spin_unlock_bh(&ar->ah->dp_hw.peer_lock);
+	}
 	spin_unlock_bh(&dp->dp_lock);
 
 	ath12k_dp_arch_link_peer_assoc(dp, &ar->ah->dp_hw,

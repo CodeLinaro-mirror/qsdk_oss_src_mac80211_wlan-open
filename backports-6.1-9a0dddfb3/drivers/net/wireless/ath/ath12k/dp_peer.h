@@ -17,6 +17,7 @@
 /* 17 tids for DP, 2 for mgmt, and 1 shared between DP and mgmt */
 #define ATH12K_MAX_TIDS 20
 
+struct ath12k_dp_link_vif;
 struct ath12k_dp_peer_ext_ctx;
 
 enum ath12k_dp_peer_state {
@@ -152,6 +153,7 @@ struct ath12k_dp_peer {
 	u16 peer_id;
 	u16 sta_id;
 	u8 addr[ETH_ALEN];
+	bool dms_capable;	/* Peer is DMS capable (use ME6) */
 	bool is_mlo;
 	bool is_vdev_peer;
 	bool is_sta_bss_peer;
@@ -342,4 +344,15 @@ struct ath12k_dp_peer *ath12k_dp_vdev_peer_find(struct ath12k_dp_hw *dp_hw,
 u8 ath12k_dp_peer_get_stats_link_id(struct ath12k_base *ab,
 				    struct ath12k_dp_peer *peer,
 				    u8 hw_link_id);
+
+/*
+ * Peer Walk API - Walks across DP peers and performs the desired action.
+ */
+int ath12k_dp_peer_walk_action(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
+			       struct ath12k_dp_link_vif *dp_link_vif,
+			       int (*)(struct ath12k_dp *dp,
+				       struct ath12k_dp_vif *,
+				       struct ath12k_dp_link_vif *,
+				       struct ath12k_dp_peer *, void *),
+			       void *app_data);
 #endif

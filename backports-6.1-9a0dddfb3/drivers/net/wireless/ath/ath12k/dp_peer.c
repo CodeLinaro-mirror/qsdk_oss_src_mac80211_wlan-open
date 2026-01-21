@@ -1501,3 +1501,71 @@ u8 ath12k_dp_peer_get_stats_link_id(struct ath12k_base *ab,
 	return peer->hw_links[hw_link_id];
 }
 EXPORT_SYMBOL(ath12k_dp_peer_get_stats_link_id);
+
+/**
+ * ath12k_dp_me_peer_walk_action(): Walks across DP peers and performs desired action.
+ * @dp - Data path object for SOC.
+ * @dp_vif - Data path Virtual Interface
+ * @dp_link_vif - Data Path Link specific object.
+ * @action_fn: Desired action fn.
+ * @app_data: App data to perform the relevant action.
+ *
+ * Returns: Success or Failure.
+ */
+int ath12k_dp_peer_walk_action(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
+			       struct ath12k_dp_link_vif *dp_link_vif,
+			       int (*action_fn)(struct ath12k_dp *,
+						struct ath12k_dp_vif *,
+						struct ath12k_dp_link_vif *,
+						struct ath12k_dp_peer *,
+						void *),
+			       void *app_data)
+{
+	struct ath12k_dp_link_peer *peer = NULL;
+	int vdev_id = dp_link_vif->vdev_id;
+	int ret = 0;
+
+	if (!action_fn)
+		return -EOPNOTSUPP;
+
+	spin_lock_bh(&dp->dp_lock);
+	list_for_each_entry(peer, &dp->peers, list) {
+		/*
+		 * Extract dp_peer from the link_peer obj.
+		 */
+		struct ath12k_dp_peer *dp_peer = peer->dp_peer;
+
+		/*
+		 * We ignore for Repeator for the current Mcast case.
+		 */
+		if (!dp_peer || dp_peer->use_4addr)
+			continue;
+
+		/*
+		 * We ignore the peers whose vdev_id does not match.
+		 */
+		if (peer->vdev_id != vdev_id)
+			continue;
+
+		/*
+		 * We process the pkt on primary_link alone.
+		 */
+		if (!peer->primary_link)
+			continue;
+
+		/*
+		 * Desired Control/Data path functionality will be invoked here.
+		 */
+		ret = action_fn(dp, dp_vif, dp_link_vif, dp_peer, app_data);
+
+		/* TODO:
+		 * Debug the reason for failure. Increment stats basing on ret.
+		 */
+
+		if (ret)
+			break;
+	}
+	spin_unlock_bh(&dp->dp_lock);
+
+	return ret;
+}

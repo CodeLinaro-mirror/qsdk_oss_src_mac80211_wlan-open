@@ -97,6 +97,11 @@ static inline bool __skb_get_inet_daddr(struct sk_buff *skb, union nf_inet_addr 
 	return is_v6;
 }
 
+int ath12k_dp_me_tx_ucast_peer(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
+			       struct ath12k_dp_link_vif *dp_link_vif,
+			       struct ath12k_dp_peer *peer,
+			       void *app_data);
+
 int ath12k_dp_me_tx(struct ath12k_dp_vif *dp_vif, struct sk_buff *skb);
 
 void ath12k_me_db_reset(struct ath12k_me_db *db);
