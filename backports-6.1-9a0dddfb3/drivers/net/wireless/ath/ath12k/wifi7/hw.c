@@ -1247,17 +1247,16 @@ static int ath12k_get_mcast_group_slot(struct ieee80211_vif *vif,
 	int group_slot = -1;
 	u8 keyidx;
 
-	if (!hw_key ||
-	    (hw_key->flags & IEEE80211_KEY_FLAG_PAIRWISE))
-		return -1;
-
-	keyidx = hw_key->keyidx;
-
 	if (vlan_vif && vlan_vif->type == NL80211_IFTYPE_AP_VLAN) {
 		vlan_ahvif = ath12k_vif_to_ahvif(vlan_vif);
 		if (!vlan_ahvif)
 			return -1;
 
+		if (!hw_key ||
+		    (hw_key->flags & IEEE80211_KEY_FLAG_PAIRWISE))
+			return -1;
+
+		keyidx = hw_key->keyidx;
 		vif_vlan = vlan_ahvif->vlan_iface;
 		if (vif_vlan && !vif_vlan->is_wds_4addr)
 			group_slot = vif_vlan->grp_key_slot_map[link_id][keyidx];
@@ -1544,8 +1543,7 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 
 		if (is_mcast && !sta)
 			group_slot = ath12k_get_mcast_group_slot(vif, vlan_vif, arvif,
-								 info->control.hw_key,
-								 arvif->link_id);
+								 key, arvif->link_id);
 
 		err = ath12k_wifi7_dp_tx(dp_pdev, arvif, skb, false, 0, is_mcast,
 					 arsta, ring_id, qos_nw_delay, group_slot);
