@@ -936,7 +936,7 @@ ath12k_update_htt_stats_txrate(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp *dp = dp_pdev->dp;
 	u32 v, ppdu_type;
 	struct ath12k_base *ab = dp->ab;
-	int ack_rssi;
+	int ack_rssi, snr;
 	int ret;
 
 	usr_stats = &ppdu_stats->user_stats[user];
@@ -1085,7 +1085,10 @@ ath12k_update_htt_stats_txrate(struct ath12k_pdev_dp *dp_pdev,
 	peer->tx_duration += tx_duration;
 
 	is_mcast = HTT_PPDU_STATS_USR_CMN_IS_MCAST(usr_stats->common.info);
-	ack_rssi = le32_to_cpu(usr_stats->cmpltn_cmn.ack_rssi);
+	snr = le32_to_cpu(usr_stats->cmpltn_cmn.ack_rssi);
+	ack_rssi = ath12k_dp_get_rssi_value(snr, &peer->signal_stats,
+					    &dp_pdev->ar->rssi_offsets, peer,
+					    true);
 	if (!is_mcast)
 		peer->peer_stats.last_ack_rssi = ack_rssi;
 

@@ -391,3 +391,61 @@ void ath12k_dp_aggr_deleted_stats(struct ath12k *ar,
 		ath12k_dp_aggr_rx_peer_stats(dst_link_peer_stats->rx_stats,
 					     &src->rx_stats);
 }
+
+static u8 ath12k_dp_get_bw_offset(u8 bw)
+{
+	switch (bw) {
+	case HAL_RX_BW_20MHZ:
+		return PKT_BW_GAIN_20MHZ;
+	case HAL_RX_BW_40MHZ:
+		return PKT_BW_GAIN_40MHZ;
+	case HAL_RX_BW_80MHZ:
+		return PKT_BW_GAIN_80MHZ;
+	case HAL_RX_BW_160MHZ:
+		return PKT_BW_GAIN_160MHZ;
+	case HAL_RX_BW_320MHZ:
+		return PKT_BW_GAIN_320MHZ;
+	default:
+		return 0;
+	}
+}
+
+/**
+ * ath12k_dp_get_rssi_value - Calculate RSSI based on given SNR
+ * @snr:      Input SNR (either snr or snr_dp)
+ * @stats:    Peer signal stats (for region offset etc.)
+ * @rssi_offsets: Conversion offsets
+ * @link_peer: Peer info (for bw_info)
+ *
+ * Returns: Calculated RSSI value (s8)
+ */
+s8 ath12k_dp_get_rssi_value(s8 snr,
+			    struct ath12k_dp_link_peer_rx_signal_stats *stats,
+			    struct wmi_rssi_dbm_conv_offsets *rssi_offsets,
+			    struct ath12k_dp_link_peer *link_peer,
+			    bool ack_rssi)
+{
+	s8 rssi_comb;
+	u8 bw_info, bw_offset = 0;
+	s8 rssi_val;
+
+	if (!link_peer)
+		return 0;
+
+
+	if (!ack_rssi && link_peer->peer_stats.rx_stats) {
+		bw_info = link_peer->peer_stats.rx_stats->bw_info;
+		bw_offset = ath12k_dp_get_bw_offset(bw_info);
+	}
+	/* Common offset calculation */
+	rssi_comb = stats->rssi_region_offset +
+		rssi_offsets->avg_nf_dbm +
+		rssi_offsets->rssi_temp_offset + bw_offset;
+
+	/* RSSI calculation */
+	rssi_val = snr + rssi_comb;
+	if (snr > rssi_offsets->xlna_bypass_threshold)
+		rssi_val += rssi_offsets->xlna_bypass_offset;
+
+	return rssi_val;
+}

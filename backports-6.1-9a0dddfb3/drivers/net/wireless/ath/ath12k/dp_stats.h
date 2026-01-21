@@ -12,6 +12,8 @@
 #include "dp.h"
 #include <linux/ip.h>
 
+struct ath12k_dp_link_peer;
+
 #define INVALID_LINK_ID			0xFF
 #define INVALID_SVC_ID			0xFF
 #define DP_REO_RING_MAX			4
@@ -1064,6 +1066,10 @@ void ath12k_dp_clear_wbm_rx_stats(struct ath12k_wbm_rx_stats *wbm_stats);
 
 struct ath12k_dp_preserved_stats *ath12k_dp_alloc_preserved_stats(void);
 void ath12k_dp_free_preserved_stats(struct ath12k_dp_preserved_stats *stats);
+s8 ath12k_dp_get_rssi_value(s8 snr,
+			    struct ath12k_dp_link_peer_rx_signal_stats *stats,
+			    struct wmi_rssi_dbm_conv_offsets *rssi_offsets,
+			    struct ath12k_dp_link_peer *link_peer, bool ack_rssi);
 
 #define SKB_TRAC_ETH_TYPE_OFFSET			12
 #define DP_ETH_TYPE_8021Q				0x8100
