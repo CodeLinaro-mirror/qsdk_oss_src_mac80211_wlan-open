@@ -18388,6 +18388,7 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 	int ppe_vp_num = ATH12K_INVALID_PPE_VP_NUM, ppe_core_mask = 0;
 	int ppe_vp_type = ATH12K_INVALID_PPE_VP_TYPE;
 	unsigned long links_map = 0;
+	int ret;
 	int i = 0;
 
 	lockdep_assert_wiphy(hw->wiphy);
@@ -18597,6 +18598,12 @@ ppe_vp_config:
 			 "Add interface vif address:%pM netdev:%s",
 			 vif->addr, wdev->netdev->name);
 
+	if (vif->type == NL80211_IFTYPE_AP) {
+		ret = ath12k_me_db_init(&ahvif->dp_vif);
+		ath12k_dbg(NULL, ATH12K_DBG_MAC, "ME Database initialization %s\n",
+			   (ret < 0) ? "failed" : "succeeded");
+	}
+
 	/* Defer vdev creation until assign_chanctx or hw_scan is initiated as driver
 	 * will not know if this interface is an ML vif at this point.
 	 */
@@ -18804,6 +18811,11 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 	struct ath12k_hw *ah = hw->priv;
 
 	lockdep_assert_wiphy(hw->wiphy);
+
+	if (vif->type == NL80211_IFTYPE_AP) {
+		ath12k_me_db_deinit(&ahvif->dp_vif);
+		ath12k_dbg(NULL, ATH12K_DBG_MAC, "ME Database deinitialized\n");
+	}
 
 	vif->driver_flags &= ~(IEEE80211_VIF_SUPPORTS_CQM_RSSI |
 			       IEEE80211_VIF_SUPPORTS_UAPSD);
