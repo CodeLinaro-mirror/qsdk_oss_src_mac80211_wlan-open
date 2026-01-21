@@ -7839,8 +7839,10 @@ const struct cfg80211_ops mac80211_config_ops = {
 	.inform_bss = ieee80211_inform_bss,
 	.set_txq_params = ieee80211_set_txq_params,
 	.set_monitor_channel = ieee80211_set_monitor_channel,
+#ifndef PLATFORM_SDX85
 	.suspend = ieee80211_suspend,
 	.resume = ieee80211_resume,
+#endif
 	.scan = ieee80211_scan,
 	.abort_scan = ieee80211_abort_scan,
 	.sched_scan_start = ieee80211_sched_scan_start,
