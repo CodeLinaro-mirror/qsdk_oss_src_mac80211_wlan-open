@@ -18,7 +18,6 @@
 #include <linux/panic_notifier.h>
 #include <linux/average.h>
 #include <linux/rhashtable.h>
-#include <linux/rcupdate.h>
 #include "qmi.h"
 #include "htc.h"
 #include "wmi.h"
@@ -40,7 +39,6 @@
 #include "qcn_extns/ath12k_cmn_extn.h"
 #include "qcn_extns/vendor_extn.h"
 #include <linux/atomic.h>
-#include "me.h"
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #include <ppe_ds_wlan.h>
@@ -746,8 +744,6 @@ struct ath12k_dp_vif {
 	atomic_t mcbc_gsn;
 	struct ath12k_dp_link_vif dp_link_vif[ATH12K_NUM_MAX_LINKS];
 	struct ath12k_dp_tx_vif_stats stats[DP_TCL_NUM_RING_MAX];
-	struct ath12k_me_db __rcu *me_db;
-
 	/* PPE mode independent variables */
 	int ppe_vp_num;
 	int ppe_core_mask;
@@ -2145,7 +2141,7 @@ struct ath12k_base {
 
 	struct rhashtable *rhead_sta_addr;
 	struct rhashtable_params rhash_sta_addr_param;
-
+	
 	bool in_coldboot_fwreset;
 	u32 chwidth_num_peer_caps;
 
