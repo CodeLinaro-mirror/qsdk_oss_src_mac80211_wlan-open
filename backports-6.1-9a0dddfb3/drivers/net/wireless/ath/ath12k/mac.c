@@ -8471,7 +8471,8 @@ void __ath12k_mac_scan_finish(struct ath12k *ar)
 		fallthrough;
 	case ATH12K_SCAN_STARTING:
 		cancel_delayed_work(&ar->scan.timeout);
-		complete_all(&ar->scan.completed);
+		if (!completion_done(&ar->scan.completed))
+			complete_all(&ar->scan.completed);
 		if (ar->scan.is_roc)
 			ar->scan.scan_id = ATH12K_ROC_SCAN_ID;
 		wiphy_work_queue(ar->ah->hw->wiphy, &ar->scan.vdev_clean_wk);

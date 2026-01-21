@@ -2500,7 +2500,11 @@ void ath12k_core_radio_cleanup(struct ath12k *ar)
 	ar->state_11d = ATH12K_11D_IDLE;
 	complete(&ar->completed_11d_scan);
 	complete(&ar->scan.started);
-	complete_all(&ar->scan.completed);
+	/* Protect only scan.completed against race with reinit_completion() */
+	spin_lock_bh(&ar->data_lock);
+	if (!completion_done(&ar->scan.completed))
+		complete_all(&ar->scan.completed);
+	spin_unlock_bh(&ar->data_lock);
 	complete(&ar->scan.on_channel);
 	complete(&ar->peer_create_done);
 	complete(&ar->peer_assoc_done);
