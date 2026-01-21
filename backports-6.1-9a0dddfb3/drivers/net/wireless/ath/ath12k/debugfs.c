@@ -2405,11 +2405,9 @@ void ath12k_debugfs_nrp_cleanup_all(struct ath12k *ar)
 	ar->debug.debugfs_nrp = NULL;
 }
 
-void ath12k_debugfs_nrp_clean(struct ath12k *ar, const u8 *addr)
+void ath12k_debugfs_nrp_clean(struct ath12k *ar, const u8 *addr, int num_nrp)
 {
-	struct ath12k_base *ab = ar->ab;
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	int i, j, num_nrp;
+	int i, j;
 	char fname[MAC_UNIT_LEN * ETH_ALEN] = {0};
 
 	for (i = 0, j = 0; i < (MAC_UNIT_LEN * ETH_ALEN); i += MAC_UNIT_LEN, j++) {
@@ -2419,11 +2417,6 @@ void ath12k_debugfs_nrp_clean(struct ath12k *ar, const u8 *addr)
 		}
 		snprintf(fname + i, sizeof(fname) - i, "%02x:", *(addr + j));
 	}
-
-	spin_lock_bh(&dp->dp_lock);
-	dp->num_nrps--;
-	num_nrp = dp->num_nrps;
-	spin_unlock_bh(&dp->dp_lock);
 
 	debugfs_lookup_and_remove(fname, ar->debug.debugfs_nrp);
 	if (!num_nrp) {
@@ -2729,6 +2722,7 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 			if (ether_addr_equal(nrp->addr, mac) &&
 			    nrp->pdev_id == ar->pdev->pdev_id) {
 				list_del(&nrp->list);
+				dp->num_nrps--;
 				del_nrp = true;
 				break;
 			}
@@ -2741,7 +2735,7 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 			ret = -EINVAL;
 			goto err_free;
 		} else {
-			ath12k_debugfs_nrp_clean(ar, mac);
+			ath12k_debugfs_nrp_clean(ar, mac, dp->num_nrps);
 			param->vdev_id = nrp->vdev_id;
 			ether_addr_copy(param->nrp_addr, nrp->addr);
 			spin_lock_bh(&dp->dp_lock);
