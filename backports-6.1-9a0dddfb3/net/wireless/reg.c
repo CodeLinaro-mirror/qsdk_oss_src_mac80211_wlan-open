@@ -2459,10 +2459,20 @@ static bool reg_wdev_chan_valid(struct wiphy *wiphy, struct wireless_dev *wdev)
 		case NL80211_IFTYPE_P2P_GO:
 		case NL80211_IFTYPE_ADHOC:
 		case NL80211_IFTYPE_MESH_POINT:
+			{
+			struct cfg80211_chan_def *csa_def;
+
+			csa_def = &wdev->links[link].csa_target_chandef;
+			if (wdev->links[link].cac_started ||
+			    (cfg80211_chandef_identical(csa_def,
+							&chandef))) {
+				break;
+			}
 			ret = cfg80211_reg_can_beacon_relax(wiphy, &chandef,
 							    iftype);
 			if (!ret)
 				return ret;
+			}
 			break;
 		case NL80211_IFTYPE_STATION:
 		case NL80211_IFTYPE_P2P_CLIENT:

@@ -7237,6 +7237,8 @@ enum ieee80211_ap_reg_power {
  *	unprotected beacon report
  * @links: array of %IEEE80211_MLD_MAX_NUM_LINKS elements containing @addr
  *	@ap and @client for each link
+ * @links.csa_target_chandef: Required Target DFS channel definition, for which channel
+ *	switch is expected
  * @links.cac_started: true if DFS channel availability check has been
  *	started
  * @links.cac_start_time: timestamp (jiffies) when the dfs state was
@@ -7356,6 +7358,7 @@ struct wireless_dev {
 			} client;
 		};
 
+		struct cfg80211_chan_def csa_target_chandef;
 		bool cac_started;
 		bool critical_flag;
 		u8 bpcc;
