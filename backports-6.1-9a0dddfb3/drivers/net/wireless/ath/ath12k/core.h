@@ -1596,6 +1596,7 @@ struct ath12k {
 #ifdef CPTCFG_QCN_EXTN
 	u32 vendor_mac_used_bitmap;
 #endif
+	u8 smart_mon_filter;
 };
 
 struct ath12k_6ghz_sp_reg_rule {

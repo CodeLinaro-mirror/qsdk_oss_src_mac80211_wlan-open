@@ -19,6 +19,7 @@ struct ath12k_base;
 struct ath12k_hw;
 struct ath12k_hw_group;
 struct ath12k_pdev_map;
+struct ath12k_pdev_dp;
 struct ath12k_vif;
 struct ath12k_link_sta;
 struct ath12k_dp_vif;
@@ -755,4 +756,6 @@ int ath12k_mac_op_destroy_datapath_offload_if(struct ieee80211_hw *hw,
 					      struct net_device *dev);
 int ath12k_mac_op_set_mtu(struct ieee80211_hw *hw, struct ieee80211_vif *vif, int mtu);
 #endif
+void ath12k_mac_cache_smart_mon_filter(struct ath12k_pdev_dp *pdev, u8 smart_mon_filter);
+u8 ath12k_mac_get_cached_smart_mon_filter(struct ath12k_pdev_dp *pdev);
 #endif
