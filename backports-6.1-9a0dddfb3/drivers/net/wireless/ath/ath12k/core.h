@@ -278,6 +278,9 @@ enum ath12k_hw_rev {
 	ATH12K_HW_IPQ5424_HW10,
 	ATH12K_HW_QCN6432_HW10,
 	ATH12K_HW_QCN9625_HW10,
+#ifdef CPTCFG_QCN_EXTN
+	ATH12K_HW_QCN9074_HW10,
+#endif
 };
 
 #define ATH12K_DIAG_HW_ID_OFFSET	16
@@ -599,6 +602,7 @@ struct ath12k_vap_cfg {
 	u32 he_snd_mode;
 	u32 gtx_enable;
 	u32 hwcts2self_ofdma;
+	u32 bcn_tx_power;
 };
 
 struct ath12k_link_vif {
@@ -683,6 +687,11 @@ struct ath12k_link_vif {
 	int num_peers;
 	struct wiphy_work update_bcn_tx_status_work;
 	struct ath12k_vap_cfg vap_cfg;
+
+	u8 gtk_pn[IEEE80211_MAX_PN_LEN];
+	u8 bigtk_pn[IEEE80211_MAX_PN_LEN];
+	u8 last_installed_gtk_keyix;
+	u8 last_installed_bigtk_keyix;
 };
 
 struct ath12k_dp_link_vif {
@@ -834,6 +843,7 @@ struct ath12k_vif {
 	struct ath12k_hw *ah;
 
 	struct ath12k_vif_extn ath12k_vif_extn;
+	u8 vap_submode;
 
 	struct dentry *debugfs_rfs_core_mask;
 
@@ -1628,7 +1638,13 @@ struct ath12k_pdev_cap {
 	u32 mld_cap;
 	bool nss_ratio_enabled;
 	u8 nss_ratio_info;
+	u32 scan_radio_caps;
+	bool is_scan_radio;
 };
+
+#define ATH12K_SCAN_RADIO_CAP_SUPPORTED   BIT(0)
+#define ATH12K_SCAN_RADIO_CAP_DFS_ENABLED BIT(1)
+#define ATH12K_SCAN_RADIO_CAP_BLANKING    BIT(2)
 
 struct mlo_timestamp {
 	u32 info;
@@ -1775,6 +1791,8 @@ struct ath12k_hw_group {
 	bool wsi_remap_in_progress;
 	struct completion peer_cleanup_complete;
 	u64 wsi_peer_clean_timeout;
+	struct completion power_up;
+	bool mlo_teardown;
 };
 
 /* Holds WSI info specific to each device, excluding WSI group info */
@@ -1788,7 +1806,12 @@ struct ath12k_wsi_info {
 
 enum ath12k_device_family {
 	ATH12K_DEVICE_FAMILY_START,
+#ifdef CPTCFG_QCN_EXTN
+	ATH12K_DEVICE_FAMILY_WIFI6 = ATH12K_DEVICE_FAMILY_START,
+	ATH12K_DEVICE_FAMILY_WIFI7,
+#else
 	ATH12K_DEVICE_FAMILY_WIFI7 = ATH12K_DEVICE_FAMILY_START,
+#endif
 	ATH12K_DEVICE_FAMILY_WIFI8,
 	ATH12K_DEVICE_FAMILY_MAX,
 };
@@ -2093,9 +2116,8 @@ struct ath12k_base {
 	struct work_struct recovery_work;
 	struct ath12k_dp_umac_reset dp_umac_reset;
 	bool early_cal_support;
-	bool pm_suspend;
+	bool powered_off;
 	bool powerup_triggered;
-	struct completion power_up;
 	struct ath12k_wsi_info bypass_wsi_info;
 	bool is_bypassed;
 	enum ath12k_wsi_bypass_action wsi_remap_state;
@@ -2262,7 +2284,7 @@ struct reserved_mem *ath12k_core_get_reserved_mem_by_name(struct ath12k_base *ab
 						  const char* name);
 u8 ath12k_core_get_total_num_vdevs(struct ath12k_base *ab);
 bool ath12k_core_is_vdev_limit_reached(struct ath12k *ar, bool is_bridge_vdev);
-void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag);
+void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag, bool standby_mode);
 int ath12k_core_power_up(struct ath12k_hw_group *ag);
 
 int ath12k_core_add_dl_qos(struct ath12k_base *ab,
@@ -2432,6 +2454,22 @@ static inline struct ath12k_hw_group *ath12k_ah_to_ag(struct ath12k_hw *ah)
 	struct ath12k *ar = ah->radio;
 
 	return ar->ab->ag;
+}
+
+static inline bool ath12k_scan_radio_supported(struct ath12k_pdev *pdev)
+{
+	return !!(pdev->cap.scan_radio_caps & ATH12K_SCAN_RADIO_CAP_SUPPORTED);
+}
+
+static inline bool ath12k_scan_radio_dfs_enabled(struct ath12k_pdev *pdev)
+{
+	return pdev && pdev->cap.is_scan_radio &&
+	       (pdev->cap.scan_radio_caps & ATH12K_SCAN_RADIO_CAP_DFS_ENABLED);
+}
+
+static inline bool ath12k_scan_radio_blanking_supported(struct ath12k_pdev *pdev)
+{
+	return !!(pdev->cap.scan_radio_caps & ATH12K_SCAN_RADIO_CAP_BLANKING);
 }
 
 int ath12k_core_config_iocoherency(struct ath12k_base *ab, bool enable);
@@ -2609,6 +2647,11 @@ static inline int ath12k_get_peer_count(struct ath12k_base *ab, bool get_max)
        return peer_count;
 }
 
+static inline bool ath12k_is_scan_radio(struct ath12k *ar)
+{
+	return ar && ar->pdev && ar->pdev->cap.is_scan_radio;
+}
+
 extern unsigned int ath12k_mlo_capable;
 
 int ath12k_wsi_load_info_init(struct ath12k_base *ab);
@@ -2632,4 +2675,6 @@ void ath12k_debug_print_dcs_wlan_intf_stats(struct ath12k_base *ab,
 					    struct wmi_dcs_wlan_interference_stats *info);
 struct ath12k_hw_group *ath12k_core_get_ag(void);
 void ath12k_core_trigger_partner_device_crash(struct ath12k_base *ab);
+void ath12k_core_pdev_deinit(struct ath12k_base *ab);
+int ath12k_core_radio_start(struct ath12k_hw *ah);
 #endif /* _CORE_H_ */

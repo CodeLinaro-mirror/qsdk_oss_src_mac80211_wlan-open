@@ -18,6 +18,7 @@
 #include "dp_peer.h"
 #include "dp_ast.h"
 #include "dp_htt.h"
+#include "dp_tx_flow_info.h"
 
 extern struct ppe_ds_wlan_ops_v2 ppeds_wlanops_v2;
 struct ath12k_ppeds_arch_ops ath12k_wifi8_arch_ppeds_ops;
@@ -124,6 +125,7 @@ static void ath12k_wifi8_dp_umac_deinit(struct ath12k_dp *dp)
 	ath12k_wifi8_dp_rx_ring_free(ab);
 	ath12k_dp_ast_table_deinit(dp->dp_hw_grp);
 	ath12k_dp_pn_counter_page_free(dp->dp_hw_grp);
+	ath12k_wifi8_dp_tx_pool_destroy(dp->dp_hw_grp);
 }
 
 static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
@@ -235,9 +237,16 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 		goto fail_ast_table_cleanup;
 	}
 
-	ath12k_info(ab, "CUMAC init successful");
+	ret = ath12k_wifi8_dp_tx_pool_create(dp->dp_hw_grp);
+	if (ret) {
+		ath12k_warn(dp, "dp pool create for queues failed %d\n", ret);
+		goto fail_pn_counter_page_free;
+	}
 
+	ath12k_info(ab, "CUMAC init successful");
 	return 0;
+fail_pn_counter_page_free:
+	ath12k_dp_pn_counter_page_free(dp->dp_hw_grp);
 
 fail_ast_table_cleanup:
 	ath12k_dp_ast_table_deinit(dp->dp_hw_grp);
@@ -361,11 +370,14 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.dp_tx_ring_setup = ath12k_wifi8_dp_tx_ring_setup,
 	.dp_peer_create = ath12k_wifi8_dp_peer_create,
 	.dp_peer_delete = ath12k_wifi8_dp_peer_delete,
-	.dp_peer_get_peerid_index = ath12k_wifi8_dp_peer_get_peerid_index,
+	.dp_peer_assoc = ath12k_wifi8_dp_peer_assoc,
 	.dp_link_peer_create = ath12k_wifi8_dp_link_peer_create,
 	.dp_link_peer_delete = ath12k_wifi8_dp_link_peer_delete,
 	.peer_cleanup_indication = ath12k_dp_htt_peer_cleanup_indication,
 	.dp_ppeds_tx_completion_handler = ath12k_wifi8_ppeds_tx_completion_handler,
+	.dp_link_peer_assoc = ath12k_wifi8_dp_link_peer_assoc,
+	.dp_get_peer_mgmt_flowq = ath12k_wifi8_get_mgmt_flowq,
+	.dp_get_peer_holq = ath12k_wifi8_get_holq,
 };
 
 struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab)
@@ -387,6 +399,7 @@ struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab)
 	dp->dev = ab->dev;
 	dp->hw_params = ab->hw_params;
 	dp->hal = &ab->hal;
+	dp->global_peer_id_supported = true;
 
 	ret = ath12k_dp_mon_init(dp);
 	if (ret) {

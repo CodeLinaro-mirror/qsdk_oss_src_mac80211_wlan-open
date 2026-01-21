@@ -747,6 +747,15 @@ static int ath11k_pci_probe(struct pci_dev *pdev,
 	int ret;
 	u32 sub_version;
 	unsigned long left;
+	int scan_radio;
+
+
+	if (!of_property_read_u32(pdev->dev.of_node, "qcom,scan_radio", &scan_radio))
+		if (scan_radio) {
+			dev_err(&pdev->dev,
+				"Scan radio is not supported in ath11k module\n");
+			return -EOPNOTSUPP;
+		}
 
 	ab = ath11k_core_alloc(&pdev->dev, sizeof(*ab_pci), ATH11K_BUS_PCI);
 

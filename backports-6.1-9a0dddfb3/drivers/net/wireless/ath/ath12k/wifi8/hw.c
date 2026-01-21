@@ -319,6 +319,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.umac_reset_ipc = 0,
 		.ds_support = true,
 		.mlo_3_link_tx_support = true,
+		.board_magic = "QCA-ATH12K-BOARD",
 	},
 };
 

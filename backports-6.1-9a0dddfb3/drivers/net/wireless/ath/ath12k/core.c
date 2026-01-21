@@ -342,7 +342,7 @@ int ath12k_core_suspend_late(struct ath12k_base *ab)
 	ath12k_hif_irq_disable(ab);
 	ath12k_hif_ce_irq_disable(ab);
 
-	if (!ab->pm_suspend)
+	if (!ab->powered_off)
 		ath12k_hif_power_down(ab, true);
 
 	return 0;
@@ -595,7 +595,7 @@ static int ath12k_core_fetch_board_data_api_n(struct ath12k_base *ab,
 					 filepath, sizeof(filepath));
 
 	/* magic has extra null byte padded */
-	magic_len = strlen(ATH12K_BOARD_MAGIC) + 1;
+	magic_len = strlen(ab->hw_params->board_magic) + 1;
 	if (len < magic_len) {
 		ath12k_err(ab, "failed to find magic value in %s, file too short: %zu\n",
 			   filepath, len);
@@ -603,7 +603,7 @@ static int ath12k_core_fetch_board_data_api_n(struct ath12k_base *ab,
 		goto err;
 	}
 
-	if (memcmp(data, ATH12K_BOARD_MAGIC, magic_len)) {
+	if (memcmp(data, ab->hw_params->board_magic, magic_len)) {
 		ath12k_err(ab, "found invalid board magic\n");
 		ret = -EINVAL;
 		goto err;
@@ -976,48 +976,45 @@ int ath12k_core_power_up(struct ath12k_hw_group *ag)
 {
 	struct ath12k_base *ab;
 	unsigned long time_left;
-	struct ath12k *ar;
-	bool radio_suspended = false;
-	int i, j;
+	int i;
 
+	reinit_completion(&ag->power_up);
 	for (i = 0; i < ag->num_probed; i++) {
 		ab =  ag->ab[i];
-		if (ab->pm_suspend) {
+		if (ab->powered_off && !ath12k_hw_group_recovery_in_progress(ag)) {
 			ath12k_hif_power_up(ab);
-			ab->pm_suspend = false;
+			ab->powered_off = false;
 			ab->powerup_triggered = true;
 			ath12k_info(ab, "Q6 power up is started\n");
-			reinit_completion(&ab->power_up);
 		}
 	}
 
-	for (i = 0; i < ag->num_probed; i++) {
-		ab =  ag->ab[i];
-
-		if (!ab->powerup_triggered && ab->num_radios > 1) {
-			for (j = 0; j < ab->num_radios; j++) {
-				ar = ab->pdevs[j].ar;
-				if (ar && ar->pdev_suspend) {
-					radio_suspended = true;
-					break;
-				}
-			}
-		}
-
-		if (ab->powerup_triggered || radio_suspended) {
-			time_left = wait_for_completion_timeout(&ab->power_up,
-								ATH12K_Q6_POWER_UP_TIMEOUT);
-			if (!time_left) {
-				ath12k_err(ab, "Q6 power up wait timed out\n");
-				return -ETIMEDOUT;
-			}
-		}
+	time_left = wait_for_completion_timeout(&ag->power_up,
+						ATH12K_Q6_POWER_UP_TIMEOUT);
+	if (!time_left) {
+		ath12k_err(ab, "Q6 power up wait timed out\n");
+		return -ETIMEDOUT;
 	}
 
 	return 0;
 }
 
-void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag)
+static void ath12k_core_cleanup(struct ath12k_base *ab)
+{
+	mutex_lock(&ab->core_lock);
+	ath12k_core_pdev_deinit(ab);
+	ath12k_dp_arch_pdev_free(ab->dp);
+	ath12k_ce_cleanup_pipes(ab);
+	ath12k_wmi_detach(ab);
+	mutex_unlock(&ab->core_lock);
+
+	ath12k_dp_cmn_device_deinit(ab->dp);
+	ath12k_hal_srng_deinit(ab);
+	ath12k_dp_umac_reset_deinit(ab);
+	ath12k_umac_reset_completion(ab);
+}
+
+void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag, bool standby_mode)
 {
 	struct ath12k_base *ab;
 	struct ath12k_hw *ah;
@@ -1025,54 +1022,66 @@ void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag)
 	unsigned long time_left;
 	int i, j, ret;
 	bool skip_power_down;
+	u8 total_vdevs;
 
-	reinit_completion(&ag->umac_reset_complete);
-	for (i = 0; i < ag->num_hw; i++) {
-		ah = ag->ah[i];
-		if (!ah)
-			continue;
+	if (!test_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ag->flags)) {
+		reinit_completion(&ag->umac_reset_complete);
+		for (i = 0; i < ag->num_hw; i++) {
+			ah = ag->ah[i];
+			if (!ah)
+				continue;
 
-		ret = ath12k_mac_mlo_standby_teardown(ah);
-		if (ret) {
-			ath12k_err(NULL, "mlo teardown is failed for ERP\n");
+			ret = ath12k_mac_mlo_standby_teardown(ah, standby_mode);
+			if (ret) {
+				if (standby_mode)
+					ath12k_err(NULL, "mlo teardown is failed for ERP\n");
+				else
+					ath12k_err(NULL, "mlo teardown is failed\n");
+				return;
+			}
+		}
+
+		time_left = wait_for_completion_timeout(&ag->umac_reset_complete,
+				msecs_to_jiffies(ATH12K_UMAC_RESET_TIMEOUT_IN_MS));
+		if (!time_left) {
+			ath12k_err(NULL, "UMAC reset didn't get completed within %d ms\n",
+				   ATH12K_UMAC_RESET_TIMEOUT_IN_MS);
+			ag->trigger_umac_reset = false;
 			return;
 		}
-	}
-
-	time_left = wait_for_completion_timeout(&ag->umac_reset_complete,
-				msecs_to_jiffies(ATH12K_UMAC_RESET_TIMEOUT_IN_MS));
-	if (!time_left) {
-		ath12k_err(NULL, "UMAC reset didn't get completed within %d ms\n",
-			    ATH12K_UMAC_RESET_TIMEOUT_IN_MS);
-		ag->trigger_umac_reset = false;
-		return;
 	}
 
 	for (i = 0; i < ag->num_devices; i++) {
 		ab = ag->ab[i];
 		skip_power_down = false;
 
-		for (j = 0; j < ab->num_radios; j++) {
-			ar = ab->pdevs[j].ar;
+		if (standby_mode) {
+			for (j = 0; j < ab->num_radios; j++) {
+				ar = ab->pdevs[j].ar;
 
-			if (ar) {
-				if (ar->allocated_vdev_map)
-					skip_power_down = true;
-				else
-					ath12k_mac_stop(ar);
+				if (ar) {
+					if (ar->allocated_vdev_map)
+						skip_power_down = true;
+					else
+						ath12k_mac_stop(ar);
+				}
 			}
 		}
 
-		if (!skip_power_down && !ab->pm_suspend) {
+		if (!skip_power_down && !ab->powered_off) {
 			ab->qmi.num_radios = U8_MAX;
 			ath12k_hif_irq_disable(ab);
 			ath12k_hif_ce_irq_disable(ab);
 			ath12k_dp_ppeds_interrupt_stop(ab);
 			ath12k_qmi_firmware_stop(ab);
 			ath12k_hif_power_down(ab, false);
+			ath12k_core_cleanup(ab);
+			total_vdevs = ath12k_core_get_total_num_vdevs(ab);
+			ab->free_vdev_map = (1LL << (ab->num_radios * total_vdevs)) - 1;
+			ab->free_vdev_stats_id_map = 0;
 			ath12k_core_to_group_ref_put(ab);
 			ath12k_qmi_free_resource(ab);
-			ab->pm_suspend = true;
+			ab->powered_off = true;
 			ath12k_info(ab, "Q6 power down\n");
 		}
 	}
@@ -1231,7 +1240,7 @@ static void ath12k_core_soc_destroy(struct ath12k_base *ab)
 	if (ab->ce_pipe_init_done && !ab->is_bypassed)
 		ath12k_ce_cleanup_pipes(ab);
 
-	if (!ab->pm_suspend)
+	if (!ab->powered_off)
 		ath12k_hif_power_down(ab, false);
 
 	ath12k_reg_free(ab);
@@ -1315,8 +1324,11 @@ static int ath12k_core_pdev_init(struct ath12k_base *ab)
 	return 0;
 }
 
-static void ath12k_core_pdev_deinit(struct ath12k_base *ab)
+void ath12k_core_pdev_deinit(struct ath12k_base *ab)
 {
+	if (ab->powered_off)
+		return;
+
 	ath12k_dp_accel_cfg_deinit(ab);
 	ath12k_fse_deinit(ab);
 	ath12k_telemetry_deinit(ab);
@@ -1544,7 +1556,7 @@ static void ath12k_core_hw_group_stop(struct ath12k_hw_group *ag)
 		ath12k_core_device_cleanup(ab);
 		
 		if (ab->hw_params->reoq_lut_support &&
-		    !ab->pm_suspend) {
+		    !ab->powered_off) {
 			mutex_lock(&ab->core_lock);
 			ath12k_dp_reoq_lut_addr_reset(ath12k_ab_to_dp(ab));
 			mutex_unlock(&ab->core_lock);
@@ -2094,6 +2106,12 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 				}
 			}
 		}
+
+		if (ath12k_check_erp_power_down(ag)) {
+			complete(&ag->power_up);
+			if (!ath12k_hw_group_recovery_in_progress(ag))
+				clear_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ag->flags);
+		}
 	}
 
 	if (hw_grp_ready) {
@@ -2219,21 +2237,12 @@ static int ath12k_core_reconfigure_on_crash(struct ath12k_base *ab, bool *is_rea
 	int ret;
 	u8 total_vdevs;
 
-	mutex_lock(&ab->core_lock);
-	ath12k_core_pdev_deinit(ab);
-	ath12k_dp_arch_pdev_free(ab->dp);
-	ath12k_ce_cleanup_pipes(ab);
-	ath12k_wmi_detach(ab);
-	mutex_unlock(&ab->core_lock);
-
-	ath12k_dp_cmn_device_deinit(ab->dp);
-	ath12k_hal_srng_deinit(ab);
-	ath12k_dp_umac_reset_deinit(ab);
-	ath12k_umac_reset_completion(ab);
-
-	total_vdevs = ath12k_core_get_total_num_vdevs(ab);
-	ab->free_vdev_map = (1LL << (ab->num_radios * total_vdevs)) - 1;
-	ab->free_vdev_stats_id_map = 0;
+	if (test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags)) {
+		ath12k_core_cleanup(ab);
+		total_vdevs = ath12k_core_get_total_num_vdevs(ab);
+		ab->free_vdev_map = (1LL << (ab->num_radios * total_vdevs)) - 1;
+		ab->free_vdev_stats_id_map = 0;
+	}
 
 	ret = ath12k_hal_srng_init(ab);
 	if (ret)
@@ -2245,7 +2254,6 @@ static int ath12k_core_reconfigure_on_crash(struct ath12k_base *ab, bool *is_rea
 	if (ret)
 		goto err_hal_srng_deinit;
 
-	/* ATH12K_FLAG_QMI_FW_READY_COMPLETE flag set during ERP exit*/
 	if (ath12k_check_erp_power_down(ab->ag)) {
 		if (!test_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE, &ab->dev_flags))
 			set_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE, &ab->dev_flags);
@@ -2595,44 +2603,38 @@ static void ath12k_core_post_reconfigure_recovery(struct ath12k_base *ab)
 	complete(&ab->driver_recovery);
 }
 
-static void ath12k_core_radio_start(struct ath12k_base *ab)
+int ath12k_core_radio_start(struct ath12k_hw *ah)
 {
-	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_hw_group *ag = ath12k_ah_to_ag(ah);
 	struct ath12k *ar;
-	struct ath12k_hw *ah = ath12k_ag_to_ah(ag, 0);
-	int i, j;
+	int i, ret = 0;
 
-	mutex_lock(&ag->mutex);
-	for (i = 0; i < ag->num_devices; i++) {
-		ab = ag->ab[i];
+	guard(mutex)(&ah->hw_mutex);
 
-		for (j = 0; j < ab->num_radios; j++) {
-			ar = ab->pdevs[j].ar;
-
-			if (!ath12k_ftm_mode && ar) {
-				if (ar->allocated_vdev_map) {
-					continue;
-				} else {
-					if (ath12k_mac_start(ar)) {
-						ath12k_err(ar->ab, "mac radio start failed\n");
-						mutex_unlock(&ag->mutex);
-						return;
-					}
-
-					ar->pdev_suspend = false;
+	for_each_ar(ah, ar, i) {
+		if (!ath12k_ftm_mode && ar) {
+			if (ar->allocated_vdev_map || ar->ab->is_bypassed) {
+				continue;
+			} else {
+				ret = ath12k_mac_start(ar);
+				if (ret) {
+					ath12k_err(ar->ab, "mac radio start failed\n");
+					return ret;
 				}
+
+				ar->pdev_suspend = false;
 			}
 		}
 
-		ab->powerup_triggered = false;
-		complete(&ab->power_up);
+		ar->ab->powerup_triggered = false;
 	}
 
 	ah->state = ATH12K_HW_STATE_ON;
-	mutex_unlock(&ag->mutex);
 
 	if (test_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ag->flags))
 		clear_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ag->flags);
+
+	return ret;
 }
 
 static void ath12k_core_restart(struct work_struct *work)
@@ -2654,10 +2656,6 @@ static void ath12k_core_restart(struct work_struct *work)
 			BUG_ON(1);
 		return;
 	}
-
-	if (is_ready && ath12k_check_erp_power_down(ag) &&
-	    !ath12k_hw_group_recovery_in_progress(ag))
-		ath12k_core_radio_start(ab);
 
 	if (ab->is_reset ||
 	    (ath12k_check_erp_power_down(ag) &&
@@ -3818,7 +3816,7 @@ static void ath12k_core_reset(struct work_struct *work)
 		 */
 		if (ab->hif.bus != ATH12K_BUS_PCI) {
 			ath12k_info(ab, "Collecting the userpd dumps before full crash\n");
-			if (!ab->pm_suspend)
+			if (!ab->powered_off)
 				ath12k_core_upd_power_down(ab);
 		}
 
@@ -3943,7 +3941,7 @@ static void ath12k_core_reset(struct work_struct *work)
 		if (ab->hif.bus == ATH12K_BUS_PCI) {
 			ath12k_hif_power_down(ab, false);
 		} else {
-			if (!ab->pm_suspend)
+			if (!ab->powered_off)
 				ath12k_core_upd_power_down(ab);
 		}
 	}
@@ -3977,7 +3975,7 @@ static void ath12k_core_reset(struct work_struct *work)
 		ath12k_hif_power_up(ab);
 
 		if (ath12k_check_erp_power_down(ag)) {
-			ab->pm_suspend = false;
+			ab->powered_off = false;
 			ab->powerup_triggered = true;
 		}
 
@@ -4072,10 +4070,10 @@ static struct ath12k_hw_group *ath12k_core_hw_group_alloc(struct ath12k_base *ab
 	ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
 	ag->wsi_load_info = NULL;
 	ag->wsi_peer_clean_timeout = ATH12K_MAC_PEER_CLEANUP_TIMEOUT_MSECS;
-
 #ifdef CPTCFG_ATH12K_POWER_OPTIMIZATION
 	ath12k_global_ps_ctx.ag = ag;
 #endif
+	init_completion(&ag->power_up);
 	return ag;
 }
 
@@ -4340,10 +4338,16 @@ static struct ath12k_hw_group *ath12k_core_hw_group_assign(struct ath12k_base *a
 {
 	struct ath12k_wsi_info *wsi = &ab->wsi_info;
 	struct ath12k_hw_group *ag;
+	bool mlo_capable;
 
 	lockdep_assert_held(&ath12k_hw_group_mutex);
 
-	if (ath12k_ftm_mode || !ath12k_mlo_capable || ath12k_waltest_mode)
+	mlo_capable = !strncmp(ab->hw_params->board_magic,
+				   ATH12K_SCAN_RADIO,
+				   strlen(ATH12K_SCAN_RADIO));
+
+	if (ath12k_ftm_mode || !ath12k_mlo_capable ||
+	    ath12k_waltest_mode || mlo_capable)
 		goto invalid_group;
 
 	/* The grouping of multiple devices will be done based on device tree file.
@@ -4512,22 +4516,6 @@ fail:
 	return ret;
 }
 
-static void ath12k_core_wsi_remap_reset(struct ath12k_base *ab)
-{
-	mutex_lock(&ab->core_lock);
-	ath12k_core_pdev_deinit(ab);
-	ath12k_dp_arch_pdev_free(ab->dp);
-	ath12k_ce_cleanup_pipes(ab);
-	ath12k_wmi_detach(ab);
-	mutex_unlock(&ab->core_lock);
-
-	ath12k_dp_cmn_device_deinit(ab->dp);
-	ath12k_hal_srng_deinit(ab);
-	ath12k_dp_umac_reset_deinit(ab);
-	ath12k_umac_reset_completion(ab);
-
-}
-
 int ath12k_core_dynamic_wsi_remap(struct ath12k_base *ab)
 {
 	int ret = 0, i;
@@ -4576,7 +4564,7 @@ int ath12k_core_dynamic_wsi_remap(struct ath12k_base *ab)
 		ath12k_qmi_free_resource(ab);
 
 		/* Clean up the states for bypassed chip */
-		ath12k_core_wsi_remap_reset(ab);
+		ath12k_core_cleanup(ab);
 
 		/* Update the counters in the hw group */
 		ag->num_bypassed++;
@@ -4805,7 +4793,16 @@ void ath12k_core_hw_group_set_mlo_capable(struct ath12k_hw_group *ag)
 	 * till the required driver implementation is in place.
 	 */
 	if (ag->num_devices == 1) {
+		bool mlo_capable;
+
 		ab = ag->ab[0];
+
+		mlo_capable = !strncmp(ab->hw_params->board_magic,
+					   ATH12K_SCAN_RADIO,
+					   strlen(ATH12K_SCAN_RADIO));
+
+		if (mlo_capable)
+			return;
 
 		/* WCN chipsets does not advertise in firmware features
 		 * hence skip checking
@@ -5212,7 +5209,6 @@ struct ath12k_base *ath12k_core_alloc(struct device *dev, size_t priv_size,
 	init_completion(&ab->restart_completed);
 	init_completion(&ab->wow.wakeup_completed);
 	init_completion(&ab->rddm_reset_done);
-	init_completion(&ab->power_up);
 
 	ab->dev = dev;
 	ab->hif.bus = bus;

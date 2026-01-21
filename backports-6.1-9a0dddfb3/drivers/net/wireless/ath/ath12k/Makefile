@@ -43,6 +43,7 @@ ath12k-$(CPTCFG_ATHDEBUG) += athdbg_if.o
 ath12k-$(CPTCFG_ATH12K_AHB) += ahb.o
 ath12k-$(CPTCFG_ATH12K_PPE_DS_SUPPORT) += ppe.o
 
+obj-$(CPTCFG_QCN_EXTN) += qcn_extns/wifi6/
 obj-$(CPTCFG_ATH12K) += wifi7/
 obj-$(CPTCFG_ATH12K) += wifi8/
 obj-$(CPTCFG_ATHDEBUG) += ath_debug/

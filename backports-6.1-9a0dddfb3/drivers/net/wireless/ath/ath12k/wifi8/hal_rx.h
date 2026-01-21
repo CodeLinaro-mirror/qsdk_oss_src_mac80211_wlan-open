@@ -27,7 +27,6 @@ struct hal_rx_reo_dest_rel_info {
 	__le32 peer_metadata;
 };
 
-#define HAL_INVALID_PEERID	0x3fff
 #define VHT_SIG_SU_NSS_MASK 0x7
 
 #define HAL_RX_MPDU_INFO_PN_GET_BYTE1(__val) \

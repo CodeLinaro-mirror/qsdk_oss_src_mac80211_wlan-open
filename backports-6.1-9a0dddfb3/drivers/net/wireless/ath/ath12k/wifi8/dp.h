@@ -31,6 +31,12 @@ struct ath12k_dp_hw_group_wifi8 {
 	struct ath12k_dp *cumac_dp;
 	struct ath12k_dp_global_ast_table dp_ast_base;
 	struct ath12k_pn_page_info *pn_page_info;
+	struct pool_ctxt_t *msduq_ctxt;
+	struct pool_ctxt_t *sw_msduq_ctxt;
+	struct pool_ctxt_t *mpduq_ctxt;
+	struct pool_ctxt_t *sw_mpduq_ctxt;
+	/* lock for tx flow pool */
+	spinlock_t tx_pool_lock;
 	u8 num_pn_pages;
 };
 

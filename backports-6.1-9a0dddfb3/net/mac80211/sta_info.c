@@ -2861,6 +2861,11 @@ static void sta_set_link_sinfo(struct sta_info *sta,
 			link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_SIGNAL);
 		}
 
+		if (link_sta_info->mgmt_signal) {
+			link_sinfo->mgmt_signal = (s8)link_sta_info->mgmt_signal;
+			link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_MGMT_SIGNAL);
+		}
+
 		if (!link_sta_info->pcpu_rx_stats &&
 		    !(link_sinfo->filled &
 		       BIT_ULL(NL80211_STA_INFO_SIGNAL_AVG))) {
@@ -3107,6 +3112,11 @@ void sta_set_sinfo(struct sta_info *sta, struct station_info *sinfo,
 		if (!(sinfo->filled & BIT_ULL(NL80211_STA_INFO_SIGNAL))) {
 			sinfo->signal = (s8)last_rxstats->last_signal;
 			sinfo->filled |= BIT_ULL(NL80211_STA_INFO_SIGNAL);
+		}
+
+		if (sta->deflink.mgmt_signal) {
+			sinfo->mgmt_signal = (s8)sta->deflink.mgmt_signal;
+			sinfo->filled |= BIT_ULL(NL80211_STA_INFO_MGMT_SIGNAL);
 		}
 
 		if (!sta->deflink.pcpu_rx_stats &&

@@ -147,6 +147,10 @@ enum ath12k_supported_bw {
 
 #define ATH12K_NUM_20_MHZ_CHAN_IN_320_MHZ_CHAN	16
 
+void ath12k_mac_op_get_key_seq(struct ieee80211_hw *hw,
+			       struct ieee80211_vif *vif,
+			       struct ieee80211_key_conf *key,
+			       struct ieee80211_key_seq *seq);
 /**
  * struct ath12k_mac_num_chanctxs_arg - Structure to hold channel context
  * @ar: Pointer to ath12k device context
@@ -495,7 +499,7 @@ void ath12k_mac_op_set_dscp_tid(struct ieee80211_hw *hw,
 				struct ieee80211_vif *vif,
 				struct cfg80211_qos_map *qos_map,
 				unsigned int link_id);
-int ath12k_mac_mlo_standby_teardown(struct ath12k_hw *ah);
+int ath12k_mac_mlo_standby_teardown(struct ath12k_hw *ah, bool standby_teardown);
 void ath12k_mac_stop(struct ath12k *ar);
 bool ath12k_mac_validate_active_radio_count(struct ath12k_hw *ah);
 int ath12k_mac_pdev_suspend(struct ath12k *ar);

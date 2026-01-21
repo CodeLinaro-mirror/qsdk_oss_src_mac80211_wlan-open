@@ -90,8 +90,7 @@ int ath12k_wifi7_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 	spin_unlock_bh(&dp_hw->peer_lock);
 
 	if (sta && sta->mlo) {
-		if (!ahsta->links_map && (hweight16(sta->valid_links) == 1))
-			ahsta->ml_peer_id = ath12k_wifi7_peer_ml_id_alloc(ah);
+		ahsta->ml_peer_id = ath12k_wifi7_peer_ml_id_alloc(ah);
 
 		if (ahsta->ml_peer_id == ATH12K_MLO_PEER_ID_INVALID) {
 			ath12k_hw_warn(ah, "unable to allocate ML peer id for sta %pM",
@@ -190,11 +189,10 @@ void ath12k_wifi7_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 	kfree(dp_peer);
 }
 
-#define PEER_TABLE_SOC_ID_SHIFT		10
-u16 ath12k_wifi7_dp_peer_get_peerid_index(struct ath12k_dp *dp, u16 peer_id)
+int ath12k_wifi7_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
+			       struct ath12k_dp_vif *dp_vif, u8 *addr)
 {
-	return (peer_id & ATH12K_PEER_ML_ID_VALID) ? peer_id :
-		((dp->device_id << PEER_TABLE_SOC_ID_SHIFT) | peer_id);
+	return 0;
 }
 
 int ath12k_wifi7_dp_link_peer_create(struct ath12k_base *ab, u32 vdev_id, u8 *addr)

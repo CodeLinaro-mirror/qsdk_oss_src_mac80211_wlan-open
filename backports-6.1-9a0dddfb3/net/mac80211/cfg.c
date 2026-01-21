@@ -777,7 +777,7 @@ static int ieee80211_get_key(struct wiphy *wiphy, struct net_device *dev,
 
 		if (key->flags & KEY_FLAG_UPLOADED_TO_HARDWARE &&
 		    !(key->conf.flags & IEEE80211_KEY_FLAG_GENERATE_IV)) {
-			drv_get_key_seq(sdata->local, key, &kseq);
+			drv_get_key_seq(sdata, key, &kseq);
 			iv32 = kseq.tkip.iv32;
 			iv16 = kseq.tkip.iv16;
 		}
@@ -810,7 +810,7 @@ static int ieee80211_get_key(struct wiphy *wiphy, struct net_device *dev,
 
 		if (key->flags & KEY_FLAG_UPLOADED_TO_HARDWARE &&
 		    !(key->conf.flags & IEEE80211_KEY_FLAG_GENERATE_IV)) {
-			drv_get_key_seq(sdata->local, key, &kseq);
+			drv_get_key_seq(sdata, key, &kseq);
 			memcpy(seq, kseq.ccmp.pn, 6);
 		} else {
 			pn64 = atomic64_read(&key->conf.tx_pn);
@@ -829,7 +829,7 @@ static int ieee80211_get_key(struct wiphy *wiphy, struct net_device *dev,
 			break;
 		if (WARN_ON(key->conf.flags & IEEE80211_KEY_FLAG_GENERATE_IV))
 			break;
-		drv_get_key_seq(sdata->local, key, &kseq);
+		drv_get_key_seq(sdata, key, &kseq);
 		params.seq = kseq.hw.seq;
 		params.seq_len = kseq.hw.seq_len;
 		break;
@@ -1706,10 +1706,13 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	if (ieee80211_hw_check(&local->hw, HAS_RATE_CONTROL))
 		link_conf->beacon_tx_rate = params->beacon_rate;
 
-	err = ieee80211_assign_beacon(sdata, link, &params->beacon, NULL, NULL,
-				      &changed);
-	if (err < 0)
-		goto error;
+	/* Skip Beacon Assignment for Scan Radio */
+	if (!wdev_is_scan_radio(&sdata->wdev)) {
+		err = ieee80211_assign_beacon(sdata, link, &params->beacon, NULL, NULL,
+					      &changed);
+		if (err < 0)
+			goto error;
+	}
 
 	err = ieee80211_set_fils_discovery(sdata, &params->fils_discovery,
 					   link, link_conf, &changed);
@@ -3223,6 +3226,8 @@ static int ieee80211_set_txq_params(struct wiphy *wiphy,
 	p.cw_max = params->cwmax;
 	p.cw_min = params->cwmin;
 	p.txop = params->txop;
+	p.acm = params->acm;
+	p.noack = params->noack;
 
 	/*
 	 * Setting tx queue params disables u-apsd because it's only
@@ -4842,7 +4847,12 @@ __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 		link_data->csa.power_mode = IEEE80211_REG_UNSET_AP;
 
 	link_data->csa.chanreq = chanreq;
-	link_conf->csa_active = true;
+	if (wdev_is_scan_radio((const struct wireless_dev *)&sdata->wdev)) {
+		/* scan radio channel change does not require csa */
+		link_conf->csa_active = false;
+	} else {
+		link_conf->csa_active = true;
+	}
 
 	if (params->block_tx)
 		ieee80211_vif_block_queues_csa(sdata);

@@ -847,13 +847,74 @@ ath12k_dp_mon_rx_update_peer_rate_table_stats(struct ath12k_rx_peer_stats *rx_st
 	stats->rx_rate[bw_idx][gi_idx][nss_idx][mcs_idx] += len;
 }
 
+void ath12k_dp_mon_rx_update_basic_stats(struct ath12k_rx_peer_stats *rx_stats,
+					 struct hal_rx_mon_ppdu_info *ppdu_info,
+					 u32 num_msdu, u32 uid)
+{
+	struct hal_rx_user_status *user_stats = NULL;
+	u32 ru_width_factor, byte_count;
+	u64 rx_duration_scaled;
+	u16 rx_time_us, num_msdu_retry_count;
+	u8 preamble_type, mcs, nss;
+
+	if (!rx_stats || !ppdu_info)
+		return;
+
+	if (ppdu_info->reception_type != HAL_RX_RECEPTION_TYPE_SU)
+		user_stats = &ppdu_info->userstats[uid];
+
+	preamble_type = user_stats ? user_stats->preamble_type : ppdu_info->preamble_type;
+	mcs = user_stats ? user_stats->mcs : ppdu_info->mcs;
+	nss = user_stats ? user_stats->nss : ppdu_info->nss;
+	byte_count = user_stats ? user_stats->mpdu_ok_byte_count : ppdu_info->mpdu_len;
+	num_msdu_retry_count = user_stats ? user_stats->retried_msdu_count :
+			       ppdu_info->retried_msdu_count;
+
+	rx_stats->num_ppdus += 1;
+	rx_stats->num_mpdu_retry_count += ppdu_info->mpdu_retry_cnt;
+	rx_stats->num_msdu_bytes += byte_count;
+	rx_stats->num_msdu_retry_count += num_msdu_retry_count;
+	rx_stats->bw_info = ppdu_info->bw;
+	rx_stats->gi_info = ppdu_info->gi;
+	rx_stats->mcs_info = mcs;
+	rx_stats->nss_info = nss;
+	rx_stats->preamble_info = ppdu_info->preamble_type;
+	if (ppdu_info->reception_type == HAL_RX_RECEPTION_TYPE_SU) {
+		rx_time_us = ppdu_info->rx_duration;
+		rx_stats->num_mpdus += ppdu_info->num_mpdu_fcs_ok +
+				       ppdu_info->num_mpdu_fcs_err;
+	} else {
+		/* MU */
+		ru_width_factor = ppdu_info->usr_nss_sum * ppdu_info->usr_ru_tones_sum;
+		if (!ru_width_factor)
+			ru_width_factor = 1;
+
+		rx_duration_scaled = ppdu_info->rx_duration * user_stats->nss *
+				     user_stats->ul_ofdma_ru_width;
+		rx_time_us = (u16)div_u64(rx_duration_scaled, ru_width_factor);
+		rx_stats->num_mpdus += user_stats->mpdu_cnt_fcs_ok +
+				       user_stats->mpdu_cnt_fcs_err;
+	}
+	rx_stats->num_ppdu_duration += rx_time_us;
+}
+
 void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
-					   struct ath12k_dp_link_peer *peer,
 					   struct hal_rx_mon_ppdu_info *ppdu_info)
 {
-	struct ath12k_rx_peer_stats *rx_stats = peer->peer_stats.rx_stats;
+	struct ath12k_dp_link_peer *peer;
+	struct ath12k_rx_peer_stats *rx_stats;
 	u32 num_msdu;
 
+	peer = ath12k_dp_link_peer_find_by_peerid_index(pdev_dp->dp, pdev_dp,
+							ppdu_info->peer_id);
+	if (!peer) {
+		ath12k_dbg(pdev_dp->ar->ab, ATH12K_DBG_DATA,
+			   "failed to find the peer with monitor peer_id %d\n",
+			   ppdu_info->peer_id);
+		return;
+	}
+
+	rx_stats = peer->peer_stats.rx_stats;
 	peer->rssi_comb = ppdu_info->rssi_comb;
 	ewma_avg_rssi_add(&peer->avg_rssi, ppdu_info->rssi_comb);
 
@@ -957,6 +1018,8 @@ void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
 
 	ath12k_dp_mon_rx_update_peer_rate_table_stats(rx_stats, ppdu_info,
 						      NULL, num_msdu);
+
+	ath12k_dp_mon_rx_update_basic_stats(rx_stats, ppdu_info, num_msdu, 0);
 }
 EXPORT_SYMBOL(ath12k_dp_mon_rx_update_peer_su_stats);
 
@@ -1026,10 +1089,11 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 	struct ath12k_dp *dp = pdev_dp->dp;
 	struct ath12k_base *ab = dp->ab;
 
-	if (ppdu_info->peer_id == HAL_MON_INVALID_PEERID)
+	if (ppdu_info->peer_id == HAL_INVALID_PEERID)
 		return;
 
-	peer = ath12k_dp_link_peer_find_by_ast(dp, user_stats->ast_index);
+	peer = ath12k_dp_link_peer_find_by_peerid_index(dp, pdev_dp,
+							user_stats->sw_peer_id);
 	if (!peer) {
 		ath12k_dbg(ab, ATH12K_DBG_DP_MON_RX, "peer with peer id %d can't be found\n",
 			   ppdu_info->peer_id);
@@ -1123,6 +1187,8 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 
 	pdev_stats->telemetry_stats.rx_data_msdu_cnt = rx_stats->num_msdu;
 	pdev_stats->telemetry_stats.total_rx_data_bytes = user_stats->mpdu_ok_byte_count;
+
+	ath12k_dp_mon_rx_update_basic_stats(rx_stats, ppdu_info, num_msdu, uid);
 }
 
 void
@@ -1162,7 +1228,8 @@ ath12k_dp_mon_ppdu_per_user_rx_time_update(struct ath12k_pdev_dp *dp_pdev,
 	RCU_LOCKDEP_WARN(!rcu_read_lock_held(), "PPDU per user rx time update called without rcu lock\n");
 	lockdep_assert_held(&dp_pdev->dp->dp_lock);
 
-       peer = ath12k_dp_link_peer_find_by_id(dp_pdev->dp, user_stats->sw_peer_id);
+	peer = ath12k_dp_link_peer_find_by_peerid_index(dp_pdev->dp, dp_pdev,
+							user_stats->sw_peer_id);
        if (!peer || !peer->sta) {
                ath12k_dbg(dp_pdev->ar->ab, ATH12K_DBG_PEER,
                           "peer stats not found on ppdu peer id %d\n",
@@ -1208,7 +1275,8 @@ ath12k_dp_mon_per_user_ppdu_rssi_update(struct ath12k_pdev_dp *dp_pdev,
 
 	lockdep_assert_held(&dp_pdev->dp->dp_lock);
 
-	peer = ath12k_dp_link_peer_find_by_id(dp_pdev->dp, user_stats->sw_peer_id);
+	peer = ath12k_dp_link_peer_find_by_peerid_index(dp_pdev->dp, dp_pdev,
+							user_stats->sw_peer_id);
 	if (!peer || !peer->sta) {
 		ath12k_dbg(dp_pdev->ar->ab, ATH12K_DBG_PEER,
 			   "peer stats not found on ppdu peer id %d\n",
@@ -1220,9 +1288,9 @@ ath12k_dp_mon_per_user_ppdu_rssi_update(struct ath12k_pdev_dp *dp_pdev,
 	stats = &peer->peer_stats.dp_mon_stats;
 	stats->snr = rssi_comb;
 	if (unlikely(stats->avg_snr == SNR_INVALID))
-		stats->avg_snr = SNR_IN(stats->snr);
+		stats->avg_snr = WEIGHTED_AVG_IN(stats->snr);
 	else
-		SNR_UPDATE_AVG(stats->avg_snr, stats->snr);
+		WEIGHTED_AVG_UPDATE(stats->avg_snr, stats->snr);
 }
 
 void ath12k_dp_mon_ppdu_rx_time_update(struct ath12k_pdev_dp *dp_pdev,
@@ -1557,6 +1625,8 @@ void ath12k_dp_mon_pdev_rx_attach(struct ath12k_pdev_dp *dp_pdev)
 
 	for (i = 0; i < HAL_MAX_UL_MU_USERS; i++)
 		skb_queue_head_init(&ppdu_info->mpdu_q[i]);
+
+	ppdu_info->peer_id = HAL_INVALID_PEERID;
 }
 EXPORT_SYMBOL(ath12k_dp_mon_pdev_rx_attach);
 
@@ -1623,6 +1693,18 @@ void ath12k_dp_mon_rx_nrp_reset(struct ath12k_pdev_dp *dp_pdev)
 	ath12k_dp_mon_rx_nrp_config_filter(dp_pdev, false);
 }
 EXPORT_SYMBOL(ath12k_dp_mon_rx_nrp_reset);
+
+void ath12k_dp_mon_rx_smart_mon_set(struct ath12k_pdev_dp *dp_pdev)
+{
+	ath12k_dp_mon_rx_smart_mon_config_filter(dp_pdev, true);
+}
+EXPORT_SYMBOL(ath12k_dp_mon_rx_smart_mon_set);
+
+void ath12k_dp_mon_rx_smart_mon_reset(struct ath12k_pdev_dp *dp_pdev)
+{
+	ath12k_dp_mon_rx_smart_mon_config_filter(dp_pdev, false);
+}
+EXPORT_SYMBOL(ath12k_dp_mon_rx_smart_mon_reset);
 
 static void ath12k_dp_mon_clear_pdev_airtime_stats(struct ath12k *ar)
 {
@@ -1991,6 +2073,67 @@ u32 ath12k_wifi7_dp_mon_get_frag_size_by_idx(struct ath12k_dp *dp,
 	return size;
 }
 EXPORT_SYMBOL(ath12k_wifi7_dp_mon_get_frag_size_by_idx);
+
+int ath12k_dp_mon_get_puncture_type(u16 puncture_pattern, u8 bw)
+{
+	u16 mask;
+	u8 punctured_bits;
+
+	if (!puncture_pattern)
+		return NO_PUNCTURE;
+
+	switch (bw) {
+	case HAL_RX_BW_80MHZ:
+		mask = PUNCTURE_80MHZ_MASK;
+		break;
+	case HAL_RX_BW_160MHZ:
+		mask = PUNCTURE_160MHZ_MASK;
+		break;
+	case HAL_RX_BW_320MHZ:
+		mask = PUNCTURE_320MHZ_MASK;
+		break;
+	default:
+		return NO_PUNCTURE;
+	}
+
+	/* 0s in puncture pattern received in TLV indicates punctured 20Mhz,
+	 * after complement, 1s will indicate punctured 20Mhz
+	 */
+	puncture_pattern = ~puncture_pattern;
+	puncture_pattern &= mask;
+
+	if (puncture_pattern) {
+		punctured_bits = 0;
+		while (puncture_pattern != 0) {
+			punctured_bits++;
+			puncture_pattern &= (puncture_pattern - 1);
+		}
+
+		if (bw == HAL_RX_BW_80MHZ) {
+			if (punctured_bits == PUNC_MINUS20MHZ)
+				return PUNCTURED_20MHZ;
+			else
+				return NO_PUNCTURE;
+		} else if (bw == HAL_RX_BW_160MHZ) {
+			if (punctured_bits == PUNC_MINUS20MHZ)
+				return PUNCTURED_20MHZ;
+			else if (punctured_bits == PUNC_MINUS40MHZ)
+				return PUNCTURED_40MHZ;
+			else
+				return NO_PUNCTURE;
+		} else if (bw == HAL_RX_BW_320MHZ) {
+			if (punctured_bits == PUNC_MINUS40MHZ)
+				return PUNCTURED_40MHZ;
+			else if (punctured_bits == PUNC_MINUS80MHZ)
+				return PUNCTURED_80MHZ;
+			else if (punctured_bits == PUNC_MINUS120MHZ)
+				return PUNCTURED_120MHZ;
+			else
+				return NO_PUNCTURE;
+		}
+	}
+	return NO_PUNCTURE;
+}
 
 void *ath12k_dp_mon_skb_get_frag_addr(struct sk_buff *skb, u8 idx)
 {

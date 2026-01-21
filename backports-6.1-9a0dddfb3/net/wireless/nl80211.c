@@ -3801,6 +3801,8 @@ static const struct nla_policy txq_params_policy[NL80211_TXQ_ATTR_MAX + 1] = {
 	[NL80211_TXQ_ATTR_CWMIN]		= { .type = NLA_U16 },
 	[NL80211_TXQ_ATTR_CWMAX]		= { .type = NLA_U16 },
 	[NL80211_TXQ_ATTR_AIFS]			= { .type = NLA_U8 },
+	[NL80211_TXQ_ATTR_ACM]			= { .type = NLA_U8 },
+	[NL80211_TXQ_ATTR_NOACK]		= { .type = NLA_U8 },
 };
 
 static int parse_txq_params(struct nlattr *tb[],
@@ -3818,6 +3820,11 @@ static int parse_txq_params(struct nlattr *tb[],
 	txq_params->cwmin = nla_get_u16(tb[NL80211_TXQ_ATTR_CWMIN]);
 	txq_params->cwmax = nla_get_u16(tb[NL80211_TXQ_ATTR_CWMAX]);
 	txq_params->aifs = nla_get_u8(tb[NL80211_TXQ_ATTR_AIFS]);
+
+	if (tb[NL80211_TXQ_ATTR_ACM])
+		txq_params->acm = nla_get_u8(tb[NL80211_TXQ_ATTR_ACM]);
+	if (tb[NL80211_TXQ_ATTR_NOACK])
+		txq_params->noack = nla_get_u8(tb[NL80211_TXQ_ATTR_NOACK]);
 
 	if (ac >= NL80211_NUM_ACS)
 		return -EINVAL;
@@ -7187,10 +7194,16 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 	if (!params)
 		return -ENOMEM;
 
-	err = nl80211_parse_beacon(rdev, info->attrs, &params->beacon,
-				   info->extack);
-	if (err)
-		goto out;
+	/* Skip beacon parsing for scan radio */
+	if (wdev_is_scan_radio(wdev)) {
+		/* Initialize beacon to empty for scan radio */
+		memset(&params->beacon, 0, sizeof(params->beacon));
+	} else {
+		err = nl80211_parse_beacon(rdev, info->attrs, &params->beacon,
+					   info->extack);
+		if (err)
+			goto out;
+	}
 
 	params->beacon_interval =
 		nla_get_u32(info->attrs[NL80211_ATTR_BEACON_INTERVAL]);
@@ -7301,7 +7314,9 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 			goto out;
 
 		/* 6 GHz Frequency requires 6 GHz power mode */
-		if (params->chandef.chan->band == NL80211_BAND_6GHZ) {
+		/* Skip for scan radio as it does not require power mode */
+		if (params->chandef.chan->band == NL80211_BAND_6GHZ &&
+		    !wdev_is_scan_radio(wdev)) {
 			if (info->attrs[NL80211_ATTR_6G_REG_POWER_MODE]) {
 				params->he_6ghz_power_type =
 				    nla_get_u8(info->attrs[NL80211_ATTR_6G_REG_POWER_MODE]);
@@ -7884,6 +7899,7 @@ static int nl80211_fill_link_station(struct sk_buff *msg,
 	case CFG80211_SIGNAL_TYPE_MBM:
 		PUT_LINK_SINFO(SIGNAL, signal, u8);
 		PUT_LINK_SINFO(SIGNAL_AVG, signal_avg, u8);
+		PUT_LINK_SINFO(MGMT_SIGNAL, mgmt_signal, u8);
 		break;
 	default:
 		break;
@@ -7949,6 +7965,9 @@ static int nl80211_fill_link_station(struct sk_buff *msg,
 	PUT_LINK_SINFO(BEACON_SIGNAL_AVG, rx_beacon_signal_avg, u8);
 	PUT_LINK_SINFO(RX_MPDUS, rx_mpdu_count, u32);
 	PUT_LINK_SINFO(FCS_ERROR_COUNT, fcs_err_count, u32);
+	PUT_LINK_SINFO(PN_ERRORS, pn_errors, u32);
+	PUT_LINK_SINFO(MIC_ERRORS, mic_errors, u32);
+	PUT_LINK_SINFO(DECRYPT_ERRORS, decrypt_errors, u32);
 	if (wiphy_ext_feature_isset(&rdev->wiphy,
 				    NL80211_EXT_FEATURE_ACK_SIGNAL_SUPPORT)) {
 		PUT_LINK_SINFO(ACK_SIGNAL, ack_signal, u8);
@@ -8084,6 +8103,7 @@ static int nl80211_send_station(struct sk_buff *msg, u32 cmd, u32 portid,
 	case CFG80211_SIGNAL_TYPE_MBM:
 		PUT_SINFO(SIGNAL, signal, u8);
 		PUT_SINFO(SIGNAL_AVG, signal_avg, u8);
+		PUT_SINFO(MGMT_SIGNAL, mgmt_signal, u8);
 		break;
 	default:
 		break;
@@ -8161,6 +8181,9 @@ static int nl80211_send_station(struct sk_buff *msg, u32 cmd, u32 portid,
 	PUT_SINFO(BEACON_SIGNAL_AVG, rx_beacon_signal_avg, u8);
 	PUT_SINFO(RX_MPDUS, rx_mpdu_count, u32);
 	PUT_SINFO(FCS_ERROR_COUNT, fcs_err_count, u32);
+	PUT_SINFO(PN_ERRORS, pn_errors, u32);
+	PUT_SINFO(MIC_ERRORS, mic_errors, u32);
+	PUT_SINFO(DECRYPT_ERRORS, decrypt_errors, u32);
 	if (wiphy_ext_feature_isset(&rdev->wiphy,
 				    NL80211_EXT_FEATURE_ACK_SIGNAL_SUPPORT)) {
 		PUT_SINFO(ACK_SIGNAL, ack_signal, u8);
@@ -12010,7 +12033,7 @@ static int nl80211_channel_switch(struct sk_buff *skb, struct genl_info *info)
 	unsigned int link_id = nl80211_link_id(info->attrs);
 	struct net_device *dev = info->user_ptr[1];
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
-	struct cfg80211_csa_settings params;
+	struct cfg80211_csa_settings params = {};
 	struct nlattr **csa_attrs = NULL;
 	int err;
 	bool need_new_beacon = false;
@@ -12031,7 +12054,10 @@ static int nl80211_channel_switch(struct sk_buff *skb, struct genl_info *info)
 		 * requiring DFS will be rejected.
 		 */
 		need_handle_dfs_flag = false;
-
+		if (wdev_is_scan_radio(wdev)) {
+			/* Beacon parsing is not required for scan radio */
+			goto skip_beacons;
+		}
 		/* useless if AP is not running */
 		if (!wdev->links[link_id].ap.beacon_interval)
 			return -ENOTCONN;
@@ -12122,14 +12148,16 @@ skip_beacons:
 	if (err)
 		goto free;
 
-	/* 6 GHz Frequency requires 6 GHz power mode */
-	if (params.chandef.chan->band == NL80211_BAND_6GHZ) {
-		if (info->attrs[NL80211_ATTR_6G_REG_POWER_MODE]) {
-			params.he_6ghz_power_type =
-			    nla_get_u8(info->attrs[NL80211_ATTR_6G_REG_POWER_MODE]);
-		} else {
-			err = -EINVAL;
-			goto free;
+	if (!wdev_is_scan_radio(wdev)) {
+		/* 6 GHz Frequency requires 6 GHz power mode */
+		if (params.chandef.chan->band == NL80211_BAND_6GHZ) {
+			if (info->attrs[NL80211_ATTR_6G_REG_POWER_MODE]) {
+				params.he_6ghz_power_type =
+					nla_get_u8(info->attrs[NL80211_ATTR_6G_REG_POWER_MODE]);
+			} else {
+				err = -EINVAL;
+				goto free;
+			}
 		}
 	}
 

@@ -142,21 +142,6 @@ ath12k_dp_link_peer_find_by_ml_peer_vdev_id(struct ath12k_dp *dp,
 }
 EXPORT_SYMBOL(ath12k_dp_link_peer_find_by_ml_peer_vdev_id);
 
-struct ath12k_dp_link_peer *
-ath12k_dp_link_peer_find_by_ast(struct ath12k_dp *dp,
-				int ast_hash)
-{
-	struct ath12k_dp_link_peer *peer;
-
-	lockdep_assert_held(&dp->dp_lock);
-
-	list_for_each_entry(peer, &dp->peers, list)
-		if (ast_hash == peer->ast_hash)
-			return peer;
-
-	return NULL;
-}
-
 bool ath12k_dp_link_peer_exist_by_vdev_id(struct ath12k_dp *dp, int vdev_id)
 {
 	struct ath12k_dp_link_peer *peer;
@@ -541,13 +526,17 @@ EXPORT_SYMBOL(ath12k_dp_peer_create_find);
 
 struct ath12k_dp_peer *ath12k_dp_peer_find_by_peerid_index(struct ath12k_dp *dp,
 							   struct ath12k_pdev_dp *dp_pdev,
-							   u16 index)
+							   u16 peer_id)
 {
+	u16 index;
+
 	RCU_LOCKDEP_WARN(!rcu_read_lock_held(),
 			 "ath12k dp peer find by peerid index called without rcu lock");
 
-	if (index >= ATH12K_PEER_ID_INVALID)
+	if (peer_id >= ATH12K_PEER_ID_INVALID)
 		return NULL;
+
+	index = ath12k_dp_peer_get_peerid_index(dp, peer_id);
 
 	return rcu_dereference(dp_pdev->dp_hw->dp_peer_list[index]);
 }
@@ -665,6 +654,8 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 	    !peer->peer_stats.tx_stats) {
 		peer->peer_stats.tx_stats = kzalloc(sizeof(*peer->peer_stats.tx_stats),
 						    GFP_ATOMIC);
+		peer->peer_stats.tx_stats->avg_ack_rssi = INVALID_RSSI;
+		peer->peer_stats.tx_stats->avg_tx_rate = INVALID_RATE;
 	}
 
 	dp_peer->qos_stats_lvl = (ar->dp.qos_stats &

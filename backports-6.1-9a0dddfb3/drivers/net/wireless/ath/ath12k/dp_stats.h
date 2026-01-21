@@ -24,6 +24,21 @@
 #define ATH12K_GI_NUM           4
 #define ATH12K_HT_MCS_NUM       32
 
+#define QOS_TID_MAX 8
+#define QOS_TID_MDSUQ_MAX 2
+#define QOS_TID_DEF_MSDUQ_MAX 2
+
+#define MAX_MCS_11B 7
+#define MAX_MCS_11A 8
+#define MAX_MCS_11N 8
+#define MAX_MCS_11AC 12
+#define MAX_MCS_11AX 14
+#define MAX_MCS_11BE 16
+#define MAX_MCS (16 + 1)
+
+#define INVALID_RSSI	GENMASK(7, 0)
+#define INVALID_RATE	GENMASK(7, 0)
+
 #define nla_total_size_nested(x) nla_total_size(x)
 /**
  * enum ath12k_stats_object:	Defines the Stats specific to object
@@ -142,11 +157,62 @@ enum ath12k_stats_type {
 	ATH12K_STATS_TYPE_MAX,
 };
 
+struct dp_pkt_info {
+	u64 num;
+	u64 bytes;
+};
+
+struct pkt_type {
+	u32 mcs_count[MAX_MCS];
+};
+
+struct ath12k_tx_pkt_info {
+	u32 num_msdu;
+	u32 num_mpdu;
+	u32 mpdu_tried;
+};
+
+enum ath12k_mu_packet_type {
+	TXRX_TYPE_MU_MIMO = 0,
+	TXRX_TYPE_MU_OFDMA = 1,
+	TXRX_TYPE_MU_MAX = 2,
+};
+
+#define WME_AC_MAX		4
+#define MAX_RU_LOCATIONS        16
+#define MAX_TRANSMIT_TYPES      9
+#define MAX_PUNCTURED_MODE	5
+#define RSSI_CHAIN_LEN		8
+
+#define TID_TO_WME_AC(_tid) (      \
+		(((_tid) == 0) || ((_tid) == 3)) ? WME_AC_BE : \
+		(((_tid) == 1) || ((_tid) == 2)) ? WME_AC_BK : \
+		(((_tid) == 4) || ((_tid) == 5)) ? WME_AC_VI : \
+		WME_AC_VO)
+
 /* VIF STATS MACROS */
 #define DP_STATS_INC(_handle, _field, _delta, _ring) \
 	do { \
 		if (likely(_handle)) \
 			_handle->stats[_ring]._field += _delta; \
+	} while (0)
+
+#define DP_STATS_INCC(handle, field, delta, cond) \
+	do { \
+		if ((cond) && likely(handle)) \
+			(handle->field) += (delta); \
+	} while (0)
+
+#define DP_STATS_INCR(handle, field, delta) \
+	do { \
+		if (likely(handle)) \
+			(handle->field) += (delta); \
+	} while (0)
+
+#define DP_STATS_UPD(handle, field, delta) \
+	do { \
+		if (likely(handle)) \
+			(handle->field) = (delta); \
 	} while (0)
 
 #define DP_STATS_INC_PKT(_handle, _field, _count, _bytes, _ring) \
@@ -249,25 +315,65 @@ struct ath12k_htt_data_stats {
 
 struct ath12k_htt_tx_stats {
 	struct ath12k_htt_data_stats stats[ATH12K_STATS_TYPE_MAX];
+	u8 rate_idx;
 	u64 tx_duration;
 	u64 ba_fails;
 	u64 ack_fails;
 	u16 ru_start;
 	u16 ru_tones;
 	u32 mu_group[MAX_MU_GROUP_ID];
+	u8 ppdu_type;
+
+	/* Ext HTT stats */
+	/* MSDU Basic */
+	struct dp_pkt_info tx_ucast_success;
+	struct dp_pkt_info tx_mcast_success;
+
+	/* PPDU Basic */
+	u32 tx_ppdus;
+
+	/* MPDU Basic */
+	u32 tx_mpdus_success;
+	u32 tx_mpdus_tried;
+	u32 retries_mpdu;
+
+	/* Basic RSSI */
+	int last_ack_rssi;
+	int avg_ack_rssi;
+	int rssi_chain[RSSI_CHAIN_LEN];
+
+	/* Basic rate */
+	u32 tx_rate;
+
+	/* Advanced stats */
+	u32 stbc;
+	u32 ldpc;
+	u32 wme_ac_type[WME_AC_MAX];
+	u64 wme_ac_type_bytes[WME_AC_MAX];
+	u32 excess_retries_per_ac[WME_AC_MAX];
+	u32 ampdu_cnt;
+	u32 non_ampdu_cnt;
+	u32 num_ppdu_cookie_valid;
+	u64 avg_tx_rate;
+	u16 tx_ratecode;
+	u32 last_tx_rate_mcs;
+	u32 mcast_last_tx_rate;
+	u32 mcast_last_tx_rate_mcs;
+	u32 pream_punct_cnt;
+	struct ath12k_tx_pkt_info ru_loc_mpdu_succ_tried[MAX_RU_LOCATIONS];
+	struct ath12k_tx_pkt_info transmit_type_mpdu_succ_tried[MAX_TRANSMIT_TYPES];
+	struct pkt_type su_be_ppdu_cnt;
+	struct pkt_type mu_be_ppdu_cnt[TXRX_TYPE_MU_MAX];
+	u32 punc_bw[MAX_PUNCTURED_MODE];
+	u32 rts_success;
+	u32 rts_failure;
+	u32 bar_cnt;
+	u32 ndpa_cnt;
+	u64 tx_ppdu_duration;
+	u8 tx_pwr;
+	u32 tx_msdu_flush_rsn[HTT_FLUSH_MAX];
+
 };
-
-#define QOS_TID_MAX 8
-#define QOS_TID_MDSUQ_MAX 2
-#define QOS_TID_DEF_MSDUQ_MAX 2
-
-#define MAX_MCS_11B 7
-#define MAX_MCS_11A 8
-#define MAX_MCS_11N 8
-#define MAX_MCS_11AC 12
-#define MAX_MCS_11AX 14
-#define MAX_MCS_11BE 16
-#define MAX_MCS (16 + 1)
 
 /* Different Packet Types */
 enum packet_std {
@@ -280,18 +386,9 @@ enum packet_std {
 	DOT11_MAX,
 };
 
-struct pkt_type {
-	u32 mcs_count[MAX_MCS];
-};
-
 struct fw_mpdu_stats {
 	u64 success_cnt;
 	u64 failure_cnt;
-};
-
-struct dp_pkt_info {
-	u64 num;
-	u64 bytes;
 };
 
 struct msduq_tx_stats {
@@ -610,6 +707,47 @@ struct ath12k_rx_peer_rate_stats {
 	u64 rx_rate[HAL_RX_BW_MAX][HAL_RX_GI_MAX][HAL_RX_MAX_NSS][HAL_RX_MAX_MCS_HT + 1];
 };
 
+/**
+ * struct ath12k_rx_peer_stats - Per-peer RX statistics
+ *
+ * @num_msdu: Total number of MSDUs received.
+ * @num_mpdu_fcs_ok: Number of MPDUs received with FCS check passed.
+ * @num_mpdu_fcs_err: Number of MPDUs received with FCS check failed.
+ * @tcp_msdu_count: Number of MSDUs carrying TCP payload.
+ * @udp_msdu_count: Number of MSDUs carrying UDP payload.
+ * @other_msdu_count: Number of MSDUs carrying non-TCP/UDP payload.
+ * @ampdu_msdu_count: Number of MSDUs received within A-MPDU aggregates.
+ * @non_ampdu_msdu_count: Number of MSDUs received outside A-MPDU aggregates.
+ * @stbc_count: Number of frames received using STBC (Space-Time Block Coding).
+ * @beamformed_count: Number of frames received with beamforming enabled.
+ * @coding_count: Array of counts per coding type (indexed by HAL_RX_SU_MU_CODING_MAX).
+ * @tid_count: Array of MSDU counts per TID (Traffic Identifier),
+ *             indexed by IEEE80211_NUM_TIDS + 1 (includes non-QoS).
+ * @pream_cnt: Array of counts per preamble type (indexed by HAL_RX_PREAMBLE_MAX).
+ * @reception_type: Array of counts per PPDU reception type
+ *                  (indexed by HAL_RX_RECEPTION_TYPE_MAX).
+ * @rx_duration: Total RX duration in microseconds.
+ * @dcm_count: Number of frames received using Dual Carrier Modulation (DCM).
+ * @ru_alloc_cnt: Array of counts per RU allocation type
+ *                (indexed by HAL_RX_RU_ALLOC_TYPE_MAX).
+ * @pkt_stats: Per-rate statistics based on packet counts.
+ * @byte_stats: Per-rate statistics based on byte counts.
+ *
+ * SU + MU Basic Stats:
+ * @num_msdu_bytes: Total MSDU bytes received.
+ * @num_msdu_retry_count: Number of MSDU retries.
+ * @num_mpdus: Total number of MPDUs received.
+ * @num_mpdu_retry_count: Number of MPDU retries.
+ * @num_ppdus: Total number of PPDUs received.
+ * @num_ppdu_duration: Aggregate PPDU duration.
+ *
+ * Bitfield info:
+ * @nss_info: Number of spatial streams (NSS).
+ * @mcs_info: Modulation and Coding Scheme (MCS) index.
+ * @bw_info: Bandwidth information (channel width).
+ * @gi_info: Guard interval information.
+ * @preamble_info: Preamble type information.
+ */
 struct ath12k_rx_peer_stats {
 	u64 num_msdu;
 	u64 num_mpdu_fcs_ok;
@@ -630,6 +768,19 @@ struct ath12k_rx_peer_stats {
 	u64 ru_alloc_cnt[HAL_RX_RU_ALLOC_TYPE_MAX];
 	struct ath12k_rx_peer_rate_stats pkt_stats;
 	struct ath12k_rx_peer_rate_stats byte_stats;
+	/* SU + MU Basic Stats */
+	u64 num_msdu_bytes;
+	u32 num_msdu_retry_count;
+	u64 num_mpdus;
+	u32 num_mpdu_retry_count;
+	u64 num_ppdus;
+	u32 num_ppdu_duration;
+
+	u32 nss_info:4,
+	    mcs_info:4,
+	    bw_info:4,
+	    gi_info:4,
+	    preamble_info:4;
 };
 
 /* struct ath12k_dp_preserved_stats - Snapshot statistics for MLO datapath

@@ -312,7 +312,7 @@ static void ath12k_ahb_ce_irqs_disable(struct ath12k_base *ab)
 {
 	int i;
 
-	if (ab->pm_suspend)
+	if (ab->powered_off)
 		return;
 
 	for (i = 0; i < ab->hw_params->ce_count; i++) {
@@ -347,7 +347,7 @@ static void ath12k_ahb_ext_irq_enable(struct ath12k_base *ab)
 
 static void ath12k_ahb_ext_irq_disable(struct ath12k_base *ab)
 {
-	if (ab->pm_suspend)
+	if (ab->powered_off)
 		return;
 
 	__ath12k_ahb_ext_irq_disable(ab);
@@ -405,17 +405,20 @@ static int ath12k_ahb_power_up(struct ath12k_base *ab)
 		}
 	}
 
-	rmem = ath12k_core_get_reserved_mem_by_name(ab, "q6-region");
-	if (!rmem)
-		return -ENODEV;
-
-	ab_ahb->mem_phys = rmem->base;
-	ab_ahb->mem_size = rmem->size;
-	ab_ahb->mem_region = (void *)devm_ioremap_wc(dev, ab_ahb->mem_phys, ab_ahb->mem_size);
 	if (!ab_ahb->mem_region) {
-		ath12k_err(ab, "unable to map memory region: %pa+%pa\n",
-			   &rmem->base, &rmem->size);
+		rmem = ath12k_core_get_reserved_mem_by_name(ab, "q6-region");
+		if (!rmem)
+			return -ENODEV;
+
+		ab_ahb->mem_phys = rmem->base;
+		ab_ahb->mem_size = rmem->size;
+		ab_ahb->mem_region = (void *)devm_ioremap_wc(dev, ab_ahb->mem_phys,
+							     ab_ahb->mem_size);
+		if (!ab_ahb->mem_region) {
+			ath12k_err(ab, "unable to map memory region: %pa+%pa\n",
+					&rmem->base, &rmem->size);
 		return -ENOMEM;
+		}
 	}
 
 	snprintf(fw_name, sizeof(fw_name), "%s/%s/%s%d%s", ATH12K_FW_DIR,
@@ -837,6 +840,9 @@ static void ath12k_ahb_free_ext_irq(struct ath12k_base *ab)
 {
 	int i, j;
 
+	if (ab->powered_off)
+		return;
+
 	for (i = 0; i < ATH12K_EXT_IRQ_GRP_NUM_MAX; i++) {
 		struct ath12k_ext_irq_grp *irq_grp = &ab->ext_irq_grp[i];
 
@@ -1028,6 +1034,9 @@ static void ath12k_ahb_dp_umac_reset_free_irq(struct ath12k_base *ab)
 {
         struct ath12k_dp_umac_reset *umac_reset = &ab->dp_umac_reset;
         struct ath12k_ahb *ab_ahb = ath12k_ab_to_ahb(ab);
+
+	if (ab->powered_off)
+		return;
 
         if (ab->hw_params->umac_irq_line_reset) {
                 iounmap(ab_ahb->interrupt_reset_base_addr);
@@ -1556,7 +1565,7 @@ ath12k_ahb_get_device_family(const struct platform_device *pdev)
 			of_id = of_match_device(driver->id_table, &pdev->dev);
 			if (of_id) {
 				/* Found the driver */
-				return 0;
+				return device_id;
 			}
 		}
 	}

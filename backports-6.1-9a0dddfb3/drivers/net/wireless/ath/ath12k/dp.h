@@ -54,6 +54,9 @@ struct dp_rx_fst;
 struct ath12k_dp_mon;
 struct ath12k_pdev_mon_dp;
 struct ath12k_hp_update_timer;
+struct peer_assoc_flowq_params;
+struct peer_assoc_holq_params;
+struct ath12k_dp_vif;
 
 #define DP_MON_PURGE_TIMEOUT_MS     100
 #define DP_MON_SERVICE_BUDGET       128
@@ -162,7 +165,6 @@ struct ath12k_pdev_dp {
 
 	/* Protects ppdu stats */
 	spinlock_t ppdu_list_lock;
-	struct ath12k_per_peer_tx_stats peer_tx_stats;
 	struct list_head ppdu_stats_info;
 
 	bool dp_mon_pdev_configured;
@@ -517,11 +519,20 @@ struct ath12k_dp_arch_ops {
 			      struct ieee80211_vif *vif);
 	void (*dp_peer_delete)(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 *addr,
 			       struct ieee80211_sta *sta, u8 hw_link_id);
-	u16 (*dp_peer_get_peerid_index)(struct ath12k_dp *dp, u16 peer_id);
+	int (*dp_peer_assoc)(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
+			     struct ath12k_dp_vif *dp_vif, u8 *addr);
 	int (*dp_link_peer_create)(struct ath12k_base *ab, u32 vdev_id, u8 *addr);
 	void (*dp_link_peer_delete)(struct ath12k_base *ab, u32 vdev_id, u8 *addr);
 	void (*peer_cleanup_indication)(struct ath12k_dp *dp, struct sk_buff *skb);
 	int (*dp_ppeds_tx_completion_handler)(struct ath12k_base *ab, int budget);
+	void (*dp_link_peer_assoc)(struct ath12k_dp_hw *dp_hw, struct ath12k_dp *dp,
+				   u8 *addr, u32 hw_link_id);
+	int (*dp_get_peer_mgmt_flowq)(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
+				      u8 *addr,
+				      struct peer_assoc_flowq_params *flowq_params);
+	int (*dp_get_peer_holq)(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
+				u8 *addr,
+				struct peer_assoc_holq_params *holq_params);
 };
 
 struct ath12k_bp_stats {
@@ -710,6 +721,7 @@ struct ath12k_dp {
 
 	struct ath12k_dp_hw_group *dp_hw_grp;
 	u8 device_id;
+	bool global_peer_id_supported;
 
 	struct ath12k_dp_arch_ops *arch_ops;
 
@@ -1049,6 +1061,16 @@ ath12k_dp_arch_peer_delete(struct ath12k_dp *dp,
 		dp->arch_ops->dp_peer_delete(dp, ah, addr, sta, hw_link_id);
 }
 
+static inline int ath12k_dp_arch_peer_assoc(struct ath12k_dp *dp,
+					    struct ath12k_dp_hw *dp_hw,
+					    struct ath12k_dp_vif *dp_vif,
+					    u8 *addr)
+{
+	if (dp->arch_ops->dp_peer_assoc)
+		return dp->arch_ops->dp_peer_assoc(dp, dp_hw, dp_vif, addr);
+	return -EOPNOTSUPP;
+}
+
 static inline int ath12k_dp_arch_link_peer_create(struct ath12k_dp *dp,
 						  struct ath12k_base *ab,
 						  u32 vdev_id, u8 *addr)
@@ -1073,16 +1095,54 @@ static inline void ath12k_dp_arch_peer_cleanup_indication(struct ath12k_dp *dp,
 		dp->arch_ops->peer_cleanup_indication(dp, skb);
 }
 
+static inline void ath12k_dp_arch_link_peer_assoc(struct ath12k_dp *dp,
+						  struct ath12k_dp_hw *dp_hw,
+						  u8 *addr, u32 hw_link_id)
+{
+	if (dp->arch_ops->dp_link_peer_assoc)
+		return dp->arch_ops->dp_link_peer_assoc(dp_hw, dp, addr,
+							hw_link_id);
+}
+
+static inline int
+ath12k_arch_dp_get_peer_mgmt_flowq(struct ath12k_dp *dp,
+				   struct ath12k_dp_hw *dp_hw,
+				   u8 *addr,
+				   struct peer_assoc_flowq_params *flowq_params)
+{
+	if (dp->arch_ops->dp_get_peer_mgmt_flowq)
+		return dp->arch_ops->dp_get_peer_mgmt_flowq(dp, dp_hw, addr,
+							    flowq_params);
+	return -EINVAL;
+}
+
+static inline int
+ath12k_arch_dp_get_peer_holq(struct ath12k_dp *dp,
+			     struct ath12k_dp_hw *dp_hw,
+			     u8 *addr,
+			     struct peer_assoc_holq_params *holq_params)
+{
+	if (dp->arch_ops->dp_get_peer_holq)
+		return dp->arch_ops->dp_get_peer_holq(dp, dp_hw, addr,
+						      holq_params);
+	return -EINVAL;
+}
+
 static inline void ath12k_dp_get_mac_addr(u32 addr_l32, u16 addr_h16, u8 *addr)
 {
 	memcpy(addr, &addr_l32, 4);
 	memcpy(addr + 4, &addr_h16, ETH_ALEN - 4);
 }
 
+#define PEER_TABLE_SOC_ID_SHIFT        10
+#define ATH12K_PEER_ML_ID_VALID        BIT(13)
 static inline
 u16 ath12k_dp_peer_get_peerid_index(struct ath12k_dp *dp, u16 peer_id)
 {
-	return dp->arch_ops->dp_peer_get_peerid_index(dp, peer_id);
+	return dp->global_peer_id_supported ? peer_id
+		: ((peer_id & ATH12K_PEER_ML_ID_VALID)
+			? peer_id
+			: ((dp->device_id << PEER_TABLE_SOC_ID_SHIFT) | peer_id));
 }
 
 static inline struct ath12k_dp *

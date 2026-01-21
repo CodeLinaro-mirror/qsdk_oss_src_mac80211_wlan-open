@@ -2715,6 +2715,24 @@ static const char *ath12k_htt_be_tx_rx_ru_size_to_str(u8 ru_size)
 	}
 }
 
+static const char *ath12k_htt_bn_rx_dru_size_to_str(u8 dru_size)
+{
+	switch (dru_size) {
+	case ATH12K_HTT_TX_PDEV_STATS_BN_DRU_SIZE_26:
+		return "DRU_26";
+	case ATH12K_HTT_TX_PDEV_STATS_BN_DRU_SIZE_52:
+		return "DRU_52";
+	case ATH12K_HTT_TX_PDEV_STATS_BN_DRU_SIZE_106:
+		return "DRU_106";
+	case ATH12K_HTT_TX_PDEV_STATS_BN_DRU_SIZE_242:
+		return "DRU_242";
+	case ATH12K_HTT_TX_PDEV_STATS_BN_DRU_SIZE_484:
+		return "DRU_484";
+	default:
+		return "unknown";
+	}
+}
+
 static const char*
 ath12k_tx_ru_size_to_str(enum ath12k_htt_stats_ru_type ru_type, u8 ru_size)
 {
@@ -4882,6 +4900,9 @@ ath12k_htt_print_tx_selfgen_bn_stats_tlv(const void *tag_buf, u16 tag_len,
 			le32_to_cpu(htt_stats_buf->bn_mu_bar_trigger));
 	len += scnprintf(buf + len, buf_len - len, "bn_mu_rts_trigger = %u\n",
 			le32_to_cpu(htt_stats_buf->bn_mu_rts_trigger));
+	len += print_array_to_buf(buf, len, "bn_basic_trig_ru_alloc_mode",
+			htt_stats_buf->bn_basic_trig_ru_alloc_mode,
+				ATH12K_HTT_BN_UL_OFDMA_NUM_RU_ALLOC_MODES, "\n");
 	len += print_array_to_buf(buf, len, "combined_bn_bsr_trigger_tried",
 			htt_stats_buf->combined_bn_bsr_trigger_tried,
 				ATH12K_HTT_NUM_AC_WMM, "\n");
@@ -7284,6 +7305,18 @@ ath12k_htt_print_phy_stats_tlv(const void *tag_buf, u16 tag_len,
 			 le32_to_cpu(htt_stats_buf->radar_cs_cnt));
 	len += scnprintf(buf + len, buf_len - len, "ani_level = %d\n\n",
 			 a_sle32_to_cpu(htt_stats_buf->ani_level));
+	len += scnprintf(buf + len, buf_len - len,
+			 "dl_max_ANI = %d\n",
+			 le32_to_cpu(htt_stats_buf->dl_max_ANI));
+	len += scnprintf(buf + len, buf_len - len,
+			 "ani_dl_max_for_rssi = %d\n",
+			 le32_to_cpu(htt_stats_buf->ani_dl_max_for_rssi));
+	len += scnprintf(buf + len, buf_len - len,
+			 "cur_EANI_mode = %u\n",
+			 u32_get_bits(le32_to_cpu(htt_stats_buf->dword_curr_eani_mode),
+				      HTT_STATS_CURR_EANI_MODE_M));
+
+
 	len += scnprintf(buf + len, buf_len - len, "current operating bw = %u\n",
 			 le32_to_cpu(htt_stats_buf->current_operating_width));
 	len += scnprintf(buf + len, buf_len - len, "current device bw = %u\n",
@@ -7661,11 +7694,11 @@ ath12k_htt_print_phy_tpc_stats_tlv(const void *tag_buf, u16 tag_len,
 				  htt_stats_buf->tx_num_chains,
 				  ATH12K_HTT_STATS_MAX_CHAINS, "\n");
 	len += print_array_to_buf(buf, len, "tpc_stats : tx_power_neg",
-				  htt_stats_buf->tx_power_neg, ATH12K_HTT_MAX_POWER_LEVEL,
-				  "\n");
-	len += print_array_to_buf(buf, len, "tpc_stats : tx_power",
 				  htt_stats_buf->tx_power_neg,
-				  ATH12K_HTT_MAX_NEGATIVE_POWER_LEVEL, "\n\n");
+				  ATH12K_HTT_MAX_NEGATIVE_POWER_LEVEL, "\n");
+	len += print_array_to_buf(buf, len, "tpc_stats : tx_power",
+				  htt_stats_buf->tx_power,
+				  ATH12K_HTT_MAX_POWER_LEVEL, "\n\n");
 
 	stats_req->buf_len = len;
 }
@@ -8050,7 +8083,31 @@ ath12k_htt_print_tx_per_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 			len += scnprintf(buf + len, buf_len - len, " %s:%u ",
 					 ath12k_tx_ru_size_to_str(ru_type, i),
 					 le32_to_cpu(stats_buf->ru[i].mpdus_failed));
-		len += scnprintf(buf + len, buf_len - len, "\n\n");
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+		if (rc_mode == ATH12K_HTT_STATS_RC_MODE_ULOFDMA) {
+			len += scnprintf(buf + len, buf_len - len,
+				"mpdus_tried_dru_%s = ",
+				mode_prefix);
+			for (i = 0; i < ATH12K_HTT_TX_PDEV_STATS_BN_DRU_SIZE_CNT; i++)
+				len += scnprintf(buf + len, buf_len - len, " %s:%u ",
+					ath12k_htt_bn_rx_dru_size_to_str(i),
+					le32_to_cpu(stats_buf->per_dru[i].mpdus_tried));
+
+			len += scnprintf(buf + len, buf_len - len, "\n");
+			len += scnprintf(buf + len, buf_len - len,
+				"mpdus_failed_dru_%s = ",
+				mode_prefix);
+
+			for (i = 0; i < ATH12K_HTT_TX_PDEV_STATS_BN_DRU_SIZE_CNT; i++)
+				len += scnprintf(buf + len, buf_len - len, " %s:%u ",
+					ath12k_htt_bn_rx_dru_size_to_str(i),
+					le32_to_cpu(stats_buf->per_dru[i].mpdus_failed));
+
+			len += scnprintf(buf + len, buf_len - len, "\n");
+		}
+
+		len += scnprintf(buf + len, buf_len - len, "\n");
 	}
 
 	if (rc_mode == ATH12K_HTT_STATS_RC_MODE_DLMUMIMO) {
@@ -8960,6 +9017,9 @@ ath12k_htt_print_be_bn_ul_trigger_stats_tlv(const void *tag_buf, u16 tag_len,
 	len += print_array_to_buf(buf, len, "bn_ul_ofdma_rx_bw",
 				  stats_buf->bn_ul_ofdma_rx_bw,
 				  ATH12K_HTT_RX_NUM_BN_BW_COUNTERS, "\n");
+	len += print_array_to_buf(buf, len, "bn_ul_ofdma_rx_dru_sbw",
+				  stats_buf->bn_ul_ofdma_rx_dru_sbw,
+				  ATH12K_HTT_BN_UL_OFDMA_NUM_DRU_SBW_COUNT, "\n");
 	len += scnprintf(buf + len, buf_len - len, "bn_ul_ofdma_rx_stbc = %u\n",
 			 le32_to_cpu(stats_buf->bn_ul_ofdma_rx_stbc));
 	len += scnprintf(buf + len, buf_len - len, "bn_ul_ofdma_rx_ldpc = %u\n",
@@ -8970,6 +9030,13 @@ ath12k_htt_print_be_bn_ul_trigger_stats_tlv(const void *tag_buf, u16 tag_len,
 		len += scnprintf(buf + len, buf_len - len, " %s:%u ",
 				 ath12k_htt_be_tx_rx_ru_size_to_str(i),
 				 le32_to_cpu(stats_buf->bn_rx_data_ru_size_ppdu[i]));
+	len += scnprintf(buf + len, buf_len - len, "\n");
+
+	len += scnprintf(buf + len, buf_len - len, "bn_rx_data_dru_size_ppdu = ");
+	for (i = 0; i < ATH12K_HTT_TX_PDEV_STATS_BN_DRU_SIZE_CNT; i++)
+		len += scnprintf(buf + len, buf_len - len, " %s:%u ",
+				ath12k_htt_bn_rx_dru_size_to_str(i),
+				le32_to_cpu(stats_buf->bn_rx_data_dru_size_ppdu[i]));
 	len += scnprintf(buf + len, buf_len - len, "\n");
 
 	len += scnprintf(buf + len, buf_len - len, "bn_rx_non_data_ru_size_ppdu = ");
@@ -10878,6 +10945,9 @@ debug_htt_stats_req *stats_req)
 		return;
 	len += scnprintf(buf + len, buf_len - len, "HTT_STATS_PDEV_FTM_TPCCAL_TAG:\n");
 
+	len += scnprintf(buf + len, buf_len - len, "cal_db_timeout_ms  = %d\n ",
+			 le32_to_cpu(htt_stats_buf->cal_db_timeout_ms));
+
 	len += scnprintf(buf + len, buf_len - len,
 			 "HTT_FTM_TPCCAL_POSTPROC_FAILURE_STATS:\n");
 
@@ -10910,6 +10980,29 @@ debug_htt_stats_req *stats_req)
 		le32_to_cpu(htt_stats_buf->tpccal_stats_postproc.pdadc[i]));
 	}
 
+	if (numgain != 0) {
+		len += scnprintf(buf + len, buf_len - len,
+				 "\nHTT_FTM_TPCCAL_TARGETS:\n\n");
+		len += scnprintf(buf + len, buf_len - len,
+				 "\nHTT_FTM_TPCCAL_TARGETS_MEASPWR:\n");
+	for (i = 0; i < ATH12K_HTT_STATS_NUM_CAL_GAINS_SELECTED_4_GLUT; i++) {
+		s16 tgt_meas_pwr =
+			(s16)(le32_to_cpu(htt_stats_buf->tpc_targets.tgt_meas_pwr[i]));
+		len += scnprintf(buf + len, buf_len - len,
+				 "\nGlut_idx = %2d Cal_pwr_targets = %5d",
+				 i, tgt_meas_pwr);
+	}
+	len += scnprintf(buf + len, buf_len - len,
+			 "\n\nHTT_FTM_TPCCAL_TARGETS_PDADC:\n");
+
+	for (i = 0; i < ATH12K_HTT_STATS_NUM_CAL_GAINS_SELECTED_4_PLUT; i++) {
+		len += scnprintf(buf + len, buf_len - len,
+				 "Plut_idx = %d Pdadc_targets = %d\n ",
+				 i, le32_to_cpu
+				(htt_stats_buf->tpc_targets.tgt_pdadc[i]));
+	}
+}
+
 	len += scnprintf(buf + len, buf_len - len, "\nHTT_FTM_TPCCAL_LATEST_STATS:\n");
 	loop_last_idx = u32_get_bits(le32_to_cpu
 				(htt_stats_buf->dword__tpccal_last_idx),
@@ -10917,14 +11010,14 @@ debug_htt_stats_req *stats_req)
 				ATH12K_HTT_MAX_TPCCAL_STATS;
 	for (i = 0; i < ATH12K_HTT_MAX_TPCCAL_STATS; i++) {
 		u8 curIdx;
-		u16 measPwr;
+		s16 measPwr;
 		u8 pdadc;
 		u16 channel;
 		u8 chain;
 		u8 gainIdx;
 
 		curIdx = loop_last_idx % ATH12K_HTT_MAX_TPCCAL_STATS;
-		measPwr = u32_get_bits(le32_to_cpu
+		measPwr = (s16) u32_get_bits(le32_to_cpu
 			(htt_stats_buf->tpccal_stats[curIdx].dword__measPwr),
 			ATH12K_HTT_STATS_TPCCAL_STATS_MEASPWR_M);
 		pdadc = u32_get_bits(le32_to_cpu
@@ -10950,6 +11043,330 @@ debug_htt_stats_req *stats_req)
 	stats_req->buf_len = len;
 }
 
+static void ath12k_htt_print_ftm_tpccal_stats_ext_tlv(const void *tag_buf,
+	u16 tag_len, struct debug_htt_stats_req *stats_req)
+{
+	u8 *buf = stats_req->buf;
+	u32 len = stats_req->buf_len;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
+	const struct ath12k_htt_stats_pdev_ftm_tpccal_ext_tlv *htt_stats_buf = tag_buf;
+	u32 cal_status;
+	int i, j;
+
+	if (tag_len < sizeof(*htt_stats_buf))
+		return;
+	len += scnprintf(buf + len, buf_len - len,
+			 "HTT_STATS_PDEV_FTM_TPCCAL_EXT_TAG:\n");
+	cal_status = le32_to_cpu(htt_stats_buf->cal_status);
+	len += scnprintf(buf + len, buf_len - len,
+			 "cal_status = %d", cal_status);
+	if (cal_status & ATH12K_HTT_STATS_TPCCALRSP_MISCFLAGS_CALERROR_PLUT_NON_LINEAR) {
+		u8 tpccal_pdadc_last_idx;
+
+		len += scnprintf(buf + len, buf_len - len,
+				 "\n\nHTT_FTM_TPCCAL_PDADC_NON_LINEARITY_STATS:\n");
+		tpccal_pdadc_last_idx = u32_get_bits(le32_to_cpu
+			(htt_stats_buf->dword__tpccal_pdadc_last_idx),
+			ATH12K_HTT_STATS_TPCCAL_PDADC_LAST_IDX);
+		if (tpccal_pdadc_last_idx > ATH12K_HTT_STATS_TPC_CAL_PDADC_BUF_LEN)
+			tpccal_pdadc_last_idx = ATH12K_HTT_STATS_TPC_CAL_PDADC_BUF_LEN;
+		for (i = 0; i < tpccal_pdadc_last_idx; i++) {
+
+			u32 band_chan_chain_info =
+			le32_to_cpu(
+			htt_stats_buf->tpccal_stats_pdadc[i].dword__band_channel_chain);
+
+			u8 pdadc_band = u32_get_bits(band_chan_chain_info,
+				ATH12K_HTT_STATS_TPCCAL_PDADC_BAND);
+			u16 pdadc_channel = u32_get_bits(band_chan_chain_info,
+				ATH12K_HTT_STATS_TPCCAL_PDADC_CHANNEL);
+			u8 pdadc_chain = u32_get_bits(band_chan_chain_info,
+				ATH12K_HTT_STATS_TPCCAL_PDADC_CHAIN);
+			u8 tpccal_pdadc_numgain;
+
+			len += scnprintf(buf + len, buf_len - len,
+					 "\n\nPDADC_NON_LINEAR:\n");
+			len += scnprintf(buf + len, buf_len - len,
+					 "Band = %d Channel = %d Chain = %d",
+					 pdadc_band, pdadc_channel, pdadc_chain);
+			tpccal_pdadc_numgain = u32_get_bits
+			(le32_to_cpu(
+			htt_stats_buf->tpccal_stats_pdadc[i].dword__tpccal_pdadc_numgain),
+			ATH12K_HTT_STATS_TPCCAL_PDADC_NUMGAIN);
+
+			if (tpccal_pdadc_numgain >
+				ATH12K_HTT_STATS_TPC_CAL_MAX_NUM_POINTS) {
+				tpccal_pdadc_numgain =
+					ATH12K_HTT_STATS_TPC_CAL_MAX_NUM_POINTS;
+			}
+
+			len += scnprintf(buf + len, buf_len - len,
+				"\n\nTPC cal results for band:%d channel:%d chain:%d corresponding to PDADC non-linearity:\n",
+				pdadc_band, pdadc_channel, pdadc_chain);
+			for (j = 0; j < tpccal_pdadc_numgain; j++) {
+
+				u32 dword_calres =
+				le32_to_cpu(
+				htt_stats_buf->tpccal_tpc_cal_res[i][j].dword_calres);
+
+				u8 pdadc_gain_idx = u32_get_bits(dword_calres,
+					ATH12K_HTT_STATS_TPCCAL_RES_PDADC_GAINIDX);
+
+				s16 measpwr = (s16)u32_get_bits(le32_to_cpu
+				(htt_stats_buf->tpccal_tpc_cal_res[i][j].dword_meas_pwr),
+				ATH12K_HTT_STATS_TPCCAL_RES_PDADC_MEASPWR);
+
+				u8 pdadc = u32_get_bits(dword_calres,
+					ATH12K_HTT_STATS_TPCCAL_RES_PDADC_VAL);
+				len += scnprintf(buf + len, buf_len - len,
+					"\ntx_gain_idx = %d meas_pwr = %d pdadc = %d",
+					pdadc_gain_idx, measpwr, pdadc);
+			}
+		}
+	}
+	stats_req->buf_len = len;
+}
+
+static void ath12k_htt_print_ftm_stats_tlv(const void *tag_buf, u16 tag_len,
+					   struct debug_htt_stats_req *stats_req)
+{
+	const struct ath12k_htt_stats_ftm_tlv *htt_stats_buf = tag_buf;
+	u8 *buf = stats_req->buf;
+	u32 len = stats_req->buf_len;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
+	u64 ts_fpc;
+	u32 dword_tlv_cmd_parsing;
+	int tlv_timestamp_cnt_filled;
+	int i, ch;
+	u8 last_idx;
+
+	if (tag_len < sizeof(*htt_stats_buf))
+		return;
+
+	len += scnprintf(buf + len, buf_len - len, "\n\nTX PARAMS\n");
+
+	u32 dword_txparams = le32_to_cpu(
+		htt_stats_buf->tx_params.dword_txparams);
+	u32 dword_txparams_ext_1 = le32_to_cpu(
+		htt_stats_buf->tx_params.dword_txparams_ext_1);
+	u32 dword_txparams_ext_2 =
+		le32_to_cpu(htt_stats_buf->tx_params.dword_txparams_ext_2);
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "CW tone Gain Index: %u\n",
+			 u32_get_bits(dword_txparams,
+				      ATH12K_HTT_STATS_CWTONE_GAIN_IDX));
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "Infinite_bursting_mode: %u\n",
+			 u32_get_bits(dword_txparams,
+				      ATH12K_HTT_STATS_INFINITE_BURSTING_MODE));
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "FTM Mode: %u\n",
+			 u32_get_bits(dword_txparams,
+				      ATH12K_HTT_STATS_FTM_MODE));
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "SIFS duration (us): %u\n",
+			 u32_get_bits(dword_txparams,
+				      ATH12K_HTT_STATS_SIFS_US));
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "TX time (us): %u\n",
+			 le32_to_cpu(htt_stats_buf->tx_params.target_fes_duration_us));
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "TX OFF Duration (us): %u\n",
+			 le32_to_cpu(
+				htt_stats_buf->tx_params.target_txoff_duration_us));
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "TX ON ratio: %u\n",
+			 u32_get_bits(dword_txparams_ext_2,
+				      ATH12K_HTT_STATS_TX_DUTY));
+
+	last_idx = u32_get_bits(dword_txparams_ext_1,
+		ATH12K_HTT_STATS_PPDU_DUR_BUF_LAST_IDX);
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "Last idx of circular buffer -actual_ppdu_dur_us: %u\n",
+				last_idx);
+
+	for (i = 0; i < ATH12K_HTT_STATS_FTM_PPDU_DUR_CIRCULAR_BUF_CNT; i++) {
+		u32 actual_ppdu_dur_us = le32_to_cpu(
+			htt_stats_buf->tx_params.actual_ppdu_dur_us[i]);
+		len += scnprintf(buf + len, buf_len - len,
+				 "Actual TX ON duration (us) [idx: %u]: %u\n",
+				 i, actual_ppdu_dur_us);
+	}
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "DPD enabled/disabled Status: %u\n",
+			 u32_get_bits(dword_txparams_ext_1,
+				      ATH12K_HTT_STATS_DPD_FLAG));
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "Aggregation Status: %u\n",
+			 u32_get_bits(dword_txparams_ext_1,
+				      ATH12K_HTT_STATS_AGG_STATUS));
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "PHY Mode: %u\n",
+			 le32_to_cpu(htt_stats_buf->tx_params.phy_mode));
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "Packet Length Post Truncation: %u\n",
+			 le32_to_cpu(htt_stats_buf->tx_params.pkt_len_post_truncation));
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "Num Users Tone Plan: %u\n",
+			 u32_get_bits(dword_txparams_ext_2,
+				      ATH12K_HTT_STATS_NUM_USERS_OFDMA_TONE_PLAN));
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "Num Users Tone Plan EHT: %u\n",
+			 u32_get_bits(dword_txparams_ext_2,
+				      ATH12K_HTT_STATS_NUM_USERS_OFDMA_TONE_PLAN_EHT));
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "PPDU Type (SU/MU): %u\n",
+			 u32_get_bits(dword_txparams_ext_2,
+				      ATH12K_HTT_STATS_PPDU_TYPE));
+
+	len += scnprintf(buf + len, buf_len - len, "\n\nTLV PARAMS\n");
+	len += scnprintf(buf + len, buf_len - len,
+		"Last TLV - Number of Params: %u\n",
+		le32_to_cpu(htt_stats_buf->tlv_params.last_tlv_num_params));
+	len += scnprintf(buf + len, buf_len - len,
+		"Last TLV - Number of Params Parsed: %u\n",
+		le32_to_cpu(htt_stats_buf->tlv_params.last_tlv_num_params_parsed));
+	len += scnprintf(buf + len, buf_len - len,
+		"Last TLV Command: %u\n",
+		le32_to_cpu(htt_stats_buf->tlv_params.last_tlv_cmd));
+	len += scnprintf(buf + len, buf_len - len,
+		"Last TLV Response Command: %u\n",
+		le32_to_cpu(htt_stats_buf->tlv_params.last_tlv_rsp_cmd));
+	dword_tlv_cmd_parsing =
+		le32_to_cpu(htt_stats_buf->tlv_params.dword_tlv_cmd_parsing);
+	len += scnprintf(buf + len, buf_len - len,
+		"Flag indicating entire TLV CMD being parsed/dropped: %u\n",
+		u32_get_bits(dword_tlv_cmd_parsing,
+		ATH12K_HTT_STATS_FLAG_CMD_PARSING));
+	len += scnprintf(buf + len, buf_len - len,
+		"Count of TLV Commands Dropped: %u\n",
+		u32_get_bits(dword_tlv_cmd_parsing,
+		ATH12K_HTT_STATS_NUM_TLV_CMD_DROPPED));
+	len += scnprintf(buf + len, buf_len - len,
+		"Last TLV Command Dropped: %u\n",
+		le32_to_cpu(htt_stats_buf->tlv_params.last_tlv_cmd_dropped));
+
+	len += scnprintf(buf + len, buf_len - len, "\n\nRX GAIN CAL PARAMS\n");
+
+	{
+		u8 rx_gain_cal_max_num_chan = u32_get_bits
+		(le32_to_cpu(
+		htt_stats_buf->rx_gain_cal_params.dword_rx_gain_cal_max_num_chan),
+		ATH12K_HTT_STATS_RXGAINCAL_MAX_NUMCHAN);
+
+		if (rx_gain_cal_max_num_chan >
+			ATH12K_HTT_STATS_FTM_RXGAINCAL_MAX_NUM_CHAN_TLV2) {
+			rx_gain_cal_max_num_chan =
+				ATH12K_HTT_STATS_FTM_RXGAINCAL_MAX_NUM_CHAN_TLV2;
+		}
+
+		len += scnprintf(buf + len, buf_len - len,
+				 "Rx Gain Cal Max Num Channels: %u\n",
+				 rx_gain_cal_max_num_chan);
+
+		for (ch = 0; ch < rx_gain_cal_max_num_chan; ch++) {
+			len += scnprintf(buf + len, buf_len - len,
+				"Good Packet Count [Channel %d]: %u\n", ch,
+				le32_to_cpu(
+				htt_stats_buf->rx_gain_cal_params.good_pkt_cnt[ch]));
+		}
+	}
+
+	u32 dword_rx_gain_cal_ref_iss = le32_to_cpu
+		(htt_stats_buf->rx_gain_cal_params.dword_rx_gain_cal_ref_iss);
+	len += scnprintf(buf + len, buf_len - len,
+			 "Rx Gain Cal Ref Input Signal Strength in dBm: %d\n",
+			 (s8)u32_get_bits(dword_rx_gain_cal_ref_iss,
+			 ATH12K_HTT_STATS_RXGAINCAL_REF_ISS));
+
+	len += scnprintf(buf + len, buf_len - len, "\n\nMISCELLANEOUS PARAMS\n");
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "bd_read_rsp: %u\n",
+			 le32_to_cpu(htt_stats_buf->bd_read_rsp));
+
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "\n\nCALIBRATION VERIFICATION FW ONLY TIMING STATS (us)\n");
+	ts_fpc = ((u64)le32_to_cpu(htt_stats_buf->timing_stats.ts_fpc_high) <<
+		   ATH12K_HTT_STATS_FTM_FPC_TIMING_SHIFT) |
+		   (u64)le32_to_cpu(htt_stats_buf->timing_stats.ts_fpc_low);
+	len += scnprintf(buf + len, buf_len - len,
+			 "FPC Timestamp : %llu\n", ts_fpc);
+	len += scnprintf(buf + len, buf_len - len,
+			 "FPC CalDbRegeneration Timestamp : %u\n",
+			 le32_to_cpu(htt_stats_buf->timing_stats.ts_cal_db_regen_time));
+	len += scnprintf(buf + len, buf_len - len,
+			 "OPC Timestamp: %u\n",
+			 le32_to_cpu(htt_stats_buf->timing_stats.ts_opc));
+	len += scnprintf(buf + len, buf_len - len,
+			 "XTAL Calibration Timestamp: %u\n",
+			 le32_to_cpu(htt_stats_buf->timing_stats.ts_xtalcal));
+	len += scnprintf(buf + len, buf_len - len,
+			 "RX Gain Calibration Timestamp: %u\n",
+			 le32_to_cpu(htt_stats_buf->timing_stats.ts_rxgaincal));
+	len += scnprintf(buf + len, buf_len - len,
+			 "NF Calibration Timestamp: %u\n",
+			 le32_to_cpu(htt_stats_buf->timing_stats.ts_nfcal));
+	len += scnprintf(buf + len, buf_len - len,
+			 "TX Verification Timestamp: %u\n",
+			 le32_to_cpu(htt_stats_buf->timing_stats.ts_tx_ver));
+	len += scnprintf(buf + len, buf_len - len,
+			 "RX Verification timestamp: %u\n",
+			 le32_to_cpu(htt_stats_buf->timing_stats.ts_rx_ver));
+	len += scnprintf(buf + len, buf_len - len,
+			 "\nTX/RX VERIFICATION - CHANNEL CHANGE TIMING STATS (us)\n\n");
+	len += scnprintf(buf + len, buf_len - len,
+			 "\nCHANNEL CHANGE OVERALL TIMING FOR TX/RX VERIFICATION(us)\n");
+	len += scnprintf(buf + len, buf_len - len,
+		"tx_ver_OverallChanChangeTiming_ts:%u\n"
+		"rx_ver_OverallChanChangeTiming_ts:%u\n",
+		le32_to_cpu(
+		htt_stats_buf->timing_stats.tx_ver_overall_chan_change_timing_ts),
+		le32_to_cpu(
+		htt_stats_buf->timing_stats.rx_ver_overall_chan_change_timing_ts));
+	tlv_timestamp_cnt_filled = (int)u32_get_bits(
+			le32_to_cpu(htt_stats_buf->timing_stats.dword_timing_stats),
+			ATH12K_HTT_STATS_TIMESTAMP_CNT);
+	if (tlv_timestamp_cnt_filled > ATH12K_HTT_STATS_FTM_TIMESTAMP_TOTAL_CNT)
+		tlv_timestamp_cnt_filled = ATH12K_HTT_STATS_FTM_TIMESTAMP_TOTAL_CNT;
+	len += scnprintf(buf + len, buf_len - len,
+			 "Number of TLVs for which tlv_cmd_info to be dumped: %u\n",
+			 tlv_timestamp_cnt_filled);
+	for (i = 0; i < tlv_timestamp_cnt_filled; i++) {
+		u32 tlv_cmd_info =
+		le32_to_cpu(
+		htt_stats_buf->timing_stats.tlv_cmd_tim_info[i].dword_tlv_cmd_info);
+		len += scnprintf(buf + len, buf_len - len,
+			"TLV Command Entry[%d]: %u\n",
+			i, u32_get_bits(tlv_cmd_info, ATH12K_HTT_STATS_CMD_ENTRY));
+		len += scnprintf(buf + len, buf_len - len,
+			"Calibration Type[%d]: %u\n",
+			i, u32_get_bits(tlv_cmd_info, ATH12K_HTT_STATS_CAL_TYPE));
+		len += scnprintf(buf + len, buf_len - len,
+			"TLV Timestamp delta (us) [%d]: %u\n",
+			i,
+			le32_to_cpu(
+			htt_stats_buf->timing_stats.tlv_cmd_tim_info[i].tlv_tim_del));
+	}
+
+	stats_req->buf_len = len;
+}
 static void ath12k_htt_stats_print_phy_paprd_pb_tlv(const void *tag_buf, u16 tag_len,
 struct debug_htt_stats_req *stats_req)
 {
@@ -11822,6 +12239,13 @@ static int ath12k_dbg_htt_ext_stats_parse(struct ath12k_base *ab,
 								      stats_req);
 		break;
 
+	case HTT_STATS_FTM_TAG:
+		ath12k_htt_print_ftm_stats_tlv(tag_buf, len, stats_req);
+		break;
+
+	case HTT_STATS_PDEV_FTM_TPCCAL_EXT_TAG:
+		ath12k_htt_print_ftm_tpccal_stats_ext_tlv(tag_buf, len, stats_req);
+		break;
 	default:
 		break;
 	}

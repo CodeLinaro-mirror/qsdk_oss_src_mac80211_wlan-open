@@ -123,6 +123,8 @@ ath12k_wifi7_hal_mon_populate_mu_user_info(struct hal_rx_mon_ppdu_info *ppdu_inf
 		ppdu_info->num_mpdu_fcs_ok;
 	rx_user_status->mpdu_cnt_fcs_err =
 		ppdu_info->num_mpdu_fcs_err;
+	rx_user_status->retried_msdu_count =
+		ppdu_info->retried_msdu_count;
 }
 
 static __always_inline void
@@ -1829,6 +1831,10 @@ ath12k_wifi7_hal_mon_rx_ppdu_eu_stats_info_get(const void *tlv_data, u32 userid,
 	ppdu_info->mpdu_retry_cnt =
 		u32_get_bits(info[11],
 			     HAL_RX_PPDU_END_USER_STATS_INFO11_MPDU_RETRY_CNT);
+	ppdu_info->retried_msdu_count =
+		u32_get_bits(info[10],
+			     HAL_RX_PPDU_END_USER_STATS_INFO10_MSDU_RETRY_CNT);
+
 	switch (ppdu_info->preamble_type) {
 	case HAL_RX_PREAMBLE_11N:
 		ppdu_info->ht_flags = 1;
@@ -1853,9 +1859,6 @@ ath12k_wifi7_hal_mon_rx_ppdu_eu_stats_info_get(const void *tlv_data, u32 userid,
 						       rxuser_stats);
 		ath12k_wifi7_hal_mon_populate_byte_count(info,
 							 rxuser_stats);
-		rxuser_stats->retried_msdu_count =
-			u32_get_bits(info[10],
-				     HAL_RX_PPDU_END_USER_STATS_INFO10_MSDU_RETRY_CNT);
 	}
 }
 
@@ -1919,6 +1922,10 @@ ath12k_wifi7_hal_mon_rx_ppdu_eu_stats_info_get_compact(const void *tlv_data, u32
 	ppdu_info->mpdu_retry_cnt =
 		u32_get_bits(info[11],
 			     HAL_RX_PPDU_END_USER_STATS_INFO11_MPDU_RETRY_CNT_CMPCT);
+	ppdu_info->retried_msdu_count =
+		u32_get_bits(info[10],
+			     HAL_RX_PPDU_END_USER_STATS_INFO10_MSDU_RETRY_CNT_CMPCT);
+
 	switch (ppdu_info->preamble_type) {
 	case HAL_RX_PREAMBLE_11N:
 		ppdu_info->ht_flags = 1;
@@ -1943,9 +1950,6 @@ ath12k_wifi7_hal_mon_rx_ppdu_eu_stats_info_get_compact(const void *tlv_data, u32
 							       rxuser_stats);
 		ath12k_wifi7_hal_mon_populate_byte_count_compact(info,
 								 rxuser_stats);
-		rxuser_stats->retried_msdu_count =
-			u32_get_bits(info[10],
-				     HAL_RX_PPDU_END_USER_STATS_INFO10_MSDU_RETRY_CNT_CMPCT);
 	}
 }
 

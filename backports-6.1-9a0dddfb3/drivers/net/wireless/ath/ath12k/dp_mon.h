@@ -62,6 +62,8 @@
 #define DP_MON_RXDMA_BUF_COOKIE_PDEV_ID 	GENMASK(19, 18)
 #define DP_MON_RX_HDR_LEN			128
 
+#define DP_SMART_MON_VALID       BIT(0)
+
 struct ath12k_mon_data;
 struct dp_mon_rx_filter;
 
@@ -84,6 +86,37 @@ struct dp_rxdma_mon_ring {
 enum dp_mon_stats_mode {
 	ATH12k_DP_MON_BASIC_STATS,
 	ATH12k_DP_MON_EXTD_STATS
+};
+
+enum dp_punctured_modes {
+	NO_PUNCTURE,
+	PUNCTURED_20MHZ,
+	PUNCTURED_40MHZ,
+	PUNCTURED_80MHZ,
+	PUNCTURED_120MHZ,
+	PUNCTURED_MODE_CNT,
+};
+
+#define PUNCTURE_80MHZ_MASK 0xF
+#define PUNCTURE_160MHZ_MASK 0xFF
+#define PUNCTURE_320MHZ_MASK 0xFFFF
+#define PUNCTURE_40MHZ_MASK 0x3
+
+/*
+ * punc_type:
+ * Type of puncturing denoting the number of bits that are punctured.
+ * Each bit represents a 20MHz channel and therefore, each enum represents
+ * the number of 20MHz channels that are punctured.
+ */
+enum punc_type {
+	PUNC_NONE        = 0,
+	PUNC_MINUS20MHZ  = 1,
+	PUNC_MINUS40MHZ  = 2,
+	PUNC_MINUS60MHZ  = 3,
+	PUNC_MINUS80MHZ  = 4,
+	PUNC_MINUS100MHZ = 5,
+	PUNC_MINUS120MHZ = 6,
+	PUNC_INVALID,
 };
 
 struct ath12k_dp_arch_mon_ops {
@@ -120,6 +153,8 @@ struct ath12k_dp_arch_mon_ops {
 	void (*mon_rx_wq_deinit)(struct ath12k_pdev_dp *pdev_dp);
 	void (*rx_nrp_set)(struct ath12k_pdev_dp *dp_pdev);
 	void (*rx_nrp_reset)(struct ath12k_pdev_dp *dp_pdev);
+	void (*rx_smart_mon_set)(struct ath12k_pdev_dp *dp_pdev);
+	void (*rx_smart_mon_reset)(struct ath12k_pdev_dp *dp_pdev);
 	void (*mon_rx_wmask)(void *ptr, struct htt_rx_ring_tlv_filter *tlv_filter);
 	void (*rx_enable_packet_filters)(void *ptr,
 						struct htt_rx_ring_tlv_filter *filter);
@@ -149,6 +184,12 @@ struct ath12k_dp_mon {
 enum dp_monitor_type {
 	ATH12K_DP_MON_TYPE_QUAD_RING,
 	ATH12K_DP_MON_TYPE_DUAL_RING
+};
+
+enum ath12k_dp_smart_mon_state {
+	ATH12K_DP_SMART_MON_DISABLED,
+	ATH12K_DP_SMART_MON_IDLE,
+	ATH12K_DP_SMART_MON_ACTIVE,
 };
 
 struct ath12k_dp_mon_mpdu_meta {
@@ -224,15 +265,15 @@ struct dp_mon_tx_ppdu_info {
 
 #define SNR_INVALID 255
 
-#define SNR_MULTIPLIER BIT(8)
-#define SNR_MUL(x, mul) ((x) * (mul))
-#define SNR_RND(x, mul) ((((x) % (mul)) >= ((mul) / 2)) ? \
-			 ((x) + ((mul) - 1)) / (mul) : (x) / (mul))
+#define AVG_MULTIPLIER BIT(8)
+#define AVG_MUL(x, mul) ((x) * (mul))
+#define AVG_RND(x, mul) ((((x) % (mul)) >= ((mul) / 2)) ? \
+		((x) + ((mul) - 1)) / (mul) : (x) / (mul))
 
-#define SNR_OUT(x) (SNR_RND((x), SNR_MULTIPLIER))
-#define SNR_IN(x)  (SNR_MUL((x), SNR_MULTIPLIER))
-#define SNR_AVG(x, y) ((((x) << 2) + (y) - (x)) >> 2)
-#define SNR_UPDATE_AVG(x, y) ((x) = SNR_AVG((x), SNR_IN(y)))
+#define WEIGHTED_AVG_OUT(x) (AVG_RND((x), AVG_MULTIPLIER))
+#define WEIGHTED_AVG_IN(x)  (AVG_MUL((x), AVG_MULTIPLIER))
+#define AVG(x, y) ((((x) << 2) + (y) - (x)) >> 2)
+#define WEIGHTED_AVG_UPDATE(x, y) ((x) = AVG((x), WEIGHTED_AVG_IN(y)))
 
 struct ath12k_pdev_mon_stats {
 	u32 status_ppdu_state;
@@ -333,6 +374,32 @@ struct ath12k_pdev_mon_dp {
 
 	struct work_struct rxmon_work;
 	struct workqueue_struct *rxmon_wq;
+	/* Monitor RX filter type: 4-bit field (C M D V) for Smart Monitor
+	 *
+	 * Bit Layout (filter out mechanism: 0=filter in, 1=filter out):
+	 *   Bit 0 (V): Valid bit - must be 1 for filter to be active
+	 *   Bit 1 (D): Data frame filter
+	 *   Bit 2 (M): Management frame filter
+	 *   Bit 3 (C): Control frame filter
+	 *
+	 * Behavior:
+	 *   0x0: Regular monitor mode - captures ALL packets
+	 *   Non-zero: Smart monitor mode
+	 *     - Monitor VAP comes up but NO packets captured initially
+	 *     - Filters applied only after NAC MAC addresses are added
+	 *     - Captures packets from NAC list based on frame type filter
+	 *
+	 * Examples:
+	 *   0x0 (0000): Regular monitor - all packets
+	 *   0x1 (0001): Smart monitor - all frame types (when NAC added)
+	 *   0x3 (0011): Smart monitor - only Control + Management
+	 *   0xD (1101): Smart monitor - only Data frames
+	 *   0xF (1111): Smart monitor - no frames (all filtered out)
+	 *
+	 * Default: 0x00 (regular monitor mode)
+	 */
+	u8 smart_mon_filter;
+	enum ath12k_dp_smart_mon_state smart_mon_state;
 };
 
 enum ath12k_dp_mon_desc_in_use {
@@ -411,7 +478,6 @@ void ath12k_dp_rx_mon_dest_process(struct ath12k *ar, int mac_id,
 				   u32 quota, struct napi_struct *napi);
 int ath12k_dp_mon_rx_set_pktlen(struct sk_buff *skb, u32 len);
 void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
-					   struct ath12k_dp_link_peer *peer,
 					   struct hal_rx_mon_ppdu_info *ppdu_info);
 void ath12k_dp_mon_rx_update_peer_mu_stats(struct ath12k_pdev_dp *pdev_dp,
 					   struct hal_rx_mon_ppdu_info *ppdu_info);
@@ -428,6 +494,8 @@ void ath12k_dp_mon_rx_monitor_mode_set(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_rx_monitor_mode_reset(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_rx_nrp_set(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_rx_nrp_reset(struct ath12k_pdev_dp *dp_pdev);
+void ath12k_dp_mon_rx_smart_mon_set(struct ath12k_pdev_dp *dp_pdev);
+void ath12k_dp_mon_rx_smart_mon_reset(struct ath12k_pdev_dp *dp_pdev);
 size_t ath12k_dp_mon_list_cut_nodes(struct list_head *list, struct list_head *head,
 				    size_t count);
 size_t ath12k_dp_mon_get_req_entries_from_buf_ring(struct ath12k_dp *dp,
@@ -453,6 +521,7 @@ void ath12k_dp_mon_skb_remove_frag(struct ath12k_dp *dp, struct sk_buff *skb,
 				   u16 idx, u16 truesize);
 void ath12k_dp_mon_add_rx_frag(struct sk_buff *skb, const void *mon_buf,
 			       int offset, int frag_len, bool take_frag_ref);
+int ath12k_dp_mon_get_puncture_type(u16 puncture_pattern, u8 bw);
 void ath12k_dp_mon_rx_process_low_thres(struct ath12k_dp *dp);
 void
 ath12k_dp_mon_cnt_skb_and_frags(struct sk_buff *skb, u32 *skb_count, u32 *frag_count);
@@ -767,8 +836,14 @@ void ath12k_dp_mon_rx_config_monitor_mode(struct ath12k *ar, bool reset)
 	mon_ops = ath12k_dp_mon_ops_get(dp);
 
 	if (!reset) {
-		if(mon_ops && mon_ops->rx_monitor_mode_set)
-			mon_ops->rx_monitor_mode_set(dp_pdev);
+		if (!(dp_pdev->dp_mon_pdev->smart_mon_filter & DP_SMART_MON_VALID)) {
+			dp_pdev->dp_mon_pdev->smart_mon_state =
+					ATH12K_DP_SMART_MON_DISABLED;
+			if (mon_ops && mon_ops->rx_monitor_mode_set)
+				mon_ops->rx_monitor_mode_set(dp_pdev);
+		} else {
+			dp_pdev->dp_mon_pdev->smart_mon_state = ATH12K_DP_SMART_MON_IDLE;
+		}
 	} else {
 		if(mon_ops && mon_ops->rx_monitor_mode_reset)
 			mon_ops->rx_monitor_mode_reset(dp_pdev);
@@ -797,6 +872,30 @@ void ath12k_dp_mon_rx_nrp_config(struct ath12k *ar, bool reset)
 			mon_ops->rx_nrp_reset(dp_pdev);
 	}
 
+}
+
+static inline
+void ath12k_dp_mon_rx_smart_mon_config(struct ath12k *ar, bool reset)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
+
+	if (unlikely(!dp_pdev || !dp_pdev->dp_mon_pdev))
+		return;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (!reset) {
+		if (mon_ops && mon_ops->rx_smart_mon_set)
+			mon_ops->rx_smart_mon_set(dp_pdev);
+		dp_pdev->dp_mon_pdev->smart_mon_state = ATH12K_DP_SMART_MON_ACTIVE;
+	} else {
+		if (mon_ops && mon_ops->rx_smart_mon_reset)
+			mon_ops->rx_smart_mon_reset(dp_pdev);
+		dp_pdev->dp_mon_pdev->smart_mon_state = ATH12K_DP_SMART_MON_IDLE;
+	}
 }
 
 static inline
@@ -851,5 +950,51 @@ static inline void
 ath12k_dp_mon_desc_reset(struct ath12k_dp_mon_desc *desc)
 {
 	memset((u8 *)desc + sizeof(desc->list), 0, sizeof(*desc) - sizeof(desc->list));
+}
+
+static inline void
+ath12k_dp_smart_mon_filter_type_set(struct ath12k *ar,
+				    u8 filter)
+{
+	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
+
+	if (unlikely(!dp_pdev || !dp_pdev->dp_mon_pdev))
+		return;
+
+	if (dp_pdev->dp_mon_pdev->smart_mon_filter != filter) {
+		dp_pdev->dp_mon_pdev->smart_mon_filter = filter;
+		if (dp_pdev->dp_mon_pdev->smart_mon_state ==
+		    ATH12K_DP_SMART_MON_ACTIVE) {
+			if (filter & DP_SMART_MON_VALID)
+				ath12k_dp_mon_rx_smart_mon_config(ar, false);
+		}
+	}
+}
+
+static inline void
+ath12k_dp_smart_mon_filter_type_get(struct ath12k *ar,
+				    u8 *filter)
+{
+	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
+
+	if (unlikely(!dp_pdev || !dp_pdev->dp_mon_pdev))
+		return;
+
+	*filter = dp_pdev->dp_mon_pdev->smart_mon_filter;
+}
+
+static inline bool
+ath12k_dp_smart_mon_enabled(struct ath12k *ar)
+{
+	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
+
+	if (unlikely(!dp_pdev || !dp_pdev->dp_mon_pdev))
+		return false;
+
+	if (dp_pdev->dp_mon_pdev->smart_mon_state !=
+	    ATH12K_DP_SMART_MON_DISABLED)
+		return true;
+
+	return false;
 }
 #endif

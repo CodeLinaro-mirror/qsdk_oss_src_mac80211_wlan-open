@@ -25,8 +25,6 @@ struct ppdu_user_delayba {
 	u32 resp_rate_flags;
 };
 
-#define ATH12K_PEER_ML_ID_VALID         BIT(13)
-
 struct ath12k_atf_peer_airtime {
 	struct peer_airtime_consumption tx_airtime_consumption[WME_NUM_AC];
 	struct peer_airtime_consumption rx_airtime_consumption[WME_NUM_AC];
@@ -247,13 +245,10 @@ int ath12k_dp_link_peer_rhash_delete(struct ath12k_dp *dp,
 				     struct ath12k_dp_link_peer *peer);
 struct ath12k_dp_peer *ath12k_dp_peer_find_by_peerid_index(struct ath12k_dp *dp,
 							   struct ath12k_pdev_dp *dp_pdev,
-							   u16 index);
+							   u16 peer_id);
 struct ath12k_dp_link_peer *
 ath12k_dp_link_peer_find_by_peerid_index(struct ath12k_dp *dp,
 					 struct ath12k_pdev_dp *dp_pdev, u16 peer_id);
-struct ath12k_dp_link_peer *
-ath12k_dp_link_peer_find_by_ast(struct ath12k_dp *dp,
-				int ast_hash);
 struct ath12k_dp_link_peer *
 ath12k_dp_link_peer_find_by_ml_peer_vdev_id(struct ath12k_dp *dp,
 					    int peer_id,

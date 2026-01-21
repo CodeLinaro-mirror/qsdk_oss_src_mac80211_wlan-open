@@ -69,7 +69,7 @@ static int ath12k_dp_tx_htt_msduq_mpduq_setup(struct ath12k_base *ab,
 			le32_encode_bits((mpduq->mpdu_q_paddr) >> 8,
 					 HTT_MPDUQ_INFO_CMD_INFO1_MPDUQ_ADDR);
 		txq_cmd->mpduq.info2 =
-			le32_encode_bits(mpduq->flow_number,
+			le32_encode_bits(mpduq->queue_number,
 					 HTT_MPDUQ_INFO_CMD_INFO2_MPDUQ_NUM) |
 			le32_encode_bits(((u64)pn_addr) >> HAL_ADDR_MSB_REG_SHIFT,
 					 HTT_MPDUQ_INFO_CMD_INFO2_PN_ADDR_39_32);
@@ -88,7 +88,7 @@ static int ath12k_dp_tx_htt_msduq_mpduq_setup(struct ath12k_base *ab,
 			le32_encode_bits(hw_link_id,
 					 HTT_MPDUQ_AND_MSDUQ_INFO_CMD_INFO0_HW_LINK_ID);
 		txq_cmd->msduq.info1 =
-			le32_encode_bits(msduq->flow_number,
+			le32_encode_bits(msduq->queue_number,
 					 HTT_MSDUQ_INFO_CMD_INFO1_MSDUQ_NUM);
 		txq_cmd->msduq.info2 =
 			le32_encode_bits((msduq->msdu_q_paddr) >> 8,

@@ -2241,6 +2241,8 @@ enum wmi_tlv_tag {
 	/* TODO add all the missing cmds */
 	WMI_TAG_PDEV_PEER_PKTLOG_FILTER_CMD = 0x301,
 	WMI_TAG_PDEV_PEER_PKTLOG_FILTER_INFO,
+	WMI_TAG_PEER_TX_PN_REQUEST_CMD = 0x306,
+	WMI_TAG_PEER_TX_PN_RESPONSE_EVENT,
 	WMI_TAG_PEER_CFR_CAPTURE_EVENT = 0x317,
 	WMI_TAG_MUEDCA_PARAMS_CONFIG_EVENT = 0x32a,
 	WMI_TAG_TWT_BTWT_INVITE_STA_CMD,
@@ -2314,6 +2316,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_PDEV_MEC_AGEING_TIMER_PARAMS = 0x3E9,
 	WMI_TAG_PDEV_SET_BIOS_INTERFACE_CMD = 0x3FB,
 	WMI_TAG_PEER_CONFIG_PPEDS_ROUTING = 0x3EA,
+	WMI_TAG_SCAN_RADIO_CAPABILITIES_EXT2 = 0x401,
 	WMI_TAG_SAWF_SERVICE_CLASS_CFG_CMD_FIXED_PARAM = 0x40A,
 	WMI_TAG_SAWF_SERVICE_CLASS_DISABLE_CMD_FIXED_PARAM = 0x40B,
 	WMI_TAG_PDEV_PKTLOG_DECODE_INFO = 0x414,
@@ -2359,6 +2362,9 @@ enum wmi_tlv_tag {
 	WMI_TAG_TWT_VDEV_CONFIG_CMD = 0x4DE,
 	WMI_TAG_MLO_TLT_SELECTION_FOR_TID_SPRAY_EVENT_FIXED_PARAM = 0x4e0,
 	WMI_PDEV_SUSPEND_EVENT_FIXED_PARAM = 0x509,
+	WMI_TAG_MGMT_MPDU_FLOWQ_PARAMS = 0x514,
+	WMI_TAG_MGMT_MSDU_FLOWQ_PARAMS = 0x515,
+	WMI_TAG_HOL_MSDU_FLOWQ_PARAMS = 0x516,
 	WMI_TAG_MLO_PEER_TID_TO_LINK_MAP_EVENT_FIXED_PARAM = 0x544,
 	WMI_TAG_MAX
 };
@@ -3338,6 +3344,7 @@ struct ath12k_wmi_vdev_create_arg {
 	u32 mbssid_flags;
 	u32 mbssid_tx_vdev_id;
 	u8 mld_addr[ETH_ALEN];
+	u32 create_flags;
 };
 
 #define ATH12K_MAX_VDEV_STATS_ID	0x30
@@ -3355,7 +3362,10 @@ struct wmi_vdev_create_cmd {
 	__le32 mbssid_tx_vdev_id;
 	__le32 vdev_stats_id_valid;
 	__le32 vdev_stats_id;
+	__le32 flags;
 } __packed;
+
+#define VDEV_FLAGS_SCAN_MODE_VAP BIT(4)
 
 struct ath12k_wmi_vdev_txrx_streams_params {
 	__le32 tlv_header;
@@ -3653,6 +3663,13 @@ struct wmi_vdev_start_req_arg {
 	u32 center_freq_device;
 };
 
+struct ath12k_wmi_peer_pn_arg {
+	u32 vdev_id;
+	u8 key_idx;
+	const u8 *peer_addr;
+	u32 key_cipher;
+};
+
 struct ath12k_wmi_peer_create_arg {
 	u8 *peer_addr;
 	u32 peer_type;
@@ -3833,6 +3850,14 @@ struct wmi_peer_reorder_queue_remove_cmd {
 	__le32 vdev_id;
 	struct ath12k_wmi_mac_addr_params peer_macaddr;
 	__le32 tid_mask;
+} __packed;
+
+struct wmi_peer_tx_pn_request_cmd {
+	__le32 tlv_header;
+	__le32 vdev_id;
+	struct ath12k_wmi_mac_addr_params peer_macaddr;
+	__le32 key_cipher;
+	__le32 key_idx;
 } __packed;
 
 enum wmi_bss_chan_info_req_type {
@@ -4658,6 +4683,47 @@ struct wmi_peer_assoc_tid_to_link_map {
 	__le32 tid_to_link_map_info;
 };
 
+struct wmi_scan_radio_capabilities_ext2 {
+	__le32 tlv_header; /* WMI_TAG_SCAN_RADIO_CAPABILITIES_EXT2 */
+	__le32 phy_id;
+	__le32 flags;
+} __packed;
+
+#define WMI_SCAN_RADIO_CAP_SCAN_RADIO         BIT(0)
+#define WMI_SCAN_RADIO_CAP_DFS_ENABLED        BIT(1)
+#define WMI_SCAN_RADIO_CAP_BLANKING_SUPPORTED BIT(2)
+
+struct peer_assoc_msduq_params {
+	u32 link_id;
+	u32 flow_type;
+	u32 mgmt_msduq_address;
+};
+
+struct peer_assoc_mpduq_params {
+	u32 mgmt_mpduq_address;
+	u32 pn_addr_31_0;
+	u32 pn_addr_39_32;
+};
+
+struct peer_assoc_flowq_params {
+	bool enabled;
+	u8 num_links;
+	struct peer_assoc_msduq_params msduq_params[ATH12K_WMI_MLO_MAX_LINKS + 1];
+	struct peer_assoc_mpduq_params mpduq_params;
+};
+
+struct peer_assoc_holq_params {
+	bool enabled;
+	u32 peer_id;
+	u32 tid;
+	u32 mpdu_type;
+	u32 msdu_type;
+	u32 mpduq_address;
+	u32 msduq_address;
+	u32 pn_addr_31_0;
+	u32 pn_addr_39_32;
+};
+
 struct ath12k_wmi_peer_assoc_arg {
 	u32 vdev_id;
 	u32 peer_new_assoc;
@@ -4731,6 +4797,8 @@ struct ath12k_wmi_peer_assoc_arg {
 	struct peer_assoc_mlo_params ml;
 	bool enable_mcs15;
 	struct ath12k_wmi_ttlm_peer_params ttlm_params;
+	struct peer_assoc_flowq_params flowq_params;
+	struct peer_assoc_holq_params holq_params;
 };
 
 #define ATH12K_WMI_FLAG_MLO_ENABLED			BIT(0)
@@ -4767,6 +4835,42 @@ struct wmi_peer_assoc_mlo_params {
 		__le32 ml_reconfig: 1,
 		       unused: 31;
 	};
+} __packed;
+
+enum {
+	WMI_MGMT_TID_MSDUQ_LINK_SPECIFIC,
+	WMI_MGMT_TID_MSDUQ_LINK_AGNOSTIC,
+	WMI_MGMT_TID_MSDUQ_TYPE_MAX,
+};
+
+#define WMI_MGMTQ_LINK_ID	GENMASK(2, 0)
+#define WMI_MGMTQ_MSDU_TYPE	GENMASK(7, 3)
+
+struct wmi_peer_assoc_msduq_params {
+	__le32 tlv_header;
+	__le32 msdu_type;
+	__le32 mgmt_msduq_address;
+} __packed;
+
+struct wmi_peer_assoc_mpduq_params {
+	__le32 tlv_header;
+	__le32 mgmt_mpduq_address;
+	__le32 pn_addr_31_0;
+	__le32 pn_addr_39_32;
+} __packed;
+
+#define WMI_HOLQ_PEER_ID	GENMASK(11, 0)
+#define WMI_HOLQ_TID		GENMASK(16, 12)
+#define WMI_HOLQ_MPDU_TYPE	GENMASK(21, 17)
+#define WMI_HOLQ_MSDU_TYPE	GENMASK(26, 22)
+
+struct wmi_peer_assoc_hol_q_params {
+	__le32 tlv_header;
+	__le32 mpduq_msduq_number;
+	__le32 mpduq_address;
+	__le32 msduq_address;
+	__le32 pn_addr_31_0;
+	__le32 pn_addr_39_32;
 } __packed;
 
 struct wmi_peer_assoc_complete_cmd {
@@ -4845,7 +4949,10 @@ struct wmi_scan_chan_list_cmd {
 #define WMI_TX_PARAMS_DWORD1_PREAMBLE_TYPE	GENMASK(19, 15)
 #define WMI_TX_PARAMS_DWORD1_FRAME_TYPE		BIT(20)
 #define WMI_TX_PARAMS_DWORD1_CFR_CAPTURE        BIT(21)
-#define WMI_TX_PARAMS_DWORD1_RSVD		GENMASK(31, 22)
+#define WMI_TX_PARAMS_DWORD1_BEAMFORM		BIT(22)
+#define WMI_TX_PARAMS_DWORD1_RETRY_LIMIT_EXT	GENMASK(25, 23)
+#define WMI_TX_PARAMS_DWORD1_RSVD		GENMASK(31, 26)
+
 
 struct wmi_mgmt_send_cmd {
 	__le32 tlv_header;
@@ -5432,6 +5539,14 @@ struct wmi_vdev_host_tsf_arg {
 	u32 use_tqm_timer;
 };
 
+struct wmi_peer_tx_pn_event {
+	__le32 vdev_id;
+	struct ath12k_wmi_mac_addr_params peer_macaddr;
+	__le32 key_cipher;
+	u8 pn[16];
+	__le32 key_ix;
+} __packed;
+
 struct wmi_peer_assoc_conf_event {
 	__le32 vdev_id;
 	struct ath12k_wmi_mac_addr_params peer_macaddr;
@@ -5868,6 +5983,14 @@ struct wmi_roam_event {
 	__le32 reason;
 	__le32 rssi;
 } __packed;
+
+struct wmi_peer_tx_pn_arg {
+	u32 vdev_id;
+	u8 mac_addr[ETH_ALEN];
+	u8 key_idx;
+	u32 key_cipher;
+	u8 pn[16];
+};
 
 #define WMI_CHAN_INFO_START_RESP 0
 #define WMI_CHAN_INFO_END_RESP 1
@@ -9186,6 +9309,8 @@ int ath12k_wmi_bcn_tmpl(struct ath12k_link_vif *arvif,
 			struct ieee80211_mutable_offsets *offs,
 			struct sk_buff *bcn,
 			struct ath12k_wmi_bcn_tmpl_ema_arg *ema_args);
+int ath12k_wmi_send_peer_tx_pn_request_cmd(struct ath12k *ar,
+					   struct ath12k_wmi_peer_pn_arg *arg);
 int ath12k_wmi_vdev_down(struct ath12k *ar, u8 vdev_id);
 int ath12k_wmi_vdev_up(struct ath12k *ar, struct ath12k_wmi_vdev_up_params *params);
 int ath12k_wmi_vdev_stop(struct ath12k *ar, u8 vdev_id);

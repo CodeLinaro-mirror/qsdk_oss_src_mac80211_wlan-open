@@ -566,6 +566,82 @@ void ath12k_dp_mon_rx_nrp_config_filter(struct ath12k_pdev_dp *dp_pdev,
 	}
 }
 
+static void
+ath12k_dp_mon_rx_setup_smart_mon_filters(struct ath12k_dp *dp,
+					 struct htt_rx_ring_tlv_filter *tlv_filter,
+					 u8 smart_mon_filter)
+{
+	u32 rx_mon_tlv_filter_flags = HTT_RX_MON_FILTER_TLV_FLAGS_MON_DEST_RING;
+
+	tlv_filter->offset_valid = false;
+	tlv_filter->rx_filter = rx_mon_tlv_filter_flags;
+	tlv_filter->drop_threshold_valid = true;
+	tlv_filter->rx_drop_threshold = HTT_RX_RING_TLV_DROP_THRESHOLD_VALUE;
+	tlv_filter->rx_hdr_len = HTT_RX_HDR_LEN_64_BYTES;
+
+	tlv_filter->enable_log_mgmt_type = true;
+	tlv_filter->enable_log_ctrl_type = true;
+	tlv_filter->enable_log_data_type = true;
+
+	tlv_filter->conf_len_ctrl = HTT_RX_RING_DEFAULT_DMA_LENGTH;
+	tlv_filter->conf_len_mgmt = HTT_RX_RING_DEFAULT_DMA_LENGTH;
+	tlv_filter->conf_len_data = HTT_RX_RING_DEFAULT_DMA_LENGTH;
+
+	tlv_filter->enable_rx_tlv_offset = true;
+	tlv_filter->rx_tlv_offset = HTT_RX_RING_PKT_TLV_OFFSET;
+
+	tlv_filter->enable_md = 1;
+	tlv_filter->enable_md_packet = 1;
+
+	if (!(smart_mon_filter & DP_SMART_MON_DATA_FILTER)) {
+		tlv_filter->md_data_filter = FILTER_DATA_ALL;
+		tlv_filter->md_packet_data_filter = FILTER_DATA_ALL;
+	}
+
+	if (!(smart_mon_filter & DP_SMART_MON_MGMT_FILTER)) {
+		tlv_filter->md_mgmt_filter = FILTER_MGMT_ALL;
+		tlv_filter->md_packet_mgmt_filter = FILTER_MGMT_ALL;
+	}
+
+	if (!(smart_mon_filter & DP_SMART_MON_CTRL_FILTER)) {
+		tlv_filter->md_ctrl_filter = FILTER_CTRL_ALL;
+		tlv_filter->md_packet_ctrl_filter = FILTER_CTRL_ALL;
+	}
+
+	tlv_filter->rx_mon_mpdu_start_wmask =
+		ath12k_hal_mon_rx_mpdu_start_wmask(dp->hal);
+	tlv_filter->rx_mon_mpdu_end_wmask =
+		ath12k_hal_mon_rx_mpdu_end_wmask(dp->hal);
+	tlv_filter->rx_mon_msdu_end_wmask =
+		ath12k_hal_mon_rx_msdu_end_wmask(dp->hal);
+	tlv_filter->rx_mon_ppdu_end_usr_stats_wmask =
+		ath12k_hal_mon_rx_ppdu_end_usr_stats_wmask(dp->hal);
+}
+
+void ath12k_dp_mon_rx_smart_mon_config_filter(struct ath12k_pdev_dp *dp_pdev,
+					      bool enable)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_dp *dp = dp_pdev->dp;
+	struct dp_mon_rx_filter rx_filter = {0};
+	struct htt_rx_ring_tlv_filter *rx_tlv_filter;
+	enum dp_mon_filter_mode mode = DP_MON_FILTER_NRP_MODE;
+	enum dp_mon_filter_srng_type srng_type = DP_MON_FILTER_SRNG_TYPE_RXMON_DEST;
+
+	if (enable) {
+		rx_filter.valid = true;
+		rx_tlv_filter = &rx_filter.rx_tlv_filter;
+		ath12k_dp_mon_rx_setup_smart_mon_filters(dp, rx_tlv_filter,
+							 dp_mon_pdev->smart_mon_filter);
+		ath12k_dp_mon_rx_display_filters(dp, mode, &rx_filter);
+		dp_mon_pdev->rx_filter[mode][srng_type] = rx_filter;
+	} else {
+		memset(&rx_filter, 0, sizeof(struct dp_mon_rx_filter));
+		ath12k_dp_mon_rx_display_filters(dp, mode, &rx_filter);
+		dp_mon_pdev->rx_filter[mode][srng_type] = rx_filter;
+	}
+}
+
 void ath12k_dp_mon_rx_wmask_subscribe(void *ptr,
 				      struct htt_rx_ring_tlv_filter *tlv_filter)
 {

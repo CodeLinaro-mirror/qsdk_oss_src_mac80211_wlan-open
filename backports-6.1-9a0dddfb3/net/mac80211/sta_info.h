@@ -528,6 +528,8 @@ struct ieee80211_fragment_cache {
  * @status_stats.last_ack_signal: last ACK signal
  * @status_stats.ack_signal_filled: last ACK signal validity
  * @status_stats.avg_ack_signal: average ACK signal
+ * @mgmt_signal: signal strength (in dBm) of the last received management
+ *	frame on this link.
  * @cur_max_bandwidth: maximum bandwidth to use for TX to the station,
  *	taken from HT/VHT capabilities or VHT operating mode notification
  * @rx_omi_bw_rx: RX OMI bandwidth restriction to apply for RX
@@ -573,6 +575,7 @@ struct link_sta_info {
 		struct ewma_avg_signal avg_ack_signal;
 	} status_stats;
 
+	s8 mgmt_signal;
 	/* Updated from TX path only, no locking requirements */
 	struct {
 		u64 packets[IEEE80211_NUM_ACS];

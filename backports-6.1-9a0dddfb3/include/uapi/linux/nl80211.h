@@ -4169,6 +4169,14 @@ enum nl80211_sta_bss_param {
  *	authentication server (u8, 0 or 1)
  * @NL80211_STA_INFO_RX_RETRIES: number of rx packets(MPDUs) from this station
  *	with retry bit set (u32)
+ * @NL80211_STA_INFO_PN_ERRORS: number of packet number (PN) errors
+ *	detected (u32)
+ * @NL80211_STA_INFO_MIC_ERRORS: number of message integrity check
+ *	(MIC) errors detected (u32)
+ * @NL80211_STA_INFO_DECRYPT_ERRORS: number of decryption errors
+ *	detected (u32)
+ * @NL80211_STA_INFO_MGMT_SIGNAL: signal strength of the last received
+ *	management frame (u8, dBm)
  * @__NL80211_STA_INFO_AFTER_LAST: internal
  * @NL80211_STA_INFO_MAX: highest possible station info attribute
  */
@@ -4218,6 +4226,15 @@ enum nl80211_sta_info {
 	NL80211_STA_INFO_ASSOC_AT_BOOTTIME,
 	NL80211_STA_INFO_CONNECTED_TO_AS,
 	NL80211_STA_INFO_RX_RETRIES,
+
+	/**
+	 * Fix me: This section should be removed once the
+	 * corresponding changes are merged upstream.
+	 */
+	NL80211_STA_INFO_PN_ERRORS = 58,
+	NL80211_STA_INFO_MIC_ERRORS = 59,
+	NL80211_STA_INFO_DECRYPT_ERRORS = 60,
+	NL80211_STA_INFO_MGMT_SIGNAL = 61,
 
 	/* keep last */
 	__NL80211_STA_INFO_AFTER_LAST,
@@ -5339,6 +5356,8 @@ enum nl80211_txq_attr {
 	NL80211_TXQ_ATTR_CWMIN,
 	NL80211_TXQ_ATTR_CWMAX,
 	NL80211_TXQ_ATTR_AIFS,
+	NL80211_TXQ_ATTR_ACM,
+	NL80211_TXQ_ATTR_NOACK,
 
 	/* keep last */
 	__NL80211_TXQ_ATTR_AFTER_LAST,

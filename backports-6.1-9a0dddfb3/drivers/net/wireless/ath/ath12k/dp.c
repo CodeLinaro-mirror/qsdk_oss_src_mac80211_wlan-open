@@ -1144,6 +1144,12 @@ int ath12k_dp_pdev_pre_alloc(struct ath12k *ar)
 	atomic_set(&dp->num_tx_pending, 0);
 	init_waitqueue_head(&dp->tx_empty_waitq);
 
+	/* TODO: for initial bring up of HW QCN9074(scan radio), avoid monitor pdev
+	 * configurations, this will be removed in the upcoming monitor patches
+	 */
+	if (ath12k_scan_radio_supported(ar->pdev))
+		return 0;
+
 	if (!dp->dp_mon_pdev_configured) {
 		ret = ath12k_dp_mon_pdev_init(dp);
 		if (ret) {
@@ -1985,6 +1991,9 @@ static int ath12k_dp_setup(struct ath12k_base *ab)
 
 void ath12k_dp_cmn_device_deinit(struct ath12k_dp *dp)
 {
+	if (dp->ab->powered_off)
+		return;
+
 	ath12k_dp_arch_op_mlo_deinit(dp);
 	ath12k_dp_arch_op_device_deinit(dp);
 

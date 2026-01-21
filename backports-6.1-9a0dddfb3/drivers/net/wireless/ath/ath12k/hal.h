@@ -24,6 +24,7 @@ struct ath12k_dp_tx_comp_status;
 struct hal_rx_desc;
 enum ath12k_supported_bw;
 
+#define HAL_INVALID_PEERID	0x3fff
 #define HAL_TLV_ALIGN	4
 
 struct hal_tlv_hdr {
@@ -1201,6 +1202,7 @@ struct ath12k_hal {
 	u32 hal_desc_sz;
 
 	const struct ath12k_hal_tcl_to_cmp_rbm_map *tcl_to_cmp_rbm_map;
+	const struct ath12k_hal_rdi_mapping *rdi_mapping;
 };
 
 enum ath12k_eht_ru_size {
@@ -1254,6 +1256,11 @@ enum hal_wbm_rel_bm_act {
 struct ath12k_hal_tcl_to_cmp_rbm_map  {
 	u8 cmp_ring_num;
 	u8 rbm_id;
+};
+
+struct ath12k_hal_rdi_mapping {
+	u8 rd;
+	u8 source;
 };
 
 #define HAL_FST_HASH_KEY_SIZE_BYTES				40

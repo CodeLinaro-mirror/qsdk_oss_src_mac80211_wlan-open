@@ -28,7 +28,6 @@
 #include "cfr.h"
 #include "ini.h"
 #include "erp.h"
-
 struct ath12k_wmi_svc_ready_parse {
 	bool wmi_svc_bitmap_done;
 };
@@ -109,6 +108,7 @@ struct ath12k_wmi_svc_rdy_ext2_parse {
 	bool dma_ring_cap_done;
 	bool spectral_bin_scaling_done;
 	bool mac_phy_caps_ext_done;
+	bool scan_radio_caps_done;
 };
 
 struct ath12k_wmi_rdy_parse {
@@ -1160,7 +1160,7 @@ int ath12k_wmi_offchan_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 	buf_len_padded = roundup(buf_len, sizeof(u32));
 
 	len = sizeof(*cmd) + sizeof(*frame_tlv) + buf_len_padded +
-	      sizeof(struct wmi_mgmt_send_params);
+	      sizeof(*tlv) + sizeof(struct wmi_mgmt_send_params);
 
 	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
 	if (!skb)
@@ -1192,6 +1192,8 @@ int ath12k_wmi_offchan_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 	/* Tx params not used currently */
 	tlv->header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_TX_SEND_PARAMS,
 					     sizeof(struct wmi_mgmt_send_params));
+	ptr += sizeof(*tlv);
+	ath12k_wmi_prepare_tx_params_extn(ATH12K_SKB_CB(frame)->u.ar, ptr);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_OFFCHAN_DATA_TX_SEND_CMDID);
 
@@ -1241,6 +1243,8 @@ int ath12k_wmi_vdev_create(struct ath12k *ar, u8 *macaddr,
 	cmd->mbssid_flags = cpu_to_le32(args->mbssid_flags);
 	cmd->mbssid_tx_vdev_id = cpu_to_le32(args->mbssid_tx_vdev_id);
 	cmd->vdev_stats_id = cpu_to_le32(args->if_stats_id);
+	cmd->flags = cpu_to_le32(args->create_flags);
+
 	ether_addr_copy(cmd->vdev_macaddr.addr, macaddr);
 
 	if (args->if_stats_id != ATH12K_INVAL_VDEV_STATS_ID)
@@ -1739,6 +1743,37 @@ int ath12k_wmi_vdev_up(struct ath12k *ar, struct ath12k_wmi_vdev_up_params *para
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_VDEV_UP_CMDID);
 	if (ret) {
 		ath12k_warn(ar->ab, "failed to submit WMI_VDEV_UP cmd\n");
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+
+int ath12k_wmi_send_peer_tx_pn_request_cmd(struct ath12k *ar,
+					   struct ath12k_wmi_peer_pn_arg *arg)
+{
+	struct wmi_peer_tx_pn_request_cmd *cmd;
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct sk_buff *skb;
+	int ret;
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_peer_tx_pn_request_cmd *)skb->data;
+
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_PEER_TX_PN_REQUEST_CMD,
+						 sizeof(*cmd));
+	cmd->vdev_id = cpu_to_le32(arg->vdev_id);
+	cmd->key_idx = cpu_to_le32(arg->key_idx);
+	cmd->key_cipher = cpu_to_le32(arg->key_cipher);
+	ether_addr_copy(cmd->peer_macaddr.addr, arg->peer_addr);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_PEER_TX_PN_REQUEST_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to submit WMI_PEER_TX_PN_REQUEST cmd: %d\n",
+			    ret);
 		dev_kfree_skb(skb);
 	}
 
@@ -3167,6 +3202,9 @@ int ath12k_wmi_send_peer_assoc_cmd(struct ath12k *ar,
 	struct wmi_peer_assoc_mlo_params *ml_params;
 	struct wmi_peer_assoc_mlo_partner_info_params *partner_info;
 	struct wmi_peer_assoc_tid_to_link_map *ttlm;
+	struct wmi_peer_assoc_msduq_params *msduq_params;
+	struct wmi_peer_assoc_mpduq_params *mpduq_params;
+	struct wmi_peer_assoc_hol_q_params *holq_params;
 	struct sk_buff *skb;
 	struct wmi_tlv *tlv;
 	void *ptr;
@@ -3196,6 +3234,18 @@ int ath12k_wmi_send_peer_assoc_cmd(struct ath12k *ar,
 
 	len += TLV_HDR_SIZE + (arg->ttlm_params.num_dir * TTLM_MAX_NUM_TIDS *
 			       sizeof(struct wmi_peer_assoc_tid_to_link_map));
+	len += TLV_HDR_SIZE; // Operating mode
+
+	if (arg->flowq_params.enabled)
+		len += TLV_HDR_SIZE + sizeof(*mpduq_params) + TLV_HDR_SIZE +
+		       (arg->flowq_params.num_links * sizeof(*msduq_params));
+	else
+		len += (2 * TLV_HDR_SIZE);
+
+	if (arg->holq_params.enabled)
+		len += TLV_HDR_SIZE + sizeof(*holq_params);
+	else
+		len += TLV_HDR_SIZE;
 
 	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
 	if (!skb)
@@ -3465,7 +3515,7 @@ ttlm:
 	ptr += TLV_HDR_SIZE;
 
 	if (!len)
-		goto send;
+		goto send_mpduq;
 
 	for (dir = 0; dir < ttlm_params->num_dir; dir++) {
 		struct ath12k_wmi_host_ttlm_of_tids *ttlm_of_tids = &ttlm_params->ttlm_info[dir];
@@ -3492,6 +3542,86 @@ ttlm:
 			ptr += sizeof(*ttlm);
 		}
 	}
+
+send_mpduq:
+	/* Operating mode dummy TLV */
+	len = 0;
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, len);
+	ptr += TLV_HDR_SIZE;
+
+	len = arg->flowq_params.enabled ? sizeof(*mpduq_params) : 0;
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, len);
+	ptr += TLV_HDR_SIZE;
+	if (!len)
+		goto send_msduq;
+	mpduq_params = ptr;
+
+	mpduq_params->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_MGMT_MPDU_FLOWQ_PARAMS,
+							  len);
+	mpduq_params->mgmt_mpduq_address =
+		cpu_to_le32(arg->flowq_params.mpduq_params.mgmt_mpduq_address);
+	mpduq_params->pn_addr_39_32 =
+		cpu_to_le32(arg->flowq_params.mpduq_params.pn_addr_39_32);
+	mpduq_params->pn_addr_31_0 =
+		cpu_to_le32(arg->flowq_params.mpduq_params.pn_addr_31_0);
+	ptr += sizeof(*mpduq_params);
+
+send_msduq:
+	len = arg->flowq_params.enabled ?
+			(arg->flowq_params.num_links * sizeof(*msduq_params)) : 0;
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, len);
+	ptr += TLV_HDR_SIZE;
+	if (!len)
+		goto send_holq;
+	for (i = 0; i < arg->flowq_params.num_links; i++) {
+		struct peer_assoc_msduq_params *msduq;
+		u32 cmd = WMI_TAG_MGMT_MSDU_FLOWQ_PARAMS;
+
+		msduq = &arg->flowq_params.msduq_params[i];
+
+		msduq_params = ptr;
+		msduq_params->tlv_header = ath12k_wmi_tlv_cmd_hdr(cmd,
+								  sizeof(*msduq_params));
+		msduq_params->mgmt_msduq_address =
+			cpu_to_le32(msduq->mgmt_msduq_address);
+		msduq_params->msdu_type =
+			le32_encode_bits(msduq->link_id, WMI_MGMTQ_LINK_ID);
+		msduq_params->msdu_type |=
+			le32_encode_bits(msduq->flow_type, WMI_MGMTQ_MSDU_TYPE);
+		ptr += sizeof(*msduq_params);
+	}
+
+send_holq:
+	len = arg->holq_params.enabled ? sizeof(*holq_params) : 0;
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, len);
+	ptr += TLV_HDR_SIZE;
+	if (!len)
+		goto send;
+	holq_params = ptr;
+
+	holq_params->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_HOL_MSDU_FLOWQ_PARAMS,
+							 len);
+	holq_params->mpduq_msduq_number =
+		le32_encode_bits(arg->holq_params.peer_id, WMI_HOLQ_PEER_ID);
+	holq_params->mpduq_msduq_number |=
+		le32_encode_bits(arg->holq_params.tid, WMI_HOLQ_TID);
+	holq_params->mpduq_msduq_number |=
+		le32_encode_bits(arg->holq_params.mpdu_type, WMI_HOLQ_MPDU_TYPE);
+	holq_params->mpduq_msduq_number |=
+		le32_encode_bits(arg->holq_params.msdu_type, WMI_HOLQ_MSDU_TYPE);
+	holq_params->mpduq_address =
+		cpu_to_le32(arg->holq_params.mpduq_address);
+	holq_params->msduq_address =
+		cpu_to_le32(arg->holq_params.msduq_address);
+	holq_params->pn_addr_39_32 =
+		cpu_to_le32(arg->holq_params.pn_addr_39_32);
+	holq_params->pn_addr_31_0 =
+		cpu_to_le32(arg->holq_params.pn_addr_31_0);
+	ptr += sizeof(*holq_params);
 
 send:
 	ath12k_dbg(ar->ab, ATH12K_DBG_WMI | ATH12K_DBG_MLME,
@@ -7372,6 +7502,38 @@ static void ath12k_wmi_eht_caps_parse(struct ath12k_pdev *pdev, u32 band,
 	cap_band->eht_cap_info_internal = le32_to_cpu(cap_info_internal);
 }
 
+static int ath12k_pull_peer_tx_pn_ev(struct ath12k_base *ab, struct sk_buff *skb,
+				     struct wmi_peer_tx_pn_arg *peer_tx_pn)
+{
+	const struct wmi_peer_tx_pn_event *ev;
+	const void **tb;
+	int ret;
+
+	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
+	if (IS_ERR(tb)) {
+		ret = PTR_ERR(tb);
+		ath12k_warn(ab, "failed to parse tlv: %d\n", ret);
+		return ret;
+	}
+
+	ev = tb[WMI_TAG_PEER_TX_PN_RESPONSE_EVENT];
+	if (!ev) {
+		ath12k_warn(ab, "failed to fetch peer tx pn ev\n");
+		kfree(tb);
+		return -EPROTO;
+	}
+
+	peer_tx_pn->vdev_id = le32_to_cpu(ev->vdev_id);
+	ether_addr_copy(peer_tx_pn->mac_addr,
+			ev->peer_macaddr.addr);
+	peer_tx_pn->key_idx = le32_to_cpu(ev->key_ix);
+	peer_tx_pn->key_cipher = le32_to_cpu(ev->key_cipher);
+	memcpy(peer_tx_pn->pn, ev->pn, sizeof(ev->pn));
+
+	kfree(tb);
+	return 0;
+}
+
 static int
 ath12k_wmi_tlv_mac_phy_caps_ext_parse(struct ath12k_base *ab,
 				      const struct ath12k_wmi_caps_ext_params *caps,
@@ -7522,6 +7684,18 @@ static int ath12k_wmi_svc_rdy_ext2_parse(struct ath12k_base *ab,
 			}
 
 			parse->mac_phy_caps_ext_done = true;
+		} else if (!parse->scan_radio_caps_done) {
+			ret = ath12k_wmi_tlv_iter(ab, ptr, len,
+						  ath12k_wmi_tlv_scan_radio_caps_ext2,
+						  parse);
+			if (ret) {
+				ath12k_warn(ab,
+					    "failed to parse SCAN RADIO capabilities WMI TLV: %d\n",
+					    ret);
+				return ret;
+			}
+
+			parse->scan_radio_caps_done = true;
 		}
 		break;
 	default:
@@ -10495,6 +10669,8 @@ static void ath12k_scan_event(struct ath12k_base *ab, struct sk_buff *skb)
 		break;
 	}
 
+	ath12k_update_offchan_ts_extn(ar, scan_ev.event_type);
+
 	spin_unlock_bh(&ar->data_lock);
 
 	rcu_read_unlock();
@@ -10686,6 +10862,8 @@ static void ath12k_chan_info_event(struct ath12k_base *ab, struct sk_buff *skb)
 		survey->time_busy = div_u64(le32_to_cpu(ch_info_ev.rx_clear_count),
 					    cc_freq_hz);
 	}
+	ath12k_update_offchan_stats_extn(ar, le32_to_cpu(ch_info_ev.freq),
+					 &ch_info_ev);
 exit:
 	spin_unlock_bh(&ar->data_lock);
 	rcu_read_unlock();
@@ -10907,6 +11085,44 @@ static void ath12k_peer_assoc_conf_event(struct ath12k_base *ab, struct sk_buff 
 
 	complete(&ar->peer_assoc_done);
 	rcu_read_unlock();
+}
+
+static void ath12k_peer_tx_pn_event(struct ath12k_base *ab, struct sk_buff *skb)
+{
+	struct wmi_peer_tx_pn_arg peer_tx_pn_arg = {};
+	struct ath12k_link_vif *arvif;
+	struct ath12k *ar;
+
+	if (ath12k_pull_peer_tx_pn_ev(ab, skb, &peer_tx_pn_arg) != 0) {
+		ath12k_warn(ab, "failed to extract peer tx pn event");
+		return;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI,
+		   "peer tx pn ev vdev id %d macaddr %pM\n",
+		   peer_tx_pn_arg.vdev_id, peer_tx_pn_arg.mac_addr);
+
+	guard(rcu)();
+	ar = ath12k_mac_get_ar_by_vdev_id(ab, peer_tx_pn_arg.vdev_id);
+	if (!ar) {
+		ath12k_warn(ab, "invalid vdev id in peer tx pn ev %d",
+			    peer_tx_pn_arg.vdev_id);
+		return;
+	}
+
+	arvif = ath12k_mac_get_arvif(ar, peer_tx_pn_arg.vdev_id);
+	if (!arvif) {
+		ath12k_warn(ab, "vif not found for vdev id %d\n",
+			    peer_tx_pn_arg.vdev_id);
+		return;
+	}
+
+	if (peer_tx_pn_arg.key_idx == 1 || peer_tx_pn_arg.key_idx == 2)
+		memcpy(arvif->gtk_pn, peer_tx_pn_arg.pn,
+		       sizeof(peer_tx_pn_arg.pn));
+	if (peer_tx_pn_arg.key_idx == 6 || peer_tx_pn_arg.key_idx == 7)
+		memcpy(arvif->bigtk_pn, peer_tx_pn_arg.pn,
+		       sizeof(peer_tx_pn_arg.pn));
 }
 
 static void
@@ -13092,9 +13308,10 @@ static void ath12k_wmi_event_teardown_complete(struct ath12k_base *ab,
 				complete_flag = false;
 		}
 	}
-	if (complete_flag && ag->trigger_umac_reset) {
+	if (complete_flag && (ag->trigger_umac_reset || ag->mlo_teardown)) {
                 complete(&ag->umac_reset_complete);
 		ag->trigger_umac_reset = false;
+		ag->mlo_teardown = false;
 	}
 }
 
@@ -15784,6 +16001,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 	case WMI_PEER_ASSOC_CONF_EVENTID:
 		ath12k_peer_assoc_conf_event(ab, skb);
 		break;
+	case WMI_PEER_TX_PN_RESPONSE_EVENTID:
+		ath12k_peer_tx_pn_event(ab, skb);
+		break;
 	case WMI_UPDATE_STATS_EVENTID:
 		ath12k_update_stats_event(ab, skb);
 		break;
@@ -16572,6 +16792,9 @@ int ath12k_wmi_attach(struct ath12k_base *ab)
 void ath12k_wmi_detach(struct ath12k_base *ab)
 {
 	int i;
+
+	if (!test_bit(ATH12K_FLAG_WMI_INIT_DONE, &ab->dev_flags))
+		return;
 
 	/* TODO: Deinit wmi resource specific to SOC as required */
 
