@@ -2597,7 +2597,7 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 	switch (action) {
 	case WMI_FILTER_NRP_ACTION_ADD:
 		spin_lock_bh(&dp->dp_lock);
-		if (dp->num_nrps == (ATH12K_MAX_NRPS - 1)) {
+		if (dp->num_nrps >= (ATH12K_MAX_NRPS)) {
 			spin_unlock_bh(&dp->dp_lock);
 			ath12k_warn(ab, "max nrp reached, cannot create more\n");
 			ret = -ENOMEM;
