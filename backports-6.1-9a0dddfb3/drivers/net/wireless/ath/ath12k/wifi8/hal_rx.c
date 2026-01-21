@@ -1396,9 +1396,8 @@ ssize_t ath12k_wifi8_hal_rx_dump_fst_table(struct ath12k_base *ab,
 				u32_get_bits(hal_fse->info2,
 					     HAL_RX_FSE_REO_DESTINATION_HANDLER));
 		len += scnprintf(buf + len, size - len,
-				"drop 0x%x use_ppe: 0x%x service_code 0x%x\n",
+				"drop 0x%x service_code 0x%x\n",
 				u32_get_bits(hal_fse->info2, HAL_RX_FSE_MSDU_DROP),
-				u32_get_bits(hal_fse->info2, HAL_RX_FSE_USE_PPE),
 				u32_get_bits(hal_fse->info2, HAL_RX_FSE_SERVICE_CODE));
 		len += scnprintf(buf + len, size - len, "metadata: 0x%x\n\n",
 				 hal_fse->metadata);
@@ -1535,8 +1534,7 @@ void *ath12k_wifi8_hal_rx_flow_setup_fse(struct ath12k_base *ab,
 	hal_fse->dest_ip_31_0 = htonl(flow->tuple_info.dest_ip_31_0);
 	hal_fse->metadata |= flow->fse_metadata;
 	hal_fse->msdu_byte_count = 0;
-	hal_fse->timestamp = 0;
-	hal_fse->tcp_sequence_number = 0;
+	hal_fse->timestamp = flow->timestamp;
 
 	hal_fse->info1 = u32_encode_bits(flow->tuple_info.dest_port,
 					 HAL_RX_FSE_DEST_PORT);
@@ -1547,14 +1545,41 @@ void *ath12k_wifi8_hal_rx_flow_setup_fse(struct ath12k_base *ab,
 					 HAL_RX_FSE_L4_PROTOCOL);
 	hal_fse->info2 |= u32_encode_bits(1, HAL_RX_FSE_VALID);
 	hal_fse->info2 |= u32_encode_bits(flow->service_code, HAL_RX_FSE_SERVICE_CODE);
-	hal_fse->info2 |= u32_encode_bits(flow->use_ppe, HAL_RX_FSE_USE_PPE);
 	hal_fse->info2 |= u32_encode_bits(flow->reo_indication,
 					  HAL_RX_FSE_REO_INDICATION);
 	hal_fse->info2 |= u32_encode_bits(flow->drop, HAL_RX_FSE_MSDU_DROP);
 	hal_fse->info2 |= u32_encode_bits(flow->reo_destination_handler,
 					  HAL_RX_FSE_REO_DESTINATION_HANDLER);
 	hal_fse->info3 = 0;
-	hal_fse->info4 = 0;
+
+	/* Program info4 fields if provided */
+	hal_fse->info4 = u32_encode_bits(flow->dest_info,
+					 HAL_RX_FSE_DEST_INFO);
+	hal_fse->info4 |= u32_encode_bits(flow->dest_info_valid,
+					  HAL_RX_FSE_DEST_INFO_VALID);
+	hal_fse->info4 |= u32_encode_bits(flow->int_priority,
+					  HAL_RX_FSE_INT_PRIORITY);
+	hal_fse->info4 |= u32_encode_bits(flow->int_priority_valid,
+					  HAL_RX_FSE_INT_PRIORITY_VALID);
+	hal_fse->info4 |= u32_encode_bits(flow->ppe_classify_read_hint,
+					  HAL_RX_FSE_PPE_CLASSIFY_READ_HINT);
+	hal_fse->info4 |= u32_encode_bits(flow->c_tdma_lut_ptr,
+					  HAL_RX_FSE_C_TDMA_LUT_PTR);
+	hal_fse->info4 |= u32_encode_bits(flow->ll_pkt, HAL_RX_FSE_LL_PKT);
+	hal_fse->info4 |= u32_encode_bits(flow->rx_sdwf_policer_id,
+					  HAL_RX_FSE_RX_SDWF_POLICER_ID);
+
+	/* Program info5 fields if provided */
+	hal_fse->info5 = u32_encode_bits(flow->telemetry_stream_id_valid,
+					 HAL_RX_FSE_TELEMETRY_STREAM_ID_VALID);
+	hal_fse->info5 |= u32_encode_bits(flow->telemetry_stream_id,
+					  HAL_RX_FSE_TELEMETRY_STREAM_ID);
+	hal_fse->info5 |= u32_encode_bits(flow->sw_peer_id_check_enable,
+					  HAL_RX_FSE_SW_PEER_ID_CHECK_ENABLE);
+	hal_fse->info5 |= u32_encode_bits(flow->sw_peer_id,
+					  HAL_RX_FSE_SW_PEER_ID);
+	hal_fse->info5 |= u32_encode_bits(flow->rx_sdwf_priority,
+					  HAL_RX_FSE_RX_SDWF_PRIORITY);
 
 	ath12k_dbg_dump(ab, ATH12K_DBG_DP_FST, NULL, "Hal FSE setup:",
 			hal_fse, sizeof(*hal_fse));
