@@ -1095,8 +1095,10 @@ static const struct ath12k_hif_ops ath12k_pci_hif_ops = {
 	.write32 = ath12k_pci_write32,
 	.power_down = ath12k_pci_power_down,
 	.power_up = ath12k_pci_power_up,
+#ifndef PLATFORM_SDX85
 	.suspend = ath12k_pci_hif_suspend,
 	.resume = ath12k_pci_hif_resume,
+#endif
 	.irq_enable = ath12k_pcic_ext_irq_enable,
 	.irq_disable = ath12k_pcic_ext_irq_disable,
 	.get_msi_address = ath12k_pci_get_msi_address,
@@ -1503,7 +1505,9 @@ int ath12k_pci_register_driver(const enum ath12k_device_family device_id,
 	pci_driver->probe = ath12k_pci_probe;
 	pci_driver->remove = ath12k_pci_remove;
 	pci_driver->shutdown = ath12k_pci_shutdown;
+#ifndef PLATFORM_SDX85
 	pci_driver->driver.pm = &ath12k_pci_pm_ops;
+#endif
 
 	return pci_register_driver(pci_driver);
 }
