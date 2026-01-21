@@ -20271,6 +20271,16 @@ ath12k_mac_assign_vif_chanctx_handle(struct ieee80211_hw *hw,
 		goto out;
 	}
 
+	if (ath12k_scan_radio_supported(ar->pdev)) {
+		ret = ath12k_wmi_pdev_set_param(ar,
+						WMI_PDEV_PARAM_SET_PROMISC_MODE_CMDID,
+						true, ar->pdev->pdev_id);
+		if (ret) {
+			ath12k_err(NULL, "Failed to send WMI_PDEV_PARAM_SET_PROMISC_MODE_CMDID to firmware");
+			goto out;
+		}
+	}
+
 	if (ctx) {
 		memcpy(&arvif->chanctx, ctx, sizeof(*ctx));
 
