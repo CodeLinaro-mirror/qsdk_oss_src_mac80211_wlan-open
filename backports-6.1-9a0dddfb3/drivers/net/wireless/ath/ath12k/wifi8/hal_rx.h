@@ -42,10 +42,6 @@ struct hal_rx_reo_dest_rel_info {
 #define HAL_RX_MPDU_INFO_PN_GET_BYTE4(__val) \
 	le32_get_bits((__val), GENMASK(31, 24))
 
-#define HAL_TLV_STATUS_PPDU_NOT_DONE            0
-#define HAL_TLV_STATUS_PPDU_DONE                1
-#define HAL_TLV_STATUS_BUF_DONE                 2
-#define HAL_TLV_STATUS_PPDU_NON_STD_DONE        3
 
 enum hal_rx_vht_sig_a_gi_setting {
 	HAL_RX_VHT_SIG_A_NORMAL_GI = 0,
@@ -54,7 +50,6 @@ enum hal_rx_vht_sig_a_gi_setting {
 };
 
 #define HE_GI_0_8 0
-#define HE_GI_0_4 1
 #define HE_GI_1_6 2
 #define HE_GI_3_2 3
 
@@ -96,7 +91,6 @@ struct hal_rx_msdu_list {
 
 /* HE Radiotap data1 Mask */
 #define HE_SU_FORMAT_TYPE 0x0000
-#define HE_EXT_SU_FORMAT_TYPE 0x0001
 #define HE_MU_FORMAT_TYPE  0x0002
 #define HE_TRIG_FORMAT_TYPE  0x0003
 #define HE_BEAM_CHANGE_KNOWN 0x0008
@@ -148,41 +142,20 @@ struct hal_rx_msdu_list {
 #define HE_SIG_B_DCM_KNOWN 0x0040
 #define HE_SIG_B_SYM_NUM_KNOWN 0x8000
 #define HE_RU_0_KNOWN 0x0100
-#define HE_RU_1_KNOWN 0x0200
-#define HE_RU_2_KNOWN 0x0400
-#define HE_RU_3_KNOWN 0x0800
 #define HE_DCM_FLAG_1_SHIFT 5
-#define HE_SPATIAL_REUSE_MU_KNOWN 0x0100
 #define HE_SIG_B_COMPRESSION_FLAG_1_KNOWN 0x4000
 
 /* HE radiotap HE-MU flags2 */
 #define HE_SIG_B_COMPRESSION_FLAG_2_SHIFT 3
 #define HE_BW_KNOWN 0x0004
 #define HE_NUM_SIG_B_SYMBOLS_SHIFT 4
-#define HE_SIG_B_COMPRESSION_FLAG_2_KNOWN 0x0100
-#define HE_NUM_SIG_B_FLAG_2_SHIFT 9
-#define HE_LTF_FLAG_2_SYMBOLS_SHIFT 12
-#define HE_LTF_KNOWN 0x8000
 
 /* HE radiotap per_user_1 */
-#define HE_STA_SPATIAL_SHIFT 11
 #define HE_TXBF_SHIFT 14
-#define HE_RESERVED_SET_TO_1_SHIFT 19
-#define HE_STA_CODING_SHIFT 20
 
 /* HE radiotap per_user_2 */
-#define HE_STA_MCS_SHIFT 4
-#define HE_STA_DCM_SHIFT 5
 
 /* HE radiotap per user known */
-#define HE_USER_FIELD_POSITION_KNOWN 0x01
-#define HE_STA_ID_PER_USER_KNOWN 0x02
-#define HE_STA_NSTS_KNOWN 0x04
-#define HE_STA_TX_BF_KNOWN 0x08
-#define HE_STA_SPATIAL_CONFIG_KNOWN 0x10
-#define HE_STA_MCS_KNOWN 0x20
-#define HE_STA_DCM_KNOWN 0x40
-#define HE_STA_CODING_KNOWN 0x80
 
 #define HAL_RX_MPDU_ERR_FCS			BIT(0)
 #define HAL_RX_MPDU_ERR_DECRYPT			BIT(1)
@@ -191,7 +164,6 @@ struct hal_rx_msdu_list {
 #define HAL_RX_MPDU_ERR_OVERFLOW		BIT(4)
 #define HAL_RX_MPDU_ERR_MSDU_LEN		BIT(5)
 #define HAL_RX_MPDU_ERR_MPDU_LEN		BIT(6)
-#define HAL_RX_MPDU_ERR_UNENCRYPTED_FRAME	BIT(7)
 
 enum hal_eht_bw {
 	HAL_EHT_BW_20,
@@ -353,22 +325,15 @@ enum hal_mon_reception_type {
 /* info2 subfields */
 #define HAL_RX_FSE_L4_PROTOCOL			GENMASK(7, 0)
 #define HAL_RX_FSE_VALID			GENMASK(8, 8)
-#define HAL_RX_FSE_RESERVED			GENMASK(12, 9)
 #define HAL_RX_FSE_SERVICE_CODE			GENMASK(21, 13)
-#define HAL_RX_FSE_PRIORITY_VLD			GENMASK(22, 22)
 #define HAL_RX_FSE_USE_PPE			GENMASK(23, 23)
 #define HAL_RX_FSE_REO_INDICATION		GENMASK(28, 24)
 #define HAL_RX_FSE_MSDU_DROP			GENMASK(29, 29)
 #define HAL_RX_FSE_REO_DESTINATION_HANDLER	GENMASK(31, 30)
 
 /* info 3 subfields */
-#define HAL_RX_FSE_AGGREGATION_COUNT		GENMASK(15, 0)
-#define HAL_RX_FSE_LRO_ELIGIBLE			GENMASK(31, 16)
-#define HAL_RX_FSE_MSDU_COUNT			GENMASK(31, 16)
 
 /* info4 subfields */
-#define HAL_RX_FSE_CUMULATIVE_IP_LEN1		GENMASK(15, 0)
-#define HAL_RX_FSE_CUMULATIVE_IP_LEN		GENMASK(31, 16)
 
 /* This structure should not be modified as it is shared with HW */
 struct hal_rx_fse {
