@@ -799,7 +799,7 @@ bool ath12k_wifi8_hal_tx_ppe2tcl_ring_halt_done(struct ath12k_base *ab)
 	return !!regval;
 }
 
-#define HAL_TCL_RBM_MAPPING0_ADDR_OFFSET HWIO_TCL_R0_RBM_MAPPING0_OFFS
+#define HAL_TCL_RBM_MAPPING0_ADDR_OFFSET 0xd8
 #define HAL_TCL_RBM_MAPPING_SHFT 4
 #define HAL_TCL_RBM_MAPPING_BMSK 0xF
 #define HAL_TCL_RBM_MAPPING_PPE2TCL_OFFSET  7
