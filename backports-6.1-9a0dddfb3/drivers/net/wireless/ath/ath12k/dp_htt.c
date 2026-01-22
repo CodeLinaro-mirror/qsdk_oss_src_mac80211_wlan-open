@@ -899,9 +899,15 @@ ath12k_htt_update_tx_rate_stats(struct ath12k_dp_link_peer *peer,
 	ratekbps = cfg80211_calculate_bitrate(&peer->txrate);
 
 	DP_STATS_UPD(tx_stats, tx_rate, ratekbps);
-	DP_STATS_UPD(tx_stats, tx_ratecode, ATH12K_HW_RATE_CODE(peer_stats->mcs,
-								peer_stats->nss,
-								peer_stats->flags));
+	if (peer_stats->flags == WMI_RATE_PREAMBLE_OFDM ||
+	    peer_stats->flags == WMI_RATE_PREAMBLE_CCK)
+		DP_STATS_UPD(tx_stats, tx_ratecode,
+			     ath12k_mac_get_rate_hw_value(ratekbps));
+	else
+		DP_STATS_UPD(tx_stats, tx_ratecode,
+			     ATH12K_HW_RATE_CODE(peer_stats->mcs, peer_stats->nss,
+						 peer_stats->flags));
+
 	if (tx_stats->avg_tx_rate == INVALID_RATE)
 		tx_stats->avg_tx_rate = WEIGHTED_AVG_IN(tx_stats->tx_rate);
 	else

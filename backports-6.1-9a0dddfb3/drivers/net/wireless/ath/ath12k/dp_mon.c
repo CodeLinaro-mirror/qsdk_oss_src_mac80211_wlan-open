@@ -928,7 +928,13 @@ static void ath12k_dp_rx_update_rate_stats(struct ath12k_rx_peer_stats *rx_stats
 
 	ppdu_rx_rate = ath12k_dp_mon_rx_get_output_rate(rx_stats->avg_rx_rate);
 	rx_stats->rnd_avg_rx_rate = ppdu_rx_rate;
-	/* TODO : Add ratecode */
+
+	if (rx_stats->preamble_info < HAL_RX_PREAMBLE_11N)
+		rx_stats->rx_ratecode = ath12k_mac_get_rate_hw_value(ratekbps);
+	else
+		rx_stats->rx_ratecode =
+			ATH12K_HW_RATE_CODE(rate->mcs, rate->nss,
+					    rx_stats->preamble_info);
 }
 
 static u8 ath12k_dp_rx_rate_convert_bw(u8 bw)
@@ -966,7 +972,7 @@ static void ath12k_dp_rx_fill_rate_info(struct rate_info *rate,
 {
 	u8 mcs, nss, preamble_type;
 	u8 rix = 0, ret;
-	u16 ratecode = 0;
+	u16 bitrate = 0;
 
 	if (!rate || !ppdu_info)
 		return;
@@ -982,10 +988,10 @@ static void ath12k_dp_rx_fill_rate_info(struct rate_info *rate,
 	case HAL_RX_PREAMBLE_11A:
 	case HAL_RX_PREAMBLE_11B:
 		ret = ath12k_mac_hw_ratecode_to_legacy_rate(mcs, preamble_type,
-							    &rix, &ratecode);
+							    &rix, &bitrate);
 		if (ret < 0)
 			return;
-		rate->legacy = ratecode;
+		rate->legacy = bitrate;
 		break;
 
 	case HAL_RX_PREAMBLE_11N:
