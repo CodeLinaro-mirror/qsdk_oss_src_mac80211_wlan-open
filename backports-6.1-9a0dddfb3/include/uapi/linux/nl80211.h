@@ -3079,6 +3079,10 @@ enum nl80211_commands {
  *	association request when used with NL80211_CMD_NEW_STATION). Can be set
  *	only if %NL80211_STA_FLAG_WME is set.
  *
+ * @NL80211_ATTR_DISABLE_UHR: Force UHR capable interfaces to disable
+ *  this feature during association. This is a flag attribute.
+ *	Currently only supported in mac80211 drivers.
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
@@ -3692,6 +3696,8 @@ enum nl80211_attrs {
 	NL80211_ATTR_BITRATE,
 
 	NL80211_ATTR_UHR_CAPABILITY,
+
+	NL80211_ATTR_DISABLE_UHR,
 
 	/* add attributes here, update the policy in nl80211.c */
 
