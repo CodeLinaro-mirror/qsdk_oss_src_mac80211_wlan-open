@@ -2040,6 +2040,8 @@ struct sta_txpwr {
  * @eht_capa_len: the length of the EHT capabilities
  * @eml_cap: EML capabilities of station
  * @mld_oper: MLD capabilites and operation field of station
+ * @uhr_capa: UHR capabilities of station
+ * @uhr_capa_len: the length of the UHR capabilities
  */
 struct link_station_parameters {
 	const u8 *mld_mac;
@@ -2061,6 +2063,8 @@ struct link_station_parameters {
 	u8 eht_capa_len;
 	u16 eml_cap;
 	u16 mld_oper;
+	const struct ieee80211_uhr_cap_elem *uhr_capa;
+	u8 uhr_capa_len;
 };
 
 /**
