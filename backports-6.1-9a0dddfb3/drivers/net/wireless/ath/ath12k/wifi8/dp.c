@@ -552,6 +552,7 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.dp_get_peer_holq = ath12k_wifi8_get_holq,
 	.dp_vif_configure = ath12k_wifi8_dp_vif_configure,
 	.dp_link_vif_configure = ath12k_wifi8_dp_link_vif_configure,
+	.rx_flow_fse_cache_operation = ath12k_wifi8_dp_rx_flow_fse_cache_operation,
 };
 
 struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab)

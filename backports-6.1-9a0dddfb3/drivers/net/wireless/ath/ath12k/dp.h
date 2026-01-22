@@ -508,6 +508,9 @@ struct ath12k_dp_arch_ops {
 	int (*rx_flow_add_entry)(struct ath12k_dp *dp, struct rx_flow_info *flow_info);
 	int (*rx_flow_delete_entry)(struct ath12k_dp *dp, struct rx_flow_info *flow_info);
 	int (*rx_flow_delete_all_entries)(struct ath12k_dp *dp);
+	int (*rx_flow_fse_cache_operation)(struct ath12k_base *ab,
+					   enum	dp_flow_fst_operation op_code,
+					   struct hal_flow_tuple_info *tuple_info);
 	ssize_t (*dump_fst_table)(struct ath12k_dp *dp, char *buf, int size);
 	struct ath12k_dp_hw_group*(*dp_hw_group_alloc)(void);
 	int (*peer_migrate_reo_cmd)(struct ath12k_dp *dp,
@@ -1036,6 +1039,14 @@ static inline ssize_t
 ath12k_dp_arch_dump_fst_table(struct ath12k_dp *dp, char *buf, int size)
 {
 	return dp->arch_ops->dump_fst_table(dp, buf, size);
+}
+
+static inline int
+ath12k_dp_arch_rx_flow_fse_cache_operation(struct ath12k_dp *dp,
+					   enum dp_flow_fst_operation op_code,
+					   struct hal_flow_tuple_info *tuple_info)
+{
+	return dp->arch_ops->rx_flow_fse_cache_operation(dp->ab, op_code, tuple_info);
 }
 
 static inline struct ath12k_dp_hw_group *

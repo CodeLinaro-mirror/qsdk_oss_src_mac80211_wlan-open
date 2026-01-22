@@ -3291,7 +3291,7 @@ err_free:
 }
 
 int ath12k_dp_htt_rx_flow_fse_operation(struct ath12k_base *ab,
-					enum dp_htt_flow_fst_operation op_code,
+					enum dp_flow_fst_operation op_code,
 					struct hal_flow_tuple_info *tuple_info)
 {
 	struct sk_buff *skb;
@@ -3312,7 +3312,7 @@ int ath12k_dp_htt_rx_flow_fse_operation(struct ath12k_base *ab,
 	cmd->info0 |= le32_encode_bits(0, HTT_H2T_MSG_RX_FSE_PDEV_ID);
 	cmd->info1 = le32_encode_bits(false, HTT_H2T_MSG_RX_FSE_IPSEC_VALID);
 
-	if (op_code == DP_HTT_FST_CACHE_INVALIDATE_ENTRY) {
+	if (op_code == DP_FST_CACHE_INVALIDATE_ENTRY) {
 		cmd->info1 |= le32_encode_bits(HTT_RX_FSE_CACHE_INVALIDATE_ENTRY,
 					       HTT_H2T_MSG_RX_FSE_OPERATION);
 		cmd->ip_src_addr_31_0 = htonl(tuple_info->src_ip_31_0);
@@ -3329,13 +3329,13 @@ int ath12k_dp_htt_rx_flow_fse_operation(struct ath12k_base *ab,
 					       HTT_H2T_MSG_RX_FSE_DEST_PORT);
 		cmd->info3 = le32_encode_bits(tuple_info->l4_protocol,
 					      HTT_H2T_MSG_RX_FSE_L4_PROTO);
-	} else if (op_code == DP_HTT_FST_CACHE_INVALIDATE_FULL) {
+	} else if (op_code == DP_FST_CACHE_INVALIDATE_FULL) {
 		cmd->info1 |= le32_encode_bits(HTT_RX_FSE_CACHE_INVALIDATE_FULL,
 					       HTT_H2T_MSG_RX_FSE_OPERATION);
-	} else if (op_code == DP_HTT_FST_DISABLE) {
+	} else if (op_code == DP_FST_DISABLE) {
 		cmd->info1 |= le32_encode_bits(HTT_RX_FSE_DISABLE,
 					       HTT_H2T_MSG_RX_FSE_OPERATION);
-	} else if (op_code == DP_HTT_FST_ENABLE) {
+	} else if (op_code == DP_FST_ENABLE) {
 		cmd->info1 |= le32_encode_bits(HTT_RX_FSE_ENABLE,
 					       HTT_H2T_MSG_RX_FSE_OPERATION);
 	}
@@ -3358,6 +3358,7 @@ err_free:
 	dev_kfree_skb_any(skb);
 	return ret;
 }
+EXPORT_SYMBOL(ath12k_dp_htt_rx_flow_fse_operation);
 
 int ath12k_dp_htt_rx_fse_3_tuple_config_send(struct ath12k_base *ab,
 					     u32 tuple_mask, u8 pdev_id)

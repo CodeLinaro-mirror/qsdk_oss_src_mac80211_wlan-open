@@ -98,4 +98,8 @@ void ath12k_wifi8_dp_rx_ring_free(struct ath12k_base *ab);
 int ath12k_wifi8_dp_rx_ring_setup(struct ath12k_base *ab);
 int ath12k_wifi8_dp_pdev_alloc(struct ath12k_base *ab);
 void ath12k_wifi8_dp_pdev_free(struct ath12k_base *ab);
+int ath12k_wifi8_dp_rx_flow_fse_cache_operation(struct ath12k_base *ab,
+						enum dp_flow_fst_operation op_code,
+						struct hal_flow_tuple_info *tuple_info);
+
 #endif
