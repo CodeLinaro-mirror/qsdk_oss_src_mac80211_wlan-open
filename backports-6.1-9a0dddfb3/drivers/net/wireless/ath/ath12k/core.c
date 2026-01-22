@@ -4027,7 +4027,8 @@ static void ath12k_core_reset(struct work_struct *work)
 
 	ath12k_dbg(ab, ATH12K_DBG_BOOT, "waiting recovery start...\n");
 
-	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2)
+	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2 &&
+	    ab->hif.bus == ATH12K_BUS_PCI)
 		ath12k_partner_chip_power_state_info(ag, FW_ASSERTED_CHIP_PWR_DOWN);
 
 	if (ab->fw_recovery_support) {
@@ -4073,7 +4074,8 @@ static void ath12k_core_reset(struct work_struct *work)
 			ab->powerup_triggered = true;
 		}
 
-		if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2)
+		if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2 &&
+		    ab->hif.bus == ATH12K_BUS_PCI)
 			ath12k_partner_chip_power_state_info(ag,
 							     FW_ASSERTED_CHIP_PWR_UP);
 
