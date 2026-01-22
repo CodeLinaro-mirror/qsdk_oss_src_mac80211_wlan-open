@@ -12470,6 +12470,201 @@ debug_htt_stats_req *stats_req)
 	stats_req->buf_len = len;
 }
 
+static void ath12k_htt_print_regdb_ctry_tlv(const void *tag_buf, u16 tag_len
+		, struct debug_htt_stats_req *stats_req)
+{
+	const struct ath12k_htt_stats_regdb_ctry_tlv *ctry_stats = tag_buf;
+	const u32 max_buf_size = ATH12K_HTT_STATS_BUF_SIZE;
+	u32 regdb_version;
+	u32 len = stats_req->buf_len;
+	u8 *buf = stats_req->buf;
+
+	if (tag_len < sizeof(*ctry_stats))
+		return;
+	regdb_version = le32_to_cpu(ctry_stats->regdb_version);
+	len += scnprintf(buf + len, max_buf_size - len, "=== Regdb Country Stats ===\n");
+	len += scnprintf(buf + len, max_buf_size - len, "Regdb Version         : %d.%d\n"
+			, u32_get_bits(regdb_version, ATH12K_HTT_STATS_REGDB_MAJ_VERSION)
+			, u32_get_bits(regdb_version, ATH12K_HTT_STATS_REGDB_MIN_VERSION)
+			);
+	len += scnprintf(buf + len, max_buf_size - len, "Custom Version        : %d\n"
+			, u32_get_bits(regdb_version
+				, ATH12K_HTT_STATS_REGDB_CUSTOM_VERSION));
+	len += scnprintf(buf + len, max_buf_size - len, "Country Code          : %d\n"
+			, le32_to_cpu(ctry_stats->country_code));
+	len += scnprintf(buf + len, max_buf_size - len, "Alpha Code            : %c%c\n"
+			, u32_get_bits(ctry_stats->alpha_code
+				, ATH12K_HTT_STATS_REGDB_ALPHA_CODE_0)
+			, u32_get_bits(ctry_stats->alpha_code
+				, ATH12K_HTT_STATS_REGDB_ALPHA_CODE_1));
+	len += scnprintf(buf + len, max_buf_size - len, "Regdomain Pair ID     : 0x%X\n"
+			, le32_to_cpu(ctry_stats->reg_domain_pair_id));
+	len += scnprintf(buf + len, max_buf_size - len, "Super Domain ID       : 0x%X\n"
+			, le32_to_cpu(ctry_stats->super_domain_id));
+	len += scnprintf(buf + len, max_buf_size - len, "Phymode Bitmap        : 0x%X\n"
+			, le32_to_cpu(ctry_stats->phymode_bitmap));
+	len += scnprintf(buf + len, max_buf_size - len, "VLP Chan. Prio. Freq. : %d MHz\n"
+			, le32_to_cpu(ctry_stats->chan_priority_freq));
+	len += scnprintf(buf + len, max_buf_size - len, "TPC Region            : 0x%X\n"
+			, le32_to_cpu(ctry_stats->tpc_region));
+	len += scnprintf(buf + len, max_buf_size - len, "Max BW 2G             : %d MHz\n"
+			, le32_to_cpu(ctry_stats->max_bw_2g));
+	len += scnprintf(buf + len, max_buf_size - len, "Max BW 5G             : %d MHz\n"
+			, le32_to_cpu(ctry_stats->max_bw_5g));
+	len += scnprintf(buf + len, max_buf_size - len, "Max BW 6G             : %d MHz\n"
+			, le32_to_cpu(ctry_stats->max_bw_6g));
+	len += scnprintf(buf + len, max_buf_size - len, "\n");
+	stats_req->buf_len = len;
+}
+
+static inline const char *ath12k_htt_regdb_regdomain_type_id_to_name(enum
+		ath12k_htt_stats_regdb_regdomain_type type_id)
+{
+	switch (type_id) {
+	case ATH12K_HTT_STATS_REGULATORY_REG_DMN_2G:
+		return "Regdomain 2G";
+	case ATH12K_HTT_STATS_REGULATORY_REG_DMN_5G:
+		return "Regdomain 5G";
+	case ATH12K_HTT_STATS_REGULATORY_REG_DMN_6G_AP_LPI:
+		return "Regdomain 6G AP LPI";
+	case ATH12K_HTT_STATS_REGULATORY_REG_DMN_6G_AP_SP:
+		return "Regdomain 6G AP SP";
+	case ATH12K_HTT_STATS_REGULATORY_REG_DMN_6G_AP_VLP:
+		return "Regdomain 6G AP VLP";
+	case ATH12K_HTT_STATS_REGULATORY_REG_DMN_6G_CL1_LPI:
+		return "Regdomain 6G CLIENT-1 LPI";
+	case ATH12K_HTT_STATS_REGULATORY_REG_DMN_6G_CL1_SP:
+		return "Regdomain 6G CLIENT-1 SP";
+	case ATH12K_HTT_STATS_REGULATORY_REG_DMN_6G_CL1_VLP:
+		return "Regdomain 6G CLIENT-1 VLP";
+	case ATH12K_HTT_STATS_REGULATORY_REG_DMN_6G_CL2_LPI:
+		return "Regdomain 6G CLIENT-2 LPI";
+	case ATH12K_HTT_STATS_REGULATORY_REG_DMN_6G_CL2_SP:
+		return "Regdomain 6G CLIENT-2 SP";
+	case ATH12K_HTT_STATS_REGULATORY_REG_DMN_6G_CL2_VLP:
+		return "Regdomain 6G CLIENT-2 VLP";
+	default:
+		return "Regdomain unknown";
+	}
+}
+
+static void ath12k_htt_print_regdb_regdomain_tlv(const void *tag_buf, u16 tag_len
+		, struct debug_htt_stats_req *stats_req)
+{
+	const struct ath12k_htt_stats_regdb_regdomain_tlv *regdmn_stats = tag_buf;
+	struct ath12k_htt_stats_regdb_reg_rule reg_rule = {0};
+	const void *current_rule_ptr;
+	const u32 max_buf_size = ATH12K_HTT_STATS_BUF_SIZE;
+	u32 len = stats_req->buf_len;
+	u32 regdmn_type, ctl_cca_dfs, offset;
+	u32 freq_info, bw_pwr_info, flag_info, psd_info;
+	u16 num_rules, rule_size, i;
+	u8 *buf = stats_req->buf;
+	static const char *border_line_left =
+		"+-----+-------------+-------------+---------+";
+	static const char *border_line_right =
+		"-----------+-----------+-----------+---------+-------+";
+	if (tag_len < sizeof(*regdmn_stats))
+		return;
+	regdmn_type = le32_to_cpu(regdmn_stats->rd_type);
+	ctl_cca_dfs = le32_to_cpu(regdmn_stats->ctl_cca_dfs);
+	num_rules = u32_get_bits(le32_to_cpu(regdmn_stats->rule_num_and_size)
+			, ATH12K_HTT_STATS_REGDOMAIN_NUM_RULES);
+	/* rule_size indicates sizeof regrule as filled by FW*/
+	rule_size = u32_get_bits(le32_to_cpu(regdmn_stats->rule_num_and_size)
+			, ATH12K_HTT_STATS_REGDOMAIN_RULE_SIZE);
+
+	len += scnprintf(buf + len, max_buf_size - len, "=== Regdb %s Stats ===\n"
+			, ath12k_htt_regdb_regdomain_type_id_to_name(regdmn_type));
+	if (num_rules == 0) {
+		len += scnprintf(buf + len, max_buf_size - len, "(not supported)\n");
+	} else {
+		len += scnprintf(buf + len, max_buf_size - len, "Regdomain Code : 0x%X\n"
+				, le32_to_cpu(regdmn_stats->rd_code));
+		len += scnprintf(buf + len, max_buf_size - len, "CTL Region     : 0x%X\n"
+				, u32_get_bits(ctl_cca_dfs
+					, ATH12K_HTT_STATS_REGDOMAIN_CTL_REGION));
+		len += scnprintf(buf + len, max_buf_size - len, "CCA Region     : 0x%X\n"
+				, u32_get_bits(ctl_cca_dfs
+					, ATH12K_HTT_STATS_REGDOMAIN_CCA_REGION));
+		if (regdmn_type == ATH12K_HTT_STATS_REGULATORY_REG_DMN_5G) {
+			len += scnprintf(buf + len, max_buf_size - len
+					, "DFS Region     : 0x%X\n"
+					, u32_get_bits(ctl_cca_dfs
+						, ATH12K_HTT_STATS_REGDOMAIN_DFS_REGION));
+		}
+		len += scnprintf(buf + len, max_buf_size - len, "Reg Rules      :\n");
+		len += scnprintf(buf + len, max_buf_size - len, "%s%s\n"
+				, border_line_left, border_line_right);
+		len += scnprintf(buf + len, max_buf_size - len
+				, "|%4s |%12s |%12s |%8s |%10s |%10s |%10s |%8s |%6s |\n"
+				, "No", "Start Freq.", "End Freq.", "Max BW"
+				, "Ant. Gain", "Reg. Power", "PSD Power", "Flags"
+				, "CTL");
+		len += scnprintf(buf + len, max_buf_size - len
+				, "|%4s |%12s |%12s |%8s |%10s |%10s |%10s |%8s |%6s |\n"
+				, "", "(MHz)", "(MHz)", "(MHz)"
+				, "(dB)", "(dBm)", "(dBm/MHz)", "", "");
+		len += scnprintf(buf + len, max_buf_size - len, "%s%s\n"
+				, border_line_left, border_line_right);
+	}
+	current_rule_ptr = &regdmn_stats->rules;
+	offset = offsetof(struct ath12k_htt_stats_regdb_regdomain_tlv, rules);
+	for (i = 0; i < num_rules; ++i) {
+		if (offset + rule_size > tag_len)
+			break;
+		/*If the rule structure is extended in FW,
+		 * the new fields are ignored here as only the min size
+		 * is copied to the rule buffer.
+		 */
+		memcpy(&reg_rule, current_rule_ptr
+				, min_t(u32, rule_size, sizeof(reg_rule)));
+		freq_info = le32_to_cpu(reg_rule.freq_info);
+		bw_pwr_info = le32_to_cpu(reg_rule.bw_pwr_info);
+		flag_info = le32_to_cpu(reg_rule.flag_info);
+		psd_info = le32_to_cpu(reg_rule.psd_power_info);
+		len += scnprintf(buf + len, max_buf_size - len
+				, "|%4u |%12u |%12u |%8u |%10u |%10u "
+				, (i + 1)
+				, u32_get_bits(freq_info
+					, ATH12K_HTT_STATS_REG_RULE_START_FREQ)
+				, u32_get_bits(freq_info
+					, ATH12K_HTT_STATS_REG_RULE_END_FREQ)
+				, u32_get_bits(bw_pwr_info
+					, ATH12K_HTT_STATS_REG_RULE_MAX_BW)
+				, u32_get_bits(bw_pwr_info
+					, ATH12K_HTT_STATS_REG_RULE_ANT_GAIN)
+				, u32_get_bits(bw_pwr_info
+					, ATH12K_HTT_STATS_REG_RULE_REG_PWR)
+				);
+		if (u32_get_bits(psd_info, ATH12K_HTT_STATS_REG_RULE_IS_PSD)) {
+			len += scnprintf(buf + len, max_buf_size - len
+					, "|%10d "
+					, (s16)u32_get_bits(psd_info
+						, ATH12K_HTT_STATS_REG_RULE_PSD_PWR)
+					);
+		} else {
+			len += scnprintf(buf + len, max_buf_size - len
+					, "|%10c ", '-');
+		}
+		len += scnprintf(buf + len, max_buf_size - len
+				, "|  0x%.4X |  0x%.2X |\n"
+				, u32_get_bits(flag_info
+					, ATH12K_HTT_STATS_REG_RULE_FLAGS)
+				, u32_get_bits(flag_info
+					, ATH12K_HTT_STATS_REG_RULE_CTL_RGN)
+				);
+		current_rule_ptr += rule_size;
+		offset += rule_size;
+	}
+	if (num_rules > 0) {
+		len += scnprintf(buf + len, max_buf_size - len, "%s%s\n"
+				, border_line_left, border_line_right);
+	}
+	len += scnprintf(buf + len, max_buf_size - len, "\n");
+	stats_req->buf_len = len;
+}
+
 static int ath12k_dbg_htt_ext_stats_parse(struct ath12k_base *ab,
 					  struct ath12k_pdev_dp *dp_pdev,
 					  u16 tag, u16 len, const void *tag_buf,
@@ -13117,6 +13312,14 @@ static int ath12k_dbg_htt_ext_stats_parse(struct ath12k_base *ab,
 
 	case HTT_STATS_TX_PDEV_BN_RATE_TAG:
 		ath12k_htt_cache_tx_pdev_bn_rate_stats_tlv(tag_buf, len);
+		break;
+
+	case HTT_STATS_REGDB_CTRY_TAG:
+		ath12k_htt_print_regdb_ctry_tlv(tag_buf, len, stats_req);
+		break;
+
+	case HTT_STATS_REGDB_REGDOMAIN_TAG:
+		ath12k_htt_print_regdb_regdomain_tlv(tag_buf, len, stats_req);
 		break;
 
 	default:
