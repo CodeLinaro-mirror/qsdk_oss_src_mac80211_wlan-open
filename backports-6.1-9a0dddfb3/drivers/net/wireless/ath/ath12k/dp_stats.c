@@ -209,13 +209,9 @@ void ath12k_dp_aggr_rx_peer_stats(struct ath12k_rx_peer_stats *dst,
 	dst->num_mpdus += src->num_mpdus;
 	dst->num_mpdu_retry_count += src->num_mpdu_retry_count;
 	dst->num_ppdus += src->num_ppdus;
-	dst->num_ppdu_duration += src->num_ppdu_duration;
 
 	dst->num_bar += src->num_bar;
 	dst->num_ndpa += src->num_ndpa;
-
-	for (i = 0; i < MAX_MCS; i++)
-		dst->num_mpdu_count[i] += src->num_mpdu_count[i];
 
 	for (i = 0; i < HAL_RX_RECEPTION_TYPE_MAX; i++)
 		dst->ppdu_reception[i] += src->ppdu_reception[i];

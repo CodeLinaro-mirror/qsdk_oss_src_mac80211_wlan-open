@@ -1187,12 +1187,6 @@ void ath12k_dp_mon_rx_update_advance_stats(struct ath12k_rx_peer_stats *rx_stats
 			rx_stats->rx_mu[preamble_type][mu_type].ppdu_nss[nss - 1] += 1;
 	}
 	rx_stats->ppdu_reception[ppdu_info->reception_type] += 1;
-
-	if (mcs < MAX_MCS) {
-		rx_stats->num_mpdu_count[mcs] += 1;
-	} else {
-		rx_stats->num_mpdu_count[MAX_MCS - 1] += 1;
-	}
 }
 
 void ath12k_dp_mon_rx_update_basic_stats(struct ath12k_dp_link_peer *peer,
@@ -1244,7 +1238,8 @@ void ath12k_dp_mon_rx_update_basic_stats(struct ath12k_dp_link_peer *peer,
 		rx_stats->num_mpdus += user_stats->mpdu_cnt_fcs_ok +
 				       user_stats->mpdu_cnt_fcs_err;
 	}
-	rx_stats->num_ppdu_duration += rx_time_us;
+
+	rx_stats->rx_duration += rx_time_us;
 
 	ath12k_dp_rx_rate_stats_update(rx_stats, ppdu_info, peer, uid);
 }
@@ -1316,7 +1311,6 @@ void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
 	rx_stats->num_mpdu_fcs_err += ppdu_info->num_mpdu_fcs_err;
 	rx_stats->dcm_count += ppdu_info->dcm;
 
-	rx_stats->rx_duration += ppdu_info->rx_duration;
 	peer->rx_duration = rx_stats->rx_duration;
 
 	if (ppdu_info->nss > 0 && ppdu_info->nss <= HAL_RX_MAX_NSS) {

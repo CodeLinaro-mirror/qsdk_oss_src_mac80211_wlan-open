@@ -2847,9 +2847,6 @@ ath12k_dp_aggregate_link_rx_mon_stats(struct ath12k_rx_peer_stats *dst,
 	for (i = 0; i < HAL_RX_MAX_NSS; i++)
 		dst->ppdu_nss[i] += src->ppdu_nss[i];
 
-	for (i = 0; i < MAX_MCS; i++)
-		dst->num_mpdu_count[i] += src->num_mpdu_count[i];
-
 	for (i = 0; i < MAX_PUNCTURED_MODE; i++)
 		dst->punc_bw[i] += src->punc_bw[i];
 
