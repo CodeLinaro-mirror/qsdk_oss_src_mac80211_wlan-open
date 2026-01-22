@@ -2207,6 +2207,7 @@ struct htt_ppdu_user_stats {
 	struct htt_ppdu_stats_usr_cmpltn_ack_ba_status ack_ba;
 	struct htt_ppdu_stats_user_common common;
 	struct htt_ppdu_stats_cmpltn_flush cmpltn_flush;
+	u8 peer_mac[ETH_ALEN];
 };
 
 #define HTT_PPDU_STATS_MAX_USERS	37

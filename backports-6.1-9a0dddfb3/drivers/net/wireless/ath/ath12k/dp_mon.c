@@ -1192,6 +1192,19 @@ void ath12k_dp_mon_rx_update_advance_stats(struct ath12k_rx_peer_stats *rx_stats
 	rx_stats->ppdu_reception[ppdu_info->reception_type] += 1;
 }
 
+static void
+ath12k_dp_mon_fill_rx_user_stats_peer_mac(struct ath12k_dp_link_peer *peer,
+					  struct hal_rx_user_status *user_stats)
+{
+	if (!user_stats)
+		return;
+
+	if (!peer)
+		memset(user_stats->peer_mac, 0, ETH_ALEN);
+	else
+		memcpy(user_stats->peer_mac, peer->addr, ETH_ALEN);
+}
+
 void ath12k_dp_mon_rx_update_basic_stats(struct ath12k_dp_link_peer *peer,
 					 struct ath12k_rx_peer_stats *rx_stats,
 					 struct hal_rx_mon_ppdu_info *ppdu_info,
@@ -1347,6 +1360,7 @@ void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
 
 	peer = ath12k_dp_link_peer_find_by_peerid_index(pdev_dp->dp, pdev_dp,
 							ppdu_info->peer_id);
+	ath12k_dp_mon_fill_rx_user_stats_peer_mac(peer, &ppdu_info->userstats[0]);
 	if (!peer) {
 		ath12k_dbg(pdev_dp->ar->ab, ATH12K_DBG_DATA,
 			   "failed to find the peer with monitor peer_id %d\n",
@@ -1539,6 +1553,7 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 
 	peer = ath12k_dp_link_peer_find_by_peerid_index(dp, pdev_dp,
 							user_stats->sw_peer_id);
+	ath12k_dp_mon_fill_rx_user_stats_peer_mac(peer, user_stats);
 	if (!peer) {
 		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "peer with peer id %d can't be found\n",
 			   ppdu_info->peer_id);
