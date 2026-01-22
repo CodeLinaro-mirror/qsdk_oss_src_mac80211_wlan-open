@@ -16851,11 +16851,11 @@ int ath12k_mac_start(struct ath12k *ar)
         ar->awgn_intf_handling_in_prog = false;
         spin_unlock_bh(&ar->data_lock);
 
-	/* Configure monitor status ring with default rx_filter to get rx status
-	 * such as rssi, rx_duration.
-	 */
-	ath12k_dp_mon_rx_stats_config(ar, true, mode);
 	if (!ath12k_scan_radio_supported(ar->pdev)) {
+		/* Configure monitor status ring with default rx_filter to get rx status
+		 * such as rssi, rx_duration.
+		 */
+		ath12k_dp_mon_rx_stats_config(ar, true, mode);
 		ret = ath12k_dp_mon_rx_update_filter(ar);
 		if (ret && (ret != -EOPNOTSUPP)) {
 			ath12k_err(ab, "failed to configure monitor status ring with default rx_filter: (%d)\n",
@@ -17083,7 +17083,12 @@ void ath12k_mac_stop(struct ath12k *ar)
 	lockdep_assert_held(&ah->hw_mutex);
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
-	ath12k_dp_mon_rx_stats_config(ar, false, mode);
+	if (!ath12k_scan_radio_supported(ar->pdev)) {
+		ath12k_dp_mon_rx_stats_config(ar, false, mode);
+	} else if (ar->monitor_started) {
+		ath12k_dp_mon_rx_config_monitor_mode(ar, true);
+		ar->monitor_started = false;
+	}
 	ret = ath12k_dp_mon_rx_update_filter(ar);
 	if (ret && (ret != -EOPNOTSUPP))
 		ath12k_err(ar->ab, "failed to clear rx_filter for monitor status ring: (%d)\n",
@@ -20686,6 +20691,16 @@ ath12k_mac_assign_vif_chanctx_handle(struct ieee80211_hw *hw,
 				    arvif->vdev_id, arvif->bssid, ret);
 			goto out;
 		}
+	}
+
+	if (ath12k_scan_radio_supported(ar->pdev) && !ar->monitor_started) {
+		ath12k_dp_mon_rx_config_monitor_mode(ar, false);
+		ret = ath12k_dp_mon_rx_update_filter(ar);
+		if (ret) {
+			ath12k_warn(ar->ab, "fail to set monitor filter: %d\n", ret);
+			goto out;
+		}
+		ar->monitor_started = true;
 	}
 
 	arvif->is_started = true;
