@@ -2286,6 +2286,12 @@ static int sta_link_apply_parameters(struct ieee80211_local *local,
 			link_sta->pub->punctured = params->punctured;
 	}
 
+	if (params->uhr_capa)
+		ieee80211_uhr_cap_ie_to_sta_uhr_cap(sdata, sband,
+						    params->uhr_capa,
+						    params->uhr_capa_len,
+						    link_sta);
+
 	ieee80211_sta_init_nss(link_sta);
 
 	/* update nss if not done already for the link sta,
