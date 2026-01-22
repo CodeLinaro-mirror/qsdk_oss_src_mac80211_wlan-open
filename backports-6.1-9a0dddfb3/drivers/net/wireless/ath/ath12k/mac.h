@@ -734,6 +734,8 @@ int ath12k_mac_get_chan_width(enum nl80211_chan_width ch_width);
 struct ieee80211_chanctx_conf *
 	ath12k_mac_get_first_active_arvif_chanctx(struct ath12k *ar);
 struct ieee80211_link_sta *ath12k_mac_get_link_sta(struct ath12k_link_sta *arsta);
+struct ieee80211_link_sta *ath12k_mac_inherit_radio_cap(struct ath12k *ar,
+							struct ath12k_link_sta *arsta);
 
 int ath12k_mac_set_tx_antenna(struct ath12k *ar, u32 tx_ant);
 int ath12k_mac_set_rx_antenna(struct ath12k *ar, u32 rx_ant);
