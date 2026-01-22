@@ -1057,10 +1057,23 @@ void ath12k_wifi7_dp_mon_rx_process_mpdu_queue(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp_mon_mpdu_meta *mpdu_meta;
 	struct ath12k_pdev_mon_dp_stats *mon_stats = &dp_pdev->dp_mon_pdev->mon_stats;
 	u32 buf_size = ATH12K_DP_MON_RX_BUF_SIZE, num_skb = 0, pkt_tlv = 0;
-	int ret, fcs_len_left, last_frag_idx, last_frag_size;
+	int ret, fcs_len_left, last_frag_idx, last_frag_size, filter_cat;
 
 	while ((mpdu = skb_dequeue(&ppdu_info->mpdu_q[queue_idx]))) {
 		mpdu_meta = (struct ath12k_dp_mon_mpdu_meta *)mpdu->data;
+
+		if (unlikely(dp_pdev->dp_mon_pdev->smart_mon_state ==
+			ATH12K_DP_SMART_MON_ACTIVE)) {
+			filter_cat =
+				ppdu_info->userstats[queue_idx].filter_category;
+			if (filter_cat != DP_MPDU_FILTER_CATEGORY_MD) {
+				dev_kfree_skb_any(mpdu);
+				mon_stats->num_skb_free++;
+				num_skb = 0;
+				pkt_tlv = 0;
+				goto next_mpdu;
+			}
+		}
 		/* In some cases, an RX_HDR TLV may get received with no content
 		 * and without an accompanying BUFFER ADDR TLV—meaning there is
 		 * no payload attached. In such cases, the skb may have fragments
