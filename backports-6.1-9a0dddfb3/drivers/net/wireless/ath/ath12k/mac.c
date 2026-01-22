@@ -24617,6 +24617,7 @@ static int ath12k_mac_setup(struct ath12k *ar)
 	ar->monitor_vdev_id = -1;
 	ar->monitor_vdev_created = false;
 	ar->monitor_started = false;
+	ar->smart_mon_filter = ATH12K_DP_SMART_MON_FILTER_DEFAULT;
 
 	INIT_WORK(&ar->erp_handle_trigger_work, ath12k_erp_handle_trigger);
 	INIT_WORK(&ar->ssr_erp_exit, ath12k_erp_ssr_exit);
