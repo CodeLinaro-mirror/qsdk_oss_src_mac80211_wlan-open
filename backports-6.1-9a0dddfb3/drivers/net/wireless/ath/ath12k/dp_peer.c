@@ -1447,3 +1447,25 @@ void ath12k_peer_qos_queue_ind_handler(struct ath12k_base *ab,
 		}
 	spin_unlock_bh(&ab->dp->dp_lock);
 }
+
+u8 ath12k_dp_peer_get_stats_link_id(struct ath12k_base *ab,
+				    struct ath12k_dp_peer *peer,
+				    u8 hw_link_id)
+{
+	/* Sanity check: ensure the HW link id is within bounds */
+	if (unlikely(hw_link_id >= ATH12K_GROUP_MAX_RADIO)) {
+		ath12k_dbg(ab, ATH12K_DBG_TELEMETRY, "Invalid HW link id %u\n",
+			   hw_link_id);
+		return 0;
+	}
+
+	/* Sanity check: ensure stats link id is within bounds */
+	if (unlikely(peer->hw_links[hw_link_id] > ATH12K_DP_MAX_MLO_LINKS)) {
+		ath12k_dbg(ab, ATH12K_DBG_TELEMETRY, "Invalid stats link %u\n",
+			   peer->hw_links[hw_link_id]);
+		return 0;
+	}
+
+	return peer->hw_links[hw_link_id];
+}
+EXPORT_SYMBOL(ath12k_dp_peer_get_stats_link_id);

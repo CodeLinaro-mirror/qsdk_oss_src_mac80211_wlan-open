@@ -1743,6 +1743,12 @@ int ath12k_dp_rx_pkt_type_filter(struct ath12k *ar,
 void ath12k_dp_rx_skb_free(struct sk_buff *skb, struct ath12k_dp *dp, int ring,
 			   enum ath12k_dp_rx_error drop_reason)
 {
+	if (ring >= DP_REO_DST_RING_MAX) {
+		ath12k_dbg(dp->ab, ATH12K_DBG_TELEMETRY, "Invalid Rx Ring %u\n",
+			   ring);
+		ring = 0;
+	}
+
 	if (unlikely(drop_reason > DP_RX_ERR_MAX))
 		DP_DEVICE_STATS_INC(dp, rx.rx_err[DP_RX_ERR_DROP_MISC][ring], 1);
 	else
@@ -1751,4 +1757,3 @@ void ath12k_dp_rx_skb_free(struct sk_buff *skb, struct ath12k_dp *dp, int ring,
 	dev_kfree_skb_any(skb);
 }
 EXPORT_SYMBOL(ath12k_dp_rx_skb_free);
-
