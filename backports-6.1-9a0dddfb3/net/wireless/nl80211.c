@@ -7248,9 +7248,20 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 
 	/* these are required for START_AP */
 	if (!info->attrs[NL80211_ATTR_BEACON_INTERVAL] ||
-	    !info->attrs[NL80211_ATTR_DTIM_PERIOD] ||
-	    !info->attrs[NL80211_ATTR_BEACON_HEAD])
+	    !info->attrs[NL80211_ATTR_DTIM_PERIOD])
 		return -EINVAL;
+
+	/* Check beacon head requirement based on interface type */
+	if (wdev_is_scan_radio(wdev)) {
+		/* Scan radio MUST NOT have beacon head */
+		if (info->attrs[NL80211_ATTR_BEACON_HEAD])
+			return -EINVAL;
+	} else {
+		/* Normal AP MUST have beacon head */
+		if (!info->attrs[NL80211_ATTR_BEACON_HEAD])
+			return -EINVAL;
+	}
+
 
 	if (info->attrs[NL80211_ATTR_SMPS_MODE] &&
 	    nla_get_u8(info->attrs[NL80211_ATTR_SMPS_MODE]) != NL80211_SMPS_OFF)
