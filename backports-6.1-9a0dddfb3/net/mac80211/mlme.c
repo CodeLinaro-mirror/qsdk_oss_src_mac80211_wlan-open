@@ -969,6 +969,7 @@ ieee80211_determine_chan_mode(struct ieee80211_sub_if_data *sdata,
 		.from_ap = true,
 		.start = ies->data,
 		.len = ies->len,
+		.is_beacon = !!rcu_dereference(cbss->beacon_ies),
 	};
 	struct ieee802_11_elems *elems;
 	struct ieee80211_supported_band *sband;
@@ -7334,6 +7335,7 @@ static void ieee80211_rx_mgmt_beacon(struct ieee80211_link_data *link,
 	    !WARN_ON(ieee80211_vif_is_mld(&sdata->vif)) &&
 	    ieee80211_rx_our_beacon(bssid, ifmgd->assoc_data->link[0].bss)) {
 		parse_params.bss = ifmgd->assoc_data->link[0].bss;
+		parse_params.is_beacon = true;
 		elems = ieee802_11_parse_elems_full(&parse_params);
 		if (!elems)
 			return;
@@ -7404,6 +7406,7 @@ static void ieee80211_rx_mgmt_beacon(struct ieee80211_link_data *link,
 	parse_params.bss = bss_conf->bss;
 	parse_params.filter = care_about_ies;
 	parse_params.crc = ncrc;
+	parse_params.is_beacon = true;
 	elems = ieee802_11_parse_elems_full(&parse_params);
 	if (!elems)
 		return;
