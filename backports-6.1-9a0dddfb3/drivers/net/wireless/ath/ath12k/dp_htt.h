@@ -314,6 +314,12 @@ enum htt_srng_ring_id {
 	HTT_TX_MON_MON2HOST_DEST_RING,
 	HTT_RX_MON_HOST2MON_BUF_RING,
 	HTT_RX_MON_MON2HOST_DEST_RING,
+	HTT_LPASS_TO_FW_RXBUF_RING,
+	HTT_HOST3_TO_FW_RXBUF_RING,
+	HTT_HOST4_TO_FW_RXBUF_RING,
+	HTT_RXDMA_WBM_BUF0_RING,
+	HTT_RXDMA_WBM_BUF1_RING,
+	HTT_RXDMA_WBM_BUF2_RING,
 };
 
 /* host -> target  HTT_SRING_SETUP message
@@ -1008,7 +1014,8 @@ struct htt_rx_ring_selection_cfg_cmd {
 	__le32 pkt_type_en_data_flag1;
 	__le32 pkt_type_en_data_flag2;
 	__le32 pkt_type_en_data_flag3;
-	__le32 reserved2[3];
+	__le32 reserved2[2];
+	__le32 rdi_based_source_cfg;
 	__le32 info4;
 	__le32 info5;
 } __packed;
@@ -1098,6 +1105,7 @@ struct htt_rx_ring_tlv_filter {
 	u8 fp_null_data_ppdu_hdr_en;
 	u8 fp_ucast_data_ppdu_hdr_en;
 	u8 fp_mcast_data_ppdu_hdr_en;
+	u32 rdi_based_source_cfg;
 };
 
 #define HTT_STATS_FRAME_CTRL_TYPE_MGMT  0x0

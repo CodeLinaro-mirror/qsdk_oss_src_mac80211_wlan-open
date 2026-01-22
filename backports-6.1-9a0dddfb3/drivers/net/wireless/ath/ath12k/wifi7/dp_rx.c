@@ -1662,6 +1662,7 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 	u8 device_id, hw_link_id;
 	int pdev_id;
 	struct hal_srng *srng;
+	struct hal_srng *refill_srng;
 	struct sk_buff *msdu;
 	struct ath12k_vif *ahvif;
 	struct ath12k_dp_link_peer *link_peer;
@@ -1849,8 +1850,8 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 
 		partner_dp = ath12k_dp_hw_grp_to_dp(dp_hw_grp, device_id);
 		rx_ring = &partner_dp->rx_refill_buf_ring;
-
-		ath12k_dp_rx_bufs_replenish(partner_dp, rx_ring,
+		refill_srng = &ab->hal.srng_list[rx_ring->refill_buf_ring.ring_id];
+		ath12k_dp_rx_bufs_replenish(partner_dp, refill_srng,
 					    &rx_desc_used_list[device_id]);
 	}
 
@@ -2559,6 +2560,7 @@ int ath12k_wifi7_dp_rx_process_err(struct ath12k_dp *dp, struct napi_struct *nap
 	u8 hw_link_id, device_id;
 	u32 desc_bank, num_msdus;
 	struct hal_srng *srng;
+	struct hal_srng *refill_srng;
 	struct ath12k_pdev_dp *dp_pdev;
 	dma_addr_t paddr;
 	bool is_frag, drop = false;
@@ -2688,8 +2690,9 @@ exit:
 
 		partner_dp = ath12k_dp_hw_grp_to_dp(dp_hw_grp, device_id);
 		rx_ring = &partner_dp->rx_refill_buf_ring;
+		refill_srng = &ab->hal.srng_list[rx_ring->refill_buf_ring.ring_id];
 
-		ath12k_dp_rx_bufs_replenish(partner_dp, rx_ring,
+		ath12k_dp_rx_bufs_replenish(partner_dp, refill_srng,
 					    &rx_desc_used_list[device_id]);
 	}
 
@@ -3324,6 +3327,7 @@ int ath12k_wifi7_dp_rx_process_wbm_err(struct ath12k_dp *dp,
 	struct dp_rxdma_ring *rx_ring;
 	struct hal_rx_wbm_rel_info err_info;
 	struct hal_srng *srng;
+	struct hal_srng *refill_srng;
 	struct sk_buff *msdu;
 	struct sk_buff_head msdu_list, scatter_msdu_list;
 	struct ath12k_skb_rxcb *rxcb;
@@ -3475,8 +3479,8 @@ int ath12k_wifi7_dp_rx_process_wbm_err(struct ath12k_dp *dp,
 
 		partner_dp = ath12k_dp_hw_grp_to_dp(dp_hw_grp, device_id);
 		rx_ring = &partner_dp->rx_refill_buf_ring;
-
-		ath12k_dp_rx_bufs_replenish(partner_dp, rx_ring,
+		refill_srng = &ab->hal.srng_list[rx_ring->refill_buf_ring.ring_id];
+		ath12k_dp_rx_bufs_replenish(partner_dp, refill_srng,
 					    &rx_desc_used_list[device_id]);
 	}
 

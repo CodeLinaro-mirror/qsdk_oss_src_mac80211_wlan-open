@@ -31,6 +31,7 @@ static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 	int i = 0, j;
 	int tot_work_done = 0;
 	u8 ring_mask, rx_mask, tx_mask;
+	struct hal_srng *refill_srng;
 
 	/* Return early if UMAC reset is in progress */
 	if (ath12k_dp_umac_reset_in_progress(ab))
@@ -144,9 +145,12 @@ static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 		LIST_HEAD(list);
 		size_t req_entries;
 
-		req_entries = ath12k_dp_get_req_entries_from_buf_ring(dp->ab, rx_ring, &list);
+		refill_srng = &ab->hal.srng_list[rx_ring->refill_buf_ring.ring_id];
+		req_entries = ath12k_dp_get_req_entries_from_buf_ring(dp->ab,
+								      refill_srng,
+								      &list);
 		if (req_entries)
-			ath12k_dp_rx_bufs_replenish(dp, rx_ring, &list);
+			ath12k_dp_rx_bufs_replenish(dp, refill_srng, &list);
 	}
 
 	if (dp->hw_params->ring_mask->host2rxmon[grp_id])

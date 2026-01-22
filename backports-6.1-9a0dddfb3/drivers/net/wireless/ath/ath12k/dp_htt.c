@@ -2358,6 +2358,10 @@ ath12k_dp_tx_get_ring_id_type(struct ath12k_base *ab,
 		*htt_ring_id = HTT_RXDMA_MONITOR_DESC_RING;
 		*htt_ring_type = HTT_SW_TO_HW_RING;
 		break;
+	case HAL_WBM_IDLE_BUF:
+		*htt_ring_type = HTT_SW_TO_HW_RING;
+		*htt_ring_id = HTT_RXDMA_WBM_BUF0_RING;
+		break;
 	default:
 		ath12k_warn(ab, "Unsupported ring type in DP :%d\n", ring_type);
 		ret = -EINVAL;
@@ -2990,6 +2994,8 @@ int ath12k_dp_tx_htt_rx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 
 		ath12k_dp_mon_rx_config_wmask(dp, cmd, tlv_filter);
 	}
+
+	cmd->rdi_based_source_cfg = cpu_to_le32(tlv_filter->rdi_based_source_cfg);
 
 	ath12k_dp_mon_rx_config_packet_type_subtype(dp, cmd, tlv_filter);
 

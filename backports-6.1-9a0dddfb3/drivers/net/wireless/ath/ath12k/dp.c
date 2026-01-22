@@ -374,6 +374,8 @@ static int ath12k_dp_srng_calculate_msi_group(struct ath12k_base *ab,
 	case HAL_CE_SRC:
 	case HAL_CE_DST:
 	case HAL_CE_DST_STATUS:
+	case HAL_WBM_BUF:
+	case HAL_WBM_IDLE_BUF:
 	default:
 		return -ENOENT;
 	}
@@ -575,6 +577,8 @@ skip_dma_alloc:
 	case HAL_RXDMA_DST:
 	case HAL_RXDMA_MONITOR_DST:
 	case HAL_RXDMA_MONITOR_DESC:
+	case HAL_WBM_BUF:
+	case HAL_WBM_IDLE_BUF:
 		params.intr_batch_cntr_thres_entries =
 					HAL_SRNG_INT_BATCH_THRESHOLD_OTHER;
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_OTHER;
@@ -2077,15 +2081,13 @@ void ath12k_dp_umac_txrx_desc_cleanup(struct ath12k_base *ab)
 }
 
 size_t ath12k_dp_get_req_entries_from_buf_ring(struct ath12k_base *ab,
-                                               struct dp_rxdma_ring *rx_ring,
-                                               struct list_head *list)
+					       struct hal_srng *srng,
+					       struct list_head *list)
 {
-        struct hal_srng *srng;
         struct ath12k_dp *dp;
         size_t num_free, req_entries;
 
         dp = ath12k_ab_to_dp(ab);
-        srng = &ab->hal.srng_list[rx_ring->refill_buf_ring.ring_id];
         spin_lock_bh(&srng->lock);
         ath12k_hal_srng_access_begin(ab, srng);
         num_free = ath12k_hal_srng_src_num_free(ab, srng, true);
@@ -2110,29 +2112,30 @@ EXPORT_SYMBOL(ath12k_dp_get_req_entries_from_buf_ring);
 
 int ath12k_dp_rxdma_ring_setup(struct ath12k_base *ab)
 {
-        struct ath12k_dp *dp;
-        struct dp_rxdma_ring *rx_ring;
-        LIST_HEAD(list);
-        size_t req_entries;
-        int ret;
+	struct ath12k_dp *dp;
+	struct dp_rxdma_ring *rx_ring;
+	struct hal_srng *refill_srng;
+	LIST_HEAD(list);
+	size_t req_entries;
+	int ret;
 
-        dp = ath12k_ab_to_dp(ab);
-        rx_ring = &dp->rx_refill_buf_ring;
-        ret = ath12k_dp_srng_setup(ab,
-                                   &dp->rx_refill_buf_ring.refill_buf_ring,
-                                   HAL_RXDMA_BUF, 0, 0,
-                                   DP_RXDMA_BUF_RING_SIZE);
+	dp = ath12k_ab_to_dp(ab);
+	rx_ring = &dp->rx_refill_buf_ring;
+	ret = ath12k_dp_srng_setup(ab, &dp->rx_refill_buf_ring.refill_buf_ring,
+				   HAL_RXDMA_BUF, 0, 0,
+				   DP_RXDMA_BUF_RING_SIZE);
 
-        if (ret) {
-                ath12k_warn(ab, "failed to setup rx_refill_buf_ring\n");
-                return ret;
-        }
+	if (ret) {
+		ath12k_warn(ab, "failed to setup rx_refill_buf_ring\n");
+		return ret;
+	}
 
-        req_entries = ath12k_dp_get_req_entries_from_buf_ring(ab, rx_ring, &list);
-        if (req_entries)
-                ath12k_dp_rx_bufs_replenish(dp, rx_ring, &list);
+	refill_srng = &ab->hal.srng_list[rx_ring->refill_buf_ring.ring_id];
+	req_entries = ath12k_dp_get_req_entries_from_buf_ring(ab, refill_srng, &list);
+	if (req_entries)
+		ath12k_dp_rx_bufs_replenish(dp, refill_srng, &list);
 
-        return 0;
+	return 0;
 }
 
 void ath12k_umac_reset_handle_post_reset_start(struct ath12k_base *ab)

@@ -456,12 +456,11 @@ static void ath12k_dp_rx_enqueue_free(struct ath12k_dp *dp,
 
 /* Returns number of Rx buffers replenished */
 void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
-				struct dp_rxdma_ring *rx_ring,
-				struct list_head *used_list)
+				 struct hal_srng *srng,
+				 struct list_head *used_list)
 {
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_buffer_addr *desc;
-	struct hal_srng *srng = NULL;
 	struct sk_buff *skb;
 	dma_addr_t paddr;
 	struct ath12k_rx_desc_info *rx_desc, *tmp_rx_desc;
@@ -503,7 +502,6 @@ void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 	if (unlikely(is_dma_inv_done))
 		dsb(st);
 
-	srng = &ab->hal.srng_list[rx_ring->refill_buf_ring.ring_id];
 	spin_lock_bh(&srng->lock);
 	ath12k_hal_srng_access_begin(ab, srng);
 	while (allocated_entries > 0) {
@@ -538,13 +536,15 @@ static int ath12k_dp_rxdma_ring_buf_setup(struct ath12k_base *ab,
 {
 	LIST_HEAD(list);
 	size_t req_entries;
+	struct hal_srng *refill_srng;
 
 	rx_ring->bufs_max = rx_ring->refill_buf_ring.size /
 			ath12k_hal_srng_get_entrysize(ab, HAL_RXDMA_BUF);
 
-	req_entries = ath12k_dp_get_req_entries_from_buf_ring(ab, rx_ring, &list);
+	refill_srng = &ab->hal.srng_list[rx_ring->refill_buf_ring.ring_id];
+	req_entries = ath12k_dp_get_req_entries_from_buf_ring(ab, refill_srng, &list);
 	if (req_entries)
-		ath12k_dp_rx_bufs_replenish(ab->dp, rx_ring, &list);
+		ath12k_dp_rx_bufs_replenish(ab->dp, refill_srng, &list);
 
 	return 0;
 }
