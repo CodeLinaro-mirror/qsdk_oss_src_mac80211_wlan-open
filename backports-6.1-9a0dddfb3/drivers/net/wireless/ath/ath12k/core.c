@@ -1015,6 +1015,8 @@ int ath12k_core_power_up(struct ath12k_hw_group *ag)
 
 static void ath12k_core_cleanup(struct ath12k_base *ab)
 {
+	ath12k_umac_reset_fallback_cleanup(ab);
+
 	mutex_lock(&ab->core_lock);
 	ath12k_core_pdev_deinit(ab);
 	ath12k_dp_arch_pdev_free(ab->dp);
@@ -1026,7 +1028,6 @@ static void ath12k_core_cleanup(struct ath12k_base *ab)
 	ath12k_dp_cmn_device_deinit(ab->dp);
 	ath12k_hal_srng_deinit(ab);
 	ath12k_dp_umac_reset_deinit(ab);
-	ath12k_umac_reset_completion(ab);
 }
 
 void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag, bool standby_mode)
@@ -1085,6 +1086,7 @@ void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag, bool standby_
 
 		if (!skip_power_down && !ab->powered_off) {
 			ab->qmi.num_radios = U8_MAX;
+			ath12k_umac_reset_fallback_cleanup(ab);
 			ath12k_hif_mgmt_irq_disable(ab);
 			ath12k_hif_irq_disable(ab);
 			ath12k_hif_ce_irq_disable(ab);
