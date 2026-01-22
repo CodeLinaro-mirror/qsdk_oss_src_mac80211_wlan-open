@@ -4045,6 +4045,8 @@ int ath12k_wmi_send_scan_start_cmd(struct ath12k *ar,
 		arg->scan_f_higher_mcs_nac_scan = true;
 	spin_unlock_bh(&dp->dp_lock);
 
+	ath12k_wmi_offchan_txrx_update_scan_params_extn(ar, arg);
+
 	ath12k_wmi_copy_scan_event_cntrl_flags(cmd, arg);
 
 	cmd->dwell_time_active = cpu_to_le32(arg->dwell_time_active);
