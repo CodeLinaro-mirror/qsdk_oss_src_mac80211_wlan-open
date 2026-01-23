@@ -11,8 +11,35 @@
 
 struct ath12k_mgmt;
 
+#define MGMT_RX_BUFFER_SIZE                2048
+#define MGMT_RX_BUFFER_ALIGN_SIZE          128
+
 #define MGMT_REO_DST_RING_SIZE             1024
 #define MGMT_REO_EXCEPTION_RING_SIZE       1024
+#define MGMT_WBM_IDLE_BUF_RING_SIZE        2048
+#define MGMT_REFILL_RING_SIZE              MGMT_WBM_IDLE_BUF_RING_SIZE
+
+#define MGMT_RX_DESC_COUNT                 2048
+#define MGMT_RX_DESC_BLOCK_SIZE            512
+#define NUM_MGMT_RX_DESC_BLOCKS            (MGMT_RX_DESC_COUNT / MGMT_RX_DESC_BLOCK_SIZE)
+
+/* Descriptor hierarchy:
+ * +--------+        +-------+-------+-----+-------+
+ * | Block0 | -----> | Slot0 | Slot1 | ... | SlotM |
+ * +--------+        +-------+-------+-----+-------+
+ * |  ....  |
+ * +--------+        +-------+-------+-----+-------+
+ * | BlockN | -----> | Slot0 | Slot1 | ... | SlotM |
+ * +--------+        +-------+-------+-----+-------+
+ *
+ * Of the available 20-bit cookie, b0-b8 are used to identify the slot and b9-b19 are used
+ * to identify the block.
+ */
+#define MGMT_RX_DESC_SLOT_MASK             GENMASK(8, 0)
+#define MGMT_RX_DESC_BLOCK_MASK            GENMASK(19, 9)
+#define MGMT_RX_DESC_COOKIE_SHIFT          9
+
+#define ATH12K_MGMT_RX_DESC_MAGIC          0xABBAABBA
 
 struct mgmt_srng {
 	u32 *vaddr_unaligned;
@@ -58,6 +85,13 @@ struct ath12k_mgmt {
 	struct ath12k_mgmt_irq_grp *irq_grp;
 	u8 num_irq_grp;
 
+	/* Rx buffer descriptors for mgmt */
+	struct ath12k_rx_desc_info *rx_desc_baddr[NUM_MGMT_RX_DESC_BLOCKS];
+
+	/* protects rx descriptors for arch-specific rx_refill_ring */
+	spinlock_t rx_desc_lock;
+	struct list_head rx_desc_free_list;
+
 	/* must be last */
 	u8 arch_priv[] __aligned(sizeof(void *));
 };
@@ -74,6 +108,20 @@ int ath12k_mgmt_srng_setup(struct ath12k_base *ab, struct mgmt_srng *ring,
 			   enum hal_ring_type type, int ring_num,
 			   int mac_id, int grp_id, int num_entries);
 void ath12k_mgmt_srng_cleanup(struct ath12k_base *ab, struct mgmt_srng *ring);
+
+static inline u32 ath12k_mgmt_gen_rx_desc_cookie(u16 block, u16 slot)
+{
+	return (u32)block << MGMT_RX_DESC_COOKIE_SHIFT | slot;
+}
+
+int ath12k_mgmt_rx_desc_init(struct ath12k_base *ab);
+void ath12k_mgmt_rx_desc_cleanup(struct ath12k_base *ab);
+size_t ath12k_mgmt_rx_desc_list_cut_nodes(struct list_head *used_list,
+					  struct list_head *rx_desc_list,
+					  size_t count);
+size_t ath12k_mgmt_get_req_entries_from_refill_ring(struct ath12k_base *ab,
+						    struct mgmt_srng *rx_refill_ring,
+						    struct list_head *list);
 
 static inline int ath12k_mgmt_arch_op_device_init(struct ath12k_mgmt *mgmt)
 {
