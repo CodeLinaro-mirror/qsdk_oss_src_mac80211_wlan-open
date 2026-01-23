@@ -3126,6 +3126,8 @@ static void ath12k_wmi_copy_peer_flags(struct wmi_peer_assoc_complete_cmd *cmd,
 			cmd->peer_flags |= cpu_to_le32(WMI_PEER_TWT_RESP);
 		if (arg->eht_flag)
 			cmd->peer_flags_ext |= cpu_to_le32(WMI_PEER_EXT_EHT);
+		if (arg->uhr_flag)
+			cmd->peer_flags_ext |= cpu_to_le32(WMI_PEER_EXT_UHR);
 	}
 
 	/* Suppress authorization for all AUTH modes that need 4-way handshake
@@ -3351,6 +3353,14 @@ int ath12k_wmi_send_peer_assoc_cmd(struct ath12k *ar,
 		       0);
 	memcpy_and_pad(&cmd->peer_eht_ppet, sizeof(cmd->peer_eht_ppet),
 		       &arg->peer_eht_ppet, sizeof(arg->peer_eht_ppet), 0);
+
+	/* Update 11bn capabilities */
+	memcpy_and_pad(cmd->peer_uhr_cap_mac, sizeof(cmd->peer_uhr_cap_mac),
+		       arg->peer_uhr_cap_mac, sizeof(arg->peer_uhr_cap_mac),
+		       0);
+	memcpy_and_pad(cmd->peer_uhr_cap_phy, sizeof(cmd->peer_uhr_cap_phy),
+		       arg->peer_uhr_cap_phy, sizeof(arg->peer_uhr_cap_phy),
+		       0);
 
 	/* Update peer legacy rate information */
 	ptr += sizeof(*cmd);
@@ -3676,7 +3686,7 @@ send:
 	ptr = ath12k_wmi_peer_assoc_v2_cmd(ar, ptr, arg, &cmd_id);
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_WMI | ATH12K_DBG_MLME,
-		   "wmi peer assoc vdev id %d assoc id %d peer mac %pM peer_flags %x rate_caps %x peer_caps %x listen_intval %d ht_caps %x max_mpdu %d nss %d phymode %d peer_mpdu_density %d vht_caps %x he cap_info %x he ops %x he cap_info_ext %x he phy %x %x %x peer_bw_rxnss_override %x peer_flags_ext %x eht mac_cap %x %x eht phy_cap %x %x %x peer_eht_ops %x\n",
+		   "wmi peer assoc vdev id %d assoc id %d peer mac %pM peer_flags %x rate_caps %x peer_caps %x listen_intval %d ht_caps %x max_mpdu %d nss %d phymode %d peer_mpdu_density %d vht_caps %x he cap_info %x he ops %x he cap_info_ext %x he phy %x %x %x peer_bw_rxnss_override %x peer_flags_ext %x eht mac_cap %x %x eht phy_cap %x %x %x peer_eht_ops %x uhr mac_cap %x %x uhr phy_cap %x\n",
 		   cmd->vdev_id, cmd->peer_associd, arg->peer_mac,
 		   cmd->peer_flags, cmd->peer_rate_caps, cmd->peer_caps,
 		   cmd->peer_listen_intval, cmd->peer_ht_caps,
@@ -3689,7 +3699,9 @@ send:
 		   cmd->peer_bw_rxnss_override, cmd->peer_flags_ext,
 		   cmd->peer_eht_cap_mac[0], cmd->peer_eht_cap_mac[1],
 		   cmd->peer_eht_cap_phy[0], cmd->peer_eht_cap_phy[1],
-		   cmd->peer_eht_cap_phy[2], cmd->peer_eht_ops);
+		   cmd->peer_eht_cap_phy[2], cmd->peer_eht_ops,
+		   cmd->peer_uhr_cap_mac[0], cmd->peer_uhr_cap_mac[1],
+		   cmd->peer_uhr_cap_phy[0]);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, cmd_id);
 	if (ret) {

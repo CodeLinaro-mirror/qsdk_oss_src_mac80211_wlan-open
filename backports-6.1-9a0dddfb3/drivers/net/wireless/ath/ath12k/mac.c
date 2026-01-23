@@ -5033,6 +5033,35 @@ static void ath12k_peer_assoc_h_holq(struct ath12k_link_sta *arsta,
 		   arg->holq_params.enabled);
 }
 
+static void ath12k_peer_assoc_h_uhr(struct ath12k *ar,
+				    struct ath12k_link_vif *arvif,
+				    struct ath12k_link_sta *arsta,
+				    struct ath12k_wmi_peer_assoc_arg *arg,
+				    struct ieee80211_link_sta *link_sta)
+{
+	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(arsta->ahsta);
+	const struct ieee80211_sta_uhr_cap *uhr_cap;
+
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	if (!link_sta) {
+		ath12k_warn(ar->ab, "unable to access link sta in peer assoc uhr for sta %pM link %u\n",
+			    sta->addr, arsta->link_id);
+		return;
+	}
+
+	uhr_cap = &link_sta->uhr_cap;
+	if (!link_sta->eht_cap.has_eht || !uhr_cap->has_uhr)
+		return;
+
+	arg->uhr_flag = true;
+
+	memcpy(&arg->peer_uhr_cap_mac, uhr_cap->uhr_cap_elem.mac_cap_info,
+	       sizeof(uhr_cap->uhr_cap_elem.mac_cap_info));
+	memcpy(&arg->peer_uhr_cap_phy, uhr_cap->uhr_cap_elem.phy_cap_info,
+	       sizeof(uhr_cap->uhr_cap_elem.phy_cap_info));
+}
+
 static void ath12k_peer_assoc_prepare(struct ath12k *ar,
 				      struct ath12k_link_vif *arvif,
 				      struct ath12k_link_sta *arsta,
@@ -5055,6 +5084,7 @@ static void ath12k_peer_assoc_prepare(struct ath12k *ar,
 	ath12k_peer_assoc_h_he(ar, arvif, arsta, arg, link_sta);
 	ath12k_peer_assoc_h_he_6ghz(ar, arvif, arsta, arg, link_sta);
 	ath12k_peer_assoc_h_eht(ar, arvif, arsta, arg, link_sta);
+	ath12k_peer_assoc_h_uhr(ar, arvif, arsta, arg, link_sta);
 	ath12k_peer_assoc_h_qos(ar, arvif, arsta, arg);
 	ath12k_peer_assoc_h_phymode(ar, arvif, arsta, arg, link_sta);
 	ath12k_peer_assoc_h_smps(arsta, arg, link_sta);

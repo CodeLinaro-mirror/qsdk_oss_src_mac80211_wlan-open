@@ -1518,6 +1518,7 @@ enum wmi_tlv_peer_flags {
 enum wmi_tlv_peer_flags_ext {
 	WMI_PEER_EXT_EHT = BIT(0),
 	WMI_PEER_EXT_320MHZ = BIT(1),
+	WMI_PEER_EXT_UHR = BIT(7),
 };
 
 /** Enum list of TLV Tags for each parameter structure type. */
@@ -4860,6 +4861,9 @@ struct ath12k_wmi_peer_assoc_arg {
 	struct ath12k_wmi_ttlm_peer_params ttlm_params;
 	struct peer_assoc_flowq_params flowq_params;
 	struct peer_assoc_holq_params holq_params;
+	bool uhr_flag;
+	u32 peer_uhr_cap_mac[WMI_MAX_UHRCAP_MAC_SIZE];
+	u32 peer_uhr_cap_phy[WMI_MAX_UHRCAP_PHY_SIZE];
 };
 
 #define ATH12K_WMI_FLAG_MLO_ENABLED			BIT(0)
@@ -4972,6 +4976,8 @@ struct wmi_peer_assoc_complete_cmd {
 	__le32 peer_eht_cap_phy[WMI_MAX_EHTCAP_PHY_SIZE];
 	__le32 peer_eht_ops;
 	struct ath12k_wmi_ppe_threshold_params peer_eht_ppet;
+	__le32 peer_uhr_cap_mac[WMI_MAX_UHRCAP_MAC_SIZE];
+	__le32 peer_uhr_cap_phy[WMI_MAX_UHRCAP_PHY_SIZE];
 } __packed;
 
 struct wmi_stop_scan_cmd {
