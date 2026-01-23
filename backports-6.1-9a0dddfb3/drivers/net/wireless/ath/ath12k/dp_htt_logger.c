@@ -1038,8 +1038,6 @@ void ath12k_dp_htt_logging_init(struct htt_logger **phtt_logger_handle,
 	ENABLE_EVENT(htt_logger_handle, HTT_T2H_MSG_TYPE_PEER_MAP2);
 	ENABLE_EVENT(htt_logger_handle, HTT_T2H_MSG_TYPE_PEER_UNMAP2);
 	ENABLE_EVENT(htt_logger_handle, HTT_T2H_MSG_TYPE_PEER_MAP3);
-	ENABLE_EVENT(htt_logger_handle, HTT_T2H_MSG_TYPE_MLO_RX_PEER_MAP);
-	ENABLE_EVENT(htt_logger_handle, HTT_T2H_MSG_TYPE_MLO_RX_PEER_UNMAP);
 	ENABLE_EVENT(htt_logger_handle,
 		     HTT_T2H_MSG_TYPE_PRIMARY_LINK_PEER_MIGRATE_IND);
 

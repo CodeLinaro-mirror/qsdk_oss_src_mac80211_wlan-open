@@ -235,68 +235,6 @@ exit:
 	spin_unlock_bh(&dp->dp_lock);
 }
 
-void ath12k_peer_mlo_map_event(struct ath12k_base *ab, struct sk_buff *skb)
-{
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	struct ath12k_htt_mlo_peer_map_msg *msg;
-	struct ath12k_dp_link_peer *peer;
-	u16 ml_peer_id;
-	u16 mld_mac_h16;
-	u8 mld_addr[ETH_ALEN];
-	u16 ast_idx;
-	u16 cache_num;
-
-	msg = (struct ath12k_htt_mlo_peer_map_msg *)skb->data;
-
-	ml_peer_id = FIELD_GET(ATH12K_HTT_MLO_PEER_MAP_INFO0_PEER_ID, msg->info0);
-
-	ml_peer_id |= ATH12K_PEER_ML_ID_VALID;
-
-	spin_lock_bh(&dp->dp_lock);
-	peer = ath12k_dp_link_peer_find_by_id(dp, ml_peer_id);
-
-	/* TODO a sync wait to check ml peer map success or delete
-	 * ml peer info in all link peers and make peer assoc failure
-	 * TBA after testing basic changes
-	 */
-	if (!peer) {
-		ath12k_warn(ab, "peer corresponding to ml peer id %d not found", ml_peer_id);
-		spin_unlock_bh(&dp->dp_lock);
-		return;
-	}
-	mld_mac_h16 = FIELD_GET(ATH12K_HTT_MLO_PEER_MAP_MAC_ADDR_H16,
-				msg->mac_addr.mac_addr_h16);
-	ast_idx = FIELD_GET(ATH12K_HTT_MLO_PEER_MAP_AST_IDX, msg->info1);
-	cache_num = FIELD_GET(ATH12K_HTT_MLO_PEER_MAP_CACHE_SET_NUM, msg->info1);
-	ath12k_dp_get_mac_addr(msg->mac_addr.mac_addr_l32, mld_mac_h16, mld_addr);
-
-	peer->hw_peer_id = ast_idx;
-	peer->ast_hash = cache_num;
-
-	WARN_ON(memcmp(mld_addr, peer->ml_addr, ETH_ALEN));
-
-	spin_unlock_bh(&dp->dp_lock);
-
-	ath12k_dbg(ab, ATH12K_DBG_PEER, "htt MLO peer map peer %pM id %d\n",
-		   mld_addr, ml_peer_id);
-
-	/* TODO rx queue setup for the ML peer */
-}
-
-void ath12k_peer_mlo_unmap_event(struct ath12k_base *ab, struct sk_buff *skb)
-{
-	struct ath12k_htt_mlo_peer_unmap_msg *msg;
-	u16 ml_peer_id;
-
-	msg = (struct ath12k_htt_mlo_peer_unmap_msg *)skb->data;
-
-	ml_peer_id = FIELD_GET(ATH12K_HTT_MLO_PEER_UNMAP_PEER_ID, msg->info0);
-
-	ml_peer_id |= ATH12K_PEER_ML_ID_VALID;
-
-	ath12k_dbg(ab, ATH12K_DBG_PEER, "htt MLO peer unmap peer ml id %d\n", ml_peer_id);
-}
-
 static int ath12k_dp_link_peer_rhash_addr_tbl_init(struct ath12k_dp *dp)
 {
 	struct ath12k_base *ab = dp->ab;
