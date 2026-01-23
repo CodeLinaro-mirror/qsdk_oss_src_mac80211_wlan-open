@@ -6,14 +6,6 @@
 #include "dp_tx_queue.h"
 #include "dp.h"
 
-u32 link_to_mgmt_type_map[] = {
-	/*[0] =*/ MGMT_MSDUQ_LINK_0,
-	/*[1] =*/ MGMT_MSDUQ_LINK_1,
-	/*[2] =*/ MGMT_MSDUQ_LINK_2,
-	/*[3] =*/ MGMT_MSDUQ_LINK_3,
-	/*[4] =*/ MGMT_MSDUQ_LINK_4,
-};
-
 u8 ath12k_tx_get_bank_id(struct ath12k_dp_peer *peer,
 			 enum htt_tx_tid_msduq_mpdu_type msduq_idx,
 			 enum ath12k_classify_bank_subid *bank_sub_id)
@@ -243,6 +235,7 @@ int ath12k_peer_alloc_mgmt_queues(struct ath12k_dp_hw_group *dp_hw_grp,
 		ath12k_dp_get_tx_flow_info_from_peer(peer);
 	struct ath12k_dp_tx_tid_info *tid = NULL;
 	enum ath12k_mgmt_msduq_type mgmt_msduq_type;
+	enum htt_tx_tid_msduq_mpdu_type link_mgmt_msduq_type;
 	u8 link;
 	int ret = 0;
 
@@ -258,7 +251,7 @@ int ath12k_peer_alloc_mgmt_queues(struct ath12k_dp_hw_group *dp_hw_grp,
 		tx_flow_info->mgmt_msduq[MGMT_MSDUQ_LINK_CMN] =
 			ath12k_init_alloc_tx_msdu_flowq(dp_hw_grp, peer,
 							MLO_MGMT_TID,
-							MGMT_TID_MSDUQ_TYPE,
+							HTT_TID_MSDUQ_MGMT_LINK_AGNOSTIC,
 							MGMT_MSDUQ_LINK_CMN);
 		if (!tx_flow_info->mgmt_msduq[MGMT_MSDUQ_LINK_CMN]) {
 			ret = -ENOMEM;
@@ -266,10 +259,11 @@ int ath12k_peer_alloc_mgmt_queues(struct ath12k_dp_hw_group *dp_hw_grp,
 		}
 		for (link = 0; link < ATH12K_WMI_MLO_MAX_LINKS; link++) {
 			mgmt_msduq_type = ATH12K_LINK_TO_MGMT_TYPE(link);
+			link_mgmt_msduq_type = ATH12K_LINK_TO_MSDUQ_TYPE(link);
 			tx_flow_info->mgmt_msduq[mgmt_msduq_type] =
 				ath12k_init_alloc_tx_msdu_flowq(dp_hw_grp, peer,
 								MLO_MGMT_TID,
-								MGMT_TID_MSDUQ_TYPE,
+								link_mgmt_msduq_type,
 								mgmt_msduq_type);
 			if (!tx_flow_info->mgmt_msduq[mgmt_msduq_type]) {
 				ret = -ENOMEM;
@@ -278,10 +272,11 @@ int ath12k_peer_alloc_mgmt_queues(struct ath12k_dp_hw_group *dp_hw_grp,
 		}
 	} else {
 		tx_flow_info->mgmt_msduq[MGMT_MSDUQ_NON_ML] =
-			ath12k_init_alloc_tx_msdu_flowq(dp_hw_grp, peer,
-							MLO_MGMT_TID,
-							MGMT_TID_MSDUQ_TYPE,
-							MGMT_MSDUQ_NON_ML);
+			ath12k_init_alloc_tx_msdu_flowq(
+					dp_hw_grp, peer,
+					MLO_MGMT_TID,
+					HTT_TID_MSDUQ_MGMT_LINK_SPECIFIC_0,
+					MGMT_MSDUQ_NON_ML);
 		if (!tx_flow_info->mgmt_msduq[MGMT_MSDUQ_NON_ML]) {
 			ret = -ENOMEM;
 			goto error;
