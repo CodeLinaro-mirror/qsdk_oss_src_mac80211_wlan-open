@@ -205,8 +205,10 @@ static struct ieee80211_rate ath12k_legacy_rates[] = {
 	ATH12K_MAC_RATE_A_M(540, ATH12K_HW_RATE_OFDM_54M),
 };
 
+static const int (*ath12k_phymodes)[ATH12K_CHAN_WIDTH_NUM];
+
 static const int
-ath12k_phymodes[NUM_NL80211_BANDS][ATH12K_CHAN_WIDTH_NUM] = {
+ath12k_phymodes_eht[NUM_NL80211_BANDS][ATH12K_CHAN_WIDTH_NUM] = {
 	[NL80211_BAND_2GHZ] = {
 			[NL80211_CHAN_WIDTH_5] = MODE_UNKNOWN,
 			[NL80211_CHAN_WIDTH_10] = MODE_UNKNOWN,
@@ -277,6 +279,45 @@ ath12k_ax_phymodes[NUM_NL80211_BANDS][ATH12K_CHAN_WIDTH_NUM] = {
 			[NL80211_CHAN_WIDTH_160] = MODE_11AX_HE160,
 			[NL80211_CHAN_WIDTH_80P80] = MODE_11AX_HE80_80,
 			[NL80211_CHAN_WIDTH_320] = MODE_UNKNOWN,
+	},
+
+};
+
+static const int
+ath12k_phymodes_uhr[NUM_NL80211_BANDS][ATH12K_CHAN_WIDTH_NUM] = {
+	//TODO: Do we need to change this accordingly for UHR ? How ?
+	[NL80211_BAND_2GHZ] = {
+			[NL80211_CHAN_WIDTH_5] = MODE_UNKNOWN,
+			[NL80211_CHAN_WIDTH_10] = MODE_UNKNOWN,
+			[NL80211_CHAN_WIDTH_20_NOHT] = MODE_11BN_UHR20_2G,
+			[NL80211_CHAN_WIDTH_20] = MODE_11BN_UHR20_2G,
+			[NL80211_CHAN_WIDTH_40] = MODE_11BN_UHR40_2G,
+			[NL80211_CHAN_WIDTH_80] = MODE_UNKNOWN,
+			[NL80211_CHAN_WIDTH_80P80] = MODE_UNKNOWN,
+			[NL80211_CHAN_WIDTH_160] = MODE_UNKNOWN,
+			[NL80211_CHAN_WIDTH_320] = MODE_UNKNOWN,
+	},
+	[NL80211_BAND_5GHZ] = {
+			[NL80211_CHAN_WIDTH_5] = MODE_UNKNOWN,
+			[NL80211_CHAN_WIDTH_10] = MODE_UNKNOWN,
+			[NL80211_CHAN_WIDTH_20_NOHT] = MODE_11BN_UHR20,
+			[NL80211_CHAN_WIDTH_20] = MODE_11BN_UHR20,
+			[NL80211_CHAN_WIDTH_40] = MODE_11BN_UHR40,
+			[NL80211_CHAN_WIDTH_80] = MODE_11BN_UHR80,
+			[NL80211_CHAN_WIDTH_160] = MODE_11BN_UHR160,
+			[NL80211_CHAN_WIDTH_80P80] = MODE_UNKNOWN,
+			[NL80211_CHAN_WIDTH_320] = MODE_11BN_UHR320,
+	},
+	[NL80211_BAND_6GHZ] = {
+			[NL80211_CHAN_WIDTH_5] = MODE_UNKNOWN,
+			[NL80211_CHAN_WIDTH_10] = MODE_UNKNOWN,
+			[NL80211_CHAN_WIDTH_20_NOHT] = MODE_11BN_UHR20,
+			[NL80211_CHAN_WIDTH_20] = MODE_11BN_UHR20,
+			[NL80211_CHAN_WIDTH_40] = MODE_11BN_UHR40,
+			[NL80211_CHAN_WIDTH_80] = MODE_11BN_UHR80,
+			[NL80211_CHAN_WIDTH_160] = MODE_11BN_UHR160,
+			[NL80211_CHAN_WIDTH_80P80] = MODE_UNKNOWN,
+			[NL80211_CHAN_WIDTH_320] = MODE_11BN_UHR320,
 	},
 
 };
@@ -394,6 +435,24 @@ static const char *ath12k_mac_phymode_str(enum wmi_phy_mode mode)
 		return "11be-eht20-2g";
 	case MODE_11BE_EHT40_2G:
 		return "11be-eht40-2g";
+	case MODE_11BN_UHR20:
+		return "11bn-uhr20";
+	case MODE_11BN_UHR40:
+		return "11bn-uhr40";
+	case MODE_11BN_UHR80:
+		return "11bn-uhr80";
+	case MODE_11BN_UHR80_80:
+		return "11bn-uhr80+80";
+	case MODE_11BN_UHR160:
+		return "11bn-uhr160";
+	case MODE_11BN_UHR160_160:
+		return "11bn-uhr160+160";
+	case MODE_11BN_UHR320:
+		return "11bn-uhr320";
+	case MODE_11BN_UHR20_2G:
+		return "11bn-uhr20-2g";
+	case MODE_11BN_UHR40_2G:
+		return "11bn-uhr40-2g";
 	case MODE_UNKNOWN:
 		/* skip */
 		break;
@@ -3385,6 +3444,37 @@ ath12k_peer_assoc_h_ht_masked(const u8 *ht_mcs_mask)
 	return true;
 }
 
+static enum wmi_phy_mode ath12k_mac_get_phymode_uhr(struct ieee80211_link_sta *link_sta)
+{
+	if (link_sta->bandwidth == IEEE80211_STA_RX_BW_320)
+		if (link_sta->uhr_cap.uhr_cap_elem.phy_cap_info[0] &
+		    IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_NDP_SOUNDING_320MHZ)
+			return MODE_11BN_UHR320;
+
+	if (link_sta->bandwidth == IEEE80211_STA_RX_BW_160) {
+		if (link_sta->he_cap.he_cap_elem.phy_cap_info[0] &
+		    IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_160MHZ_IN_5G)
+			return MODE_11BN_UHR160;
+
+		if (link_sta->he_cap.he_cap_elem.phy_cap_info[0] &
+			 IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_80PLUS80_MHZ_IN_5G)
+			return MODE_11BN_UHR80_80;
+
+		return MODE_UNKNOWN;
+	}
+
+	if (link_sta->bandwidth == IEEE80211_STA_RX_BW_80)
+		return MODE_11BN_UHR80;
+
+	if (link_sta->bandwidth == IEEE80211_STA_RX_BW_40)
+		return MODE_11BN_UHR40;
+
+	if (link_sta->bandwidth == IEEE80211_STA_RX_BW_20)
+		return MODE_11BN_UHR20;
+
+	return MODE_UNKNOWN;
+}
+
 static bool
 ath12k_peer_assoc_h_vht_masked(const u16 *vht_mcs_mask)
 {
@@ -4529,7 +4619,12 @@ static void ath12k_peer_assoc_h_phymode(struct ath12k *ar,
 
 	switch (band) {
 	case NL80211_BAND_2GHZ:
-		if (link_sta->eht_cap.has_eht &&
+		if (link_sta->uhr_cap.has_uhr) {
+			if (link_sta->bandwidth == IEEE80211_STA_RX_BW_40)
+				phymode = MODE_11BN_UHR40_2G;
+			else
+				phymode = MODE_11BN_UHR20_2G;
+		} else if (link_sta->eht_cap.has_eht &&
 		    !ath12k_peer_assoc_h_eht_masked(eht_mcs_mask)) {
 			if (link_sta->bandwidth == IEEE80211_STA_RX_BW_40)
 				phymode = MODE_11BE_EHT40_2G;
@@ -4563,8 +4658,10 @@ static void ath12k_peer_assoc_h_phymode(struct ath12k *ar,
 		break;
 	case NL80211_BAND_5GHZ:
 	case NL80211_BAND_6GHZ:
-		/* Check EHT first */
-		if (link_sta->eht_cap.has_eht) {
+		/* Check UHR first */
+		if (link_sta->uhr_cap.has_uhr) {
+			phymode = ath12k_mac_get_phymode_uhr(link_sta);
+		} else if (link_sta->eht_cap.has_eht) {
 			phymode = ath12k_mac_get_phymode_eht(ar, link_sta);
 		} else if (link_sta->he_cap.has_he &&
 			   !ath12k_peer_assoc_h_he_masked(he_mcs_mask)) {
@@ -15456,6 +15553,7 @@ static void ath12k_mac_copy_eht_cap(struct ath12k *ar,
 		return;
 
 	eht_cap->has_eht = true;
+	ath12k_phymodes = ath12k_phymodes_eht;
 	memcpy(eht_cap_elem->mac_cap_info, band_cap->eht_cap_mac_info,
 	       sizeof(eht_cap_elem->mac_cap_info));
 	memcpy(eht_cap_elem->phy_cap_info, band_cap->eht_cap_phy_info,
@@ -15507,6 +15605,7 @@ static void ath12k_mac_copy_uhr_cap(struct ath12k *ar,
 
 	memset(uhr_cap, 0, sizeof(struct ieee80211_sta_uhr_cap));
 	uhr_cap->has_uhr = true;
+	ath12k_phymodes = ath12k_phymodes_uhr;
 	memcpy(uhr_cap_elem->mac_cap_info, band_cap->uhr_cap_mac_info,
 	       sizeof(uhr_cap_elem->mac_cap_info));
 	memcpy(uhr_cap_elem->phy_cap_info, band_cap->uhr_cap_phy_info,
@@ -18742,6 +18841,56 @@ void ath12k_mac_op_remove_chanctx(struct ieee80211_hw *hw,
 }
 EXPORT_SYMBOL(ath12k_mac_op_remove_chanctx);
 
+static enum wmi_phy_mode ath12k_uhr_to_eht_phy_mode(enum wmi_phy_mode mode)
+{
+	switch (mode) {
+	case MODE_11BN_UHR20:
+		return  MODE_11BE_EHT20;
+	case MODE_11BN_UHR40:
+		return MODE_11BE_EHT40;
+	case MODE_11BN_UHR80:
+		return MODE_11BE_EHT80;
+	case MODE_11BN_UHR80_80:
+		return MODE_11BE_EHT80_80;
+	case MODE_11BN_UHR160:
+		return MODE_11BE_EHT160;
+	case MODE_11BN_UHR160_160:
+		return MODE_11BE_EHT160_160;
+	case MODE_11BN_UHR320:
+		return MODE_11BE_EHT320;
+	case MODE_11BN_UHR20_2G:
+		return	MODE_11BE_EHT20_2G;
+	case MODE_11BN_UHR40_2G:
+		return MODE_11BE_EHT40_2G;
+	default:
+		return mode;
+	}
+}
+
+static enum wmi_phy_mode ath12k_eht_to_he_phy_mode(enum wmi_phy_mode mode)
+{
+	switch (mode) {
+	case MODE_11BE_EHT20:
+		return MODE_11AX_HE20;
+	case MODE_11BE_EHT40:
+		return MODE_11AX_HE40;
+	case MODE_11BE_EHT80:
+		return MODE_11AX_HE80;
+	case MODE_11BE_EHT80_80:
+		return MODE_11AX_HE80_80;
+	case MODE_11BE_EHT160:
+	case MODE_11BE_EHT160_160:
+	case MODE_11BE_EHT320:
+		return MODE_11AX_HE160;
+	case MODE_11BE_EHT20_2G:
+		return MODE_11AX_HE20_2G;
+	case MODE_11BE_EHT40_2G:
+		return MODE_11AX_HE40_2G;
+	default:
+		return mode;
+	}
+}
+
 static enum wmi_phy_mode
 ath12k_mac_check_down_grade_phy_mode(struct ath12k *ar,
 				     enum wmi_phy_mode mode,
@@ -18749,6 +18898,7 @@ ath12k_mac_check_down_grade_phy_mode(struct ath12k *ar,
 				     enum nl80211_iftype type)
 {
 	struct ieee80211_sta_eht_cap *eht_cap = NULL;
+	struct ieee80211_sta_uhr_cap *uhr_cap = NULL;
 	enum wmi_phy_mode down_mode;
 	int n = ar->mac.sbands[band].n_iftype_data;
 	int i;
@@ -18761,41 +18911,18 @@ ath12k_mac_check_down_grade_phy_mode(struct ath12k *ar,
 	for (i = 0; i < n; i++) {
 		if (data[i].types_mask & BIT(type)) {
 			eht_cap = &data[i].eht_cap;
+			uhr_cap = &data[i].uhr_cap;
 			break;
 		}
 	}
 
-	if (eht_cap && eht_cap->has_eht)
+	if (uhr_cap && uhr_cap->has_uhr)
 		return mode;
 
-	switch (mode) {
-	case MODE_11BE_EHT20:
-		down_mode = MODE_11AX_HE20;
-		break;
-	case MODE_11BE_EHT40:
-		down_mode = MODE_11AX_HE40;
-		break;
-	case MODE_11BE_EHT80:
-		down_mode = MODE_11AX_HE80;
-		break;
-	case MODE_11BE_EHT80_80:
-		down_mode = MODE_11AX_HE80_80;
-		break;
-	case MODE_11BE_EHT160:
-	case MODE_11BE_EHT160_160:
-	case MODE_11BE_EHT320:
-		down_mode = MODE_11AX_HE160;
-		break;
-	case MODE_11BE_EHT20_2G:
-		down_mode = MODE_11AX_HE20_2G;
-		break;
-	case MODE_11BE_EHT40_2G:
-		down_mode = MODE_11AX_HE40_2G;
-		break;
-	default:
-		down_mode = mode;
-		break;
-	}
+	if (eht_cap && eht_cap->has_eht)
+		down_mode = ath12k_uhr_to_eht_phy_mode(mode);
+	else
+		down_mode = ath12k_eht_to_he_phy_mode(mode);
 
 	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
 			 "mac vdev start phymode %s downgrade to %s\n",
