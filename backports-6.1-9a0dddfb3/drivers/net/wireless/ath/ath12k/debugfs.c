@@ -7707,8 +7707,9 @@ static ssize_t ath12k_write_primary_link(struct file *file,
 
 	for_each_set_bit_from(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
 		arvif = ahvif->link[link_id];
-		if (!arvif)
+		if (!arvif || !arvif->ar)
 			continue;
+
 		ar = arvif->ar;
 		if (primary_link == ar->radio_idx) {
 			ahvif->hw_link_id = primary_link;
