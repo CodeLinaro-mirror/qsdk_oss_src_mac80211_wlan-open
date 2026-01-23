@@ -215,7 +215,8 @@ struct hal_tx_msdu_flow_info {
 	u16 peer_id;
 	u8 bitmap;
 	u8 tid:4,
-	   mlo:1;
+	   mlo:1,
+	   is_mgmtq:1;
 };
 
 struct hal_tx_mpdu_queue_head_info {
@@ -227,6 +228,7 @@ struct hal_tx_mpdu_queue_head_info {
 	   encap_type:2,
 	   wapi:1,
 	   mlo:1;
+	bool is_mgmtq;
 	u8 assoc_link_id;
 	u8 link_id1;
 	u8 link_id2;
