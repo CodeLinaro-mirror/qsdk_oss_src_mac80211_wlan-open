@@ -100,7 +100,8 @@ int ath12k_telemetry_get_mov_avg(void *telemetry_ctx, u8 tid,
 				 u8 queue, u32 *nwdelay_avg,
 				 u32 *swdelay_avg,
 				 u32 *hwdelay_avg);
-int ath12k_telemetry_update_rssi_rate_breach(u8 *peer_mac, u8 path_type,
+int ath12k_telemetry_update_rssi_rate_breach(u8 soc_id, u16 peer_id, u8 *peer_mac,
+					     u8 path_type,
 					     s32 rssi_value, u32 rate_value);
 void ath12k_rssi_rate_notify_breach(u8 *peer_mac, u8 breach_type,
 				    u32 threshold_value, u32 detected_value,

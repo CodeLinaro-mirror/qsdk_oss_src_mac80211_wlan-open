@@ -15,6 +15,7 @@
 #include "dp_mon.h"
 #include "dp_mon_filter.h"
 #include "ini.h"
+#include "telemetry_agent_if.h"
 
 /**
  * ath12k_htt_send() - Send htt packet from host
@@ -887,11 +888,13 @@ ath12k_update_extd_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 
 	tx_pwr = HTT_PPDU_GET_PER_CHAIN_TX_PWR(usr_stats->common.tx_pwr, 0);
 	DP_STATS_UPD(tx_stats, tx_pwr, tx_pwr / usr_stats->common.tx_pwr_multiplier);
+
 }
 
 static void
 ath12k_htt_update_tx_rate_stats(struct ath12k_dp_link_peer *peer,
-				struct ath12k_per_peer_tx_stats *peer_stats)
+				struct ath12k_per_peer_tx_stats *peer_stats,
+				struct ath12k_pdev_dp *dp_pdev)
 {
 	struct ath12k_htt_tx_stats *tx_stats = peer->peer_stats.tx_stats;
 	u32 ratekbps;
@@ -921,6 +924,18 @@ ath12k_htt_update_tx_rate_stats(struct ath12k_dp_link_peer *peer,
 		} else {
 			DP_STATS_UPD(tx_stats, last_tx_rate_mcs, peer_stats->mcs);
 		}
+	}
+
+	if (IS_VALID_RSSI(tx_stats->last_ack_rssi) &&
+	    IS_VALID_RATE(tx_stats->tx_rate)) {
+		u8 soc_id = ath12k_get_ab_device_id(dp_pdev->ar->ab);
+
+		ath12k_telemetry_update_rssi_rate_breach(soc_id,
+							 peer->peer_id,
+							 peer->addr,
+							 PATH_TYPE_TX,
+							 tx_stats->last_ack_rssi,
+							 tx_stats->tx_rate);
 	}
 }
 
@@ -1138,7 +1153,7 @@ ath12k_update_htt_stats_txrate(struct ath12k_pdev_dp *dp_pdev,
 
 		fixed_rate_used = HTT_USR_RATE_IS_FIXED_RATE(user_rate->info2);
 		if (!fixed_rate_used)
-			ath12k_htt_update_tx_rate_stats(peer, peer_stats);
+			ath12k_htt_update_tx_rate_stats(peer, peer_stats, dp_pdev);
 	}
 }
 

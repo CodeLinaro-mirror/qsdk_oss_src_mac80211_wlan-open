@@ -432,7 +432,9 @@ struct telemetry_agent_ops {
 	int (*agent_set_rssi_rate_threshold)(u8 threshold_type, u32 value);
 	int (*agent_print_rssi_rate_thresholds)(void);
 	int (*agent_set_rssi_rate_breach_mask)(u8 mask);
-	int (*agent_update_rssi_rate_breach)(u8 *peer_mac,
+	int (*agent_update_rssi_rate_breach)(u8 soc_id,
+					     u16 peer_id,
+					     u8 *peer_mac,
 					     u8 path_type,
 					     s32 rssi_value,
 					     u32 rate_value);

@@ -11,6 +11,7 @@
 #include "peer.h"
 #include "debugfs.h"
 #include "dp_mon_filter.h"
+#include "telemetry_agent_if.h"
 
 static inline u32
 ath12k_dp_mon_rx_ul_ofdma_ru_size_to_width(enum ath12k_eht_ru_size ru_size)
@@ -1645,6 +1646,21 @@ ath12k_dp_mon_link_peer_signal_stats(struct ath12k_pdev_dp *dp_pdev,
 		}
 	}
 	ath12k_dp_calc_rx_peer_rssi(dp_pdev, peer);
+
+	if (peer->peer_stats.rx_stats &&
+	    IS_VALID_RATE(peer->peer_stats.rx_stats->last_rx_rate) &&
+	    IS_VALID_RSSI(stats->rssi)) {
+		u32 last_rx_rate = peer->peer_stats.rx_stats->last_rx_rate;
+		u8 soc_id = ath12k_get_ab_device_id(dp_pdev->ar->ab);
+
+		ath12k_telemetry_update_rssi_rate_breach(soc_id,
+							 peer->peer_id,
+							 peer->addr,
+							 PATH_TYPE_RX,
+							 stats->rssi,
+							 last_rx_rate);
+	}
+
 	rcu_read_unlock();
 }
 
