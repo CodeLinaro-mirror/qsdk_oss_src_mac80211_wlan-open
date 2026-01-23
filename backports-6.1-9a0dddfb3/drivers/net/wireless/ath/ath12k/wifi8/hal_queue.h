@@ -8,6 +8,8 @@
 
 #include <linux/types.h>
 #include "hal_desc.h"
+#include "../dp_cmn.h"
+#include "../dp_peer.h"
 
 enum hal_tx_descriptor_header_owner {
 	HAL_WIFIWBM_OWNED,
@@ -74,7 +76,10 @@ struct hal_uniform_descriptor_header {
 #define HAL_TX_MSDU_FLOW_TID                               GENMASK(30, 27)
 #define HAL_TX_MSDU_FLOW_MLO_VALID                         BIT(31)
 
+#define HAL_TX_MSDU_FLOW_MSDU_COUNT			   GENMASK(15, 0)
 #define HAL_TX_MSDU_FLOW_SW_NOTIFICATION_THRES             GENMASK(31, 16)
+
+#define HAL_TX_MSDU_FLOW_FLOW_BYTE_COUNT		   GENMASK(31, 0)
 
 #define HAL_TX_MSDU_FLOW_SW_PEER_ID                        GENMASK(15, 0)
 #define HAL_TX_MSDU_FLOW_SW_NOTIFICATION_THRES_2           GENMASK(31, 16)
@@ -85,6 +90,7 @@ struct hal_uniform_descriptor_header {
 #define HAL_TX_MSDU_FLOW_GEN_SLOW_DROP_NOTIFICATION        BIT(4)
 #define HAL_TX_MSDU_FLOW_GEN_MED_DROP_NOTIFICATION         BIT(6)
 #define HAL_TX_MSDU_FLOW_GEN_HARD_DROP_NOTIFICATION        BIT(8)
+#define HAL_TX_MSDU_FLOW_ADD_FRAME_COUNT_SINCE_DROP	   GENMASK(13, 10)
 #define HAL_TX_MSDU_FLOW_TQM_STATUS_FOR_CHIP2              BIT(14)
 #define HAL_TX_MSDU_FLOW_TQM_STATUS_FOR_CHIP3              BIT(15)
 #define HAL_TX_MSDU_FLOW_SLOW_DROP_THRESHOLD               GENMASK(31, 16)
@@ -92,6 +98,8 @@ struct hal_uniform_descriptor_header {
 #define HAL_TX_MSDU_FLOW_MED_DROP_THRESHOLD                GENMASK(15, 0)
 #define HAL_TX_MSDU_FLOW_HARD_DROP_THRESHOLD               GENMASK(31, 16)
 
+//info13
+#define HAL_TX_MSDU_FLOW_PROCESSED_BYTE_COUNT_48_32	GENMASK(15, 0)
 struct hal_tx_msdu_flow {
 	struct hal_uniform_descriptor_header header;
 	__le32 info0;
@@ -143,13 +151,19 @@ struct ath12k_tx_rate_stats_info {
 } __packed;
 
 #define HAL_TX_MPDU_QUEUE_HEAD_MLO_VALID                        BIT(0)
-#define HAL_TX_MPDU_QUEUE_HEAD_MPDU_TYPE                        BIT(15)
+#define	HAL_TX_MPDU_QUEUE_HEAD_MPDU_TYPE			BIT(15)
+#define	HAL_TX_MPDU_QUEUE_HEAD_MPDU_COUNT			GENMASK(31, 16)
 
+#define HAL_TX_MPDU_QUEUE_HEAD_QUEUE_BYTE_COUNT			GENMASK(31, 0)
+
+#define HAL_TX_MPDU_QUEUE_HEAD_MPDU_START_SEQ_NUM		GENMASK(11, 0)
 #define HAL_TX_MPDU_QUEUE_HEAD_QUEUE_VALID                      BIT(12)
 #define HAL_TX_MPDU_QUEUE_HEAD_ASSOC_LINK_DESC_CNT              GENMASK(14, 13)
 #define HAL_TX_MPDU_QUEUE_HEAD_MPDU_LAST_SEQ_NUM                GENMASK(26, 15)
+#define HAL_TX_MPDU_QUEUE_HEAD_LAST_MPDU_LINK_DESC_IDX		GENMASK(31, 27)
 
 #define HAL_TX_MPDU_QUEUE_HEAD_TID                              GENMASK(6, 3)
+#define HAL_TX_MPDU_QUEUE_HEAD_NUM_EXT_DESC_IN_USE		GENMASK(12, 7)
 #define HAL_TX_MPDU_QUEUE_HEAD_SW_PEER_ID                       GENMASK(31, 16)
 
 #define HAL_TX_MPDU_QUEUE_HEAD_PN_ADDR_31_0                     GENMASK(31, 0)
@@ -158,6 +172,8 @@ struct ath12k_tx_rate_stats_info {
 #define HAL_TX_MPDU_QUEUE_HEAD_PN_INC_VALUE                     GENMASK(15, 8)
 #define HAL_TX_MPDU_QUEUE_HEAD_MPDU_HDR_LEN                     GENMASK(24, 16)
 #define HAL_TX_MPDU_QUEUE_HEAD_NUM_OF_EXT_DESC                  GENMASK(30, 25)
+
+#define HAL_TX_MPDU_QUEUE_HEAD_LAST_MPDU_INDEX			GENMASK(2, 0)
 
 #define HAL_TX_MPDU_QUEUE_HEAD_LINK0_ID                         GENMASK(19, 17)
 #define HAL_TX_MPDU_QUEUE_HEAD_LINK1_ID                         GENMASK(22, 20)
@@ -275,4 +291,13 @@ void ath12k_wifi8_hal_msduq_set_invalid(struct ath12k_dp_hw_group *dp_hw_grp,
 void ath12k_wifi8_hal_mpduq_set_invalid(struct ath12k_dp_hw_group *dp_hw_grp,
 					struct hal_tx_mpdu_queue_head *mpduq,
 					dma_addr_t paddr);
+int ath12k_wifi8_hal_tx_msdu_queue_cleanup(struct ath12k_dp_hw_group *dp_hw_grp,
+					   u32 msduq_idx,
+					   struct hal_tx_msdu_flow_info *ti);
+int ath12k_wifi8_hal_tx_mpdu_queue_cleanup(struct ath12k_dp_hw_group *dp_hw_grp,
+					   u32 mpduq_idx,
+					   struct hal_tx_mpdu_queue_head_info *ti);
+int ath12k_wifi8_cleanup_all_peers_tx_queues(struct ath12k_dp_hw *dp_hw,
+					     struct ath12k_dp_hw_group *dp_hw_grp,
+					     struct ath12k_pdev_dp *dp_pdev);
 #endif

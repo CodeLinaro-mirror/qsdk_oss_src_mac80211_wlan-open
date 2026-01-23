@@ -215,4 +215,5 @@ static inline struct ath12k_dp *ath12k_get_central_dp(struct ath12k_dp *dp)
 
 struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab);
 void ath12k_wifi8_dp_deinit(struct ath12k_dp *dp);
+void ath12k_wifi8_srng_hw_ring_disable(struct ath12k_base *ab);
 #endif

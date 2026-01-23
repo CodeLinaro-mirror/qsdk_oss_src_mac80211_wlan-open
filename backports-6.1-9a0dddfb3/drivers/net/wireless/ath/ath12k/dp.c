@@ -2115,12 +2115,13 @@ int ath12k_dp_srng_alloc_aligned(struct ath12k_base *ab,
 	return 0;
 }
 
-static void ath12k_dp_srng_hw_disable(struct ath12k_base *ab, struct dp_srng *ring)
+void ath12k_dp_srng_hw_disable(struct ath12k_base *ab, struct dp_srng *ring)
 {
         struct hal_srng *srng = &ab->hal.srng_list[ring->ring_id];
 
 	ath12k_hal_srng_hw_disable(ab, srng);
 }
+EXPORT_SYMBOL(ath12k_dp_srng_hw_disable);
 
 void ath12k_dp_srng_hw_ring_disable(struct ath12k_base *ab)
 {

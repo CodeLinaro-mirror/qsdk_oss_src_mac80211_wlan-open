@@ -498,6 +498,18 @@ fail_link_desc_cleanup:
 
 }
 
+void ath12k_wifi8_srng_hw_ring_disable(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ab->dp;
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+
+	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->tx_exception);
+	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->tcl_status_ring);
+	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->tcl_cmd_ring);
+	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->tqm_status_ring);
+	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->tqm_cmd_ring);
+}
+
 static int ath12k_wifi8_dp_op_device_init(struct ath12k_dp *dp)
 {
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
