@@ -410,6 +410,8 @@ void ath12k_wifi8_hal_rx_reo_ent_paddr_get(struct ath12k_base *ab,
 					   dma_addr_t *paddr, u32 *cookie);
 void ath12k_wifi8_hal_reo_init_cmd_ring(struct ath12k_base *ab,
 					struct hal_srng *srng);
+int ath12k_wifi8_hal_fse_cmd_send(struct ath12k_base *ab, struct hal_srng *srng,
+				  struct hal_fse_cmd *fse_cmd);
 void ath12k_wifi8_hal_reo_hw_setup(struct ath12k_base *ab);
 void ath12k_wifi8_hal_reo_qdesc_setup(struct hal_rx_reo_queue *qdesc,
 				      int tid, u32 ba_window_size,

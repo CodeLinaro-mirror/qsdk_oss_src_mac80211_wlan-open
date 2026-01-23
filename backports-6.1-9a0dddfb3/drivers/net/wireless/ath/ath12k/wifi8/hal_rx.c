@@ -1627,3 +1627,43 @@ void ath12k_wifi8_hal_reset_rx_reo_tid_q(void *vaddr,
 					  HAL_DESC_REO_QUEUE_EXT_DESC,
 					  REO_QUEUE_DESC_MAGIC_DEBUG_PATTERN_5);
 }
+
+int ath12k_wifi8_hal_fse_cmd_send(struct ath12k_base *ab, struct hal_srng *srng,
+				  struct hal_fse_cmd *fse_cmd)
+{
+	struct hal_fse_cmd *fse_desc;
+	int ret = 0;
+
+	ath12k_dbg(ab, ATH12K_DBG_DP_FST,
+		   "FSE CMD send: ring_id=%u hp=%u tp=%u",
+		    srng->ring_id, srng->u.src_ring.hp,
+		    srng->u.src_ring.tp_addr ? *srng->u.src_ring.tp_addr : 0);
+
+	spin_lock_bh(&srng->lock);
+	ath12k_hal_srng_access_begin(ab, srng);
+	fse_desc =
+		(struct hal_fse_cmd *)ath12k_hal_srng_src_get_next_entry(ab, srng);
+
+	if (!fse_desc) {
+		ret = -ENOBUFS;
+		ath12k_info(ab, "FSE CMD send: no space in ring_id=%u new_hp=%u new_tp=%u",
+			    srng->ring_id, srng->u.src_ring.hp,
+			    srng->u.src_ring.tp_addr ? *srng->u.src_ring.tp_addr : 0);
+		goto out;
+	}
+	memcpy(fse_desc, fse_cmd, sizeof(*fse_cmd));
+	ath12k_dbg_dump(ab, ATH12K_DBG_DP_FST, NULL, "FSE CMD:",
+			fse_cmd, sizeof(*fse_cmd));
+
+	ath12k_dbg(ab, ATH12K_DBG_DP_FST,
+		   "FSE CMD send: done ring_id=%u ret=%d new_hp=%u new_tp=%u",
+		   srng->ring_id, ret, srng->u.src_ring.hp,
+		   srng->u.src_ring.tp_addr ? *srng->u.src_ring.tp_addr : 0);
+
+
+out:
+	ath12k_hal_srng_access_end(ab, srng);
+	spin_unlock_bh(&srng->lock);
+
+	return ret;
+}
