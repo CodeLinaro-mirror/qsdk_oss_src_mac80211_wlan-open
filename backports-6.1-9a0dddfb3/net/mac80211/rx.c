@@ -1957,6 +1957,92 @@ ieee80211_rx_h_uapsd_and_pspoll(struct ieee80211_rx_data *rx)
 	return RX_CONTINUE;
 }
 
+static void ieee80211_update_rx_stats(struct ieee80211_rx_data *rx,
+				      struct ieee80211_rx_status *status,
+				      bool fast_path, u8 uses_rss)
+{
+	struct sta_info *sta = rx->sta;
+	struct link_sta_info *link_sta = rx->link_sta;
+	struct sk_buff *skb = rx->skb;
+	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
+	struct ieee80211_sta_rx_stats *stats;
+
+	if (!sta || !link_sta)
+		return;
+
+	stats = &link_sta->rx_stats;
+	if (uses_rss)
+		stats = this_cpu_ptr(link_sta->pcpu_rx_stats);
+
+	if (!(status->flag & RX_FLAG_NO_SIGNAL_VAL)) {
+		stats->last_signal = status->signal;
+		if (!uses_rss)
+			ewma_signal_add(&link_sta->rx_stats_avg.signal,
+					-status->signal);
+	}
+
+	if (status->chains) {
+		int i;
+
+		stats->chains = status->chains;
+		for (i = 0; i < ARRAY_SIZE(status->chain_signal); i++) {
+			int signal = status->chain_signal[i];
+
+			if (!(status->chains & BIT(i)))
+				continue;
+
+			stats->chain_signal_last[i] = signal;
+			if (!uses_rss)
+				ewma_signal_add(&link_sta->rx_stats_avg.chain_signal[i],
+						-signal);
+		}
+	}
+
+	if (fast_path) {
+		stats->last_rx = jiffies;
+		stats->last_rate = sta_stats_encode_rate(status);
+	} else {
+		/*
+		 * Update last_rx only for IBSS packets which are for the current
+		 * BSSID and for station already AUTHORIZED to avoid keeping the
+		 * current IBSS network alive in cases where other STAs start
+		 * using different BSSID. This will also give the station another
+		 * chance to restart the authentication/authorization in case
+		 * something went wrong the first time.
+		 */
+		if (rx->sdata->vif.type == NL80211_IFTYPE_ADHOC) {
+			u8 *bssid = ieee80211_get_bssid(hdr, rx->skb->len,
+							NL80211_IFTYPE_ADHOC);
+			if (bssid && ether_addr_equal(bssid, rx->sdata->u.ibss.bssid) &&
+			    test_sta_flag(sta, WLAN_STA_AUTHORIZED)) {
+				stats->last_rx = jiffies;
+				if (ieee80211_is_data_present(hdr->frame_control) &&
+				    !is_multicast_ether_addr(hdr->addr1))
+					stats->last_rate = sta_stats_encode_rate(status);
+			}
+		} else if (rx->sdata->vif.type == NL80211_IFTYPE_OCB) {
+			stats->last_rx = jiffies;
+		} else if (!ieee80211_is_s1g_beacon(hdr->frame_control) &&
+			   !is_multicast_ether_addr(hdr->addr1)) {
+			/*
+			 * Mesh beacons will update last_rx when if they are found to
+			 * match the current local configuration when processed.
+			 */
+			stats->last_rx = jiffies;
+			if (ieee80211_is_data_present(hdr->frame_control))
+				stats->last_rate = sta_stats_encode_rate(status);
+		}
+	}
+
+	stats->fragments++;
+	stats->packets++;
+
+	u64_stats_update_begin(&stats->syncp);
+	stats->msdu[rx->seqno_idx]++;
+	stats->bytes += skb->len;
+	u64_stats_update_end(&stats->syncp);
+}
+
 static ieee80211_rx_result debug_noinline
 ieee80211_rx_h_sta_process(struct ieee80211_rx_data *rx)
 {
@@ -1966,68 +2052,11 @@ ieee80211_rx_h_sta_process(struct ieee80211_rx_data *rx)
 	struct ieee80211_rx_status *status = IEEE80211_SKB_RXCB(skb);
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
 	bool tid_stats_disable = rx->local->hw.tid_stats_disable;
-	int i;
 
 	if (!sta || !link_sta)
 		return RX_CONTINUE;
 
-	/*
-	 * Update last_rx only for IBSS packets which are for the current
-	 * BSSID and for station already AUTHORIZED to avoid keeping the
-	 * current IBSS network alive in cases where other STAs start
-	 * using different BSSID. This will also give the station another
-	 * chance to restart the authentication/authorization in case
-	 * something went wrong the first time.
-	 */
-	if (rx->sdata->vif.type == NL80211_IFTYPE_ADHOC) {
-		u8 *bssid = ieee80211_get_bssid(hdr, rx->skb->len,
-						NL80211_IFTYPE_ADHOC);
-		if (bssid && ether_addr_equal(bssid, rx->sdata->u.ibss.bssid) &&
-		    test_sta_flag(sta, WLAN_STA_AUTHORIZED)) {
-			link_sta->rx_stats.last_rx = jiffies;
-			if (ieee80211_is_data_present(hdr->frame_control) &&
-			    !is_multicast_ether_addr(hdr->addr1))
-				link_sta->rx_stats.last_rate =
-					sta_stats_encode_rate(status);
-		}
-	} else if (rx->sdata->vif.type == NL80211_IFTYPE_OCB) {
-		link_sta->rx_stats.last_rx = jiffies;
-	} else if (!ieee80211_is_s1g_beacon(hdr->frame_control) &&
-		   !is_multicast_ether_addr(hdr->addr1)) {
-		/*
-		 * Mesh beacons will update last_rx when if they are found to
-		 * match the current local configuration when processed.
-		 */
-		link_sta->rx_stats.last_rx = jiffies;
-		if (ieee80211_is_data_present(hdr->frame_control))
-			link_sta->rx_stats.last_rate = sta_stats_encode_rate(status);
-	}
-
-	link_sta->rx_stats.fragments++;
-
-	u64_stats_update_begin(&link_sta->rx_stats.syncp);
-	link_sta->rx_stats.bytes += rx->skb->len;
-	u64_stats_update_end(&link_sta->rx_stats.syncp);
-
-	if (!(status->flag & RX_FLAG_NO_SIGNAL_VAL)) {
-		link_sta->rx_stats.last_signal = status->signal;
-		ewma_signal_add(&link_sta->rx_stats_avg.signal,
-				-status->signal);
-	}
-
-	if (status->chains) {
-		link_sta->rx_stats.chains = status->chains;
-		for (i = 0; i < ARRAY_SIZE(status->chain_signal); i++) {
-			int signal = status->chain_signal[i];
-
-			if (!(status->chains & BIT(i)))
-				continue;
-
-			link_sta->rx_stats.chain_signal_last[i] = signal;
-			ewma_signal_add(&link_sta->rx_stats_avg.chain_signal[i],
-					-signal);
-		}
-	}
+	ieee80211_update_rx_stats(rx, status, 0, 0);
 
 	if (ieee80211_is_s1g_beacon(hdr->frame_control))
 		return RX_CONTINUE;
@@ -2086,10 +2115,9 @@ ieee80211_rx_h_sta_process(struct ieee80211_rx_data *rx)
 			return RX_DROP_M_UNEXPECTED_4ADDR_FRAME;
 		}
 		/*
-		 * Update counter and free packet here to avoid
+		 * free packet here to avoid
 		 * counting this as a dropped packed.
 		 */
-		link_sta->rx_stats.packets++;
 		dev_kfree_skb(rx->skb);
 		return RX_QUEUED;
 	}
@@ -5457,78 +5485,21 @@ static void ieee80211_rx_8023(struct ieee80211_rx_data *rx,
 			      struct ieee80211_fast_rx *fast_rx,
 			      int orig_len)
 {
-	struct ieee80211_sta_rx_stats *stats;
 	struct ieee80211_rx_status *status = IEEE80211_SKB_RXCB(rx->skb);
 	struct ieee80211_local *local = rx->local;
-	struct sta_info *sta = rx->sta;
-	struct link_sta_info *link_sta;
 	struct sk_buff *skb = rx->skb;
 	void *sa = skb->data + ETH_ALEN;
 	void *da = skb->data;
 	bool tid_stats_disable = local->hw.tid_stats_disable;
 
-	if (rx->link_id >= 0) {
-		link_sta = rcu_dereference(sta->link[rx->link_id]);
-		if (WARN_ON_ONCE(!link_sta)) {
-			dev_kfree_skb(rx->skb);
-			return;
-		}
-	} else {
-		link_sta = &sta->deflink;
-	}
 
-	stats = &link_sta->rx_stats;
-	if (fast_rx->uses_rss)
-		stats = this_cpu_ptr(link_sta->pcpu_rx_stats);
-
-	/* statistics part of ieee80211_rx_h_sta_process() */
-	if (!(status->flag & RX_FLAG_NO_SIGNAL_VAL)) {
-		stats->last_signal = status->signal;
-		if (!fast_rx->uses_rss)
-			ewma_signal_add(&link_sta->rx_stats_avg.signal,
-					-status->signal);
-	}
-
-	if (status->chains) {
-		int i;
-
-		stats->chains = status->chains;
-		for (i = 0; i < ARRAY_SIZE(status->chain_signal); i++) {
-			int signal = status->chain_signal[i];
-
-			if (!(status->chains & BIT(i)))
-				continue;
-
-			stats->chain_signal_last[i] = signal;
-			if (!fast_rx->uses_rss)
-				ewma_signal_add(&link_sta->rx_stats_avg.chain_signal[i],
-						-signal);
-		}
-	}
-	/* end of statistics */
-
-	stats->last_rx = jiffies;
-	stats->last_rate = sta_stats_encode_rate(status);
-
-	stats->fragments++;
-	stats->packets++;
-
+	ieee80211_update_rx_stats(rx, status, 1, fast_rx->uses_rss);
 	skb->dev = fast_rx->dev;
 
 	if (!tid_stats_disable)
 		ieee80211_rx_stats_reason(rx->sdata, skb->len,
 					  status->tid, RX_TOTAL_PKTS);
 	ieee80211_rx_stats(fast_rx->dev, skb->len);
-
-	/* The seqno index has the same property as needed
-	 * for the rx_msdu field, i.e. it is IEEE80211_NUM_TIDS
-	 * for non-QoS-data frames. Here we know it's a data
-	 * frame, so count MSDUs.
-	 */
-	u64_stats_update_begin(&stats->syncp);
-	stats->msdu[rx->seqno_idx]++;
-	stats->bytes += orig_len;
-	u64_stats_update_end(&stats->syncp);
 
 	if (fast_rx->internal_forward) {
 		struct sk_buff *xmit_skb = NULL;
@@ -5571,7 +5542,7 @@ static void ieee80211_rx_8023(struct ieee80211_rx_data *rx,
 	/* Do not deliver frames to PPE in fast rx incase of RFS
 	 * RFS is supported only in SFE Mode */
 	if (ieee80211_netif_rx_ppe(rx, skb)) {
-		atomic_inc(&sta->rx_netif_pkts);
+		atomic_inc(&rx->sta->rx_netif_pkts);
 		if (!tid_stats_disable)
 			ieee80211_rx_stats_reason(rx->sdata,
 						  skb->len,
