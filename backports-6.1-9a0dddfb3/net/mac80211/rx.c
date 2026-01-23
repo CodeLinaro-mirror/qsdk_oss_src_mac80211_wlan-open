@@ -5906,6 +5906,21 @@ static void __ieee80211_rx_handle_8023(struct ieee80211_hw *hw,
 	return;
 
 drop:
+	if (sta) {
+		struct link_sta_info *link_sta;
+		struct ieee80211_sta_rx_stats *stats;
+
+		if (status->link_valid)
+			link_id = status->link_id;
+		if (link_id >= 0)
+			link_sta = rcu_dereference(sta->link[rx.link_id]);
+		else
+			link_sta = &sta->deflink;
+		if (link_sta) {
+			stats = &link_sta->rx_stats;
+			stats->dropped++;
+		}
+	}
 	dev_kfree_skb(skb);
 }
 
@@ -5978,6 +5993,8 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 	struct ieee80211_rx_data rx;
 	struct ieee80211_sub_if_data *prev;
 	struct rhlist_head *tmp;
+	struct sta_info *drop_sta = NULL;
+	int link_id = -1;
 	int err = 0, prev_linkid;
 	bool tid_stats_disable = local->hw.tid_stats_disable;
 	bool prev_flag, is_mgmt = false;
@@ -6025,7 +6042,6 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 
 	if (ieee80211_is_data(fc)) {
 		struct sta_info *sta, *prev_sta;
-		int link_id = -1;
 		bool only_monitor = status->flag & RX_FLAG_ONLY_MONITOR;
 
 		if (status->link_valid)
@@ -6033,6 +6049,7 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 
 		if (pubsta) {
 			sta = container_of(pubsta, struct sta_info, sta);
+			drop_sta = sta;
 			if (!ieee80211_rx_data_set_sta(&rx, sta, link_id, only_monitor))
 				goto out;
 
@@ -6074,6 +6091,7 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 				continue;
 			}
 
+			drop_sta = prev_sta;
 			rx.sdata = prev_sta->sdata;
 			if (!status->link_valid && prev_sta->sta.mlo) {
 				struct link_sta_info *link_sta;
@@ -6108,6 +6126,7 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 		}
 
 		if (prev_sta) {
+			drop_sta = prev_sta;
 			rx.sdata = prev_sta->sdata;
 			if (!status->link_valid && prev_sta->sta.mlo) {
 				struct link_sta_info *link_sta;
@@ -6316,6 +6335,21 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 	}
 
  out:
+	if (drop_sta) {
+		struct link_sta_info *link_sta;
+		struct ieee80211_sta_rx_stats *stats;
+
+		if (status->link_valid)
+			link_id = status->link_id;
+		if (link_id >= 0)
+			link_sta = rcu_dereference(drop_sta->link[rx.link_id]);
+		else
+			link_sta = &drop_sta->deflink;
+		if (link_sta) {
+			stats = &link_sta->rx_stats;
+			stats->dropped++;
+		}
+	}
 	dev_kfree_skb(skb);
 }
 
