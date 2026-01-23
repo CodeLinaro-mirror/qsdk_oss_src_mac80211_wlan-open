@@ -55,6 +55,7 @@ int ath12k_init_tx_msdu_flowq(struct ath12k_dp_hw_group *dp_hw_grp,
 	ti.bitmap = sw_msduq_ptr->bitmap;
 
 	if (tid_num == MLO_MGMT_TID) {
+		ti.is_mgmtq = true;
 		ti.tid = TQM_NON_DATA_TID;
 	} else {
 		/*
