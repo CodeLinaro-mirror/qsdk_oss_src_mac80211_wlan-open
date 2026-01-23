@@ -1049,13 +1049,15 @@ int ath12k_wmi_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 	void *ptr;
 	struct wmi_tlv *tlv;
 	u16 mcs;
+	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(frame);
 
 	buf_len = min_t(int, frame->len, WMI_MGMT_SEND_DOWNLD_LEN);
 
 	len = sizeof(*cmd) + sizeof(*frame_tlv) + roundup(buf_len, sizeof(u32));
 
 	rate_present = ath12k_get_skb_rate(arvif, frame, &mcs, &preamble);
-	if (is_cfr || rate_present)
+	if (is_cfr || rate_present ||
+	    ATH12K_CUSTOM_TX_PARAM_CONFIGURED_EXTN(skb_cb->u.ar))
 		tx_params_valid = true;
 
 	if (tx_params_valid || link_agnostic) {
@@ -1115,6 +1117,8 @@ int ath12k_wmi_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 		 */
 		if (is_cfr)
 			params->tx_param_dword1 |= WMI_TX_PARAMS_DWORD1_CFR_CAPTURE;
+
+		ath12k_wmi_prepare_tx_params_extn(skb_cb, params);
 	}
 
 	ptr += sizeof(struct wmi_mgmt_send_params);
@@ -1257,7 +1261,7 @@ int ath12k_wmi_offchan_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 	tlv->header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_TX_SEND_PARAMS,
 					     sizeof(struct wmi_mgmt_send_params));
 
-	ath12k_wmi_prepare_tx_params_extn(ATH12K_SKB_CB(frame)->u.ar, ptr);
+	ath12k_wmi_prepare_tx_params_extn(ATH12K_SKB_CB(frame), ptr);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_OFFCHAN_DATA_TX_SEND_CMDID);
 
