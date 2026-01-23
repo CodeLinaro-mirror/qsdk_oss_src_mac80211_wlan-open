@@ -1961,6 +1961,8 @@ static void ieee80211_update_rx_stats(struct ieee80211_rx_data *rx,
 				      struct ieee80211_rx_status *status,
 				      bool fast_path, u8 uses_rss)
 {
+	struct ieee80211_local *local = rx->local;
+	struct ieee80211_hw *hw = &local->hw;
 	struct sta_info *sta = rx->sta;
 	struct link_sta_info *link_sta = rx->link_sta;
 	struct sk_buff *skb = rx->skb;
@@ -1968,6 +1970,11 @@ static void ieee80211_update_rx_stats(struct ieee80211_rx_data *rx,
 	struct ieee80211_sta_rx_stats *stats;
 
 	if (!sta || !link_sta)
+		return;
+
+	/* When driver TXRX stats offload enabled, stop accounting it in here*/
+	if (ieee80211_hw_check(hw, TXRX_STATS_OFFLOAD) ||
+	    rx->sdata->vif.offload_flags & IEEE80211_OFFLOAD_TXRX_STATS)
 		return;
 
 	stats = &link_sta->rx_stats;
@@ -3103,6 +3110,7 @@ ieee80211_deliver_skb(struct ieee80211_rx_data *rx)
 {
 	struct ieee80211_sub_if_data *sdata = rx->sdata;
 	struct ieee80211_local *local = rx->local;
+	struct ieee80211_hw *hw = &local->hw;
 	struct ieee80211_rx_status *status = IEEE80211_SKB_RXCB(rx->skb);
 	struct net_device *dev = sdata->dev;
 	struct sk_buff *skb, *xmit_skb;
@@ -3117,15 +3125,18 @@ ieee80211_deliver_skb(struct ieee80211_rx_data *rx)
 	if (!tid_stats_disable)
 		ieee80211_rx_stats_reason(sdata, skb->len, status->tid, RX_TOTAL_PKTS);
 
-	if (rx->sta) {
-		/* The seqno index has the same property as needed
-		 * for the rx_msdu field, i.e. it is IEEE80211_NUM_TIDS
-		 * for non-QoS-data frames. Here we know it's a data
-		 * frame, so count MSDUs.
-		 */
-		u64_stats_update_begin(&rx->link_sta->rx_stats.syncp);
-		rx->link_sta->rx_stats.msdu[rx->seqno_idx]++;
-		u64_stats_update_end(&rx->link_sta->rx_stats.syncp);
+	if (!ieee80211_hw_check(hw, TXRX_STATS_OFFLOAD) ||
+	    !(rx->sdata->vif.offload_flags & IEEE80211_OFFLOAD_TXRX_STATS)) {
+		if (rx->sta) {
+			/* The seqno index has the same property as needed
+			 * for the rx_msdu field, i.e. it is IEEE80211_NUM_TIDS
+			 * for non-QoS-data frames. Here we know it's a data
+			 * frame, so count MSDUs.
+			 */
+			u64_stats_update_begin(&rx->link_sta->rx_stats.syncp);
+			rx->link_sta->rx_stats.msdu[rx->seqno_idx]++;
+			u64_stats_update_end(&rx->link_sta->rx_stats.syncp);
+		}
 	}
 
 	if ((sdata->vif.type == NL80211_IFTYPE_AP ||

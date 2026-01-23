@@ -1156,6 +1156,29 @@ void ieee80211_tx_status_skb(struct ieee80211_hw *hw, struct sk_buff *skb)
 }
 EXPORT_SYMBOL(ieee80211_tx_status_skb);
 
+void ieee80211_tx_status_offload(struct ieee80211_hw *hw,
+				 struct ieee80211_tx_status *status)
+{
+	struct ieee80211_local *local;
+	struct sk_buff *skb;
+
+	if (!hw || !status)
+		return;
+
+	local = hw_to_local(hw);
+	skb = status->skb;
+
+	if (!skb)
+		return;
+
+	ieee80211_report_used_skb(local, skb, false, status->ack_hwtstamp);
+	if (status->free_list)
+		list_add_tail(&skb->list, status->free_list);
+	else
+		dev_kfree_skb(skb);
+}
+EXPORT_SYMBOL(ieee80211_tx_status_offload);
+
 void ieee80211_tx_status_ext(struct ieee80211_hw *hw,
 			     struct ieee80211_tx_status *status)
 {
