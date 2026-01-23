@@ -255,6 +255,7 @@ struct hal_rx_mon_ppdu_info {
 	u16 punctured_pattern;
 	u16 punc_bw;
 	struct hal_rx_user_ctrl_frm_info ctrl_frm_info[HAL_MAX_UL_MU_USERS];
+	struct hal_mon_ppdu_info_extn ppdu_info_extn;
 };
 
 /* in the bitmap 0 indicates no puncturing and 1 indicate that sub channel is punctured */
