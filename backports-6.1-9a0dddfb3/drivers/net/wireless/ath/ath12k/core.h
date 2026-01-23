@@ -1653,6 +1653,8 @@ struct ath12k_band_cap {
 	u16 he_6ghz_capa;
 	u32 eht_cap_mac_info[WMI_MAX_EHTCAP_MAC_SIZE];
 	u32 eht_cap_phy_info[WMI_MAX_EHTCAP_PHY_SIZE];
+	u32 uhr_cap_mac_info[WMI_MAX_UHRCAP_MAC_SIZE];
+	u32 uhr_cap_phy_info[WMI_MAX_UHRCAP_PHY_SIZE];
 	u32 eht_mcs_20_only;
 	u32 eht_mcs_80;
 	u32 eht_mcs_160;

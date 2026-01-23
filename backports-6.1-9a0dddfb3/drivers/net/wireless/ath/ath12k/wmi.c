@@ -7599,6 +7599,20 @@ static int ath12k_pull_peer_tx_pn_ev(struct ath12k_base *ab, struct sk_buff *skb
 	return 0;
 }
 
+static void ath12k_wmi_uhr_caps_parse(struct ath12k_pdev *pdev, u32 band,
+				      const __le32 cap_mac_info[],
+				      const __le32 cap_phy_info[])
+{
+	struct ath12k_band_cap *cap_band = &pdev->cap.band[band];
+	u8 i;
+
+	for (i = 0; i < WMI_MAX_UHRCAP_MAC_SIZE; i++)
+		cap_band->uhr_cap_mac_info[i] = le32_to_cpu(cap_mac_info[i]);
+
+	for (i = 0; i < WMI_MAX_UHRCAP_PHY_SIZE; i++)
+		cap_band->uhr_cap_phy_info[i] = le32_to_cpu(cap_phy_info[i]);
+}
+
 static int
 ath12k_wmi_tlv_mac_phy_caps_ext_parse(struct ath12k_base *ab,
 				      const struct ath12k_wmi_caps_ext_params *caps,
@@ -7640,6 +7654,9 @@ ath12k_wmi_tlv_mac_phy_caps_ext_parse(struct ath12k_base *ab,
 					  caps->eht_supp_mcs_ext_2ghz,
 					  &caps->eht_ppet_2ghz,
 					  caps->eht_cap_info_internal);
+		ath12k_wmi_uhr_caps_parse(pdev, NL80211_BAND_2GHZ,
+					  caps->uhr_cap_mac_info_2ghz,
+					  caps->uhr_cap_phy_info_2ghz);
 	}
 
 	if (bands & WMI_HOST_WLAN_5GHZ_CAP) {
@@ -7656,6 +7673,14 @@ ath12k_wmi_tlv_mac_phy_caps_ext_parse(struct ath12k_base *ab,
 					  caps->eht_supp_mcs_ext_5ghz,
 					  &caps->eht_ppet_5ghz,
 					  caps->eht_cap_info_internal);
+
+		ath12k_wmi_uhr_caps_parse(pdev, NL80211_BAND_5GHZ,
+					  caps->uhr_cap_mac_info_5ghz,
+					  caps->uhr_cap_phy_info_5ghz);
+
+		ath12k_wmi_uhr_caps_parse(pdev, NL80211_BAND_6GHZ,
+					  caps->uhr_cap_mac_info_5ghz,
+					  caps->uhr_cap_phy_info_5ghz);
 	}
 
 	pdev->cap.eml_cap = le32_to_cpu(caps->eml_capability);

@@ -15465,6 +15465,43 @@ static void ath12k_mac_copy_eht_cap(struct ath12k *ar,
 		ath12k_mac_copy_eht_ppe_thresh(&band_cap->eht_ppet, eht_cap);
 }
 
+static void ath12k_mac_copy_uhr_cap(struct ath12k *ar,
+				    struct ath12k_band_cap *band_cap,
+				    int iftype,
+				    struct ieee80211_sta_uhr_cap *uhr_cap)
+{
+	struct ieee80211_uhr_cap_elem_fixed *uhr_cap_elem = &uhr_cap->uhr_cap_elem;
+
+	if (!(test_bit(WMI_TLV_SERVICE_11BN, ar->ab->wmi_ab.svc_map)))
+		return;
+
+	memset(uhr_cap, 0, sizeof(struct ieee80211_sta_uhr_cap));
+	uhr_cap->has_uhr = true;
+	memcpy(uhr_cap_elem->mac_cap_info, band_cap->uhr_cap_mac_info,
+	       sizeof(uhr_cap_elem->mac_cap_info));
+	memcpy(uhr_cap_elem->phy_cap_info, band_cap->uhr_cap_phy_info,
+	       sizeof(uhr_cap_elem->phy_cap_info));
+
+	switch (iftype) {
+	case NL80211_IFTYPE_AP:
+		uhr_cap_elem->phy_cap_info[0] &=
+			~IEEE80211_UHR_PHY_CAP0_MAX_NSS_TOTAL_RX_DL_MUMIMO_80MHZ;
+		uhr_cap_elem->phy_cap_info[0] &=
+			~IEEE80211_UHR_PHY_CAP0_MAX_NSS_TOTAL_RX_DL_MUMIMO_160MHZ;
+		uhr_cap_elem->phy_cap_info[0] &=
+			~IEEE80211_UHR_PHY_CAP0_MAX_NSS_TOTAL_RX_DL_MUMIMO_320MHZ;
+		break;
+	case NL80211_IFTYPE_STATION:
+		/* add if anything needs to be cleared for STA mode */
+		break;
+	case NL80211_IFTYPE_MESH_POINT:
+		/* add if anything needs to be cleared for Mesh mode */
+		break;
+	default:
+		break;
+	}
+}
+
 static int ath12k_mac_copy_sband_iftype_data(struct ath12k *ar,
 					     struct ath12k_pdev_cap *cap,
 					     struct ieee80211_sband_iftype_data *data,
@@ -15495,6 +15532,8 @@ static int ath12k_mac_copy_sband_iftype_data(struct ath12k *ar,
 		}
 		ath12k_mac_copy_eht_cap(ar, band_cap, &he_cap->he_cap_elem, i,
 					&data[idx].eht_cap);
+		ath12k_mac_copy_uhr_cap(ar, band_cap, i,
+					&data[idx].uhr_cap);
 		idx++;
 	}
 
