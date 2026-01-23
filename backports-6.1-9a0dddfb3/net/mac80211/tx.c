@@ -6393,6 +6393,9 @@ struct sk_buff *ieee80211_beacon_get_tim(struct ieee80211_hw *hw,
 	    !hw_to_local(hw)->monitors)
 		return bcn;
 
+	if (ieee80211_hw_check(hw, SUPPORTS_TX_MONITOR_OFFLOAD))
+		return bcn;
+
 	/* send a copy to monitor interfaces */
 	copy = skb_copy(bcn, GFP_ATOMIC);
 	if (!copy)

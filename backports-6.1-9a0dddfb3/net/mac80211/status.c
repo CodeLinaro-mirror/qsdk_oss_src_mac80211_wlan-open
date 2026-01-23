@@ -206,51 +206,134 @@ static void ieee80211_set_bar_pending(struct sta_info *sta, u8 tid, u16 ssn)
 	tid_tx->bar_pending = true;
 }
 
-static int ieee80211_tx_radiotap_len(struct ieee80211_tx_info *info,
+static int ieee80211_tx_radiotap_len(struct ieee80211_local *local,
+				     struct ieee80211_tx_info *info,
 				     struct ieee80211_tx_status *status)
 {
 	struct ieee80211_rate_status *status_rate = NULL;
 	int len = sizeof(struct ieee80211_radiotap_header);
+	bool has_mon_offload;
 
 	if (status && status->n_rates)
 		status_rate = &status->rates[status->n_rates - 1];
 
-	/* IEEE80211_RADIOTAP_RATE rate */
+	/* Check if monitor offload is supported */
+	has_mon_offload = status &&
+			  ieee80211_hw_check(&local->hw, SUPPORTS_TX_MONITOR_OFFLOAD);
+
+	/* IEEE80211_RADIOTAP_TSFT (field 0) - 8-byte alignment */
+	if (has_mon_offload) {
+		len = ALIGN(len, 8);
+		len += 8;
+	}
+
+	/* IEEE80211_RADIOTAP_FLAGS (field 1) - 1 byte */
+	if (has_mon_offload && tx_mon_hw_check(&status->mon_info, FLAGS_INFO))
+		len += 1;
+
+	/* IEEE80211_RADIOTAP_RATE (field 2) - 1 byte */
 	if (status_rate && !(status_rate->rate_idx.flags &
 						(RATE_INFO_FLAGS_MCS |
 						 RATE_INFO_FLAGS_DMG |
 						 RATE_INFO_FLAGS_EDMG |
 						 RATE_INFO_FLAGS_VHT_MCS |
-						 RATE_INFO_FLAGS_HE_MCS)))
-		len += 2;
-	else if (info->status.rates[0].idx >= 0 &&
+						 RATE_INFO_FLAGS_HE_MCS))) {
+		len += 1; /* 1 byte rate */
+	} else if (info->status.rates[0].idx >= 0 &&
 		 !(info->status.rates[0].flags &
-		   (IEEE80211_TX_RC_MCS | IEEE80211_TX_RC_VHT_MCS)))
-		len += 2;
+		   (IEEE80211_TX_RC_MCS | IEEE80211_TX_RC_VHT_MCS))) {
+		len += 1; /* 1 byte rate */
+	}
 
-	/* IEEE80211_RADIOTAP_TX_FLAGS */
+	/* IEEE80211_RADIOTAP_CHANNEL (field 3) - 2-byte alignment, 4 bytes */
+	if (has_mon_offload && tx_mon_hw_check(&status->mon_info, CHAN_INFO)) {
+		len = ALIGN(len, 2);
+		len += 4;
+	}
+
+	/* IEEE80211_RADIOTAP_TX_FLAGS (field 15) - 2-byte alignment, 2 bytes */
+	len = ALIGN(len, 2);
 	len += 2;
 
-	/* IEEE80211_RADIOTAP_DATA_RETRIES */
+	/* IEEE80211_RADIOTAP_DATA_RETRIES (field 17) - 1 byte */
 	len += 1;
 
-	/* IEEE80211_RADIOTAP_MCS
-	 * IEEE80211_RADIOTAP_VHT */
-	if (status_rate) {
-		if (status_rate->rate_idx.flags & RATE_INFO_FLAGS_MCS)
-			len += 3;
-		else if (status_rate->rate_idx.flags & RATE_INFO_FLAGS_VHT_MCS)
-			len = ALIGN(len, 2) + 12;
-		else if (status_rate->rate_idx.flags & RATE_INFO_FLAGS_HE_MCS)
-			len = ALIGN(len, 2) + 12;
-	} else if (info->status.rates[0].idx >= 0) {
-		if (info->status.rates[0].flags & IEEE80211_TX_RC_MCS)
-			len += 3;
-		else if (info->status.rates[0].flags & IEEE80211_TX_RC_VHT_MCS)
-			len = ALIGN(len, 2) + 12;
+	/* IEEE80211_RADIOTAP_MCS (field 19) - 3 bytes */
+	if (status_rate && (status_rate->rate_idx.flags & RATE_INFO_FLAGS_MCS)) {
+		len += 3;
+	} else if (info->status.rates[0].idx >= 0 &&
+		   (info->status.rates[0].flags & IEEE80211_TX_RC_MCS)) {
+		len += 3;
+	}
+
+	/* IEEE80211_RADIOTAP_AMPDU_STATUS (field 20) - 4-byte alignment, 8 bytes */
+	if (has_mon_offload && tx_mon_hw_check(&status->mon_info, AMPDU_STATUS_INFO)) {
+		len = ALIGN(len, 4);
+		len += 8;
+	}
+
+	/* IEEE80211_RADIOTAP_VHT (field 21) - 2-byte alignment, 12 bytes */
+	if (status_rate && (status_rate->rate_idx.flags & RATE_INFO_FLAGS_VHT_MCS)) {
+		len = ALIGN(len, 2) + 12;
+	} else if (info->status.rates[0].idx >= 0 &&
+		   (info->status.rates[0].flags & IEEE80211_TX_RC_VHT_MCS)) {
+		len = ALIGN(len, 2) + 12;
+	}
+
+	/* IEEE80211_RADIOTAP_HE (field 23) - 2-byte alignment, 12 bytes */
+	if (status_rate && (status_rate->rate_idx.flags & RATE_INFO_FLAGS_HE_MCS))
+		len = ALIGN(len, 2) + 12;
+
+	/* IEEE80211_RADIOTAP_HE_MU (field 24) - 2-byte alignment, 12 bytes */
+	if (has_mon_offload && tx_mon_hw_check(&status->mon_info, HE_MU_INFO)) {
+		len = ALIGN(len, 2);
+		len += 12; /* 2 x u16 + 2 x 4 x u8 */
+	}
+
+	/* IEEE80211_RADIOTAP_LSIG (field 27) - 2-byte alignment, 4 bytes */
+	if (has_mon_offload && tx_mon_hw_check(&status->mon_info, LSIG_INFO)) {
+		len = ALIGN(len, 2);
+		len += 4; /* 2 x u16 fields */
+	}
+
+	/* IEEE80211_RADIOTAP_VENDOR_NAMESPACE (field 30) - 2-byte alignment, variable */
+	if (has_mon_offload && tx_mon_hw_check(&status->mon_info, VENDOR_TLV) &&
+	    status->mon_info.v_tlv) {
+		len = ALIGN(len, 2);
+		len += sizeof(struct ieee80211_radiotap_vendor_ns) +
+		       le16_to_cpu(status->mon_info.v_tlv->skip_length);
+	}
+
+	/* IEEE80211_RADIOTAP_EHT_USIG (field 33) - 4-byte alignment, 12 bytes */
+	if (has_mon_offload && tx_mon_hw_check(&status->mon_info, EHT_USIG_INFO)) {
+		len = ALIGN(len, 4);
+		len += 12; /* 3 x u32 fields */
+	}
+
+	/* IEEE80211_RADIOTAP_EHT (field 34) - 4-byte alignment, variable */
+	if (has_mon_offload && tx_mon_hw_check(&status->mon_info, EHT_INFO)) {
+		len = ALIGN(len, 4);
+		/* known (u32) + data[9] (9 x u32) + user_info[] (eht_num_users x u32) */
+		len += 4 + (9 * 4) + (status->mon_info.eht_num_users * 4);
 	}
 
 	return len;
+}
+
+static void
+ieee80211_add_ampdu_status_radiotap(struct ieee80211_radiotap_header *rthdr,
+				    struct ieee80211_tx_status *status,
+				    u8 **pos)
+{
+	/* required alignment from rthdr */
+	*pos = (u8 *)rthdr + ALIGN(*pos - (u8 *)rthdr, 4);
+	rthdr->it_present |= cpu_to_le32(BIT(IEEE80211_RADIOTAP_AMPDU_STATUS));
+	put_unaligned_le32(status->mon_info.ampdu_ref_num, *pos);
+	*pos += 4;
+	put_unaligned_le16(status->mon_info.ampdu_flags, *pos);
+	*pos += 2;
+	put_unaligned_le16(status->mon_info.ampdu_reserved_flags, *pos);
+	*pos += 2;
 }
 
 static void
@@ -264,20 +347,81 @@ ieee80211_add_tx_radiotap_header(struct ieee80211_local *local,
 	struct ieee80211_radiotap_header *rthdr;
 	struct ieee80211_rate_status *status_rate = NULL;
 	unsigned char *pos;
+	u32 it_present_val = 0;
 	u16 legacy_rate = 0;
 	u16 txflags;
+	bool has_mon_offload;
+	bool has_eht_usig;
+	bool has_eht;
+	__le32 *it_present;
 
 	if (status && status->n_rates)
 		status_rate = &status->rates[status->n_rates - 1];
 
-	rthdr = skb_push(skb, rtap_len);
+	/* Check once if monitor offload is supported */
+	has_mon_offload = status &&
+			  ieee80211_hw_check(&local->hw,
+					     SUPPORTS_TX_MONITOR_OFFLOAD);
 
+	/* Check for EHT fields to avoid redundant calls */
+	has_eht_usig = has_mon_offload &&
+		       tx_mon_hw_check(&status->mon_info, EHT_USIG_INFO);
+	has_eht = has_mon_offload &&
+		  tx_mon_hw_check(&status->mon_info, EHT_INFO);
+
+	rthdr = skb_push(skb, rtap_len);
 	memset(rthdr, 0, rtap_len);
 	rthdr->it_len = cpu_to_le16(rtap_len);
-	rthdr->it_present =
-		cpu_to_le32(BIT(IEEE80211_RADIOTAP_TX_FLAGS) |
-			    BIT(IEEE80211_RADIOTAP_DATA_RETRIES));
-	pos = (unsigned char *)(rthdr + 1);
+	it_present = &rthdr->it_present;
+
+	/* Check if we need extended present flags for EHT fields */
+	if (has_eht_usig || has_eht) {
+		/* Set EXT bit in first present word */
+		rthdr->it_present |= cpu_to_le32(BIT(IEEE80211_RADIOTAP_EXT));
+
+		/* Build second present word with EHT field bits
+		 * Bit positions in extended words are: bit_position % 32
+		 * IEEE80211_RADIOTAP_EHT_USIG = 33, so: 33 % 32 = bit 1
+		 * IEEE80211_RADIOTAP_EHT = 34, so: 34 % 32 = bit 2
+		 */
+		if (has_eht_usig)
+			it_present_val |= BIT(IEEE80211_RADIOTAP_EHT_USIG % 32);
+
+		if (has_eht)
+			it_present_val |= BIT(IEEE80211_RADIOTAP_EHT % 32);
+
+		/* Write second present word to it_optional[0] */
+		put_unaligned_le32(it_present_val, &rthdr->it_optional[0]);
+		it_present++;
+	}
+
+	/* radiotap header, set always present flags */
+	rthdr->it_present |= BIT(IEEE80211_RADIOTAP_TX_FLAGS) |
+			    BIT(IEEE80211_RADIOTAP_DATA_RETRIES);
+
+	/* This references through an offset into it_optional[] rather
+	 * than via it_present otherwise later uses of pos will cause
+	 * the compiler to think we have walked past the end of the
+	 * struct member.
+	 */
+	pos = (u8 *)&rthdr->it_optional[it_present + 1 - rthdr->it_optional];
+
+	/* ===== Hardware TX Monitor Offload Fields ===== */
+	if (has_mon_offload) {
+		/* IEEE80211_RADIOTAP_TSFT */
+		/* required alignment from rthdr */
+		pos = (u8 *)rthdr + ALIGN(pos - (u8 *)rthdr, 8);
+		rthdr->it_present |= cpu_to_le32(BIT(IEEE80211_RADIOTAP_TSFT));
+		put_unaligned_le64(status->mon_info.tsft, pos);
+		pos += 8;
+
+		/* IEEE80211_RADIOTAP_FLAGS */
+		if (tx_mon_hw_check(&status->mon_info, FLAGS_INFO)) {
+			rthdr->it_present |= cpu_to_le32(BIT(IEEE80211_RADIOTAP_FLAGS));
+			*pos = status->mon_info.rtap_flags;
+			pos++;
+		}
+	}
 
 	/*
 	 * XXX: Once radiotap gets the bitmap reset thing the vendor
@@ -312,6 +456,17 @@ ieee80211_add_tx_radiotap_header(struct ieee80211_local *local,
 		rthdr->it_present |= cpu_to_le32(BIT(IEEE80211_RADIOTAP_RATE));
 		*pos = DIV_ROUND_UP(legacy_rate, 5);
 		/* padding for tx flags */
+		pos += 1;
+	}
+
+	/* IEEE80211_RADIOTAP_CHANNEL */
+	if (has_mon_offload && tx_mon_hw_check(&status->mon_info, CHAN_INFO)) {
+		/* required alignment from rthdr */
+		pos = (u8 *)rthdr + ALIGN(pos - (u8 *)rthdr, 2);
+		rthdr->it_present |= cpu_to_le32(BIT(IEEE80211_RADIOTAP_CHANNEL));
+		put_unaligned_le16(status->mon_info.chan_freq, pos);
+		pos += 2;
+		put_unaligned_le16(status->mon_info.chan_flags, pos);
 		pos += 2;
 	}
 
@@ -326,6 +481,7 @@ ieee80211_add_tx_radiotap_header(struct ieee80211_local *local,
 	if (info->status.rates[0].flags & IEEE80211_TX_RC_USE_RTS_CTS)
 		txflags |= IEEE80211_RADIOTAP_F_TX_RTS;
 
+	pos = (u8 *)rthdr + ALIGN(pos - (u8 *)rthdr, 2);
 	put_unaligned_le16(txflags, pos);
 	pos += 2;
 
@@ -346,7 +502,15 @@ ieee80211_add_tx_radiotap_header(struct ieee80211_local *local,
 			pos[1] |= IEEE80211_RADIOTAP_MCS_BW_40;
 		pos[2] = status_rate->rate_idx.mcs;
 		pos += 3;
-	} else if (status_rate && (status_rate->rate_idx.flags &
+	}
+
+	/* IEEE80211_RADIOTAP_AMPDU_STATUS */
+	if (has_mon_offload &&
+	    tx_mon_hw_check(&status->mon_info, AMPDU_STATUS_INFO)) {
+		ieee80211_add_ampdu_status_radiotap(rthdr, status, &pos);
+	}
+
+	if (status_rate && (status_rate->rate_idx.flags &
 					RATE_INFO_FLAGS_VHT_MCS))
 	{
 		u16 known = local->hw.radiotap_vht_details &
@@ -471,7 +635,7 @@ ieee80211_add_tx_radiotap_header(struct ieee80211_local *local,
 	}
 
 	if (status_rate || info->status.rates[0].idx < 0)
-		return;
+		goto he_mu_parsing;
 
 	/* IEEE80211_RADIOTAP_MCS
 	 * IEEE80211_RADIOTAP_VHT */
@@ -488,7 +652,15 @@ ieee80211_add_tx_radiotap_header(struct ieee80211_local *local,
 			pos[1] |= IEEE80211_RADIOTAP_MCS_FMT_GF;
 		pos[2] = info->status.rates[0].idx;
 		pos += 3;
-	} else if (info->status.rates[0].flags & IEEE80211_TX_RC_VHT_MCS) {
+	}
+
+	/* IEEE80211_RADIOTAP_AMPDU_STATUS */
+	if (has_mon_offload &&
+	    tx_mon_hw_check(&status->mon_info, AMPDU_STATUS_INFO)) {
+		ieee80211_add_ampdu_status_radiotap(rthdr, status, &pos);
+	}
+
+	if (info->status.rates[0].flags & IEEE80211_TX_RC_VHT_MCS) {
 		u16 known = local->hw.radiotap_vht_details &
 			(IEEE80211_RADIOTAP_VHT_KNOWN_GI |
 			 IEEE80211_RADIOTAP_VHT_KNOWN_BANDWIDTH);
@@ -530,6 +702,90 @@ ieee80211_add_tx_radiotap_header(struct ieee80211_local *local,
 		/* u16 partial_aid */
 		pos += 2;
 	}
+
+he_mu_parsing:
+	/* IEEE80211_RADIOTAP_HE_MU */
+	if (has_mon_offload &&
+	    tx_mon_hw_check(&status->mon_info, HE_MU_INFO)) {
+		/* required alignment from rthdr */
+		pos = (u8 *)rthdr + ALIGN(pos - (u8 *)rthdr, 2);
+		rthdr->it_present |= cpu_to_le32(BIT(IEEE80211_RADIOTAP_HE_MU));
+		put_unaligned_le16(status->mon_info.he_mu.flags1, pos);
+		pos += 2;
+		put_unaligned_le16(status->mon_info.he_mu.flags2, pos);
+		pos += 2;
+		memcpy(pos, status->mon_info.he_mu.ru_ch1, 4);
+		pos += 4;
+		memcpy(pos, status->mon_info.he_mu.ru_ch2, 4);
+		pos += 4;
+	}
+
+	/* IEEE80211_RADIOTAP_LSIG */
+	if (has_mon_offload &&
+	    tx_mon_hw_check(&status->mon_info, LSIG_INFO)) {
+		/* required alignment from rthdr */
+		pos = (u8 *)rthdr + ALIGN(pos - (u8 *)rthdr, 2);
+		rthdr->it_present |= cpu_to_le32(BIT(IEEE80211_RADIOTAP_LSIG));
+		put_unaligned_le16(status->mon_info.lsig.data1, pos);
+		pos += 2;
+		put_unaligned_le16(status->mon_info.lsig.data2, pos);
+		pos += 2;
+	}
+
+	/* IEEE80211_RADIOTAP_VENDOR_NAMESPACE */
+	if (has_mon_offload && tx_mon_hw_check(&status->mon_info, VENDOR_TLV) &&
+	    status->mon_info.v_tlv) {
+		/* required alignment from rthdr */
+		pos = (u8 *)rthdr + ALIGN(pos - (u8 *)rthdr, 2);
+		rthdr->it_present |=
+			cpu_to_le32(BIT(IEEE80211_RADIOTAP_VENDOR_NAMESPACE));
+
+		/* Copy the vendor namespace structure */
+		memcpy(pos, status->mon_info.v_tlv->oui, 3);
+		pos += 3;
+		*pos = status->mon_info.v_tlv->sub_namespace;
+		pos++;
+		put_unaligned_le16(status->mon_info.v_tlv->skip_length, pos);
+		pos += 2;
+
+		/* Copy the vendor data */
+		if (status->mon_info.v_tlv->skip_length > 0) {
+			memcpy(pos, status->mon_info.v_tlv->data,
+			       le16_to_cpu(status->mon_info.v_tlv->skip_length));
+			pos += le16_to_cpu(status->mon_info.v_tlv->skip_length);
+		}
+	}
+
+	/* IEEE80211_RADIOTAP_EHT (USIG) */
+	if (has_eht_usig) {
+		/* required alignment from rthdr */
+		pos = (u8 *)rthdr + ALIGN(pos - (u8 *)rthdr, 4);
+		put_unaligned_le32(status->mon_info.eht_usig.common, pos);
+		pos += 4;
+		put_unaligned_le32(status->mon_info.eht_usig.value, pos);
+		pos += 4;
+		put_unaligned_le32(status->mon_info.eht_usig.mask, pos);
+		pos += 4;
+	}
+
+	/* IEEE80211_RADIOTAP_EHT (full EHT header) */
+	if (has_eht) {
+		/* required alignment from rthdr */
+		pos = (u8 *)rthdr + ALIGN(pos - (u8 *)rthdr, 4);
+		/* Copy known field */
+		put_unaligned_le32(status->mon_info.eht.known, pos);
+		pos += 4;
+
+		/* Copy data[9] array */
+		memcpy(pos, status->mon_info.eht.data, 9 * 4);
+		pos += 9 * 4;
+
+		/* Copy user_info[] array */
+		memcpy(pos, status->mon_info.eht.user_info,
+		       status->mon_info.eht_num_users * 4);
+		pos += status->mon_info.eht_num_users * 4;
+	}
+
 }
 
 /*
@@ -908,7 +1164,7 @@ void ieee80211_tx_monitor(struct ieee80211_local *local, struct sk_buff *skb,
 	int rtap_len;
 
 	/* send frame to monitor interfaces now */
-	rtap_len = ieee80211_tx_radiotap_len(info, status);
+	rtap_len = ieee80211_tx_radiotap_len(local, info, status);
 	if (WARN_ON_ONCE(skb_headroom(skb) < rtap_len)) {
 		pr_err("ieee80211_tx_status: headroom too small\n");
 		dev_kfree_skb(skb);
@@ -1130,9 +1386,9 @@ static void __ieee80211_tx_status(struct ieee80211_hw *hw,
 		return;
 	}
 
-	/* send to monitor interfaces */
-	ieee80211_tx_monitor(local, skb, retry_count,
-			     send_to_cooked, status);
+	/* send to monitor interfaces if tx monitor h/w support is not aviable*/
+	if (!ieee80211_hw_check(hw, SUPPORTS_TX_MONITOR_OFFLOAD))
+		ieee80211_tx_monitor(local, skb, retry_count, send_to_cooked, status);
 }
 
 void ieee80211_tx_status_skb(struct ieee80211_hw *hw, struct sk_buff *skb)
@@ -1329,6 +1585,18 @@ free:
 		dev_kfree_skb(skb);
 }
 EXPORT_SYMBOL(ieee80211_tx_status_ext);
+
+void ieee80211_tx_monitor_hw_ol(struct ieee80211_hw *hw,
+				struct ieee80211_tx_status *status)
+{
+	struct ieee80211_local *local = hw_to_local(hw);
+
+	if (unlikely(!ieee80211_hw_check(&local->hw, SUPPORTS_TX_MONITOR_OFFLOAD)))
+		return;
+
+	ieee80211_tx_monitor(local, status->skb, 0, false, status);
+}
+EXPORT_SYMBOL(ieee80211_tx_monitor_hw_ol);
 
 void ieee80211_tx_rate_update(struct ieee80211_hw *hw,
 			      struct ieee80211_sta *pubsta,
