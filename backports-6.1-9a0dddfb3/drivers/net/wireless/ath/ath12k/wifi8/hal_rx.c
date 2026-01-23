@@ -169,8 +169,8 @@ ath12k_wifi8_hal_reo_cmd_update_rx_queue(struct hal_tlv_64_hdr *tlv,
 				 HAL_REO_UPD_RX_QUEUE_INFO1_DIS_DUP_DETECTION) |
 		le32_encode_bits(!!(cmd->upd1 & HAL_REO_CMD_UPD1_SOFT_REORDER_EN),
 				 HAL_REO_UPD_RX_QUEUE_INFO1_SOFT_REORDER_EN) |
-		le32_encode_bits(u32_get_bits(cmd->upd1, HAL_REO_CMD_UPD1_AC),
-				 HAL_REO_UPD_RX_QUEUE_INFO1_AC) |
+		le32_encode_bits(u32_get_bits(cmd->upd1, HAL_REO_CMD_UPD1_LL_TIMER_ID),
+				 HAL_REO_UPD_RX_QUEUE_INFO1_LINK_LIST_TIMER_ID) |
 		le32_encode_bits(!!(cmd->upd1 & HAL_REO_CMD_UPD1_BAR),
 				 HAL_REO_UPD_RX_QUEUE_INFO1_BAR) |
 		le32_encode_bits(!!(cmd->upd1 & HAL_REO_CMD_UPD1_CHECK_2K_MODE),
@@ -184,11 +184,7 @@ ath12k_wifi8_hal_reo_cmd_update_rx_queue(struct hal_tlv_64_hdr *tlv,
 		le32_encode_bits(!!(cmd->upd1 & HAL_REO_CMD_UPD1_EVEN_PN),
 				 HAL_REO_UPD_RX_QUEUE_INFO1_EVEN_PN) |
 		le32_encode_bits(!!(cmd->upd1 & HAL_REO_CMD_UPD1_UNEVEN_PN),
-				 HAL_REO_UPD_RX_QUEUE_INFO1_UNEVEN_PN) |
-		le32_encode_bits(!!(cmd->upd1 & HAL_REO_CMD_UPD1_PN_HANDLE_ENABLE),
-				 HAL_REO_UPD_RX_QUEUE_INFO1_PN_HANDLE_ENABLE) |
-		le32_encode_bits(!!(cmd->upd1 & HAL_REO_CMD_UPD1_IGNORE_AMPDU_FLG),
-				 HAL_REO_UPD_RX_QUEUE_INFO1_IGNORE_AMPDU_FLG);
+				 HAL_REO_UPD_RX_QUEUE_INFO1_UNEVEN_PN);
 
 	if (cmd->pn_size == 24)
 		cmd->pn_size = HAL_RX_REO_QUEUE_PN_SIZE_24;
@@ -204,6 +200,10 @@ ath12k_wifi8_hal_reo_cmd_update_rx_queue(struct hal_tlv_64_hdr *tlv,
 		cmd->ba_window_size++;
 
 	desc->info2 =
+		le32_encode_bits(!!(cmd->upd2 & HAL_REO_CMD_UPD2_PN_HANDLE_ENABLE),
+				 HAL_REO_UPD_RX_QUEUE_INFO2_PN_HANDLE_ENABLE) |
+		le32_encode_bits(!!(cmd->upd2 & HAL_REO_CMD_UPD2_IGNORE_AMPDU_FLG),
+				 HAL_REO_UPD_RX_QUEUE_INFO2_IGNORE_AMPDU_FLG) |
 		le32_encode_bits(cmd->ba_window_size - 1,
 				 HAL_REO_UPD_RX_QUEUE_INFO2_BA_WINDOW_SIZE) |
 		le32_encode_bits(cmd->pn_size, HAL_REO_UPD_RX_QUEUE_INFO2_PN_SIZE) |
