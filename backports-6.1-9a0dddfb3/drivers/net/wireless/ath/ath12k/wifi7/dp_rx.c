@@ -4208,7 +4208,30 @@ int ath12k_wifi7_dp_rx_flow_fse_cache_operation(struct ath12k_base *ab,
 						enum dp_flow_fst_operation op_code,
 						struct hal_flow_tuple_info *tuple_info)
 {
-	return ath12k_dp_htt_rx_flow_fse_operation(ab, op_code, tuple_info);
+	int i;
+	int ret = 0;
+
+	for (i = 0; i < ab->ag->num_devices; i++) {
+		struct ath12k_base *partner_ab = ab->ag->ab[i];
+
+		if (!partner_ab || partner_ab->is_bypassed)
+			continue;
+
+		/* Skip sending HTT command when recovery in progress */
+		if (test_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags))
+			continue;
+
+		ret = ath12k_dp_htt_rx_flow_fse_operation(partner_ab,
+							  op_code,
+							  tuple_info);
+		if (ret) {
+			ath12k_err(partner_ab, "Unable to invalidate cache entry ret %d",
+					ret);
+			return ret;
+		}
+	}
+
+	return ret;
 }
 
 void ath12k_wifi7_dp_pdev_free(struct ath12k_base *ab)

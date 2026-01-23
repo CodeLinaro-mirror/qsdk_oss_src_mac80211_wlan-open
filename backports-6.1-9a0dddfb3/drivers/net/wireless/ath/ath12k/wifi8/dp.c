@@ -296,6 +296,14 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 	dp_hw_group_wifi8 = ath12k_get_dp_hw_group_wifi8(dp->dp_hw_grp);
 	dp_hw_group_wifi8->cumac_dp = dp;
 
+	ret = ath12k_wifi8_dp_rx_flow_fse_cache_operation(ab,
+							  DP_FST_CACHE_INVALIDATE_FULL,
+							  NULL);
+	if (ret) {
+		ath12k_err(ab, "Unable to invalidate Full cache ret %d", ret);
+		return ret;
+	}
+
 	ret = ath12k_dp_ast_table_init(dp->dp_hw_grp);
 	if (ret) {
 		ath12k_warn(ab, "dp ast table init failed %d\n", ret);

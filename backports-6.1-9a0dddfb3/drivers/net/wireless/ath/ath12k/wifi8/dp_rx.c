@@ -188,6 +188,27 @@ int ath12k_wifi8_dp_reo_cache_flush(struct ath12k_base *ab,
 	return ret;
 }
 
+int ath12k_wifi8_dp_fse_cmd_send(struct ath12k_base *ab,
+				 struct hal_fse_cmd *fse_cmd)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp *central_dp = ath12k_get_central_dp(dp);
+	struct ath12k_base *central_ab = central_dp->ab;
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(central_dp);
+	struct hal_srng *cmd_ring;
+	int ret;
+
+	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &central_ab->dev_flags) ||
+	    test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &central_ab->dev_flags))
+		return -ESHUTDOWN;
+
+
+	cmd_ring = &central_ab->hal.srng_list[dp_wifi8->fse_cmd_ring.ring_id];
+	ret = ath12k_wifi8_hal_fse_cmd_send(central_ab, cmd_ring, fse_cmd);
+
+	return ret;
+}
+
 void ath12k_wifi8_peer_rx_tid_qref_setup(struct ath12k_base *ab, u16 peer_id, u16 tid,
 					 dma_addr_t paddr)
 {
@@ -3852,9 +3873,56 @@ int ath12k_wifi8_dp_rx_flow_fse_cache_operation(struct ath12k_base *ab,
 						enum dp_flow_fst_operation op_code,
 						struct hal_flow_tuple_info *tuple_info)
 {
-	ath12k_dbg(ab, ATH12K_DBG_DP_FST,
-		   "FSE cache operation %d not supported in wifi8\n", op_code);
-	return 0;
+	struct hal_fse_cmd fse_cmd = { 0 };
+	int ret;
+	u32 chips;
+
+	if (op_code == DP_FST_CACHE_INVALIDATE_ENTRY) {
+
+	/* Populate tuple fields for cache invalidation */
+		fse_cmd.src_ip[0] = htonl(tuple_info->src_ip_127_96);
+		fse_cmd.src_ip[1] = htonl(tuple_info->src_ip_95_64);
+		fse_cmd.src_ip[2] = htonl(tuple_info->src_ip_63_32);
+		fse_cmd.src_ip[3] = htonl(tuple_info->src_ip_31_0);
+		fse_cmd.dest_ip[0] = htonl(tuple_info->dest_ip_127_96);
+		fse_cmd.dest_ip[1] = htonl(tuple_info->dest_ip_95_64);
+		fse_cmd.dest_ip[2] = htonl(tuple_info->dest_ip_63_32);
+		fse_cmd.dest_ip[3] = htonl(tuple_info->dest_ip_31_0);
+		fse_cmd.info0 =
+			cpu_to_le32(FIELD_PREP(HAL_FSE_CMD_INFO0_SRC_PORT,
+					       tuple_info->src_port) |
+				    FIELD_PREP(HAL_FSE_CMD_INFO0_DEST_PORT,
+					       tuple_info->dest_port));
+		fse_cmd.info1 =
+			cpu_to_le32(FIELD_PREP(HAL_FSE_CMD_INFO1_L4_PROTOCOL,
+					       tuple_info->l4_protocol) |
+				    FIELD_PREP(HAL_FSE_CMD_INFO1_GSE_CTRL,
+					       HAL_FSE_GSE_CTRL_INVAL_SINGLE));
+	} else if (op_code == DP_FST_CACHE_INVALIDATE_FULL) {
+		fse_cmd.info1 =
+			cpu_to_le32(FIELD_PREP(HAL_FSE_CMD_INFO1_GSE_CTRL,
+					       HAL_FSE_GSE_CTRL_INVAL_ALL));
+	} else if (op_code == DP_FST_DISABLE) {
+		fse_cmd.info1 =
+			cpu_to_le32(FIELD_PREP(HAL_FSE_CMD_INFO1_GSE_CTRL,
+					       HAL_FSE_GSE_CTRL_SRCH_DIS));
+	} else if (op_code == DP_FST_ENABLE) {
+		ath12k_dbg(ab, ATH12K_DBG_DP_FST,
+			   "DP_FST_ENABLE op: no GSE command required\n");
+		return 0;
+	}
+
+	chips = HAL_FSE_CMD_HDR_INFO0_SEND_TO_CHIP0 |
+		HAL_FSE_CMD_HDR_INFO0_SEND_TO_CHIP1 |
+		HAL_FSE_CMD_HDR_INFO0_SEND_TO_CHIP2 |
+		HAL_FSE_CMD_HDR_INFO0_SEND_TO_CHIP3 |
+		HAL_FSE_CMD_HDR_INFO0_SEND_TO_CHIP4;
+
+	fse_cmd.cmd.info0 = cpu_to_le32(chips);
+
+	ret = ath12k_wifi8_dp_fse_cmd_send(ab, &fse_cmd);
+
+	return ret;
 }
 
 int ath12k_wifi8_dp_peer_migrate_reo_cmd(struct ath12k_dp *dp,
@@ -4140,10 +4208,30 @@ int ath12k_wifi8_dp_rx_wbm_buf_ring_init(struct ath12k_base *ab)
 	return 0;
 }
 
+int ath12k_wifi8_dp_rx_fse_cmd_srng_setup(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+
+	return ath12k_dp_srng_setup(ab, &dp_wifi8->fse_cmd_ring,
+				    HAL_RXOLE_FSE_CMD,
+				    0, 0, DP_FSE_CMD_RING_SIZE);
+}
+
+void ath12k_wifi8_dp_rx_fse_cmd_srng_free(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+
+	ath12k_dp_srng_cleanup(ab, &dp_wifi8->fse_cmd_ring);
+}
+
+
 void ath12k_wifi8_dp_rx_ring_free(struct ath12k_base *ab)
 {
 	ath12k_wifi8_dp_rx_wbm_srng_free(ab);
 	ath12k_dp_rx_reo_cleanup(ab);
+	ath12k_wifi8_dp_rx_fse_cmd_srng_free(ab);
 }
 
 int ath12k_wifi8_dp_rx_ring_setup(struct ath12k_base *ab)
@@ -4165,6 +4253,12 @@ int ath12k_wifi8_dp_rx_ring_setup(struct ath12k_base *ab)
 	ret = ath12k_wifi8_dp_rx_wbm_buf_ring_init(ab);
 	if (ret) {
 		ath12k_warn(ab, "failed to configure rx wbm idle buf ring\n");
+		return ret;
+	}
+
+	ret = ath12k_wifi8_dp_rx_fse_cmd_srng_setup(ab);
+	if (ret) {
+		ath12k_warn(ab, "failed to set up fse_cmd ring :%d\n", ret);
 		return ret;
 	}
 

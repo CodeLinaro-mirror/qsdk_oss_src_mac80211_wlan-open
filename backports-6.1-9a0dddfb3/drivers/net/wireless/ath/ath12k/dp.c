@@ -567,6 +567,7 @@ skip_dma_alloc:
 	case HAL_REO_REINJECT:
 	case HAL_REO_CMD:
 	case HAL_REO_STATUS:
+	case HAL_RXOLE_FSE_CMD:
 	case HAL_TCL_DATA:
 	case HAL_TCL_CMD:
 	case HAL_TCL_STATUS:

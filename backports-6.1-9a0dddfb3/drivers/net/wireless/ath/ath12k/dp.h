@@ -1118,9 +1118,9 @@ ath12k_dp_arch_dump_fst_table(struct ath12k_dp *dp, char *buf, int size)
 }
 
 static inline int
-ath12k_dp_arch_rx_flow_fse_cache_operation(struct ath12k_dp *dp,
-					   enum dp_flow_fst_operation op_code,
-					   struct hal_flow_tuple_info *tuple_info)
+ath12k_dp_arch_rx_flow_fse_cache_op(struct ath12k_dp *dp,
+				    enum dp_flow_fst_operation op_code,
+				    struct hal_flow_tuple_info *tuple_info)
 {
 	return dp->arch_ops->rx_flow_fse_cache_operation(dp->ab, op_code, tuple_info);
 }

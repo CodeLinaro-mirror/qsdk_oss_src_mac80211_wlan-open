@@ -375,7 +375,17 @@ fail_irq_cleanup:
 
 static int ath12k_wifi7_dp_op_mlo_init(struct ath12k_dp *dp)
 {
+	int ret;
+
 	ath12k_dp_partner_cc_init(dp->ab);
+
+	ret = ath12k_wifi7_dp_rx_flow_fse_cache_operation(dp->ab,
+							  DP_FST_CACHE_INVALIDATE_FULL,
+							  NULL);
+	if (ret) {
+		ath12k_err(dp->ab, "Unable to invalidate Full cache ret %d", ret);
+		return ret;
+	}
 
 	return 0;
 }

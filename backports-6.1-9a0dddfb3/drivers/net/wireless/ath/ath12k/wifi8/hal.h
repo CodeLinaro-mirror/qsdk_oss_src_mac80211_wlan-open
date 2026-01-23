@@ -417,6 +417,12 @@ enum rdi_based_source_ring_selection {
 /* REO CMD R2 address */
 #define HAL_REO_CMD_HP				0x3020
 
+/* FSE CMD Cache ring R0 address */
+#define HAL_FSE_CMD_RING_BASE_LSB		0x1bc0
+
+/* FSE CMD Cache ring R2 address */
+#define HAL_FSE_CMD_HP				0x3180
+
 /* SW2REO R0 address */
 #define	HAL_SW2REO_RING_BASE_LSB(hal) \
 	((hal)->regs->hal_sw2reo_ring_base)
@@ -643,6 +649,7 @@ enum rdi_based_source_ring_selection {
 #define HAL_REO_SW2REO_RING_BASE_MSB_RING_SIZE		0x0000ffff
 #define HAL_REO_CMD_RING_BASE_MSB_RING_SIZE		0x0000ffff
 #define HAL_REO_STATUS_RING_BASE_MSB_RING_SIZE		0x0000ffff
+#define HAL_FSE_CMD_RING_BASE_MSB_RING_SIZE		0x0000ffff
 #define HAL_REO2PPE_RING_BASE_MSB_RING_SIZE		0xffffffff
 #define HAL_PPE2TCL_RING_BASE_MSB_RING_SIZE		0x000fffff
 #define HAL_SW2TCL1_RING_BASE_MSB_RING_SIZE		0x000fffff
