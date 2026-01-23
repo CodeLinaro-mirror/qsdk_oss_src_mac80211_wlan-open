@@ -190,8 +190,10 @@ void ath12k_peer_unmap_event(struct ath12k_base *ab, u16 peer_id, bool is_wds)
 		goto exit;
 	}
 
-	ath12k_dbg(ab, ATH12K_DBG_PEER, "htt peer unmap vdev %d peer %pM id %d\n",
-		   peer->vdev_id, peer->addr, peer_id);
+	ath12k_dbg_tag(ab, ATH12K_DBG_PEER, ATH12K_DBG_L0,
+		       peer->pdev_idx, peer->vdev_id,
+		       "htt peer unmap vdev %d peer %pM id %d\n",
+		       peer->vdev_id, peer->addr, peer_id);
 
 	ath12k_link_peer_free(peer);
 
@@ -228,8 +230,11 @@ void ath12k_peer_map_event(struct ath12k_base *ab, u8 vdev_id, u16 peer_id,
 		ewma_avg_rssi_init(&peer->signal_stats.avg_rssi);
 		ewma_avg_rssi_dp_init(&peer->signal_stats.avg_rssi_dp);
 	}
-	ath12k_dbg(ab, ATH12K_DBG_PEER, "htt peer map vdev %d peer %pM id %d\n",
-		   vdev_id, mac_addr, peer_id);
+
+	ath12k_dbg_tag(ab, ATH12K_DBG_PEER, ATH12K_DBG_L0,
+		       peer ? peer->pdev_idx : 0, vdev_id,
+		       "htt peer map vdev %d peer %pM id %d\n",
+		       vdev_id, mac_addr, peer_id);
 
 exit:
 	spin_unlock_bh(&dp->dp_lock);

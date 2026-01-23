@@ -61,7 +61,7 @@ EXPORT_SYMBOL(__ath12k_warn);
 
 #ifdef CPTCFG_ATH12K_DEBUG
 
-void __ath12k_dbg(struct ath12k_base *ab, enum ath12k_debug_mask mask,
+void __ath12k_dbg(struct ath12k_base *ab, u64 mask,
 		  const char *fmt, ...)
 {
         struct va_format vaf;
@@ -86,7 +86,7 @@ void __ath12k_dbg(struct ath12k_base *ab, enum ath12k_debug_mask mask,
 EXPORT_SYMBOL(__ath12k_dbg);
 
 void ath12k_dbg_dump(struct ath12k_base *ab,
-		     enum ath12k_debug_mask mask,
+		     u64 mask,
 		     const char *msg, const char *prefix,
 		     const void *buf, size_t len)
 {
@@ -115,3 +115,4 @@ void ath12k_dbg_dump(struct ath12k_base *ab,
 EXPORT_SYMBOL(ath12k_dbg_dump);
 
 #endif /* CPTCFG_ATH12K_DEBUG */
+

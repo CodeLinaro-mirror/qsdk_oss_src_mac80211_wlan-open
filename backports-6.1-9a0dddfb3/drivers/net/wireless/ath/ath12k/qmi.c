@@ -3407,14 +3407,14 @@ static int ath12k_qmi_fill_adj_info(struct ath12k_base *ab,
 		adj_info->chip_id = adjacent_ab->device_id;
 		adj_info->num_local_links = adjacent_ab->qmi.num_radios;
 
-		ath12k_dbg(ab, ATH12K_DBG_QMI, "MLO adj chip id %d num_link %d\n",
+		ath12k_dbg(ab, ATH12K_DBG_QMI | ATH12K_DBG_MLO, "MLO adj chip id %d num_link %d\n",
 			   adjacent_ab->device_id, adj_info->num_local_links);
 
 		for (adj_index = 0; adj_index < adj_info->num_local_links; adj_index++) {
 			adj_info->hw_link_id[adj_index] = adj_wsi_info->hw_link_id_base + adj_index;
 			adj_info->valid_mlo_link_id[adj_index] = true;
 
-			ath12k_dbg(ab, ATH12K_DBG_QMI, "MLO adj chip link id %d\n",
+			ath12k_dbg(ab, ATH12K_DBG_QMI | ATH12K_DBG_MLO, "MLO adj chip link id %d\n",
 				   adj_info->hw_link_id[adj_index]);
 
 		}
@@ -3434,7 +3434,7 @@ static int ath12k_host_cap_parse_mlo(struct ath12k_base *ab,
 	int i, j, ret;
 
 	if (!ag->mlo_capable) {
-		ath12k_dbg(ab, ATH12K_DBG_QMI,
+		ath12k_dbg(ab, ATH12K_DBG_QMI | ATH12K_DBG_MLO,
 			   "MLO is disabled hence skip QMI MLO cap");
 		return 0;
 	}
@@ -3442,14 +3442,15 @@ static int ath12k_host_cap_parse_mlo(struct ath12k_base *ab,
 	wsi_info = ath12k_core_get_current_wsi_info(ab);
 	if (ath12k_cold_boot_cal_needed(ab) && !ab->mm_cal_support &&
             ab->qmi.cal_timeout == 0) {
-                ath12k_dbg(ab, ATH12K_DBG_QMI, "Skip MLO cap send for device id %d since it's in cold_boot\n",
-                                ab->device_id);
+		ath12k_dbg(ab, ATH12K_DBG_QMI | ATH12K_DBG_MLO,
+			   "Skip MLO cap send for device id %d since it's in cold_boot\n",
+			   ab->device_id);
                 return 0;
         }
 
 	if (!ab->qmi.num_radios || ab->qmi.num_radios == U8_MAX) {
 		ag->mlo_capable = false;
-		ath12k_dbg(ab, ATH12K_DBG_QMI,
+		ath12k_dbg(ab, ATH12K_DBG_QMI | ATH12K_DBG_MLO,
 			   "skip QMI MLO cap due to invalid num_radio %d\n",
 			   ab->qmi.num_radios);
 		return 0;
@@ -3474,7 +3475,8 @@ static int ath12k_host_cap_parse_mlo(struct ath12k_base *ab,
 	req->mlo_num_chips_valid = 1;
 	req->mlo_num_chips = ag->num_devices;
 
-	ath12k_dbg(ab, ATH12K_DBG_QMI, "mlo capability advertisement device_id %d group_id %d num_devices %d",
+	ath12k_dbg(ab, ATH12K_DBG_QMI | ATH12K_DBG_MLO,
+		   "mlo capability advertisement device_id %d group_id %d num_devices %d",
 		   req->mlo_chip_id, req->mlo_group_id, req->mlo_num_chips);
 
 	mutex_lock(&ag->mutex);
@@ -3498,7 +3500,7 @@ static int ath12k_host_cap_parse_mlo(struct ath12k_base *ab,
 		info->mlo_chip_info.num_local_links = partner_ab->qmi.num_radios;
 		info->num_adj_chips = wsi_info->num_adj_chips;
 
-		ath12k_dbg(ab, ATH12K_DBG_QMI, "mlo device id %d num_link %d\n",
+		ath12k_dbg(ab, ATH12K_DBG_QMI | ATH12K_DBG_MLO, "mlo device id %d num_link %d\n",
 			   info->mlo_chip_info.chip_id,
 			   info->mlo_chip_info.num_local_links);
 
@@ -3506,7 +3508,7 @@ static int ath12k_host_cap_parse_mlo(struct ath12k_base *ab,
 			info->mlo_chip_info.hw_link_id[j] = adj_wsi_info->hw_link_id_base + j;
 			info->mlo_chip_info.valid_mlo_link_id[j] = 1; //true
 
-			ath12k_dbg(ab, ATH12K_DBG_QMI, "mlo hw_link_id %d\n",
+			ath12k_dbg(ab, ATH12K_DBG_QMI | ATH12K_DBG_MLO, "mlo hw_link_id %d\n",
 				   info->mlo_chip_info.hw_link_id[j]);
 
 			hw_link_id++;
@@ -3684,7 +3686,7 @@ static int ath12k_qmi_mlo_reconfig_send(struct ath12k_base *ab)
 	int i, j, k = 0, ret;
 
 	if (!ag->mlo_capable) {
-		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS,
+		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS | ATH12K_DBG_MLO,
 			   "MLO is disabled hence skip QMI MLO Reconfig");
 		return 0;
 	}
@@ -3692,14 +3694,15 @@ static int ath12k_qmi_mlo_reconfig_send(struct ath12k_base *ab)
 	wsi_info = ath12k_core_get_current_wsi_info(ab);
 	if (ath12k_cold_boot_cal_needed(ab) && !ab->mm_cal_support &&
 	    ab->qmi.cal_timeout == 0) {
-		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS, "Skip MLO Reconfig send for device id %d since it's in cold_boot\n",
+		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS | ATH12K_DBG_MLO,
+			   "Skip MLO Reconfig send for device id %d since it's in cold_boot\n",
 			   ab->device_id);
 		return 0;
 	}
 
 	if (!ab->qmi.num_radios || ab->qmi.num_radios == U8_MAX) {
 		ag->mlo_capable = false;
-		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS,
+		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS | ATH12K_DBG_MLO,
 			   "skip QMI MLO Reconfi due to invalid num_radio %d\n",
 			   ab->qmi.num_radios);
 		return 0;
@@ -3726,7 +3729,8 @@ static int ath12k_qmi_mlo_reconfig_send(struct ath12k_base *ab)
 	req.mlo_num_chips = ag->num_devices - ag->num_bypassed;
 	req.mlo_chip_info_valid = 0;
 
-	ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS, "mlo reconfig device_id %d group_id %d num_devices %d",
+	ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS | ATH12K_DBG_MLO,
+		   "mlo reconfig device_id %d group_id %d num_devices %d",
 		   req.mlo_chip_id, req.mlo_group_id, req.mlo_num_chips);
 
 	if (!ag->hw_link_id_init_done)
@@ -3748,7 +3752,7 @@ static int ath12k_qmi_mlo_reconfig_send(struct ath12k_base *ab)
 		info->mlo_chip_info.num_local_links = partner_ab->qmi.num_radios;
 		info->num_adj_chips = wsi_info->num_adj_chips;
 
-		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS, "mlo device id %d num_link %d\n",
+		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS | ATH12K_DBG_MLO, "mlo device id %d num_link %d\n",
 			   info->mlo_chip_info.chip_id,
 			   info->mlo_chip_info.num_local_links);
 
@@ -3756,7 +3760,7 @@ static int ath12k_qmi_mlo_reconfig_send(struct ath12k_base *ab)
 			info->mlo_chip_info.hw_link_id[j] = adj_wsi_info->hw_link_id_base + j;
 			info->mlo_chip_info.valid_mlo_link_id[j] = 1;
 
-			ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS, "mlo hw_link_id %d\n",
+			ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS | ATH12K_DBG_MLO, "mlo hw_link_id %d\n",
 				   info->mlo_chip_info.hw_link_id[j]);
 		}
 

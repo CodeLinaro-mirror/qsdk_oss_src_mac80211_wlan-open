@@ -51,7 +51,7 @@ struct athdbg_request{
 	struct ath12k_base *ab;
 	struct list_head req_list;
 	enum athdbg_request_type req_type;
-	unsigned int data;
+	u64 data;
 	char *input_buf;
 };
 
@@ -69,5 +69,6 @@ struct ath_debug_base {
 	char bus[BUS_NAME_LEN];
 };
 
-unsigned int athdbg_conv_str_to_dbgmask(char *dbgmask);
+u64 athdbg_conv_str_to_dbgmask(const char *dbgmask);
+int athdbg_dbgmask_to_str(u64 mask, char *buf, size_t buflen);
 #endif

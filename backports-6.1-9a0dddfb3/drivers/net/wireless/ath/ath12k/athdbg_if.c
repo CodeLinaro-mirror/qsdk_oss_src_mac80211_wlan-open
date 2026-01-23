@@ -5,12 +5,14 @@
 #include "ath_debug/athdbg_minidump.h"
 #include "ath_debug/athdbg_mhi.h"
 #include "ath_debug/athdbg_wmi_recording.h"
+#include "debug.h"
 #include "mhi.h"
 #include "pci.h"
 
 extern struct ath_debug_base *athdbg_base;
 
 #define MAX_SOC_DIR_NAME_SIZE 64
+
 
 const struct athdbg_to_ath12k_ops dbg_to_ath_ops = {
 #ifndef CONFIG_UPSTREAM_BUILD
@@ -20,6 +22,7 @@ const struct athdbg_to_ath12k_ops dbg_to_ath_ops = {
 #endif
 	.dev_running_status = athdbg_if_check_dev_running,
 	.set_dbg_mask = athdbg_if_setmask,
+	.get_dbg_mask = athdbg_if_getmask,
 	.get_link_vif_from_vdev_id = ath12k_mac_get_arvif_by_vdev_id,
 	.pci_read32 = ath12k_pci_read32,
 };
@@ -143,7 +146,12 @@ bool athdbg_if_check_dev_running(struct ath12k_base *ab)
 	return ret;
 }
 
-void athdbg_if_setmask(unsigned int debug_mask)
+void athdbg_if_setmask(u64 debug_mask)
 {
 	ath12k_debug_mask = debug_mask;
+}
+
+u64 athdbg_if_getmask(void)
+{
+	return ath12k_debug_mask;
 }

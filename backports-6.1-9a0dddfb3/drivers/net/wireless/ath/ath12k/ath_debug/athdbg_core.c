@@ -30,7 +30,7 @@ static bool athdbg_drv_ready(struct ath12k_base *ab)
 	return TRUE;
 }
 
-unsigned int athdbg_conv_str_to_dbgmask(char *dbgmask)
+u64 athdbg_conv_str_to_dbgmask(const char *dbgmask)
 {
 	if (!strcmp(dbgmask, "ahb"))
 		return ATH12K_DBG_AHB;
@@ -54,7 +54,7 @@ unsigned int athdbg_conv_str_to_dbgmask(char *dbgmask)
 		return ATH12K_DBG_HAL;
 	else if (!strcmp(dbgmask, "pci"))
 		return ATH12K_DBG_PCI;
-	else if (!strcmp(dbgmask, "cp_tx"))
+	else if (!strcmp(dbgmask, "dp_tx"))
 		return ATH12K_DBG_DP_TX;
 	else if (!strcmp(dbgmask, "dp_rx"))
 		return ATH12K_DBG_DP_RX;
@@ -65,9 +65,84 @@ unsigned int athdbg_conv_str_to_dbgmask(char *dbgmask)
 		return ATH12K_DBG_DP_FST;
 	else if (!strcmp(dbgmask, "peer"))
 		return ATH12K_DBG_PEER;
+	else if (!strcmp(dbgmask, "scan"))
+		return ATH12K_DBG_SCAN;
+	else if (!strcmp(dbgmask, "assoc"))
+		return ATH12K_DBG_ASSOC;
+	else if (!strcmp(dbgmask, "roam"))
+		return ATH12K_DBG_ROAM;
+	else if (!strcmp(dbgmask, "dfs"))
+		return ATH12K_DBG_DFS;
+	else if (!strcmp(dbgmask, "crypto"))
+		return ATH12K_DBG_CRYPTO;
+	else if (!strcmp(dbgmask, "offchan"))
+		return ATH12K_DBG_OFFCHAN;
+	else if (!strcmp(dbgmask, "action"))
+		return ATH12K_DBG_ACTION;
+	else if (!strcmp(dbgmask, "mlo"))
+		return ATH12K_DBG_MLO;
+	else if (!strcmp(dbgmask, "power"))
+		return ATH12K_DBG_POWER;
 #endif
 	else
 		return 0;
+}
+
+int athdbg_dbgmask_to_str(u64 mask, char *buf, size_t buflen)
+{
+	int n = 0;
+	const char *sep = "";
+
+	struct { u64 bit; const char *name; } map[] = {
+		{ ATH12K_DBG_AHB, "ahb" },
+		{ ATH12K_DBG_WMI, "wmi" },
+		{ ATH12K_DBG_HTC, "htc" },
+		{ ATH12K_DBG_DP_HTT, "htt" },
+		{ ATH12K_DBG_MAC, "mac" },
+		{ ATH12K_DBG_BOOT, "boot" },
+		{ ATH12K_DBG_QMI, "qmi" },
+		{ ATH12K_DBG_DATA, "data" },
+		{ ATH12K_DBG_MGMT, "mgmt" },
+		{ ATH12K_DBG_REG, "reg" },
+		{ ATH12K_DBG_TESTMODE, "testmode" },
+		{ ATH12K_DBG_HAL, "hal" },
+		{ ATH12K_DBG_PCI, "pci" },
+		{ ATH12K_DBG_DP_TX, "dp_tx" },
+		{ ATH12K_DBG_DP_RX, "dp_rx" },
+		{ ATH12K_DBG_WOW, "wow" },
+#ifndef CONFIG_UPSTREAM_BUILD
+		{ ATH12K_DBG_DP_FST, "fst" },
+		{ ATH12K_DBG_PEER, "peer" },
+		{ ATH12K_DBG_SCAN, "scan" },
+		{ ATH12K_DBG_ASSOC, "assoc" },
+		{ ATH12K_DBG_ROAM, "roam" },
+		{ ATH12K_DBG_DFS, "dfs" },
+		{ ATH12K_DBG_CRYPTO, "crypto" },
+		{ ATH12K_DBG_OFFCHAN, "offchan" },
+		{ ATH12K_DBG_ACTION, "action" },
+		{ ATH12K_DBG_MLO, "mlo" },
+		{ ATH12K_DBG_POWER, "power" },
+#endif
+	};
+
+	int i;
+
+	if (!buf || buflen == 0)
+		return -EINVAL;
+
+	for (i = 0; i < ARRAY_SIZE(map); i++) {
+		if (mask & map[i].bit) {
+			n += scnprintf(buf + n, buflen - n, "%s%s", sep, map[i].name);
+			sep = ":";
+			if (n >= buflen)
+				break;
+		}
+	}
+
+	if (n == 0)
+		n = scnprintf(buf, buflen, "0");
+
+	return n;
 }
 
 static void athdbg_process_request(struct work_struct *work)

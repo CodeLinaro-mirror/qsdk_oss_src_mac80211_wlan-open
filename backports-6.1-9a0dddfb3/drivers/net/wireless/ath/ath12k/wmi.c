@@ -10340,7 +10340,7 @@ static void ath12k_vdev_start_resp_event(struct ath12k_base *ab, struct sk_buff 
 
 	rcu_read_unlock();
 
-	ath12k_dbg(ab, ATH12K_DBG_WMI, "vdev start resp for vdev id %d",
+	ath12k_dbg(ab, (ATH12K_DBG_WMI | ATH12K_DBG_MAC | ATH12K_DBG_MLME), "vdev start resp for vdev id %d",
 		   vdev_start_resp.vdev_id);
 }
 

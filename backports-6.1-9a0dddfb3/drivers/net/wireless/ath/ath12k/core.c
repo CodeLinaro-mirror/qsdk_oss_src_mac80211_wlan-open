@@ -69,9 +69,9 @@ MODULE_PARM_DESC(ppe_ds_enable, "ppe_ds_enable: 0-disable, 1-enable");
 extern struct ath12k_ps_context ath12k_global_ps_ctx;
 #endif
 
-unsigned int ath12k_debug_mask = 0x00000010;
-module_param_named(debug_mask, ath12k_debug_mask, uint, 0644);
-MODULE_PARM_DESC(debug_mask, "Debugging mask");
+u64 ath12k_debug_mask = ATH12K_DBG_MAC;
+module_param_named(debug_mask, ath12k_debug_mask, ullong, 0644);
+MODULE_PARM_DESC(debug_mask, "Debugging mask (64-bit)");
 EXPORT_SYMBOL(ath12k_debug_mask);
 
 unsigned int ath12k_debug_mask_level;
@@ -789,7 +789,7 @@ int ath12k_core_fetch_rxgainlut(struct ath12k_base *ab, struct ath12k_board_data
 						 ATH12K_BD_IE_RXGAINLUT_DATA);
 	if (!ret)
 		goto exit;
-	
+
 	ret = ath12k_core_create_fallback_board_name(ab, rxgainlutdefaultname,
 					    	     BOARD_NAME_SIZE);
 	if (ret) {
@@ -1590,7 +1590,7 @@ static void ath12k_core_hw_group_stop(struct ath12k_hw_group *ag)
 		clear_bit(ATH12K_FLAG_REGISTERED, &ab->dev_flags);
 
 		ath12k_core_device_cleanup(ab);
-		
+
 		if (ab->hw_params->reoq_lut_support &&
 		    !ab->powered_off) {
 			mutex_lock(&ab->core_lock);
@@ -4098,7 +4098,7 @@ static int ath12k_core_panic_handler(struct notifier_block *nb,
 #endif
 	if (ab->in_panic)
 		goto panic_handler;
-	
+
 	ab->in_panic = true;
 
 	if (ab->hif.bus == ATH12K_BUS_PCI)
