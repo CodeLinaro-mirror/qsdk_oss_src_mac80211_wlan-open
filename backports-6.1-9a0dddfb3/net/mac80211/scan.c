@@ -596,8 +596,10 @@ static bool __ieee80211_can_leave_ch(struct ieee80211_sub_if_data *sdata,
 	if (!ieee80211_is_radar_required(local, req))
 		return true;
 
-	if (!regulatory_pre_cac_allowed(local->hw.wiphy))
-		return false;
+	if (sdata->vif.type != NL80211_IFTYPE_STATION) {
+		if (!regulatory_pre_cac_allowed(local->hw.wiphy))
+			return false;
+	}
 
 	list_for_each_entry(sdata_iter, &local->interfaces, list) {
 		for_each_valid_link(&sdata_iter->wdev, link_id)

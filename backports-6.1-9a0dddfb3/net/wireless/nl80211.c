@@ -1069,6 +1069,7 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_ADVERTISED_TTLM] =
 		NLA_POLICY_NESTED(nl80211_advertised_ttlm_policy),
 	[NL80211_ATTR_QOS_MGMT] = NLA_POLICY_NESTED(nl80211_qm_policy),
+	[NL80211_ATTR_SKIP_CAC] = { .type = NLA_FLAG },
 	[NL80211_ATTR_ASSOC_MLD_EXT_CAPA_OPS] = { .type = NLA_U16 },
 	[NL80211_ATTR_CONTROL_MIC_PAD] = { .type = NLA_U8 },
 	[NL80211_ATTR_USE_CFP] = { .type = NLA_U32 },
@@ -4149,7 +4150,8 @@ static int __nl80211_set_channel(struct cfg80211_registered_device *rdev,
 	case NL80211_IFTYPE_AP:
 	case NL80211_IFTYPE_P2P_GO:
 		if (!cfg80211_reg_can_beacon_relax(&rdev->wiphy, &chandef,
-						   iftype))
+						   iftype) &&
+		    !(nla_get_flag(info->attrs[NL80211_ATTR_SKIP_CAC])))
 			return -EINVAL;
 		if (wdev->links[link_id].ap.beacon_interval) {
 			struct ieee80211_channel *cur_chan;
@@ -11921,6 +11923,7 @@ static int nl80211_start_radar_detection(struct sk_buff *skb,
 	enum nl80211_dfs_regions dfs_region;
 	unsigned int cac_time_ms;
 	int err;
+	bool skip_cac;
 
 	flush_delayed_work(&rdev->dfs_update_channels_wk);
 
@@ -12018,6 +12021,12 @@ static int nl80211_start_radar_detection(struct sk_buff *skb,
 	if (WARN_ON(!cac_time_ms))
 		cac_time_ms = IEEE80211_DFS_MIN_CAC_TIME_MS;
 
+	skip_cac = info->attrs[NL80211_ATTR_SKIP_CAC] &&
+		nla_get_flag(info->attrs[NL80211_ATTR_SKIP_CAC]);
+	/* If skip_cac is configured, reset the CAC time to 0 */
+	if (skip_cac)
+		cac_time_ms = 0;
+
 	err = rdev_start_radar_detection(rdev, dev, &chandef, cac_time_ms,
 					 link_id);
 
@@ -12045,6 +12054,14 @@ static int nl80211_start_radar_detection(struct sk_buff *skb,
 	wdev->links[link_id].cac_start_time = jiffies;
 	wdev->links[link_id].cac_time_ms = cac_time_ms;
 
+	if (nla_get_flag(info->attrs[NL80211_ATTR_SKIP_CAC])) {
+		cfg80211_cac_event(dev, &chandef,
+				NL80211_RADAR_CAC_FINISHED,
+				GFP_KERNEL, link_id);
+		/* Set cac_started true for ieee80211_link_release_channel() */
+		wdev->links[link_id].cac_started = true;
+		rdev_end_cac(rdev, dev, link_id);
+	}
 unlock:
 	return err;
 }
@@ -12185,6 +12202,7 @@ static int nl80211_channel_switch(struct sk_buff *skb, struct genl_info *info)
 	bool need_new_beacon = false;
 	bool need_handle_dfs_flag = true;
 	u32 cs_count;
+	bool is_skip_cac_enabled;
 
 	if (!rdev->ops->channel_switch ||
 	    !(rdev->wiphy.flags & WIPHY_FLAG_HAS_CHANNEL_SWITCH))
@@ -12307,6 +12325,16 @@ skip_beacons:
 		}
 	}
 
+	is_skip_cac_enabled = (info->attrs[NL80211_ATTR_SKIP_CAC] &&
+			nla_get_flag(info->attrs[NL80211_ATTR_SKIP_CAC]));
+
+	if (is_skip_cac_enabled) {
+		cfg80211_set_dfs_state(&rdev->wiphy, &params.chandef,
+				       NL80211_DFS_AVAILABLE);
+		memcpy(&rdev->cac_done_chandef, &params.chandef, sizeof(params.chandef));
+		queue_work(cfg80211_wq, &rdev->propagate_cac_done_wk);
+		cfg80211_sched_dfs_chan_update(rdev);
+	}
 	err = cfg80211_chandef_dfs_required(wdev->wiphy,
 					    &params.chandef,
 					    wdev->iftype);
