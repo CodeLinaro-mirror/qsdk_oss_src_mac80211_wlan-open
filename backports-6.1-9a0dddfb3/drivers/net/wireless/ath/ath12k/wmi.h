@@ -1518,6 +1518,7 @@ enum wmi_tlv_peer_flags {
 enum wmi_tlv_peer_flags_ext {
 	WMI_PEER_EXT_EHT = BIT(0),
 	WMI_PEER_EXT_320MHZ = BIT(1),
+	WMI_PEER_CFP = BIT(2),
 	WMI_PEER_EXT_UHR = BIT(7),
 };
 
@@ -2401,6 +2402,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_MGMT_MSDU_FLOWQ_PARAMS = 0x515,
 	WMI_TAG_HOL_MSDU_FLOWQ_PARAMS = 0x516,
 	WMI_TAG_MLO_PEER_TID_TO_LINK_MAP_EVENT_FIXED_PARAM = 0x544,
+	WMI_TAG_PEER_ASSOC_CIP_INFO,
 	WMI_TAG_MAX
 };
 
@@ -4755,6 +4757,12 @@ struct wmi_peer_assoc_tid_to_link_map {
 	__le32 tid_to_link_map_info;
 };
 
+struct wmi_peer_assoc_cip_info {
+	__le32 tlv_header;
+	__le32 cfp_enable;
+	__le32 cfp_padding_bits;
+};
+
 struct wmi_scan_radio_capabilities_ext2 {
 	__le32 phy_id;
 	__le32 flags;
@@ -4821,6 +4829,7 @@ struct ath12k_wmi_peer_assoc_arg {
 	u32 tx_max_mcs_nss;
 	u32 peer_bw_rxnss_override;
 	bool is_pmf_enabled;
+	bool is_cfp_enabled;
 	bool is_wme_set;
 	bool qos_flag;
 	bool apsd_flag;
@@ -4870,6 +4879,7 @@ struct ath12k_wmi_peer_assoc_arg {
 	struct ath12k_wmi_ttlm_peer_params ttlm_params;
 	struct peer_assoc_flowq_params flowq_params;
 	struct peer_assoc_holq_params holq_params;
+	u8 control_mic_pad;
 	bool uhr_flag;
 	u32 peer_uhr_cap_mac[WMI_MAX_UHRCAP_MAC_SIZE];
 	u32 peer_uhr_cap_phy[WMI_MAX_UHRCAP_PHY_SIZE];

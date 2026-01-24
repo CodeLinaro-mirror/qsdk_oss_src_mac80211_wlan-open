@@ -3222,6 +3222,9 @@ static void ath12k_peer_assoc_h_basic(struct ath12k *ar,
 	arg->peer_listen_intval = hw->conf.listen_interval;
 	arg->peer_nss = 1;
 
+	if (sta->control_mic_pad)
+		arg->control_mic_pad = sta->control_mic_pad;
+
 	bss_conf = ath12k_mac_get_link_bss_conf(arvif);
 	if (!bss_conf) {
 		ath12k_warn(ar->ab, "unable to access bss link conf in peer assoc for vif %pM link %u\n",
@@ -3314,6 +3317,9 @@ static void ath12k_peer_assoc_h_crypto(struct ath12k *ar,
 		/* TODO: Need to check if FW supports PMF? */
 		arg->is_pmf_enabled = true;
 	}
+
+	if (sta->cfp)
+		arg->is_cfp_enabled = true;
 
 	/* TODO: safe_mode_enabled (bypass 4-way handshake) flag req? */
 }

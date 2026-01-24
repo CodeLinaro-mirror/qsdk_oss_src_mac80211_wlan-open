@@ -3152,6 +3152,9 @@ static void ath12k_wmi_copy_peer_flags(struct wmi_peer_assoc_complete_cmd *cmd,
 	if (arg->is_pmf_enabled)
 		cmd->peer_flags |= cpu_to_le32(WMI_PEER_PMF);
 
+	if (arg->is_cfp_enabled)
+		cmd->peer_flags |= cpu_to_le32(WMI_PEER_CFP);
+
 	/* Disable AMSDU for station transmit, if user configures it */
 	/* Disable AMSDU for AP transmit to 11n Stations, if user configures
 	 * it
@@ -3237,6 +3240,24 @@ static void *ath12k_wmi_peer_assoc_v2_cmd(struct ath12k *ar,
 	/*
 	 * Fill the tlv here for WMI_PEER_ASSOC_V2_CMDID
 	 */
+
+	if (arg->control_mic_pad > 0) {
+		int len = 0;
+		struct wmi_tlv *tlv;
+		*cmd_id = WMI_PEER_ASSOC_V2_CMDID;
+		struct wmi_peer_assoc_cip_info *cip_info;
+
+		len += TLV_HDR_SIZE + sizeof(*cip_info);
+		tlv = ptr;
+		tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, len);
+		ptr += TLV_HDR_SIZE;
+		cip_info = ptr;
+		cip_info->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_PEER_ASSOC_CIP_INFO,
+							      sizeof(*cip_info));
+		cip_info->cfp_enable =  cpu_to_le32(arg->is_cfp_enabled);
+		cip_info->cfp_padding_bits = cpu_to_le32(arg->control_mic_pad);
+		ptr += sizeof(*cip_info);
+	}
 
 	return ptr;
 }
