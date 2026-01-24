@@ -884,7 +884,13 @@ static void ieee80211_uninit(struct net_device *dev)
 static void
 ieee80211_get_stats64(struct net_device *dev, struct rtnl_link_stats64 *stats)
 {
-	dev_fetch_sw_netstats(stats, dev->tstats);
+	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+	struct ieee80211_local *local = sdata->local;
+
+	if (sdata->vif.offload_flags & IEEE80211_OFFLOAD_TXRX_STATS)
+		drv_get_netstats(local, sdata, stats);
+	else
+		dev_fetch_sw_netstats(stats, dev->tstats);
 }
 
 static int ieee80211_change_mtu(struct net_device *dev, int mtu)
