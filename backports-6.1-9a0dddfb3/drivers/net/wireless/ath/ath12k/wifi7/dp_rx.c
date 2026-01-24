@@ -1520,6 +1520,8 @@ ath12k_wifi7_dp_rx_process_received_packets(struct ath12k_dp *dp,
 	struct ath12k_dp *partner_dp;
 	struct ath12k_vif *ahvif;
 	struct ath12k_dp_link_peer *link_peer;
+	struct ath12k_dp_link_peer_stats *peer_stats;
+	u16 peer_id;
 	u8 hw_link_id, pdev_id;
 	int msdu_idx = 0;
 	bool fast_rx = true;
@@ -1577,11 +1579,13 @@ ath12k_wifi7_dp_rx_process_received_packets(struct ath12k_dp *dp,
 			continue;
 		}
 
+		peer_id = spd_desc_l->rx_mpdu_info.flow_info.peer_id;
+
 		if (ath12k_dp_stats_enabled(dp_pdev) &&
 		    ath12k_tid_stats_enabled(dp_pdev)) {
 			rcu_read_lock();
 			link_peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev,
-									     spd_desc_l->rx_mpdu_info.flow_info.peer_id);
+									     peer_id);
 			if (link_peer) {
 				ahvif = ath12k_vif_to_ahvif(link_peer->vif);
 				ath12k_tid_rx_stats(ahvif, spd_desc_l->rx_mpdu_info.tid,
@@ -1597,6 +1601,14 @@ ath12k_wifi7_dp_rx_process_received_packets(struct ath12k_dp *dp,
 		if (unlikely(ret)) {
 			ath12k_dbg(partner_ab, ATH12K_DBG_DATA,
 				   "Unable to process msdu %d", ret);
+			rcu_read_lock();
+			link_peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev,
+									     peer_id);
+			if (link_peer) {
+				peer_stats = &link_peer->peer_stats;
+				DP_STATS_INCR(peer_stats, rx_dropped, 1);
+			}
+			rcu_read_unlock();
 			ath12k_dp_rx_skb_free(msdu, dp, ring_id, ret);
 			spd_desc_l->msdu = NULL;
 			continue;
