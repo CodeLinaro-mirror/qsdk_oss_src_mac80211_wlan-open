@@ -822,9 +822,12 @@ ath12k_update_extd_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 	DP_STATS_INCR(tx_stats, tx_mpdus_success, peer_stats->succ_mpdu_pkts);
 	DP_STATS_INCR(tx_stats, retries_mpdu,
 		      (peer_stats->mpdu_tried - peer_stats->succ_mpdu_pkts));
-	if (!is_mcast)
+	if (!is_mcast) {
 		DP_STATS_UPD(tx_stats, last_ack_rssi,
 			     peer->peer_stats.last_ack_rssi);
+		ewma_avg_ack_rssi_add(&peer->peer_stats.avg_ack_rssi,
+				      peer->peer_stats.last_ack_rssi);
+	}
 
 	/* Update debugfs stats */
 	ath12k_debugfs_sta_update_success(peer, peer_stats);
@@ -1110,8 +1113,11 @@ ath12k_update_htt_stats_txrate(struct ath12k_pdev_dp *dp_pdev,
 	ack_rssi = ath12k_dp_get_rssi_value(snr, &peer->signal_stats,
 					    &dp_pdev->ar->rssi_offsets, peer,
 					    true);
-	if (!is_mcast)
+	if (!is_mcast) {
 		peer->peer_stats.last_ack_rssi = ack_rssi;
+		ewma_avg_ack_rssi_add(&peer->peer_stats.avg_ack_rssi,
+				      ack_rssi);
+	}
 
 	memcpy(&peer->last_txrate, &peer->txrate, sizeof(struct rate_info));
 
