@@ -23,6 +23,7 @@ struct ath12k_pdev_dp;
 struct ath12k_vif;
 struct ath12k_link_sta;
 struct ath12k_dp_vif;
+struct ath12k_pdev_dp;
 enum ath12k_mlo_recovery_mode;
 enum ath12k_dp_tx_enq_error;
 
@@ -743,6 +744,8 @@ void ath12k_mac_update_freq_range(struct ath12k *ar,
 				  u32 freq_low, u32 freq_high);
 void ath12k_mac_ieee80211_free_txskb(struct ieee80211_hw *hw,
 				     struct sk_buff *skb,
+				     struct ath12k_pdev_dp *dp_pdev,
+				     struct ieee80211_sta *sta,
 				     struct ath12k_dp_vif *dp_vif, u8 ring_id,
 				     enum ath12k_dp_tx_enq_error drop_reason,
 				     bool dev_free);

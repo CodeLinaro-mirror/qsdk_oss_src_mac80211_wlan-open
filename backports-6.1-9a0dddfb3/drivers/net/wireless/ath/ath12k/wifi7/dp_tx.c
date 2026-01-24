@@ -2024,6 +2024,7 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 	struct ieee80211_vif *vif;
 	struct ath12k_vif *ahvif;
 	struct ath12k_dp_link_peer *link_peer;
+	struct ath12k_dp_pkt_info *tx_dropped;
 	struct sk_buff *skb_ext_desc = sw_metadata->skb_ext_desc;
 	struct ath12k *ar;
 	struct ath12k_dp_peer *peer = NULL;
@@ -2225,6 +2226,14 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 
 exit:
 	DP_DEVICE_STATS_INC(dp, tx_err.tx_comp_err[drop_reason][ring], 1);
+
+	link_peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev,
+							     ts->peer_id);
+	if (link_peer) {
+		tx_dropped = &link_peer->peer_stats.tx_dropped;
+		DP_STATS_INCR(tx_dropped, packets, 1);
+		DP_STATS_INCR(tx_dropped, bytes, msdu->len);
+	}
 	if (ahvif && ath12k_dp_stats_enabled(dp_pdev) &&
 	    ath12k_tid_stats_enabled(dp_pdev))
 		ath12k_tid_tx_drop_stats(ahvif, tid, msdu_len, reason);
