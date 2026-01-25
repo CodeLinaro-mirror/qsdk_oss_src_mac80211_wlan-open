@@ -225,7 +225,6 @@ void ath12k_peer_map_event(struct ath12k_base *ab, u8 vdev_id, u16 peer_id,
 		list_add(&peer->list, &dp->peers);
 		wake_up(&ab->peer_mapping_wq);
 		ewma_avg_rssi_init(&peer->avg_rssi);
-		ewma_avg_ack_rssi_init(&peer->peer_stats.avg_ack_rssi);
 		ewma_avg_snr_init(&peer->signal_stats.avg_snr);
 		ewma_avg_snr_dp_init(&peer->signal_stats.avg_snr_dp);
 		ewma_avg_rssi_init(&peer->signal_stats.avg_rssi);
@@ -934,21 +933,18 @@ void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr)
 	synchronize_rcu();
 }
 
-unsigned long ath12k_link_peer_last_active(struct ath12k_dp_link_peer *link_peer)
+void ath12k_link_peer_get_sta_rate_info_stats(struct ath12k_dp *dp, const u8 *addr,
+					      struct ath12k_dp_link_peer_rate_info *rate_info)
 {
-	unsigned long last_ack = READ_ONCE(link_peer->peer_stats.last_ack);
-	unsigned long last_rx = READ_ONCE(link_peer->peer_stats.last_rx);
+	struct ath12k_dp_link_peer *link_peer;
 
-	if (!last_ack || time_after(last_rx, last_ack))
-		return last_rx;
+	spin_lock_bh(&dp->dp_lock);
+	link_peer = ath12k_dp_link_peer_find_by_addr(dp, addr);
+	if (!link_peer) {
+		spin_unlock_bh(&dp->dp_lock);
+		return;
+	}
 
-	return last_ack;
-}
-
-void
-ath12k_link_peer_get_sta_rate_info_stats(struct ath12k_dp_link_peer *link_peer,
-					 struct ath12k_dp_link_peer_rate_info *rate_info)
-{
 	rate_info->rx_duration = link_peer->rx_duration;
 	rate_info->tx_duration = link_peer->tx_duration;
 	rate_info->txrate.legacy = link_peer->txrate.legacy;
@@ -964,6 +960,8 @@ ath12k_link_peer_get_sta_rate_info_stats(struct ath12k_dp_link_peer *link_peer,
 	rate_info->tx_retry_count = link_peer->tx_retry_count;
 	rate_info->tx_retry_failed = link_peer->tx_retry_failed;
 	rate_info->rx_retries = link_peer->peer_stats.rx_retries;
+
+	spin_unlock_bh(&dp->dp_lock);
 }
 
 bool ath12k_dp_link_peer_reset_tx_stats(struct ath12k_dp *dp, const u8 *addr)

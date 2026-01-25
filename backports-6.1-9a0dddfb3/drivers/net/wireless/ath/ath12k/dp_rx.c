@@ -1039,9 +1039,6 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 			rcu_read_unlock();
 			return;
 		}
-
-		if (link_peer)
-			WRITE_ONCE(link_peer->peer_stats.last_rx, jiffies);
 	}
 
 	if (ath12k_dp_stats_enabled(dp_pdev) &&

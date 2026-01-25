@@ -573,21 +573,15 @@ struct ath12k_mld_qos_stats {
 	struct fw_mpdu_stats svc_intval_stats;
 	struct fw_mpdu_stats burst_size_stats;
 };
-
-DECLARE_EWMA(avg_ack_rssi, 10, 8)
-
 struct ath12k_dp_link_peer_stats {
 	struct ath12k_htt_tx_stats *tx_stats;
 	struct ath12k_rx_peer_stats *rx_stats;
 	struct ath12k_dp_mon_peer_stats dp_mon_stats;
 	struct ath12k_qos_stats *qos_stats;
 	struct ath12k_dp_pkt_info tx_dropped;
-	unsigned long last_ack;
-	unsigned long last_rx;
 	u32 rx_dropped;
 	u32 rx_retries;
 	int last_ack_rssi;
-	struct ewma_avg_ack_rssi avg_ack_rssi;
 };
 
 struct ath12k_dp_peer_rx_stats {
