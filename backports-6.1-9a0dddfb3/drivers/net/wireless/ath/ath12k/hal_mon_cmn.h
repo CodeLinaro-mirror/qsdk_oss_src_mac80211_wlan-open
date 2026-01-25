@@ -7,6 +7,7 @@
 #define HAL_MON_CMN_H
 
 #include "hw.h"
+#include "qcn_extns/ath12k_cmn_extn.h"
 
 #define HAL_RX_MON_MAX_AGGR_SIZE	128
 #define HAL_RX_MAX_MPDU				256
