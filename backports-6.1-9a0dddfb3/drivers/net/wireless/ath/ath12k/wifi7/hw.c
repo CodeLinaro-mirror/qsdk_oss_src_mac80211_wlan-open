@@ -1280,9 +1280,11 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	struct ieee80211_key_conf *key = info->control.hw_key;
 	struct ath12k_mgmt_frame_stats *mgmt_stats = &ahvif->mgmt_stats;
 	struct ieee80211_sta *sta = control->sta;
+	u32 control_flags = info->control.flags;
 	struct ath12k_link_sta *arsta = NULL;
 	struct ath12k_link_vif *tmp_arvif;
 	struct ath12k_sta *ahsta = NULL;
+	struct ieee80211_tx_rate rate;
 	u32 info_flags = info->flags;
 	struct ieee80211_mgmt *mgmt;
 	struct sk_buff *msdu_copied;
@@ -1316,6 +1318,10 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 						ring_id, false);
 		return;
 	}
+
+	if ((control_flags & IEEE80211_TX_CTRL_MGMT_RATE_EXIST) &&
+	    info->control.rates[0].idx >= 0)
+		rate = info->control.rates[0];
 
 	link_id = u32_get_bits(info->control.flags, IEEE80211_TX_CTRL_MLO_LINK);
 	if (unlikely(!(skb->fast_xmit &&
@@ -1483,11 +1489,21 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 			return;
 		}
 
+		if ((control_flags & IEEE80211_TX_CTRL_MGMT_RATE_EXIST) &&
+		    rate.idx >= 0) {
+			if (ath12k_skb_rhash_insert(ar, skb, rate))
+				ath12k_warn(ar->ab,
+					    "tx skb rhash entry creation failed\n");
+		}
+
 		frm_type = FIELD_GET(IEEE80211_FCTL_STYPE, hdr->frame_control);
 		ret = ath12k_mac_mgmt_tx(ar, skb, is_prb_rsp);
 		if (ret) {
 			if (ret != -EBUSY)
 				ath12k_warn(ar->ab, "failed to queue mgmt stype 0x%x frame %d\n", frm_type, ret);
+
+			ath12k_skb_rhash_remove(ar, skb);
+
 			ath12k_mac_ieee80211_free_txskb(hw, skb, dp_pdev,
 							sta, dp_vif,
 							DP_TX_ENQ_DROP_MGMT_FRAME,

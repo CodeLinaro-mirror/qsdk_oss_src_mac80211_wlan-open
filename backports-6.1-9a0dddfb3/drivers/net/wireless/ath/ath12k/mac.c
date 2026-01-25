@@ -995,6 +995,42 @@ static bool ath12k_mac_bitrate_is_cck(int bitrate)
 	return false;
 }
 
+int ath12k_tx_rate_info(struct ath12k_link_vif *arvif,
+			struct ieee80211_tx_rate *rate,
+			u16 *mcs, u8 *preamble)
+{
+	struct ieee80211_supported_band *sband;
+	enum nl80211_band band;
+	u16 bitrate;
+
+	if (!arvif || !arvif->chanctx.def.chan)
+		return -1;
+
+	band = arvif->chanctx.def.chan->band;
+	sband = &arvif->ar->mac.sbands[band];
+
+	if (rate->flags & IEEE80211_TX_RC_MCS) {
+		*mcs = rate->idx;
+		*preamble = WMI_RATE_PREAMBLE_HT;
+	} else {
+		if (rate->idx < 0 || rate->idx >= sband->n_bitrates)
+			return -1;
+
+		bitrate = sband->bitrates[rate->idx].bitrate;
+
+		if (ath12k_mac_bitrate_is_cck(bitrate))
+			*preamble = WMI_RATE_PREAMBLE_CCK;
+		else
+			*preamble = WMI_RATE_PREAMBLE_OFDM;
+
+		if (band == NL80211_BAND_5GHZ || band == NL80211_BAND_6GHZ)
+			rate->idx += ATH12K_MAC_FIRST_OFDM_RATE_IDX;
+
+		*mcs = rate->idx;
+	}
+	return 0;
+}
+
 u8 ath12k_mac_hw_rate_to_idx(const struct ieee80211_supported_band *sband,
 			     u8 hw_rate, bool cck)
 {
@@ -15885,6 +15921,8 @@ static void ath12k_mgmt_over_wmi_tx_drop(struct ath12k *ar, struct sk_buff *skb)
 	if (!(info->flags & IEEE80211_TX_CTL_TX_OFFCHAN))
 		num_mgmt = atomic_dec_if_positive(&ar->num_pending_mgmt_tx);
 
+	ath12k_skb_rhash_remove(ar, skb);
+
 	if (!ATH12K_IS_CUSTOM_PKT(ATH12K_SKB_CB(skb)))
 		ieee80211_free_txskb(ar->ah->hw, skb);
 	else
@@ -16765,6 +16803,11 @@ int ath12k_mac_start(struct ath12k *ar)
 	rcu_assign_pointer(ab->pdevs_active[ar->pdev_idx],
 			   &ab->pdevs[ar->pdev_idx]);
 
+	ret = ath12k_skb_rhash_tbl_init(ar);
+	if (ret) {
+		ath12k_err(ab, "failed to initialize tx skb rhashtable:%d\n", ret);
+		goto err;
+	}
 	return 0;
 err:
 
@@ -16991,6 +17034,7 @@ void ath12k_mac_stop(struct ath12k *ar)
 	spin_lock_bh(&ar->data_lock);
         ar->awgn_intf_handling_in_prog = false;
         spin_unlock_bh(&ar->data_lock);
+	ath12k_skb_rhash_tbl_destroy(ar);
 }
 
 void ath12k_mac_op_stop(struct ieee80211_hw *hw, bool suspend)
