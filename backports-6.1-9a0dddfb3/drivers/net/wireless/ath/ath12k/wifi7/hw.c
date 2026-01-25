@@ -1777,7 +1777,6 @@ static const struct ieee80211_ops ath12k_ops_wifi7 = {
 	.set_radar_background           = ath12k_mac_op_set_radar_background,
 	.erp                            = ath12k_mac_op_erp,
 	.qos_mgmt_cfg                   = ath12k_mac_op_qos_mgmt_cfg,
-	.get_netstats                   = ath12k_mac_op_get_netstats,
 	.get_afc_eirp_pwr               = ath12k_mac_op_get_afc_eirp_pwr,
 	.get_6ghz_dev_deployment_type	= ath12k_mac_op_get_6ghz_dev_deployment_type,
 	.get_key_seq                    = ath12k_mac_op_get_key_seq,
