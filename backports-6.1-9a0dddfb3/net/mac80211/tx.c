@@ -64,14 +64,7 @@ static void ieee80211_update_tx_stats(struct sta_info *sta,
 				      struct sk_buff *skb, u16 ac,
 				      u8 tid)
 {
-	struct ieee80211_local *local = sta->local;
-	struct ieee80211_hw *hw = &local->hw;
 	struct link_sta_info *deflink = &sta->deflink;
-
-	/* When driver TXRX stats offload enabled, stop accounting it in here*/
-	if (ieee80211_hw_check(hw, TXRX_STATS_OFFLOAD) ||
-	    sta->sdata->vif.offload_flags & IEEE80211_OFFLOAD_TXRX_STATS)
-		return;
 
 	if (skb_shinfo(skb)->gso_size)
 		deflink->tx_stats.msdu[tid] +=
