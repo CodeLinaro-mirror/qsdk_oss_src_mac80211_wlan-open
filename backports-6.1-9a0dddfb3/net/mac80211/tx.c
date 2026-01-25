@@ -47,10 +47,6 @@ static void ieee80211_8023_xmit(struct ieee80211_sub_if_data *sdata,
 static inline void ieee80211_tx_stats(struct net_device *dev, u32 len)
 {
 	struct pcpu_sw_netstats *tstats = this_cpu_ptr(netdev_tstats(dev));
-	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
-
-	if (sdata->vif.offload_flags & IEEE80211_OFFLOAD_TXRX_STATS)
-		return;
 
 	u64_stats_update_begin(&tstats->syncp);
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
@@ -3861,6 +3857,7 @@ ieee80211_xmit_fast_finish(struct ieee80211_sub_if_data *sdata,
 
 	if (key)
 		info->control.hw_key = &key->conf;
+
 	ieee80211_tx_stats(skb->dev, skb->len);
 
 	if (hdr->frame_control & cpu_to_le16(IEEE80211_STYPE_QOS_DATA)) {

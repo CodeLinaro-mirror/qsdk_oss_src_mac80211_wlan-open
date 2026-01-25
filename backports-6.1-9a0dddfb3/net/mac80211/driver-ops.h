@@ -687,17 +687,6 @@ static inline void drv_link_sta_statistics(struct ieee80211_local *local,
 	trace_drv_return_void(local);
 }
 
-static inline void
-drv_get_netstats(struct ieee80211_local *local,
-		 struct ieee80211_sub_if_data *sdata,
-		 struct rtnl_link_stats64 *stats)
-{
-	if (local->ops->get_netstats) {
-		local->ops->get_netstats(&local->hw, &sdata->vif,
-					 stats);
-	}
-}
-
 int drv_conf_tx(struct ieee80211_local *local,
 		struct ieee80211_link_data *link, u16 ac,
 		const struct ieee80211_tx_queue_params *params);
