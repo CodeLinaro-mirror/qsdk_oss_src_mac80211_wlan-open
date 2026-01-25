@@ -1901,6 +1901,16 @@ static inline int drv_erp(struct ieee80211_local *local,
 	return ret;
 }
 
+static inline void drv_set_monitor(struct ieee80211_local *local,
+				   struct ieee80211_vif *vif,
+				   u32 flags)
+{
+	if (!vif || !local->ops->set_monitor_flags)
+		return;
+
+	local->ops->set_monitor_flags(&local->hw, vif, flags);
+}
+
 static inline int
 drv_qos_mgmt_cfg(struct ieee80211_sub_if_data *sdata,
 		 struct ieee80211_local *local, struct ieee80211_sta *sta,

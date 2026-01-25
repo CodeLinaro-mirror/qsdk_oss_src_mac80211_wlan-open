@@ -1043,6 +1043,9 @@ ieee80211_rx_monitor(struct ieee80211_local *local, struct sk_buff *origskb,
 		    chandef->chan->center_freq != status->freq)
 			continue;
 
+		if (sdata->u.mntr.flags & MONITOR_FLAG_SKIP_RX)
+			continue;
+
 		if (!prev_sdata) {
 			prev_sdata = sdata;
 			continue;
