@@ -579,7 +579,6 @@ struct ath12k_dp_link_peer_stats {
 	struct ath12k_dp_mon_peer_stats dp_mon_stats;
 	struct ath12k_qos_stats *qos_stats;
 	struct ath12k_dp_pkt_info tx_dropped;
-	u32 rx_dropped;
 	u32 rx_retries;
 	int last_ack_rssi;
 };
