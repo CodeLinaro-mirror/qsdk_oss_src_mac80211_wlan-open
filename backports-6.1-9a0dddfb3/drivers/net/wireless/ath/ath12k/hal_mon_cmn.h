@@ -322,6 +322,35 @@ struct hal_tx_mon_ppdu_info {
 	struct hal_rx_mon_ppdu_info rx_status;
 };
 
+/**
+ * struct hal_txmon_word_mask_config - hal tx monitor word mask filter setting
+ * Add more members to this structure, if extended in upcoming h/ws
+ * @pcu_ppdu_setup_init: PCU_PPDU_SETUP TLV word mask
+ * @tx_peer_entry: TX_PEER_ENTRY TLV word mask
+ * @tx_queue_ext: TX_QUEUE_EXTENSION TLV word mask
+ * @tx_fes_status_end: TX_FES_STATUS_END TLV word mask
+ * @response_end_status: RESPONSE_END_STATUS TLV word mask
+ * @tx_fes_status_prot: TX_FES_STATUS_PROT TLV word mask
+ * @tx_fes_setup: TX_FES_SETUP TLV word mask
+ * @tx_msdu_start: TX_MSDU_START TLV word mask
+ * @tx_mpdu_start: TX_MPDU_START TLV word mask
+ * @rxpcu_user_setup: RXPCU_USER_SETUP TLV word mask
+ * @compaction_enable: flag to enable word mask compaction
+ */
+struct hal_tx_mon_wmask_config {
+	u32 pcu_ppdu_setup_init;
+	u16 tx_peer_entry;
+	u16 tx_queue_ext;
+	u16 tx_fes_status_end;
+	u16 response_end_status;
+	u16 tx_fes_status_prot;
+	u8 tx_fes_setup;
+	u8 tx_msdu_start;
+	u8 tx_mpdu_start;
+	u8 rxpcu_user_setup;
+	u8 compaction_enable;
+};
+
 static inline u64 ath12k_hal_le32hilo_to_u64(__le32 hi, __le32 lo)
 {
 	u64 hi64 = le32_to_cpu(hi);
@@ -359,6 +388,7 @@ struct hal_mon_ops {
 				u16 tlv_tag);
 	void (*hal_mon_set_mon_buf_desc)(void *desc, u32 addr_lo,
 					 u32 addr_hi, u64 cookie);
+	void (*get_tx_mon_wmask_config)(struct hal_tx_mon_wmask_config *wmsk);
 };
 
 static inline enum hal_tx_mon_status
@@ -515,4 +545,11 @@ hal_get_radiotap_he_gi_ltf(u16 *he_gi, u16 *he_ltf)
 	}
 }
 
+static inline void
+ath12k_hal_mon_tx_get_wmask_config(struct ath12k_hal *hal,
+				   struct hal_tx_mon_wmask_config *wmsk)
+{
+	if (hal->hal_mon_ops->get_tx_mon_wmask_config)
+		hal->hal_mon_ops->get_tx_mon_wmask_config(wmsk);
+}
 #endif

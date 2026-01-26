@@ -7,6 +7,8 @@
 #ifndef ATH12K_DP_HTT_H
 #define ATH12K_DP_HTT_H
 
+#include "hal_mon_cmn.h"
+
 struct ath12k_dp;
 struct ath12k_pdev_dp;
 
@@ -970,9 +972,6 @@ enum htt_rx_hdr_len_type {
 		HTT_RX_FILTER_TLV_FLAGS_RX_PACKET | \
 		HTT_RX_FILTER_TLV_FLAGS_MSDU_END)
 
-#define HTT_TX_RING_SELECTION_CFG_CMD_INFO0_MSG_TYPE	GENMASK(7, 0)
-#define HTT_TX_RING_SELECTION_CFG_CMD_INFO0_PDEV_ID	GENMASK(15, 8)
-
 #define HTT_RX_FILTER_TLV_PKTLOG_LITE \
         (HTT_RX_FILTER_TLV_FLAGS_MPDU_START | \
          HTT_RX_FILTER_TLV_FLAGS_PPDU_START | \
@@ -1117,21 +1116,271 @@ struct htt_rx_ring_tlv_filter {
 #define HTT_STATS_FC0_SUBTYPE_VHT_NDP_AN	0x50
 #define HTT_STATS_FC0_SUBTYPE_BAR		0x80
 
-#define HTT_TX_RING_SELECTION_CFG_CMD_INFO0_MSG_TYPE	GENMASK(7, 0)
-#define HTT_TX_RING_SELECTION_CFG_CMD_INFO0_PDEV_ID	GENMASK(15, 8)
-#define HTT_TX_RING_SELECTION_CFG_CMD_INFO0_RING_ID	GENMASK(23, 16)
-#define HTT_TX_RING_SELECTION_CFG_CMD_INFO0_SS		BIT(24)
-#define HTT_TX_RING_SELECTION_CFG_CMD_INFO0_PS		BIT(25)
+/**
+ * @brief host -> target TX monitor config message
+ *
+ * MSG_TYPE => HTT_H2T_MSG_TYPE_TX_MONITOR_CFG
+ *
+ * @details
+ *    HTT_H2T_MSG_TYPE_TX_MONITOR_CFG message is sent by host to
+ *    configure RXDMA rings.
+ *    The configuration is per ring based and includes both packet types
+ *    and PPDU/MPDU TLVs.
+ *
+ *    The message would appear as follows:
+ *
+ * |31 28|27|26|25|24|23 22|21|20|19|18 16|15|14|13|12|11|10|9|8|7|6|5|4|3|2  0|
+ * |-----+--+--+--+--+-----+--+--+--+-----+--+--+--+--+--+--+-+-+-+-+-+-+-+----|
+ * |rsvd1|MF|TM|PS|SS|       ring_id      |        pdev_id      |   msg_type   |
+ * |--------------+--------+--------+-----+------------------------------------|
+ * |    rsvd2     |  DATA  |  CTRL  | MGMT|            ring_buffer_size        |
+ * |-----------------------------------------+--+--+--+--+--+-+-+-+-+-+-+-+----|
+ * |                                      |cm| M| M| M| M| M|M|M|M|M|M|M|M|    |
+ * |                                      |pt| S| S| S| P| P|P|S|S|S|P|P|P|    |
+ * |                                      |ac| E| E| E| E| E|E|S|S|S|S|S|S|    |
+ * |                     rsvd3            |tn| D| C| M| D| C|M|D|C|M|D|C|M|  E |
+ * |---------------------------------------------------------------------------|
+ * |                               tlv_filter_mask_in0                         |
+ * |---------------------------------------------------------------------------|
+ * |                               tlv_filter_mask_in1                         |
+ * |---------------------------------------------------------------------------|
+ * |                               tlv_filter_mask_in2                         |
+ * |---------------------------------------------------------------------------|
+ * |                               tlv_filter_mask_in3                         |
+ * |--------------------+-----------------+---------------------+--------------|
+ * |  tx_msdu_start_wm  | tx_queue_ext_wm |  tx_peer_entry_wm   |tx_fes_stup_wm|
+ * |---------------------------------------------------------------------------|
+ * |                          pcu_ppdu_setup_word_mask                         |
+ * |-----------------------+--+--+--+-----+---------------------+--------------|
+ * |         rsvd4         | D| C| M|  PT |   rxpcu_usrsetp_wm  |tx_mpdu_srt_wm|
+ * |---------------------------------------------------------------------------|
+ *
+ * Where:
+ *     MF = MAC address filtering enable
+ *     TM = tx monitor global enable
+ *     PS = pkt_swap
+ *     SS = status_swap
+ * The message is interpreted as follows:
+ * dword0 - b'0:7   - msg_type: This will be set to
+ *                    0x1b (HTT_H2T_MSG_TYPE_TX_MONITOR_CFG)
+ *          b'8:15  - pdev_id:
+ *                    0 (for rings at SOC level),
+ *                    1/2/3 mac id (for rings at LMAC level)
+ *          b'16:23 - ring_id : Identify the ring to configure.
+ *                    More details can be got from enum htt_srng_ring_id
+ *          b'24    - status_swap (SS): 1 is to swap status TLV
+ *          b'25    - pkt_swap (PS):  1 is to swap packet TLV
+ *          b'26    - tx_mon_global_en: Enable/Disable global register
+ *                    configuration in Tx monitor module.
+ *          b'27    - mac_addr_filter_en:
+ *                    Enable/Disable Mac Address based filter.
+ *          b'28:31 - rsvd1:  reserved for future use
+ * dword1 - b'0:15  - ring_buffer_size: size of bufferes referenced by rx ring,
+ *                    in byte units.
+ *                    Valid only for HW_TO_SW_RING and SW_TO_HW_RING
+ *          b'16:18 - config_length_mgmt(MGMT) for MGMT: Each bit set represent
+ *                    64, 128, 256.
+ *                    If all 3 bits are set config length is > 256.
+ *                    if val is '0', then ignore this field.
+ *          b'19:21 - config_length_ctrl(CTRL) for CTRL: Each bit set represent
+ *                    64, 128, 256.
+ *                    If all 3 bits are set config length is > 256.
+ *                    if val is '0', then ignore this field.
+ *          b'22:24 - config_length_data(DATA) for DATA: Each bit set represent
+ *                    64, 128, 256.
+ *                    If all 3 bits are set config length is > 256.
+ *                    If val is '0', then ignore this field.
+ *        - b'25:31 - rsvd2: Reserved for future use
+ * dword2 - b'0:2   - packet_type_enable_flags(E): MGMT, CTRL, DATA
+ *          b'3     - filter_in_tx_mpdu_start_mgmt(MPSM):
+ *                    If packet_type_enable_flags is '1' for MGMT type,
+ *                    monitor will ignore this bit and allow this TLV.
+ *                    If packet_type_enable_flags is '0' for MGMT type,
+ *                    monitor will use this bit to enable/disable logging
+ *                    of this TLV.
+ *          b'4     - filter_in_tx_mpdu_start_ctrl(MPSC)
+ *                    If packet_type_enable_flags is '1' for CTRL type,
+ *                    monitor will ignore this bit and allow this TLV.
+ *                    If packet_type_enable_flags is '0' for CTRL type,
+ *                    monitor will use this bit to enable/disable logging
+ *                    of this TLV.
+ *          b'5     - filter_in_tx_mpdu_start_data(MPSD)
+ *                    If packet_type_enable_flags is '1' for DATA type,
+ *                    monitor will ignore this bit and allow this TLV.
+ *                    If packet_type_enable_flags is '0' for DATA type,
+ *                    monitor will use this bit to enable/disable logging
+ *                    of this TLV.
+ *          b'6     - filter_in_tx_msdu_start_mgmt(MSSM)
+ *                    If packet_type_enable_flags is '1' for MGMT type,
+ *                    monitor will ignore this bit and allow this TLV.
+ *                    If packet_type_enable_flags is '0' for MGMT type,
+ *                    monitor will use this bit to enable/disable logging
+ *                    of this TLV.
+ *          b'7     - filter_in_tx_msdu_start_ctrl(MSSC)
+ *                    If packet_type_enable_flags is '1' for CTRL type,
+ *                    monitor will ignore this bit and allow this TLV.
+ *                    If packet_type_enable_flags is '0' for CTRL type,
+ *                    monitor will use this bit to enable/disable logging
+ *                    of this TLV.
+ *          b'8     - filter_in_tx_msdu_start_data(MSSD)
+ *                    If packet_type_enable_flags is '1' for DATA type,
+ *                    monitor will ignore this bit and allow this TLV.
+ *                    If packet_type_enable_flags is '0' for DATA type,
+ *                    monitor will use this bit to enable/disable logging
+ *                    of this TLV.
+ *          b'9     - filter_in_tx_mpdu_end_mgmt(MPEM)
+ *                    If packet_type_enable_flags is '1' for MGMT type,
+ *                    monitor will ignore this bit and allow this TLV.
+ *                    If packet_type_enable_flags is '0' for MGMT type,
+ *                    monitor will use this bit to enable/disable logging
+ *                    of this TLV.
+ *                    If filter_in_TX_MPDU_START = 1 it is recommended
+ *                    to set this bit.
+ *          b'10    - filter_in_tx_mpdu_end_ctrl(MPEC)
+ *                    If packet_type_enable_flags is '1' for CTRL type,
+ *                    monitor will ignore this bit and allow this TLV.
+ *                    If packet_type_enable_flags is '0' for CTRL type,
+ *                    monitor will use this bit to enable/disable logging
+ *                    of this TLV.
+ *                    If filter_in_TX_MPDU_START = 1 it is recommended
+ *                    to set this bit.
+ *          b'11    - filter_in_tx_mpdu_end_data(MPED)
+ *                    If packet_type_enable_flags is '1' for DATA type,
+ *                    monitor will ignore this bit and allow this TLV.
+ *                    If packet_type_enable_flags is '0' for DATA type,
+ *                    monitor will use this bit to enable/disable logging
+ *                    of this TLV.
+ *                    If filter_in_TX_MPDU_START = 1 it is recommended
+ *                    to set this bit.
+ *          b'12    - filter_in_tx_msdu_end_mgmt(MSEM)
+ *                    If packet_type_enable_flags is '1' for MGMT type,
+ *                    monitor will ignore this bit and allow this TLV.
+ *                    If packet_type_enable_flags is '0' for MGMT type,
+ *                    monitor will use this bit to enable/disable logging
+ *                    of this TLV.
+ *                    If filter_in_TX_MSDU_START = 1 it is recommended
+ *                    to set this bit.
+ *          b'13    - filter_in_tx_msdu_end_ctrl(MSEC)
+ *                    If packet_type_enable_flags is '1' for CTRL type,
+ *                    monitor will ignore this bit and allow this TLV.
+ *                    If packet_type_enable_flags is '0' for CTRL type,
+ *                    monitor will use this bit to enable/disable logging
+ *                    of this TLV.
+ *                    If filter_in_TX_MSDU_START = 1 it is recommended
+ *                    to set this bit.
+ *          b'14    - filter_in_tx_msdu_end_data(MSED)
+ *                    If packet_type_enable_flags is '1' for DATA type,
+ *                    monitor will ignore this bit and allow this TLV.
+ *                    If packet_type_enable_flags is '0' for DATA type,
+ *                    monitor will use this bit to enable/disable logging
+ *                    of this TLV.
+ *                    If filter_in_TX_MSDU_START = 1 it is recommended
+ *                    to set this bit.
+ *          b'15    - Enable compaction TLVS
+ *          b'16:31 - rsvd3: Reserved for future use
+ * dword3 - b'0:31  - tlv_filter_mask_in0:
+ * dword4 - b'0:31  - tlv_filter_mask_in1:
+ * dword5 - b'0:31  - tlv_filter_mask_in2:
+ * dword6 - b'0:31  - tlv_filter_mask_in3:
+ * dword7 - b'0:7   - tx_fes_setup_word_mask:
+ *        - b'8:15  - tx_peer_entry_word_mask:
+ *        - b'16:23 - tx_queue_ext_word_mask:
+ *        - b'24:31 - tx_msdu_start_word_mask:
+ * dword8 - b'0:31  - pcu_ppdu_setup_word_mask:
+ * dword9 - b'0:7   - tx_mpdu_start_word_mask:
+ *        - b'8:15  - rxpcu_user_setup_word_mask:
+ *        - b'16:18 - pkt_type_enable_msdu_or_mpdu_logging (PT):
+ *                    MGMT, CTRL, DATA
+ *        - b'19    - dma_mpdu_mgmt(M): For MGMT
+ *                    0 -> MSDU level logging is enabled
+ *                         (valid only if bit is set in
+ *                         pkt_type_enable_msdu_or_mpdu_logging)
+ *                    1 -> MPDU level logging is enabled
+ *                         (valid only if bit is set in
+ *                         pkt_type_enable_msdu_or_mpdu_logging)
+ *        - b'20    - dma_mpdu_ctrl(C) : For CTRL
+ *                    0 -> MSDU level logging is enabled
+ *                         (valid only if bit is set in
+ *                         pkt_type_enable_msdu_or_mpdu_logging)
+ *                    1 -> MPDU level logging is enabled
+ *                         (valid only if bit is set in
+ *                         pkt_type_enable_msdu_or_mpdu_logging)
+ *        - b'21    - dma_mpdu_data(D) : For DATA
+ *                    0 -> MSDU level logging is enabled
+ *                         (valid only if bit is set in
+ *                         pkt_type_enable_msdu_or_mpdu_logging)
+ *                    1 -> MPDU level logging is enabled
+ *                         (valid only if bit is set in
+ *                         pkt_type_enable_msdu_or_mpdu_logging)
+ *        - b'22:31 - rsvd4 for future use
+ */
 
-#define HTT_TX_RING_SELECTION_CFG_CMD_INFO1_RING_BUFF_SIZE	GENMASK(15, 0)
-#define HTT_TX_RING_SELECTION_CFG_CMD_INFO1_PKT_TYPE		GENMASK(18, 16)
-#define HTT_TX_RING_SELECTION_CFG_CMD_INFO1_CONF_LEN_MGMT	GENMASK(21, 19)
-#define HTT_TX_RING_SELECTION_CFG_CMD_INFO1_CONF_LEN_CTRL	GENMASK(24, 22)
-#define HTT_TX_RING_SELECTION_CFG_CMD_INFO1_CONF_LEN_DATA	GENMASK(27, 25)
+#define HTT_TX_MON_RING_CFG_CMD_INFO0_MSG_TYPE		GENMASK(7, 0)
+#define HTT_TX_MON_RING_CFG_CMD_INFO0_PDEV_ID		GENMASK(15, 8)
+#define HTT_TX_MON_RING_CFG_CMD_INFO0_RING_ID		GENMASK(23, 16)
+#define HTT_TX_MON_RING_CFG_CMD_INFO0_SS			BIT(24)
+#define HTT_TX_MON_RING_CFG_CMD_INFO0_PS			BIT(25)
+#define HTT_TX_MON_RING_CFG_CMD_INFO0_EN_TXMON			BIT(26)
+#define HTT_TX_MON_RING_CFG_CMD_INFO0_MAC_ADDR_FLTR_CMD		BIT(27)
 
-#define HTT_TX_RING_SELECTION_CFG_CMD_INFO2_PKT_TYPE_EN_FLAG	GENMASK(2, 0)
+#define HTT_TX_MON_RING_CFG_CMD_INFO1_RING_BUFF_SIZE		GENMASK(15, 0)
+#define HTT_TX_MON_RING_CFG_CMD_INFO1_CONF_DMA_LEN_MGMT		GENMASK(18, 16)
+#define HTT_TX_MON_RING_CFG_CMD_INFO1_CONF_DMA_LEN_CTRL		GENMASK(21, 19)
+#define HTT_TX_MON_RING_CFG_CMD_INFO1_CONF_DMA_LEN_DATA		GENMASK(24, 22)
+#define HTT_TX_MON_RING_CFG_CMD_INFO1_CONF_RESERVED		GENMASK(31, 25)
 
-struct htt_tx_ring_selection_cfg_cmd {
+#define HTT_TX_MON_FRAME_CTRL_INFO2_TYPE_MGMT  BIT(0)
+#define HTT_TX_MON_FRAME_CTRL_INFO2_TYPE_CTRL  BIT(1)
+#define HTT_TX_MON_FRAME_CTRL_INFO2_TYPE_DATA  BIT(2)
+
+/* MPDU Start Filters */
+#define HTT_TX_MON_FRAME_CTRL_INFO2_MPSM BIT(3)
+#define HTT_TX_MON_FRAME_CTRL_INFO2_MPSC BIT(4)
+#define HTT_TX_MON_FRAME_CTRL_INFO2_MPSD BIT(5)
+
+/* MSDU Start Filters */
+#define HTT_TX_MON_FRAME_CTRL_INFO2_MSSM BIT(6)
+#define HTT_TX_MON_FRAME_CTRL_INFO2_MSSC BIT(7)
+#define HTT_TX_MON_FRAME_CTRL_INFO2_MSSD BIT(8)
+
+/* MPDU End Filters */
+#define HTT_TX_MON_FRAME_CTRL_INFO2_MPEM BIT(9)
+#define HTT_TX_MON_FRAME_CTRL_INFO2_MPEC BIT(10)
+#define HTT_TX_MON_FRAME_CTRL_INFO2_MPED BIT(11)
+
+/* MSDU End Filters */
+#define HTT_TX_MON_FRAME_CTRL_INFO2_MSEM BIT(12)
+#define HTT_TX_MON_FRAME_CTRL_INFO2_MSEC BIT(13)
+#define HTT_TX_MON_FRAME_CTRL_INFO2_MSED BIT(14)
+
+#define HTT_TX_MON_FRAME_CTRL_INFO2_EN_COMPACTION BIT(15)
+
+#define HTT_TX_MON_WMASK_IN0_FES_SETUP_MASK		GENMASK(7, 0)
+#define HTT_TX_MON_WMASK_IN0_PEER_ENTRY_MASK_V1		GENMASK(15, 8)
+#define HTT_TX_MON_WMASK_IN0_TX_QUEUE_EXT_MASK_V1	GENMASK(23, 16)
+#define HTT_TX_MON_WMASK_IN0_MSDU_START_MASK		GENMASK(31, 24)
+#define HTT_TX_MON_WMASK_IN1_PCU_PPDU_SETUP_INIT_MASK	GENMASK(31, 0)
+#define HTT_TX_MON_WMASK_IN2_MPDU_START_MASK		GENMASK(7, 0)
+#define HTT_TX_MON_WMASK_IN2_RXPCU_USER_SETUP_MASK	GENMASK(15, 8)
+#define HTT_TX_MON_WMASK_IN2_MGMT_MPDU_MSDU_LOG_EN	BIT(16)
+#define HTT_TX_MON_WMASK_IN2_CTRL_MPDU_MSDU_LOG_EN	BIT(17)
+#define HTT_TX_MON_WMASK_IN2_DATA_MPDU_MSDU_LOG_EN	BIT(18)
+
+#define HTT_TX_MON_WMASK_IN2_MGMT_LOG_TYP		BIT(19)
+#define HTT_TX_MON_WMASK_IN2_CTRL_LOG_TYP		BIT(20)
+#define HTT_TX_MON_WMASK_IN2_DATA_LOG_TYP		BIT(21)
+
+#define HTT_TX_MON_WMASK_IN2_MPDU_LOG	1
+#define HTT_TX_MON_WMASK_IN2_MSDU_LOG	0
+
+#define HTT_TX_MON_WMASK_IN3_TX_QUEUE_EXT_MASK_V2	GENMASK(11, 0)
+#define HTT_TX_MON_WMASK_IN3_PEER_ENTRY_MASK_V2	GENMASK(23, 12)
+
+#define HTT_TX_MON_WMASK_IN4_FES_STATUS_END_MASK	GENMASK(15, 0)
+#define HTT_TX_MON_WMASK_IN4_RESPONSE_END_STATUS_MASK	GENMASK(31, 16)
+#define HTT_TX_MON_WMASK_IN5_FES_STATUS_PROT_MASK	GENMASK(10, 0)
+
+struct htt_tx_mon_ring_selection_cfg_cmd {
 	__le32 info0;
 	__le32 info1;
 	__le32 info2;
@@ -1139,40 +1388,83 @@ struct htt_tx_ring_selection_cfg_cmd {
 	__le32 tlv_filter_mask_in1;
 	__le32 tlv_filter_mask_in2;
 	__le32 tlv_filter_mask_in3;
-	__le32 reserved[3];
+	__le32 tlv_word_mask_in0;
+	__le32 tlv_word_mask_in1;
+	__le32 tlv_word_mask_in2;
+	__le32 tlv_word_mask_in3;
+	__le32 tlv_word_mask_in4;
+	__le32 tlv_word_mask_in5;
 } __packed;
-
-#define HTT_TX_RING_TLV_FILTER_MGMT_DMA_LEN	GENMASK(3, 0)
-#define HTT_TX_RING_TLV_FILTER_CTRL_DMA_LEN	GENMASK(7, 4)
-#define HTT_TX_RING_TLV_FILTER_DATA_DMA_LEN	GENMASK(11, 8)
-
-#define HTT_TX_MON_FILTER_HYBRID_MODE \
-		(HTT_TX_FILTER_TLV_FLAGS0_RESPONSE_START_STATUS | \
-		HTT_TX_FILTER_TLV_FLAGS0_RESPONSE_END_STATUS | \
-		HTT_TX_FILTER_TLV_FLAGS0_TX_FES_STATUS_START | \
-		HTT_TX_FILTER_TLV_FLAGS0_TX_FES_STATUS_END | \
-		HTT_TX_FILTER_TLV_FLAGS0_TX_FES_STATUS_START_PPDU | \
-		HTT_TX_FILTER_TLV_FLAGS0_TX_FES_STATUS_USER_PPDU | \
-		HTT_TX_FILTER_TLV_FLAGS0_TX_FES_STATUS_ACK_OR_BA | \
-		HTT_TX_FILTER_TLV_FLAGS0_TX_FES_STATUS_1K_BA | \
-		HTT_TX_FILTER_TLV_FLAGS0_TX_FES_STATUS_START_PROT | \
-		HTT_TX_FILTER_TLV_FLAGS0_TX_FES_STATUS_PROT | \
-		HTT_TX_FILTER_TLV_FLAGS0_TX_FES_STATUS_USER_RESPONSE | \
-		HTT_TX_FILTER_TLV_FLAGS0_RECEIVED_RESPONSE_INFO | \
-		HTT_TX_FILTER_TLV_FLAGS0_RECEIVED_RESPONSE_INFO_PART2)
 
 struct htt_tx_ring_tlv_filter {
 	u32 tx_mon_downstream_tlv_flags;
 	u32 tx_mon_upstream_tlv_flags0;
 	u32 tx_mon_upstream_tlv_flags1;
 	u32 tx_mon_upstream_tlv_flags2;
+	struct hal_tx_mon_wmask_config wmask;
 	bool tx_mon_mgmt_filter;
 	bool tx_mon_data_filter;
 	bool tx_mon_ctrl_filter;
-	u16 tx_mon_pkt_dma_len;
+	u16 tx_mon_mgmt_pkt_dma_len;
+	u16 tx_mon_data_pkt_dma_len;
+	u16 tx_mon_ctrl_pkt_dma_len;
+	bool mgmt_mpdu_end;
+	bool mgmt_msdu_end;
+	bool mgmt_msdu_start;
+	bool mgmt_mpdu_start;
+	bool ctrl_mpdu_end;
+	bool ctrl_msdu_end;
+	bool ctrl_msdu_start;
+	bool ctrl_mpdu_start;
+	bool data_mpdu_end;
+	bool data_msdu_end;
+	bool data_msdu_start;
+	bool data_mpdu_start;
+	bool txmon_disable;
+	bool mgmt_mpdu_msdu_log_en;
+	bool ctrl_mpdu_msdu_log_en;
+	bool data_mpdu_msdu_log_en;
+	bool mgmt_log_typ;
+	bool ctrl_log_typ;
+	bool data_log_typ;
+	bool mac_addr_filter_en;
 } __packed;
 
+enum htt_tx_mon_downstream_tlv_flags {
+	HTT_TX_FILTER_TLV_FLAGS_TX_FES_SETUP		= BIT(0),
+	HTT_TX_FILTER_TLV_FLAGS_TX_PEER_ENTRY		= BIT(1),
+	HTT_TX_FILTER_TLV_FLAGS_TX_QUEUE_EXTENSION	= BIT(2),
+	HTT_TX_FILTER_TLV_FLAGS_TX_LAST_MPDU_END	= BIT(3),
+	HTT_TX_FILTER_TLV_FLAGS_TX_LAST_MPDU_FETCHED	= BIT(4),
+	HTT_TX_FILTER_TLV_FLAGS_TX_DATA_SYNC		= BIT(5),
+	HTT_TX_FILTER_TLV_FLAGS_PCU_PPDU_SETUP_INIT	= BIT(6),
+	HTT_TX_FILTER_TLV_FLAGS_FW2S_MON		= BIT(7),
+	HTT_TX_FILTER_TLV_FLAGS_TX_LOOPBACK_SETUP	= BIT(8),
+	HTT_TX_FILTER_TLV_FLAGS_SCH_CRITICAL_TLV_REF	= BIT(9),
+	HTT_TX_FILTER_TLV_FLAGS_NDP_PREAMBLE_DONE	= BIT(10),
+	HTT_TX_FILTER_TLV_FLAGS_TX_RAW_FRAME_SETUP	= BIT(11),
+	HTT_TX_FILTER_TLV_FLAGS_TXPCU_USER_SETUP	= BIT(12),
+	HTT_TX_FILTER_TLV_FLAGS_RXPCU_SETUP		= BIT(13),
+	HTT_TX_FILTER_TLV_FLAGS_RXPCU_SETUP_COMPLETE	= BIT(14),
+	HTT_TX_FILTER_TLV_FLAGS_COEX_TX_REQ		= BIT(15),
+	HTT_TX_FILTER_TLV_FLAGS_RXPCU_USER_SETUP	= BIT(16),
+	HTT_TX_FILTER_TLV_FLAGS_RXPCU_USER_SETUP_EXT	= BIT(17),
+	HTT_TX_FILTER_TLV_FLAGS_WUR_DATA		= BIT(18),
+	HTT_TX_FILTER_TLV_FLAGS_TQM_MPDU_GLOBAL_START	= BIT(19),
+	HTT_TX_FILTER_TLV_FLAGS_TX_FES_SETUP_COMPLETE	= BIT(20),
+	HTT_TX_FILTER_TLV_FLAGS_SCHEDULER_END		= BIT(21),
+	HTT_TX_FILTER_TLV_FLAGS_SCH_WAIT_INSTR_TX_PATH	= BIT(22),
+};
+
+#define HTT_TX_MON_FILTER_DW_STRM_TLV_DEFAULT_MODE \
+		(HTT_TX_FILTER_TLV_FLAGS_TX_FES_SETUP | \
+		 HTT_TX_FILTER_TLV_FLAGS_TX_PEER_ENTRY | \
+		 HTT_TX_FILTER_TLV_FLAGS_TX_QUEUE_EXTENSION | \
+		 HTT_TX_FILTER_TLV_FLAGS_FW2S_MON | \
+		 HTT_TX_FILTER_TLV_FLAGS_PCU_PPDU_SETUP_INIT)
+
 enum htt_tx_mon_upstream_tlv_flags0 {
+	HTT_TX_FILTER_TLV_FLAGS0_RX_RESPONSE_REQUIRED_INFO	= BIT(0),
 	HTT_TX_FILTER_TLV_FLAGS0_RESPONSE_START_STATUS		= BIT(1),
 	HTT_TX_FILTER_TLV_FLAGS0_RESPONSE_END_STATUS		= BIT(2),
 	HTT_TX_FILTER_TLV_FLAGS0_TX_FES_STATUS_START		= BIT(3),
@@ -1188,8 +1480,121 @@ enum htt_tx_mon_upstream_tlv_flags0 {
 	HTT_TX_FILTER_TLV_FLAGS0_RX_FRAME_1K_BITMAP_ACK		= BIT(13),
 	HTT_TX_FILTER_TLV_FLAGS0_COEX_TX_STATUS			= BIT(14),
 	HTT_TX_FILTER_TLV_FLAGS0_RECEIVED_RESPONSE_INFO		= BIT(15),
-	HTT_TX_FILTER_TLV_FLAGS0_RECEIVED_RESPONSE_INFO_PART2	= BIT(16),
+	HTT_TX_FILTER_TLV_FLAGS0_RECEIVED_RESPONSE_INFO_P2	= BIT(16),
+	HTT_TX_FILTER_TLV_FLAGS0_OFDMA_TRIGGER_DETAILS		= BIT(17),
+	HTT_TX_FILTER_TLV_FLAGS0_RECEIVED_TRIGGER_INFO		= BIT(18),
+	HTT_TX_FILTER_TLV_FLAGS0_PDG_TX_REQUEST			= BIT(19),
+	HTT_TX_FILTER_TLV_FLAGS0_PDG_RESPONSE			= BIT(20),
+	HTT_TX_FILTER_TLV_FLAGS0_PDG_TRIG_RESPONSE		= BIT(21),
+	HTT_TX_FILTER_TLV_FLAGS0_TRIGGER_RESPONSE_TX_DONE	= BIT(22),
+	HTT_TX_FILTER_TLV_FLAGS0_PROT_TX_END			= BIT(23),
+	HTT_TX_FILTER_TLV_FLAGS0_PPDU_TX_END			= BIT(24),
+	HTT_TX_FILTER_TLV_FLAGS0_R2R_STATUS_END			= BIT(25),
+	HTT_TX_FILTER_TLV_FLAGS0_FLUSH_REQ			= BIT(26),
+	HTT_TX_FILTER_TLV_FLAGS0_MACTX_PHY_DESC			= BIT(27),
+	HTT_TX_FILTER_TLV_FLAGS0_MACTX_USER_DESC_CMN		= BIT(28),
+	HTT_TX_FILTER_TLV_FLAGS0_MACTX_USER_DESC_PER_USR	= BIT(29),
+	HTT_TX_FILTER_TLV_FLAGS0_L_SIG_A		        = BIT(30),
+	HTT_TX_FILTER_TLV_FLAGS0_L_SIG_B			= BIT(31),
 };
+
+#define HTT_TX_MON_FILTER_UP_STRM_TLV_FLAG0 \
+	(HTT_TX_FILTER_TLV_FLAGS0_RX_RESPONSE_REQUIRED_INFO | \
+	 HTT_TX_FILTER_TLV_FLAGS0_RESPONSE_END_STATUS | \
+	 HTT_TX_FILTER_TLV_FLAGS0_TX_FES_STATUS_START | \
+	 HTT_TX_FILTER_TLV_FLAGS0_TX_FES_STATUS_END | \
+	 HTT_TX_FILTER_TLV_FLAGS0_TX_FES_STATUS_START_PPDU | \
+	 HTT_TX_FILTER_TLV_FLAGS0_TX_FES_STATUS_USER_PPDU | \
+	 HTT_TX_FILTER_TLV_FLAGS0_TX_FES_STATUS_ACK_OR_BA | \
+	 HTT_TX_FILTER_TLV_FLAGS0_TX_FES_STATUS_1K_BA | \
+	 HTT_TX_FILTER_TLV_FLAGS0_TX_FES_STATUS_START_PROT | \
+	 HTT_TX_FILTER_TLV_FLAGS0_TX_FES_STATUS_PROT | \
+	 HTT_TX_FILTER_TLV_FLAGS0_RX_FRAME_BITMAP_ACK | \
+	 HTT_TX_FILTER_TLV_FLAGS0_RX_FRAME_1K_BITMAP_ACK | \
+	 HTT_TX_FILTER_TLV_FLAGS0_COEX_TX_STATUS | \
+	 HTT_TX_FILTER_TLV_FLAGS0_MACTX_PHY_DESC | \
+	 HTT_TX_FILTER_TLV_FLAGS0_MACTX_USER_DESC_CMN | \
+	 HTT_TX_FILTER_TLV_FLAGS0_MACTX_USER_DESC_PER_USR | \
+	 HTT_TX_FILTER_TLV_FLAGS0_L_SIG_A | \
+	 HTT_TX_FILTER_TLV_FLAGS0_L_SIG_B)
+
+enum htt_tx_mon_upstream_tlv_flags1 {
+	HTT_TX_FILTER_TLV_FLAGS1_HT_SIG					= BIT(0),
+	HTT_TX_FILTER_TLV_FLAGS1_VHT_SIG_A				= BIT(1),
+	HTT_TX_FILTER_TLV_FLAGS1_VHT_SIG_B_SU20				= BIT(2),
+	HTT_TX_FILTER_TLV_FLAGS1_VHT_SIG_B_SU40				= BIT(3),
+	HTT_TX_FILTER_TLV_FLAGS1_VHT_SIG_B_SU80				= BIT(4),
+	HTT_TX_FILTER_TLV_FLAGS1_VHT_SIG_B_SU160			= BIT(5),
+	HTT_TX_FILTER_TLV_FLAGS1_VHT_SIG_B_MU20				= BIT(6),
+	HTT_TX_FILTER_TLV_FLAGS1_VHT_SIG_B_MU40				= BIT(7),
+	HTT_TX_FILTER_TLV_FLAGS1_VHT_SIG_B_MU80				= BIT(8),
+	HTT_TX_FILTER_TLV_FLAGS1_VHT_SIG_B_MU160			= BIT(9),
+	HTT_TX_FILTER_TLV_FLAGS1_TX_SERVICE				= BIT(10),
+	HTT_TX_FILTER_TLV_FLAGS1_HE_SIG_A_SU				= BIT(11),
+	HTT_TX_FILTER_TLV_FLAGS1_HE_SIG_A_MU_DL				= BIT(12),
+	HTT_TX_FILTER_TLV_FLAGS1_HE_SIG_A_MU_UL				= BIT(13),
+	HTT_TX_FILTER_TLV_FLAGS1_HE_SIG_B1_MU				= BIT(14),
+	HTT_TX_FILTER_TLV_FLAGS1_HE_SIG_B2_MU				= BIT(15),
+	HTT_TX_FILTER_TLV_FLAGS1_HE_SIG_B2_OFDMA			= BIT(16),
+	HTT_TX_FILTER_TLV_FLAGS1_U_SIG_EHT_SU_MU			= BIT(17),
+	HTT_TX_FILTER_TLV_FLAGS1_U_SIG_EHT_SU				= BIT(18),
+	HTT_TX_FILTER_TLV_FLAGS1_U_SIG_EHT_TB				= BIT(19),
+	HTT_TX_FILTER_TLV_FLAGS1_EHT_SIG_USR_SU				= BIT(20),
+	HTT_TX_FILTER_TLV_FLAGS1_EHT_SIG_USR_MU_MIMO			= BIT(21),
+	HTT_TX_FILTER_TLV_FLAGS1_EHT_SIG_USR_OFDMA			= BIT(22),
+	HTT_TX_FILTER_TLV_FLAGS1_PHYTX_PPDU_HEADER_INFO_REQUEST		= BIT(23),
+	HTT_TX_FILTER_TLV_FLAGS1_TQM_UPDATE_TX_MPDU_COUNT		= BIT(24),
+	HTT_TX_FILTER_TLV_FLAGS1_TQM_ACKED_MPDU				= BIT(25),
+	HTT_TX_FILTER_TLV_FLAGS1_TQM_ACKED_1K_MPDU			= BIT(26),
+	HTT_TX_FILTER_TLV_FLAGS1_TXPCU_BUFFER_STATUS			= BIT(27),
+	HTT_TX_FILTER_TLV_FLAGS1_TXPCU_USER_BUFFER_STATUS		= BIT(28),
+	HTT_TX_FILTER_TLV_FLAGS1_TXDMA_STOP_REQUEST			= BIT(29),
+	HTT_TX_FILTER_TLV_FLAGS1_EXPECTED_RESPONSE			= BIT(30),
+	HTT_TX_FILTER_TLV_FLAGS1_TX_MPDU_COUNT_TRANSFER_END		= BIT(31),
+};
+
+#define HTT_TX_MON_FILTER_UP_STRM_TLV_FLAG1 \
+	(HTT_TX_FILTER_TLV_FLAGS1_HT_SIG | \
+	 HTT_TX_FILTER_TLV_FLAGS1_VHT_SIG_A | \
+	 HTT_TX_FILTER_TLV_FLAGS1_HE_SIG_A_SU | \
+	 HTT_TX_FILTER_TLV_FLAGS1_HE_SIG_A_MU_DL | \
+	 HTT_TX_FILTER_TLV_FLAGS1_HE_SIG_B1_MU | \
+	 HTT_TX_FILTER_TLV_FLAGS1_HE_SIG_B2_MU | \
+	 HTT_TX_FILTER_TLV_FLAGS1_HE_SIG_B2_OFDMA | \
+	 HTT_TX_FILTER_TLV_FLAGS1_U_SIG_EHT_SU_MU | \
+	 HTT_TX_FILTER_TLV_FLAGS1_U_SIG_EHT_SU | \
+	 HTT_TX_FILTER_TLV_FLAGS1_U_SIG_EHT_TB | \
+	 HTT_TX_FILTER_TLV_FLAGS1_EHT_SIG_USR_SU | \
+	 HTT_TX_FILTER_TLV_FLAGS1_EHT_SIG_USR_MU_MIMO | \
+	 HTT_TX_FILTER_TLV_FLAGS1_EHT_SIG_USR_OFDMA | \
+	 HTT_TX_FILTER_TLV_FLAGS1_EHT_SIG_USR_OFDMA)
+
+enum htt_tx_mon_upstream_tlv_flags2 {
+	HTT_TX_FILTER_TLV_FLAGS2RX_TRIG_INFO_S				= BIT(0),
+	HTT_TX_FILTER_TLV_FLAGS2RXPCU_TX_SETUP_CLEAR_S			= BIT(1),
+	HTT_TX_FILTER_TLV_FLAGS2RX_FRAME_BITMAP_REQ_S			= BIT(2),
+	HTT_TX_FILTER_TLV_FLAGS2RX_PHY_SLEEP_S				= BIT(3),
+	HTT_TX_FILTER_TLV_FLAGS2TXPCU_PREAMBLE_DONE_S			= BIT(4),
+	HTT_TX_FILTER_TLV_FLAGS2TXPCU_PHYTX_DEBUG32_S			= BIT(5),
+	HTT_TX_FILTER_TLV_FLAGS2TXPCU_PHYTX_OTHER_TRANSMIT_INFO32_S	= BIT(6),
+	HTT_TX_FILTER_TLV_FLAGS2RX_PPDU_NO_ACK_REPORT_S			= BIT(7),
+	HTT_TX_FILTER_TLV_FLAGS2RX_PPDU_ACK_REPORT_S			= BIT(8),
+	HTT_TX_FILTER_TLV_FLAGS2COEX_RX_STATUS_S			= BIT(9),
+	HTT_TX_FILTER_TLV_FLAGS2RX_START_PARAM_S			= BIT(10),
+	HTT_TX_FILTER_TLV_FLAGS2TX_CBF_INFO_S				= BIT(11),
+	HTT_TX_FILTER_TLV_FLAGS2RXPCU_EARLY_RX_INDICATION_S		= BIT(12),
+	HTT_TX_FILTER_TLV_FLAGS2RECEIVED_RESPONSE_USER_7_0_S		= BIT(13),
+	HTT_TX_FILTER_TLV_FLAGS2RECEIVED_RESPONSE_USER_15_8_S		= BIT(14),
+	HTT_TX_FILTER_TLV_FLAGS2RECEIVED_RESPONSE_USER_23_16_S		= BIT(15),
+	HTT_TX_FILTER_TLV_FLAGS2RECEIVED_RESPONSE_USER_31_24_S		= BIT(16),
+	HTT_TX_FILTER_TLV_FLAGS2RECEIVED_RESPONSE_USER_36_32_S		= BIT(17),
+	HTT_TX_FILTER_TLV_FLAGS2RX_PM_INFO_S				= BIT(18),
+	HTT_TX_FILTER_TLV_FLAGS2RX_PREAMBLE_S				= BIT(19),
+	HTT_TX_FILTER_TLV_FLAGS2OTHERS_S				= BIT(20),
+	HTT_TX_FILTER_TLV_FLAGS2MACTX_PRE_PHY_DESC_S			= BIT(21),
+};
+
+#define HTT_TX_MON_FILTER_UP_STRM_TLV_FLAG2 0
 
 #define HTT_TX_FILTER_TLV_FLAGS2_TXPCU_PHYTX_OTHER_TRANSMIT_INFO32	BIT(11)
 
@@ -2411,10 +2816,10 @@ int ath12k_dp_tx_htt_rx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 				     int mac_id, enum hal_ring_type ring_type,
 				     int rx_buf_size,
 				     struct htt_rx_ring_tlv_filter *tlv_filter);
-int ath12k_dp_tx_htt_tx_filter_setup(struct ath12k_base *ab, u32 ring_id,
-				     int mac_id, enum hal_ring_type ring_type,
-				     int tx_buf_size,
-				     struct htt_tx_ring_tlv_filter *htt_tlv_filter);
+int ath12k_dp_htt_mon_tx_filter_setup(struct ath12k_base *ab, u32 ring_id,
+				      int mac_id, enum hal_ring_type ring_type,
+				      int tx_buf_size,
+				      struct htt_tx_ring_tlv_filter *htt_tlv_filter);
 int ath12k_dp_htt_rx_flow_fst_setup(struct ath12k_base *ab, struct htt_rx_flow_fst_setup *setup_info);
 int ath12k_dp_htt_rx_flow_fse_operation(struct ath12k_base *ab,
 					enum dp_flow_fst_operation op_code,

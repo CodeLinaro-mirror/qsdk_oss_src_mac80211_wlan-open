@@ -876,4 +876,5 @@ ath12k_wifi7_hal_mon_rx_ppdu_eu_stats_info_parse(const void *tlv_data, u32 useri
 						 struct hal_rx_mon_ppdu_info *ppdu_info,
 						 u32 tlv_len);
 u8 *ath12k_wifi7_hal_mon_rx_desc_get_msdu_payload(void *rx_desc);
+void ath12k_wifi7_hal_tx_mon_get_wmask_config(struct hal_tx_mon_wmask_config *wmsk);
 #endif
