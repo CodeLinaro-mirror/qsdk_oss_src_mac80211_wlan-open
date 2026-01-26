@@ -1249,6 +1249,102 @@ void ath12k_dp_mon_rx_update_basic_stats(struct ath12k_dp_link_peer *peer,
 	ath12k_dp_rx_rate_stats_update(rx_stats, ppdu_info, peer, uid);
 }
 
+/**
+ * ath12k_dp_mon_check_rssi_deauth() - Ultra-lightweight RSSI monitoring
+ * @peer: Pointer to peer structure
+ * @rssi_dBm: Current RSSI value in dBm (Computed value from signal_stats)
+ *
+ * Monitors peer RSSI and schedules deauth workqueue if RSSI stays below
+ * threshold for grace period. Optimized for minimal CPU overhead:
+ *
+ */
+static void ath12k_dp_mon_check_rssi_deauth(struct ath12k_dp_link_peer *peer,
+					    s8 signal_dbm)
+{
+	struct ath12k_rssi_deauth_config *cfg;
+	struct ath12k_link_sta *arsta = NULL;
+	struct ath12k_link_vif *arvif;
+	struct ath12k_vif *ahvif;
+	struct ath12k_sta *ahsta;
+
+	if (!peer->sta)
+		return;
+
+	ahsta = ath12k_sta_to_ahsta(peer->sta);
+	if (!ahsta)
+		return;
+
+	ahvif = ahsta->ahvif;
+	if (!ahvif)
+		return;
+
+	if (peer->link_id < IEEE80211_MLD_MAX_NUM_LINKS)
+		arsta = rcu_dereference(ahsta->link[peer->link_id]);
+	if (!arsta)
+		arsta = &ahsta->deflink;
+
+	arvif = arsta->arvif;
+	if (!arvif)
+		return;
+
+	cfg = &arvif->rssi_deauth_cfg;
+	if (!cfg) {
+		ath12k_generic_dbg(ATH12K_DBG_DATA,
+				   "failed to find the configured rssi threshold for peer_id %d\n",
+				   peer->peer_id);
+		return;
+	}
+	peer->rssi_mon.cfg = cfg;
+
+	if (likely(!cfg->enabled))
+		return;
+
+	ath12k_generic_dbg(ATH12K_DBG_PEER,
+			   "peer: (%pM vif type: %d low rssi count: %d), cfg (en: %d thres %d grace: %d) last rssi: %d\n",
+			   peer->addr, peer->vif->type, peer->rssi_mon.low_rssi_count,
+			   cfg->enabled, cfg->rssi_threshold, cfg->grace_samples,
+			   signal_dbm);
+
+	peer->rssi_mon.last_rssi = signal_dbm;
+
+	/* RSSI above threshold - reset counters and exit */
+	if (signal_dbm >= cfg->rssi_threshold) {
+		peer->rssi_mon.low_rssi_count = 0;
+		peer->rssi_mon.first_low_jiffies = 0;
+		return;
+	}
+
+	/* RSSI below threshold */
+	/* First time below threshold - record timestamp */
+	if (peer->rssi_mon.low_rssi_count == 0)
+		peer->rssi_mon.first_low_jiffies = jiffies;
+
+	peer->rssi_mon.low_rssi_count++;
+
+	/* Check if we've hit the grace period */
+	if (peer->rssi_mon.low_rssi_count >= cfg->grace_samples) {
+		/* Set atomic event flag */
+		atomic_or(ATH12K_PEER_EVENT_RSSI_LOW, &peer->event_flags);
+
+		/* Set event type and peer info for safe lookup */
+		peer->event.type = ATH12K_VIF_EVENT_TYPE_PEER;
+		peer->event.peer_id = peer->peer_id;
+		peer->event.link_id = peer->link_id;
+		peer->event.hw_link_id = peer->hw_link_id;
+
+		ath12k_generic_dbg(ATH12K_DBG_PEER,
+				   "Enqueue peer for deauth: (%pM vif type: %d low rssi count: %d), cfg (en: %d thres %d grace: %d) last rssi: %d\n",
+				   peer->addr, peer->vif->type,
+				   peer->rssi_mon.low_rssi_count,
+				   cfg->enabled, cfg->rssi_threshold,
+				   cfg->grace_samples, signal_dbm);
+		/* Add to event queue and schedule work if needed */
+		/* Note: llist_add returns true if list was empty */
+		if (llist_add(&peer->event.node, &ahvif->event_list))
+			wiphy_work_queue(ahvif->ah->hw->wiphy, &ahvif->event_work);
+	}
+}
+
 void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
 					   struct hal_rx_mon_ppdu_info *ppdu_info)
 {
@@ -1717,6 +1813,8 @@ ath12k_dp_mon_link_peer_signal_stats(struct ath12k_pdev_dp *dp_pdev,
 							 stats->rssi,
 							 last_rx_rate);
 	}
+	/* RSSI deauth check */
+	ath12k_dp_mon_check_rssi_deauth(peer, stats->rssi);
 
 	rcu_read_unlock();
 }

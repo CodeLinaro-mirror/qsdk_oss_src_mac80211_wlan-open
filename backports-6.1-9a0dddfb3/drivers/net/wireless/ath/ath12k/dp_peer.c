@@ -229,6 +229,15 @@ void ath12k_peer_map_event(struct ath12k_base *ab, u8 vdev_id, u16 peer_id,
 		ewma_avg_snr_dp_init(&peer->signal_stats.avg_snr_dp);
 		ewma_avg_rssi_init(&peer->signal_stats.avg_rssi);
 		ewma_avg_rssi_dp_init(&peer->signal_stats.avg_rssi_dp);
+		/* Initialize generic event mechanism */
+		peer->event.type = ATH12K_VIF_EVENT_TYPE_PEER;
+		atomic_set(&peer->event_flags, 0);
+
+		/* Initialize RSSI monitoring structure */
+		peer->rssi_mon.last_rssi = 0;
+		peer->rssi_mon.low_rssi_count = 0;
+		peer->rssi_mon.first_low_jiffies = 0;
+		peer->rssi_mon.cfg = NULL;  /* Will be set during peer assignment */
 	}
 
 	ath12k_dbg_tag(ab, ATH12K_DBG_PEER, ATH12K_DBG_L0,
@@ -647,6 +656,26 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 	rcu_assign_pointer(dp_peer->link_peers[peer->link_id], peer);
 
 	spin_unlock_bh(&dp_hw->peer_lock);
+
+	/* Cache config pointer for fast data path access
+	 * Prefer per-link configuration when available; fallback to deflink.
+	 */
+	if (peer->sta) {
+		struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(peer->sta);
+		struct ath12k_link_sta *arsta = NULL;
+		struct ath12k_link_vif *arvif;
+
+		rcu_read_lock();
+		if (link_id < IEEE80211_MLD_MAX_NUM_LINKS)
+			arsta = rcu_dereference(ahsta->link[link_id]);
+		if (!arsta)
+			arsta = &ahsta->deflink;
+		arvif = arsta->arvif;
+		rcu_read_unlock();
+
+		if (arvif)
+			peer->rssi_mon.cfg = &arvif->rssi_deauth_cfg;
+	}
 
 	/* In case of Split PHY and roaming scenario, pdev idx
 	 * might differ but both the pdev will share same rhash

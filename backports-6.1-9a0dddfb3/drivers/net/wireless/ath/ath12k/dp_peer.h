@@ -7,6 +7,7 @@
 #ifndef ATH12K_DP_PEER_H
 #define ATH12K_DP_PEER_H
 
+#include "events.h"
 #include "dp_rx.h"
 #include "dp_stats.h"
 #define ATH12K_DP_PEER_ID_INVALID              0xFFFF
@@ -107,6 +108,17 @@ struct ath12k_dp_link_peer {
 	bool is_assigned;
 
 	struct ath12k_dp_link_peer_rx_signal_stats signal_stats;
+	/* Generic Event Mechanism */
+	struct ath12k_vif_event event;
+	atomic_t event_flags;
+
+	/* RSSI-based deauthentication monitoring */
+	struct {
+		s8 last_rssi;				/* Last measured RSSI in dBm */
+		u32 low_rssi_count;			/* Consecutive low RSSI samples */
+		unsigned long first_low_jiffies;	/* Timestamp of first low RSSI */
+		struct ath12k_rssi_deauth_config *cfg;	/* Cached config pointer */
+	} rssi_mon;
 };
 
 struct ath12k_dp_peer {
