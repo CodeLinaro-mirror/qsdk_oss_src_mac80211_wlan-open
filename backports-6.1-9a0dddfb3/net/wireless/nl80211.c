@@ -15194,6 +15194,24 @@ static int cfg80211_cqm_rssi_update(struct cfg80211_registered_device *rdev,
 	return rdev_set_cqm_rssi_range_config(rdev, dev, low, high);
 }
 
+static int nl80211_set_ap_cqm_rssi(struct genl_info *info,
+				   const s32 *thresholds, int n_thresholds,
+				   u32 hysteresis)
+{
+	struct cfg80211_registered_device *rdev = info->user_ptr[0];
+	struct net_device *dev = info->user_ptr[1];
+	int link_id = nl80211_link_id_or_invalid(info->attrs);
+
+	/* Only support single threshold */
+	if (n_thresholds != 1 || thresholds[0] > 0)
+		return -EINVAL;
+
+	if (!rdev->ops->set_cqm_rssi_config)
+		return -EOPNOTSUPP;
+
+	return rdev_set_cqm_rssi_config(rdev, dev, thresholds[0], hysteresis, link_id);
+}
+
 static int nl80211_set_cqm_rssi(struct genl_info *info,
 				const s32 *thresholds, int n_thresholds,
 				u32 hysteresis)
@@ -15258,14 +15276,14 @@ static int nl80211_set_cqm_rssi(struct genl_info *info,
 		else
 			err = rdev_set_cqm_rssi_config(rdev, dev,
 						       thresholds[0],
-						       hysteresis);
+						       hysteresis, -1);
 	} else {
 		RCU_INIT_POINTER(wdev->cqm_config, NULL);
 		/* if enabled as range also disable via range */
 		if (old->use_range_api)
 			err = rdev_set_cqm_rssi_range_config(rdev, dev, 0, 0);
 		else
-			err = rdev_set_cqm_rssi_config(rdev, dev, 0, 0);
+			err = rdev_set_cqm_rssi_config(rdev, dev, 0, 0, -1);
 	}
 
 	if (err) {
@@ -15281,6 +15299,8 @@ static int nl80211_set_cqm_rssi(struct genl_info *info,
 static int nl80211_set_cqm(struct sk_buff *skb, struct genl_info *info)
 {
 	struct nlattr *attrs[NL80211_ATTR_CQM_MAX + 1];
+	struct wireless_dev *wdev = NULL;
+	struct net_device *dev = NULL;
 	struct nlattr *cqm;
 	int err;
 
@@ -15304,8 +15324,15 @@ static int nl80211_set_cqm(struct sk_buff *skb, struct genl_info *info)
 		if (len % 4)
 			return -EINVAL;
 
-		return nl80211_set_cqm_rssi(info, thresholds, len / 4,
-					    hysteresis);
+		dev = info->user_ptr[1];
+		wdev = dev->ieee80211_ptr;
+
+		if (wdev->iftype == NL80211_IFTYPE_AP)
+			return nl80211_set_ap_cqm_rssi(info, thresholds, len / 4,
+						       hysteresis);
+		else
+			return nl80211_set_cqm_rssi(info, thresholds, len / 4,
+						    hysteresis);
 	}
 
 	if (attrs[NL80211_ATTR_CQM_TXE_RATE] &&
@@ -20358,7 +20385,8 @@ static const struct genl_small_ops nl80211_small_ops[] = {
 		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.doit = nl80211_set_cqm,
 		.flags = GENL_UNS_ADMIN_PERM,
-		.internal_flags = IFLAGS(NL80211_FLAG_NEED_NETDEV),
+		.internal_flags = IFLAGS(NL80211_FLAG_NEED_NETDEV |
+					 NL80211_FLAG_MLO_VALID_LINK_ID),
 	},
 	{
 		.cmd = NL80211_CMD_SET_CHANNEL,

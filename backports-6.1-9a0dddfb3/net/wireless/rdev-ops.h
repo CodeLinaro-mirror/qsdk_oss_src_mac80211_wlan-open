@@ -825,13 +825,14 @@ static inline int rdev_set_power_mgmt(struct cfg80211_registered_device *rdev,
 
 static inline int
 rdev_set_cqm_rssi_config(struct cfg80211_registered_device *rdev,
-			 struct net_device *dev, s32 rssi_thold, u32 rssi_hyst)
+			 struct net_device *dev, s32 rssi_thold, u32 rssi_hyst,
+			 int link_id)
 {
 	int ret;
 	trace_rdev_set_cqm_rssi_config(&rdev->wiphy, dev, rssi_thold,
-				       rssi_hyst);
+				       rssi_hyst, link_id);
 	ret = rdev->ops->set_cqm_rssi_config(&rdev->wiphy, dev, rssi_thold,
-				       rssi_hyst);
+				       rssi_hyst, link_id);
 	trace_rdev_return_int(&rdev->wiphy, ret);
 	return ret;
 }
