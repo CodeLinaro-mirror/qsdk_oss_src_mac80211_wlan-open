@@ -90,7 +90,11 @@ static const char *irq_name[ATH12K_IRQ_NUM_MAX] = {
 	"umac_reset",
 	"reo2ppe",
 	"ppe_wbm_rel",
-	"ppe2tcl"
+	"ppe2tcl",
+	"txmon2host-monitor-destination-mac3",
+	"txmon2host-monitor-destination-mac2",
+	"txmon2host-monitor-destination-mac1",
+	"host2tx-monitor-ring1"
 };
 
 enum ext_irq_num {
@@ -134,7 +138,11 @@ enum ext_irq_num {
 	umac_reset,
 	reo2ppe,
 	ppe_wbm_rel,
-	ppe2tcl
+	ppe2tcl,
+	txmon2host_monitor_destination_mac3,
+	txmon2host_monitor_destination_mac2,
+	txmon2host_monitor_destination_mac1,
+	host2tx_monitor_ring1
 };
 
 static u32 ath12k_ahb_read32(struct ath12k_base *ab, u32 offset)
@@ -727,6 +735,14 @@ ath12k_ahb_config_ext_irq(struct ath12k_base *ab,
 			if (ring_mask->rx_mon_dest[i] & BIT(j))
 				irq_grp->irqs[num_irq++] =
 					rxdma2host_monitor_destination_mac1;
+
+			if (ring_mask->tx_mon_dest[i] & BIT(j))
+				irq_grp->irqs[num_irq++] =
+					txmon2host_monitor_destination_mac1;
+
+			if (ring_mask->tx_mon_buff[i] & BIT(j))
+				irq_grp->irqs[num_irq++] =
+					host2tx_monitor_ring1;
 		}
 
 		irq_grp->num_irq = num_irq;

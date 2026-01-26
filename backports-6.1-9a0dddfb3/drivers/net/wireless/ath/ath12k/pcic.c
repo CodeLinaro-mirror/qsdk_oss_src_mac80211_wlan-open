@@ -465,7 +465,9 @@ int ath12k_pcic_ext_cfg_gic_msi_irq(struct ath12k_base *ab,
 	if (!napi_ndev)
 		return -ENOMEM;
 
-	if (ab->hw_params->ring_mask->rx_mon_dest[i])
+	if (ab->hw_params->ring_mask->rx_mon_dest[i] ||
+	    ab->hw_params->ring_mask->tx_mon_dest[i] ||
+	    ab->hw_params->ring_mask->tx_mon_buff[i])
 		budget = NAPI_POLL_WEIGHT;
 	else
 		budget = ath12k_napi_poll_budget;
@@ -485,7 +487,9 @@ int ath12k_pcic_ext_cfg_gic_msi_irq(struct ath12k_base *ab,
 	    ab->hw_params->ring_mask->wbm2sw6_ppeds_tx_cmpln[i] ||
 	    ab->hw_params->ring_mask->reo2ppe[i] ||
 #endif
-	    ab->hw_params->ring_mask->rx_mon_dest[i]) {
+	    ab->hw_params->ring_mask->rx_mon_dest[i] ||
+	    ab->hw_params->ring_mask->tx_mon_dest[i] ||
+	    ab->hw_params->ring_mask->tx_mon_buff[i]) {
 		num_irq = 1;
 	}
 
@@ -964,7 +968,9 @@ int ath12k_pcic_ext_irq_config(struct ath12k_base *ab,
 			goto fail_allocate;
 		}
 
-		if (ab->hw_params->ring_mask->rx_mon_dest[i])
+		if (ab->hw_params->ring_mask->rx_mon_dest[i] ||
+		    ab->hw_params->ring_mask->tx_mon_dest[i] ||
+		    ab->hw_params->ring_mask->tx_mon_buff[i])
 			budget = NAPI_POLL_WEIGHT;
 		else
 			budget = ath12k_napi_poll_budget;
@@ -990,7 +996,9 @@ int ath12k_pcic_ext_irq_config(struct ath12k_base *ab,
 		    ab->hw_params->ring_mask->reo2ppe[i] ||
 #endif
 		    ab->hw_params->ring_mask->rx_mon_dest[i] ||
-		    ab->hw_params->ring_mask->rx_mon_status[i]) {
+		    ab->hw_params->ring_mask->rx_mon_status[i] ||
+		    ab->hw_params->ring_mask->tx_mon_dest[i] ||
+		    ab->hw_params->ring_mask->tx_mon_buff[i]) {
 			num_irq = 1;
 		}
 

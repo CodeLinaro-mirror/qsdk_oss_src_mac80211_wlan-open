@@ -240,6 +240,7 @@ static const struct ath12k_hw_ops wcn7850_ops = {
 
 #define ATH12K_TX_MON_RING_MASK_0 0x1
 #define ATH12K_TX_MON_RING_MASK_1 0x2
+#define ATH12K_HOST2TX_MON_RING_MASK_0 0x1
 #define ATH12K_UMAC_RESET_INTR_MASK_0   0x1
 
 #define ATH12K_PPE2TCL_RING_MASK_0 0x1
@@ -291,11 +292,6 @@ static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274_msi8 = {
                 0, 0,
                 ATH12K_HOST2RXDMA_RING_MASK_0,
                 0, 0, 0, 0
-        },
-        .tx_mon_dest = {
-                ATH12K_TX_MON_RING_MASK_0,
-                ATH12K_TX_MON_RING_MASK_1,
-                0, 0, 0, 0, 0, 0
         },
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
         .ppe2tcl = {
@@ -368,8 +364,18 @@ static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274 = {
 		0, 0, 0, 0, 0, 0, 0, 0, 0,
 	},
 	.tx_mon_dest = {
-		0, 0, 0,
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		0,
+		ATH12K_TX_MON_RING_MASK_0,
+		ATH12K_TX_MON_RING_MASK_1,
+		0, 0, 0, 0, 0
+	},
+	.tx_mon_buff = {
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		0, 0,
+		ATH12K_HOST2TX_MON_RING_MASK_0,
 	},
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	.ppe2tcl = {
@@ -432,8 +438,17 @@ static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_ipq5332 = {
 		ATH12K_REO_STATUS_RING_MASK_0,
 	},
 	.tx_mon_dest = {
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		0,
 		ATH12K_TX_MON_RING_MASK_0,
-		ATH12K_TX_MON_RING_MASK_1,
+	},
+	.tx_mon_buff = {
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		0, 0,
+		ATH12K_HOST2TX_MON_RING_MASK_0,
+
 	},
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	.ppe2tcl = {
@@ -487,6 +502,8 @@ static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_wcn7850 = {
 	},
 	.tx_mon_dest = {
 	},
+	.tx_mon_buff = {
+	},
 };
 
 static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn6432 = {
@@ -538,10 +555,17 @@ static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn6432 = {
 		0, 0, 0
 	},
 	.tx_mon_dest = {
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		0,
 		ATH12K_TX_MON_RING_MASK_0,
 		ATH12K_TX_MON_RING_MASK_1,
-		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-		0, 0, 0
+	},
+	.tx_mon_buff = {
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		0, 0,
+		ATH12K_HOST2TX_MON_RING_MASK_0,
 	},
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	.ppe2tcl = {

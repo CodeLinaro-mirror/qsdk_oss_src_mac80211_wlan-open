@@ -329,6 +329,9 @@ static int ath12k_dp_srng_calculate_msi_group(struct ath12k_base *ab,
 	case HAL_TX_MONITOR_DST:
 		grp_mask = &ring_mask->tx_mon_dest[0];
 		break;
+	case HAL_TX_MONITOR_BUF:
+		grp_mask = &ring_mask->tx_mon_buff[0];
+		break;
 	case HAL_RXDMA_BUF:
 		grp_mask = &ring_mask->host2rxdma[0];
 		break;
@@ -538,16 +541,16 @@ skip_dma_alloc:
 		params.intr_batch_cntr_thres_entries = 1;
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_RX;
 		break;
-	case HAL_TX_MONITOR_DST:
-		params.low_threshold = DP_TX_MONITOR_BUF_SIZE_MAX >> 3;
-		params.flags |= HAL_SRNG_FLAGS_LOW_THRESH_INTR_EN;
-		params.intr_batch_cntr_thres_entries = 0;
-		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_RX;
-		break;
 	case HAL_TX_EXCEPTION:
 		params.intr_batch_cntr_thres_entries =
 					HAL_SRNG_INT_BATCH_THRESHOLD_TX_EXCEPTION;
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_TX_EXCEPTION;
+		break;
+	case HAL_TX_MONITOR_BUF:
+		params.low_threshold = num_entries >> 1;
+		params.flags |= HAL_SRNG_FLAGS_LOW_THRESH_INTR_EN;
+		params.intr_batch_cntr_thres_entries = 0;
+		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_RX;
 		break;
 	case HAL_WBM2SW_RELEASE:
 		if (ab->hw_params->hw_ops->dp_srng_is_tx_comp_ring(ring_num)) {
@@ -579,6 +582,7 @@ skip_dma_alloc:
 	case HAL_RXDMA_MONITOR_DESC:
 	case HAL_WBM_BUF:
 	case HAL_WBM_IDLE_BUF:
+	case HAL_TX_MONITOR_DST:
 		params.intr_batch_cntr_thres_entries =
 					HAL_SRNG_INT_BATCH_THRESHOLD_OTHER;
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_OTHER;
@@ -1157,12 +1161,22 @@ int ath12k_dp_pdev_pre_alloc(struct ath12k *ar)
 			goto mon_pdev_rx_free;
 		}
 
+		ret = ath12k_dp_mon_tx_pdev_alloc(dp, dp->mac_id);
+		if (ret) {
+			ath12k_err(ab, "TX Monitor: Pdev alloc failed - mac_id=%d (%d)",
+				   dp->mac_id, ret);
+			goto mon_pdev_tx_free;
+		}
+
 		dp->dp_mon_pdev_configured = true;
 	}
 
 	/* TODO: Add any RXDMA setup required per pdev */
 
 	return 0;
+
+mon_pdev_tx_free:
+	ath12k_dp_mon_tx_pdev_free(&ar->dp);
 
 mon_pdev_rx_free:
 	ath12k_dp_mon_pdev_rx_free(dp);

@@ -4213,8 +4213,8 @@ void ath12k_wifi7_dp_pdev_free(struct ath12k_base *ab)
 
 		if (ar->dp.dp_mon_pdev_configured) {
 			ath12k_dp_mon_pdev_rx_free(&ar->dp);
+			ath12k_dp_mon_tx_pdev_free(&ar->dp);
 			ath12k_dp_mon_pdev_deinit(&ar->dp);
-
 			ar->dp.dp_mon_pdev_configured = false;
 		}
 	}
@@ -4287,6 +4287,13 @@ int ath12k_wifi7_dp_pdev_alloc(struct ath12k_base *ab)
 				goto err_mon_pdev_rx_free;
 			}
 
+			ret = ath12k_dp_mon_tx_pdev_alloc(dp_pdev, i);
+			if (ret) {
+				ath12k_err(ab, "TX Monitor: alloc fail pdev %d(%d)\n",
+					   i, ret);
+				goto err_mon_pdev_tx_free;
+			}
+
 			dp_pdev->dp_mon_pdev_configured = true;
 		}
 	}
@@ -4307,6 +4314,9 @@ int ath12k_wifi7_dp_pdev_alloc(struct ath12k_base *ab)
 	dp->num_radios = ab->num_radios;
 
 	return ret;
+
+err_mon_pdev_tx_free:
+	ath12k_dp_mon_tx_pdev_free(dp_pdev);
 err_mon_pdev_rx_free:
 	/* Clean up the current pdev's RX allocation */
 	ath12k_dp_mon_pdev_rx_free(dp_pdev);

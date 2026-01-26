@@ -314,7 +314,7 @@ enum ath12k_firmware_mode {
 
 extern bool ath12k_cold_boot_cal;
 
-#define ATH12K_IRQ_NUM_MAX 60
+#define ATH12K_IRQ_NUM_MAX 61
 #define ATH12K_EXT_IRQ_NUM_MAX	16
 #define ATH12K_MAX_TCL_RING_NUM	3
 
