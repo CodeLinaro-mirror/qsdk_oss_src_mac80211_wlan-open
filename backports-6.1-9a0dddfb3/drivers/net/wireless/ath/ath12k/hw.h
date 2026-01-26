@@ -354,7 +354,7 @@ static inline
 int ath12k_hw_get_mac_from_pdev_id(const struct ath12k_hw_params *hw,
 				   int pdev_idx)
 {
-	if (hw->hw_ops->get_hw_mac_from_pdev_id)
+	if (hw->hw_ops && hw->hw_ops->get_hw_mac_from_pdev_id)
 		return hw->hw_ops->get_hw_mac_from_pdev_id(pdev_idx);
 
 	return 0;

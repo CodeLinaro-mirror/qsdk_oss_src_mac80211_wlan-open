@@ -3074,6 +3074,117 @@ void ath12k_mac_handle_beacon_miss(struct ath12k *ar, u32 vdev_id)
 						   &vdev_id);
 }
 
+/* Handle a single VIF event; split out for clarity and reuse */
+static inline void
+ath12k_mac_report_low_ack_wrapper(struct ieee80211_sta *sta, u32 num_packets)
+{
+	ieee80211_report_low_ack(sta, num_packets);
+}
+
+static void ath12k_mac_handle_peer_event(struct ath12k_vif *ahvif,
+					 struct ath12k_dp_link_peer *peer, int flags)
+{
+	struct ath12k_base *ab = ahvif->ah->radio[0].ab;
+
+	if (!flags)
+		return;
+
+	if (flags & ATH12K_PEER_EVENT_RSSI_LOW) {
+		if (!peer->rssi_mon.cfg)
+			return;
+
+		/* Check whether the latest RSSI monitoring configuration
+		 * has changed in a way that disables deauthentication
+		 * handling, or if RSSI has improved enough to exit the
+		 * low-RSSI/deauth state.
+		 */
+		if (peer->rssi_mon.last_rssi >= peer->rssi_mon.cfg->rssi_threshold) {
+			peer->rssi_mon.low_rssi_count = 0;
+			peer->rssi_mon.first_low_jiffies = 0;
+			ath12k_dbg(ab, ATH12K_DBG_MAC,
+				   "rssi deauth: peer %pM rssi recovered to %d dBm (threshold %d dBm)\n",
+				   peer->addr, peer->rssi_mon.last_rssi,
+				   peer->rssi_mon.cfg->rssi_threshold);
+			return;
+		}
+
+		if (!peer->sta)
+			return;
+
+		ath12k_info(ab,
+			    "rssi deauth: sta %pM peer: %pM RSSI %d dBm below threshold %d dBm for %u samples\n",
+			    peer->sta->addr, peer->addr, peer->rssi_mon.last_rssi,
+			    peer->rssi_mon.cfg->rssi_threshold,
+			    peer->rssi_mon.low_rssi_count);
+
+		ath12k_mac_report_low_ack_wrapper(peer->sta,
+						  ATH12K_REPORT_LOW_ACK_NUM_PKT);
+
+		peer->rssi_mon.low_rssi_count = 0;
+		peer->rssi_mon.first_low_jiffies = 0;
+	}
+}
+
+void ath12k_mac_vif_event_work(struct wiphy *wiphy, struct wiphy_work *work)
+{
+	struct ath12k_vif *ahvif = container_of(work, struct ath12k_vif,
+						event_work);
+	struct ath12k_vif_event *event, *tmp;
+	struct ath12k_dp_link_peer *peer;
+	struct ath12k_link_vif *arvif;
+	struct llist_node *node;
+	struct ath12k *ar;
+	int flags;
+
+	lockdep_assert_wiphy(wiphy);
+
+	node = llist_del_all(&ahvif->event_list);
+	if (!node)
+		return;
+
+	/* Iterate through the reversed list (llist adds to head) */
+	llist_for_each_entry_safe(event, tmp, node, node) {
+		switch (event->type) {
+		case ATH12K_VIF_EVENT_TYPE_PEER:
+			/* Safe peer lookup by ID instead of container_of to avoid
+			 * use-after-free if peer was deleted while event was queued
+			 */
+			rcu_read_lock();
+			arvif =  rcu_dereference(ahvif->link[event->link_id]);
+			ar = arvif->ar;
+
+			if (!ar) {
+				rcu_read_unlock();
+				break;
+			}
+
+			spin_lock_bh(&ar->dp.dp->dp_lock);
+			peer = ath12k_dp_link_peer_find_by_id(ar->dp.dp, event->peer_id);
+			spin_unlock_bh(&ar->dp.dp->dp_lock);
+
+			if (!peer) {
+				/* Peer was deleted, skip event */
+				ath12k_generic_dbg(ATH12K_DBG_MAC,
+						   "peer %d deleted while event queued, skipping\n",
+						   event->peer_id);
+				rcu_read_unlock();
+				break;
+			}
+			ath12k_generic_dbg(ATH12K_DBG_MAC,
+					   "peer: %pM, event(link: %d hw link: %d peer id: %d)\n",
+					   peer->addr, event->link_id, event->hw_link_id,
+					   peer->peer_id);
+			flags = atomic_xchg(&peer->event_flags, 0);
+			ath12k_mac_handle_peer_event(ahvif, peer, flags);
+			rcu_read_unlock();
+			break;
+		default:
+			ath12k_hw_warn(ahvif->ah, "unknown event type %d\n", event->type);
+			break;
+		}
+	}
+}
+
 static void ath12k_mac_vif_sta_connection_loss_work(struct work_struct *work)
 {
 	struct ath12k_link_vif *arvif = container_of(work, struct ath12k_link_vif,
@@ -5891,6 +6002,19 @@ static void ath12k_update_obss_color_notify_work(struct wiphy *wiphy,
 	arvif->obss_color_bitmap = 0;
 }
 
+static void ath12k_mac_init_arvif_rssi(struct ath12k_link_vif *arvif)
+{
+	arvif->rssi_deauth_cfg.enabled = false;
+	arvif->rssi_deauth_cfg.rssi_threshold = -75;
+	arvif->rssi_deauth_cfg.grace_samples = 10;
+	arvif->rssi_deauth_cfg.noise_floor_offset = ATH12K_DEFAULT_NOISE_FLOOR;
+	ath12k_generic_dbg(ATH12K_DBG_MAC,
+			   "rssi deauth: vdev %d initialized - threshold=%d dBm, grace_samples=%u, enabled=%d\n",
+			   arvif->vdev_id, arvif->rssi_deauth_cfg.rssi_threshold,
+			   arvif->rssi_deauth_cfg.grace_samples,
+			   arvif->rssi_deauth_cfg.enabled);
+}
+
 static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 				  struct ath12k_link_vif *arvif, int link_id,
 				  bool is_bridge_vdev)
@@ -5930,6 +6054,9 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 	}
 	arvif->num_stations = 0;
 	arvif->num_peers = 0;
+
+	ath12k_mac_init_arvif_rssi(arvif);
+
 	init_completion(&arvif->peer_ch_width_switch_send);
 	wiphy_work_init(&arvif->peer_ch_width_switch_work,
 		  ath12k_wmi_peer_chan_width_switch_work);
@@ -8230,6 +8357,24 @@ skip_pending_cs_up:
 			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
 					 "Set slottime: %d for VDEV: %d\n",
 					 slottime, arvif->vdev_id);
+	}
+
+	if (changed & BSS_CHANGED_CQM) {
+		if (vif->type == NL80211_IFTYPE_AP) {
+			/* AP-mode CQM for station monitoring */
+			arvif->rssi_deauth_cfg.enabled =
+				(info->cqm_rssi_thold != 0);
+			arvif->rssi_deauth_cfg.rssi_threshold =
+				info->cqm_rssi_thold;
+			arvif->rssi_deauth_cfg.grace_samples =
+				info->cqm_rssi_hyst; /* Semantic adaptation */
+
+			ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+				   "AP CQM: enabled=%d threshold=%ddBm grace_samples=%u\n",
+				   arvif->rssi_deauth_cfg.enabled,
+				   arvif->rssi_deauth_cfg.rssi_threshold,
+				   arvif->rssi_deauth_cfg.grace_samples);
+		}
 	}
 
 	if (changed & BSS_CHANGED_ERP_PREAMBLE) {
@@ -17601,6 +17746,19 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		break;
 	}
 
+	/* Update noise floor offset based on HW capability */
+	if (test_bit(WMI_TLV_SERVICE_HW_DB2DBM_CONVERSION_SUPPORT,
+		     ar->ab->wmi_ab.svc_map))
+		arvif->rssi_deauth_cfg.noise_floor_offset = 0;
+	else
+		arvif->rssi_deauth_cfg.noise_floor_offset = ATH12K_DEFAULT_NOISE_FLOOR;
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+		   "rssi deauth: vdev %d initialized - threshold=%d dBm, grace_samples=%u, enabled=%d\n",
+		   arvif->vdev_id, arvif->rssi_deauth_cfg.rssi_threshold,
+		   arvif->rssi_deauth_cfg.grace_samples,
+		   arvif->rssi_deauth_cfg.enabled);
+
 	if (ahvif->vdev_type != WMI_VDEV_TYPE_STA) {
 		ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
 			   "mac vdev create id %d type %d subtype %d map %llx\n",
@@ -18167,6 +18325,10 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 	ahvif->ah = ah;
 	ahvif->vif = vif;
 	arvif = &ahvif->deflink;
+
+	init_llist_head(&ahvif->event_list);
+	wiphy_work_init(&ahvif->event_work, ath12k_mac_vif_event_work);
+
 	/* Restore the VP information if VP is allocated
 	 * successfully at the time of iface init.
 	 */
@@ -18311,7 +18473,8 @@ ppe_vp_config:
 	for (i = 0; i < ARRAY_SIZE(vif->hw_queue); i++)
 		vif->hw_queue[i] = ATH12K_HW_DEFAULT_QUEUE;
 
-	vif->driver_flags |= IEEE80211_VIF_SUPPORTS_UAPSD;
+	vif->driver_flags |= (IEEE80211_VIF_SUPPORTS_UAPSD |
+			      IEEE80211_VIF_SUPPORTS_CQM_RSSI);
 	if (ath12k_frame_mode == ATH12K_HW_TXRX_ETHERNET) {
 		vif->offload_flags |= IEEE80211_OFFLOAD_ENCAP_4ADDR;
 
@@ -18531,6 +18694,9 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 	struct ath12k_hw *ah = hw->priv;
 
 	lockdep_assert_wiphy(hw->wiphy);
+
+	vif->driver_flags &= ~(IEEE80211_VIF_SUPPORTS_CQM_RSSI |
+			       IEEE80211_VIF_SUPPORTS_UAPSD);
 
 	if (vif->type == NL80211_IFTYPE_AP_VLAN) {
 		if (!ahvif->vlan_iface) {
@@ -25461,7 +25627,7 @@ static void ath12k_mac_hw_destroy(struct ath12k_hw *ah)
 static struct ath12k_hw *ath12k_mac_hw_allocate(struct ath12k_hw_group *ag,
 						struct ath12k_pdev_map *pdev_map,
 						u8 num_pdev_map,
-						const char* phy_name)
+						const char *phy_name)
 {
 	struct ieee80211_hw *hw;
 	struct ath12k *ar;
