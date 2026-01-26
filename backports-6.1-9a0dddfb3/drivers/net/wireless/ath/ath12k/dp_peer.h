@@ -7,7 +7,7 @@
 #ifndef ATH12K_DP_PEER_H
 #define ATH12K_DP_PEER_H
 
-#include "events.h"
+#include "event.h"
 #include "dp_rx.h"
 #include "dp_stats.h"
 #define ATH12K_DP_PEER_ID_INVALID              0xFFFF
@@ -39,6 +39,20 @@ struct ath12k_mscs_ctxt {
 	u8 user_priority_bitmap;
 	u8 user_priority_limit;
 	u8 tclas_mask;
+};
+
+/**
+ * struct ath12k_peer_event - Peer-specific event (optimized)
+ * @common: Base event structure (includes flags)
+ * @peer_id: Peer ID for safe lookup
+ *
+ * Optimized event structure containing only fields needed for
+ * safe and efficient event processing. The link_id is NOT needed
+ * as it's available from peer->link_id after successful lookup.
+ */
+struct ath12k_peer_event {
+	struct ath12k_event common;
+	u16 peer_id;
 };
 
 struct ath12k_dp_link_peer {
@@ -109,8 +123,7 @@ struct ath12k_dp_link_peer {
 
 	struct ath12k_dp_link_peer_rx_signal_stats signal_stats;
 	/* Generic Event Mechanism */
-	struct ath12k_vif_event event;
-	atomic_t event_flags;
+	struct ath12k_peer_event event;
 
 	/* RSSI-based deauthentication monitoring */
 	struct {
@@ -120,6 +133,8 @@ struct ath12k_dp_link_peer {
 		struct ath12k_rssi_deauth_config *cfg;	/* Cached config pointer */
 	} rssi_mon;
 };
+
+#define ATH12K_PEER_EVENT_RSSI_LOW      BIT(0)
 
 struct ath12k_dp_peer {
 	struct list_head list;

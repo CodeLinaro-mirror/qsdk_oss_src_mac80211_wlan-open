@@ -39,6 +39,7 @@
 #include "qcn_extns/ath12k_cmn_extn.h"
 #include "qcn_extns/vendor_extn.h"
 #include <linux/atomic.h>
+#include "event.h"
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #include <ppe_ds_wlan.h>
@@ -865,6 +866,11 @@ struct netdev_tid_stats {
 	struct tid_netstats tid_stats[IEEE80211_NUM_TIDS];
 };
 
+/* Generic VIF Event Types */
+enum ath12k_vif_event_type {
+	ATH12K_VIF_EVENT_TYPE_PEER,
+};
+
 struct ath12k_vif {
 	/* Should be the first member in the structure */
 	struct ath12k_dp_vif dp_vif;
@@ -932,9 +938,7 @@ struct ath12k_vif {
 	struct ieee80211_chanctx_conf chanctx;
 	struct ath12k_reg_tpc_power_info reg_tpc_info;
 
-	/* Generic VIF event worker */
-	struct wiphy_work event_work;
-	struct llist_head event_list;
+	struct ath12k_event_queue event_queue;
 };
 
 struct ath12k_vif_iter {

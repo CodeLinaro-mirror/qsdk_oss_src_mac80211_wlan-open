@@ -3125,64 +3125,51 @@ static void ath12k_mac_handle_peer_event(struct ath12k_vif *ahvif,
 	}
 }
 
-void ath12k_mac_vif_event_work(struct wiphy *wiphy, struct wiphy_work *work)
+void ath12k_mac_peer_event_callback(struct ath12k_event_queue *queue,
+				    struct ath12k_event *event)
 {
-	struct ath12k_vif *ahvif = container_of(work, struct ath12k_vif,
-						event_work);
-	struct ath12k_vif_event *event, *tmp;
+	struct ath12k_vif *ahvif = queue->priv;
+	struct ath12k_peer_event *peer_event =
+				container_of(event, struct ath12k_peer_event, common);
 	struct ath12k_dp_link_peer *peer;
-	struct ath12k_link_vif *arvif;
-	struct llist_node *node;
 	struct ath12k *ar;
+	struct ath12k_link_vif *arvif;
 	int flags;
 
-	lockdep_assert_wiphy(wiphy);
+	/* Safe peer lookup by ID instead of container_of to avoid
+	 * use-after-free if peer was deleted while event was queued
+	 */
 
-	node = llist_del_all(&ahvif->event_list);
-	if (!node)
+	rcu_read_lock();
+	arvif =  ath12k_get_arvif_from_link_id(ahvif, event->link_id);
+	if (!arvif || !arvif->ar) {
+		rcu_read_unlock();
 		return;
-
-	/* Iterate through the reversed list (llist adds to head) */
-	llist_for_each_entry_safe(event, tmp, node, node) {
-		switch (event->type) {
-		case ATH12K_VIF_EVENT_TYPE_PEER:
-			/* Safe peer lookup by ID instead of container_of to avoid
-			 * use-after-free if peer was deleted while event was queued
-			 */
-			rcu_read_lock();
-			arvif =  rcu_dereference(ahvif->link[event->link_id]);
-			ar = arvif->ar;
-
-			if (!ar) {
-				rcu_read_unlock();
-				break;
-			}
-
-			spin_lock_bh(&ar->dp.dp->dp_lock);
-			peer = ath12k_dp_link_peer_find_by_id(ar->dp.dp, event->peer_id);
-			spin_unlock_bh(&ar->dp.dp->dp_lock);
-
-			if (!peer) {
-				/* Peer was deleted, skip event */
-				ath12k_generic_dbg(ATH12K_DBG_MAC,
-						   "peer %d deleted while event queued, skipping\n",
-						   event->peer_id);
-				rcu_read_unlock();
-				break;
-			}
-			ath12k_generic_dbg(ATH12K_DBG_MAC,
-					   "peer: %pM, event(link: %d hw link: %d peer id: %d)\n",
-					   peer->addr, event->link_id, event->hw_link_id,
-					   peer->peer_id);
-			flags = atomic_xchg(&peer->event_flags, 0);
-			ath12k_mac_handle_peer_event(ahvif, peer, flags);
-			rcu_read_unlock();
-			break;
-		default:
-			ath12k_hw_warn(ahvif->ah, "unknown event type %d\n", event->type);
-			break;
-		}
 	}
+	ar = arvif->ar;
+
+	spin_lock_bh(&ar->dp.dp->dp_lock);
+	peer = ath12k_dp_link_peer_find_by_id(ar->dp.dp, peer_event->peer_id);
+	spin_unlock_bh(&ar->dp.dp->dp_lock);
+
+	if (!peer) {
+		rcu_read_unlock();
+		/* Peer was deleted, skip event */
+		ath12k_generic_dbg(ATH12K_DBG_MAC,
+				   "peer %d deleted while event queued, skipping\n",
+				   peer_event->peer_id);
+		return;
+	}
+
+	ath12k_generic_dbg(ATH12K_DBG_MAC,
+			   "peer: %px, event(link: %d hw link: %d peer id: %d)\n",
+			   peer, event->link_id, event->hw_link_id,
+			   peer_event->peer_id);
+
+	/* Read and clear flags atomically from event structure */
+	flags = atomic_xchg(&event->flags, 0);
+	ath12k_mac_handle_peer_event(ahvif, peer, flags);
+	rcu_read_unlock();
 }
 
 static void ath12k_mac_vif_sta_connection_loss_work(struct work_struct *work)
@@ -6010,7 +5997,8 @@ static void ath12k_mac_init_arvif_rssi(struct ath12k_link_vif *arvif)
 	arvif->rssi_deauth_cfg.noise_floor_offset = ATH12K_DEFAULT_NOISE_FLOOR;
 	ath12k_generic_dbg(ATH12K_DBG_MAC,
 			   "rssi deauth: vdev %d initialized - threshold=%d dBm, grace_samples=%u, enabled=%d\n",
-			   arvif->vdev_id, arvif->rssi_deauth_cfg.rssi_threshold,
+			   arvif->vdev_id,
+			   arvif->rssi_deauth_cfg.rssi_threshold,
 			   arvif->rssi_deauth_cfg.grace_samples,
 			   arvif->rssi_deauth_cfg.enabled);
 }
@@ -18326,8 +18314,7 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 	ahvif->vif = vif;
 	arvif = &ahvif->deflink;
 
-	init_llist_head(&ahvif->event_list);
-	wiphy_work_init(&ahvif->event_work, ath12k_mac_vif_event_work);
+	ath12k_event_queue_init(&ahvif->event_queue, hw->wiphy, ahvif);
 
 	/* Restore the VP information if VP is allocated
 	 * successfully at the time of iface init.
@@ -18697,6 +18684,9 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 
 	vif->driver_flags &= ~(IEEE80211_VIF_SUPPORTS_CQM_RSSI |
 			       IEEE80211_VIF_SUPPORTS_UAPSD);
+
+	/* Cleanup event queue */
+	ath12k_event_queue_deinit(&ahvif->event_queue);
 
 	if (vif->type == NL80211_IFTYPE_AP_VLAN) {
 		if (!ahvif->vlan_iface) {

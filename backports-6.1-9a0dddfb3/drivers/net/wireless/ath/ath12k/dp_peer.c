@@ -9,6 +9,7 @@
 #include "debug.h"
 #include "debugfs.h"
 #include "telemetry_agent_if.h"
+#include "mac.h"
 
 struct ath12k_dp_link_peer *
 ath12k_dp_link_peer_find_by_vdev_id_and_addr(struct ath12k_dp *dp,
@@ -229,9 +230,16 @@ void ath12k_peer_map_event(struct ath12k_base *ab, u8 vdev_id, u16 peer_id,
 		ewma_avg_snr_dp_init(&peer->signal_stats.avg_snr_dp);
 		ewma_avg_rssi_init(&peer->signal_stats.avg_rssi);
 		ewma_avg_rssi_dp_init(&peer->signal_stats.avg_rssi_dp);
-		/* Initialize generic event mechanism */
-		peer->event.type = ATH12K_VIF_EVENT_TYPE_PEER;
-		atomic_set(&peer->event_flags, 0);
+
+		/* Initialize generic event mechanism (FR_RSSI)
+		 * Note: llist_node does not need explicit initialization.
+		 * The llist_add() operation will handle node linkage automatically.
+		 */
+		peer->event.common.callback = ath12k_mac_peer_event_callback;
+		atomic_set(&peer->event.common.flags, 0);
+
+		/* Initialize peer event context */
+		peer->event.peer_id = peer_id;
 
 		/* Initialize RSSI monitoring structure */
 		peer->rssi_mon.last_rssi = 0;
@@ -599,6 +607,7 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 
 	peer->dp_peer = dp_peer;
 	peer->hw_link_id = hw_link_id;
+	peer->event.common.hw_link_id = hw_link_id;
 	peer->tcl_metadata |= u32_encode_bits(0, HTT_TCL_META_DATA_TYPE) |
 			      u32_encode_bits(peer->peer_id, HTT_TCL_META_DATA_PEER_ID);
 	peer->tcl_metadata &= ~HTT_TCL_META_DATA_VALID_HTT;
@@ -939,8 +948,11 @@ void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr)
 	arvif = ath12k_mac_get_arvif(ar, vdev_id);
 	if (arvif) {
 		ahvif = arvif->ahvif;
-		if (ahvif)
+		if (ahvif) {
 			link_vif = &ahvif->dp_vif.dp_link_vif[arvif->link_id];
+			/* Flush the pending events to be safe */
+			ath12k_event_queue_flush(&ahvif->event_queue);
+		}
 	}
 
 	spin_lock_bh(&dp->dp_lock);
