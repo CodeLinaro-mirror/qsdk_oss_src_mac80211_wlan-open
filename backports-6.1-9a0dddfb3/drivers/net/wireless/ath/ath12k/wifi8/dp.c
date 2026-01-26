@@ -427,6 +427,12 @@ static void ath12k_wifi8_dp_vif_configure(struct ath12k_dp *dp,
 	if (optype == ATH12K_DP_OP_DEINIT) {
 		if (dp_vif->bank_id != DP_INVALID_BANK_ID)
 			ath12k_dp_tx_put_bank_profile(central_dp, dp_vif->bank_id);
+
+		/* Reset VDEV multicast packet control bits for this vdev_id
+		 * to prevent stale entry on vdev_id reuse.
+		 */
+		ath12k_wifi8_hal_vdev_mcast_ctrl_set(central_ab, dp_vif->dp_vif_id,
+						HAL_TX_PACKET_CONTROL_CONFIG_DISABLE);
 		return;
 	} else if (optype == ATH12K_DP_OP_INIT) {
 		/*TODO keep vdev_id check disabled for initial emulation */
