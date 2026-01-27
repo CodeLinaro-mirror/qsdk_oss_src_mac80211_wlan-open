@@ -1050,3 +1050,12 @@ void *ath12k_hal_srng_src_get_tqm_next_entry(struct ath12k_base *ab,
 
 	return desc;
 }
+
+void ath12k_wifi8_hal_txpt_classify_info_flush(struct ath12k_base *ab)
+{
+	u32 val;
+
+	val = ath12k_hif_read32(ab, HAL_TCL_ASE_PEER_FETCH_CACHE_CTRL);
+	val |= le32_encode_bits(1, HAL_TCL_ASE_PEER_FETCH_CACHE_FLUSH);
+	ath12k_hif_write32(ab, HAL_TCL_ASE_PEER_FETCH_CACHE_CTRL, val);
+}

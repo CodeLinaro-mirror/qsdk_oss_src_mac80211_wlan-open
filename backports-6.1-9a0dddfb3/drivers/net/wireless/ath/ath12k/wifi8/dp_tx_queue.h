@@ -20,6 +20,18 @@ enum ath12k_classify_bank_subid {
 	CLASSIFY_BANK_SUBID_MIXED,
 };
 
+struct ath12k_dp_tx_metdata {
+	u8 svc_id; //bit 0
+	u32 bitmap; //bitmap is used to track if fields are modified
+};
+
+struct ath12k_dp_tx_queue_metadata {
+	u8 tidno;
+	u8 flow_type;
+	enum hal_tcl_encap_type encap_type;
+	struct ath12k_dp_tx_metdata q_params;
+};
+
 extern u32 link_to_mgmt_type_map[];
 
 #define MGMT_MSDUQ_LINK(n) \
@@ -59,6 +71,8 @@ static inline u32 ath12k_link_num_to_msduq_type(u8 link_num)
 #define HTT_MSDUQ_INDEX_TO_CLASSIFY_BANK_ID(htt_msduq_idx)    ((htt_msduq_idx) >> 0x1)
 #define HTT_MSDUQ_INDEX_TO_CLASSIFY_BANK_SUBID(htt_msduq_idx) ((htt_msduq_idx) &  0x1)
 
+void ath12k_set_txpt_flow_ptr(struct ath12k_dp_hw_group *dp_hw_grp,
+			      struct ath12k_dp_peer *peer);
 u8 ath12k_tx_get_bank_id(struct ath12k_dp_peer *peer,
 			 enum htt_tx_tid_msduq_mpdu_type msduq_idx,
 			 enum ath12k_classify_bank_subid *bank_sub_id);
@@ -95,4 +109,7 @@ void ath12k_peer_free_static_queues(struct ath12k_dp_hw_group *dp_hw_grp,
 				    struct ath12k_dp_peer *peer);
 void ath12k_dp_peer_free_queues(struct ath12k_dp_hw_group *dp_hw_grp,
 				struct ath12k_dp_peer *peer);
+int ath12k_peer_alloc_dynamic_queue(struct ath12k_dp_hw_group *dp_hw_grp,
+				    struct ath12k_dp_peer *peer,
+				    struct ath12k_dp_tx_queue_metadata *tx_queue_params);
 #endif

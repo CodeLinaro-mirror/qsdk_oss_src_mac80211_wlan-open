@@ -293,12 +293,16 @@ int ath12k_dp_tx_peer_msduq_mpduq_setup(struct ath12k_dp_hw_group *dp_hw_grp,
 	/* data tid queues */
 	for (i = 0; i < ATH12K_MAX_NUM_DATA_TIDS; i++) {
 		mpduq = tx_info->tid_info[i].mpduq;
-		if (mpduq && mpduq->mpduq_state == ATH12K_TX_Q_CREATED)
+		if (mpduq &&
+		    (mpduq->mpduq_state == ATH12K_TX_Q_CREATED ||
+		     mpduq->mpduq_state == ATH12K_TX_Q_MODIFIED))
 			list_add_tail(&mpduq->list, &mpduq_pending_list_head);
 
 		for (j = 0; j < ATH12K_MAX_DP_MSDUQ_PER_TID; j++) {
 			msduq = tx_info->tid_info[i].msduq[j];
-			if (msduq && msduq->msduq_state == ATH12K_TX_Q_CREATED)
+			if (msduq &&
+			    (msduq->msduq_state == ATH12K_TX_Q_CREATED ||
+			     msduq->msduq_state == ATH12K_TX_Q_MODIFIED))
 				list_add_tail(&msduq->list, &msduq_pending_list_head);
 		}
 	}

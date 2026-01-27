@@ -3069,14 +3069,255 @@ int ath12k_wifi8_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 						  &local_list_no_skb, list_no_skb_count);
 	return (count + list_no_skb_count);
 }
+#define INDEX_LOOKUP_OVERRIDE_ENABLED 1
+#define HLOS_TID_OVERWRITE_ENABLED 1
+#define FLOW_OVERRIDE_ENABLED 1
+static int ath12k_wifi8_dp_tx_reinject(struct ath12k_dp *dp,
+				       struct ath12k_dp_vif *dp_vif,
+				       struct hal_tcl_exit_base *tx_exception_desc,
+				       struct ath12k_tx_desc_info *tx_desc)
+{
+	struct hal_tcl_data_cmd tcl_desc = {0};
+	struct hal_tcl_data_cmd *hal_tcl_desc;
+	struct dp_tx_ring *tx_ring;
+	u8 ring_selector = 0, ring_id = 0;
+	struct ath12k_hal *hal = dp->hal;
+	struct hal_srng *tcl_ring;
+	u8 hal_ring_id;
+	u32 data_len;
+
+	ring_selector = dp->hw_params->hw_ops->get_ring_selector(tx_desc->skb);
+	ring_id = ring_selector % dp->hw_params->max_tx_ring;
+
+	memcpy(&tcl_desc.buf_addr_info, &tx_exception_desc->buf_addr_info,
+	       sizeof(struct ath12k_buffer_addr));
+	tcl_desc.info0 =
+			FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_BUF_OR_EXT_DESC_TYPE,
+				   FIELD_GET(HAL_TCL_EXIT_BASE_INFO0_BUF_OR_EXT_DESC_TYPE,
+					     le32_to_cpu(tx_exception_desc->info0))) |
+			FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_BANK_ID,
+				   FIELD_GET(HAL_TCL_EXIT_BASE_INFO12_BANK_ID,
+					      le32_to_cpu(tx_exception_desc->info12))) |
+			FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_VDEV_ID,
+				   FIELD_GET(HAL_TCL_EXIT_BASE_INFO11_VDEV_ID,
+					     le32_to_cpu(tx_exception_desc->info11))) |
+			FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_DATA_LENGTH,
+				   FIELD_GET(HAL_TCL_EXIT_BASE_INFO9_DATA_LENGTH,
+					     le32_to_cpu(tx_exception_desc->info9)));
+	if (le32_get_bits(tx_exception_desc->info5,
+			  HAL_TCL_EXIT_BASE_INFO5_INDEX_LOOKUP_OVERRIDE)) {
+		tcl_desc.search_index = tx_exception_desc->addrx_ast_hash_idx;
+		tcl_desc.info1 =
+			FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_CACHE_SET_NUM,
+				   FIELD_GET(HAL_TCL_EXIT_BASE_INFO11_CACHE_SET_NUM,
+					     le32_to_cpu(tx_exception_desc->info11))) |
+			FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_INDEX_LOOKUP_OVERRIDE,
+				   INDEX_LOOKUP_OVERRIDE_ENABLED);
+	}
+	tcl_desc.info2 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO2_TO_FW_SW,
+				    FIELD_GET(HAL_TCL_EXIT_BASE_INFO11_TO_FW_SW,
+					      le32_to_cpu(tx_exception_desc->info11))) |
+			 FIELD_PREP(HAL_TCL_DATA_CMD_INFO2_IPV4_CHECKSUM_EN,
+				    FIELD_GET(HAL_TCL_EXIT_BASE_INFO9_IPV4_CHECKSUM_EN,
+					      le32_to_cpu(tx_exception_desc->info9))) |
+			 FIELD_PREP(HAL_TCL_DATA_CMD_INFO2_UDP_OVER_IPV4_CHECKSUM_EN,
+				    FIELD_GET(
+					HAL_TCL_EXIT_BASE_INFO9_UDP_OVER_IPV4_CHECKSUM_EN,
+					le32_to_cpu(tx_exception_desc->info9))) |
+			 FIELD_PREP(HAL_TCL_DATA_CMD_INFO2_L4_CHECKSUM_EN,
+				    FIELD_GET(HAL_TCL_EXIT_BASE_INFO9_L4_CHECKSUM_EN,
+					      le32_to_cpu(tx_exception_desc->info9)));
+	tcl_desc.info3 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO3_FLOW_SELECT,
+				    FIELD_GET(HAL_TCL_EXIT_BASE_INFO5_FLOW_SELECT,
+					      le32_to_cpu(tx_exception_desc->info5))) |
+			 FIELD_PREP(HAL_TCL_DATA_CMD_INFO3_LINK_ID,
+				    FIELD_GET(HAL_TCL_EXIT_BASE_INFO5_CMD_LINK_ID,
+					      le32_to_cpu(tx_exception_desc->info5)));
+	tcl_desc.tcl_cmd_number = tx_exception_desc->tcl_status_number;
+
+	if (le32_get_bits(tx_exception_desc->info9,
+			  HAL_TCL_EXIT_BASE_INFO9_HLOS_TID_OVERWRITE))
+		tcl_desc.info1 |=
+			FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_HLOS_TID,
+				   FIELD_GET(HAL_TCL_EXIT_BASE_INFO0_TID,
+					     le32_to_cpu(tx_exception_desc->info0))) |
+			FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_HLOS_TID_OVERWRITE,
+				   HLOS_TID_OVERWRITE_ENABLED);
+	if (le32_get_bits(tx_exception_desc->info5,
+			  HAL_TCL_EXIT_BASE_INFO5_FLOW_OVERRIDE_ENABLE))
+		tcl_desc.info2 |=
+		FIELD_PREP(HAL_TCL_DATA_CMD_INFO2_FLOW_OVERRIDE_ENABLE,
+			   FLOW_OVERRIDE_ENABLED) |
+		FIELD_PREP(HAL_TCL_DATA_CMD_INFO2_WHO_CLASSIFY_INFO_SEL,
+			   FIELD_GET(HAL_TCL_EXIT_BASE_INFO11_WHO_CLASSIFY_INFOSEL,
+				     le32_to_cpu(tx_exception_desc->info11)));
+
+	tx_ring = &dp->tx_ring[ring_id];
+	hal_ring_id = tx_ring->tcl_data_ring.ring_id;
+	tcl_ring = &hal->srng_list[hal_ring_id];
+
+	ath12k_hal_srng_access_begin_no_lock(tcl_ring);
+	hal_tcl_desc = ath12k_hal_srng_src_get_next_entry(dp->ab, tcl_ring);
+	if (unlikely(!hal_tcl_desc)) {
+		ath12k_hal_srng_access_end_no_lock(dp->ab, tcl_ring);
+		dp->device_stats.tx_err.desc_na[ring_id]++;
+		return DP_TX_ENQ_DROP_TCL_DESC_NA;
+	}
+
+	memcpy(hal_tcl_desc, &tcl_desc, sizeof(tcl_desc));
+
+	data_len = FIELD_GET(HAL_TCL_EXIT_BASE_INFO9_DATA_LENGTH,
+			     le32_to_cpu(tx_exception_desc->info9));
+	ath12k_hal_srng_access_end_no_lock(dp->ab, tcl_ring);
+	return DP_TX_ENQ_SUCCESS;
+}
 
 static int ath12k_wifi8_dp_tx_null_flowq_handler(
 			struct ath12k_dp *dp,
 			struct hal_tcl_exit_base *tx_exception_desc,
 			struct ath12k_tx_desc_info *tx_desc)
 {
-	ath12k_err(dp->ab, "flowq is null");
-	return 0;
+	enum hal_tcl_encap_type encap_type;
+	struct ath12k_dp_tx_queue_metadata tx_q_params = {0};
+	struct ath12k_dp_peer *peer;
+	struct ath12k_pdev_dp *dp_pdev;
+	u8 tidno, flow_type;
+	u16 peer_id;
+	u8 hw_link_id, link_id;
+	bool non_qos, is_tcp, is_udp, mcast;
+	u8 bank_id;
+	struct ath12k_dp_link_peer *link_peer;
+	struct ath12k_vif *ahvif;
+	struct ath12k_dp_vif *dp_vif;
+	int ret;
+
+	tidno = le32_get_bits(tx_exception_desc->info0,
+			      HAL_TCL_EXIT_BASE_INFO0_TID);
+
+	if (le32_get_bits(tx_exception_desc->info6,
+			  HAL_TCL_EXIT_BASE_INFO6_ADDRX_IDX_INVALID)) {
+		ath12k_err(dp->ab, "Addr X index is invalid for desc_id %d",
+			   tx_desc->desc_id);
+		return -EINVAL;
+	}
+	peer_id = le16_to_cpu(tx_exception_desc->meta_data_ase);
+	hw_link_id = le32_get_bits(tx_exception_desc->info5,
+				   HAL_TCL_EXIT_BASE_INFO12_FW_LINK_ID);
+
+	rcu_read_lock();
+	dp_pdev = ath12k_dp_hw_grp_to_dp_pdev(dp->dp_hw_grp, hw_link_id);
+	if (!dp_pdev) {
+		ath12k_err(dp->ab, "link id is invalid for desc_id %d",
+			   tx_desc->desc_id);
+		ret = -EINVAL;
+		goto end;
+	}
+
+	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, peer_id);
+	if (!peer) {
+		ath12k_err(dp->ab, "peer_id is invalid for desc_id %d",
+			   tx_desc->desc_id);
+		ret = -EINVAL;
+		goto end;
+	}
+	if (peer->qos_stats_lvl == ATH12K_QOS_SINGLE_LINK_STATS)
+		link_id = peer->hw_links[dp_pdev->hw_link_id];
+	else
+		link_id = ath12k_dp_get_link_id(dp_pdev, hw_link_id, peer);
+
+	if (link_id < ATH12K_NUM_MAX_LINKS) {
+		link_peer = rcu_dereference(peer->link_peers[link_id]);
+		if (!link_peer) {
+			ath12k_err(dp->ab, "link_peer is invalid for link_id %d",
+				   link_id);
+			ret = -EINVAL;
+			goto end;
+		}
+		if (link_peer->vif) {
+			ahvif = ath12k_vif_to_ahvif(link_peer->vif);
+		} else {
+			ath12k_err(dp->ab, "vif is invalid for link_id %d",
+				   link_id);
+			ret = -EINVAL;
+			goto end;
+		}
+		if (ahvif) {
+			dp_vif = &ahvif->dp_vif;
+		} else {
+			ath12k_err(dp->ab, "ahvif is invalid for link_id %d",
+				   link_id);
+			ret = -EINVAL;
+			goto end;
+		}
+		if (dp_vif) {
+			encap_type = dp_vif->tx_encap_type;
+		} else {
+			ath12k_err(dp->ab, "dp_vif is invalid for link_id %d",
+				   link_id);
+			ret = -EINVAL;
+			goto end;
+		}
+	} else {
+		ath12k_err(dp->ab, "link_id %d exceeding MAX_LINKS",
+			   link_id);
+		ret = -EINVAL;
+		goto end;
+	}
+
+	mcast = le32_get_bits(tx_exception_desc->info5,
+			      HAL_TCL_EXIT_BASE_INFO5_DA_IS_BCAST_MCAST);
+	is_udp = le32_get_bits(tx_exception_desc->info3,
+			       HAL_TCL_EXIT_BASE_INFO3_UDP_PROTO);
+	is_tcp = le32_get_bits(tx_exception_desc->info3,
+			       HAL_TCL_EXIT_BASE_INFO3_TCP_PROTO);
+	non_qos = le32_get_bits(tx_exception_desc->info1,
+				HAL_TCL_EXIT_BASE_INFO1_NON_QOS);
+
+	if (peer->is_vdev_peer || non_qos) {
+		ath12k_err(dp->ab,
+			   "Frame is either mcast %d or non_qos %d for desc_id %d",
+			   mcast, non_qos, tx_desc->desc_id);
+		rcu_read_unlock();
+		return -EINVAL;
+	}
+
+	if (le32_get_bits(tx_exception_desc->info11,
+			  HAL_TCL_EXIT_BASE_INFO11_BANK_ID_EXCEEDED)) {
+		ath12k_err(dp->ab, "Bank ID exceeded for desc_id %d",
+			   tx_desc->desc_id);
+		rcu_read_unlock();
+		return -EINVAL;
+	}
+	if (le32_get_bits(tx_exception_desc->info7,
+			  HAL_TCL_EXIT_BASE_INFO7_BANK_NOT_CONFIGURED)) {
+		ath12k_err(dp->ab, "Bank registers not configured for desc_id %d",
+			   tx_desc->desc_id);
+		rcu_read_unlock();
+		return -EINVAL;
+	}
+	if (le32_get_bits(tx_exception_desc->info11,
+			  HAL_TCL_EXIT_BASE_INFO11_WHO_CLASSIFY_INFO_SEL_EXCEEDED)) {
+		ath12k_err(dp->ab, "Number of who_classify_info exceeded for desc_id %d",
+			   tx_desc->desc_id);
+		rcu_read_unlock();
+		return -EINVAL;
+	}
+	bank_id = le32_get_bits(tx_exception_desc->info11,
+				HAL_TCL_EXIT_BASE_INFO11_WHO_CLASSIFY_INFOSEL);
+
+	flow_type = bank_id * ATH12K_NUM_MSDU_Q_PER_TID + is_udp;
+	tx_q_params.encap_type = encap_type;
+	tx_q_params.tidno = tidno;
+	tx_q_params.flow_type = flow_type;
+	ret = ath12k_peer_alloc_dynamic_queue(dp->dp_hw_grp, peer,
+					      &tx_q_params);
+end:
+	rcu_read_unlock();
+
+	if (ret)
+		return ret;
+	return ath12k_wifi8_dp_tx_reinject(dp, dp_vif, tx_exception_desc,
+					   tx_desc);
 }
 
 static bool
@@ -3174,6 +3415,7 @@ int ath12k_wifi8_dp_tx_exception_handler(struct ath12k_dp *dp, int budget)
 	int pdev_tx_comp_cnt[ATH12K_GROUP_MAX_RADIO] = {0};
 	u8 hw_link_id = 0;
 	struct ath12k_pdev_dp *dp_pdev = NULL;
+	int ret;
 
 	srng = &ab->hal.srng_list[dp_wifi8->tx_exception.ring_id];
 	spin_lock_bh(&srng->lock);
@@ -3206,11 +3448,11 @@ int ath12k_wifi8_dp_tx_exception_handler(struct ath12k_dp *dp, int budget)
 
 		if (le32_get_bits(tx_exception_desc->info11,
 				  HAL_TCL_EXIT_BASE_INFO11_FLOW_POINTER_NULL)) {
-			ath12k_wifi8_dp_tx_null_flowq_handler(dp,
-							      tx_exception_desc,
-							      tx_desc);
-			/* TODO remove these lines after enabling dynamic flow queue */
-			goto tx_buf_release;
+			ret = ath12k_wifi8_dp_tx_null_flowq_handler(dp,
+								    tx_exception_desc,
+								    tx_desc);
+			if (ret == 0)
+				continue;
 		}
 tx_buf_release:
 		sw_metadata.skb = tx_desc->skb;

@@ -214,6 +214,7 @@ void ath12k_wifi8_hal_txpt_classify_info_setup(struct ath12k_dp_hw_group *dp_hw_
 					       ATH12K_SIZE_OF_TID_INFO,
 					       DMA_BIDIRECTIONAL);
 
+	ath12k_wifi8_hal_txpt_classify_info_flush(ab);
 	ath12k_dbg_dump(ab, ATH12K_DBG_HAL, NULL, "Hal CLASSIFY INFO setup:",
 			tx_tid_ptr, sizeof(*tx_tid_ptr));
 }
