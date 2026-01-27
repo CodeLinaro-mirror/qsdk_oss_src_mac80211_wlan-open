@@ -116,12 +116,6 @@ ath12k_pri_link_migrate_policy[QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_NEW_PRI_LINK_ID] = {.type =  NLA_U8},
 };
 
-static const struct nla_policy
-ath12k_vendor_dcs_policy[QCA_WLAN_VENDOR_ATTR_DCS_MAX + 1] = {
-	[QCA_WLAN_VENDOR_ATTR_DCS_MLO_LINK_ID] = {.type = NLA_U8},
-	[QCA_WLAN_VENDOR_ATTR_DCS_WLAN_INTERFERENCE_CONFIGURE] = {.type = NLA_U8},
-};
-
 static void
 ath12k_afc_response_buffer_display(struct ath12k_base *ab,
 				   struct ath12k_afc_host_resp *afc_rsp)
@@ -9638,195 +9632,6 @@ int ath12k_vendor_put_ab_num_links(struct sk_buff *vendor_event,
 	return 0;
 }
 
-void ath12k_vendor_wlan_intf_stats(struct work_struct *work)
-{
-	struct ath12k *ar = container_of(work, struct ath12k, wlan_intf_work);
-	struct sk_buff *msg = NULL;
-	struct wireless_dev *wdev;
-	struct ath12k_link_vif *tmp_arvif = NULL, *arvif;
-	struct ath12k_dcs_wlan_interference *dcs_wlan_intf = NULL, *temp;
-	int tmp;
-	u8 dcs_enable_bitmap;
-	bool disable_wlan_intf = false;
-
-	if (!ar || !ar->ah || !ar->ah->hw || !ar->ah->hw->wiphy)
-		return;
-
-	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
-
-	list_for_each_entry(arvif, &ar->arvifs, list) {
-		if (arvif->ahvif->vdev_type != WMI_VDEV_TYPE_AP) {
-			disable_wlan_intf = true;
-			break;
-		} else if (arvif->vdev_subtype == WMI_VDEV_SUBTYPE_MESH_11S) {
-			disable_wlan_intf = true;
-			break;
-		}
-
-		if (!tmp_arvif && arvif->is_started)
-			tmp_arvif = arvif;
-	}
-
-	if (disable_wlan_intf) {
-		spin_lock_bh(&ar->data_lock);
-		ar->dcs_enable_bitmap &= ~WMI_DCS_WLAN_INTF;
-		dcs_enable_bitmap = ar->dcs_enable_bitmap;
-		spin_unlock_bh(&ar->data_lock);
-		ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_DCS,
-					  dcs_enable_bitmap, ar->pdev->pdev_id);
-		ath12k_err(ar->ab, "Disabling wlan interference, only AP mode supported.\n");
-		goto cleanup;
-	}
-
-	if (!tmp_arvif || !tmp_arvif->ahvif)
-		goto cleanup;
-
-	wdev = ieee80211_vif_to_wdev(tmp_arvif->ahvif->vif);
-
-	if (!wdev || !wdev->wiphy)
-		goto cleanup;
-
-	spin_lock_bh(&ar->data_lock);
-	list_for_each_entry_safe(dcs_wlan_intf, temp, &ar->wlan_intf_list, list) {
-		list_del(&dcs_wlan_intf->list);
-		spin_unlock_bh(&ar->data_lock);
-		ath12k_debug_print_dcs_wlan_intf_stats(ar->ab, &dcs_wlan_intf->info);
-		tmp = QCA_NL80211_VENDOR_SUBCMD_DCS_WLAN_INTERFERENCE_COMPUTE_INDEX;
-		msg = cfg80211_vendor_event_alloc(wdev->wiphy, wdev, NLMSG_DEFAULT_SIZE,
-						  tmp, GFP_KERNEL);
-		if (!msg)
-			goto nla_put_failure;
-
-		if (nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_TSF,
-				dcs_wlan_intf->info.reg_tsf32))
-			goto nla_put_failure;
-
-		if (nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_WLAN_LAST_ACK_RSSI,
-				dcs_wlan_intf->info.last_ack_rssi))
-			goto nla_put_failure;
-
-		tmp = QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_TX_WASTE_TIME;
-		if (nla_put_u32(msg, tmp, dcs_wlan_intf->info.tx_waste_time))
-			goto nla_put_failure;
-
-		if (nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_RX_TIME,
-				dcs_wlan_intf->info.rx_time))
-			goto nla_put_failure;
-
-		tmp = QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_PHY_ERR_COUNT;
-		if (nla_put_u32(msg, tmp, dcs_wlan_intf->info.phyerr_cnt))
-			goto nla_put_failure;
-
-		tmp = QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_LISTEN_TIME;
-		if (nla_put_u32(msg, tmp, dcs_wlan_intf->info.listen_time))
-			goto nla_put_failure;
-
-		tmp = QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_TX_FRAME_COUNT;
-		if (nla_put_u32(msg, tmp, dcs_wlan_intf->info.reg_tx_frame_cnt))
-			goto nla_put_failure;
-
-		tmp = QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_RX_FRAME_COUNT;
-		if (nla_put_u32(msg, tmp,
-				dcs_wlan_intf->info.reg_rx_frame_cnt))
-			goto nla_put_failure;
-
-		tmp = QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_RX_CLR_COUNT;
-		if (nla_put_u32(msg, tmp,
-				dcs_wlan_intf->info.reg_rxclr_cnt))
-			goto nla_put_failure;
-
-		tmp = QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_CYCLE_COUNT;
-		if (nla_put_u32(msg, tmp,
-				dcs_wlan_intf->info.reg_cycle_cnt))
-			goto nla_put_failure;
-
-		tmp = QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_RX_CLR_EXT_COUNT;
-		if (nla_put_u32(msg, tmp,
-				dcs_wlan_intf->info.reg_rxclr_ext_cnt))
-			goto nla_put_failure;
-
-		tmp = QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_OFDM_PHYERR_COUNT;
-		if (nla_put_u32(msg, tmp,
-				dcs_wlan_intf->info.reg_ofdm_phyerr_cnt))
-			goto nla_put_failure;
-
-		tmp = QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_CCK_PHYERR_COUNT;
-		if (nla_put_u32(msg, tmp,
-				dcs_wlan_intf->info.reg_cck_phyerr_cnt))
-			goto nla_put_failure;
-
-		tmp = QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_CHANNEL_NF;
-		if (nla_put_s32(msg, tmp,
-				dcs_wlan_intf->info.chan_nf))
-			goto nla_put_failure;
-
-		tmp = QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_MY_BSS_RX_CYCLE_COUNT;
-		if (nla_put_u32(msg, tmp,
-				dcs_wlan_intf->info.my_bss_rx_cycle_count))
-			goto nla_put_failure;
-
-		cfg80211_vendor_event(msg, GFP_KERNEL);
-		kfree(dcs_wlan_intf);
-		dcs_wlan_intf = NULL;
-		spin_lock_bh(&ar->data_lock);
-	}
-	spin_unlock_bh(&ar->data_lock);
-	goto exit;
-
-nla_put_failure:
-	kfree(dcs_wlan_intf);
-	kfree(msg);
-cleanup:
-	ath12k_dcs_wlan_intf_cleanup(ar);
-exit:
-	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
-}
-
-static int ath12k_vendor_dcs_handler(struct wiphy *wihpy,
-				     struct wireless_dev *wdev,
-				     const void *data,
-				     int data_len)
-{
-	int ret, link_id = 0, wlan_intf, vendor_intf_bitmap, tmp;
-	struct ath12k *ar;
-	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_DCS_MAX + 1];
-
-	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_DCS_MAX, data, data_len,
-			ath12k_vendor_dcs_policy, NULL);
-
-	if (ret) {
-		ath12k_err(NULL, "Invalid attribute in dcs_handler %d\n", ret);
-		return ret;
-	}
-
-	if (wdev->valid_links) { /* MLO case */
-		if (!tb[QCA_WLAN_VENDOR_ATTR_DCS_MLO_LINK_ID])
-			return -EINVAL;
-		link_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_DCS_MLO_LINK_ID]);
-		if (!(wdev->valid_links & BIT(link_id)))
-			return -ENOLINK;
-	} else { /* NON-MLO case */
-		if (tb[QCA_WLAN_VENDOR_ATTR_DCS_MLO_LINK_ID])
-			return -EINVAL;
-		link_id = 0;
-	}
-
-	if (!tb[QCA_WLAN_VENDOR_ATTR_DCS_WLAN_INTERFERENCE_CONFIGURE])
-		return -EINVAL;
-
-	tmp = QCA_WLAN_VENDOR_ATTR_DCS_WLAN_INTERFERENCE_CONFIGURE;
-	wlan_intf = nla_get_u8(tb[tmp]);
-	tmp = ~WMI_DCS_WLAN_INTF & ATH12K_VENDOR_VALID_INTF_BITMAP;
-	vendor_intf_bitmap = wlan_intf ? WMI_DCS_WLAN_INTF : tmp;
-
-	ar = ath12k_get_ar_from_wdev(wdev, link_id);
-	if (!ar)
-		return -ENODATA;
-
-	ath12k_mac_set_vendor_intf_detect(ar, vendor_intf_bitmap);
-	return 0;
-}
-
 static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
@@ -9963,14 +9768,6 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.maxattr = QCA_WLAN_VENDOR_ATTR_SDWF_DEV_MAX,
 		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
 	},
-	{
-		.info.vendor_id = QCA_NL80211_VENDOR_ID,
-		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_DCS_WLAN_INTERFERENCE_COMPUTE,
-		.doit = ath12k_vendor_dcs_handler,
-		.policy = ath12k_vendor_dcs_policy,
-		.maxattr = QCA_WLAN_VENDOR_ATTR_DCS_MAX,
-		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
-	},
 
 #ifdef CPTCFG_QCN_EXTN
 	{
@@ -10048,10 +9845,6 @@ static const struct nl80211_vendor_cmd_info ath12k_vendor_events[] = {
 	[QCA_NL80211_VENDOR_SUBCMD_PRI_LINK_MIGRATE_INDEX] = {
 		.vendor_id = QCA_NL80211_VENDOR_ID,
 		.subcmd = QCA_NL80211_VENDOR_SUBCMD_PRI_LINK_MIGRATE,
-	},
-	[QCA_NL80211_VENDOR_SUBCMD_DCS_WLAN_INTERFERENCE_COMPUTE_INDEX] = {
-		.vendor_id = QCA_NL80211_VENDOR_ID,
-		.subcmd = QCA_NL80211_VENDOR_SUBCMD_DCS_WLAN_INTERFERENCE_COMPUTE,
 	},
 	[QCA_NL80211_VENDOR_SUBCMD_SCS_RULE_CONFIG_INDEX] = {
 		.vendor_id = QCA_NL80211_VENDOR_ID,

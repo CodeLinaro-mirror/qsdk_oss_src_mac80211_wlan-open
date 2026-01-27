@@ -1606,8 +1606,6 @@ struct ath12k {
 	u8 dcs_enable_bitmap;
 	/* ath12k extension structure */
 	struct ath12k_extn ar_extn;
-	struct list_head wlan_intf_list;
-	struct work_struct wlan_intf_work;
 	struct completion delete_all_peer_done;
 	struct wmi_vdev_host_tsf_arg tsf_report;
 	struct completion tsf_report_done;
@@ -2763,9 +2761,6 @@ void ath12k_telemetry_notify_breach(u8 *mac_addr, u8 svc_id, u8 param,
 void ath12k_rssi_rate_notify_breach_event(u8 *mac_addr, u8 breach_type,
 					  u32 threshold_value, u32 detected_value,
 					  bool set_clear);
-void ath12k_vendor_wlan_intf_stats(struct work_struct *work);
-void ath12k_debug_print_dcs_wlan_intf_stats(struct ath12k_base *ab,
-					    struct wmi_dcs_wlan_interference_stats *info);
 struct ath12k_hw_group *ath12k_core_get_ag(void);
 void ath12k_core_trigger_partner_device_crash(struct ath12k_base *ab);
 void ath12k_core_pdev_deinit(struct ath12k_base *ab);

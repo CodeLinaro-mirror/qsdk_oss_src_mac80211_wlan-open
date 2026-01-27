@@ -6094,24 +6094,6 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 	clear_bit(0, arvif->free_groupidx_map);
 }
 
-void ath12k_mac_set_vendor_intf_detect(struct ath12k *ar, u8 intf_detect_bitmap)
-{
-	u8 prev_intf_bitmap, dcs_enable_bitmap;
-
-	spin_lock_bh(&ar->data_lock);
-	prev_intf_bitmap = ar->dcs_enable_bitmap & ATH12K_VENDOR_VALID_INTF_BITMAP;
-	if (intf_detect_bitmap != prev_intf_bitmap) {
-		ar->dcs_enable_bitmap &= ~ATH12K_VENDOR_VALID_INTF_BITMAP;
-		ar->dcs_enable_bitmap |= intf_detect_bitmap;
-		dcs_enable_bitmap = ar->dcs_enable_bitmap;
-		spin_unlock_bh(&ar->data_lock);
-		ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_DCS,
-					  dcs_enable_bitmap, ar->pdev->pdev_id);
-		return;
-	}
-	spin_unlock_bh(&ar->data_lock);
-}
-
 void ath12k_mac_ap_ps_recalc(struct ath12k *ar)
 {
 	enum ath12k_ap_ps_state state = ATH12K_AP_PS_STATE_OFF;
@@ -17102,7 +17084,6 @@ void ath12k_mac_stop(struct ath12k *ar)
 			   ret);
 
 	clear_bit(ATH12K_FLAG_CAC_RUNNING, &ar->dev_flags);
-	ath12k_dcs_wlan_intf_cleanup(ar);
 
 	cancel_delayed_work_sync(&ar->scan.timeout);
 	wiphy_work_cancel(ath12k_ar_to_hw(ar)->wiphy, &ar->scan.vdev_clean_wk);
@@ -17110,7 +17091,6 @@ void ath12k_mac_stop(struct ath12k *ar)
 	cancel_work_sync(&ar->reg_set_previous_country);
 	cancel_work_sync(&ar->ab->rfkill_work);
 	cancel_work_sync(&ar->ab->update_11d_work);
-	cancel_work_sync(&ar->wlan_intf_work);
 	ar->state_11d = ATH12K_11D_IDLE;
 	complete(&ar->completed_11d_scan);
 
@@ -25292,7 +25272,6 @@ static int ath12k_mac_setup(struct ath12k *ar)
 	spin_lock_init(&ar->data_lock);
 	INIT_LIST_HEAD(&ar->arvifs);
 	INIT_LIST_HEAD(&ar->dp.ppdu_stats_info);
-	INIT_LIST_HEAD(&ar->wlan_intf_list);
 
 	init_completion(&ar->vdev_setup_done);
 	init_completion(&ar->vdev_delete_done);
@@ -25321,7 +25300,6 @@ static int ath12k_mac_setup(struct ath12k *ar)
 	wiphy_work_init(&ar->agile_cac_abort_wq, ath12k_agile_cac_abort_work);
 
 	wiphy_work_init(&ar->wmi_mgmt_tx_work, ath12k_mgmt_over_wmi_tx_work);
-	INIT_WORK(&ar->wlan_intf_work, ath12k_vendor_wlan_intf_stats);
 	skb_queue_head_init(&ar->wmi_mgmt_tx_queue);
 
 	ar->monitor_vdev_id = -1;

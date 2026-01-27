@@ -918,7 +918,6 @@ struct ieee80211_bss_conf {
 	bool elemid_added;
 	bool elemid_modified;
 	u32 rts_threshold;
-	u8 intf_detect_bitmap;
 	enum nl80211_beacon_tx_mode beacon_tx_mode;
 	u8 ml_max_rec_links;
 	bool is_cfp_enabled;

@@ -201,7 +201,6 @@ void ath12k_mac_11d_scan_stop(struct ath12k *ar);
 void ath12k_mac_11d_scan_stop_all(struct ath12k_base *ab);
 
 void ath12k_mac_set_cw_intf_detect(struct ath12k *ar, u8 intf_bitmap);
-void ath12k_mac_set_vendor_intf_detect(struct ath12k *ar, u8 intf_detect_bitmap);
 void ath12k_mac_destroy(struct ath12k_hw_group *ag);
 void ath12k_mac_unregister(struct ath12k_hw_group *ag);
 int ath12k_mac_register(struct ath12k_hw_group *ag);
@@ -279,7 +278,6 @@ void ath12k_mac_drain_tx(struct ath12k *ar);
 void ath12k_mac_peer_cleanup_all(struct ath12k *ar);
 void ath12k_mac_dp_peer_cleanup(struct ath12k_hw *ah,
 				enum ath12k_mlo_recovery_mode recovery_mode);
-void ath12k_dcs_wlan_intf_cleanup(struct ath12k *ar);
 int ath12k_mac_tx_mgmt_pending_free(int buf_id, void *skb, void *ctx);
 enum rate_info_bw ath12k_mac_bw_to_mac80211_bw(enum ath12k_supported_bw bw);
 enum ath12k_supported_bw ath12k_mac_mac80211_bw_to_ath12k_bw(enum rate_info_bw bw);

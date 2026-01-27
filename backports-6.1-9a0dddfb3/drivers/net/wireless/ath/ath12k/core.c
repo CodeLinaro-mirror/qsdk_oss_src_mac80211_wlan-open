@@ -2394,18 +2394,6 @@ static void ath12k_mac_peer_ab_disassoc(struct ath12k_base *ab)
 	spin_unlock_bh(&ab->dp->dp_lock);
 }
 
-void ath12k_dcs_wlan_intf_cleanup(struct ath12k *ar)
-{
-	struct ath12k_dcs_wlan_interference *dcs_wlan_intf, *temp;
-
-	spin_lock_bh(&ar->data_lock);
-	list_for_each_entry_safe(dcs_wlan_intf, temp, &ar->wlan_intf_list, list) {
-		list_del(&dcs_wlan_intf->list);
-		kfree(dcs_wlan_intf);
-	}
-	spin_unlock_bh(&ar->data_lock);
-}
-
 void ath12k_core_halt(struct ath12k *ar)
 {
 	struct ath12k_base *ab = ar->ab;
@@ -2444,10 +2432,8 @@ void ath12k_core_halt(struct ath12k *ar)
 	ath12k_telemetry_ab_peer_agent_destroy(ab);
 
 	ath12k_mac_peer_cleanup_all(ar);
-	ath12k_dcs_wlan_intf_cleanup(ar);
 	cancel_work_sync(&ar->regd_update_work);
 	cancel_work_sync(&ar->reg_set_previous_country);
-	cancel_work_sync(&ar->wlan_intf_work);
 	cancel_work_sync(&ab->rfkill_work);
 	cancel_work_sync(&ab->update_11d_work);
 	wiphy_work_cancel(ath12k_ar_to_hw(ar)->wiphy, &ar->agile_cac_abort_wq);

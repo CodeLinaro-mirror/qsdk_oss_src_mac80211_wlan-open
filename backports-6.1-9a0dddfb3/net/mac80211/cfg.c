@@ -1862,11 +1862,6 @@ static int ieee80211_update_ap(struct wiphy *wiphy, struct net_device *dev,
 	if (err < 0)
 		return err;
 
-	if (link_conf->intf_detect_bitmap != params->intf_detect_bitmap) {
-		link_conf->intf_detect_bitmap = params->intf_detect_bitmap;
-		changed |= BSS_CHANGED_INTF_DETECT;
-	}
-
 	if (ieee80211_hw_check(&sdata->local->hw, SUPPORTS_AP_PS) &&
 	    params->ap_ps_valid) {
 		link_conf->ap_ps_enable = params->ap_ps_enable;
