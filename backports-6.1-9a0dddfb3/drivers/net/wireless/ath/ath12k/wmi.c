@@ -9401,7 +9401,6 @@ static int wmi_process_mgmt_tx_comp(struct ath12k *ar, u32 desc_id,
 	struct ath12k_mgmt_frame_stats *mgmt_stats;
 	u16 frm_stype;
 	int num_mgmt;
-	bool is_custom_pkt;
 
 	spin_lock_bh(&ar->data_lock);
 	spin_lock_bh(&ar->txmgmt_idr_lock);
@@ -9419,8 +9418,6 @@ static int wmi_process_mgmt_tx_comp(struct ath12k *ar, u32 desc_id,
 	spin_unlock_bh(&ar->txmgmt_idr_lock);
 
 	skb_cb = ATH12K_SKB_CB(msdu);
-	is_custom_pkt = ATH12K_IS_CUSTOM_PKT(skb_cb);
-
 	ath12k_core_dma_unmap_single(ar->ab->dev, skb_cb->paddr, msdu->len, DMA_TO_DEVICE);
 
 	hdr = (struct ieee80211_hdr *)msdu->data;
@@ -9449,6 +9446,14 @@ static int wmi_process_mgmt_tx_comp(struct ath12k *ar, u32 desc_id,
 skip_mgmt_stats:
 	spin_unlock_bh(&ar->data_lock);
 
+	/* Handle custom tx packet before memsetting
+	 * skb_cb via info.
+	 */
+	if (ATH12K_IS_CUSTOM_PKT(skb_cb)) {
+		ath12k_custom_tx_free_extn(msdu, status);
+		goto skip_tx_status;
+	}
+
 	info = IEEE80211_SKB_CB(msdu);
 	memset(&info->status, 0, sizeof(info->status));
 
@@ -9463,11 +9468,9 @@ skip_mgmt_stats:
 	if ((info->flags & IEEE80211_TX_CTL_NO_ACK) && !status)
 		info->flags |= IEEE80211_TX_STAT_NOACK_TRANSMITTED;
 
-	if (!is_custom_pkt)
-		ieee80211_tx_status_irqsafe(ath12k_ar_to_hw(ar), msdu);
-	else
-		ath12k_custom_tx_free_extn(msdu, status);
+	ieee80211_tx_status_irqsafe(ath12k_ar_to_hw(ar), msdu);
 
+skip_tx_status:
 	num_mgmt = atomic_dec_if_positive(&ar->num_pending_mgmt_tx);
 
 	/* WARN when we received this event without doing any mgmt tx */
