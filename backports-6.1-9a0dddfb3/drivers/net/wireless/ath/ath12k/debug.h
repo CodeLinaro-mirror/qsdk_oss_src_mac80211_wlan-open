@@ -143,6 +143,18 @@ do {                                                     \
 #define ath12k_generic_dbg(dbg_mask, dbg_level, fmt, ...)			\
 do {										\
 	if (ath12k_debug_mask_level >= dbg_level)				\
-		ath12k_dbg(NULL, dbg_mask, fmt, ##__VA_ARGS__);                 \
+		ath12k_dbg(NULL, dbg_mask, fmt, ##__VA_ARGS__);			\
 } while (0)
+
+enum ath12k_crit_event {
+	ATH12K_CRIT_VAP_FAILURE = 0,
+	ATH12K_CRIT_CONNECTION_FAIL = 1,
+	ATH12K_CRIT_PEER_FAILURE = 3,
+};
+
+void athdbg_uio_critical_failure_trigger(struct ath12k_base *ab, uint32_t crit_enum);
+
+#define ath12k_critical_failure_trigger(ab, crit_enum) \
+	athdbg_uio_critical_failure_trigger(ab, crit_enum)
+
 #endif /* _ATH12K_DEBUG_H_ */

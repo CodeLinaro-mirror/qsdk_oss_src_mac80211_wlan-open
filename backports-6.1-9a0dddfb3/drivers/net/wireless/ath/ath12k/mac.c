@@ -2387,9 +2387,10 @@ int ath12k_mac_vdev_stop(struct ath12k_link_vif *arvif)
 	if (arvif->num_peers &&
 	    arvif->ahvif->vdev_type != WMI_VDEV_TYPE_STA) {
 		ret = ath12k_wmi_peer_delete_all(arvif);
-		if (ret)
+		if (ret) {
 			ath12k_warn(ar->ab, "failed to submit peer delete all for vdev_id:%d\n",
 				    arvif->vdev_id);
+		}
 
 		if (!wait_for_completion_timeout(&ar->delete_all_peer_done,
 						 3 * HZ)) {
@@ -6453,7 +6454,10 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 	}
 
 	ath12k_debugfs_remove_interface(arvif);
-	ath12k_mac_vdev_delete(ar, arvif);
+	ret = ath12k_mac_vdev_delete(ar, arvif);
+	if (ret)
+		ath12k_critical_failure_trigger(ar->ab, ATH12K_CRIT_VAP_FAILURE);
+
 	ath12k_mac_ap_ps_recalc(ar);
 }
 
@@ -19234,6 +19238,7 @@ ath12k_mac_assign_vif_to_vdev(struct ieee80211_hw *hw,
 	ret = ath12k_mac_vdev_create(ar, arvif, is_bridge_vdev);
 	if (ret) {
 		ath12k_warn(ab, "failed to create vdev %pM ret %d", vif->addr, ret);
+		ath12k_critical_failure_trigger(ab, ATH12K_CRIT_VAP_FAILURE);
 		goto unlock;
 	}
 
@@ -20768,7 +20773,12 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 int ath12k_mac_vdev_start(struct ath12k_link_vif *arvif,
 				 struct ieee80211_chanctx_conf *ctx)
 {
-	return ath12k_mac_vdev_start_restart(arvif, ctx, false);
+	int ret;
+
+	ret = ath12k_mac_vdev_start_restart(arvif, ctx, false);
+	if (ret)
+		ath12k_critical_failure_trigger(arvif->ar->ab, ATH12K_CRIT_VAP_FAILURE);
+	return ret;
 }
 
 static int ath12k_mac_vdev_restart(struct ath12k_link_vif *arvif,
@@ -20792,6 +20802,7 @@ static int ath12k_mac_vdev_restart(struct ath12k_link_vif *arvif,
 	if (ret) {
 		ath12k_warn(ab, "failed to start vdev %d: %d during restart\n",
 			    arvif->vdev_id, ret);
+		ath12k_critical_failure_trigger(ab, ATH12K_CRIT_VAP_FAILURE);
 		return ret;
 	}
 

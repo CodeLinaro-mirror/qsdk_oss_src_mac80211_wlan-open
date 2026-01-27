@@ -11048,6 +11048,7 @@ static void ath12k_peer_delete_resp_event(struct ath12k_base *ab, struct sk_buff
 		ath12k_warn(ab, "invalid vdev id in peer delete resp ev %d",
 			    peer_del_resp.vdev_id);
 		rcu_read_unlock();
+		ath12k_critical_failure_trigger(ab, ATH12K_CRIT_PEER_FAILURE);
 		return;
 	}
 
