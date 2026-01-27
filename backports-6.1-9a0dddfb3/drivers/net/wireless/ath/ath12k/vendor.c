@@ -7006,7 +7006,10 @@ fail:
 	return -EINVAL;
 }
 
-static struct ath12k *ath12k_get_ar_from_wdev(struct wireless_dev *wdev, u8 link_id)
+#ifndef CPTCFG_QCN_EXTN
+static
+#endif
+struct ath12k *ath12k_get_ar_from_wdev(struct wireless_dev *wdev, u8 link_id)
 {
 	struct ieee80211_vif *vif =  NULL;
 	struct ath12k_vif *ahvif = NULL;
@@ -9807,6 +9810,14 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.doit = ath12k_vendor_home_offchan_tx_rx_handler,
 		.policy = ath12k_vendor_home_offchan_tx_rx_policy,
 		.maxattr = QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_DCS_CONFIG,
+		.doit = ath12k_vendor_dcs_config_handler,
+		.policy = ath12k_vendor_dcs_config_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_DCS_MAX,
 		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
 	},
 #endif
