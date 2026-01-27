@@ -5463,11 +5463,12 @@ void ieee80211_rx_update_stats(struct ieee80211_hw *hw, struct ieee80211_sta *pu
 	struct ieee80211_sta_rx_stats *stats;
 
 	rcu_read_lock();
-	if (link_id >= 0) {
+	if (link_id >= 0 && link_id < ARRAY_SIZE(sta->link) &&
+	   (sta->sta.valid_links & BIT(link_id))) {
 		link_sta = rcu_dereference(sta->link[link_id]);
-		if (WARN_ON_ONCE(!link_sta)) {
-			rcu_read_unlock();
-			return;
+		if (!link_sta) {
+			/* Fallback to the deflink in case of incorrect link_id */
+			link_sta = &sta->deflink;
 		}
 	} else {
 		link_sta = &sta->deflink;

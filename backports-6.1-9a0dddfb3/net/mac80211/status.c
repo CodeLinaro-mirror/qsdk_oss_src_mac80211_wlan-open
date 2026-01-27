@@ -1627,11 +1627,12 @@ void ieee80211_ppeds_tx_update_stats(struct ieee80211_hw *hw,
 	int rates_idx, retry_count;
 
 	rcu_read_lock();
-	if (link_id >= 0) {
+	if (link_id >= 0 && link_id < ARRAY_SIZE(sta->link) &&
+	   (sta->sta.valid_links & BIT(link_id))) {
 		link_sta = rcu_dereference(sta->link[link_id]);
-		if (WARN_ON_ONCE(!link_sta)) {
-			rcu_read_unlock();
-			return;
+		if (!link_sta) {
+			/* Fallback to the deflink in case of incorrect link_id */
+			link_sta = &sta->deflink;
 		}
 	} else {
 		link_sta = &sta->deflink;
