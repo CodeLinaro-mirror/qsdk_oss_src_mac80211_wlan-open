@@ -8,8 +8,22 @@
 #define ATH12K_DP_TX_WIFI8_H
 
 #include "../dp.h"
+#include "hal_desc.h"
 
 #define DP_TX_SFE_BUFFER_SIZE           256
+
+struct ath12k_dp_tx_queue {
+	u16 peer_id;
+	u8 hw_link_id;
+};
+struct ath12k_dp_tqm_cmd {
+	struct list_head list;
+	struct ath12k_dp_tx_queue data;
+	enum hal_tlv_tag_be cmd_type;
+	int cmd_num;
+	void (*handler)(struct ath12k_dp *dp, void *ctx,
+			enum hal_tqm_cmd_execution_status status);
+};
 
 int ath12k_wifi8_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int budget);
 enum ath12k_dp_tx_enq_error
@@ -50,4 +64,16 @@ ath12k_wifi8_dp_tx_exception_handler(struct ath12k_dp *dp, int budget)
 	return 0;
 }
 #endif
+int ath12k_wifi8_dp_tqm_cmd_send(struct ath12k_base *ab,
+				 enum hal_tlv_tag_be type,
+				 struct ath12k_hal_tqm_cmd *cmd,
+				 struct ath12k_dp_tx_queue *data,
+				 void (*callback_fn)(
+					 struct ath12k_dp *dp,
+					 void *ctx,
+					 enum hal_tqm_cmd_execution_status status));
+void ath12k_wifi8_dp_tx_process_tqm_status(struct ath12k_dp *dp);
+void ath12k_dp_peer_cleanup_tqm_sync(struct ath12k_dp *dp, void *ctx,
+				     enum hal_tqm_cmd_execution_status status);
+void ath12k_wifi8_dp_tx_tqm_cmd_list_cleanup(struct ath12k_base *ab);
 #endif

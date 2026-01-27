@@ -54,6 +54,9 @@ static int ath12k_wifi8_dp_service_srng(struct ath12k_dp *dp,
 			goto done;
 	}
 
+	if (dp->hw_params->ring_mask->tqm_status[grp_id])
+		ath12k_wifi8_dp_tx_process_tqm_status(dp);
+
 	while (tx_mask) {
 		i = fls(tx_mask) - 1;
 		tx_mask ^= 1 << i;
@@ -177,6 +180,7 @@ static void ath12k_wifi8_dp_umac_deinit(struct ath12k_dp *dp)
 	ath12k_dp_srng_common_cleanup(ab);
 
 	ath12k_dp_rx_reo_cmd_list_cleanup(ab);
+	ath12k_wifi8_dp_tx_tqm_cmd_list_cleanup(ab);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ath12k_nss_plugin_unregister_ops(ab);
 #endif
@@ -207,6 +211,9 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 	INIT_LIST_HEAD(&dp->reo_cmd_update_rx_queue_list);
 	spin_lock_init(&dp->reo_cmd_update_rx_queue_lock);
 	spin_lock_init(&dp->reo_cmd_lock);
+	INIT_LIST_HEAD(&dp->tqm_cmd_list);
+	spin_lock_init(&dp->tqm_cmd_lock);
+
 	dp->reo_cmd_cache_flush_count = 0;
 	dp->idle_link_rbm =
 			ath12k_hal_get_idle_link_rbm(&ab->hal, ab->device_id);
@@ -614,4 +621,17 @@ void ath12k_wifi8_dp_deinit(struct ath12k_dp *dp)
 {
 	ath12k_dp_mon_deinit(dp);
 	kfree(dp);
+}
+
+void ath12k_wifi8_dp_tx_tqm_cmd_list_cleanup(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp_tqm_cmd *cmd, *tmp;
+
+	spin_lock_bh(&dp->tqm_cmd_lock);
+	list_for_each_entry_safe(cmd, tmp, &dp->tqm_cmd_list, list) {
+		list_del(&cmd->list);
+		kfree(cmd);
+	}
+	spin_unlock_bh(&dp->tqm_cmd_lock);
 }

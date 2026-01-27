@@ -142,6 +142,26 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.max_size = HAL_TCL_STATUS_RING_BASE_MSB_RING_SIZE,
 		.name = "Tcl_status",
 	},
+	[HAL_TQM_CMD] = {
+		.start_ring_id = HAL_SRNG_RING_ID_TQM_HOST_CMD,
+		.max_rings = 1,
+		.entry_size = (sizeof(struct hal_tlv_64_hdr) +
+			sizeof(struct hal_tqm_sync_cmd)) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_SRC,
+		.max_size = HAL_TQM_HOST_CMD_RING_BASE_MSB_RING_SIZE,
+		.name = "Tqm_cmd",
+	},
+	[HAL_TQM_STATUS] = {
+		.start_ring_id = HAL_SRNG_RING_ID_TQM_HOST_STATUS,
+		.max_rings = 1,
+		.entry_size = (sizeof(struct hal_tlv_64_hdr) +
+			sizeof(struct hal_tqm_sync_cmd_status)) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_DST,
+		.max_size = HAL_TQM_HOST_STATUS_RING_BASE_MSB_RING_SIZE,
+		.name = "Tqm_status",
+	},
 	/* TCL2SW Exception Ring */
 	[HAL_TX_EXCEPTION] = {
 		.start_ring_id = HAL_SRNG_RING_ID_TX_EXCEPTION,
@@ -617,6 +637,14 @@ static int ath12k_wifi8_hal_srng_create_config_qcn9625(struct ath12k_hal *hal)
 	s = &hal->srng_config[HAL_REO_STATUS];
 	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO_STATUS_RING_BASE_LSB(hal);
 	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO_STATUS_HP;
+
+	s = &hal->srng_config[HAL_TQM_CMD];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_TQM_HOST_CMD_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_TQM_HOST_CMD_RING_HP;
+
+	s = &hal->srng_config[HAL_TQM_STATUS];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_TQM_HOST_STATUS_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_TQM_HOST_STATUS_RING_HP;
 
 	s = &hal->srng_config[HAL_REO2PPE];
 	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO2PPE_RING_BASE_LSB(hal);
