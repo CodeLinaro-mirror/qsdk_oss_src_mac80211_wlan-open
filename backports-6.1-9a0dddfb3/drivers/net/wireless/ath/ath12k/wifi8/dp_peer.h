@@ -48,4 +48,6 @@ int ath12k_wifi8_get_holq(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 int ath12k_wifi8_dp_get_peer_init_status(struct ath12k_dp *dp,
 					 struct ath12k_dp_hw *dp_hw,
 					 u8 *addr);
+void ath12k_wifi8_dp_peer_cleanup(struct ath12k_dp_hw *dp_hw,
+				  struct ath12k_dp_peer *dp_peer);
 #endif
