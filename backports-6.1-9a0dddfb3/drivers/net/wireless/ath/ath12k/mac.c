@@ -6042,6 +6042,7 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 	}
 	arvif->num_stations = 0;
 	arvif->num_peers = 0;
+	arvif->splitphy_ds_bank_id = DP_INVALID_BANK_ID;
 
 	ath12k_mac_init_arvif_rssi(arvif);
 
