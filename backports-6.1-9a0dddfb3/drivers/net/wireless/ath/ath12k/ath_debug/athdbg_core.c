@@ -83,6 +83,8 @@ u64 athdbg_conv_str_to_dbgmask(const char *dbgmask)
 		return ATH12K_DBG_MLO;
 	else if (!strcmp(dbgmask, "power"))
 		return ATH12K_DBG_POWER;
+	else if (!strcmp(dbgmask, "tx_mon"))
+		return ATH12K_DBG_DP_MON_TX;
 #endif
 	else
 		return 0;
@@ -122,6 +124,7 @@ int athdbg_dbgmask_to_str(u64 mask, char *buf, size_t buflen)
 		{ ATH12K_DBG_ACTION, "action" },
 		{ ATH12K_DBG_MLO, "mlo" },
 		{ ATH12K_DBG_POWER, "power" },
+		{ ATH12K_DBG_DP_MON_TX, "tx_mon" },
 #endif
 	};
 
