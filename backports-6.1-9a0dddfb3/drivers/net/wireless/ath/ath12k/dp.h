@@ -233,6 +233,16 @@ enum ath12k_dp_eapol_key_type {
 /* TODO: revisit this count during testing */
 #define ATH12K_RX_DESC_COUNT           (8192)
 #define DP_RX_BUFFER_SIZE		1856
+#elif defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
+#define DP_TX_COMP_RING_SIZE           16384
+#define ATH12K_NUM_POOL_TX_DESC        16384
+#define DP_REO2PPE_RING_SIZE    2048
+#define DP_PPE2TCL_RING_SIZE    2048
+#define DP_PPE_WBM2SW_RING_SIZE 8192
+#define DP_RXDMA_BUF_RING_SIZE      4096
+/* TODO: revisit this count during testing */
+#define ATH12K_RX_DESC_COUNT           (8192)
+#define DP_RX_BUFFER_SIZE       1856
 #else
 //#ifdef CONFIG_ATH12K_MEM_PROFILE_DEFAULT TODO Fix the Default profile enablement
 #define DP_TX_COMP_RING_SIZE           32768
@@ -263,8 +273,10 @@ enum ath12k_dp_eapol_key_type {
 #define DP_RXDMA_REFILL_RING_SIZE	2048
 #define DP_RXDMA_ERR_DST_RING_SIZE	1024
 
-#if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined (CPTCFG_ATH12K_MEM_PROFILE_512M)
+#if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined(CPTCFG_ATH12K_MEM_PROFILE_512M)
 #define DP_RX_RELEASE_RING_SIZE		8192
+#elif defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
+#define DP_RX_RELEASE_RING_SIZE     8192
 #else
 #define DP_RX_RELEASE_RING_SIZE		16384
 #endif
