@@ -8,6 +8,8 @@
 #include "../dp_cmn.h"
 #include "dp.h"
 
+#define ATH12K_WDS_STA_HEADER_LEN 6
+
 struct ath12k_dp_mpdu_q_info
 *ath12k_alloc_peer_tid_mpduq(struct ath12k_dp_hw_group *dp_hw_grp,
 			     struct ath12k_dp_peer *peer,
@@ -34,6 +36,18 @@ struct ath12k_dp_mpdu_q_info
 			  &sw_mpduq_ptr->mpdu_q_vaddr, &sw_mpduq_ptr->mpdu_q_paddr);
 
 	return sw_mpduq_ptr;
+}
+
+static inline
+u32 ath12k_wifi8_dp_tx_get_header_length(struct ath12k_dp_hw_group *dp_hw_grp,
+		struct ath12k_dp_peer *peer, u8 tid_num)
+{
+	u32 header_len = 0;
+
+	if (peer->is_sta_bss_peer_4addr)
+		header_len += ATH12K_WDS_STA_HEADER_LEN;
+
+	return header_len;
 }
 
 int ath12k_tx_send_mpduq_init(struct ath12k_dp_hw_group *dp_hw_grp,
@@ -90,6 +104,8 @@ int ath12k_tx_send_mpduq_init(struct ath12k_dp_hw_group *dp_hw_grp,
 	}
 	ti.mlo = peer->is_mlo;
 	ti.pn_dma_addr = sw_mpduq_ptr->pn_addr;
+	ti.header_len = ath12k_wifi8_dp_tx_get_header_length(dp_hw_grp, peer,
+							     tid_num);
 
 	return ath12k_wifi8_hal_tx_mpdu_queue_setup(dp_hw_grp,
 						    sw_mpduq_ptr->mpduq_id,
