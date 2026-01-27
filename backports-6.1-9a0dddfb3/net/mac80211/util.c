@@ -2898,34 +2898,53 @@ u8 *ieee80211_ie_build_ht_oper(u8 *pos, struct ieee80211_sta_ht_cap *ht_cap,
 u8 *ieee80211_ie_build_wide_bw_cs(u8 *pos,
 				  const struct cfg80211_chan_def *chandef)
 {
-	*pos++ = WLAN_EID_WIDE_BW_CHANNEL_SWITCH;	/* EID */
-	*pos++ = 3;					/* IE length */
-	/* New channel width */
-	switch (chandef->width) {
+	struct cfg80211_chan_def tmp_chandef = *chandef;
+	u8 center_seg0 = 0, center_seg1 = 0;
+
+	if (tmp_chandef.width > NL80211_CHAN_WIDTH_160)
+		ieee80211_chandef_downgrade(&tmp_chandef, NULL);
+
+	center_seg0 = ieee80211_frequency_to_channel(tmp_chandef.center_freq1);
+	if (tmp_chandef.center_freq2)
+		center_seg1 = ieee80211_frequency_to_channel(tmp_chandef.center_freq2);
+
+	*pos++ = WLAN_EID_WIDE_BW_CHANNEL_SWITCH;
+	*pos++ = 3;
+
+	/* bandwidth: 0: 40, 1: 80, 160, 80+80, 4 to 255 reserved as per
+	 * IEEE Std 802.11-2024, 9.4.2.157 and Table 9-316 (VHT Operation
+	 * Information subfields).
+	 *
+	 * Update the CCFS0 and CCFS1 values in the element based on
+	 * IEEE Std 802.11-2024, Table 9-316 (VHT Operation
+	 * Information subfields).
+	 */
+	switch (tmp_chandef.width) {
+	case NL80211_CHAN_WIDTH_160:
+		/* CCFS1 - The channel center frequency index of the 160 MHz channel. */
+		center_seg1 = center_seg0;
+		/* CCFS0 - The channel center frequency index of the 80 MHz
+		 * channel segment that contains the primary channel.
+		 */
+		if (tmp_chandef.chan->center_freq < tmp_chandef.center_freq1)
+			center_seg0 -= 8;
+		else
+			center_seg0 += 8;
+
+		fallthrough;
+	case NL80211_CHAN_WIDTH_80P80:
 	case NL80211_CHAN_WIDTH_80:
 		*pos++ = IEEE80211_VHT_CHANWIDTH_80MHZ;
 		break;
-	case NL80211_CHAN_WIDTH_160:
-		*pos++ = IEEE80211_VHT_CHANWIDTH_160MHZ;
-		break;
-	case NL80211_CHAN_WIDTH_80P80:
-		*pos++ = IEEE80211_VHT_CHANWIDTH_80P80MHZ;
-		break;
-	case NL80211_CHAN_WIDTH_320:
-		/* The behavior is not defined for 320 MHz channels */
-		WARN_ON(1);
-		fallthrough;
 	default:
+		/* Wide Bandwidth Channel Switch element is present only
+		 * when the new channel width is wider than 20 MHz.
+		 */
 		*pos++ = IEEE80211_VHT_CHANWIDTH_USE_HT;
 	}
 
-	/* new center frequency segment 0 */
-	*pos++ = ieee80211_frequency_to_channel(chandef->center_freq1);
-	/* new center frequency segment 1 */
-	if (chandef->center_freq2)
-		*pos++ = ieee80211_frequency_to_channel(chandef->center_freq2);
-	else
-		*pos++ = 0;
+	*pos++ = center_seg0;
+	*pos++ = center_seg1;
 
 	return pos;
 }
@@ -4410,7 +4429,8 @@ int ieee80211_send_action_csa(struct ieee80211_sub_if_data *sdata,
 
 	if (csa_settings->chandef.width == NL80211_CHAN_WIDTH_80 ||
 	    csa_settings->chandef.width == NL80211_CHAN_WIDTH_80P80 ||
-	    csa_settings->chandef.width == NL80211_CHAN_WIDTH_160) {
+	    csa_settings->chandef.width == NL80211_CHAN_WIDTH_160 ||
+	    csa_settings->chandef.width == NL80211_CHAN_WIDTH_320) {
 		skb_put(skb, 5);
 		pos = ieee80211_ie_build_wide_bw_cs(pos, &csa_settings->chandef);
 	}
