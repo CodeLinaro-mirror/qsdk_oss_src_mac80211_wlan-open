@@ -6140,7 +6140,6 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 	struct ath12k_hw *ah = hw->priv;
 	struct ath12k *ar = arvif->ar;
 	int ret;
-	struct ath12k_dp_link_peer *peer;
 	struct ath12k_dp *dp;
 
 	lockdep_assert_wiphy(ah->hw->wiphy);
@@ -6186,13 +6185,6 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 			ath12k_warn(ar->ab, "failed to submit AP self-peer removal on vdev %d link id %d: %d"
 				    "num_peers: %d",
 				    arvif->vdev_id, arvif->link_id, ret, ar->num_peers);
-
-		spin_lock_bh(&dp->dp_lock);
-		peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp,
-								    arvif->vdev_id,
-								    arvif->bssid);
-		ath12k_link_peer_free(peer);
-		spin_unlock_bh(&dp->dp_lock);
 
 		ath12k_dp_arch_peer_delete(dp, ah, arvif->bssid,
 					   NULL, ar->hw_link_id);
@@ -12124,26 +12116,10 @@ static void ath12k_mac_station_post_remove(struct ath12k *ar,
 					   u8 *addr,
 					   struct ath12k_sta *ahsta, u8 link_id)
 {
-	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(ahsta);
-	struct ath12k_dp_link_peer *peer;
-
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
 	ath12k_mac_dec_num_stations(arvif, ahsta);
 
-	spin_lock_bh(&ar->ab->dp->dp_lock);
-
-	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(ar->ab->dp, arvif->vdev_id,
-							    addr);
-	if (peer && peer->sta == sta) {
-		ath12k_dbg(ar->ab, ATH12K_DBG_PEER | ATH12K_DBG_MLME,
-			   "remove peer:%pM vdev:%i num_peers:%d\n",
-			   addr, arvif->vdev_id, ar->num_peers);
-		peer->sta = NULL;
-		ath12k_link_peer_free(peer);
-	}
-
-	spin_unlock_bh(&ar->ab->dp->dp_lock);
 	ath12k_mac_ap_ps_recalc(ar);
 	ahsta->peer_delete_cmd_sent_bitmap &= ~BIT(link_id);
 }
@@ -17545,7 +17521,6 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	u8 map_id;
 	u32 rep_ul_resp;
 	struct ath12k_dp_peer_create_params params = {};
-	struct ath12k_dp_link_peer *peer;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -17981,13 +17956,6 @@ err_peer_del:
 			ath12k_warn(ar->ab, "failed to delete peer %pM vdev_id %d ret %d\n",
 				    link_addr, arvif->vdev_id, fbret);
 		}
-
-		spin_lock_bh(&ar->ab->dp->dp_lock);
-		peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(ar->ab->dp,
-								    arvif->vdev_id,
-								    arvif->bssid);
-		ath12k_link_peer_free(peer);
-		spin_unlock_bh(&ar->ab->dp->dp_lock);
 	}
 
 err_dp_peer_del:
