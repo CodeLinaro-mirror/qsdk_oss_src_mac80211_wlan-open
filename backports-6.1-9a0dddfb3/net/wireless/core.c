@@ -1392,7 +1392,12 @@ void cfg80211_leave(struct cfg80211_registered_device *rdev,
 	struct cfg80211_sched_scan_request *pos, *tmp;
 
 	lockdep_assert_held(&rdev->wiphy.mtx);
-	wdev->is_netdev_going_down = true;
+	/*
+	 * If link_id is set, only that link is going down, no need to set
+	 * netdev going down during that case.
+	 */
+	if (link_id == -1)
+		wdev->is_netdev_going_down = true;
 	cfg80211_pmsr_wdev_down(wdev);
 
 	cfg80211_stop_background_radar_detection(wdev);
