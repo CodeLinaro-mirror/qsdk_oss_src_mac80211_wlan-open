@@ -1831,8 +1831,6 @@ struct cfg80211_ttlm_params {
  * @fils_discovery: FILS discovery transmission parameters
  * @unsol_bcast_probe_resp: Unsolicited broadcast probe response parameters
  * @mbssid_config: AP settings for multiple bssid
- * @intf_detect_bitmap: Interference detection bitmap.
- *	BIT(0) represents - CW Interference.
  * @beacon_tx_mode: Beacon Tx Mode setting
  * @ml_max_rec_links_valid: Indicates valid ML Max recommended links
  * @ml_max_rec_links: ML Max recommended links
@@ -1874,7 +1872,6 @@ struct cfg80211_ap_settings {
 	struct cfg80211_mbssid_config mbssid_config;
 	bool ap_ps_valid;
 	bool ap_ps_enable;
-	u8 intf_detect_bitmap;
 	enum nl80211_beacon_tx_mode beacon_tx_mode;
 	bool ml_max_rec_links_valid;
 	u8 ml_max_rec_links;
@@ -9913,18 +9910,6 @@ cfg80211_background_radar_event(struct wiphy *wiphy,
  */
 void cfg80211_awgn_event(struct wiphy *wiphy, struct cfg80211_chan_def *chandef,
 			 gfp_t gfp, u32 chan_bw_interference_bitmap);
-
-/**
- * cfg80211_cw_event - CW detection event
- * @wiphy: the wiphy
- * @chandef: chandef for the current channel
- * @gfp: context flags
- *
- * This function is called when Continous Wave
- * is detected on the current channel.
- */
-void cfg80211_cw_event(struct wiphy *wiphy, struct cfg80211_chan_def *chandef,
-			 gfp_t gfp);
 
 /**
  * cfg80211_sta_opmode_change_notify - STA's ht/vht operation mode change event

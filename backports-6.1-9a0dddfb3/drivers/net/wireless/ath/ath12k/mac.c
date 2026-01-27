@@ -8510,10 +8510,6 @@ skip_pending_cs_up:
 
 	if (changed & BSS_CHANGED_ML_MAX_REC_LINKS)
 		ath12k_mac_vdev_ml_max_rec_links(arvif, info->ml_max_rec_links);
-
-	if (changed & BSS_CHANGED_INTF_DETECT) {
-		ath12k_mac_set_cw_intf_detect(ar, info->intf_detect_bitmap);
-	}
 }
 
 static struct ath12k_vif_cache *ath12k_ahvif_get_link_cache(struct ath12k_vif *ahvif,
@@ -27538,27 +27534,3 @@ ath12k_mac_op_get_6ghz_dev_deployment_type(struct ieee80211_hw *hw)
 	return dep_type;
 }
 EXPORT_SYMBOL(ath12k_mac_op_get_6ghz_dev_deployment_type);
-
-void ath12k_mac_set_cw_intf_detect(struct ath12k *ar, u8 intf_detect_param)
-{
-	u8 cw_intf, dcs_enable_bitmap;
-
-	/* TODO: Since for now only CW Interference is supported on the set path,
-	 *  later when there is support added for other interference types,
-	 *  the driver would receive intf_detect_bitmap
-	 */
-	spin_lock_bh(&ar->data_lock);
-	cw_intf = ar->dcs_enable_bitmap & WMI_DCS_CW_INTF;
-	if ((~cw_intf & intf_detect_param) |
-	    (cw_intf & ~intf_detect_param)) {
-		ar->dcs_enable_bitmap &= ~WMI_DCS_CW_INTF;
-		ar->dcs_enable_bitmap |= intf_detect_param;
-		dcs_enable_bitmap = ar->dcs_enable_bitmap;
-		spin_unlock_bh(&ar->data_lock);
-		ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_DCS,
-					  dcs_enable_bitmap,
-					  ar->pdev->pdev_id);
-		return;
-	}
-	spin_unlock_bh(&ar->data_lock);
-}

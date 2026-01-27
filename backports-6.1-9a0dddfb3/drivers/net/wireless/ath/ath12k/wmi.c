@@ -12465,62 +12465,6 @@ bool ath12k_wmi_validate_dcs_awgn_info(struct ath12k *ar, struct wmi_dcs_awgn_in
 }
 
 static void
-ath12k_wmi_dcs_cw_interference_event(struct ath12k_base *ab,
-				     struct sk_buff *skb,
-				     u32 pdev_id)
-{
-	struct ath12k *ar;
-	struct wmi_dcs_cw_info cw_info = {};
-	struct ieee80211_chanctx_conf *chanctx_conf;
-	struct ath12k_mac_get_any_chanctx_conf_arg arg;
-	struct ath12k_hw *ah;
-	int ret;
-
-	ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
-				  ath12k_wmi_dcs_event_parser,
-				  &cw_info);
-	if (ret) {
-		ath12k_warn(ab, "failed to parse cw tlv %d\n", ret);
-		return;
-	}
-
-	rcu_read_lock();
-	ar = ath12k_mac_get_ar_by_pdev_id(ab, pdev_id);
-	if (!ar) {
-		ath12k_warn(ab, "CW detected in invalid pdev id(%d)\n",
-			    pdev_id);
-		goto exit;
-	}
-
-	spin_lock_bh(&ar->data_lock);
-	if (!(ar->dcs_enable_bitmap & WMI_DCS_CW_INTF)) {
-		/* TODO - incase Fw missed the pdev set param
-		 * to disable CW Interference
-		 */
-		spin_unlock_bh(&ar->data_lock);
-		goto exit;
-	}
-	spin_unlock_bh(&ar->data_lock);
-	ath12k_dbg(ab, ATH12K_DBG_WMI, "CW Interference detected for pdev=%d\n",
-		   pdev_id);
-
-	ah = ar->ah;
-
-	arg.ar = ar;
-	arg.chanctx_conf = NULL;
-	ieee80211_iter_chan_contexts_atomic(ah->hw, ath12k_mac_get_any_chanctx_conf_iter,
-					    &arg);
-	chanctx_conf = arg.chanctx_conf;
-	if (!chanctx_conf) {
-		ath12k_warn(ab, "chanctx_conf is not available\n");
-		goto exit;
-	}
-	ieee80211_cw_detected(ah->hw, chanctx_conf->def.chan);
-exit:
-	rcu_read_unlock();
-}
-
-static void
 ath12k_wmi_dcs_awgn_interference_event(struct ath12k_base *ab,
 				       struct sk_buff *skb,
 				       u32 pdev_id)
@@ -12923,7 +12867,6 @@ ath12k_wmi_dcs_interference_event(struct ath12k_base *ab,
 
 	switch (interference_type) {
 	case WMI_DCS_CW_INTF:
-		ath12k_wmi_dcs_cw_interference_event(ab, skb, pdev_id);
 		break;
 	case WMI_DCS_WLAN_INTF:
 		break;

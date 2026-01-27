@@ -1371,7 +1371,7 @@
  *	%NL80211_ATTR_AWGN_INTERFERENCE_BITMAP
  * @NL80211_ATTR_AWGN_INTERFERENCE_BITMAP: u32 attribute specifying the
  *	interference bitmap of operating bandwidth for %NL80211_CMD_AWGN_DETECT
- * @NL80211_CMD_INTERFERENCE_DETECT: Once any interference is detected on the
+ * * @NL80211_CMD_INTERFERENCE_DETECT: Once any interference is detected on the
  *	operating channel, userspace would be notified of it
  *	using %NL80211_ATTR_INTERFERENCE_TYPE.
  *
@@ -8838,21 +8838,6 @@ enum nl80211_set_cu_attrs {
 	/* keep last */
 	__NL80211_SET_CU_ATTR_LAST,
 	NL80211_SET_CU_ATTR_MAX = __NL80211_SET_CU_ATTR_LAST - 1
-};
-
-/**
- * enum nl80211_interference_type -
- *
- * @NL80211_CW_INTERFERENCE_DETECTED : Continous Wave Interference Detected.
- * @NL80211_AWGN_INTERFERENCE_DETECTED : AWGN Interference Detected.
-*/
-enum nl80211_interference_type {
-	NL80211_INTERFERENCE_TYPE_INVALID,
-	NL80211_INTERFERENCE_TYPE_CW,
-	NL80211_INTERFERENCE_TYPE_AWGN,
-
-	NL80211_INTERFERENCE_TYPE_LAST,
-	NL80211_INTERFERENCE_TYPE_MAX = NL80211_INTERFERENCE_TYPE_LAST - 1,
 };
 
 /**

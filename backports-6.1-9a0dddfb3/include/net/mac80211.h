@@ -7415,14 +7415,6 @@ void ieee80211_channel_switch_disconnect(struct ieee80211_vif *vif);
 void ieee80211_awgn_detected(struct ieee80211_hw *hw, u32 chan_bw_interference_bitmap,
 			     struct ieee80211_channel *awgn_channel);
 
-/**
- * ieee80211_cw_detected - inform that cw interference is detected
- *
- * @hw: pointer as obtained from ieee80211_alloc_hw()
- * @cw_channel: Channel pointer on which Continous Wave Interference is detected. Mandatory to pass
- *	for MLO drivers. For non-MLO %NULL can be passed
- */
-void ieee80211_cw_detected(struct ieee80211_hw *hw, struct ieee80211_channel *cw_channel);
 
 /**
  * ieee80211_request_smps - request SM PS transition

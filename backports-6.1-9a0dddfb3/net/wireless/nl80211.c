@@ -1057,7 +1057,6 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_SET_CRITICAL_UPDATE] = NLA_POLICY_NESTED(nl80211_set_critical_update_policy),
 	[NL80211_ATTR_CHANNEL_WIDTH_DEVICE] = { .type = NLA_U32 },
 	[NL80211_ATTR_CENTER_FREQ_DEVICE] = { .type = NLA_U32 },
-	[NL80211_ATTR_INTERFERENCE_TYPE] = { .type = NLA_U8 },
 	[NL80211_ATTR_AP_REMOVAL_COUNT] = { .type = NLA_U32 },
 	[NL80211_ATTR_TSF] = { .type = NLA_U64 },
 	[NL80211_ATTR_WIPHY_ANTENNA_GAIN] = { .type = NLA_U32 },
@@ -7630,11 +7629,6 @@ static int nl80211_update_ap(struct sk_buff *skb, struct genl_info *info)
 		if (params->ssid_len > 0)
 			params->ssid =
 			    nla_data(info->attrs[NL80211_ATTR_SSID]);
-	}
-
-	if (info->attrs[NL80211_ATTR_INTERFERENCE_TYPE]) {
-		params->intf_detect_bitmap = nla_get_u8(info->attrs[NL80211_ATTR_INTERFERENCE_TYPE]);
-		haveinfo = true;
 	}
 
 	err = nl80211_parse_beacon(rdev, info->attrs, &params->beacon,
@@ -23319,54 +23313,6 @@ void nl80211_awgn_notify(struct cfg80211_registered_device *rdev,
 
 	if (nla_put_u32(msg, NL80211_ATTR_AWGN_INTERFERENCE_BITMAP,
 			chan_bw_interference_bitmap))
-		goto nla_put_failure;
-
-	genlmsg_end(msg, hdr);
-
-	ret = genlmsg_multicast_netns(&nl80211_fam, wiphy_net(&rdev->wiphy), msg, 0,
-				      NL80211_MCGRP_MLME, gfp);
-	return;
-
-nla_put_failure:
-	nlmsg_free(msg);
-}
-
-void nl80211_cw_notify(struct cfg80211_registered_device *rdev,
-			 struct cfg80211_chan_def *chandef,
-			 struct net_device *netdev,
-			 gfp_t gfp)
-{
-	struct sk_buff *msg;
-	void *hdr;
-	int ret;
-
-	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, gfp);
-	if (!msg)
-		return;
-
-	hdr = nl80211hdr_put(msg, 0, 0, 0, NL80211_CMD_INTERFERENCE_DETECT);
-	if (!hdr) {
-		nlmsg_free(msg);
-		return;
-	}
-
-	 if (nla_put_u32(msg, NL80211_ATTR_WIPHY, rdev->wiphy_idx))
-		 goto nla_put_failure;
-
-	if (netdev) {
-		struct wireless_dev *wdev = netdev->ieee80211_ptr;
-
-		if (nla_put_u32(msg, NL80211_ATTR_IFINDEX, netdev->ifindex) ||
-		    nla_put_u64_64bit(msg, NL80211_ATTR_WDEV, wdev_id(wdev),
-				      NL80211_ATTR_PAD))
-			goto nla_put_failure;
-	}
-
-	if (nla_put_u32(msg, NL80211_ATTR_INTERFERENCE_TYPE, NL80211_INTERFERENCE_TYPE_CW)) {
-		goto nla_put_failure;
-	}
-
-	if (nl80211_send_chandef(msg, chandef))
 		goto nla_put_failure;
 
 	genlmsg_end(msg, hdr);
