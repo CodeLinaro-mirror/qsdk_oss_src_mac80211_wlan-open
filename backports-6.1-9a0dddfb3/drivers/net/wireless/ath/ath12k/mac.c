@@ -5930,6 +5930,8 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 	}
 	arvif->num_stations = 0;
 	arvif->num_peers = 0;
+	arvif->splitphy_ds_bank_id = DP_INVALID_BANK_ID;
+
 	init_completion(&arvif->peer_ch_width_switch_send);
 	wiphy_work_init(&arvif->peer_ch_width_switch_work,
 		  ath12k_wmi_peer_chan_width_switch_work);
