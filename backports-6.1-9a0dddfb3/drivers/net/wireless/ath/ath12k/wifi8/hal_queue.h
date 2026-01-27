@@ -282,6 +282,7 @@ struct hal_tx_mpdu_queue_head_info {
 	dma_addr_t paddr;
 	dma_addr_t pn_dma_addr;
 	u32 queue_number;
+	u32 header_len;
 	u16 peer_id;
 	u8 tid:4,
 	   encap_type:2,
