@@ -143,8 +143,11 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 
 	/* cache net dev here and reuse it during process rx */
 	wdev = ieee80211_vif_to_wdev(vif);
-	if (wdev)
+	if (wdev) {
 		dp_peer->dev = wdev->netdev;
+		if (params->is_sta_bss_peer)
+			dp_peer->is_sta_bss_peer_4addr = wdev->use_4addr;
+	}
 
 	spin_lock_bh(&dp_hw->peer_lock);
 
