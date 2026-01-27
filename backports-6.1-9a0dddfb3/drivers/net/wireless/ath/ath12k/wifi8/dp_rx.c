@@ -3414,7 +3414,7 @@ static int ath12k_wifi8_get_rdi_source_cfg(struct ath12k_base *ab, int source)
 	return rdi_based_source_cfg;
 }
 
-static int ath12k_wifi8_dp_wbm_idle_buf_0_config_qcn9625(struct ath12k_base *ab)
+static int ath12k_wifi8_dp_rx_wbm_idle_buf_0_config_qcn9625(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
@@ -3462,7 +3462,7 @@ int ath12k_wifi8_dp_rxdma_ring_sel_config_qcn9625(struct ath12k_base *ab)
 {
 	int ret;
 
-	ret = ath12k_wifi8_dp_wbm_idle_buf_0_config_qcn9625(ab);
+	ret = ath12k_wifi8_dp_rx_wbm_idle_buf_0_config_qcn9625(ab);
 	if (ret) {
 		ath12k_err(ab, "Idle buf pool 0 config failed\n");
 		return ret;
@@ -4093,7 +4093,7 @@ out:
 	return ret;
 }
 
-void ath12k_wifi8_dp_wbm_srng_free(struct ath12k_base *ab)
+void ath12k_wifi8_dp_rx_wbm_srng_free(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
@@ -4104,7 +4104,7 @@ void ath12k_wifi8_dp_wbm_srng_free(struct ath12k_base *ab)
 	ath12k_dp_srng_cleanup(ab, &dp_wifi8->wbm_idle_buf_ring);
 }
 
-int ath12k_wifi8_dp_wbm_srng_setup(struct ath12k_base *ab)
+int ath12k_wifi8_dp_rx_wbm_srng_setup(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
@@ -4132,11 +4132,11 @@ int ath12k_wifi8_dp_wbm_srng_setup(struct ath12k_base *ab)
 
 	return 0;
 fail:
-	ath12k_wifi8_dp_wbm_srng_free(ab);
+	ath12k_wifi8_dp_rx_wbm_srng_free(ab);
 	return ret;
 }
 
-int ath12k_wifi8_dp_wbm_buf_ring_init(struct ath12k_base *ab)
+int ath12k_wifi8_dp_rx_wbm_buf_ring_init(struct ath12k_base *ab)
 {
 	LIST_HEAD(list);
 	size_t req_entries;
@@ -4153,7 +4153,7 @@ int ath12k_wifi8_dp_wbm_buf_ring_init(struct ath12k_base *ab)
 
 void ath12k_wifi8_dp_rx_ring_free(struct ath12k_base *ab)
 {
-	ath12k_wifi8_dp_wbm_srng_free(ab);
+	ath12k_wifi8_dp_rx_wbm_srng_free(ab);
 	ath12k_dp_rx_reo_cleanup(ab);
 }
 
@@ -4167,15 +4167,15 @@ int ath12k_wifi8_dp_rx_ring_setup(struct ath12k_base *ab)
 		return ret;
 	}
 
-	ret = ath12k_wifi8_dp_wbm_srng_setup(ab);
+	ret = ath12k_wifi8_dp_rx_wbm_srng_setup(ab);
 	if (ret) {
-		ath12k_warn(ab, "failed to setup wbm refill and idle buf rings\n");
+		ath12k_warn(ab, "failed to setup rx wbm refill and idle buf rings\n");
 		return ret;
 	}
 
-	ret = ath12k_wifi8_dp_wbm_buf_ring_init(ab);
+	ret = ath12k_wifi8_dp_rx_wbm_buf_ring_init(ab);
 	if (ret) {
-		ath12k_warn(ab, "failed to configure wbm idle buf ring\n");
+		ath12k_warn(ab, "failed to configure rx wbm idle buf ring\n");
 		return ret;
 	}
 
