@@ -3002,13 +3002,15 @@ static int ath12k_wifi8_dp_rx_h_unauth_wds_err(struct ath12k_pdev_dp *dp_pdev,
 
 	rxcb->tid = rx_desc_data->tid;
 
-	hdr = (struct ieee80211_hdr *)msdu->data;
-	hdr_len = ieee80211_hdrlen(hdr->frame_control);
-	llc = (struct ath12k_dp_rx_rfc1042_hdr *)(msdu->data + hdr_len);
+	if (rx_desc_data->decap == DP_RX_DECAP_TYPE_NATIVE_WIFI) {
+		hdr = (struct ieee80211_hdr *)msdu->data;
+		hdr_len = ieee80211_hdrlen(hdr->frame_control);
+		llc = (struct ath12k_dp_rx_rfc1042_hdr *)(msdu->data + hdr_len);
 
-	if (!(llc->snap_type == cpu_to_be16(ETH_P_PAE) ||
-	      ieee80211_is_qos_nullfunc(hdr->frame_control)))
-		drop = true;
+		if (!(llc->snap_type == cpu_to_be16(ETH_P_PAE) ||
+					ieee80211_is_qos_nullfunc(hdr->frame_control)))
+			drop = true;
+	}
 
 exit:
 	rcu_read_unlock();
