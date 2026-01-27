@@ -161,6 +161,8 @@ void ath12k_wifi8_hal_srng_dst_hw_init(struct ath12k_base *ab,
 	if (srng->flags & HAL_SRNG_FLAGS_MSI_SWAP)
 		val |= HAL_REO1_RING_MISC_MSI_SWAP;
 	val |= HAL_REO1_RING_MISC_SRNG_ENABLE;
+	val |= HAL_REO1_RING_MISC_RING_ID_DISABLE;
+	val |= HAL_REO1_RING_MISC_LOOPCNT_DISABLE;
 
 	ath12k_hif_write32(ab, reg_base + ath12k_hal_reo1_ring_misc_offset(hal), val);
 }
@@ -254,11 +256,8 @@ void ath12k_wifi8_hal_srng_src_hw_init(struct ath12k_base *ab,
 
 	/* Loop count is not used for SRC rings */
 	val |= HAL_TCL1_RING_MISC_MSI_LOOPCNT_DISABLE;
-
+	val |= HAL_TCL1_RING_MISC_MSI_RING_ID_DISABLE;
 	val |= HAL_TCL1_RING_MISC_SRNG_ENABLE;
-
-	if (srng->ring_id == HAL_SRNG_RING_ID_WBM_IDLE_LINK)
-		val |= HAL_TCL1_RING_MISC_MSI_RING_ID_DISABLE;
 
 	/* descriptor/head_ptr is from/to host DDR */
 	val |= HAL_TCL1_RING_MISC_TRANSACTION_TYPE;
