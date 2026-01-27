@@ -6169,8 +6169,10 @@ ath12k_wmi_copy_resource_config(struct ath12k_base *ab,
 	wmi_cfg->flags2 |= cpu_to_le32(WMI_RSRC_CFG_FLAGS2_CALC_NEXT_DTIM_COUNT_SET);
 	if (ath12k_frame_mode != ATH12K_HW_TXRX_ETHERNET)
 		wmi_cfg->flags2 |= WMI_RSRC_CFG_FLAGS2_INTRABSS_MEC_WDS_LEARNING_DISABLE;
+#ifndef CPTCFG_EXT_IPA_OFFLOAD
 	else
 		wmi_cfg->flags2 |= WMI_RSRC_CFG_FLAGS2_FW_AST_INDICATION_DISABLE;
+#endif
 
 	if (tg_cfg->is_wds_null_frame_supported)
 		wmi_cfg->flags2 |= WMI_RSRC_CFG_FLAGS2_WDS_NULL_FRAME_SUPPORT;
