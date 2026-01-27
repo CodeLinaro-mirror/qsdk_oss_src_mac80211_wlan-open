@@ -2213,7 +2213,7 @@ int ath12k_dp_mon_tx_buff_alloc(struct ath12k_dp *dp)
 
 	if (dp_mon->tx_mon_buf_ring_ready) {
 		spin_unlock_bh(&dp_mon->tx_mon_desc_lock);
-		ath12k_dbg(dp->ab, ATH12K_DBG_DP_MON,
+		ath12k_dbg(dp->ab, ATH12K_DBG_DP_MON_TX,
 			   "TX monitor: Buffers available\n");
 		return 0;
 	}

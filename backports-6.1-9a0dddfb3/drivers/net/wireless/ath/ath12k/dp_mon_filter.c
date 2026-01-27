@@ -1028,98 +1028,98 @@ void ath12k_dp_mon_tx_display_filters(struct ath12k_dp *dp,
 		return;
 	}
 
-	ath12k_dbg(ab, ATH12K_DBG_DP_MON, "TX MON RING TLV FILTER CONFIG");
-	ath12k_dbg(ab, ATH12K_DBG_DP_MON, "[Mode: %d]: Valid: %d",
+	ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "TX MON RING TLV FILTER CONFIG");
+	ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "[Mode: %d]: Valid: %d",
 		   mode, filter->valid);
 	if (filter->valid) {
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "downstream TLV Flags: 0x%X",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "downstream TLV Flags: 0x%X",
 			   src_tlv_filter->tx_mon_downstream_tlv_flags);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "upstream TLV Flags-0: 0x%X",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "upstream TLV Flags-0: 0x%X",
 			   src_tlv_filter->tx_mon_upstream_tlv_flags0);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "upstream TLV Flags-1: 0x%X",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "upstream TLV Flags-1: 0x%X",
 			   src_tlv_filter->tx_mon_upstream_tlv_flags1);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "upstream TLV Flags-2: 0x%X",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "upstream TLV Flags-2: 0x%X",
 			   src_tlv_filter->tx_mon_upstream_tlv_flags2);
 
 		/* Print wmask configuration */
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "wmask pcu_ppdu_setup_init: 0x%X",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "wmask pcu_ppdu_setup_init: 0x%X",
 			   src_tlv_filter->wmask.pcu_ppdu_setup_init);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "wmask tx_peer_entry: 0x%X",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "wmask tx_peer_entry: 0x%X",
 			   src_tlv_filter->wmask.tx_peer_entry);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "wmask tx_queue_ext: 0x%X",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "wmask tx_queue_ext: 0x%X",
 			   src_tlv_filter->wmask.tx_queue_ext);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "wmask tx_fes_status_end: 0x%X",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "wmask tx_fes_status_end: 0x%X",
 			   src_tlv_filter->wmask.tx_fes_status_end);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "wmask response_end_status: 0x%X",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "wmask response_end_status: 0x%X",
 			   src_tlv_filter->wmask.response_end_status);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "wmask tx_fes_status_prot: 0x%X",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "wmask tx_fes_status_prot: 0x%X",
 			   src_tlv_filter->wmask.tx_fes_status_prot);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "wmask tx_fes_setup: 0x%X",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "wmask tx_fes_setup: 0x%X",
 			   src_tlv_filter->wmask.tx_fes_setup);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "wmask tx_msdu_start: 0x%X",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "wmask tx_msdu_start: 0x%X",
 			   src_tlv_filter->wmask.tx_msdu_start);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "wmask tx_mpdu_start: 0x%X",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "wmask tx_mpdu_start: 0x%X",
 			   src_tlv_filter->wmask.tx_mpdu_start);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "wmask rxpcu_user_setup: 0x%X",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "wmask rxpcu_user_setup: 0x%X",
 			   src_tlv_filter->wmask.rxpcu_user_setup);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "wmask compaction_enable: %d",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "wmask compaction_enable: %d",
 			   src_tlv_filter->wmask.compaction_enable);
 
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "mgmt filter enable: %d",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "mgmt filter enable: %d",
 			   src_tlv_filter->tx_mon_mgmt_filter);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "data filter enable: %d",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "data filter enable: %d",
 			   src_tlv_filter->tx_mon_data_filter);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "ctrl filter enable: %d",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "ctrl filter enable: %d",
 			   src_tlv_filter->tx_mon_ctrl_filter);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "packet dma length data: %d",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "packet dma length data: %d",
 			   src_tlv_filter->tx_mon_data_pkt_dma_len);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "packet dma length ctrl: %d",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "packet dma length ctrl: %d",
 			   src_tlv_filter->tx_mon_ctrl_pkt_dma_len);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "packet dma length mgmt: %d",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "packet dma length mgmt: %d",
 			   src_tlv_filter->tx_mon_mgmt_pkt_dma_len);
 
 		/* Print MPDU/MSDU start/end flags */
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "mgmt_mpdu_end: %d",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "mgmt_mpdu_end: %d",
 			   src_tlv_filter->mgmt_mpdu_end);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "mgmt_msdu_end: %d",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "mgmt_msdu_end: %d",
 			   src_tlv_filter->mgmt_msdu_end);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "mgmt_msdu_start: %d",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "mgmt_msdu_start: %d",
 			   src_tlv_filter->mgmt_msdu_start);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "mgmt_mpdu_start: %d",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "mgmt_mpdu_start: %d",
 			   src_tlv_filter->mgmt_mpdu_start);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "ctrl_mpdu_end: %d",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "ctrl_mpdu_end: %d",
 			   src_tlv_filter->ctrl_mpdu_end);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "ctrl_msdu_end: %d",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "ctrl_msdu_end: %d",
 			   src_tlv_filter->ctrl_msdu_end);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "ctrl_msdu_start: %d",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "ctrl_msdu_start: %d",
 			   src_tlv_filter->ctrl_msdu_start);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "ctrl_mpdu_start: %d",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "ctrl_mpdu_start: %d",
 			   src_tlv_filter->ctrl_mpdu_start);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "data_mpdu_end: %d",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "data_mpdu_end: %d",
 			   src_tlv_filter->data_mpdu_end);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "data_msdu_end: %d",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "data_msdu_end: %d",
 			   src_tlv_filter->data_msdu_end);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "data_msdu_start: %d",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "data_msdu_start: %d",
 			   src_tlv_filter->data_msdu_start);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "data_mpdu_start: %d",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "data_mpdu_start: %d",
 			   src_tlv_filter->data_mpdu_start);
 
 		/* Print additional boolean flags */
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "txmon_disable: %d",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "txmon_disable: %d",
 			   src_tlv_filter->txmon_disable);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "mgmt_mpdu_msdu_log_en: %d",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "mgmt_mpdu_msdu_log_en: %d",
 			   src_tlv_filter->mgmt_mpdu_msdu_log_en);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "ctrl_mpdu_msdu_log_en: %d",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "ctrl_mpdu_msdu_log_en: %d",
 			   src_tlv_filter->ctrl_mpdu_msdu_log_en);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "data_mpdu_msdu_log_en: %d",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "data_mpdu_msdu_log_en: %d",
 			   src_tlv_filter->data_mpdu_msdu_log_en);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "mgmt_log_typ: %d",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "mgmt_log_typ: %d",
 			   src_tlv_filter->mgmt_log_typ);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "ctrl_log_typ: %d",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "ctrl_log_typ: %d",
 			   src_tlv_filter->ctrl_log_typ);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "data_log_typ: %d",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "data_log_typ: %d",
 			   src_tlv_filter->data_log_typ);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "mac_addr_filter_en: %d",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "mac_addr_filter_en: %d",
 			   src_tlv_filter->mac_addr_filter_en);
 	}
 }
@@ -1283,7 +1283,7 @@ void ath12k_dp_mon_tx_prepare_filter(struct ath12k_dp *dp,
 		dest_wmask->rxpcu_user_setup |= src_wmask->rxpcu_user_setup;
 		dest_wmask->compaction_enable |= src_wmask->compaction_enable;
 
-		ath12k_generic_dbg(ATH12K_DBG_DP_MON, "Updated Tx filters for mode: %d",
+		ath12k_generic_dbg(ATH12K_DBG_DP_MON_TX, "Updated Tx filters for mode: %d",
 				   mode);
 		ath12k_dp_mon_tx_display_filters(dp, mode, tx_mon_filter);
 	}
