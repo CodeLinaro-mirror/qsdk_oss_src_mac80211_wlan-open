@@ -10,6 +10,23 @@
 #include "debug.h"
 #include "qcn_extns/me_snoop_extn.h"
 
+void ath12k_print_me_configs(struct ath12k_me_db *me_db)
+{
+	u32 me_mode, igmp_mode;
+
+	if (me_db->me_flags & ATH12K_ME_FLAGS_BIT_ME5)
+		me_mode = 5;
+	else if (me_db->me_flags & ATH12K_ME_FLAGS_BIT_ME6)
+		me_mode = 6;
+	else
+		me_mode = 0;
+
+	igmp_mode = (me_db->me_flags & ATH12K_ME_FLAGS_BIT_IGMP_EN) ? 1 : 0;
+
+	ath12k_dbg(NULL, ATH12K_DBG_CFG, "ME mode: %u IGMP ME mode: %u grp_limit: %u\n",
+		   me_mode, igmp_mode, me_db->grp_limit);
+}
+
 /**
  * ath12k_me_db_reset(): Multicast Enhancement database reset
  * @db - ME Database
