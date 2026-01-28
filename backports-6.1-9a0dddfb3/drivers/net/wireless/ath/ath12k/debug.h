@@ -76,7 +76,7 @@ __printf(2, 3) void __ath12k_warn(struct device *dev, const char *fmt, ...);
 #define ath12k_hw_warn(ah, fmt, ...) __ath12k_warn((ah)->dev, fmt, ##__VA_ARGS__)
 #define ath12k_dbg_level(ab, dbg_mask, dbg_level, fmt, ...)				\
 do {											\
-	if (dbg_level && ath12k_debug_mask_level >= dbg_level)		\
+	if (ath12k_debug_mask_level >= dbg_level)		\
 		ath12k_dbg(ab, dbg_mask, fmt, ##__VA_ARGS__);				\
 } while (0)
 
