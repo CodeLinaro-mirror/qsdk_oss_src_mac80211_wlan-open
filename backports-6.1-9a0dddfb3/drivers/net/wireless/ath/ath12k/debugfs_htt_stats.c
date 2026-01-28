@@ -9945,13 +9945,17 @@ ath12k_htt_print_rx_pdev_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 			 le32_to_cpu(htt_stats_buf->rx_ldpc));
 	len += scnprintf(buf + len, buf_len - len, "rts_cnt = %u\n",
 			 le32_to_cpu(htt_stats_buf->rts_cnt));
-	len += scnprintf(buf + len, buf_len - len, "rssi_mgmt = %u\n",
+	len += scnprintf(buf + len, buf_len - len,
+			 "rssi_db_mgmt_comb_chain_full_band = %u\n",
 			 le32_to_cpu(htt_stats_buf->rssi_mgmt));
-	len += scnprintf(buf + len, buf_len - len, "rssi_data = %u\n",
+	len += scnprintf(buf + len, buf_len - len,
+			 "rssi_db_data_comb_chain_full_band = %u\n",
 			 le32_to_cpu(htt_stats_buf->rssi_data));
-	len += scnprintf(buf + len, buf_len - len, "rssi_comb = %u\n",
+	len += scnprintf(buf + len, buf_len - len,
+			 "rssi_db_comb_chain_full_band = %u\n",
 			 le32_to_cpu(htt_stats_buf->rssi_comb));
-	len += scnprintf(buf + len, buf_len - len, "rssi_in_dbm = %d\n",
+	len += scnprintf(buf + len, buf_len - len,
+			 "rssi_dbm_comb_chain_full_band  = %d\n",
 			 le32_to_cpu(htt_stats_buf->rssi_in_dbm));
 	len += scnprintf(buf + len, buf_len - len, "rx_evm_nss_count = %u\n",
 			 le32_to_cpu(htt_stats_buf->nss_count));
@@ -10083,7 +10087,7 @@ ath12k_htt_print_rx_pdev_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 
 	for (j = 0; j < ATH12K_HTT_RX_PDEV_STATS_NUM_SPATIAL_STREAMS; j++) {
 		len += scnprintf(buf + len, buf_len - len,
-				 "rssi_chain_in_db[%u] = ", j);
+				 "rssi_db_per_chain_per_subband[%u] = ", j);
 		for (i = 0; i < ATH12K_HTT_RX_PDEV_STATS_NUM_BW_COUNTERS; i++)
 			len += scnprintf(buf + len,
 					 buf_len - len,
