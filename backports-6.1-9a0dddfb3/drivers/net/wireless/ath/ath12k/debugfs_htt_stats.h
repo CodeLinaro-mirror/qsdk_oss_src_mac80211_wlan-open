@@ -466,8 +466,8 @@ enum ath12k_dbg_htt_ext_stats_type {
 	ATH12K_DBG_HTT_DBG_EXT_STATS_OPTIONAL_CONFIGS		= 77,
 	ATH12K_DBG_HTT_DBG_EXT_STATS_FTM			= 79,
 	ATH12K_DBG_HTT_DBG_EXT_STATS_FTM_TPCCAL_EXT		= 80,
+	ATH12K_DBG_HTT_DBG_EXT_STATS_ANI_HISTOGRAM		= 81,
 	ATH12K_DBG_HTT_STATS_REGULATORY				= 83,
-	/* keep this last */
 	ATH12K_DBG_HTT_NUM_EXT_STATS,
 };
 
@@ -680,6 +680,12 @@ enum ath12k_dbg_htt_tlv_tag {
 	HTT_STATS_FTM_TAG				= 234,
 	HTT_STATS_PDEV_FTM_TPCCAL_EXT_TAG		= 235,
 	HTT_STATS_TX_PDEV_BN_RATE_TAG			= 236,
+	HTT_STATS_PDEV_ANI_STATS_HIST_TAG		= 240,
+	HTT_STATS_ANI_SCALAR_TAG			= 241,
+	HTT_STATS_ANI_PKT_CNT_TAG			= 242,
+	HTT_STATS_ANI_CRC_PASS_TAG			= 243,
+	HTT_STATS_ANI_PER_BLK_ERR_TAG			= 244,
+	HTT_STATS_ANI_OTA_ERR_TAG			= 245,
 	HTT_STATS_REGDB_CTRY_TAG			= 247,
 	HTT_STATS_REGDB_REGDOMAIN_TAG			= 248,
 	HTT_STATS_REG_6G_TAG				= 249,
@@ -5766,6 +5772,53 @@ struct ath12k_htt_stats_ftm_tlv {
 	__le32 bd_read_rsp;
 } __packed;
 
+#define ATH12K_HTT_STATS_NUM_ANI_HIST_TYPE_1SEC 0
+#define ATH12K_HTT_STATS_NUM_ANI_HIST_TYPE_GRANULAR 1
+#define ATH12K_HTT_STATS_NUM_ANI_HIST_TYPE_1SEC_NOT_ENABLED 2
+#define ATH12K_HTT_STATS_NUM_ANI_HIST_TYPE_GRANULAR_NOT_ENABLED 3
+#define ATH12K_HTT_STATS_NUM_ANI_HIST_RX_PKT_CNT_MAX 9
+#define ATH12K_HTT_STATS_NUM_ANI_HIST_RX_PKT_CRC_PASS_CNT_MAX 9
+#define ATH12K_HTT_STATS_NUM_ANI_HIST_PER_BLK_ERR_CNT_MAX 16
+#define ATH12K_HTT_STATS_NUM_ANI_HIST_RX_OTA_ERR_CNT_MAX 10
+#define ATH12K_HTT_STATS_NUM_ANI_HIST_PRINT_CNT_MAX 9
+
+struct htt_stats_pdev_ani_hist_tlv {
+	__le32 chan_num;
+	__le32 num_records;
+	__le32 collection_interval;
+	__le32 ani_hist_type;
+};
+
+struct htt_stats_ani_scalar_tlv {
+	__le32 rx_ofdma_timing_err_cnt;
+	__le32 rx_cck_fail_cnt;
+	__le32 rx_cck1_fail_cnt;
+	__le32 rx_cck2_fail_cnt;
+	__le32 rx_cck7_fail_cnt;
+	__le32 mactx_abort_cnt;
+	__le32 macrx_abort_cnt;
+	__le32 phytx_abort_cnt;
+	__le32 phyrx_abort_cnt;
+	__le32 phyrx_defer_abort_cnt;
+	__le32 rx_sizing1_event_cnt;
+	__le32 rx_sizing2_event_cnt;
+};
+
+struct htt_stats_ani_pkt_cnt_tlv {
+	__le32 rx_pkt_cnt[ATH12K_HTT_STATS_NUM_ANI_HIST_RX_PKT_CNT_MAX];
+};
+
+struct htt_stats_ani_crc_pass_tlv {
+	__le32 rx_pkt_crc_pass_cnt[ATH12K_HTT_STATS_NUM_ANI_HIST_RX_PKT_CRC_PASS_CNT_MAX];
+};
+
+struct htt_stats_ani_per_blk_err_tlv {
+	__le32 per_blk_err_cnt[ATH12K_HTT_STATS_NUM_ANI_HIST_PER_BLK_ERR_CNT_MAX];
+};
+
+struct htt_stats_ani_ota_err_tlv {
+	__le32 rx_ota_err_cnt[ATH12K_HTT_STATS_NUM_ANI_HIST_RX_OTA_ERR_CNT_MAX];
+};
 
 struct ath12k_htt_stats_phy_paprd_pb_tlv {
 	__le32 pdev_id;
