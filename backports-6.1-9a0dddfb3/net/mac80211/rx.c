@@ -33,6 +33,7 @@
 #include "tkip.h"
 #include "wme.h"
 #include "rate.h"
+#include "qcn_extns/cmn_extn.h"
 
 extern int debug_param;
 
@@ -3903,6 +3904,9 @@ ieee80211_rx_h_mgmt_check(struct ieee80211_rx_data *rx)
 						       RX_DROP_RUNT_ACTION);
 		return RX_DROP_U_RUNT_ACTION;
 	}
+
+	if (ieee80211_process_mesh_peer_beacon(rx) == RX_DROP_MONITOR)
+		return RX_DROP_MONITOR;
 
 	if (rx->sdata->vif.type == NL80211_IFTYPE_AP &&
 	    ieee80211_is_beacon(mgmt->frame_control) &&

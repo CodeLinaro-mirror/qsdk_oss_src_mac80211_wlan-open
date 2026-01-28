@@ -3886,6 +3886,9 @@ send:
 
 	return ret;
 }
+#ifdef CPTCFG_QCN_EXTN
+EXPORT_SYMBOL(ath12k_wmi_send_peer_assoc_cmd);
+#endif
 
 int ath12k_wmi_update_scan_chan_list(struct ath12k *ar,
 				     struct ath12k_wmi_scan_req_arg *req_arg)
