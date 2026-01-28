@@ -2674,7 +2674,12 @@ void ath12k_ppeds_tx_update_stats(struct ath12k *ar, int skb_len,
 	ath12k_wifi7_dp_tx_status_parse(ab, tx_status, &ts);
 	info.status.ack_signal = ATH12K_DEFAULT_NOISE_FLOOR + ts.ack_rssi;
 	info.status.flags = IEEE80211_TX_STATUS_ACK_SIGNAL_VALID;
-	dp->ppe.ppeds_stats.tqm_rel_reason[ts.status]++;
+
+	if (ts.buf_rel_source == HAL_WBM_REL_SRC_MODULE_TQM) {
+		ts.status = le32_get_bits(tx_status->info0,
+					  HAL_WBM_COMPL_TX_INFO0_TQM_RELEASE_REASON);
+		dp->ppe.ppeds_stats.tqm_rel_reason[ts.status]++;
+	}
 
 	if (ts.status == HAL_WBM_TQM_REL_REASON_FRAME_ACKED)
 		info.flags |= IEEE80211_TX_STAT_ACK;
