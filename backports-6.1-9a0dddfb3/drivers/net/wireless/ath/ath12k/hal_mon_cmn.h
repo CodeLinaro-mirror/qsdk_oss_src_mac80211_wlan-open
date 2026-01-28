@@ -309,16 +309,49 @@ enum hal_tx_mon_status {
 	HAL_TX_MON_FES_STATUS_END,
 	HAL_RX_MON_RESPONSE_REQUIRED_INFO,
 	HAL_TX_MON_FES_STATUS_PROT,
+	HAL_TX_MON_FES_STATUS_START_PPDU,
+	HAL_TX_MON_FES_STATUS_START_PROT,
 	HAL_TX_MON_FRAME_BITMAP_ACK,
 	HAL_TX_MON_MSDU_START,
 	HAL_TX_MON_RESPONSE_END_STATUS_INFO,
 	HAL_TX_MON_BUFFER_ADDR,
 	HAL_TX_MON_DATA,
+	HAL_TX_MON_FW2SW,
 };
 
+/**
+ * struct hal_tx_mon_packet_info - packet info
+ * @sw_cookie: 64-bit SW desc virtual address
+ * @dma_length: packet DMA length
+ * @msdu_continuation: msdu continulation in next buffer
+ * @truncated: packet is truncated
+ */
+struct hal_tx_mon_packet_info {
+	u64 sw_cookie;
+	u32 dma_length : 16,
+	    msdu_continuation : 1,
+	    truncated : 1,
+	    reserved : 14;
+};
+
+/**
+ * struct hal_tx_mon_ppdu_info - tx monitor ppdu information
+ * @ppdu_id:  Id of the PLCP protocol data unit
+ * @num_users: number of users
+ * @cur_usr_idx: Current user index of the PPDU
+ * @reserved: for future purpose
+ * @prot_tlv_status: protection tlv status
+ * @packet_info: packet information
+ * @rx_status: monitor mode rx status information
+ * @rx_user_status: monitor mode rx user status information
+ */
 struct hal_tx_mon_ppdu_info {
 	u32 ppdu_id;
 	u8  num_users;
+	u32 cur_usr_idx : 8,
+	    reserved : 24;
+	u32 prot_tlv_status;
+	struct hal_tx_mon_packet_info packet_info;
 	struct hal_rx_mon_ppdu_info rx_status;
 };
 
@@ -351,6 +384,43 @@ struct hal_tx_mon_wmask_config {
 	u8 compaction_enable;
 };
 
+/**
+ * struct hal_tx_mon_status_info - status info that wasn't populated in rx_status
+ * @band_center_freq1:
+ * @band_center_freq2:
+ * @freq:
+ * @phy_mode:
+ * @schedule_id:
+ * @response_type: Response type in response window
+ * @ndp_frame: NDP frame
+ * @reserved: reserved bits
+ * @buffer: Packet buffer pointer address
+ * @offset: Packet buffer offset
+ * @length: Packet buffer length
+ * @dp_tx_pkt_cap_cookie: cookie counter
+ */
+struct hal_tx_mon_status_info {
+	u16 band_center_freq1;
+	u16 band_center_freq2;
+	u16 freq;
+	u16 phy_mode;
+	u32 schedule_id;
+	u32 response_type : 5,
+	    ndp_frame : 2,
+	    reserved : 25;
+	void *buffer;
+	u32 offset;
+	u32 length;
+	u8  dp_tx_pkt_cap_cookie[8];
+};
+
+enum mon_tx_fw2sw_user_id {
+	HAL_MON_TX_FW2SW_TYPE_FES_SETUP      = 0,
+	HAL_MON_TX_FW2SW_TYPE_FES_SETUP_USER = 1,
+	HAL_MON_TX_FW2SW_TYPE_FES_SETUP_EXT  = 2,
+	HAL_MON_TX_FW2SW_TYPE_MAX            = 4
+};
+
 static inline u64 ath12k_hal_le32hilo_to_u64(__le32 hi, __le32 lo)
 {
 	u64 hi64 = le32_to_cpu(hi);
@@ -361,10 +431,14 @@ static inline u64 ath12k_hal_le32hilo_to_u64(__le32 hi, __le32 lo)
 
 struct hal_mon_ops {
 	enum hal_tx_mon_status
-	(*tx_parse_status_tlv)(struct hal_tx_mon_ppdu_info *ppdu_info,
+	(*tx_parse_status_tlv)(struct ath12k_hal *hal,
+			       struct hal_tx_mon_ppdu_info *ppdu_info,
 			       u16 tlv_tag,
 			       const void *tlv_data,
-			       u32 userid);
+			       u32 userid,
+			       u16 tlv_len,
+			       struct hal_tx_mon_status_info *status_info,
+			       u8 *status_frag);
 	enum hal_tx_mon_status
 	(*tx_status_get_num_user)(u16 tlv_tag,
 				  const void *tlv,
@@ -394,12 +468,15 @@ struct hal_mon_ops {
 static inline enum hal_tx_mon_status
 ath12k_hal_mon_tx_parse_status(struct ath12k_hal *hal,
 			       struct hal_tx_mon_ppdu_info *ppdu_info,
-			       u16 tlv_tag, const void *tlv_data, u32 userid)
+			       u16 tlv_tag, const void *tlv_data,
+			       u32 userid, u16 tlv_len,
+			       struct hal_tx_mon_status_info *status_info,
+			       u8 *status_frag)
 {
-	return hal->hal_mon_ops->tx_parse_status_tlv(ppdu_info,
-						     tlv_tag,
-						     tlv_data,
-						     userid);
+	return hal->hal_mon_ops->tx_parse_status_tlv(hal, ppdu_info,
+						     tlv_tag, tlv_data,
+						     userid, tlv_len,
+						     status_info, status_frag);
 }
 
 static inline enum hal_tx_mon_status
