@@ -181,4 +181,6 @@ void ath12k_me_db_reset(struct ath12k_me_db *db);
 int ath12k_me_db_deinit(struct ath12k_dp_vif *dp_vif);
 int ath12k_me_db_init(struct ath12k_dp_vif *dp_vif);
 
+void ath12k_print_me_configs(struct ath12k_me_db *db);
+
 #endif /* __ATH12K_ME_H */
