@@ -467,6 +467,7 @@ enum ath12k_dbg_htt_ext_stats_type {
 	ATH12K_DBG_HTT_DBG_EXT_STATS_FTM			= 79,
 	ATH12K_DBG_HTT_DBG_EXT_STATS_FTM_TPCCAL_EXT		= 80,
 	ATH12K_DBG_HTT_DBG_EXT_STATS_ANI_HISTOGRAM		= 81,
+	ATH12K_DBG_HTT_DBG_EXT_STATS_RESET_HISTORY		= 82,
 	ATH12K_DBG_HTT_STATS_REGULATORY				= 83,
 	ATH12K_DBG_HTT_NUM_EXT_STATS,
 };
@@ -686,6 +687,7 @@ enum ath12k_dbg_htt_tlv_tag {
 	HTT_STATS_ANI_CRC_PASS_TAG			= 243,
 	HTT_STATS_ANI_PER_BLK_ERR_TAG			= 244,
 	HTT_STATS_ANI_OTA_ERR_TAG			= 245,
+	HTT_STATS_RESET_HISTORY_TAG			= 246,
 	HTT_STATS_REGDB_CTRY_TAG			= 247,
 	HTT_STATS_REGDB_REGDOMAIN_TAG			= 248,
 	HTT_STATS_REG_6G_TAG				= 249,
@@ -6448,4 +6450,62 @@ struct ath12k_htt_stats_tx_selfgen_resp_frame_stats_tlv {
 	struct ath12k_htt_stats_whal_selfgen_resp_frame_entry
 		frame_data[ATH12K_HTT_STATS_RESP_FRAME_TYPE_MAX];
 } __packed;
+#define HTT_STATS_RESET_HISTORY_MAX_ENTRIES 10
+
+/**
+ * @brief TLV structure for Upstream reset stats 82 (reset history)
+ * This structure holds the last HTT_STATS_RESET_HISTORY_MAX_ENTRIES.
+ * The entries are copied from the firmware's internal circular buffer.
+ */
+struct htt_stats_reset_history_tlv {
+	/**
+	 * @brief An array of structures, each holding the details of a single
+	 *        reset event. The entries are ordered chronologically from
+	 *        oldest to newest.
+	 */
+	struct {
+		__le32 timestamp_ms;
+		__le32 reset_flags;
+		__le32 reset_cause;
+		__le32 reset_reason;
+		__le32 phy_mode;
+
+		union {
+			__le32 channel_freq;
+			struct {
+				__le32 mhz:16,
+				       band_center_freq1:16;
+			};
+		};
+
+		union {
+			__le32 channel_info;
+			struct {
+				__le32 flags:16,
+				       phy_id:8,
+				       swprofile:8;
+			};
+		};
+
+		union {
+			__le32 home_channel_info;
+			struct {
+				__le32 is_home_chan:1,
+				       reserved:31;
+			};
+		};
+		__le32 reserved_dwords[2]; /* reserved for future use */
+	} reset_history[HTT_STATS_RESET_HISTORY_MAX_ENTRIES];
+
+	__le32 idx;                   /**< Current write index of the circular buffer */
+	__le32 count;                 /**< Total number of resets captured (up to 10) */
+} __packed;
+
+#define HTT_STATS_RESET_HISTORY_MHZ_GET                         GENMASK(15, 0)
+#define HTT_STATS_RESET_HISTORY_BAND_CENTER_FREQ1_GET           GENMASK(31, 16)
+#define HTT_STATS_RESET_HISTORY_FLAGS_GET                       GENMASK(15, 0)
+#define HTT_STATS_RESET_HISTORY_PHY_ID_GET                      GENMASK(23, 16)
+#define HTT_STATS_RESET_HISTORY_SWPROFILE_GET                   GENMASK(31, 24)
+#define HTT_STATS_RESET_HISTORY_IS_HOME_CHAN_GET                GENMASK(0, 0)
+
 #endif

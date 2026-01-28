@@ -1380,6 +1380,74 @@ ath12k_htt_print_bn_ul_ofdma_user_stats(const void *tag_buf, u16 tag_len,
 	stats_req->buf_len = len;
 }
 
+
+static void ath12k_htt_print_phy_reset_history_tlv(const void *tag_buf, u16 tag_len,
+					    struct debug_htt_stats_req *stats_req)
+{
+	const struct htt_stats_reset_history_tlv *htt_stats_buf = tag_buf;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE, len = stats_req->buf_len;
+	u8 *buf = stats_req->buf;
+	u32 i, num_entries;
+
+	if (tag_len < sizeof(*htt_stats_buf))
+		return;
+
+	len += scnprintf(buf + len, buf_len - len,
+			"\nHTT_STATS_PHY_RESET_HISTORY_TLV:\n");
+	len += scnprintf(buf + len, buf_len - len,
+			"|=======================================================================================================================================================|\n");
+	len += scnprintf(buf + len, buf_len - len,
+			"| %-3s | %-13s | %-12s | %-12s | %-12s | %-10s | %-6s | %-10s | %-8s | %-8s | %-10s | %-12s |\n",
+			"Idx", "Timestamp(ms)", "ResetCause", "ResetReason",
+			"ResetFlags", "PhyMode", "PhyId", "Freq(MHz)", "BCF1",
+			"Flags", "SWProfile", "isHomeChan");
+	len += scnprintf(buf + len, buf_len - len,
+			"|-----|---------------|--------------|--------------|--------------|------------|--------|------------|----------|----------|------------|--------------|\n");
+
+	num_entries = min_t(u32, le32_to_cpu(htt_stats_buf->count),
+						HTT_STATS_RESET_HISTORY_MAX_ENTRIES);
+
+	for (i = 0; i < num_entries; i++) {
+		u32 chan_info = le32_to_cpu(htt_stats_buf->reset_history[i].channel_info);
+		u32 chan_freq = le32_to_cpu(htt_stats_buf->reset_history[i].channel_freq);
+		u32 home_info =
+			le32_to_cpu(htt_stats_buf->reset_history[i].home_channel_info);
+		if (len + 250 > buf_len) {
+			len += scnprintf(buf + len, buf_len - len,
+				"... (output truncated, insufficient buffer space)\n");
+				break;
+			}
+		len += scnprintf(buf + len, buf_len - len,
+				"| %-3u | %-13u | 0x%-10x | 0x%-10x | 0x%-10x | %-10u | %-6u | %-10u | %-8u | 0x%-6x | %-10u | %-12u |\n",
+				i + 1,
+				le32_to_cpu(htt_stats_buf->reset_history[i].timestamp_ms),
+				le32_to_cpu(htt_stats_buf->reset_history[i].reset_cause),
+				le32_to_cpu(htt_stats_buf->reset_history[i].reset_reason),
+				le32_to_cpu(htt_stats_buf->reset_history[i].reset_flags),
+				le32_to_cpu(htt_stats_buf->reset_history[i].phy_mode),
+				u32_get_bits(chan_info,
+					HTT_STATS_RESET_HISTORY_PHY_ID_GET),
+				u32_get_bits(chan_freq,
+					HTT_STATS_RESET_HISTORY_MHZ_GET),
+				u32_get_bits(chan_freq,
+					HTT_STATS_RESET_HISTORY_BAND_CENTER_FREQ1_GET),
+				u32_get_bits(chan_info,
+					HTT_STATS_RESET_HISTORY_FLAGS_GET),
+				u32_get_bits(chan_info,
+					HTT_STATS_RESET_HISTORY_SWPROFILE_GET),
+				u32_get_bits(home_info,
+					HTT_STATS_RESET_HISTORY_IS_HOME_CHAN_GET));
+	}
+
+	len += scnprintf(buf + len, buf_len - len,
+			"|=======================================================================================================================================================|\n");
+	len += scnprintf(buf + len, buf_len - len,
+		"Total Resets: %u, Buffer Write Index: %u\n",
+		le32_to_cpu(htt_stats_buf->count), le32_to_cpu(htt_stats_buf->idx));
+
+	stats_req->buf_len = len;
+}
+
 static inline void
 ath12k_htt_print_unavailable_error_stats_tlv(const void *tag_buf,
 					     struct debug_htt_stats_req *stats_req)
@@ -13795,6 +13863,9 @@ static int ath12k_dbg_htt_ext_stats_parse(struct ath12k_base *ab,
 		break;
 	case HTT_STATS_OPTIONAL_CONFIGS_STATS_TAG:
 		ath12k_htt_print_optional_configs_stats_tlv(tag_buf, len, stats_req);
+		break;
+	case HTT_STATS_RESET_HISTORY_TAG:
+		ath12k_htt_print_phy_reset_history_tlv(tag_buf, len, stats_req);
 		break;
 	case HTT_STATS_TX_PDEV_WIFI_RADAR_TAG:
 		ath12k_htt_print_wifi_radar_stats_tlv(tag_buf, len, stats_req);
