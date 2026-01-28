@@ -619,6 +619,7 @@ struct ath12k_vap_cfg {
 	u32 hwcts2self_ofdma;
 	u8 bcn_tx_power;
 	u32 ampdu_aggr_size;
+	u32 amsdu_aggr_size;
 };
 
 struct ath12k_rssi_deauth_config {
