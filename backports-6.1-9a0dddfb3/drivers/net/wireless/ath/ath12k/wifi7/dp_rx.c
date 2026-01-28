@@ -1854,7 +1854,8 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 
 		partner_dp = ath12k_dp_hw_grp_to_dp(dp_hw_grp, device_id);
 		rx_ring = &partner_dp->rx_refill_buf_ring;
-		refill_srng = &ab->hal.srng_list[rx_ring->refill_buf_ring.ring_id];
+		refill_srng =
+			&partner_dp->ab->hal.srng_list[rx_ring->refill_buf_ring.ring_id];
 		ath12k_dp_rx_bufs_replenish(partner_dp, refill_srng,
 					    &rx_desc_used_list[device_id]);
 	}
@@ -2694,8 +2695,8 @@ exit:
 
 		partner_dp = ath12k_dp_hw_grp_to_dp(dp_hw_grp, device_id);
 		rx_ring = &partner_dp->rx_refill_buf_ring;
-		refill_srng = &ab->hal.srng_list[rx_ring->refill_buf_ring.ring_id];
-
+		refill_srng =
+			&partner_dp->ab->hal.srng_list[rx_ring->refill_buf_ring.ring_id];
 		ath12k_dp_rx_bufs_replenish(partner_dp, refill_srng,
 					    &rx_desc_used_list[device_id]);
 	}
@@ -3485,7 +3486,8 @@ int ath12k_wifi7_dp_rx_process_wbm_err(struct ath12k_dp *dp,
 
 		partner_dp = ath12k_dp_hw_grp_to_dp(dp_hw_grp, device_id);
 		rx_ring = &partner_dp->rx_refill_buf_ring;
-		refill_srng = &ab->hal.srng_list[rx_ring->refill_buf_ring.ring_id];
+		refill_srng =
+			&partner_dp->ab->hal.srng_list[rx_ring->refill_buf_ring.ring_id];
 		ath12k_dp_rx_bufs_replenish(partner_dp, refill_srng,
 					    &rx_desc_used_list[device_id]);
 	}
