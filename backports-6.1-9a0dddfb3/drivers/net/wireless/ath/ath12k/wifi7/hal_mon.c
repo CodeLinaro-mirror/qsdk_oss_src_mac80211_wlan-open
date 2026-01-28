@@ -2078,6 +2078,443 @@ ath12k_hal_wifi7_hal_mon_populate_ppdu_info(struct hal_rx_mon_ppdu_info *ppdu_in
 }
 
 static __always_inline void
+ath12k_wifi7_hal_mon_tx_parse_he_sig_a_su
+			(const struct hal_tx_mon_he_sig_a_su *he_sig_a_su,
+			 struct hal_tx_mon_ppdu_info *ppdu_info)
+{
+	u16 he_data1;
+	u16 he_data2;
+	u16 he_data3;
+	u16 he_data6;
+	u16 he_mu_flag_1 = 0;
+	u16 he_mu_flag_2 = 0;
+	u16 num_users = 0;
+	u8  mcs_of_sig_b = 0;
+	u8  dcm_of_sig_b = 0;
+	u8  sig_a_bw = 0;
+	u8  i = 0;
+	u8  bss_color_id;
+	u8  coding;
+	u8  stbc;
+	u8  beam_change;
+	u8  txop;
+	u32 info[2];
+
+	info[0] = __le32_to_cpu(he_sig_a_su->info0);
+	info[1] = __le32_to_cpu(he_sig_a_su->info1);
+
+	num_users = ppdu_info->num_users;
+	beam_change = u32_get_bits(info[0],
+				   HAL_TX_MON_HE_SIG_A_SU_INFO0_BEAM_CHANGE);
+	mcs_of_sig_b = u32_get_bits(info[0],
+				    HAL_TX_MON_HE_SIG_A_SU_INFO0_TRANSMIT_MCS);
+	dcm_of_sig_b = u32_get_bits(info[0],
+				    HAL_TX_MON_HE_SIG_A_SU_INFO0_DCM);
+	sig_a_bw = u32_get_bits(info[0],
+				HAL_TX_MON_HE_SIG_A_SU_INFO0_TRANSMIT_BW);
+	bss_color_id = u32_get_bits(info[0],
+				    HAL_TX_MON_HE_SIG_A_SU_INFO0_BSS_COLOR_ID);
+	coding = u32_get_bits(info[1],
+			      HAL_TX_MON_HE_SIG_A_SU_INFO1_CODING);
+	stbc = u32_get_bits(info[1],
+			    HAL_TX_MON_HE_SIG_A_SU_INFO1_STBC);
+	txop = u32_get_bits(info[1],
+			    HAL_TX_MON_HE_SIG_A_SU_INFO1_TXOP_DURATION);
+
+	he_mu_flag_1 |= mcs_of_sig_b;
+	he_mu_flag_1 |= dcm_of_sig_b << HE_STA_DCM_SHIFT;
+	he_mu_flag_1 |= IEEE80211_RADIOTAP_HE_MU_FLAGS1_SIG_B_MCS_KNOWN |
+			IEEE80211_RADIOTAP_HE_MU_FLAGS1_SIG_B_DCM_KNOWN |
+			IEEE80211_RADIOTAP_HE_MU_FLAGS1_CH1_CTR_26T_RU_KNOWN |
+			IEEE80211_RADIOTAP_HE_MU_FLAGS1_CH1_RU_KNOWN |
+			IEEE80211_RADIOTAP_HE_MU_FLAGS1_CH2_RU_KNOWN |
+			IEEE80211_RADIOTAP_HE_MU_FLAGS1_CH1_CTR_26T_RU_KNOWN;
+	he_mu_flag_2 |= sig_a_bw;
+	he_mu_flag_2 |= IEEE80211_RADIOTAP_HE_MU_FLAGS2_BW_FROM_SIG_A_BW_KNOWN;
+
+	ppdu_info->rx_status.he_mu_flags = (!!(num_users & HE_MU_NUM_USER_MASK));
+
+	he_data1 = (IEEE80211_RADIOTAP_HE_DATA1_BSS_COLOR_KNOWN |
+			IEEE80211_RADIOTAP_HE_DATA1_CODING_KNOWN);
+	he_data2 = (IEEE80211_RADIOTAP_HE_DATA2_TXBF_KNOWN |
+			IEEE80211_RADIOTAP_HE_DATA2_PE_DISAMBIG_KNOWN |
+			IEEE80211_RADIOTAP_HE_DATA2_TXOP_KNOWN |
+			IEEE80211_RADIOTAP_HE_DATA2_PRE_FEC_PAD_KNOWN |
+			IEEE80211_RADIOTAP_HE_DATA2_MIDAMBLE_KNOWN);
+	he_data3 = (bss_color_id | (beam_change << HE_BEAM_CHANGE_SHIFT) |
+			(coding << HE_CODING_SHIFT) | (stbc << HE_STBC_SHIFT));
+	he_data6 = (txop << HE_TXOP_SHIFT);
+
+	for (i = 0; i < num_users; i++) {
+		ppdu_info->rx_status.userstats[i].he_flags1 |= he_mu_flag_1;
+		ppdu_info->rx_status.userstats[i].he_flags2 |= he_mu_flag_2;
+		ppdu_info->rx_status.userstats[i].he_data1 |= he_data1;
+		ppdu_info->rx_status.userstats[i].he_data2 |= he_data2;
+		ppdu_info->rx_status.userstats[i].he_data3 |= he_data3;
+		ppdu_info->rx_status.userstats[i].he_data6 |= he_data6;
+	}
+}
+
+static __always_inline void
+ath12k_wifi7_hal_mon_tx_parse_he_sig_a_mu_dl
+			(const struct hal_tx_mon_he_sig_a_mu_dl *he_sig_a_mu_dl,
+			 struct hal_tx_mon_ppdu_info *ppdu_info)
+{
+	u16 he_data1;
+	u16 he_data2;
+	u16 he_data3;
+	u16 he_data6;
+	u16 he_mu_flag_1 = 0;
+	u16 he_mu_flag_2 = 0;
+	u16 num_users = 0;
+	u8  bss_color_id;
+	u8  txop;
+	u8  mcs_of_sig_b = 0;
+	u8  dcm_of_sig_b = 0;
+	u8  sig_a_bw = 0;
+	u8  num_sig_b_symb = 0;
+	u8  comp_mode_sig_b = 0;
+	u8  i = 0;
+	u32 info[2];
+
+	info[0] = __le32_to_cpu(he_sig_a_mu_dl->info0);
+	info[1] = __le32_to_cpu(he_sig_a_mu_dl->info1);
+
+	num_users = ppdu_info->num_users;
+	mcs_of_sig_b = u32_get_bits(info[0],
+				    HAL_TX_MON_HE_SIG_A_MU_DL_INFO0_MCS_OF_SIG_B);
+	dcm_of_sig_b = u32_get_bits(info[0],
+				    HAL_TX_MON_HE_SIG_A_MU_DL_INFO0_DCM_OF_SIG_B);
+	sig_a_bw = u32_get_bits(info[0],
+				HAL_TX_MON_HE_SIG_A_MU_DL_INFO0_TRANSMIT_BW);
+	num_sig_b_symb = u32_get_bits(info[0],
+				      HAL_TX_MON_HE_SIG_A_MU_DL_INFO0_NUM_SIG_B_SYMBOLS);
+	comp_mode_sig_b = u32_get_bits(info[0],
+				       HAL_TX_MON_HE_SIG_A_MU_DL_INFO0_COMP_MODE_SIG_B);
+	bss_color_id = u32_get_bits(info[0],
+				    HAL_TX_MON_HE_SIG_A_MU_DL_INFO0_BSS_COLOR_ID);
+	txop = u32_get_bits(info[1],
+			    HAL_TX_MON_HE_SIG_A_MU_DL_INFO1_TXOP_DURATION);
+
+	he_mu_flag_1 |= mcs_of_sig_b;
+	he_mu_flag_1 |= dcm_of_sig_b << HE_STA_DCM_SHIFT;
+	he_mu_flag_1 |= IEEE80211_RADIOTAP_HE_MU_FLAGS1_SIG_B_MCS_KNOWN |
+			IEEE80211_RADIOTAP_HE_MU_FLAGS1_SIG_B_DCM_KNOWN |
+			IEEE80211_RADIOTAP_HE_MU_FLAGS1_SIG_B_SYMS_USERS_KNOWN |
+			IEEE80211_RADIOTAP_HE_MU_FLAGS1_CH1_CTR_26T_RU_KNOWN |
+			IEEE80211_RADIOTAP_HE_MU_FLAGS1_CH1_RU_KNOWN |
+			IEEE80211_RADIOTAP_HE_MU_FLAGS1_CH2_RU_KNOWN |
+			IEEE80211_RADIOTAP_HE_MU_FLAGS1_CH1_CTR_26T_RU_KNOWN |
+			IEEE80211_RADIOTAP_HE_MU_FLAGS1_SIG_B_COMP_KNOWN |
+			IEEE80211_RADIOTAP_HE_MU_FLAGS1_SIG_B_SYMS_USERS_KNOWN;
+	he_mu_flag_2 |= sig_a_bw;
+	he_mu_flag_2 |= sig_a_bw << HE_SIG_A_PUNC_BW_SHIFT;
+	he_mu_flag_2 |= num_sig_b_symb << HE_NUM_SIG_B_SYMBOLS_SHIFT;
+	he_mu_flag_2 |= comp_mode_sig_b << HE_SIG_B_COMPRESSION_FLAG_2_SHIFT;
+	he_mu_flag_2 |= IEEE80211_RADIOTAP_HE_MU_FLAGS2_BW_FROM_SIG_A_BW_KNOWN;
+	he_mu_flag_2 |= IEEE80211_RADIOTAP_HE_MU_FLAGS2_PUNC_FROM_SIG_A_BW_KNOWN;
+
+	he_data1 = IEEE80211_RADIOTAP_HE_DATA1_BSS_COLOR_KNOWN;
+	he_data2 = IEEE80211_RADIOTAP_HE_DATA2_TXOP_KNOWN;
+	he_data3 = bss_color_id;
+	he_data6 = (txop << HE_TXOP_SHIFT);
+
+	ppdu_info->rx_status.he_mu_flags = (!!(num_users & HE_MU_NUM_USER_MASK));
+
+	for (i = 0; i < num_users; i++) {
+		ppdu_info->rx_status.userstats[i].he_flags1 |= he_mu_flag_1;
+		ppdu_info->rx_status.userstats[i].he_flags2 |= he_mu_flag_2;
+		ppdu_info->rx_status.userstats[i].he_data1 |= he_data1;
+		ppdu_info->rx_status.userstats[i].he_data2 |= he_data2;
+		ppdu_info->rx_status.userstats[i].he_data3 |= he_data3;
+		ppdu_info->rx_status.userstats[i].he_data6 |= he_data6;
+	}
+}
+
+static __always_inline void
+ath12k_wifi7_hal_mon_tx_parse_he_sig_b2_mu
+			(const struct hal_tx_mon_he_sig_b2_mu *he_sig_b2_mu,
+			 u32 userid,
+			 struct hal_tx_mon_ppdu_info *ppdu_info)
+{
+	u16 sta_id = 0;
+	u16 sta_spatial_config = 0;
+	u8  sta_mcs = 0;
+	u8  coding = 0;
+	u8  nss = 0;
+	u8  user_order = 0;
+	u32 info[2];
+
+	info[0] = __le32_to_cpu(he_sig_b2_mu->info0);
+	info[1] = __le32_to_cpu(he_sig_b2_mu->info1);
+
+	ppdu_info->cur_usr_idx = userid;
+	sta_id = u32_get_bits(info[0],
+			      HAL_TX_MON_HE_SIG_B2_MU_INFO0_STA_ID);
+	sta_spatial_config = u32_get_bits(info[0],
+					  HAL_TX_MON_HE_SIG_B2_MU_INFO0_SPATIAL_CFG);
+	sta_mcs = u32_get_bits(info[0],
+			       HAL_TX_MON_HE_SIG_B2_MU_INFO0_STA_MCS);
+	coding = u32_get_bits(info[0],
+			      HAL_TX_MON_HE_SIG_B2_MU_INFO0_STA_CODING);
+	nss = u32_get_bits(info[0],
+			   HAL_TX_MON_HE_SIG_B2_MU_INFO0_NSTS) + 1;
+	user_order = u32_get_bits(info[1],
+				  HAL_TX_MON_HE_SIG_B2_MU_INFO1_USER_ORDER);
+
+	ppdu_info->rx_status.userstats[userid].he_data1 |=
+			IEEE80211_RADIOTAP_HE_DATA1_DATA_MCS_KNOWN |
+			IEEE80211_RADIOTAP_HE_DATA1_CODING_KNOWN;
+	ppdu_info->rx_status.userstats[userid].mcs = sta_mcs;
+	ppdu_info->rx_status.userstats[userid].he_data3 |=
+			sta_mcs << HE_TRANSMIT_MCS_SHIFT;
+	ppdu_info->rx_status.userstats[userid].he_data3 |=
+			coding << HE_CODING_SHIFT;
+	ppdu_info->rx_status.userstats[userid].he_data4 |=
+			sta_id << HE_STA_ID_SHIFT;
+	ppdu_info->rx_status.userstats[userid].nss = nss;
+	ppdu_info->rx_status.userstats[userid].he_data6 |= nss;
+}
+
+static __always_inline void
+ath12k_wifi7_hal_mon_tx_parse_he_sig_b2_ofdma
+			(const struct hal_tx_mon_he_sig_b2_ofdma *he_sig_b2_ofdma,
+			 u32 userid,
+			 struct hal_tx_mon_ppdu_info *ppdu_info)
+{
+	u16 sta_id = 0;
+	u8  nss = 0;
+	u8  txbf = 0;
+	u8  sta_mcs = 0;
+	u8  sta_dcm = 0;
+	u8  coding = 0;
+	u8  user_order = 0;
+	u32 info[2];
+
+	info[0] = __le32_to_cpu(he_sig_b2_ofdma->info0);
+	info[1] = __le32_to_cpu(he_sig_b2_ofdma->info1);
+
+	ppdu_info->cur_usr_idx = userid;
+	sta_id = u32_get_bits(info[0],
+			      HAL_TX_MON_HE_SIG_B2_OFDMA_INFO0_STA_ID);
+	nss = u32_get_bits(info[0],
+			   HAL_TX_MON_HE_SIG_B2_OFDMA_INFO0_NSTS);
+	txbf = u32_get_bits(info[0],
+			    HAL_TX_MON_HE_SIG_B2_OFDMA_INFO0_TXBF);
+	sta_mcs = u32_get_bits(info[0],
+			       HAL_TX_MON_HE_SIG_B2_OFDMA_INFO0_STA_MCS);
+	sta_dcm = u32_get_bits(info[0],
+			       HAL_TX_MON_HE_SIG_B2_OFDMA_INFO0_STA_DCM);
+	coding = u32_get_bits(info[0],
+			      HAL_TX_MON_HE_SIG_B2_OFDMA_INFO0_STA_CODING);
+	user_order = u32_get_bits(info[1],
+				  HAL_TX_MON_HE_SIG_B2_OFDMA_INFO1_USER_ORDER);
+
+	ppdu_info->rx_status.userstats[userid].he_data1 |=
+				IEEE80211_RADIOTAP_HE_DATA1_DATA_MCS_KNOWN |
+				IEEE80211_RADIOTAP_HE_DATA1_CODING_KNOWN |
+				IEEE80211_RADIOTAP_HE_DATA1_DATA_DCM_KNOWN;
+	ppdu_info->rx_status.userstats[userid].he_data2 |=
+				IEEE80211_RADIOTAP_HE_DATA2_TXBF_KNOWN;
+	ppdu_info->rx_status.userstats[userid].mcs = sta_mcs;
+	ppdu_info->rx_status.userstats[userid].he_data3 |=
+				sta_mcs << HE_TRANSMIT_MCS_SHIFT;
+	ppdu_info->rx_status.userstats[userid].he_data3 |=
+				sta_dcm << HE_DCM_SHIFT;
+	ppdu_info->rx_status.userstats[userid].he_data3 |=
+				coding << HE_CODING_SHIFT;
+	ppdu_info->rx_status.userstats[userid].he_data4 |=
+				sta_id << HE_STA_ID_SHIFT;
+	ppdu_info->rx_status.userstats[userid].he_data5 |=
+				txbf << HE_TXBF_SHIFT;
+	ppdu_info->rx_status.userstats[userid].nss = nss;
+	ppdu_info->rx_status.userstats[userid].he_data6 |= nss;
+}
+
+static __always_inline void
+ath12k_wifi7_hal_mon_tx_parse_vht_sig_a
+				(const struct hal_tx_mon_mactx_vht_sig_a *vht_sig_a,
+				 u32 userid,
+				 struct hal_tx_mon_ppdu_info *ppdu_info,
+				 struct hal_tx_mon_status_info *status_info)
+{
+	u8  bandwidth = 0;
+	u8  is_stbc = 0;
+	u8  group_id = 0;
+	u32 nss_comb = 0;
+	u8  nss_su = 0;
+	u8  nss_mu[4] = {0};
+	u8  sgi = 0;
+	u8  coding = 0;
+	u8  mcs = 0;
+	u8  beamformed = 0;
+	u16 partial_aid = 0;
+	u32 info[2];
+
+	info[0] = __le32_to_cpu(vht_sig_a->info0);
+	info[1] = __le32_to_cpu(vht_sig_a->info1);
+
+	bandwidth = u32_get_bits(info[0],
+				 HAL_TX_MON_VHT_SIG_A_INFO0_BANDWIDTH);
+	is_stbc = u32_get_bits(info[0],
+			       HAL_TX_MON_VHT_SIG_A_INFO0_STBC);
+	group_id = u32_get_bits(info[0],
+				HAL_TX_MON_VHT_SIG_A_INFO0_GROUP_ID);
+	nss_comb = u32_get_bits(info[0],
+				HAL_TX_MON_VHT_SIG_A_INFO0_N_STS);
+	sgi = u32_get_bits(info[1],
+			   HAL_TX_MON_VHT_SIG_A_INFO1_GI_SETTING);
+	coding = u32_get_bits(info[1],
+			      HAL_TX_MON_VHT_SIG_A_INFO1_SU_MU_CODING);
+	mcs = u32_get_bits(info[1],
+			   HAL_TX_MON_VHT_SIG_A_INFO1_MCS);
+	beamformed = u32_get_bits(info[1],
+				  HAL_TX_MON_VHT_SIG_A_INFO1_BEAMFORMED);
+
+	nss_su = (nss_comb & VHT_SIG_SU_NSS_MASK) + 1;
+	partial_aid = (nss_comb >> 3) & VHT_SIG_SU_PARTIAL_AID_MASK;
+	nss_mu[0] = (nss_comb & VHT_SIG_SU_NSS_MASK) + 1;
+	nss_mu[1] = ((nss_comb >> 3) & VHT_SIG_SU_NSS_MASK) + 1;
+	nss_mu[2] = ((nss_comb >> 6) & VHT_SIG_SU_NSS_MASK) + 1;
+	nss_mu[3] = ((nss_comb >> 9) & VHT_SIG_SU_NSS_MASK) + 1;
+
+	ppdu_info->rx_status.ldpc =
+			(coding == HAL_RX_SU_MU_CODING_LDPC) ? 1 : 0;
+	status_info->sw_frame_group_id = group_id;
+	ppdu_info->rx_status.sgi = sgi;
+	ppdu_info->rx_status.is_stbc = is_stbc;
+	ppdu_info->rx_status.bw = bandwidth;
+	ppdu_info->rx_status.beamformed = beamformed;
+
+	if (group_id == 0 || group_id == 63) {
+		ppdu_info->rx_status.reception_type =
+			HAL_RX_RECEPTION_TYPE_SU;
+		ppdu_info->rx_status.mcs = mcs;
+		ppdu_info->rx_status.nss = nss_su & VHT_SIG_SU_NSS_MASK;
+		ppdu_info->rx_status.userstats[userid].vht_flag_values3[0] =
+			((mcs << 4) | nss_su);
+	} else {
+		ppdu_info->rx_status.reception_type =
+			HAL_RX_RECEPTION_TYPE_MU_MIMO;
+		ppdu_info->rx_status.userstats[userid].mcs = mcs;
+		ppdu_info->rx_status.userstats[userid].nss =
+			nss_su & VHT_SIG_SU_NSS_MASK;
+		ppdu_info->rx_status.userstats[userid].vht_flag_values3[0] =
+			((mcs << 4) | nss_mu[0]);
+		ppdu_info->rx_status.userstats[userid].vht_flag_values3[1] =
+			((mcs << 4) | nss_mu[1]);
+		ppdu_info->rx_status.userstats[userid].vht_flag_values3[2] =
+			((mcs << 4) | nss_mu[2]);
+		ppdu_info->rx_status.userstats[userid].vht_flag_values3[3] =
+			((mcs << 4) | nss_mu[3]);
+	}
+
+	ppdu_info->rx_status.userstats[userid].vht_flag_values2 = bandwidth;
+	ppdu_info->rx_status.userstats[userid].vht_flag_values4 = coding;
+	ppdu_info->rx_status.userstats[userid].vht_flag_values5 = group_id;
+	ppdu_info->rx_status.userstats[userid].vht_flag_values6 = partial_aid;
+}
+
+static __always_inline void
+ath12k_wifi7_hal_mon_tx_parse_l_sig_a(const struct hal_tx_mon_l_sig_a *l_sig_a,
+				      struct hal_tx_mon_ppdu_info *ppdu_info)
+{
+	u8 rate = 0;
+	u32 info0;
+
+	info0 = __le32_to_cpu(l_sig_a->info0);
+
+	rate = u32_get_bits(info0, HAL_TX_MON_L_SIG_A_INFO0_RATE);
+
+	switch (rate) {
+	case 8:
+		ppdu_info->rx_status.rate = HAL_11A_RATE_0MCS;
+		ppdu_info->rx_status.mcs = HAL_LEGACY_MCS0;
+		break;
+	case 9:
+		ppdu_info->rx_status.rate = HAL_11A_RATE_1MCS;
+		ppdu_info->rx_status.mcs = HAL_LEGACY_MCS1;
+		break;
+	case 10:
+		ppdu_info->rx_status.rate = HAL_11A_RATE_2MCS;
+		ppdu_info->rx_status.mcs = HAL_LEGACY_MCS2;
+		break;
+	case 11:
+		ppdu_info->rx_status.rate = HAL_11A_RATE_3MCS;
+		ppdu_info->rx_status.mcs = HAL_LEGACY_MCS3;
+		break;
+	case 12:
+		ppdu_info->rx_status.rate = HAL_11A_RATE_4MCS;
+		ppdu_info->rx_status.mcs = HAL_LEGACY_MCS4;
+		break;
+	case 13:
+		ppdu_info->rx_status.rate = HAL_11A_RATE_5MCS;
+		ppdu_info->rx_status.mcs = HAL_LEGACY_MCS5;
+		break;
+	case 14:
+		ppdu_info->rx_status.rate = HAL_11A_RATE_6MCS;
+		ppdu_info->rx_status.mcs = HAL_LEGACY_MCS6;
+		break;
+	case 15:
+		ppdu_info->rx_status.rate = HAL_11A_RATE_7MCS;
+		ppdu_info->rx_status.mcs = HAL_LEGACY_MCS7;
+		break;
+	default:
+		break;
+	}
+
+	ppdu_info->rx_status.ofdm_flag = 1;
+	ppdu_info->rx_status.reception_type = HAL_RX_RECEPTION_TYPE_SU;
+}
+
+static __always_inline void
+ath12k_wifi7_hal_mon_tx_parse_l_sig_b(const struct hal_tx_mon_l_sig_b *l_sig_b,
+				      struct hal_tx_mon_ppdu_info *ppdu_info)
+{
+	u8 rate = 0;
+	u32 info0;
+
+	info0 = __le32_to_cpu(l_sig_b->info0);
+
+	rate = u32_get_bits(info0, HAL_TX_MON_L_SIG_B_INFO0_RATE);
+
+	switch (rate) {
+	case 1:
+		ppdu_info->rx_status.rate = HAL_11B_RATE_3MCS;
+		ppdu_info->rx_status.mcs = HAL_LEGACY_MCS3;
+		break;
+	case 2:
+		ppdu_info->rx_status.rate = HAL_11B_RATE_2MCS;
+		ppdu_info->rx_status.mcs = HAL_LEGACY_MCS2;
+		break;
+	case 3:
+		ppdu_info->rx_status.rate = HAL_11B_RATE_1MCS;
+		ppdu_info->rx_status.mcs = HAL_LEGACY_MCS1;
+		break;
+	case 4:
+		ppdu_info->rx_status.rate = HAL_11B_RATE_0MCS;
+		ppdu_info->rx_status.mcs = HAL_LEGACY_MCS0;
+		break;
+	case 5:
+		ppdu_info->rx_status.rate = HAL_11B_RATE_6MCS;
+		ppdu_info->rx_status.mcs = HAL_LEGACY_MCS6;
+		break;
+	case 6:
+		ppdu_info->rx_status.rate = HAL_11B_RATE_5MCS;
+		ppdu_info->rx_status.mcs = HAL_LEGACY_MCS5;
+		break;
+	case 7:
+		ppdu_info->rx_status.rate = HAL_11B_RATE_4MCS;
+		ppdu_info->rx_status.mcs = HAL_LEGACY_MCS4;
+		break;
+	default:
+		break;
+	}
+
+	ppdu_info->rx_status.cck_flag = 1;
+	ppdu_info->rx_status.reception_type = HAL_RX_RECEPTION_TYPE_SU;
+}
+static __always_inline void
 ath12k_hal_mon_tx_parse_mon_buf_addr(const void *tlv_data, void *packet_info)
 {
 	struct hal_tx_mon_buf_addr *mon_buf_addr =
@@ -2637,40 +3074,71 @@ ath12k_wifi7_hal_mon_tx_parse_status_tlv(struct ath12k_hal *hal,
 		break;
 	}
 
-	case HAL_MACTX_HE_SIG_A_SU:
-		ath12k_wifi7_hal_mon_parse_he_sig_su(tlv_data, &tx_ppdu_info->rx_status);
+	case HAL_MACTX_HE_SIG_A_SU: {
+		ath12k_wifi7_hal_mon_tx_parse_he_sig_a_su(tlv_data,
+							  tx_ppdu_info);
+		status = HAL_TX_MON_MACTX_HE_SIG_A_SU;
 		break;
+	}
 
-	case HAL_MACTX_HE_SIG_A_MU_DL:
-		ath12k_wifi7_hal_mon_parse_he_sig_mu(tlv_data, &tx_ppdu_info->rx_status);
+	case HAL_MACTX_HE_SIG_A_MU_DL: {
+		ath12k_wifi7_hal_mon_tx_parse_he_sig_a_mu_dl(tlv_data,
+							     tx_ppdu_info);
+		status = HAL_TX_MON_MACTX_HE_SIG_A_MU_DL;
 		break;
+	}
 
-	case HAL_MACTX_HE_SIG_B1_MU:
-		ath12k_wifi7_hal_mon_parse_he_sig_b1_mu(tlv_data,
-							&tx_ppdu_info->rx_status);
+	case HAL_MACTX_HE_SIG_B1_MU: {
+		status = HAL_TX_MON_MACTX_HE_SIG_B1_MU;
 		break;
+	}
 
-	case HAL_MACTX_HE_SIG_B2_MU:
-		ath12k_wifi7_hal_mon_parse_he_sig_b2_mu(tlv_data,
-							&tx_ppdu_info->rx_status);
+	case HAL_MACTX_HE_SIG_B2_MU: {
+		ath12k_wifi7_hal_mon_tx_parse_he_sig_b2_mu(tlv_data,
+							   userid,
+							   tx_ppdu_info);
+		status = HAL_TX_MON_MACTX_HE_SIG_B2_MU;
 		break;
+	}
 
-	case HAL_MACTX_HE_SIG_B2_OFDMA:
-		ath12k_wifi7_hal_mon_parse_he_sig_b2_ofdma(tlv_data,
-							   &tx_ppdu_info->rx_status);
+	case HAL_MACTX_HE_SIG_B2_OFDMA: {
+		ath12k_wifi7_hal_mon_tx_parse_he_sig_b2_ofdma(tlv_data,
+							      userid,
+							      tx_ppdu_info);
+		status = HAL_TX_MON_MACTX_HE_SIG_B2_OFDMA;
 		break;
+	}
 
-	case HAL_MACTX_VHT_SIG_A:
-		ath12k_wifi7_hal_mon_parse_vht_sig_a(tlv_data, &tx_ppdu_info->rx_status);
+	case HAL_MACTX_VHT_SIG_A: {
+		ath12k_wifi7_hal_mon_tx_parse_vht_sig_a(tlv_data,
+							userid,
+							tx_ppdu_info,
+							status_info);
+		status = HAL_TX_MON_MACTX_VHT_SIG;
 		break;
+	}
 
-	case HAL_MACTX_L_SIG_A:
-		ath12k_wifi7_hal_mon_parse_l_sig_a(tlv_data, &tx_ppdu_info->rx_status);
-		break;
+	case HAL_MACTX_L_SIG_A: {
+		u8 *l_sig_a_info = NULL;
 
-	case HAL_MACTX_L_SIG_B:
-		ath12k_wifi7_hal_mon_parse_l_sig_b(tlv_data, &tx_ppdu_info->rx_status);
+		l_sig_a_info = (u8 *)tlv_data;
+		ath12k_wifi7_hal_mon_tx_parse_l_sig_a(tlv_data,
+						      tx_ppdu_info);
+		tx_ppdu_info->rx_status.l_sig_a_info = *((u32 *)l_sig_a_info);
+		status = HAL_TX_MON_MACTX_L_SIG_A;
 		break;
+	}
+
+	case HAL_MACTX_L_SIG_B: {
+		u8 *l_sig_b_info = NULL;
+
+		l_sig_b_info = (u8 *)tlv_data;
+		ath12k_wifi7_hal_mon_tx_parse_l_sig_b(tlv_data,
+						      tx_ppdu_info);
+		tx_ppdu_info->rx_status.l_sig_b_info = *((u32 *)l_sig_b_info);
+		status = HAL_TX_MON_MACTX_L_SIG_B;
+		break;
+	}
 
 	case HAL_RX_FRAME_BITMAP_ACK: {
 		const struct hal_rx_frame_bitmap_ack *fbm_ack = tlv_data;

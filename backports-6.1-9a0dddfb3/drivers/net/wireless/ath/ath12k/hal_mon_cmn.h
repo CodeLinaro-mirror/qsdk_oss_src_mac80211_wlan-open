@@ -100,6 +100,19 @@ struct hal_rx_user_status {
 	u16 ht_flags;
 	u16 vht_flags;
 	u16 he_flags;
+	u8  vht_flag_values2;
+	u8  vht_flag_values3[4];
+	u8  vht_flag_values4;
+	u8  vht_flag_values5;
+	u16 vht_flag_values6;
+	u16 he_flags1;
+	u16 he_flags2;
+	u16 he_data1;
+	u16 he_data2;
+	u16 he_data3;
+	u16 he_data4;
+	u16 he_data5;
+	u16 he_data6;
 	u8 rs_flags;
 	u8 ldpc;
 	u16 mpdu_cnt_fcs_ok;
@@ -213,6 +226,8 @@ struct hal_rx_mon_ppdu_info {
 	u16 he_data4;
 	u16 he_data5;
 	u16 he_data6;
+	u32 l_sig_a_info;
+	u32 l_sig_b_info;
 	u32 ppdu_len;
 	u16 prev_ppdu_id;
 	u32 device_id;
@@ -314,6 +329,14 @@ enum hal_tx_mon_status {
 	HAL_TX_MON_FRAME_BITMAP_ACK,
 	HAL_TX_MON_MSDU_START,
 	HAL_TX_MON_RESPONSE_END_STATUS_INFO,
+	HAL_TX_MON_MACTX_HE_SIG_A_SU,
+	HAL_TX_MON_MACTX_HE_SIG_A_MU_DL,
+	HAL_TX_MON_MACTX_HE_SIG_B1_MU,
+	HAL_TX_MON_MACTX_HE_SIG_B2_MU,
+	HAL_TX_MON_MACTX_HE_SIG_B2_OFDMA,
+	HAL_TX_MON_MACTX_VHT_SIG,
+	HAL_TX_MON_MACTX_L_SIG_A,
+	HAL_TX_MON_MACTX_L_SIG_B,
 	HAL_TX_MON_BUFFER_ADDR,
 	HAL_TX_MON_DATA,
 	HAL_TX_MON_FW2SW,
@@ -394,6 +417,7 @@ struct hal_tx_mon_wmask_config {
  * @response_type: Response type in response window
  * @ndp_frame: NDP frame
  * @reserved: reserved bits
+ * @sw_frame_group_id: software frame group ID
  * @buffer: Packet buffer pointer address
  * @offset: Packet buffer offset
  * @length: Packet buffer length
@@ -408,6 +432,7 @@ struct hal_tx_mon_status_info {
 	u32 response_type : 5,
 	    ndp_frame : 2,
 	    reserved : 25;
+	u8  sw_frame_group_id;
 	void *buffer;
 	u32 offset;
 	u32 length;
