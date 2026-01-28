@@ -176,6 +176,55 @@ struct wmi_gpio_input_event {
 	__le32 value;
 };
 
+#define WMI_VDEV_AGGR_AC			GENMASK(2, 0)
+#define WMI_VDEV_AGGR_TYPE			GENMASK(3, 2)
+#define WMI_VDEV_TX_AGGR_SZ_DISABLE		GENMASK(4, 3)
+#define WMI_VDEV_RX_AGGR_SZ_DISABLE		GENMASK(5, 4)
+#define WMI_VDEV_AGGR_AC_ENABLE			GENMASK(6, 5)
+
+struct set_custom_aggr_size_params {
+	u32 vdev_id;
+	u32 tx_aggr_size;
+	u32 rx_aggr_size;
+	u32 ac;
+	u32 aggr_type;
+	u32 tx_aggr_size_disable;
+	u32 rx_aggr_size_disable;
+	u32 tx_ac_enable;
+};
+
+/**
+ * struct wmi_set_custom_aggr_size_params_cmd - Send custom aggregation param
+ * @tlv_header: Type-Length-Value header used for identifying and parsing
+ * @vdev_id: ID of the vdev to which this custom aggr param to be applied
+ * @tx_aggr_size: Size for tx aggregation. Max MPDUs per A-MPDU or max MSDUs
+ * per A-MSDU based on aggr_type field.
+ * @rx_aggr_size: Size for rx aggregation. Block ack window size limit for a
+ * given vdev.
+ * @enable_bitmap: To set TX aggregation size limits per VDEV per AC
+ * bits 1:0 (ac): Access Category (0x0=BE, 0x1=BK, 0x2=VI, 0x3=VO). If
+ * tx_ac_enable bit is not set, tx_aggr_size is applied for all Access
+ * Categories
+ * bit 2 (aggr_type):            TX Aggregation Type (0=A-MPDU, 1=A-MSDU)
+ * bit 3 (tx_aggr_size_disable): If set tx_aggr_size is invalid
+ * bit 4 (rx_aggr_size_disable): If set rx_aggr_size is invalid
+ * bit 5 (tx_ac_enable):         If set, above ac bitmap is valid.
+ * bits 31:6:                    Reserved bits. should be set to zero.
+ */
+struct wmi_set_custom_aggr_size_params_cmd {
+	u32 tlv_header;
+	u32 vdev_id;
+	u32 tx_aggr_size;
+	u32 rx_aggr_size;
+	u32 enable_bitmap;
+} __packed;
+
+enum wmi_vdev_aggr_type {
+	WMI_VDEV_CUSTOM_AGGR_TYPE_AMPDU = 0,
+	WMI_VDEV_CUSTOM_AGGR_TYPE_AMSDU = 1,
+	WMI_VDEV_CUSTOM_AGGR_TYPE_MAX,
+};
+
 #define WMI_TLV_LEN	GENMASK(15, 0)
 #define WMI_TLV_TAG	GENMASK(31, 16)
 #define TLV_HDR_SIZE	sizeof_field(struct wmi_tlv, header)
@@ -9730,4 +9779,6 @@ int ath12k_wmi_atf_send_group_config(struct ath12k *ar);
 int ath12k_wmi_atf_send_peer_config(struct ath12k *ar,
 				    struct ath12k_atf_peer_params *peer_param);
 int ath12k_wmi_peer_delete_all(struct ath12k_link_vif *arvif);
+int ath12k_wmi_send_aggr_size_cmd(struct ath12k *ar,
+				  struct set_custom_aggr_size_params *params);
 #endif

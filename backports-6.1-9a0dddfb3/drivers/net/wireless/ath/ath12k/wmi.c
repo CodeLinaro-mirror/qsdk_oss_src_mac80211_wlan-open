@@ -19460,3 +19460,54 @@ int ath12k_wmi_vdev_tsf_tstamp_action_cmd(struct ath12k *ar, u8 vdev_id)
 
 	return ret;
 }
+
+int ath12k_wmi_send_aggr_size_cmd(struct ath12k *ar,
+				  struct set_custom_aggr_size_params *params)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct ath12k_base *ab = wmi->wmi_ab->ab;
+	struct wmi_set_custom_aggr_size_params_cmd *cmd = NULL;
+	struct sk_buff *skb;
+	int ret, len;
+
+	len = sizeof(*cmd);
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (void *)skb->data;
+	cmd->tlv_header = FIELD_PREP(WMI_TLV_TAG,
+				     WMI_TAG_VDEV_SET_CUSTOM_AGGR_SIZE_CMD) |
+		FIELD_PREP(WMI_TLV_LEN, len - TLV_HDR_SIZE);
+
+	cmd->vdev_id = params->vdev_id;
+	cmd->tx_aggr_size = params->tx_aggr_size;
+	cmd->rx_aggr_size = params->rx_aggr_size;
+	cmd->enable_bitmap = FIELD_PREP(WMI_VDEV_AGGR_AC, params->ac) |
+		FIELD_PREP(WMI_VDEV_AGGR_TYPE, params->aggr_type) |
+		FIELD_PREP(WMI_VDEV_TX_AGGR_SZ_DISABLE,
+			   params->tx_aggr_size_disable) |
+		FIELD_PREP(WMI_VDEV_RX_AGGR_SZ_DISABLE,
+			   params->rx_aggr_size_disable) |
+		FIELD_PREP(WMI_VDEV_AGGR_AC_ENABLE,
+			   params->tx_ac_enable);
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "WMI set aggr size vdev_id %d tx_aggr %d rx_aggr %d ac %d aggr_type %d tx_aggr_size_disable %d rx_aggr_size_disable %d tx_ac_enable %d",
+		   params->vdev_id, params->tx_aggr_size, params->rx_aggr_size,
+		   params->ac, params->aggr_type, params->tx_aggr_size_disable,
+		   params->rx_aggr_size_disable, params->tx_ac_enable);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb,
+				  WMI_VDEV_SET_CUSTOM_AGGR_SIZE_CMDID);
+
+	if (ret) {
+		ath12k_warn(ab,
+			    "Failed to send WMI_VDEV_SET_CUSTOM_AGGR_SIZE_CMDID");
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+
