@@ -2409,6 +2409,8 @@ void ath12k_debugfs_nrp_clean(struct ath12k *ar, const u8 *addr, int num_nrp)
 {
 	int i, j;
 	char fname[MAC_UNIT_LEN * ETH_ALEN] = {0};
+	struct ath12k_link_vif *arvif = NULL;
+	struct ieee80211_vif *vif = NULL;
 
 	for (i = 0, j = 0; i < (MAC_UNIT_LEN * ETH_ALEN); i += MAC_UNIT_LEN, j++) {
 		if (j == ETH_ALEN - 1) {
@@ -2422,10 +2424,20 @@ void ath12k_debugfs_nrp_clean(struct ath12k *ar, const u8 *addr, int num_nrp)
 	if (!num_nrp) {
 		debugfs_remove_recursive(ar->debug.debugfs_nrp);
 		ar->debug.debugfs_nrp = NULL;
-		if (!ath12k_dp_smart_mon_enabled(ar))
+		if (!ath12k_dp_smart_mon_enabled(ar)) {
 			ath12k_reset_nrp_filter(ar, true);
-		else
+		} else {
 			ath12k_reset_smart_mon_filter(ar, true);
+			list_for_each_entry(arvif, &ar->arvifs, list) {
+				if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR &&
+				    arvif->is_started) {
+					vif = arvif->ahvif->vif;
+					ieee80211_enable_offchan_packet_capture(vif,
+										FALSE);
+					break;
+				}
+			}
+		}
 	}
 }
 
@@ -2692,10 +2704,13 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 				ret = -ENOENT;
 				goto err_free;
 			}
-			if (!smart_mon_enabled)
+			if (!smart_mon_enabled) {
 				ath12k_reset_nrp_filter(ar, false);
-			else
+			} else {
 				ath12k_reset_smart_mon_filter(ar, false);
+				ieee80211_enable_offchan_packet_capture(arvif->ahvif->vif,
+									TRUE);
+			}
 		}
 		spin_lock_bh(&dp->dp_lock);
 		list_add_tail(&nrp->list, &dp->neighbor_peers);
