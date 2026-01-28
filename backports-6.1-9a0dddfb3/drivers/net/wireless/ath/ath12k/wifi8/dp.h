@@ -43,6 +43,7 @@ struct ath12k_dp_hw_group_wifi8 {
 	/* lock for tx flow pool */
 	spinlock_t tx_pool_lock;
 	u8 num_pn_pages;
+	struct completion peer_init_done;
 };
 
 static inline struct ath12k_dp_wifi8 *ath12k_get_dp_wifi8(struct ath12k_dp *dp)

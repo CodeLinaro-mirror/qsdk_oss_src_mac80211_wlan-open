@@ -545,6 +545,10 @@ struct ath12k_dp_arch_ops {
 				 enum ath12k_dp_op_type optype);
 	void (*dp_link_vif_configure)(struct ath12k_dp *dp, struct ath12k_vif *ahvif,
 				      u8 link_id, enum ath12k_dp_op_type optype);
+	int (*get_peer_init_status)(struct ath12k_dp *dp,
+				    struct ath12k_dp_hw *dp_hw,
+				    u8 *addr);
+
 };
 
 struct ath12k_bp_stats {
@@ -1171,6 +1175,16 @@ static inline void ath12k_dp_arch_dp_link_vif_configure(struct ath12k_dp *dp,
 {
 	if (dp->arch_ops->dp_link_vif_configure)
 		dp->arch_ops->dp_link_vif_configure(dp, ahvif, link_id, optype);
+}
+
+static inline int ath12k_dp_arch_get_peer_init_status(struct ath12k_dp *dp,
+						      struct ath12k_dp_hw *dp_hw,
+						      u8 *addr)
+{
+	if (dp->arch_ops->get_peer_init_status)
+		return dp->arch_ops->get_peer_init_status(dp, dp_hw, addr);
+
+	return 0;
 }
 
 static inline void ath12k_dp_get_mac_addr(u32 addr_l32, u16 addr_h16, u8 *addr)

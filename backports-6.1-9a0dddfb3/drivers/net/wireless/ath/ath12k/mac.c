@@ -5649,6 +5649,7 @@ void ath12k_bss_assoc(struct ath12k *ar,
 	u16 bridge_bitmap;
 	u8 bssid[ETH_ALEN], num_devices;
 	bool is_bridge_vdev = ath12k_mac_is_bridge_vdev(arvif);
+	struct ath12k_hw *ah = NULL;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -5663,6 +5664,7 @@ void ath12k_bss_assoc(struct ath12k *ar,
 
 	ahvif = arvif->ahvif;
 	vif = ath12k_ahvif_to_vif(ahvif);
+	ah = ahvif->ah;
 
 	if (is_bridge_vdev) {
 		link_id = arvif->link_id;
@@ -5771,6 +5773,13 @@ void ath12k_bss_assoc(struct ath12k *ar,
 	if (!wait_for_completion_timeout(&ar->peer_assoc_done, 1 * HZ)) {
 		ath12k_warn(ar->ab, "failed to get peer assoc conf event for %pM vdev %i\n",
 			    bssid, arvif->vdev_id);
+		return;
+	}
+
+	ret = ath12k_dp_arch_get_peer_init_status(dp, &ah->dp_hw, vif->cfg.ap_addr);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to get successful peer assoc init status for %pM\n",
+			    vif->cfg.ap_addr);
 		return;
 	}
 
@@ -13410,8 +13419,33 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 		}
 	}
 
-	if (old_state == IEEE80211_STA_AUTH &&  new_state == IEEE80211_STA_ASSOC)
+	if (old_state == IEEE80211_STA_AUTH &&  new_state == IEEE80211_STA_ASSOC) {
 		ath12k_wsi_load_info_stats_update(ahvif, ahsta, true);
+
+		if (vif->type == NL80211_IFTYPE_AP ||
+		    vif->type == NL80211_IFTYPE_MESH_POINT ||
+		    vif->type == NL80211_IFTYPE_ADHOC) {
+			links_map = ahsta->links_map;
+			for_each_set_bit(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
+				arvif = wiphy_dereference(hw->wiphy,
+							  ahvif->link[link_id]);
+				if (arvif)
+					break;
+			}
+			if (arvif) {
+				ret =
+				ath12k_dp_arch_get_peer_init_status(arvif->ar->ab->dp,
+								    &ah->dp_hw,
+								    sta->addr);
+				if (ret) {
+					ath12k_hw_warn(ah,
+						       "unable to get peer dp status %pM",
+						       sta->addr);
+					goto exit;
+				}
+			}
+		}
+	}
 
 ml_station_remove:
 	/* IEEE80211_STA_NONE -> IEEE80211_STA_NOTEXIST:

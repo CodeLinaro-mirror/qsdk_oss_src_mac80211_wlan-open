@@ -984,6 +984,11 @@ struct hal_tx_msdu_extension {
 	__le32 rsvd1[10];
 } __packed;
 
+#define HAL_TCL_GSE_CMD_INFO0_CONTROL_BUFFER_ADDR_39_32		GENMASK(7, 0)
+#define HAL_TCL_GSE_CMD_INFO0_GSE_CTRL				GENMASK(11, 8)
+#define HAL_TCL_GSE_CMD_INFO0_STATUS_DESTINATION_RING_ID	BIT(13)
+#define HAL_TCL_GSE_CMD_INFO1_TCL_CMD_TYPE			BIT(0)
+
 struct hal_tcl_gse_cmd {
 	__le32 control_buffer_addr_31_0;
 	__le32 info0;
@@ -994,11 +999,18 @@ struct hal_tcl_gse_cmd {
 	__le32 info2;
 } __packed;
 
+enum hal_tcl_cache_op {
+	HAL_TCL_CACHE_OP_INVALIDATE_SINGLE_ENTRY        = 4,
+	HAL_TCL_CACHE_OP_INVALIDATE_ALL                 = 5,
+};
+
 enum hal_tcl_cache_op_res {
 	HAL_TCL_CACHE_OP_RES_DONE,
 	HAL_TCL_CACHE_OP_RES_NOT_FOUND,
 	HAL_TCL_CACHE_OP_RES_TIMEOUT,
 };
+
+#define HAL_TCL_STATUS_RING_INFO0_GSE_CTRL		GENMASK(3, 0)
 
 struct hal_tcl_status_ring {
 	__le32 info0;
