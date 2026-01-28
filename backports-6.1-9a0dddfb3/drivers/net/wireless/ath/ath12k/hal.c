@@ -85,21 +85,25 @@ void ath12k_hal_reoq_lut_addr_read_enable(struct ath12k_base *ab)
 {
 	ab->hal.hal_ops->reoq_lut_addr_read_enable(ab);
 }
+EXPORT_SYMBOL(ath12k_hal_reoq_lut_addr_read_enable);
 
 void ath12k_hal_reoq_lut_set_max_peerid(struct ath12k_base *ab)
 {
 	ab->hal.hal_ops->reoq_lut_set_max_peerid(ab);
 }
+EXPORT_SYMBOL(ath12k_hal_reoq_lut_set_max_peerid);
 
 void ath12k_hal_write_ml_reoq_lut_addr(struct ath12k_base *ab, dma_addr_t paddr)
 {
 	ab->hal.hal_ops->write_ml_reoq_lut_addr(ab, paddr);
 }
+EXPORT_SYMBOL(ath12k_hal_write_ml_reoq_lut_addr);
 
 void ath12k_hal_write_reoq_lut_addr(struct ath12k_base *ab, dma_addr_t paddr)
 {
 	ab->hal.hal_ops->write_reoq_lut_addr(ab, paddr);
 }
+EXPORT_SYMBOL(ath12k_hal_write_reoq_lut_addr);
 
 void ath12k_hal_reo_hw_setup(struct ath12k_base *ab)
 {
@@ -1103,28 +1107,6 @@ void ath12k_hal_dump_srng_stats(struct ath12k_base *ab)
 				   srng->u.dst_ring.last_hp,
 				   jiffies_to_msecs(jiffies - srng->timestamp));
 	}
-}
-
-void ath12k_hal_vdev_mcast_ctrl_set(struct ath12k_base *ab, u32 vdev_id,
-				    u8 mcast_ctrl_val)
-{
-	u32 reg_addr, val, reg_val;
-	u8 reg_idx, index_in_reg;
-
-	reg_idx = HAL_TCL_VDEV_MCAST_PACKET_CTRL_REG_ID(vdev_id);
-	index_in_reg = HAL_TCL_VDEV_MCAST_PACKET_CTRL_INDEX_IN_REG(vdev_id);
-
-	reg_addr = HAL_TCL_R0_VDEV_MCAST_PACKET_CTRL_MAP_n_ADDR(reg_idx);
-	val = ath12k_hif_read32(ab, reg_addr);
-
-	val &= (~(HAL_TCL_VDEV_MCAST_PACKET_CTRL_MASK <<
-		  (HAL_TCL_VDEV_MCAST_PACKET_CTRL_SHIFT * index_in_reg)));
-
-	reg_val = val |
-		  ((HAL_TCL_VDEV_MCAST_PACKET_CTRL_MASK & mcast_ctrl_val) <<
-		   (HAL_TCL_VDEV_MCAST_PACKET_CTRL_SHIFT * index_in_reg));
-
-	ath12k_hif_write32(ab, reg_addr, reg_val);
 }
 
 void ath12k_hal_srng_hw_disable(struct ath12k_base *ab,

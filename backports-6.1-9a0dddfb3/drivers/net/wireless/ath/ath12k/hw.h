@@ -22,6 +22,11 @@ struct ath12k_cfr_peer_tx_param;
 #if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined (CPTCFG_ATH12K_MEM_PROFILE_512M)
 /* Num VDEVS per radio */
 #define TARGET_NUM_VDEVS        (8 + 1)
+/* Maximum number of AP interfaces allowed per radio for MBSSID.
+ * This excludes the monitor vdev included in TARGET_NUM_VDEVS.
+ */
+#define ATH12K_MBSSID_MAX_INTERFACES	(TARGET_NUM_VDEVS - 1)
+
 /* Num of Bridge vdevs per radio */
 #define TARGET_NUM_BRIDGE_VDEVS		0
 #define ATH12K_MAX_NUM_VDEVS_NLINK	TARGET_NUM_BRIDGE_VDEVS
@@ -38,6 +43,11 @@ struct ath12k_cfr_peer_tx_param;
 // #ifdef CONFIG_ATH12K_MEM_PROFILE_DEFAULT TODO Enable default profile
 /* Num VDEVS per radio */
 #define TARGET_NUM_VDEVS	(16 + 1)
+/* Maximum number of AP interfaces allowed per radio for MBSSID.
+ * This excludes the monitor vdev included in TARGET_NUM_VDEVS.
+ */
+#define ATH12K_MBSSID_MAX_INTERFACES	(TARGET_NUM_VDEVS - 1)
+
 /* Num of Bridge vdevs per radio */
 #define TARGET_NUM_BRIDGE_VDEVS		8
 #define ATH12K_MAX_NUM_VDEVS_NLINK	TARGET_NUM_VDEVS + \
@@ -113,7 +123,6 @@ struct ath12k_cfr_peer_tx_param;
 #define TARGET_MIN_MBSSID_GROUP_SIZE	2
 #define TARGET_MAX_MBSSID_GROUPS	(TARGET_MAX_BCN_OFFLD / \
 					 TARGET_MIN_MBSSID_GROUP_SIZE)
-#define TARGET_MAX_BEACON_SIZE		1500
 
 #define ATH12K_HW_DEFAULT_QUEUE		0
 #define ATH12K_HW_MAX_QUEUES		4

@@ -165,7 +165,7 @@ void ath12k_wifi7_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 
 	if (!dp_peer) {
 		spin_unlock_bh(&dp_hw->peer_lock);
-		ath12k_hw_warn(ah, "Failed to find peer:%pM", addr);
+		ath12k_dbg(NULL, ATH12K_DBG_PEER, "Failed to find peer:%pM", addr);
 		return;
 	}
 

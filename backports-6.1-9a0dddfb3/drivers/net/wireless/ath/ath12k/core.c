@@ -69,9 +69,9 @@ MODULE_PARM_DESC(ppe_ds_enable, "ppe_ds_enable: 0-disable, 1-enable");
 extern struct ath12k_ps_context ath12k_global_ps_ctx;
 #endif
 
-unsigned int ath12k_debug_mask = 0x00000010;
-module_param_named(debug_mask, ath12k_debug_mask, uint, 0644);
-MODULE_PARM_DESC(debug_mask, "Debugging mask");
+u64 ath12k_debug_mask = ATH12K_DBG_MAC;
+module_param_named(debug_mask, ath12k_debug_mask, ullong, 0644);
+MODULE_PARM_DESC(debug_mask, "Debugging mask (64-bit)");
 EXPORT_SYMBOL(ath12k_debug_mask);
 
 unsigned int ath12k_debug_mask_level;
@@ -97,6 +97,7 @@ unsigned int ath12k_frame_mode = ATH12K_HW_TXRX_ETHERNET;
 module_param_named(frame_mode, ath12k_frame_mode, uint, 0644);
 MODULE_PARM_DESC(frame_mode,
 		 "Datapath frame mode (0: raw, 1: native wifi (default), 2: ethernet)");
+EXPORT_SYMBOL(ath12k_frame_mode);
 
 bool ath12k_fse_3_tuple_enabled = true;
 module_param_named(fse_3_tuple_enabled, ath12k_fse_3_tuple_enabled, bool, 0644);
@@ -339,6 +340,7 @@ int ath12k_core_suspend_late(struct ath12k_base *ab)
 
 	ath12k_acpi_stop(ab);
 
+	ath12k_hif_mgmt_irq_disable(ab);
 	ath12k_hif_irq_disable(ab);
 	ath12k_hif_ce_irq_disable(ab);
 
@@ -787,7 +789,7 @@ int ath12k_core_fetch_rxgainlut(struct ath12k_base *ab, struct ath12k_board_data
 						 ATH12K_BD_IE_RXGAINLUT_DATA);
 	if (!ret)
 		goto exit;
-	
+
 	ret = ath12k_core_create_fallback_board_name(ab, rxgainlutdefaultname,
 					    	     BOARD_NAME_SIZE);
 	if (ret) {
@@ -1008,6 +1010,7 @@ static void ath12k_core_cleanup(struct ath12k_base *ab)
 	ath12k_wmi_detach(ab);
 	mutex_unlock(&ab->core_lock);
 
+	ath12k_mgmt_device_deinit(ab->mgmt);
 	ath12k_dp_cmn_device_deinit(ab->dp);
 	ath12k_hal_srng_deinit(ab);
 	ath12k_dp_umac_reset_deinit(ab);
@@ -1070,6 +1073,7 @@ void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag, bool standby_
 
 		if (!skip_power_down && !ab->powered_off) {
 			ab->qmi.num_radios = U8_MAX;
+			ath12k_hif_mgmt_irq_disable(ab);
 			ath12k_hif_irq_disable(ab);
 			ath12k_hif_ce_irq_disable(ab);
 			ath12k_dp_ppeds_interrupt_stop(ab);
@@ -1096,6 +1100,7 @@ static void ath12k_core_stop(struct ath12k_base *ab)
 	ath12k_acpi_stop(ab);
 	ath12k_hif_stop(ab);
 	ath12k_wmi_detach(ab);
+	ath12k_mgmt_device_deinit(ab->mgmt);
 	ath12k_dp_cmn_device_deinit(ab->dp);
 	ath12k_cfg_deinit(ab);
 
@@ -1338,14 +1343,44 @@ void ath12k_core_pdev_deinit(struct ath12k_base *ab)
 		ath12k_cfr_deinit(ab);
 }
 
+static int ath12k_core_gpio_init(struct ath12k *ar)
+{
+	int i;
+
+	for (i = 0; i < 32; i++) {
+		ar->radio_cfg.gpio_cfg[i].configured     = false;
+		ar->radio_cfg.gpio_cfg[i].gpio_pin       = i;
+		ar->radio_cfg.gpio_cfg[i].gpio_function  = 0;
+		ar->radio_cfg.gpio_cfg[i].gpio_pull_type = QCA_WLAN_GPIO_PULL_NONE;
+		ar->radio_cfg.gpio_cfg[i].gpio_dir       = QCA_WLAN_GPIO_INPUT;
+		ar->radio_cfg.gpio_cfg[i].gpio_intr_mode = QCA_WLAN_GPIO_INTMODE_DISABLE;
+		ar->radio_cfg.gpio_cfg[i].gpio_value     = 0;
+	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_BOOT,
+		   "GPIO configuration cache initialized\n");
+
+	return 0;
+}
+
 static int ath12k_core_pdev_create(struct ath12k_base *ab)
 {
-	int ret;
+	int ret, i;
 
 	ret = ath12k_dp_arch_pdev_alloc(ab->dp);
 	if (ret) {
 		ath12k_err(ab, "failed to attach DP pdev: %d\n", ret);
 		goto err_pdev_debug;
+	}
+
+	/* Initialize GPIO configuration cache for each radio */
+	for (i = 0; i < ab->num_radios; i++) {
+		ret = ath12k_core_gpio_init(ab->pdevs[i].ar);
+		if (ret) {
+			ath12k_err(ab, "failed to initialize GPIO for radio %d: %d\n",
+				   i, ret);
+			goto err_pdev_debug;
+		}
 	}
 
 	return 0;
@@ -1469,6 +1504,7 @@ static void ath12k_core_device_cleanup(struct ath12k_base *ab)
 {
 	mutex_lock(&ab->core_lock);
 
+	ath12k_hif_mgmt_irq_disable(ab);
 	ath12k_hif_irq_disable(ab);
 	ath12k_core_pdev_destroy(ab);
 	ath12k_dp_umac_reset_deinit(ab);
@@ -1554,7 +1590,7 @@ static void ath12k_core_hw_group_stop(struct ath12k_hw_group *ag)
 		clear_bit(ATH12K_FLAG_REGISTERED, &ab->dev_flags);
 
 		ath12k_core_device_cleanup(ab);
-		
+
 		if (ab->hw_params->reoq_lut_support &&
 		    !ab->powered_off) {
 			mutex_lock(&ab->core_lock);
@@ -1797,6 +1833,8 @@ core_pdev_create:
 		ath12k_hif_ppeds_irq_enable(ab, PPEDS_IRQ_PPE_WBM2SW_REL);
 #endif
 
+		ath12k_hif_mgmt_irq_enable(ab);
+
 		ret = ath12k_core_rfkill_config(ab);
 		if (ret && ret != -EOPNOTSUPP) {
 			mutex_unlock(&ab->core_lock);
@@ -1921,11 +1959,22 @@ static void ath12k_fw_stats_vdevs_free(struct list_head *head)
 	}
 }
 
+static void ath12k_fw_stats_vdev_extds_free(struct list_head *head)
+{
+	struct ath12k_fw_stats_vdev_extd *i, *tmp;
+
+	list_for_each_entry_safe(i, tmp, head, list) {
+		list_del(&i->list);
+		kfree(i);
+	}
+}
+
 void ath12k_fw_stats_init(struct ath12k *ar)
 {
 	INIT_LIST_HEAD(&ar->fw_stats.vdevs);
 	INIT_LIST_HEAD(&ar->fw_stats.pdevs);
 	INIT_LIST_HEAD(&ar->fw_stats.bcn);
+	INIT_LIST_HEAD(&ar->fw_stats.vdev_extds);
 	init_completion(&ar->fw_stats_complete);
 	init_completion(&ar->fw_stats_done);
 }
@@ -1935,6 +1984,7 @@ void ath12k_fw_stats_free(struct ath12k_fw_stats *stats)
 	ath12k_fw_stats_pdevs_free(&stats->pdevs);
 	ath12k_fw_stats_vdevs_free(&stats->vdevs);
 	ath12k_fw_stats_bcn_free(&stats->bcn);
+	ath12k_fw_stats_vdev_extds_free(&stats->vdev_extds);
 }
 EXPORT_SYMBOL(ath12k_fw_stats_free);
 
@@ -1944,6 +1994,7 @@ void ath12k_fw_stats_reset(struct ath12k *ar)
 	ath12k_fw_stats_free(&ar->fw_stats);
 	ar->fw_stats.num_vdev_recvd = 0;
 	ar->fw_stats.num_bcn_recvd = 0;
+	ar->fw_stats.num_vdev_extd_recvd = 0;
 	spin_unlock_bh(&ar->data_lock);
 }
 
@@ -2012,6 +2063,11 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 		goto err_firmware_stop;
 	}
 
+	ret = ath12k_mgmt_device_init(ab->mgmt);
+	if (ret) {
+		ath12k_err(ab, "Failed to init MGMT: %d", ret);
+		goto err_dp_free;
+	}
 
 	mutex_lock(&ag->mutex);
 	mutex_lock(&ab->core_lock);
@@ -2024,7 +2080,7 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 	ret = ath12k_core_start(ab);
 	if (ret) {
 		ath12k_err(ab, "failed to start core: %d\n", ret);
-		goto err_dp_free;
+		goto err_mgmt_free;
 	}
 
 	mutex_unlock(&ab->core_lock);
@@ -2158,6 +2214,9 @@ err_core_stop:
 	}
 	mutex_unlock(&ag->mutex);
 	goto exit;
+
+err_mgmt_free:
+	ath12k_mgmt_device_deinit(ab->mgmt);
 
 err_dp_free:
 	ath12k_dp_cmn_device_deinit(ab->dp);
@@ -2351,11 +2410,23 @@ void ath12k_core_halt(struct ath12k *ar)
 {
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_hw_group *ag = ab->ag;
+	int ret;
 
 	if (ab->is_bypassed)
 		return;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	/* The host sends a peer delete command to the firmware and records the peer in
+	 * the corresponding pdev’s peer_del tracker. When the firmware’s peer delete
+	 * response is received, the matching peer entry is removed from this tracker.
+	 * If an assert occurs before the firmware responds, the host is left with a stale
+	 * peer entry. To avoid this, flush the peer_del tracker for the asserted chip.
+	 */
+	ret = ath12k_peer_del_tracker_clear_pdev(ar->pdev);
+	if (ret)
+		ath12k_err(ab, "failed to clean up peer_del tracker for pdev:%d\n",
+			   ar->pdev_idx);
 
 	/* Send low ack disassoc to hostapd to free the peers from host
 	 * to associate fresh after recovery. It is expected that, this
@@ -2433,7 +2504,6 @@ void ath12k_core_radio_cleanup(struct ath12k *ar)
 	complete(&ar->scan.on_channel);
 	complete(&ar->peer_create_done);
 	complete(&ar->peer_assoc_done);
-	complete(&ar->peer_delete_done);
 	ath12k_debugfs_nrp_cleanup_all(ar);
 	complete(&ar->install_key_done);
 	complete(&ar->vdev_setup_done);
@@ -2803,7 +2873,8 @@ key_add:
 					 */
 					rcu_read_unlock();
 					ret = ath12k_mac_set_key(p_arvif->ar, SET_KEY,
-								 p_arvif,  p_arsta, key);
+								 p_arvif, p_arsta,
+								 key, NULL);
 					rcu_read_lock();
 					if (ret)
 						break;
@@ -2820,7 +2891,7 @@ key_add:
 				 */
 				rcu_read_unlock();
 				ret = ath12k_mac_set_key(p_arvif->ar, SET_KEY, p_arvif,
-							 p_arsta, key);
+							 p_arsta, key, NULL);
 				rcu_read_lock();
 			}
 		}
@@ -3283,6 +3354,25 @@ static void ath12k_core_peer_disassoc(struct ath12k_hw_group *ag,
 	}
 }
 
+static void ath12k_reset_group_key_slots(struct ath12k_link_vif *arvif,
+					 struct ath12k_vif *ahvif)
+{
+	struct ath12k_vlan_iface *vlan_iface;
+
+	bitmap_fill(arvif->free_groupidx_map, ATH12K_GROUP_KEYS_NUM_MAX);
+	/* HW group idx 0 reserved, mark unavailable */
+	clear_bit(0, arvif->free_groupidx_map);
+
+	if (ahvif->vif &&
+	    ahvif->vif->type == NL80211_IFTYPE_AP_VLAN) {
+		vlan_iface = ahvif->vlan_iface;
+		if (vlan_iface && !vlan_iface->is_wds_4addr)
+			memset(vlan_iface->grp_key_slot_map[arvif->link_id],
+			       ATH12K_GROUP_KEY_SLOT_INVALID,
+			       sizeof(vlan_iface->grp_key_slot_map[arvif->link_id]));
+	}
+}
+
 /* Wrapper function for recovery after crash
  * This recovery function will be called for
  * both Mode 1 and Mode 2. Because both Mode
@@ -3501,13 +3591,16 @@ skip_link_info:
 				}
 				spin_unlock_bh(&dp->dp_lock);
 
+				ath12k_reset_group_key_slots(arvif, ahvif);
 				for (key_idx = 0; key_idx < WMI_MAX_KEY_INDEX; key_idx++) {
 					key = arvif->keys[key_idx];
 					if (key) {
 						ath12k_dbg(ab, ATH12K_DBG_MODE1_RECOVERY,
 								"key:%p cipher:%d idx:%d flags:%d\n",
 								key, key->cipher, key->keyidx, key->flags);
-						ret = ath12k_mac_set_key(arvif->ar, SET_KEY, arvif, NULL, key);
+						ret = ath12k_mac_set_key(arvif->ar,
+									 SET_KEY, arvif,
+									 NULL, key, NULL);
 					}
 				}
 			}
@@ -3841,6 +3934,7 @@ static void ath12k_core_reset(struct work_struct *work)
 
 	mutex_lock(&ag->mutex);
 
+	ath12k_hif_mgmt_irq_disable(ab);
 	ath12k_core_disable_ext_irq_during_recovery(ab);
 	ath12k_hif_ce_irq_disable(ab);
 	ab->is_reset = true;
@@ -3933,7 +4027,8 @@ static void ath12k_core_reset(struct work_struct *work)
 
 	ath12k_dbg(ab, ATH12K_DBG_BOOT, "waiting recovery start...\n");
 
-	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2)
+	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2 &&
+	    ab->hif.bus == ATH12K_BUS_PCI)
 		ath12k_partner_chip_power_state_info(ag, FW_ASSERTED_CHIP_PWR_DOWN);
 
 	if (ab->fw_recovery_support) {
@@ -3979,7 +4074,8 @@ static void ath12k_core_reset(struct work_struct *work)
 			ab->powerup_triggered = true;
 		}
 
-		if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2)
+		if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2 &&
+		    ab->hif.bus == ATH12K_BUS_PCI)
 			ath12k_partner_chip_power_state_info(ag,
 							     FW_ASSERTED_CHIP_PWR_UP);
 
@@ -4002,7 +4098,7 @@ static int ath12k_core_panic_handler(struct notifier_block *nb,
 #endif
 	if (ab->in_panic)
 		goto panic_handler;
-	
+
 	ab->in_panic = true;
 
 	if (ab->hif.bus == ATH12K_BUS_PCI)
@@ -5328,5 +5424,218 @@ void ath12k_telemetry_notify_breach(u8 *mac_addr, u8 svc_id, u8 param,
 		   mac_addr);
 }
 
+void ath12k_rssi_rate_notify_breach_event(u8 *mac_addr, u8 breach_type,
+					  u32 threshold_value, u32 detected_value,
+					  bool set_clear)
+{
+	struct ath12k_hw_group *ag = NULL;
+	struct ieee80211_vif *vif = NULL;
+	struct ath12k_base *ab = NULL;
+	struct ath12k_dp_link_peer *peer = NULL;
+	struct ath12k_dp *dp;
+	int soc;
+	u8 mld_addr_buf[ETH_ALEN] = {0};
+	u8 *mld_addr = NULL;
+
+	if (!mac_addr)
+		return;
+
+	mutex_lock(&ath12k_hw_group_mutex);
+	list_for_each_entry(ag, &ath12k_hw_group_list, list) {
+		if (!ag) {
+			ath12k_err(NULL, "unable to fetch hw group\n");
+			continue;
+		}
+
+		for (soc = ag->num_probed; soc > 0; soc--) {
+			ab = ag->ab[soc - 1];
+			if (!ab) {
+				/* Control should not reach here */
+				ath12k_info(NULL, "SOC not initialized\n");
+				continue;
+			}
+
+			dp = ath12k_ab_to_dp(ab);
+			spin_lock_bh(&dp->dp_lock);
+			peer = ath12k_dp_link_peer_find_by_addr(dp, mac_addr);
+			if (peer) {
+				vif = peer->vif;
+				if (peer->mlo) {
+					ether_addr_copy(mld_addr_buf, peer->ml_addr);
+					mld_addr = mld_addr_buf;
+				}
+				ath12k_dbg(ab, ATH12K_DBG_TELEMETRY,
+					   "RSSI/Rate Breach detected: Peer %pM type %u\n",
+					   mac_addr, breach_type);
+				spin_unlock_bh(&dp->dp_lock);
+				mutex_unlock(&ath12k_hw_group_mutex);
+				ath12k_vendor_rssi_rate_notify_breach(vif,
+								      mac_addr,
+								      breach_type,
+								      threshold_value,
+								      detected_value,
+								      set_clear,
+								      mld_addr);
+				return;
+			}
+			spin_unlock_bh(&dp->dp_lock);
+		}
+	}
+	mutex_unlock(&ath12k_hw_group_mutex);
+
+	ath12k_dbg(NULL, ATH12K_DBG_TELEMETRY,
+		   "Peer(%pM) not found for RSSI/Rate breach notification",
+		   mac_addr);
+}
+
+int ath12k_skb_rhash_tbl_init(struct ath12k *ar)
+{
+	struct rhashtable_params *param;
+	struct rhashtable *rhash_tbl;
+	int ret;
+
+	if (ar->rhash_tx_skb_tbl)
+		return 0;
+
+	rhash_tbl = kzalloc(sizeof(*rhash_tbl), GFP_ATOMIC);
+	if (!rhash_tbl)
+		return -ENOMEM;
+
+	param = &ar->rhash_tx_skb_param;
+
+	param->key_offset = offsetof(struct ath12k_skb_tx_info, skb);
+	param->head_offset = offsetof(struct ath12k_skb_tx_info, rhash_skb);
+	param->key_len = sizeof_field(struct ath12k_skb_tx_info, skb);
+	param->automatic_shrinking = true;
+
+	ret = rhashtable_init(rhash_tbl, param);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to init tx skb rhashtable %d\n",
+			    ret);
+		goto err_free;
+	}
+
+	spin_lock_init(&ar->rhash_tx_lock);
+	ar->rhash_tx_skb_tbl = rhash_tbl;
+
+	return 0;
+
+err_free:
+	kfree(rhash_tbl);
+
+	return ret;
+}
+EXPORT_SYMBOL(ath12k_skb_rhash_tbl_init);
+
+void ath12k_skb_rhash_tbl_destroy(struct ath12k *ar)
+{
+	struct ath12k_skb_tx_info *skb_tx_info;
+	struct rhashtable_iter iter;
+	struct rhashtable *rtbl;
+
+	rtbl = ar->rhash_tx_skb_tbl;
+	if (!rtbl)
+		return;
+
+	spin_lock_bh(&ar->rhash_tx_lock);
+	ar->rhash_tx_skb_tbl = NULL;
+	spin_unlock_bh(&ar->rhash_tx_lock);
+
+	rhashtable_walk_enter(rtbl, &iter);
+	rhashtable_walk_start(&iter);
+	while ((skb_tx_info = rhashtable_walk_next(&iter)) != NULL) {
+		if (IS_ERR(skb_tx_info))
+			continue;
+
+		rhashtable_remove_fast(rtbl,
+				       &skb_tx_info->rhash_skb,
+				       ar->rhash_tx_skb_param);
+		kfree_rcu(skb_tx_info, rcu_head);
+	}
+	rhashtable_walk_stop(&iter);
+	rhashtable_walk_exit(&iter);
+
+	rhashtable_destroy(rtbl);
+	kfree(rtbl);
+}
+EXPORT_SYMBOL(ath12k_skb_rhash_tbl_destroy);
+
+int ath12k_skb_rhash_insert(struct ath12k *ar, struct sk_buff *skb,
+			    struct ieee80211_tx_rate rate)
+{
+	struct rhashtable_params *params = &ar->rhash_tx_skb_param;
+	struct ath12k_skb_tx_info *skb_tx_info;
+	struct rhashtable *rtbl;
+	void *ret;
+
+	spin_lock_bh(&ar->rhash_tx_lock);
+	rtbl = ar->rhash_tx_skb_tbl;
+	if (!rtbl) {
+		spin_unlock_bh(&ar->rhash_tx_lock);
+		return 0;
+	}
+
+	skb_tx_info = kzalloc(sizeof(*skb_tx_info), GFP_ATOMIC);
+	if (!skb_tx_info) {
+		spin_unlock_bh(&ar->rhash_tx_lock);
+		return -ENOMEM;
+	}
+
+	skb_tx_info->rate = rate;
+	skb_tx_info->skb = skb;
+	ret = rhashtable_lookup_get_insert_fast(rtbl,
+						&skb_tx_info->rhash_skb,
+						*params);
+	spin_unlock_bh(&ar->rhash_tx_lock);
+
+	if (ret) {
+		kfree_rcu(skb_tx_info, rcu_head);
+		if (IS_ERR(ret))
+			return PTR_ERR(ret);
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_skb_rhash_insert);
+
+void ath12k_skb_rhash_remove(struct ath12k *ar, struct sk_buff *skb)
+{
+	struct rhashtable_params *params = &ar->rhash_tx_skb_param;
+	struct ath12k_skb_tx_info *skb_tx_info;
+	struct rhash_head *rhead;
+	struct rhashtable *rtbl;
+
+	spin_lock_bh(&ar->rhash_tx_lock);
+	rtbl = ar->rhash_tx_skb_tbl;
+	if (!rtbl) {
+		spin_unlock_bh(&ar->rhash_tx_lock);
+		return;
+	}
+
+	skb_tx_info = ath12k_get_skb_tx_info(ar, skb);
+	if (skb_tx_info) {
+		rhead = &skb_tx_info->rhash_skb;
+		rhashtable_remove_fast(rtbl, rhead, *params);
+		kfree_rcu(skb_tx_info, rcu_head);
+	}
+	spin_unlock_bh(&ar->rhash_tx_lock);
+}
+EXPORT_SYMBOL(ath12k_skb_rhash_remove);
+
+struct ath12k_skb_tx_info *
+ath12k_get_skb_tx_info(struct ath12k *ar, struct sk_buff *skb)
+{
+	struct rhashtable *rtbl;
+	struct ath12k_skb_tx_info *info;
+
+	rtbl = ar->rhash_tx_skb_tbl;
+	if (!rtbl)
+		return NULL;
+
+	info = rhashtable_lookup_fast(rtbl, &skb,
+				      ar->rhash_tx_skb_param);
+	return info;
+}
+EXPORT_SYMBOL(ath12k_get_skb_tx_info);
 MODULE_DESCRIPTION("Driver support for Qualcomm Technologies WLAN devices");
 MODULE_LICENSE("Dual BSD/GPL");

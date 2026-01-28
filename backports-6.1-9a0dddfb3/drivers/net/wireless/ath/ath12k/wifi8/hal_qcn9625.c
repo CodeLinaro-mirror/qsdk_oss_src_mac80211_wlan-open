@@ -11,6 +11,8 @@
 #include "hal.h"
 #include <linux/cacheflush.h>
 
+extern void ath12k_wifi8_hal_mon_ops_init(struct ath12k_hal *hal, u8 hw_version);
+
 static const struct hal_srng_config hw_srng_config_template[] = {
 	/* TODO: max_rings can populated by querying HW capabilities */
 	/* REO2SW Rings */
@@ -195,14 +197,23 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.max_size = HAL_TQM2SW_RELEASE_RING_BASE_MSB_RING_SIZE,
 		.name = "tx_completion",
 	},
-	[HAL_RXDMA_BUF] = {
-		.start_ring_id = HAL_SRNG_SW2RXDMA_BUF0,
+	[HAL_WBM_BUF] = {
+		.start_ring_id = HAL_SRNG_RING_ID_WBM_BUF1,
+		.max_rings = 4,
+		.entry_size = sizeof(struct hal_wbm_buffer_ring) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_SRC,
+		.max_size = HAL_WBM_BUF_RING_MAX_SIZE,
+		.name = "WBM_buf",
+	},
+	[HAL_WBM_IDLE_BUF] = {
+		.start_ring_id = HAL_SRNG_RING_ID_WBM_IDLE_BUF0,
 		.max_rings = 1,
 		.entry_size = sizeof(struct hal_wbm_buffer_ring) >> 2,
-		.mac_type = ATH12K_HAL_SRNG_DMAC,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_SRC,
-		.max_size = HAL_RXDMA_RING_MAX_SIZE_BE,
-		.name = "Rxdma_buf",
+		.max_size = HAL_WBM_IDLE_BUF_RING_MAX_SIZE,
+		.name = "WBM_idle_buf",
 	},
 	[HAL_RXDMA_DST] = {
 		.start_ring_id = HAL_SRNG_RING_ID_WMAC1_RXDMA2SW0,
@@ -272,51 +283,61 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.mac_type = ATH12K_HAL_SRNG_PMAC,
 		.ring_dir = HAL_SRNG_DIR_DST,
 		.max_size = HAL_RXDMA_RING_MAX_SIZE_BE,
-	}
+	},
+	[HAL_WBM_BUF_MGMT] = {
+		.start_ring_id = HAL_SRNG_RING_ID_WBM_BUF_MGMT,
+		.max_rings = 1,
+		.entry_size = sizeof(struct hal_wbm_buffer_ring) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_SRC,
+		.max_size = HAL_WBM_BUF_RING_MAX_SIZE,
+		.name = "WBM_buf_mgmt",
+	},
+	[HAL_WBM_IDLE_BUF_MGMT] = {
+		.start_ring_id = HAL_SRNG_RING_ID_WBM_IDLE_BUF_MGMT,
+		.max_rings = 1,
+		.entry_size = sizeof(struct hal_wbm_buffer_ring) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_SRC,
+		.max_size = HAL_WBM_IDLE_BUF_RING_MAX_SIZE,
+		.name = "WBM_idle_buf_mgmt",
+	},
 };
 
 const struct ath12k_hw_regs qcn9625_regs = {
 	/* SW2TCL(x) R0 ring configuration address */
-	.hal_tcl1_ring_id = HWIO_TCL_R0_SW2TCL1_RING_ID_OFFS,
-	.hal_tcl1_ring_misc = HWIO_TCL_R0_SW2TCL1_RING_MISC_OFFS,
-	.hal_tcl1_ring_tp_addr_lsb = HWIO_TCL_R0_SW2TCL1_RING_TP_ADDR_LSB_OFFS,
-	.hal_tcl1_ring_tp_addr_msb = HWIO_TCL_R0_SW2TCL1_RING_TP_ADDR_MSB_OFFS,
-	.hal_tcl1_ring_consumer_int_setup_ix0 =
-				HWIO_TCL_R0_SW2TCL1_RING_CONSUMER_INT_SETUP_IX0_OFFS,
-	.hal_tcl1_ring_consumer_int_setup_ix1 =
-				HWIO_TCL_R0_SW2TCL1_RING_CONSUMER_INT_SETUP_IX1_OFFS,
-	.hal_tcl1_ring_msi1_base_lsb = HWIO_TCL_R0_SW2TCL1_RING_MSI1_BASE_LSB_OFFS,
-	.hal_tcl1_ring_msi1_base_msb = HWIO_TCL_R0_SW2TCL1_RING_MSI1_BASE_MSB_OFFS,
-	.hal_tcl1_ring_msi1_data = HWIO_TCL_R0_SW2TCL1_RING_MSI1_DATA_OFFS,
-	.hal_tcl1_ring_base_lsb = HWIO_TCL_R0_SW2TCL1_RING_BASE_LSB_OFFS,
-	.hal_tcl1_ring_base_msb = HWIO_TCL_R0_SW2TCL1_RING_BASE_MSB_OFFS,
-	.hal_tcl2_ring_base_lsb = HWIO_TCL_R0_SW2TCL2_RING_BASE_LSB_OFFS,
+	.hal_tcl1_ring_id = 0x1604,
+	.hal_tcl1_ring_misc = 0x160c,
+	.hal_tcl1_ring_tp_addr_lsb = 0x1618,
+	.hal_tcl1_ring_tp_addr_msb = 0x161c,
+	.hal_tcl1_ring_consumer_int_setup_ix0 = 0x162c,
+	.hal_tcl1_ring_consumer_int_setup_ix1 = 0x1630,
+	.hal_tcl1_ring_msi1_base_lsb = 0x1644,
+	.hal_tcl1_ring_msi1_base_msb = 0x1648,
+	.hal_tcl1_ring_msi1_data = 0x164c,
+	.hal_tcl1_ring_base_lsb = 0x15fc,
+	.hal_tcl1_ring_base_msb = 0x1600,
+	.hal_tcl2_ring_base_lsb = 0x1674,
 
 	/* TCL STATUS ring address */
-	.hal_tcl_status_ring_base_lsb = HWIO_TCL_R0_TCL2SW_STATUS1_RING_BASE_LSB_OFFS,
+	.hal_tcl_status_ring_base_lsb = 0x1cfc,
 
 	/* WBM idle link ring address */
-	.hal_wbm_idle_ring_base_lsb = HWIO_WBM_R0_WBM_IDLE_LINK_RING_BASE_LSB_OFFS,
-	.hal_wbm_idle_ring_misc_addr = HWIO_WBM_R0_WBM_IDLE_LINK_RING_MISC_OFFS,
-	.hal_wbm_r0_idle_list_cntl_addr = HWIO_WBM_R0_IDLE_LIST_CONTROL_OFFS,
-	.hal_wbm_r0_idle_list_size_addr = HWIO_WBM_R0_IDLE_LIST_SIZE_OFFS,
-	.hal_wbm_scattered_ring_base_lsb =
-				HWIO_WBM_R0_SCATTERED_LINK_DESC_LIST_BASE_LSB_OFFS,
-	.hal_wbm_scattered_ring_base_msb =
-				HWIO_WBM_R0_SCATTERED_LINK_DESC_LIST_BASE_MSB_OFFS,
-	.hal_wbm_scattered_desc_head_info_ix0 =
-				HWIO_WBM_R0_SCATTERED_LINK_DESC_PTR_HEAD_INFO_IX0_OFFS,
-	.hal_wbm_scattered_desc_head_info_ix1 =
-				HWIO_WBM_R0_SCATTERED_LINK_DESC_PTR_HEAD_INFO_IX1_OFFS,
-	.hal_wbm_scattered_desc_tail_info_ix0 =
-				HWIO_WBM_R0_SCATTERED_LINK_DESC_PTR_TAIL_INFO_IX0_OFFS,
-	.hal_wbm_scattered_desc_tail_info_ix1 =
-				HWIO_WBM_R0_SCATTERED_LINK_DESC_PTR_TAIL_INFO_IX1_OFFS,
-	.hal_wbm_scattered_desc_ptr_hp_addr = HWIO_WBM_R0_SCATTERED_LINK_DESC_PTR_HP_OFFS,
+	.hal_wbm_idle_ring_base_lsb = 0x51c,
+	.hal_wbm_idle_ring_misc_addr = 0x52c,
+	.hal_wbm_r0_idle_list_cntl_addr = 0x130,
+	.hal_wbm_r0_idle_list_size_addr = 0x134,
+	.hal_wbm_scattered_ring_base_lsb = 0x138,
+	.hal_wbm_scattered_ring_base_msb = 0x13c,
+	.hal_wbm_scattered_desc_head_info_ix0 = 0x140,
+	.hal_wbm_scattered_desc_head_info_ix1 = 0x144,
+	.hal_wbm_scattered_desc_tail_info_ix0 = 0x148,
+	.hal_wbm_scattered_desc_tail_info_ix1 = 0x14c,
+	.hal_wbm_scattered_desc_ptr_hp_addr = 0x150,
 
 	/* SW2WBM release ring address */
-	.hal_wbm_sw_release_ring_base_lsb = HWIO_WBM_R0_SW_RELEASE_RING_BASE_LSB_OFFS,
-	.hal_wbm_sw1_release_ring_base_lsb = HWIO_WBM_R0_FW_RELEASE_RING_BASE_MSB_OFFS,
+	.hal_wbm_sw_release_ring_base_lsb = 0x24c,
+	.hal_wbm_sw1_release_ring_base_lsb = 0x2c8,
 
 	/* PCIe base address */
 	.pcie_qserdes_sysclk_en_sel = 0x01E0C094,
@@ -329,61 +350,57 @@ const struct ath12k_hw_regs qcn9625_regs = {
 	.pcie_gcc_gcc_pcie_hot_rst = 0x1E38438,
 
 	/* REO DEST ring address */
-	.hal_reo2_ring_base = HWIO_REO_R0_REO2SW2_RING_BASE_LSB_OFFS,
-	.hal_reo1_misc_ctrl_addr = HWIO_REO_R0_MISC_CTL_OFFS,
-	.hal_reo1_sw_cookie_cfg0 = HWIO_REO_R0_SW_COOKIE_CFG0_OFFS,
-	.hal_reo1_sw_cookie_cfg1 = HWIO_REO_R0_SW_COOKIE_CFG1_OFFS,
-	.hal_reo1_qdesc_lut_base0 = HWIO_REO_R0_QDESC_LUT_BASE0_ADDR_OFFS,
-	.hal_reo1_qdesc_lut_base1 = HWIO_REO_R0_QDESC_LUT_BASE1_ADDR_OFFS,
-	.hal_reo1_qdesc_addr = HWIO_REO_R0_QDESC_ADDR_READ_OFFS,
-	.hal_reo1_qdesc_max_peerid = HWIO_REO_R0_QDESC_MAX_SW_PEER_ID_OFFS,
-	.hal_reo1_ring_base_lsb = HWIO_REO_R0_REO2SW1_RING_BASE_LSB_OFFS,
-	.hal_reo1_ring_base_msb = HWIO_REO_R0_REO2SW1_RING_BASE_MSB_OFFS,
-	.hal_reo1_ring_id = HWIO_REO_R0_REO2SW1_RING_ID_OFFS,
-	.hal_reo1_ring_misc = HWIO_REO_R0_REO2SW1_RING_MISC_OFFS,
-	.hal_reo1_ring_hp_addr_lsb = HWIO_REO_R0_REO2SW1_RING_HP_ADDR_LSB_OFFS,
-	.hal_reo1_ring_hp_addr_msb = HWIO_REO_R0_REO2SW1_RING_HP_ADDR_MSB_OFFS,
+	.hal_reo2_ring_base = 0x8c0,
+	.hal_reo1_misc_ctrl_addr = 0x198c,
+	.hal_reo1_sw_cookie_cfg0 = 0x6c,
+	.hal_reo1_sw_cookie_cfg1 = 0x70,
+	.hal_reo1_qdesc_lut_base0 = 0x74,
+	.hal_reo1_qdesc_lut_base1 = 0x78,
+	.hal_reo1_qdesc_addr = 0x7c,
+	.hal_reo1_qdesc_max_peerid = 0x88,
+	.hal_reo1_ring_base_lsb = 0x848,
+	.hal_reo1_ring_base_msb = 0x84c,
+	.hal_reo1_ring_id = 0x850,
+	.hal_reo1_ring_misc = 0x858,
+	.hal_reo1_ring_hp_addr_lsb = 0x85c,
+	.hal_reo1_ring_hp_addr_msb = 0x860,
 	.hal_reo1_ring_producer_int_setup =
-					HWIO_REO_R0_REO2SW1_RING_PRODUCER_INT_SETUP_OFFS,
-	.hal_reo1_ring_msi1_base_lsb = HWIO_REO_R0_REO2SW1_RING_MSI1_BASE_LSB_OFFS,
-	.hal_reo1_ring_msi1_base_msb = HWIO_REO_R0_REO2SW1_RING_MSI1_BASE_MSB_OFFS,
-	.hal_reo1_ring_msi1_data = HWIO_REO_R0_REO2SW1_RING_MSI1_DATA_OFFS,
-	.hal_reo1_aging_thres_ix0 = HWIO_REO_R0_AGING_THRESHOLD_IX_0_OFFS,
-	.hal_reo1_aging_thres_ix1 = HWIO_REO_R0_AGING_THRESHOLD_IX_1_OFFS,
-	.hal_reo1_aging_thres_ix2 = HWIO_REO_R0_AGING_THRESHOLD_IX_2_OFFS,
-	.hal_reo1_aging_thres_ix3 = HWIO_REO_R0_AGING_THRESHOLD_IX_3_OFFS,
+					0x86c,
+	.hal_reo1_ring_msi1_base_lsb = 0x890,
+	.hal_reo1_ring_msi1_base_msb = 0x894,
+	.hal_reo1_ring_msi1_data = 0x898,
+	.hal_reo1_aging_thres_ix0 = 0x1918,
+	.hal_reo1_aging_thres_ix1 = 0x191c,
+	.hal_reo1_aging_thres_ix2 = 0x1920,
+	.hal_reo1_aging_thres_ix3 = 0x1924,
 
 	/* REO Exception ring address */
-	.hal_reo2_sw0_ring_base = HWIO_REO_R0_REO2SW0_RING_BASE_LSB_OFFS,
+	.hal_reo2_sw0_ring_base = 0xd70,
 
 	/* REO Reinject ring address */
-	.hal_sw2reo_ring_base = HWIO_REO_R0_SW2REO_RING_BASE_LSB_OFFS,
-	.hal_sw2reo1_ring_base = HWIO_REO_R0_SW2REO1_RING_BASE_LSB_OFFS,
+	.hal_sw2reo_ring_base = 0x344,
+	.hal_sw2reo1_ring_base = 0x3bc,
 
 	/* REO cmd ring address */
-	.hal_reo_cmd_ring_base = HWIO_REO_R0_REO_CMD_RING_BASE_LSB_OFFS,
+	.hal_reo_cmd_ring_base = 0x2cc,
 
 	/* REO status ring address */
-	.hal_reo_status_ring_base = HWIO_REO_R0_REO_STATUS_RING_BASE_LSB_OFFS,
+	.hal_reo_status_ring_base = 0x135c,
 
 	/* CE base address */
-	.hal_umac_ce0_src_reg_base =
-			SEQ_WCSS_UMAC_WFSS_CE_0_REG_WFSS_CE_0_CHANNEL_SRC_REG_OFFSET,
-	.hal_umac_ce0_dest_reg_base =
-			SEQ_WCSS_UMAC_WFSS_CE_0_REG_WFSS_CE_0_CHANNEL_DST_REG_OFFSET,
-	.hal_umac_ce1_src_reg_base =
-			SEQ_WCSS_UMAC_WFSS_CE_0_REG_WFSS_CE_1_CHANNEL_SRC_REG_OFFSET,
-	.hal_umac_ce1_dest_reg_base =
-			SEQ_WCSS_UMAC_WFSS_CE_0_REG_WFSS_CE_1_CHANNEL_DST_REG_OFFSET,
-	.hal_ppe_rel_ring_base = HWIO_TQM_R0_TQM2PPE_RELEASE_RING_BASE_LSB_OFFS,
-	.hal_reo2ppe_ring_base = HWIO_REO_R0_REO2PPE_RING_BASE_LSB_OFFS,
-	.hal_tcl_ppe2tcl_ring_base_lsb = HWIO_TCL_R0_PPE2TCL1_RING_BASE_LSB_OFFS,
+	.hal_umac_ce0_src_reg_base = 0x1B80000,
+	.hal_umac_ce0_dest_reg_base = 0x1B81000,
+	.hal_umac_ce1_src_reg_base = 0x1B82000,
+	.hal_umac_ce1_dest_reg_base = 0x1B83000,
+	.hal_ppe_rel_ring_base = 0xb74,
+	.hal_reo2ppe_ring_base = 0xde8,
+	.hal_tcl_ppe2tcl_ring_base_lsb = 0x19bc,
 	/* PMM register base address */
 	.hal_pmm_reg_base = 0x010D40FC,
 };
 
 const struct ath12k_hw_hal_params ath12k_wifi8_hw_hal_params_qcn9625 = {
-	.rx_buf_rbm = HAL_RX_BUF_RBM_SW0_BM,
+	.rx_buf_rbm = HAL_RX_BUF_RBM_SW5_BM,
 	.tqm2sw_cc_enable1 = HAL_TQM_SW_COOKIE_CONV_CFG_TQM2SW0_EN |
 			     HAL_TQM_SW_COOKIE_CONV_CFG_TQM2SW1_EN |
 			     HAL_TQM_SW_COOKIE_CONV_CFG_TQM2SW2_EN |
@@ -400,6 +417,8 @@ const struct ath12k_hw_hal_params ath12k_wifi8_hw_hal_params_qcn9625 = {
 	.num_rx_msdus_per_link_desc = HAL_NUM_RX_MSDUS_PER_LINK_DESC,
 	.num_mpdu_links_per_queue_desc = HAL_NUM_MPDU_LINKS_PER_QUEUE_DESC,
 	.dscp_tid_map_tbl_max_entries = HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX,
+	.num_tids = HAL_WIFI8_NUM_TIDS,
+	.reoq_lut_size = HAL_WIFI8_REOQ_LUT_SIZE,
 };
 
 u32 ath12k_wifi8_hal_rx_h_mpdu_err_qcn9625(struct hal_rx_desc *desc)
@@ -666,6 +685,47 @@ static int ath12k_wifi8_hal_srng_create_config_qcn9625(struct ath12k_hal *hal)
 				HAL_TQM_PPE_RELEASE_RING_BASE_LSB(hal);
 	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_TQM_PPE_RELEASE_RING_HP;
 
+	s = &hal->srng_config[HAL_WBM_BUF];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_WBM_REG +
+				HAL_WBM_SW2WBM_BUFF_RELEASE1_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_WBM_REG +
+				HAL_WBM_SW2WBM_BUFF_RELEASE1_RING_HP;
+	s->reg_size[0] = HAL_WBM_SW2WBM_BUFF_RELEASE2_RING_BASE_LSB -
+				HAL_WBM_SW2WBM_BUFF_RELEASE1_RING_BASE_LSB;
+	s->reg_size[1] = HAL_WBM_SW2WBM_BUFF_RELEASE2_RING_HP -
+				HAL_WBM_SW2WBM_BUFF_RELEASE1_RING_HP;
+
+	s = &hal->srng_config[HAL_WBM_IDLE_BUF];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_WBM_REG + HAL_WBM_SW_IDLE_BUF_RING_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_WBM_REG + HAL_WBM_SW_IDLE_BUF_RING_HP;
+
+	/* REO2SW8 MGMT Exception ring */
+	s = &hal->srng_config[HAL_REO_EXCEPTION_MGMT];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO2SW8_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO2SW8_RING_HP;
+
+	/* REO2SW9 MGMT Destination ring */
+	s = &hal->srng_config[HAL_REO_DST_MGMT];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO2SW9_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO2SW9_RING_HP;
+
+	/* REO2SW11 MGMT High-priority ring */
+	s = &hal->srng_config[HAL_REO_DST_HIGH_PRIO];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO2SW11_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO2SW11_RING_HP;
+
+	/* MGMT WBM Buf ring */
+	s = &hal->srng_config[HAL_WBM_BUF_MGMT];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_WBM_REG +
+				HAL_WBM_SW2WBM_MGMT_BUFF_RELEASE1_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_WBM_REG +
+				HAL_WBM_SW2WBM_MGMT_BUFF_RELEASE1_RING_HP;
+
+	/* MGMT WBM IDle Buf ring */
+	s = &hal->srng_config[HAL_WBM_IDLE_BUF_MGMT];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_WBM_REG + HAL_WBM_SW_IDLE_MGMT_BUF_RING_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_WBM_REG + HAL_WBM_SW_IDLE_MGMT_BUF_RING_HP;
+
 	return 0;
 }
 
@@ -797,4 +857,5 @@ const struct hal_ops hal_qcn9625_ops = {
 	.hal_reo_config_reo2ppe_dest_info = ath12k_wifi8_hal_reo_config_reo2ppe_dest_info,
 	.hal_tx_set_ppe_vp_entry = ath12k_wifi8_hal_tx_set_ppe_vp_entry,
 	.hal_get_tlv_tag_params = ath12k_wifi8_get_tlv_tag_params,
+	.hal_mon_ops_init = ath12k_wifi8_hal_mon_ops_init,
 };

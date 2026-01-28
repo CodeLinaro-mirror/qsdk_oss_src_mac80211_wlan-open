@@ -34,6 +34,13 @@ static inline void drv_tx(struct ieee80211_local *local,
 			  struct ieee80211_tx_control *control,
 			  struct sk_buff *skb)
 {
+	struct ieee80211_sub_if_data *orig_sdata;
+
+	if (ieee80211_hw_check(&local->hw, VLAN_GROUP_KEY_HW_OFFLOAD)) {
+		orig_sdata = IEEE80211_DEV_TO_SUB_IF(skb->dev);
+		if (orig_sdata->vif.type == NL80211_IFTYPE_AP_VLAN)
+			control->vlan_vif = &orig_sdata->vif;
+	}
 	local->ops->tx(&local->hw, control, skb);
 }
 
@@ -1625,7 +1632,8 @@ static inline void drv_sta_set_4addr(struct ieee80211_local *local,
 				     struct ieee80211_sta *sta, bool enabled)
 {
 	if (!ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD) &&
-	    !ieee80211_hw_check(&local->hw, SUPPORTS_VLAN_DATA_OFFLOAD))
+	    !ieee80211_hw_check(&local->hw, SUPPORTS_VLAN_DATA_OFFLOAD) &&
+	    !ieee80211_hw_check(&local->hw, VLAN_GROUP_KEY_HW_OFFLOAD))
 		sdata = get_bss_sdata(sdata);
 
 	might_sleep();
@@ -1880,6 +1888,16 @@ static inline int drv_erp(struct ieee80211_local *local,
 
 	trace_drv_return_int(local, ret);
 	return ret;
+}
+
+static inline void drv_set_monitor(struct ieee80211_local *local,
+				   struct ieee80211_vif *vif,
+				   u32 flags)
+{
+	if (!vif || !local->ops->set_monitor_flags)
+		return;
+
+	local->ops->set_monitor_flags(&local->hw, vif, flags);
 }
 
 static inline int

@@ -123,20 +123,6 @@ struct hal_tlv_64_hdr {
 
 #define HAL_ENCRYPT_TYPE_MAX	12
 
-/* To set mcast pkt ctrl vlaues */
-#define HAL_TCL_R0_VDEV_MCAST_PACKET_CTRL_MAP_n_ADDR(vdev_id) (0x00A4414C + (0x4 * (vdev_id)))
-#define HAL_TCL_VDEV_MCAST_PACKET_CTRL_REG_ID(vdev_id) ((vdev_id) >> 0x4)
-#define HAL_TCL_VDEV_MCAST_PACKET_CTRL_INDEX_IN_REG(vdev_id) ((vdev_id) & 0xF)
-#define HAL_TCL_VDEV_MCAST_PACKET_CTRL_MASK 0x3
-#define HAL_TCL_VDEV_MCAST_PACKET_CTRL_SHIFT 0x2
-
-enum ath12k_hal_tx_pkt_ctrl_config {
-       HAL_TX_PACKET_CONTROL_CONFIG_TO_FW_EXCEPTION,
-       HAL_TX_PACKET_CONTROL_CONFIG_DROP_PKT,
-       HAL_TX_PACKET_CONTROL_CONFIG_MEC_NOTIFY,
-       HAL_TX_PACKET_CONTROL_CONFIG_PKT_TO_TQM,
-};
-
 enum hal_rx_su_mu_coding {
 	HAL_RX_SU_MU_CODING_BCC,
 	HAL_RX_SU_MU_CODING_LDPC,
@@ -243,6 +229,15 @@ enum hal_srng_ring_id {
 	HAL_SRNG_RING_ID_SW2TCL1_CMD,
 	HAL_SRNG_RING_ID_TCL_STATUS,
 	HAL_SRNG_RING_ID_TX_EXCEPTION,
+
+	HAL_SRNG_RING_ID_WBM_BUF1 = 41,
+	HAL_SRNG_RING_ID_WBM_BUF2,
+	HAL_SRNG_RING_ID_WBM_BUF3,
+	HAL_SRNG_RING_ID_WBM_BUF4,
+	HAL_SRNG_RING_ID_WBM_IDLE_BUF0,
+
+	HAL_SRNG_RING_ID_WBM_BUF_MGMT = 52,
+	HAL_SRNG_RING_ID_WBM_IDLE_BUF_MGMT = 53,
 
 	HAL_SRNG_RING_ID_CE0_SRC = 64,
 	HAL_SRNG_RING_ID_CE1_SRC,
@@ -403,6 +398,10 @@ enum hal_ring_type {
 	HAL_REO_DST_CTDMA,
 	HAL_REO_EXCEPTION_DS,
 	HAL_REO_EXCEPTION_MGMT,
+	HAL_WBM_BUF,
+	HAL_WBM_IDLE_BUF,
+	HAL_WBM_BUF_MGMT,
+	HAL_WBM_IDLE_BUF_MGMT,
 	HAL_MAX_RING_TYPES,
 };
 
@@ -1060,6 +1059,8 @@ struct ath12k_hw_hal_params {
 	u16 num_rx_msdus_per_link_desc;
 	u16 num_mpdu_links_per_queue_desc;
 	u16 dscp_tid_map_tbl_max_entries;
+	u8 num_tids;
+	u32 reoq_lut_size;
 };
 
 struct ath12k_hw_regs {
@@ -1258,6 +1259,7 @@ struct ath12k_hal_tcl_to_cmp_rbm_map  {
 	u8 rbm_id;
 };
 
+#define HAL_RDI_MAPPING_MAX 32
 struct ath12k_hal_rdi_mapping {
 	u8 rd;
 	u8 source;
@@ -1308,6 +1310,7 @@ enum hal_reo_dest_ring_buffer_type {
 enum hal_reo_dest_ring_push_reason {
 	HAL_REO_DEST_RING_PUSH_REASON_ERR_DETECTED,
 	HAL_REO_DEST_RING_PUSH_REASON_ROUTING_INSTRUCTION,
+	HAL_REO_DEST_RING_PUSH_REASON_RXDMA_FLUSH,
 };
 
 /* Peer Metadata classification */
@@ -1656,8 +1659,6 @@ void ath12k_hal_rx_buf_addr_info_get(struct ath12k_buffer_addr *binfo,
 void ath12k_hal_cc_config(struct ath12k_base *ab);
 u8
 ath12k_hal_get_idle_link_rbm(struct ath12k_hal *hal, u8 device_id);
-void ath12k_hal_vdev_mcast_ctrl_set(struct ath12k_base *ab, u32 vdev_id,
-				    u8 mcast_ctrl_val);
 void ath12k_hal_reo_shared_qaddr_cache_clear(struct ath12k_base *ab);
 u8 *
 ath12k_hal_rxdesc_get_mpdu_start_addr2(struct ath12k_hal *hal, struct hal_rx_desc *desc);

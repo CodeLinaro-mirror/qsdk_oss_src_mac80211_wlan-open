@@ -13,6 +13,9 @@
 #include "dp_ast.h"
 
 #define DP_TX_EXCEPTION_RING_SIZE      512
+#define DP_WBM_REFILL_RING_MAX         4
+#define DP_WBM_REFILL_RING_SIZE        512
+#define DP_WBM_IDLE_BUF_RING_SIZE      8192
 
 struct ath12k_base;
 struct ath12k_dp;
@@ -24,6 +27,8 @@ struct ath12k_dp_wifi8 {
 	struct dp_srng tcl_cmd_ring;
 	struct dp_srng tcl_status_ring;
 	struct dp_srng reo_dst_high_prio_ring;
+	struct dp_srng wbm_refill_ring[DP_WBM_REFILL_RING_MAX];
+	struct dp_srng wbm_idle_buf_ring;
 };
 
 struct ath12k_dp_hw_group_wifi8 {
@@ -91,6 +96,18 @@ static inline struct device *
 
 	return dp_hw_grp_wifi8->cumac_dp->dev;
 }
+
+static inline struct ath12k_dp *ath12k_get_central_dp(struct ath12k_dp *dp)
+{
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8 =
+		ath12k_get_dp_hw_group_wifi8(dp->dp_hw_grp);
+
+	if (!dp_hw_grp_wifi8)
+		return NULL;
+
+	return dp_hw_grp_wifi8->cumac_dp;
+}
+
 
 struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab);
 void ath12k_wifi8_dp_deinit(struct ath12k_dp *dp);

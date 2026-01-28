@@ -233,8 +233,8 @@ int ath12k_dp_rx_alloc(struct ath12k_base *ab);
 void ath12k_dp_rx_free(struct ath12k_base *ab);
 void ath12k_dp_rx_reo_cmd_list_cleanup(struct ath12k_base *ab);
 void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
-				struct dp_rxdma_ring *rx_ring,
-				struct list_head *used_list);
+				 struct hal_srng *srng,
+				 struct list_head *used_list);
 int ath12k_dp_rx_peer_frag_setup(struct ath12k *ar,
 				 struct ath12k_dp_link_peer *peer,
 				 struct crypto_shash *tfm);
@@ -274,7 +274,7 @@ void ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *
 				struct ieee80211_rx_status *status, bool decrypted,
 				u16 peer_id, bool is_first_msdu, bool is_last_msdu);
 int ath12k_hw_grp_dp_rx_invalidate_entry(struct ath12k_hw_group *ag,
-					 enum dp_htt_flow_fst_operation operation,
+					 enum dp_flow_fst_operation operation,
 					 struct hal_flow_tuple_info *tuple_info);
 int ath12k_dp_rx_flow_add_entry(struct ath12k_base *ab,
 				struct rx_flow_info *flow_info);
@@ -288,6 +288,9 @@ void ath12k_dp_rx_fst_init(struct ath12k_base *ab);
 ssize_t ath12k_dp_dump_fst_table(struct ath12k_base *ab, char *buf, int size);
 size_t ath12k_dp_list_cut_nodes(struct list_head *list,
 				struct list_head *head, size_t count);
+int ath12k_dp_rx_peer_tid_setup(struct ath12k *ar, const u8 *peer_mac, int vdev_id,
+				u8 tid, u32 ba_win_sz, u16 ssn,
+				enum hal_pn_type pn_type);
 void ath12k_dp_tid_cleanup(struct ath12k_base *ab);
 void ath12k_dp_peer_tid_setup(struct ath12k_base *ab);
 void ath12k_dp_peer_reo_tid_setup(struct ath12k *ar, int vdev_id,

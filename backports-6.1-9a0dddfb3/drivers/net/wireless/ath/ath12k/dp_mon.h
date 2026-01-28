@@ -35,11 +35,13 @@
 #define DP_RXDMA_MON_STATUS_RING_SIZE	1024
 #define DP_RXDMA_MONITOR_DESC_RING_SIZE	4096
 #if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined (CPTCFG_ATH12K_MEM_PROFILE_512M)
-#define DP_RXDMA_MONITOR_BUF_RING_SIZE  256
+#define DP_RXDMA_MONITOR_BUF_RING_SIZE  512
 #define DP_RXDMA_MONITOR_DST_RING_SIZE  512
+#define ATH12K_DP_SMART_MON_FILTER_DEFAULT DP_SMART_MON_VALID
 #else
 #define DP_RXDMA_MONITOR_BUF_RING_SIZE 8192
 #define DP_RXDMA_MONITOR_DST_RING_SIZE 8192
+#define ATH12K_DP_SMART_MON_FILTER_DEFAULT 0
 #endif
 #define DP_TX_MONITOR_BUF_RING_SIZE	4096
 #define DP_TX_MONITOR_DEST_RING_SIZE	2048
@@ -528,8 +530,8 @@ ath12k_dp_mon_cnt_skb_and_frags(struct sk_buff *skb, u32 *skb_count, u32 *frag_c
 void ath12k_dp_mon_pktlog_config_filter(struct ath12k_pdev_dp *dp_pdev,
 					enum ath12k_pktlog_mode mode,
 					u32 filter, bool enable);
-u32 ath12k_wifi7_dp_mon_get_frag_size_by_idx(struct ath12k_dp *dp, struct sk_buff *skb,
-					     u8 idx);
+u32 ath12k_dp_mon_get_frag_size_by_idx(struct ath12k_dp *dp, struct sk_buff *skb,
+				       u8 idx);
 void *ath12k_dp_mon_skb_get_frag_addr(struct sk_buff *skb, u8 idx);
 int ath12k_dp_mon_adj_frag_offset(struct sk_buff *skb, u8 idx, int offset);
 u32 ath12k_dp_mon_get_num_frags_in_fraglist(struct sk_buff *skb);
@@ -928,6 +930,19 @@ ath12k_dp_mon_rx_config_packet_type_subtype(struct ath12k_dp *dp, void *ptr,
 }
 
 static inline void
+ath12k_dp_mon_rx_config_packet_type_hdr_len(struct ath12k_dp *dp, void *ptr,
+					    struct htt_rx_ring_tlv_filter *tlv_filter)
+{
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+
+	if (unlikely(!dp || !dp->dp_mon))
+		return;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+}
+
+static inline void
 ath12k_dp_mon_pktlog_config(struct ath12k *ar, bool enable,
 			    enum ath12k_pktlog_mode mode,
 			    u32 filter)
@@ -965,8 +980,12 @@ ath12k_dp_smart_mon_filter_type_set(struct ath12k *ar,
 		dp_pdev->dp_mon_pdev->smart_mon_filter = filter;
 		if (dp_pdev->dp_mon_pdev->smart_mon_state ==
 		    ATH12K_DP_SMART_MON_ACTIVE) {
-			if (filter & DP_SMART_MON_VALID)
+			if (filter & DP_SMART_MON_VALID) {
+				ath12k_dp_mon_rx_smart_mon_config(ar, true);
+				ath12k_dp_mon_rx_update_filter(ar);
 				ath12k_dp_mon_rx_smart_mon_config(ar, false);
+				ath12k_dp_mon_rx_update_filter(ar);
+			}
 		}
 	}
 }

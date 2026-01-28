@@ -138,6 +138,16 @@ config ATH12K_PPE_DS_SUPPORT
 
 		Say Y to enable PPE DS Support. If unsure, say N.
 
+config ATHDEBUG_UIO_LOGGING
+	bool "ath12k UIO logging support"
+	depends on ATH12K
+	default n
+	help
+	  Enable UIO logging support for ath12k. When enabled, logs will be
+	  sent to a UIO device instead of dmesg. This allows userspace
+	  applications to efficiently access logs without flooding the kernel
+	  log. If unsure, say N for standard dmesg logging.
+
 source "$BACKPORT_DIR/drivers/net/wireless/ath/ath12k/qcn_extns/Kconfig"
 
 config ATHDEBUG

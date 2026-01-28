@@ -19,6 +19,7 @@ struct ath12k_base;
 struct ath12k_hw;
 struct ath12k_hw_group;
 struct ath12k_pdev_map;
+struct ath12k_pdev_dp;
 struct ath12k_vif;
 struct ath12k_link_sta;
 struct ath12k_dp_vif;
@@ -203,6 +204,9 @@ void ath12k_mac_destroy(struct ath12k_hw_group *ag);
 void ath12k_mac_unregister(struct ath12k_hw_group *ag);
 int ath12k_mac_register(struct ath12k_hw_group *ag);
 int ath12k_mac_allocate(struct ath12k_hw_group *ag);
+int ath12k_tx_rate_info(struct ath12k_link_vif *arvif,
+			struct ieee80211_tx_rate *rate,
+			u16 *mcs, u8 *preamble);
 int ath12k_mac_hw_ratecode_to_legacy_rate(u8 hw_rc, u8 preamble, u8 *rateidx,
 					  u16 *rate);
 u8 ath12k_mac_bitrate_to_idx(const struct ieee80211_supported_band *sband,
@@ -477,9 +481,10 @@ int ath12k_mac_conf_tx(struct ath12k_link_vif *arvif, u16 ac,
 		       const struct ieee80211_tx_queue_params *params);
 
 int ath12k_mac_set_key(struct ath12k *ar, enum set_key_cmd cmd,
-                              struct ath12k_link_vif *arvif,
-                              struct ath12k_link_sta *arsta,
-                              struct ieee80211_key_conf *key);
+		       struct ath12k_link_vif *arvif,
+		       struct ath12k_link_sta *arsta,
+		       struct ieee80211_key_conf *key,
+		       struct ath12k_vif *vlan_ahvif);
 int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 			   bool is_bridge_vdev);
 
@@ -745,6 +750,8 @@ void ath12k_mac_ieee80211_free_txskb(struct ieee80211_hw *hw,
 				     enum ath12k_dp_tx_enq_error drop_reason,
 				     bool dev_free);
 bool ath12k_mac_check_err_code_debug_logging(enum ath12k_dp_tx_enq_error err);
+enum nl80211_band ath12k_get_band_based_on_freq(u32 freq);
+u32 ath12k_mac_get_rate_hw_value(int bitrate);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 int ath12k_mac_op_create_datapath_offload_if(struct ieee80211_hw *hw,
 					     struct ieee80211_vif *vif,
@@ -754,4 +761,6 @@ int ath12k_mac_op_destroy_datapath_offload_if(struct ieee80211_hw *hw,
 					      struct net_device *dev);
 int ath12k_mac_op_set_mtu(struct ieee80211_hw *hw, struct ieee80211_vif *vif, int mtu);
 #endif
+void ath12k_mac_cache_smart_mon_filter(struct ath12k_pdev_dp *pdev, u8 smart_mon_filter);
+u8 ath12k_mac_get_cached_smart_mon_filter(struct ath12k_pdev_dp *pdev);
 #endif

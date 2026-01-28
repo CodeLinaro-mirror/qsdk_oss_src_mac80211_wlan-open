@@ -7,7 +7,7 @@
 #define ATH12K_TELEMETRY_AGENT_IF_H
 
 #include "telemetry.h"
-#include "telemetry_agent_wifi_driver_if.h"
+#include "../telemetry_agent_wifi_driver_if.h"
 #include "core.h"
 
 int ath12k_telemetry_ab_agent_create_handler(struct ath12k_base *ab);
@@ -19,7 +19,8 @@ int unregister_telemetry_agent_ops(struct telemetry_agent_ops *agent_ops);
 int ath12k_get_pdev_stats(void *obj, struct agent_link_iface_stats_obj *stats);
 int ath12k_get_peer_info(void *obj, struct agent_peer_iface_init_obj *stats);
 int ath12k_get_pdev_info(void *obj, struct agent_pdev_iface_init_obj *stats);
-int ath12k_get_peer_stats(void *obj, struct agent_peer_iface_stats_obj *stats);
+int ath12k_get_peer_stats(int obj_id, void *parent,
+			  struct agent_peer_iface_stats_obj *stats);
 int ath12k_get_psoc_info(void *obj, struct agent_psoc_iface_init_obj *statis);
 
 int ath12k_sawf_get_tput_stats(void *soc, void *arg, u64 *in_bytes,
@@ -85,6 +86,9 @@ int ath12k_telemetry_set_mov_avg_params(u32 num_pkt, u32 num_win);
 int ath12k_telemetry_set_sla_params(u32 num_pkt, u32 time_sec);
 int ath12k_telemetry_set_sla_cfg(struct ath12k_sla_thershold_cfg param);
 int ath12k_telemetry_set_sla_detect_cfg(struct ath12k_sla_detect_cfg param);
+int ath12k_telemetry_set_threshold(u8 type, u32 value);
+int ath12k_telemetry_print_thresholds(void);
+int ath12k_telemetry_set_breach_mask(u8 mask);
 int ath12k_telemetry_get_rate(void *telemetry_ctx, u8 tid,
 			      u8 queue, u32 *egress_rate,
 			      u32 *ingress_rate);
@@ -96,4 +100,10 @@ int ath12k_telemetry_get_mov_avg(void *telemetry_ctx, u8 tid,
 				 u8 queue, u32 *nwdelay_avg,
 				 u32 *swdelay_avg,
 				 u32 *hwdelay_avg);
+int ath12k_telemetry_update_rssi_rate_breach(u8 soc_id, u16 peer_id, u8 *peer_mac,
+					     u8 path_type,
+					     s32 rssi_value, u32 rate_value);
+void ath12k_rssi_rate_notify_breach(u8 *peer_mac, u8 breach_type,
+				    u32 threshold_value, u32 detected_value,
+				    bool set_clear);
 #endif /* ATH12K_TELEMETRY_AGENT_IF_H */

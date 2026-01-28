@@ -569,6 +569,9 @@ static u32 ath12k_map_fw_phy_flags(u32 phy_flags)
 	if (phy_flags & ATH12K_REG_PHY_BITMAP_NO11BE)
 		flags |= NL80211_RRF_NO_EHT;
 
+	if (phy_flags & ATH12K_REG_PHY_BITMAP_NO11BN)
+		flags |= NL80211_RRF_NO_UHR;
+
 	return flags;
 }
 

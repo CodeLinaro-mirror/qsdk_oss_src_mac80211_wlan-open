@@ -26,8 +26,9 @@ struct ath12k_pdev_dp;
 
 /* Global sequence number */
 #define HTT_TCL_META_DATA_TYPE_GLOBAL_SEQ_NUM		3
-#define HTT_TCL_META_DATA_GLOBAL_SEQ_HOST_INSPECTED	BIT(2)
+#define HTT_TCL_META_DATA_GSN_INSPECTED			BIT(2)
 #define HTT_TCL_META_DATA_GLOBAL_SEQ_NUM		GENMASK(14, 3)
+#define HTT_TCL_META_DATA_GLOBAL_HTT_EXT_PRESENT	BIT(15)
 #define HTT_TX_MLO_MCAST_HOST_REINJECT_BASE_VDEV_ID	128
 
 /* HTT tx completion is overlaid in wbm_release_ring */
@@ -313,6 +314,12 @@ enum htt_srng_ring_id {
 	HTT_TX_MON_MON2HOST_DEST_RING,
 	HTT_RX_MON_HOST2MON_BUF_RING,
 	HTT_RX_MON_MON2HOST_DEST_RING,
+	HTT_LPASS_TO_FW_RXBUF_RING,
+	HTT_HOST3_TO_FW_RXBUF_RING,
+	HTT_HOST4_TO_FW_RXBUF_RING,
+	HTT_RXDMA_WBM_BUF0_RING,
+	HTT_RXDMA_WBM_BUF1_RING,
+	HTT_RXDMA_WBM_BUF2_RING,
 };
 
 /* host -> target  HTT_SRING_SETUP message
@@ -712,6 +719,36 @@ enum htt_stats_frametype {
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO3_EN_TLV_PKT_OFFSET	BIT(0)
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO3_PKT_TLV_OFFSET	GENMASK(14, 1)
 
+#define HTT_RX_RING_SEL_CFG_CMD_INFO4_RXMON_FPMO_DATA_HDRLEN	GENMASK(1, 0)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO4_RXMON_FPMO_CTRL_HDRLEN	GENMASK(3, 2)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO4_RXMON_FPMO_MGMT_HDRLEN	GENMASK(5, 4)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO4_RXMON_FP_DATA_HDRLEN	GENMASK(7, 6)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO4_RXMON_FP_CTRL_HDRLEN	GENMASK(9, 8)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO4_RXMON_FP_MGMT_HDRLEN	GENMASK(11, 10)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO4_RXMON_MO_DATA_HDRLEN	GENMASK(13, 12)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO4_RXMON_MO_CTRL_HDRLEN	GENMASK(15, 14)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO4_RXMON_MO_MGMT_HDRLEN	GENMASK(17, 16)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO4_RXMON_MD_DATA_HDRLEN	GENMASK(19, 18)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO4_RXMON_MD_CTRL_HDRLEN	GENMASK(21, 20)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO4_RXMON_MD_MGMT_HDRLEN	GENMASK(23, 22)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO4_RXMON_ENABLE_HDR_PER_PPDU	BIT(24)
+
+#define HTT_RX_RING_SEL_CFG_CMD_INFO5_SW0_BUF_SRC_HDR_EN		BIT(0)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO5_MO_HDR_EN				BIT(1)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO5_MD_HDR_EN				BIT(2)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO5_FP_HDR_EN				BIT(3)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO5_FPMO_HDR_EN			BIT(4)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO5_FPMO_QOS_NULL_DATA_HDR_EN		BIT(5)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO5_FPMO_QOS_NULL_TB_DATA_HDR_EN	BIT(6)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO5_FPMO_NULL_DATA_HDR_EN		BIT(7)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO5_FPMO_UCAST_DATA_HDR_EN		BIT(8)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO5_FPMO_MCAST_DATA_HDR_EN		BIT(9)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO5_FP_QOS_NULL_DATA_HDR_EN		BIT(10)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO5_FP_QOS_NULL_TB_DATA_HDR_EN	BIT(11)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO5_FP_NULL_DATA_HDR_EN		BIT(12)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO5_FP_UCAST_DATA_HDR_EN		BIT(13)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO5_FP_MCAST_DATA_HDR_EN		BIT(14)
+
 #define HTT_RX_RING_SELECTION_CFG_RX_PACKET_OFFSET      GENMASK(15, 0)
 #define HTT_RX_RING_SELECTION_CFG_RX_HEADER_OFFSET      GENMASK(31, 16)
 #define HTT_RX_RING_SELECTION_CFG_RX_MPDU_END_OFFSET    GENMASK(15, 0)
@@ -977,6 +1014,10 @@ struct htt_rx_ring_selection_cfg_cmd {
 	__le32 pkt_type_en_data_flag1;
 	__le32 pkt_type_en_data_flag2;
 	__le32 pkt_type_en_data_flag3;
+	__le32 reserved2[2];
+	__le32 rdi_based_source_cfg;
+	__le32 info4;
+	__le32 info5;
 } __packed;
 
 #define HTT_RX_RING_TLV_DROP_THRESHOLD_VALUE	32
@@ -1036,6 +1077,35 @@ struct htt_rx_ring_tlv_filter {
 	bool drop_threshold_valid;
 	bool rxmon_disable;
 	u8 rx_hdr_len;
+	u8 rx_mon_fpmo_data_hdrlen;
+	u8 rx_mon_fpmo_ctrl_hdrlen;
+	u8 rx_mon_fpmo_mgmt_hdrlen;
+	u8 rx_mon_fp_data_hdrlen;
+	u8 rx_mon_fp_ctrl_hdrlen;
+	u8 rx_mon_fp_mgmt_hdrlen;
+	u8 rx_mon_mo_data_hdrlen;
+	u8 rx_mon_mo_ctrl_hdrlen;
+	u8 rx_mon_mo_mgmt_hdrlen;
+	u8 rx_mon_md_data_hdrlen;
+	u8 rx_mon_md_ctrl_hdrlen;
+	u8 rx_mon_md_mgmt_hdrlen;
+	u8 rx_mon_enable_hdr_per_ppdu;
+	u8 sw0_buf_src_ppdu_hdr_en;
+	u8 mo_ppdu_hdr_en;
+	u8 md_ppdu_hdr_en;
+	u8 fp_ppdu_hdr_en;
+	u8 fpmo_ppdu_hdr_en;
+	u8 fpmo_qos_null_data_ppdu_hdr_en;
+	u8 fpmo_qos_null_tb_data_ppdu_hdr_en;
+	u8 fpmo_null_data_ppdu_hdr_en;
+	u8 fpmo_ucast_data_ppdu_hdr_en;
+	u8 fpmo_mcast_data_ppdu_hdr_en;
+	u8 fp_qos_null_data_ppdu_hdr_en;
+	u8 fp_qos_null_tb_data_ppdu_hdr_en;
+	u8 fp_null_data_ppdu_hdr_en;
+	u8 fp_ucast_data_ppdu_hdr_en;
+	u8 fp_mcast_data_ppdu_hdr_en;
+	u32 rdi_based_source_cfg;
 };
 
 #define HTT_STATS_FRAME_CTRL_TYPE_MGMT  0x0
@@ -1138,8 +1208,6 @@ enum htt_t2h_msg_type {
 	HTT_T2H_MSG_TYPE_EXT_STATS_CONF = 0x1c,
 	HTT_T2H_MSG_TYPE_BKPRESSURE_EVENT_IND = 0x24,
 	HTT_T2H_MSG_TYPE_MLO_TIMESTAMP_OFFSET_IND = 0x28,
-	HTT_T2H_MSG_TYPE_MLO_RX_PEER_MAP = 0x29,
-	HTT_T2H_MSG_TYPE_MLO_RX_PEER_UNMAP = 0x2a,
 	HTT_T2H_MSG_TYPE_PEER_MAP3	= 0x2b,
 	HTT_T2H_MSG_TYPE_VDEV_TXRX_STATS_PERIODIC_IND = 0x2c,
 	HTT_T2H_MSG_TYPE_QOS_MSDUQ_INFO_IND = 0x2e,
@@ -1736,8 +1804,13 @@ enum HTT_FLUSH_STATUS_DROP_REASON {
 	HTT_FLUSH_MAX,
 };
 #define HTT_PPDU_STATS_FLUSH_NUM_MSDU_M         GENMASK(30, 17)
+#define HTT_PPDU_STATS_FLUSH_NUM_MPDU_M         GENMASK(16, 8)
+
 #define HTT_PPDU_STATS_FLUSH_GET_NUM_MSDU(_val) \
 	le32_get_bits(_val, HTT_PPDU_STATS_FLUSH_NUM_MSDU_M)
+
+#define HTT_PPDU_STATS_FLUSH_GET_NUM_MPDU(_val) \
+	le32_get_bits(_val, HTT_PPDU_STATS_FLUSH_NUM_MPDU_M)
 /* Flush stats for failed tx completions */
 struct htt_ppdu_stats_cmpltn_flush {
 	__le32 drop_reason;
@@ -2092,12 +2165,12 @@ struct htt_rx_flow_fst_setup {
 	u8 *hash_key;
 };
 
-enum dp_htt_flow_fst_operation {
-	DP_HTT_FST_CACHE_OP_NONE,
-	DP_HTT_FST_CACHE_INVALIDATE_ENTRY,
-	DP_HTT_FST_CACHE_INVALIDATE_FULL,
-	DP_HTT_FST_ENABLE,
-	DP_HTT_FST_DISABLE
+enum dp_flow_fst_operation {
+	DP_FST_CACHE_OP_NONE,
+	DP_FST_CACHE_INVALIDATE_ENTRY,
+	DP_FST_CACHE_INVALIDATE_FULL,
+	DP_FST_ENABLE,
+	DP_FST_DISABLE
 };
 
 enum htt_rx_fse_operation {
@@ -2185,35 +2258,6 @@ struct htt_h2t_msg_rx_3_tuple_hash_cfg {
 #define HTT_H2T_FLOW_CLASSIFY_3_TUPLE_FIELD_CONFIG   BIT(2)
 
 #define HTT_3_TUPLE_HASH_CFG_REQ_BYTES     8
-
-struct ath12k_htt_mlo_link_peer_info {
-	struct htt_tlv tlv_hdr;
-	u16 sw_peer_id;
-	u8 vdev_id;
-	u8 chip_id;
-} __packed;
-
-#define ATH12K_HTT_MLO_PEER_MAP_INFO0_PEER_ID		GENMASK(23, 8)
-#define ATH12K_HTT_MLO_PEER_MAP_MAC_ADDR_H16		GENMASK(15, 0)
-#define ATH12K_HTT_MLO_PEER_MAP_AST_IDX			GENMASK(15, 0)
-#define ATH12K_HTT_MLO_PEER_MAP_CACHE_SET_NUM		GENMASK(31, 28)
-#define ATH12K_HTT_MAX_MLO_LINKS			3
-
-struct ath12k_htt_mlo_peer_map_msg {
-	u32 info0;
-	struct htt_mac_addr mac_addr;
-	u32 info1;
-	u32 info2;
-	u32 info3;
-	u32 rsvd0;
-	u32 rsvd1;
-	struct ath12k_htt_mlo_link_peer_info link_peer[ATH12K_HTT_MAX_MLO_LINKS];
-} __packed;
-
-#define ATH12K_HTT_MLO_PEER_UNMAP_PEER_ID               GENMASK(23, 8)
-struct ath12k_htt_mlo_peer_unmap_msg {
-	u32 info0;
-} __packed;
 
 #define ATH12K_HTT_PRI_LINK_MIGR_MSG_TYPE		GENMASK(7, 0)
 #define ATH12K_HTT_PRI_LINK_MIGR_CHIP_ID		GENMASK(11, 8)
@@ -2339,10 +2383,16 @@ struct ath12k_htt_ppdu_id_fmt_info {
 #define HTT_PPDU_ID_FMT_GET_BITS	GENMASK(21, 17)
 #define HTT_PPDU_ID_FMT_GET_OFFSET	GENMASK(26, 22)
 
+enum dp_htt_logger_type {
+	HTT_LOGGER_COMMAND,
+	HTT_LOGGER_EVENT
+};
+
 int ath12k_dp_htt_connect(struct ath12k_dp *dp);
 
 void ath12k_dp_htt_htc_t2h_msg_handler(struct ath12k_base *ab,
 				       struct sk_buff *skb);
+void ath12k_dp_htt_htc_tx_complete(struct ath12k_base *ab, struct sk_buff *skb);
 
 int ath12k_dp_htt_tlv_iter(struct ath12k_base *ab, struct ath12k_pdev_dp *dp_pdev,
 			   const void *ptr, size_t len,
@@ -2367,7 +2417,7 @@ int ath12k_dp_tx_htt_tx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 				     struct htt_tx_ring_tlv_filter *htt_tlv_filter);
 int ath12k_dp_htt_rx_flow_fst_setup(struct ath12k_base *ab, struct htt_rx_flow_fst_setup *setup_info);
 int ath12k_dp_htt_rx_flow_fse_operation(struct ath12k_base *ab,
-					enum dp_htt_flow_fst_operation op_code,
+					enum dp_flow_fst_operation op_code,
 					struct hal_flow_tuple_info *tuple_info);
 int ath12k_dp_htt_rx_fse_3_tuple_config_send(struct ath12k_base *ab,
 					     u32 tuple_mask, u8 pdev_id);

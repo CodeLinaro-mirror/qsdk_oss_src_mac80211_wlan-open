@@ -456,12 +456,11 @@ static void ath12k_dp_rx_enqueue_free(struct ath12k_dp *dp,
 
 /* Returns number of Rx buffers replenished */
 void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
-				struct dp_rxdma_ring *rx_ring,
-				struct list_head *used_list)
+				 struct hal_srng *srng,
+				 struct list_head *used_list)
 {
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_buffer_addr *desc;
-	struct hal_srng *srng = NULL;
 	struct sk_buff *skb;
 	dma_addr_t paddr;
 	struct ath12k_rx_desc_info *rx_desc, *tmp_rx_desc;
@@ -503,7 +502,6 @@ void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 	if (unlikely(is_dma_inv_done))
 		dsb(st);
 
-	srng = &ab->hal.srng_list[rx_ring->refill_buf_ring.ring_id];
 	spin_lock_bh(&srng->lock);
 	ath12k_hal_srng_access_begin(ab, srng);
 	while (allocated_entries > 0) {
@@ -538,13 +536,15 @@ static int ath12k_dp_rxdma_ring_buf_setup(struct ath12k_base *ab,
 {
 	LIST_HEAD(list);
 	size_t req_entries;
+	struct hal_srng *refill_srng;
 
 	rx_ring->bufs_max = rx_ring->refill_buf_ring.size /
 			ath12k_hal_srng_get_entrysize(ab, HAL_RXDMA_BUF);
 
-	req_entries = ath12k_dp_get_req_entries_from_buf_ring(ab, rx_ring, &list);
+	refill_srng = &ab->hal.srng_list[rx_ring->refill_buf_ring.ring_id];
+	req_entries = ath12k_dp_get_req_entries_from_buf_ring(ab, refill_srng, &list);
 	if (req_entries)
-		ath12k_dp_rx_bufs_replenish(ab->dp, rx_ring, &list);
+		ath12k_dp_rx_bufs_replenish(ab->dp, refill_srng, &list);
 
 	return 0;
 }
@@ -714,7 +714,7 @@ void ath12k_dp_rx_peer_tid_cleanup(struct ath12k *ar, struct ath12k_dp_link_peer
 	if (!peer->primary_link)
 		return;
 
-	for (i = 0; i <= IEEE80211_NUM_TIDS; i++) {
+	for (i = 0; i < ab->hal.hal_params->num_tids; i++) {
 		rx_tid = &peer->dp_peer->rx_tid[i];
 
 		ath12k_dp_arch_rx_peer_tid_delete(dp, ar, peer, i);
@@ -726,9 +726,9 @@ void ath12k_dp_rx_peer_tid_cleanup(struct ath12k *ar, struct ath12k_dp_link_peer
 	}
 }
 
-int ath12k_wifi7_dp_rx_peer_tid_setup(struct ath12k *ar, const u8 *peer_mac, int vdev_id,
-				      u8 tid, u32 ba_win_sz, u16 ssn,
-				      enum hal_pn_type pn_type)
+int ath12k_dp_rx_peer_tid_setup(struct ath12k *ar, const u8 *peer_mac, int vdev_id,
+				u8 tid, u32 ba_win_sz, u16 ssn,
+				enum hal_pn_type pn_type)
 {
 	struct hal_rx_reo_queue *addr_aligned;
 	struct ath12k_base *ab = ar->ab;
@@ -752,16 +752,8 @@ int ath12k_wifi7_dp_rx_peer_tid_setup(struct ath12k *ar, const u8 *peer_mac, int
 		return 0;
 	}
 
-	if (ab->hw_params->reoq_lut_support &&
-	    (!dp->reoq_lut.vaddr || !dp->ml_reoq_lut.vaddr)) {
-		spin_unlock_bh(&dp->dp_lock);
-		ath12k_warn(ab, "reo qref table is not setup\n");
-		return -EINVAL;
-	}
-
-	if (peer->peer_id > DP_MAX_PEER_ID || tid > IEEE80211_NUM_TIDS) {
-		ath12k_warn(ab, "peer id of peer %d or tid %d doesn't allow reoq setup\n",
-			    peer->peer_id, tid);
+	if (tid >= ab->hal.hal_params->num_tids) {
+		ath12k_warn(ab, "tid %d doesn't allow reoq setup\n", tid);
 		spin_unlock_bh(&dp->dp_lock);
 		return -EINVAL;
 	}
@@ -810,14 +802,9 @@ int ath12k_wifi7_dp_rx_peer_tid_setup(struct ath12k *ar, const u8 *peer_mac, int
 		/* Update the REO queue LUT at the corresponding peer id
 		 * and tid with qaddr.
 		 */
-		if (peer->mlo)
-			ath12k_dp_arch_peer_rx_tid_qref_setup(dp, peer->ml_id,
-							      rx_tid->tid,
-							      rx_tid->paddr);
-		else
-			ath12k_dp_arch_peer_rx_tid_qref_setup(dp, peer->peer_id,
-							      rx_tid->tid,
-							      rx_tid->paddr);
+		ath12k_dp_arch_peer_rx_tid_qref_setup(dp, peer->dp_peer->peer_id,
+						      rx_tid->tid,
+						      rx_tid->paddr);
 
 		spin_unlock_bh(&dp->dp_lock);
 	} else {
@@ -851,9 +838,9 @@ int ath12k_dp_rx_ampdu_start(struct ath12k *ar,
 
 	vdev_id = arsta->arvif->vdev_id;
 
-	ret = ath12k_wifi7_dp_rx_peer_tid_setup(ar, arsta->addr, vdev_id,
-						params->tid, params->buf_size,
-						params->ssn, arsta->ahsta->pn_type);
+	ret = ath12k_dp_rx_peer_tid_setup(ar, arsta->addr, vdev_id,
+					  params->tid, params->buf_size,
+					  params->ssn, arsta->ahsta->pn_type);
 	if (ret)
 		ath12k_warn(ab, "failed to setup rx tid %d\n", ret);
 
@@ -887,7 +874,8 @@ int ath12k_dp_rx_ampdu_stop(struct ath12k *ar,
 	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, vdev_id, arsta->addr);
 	if (!peer || !peer->dp_peer) {
 		spin_unlock_bh(&dp->dp_lock);
-		ath12k_warn(ab, "failed to find the peer to stop rx aggregation\n");
+		ath12k_dbg(ab, ATH12K_DBG_PEER,
+			   "failed to find the peer to stop rx aggregation\n");
 		return -ENOENT;
 	}
 
@@ -952,7 +940,7 @@ int ath12k_dp_rx_peer_pn_replay_config(struct ath12k_link_vif *arvif,
 		return 0;
 	}
 
-	for (tid = 0; tid <= IEEE80211_NUM_TIDS; tid++) {
+	for (tid = 0; tid < ab->hal.hal_params->num_tids; tid++) {
 		rx_tid = &peer->dp_peer->rx_tid[tid];
 		if (!rx_tid->active)
 			continue;
@@ -1128,7 +1116,7 @@ int ath12k_dp_rx_peer_frag_setup(struct ath12k *ar,
 
 	lockdep_assert(&dp->dp_lock);
 
-	for (i = 0; i <= IEEE80211_NUM_TIDS; i++) {
+	for (i = 0; i < ab->hal.hal_params->num_tids; i++) {
 		rx_tid = &peer->dp_peer->rx_tid[i];
 		rx_tid->dp = dp;
 		timer_setup(&rx_tid->frag_timer, ath12k_dp_rx_frag_timer, 0);
@@ -1252,7 +1240,7 @@ void ath12k_dp_rx_fst_detach(struct ath12k_base *ab, struct dp_rx_fst *fst)
 }
 
 int ath12k_hw_grp_dp_rx_invalidate_entry(struct ath12k_hw_group *ag,
-					 enum dp_htt_flow_fst_operation operation,
+					 enum dp_flow_fst_operation operation,
 					 struct hal_flow_tuple_info *tuple_info)
 {
 	int i;
@@ -1260,6 +1248,7 @@ int ath12k_hw_grp_dp_rx_invalidate_entry(struct ath12k_hw_group *ag,
 
 	for (i = 0; i < ag->num_devices; i++) {
 		struct ath12k_base *partner_ab = ag->ab[i];
+		struct ath12k_dp *dp;
 
 		if (!partner_ab || partner_ab->is_bypassed)
 			continue;
@@ -1268,9 +1257,10 @@ int ath12k_hw_grp_dp_rx_invalidate_entry(struct ath12k_hw_group *ag,
 		if (test_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags))
 			continue;
 
+		dp = ath12k_ab_to_dp(partner_ab);
 		/* Flush entries in the HW cache */
-		ret = ath12k_dp_htt_rx_flow_fse_operation(partner_ab, operation,
-							  tuple_info);
+		ret = ath12k_dp_arch_rx_flow_fse_cache_operation(dp, operation,
+								 tuple_info);
 		if (ret) {
 			ath12k_err(partner_ab, "Unable to invalidate cache entry ret %d",
 				   ret);
@@ -1309,7 +1299,7 @@ int ath12k_dp_rx_flow_add_entry(struct ath12k_base *ab,
 		goto out;
 	}
 
-	ret = ath12k_hw_grp_dp_rx_invalidate_entry(ab->ag, DP_HTT_FST_CACHE_INVALIDATE_ENTRY,
+	ret = ath12k_hw_grp_dp_rx_invalidate_entry(ab->ag, DP_FST_CACHE_INVALIDATE_ENTRY,
 						   &flow_info->flow_tuple_info);
 	if (ret) {
 		ath12k_err(ab, "Unable to invalidate cache entry ret %d", ret);
@@ -1354,7 +1344,7 @@ int ath12k_dp_rx_flow_delete_entry(struct ath12k_base *ab,
 		goto out;
 	}
 
-	ret = ath12k_hw_grp_dp_rx_invalidate_entry(ab->ag, DP_HTT_FST_CACHE_INVALIDATE_ENTRY,
+	ret = ath12k_hw_grp_dp_rx_invalidate_entry(ab->ag, DP_FST_CACHE_INVALIDATE_ENTRY,
 						   &flow_info->flow_tuple_info);
 	if (ret) {
 		ath12k_err(ab, "Rx flow delete fail due to invalidate ret %d", ret);
@@ -1391,7 +1381,7 @@ int ath12k_dp_rx_flow_delete_all_entries(struct ath12k_base *ab)
 	}
 
 	ret = ath12k_hw_grp_dp_rx_invalidate_entry(ab->ag,
-						   DP_HTT_FST_CACHE_INVALIDATE_FULL,
+						   DP_FST_CACHE_INVALIDATE_FULL,
 						   NULL);
 	if (ret) {
 		ath12k_err(ab, "Rx flow delete all fail due to invalidate ret %d", ret);
@@ -1462,9 +1452,9 @@ void ath12k_dp_rx_fst_init(struct ath12k_base *ab)
 	 * by sending INVALIDATE FULL command. This is needed to avoid DDR
 	 * and HW cache going out of sync when one soc goes for a recovery.
 	 */
-	ath12k_dp_htt_rx_flow_fse_operation(ab,
-					    DP_HTT_FST_CACHE_INVALIDATE_FULL,
-					    NULL);
+	ath12k_dp_arch_rx_flow_fse_cache_operation(dp,
+						   DP_FST_CACHE_INVALIDATE_FULL,
+						   NULL);
 
 	if (!ath12k_fse_3_tuple_enabled)
 		return;
@@ -1498,7 +1488,7 @@ void ath12k_dp_tid_cleanup(struct ath12k_base *ab)
         spin_lock_bh(&ab->dp->dp_lock);
         list_for_each_entry(peer, &ab->dp->peers, list) {
 		if (peer->dp_peer) {
-			for (tid = 0; tid <= IEEE80211_NUM_TIDS; tid++) {
+			for (tid = 0; tid < ab->hal.hal_params->num_tids; tid++) {
 				rx_tid = &peer->dp_peer->rx_tid[tid];
 				if (rx_tid->active) {
 					vaddr = rx_tid->vaddr;
@@ -1533,21 +1523,20 @@ void ath12k_dp_peer_reo_tid_setup(struct ath12k *ar, int vdev_id,
 		return;
 	}
 
-       for (tid = 0; tid <= IEEE80211_NUM_TIDS; tid++) {
-               rx_tid = &peer->dp_peer->rx_tid[tid];
-               if (!rx_tid->active)
-                       continue;
+	for (tid = 0; tid < ar->ab->hal.hal_params->num_tids; tid++) {
+		rx_tid = &peer->dp_peer->rx_tid[tid];
+		if (!rx_tid->active)
+			continue;
 
-               ret = ath12k_dp_arch_peer_rx_tid_reo_update(dp, ar,
-                                                           peer, rx_tid,
-                                                           rx_tid->ba_win_sz,
-                                                           0, false);
-               if (ret) {
-                       ath12k_warn(ar->ab, "failed to update reo for peer %pM rx tid %d\n",
-                                   peer_mac, tid);
-               }
-       }
-       spin_unlock_bh(&dp->dp_lock);
+		ret = ath12k_dp_arch_peer_rx_tid_reo_update(dp, ar, peer, rx_tid,
+							    rx_tid->ba_win_sz,
+							    0, false);
+		if (ret) {
+			ath12k_warn(ar->ab, "failed to update reo for peer %pM rx tid %d\n",
+				    peer_mac, tid);
+		}
+	}
+	spin_unlock_bh(&dp->dp_lock);
 }
 
 void ath12k_dp_tid_setup(void *data, struct ieee80211_sta *sta)
@@ -1642,9 +1631,9 @@ ath12k_dp_primary_peer_migrate_setup(struct ath12k_dp *dp, void *ctx,
 		/* Update the REO queue LUT at the corresponding peer id
 		 * and tid with qaddr.
 		 */
-		for (tid = 0; tid <= IEEE80211_NUM_TIDS; tid++) {
+		for (tid = 0; tid < mig_ab->hal.hal_params->num_tids; tid++) {
 			ath12k_dp_arch_peer_rx_tid_qref_setup(mig_dp,
-							      peer->mlo ? peer->ml_id : peer->peer_id,
+							      peer->dp_peer->peer_id,
 							      rx_tid->tid,
 							      rx_tid->paddr);
 		}
@@ -1754,6 +1743,12 @@ int ath12k_dp_rx_pkt_type_filter(struct ath12k *ar,
 void ath12k_dp_rx_skb_free(struct sk_buff *skb, struct ath12k_dp *dp, int ring,
 			   enum ath12k_dp_rx_error drop_reason)
 {
+	if (ring >= DP_REO_DST_RING_MAX) {
+		ath12k_dbg(dp->ab, ATH12K_DBG_TELEMETRY, "Invalid Rx Ring %u\n",
+			   ring);
+		ring = 0;
+	}
+
 	if (unlikely(drop_reason > DP_RX_ERR_MAX))
 		DP_DEVICE_STATS_INC(dp, rx.rx_err[DP_RX_ERR_DROP_MISC][ring], 1);
 	else
@@ -1762,4 +1757,3 @@ void ath12k_dp_rx_skb_free(struct sk_buff *skb, struct ath12k_dp *dp, int ring,
 	dev_kfree_skb_any(skb);
 }
 EXPORT_SYMBOL(ath12k_dp_rx_skb_free);
-

@@ -144,6 +144,11 @@ struct hal_rx_mon_msdu_info {
 	    last_buffer:1;
 };
 
+struct hal_rx_user_ctrl_frm_info {
+	 uint8_t bar : 1,
+		 ndpa : 1;
+};
+
 struct hal_rx_mon_ppdu_info {
 	u16 ppdu_id;
 	u16 last_ppdu_id;
@@ -246,6 +251,36 @@ struct hal_rx_mon_ppdu_info {
 	struct hal_rx_mon_msdu_info msdu_info[HAL_MAX_UL_MU_USERS];
 	u8 user_id;
 	u16 retried_msdu_count;
+	u8 rssi_region_offset;
+	u16 punctured_pattern;
+	u16 punc_bw;
+	struct hal_rx_user_ctrl_frm_info ctrl_frm_info[HAL_MAX_UL_MU_USERS];
+	struct hal_mon_ppdu_info_extn ppdu_info_extn;
+};
+
+/* in the bitmap 0 indicates no puncturing and 1 indicate that sub channel is punctured */
+#define PUNCTURE_NONE    0x0000
+#define PUNCTURE_INVALID 0xFFFF
+#define PUNCTURE_80MHZ_MASK 0xF
+#define PUNCTURE_160MHZ_MASK 0xFF
+#define PUNCTURE_320MHZ_MASK 0xFFFF
+#define PUNCTURE_40MHZ_MASK 0x3
+
+/*
+ * ieee80211_punc_type:
+ * Type of puncturing denoting the number of bits that are punctured.
+ * Each bit represents a 20MHz channel and therefore, each enum represents
+ * the number of 20MHz channels that are punctured.
+ */
+enum ieee80211_punc_type {
+	IEEE80211_PUNC_NONE        = 0,
+	IEEE80211_PUNC_MINUS20MHZ  = 1,
+	IEEE80211_PUNC_MINUS40MHZ  = 2,
+	IEEE80211_PUNC_MINUS60MHZ  = 3,
+	IEEE80211_PUNC_MINUS80MHZ  = 4,
+	IEEE80211_PUNC_MINUS100MHZ = 5,
+	IEEE80211_PUNC_MINUS120MHZ = 6,
+	IEEE80211_PUNC_INVALID,
 };
 
 struct hal_rx_mon_status_tlv_hdr {

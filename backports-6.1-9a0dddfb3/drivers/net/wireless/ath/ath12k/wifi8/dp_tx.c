@@ -19,6 +19,7 @@
 #include "../dp_peer.h"
 #include "../telemetry.h"
 #include "../telemetry_agent_if.h"
+#include "dp_peer.h"
 
 struct ath12k_tx_sw_metadata {
 	struct sk_buff *skb;
@@ -245,6 +246,7 @@ ath12k_dp_sdwftx_ingress_stats_update(struct ath12k_link_vif *arvif,
 	struct ath12k_dp *dp;
 	struct ath12k_dp_link_peer *pri_peer;
 	u16 msduq, peer_id, qos_id;
+	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
 
 	if (!ar)
 		return;
@@ -264,11 +266,14 @@ ath12k_dp_sdwftx_ingress_stats_update(struct ath12k_link_vif *arvif,
 
 		dp = ar->dp.dp;
 
+		rcu_read_lock();
 		spin_lock_bh(&dp->dp_lock);
 
-		pri_peer = ath12k_dp_link_peer_find_by_id(dp, peer_id);
+		pri_peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev,
+								    peer_id);
 		if (!pri_peer || !pri_peer->dp_peer || !pri_peer->dp_peer->qos) {
 			spin_unlock_bh(&dp->dp_lock);
+			rcu_read_unlock();
 			return;
 		}
 
@@ -278,12 +283,14 @@ ath12k_dp_sdwftx_ingress_stats_update(struct ath12k_link_vif *arvif,
 			ath12k_err(ar->ab, "msduq_id: %u not yet reserved\n",
 				   msduq);
 			spin_unlock_bh(&dp->dp_lock);
+			rcu_read_unlock();
 			return;
 		}
 
 		ath12k_qos_tx_enqueue_peer_stats(&pri_peer->peer_stats,
 						 msduq, skb_len);
 		spin_unlock_bh(&dp->dp_lock);
+		rcu_read_unlock();
 	}
 
 	/* Store the NWDELAY to skb->mark which can be fetched
@@ -867,15 +874,15 @@ ath12k_wifi8_dp_tx_populate_tcl_desc(struct ath12k_pdev_dp *dp_pdev,
 				(((u64)virt_to_phys(skb->data) >> 32) |
 				(tx_desc->desc_id << 12));
 	hal_tcl_desc->info0 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_BANK_ID,
-					 dp_link_vif->bank_id) |
+					 dp_vif->bank_id) |
 			      FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_VDEV_ID,
-					 dp_link_vif->vdev_id);
+					 dp_vif->dp_vif_id);
 	hal_tcl_desc->info1 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_CACHE_SET_NUM,
-					 dp_link_vif->ast_hash);
+					 dp_vif->ast_hash);
 	hal_tcl_desc->info2 =  skb->len;
 	hal_tcl_desc->info3 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO3_LINK_ID,
-					 dp_link_vif->link_id);
-	hal_tcl_desc->search_index = dp_link_vif->ast_idx;
+					 HAL_TX_WILD_CARD_LINK_ID);
+	hal_tcl_desc->search_index = dp_vif->ast_idx;
 	hal_tcl_desc->info5 = 0;
 
 	/**
@@ -918,17 +925,17 @@ ath12k_wifi8_dp_tx_populate_tcl_desc(struct ath12k_pdev_dp *dp_pdev,
 	tcl_desc.buf_addr_info.info1 = (((u64)virt_to_phys(skb->data) >> 32) |
 				       (tx_desc->desc_id << 12));
 	tcl_desc.info0 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_BANK_ID,
-				    dp_link_vif->bank_id) |
+				    dp_vif->bank_id) |
 			 FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_VDEV_ID,
-				    dp_link_vif->vdev_id);
+				    dp_vif->dp_vif_id);
 
 	tcl_desc.info1 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_CACHE_SET_NUM,
-				    dp_link_vif->ast_hash);
+				    dp_vif->ast_hash);
 	tcl_desc.tcl_cmd_number =  dp_link_vif->tcl_metadata;
 	tcl_desc.info2 =  skb->len;
 	tcl_desc.info3 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO3_LINK_ID,
-				    dp_link_vif->lmac_id);
-	tcl_desc.search_index = dp_link_vif->ast_idx;
+				    HAL_TX_WILD_CARD_LINK_ID);
+	tcl_desc.search_index = dp_vif->ast_idx;
 	tcl_desc.info5 = 0;
 
 	/**
@@ -982,6 +989,11 @@ ath12k_wifi8_dp_tx_fast(struct ath12k_pdev_dp *dp_pdev,
 
 	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags))
 		return DP_TX_ENQ_DROP_CRASH_FLUSH;
+
+	if (test_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags)) {
+		kfree_skb(skb);
+		return DP_TX_ENQ_SUCCESS;
+	}
 
 	pool_id = skb_get_queue_mapping(skb) & (ATH12K_HW_MAX_QUEUES - 1);
 
@@ -1079,7 +1091,6 @@ ath12k_wifi8_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	u8 hal_ring_id;
 	int ret;
 	u8 reason, tid;
-	u16 peer_id;
 	u8 ring_selector, subtype;
 	bool msdu_ext_desc = false;
 	size_t hdrlen;
@@ -1087,12 +1098,19 @@ ath12k_wifi8_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	u32 iova_mask = dp->hw_params->iova_mask;
 	bool is_diff_encap = false, is_null = false;
 	u8 qos_tag;
+	struct ath12k_sta *ahsta = NULL;
+	struct ath12k_dp_peer *dp_peer = NULL;
 	enum ath12k_dp_tx_enq_error err = DP_TX_ENQ_SUCCESS;
 
 	DP_STATS_INC_PKT(dp_vif, tx_i.recv_from_stack, 1, skb->len, ring_id);
 
 	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags))
 		return DP_TX_ENQ_DROP_CRASH_FLUSH;
+
+	if (test_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags)) {
+		kfree_skb(skb);
+		return err;
+	}
 
 	if (skb_cb->flags & ATH12K_SKB_HW_80211_ENCAP)
 		eth = (struct ethhdr *)skb->data;
@@ -1103,19 +1121,36 @@ ath12k_wifi8_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	    !ieee80211_is_data(hdr->frame_control))
 		return DP_TX_ENQ_DROP_NON_DATA_FRAME;
 
-	if (eth && is_multicast_ether_addr(eth->h_dest) && arsta) {
-		ti.meta_data_flags = arsta->tcl_metadata;
-		peer_id = u16_get_bits(ti.meta_data_flags,
-				       HTT_TCL_META_DATA_PEER_ID_MISSION);
-		ti.bss_ast_hash = arsta->ast_hash;
-		ti.bss_ast_idx = peer_id;
+	ti.meta_data_flags = dp_link_vif->tcl_metadata;
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
+		ti.bss_ast_hash = dp_vif->ast_hash;
+		ti.bss_ast_idx = dp_vif->ast_idx;
+	} else if (arsta) {
+		ahsta = arsta->ahsta;
+		if (ahsta->use_4addr_set) {
+			rcu_read_lock();
+			dp_peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev,
+								      ahsta->dp_peer_id);
+			if (!dp_peer) {
+				rcu_read_unlock();
+				return DP_TX_ENQ_DROP_INV_PEER;
+			}
+
+			ti.bss_ast_hash = dp_peer->peer_ext_ctx->ast_hash;
+			ti.bss_ast_idx = dp_peer->peer_ext_ctx->ast_index;
+			ti.lookup_override = true;
+			ti.meta_data_flags =
+			u32_encode_bits(0, HTT_TCL_META_DATA_TYPE) |
+					u32_encode_bits(dp_peer->peer_id,
+							HTT_TCL_META_DATA_PEER_ID);
+			rcu_read_unlock();
+		}
+	} else if (is_mcast) {
+		ti.bss_ast_hash = dp_link_vif->ast_hash;
+		ti.bss_ast_idx = dp_link_vif->ast_idx;
 		ti.lookup_override = true;
-	} else if (hdr && ieee80211_has_a4(hdr->frame_control) &&
-	    is_multicast_ether_addr(hdr->addr3) && arsta) {
-		ti.meta_data_flags = arsta->tcl_metadata;
+		/* set this until FW enables TQM path for MCAST by default */
 		ti.flags0 |= FIELD_PREP(HAL_TCL_DATA_CMD_INFO2_TO_FW_SW, 1);
-	} else {
-		ti.meta_data_flags = dp_link_vif->tcl_metadata;
 	}
 	pool_id = skb_get_queue_mapping(skb) & (ATH12K_HW_MAX_QUEUES - 1);
 
@@ -1146,7 +1181,7 @@ ath12k_wifi8_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 		return DP_TX_ENQ_DROP_SW_DESC_NA;
 	}
 
-	ti.bank_id = dp_link_vif->bank_id;
+	ti.bank_id = dp_vif->bank_id;
 
 	if (gsn_valid && !(ti.lookup_override)) {
 		/* Reset and Initialize meta_data_flags with Global Sequence
@@ -1158,27 +1193,24 @@ ath12k_wifi8_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 			u32_encode_bits(mcbc_gsn, HTT_TCL_META_DATA_GLOBAL_SEQ_NUM);
 
 		if (arvif->nawds_support)
-			ti.meta_data_flags |= u32_encode_bits(1, HTT_TCL_META_DATA_GLOBAL_SEQ_HOST_INSPECTED);
+			ti.meta_data_flags |=
+				u32_encode_bits(1, HTT_TCL_META_DATA_GSN_INSPECTED);
 	}
 
 	ti.encap_type = ath12k_dp_tx_get_encap_type(ab, skb);
-	ti.addr_search_flags = dp_link_vif->hal_addr_search_flags;
-	ti.search_type = dp_link_vif->search_type;
+	ti.addr_search_flags = dp_vif->hal_addr_search_flags;
+	ti.search_type = dp_vif->search_type;
 	ti.type = HAL_TCL_DESC_TYPE_BUFFER;
 	ti.pkt_offset = 0;
-	ti.link_id = dp_link_vif->link_id;
+	ti.link_id = HAL_TX_WILD_CARD_LINK_ID;
 
-	ti.vdev_id = dp_link_vif->vdev_id;
+	ti.vdev_id = dp_vif->dp_vif_id;
 	if (gsn_valid)
 		ti.vdev_id += HTT_TX_MLO_MCAST_HOST_REINJECT_BASE_VDEV_ID;
 	else if (arvif->nawds_support && is_mcast && !ti.lookup_override)
 		ti.meta_data_flags |=
 			u32_encode_bits(1, HTT_TCL_META_DATA_HOST_INSPECTED_MISSION);
 
-	if (!(ti.lookup_override)) {
-		ti.bss_ast_hash = dp_link_vif->ast_hash;
-		ti.bss_ast_idx = dp_link_vif->ast_idx;
-	}
 	ti.dscp_tid_tbl_idx = 0;
 
 	switch (ti.encap_type) {
@@ -1433,7 +1465,8 @@ skip_htt_metadata:
 					tx_desc->flags |= DP_TX_DESC_FLAG_BCAST;
 				else
 					tx_desc->flags |= DP_TX_DESC_FLAG_MCAST;
-				DP_STATS_INC(dp_vif, tx_i.mcast, 1, ti.ring_id);
+				DP_STATS_INC_PKT(dp_vif, tx_i.mcast, 1, skb->len,
+						 ti.ring_id);
 			}
 			DP_STATS_INC(dp_vif, tx_i.encap_type[ti.encap_type], 1,
 				     ti.ring_id);
@@ -1506,7 +1539,6 @@ ath12k_wifi8_dp_tx_get_hw_link_id_from_ppdu_id(struct hal_tx_status *ts,
 
 static void ath12k_wifi8_dp_tx_free_txbuf(struct ath12k_dp *dp,
 					  struct sk_buff *msdu,
-					  struct dp_tx_ring *tx_ring,
 					  struct ath12k_tx_sw_metadata *sw_metadata)
 {
 	struct ath12k_pdev_dp *dp_pdev;
@@ -1645,14 +1677,12 @@ ath12k_wifi8_dp_tx_htt_tx_complete_buf(struct ath12k_dp *dp,
 		}
 	}
 
-	spin_lock_bh(&dp->dp_lock);
-	peer = ath12k_dp_link_peer_find_by_id(dp, peer_id);
+	peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev, peer_id);
 	if (!peer || !peer->sta)
 		ath12k_dbg(ab, ATH12K_DBG_DATA,
 			   "dp_tx: failed to find the peer with peer_id %d\n", peer_id);
 	else
 		status.sta = peer->sta;
-	spin_unlock_bh(&dp->dp_lock);
 
 	if ((unlikely(ath12k_dp_stats_enabled(dp_pdev))) &&
 	    (unlikely(ath12k_debugfs_is_qos_stats_enabled(dp_pdev->ar)))) {
@@ -1737,7 +1767,7 @@ ath12k_wifi8_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 		}
 		fallthrough;
 	case HAL_WBM_REL_HTT_TX_COMP_STATUS_VDEVID_MISMATCH:
-		ath12k_wifi8_dp_tx_free_txbuf(dp, msdu, tx_ring, sw_metadata);
+		ath12k_wifi8_dp_tx_free_txbuf(dp, msdu, sw_metadata);
 		break;
 	case HAL_WBM_REL_HTT_TX_COMP_STATUS_MEC_NOTIFY:
 		/* This event is to be handled only when the driver decides to
@@ -1751,7 +1781,8 @@ ath12k_wifi8_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 
 	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, ts->peer_id);
 	if (peer) {
-		link_id = ath12k_dp_get_link_id(dp_pdev, ts->hw_link_id, peer);
+		link_id = ath12k_dp_peer_get_stats_link_id(dp->ab, peer,
+							   ts->hw_link_id);
 		ath12k_dp_tx_update_peer_basic_stats(peer, msdu_len,
 						     htt_status,
 						     link_id, ring_id);
@@ -1760,7 +1791,8 @@ ath12k_wifi8_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 				ath12k_dp_tx_comp_update_peer_stats(peer, ts,
 								    ring_id,
 								    tx_desc_flags,
-								    link_id);
+								    link_id,
+								    msdu_len);
 		}
 	} else {
 		DP_DEVICE_STATS_INC(dp, tx_err.tx_comp_err[DP_TX_COMP_ERR_INVALID_PEER][ring_id], 1);
@@ -2020,7 +2052,8 @@ static void ath12k_wifi8_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 
 	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, ts->peer_id);
 	if (peer) {
-		link_id = ath12k_dp_get_link_id(dp_pdev, ts->hw_link_id, peer);
+		link_id = ath12k_dp_peer_get_stats_link_id(dp->ab, peer,
+							   ts->hw_link_id);
 		ath12k_dp_tx_update_peer_basic_stats(peer, msdu_len, ts->status,
 						     link_id, ring);
 
@@ -2029,7 +2062,8 @@ static void ath12k_wifi8_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 				ath12k_dp_tx_comp_update_peer_stats(peer, ts,
 								    ring,
 								    tx_desc_flags,
-								    link_id);
+								    link_id,
+								    msdu_len);
 			if (unlikely(ath12k_debugfs_is_qos_stats_enabled(ar)))
 				ath12k_qos_stats_update(ar, msdu, ts,
 							dp_pdev,
@@ -2114,13 +2148,12 @@ static void ath12k_wifi8_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 
 	ath12k_wifi8_dp_tx_update_txcompl(dp_pdev, ts);
 
-	spin_lock_bh(&dp->dp_lock);
-	link_peer = ath12k_dp_link_peer_find_by_id(dp, ts->peer_id);
+	link_peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev,
+							     ts->peer_id);
 	if (!link_peer || !link_peer->sta) {
 		ath12k_dbg(ab, ATH12K_DBG_DATA,
 			   "dp_tx: failed to find the peer with peer_id %d\n",
 			   ts->peer_id);
-		spin_unlock_bh(&dp->dp_lock);
 		ieee80211_free_txskb(ath12k_dp_pdev_to_hw(dp_pdev), msdu);
 		drop_reason = DP_TX_COMP_ERR_INVALID_LINK_PEER;
 		goto exit;
@@ -2136,7 +2169,6 @@ static void ath12k_wifi8_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 
 	status.rates = &status_rate;
 	status.n_rates = 1;
-	spin_unlock_bh(&dp->dp_lock);
 
 	ieee80211_tx_status_ext(ath12k_dp_pdev_to_hw(dp_pdev), &status);
 	rcu_read_unlock();
@@ -2448,24 +2480,30 @@ int ath12k_wifi8_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 }
 
 u32 ath12k_wifi8_dp_tx_get_vdev_bank_config(struct ath12k_base *ab,
-					    struct ath12k_link_vif *arvif,
-					    bool vdev_id_check_en)
+					    struct ath12k_vif *ahvif,
+					    u8 link_id,
+					    bool force_vdev_id_check_disable)
 {
 	u32 bank_config = 0;
-	u8 link_id = arvif->link_id;
 	enum hal_encrypt_type encrypt_type = 0;
-	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
 	struct ath12k_dp_link_vif *dp_link_vif = &dp_vif->dp_link_vif[link_id];
+	u32 key_cipher = ahvif->deflink.key_cipher;
+	bool vdev_id_check_en;
+
+	if (force_vdev_id_check_disable)
+		vdev_id_check_en = false;
+	else
+		vdev_id_check_en = dp_vif->vdev_id_check_en;
 
 	/* Only valid for raw frames with HW crypto enabled.
 	 * With SW crypto, mac80211 sets key per packet
 	 */
 	if (dp_vif->tx_encap_type == HAL_TCL_ENCAP_TYPE_RAW &&
 	    test_bit(ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED, &ab->ag->flags) &&
-	    arvif->key_cipher != INVALID_CIPHER)
+	    key_cipher != INVALID_CIPHER)
 		bank_config |=
-			u32_encode_bits(ath12k_dp_tx_get_encrypt_type(arvif->key_cipher),
+			u32_encode_bits(ath12k_dp_tx_get_encrypt_type(key_cipher),
 					HAL_TX_BANK_CONFIG_ENCRYPT_TYPE);
 	else
 		encrypt_type = HAL_ENCRYPT_TYPE_OPEN;
@@ -2484,9 +2522,9 @@ u32 ath12k_wifi8_dp_tx_get_vdev_bank_config(struct ath12k_base *ab,
 	else
 		bank_config |= u32_encode_bits(0, HAL_TX_BANK_CONFIG_INDEX_LOOKUP_EN);
 
-	bank_config |= u32_encode_bits(dp_link_vif->hal_addr_search_flags &
+	bank_config |= u32_encode_bits(dp_vif->hal_addr_search_flags &
 				       HAL_TX_ADDRX_EN,	HAL_TX_BANK_CONFIG_ADDRX_EN) |
-			u32_encode_bits(!!(dp_link_vif->hal_addr_search_flags &
+			u32_encode_bits(!!(dp_vif->hal_addr_search_flags &
 					HAL_TX_ADDRY_EN),
 					HAL_TX_BANK_CONFIG_ADDRY_EN);
 
@@ -2495,6 +2533,7 @@ u32 ath12k_wifi8_dp_tx_get_vdev_bank_config(struct ath12k_base *ab,
 			u32_encode_bits(vdev_id_check_en,
 					HAL_TX_BANK_CONFIG_VDEV_ID_CHECK_EN);
 
+	/*TODO need to revist with qos implementation */
 	bank_config |= u32_encode_bits(dp_link_vif->map_id,
 				       HAL_TX_BANK_CONFIG_DSCP_TIP_MAP_ID);
 
@@ -2596,7 +2635,6 @@ void ath12k_ppeds_tx_update_stats(struct ath12k *ar, int skb_len,
 	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
 	struct ath12k_dp_link_peer *peer;
 	struct ath12k_vif *ahvif;
-	struct ath12k_link_sta *arsta;
 	struct hal_tx_status ts = { 0 };
 	bool tx_drop = false;
 	bool tx_status_default = false;
@@ -2644,14 +2682,8 @@ void ath12k_ppeds_tx_update_stats(struct ath12k *ar, int skb_len,
 
 	rcu_read_lock();
 
-	peer = ath12k_dp_link_peer_find_by_id(dp, ts.peer_id);
+	peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev, ts.peer_id);
 	if (unlikely(!peer || !peer->sta || !peer->vif)) {
-		rcu_read_unlock();
-		return;
-	}
-
-	arsta = ath12k_peer_get_link_sta(ab, peer);
-	if (!arsta) {
 		rcu_read_unlock();
 		return;
 	}
@@ -2788,4 +2820,193 @@ int ath12k_wifi8_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 	ath12k_dp_ppeds_tx_release_desc_list_bulk(dp, &local_list, count,
 						  &local_list_no_skb, list_no_skb_count);
 	return (count + list_no_skb_count);
+}
+
+static int ath12k_wifi8_dp_tx_null_flowq_handler(
+			struct ath12k_dp *dp,
+			struct hal_tcl_exit_base *tx_exception_desc,
+			struct ath12k_tx_desc_info *tx_desc)
+{
+	ath12k_err(dp->ab, "flowq is null");
+	return 0;
+}
+
+static bool
+ath12k_wifi8_dp_validate_tx_exception_error(struct hal_tcl_exit_base *tx_exception_desc)
+{
+	if (le32_get_bits(tx_exception_desc->info11,
+			  HAL_TCL_EXIT_BASE_INFO11_VDEV_ID_CHECK_EN) &&
+	    le32_get_bits(tx_exception_desc->info11,
+			  HAL_TCL_EXIT_BASE_INFO11_VDEV_ID_CHECK_FAILURE)) {
+		ath12k_err(NULL, "tx exception error vdev id check failure");
+		return true;
+	}
+	if (le32_get_bits(tx_exception_desc->info6,
+			  HAL_TCL_EXIT_BASE_INFO6_ADDRX_IDX_INVALID)) {
+		ath12k_err(NULL, "tx exception error addrx invalid");
+		return true;
+	}
+	if (le32_get_bits(tx_exception_desc->info6,
+			  HAL_TCL_EXIT_BASE_INFO6_ADDRX_IDX_TIMEOUT)) {
+		ath12k_err(NULL, "tx exception error addrx timeout");
+		return true;
+	}
+	if (le32_get_bits(tx_exception_desc->info0,
+			  HAL_TCL_EXIT_BASE_INFO0_MSDU_DROP)) {
+		ath12k_err(NULL, "tx exception error MSDU drop");
+		return true;
+	}
+
+	if (le32_get_bits(tx_exception_desc->info1,
+			  HAL_TCL_EXIT_BASE_INFO1_ILLEGAL_FRAME)) {
+		ath12k_err(NULL, "tx exception error illegal frame");
+		return true;
+	}
+	if (le32_get_bits(tx_exception_desc->info1,
+			  HAL_TCL_EXIT_BASE_INFO1_ILLEGAL_ETH_HEADER)) {
+		ath12k_err(NULL, "tx exception error illegal eth header");
+		return true;
+	}
+	if (le32_get_bits(tx_exception_desc->info7,
+			  HAL_TCL_EXIT_BASE_INFO7_PEER_POINTER_NULL_EXCEPTION)) {
+		ath12k_err(NULL, "tx exception error peer pointer is null");
+		return true;
+	}
+	if (le32_get_bits(tx_exception_desc->info7,
+			  HAL_TCL_EXIT_BASE_INFO7_BANK_NOT_CONFIGURED)) {
+		ath12k_err(NULL, "tx exception error bank not configured");
+		return true;
+	}
+	if (le32_get_bits(tx_exception_desc->info9,
+			  HAL_TCL_EXIT_BASE_INFO9_MSDU_LENGTH_ERROR)) {
+		ath12k_err(NULL, "tx exception error invalid msdu length");
+		return true;
+	}
+	/* In case tcl cmd to SW */
+	if ((le32_get_bits(tx_exception_desc->info11,
+			   HAL_TCL_EXIT_BASE_INFO11_TO_FW_SW)) == 2) {
+		ath12k_err(NULL, "tx exception error TO SW is set");
+		return true;
+	}
+	if (le32_get_bits(tx_exception_desc->info11,
+			  HAL_TCL_EXIT_BASE_INFO11_PARSER_OP_TLV_SEQUENCE_ERR)) {
+		ath12k_err(NULL, "tx exception error parser error");
+		return true;
+	}
+	if (le32_get_bits(tx_exception_desc->info11,
+			  HAL_TCL_EXIT_BASE_INFO11_WHO_CLASSIFY_INFO_SEL_EXCEEDED)) {
+		ath12k_err(NULL, "tx exception error classify info sel exceeded");
+		return true;
+	}
+	if (le32_get_bits(tx_exception_desc->info11,
+			  HAL_TCL_EXIT_BASE_INFO11_BANK_ID_EXCEEDED)) {
+		ath12k_err(NULL, "tx exception error bank id exceeded");
+		return true;
+	}
+	if (le32_get_bits(tx_exception_desc->info11,
+			  HAL_TCL_EXIT_BASE_INFO11_BUFFER_LENGTH_ERROR)) {
+		ath12k_err(NULL, "tx exception error buffer len error");
+		return true;
+	}
+
+	return false;
+}
+
+int ath12k_wifi8_dp_tx_exception_handler(struct ath12k_dp *dp, int budget)
+{
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+	struct ath12k_base *ab = dp->ab;
+	struct hal_tcl_exit_base *tx_exception_desc = NULL;
+	struct ath12k_tx_desc_info *tx_desc = NULL;
+	struct hal_srng *srng;
+	int quota = budget;
+	u32 desc_id;
+	dma_addr_t paddr;
+	struct ath12k_tx_sw_metadata sw_metadata = {0};
+	int pdev_tx_comp_cnt[MAX_RADIOS] = {0};
+	u8 mac_id = 0;
+	u8 pdev_id;
+	struct ath12k_pdev_dp *dp_pdev = NULL;
+
+	srng = &ab->hal.srng_list[dp_wifi8->tx_exception.ring_id];
+	spin_lock_bh(&srng->lock);
+	ath12k_hal_srng_access_begin(ab, srng);
+	while (budget-- &&
+	       (tx_exception_desc = ath12k_hal_srng_dst_get_next_entry(ab, srng))) {
+		paddr = ((u64)(le32_get_bits(tx_exception_desc->buf_addr_info.info1,
+					     BUFFER_ADDR_INFO1_ADDR)) << 32) |
+			le32_get_bits(tx_exception_desc->buf_addr_info.info0,
+				      BUFFER_ADDR_INFO0_ADDR);
+		if (!paddr) {
+			ath12k_warn(dp->ab, "invalid  paddr in TX exception path\n");
+			print_hex_dump(KERN_ERR, "tx exception desc: ",
+				       DUMP_PREFIX_ADDRESS, 16, 1, tx_exception_desc,
+				       sizeof(*tx_exception_desc), false);
+			continue;
+		}
+
+		desc_id = le32_get_bits(tx_exception_desc->buf_addr_info.info1,
+					BUFFER_ADDR_INFO1_SW_COOKIE);
+		tx_desc = ath12k_dp_get_tx_desc(dp, desc_id);
+		if (!tx_desc) {
+			ath12k_warn(dp->ab,
+				    "unable to get txdesc exception path %d\n", desc_id);
+			continue;
+		}
+
+		if (ath12k_wifi8_dp_validate_tx_exception_error(tx_exception_desc))
+			goto tx_buf_release;
+
+		if (le32_get_bits(tx_exception_desc->info11,
+				  HAL_TCL_EXIT_BASE_INFO11_FLOW_POINTER_NULL)) {
+			ath12k_wifi8_dp_tx_null_flowq_handler(dp,
+							      tx_exception_desc,
+							      tx_desc);
+			/* TODO remove these lines after enabling dynamic flow queue */
+			goto tx_buf_release;
+		}
+tx_buf_release:
+		sw_metadata.skb = tx_desc->skb;
+		sw_metadata.paddr = tx_desc->paddr;
+		sw_metadata.len = tx_desc->len;
+		sw_metadata.skb_ext_desc = tx_desc->skb_ext_desc;
+		sw_metadata.paddr_ext_desc = tx_desc->paddr_ext_desc;
+		sw_metadata.ext_desc_len = tx_desc->ext_desc_len;
+		sw_metadata.flags = tx_desc->flags;
+		sw_metadata.mac_id = tx_desc->mac_id;
+
+		tx_desc->skb = NULL;
+		tx_desc->skb_ext_desc = NULL;
+		tx_desc->in_use = false;
+		tx_desc->flags = 0;
+		tx_desc->paddr_ext_desc = 0;
+
+		pdev_tx_comp_cnt[sw_metadata.mac_id]++;
+		ath12k_wifi8_dp_tx_free_txbuf(dp, sw_metadata.skb, &sw_metadata);
+		ath12k_dp_tx_release_txbuf(dp, tx_desc, tx_desc->pool_id);
+	}
+
+	ath12k_hal_srng_access_end(ab, srng);
+	spin_unlock_bh(&srng->lock);
+
+	for (mac_id = 0; mac_id < MAX_RADIOS; mac_id++) {
+		if (likely(pdev_tx_comp_cnt[mac_id])) {
+			pdev_id = ath12k_hw_mac_id_to_pdev_id(dp->hw_params, mac_id);
+			rcu_read_lock();
+			dp_pdev = ath12k_dp_to_dp_pdev(dp, pdev_id);
+
+			if (unlikely(!dp_pdev)) {
+				rcu_read_unlock();
+				continue;
+			}
+
+			if (atomic_sub_and_test(pdev_tx_comp_cnt[mac_id],
+						&dp_pdev->num_tx_pending))
+				wake_up(&dp_pdev->tx_empty_waitq);
+
+			rcu_read_unlock();
+		}
+	}
+
+	return quota - budget;
 }

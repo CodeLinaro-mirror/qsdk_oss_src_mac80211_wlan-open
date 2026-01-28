@@ -566,7 +566,7 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata, bool going_do
 			if (skb->dev == sdata->dev) {
 				__skb_unlink(skb, &ps->bc_buf);
 				local->total_ps_buffered--;
-				ieee80211_free_txskb(&local->hw, skb);
+				__ieee80211_free_txskb(&local->hw, skb);
 			}
 		}
 		spin_unlock_irqrestore(&ps->bc_buf.lock, flags);
@@ -596,6 +596,7 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata, bool going_do
 		}
 
 		ieee80211_adjust_monitor_flags(sdata, -1);
+		drv_set_monitor(local, &sdata->vif, 0);
 		break;
 	case NL80211_IFTYPE_NAN:
 		/* clean all the functions */
@@ -632,7 +633,7 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata, bool going_do
 	}
 
 	/*
-	 * Since ieee80211_free_txskb() may issue __dev_queue_xmit()
+	 * Since __ieee80211_free_txskb() may issue __dev_queue_xmit()
 	 * which should be called with interrupts enabled, reclamation
 	 * is done in two phases:
 	 */
@@ -641,7 +642,7 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata, bool going_do
 	/* ... and perform actual reclamation with interrupts enabled. */
 	skb_queue_walk_safe(&freeq, skb, tmp) {
 		__skb_unlink(skb, &freeq);
-		ieee80211_free_txskb(&local->hw, skb);
+		__ieee80211_free_txskb(&local->hw, skb);
 	}
 
 	/* Since there are percpu SW queues, unlink all
@@ -677,7 +678,8 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata, bool going_do
 	switch (sdata->vif.type) {
 	case NL80211_IFTYPE_AP_VLAN:
 		if ((ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD) ||
-		     ieee80211_hw_check(&local->hw, SUPPORTS_VLAN_DATA_OFFLOAD)) &&
+		     ieee80211_hw_check(&local->hw, SUPPORTS_VLAN_DATA_OFFLOAD) ||
+		     ieee80211_hw_check(&local->hw, VLAN_GROUP_KEY_HW_OFFLOAD)) &&
 		    going_down)
 			drv_remove_interface(local, sdata);
 		break;
@@ -1136,7 +1138,6 @@ void ieee80211_adjust_monitor_flags(struct ieee80211_sub_if_data *sdata,
 	ADJUST(OTHER_BSS, other_bss);
 	if (!(flags & MONITOR_FLAG_SKIP_TX))
 		local->tx_mntrs += offset;
-
 #undef ADJUST
 }
 
@@ -1416,7 +1417,8 @@ int ieee80211_do_open(struct wireless_dev *wdev, bool coming_up)
 				netif_carrier_on(dev);
 
 			if (ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD) ||
-			     ieee80211_hw_check(&local->hw, SUPPORTS_VLAN_DATA_OFFLOAD)) {
+			    ieee80211_hw_check(&local->hw, SUPPORTS_VLAN_DATA_OFFLOAD) ||
+			    ieee80211_hw_check(&local->hw, VLAN_GROUP_KEY_HW_OFFLOAD)) {
 				ieee80211_set_sdata_offload_flags(sdata);
 				res = drv_add_interface(local, sdata);
 				if (res)
@@ -1455,6 +1457,7 @@ int ieee80211_do_open(struct wireless_dev *wdev, bool coming_up)
 
 		ieee80211_adjust_monitor_flags(sdata, 1);
 		ieee80211_configure_filter(local);
+		drv_set_monitor(local, &sdata->vif, sdata->u.mntr.flags);
 		ieee80211_recalc_offload(local);
 		ieee80211_recalc_idle(local);
 

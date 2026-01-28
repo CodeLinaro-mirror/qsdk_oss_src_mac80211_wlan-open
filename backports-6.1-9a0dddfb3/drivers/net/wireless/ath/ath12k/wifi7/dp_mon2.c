@@ -259,7 +259,7 @@ ath12k_wifi7_dp_mon_parse_status_rx_hdr(struct ath12k_pdev_dp *dp_pdev,
 	offset = (const u8 *)tlv_data - (const u8 *)mon_buf;
 	offset += ATH12K_MON_RX_PKT_OFFSET;
 	if (unlikely(frag_len <= 0) || frag_len > DP_MON_RX_HDR_LEN) {
-		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_RX,
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON,
 			   "invalid rx header length: %d", frag_len);
 		return 0;
 	}
@@ -639,8 +639,8 @@ ath12k_wifi7_dp_mon_pad_amsdu(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *mp
 		if (!pad_start_ptr)
 			return -EINVAL;
 
-		pad_start_ptr += ath12k_wifi7_dp_mon_get_frag_size_by_idx(dp,
-									  mpdu, frag_idx);
+		pad_start_ptr += ath12k_dp_mon_get_frag_size_by_idx(dp,
+								    mpdu, frag_idx);
 		/* pad_start_ptr points at end of frag, to add amsdu padding
 		 * subtract the amsdu pad len in pad_start_ptr.
 		 */
@@ -744,8 +744,8 @@ ath12k_wifi7_dp_mon_process_msdu_frag(struct ath12k_pdev_dp *dp_pdev,
 			 */
 			if (prev_msdu_end_received) {
 				hdr_frag_size =
-				ath12k_wifi7_dp_mon_get_frag_size_by_idx(dp, msdu_cur,
-									 frag_iter);
+				ath12k_dp_mon_get_frag_size_by_idx(dp, msdu_cur,
+								   frag_iter);
 				/* Adjust page frag offset to point to LLC/SNAP header*/
 				if (hdr_frag_size > msdu_llc_len) {
 					frag_llc_len = hdr_frag_size - msdu_llc_len;
@@ -769,8 +769,8 @@ ath12k_wifi7_dp_mon_process_msdu_frag(struct ath12k_pdev_dp *dp_pdev,
 			msdu_meta = (struct hal_rx_mon_msdu_info *)
 					((u8 *)frag_addr - ATH12K_MON_RX_PKT_OFFSET);
 			frag_size =
-				ath12k_wifi7_dp_mon_get_frag_size_by_idx(dp, msdu_cur,
-									 frag_iter);
+				ath12k_dp_mon_get_frag_size_by_idx(dp, msdu_cur,
+								   frag_iter);
 
 			/*For middle buffers, no need to add headers
 			 */
@@ -806,8 +806,8 @@ ath12k_wifi7_dp_mon_process_msdu_frag(struct ath12k_pdev_dp *dp_pdev,
 				 * with the subframe header.
 				 */
 				hdr_frag_size =
-				ath12k_wifi7_dp_mon_get_frag_size_by_idx(dp, msdu_cur,
-									 frag_iter - 1);
+				ath12k_dp_mon_get_frag_size_by_idx(dp, msdu_cur,
+								   frag_iter - 1);
 				llc_amsdu_len = msdu_llc_len + amsdu_pad;
 				if (hdr_frag_size > llc_amsdu_len) {
 					llc_amsdu_len = msdu_llc_len + amsdu_pad;
@@ -939,7 +939,7 @@ ath12k_wifi7_dp_mon_restitch_frags(struct sk_buff *mpdu,
 
 	if (unlikely(num_frags < ATH12K_DP_MON_MIN_FRAGS_RESTITCH)) {
 		mon_stats->restitch_insuff_frags_cnt++;
-		ath12k_dbg(dp->ab, ATH12K_DBG_DP_MON_RX,
+		ath12k_dbg(dp->ab, ATH12K_DBG_DP_MON,
 			   "mon_rx_restitch: not enough frags %d to proceed further",
 			   num_frags);
 		ret = -EINVAL;
@@ -954,7 +954,7 @@ ath12k_wifi7_dp_mon_restitch_frags(struct sk_buff *mpdu,
 		goto free_mpdu;
 	}
 
-	hdr_frag_size = ath12k_wifi7_dp_mon_get_frag_size_by_idx(dp, mpdu, 0);
+	hdr_frag_size = ath12k_dp_mon_get_frag_size_by_idx(dp, mpdu, 0);
 	if (unlikely(!hdr_frag_size)) {
 		ath12k_warn(dp, "mon_rx_restitch: rx header size is 0\n");
 		ret = -EINVAL;
@@ -975,7 +975,7 @@ ath12k_wifi7_dp_mon_restitch_frags(struct sk_buff *mpdu,
 		goto free_mpdu;
 	}
 
-	frag_size = ath12k_wifi7_dp_mon_get_frag_size_by_idx(dp, mpdu, 1);
+	frag_size = ath12k_dp_mon_get_frag_size_by_idx(dp, mpdu, 1);
 	if (unlikely(!frag_size)) {
 		ath12k_warn(dp, "mon_rx_restitch: pkt size is 0\n");
 		ret = -EINVAL;
@@ -997,7 +997,7 @@ ath12k_wifi7_dp_mon_restitch_frags(struct sk_buff *mpdu,
 		frag_page_offset += ATH12K_DP_MON_ETH_TYPE_DOUBLE_VLAN_LEN;
 
 	if (unlikely(frag_size <= frag_page_offset)) {
-		ath12k_dbg(dp->ab, ATH12K_DBG_DP_MON_RX,
+		ath12k_dbg(dp->ab, ATH12K_DBG_DP_MON,
 			   "mon_rx_restitch: pkt size %u is less than frag offset %u\n",
 			   frag_size, frag_page_offset);
 		ret = -EINVAL;
@@ -1057,10 +1057,23 @@ void ath12k_wifi7_dp_mon_rx_process_mpdu_queue(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp_mon_mpdu_meta *mpdu_meta;
 	struct ath12k_pdev_mon_dp_stats *mon_stats = &dp_pdev->dp_mon_pdev->mon_stats;
 	u32 buf_size = ATH12K_DP_MON_RX_BUF_SIZE, num_skb = 0, pkt_tlv = 0;
-	int ret, fcs_len_left, last_frag_idx, last_frag_size;
+	int ret, fcs_len_left, last_frag_idx, last_frag_size, filter_cat;
 
 	while ((mpdu = skb_dequeue(&ppdu_info->mpdu_q[queue_idx]))) {
 		mpdu_meta = (struct ath12k_dp_mon_mpdu_meta *)mpdu->data;
+
+		if (unlikely(dp_pdev->dp_mon_pdev->smart_mon_state ==
+			ATH12K_DP_SMART_MON_ACTIVE)) {
+			filter_cat =
+				ppdu_info->userstats[queue_idx].filter_category;
+			if (filter_cat != DP_MPDU_FILTER_CATEGORY_MD) {
+				dev_kfree_skb_any(mpdu);
+				mon_stats->num_skb_free++;
+				num_skb = 0;
+				pkt_tlv = 0;
+				goto next_mpdu;
+			}
+		}
 		/* In some cases, an RX_HDR TLV may get received with no content
 		 * and without an accompanying BUFFER ADDR TLV—meaning there is
 		 * no payload attached. In such cases, the skb may have fragments
@@ -1084,9 +1097,9 @@ void ath12k_wifi7_dp_mon_rx_process_mpdu_queue(struct ath12k_pdev_dp *dp_pdev,
 			last_frag_idx = skb_shinfo(mpdu)->nr_frags - 1;
 			if (skb_shinfo(mpdu)->nr_frags >= 2) {
 				last_frag_size =
-				ath12k_wifi7_dp_mon_get_frag_size_by_idx(dp_pdev->dp,
-									 mpdu,
-									 last_frag_idx);
+				ath12k_dp_mon_get_frag_size_by_idx(dp_pdev->dp,
+								   mpdu,
+								   last_frag_idx);
 				if (last_frag_size > 0 && last_frag_size <= FCS_LEN) {
 					ath12k_dp_mon_skb_remove_frag(dp_pdev->dp, mpdu,
 								      last_frag_idx,
@@ -1261,7 +1274,7 @@ static int ath12k_wifi7_dp_mon_rx_add_ppdu_desc(struct list_head *mon_desc_used_
 	ppdu_desc = ath12k_wifi7_dp_mon_rx_get_ppdu_desc(dp_mon_pdev);
 	if (!ppdu_desc) {
 		mon_stats->ppdu_desc_free_list_empty_cnt++;
-		ath12k_dbg(dp_mon->dp->ab, ATH12K_DBG_DP_MON_RX,
+		ath12k_dbg(dp_mon->dp->ab, ATH12K_DBG_DP_MON,
 			   "No entry in the ppdu desc free list\n");
 		return -ENOENT;
 	}
@@ -1396,7 +1409,7 @@ ath12k_dp_mon_rx_update_peer_stats_ds(struct ath12k_pdev_dp *pdev_dp,
 
 		peer = ath12k_dp_link_peer_find_by_peerid_index(dp, pdev_dp,
 								user_stats->sw_peer_id);
-		if (!peer)
+		if (!peer || !peer->sta)
 			continue;
 
 		ahvif = ath12k_vif_to_ahvif(peer->vif);
@@ -1431,6 +1444,23 @@ ath12k_dp_mon_rx_update_peer_stats_ds(struct ath12k_pdev_dp *pdev_dp,
 	}
 }
 #endif
+
+static inline void
+ath12k_wifi7_dp_get_avg_rssi(struct hal_rx_mon_ppdu_info *ppdu_info,
+			     struct ath12k_neighbor_peer *nrp)
+{
+	// Calculating the moving average of RSSI
+	if (nrp->avg_rssi != 0) {
+		nrp->avg_rssi =
+			((nrp->avg_rssi -
+			  (nrp->avg_rssi >> 2)) +
+			  (ppdu_info->rssi_comb >> 2));
+	} else {
+		// First sample
+		nrp->avg_rssi =
+			ppdu_info->rssi_comb;
+	}
+}
 
 static void
 ath12k_wifi7_dp_mon_rx_process_ppdu(struct work_struct *work)
@@ -1502,6 +1532,8 @@ ath12k_wifi7_dp_mon_rx_process_ppdu(struct work_struct *work)
 							 ppdu_info->nrp_info.mac_addr2);
 					if (filter_category ==
 					    DP_MPDU_FILTER_CATEGORY_MD && is_addr_equal) {
+						ath12k_wifi7_dp_get_avg_rssi(ppdu_info,
+									     nrp);
 						nrp->rssi = ppdu_info->rssi_comb;
 						nrp->timestamp =
 							ktime_to_ms(ktime_get_real());
@@ -1676,7 +1708,7 @@ int ath12k_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int mac_i
 			ret = ath12k_wifi7_dp_mon_rx_add_ppdu_desc(mon_desc_used_list,
 								   dp_mon_pdev);
 			if (ret) {
-				ath12k_dbg(dp->ab, ATH12K_DBG_DP_MON_RX,
+				ath12k_dbg(dp->ab, ATH12K_DBG_DP_MON,
 					   "mon_dest: Failed to add mon desc to ppdu ret %d",
 					   ret);
 				ath12k_wifi7_dp_mon_flush_used_list(pdev_dp,

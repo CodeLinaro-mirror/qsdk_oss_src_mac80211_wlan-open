@@ -36,6 +36,9 @@ enum athdbg_request_type{
 	ATH_DBG_REQ_COLLECT_MINI_DUMP = 0x02,
 	ATH_DBG_REQ_ENABLE_QDSS = 0x04,
 	ATH_DBG_REQ_DUMP_QDSS = 0x08,
+	ATH_DBG_REQ_WMI_ENABLE = 0x10,
+	ATH_DBG_REQ_WMI_DUMP   = 0x20,
+	ATH_DBG_REQ_WMI_VERBOSITY = 0x40,
 };
 
 enum athdbg_qdss_dump_type {
@@ -48,7 +51,7 @@ struct athdbg_request{
 	struct ath12k_base *ab;
 	struct list_head req_list;
 	enum athdbg_request_type req_type;
-	unsigned int data;
+	u64 data;
 	char *input_buf;
 };
 
@@ -66,5 +69,6 @@ struct ath_debug_base {
 	char bus[BUS_NAME_LEN];
 };
 
-unsigned int athdbg_conv_str_to_dbgmask(char *dbgmask);
+u64 athdbg_conv_str_to_dbgmask(const char *dbgmask);
+int athdbg_dbgmask_to_str(u64 mask, char *buf, size_t buflen);
 #endif

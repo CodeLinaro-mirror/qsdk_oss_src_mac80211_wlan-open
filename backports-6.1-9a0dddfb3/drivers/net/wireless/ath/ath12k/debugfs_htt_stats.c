@@ -496,7 +496,15 @@ ath12k_htt_print_txbf_ofdma_be_ndpa_stats_tlv(const void *tag_buf,
 	len += scnprintf(buf + len, buf_len - len,
 			 "HTT_TXBF_OFDMA_BE_NDPA_STATS_TLV:\n");
 
+	if (num_elements > ATH12K_HTT_TX_PDEV_MAX_TXBF_OFDMA_USERS) {
+		len += scnprintf(buf + len, buf_len - len,
+				 "Invalid num_elements: %u\n", num_elements);
+		stats_req->buf_len = len;
+		return;
+	}
+
 	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "be_ofdma_ndpa_queued =");
 	for (i = 0; i < num_elements; i++) {
 		if (htt_stats_buf->be_ndpa[i].be_ofdma_ndpa_queued) {
 			null_output = 0;
@@ -505,13 +513,13 @@ ath12k_htt_print_txbf_ofdma_be_ndpa_stats_tlv(const void *tag_buf,
 				htt_stats_buf->be_ndpa[i].be_ofdma_ndpa_queued);
 		}
 	}
-	if (null_output) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_ndpa_queued = %s\n", "NONE");
-	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
 
 	null_output = 1;
-
+	len += scnprintf(buf + len, buf_len - len, "be_ofdma_ndpa_tried =");
 	for (i = 0; i < num_elements; i++) {
 		if (htt_stats_buf->be_ndpa[i].be_ofdma_ndpa_tried) {
 			null_output = 0;
@@ -520,13 +528,13 @@ ath12k_htt_print_txbf_ofdma_be_ndpa_stats_tlv(const void *tag_buf,
 				htt_stats_buf->be_ndpa[i].be_ofdma_ndpa_tried);
 		}
 	}
-	if (null_output) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_ndpa_tried = %s\n", "NONE");
-	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
 
 	null_output = 1;
-
+	len += scnprintf(buf + len, buf_len - len, "be_ofdma_ndpa_flushed =");
 	for (i = 0; i < num_elements; i++) {
 		if (htt_stats_buf->be_ndpa[i].be_ofdma_ndpa_flushed) {
 			null_output = 0;
@@ -535,13 +543,13 @@ ath12k_htt_print_txbf_ofdma_be_ndpa_stats_tlv(const void *tag_buf,
 				htt_stats_buf->be_ndpa[i].be_ofdma_ndpa_flushed);
 		}
 	}
-	if (null_output) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_ndpa_flushed = %s\n", "NONE");
-	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
 
 	null_output = 1;
-
+	len += scnprintf(buf + len, buf_len - len, "be_ofdma_ndpa_err =");
 	for (i = 0; i < num_elements; i++) {
 		if (htt_stats_buf->be_ndpa[i].be_ofdma_ndpa_err) {
 			null_output = 0;
@@ -550,10 +558,10 @@ ath12k_htt_print_txbf_ofdma_be_ndpa_stats_tlv(const void *tag_buf,
 				htt_stats_buf->be_ndpa[i].be_ofdma_ndpa_err);
 		}
 	}
-	if (null_output) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_ndpa_err = %s\n", "NONE");
-	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
 
 	stats_req->buf_len = len;
 }
@@ -571,7 +579,16 @@ ath12k_htt_print_txbf_ofdma_be_ndp_stats_tlv(const void *tag_buf,
 	u32 num_elements = htt_stats_buf->num_elems_be_ndp_arr;
 
 	len += scnprintf(buf + len, buf_len - len, "HTT_TXBF_OFDMA_BE_NDP_STATS_TLV:\n");
+
+	if (num_elements > ATH12K_HTT_TX_PDEV_MAX_TXBF_OFDMA_USERS) {
+		len += scnprintf(buf + len, buf_len - len,
+				 "Invalid num_elements: %u\n", num_elements);
+		stats_req->buf_len = len;
+		return;
+	}
+
 	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "be_ofdma_ndp_queued =");
 	for (i = 0; i < num_elements; i++) {
 		if (htt_stats_buf->be_ndp[i].be_ofdma_ndp_queued) {
 			null_output = 0;
@@ -580,12 +597,13 @@ ath12k_htt_print_txbf_ofdma_be_ndp_stats_tlv(const void *tag_buf,
 				htt_stats_buf->be_ndp[i].be_ofdma_ndp_queued);
 		}
 	}
-	if (null_output) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_ndp_queued = %s\n", "NONE");
-	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
 
 	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "be_ofdma_ndp_flushed =");
 	for (i = 0; i < num_elements; i++) {
 		if (htt_stats_buf->be_ndp[i].be_ofdma_ndp_flushed) {
 			null_output = 0;
@@ -594,12 +612,13 @@ ath12k_htt_print_txbf_ofdma_be_ndp_stats_tlv(const void *tag_buf,
 				htt_stats_buf->be_ndp[i].be_ofdma_ndp_flushed);
 		}
 	}
-	if (null_output) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_ndp_flushed = %s\n", "NONE");
-	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
 
 	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "be_ofdma_ndp_err =");
 	for (i = 0; i < num_elements; i++) {
 		if (htt_stats_buf->be_ndp[i].be_ofdma_ndp_err) {
 			null_output = 0;
@@ -608,12 +627,13 @@ ath12k_htt_print_txbf_ofdma_be_ndp_stats_tlv(const void *tag_buf,
 				htt_stats_buf->be_ndp[i].be_ofdma_ndp_err);
 		}
 	}
-	if (null_output) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_ndp_err = %s\n", "NONE");
-	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
 
 	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "be_ofdma_ndp_tried =");
 	for (i = 0; i < num_elements; i++) {
 		if (htt_stats_buf->be_ndp[i].be_ofdma_ndp_tried) {
 			null_output = 0;
@@ -622,11 +642,10 @@ ath12k_htt_print_txbf_ofdma_be_ndp_stats_tlv(const void *tag_buf,
 				htt_stats_buf->be_ndp[i].be_ofdma_ndp_tried);
 		}
 	}
-	if (null_output) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_ndp_tried = %s\n", "NONE");
-	}
-	len += scnprintf(buf + len, buf_len - len, "\n");
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
 
 	stats_req->buf_len = len;
 }
@@ -644,7 +663,16 @@ ath12k_htt_print_txbf_ofdma_be_brp_stats_tlv(const void *tag_buf,
 	u32 num_elements = htt_stats_buf->num_elems_be_brp_arr;
 
 	len += scnprintf(buf + len, buf_len - len, "HTT_TXBF_OFDMA_BE_BRP_STATS_TLV:\n");
+
+	if (num_elements > ATH12K_HTT_TX_PDEV_MAX_TXBF_OFDMA_USERS) {
+		len += scnprintf(buf + len, buf_len - len,
+				 "Invalid num_elements: %u\n", num_elements);
+		stats_req->buf_len = len;
+		return;
+	}
+
 	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "be_ofdma_brpoll_queued =");
 	for (i = 0; i < num_elements; i++) {
 		if (htt_stats_buf->be_brp[i].be_ofdma_brpoll_queued) {
 			null_output = 0;
@@ -653,12 +681,13 @@ ath12k_htt_print_txbf_ofdma_be_brp_stats_tlv(const void *tag_buf,
 				htt_stats_buf->be_brp[i].be_ofdma_brpoll_queued);
 		}
 	}
-	if (null_output) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_brpoll_queued = %s\n", "NONE");
-	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
 
 	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "be_ofdma_brpoll_tried =");
 	for (i = 0; i < num_elements; i++) {
 		if (htt_stats_buf->be_brp[i].be_ofdma_brpoll_tried) {
 			null_output = 0;
@@ -667,12 +696,13 @@ ath12k_htt_print_txbf_ofdma_be_brp_stats_tlv(const void *tag_buf,
 				htt_stats_buf->be_brp[i].be_ofdma_brpoll_tried);
 		}
 	}
-	if (null_output) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_brpoll_tried = %s\n", "NONE");
-	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
 
 	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "be_ofdma_brpoll_flushed =");
 	for (i = 0; i < num_elements; i++) {
 		if (htt_stats_buf->be_brp[i].be_ofdma_brpoll_flushed) {
 			null_output = 0;
@@ -681,12 +711,13 @@ ath12k_htt_print_txbf_ofdma_be_brp_stats_tlv(const void *tag_buf,
 				htt_stats_buf->be_brp[i].be_ofdma_brpoll_flushed);
 		}
 	}
-	if (null_output) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_brpoll_flushed = %s\n", "NONE");
-	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
 
 	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "be_ofdma_brp_err =");
 	for (i = 0; i < num_elements; i++) {
 		if (htt_stats_buf->be_brp[i].be_ofdma_brp_err) {
 			null_output = 0;
@@ -695,11 +726,13 @@ ath12k_htt_print_txbf_ofdma_be_brp_stats_tlv(const void *tag_buf,
 				htt_stats_buf->be_brp[i].be_ofdma_brp_err);
 		}
 	}
-	if (null_output) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_brp_err = %s\n", "NONE");
-	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
 	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "be_ofdma_brp_err_num_cbf_rcvd =");
 	for (i = 0; i < num_elements; i++) {
 		if (htt_stats_buf->be_brp[i].be_ofdma_brp_err_num_cbf_rcvd) {
 			null_output = 0;
@@ -708,10 +741,11 @@ ath12k_htt_print_txbf_ofdma_be_brp_stats_tlv(const void *tag_buf,
 				htt_stats_buf->be_brp[i].be_ofdma_brp_err_num_cbf_rcvd);
 		}
 	}
-	if (null_output) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_brp_err_num_cbf_rcvd = %s\n", "NONE");
-	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
 	stats_req->buf_len = len;
 }
 
@@ -730,7 +764,15 @@ ath12k_htt_print_txbf_ofdma_be_steer_stats_tlv(const void *tag_buf,
 	len += scnprintf(buf + len, buf_len - len,
 			 "HTT_TXBF_OFDMA_BE_STEER_STATS_TLV:\n");
 
+	if (num_elements > ATH12K_HTT_TX_PDEV_MAX_TXBF_OFDMA_USERS) {
+		len += scnprintf(buf + len, buf_len - len,
+				 "Invalid num_elements: %u\n", num_elements);
+		stats_req->buf_len = len;
+		return;
+	}
+
 	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "be_ofdma_num_ppdu_steer =");
 	for (i = 0; i < num_elements; i++) {
 		if (htt_stats_buf->be_steer[i].be_ofdma_num_ppdu_steer) {
 			null_output = 0;
@@ -739,12 +781,13 @@ ath12k_htt_print_txbf_ofdma_be_steer_stats_tlv(const void *tag_buf,
 				htt_stats_buf->be_steer[i].be_ofdma_num_ppdu_steer);
 		}
 	}
-	if (null_output) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_num_ppdu_steer = %s\n", "NONE");
-	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
 
 	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "be_ofdma_num_ppdu_ol =");
 	for (i = 0; i < num_elements; i++) {
 		if (htt_stats_buf->be_steer[i].be_ofdma_num_ppdu_ol) {
 			null_output = 0;
@@ -753,12 +796,13 @@ ath12k_htt_print_txbf_ofdma_be_steer_stats_tlv(const void *tag_buf,
 				htt_stats_buf->be_steer[i].be_ofdma_num_ppdu_ol);
 		}
 	}
-	if (null_output) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_num_ppdu_ol = %s\n", "NONE");
-	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
 
 	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "be_ofdma_num_usrs_prefetch =");
 	for (i = 0; i < num_elements; i++) {
 		if (htt_stats_buf->be_steer[i].be_ofdma_num_usrs_prefetch) {
 			null_output = 0;
@@ -767,12 +811,13 @@ ath12k_htt_print_txbf_ofdma_be_steer_stats_tlv(const void *tag_buf,
 				htt_stats_buf->be_steer[i].be_ofdma_num_usrs_prefetch);
 		}
 	}
-	if (null_output) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_num_usrs_prefetch = %s\n", "NONE");
-	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
 
 	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "be_ofdma_num_usrs_sound =");
 	for (i = 0; i < num_elements; i++) {
 		if (htt_stats_buf->be_steer[i].be_ofdma_num_usrs_sound) {
 			null_output = 0;
@@ -781,12 +826,13 @@ ath12k_htt_print_txbf_ofdma_be_steer_stats_tlv(const void *tag_buf,
 				htt_stats_buf->be_steer[i].be_ofdma_num_usrs_sound);
 		}
 	}
-	if (null_output) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_num_usrs_sound = %s\n", "NONE");
-	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
 
 	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "be_ofdma_num_usrs_force_sound =");
 	for (i = 0; i < num_elements; i++) {
 		if (htt_stats_buf->be_steer[i].be_ofdma_num_usrs_force_sound) {
 			null_output = 0;
@@ -795,10 +841,10 @@ ath12k_htt_print_txbf_ofdma_be_steer_stats_tlv(const void *tag_buf,
 				htt_stats_buf->be_steer[i].be_ofdma_num_usrs_force_sound);
 		}
 	}
-	if (null_output) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_num_usrs_force_sound = %s\n", "NONE");
-	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
 
 	stats_req->buf_len = len;
 }
@@ -825,6 +871,419 @@ ath12k_htt_print_txbf_ofdma_be_steer_mpdu_stats_tlv(const void *tag_buf, u16 tag
 			 le32_to_cpu(stats_buf->be_ofdma_sifs_steer_mpdus_tried));
 	len += scnprintf(buf + len, buf_len - len, "sifs_steer_mpdus_failed = %u\n",
 			 le32_to_cpu(stats_buf->be_ofdma_sifs_steer_mpdus_failed));
+
+	stat_req->buf_len = len;
+}
+
+static inline void
+ath12k_htt_print_txbf_ofdma_bn_ndpa_stats_tlv(const void *tag_buf,
+					      struct debug_htt_stats_req *stats_req)
+{
+	const struct htt_txbf_ofdma_bn_ndpa_stats_tlv *htt_stats_buf = tag_buf;
+	u8 *buf = stats_req->buf;
+	u32 len = stats_req->buf_len;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
+	int i, null_output;
+	u32 num_elements = le32_to_cpu(htt_stats_buf->num_elems_bn_ndpa_arr);
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "HTT_TXBF_OFDMA_BN_NDPA_STATS_TLV:\n");
+
+	if (num_elements > ATH12K_HTT_TX_PDEV_MAX_TXBF_OFDMA_USERS) {
+		len += scnprintf(buf + len, buf_len - len,
+				 "Invalid num_elements: %u\n", num_elements);
+		stats_req->buf_len = len;
+		return;
+	}
+
+	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_ndpa_queued =");
+	for (i = 0; i < num_elements; i++) {
+		if (htt_stats_buf->bn_ndpa[i].bn_ofdma_ndpa_queued) {
+			null_output = 0;
+			len += scnprintf(buf + len, buf_len - len,
+				" %u:%u,", i + 1,
+				le32_to_cpu
+				(htt_stats_buf->bn_ndpa[i].bn_ofdma_ndpa_queued));
+		}
+	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_ndpa_tried =");
+	for (i = 0; i < num_elements; i++) {
+		if (htt_stats_buf->bn_ndpa[i].bn_ofdma_ndpa_tried) {
+			null_output = 0;
+			len += scnprintf(buf + len, buf_len - len,
+				" %u:%u,", i + 1,
+				le32_to_cpu
+				(htt_stats_buf->bn_ndpa[i].bn_ofdma_ndpa_tried));
+		}
+	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_ndpa_flushed =");
+	for (i = 0; i < num_elements; i++) {
+		if (htt_stats_buf->bn_ndpa[i].bn_ofdma_ndpa_flushed) {
+			null_output = 0;
+			len += scnprintf(buf + len, buf_len - len,
+				" %u:%u,", i + 1,
+				le32_to_cpu
+				(htt_stats_buf->bn_ndpa[i].bn_ofdma_ndpa_flushed));
+		}
+	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_ndpa_err =");
+	for (i = 0; i < num_elements; i++) {
+		if (htt_stats_buf->bn_ndpa[i].bn_ofdma_ndpa_err) {
+			null_output = 0;
+			len += scnprintf(buf + len, buf_len - len,
+				" %u:%u,", i + 1,
+				le32_to_cpu
+				(htt_stats_buf->bn_ndpa[i].bn_ofdma_ndpa_err));
+		}
+	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+	stats_req->buf_len = len;
+}
+
+static inline void
+ath12k_htt_print_txbf_ofdma_bn_ndp_stats_tlv(const void *tag_buf,
+					     struct debug_htt_stats_req *stats_req)
+{
+	const struct htt_txbf_ofdma_bn_ndp_stats_tlv *htt_stats_buf = tag_buf;
+	u8 *buf = stats_req->buf;
+	u32 len = stats_req->buf_len;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
+	int i, null_output;
+
+	u32 num_elements = le32_to_cpu(htt_stats_buf->num_elems_bn_ndp_arr);
+
+	len += scnprintf(buf + len, buf_len - len, "HTT_TXBF_OFDMA_BN_NDP_STATS_TLV:\n");
+
+	if (num_elements > ATH12K_HTT_TX_PDEV_MAX_TXBF_OFDMA_USERS) {
+		len += scnprintf(buf + len, buf_len - len,
+				 "Invalid num_elements: %u\n", num_elements);
+		stats_req->buf_len = len;
+		return;
+	}
+
+	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_ndp_queued =");
+	for (i = 0; i < num_elements; i++) {
+		if (htt_stats_buf->bn_ndp[i].bn_ofdma_ndp_queued) {
+			null_output = 0;
+			len += scnprintf(buf + len, buf_len - len,
+				" %u:%u,", i + 1,
+				le32_to_cpu
+				(htt_stats_buf->bn_ndp[i].bn_ofdma_ndp_queued));
+		}
+	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_ndp_flushed =");
+	for (i = 0; i < num_elements; i++) {
+		if (htt_stats_buf->bn_ndp[i].bn_ofdma_ndp_flushed) {
+			null_output = 0;
+			len += scnprintf(buf + len, buf_len - len,
+				" %u:%u,", i + 1,
+				le32_to_cpu
+				(htt_stats_buf->bn_ndp[i].bn_ofdma_ndp_flushed));
+		}
+	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_ndp_err =");
+	for (i = 0; i < num_elements; i++) {
+		if (htt_stats_buf->bn_ndp[i].bn_ofdma_ndp_err) {
+			null_output = 0;
+			len += scnprintf(buf + len, buf_len - len,
+				" %u:%u,", i + 1,
+				le32_to_cpu
+				(htt_stats_buf->bn_ndp[i].bn_ofdma_ndp_err));
+		}
+	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_ndp_tried =");
+	for (i = 0; i < num_elements; i++) {
+		if (htt_stats_buf->bn_ndp[i].bn_ofdma_ndp_tried) {
+			null_output = 0;
+			len += scnprintf(buf + len, buf_len - len,
+				" %u:%u,", i + 1,
+				le32_to_cpu
+				(htt_stats_buf->bn_ndp[i].bn_ofdma_ndp_tried));
+		}
+	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+	stats_req->buf_len = len;
+}
+
+static inline void
+ath12k_htt_print_txbf_ofdma_bn_brp_stats_tlv(const void *tag_buf,
+					     struct debug_htt_stats_req *stats_req)
+{
+	const struct htt_txbf_ofdma_bn_brp_stats_tlv *htt_stats_buf = tag_buf;
+	u8 *buf = stats_req->buf;
+	u32 len = stats_req->buf_len;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
+	int i, null_output;
+
+	u32 num_elements = le32_to_cpu(htt_stats_buf->num_elems_bn_brp_arr);
+
+	len += scnprintf(buf + len, buf_len - len, "HTT_TXBF_OFDMA_BN_BRP_STATS_TLV:\n");
+
+	if (num_elements > ATH12K_HTT_TX_PDEV_MAX_TXBF_OFDMA_USERS) {
+		len += scnprintf(buf + len, buf_len - len,
+				 "Invalid num_elements: %u\n", num_elements);
+		stats_req->buf_len = len;
+		return;
+	}
+
+	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_brpoll_queued =");
+	for (i = 0; i < num_elements; i++) {
+		if (htt_stats_buf->bn_brp[i].bn_ofdma_brpoll_queued) {
+			null_output = 0;
+			len += scnprintf(buf + len, buf_len - len,
+				" %u:%u,", i + 1,
+				le32_to_cpu
+				(htt_stats_buf->bn_brp[i].bn_ofdma_brpoll_queued));
+		}
+	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_brpoll_tried =");
+	for (i = 0; i < num_elements; i++) {
+		if (htt_stats_buf->bn_brp[i].bn_ofdma_brpoll_tried) {
+			null_output = 0;
+			len += scnprintf(buf + len, buf_len - len,
+				" %u:%u,", i + 1,
+				le32_to_cpu
+				(htt_stats_buf->bn_brp[i].bn_ofdma_brpoll_tried));
+		}
+	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_brpoll_flushed =");
+	for (i = 0; i < num_elements; i++) {
+		if (htt_stats_buf->bn_brp[i].bn_ofdma_brpoll_flushed) {
+			null_output = 0;
+			len += scnprintf(buf + len, buf_len - len,
+				" %u:%u,", i + 1,
+				le32_to_cpu
+				(htt_stats_buf->bn_brp[i].bn_ofdma_brpoll_flushed));
+		}
+	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_brp_err =");
+	for (i = 0; i < num_elements; i++) {
+		if (htt_stats_buf->bn_brp[i].bn_ofdma_brp_err) {
+			null_output = 0;
+			len += scnprintf(buf + len, buf_len - len,
+				" %u:%u,", i + 1,
+				le32_to_cpu
+				(htt_stats_buf->bn_brp[i].bn_ofdma_brp_err));
+		}
+	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_brp_err_num_cbf_rcvd =");
+	for (i = 0; i < num_elements; i++) {
+		if (htt_stats_buf->bn_brp[i].bn_ofdma_brp_err_num_cbf_rcvd) {
+			null_output = 0;
+			len += scnprintf(buf + len, buf_len - len,
+				" %u:%u,", i + 1,
+				le32_to_cpu
+				(htt_stats_buf->bn_brp[i].bn_ofdma_brp_err_num_cbf_rcvd));
+		}
+	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+	stats_req->buf_len = len;
+}
+
+static inline void
+ath12k_htt_print_txbf_ofdma_bn_steer_stats_tlv(const void *tag_buf,
+					       struct debug_htt_stats_req *stats_req)
+{
+	const struct htt_txbf_ofdma_bn_steer_stats_tlv *htt_stats_buf = tag_buf;
+	u8 *buf = stats_req->buf;
+	u32 len = stats_req->buf_len;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
+	int i, null_output;
+
+	u32 num_elements = le32_to_cpu(htt_stats_buf->num_elems_bn_steer_arr);
+
+	len += scnprintf(buf + len, buf_len - len,
+			"HTT_TXBF_OFDMA_BN_STEER_STATS_TLV:\n");
+
+	if (num_elements > ATH12K_HTT_TX_PDEV_MAX_TXBF_OFDMA_USERS) {
+		len += scnprintf(buf + len, buf_len - len,
+				 "Invalid num_elements: %u\n", num_elements);
+		stats_req->buf_len = len;
+		return;
+	}
+
+	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_num_ppdu_steer =");
+	for (i = 0; i < num_elements; i++) {
+		if (htt_stats_buf->bn_steer[i].bn_ofdma_num_ppdu_steer) {
+			null_output = 0;
+			len += scnprintf(buf + len, buf_len - len,
+				" %u:%u,", i + 1,
+				le32_to_cpu
+				(htt_stats_buf->bn_steer[i].bn_ofdma_num_ppdu_steer));
+		}
+	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_num_ppdu_ol =");
+	for (i = 0; i < num_elements; i++) {
+		if (htt_stats_buf->bn_steer[i].bn_ofdma_num_ppdu_ol) {
+			null_output = 0;
+			len += scnprintf(buf + len, buf_len - len,
+				" %u:%u,", i + 1,
+				le32_to_cpu
+				(htt_stats_buf->bn_steer[i].bn_ofdma_num_ppdu_ol));
+		}
+	}
+
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_num_usrs_prefetch =");
+	for (i = 0; i < num_elements; i++) {
+		if (htt_stats_buf->bn_steer[i].bn_ofdma_num_usrs_prefetch) {
+			null_output = 0;
+			len += scnprintf(buf + len, buf_len - len,
+				" %u:%u,", i + 1,
+				le32_to_cpu
+				(htt_stats_buf->bn_steer[i].bn_ofdma_num_usrs_prefetch));
+		}
+	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_num_usrs_sound =");
+	for (i = 0; i < num_elements; i++) {
+		if (htt_stats_buf->bn_steer[i].bn_ofdma_num_usrs_sound) {
+			null_output = 0;
+			len += scnprintf(buf + len, buf_len - len,
+				" %u:%u,", i + 1,
+				le32_to_cpu
+				(htt_stats_buf->bn_steer[i].bn_ofdma_num_usrs_sound));
+		}
+	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_num_usrs_force_sound =");
+	for (i = 0; i < num_elements; i++) {
+		if (htt_stats_buf->bn_steer[i].bn_ofdma_num_usrs_force_sound) {
+			null_output = 0;
+			len += scnprintf(buf + len, buf_len - len,
+				" %u:%u,", i + 1,
+				le32_to_cpu
+				(htt_stats_buf->bn_steer[i].bn_ofdma_num_usrs_force_sound)
+				);
+		}
+	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+	stats_req->buf_len = len;
+}
+
+static inline void
+ath12k_htt_print_txbf_ofdma_bn_steer_mpdu_stats_tlv(const void *tag_buf, u16 tag_len,
+						    struct debug_htt_stats_req *stat_req)
+{
+	const struct ath12k_htt_txbf_ofdma_bn_steer_mpdu_stats_tlv *stats_buf = tag_buf;
+	u8 *buf = stat_req->buf;
+	u32 len = stat_req->buf_len;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
+
+	if (tag_len < sizeof(*stats_buf))
+		return;
+
+	len += scnprintf(buf + len, buf_len - len,
+			"HTT_TXBF_OFDMA_BN_STEER_MPDU_STATS_TLV:\n");
+	len += scnprintf(buf + len, buf_len - len, "rbo_steer_mpdus_tried = %u\n",
+			le32_to_cpu(stats_buf->bn_ofdma_rbo_steer_mpdus_tried));
+	len += scnprintf(buf + len, buf_len - len, "rbo_steer_mpdus_failed = %u\n",
+			le32_to_cpu(stats_buf->bn_ofdma_rbo_steer_mpdus_failed));
+	len += scnprintf(buf + len, buf_len - len, "sifs_steer_mpdus_tried = %u\n",
+			le32_to_cpu(stats_buf->bn_ofdma_sifs_steer_mpdus_tried));
+	len += scnprintf(buf + len, buf_len - len, "sifs_steer_mpdus_failed = %u\n",
+			le32_to_cpu(stats_buf->bn_ofdma_sifs_steer_mpdus_failed));
 
 	stat_req->buf_len = len;
 }
@@ -1519,6 +1978,15 @@ static inline void ath12k_htt_print_tx_peer_rate_stats_tlv(const void *tag_buf,
 	len += print_array_to_buf(buf, len, "tx_dcm", htt_stats_buf->tx_dcm,
 			   ATH12K_HTT_TX_PDEV_STATS_NUM_DCM_COUNTERS, "\n\n");
 
+	len += scnprintf(buf + len, buf_len - len, "tx_ppdu_cnt = %u\n",
+			 le32_to_cpu(htt_stats_buf->tx_ppdu_cnt));
+
+	len += scnprintf(buf + len, buf_len - len, "tx_mpdu_try_cnt = %u\n",
+			 le32_to_cpu(htt_stats_buf->tx_mpdu_try_cnt));
+
+	len += scnprintf(buf + len, buf_len - len, "tx_mpdu_success_cnt = %u\n",
+			 le32_to_cpu(htt_stats_buf->tx_mpdu_success_cnt));
+
 	stats_req->buf_len = len;
 
 fail:
@@ -1668,6 +2136,12 @@ static inline void ath12k_htt_print_rx_peer_rate_stats_tlv(const void *tag_buf,
 					 htt_stats_buf->rx_per_chain_rssi_in_dbm_ext[j][i]);
 		len += scnprintf(buf + len, buf_len - len, "\n");
 	}
+
+	len += scnprintf(buf + len, buf_len - len, "rx_ppdu_bytes = %u\n",
+			 le32_to_cpu(htt_stats_buf->tot_rx_ppdu_bytes));
+
+	len += scnprintf(buf + len, buf_len - len, "rx_mpdu_try_cnt = %u\n",
+			 le32_to_cpu(htt_stats_buf->rx_mpdu_try_cnt));
 
 	stats_req->buf_len = len;
 
@@ -2848,7 +3322,7 @@ ath12k_htt_print_tx_pdev_stats_cmn_tlv(const void *tag_buf, u16 tag_len,
 			 le32_to_cpu(htt_stats_buf->mpdu_removed_tqm));
 	len += scnprintf(buf + len, buf_len - len, "msdu_removed_tqm = %u\n",
 			 le32_to_cpu(htt_stats_buf->msdu_removed_tqm));
-	len += scnprintf(buf + len, buf_len - len, "remove_mpdus_max_retries = %u\n",
+	len += scnprintf(buf + len, buf_len - len, "tx_removed_mpdu_cnt = %u\n",
 			 le32_to_cpu(htt_stats_buf->remove_mpdus_max_retries));
 	len += scnprintf(buf + len, buf_len - len, "mpdus_sw_flush = %u\n",
 			 le32_to_cpu(htt_stats_buf->mpdus_sw_flush));
@@ -2918,8 +3392,14 @@ ath12k_htt_print_tx_pdev_stats_cmn_tlv(const void *tag_buf, u16 tag_len,
 			 le32_to_cpu(htt_stats_buf->ofdma_seq_flush));
 	len += scnprintf(buf + len, buf_len - len, "bytes_sent.low_32 = %u\n",
 			 le32_to_cpu(htt_stats_buf->bytes_sent.low_32));
-	len += scnprintf(buf + len, buf_len - len, "bytes_sent.high_32 = %u\n\n",
+	len += scnprintf(buf + len, buf_len - len, "bytes_sent.high_32 = %u\n",
 			 le32_to_cpu(htt_stats_buf->bytes_sent.high_32));
+	len += scnprintf(buf + len, buf_len - len, "hw_reaped_lpi = %u\n",
+			 le32_to_cpu(htt_stats_buf->hw_reaped_lpi));
+	len += scnprintf(buf + len, buf_len - len, "hw_reaped_sp = %u\n",
+			 le32_to_cpu(htt_stats_buf->hw_reaped_sp));
+	len += scnprintf(buf + len, buf_len - len, "hw_reaped_vlp = %u\n\n",
+			 le32_to_cpu(htt_stats_buf->hw_reaped_vlp));
 
 	stats_req->buf_len = len;
 }
@@ -4621,6 +5101,17 @@ ath12k_htt_print_tx_selfgen_cmn_stats_tlv(const void *tag_buf, u16 tag_len,
 	len += print_array_to_buf(buf, len, "smart_basic_trig_sch_histogram",
 			 htt_stats_buf->smart_basic_trig_sch_histogram,
 			ATH12K_HTT_MAX_NUM_SBT_INTR, "\n\n");
+	len += print_array_to_buf(buf, len, "ru_alloc_mode_cnt = ",
+			 htt_stats_buf->ru_alloc_mode_cnt,
+			ATH12K_HTT_RU_ALLOC_NUM_MODES, "\n\n");
+	len += scnprintf(buf + len, buf_len - len, "MU BAR_PIPELINING_STATS:\n");
+	len += scnprintf(buf + len, buf_len - len, "mu_bar_pipeline_seq_cnt = %u\n",
+			le32_to_cpu(htt_stats_buf->mu_bar_pipeline_seq_cnt));
+	len += scnprintf(buf + len, buf_len - len, "mu_bar_pipeline_resume_cnt = %u\n",
+			le32_to_cpu(htt_stats_buf->mu_bar_pipeline_resume_cnt));
+	len += scnprintf(buf + len, buf_len - len,
+			"mu_bar_pipeline_resume_fail_cnt = %u\n",
+			le32_to_cpu(htt_stats_buf->mu_bar_pipeline_resume_fail_cnt));
 
 	stats_req->buf_len = len;
 }
@@ -8011,9 +8502,47 @@ ath12k_htt_print_tx_per_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 	else
 		len += scnprintf(buf + len, buf_len - len, "ppdus_tried_%s = ",
 				 mode_prefix);
-	for (i = 0; i < ATH12K_HTT_TXBF_RATE_STAT_NUM_MCS_CNTRS; i++)
+	for (i = 0; i < ATH12K_HTT_TXBF_RATE_STAT_NUM_MCS_CNTRS; i++) {
 		len += scnprintf(buf + len, buf_len - len, " %u:%u ", i,
 				 le32_to_cpu(stats_buf->per_mcs[i].ppdus_tried));
+
+		if (u32_get_bits(wifi_version_word, HTT_PER_RATE_STATS_WIFI_VERSION)
+				>= HTT_WIFI_VER_11BN) {
+			u8 k;
+
+			switch (i) {
+			case ATH12K_HTT_TX_RX_MCS_RATE_1:
+			k = 0;
+			len += scnprintf(buf + len, buf_len - len, " 1.1:%u ",
+					le32_to_cpu
+					(stats_buf->per_mcs_ext_3[k].ppdus_tried));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_3:
+			k = 1;
+			len += scnprintf(buf + len, buf_len - len, " 3.1:%u ",
+					le32_to_cpu
+					(stats_buf->per_mcs_ext_3[k].ppdus_tried));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_4:
+			k = 2;
+			len += scnprintf(buf + len, buf_len - len, " 4.1:%u ",
+					le32_to_cpu
+					(stats_buf->per_mcs_ext_3[k].ppdus_tried));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_7:
+			k = 3;
+			len += scnprintf(buf + len, buf_len - len, " 7.1:%u ",
+					le32_to_cpu
+					(stats_buf->per_mcs_ext_3[k].ppdus_tried));
+			break;
+
+			}
+		}
+	}
+
 	len += scnprintf(buf + len, buf_len - len, "\n");
 
 	if (rc_mode == ATH12K_HTT_STATS_RC_MODE_ULOFDMA ||
@@ -8023,21 +8552,135 @@ ath12k_htt_print_tx_per_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 	else
 		len += scnprintf(buf + len, buf_len - len, "ppdus_ack_failed_%s = ",
 				 mode_prefix);
-	for (i = 0; i < ATH12K_HTT_TXBF_RATE_STAT_NUM_MCS_CNTRS; i++)
+	for (i = 0; i < ATH12K_HTT_TXBF_RATE_STAT_NUM_MCS_CNTRS; i++) {
 		len += scnprintf(buf + len, buf_len - len, " %u:%u ", i,
-				 le32_to_cpu(stats_buf->per_mcs[i].ppdus_ack_failed));
+				le32_to_cpu(stats_buf->per_mcs[i].ppdus_ack_failed));
+		if (u32_get_bits(wifi_version_word,
+				HTT_PER_RATE_STATS_WIFI_VERSION)
+				>= HTT_WIFI_VER_11BN) {
+			u8 k;
+
+			switch (i) {
+			case ATH12K_HTT_TX_RX_MCS_RATE_1:
+			k = 0;
+			len += scnprintf(buf + len, buf_len - len, " 1.1:%u ",
+				le32_to_cpu
+				(stats_buf->per_mcs_ext_3[k].ppdus_ack_failed));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_3:
+			k = 1;
+			len += scnprintf(buf + len, buf_len - len, " 3.1:%u ",
+				le32_to_cpu
+				(stats_buf->per_mcs_ext_3[k].ppdus_ack_failed));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_4:
+			k = 2;
+			len += scnprintf(buf + len, buf_len - len, " 4.1:%u ",
+				le32_to_cpu
+				(stats_buf->per_mcs_ext_3[k].ppdus_ack_failed));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_7:
+			k = 3;
+			len += scnprintf(buf + len, buf_len - len, " 7.1:%u ",
+				le32_to_cpu
+				(stats_buf->per_mcs_ext_3[k].ppdus_ack_failed));
+			break;
+
+			}
+		}
+	}
+
 	len += scnprintf(buf + len, buf_len - len, "\n");
 
 	len += scnprintf(buf + len, buf_len - len, "mpdus_tried_%s = ", mode_prefix);
-	for (i = 0; i < ATH12K_HTT_TXBF_RATE_STAT_NUM_MCS_CNTRS; i++)
+	for (i = 0; i < ATH12K_HTT_TXBF_RATE_STAT_NUM_MCS_CNTRS; i++) {
 		len += scnprintf(buf + len, buf_len - len, " %u:%u ", i,
 				 le32_to_cpu(stats_buf->per_mcs[i].mpdus_tried));
+		if (u32_get_bits(wifi_version_word,
+				HTT_PER_RATE_STATS_WIFI_VERSION)
+				>= HTT_WIFI_VER_11BN) {
+			u8 k;
+
+			switch (i) {
+			case ATH12K_HTT_TX_RX_MCS_RATE_1:
+			k = 0;
+			len += scnprintf(buf + len, buf_len - len, " 1.1:%u ",
+					le32_to_cpu
+					(stats_buf->per_mcs_ext_3[k].mpdus_tried));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_3:
+			k = 1;
+			len += scnprintf(buf + len, buf_len - len, " 3.1:%u ",
+					le32_to_cpu
+					(stats_buf->per_mcs_ext_3[k].mpdus_tried));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_4:
+			k = 2;
+			len += scnprintf(buf + len, buf_len - len, " 4.1:%u ",
+					le32_to_cpu
+					(stats_buf->per_mcs_ext_3[k].mpdus_tried));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_7:
+			k = 3;
+			len += scnprintf(buf + len, buf_len - len, " 7.1:%u ",
+					le32_to_cpu
+					(stats_buf->per_mcs_ext_3[k].mpdus_tried));
+			break;
+
+			}
+		}
+	}
+
 	len += scnprintf(buf + len, buf_len - len, "\n");
 
 	len += scnprintf(buf + len, buf_len - len, "mpdus_failed_%s = ", mode_prefix);
-	for (i = 0; i < ATH12K_HTT_TXBF_RATE_STAT_NUM_MCS_CNTRS; i++)
+	for (i = 0; i < ATH12K_HTT_TXBF_RATE_STAT_NUM_MCS_CNTRS; i++) {
 		len += scnprintf(buf + len, buf_len - len, " %u:%u ", i,
 				 le32_to_cpu(stats_buf->per_mcs[i].mpdus_failed));
+		if (u32_get_bits(wifi_version_word,
+				HTT_PER_RATE_STATS_WIFI_VERSION)
+				>= HTT_WIFI_VER_11BN) {
+			u8 k;
+
+			switch (i) {
+			case ATH12K_HTT_TX_RX_MCS_RATE_1:
+			k = 0;
+			len += scnprintf(buf + len, buf_len - len, " 1.1:%u ",
+					le32_to_cpu
+					(stats_buf->per_mcs_ext_3[k].mpdus_failed));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_3:
+			k = 1;
+			len += scnprintf(buf + len, buf_len - len, " 3.1:%u ",
+					le32_to_cpu
+					(stats_buf->per_mcs_ext_3[k].mpdus_failed));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_4:
+			k = 2;
+			len += scnprintf(buf + len, buf_len - len, " 4.1:%u ",
+					le32_to_cpu
+					(stats_buf->per_mcs_ext_3[k].mpdus_failed));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_7:
+			k = 3;
+			len += scnprintf(buf + len, buf_len - len, " 7.1:%u ",
+					le32_to_cpu
+					(stats_buf->per_mcs_ext_3[k].mpdus_failed));
+			break;
+
+			}
+		}
+	}
+
 	len += scnprintf(buf + len, buf_len - len, "\n");
 
 	if ((rc_mode == ATH12K_HTT_STATS_RC_MODE_DLOFDMA ||
@@ -8612,6 +9255,41 @@ ath12k_htt_print_pdev_mbssid_ctrl_frame_stats_tlv(const void *tag_buf, u16 tag_l
 	stats_req->buf_len = len;
 }
 
+
+/* .bss zero-initialized cache of bn (intermediate) MCS values */
+static struct ath12k_htt_tx_pdev_bn_rate_stats_tlv htt_stats_bn_rate_stats_buf_global;
+
+/*
+ * ath12k_htt_cache_tx_pdev_bn_rate_stats_tlv - Cache bn TLV for coherent print
+ *
+ * If the bn TLV and the main rate TLV arrive in the same message with bn first,
+ * interleaved printing will be coherent. If they arrive separately, there is a
+ * theoretical race across multiple targets uploading at the same time, but the
+ * probability is negligible and typical firmware sends them together.
+ */
+
+static void
+ath12k_htt_cache_tx_pdev_bn_rate_stats_tlv(const void *tag_buf, u16 tag_len)
+{
+	const struct ath12k_htt_tx_pdev_bn_rate_stats_tlv *htt_stats_buf = tag_buf;
+
+	if (tag_len < sizeof(*htt_stats_buf))
+		return;
+
+	memcpy(&htt_stats_bn_rate_stats_buf_global, htt_stats_buf,
+		sizeof(htt_stats_bn_rate_stats_buf_global));
+}
+
+/*
+ * ath12k_htt_clear_tx_pdev_bn_rate_stats_cache - Clear bn TLV cache
+ */
+static void ath12k_htt_clear_tx_pdev_bn_rate_stats_cache(void)
+{
+	memset(&htt_stats_bn_rate_stats_buf_global, 0,
+		sizeof(htt_stats_bn_rate_stats_buf_global));
+}
+
+
 static inline void
 ath12k_htt_print_tx_pdev_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 					struct debug_htt_stats_req *stats_req)
@@ -8682,9 +9360,41 @@ ath12k_htt_print_tx_pdev_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 				 j - ATH12K_HTT_TX_PDEV_STATS_NUM_EXTRA2_MCS_COUNTERS,
 				 le32_to_cpu(htt_stats_buf->tx_mcs_ext_2[j]));
 
-	for (j = 0; j < ATH12K_HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS; j++)
+	for (j = 0; j < ATH12K_HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS; j++) {
 		len += scnprintf(buf + len, buf_len - len, " %u:%u,",
-				 j, le32_to_cpu(htt_stats_buf->tx_mcs[j]));
+				j, le32_to_cpu(htt_stats_buf->tx_mcs[j]));
+		if (u32_get_bits(htt_stats_bn_rate_stats_buf_global.mac_id__word,
+				HTT_TX_PDEV_BN_RATE_STATS_WIFI_VERSION)
+				>= HTT_WIFI_VER_11BN) {
+			u8 k;
+
+			switch (j) {
+			case ATH12K_HTT_TX_RX_MCS_RATE_1:
+			k = 0;
+			len += scnprintf(buf + len, buf_len - len, " 1.1:%u,",
+			le32_to_cpu(htt_stats_bn_rate_stats_buf_global.tx_mcs_ext_3[k]));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_3:
+			k = 1;
+			len += scnprintf(buf + len, buf_len - len, " 3.1:%u,",
+			le32_to_cpu(htt_stats_bn_rate_stats_buf_global.tx_mcs_ext_3[k]));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_4:
+			k = 2;
+			len += scnprintf(buf + len, buf_len - len, " 4.1:%u,",
+			le32_to_cpu(htt_stats_bn_rate_stats_buf_global.tx_mcs_ext_3[k]));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_7:
+			k = 3;
+			len += scnprintf(buf + len, buf_len - len, " 7.1:%u,",
+			le32_to_cpu(htt_stats_bn_rate_stats_buf_global.tx_mcs_ext_3[k]));
+			break;
+			}
+		}
+	}
 
 	for (j = 0; j < ATH12K_HTT_TX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS; j++)
 		len += scnprintf(buf + len, buf_len - len, " %u:%u,",
@@ -8745,11 +9455,50 @@ ath12k_htt_print_tx_pdev_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 			 ATH12K_HTT_TX_PDEV_STATS_NUM_BW_COUNTERS,
 			 le32_to_cpu(htt_stats_buf->tx_bw_320mhz));
 
-	len += print_array_to_buf(buf, len, "tx_stbc",
-				  htt_stats_buf->tx_stbc,
-				  ATH12K_HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS, NULL);
+	len += scnprintf(buf + len, buf_len - len, "tx_stbc =");
+
+	for (j = 0; j < ATH12K_HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS; j++) {
+		len += scnprintf(buf + len, buf_len - len, " %u:%u,",
+				j, le32_to_cpu(htt_stats_buf->tx_stbc[j]));
+		if (u32_get_bits(htt_stats_bn_rate_stats_buf_global.mac_id__word,
+				HTT_TX_PDEV_BN_RATE_STATS_WIFI_VERSION)
+				>= HTT_WIFI_VER_11BN) {
+			u8 k;
+
+			switch (j) {
+			case ATH12K_HTT_TX_RX_MCS_RATE_1:
+			k = 0;
+			len += scnprintf(buf + len, buf_len - len, " 1.1:%u,",
+				le32_to_cpu
+				(htt_stats_bn_rate_stats_buf_global.tx_stbc_ext_3[k]));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_3:
+			k = 1;
+			len += scnprintf(buf + len, buf_len - len, " 3.1:%u,",
+				le32_to_cpu
+				(htt_stats_bn_rate_stats_buf_global.tx_stbc_ext_3[k]));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_4:
+			k = 2;
+			len += scnprintf(buf + len, buf_len - len, " 4.1:%u,",
+				le32_to_cpu
+				(htt_stats_bn_rate_stats_buf_global.tx_stbc_ext_3[k]));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_7:
+			k = 3;
+			len += scnprintf(buf + len, buf_len - len, " 7.1:%u,",
+				le32_to_cpu
+				(htt_stats_bn_rate_stats_buf_global.tx_stbc_ext_3[k]));
+			break;
+			}
+		}
+	}
+
 	for (j = 0; j < ATH12K_HTT_TX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS; j++)
-		len += scnprintf(buf + len, buf_len - len, ", %u:%u",
+		len += scnprintf(buf + len, buf_len - len, " %u:%u,",
 				 j + ATH12K_HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS,
 				 le32_to_cpu(htt_stats_buf->tx_stbc_ext[j]));
 	len += scnprintf(buf + len, buf_len - len, "\n");
@@ -8757,14 +9506,51 @@ ath12k_htt_print_tx_pdev_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 	for (j = 0; j < ATH12K_HTT_TX_PDEV_STATS_NUM_GI_COUNTERS; j++) {
 		len += scnprintf(buf + len, (buf_len - len),
 				 "tx_gi[%u] =", j);
-		len += scnprintf(buf + len, buf_len - len, " -2:%u,-1:%u,",
+		len += scnprintf(buf + len, buf_len - len, " -2:%u,-1:%u ",
 				 htt_stats_buf->tx_gi_ext_2[j][0],
 				 htt_stats_buf->tx_gi_ext_2[j][1]);
-		len += print_array_to_buf(buf, len, NULL, htt_stats_buf->tx_gi[j],
-					  ATH12K_HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS,
-					  NULL);
+		for (i = 0; i < ATH12K_HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS; i++) {
+			len += scnprintf(buf + len, buf_len - len, " %u:%u,",
+				j, le32_to_cpu(htt_stats_buf->tx_gi[j][i]));
+			if (u32_get_bits(htt_stats_bn_rate_stats_buf_global.mac_id__word,
+				HTT_TX_PDEV_BN_RATE_STATS_WIFI_VERSION)
+				>= HTT_WIFI_VER_11BN) {
+				u8 k;
+
+				switch (i) {
+				case ATH12K_HTT_TX_RX_MCS_RATE_1:
+				k = 0;
+				len += scnprintf(buf + len, buf_len - len, " 1.1:%u,",
+				le32_to_cpu
+				(htt_stats_bn_rate_stats_buf_global.tx_gi_ext_3[j][k]));
+				break;
+
+				case ATH12K_HTT_TX_RX_MCS_RATE_3:
+				k = 1;
+				len += scnprintf(buf + len, buf_len - len, " 3.1:%u,",
+				le32_to_cpu
+				(htt_stats_bn_rate_stats_buf_global.tx_gi_ext_3[j][k]));
+				break;
+
+				case ATH12K_HTT_TX_RX_MCS_RATE_4:
+				k = 2;
+				len += scnprintf(buf + len, buf_len - len, " 4.1:%u,",
+				le32_to_cpu
+				(htt_stats_bn_rate_stats_buf_global.tx_gi_ext_3[j][k]));
+				break;
+
+				case ATH12K_HTT_TX_RX_MCS_RATE_7:
+				k = 3;
+				len += scnprintf(buf + len, buf_len - len, " 7.1:%u,",
+				le32_to_cpu
+				(htt_stats_bn_rate_stats_buf_global.tx_gi_ext_3[j][k]));
+				break;
+				}
+			}
+		}
+
 		for (i = 0; i < ATH12K_HTT_TX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS; i++)
-			len += scnprintf(buf + len, buf_len - len, ", %u:%u",
+			len += scnprintf(buf + len, buf_len - len, " %u:%u,",
 					 i + ATH12K_HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS,
 					 le32_to_cpu(htt_stats_buf->tx_gi_ext[j][i]));
 		len += scnprintf(buf + len, buf_len - len, "\n");
@@ -8915,6 +9701,8 @@ ath12k_htt_print_tx_pdev_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 	len += scnprintf(buf + len, buf_len - len, "\n\n");
 
 	stats_req->buf_len = len;
+
+	ath12k_htt_clear_tx_pdev_bn_rate_stats_cache();
 }
 
 static inline void
@@ -9404,12 +10192,50 @@ ath12k_htt_print_rx_pdev_rate_ext_stats_tlv(const void *tag_buf, u16 tag_len,
 				  ATH12K_HTT_RX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS,
 				  "\n");
 
-	len += print_array_to_buf(buf, len, "rx_mcs_ext",
-				  htt_stats_buf->rx_mcs_ext,
-				  ATH12K_HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS_EXT,
-				  NULL);
+	len += scnprintf(buf + len, buf_len - len, "rx_mcs_ext =");
+
+	for (j = 0; j < ATH12K_HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS_EXT; j++) {
+		len += scnprintf(buf + len, buf_len - len, " %u:%u,",
+				j, le32_to_cpu(htt_stats_buf->rx_mcs_ext[j]));
+		if (u32_get_bits(wifi_version_word,
+				HTT_RX_PDEV_RATE_EXT_STATS_WIFI_VERSION)
+				>= HTT_WIFI_VER_11BN) {
+			u8 k;
+
+			switch (j) {
+			case ATH12K_HTT_TX_RX_MCS_RATE_1:
+			k = 0;
+			len += scnprintf(buf + len, buf_len - len, " 1.1:%u,",
+						le32_to_cpu
+						(htt_stats_buf->rx_mcs_ext_3[k]));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_3:
+			k = 1;
+			len += scnprintf(buf + len, buf_len - len, " 3.1:%u,",
+						le32_to_cpu
+						(htt_stats_buf->rx_mcs_ext_3[k]));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_4:
+			k = 2;
+			len += scnprintf(buf + len, buf_len - len, " 4.1:%u,",
+						le32_to_cpu
+						(htt_stats_buf->rx_mcs_ext_3[k]));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_7:
+			k = 3;
+			len += scnprintf(buf + len, buf_len - len, " 7.1:%u,",
+						le32_to_cpu
+						(htt_stats_buf->rx_mcs_ext_3[k]));
+			break;
+			}
+		}
+	}
+
 	for (j = 0; j < ATH12K_HTT_RX_PDEV_STATS_NUM_EXTRA2_MCS_COUNTERS; j++)
-		len += scnprintf(buf + len, buf_len - len, ", %u:%u",
+		len += scnprintf(buf + len, buf_len - len, " %u:%u,",
 				 j + ATH12K_HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS_EXT,
 				 le32_to_cpu(htt_stats_buf->rx_mcs_ext_2[j]));
 	len += scnprintf(buf + len, buf_len - len, "\n");
@@ -9826,6 +10652,31 @@ ath12k_htt_print_txbf_ofdma_be_parbw_tlv(const void *tag_buf, u16 tag_len,
 			 le32_to_cpu(htt_stats_buf->be_ofdma_parbw_cv));
 	len += scnprintf(buf + len, buf_len - len, "be_ofdma_total_cv = %u\n",
 			 le32_to_cpu(htt_stats_buf->be_ofdma_total_cv));
+	len += scnprintf(buf + len, buf_len - len, "\n");
+
+	stats_req->buf_len = len;
+}
+
+static void
+ath12k_htt_print_txbf_ofdma_bn_parbw_tlv(const void *tag_buf, u16 tag_len,
+					 struct debug_htt_stats_req *stats_req)
+{
+	const struct ath12k_htt_stats_txbf_ofdma_bn_parbw_tlv *htt_stats_buf = tag_buf;
+	u8 *buf = stats_req->buf;
+	u32 len = stats_req->buf_len;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
+
+	if (tag_len < sizeof(*htt_stats_buf))
+		return;
+
+	len += scnprintf(buf + len, buf_len - len,
+						"HTT_STATS_TXBF_OFDMA_BN_PARBW_TAG:\n");
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_parbw_user_snd = %u\n",
+			 le32_to_cpu(htt_stats_buf->bn_ofdma_parbw_user_snd));
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_parbw_cv = %u\n",
+			 le32_to_cpu(htt_stats_buf->bn_ofdma_parbw_cv));
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_total_cv = %u\n",
+			 le32_to_cpu(htt_stats_buf->bn_ofdma_total_cv));
 
 	stats_req->buf_len = len;
 }
@@ -12239,6 +13090,31 @@ static int ath12k_dbg_htt_ext_stats_parse(struct ath12k_base *ab,
 								      stats_req);
 		break;
 
+	case HTT_STATS_TXBF_OFDMA_BN_NDPA_TAG:
+		ath12k_htt_print_txbf_ofdma_bn_ndpa_stats_tlv(tag_buf, stats_req);
+		break;
+
+	case HTT_STATS_TXBF_OFDMA_BN_NDP_TAG:
+		ath12k_htt_print_txbf_ofdma_bn_ndp_stats_tlv(tag_buf, stats_req);
+		break;
+
+	case HTT_STATS_TXBF_OFDMA_BN_BRP_TAG:
+		ath12k_htt_print_txbf_ofdma_bn_brp_stats_tlv(tag_buf, stats_req);
+		break;
+
+	case HTT_STATS_TXBF_OFDMA_BN_STEER_TAG:
+		ath12k_htt_print_txbf_ofdma_bn_steer_stats_tlv(tag_buf, stats_req);
+		break;
+
+	case HTT_STATS_TXBF_OFDMA_BN_STEER_MPDU_TAG:
+		ath12k_htt_print_txbf_ofdma_bn_steer_mpdu_stats_tlv(tag_buf, len,
+								    stats_req);
+		break;
+
+	case HTT_STATS_TXBF_OFDMA_BN_PARBW_TAG:
+		ath12k_htt_print_txbf_ofdma_bn_parbw_tlv(tag_buf, len, stats_req);
+		break;
+
 	case HTT_STATS_FTM_TAG:
 		ath12k_htt_print_ftm_stats_tlv(tag_buf, len, stats_req);
 		break;
@@ -12246,6 +13122,11 @@ static int ath12k_dbg_htt_ext_stats_parse(struct ath12k_base *ab,
 	case HTT_STATS_PDEV_FTM_TPCCAL_EXT_TAG:
 		ath12k_htt_print_ftm_tpccal_stats_ext_tlv(tag_buf, len, stats_req);
 		break;
+
+	case HTT_STATS_TX_PDEV_BN_RATE_TAG:
+		ath12k_htt_cache_tx_pdev_bn_rate_stats_tlv(tag_buf, len);
+		break;
+
 	default:
 		break;
 	}

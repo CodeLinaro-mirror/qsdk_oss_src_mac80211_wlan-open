@@ -129,6 +129,8 @@ static int ieee80211_set_mon_options(struct ieee80211_sub_if_data *sdata,
 			ieee80211_adjust_monitor_flags(sdata, 1);
 
 			ieee80211_configure_filter(local);
+			drv_set_monitor(sdata->local, &sdata->vif,
+					sdata->u.mntr.flags);
 		} else {
 			/*
 			 * Because the interface is down, ieee80211_do_stop
@@ -701,7 +703,8 @@ ieee80211_lookup_key(struct ieee80211_sub_if_data *sdata, int link_id,
 		if (!pairwise &&
 		    key_idx < NUM_DEFAULT_KEYS +
 			      NUM_DEFAULT_MGMT_KEYS +
-			      NUM_DEFAULT_BEACON_KEYS)
+			      NUM_DEFAULT_BEACON_KEYS +
+			      NUM_DEFAULT_CONTROL_KEYS)
 			return wiphy_dereference(local->hw.wiphy,
 						 link_sta->gtk[key_idx]);
 
@@ -892,6 +895,22 @@ static int ieee80211_config_default_beacon_key(struct wiphy *wiphy,
 	return 0;
 }
 
+static int ieee80211_config_default_control_key(struct wiphy *wiphy,
+						struct net_device *dev,
+						int link_id, u8 key_idx)
+{
+	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+	struct ieee80211_link_data *link =
+		ieee80211_link_or_deflink(sdata, link_id, true);
+
+	if (IS_ERR(link))
+		return PTR_ERR(link);
+
+	ieee80211_set_default_control_key(link, key_idx);
+
+	return 0;
+}
+
 void sta_set_rate_info_tx(struct sta_info *sta,
 			  const struct ieee80211_tx_rate *rate,
 			  struct rate_info *rinfo)
@@ -1016,6 +1035,20 @@ int ieee80211_set_monitor_channel(struct wiphy *wiphy,
 		sdata = wiphy_dereference(wiphy, local->monitor_sdata);
 		if (!sdata)
 			goto done;
+	}
+
+	/*
+	 * If the monitor interface exists but hasn't been fully added to the
+	 * driver yet (IEEE80211_SDATA_IN_DRIVER not set), avoid triggering
+	 * driver ops through channel context assignment. In this case, just
+	 * cache the requested channel; once the monitor sdata is in-driver,
+	 * normal channel handling will apply and the cached request will be
+	 * consistent.
+	 */
+	if (!(sdata->flags & IEEE80211_SDATA_IN_DRIVER)) {
+		pr_err("sdata in driver isn't set for mon chan vif_type: %d\n",
+		       sdata->vif.type);
+		goto done;
 	}
 
 	if (rcu_access_pointer(sdata->deflink.conf->chanctx_conf) &&
@@ -1496,10 +1529,14 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	lockdep_assert_wiphy(local->hw.wiphy);
 
 	link = sdata_dereference(sdata->link[link_id], sdata);
+
 	if (!link)
 		return -ENOLINK;
 
 	link_conf = link->conf;
+
+	if (params->is_cfp_enabled)
+		link_conf->is_cfp_enabled = true;
 
 	old = sdata_dereference(link->u.ap.beacon, sdata);
 	if (old)
@@ -1602,6 +1639,14 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 		link_conf->eht_su_beamformer = false;
 		link_conf->eht_su_beamformee = false;
 		link_conf->eht_mu_beamformer = false;
+	}
+
+	if (params->uhr_cap) {
+		/* If UHR can operate independently below check should be removed */
+		if (!link_conf->eht_support)
+			return -EOPNOTSUPP;
+
+		link_conf->uhr_support = true;
 	}
 
 	if (sdata->vif.type == NL80211_IFTYPE_AP &&
@@ -2251,6 +2296,12 @@ static int sta_link_apply_parameters(struct ieee80211_local *local,
 			link_sta->pub->punctured = params->punctured;
 	}
 
+	if (params->uhr_capa)
+		ieee80211_uhr_cap_ie_to_sta_uhr_cap(sdata, sband,
+						    params->uhr_capa,
+						    params->uhr_capa_len,
+						    link_sta);
+
 	ieee80211_sta_init_nss(link_sta);
 
 	/* update nss if not done already for the link sta,
@@ -2285,6 +2336,7 @@ static int sta_apply_parameters(struct ieee80211_local *local,
 	mask = params->sta_flags_mask;
 	set = params->sta_flags_set;
 	sta->sta.eml_cap = params->link_sta_params.eml_cap;
+	sta->sta.control_mic_pad = params->control_mic_pad;
 
 	if (ieee80211_vif_is_mesh(&sdata->vif)) {
 		/*
@@ -2336,6 +2388,14 @@ static int sta_apply_parameters(struct ieee80211_local *local,
 			set_sta_flag(sta, WLAN_STA_MFP);
 		else
 			clear_sta_flag(sta, WLAN_STA_MFP);
+	}
+
+	if (mask & BIT(NL80211_STA_FLAG_CFP)) {
+		sta->sta.cfp = !!(set & BIT(NL80211_STA_FLAG_CFP));
+		if (set & BIT(NL80211_STA_FLAG_CFP))
+			set_sta_flag(sta, WLAN_STA_CFP);
+		else
+			clear_sta_flag(sta, WLAN_STA_CFP);
 	}
 
 	if (mask & BIT(NL80211_STA_FLAG_TDLS_PEER)) {
@@ -4070,11 +4130,17 @@ static int ieee80211_start_radar_detection(struct wiphy *wiphy,
 	link_data->smps_mode = IEEE80211_SMPS_OFF;
 	link_data->needed_rx_chains = local->rx_chains;
 
-	err = ieee80211_link_use_channel(link_data, &chanreq,
-					 IEEE80211_CHANCTX_SHARED);
-	if (err)
-		return err;
-
+	if (!link_data->conf->deferred_up) {
+		err = ieee80211_link_use_channel(link_data, &chanreq,
+						 IEEE80211_CHANCTX_SHARED);
+		if (err)
+			return err;
+	} else {
+		if (!link_data->conf->chanreq.oper.chan) {
+			sdata_info(sdata, "No channel context for CSA-DFS CAC\n");
+			return -EINVAL;
+		}
+	}
 	hrtimer_start(&link_data->dfs_cac_timer, ktime, HRTIMER_MODE_REL);
 	return 0;
 }
@@ -4381,6 +4447,7 @@ static int __ieee80211_csa_finalize(struct ieee80211_link_data *link_data)
 	struct ieee80211_bss_conf *link_conf = link_data->conf;
 	struct ieee80211_sub_if_data *mon_sdata = NULL;
 	u64 changed = 0;
+	int dfs_required;
 	int err;
 
 	lockdep_assert_wiphy(local->hw.wiphy);
@@ -4396,7 +4463,7 @@ static int __ieee80211_csa_finalize(struct ieee80211_link_data *link_data)
 
 		mon_link = &mon_sdata->deflink;
 		chandef = &mon_sdata->vif.bss_conf.chanreq.oper;
-		if (chandef->chan &&
+		if (!chandef->chan ||
 		    chandef->chan->band != link_conf->chanreq.oper.chan->band)
 			continue;
 
@@ -4440,9 +4507,15 @@ static int __ieee80211_csa_finalize(struct ieee80211_link_data *link_data)
 	if (err)
 		return err;
 
-	ieee80211_link_info_change_notify(sdata, link_data, changed);
-
-	ieee80211_vif_unblock_queues_csa(sdata);
+	dfs_required = cfg80211_chandef_dfs_required(local->hw.wiphy,
+						     &link_conf->chanreq.oper,
+						     sdata->vif.type);
+	if (dfs_required <= 0) {
+		ieee80211_link_info_change_notify(sdata, link_data, changed);
+		ieee80211_vif_unblock_queues_csa(sdata);
+	} else {
+		link_conf->deferred_up = true;
+	}
 
 	err = drv_post_channel_switch(link_data);
 	if (err)
@@ -4730,15 +4803,13 @@ __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 		struct ieee80211_bss_conf *bss_conf = &mon_sdata->vif.bss_conf;
 
 		chandef = &bss_conf->chanreq.oper;
-		if (chandef->chan &&
+		if (!chandef->chan ||
 		    chandef->chan->band != chanreq.oper.chan->band)
 			continue;
 
 		mon_conf = wiphy_dereference(wiphy, bss_conf->chanctx_conf);
-		if (!mon_conf) {
-			err = -EBUSY;
-			goto out;
-		}
+		if (!mon_conf)
+			continue;
 
 		if (!mon_link->reserved_chanctx) {
 			mon_chanctx = container_of(mon_conf,
@@ -6380,6 +6451,7 @@ const struct cfg80211_ops mac80211_config_ops = {
 	.set_default_key = ieee80211_config_default_key,
 	.set_default_mgmt_key = ieee80211_config_default_mgmt_key,
 	.set_default_beacon_key = ieee80211_config_default_beacon_key,
+	.set_default_control_key = ieee80211_config_default_control_key,
 	.start_ap = ieee80211_start_ap,
 	.update_ap = ieee80211_update_ap,
 	.stop_ap = ieee80211_stop_ap,

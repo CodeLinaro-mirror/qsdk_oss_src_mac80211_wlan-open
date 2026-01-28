@@ -2405,11 +2405,9 @@ void ath12k_debugfs_nrp_cleanup_all(struct ath12k *ar)
 	ar->debug.debugfs_nrp = NULL;
 }
 
-void ath12k_debugfs_nrp_clean(struct ath12k *ar, const u8 *addr)
+void ath12k_debugfs_nrp_clean(struct ath12k *ar, const u8 *addr, int num_nrp)
 {
-	struct ath12k_base *ab = ar->ab;
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	int i, j, num_nrp;
+	int i, j;
 	char fname[MAC_UNIT_LEN * ETH_ALEN] = {0};
 
 	for (i = 0, j = 0; i < (MAC_UNIT_LEN * ETH_ALEN); i += MAC_UNIT_LEN, j++) {
@@ -2419,11 +2417,6 @@ void ath12k_debugfs_nrp_clean(struct ath12k *ar, const u8 *addr)
 		}
 		snprintf(fname + i, sizeof(fname) - i, "%02x:", *(addr + j));
 	}
-
-	spin_lock_bh(&dp->dp_lock);
-	dp->num_nrps--;
-	num_nrp = dp->num_nrps;
-	spin_unlock_bh(&dp->dp_lock);
 
 	debugfs_lookup_and_remove(fname, ar->debug.debugfs_nrp);
 	if (!num_nrp) {
@@ -2482,9 +2475,10 @@ static ssize_t ath12k_read_nrp_rssi(struct file *file,
 	}
 
 	len = scnprintf(buf, sizeof(buf),
-			"Neighbor Peer MAC\t\tRSSI\t\tTime\n");
-	len += scnprintf(buf + len, sizeof(buf) - len, "%pM\t\t%u\t\t%lld\n",
-			 nrp->addr, nrp->rssi, nrp->timestamp);
+			"%-20s %-10s %-10s %s\n",
+			"Neighbor Peer MAC", "RSSI", "Avg RSSI", "Time");
+	len += scnprintf(buf + len, sizeof(buf) - len, "%-20pM %-10u %-10u %lld\n",
+			 nrp->addr, nrp->rssi, nrp->avg_rssi, nrp->timestamp);
 
 	return simple_read_from_buffer(ubuf, count, ppos, buf, len);
 }
@@ -2596,7 +2590,7 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 	switch (action) {
 	case WMI_FILTER_NRP_ACTION_ADD:
 		spin_lock_bh(&dp->dp_lock);
-		if (dp->num_nrps == (ATH12K_MAX_NRPS - 1)) {
+		if (dp->num_nrps >= (ATH12K_MAX_NRPS)) {
 			spin_unlock_bh(&dp->dp_lock);
 			ath12k_warn(ab, "max nrp reached, cannot create more\n");
 			ret = -ENOMEM;
@@ -2728,6 +2722,7 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 			if (ether_addr_equal(nrp->addr, mac) &&
 			    nrp->pdev_id == ar->pdev->pdev_id) {
 				list_del(&nrp->list);
+				dp->num_nrps--;
 				del_nrp = true;
 				break;
 			}
@@ -2740,7 +2735,7 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 			ret = -EINVAL;
 			goto err_free;
 		} else {
-			ath12k_debugfs_nrp_clean(ar, mac);
+			ath12k_debugfs_nrp_clean(ar, mac, dp->num_nrps);
 			param->vdev_id = nrp->vdev_id;
 			ether_addr_copy(param->nrp_addr, nrp->addr);
 			spin_lock_bh(&dp->dp_lock);
@@ -2976,14 +2971,15 @@ void ath12k_debugfs_op_vif_add(struct ieee80211_hw *hw,
 {
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
 
-	if (!ahvif->debugfs_linkstats) {
-		ahvif->debugfs_linkstats = debugfs_create_file("link_stats", 0400,
-							       vif->debugfs_dir,
-							       ahvif,
-							       &ath12k_fops_link_stats);
-		if (IS_ERR(ahvif->debugfs_linkstats))
-			ahvif->debugfs_linkstats = NULL;
-	}
+	if (!vif || !vif->debugfs_dir)
+		return;
+
+	ahvif->debugfs_linkstats = debugfs_create_file("link_stats", 0400,
+						       vif->debugfs_dir,
+						       ahvif,
+						       &ath12k_fops_link_stats);
+	if (IS_ERR(ahvif->debugfs_linkstats))
+		ahvif->debugfs_linkstats = NULL;
 }
 EXPORT_SYMBOL(ath12k_debugfs_op_vif_add);
 
@@ -4392,6 +4388,69 @@ static const struct file_operations fops_vdev_stats = {
 	.llseek = default_llseek,
 };
 
+static int ath12k_open_vdev_extd_stats(struct inode *inode, struct file *file)
+{
+	struct ath12k *ar = inode->i_private;
+	struct ath12k_fw_stats_req_params param;
+	struct ath12k_hw *ah = ath12k_ar_to_ah(ar);
+	int ret;
+
+	guard(wiphy)(ath12k_ar_to_hw(ar)->wiphy);
+
+	if (!ah)
+		return -ENETDOWN;
+
+	if (ah->state != ATH12K_HW_STATE_ON)
+		return -ENETDOWN;
+
+	void *buf __free(kfree) = kzalloc(ATH12K_FW_STATS_BUF_SIZE, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	param.pdev_id = ath12k_mac_get_target_pdev_id(ar);
+	/* VDEV extd stats is always sent for all active VDEVs from FW */
+	param.vdev_id = 0;
+	param.stats_id = WMI_REQUEST_VDEV_EXTD_STAT;
+
+	ret = ath12k_mac_get_fw_stats(ar, &param);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to request fw vdev extd stats: %d\n", ret);
+		return ret;
+	}
+
+	ath12k_wmi_fw_stats_dump(ar, &ar->fw_stats, param.stats_id,
+				 buf);
+
+	file->private_data = no_free_ptr(buf);
+
+	return 0;
+}
+
+static int ath12k_release_vdev_extd_stats(struct inode *inode, struct file *file)
+{
+	kfree(file->private_data);
+
+	return 0;
+}
+
+static ssize_t ath12k_read_vdev_extd_stats(struct file *file,
+					   char __user *user_buf,
+					   size_t count, loff_t *ppos)
+{
+	const char *buf = file->private_data;
+	size_t len = strlen(buf);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static const struct file_operations fops_vdev_extd_stats = {
+	.open = ath12k_open_vdev_extd_stats,
+	.release = ath12k_release_vdev_extd_stats,
+	.read = ath12k_read_vdev_extd_stats,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 static int ath12k_open_bcn_stats(struct inode *inode, struct file *file)
 {
 	struct ath12k *ar = inode->i_private;
@@ -4895,6 +4954,8 @@ void ath12k_debugfs_fw_stats_register(struct ath12k *ar)
 			    &fops_pdev_stats);
 	debugfs_create_file("en_vdev_stats_ol", 0600, fwstats_dir, ar,
 			    &fops_vdev_stats_offload);
+	debugfs_create_file("vdev_extd_stats", 0600, fwstats_dir, ar,
+			    &fops_vdev_extd_stats);
 
 	ath12k_fw_stats_init(ar);
 }
@@ -6240,6 +6301,37 @@ static const struct file_operations fops_dp_stats_mask = {
 	.open = simple_open,
 };
 
+static void ath12k_dp_vif_reset_proto_stats(struct ath12k_dp_vif *dp_vif)
+{
+	int ring_id;
+
+	if (!dp_vif)
+		return;
+
+	/* Reset TX protocol stats for all rings */
+	for (ring_id = 0; ring_id < DP_TCL_NUM_RING_MAX; ring_id++) {
+		if (dp_vif->stats[ring_id].proto)
+			memset(dp_vif->stats[ring_id].proto, 0,
+			       sizeof(struct ath12k_dp_proto_stats_vif));
+	}
+}
+
+static void ath12k_dp_peer_reset_proto_stats(struct ath12k_dp_peer *dp_peer)
+{
+	u8 index;
+
+	if (!dp_peer)
+		return;
+
+	rcu_read_lock();
+	for (index = 0; index < ATH12K_DP_MAX_MLO_LINKS; index++) {
+		if (dp_peer->stats[index].proto)
+			memset(dp_peer->stats[index].proto, 0,
+			       sizeof(struct ath12k_dp_proto_stats_peer));
+	}
+	rcu_read_unlock();
+}
+
 static void ath12k_dp_peer_clear_qos_stats(struct ath12k_dp_peer *dp_peer)
 {
 	struct ath12k_dp_link_peer *link_peer;
@@ -6304,6 +6396,10 @@ static ssize_t ath12k_write_reset_dp_stats(struct file *file,
 			       sizeof(*dp_peer->link_peer_delete_stats));
 		ath12k_dp_peer_clear_qos_stats(dp_peer);
 
+		ar = &ah->radio[0];
+		if (ar && ath12k_proto_stats_enabled(&ar->dp))
+			ath12k_dp_peer_reset_proto_stats(dp_peer);
+
 		struct ath12k_dp_link_peer *tmp_peer = NULL;
 		unsigned long peer_links_map, scan_links_map;
 		u8 link_id;
@@ -6337,6 +6433,9 @@ static ssize_t ath12k_write_reset_dp_stats(struct file *file,
 			dp_vif = &arvif->ahvif->dp_vif;
 			memset(&dp_vif->stats, 0, sizeof(dp_vif->stats));
 			ath12k_dp_vif_reset_del_stats(dp_vif, arvif->ahvif->links_map);
+
+			if (ath12k_proto_stats_enabled(&ar->dp))
+				ath12k_dp_vif_reset_proto_stats(dp_vif);
 		}
 	}
 
@@ -6349,6 +6448,63 @@ static const struct file_operations fops_reset_dp_stats = {
 	.open = simple_open,
 };
 
+static ssize_t ath12k_write_reset_proto_stats(struct file *file,
+					      const char __user *ubuf,
+					      size_t count, loff_t *ppos)
+{
+	struct ath12k_hw *ah = file->private_data;
+	struct ath12k *ar;
+	struct ath12k_dp_peer *dp_peer;
+	struct ath12k_link_vif *arvif;
+	struct ath12k_dp_vif *dp_vif;
+	u32 reset;
+	int i = 0;
+
+	if (kstrtou32_from_user(ubuf, count, 0, &reset))
+		return -EINVAL;
+
+	if (!reset)
+		return -EINVAL;
+
+	wiphy_lock(ah->hw->wiphy);
+
+	for (i = 0; i < ah->num_radio; i++) {
+		ar = &ah->radio[i];
+		if (!ar)
+			continue;
+		if (!ath12k_proto_stats_enabled(&ar->dp)) {
+			wiphy_unlock(ah->hw->wiphy);
+			return count;
+		}
+	}
+
+	/* Reset protocol stats for all peers */
+	spin_lock_bh(&ah->dp_hw.peer_lock);
+	list_for_each_entry(dp_peer, &ah->dp_hw.peers, list) {
+		ath12k_dp_peer_reset_proto_stats(dp_peer);
+	}
+	spin_unlock_bh(&ah->dp_hw.peer_lock);
+
+	/* Reset protocol stats for all VIFs */
+	for (i = 0; i < ah->num_radio; i++) {
+		ar = &ah->radio[i];
+		list_for_each_entry(arvif, &ar->arvifs, list) {
+			dp_vif = &arvif->ahvif->dp_vif;
+			ath12k_dp_vif_reset_proto_stats(dp_vif);
+		}
+	}
+
+	wiphy_unlock(ah->hw->wiphy);
+	return count;
+}
+
+static const struct file_operations fops_reset_proto_stats = {
+	.write = ath12k_write_reset_proto_stats,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 void ath12k_hw_debugfs_register(struct ath12k_hw *ah)
 {
 	struct ieee80211_hw *hw = ah->hw;
@@ -6358,6 +6514,9 @@ void ath12k_hw_debugfs_register(struct ath12k_hw *ah)
 
 	debugfs_create_file("reset_dp_stats", 0644, hw->wiphy->debugfsdir, ah,
 			    &fops_reset_dp_stats);
+
+	debugfs_create_file("reset_proto_stats", 0200, hw->wiphy->debugfsdir, ah,
+			    &fops_reset_proto_stats);
 
 	debugfs_create_file("qos_stats", 0644, hw->wiphy->debugfsdir, ah,
 			    &fops_qos_stats);
@@ -7548,8 +7707,9 @@ static ssize_t ath12k_write_primary_link(struct file *file,
 
 	for_each_set_bit_from(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
 		arvif = ahvif->link[link_id];
-		if (!arvif)
+		if (!arvif || !arvif->ar)
 			continue;
+
 		ar = arvif->ar;
 		if (primary_link == ar->radio_idx) {
 			ahvif->hw_link_id = primary_link;

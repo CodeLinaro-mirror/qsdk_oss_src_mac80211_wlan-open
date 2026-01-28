@@ -174,6 +174,7 @@ ieee80211_determine_ap_chan(struct ieee80211_sub_if_data *sdata,
 	const struct ieee80211_vht_operation *vht_oper = elems->vht_operation;
 	const struct ieee80211_he_operation *he_oper = elems->he_operation;
 	const struct ieee80211_eht_operation *eht_oper = elems->eht_operation;
+	const struct ieee80211_uhr_operation *uhr_oper = elems->uhr_operation;
 	struct ieee80211_supported_band *sband =
 		sdata->local->hw.wiphy->bands[channel->band];
 	struct cfg80211_chan_def vht_chandef;
@@ -383,7 +384,11 @@ ieee80211_determine_ap_chan(struct ieee80211_sub_if_data *sdata,
 	if (ieee802_11_determine_ap_chan_extn(elems, chandef, sdata))
 		return IEEE80211_CONN_MODE_HE;
 
-	return IEEE80211_CONN_MODE_EHT;
+	/* stick to EHT if we or the AP don't have UHR */
+	if (conn->mode < IEEE80211_CONN_MODE_UHR || !uhr_oper)
+		return IEEE80211_CONN_MODE_EHT;
+
+	return IEEE80211_CONN_MODE_UHR;
 }
 
 static bool
@@ -969,6 +974,7 @@ ieee80211_determine_chan_mode(struct ieee80211_sub_if_data *sdata,
 		.from_ap = true,
 		.start = ies->data,
 		.len = ies->len,
+		.is_beacon = !!rcu_dereference(cbss->beacon_ies),
 	};
 	struct ieee802_11_elems *elems;
 	struct ieee80211_supported_band *sband;
@@ -1050,6 +1056,7 @@ again:
 				       IEEE80211_CONN_BW_LIMIT_160);
 		break;
 	case IEEE80211_CONN_MODE_EHT:
+	case IEEE80211_CONN_MODE_UHR:
 		conn->bw_limit = min_t(enum ieee80211_conn_bw_limit,
 				       conn->bw_limit,
 				       IEEE80211_CONN_BW_LIMIT_320);
@@ -1110,6 +1117,16 @@ again:
 				       conn->bw_limit,
 				       IEEE80211_CONN_BW_LIMIT_160);
 	}
+
+	if (conn->mode >= IEEE80211_CONN_MODE_UHR &&
+	    !cfg80211_chandef_usable(sdata->wdev.wiphy, &chanreq->oper,
+				     IEEE80211_CHAN_NO_UHR)) {
+		conn->mode = IEEE80211_CONN_MODE_EHT;
+		conn->bw_limit = min_t(enum ieee80211_conn_bw_limit,
+				       conn->bw_limit,
+				       IEEE80211_CONN_BW_LIMIT_160);
+	}
+
 
 	if (chanreq->oper.width != ap_chandef->width || ap_mode != conn->mode)
 		link_id_info(sdata, link_id,
@@ -1791,6 +1808,9 @@ ieee80211_add_link_elems(struct ieee80211_sub_if_data *sdata,
 	if (assoc_data->link[link_id].conn.mode >= IEEE80211_CONN_MODE_EHT)
 		ADD_PRESENT_EXT_ELEM(WLAN_EID_EXT_EHT_CAPABILITY);
 
+	if (assoc_data->link[link_id].conn.mode >= IEEE80211_CONN_MODE_UHR)
+		ADD_PRESENT_EXT_ELEM(WLAN_EID_EXT_UHR_CAPABILITY);
+
 	if (link_id == assoc_data->assoc_link_id)
 		ieee80211_assoc_add_ml_elem(sdata, skb, orig_capab, ext_capa,
 					    present_elems, assoc_data);
@@ -1801,6 +1821,9 @@ ieee80211_add_link_elems(struct ieee80211_sub_if_data *sdata,
 	if (assoc_data->link[link_id].conn.mode >= IEEE80211_CONN_MODE_EHT)
 		ieee80211_put_eht_cap(skb, sdata, sband,
 				      &assoc_data->link[link_id].conn);
+
+	if (assoc_data->link[link_id].conn.mode >= IEEE80211_CONN_MODE_UHR)
+		ieee80211_put_uhr_cap(skb, sdata, sband);
 
 	if (sband->band == NL80211_BAND_S1GHZ) {
 		ieee80211_add_aid_request_ie(sdata, skb);
@@ -2057,6 +2080,8 @@ ieee80211_link_common_elems_size(struct ieee80211_sub_if_data *sdata,
 	size += 2 + 1 + sizeof(struct ieee80211_eht_cap_elem) +
 		sizeof(struct ieee80211_eht_mcs_nss_supp) +
 		IEEE80211_EHT_PPE_THRES_MAX_LEN;
+
+	size += 2 + 1 + sizeof(struct ieee80211_uhr_cap_elem);
 
 	return size;
 }
@@ -3429,10 +3454,21 @@ void ieee80211_dfs_cac_timer_work(struct wiphy *wiphy, struct wiphy_work *work)
 	lockdep_assert_wiphy(sdata->local->hw.wiphy);
 
 	if (sdata->wdev.links[link->link_id].cac_started) {
-		ieee80211_link_release_channel(link);
-		cfg80211_cac_event(sdata->dev, &chandef,
-				   NL80211_RADAR_CAC_FINISHED,
-				   GFP_KERNEL, link->link_id);
+		if (!link->conf->deferred_up) {
+			ieee80211_link_release_channel(link);
+			cfg80211_cac_event(sdata->dev, &chandef,
+					   NL80211_RADAR_CAC_FINISHED,
+					   GFP_KERNEL, link->link_id);
+		} else {
+			cfg80211_cac_event(sdata->dev, &chandef,
+					   NL80211_RADAR_CAC_FINISHED,
+					   GFP_KERNEL, link->link_id);
+			ieee80211_link_info_change_notify(sdata, link,
+							  BSS_CHANGED_BEACON);
+			ieee80211_vif_unblock_queues_csa(sdata);
+			cfg80211_schedule_channels_check(&sdata->wdev);
+			link->conf->deferred_up = false;
+		}
 	}
 }
 
@@ -5409,8 +5445,18 @@ static bool ieee80211_assoc_config_link(struct ieee80211_link_data *link,
 			if (sdata->u.mgd.epcs.enabled &&
 			    !bss_conf->epcs_support)
 				ieee80211_epcs_teardown(sdata);
+
+			if (elems->uhr_cap &&
+			    link->u.mgd.conn.mode >= IEEE80211_CONN_MODE_UHR) {
+				ieee80211_uhr_cap_ie_to_sta_uhr_cap(sdata, sband,
+								    elems->uhr_cap,
+								    elems->uhr_cap_len,
+								    link_sta);
+				bss_conf->uhr_support = link_sta->pub->uhr_cap.has_uhr;
+			}
 		} else {
 			bss_conf->eht_support = false;
+			bss_conf->uhr_support = false;
 			bss_conf->epcs_support = false;
 		}
 	} else {
@@ -5706,6 +5752,7 @@ ieee80211_determine_our_sta_mode(struct ieee80211_sub_if_data *sdata,
 	const struct ieee80211_sta_he_cap *he_cap;
 	const struct ieee80211_sta_eht_cap *eht_cap;
 	struct ieee80211_sta_vht_cap vht_cap;
+	const struct ieee80211_sta_uhr_cap *uhr_cap;
 
 	if (sband->band == NL80211_BAND_S1GHZ) {
 		conn->mode = IEEE80211_CONN_MODE_S1G;
@@ -5875,6 +5922,23 @@ ieee80211_determine_our_sta_mode(struct ieee80211_sub_if_data *sdata,
 	else if (is_6ghz)
 		mlme_link_id_dbg(sdata, link_id,
 				 "no EHT 320 MHz cap in 6 GHz, limiting to 160 MHz\n");
+
+	if (req && req->flags & ASSOC_REQ_DISABLE_UHR) {
+		mlme_link_id_dbg(sdata, link_id,
+				 "UHR disabled by flag, limiting to EHT\n");
+		goto out;
+	}
+
+	uhr_cap = ieee80211_get_uhr_iftype_cap_vif(sband, &sdata->vif);
+	if (!uhr_cap) {
+		mlme_link_id_dbg(sdata, link_id,
+				 "no UHR support, limiting to EHT\n");
+		goto out;
+	}
+
+	/* we have UHR */
+
+	conn->mode = IEEE80211_CONN_MODE_UHR;
 
 out:
 	mlme_link_id_dbg(sdata, link_id,
@@ -6179,6 +6243,13 @@ static bool ieee80211_assoc_success(struct ieee80211_sub_if_data *sdata,
 		sta->sta.mfp = true;
 	} else {
 		sta->sta.mfp = false;
+	}
+
+	if (ifmgd->flags & IEEE80211_STA_CFP_ENABLED) {
+		set_sta_flag(sta, WLAN_STA_CFP);
+		sta->sta.cfp = true;
+	} else {
+		sta->sta.cfp = false;
 	}
 
 	ieee80211_sta_set_max_amsdu_subframes(sta, elems->ext_capab,
@@ -7316,6 +7387,7 @@ static void ieee80211_rx_mgmt_beacon(struct ieee80211_link_data *link,
 	    !WARN_ON(ieee80211_vif_is_mld(&sdata->vif)) &&
 	    ieee80211_rx_our_beacon(bssid, ifmgd->assoc_data->link[0].bss)) {
 		parse_params.bss = ifmgd->assoc_data->link[0].bss;
+		parse_params.is_beacon = true;
 		elems = ieee802_11_parse_elems_full(&parse_params);
 		if (!elems)
 			return;
@@ -7386,6 +7458,7 @@ static void ieee80211_rx_mgmt_beacon(struct ieee80211_link_data *link,
 	parse_params.bss = bss_conf->bss;
 	parse_params.filter = care_about_ies;
 	parse_params.crc = ncrc;
+	parse_params.is_beacon = true;
 	elems = ieee802_11_parse_elems_full(&parse_params);
 	if (!elems)
 		return;
@@ -9537,7 +9610,8 @@ int ieee80211_mgd_assoc(struct ieee80211_sub_if_data *sdata,
 		if (req->flags & (ASSOC_REQ_DISABLE_HT |
 				  ASSOC_REQ_DISABLE_VHT |
 				  ASSOC_REQ_DISABLE_HE |
-				  ASSOC_REQ_DISABLE_EHT)) {
+				  ASSOC_REQ_DISABLE_EHT |
+				  ASSOC_REQ_DISABLE_UHR)) {
 			err = -EINVAL;
 			goto err_free;
 		}
@@ -9732,6 +9806,14 @@ int ieee80211_mgd_assoc(struct ieee80211_sub_if_data *sdata,
 	} else {
 		ifmgd->mfp = IEEE80211_MFP_DISABLED;
 		ifmgd->flags &= ~IEEE80211_STA_MFP_ENABLED;
+	}
+
+	if (req->use_cfp) {
+		ifmgd->cfp = IEEE80211_CFP_REQUIRED;
+		ifmgd->flags |= IEEE80211_STA_CFP_ENABLED;
+	} else {
+		ifmgd->cfp = IEEE80211_CFP_DISABLED;
+		ifmgd->flags &= ~IEEE80211_STA_CFP_ENABLED;
 	}
 
 	if (req->flags & ASSOC_REQ_USE_RRM)

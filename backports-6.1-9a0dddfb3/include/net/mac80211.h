@@ -754,6 +754,8 @@ struct ieee80211_parsed_tpe {
  * @eht_support: does this BSS support EHT
  * @epcs_support: does this BSS support EPCS
  * @csa_active: marks whether a channel switch is going on.
+ * @deferred_up: On CSA to target DFS channel, mark the flag for deferred
+ *	vap up post CAC, and skip vap down
  * @mu_mimo_owner: indicates interface owns MU-MIMO capability
  * @chanctx_conf: The channel context this interface is assigned to, or %NULL
  *	when it is not assigned. This pointer is RCU-protected due to the TX
@@ -799,6 +801,7 @@ struct ieee80211_parsed_tpe {
  * 	see &enum ieee80211_critical_updates
  * @beacon_tx_mode: Beacon Tx Mode setting.
  * @ml_max_rec_links: ML Max recommended links
+ * @uhr_support: does this BSS support UHR
  */
 struct ieee80211_bss_conf {
 	struct ieee80211_vif *vif;
@@ -882,6 +885,7 @@ struct ieee80211_bss_conf {
 	bool eht_support;
 	bool epcs_support;
 	bool csa_active;
+	bool deferred_up;
 	bool enable_mcs15;
 
 	bool mu_mimo_owner;
@@ -917,6 +921,8 @@ struct ieee80211_bss_conf {
 	u8 intf_detect_bitmap;
 	enum nl80211_beacon_tx_mode beacon_tx_mode;
 	u8 ml_max_rec_links;
+	bool is_cfp_enabled;
+	bool uhr_support;
 };
 
 /**
@@ -1101,6 +1107,7 @@ enum mac80211_tx_control_flags {
 	IEEE80211_TX_CTRL_DONT_REORDER		= BIT(8),
 	IEEE80211_TX_CTRL_MCAST_MLO_FIRST_TX	= BIT(9),
 	IEEE80211_TX_CTRL_DONT_USE_RATE_MASK	= BIT(10),
+	IEEE80211_TX_CTRL_MGMT_RATE_EXIST	= BIT(11),
 	IEEE80211_TX_CTRL_MLO_LINK		= 0xf0000000,
 };
 
@@ -1415,6 +1422,83 @@ struct ieee80211_rate_status {
 };
 
 /**
+ * enum mac80211_tx_mon_flags - tx monitor info flags
+ *
+ * These are used with @flag member of &struct ieee80211_tx_mon_info
+ * @TX_MON_FLAG_FLAGS_INFO: info for IEEE80211_RADIOTAP_FLAGS
+ * @TX_MON_FLAG_CHAN_INFO: info for IEEE80211_RADIOTAP_CHANNEL
+ * @TX_MON_FLAG_AMPDU_STATUS_INFO: info for IEEE80211_RADIOTAP_AMPDU_STATUS
+ * @TX_MON_FLAG_LSIG_INFO: info for IEEE80211_RADIOTAP_LSIG (L-SIG field)
+ * @TX_MON_FLAG_HE_MU_INFO: info for IEEE80211_RADIOTAP_HE_MU (HE MU fields)
+ * @TX_MON_FLAG_EHT_USIG_INFO: info for IEEE80211_RADIOTAP_EHT_USIG (EHT U-SIG)
+ * @TX_MON_FLAG_EHT_INFO: info for IEEE80211_RADIOTAP_EHT (EHT header)
+ * @TX_MON_FLAG_END: Last member
+ */
+
+enum mac80211_tx_mon_flags {
+	TX_MON_FLAG_FLAGS_INFO,
+	TX_MON_FLAG_CHAN_INFO,
+	TX_MON_FLAG_AMPDU_STATUS_INFO,
+	TX_MON_FLAG_LSIG_INFO,
+	TX_MON_FLAG_HE_MU_INFO,
+	TX_MON_FLAG_EHT_USIG_INFO,
+	TX_MON_FLAG_EHT_INFO,
+	TX_MON_FLAG_VENDOR_TLV,
+	TX_MON_FLAG_END,
+};
+
+/**
+ * struct ieee80211_tx_mon_info - tx monitor related information
+ *
+ * @flags: flags pointing to enum mac80211_tx_mon_flags
+ * @tsft: tsft value for IEEE80211_RADIOTAP_TSFT
+ * @rtap_flags: flags for IEEE80211_RADIOTAP_FLAGS
+ * @chan_freq: channel frequency bitmask for IEEE80211_RADIOTAP_CHANNEL
+ * @chan_flags: channel frequency flags for IEEE80211_RADIOTAP_CHANNEL
+ * @ampdu_ref_num:  A-MPDU reference num for IEEE80211_RADIOTAP_AMPDU_STATUS
+ * @ampdu_flags:  ampdu_flags for IEEE80211_RADIOTAP_AMPDU_STATUS
+ * @ampdu_reserved_flags: ampdu_reserved_flags for IEEE80211_RADIOTAP_AMPDU_STATUS
+ * @lsig: L-SIG fields for IEEE80211_RADIOTAP_LSIG
+ * @he_mu: HE-MU fields for IEEE80211_RADIOTAP_HE_MU
+ * @eht_usig: EHT USIG fields for IEEE80211_RADIOTAP_EHT_USIG
+ * @eht_num_users: Number of user info entries in EHT radiotap header
+ * @eht: EHT fields for IEEE80211_RADIOTAP_EHT
+ * @v_tlv: Pointer Vendor TLV fields - contains variable length array, alway do deep copy
+ */
+struct ieee80211_tx_mon_info {
+	unsigned long flags[BITS_TO_LONGS(TX_MON_FLAG_END)];
+	u64 tsft;
+	u8 rtap_flags;
+	u16 chan_freq;
+	u16 chan_flags;
+	u32 ampdu_ref_num;
+	u16 ampdu_flags;
+	u16 ampdu_reserved_flags;
+	struct ieee80211_radiotap_lsig lsig;
+	struct ieee80211_radiotap_he_mu he_mu;
+	struct ieee80211_radiotap_eht_usig eht_usig;
+	u32 eht_num_users;
+	struct ieee80211_radiotap_eht eht;
+	struct ieee80211_radiotap_vendor_ns *v_tlv;
+};
+
+static inline bool _tx_mon_hw_check(struct ieee80211_tx_mon_info *info,
+				    enum mac80211_tx_mon_flags flg)
+{
+	return test_bit(flg, info->flags);
+}
+
+#define tx_mon_hw_check(info, flg)	_tx_mon_hw_check(info, TX_MON_FLAG_##flg)
+
+static inline void _tx_mon_hw_set(struct ieee80211_tx_mon_info *info,
+				  enum mac80211_tx_mon_flags flg)
+{
+	__set_bit(flg, info->flags);
+}
+
+#define tx_mon_hw_set(info, flg)	_tx_mon_hw_set(info, TX_MON_FLAG_##flg)
+
+/**
  * struct ieee80211_tx_status - extended tx status info for rate control
  *
  * @sta: Station that the packet was transmitted for
@@ -1428,6 +1512,7 @@ struct ieee80211_rate_status {
  *	frames. Only reported by devices that have timestamping enabled.
  * @mpdu_succ: Number of mpdus successfully transmitted
  * @mpdu_fail: Number of mpdus failed
+ * @mon_info: information for 'tx monitor' processing in case of hardware offload support
  */
 struct ieee80211_tx_status {
 	struct ieee80211_sta *sta;
@@ -1435,6 +1520,8 @@ struct ieee80211_tx_status {
 	struct sk_buff *skb;
 	struct ieee80211_rate_status *rates;
 	ktime_t ack_hwtstamp;
+	u8 link_valid;
+	int link_id;
 	u8 n_rates;
 
 #if LINUX_VERSION_IS_GEQ(4,19,0)
@@ -1445,6 +1532,7 @@ struct ieee80211_tx_status {
 	u32 mpdu_succ;
 	u32 mpdu_fail;
 	bool skip_per_packet_metric_update;
+	struct ieee80211_tx_mon_info mon_info;
 };
 
 /**
@@ -2651,6 +2739,7 @@ struct ieee80211_sta_aggregates {
  *	notifications and capabilities. The value is only valid after
  *	the station moves to associated state.
  * @txpwr: the station tx power configuration
+ * @uhr_cap: UHR capabilities of this STA
  *
  */
 struct ieee80211_link_sta {
@@ -2674,6 +2763,7 @@ struct ieee80211_link_sta {
 	enum ieee80211_sta_rx_bandwidth bandwidth;
 	enum ieee80211_sta_rx_bandwidth sta_max_bandwidth;
 	struct ieee80211_sta_txpwr txpwr;
+	struct ieee80211_sta_uhr_cap uhr_cap;
 };
 
 /**
@@ -2706,6 +2796,7 @@ struct ieee80211_link_sta {
  * @tdls_initiator: indicates the STA is an initiator of the TDLS link. Only
  *	valid if the STA is a TDLS peer in the first place.
  * @mfp: indicates whether the STA uses management frame protection or not.
+ * @cfp: indicated whether the STA used control frame protection or not.
  * @mlo: indicates whether the STA is MLO station.
  * @ft_auth: indicates whether the STA uses FT Authentication.
  * @max_amsdu_subframes: indicates the maximal number of MSDUs in a single
@@ -2736,6 +2827,7 @@ struct ieee80211_link_sta {
  * @neg_ttlm: TTLM negotiation parameters of the station
  * @reconf: bitmap of links added and removed during multi-link
  *	reconfiguration.
+ * @control_mic_pad: Padding info for control frames
  */
 struct ieee80211_sta {
 	u8 addr[ETH_ALEN] __aligned(2);
@@ -2748,6 +2840,7 @@ struct ieee80211_sta {
 	bool tdls;
 	bool tdls_initiator;
 	bool mfp;
+	bool cfp;
 	bool mlo;
 	bool spp_amsdu;
 	bool ft_auth;
@@ -2774,6 +2867,7 @@ struct ieee80211_sta {
 	u16 mld_cap_op;
 	struct net_device *dev;
 	struct ieee80211_neg_ttlm neg_ttlm;
+	u8 control_mic_pad;
 
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
@@ -2820,9 +2914,15 @@ enum sta_notify_cmd {
  *
  * @sta: station table entry, this sta pointer may be NULL and
  * 	it is not allowed to copy the pointer, due to RCU.
+ * @vlan_vif: AP_VLAN interface for this frame, if different from the
+ *	primary AP interface. This is only set when the hardware advertises
+ *	%IEEE80211_HW_VLAN_GROUP_KEY_HW_OFFLOAD and allows the driver
+ *	to select VLAN-specific group keys (GTKs) in hardware. For drivers
+ *	that do not implement VLAN group key offload this field will be %NULL.
  */
 struct ieee80211_tx_control {
 	struct ieee80211_sta *sta;
+	struct ieee80211_vif *vlan_vif;
 };
 
 /**
@@ -3123,6 +3223,15 @@ struct ieee80211_txq {
  * @IEEE80211_HW_SUPPORTS_SINGLE_CHANNEL: Hardware only supports single
  *	channel operation.
  *
+ * @IEEE80211_HW_VLAN_GROUP_KEY_HW_OFFLOAD: Hardware/driver supports
+ *	hardware encryption for per-VLAN group keys on AP_VLAN interfaces.
+ *	When this flag is set mac80211 will install GTKs for AP_VLAN interfaces
+ *	in the driver and will also pass the originating AP_VLAN vif to the driver
+ *	in @ieee80211_tx_control.
+ *
+ * @IEEE80211_HW_SUPPORTS_TX_MONITOR_OFFLOAD: Hardware/driver supports Tx Monitor
+ *	frame generation
+ *
  * @NUM_IEEE80211_HW_FLAGS: number of hardware flags, used for sizing arrays
  */
 enum ieee80211_hw_flags {
@@ -3195,6 +3304,8 @@ enum ieee80211_hw_flags {
 	IEEE80211_HW_SUPPORTS_EXT_REMAIN_ON_CHAN,
 	IEEE80211_HW_SUPPORTS_DSCP_TID_MAP,
 	IEEE80211_HW_SUPPORTS_SINGLE_CHANNEL,
+	IEEE80211_HW_VLAN_GROUP_KEY_HW_OFFLOAD,
+	IEEE80211_HW_SUPPORTS_TX_MONITOR_OFFLOAD,
 
 	/* keep last, obviously */
 	NUM_IEEE80211_HW_FLAGS
@@ -3492,12 +3603,26 @@ ieee80211_get_alt_retry_rate(const struct ieee80211_hw *hw,
 }
 
 /**
+ * __ieee80211_free_txskb - free TX skb
+ * @hw: the hardware
+ * @skbs: the skbs
+ *
+ * Free a transmit skb. Use this function when some failure
+ * to transmit happened and thus status cannot be reported.
+ */
+void __ieee80211_free_txskb(struct ieee80211_hw *hw, struct sk_buff *skb);
+
+/**
  * ieee80211_free_txskb - free TX skb
  * @hw: the hardware
  * @skb: the skb
  *
  * Free a transmit skb. Use this function when some failure
  * to transmit happened and thus status cannot be reported.
+ *
+ * This function also looks up the station associated with the
+ * frame and updates the per-station transmit statistics (packets
+ * and bytes)
  */
 void ieee80211_free_txskb(struct ieee80211_hw *hw, struct sk_buff *skb);
 
@@ -3727,6 +3852,28 @@ void ieee80211_purge_tx_queue(struct ieee80211_hw *hw,
  * hardware support flags, and handle the SMPS flag to the config()
  * operation. It will then with this mechanism be instructed to
  * enter the requested SMPS mode while associated to an HT AP.
+ */
+
+/**
+ * DOC: Monitor mode control
+ * mac80211 provides fine-grained control over monitor mode
+ * behavior through the set_monitor_flags() callback.
+ *
+ * The flags parameter contains monitor flags from enum nl80211_mntr_flags,
+ * which control various aspects of frame capture. Two key flags are:
+ *
+ * - NL80211_MNTR_FLAG_SKIP_TX: When set, local TX packets are not
+ *   passed to the monitor interface. This allows selective monitoring
+ *   of received frames only.
+ *
+ * - NL80211_MNTR_FLAG_SKIP_RX: When set, local RX packets are not
+ *   passed to the monitor interface. This allows selective monitoring
+ *   of transmitted frames only.
+ *
+ * The driver configures its hardware/firmware to honor these
+ * flags when operating in monitor mode. This callback is invoked when
+ * userspace modifies monitor flags via nl80211, allowing the driver
+ * to enable or disable full monitor mode for TX and RX independently.
  */
 
 /**
@@ -4639,6 +4786,8 @@ struct ieee80211_ppe_vp_ds_params {
  *	just "paused" for scanning/ROC, which is indicated by the beacon being
  *	disabled/enabled via @bss_info_changed.
  * @stop_ap: Stop operation on the AP interface.
+ * @set_monitor_flags: Enables or disables TX and RX monitor mode in userspace
+ *      via NL commands.
  *
  * @reconfig_complete: Called after a call to ieee80211_restart_hw() and
  *	during resume, when the reconfiguration has completed.
@@ -4847,7 +4996,9 @@ struct ieee80211_ops {
 			struct ieee80211_bss_conf *link_conf);
 	void (*stop_ap)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			struct ieee80211_bss_conf *link_conf);
-
+	int (*set_monitor_flags)(struct ieee80211_hw *hw,
+				 struct ieee80211_vif *vif,
+				 u32 flags);
 	u64 (*prepare_multicast)(struct ieee80211_hw *hw,
 				 struct netdev_hw_addr_list *mc_list);
 	void (*configure_filter)(struct ieee80211_hw *hw,
@@ -7658,6 +7809,20 @@ ieee80211_get_eht_iftype_cap_vif(const struct ieee80211_supported_band *sband,
 }
 
 /**
+ * ieee80211_get_uhr_iftype_cap_vif - return UHR capabilities for sband/vif
+ * @sband: the sband to search for the iftype on
+ * @vif: the vif to get the iftype from
+ *
+ * Return: pointer to the struct ieee80211_sta_uhr_cap, or %NULL is none found
+ */
+static inline const struct ieee80211_sta_uhr_cap *
+ieee80211_get_uhr_iftype_cap_vif(const struct ieee80211_supported_band *sband,
+				 struct ieee80211_vif *vif)
+{
+	return ieee80211_get_uhr_iftype_cap(sband, ieee80211_vif_type_p2p(vif));
+}
+
+/**
  * ieee80211_update_mu_groups - set the VHT MU-MIMO groud data
  *
  * @vif: the specified virtual interface
@@ -8480,4 +8645,16 @@ ieee80211_rx_send_mscs_tuple(struct ieee80211_sta *pubsta,
 			     u8 tid);
 
 int ieee80211_get_link_assoc_status(struct ieee80211_vif *vif, u8 link_id);
+
+/**
+ * ieee80211_tx_monitor_offload - h/w offloaded tx monitor callback
+ *
+ * This function can be used by driver to deliver packet to upper layer
+ * when they support hardware offload support for tx monitor.
+ *
+ * @hw: the hardware the frame was transmitted by
+ * @status: tx status information
+ */
+void ieee80211_tx_monitor_offload(struct ieee80211_hw *hw,
+				  struct ieee80211_tx_status *status);
 #endif /* MAC80211_H */

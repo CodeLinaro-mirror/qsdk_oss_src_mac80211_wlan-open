@@ -52,9 +52,6 @@ int ath12k_wifi7_dp_rx_link_desc_return(struct ath12k_dp *dp,
 					enum hal_wbm_rel_bm_act action);
 void ath12k_wifi7_dp_rx_process_reo_status(struct ath12k_dp *dp);
 
-int ath12k_wifi7_dp_rx_peer_tid_setup(struct ath12k *ar, const u8 *peer_mac, int vdev_id,
-				      u8 tid, u32 ba_win_sz, u16 ssn,
-				      enum hal_pn_type pn_type);
 void ath12k_wifi7_dp_setup_pn_check_reo_cmd(struct ath12k_hal_reo_cmd *cmd,
 					    struct ath12k_dp_rx_tid *rx_tid,
 					    u32 cipher, enum set_key_cmd key_cmd);
@@ -99,4 +96,7 @@ void ath12k_dp_rx_tid_del_func(struct ath12k_dp *dp, void *ctx,
 			       enum hal_reo_cmd_status status);
 void ath12k_wifi7_dp_rx_ring_free(struct ath12k_base *ab);
 int ath12k_wifi7_dp_rx_ring_setup(struct ath12k_base *ab);
+int ath12k_wifi7_dp_rx_flow_fse_cache_operation(struct ath12k_base *ab,
+						enum dp_flow_fst_operation op_code,
+						struct hal_flow_tuple_info *tuple_info);
 #endif

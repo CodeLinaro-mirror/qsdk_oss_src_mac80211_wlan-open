@@ -770,6 +770,7 @@ setup:
 
 	return status;
 }
+EXPORT_SYMBOL(ath12k_htc_connect_service);
 
 int ath12k_htc_start(struct ath12k_htc *htc)
 {

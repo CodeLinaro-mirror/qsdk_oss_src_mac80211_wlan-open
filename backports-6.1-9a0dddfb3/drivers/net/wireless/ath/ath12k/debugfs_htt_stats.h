@@ -328,6 +328,9 @@ struct htt_tx_peer_rate_stats_tlv {
 			 [HTT_TX_PEER_STATS_NUM_BW_COUNTERS];
 	u32 tx_bw_320mhz;
 	u32 tx_mcs_ext_2[HTT_TX_PEER_STATS_NUM_EXTRA2_MCS_COUNTERS];
+	__le32 tx_ppdu_cnt;
+	__le32 tx_mpdu_try_cnt;
+	__le32 tx_mpdu_success_cnt;
 };
 
 #define HTT_RX_PEER_STATS_NUM_MCS_COUNTERS        12
@@ -393,6 +396,8 @@ struct htt_rx_peer_rate_stats_tlv {
 				       [HTT_RX_PEER_STATS_NUM_BW_EXT_COUNTERS];
 	u32 rx_bw_320mhz;
 	u32 rx_mcs_ext_2[HTT_RX_PEER_STATS_NUM_EXTRA2_MCS_COUNTERS];
+	__le32 tot_rx_ppdu_bytes;
+	__le32 rx_mpdu_try_cnt;
 };
 
 enum htt_peer_stats_req_mode {
@@ -665,9 +670,16 @@ enum ath12k_dbg_htt_tlv_tag {
 	HTT_STATS_TX_SELFGEN_BN_SCHED_STATUS_TAG	= 222,
 	HTT_STATS_TX_PDEV_BN_DL_MU_OFDMA_STATS_TAG	= 223,
 	HTT_STATS_TX_PDEV_BN_UL_MU_OFDMA_STATS_TAG	= 224,
+	HTT_STATS_TXBF_OFDMA_BN_NDPA_TAG                = 226,
+	HTT_STATS_TXBF_OFDMA_BN_NDP_TAG                 = 227,
+	HTT_STATS_TXBF_OFDMA_BN_BRP_TAG                 = 228,
+	HTT_STATS_TXBF_OFDMA_BN_STEER_TAG               = 229,
+	HTT_STATS_TXBF_OFDMA_BN_STEER_MPDU_TAG          = 230,
+	HTT_STATS_TXBF_OFDMA_BN_PARBW_TAG               = 231,
 	HTT_STATS_OPTIONAL_CONFIGS_STATS_TAG		= 232,
 	HTT_STATS_FTM_TAG				= 234,
 	HTT_STATS_PDEV_FTM_TPCCAL_EXT_TAG		= 235,
+	HTT_STATS_TX_PDEV_BN_RATE_TAG                   = 236,
 	HTT_STATS_MAX_TAG,
 };
 
@@ -806,6 +818,9 @@ struct ath12k_htt_tx_pdev_stats_cmn_tlv {
 		__le32 high_32;
 	} bytes_sent;
 	__le32 num_ppdu_tried_ota_per_ac[ATH12K_HTT_NUM_AC_WMM];
+	__le32 hw_reaped_lpi;
+	__le32 hw_reaped_sp;
+	__le32 hw_reaped_vlp;
 } __packed;
 
 
@@ -966,6 +981,12 @@ enum ATH12K_HTT_TX_RX_PDEV_STATS_AX_RU_SIZE {
 #define ATH12K_HTT_TX_PDEV_STATS_NUM_BE_BW_COUNTERS		5
 #define ATH12K_HTT_TX_PDEV_STATS_NUM_PER_COUNTERS		101
 #define ATH12K_HTT_TX_PDEV_STATS_NUM_BN_BW_COUNTERS		5
+/*Macros to use when appending iMCS values to MCS statistics*/
+#define ATH12K_HTT_TX_RX_MCS_RATE_1                             1
+#define ATH12K_HTT_TX_RX_MCS_RATE_3                             3
+#define ATH12K_HTT_TX_RX_MCS_RATE_4                             4
+#define ATH12K_HTT_TX_RX_MCS_RATE_7                             7
+
 
 #define ATH12K_HTT_RX_PDEV_STATS_NUM_BW_EXT_COUNTERS		4
 #define ATH12K_HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS_EXT		14
@@ -1089,6 +1110,22 @@ struct ath12k_htt_tx_pdev_rate_stats_sawf_tlv {
 	__le32 su_burst_rate_drop_fail_cnt;
 } __packed;
 
+#define HTT_TX_PDEV_BN_RATE_STATS_MAC_ID   GENMASK(7, 0)
+#define HTT_TX_PDEV_BN_RATE_STATS_WIFI_VERSION     GENMASK(11, 8)
+
+struct ath12k_htt_tx_pdev_bn_rate_stats_tlv {
+	__le32 mac_id__word;
+
+	__le32 tx_mcs_ext_3[ATH12K_HTT_TX_PDEV_STATS_NUM_EXTRA3_MCS_COUNTERS];
+
+	__le32 tx_gi_ext_3[ATH12K_HTT_TX_PDEV_STATS_NUM_GI_COUNTERS]
+			[ATH12K_HTT_TX_PDEV_STATS_NUM_EXTRA3_MCS_COUNTERS];
+
+	__le32 tx_stbc_ext_3[ATH12K_HTT_TX_PDEV_STATS_NUM_EXTRA3_MCS_COUNTERS];
+} __packed;
+
+
+
 #define ATH12K_HTT_RX_PDEV_STATS_NUM_LEGACY_CCK_STATS		4
 #define ATH12K_HTT_RX_PDEV_STATS_NUM_LEGACY_OFDM_STATS		8
 #define ATH12K_HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS		12
@@ -1209,6 +1246,9 @@ struct ath12k_htt_rx_pdev_rate_ext_stats_tlv {
 
 	__le32 npca_rx_su_punctured_mode
 		[ATH12K_HTT_RX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS];
+
+	__le32 rx_mcs_ext_3
+		[ATH12K_HTT_RX_PDEV_STATS_NUM_EXTRA3_MCS_COUNTERS];
 };
 
 #define ATH12K_HTT_TX_PDEV_STATS_SCHED_PER_TXQ_MAC_ID	GENMASK(7, 0)
@@ -3067,6 +3107,18 @@ enum ath12k_htt_bn_ul_ofdma_dru_sbw_size {
 	ATH12K_HTT_BN_UL_OFDMA_NUM_DRU_SBW_COUNT = 3,
 };
 
+enum ath12k_htt_ru_alloc_mode {
+	ATH12K_HTT_RU_ALLOC_MODE_PF,
+	ATH12K_HTT_RU_ALLOC_MODE_QOS,
+	ATH12K_HTT_RU_ALLOC_MODE_STATIC,
+	ATH12K_HTT_RU_ALLOC_MODE_EQUAL,
+	ATH12K_HTT_RU_ALLOC_MODE_SIMPLIFIED,
+	/* Reserving additional modes for future use */
+	ATH12K_HTT_RU_ALLOC_MODE_RESERVED_1,
+	ATH12K_HTT_RU_ALLOC_MODE_RESERVED_2,
+	ATH12K_HTT_RU_ALLOC_NUM_MODES,
+};
+
 struct ath12k_htt_tx_selfgen_cmn_stats_tlv {
 	__le32 mac_id__word;
 	__le32 su_bar;
@@ -3092,6 +3144,10 @@ struct ath12k_htt_tx_selfgen_cmn_stats_tlv {
 	__le32 standalone_ax_bsr_trigger_tried[ATH12K_HTT_NUM_AC_WMM];
 	__le32 standalone_ax_bsr_trigger_err[ATH12K_HTT_NUM_AC_WMM];
 	__le32 smart_basic_trig_sch_histogram[ATH12K_HTT_MAX_NUM_SBT_INTR];
+	__le32 ru_alloc_mode_cnt[ATH12K_HTT_RU_ALLOC_NUM_MODES];
+	__le32 mu_bar_pipeline_seq_cnt;
+	__le32 mu_bar_pipeline_resume_cnt;
+	__le32 mu_bar_pipeline_resume_fail_cnt;
 } __packed;
 
 struct ath12k_htt_tx_selfgen_ac_stats_tlv {
@@ -4385,6 +4441,7 @@ struct ath12k_htt_tx_per_rate_stats_tlv {
 #define ATH12K_HTT_TX_PDEV_NUM_BN_MCS_CNTRS     20
 #define ATH12K_HTT_TX_PDEV_NUM_UHR_SIG_MCS_CNTRS    4
 #define ATH12K_HTT_TX_PDEV_NUM_BN_BW_CNTRS      5
+#define ATH12K_HTT_TX_PDEV_MAX_TXBF_OFDMA_USERS		8
 
 struct ath12k_htt_tx_pdev_rate_stats_be_ofdma_tlv {
 	__le32 mac_id__word;
@@ -4479,6 +4536,71 @@ struct ath12k_htt_txbf_ofdma_be_steer_mpdu_stats_tlv {
 	__le32 be_ofdma_rbo_steer_mpdus_failed;
 	__le32 be_ofdma_sifs_steer_mpdus_tried;
 	__le32 be_ofdma_sifs_steer_mpdus_failed;
+} __packed;
+
+struct htt_txbf_ofdma_bn_ndpa_stats_elem_t {
+	__le32 bn_ofdma_ndpa_queued;
+	__le32 bn_ofdma_ndpa_tried;
+	__le32 bn_ofdma_ndpa_flushed;
+	__le32 bn_ofdma_ndpa_err;
+} __packed;
+
+struct htt_txbf_ofdma_bn_ndpa_stats_tlv {
+	__le32 num_elems_bn_ndpa_arr;
+	__le32 arr_elem_size_bn_ndpa;
+	struct htt_txbf_ofdma_bn_ndpa_stats_elem_t
+		bn_ndpa[ATH12K_HTT_TX_PDEV_MAX_TXBF_OFDMA_USERS];
+} __packed;
+
+struct htt_txbf_ofdma_bn_ndp_stats_elem_t {
+	__le32 bn_ofdma_ndp_queued;
+	__le32 bn_ofdma_ndp_tried;
+	__le32 bn_ofdma_ndp_flushed;
+	__le32 bn_ofdma_ndp_err;
+} __packed;
+
+struct htt_txbf_ofdma_bn_ndp_stats_tlv {
+	__le32 num_elems_bn_ndp_arr;
+	__le32 arr_elem_size_bn_ndp;
+	struct htt_txbf_ofdma_bn_ndp_stats_elem_t
+		bn_ndp[ATH12K_HTT_TX_PDEV_MAX_TXBF_OFDMA_USERS];
+} __packed;
+
+struct htt_txbf_ofdma_bn_brp_stats_elem_t {
+	__le32 bn_ofdma_brpoll_queued;
+	__le32 bn_ofdma_brpoll_tried;
+	__le32 bn_ofdma_brpoll_flushed;
+	__le32 bn_ofdma_brp_err;
+	__le32 bn_ofdma_brp_err_num_cbf_rcvd;
+} __packed;
+
+struct htt_txbf_ofdma_bn_brp_stats_tlv {
+	__le32 num_elems_bn_brp_arr;
+	__le32 arr_elem_size_bn_brp;
+	struct htt_txbf_ofdma_bn_brp_stats_elem_t
+		bn_brp[ATH12K_HTT_TX_PDEV_MAX_TXBF_OFDMA_USERS];
+} __packed;
+
+struct htt_txbf_ofdma_bn_steer_stats_elem_t {
+	__le32 bn_ofdma_num_ppdu_steer;
+	__le32 bn_ofdma_num_ppdu_ol;
+	__le32 bn_ofdma_num_usrs_prefetch;
+	__le32 bn_ofdma_num_usrs_sound;
+	__le32 bn_ofdma_num_usrs_force_sound;
+} __packed;
+
+struct htt_txbf_ofdma_bn_steer_stats_tlv {
+	__le32 num_elems_bn_steer_arr;
+	__le32 arr_elem_size_bn_steer;
+	struct htt_txbf_ofdma_bn_steer_stats_elem_t
+		bn_steer[ATH12K_HTT_TX_PDEV_MAX_TXBF_OFDMA_USERS];
+} __packed;
+
+struct ath12k_htt_txbf_ofdma_bn_steer_mpdu_stats_tlv {
+	__le32 bn_ofdma_rbo_steer_mpdus_tried;
+	__le32 bn_ofdma_rbo_steer_mpdus_failed;
+	__le32 bn_ofdma_sifs_steer_mpdus_tried;
+	__le32 bn_ofdma_sifs_steer_mpdus_failed;
 } __packed;
 
 struct htt_rx_pdev_be_ul_ofdma_user_stats_tlv {
@@ -5089,6 +5211,12 @@ struct ath12k_htt_stats_txbf_ofdma_be_parbw_tlv {
 	__le32 be_ofdma_parbw_user_snd;
 	__le32 be_ofdma_parbw_cv;
 	__le32 be_ofdma_total_cv;
+} __packed;
+
+struct ath12k_htt_stats_txbf_ofdma_bn_parbw_tlv {
+	__le32 bn_ofdma_parbw_user_snd;
+	__le32 bn_ofdma_parbw_cv;
+	__le32 bn_ofdma_total_cv;
 } __packed;
 
 enum {

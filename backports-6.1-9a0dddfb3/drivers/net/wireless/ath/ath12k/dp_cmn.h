@@ -13,6 +13,7 @@
 #define ATH12K_DP_MAX_MLO_LINKS 4
 
 struct ath12k_hw_group;
+struct ath12k_sta;
 struct ath12k;
 
 struct dp_srng {
@@ -93,6 +94,7 @@ struct ath12k_dp_peer_create_params {
 	bool is_mlo;
 	bool is_vdev_peer;
 	u8 hw_link_id;
+	bool is_sta_bss_peer;
 	u16 peer_id;
 	u16 sta_id;
 };
@@ -136,6 +138,8 @@ bool ath12k_dp_link_peer_reset_rx_stats(struct ath12k_dp *dp, const u8 *addr);
 bool ath12k_dp_link_peer_reset_tx_stats(struct ath12k_dp *dp, const u8 *addr);
 int ath12k_dp_mon_init(struct ath12k_dp *dp);
 void ath12k_dp_mon_deinit(struct ath12k_dp *dp);
+void ath12k_dp_cp_link_peer_unassign(struct ath12k *ar, struct ath12k_link_vif *arvif,
+				     struct ath12k_sta *ahsta, u8 link_id, u8 *addr);
 struct ath12k_dp_peer *ath12k_dp_peer_find(struct ath12k_dp_hw *dp_hw, u8 *addr);
 u16 ath12k_dp_peer_get_peer_id(struct ath12k_dp_hw *dp_hw, u8 *addr);
 u16 ath12k_dp_peer_get_sta_id(struct ath12k_dp_hw *dp_hw, u8 *addr);

@@ -39,9 +39,12 @@ void ath12k_dp_aggr_per_pkt_tx_stats(struct ath12k_dp_peer_tx_stats *dst_tx_stat
 	dst_tx_stats->amsdu_cnt += src_tx_stats->amsdu_cnt;
 	dst_tx_stats->non_amsdu_cnt += src_tx_stats->non_amsdu_cnt;
 	dst_tx_stats->inval_link_id_pkt_cnt += src_tx_stats->inval_link_id_pkt_cnt;
-	dst_tx_stats->mcast += src_tx_stats->mcast;
-	dst_tx_stats->ucast += src_tx_stats->ucast;
-	dst_tx_stats->bcast += src_tx_stats->bcast;
+	dst_tx_stats->ucast.packets += src_tx_stats->ucast.packets;
+	dst_tx_stats->ucast.bytes += src_tx_stats->ucast.bytes;
+	dst_tx_stats->mcast.packets += src_tx_stats->mcast.packets;
+	dst_tx_stats->mcast.bytes += src_tx_stats->mcast.bytes;
+	dst_tx_stats->bcast.packets += src_tx_stats->bcast.packets;
+	dst_tx_stats->bcast.bytes += src_tx_stats->bcast.bytes;
 }
 
 /**
@@ -63,8 +66,10 @@ void ath12k_dp_aggr_per_pkt_rx_stats(struct ath12k_dp_peer_rx_stats *dst_rx_stat
 	dst_rx_stats->sent_to_stack_fast.packets +=
 						src_rx_stats->sent_to_stack_fast.packets;
 	dst_rx_stats->sent_to_stack_fast.bytes += src_rx_stats->sent_to_stack_fast.bytes;
-	dst_rx_stats->mcast += src_rx_stats->mcast;
-	dst_rx_stats->ucast += src_rx_stats->ucast;
+	dst_rx_stats->mcast.packets += src_rx_stats->mcast.packets;
+	dst_rx_stats->mcast.bytes += src_rx_stats->mcast.bytes;
+	dst_rx_stats->ucast.packets += src_rx_stats->ucast.packets;
+	dst_rx_stats->ucast.bytes += src_rx_stats->ucast.bytes;
 	dst_rx_stats->non_amsdu += src_rx_stats->non_amsdu;
 	dst_rx_stats->msdu_part_of_amsdu += src_rx_stats->msdu_part_of_amsdu;
 	dst_rx_stats->mpdu_retry += src_rx_stats->mpdu_retry;
@@ -198,6 +203,65 @@ void ath12k_dp_aggr_rx_peer_stats(struct ath12k_rx_peer_stats *dst,
 				for (l = 0; l <= HAL_RX_MAX_MCS_HT; l++)
 					dst->byte_stats.rx_rate[i][j][k][l] +=
 						src->byte_stats.rx_rate[i][j][k][l];
+
+	dst->num_msdu_bytes += src->num_msdu_bytes;
+	dst->num_msdu_retry_count += src->num_msdu_retry_count;
+	dst->num_mpdus += src->num_mpdus;
+	dst->num_mpdu_retry_count += src->num_mpdu_retry_count;
+	dst->num_ppdus += src->num_ppdus;
+	dst->num_ppdu_duration += src->num_ppdu_duration;
+
+	dst->num_bar += src->num_bar;
+	dst->num_ndpa += src->num_ndpa;
+
+	for (i = 0; i < MAX_MCS; i++)
+		dst->num_mpdu_count[i] += src->num_mpdu_count[i];
+
+	for (i = 0; i < HAL_RX_RECEPTION_TYPE_MAX; i++)
+		dst->ppdu_reception[i] += src->ppdu_reception[i];
+
+	for (i = 0; i < HAL_RX_MAX_NSS; i++)
+		dst->ppdu_nss[i] += src->ppdu_nss[i];
+
+	for (i = 0; i < DOT11_MAX; i++) {
+		for (j = 0; j < MAX_MCS; j++) {
+			dst->proto_type[i].mcs_count[j] +=
+				src->proto_type[i].mcs_count[j];
+		}
+	}
+
+	for (i = 0; i < WME_NUM_AC; i++) {
+		dst->wme_ac_type[i].total_pkts += src->wme_ac_type[i].total_pkts;
+		dst->wme_ac_type[i].total_bytes += src->wme_ac_type[i].total_bytes;
+	}
+
+	for (i = 0; i < DOT11_MAX; i++) {
+		for (j = 0; j < MAX_MCS; j++)
+			dst->su_ppdu_count[i].mcs_count[j] +=
+				src->su_ppdu_count[i].mcs_count[j];
+	}
+
+	for (i = 0; i < MAX_PUNCTURED_MODE; i++)
+		dst->punc_bw[i] += src->punc_bw[i];
+
+	for (i = 0; i < DOT11_MAX; i++) {
+		for (j = 0; j < TXRX_TYPE_MU_MAX; j++) {
+			dst->rx_mu[i][j].mpdu_cnt_fcs_ok +=
+				src->rx_mu[i][j].mpdu_cnt_fcs_ok;
+			dst->rx_mu[i][j].mpdu_cnt_fcs_err +=
+				src->rx_mu[i][j].mpdu_cnt_fcs_err;
+
+			for (k = 0; k < HAL_RX_MAX_NSS; k++) {
+				dst->rx_mu[i][j].ppdu_nss[k] +=
+					src->rx_mu[i][j].ppdu_nss[k];
+			}
+
+			for (k = 0; k < MAX_MCS; k++) {
+				dst->rx_mu[i][j].ppdu.mcs_count[k] +=
+					src->rx_mu[i][j].ppdu.mcs_count[k];
+			}
+		}
+	}
 }
 
 /**
@@ -261,7 +325,8 @@ void ath12k_dp_clear_per_pkt_rx_stats(struct ath12k_dp_peer_stats *rx_peer_stats
 
 /**
  * ath12k_dp_aggr_deleted_stats() - Aggregate stats from a deleted entity
- * @dst: The destination stats structure to merge into.
+ * @dst_peer_stats: The destination peer stats structure.
+ * @dst_link_peer_stats: Destination link peer stats structure
  * @src: The source structure containing stats from the deleted entity.
  * @stats_type: A string for logging that identifies the aggregation context.
  *
@@ -273,7 +338,8 @@ void ath12k_dp_clear_per_pkt_rx_stats(struct ath12k_dp_peer_stats *rx_peer_stats
  * If @src is NULL, the function returns without performing any aggregation.
  *
  * The function iterates over all TCL and REO rings, invoking per-ring
- * helpers to merge the counters.
+ * helpers to merge the counters. Also the extended HTT and Rx peer stats
+ * would be aggregated.
  *
  * It is used in several hierarchical scenarios:
  * 1. MLD Peer Aggregation:
@@ -289,23 +355,97 @@ void ath12k_dp_clear_per_pkt_rx_stats(struct ath12k_dp_peer_stats *rx_peer_stats
  *    link VIF into 'link_vif_delete_stats' of MLD VIF.
  */
 
-void ath12k_dp_aggr_deleted_stats(struct ath12k_dp_peer_stats *dst,
+void ath12k_dp_aggr_deleted_stats(struct ath12k *ar,
+				  struct ath12k_dp_peer_stats *dst_peer_stats,
+				  struct ath12k_dp_link_peer_stats *dst_link_peer_stats,
 				  struct ath12k_dp_preserved_stats *src,
 				  const char *stats_type)
 {
 	u8 i;
 
-	if (!src || !dst) {
+	if (!src || !dst_peer_stats) {
 		ath12k_err(NULL, "%s not found\n", stats_type);
 		return;
 	}
 
 	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++)
-		ath12k_dp_aggr_per_pkt_tx_stats(&dst->tx[i], &src->per_pkt_tx[i]);
+		ath12k_dp_aggr_per_pkt_tx_stats(&dst_peer_stats->tx[i],
+						&src->per_pkt_tx[i]);
 
 	for (i = 0; i < DP_REO_DST_RING_MAX; i++)
-		ath12k_dp_aggr_per_pkt_rx_stats(&dst->rx[i], &src->per_pkt_rx[i]);
+		ath12k_dp_aggr_per_pkt_rx_stats(&dst_peer_stats->rx[i],
+						&src->per_pkt_rx[i]);
 
-	ath12k_dp_aggr_wbm_rx_stats(&dst->wbm_err, &src->wbm_err);
+	ath12k_dp_aggr_wbm_rx_stats(&dst_peer_stats->wbm_err,
+				    &src->wbm_err);
+
+	if (!ar || !dst_link_peer_stats) {
+		ath12k_info(NULL, "Extended stats not present\n");
+		return;
+	}
+
+	if (ath12k_extd_tx_stats_enabled(ar))
+		ath12k_dp_aggr_htt_tx_stats(dst_link_peer_stats->tx_stats,
+					    &src->tx_stats);
+	if (ath12k_extd_rx_stats_enabled(ar))
+		ath12k_dp_aggr_rx_peer_stats(dst_link_peer_stats->rx_stats,
+					     &src->rx_stats);
 }
 
+static u8 ath12k_dp_get_bw_offset(u8 bw)
+{
+	switch (bw) {
+	case HAL_RX_BW_20MHZ:
+		return PKT_BW_GAIN_20MHZ;
+	case HAL_RX_BW_40MHZ:
+		return PKT_BW_GAIN_40MHZ;
+	case HAL_RX_BW_80MHZ:
+		return PKT_BW_GAIN_80MHZ;
+	case HAL_RX_BW_160MHZ:
+		return PKT_BW_GAIN_160MHZ;
+	case HAL_RX_BW_320MHZ:
+		return PKT_BW_GAIN_320MHZ;
+	default:
+		return 0;
+	}
+}
+
+/**
+ * ath12k_dp_get_rssi_value - Calculate RSSI based on given SNR
+ * @snr:      Input SNR (either snr or snr_dp)
+ * @stats:    Peer signal stats (for region offset etc.)
+ * @rssi_offsets: Conversion offsets
+ * @link_peer: Peer info (for bw_info)
+ *
+ * Returns: Calculated RSSI value (s8)
+ */
+s8 ath12k_dp_get_rssi_value(s8 snr,
+			    struct ath12k_dp_link_peer_rx_signal_stats *stats,
+			    struct wmi_rssi_dbm_conv_offsets *rssi_offsets,
+			    struct ath12k_dp_link_peer *link_peer,
+			    bool ack_rssi)
+{
+	s8 rssi_comb;
+	u8 bw_info, bw_offset = 0;
+	s8 rssi_val;
+
+	if (!link_peer)
+		return 0;
+
+
+	if (!ack_rssi && link_peer->peer_stats.rx_stats) {
+		bw_info = link_peer->peer_stats.rx_stats->bw_info;
+		bw_offset = ath12k_dp_get_bw_offset(bw_info);
+	}
+	/* Common offset calculation */
+	rssi_comb = stats->rssi_region_offset +
+		rssi_offsets->avg_nf_dbm +
+		rssi_offsets->rssi_temp_offset + bw_offset;
+
+	/* RSSI calculation */
+	rssi_val = snr + rssi_comb;
+	if (snr > rssi_offsets->xlna_bypass_threshold)
+		rssi_val += rssi_offsets->xlna_bypass_offset;
+
+	return rssi_val;
+}

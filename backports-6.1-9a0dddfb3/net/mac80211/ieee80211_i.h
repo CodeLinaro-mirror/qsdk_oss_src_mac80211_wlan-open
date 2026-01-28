@@ -410,6 +410,7 @@ enum ieee80211_sta_flags {
 	IEEE80211_STA_UAPSD_ENABLED	= BIT(7),
 	IEEE80211_STA_NULLFUNC_ACKED	= BIT(8),
 	IEEE80211_STA_ENABLE_RRM	= BIT(15),
+	IEEE80211_STA_CFP_ENABLED       = BIT(16),
 };
 
 enum ieee80211_conn_mode {
@@ -419,6 +420,7 @@ enum ieee80211_conn_mode {
 	IEEE80211_CONN_MODE_VHT,
 	IEEE80211_CONN_MODE_HE,
 	IEEE80211_CONN_MODE_EHT,
+	IEEE80211_CONN_MODE_UHR,
 };
 
 #define IEEE80211_CONN_MODE_HIGHEST	IEEE80211_CONN_MODE_EHT
@@ -571,6 +573,11 @@ struct ieee80211_if_managed {
 		IEEE80211_MFP_OPTIONAL,
 		IEEE80211_MFP_REQUIRED
 	} mfp; /* management frame protection */
+
+	enum {
+		IEEE80211_CFP_DISABLED,
+		IEEE80211_CFP_REQUIRED
+	} cfp; /* control frame protection */
 
 	/*
 	 * Bitmask of enabled u-apsd queues,
@@ -1088,10 +1095,12 @@ struct ieee80211_link_data {
 	/* multicast keys only */
 	struct ieee80211_key __rcu *gtk[NUM_DEFAULT_KEYS +
 					NUM_DEFAULT_MGMT_KEYS +
-					NUM_DEFAULT_BEACON_KEYS];
+					NUM_DEFAULT_BEACON_KEYS +
+					NUM_DEFAULT_CONTROL_KEYS];
 	struct ieee80211_key __rcu *default_multicast_key;
 	struct ieee80211_key __rcu *default_mgmt_key;
 	struct ieee80211_key __rcu *default_beacon_key;
+	struct ieee80211_key __rcu *default_control_key;
 
 
 	bool operating_11g_mode;
@@ -1274,6 +1283,7 @@ struct ieee80211_sub_if_data {
 		struct dentry *default_multicast_key;
 		struct dentry *default_mgmt_key;
 		struct dentry *default_beacon_key;
+		struct dentry *default_control_key;
 	} debugfs;
 #endif
 #ifdef CPTCFG_MAC80211_NSS_SUPPORT
@@ -1972,6 +1982,8 @@ struct ieee802_11_elems {
 	const struct ieee80211_multi_link_elem *ml_epcs;
 	const struct ieee80211_bandwidth_indication *bandwidth_indication;
 	const struct ieee80211_ttlm_elem *ttlm[IEEE80211_TTLM_MAX_CNT];
+	const struct ieee80211_uhr_cap_elem *uhr_cap;
+	const struct ieee80211_uhr_operation *uhr_operation;
 
 	/* not the order in the psd values is per element, not per chandef */
 	struct ieee80211_parsed_tpe tpe;
@@ -2012,6 +2024,7 @@ struct ieee802_11_elems {
 	struct ieee80211_mle_per_sta_profile *prof;
 	size_t sta_prof_len;
 
+	u8 uhr_cap_len;
 	/* whether/which parse error occurred while retrieving these elements */
 	u8 parse_error;
 };
@@ -2580,6 +2593,7 @@ static inline void ieee80211_tx_skb(struct ieee80211_sub_if_data *sdata,
  * @start: pointer to the elements
  * @len: length of the elements
  * @action: %true if the elements came from an action frame
+ * @is_beacon: %true if the elements came from beacon frame
  * @filter: bitmap of element IDs to filter out while calculating
  *	the element CRC
  * @crc: CRC starting value
@@ -2598,6 +2612,7 @@ struct ieee80211_elems_parse_params {
 	const u8 *start;
 	size_t len;
 	bool action;
+	bool is_beacon;
 	u64 filter;
 	u32 crc;
 	struct cfg80211_bss *bss;
@@ -2868,7 +2883,9 @@ int ieee80211_put_eht_cap(struct sk_buff *skb,
 			  struct ieee80211_sub_if_data *sdata,
 			  const struct ieee80211_supported_band *sband,
 			  const struct ieee80211_conn_settings *conn);
-
+int ieee80211_put_uhr_cap(struct sk_buff *skb,
+			  struct ieee80211_sub_if_data *sdata,
+			  const struct ieee80211_supported_band *sband);
 /* channel management */
 bool ieee80211_chandef_ht_oper(const struct ieee80211_ht_operation *ht_oper,
 			       struct cfg80211_chan_def *chandef);
@@ -3028,6 +3045,12 @@ ieee80211_eht_cap_ie_to_sta_eht_cap(struct ieee80211_sub_if_data *sdata,
 				    const u8 *he_cap_ie, u8 he_cap_len,
 				    const struct ieee80211_eht_cap_elem *eht_cap_ie_elem,
 				    u8 eht_cap_len,
+				    struct link_sta_info *link_sta);
+void
+ieee80211_uhr_cap_ie_to_sta_uhr_cap(struct ieee80211_sub_if_data *sdata,
+				    struct ieee80211_supported_band *sband,
+				    const struct ieee80211_uhr_cap_elem *uhr_cap_ie_elem,
+				    u8 uhr_cap_len,
 				    struct link_sta_info *link_sta);
 void ieee80211_process_neg_ttlm_req(struct ieee80211_sub_if_data *sdata,
 				    struct ieee80211_mgmt *mgmt, size_t len);

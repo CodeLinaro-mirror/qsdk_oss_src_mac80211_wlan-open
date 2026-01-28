@@ -134,6 +134,7 @@ struct wiphy;
  *	with very low power (VLP), even if otherwise set to NO_IR.
  * @IEEE80211_CHAN_ALLOW_20MHZ_ACTIVITY: Allow activity on a 20 MHz channel,
  *	even if otherwise set to NO_IR.
+ * @IEEE80211_CHAN_NO_UHR: UHR operation is not permitted on this channel.
  */
 enum ieee80211_channel_flags {
 	IEEE80211_CHAN_DISABLED			= BIT(0),
@@ -163,6 +164,7 @@ enum ieee80211_channel_flags {
 	IEEE80211_CHAN_CAN_MONITOR		= BIT(24),
 	IEEE80211_CHAN_ALLOW_6GHZ_VLP_AP	= BIT(25),
 	IEEE80211_CHAN_ALLOW_20MHZ_ACTIVITY     = BIT(26),
+	IEEE80211_CHAN_NO_UHR			= BIT(27),
 };
 
 #define IEEE80211_CHAN_NO_HT40 \
@@ -440,6 +442,21 @@ struct ieee80211_sta_eht_cap {
 	u8 eht_ppe_thres[IEEE80211_EHT_PPE_THRES_MAX_LEN];
 };
 
+/**
+ * struct ieee80211_sta_uhr_cap - STA's UHR capabilities
+ *
+ * This structure describes most essential parameters needed
+ * to describe 802.11bn UHR capabilities for a STA.
+ *
+ * @has_uhr: true if UHR data is valid.
+ * @uhr_cap_elem: Fixed portion of the uhr capabilities element.
+ */
+struct ieee80211_sta_uhr_cap {
+	bool has_uhr;
+	struct ieee80211_uhr_cap_elem_fixed uhr_cap_elem;
+};
+
+
 /* sparse defines __CHECKER__; see Documentation/dev-tools/sparse.rst */
 #ifdef __CHECKER__
 /*
@@ -465,6 +482,7 @@ struct ieee80211_sta_eht_cap {
  * @he_6ghz_capa: HE 6 GHz capabilities, must be filled in for a
  *	6 GHz band channel (and 0 may be valid value).
  * @eht_cap: STA's EHT capabilities
+ * @uhr_cap: STA's UHR capabilities
  * @vendor_elems: vendor element(s) to advertise
  * @vendor_elems.data: vendor element(s) data
  * @vendor_elems.len: vendor element(s) length
@@ -474,6 +492,7 @@ struct ieee80211_sband_iftype_data {
 	struct ieee80211_sta_he_cap he_cap;
 	struct ieee80211_he_6ghz_capa he_6ghz_capa;
 	struct ieee80211_sta_eht_cap eht_cap;
+	struct ieee80211_sta_uhr_cap uhr_cap;
 	struct {
 		const u8 *data;
 		unsigned int len;
@@ -728,6 +747,26 @@ ieee80211_get_eht_iftype_cap(const struct ieee80211_supported_band *sband,
 
 	if (data && data->eht_cap.has_eht)
 		return &data->eht_cap;
+
+	return NULL;
+}
+
+/**
+ * ieee80211_get_uhr_iftype_cap - return UHR capabilities for an sband's iftype
+ * @sband: the sband to search for the iftype on
+ * @iftype: enum nl80211_iftype
+ *
+ * Return: pointer to the struct ieee80211_sta_uhr_cap, or NULL is none found
+ */
+static inline const struct ieee80211_sta_uhr_cap *
+ieee80211_get_uhr_iftype_cap(const struct ieee80211_supported_band *sband,
+			     enum nl80211_iftype iftype)
+{
+	const struct ieee80211_sband_iftype_data *data =
+		ieee80211_get_sband_iftype_data(sband, iftype);
+
+	if (data && data->uhr_cap.has_uhr)
+		return &data->uhr_cap;
 
 	return NULL;
 }
@@ -1779,6 +1818,8 @@ struct cfg80211_ttlm_params {
  * @he_cap: HE capabilities (or %NULL if HE isn't enabled)
  * @eht_cap: EHT capabilities (or %NULL if EHT isn't enabled)
  * @eht_oper: EHT operation IE (or %NULL if EHT isn't enabled)
+ * @uhr_cap: UHR capabilities (or %NULL if UHR isn't enabled)
+ * @uhr_oper: UHR operation IE (or %NULL if UHR isn't enabled)
  * @ht_required: stations must support HT
  * @vht_required: stations must support VHT
  * @twt_responder: Enable Target Wait Time
@@ -1822,6 +1863,8 @@ struct cfg80211_ap_settings {
 	const struct ieee80211_he_operation *he_oper;
 	const struct ieee80211_eht_cap_elem *eht_cap;
 	const struct ieee80211_eht_operation *eht_oper;
+	const struct ieee80211_uhr_cap_elem *uhr_cap;
+	const struct ieee80211_uhr_operation *uhr_oper;
 	bool ht_required, vht_required, he_required, sae_h2e_required;
 	bool twt_responder;
 	u32 flags;
@@ -1837,6 +1880,7 @@ struct cfg80211_ap_settings {
 	u8 ml_max_rec_links;
 	enum nl80211_regulatory_power_modes he_6ghz_power_type;
 	struct cfg80211_ttlm_params ttlm_params;
+	bool is_cfp_enabled;
 };
 
 
@@ -2002,6 +2046,8 @@ struct sta_txpwr {
  * @eht_capa_len: the length of the EHT capabilities
  * @eml_cap: EML capabilities of station
  * @mld_oper: MLD capabilites and operation field of station
+ * @uhr_capa: UHR capabilities of station
+ * @uhr_capa_len: the length of the UHR capabilities
  */
 struct link_station_parameters {
 	const u8 *mld_mac;
@@ -2023,6 +2069,8 @@ struct link_station_parameters {
 	u8 eht_capa_len;
 	u16 eml_cap;
 	u16 mld_oper;
+	const struct ieee80211_uhr_cap_elem *uhr_capa;
+	u8 uhr_capa_len;
 };
 
 /**
@@ -2076,6 +2124,7 @@ struct link_station_del_parameters {
  *	present/updated
  * @eml_cap: EML capabilities of this station
  * @link_sta_params: link related params.
+ * @control_mic_pad: padding info for control frames
  */
 struct station_parameters {
 	struct net_device *vlan;
@@ -2103,6 +2152,7 @@ struct station_parameters {
 	bool eml_cap_present;
 	u16 eml_cap;
 	struct link_station_parameters link_sta_params;
+	u8 control_mic_pad;
 };
 
 /**
@@ -2718,6 +2768,7 @@ static inline int cfg80211_get_station(struct net_device *dev,
  * @MONITOR_FLAG_COOK_FRAMES: report frames after processing
  * @MONITOR_FLAG_ACTIVE: active monitor, ACKs frames on its MAC address
  * @MONITOR_FLAG_SKIP_TX: do not pass locally transmitted frames
+ * @MONITOR_FLAG_SKIP_RX: do not pass locally received frames
  */
 enum monitor_flags {
 	MONITOR_FLAG_CHANGED		= BIT(__NL80211_MNTR_FLAG_INVALID),
@@ -2728,6 +2779,7 @@ enum monitor_flags {
 	MONITOR_FLAG_COOK_FRAMES	= BIT(NL80211_MNTR_FLAG_COOK_FRAMES),
 	MONITOR_FLAG_ACTIVE		= BIT(NL80211_MNTR_FLAG_ACTIVE),
 	MONITOR_FLAG_SKIP_TX		= BIT(NL80211_MNTR_FLAG_SKIP_TX),
+	MONITOR_FLAG_SKIP_RX            = BIT(NL80211_MNTR_FLAG_SKIP_RX),
 };
 
 /**
@@ -3579,6 +3631,7 @@ struct cfg80211_ml_reconf_req {
  *	Drivers shall disable MLO features for the current association if this
  *	flag is not set.
  * @ASSOC_REQ_SPP_AMSDU: SPP A-MSDUs will be used on this connection (if any)
+ * @ASSOC_REQ_DISABLE_UHR:  Disable UHR
  */
 enum cfg80211_assoc_req_flags {
 	ASSOC_REQ_DISABLE_HT			= BIT(0),
@@ -3589,6 +3642,7 @@ enum cfg80211_assoc_req_flags {
 	ASSOC_REQ_DISABLE_EHT			= BIT(5),
 	CONNECT_REQ_MLO_SUPPORT			= BIT(6),
 	ASSOC_REQ_SPP_AMSDU			= BIT(7),
+	ASSOC_REQ_DISABLE_UHR			= BIT(8),
 };
 
 /**
@@ -3605,6 +3659,7 @@ enum cfg80211_assoc_req_flags {
  * @ie: Extra IEs to add to (Re)Association Request frame or %NULL
  * @ie_len: Length of ie buffer in octets
  * @use_mfp: Use management frame protection (IEEE 802.11w) in this association
+ * @use_cfp: Use control frame protection in this association
  * @crypto: crypto settings
  * @prev_bssid: previous BSSID, if not %NULL use reassociate frame. This is used
  *	to indicate a request to reassociate within the ESS instead of a request
@@ -3644,6 +3699,7 @@ struct cfg80211_assoc_request {
 	size_t ie_len;
 	struct cfg80211_crypto_settings crypto;
 	bool use_mfp;
+	bool use_cfp;
 	u32 flags;
 	const u8 *supported_selectors;
 	u8 supported_selectors_len;
@@ -3797,6 +3853,7 @@ struct cfg80211_bss_selection {
  * @ie_len: Length of assoc_ie in octets
  * @privacy: indicates whether privacy-enabled APs should be used
  * @mfp: indicate whether management frame protection is used
+ * @cfp: indicate whether control frame protection is used
  * @crypto: crypto settings
  * @key_len: length of WEP key for shared key authentication
  * @key_idx: index of WEP key for shared key authentication
@@ -3849,6 +3906,7 @@ struct cfg80211_connect_params {
 	size_t ie_len;
 	bool privacy;
 	enum nl80211_mfp mfp;
+	enum nl80211_cfp cfp;
 	struct cfg80211_crypto_settings crypto;
 	const u8 *key;
 	u8 key_len, key_idx;
@@ -4196,6 +4254,7 @@ struct cfg80211_mgmt_tx_params {
 	int n_csa_offsets;
 	const u16 *csa_offsets;
 	int link_id;
+	struct cfg80211_bitrate_mask rate;
 };
 
 /**
@@ -5070,6 +5129,8 @@ struct cfg80211_qm_resp_data {
  * @set_default_beacon_key: set the default Beacon frame key on an interface.
  *	@link_id will be >= 0 for MLO connection and -1 for non-MLO connection.
  *
+ * @set_default_control_key: set the default control frame key (CIGTK) on an interface.
+ *
  * @set_rekey_data: give the data necessary for GTK rekeying to the driver
  *
  * @start_ap: Start acting in AP mode defined by the parameters.
@@ -5474,6 +5535,11 @@ struct cfg80211_ops {
 					  struct net_device *netdev,
 					  int link_id,
 					  u8 key_index);
+
+	int	(*set_default_control_key)(struct wiphy *wiphy,
+					   struct net_device *netdev,
+					   int link_id,
+					   u8 key_index);
 
 	int	(*start_ap)(struct wiphy *wiphy, struct net_device *dev,
 			    struct cfg80211_ap_settings *settings);
@@ -6211,6 +6277,7 @@ struct wiphy_vendor_command {
  * @extended_capabilities_len: length of the extended capabilities
  * @eml_capabilities: EML capabilities (for MLO)
  * @mld_capa_and_ops: MLD capabilities and operations (for MLO)
+ * @ext_mld_capa_and_ops: Extended MLD capabilities and operations (for MLO)
  */
 struct wiphy_iftype_ext_capab {
 	enum nl80211_iftype iftype;
@@ -6219,6 +6286,7 @@ struct wiphy_iftype_ext_capab {
 	u8 extended_capabilities_len;
 	u16 eml_capabilities;
 	u16 mld_capa_and_ops;
+	u16 ext_mld_capa_and_ops;
 };
 
 /**
@@ -7183,6 +7251,8 @@ enum ieee80211_ap_reg_power {
  *	unprotected beacon report
  * @links: array of %IEEE80211_MLD_MAX_NUM_LINKS elements containing @addr
  *	@ap and @client for each link
+ * @links.csa_target_chandef: Required Target DFS channel definition, for which channel
+ *	switch is expected
  * @links.cac_started: true if DFS channel availability check has been
  *	started
  * @links.cac_start_time: timestamp (jiffies) when the dfs state was
@@ -7302,6 +7372,7 @@ struct wireless_dev {
 			} client;
 		};
 
+		struct cfg80211_chan_def csa_target_chandef;
 		bool cac_started;
 		bool critical_flag;
 		u8 bpcc;
@@ -9546,6 +9617,7 @@ struct cfg80211_rx_info {
 	bool critical_update;
 	bool link_removal_update;
 	bool ttlm_expec_dur_update;
+	u16 bitrate;
 };
 
 /**

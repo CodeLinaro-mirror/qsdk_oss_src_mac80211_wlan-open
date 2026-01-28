@@ -381,6 +381,25 @@ struct ieee80211_radiotap_tlv {
 
 /**
  * struct ieee80211_radiotap_vendor_content - radiotap vendor data content
+ * see https://www.radiotap.org/fields/Vendor%20Namespace.html
+ * Not to be confused with this structure as same of
+ * ieee80211_radiotap_vendor_content. Vendor TLV redefines the vendor NS
+ * usage.
+ * @oui: radiotap vendor namespace OUI
+ * @sub_namespace: radiotap vendor sub namespace
+ * @skip_length: length of data
+ * @data: the actual vendor namespace data
+ */
+struct ieee80211_radiotap_vendor_ns {
+	u8 oui[3];
+	u8 sub_namespace;
+	__le16 skip_length;
+	u8 data[];
+} __packed;
+
+/**
+ * struct ieee80211_radiotap_vendor_content - radiotap vendor data content
+ * see https://www.radiotap.org/fields/TLV.html
  * @oui: radiotap vendor namespace OUI
  * @oui_subtype: radiotap vendor sub namespace
  * @vendor_type: radiotap vendor type

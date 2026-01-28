@@ -15,6 +15,7 @@
 #include "ppe.h"
 #include <linux/rhashtable.h>
 #include "dp_stats.h"
+#include "dp_htt_logger.h"
 
 #define HTT_TCL_META_DATA_PEER_ID_MISSION       GENMASK(15, 3)
 
@@ -44,6 +45,7 @@ struct ath12k_dp_link_peer;
 struct ath12k_dp;
 struct ath12k_vif;
 struct ath12k_link_vif;
+struct ath12k_dp_vif;
 struct hal_tcl_status_ring;
 struct ath12k_ext_irq_grp;
 struct ath12k_dp_rx_tid;
@@ -104,6 +106,13 @@ struct dp_link_desc_bank {
 enum ath12k_dp_ppdu_state {
 	DP_PPDU_STATUS_START,
 	DP_PPDU_STATUS_DONE,
+};
+
+enum ath12k_dp_op_type {
+	ATH12K_DP_OP_INIT,
+	ATH12K_DP_OP_DEINIT,
+	ATH12K_DP_OP_UPDATE,
+	ATH12K_DP_OP_INVALID
 };
 
 struct ath12k_wmm_stats {
@@ -335,12 +344,6 @@ enum ath12k_dp_eapol_key_type {
 
 #define DP_TCL_ENCAP_TYPE_MAX	4
 
-/* Total size of the LUT is based on 2K peers, each having reference
- * for 17tids, note each entry is of type ath12k_reo_queue_ref
- * hence total size is 2048 * 17 * 8 = 278528
- */
-#define DP_REOQ_LUT_SIZE	278528
-
 /* Invalid TX Bank ID value */
 #define DP_INVALID_BANK_ID -1
 
@@ -466,7 +469,9 @@ struct ath12k_dp_arch_ops {
 	int (*dp_op_mlo_init)(struct ath12k_dp *dp);
 	void (*dp_op_mlo_deinit)(struct ath12k_dp *dp);
 	u32 (*dp_tx_get_vdev_bank_config)(struct ath12k_base *ab,
-					  struct ath12k_link_vif *arvif, bool vdev_id_check_en);
+					  struct ath12k_vif *ahvif,
+					  u8 link_id,
+					  bool vdev_id_check_en);
 	int (*dp_reo_cmd_send)(struct ath12k_base *ab,
 			       struct ath12k_dp_rx_tid *rx_tid,
 			       enum hal_reo_cmd_type type,
@@ -503,6 +508,9 @@ struct ath12k_dp_arch_ops {
 	int (*rx_flow_add_entry)(struct ath12k_dp *dp, struct rx_flow_info *flow_info);
 	int (*rx_flow_delete_entry)(struct ath12k_dp *dp, struct rx_flow_info *flow_info);
 	int (*rx_flow_delete_all_entries)(struct ath12k_dp *dp);
+	int (*rx_flow_fse_cache_operation)(struct ath12k_base *ab,
+					   enum	dp_flow_fst_operation op_code,
+					   struct hal_flow_tuple_info *tuple_info);
 	ssize_t (*dump_fst_table)(struct ath12k_dp *dp, char *buf, int size);
 	struct ath12k_dp_hw_group*(*dp_hw_group_alloc)(void);
 	int (*peer_migrate_reo_cmd)(struct ath12k_dp *dp,
@@ -533,6 +541,10 @@ struct ath12k_dp_arch_ops {
 	int (*dp_get_peer_holq)(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 				u8 *addr,
 				struct peer_assoc_holq_params *holq_params);
+	void (*dp_vif_configure)(struct ath12k_dp *dp, struct ath12k_vif *ahvif,
+				 enum ath12k_dp_op_type optype);
+	void (*dp_link_vif_configure)(struct ath12k_dp *dp, struct ath12k_vif *ahvif,
+				      u8 link_id, enum ath12k_dp_op_type optype);
 };
 
 struct ath12k_bp_stats {
@@ -676,6 +688,9 @@ struct ath12k_dp {
 	struct list_head reo_cmd_list;
 	struct list_head reo_cmd_cache_flush_list;
 	u32 reo_cmd_cache_flush_count;
+
+	/* htt_logger_handle */
+	struct htt_logger *htt_logger_handle;
 
 	/* protects access to below fields,
 	 * - reo_cmd_list
@@ -905,10 +920,13 @@ static inline void ath12k_dp_arch_op_mlo_deinit(struct ath12k_dp *dp)
 }
 
 static inline u32 ath12k_dp_arch_tx_get_vdev_bank_config(struct ath12k_dp *dp,
-							 struct ath12k_link_vif *arvif,
-							 bool vdev_id_check_en)
+							 struct ath12k_vif *ahvif,
+							 u8 link_id,
+							 bool force_vdev_id_check_disable)
 {
-	return dp->arch_ops->dp_tx_get_vdev_bank_config(dp->ab, arvif, vdev_id_check_en);
+	return dp->arch_ops->dp_tx_get_vdev_bank_config(dp->ab, ahvif,
+							link_id,
+							force_vdev_id_check_disable);
 }
 
 static inline int ath12k_dp_arch_reo_cmd_send(struct ath12k_dp *dp,
@@ -1023,6 +1041,14 @@ ath12k_dp_arch_dump_fst_table(struct ath12k_dp *dp, char *buf, int size)
 	return dp->arch_ops->dump_fst_table(dp, buf, size);
 }
 
+static inline int
+ath12k_dp_arch_rx_flow_fse_cache_operation(struct ath12k_dp *dp,
+					   enum dp_flow_fst_operation op_code,
+					   struct hal_flow_tuple_info *tuple_info)
+{
+	return dp->arch_ops->rx_flow_fse_cache_operation(dp->ab, op_code, tuple_info);
+}
+
 static inline struct ath12k_dp_hw_group *
 ath12k_core_dp_hw_group_alloc(struct ath12k_dp *dp)
 {
@@ -1128,6 +1154,25 @@ ath12k_arch_dp_get_peer_holq(struct ath12k_dp *dp,
 	return -EINVAL;
 }
 
+static inline void ath12k_dp_arch_dp_vif_configure(struct ath12k_dp_hw_group *dp_hw_grp,
+						   struct ath12k_vif *ahvif,
+						   enum ath12k_dp_op_type optype)
+{
+	struct ath12k_dp *dp = dp_hw_grp->dp[0];
+
+	if (dp->arch_ops->dp_vif_configure)
+		dp->arch_ops->dp_vif_configure(dp, ahvif, optype);
+}
+
+static inline void ath12k_dp_arch_dp_link_vif_configure(struct ath12k_dp *dp,
+							struct ath12k_vif *ahvif,
+							u8 link_id,
+							enum ath12k_dp_op_type optype)
+{
+	if (dp->arch_ops->dp_link_vif_configure)
+		dp->arch_ops->dp_link_vif_configure(dp, ahvif, link_id, optype);
+}
+
 static inline void ath12k_dp_get_mac_addr(u32 addr_l32, u16 addr_h16, u8 *addr)
 {
 	memcpy(addr, &addr_l32, 4);
@@ -1143,6 +1188,24 @@ u16 ath12k_dp_peer_get_peerid_index(struct ath12k_dp *dp, u16 peer_id)
 		: ((peer_id & ATH12K_PEER_ML_ID_VALID)
 			? peer_id
 			: ((dp->device_id << PEER_TABLE_SOC_ID_SHIFT) | peer_id));
+}
+
+static inline struct ath12k_pdev_dp *
+ath12k_dp_hw_grp_to_dp_pdev(struct ath12k_dp_hw_group *dp_hw_grp, u8 hw_link_id)
+{
+	struct ath12k_dp_hw_link *hw_links = dp_hw_grp->hw_links;
+	u8 device_id = hw_links[hw_link_id].device_id;
+	struct ath12k_dp *dp = dp_hw_grp->dp[device_id];
+	u8 pdev_id;
+
+	RCU_LOCKDEP_WARN(!rcu_read_lock_held(),
+			 "ath12k dp to dp pdev called without rcu lock");
+	if (!dp)
+		return NULL;
+
+	pdev_id = ath12k_hw_mac_id_to_pdev_id(dp->hw_params,
+					      hw_links[hw_link_id].pdev_idx);
+	return rcu_dereference(dp->dp_pdevs[pdev_id]);
 }
 
 static inline struct ath12k_dp *
@@ -1176,8 +1239,6 @@ ath12k_dp_arch_peer_migrate_reo_cmd(struct ath12k_dp *dp,
 }
 
 int ath12k_dp_htt_connect(struct ath12k_dp *dp);
-int ath12k_dp_msdu_htt_connect(struct ath12k_dp *dp);
-void ath12k_dp_vdev_tx_attach(struct ath12k *ar, struct ath12k_link_vif *arvif);
 void ath12k_dp_partner_cc_init(struct ath12k_base *ab);
 int ath12k_dp_get_pdev_telemetry_stats(struct ath12k_base *ab,
                                       int pdev_id,
@@ -1208,7 +1269,6 @@ void ath12k_umac_reset_notify_target_sync_and_send(struct ath12k_base *ab,
                                        enum dp_umac_reset_tx_cmd tx_event);
 void ath12k_umac_reset_handle_post_reset_start(struct ath12k_base *ab);
 bool ath12k_dp_umac_reset_in_progress(struct ath12k_base *ab);
-void ath12k_dp_tx_update_bank_profile(struct ath12k_link_vif *arvif);
 void ath12k_dp_reoq_lut_addr_reset(struct ath12k_dp *dp);
 void ath12k_dp_srng_msi_setup(struct ath12k_base *ab,
 			      struct hal_srng_params *ring_params,
@@ -1216,12 +1276,10 @@ void ath12k_dp_srng_msi_setup(struct ath12k_base *ab,
 void ath12k_hal_tx_config_rbm_mapping(struct ath12k_base *ab, u8 ring_num,
 				      u8 rbm_id, int ring_type);
 size_t ath12k_dp_get_req_entries_from_buf_ring(struct ath12k_base *ab,
-					       struct dp_rxdma_ring *rx_ring,
+					       struct hal_srng *srng,
 					       struct list_head *list);
 int ath12k_dp_init_bank_profiles(struct ath12k_base *ab);
 void ath12k_dp_deinit_bank_profiles(struct ath12k_base *ab);
-int ath12k_dp_reoq_lut_setup(struct ath12k_base *ab);
-void ath12k_dp_reoq_lut_cleanup(struct ath12k_base *ab);
 int ath12k_dp_cc_init(struct ath12k_base *ab);
 void ath12k_dp_cc_cleanup(struct ath12k_base *ab);
 int ath12k_wbm_idle_ring_setup(struct ath12k_base *ab, u32 *n_link_desc);
@@ -1241,6 +1299,28 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 void ath12k_dp_get_pdev_stats(struct ath12k_pdev_dp *pdev,
 			      struct ath12k_telemetry_dp_radio *telemetry_radio);
 void ath12k_dp_clear_link_desc_pool(struct ath12k_dp *dp);
+
+int ath12k_dp_alloc_proto_stats_vif(struct ath12k_dp_vif *dp_vif);
+void ath12k_dp_free_proto_stats_vif(struct ath12k_dp_tx_vif_stats *vif_stats);
+int ath12k_dp_alloc_proto_stats(struct ath12k *ar);
+int ath12k_dp_alloc_proto_stats_peer(struct ath12k *ar,
+				     struct ath12k_dp_peer *dp_peer);
+void ath12k_dp_free_proto_stats(struct ath12k *ar);
+void ath12k_dp_free_proto_stats_peer(struct ath12k_dp_peer *dp_peer);
+
+void ath12k_dp_update_proto_stats_vif(struct ath12k_dp_vif *dp_vif,
+				      u8 link_id, struct sk_buff *skb,
+				      u8 level, int ring_id);
+void ath12k_dp_tx_peer_update_proto_stats(struct ath12k_dp_peer *dp_peer,
+					  u8 link_id, struct sk_buff *skb,
+					  u8 level, int ring_id);
+void ath12k_dp_rx_update_protocol_stats(struct ath12k_dp_peer *dp_peer,
+					u8 link_id, struct sk_buff *skb, u8 level,
+					int ring_id);
+int ath12k_dp_alloc_reoq_lut(struct ath12k_base *ab,
+			     struct ath12k_reo_q_addr_lut *lut);
+void ath12k_dp_update_vdev_search(struct ath12k_vif *ahvif);
+int ath12k_dp_tx_get_bank_profile(struct ath12k_dp *dp, u32 bank_config);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 void ath12k_ppeds_reinject_handler(struct ath12k_base *ab,
 				   struct ath12k_ppeds_tx_desc_info *tx_desc,
@@ -1248,8 +1328,6 @@ void ath12k_ppeds_reinject_handler(struct ath12k_base *ab,
 void ath12k_dp_ppeds_tx_comp_get_desc(struct ath12k_base *ab,
 				      struct ath12k_dp_tx_comp_status *tx_comp_status,
 				      struct ath12k_ppeds_tx_desc_info **tx_desc);
-int ath12k_dp_tx_get_bank_profile(struct ath12k_base *ab, struct ath12k_link_vif *arvif,
-				  struct ath12k_dp *dp, bool vdev_id_check_en);
 struct ath12k_ppeds_tx_desc_info *ath12k_dp_get_ppeds_tx_desc(struct ath12k_base *ab,
 							      u32 desc_id);
 int ath12k_dp_cc_ppeds_desc_init(struct ath12k_base *ab);

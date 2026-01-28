@@ -13,6 +13,9 @@
 #define ATH12K_3LINK_MLO_MAX_STA_LINKS         3
 #define ATH12K_DATA_TID_MAX 8
 
+/* 17 tids for DP, 2 for mgmt, and 1 shared between DP and mgmt */
+#define ATH12K_MAX_TIDS 20
+
 struct ath12k_dp_peer_ext_ctx;
 
 struct ppdu_user_delayba {
@@ -30,8 +33,6 @@ struct ath12k_atf_peer_airtime {
 	struct peer_airtime_consumption rx_airtime_consumption[WME_NUM_AC];
 	u64 last_update_time;
 };
-
-DECLARE_EWMA(avg_rssi, 10, 8)
 
 struct ath12k_mscs_ctxt {
 	u8 user_priority_bitmap;
@@ -80,6 +81,7 @@ struct ath12k_dp_link_peer {
 
 	/* link stats */
 	struct rate_info txrate;
+	struct rate_info rxrate;
 	struct rate_info last_txrate;
 	u64 rx_duration;
 	u64 tx_duration;
@@ -103,17 +105,21 @@ struct ath12k_dp_link_peer {
 	u32 atf_actual_ul_duration;
 
 	bool is_assigned;
+
+	struct ath12k_dp_link_peer_rx_signal_stats signal_stats;
 };
 
 struct ath12k_dp_peer {
 	struct list_head list;
 	struct ieee80211_sta *sta;
 	struct net_device *dev;
+	u16 tcl_metadata;
 	u16 peer_id;
 	u16 sta_id;
 	u8 addr[ETH_ALEN];
 	bool is_mlo;
 	bool is_vdev_peer;
+	bool is_sta_bss_peer;
 	/* hw_link_id of the radio, valid only for self bss peer */
 	u8 hw_link_id;
 
@@ -131,7 +137,7 @@ struct ath12k_dp_peer {
 	enum hal_pn_type pn_type;
 
 	struct ieee80211_key_conf *keys[WMI_MAX_KEY_INDEX + 1];
-	struct ath12k_dp_rx_tid rx_tid[IEEE80211_NUM_TIDS + 1];
+	struct ath12k_dp_rx_tid rx_tid[ATH12K_MAX_TIDS];
 
 	bool use_4addr;
 
@@ -254,15 +260,12 @@ ath12k_dp_link_peer_find_by_ml_peer_vdev_id(struct ath12k_dp *dp,
 					    int peer_id,
 					    int vdev_id);
 
-void ath12k_peer_mlo_map_event(struct ath12k_base *ab, struct sk_buff *skb);
-
 static inline
 enum nl80211_iftype ath12k_peer_get_peer_type(struct ath12k_dp_link_peer *peer)
 {
 	return peer->vif->type;
 }
 
-void ath12k_peer_mlo_unmap_event(struct ath12k_base *ab, struct sk_buff *skb);
 struct ath12k_dp_peer_qos *
 ath12k_dp_peer_qos_get(struct ath12k_dp *dp,
 		       struct ath12k_dp_peer *peer);
@@ -296,6 +299,10 @@ u16 dp_peer_msduq_qos_id(struct ath12k_base *ab,
 void ath12k_peer_qos_queue_ind_handler(struct ath12k_base *ab,
 				       struct sk_buff *skb);
 void ath12k_link_peer_free(struct ath12k_dp_link_peer *peer);
+int ath12k_link_sta_rhash_delete(struct ath12k_base *ab, struct ath12k_link_sta *arsta);
 struct ath12k_dp_peer *ath12k_dp_vdev_peer_find(struct ath12k_dp_hw *dp_hw,
 						u8 *addr, u8 hw_link_id);
+u8 ath12k_dp_peer_get_stats_link_id(struct ath12k_base *ab,
+				    struct ath12k_dp_peer *peer,
+				    u8 hw_link_id);
 #endif

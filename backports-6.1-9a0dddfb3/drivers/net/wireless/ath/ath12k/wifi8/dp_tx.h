@@ -24,8 +24,9 @@ ath12k_wifi8_dp_tx_fast(struct ath12k_pdev_dp *dp_pdev,
 			struct sk_buff *skb,
 			u32 qos_nw_delay);
 u32 ath12k_wifi8_dp_tx_get_vdev_bank_config(struct ath12k_base *ab,
-					    struct ath12k_link_vif *arvif,
-					    bool vdev_id_check_en);
+					    struct ath12k_vif *ahvif,
+					    u8 link_id,
+					    bool force_vdev_id_check_disable);
 bool ath12k_mac_tx_check_max_limit(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *skb);
 int ath12k_wifi8_sdwf_reinject_handler(struct ath12k_pdev_dp *dp_pdev,
 				       struct ath12k_link_vif *arvif,
@@ -34,4 +35,5 @@ int ath12k_wifi8_sdwf_reinject_handler(struct ath12k_pdev_dp *dp_pdev,
 int ath12k_wifi8_dp_tx_ring_setup(struct ath12k_base *ab);
 void ath12k_wifi8_dp_tx_ring_cleanup(struct ath12k_base *ab);
 int ath12k_wifi8_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget);
+int ath12k_wifi8_dp_tx_exception_handler(struct ath12k_dp *dp, int budget);
 #endif

@@ -64,6 +64,9 @@ static inline void ieee80211_rx_stats_reason(struct ieee80211_sub_if_data *sdata
 	if (!sdata->txrx_stats)
 		return;
 
+	if (tid >= IEEE80211_NUM_TIDS)
+		return;
+
 	txrx_stats = this_cpu_ptr(sdata->txrx_stats);
 	u64_stats_update_begin(&txrx_stats->syncp);
 	switch (reason) {
@@ -102,6 +105,9 @@ static inline void ieee80211_rx_drop_stats_reason(struct ieee80211_sub_if_data *
 	struct pcpu_txrx_stats *txrx_stats;
 
 	if (!sdata->txrx_stats)
+		return;
+
+	if (tid >= IEEE80211_NUM_TIDS)
 		return;
 
 	txrx_stats = this_cpu_ptr(sdata->txrx_stats);
@@ -1031,6 +1037,9 @@ ieee80211_rx_monitor(struct ieee80211_local *local, struct sk_buff *origskb,
 		chandef = &sdata->vif.bss_conf.chanreq.oper;
 		if (chandef->chan &&
 		    chandef->chan->center_freq != status->freq)
+			continue;
+
+		if (sdata->u.mntr.flags & MONITOR_FLAG_SKIP_RX)
 			continue;
 
 		if (!prev_sdata) {
@@ -4406,6 +4415,15 @@ ieee80211_rx_h_userspace_mgmt(struct ieee80211_rx_data *rx)
 	struct ieee80211_mgmt *mgmt = (void *)rx->skb->data;
 	__le16 stype;
 	struct wireless_dev *wdev = &rx->sdata->wdev;
+	struct ieee80211_supported_band *sband;
+	u16 bitrate;
+
+	sband = rx->local->hw.wiphy->bands[status->band];
+	if ((status->encoding == RX_ENC_LEGACY) &&
+	    sband && (status->rate_idx < sband->n_bitrates))
+		bitrate = sband->bitrates[status->rate_idx].bitrate;
+	else /* Set bitrate only for Legacy rates */
+		bitrate = 0;
 
 	struct cfg80211_rx_info info = {
 		.freq = ieee80211_rx_status_to_khz(status),
@@ -4416,6 +4434,7 @@ ieee80211_rx_h_userspace_mgmt(struct ieee80211_rx_data *rx)
 		.critical_update = 0,
 		.link_removal_update = 0,
 		.ttlm_expec_dur_update = 0,
+		.bitrate = bitrate,
 	};
 
 	stype = mgmt->frame_control & cpu_to_le16(IEEE80211_FCTL_STYPE);

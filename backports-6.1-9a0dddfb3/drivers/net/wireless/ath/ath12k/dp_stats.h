@@ -10,6 +10,9 @@
 #include "dp_cmn.h"
 #include "cmn_defs.h"
 #include "dp.h"
+#include <linux/ip.h>
+
+struct ath12k_dp_link_peer;
 
 #define INVALID_LINK_ID			0xFF
 #define INVALID_SVC_ID			0xFF
@@ -38,6 +41,9 @@
 
 #define INVALID_RSSI	GENMASK(7, 0)
 #define INVALID_RATE	GENMASK(7, 0)
+
+#define IS_VALID_RSSI(rssi) ((rssi) <= 0)
+#define IS_VALID_RATE(rate) ((rate) >= 0)
 
 #define nla_total_size_nested(x) nla_total_size(x)
 /**
@@ -134,12 +140,72 @@ enum ath12k_wbm_err_drop_reason {
 	WBM_ERR_DROP_MAX,
 };
 
+enum ath12k_dp_pkt_l3_proto_type {
+	DP_PKT_TYPE_ARP = 0,
+	DP_PKT_TYPE_IPV4,
+	DP_PKT_TYPE_IPV6,
+	DP_PKT_TYPE_EAPOL,
+	DP_PKT_TYPE_EAPOL_M1,
+	DP_PKT_TYPE_EAPOL_M2,
+	DP_PKT_TYPE_EAPOL_M3,
+	DP_PKT_TYPE_EAPOL_M4,
+	DP_PKT_TYPE_EAPOL_G1,
+	DP_PKT_TYPE_EAPOL_G2,
+	DP_PKT_TYPE_L3_NS,
+	DP_PKT_TYPE_L3_MAX,
+};
+
+enum ath12k_dp_pkt_l4_proto_type {
+	DP_PKT_TYPE_TCP = 0,
+	DP_PKT_TYPE_UDP,
+	DP_PKT_TYPE_ICMP,
+	DP_PKT_TYPE_ICMP_REQ,
+	DP_PKT_TYPE_ICMP_RSP,
+	DP_PKT_TYPE_IGMP,
+	DP_PKT_TYPE_L4_NS,
+	DP_PKT_TYPE_L4_MAX,
+};
+
+enum ath12k_dp_pkt_l5_proto_type {
+	DP_PKT_TYPE_DHCP = 0,
+	DP_PKT_TYPE_DHCP_DIS,
+	DP_PKT_TYPE_DHCP_REQ,
+	DP_PKT_TYPE_DHCP_OFR,
+	DP_PKT_TYPE_DHCP_ACK,
+	DP_PKT_TYPE_DHCP_NS,
+	DP_PKT_TYPE_DNS_QUERY,
+	DP_PKT_TYPE_DNS_RSP,
+	DP_PKT_TYPE_L5_NS,
+	DP_PKT_TYPE_L5_MAX,
+};
+
+enum ath12k_dp_proto_stats_rx_level {
+	RX_RECV_FROM_HW = 0,
+	RX_SENT_TO_STACK,
+	RX_RECV_MAX,
+};
+
+enum ath12k_dp_proto_stats_tx_level {
+	TX_RECV_FROM_STACK = 0,
+	TX_RECV_FROM_STACK_FP,
+	TX_ENQUEUE_HW,
+	TX_ENQUEUE_HW_FP,
+	TX_ENQUEUE_MAX,
+};
+
+enum ath12k_dp_proto_stats_tx_comp_level {
+	TX_COMP = 0,
+	TX_COMP_MAX,
+};
+
 enum ath12k_dp_debug_stats_mask {
 	DP_ENABLE_STATS          = 0x00000001,
 	DP_ENABLE_DEBUG_STATS    = 0x00000002,
 	DP_ENABLE_EXT_TX_STATS   = 0x00000004,
 	DP_ENABLE_EXT_RX_STATS   = 0x00000008,
 	DP_ENABLE_TID_STATS      = 0x00000010,
+	DP_ENABLE_ADVANCE_STATS  = 0x00000020,
+	DP_ENABLE_PROTO_STATS    = 0x00000030,
 	DP_ENABLE_QOS_STATS      = 0x80000000,
 };
 
@@ -256,6 +322,12 @@ enum ath12k_mu_packet_type {
 #define DP_PEER_LINK_STATS_CNT(_handle, _field, _delta, _link) \
 	do { \
 		DP_PEER_STATS_FIELD_INC(_handle, stats[_link]._field, _delta); \
+	} while (0)
+
+#define DP_PEER_PROTO_STATS_INC(_handle, _link, _dir, _ring, _lvl, _field, _delta) \
+	do { \
+		if (likely(_handle)) \
+			_handle->stats[_link].proto->_dir[_ring][_lvl]._field += _delta; \
 	} while (0)
 
 struct ath12k_wbm_tx_stats {
@@ -375,6 +447,17 @@ struct ath12k_htt_tx_stats {
 
 };
 
+#define MAX_PUNCTURED_MODE 5
+
+#define DP_AVG_RATE_FILTER_MIN 0
+#define DP_AVG_RATE_FILTER_MAX 11000
+#define DP_AVG_RATE_FILTER_DEFAULT 0
+
+#define DP_ATH_RATE_EP_MULTIPLIER     BIT(7)
+#define DP_ATH_EP_MUL(a, b)	      ((a) * (b))
+#define DP_ATH_RATE_IN(c)  (DP_ATH_EP_MUL((c), DP_ATH_RATE_EP_MULTIPLIER))
+#define DUMMY_MARKER	  0
+
 /* Different Packet Types */
 enum packet_std {
 	DOT11_A = 0,
@@ -382,7 +465,8 @@ enum packet_std {
 	DOT11_N = 2,
 	DOT11_AC = 3,
 	DOT11_AX = 4,
-	DOT11_BE = 5,
+	DOT11_BA = 5,
+	DOT11_BE = 6,
 	DOT11_MAX,
 };
 
@@ -495,6 +579,7 @@ struct ath12k_dp_link_peer_stats {
 	struct ath12k_dp_mon_peer_stats dp_mon_stats;
 	struct ath12k_qos_stats *qos_stats;
 	u32 rx_retries;
+	int last_ack_rssi;
 };
 
 struct ath12k_dp_peer_rx_stats {
@@ -504,8 +589,8 @@ struct ath12k_dp_peer_rx_stats {
 	struct ath12k_dp_pkt_info sent_to_stack_fast;
 
 	/* Debug and Advance */
-	u32 mcast;
-	u32 ucast;
+	struct ath12k_dp_pkt_info mcast;
+	struct ath12k_dp_pkt_info ucast;
 	u32 non_amsdu;
 	u32 msdu_part_of_amsdu;
 	u32 mpdu_retry;
@@ -528,9 +613,9 @@ struct ath12k_dp_peer_tx_stats {
 	u32 amsdu_cnt;
 	u32 non_amsdu_cnt;
 	u32 inval_link_id_pkt_cnt;
-	u32 mcast;
-	u32 ucast;
-	u32 bcast;
+	struct ath12k_dp_pkt_info mcast;
+	struct ath12k_dp_pkt_info ucast;
+	struct ath12k_dp_pkt_info bcast;
 };
 
 struct ath12k_tele_qos_tx {
@@ -593,12 +678,24 @@ struct ath12k_tele_qos_delay_ctx {
 	u8 msduq;
 };
 
+struct ath12k_dp_proto_stats {
+	u64 l3[DP_PKT_TYPE_L3_MAX];
+	u64 l4[DP_PKT_TYPE_L4_MAX];
+	u64 l5[DP_PKT_TYPE_L5_MAX];
+};
+
+struct ath12k_dp_proto_stats_peer {
+	struct ath12k_dp_proto_stats tx[DP_TCL_NUM_RING_MAX][TX_COMP_MAX];
+	struct ath12k_dp_proto_stats rx[DP_REO_DST_RING_MAX][RX_RECV_MAX];
+};
+
 struct ath12k_dp_peer_stats {
 	struct ath12k_dp_peer_tx_stats tx[DP_TCL_NUM_RING_MAX];
 	struct ath12k_dp_peer_rx_stats rx[DP_REO_DST_RING_MAX];
 	struct ath12k_wbm_rx_stats wbm_err;
 	struct ath12k_tele_qos_tx_ctx tx_ctx;
 	struct ath12k_tele_qos_delay_ctx delay_ctx;
+	struct ath12k_dp_proto_stats_peer *proto;
 };
 
 struct ath12k_dp_tx_ingress_stats {
@@ -611,14 +708,19 @@ struct ath12k_dp_tx_ingress_stats {
 	u32 encap_type[HAL_TCL_ENCAP_TYPE_MAX];
 	u32 encrypt_type[HAL_ENCRYPT_TYPE_MAX];
 	u32 desc_type[DP_TCL_DESC_TYPE_MAX];
-	u32 mcast;
+	struct ath12k_dp_pkt_info mcast;
 
 	/* Drop */
 	u32 drop[DP_TX_ENQ_ERR_MAX];
 };
 
+struct ath12k_dp_proto_stats_vif {
+	struct ath12k_dp_proto_stats tx[TX_ENQUEUE_MAX];
+};
+
 struct ath12k_dp_tx_vif_stats {
 	struct ath12k_dp_tx_ingress_stats tx_i;
+	struct ath12k_dp_proto_stats_vif *proto;
 };
 
 struct ath12k_dp_aggr_vif_stats {
@@ -637,6 +739,7 @@ struct ath12k_stats_feat {
 	bool feat_rx;
 	bool feat_sdwftx;
 	bool feat_sdwfdelay;
+	bool feat_proto;
 };
 
 struct ath12k_telemetry_command {
@@ -707,6 +810,98 @@ struct ath12k_rx_peer_rate_stats {
 	u64 rx_rate[HAL_RX_BW_MAX][HAL_RX_GI_MAX][HAL_RX_MAX_NSS][HAL_RX_MAX_MCS_HT + 1];
 };
 
+struct ath12k_rx_peer_user_stats {
+	u64 ppdu_nss[HAL_RX_MAX_NSS];
+	u32 mpdu_cnt_fcs_ok;
+	u32 mpdu_cnt_fcs_err;
+	struct pkt_type ppdu;
+};
+
+#define MCS_VALID 1
+#define MCS_INVALID 0
+#define ATH12K_MAX_MCS_STRING_LEN 34
+
+#define IEEE80211_FC0_TYPE_MASK		0x000c
+#define IEEE80211_FC0_TYPE_DATA		0x0008
+#define IEEE80211_FC0_SUBTYPE_MASK	0x00f0
+#define IEEE80211_FC0_SUBTYPE_DATA	0x0000
+#define IEEE80211_FC0_SUBTYPE_VHT_NDP_AN	0x0050
+#define IEEE80211_FC0_SUBTYPE_BAR	0x0080
+
+static const u8 max_mcs_by_preamble[HAL_RX_PREAMBLE_MAX] = {
+	[HAL_RX_PREAMBLE_11A] = MAX_MCS_11A,
+	[HAL_RX_PREAMBLE_11B] = MAX_MCS_11B,
+	[HAL_RX_PREAMBLE_11N] = MAX_MCS_11N,
+	[HAL_RX_PREAMBLE_11AC] = MAX_MCS_11AC,
+	[HAL_RX_PREAMBLE_11AX] = MAX_MCS_11AX,
+	[HAL_RX_PREAMBLE_11BE] = MAX_MCS_11BE,
+};
+
+struct ath12k_rx_peer_total_stats {
+	u64 total_pkts;
+	u64 total_bytes;
+};
+
+enum ath12k_cmn_bw_types {
+	CMN_BW_20MHZ,
+	CMN_BW_40MHZ,
+	CMN_BW_80MHZ,
+	CMN_BW_160MHZ,
+	CMN_BW_240MHZ,
+	CMN_BW_320MHZ,
+	CMN_BW_CNT,
+	CMN_BW_IDLE = 0xFF, /*default BW state */
+};
+
+#define PKT_BW_GAIN_20MHZ   0
+#define PKT_BW_GAIN_40MHZ   3
+#define PKT_BW_GAIN_80MHZ   6
+#define PKT_BW_GAIN_160MHZ  9
+#define PKT_BW_GAIN_320MHZ  12
+
+DECLARE_EWMA(avg_snr, 0, 8)
+DECLARE_EWMA(avg_snr_dp, 0, 8)
+DECLARE_EWMA(avg_rssi, 10, 8)
+DECLARE_EWMA(avg_rssi_dp, 10, 8)
+
+/**
+ * struct ath12k_dp_link_peer_rx_signal_stats - Per-peer signal statistics
+ * @snr:              Current signal-to-noise ratio (SNR) in dB
+ * @snr_avg:          Averaged SNR value (scaled/filtered)
+ * @avg_snr:          EWMA (Exponentially Weighted Moving Average) tracker for SNR
+ * @rssi_region_offset: Region-specific RSSI offset applied during conversion
+ * @snr_dp:           Data path specific SNR value
+ * @snr_dp_avg:       Averaged DP-specific SNR value
+ * @avg_snr_dp:       EWMA tracker for DP-specific SNR
+ *
+ * @rssi:             Current received signal strength indicator (RSSI) in dBm
+ * @rssi_avg:         Averaged RSSI value (scaled/filtered)
+ * @avg_rssi:         EWMA tracker for RSSI
+ * @rssi_dp:          Data path specific RSSI value
+ * @rssi_dp_avg:      Averaged DP-specific RSSI value
+ * @avg_rssi_dp:      EWMA tracker for DP-specific RSSI
+ *
+ * This structure holds both instantaneous and averaged signal quality
+ * metrics (SNR and RSSI) for a given peer, including data path specific
+ * values and EWMA smoothing helpers.
+ */
+struct ath12k_dp_link_peer_rx_signal_stats {
+	u8 snr;
+	u16 snr_avg;
+	struct ewma_avg_snr avg_snr;
+	u8 rssi_region_offset;
+	u8 snr_dp;
+	u16 snr_dp_avg;
+	struct ewma_avg_snr_dp avg_snr_dp;
+
+	s8 rssi;
+	s16 rssi_avg;
+	struct ewma_avg_rssi avg_rssi;
+	s8 rssi_dp;
+	s16 rssi_dp_avg;
+	struct ewma_avg_rssi_dp avg_rssi_dp;
+};
+
 /**
  * struct ath12k_rx_peer_stats - Per-peer RX statistics
  *
@@ -747,6 +942,30 @@ struct ath12k_rx_peer_rate_stats {
  * @bw_info: Bandwidth information (channel width).
  * @gi_info: Guard interval information.
  * @preamble_info: Preamble type information.
+ *
+ * Advance Stats:
+ * @bar_count: Number of BlockAck Request (BAR) frames received.
+ * @ndpa_count: Number of NDP Announcement (NDPA) frames received for MU-MIMO sounding.
+ * @num_mpdu_count: Array of MPDU counts per MCS index (indexed by MAX_MCS).
+ * @ppdu_reception: Number of PPDUs received per reception type
+ *                  (indexed by HAL_RX_RECEPTION_TYPE_MAX).
+ * @ppdu_nss: Number of PPDUs received per spatial stream (indexed by HAL_RX_MAX_NSS).
+ * @proto_type: MSDU packet counts per 802.11 protocol type (indexed by DOT11_MAX).
+ * @wme_ac_type: MSDU packets and bytes per WME Access Category
+ *               (Voice, Video, Best Effort, Background).
+ * @su_ppdu_count: PPDU SU packet counts per MCS per 802.11 protocol type
+ * @punc_bw: Number of MSDUs received per punctured bandwidth mode
+ *           (indexed by MAX_PUNCTURED_MODE).
+ *
+ * MU statistics:
+ * @rx_mu: MU reception statistics per 802.11 protocol type and user type
+ *         (indexed by DOT11_MAX and TXRX_TYPE_MU_MAX).
+ *
+ * Rate Stats :
+ * @last_rx_rate: Last received data rate in kbps.
+ * @rnd_avg_rx_rate: Rounded average RX data rate in kbps.
+ * @avg_rx_rate: Filtered average RX data rate in kbps.
+ * @rx_ratecode: Encoded RX ratecode.
  */
 struct ath12k_rx_peer_stats {
 	u64 num_msdu;
@@ -781,6 +1000,25 @@ struct ath12k_rx_peer_stats {
 	    bw_info:4,
 	    gi_info:4,
 	    preamble_info:4;
+
+	/* Advance Stats */
+	u32 num_bar;
+	u32 num_ndpa;
+	u64 num_mpdu_count[MAX_MCS];
+	u64 ppdu_reception[HAL_RX_RECEPTION_TYPE_MAX];
+	u64 ppdu_nss[HAL_RX_MAX_NSS];
+	struct pkt_type proto_type[DOT11_MAX];
+	struct ath12k_rx_peer_total_stats wme_ac_type[WME_NUM_AC];
+	struct pkt_type su_ppdu_count[DOT11_MAX];
+	u32 punc_bw[MAX_PUNCTURED_MODE];
+	/* MU stats */
+	struct ath12k_rx_peer_user_stats rx_mu[DOT11_MAX][TXRX_TYPE_MU_MAX];
+	/* Rate stats */
+	u32 last_rx_rate;
+	u32 rnd_avg_rx_rate;
+	u32 avg_rx_rate;
+	u32 rx_ratecode;
+	struct ath12k_dp_link_peer_rx_signal_stats signal_stats;
 };
 
 /* struct ath12k_dp_preserved_stats - Snapshot statistics for MLO datapath
@@ -818,7 +1056,9 @@ void ath12k_dp_aggr_rx_peer_stats(struct ath12k_rx_peer_stats *dst,
 				  const struct ath12k_rx_peer_stats *src);
 void ath12k_dp_aggr_wbm_rx_stats(struct ath12k_wbm_rx_stats *dst,
 				 struct ath12k_wbm_rx_stats *src);
-void ath12k_dp_aggr_deleted_stats(struct ath12k_dp_peer_stats *dst,
+void ath12k_dp_aggr_deleted_stats(struct ath12k *ar,
+				  struct ath12k_dp_peer_stats *dst_peer_stats,
+				  struct ath12k_dp_link_peer_stats *dst_link_peer_stats,
 				  struct ath12k_dp_preserved_stats *src,
 				  const char *stats_type);
 
@@ -829,4 +1069,353 @@ void ath12k_dp_clear_wbm_rx_stats(struct ath12k_wbm_rx_stats *wbm_stats);
 
 struct ath12k_dp_preserved_stats *ath12k_dp_alloc_preserved_stats(void);
 void ath12k_dp_free_preserved_stats(struct ath12k_dp_preserved_stats *stats);
+s8 ath12k_dp_get_rssi_value(s8 snr,
+			    struct ath12k_dp_link_peer_rx_signal_stats *stats,
+			    struct wmi_rssi_dbm_conv_offsets *rssi_offsets,
+			    struct ath12k_dp_link_peer *link_peer, bool ack_rssi);
+
+#define SKB_TRAC_ETH_TYPE_OFFSET			12
+#define DP_ETH_TYPE_8021Q				0x8100
+#define DP_ETH_TYPE_8021AD				0x88a8
+#define SKB_TRAC_VLAN_ETH_TYPE_OFFSET			16
+#define SKB_TRAC_DOUBLE_VLAN_ETH_TYPE_OFFSET		20
+#define SKB_TRAC_IPV4_ETH_TYPE				0x0800
+#define SKB_TRAC_IPV6_ETH_TYPE				0x86dd
+#define SKB_TRAC_ARP_ETH_TYPE				0x0806
+#define SKB_TRAC_EAPOL_ETH_TYPE				0x888E
+#define SKB_TRAC_VLAN_IP_OFFSET				18
+#define SKB_TRAC_DOUBLE_VLAN_IP_OFFSET			22
+#define SKB_TRAC_IP_OFFSET				14
+#define SKB_IPV4_PROTOCOL_FIELD_OFFSET			9
+#define SKB_TRAC_TCP_TYPE				6
+#define SKB_TRAC_UDP_TYPE				17
+#define SKB_TRAC_ICMP_TYPE				1
+#define SKB_TRAC_IGMP_TYPE				2
+#define SKB_IPV4_HDR_SIZE_UNIT				4
+#define SKB_TRAC_DHCP_SRV_PORT				67
+#define SKB_TRAC_DHCP_CLI_PORT				68
+#define SKB_PKT_DNS_DST_PORT_OFFSET			36
+#define SKB_PKT_DNS_STANDARD_PORT			53
+#define SKB_PKT_DNS_OVER_UDP_OPCODE_OFFSET		44
+#define SKB_PKT_DNSOP_BITMAP				0xF800
+#define SKB_PKT_DNSOP_STANDARD_QUERY			0x0000
+#define SKB_PKT_DNSOP_STANDARD_RESPONSE			0x8000
+#define SKB_PKT_DNS_SRC_PORT_OFFSET			34
+#define SKB_PKT_ICMPV4OP_REQ				0x08
+#define SKB_PKT_ICMPV4OP_REPLY				0x00
+#define DHCP_OPTION53					0x35
+#define DHCP_OPTION53_LENGTH				1
+#define DHCP_OPTION53_OFFSET				0x11A
+#define DHCP_OPTION53_LENGTH_OFFSET			0x11B
+#define DHCP_OPTION53_STATUS_OFFSET			0x11C
+
+#define DHCP_DISCOVER			(1)
+#define DHCP_OFFER			(2)
+#define DHCP_REQUEST			(3)
+#define DHCP_ACK			(4)
+
+static inline u16
+ath12k_dp_get_ether_type(struct sk_buff *skb)
+{
+	u16 ether_type;
+
+	if (skb->len < SKB_TRAC_ETH_TYPE_OFFSET + sizeof(u16))
+		return 0;
+
+	ether_type = get_unaligned((u16 *)(skb->data + SKB_TRAC_ETH_TYPE_OFFSET));
+
+	if (unlikely(be16_to_cpu(ether_type) == DP_ETH_TYPE_8021Q))
+		ether_type = get_unaligned((u16 *)(skb->data +
+						   SKB_TRAC_VLAN_ETH_TYPE_OFFSET));
+	else if (unlikely(be16_to_cpu(ether_type) == DP_ETH_TYPE_8021AD))
+		ether_type = get_unaligned((u16 *)(skb->data +
+					    SKB_TRAC_DOUBLE_VLAN_ETH_TYPE_OFFSET));
+
+	return be16_to_cpu(ether_type);
+}
+
+static inline u8
+ath12k_dp_get_l3_protocol_type(struct sk_buff *skb)
+{
+	u32 l3_type = 0;
+
+	l3_type = ath12k_dp_get_ether_type(skb);
+
+	switch (l3_type) {
+	case SKB_TRAC_IPV4_ETH_TYPE:
+		return DP_PKT_TYPE_IPV4;
+
+	case SKB_TRAC_IPV6_ETH_TYPE:
+		return DP_PKT_TYPE_IPV6;
+
+	case SKB_TRAC_ARP_ETH_TYPE:
+		return DP_PKT_TYPE_ARP;
+
+	case SKB_TRAC_EAPOL_ETH_TYPE:
+		return DP_PKT_TYPE_EAPOL;
+
+	default:
+		return DP_PKT_TYPE_L3_NS;
+	}
+}
+
+static inline u8
+ath12k_dp_get_ip_offset(struct sk_buff *skb)
+{
+	u16 ether_type;
+
+	if (skb->len < SKB_TRAC_ETH_TYPE_OFFSET + sizeof(u16))
+		return 0;
+
+	ether_type = get_unaligned((u16 *)(skb->data + SKB_TRAC_ETH_TYPE_OFFSET));
+
+	if (unlikely(ether_type == cpu_to_be16(DP_ETH_TYPE_8021Q)))
+		return SKB_TRAC_VLAN_IP_OFFSET;
+	else if (unlikely(ether_type == cpu_to_be16(DP_ETH_TYPE_8021AD)))
+		return SKB_TRAC_DOUBLE_VLAN_IP_OFFSET;
+
+	return SKB_TRAC_IP_OFFSET;
+}
+
+static inline u8
+ath12k_dp_get_ipv4_proto(struct sk_buff *skb)
+{
+	u8 proto_type;
+	u8 ipv4_offset;
+
+	ipv4_offset = ath12k_dp_get_ip_offset(skb);
+
+	if (skb->len < ipv4_offset + SKB_IPV4_PROTOCOL_FIELD_OFFSET + sizeof(u8))
+		return 0;
+
+	proto_type = get_unaligned((u8 *)(skb->data + ipv4_offset +
+					  SKB_IPV4_PROTOCOL_FIELD_OFFSET));
+	return proto_type;
+}
+
+static inline u8
+ath12k_dp_get_l4_protocol_type(struct sk_buff *skb)
+{
+	u8 l4_type = 0;
+
+	l4_type = ath12k_dp_get_ipv4_proto(skb);
+
+	switch (l4_type) {
+	case SKB_TRAC_TCP_TYPE:
+		return DP_PKT_TYPE_TCP;
+
+	case SKB_TRAC_UDP_TYPE:
+		return DP_PKT_TYPE_UDP;
+
+	case SKB_TRAC_ICMP_TYPE:
+		return DP_PKT_TYPE_ICMP;
+
+	case SKB_TRAC_IGMP_TYPE:
+		return DP_PKT_TYPE_IGMP;
+
+	default:
+		return DP_PKT_TYPE_L4_NS;
+	}
+}
+
+static inline bool
+ath12k_dp_is_ipv4_dhcp_pkt(struct sk_buff *skb)
+{
+	u16 sport;
+	u16 dport;
+	u8 ipv4_offset;
+	u8 ipv4_hdr_len;
+	struct iphdr *iphdr;
+
+	if (ath12k_dp_get_ether_type(skb) != SKB_TRAC_IPV4_ETH_TYPE)
+		return false;
+
+	ipv4_offset = ath12k_dp_get_ip_offset(skb);
+
+	if (skb->len < ipv4_offset + sizeof(struct iphdr))
+		return false;
+
+	iphdr = (struct iphdr *)(skb->data + ipv4_offset);
+	ipv4_hdr_len = iphdr->ihl * SKB_IPV4_HDR_SIZE_UNIT;
+
+	if (skb->len < ipv4_offset + ipv4_hdr_len + 2 * sizeof(u16))
+		return false;
+
+	sport = get_unaligned((u16 *)(skb->data + ipv4_offset + ipv4_hdr_len));
+	dport = get_unaligned((u16 *)(skb->data + ipv4_offset +
+				      ipv4_hdr_len + sizeof(u16)));
+
+	if ((sport == cpu_to_be16(SKB_TRAC_DHCP_SRV_PORT) &&
+	     dport == cpu_to_be16(SKB_TRAC_DHCP_CLI_PORT)) ||
+	    (sport == cpu_to_be16(SKB_TRAC_DHCP_CLI_PORT) &&
+	     dport == cpu_to_be16(SKB_TRAC_DHCP_SRV_PORT)))
+		return true;
+	else
+		return false;
+}
+
+static inline bool
+ath12k_dp_is_dns_query(struct sk_buff *skb)
+{
+	u16 op_code;
+	u16 tgt_port;
+
+	if (skb->len < SKB_PKT_DNS_DST_PORT_OFFSET + sizeof(u16))
+		return false;
+
+	tgt_port = get_unaligned((u16 *)(skb->data + SKB_PKT_DNS_DST_PORT_OFFSET));
+    /* Standard DNS query always happen on Dest Port 53. */
+	if (tgt_port == cpu_to_be16(SKB_PKT_DNS_STANDARD_PORT)) {
+		if (skb->len < SKB_PKT_DNS_OVER_UDP_OPCODE_OFFSET + sizeof(u16))
+			return false;
+
+		op_code = get_unaligned((u16 *)(skb->data +
+					SKB_PKT_DNS_OVER_UDP_OPCODE_OFFSET));
+
+	if ((be16_to_cpu(op_code) & SKB_PKT_DNSOP_BITMAP) ==
+	    SKB_PKT_DNSOP_STANDARD_QUERY)
+		return true;
+	}
+	return false;
+}
+
+static inline bool
+ath12k_dp_is_dns_response(struct sk_buff *skb)
+{
+	u16 op_code;
+	u16 src_port;
+
+	if (skb->len < SKB_PKT_DNS_SRC_PORT_OFFSET + sizeof(u16))
+		return false;
+
+	src_port = get_unaligned((u16 *)(skb->data + SKB_PKT_DNS_SRC_PORT_OFFSET));
+	/* Standard DNS response always comes on Src Port 53. */
+	if (src_port == cpu_to_be16(SKB_PKT_DNS_STANDARD_PORT)) {
+		if (skb->len < SKB_PKT_DNS_OVER_UDP_OPCODE_OFFSET + sizeof(u16))
+			return false;
+
+		op_code = get_unaligned((u16 *)(skb->data +
+					SKB_PKT_DNS_OVER_UDP_OPCODE_OFFSET));
+
+	if ((be16_to_cpu(op_code) & SKB_PKT_DNSOP_BITMAP) ==
+	    SKB_PKT_DNSOP_STANDARD_RESPONSE)
+		return true;
+	}
+	return false;
+}
+
+static inline u8
+ath12k_dp_get_l5_protocol_type(struct sk_buff *skb)
+{
+	if (ath12k_dp_is_ipv4_dhcp_pkt(skb))
+		return DP_PKT_TYPE_DHCP;
+	else if (ath12k_dp_is_dns_query(skb))
+		return DP_PKT_TYPE_DNS_QUERY;
+	else if (ath12k_dp_is_dns_response(skb))
+		return DP_PKT_TYPE_DNS_RSP;
+	else
+		return DP_PKT_TYPE_L5_NS;
+}
+
+static inline bool
+ath12k_dp_is_icmpv4_req(struct sk_buff *skb)
+{
+	u8 op_code;
+	u8 ipv4_offset;
+	u8 ipv4_hdr_len;
+	struct iphdr *iphdr;
+
+	ipv4_offset = ath12k_dp_get_ip_offset(skb);
+
+	if (skb->len < ipv4_offset + sizeof(struct iphdr))
+		return false;
+
+	iphdr = (struct iphdr *)(skb->data + ipv4_offset);
+	ipv4_hdr_len = iphdr->ihl * SKB_IPV4_HDR_SIZE_UNIT;
+
+	if (ipv4_hdr_len < sizeof(struct iphdr) ||
+	    skb->len < ipv4_offset + ipv4_hdr_len + 1)
+		return false;
+
+	op_code = get_unaligned((u8 *)(skb->data + ipv4_offset + ipv4_hdr_len));
+
+	if (op_code == SKB_PKT_ICMPV4OP_REQ)
+		return true;
+
+	return false;
+}
+
+static inline bool
+ath12k_dp_is_icmpv4_rsp(struct sk_buff *skb)
+{
+	u8 op_code;
+	u8 ipv4_offset;
+	u8 ipv4_hdr_len;
+	struct iphdr *iphdr;
+
+	ipv4_offset = ath12k_dp_get_ip_offset(skb);
+
+	if (skb->len < ipv4_offset + sizeof(struct iphdr))
+		return false;
+
+	iphdr = (struct iphdr *)(skb->data + ipv4_offset);
+	ipv4_hdr_len = iphdr->ihl * SKB_IPV4_HDR_SIZE_UNIT;
+
+	if (ipv4_hdr_len < sizeof(struct iphdr) ||
+	    skb->len < ipv4_offset + ipv4_hdr_len + 1)
+		return false;
+
+	op_code = get_unaligned((u8 *)(skb->data + ipv4_offset + ipv4_hdr_len));
+
+	if (op_code == SKB_PKT_ICMPV4OP_REPLY)
+		return true;
+
+	return false;
+}
+
+static inline u8
+ath12k_dp_get_l4_protocol_subtype(struct sk_buff *skb)
+{
+	if (ath12k_dp_is_icmpv4_req(skb))
+		return DP_PKT_TYPE_ICMP_REQ;
+	else if (ath12k_dp_is_icmpv4_rsp(skb))
+		return DP_PKT_TYPE_ICMP_RSP;
+	else
+		return DP_PKT_TYPE_L4_NS;
+}
+
+static inline enum ath12k_dp_pkt_l5_proto_type
+ath12k_dp_get_dhcp_subtype(u8 *data)
+{
+	enum ath12k_dp_pkt_l5_proto_type subtype = DP_PKT_TYPE_DHCP_NS;
+
+	if (data[DHCP_OPTION53_OFFSET] == DHCP_OPTION53 &&
+	    data[DHCP_OPTION53_LENGTH_OFFSET] == DHCP_OPTION53_LENGTH) {
+		switch (data[DHCP_OPTION53_STATUS_OFFSET]) {
+		case DHCP_DISCOVER:
+			subtype = DP_PKT_TYPE_DHCP_DIS;
+			break;
+		case DHCP_REQUEST:
+			subtype = DP_PKT_TYPE_DHCP_REQ;
+			break;
+		case DHCP_OFFER:
+			subtype = DP_PKT_TYPE_DHCP_OFR;
+			break;
+		case DHCP_ACK:
+			subtype = DP_PKT_TYPE_DHCP_ACK;
+			break;
+		default:
+			subtype = DP_PKT_TYPE_DHCP_NS;
+			break;
+		}
+	}
+	return subtype;
+}
+
+static inline enum ath12k_dp_pkt_l5_proto_type
+ath12k_dp_get_l5_protocol_subtype(struct sk_buff *skb)
+{
+	return ath12k_dp_get_dhcp_subtype(skb->data);
+}
+
 #endif

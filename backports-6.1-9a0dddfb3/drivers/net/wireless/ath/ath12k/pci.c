@@ -1152,6 +1152,10 @@ static const struct ath12k_hif_ops ath12k_pci_hif_ops = {
 	.dp_umac_reset_enable_irq = ath12k_pci_dp_umac_reset_enable_irq,
 	.dp_umac_reset_free_irq = ath12k_pci_dp_umac_reset_free_irq,
 	.get_iova = ath12k_pci_get_iova,
+	.mgmt_irq_setup = ath12k_pcic_mgmt_irq_config,
+	.mgmt_irq_cleanup = ath12k_pcic_mgmt_irq_free,
+	.mgmt_irq_enable = ath12k_pcic_mgmt_irqs_enable,
+	.mgmt_irq_disable = ath12k_pcic_mgmt_irqs_disable,
 };
 
 static enum ath12k_device_family
@@ -1335,10 +1339,19 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
 		}
 	}
 
+	/* do mgmt_init for hal srngs */
+	if (ab_pci->device_ops->mgmt_init) {
+		ab->mgmt = ab_pci->device_ops->mgmt_init(ab);
+		if (!ab->mgmt) {
+			ath12k_err(ab, "mgmt_init failed");
+			goto err_free_dp;
+		}
+	}
+
 	ret = ath12k_core_init(ab);
 	if (ret) {
 		ath12k_err(ab, "failed to init core: %d\n", ret);
-		goto err_free_dp;
+		goto err_free_mgmt;
 	}
 
 	ret = ath12k_pci_get_link_status(ab_pci->pdev, &ab_pci->def_link_speed,
@@ -1348,10 +1361,14 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
 
 	return 0;
 
-err_free_dp:
+err_free_mgmt:
 	if (test_bit(ATH12K_FLAG_SOC_CREATE_FAIL, &ab->dev_flags))
 		return ret;
 
+	if (ab_pci->device_ops->mgmt_deinit)
+		ab_pci->device_ops->mgmt_deinit(ab->mgmt);
+
+err_free_dp:
 	if (ab_pci->device_ops->dp_deinit)
 		ab_pci->device_ops->dp_deinit(ab->dp);
 
@@ -1414,6 +1431,9 @@ qmi_fail:
 
 	ath12k_hal_srng_deinit(ab);
 	ath12k_ce_free_pipes(ab);
+
+	if (ab_pci->device_ops->mgmt_deinit)
+		ab_pci->device_ops->mgmt_deinit(ab->mgmt);
 
 	if (ab_pci->device_ops->dp_deinit)
 		ab_pci->device_ops->dp_deinit(ab->dp);

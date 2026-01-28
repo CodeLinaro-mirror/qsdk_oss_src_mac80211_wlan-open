@@ -40,22 +40,10 @@ struct hal_tx_info {
 
 extern u8 ath12k_default_dscp_tid_map[DSCP_TID_MAP_TBL_ENTRY_SIZE];
 
-#define TX_IP_CHECKSUM (HAL_TCL_DATA_CMD_INFO2_IPV4_CHECKSUM_EN | \
-			HAL_TCL_DATA_CMD_INFO2_UDP4_CHECKSUM_EN | \
-			HAL_TCL_DATA_CMD_INFO2_UDP6_CHECKSUM_EN | \
-			HAL_TCL_DATA_CMD_INFO2_TCP4_CHECKSUM_EN | \
-			HAL_TCL_DATA_CMD_INFO2_TCP6_CHECKSUM_EN)
 
 /* TODO: Check if the actual desc macros can be used instead */
 #define HAL_TX_STATUS_FLAGS_FIRST_MSDU		BIT(0)
-#define HAL_TX_STATUS_FLAGS_LAST_MSDU		BIT(1)
-#define HAL_TX_STATUS_FLAGS_MSDU_IN_AMSDU	BIT(2)
-#define HAL_TX_STATUS_FLAGS_RATE_STATS_VALID	BIT(3)
-#define HAL_TX_STATUS_FLAGS_RATE_LDPC		BIT(4)
-#define HAL_TX_STATUS_FLAGS_RATE_STBC		BIT(5)
-#define HAL_TX_STATUS_FLAGS_OFDMA		BIT(6)
 
-#define HAL_TX_STATUS_DESC_LEN		sizeof(struct hal_wbm_release_ring)
 
 #define HAL_TX_BANK_CONFIG_EPD			BIT(0)
 #define HAL_TX_BANK_CONFIG_ENCAP_TYPE		GENMASK(2, 1)
@@ -67,8 +55,9 @@ extern u8 ath12k_default_dscp_tid_map[DSCP_TID_MAP_TBL_ENTRY_SIZE];
 #define HAL_TX_BANK_CONFIG_ADDRY_EN		BIT(11)
 #define HAL_TX_BANK_CONFIG_MESH_EN		GENMASK(13, 12)
 #define HAL_TX_BANK_CONFIG_VDEV_ID_CHECK_EN	BIT(14)
-#define HAL_TX_BANK_CONFIG_LINK_ID		GENMASK(17, 15)
 #define HAL_TX_BANK_CONFIG_DSCP_TIP_MAP_ID	GENMASK(25, 18)
+
+#define HAL_TX_WILD_CARD_LINK_ID       7
 
 void ath12k_wifi8_hal_tx_set_dscp_tid_map(struct ath12k_base *ab, u8 *map, int id);
 void ath12k_wifi8_hal_tx_update_dscp_tid_map(struct ath12k_base *ab,

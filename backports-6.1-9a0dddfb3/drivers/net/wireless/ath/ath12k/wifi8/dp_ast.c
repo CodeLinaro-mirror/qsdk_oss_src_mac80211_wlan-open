@@ -363,7 +363,8 @@ int ath12k_dp_ast_table_init(struct ath12k_dp_hw_group *dp_hw_grp)
 	spin_lock_init(&ast_base->ast_lock);
 
 	ath12k_dp_ast_param_init(ast_base, &ast_info);
-	ath12k_wifi8_hal_hw_ase_init(ab, &ast_info);
+	if (!ath12k_ftm_mode)
+		ath12k_wifi8_hal_hw_ase_init(ab, &ast_info);
 
 	return 0;
 

@@ -30,6 +30,7 @@ struct ath12k_dp_htt_wbm_tx_status {
 };
 
 void ath12k_dp_tx_put_bank_profile(struct ath12k_dp *dp, u8 bank_id);
+u32 ath12k_dp_tx_get_bank_config_from_id(struct ath12k_dp *dp, u8 bank_id);
 
 void ath12k_dp_tx_encap_nwifi(struct sk_buff *skb);
 void *ath12k_dp_metadata_align_skb(struct sk_buff *skb, u8 tail_len);
@@ -47,7 +48,8 @@ void ath12k_dp_tx_update_peer_basic_stats(struct ath12k_dp_peer *peer,
 					  u8 link_id, int ring_id);
 void ath12k_dp_tx_comp_update_peer_stats(struct ath12k_dp_peer *peer,
 					 struct hal_tx_status *ts, int ring_id,
-					 u16 tx_desc_flags, u8 link_id);
+					 u16 tx_desc_flags, u8 link_id,
+					 u32 msdu_len);
 int ath12k_sdwf_reinject_handler(struct ath12k_base *ab, struct sk_buff *skb,
 				 struct htt_tx_wbm_completion *status_desc, u8 mac_id);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT

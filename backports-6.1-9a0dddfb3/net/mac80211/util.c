@@ -47,7 +47,7 @@ struct ieee80211_hw *wiphy_to_ieee80211_hw(struct wiphy *wiphy)
 EXPORT_SYMBOL(wiphy_to_ieee80211_hw);
 
 const struct ieee80211_conn_settings ieee80211_conn_settings_unlimited = {
-	.mode = IEEE80211_CONN_MODE_EHT,
+	.mode = IEEE80211_CONN_MODE_UHR,
 	.bw_limit = IEEE80211_CONN_BW_LIMIT_320,
 };
 
@@ -1576,6 +1576,15 @@ static int ieee80211_put_preq_ies_band(struct sk_buff *skb,
 			return err;
 	}
 
+	if (cfg80211_any_usable_channels(local->hw.wiphy, BIT(sband->band),
+					 IEEE80211_CHAN_NO_HE |
+					 IEEE80211_CHAN_NO_EHT |
+					 IEEE80211_CHAN_NO_UHR)) {
+		err = ieee80211_put_uhr_cap(skb, sdata, sband);
+		if (err)
+			return err;
+	}
+
 	err = ieee80211_put_he_6ghz_cap(skb, sdata, IEEE80211_SMPS_OFF);
 	if (err)
 		return err;
@@ -2085,6 +2094,7 @@ int ieee80211_reconfig(struct ieee80211_local *local)
 			continue;
 		if ((sdata->vif.type != NL80211_IFTYPE_AP_VLAN ||
 		     ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD) ||
+		     ieee80211_hw_check(&local->hw, VLAN_GROUP_KEY_HW_OFFLOAD) ||
 		     ieee80211_hw_check(&local->hw, SUPPORTS_VLAN_DATA_OFFLOAD)) &&
 		    sdata->vif.type != NL80211_IFTYPE_MONITOR &&
 		    ieee80211_sdata_running(sdata)) {
@@ -2105,6 +2115,7 @@ int ieee80211_reconfig(struct ieee80211_local *local)
 				continue;
 			if ((sdata->vif.type != NL80211_IFTYPE_AP_VLAN ||
 			     ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD) ||
+			     ieee80211_hw_check(&local->hw, VLAN_GROUP_KEY_HW_OFFLOAD) ||
 			     ieee80211_hw_check(&local->hw, SUPPORTS_VLAN_DATA_OFFLOAD)) &&
 			    sdata->vif.type != NL80211_IFTYPE_MONITOR &&
 			    ieee80211_sdata_running(sdata))
@@ -3988,8 +3999,12 @@ void ieee80211_dfs_cac_cancel(struct ieee80211_local *local)
 			 * Release monitor VAP first to avoid
 			 * channel change in radar channel
 			 */
-			ieee80211_release_monitor_chandef(wiphy, curr_ctx, &chandef);
-			ieee80211_link_release_channel(link);
+			if (!link->conf->deferred_up) {
+				ieee80211_release_monitor_chandef(wiphy, curr_ctx,
+								  &chandef);
+				ieee80211_link_release_channel(link);
+			}
+
 			cfg80211_cac_event(sdata->dev, &chandef,
 					   NL80211_RADAR_CAC_ABORTED,
 					   GFP_KERNEL, link_id);
@@ -5062,6 +5077,34 @@ int ieee80211_put_eht_cap(struct sk_buff *skb,
 	return 0;
 }
 
+int ieee80211_put_uhr_cap(struct sk_buff *skb,
+			  struct ieee80211_sub_if_data *sdata,
+			  const struct ieee80211_supported_band *sband)
+{
+	const struct ieee80211_sta_uhr_cap *uhr_cap =
+		ieee80211_get_uhr_iftype_cap_vif(sband, &sdata->vif);
+	struct ieee80211_uhr_cap_elem_fixed fixed;
+	u8 ie_len;
+
+	/* Make sure we have place for the IE */
+	if (!uhr_cap)
+		return 0;
+
+	fixed = uhr_cap->uhr_cap_elem;
+
+	ie_len = 2 + 1 + sizeof(uhr_cap->uhr_cap_elem);
+	if (skb_tailroom(skb) < ie_len)
+		return -ENOBUFS;
+
+	skb_put_u8(skb, WLAN_EID_EXTENSION);
+	skb_put_u8(skb, ie_len - 2);
+	skb_put_u8(skb, WLAN_EID_EXT_UHR_CAPABILITY);
+	skb_put_data(skb, &fixed, sizeof(fixed));
+
+	return 0;
+}
+
+
 const char *ieee80211_conn_mode_str(enum ieee80211_conn_mode mode)
 {
 	static const char * const modes[] = {
@@ -5071,6 +5114,7 @@ const char *ieee80211_conn_mode_str(enum ieee80211_conn_mode mode)
 		[IEEE80211_CONN_MODE_VHT] = "VHT",
 		[IEEE80211_CONN_MODE_HE] = "HE",
 		[IEEE80211_CONN_MODE_EHT] = "EHT",
+		[IEEE80211_CONN_MODE_UHR] = "UHR",
 	};
 
 	if (WARN_ON(mode >= ARRAY_SIZE(modes)))

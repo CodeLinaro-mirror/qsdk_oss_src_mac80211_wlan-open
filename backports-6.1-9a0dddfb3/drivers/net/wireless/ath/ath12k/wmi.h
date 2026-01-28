@@ -78,6 +78,7 @@ static inline s32 a_sle32_to_cpu(a_sle32 val)
 #define WMI_TLV_CMD_UNSUPPORTED 0
 #define WMI_TLV_PDEV_PARAM_UNSUPPORTED 0
 #define WMI_TLV_VDEV_PARAM_UNSUPPORTED 0
+#define HW_QCN9000		3
 
 struct wmi_cmd_hdr {
 	__le32 cmd_id;
@@ -95,6 +96,21 @@ struct wmi_vdev_ch_power_info {
          * incremental for non-PSD BW
          */
         u32 tx_power;
+} __packed;
+
+struct wmi_gpio_config_cmd {
+	__le32 tlv_header;
+	__le32 gpio_num;
+	__le32 input;
+	__le32 pull_type;
+	__le32 intr_mode;
+	__le32 mux_config_val;
+} __packed;
+
+struct wmi_gpio_output_cmd {
+	__le32 tlv_header;
+	__le32 gpio_num;
+	__le32 set;
 } __packed;
 
 /**
@@ -154,6 +170,11 @@ struct wmi_peer_delete_all_cmd {
 	__le32 vdev_id;
 	__le32 peer_type_bitmap;
 } __packed;
+
+struct wmi_gpio_input_event {
+	__le32 gpio_num;
+	__le32 value;
+};
 
 #define WMI_TLV_LEN	GENMASK(15, 0)
 #define WMI_TLV_TAG	GENMASK(31, 16)
@@ -595,6 +616,16 @@ enum wmi_tlv_cmd_id {
 	WMI_PEER_UNMAP_RESPONSE_CMDID,
 	WMI_PEER_CONFIG_VLAN_CMDID,
 	WMI_PEER_CONFIG_PPE_DS_CMDID,
+	WMI_PEER_ENABLE_DISABLE_INTRA_BSS_CMDID,
+	WMI_PEER_RX_PN_REQUEST_CMDID,
+	WMI_PEER_TX_FILTER_CMDID,
+	WMI_PEER_FLUSH_POLICY_CMDID,
+	WMI_PEER_SCHED_MODE_DISABLE_CMDID,
+	WMI_PEER_BULK_SET_CMDID,
+	WMI_PEER_MULTIPLE_REORDER_QUEUE_SETUP_CMDID,
+	WMI_PEER_TID_RATE_CUSTOM_CMDID,
+	WMI_PEER_NPCA_CAP_CMDID,
+	WMI_PEER_ASSOC_V2_CMDID = 0x6029,
 	WMI_BCN_TX_CMDID = WMI_TLV_CMD(WMI_GRP_MGMT),
 	WMI_PDEV_SEND_BCN_CMDID,
 	WMI_BCN_TMPL_CMDID,
@@ -1436,6 +1467,8 @@ enum wmi_tlv_vdev_param {
 	WMI_VDEV_PARAM_ENABLE_BCAST_PROBE_RESPONSE,
 	WMI_VDEV_PARAM_FILS_MAX_CHANNEL_GUARD_TIME,
 	WMI_VDEV_PARAM_HE_LTF = 0x74,
+	WMI_VDEV_PARAM_ENABLE_MULTI_GROUP_KEY = 0x76,
+	WMI_VDEV_PARAM_NUM_GROUP_KEYS = 0x77,
 	WMI_VDEV_PARAM_ENABLE_DISABLE_RTT_RESPONDER_ROLE = 0x7d,
 	WMI_VDEV_PARAM_BA_MODE = 0x7e,
 	WMI_VDEV_PARAM_AUTORATE_MISC_CFG = 0x80,
@@ -1485,6 +1518,8 @@ enum wmi_tlv_peer_flags {
 enum wmi_tlv_peer_flags_ext {
 	WMI_PEER_EXT_EHT = BIT(0),
 	WMI_PEER_EXT_320MHZ = BIT(1),
+	WMI_PEER_CFP = BIT(2),
+	WMI_PEER_EXT_UHR = BIT(7),
 };
 
 /** Enum list of TLV Tags for each parameter structure type. */
@@ -2284,6 +2319,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_TPC_STATS_REG_PWR_ALLOWED,
 	WMI_TAG_TPC_STATS_RATES_ARRAY,
 	WMI_TAG_TPC_STATS_CTL_PWR_TABLE_EVENT,
+	WMI_TAG_SCAN_RADIO_CAPABILITIES_EXT2 = 0x39D,
 	WMI_TAG_PEER_TID_LATENCY_CONFIG_FIXED_PARAM = 0x3B9,
 	WMI_TAG_TID_LATENCY_INFO,
 	WMI_CTRL_PATH_CAL_STATS = 0x3BC,
@@ -2316,7 +2352,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_PDEV_MEC_AGEING_TIMER_PARAMS = 0x3E9,
 	WMI_TAG_PDEV_SET_BIOS_INTERFACE_CMD = 0x3FB,
 	WMI_TAG_PEER_CONFIG_PPEDS_ROUTING = 0x3EA,
-	WMI_TAG_SCAN_RADIO_CAPABILITIES_EXT2 = 0x401,
+	WMI_TAG_TWT_CAPS_PARAMS = 0x3ED,
 	WMI_TAG_SAWF_SERVICE_CLASS_CFG_CMD_FIXED_PARAM = 0x40A,
 	WMI_TAG_SAWF_SERVICE_CLASS_DISABLE_CMD_FIXED_PARAM = 0x40B,
 	WMI_TAG_PDEV_PKTLOG_DECODE_INFO = 0x414,
@@ -2366,6 +2402,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_MGMT_MSDU_FLOWQ_PARAMS = 0x515,
 	WMI_TAG_HOL_MSDU_FLOWQ_PARAMS = 0x516,
 	WMI_TAG_MLO_PEER_TID_TO_LINK_MAP_EVENT_FIXED_PARAM = 0x544,
+	WMI_TAG_PEER_ASSOC_CIP_INFO,
 	WMI_TAG_MAX
 };
 
@@ -2630,6 +2667,12 @@ enum wmi_tlv_service {
 	WMI_SERVICE_UMAC_MIGRATION_SUPPORT = 436,
 	WMI_SERVICE_STA_MLO_RCFG_SUPPORT = 448,
 	WMI_SERVICE_PDEV_SUSPEND_EVENT_SUPPORT = 449,
+	WMI_SERVICE_CFP_SUPPORT = 469,
+	WMI_SERVICE_CFP_PADDING_SUPPORT = 470,
+
+	WMI_TLV_SERVICE_11BN = 458,
+
+	WMI_SERVICE_EXT_TLV_SUPPORT = 465,
 
 	WMI_MAX_EXT2_SERVICE,
 };
@@ -2866,6 +2909,7 @@ struct ath12k_wmi_resource_config_arg {
 	u32 bpf_instruction_size;
 	u32 max_bssid_rx_filters;
 	u32 use_pdev_id;
+	u32 max_num_group_keys;
 	u32 peer_map_unmap_version;
 	u32 sched_params;
 	u32 twt_ap_pdev_count;
@@ -3231,6 +3275,9 @@ struct ath12k_wmi_soc_hal_reg_caps_params {
 #define WMI_MAX_EHTCAP_PHY_SIZE  3
 #define WMI_MAX_EHTCAP_RATE_SET  3
 
+#define WMI_MAX_UHRCAP_MAC_SIZE  2
+#define WMI_MAX_UHRCAP_PHY_SIZE  1
+
 /* Used for EHT MCS-NSS array. Data at each array index follows the format given
  * in IEEE P802.11be/D2.0, May 20229.4.2.313.4.
  *
@@ -3289,6 +3336,19 @@ struct ath12k_wmi_caps_ext_params {
 	__le32 eht_supp_mcs_ext_5ghz[WMI_MAX_EHT_SUPP_MCS_5GHZ_SIZE];
 	__le32 eml_capability;
 	__le32 mld_capability;
+	__le32 ext_mld_capability;
+	__le32 uhr_cap_mac_info_2ghz[WMI_MAX_UHRCAP_MAC_SIZE];
+	__le32 uhr_cap_mac_info_5ghz[WMI_MAX_UHRCAP_MAC_SIZE];
+	__le32 uhr_cap_phy_info_2ghz[WMI_MAX_UHRCAP_PHY_SIZE];
+	__le32 uhr_cap_phy_info_5ghz[WMI_MAX_UHRCAP_PHY_SIZE];
+} __packed;
+
+#define WMI_HOST_WLAN_FLEXI_TWT_CAP	BIT(1)
+
+struct ath12k_wmi_twt_caps_params {
+	__le32 twt_capability_bitmap;
+	__le32 min_max_wake_dur_us;
+	__le32 min_max_wake_intvl_us;
 } __packed;
 
 /* 2 word representation of MAC addr */
@@ -3344,6 +3404,7 @@ struct ath12k_wmi_vdev_create_arg {
 	u32 mbssid_flags;
 	u32 mbssid_tx_vdev_id;
 	u8 mld_addr[ETH_ALEN];
+	bool is_cfp_enabled;
 	u32 create_flags;
 };
 
@@ -3362,6 +3423,7 @@ struct wmi_vdev_create_cmd {
 	__le32 mbssid_tx_vdev_id;
 	__le32 vdev_stats_id_valid;
 	__le32 vdev_stats_id;
+	__le32 is_cfp_enabled;
 	__le32 flags;
 } __packed;
 
@@ -3586,8 +3648,17 @@ enum wmi_phy_mode {
 	MODE_11BE_EHT320 = 30,
 	MODE_11BE_EHT20_2G = 31,
 	MODE_11BE_EHT40_2G = 32,
-	MODE_UNKNOWN = 33,
-	MODE_MAX = 33,
+	MODE_11BN_UHR20 = 33,
+	MODE_11BN_UHR40 = 34,
+	MODE_11BN_UHR80 = 35,
+	MODE_11BN_UHR80_80 = 36,
+	MODE_11BN_UHR160 = 37,
+	MODE_11BN_UHR160_160 = 38,
+	MODE_11BN_UHR320 = 39,
+	MODE_11BN_UHR20_2G = 40,
+	MODE_11BN_UHR40_2G = 41,
+	MODE_UNKNOWN = 42,
+	MODE_MAX = 42,
 };
 
 #define ATH12K_WMI_MLO_MAX_LINKS 4
@@ -4444,6 +4515,7 @@ struct ath12k_wmi_bcn_tmpl_ema_arg {
 };
 
 #define WMI_BEACON_PROTECTION_EN_BIT	BIT(0)
+#define WMI_CONTROL_PROTECTION_EN_BIT   BIT(1)
 
 struct wmi_bcn_tmpl_cmd {
 	__le32 tlv_header;
@@ -4502,6 +4574,8 @@ struct wmi_vdev_install_key_arg {
 	u32 key_rxmic_len;
 	u64 key_rsc_counter;
 	const void *key_data;
+	u32 is_group_key_id_valid;
+	u32 group_key_id;
 };
 
 #define WMI_MAX_SUPPORTED_RATES			128
@@ -4683,8 +4757,13 @@ struct wmi_peer_assoc_tid_to_link_map {
 	__le32 tid_to_link_map_info;
 };
 
+struct wmi_peer_assoc_cip_info {
+	__le32 tlv_header;
+	__le32 cfp_enable;
+	__le32 cfp_padding_bits;
+};
+
 struct wmi_scan_radio_capabilities_ext2 {
-	__le32 tlv_header; /* WMI_TAG_SCAN_RADIO_CAPABILITIES_EXT2 */
 	__le32 phy_id;
 	__le32 flags;
 } __packed;
@@ -4750,6 +4829,7 @@ struct ath12k_wmi_peer_assoc_arg {
 	u32 tx_max_mcs_nss;
 	u32 peer_bw_rxnss_override;
 	bool is_pmf_enabled;
+	bool is_cfp_enabled;
 	bool is_wme_set;
 	bool qos_flag;
 	bool apsd_flag;
@@ -4799,6 +4879,10 @@ struct ath12k_wmi_peer_assoc_arg {
 	struct ath12k_wmi_ttlm_peer_params ttlm_params;
 	struct peer_assoc_flowq_params flowq_params;
 	struct peer_assoc_holq_params holq_params;
+	u8 control_mic_pad;
+	bool uhr_flag;
+	u32 peer_uhr_cap_mac[WMI_MAX_UHRCAP_MAC_SIZE];
+	u32 peer_uhr_cap_phy[WMI_MAX_UHRCAP_PHY_SIZE];
 };
 
 #define ATH12K_WMI_FLAG_MLO_ENABLED			BIT(0)
@@ -4911,6 +4995,8 @@ struct wmi_peer_assoc_complete_cmd {
 	__le32 peer_eht_cap_phy[WMI_MAX_EHTCAP_PHY_SIZE];
 	__le32 peer_eht_ops;
 	struct ath12k_wmi_ppe_threshold_params peer_eht_ppet;
+	__le32 peer_uhr_cap_mac[WMI_MAX_UHRCAP_MAC_SIZE];
+	__le32 peer_uhr_cap_phy[WMI_MAX_UHRCAP_PHY_SIZE];
 } __packed;
 
 struct wmi_stop_scan_cmd {
@@ -7341,38 +7427,62 @@ struct wmi_dbglog_config_cmd_fixed_param {
 #define WMI_SEND_TIMEOUT_HZ (3 * HZ)
 #define WMI_CTRL_STATS_READY_TIMEOUT_HZ (1 * HZ)
 
-#define WMI_CMD_EVT_DEBUG_MAX_ENTRY 1024
 #define WMI_DEBUG_ENTRY_MAX_LENGTH (16)
 
-#define WMI_COMMAND_RECORD(wmi, skb, id) {                              \
-	if (wmi->dbg_cmd_tail_idx >= WMI_CMD_EVT_DEBUG_MAX_ENTRY)        \
-		wmi->dbg_cmd_tail_idx = 0;                               \
-	wmi->wmi_cmd_log[wmi->dbg_cmd_tail_idx].cmdid = id;              \
-	memcpy(wmi->wmi_cmd_log[wmi->dbg_cmd_tail_idx].data, skb->data + \
-		sizeof(struct wmi_cmd_hdr), WMI_DEBUG_ENTRY_MAX_LENGTH); \
-	wmi->wmi_cmd_log[wmi->dbg_cmd_tail_idx].time =                   \
-		ktime_to_us(ktime_get());                                \
-	wmi->dbg_cmd_tail_idx++;                                         \
+#define WMI_COMMAND_RECORD(wmi, skb, id) {					     \
+	rcu_read_lock();                                                             \
+	if (wmi->wmi_recording_enabled) {					     \
+		struct wmi_cmd_debug *cmd_log;                                       \
+		u32 cap = wmi->wmi_cmd_log_size;				     \
+		cmd_log = rcu_dereference((wmi)->wmi_cmd_log);                       \
+		if (cmd_log && cap) {                                                \
+			u32 tail = wmi->dbg_cmd_tail_idx;			     \
+			tail %= cap;                                                 \
+			cmd_log[tail].cmdid = (id);                                  \
+			memcpy(cmd_log[tail].data,                                   \
+			       (skb)->data + sizeof(struct wmi_cmd_hdr),             \
+			       WMI_DEBUG_ENTRY_MAX_LENGTH);                          \
+			cmd_log[tail].time = ktime_to_us(ktime_get());               \
+			(wmi->dbg_cmd_tail_idx)++;				     \
+		}                                                                    \
+	}                                                                            \
+	rcu_read_unlock();                                                           \
 }
 
-#define WMI_COMMAND_TX_CMP_RECORD(wmi, id) {                               \
-	if (wmi->dbg_cmd_tx_cmp_tail_idx >= WMI_CMD_EVT_DEBUG_MAX_ENTRY)    \
-		wmi->dbg_cmd_tx_cmp_tail_idx = 0;                           \
-	wmi->wmi_cmd_tx_cmp_log[wmi->dbg_cmd_tx_cmp_tail_idx].cmdid = id;   \
-	wmi->wmi_cmd_tx_cmp_log[wmi->dbg_cmd_tx_cmp_tail_idx].time =        \
-		ktime_to_us(ktime_get());                                   \
-	wmi->dbg_cmd_tx_cmp_tail_idx++;                                     \
+#define WMI_COMMAND_TX_CMP_RECORD(wmi, id) {					     \
+	rcu_read_lock();                                                             \
+	if (wmi->wmi_recording_enabled) {					     \
+		struct wmi_cmd_comp_debug *tx_log;                                   \
+		u32 cap = wmi->wmi_cmd_tx_cmp_log_size;				     \
+		tx_log = rcu_dereference((wmi)->wmi_cmd_tx_cmp_log);                 \
+		if (tx_log && cap) {                                                 \
+			u32 tail = wmi->dbg_cmd_tx_cmp_tail_idx;		     \
+			tail %= cap;						     \
+			tx_log[tail].cmdid = (id);                                   \
+			tx_log[tail].time  = ktime_to_us(ktime_get());               \
+			(wmi->dbg_cmd_tx_cmp_tail_idx)++;			     \
+		}                                                                    \
+	}                                                                            \
+	rcu_read_unlock();                                                           \
 }
 
-#define WMI_EVENT_RX_RECORD(wmi, skb, id) {                            \
-	if (wmi->dbg_evt_tail_idx >= WMI_CMD_EVT_DEBUG_MAX_ENTRY)       \
-		wmi->dbg_evt_tail_idx = 0;                              \
-	wmi->wmi_evt_log[wmi->dbg_evt_tail_idx].eventid = id;           \
-	memcpy(wmi->wmi_evt_log[wmi->dbg_evt_tail_idx].data, skb->data, \
-		WMI_DEBUG_ENTRY_MAX_LENGTH);                            \
-	wmi->wmi_evt_log[wmi->dbg_evt_tail_idx].time =                  \
-		ktime_to_us(ktime_get());                               \
-	wmi->dbg_evt_tail_idx++;                                        \
+#define WMI_EVENT_RX_RECORD(wmi, skb, id) {					     \
+	rcu_read_lock();                                                             \
+	if (wmi->wmi_recording_enabled) {					     \
+		struct wmi_event_debug *evt_log;                                     \
+		u32 cap = wmi->wmi_evt_log_size;				     \
+		evt_log = rcu_dereference((wmi)->wmi_evt_log);                       \
+		if (evt_log && cap) {                                                \
+			u32 tail = wmi->dbg_evt_tail_idx;			     \
+			tail %= cap;                                                 \
+			evt_log[tail].eventid = (id);                                \
+			memcpy(evt_log[tail].data, (skb)->data,                      \
+			       WMI_DEBUG_ENTRY_MAX_LENGTH);                          \
+			evt_log[tail].time = ktime_to_us(ktime_get());               \
+			(wmi->dbg_evt_tail_idx)++;				     \
+		}                                                                    \
+	}                                                                            \
+	rcu_read_unlock();                                                           \
 }
 
 struct wmi_cmd_debug {
@@ -7399,13 +7509,17 @@ struct ath12k_wmi_pdev {
 	enum ath12k_htc_ep_id eid;
 	u32 rx_decap_mode;
 	wait_queue_head_t tx_ce_desc_wq;
-
-	struct wmi_cmd_debug wmi_cmd_log[WMI_CMD_EVT_DEBUG_MAX_ENTRY];
-	struct wmi_cmd_comp_debug wmi_cmd_tx_cmp_log[WMI_CMD_EVT_DEBUG_MAX_ENTRY];
-	struct wmi_event_debug wmi_evt_log[WMI_CMD_EVT_DEBUG_MAX_ENTRY];
-	u16 dbg_cmd_tail_idx;
-	u16 dbg_cmd_tx_cmp_tail_idx;
-	u16 dbg_evt_tail_idx;
+	struct wmi_cmd_debug __rcu *wmi_cmd_log;
+	struct wmi_cmd_comp_debug __rcu *wmi_cmd_tx_cmp_log;
+	struct wmi_event_debug __rcu *wmi_evt_log;
+	u32 wmi_cmd_log_size;
+	u32 wmi_cmd_tx_cmp_log_size;
+	u32 wmi_evt_log_size;
+	u32 dbg_cmd_tail_idx;
+	u32 dbg_cmd_tx_cmp_tail_idx;
+	u32 dbg_evt_tail_idx;
+	u32 verbosity;
+	bool wmi_recording_enabled;
 };
 
 struct ath12k_wmi_base {
@@ -8484,6 +8598,7 @@ enum wmi_stats_id {
 	WMI_REQUEST_VDEV_STAT		= BIT(3),
 	WMI_REQUEST_RSSI_PER_CHAIN_STAT	= BIT(8),
 	WMI_REQUEST_BCN_STAT		= BIT(11),
+	WMI_REQUEST_VDEV_EXTD_STAT	= BIT(16),
 };
 
 struct wmi_request_stats_cmd {
@@ -8503,6 +8618,16 @@ struct wmi_rssi_stat_params {
 
 struct wmi_per_chain_rssi_stat_params {
 	__le32 num_per_chain_rssi;
+} __packed;
+
+struct wmi_vdev_extd_stats_params {
+	__le32 vdev_id;
+	__le32 fd_succ_cnt;
+	__le32 fd_fail_cnt;
+	__le32 unsolicited_prb_succ_cnt;
+	__le32 unsolicited_prb_fail_cnt;
+	__le32 flags;
+	a_sle32 vdev_tx_power;
 } __packed;
 
 #define MAX_TX_RATE_VALUES 10
@@ -9300,7 +9425,7 @@ int ath12k_wmi_cmd_send(struct ath12k_wmi_pdev *wmi, struct sk_buff *skb,
 struct sk_buff *ath12k_wmi_alloc_skb(struct ath12k_wmi_base *wmi_sc, u32 len);
 int ath12k_wmi_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 			 struct sk_buff *frame, bool link_agnostic,
-			 bool tx_params_valid);
+			 bool is_cfr);
 int ath12k_wmi_offchan_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 				 struct sk_buff *frame);
 int ath12k_wmi_p2p_go_bcn_ie(struct ath12k *ar, u32 vdev_id,

@@ -276,7 +276,7 @@ void ath12k_wifi8_hal_set_umac_srng_ptr_addr(struct ath12k_base *ab,
 			srng->u.dst_ring.tp_addr =
 				(u32 *)((unsigned long)ab->mem + reg_base +
 				(HAL_REO1_RING_TP - HAL_REO1_RING_HP));
-			if (type  == HAL_WBM2SW_RELEASE) {
+			if (type  == HAL_TX_COMPLETION) {
 				if (ab->hif.bus == ATH12K_BUS_PCI ||
 				    ab->hif.bus == ATH12K_BUS_HYBRID){
 					srng->u.dst_ring.tp_addr_direct =
@@ -799,7 +799,7 @@ bool ath12k_wifi8_hal_tx_ppe2tcl_ring_halt_done(struct ath12k_base *ab)
 	return !!regval;
 }
 
-#define HAL_TCL_RBM_MAPPING0_ADDR_OFFSET HWIO_TCL_R0_RBM_MAPPING0_OFFS
+#define HAL_TCL_RBM_MAPPING0_ADDR_OFFSET 0xd8
 #define HAL_TCL_RBM_MAPPING_SHFT 4
 #define HAL_TCL_RBM_MAPPING_BMSK 0xF
 #define HAL_TCL_RBM_MAPPING_PPE2TCL_OFFSET  7
@@ -952,4 +952,26 @@ void ath12k_wifi8_hal_hw_ase_init(struct ath12k_base *ab,
 	ath12k_hif_write32(ab, HAL_TCL_ASE_HASH_KEY_31_0, ast_param->ase_hash_key1);
 	ath12k_hif_write32(ab, HAL_TCL_ASE_HASH_KEY_63_32, ast_param->ase_hash_key2);
 	ath12k_hif_write32(ab, HAL_TCL_ASE_HASH_KEY_64, ast_param->ase_hash_key3);
+}
+
+void ath12k_wifi8_hal_vdev_mcast_ctrl_set(struct ath12k_base *ab, u32 vdev_id,
+					  u8 mcast_ctrl_val)
+{
+	u32 reg_addr, val, reg_val;
+	u8 reg_idx, index_in_reg;
+
+	reg_idx = HAL_TCL_VDEV_MCAST_PACKET_CTRL_REG_ID(vdev_id);
+	index_in_reg = HAL_TCL_VDEV_MCAST_PACKET_CTRL_INDEX_IN_REG(vdev_id);
+
+	reg_addr = HAL_TCL_R0_VDEV_MCAST_PACKET_CTRL_MAP_n_ADDR(reg_idx);
+	val = ath12k_hif_read32(ab, reg_addr);
+
+	val &= (~(HAL_TCL_VDEV_MCAST_PACKET_CTRL_MASK <<
+		  (HAL_TCL_VDEV_MCAST_PACKET_CTRL_SHIFT * index_in_reg)));
+
+	reg_val = val |
+		  ((HAL_TCL_VDEV_MCAST_PACKET_CTRL_MASK & mcast_ctrl_val) <<
+		   (HAL_TCL_VDEV_MCAST_PACKET_CTRL_SHIFT * index_in_reg));
+
+	ath12k_hif_write32(ab, reg_addr, reg_val);
 }

@@ -64,9 +64,6 @@ struct hal_uniform_descriptor_header {
 	__le32 info0;
 } __packed;
 
-//info0
-#define HAL_TX_MSDU_FLOW_MSDU_QUEUE_SAM_ID                 GENMASK(12, 0)
-#define HAL_TX_MSDU_FLOW_RESERVED_1A                       GENMASK(19, 13)
 #define HAL_TX_MSDU_FLOW_FLOW_VALID                        BIT(20)
 #define HAL_TX_MSDU_FLOW_EMPTY_TO_N_EMPTY                  BIT(21)
 #define HAL_TX_MSDU_FLOW_N_EMPTY_TO_EMPTY                  BIT(22)
@@ -76,34 +73,21 @@ struct hal_uniform_descriptor_header {
 #define HAL_TX_MSDU_FLOW_TID                               GENMASK(30, 27)
 #define HAL_TX_MSDU_FLOW_MLO_VALID                         BIT(31)
 
-//info1
-#define HAL_TX_MSDU_FLOW_MSDU_COUNT                        GENMASK(15, 0)
 #define HAL_TX_MSDU_FLOW_SW_NOTIFICATION_THRES             GENMASK(31, 16)
 
-//info2
-#define HAL_TX_MSDU_FLOW_FLOW_BYTE_COUNT                   GENMASK(31, 0)
-
-//info3
 #define HAL_TX_MSDU_FLOW_SW_PEER_ID                        GENMASK(15, 0)
 #define HAL_TX_MSDU_FLOW_SW_NOTIFICATION_THRES_2           GENMASK(31, 16)
 
-//info9
 #define HAL_TX_MSDU_FLOW_DROP_RULE                         BIT(0)
-#define HAL_TX_MSDU_FLOW_INVALIDATED_BY_TQM_CMD            BIT(1)
 #define HAL_TX_MSDU_FLOW_TQM_STATUS_FOR_CHIP0              BIT(2)
 #define HAL_TX_MSDU_FLOW_TQM_STATUS_FOR_CHIP1              BIT(3)
 #define HAL_TX_MSDU_FLOW_GEN_SLOW_DROP_NOTIFICATION        BIT(4)
-#define HAL_TX_MSDU_FLOW_SLOW_DROP_NOTIFICATION_DONE       BIT(5)
 #define HAL_TX_MSDU_FLOW_GEN_MED_DROP_NOTIFICATION         BIT(6)
-#define HAL_TX_MSDU_FLOW_MED_DROP_NOTIFICATION_DONE        BIT(7)
 #define HAL_TX_MSDU_FLOW_GEN_HARD_DROP_NOTIFICATION        BIT(8)
-#define HAL_TX_MSDU_FLOW_HARD_DROP_NOTIFICATION_DONE       BIT(9)
-#define HAL_TX_MSDU_FLOW_ADD_FRAME_COUNT_SINCE_DROP        GENMASK(13, 10)
 #define HAL_TX_MSDU_FLOW_TQM_STATUS_FOR_CHIP2              BIT(14)
 #define HAL_TX_MSDU_FLOW_TQM_STATUS_FOR_CHIP3              BIT(15)
 #define HAL_TX_MSDU_FLOW_SLOW_DROP_THRESHOLD               GENMASK(31, 16)
 
-//info10
 #define HAL_TX_MSDU_FLOW_MED_DROP_THRESHOLD                GENMASK(15, 0)
 #define HAL_TX_MSDU_FLOW_HARD_DROP_THRESHOLD               GENMASK(31, 16)
 
@@ -151,63 +135,26 @@ struct hal_tx_msdu_flow {
 	__le32 info32;
 } __packed;
 
-//info0
 #define HAL_TX_MPDU_QUEUE_HEAD_MLO_VALID                        BIT(0)
-#define HAL_TX_MPDU_QUEUE_HEAD_MPDU_HEAD_LENGTH                 GENMASK(14, 1)
 #define HAL_TX_MPDU_QUEUE_HEAD_MPDU_TYPE                        BIT(15)
-#define HAL_TX_MPDU_QUEUE_HEAD_MPDU_COUNT                       GENMASK(31, 16)
 
-//info1
-#define HAL_TX_MPDU_QUEUE_HEAD_QUEUE_BYTE_COUNT                 GENMASK(31, 0)
-
-//info2
-#define HAL_TX_MPDU_QUEUE_HEAD_MPDU_START_SEQ_NUM               GENMASK(11, 0)
 #define HAL_TX_MPDU_QUEUE_HEAD_QUEUE_VALID                      BIT(12)
 #define HAL_TX_MPDU_QUEUE_HEAD_ASSOC_LINK_DESC_CNT              GENMASK(14, 13)
 #define HAL_TX_MPDU_QUEUE_HEAD_MPDU_LAST_SEQ_NUM                GENMASK(26, 15)
-#define HAL_TX_MPDU_QUEUE_HEAD_LAST_MPDU_LINK_DESC_INDEX        GENMASK(31, 27)
 
-//info3
-#define HAL_TX_MPDU_QUEUE_HEAD_LINK_OWNERSHIP_STTAUS_LINK2      GENMASK(1, 0)
-#define HAL_TX_MPDU_QUEUE_HEAD_TX_COUNT_UPDATE_STATUS_LINK2     BIT(2)
 #define HAL_TX_MPDU_QUEUE_HEAD_TID                              GENMASK(6, 3)
-#define HAL_TX_MPDU_QUEUE_HEAD_NUM_EXT_DESC_IN_USE              GENMASK(12, 7)
-#define HAL_TX_MPDU_QUEUE_HEAD_HEAD_NOTIFY_FRAME_TYPE           GENMASK(15, 13)
 #define HAL_TX_MPDU_QUEUE_HEAD_SW_PEER_ID                       GENMASK(31, 16)
 
-//info4
 #define HAL_TX_MPDU_QUEUE_HEAD_PN_ADDR_31_0                     GENMASK(31, 0)
 
-//info5
 #define HAL_TX_MPDU_QUEUE_HEAD_PN_ADDR_39_32                    GENMASK(7, 0)
 #define HAL_TX_MPDU_QUEUE_HEAD_PN_INC_VALUE                     GENMASK(15, 8)
 #define HAL_TX_MPDU_QUEUE_HEAD_MPDU_HDR_LEN                     GENMASK(24, 16)
 #define HAL_TX_MPDU_QUEUE_HEAD_NUM_OF_EXT_DESC                  GENMASK(30, 25)
-#define HAL_TX_MPDU_QUEUE_HEAD_RESERVED_8A                      BIT(31)
 
-//info9
-#define HAL_TX_MPDU_QUEUE_HEAD_MPDU_COUNT_LINK2                 GENMASK(11, 0)
-#define HAL_TX_MPDU_QUEUE_HEAD_RESERVED_16A                     BIT(12)
-#define HAL_TX_MPDU_QUEUE_HEAD_LAST_MPDU_INDEX                  GENMASK(16, 13)
 #define HAL_TX_MPDU_QUEUE_HEAD_LINK0_ID                         GENMASK(19, 17)
 #define HAL_TX_MPDU_QUEUE_HEAD_LINK1_ID                         GENMASK(22, 20)
 #define HAL_TX_MPDU_QUEUE_HEAD_LINK2_ID                         GENMASK(25, 23)
-#define HAL_TX_MPDU_QUEUE_HEAD_OWNERSHIP_STATUS_LINK0           GENMASK(27, 26)
-#define HAL_TX_MPDU_QUEUE_HEAD_OWNERSHIP_STATUS_LINK1           GENMASK(29, 28)
-#define HAL_TX_MPDU_QUEUE_HEAD_COUNT_UPDATE_STATUS_LINK0        BIT(30)
-#define HAL_TX_MPDU_QUEUE_HEAD_COUNT_UPDATE_STATUS_LINK1        BIT(31)
-
-//info13
-#define HAL_TX_MPDU_QUEUE_HEAD_MPDU_COUNT_LINK0                 GENMASK(11, 0)
-#define HAL_TX_MPDU_QUEUE_HEAD_MPDU_COUNT_LINK1                 GENMASK(23, 12)
-#define HAL_TX_MPDU_QUEUE_HEAD_TQM_STATUS_CHIP0                 BIT(24)
-#define HAL_TX_MPDU_QUEUE_HEAD_TQM_STATUS_CHIP1                 BIT(25)
-#define HAL_TX_MPDU_QUEUE_HEAD_TQM_STATUS_CHIP2                 BIT(26)
-#define HAL_TX_MPDU_QUEUE_HEAD_TQM_STATUS_CHIP3                 BIT(27)
-#define HAL_TX_MPDU_QUEUE_HEAD_SEMI_4LINK_MLO                   BIT(28)
-#define HAL_TX_MPDU_QUEUE_HEAD_LINK0_VALID                      BIT(29)
-#define HAL_TX_MPDU_QUEUE_HEAD_LINK1_VALID                      BIT(30)
-#define HAL_TX_MPDU_QUEUE_HEAD_LINK2_VALID                      BIT(31)
 
 struct hal_tx_mpdu_queue_head {
 	struct hal_uniform_descriptor_header header;
@@ -249,19 +196,12 @@ struct hal_tx_mpdu_queue_head {
 	__le32 info26;
 } __packed;
 
-//info0
 #define HAL_TXPT_CLASSIFY_TQM_FLOW_PTR_NON_UDP_39_8     GENMASK(31, 0)
-
-//info1
 #define HAL_TXPT_CLASSIFY_TQM_FLOW_PTR_UDP_39_8         GENMASK(31, 0)
-
-//info2
 #define HAL_TXPT_CLASSIFY_TQM_FLOW_HANDLER              GENMASK(1, 0)
 #define HAL_TXPT_CLASSIFY_TQM_FLOW_LOOP_HANDLER         GENMASK(3, 2)
 #define HAL_TXPT_CLASSIFY_MSDU_DROP                     BIT(4)
 #define HAL_TXPT_CLASSIFY_METADATA                      GENMASK(15, 5)
-#define HAL_TXPT_CLASSIFY_TCL_FW_LINK_ID		GENMASK(18, 16)
-#define HAL_TXPT_CLASSIFY_RESERVED_2B                   GENMASK(31, 19)
 
 struct hal_txpt_classify_info {
 	__le32 info0;

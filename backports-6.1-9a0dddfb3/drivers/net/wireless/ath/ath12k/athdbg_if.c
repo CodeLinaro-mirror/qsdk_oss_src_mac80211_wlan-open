@@ -4,12 +4,17 @@
 #include "ath_debug/athdbg_core.h"
 #include "ath_debug/athdbg_minidump.h"
 #include "ath_debug/athdbg_mhi.h"
+#include "ath_debug/athdbg_wmi_recording.h"
+#include "debug.h"
+#include "ath_debug/athdbg_uio.h"
 #include "mhi.h"
 #include "pci.h"
+
 
 extern struct ath_debug_base *athdbg_base;
 
 #define MAX_SOC_DIR_NAME_SIZE 64
+
 
 const struct athdbg_to_ath12k_ops dbg_to_ath_ops = {
 #ifndef CONFIG_UPSTREAM_BUILD
@@ -19,6 +24,7 @@ const struct athdbg_to_ath12k_ops dbg_to_ath_ops = {
 #endif
 	.dev_running_status = athdbg_if_check_dev_running,
 	.set_dbg_mask = athdbg_if_setmask,
+	.get_dbg_mask = athdbg_if_getmask,
 	.get_link_vif_from_vdev_id = ath12k_mac_get_arvif_by_vdev_id,
 	.pci_read32 = ath12k_pci_read32,
 };
@@ -66,6 +72,8 @@ static int athdbg_if_create_debugfs(struct ath12k_base *ab)
 							&debugfs_qdss_enable_fops);
 		debugfs_create_file("collect", 0644, qdss_dir, partner_ab,
 							&debugfs_qdss_collect_fops);
+
+		athdbg_create_wmi_debugfs(athdbg_dir, partner_ab);
 	}
 
 	return 0;
@@ -83,6 +91,12 @@ void athdbg_if_register(struct ath12k_base *ab)
 {
 	int ret;
 
+	#ifdef CPTCFG_ATHDEBUG_UIO_LOGGING
+	ret = athdbg_uio_register(ab);
+	if (ret)
+		pr_err("athdbg_if: ath_debug UIO register failed: %d\n", ret);
+	#endif
+
 	ret = athdbg_if_create_debugfs(ab);
 	if (ret) {
 		pr_err("athdbg_if: debugfs entry create failure %d", ret);
@@ -92,6 +106,10 @@ void athdbg_if_register(struct ath12k_base *ab)
 
 void athdbg_if_unregister(struct ath12k_base *ab)
 {
+	#ifdef CPTCFG_ATHDEBUG_UIO_LOGGING
+	athdbg_uio_unregister(ab);
+	#endif
+
 	athdbg_clear_minidump_info();
 	athdbg_base->dbg_to_ath_ops = NULL;
 }
@@ -140,7 +158,12 @@ bool athdbg_if_check_dev_running(struct ath12k_base *ab)
 	return ret;
 }
 
-void athdbg_if_setmask(unsigned int debug_mask)
+void athdbg_if_setmask(u64 debug_mask)
 {
 	ath12k_debug_mask = debug_mask;
+}
+
+u64 athdbg_if_getmask(void)
+{
+	return ath12k_debug_mask;
 }

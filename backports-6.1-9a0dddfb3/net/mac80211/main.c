@@ -39,6 +39,7 @@
 #define PHY_5GHZ_LOW "phy01"
 #define PHY_5GHZ_HIGH "phy02"
 #define PHY_6GHZ "phy03"
+#define PHY_SCAN_RADIO "phy-scan-00"
 
 void ieee80211_configure_filter(struct ieee80211_local *local)
 {
@@ -940,6 +941,8 @@ struct ieee80211_hw *ieee80211_alloc_hw_nm(size_t priv_data_len,
 			local->wlan_name = "wlan2";
 		else if (!strcmp(requested_name, PHY_6GHZ))
 			local->wlan_name = "wlan3";
+		else if (!strcmp(requested_name, PHY_SCAN_RADIO))
+			local->wlan_name = "scan0";
 		else
 			local->wlan_name = "wlan%d";
 	} else
@@ -1248,7 +1251,7 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
 	int result, i;
 	enum nl80211_band band;
 	int channels, max_bitrates;
-	bool supp_ht, supp_vht, supp_he, supp_eht;
+	bool supp_ht, supp_vht, supp_he, supp_eht, supp_uhr;
 	struct cfg80211_chan_def dflt_chandef = {};
 
 	if (ieee80211_hw_check(hw, QUEUE_CONTROL) &&
@@ -1380,6 +1383,7 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
 	supp_vht = false;
 	supp_he = false;
 	supp_eht = false;
+	supp_uhr = false;
 	for (band = 0; band < NUM_NL80211_BANDS; band++) {
 		const struct ieee80211_sband_iftype_data *iftd;
 		struct ieee80211_supported_band *sband;
@@ -1433,6 +1437,7 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
 
 			supp_he = supp_he || iftd->he_cap.has_he;
 			supp_eht = supp_eht || iftd->eht_cap.has_eht;
+			supp_uhr = supp_uhr || iftd->uhr_cap.has_uhr;
 
 			if (band == NL80211_BAND_2GHZ)
 				he_40_mhz_cap =
@@ -1463,6 +1468,10 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
 
 		/* EHT requires HE support */
 		if (WARN_ON(supp_eht && !supp_he))
+			return -EINVAL;
+
+		/* UHR requires EHT support */
+		if (WARN_ON(supp_uhr && !supp_eht))
 			return -EINVAL;
 
 		if (!sband->ht_cap.ht_supported)
@@ -1567,6 +1576,10 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
 				3 + sizeof(struct ieee80211_eht_cap_elem) +
 				sizeof(struct ieee80211_eht_mcs_nss_supp) +
 				IEEE80211_EHT_PPE_THRES_MAX_LEN;
+
+		if (supp_uhr)
+			local->scan_ies_len +=
+				3 + sizeof(struct ieee80211_uhr_cap_elem);
 	}
 
 	if (!local->ops->hw_scan) {

@@ -864,6 +864,53 @@ static bool ieee80211_is_link_bss_active(struct ieee80211_sub_if_data *sdata,
 	return false;
 }
 
+static void ieee80211_set_tx_rate(struct ieee80211_local *local,
+				  struct ieee80211_tx_info *info,
+				  struct cfg80211_bitrate_mask *mask,
+				  struct cfg80211_chan_def *chandef)
+{
+	enum nl80211_band band;
+	u16 rate_flags = 0;
+	u8 i;
+
+	if (!chandef || !chandef->chan || !mask)
+		return;
+
+	band = chandef->chan->band;
+	for (i = 0; i < IEEE80211_TX_MAX_RATES; i++) {
+		info->control.rates[i].idx = -1;
+		info->control.rates[i].flags = 0;
+		info->control.rates[i].count = 0;
+	}
+
+	/*
+	 * Only HT and legacy rates are currently supported in
+	 * struct ieee80211_tx_info for 2.4 GHz band
+	 */
+	if (mask->control[band].ht_mcs_changed) {
+		for (i = 0; i < IEEE80211_HT_MCS_MASK_LEN; i++) {
+			if (!mask->control[band].ht_mcs[i])
+				continue;
+			if (hweight16(mask->control[band].ht_mcs[i]) == 1) {
+				info->control.rates[0].idx =
+					ffs(mask->control[band].ht_mcs[i]) - 1;
+				rate_flags = IEEE80211_TX_RC_MCS;
+				goto found;
+			}
+		}
+	}
+
+	if (mask->control[band].legacy_mcs_changed &&
+	    (hweight32(mask->control[band].legacy) == 1))
+		info->control.rates[0].idx = ffs(mask->control[band].legacy) - 1;
+
+found:
+	if (info->control.rates[0].idx >= 0) {
+		info->control.flags |= IEEE80211_TX_CTRL_MGMT_RATE_EXIST;
+		info->control.rates[0].flags = rate_flags;
+	}
+}
+
 int ieee80211_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
 		      struct cfg80211_mgmt_tx_params *params, u64 *cookie)
 {
@@ -1060,6 +1107,9 @@ int ieee80211_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
 
 	IEEE80211_SKB_CB(skb)->flags = flags;
 	IEEE80211_SKB_CB(skb)->control.flags |= IEEE80211_TX_CTRL_DONT_USE_RATE_MASK;
+
+	ieee80211_set_tx_rate(local, IEEE80211_SKB_CB(skb),
+			      &params->rate, &params->chandef);
 
 	skb->dev = sdata->dev;
 

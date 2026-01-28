@@ -424,7 +424,6 @@ ath12k_wifi7_hal_mon_parse_he_sig_mu(const struct hal_rx_he_sig_a_mu_dl_info *he
 	/* data4 */
 	ppdu_info->he_data4 = u32_get_bits(info0,
 					   HAL_RX_HE_SIG_A_MU_DL_INFO0_SPATIAL_REUSE);
-	ppdu_info->he_data4 = value;
 
 	/* data5 */
 	value = u32_get_bits(info0, HAL_RX_HE_SIG_A_MU_DL_INFO0_TRANSMIT_BW);
@@ -1410,7 +1409,7 @@ ath12k_wifi7_hal_mon_parse_user_info(const struct hal_receive_user_info *rx_usr_
 	}
 
 	ru_type_80_3 = le32_get_bits(rx_usr_info->info2, HAL_RX_USR_INFO2_RU_TYPE_80_3);
-	ru_start_index_80_3 = le32_get_bits(rx_usr_info->info2,
+	ru_start_index_80_3 = le32_get_bits(rx_usr_info->info3,
 					    HAL_RX_USR_INFO3_RU_START_IDX_80_3);
 	if (ru_type_80_3 != HAL_EHT_RU_NONE) {
 		ru_size += ru_type_80_3;
@@ -1708,12 +1707,31 @@ ath12k_wifi7_hal_mon_rx_mpdu_start_info_parse(const void *tlv_data, u32 userid,
 					      struct hal_rx_mon_ppdu_info *ppdu_info,
 					      u32 tlv_len)
 {
+	u16 fc;
+
+	if (userid >= HAL_MAX_UL_MU_USERS)
+		return;
+
 	if (likely(tlv_len < HAL_MON_RX_MPDU_START_TLV_SIZE))
 		ath12k_wifi7_hal_mon_rx_mpdu_start_info_get_compact(tlv_data, userid,
 								   ppdu_info);
 	else
 		ath12k_wifi7_hal_mon_rx_mpdu_start_info_get(tlv_data, userid,
 							    ppdu_info);
+
+	if (!ppdu_info->nrp_info.fc_valid ||
+	    !ppdu_info->userstats[userid].frame_control_info_valid)
+		return;
+	fc = ppdu_info->nrp_info.frame_control;
+	if (userid < HAL_MAX_UL_MU_USERS &&
+	    (HAL_RX_GET_FRAME_CTRL_TYPE(fc) == HAL_RX_FRAME_CTRL_TYPE_CTRL)) {
+		if ((fc & IEEE80211_FC0_SUBTYPE_MASK) ==
+				IEEE80211_FC0_SUBTYPE_VHT_NDP_AN)
+			ppdu_info->ctrl_frm_info[userid].ndpa = 1;
+		if ((fc & IEEE80211_FC0_SUBTYPE_MASK) ==
+				IEEE80211_FC0_SUBTYPE_BAR)
+			ppdu_info->ctrl_frm_info[userid].bar = 1;
+	}
 }
 
 static __always_inline void
@@ -1968,6 +1986,85 @@ ath12k_wifi7_hal_mon_rx_ppdu_eu_stats_info_parse(const void *tlv_data, u32 useri
 							       ppdu_info);
 }
 
+int ath12k_dp_mon_get_puncture_type(u16 puncture_pattern, u8 bw)
+{
+	u16 mask;
+	u8 punctured_bits;
+
+	if (!puncture_pattern)
+		return ATH12K_PUNCTURE_NONE;
+
+	switch (bw) {
+	case CMN_BW_80MHZ:
+		mask = ATH12K_PUNCTURE_80MHZ_MASK;
+		break;
+	case CMN_BW_160MHZ:
+		mask = ATH12K_PUNCTURE_160MHZ_MASK;
+		break;
+	case CMN_BW_320MHZ:
+		mask = ATH12K_PUNCTURE_320MHZ_MASK;
+		break;
+	default:
+		return ATH12K_PUNCTURE_NONE;
+	}
+
+	/* Validate pattern is within expected range */
+	if (puncture_pattern & ~mask)
+		return ATH12K_PUNCTURE_INVALID;
+
+	/* 0s in puncture pattern received in TLV indicates punctured 20Mhz,
+	 * after complement, 1s will indicate punctured 20Mhz
+	 */
+	puncture_pattern = ~puncture_pattern;
+	puncture_pattern &= mask;
+
+	if (puncture_pattern) {
+		punctured_bits = hweight16(puncture_pattern);
+
+		if (bw == CMN_BW_80MHZ) {
+			if (punctured_bits == IEEE80211_PUNC_MINUS20MHZ)
+				return PUNCTURED_20MHZ;
+			else
+				return NO_PUNCTURE;
+		} else if (bw == CMN_BW_160MHZ) {
+			if (punctured_bits == IEEE80211_PUNC_MINUS20MHZ)
+				return PUNCTURED_20MHZ;
+			else if (punctured_bits == IEEE80211_PUNC_MINUS40MHZ)
+				return PUNCTURED_40MHZ;
+			else
+				return NO_PUNCTURE;
+		} else if (bw == CMN_BW_320MHZ) {
+			if (punctured_bits == IEEE80211_PUNC_MINUS40MHZ)
+				return PUNCTURED_40MHZ;
+			else if (punctured_bits == IEEE80211_PUNC_MINUS80MHZ)
+				return PUNCTURED_80MHZ;
+			else if (punctured_bits == IEEE80211_PUNC_MINUS120MHZ)
+				return PUNCTURED_120MHZ;
+			else
+				return NO_PUNCTURE;
+		}
+	}
+	return NO_PUNCTURE;
+}
+
+void
+ath12k_hal_wifi7_hal_mon_populate_ppdu_info(struct hal_rx_mon_ppdu_info *ppdu_info)
+{
+	u16 puncture_pattern;
+	enum dp_punctured_modes punc_mode;
+
+	if (!ppdu_info)
+		return;
+
+	puncture_pattern = ppdu_info->punctured_pattern;
+	punc_mode = ath12k_dp_mon_get_puncture_type(puncture_pattern,
+						    ppdu_info->bw);
+	if (punc_mode == ATH12K_PUNCTURE_INVALID)
+		return;
+
+	ppdu_info->punc_bw = punc_mode;
+}
+
 enum hal_rx_mon_status
 ath12k_wifi7_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 					 struct hal_rx_mon_ppdu_info *ppdu_info,
@@ -2092,6 +2189,10 @@ ath12k_wifi7_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 
 		ppdu_info->bw = u32_get_bits(info[0],
 					     HAL_RX_PHYRX_RSSI_LEGACY_INFO_INFO0_RX_BW);
+
+		ppdu_info->rssi_region_offset =
+			u32_get_bits(__le32_to_cpu(rssi->rsvd0[5]),
+				     HAL_RX_PHYRX_RSSI_LEGACY_INFO_RSVD5_REGION_OFFSET);
 		break;
 	}
 	case HAL_PHYRX_OTHER_RECEIVE_INFO: {
@@ -2099,6 +2200,11 @@ ath12k_wifi7_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 
 		ppdu_info->gi = le32_get_bits(cmn_usr_info->info0,
 					      HAL_RX_PHY_CMN_USER_INFO0_GI);
+		ppdu_info->punctured_pattern =
+			le32_get_bits(cmn_usr_info->info0,
+				      HAL_RX_PHY_CMN_USER_INFO0_PUNC_PAT);
+
+		ath12k_hal_wifi7_hal_mon_populate_ppdu_info(ppdu_info);
 		break;
 	}
 	case HAL_RX_PPDU_START_USER_INFO:

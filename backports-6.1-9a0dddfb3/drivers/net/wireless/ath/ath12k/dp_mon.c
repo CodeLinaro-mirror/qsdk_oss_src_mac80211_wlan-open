@@ -11,6 +11,7 @@
 #include "peer.h"
 #include "debugfs.h"
 #include "dp_mon_filter.h"
+#include "telemetry_agent_if.h"
 
 static inline u32
 ath12k_dp_mon_rx_ul_ofdma_ru_size_to_width(enum ath12k_eht_ru_size ru_size)
@@ -847,7 +848,298 @@ ath12k_dp_mon_rx_update_peer_rate_table_stats(struct ath12k_rx_peer_stats *rx_st
 	stats->rx_rate[bw_idx][gi_idx][nss_idx][mcs_idx] += len;
 }
 
-void ath12k_dp_mon_rx_update_basic_stats(struct ath12k_rx_peer_stats *rx_stats,
+/**
+ * ath12k_dp_mon_rx_calculate_avg_rate() - Calculate the average rate using a
+ * low-pass filter.
+ * @avg_rate: The current average rate.
+ * @new_rate_sample: The new rate sample to include in the average.
+ *
+ * This function applies a low-pass filter to average the data rate. It gives
+ * more weight to the previous average, creating a smoothing effect.
+ *
+ * Return: The new calculated average rate.
+ */
+static inline u64 ath12k_dp_mon_rx_calculate_avg_rate(u64 avg_rate, int new_rate_sample)
+{
+	new_rate_sample = DP_ATH_RATE_IN(new_rate_sample);
+	if (avg_rate == DUMMY_MARKER)
+		return new_rate_sample;
+
+	return ((avg_rate << 3) + new_rate_sample - avg_rate) >> 3;
+}
+
+/**
+ * ath12k_dp_mon_rx_get_output_rate() - Convert an internal rate representation to an
+ * output rate.
+ * @internal_rate: The internal rate value to be converted.
+ *
+ * This function converts an internal rate representation to a final
+ * output rate, including rounding logic.
+ *
+ * Return: The converted output rate or DUMMY_MARKER if the input is a dummy.
+ */
+static inline u64 ath12k_dp_mon_rx_get_output_rate(u64 internal_rate)
+{
+	const int multiplier = DP_ATH_RATE_EP_MULTIPLIER;
+
+	if (internal_rate == DUMMY_MARKER)
+		return DUMMY_MARKER;
+
+	if ((internal_rate % multiplier) >= (multiplier / 2))
+		return (internal_rate + (multiplier - 1)) / multiplier;
+	else
+		return internal_rate / multiplier;
+}
+
+static inline u16 ath12k_dp_get_avg_rate_stats_filter_val(void)
+{
+	/* Note: Returning default as ini config is absent */
+	return DP_AVG_RATE_FILTER_DEFAULT;
+}
+
+static inline bool ath12k_dp_mon_eval_avg_rate_filter(u32 ratekbps, u32 avg_rx_rate)
+{
+	u16 filter_val = 0;
+
+	filter_val = ath12k_dp_get_avg_rate_stats_filter_val();
+
+	if (!filter_val || avg_rx_rate < filter_val || ratekbps > filter_val)
+		return true;
+
+	return false;
+}
+
+static void ath12k_dp_rx_update_rate_stats(struct ath12k_rx_peer_stats *rx_stats,
+					   struct rate_info *rate)
+{
+	u32 ratekbps, ppdu_rx_rate;
+
+	if (!rx_stats || !rate)
+		return;
+
+	/* Converting cfg80211_calculate_bitrate(100Kbps) to Kbps */
+	ratekbps = cfg80211_calculate_bitrate(rate) * 100;
+	rx_stats->last_rx_rate = ratekbps;
+
+	if (likely(ath12k_dp_mon_eval_avg_rate_filter(ratekbps, rx_stats->avg_rx_rate))) {
+		rx_stats->avg_rx_rate =
+			ath12k_dp_mon_rx_calculate_avg_rate(rx_stats->avg_rx_rate,
+							    ratekbps);
+	}
+
+	ppdu_rx_rate = ath12k_dp_mon_rx_get_output_rate(rx_stats->avg_rx_rate);
+	rx_stats->rnd_avg_rx_rate = ppdu_rx_rate;
+
+	if (rx_stats->preamble_info < HAL_RX_PREAMBLE_11N)
+		rx_stats->rx_ratecode = ath12k_mac_get_rate_hw_value(ratekbps);
+	else
+		rx_stats->rx_ratecode =
+			ATH12K_HW_RATE_CODE(rate->mcs, rate->nss,
+					    rx_stats->preamble_info);
+}
+
+static u8 ath12k_dp_rx_rate_convert_bw(u8 bw)
+{
+	u8 ret = 0;
+
+	switch (bw) {
+	case CMN_BW_20MHZ:
+		ret = RATE_INFO_BW_20;
+		break;
+	case CMN_BW_40MHZ:
+		ret = RATE_INFO_BW_40;
+		break;
+	case CMN_BW_80MHZ:
+		ret = RATE_INFO_BW_80;
+		break;
+	case CMN_BW_160MHZ:
+		ret = RATE_INFO_BW_160;
+		break;
+	case CMN_BW_320MHZ:
+		ret = RATE_INFO_BW_320;
+		break;
+	default:
+		ret = RATE_INFO_BW_20;
+		break;
+	}
+
+	return ret;
+}
+
+static void ath12k_dp_rx_fill_rate_info(struct rate_info *rate,
+					struct hal_rx_mon_ppdu_info *ppdu_info,
+					struct hal_rx_user_status *user_stats,
+					bool is_su)
+{
+	u8 mcs, nss, preamble_type;
+	u8 rix = 0, ret;
+	u16 bitrate = 0;
+
+	if (!rate || !ppdu_info)
+		return;
+
+	mcs = (user_stats) ? user_stats->mcs : ppdu_info->mcs;
+	nss = (user_stats) ? user_stats->nss : ppdu_info->nss;
+	preamble_type = ppdu_info->preamble_type;
+
+	rate->nss = nss;
+	rate->bw = ath12k_mac_bw_to_mac80211_bw(ppdu_info->bw);
+
+	switch (preamble_type) {
+	case HAL_RX_PREAMBLE_11A:
+	case HAL_RX_PREAMBLE_11B:
+		ret = ath12k_mac_hw_ratecode_to_legacy_rate(mcs, preamble_type,
+							    &rix, &bitrate);
+		if (ret < 0)
+			return;
+		rate->legacy = bitrate;
+		break;
+
+	case HAL_RX_PREAMBLE_11N:
+		if (mcs > HAL_RX_MAX_MCS_HT || nss < 1 || nss > HAL_RX_MAX_NSS)
+			return;
+		rate->mcs = mcs + 8 * (nss - 1);
+		rate->flags = RATE_INFO_FLAGS_MCS;
+		if (ppdu_info->sgi)
+			rate->flags |= RATE_INFO_FLAGS_SHORT_GI;
+		break;
+
+	case HAL_RX_PREAMBLE_11AC:
+		if (mcs > HAL_RX_MAX_MCS_VHT)
+			return;
+		rate->mcs = mcs;
+		rate->flags = RATE_INFO_FLAGS_VHT_MCS;
+		if (ppdu_info->sgi)
+			rate->flags |= RATE_INFO_FLAGS_SHORT_GI;
+		break;
+
+	case HAL_RX_PREAMBLE_11AX:
+		if (mcs > HAL_RX_MAX_MCS_HE)
+			return;
+		rate->mcs = mcs;
+		rate->flags = RATE_INFO_FLAGS_HE_MCS;
+		rate->he_gi = ath12k_he_gi_to_nl80211_he_gi(ppdu_info->sgi);
+		if (is_su) {
+			rate->bw = ath12k_dp_rx_rate_convert_bw(ppdu_info->bw);
+		} else {
+			rate->bw = RATE_INFO_BW_HE_RU;
+			rate->he_ru_alloc = ppdu_info->ru_alloc;
+		}
+		break;
+
+	case HAL_RX_PREAMBLE_11BE:
+		if (mcs > HAL_RX_MAX_MCS_BE)
+			return;
+		rate->mcs = mcs;
+		rate->flags = RATE_INFO_FLAGS_EHT_MCS;
+		rate->eht_gi = ath12k_eht_gi_to_nl80211_eht_gi(ppdu_info->sgi);
+		if (is_su) {
+			rate->bw = ath12k_dp_rx_rate_convert_bw(ppdu_info->bw);
+		} else {
+			rate->bw = RATE_INFO_BW_EHT_RU;
+			rate->eht_ru_alloc = ppdu_info->ru_alloc;
+		}
+		break;
+
+	default:
+		return;
+	}
+}
+
+static void ath12k_dp_rx_rate_stats_update(struct ath12k_rx_peer_stats *rx_stats,
+					   struct hal_rx_mon_ppdu_info *ppdu_info,
+					   struct ath12k_dp_link_peer *peer, u32 uid)
+{
+	struct hal_rx_user_status *user_stats = NULL;
+	bool is_su = true;
+
+	if (!peer || !rx_stats || !ppdu_info)
+		return;
+
+	if (ppdu_info->reception_type != HAL_RX_RECEPTION_TYPE_SU) {
+		user_stats = &ppdu_info->userstats[uid];
+		is_su = false;
+		if (!user_stats)
+			return;
+	}
+
+	ath12k_dp_rx_fill_rate_info(&peer->rxrate, ppdu_info, user_stats, is_su);
+}
+
+void ath12k_dp_mon_rx_update_advance_stats(struct ath12k_rx_peer_stats *rx_stats,
+					   struct hal_rx_mon_ppdu_info *ppdu_info,
+					   u32 num_msdu, u32 uid)
+{
+	struct hal_rx_user_status *user_stats = NULL;
+	u8 preamble_type, mcs, nss, ac, punc_mode, max_mcs, res_mcs, mu_type;
+	u32 byte_count, tid;
+
+	if (!rx_stats || !ppdu_info || uid >= HAL_MAX_UL_MU_USERS)
+		return;
+
+	if (ppdu_info->reception_type != HAL_RX_RECEPTION_TYPE_SU)
+		user_stats = &ppdu_info->userstats[uid];
+
+	preamble_type = user_stats ? user_stats->preamble_type : ppdu_info->preamble_type;
+	mcs = user_stats ? user_stats->mcs : ppdu_info->mcs;
+	nss = user_stats ? user_stats->nss : ppdu_info->nss;
+	byte_count = user_stats ? user_stats->mpdu_ok_byte_count : ppdu_info->mpdu_len;
+	tid = user_stats ? user_stats->tid : ppdu_info->tid;
+	ac = ath12k_tid_to_ac(tid);
+	punc_mode = ppdu_info->punc_bw;
+
+	if (preamble_type >= HAL_RX_PREAMBLE_MAX)
+		return;
+
+	if (tid <= IEEE80211_NUM_TIDS && ac < WME_NUM_AC) {
+		rx_stats->wme_ac_type[ac].total_pkts += num_msdu;
+		rx_stats->wme_ac_type[ac].total_bytes += byte_count;
+	}
+
+	if (punc_mode < MAX_PUNCTURED_MODE)
+		rx_stats->punc_bw[punc_mode] += num_msdu;
+
+	rx_stats->num_bar += ppdu_info->ctrl_frm_info[uid].bar;
+	rx_stats->num_ndpa += ppdu_info->ctrl_frm_info[uid].ndpa;
+
+	max_mcs = max_mcs_by_preamble[preamble_type];
+	res_mcs = (mcs < max_mcs) ? mcs : (MAX_MCS - 1);
+
+	rx_stats->proto_type[preamble_type].mcs_count[res_mcs] += num_msdu;
+
+	if (ppdu_info->reception_type == HAL_RX_RECEPTION_TYPE_SU) {
+		rx_stats->su_ppdu_count[preamble_type].mcs_count[res_mcs] += 1;
+		if (likely(nss) && (nss - 1) < HAL_RX_MAX_NSS)
+			rx_stats->ppdu_nss[nss - 1] += 1;
+	} else {
+		if (!user_stats)
+			return;
+
+		/* Assumes any non-SU and non-MU-MIMO reception is MU-OFDMA.
+		 * Update if new reception types are introduced.
+		 */
+		mu_type = (ppdu_info->reception_type == HAL_RX_RECEPTION_TYPE_MU_MIMO) ?
+			TXRX_TYPE_MU_MIMO : TXRX_TYPE_MU_OFDMA;
+
+		rx_stats->rx_mu[preamble_type][mu_type].mpdu_cnt_fcs_ok +=
+							user_stats->mpdu_cnt_fcs_ok;
+		rx_stats->rx_mu[preamble_type][mu_type].ppdu.mcs_count[res_mcs] += 1;
+		rx_stats->rx_mu[preamble_type][mu_type].mpdu_cnt_fcs_err +=
+							user_stats->mpdu_cnt_fcs_err;
+		if (likely(nss) && (nss - 1) < HAL_RX_MAX_NSS)
+			rx_stats->rx_mu[preamble_type][mu_type].ppdu_nss[nss - 1] += 1;
+	}
+	rx_stats->ppdu_reception[ppdu_info->reception_type] += 1;
+
+	if (mcs < MAX_MCS) {
+		rx_stats->num_mpdu_count[mcs] += 1;
+	} else {
+		rx_stats->num_mpdu_count[MAX_MCS - 1] += 1;
+	}
+}
+
+void ath12k_dp_mon_rx_update_basic_stats(struct ath12k_dp_link_peer *peer,
+					 struct ath12k_rx_peer_stats *rx_stats,
 					 struct hal_rx_mon_ppdu_info *ppdu_info,
 					 u32 num_msdu, u32 uid)
 {
@@ -896,6 +1188,8 @@ void ath12k_dp_mon_rx_update_basic_stats(struct ath12k_rx_peer_stats *rx_stats,
 				       user_stats->mpdu_cnt_fcs_err;
 	}
 	rx_stats->num_ppdu_duration += rx_time_us;
+
+	ath12k_dp_rx_rate_stats_update(rx_stats, ppdu_info, peer, uid);
 }
 
 void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
@@ -1019,7 +1313,13 @@ void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
 	ath12k_dp_mon_rx_update_peer_rate_table_stats(rx_stats, ppdu_info,
 						      NULL, num_msdu);
 
-	ath12k_dp_mon_rx_update_basic_stats(rx_stats, ppdu_info, num_msdu, 0);
+	ath12k_dp_mon_rx_update_basic_stats(peer, rx_stats, ppdu_info, num_msdu, 0);
+	/* Update Advance stats */
+	if (ath12k_dp_stats_enabled(pdev_dp) &&
+	    ath12k_dp_advance_stats_enabled(pdev_dp)) {
+		ath12k_dp_mon_rx_update_advance_stats(rx_stats, ppdu_info, num_msdu, 0);
+		ath12k_dp_rx_update_rate_stats(rx_stats, &peer->rxrate);
+	}
 }
 EXPORT_SYMBOL(ath12k_dp_mon_rx_update_peer_su_stats);
 
@@ -1095,7 +1395,7 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 	peer = ath12k_dp_link_peer_find_by_peerid_index(dp, pdev_dp,
 							user_stats->sw_peer_id);
 	if (!peer) {
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON_RX, "peer with peer id %d can't be found\n",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "peer with peer id %d can't be found\n",
 			   ppdu_info->peer_id);
 		return;
 	}
@@ -1188,7 +1488,13 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 	pdev_stats->telemetry_stats.rx_data_msdu_cnt = rx_stats->num_msdu;
 	pdev_stats->telemetry_stats.total_rx_data_bytes = user_stats->mpdu_ok_byte_count;
 
-	ath12k_dp_mon_rx_update_basic_stats(rx_stats, ppdu_info, num_msdu, uid);
+	ath12k_dp_mon_rx_update_basic_stats(peer, rx_stats, ppdu_info, num_msdu, uid);
+	/* Update Advance stats */
+	if (ath12k_dp_stats_enabled(pdev_dp) &&
+	    ath12k_dp_advance_stats_enabled(pdev_dp)) {
+		ath12k_dp_mon_rx_update_advance_stats(rx_stats, ppdu_info, num_msdu, uid);
+		ath12k_dp_rx_update_rate_stats(rx_stats, &peer->rxrate);
+	}
 }
 
 void
@@ -1230,12 +1536,12 @@ ath12k_dp_mon_ppdu_per_user_rx_time_update(struct ath12k_pdev_dp *dp_pdev,
 
 	peer = ath12k_dp_link_peer_find_by_peerid_index(dp_pdev->dp, dp_pdev,
 							user_stats->sw_peer_id);
-       if (!peer || !peer->sta) {
-               ath12k_dbg(dp_pdev->ar->ab, ATH12K_DBG_PEER,
-                          "peer stats not found on ppdu peer id %d\n",
-                          user_stats->sw_peer_id);
-               return;
-       }
+	if (!peer || !peer->sta) {
+		ath12k_dbg(dp_pdev->ar->ab, ATH12K_DBG_PEER,
+			   "peer stats not found on ppdu peer id %d\n",
+			   user_stats->sw_peer_id);
+		return;
+	}
 
        nss_ru_width_sum = ppdu_info->usr_nss_sum * ppdu_info->usr_ru_tones_sum;
        if (!nss_ru_width_sum)
@@ -1258,6 +1564,104 @@ ath12k_dp_mon_ppdu_per_user_rx_time_update(struct ath12k_pdev_dp *dp_pdev,
                   user_stats->nss, user_stats->ul_ofdma_ru_width,
                   rx_time_us,
                   stats->dp_mon_stats.mon_stats.rx_airtime_consumption[ac].consumption);
+}
+
+#define RSSI_OFFSET 100
+static void
+ath12k_dp_calc_rx_peer_rssi(struct ath12k_pdev_dp *dp_pdev,
+			    struct ath12k_dp_link_peer *link_peer)
+{
+	struct ath12k *ar = dp_pdev->ar;
+	struct ath12k_dp_link_peer_rx_signal_stats *stats;
+	s8 rssi, rssi_dp;
+
+	if (!ar || !link_peer)
+		return;
+
+	stats = &link_peer->signal_stats;
+	rssi = ath12k_dp_get_rssi_value(stats->snr, stats, &ar->rssi_offsets,
+					link_peer, false);
+	stats->rssi = rssi;
+	rssi_dp = ath12k_dp_get_rssi_value(stats->snr_dp, stats,
+					   &ar->rssi_offsets, link_peer, false);
+	stats->rssi_dp = rssi_dp;
+	ewma_avg_rssi_add(&stats->avg_rssi, (stats->rssi + RSSI_OFFSET) << 8);
+	stats->rssi_avg =
+		(ewma_avg_rssi_read(&stats->avg_rssi) >> 8) - RSSI_OFFSET;
+	ewma_avg_rssi_dp_add(&stats->avg_rssi_dp, (stats->rssi_dp + RSSI_OFFSET) << 8);
+	stats->rssi_dp_avg =
+		(ewma_avg_rssi_dp_read(&stats->avg_rssi_dp) >> 8) - RSSI_OFFSET;
+}
+
+static void
+ath12k_dp_mon_link_peer_signal_stats(struct ath12k_pdev_dp *dp_pdev,
+				     struct hal_rx_mon_ppdu_info *ppdu_info,
+				     u32 uid)
+{
+	struct hal_rx_user_status *user_stats = &ppdu_info->userstats[uid];
+	struct ath12k_dp_link_peer *peer;
+	struct ath12k_dp_link_peer_rx_signal_stats *stats = NULL;
+
+	if (!dp_pdev)
+		return;
+
+	lockdep_assert_held(&dp_pdev->dp->dp_lock);
+	rcu_read_lock();
+	peer = ath12k_dp_link_peer_find_by_peerid_index(dp_pdev->dp, dp_pdev,
+							user_stats->sw_peer_id);
+	if (!peer) {
+		ath12k_dbg(dp_pdev->ar->ab, ATH12K_DBG_PEER,
+			   "peer stats not found on ppdu peer id %d\n",
+			   user_stats->sw_peer_id);
+		rcu_read_unlock();
+		return;
+	}
+
+	stats = &peer->signal_stats;
+	stats->snr = ppdu_info->rssi_comb;
+	stats->rssi_region_offset = ppdu_info->rssi_region_offset;
+	ewma_avg_snr_add(&stats->avg_snr, stats->snr);
+	stats->snr_avg = ewma_avg_snr_read(&stats->avg_snr);
+
+	if (likely(ppdu_info->fc_valid)) {
+		switch (ppdu_info->frame_control & 0x00F0) {
+		case IEEE80211_STYPE_DATA:
+		case IEEE80211_STYPE_DATA_CFACK:
+		case IEEE80211_STYPE_DATA_CFPOLL:
+		case IEEE80211_STYPE_DATA_CFACKPOLL:
+		case IEEE80211_STYPE_QOS_DATA:
+		case IEEE80211_STYPE_QOS_DATA_CFACK:
+		case IEEE80211_STYPE_QOS_DATA_CFPOLL:
+		case IEEE80211_STYPE_QOS_DATA_CFACKPOLL:
+			if ((ppdu_info->preamble_type != HAL_RX_PREAMBLE_11A &&
+			     ppdu_info->preamble_type != HAL_RX_PREAMBLE_11B)) {
+				stats->snr_dp = ppdu_info->rssi_comb;
+				ewma_avg_snr_dp_add(&stats->avg_snr_dp, stats->snr_dp);
+				stats->snr_dp_avg =
+					ewma_avg_snr_dp_read(&stats->avg_snr_dp);
+			}
+			break;
+		default:
+			break;
+		}
+	}
+	ath12k_dp_calc_rx_peer_rssi(dp_pdev, peer);
+
+	if (peer->peer_stats.rx_stats &&
+	    IS_VALID_RATE(peer->peer_stats.rx_stats->last_rx_rate) &&
+	    IS_VALID_RSSI(stats->rssi)) {
+		u32 last_rx_rate = peer->peer_stats.rx_stats->last_rx_rate;
+		u8 soc_id = ath12k_get_ab_device_id(dp_pdev->ar->ab);
+
+		ath12k_telemetry_update_rssi_rate_breach(soc_id,
+							 peer->peer_id,
+							 peer->addr,
+							 PATH_TYPE_RX,
+							 stats->rssi,
+							 last_rx_rate);
+	}
+
+	rcu_read_unlock();
 }
 
 static void
@@ -1320,8 +1724,10 @@ void ath12k_dp_mon_ppdu_rssi_update(struct ath12k_pdev_dp *dp_pdev,
 	if (num_users > HAL_MAX_UL_MU_USERS)
 		num_users = HAL_MAX_UL_MU_USERS;
 
-	for (uid = 0; uid < num_users; uid++)
+	for (uid = 0; uid < num_users; uid++) {
 		ath12k_dp_mon_per_user_ppdu_rssi_update(dp_pdev, ppdu_info, uid);
+		ath12k_dp_mon_link_peer_signal_stats(dp_pdev, ppdu_info, uid);
+	}
 }
 EXPORT_SYMBOL(ath12k_dp_mon_ppdu_rssi_update);
 
@@ -1586,12 +1992,17 @@ int ath12k_dp_mon_pdev_alloc(struct ath12k_pdev_dp *dp_pdev)
 	dp_mon_pdev->dp_mon = dp_pdev->dp->dp_mon;
 	dp_pdev->dp_mon_pdev = dp_mon_pdev;
 
+	dp_mon_pdev->smart_mon_filter =
+		ath12k_mac_get_cached_smart_mon_filter(dp_pdev);
+
 	return 0;
 }
 EXPORT_SYMBOL(ath12k_dp_mon_pdev_alloc);
 
 void ath12k_dp_mon_pdev_free(struct ath12k_pdev_dp *dp_pdev)
 {
+	ath12k_mac_cache_smart_mon_filter(dp_pdev,
+					  dp_pdev->dp_mon_pdev->smart_mon_filter);
 	kfree(dp_pdev->dp_mon_pdev);
 	dp_pdev->dp_mon_pdev = NULL;
 }
@@ -1939,7 +2350,7 @@ ath12k_dp_mon_get_skb_valid_frag(struct ath12k_dp *dp, struct sk_buff *skb)
 	if (likely(num_frags < MAX_SKB_FRAGS))
 		return last_skb;
 
-	ath12k_dbg(dp->ab, ATH12K_DBG_DP_MON_RX,
+	ath12k_dbg(dp->ab, ATH12K_DBG_DP_MON,
 		   "no skb with available frag slots found in skb or frag_list\n");
 	return NULL;
 }
@@ -1976,7 +2387,7 @@ void ath12k_dp_mon_skb_remove_frag(struct ath12k_dp *dp, struct sk_buff *skb,
 	if (unlikely(!page))
 		return;
 
-	frag_len = ath12k_wifi7_dp_mon_get_frag_size_by_idx(dp, skb, idx);
+	frag_len = ath12k_dp_mon_get_frag_size_by_idx(dp, skb, idx);
 	put_page(page);
 	skb->len -= frag_len;
 	skb->data_len -= frag_len;
@@ -2062,8 +2473,8 @@ ath12k_dp_mon_cnt_skb_and_frags(struct sk_buff *skb, u32 *skb_count, u32 *frag_c
 }
 EXPORT_SYMBOL(ath12k_dp_mon_cnt_skb_and_frags);
 
-u32 ath12k_wifi7_dp_mon_get_frag_size_by_idx(struct ath12k_dp *dp,
-					     struct sk_buff *skb, u8 idx)
+u32 ath12k_dp_mon_get_frag_size_by_idx(struct ath12k_dp *dp,
+				       struct sk_buff *skb, u8 idx)
 {
 	u32 size = 0;
 
@@ -2072,7 +2483,7 @@ u32 ath12k_wifi7_dp_mon_get_frag_size_by_idx(struct ath12k_dp *dp,
 
 	return size;
 }
-EXPORT_SYMBOL(ath12k_wifi7_dp_mon_get_frag_size_by_idx);
+EXPORT_SYMBOL(ath12k_dp_mon_get_frag_size_by_idx);
 
 int ath12k_dp_mon_get_puncture_type(u16 puncture_pattern, u8 bw)
 {

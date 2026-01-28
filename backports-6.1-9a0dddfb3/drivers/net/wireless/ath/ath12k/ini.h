@@ -89,9 +89,11 @@
 	ATH12K_CFG(ATH12K_CFG_REP_UL_RESP) \
 	ATH12K_CFG(ATH12K_CFG_COHOSTED_BSS_IND_ENABLE) \
 	ATH12K_CFG(ATH12K_CFG_STA_BSS_COLOR_COLLISION_DETECTION) \
+	ATH12K_CFG(ATH12K_CFG_AP_MAX_MGMT_FRM_SZ) \
 
 #define ATH12K_CFG_DP \
 	ATH12K_CFG(ATH12K_CFG_DP_RXDMA_BUF_RING) \
+	ATH12K_CFG(ATH12K_CFG_HTT_LOGGING_ENABLE) \
 
 #define ATH12K_CFG_MAX_DESC \
 	ATH12K_CFG_INI_UINT("max_descs", \
@@ -133,6 +135,10 @@
 	WLAN_ATH12K_CFG_RXDMA_BUF_RING_SIZE, \
 	ATH12K_CFG_VALUE_OR_DEFAULT, "DP RXDMA buffer ring size")
 
+#define ATH12K_CFG_HTT_LOGGING_ENABLE \
+	ATH12K_CFG_INI_BOOL("htt_logging_enable", false, \
+	"Enable HTT interface logging at initialization")
+
 #define ATH12K_CFG_REP_UL_RESP \
 	ATH12K_CFG_INI_UINT("rep_ul_resp", \
 	0, 0xFFFFFFFF, 0, \
@@ -141,6 +147,11 @@
 #define ATH12K_CFG_STA_BSS_COLOR_COLLISION_DETECTION \
 	ATH12K_CFG_INI_BOOL("sta_bss_color_collision_detection", \
 	true, "Enable STA BSS color collision detection")
+
+#define ATH12K_CFG_AP_MAX_MGMT_FRM_SZ \
+	ATH12K_CFG_INI_UINT("ap_max_mgmt_frm_sz", \
+	1500, 2000, 1500, \
+	ATH12K_CFG_VALUE_OR_DEFAULT, "AP max mgmt frame size for beacon and probe resp")
 
 /**
  * enum ath12k_cfg_data_type - Enum for CFG/INI types

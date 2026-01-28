@@ -902,6 +902,7 @@ int ath12k_wow_op_suspend(struct ieee80211_hw *hw,
 		goto cleanup;
 	}
 
+	ath12k_hif_mgmt_irq_disable(ar->ab);
 	ath12k_hif_irq_disable(ar->ab);
 	ath12k_hif_ce_irq_disable(ar->ab);
 
@@ -951,6 +952,7 @@ int ath12k_wow_op_resume(struct ieee80211_hw *hw)
 
 	ath12k_hif_ce_irq_enable(ar->ab);
 	ath12k_hif_irq_enable(ar->ab);
+	ath12k_hif_mgmt_irq_enable(ar->ab);
 
 	ret = ath12k_wow_wakeup(ar);
 	if (ret) {

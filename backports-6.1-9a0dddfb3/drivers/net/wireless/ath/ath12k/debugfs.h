@@ -39,7 +39,7 @@ int ath12k_wsi_bypass_precheck(struct ath12k_base *ab, unsigned int value);
 u32 ath12k_dbg_dump_qos_profile(struct ath12k_base *ab,
 				char *buf, u8 qos_id, u32 size);
 
-#define ATH12K_MAX_NRPS 7
+#define ATH12K_MAX_NRPS 8
 #define MAC_UNIT_LEN 3
 
 struct ath12k_neighbor_peer {
@@ -47,6 +47,7 @@ struct ath12k_neighbor_peer {
 	int vdev_id;
 	u8 addr[ETH_ALEN];
 	u8 rssi;
+	u8 avg_rssi;
 	s64 timestamp;
 	int pdev_id;
 };
@@ -97,6 +98,12 @@ ath12k_dp_debug_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
 	return (dp_pdev->dp_stats_mask & DP_ENABLE_DEBUG_STATS);
 }
 
+static inline bool
+ath12k_dp_advance_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+{
+	return (dp_pdev->dp_stats_mask & DP_ENABLE_ADVANCE_STATS);
+}
+
 static inline u8 ath12k_debugfs_is_qos_stats_enabled(struct ath12k *ar)
 {
 	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
@@ -111,11 +118,16 @@ static inline bool ath12k_tid_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
 	return (dp_pdev->dp_stats_mask & DP_ENABLE_TID_STATS);
 }
 
+static inline bool ath12k_proto_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+{
+	return (dp_pdev->dp_stats_mask & DP_ENABLE_PROTO_STATS);
+}
+
 void ath12k_tid_tx_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason);
 void ath12k_tid_tx_drop_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason);
 void ath12k_tid_rx_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason);
 void ath12k_tid_drop_rx_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason);
-void ath12k_debugfs_nrp_clean(struct ath12k *ar, const u8 *addr);
+void ath12k_debugfs_nrp_clean(struct ath12k *ar, const u8 *addr, int num_nrp);
 void ath12k_debugfs_nrp_cleanup_all(struct ath12k *ar);
 
 void ath12k_debugfs_op_vif_add(struct ieee80211_hw *hw,
@@ -342,7 +354,8 @@ static inline u8 ath12k_debugfs_is_qos_stats_enabled(struct ath12k *ar)
 	return 0;
 }
 
-static inline void ath12k_debugfs_nrp_clean(struct ath12k *ar, const u8 *addr)
+static inline
+void ath12k_debugfs_nrp_clean(struct ath12k *ar, const u8 *addr, int num_nrp)
 {
 }
 

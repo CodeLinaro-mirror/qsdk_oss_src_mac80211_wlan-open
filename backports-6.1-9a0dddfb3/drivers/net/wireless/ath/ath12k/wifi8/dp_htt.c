@@ -96,7 +96,7 @@ static int ath12k_dp_tx_htt_msduq_mpduq_setup(struct ath12k_base *ab,
 		txq_cmd++;
 	}
 
-	ret = ath12k_htc_send(&ab->htc, dp->eid, skb);
+	ret = ath12k_htc_send(&ab->htc, dp->msdu_eid, skb);
 	if (ret) {
 		dev_kfree_skb_any(skb);
 		return ret;
@@ -331,4 +331,26 @@ void ath12k_dp_htt_peer_cleanup_indication(struct ath12k_dp *dp,
 	hw_link_id = le32_get_bits(msg->info, HTT_T2H_GLOBAL_PEER_ID_UNMAP_HW_LINK_ID);
 
 	ath12k_dp_peer_cleanup_indication(dp, peer_id, hw_link_id);
+}
+
+int ath12k_wifi8_dp_msdu_htt_connect(struct ath12k_dp *dp)
+{
+	struct ath12k_htc_svc_conn_resp conn_resp = {0};
+	struct ath12k_htc_svc_conn_req conn_req = {0};
+	int status;
+
+	conn_req.ep_ops.ep_tx_complete = ath12k_dp_htt_htc_tx_complete;
+	conn_req.ep_ops.ep_rx_complete = ath12k_dp_htt_htc_t2h_msg_handler;
+
+	/* connect to control service */
+	conn_req.service_id = ATH12K_HTC_SVC_ID_HTT_DATA4_MSG;
+
+	status = ath12k_htc_connect_service(&dp->ab->htc, &conn_req,
+					    &conn_resp);
+	if (status)
+		return status;
+
+	dp->msdu_eid = conn_resp.eid;
+
+	return 0;
 }

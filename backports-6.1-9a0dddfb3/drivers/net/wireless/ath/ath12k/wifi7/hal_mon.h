@@ -197,6 +197,7 @@ struct hal_mon_usig_hdr {
 } __packed;
 
 #define HAL_RX_PHY_CMN_USER_INFO0_GI		GENMASK(17, 16)
+#define HAL_RX_PHY_CMN_USER_INFO0_PUNC_PAT	GENMASK(15, 0)
 
 struct hal_phyrx_common_user_info {
 	__le32 rsvd0[2];
@@ -290,7 +291,7 @@ struct hal_eht_sig_ofdma_cmn_eb1 {
 #define HAL_RX_EHT_SIG_OFDMA_EB2_RU_ALLOC_2_4		GENMASK_ULL(35, 27)
 #define HAL_RX_EHT_SIG_OFDMA_EB2_RU_ALLOC_2_5		GENMASK_ULL(44, 36)
 #define HAL_RX_EHT_SIG_OFDMA_EB2_RU_ALLOC_2_6		GENMASK_ULL(53, 45)
-#define HAL_RX_EHT_SIG_OFDMA_EB2_MCS			GNEMASK_ULL(57, 54)
+#define HAL_RX_EHT_SIG_OFDMA_EB2_MCS			GENMASK_ULL(57, 54)
 
 struct hal_eht_sig_ofdma_cmn_eb2 {
 	__le64 info0;
@@ -415,9 +416,10 @@ struct hal_rx_he_sig_b2_ofdma_info {
 	__le32 info0;
 } __packed;
 
-#define HAL_RX_PHYRX_RSSI_LEGACY_INFO_INFO0_RECEPTION	GENMASK(3, 0)
-#define HAL_RX_PHYRX_RSSI_LEGACY_INFO_INFO0_RX_BW	GENMASK(7, 5)
-#define HAL_RX_PHYRX_RSSI_LEGACY_INFO_INFO1_RSSI_COMB	GENMASK(15, 8)
+#define HAL_RX_PHYRX_RSSI_LEGACY_INFO_INFO0_RECEPTION		GENMASK(3, 0)
+#define HAL_RX_PHYRX_RSSI_LEGACY_INFO_INFO0_RX_BW		GENMASK(7, 5)
+#define HAL_RX_PHYRX_RSSI_LEGACY_INFO_INFO1_RSSI_COMB		GENMASK(15, 8)
+#define HAL_RX_PHYRX_RSSI_LEGACY_INFO_RSVD5_REGION_OFFSET	GENMASK(16, 9)
 
 struct hal_rx_phyrx_rssi_legacy_info {
 	__le32 info0;
@@ -840,6 +842,11 @@ ath12k_wifi7_hal_mon_parse_rx_msdu_end_err(u32 info, u32 *errmap)
 	if (info & RX_MSDU_END_INFO13_MPDU_LEN_ERR)
 		*errmap |= HAL_RX_MON_MPDU_ERR_MPDU_LEN;
 }
+
+#define HAL_RX_FRAMECTRL_TYPE_MASK	0x0C
+#define HAL_RX_GET_FRAME_CTRL_TYPE(fc)\
+	(((fc) & HAL_RX_FRAMECTRL_TYPE_MASK) >> 2)
+#define HAL_RX_FRAME_CTRL_TYPE_CTRL 0x001
 
 enum hal_rx_mon_status
 ath12k_wifi7_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
