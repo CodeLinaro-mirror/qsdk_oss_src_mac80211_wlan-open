@@ -1319,7 +1319,7 @@ struct ath12k_radio_cfg {
 	u32 rx_override;
 	u32 l1ss_enable;
 	u32 dsleep_enable;
-	u32 rxsop_sens_lvl;
+	s32 rxsop_sens_lvl;
 	u8 dyngroup;
 	u8 dpdenable;
 	u16 burst_dur;
