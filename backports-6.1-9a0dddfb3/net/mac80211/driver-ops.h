@@ -36,7 +36,8 @@ static inline void drv_tx(struct ieee80211_local *local,
 {
 	struct ieee80211_sub_if_data *orig_sdata;
 
-	if (ieee80211_hw_check(&local->hw, VLAN_GROUP_KEY_HW_OFFLOAD)) {
+	if (ieee80211_hw_check(&local->hw, VLAN_GROUP_KEY_HW_OFFLOAD) &&
+			       skb->dev) {
 		orig_sdata = IEEE80211_DEV_TO_SUB_IF(skb->dev);
 		if (orig_sdata->vif.type == NL80211_IFTYPE_AP_VLAN)
 			control->vlan_vif = &orig_sdata->vif;
