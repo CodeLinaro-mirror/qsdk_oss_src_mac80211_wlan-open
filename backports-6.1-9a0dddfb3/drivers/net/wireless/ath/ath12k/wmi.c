@@ -3276,9 +3276,11 @@ static void *ath12k_wmi_peer_assoc_v2_cmd(struct ath12k *ar,
 					  struct ath12k_wmi_peer_assoc_arg *arg,
 					  enum wmi_tlv_cmd_id *cmd_id)
 {
-	if (test_bit(WMI_SERVICE_EXT_TLV_SUPPORT,
+	if (!test_bit(WMI_SERVICE_EXT_TLV_SUPPORT,
 		     ar->ab->wmi_ab.svc_map))
-		*cmd_id = WMI_PEER_ASSOC_V2_CMDID;
+		return ptr;
+
+	*cmd_id = WMI_PEER_ASSOC_V2_CMDID;
 
 	/*
 	 * Fill the tlv here for WMI_PEER_ASSOC_V2_CMDID
@@ -3287,10 +3289,9 @@ static void *ath12k_wmi_peer_assoc_v2_cmd(struct ath12k *ar,
 	if (arg->control_mic_pad > 0) {
 		int len = 0;
 		struct wmi_tlv *tlv;
-		*cmd_id = WMI_PEER_ASSOC_V2_CMDID;
 		struct wmi_peer_assoc_cip_info *cip_info;
 
-		len += TLV_HDR_SIZE + sizeof(*cip_info);
+		len = sizeof(*cip_info);
 		tlv = ptr;
 		tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, len);
 		ptr += TLV_HDR_SIZE;
@@ -3320,6 +3321,7 @@ int ath12k_wmi_send_peer_assoc_cmd(struct ath12k *ar,
 	struct wmi_peer_assoc_msduq_params *msduq_params;
 	struct wmi_peer_assoc_mpduq_params *mpduq_params;
 	struct wmi_peer_assoc_hol_q_params *holq_params;
+	struct wmi_peer_assoc_cip_info *cip_info;
 	enum wmi_tlv_cmd_id cmd_id = WMI_PEER_ASSOC_CMDID;
 	struct sk_buff *skb;
 	struct wmi_tlv *tlv;
@@ -3362,6 +3364,15 @@ int ath12k_wmi_send_peer_assoc_cmd(struct ath12k *ar,
 		len += TLV_HDR_SIZE + sizeof(*holq_params);
 	else
 		len += TLV_HDR_SIZE;
+
+	if (test_bit(WMI_SERVICE_EXT_TLV_SUPPORT, ar->ab->wmi_ab.svc_map)) {
+
+	/* add length for the TLVs which needs to be sent for peer assoc
+	 * v2 command
+	 */
+		if (arg->control_mic_pad)
+			len += TLV_HDR_SIZE + sizeof(*cip_info);
+	}
 
 	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
 	if (!skb)
