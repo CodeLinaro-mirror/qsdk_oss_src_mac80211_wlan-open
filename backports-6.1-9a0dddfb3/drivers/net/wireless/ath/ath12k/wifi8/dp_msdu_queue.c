@@ -112,7 +112,9 @@ struct ath12k_dp_msdu_q_info
 	u8 is_qos = 0;
 	int ret;
 
-	if (msduq_type == MGMT_TID_MSDUQ_TYPE && mgmt_msduq_type >= MGMT_MSDUQ_TYPE_MAX)
+	if (msduq_type >= HTT_TID_MSDUQ_MGMT_LINK_SPECIFIC_0 &&
+	    msduq_type <= HTT_TID_MSDUQ_MGMT_LINK_AGNOSTIC &&
+	    mgmt_msduq_type >= MGMT_MSDUQ_TYPE_MAX)
 		return NULL;
 
 	spin_lock_bh(&dp_hw_grp_wifi8->tx_pool_lock);
