@@ -109,6 +109,17 @@ config ATH12K_MEM_PROFILE_512M
 	  limits the monitor ring and the number of virtual devices
 	  (vdevs).
 
+config ATH12K_MEM_PROFILE_256M
+	bool "ath12k enable 256MB memory profile"
+	depends on ATH12K
+	help
+	  Enables the 256MB memory profile
+
+	  Selecting this option reduces memory allocation to the firmware,
+	  decreases the number of transmit and receive descriptors, and
+	  limits the monitor ring and the number of virtual devices
+	  (vdevs).
+
 endchoice
 
 config ATH12K_CFR
