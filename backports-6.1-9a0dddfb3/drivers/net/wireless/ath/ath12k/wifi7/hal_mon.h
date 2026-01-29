@@ -18,6 +18,14 @@
 	sizeof(struct hal_rx_msdu_end)
 #define HAL_MON_RX_PPDU_EU_STATS_TLV_SIZE	\
 	sizeof(struct hal_rx_ppdu_end_user_stats)
+#define HAL_MON_TX_FES_SETUP_TLV_SIZE		\
+	sizeof(struct hal_tx_mon_fes_setup)
+#define HAL_MON_TX_PEER_ENTRY_TLV_SIZE		\
+	sizeof(struct hal_tx_mon_peer_entry)
+#define HAL_MON_TX_QUEUE_EXT_TLV_SIZE		\
+	sizeof(struct hal_tx_mon_queue_ext)
+#define HAL_MON_TX_MPDU_START_TLV_SIZE		\
+	sizeof(struct hal_tx_mon_mpdu_start)
 
 #define HAL_RX_PPDU_START_INFO0_PPDU_ID			GENMASK(15, 0)
 #define HAL_RX_PPDU_START_INFO1_CHAN_NUM		GENMASK(15, 0)
@@ -502,12 +510,110 @@ struct hal_tx_fes_status_end {
 	__le32 reserved1[19];
 } __packed;
 
-#define HAL_TX_FES_SETUP_INFO0_NUM_OF_USERS	GENMASK(28, 23)
+#define HAL_TX_MON_FES_SETUP_INFO0_NUM_OF_USERS		GENMASK(28, 23)
 
-struct hal_tx_fes_setup {
+struct hal_tx_mon_fes_setup {
 	__le32 schedule_id;
 	__le32 info0;
 	__le64 rsvd0;
+} __packed;
+
+/* The below hal_tx_mon_fes_setup_compact structure is tied with the mask value
+ * HAL_TX_MON_WMASK_FES_SETUP_CFG. If the mask value changes the structure will also
+ * change.
+ * ipq5424/5332, qcn6432/9274 uses common compact structure as they share same
+ * fes setup wmask.
+ */
+
+#define HAL_TX_MON_FES_SETUP_INFO0_NUM_OF_USERS_CMPCT		GENMASK(28, 23)
+
+struct hal_tx_mon_fes_setup_compact {
+	__le32 schedule_id;
+	__le32 info0;
+	__le64 rsvd0;
+} __packed;
+
+#define HAL_TX_MON_PEER_ENTRY_INFO0_MAC_ADR_31_0		GENMASK(31, 0)
+#define HAL_TX_MON_PEER_ENTRY_INFO1_MAC_ADR_47_32		GENMASK(15, 0)
+#define HAL_TX_MON_PEER_ENTRY_INFO1_MAC_ADR_15_0		GENMASK(31, 16)
+#define HAL_TX_MON_PEER_ENTRY_INFO2_MAC_ADR_47_16		GENMASK(31, 0)
+#define HAL_TX_MON_PEER_ENTRY_INFO3_KEY_TYPE			GENMASK(7, 4)
+#define HAL_TX_MON_PEER_ENTRY_INFO4_SW_PEER_ID			GENMASK(31, 16)
+
+struct hal_tx_mon_peer_entry {
+	__le32 info0;
+	__le32 info1;
+	__le32 info2;
+	__le32 info3;
+	__le32 rsvd0[13];
+	__le32 info4;
+} __packed;
+
+/* The below hal_tx_mon_peer_entry_compact structure is tied with the mask value
+ * HAL_TX_MON_WMASK_PEER_ENTRY_CFG. If the mask value changes the structure will also
+ * change.
+ * ipq5424/5332, qcn6432/9274 uses common compact structure as they share same
+ * peer entry wmask.
+ */
+
+#define HAL_TX_MON_PEER_ENTRY_INFO0_MAC_ADR_31_0_CMPCT		GENMASK(31, 0)
+#define HAL_TX_MON_PEER_ENTRY_INFO1_MAC_ADR_47_32_CMPCT		GENMASK(15, 0)
+#define HAL_TX_MON_PEER_ENTRY_INFO1_MAC_ADR_15_0_CMPCT		GENMASK(31, 16)
+#define HAL_TX_MON_PEER_ENTRY_INFO2_MAC_ADR_47_16_CMPCT		GENMASK(31, 0)
+#define HAL_TX_MON_PEER_ENTRY_INFO3_KEY_TYPE_CMPCT		GENMASK(7, 4)
+#define HAL_TX_MON_PEER_ENTRY_INFO4_SW_PEER_ID_CMPCT		GENMASK(31, 16)
+
+struct hal_tx_mon_peer_entry_compact {
+	__le32 info0;
+	__le32 info1;
+	__le32 info2;
+	__le32 info3;
+	__le32 rsvd0;
+	__le32 info4;
+} __packed;
+
+#define HAL_TX_MON_QUEUE_EXT_INFO0_FRAME_CTRL		GENMASK(15, 0)
+
+struct hal_tx_mon_queue_ext {
+	__le32 info0;
+	__le32 rsvd0[13];
+} __packed;
+
+/* The below hal_tx_mon_queue_ext_compact structure is tied with the mask value
+ * HAL_TX_MON_WMASK_QUEUE_EXT_CFG. If the mask value changes the structure will also
+ * change.
+ * ipq5424/5332, qcn6432/9274 uses common compact structure as they share same
+ * queue ext wmask.
+ */
+
+#define HAL_TX_MON_QUEUE_EXT_INFO0_FRAME_CTRL_CMPCT	GENMASK(15, 0)
+
+struct hal_tx_mon_queue_ext_compact {
+	__le32 info0;
+	__le32 rsvd0;
+} __packed;
+
+#define HAL_TX_MON_MPDU_START_INFO0_SEQ			GENMASK(27, 16)
+
+struct hal_tx_mon_mpdu_start {
+	__le32 rsvd0[2];
+	__le32 info0;
+	__le32 rsvd1[7];
+} __packed;
+
+/* The below hal_tx_mon_mpdu_start_compact structure is tied with the mask value
+ * HAL_TX_MON_WMASK_MPDU_START_CFG. If the mask value changes the structure will also
+ * change.
+ * ipq5424/5332, qcn6432/9274 uses common compact structure as they share same
+ * mpdu start wmask.
+ */
+
+#define HAL_TX_MON_MPDU_START_INFO0_SEQ_CMPCT		GENMASK(27, 16)
+
+struct hal_tx_mon_mpdu_start_compact {
+	__le32 rsvd0[2];
+	__le32 info0;
+	__le32 rsvd1;
 } __packed;
 
 #define HAL_TX_MON_RX_RESPONSE_REQUIRED_INFO0_PHY_PPDU_ID		GENMASK(15, 0)
@@ -657,15 +763,6 @@ struct hal_tx_mon_rx_frame_1k_bitmap_ack {
 struct hal_tx_mon_coex_tx_status {
 	__le32 info0;
 	__le32 rsvd[3];
-} __packed;
-
-#define HAL_TX_Q_EXT_INFO0_FRAME_CTRL		GENMASK(15, 0)
-#define HAL_TX_Q_EXT_INFO0_QOS_CTRL		GENMASK(31, 16)
-#define HAL_TX_Q_EXT_INFO1_AMPDU_FLAG		BIT(0)
-
-struct hal_tx_queue_exten {
-	__le32 info0;
-	__le32 info1;
 } __packed;
 
 #define HAL_TX_MON_HE_SIG_A_SU_INFO0_BEAM_CHANGE	BIT(1)
@@ -1107,9 +1204,11 @@ ath12k_wifi7_hal_mon_tx_parse_status_tlv(struct ath12k_hal *hal,
 					 struct hal_tx_mon_status_info *status_info,
 					 u8 *status_frag);
 enum hal_tx_mon_status
-ath12k_wifi7_hal_mon_tx_status_get_num_user(u16 tlv_tag,
+ath12k_wifi7_hal_mon_tx_status_get_num_user(struct ath12k_hal *hal,
+					    u16 tlv_tag,
 					    const void *tx_tlv,
-					    u8 *num_users);
+					    u8 *num_users,
+					    u16 tlv_len);
 u32 ath12k_wifi7_hal_mon_rx_mpdu_start_wmask_get(void);
 u32 ath12k_wifi7_hal_mon_rx_mpdu_end_wmask_get(void);
 u32 ath12k_wifi7_hal_mon_rx_msdu_end_wmask_get(void);
@@ -1128,4 +1227,21 @@ ath12k_wifi7_hal_mon_rx_ppdu_eu_stats_info_parse(const void *tlv_data, u32 useri
 						 u32 tlv_len);
 u8 *ath12k_wifi7_hal_mon_rx_desc_get_msdu_payload(void *rx_desc);
 void ath12k_wifi7_hal_tx_mon_get_wmask_config(struct hal_tx_mon_wmask_config *wmsk);
+void
+ath12k_wifi7_hal_mon_tx_fes_setup_info_parse(const void *tlv_data, u32 userid,
+					     struct hal_tx_mon_ppdu_info *ppdu_info,
+					     u16 tlv_len);
+void
+ath12k_wifi7_hal_mon_tx_peer_entry_info_parse(const void *tlv_data, u32 userid,
+					      struct hal_tx_mon_ppdu_info *ppdu_info,
+					      struct hal_tx_mon_status_info *status_info,
+					      u16 tlv_len);
+void
+ath12k_wifi7_hal_mon_tx_queue_ext_info_parse(const void *tlv_data, u32 userid,
+					     struct hal_tx_mon_ppdu_info *ppdu_info,
+					     u16 tlv_len);
+void
+ath12k_wifi7_hal_mon_tx_mpdu_start_info_parse(const void *tlv_data, u32 userid,
+					      struct hal_tx_mon_ppdu_info *ppdu_info,
+					      u16 tlv_len);
 #endif
