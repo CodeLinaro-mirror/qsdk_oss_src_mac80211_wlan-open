@@ -6898,37 +6898,32 @@ void ath12k_send_fw_hang_cmd(struct ath12k_base *ab,
 		recovery_mode = ATH12K_WMI_DISABLE_FW_RECOVERY;
 		break;
 	}
-	if (ag->mlo_capable) {
-		for (i = 0; i < ag->num_devices; i++) {
-			ab = ag->ab[i];
-			if (ab->is_bypassed)
-				continue;
-			mutex_lock(&ab->core_lock);
-			ab->fw_recovery_support = value;
-			mutex_unlock(&ab->core_lock);
 
-			/*
-			 * TODO: Instead of checking recovery mode addr from
-			 * TLV, need to check WMI caps once the support is
-			 * added from FW.
-			 */
-			if (ab->recovery_mode_address) {
+	for (i = 0; i < ag->num_devices; i++) {
+		ab = ag->ab[i];
+		if (ab->is_bypassed)
+			continue;
+		mutex_lock(&ab->core_lock);
+		ab->fw_recovery_support = value;
+		mutex_unlock(&ab->core_lock);
 
-				if (ath12k_check_erp_power_down(ag) &&
-				    ab->powered_off)
-					continue;
+		/*
+		 * TODO: Instead of checking recovery mode addr from
+		 * TLV, need to check WMI caps once the support is
+		 * added from FW.
+		 */
+		if (ag->mlo_capable && !ab->recovery_mode_address)
+			continue;
 
-				ath12k_debug_multipd_wmi_pdev_set_param(ab, value);
+		if (ath12k_check_erp_power_down(ag) && ab->powered_off)
+			continue;
 
-				ret =
-				ath12k_wmi_force_fw_hang_cmd(ab->pdevs[0].ar,
-							     recovery_mode,
-							     ATH12K_WMI_FW_HANG_DELAY,
-							     false);
-				ath12k_info(ab, "setting FW assert mode [%d] ret [%d]\n",
-					    recovery_mode, ret);
-			}
-		}
+		ath12k_debug_multipd_wmi_pdev_set_param(ab, value);
+
+		ret = ath12k_wmi_force_fw_hang_cmd(ab->pdevs[0].ar, recovery_mode,
+						   ATH12K_WMI_FW_HANG_DELAY, false);
+		ath12k_info(ab, "setting FW assert mode [%d] ret [%d]\n", recovery_mode,
+			    ret);
 	}
 }
 
@@ -6946,6 +6941,13 @@ static ssize_t ath12k_debug_write_fw_recovery(struct file *file,
 	if (value < ATH12K_FW_RECOVERY_DISABLE ||
 	    value > ATH12K_FW_RECOVERY_ENABLE_MODE2) {
 		ath12k_warn(ab, "Please enter: 0 = Disable, 1 = Mode - 0 recovery 2 = Mode - 1 recovery 3 = Mode - 2 recovery\n");
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	if (ab && ab->ag && !ab->ag->mlo_capable &&
+	    value > ATH12K_WMI_FW_HANG_RECOVERY_MODE0) {
+		ath12k_err(ab, "Only mode 0 recovery supports for non-MLO devices\n");
 		ret = -EINVAL;
 		goto exit;
 	}
