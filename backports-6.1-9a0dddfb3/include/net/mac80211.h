@@ -8648,4 +8648,15 @@ int ieee80211_get_link_assoc_status(struct ieee80211_vif *vif, u8 link_id);
  */
 void ieee80211_tx_monitor_offload(struct ieee80211_hw *hw,
 				  struct ieee80211_tx_status *status);
+
+/**
+ * ieee80211_enable_offchan_packet_capture - Enable offchan packet capture
+ *
+ * This function enables offchan packet capyure through monitor interface
+ *
+ * @vif:  vif for which offchan packet capture
+ * @enable: enable/disable offchan packet capture
+ */
+void ieee80211_enable_offchan_packet_capture(struct ieee80211_vif *vif,
+					     bool enable);
 #endif /* MAC80211_H */

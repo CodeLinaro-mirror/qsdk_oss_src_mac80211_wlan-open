@@ -875,6 +875,7 @@ struct ieee80211_if_mesh {
  * @IEEE80211_SDATA_IN_DRIVER: indicates interface was added to driver
  * @IEEE80211_SDATA_DISCONNECT_HW_RESTART: Disconnect after hardware restart
  *  recovery
+ * @IEEE80211_SDATA_OFFCHAN_PACKETS: interface expects offchan monitor packets
  */
 enum ieee80211_sub_if_data_flags {
 	IEEE80211_SDATA_ALLMULTI		= BIT(0),
@@ -882,6 +883,7 @@ enum ieee80211_sub_if_data_flags {
 	IEEE80211_SDATA_DISCONNECT_RESUME	= BIT(4),
 	IEEE80211_SDATA_IN_DRIVER		= BIT(5),
 	IEEE80211_SDATA_DISCONNECT_HW_RESTART	= BIT(6),
+	IEEE80211_SDATA_OFFCHAN_PACKETS		= BIT(7),
 };
 
 /**
@@ -1295,6 +1297,8 @@ struct ieee80211_sub_if_data {
 	struct pcpu_txrx_stats __percpu *txrx_stats;
 	u32 tx_dropped;
 	u32 rx_dropped;
+
+	int chan_hw_idx;
 
 	/* must be last, dynamically sized area in this! */
 	struct ieee80211_vif vif;

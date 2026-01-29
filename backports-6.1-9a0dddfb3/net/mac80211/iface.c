@@ -1883,6 +1883,9 @@ static void ieee80211_setup_sdata(struct ieee80211_sub_if_data *sdata,
 
 	sdata->noack_map = 0;
 
+	sdata->chan_hw_idx = -1;
+	sdata->flags &= ~IEEE80211_SDATA_OFFCHAN_PACKETS;
+
 	/* only monitor/p2p-device differ */
 	if (sdata->dev) {
 		sdata->dev->netdev_ops = &ieee80211_dataif_ops;
@@ -2540,3 +2543,27 @@ void ieee80211_vif_unblock_queues_csa(struct ieee80211_sub_if_data *sdata)
 	ieee80211_wake_vif_queues_norefcount(local, sdata,
 					     IEEE80211_QUEUE_STOP_REASON_CSA);
 }
+
+void ieee80211_enable_offchan_packet_capture(struct ieee80211_vif *vif,
+					     bool enable)
+{
+	struct ieee80211_sub_if_data *sdata = vif_to_sdata(vif);
+	struct ieee80211_local *local = sdata->local;
+	struct cfg80211_chan_def *chandef = &sdata->vif.bss_conf.chanreq.oper;
+	u32 ctr_freq = MHZ_TO_KHZ(chandef->chan->center_freq);
+
+	if (enable) {
+		if (!chandef->chan) {
+			pr_warn("%s: Cannot enable off-channel capture without valid channel\n",
+				sdata->name);
+			return;
+		}
+		sdata->flags |= IEEE80211_SDATA_OFFCHAN_PACKETS;
+		sdata->chan_hw_idx = cfg80211_get_hw_idx_by_freq(local->hw.wiphy,
+								 ctr_freq);
+	} else {
+		sdata->flags &= ~IEEE80211_SDATA_OFFCHAN_PACKETS;
+		sdata->chan_hw_idx = -1;
+	}
+}
+EXPORT_SYMBOL(ieee80211_enable_offchan_packet_capture);
