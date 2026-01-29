@@ -24890,7 +24890,11 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 		if (test_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ar->ab->ag->flags))
 			is_raw_mode = true;
 
-		if (!ar->ab->hw_params->supports_monitor)
+		/* Do not allow monitor interface creation if hardware
+		 * does not support it or if radio is a scan radio
+		 */
+		if (!ar->ab->hw_params->supports_monitor ||
+		    ath12k_scan_radio_supported(ar->pdev))
 			is_monitor_disable = true;
 
 		/* In non-MLO/SLO case ah->num_radio is 1, and ar->mac_addr is
