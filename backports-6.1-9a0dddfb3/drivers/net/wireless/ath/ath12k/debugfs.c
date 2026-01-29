@@ -2385,6 +2385,7 @@ void ath12k_debugfs_nrp_cleanup_all(struct ath12k *ar)
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_neighbor_peer *nrp, *tmp;
+	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
 
 	spin_lock_bh(&dp->dp_lock);
 
@@ -2399,6 +2400,7 @@ void ath12k_debugfs_nrp_cleanup_all(struct ath12k *ar)
 	}
 
 	dp->num_nrps = 0;
+	dp_pdev->num_nrps = 0;
 	spin_unlock_bh(&dp->dp_lock);
 
 	debugfs_remove_recursive(ar->debug.debugfs_nrp);
@@ -2507,6 +2509,7 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 	struct ath12k *ar = file->private_data;
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
 	struct ath12k_neighbor_peer *nrp = NULL, *tmp = NULL;
 	struct ath12k_dp_link_peer *peer = NULL;
 	struct ath12k_link_vif *arvif = NULL;
@@ -2602,7 +2605,7 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 	switch (action) {
 	case WMI_FILTER_NRP_ACTION_ADD:
 		spin_lock_bh(&dp->dp_lock);
-		if (dp->num_nrps >= (ATH12K_MAX_NRPS)) {
+		if (dp_pdev->num_nrps >= (ATH12K_MAX_NRPS)) {
 			spin_unlock_bh(&dp->dp_lock);
 			ath12k_warn(ab, "max nrp reached, cannot create more\n");
 			ret = -ENOMEM;
@@ -2687,7 +2690,7 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 		ether_addr_copy(param->nrp_addr, nrp->addr);
 
 		spin_lock_bh(&dp->dp_lock);
-		num_nrp = dp->num_nrps;
+		num_nrp = dp_pdev->num_nrps;
 		spin_unlock_bh(&dp->dp_lock);
 		if (!num_nrp) {
 			ar->debug.debugfs_nrp = debugfs_create_dir("nrp_rssi",
@@ -2715,7 +2718,7 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 		spin_lock_bh(&dp->dp_lock);
 		list_add_tail(&nrp->list, &dp->neighbor_peers);
 		dp->num_nrps++;
-		num_nrp = dp->num_nrps;
+		dp_pdev->num_nrps++;
 		spin_unlock_bh(&dp->dp_lock);
 
 		debugfs_create_file(fname, 0644,
@@ -2724,7 +2727,7 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 		break;
 	case WMI_FILTER_NRP_ACTION_REMOVE:
 		spin_lock_bh(&dp->dp_lock);
-		if (!dp->num_nrps) {
+		if (!dp_pdev->num_nrps) {
 			spin_unlock_bh(&dp->dp_lock);
 			ath12k_warn(ab,
 				    "nrp list is empty, can't delete this mac: %pM for the pdev_id: %d\n",
@@ -2738,6 +2741,7 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 			    nrp->pdev_id == ar->pdev->pdev_id) {
 				list_del(&nrp->list);
 				dp->num_nrps--;
+				dp_pdev->num_nrps--;
 				del_nrp = true;
 				break;
 			}
@@ -2750,12 +2754,12 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 			ret = -EINVAL;
 			goto err_free;
 		} else {
-			ath12k_debugfs_nrp_clean(ar, mac, dp->num_nrps);
+			spin_lock_bh(&dp->dp_lock);
+			num_nrp = dp_pdev->num_nrps;
+			spin_unlock_bh(&dp->dp_lock);
+			ath12k_debugfs_nrp_clean(ar, mac, num_nrp);
 			param->vdev_id = nrp->vdev_id;
 			ether_addr_copy(param->nrp_addr, nrp->addr);
-			spin_lock_bh(&dp->dp_lock);
-			num_nrp = dp->num_nrps;
-			spin_unlock_bh(&dp->dp_lock);
 			kfree(nrp);
 		}
 		break;

@@ -2212,6 +2212,7 @@ static void ath12k_mac_nrp_delete(struct ath12k *ar)
 	struct ath12k_set_neighbor_rx_params param = {0};
 	struct ath12k_neighbor_peer *nrp = NULL, *tmp = NULL;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ar->ab);
+	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
 	int ret, nrp_pdev_count = 0, overall_status = 0;
 	struct list_head nrp_local_list;
 
@@ -2222,6 +2223,7 @@ static void ath12k_mac_nrp_delete(struct ath12k *ar)
 	list_for_each_entry_safe(nrp, tmp, &dp->neighbor_peers, list) {
 		if (nrp->pdev_id == ar->pdev->pdev_id) {
 			dp->num_nrps--;
+			dp_pdev->num_nrps--;
 			list_del(&nrp->list);
 			list_add_tail(&nrp->list, &nrp_local_list);
 			nrp_pdev_count++;
@@ -2328,7 +2330,7 @@ int ath12k_mac_vdev_stop(struct ath12k_link_vif *arvif)
 
 	if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
 		spin_lock_bh(&dp->dp_lock);
-		num_nrps = dp->num_nrps;
+		num_nrps = dp_pdev->num_nrps;
 		spin_unlock_bh(&dp->dp_lock);
 		if (num_nrps > 0)
 			ath12k_mac_nrp_delete(ar);
