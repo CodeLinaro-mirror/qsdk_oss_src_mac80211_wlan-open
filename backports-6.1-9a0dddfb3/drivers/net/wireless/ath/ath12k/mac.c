@@ -2101,7 +2101,7 @@ static int ath12k_mac_monitor_vdev_delete(struct ath12k *ar)
 int ath12k_mac_monitor_start(struct ath12k *ar)
 {
 	struct ath12k_mac_get_any_chanctx_conf_arg arg;
-	int ret;
+	int ret, cleanup_ret;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -2127,7 +2127,7 @@ int ath12k_mac_monitor_start(struct ath12k *ar)
 	ret = ath12k_dp_mon_rx_update_filter(ar);
 	if (ret) {
 		ath12k_warn(ar->ab, "fail to set monitor filter: %d\n", ret);
-		return ret;
+		goto err_filter;
 	}
 
 	ar->monitor_started = true;
@@ -2135,6 +2135,15 @@ int ath12k_mac_monitor_start(struct ath12k *ar)
 	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L0, "mac monitor started\n");
 
 	return 0;
+
+err_filter:
+	ath12k_dp_mon_rx_config_monitor_mode(ar, true);
+	cleanup_ret = ath12k_mac_monitor_vdev_stop(ar);
+	if (cleanup_ret)
+		ath12k_warn(ar->ab,
+			    "failed to stop monitor vdev after filter failure: %d\n",
+			    cleanup_ret);
+	return ret;
 }
 
 static int ath12k_mac_monitor_stop(struct ath12k *ar)
