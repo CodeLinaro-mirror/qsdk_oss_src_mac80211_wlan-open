@@ -8591,7 +8591,9 @@ static void ath12k_mac_scan_send_complete(struct ath12k *ar,
 	int i;
 
 	lockdep_assert_wiphy(ah->hw->wiphy);
-
+	if (ar->scan.is_roc || ar->scan.scan_id == ATH12K_ROC_SCAN_ID
+	    || ar->scan.roc_freq)
+		return;
 	for_each_ar(ah, partner_ar, i)
 		if (partner_ar != ar &&
 		    partner_ar->scan.state == ATH12K_SCAN_RUNNING &&
