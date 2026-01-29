@@ -2552,7 +2552,8 @@ static void ath12k_wmi_migration_cmd_work(struct work_struct *work)
 		 */
 		ml_peer = rcu_dereference(ah->dp_hw.dp_peer_list[peer_node->ml_peer_id]);
 
-		if (ml_peer) {
+		if (ml_peer &&
+		    ml_peer->dp_peer_state < ATH12K_DP_PEER_LOGICALLY_DELETED) {
 			ahsta = ath12k_sta_to_ahsta(ml_peer->sta);
 			ahsta->is_migration_in_progress = false;
 		}
@@ -14620,7 +14621,8 @@ ath12k_mac_free_link_migr_peer_list(struct ath12k_hw *ah,
 		 */
 		ml_peer = rcu_dereference(ah->dp_hw.dp_peer_list[peer_node->ml_peer_id]);
 
-		if (ml_peer) {
+		if (ml_peer &&
+		    ml_peer->dp_peer_state < ATH12K_DP_PEER_LOGICALLY_DELETED) {
 			ahsta = ath12k_sta_to_ahsta(ml_peer->sta);
 			ahsta->is_migration_in_progress = false;
 		}

@@ -492,6 +492,7 @@ struct ath12k_dp_peer *ath12k_dp_peer_find_by_peerid_index(struct ath12k_dp *dp,
 							   struct ath12k_pdev_dp *dp_pdev,
 							   u16 peer_id)
 {
+	struct ath12k_dp_peer *dp_peer = NULL;
 	u16 index;
 
 	RCU_LOCKDEP_WARN(!rcu_read_lock_held(),
@@ -502,7 +503,12 @@ struct ath12k_dp_peer *ath12k_dp_peer_find_by_peerid_index(struct ath12k_dp *dp,
 
 	index = ath12k_dp_peer_get_peerid_index(dp, peer_id);
 
-	return rcu_dereference(dp_pdev->dp_hw->dp_peer_list[index]);
+	dp_peer = rcu_dereference(dp_pdev->dp_hw->dp_peer_list[index]);
+
+	if (dp_peer && (dp_peer->dp_peer_state < ATH12K_DP_PEER_LOGICALLY_DELETED))
+		return dp_peer;
+
+	return NULL;
 }
 EXPORT_SYMBOL(ath12k_dp_peer_find_by_peerid_index);
 

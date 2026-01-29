@@ -19,6 +19,12 @@
 
 struct ath12k_dp_peer_ext_ctx;
 
+enum ath12k_dp_peer_state {
+	ATH12K_DP_PEER_CREATED,
+	ATH12K_DP_PEER_LOGICALLY_DELETED,
+	ATH12K_DP_PEER_DELETED,
+};
+
 struct ppdu_user_delayba {
 	u16 sw_peer_id;
 	u32 info0;
@@ -140,6 +146,8 @@ struct ath12k_dp_peer {
 	struct list_head list;
 	struct ieee80211_sta *sta;
 	struct net_device *dev;
+	struct rcu_head rcu_head;
+	enum ath12k_dp_peer_state dp_peer_state;
 	u16 tcl_metadata;
 	u16 peer_id;
 	u16 sta_id;
