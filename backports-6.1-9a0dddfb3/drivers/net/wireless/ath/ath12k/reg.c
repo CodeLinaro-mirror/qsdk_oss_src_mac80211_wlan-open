@@ -3656,6 +3656,7 @@ int ath12k_process_expiry_event(struct ath12k *ar)
 		}
 		break;
 	case REG_AFC_EXPIRY_EVENT_SWITCH_TO_LPI:
+	case REG_AFC_EXPIRY_EVENT_STOP_TX:
 		spin_lock_bh(&ar->ah->afc_lock);
 		ret = ath12k_handle_invalid_afc_payload(ar);
 		spin_lock_bh(&ar->data_lock);

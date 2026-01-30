@@ -67,6 +67,7 @@ enum ath12k_afc_event_state {
  * @REG_AFC_EXPIRY_EVENT_START: Start expiry event
  * @REG_AFC_EXPIRY_EVENT_RENEW: Renew expiry event
  * @REG_AFC_EXPIRY_EVENT_SWITCH_TO_LPI: Switch to LPI expiry event
+ * @REG_AFC_EXPIRY_EVENT_STOP_TX: Stop Transmission event
  *
  * Enumeration of different AFC expiry event subtypes.
  */
@@ -74,6 +75,7 @@ enum ath12k_afc_expiry_event_subtype {
 	REG_AFC_EXPIRY_EVENT_START = 1,
 	REG_AFC_EXPIRY_EVENT_RENEW = 2,
 	REG_AFC_EXPIRY_EVENT_SWITCH_TO_LPI = 3,
+	REG_AFC_EXPIRY_EVENT_STOP_TX = 4,
 };
 
 enum ath12k_afc_power_event_status_code {
