@@ -771,9 +771,8 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 int ath12k_peer_dp_cp_link_peer_delete(struct ath12k_link_vif *arvif,
 				       struct ath12k_sta *ahsta, u8 link_id,
 				       bool peer_del_all, int link_going_down,
-				       u8 *addr)
+				       u8 *addr, u32 mlo_hw_link_id_bitmap)
 {
-	u32 mlo_hw_link_id_bitmap = 0;
 	struct ath12k *ar;
 	int ret;
 
@@ -781,9 +780,6 @@ int ath12k_peer_dp_cp_link_peer_delete(struct ath12k_link_vif *arvif,
 		return 0;
 
 	ar = arvif->ar;
-
-	if (ahsta)
-		mlo_hw_link_id_bitmap = ahsta->mlo_hw_link_id_bitmap;
 
 	ath12k_dp_peer_cleanup(ar, arvif->vdev_id, addr);
 	ath12k_dp_cp_link_peer_unassign(ar, arvif, ahsta, link_id, addr);
@@ -829,6 +825,7 @@ int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif,
 	unsigned long links;
 	struct ath12k *ar;
 	int ret, err_ret = 0, primary_link_id;
+	u32 mlo_hw_link_id_bitmap;
 	u8 link_id;
 
 	lockdep_assert_wiphy(ah->hw->wiphy);
@@ -841,6 +838,7 @@ int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif,
 	 */
 	links = ahsta->links_map;
 	primary_link_id = ahsta->primary_link_id;
+	mlo_hw_link_id_bitmap = ahsta->mlo_hw_link_id_bitmap;
 	for_each_set_bit(link_id, &links, ATH12K_NUM_MAX_LINKS) {
 		arvif = wiphy_dereference(ah->hw->wiphy, ahvif->link[link_id]);
 		arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
@@ -852,7 +850,8 @@ int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif,
 		memcpy(link_addr[link_id], arsta->addr, ETH_ALEN);
 		ret = ath12k_peer_dp_cp_link_peer_delete(arvif, ahsta, link_id,
 							 peer_del_all, link_going_down,
-							 link_addr[link_id]);
+							 link_addr[link_id],
+							 mlo_hw_link_id_bitmap);
 		if (ret)
 			err_ret = ret;
 

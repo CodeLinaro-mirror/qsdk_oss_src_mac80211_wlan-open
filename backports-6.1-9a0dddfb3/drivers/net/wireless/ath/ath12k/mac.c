@@ -14176,13 +14176,15 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 
 				if (sta->mlo) {
 					char link_addr[ETH_ALEN];
+					u32 hw_link_bmap = ahsta->mlo_hw_link_id_bitmap;
 
 					memcpy(link_addr, arsta->addr, ETH_ALEN);
 					result =
 					ath12k_peer_dp_cp_link_peer_delete(arvif, ahsta,
 									   link_id,
 									   false, 0,
-									   link_addr);
+									   link_addr,
+									   hw_link_bmap);
 					if (result)
 						ath12k_warn(ar->ab, "ml arsta %pM remove failed\n",
 							    link_addr);
@@ -14290,12 +14292,14 @@ skip_pri_link_selection:
 
 			if (sta->mlo) {
 				char link_addr[ETH_ALEN];
+				u32 hw_link_bmap = ahsta->mlo_hw_link_id_bitmap;
 
 				memcpy(link_addr, arsta->addr, ETH_ALEN);
 				ret = ath12k_peer_dp_cp_link_peer_delete(arvif, ahsta,
 									 link_id,
 									 false, 0,
-									 link_addr);
+									 link_addr,
+									 hw_link_bmap);
 				if (ret)
 					ath12k_warn(ar->ab, "Failed to remove ml station: %pM for VDEV: %d\n",
 						    link_addr, arvif->vdev_id);

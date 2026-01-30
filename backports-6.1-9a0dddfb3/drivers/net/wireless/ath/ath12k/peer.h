@@ -70,7 +70,7 @@ void ath12k_mac_peer_disassoc(struct ath12k_base *ab, struct ieee80211_sta *sta,
 int ath12k_peer_dp_cp_link_peer_delete(struct ath12k_link_vif *arvif,
 				       struct ath12k_sta *ahsta, u8 link_id,
 				       bool peer_del_all, int link_going_down,
-				       u8 *addr);
+				       u8 *addr, u32 mlo_hw_link_id_bitmap);
 
 /* Peer deletion tracking functions */
 int ath12k_peer_del_tracker_init(struct ath12k_pdev *pdev);
