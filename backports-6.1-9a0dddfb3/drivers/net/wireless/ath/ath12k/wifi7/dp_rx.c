@@ -1750,6 +1750,11 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 			}
 		}
 
+		if (unlikely(desc_info->magic != ATH12K_DP_RX_DESC_MAGIC)) {
+			ath12k_warn(ab, "Check HW CC implementation");
+			BUG_ON(1);
+		}
+
 		num_buffs_reaped[device_id]++;
 
 		dp->device_stats.reo_rx[ring_id][dp->device_id]++;
@@ -1759,9 +1764,6 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 		mpdu_info->flow_info.peer_id =
 			ath12k_wifi7_dp_rx_get_peer_id(ab, dp->peer_metadata_ver,
 						       mpdu_info->peer_meta_data);
-
-		if (unlikely(desc_info->magic != ATH12K_DP_RX_DESC_MAGIC))
-			ath12k_warn(ab, "Check HW CC implementation");
 
 		mpdu_info->fragment_flag = desc_info->is_frag;
 		desc_info->is_frag = 0;
@@ -2425,8 +2427,10 @@ ath12k_wifi7_dp_process_rx_err_buf(struct ath12k_pdev_dp *dp_pdev,
 		}
 	}
 
-	if (desc_info->magic != ATH12K_DP_RX_DESC_MAGIC)
+	if (desc_info->magic != ATH12K_DP_RX_DESC_MAGIC) {
 		ath12k_warn(ab, " RX Exception, Check HW CC implementation");
+		BUG_ON(1);
+	}
 
 	msdu = desc_info->skb;
 	desc_info->skb = NULL;
@@ -2530,7 +2534,7 @@ static int ath12k_wifi7_handle_msdu_buftype(struct ath12k_dp *dp,
 
 	if (desc_info->magic != ATH12K_DP_RX_DESC_MAGIC) {
 		ath12k_warn(dp, " rx exception, magic check failed");
-		return -EINVAL;
+		BUG_ON(1);
 	}
 
 	msdu = desc_info->skb;
@@ -3390,8 +3394,10 @@ int ath12k_wifi7_dp_rx_process_wbm_err(struct ath12k_dp *dp,
 			}
 		}
 
-		if (desc_info->magic != ATH12K_DP_RX_DESC_MAGIC)
+		if (desc_info->magic != ATH12K_DP_RX_DESC_MAGIC) {
 			ath12k_warn(ab, "WBM RX err, Check HW CC implementation");
+			BUG_ON(1);
+		}
 
 		msdu = desc_info->skb;
 		desc_info->skb = NULL;
