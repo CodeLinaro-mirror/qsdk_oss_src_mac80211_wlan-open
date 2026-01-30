@@ -596,6 +596,7 @@ void ath12k_dp_mon_tx_htt_srng_cleanup(struct ath12k_dp *dp);
 int ath12k_dp_mon_tx_htt_dst_ring_setup(struct ath12k_pdev_dp *dp_pdev, u32 mac_id);
 int ath12k_dp_mon_tx_config_filter(struct ath12k_pdev_dp *dp_pdev, bool enable);
 int ath12k_dp_mon_tx_monitor_start_stop(struct ath12k *ar, bool state);
+int ath12k_dp_mon_tx_set_monitor_flags(struct ath12k *ar, u32 new_flags, u32 *cur_flags);
 
 static inline
 int ath12k_dp_mon_rx_alloc(struct ath12k_dp *dp)

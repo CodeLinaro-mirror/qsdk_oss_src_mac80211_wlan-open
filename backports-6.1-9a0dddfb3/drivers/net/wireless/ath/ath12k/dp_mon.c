@@ -2881,6 +2881,7 @@ void ath12k_dp_mon_tx_process_low_thres(struct ath12k_dp *dp)
 	if (num_free < (tx_buff_ring->bufs_max / 2)) {
 		ath12k_hal_srng_access_end(ab, srng);
 		spin_unlock_bh(&srng->lock);
+		spin_unlock_bh(&dp_mon->tx_mon_desc_lock);
 		return;
 	}
 
@@ -3130,13 +3131,23 @@ int ath12k_dp_mon_tx_monitor_start_stop(struct ath12k *ar, bool state)
 	int ret = -EOPNOTSUPP;
 	struct ath12k_pdev_mon_dp *dp_mon_pdev;
 
-	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
-
 	dp_mon_pdev = ar->dp.dp_mon_pdev;
 	if (!dp_mon_pdev) {
 		ath12k_warn(ar->ab, "Tx Monitor: Invalid Pdev (%d)\n",
 			    ret);
 		return ret;
+	}
+
+	if (state && dp_mon_pdev->tx_monitor_started) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_DP_MON,
+			   "Tx mon already active on requested interface\n");
+		return 0;
+	}
+
+	if (!state && !dp_mon_pdev->tx_monitor_started) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_DP_MON,
+			   "Not running Tx mon on requested interface\n");
+		return 0;
 	}
 
 	ret = ath12k_dp_mon_tx_config_monitor_mode(ar, state);
@@ -3151,9 +3162,50 @@ int ath12k_dp_mon_tx_monitor_start_stop(struct ath12k *ar, bool state)
 		ath12k_warn(ar->ab, "Tx Monitor: fail tx monitor filter update ret %d\n",
 			    ret);
 		/* always set tx mon mode as false in case of failure*/
-		ath12k_dp_mon_tx_config_monitor_mode(ar, false);
+		if (ath12k_dp_mon_tx_config_monitor_mode(ar, false)) {
+			ath12k_err(ar->ab,
+				   "Tx Mon: Config failure potential state mismatch\n");
+			return ret;
+		}
+		dp_mon_pdev->tx_monitor_started = false;
 		return ret;
 	}
 	dp_mon_pdev->tx_monitor_started = state;
+	return ret;
+}
+
+int ath12k_dp_mon_tx_set_monitor_flags(struct ath12k *ar, u32 new_flags, u32 *cur_flags)
+{
+	bool tx_mon_state_change;
+	bool req_state;
+	int ret = -EINVAL;
+	struct ath12k_pdev_mon_dp *dp_mon_pdev;
+
+	dp_mon_pdev = ar->dp.dp_mon_pdev;
+	if (!dp_mon_pdev) {
+		ath12k_warn(ar->ab, "Tx Monitor: Invalid Pdev (%d)\n", ret);
+		return ret;
+	}
+
+	tx_mon_state_change = (*cur_flags & MONITOR_FLAG_SKIP_TX) !=
+						  (new_flags & MONITOR_FLAG_SKIP_TX);
+	if (!tx_mon_state_change) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_DP_MON, "Tx Mon: State Unchanged :%d\n",
+			   dp_mon_pdev->tx_monitor_started);
+		return 0; /*requested flag is already set, return success*/
+	}
+
+	req_state = !(new_flags & MONITOR_FLAG_SKIP_TX);
+	ret = ath12k_dp_mon_tx_monitor_start_stop(ar, req_state);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "Tx Monitor: Attempted %d state change failed(%d)\n",
+			    req_state, ret);
+		return ret;
+	}
+	*cur_flags &= ~MONITOR_FLAG_SKIP_TX; // Clear Flag
+	*cur_flags |= new_flags & MONITOR_FLAG_SKIP_TX;
+	ath12k_dbg(ar->ab, ATH12K_DBG_DP_MON, "State :%d attempt status %d\n",
+		   dp_mon_pdev->tx_monitor_started, ret);
 	return ret;
 }

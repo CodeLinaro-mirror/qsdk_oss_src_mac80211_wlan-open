@@ -510,7 +510,8 @@ int ath12k_mac_pdev_suspend(struct ath12k *ar);
 int ath12k_mac_set_eht_txbf_conf(struct ath12k_link_vif *arvif);
 int ath12k_mac_set_he_txbf_conf(struct ath12k_link_vif *arvif);
 int ath12k_mac_pdev_resume(struct ath12k *ar);
-
+int ath12k_mac_op_set_monitor_flags(struct ieee80211_hw *hw,
+				    struct ieee80211_vif *vif, u32 flags);
 /* In the bitmap 0 indicates no puncturing and 1 indicated that sub channel is
  * punctured
  */
