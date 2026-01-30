@@ -397,7 +397,10 @@ ath12k_wmi_get_host_chan_width(u32 width)
 	return host_width;
 }
 
-static int
+#ifndef CPTCFG_QCN_EXTN
+static
+#endif
+int
 ath12k_wmi_tlv_iter(struct ath12k_base *ab, const void *ptr, size_t len,
 		    int (*iter)(struct ath12k_base *ab, u16 tag, u16 len,
 				const void *ptr, void *data),
@@ -12358,9 +12361,12 @@ static int ath12k_wmi_dcs_intf_subtlv_parser(struct ath12k_base *ab,
 	return ret;
 }
 
-static int ath12k_wmi_dcs_event_parser(struct ath12k_base *ab,
-				       u16 tag, u16 len,
-				       const void *ptr, void *data)
+#ifndef CPTCFG_QCN_EXTN
+static
+#endif
+int ath12k_wmi_dcs_event_parser(struct ath12k_base *ab,
+				u16 tag, u16 len,
+				const void *ptr, void *data)
 {
 	int ret = 0;
 
@@ -12871,6 +12877,7 @@ ath12k_wmi_dcs_interference_event(struct ath12k_base *ab,
 
 	switch (interference_type) {
 	case WMI_DCS_CW_INTF:
+		ath12k_wmi_dcs_cw_interference_event_extn(ab, skb, pdev_id);
 		break;
 	case WMI_DCS_WLAN_INTF:
 		break;

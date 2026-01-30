@@ -9881,6 +9881,10 @@ static const struct nl80211_vendor_cmd_info ath12k_vendor_events[] = {
 		.vendor_id = QCA_NL80211_VENDOR_ID,
 		.subcmd = QCA_NL80211_VENDOR_SUBCMD_WLAN_HOME_OFFCHAN_TX_RX,
 	},
+	[QCA_NL80211_VENDOR_SUBCMD_DCS_INTERFERENCE_COMPUTE_INDEX] = {
+		.vendor_id = QCA_NL80211_VENDOR_ID,
+		.subcmd = QCA_NL80211_VENDOR_SUBCMD_DCS_CONFIG,
+	},
 };
 
 int ath12k_vendor_register(struct ath12k_hw *ah)
