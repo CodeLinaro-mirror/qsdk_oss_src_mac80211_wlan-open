@@ -1574,16 +1574,16 @@ static u16 ath12k_wifi8_dp_rx_get_peer_id(struct ath12k_base *ab,
 		fallthrough;
 	case ATH12K_PEER_METADATA_V0:
 		return le32_get_bits(peer_metadata,
-				     RX_MPDU_DESC_META_DATA_V0_PEER_ID);
+				     RX_MPDU_DESC_META_DATA_V0_PEER_ID_WIFI8);
 	case ATH12K_PEER_METADATA_V1:
 		return le32_get_bits(peer_metadata,
-				     RX_MPDU_DESC_META_DATA_V1_PEER_ID);
+				     RX_MPDU_DESC_META_DATA_V1_PEER_ID_WIFI8);
 	case ATH12K_PEER_METADATA_V1A:
 		return le32_get_bits(peer_metadata,
-				     RX_MPDU_DESC_META_DATA_V1A_PEER_ID);
+				     RX_MPDU_DESC_META_DATA_V1A_PEER_ID_WIFI8);
 	case ATH12K_PEER_METADATA_V1B:
 		return le32_get_bits(peer_metadata,
-				     RX_MPDU_DESC_META_DATA_V1B_PEER_ID);
+				     RX_MPDU_DESC_META_DATA_V1B_PEER_ID_WIFI8);
 	}
 }
 
@@ -2359,7 +2359,7 @@ ath12k_wifi8_dp_process_rx_err_buf(struct ath12k_pdev_dp *dp_pdev,
 	desc_info->skb = NULL;
 	rxcb = ATH12K_SKB_RXCB(msdu);
 	rxcb->peer_id = le32_get_bits(desc->rx_mpdu_info.peer_meta_data,
-				      RX_MPDU_DESC_META_DATA_V1_PEER_ID);
+				      RX_MPDU_DESC_META_DATA_V1_PEER_ID_WIFI8);
 
 	list_add_tail(&desc_info->list, used_list);
 
