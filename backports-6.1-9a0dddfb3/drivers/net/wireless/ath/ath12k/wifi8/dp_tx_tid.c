@@ -78,7 +78,7 @@ int ath12k_tx_send_mpduq_init(struct ath12k_dp_hw_group *dp_hw_grp,
 	ti.encap_type = dp_vif->tx_encap_type;
 	//TBD: ti.wapi
 	ti.assoc_link_id = ATH12K_INVALID_LINK_ID;
-	ti.link_id1 = ATH12K_INVALID_LINK_ID;
+	ti.link_id1 = ATH12K_INVALID_LINK_ID - 1;
 	ti.link_id2 = ATH12K_INVALID_LINK_ID;
 	if (peer->sta) {
 		rcu_read_lock();
@@ -92,7 +92,7 @@ int ath12k_tx_send_mpduq_init(struct ath12k_dp_hw_group *dp_hw_grp,
 			hw_link_id = link_peer->hw_link_id;
 			if (hw_link_id == ti.assoc_link_id)
 				continue;
-			if (ti.link_id1 == ATH12K_INVALID_LINK_ID) {
+			if (ti.link_id1 == (ATH12K_INVALID_LINK_ID - 1)) {
 				ti.link_id1 = hw_link_id;
 				continue;
 			}

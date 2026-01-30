@@ -19,6 +19,16 @@ extern const struct ath12k_hw_hal_params ath12k_wifi8_hw_hal_params_qcn9625;
 
 extern const struct ath12k_hw_version_map ath12k_wifi8_hw_ver_map[];
 
+/* Peer Metadata classification */
+/* Version 0 */
+#define RX_MPDU_DESC_META_DATA_V0_PEER_ID_WIFI8		GENMASK(11, 0)
+/* Version 1 */
+#define RX_MPDU_DESC_META_DATA_V1_PEER_ID_WIFI8		GENMASK(11, 0)
+/* Version 1A */
+#define RX_MPDU_DESC_META_DATA_V1A_PEER_ID_WIFI8	GENMASK(11, 0)
+/* Version 1B */
+#define RX_MPDU_DESC_META_DATA_V1B_PEER_ID_WIFI8	GENMASK(11, 0)
+
 #define PCIE_WINDOW_REG_ADDRESS			0x3278
 #define WINDOW_VALUE_MASK			GENMASK(25, 19)
 #define WINDOW_STATIC_MASK			GENMASK(31, 7)
