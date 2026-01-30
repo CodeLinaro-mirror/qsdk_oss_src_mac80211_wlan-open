@@ -2430,6 +2430,8 @@ void ath12k_dp_mon_pdev_rx_attach(struct ath12k_pdev_dp *dp_pdev)
 	spin_lock_init(&pmon->mon_lock);
 
 	mon_ops = ath12k_dp_mon_ops_get(dp_pdev->dp);
+	if (mon_ops && mon_ops->setup_mon_link_desc)
+		mon_ops->setup_mon_link_desc(dp_pdev);
 
 	if (mon_ops && mon_ops->mon_pdev_rx_mpdu_list_init)
 		mon_ops->mon_pdev_rx_mpdu_list_init(pmon);

@@ -455,6 +455,13 @@ ath12k_dp_mon_rx_config_filters(struct ath12k_dp *dp,
 			mac_id = i;
 			ring_buf_size = DP_RXDMA_REFILL_RING_SIZE;
 			break;
+		case DP_MON_FILTER_SRNG_TYPE_RXDMA_MON_BUF:
+			ring_id =
+			dp_mon->rxdma_mon_buf_ring.refill_buf_ring.ring_id;
+			ring_type = HAL_RXDMA_MONITOR_BUF;
+			mac_id = i;
+			ring_buf_size = DP_RXDMA_REFILL_RING_SIZE;
+			break;
 		case DP_MON_FILTER_SRNG_TYPE_RXDMA_MONITOR_STATUS:
 			ring_id =
 			dp_mon->rx_mon_status_refill_ring[i].refill_buf_ring.ring_id;
