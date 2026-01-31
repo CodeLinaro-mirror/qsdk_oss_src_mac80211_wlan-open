@@ -466,7 +466,7 @@ enum ath12k_dbg_htt_ext_stats_type {
 	ATH12K_DBG_HTT_DBG_EXT_STATS_OPTIONAL_CONFIGS		= 77,
 	ATH12K_DBG_HTT_DBG_EXT_STATS_FTM			= 79,
 	ATH12K_DBG_HTT_DBG_EXT_STATS_FTM_TPCCAL_EXT		= 80,
-
+	ATH12K_DBG_HTT_STATS_REGULATORY				= 83,
 	/* keep this last */
 	ATH12K_DBG_HTT_NUM_EXT_STATS,
 };
@@ -523,7 +523,7 @@ enum ath12k_dbg_htt_tlv_tag {
 	HTT_STATS_TX_SELFGEN_AX_STATS_TAG		= 49,
 	HTT_STATS_TX_SELFGEN_AX_ERR_STATS_TAG		= 50,
 	HTT_STATS_TX_HWQ_MUMIMO_SCH_STATS_TAG		= 51,
-	HTT_STATS_TX_HWQ_MUMIMO_MPDU_STATS_TAG 		= 52,
+	HTT_STATS_TX_HWQ_MUMIMO_MPDU_STATS_TAG		= 52,
 	HTT_STATS_TX_HWQ_MUMIMO_CMN_STATS_TAG		= 53,
 	HTT_STATS_HW_INTR_MISC_TAG			= 54,
 	HTT_STATS_HW_WD_TIMEOUT_TAG			= 55,
@@ -679,7 +679,12 @@ enum ath12k_dbg_htt_tlv_tag {
 	HTT_STATS_OPTIONAL_CONFIGS_STATS_TAG		= 232,
 	HTT_STATS_FTM_TAG				= 234,
 	HTT_STATS_PDEV_FTM_TPCCAL_EXT_TAG		= 235,
-	HTT_STATS_TX_PDEV_BN_RATE_TAG                   = 236,
+	HTT_STATS_TX_PDEV_BN_RATE_TAG			= 236,
+	HTT_STATS_REGDB_CTRY_TAG			= 247,
+	HTT_STATS_REGDB_REGDOMAIN_TAG			= 248,
+	HTT_STATS_REG_6G_TAG				= 249,
+	HTT_STATS_REG_6G_CH_PWR_INFO_TAG		= 250,
+	HTT_STATS_REG_6G_OOBE_TAG			= 251,
 	HTT_STATS_MAX_TAG,
 };
 
@@ -5981,4 +5986,123 @@ enum HTT_RX_TX_PDEV_STATS_WIFI_VERSION {
 	HTT_WIFI_VER_11BE = 7,
 	HTT_WIFI_VER_11BN = 8,
 };
+
+/******************** Regulatory Stats *********************/
+struct ath12k_htt_stats_regdb_ctry_tlv {
+	union {
+		struct {
+			__le32 major_version : 8,
+			       minor_version : 8,
+			       custom_version: 8,
+			       rsvd          : 8;
+		};
+		__le32 regdb_version;
+	};
+	__le32 country_code;
+	__le32 alpha_code;	/* [7:0] = alpha[0], [15:8] = alpha[1], ...*/
+	__le32 reg_domain_pair_id;
+	__le32 super_domain_id;
+	__le32 phymode_bitmap;
+	__le32 chan_priority_freq; /* in MHz */
+	__le32 tpc_region;
+	__le32 max_bw_2g;	/* in MHz */
+	__le32 max_bw_5g;	/*in MHz */
+	__le32 max_bw_6g;	/*in MHz */
+};
+
+#define ATH12K_HTT_STATS_REGDB_MAJ_VERSION	GENMASK(7, 0)
+#define ATH12K_HTT_STATS_REGDB_MIN_VERSION	GENMASK(15, 8)
+#define ATH12K_HTT_STATS_REGDB_CUSTOM_VERSION	GENMASK(23, 16)
+#define ATH12K_HTT_STATS_REGDB_ALPHA_CODE_0	GENMASK(7, 0)
+#define ATH12K_HTT_STATS_REGDB_ALPHA_CODE_1	GENMASK(15, 8)
+#define ATH12K_HTT_STATS_REGDB_ALPHA_CODE_2	GENMASK(23, 16)
+#define ATH12K_HTT_STATS_REGDB_ALPHA_CODE_3	GENMASK(31, 24)
+
+struct ath12k_htt_stats_regdb_reg_rule {
+	union {
+		struct {
+			__le32 start_freq : 16,	/* in MHz */
+			       end_freq   : 16;	/* in MHz */
+		};
+		__le32 freq_info;
+	};
+	union {
+		struct {
+			__le32 max_bw     : 16,	/* in MHz */
+			       reg_power  : 8,	/* in dBm */
+			       ant_gain   : 8;	/* in dB */
+		};
+		__le32 bw_pwr_info;
+	};
+	union {
+		struct {
+			__le32 flags      : 16,
+			       ctl_region : 8,
+			       rsvd       : 8;
+		};
+		__le32 flag_info;
+	};
+	union {
+		struct {
+			__le32 is_psd     : 1,
+			       rsvd1      : 15,
+			       psd_power  : 16;	/* dBm / MHz  (signed)*/
+		};
+		__le32 psd_power_info;
+	};
+};
+
+#define ATH12K_HTT_STATS_REG_RULE_START_FREQ	GENMASK(15, 0)
+#define ATH12K_HTT_STATS_REG_RULE_END_FREQ	GENMASK(31, 16)
+#define ATH12K_HTT_STATS_REG_RULE_MAX_BW	GENMASK(15, 0)
+#define ATH12K_HTT_STATS_REG_RULE_REG_PWR	GENMASK(23, 16)
+#define ATH12K_HTT_STATS_REG_RULE_ANT_GAIN	GENMASK(31, 24)
+#define ATH12K_HTT_STATS_REG_RULE_FLAGS		GENMASK(15, 0)
+#define ATH12K_HTT_STATS_REG_RULE_CTL_RGN	GENMASK(23, 16)
+#define ATH12K_HTT_STATS_REG_RULE_IS_PSD	BIT(0)
+#define ATH12K_HTT_STATS_REG_RULE_PSD_PWR	GENMASK(31, 16)
+
+enum ath12k_htt_stats_regdb_regdomain_type {
+	ATH12K_HTT_STATS_REGULATORY_REG_DMN_2G             = 0,
+	ATH12K_HTT_STATS_REGULATORY_REG_DMN_5G             = 1,
+	/* 2 is unused */
+	ATH12K_HTT_STATS_REGULATORY_REG_DMN_6G_AP_LPI      = 3,
+	ATH12K_HTT_STATS_REGULATORY_REG_DMN_6G_AP_SP       = 4,
+	ATH12K_HTT_STATS_REGULATORY_REG_DMN_6G_AP_VLP      = 5,
+	ATH12K_HTT_STATS_REGULATORY_REG_DMN_6G_CL1_LPI     = 6,
+	ATH12K_HTT_STATS_REGULATORY_REG_DMN_6G_CL1_SP      = 7,
+	ATH12K_HTT_STATS_REGULATORY_REG_DMN_6G_CL1_VLP     = 8,
+	ATH12K_HTT_STATS_REGULATORY_REG_DMN_6G_CL2_LPI     = 9,
+	ATH12K_HTT_STATS_REGULATORY_REG_DMN_6G_CL2_SP      = 10,
+	ATH12K_HTT_STATS_REGULATORY_REG_DMN_6G_CL2_VLP     = 11,
+};
+
+struct ath12k_htt_stats_regdb_regdomain_tlv {
+	__le32 rd_type;	/*enum ath12k_htt_stats_regdb_regdomain_type*/
+	union {
+		struct {
+			__le32 ctl_region : 8,
+			    cca_region : 8,
+			    dfs_region : 8,
+			    rsvd       : 8;
+		};
+		__le32 ctl_cca_dfs;
+	};
+	__le32 rd_code;
+	__le32 reserved;
+	union {
+		struct {
+			__le32 num_rules : 16,
+			       rule_size : 16;
+		};
+		__le32 rule_num_and_size;
+	};
+	struct ath12k_htt_stats_regdb_reg_rule rules[];
+};
+
+#define ATH12K_HTT_STATS_REGDOMAIN_CTL_REGION	GENMASK(7, 0)
+#define ATH12K_HTT_STATS_REGDOMAIN_CCA_REGION	GENMASK(15, 8)
+#define ATH12K_HTT_STATS_REGDOMAIN_DFS_REGION	GENMASK(23, 16)
+#define ATH12K_HTT_STATS_REGDOMAIN_NUM_RULES	GENMASK(15, 0)
+#define ATH12K_HTT_STATS_REGDOMAIN_RULE_SIZE	GENMASK(31, 16)
 #endif
