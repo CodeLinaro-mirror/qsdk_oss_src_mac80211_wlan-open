@@ -221,6 +221,10 @@ enum ath12k_bdf_search {
 		   (min(u8_get_bits((eht_map) >> (idx), \
 		   IEEE80211_EHT_MCS_NSS_TX), nss))
 
+#define ATH12K_CHAN_SWITCH_RESTART_TIME_DELAY	100
+#define ATH12K_CSA_FW_RESTART_TIME_DELAY	50
+#define ATH12K_CSA_CALDB_UNDONE_TIME		500
+
 enum ath12k_crypt_mode {
 	/* Only use hardware crypto engine */
 	ATH12K_CRYPT_MODE_HW,
