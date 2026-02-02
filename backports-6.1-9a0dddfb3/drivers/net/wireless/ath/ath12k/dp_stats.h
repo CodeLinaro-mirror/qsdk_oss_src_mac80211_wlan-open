@@ -934,7 +934,6 @@ struct ath12k_dp_link_peer_rx_signal_stats {
  * @num_mpdus: Total number of MPDUs received.
  * @num_mpdu_retry_count: Number of MPDU retries.
  * @num_ppdus: Total number of PPDUs received.
- * @num_ppdu_duration: Aggregate PPDU duration.
  *
  * Bitfield info:
  * @nss_info: Number of spatial streams (NSS).
@@ -946,7 +945,6 @@ struct ath12k_dp_link_peer_rx_signal_stats {
  * Advance Stats:
  * @bar_count: Number of BlockAck Request (BAR) frames received.
  * @ndpa_count: Number of NDP Announcement (NDPA) frames received for MU-MIMO sounding.
- * @num_mpdu_count: Array of MPDU counts per MCS index (indexed by MAX_MCS).
  * @ppdu_reception: Number of PPDUs received per reception type
  *                  (indexed by HAL_RX_RECEPTION_TYPE_MAX).
  * @ppdu_nss: Number of PPDUs received per spatial stream (indexed by HAL_RX_MAX_NSS).
@@ -993,7 +991,6 @@ struct ath12k_rx_peer_stats {
 	u64 num_mpdus;
 	u32 num_mpdu_retry_count;
 	u64 num_ppdus;
-	u32 num_ppdu_duration;
 
 	u32 nss_info:4,
 	    mcs_info:4,
@@ -1004,7 +1001,6 @@ struct ath12k_rx_peer_stats {
 	/* Advance Stats */
 	u32 num_bar;
 	u32 num_ndpa;
-	u64 num_mpdu_count[MAX_MCS];
 	u64 ppdu_reception[HAL_RX_RECEPTION_TYPE_MAX];
 	u64 ppdu_nss[HAL_RX_MAX_NSS];
 	struct pkt_type proto_type[DOT11_MAX];
