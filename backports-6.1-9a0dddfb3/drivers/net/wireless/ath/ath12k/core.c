@@ -1688,7 +1688,7 @@ int ath12k_mac_mlo_ready(struct ath12k_hw_group *ag)
 
 static int ath12k_core_mlo_setup(struct ath12k_hw_group *ag)
 {
-	int ret, i;
+	int ret;
 
 	if (!ag->mlo_capable)
 		return 0;
@@ -1696,10 +1696,6 @@ static int ath12k_core_mlo_setup(struct ath12k_hw_group *ag)
 	ret = ath12k_mac_mlo_setup(ag);
 	if (ret)
 		return ret;
-
-	for (i = 0; i < ag->num_devices; i++)
-		if (!ag->ab[i]->is_bypassed)
-			ath12k_dp_partner_cc_init(ag->ab[i]);
 
 	ret = ath12k_mac_mlo_ready(ag);
 	if (ret)
