@@ -216,7 +216,9 @@ void ath12k_wifi8_hal_txpt_classify_info_setup(struct ath12k_dp_hw_group *dp_hw_
 			    le32_encode_bits(ti->msdu_drop,
 					     HAL_TXPT_CLASSIFY_MSDU_DROP) |
 			    le32_encode_bits(ti->metadata,
-					     HAL_TXPT_CLASSIFY_METADATA);
+					     HAL_TXPT_CLASSIFY_METADATA) |
+			    le32_encode_bits(ti->assoc_link_id,
+					     HAL_TXPT_CLASSIFY_TCL_FW_LINK_ID);
 
 	ath12k_core_dma_sync_single_for_device(dev, ti->paddr,
 					       ATH12K_SIZE_OF_TID_INFO,

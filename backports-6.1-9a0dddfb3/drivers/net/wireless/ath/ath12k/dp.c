@@ -1694,6 +1694,9 @@ static int ath12k_dp_cmem_init(struct ath12k_base *ab,
 	u32 cmem_base;
 	int i, start, end;
 
+	if (!dp->spt_info)
+		return 0;
+
 	cmem_base = ab->qmi.dev_mem[ATH12K_QMI_DEVMEM_CMEM_INDEX].start;
 
 	switch (type) {
