@@ -1041,6 +1041,7 @@ static void ath12k_dp_rx_fill_rate_info(struct rate_info *rate,
 	nss = (user_stats) ? user_stats->nss : ppdu_info->nss;
 	preamble_type = ppdu_info->preamble_type;
 
+	memset(rate, 0, sizeof(*rate));
 	rate->nss = nss;
 	rate->bw = ath12k_mac_bw_to_mac80211_bw(ppdu_info->bw);
 
