@@ -38,11 +38,9 @@ int ath12k_dp_rx_mon_process_ring(struct ath12k_dp *dp, int mac_id,
 		return 0;
 	}
 
-	if (mon_ops && mon_ops->mon_rx_srng_process) {
-		num_buffs_reaped =
-			ath12k_wifi8_dp_mon_rx_dual_ring_process(dp_pdev, mac_id,
-								 napi, &budget);
-	}
+	num_buffs_reaped =
+		ath12k_wifi8_dp_mon_rx_dual_ring_process(dp_pdev, mac_id,
+							 napi, &budget);
 
 	rcu_read_unlock();
 
