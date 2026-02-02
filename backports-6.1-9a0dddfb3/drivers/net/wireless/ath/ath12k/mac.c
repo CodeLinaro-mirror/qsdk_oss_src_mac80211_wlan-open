@@ -17141,7 +17141,7 @@ void ath12k_mac_stop(struct ath12k *ar)
 	int ret;
 	enum dp_mon_stats_mode mode = ATH12k_DP_MON_BASIC_STATS;
 
-	if (ar->ab->powered_off)
+	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ar->ab->dev_flags))
 		return;
 
 	lockdep_assert_held(&ah->hw_mutex);

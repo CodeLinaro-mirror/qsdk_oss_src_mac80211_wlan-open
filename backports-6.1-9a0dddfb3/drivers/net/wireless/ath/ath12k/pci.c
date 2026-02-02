@@ -1056,9 +1056,6 @@ void ath12k_pci_power_down(struct ath12k_base *ab, bool is_suspend)
                ath12k_err(ab, "failed to configure IOCoherency: %d\n", ret);
 #endif
 
-	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
-		return;
-
 	/* restore aspm in case firmware bootup fails */
 	ath12k_pci_aspm_restore(ab_pci);
 
@@ -1118,7 +1115,7 @@ static void ath12k_pci_dp_umac_reset_free_irq(struct ath12k_base *ab)
 {
         struct ath12k_dp_umac_reset *umac_reset = &ab->dp_umac_reset;
 
-	if (ab->powered_off)
+	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
         disable_irq_nosync(umac_reset->irq_num);
@@ -1478,7 +1475,7 @@ static void ath12k_pci_shutdown(struct pci_dev *pdev)
 	ath12k_pci_set_irq_affinity_hint(ab_pci, NULL);
 
 	if (ath12k_check_erp_power_down(ab->ag) &&
-	    ab->powered_off)
+	    test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
 	ath12k_qmi_firmware_stop(ab);

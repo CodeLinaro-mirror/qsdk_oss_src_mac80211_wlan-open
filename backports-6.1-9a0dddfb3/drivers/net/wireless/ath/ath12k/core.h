@@ -2194,7 +2194,6 @@ struct ath12k_base {
 	struct work_struct recovery_work;
 	struct ath12k_dp_umac_reset dp_umac_reset;
 	bool early_cal_support;
-	bool powered_off;
 	bool powerup_triggered;
 	struct ath12k_wsi_info bypass_wsi_info;
 	bool is_bypassed;
