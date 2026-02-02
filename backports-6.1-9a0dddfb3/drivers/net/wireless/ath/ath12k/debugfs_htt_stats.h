@@ -4162,6 +4162,7 @@ struct ath12k_htt_phy_tpc_stats_tlv {
 	__le32 tx_num_chains[ATH12K_HTT_STATS_MAX_CHAINS];
 	__le32 tx_power[ATH12K_HTT_MAX_POWER_LEVEL];
 	__le32 tx_power_neg[ATH12K_HTT_MAX_NEGATIVE_POWER_LEVEL];
+	__le32 tpc_ie_power;
 } __packed;
 
 struct ath12k_htt_t2h_soc_txrx_stats_common_tlv {
@@ -6108,4 +6109,117 @@ struct ath12k_htt_stats_regdb_regdomain_tlv {
 #define ATH12K_HTT_STATS_REGDOMAIN_DFS_REGION	GENMASK(23, 16)
 #define ATH12K_HTT_STATS_REGDOMAIN_NUM_RULES	GENMASK(15, 0)
 #define ATH12K_HTT_STATS_REGDOMAIN_RULE_SIZE	GENMASK(31, 16)
+
+struct ath12k_htt_stats_reg_6g_tlv {
+	union {
+		struct {
+			__le32 afc_local_rsvd : 8,
+				 deployment_type: 8,
+				 power_mode_mask: 8,
+				 reserved       : 8;
+		};
+		__le32 afc_ini_params;
+	};
+	__le32 tx_allowed_reason_code;
+	union {
+		struct {
+			__le32 set_tpc_count      : 16,
+				 set_tpc_pass_count : 16;
+		};
+		__le32 set_tpc_counters;
+	};
+	union {
+		struct {
+			__le32 current_power_mode              : 4,
+				 last_best_power_mode            : 4,
+				 is_current_mode_best_power_mode : 1,
+				 rsvd1                           : 7,
+				 best_power_mode_count           : 16;
+		};
+		__le32 power_mode_stats;
+	};
+};
+
+#define ATH12K_HTT_STATS_REG_6G_AFC_LOCAL_RSVD	GENMASK(7, 0)
+#define ATH12K_HTT_STATS_REG_6G_DEPLOYMENT_TYPE	GENMASK(15, 8)
+#define ATH12K_HTT_STATS_REG_6G_POWER_MODE_MASK	GENMASK(23, 16)
+#define ATH12K_HTT_STATS_REG_6G_SET_TPC_COUNT	GENMASK(15, 0)
+#define ATH12K_HTT_STATS_REG_6G_SET_TPC_PASS_COUNT	GENMASK(31, 16)
+#define ATH12K_HTT_STATS_REG_6G_CURRENT_POWER_MODE	GENMASK(3, 0)
+#define ATH12K_HTT_STATS_REG_6G_LAST_BEST_POWER_MODE	GENMASK(7, 4)
+#define ATH12K_HTT_STATS_REG_6G_BEST_POWER_MODE_COUNT	GENMASK(31, 16)
+#define ATH12K_HTT_STATS_REG_6G_IS_CURRENT_POWER_MODE_BEST	BIT(8)
+
+struct ath12k_htt_stats_reg_freq_power_pair {
+	union {
+		struct {
+			__le32 freq  : 16, /* in MHz */
+			       power : 16; /* in 0.25 dBm */
+		};
+		__le32 freq_power_pair;
+	};
+};
+
+#define ATH12K_HTT_STATS_FREQ_POWER_PAIR_FREQ	GENMASK(15, 0)
+#define ATH12K_HTT_STATS_FREQ_POWER_PAIR_POWER	GENMASK(31, 16)
+
+#define ATH12K_HTT_STATS_REG_POWER_INFO_6G_MAX_SUBBANDS	16
+
+struct ath12k_htt_stats_reg_6g_ch_power_info_tlv {
+	__le32 index;
+	union {
+		__le32 power_info_word;
+		struct {
+			__le32 power_type_6ghz : 8,
+			       eirp_power : 8,      /* in dBm */
+			       is_psd_power : 1,
+			       both_psd_eirp_support : 1,
+			       rsvd :14;
+		};
+	};
+	union {
+		__le32 num_levels_word;
+		struct {
+			__le32 num_power_levels : 8,
+			       num_psd_levels : 8,
+			       num_eirp_levels : 8,
+			       unused : 8;
+		};
+	};
+	__le32 puncture_bitmap;
+	struct ath12k_htt_stats_reg_freq_power_pair
+		tx_power_freq_pair[ATH12K_HTT_STATS_REG_POWER_INFO_6G_MAX_SUBBANDS];
+	struct ath12k_htt_stats_reg_freq_power_pair
+		psd_power_freq_pair[ATH12K_HTT_STATS_REG_POWER_INFO_6G_MAX_SUBBANDS];
+	struct ath12k_htt_stats_reg_freq_power_pair
+		eirp_power_freq_pair[ATH12K_HTT_STATS_REG_POWER_INFO_6G_MAX_SUBBANDS];
+};
+
+#define ATH12K_HTT_STATS_REG_6G_CH_POWER_TYPE	GENMASK(7, 0)
+#define ATH12K_HTT_STATS_REG_6G_CH_EIRP_POWER	GENMASK(15, 8)
+#define ATH12K_HTT_STATS_REG_6G_CH_IS_PSD_POWER	BIT(16)
+#define ATH12K_HTT_STATS_REG_6G_CH_IS_BOTH_PSD_EIRP	BIT(17)
+#define ATH12K_HTT_STATS_REG_6G_CH_NUM_POWER_LEVELS	GENMASK(7, 0)
+#define ATH12K_HTT_STATS_REG_6G_CH_NUM_PSD_LEVELS	GENMASK(15, 8)
+#define ATH12K_HTT_STATS_REG_6G_CH_NUM_EIRP_LEVELS	GENMASK(23, 16)
+
+#define ATH12K_HTT_STATS_REG_OOBE_MAX_BW 5
+
+struct ath12k_htt_stats_reg_6g_oobe_tlv {
+	__le32 oobe_psd[ATH12K_HTT_STATS_REG_OOBE_MAX_BW]; /* 0.25 dBm / MHz */
+	union {
+		struct {
+			__le32 oobe_limit_offset : 16,  /* in MHz */
+			       oobe_limit_mask   : 16;  /* in dBr */
+		};
+		__le32 offset_mask_pair;
+	} oobe_limit[ATH12K_HTT_STATS_REG_OOBE_MAX_BW];
+};
+
+#define ATH12K_HTT_STATS_REG_6G_OOBE_LIMIT_OFFSET	GENMASK(15, 0)
+#define ATH12K_HTT_STATS_REG_6G_OOBE_LIMIT_MASK	GENMASK(31, 16)
+
+#define ATH12K_QUARTER_DBM_TO_DBM_INT(q)	((q) / 4)
+#define ATH12K_QUARTER_DBM_TO_DBM_FRAC(q)	(((q) % 4) * 25 * ((q) < 0 ? -1 : 1))
+
 #endif

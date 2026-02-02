@@ -8189,7 +8189,10 @@ ath12k_htt_print_phy_tpc_stats_tlv(const void *tag_buf, u16 tag_len,
 				  ATH12K_HTT_MAX_NEGATIVE_POWER_LEVEL, "\n");
 	len += print_array_to_buf(buf, len, "tpc_stats : tx_power",
 				  htt_stats_buf->tx_power,
-				  ATH12K_HTT_MAX_POWER_LEVEL, "\n\n");
+				  ATH12K_HTT_MAX_POWER_LEVEL, "\n");
+	len += scnprintf(buf + len, buf_len - len,
+			"tpc_stats : tpc_ie_power = %d\n\n",
+			le32_to_cpu(htt_stats_buf->tpc_ie_power));
 
 	stats_req->buf_len = len;
 }
@@ -12683,6 +12686,190 @@ static void ath12k_htt_print_regdb_regdomain_tlv(const void *tag_buf, u16 tag_le
 	stats_req->buf_len = len;
 }
 
+static const char *ath12k_htt_reg_6g_deployment_mode_id_to_name(u8 id)
+{
+	switch (id) {
+	case 1:
+		return "indoor";
+	case 2:
+		return "outdoor";
+	default:
+		return "unknown";
+	}
+}
+
+static void ath12k_htt_print_reg_6g_tlv(const void *tag_buf, u16 tag_len
+		, struct debug_htt_stats_req *stats_req)
+{
+	const struct ath12k_htt_stats_reg_6g_tlv *reg_6g_stats = tag_buf;
+	const u32 max_buf_size = ATH12K_HTT_STATS_BUF_SIZE;
+	u32 afc_ini, power_mode_stats, tx_allowed_rc;
+	u32 len = stats_req->buf_len;
+	u8 deployment_mode;
+	u8 *buf = stats_req->buf;
+
+	if (tag_len < sizeof(*reg_6g_stats))
+		return;
+	afc_ini = le32_to_cpu(reg_6g_stats->afc_ini_params);
+	power_mode_stats = le32_to_cpu(reg_6g_stats->power_mode_stats);
+	tx_allowed_rc = le32_to_cpu(reg_6g_stats->tx_allowed_reason_code);
+	deployment_mode = u32_get_bits(afc_ini, ATH12K_HTT_STATS_REG_6G_DEPLOYMENT_TYPE);
+	len += scnprintf(buf + len, max_buf_size - len
+			, "=== 6GHz Regulatory Stats ===\n");
+	len += scnprintf(buf + len, max_buf_size - len, "INI:afc_local_rsvd    : %u\n"
+			, u32_get_bits(afc_ini, ATH12K_HTT_STATS_REG_6G_AFC_LOCAL_RSVD));
+	len += scnprintf(buf + len, max_buf_size - len
+			, "INI:deployment_type   : %u (%s)\n"
+			, deployment_mode, ath12k_htt_reg_6g_deployment_mode_id_to_name(
+				deployment_mode));
+	len += scnprintf(buf + len, max_buf_size - len, "INI:power_mode_mask   : 0x%X\n"
+			, u32_get_bits(afc_ini, ATH12K_HTT_STATS_REG_6G_POWER_MODE_MASK));
+	len += scnprintf(buf + len, max_buf_size - len
+			, "Tx Allowed Reason Code: 0x%X (%s)\n"
+			, tx_allowed_rc, (tx_allowed_rc & 1) ? "Allowed" : "Not allowed");
+	len += scnprintf(buf + len, max_buf_size - len, "SET TPC Cmd Count     : %u\n"
+			, u32_get_bits(le32_to_cpu(reg_6g_stats->set_tpc_counters)
+				, ATH12K_HTT_STATS_REG_6G_SET_TPC_COUNT));
+	len += scnprintf(buf + len, max_buf_size - len, "SET TPC Cmd Pass Count: %u\n"
+			, u32_get_bits(le32_to_cpu(reg_6g_stats->set_tpc_counters)
+				, ATH12K_HTT_STATS_REG_6G_SET_TPC_PASS_COUNT));
+	len += scnprintf(buf + len, max_buf_size - len, "Current Power Mode    : %u\n"
+			, u32_get_bits(power_mode_stats
+				, ATH12K_HTT_STATS_REG_6G_CURRENT_POWER_MODE));
+	len += scnprintf(buf + len, max_buf_size - len, "Is Best Power Mode    : %s\n"
+			, u32_get_bits(power_mode_stats
+				, ATH12K_HTT_STATS_REG_6G_IS_CURRENT_POWER_MODE_BEST) ?
+			"Yes" : "No");
+	len += scnprintf(buf + len, max_buf_size - len, "Best Power Mode count : %u\n"
+			, u32_get_bits(power_mode_stats
+				, ATH12K_HTT_STATS_REG_6G_BEST_POWER_MODE_COUNT));
+	len += scnprintf(buf + len, max_buf_size - len, "Last Best Power Mode  : %u\n"
+			, u32_get_bits(power_mode_stats
+				, ATH12K_HTT_STATS_REG_6G_LAST_BEST_POWER_MODE));
+	len += scnprintf(buf + len, max_buf_size - len, "\n");
+	stats_req->buf_len = len;
+}
+
+static void ath12k_htt_print_reg_6g_ch_pwr_info_tlv(const void *tag_buf, u16 tag_len
+		, struct debug_htt_stats_req *stats_req)
+{
+	const struct ath12k_htt_stats_reg_6g_ch_power_info_tlv *ch_pwr_stats = tag_buf;
+	const u32 max_buf_size = ATH12K_HTT_STATS_BUF_SIZE;
+	u32 power_info, num_levels, freq_power_pair;
+	u32 len = stats_req->buf_len;
+	s16 power;
+	u8 num_power_levels, num_psd_levels, num_eirp_levels, i;
+	u8 *buf = stats_req->buf;
+
+	if (tag_len < sizeof(*ch_pwr_stats))
+		return;
+	power_info = le32_to_cpu(ch_pwr_stats->power_info_word);
+	num_levels = le32_to_cpu(ch_pwr_stats->num_levels_word);
+	len += scnprintf(buf + len, max_buf_size - len
+			, "=== 6GHz Chan Power Info[%u] ===\n"
+			, le32_to_cpu(ch_pwr_stats->index));
+
+	len += scnprintf(buf + len, max_buf_size - len, "Power Mode            : %u\n"
+			, u32_get_bits(power_info
+				, ATH12K_HTT_STATS_REG_6G_CH_POWER_TYPE));
+	len += scnprintf(buf + len, max_buf_size - len, "EIRP Power (dBm)      : %d\n"
+			, (s8)u32_get_bits(power_info
+				, ATH12K_HTT_STATS_REG_6G_CH_EIRP_POWER));
+	len += scnprintf(buf + len, max_buf_size - len, "Is PSD Power          : %u\n"
+			, u32_get_bits(power_info
+				, ATH12K_HTT_STATS_REG_6G_CH_IS_PSD_POWER));
+	len += scnprintf(buf + len, max_buf_size - len, "Is Both PSD EIRP      : %u\n"
+			, u32_get_bits(power_info
+				, ATH12K_HTT_STATS_REG_6G_CH_IS_BOTH_PSD_EIRP));
+	len += scnprintf(buf + len, max_buf_size - len, "Puncture Bitmap       : 0x%X\n"
+			, le32_to_cpu(ch_pwr_stats->puncture_bitmap));
+
+	num_power_levels = min_t(u8, ATH12K_HTT_STATS_REG_POWER_INFO_6G_MAX_SUBBANDS
+			, u32_get_bits(num_levels
+				, ATH12K_HTT_STATS_REG_6G_CH_NUM_POWER_LEVELS));
+	num_psd_levels = min_t(u8, ATH12K_HTT_STATS_REG_POWER_INFO_6G_MAX_SUBBANDS
+			, u32_get_bits(num_levels
+				, ATH12K_HTT_STATS_REG_6G_CH_NUM_PSD_LEVELS));
+	num_eirp_levels = min_t(u8, ATH12K_HTT_STATS_REG_POWER_INFO_6G_MAX_SUBBANDS
+			, u32_get_bits(num_levels
+				, ATH12K_HTT_STATS_REG_6G_CH_NUM_EIRP_LEVELS));
+
+	for (i = 0; i < num_power_levels; ++i) {
+		freq_power_pair = le32_to_cpu(
+				ch_pwr_stats->tx_power_freq_pair[i].freq_power_pair);
+		power = (s16)u32_get_bits(freq_power_pair
+			, ATH12K_HTT_STATS_FREQ_POWER_PAIR_POWER);
+		len += scnprintf(buf + len, max_buf_size - len
+				, "Tx Power[%2u]          : %4u MHz : %3d.%02u dBm\n", i
+				, u32_get_bits(freq_power_pair
+					, ATH12K_HTT_STATS_FREQ_POWER_PAIR_FREQ)
+				, ATH12K_QUARTER_DBM_TO_DBM_INT(power)
+				, ATH12K_QUARTER_DBM_TO_DBM_FRAC(power));
+	}
+	for (i = 0; i < num_psd_levels; ++i) {
+		freq_power_pair = le32_to_cpu(
+				ch_pwr_stats->psd_power_freq_pair[i].freq_power_pair);
+		power = (s16)u32_get_bits(freq_power_pair
+			, ATH12K_HTT_STATS_FREQ_POWER_PAIR_POWER);
+		len += scnprintf(buf + len, max_buf_size - len
+				, "PSD Power[%2u]         : %4u MHz : %3d.%02u dBm/MHz\n"
+				, i
+				, u32_get_bits(freq_power_pair
+					, ATH12K_HTT_STATS_FREQ_POWER_PAIR_FREQ)
+				, ATH12K_QUARTER_DBM_TO_DBM_INT(power)
+				, ATH12K_QUARTER_DBM_TO_DBM_FRAC(power));
+	}
+	for (i = 0; i < num_eirp_levels; ++i) {
+		freq_power_pair = le32_to_cpu(
+				ch_pwr_stats->eirp_power_freq_pair[i].freq_power_pair);
+		power = (s16)u32_get_bits(freq_power_pair
+			, ATH12K_HTT_STATS_FREQ_POWER_PAIR_POWER);
+		len += scnprintf(buf + len, max_buf_size - len
+				, "EIRP Power[%2u]        : %4u MHz : %3d.%02u dBm\n", i
+				, u32_get_bits(freq_power_pair
+					, ATH12K_HTT_STATS_FREQ_POWER_PAIR_FREQ)
+				, ATH12K_QUARTER_DBM_TO_DBM_INT(power)
+				, ATH12K_QUARTER_DBM_TO_DBM_FRAC(power));
+	}
+	len += scnprintf(buf + len, max_buf_size - len, "\n");
+	stats_req->buf_len = len;
+}
+
+static void ath12k_htt_print_reg_6g_oobe_tlv(const void *tag_buf, u16 tag_len
+		, struct debug_htt_stats_req *stats_req)
+{
+	const struct ath12k_htt_stats_reg_6g_oobe_tlv *oobe_stats = tag_buf;
+	const u32 max_buf_size = ATH12K_HTT_STATS_BUF_SIZE;
+	u32 len = stats_req->buf_len;
+	u32 offset_mask_pair;
+	s32 psd;
+	u8 i;
+	u8 *buf = stats_req->buf;
+
+	if (tag_len < sizeof(*oobe_stats))
+		return;
+	len += scnprintf(buf + len, max_buf_size - len, "=== 6GHz OOBE Stats ===\n");
+	for (i = 0; i < ATH12K_HTT_STATS_REG_OOBE_MAX_BW; ++i) {
+		psd = (s32)le32_to_cpu(oobe_stats->oobe_psd[i]);
+		len += scnprintf(buf + len, max_buf_size - len
+				, "OOBE PSD[%2u]          : %3d.%02u dBm/MHz\n", i
+				, ATH12K_QUARTER_DBM_TO_DBM_INT(psd)
+				, ATH12K_QUARTER_DBM_TO_DBM_FRAC(psd));
+	}
+	for (i = 0; i < ATH12K_HTT_STATS_REG_OOBE_MAX_BW; ++i) {
+		offset_mask_pair =  le32_to_cpu(
+				oobe_stats->oobe_limit[i].offset_mask_pair);
+		len += scnprintf(buf + len, max_buf_size - len
+				, "OOBE Limit[%2u]        : %4d MHz : %3d dBr\n", i
+				, (s16)u32_get_bits(offset_mask_pair
+					, ATH12K_HTT_STATS_REG_6G_OOBE_LIMIT_OFFSET)
+				, (s16)u32_get_bits(offset_mask_pair
+					, ATH12K_HTT_STATS_REG_6G_OOBE_LIMIT_MASK));
+	}
+	len += scnprintf(buf + len, max_buf_size - len, "\n");
+	stats_req->buf_len = len;
+}
+
 static int ath12k_dbg_htt_ext_stats_parse(struct ath12k_base *ab,
 					  struct ath12k_pdev_dp *dp_pdev,
 					  u16 tag, u16 len, const void *tag_buf,
@@ -13338,6 +13525,18 @@ static int ath12k_dbg_htt_ext_stats_parse(struct ath12k_base *ab,
 
 	case HTT_STATS_REGDB_REGDOMAIN_TAG:
 		ath12k_htt_print_regdb_regdomain_tlv(tag_buf, len, stats_req);
+		break;
+
+	case HTT_STATS_REG_6G_TAG:
+		ath12k_htt_print_reg_6g_tlv(tag_buf, len, stats_req);
+		break;
+
+	case HTT_STATS_REG_6G_CH_PWR_INFO_TAG:
+		ath12k_htt_print_reg_6g_ch_pwr_info_tlv(tag_buf, len, stats_req);
+		break;
+
+	case HTT_STATS_REG_6G_OOBE_TAG:
+		ath12k_htt_print_reg_6g_oobe_tlv(tag_buf, len, stats_req);
 		break;
 
 	default:
