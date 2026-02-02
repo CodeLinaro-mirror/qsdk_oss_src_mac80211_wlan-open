@@ -366,6 +366,13 @@ fail_irq_cleanup:
 
 }
 
+static int ath12k_wifi7_dp_op_mlo_init(struct ath12k_dp *dp)
+{
+	ath12k_dp_partner_cc_init(dp->ab);
+
+	return 0;
+}
+
 static void ath12k_wifi7_dp_op_device_deinit(struct ath12k_dp *dp)
 {
 	struct ath12k_base *ab = dp->ab;
@@ -488,6 +495,7 @@ static void ath12k_wifi7_dp_link_vif_configure(struct ath12k_dp *dp,
 static struct ath12k_dp_arch_ops ath12k_wifi7_dp_arch_ops = {
 	.dp_op_device_init = ath12k_wifi7_dp_op_device_init,
 	.dp_op_device_deinit = ath12k_wifi7_dp_op_device_deinit,
+	.dp_op_mlo_init = ath12k_wifi7_dp_op_mlo_init,
 	.dp_tx_get_vdev_bank_config = ath12k_wifi7_dp_tx_get_vdev_bank_config,
 	.dp_reo_cmd_send = ath12k_wifi7_dp_reo_cmd_send,
 	.setup_pn_check_reo_cmd = ath12k_wifi7_dp_setup_pn_check_reo_cmd,
