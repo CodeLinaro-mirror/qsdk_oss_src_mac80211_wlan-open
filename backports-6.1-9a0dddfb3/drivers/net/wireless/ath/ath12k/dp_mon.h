@@ -1116,7 +1116,7 @@ int ath12k_dp_mon_tx_srng_alloc(struct ath12k_dp *dp)
 
 	if (!mon_ops) {
 		ath12k_err(dp->ab, "TX Monitor: No monitor ops available");
-		return ret;
+		return -EINVAL;
 	}
 
 	if (mon_ops->mon_tx_srng_alloc_setup) {
@@ -1168,7 +1168,7 @@ int ath12k_dp_mon_tx_pdev_alloc(struct ath12k_pdev_dp *dp_pdev,
 
 	if (!mon_ops) {
 		ath12k_warn(dp, "Tx Mon: mon ops is NULL\n");
-		return ret;
+		return -EINVAL;
 	}
 
 	if (mon_ops->mon_tx_dst_ring_alloc_setup) {
