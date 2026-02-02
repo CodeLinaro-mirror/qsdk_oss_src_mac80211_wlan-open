@@ -752,6 +752,11 @@ void ath12k_mac_ieee80211_free_txskb(struct ieee80211_hw *hw,
 bool ath12k_mac_check_err_code_debug_logging(enum ath12k_dp_tx_enq_error err);
 enum nl80211_band ath12k_get_band_based_on_freq(u32 freq);
 u32 ath12k_mac_get_rate_hw_value(int bitrate);
+struct ath12k*
+ath12k_mac_select_scan_device(struct ieee80211_hw *hw,
+			      struct ieee80211_vif *vif,
+			      u32 center_freq);
+u8 ath12k_mac_find_link_id_by_ar(struct ath12k_vif *ahvif, struct ath12k *ar);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 int ath12k_mac_op_create_datapath_offload_if(struct ieee80211_hw *hw,
 					     struct ieee80211_vif *vif,

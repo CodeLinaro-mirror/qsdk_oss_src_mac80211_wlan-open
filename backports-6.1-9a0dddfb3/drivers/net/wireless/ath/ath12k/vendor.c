@@ -9094,6 +9094,7 @@ static int ath12k_vendor_get_reg_eirp_handler(struct wiphy *wiphy, struct wirele
 		    wdev->links[link_id].ap.chandef.chan->band == NL80211_BAND_6GHZ)
 			break;
 	}
+
 	if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
 		return -EINVAL;
 
@@ -9151,6 +9152,273 @@ static int ath12k_vendor_get_reg_eirp_handler(struct wiphy *wiphy, struct wirele
 free_eirp:
 	kfree(chan_eirp_list);
 	return ret_val;
+}
+
+static const struct nla_policy
+ath12k_vendor_channel_switch_time_policy[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_FREQ] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_BANDWIDTH] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_CENTER_FREQ1] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_CENTER_FREQ2] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_PUNCT_BMAP] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_TOTAL] = { .type = NLA_U32 },
+};
+
+int ath12k_get_num_beaconing_vifs(struct ath12k *ar)
+{
+	u32 count = 0;
+	struct ath12k_link_vif *arvif;
+
+	list_for_each_entry(arvif, &ar->arvifs, list) {
+		if (arvif->is_up &&
+		    arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP &&
+		    arvif->beacon_interval > 0)
+			count++;
+	}
+	return count;
+}
+
+static enum nl80211_chan_width
+ath12k_vendor_bandwidth_to_chan_width(u32 bandwidth)
+{
+	switch (bandwidth) {
+	case 20:
+		return NL80211_CHAN_WIDTH_20;
+	case 40:
+		return NL80211_CHAN_WIDTH_40;
+	case 80:
+		return NL80211_CHAN_WIDTH_80;
+	case 160:
+		return NL80211_CHAN_WIDTH_160;
+	case 5:
+		return NL80211_CHAN_WIDTH_5;
+	case 10:
+		return NL80211_CHAN_WIDTH_10;
+	case 1:
+		return NL80211_CHAN_WIDTH_1;
+	case 2:
+		return NL80211_CHAN_WIDTH_2;
+	case 4:
+		return NL80211_CHAN_WIDTH_4;
+	case 8:
+		return NL80211_CHAN_WIDTH_8;
+	case 16:
+		return NL80211_CHAN_WIDTH_16;
+	default:
+		return bandwidth;
+	}
+}
+
+static int
+ath12k_vendor_validate_cs_time_chandef(struct wiphy *wiphy,
+				       u32 freq, u32 bandwidth_attr,
+				       u32 center_freq1, u32 center_freq2,
+				       struct cfg80211_chan_def *chandef)
+{
+	struct ieee80211_channel *channel;
+
+	if (!freq)
+		return -EINVAL;
+
+	channel = ieee80211_get_channel(wiphy, freq);
+	if (!channel)
+		return -EINVAL;
+
+	memset(chandef, 0, sizeof(*chandef));
+	chandef->chan = channel;
+	chandef->width = ath12k_vendor_bandwidth_to_chan_width(bandwidth_attr);
+
+	switch (chandef->width) {
+	case NL80211_CHAN_WIDTH_20_NOHT:
+	case NL80211_CHAN_WIDTH_20:
+	case NL80211_CHAN_WIDTH_5:
+	case NL80211_CHAN_WIDTH_10:
+	case NL80211_CHAN_WIDTH_1:
+	case NL80211_CHAN_WIDTH_2:
+	case NL80211_CHAN_WIDTH_4:
+	case NL80211_CHAN_WIDTH_8:
+	case NL80211_CHAN_WIDTH_16:
+		if (center_freq2)
+			return -EINVAL;
+		if (center_freq1 && center_freq1 != freq)
+			return -EINVAL;
+		center_freq1 = freq;
+		center_freq2 = 0;
+		break;
+	case NL80211_CHAN_WIDTH_40:
+	case NL80211_CHAN_WIDTH_80:
+	case NL80211_CHAN_WIDTH_160:
+		if (center_freq2)
+			return -EINVAL;
+		if (!center_freq1)
+			center_freq1 = freq;
+		center_freq2 = 0;
+		break;
+	case NL80211_CHAN_WIDTH_80P80:
+		if (!center_freq1 || !center_freq2 ||
+		    center_freq1 == center_freq2)
+			return -EINVAL;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	chandef->center_freq1 = center_freq1;
+	chandef->center_freq2 = center_freq2;
+	return 0;
+}
+
+static int ath12k_vendor_get_channel_switch_time(struct wiphy *wiphy,
+						 struct wireless_dev *wdev,
+						 const void *data,
+						 int data_len)
+{
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_MAX + 1];
+	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
+	struct ath12k_hw *ah = hw->priv;
+	struct ieee80211_vif *vif;
+	struct ath12k_vif *ahvif;
+	u32 beacon_time, restart_time, dfs_time;
+	struct ath12k_link_vif *arvif;
+	u64 tot_chan_switch_time;
+	struct ath12k *ar;
+	int dfs_required;
+	u8 link_id;
+	struct ath12k_base *ab;
+	struct sk_buff *reply;
+	u32 tgt_restart_time;
+	u32 drv_restart_time;
+	u32 active_vifs;
+	u32 freq = 0, center_freq1 = 0, center_freq2 = 0;
+	u32 bandwidth_attr = NL80211_CHAN_WIDTH_20_NOHT;
+	u32 channel_switch_time = 0;
+	struct cfg80211_chan_def chandef;
+	int ret;
+
+	if (!wdev || !wdev->netdev)
+		return -EINVAL;
+
+	vif = wdev_to_ieee80211_vif(wdev);
+	if (!vif)
+		return -EINVAL;
+
+	ahvif = ath12k_vif_to_ahvif(vif);
+	if (!ahvif)
+		return -EINVAL;
+
+	if (!data || !data_len) {
+		ath12k_dbg(NULL, ATH12K_DBG_MAC,
+			   "No data provided for channel switch time\n");
+		return -EINVAL;
+	}
+
+	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_MAX,
+			data, data_len, ath12k_vendor_channel_switch_time_policy,
+			NULL);
+	if (ret) {
+		ath12k_dbg(NULL, ATH12K_DBG_MAC,
+			   "Failed to parse channel switch time attributes: %d\n", ret);
+		return ret;
+	}
+
+	if (!tb[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_FREQ]) {
+		ath12k_dbg(NULL, ATH12K_DBG_MAC,
+			   "Channel switch time: missing freq\n");
+		return -EINVAL;
+	}
+
+	freq = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_FREQ]);
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_BANDWIDTH])
+		bandwidth_attr =
+		      nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_BANDWIDTH]);
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_CENTER_FREQ1])
+		center_freq1 =
+		   nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_CENTER_FREQ1]);
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_CENTER_FREQ2])
+		center_freq2 =
+		   nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_CENTER_FREQ2]);
+
+	ret = ath12k_vendor_validate_cs_time_chandef(hw->wiphy, freq,
+						     bandwidth_attr,
+						     center_freq1,
+						     center_freq2,
+						     &chandef);
+	if (ret) {
+		ath12k_dbg(NULL, ATH12K_DBG_MAC,
+			   "Channel switch time: invalid chandef params (freq=%u width=%u cf1=%u cf2=%u)\n",
+			   freq, bandwidth_attr, center_freq1, center_freq2);
+		return ret;
+	}
+
+	/*
+	 * Get beacon interval of link vif that corresponds to the channel.
+	 * Use ath12k_mac_select_scan_device to get the ar corresponding
+	 * to this channel freq and get corresponding link.
+	 */
+	ar = ath12k_mac_select_scan_device(hw, vif, center_freq1);
+	if (!ar)
+		return -EINVAL;
+
+	link_id = ath12k_mac_find_link_id_by_ar(ahvif, ar);
+	arvif = wiphy_dereference(ah->hw->wiphy, ahvif->link[link_id]);
+	if (!arvif)
+		return -EINVAL;
+	/*
+	 * Accounts for two beacon intervals:
+	 * 1. Time to receive CSA completion event from firmware.
+	 * 2. Time for firmware to transmit a beacon on the new channel
+	 *    after processing the vdev up command from the host.
+	 */
+	beacon_time = arvif->beacon_interval * 2;
+
+	ab = ar->ab;
+	if (!ab)
+		return -EINVAL;
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+		   "vendor get channel switch time: freq=%u bw=%u cf1=%u cf2=%u\n",
+		   freq, bandwidth_attr, center_freq1, center_freq2);
+
+	active_vifs = ath12k_get_num_beaconing_vifs(ar);
+	tgt_restart_time = ATH12K_CSA_FW_RESTART_TIME_DELAY;
+	drv_restart_time = (active_vifs * ATH12K_CHAN_SWITCH_RESTART_TIME_DELAY);
+
+	restart_time = tgt_restart_time + drv_restart_time;
+
+	if (!ab->qmi.cal_done)
+		restart_time += ATH12K_CSA_CALDB_UNDONE_TIME;
+
+	dfs_required = cfg80211_chandef_dfs_required(hw->wiphy, &chandef,
+						     vif->type);
+	if (dfs_required > 0)
+		dfs_time = chandef.chan->dfs_cac_ms;
+	else
+		dfs_time = 0;
+
+	tot_chan_switch_time = beacon_time + restart_time + dfs_time;
+	if (tot_chan_switch_time > U32_MAX)
+		channel_switch_time = U32_MAX;
+	else
+		channel_switch_time = tot_chan_switch_time;
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+		   "get channel switch time: beacon=%u restart=%u dfs=%u total=%u\n",
+		   beacon_time, restart_time, dfs_time, channel_switch_time);
+
+	reply = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, 100);
+	if (!reply)
+		return -ENOMEM;
+
+	if (nla_put_u32(reply, QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_TOTAL,
+			channel_switch_time)) {
+		kfree_skb(reply);
+		return -ENOBUFS;
+	}
+
+	return cfg80211_vendor_cmd_reply(reply);
 }
 
 static int ath12k_vendor_sdwf_streaming_stats_configure(struct wireless_dev *wdev,
@@ -9800,6 +10068,14 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.doit = ath12k_vendor_dcs_config_handler,
 		.policy = ath12k_vendor_dcs_config_policy,
 		.maxattr = QCA_WLAN_VENDOR_ATTR_DCS_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_GET_CHANNEL_SWITCH_TIME,
+		.doit = ath12k_vendor_get_channel_switch_time,
+		.policy = ath12k_vendor_channel_switch_time_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_MAX,
 		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
 	},
 #endif

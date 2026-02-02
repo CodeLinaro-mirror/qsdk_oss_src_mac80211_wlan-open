@@ -8697,7 +8697,7 @@ int ath12k_mac_op_start_ap(struct ieee80211_hw *hw,
 }
 EXPORT_SYMBOL(ath12k_mac_op_start_ap);
 
-static struct ath12k*
+struct ath12k*
 ath12k_mac_select_scan_device(struct ieee80211_hw *hw,
 			      struct ieee80211_vif *vif,
 			      u32 center_freq)
@@ -9288,7 +9288,7 @@ int ath12k_mac_op_set_radar_background(struct ieee80211_hw *hw,
 
 EXPORT_SYMBOL(ath12k_mac_op_set_radar_background);
 
-static u8
+u8
 ath12k_mac_find_link_id_by_ar(struct ath12k_vif *ahvif, struct ath12k *ar)
 {
 	struct ath12k_link_vif *arvif;

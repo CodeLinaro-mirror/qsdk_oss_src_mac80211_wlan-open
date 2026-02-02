@@ -101,6 +101,7 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_DERIVE_LINK_BSS_ADDR = 512,
 	QCA_NL80211_VENDOR_SUBCMD_WLAN_HOME_OFFCHAN_TX_RX = 513,
 	QCA_NL80211_VENDOR_SUBCMD_WLAN_CTL_TABLE = 514,
+	QCA_NL80211_VENDOR_SUBCMD_GET_CHANNEL_SWITCH_TIME = 515,
 };
 
 enum qca_nl80211_vendor_events {
@@ -3831,6 +3832,43 @@ enum qca_wlan_vendor_attr_rtplinst {
 	QCA_WLAN_VENDOR_ATTR_RTPLINST_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_RTPLINST_MAX =
 		QCA_WLAN_VENDOR_ATTR_RTPLINST_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_channel_switch_time - Attributes for
+ * %QCA_NL80211_VENDOR_SUBCMD_GET_CHANNEL_SWITCH_TIME.
+ *
+ * This vendor command is used to query the driver for the estimated time
+ * required to complete a channel switch operation.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_FREQ: Required (u32).
+ * Center frequency of the target channel in MHz.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_BANDWIDTH: Optional (u32).
+ * Channel bandwidth. Uses values from enum nl80211_chan_width.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_CENTER_FREQ1: Optional (u32).
+ * Center frequency of the first segment in MHz (for VHT/HE).
+ *
+ * @QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_CENTER_FREQ2: Optional (u32).
+ * Center frequency of the second segment in MHz (for 80+80 MHz).
+ *
+ * @QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_TOTAL: Response attribute (u32).
+ * Total estimated channel switch time in microseconds.
+ */
+enum qca_wlan_vendor_attr_channel_switch_time {
+	QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_FREQ = 1,
+	QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_BANDWIDTH = 2,
+	QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_CENTER_FREQ1 = 3,
+	QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_CENTER_FREQ2 = 4,
+	QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_PUNCT_BMAP = 5,
+	QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_TOTAL = 6,
+
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_MAX =
+		QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_AFTER_LAST - 1,
 };
 
 #define ATH12K_VENDOR_PUT(vendor_event, type, attr, param)             \
