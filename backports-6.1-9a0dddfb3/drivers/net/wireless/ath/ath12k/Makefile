@@ -69,7 +69,8 @@ ath12k-$(CPTCFG_QCN_EXTN) += \
 	qcn_extns/esp_extn.o \
 	qcn_extns/txrx_extn.o \
 	qcn_extns/dcs_extn.o \
-	qcn_extns/dp_stats_extn.o
+	qcn_extns/dp_stats_extn.o \
+	qcn_extns/mesh-extn.o
 
 ath12k-$(CPTCFG_EXT_IPA_OFFLOAD) += \
 	qcn_extns/ipa/dp_ipa.o \

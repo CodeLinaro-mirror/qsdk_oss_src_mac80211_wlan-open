@@ -6577,9 +6577,13 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 			}
 			break;
 		default:
-			ath12k_dbg(NULL, ATH12K_DBG_CFG,
-				   "Un-supported generic command\n");
-			return -EOPNOTSUPP;
+			ret = ath12k_vendor_wifi_config_handler_extn(wiphy, wdev,
+								     &wifi_params);
+			if (ret) {
+				ath12k_dbg(NULL, ATH12K_DBG_CFG,
+					   "Un-supported generic command\n");
+				return ret;
+			}
 		}
 	}
 
