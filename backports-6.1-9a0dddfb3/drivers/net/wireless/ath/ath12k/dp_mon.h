@@ -806,7 +806,7 @@ int ath12k_dp_mon_tx_update_filter(struct ath12k *ar)
 	struct ath12k_dp *dp;
 	const struct ath12k_dp_arch_mon_ops *mon_ops;
 	struct ath12k_pdev_dp *dp_pdev;
-	int ret;
+	int ret = -EINVAL;
 
 	if (unlikely(!ar || !ar->ab)) {
 		ath12k_err(NULL, "Invalid Radio / Radio base\n");
@@ -818,13 +818,13 @@ int ath12k_dp_mon_tx_update_filter(struct ath12k *ar)
 	dp = ath12k_ab_to_dp(ab);
 	mon_ops = ath12k_dp_mon_ops_get(dp);
 
-	if (mon_ops && dp_pdev && mon_ops->mon_tx_filter_update) {
+	if (mon_ops && dp_pdev && mon_ops->mon_tx_filter_update)
 		ret = mon_ops->mon_tx_filter_update(dp_pdev);
-		if (ret)
-			return ret;
-	}
 
-	return 0;
+	if (ret)
+		ath12k_warn(ab, "Tx Mon : Filter update failed\n");
+
+	return ret;
 }
 
 static inline
@@ -1110,21 +1110,19 @@ static inline
 int ath12k_dp_mon_tx_srng_alloc(struct ath12k_dp *dp)
 {
 	const struct ath12k_dp_arch_mon_ops *mon_ops;
-	int ret = -EOPNOTSUPP;
+	int ret = 0;
 
 	mon_ops = ath12k_dp_mon_ops_get(dp);
 
 	if (!mon_ops) {
 		ath12k_err(dp->ab, "TX Monitor: No monitor ops available");
-		return -EINVAL;
+		return ret;
 	}
 
 	if (mon_ops->mon_tx_srng_alloc_setup) {
 		ret = mon_ops->mon_tx_srng_alloc_setup(dp);
-		if (ret) {
+		if (ret)
 			ath12k_err(dp->ab, "TX Monitor: SRNG setup failed, ret=%d", ret);
-			return -EINVAL;
-		}
 	}
 
 	return ret;
@@ -1158,7 +1156,7 @@ int ath12k_dp_mon_tx_pdev_alloc(struct ath12k_pdev_dp *dp_pdev,
 {
 	struct ath12k_dp *dp;
 	const struct ath12k_dp_arch_mon_ops *mon_ops;
-	int ret;
+	int ret = 0;
 
 	if (unlikely(!dp_pdev)) {
 		ath12k_err(NULL, "Tx Mon: Invalid DP Pdev\n");
@@ -1170,7 +1168,7 @@ int ath12k_dp_mon_tx_pdev_alloc(struct ath12k_pdev_dp *dp_pdev,
 
 	if (!mon_ops) {
 		ath12k_warn(dp, "Tx Mon: mon ops is NULL\n");
-		return -EINVAL;
+		return ret;
 	}
 
 	if (mon_ops->mon_tx_dst_ring_alloc_setup) {
