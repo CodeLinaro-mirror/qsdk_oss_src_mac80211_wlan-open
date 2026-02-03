@@ -171,13 +171,13 @@ int ath12k_wifi8_dp_reo_cache_flush(struct ath12k_base *ab,
 	cmd.flag |= HAL_REO_CMD_FLG_NEED_STATUS |
 		HAL_REO_CMD_FLG_FLUSH_FWD_ALL_MPDUS;
 
-	/* For all QoS TIDs (except NON_QOS), the driver allocates a maximum
-	 * window size of 1024. In such cases, the driver can issue a single
-	 * 1KB descriptor flush command instead of sending multiple 128-byte
-	 * flush commands for each QoS TID, improving efficiency.
+	/* For all QoS TIDs (except NON_QOS and MGMT), the driver allocates
+	 * a maximum window size of 1024. In such cases, the driver can issue
+	 * a single 1KB descriptor flush command instead of sending multiple
+	 * 128-byte flush commands for each QoS TID, improving efficiency.
 	 */
 
-	if (rx_tid->tid != HAL_NON_QOS_TID)
+	if (!ath12k_wifi8_hal_is_reo_nonqos_mgmt_tid(rx_tid->tid))
 		cmd.flag |= HAL_REO_CMD_FLG_FLUSH_QUEUE_1K_DESC;
 
 	ret = ath12k_wifi8_dp_reo_cmd_send(ab, rx_tid,
@@ -327,7 +327,7 @@ static int ath12k_wifi8_peer_rx_tid_delete_handler(struct ath12k_base *ab,
 	cmd.addr_hi = upper_32_bits(rx_tid->paddr);
 	cmd.upd0 |= HAL_REO_CMD_UPD0_VLD;
 	cmd.upd0 |= HAL_REO_CMD_UPD0_BA_WINDOW_SIZE;
-	cmd.ba_window_size = (tid == HAL_NON_QOS_TID) ?
+	cmd.ba_window_size = ath12k_wifi8_hal_is_reo_nonqos_mgmt_tid(tid) ?
 			      rx_tid->ba_win_sz : DP_BA_WIN_SZ_MAX;
 	cmd.upd1 |= HAL_REO_CMD_UPD1_VLD;
 
@@ -3369,7 +3369,7 @@ int ath12k_wifi8_dp_alloc_reo_qdesc(struct ath12k_base *ab,
 	/* TODO: Optimize the memory allocation for qos tid based on
 	 * the actual BA window size in REO tid update path.
 	 */
-	if (tid == HAL_NON_QOS_TID)
+	if (ath12k_wifi8_hal_is_reo_nonqos_mgmt_tid(tid))
 		hw_desc_sz = ath12k_wifi8_hal_reo_qdesc_size(ba_win_sz, tid);
 	else
 		hw_desc_sz = ath12k_wifi8_hal_reo_qdesc_size(DP_BA_WIN_SZ_MAX, tid);

@@ -147,6 +147,8 @@ int ath12k_dp_peer_setup(struct ath12k *ar, struct ath12k_link_vif *arvif, const
 	struct ieee80211_sta *sta;
 	struct ath12k_sta *ahsta;
 	struct crypto_shash *tfm;
+	u32 ba_win_size;
+	u16 ssn;
 
 	/* NOTE: reo_dest ring id starts from 1 unlike mac_id which starts from 0 */
 	reo_dest = ar->dp.mac_id + 1;
@@ -201,8 +203,9 @@ int ath12k_dp_peer_setup(struct ath12k *ar, struct ath12k_link_vif *arvif, const
 		ath12k_dp_tx_ppeds_cfg_astidx_cache_mapping(ar->ab, arvif, true);
 
 	for (tid = 0; tid < ab->hal.hal_params->num_tids; tid++) {
-		ret = ath12k_dp_rx_peer_tid_setup(ar, addr, vdev_id, tid, 1, 0,
-						  HAL_PN_TYPE_NONE);
+		ath12k_dp_rx_peer_tid_ba_config(dp, tid, &ba_win_size, &ssn);
+		ret = ath12k_dp_rx_peer_tid_setup(ar, addr, vdev_id, tid, ba_win_size,
+						  ssn, HAL_PN_TYPE_NONE);
 		if (ret) {
 			ath12k_warn(ab, "failed to setup rxd tid queue for tid %d: %d\n",
 				    tid, ret);

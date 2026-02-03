@@ -62,6 +62,31 @@ static bool ath12k_wifi8_hw_link_id_required_in_mgmt_send_qcn9625(struct ath12k_
 	return true;
 }
 
+static void ath12k_wifi8_hw_rx_peer_ba_config_qcn9625(struct ath12k_base *ab, u8 tid,
+						      u32 *ba_win_size, u16 *ssn)
+{
+	u32 ba_win_size_val = 1;
+	u16 ssn_val = 0;
+
+	if (ath12k_wifi8_hal_is_reo_nonqos_mgmt_tid(tid)) {
+		ba_win_size_val = ab->ag->num_devices;
+		/* SSN=0 is used for association request before queue setup */
+		ssn_val = 1;
+	}
+
+	if (ba_win_size)
+		*ba_win_size = ba_win_size_val;
+
+	if (ssn)
+		*ssn = ssn_val;
+}
+
+static bool
+ath12k_wifi8_rx_peer_tid_skip_pn_replay_qcn9625(struct ath12k_base *ab, u8 tid)
+{
+	return (tid == HAL_MGMT_BCAST_TID || tid == HAL_MGMT_SENSING_TID);
+}
+
 static const struct ath12k_hw_ops qcn9625_ops = {
 	.get_hw_mac_from_pdev_id = ath12k_wifi8_hw_qcn9625_mac_from_pdev_id,
 	.mac_id_to_pdev_id = ath12k_wifi8_hw_mac_id_to_pdev_id_qcn9625,
@@ -72,6 +97,8 @@ static const struct ath12k_hw_ops qcn9625_ops = {
 	.hw_link_id_required_in_mgmt_send =
 		ath12k_wifi8_hw_link_id_required_in_mgmt_send_qcn9625,
 	.mgmt_rxdma_ring_sel_config = ath12k_wifi8_mgmt_wbm_ring_sel_config_qcn9625,
+	.rx_peer_ba_config = ath12k_wifi8_hw_rx_peer_ba_config_qcn9625,
+	.rx_peer_tid_skip_pn_replay = ath12k_wifi8_rx_peer_tid_skip_pn_replay_qcn9625,
 };
 
 /* To support 8 MSI DP grouping */
