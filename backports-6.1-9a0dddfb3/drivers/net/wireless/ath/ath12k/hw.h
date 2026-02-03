@@ -350,6 +350,7 @@ struct ath12k_hw_ops {
 	void (*fill_cfr_hdr_info)(struct ath12k *ar,
 				  struct ath12k_csi_cfr_header *header,
 				  struct ath12k_cfr_peer_tx_param *params);
+	bool (*hw_link_id_required_in_mgmt_send)(struct ath12k_base *ab);
 };
 
 static inline
