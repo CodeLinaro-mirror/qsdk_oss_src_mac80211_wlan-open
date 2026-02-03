@@ -22590,14 +22590,9 @@ ath12k_mac_reconfig_complete(struct ieee80211_hw *hw,
 			ath12k_wmi_send_set_current_country_cmd(ar, &arg);
 		}
 
-		/*
-		 * Firmware accounts the very first frame (without retry bit set) also
-		 * in the retry count. Increase the user provided tx retry count by 1
-		 * to match the number of tx frames with retry bit set in the air.
-		 */
 		if (ar->mgmt_tx_retry_limit)
 			ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_MGMT_RETRY_LIMIT,
-						  ar->mgmt_tx_retry_limit + 1,
+						  ar->mgmt_tx_retry_limit,
 						  ar->pdev->pdev_id);
 
 
