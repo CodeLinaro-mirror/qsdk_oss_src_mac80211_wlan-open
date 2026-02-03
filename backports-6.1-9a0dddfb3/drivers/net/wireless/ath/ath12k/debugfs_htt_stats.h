@@ -3736,6 +3736,7 @@ struct ath12k_htt_latency_prof_cnt_tlv {
 #define ATH12K_HTT_RX_PDEV_STATS_TOTAL_BW_COUNTERS \
 	 (ATH12K_HTT_RX_PDEV_STATS_NUM_BW_EXT_COUNTERS \
 	  + ATH12K_HTT_RX_PDEV_STATS_NUM_BW_COUNTERS)
+#define ATH12K_HTT_NUM_TCP_IMPLICIT_TRIG_INTR	12
 
 struct ath12k_htt_rx_pdev_ul_ofdma_user_stats_tlv {
 	__le32 user_index;
@@ -3764,6 +3765,9 @@ struct ath12k_htt_rx_pdev_ul_trigger_stats_tlv {
 	__le32 uplink_sta_power_headroom[ATH12K_HTT_RX_UL_MAX_UPLINK_RSSI_TRACK];
 	__le32 red_bw[ATH12K_HTT_RX_NUM_REDUCED_CHAN_TYPES][ATH12K_HTT_RX_NUM_BW_CNTRS];
 	__le32 ul_ofdma_bsc_trig_rx_qos_null_only;
+	__le32 tcp_aware_implicit_trig_hist_ms[ATH12K_HTT_NUM_TCP_IMPLICIT_TRIG_INTR];
+	__le32 ulofdma_implicit_trig_tried;
+	__le32 ulofdma_implicit_trig_qos_null;
 } __packed;
 
 #define ATH12K_HTT_TX_UL_MUMIMO_USER_STATS	8
@@ -4669,6 +4673,10 @@ struct ath12k_htt_rx_pdev_be_ul_trig_stats_tlv {
 	__le32 bn_ul_ofdma_basic_trig_rx_qos_null_only;
 	__le32 bn_ul_ofdma_rx_dru_sbw[ATH12K_HTT_BN_UL_OFDMA_NUM_DRU_SBW_COUNT];
 	__le32 bn_rx_data_dru_size_ppdu[ATH12K_HTT_TX_PDEV_STATS_BN_DRU_SIZE_CNT];
+	__le32 be_ulofdma_implicit_trig_tried;
+	__le32 be_ulofdma_implicit_trig_qos_null;
+	__le32 bn_ulofdma_implicit_trig_tried;
+	__le32 bn_ulofdma_implicit_trig_qos_null;
 } __packed;
 
 struct htt_umac_ssr_stats_tlv {
