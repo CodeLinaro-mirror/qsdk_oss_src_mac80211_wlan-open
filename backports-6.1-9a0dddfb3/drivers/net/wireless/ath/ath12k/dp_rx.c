@@ -76,8 +76,7 @@ out:
 	return nodes;
 }
 
-int ath12k_dp_rx_crypto_mic_len(struct ath12k_pdev_dp *dp_pdev,
-				enum hal_encrypt_type enctype)
+int ath12k_dp_rx_crypto_mic_len(struct ath12k_dp *dp, enum hal_encrypt_type enctype)
 {
 	switch (enctype) {
 	case HAL_ENCRYPT_TYPE_OPEN:
@@ -99,12 +98,11 @@ int ath12k_dp_rx_crypto_mic_len(struct ath12k_pdev_dp *dp_pdev,
 		break;
 	}
 
-	ath12k_warn(dp_pdev->dp->ab, "unsupported encryption type %d for mic len\n", enctype);
+	ath12k_warn(dp->ab, "unsupported encryption type %d for mic len\n", enctype);
 	return 0;
 }
 
-int ath12k_dp_rx_crypto_param_len(struct ath12k_pdev_dp *dp_pdev,
-				  enum hal_encrypt_type enctype)
+int ath12k_dp_rx_crypto_param_len(struct ath12k_dp *dp, enum hal_encrypt_type enctype)
 {
 	switch (enctype) {
 	case HAL_ENCRYPT_TYPE_OPEN:
@@ -127,13 +125,12 @@ int ath12k_dp_rx_crypto_param_len(struct ath12k_pdev_dp *dp_pdev,
 		break;
 	}
 
-	ath12k_warn(dp_pdev->dp->ab, "unsupported encryption type %d\n", enctype);
+	ath12k_warn(dp->ab, "unsupported encryption type %d\n", enctype);
 	return 0;
 }
 EXPORT_SYMBOL(ath12k_dp_rx_crypto_param_len);
 
-int ath12k_dp_rx_crypto_icv_len(struct ath12k_pdev_dp *dp_pdev,
-				enum hal_encrypt_type enctype)
+int ath12k_dp_rx_crypto_icv_len(struct ath12k_dp *dp, enum hal_encrypt_type enctype)
 {
 	switch (enctype) {
 	case HAL_ENCRYPT_TYPE_OPEN:
@@ -153,7 +150,7 @@ int ath12k_dp_rx_crypto_icv_len(struct ath12k_pdev_dp *dp_pdev,
 		break;
 	}
 
-	ath12k_warn(dp_pdev->dp->ab, "unsupported encryption type %d\n", enctype);
+	ath12k_warn(dp->ab, "unsupported encryption type %d\n", enctype);
 	return 0;
 }
 
@@ -290,15 +287,15 @@ void ath12k_dp_rx_h_undecap_frag(struct ath12k_pdev_dp *dp_pdev, struct sk_buff 
 
 	if (flags & RX_FLAG_MIC_STRIPPED)
 		skb_trim(msdu, msdu->len -
-			 ath12k_dp_rx_crypto_mic_len(dp_pdev, enctype));
+			 ath12k_dp_rx_crypto_mic_len(dp, enctype));
 
 	if (flags & RX_FLAG_ICV_STRIPPED)
 		skb_trim(msdu, msdu->len -
-			 ath12k_dp_rx_crypto_icv_len(dp_pdev, enctype));
+			 ath12k_dp_rx_crypto_icv_len(dp, enctype));
 
 	if (flags & RX_FLAG_IV_STRIPPED) {
 		hdr_len = ieee80211_hdrlen(hdr->frame_control);
-		crypto_len = ath12k_dp_rx_crypto_param_len(dp_pdev, enctype);
+		crypto_len = ath12k_dp_rx_crypto_param_len(dp, enctype);
 
 		memmove(msdu->data + hal_rx_desc_sz + crypto_len,
 			msdu->data + hal_rx_desc_sz, hdr_len);
@@ -372,13 +369,14 @@ void ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *
 				struct ieee80211_rx_status *status, bool decrypted,
 				u16 peer_id, bool is_first_msdu, bool is_last_msdu)
 {
+	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ieee80211_hdr *hdr;
 	size_t hdr_len;
 	size_t crypto_len;
 
 	if (!is_first_msdu || !(is_first_msdu && is_last_msdu)) {
 		/* TODO: Change below stats increment back to WARN_ON_ONCE(1) */
-		dp_pdev->dp->device_stats.first_and_last_msdu_bit_miss++;
+		dp->device_stats.first_and_last_msdu_bit_miss++;
 		return;
 	}
 
@@ -394,20 +392,20 @@ void ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *
 	/* Tail */
 	if (status->flag & RX_FLAG_IV_STRIPPED) {
 		skb_trim(msdu, msdu->len -
-			 ath12k_dp_rx_crypto_mic_len(dp_pdev, enctype));
+			 ath12k_dp_rx_crypto_mic_len(dp, enctype));
 
 		skb_trim(msdu, msdu->len -
-			 ath12k_dp_rx_crypto_icv_len(dp_pdev, enctype));
+			 ath12k_dp_rx_crypto_icv_len(dp, enctype));
 	} else {
 		/* MIC */
 		if (status->flag & RX_FLAG_MIC_STRIPPED)
 			skb_trim(msdu, msdu->len -
-				 ath12k_dp_rx_crypto_mic_len(dp_pdev, enctype));
+				 ath12k_dp_rx_crypto_mic_len(dp, enctype));
 
 		/* ICV */
 		if (status->flag & RX_FLAG_ICV_STRIPPED)
 			skb_trim(msdu, msdu->len -
-				 ath12k_dp_rx_crypto_icv_len(dp_pdev, enctype));
+				 ath12k_dp_rx_crypto_icv_len(dp, enctype));
 	}
 
 	/* MMIC */
@@ -419,7 +417,7 @@ void ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *
 	/* Head */
 	if (status->flag & RX_FLAG_IV_STRIPPED) {
 		hdr_len = ieee80211_hdrlen(hdr->frame_control);
-		crypto_len = ath12k_dp_rx_crypto_param_len(dp_pdev, enctype);
+		crypto_len = ath12k_dp_rx_crypto_param_len(dp, enctype);
 
 		memmove(msdu->data + crypto_len, msdu->data, hdr_len);
 		skb_pull(msdu, crypto_len);
