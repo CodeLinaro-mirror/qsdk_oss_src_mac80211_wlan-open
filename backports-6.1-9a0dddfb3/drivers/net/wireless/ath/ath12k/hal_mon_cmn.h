@@ -8,7 +8,6 @@
 
 #include "hw.h"
 
-#define HAL_MON_INVALID_PEERID	0x3fff
 #define HAL_RX_MON_MAX_AGGR_SIZE	128
 #define HAL_RX_MAX_MPDU				256
 #define HAL_RX_NUM_WORDS_PER_PPDU_BITMAP	(HAL_RX_MAX_MPDU >> 5)

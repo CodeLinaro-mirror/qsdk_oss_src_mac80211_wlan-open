@@ -286,9 +286,6 @@ struct ath12k_dp_link_peer *
 ath12k_dp_link_peer_find_by_peerid_index(struct ath12k_dp *dp,
 					 struct ath12k_pdev_dp *dp_pdev, u16 peer_id);
 struct ath12k_dp_link_peer *
-ath12k_dp_link_peer_find_by_ast(struct ath12k_dp *dp,
-				int ast_hash);
-struct ath12k_dp_link_peer *
 ath12k_dp_link_peer_find_by_ml_peer_vdev_id(struct ath12k_dp *dp,
 					    int peer_id,
 					    int vdev_id);
