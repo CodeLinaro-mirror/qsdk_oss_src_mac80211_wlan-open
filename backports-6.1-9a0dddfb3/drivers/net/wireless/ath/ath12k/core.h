@@ -2751,6 +2751,21 @@ static inline int ath12k_get_peer_count(struct ath12k_base *ab, bool get_max)
        return peer_count;
 }
 
+static inline void
+ath12k_core_srng_get_htt_mgmt_filter(struct ath12k_base *ab, u16 *mgmt_filter)
+{
+	ath12k_dp_get_htt_mgmt_filter(ab, mgmt_filter);
+}
+
+static inline int
+ath12k_core_srng_htt_rx_filter_setup(struct ath12k_base *ab, u32 ring_id, int mac_id,
+				     enum hal_ring_type ring_type, int rx_buf_size,
+				     struct htt_rx_ring_tlv_filter *tlv_filter)
+{
+	return ath12k_dp_tx_htt_rx_filter_setup(ab, ring_id, mac_id, ring_type,
+						rx_buf_size, tlv_filter);
+}
+
 extern unsigned int ath12k_mlo_capable;
 
 int ath12k_wsi_load_info_init(struct ath12k_base *ab);

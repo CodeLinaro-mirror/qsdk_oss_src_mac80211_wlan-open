@@ -351,6 +351,7 @@ struct ath12k_hw_ops {
 				  struct ath12k_csi_cfr_header *header,
 				  struct ath12k_cfr_peer_tx_param *params);
 	bool (*hw_link_id_required_in_mgmt_send)(struct ath12k_base *ab);
+	int (*mgmt_rxdma_ring_sel_config)(struct ath12k_base *ab);
 };
 
 static inline

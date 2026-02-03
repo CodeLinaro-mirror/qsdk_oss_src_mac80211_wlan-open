@@ -2394,6 +2394,10 @@ ath12k_dp_tx_get_ring_id_type(struct ath12k_base *ab,
 		*htt_ring_id = HTT_TX_MON_MON2HOST_DEST_RING;
 		*htt_ring_type = HTT_HW_TO_SW_RING;
 		break;
+	case HAL_WBM_IDLE_BUF_MGMT:
+		*htt_ring_type = HTT_SW_TO_HW_RING;
+		*htt_ring_id = HTT_RXDMA_WBM_BUF1_RING;
+		break;
 	default:
 		ath12k_warn(ab, "Unsupported ring type in DP :%d\n", ring_type);
 		ret = -EINVAL;
@@ -2519,6 +2523,15 @@ err_free:
 	return ret;
 }
 EXPORT_SYMBOL(ath12k_dp_tx_htt_srng_setup);
+
+void ath12k_dp_get_htt_mgmt_filter(struct ath12k_base *ab, u16 *mgmt_filter)
+{
+	u16 filter = FILTER_MGMT_ALL;
+
+	filter &= ~(FILTER_MGMT_PROBE_RESP | FILTER_MGMT_BEACON);
+	*mgmt_filter = filter;
+}
+EXPORT_SYMBOL(ath12k_dp_get_htt_mgmt_filter);
 
 void ath12k_dp_tx_htt_rx_mgmt_flag0_fp_filter_set(u32 *ptr, u16 filter)
 {

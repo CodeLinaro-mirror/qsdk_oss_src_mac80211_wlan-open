@@ -974,3 +974,17 @@ void ath12k_wifi8_hal_vdev_mcast_ctrl_set(struct ath12k_base *ab, u32 vdev_id,
 
 	ath12k_hif_write32(ab, reg_addr, reg_val);
 }
+
+int ath12k_wifi8_hal_get_rdi_source_cfg(struct ath12k_base *ab, int source)
+{
+	struct ath12k_hal *hal = &ab->hal;
+	const struct ath12k_hal_rdi_mapping *rdi_mapping = hal->rdi_mapping;
+	unsigned long rdi_based_source_cfg = 0;
+	int i;
+
+	for (i = 0; i < HAL_RDI_MAPPING_MAX; i++)
+		if (rdi_mapping[i].source == source)
+			set_bit(i, &rdi_based_source_cfg);
+
+	return rdi_based_source_cfg;
+}
