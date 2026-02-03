@@ -41,6 +41,11 @@ struct ath12k_mgmt;
 
 #define ATH12K_MGMT_RX_DESC_MAGIC          0xABBAABBA
 
+enum ath12k_mgmt_srng_pkt_type {
+	ATH12K_MGMT_SRNG_PKT_TYPE_RX,
+	ATH12K_MGMT_SRNG_PKT_TYPE_RX_ERR,
+};
+
 struct mgmt_srng {
 	u32 *vaddr_unaligned;
 	u32 *vaddr;
@@ -76,6 +81,18 @@ struct ath12k_mgmt_irq_grp {
 	int irqs[ATH12K_MGMT_IRQ_PER_GRP_NUM_MAX];
 };
 
+#define ATH12K_SRNG_STATS_MGMT_FRM_STYPE_MAX 16
+struct ath12k_device_mgmt_srng_stats {
+	u32 invalid_pkts; /* non-mgmt pkts invalidly routed to mgmt srng */
+	u32 invalid_push_pkts; /* pkts with invalid push reason */
+	u32 rx_pkts[ATH12K_SRNG_STATS_MGMT_FRM_STYPE_MAX];
+	u32 err_ring_pkts;
+	/* subset of err_ring_pkts */
+	u32 rxdma_err[HAL_REO_ENTR_RING_RXDMA_ECODE_MAX];
+	u32 reo_err[HAL_REO_DEST_RING_ERROR_CODE_MAX];
+	u32 frag_pkts;
+};
+
 struct ath12k_mgmt {
 	struct ath12k_base *ab;
 	struct device *dev;
@@ -91,6 +108,8 @@ struct ath12k_mgmt {
 	/* protects rx descriptors for arch-specific rx_refill_ring */
 	spinlock_t rx_desc_lock;
 	struct list_head rx_desc_free_list;
+
+	struct ath12k_device_mgmt_srng_stats srng_stats;
 
 	/* must be last */
 	u8 arch_priv[] __aligned(sizeof(void *));
