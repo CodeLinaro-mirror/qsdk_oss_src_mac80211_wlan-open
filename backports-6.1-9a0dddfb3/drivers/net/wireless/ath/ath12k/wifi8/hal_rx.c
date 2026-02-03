@@ -1057,6 +1057,12 @@ void ath12k_wifi8_hal_reo_hw_setup(struct ath12k_base *ab)
 	val |= u32_encode_bits(1, HAL_REO1_MISC_CFG_2_BAR_REO_ERR_DELINK_ENABLE);
 	ath12k_hif_write32(ab, reo_base + HAL_REO1_MISC_CFG_2, val);
 
+	/* disable cookie conversion for mgmt rings */
+	val = ath12k_hif_read32(ab, reo_base + HAL_REO1_COOKIE_CONV_EN_RING);
+	val &= ~HAL_REO1_COOKIE_CONV_REO2SW8_EN;
+	val &= ~HAL_REO1_COOKIE_CONV_REO2SW9_EN;
+	val &= ~HAL_REO1_COOKIE_CONV_REO2SW11_EN;
+	ath12k_hif_write32(ab, reo_base + HAL_REO1_COOKIE_CONV_EN_RING, val);
 }
 
 void ath12k_wifi8_hal_reo_shared_qaddr_cache_clear(struct ath12k_base *ab)
