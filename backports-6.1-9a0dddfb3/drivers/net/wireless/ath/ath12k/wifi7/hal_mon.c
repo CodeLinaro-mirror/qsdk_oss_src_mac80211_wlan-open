@@ -3859,25 +3859,26 @@ ath12k_wifi7_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 
 	case HAL_PHYRX_RSSI_LEGACY: {
 		const struct hal_rx_phyrx_rssi_legacy_info *rssi = tlv_data;
-		u32 info[2];
+		u32 info[3];
 
 		info[0] = __le32_to_cpu(rssi->info0);
 		info[1] = __le32_to_cpu(rssi->info1);
+		info[2] = __le32_to_cpu(rssi->info2);
 
 		/* TODO: Please note that the combined rssi will not be accurate
 		 * in MU case. Rssi in MU needs to be retrieved from
 		 * PHYRX_OTHER_RECEIVE_INFO TLV.
 		 */
 		ppdu_info->rssi_comb =
-			u32_get_bits(info[1],
-				     HAL_RX_PHYRX_RSSI_LEGACY_INFO_INFO1_RSSI_COMB);
+			u32_get_bits(info[2],
+				     HAL_RX_PHYRX_RSSI_LEGACY_INFO_INFO2_RSSI_COMB);
 
 		ppdu_info->bw = u32_get_bits(info[0],
 					     HAL_RX_PHYRX_RSSI_LEGACY_INFO_INFO0_RX_BW);
 
 		ppdu_info->rssi_region_offset =
-			u32_get_bits(__le32_to_cpu(rssi->rsvd0[5]),
-				     HAL_RX_PHYRX_RSSI_LEGACY_INFO_RSVD5_REGION_OFFSET);
+			u32_get_bits(info[1],
+				     HAL_RX_PHYRX_RSSI_LEGACY_INFO_INFO1_REGION_OFFSET);
 		break;
 	}
 	case HAL_PHYRX_OTHER_RECEIVE_INFO: {
