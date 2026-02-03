@@ -215,6 +215,23 @@ void ath12k_mgmt_srng_cleanup(struct ath12k_base *ab, struct mgmt_srng *ring)
 }
 EXPORT_SYMBOL(ath12k_mgmt_srng_cleanup);
 
+struct ath12k_rx_desc_info *ath12k_mgmt_get_rx_desc_from_cookie(struct ath12k_mgmt *mgmt,
+								u32 cookie)
+{
+	u16 block, slot;
+
+	block = u32_get_bits(cookie, MGMT_RX_DESC_BLOCK_MASK);
+	slot = u32_get_bits(cookie, MGMT_RX_DESC_SLOT_MASK);
+
+	if (block >= NUM_MGMT_RX_DESC_BLOCKS ||
+	    !mgmt->rx_desc_baddr[block] ||
+	    slot >= MGMT_RX_DESC_BLOCK_SIZE)
+		return NULL;
+
+	return &mgmt->rx_desc_baddr[block][slot];
+}
+EXPORT_SYMBOL(ath12k_mgmt_get_rx_desc_from_cookie);
+
 int ath12k_mgmt_rx_desc_init(struct ath12k_base *ab)
 {
 	struct ath12k_mgmt *mgmt = ab->mgmt;
@@ -356,3 +373,22 @@ size_t ath12k_mgmt_get_req_entries_from_refill_ring(struct ath12k_base *ab,
 	return req_entries;
 }
 EXPORT_SYMBOL(ath12k_mgmt_get_req_entries_from_refill_ring);
+
+struct sk_buff *ath12k_mgmt_rx_get_mmpdu_last_buf(struct sk_buff_head *mmpdu_list,
+						  struct sk_buff *first)
+{
+	struct sk_buff *skb;
+	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(first);
+
+	if (!rxcb->is_continuation)
+		return first;
+
+	skb_queue_walk(mmpdu_list, skb) {
+		rxcb = ATH12K_SKB_RXCB(skb);
+		if (!rxcb->is_continuation)
+			return skb;
+	}
+
+	return NULL;
+}
+EXPORT_SYMBOL(ath12k_mgmt_rx_get_mmpdu_last_buf);
