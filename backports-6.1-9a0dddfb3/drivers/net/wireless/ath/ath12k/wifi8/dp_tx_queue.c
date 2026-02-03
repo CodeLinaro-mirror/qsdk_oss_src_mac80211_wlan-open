@@ -89,6 +89,7 @@ int ath12k_tx_classify_info_alloc(struct ath12k_dp_hw_group *dp_hw_grp,
 	int success_count = 0;
 	enum ath12k_classify_bank_subid bank_sub_id;
 	struct device *dev = ath12k_dp_get_dev_from_dp_hw_group(dp_hw_grp);
+	struct ath12k_sta *ahsta;
 
 	if (!peer)
 		return -EINVAL;
@@ -164,8 +165,14 @@ int ath12k_tx_classify_info_alloc(struct ath12k_dp_hw_group *dp_hw_grp,
 		ti.flow_loop_handler = HAL_WIFITXPT_LOOP_TO_TQM;
 		ti.msdu_drop = 0;
 		ti.metadata = peer ? ((peer->peer_id & 0xFF) << 0x3 | (tidno & 0x7)) : 0;
-		ath12k_wifi8_hal_txpt_classify_info_setup(dp_hw_grp, tx_tid_ptr, &ti);
+		if (peer->sta) {
+			rcu_read_lock();
+			ahsta = ath12k_sta_to_ahsta(peer->sta);
+			ti.assoc_link_id = ahsta->assoc_link_id;
+			rcu_read_unlock();
+		}
 
+		ath12k_wifi8_hal_txpt_classify_info_setup(dp_hw_grp, tx_tid_ptr, &ti);
 		success_count++;
 	}
 	return success_count == requested ? 0 : -EFAULT;

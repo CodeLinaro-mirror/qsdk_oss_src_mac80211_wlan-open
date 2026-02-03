@@ -202,6 +202,7 @@ struct hal_tx_mpdu_queue_head {
 #define HAL_TXPT_CLASSIFY_TQM_FLOW_LOOP_HANDLER         GENMASK(3, 2)
 #define HAL_TXPT_CLASSIFY_MSDU_DROP                     BIT(4)
 #define HAL_TXPT_CLASSIFY_METADATA                      GENMASK(15, 5)
+#define HAL_TXPT_CLASSIFY_TCL_FW_LINK_ID		GENMASK(18, 16)
 
 struct hal_txpt_classify_info {
 	__le32 info0;
@@ -242,7 +243,9 @@ struct hal_txpt_classify_data {
 	    flow_handler:2,
 	    flow_loop_handler:2,
 	    msdu_drop:1,
-	    metadata:11;
+	    metadata:11,
+	    assoc_link_id:8,
+	    reserved:6;
 };
 
 int ath12k_wifi8_hal_tx_msdu_queue_setup(struct ath12k_dp_hw_group *dp_hw_grp,
