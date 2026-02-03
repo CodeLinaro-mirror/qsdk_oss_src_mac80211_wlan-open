@@ -959,6 +959,20 @@ void ath12k_dp_mon_pktlog_config_filter(struct ath12k_pdev_dp *dp_pdev,
 }
 EXPORT_SYMBOL(ath12k_dp_mon_pktlog_config_filter);
 
+void ath12k_dp_htt_rx_filter_rxmon_cfg(void *ptr,
+				       struct htt_rx_ring_tlv_filter *tlv_filter)
+{
+	struct htt_rx_ring_selection_cfg_cmd *cmd =
+				(struct htt_rx_ring_selection_cfg_cmd *)ptr;
+
+	cmd->info0 |= le32_encode_bits(!tlv_filter->rxmon_disable,
+				       HTT_RX_RING_SELECTION_CFG_CMD_INFO0_EN_RXMON);
+	cmd->info0 |=
+		le32_encode_bits(!tlv_filter->rxmon_disable,
+				 HTT_RX_RING_SELECTION_CFG_CMD_INFO0_PKT_TYPE_EN_DATA);
+}
+EXPORT_SYMBOL(ath12k_dp_htt_rx_filter_rxmon_cfg);
+
 int ath12k_dp_mon_tx_filter_alloc(struct ath12k_pdev_dp *dp_pdev)
 {
 	struct dp_mon_tx_filter **tx_mon_filter = NULL;

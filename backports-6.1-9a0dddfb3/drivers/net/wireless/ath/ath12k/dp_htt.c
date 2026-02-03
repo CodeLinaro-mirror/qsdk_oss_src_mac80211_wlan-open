@@ -2361,7 +2361,10 @@ ath12k_dp_tx_get_ring_id_type(struct ath12k_base *ab,
 		*htt_ring_type = HTT_HW_TO_SW_RING;
 		break;
 	case HAL_RXDMA_MONITOR_BUF:
-		*htt_ring_id = HTT_RX_MON_HOST2MON_BUF_RING;
+		if (ath12k_dp_mon_rx_get_quad_ring_support(ab->dp))
+			*htt_ring_id = HTT_RXDMA_MONITOR_BUF_RING;
+		else
+			*htt_ring_id = HTT_RX_MON_HOST2MON_BUF_RING;
 		*htt_ring_type = HTT_SW_TO_HW_RING;
 		break;
 	case HAL_RXDMA_MONITOR_STATUS:
@@ -2369,7 +2372,10 @@ ath12k_dp_tx_get_ring_id_type(struct ath12k_base *ab,
 		*htt_ring_type = HTT_SW_TO_HW_RING;
 		break;
 	case HAL_RXDMA_MONITOR_DST:
-		*htt_ring_id = HTT_RX_MON_MON2HOST_DEST_RING;
+		if (ath12k_dp_mon_rx_get_quad_ring_support(ab->dp))
+			*htt_ring_id = HTT_RXDMA_MONITOR_DEST_RING;
+		else
+			*htt_ring_id = HTT_RX_MON_MON2HOST_DEST_RING;
 		*htt_ring_type = HTT_HW_TO_SW_RING;
 		break;
 	case HAL_RXDMA_MONITOR_DESC:
@@ -2912,10 +2918,8 @@ int ath12k_dp_tx_htt_rx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 	cmd->info0 |=
 		le32_encode_bits(tlv_filter->drop_threshold_valid,
 				 HTT_RX_RING_SELECTION_CFG_CMD_INFO0_DROP_THRES_VAL);
-	cmd->info0 |= le32_encode_bits(!tlv_filter->rxmon_disable,
-				       HTT_RX_RING_SELECTION_CFG_CMD_INFO0_EN_RXMON);
-	cmd->info0 |= le32_encode_bits(!tlv_filter->rxmon_disable,
-				       HTT_RX_RING_SELECTION_CFG_CMD_INFO0_PKT_TYPE_EN_DATA);
+
+	ath12k_dp_mon_rx_enable(dp, cmd, tlv_filter);
 
 	cmd->info1 = le32_encode_bits(rx_buf_size,
 				      HTT_RX_RING_SELECTION_CFG_CMD_INFO1_BUF_SIZE);
