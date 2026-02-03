@@ -21,11 +21,12 @@
  * triggered from atomic context.
  */
 static ATOMIC_NOTIFIER_HEAD(ath12k_ppdu_notifier_chain);
+static ATOMIC_NOTIFIER_HEAD(ath12k_fse_update_notifier_chain);
 
 /* Track listener counts per event type for optimization */
 static atomic_t ath12k_ppdu_rx_listener_count = ATOMIC_INIT(0);
 static atomic_t ath12k_ppdu_tx_listener_count = ATOMIC_INIT(0);
-
+static atomic_t ath12k_fse_update_listener_count = ATOMIC_INIT(0);
 /**
  * ath12k_register_ppdu_notifier - Register PPDU event listener
  * @nb: Notifier block with callback
@@ -241,3 +242,62 @@ int ath12k_ext_mon_rx_notifier_call_chain(unsigned long val, void *rx_event)
 	return srcu_notifier_call_chain(&ath12k_ext_mon_rx_notifier_chain, val, rx_event);
 }
 EXPORT_SYMBOL(ath12k_ext_mon_rx_notifier_call_chain);
+
+/* Register: FSE_UPDATE */
+int ath12k_register_fse_update_notifier(struct notifier_block *nb,
+					 unsigned long event_mask)
+{
+	int ret;
+
+	if (!nb)
+		return -EINVAL;
+
+	ath12k_dbg(NULL, ATH12K_DBG_TELEMETRY,
+		   "FSE_UPDATE notifier register, mask=0x%lx\n",
+		   event_mask);
+
+	ret = atomic_notifier_chain_register(&ath12k_fse_update_notifier_chain,
+					     nb);
+	if (ret)
+		return ret;
+
+	if (event_mask & (1 << ATH12K_EVENT_FSE_UPDATE))
+		atomic_inc(&ath12k_fse_update_listener_count);
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_register_fse_update_notifier);
+
+int ath12k_unregister_fse_update_notifier(struct notifier_block *nb,
+					   unsigned long event_mask)
+{
+	int ret;
+
+	if (!nb)
+		return -EINVAL;
+
+	ath12k_dbg(NULL, ATH12K_DBG_TELEMETRY,
+		   "FSE_UPDATE notifier unregister, mask=0x%lx\n",
+		   event_mask);
+
+	ret = atomic_notifier_chain_unregister(&ath12k_fse_update_notifier_chain,
+					       nb);
+	if (!ret && (event_mask & (1 << ATH12K_EVENT_FSE_UPDATE)))
+		atomic_dec(&ath12k_fse_update_listener_count);
+
+	return ret;
+}
+EXPORT_SYMBOL(ath12k_unregister_fse_update_notifier);
+
+bool ath12k_fse_update_notif_has_listeners(void)
+{
+	return atomic_read(&ath12k_fse_update_listener_count) > 0;
+}
+EXPORT_SYMBOL(ath12k_fse_update_notif_has_listeners);
+
+int ath12k_fse_update_notif_call_chain(void *v)
+{
+	return atomic_notifier_call_chain(&ath12k_fse_update_notifier_chain,
+					  ATH12K_EVENT_FSE_UPDATE, v);
+}
+EXPORT_SYMBOL(ath12k_fse_update_notif_call_chain);
