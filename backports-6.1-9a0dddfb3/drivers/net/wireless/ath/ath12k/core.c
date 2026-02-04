@@ -5362,6 +5362,7 @@ void ath12k_telemetry_notify_breach(u8 *mac_addr, u8 svc_id, u8 param,
 	struct ath12k_base *ab = NULL;
 	struct ath12k_dp_link_peer *peer = NULL;
 	int soc;
+	u8 mld_addr_buf[ETH_ALEN] = {0};
 	u8 *mld_addr = NULL;
 
 	if (!mac_addr)
@@ -5386,8 +5387,10 @@ void ath12k_telemetry_notify_breach(u8 *mac_addr, u8 svc_id, u8 param,
 			peer = ath12k_dp_link_peer_find_by_addr(ab->dp, mac_addr);
 			if (peer) {
 				vif = peer->vif;
-				if (peer->mlo)
-					mld_addr = peer->ml_addr;
+				if (peer->mlo) {
+					ether_addr_copy(mld_addr_buf, peer->ml_addr);
+					mld_addr = mld_addr_buf;
+				}
 				ath12k_dbg(ab, ATH12K_DBG_QOS, "Breach detected: Peer %pM\n",
 					   mac_addr);
 				spin_unlock_bh(&ab->dp->dp_lock);
