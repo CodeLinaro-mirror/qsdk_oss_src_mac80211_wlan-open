@@ -31,6 +31,20 @@ static inline void ath12k_dp_copy_mac_addr(u32 *mac_addr_31_0,
 	memcpy(mac_addr_47_32, mac_addr + 4, ETH_ALEN - 4);
 }
 
+bool ath12k_wifi8_dp_ase_tx_cache_enabled(struct ath12k_dp_hw_group *dp_hw_grp)
+{
+	struct ath12k_dp_global_ast_table *ast_base =
+				ath12k_dp_get_global_ast_table(dp_hw_grp);
+
+	if (!ast_base)
+		return false;
+
+	if (ast_base->ase_tx_cache_en)
+		return true;
+
+	return false;
+}
+
 u16 ath12k_dp_compute_ast_hash(u8 *mac_addr,
 			       u32 ast_hash_mask,
 			       bool is_mcast,
@@ -140,10 +154,8 @@ ath12k_dp_ast_param_init(struct ath12k_dp_global_ast_table *ast_base,
 	ast_info->num_ast_entries = ast_base->num_ast_entries;
 	ast_info->skid_len = ast_base->skid_len;
 
-	/* Disable the ASE cache */
-	ast_info->ast_cache_en = 0;
-	/* Disable the failure cache */
-	ast_info->ast_cache_failure_en = 0;
+	ast_info->ast_cache_en = ast_base->ase_tx_cache_en;
+	ast_info->ast_cache_failure_en = ast_base->ase_tx_cache_en;
 
 	/* init the hash keys */
 	ast_info->ase_hash_key1 = ast_base->hash_keys.ase_hash_key1;
@@ -294,6 +306,8 @@ int ath12k_dp_ast_table_init(struct ath12k_dp_hw_group *dp_hw_grp)
 	struct ath12k_hal_ast_param ast_info = {0};
 	struct ath12k_base *ab = NULL;
 	int ret;
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8 =
+			ath12k_get_dp_hw_group_wifi8(dp_hw_grp);
 
 	if (!dp_hw_grp) {
 		ath12k_err(NULL, "ASE init dp_hw_grp is NULL\n");
@@ -303,6 +317,7 @@ int ath12k_dp_ast_table_init(struct ath12k_dp_hw_group *dp_hw_grp)
 	dev = ath12k_dp_get_dev_from_dp_hw_group(dp_hw_grp);
 	ast_base = ath12k_dp_get_global_ast_table(dp_hw_grp);
 	ab = ath12k_dp_get_ab_from_dp_hw_group(dp_hw_grp);
+	dp_hw_grp_wifi8 = ath12k_get_dp_hw_group_wifi8(dp_hw_grp);
 
 	if (!ast_base || !dev || !ab) {
 		ath12k_err(NULL, "ASE init unable to fetch ast_base or dev or ab\n");
@@ -362,9 +377,13 @@ int ath12k_dp_ast_table_init(struct ath12k_dp_hw_group *dp_hw_grp)
 
 	spin_lock_init(&ast_base->ast_lock);
 
+	ast_base->ase_tx_cache_en = 1;
 	ath12k_dp_ast_param_init(ast_base, &ast_info);
 	if (!ath12k_ftm_mode)
 		ath12k_wifi8_hal_hw_ase_init(ab, &ast_info);
+
+	if (ath12k_wifi8_dp_ase_tx_cache_enabled(dp_hw_grp))
+		init_completion(&dp_hw_grp_wifi8->peer_init_done);
 
 	return 0;
 
@@ -464,9 +483,102 @@ ath12k_dp_get_sw_ast_entry_by_index(struct ath12k_dp_hw_group *dp_hw_grp, u16 as
 	return ast_base->ast_entries[ast_index];
 }
 
-void ath12k_dp_hw_ast_entry_sync(struct ath12k_dp_hw_group *dp_hw_grp,
-				 struct ath12k_ast_entry *sw_ast_entry,
-				 struct hal_ast_entry *hw_ast_entry)
+static int
+ath12k_wifi8_invalidate_tx_ase_cache(struct ath12k_dp_hw_group *dp_hw_grp,
+				     struct ath12k_ase_cache_op_param *config)
+{
+	struct ath12k_dp_global_ast_table *ast_base =
+		ath12k_dp_get_global_ast_table(dp_hw_grp);
+	struct ath12k_base *ab = ath12k_dp_get_ab_from_dp_hw_group(dp_hw_grp);
+	struct ath12k_dp_wifi8 *dp_wifi8 = NULL;
+	struct ath12k_hal_tx_cmd_ring_param param = {0};
+	struct hal_srng *tx_cmd_ring;
+	int ret = 0;
+
+	if (!ab || !ast_base)
+		return -EINVAL;
+
+	dp_wifi8 = ath12k_get_dp_wifi8(ab->dp);
+	tx_cmd_ring = &ab->hal.srng_list[dp_wifi8->tcl_cmd_ring.ring_id];
+
+	switch (config->cmd) {
+	case ATH12K_INVALIDATE_ENTRY:
+		param.ctrl_buf_addr = (dma_addr_t)(((u8 *)ast_base->ast_paddr) +
+						   (config->ast_index *
+						    HAL_HW_AST_ENTRY_SIZE));
+		param.meta_data_0 = config->meta_data_0;
+
+		param.cmd_num = HAL_TCL_CACHE_OP_INVALIDATE_SINGLE_ENTRY;
+		break;
+
+	case ATH12K_INVALIDATE_ALL:
+		param.cmd_num = HAL_TCL_CACHE_OP_INVALIDATE_ALL;
+		break;
+
+	default:
+		break;
+	}
+
+	ret = ath12k_wifi8_hal_invalidate_tx_cache_cmd_send(ab, tx_cmd_ring, &param);
+
+	return ret;
+}
+
+int ath12k_wifi8_invalidate_peer_ase_entry(struct ath12k_dp_hw_group *dp_hw_grp,
+					   struct ath12k_ast_entry *sw_ast_entry)
+{
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8 =
+			ath12k_get_dp_hw_group_wifi8(dp_hw_grp);
+	struct ath12k_ase_cache_op_param config = {0};
+	bool ast_is_valid;
+	int ret;
+
+	if (!ath12k_wifi8_dp_ase_tx_cache_enabled(dp_hw_grp))
+		return 0;
+
+	if (sw_ast_entry->tx_cmd_seq_num >= ATH12K_MAX_TX_ASE_CMD_SEQ_NUM)
+		sw_ast_entry->tx_cmd_seq_num = 0;
+	else
+		sw_ast_entry->tx_cmd_seq_num++;
+
+	ast_is_valid = !!(sw_ast_entry->ast_entry_flags & ATH12K_AST_ENTRY_IS_VALID);
+	config.ast_index = sw_ast_entry->ast_index;
+	config.meta_data_0 = u32_encode_bits(sw_ast_entry->ast_index,
+					     ATH12K_AST_META_DATA_0_AST_INDEX) |
+			     u32_encode_bits(sw_ast_entry->tx_cmd_seq_num,
+					     ATH12K_AST_META_DATA_0_TX_CMD_SEQ_NUM) |
+			     u32_encode_bits(!!ast_is_valid,
+					     ATH12K_AST_META_DATA_0_STATE);
+	config.cmd = ATH12K_INVALIDATE_ENTRY;
+
+	ret = ath12k_wifi8_invalidate_tx_ase_cache(dp_hw_grp, &config);
+	if (ret)
+		return ret;
+
+	if (ast_is_valid)
+		set_bit(ATH12K_AST_ENTRY_TX_INVAL_STATUS,
+			&sw_ast_entry->ast_create_invalidate_status);
+
+	reinit_completion(&dp_hw_grp_wifi8->peer_init_done);
+	return ret;
+}
+
+int ath12k_wifi8_invalidate_peer_ase_cache_table(struct ath12k_dp_hw_group *dp_hw_grp)
+{
+	int ret = 0;
+	struct ath12k_ase_cache_op_param config = {0};
+
+	if (!ath12k_wifi8_dp_ase_tx_cache_enabled(dp_hw_grp))
+		return 0;
+
+	config.cmd = ATH12K_INVALIDATE_ALL;
+	ret = ath12k_wifi8_invalidate_tx_ase_cache(dp_hw_grp, &config);
+	return ret;
+}
+
+int ath12k_dp_hw_ast_entry_sync(struct ath12k_dp_hw_group *dp_hw_grp,
+				struct ath12k_ast_entry *sw_ast_entry,
+				struct hal_ast_entry *hw_ast_entry)
 {
 	struct ath12k_dp_global_ast_table *ast_base =
 				ath12k_dp_get_global_ast_table(dp_hw_grp);
@@ -475,6 +587,7 @@ void ath12k_dp_hw_ast_entry_sync(struct ath12k_dp_hw_group *dp_hw_grp,
 	u16 mac_addr_47_32 = 0;
 	bool is_valid = !!(sw_ast_entry->ast_entry_flags & ATH12K_AST_ENTRY_IS_VALID);
 	dma_addr_t paddr;
+	int ret = 0;
 
 	if (is_valid) {
 		/* HW AST entry setup */
@@ -520,7 +633,7 @@ void ath12k_dp_hw_ast_entry_sync(struct ath12k_dp_hw_group *dp_hw_grp,
 	if (!dev) {
 		ath12k_err(NULL, "dev is NULL during AST entry sync for index %u\n",
 			   sw_ast_entry->ast_index);
-		return;
+		return -EINVAL;
 	}
 
 	/* flush the entry */
@@ -531,7 +644,8 @@ void ath12k_dp_hw_ast_entry_sync(struct ath12k_dp_hw_group *dp_hw_grp,
 					       HAL_HW_AST_ENTRY_SIZE,
 					       DMA_BIDIRECTIONAL);
 
-	/* TODO send the TCL command to invalidate the cache */
+	ret = ath12k_wifi8_invalidate_peer_ase_entry(dp_hw_grp, sw_ast_entry);
+	return ret;
 }
 
 int ath12k_dp_ast_entry_create(struct ath12k_dp_hw_group *dp_hw_grp,
@@ -573,6 +687,12 @@ int ath12k_dp_ast_entry_create(struct ath12k_dp_hw_group *dp_hw_grp,
 			ast_index++;
 			continue;
 		}
+		/* Check if a previous delete operation is in progress */
+		sw_ast_entry = ath12k_dp_get_sw_ast_entry_by_index(dp_hw_grp, ast_index);
+		if (sw_ast_entry) {
+			ret = -EBUSY;
+			goto error_handle;
+		}
 
 		free_slot_found = true;
 		break;
@@ -613,7 +733,12 @@ int ath12k_dp_ast_entry_create(struct ath12k_dp_hw_group *dp_hw_grp,
 		sw_ast_entry->ast_entry_flags = ATH12K_AST_ENTRY_EMPTY_FLAGS;
 		goto free_sw_entry;
 	}
-	ath12k_dp_hw_ast_entry_sync(dp_hw_grp, sw_ast_entry, hw_ast_entry);
+	ret = ath12k_dp_hw_ast_entry_sync(dp_hw_grp, sw_ast_entry, hw_ast_entry);
+	if (ret) {
+		ast_base->ast_entries[ast_index] = NULL;
+		(void)ath12k_ast_entry_rhash_delete(dp_hw_grp, sw_ast_entry);
+		goto free_sw_entry;
+	}
 
 	param->ast_index = ast_index;
 	param->ast_hash = ast_hash;
@@ -628,6 +753,27 @@ error_handle:
 	return ret;
 }
 
+void ath12k_dp_free_ast_entry(struct ath12k_dp_hw_group *dp_hw_grp,
+			      u16 ast_index)
+{
+	struct ath12k_dp_global_ast_table *ast_base =
+				ath12k_dp_get_global_ast_table(dp_hw_grp);
+	struct ath12k_ast_entry *sw_ast_entry = NULL;
+
+	spin_lock_bh(&ast_base->ast_lock);
+	sw_ast_entry = ath12k_dp_get_sw_ast_entry_by_index(dp_hw_grp, ast_index);
+	if (!sw_ast_entry) {
+		spin_unlock_bh(&ast_base->ast_lock);
+		return;
+	}
+
+	/* remove SW AST entry from index based and hash tables */
+	ast_base->ast_entries[ast_index] = NULL;
+	(void)ath12k_ast_entry_rhash_delete(dp_hw_grp, sw_ast_entry);
+
+	kfree(sw_ast_entry);
+	spin_unlock_bh(&ast_base->ast_lock);
+}
 void ath12k_dp_ast_entry_delete(struct ath12k_dp_hw_group *dp_hw_grp,
 				u16 ast_index)
 {
@@ -655,13 +801,80 @@ void ath12k_dp_ast_entry_delete(struct ath12k_dp_hw_group *dp_hw_grp,
 
 	/* reset the valid flag */
 	sw_ast_entry->ast_entry_flags &= ~ATH12K_AST_ENTRY_IS_VALID;
+	clear_bit(ATH12K_AST_ENTRY_TX_INVAL_STATUS,
+		  &sw_ast_entry->ast_create_invalidate_status);
 
 	ath12k_dp_hw_ast_entry_sync(dp_hw_grp, sw_ast_entry, hw_ast_entry);
 
-	/* remove SW AST entry from index based and hash tables */
-	ast_base->ast_entries[ast_index] = NULL;
-	(void)ath12k_ast_entry_rhash_delete(dp_hw_grp, sw_ast_entry);
-
-	kfree(sw_ast_entry);
 	spin_unlock_bh(&ast_base->ast_lock);
+	if (!ath12k_wifi8_dp_ase_tx_cache_enabled(dp_hw_grp))
+		ath12k_dp_free_ast_entry(dp_hw_grp, ast_index);
+}
+
+int ath12k_wifi8_dp_tx_cmd_status_handler(struct ath12k_dp *dp,
+					  int budget)
+{
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+	struct ath12k_dp_global_ast_table *ast_base =
+				ath12k_dp_get_global_ast_table(dp->dp_hw_grp);
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8 =
+			ath12k_get_dp_hw_group_wifi8(dp->dp_hw_grp);
+	struct ath12k_base *ab = dp->ab;
+	struct hal_srng *srng;
+	struct hal_tcl_status_ring *tx_status_desc;
+	struct ath12k_ast_entry *sw_ast_entry = NULL;
+	int quota = budget;
+	int ctrl_cmd;
+	u32 meta_data_0;
+	u16 tx_cmd_seq_num;
+	u16 ast_index;
+
+	srng = &ab->hal.srng_list[dp_wifi8->tcl_status_ring.ring_id];
+
+	spin_lock_bh(&srng->lock);
+	ath12k_hal_srng_access_begin(ab, srng);
+
+	while (budget-- &&
+	       (tx_status_desc = ath12k_hal_srng_dst_get_next_entry(ab, srng))) {
+		ctrl_cmd = le32_get_bits(tx_status_desc->info0,
+					 HAL_TCL_STATUS_RING_INFO0_GSE_CTRL);
+		if (ctrl_cmd != HAL_TCL_CACHE_OP_INVALIDATE_SINGLE_ENTRY)
+			continue;
+
+		meta_data_0 = le32_to_cpu(tx_status_desc->cmd_meta_data_31_0);
+		ast_index = u32_get_bits(meta_data_0, ATH12K_AST_META_DATA_0_AST_INDEX);
+		tx_cmd_seq_num = u32_get_bits(meta_data_0,
+					      ATH12K_AST_META_DATA_0_TX_CMD_SEQ_NUM);
+		/* free the ast entry on reception of status */
+		if (u32_get_bits(meta_data_0, ATH12K_AST_META_DATA_0_STATE) ==
+				 AST_ENTRY_DELETE) {
+			ath12k_dp_free_ast_entry(dp->dp_hw_grp, ast_index);
+			continue;
+		}
+
+		spin_lock_bh(&ast_base->ast_lock);
+		sw_ast_entry = ath12k_dp_get_sw_ast_entry_by_index(dp->dp_hw_grp,
+								   ast_index);
+		if (!sw_ast_entry) {
+			spin_unlock_bh(&ast_base->ast_lock);
+			continue;
+		}
+
+		if (tx_cmd_seq_num != sw_ast_entry->tx_cmd_seq_num) {
+			spin_unlock_bh(&ast_base->ast_lock);
+			continue;
+		}
+
+		clear_bit(ATH12K_AST_ENTRY_TX_INVAL_STATUS,
+			  &sw_ast_entry->ast_create_invalidate_status);
+
+		if (!sw_ast_entry->ast_create_invalidate_status)
+			complete(&dp_hw_grp_wifi8->peer_init_done);
+
+		spin_unlock_bh(&ast_base->ast_lock);
+	}
+
+	ath12k_hal_srng_access_end(ab, srng);
+	spin_unlock_bh(&srng->lock);
+	return quota - budget;
 }

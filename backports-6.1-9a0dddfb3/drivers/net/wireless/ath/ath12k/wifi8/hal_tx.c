@@ -185,3 +185,37 @@ void ath12k_wifi8_hal_tx_set_dscp_tid_map(struct ath12k_base *ab, u8 *map, int i
 			   HAL_TCL1_RING_CMN_CTRL_REG,
 			   ctrl_reg_val);
 }
+
+int
+ath12k_wifi8_hal_invalidate_tx_cache_cmd_send(struct ath12k_base *ab,
+					      struct hal_srng *srng,
+					      struct ath12k_hal_tx_cmd_ring_param *param)
+{
+	struct hal_tcl_gse_cmd *tx_gse_cmd;
+	int ret = 0;
+
+	spin_lock_bh(&srng->lock);
+
+	ath12k_hal_srng_access_begin(ab, srng);
+	tx_gse_cmd = ath12k_hal_srng_src_get_next_entry(ab, srng);
+	if (!tx_gse_cmd) {
+		ret = -ENOBUFS;
+		goto out;
+	}
+	tx_gse_cmd->control_buffer_addr_31_0 = cpu_to_le32(param->ctrl_buf_addr);
+	tx_gse_cmd->info0 =
+		le32_encode_bits(((u64)param->ctrl_buf_addr >> HAL_ADDR_MSB_REG_SHIFT),
+				 HAL_TCL_GSE_CMD_INFO0_CONTROL_BUFFER_ADDR_39_32) |
+		le32_encode_bits(param->cmd_num,
+				 HAL_TCL_GSE_CMD_INFO0_GSE_CTRL) |
+		le32_encode_bits(0, /*tcl2sw */
+				 HAL_TCL_GSE_CMD_INFO0_STATUS_DESTINATION_RING_ID);
+	tx_gse_cmd->info1 = le32_encode_bits(1, /*tcl cmd ring */
+					     HAL_TCL_GSE_CMD_INFO1_TCL_CMD_TYPE);
+	tx_gse_cmd->cmd_meta_data_31_0 = cpu_to_le32(param->meta_data_0);
+out:
+	ath12k_hal_srng_access_end(ab, srng);
+	spin_unlock_bh(&srng->lock);
+
+	return ret;
+}

@@ -46,6 +46,14 @@ static int ath12k_wifi8_dp_service_srng(struct ath12k_dp *dp,
 			goto done;
 	}
 
+	if (dp->hw_params->ring_mask->tcl_status[grp_id]) {
+		work_done = ath12k_wifi8_dp_tx_cmd_status_handler(dp, budget);
+		budget -= work_done;
+		tot_work_done += work_done;
+		if (budget <= 0)
+			goto done;
+	}
+
 	while (tx_mask) {
 		i = fls(tx_mask) - 1;
 		tx_mask ^= 1 << i;
@@ -553,6 +561,7 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.dp_vif_configure = ath12k_wifi8_dp_vif_configure,
 	.dp_link_vif_configure = ath12k_wifi8_dp_link_vif_configure,
 	.rx_flow_fse_cache_operation = ath12k_wifi8_dp_rx_flow_fse_cache_operation,
+	.get_peer_init_status = ath12k_wifi8_dp_get_peer_init_status,
 };
 
 struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab)
