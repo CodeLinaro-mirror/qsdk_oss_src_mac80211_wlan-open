@@ -33,6 +33,9 @@
 #define ATH12K_MGMT_TX_RETRY_LIMIT_MIN 1
 #define ATH12K_MGMT_TX_RETRY_LIMIT_MAX 14
 
+#define ATH12K_IPV4_ADDR_LEN         4
+#define ATH12K_IPV6_ADDR_LEN         16
+
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 extern unsigned int ath12k_ppe_ds_enabled;
 #endif
@@ -64,6 +67,37 @@ struct atf_peer_stat {
 	u32 atf_actual_ul_duration;
 };
 
+/* ME List Types */
+enum ieee80211_me_list {
+	IEEE80211_HMMC_LIST = 0,
+	IEEE80211_DENY_LIST = 1,
+	IEEE80211_HMMC_LIST_V6 = 2,
+	IEEE80211_DENY_LIST_V6 = 3,
+};
+
+/* ME List Operations */
+enum ieee80211_wlanconfig_me_op {
+	IEEE80211_WLANCONFIG_ME_LIST_ADD = 0,
+	IEEE80211_WLANCONFIG_ME_LIST_DEL = 1,
+	IEEE80211_WLANCONFIG_ME_LIST_DUMP = 2,
+};
+
+/* IP Address Types */
+enum qca_wlan_vendor_me_ip_type {
+	QCA_WLAN_VENDOR_ME_IP_TYPE_IPV4 = 0,
+	QCA_WLAN_VENDOR_ME_IP_TYPE_IPV6 = 1,
+};
+
+/* ME List Entry Structure */
+struct ieee80211_wlanconfig_me_list {
+	union {
+		u_int32_t ip;			/* IPv4 address */
+		u_int32_t ipv6[4];		/* IPv6 address (128-bit) */
+	};
+	u_int32_t mask;				/* Mask or Prefix for IPv4 or IPv6 */
+	enum ieee80211_me_list me_list_type;	/* ME List type */
+};
+
 /**
  * @QCA_NL80211_VENDOR_SUBCMD_WLAN_CTL_TABLE: This vendor subcommand is used to
  *     configure the CTL (Conformance Test Limit) table for a specific band.
@@ -87,6 +121,7 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_WLAN_TELEMETRY_WDEV = 263,
 	QCA_NL80211_VENDOR_SUBCMD_ATF_OFFLOAD_OPS = 268,
 	QCA_NL80211_VENDOR_SUBCMD_DCS_CONFIG = 269,
+	QCA_NL80211_VENDOR_SUBCMD_ME_LIST = 374,
 	QCA_NL80211_VENDOR_SUBCMD_ME_CONFIG = 375,
 
 	/* Yet to upstream */
@@ -3993,6 +4028,57 @@ enum qca_wlan_vendor_attr_me_config {
 	QCA_WLAN_VENDOR_ATTR_ME_CONFIG_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_ME_CONFIG_MAX =
 		QCA_WLAN_VENDOR_ATTR_ME_CONFIG_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_me_list: Represents the List of attributes
+ * used for HMMC/DENY Lists for ME Enhancements.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ME_LIST_INVALID: Information passed for HMMC/DENY list
+ * is invalid.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ME_LIST_OPERATION: u8, represents the exact list operation
+ * being performed (add, delete, dump). This is included in the commands sent from
+ * userspace to the driver.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ME_LIST_TYPE: u8, represents the type of the list for
+ * which the relevant operation is being perfomed(hmmc, deny). This is included
+ * in the commands sent from userspace to the driver.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ME_LIST_IP_TYPE: u8, represents the IP version used
+ * for the operation being performed (ipv4/ipv6). This is included in the commands
+ * sent from userspace to the driver.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ME_LIST_IPV4_ADDR: 4 Bytes, represents the IPv4 address used
+ * for the operation being performed. This is included in the commands
+ * sent from userspace to the driver.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ME_LIST_IPV6_ADDR: 16 Bytes, represents the IPv6 address used
+ * for the operation being performed. This is included in the commands
+ * sent from userspace to the driver.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ME_LIST_MASK: u32, represents the IPv4 Mask used
+ * for the operation being performed. This is included in the commands
+ * sent from userspace to the driver.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ME_LIST_PREFIX: u32, represents the IPv6 Prefix used
+ * for the operation being performed. This is included in the commands
+ * sent from userspace to the driver.
+ */
+enum qca_wlan_vendor_attr_me_list {
+	QCA_WLAN_VENDOR_ATTR_ME_LIST_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_ME_LIST_OPERATION = 1,    /* u8: ADD/DEL/DUMP */
+	QCA_WLAN_VENDOR_ATTR_ME_LIST_TYPE = 2,         /* u8: List type */
+	QCA_WLAN_VENDOR_ATTR_ME_LIST_IP_TYPE = 3,      /* u8: IPv4/IPv6 */
+	QCA_WLAN_VENDOR_ATTR_ME_LIST_IPV4_ADDR = 4,    /* binary: 4 bytes */
+	QCA_WLAN_VENDOR_ATTR_ME_LIST_IPV6_ADDR = 5,    /* binary: 16 bytes */
+	QCA_WLAN_VENDOR_ATTR_ME_LIST_MASK = 6,         /* u32: IPv4 mask */
+	QCA_WLAN_VENDOR_ATTR_ME_LIST_PREFIX = 7,       /* u32: IPv6 prefix */
+
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_ME_LIST_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_ME_LIST_MAX =
+		QCA_WLAN_VENDOR_ATTR_ME_LIST_AFTER_LAST - 1,
 };
 
 #define ATH12K_VENDOR_PUT(vendor_event, type, attr, param)             \

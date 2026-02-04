@@ -42,6 +42,7 @@
 #include <linux/atomic.h>
 #include "event.h"
 #include "me.h"
+#include "me_hmmc.h"
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #include <ppe_ds_wlan.h>
