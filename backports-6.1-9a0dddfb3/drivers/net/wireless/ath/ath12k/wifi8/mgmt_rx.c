@@ -5,7 +5,6 @@
 
 #include "../core.h"
 #include "../debug.h"
-#include "../mgmt_rx.h"
 #include "../hif.h"
 #include "mgmt_rx.h"
 #include "hal.h"
