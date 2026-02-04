@@ -968,7 +968,7 @@ ath12k_wifi8_dp_tx_fast(struct ath12k_pdev_dp *dp_pdev,
 			struct sk_buff *skb,
 			u32 qos_nw_delay)
 {
-	struct ath12k_dp *dp = dp_pdev->dp;
+	struct ath12k_dp *dp = ath12k_get_central_dp(dp_pdev->dp);
 	struct ath12k_hal *hal = dp->hal;
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_tx_desc_info *tx_desc = NULL;
@@ -1019,7 +1019,7 @@ ath12k_wifi8_dp_tx_fast(struct ath12k_pdev_dp *dp_pdev,
 		tx_desc->flags = 0;
 
 	tx_desc->skb = skb;
-	tx_desc->mac_id = dp_link_vif->pdev_idx;
+	tx_desc->mac_id = dp_pdev->hw_link_id;
 
 	tx_ring = &dp->tx_ring[ring_id];
 	hal_ring_id = tx_ring->tcl_data_ring.ring_id;
@@ -1071,7 +1071,7 @@ ath12k_wifi8_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 		   bool is_mcast, struct ath12k_link_sta *arsta, u8 ring_id,
 		   u32 qos_nw_delay)
 {
-	struct ath12k_dp *dp = dp_pdev->dp;
+	struct ath12k_dp *dp = ath12k_get_central_dp(dp_pdev->dp);
 	struct ath12k_hal *hal = dp->hal;
 	struct ath12k_base *ab = dp->ab;
 	struct hal_tx_info ti = {0};
@@ -1323,7 +1323,7 @@ skip_htt_metadata:
 	}
 
 	tx_desc->skb = skb;
-	tx_desc->mac_id = dp_link_vif->pdev_idx;
+	tx_desc->mac_id = dp_pdev->hw_link_id;
 	ti.desc_id = tx_desc->desc_id;
 	ti.data_len = skb->len;
 
@@ -1541,7 +1541,6 @@ static void ath12k_wifi8_dp_tx_free_txbuf(struct ath12k_dp *dp,
 {
 	struct ath12k_pdev_dp *dp_pdev;
 	struct sk_buff *skb_ext_desc = sw_metadata->skb_ext_desc;
-	u8 pdev_id = ath12k_hw_mac_id_to_pdev_id(dp->hw_params, sw_metadata->mac_id);
 
 	ath12k_core_dma_unmap_single(dp->dev, sw_metadata->paddr,
 				     sw_metadata->len, DMA_TO_DEVICE);
@@ -1553,7 +1552,7 @@ static void ath12k_wifi8_dp_tx_free_txbuf(struct ath12k_dp *dp,
 
 	rcu_read_lock();
 
-	dp_pdev = ath12k_dp_to_dp_pdev(dp, pdev_id);
+	dp_pdev = ath12k_dp_hw_grp_to_dp_pdev(dp->dp_hw_grp, sw_metadata->mac_id);
 	if (!dp_pdev) {
 		rcu_read_unlock();
 		return;
@@ -1589,9 +1588,6 @@ ath12k_wifi8_dp_tx_htt_tx_complete_buf(struct ath12k_dp *dp,
 	struct ieee80211_hdr *hdr;
 	size_t hdrlen;
 	enum ath12k_dp_eapol_key_type subtype;
-	u8 pdev_id;
-
-	pdev_id = ath12k_hw_mac_id_to_pdev_id(dp->hw_params, sw_metadata->mac_id);
 
 	ath12k_core_dma_unmap_single(dp->dev, sw_metadata->paddr,
 				     sw_metadata->len, DMA_TO_DEVICE);
@@ -1602,7 +1598,7 @@ ath12k_wifi8_dp_tx_htt_tx_complete_buf(struct ath12k_dp *dp,
 	}
 
 	rcu_read_lock();
-	dp_pdev = ath12k_dp_to_dp_pdev(dp, pdev_id);
+	dp_pdev = ath12k_dp_hw_grp_to_dp_pdev(dp->dp_hw_grp, sw_metadata->mac_id);
 	if (!dp_pdev) {
 		rcu_read_unlock();
 		return;
@@ -1704,7 +1700,6 @@ ath12k_wifi8_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 {
 	struct htt_tx_wbm_completion *status_desc;
 	struct ath12k_pdev_dp *dp_pdev;
-	u8 pdev_id;
 	struct ath12k_dp_peer *peer = NULL;
 	u8 link_id = 0;
 	u32 msdu_len = msdu->len;
@@ -1712,10 +1707,8 @@ ath12k_wifi8_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 
 	status_desc = desc;
 
-	pdev_id = ath12k_hw_mac_id_to_pdev_id(dp->hw_params, sw_metadata->mac_id);
-
 	rcu_read_lock();
-	dp_pdev = ath12k_dp_to_dp_pdev(dp, pdev_id);
+	dp_pdev = ath12k_dp_hw_grp_to_dp_pdev(dp->dp_hw_grp, sw_metadata->mac_id);
 	if (!dp_pdev) {
 		DP_DEVICE_STATS_INC(dp, tx_err.tx_comp_err[DP_TX_COMP_ERR_INVALID_PDEV][ring_id], 1);
 		rcu_read_unlock();
@@ -2230,7 +2223,6 @@ int ath12k_wifi8_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 	struct hal_tx_status ts = { 0 };
 	struct dp_tx_ring *tx_ring = &dp->tx_ring[ring_id];
 	struct ath12k_dp_tx_comp_status tx_comp_status;
-	u8 pdev_id;
 	int i;
 #ifndef CONFIG_IO_COHERENCY
 	int valid_entries;
@@ -2240,8 +2232,8 @@ int ath12k_wifi8_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 	struct sk_buff *msdu = NULL;
 	struct ath12k_vif *ahvif = NULL;
 	bool fast_flag;
-	int pdev_tx_comp_cnt[MAX_RADIOS] = {0};
-	u8 mac_id = 0;
+	int pdev_tx_comp_cnt[ATH12K_GROUP_MAX_RADIO] = {0};
+	u8 hw_link_id = 0;
 
 	ath12k_hal_srng_access_dst_ring_begin_nolock(ab, status_ring);
 
@@ -2352,17 +2344,16 @@ int ath12k_wifi8_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 
 	spin_unlock_bh(&dp->tx_desc_lock[ring_id]);
 
-	for (mac_id = 0; mac_id < MAX_RADIOS; mac_id++) {
-		if (likely(pdev_tx_comp_cnt[mac_id])) {
-			pdev_id = ath12k_hw_mac_id_to_pdev_id(dp->hw_params, mac_id);
+	for (hw_link_id = 0; hw_link_id < ATH12K_GROUP_MAX_RADIO; hw_link_id++) {
+		if (likely(pdev_tx_comp_cnt[hw_link_id])) {
 			rcu_read_lock();
-			dp_pdev = ath12k_dp_to_dp_pdev(dp, pdev_id);
+			dp_pdev = ath12k_dp_hw_grp_to_dp_pdev(dp->dp_hw_grp, hw_link_id);
 			rcu_read_unlock();
 
 			if (unlikely(!dp_pdev))
 				continue;
 
-			if (atomic_sub_and_test(pdev_tx_comp_cnt[mac_id],
+			if (atomic_sub_and_test(pdev_tx_comp_cnt[hw_link_id],
 						&dp_pdev->num_tx_pending))
 				wake_up(&dp_pdev->tx_empty_waitq);
 		}
@@ -2433,9 +2424,8 @@ int ath12k_wifi8_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 		if (unlikely(!fast_flag && sw_metadata->skb)) {
 			rcu_read_lock();
 
-			pdev_id = ath12k_hw_mac_id_to_pdev_id(dp->hw_params,
+			dp_pdev = ath12k_dp_hw_grp_to_dp_pdev(dp->dp_hw_grp,
 							      sw_metadata->mac_id);
-			dp_pdev = ath12k_dp_to_dp_pdev(dp, pdev_id);
 			if (!dp_pdev) {
 				DP_DEVICE_STATS_INC(dp, tx_err.tx_comp_err[DP_TX_COMP_ERR_INVALID_PDEV][ring_id], 1);
 				rcu_read_unlock();
@@ -2921,9 +2911,8 @@ int ath12k_wifi8_dp_tx_exception_handler(struct ath12k_dp *dp, int budget)
 	u32 desc_id;
 	dma_addr_t paddr;
 	struct ath12k_tx_sw_metadata sw_metadata = {0};
-	int pdev_tx_comp_cnt[MAX_RADIOS] = {0};
-	u8 mac_id = 0;
-	u8 pdev_id;
+	int pdev_tx_comp_cnt[ATH12K_GROUP_MAX_RADIO] = {0};
+	u8 hw_link_id = 0;
 	struct ath12k_pdev_dp *dp_pdev = NULL;
 
 	srng = &ab->hal.srng_list[dp_wifi8->tx_exception.ring_id];
@@ -2987,18 +2976,16 @@ tx_buf_release:
 	ath12k_hal_srng_access_end(ab, srng);
 	spin_unlock_bh(&srng->lock);
 
-	for (mac_id = 0; mac_id < MAX_RADIOS; mac_id++) {
-		if (likely(pdev_tx_comp_cnt[mac_id])) {
-			pdev_id = ath12k_hw_mac_id_to_pdev_id(dp->hw_params, mac_id);
+	for (hw_link_id = 0; hw_link_id < ATH12K_GROUP_MAX_RADIO; hw_link_id++) {
+		if (likely(pdev_tx_comp_cnt[hw_link_id])) {
 			rcu_read_lock();
-			dp_pdev = ath12k_dp_to_dp_pdev(dp, pdev_id);
-
+			dp_pdev = ath12k_dp_hw_grp_to_dp_pdev(dp->dp_hw_grp, hw_link_id);
 			if (unlikely(!dp_pdev)) {
 				rcu_read_unlock();
 				continue;
 			}
 
-			if (atomic_sub_and_test(pdev_tx_comp_cnt[mac_id],
+			if (atomic_sub_and_test(pdev_tx_comp_cnt[hw_link_id],
 						&dp_pdev->num_tx_pending))
 				wake_up(&dp_pdev->tx_empty_waitq);
 

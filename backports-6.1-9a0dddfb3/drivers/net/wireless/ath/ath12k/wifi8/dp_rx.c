@@ -1595,7 +1595,6 @@ int ath12k_wifi8_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 	struct list_head rx_desc_used_list;
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
 	struct list_head rx_desc_sg_list;
-	struct ath12k_dp_hw_link *hw_links = dp_hw_grp->hw_links;
 	int num_buffs_reaped = 0;
 	struct ath12k_rx_desc_info *desc_info;
 	int cpu_id = smp_processor_id();
@@ -1606,7 +1605,6 @@ int ath12k_wifi8_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 	struct sk_buff_head local_msdu_list;
 	int total_msdu_reaped = 0;
 	u8 hw_link_id;
-	int pdev_id;
 	struct hal_srng *srng;
 	struct hal_srng *refill_srng;
 	struct sk_buff *msdu;
@@ -1712,10 +1710,7 @@ int ath12k_wifi8_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 
 		hw_link_id = le32_get_bits(desc->rx_mpdu_ext_info.info0,
 					   HAL_RX_MPDU_EXT_DESC_INFO_INFO0_SRC_LINK_ID);
-		pdev_id = ath12k_hw_mac_id_to_pdev_id(dp->hw_params,
-						      hw_links[hw_link_id].pdev_idx);
-
-		dp_pdev = ath12k_dp_to_dp_pdev(dp, pdev_id);
+		dp_pdev = ath12k_dp_hw_grp_to_dp_pdev(dp->dp_hw_grp, hw_link_id);
 		if (ath12k_dp_stats_enabled(dp_pdev) &&
 		    ath12k_tid_stats_enabled(dp_pdev)) {
 			rcu_read_lock();
