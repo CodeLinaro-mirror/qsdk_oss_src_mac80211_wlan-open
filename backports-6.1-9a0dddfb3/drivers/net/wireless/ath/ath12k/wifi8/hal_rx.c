@@ -1048,8 +1048,8 @@ void ath12k_wifi8_hal_reo_hw_setup(struct ath12k_base *ab)
 	val = ath12k_hif_read32(ab, reo_base + HAL_REO1_MISC_CFG_1);
 	val |= u32_encode_bits(1, HAL_REO1_MISC_CFG_1_REO_ERR_DELINK_ENABLE);
 	val |= u32_encode_bits(1, HAL_REO1_MISC_CFG_1_RXDMA_ERR_DELINK_ENABLE);
-	val |= u32_encode_bits(1, HAL_REO1_MISC_CFG_1_REO_MSDU_FETCH_OPTIMIZE);
-	val |= u32_encode_bits(1, HAL_REO1_MISC_CFG_1_REO_MSDU_LINK_SHARING_EN);
+	val &= ~HAL_REO1_MISC_CFG_1_REO_MSDU_FETCH_OPTIMIZE;
+	val &= ~HAL_REO1_MISC_CFG_1_REO_MSDU_LINK_SHARING_EN;
 	ath12k_hif_write32(ab, reo_base + HAL_REO1_MISC_CFG_1, val);
 
 	val = ath12k_hif_read32(ab, reo_base + HAL_REO1_MISC_CFG_2);
