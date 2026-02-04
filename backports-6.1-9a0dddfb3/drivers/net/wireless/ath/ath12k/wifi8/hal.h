@@ -104,6 +104,7 @@ enum rdi_based_source_ring_selection {
 #define HAL_SEQ_WCSS_UMAC_TCL_REG		0xf13000
 #define HAL_SEQ_WCSS_UMAC_TQM_REG		0xf08000
 #define HAL_SEQ_WCSS_UMAC_WBM_REG		0xf04000
+#define HAL_SEQ_WCSS_UMAC_SAM_REG		0xf28000
 
 #define HAL_SEQ_WCSS_UMAC_CE0_SRC_REG	0x1B80000
 #define HAL_SEQ_WCSS_UMAC_CE0_DST_REG	0x1B81000
@@ -223,6 +224,18 @@ enum rdi_based_source_ring_selection {
 /*TQM2SW Ring address */
 #define HAL_TQM2SW0_RELEASE_RING_HP		0x3078
 #define HAL_TQM2SW1_RELEASE_RING_HP		0x3080
+
+/* SAM cmd Ring address*/
+#define HAL_SAM_HOST_CMD_RING_BASE_LSB		0x174
+#define HAL_SAM_HOST_CMD_RING_HP		0x1010
+
+/* SAM cmd Ring address*/
+#define HAL_SAM_HOST_STATUS_RING_BASE_LSB	0x2DC
+#define HAL_SAM_HOST_STATUS_RING_HP		0x1028
+
+/* SAM command parameters. */
+#define MAX_NUM_SAM_MSDU_QUEUES_SUPPORTED	4096
+#define MAX_NUM_SAM_MPDU_QUEUES_SUPPORTED	1024
 
 #define HAL_TCL_PPE_INDEX_MAPPING_OFFSET 0x214
 #define HAL_TCL_PPE_INDEX_MAPPING_SLOT_SIZE 0x4
@@ -671,6 +684,9 @@ enum rdi_based_source_ring_selection {
 #define HAL_WBM2PPE_RELEASE_RING_BASE_MSB_RING_SIZE	0x0000ffff
 #define HAL_WBM_IDLE_BUF_RING_MAX_SIZE                 0x000fffff
 #define HAL_WBM_BUF_RING_MAX_SIZE                      0x000fffff
+#define HAL_SAM_HOST_CMD_RING_BASE_MSB_RING_SIZE	0x000fffff
+#define HAL_SAM_HOST_STATUS_RING_BASE_MSB_RING_SIZE	0x000fffff
+
 
 #define HAL_WBM2SW_REL_ERR_RING_NUM 5
 #define HAL_WBM2SW_PPEDS_TX_CMPLN_MAP_ID 11

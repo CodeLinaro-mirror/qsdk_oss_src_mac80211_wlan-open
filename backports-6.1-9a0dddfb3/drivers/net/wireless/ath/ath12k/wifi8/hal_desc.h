@@ -13,6 +13,9 @@
 #define HAL_TLV_HDR_LEN		GENMASK(25, 10)
 #define HAL_TLV_USR_ID		GENMASK(31, 26)
 
+#define HAL_TLV_64_HDR_LENGTH		GENMASK(21, 10)
+#define HAL_TLV_64_HDR_SRC_LINK_ID	GENMASK(24, 22)
+
 enum hal_tlv_tag {
 	HAL_MACTX_CBF_START                                    = 0 /* 0x0 */,
 	HAL_PHYRX_DATA                                         = 1 /* 0x1 */,
@@ -2068,6 +2071,9 @@ enum hal_tlv_tag_be {
 	HAL_TQM_GET_MPDUQ_STATS_STATUS_BO	= 238,
 	HAL_TQM_UPDATE_MPDUQ_BO			= 368,
 	HAL_TQM_UPDATE_MPDUQ_STATUS_BO		= 370,
+	HAL_SAM_MPDU_QUEUE_CLEAR_PROGRAMMING_BO = 608,
+	HAL_SAM_MSDU_QUEUE_CLEAR_PROGRAMMING_BO = 609,
+	HAL_SAM_PEER_CLEAR_PROGRAMMING_BO = 647,
 };
 
 enum hal_tqm_remove_msdu_cmd_type {
@@ -2681,4 +2687,61 @@ struct hal_fse_cmd {
 	__le32 info2;
 } __packed;
 
+// info 0
+#define HAL_SAM_CMD_NUMBER			GENMASK(15, 0)
+#define HAL_SAM_CMD_STATUS_REQUIRED_TO_SW	BIT(16)
+#define HAL_SAM_CMD_STATUS_REQUIRED_TO_LINK_FW	BIT(17)
+#define HAL_SAM_TO_SAM_COMMUNICATION		BIT(18)
+#define HAL_SAM_RESERVED_0A			GENMASK(31, 19)
+
+struct hal_uniform_sam_cmd_hdr {
+	__le32 info0;
+};
+
+// info 0
+#define HAL_SAM_MPDU_START_MPDU_QUEUE_SAM_ID	GENMASK(10, 0)
+#define HAL_SAM_MPDU_RESERVED_0A		GENMASK(12, 11)
+#define HAL_SAM_MPDU_END_MPDU_QUEUE_SAM_ID	GENMASK(23, 13)
+#define HAL_SAM_MPDU_RESERVED_1A		GENMASK(31, 24)
+
+struct hal_sam_mpdu_queue_clear_programming {
+	struct hal_uniform_sam_cmd_hdr cmd_hdr;
+	__le32 info0;
+} __packed;
+
+// info 0
+#define HAL_SAM_MSDU_START_MSDU_QUEUE_SAM_ID	GENMASK(12, 0)
+#define HAL_SAM_MSDU_END_MSDU_QUEUE_SAM_ID	GENMASK(25, 13)
+#define HAL_SAM_MSDU_RESERVED_1A		GENMASK(31, 26)
+
+struct hal_sam_msdu_queue_clear_programming {
+	struct hal_uniform_sam_cmd_hdr cmd_hdr;
+	__le32 info0;
+} __packed;
+
+// info 0
+#define HAL_SAM_PEER_START_PEER_ID		GENMASK(12, 0)
+#define HAL_SAM_PEER_END_PEER_ID		GENMASK(25, 13)
+#define HAL_SAM_PEER_RESERVED_1A		GENMASK(31, 26)
+
+struct hal_sam_peer_clear_programming {
+	struct hal_uniform_sam_cmd_hdr cmd_hdr;
+	__le32 info0;
+} __packed;
+
+// info0
+#define HAL_SAM_STATUS_CMD_NUMBER		GENMASK(15, 0)
+#define HAL_SAM_STATUS_REQUIRED_TO_SW		BIT(16)
+#define HAL_SAM_STATUS_REQUIRED_TO_LINK_FW	BIT(17)
+#define HAL_SAM_STATUS_TO_SAM_COMMUNICATION	BIT(18)
+#define HAL_SAM_STATUS_RESERVED_0A		GENMASK(31, 19)
+
+struct hal_uniform_sam_status_hdr {
+	__le32 info0;
+};
+
+struct hal_sam_cmd_status {
+	struct hal_uniform_sam_status_hdr status_hdr;
+	__le32 reserved_1a;
+};
 #endif /* ATH12K_HAL_DESC_H */

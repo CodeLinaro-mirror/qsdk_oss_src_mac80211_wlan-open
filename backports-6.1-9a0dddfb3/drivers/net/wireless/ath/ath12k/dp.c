@@ -381,6 +381,9 @@ static int ath12k_dp_srng_calculate_msi_group(struct ath12k_base *ab,
 		}
 		grp_mask = &ab->hw_params->ring_mask->tx[0];
 		break;
+	case HAL_SAM_STATUS:
+		grp_mask = &ab->hw_params->ring_mask->sam_status[0];
+		break;
 	case HAL_REO_DST_MGMT:
 	case HAL_REO_DST_CTDMA:
 	case HAL_REO_EXCEPTION_DS:
@@ -590,6 +593,8 @@ skip_dma_alloc:
 	case HAL_WBM_BUF:
 	case HAL_WBM_IDLE_BUF:
 	case HAL_TX_MONITOR_DST:
+	case HAL_SAM_CMD:
+	case HAL_SAM_STATUS:
 		params.intr_batch_cntr_thres_entries =
 					HAL_SRNG_INT_BATCH_THRESHOLD_OTHER;
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_OTHER;

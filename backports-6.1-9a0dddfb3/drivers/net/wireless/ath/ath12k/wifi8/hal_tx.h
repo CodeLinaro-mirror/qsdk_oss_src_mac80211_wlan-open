@@ -120,4 +120,7 @@ void ath12k_wifi8_hal_tqm_get_mpduq_stats_cmd_status(struct ath12k_base *ab,
 void ath12k_wifi8_hal_tqm_update_mpduq_cmd_status(struct ath12k_base *ab,
 						  struct hal_tlv_64_hdr *tlv,
 						  struct hal_tqm_status *status);
+void ath12k_wifi8_hal_tx_sam_program_clear(struct ath12k_base *ab);
+void ath12k_wifi8_hal_tx_sam_init_cmd_ring(struct ath12k_base *ab, struct hal_srng *srng);
+void ath12k_wifi8_hal_tx_sam_status(struct ath12k_base *ab, struct hal_tlv_64_hdr *tlv);
 #endif

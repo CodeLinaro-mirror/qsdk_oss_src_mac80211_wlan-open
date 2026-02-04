@@ -9,9 +9,12 @@
 #include "hal.h"
 #include "../hif.h"
 #include "../debug.h"
+#include "dp.h"
 
 #define HAL_TX_BITS_PER_TID 3
 #define HAL_TX_NUM_DSCP_REG_SIZE 32
+
+#define HAL_TX_NUM_MAX_LINKS	5
 
 void ath12k_wifi8_hal_tx_cmd_desc_setup(struct ath12k_base *ab,
 					struct hal_tcl_data_cmd *tcl_cmd,
@@ -725,4 +728,157 @@ void ath12k_wifi8_hal_tqm_cmd_staging_free(struct ath12k_base *ab)
 {
 	kfree(ab->tqm_cmd_staging);
 	ab->tqm_cmd_staging = NULL;
+}
+
+int ath12k_wifi8_hal_tx_sam_mpduq_clear_cmd(struct hal_tlv_64_hdr *tlv)
+{
+	struct hal_sam_mpdu_queue_clear_programming *desc;
+
+	tlv->tl = le64_encode_bits(HAL_SAM_MPDU_QUEUE_CLEAR_PROGRAMMING_BO,
+				   HAL_TLV_HDR_TAG) |
+		  le64_encode_bits(sizeof(*desc), HAL_TLV_64_HDR_LENGTH);
+
+	desc = (struct hal_sam_mpdu_queue_clear_programming *)tlv->value;
+
+	desc->cmd_hdr.info0 |= le32_encode_bits(1, HAL_SAM_CMD_STATUS_REQUIRED_TO_SW);
+	desc->info0 = le32_encode_bits(0, HAL_SAM_MPDU_START_MPDU_QUEUE_SAM_ID) |
+		      le32_encode_bits(MAX_NUM_SAM_MPDU_QUEUES_SUPPORTED - 1,
+				       HAL_SAM_MPDU_END_MPDU_QUEUE_SAM_ID);
+
+	return le32_get_bits(desc->cmd_hdr.info0, HAL_SAM_CMD_NUMBER);
+}
+
+int ath12k_wifi8_hal_tx_sam_msduq_clear_cmd(struct hal_tlv_64_hdr *tlv)
+{
+	struct hal_sam_msdu_queue_clear_programming *desc;
+
+	tlv->tl = le64_encode_bits(HAL_SAM_MSDU_QUEUE_CLEAR_PROGRAMMING_BO,
+				   HAL_TLV_HDR_TAG) |
+		  le64_encode_bits(sizeof(*desc), HAL_TLV_64_HDR_LENGTH);
+
+	desc = (struct hal_sam_msdu_queue_clear_programming *)tlv->value;
+
+	desc->cmd_hdr.info0 |= le32_encode_bits(1, HAL_SAM_CMD_STATUS_REQUIRED_TO_SW);
+	desc->info0 = le32_encode_bits(0, HAL_SAM_MSDU_START_MSDU_QUEUE_SAM_ID) |
+		      le32_encode_bits(MAX_NUM_SAM_MSDU_QUEUES_SUPPORTED - 1,
+				       HAL_SAM_MSDU_END_MSDU_QUEUE_SAM_ID);
+
+	return le32_get_bits(desc->cmd_hdr.info0, HAL_SAM_CMD_NUMBER);
+}
+
+int ath12k_wifi8_hal_tx_sam_peer_clear_cmd(struct hal_tlv_64_hdr *tlv, int src_link_id)
+{
+	struct hal_sam_peer_clear_programming *desc;
+
+	tlv->tl = le64_encode_bits(HAL_SAM_PEER_CLEAR_PROGRAMMING_BO,
+				   HAL_TLV_HDR_TAG) |
+		  le64_encode_bits(sizeof(*desc), HAL_TLV_64_HDR_LENGTH) |
+		  le64_encode_bits(src_link_id, HAL_TLV_64_HDR_SRC_LINK_ID);
+
+	desc = (struct hal_sam_peer_clear_programming *)tlv->value;
+
+	desc->cmd_hdr.info0 |= le32_encode_bits(1, HAL_SAM_CMD_STATUS_REQUIRED_TO_SW);
+	desc->info0 = le32_encode_bits(0, HAL_SAM_PEER_START_PEER_ID) |
+		      le32_encode_bits(ATH12K_MAX_STA_ID - 1, HAL_SAM_PEER_END_PEER_ID);
+
+	return le32_get_bits(desc->cmd_hdr.info0, HAL_SAM_CMD_NUMBER);
+}
+
+int ath12k_wifi8_hal_tx_sam_cmd_send(struct ath12k_base *ab, struct hal_srng *srng,
+				     int src_link_id, enum hal_tlv_tag_be type)
+{
+	struct hal_tlv_64_hdr *sam_desc;
+	int ret;
+
+	spin_lock_bh(&srng->lock);
+	ath12k_hal_srng_access_begin(ab, srng);
+	sam_desc = (struct hal_tlv_64_hdr *)ath12k_hal_srng_src_get_next_entry(ab, srng);
+	if (!sam_desc) {
+		ret = -ENOBUFS;
+		goto out;
+	}
+	switch (type) {
+	case HAL_SAM_MPDU_QUEUE_CLEAR_PROGRAMMING_BO:
+		ret = ath12k_wifi8_hal_tx_sam_mpduq_clear_cmd(sam_desc);
+		break;
+	case HAL_SAM_MSDU_QUEUE_CLEAR_PROGRAMMING_BO:
+		ret = ath12k_wifi8_hal_tx_sam_msduq_clear_cmd(sam_desc);
+		break;
+	case HAL_SAM_PEER_CLEAR_PROGRAMMING_BO:
+		ret = ath12k_wifi8_hal_tx_sam_peer_clear_cmd(sam_desc, src_link_id);
+		break;
+	default:
+		ath12k_warn(ab, "Unknown sam command %d\n", type);
+		ret = -EINVAL;
+	}
+out:
+	ath12k_hal_srng_access_end(ab, srng);
+	spin_unlock_bh(&srng->lock);
+	return ret;
+}
+
+void ath12k_wifi8_hal_tx_sam_program_clear(struct ath12k_base *ab)
+{
+	struct hal_srng *srng;
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(ab->dp);
+	int i, ret;
+
+	srng = &ab->hal.srng_list[dp_wifi8->sam_cmd_ring.ring_id];
+	ret = ath12k_wifi8_hal_tx_sam_cmd_send(ab, srng, -1,
+					       HAL_SAM_MPDU_QUEUE_CLEAR_PROGRAMMING_BO);
+
+	if (ret < 0)
+		ath12k_warn(ab, "failed to send SAM mpdu clear command: %d\n", ret);
+
+	ret = ath12k_wifi8_hal_tx_sam_cmd_send(ab, srng, -1,
+					       HAL_SAM_MSDU_QUEUE_CLEAR_PROGRAMMING_BO);
+
+	if (ret < 0)
+		ath12k_warn(ab, "failed to send SAM msdu clear command: %d\n", ret);
+
+	/* Send peer clear command over all links.
+	 * TODO: In v2 hardware, a new link_mask field allows a single SAM command
+	 * to be sent for all links, with bits set for each link.
+	 */
+	for (i = 0; i < HAL_TX_NUM_MAX_LINKS; i++) {
+		ret = ath12k_wifi8_hal_tx_sam_cmd_send(ab, srng, i,
+						       HAL_SAM_PEER_CLEAR_PROGRAMMING_BO);
+
+		if (ret < 0)
+			ath12k_warn(ab,
+				    "failed to send SAM peer clear command for link %d: %d\n",
+				    i, ret);
+	}
+}
+
+void ath12k_wifi8_hal_tx_sam_init_cmd_ring(struct ath12k_base *ab, struct hal_srng *srng)
+{
+	struct hal_srng_params params;
+	struct hal_tlv_64_hdr *tlv;
+	struct hal_uniform_sam_cmd_hdr *desc;
+	int i, cmd_num = 1;
+	int entry_size;
+	u8 *entry;
+
+	memset(&params, 0, sizeof(params));
+
+	entry_size = ath12k_hal_srng_get_entrysize(ab, HAL_SAM_CMD);
+	ath12k_hal_srng_get_params(ab, srng, &params);
+	entry = (u8 *)params.ring_base_vaddr;
+
+	for (i = 0; i < params.num_entries; i++) {
+		tlv = (struct hal_tlv_64_hdr *)entry;
+		desc = (struct hal_uniform_sam_cmd_hdr *)tlv->value;
+		desc->info0 = le32_encode_bits(cmd_num++,
+					       HAL_SAM_CMD_NUMBER);
+		entry += entry_size;
+	}
+}
+
+void ath12k_wifi8_hal_tx_sam_status(struct ath12k_base *ab, struct hal_tlv_64_hdr *tlv)
+{
+	struct hal_sam_cmd_status *desc = (struct hal_sam_cmd_status *)tlv->value;
+	int cmd_num = le32_get_bits(desc->status_hdr.info0,
+				    HAL_SAM_STATUS_CMD_NUMBER);
+	ath12k_dbg(ab, ATH12K_DBG_HAL, "cmd_num %d\n", cmd_num);
 }

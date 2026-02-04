@@ -214,6 +214,7 @@ struct ath12k_hw_ring_mask {
 	u8 tx_exception[ATH12K_EXT_IRQ_NUM_MAX];
 	u8 tcl_status[ATH12K_EXT_IRQ_NUM_MAX];
 	u8 tqm_status[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 sam_status[ATH12K_EXT_IRQ_NUM_MAX];
 };
 
 enum ath12k_m3_fw_loaders {
