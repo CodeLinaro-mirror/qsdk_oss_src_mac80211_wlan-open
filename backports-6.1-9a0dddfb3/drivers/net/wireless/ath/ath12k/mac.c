@@ -6244,6 +6244,8 @@ ath12k_mac_assign_link_vif(struct ath12k_hw *ah, struct ieee80211_vif *vif,
 	 */
 	if (!ahvif->links_map && link_id < ATH12K_DEFAULT_SCAN_LINK) {
 		arvif = &ahvif->deflink;
+		/* Clear pre-allocated deflink to reset the old residual data */
+		memset(arvif, 0, sizeof(*arvif));
 	} else {
 		arvif = (struct ath12k_link_vif *)
 		kzalloc(sizeof(struct ath12k_link_vif), GFP_KERNEL);
@@ -18313,6 +18315,8 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 	ahvif->ah = ah;
 	ahvif->vif = vif;
 	arvif = &ahvif->deflink;
+	/* Clear pre-allocated deflink to reset the old residual data */
+	memset(arvif, 0, sizeof(*arvif));
 
 	ath12k_event_queue_init(&ahvif->event_queue, hw->wiphy, ahvif);
 
