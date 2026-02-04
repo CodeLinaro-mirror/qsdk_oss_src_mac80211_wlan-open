@@ -459,6 +459,7 @@ int ath12k_wifi8_hal_reo_rel_parse_err(struct ath12k_dp *dp, void *desc,
 
 	rel_info->err_rel_src = rel_src;
 	rel_info->hw_cc_done = hw_cc_done;
+	rel_info->peer_metadata = reo_desc->rx_mpdu_info.peer_meta_data;
 
 	return 0;
 }

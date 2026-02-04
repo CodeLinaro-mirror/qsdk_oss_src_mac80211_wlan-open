@@ -152,11 +152,15 @@ int ath12k_wifi8_hal_tx_mpdu_queue_setup(struct ath12k_dp_hw_group *dp_hw_grp,
 		mpduq->info5 |= le32_encode_bits(0, HAL_TX_MPDU_QUEUE_HEAD_MPDU_HDR_LEN);
 	} else {
 		if (ti->tid > MAX_VALID_DATA_TID)
-			mpduq->info5 |= le32_encode_bits(ATH12K_FRAME_HEADER_SIZE,
-						HAL_TX_MPDU_QUEUE_HEAD_MPDU_HDR_LEN);
+			mpduq->info5 |=
+				le32_encode_bits(ATH12K_FRAME_HEADER_SIZE +
+						 ti->header_len,
+						 HAL_TX_MPDU_QUEUE_HEAD_MPDU_HDR_LEN);
 		else
-			mpduq->info5 |= le32_encode_bits(ATH12K_QOS_FRAME_HEADER_SIZE,
-						HAL_TX_MPDU_QUEUE_HEAD_MPDU_HDR_LEN);
+			mpduq->info5 |=
+				le32_encode_bits(ATH12K_QOS_FRAME_HEADER_SIZE +
+						 ti->header_len,
+						 HAL_TX_MPDU_QUEUE_HEAD_MPDU_HDR_LEN);
 	}
 	mpduq->info5 |= le32_encode_bits(ATH12K_MAX_NUM_OF_EXT_DESCRIPTORS,
 					 HAL_TX_MPDU_QUEUE_HEAD_NUM_OF_EXT_DESC);
