@@ -10121,6 +10121,519 @@ static int ath12k_vendor_me_config_handler(struct wiphy *wiphy,
 	return ath12k_vendor_set_wifi_params_me(wiphy, wdev, &params);
 }
 
+static const struct nla_policy
+ath12k_vendor_me_list_policy[QCA_WLAN_VENDOR_ATTR_ME_LIST_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_ME_LIST_OPERATION] = { .type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_ME_LIST_TYPE] = { .type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_ME_LIST_IP_TYPE] = { .type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_ME_LIST_IPV4_ADDR] = { .type = NLA_BINARY,
+						.len = ATH12K_IPV4_ADDR_LEN },
+	[QCA_WLAN_VENDOR_ATTR_ME_LIST_IPV6_ADDR] = { .type = NLA_BINARY,
+						.len = ATH12K_IPV6_ADDR_LEN },
+	[QCA_WLAN_VENDOR_ATTR_ME_LIST_MASK] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_ME_LIST_PREFIX] = { .type = NLA_U32 },
+};
+
+/**
+ * ath12k_parse_me_list_entry - Parse ME list entry from netlink attributes
+ * @tb: netlink attribute table
+ * @me_entry: output ME entry structure
+ * @ip_type: IP type (IPv4 or IPv6)
+ */
+static int ath12k_parse_me_list_entry(struct nlattr **tb,
+				      struct ieee80211_wlanconfig_me_list *me_entry,
+				      u8 ip_type)
+{
+	ath12k_dbg(NULL, ATH12K_DBG_CFG, "Parsing ME list entry, IP type: %u\n", ip_type);
+
+	if (ip_type == QCA_WLAN_VENDOR_ME_IP_TYPE_IPV4) {
+		/* Parse IPv4 address */
+		if (!tb[QCA_WLAN_VENDOR_ATTR_ME_LIST_IPV4_ADDR] ||
+			nla_len(tb[QCA_WLAN_VENDOR_ATTR_ME_LIST_IPV4_ADDR])
+				!= ATH12K_IPV4_ADDR_LEN) {
+			ath12k_err(NULL, "Invalid IPv4 address\n");
+			return -EINVAL;
+		}
+		memcpy(&me_entry->ip,
+			nla_data(tb[QCA_WLAN_VENDOR_ATTR_ME_LIST_IPV4_ADDR]),
+			ATH12K_IPV4_ADDR_LEN);
+
+		/* Parse IPv4 mask */
+		if (!tb[QCA_WLAN_VENDOR_ATTR_ME_LIST_MASK]) {
+			ath12k_err(NULL, "Missing IPv4 mask\n");
+			return -EINVAL;
+		}
+		me_entry->mask = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_ME_LIST_MASK]);
+
+		ath12k_dbg(NULL, ATH12K_DBG_CFG,
+			"IPv4 ME entry: %pI4, mask: 0x%08x\n",
+			&me_entry->ip, me_entry->mask);
+	} else if (ip_type == QCA_WLAN_VENDOR_ME_IP_TYPE_IPV6) {
+		/* Parse IPv6 address */
+		if (!tb[QCA_WLAN_VENDOR_ATTR_ME_LIST_IPV6_ADDR] ||
+			nla_len(tb[QCA_WLAN_VENDOR_ATTR_ME_LIST_IPV6_ADDR])
+				!= ATH12K_IPV6_ADDR_LEN) {
+			ath12k_err(NULL, "Invalid IPv6 address\n");
+			return -EINVAL;
+		}
+		memcpy(me_entry->ipv6,
+			nla_data(tb[QCA_WLAN_VENDOR_ATTR_ME_LIST_IPV6_ADDR]),
+			ATH12K_IPV6_ADDR_LEN);
+
+		/* Parse IPv6 prefix */
+		if (!tb[QCA_WLAN_VENDOR_ATTR_ME_LIST_PREFIX]) {
+			ath12k_err(NULL, "Missing IPv6 prefix\n");
+			return -EINVAL;
+		}
+		me_entry->mask = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_ME_LIST_PREFIX]);
+
+		ath12k_dbg(NULL, ATH12K_DBG_CFG,
+			   "IPv6 ME entry: %pI6, prefix: %u\n",
+			   me_entry->ipv6, me_entry->mask);
+	} else {
+		ath12k_err(NULL, "Invalid IP type: %u\n", ip_type);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+/**
+ * ath12k_validate_me_list_entry - Validate ME list entry
+ * @me_entry: ME entry to validate
+ */
+static int ath12k_validate_me_list_entry(struct ieee80211_wlanconfig_me_list *me_entry)
+{
+	bool is_ipv6 = (me_entry->me_list_type == IEEE80211_HMMC_LIST_V6 ||
+			me_entry->me_list_type == IEEE80211_DENY_LIST_V6);
+
+	if (is_ipv6) {
+		/* IPv6 multicast addresses start with 0xFF */
+		u8 *ipv6_bytes = (u8 *)me_entry->ipv6;
+
+		if (ipv6_bytes[0] != 0xFF) {
+			ath12k_err(NULL, "Invalid IPv6 multicast address: %pI6\n",
+				   me_entry->ipv6);
+			return -EINVAL;
+		}
+
+		/* Validate prefix length */
+		if (me_entry->mask > 128) {
+			ath12k_err(NULL, "Invalid IPv6 prefix length: %u\n",
+				   me_entry->mask);
+			return -EINVAL;
+		}
+	} else {
+		/* IPv4 multicast range: 224.0.0.0 to 239.255.255.255 */
+		u32 addr = ntohl(me_entry->ip);
+
+		if ((addr & 0xF0000000) != 0xE0000000) {
+			ath12k_err(NULL, "Invalid IPv4 multicast address: %pI4\n",
+				   &me_entry->ip);
+			return -EINVAL;
+		}
+	}
+
+	return 0;
+}
+
+/**
+ * ath12k_add_me_list_entry - Add entry to ME list
+ * @ahvif: ath12k_vif pointer
+ * @me_entry: ME entry to add
+ */
+static int ath12k_add_me_list_entry(struct ath12k_vif *ahvif,
+				    struct ieee80211_wlanconfig_me_list *me_entry)
+{
+	struct ath12k_dp_vif *dp_vif;
+	struct ath12k_me_db *me_db;
+	int ret = 0;
+
+	dp_vif = &ahvif->dp_vif;
+
+	/* This will take the ref on me_db */
+	me_db = ath12k_me_db_get(dp_vif);
+	if (!me_db) {
+		ath12k_err(NULL, "me_db is NULL");
+		return -EINVAL;
+	}
+
+	ath12k_dbg(NULL, ATH12K_DBG_CFG,
+		   "Adding ME list entry, type: %u\n", me_entry->me_list_type);
+
+	/* Select target list based on list type */
+	switch (me_entry->me_list_type) {
+	case IEEE80211_HMMC_LIST:
+		ret = ath12k_me_hmmc_add(me_db, &me_entry->ip, false,
+					 me_entry->mask, ATH12K_ME_HMMC_ACTION);
+		if (ret < 0) {
+			/* TODO: Increment the stats */
+			ath12k_dbg(NULL, ATH12K_DBG_CFG,
+				   "Failed adding HMMC IPV4 entry to db:%p, me_entry: %p\n",
+				   &me_db->hmmc_db, me_entry);
+			ath12k_me_db_put(me_db);
+			return ret;
+		}
+		break;
+	case IEEE80211_HMMC_LIST_V6:
+		ret = ath12k_me_hmmc_add(me_db, me_entry->ipv6, true,
+					 me_entry->mask, ATH12K_ME_HMMC_ACTION);
+		if (ret < 0) {
+			/* TODO: Increment the stats */
+			ath12k_dbg(NULL, ATH12K_DBG_CFG,
+				   "Failed adding HMMC IPV6 entry to db:%p, me_entry: %p\n",
+				   &me_db->hmmc_db, me_entry);
+			ath12k_me_db_put(me_db);
+			return ret;
+		}
+		break;
+	case IEEE80211_DENY_LIST:
+		ret = ath12k_me_hmmc_add(me_db, &me_entry->ip, false,
+					 me_entry->mask, ATH12K_ME_DENYLIST_ACTION);
+		if (ret < 0) {
+			/* TODO: Increment the stats */
+			ath12k_dbg(NULL, ATH12K_DBG_CFG,
+				   "Failed adding DENY IPV4 entry to db:%p, me_entry: %p\n",
+				   &me_db->hmmc_db, me_entry);
+			ath12k_me_db_put(me_db);
+			return ret;
+		}
+		break;
+	case IEEE80211_DENY_LIST_V6:
+		ret = ath12k_me_hmmc_add(me_db, me_entry->ipv6, true,
+					 me_entry->mask, ATH12K_ME_DENYLIST_ACTION);
+		if (ret < 0) {
+			/* TODO: Increment the stats */
+			ath12k_dbg(NULL, ATH12K_DBG_CFG,
+				   "Failed adding DENY IPV6 entry to db:%p, me_entry: %p\n",
+				   &me_db->hmmc_db, me_entry);
+			ath12k_me_db_put(me_db);
+			return ret;
+		}
+		break;
+	default:
+		ath12k_err(NULL, "Invalid ME list type: %u\n", me_entry->me_list_type);
+		ath12k_me_db_put(me_db);
+		return -EINVAL;
+	}
+
+	/*TODO: Increment the stats counter */
+	ath12k_dbg(NULL, ATH12K_DBG_CFG,
+		   "Added a ME list entry to db:%p, me_entry: %p\n",
+		   &me_db->hmmc_db, me_entry);
+
+	/* This will drop the ref for me_db */
+	ath12k_me_db_put(me_db);
+	return ret;
+}
+
+/**
+ * ath12k_del_me_list_entry - Delete entry from ME list
+ * @ahvif: ath12k_vif pointer
+ * @me_entry: ME entry to delete
+ */
+static int ath12k_del_me_list_entry(struct ath12k_vif *ahvif,
+				    struct ieee80211_wlanconfig_me_list *me_entry)
+{
+	struct ath12k_dp_vif *dp_vif;
+	struct ath12k_me_db *me_db;
+	int ret = 0;
+
+	dp_vif = &ahvif->dp_vif;
+
+	/* This will take the ref on me_db */
+	me_db = ath12k_me_db_get(dp_vif);
+	if (!me_db) {
+		ath12k_err(NULL, "me_db is NULL");
+		return -EINVAL;
+	}
+
+	ath12k_dbg(NULL, ATH12K_DBG_CFG,
+		   "Deleting ME list entry, type: %u\n", me_entry->me_list_type);
+
+	switch (me_entry->me_list_type) {
+	case IEEE80211_HMMC_LIST:
+		ret = ath12k_me_hmmc_del(me_db, &me_entry->ip, false,
+					 me_entry->mask);
+		if (ret < 0) {
+			/* TODO: Increment the stats */
+			ath12k_dbg(NULL, ATH12K_DBG_CFG,
+				   "Failed deleting HMMC IPV4 entry from db:%p, me_entry: %p\n",
+				   &me_db->hmmc_db, me_entry);
+			ath12k_me_db_put(me_db);
+			return ret;
+		}
+		break;
+	case IEEE80211_HMMC_LIST_V6:
+		ret = ath12k_me_hmmc_del(me_db, me_entry->ipv6, true,
+					 me_entry->mask);
+		if (ret < 0) {
+			/* TODO: Increment the stats */
+			ath12k_dbg(NULL, ATH12K_DBG_CFG,
+				   "Failed deleting HMMC IPV6 entry from db:%p, me_entry: %p\n",
+				   &me_db->hmmc_db, me_entry);
+			ath12k_me_db_put(me_db);
+			return ret;
+		}
+		break;
+	case IEEE80211_DENY_LIST:
+		ret = ath12k_me_hmmc_del(me_db, &me_entry->ip, false,
+					 me_entry->mask);
+		if (ret < 0) {
+			/* TODO: Increment the stats */
+			ath12k_dbg(NULL, ATH12K_DBG_CFG,
+				   "Failed deleting DENY IPV4 entry from db:%p, me_entry: %p\n",
+				   &me_db->hmmc_db, me_entry);
+			ath12k_me_db_put(me_db);
+			return ret;
+		}
+		break;
+	case IEEE80211_DENY_LIST_V6:
+		ret = ath12k_me_hmmc_del(me_db, me_entry->ipv6, true,
+					 me_entry->mask);
+		if (ret < 0) {
+			/* TODO: Increment the stats */
+			ath12k_dbg(NULL, ATH12K_DBG_CFG,
+				   "Failed deleting DENY IPV6 entry from db:%p, me_entry: %p\n",
+				   &me_db->hmmc_db, me_entry);
+			ath12k_me_db_put(me_db);
+			return ret;
+		}
+		break;
+	default:
+		ath12k_err(NULL, "Invalid ME list type: %u\n", me_entry->me_list_type);
+		ath12k_me_db_put(me_db);
+		return -EINVAL;
+	}
+
+	/* TODO: Increment the stats */
+	ath12k_dbg(NULL, ATH12K_DBG_CFG,
+		   "Deleted ME list entry from db: %p\n", &me_db->hmmc_db);
+
+	/* This will drop the ref for me_db */
+	ath12k_me_db_put(me_db);
+	return ret;
+}
+
+/**
+ * ath12k_dump_me_list_entries - Dump ME list entries
+ * @ar: ath12k radio pointer
+ * @list_type: ME list type to dump
+ */
+static int ath12k_dump_me_list_entries(struct ath12k_vif *ahvif, u8 list_type)
+{
+	struct ath12k_dp_vif *dp_vif;
+	struct ath12k_me_db *me_db;
+	bool is_ipv6;
+	u16 count;
+
+	dp_vif = &ahvif->dp_vif;
+
+	/* This will take the ref on me_db */
+	me_db = ath12k_me_db_get(dp_vif);
+	if (!me_db) {
+		ath12k_err(NULL, "me_db is NULL");
+		return -EINVAL;
+	}
+
+	ath12k_dbg(NULL, ATH12K_DBG_CFG,
+		   "Dumping ME list entries from db: %p, list_type: %u\n",
+		   &me_db->hmmc_db, list_type);
+
+	/* Select target list and count based on list type */
+	switch (list_type) {
+	case IEEE80211_HMMC_LIST:
+		is_ipv6 = false;
+
+		/* TODO:
+		 * Iterate and print info for each valid entry.
+		 */
+
+		ath12k_info(NULL, "HMMC IPv4 List (%u entries):\n", count);
+
+		break;
+	case IEEE80211_HMMC_LIST_V6:
+		is_ipv6 = true;
+
+		/* TODO:
+		 * Iterate and print info for each valid entry.
+		 */
+
+		ath12k_info(NULL, "HMMC IPv6 List (%u entries):\n", count);
+
+		break;
+	case IEEE80211_DENY_LIST:
+		is_ipv6 = false;
+
+		/* TODO:
+		 * Iterate and print info for each valid entry.
+		 */
+
+		ath12k_info(NULL, "Deny IPv4 List (%u entries):\n", count);
+
+		break;
+	case IEEE80211_DENY_LIST_V6:
+		is_ipv6 = true;
+
+		/* TODO:
+		 * Iterate and print info for each valid entry.
+		 */
+
+		ath12k_info(NULL, "Deny IPv6 List (%u entries):\n", count);
+
+		break;
+	default:
+		ath12k_err(NULL, "Invalid ME list type: %u\n", list_type);
+		ath12k_me_db_put(me_db);
+		return -EINVAL;
+	}
+
+	/* This will drop the ref for me_db */
+	ath12k_me_db_put(me_db);
+	return 0;
+}
+
+/**
+ * ath12k_vendor_hmmc_deny_list_handler - Handle ME list vendor command
+ * @wiphy: wiphy device pointer
+ * @wdev: wireless device pointer
+ * @data: vendor command data
+ * @data_len: vendor command data length
+ *
+ * This function handles ME list configuration commands from userspace.
+ * It supports both HMMC and Deny lists with IPv4/IPv6 addresses.
+ */
+static int ath12k_vendor_hmmc_deny_list_handler(struct wiphy *wiphy,
+						struct wireless_dev *wdev,
+						const void *data,
+						int data_len)
+{
+	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
+	struct ath12k_hw *ah = hw->priv;
+	struct ath12k *ar;
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_ME_LIST_MAX + 1];
+	struct ieee80211_wlanconfig_me_list me_entry;
+	u8 operation, list_type, ip_type, hw_idx = 0;
+	int ifidx = 0;
+	int ret = 0;
+	struct ath12k_vif *ahvif;
+
+	ath12k_dbg(NULL, ATH12K_DBG_CFG, "Received ME list command\n");
+
+	/* Validate input parameters */
+	if (!data || !data_len) {
+		ath12k_err(NULL, "Invalid ME list data\n");
+		return -EINVAL;
+	}
+
+	ahvif = ath12k_get_ahvif_from_wdev(wdev);
+	if (!ahvif) {
+		ath12k_err(NULL, "Failed to retrieve ahvif\n");
+		return -EINVAL;
+	}
+
+	/* Validate interface type - HMMC configs are for AP mode alone */
+	if (ahvif->vif->type != NL80211_IFTYPE_AP) {
+		ath12k_err(NULL, "HMMC config is only supported on AP interfaces");
+		return -EOPNOTSUPP;
+	}
+
+	/* Parse netlink attributes */
+	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_ME_LIST_MAX, data, data_len,
+			ath12k_vendor_me_list_policy, NULL);
+	if (ret) {
+		ath12k_err(NULL, "Failed to parse ME list attributes: %d\n", ret);
+		return ret;
+	}
+
+	if (!tb[NL80211_ATTR_IFINDEX]) {
+		ath12k_err(NULL, "Not a valid interface index for ME\n");
+		return -EINVAL;
+	}
+	ifidx = nla_get_u32(tb[NL80211_ATTR_IFINDEX]);
+
+	if (ifidx < 0)
+		return -EINVAL;
+
+	/* Extract operation */
+	if (!tb[QCA_WLAN_VENDOR_ATTR_ME_LIST_OPERATION]) {
+		ath12k_err(NULL, "Missing ME list operation\n");
+		return -EINVAL;
+	}
+	operation = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_ME_LIST_OPERATION]);
+
+	/* Extract list type */
+	if (!tb[QCA_WLAN_VENDOR_ATTR_ME_LIST_TYPE]) {
+		ath12k_err(NULL, "Missing ME list type\n");
+		return -EINVAL;
+	}
+	list_type = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_ME_LIST_TYPE]);
+
+	/* Extract IP type */
+	if (!tb[QCA_WLAN_VENDOR_ATTR_ME_LIST_IP_TYPE]) {
+		ath12k_err(NULL, "Missing ME list IP type\n");
+		return -EINVAL;
+	}
+	ip_type = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_ME_LIST_IP_TYPE]);
+
+	/* Get radio instance */
+	ar = &ah->radio[hw_idx];
+	if (!ar) {
+		ath12k_err(NULL, "Invalid radio instance\n");
+		return -ENODEV;
+	}
+
+	ath12k_dbg(NULL, ATH12K_DBG_CFG,
+		   "ME list operation: %u, list_type: %u, ip_type: %u\n",
+		   operation, list_type, ip_type);
+
+	/* Initialize ME entry */
+	memset(&me_entry, 0, sizeof(me_entry));
+	me_entry.me_list_type = list_type;
+
+	/* Process based on operation */
+	switch (operation) {
+	case IEEE80211_WLANCONFIG_ME_LIST_ADD:
+	case IEEE80211_WLANCONFIG_ME_LIST_DEL:
+
+		/* Extract IP address and mask/prefix */
+		ret = ath12k_parse_me_list_entry(tb, &me_entry, ip_type);
+		if (ret) {
+			ath12k_err(NULL, "Failed to parse ME list entry: %d\n", ret);
+			return ret;
+		}
+
+		/* Validate multicast address */
+		ret = ath12k_validate_me_list_entry(&me_entry);
+		if (ret) {
+			ath12k_err(NULL, "Invalid ME list entry: %d\n", ret);
+			return ret;
+		}
+
+		/* Process ADD/DEL operation */
+		if (operation == IEEE80211_WLANCONFIG_ME_LIST_ADD)
+			ret = ath12k_add_me_list_entry(ahvif, &me_entry);
+		else
+			ret = ath12k_del_me_list_entry(ahvif, &me_entry);
+		break;
+
+	case IEEE80211_WLANCONFIG_ME_LIST_DUMP:
+		ret = ath12k_dump_me_list_entries(ahvif, list_type);
+		break;
+
+	default:
+		ath12k_err(NULL, "Invalid ME list operation: %u\n", operation);
+		ret = -EINVAL;
+		break;
+	}
+
+	ath12k_dbg(NULL, ATH12K_DBG_CFG,
+		   "ME list operation %u completed with result: %d\n",
+		   operation, ret);
+
+	return ret;
+}
+
 static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
@@ -10263,6 +10776,14 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.doit = ath12k_vendor_me_config_handler,
 		.policy = ath12k_vendor_me_config_policy,
 		.maxattr = QCA_WLAN_VENDOR_ATTR_ME_CONFIG_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_ME_LIST,
+		.doit = ath12k_vendor_hmmc_deny_list_handler,
+		.policy = ath12k_vendor_me_list_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_ME_LIST_MAX,
 		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
 	},
 
