@@ -4249,11 +4249,24 @@ static int ath12k_qmi_alloc_target_mem_chunk(struct ath12k_base *ab)
 		case AFC_REGION_TYPE:
 		case PAGEABLE_MEM_REGION_TYPE:
 		case CALDB_MEM_REGION_TYPE:
+			if ((chunk->type == CALDB_MEM_REGION_TYPE &&
+			     !ab->hw_params->cold_boot_calib) ||
+			     !chunk->size) {
+				chunk->paddr = 0;
+				chunk->v.addr = NULL;
+				break;
+			}
 			ret = ath12k_qmi_alloc_chunk(ab, chunk);
 			if (ret)
 				goto err;
 			break;
 		case MLO_GLOBAL_MEM_REGION_TYPE:
+			if (!chunk->size) {
+				chunk->paddr = 0;
+				chunk->v.addr = NULL;
+				mlo_idx++;
+				break;
+			}
 			mlo_size += chunk->size;
 			if (ag->mlo_mem.mlo_mem_size &&
 			    mlo_size > ag->mlo_mem.mlo_mem_size) {
@@ -4534,7 +4547,13 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 
 		switch (ab->qmi.target_mem[i].type) {
 		case CALDB_MEM_REGION_TYPE:
-			if (!ab->hw_params->cold_boot_calib) {
+		case HOST_DDR_REGION_TYPE:
+		case BDF_MEM_REGION_TYPE:
+		case M3_DUMP_REGION_TYPE:
+		case PAGEABLE_MEM_REGION_TYPE:
+			if ((ab->qmi.target_mem[i].type == CALDB_MEM_REGION_TYPE &&
+			     !ab->hw_params->cold_boot_calib) ||
+			     !ab->qmi.target_mem[i].size) {
 				ab->qmi.target_mem[idx].paddr = 0;
 				ab->qmi.target_mem[idx].v.ioaddr = NULL;
 				ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
@@ -4542,12 +4561,6 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 				idx++;
 				break;
 			}
-
-			fallthrough;
-		case HOST_DDR_REGION_TYPE:
-		case BDF_MEM_REGION_TYPE:
-		case M3_DUMP_REGION_TYPE:
-		case PAGEABLE_MEM_REGION_TYPE:
 			if (ddr_rmem->size - sz < ab->qmi.target_mem[i].size) {
 				avail_sz = ddr_rmem->size - sz;
 				goto print_err;
@@ -4568,6 +4581,14 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 			idx++;
 			break;
 		case MLO_GLOBAL_MEM_REGION_TYPE:
+			if (!ab->qmi.target_mem[i].size) {
+				ab->qmi.target_mem[idx].paddr = 0;
+				ab->qmi.target_mem[idx].v.ioaddr = NULL;
+				ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
+				ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
+				idx++;
+				break;
+			}
 			rmem = ath12k_core_get_reserved_mem_by_name(ab, "mlo-global-mem");
 			if (!rmem) {
 				ret = -EINVAL;
@@ -4685,7 +4706,13 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 
 		switch (ab->qmi.target_mem[i].type) {
 		case CALDB_MEM_REGION_TYPE:
-			if (!ab->hw_params->cold_boot_calib) {
+		case HOST_DDR_REGION_TYPE:
+		case BDF_MEM_REGION_TYPE:
+		case M3_DUMP_REGION_TYPE:
+		case PAGEABLE_MEM_REGION_TYPE:
+			if ((ab->qmi.target_mem[i].type == CALDB_MEM_REGION_TYPE &&
+			     !ab->hw_params->cold_boot_calib) ||
+			     !ab->qmi.target_mem[i].size) {
 				ab->qmi.target_mem[idx].paddr = 0;
 				ab->qmi.target_mem[idx].v.ioaddr = NULL;
 				ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
@@ -4693,12 +4720,6 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 				idx++;
 				break;
 			}
-
-			fallthrough;
-		case HOST_DDR_REGION_TYPE:
-		case BDF_MEM_REGION_TYPE:
-		case M3_DUMP_REGION_TYPE:
-		case PAGEABLE_MEM_REGION_TYPE:
 			if (ddr_rmem->size - sz < ab->qmi.target_mem[i].size) {
 				avail_sz = ddr_rmem->size - sz;
 				goto print_err;
@@ -4722,6 +4743,14 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 			idx++;
 			break;
 		case MLO_GLOBAL_MEM_REGION_TYPE:
+			if (!ab->qmi.target_mem[i].size) {
+				ab->qmi.target_mem[idx].paddr = 0;
+				ab->qmi.target_mem[idx].v.ioaddr = NULL;
+				ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
+				ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
+				idx++;
+				break;
+			}
 			rmem = ath12k_core_get_reserved_mem_by_name(ab, "mlo-global-mem");
 			if (!rmem) {
 				ret = -EINVAL;
@@ -4748,13 +4777,13 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 			}
 
 			ab->qmi.target_mem[idx].paddr = mlo_chunk->paddr;
-                        ab->qmi.target_mem[idx].v.ioaddr = mlo_chunk->v.ioaddr;
+			ab->qmi.target_mem[idx].v.ioaddr = mlo_chunk->v.ioaddr;
 			ab->qmi.target_mem[idx].size = mlo_chunk->size;
 			ab->qmi.target_mem[idx].type = mlo_chunk->type;
 
 			if (!ag->mlo_mem.mlo_mem_size) {
 				ag->mlo_mem.mlo_mem_size = mlo_chunk->size;
-			} else if(ag->mlo_mem.mlo_mem_size != mlo_chunk->size){
+			} else if (ag->mlo_mem.mlo_mem_size != mlo_chunk->size) {
 				ath12k_err(ab, "QMI MLO memory size error, expected size is %d"
 					   "but requested size is %d", ag->mlo_mem.mlo_mem_size,
 					   mlo_chunk->size);
