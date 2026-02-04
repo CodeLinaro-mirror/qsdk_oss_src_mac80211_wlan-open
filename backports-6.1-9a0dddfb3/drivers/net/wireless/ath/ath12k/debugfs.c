@@ -7364,7 +7364,7 @@ static ssize_t ath12k_debugfs_dump_device_mgmt_srng_stats(struct file *file,
 							  loff_t *ppos)
 {
 	struct ath12k_base *ab = file->private_data;
-	struct ath12k_device_mgmt_srng_stats *device_stats = &ab->mgmt->srng_stats;
+	struct ath12k_device_mgmt_srng_stats *device_stats;
 	static const char *frm_stype[ATH12K_SRNG_STATS_MGMT_FRM_STYPE_MAX - 1] = {
 			"Association request", "Association response",
 			"Reassociation request", "Reassociation response",
@@ -7389,6 +7389,14 @@ static ssize_t ath12k_debugfs_dump_device_mgmt_srng_stats(struct file *file,
 	char *buf __free(kfree) = kzalloc(size, GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
+
+	if (!ab->mgmt)
+		return -EINVAL;
+
+	device_stats = &ab->mgmt->srng_stats;
+
+	if (ath12k_cfg_get(ab, ATH12K_CFG_REO_MGMT_PATH_DISABLE))
+		ath12k_info(ab, "REO2SW management path is disabled");
 
 	len += scnprintf(buf + len, size - len, "SOC MGMT SRNG RX STATS:\n\n");
 
