@@ -6142,16 +6142,14 @@ ieee80211_beacon_get_ap_ema_list(struct ieee80211_hw *hw,
 				 struct ieee80211_chanctx_conf *chanctx_conf)
 {
 	struct ieee80211_ema_beacons *ema = NULL;
+	u8 cnt = (beacon->mbssid_ies && beacon->mbssid_ies->cnt) ?
+			beacon->mbssid_ies->cnt : 1;
 
-	if (!beacon->mbssid_ies || !beacon->mbssid_ies->cnt)
-		return NULL;
-
-	ema = kzalloc(struct_size(ema, bcn, beacon->mbssid_ies->cnt),
-		      GFP_ATOMIC);
+	ema = kzalloc(struct_size(ema, bcn, cnt), GFP_ATOMIC);
 	if (!ema)
 		return NULL;
 
-	for (ema->cnt = 0; ema->cnt < beacon->mbssid_ies->cnt; ema->cnt++) {
+	for (ema->cnt = 0; ema->cnt < cnt; ema->cnt++) {
 		ema->bcn[ema->cnt].skb =
 			ieee80211_beacon_get_ap(hw, vif, link,
 						&ema->bcn[ema->cnt].offs,
@@ -6161,7 +6159,7 @@ ieee80211_beacon_get_ap_ema_list(struct ieee80211_hw *hw,
 			break;
 	}
 
-	if (ema->cnt == beacon->mbssid_ies->cnt)
+	if (ema->cnt == cnt)
 		return ema;
 
 	ieee80211_beacon_free_ema_list(ema);
