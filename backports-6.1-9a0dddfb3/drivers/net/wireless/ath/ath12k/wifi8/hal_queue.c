@@ -148,7 +148,7 @@ int ath12k_wifi8_hal_tx_mpdu_queue_setup(struct ath12k_dp_hw_group *dp_hw_grp,
 	else
 		mpduq->info5 |= le32_encode_bits(1, HAL_TX_MPDU_QUEUE_HEAD_PN_INC_VALUE);
 	if (ti->encap_type == ATH12K_HW_TXRX_RAW ||
-	    ti->encap_type == ATH12K_HW_TXRX_NATIVE_WIFI) {
+	    ti->encap_type == ATH12K_HW_TXRX_NATIVE_WIFI || ti->is_mgmtq) {
 		mpduq->info5 |= le32_encode_bits(0, HAL_TX_MPDU_QUEUE_HEAD_MPDU_HDR_LEN);
 	} else {
 		if (ti->tid > MAX_VALID_DATA_TID)
