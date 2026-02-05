@@ -55,6 +55,7 @@ ath12k-y += ppe_stub.o
 endif
 
 obj-$(CPTCFG_QCN_EXTN) += qcn_extns/wifi6/
+obj-$(CPTCFG_QCN_EXTN) += qcn_extns/sa_test/
 obj-$(CPTCFG_ATH12K) += wifi7/
 obj-$(CPTCFG_ATH12K) += wifi8/
 obj-$(CPTCFG_ATHDEBUG) += ath_debug/
@@ -67,6 +68,8 @@ ath12k-$(CPTCFG_QCN_EXTN) += \
 	qcn_extns/esp_extn.o \
 	qcn_extns/txrx_extn.o \
 	qcn_extns/dcs_extn.o \
+	qcn_extns/sa_api.o \
+	qcn_extns/sa_core.o \
 	qcn_extns/dp_stats_extn.o \
 	qcn_extns/ini.o \
 	qcn_extns/ini_parse.o \
