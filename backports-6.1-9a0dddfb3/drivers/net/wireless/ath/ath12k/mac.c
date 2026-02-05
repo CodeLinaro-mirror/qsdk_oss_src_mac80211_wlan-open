@@ -6853,7 +6853,8 @@ ath12k_get_ttlm_preferred_link_to_start(struct ieee80211_vif *vif)
 	u16 valid_links = vif->valid_links;
 
 	for (link_id = 0; link_id < ATH12K_NUM_MAX_LINKS; link_id++) {
-		if (!(valid_links & BIT(link_id)))
+		if (!(valid_links & BIT(link_id)) ||
+		    (vif->repurposed_links & BIT(link_id)))
 			continue;
 
 		arvif = rcu_dereference(ahvif->link[link_id]);
@@ -6933,6 +6934,12 @@ ath12k_mac_populate_ttlm_params(struct ath12k_link_vif *arvif,
 		if ((valid_links & ieee_link_map_value) != ieee_link_map_value) {
 			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
 					 "Invalid link_map value in set_ttlm");
+			return -1;
+		}
+
+		if (vif->repurposed_links & ieee_link_map_value) {
+			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
+					 "Repurposed link is part of link_map in set_ttlm");
 			return -1;
 		}
 
