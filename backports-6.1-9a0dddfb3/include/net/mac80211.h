@@ -2249,6 +2249,7 @@ struct ieee80211_advertised_ttlm_info {
  *	suspended due to negotiated TTLM, and could be activated in the
  *	future by tearing down the TTLM negotiation.
  *	0 for non-MLO.
+ * @repurposed_links: Bitmap of links of the MLD, which are in non-11be mode.
  * @neg_ttlm: negotiated TID to link mapping info.
  *	see &struct ieee80211_neg_ttlm.
  * @adv_ttlm: Config of advertised TTLM when triggered on AP interface.
@@ -2293,6 +2294,7 @@ struct ieee80211_vif {
 	struct ieee80211_bss_conf bss_conf;
 	struct ieee80211_bss_conf __rcu *link_conf[IEEE80211_MLD_MAX_NUM_LINKS];
 	u16 valid_links, active_links, dormant_links, suspended_links;
+	u16 repurposed_links;
 	struct ieee80211_neg_ttlm neg_ttlm;
 	struct ieee80211_advertised_ttlm_info adv_ttlm;
 	u8 addr[ETH_ALEN] __aligned(2);
@@ -8660,6 +8662,24 @@ int ieee80211_get_link_assoc_status(struct ieee80211_vif *vif, u8 link_id);
  */
 void ieee80211_tx_monitor_offload(struct ieee80211_hw *hw,
 				  struct ieee80211_tx_status *status);
+
+/**
+ * ieee80211_set_repurpose_link - Mark a link for repurposing
+ * @vif: virtual interface
+ * @link_id: link identifier
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int ieee80211_set_repurpose_link(struct ieee80211_vif *vif, u8 link_id);
+
+/**
+ * ieee80211_clear_repurpose_link - Clear repurpose mark for a link
+ * @vif: virtual interface
+ * @link_id: link identifier
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int ieee80211_clear_repurpose_link(struct ieee80211_vif *vif, u8 link_id);
 
 /**
  * ieee80211_enable_offchan_packet_capture - Enable offchan packet capture

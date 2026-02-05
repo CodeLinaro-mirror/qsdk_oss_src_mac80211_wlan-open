@@ -242,6 +242,67 @@ void ieee80211_ttlm_info_expec_dur_update(struct ieee80211_vif *vif,
 }
 EXPORT_SYMBOL(ieee80211_ttlm_info_expec_dur_update);
 
+/**
+ * ieee80211_set_repurpose_link() - Mark a link for repurposing in mac80211
+ * @vif: virtual interface pointer
+ * @link_id: link identifier to mark for repurposing
+ *
+ * This function sets the repurpose bit for the specified link in the
+ * ieee80211_vif structure.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int ieee80211_set_repurpose_link(struct ieee80211_vif *vif, u8 link_id)
+{
+	struct ieee80211_sub_if_data *sdata = vif_to_sdata(vif);
+
+	if (!sdata)
+		return -EINVAL;
+
+	lockdep_assert_wiphy(sdata->local->hw.wiphy);
+
+	if (cfg80211_set_repurpose_link(ieee80211_vif_to_wdev(vif), link_id))
+		return -EINVAL;
+
+	vif->repurposed_links |= BIT(link_id);
+
+	return 0;
+}
+EXPORT_SYMBOL(ieee80211_set_repurpose_link);
+
+/**
+ * ieee80211_clear_repurpose_link() - Clear repurpose mark for a link
+ * @vif: virtual interface pointer
+ * @link_id: link identifier to clear
+ *
+ * This function clears the repurpose bit for the specified link.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int ieee80211_clear_repurpose_link(struct ieee80211_vif *vif, u8 link_id)
+{
+	struct ieee80211_sub_if_data *sdata = vif_to_sdata(vif);
+
+	if (!sdata)
+		return -EINVAL;
+
+	lockdep_assert_wiphy(sdata->local->hw.wiphy);
+
+	if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
+		return -EINVAL;
+
+	if (!(vif->valid_links & BIT(link_id)))
+		return -EINVAL;
+
+	if (cfg80211_clear_repurpose_link(ieee80211_vif_to_wdev(vif), link_id))
+		return -EINVAL;
+
+	vif->repurposed_links &= ~BIT(link_id);
+
+	return 0;
+}
+EXPORT_SYMBOL(ieee80211_clear_repurpose_link);
+
 static struct wireless_dev *ieee80211_add_iface(struct wiphy *wiphy,
 						const char *name,
 						unsigned char name_assign_type,

@@ -54,6 +54,63 @@ module_param(cfg80211_disable_40mhz_24ghz, bool, 0644);
 MODULE_PARM_DESC(cfg80211_disable_40mhz_24ghz,
 		 "Disable 40MHz support in the 2.4GHz band");
 
+/**
+ * cfg80211_set_repurpose_link() - Mark a link for repurposing in cfg80211
+ * @wdev: wireless device pointer
+ * @link_id: link identifier to mark for repurposing
+ *
+ * This function sets the repurpose bit for the specified link in the
+ * wireless_dev structure.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int cfg80211_set_repurpose_link(struct wireless_dev *wdev, u8 link_id)
+{
+	if (!wdev)
+		return -EINVAL;
+
+	lockdep_assert_wiphy(wdev->wiphy);
+
+	if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
+		return -EINVAL;
+
+	if (!(wdev->valid_links & BIT(link_id)))
+		return -EINVAL;
+
+	wdev->repurposed_links |= BIT(link_id);
+
+	return 0;
+}
+EXPORT_SYMBOL(cfg80211_set_repurpose_link);
+
+/**
+ * cfg80211_clear_repurpose_link() - Clear repurpose mark for a link
+ * @wdev: wireless device pointer
+ * @link_id: link identifier to clear
+ *
+ * This function clears the repurpose bit for the specified link.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int cfg80211_clear_repurpose_link(struct wireless_dev *wdev, u8 link_id)
+{
+	if (!wdev)
+		return -EINVAL;
+
+	lockdep_assert_wiphy(wdev->wiphy);
+
+	if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
+		return -EINVAL;
+
+	if (!(wdev->valid_links & BIT(link_id)))
+		return -EINVAL;
+
+	wdev->repurposed_links &= ~BIT(link_id);
+
+	return 0;
+}
+EXPORT_SYMBOL(cfg80211_clear_repurpose_link);
+
 struct cfg80211_registered_device *cfg80211_rdev_by_wiphy_idx(int wiphy_idx)
 {
 	struct cfg80211_registered_device *result = NULL, *rdev;
