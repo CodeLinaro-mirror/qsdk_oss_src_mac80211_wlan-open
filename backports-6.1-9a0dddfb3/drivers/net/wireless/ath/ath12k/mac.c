@@ -996,6 +996,7 @@ struct ieee80211_link_sta *ath12k_mac_get_link_sta(struct ath12k_link_sta *arsta
 
 	return link_sta;
 }
+EXPORT_SYMBOL(ath12k_mac_get_link_sta);
 
 static bool ath12k_mac_bitrate_is_cck(int bitrate)
 {
@@ -5621,7 +5622,7 @@ static u32 ath12k_mac_ieee80211_sta_bw_to_wmi(struct ath12k *ar,
 	return bw;
 }
 
-static struct
+struct
 ieee80211_link_sta *ath12k_mac_inherit_radio_cap(struct ath12k *ar,
 						 struct ath12k_link_sta *arsta)
 {
@@ -5666,6 +5667,7 @@ ieee80211_link_sta *ath12k_mac_inherit_radio_cap(struct ath12k *ar,
 
 	return link_sta;
 }
+EXPORT_SYMBOL(ath12k_mac_inherit_radio_cap);
 
 void ath12k_bss_assoc(struct ath12k *ar,
 			     struct ath12k_link_vif *arvif,

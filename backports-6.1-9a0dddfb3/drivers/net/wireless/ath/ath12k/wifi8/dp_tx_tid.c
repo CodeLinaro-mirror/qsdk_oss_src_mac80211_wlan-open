@@ -7,6 +7,8 @@
 #include "dp_pool.h"
 #include "../dp_cmn.h"
 #include "dp.h"
+#include "../mac.h"
+#include "../ini.h"
 
 #define ATH12K_WDS_STA_HEADER_LEN 6
 
@@ -39,14 +41,93 @@ struct ath12k_dp_mpdu_q_info
 }
 
 static inline
+bool ath12k_tx_get_he_mac_cap(struct ath12k_dp_hw_group *dp_hw_grp,
+			      struct ath12k_dp_link_peer *link_peer)
+{
+	struct ath12k_base *ab = ath12k_dp_get_ab_from_dp_hw_group(dp_hw_grp);
+	struct ath12k_link_sta *arsta;
+	struct ieee80211_link_sta *link_sta;
+	const struct ieee80211_sta_he_cap *he_cap;
+	bool ht_he_cap = false;
+
+	arsta = ath12k_peer_get_link_sta(ab, link_peer);
+	if (!arsta || !arsta->arvif) {
+		ath12k_warn(ab, "arsta or arvif is NULL");
+		return false;
+	}
+	link_sta = ath12k_mac_get_link_sta(arsta);
+	if (!link_sta) {
+		ath12k_warn(ab, "link sta is NULL");
+		return false;
+	}
+	he_cap = &link_sta->he_cap;
+	if (!he_cap) {
+		ath12k_warn(ab, "he_cap is NULL");
+		return false;
+	}
+	if ((he_cap->he_cap_elem.mac_cap_info[0] & 0x1u) != 0)
+		ht_he_cap = true;
+
+	return ht_he_cap;
+}
+
+static inline
+u32 ath12k_wifi8_dp_tx_get_he_header_length(struct ath12k_dp_hw_group *dp_hw_grp,
+					    struct ath12k_dp_peer *peer, u8 tid_num)
+{
+	bool ht_he_cap;
+	struct ath12k_dp_link_peer *link_peer = NULL;
+	struct ath12k_base *ab = ath12k_dp_get_ab_from_dp_hw_group(dp_hw_grp);
+	struct ath12k_link_sta *arsta;
+	int i;
+	u32 header_size = 0;
+	u32 rep_ul_resp;
+	struct ath12k *ar;
+
+	if (!peer || !peer->sta)
+		return 0;
+
+	rcu_read_lock();
+	for (i = 0; i < ATH12K_NUM_MAX_LINKS; i++) {
+		link_peer = rcu_dereference(peer->link_peers[i]);
+		if (link_peer)
+			break;
+	}
+
+	arsta = ath12k_peer_get_link_sta(ab, link_peer);
+	if (!arsta || !arsta->arvif || !arsta->arvif->ahvif ||
+	    !arsta->arvif->ahvif->vif) {
+		rcu_read_unlock();
+		return 0;
+	}
+
+	ht_he_cap = ath12k_tx_get_he_mac_cap(dp_hw_grp, link_peer);
+	ar = arsta->arvif->ar;
+	rep_ul_resp = ((ath12k_cfg_get(ab, ATH12K_CFG_REP_UL_RESP) >>
+			ar->pdev->pdev_id) & 01);
+	//do we need STA check if we are checking sta_bss_peer
+	if (arsta->arvif->ahvif->vif->type == NL80211_IFTYPE_STATION &&
+	    peer->is_sta_bss_peer && peer->sta->wme &&
+	    rep_ul_resp &&
+	    ht_he_cap) {
+		if (tid_num < NON_QOS_TID)
+			header_size = 4;
+	}
+	rcu_read_unlock();
+	return header_size;
+}
+
+static inline
 u32 ath12k_wifi8_dp_tx_get_header_length(struct ath12k_dp_hw_group *dp_hw_grp,
-		struct ath12k_dp_peer *peer, u8 tid_num)
+					 struct ath12k_dp_peer *peer, u8 tid_num)
 {
 	u32 header_len = 0;
 
 	if (peer->is_sta_bss_peer_4addr)
 		header_len += ATH12K_WDS_STA_HEADER_LEN;
 
+	header_len += ath12k_wifi8_dp_tx_get_he_header_length(dp_hw_grp,
+							      peer, tid_num);
 	return header_len;
 }
 
