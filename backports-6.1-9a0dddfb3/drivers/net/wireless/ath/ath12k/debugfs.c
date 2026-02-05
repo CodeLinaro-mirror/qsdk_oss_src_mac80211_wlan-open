@@ -7342,6 +7342,77 @@ u32 ath12k_dbg_dump_qos_profile(struct ath12k_base *ab,
 	return len;
 }
 
+static ssize_t ath12k_debugfs_dump_device_mgmt_srng_stats(struct file *file,
+							  char __user *user_buf,
+							  size_t count,
+							  loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	struct ath12k_device_mgmt_srng_stats *device_stats = &ab->mgmt->srng_stats;
+	static const char *frm_stype[ATH12K_SRNG_STATS_MGMT_FRM_STYPE_MAX - 1] = {
+			"Association request", "Association response",
+			"Reassociation request", "Reassociation response",
+			"Probe request", "Probe response", "Timing Advertisement",
+			"Reserved", "Beacon", "ATIM", "Disassociation", "Authentication",
+			"Deauthentication", "Action", "Action NoAck"};
+	static const char *rxdma_err[HAL_REO_ENTR_RING_RXDMA_ECODE_MAX] = {
+			"Overflow", "MPDU len", "FCS", "Decrypt", "TKIP MIC",
+			"Unencrypt", "MSDU len", "MSDU limit", "WiFi parse",
+			"AMSDU parse", "SA timeout", "DA timeout",
+			"Flow timeout", "Flush req", "AMSDU frag", "mcast echo",
+			"AMSDU addr mismatch", "Unauth WDS", "Gcast AMSDU WDS"};
+	static const char *reo_err[HAL_REO_DEST_RING_ERROR_CODE_MAX] = {
+			"Desc addr zero", "Desc invalid", "AMPDU in non BA",
+			"Non BA dup", "BA dup", "Frame 2k jump", "BAR 2k jump",
+			"Frame OOR", "BAR OOR", "No BA session",
+			"Frame SN equal SSN", "PN check", "2k err",
+			"PN err", "Desc blocked"};
+	int len = 0, i;
+	const int size = 4096;
+
+	char *buf __free(kfree) = kzalloc(size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	len += scnprintf(buf + len, size - len, "SOC MGMT SRNG RX STATS:\n\n");
+
+	len += scnprintf(buf + len, size - len, "Delivered packets:\n");
+	for (i = 0; i < ATH12K_SRNG_STATS_MGMT_FRM_STYPE_MAX-1; i++)
+		len += scnprintf(buf + len, size - len, "  %s: %u\n",
+				 frm_stype[i], device_stats->rx_pkts[i]);
+
+	len += scnprintf(buf + len, size - len, "Invalid push reason packets: %u\n",
+			 device_stats->invalid_push_pkts);
+
+	len += scnprintf(buf + len, size - len, "Invalid type packets: %u\n",
+			 device_stats->invalid_pkts);
+
+	len += scnprintf(buf + len, size - len, "Error ring packets: %u\n",
+			 device_stats->err_ring_pkts);
+
+	len += scnprintf(buf + len, size - len, "Fragment packets: %u\n",
+			 device_stats->frag_pkts);
+
+	len += scnprintf(buf + len, size - len, "RXDMA errors:\n");
+	for (i = 0; i < HAL_REO_ENTR_RING_RXDMA_ECODE_MAX; i++)
+		len += scnprintf(buf + len, size - len, "  %s: %u\n",
+				 rxdma_err[i], device_stats->rxdma_err[i]);
+
+	len += scnprintf(buf + len, size - len, "REO errors:\n");
+	for (i = 0; i < HAL_REO_DEST_RING_ERROR_CODE_MAX; i++)
+		len += scnprintf(buf + len, size - len, "  %s: %u\n",
+				 reo_err[i], device_stats->reo_err[i]);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static const struct file_operations fops_device_mgmt_srng_stats = {
+	.read = ath12k_debugfs_dump_device_mgmt_srng_stats,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 void ath12k_debugfs_pdev_create(struct ath12k_base *ab) {
 	debugfs_create_file("simulate_fw_crash", 0600, ab->debugfs_soc, ab,
 			    &fops_simulate_fw_crash);
@@ -7367,6 +7438,8 @@ void ath12k_debugfs_pdev_create(struct ath12k_base *ab) {
 			    &fops_device_mon_stats);
 	debugfs_create_file("dump_srng_stats", 0600, ab->debugfs_soc, ab,
 			    &fops_dump_hal_stats);
+	debugfs_create_file("device_mgmt_srng_stats", 0600, ab->debugfs_soc, ab,
+			    &fops_device_mgmt_srng_stats);
 	if (test_bit(WMI_TLV_SERVICE_DYNAMIC_WSI_REMAP_SUPPORT, ab->wmi_ab.svc_map))
 		debugfs_create_file("wsi_bypass_device", 0600, ab->debugfs_soc, ab,
 				    &fops_wsi_bypass_device);
