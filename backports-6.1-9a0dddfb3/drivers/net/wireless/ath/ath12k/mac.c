@@ -17389,6 +17389,9 @@ static void ath12k_mac_update_vif_offload(struct ath12k_link_vif *arvif)
 		/* TODO handle failure for partner VIFs */
 		vif->offload_flags &= ~IEEE80211_OFFLOAD_DECAP_ENABLED;
 	}
+
+	if (vif->type == NL80211_IFTYPE_AP || vif->type == NL80211_IFTYPE_STATION)
+		vif->offload_flags |= IEEE80211_OFFLOAD_TXRX_STATS;
 }
 
 void ath12k_mac_op_update_vif_offload(struct ieee80211_hw *hw,
