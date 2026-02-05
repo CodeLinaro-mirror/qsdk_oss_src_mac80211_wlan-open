@@ -3160,7 +3160,7 @@ static void ath12k_mac_handle_peer_event(struct ath12k_vif *ahvif,
 			    peer->rssi_mon.low_rssi_count);
 
 		ath12k_mac_report_low_ack_wrapper(peer->sta,
-						  ATH12K_REPORT_LOW_ACK_NUM_PKT);
+						  ATH12K_REPORT_RSSI_ALL);
 
 		peer->rssi_mon.low_rssi_count = 0;
 		peer->rssi_mon.first_low_jiffies = 0;
