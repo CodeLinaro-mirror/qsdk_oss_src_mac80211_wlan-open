@@ -1599,9 +1599,18 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 			return;
 		}
 
-		if (is_mcast && !sta)
+		if (is_mcast && !sta) {
+			if (ahvif->vif->type == NL80211_IFTYPE_AP) {
+				/*
+				 * If the ME TX is successful the SKB will be consumed
+				 */
+				if (!ath12k_dp_me_tx(&ahvif->dp_vif, skb))
+					return;
+			}
+
 			group_slot = ath12k_get_mcast_group_slot(vif, vlan_vif, arvif,
 								 key, arvif->link_id);
+		}
 
 		err = ath12k_wifi7_dp_tx(dp_pdev, arvif, skb, false, 0, is_mcast,
 					 arsta, ring_id, qos_nw_delay, group_slot);
