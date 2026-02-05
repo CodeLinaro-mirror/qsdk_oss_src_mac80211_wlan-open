@@ -13,9 +13,6 @@
 #define HAL_TLV_HDR_LEN		GENMASK(25, 10)
 #define HAL_TLV_USR_ID		GENMASK(31, 26)
 
-#define HAL_TLV_64_HDR_TAG		GENMASK(9, 0)
-#define HAL_TLV_64_HDR_LEN		GENMASK(21, 10)
-
 enum hal_tlv_tag {
 	HAL_MACTX_CBF_START                                    = 0 /* 0x0 */,
 	HAL_PHYRX_DATA                                         = 1 /* 0x1 */,
@@ -445,7 +442,7 @@ enum hal_tlv_tag {
 	HAL_MLO_PDG_FES_SETUP_SU                               = 468 /* 0x1d4 */,
 	HAL_MLO_PDG_FES_SETUP_MU                               = 469 /* 0x1d5 */,
 	HAL_MPDU_INFO_1K_BITMAP                                = 470 /* 0x1d6 */,
-	HAL_MON_BUFFER_ADDR                                    = 471 /* 0x1d7 */,
+	HAL_MON_BUF_ADDR                                       = 471 /* 0x1d7 */,
 	HAL_TX_FRAG_STATE                                      = 472 /* 0x1d8 */,
 	HAL_MACTX_OTHER_TRANSMIT_INFO_PHY_CV_RESET             = 473 /* 0x1d9 */,
 	HAL_MACTX_OTHER_TRANSMIT_INFO_SW_PEER_IDS              = 474 /* 0x1da */,
