@@ -2711,6 +2711,17 @@ ieee80211_sta_process_chanswitch(struct ieee80211_link_data *link,
 						   link->u.mgd.bssid,
 						   source == IEEE80211_CSA_SOURCE_UNPROT_ACTION,
 						   &csa_ie);
+
+		if (csa_elems->bandwidth_indication) {
+			const struct ieee80211_bandwidth_indication *bwi;
+
+			bwi = csa_elems->bandwidth_indication;
+			if (bwi->params & IEEE80211_BW_IND_DIS_SUBCH_PRESENT) {
+				csa_ie.chanreq.oper.punctured =
+					get_unaligned_le16(bwi->info.optional);
+			}
+		}
+
 		if (res == 0) {
 			ch_switch.block_tx = csa_ie.mode;
 			ch_switch.chandef = csa_ie.chanreq.oper;
