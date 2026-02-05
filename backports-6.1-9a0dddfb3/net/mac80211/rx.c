@@ -44,6 +44,10 @@ extern bool ap_vlan_without_4addr_null;
 static inline void ieee80211_rx_stats(struct net_device *dev, u32 len)
 {
 	struct pcpu_sw_netstats *tstats = this_cpu_ptr(netdev_tstats(dev));
+	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+
+	if (sdata->vif.offload_flags & IEEE80211_OFFLOAD_TXRX_STATS)
+		return;
 
 	u64_stats_update_begin(&tstats->syncp);
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
