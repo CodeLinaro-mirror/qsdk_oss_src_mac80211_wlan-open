@@ -2742,8 +2742,7 @@ static void sta_set_link_sinfo(struct sta_info *sta,
 				link_sta_info->pub,
 				link_sinfo);
 
-	link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_INACTIVE_TIME) |
-			 BIT_ULL(NL80211_STA_INFO_BSS_PARAM);
+	link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_BSS_PARAM);
 
 	if (sdata->vif.type == NL80211_IFTYPE_STATION) {
 		link_sinfo->beacon_loss_count =
@@ -2751,9 +2750,12 @@ static void sta_set_link_sinfo(struct sta_info *sta,
 		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_BEACON_LOSS);
 	}
 
-	link_sinfo->inactive_time =
-		jiffies_to_msecs(jiffies -
-		ieee80211_sta_last_active(sta, link_id));
+	if (!(link_sinfo->filled & BIT_ULL(NL80211_STA_INFO_INACTIVE_TIME))) {
+		link_sinfo->inactive_time =
+			jiffies_to_msecs(jiffies -
+			ieee80211_sta_last_active(sta, link_id));
+		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_INACTIVE_TIME);
+	}
 
 	if (!(link_sinfo->filled & (BIT_ULL(NL80211_STA_INFO_TX_BYTES64) |
 				    BIT_ULL(NL80211_STA_INFO_TX_BYTES)))) {
@@ -2998,8 +3000,7 @@ void sta_set_sinfo(struct sta_info *sta, struct station_info *sinfo,
 		sinfo->rx_beacon = sdata->deflink.u.mgd.count_beacon_signal;
 
 	drv_sta_statistics(local, sdata, &sta->sta, sinfo);
-	sinfo->filled |= BIT_ULL(NL80211_STA_INFO_INACTIVE_TIME) |
-			 BIT_ULL(NL80211_STA_INFO_STA_FLAGS) |
+	sinfo->filled |= BIT_ULL(NL80211_STA_INFO_STA_FLAGS) |
 			 BIT_ULL(NL80211_STA_INFO_BSS_PARAM) |
 			 BIT_ULL(NL80211_STA_INFO_CONNECTED_TIME) |
 			 BIT_ULL(NL80211_STA_INFO_ASSOC_AT_BOOTTIME);
@@ -3012,8 +3013,13 @@ void sta_set_sinfo(struct sta_info *sta, struct station_info *sinfo,
 
 	sinfo->connected_time = ktime_get_seconds() - sta->last_connected;
 	sinfo->assoc_at = sta->assoc_at;
-	sinfo->inactive_time =
-		jiffies_to_msecs(jiffies - ieee80211_sta_last_active(sta, -1));
+
+	if (!(sinfo->filled & BIT_ULL(NL80211_STA_INFO_INACTIVE_TIME))) {
+		sinfo->inactive_time =
+			jiffies_to_msecs(jiffies -
+			ieee80211_sta_last_active(sta, -1));
+		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_INACTIVE_TIME);
+	}
 
 	if (!(sinfo->filled & (BIT_ULL(NL80211_STA_INFO_TX_BYTES64) |
 			       BIT_ULL(NL80211_STA_INFO_TX_BYTES)))) {
