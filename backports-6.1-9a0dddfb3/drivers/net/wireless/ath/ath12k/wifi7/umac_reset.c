@@ -139,26 +139,25 @@ static void ath12k_wifi7_umac_reset_handle_post_reset_start(struct ath12k_base *
 	while (time_before(jiffies, end))
 		;
 
-	ret = ath12k_wbm_idle_ring_setup(ab, &n_link_desc);
-
+	ret = ath12k_wbm_idle_ring_init(ab);
 	if (ret)
 		ath12k_warn(ab, "failed to setup wbm_idle_ring: %d\n", ret);
 
 	dp = ath12k_ab_to_dp(ab);
 	srng = &ab->hal.srng_list[dp->wbm_idle_ring.ring_id];
+	n_link_desc = dp->wbm_idle_ring.num_entries;
 
-	ret = ath12k_dp_link_desc_setup(ab, dp->link_desc_banks,
-					HAL_WBM_IDLE_LINK, srng, n_link_desc);
+	ret = ath12k_dp_link_desc_init(ab, dp->link_desc_banks,
+				       HAL_WBM_IDLE_LINK, srng, n_link_desc);
 	if (ret)
 		ath12k_warn(ab, "failed to setup link desc: %d\n", ret);
 
-	ath12k_dp_srng_common_setup(ab);
-	ath12k_wifi7_dp_tx_ring_setup(ab);
+	ath12k_dp_srng_common_init(ab);
+	ath12k_wifi7_dp_tx_ring_init(ab);
 
-	ret = ath12k_dp_srng_setup(ab,
-				   &dp->rx_refill_buf_ring.refill_buf_ring,
-				   HAL_RXDMA_BUF, 0, 0,
-				   DP_RXDMA_BUF_RING_SIZE);
+	ret = ath12k_dp_srng_init(ab,
+				  &dp->rx_refill_buf_ring.refill_buf_ring,
+				  HAL_RXDMA_BUF, 0, 0);
 
 	if (ret)
 		ath12k_warn(ab, "failed to setup rx_refill_buf_ring\n");
@@ -173,16 +172,14 @@ static void ath12k_wifi7_umac_reset_handle_post_reset_start(struct ath12k_base *
 		ath12k_dp_ppeds_tx_desc_cleanup(ab);
 #endif
 
-	ret = ath12k_dp_srng_setup(ab, &dp->rx_rel_ring, HAL_WBM2SW_RELEASE,
-				   HAL_WBM2SW_REL_ERR_RING_NUM, 0,
-				   DP_RX_RELEASE_RING_SIZE);
+	ret = ath12k_dp_srng_init(ab, &dp->rx_rel_ring, HAL_WBM2SW_RELEASE,
+				  HAL_WBM2SW_REL_ERR_RING_NUM, 0);
 	if (ret)
 		ath12k_warn(ab, "failed to set up rx_rel ring :%d\n", ret);
 
 	for (i = 0; i < ATH12K_DP_RX_REGULAR_RING_MAX; i++) {
-		ret = ath12k_dp_srng_setup(ab, &dp->reo_dst_ring[i],
-					   HAL_REO_DST, i, 0,
-					   ath12k_dp_reo_dst_ring_size[i]);
+		ret = ath12k_dp_srng_init(ab, &dp->reo_dst_ring[i],
+					  HAL_REO_DST, i, 0);
 		if (ret)
 			ath12k_warn(ab, "failed to setup reo_dst_ring\n");
 	}

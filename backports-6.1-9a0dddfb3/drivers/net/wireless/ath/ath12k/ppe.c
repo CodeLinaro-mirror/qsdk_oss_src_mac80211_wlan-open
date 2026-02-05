@@ -812,9 +812,9 @@ int ath12k_dp_srng_init_idx(struct ath12k_base *ab, struct dp_srng *ring,
 }
 EXPORT_SYMBOL(ath12k_dp_srng_init_idx);
 
-int ath12k_dp_srng_alloc(struct ath12k_base *ab, struct dp_srng *ring,
-			 enum hal_ring_type type, int ring_num,
-			 int num_entries)
+static int ath12k_ppe_ds_dp_srng_alloc(struct ath12k_base *ab, struct dp_srng *ring,
+				       enum hal_ring_type type, int ring_num,
+				       int num_entries)
 {
 	int entry_sz = ath12k_hal_srng_get_entrysize(ab, type);
 	int max_entries = ath12k_hal_srng_get_max_entries(ab, type);
@@ -851,7 +851,7 @@ int ath12k_ppeds_dp_srng_alloc(struct ath12k_base *ab, struct dp_srng *ring,
 {
 	int ret;
 
-	ret = ath12k_dp_srng_alloc(ab, ring, type, ring_num, num_entries);
+	ret = ath12k_ppe_ds_dp_srng_alloc(ab, ring, type, ring_num, num_entries);
 	if (ret != 0)
 		ath12k_warn(ab, "Failed to allocate dp srng ring.\n");
 

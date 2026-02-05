@@ -1011,6 +1011,7 @@ struct ath12k_dp {
 	struct dp_srng reo_dst_ring[DP_REO_DST_RING_MAX];
 	struct dp_tx_ring tx_ring[DP_TCL_NUM_RING_MAX];
 	struct wbm_idle_scatter_list scatter_list[DP_IDLE_SCATTER_BUFS_MAX];
+	u8 num_scatter_buf;
 	struct list_head reo_cmd_list;
 	struct list_head reo_cmd_cache_flush_list;
 	struct list_head tqm_cmd_list;
@@ -1853,10 +1854,19 @@ int ath12k_dp_tx_htt_srng_setup(struct ath12k_base *ab, u32 ring_id,
 int ath12k_dp_peer_setup(struct ath12k *ar, void *ptr, struct ath12k_link_vif *arvif,
 			 const u8 *addr, u8 link_id);
 void ath12k_dp_peer_cleanup(struct ath12k *ar, void *ptr, int vdev_id, const u8 *addr);
+int ath12k_dp_srng_init(struct ath12k_base *ab, struct dp_srng *ring,
+			enum hal_ring_type type, int ring_num, int mac_id);
+int ath12k_dp_srng_alloc(struct ath12k_base *ab, struct dp_srng *ring,
+			 enum hal_ring_type type, int ring_num,
+			 int mac_id, int num_entries);
 void ath12k_dp_srng_cleanup(struct ath12k_base *ab, struct dp_srng *ring);
 int ath12k_dp_srng_setup(struct ath12k_base *ab, struct dp_srng *ring,
 			 enum hal_ring_type type, int ring_num,
 			 int mac_id, int num_entries);
+int ath12k_dp_link_desc_init(struct ath12k_base *ab,
+			     struct dp_link_desc_bank *link_desc_banks,
+			     u32 ring_type, struct hal_srng *srng,
+			     u32 n_link_desc);
 void ath12k_dp_link_desc_cleanup(struct ath12k_base *ab,
 				 struct dp_link_desc_bank *desc_bank,
 				 u32 ring_type, struct dp_srng *ring);
@@ -1886,7 +1896,10 @@ int ath12k_dp_init_bank_profiles(struct ath12k_base *ab);
 void ath12k_dp_deinit_bank_profiles(struct ath12k_base *ab);
 int ath12k_dp_cc_init(struct ath12k_base *ab);
 void ath12k_dp_cc_cleanup(struct ath12k_base *ab);
+int ath12k_wbm_idle_ring_init(struct ath12k_base *ab);
 int ath12k_wbm_idle_ring_setup(struct ath12k_base *ab, u32 *n_link_desc);
+void ath12k_wbm_idle_ring_cleanup(struct ath12k_base *ab);
+int ath12k_dp_srng_common_init(struct ath12k_base *ab);
 int ath12k_dp_srng_common_setup(struct ath12k_base *ab);
 void ath12k_dp_srng_common_cleanup(struct ath12k_base *ab);
 enum ath12k_dp_eapol_key_type ath12k_dp_get_eapol_subtype(u8 *data);

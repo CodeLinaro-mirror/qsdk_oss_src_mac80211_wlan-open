@@ -167,7 +167,7 @@ done:
 	return tot_work_done;
 }
 
-static int ath12k_wifi7_dp_reoq_lut_setup(struct ath12k_base *ab)
+static int ath12k_wifi7_dp_reoq_lut_alloc(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	int ret;
@@ -190,6 +190,13 @@ static int ath12k_wifi7_dp_reoq_lut_setup(struct ath12k_base *ab)
 		dp->reoq_lut.vaddr_unaligned = NULL;
 		return ret;
 	}
+
+	return 0;
+}
+
+static int ath12k_wifi7_dp_reoq_lut_init(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 
 	/* Bits in the register have address [39:8] LUT base address to be
 	 * allocated such that LSBs are assumed to be zero. Also, current
@@ -224,6 +231,23 @@ static void ath12k_wifi7_dp_reoq_lut_cleanup(struct ath12k_base *ab)
 					     dp->ml_reoq_lut.paddr_unaligned);
 		dp->ml_reoq_lut.vaddr_unaligned = NULL;
 	}
+}
+
+static int ath12k_wifi7_dp_reoq_lut_setup(struct ath12k_base *ab)
+{
+	int ret;
+
+	ret = ath12k_wifi7_dp_reoq_lut_alloc(ab);
+	if (ret)
+		return ret;
+
+	ret = ath12k_wifi7_dp_reoq_lut_init(ab);
+	if (ret) {
+		ath12k_wifi7_dp_reoq_lut_cleanup(ab);
+		return ret;
+	}
+
+	return 0;
 }
 
 static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
@@ -268,7 +292,7 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 					HAL_WBM_IDLE_LINK, srng, n_link_desc);
 	if (ret) {
 		ath12k_warn(ab, "failed to setup link desc: %d\n", ret);
-		goto fail_irq_cleanup;
+		goto fail_link_desc_cleanup;
 	}
 
 	ret = ath12k_dp_cc_init(ab);
@@ -383,7 +407,6 @@ fail_hw_cc_cleanup:
 fail_link_desc_cleanup:
 	ath12k_dp_link_desc_cleanup(ab, dp->link_desc_banks,
 				    HAL_WBM_IDLE_LINK, &dp->wbm_idle_ring);
-
 fail_irq_cleanup:
 	ath12k_hif_ext_irq_cleanup(dp->ab);
 

@@ -592,16 +592,12 @@ void ath12k_dp_srng_msi_setup(struct ath12k_base *ab,
 #endif
 }
 
-int ath12k_dp_srng_setup(struct ath12k_base *ab, struct dp_srng *ring,
+int ath12k_dp_srng_alloc(struct ath12k_base *ab, struct dp_srng *ring,
 			 enum hal_ring_type type, int ring_num,
 			 int mac_id, int num_entries)
 {
-	struct hal_srng_params params = { 0 };
-	int entry_sz = ath12k_hal_srng_get_entrysize(ab, type);
 	int max_entries = ath12k_hal_srng_get_max_entries(ab, type);
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	int vector = 0;
-#endif
+	int entry_sz = ath12k_hal_srng_get_entrysize(ab, type);
 	int ret;
 	bool cached = false;
 
@@ -630,17 +626,31 @@ int ath12k_dp_srng_setup(struct ath12k_base *ab, struct dp_srng *ring,
 	cached = true;
 #endif
 
-	if (ath12k_dp_umac_reset_in_progress(ab))
-		goto skip_dma_alloc;
-
 	ret = ath12k_dp_srng_alloc_aligned(ab, ring, num_entries, entry_sz, cached);
 	if (ret)
 		return ret;
 
-skip_dma_alloc:
+	ring->cached = cached;
+	ring->num_entries = num_entries;
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_dp_srng_alloc);
+
+int ath12k_dp_srng_init(struct ath12k_base *ab, struct dp_srng *ring,
+			enum hal_ring_type type, int ring_num, int mac_id)
+{
+	struct hal_srng_params params = {};
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	int vector = 0;
+#endif
+	int ret;
+
+	memset(ring->vaddr_unaligned, 0, ring->size);
+
 	params.ring_base_vaddr = ring->vaddr;
 	params.ring_base_paddr = ring->paddr;
-	params.num_entries = num_entries;
+	params.num_entries = ring->num_entries;
 	ath12k_dp_srng_msi_setup(ab, &params, type, ring_num + mac_id);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (ab->hw_params->ds_support && ab->hif.bus == ATH12K_BUS_AHB &&
@@ -657,24 +667,24 @@ skip_dma_alloc:
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_RX;
 		break;
 	case HAL_RXDMA_BUF:
-		params.low_threshold = num_entries >> 3;
+		params.low_threshold = ring->num_entries >> 3;
 		params.flags |= HAL_SRNG_FLAGS_LOW_THRESH_INTR_EN;
 		params.intr_batch_cntr_thres_entries = 0;
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_RX;
 		break;
 	case HAL_RXDMA_MONITOR_BUF:
-		if (num_entries > DP_RXDMA_MONITOR_DEFAULT_RING_FILL_LVL) {
+		if (ring->num_entries > DP_RXDMA_MONITOR_DEFAULT_RING_FILL_LVL) {
 			params.low_threshold =
 					DP_RXDMA_MONITOR_DEFAULT_RING_FILL_LVL >> 1;
 		} else {
-			params.low_threshold = num_entries >> 1;
+			params.low_threshold = ring->num_entries >> 1;
 		}
 		params.flags |= HAL_SRNG_FLAGS_LOW_THRESH_INTR_EN;
 		params.intr_batch_cntr_thres_entries = 0;
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_RX;
 		break;
 	case HAL_RXDMA_MONITOR_STATUS:
-		params.low_threshold = num_entries >> 3;
+		params.low_threshold = ring->num_entries >> 3;
 		params.flags |= HAL_SRNG_FLAGS_LOW_THRESH_INTR_EN;
 		params.intr_batch_cntr_thres_entries = 1;
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_RX;
@@ -685,7 +695,7 @@ skip_dma_alloc:
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_TX_EXCEPTION;
 		break;
 	case HAL_TX_MONITOR_BUF:
-		params.low_threshold = num_entries >> 1;
+		params.low_threshold = ring->num_entries >> 1;
 		params.flags |= HAL_SRNG_FLAGS_LOW_THRESH_INTR_EN;
 		params.intr_batch_cntr_thres_entries = 0;
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_RX;
@@ -769,10 +779,8 @@ skip_dma_alloc:
 		return -EINVAL;
 	}
 
-	if (cached) {
+	if (ring->cached)
 		params.flags |= HAL_SRNG_FLAGS_CACHED;
-		ring->cached = 1;
-	}
 
 	ret = ath12k_hal_srng_setup_idx(ab, type, ring_num, mac_id, &params, 0);
 	if (ret < 0) {
@@ -782,6 +790,33 @@ skip_dma_alloc:
 	}
 
 	ring->ring_id = ret;
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_dp_srng_init);
+
+int ath12k_dp_srng_setup(struct ath12k_base *ab, struct dp_srng *ring,
+			 enum hal_ring_type type, int ring_num,
+			 int mac_id, int num_entries)
+{
+	int ret;
+
+	if (ath12k_dp_umac_reset_in_progress(ab)) {
+		/* For safety */
+		ring->num_entries = num_entries;
+		goto skip_dp_srng_alloc;
+	}
+
+	ret = ath12k_dp_srng_alloc(ab, ring, type, ring_num, mac_id, num_entries);
+	if (ret)
+		return ret;
+
+skip_dp_srng_alloc:
+	ret = ath12k_dp_srng_init(ab, ring, type, ring_num, mac_id);
+	if (ret) {
+		ath12k_dp_srng_cleanup(ab, ring);
+		return ret;
+	}
 
 	return 0;
 }
@@ -917,13 +952,12 @@ void ath12k_dp_srng_common_cleanup(struct ath12k_base *ab)
 }
 EXPORT_SYMBOL(ath12k_dp_srng_common_cleanup);
 
-int ath12k_dp_srng_common_setup(struct ath12k_base *ab)
+int ath12k_dp_srng_common_alloc(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	struct hal_srng *srng;
 	int ret;
 
-	ret = ath12k_dp_srng_setup(ab, &dp->wbm_desc_rel_ring,
+	ret = ath12k_dp_srng_alloc(ab, &dp->wbm_desc_rel_ring,
 				   HAL_SW2WBM_RELEASE, 0, 0,
 				   DP_WBM_RELEASE_RING_SIZE);
 	if (ret) {
@@ -932,7 +966,7 @@ int ath12k_dp_srng_common_setup(struct ath12k_base *ab)
 		goto err;
 	}
 
-	ret = ath12k_dp_srng_setup(ab, &dp->reo_reinject_ring, HAL_REO_REINJECT,
+	ret = ath12k_dp_srng_alloc(ab, &dp->reo_reinject_ring, HAL_REO_REINJECT,
 				   0, 0, DP_REO_REINJECT_RING_SIZE);
 	if (ret) {
 		ath12k_warn(ab, "failed to set up reo_reinject ring :%d\n",
@@ -940,7 +974,7 @@ int ath12k_dp_srng_common_setup(struct ath12k_base *ab)
 		goto err;
 	}
 
-	ret = ath12k_dp_srng_setup(ab, &dp->reo_except_ring, HAL_REO_EXCEPTION,
+	ret = ath12k_dp_srng_alloc(ab, &dp->reo_except_ring, HAL_REO_EXCEPTION,
 				   0, 0, DP_REO_EXCEPTION_RING_SIZE);
 	if (ret) {
 		ath12k_warn(ab, "failed to set up reo_exception ring :%d\n",
@@ -948,21 +982,72 @@ int ath12k_dp_srng_common_setup(struct ath12k_base *ab)
 		goto err;
 	}
 
-	ret = ath12k_dp_srng_setup(ab, &dp->reo_cmd_ring, HAL_REO_CMD,
+	ret = ath12k_dp_srng_alloc(ab, &dp->reo_cmd_ring, HAL_REO_CMD,
 				   0, 0, DP_REO_CMD_RING_SIZE);
 	if (ret) {
 		ath12k_warn(ab, "failed to set up reo_cmd ring :%d\n", ret);
 		goto err;
 	}
 
-	srng = &ab->hal.srng_list[dp->reo_cmd_ring.ring_id];
-	ath12k_hal_reo_init_cmd_ring(ab, srng);
-
-	ret = ath12k_dp_srng_setup(ab, &dp->reo_status_ring, HAL_REO_STATUS,
+	ret = ath12k_dp_srng_alloc(ab, &dp->reo_status_ring, HAL_REO_STATUS,
 				   0, 0, DP_REO_STATUS_RING_SIZE);
 	if (ret) {
 		ath12k_warn(ab, "failed to set up reo_status ring :%d\n", ret);
 		goto err;
+	}
+
+	return 0;
+err:
+	ath12k_dp_srng_common_cleanup(ab);
+
+	return ret;
+}
+
+int ath12k_dp_srng_common_init(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct hal_srng *srng;
+	int ret;
+
+	ret = ath12k_dp_srng_init(ab, &dp->wbm_desc_rel_ring,
+				  HAL_SW2WBM_RELEASE, 0, 0);
+	if (ret) {
+		ath12k_warn(ab, "failed to set up wbm2sw_release ring :%d\n",
+			    ret);
+		return ret;
+	}
+
+	ret = ath12k_dp_srng_init(ab, &dp->reo_reinject_ring, HAL_REO_REINJECT,
+				  0, 0);
+	if (ret) {
+		ath12k_warn(ab, "failed to set up reo_reinject ring :%d\n",
+			    ret);
+		return ret;
+	}
+
+	ret = ath12k_dp_srng_init(ab, &dp->reo_except_ring, HAL_REO_EXCEPTION,
+				  0, 0);
+	if (ret) {
+		ath12k_warn(ab, "failed to set up reo_exception ring :%d\n",
+			    ret);
+		return ret;
+	}
+
+	ret = ath12k_dp_srng_init(ab, &dp->reo_cmd_ring, HAL_REO_CMD,
+				  0, 0);
+	if (ret) {
+		ath12k_warn(ab, "failed to set up reo_cmd ring :%d\n", ret);
+		return ret;
+	}
+
+	srng = &ab->hal.srng_list[dp->reo_cmd_ring.ring_id];
+	ath12k_hal_reo_init_cmd_ring(ab, srng);
+
+	ret = ath12k_dp_srng_init(ab, &dp->reo_status_ring, HAL_REO_STATUS,
+				  0, 0);
+	if (ret) {
+		ath12k_warn(ab, "failed to set up reo_status ring :%d\n", ret);
+		return ret;
 	}
 
 	ath12k_hal_reo_hw_setup(ab);
@@ -978,10 +1063,33 @@ int ath12k_dp_srng_common_setup(struct ath12k_base *ab)
 #endif
 
 	return 0;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 err:
-	ath12k_dp_srng_common_cleanup(ab);
-
+	dp->ppe.ppe_ops->ath12k_ppeds_srng_cleanup(ab);
+#endif
 	return ret;
+}
+EXPORT_SYMBOL(ath12k_dp_srng_common_init);
+
+int ath12k_dp_srng_common_setup(struct ath12k_base *ab)
+{
+	int ret;
+
+	if (ath12k_dp_umac_reset_in_progress(ab))
+		goto skip_dma_alloc;
+
+	ret = ath12k_dp_srng_common_alloc(ab);
+	if (ret)
+		return ret;
+
+skip_dma_alloc:
+	ret = ath12k_dp_srng_common_init(ab);
+	if (ret) {
+		ath12k_dp_srng_common_cleanup(ab);
+		return ret;
+	}
+
+	return 0;
 }
 EXPORT_SYMBOL(ath12k_dp_srng_common_setup);
 
@@ -990,6 +1098,8 @@ static void ath12k_dp_scatter_idle_link_desc_cleanup(struct ath12k_base *ab)
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct wbm_idle_scatter_list *slist = dp->scatter_list;
 	int i;
+
+	dp->num_scatter_buf = 0;
 
 	for (i = 0; i < DP_IDLE_SCATTER_BUFS_MAX; i++) {
 		if (!slist[i].vaddr)
@@ -1001,46 +1111,59 @@ static void ath12k_dp_scatter_idle_link_desc_cleanup(struct ath12k_base *ab)
 	}
 }
 
-static int ath12k_dp_scatter_idle_link_desc_setup(struct ath12k_base *ab,
-						  int size,
-						  u32 n_link_desc_bank,
-						  u32 n_link_desc,
-						  u32 last_bank_sz)
+static int
+ath12k_dp_scatter_idle_link_desc_alloc(struct ath12k_base *ab, int size)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	struct ath12k_hal *hal = dp->hal;
-	struct dp_link_desc_bank *link_desc_banks = dp->link_desc_banks;
 	struct wbm_idle_scatter_list *slist = dp->scatter_list;
-	u32 n_entries_per_buf;
-	int num_scatter_buf, scatter_idx;
-	struct wbm_link_desc *scatter_buf;
-	int align_bytes, n_entries;
-	dma_addr_t paddr;
-	int rem_entries;
-	int i;
-	int ret = 0;
-	u32 end_offset, cookie;
-	u8 rbm = dp->idle_link_rbm;
-	u16 link_desc_size = ab->hal.hal_params->link_desc_size;
+	int num_scatter_buf;
+	int ret, i;
 
-	n_entries_per_buf = HAL_WBM_IDLE_SCATTER_BUF_SIZE /
-		ath12k_hal_srng_get_entrysize(ab, HAL_WBM_IDLE_LINK);
 	num_scatter_buf = DIV_ROUND_UP(size, HAL_WBM_IDLE_SCATTER_BUF_SIZE);
 
 	if (num_scatter_buf > DP_IDLE_SCATTER_BUFS_MAX)
 		return -EINVAL;
 
-	if (!ath12k_dp_umac_reset_in_progress(ab)) {
-		for (i = 0; i < num_scatter_buf; i++) {
-			slist[i].vaddr = ath12k_hal_dma_alloc_coherent(ab->dev,
-				             HAL_WBM_IDLE_SCATTER_BUF_SIZE_MAX,
-						&slist[i].paddr, GFP_KERNEL);
-			if (!slist[i].vaddr) {
-				ret = -ENOMEM;
-				goto err;
-			}
+	for (i = 0; i < num_scatter_buf; i++) {
+		slist[i].vaddr
+			= ath12k_hal_dma_alloc_coherent(ab->dev,
+							HAL_WBM_IDLE_SCATTER_BUF_SIZE_MAX,
+							&slist[i].paddr, GFP_KERNEL);
+		if (!slist[i].vaddr) {
+			ret = -ENOMEM;
+			goto err;
 		}
 	}
+
+	dp->num_scatter_buf = num_scatter_buf;
+
+	return 0;
+err:
+	ath12k_dp_scatter_idle_link_desc_cleanup(ab);
+	return ret;
+}
+
+static int
+ath12k_dp_scatter_idle_link_desc_init(struct ath12k_base *ab,
+				      u32 n_link_desc_bank, u32 n_link_desc)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct dp_link_desc_bank *link_desc_banks = dp->link_desc_banks;
+	u16 link_desc_size = ab->hal.hal_params->link_desc_size;
+	struct wbm_idle_scatter_list *slist = dp->scatter_list;
+	struct ath12k_hal *hal = dp->hal;
+	u8 rbm = dp->idle_link_rbm;
+	struct wbm_link_desc *scatter_buf;
+	int align_bytes, n_entries;
+	u32 end_offset, cookie;
+	u32 n_entries_per_buf;
+	dma_addr_t paddr;
+	int scatter_idx;
+	int rem_entries;
+	int i;
+
+	n_entries_per_buf = HAL_WBM_IDLE_SCATTER_BUF_SIZE /
+		ath12k_hal_srng_get_entrysize(ab, HAL_WBM_IDLE_LINK);
 
 	scatter_idx = 0;
 	scatter_buf = slist[scatter_idx].vaddr;
@@ -1072,15 +1195,10 @@ static int ath12k_dp_scatter_idle_link_desc_setup(struct ath12k_base *ab,
 
 	end_offset = (scatter_buf - slist[scatter_idx].vaddr) *
 		     sizeof(struct wbm_link_desc);
-	ath12k_hal_setup_link_idle_list(ab, slist, num_scatter_buf,
+	ath12k_hal_setup_link_idle_list(ab, slist, dp->num_scatter_buf,
 					n_link_desc, end_offset);
 
 	return 0;
-
-err:
-	ath12k_dp_scatter_idle_link_desc_cleanup(ab);
-
-	return ret;
 }
 
 static void
@@ -1151,7 +1269,23 @@ void ath12k_dp_link_desc_cleanup(struct ath12k_base *ab,
 }
 EXPORT_SYMBOL(ath12k_dp_link_desc_cleanup);
 
-int ath12k_wbm_idle_ring_setup(struct ath12k_base *ab, u32 *n_link_desc)
+int ath12k_wbm_idle_ring_init(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	int ret;
+
+	ret = ath12k_dp_srng_init(ab, &dp->wbm_idle_ring,
+				  HAL_WBM_IDLE_LINK, 0, 0);
+	if (ret) {
+		ath12k_warn(ab, "failed to init wbm_idle_ring: %d\n", ret);
+		return ret;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_wbm_idle_ring_init);
+
+int ath12k_wbm_idle_ring_alloc(struct ath12k_base *ab, u32 *n_link_desc)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	u32 n_mpdu_link_desc, n_mpdu_queue_desc;
@@ -1178,32 +1312,59 @@ int ath12k_wbm_idle_ring_setup(struct ath12k_base *ab, u32 *n_link_desc)
 	if (*n_link_desc & (*n_link_desc - 1))
 		*n_link_desc = 1 << fls(*n_link_desc);
 
-	ret = ath12k_dp_srng_setup(ab, &dp->wbm_idle_ring,
+	ret = ath12k_dp_srng_alloc(ab, &dp->wbm_idle_ring,
 				   HAL_WBM_IDLE_LINK, 0, 0, *n_link_desc);
 	if (ret) {
 		ath12k_warn(ab, "failed to setup wbm_idle_ring: %d\n", ret);
 		return ret;
 	}
+
 	return ret;
+}
+EXPORT_SYMBOL(ath12k_wbm_idle_ring_alloc);
+
+void ath12k_wbm_idle_ring_cleanup(struct ath12k_base *ab)
+{
+	ath12k_dp_srng_cleanup(ab, &ab->dp->wbm_idle_ring);
+}
+EXPORT_SYMBOL(ath12k_wbm_idle_ring_cleanup);
+
+int ath12k_wbm_idle_ring_setup(struct ath12k_base *ab, u32 *n_link_desc)
+{
+	int ret;
+
+	if (ath12k_dp_umac_reset_in_progress(ab)) {
+		*n_link_desc = ab->dp->wbm_idle_ring.num_entries;
+		goto skip_dma_alloc;
+	}
+
+	ret = ath12k_wbm_idle_ring_alloc(ab, n_link_desc);
+	if (ret)
+		return ret;
+
+skip_dma_alloc:
+	ret = ath12k_wbm_idle_ring_init(ab);
+	if (ret) {
+		ath12k_wbm_idle_ring_cleanup(ab);
+		return ret;
+	}
+
+	return 0;
 }
 EXPORT_SYMBOL(ath12k_wbm_idle_ring_setup);
 
-int ath12k_dp_link_desc_setup(struct ath12k_base *ab,
+int ath12k_dp_link_desc_alloc(struct ath12k_base *ab,
 			      struct dp_link_desc_bank *link_desc_banks,
 			      u32 ring_type, struct hal_srng *srng,
 			      u32 n_link_desc)
 {
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	u32 tot_mem_sz;
 	u32 n_link_desc_bank, last_bank_sz;
-	u32 entry_sz, align_bytes, n_entries;
-	struct wbm_link_desc *desc;
-	u32 paddr;
-	int i, ret;
-	u32 cookie;
-	u8 rbm = dp->idle_link_rbm;
-	u16 link_desc_size = ab->hal.hal_params->link_desc_size;
+	u16 link_desc_size;
+	u32 tot_mem_sz;
+	u32 entry_sz;
+	int ret;
 
+	link_desc_size = ab->hal.hal_params->link_desc_size;
 	tot_mem_sz = n_link_desc * link_desc_size;
 	tot_mem_sz += HAL_LINK_DESC_ALIGN;
 
@@ -1225,13 +1386,11 @@ int ath12k_dp_link_desc_setup(struct ath12k_base *ab,
 	if (n_link_desc_bank > DP_LINK_DESC_BANKS_MAX)
 		return -EINVAL;
 
-	if (!ath12k_dp_umac_reset_in_progress(ab)) {
-		ret = ath12k_dp_link_desc_bank_alloc(ab, link_desc_banks,
-						     n_link_desc_bank,
-						     last_bank_sz);
-		if (ret)
-			return ret;
-	}
+	ret = ath12k_dp_link_desc_bank_alloc(ab, link_desc_banks,
+					     n_link_desc_bank,
+					     last_bank_sz);
+	if (ret)
+		return ret;
 
 	/* Setup link desc idle list for HW internal usage */
 	entry_sz = ath12k_hal_srng_get_entrysize(ab, ring_type);
@@ -1240,14 +1399,70 @@ int ath12k_dp_link_desc_setup(struct ath12k_base *ab,
 	/* Setup scatter desc list when the total memory requirement is more */
 	if (tot_mem_sz > DP_LINK_DESC_ALLOC_SIZE_THRESH &&
 	    ring_type != HAL_RXDMA_MONITOR_DESC) {
-		ret = ath12k_dp_scatter_idle_link_desc_setup(ab, tot_mem_sz,
-							     n_link_desc_bank,
-							     n_link_desc,
-							     last_bank_sz);
+		ret = ath12k_dp_scatter_idle_link_desc_alloc(ab, tot_mem_sz);
 		if (ret) {
 			ath12k_warn(ab, "failed to setup scatting idle list descriptor :%d\n",
 				    ret);
 			goto fail_desc_bank_free;
+		}
+
+		return 0;
+	}
+
+	return 0;
+
+fail_desc_bank_free:
+	ath12k_dp_link_desc_bank_free(ab, link_desc_banks);
+
+	return ret;
+}
+
+int ath12k_dp_link_desc_init(struct ath12k_base *ab,
+			     struct dp_link_desc_bank *link_desc_banks,
+			     u32 ring_type, struct hal_srng *srng,
+			     u32 n_link_desc)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	u32 n_link_desc_bank, last_bank_sz;
+	u32 align_bytes, n_entries;
+	u8 rbm = dp->idle_link_rbm;
+	struct wbm_link_desc *desc;
+	u16 link_desc_size;
+	u32 tot_mem_sz;
+	u32 paddr;
+	int i, ret;
+	u32 cookie;
+
+	link_desc_size = ab->hal.hal_params->link_desc_size;
+	tot_mem_sz = n_link_desc * link_desc_size;
+	tot_mem_sz += HAL_LINK_DESC_ALIGN;
+
+	if (tot_mem_sz <= DP_LINK_DESC_ALLOC_SIZE_THRESH) {
+		n_link_desc_bank = 1;
+		last_bank_sz = tot_mem_sz;
+	} else {
+		n_link_desc_bank = tot_mem_sz /
+				   (DP_LINK_DESC_ALLOC_SIZE_THRESH -
+				    HAL_LINK_DESC_ALIGN);
+		last_bank_sz = tot_mem_sz %
+			       (DP_LINK_DESC_ALLOC_SIZE_THRESH -
+				HAL_LINK_DESC_ALIGN);
+
+		if (last_bank_sz)
+			n_link_desc_bank += 1;
+	}
+
+	if (n_link_desc_bank > DP_LINK_DESC_BANKS_MAX)
+		return -EINVAL;
+
+	if (dp->num_scatter_buf && ring_type != HAL_RXDMA_MONITOR_DESC) {
+		ret = ath12k_dp_scatter_idle_link_desc_init(ab,
+							    n_link_desc_bank,
+							    n_link_desc);
+		if (ret) {
+			ath12k_warn(ab, "failed to setup scatting idle list descriptor :%d\n",
+				    ret);
+			return ret;
 		}
 
 		return 0;
@@ -1278,11 +1493,33 @@ int ath12k_dp_link_desc_setup(struct ath12k_base *ab,
 	spin_unlock_bh(&srng->lock);
 
 	return 0;
+}
+EXPORT_SYMBOL(ath12k_dp_link_desc_init);
 
-fail_desc_bank_free:
-	ath12k_dp_link_desc_bank_free(ab, link_desc_banks);
+int ath12k_dp_link_desc_setup(struct ath12k_base *ab,
+			      struct dp_link_desc_bank *link_desc_banks,
+			      u32 ring_type, struct hal_srng *srng,
+			      u32 n_link_desc)
+{
+	int ret;
 
-	return ret;
+	if (ath12k_dp_umac_reset_in_progress(ab))
+		goto skip_dma_alloc;
+
+	ret = ath12k_dp_link_desc_alloc(ab, link_desc_banks,
+					ring_type, srng, n_link_desc);
+	if (ret)
+		return ret;
+
+skip_dma_alloc:
+	ret = ath12k_dp_link_desc_init(ab, link_desc_banks,
+				       ring_type, srng, n_link_desc);
+	if (ret) {
+		/* the caller must free the link desc in this case */
+		return ret;
+	}
+
+	return 0;
 }
 EXPORT_SYMBOL(ath12k_dp_link_desc_setup);
 

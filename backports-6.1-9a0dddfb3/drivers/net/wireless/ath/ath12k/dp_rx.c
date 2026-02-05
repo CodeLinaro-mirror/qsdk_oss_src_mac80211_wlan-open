@@ -753,14 +753,14 @@ void ath12k_dp_rx_reo_cleanup(struct ath12k_base *ab)
 }
 EXPORT_SYMBOL(ath12k_dp_rx_reo_cleanup);
 
-int ath12k_dp_rx_reo_setup(struct ath12k_base *ab)
+int ath12k_dp_rx_reo_alloc(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	int ret;
 	int i;
 
 	for (i = 0; i < ATH12K_DP_RX_REGULAR_RING_MAX; i++) {
-		ret = ath12k_dp_srng_setup(ab, &dp->reo_dst_ring[i],
+		ret = ath12k_dp_srng_alloc(ab, &dp->reo_dst_ring[i],
 					   HAL_REO_DST, i, 0,
 					   ath12k_dp_reo_dst_ring_size[i]);
 		if (ret) {
@@ -775,6 +775,43 @@ err_reo_cleanup:
 	ath12k_dp_rx_reo_cleanup(ab);
 
 	return ret;
+}
+EXPORT_SYMBOL(ath12k_dp_rx_reo_alloc);
+
+int ath12k_dp_rx_reo_init(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	int ret;
+	int i;
+
+	for (i = 0; i < ATH12K_DP_RX_REGULAR_RING_MAX; i++) {
+		ret = ath12k_dp_srng_init(ab, &dp->reo_dst_ring[i],
+					  HAL_REO_DST, i, 0);
+		if (ret) {
+			ath12k_warn(ab, "failed to setup reo_dst_ring\n");
+			return ret;
+		}
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_dp_rx_reo_init);
+
+int ath12k_dp_rx_reo_setup(struct ath12k_base *ab)
+{
+	int ret;
+
+	ret = ath12k_dp_rx_reo_alloc(ab);
+	if (ret)
+		return ret;
+
+	ret = ath12k_dp_rx_reo_init(ab);
+	if (ret) {
+		ath12k_dp_rx_reo_cleanup(ab);
+		return ret;
+	}
+
+	return 0;
 }
 EXPORT_SYMBOL(ath12k_dp_rx_reo_setup);
 
