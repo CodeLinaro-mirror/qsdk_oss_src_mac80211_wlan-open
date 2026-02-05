@@ -18099,6 +18099,13 @@ static void ath12k_mac_vif_flush_key_cache(struct ath12k_link_vif *arvif)
 		if (ret)
 			ath12k_warn(arvif->ar->ab, "unable to apply set key param to vdev %d ret %d\n",
 				    arvif->vdev_id, ret);
+		else {
+			if (key_conf->key->keyidx == 1 || key_conf->key->keyidx == 2)
+				arvif->last_installed_gtk_keyix = key_conf->key->keyidx;
+			if (key_conf->key->keyidx == 6 || key_conf->key->keyidx == 7)
+				arvif->last_installed_bigtk_keyix = key_conf->key->keyidx;
+		}
+
 free_cache:
 		list_del(&key_conf->list);
 		kfree(key_conf);
