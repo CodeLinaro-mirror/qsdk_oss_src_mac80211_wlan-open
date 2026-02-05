@@ -20684,9 +20684,13 @@ ath12k_mac_unassign_vif_chanctx_handle(struct ieee80211_hw *hw,
 	 * and not delete the vdev symmetric to assign_vif_chanctx()
 	 * the VDEV will be deleted and unassigned either during
 	 * remove_interface() or when there is a change in channel
-	 * that moves the vif to a new ar
+	 * that moves the vif to a new ar.
+	 * During firmware recovery, arvif->is_created is explicitly
+	 * set to false. If recovery is in progress and an interface
+	 * removal is triggered, arvif->list must not retain a stale
+	 * entry.
 	 */
-	if (!arvif || !arvif->is_created)
+	if (!arvif || (!arvif->ar && !arvif->is_created))
 		return;
 
 	ar = arvif->ar;
@@ -20694,9 +20698,6 @@ ath12k_mac_unassign_vif_chanctx_handle(struct ieee80211_hw *hw,
 
 	ath12k_vendor_link_state_update(ar->pdev_idx, ab, arvif,
 					ATH12K_VENDOR_LINK_STATE_UNASSIGNED);
-
-	if (unlikely(test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)))
-		return;
 
 	if (ctx)
 		ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
@@ -20706,6 +20707,9 @@ ath12k_mac_unassign_vif_chanctx_handle(struct ieee80211_hw *hw,
 		ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
 				 "mac chanctx unassign for vdev_id %i vdev_subtype %0x\n",
 				 arvif->vdev_id, arvif->vdev_subtype);
+
+	if (unlikely(test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)))
+		goto cleanup;
 
 	if (ahvif->vdev_type != WMI_VDEV_TYPE_STA)
 		WARN_ON(!arvif->is_started);
@@ -20759,6 +20763,7 @@ ath12k_mac_unassign_vif_chanctx_handle(struct ieee80211_hw *hw,
 	 * entries in ahvif, this link must be explicitly removed
 	 * during channel context unassignment.
 	 */
+cleanup:
 	if (!vif->valid_links) {
 		ath12k_mac_remove_link_interface(hw, arvif);
 		ath12k_mac_unassign_link_vif(arvif);
