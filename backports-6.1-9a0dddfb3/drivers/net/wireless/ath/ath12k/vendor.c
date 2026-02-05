@@ -116,6 +116,114 @@ ath12k_pri_link_migrate_policy[QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_NEW_PRI_LINK_ID] = {.type =  NLA_U8},
 };
 
+/* NLA policy for repurpose link command */
+static const struct nla_policy
+ath12k_repurpose_link_policy[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_MLO_LINK_ID] = { .type = NLA_U8 },
+};
+
+/**
+ * ath12k_vendor_repurpose_link() - Mark an MLO link for repurposing
+ * @wiphy: wiphy device pointer
+ * @wdev: wireless device pointer
+ * @data: vendor command data
+ * @data_len: vendor command data length
+ *
+ * This vendor command marks a specific MLO link as being repurposed.
+ * The link ID is extracted from the vendor attributes and the corresponding
+ * bit is set in the repurpose_links_bmap across ath12k_vif, ieee80211_vif,
+ * and wireless_dev structures.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static int ath12k_vendor_repurpose_link(struct wiphy *wiphy,
+					struct wireless_dev *wdev,
+					const void *data, int data_len)
+{
+	struct ieee80211_vif *vif = wdev_to_ieee80211_vif(wdev);
+	struct ath12k_vif *ahvif;
+	struct ath12k_link_vif *arvif;
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1];
+	u8 link_id;
+	int ret;
+
+	if (!vif)
+		return -EINVAL;
+
+	if (vif->type != NL80211_IFTYPE_AP) {
+		ath12k_err(NULL,
+			   "Repurpose not supported on vif type: %d",
+			   vif->type);
+		return -EOPNOTSUPP;
+	}
+
+	ahvif = ath12k_vif_to_ahvif(vif);
+	if (!ahvif) {
+		ath12k_err(NULL, "ath12k VIF is NULL");
+		return -EINVAL;
+	}
+
+	/* Parse vendor attributes */
+	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_CONFIG_MAX, data, data_len,
+			ath12k_repurpose_link_policy, NULL);
+	if (ret) {
+		ath12k_err(NULL, "Failed to parse vendor attributes: %d", ret);
+		return ret;
+	}
+
+	/* Check if link ID attribute is present */
+	if (!tb[QCA_WLAN_VENDOR_ATTR_CONFIG_MLO_LINK_ID]) {
+		ath12k_err(NULL, "Link ID attribute missing");
+		return -EINVAL;
+	}
+
+	link_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_CONFIG_MLO_LINK_ID]);
+
+	/* Validate link ID range */
+	if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS) {
+		ath12k_err(NULL, "Invalid link ID %u (max %u)",
+			   link_id, IEEE80211_MLD_MAX_NUM_LINKS - 1);
+		return -EINVAL;
+	}
+
+	/* Do not allow repurpose setting on active link */
+	arvif = ath12k_get_arvif_from_link_id(ahvif, link_id);
+	if (!arvif) {
+		ath12k_err(NULL, "No arvif found for the repurposing link");
+		return -EINVAL;
+	}
+	if (arvif->is_started) {
+		ath12k_err(NULL, "Cannot repurpose active link ID %u",
+			   link_id);
+		return -EBUSY;
+	}
+
+	/* Check if link is already marked for repurposing */
+	if (ahvif->repurposed_links & BIT(link_id)) {
+		ath12k_err(NULL, "Link ID %u already marked for repurposing",
+			   link_id);
+		return 0;
+	}
+
+	/* Mark link for repurposing in ieee80211_vif via mac80211 helper */
+	ret = ieee80211_set_repurpose_link(vif, link_id);
+	if (ret) {
+		ath12k_err(NULL,
+			   "Failed to set repurpose link in mac80211: %d",
+			   ret);
+		return ret;
+	}
+
+	/* Mark link for repurposing in ath12k_vif */
+	ahvif->repurposed_links |= BIT(link_id);
+
+	ath12k_dbg(NULL, ATH12K_DBG_MAC,
+		   "Link ID %u marked for repurposing (bmap: 0x%x)",
+		   link_id, ahvif->repurposed_links);
+
+	return ret;
+}
+
 static void
 ath12k_afc_response_buffer_display(struct ath12k_base *ab,
 				   struct ath12k_afc_host_resp *afc_rsp)
@@ -10039,6 +10147,14 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
 	},
 #endif
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_REPURPOSE_LINK_INDICATION,
+		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
+		.doit = ath12k_vendor_repurpose_link,
+		.policy = ath12k_repurpose_link_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_CONFIG_MAX,
+	},
 
 };
 
