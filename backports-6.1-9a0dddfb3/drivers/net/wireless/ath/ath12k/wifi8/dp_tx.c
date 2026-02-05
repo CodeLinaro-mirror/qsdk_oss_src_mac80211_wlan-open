@@ -1149,8 +1149,6 @@ ath12k_wifi8_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 		ti.bss_ast_hash = dp_link_vif->ast_hash;
 		ti.bss_ast_idx = dp_link_vif->ast_idx;
 		ti.lookup_override = true;
-		/* set this until FW enables TQM path for MCAST by default */
-		ti.flags0 |= FIELD_PREP(HAL_TCL_DATA_CMD_INFO2_TO_FW_SW, 1);
 	}
 	pool_id = skb_get_queue_mapping(skb) & (ATH12K_HW_MAX_QUEUES - 1);
 
