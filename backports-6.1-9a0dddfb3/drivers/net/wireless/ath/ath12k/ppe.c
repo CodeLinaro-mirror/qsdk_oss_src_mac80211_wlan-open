@@ -14,7 +14,9 @@
 #include <linux/dma-mapping.h>
 #include <linux/cacheflush.h>
 #include "hif.h"
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #include "ppe.h"
+#endif
 #include "dp.h"
 #include "fse.h"
 #include "ppe_public.h"
@@ -115,6 +117,7 @@ static void ath12k_dp_ppeds_del_napi_ctxt(struct ath12k_base *ab)
 	ath12k_dbg(ab, ATH12K_DBG_PPE, "%s success\n", __func__);
 }
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 void ath12k_dp_peer_ppeds_route_setup(struct ath12k *ar, struct ath12k_link_vif *arvif,
 				      struct ath12k_link_sta *arsta)
 {
@@ -174,6 +177,7 @@ void ath12k_dp_peer_ppeds_route_setup(struct ath12k *ar, struct ath12k_link_vif 
 					     src_info, ppe_routing_enable,
 					     use_ppe);
 }
+#endif
 
 void ath12k_dp_ppeds_tx_set_ppe_vp_entry(struct ath12k_base *ab,
 					 struct ath12k_dp_ppe_vp_profile *ppe_vp_profile,
@@ -1106,7 +1110,9 @@ static int ath12k_dp_srng_init_idx(struct ath12k_base *ab, struct dp_srng *ring,
 
 	switch (type) {
 	case HAL_REO_DST:
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	case HAL_REO2PPE:
+#endif
 			params.intr_batch_cntr_thres_entries =
 				HAL_SRNG_INT_BATCH_THRESHOLD_RX;
 			params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_RX;
@@ -1123,11 +1129,13 @@ static int ath12k_dp_srng_init_idx(struct ath12k_base *ab, struct dp_srng *ring,
 			HAL_SRNG_INT_BATCH_THRESHOLD_OTHER;
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_OTHER;
 		break;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	case HAL_PPE2TCL:
 		params.intr_batch_cntr_thres_entries =
 			HAL_SRNG_INT_BATCH_THRESHOLD_PPE2TCL;
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_PPE2TCL;
 		break;
+#endif
 	default:
 		ath12k_warn(ab, "Not a valid ring type in dp :%d\n", type);
 		return -EINVAL;
@@ -1328,6 +1336,7 @@ void ath12k_dp_srng_ppeds_cleanup(struct ath12k_base *ab)
 	ath12k_dp_srng_cleanup(ab, &dp->ppe.ppeds_comp_ring.ppe_wbm2sw_ring);
 }
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 int ath12k_ppe_rfs_get_core_mask(void)
 {
 	return ATH12K_PPE_DEFAULT_CORE_MASK;
@@ -1368,7 +1377,6 @@ int ath12k_change_core_mask_for_ppe_rfs(struct ath12k_base *ab,
 	return 0;
 }
 
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 static bool ath12k_stats_update_ppe_vp(struct net_device *dev, ppe_vp_hw_stats_t *vp_stats)
 {
 	struct pcpu_sw_netstats *tstats = this_cpu_ptr(netdev_tstats(dev));
@@ -1480,35 +1488,6 @@ int ath12k_vif_set_mtu(struct ath12k_vif *ahvif, int mtu)
 }
 EXPORT_SYMBOL(ath12k_vif_set_mtu);
 
-int ath12k_vif_get_vp_num(struct ath12k_vif *ahvif, struct net_device *dev)
-{
-	int ppe_vp_num = ATH12K_INVALID_PPE_VP_NUM;
-	struct nss_plugins_ops *plugin_ops = ath12k_get_registered_nss_plugin_ops();
-
-	if (dev->ieee80211_ptr &&
-	    dev->ieee80211_ptr->iftype == NL80211_IFTYPE_MONITOR)
-		return 0;
-
-	if (!plugin_ops)
-		return -EINVAL;
-
-	ppe_vp_num = plugin_ops->get_vp_num(dev);
-
-	if (ppe_vp_num <= 0) {
-		ath12k_dbg(NULL, ATH12K_DBG_PPE,
-			   "Error in getting VP num for netdev %s err %d\n",
-			   dev->name, ppe_vp_num);
-		return -ENOSR;
-	}
-
-	ahvif->dp_vif.ppe_vp_num = ppe_vp_num;
-
-	ath12k_dbg(NULL, ATH12K_DBG_PPE,
-		   "PPE VP assignment: device '%s' VP num %d assigned by ath client\n",
-		   dev->name, ahvif->dp_vif.ppe_vp_num);
-	return 0;
-}
-EXPORT_SYMBOL(ath12k_vif_get_vp_num);
 
 static void
 ath12k_dp_rx_ppeds_fse_update_flow_info(struct ath12k_base *ab,
@@ -1698,6 +1677,36 @@ void ath12k_dp_ppeds_interrupt_start(struct ath12k_base *ab)
 	ath12k_hif_ppeds_irq_enable(ab, PPEDS_IRQ_REO2PPE);
 	ath12k_hif_ppeds_irq_enable(ab, PPEDS_IRQ_PPE_WBM2SW_REL);
 }
+
+int ath12k_vif_get_vp_num(struct ath12k_vif *ahvif, struct net_device *dev)
+{
+	int ppe_vp_num = ATH12K_INVALID_PPE_VP_NUM;
+	struct nss_plugins_ops *plugin_ops = ath12k_get_registered_nss_plugin_ops();
+
+	if (dev->ieee80211_ptr &&
+	    dev->ieee80211_ptr->iftype == NL80211_IFTYPE_MONITOR)
+		return 0;
+
+	if (!plugin_ops)
+		return -EINVAL;
+
+	ppe_vp_num = plugin_ops->get_vp_num(dev);
+
+	if (ppe_vp_num <= 0) {
+		ath12k_dbg(NULL, ATH12K_DBG_PPE,
+			   "Error in getting VP num for netdev %s err %d\n",
+			   dev->name, ppe_vp_num);
+		return -ENOSR;
+	}
+
+	ahvif->dp_vif.ppe_vp_num = ppe_vp_num;
+
+	ath12k_dbg(NULL, ATH12K_DBG_PPE,
+		   "PPE VP assignment: device '%s' VP num %d assigned by ath client\n",
+		   dev->name, ahvif->dp_vif.ppe_vp_num);
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_vif_get_vp_num);
 
 int ath12k_nss_plugin_register_ops(struct ath12k_base *ab)
 {

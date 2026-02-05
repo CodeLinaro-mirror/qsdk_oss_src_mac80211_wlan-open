@@ -2784,7 +2784,6 @@ void ath12k_ppeds_tx_update_stats(struct ath12k *ar, int skb_len,
 #endif
 	rcu_read_unlock();
 }
-#endif
 
 int ath12k_wifi7_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 {
@@ -2891,3 +2890,4 @@ int ath12k_wifi7_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 						  &local_list_no_skb, list_no_skb_count);
 	return (count + list_no_skb_count);
 }
+#endif

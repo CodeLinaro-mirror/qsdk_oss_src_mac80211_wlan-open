@@ -13,7 +13,9 @@
 #include "hw.h"
 #include "peer.h"
 #include "mac.h"
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #include "ppe.h"
+#endif
 #include "hal.h"
 #include "dp_peer.h"
 #include "dp_stats.h"
