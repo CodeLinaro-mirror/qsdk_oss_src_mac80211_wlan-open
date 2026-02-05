@@ -2531,6 +2531,7 @@ static void ath12k_core_pre_reconfigure_recovery(struct ath12k_base *ab)
 		    ah->state == ATH12K_HW_STATE_RESTARTING)
 			continue;
 
+		wiphy_lock(ah->hw->wiphy);
 		for (j = 0; j < ah->num_radio; j++) {
 			ar = &ah->radio[j];
 			if (ar->ab->is_bypassed)
