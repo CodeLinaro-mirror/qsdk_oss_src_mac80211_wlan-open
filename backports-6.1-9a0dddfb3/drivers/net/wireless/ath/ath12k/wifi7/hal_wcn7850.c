@@ -612,6 +612,7 @@ const struct ath12k_hw_hal_params ath12k_wifi7_hw_hal_params_wcn7850 = {
 	.dscp_tid_map_tbl_max_entries = HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX,
 	.num_tids = HAL_WIFI7_NUM_TIDS,
 	.reoq_lut_size = HAL_WIFI7_REOQ_LUT_SIZE,
+	.dp_rx_err_rdi = HAL_WIFI7_DP_RX_ERR_RDI,
 };
 
 static

@@ -1718,6 +1718,7 @@ int ath12k_dp_rx_pkt_type_filter(struct ath12k *ar,
 				 u32 meta_data)
 {
 	struct ath12k_wmi_pkt_route_param param;
+	struct ath12k_base *ab = ar->ab;
 	int ret;
 
 	/* Routing Eapol/ARP packets to CCE is only allowed now */
@@ -1727,9 +1728,17 @@ int ath12k_dp_rx_pkt_type_filter(struct ath12k *ar,
 
 	param.opcode = ATH12K_WMI_PKTROUTE_ADD;
 	param.meta_data = meta_data;
-	param.dst_ring = ATH12K_REO_RELEASE_RING;
+	param.dst_ring = ab->hal.hal_params->dp_rx_err_rdi;
 	param.dst_ring_handler = ATH12K_WMI_PKTROUTE_USE_CCE;
 	param.route_type_bmap = 1 << pkt_type;
+
+	/* Do not program EAP CCE rule for hardwares that use other than REO_RELEASE_RING
+	 * as destination. This is a temporary fix for wifi8.
+	 */
+	if (param.dst_ring != ATH12K_REO_RELEASE_RING) {
+		ath12k_info(ar->ab, "EAP CCE dst=%u, not configuring", param.dst_ring);
+		return 0;
+	}
 
 	ret = ath12k_wmi_send_pdev_pkt_route(ar, &param);
 	if (ret)

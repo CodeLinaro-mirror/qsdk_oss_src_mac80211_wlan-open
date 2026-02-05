@@ -39,6 +39,8 @@ extern const struct ath12k_hw_version_map ath12k_wifi7_hw_ver_map[];
 #define HAL_WIFI7_REOQ_LUT_SIZE       278528
 #define HAL_WIFI7_NUM_TIDS     17
 
+#define HAL_WIFI7_DP_RX_ERR_RDI 5
+
 /* TODO: 16 entries per radio times MAX_VAPS_SUPPORTED */
 #define HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX_9274	48
 #define HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX_5332	24
