@@ -4805,3 +4805,36 @@ ath12k_wifi7_hal_tx_mon_get_wmask_config(struct hal_tx_mon_wmask_config *wmsk)
 	wmsk->response_end_status = HAL_TX_MON_WMASK_RESPONSE_END_STATUS_CFG;
 	wmsk->tx_fes_status_prot = HAL_TX_MON_WMASK_FES_STATUS_PROT_CFG;
 }
+
+int ath12k_wifi7_extract_tx_mon_ring_desc(struct ath12k_hal *hal,
+					  void *ring_entry,
+					  struct ath12k_mon_ring_desc_info *desc_info)
+{
+	struct hal_mon_dest_desc *mon_dst_desc =
+		(struct hal_mon_dest_desc *)ring_entry;
+	u64 desc_va;
+	u32 info0;
+
+	info0 = le32_to_cpu(mon_dst_desc->info0);
+	desc_info->ppdu_id = le32_to_cpu(mon_dst_desc->ppdu_id);
+	desc_info->empty_desc = le32_get_bits(info0,
+					      HAL_MON_DEST_INFO0_EMPTY_DESC);
+	desc_info->end_offset = le32_get_bits(info0,
+					      HAL_MON_DEST_INFO0_END_OFFSET);
+	desc_info->end_reason = le32_get_bits(info0,
+					      HAL_MON_DEST_INFO0_END_REASON);
+
+	if (desc_info->empty_desc)
+		return 0;
+
+	desc_va = le64_to_cpu(mon_dst_desc->cookie);
+	desc_info->mon_desc = (struct ath12k_dp_mon_desc *)(uintptr_t)desc_va;
+
+	if (!desc_info->mon_desc || desc_va < PAGE_SIZE)
+		return -EINVAL;
+
+	if (desc_info->mon_desc->magic != ATH12K_MON_MAGIC_VALUE)
+		return -EINVAL;
+
+	return 0;
+}

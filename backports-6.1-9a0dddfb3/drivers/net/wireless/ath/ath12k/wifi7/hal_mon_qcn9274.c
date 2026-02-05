@@ -343,6 +343,7 @@ const struct hal_mon_ops hal_qcn9274_mon_ops = {
 		ath12k_wifi7_hal_mon_tx_fes_status_prot_info_parse,
 	.tx_pcu_ppdu_setup_init_info_get =
 		ath12k_wifi7_hal_mon_tx_pcu_ppdu_setup_init_info_parse,
+	.extract_tx_mon_ring_desc = ath12k_wifi7_extract_tx_mon_ring_desc,
 };
 
 const struct hal_mon_ops hal_ipq5332_mon_ops = {
@@ -383,6 +384,7 @@ const struct hal_mon_ops hal_ipq5332_mon_ops = {
 		ath12k_wifi7_hal_mon_tx_fes_status_prot_info_parse,
 	.tx_pcu_ppdu_setup_init_info_get =
 		ath12k_wifi7_hal_mon_tx_pcu_ppdu_setup_init_info_parse,
+	.extract_tx_mon_ring_desc = ath12k_wifi7_extract_tx_mon_ring_desc,
 };
 
 const struct hal_mon_ops hal_ipq5424_mon_ops = {
@@ -423,6 +425,7 @@ const struct hal_mon_ops hal_ipq5424_mon_ops = {
 		ath12k_wifi7_hal_mon_tx_fes_status_prot_info_parse,
 	.tx_pcu_ppdu_setup_init_info_get =
 		ath12k_wifi7_hal_mon_tx_pcu_ppdu_setup_init_info_parse,
+	.extract_tx_mon_ring_desc = ath12k_wifi7_extract_tx_mon_ring_desc,
 };
 
 const struct hal_mon_ops hal_qcn6432_mon_ops = {
@@ -463,4 +466,5 @@ const struct hal_mon_ops hal_qcn6432_mon_ops = {
 		ath12k_wifi7_hal_mon_tx_fes_status_prot_info_parse,
 	.tx_pcu_ppdu_setup_init_info_get =
 		ath12k_wifi7_hal_mon_tx_pcu_ppdu_setup_init_info_parse,
+	.extract_tx_mon_ring_desc = ath12k_wifi7_extract_tx_mon_ring_desc,
 };

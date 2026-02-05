@@ -41,6 +41,7 @@ ath12k-y += core.o \
 	    ce_stats.o \
 	    mgmt_rx.o \
 	    event.o \
+	    dp_tx_mon.o \
 	    me.o \
 	    dp_ext_desc.o \
 	    dp_me.o \

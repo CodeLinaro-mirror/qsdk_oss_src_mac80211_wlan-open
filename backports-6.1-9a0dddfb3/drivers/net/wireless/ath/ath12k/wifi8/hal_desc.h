@@ -1309,13 +1309,6 @@ struct hal_wbm_buffer_ring {
 	struct ath12k_buffer_addr buf_addr_info;
 };
 
-enum hal_mon_end_reason {
-	HAL_MON_STATUS_BUFFER_FULL,
-	HAL_MON_FLUSH_DETECTED,
-	HAL_MON_END_OF_PPDU,
-	HAL_MON_PPDU_TRUNCATED,
-};
-
 struct hal_sw_monitor_ring {
 	struct hal_rx_reo_mpdu_desc_info reo_level_mpdu_frame_info;
 	struct ath12k_buffer_addr status_buff_addr_info;
