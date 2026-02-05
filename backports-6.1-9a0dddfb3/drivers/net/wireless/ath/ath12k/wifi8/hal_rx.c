@@ -1063,6 +1063,15 @@ void ath12k_wifi8_hal_reo_hw_setup(struct ath12k_base *ab)
 	val &= ~HAL_REO1_COOKIE_CONV_REO2SW9_EN;
 	val &= ~HAL_REO1_COOKIE_CONV_REO2SW11_EN;
 	ath12k_hif_write32(ab, reo_base + HAL_REO1_COOKIE_CONV_EN_RING, val);
+
+	/* Configure error ring RDs for mgmt rings */
+	val = ath12k_hif_read32(ab, reo_base + HAL_REO1_ERROR_RING_CFG_FOR_DEST_IX1);
+	val |= u32_encode_bits(10, HAL_REO1_ERROR_RING_CFG_FOR_DEST_REO2SW9_ERR);
+	ath12k_hif_write32(ab, reo_base + HAL_REO1_ERROR_RING_CFG_FOR_DEST_IX1, val);
+
+	val = ath12k_hif_read32(ab, reo_base + HAL_REO1_ERROR_RING_CFG_FOR_DEST_IX2);
+	val |= u32_encode_bits(10, HAL_REO1_ERROR_RING_CFG_FOR_DEST_REO2SW11_ERR);
+	ath12k_hif_write32(ab, reo_base + HAL_REO1_ERROR_RING_CFG_FOR_DEST_IX2, val);
 }
 
 void ath12k_wifi8_hal_reo_shared_qaddr_cache_clear(struct ath12k_base *ab)
