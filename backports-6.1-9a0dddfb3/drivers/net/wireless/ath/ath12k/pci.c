@@ -1031,6 +1031,11 @@ int ath12k_pci_power_up(struct ath12k_base *ab)
 void ath12k_pci_power_down(struct ath12k_base *ab, bool is_suspend)
 {
 	struct ath12k_pci *ab_pci = ath12k_pci_priv(ab);
+	bool scan_radio = FALSE;
+
+	scan_radio = !strncmp(ab->hw_params->board_magic,
+			   ATH12K_SCAN_RADIO,
+			   strlen(ATH12K_SCAN_RADIO));
 
 #ifdef CONFIG_IO_COHERENCY
        int ret;
@@ -1039,14 +1044,17 @@ void ath12k_pci_power_down(struct ath12k_base *ab, bool is_suspend)
 	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
-	ath12k_mhi_set_state(ab_pci, ATH12K_MHI_SOC_RESET);
-	if (!wait_for_completion_timeout(&ab->rddm_reset_done,
-					 msecs_to_jiffies(3000))) {
-		ath12k_warn(ab, "failed to set RDDM mode\n");
-		if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags)) {
-			ath12k_warn(ab, "failed to clear MHI SOC RESET as mhi already in rddm state due to recovery in progress, clearing it here\n");
-			clear_bit(ATH12K_MHI_SOC_RESET, &ab_pci->mhi_state);
-			reinit_completion(&ab->rddm_reset_done);
+	if (!scan_radio || !test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags)) {
+		ath12k_mhi_set_state(ab_pci, ATH12K_MHI_SOC_RESET);
+		if (!wait_for_completion_timeout(&ab->rddm_reset_done,
+						 msecs_to_jiffies(3000))) {
+			ath12k_warn(ab, "failed to set MHI SOC RESET\n");
+			if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags)) {
+				ath12k_warn(ab, "MHI in RDDM mode due to recovery\n");
+				ath12k_warn(ab, "Clearing MHI SOC RESET\n");
+				clear_bit(ATH12K_MHI_SOC_RESET, &ab_pci->mhi_state);
+				reinit_completion(&ab->rddm_reset_done);
+			}
 		}
 	}
 
