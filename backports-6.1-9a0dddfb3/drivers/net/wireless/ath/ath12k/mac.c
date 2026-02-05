@@ -488,6 +488,21 @@ u16 ath12k_mac_he_convert_tones_to_ru_tones(u16 tones)
 }
 EXPORT_SYMBOL(ath12k_mac_he_convert_tones_to_ru_tones);
 
+enum nl80211_he_gi ath12k_mac_he_gi_to_nl80211_he_gi(u8 sgi)
+{
+	switch (sgi) {
+	case RX_MSDU_START_SGI_0_8_US:
+		return NL80211_RATE_INFO_HE_GI_0_8;
+	case RX_MSDU_START_SGI_1_6_US:
+		return NL80211_RATE_INFO_HE_GI_1_6;
+	case RX_MSDU_START_SGI_3_2_US:
+		return NL80211_RATE_INFO_HE_GI_3_2;
+	default:
+		return NL80211_RATE_INFO_HE_GI_0_8;
+	}
+}
+EXPORT_SYMBOL(ath12k_mac_he_gi_to_nl80211_he_gi);
+
 static void ath12k_mac_bridge_vdevs_down(struct ieee80211_hw *hw,
 					 struct ath12k_vif *ahvif, u8 cur_link_id);
 static void ath12k_mac_bridge_vdevs_up(struct ath12k_link_vif *arvif);
@@ -9874,9 +9889,13 @@ int ath12k_mac_set_key(struct ath12k *ar, enum set_key_cmd cmd,
 		if (key->flags & IEEE80211_KEY_FLAG_PAIRWISE) {
 			peer->dp_peer->ucast_keyidx = key->keyidx;
 			peer->dp_peer->sec_type = ath12k_dp_tx_get_encrypt_type(key->cipher);
+			if (arsta)
+				arsta->ahsta->enctype = peer->dp_peer->sec_type;
 		} else {
 			peer->dp_peer->mcast_keyidx = key->keyidx;
 			peer->dp_peer->sec_type_grp = ath12k_dp_tx_get_encrypt_type(key->cipher);
+			if (arsta)
+				arsta->ahsta->enctype = peer->dp_peer->sec_type_grp;
 		}
 	} else if (peer && peer->dp_peer && cmd == DISABLE_KEY) {
 		peer->dp_peer->keys[key->keyidx] = NULL;
