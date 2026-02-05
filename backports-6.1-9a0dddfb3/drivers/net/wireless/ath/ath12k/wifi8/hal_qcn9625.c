@@ -426,6 +426,7 @@ const struct ath12k_hw_hal_params ath12k_wifi8_hw_hal_params_qcn9625 = {
 	.dscp_tid_map_tbl_max_entries = HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX,
 	.num_tids = HAL_WIFI8_NUM_TIDS,
 	.reoq_lut_size = HAL_WIFI8_REOQ_LUT_SIZE,
+	.dp_rx_err_rdi = HAL_WIFI8_DP_RX_ERR_RDI,
 };
 
 u32 ath12k_wifi8_hal_rx_h_mpdu_err_qcn9625(struct hal_rx_desc *desc)

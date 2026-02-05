@@ -1061,6 +1061,7 @@ struct ath12k_hw_hal_params {
 	u16 dscp_tid_map_tbl_max_entries;
 	u8 num_tids;
 	u32 reoq_lut_size;
+	u32 dp_rx_err_rdi;
 };
 
 struct ath12k_hw_regs {
