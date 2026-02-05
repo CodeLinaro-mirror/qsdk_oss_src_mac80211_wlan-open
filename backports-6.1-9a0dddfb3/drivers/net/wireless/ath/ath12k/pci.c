@@ -18,6 +18,10 @@
 #include "debugfs.h"
 #include "fw.h"
 #include "pcic.h"
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#include <linux/iommu.h>
+#include "qcn_extns/ipa/dp_ipa.h"
+#endif
 
 #define ATH12K_PCI_BAR_NUM		0
 #define ATH12K_PCI_DMA_MASK		32
@@ -406,6 +410,9 @@ static int ath12k_pci_claim(struct ath12k_pci *ab_pci, struct pci_dev *pdev)
 		ret = -EIO;
 		goto release_region;
 	}
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	ab->ath12k_base_extn.mem_pa = pci_resource_start(pdev, ATH12K_PCI_BAR_NUM);
+#endif
 
 	ath12k_dbg(ab, ATH12K_DBG_BOOT, "boot pci_mem 0x%p\n", ab->mem);
 	return 0;
@@ -1263,6 +1270,14 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
 	ab_pci->device_ops = &ath12k_pci_family_drivers[device_id]->ops;
 	ab_pci->reg_base = ath12k_pci_family_drivers[device_id]->reg_base;
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	/* Init smmu for SDX */
+	ret = ath12k_pci_init_smmu_extn(ab_pci);
+	if (ret) {
+		ath12k_err(ab, "failed to SMMU_INIT device: %d\n", ret);
+		goto err_pci_free_region;
+	}
+#endif
 	/* Call device specific probe. This is the callback that can
 	 * be used to override any ops in future
 	 */
@@ -1270,7 +1285,11 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
 		ret = ab_pci->device_ops->probe(pdev, pci_dev);
 		if (ret) {
 			ath12k_err(ab, "failed to probe device: %d\n", ret);
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+			goto err_pci_deinit_smmu;
+#else
 			goto err_pci_free_region;
+#endif
 		}
 	}
 
@@ -1282,7 +1301,11 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
 	ret = ath12k_pci_msi_alloc(ab_pci);
 	if (ret) {
 		ath12k_err(ab, "failed to alloc msi: %d\n", ret);
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+		goto err_pci_deinit_smmu;
+#else
 		goto err_pci_free_region;
+#endif
 	}
 
 	ath12k_fw_map(ab);
@@ -1391,6 +1414,11 @@ err_irq_affinity_cleanup:
 
 err_pci_msi_free:
 	ath12k_pci_msi_free(ab_pci);
+
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+err_pci_deinit_smmu:
+	ath12k_pci_deinit_smmu_extn(ab_pci);
+#endif
 
 err_pci_free_region:
 	ath12k_pci_free_region(ab_pci);
