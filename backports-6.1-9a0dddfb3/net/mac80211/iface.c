@@ -26,6 +26,7 @@
 #include "driver-ops.h"
 #include "wme.h"
 #include "rate.h"
+#include "qcn_extns/cmn_extn.h"
 
 #ifdef CPTCFG_MAC80211_NSS_SUPPORT
 bool nss_redirect = false;
@@ -699,6 +700,8 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata, bool going_do
 	default:
 		if (!going_down)
 			break;
+
+		ieee80211_scan_radio_do_stop_extn(sdata, &hw_reconf_flags);
 		drv_remove_interface(local, sdata);
 
 		/* Clear private driver data to prevent reuse */
@@ -1547,6 +1550,10 @@ int ieee80211_do_open(struct wireless_dev *wdev, bool coming_up)
 		if (sdata->u.mntr.flags & MONITOR_FLAG_COOK_FRAMES)
 			break;
 		list_add_tail_rcu(&sdata->u.mntr.list, &local->mon_list);
+		break;
+	case NL80211_IFTYPE_AP:
+		/* Handle scan radio as monitor for Rx */
+		ieee80211_scan_radio_do_open_extn(sdata, wdev, dev, &hw_reconf_flags);
 		break;
 	default:
 		break;
