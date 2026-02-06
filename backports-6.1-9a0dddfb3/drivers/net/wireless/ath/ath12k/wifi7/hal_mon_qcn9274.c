@@ -282,17 +282,17 @@ ath12k_wifi7_hal_tx_ppdu_info(struct ath12k_mon_data *pmon,
 	case HAL_TX_FES_STATUS_USER_PPDU:
 		break;
 	case HAL_TX_FES_STATUS_PROT: {
-		if (!pmon->tx_prot_ppdu_info->is_used)
-			pmon->tx_prot_ppdu_info->is_used = true;
+		if (!pmon->prot_ppdu_info.is_used)
+			pmon->prot_ppdu_info.is_used = true;
 
-		return pmon->tx_prot_ppdu_info;
+		return &pmon->prot_ppdu_info;
 	}
 	}
 
-	if (!pmon->tx_data_ppdu_info->is_used)
-		pmon->tx_data_ppdu_info->is_used = true;
+	if (!pmon->data_ppdu_info.is_used)
+		pmon->data_ppdu_info.is_used = true;
 
-	return pmon->tx_data_ppdu_info;
+	return &pmon->data_ppdu_info;
 }
 
 void ath12k_wifi7_hal_mon_set_mon_buf_desc(void *desc, u32 addr_lo,

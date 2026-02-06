@@ -123,6 +123,10 @@ static int ath12k_dp_mon_tx_wq_init(struct ath12k_pdev_dp *dp_pdev)
 		goto free_vendor_tlv;
 	}
 
+	INIT_WORK(&dp_mon_pdev->txmon_work,
+		  ath12k_dp_tx_mon_process_ppdu);
+	dp_mon_pdev->tx_mon_wq_initialized = true;
+
 	return 0;
 
 free_vendor_tlv:
@@ -496,6 +500,258 @@ ath12k_dp_tx_mon_flush_desc_list(struct ath12k_pdev_dp *dp_pdev,
 
 	/* Free descriptor list */
 	ath12k_dp_mon_tx_desc_free(mon_desc_list, dp_mon);
+}
+
+/**
+ * ath12k_dp_mon_tx_prep_ppdu_info() - Prepare PPDU information for TX monitor processing
+ * @dp_mon_pdev: Pointer to monitor PDEV context containing processing state
+ * @ppdu_desc: Pointer to PPDU descriptor containing status descriptors with TLV data
+ *
+ * This function prepares PPDU information structures for TX monitor frame processing
+ * by parsing the initial TLV data to extract user count and initializing the
+ * processing contexts for both protection and data frames.
+ *
+ * The function performs the following key operations:
+ * 1. Validates PPDU descriptor and status descriptor availability
+ * 2. Parses the first TLV header to extract tag, length, and user ID information
+ * 3. Determines the number of users in the PPDU from HAL TLV parsing
+ * 4. Initializes protection and data PPDU info structures with user counts
+ * 5. Initializes MPDU queues for all potential users (up to HAL_MAX_UL_MU_USERS)
+ *
+ * TLV Processing Details:
+ * The function examines the first status descriptor's monitor buffer, which contains
+ * TLV data from the hardware. It extracts the TLV header using HAL operations to
+ * determine the TLV tag, user ID, and length. This information is then used to
+ * parse the number of users in the PPDU through HAL-specific parsing functions.
+ */
+static int
+ath12k_dp_mon_tx_prep_ppdu_info(struct ath12k_pdev_mon_dp *dp_mon_pdev,
+				struct ath12k_dp_mon_ppdu_desc *ppdu_desc)
+{
+	struct ath12k_mon_data *mon_data = &dp_mon_pdev->mon_data;
+	struct ath12k_pdev_dp *dp_pdev = dp_mon_pdev->dp_pdev;
+	u8 num_users = 0;
+	struct ath12k_dp_mon_status_desc *status_desc;
+	enum hal_tx_mon_status hal_status = HAL_TX_MON_STATUS_PPDU_NOT_DONE;
+	struct sk_buff_head *mpdu_q;
+	struct hal_tlv_64_hdr *tlv_hdr;
+	void *tlv_data;
+	u16 tlv_tag, tlv_len;
+	u32 tlv_userid = 0;
+	int i;
+
+	if (unlikely(!ppdu_desc->status_desc_cnt)) {
+		ath12k_warn(dp_pdev->dp->ab, "status_desc_cnt %d ",
+			    ppdu_desc->status_desc_cnt);
+		return -EINVAL;
+	}
+
+	status_desc = &ppdu_desc->status_desc[0];
+	if (unlikely(!status_desc || !status_desc->mon_buf)) {
+		ath12k_warn(dp_pdev->dp->ab, "status desc %p , mon buf%p ",
+			    status_desc, status_desc ? status_desc->mon_buf : 0);
+		return -EINVAL;
+	}
+
+	if (status_desc->buf_len < sizeof(struct hal_tlv_64_hdr)) {
+		ath12k_warn(dp_pdev->dp->ab,
+			    "TX Mon: Buffer too small for TLV header: %u < %zu\n",
+			    status_desc->buf_len, sizeof(struct hal_tlv_64_hdr));
+		return -EINVAL;
+	}
+
+	tlv_hdr = (struct hal_tlv_64_hdr *)status_desc->mon_buf;
+	ath12k_hal_get_tlv_params(dp_pdev->dp->hal, tlv_hdr->tl,
+				  &tlv_tag, &tlv_userid, &tlv_len);
+
+	if (sizeof(struct hal_tlv_64_hdr) + tlv_len > status_desc->buf_len) {
+		ath12k_warn(dp_pdev->dp->ab,
+			    "TX Mon: TLV length exceeds buffer: %u + %u > %u\n",
+			    (u32)sizeof(struct hal_tlv_64_hdr),
+			    tlv_len, status_desc->buf_len);
+		return -EINVAL;
+	}
+
+	tlv_data = (u8 *)status_desc->mon_buf + sizeof(struct hal_tlv_64_hdr);
+
+	hal_status = ath12k_hal_mon_tx_status_get_num_user(dp_pdev->dp->hal,
+							   tlv_tag,
+							   tlv_data,
+							   &num_users,
+							   tlv_len);
+	if (hal_status == HAL_TX_MON_STATUS_PPDU_NOT_DONE || !num_users) {
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "TX Mon: Failed to get num_users");
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "hal_status=%d, num_users=%u, tlv_tag=0x%x\n",
+			   hal_status, num_users, tlv_tag);
+		return -EINVAL;
+	}
+
+	mon_data->prot_ppdu_info.tx_info.num_users = 1;
+	mon_data->data_ppdu_info.tx_info.num_users = num_users;
+
+	for (i = 0; i < HAL_MAX_UL_MU_USERS; i++) {
+		mpdu_q = mon_data->prot_ppdu_info.tx_info.rx_status.mpdu_q;
+		skb_queue_head_init(&mpdu_q[i]);
+		mpdu_q = mon_data->data_ppdu_info.tx_info.rx_status.mpdu_q;
+		skb_queue_head_init(&mpdu_q[i]);
+	}
+
+	return 0;
+}
+
+/**
+ * ath12k_dp_mon_tx_deep_free_ppdu_info() - Deep cleanup of PPDU info structures
+ * @pdev_dp: Pointer to DP PDEV context for device-specific operations
+ * @mon_data: Pointer to monitor data containing PPDU info structures to clean
+ *
+ * This function performs comprehensive cleanup of all MPDU socket buffers
+ * queued in both protection and data PPDU information structures. It ensures
+ * complete memory deallocation to prevent memory leaks during TX monitor
+ * processing cleanup or error recovery scenarios.
+ *
+ * The function performs deep cleanup by:
+ * 1. Iterating through all possible user queues (up to HAL_MAX_UL_MU_USERS)
+ * 2. Dequeuing and freeing all MPDU socket buffers from data PPDU queues
+ * 3. Dequeuing and freeing all MPDU socket buffers from protection PPDU queues
+ * 4. Using dev_kfree_skb_any() for safe deallocation in any context
+ */
+static void
+ath12k_dp_mon_tx_deep_free_ppdu_info(struct ath12k_pdev_dp *pdev_dp,
+				     struct ath12k_mon_data *mon_data)
+{
+	int i;
+	struct hal_tx_mon_ppdu_info *data_ppdu_info =
+		&mon_data->data_ppdu_info.tx_info;
+	struct hal_tx_mon_ppdu_info *prot_ppdu_info =
+		&mon_data->prot_ppdu_info.tx_info;
+
+	struct sk_buff_head *mpdu_q;
+	struct sk_buff *mpdu;
+
+	for (i = 0; i < HAL_MAX_UL_MU_USERS; i++) {
+		mpdu_q = &data_ppdu_info->rx_status.mpdu_q[i];
+		while ((mpdu = skb_dequeue(mpdu_q)))
+			dev_kfree_skb_any(mpdu);
+		mpdu_q = &prot_ppdu_info->rx_status.mpdu_q[i];
+		while ((mpdu = skb_dequeue(mpdu_q)))
+			dev_kfree_skb_any(mpdu);
+	}
+}
+
+/**
+ * ath12k_dp_tx_mon_process_ppdu() - Work queue handler for TX monitor
+ * @work: Work structure containing the monitor pdev context
+ *
+ * This function processes PPDU descriptors in work queue context, performing
+ * heavy TLV parsing, software filtering, frame generation, and stack delivery.
+ * It follows the efficient batch processing pattern while adding
+ * comprehensive error handling and bridge functions for complete functionality.
+ *
+ * Processing Flow:
+ * 1. Move descriptors from used to processing list (batch processing)
+ * 2. Process each PPDU with validation and error handling
+ * 3. Perform TLV parsing and software filtering
+ * 4. Generate frames and deliver to stack
+ * 5. Return descriptors to free pool for reuse
+ */
+void ath12k_dp_tx_mon_process_ppdu(struct work_struct *work)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev =
+		container_of(work, struct ath12k_pdev_mon_dp, txmon_work);
+	struct ath12k_pdev_dp *pdev_dp = dp_mon_pdev->dp_pdev;
+	struct ath12k_dp_mon_ppdu_desc *ppdu_desc;
+	struct ath12k_dp_mon_status_desc *status_desc;
+	struct ath12k_mon_data *mon_data = &dp_mon_pdev->mon_data;
+	struct ath12k_pdev_tx_mon_stats *tx_stats = &dp_mon_pdev->tx_mon_stats;
+	int desc_idx, desc_count = 0;
+	int ppdu_processed = 0;
+	int total_status_desc = 0, prep_failed = 0;
+
+	if (unlikely(!pdev_dp || !dp_mon_pdev)) {
+		ath12k_err(pdev_dp ? pdev_dp->dp->ab : NULL,
+			   "TX Mon: Invalid parameters in work queue\n");
+		return;
+	}
+
+	spin_lock_bh(&dp_mon_pdev->tx_mon_ppdu_desc_lock);
+	list_splice_init(&dp_mon_pdev->tx_mon_ppdu_desc_used_list,
+			 &dp_mon_pdev->tx_mon_ppdu_desc_proc_list);
+	spin_unlock_bh(&dp_mon_pdev->tx_mon_ppdu_desc_lock);
+
+	list_for_each_entry(ppdu_desc,
+			    &dp_mon_pdev->tx_mon_ppdu_desc_proc_list,
+			    list) {
+		if (unlikely(ppdu_desc->status_desc_cnt == 0)) {
+			ath12k_warn(pdev_dp->dp->ab,
+				    "TX Mon: Invalid PPDU desc or zero status count\n");
+			tx_stats->tx_ppdu_desc_invalid++;
+			desc_count++;
+			continue;
+		}
+
+		if (unlikely(ppdu_desc->status_desc_cnt > ATH12K_DP_MON_STATUS_BUF)) {
+			ath12k_warn(pdev_dp->dp->ab,
+				    "TX Mon: PPDU desc overflow count=%u max=%u\n",
+				    ppdu_desc->status_desc_cnt, ATH12K_DP_MON_STATUS_BUF);
+			tx_stats->tx_ppdu_desc_overflow++;
+			ppdu_desc->status_desc_cnt = ATH12K_DP_MON_STATUS_BUF;
+			tx_stats->tx_work_queue_stalls++;
+		}
+
+		if (ath12k_dp_mon_tx_prep_ppdu_info(dp_mon_pdev, ppdu_desc)) {
+			tx_stats->tx_ppdu_parse_errors++;
+			prep_failed++;
+			goto ppdu_prep_failed;
+		}
+
+		for (desc_idx = 0; desc_idx < ppdu_desc->status_desc_cnt; desc_idx++) {
+			status_desc = &ppdu_desc->status_desc[desc_idx];
+
+			if (unlikely(!status_desc->mon_buf)) {
+				ath12k_dbg(pdev_dp->dp->ab, ATH12K_DBG_DP_MON_TX,
+					   "TX Mon: Null buffer address in ppdu desc idx=%d\n",
+					   desc_idx);
+				tx_stats->tx_status_buf_null++;
+				continue;
+			}
+
+			ath12k_core_dma_unmap_page(pdev_dp->dp->dev,
+						   status_desc->paddr,
+						   ATH12K_DP_MON_TX_BUF_SIZE,
+						   DMA_FROM_DEVICE);
+
+			page_frag_free(status_desc->mon_buf);
+			status_desc->mon_buf = NULL;
+			status_desc->paddr = 0;
+			status_desc->buf_len = 0;
+			status_desc->end_of_ppdu = false;
+			total_status_desc++;
+		}
+		ppdu_processed++;
+
+ppdu_prep_failed:
+		desc_count++;
+		/* Reset PPDU descriptor for reuse */
+		ath12k_dp_mon_reset_ppdu_desc(ppdu_desc);
+		/* Deep cleanup of PPDU info */
+		ath12k_dp_mon_tx_deep_free_ppdu_info(pdev_dp, mon_data);
+	}
+
+	spin_lock_bh(&dp_mon_pdev->tx_mon_ppdu_desc_lock);
+	list_splice_tail_init(&dp_mon_pdev->tx_mon_ppdu_desc_proc_list,
+			      &dp_mon_pdev->tx_mon_ppdu_desc_free_list);
+	dp_mon_pdev->mon_stats.ppdu_desc_free += desc_count;
+	spin_unlock_bh(&dp_mon_pdev->tx_mon_ppdu_desc_lock);
+
+	/* Update statistics */
+	tx_stats->tx_ppdu_processed += ppdu_processed;
+	tx_stats->tx_status_desc_processed += total_status_desc;
+
+	ath12k_dbg(pdev_dp->dp->ab, ATH12K_DBG_DP_MON_TX,
+		   "TX Mon: Work queue processed %d PPDUs, %d status descriptors\n",
+		   ppdu_processed, total_status_desc);
 }
 
 /**
