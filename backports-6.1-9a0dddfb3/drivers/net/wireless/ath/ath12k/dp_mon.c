@@ -1740,10 +1740,10 @@ ath12k_dp_calc_rx_peer_rssi(struct ath12k_pdev_dp *dp_pdev,
 
 	stats = &link_peer->signal_stats;
 	rssi = ath12k_dp_get_rssi_value(stats->snr, stats, &ar->rssi_offsets,
-					link_peer, false);
+					false);
 	stats->rssi = rssi;
 	rssi_dp = ath12k_dp_get_rssi_value(stats->snr_dp, stats,
-					   &ar->rssi_offsets, link_peer, false);
+					   &ar->rssi_offsets, false);
 	stats->rssi_dp = rssi_dp;
 	ewma_avg_rssi_add(&stats->avg_rssi, (stats->rssi + RSSI_OFFSET) << 8);
 	stats->rssi_avg =
@@ -1782,6 +1782,7 @@ ath12k_dp_mon_link_peer_signal_stats(struct ath12k_pdev_dp *dp_pdev,
 	stats->rssi_region_offset = ppdu_info->rssi_region_offset;
 	ewma_avg_snr_add(&stats->avg_snr, stats->snr);
 	stats->snr_avg = ewma_avg_snr_read(&stats->avg_snr);
+	stats->channel_bw = ppdu_info->bw;
 
 	if (likely(ppdu_info->fc_valid)) {
 		switch (ppdu_info->frame_control & 0x00F0) {

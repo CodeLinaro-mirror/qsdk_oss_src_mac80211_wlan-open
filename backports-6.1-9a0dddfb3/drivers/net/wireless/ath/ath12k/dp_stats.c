@@ -411,30 +411,22 @@ static u8 ath12k_dp_get_bw_offset(u8 bw)
  * @snr:      Input SNR (either snr or snr_dp)
  * @stats:    Peer signal stats (for region offset etc.)
  * @rssi_offsets: Conversion offsets
- * @link_peer: Peer info (for bw_info)
  *
  * Returns: Calculated RSSI value (s8)
  */
 s8 ath12k_dp_get_rssi_value(s8 snr,
 			    struct ath12k_dp_link_peer_rx_signal_stats *stats,
 			    struct wmi_rssi_dbm_conv_offsets *rssi_offsets,
-			    struct ath12k_dp_link_peer *link_peer,
 			    bool ack_rssi)
 {
-	s8 rssi_comb;
-	u8 bw_info, bw_offset = 0;
-	s8 rssi_val;
-
-	if (!link_peer)
-		return 0;
+	s8 rssi_comb, rssi_val;
+	u8 bw_offset = 0;
 
 	if (ack_rssi && snr < 0)
 		return 0;
 
-	if (!ack_rssi && link_peer->peer_stats.rx_stats) {
-		bw_info = link_peer->peer_stats.rx_stats->bw_info;
-		bw_offset = ath12k_dp_get_bw_offset(bw_info);
-	}
+	bw_offset = ath12k_dp_get_bw_offset(stats->channel_bw);
+
 	/* Common offset calculation */
 	rssi_comb = stats->rssi_region_offset +
 		rssi_offsets->avg_nf_dbm +
