@@ -2624,6 +2624,9 @@ static int ath12k_get_dp_vif_attr_len(struct ath12k_telemetry_command *cmd)
 	if (cmd->feat.feat_proto)
 		total_size += ath12k_get_feat_proto_vap_attr_size();
 
+	if (cmd->feat.feat_rx)
+		total_size += ath12k_get_dp_rx_scan_radio_stats_len();
+
 	/*Aggregated Sta Stats Size */
 	total_size += ath12k_get_dp_peer_attr_len(cmd);
 
@@ -5730,6 +5733,13 @@ static int ath12k_fill_vap_rx_stats(struct ath12k *ar,
 				    struct ath12k_telemetry_dp_vif *telemetry_vif)
 {
 	int ret;
+
+	/*Rx scan stats */
+	if (ath12k_scan_radio_supported(ar->pdev)) {
+		ret = ath12k_fill_rx_scan_radio_stats(
+				vendor_event, &telemetry_vif->rx_scan_radio_stats);
+		return ret;
+	}
 
 	/* Aggregated Peer Rx Stats */
 	ret = ath12k_fill_peer_rx_stats(ar,

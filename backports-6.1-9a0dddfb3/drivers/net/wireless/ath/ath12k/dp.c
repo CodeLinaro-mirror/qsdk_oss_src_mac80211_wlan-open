@@ -3115,6 +3115,11 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 	    ath12k_dp_debug_stats_enabled(&ar->dp))
 		telemetry_vif->is_extended = true;
 
+	if (ath12k_scan_radio_supported(ar->pdev)) {
+		ath12k_dp_mon_rx_scan_radio_stats_update(ar, telemetry_vif);
+		return;
+	}
+
 	/*Vif stats for requested link*/
 	if (links_map & BIT(link_id)) {
 		rcu_read_lock();

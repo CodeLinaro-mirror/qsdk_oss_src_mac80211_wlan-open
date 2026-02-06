@@ -6402,7 +6402,14 @@ static ssize_t ath12k_write_reset_dp_stats(struct file *file,
 	if (!reset)
 		return -EINVAL;
 
+	/*Clear only scan related stats*/
+	if (reset == 2) {
+		ath12k_dp_rx_scan_radio_stats_reset(ah);
+		return count;
+	}
+
 	wiphy_lock(ah->hw->wiphy);
+
 	spin_lock_bh(&ah->dp_hw.peer_lock);
 	list_for_each_entry(dp_peer, &ah->dp_hw.peers, list) {
 		memset(&dp_peer->stats, 0, sizeof(dp_peer->stats));

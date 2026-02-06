@@ -13,6 +13,8 @@
 #include "pktlog.h"
 
 #include "hal_mon_cmn.h"
+#include "qcn_extns/ath12k_cmn_extn.h"
+#include "qcn_extns/dp_stats_extn.h"
 
 #define ATH12K_DP_MON_TX_BUF_SIZE	2048
 #define ATH12K_DP_MON_RX_BUF_SIZE	2048
@@ -454,6 +456,7 @@ struct ath12k_pdev_mon_dp {
 	enum ath12k_dp_smart_mon_state smart_mon_state;
 
 	bool tx_monitor_started:1;
+	struct ath12k_pdev_mon_dp_extn pdev_mon_dp_extn;
 };
 
 enum ath12k_dp_mon_desc_in_use {
@@ -1287,5 +1290,41 @@ int ath12k_dp_mon_tx_config_monitor_mode(struct ath12k *ar, bool set)
 	}
 
 	return ret;
+}
+
+static inline void
+ath12k_dp_rx_scan_radio_stats_reset(struct ath12k_hw *ah)
+{
+	int i = 0;
+	struct ath12k *ar;
+
+	wiphy_lock(ah->hw->wiphy);
+	for (i = 0; i < ah->num_radio; i++) {
+		ar = &ah->radio[i];
+
+		if (!ar->dp.dp_mon_pdev)
+			continue;
+
+		memset(&ar->dp.dp_mon_pdev->pdev_mon_dp_extn, 0,
+		       sizeof(ar->dp.dp_mon_pdev->pdev_mon_dp_extn));
+	}
+	wiphy_unlock(ah->hw->wiphy);
+}
+
+static inline void
+ath12k_dp_mon_rx_scan_radio_stats_update(struct ath12k *ar,
+					 struct ath12k_telemetry_dp_vif *telemetry_vif)
+{
+	struct ath12k_pdev_mon_dp_extn *mon_dp_extn;
+
+	if (unlikely(!ar || !telemetry_vif))
+		return;
+
+	if (!ar->dp.dp_mon_pdev)
+		return;
+
+	mon_dp_extn = &ar->dp.dp_mon_pdev->pdev_mon_dp_extn;
+	ath12k_dp_rx_scan_radio_stats_update(telemetry_vif,
+					     &mon_dp_extn->rx_scan_radio_stats);
 }
 #endif
