@@ -216,6 +216,7 @@ struct ath12k_hw_ring_mask {
 	u8 umac_dp_reset[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
 	u8 tx_exception[ATH12K_EXT_IRQ_GRP_NUM_MAX];
 	u8 tcl_status[ATH12K_EXT_IRQ_GRP_NUM_MAX];
+	u8 tqm_status[ATH12K_EXT_IRQ_GRP_NUM_MAX];
 };
 
 enum ath12k_m3_fw_loaders {

@@ -188,6 +188,13 @@ enum rdi_based_source_ring_selection {
 /*TCL CMD ring address */
 #define HAL_TCL_CMD_RING_BASE_LSB		0x00001944
 #define HAL_TCL_CMD_RING_HP			0x00004038
+/*TQM CMD ring address */
+#define HAL_TQM_HOST_CMD_RING_BASE_LSB		0x0000028C
+#define HAL_TQM_HOST_CMD_RING_HP		0x00003028
+
+/*TQM STATUS ring address */
+#define HAL_TQM_HOST_STATUS_RING_BASE_LSB	0x000005D4
+#define HAL_TQM_HOST_STATUS_RING_HP		0x00003060
 
 /* TCL STATUS ring address */
 #define HAL_TCL_STATUS_RING_BASE_LSB(hal) \
@@ -640,6 +647,8 @@ enum rdi_based_source_ring_selection {
 #define HAL_SW2TCL1_CMD_RING_BASE_MSB_RING_SIZE		0x000fffff
 #define HAL_TCL_STATUS_RING_BASE_MSB_RING_SIZE		0x0000ffff
 #define HAL_TX_EXCEPTION_RING_BASE_MSB_RING_SIZE	0x0000ffff
+#define HAL_TQM_HOST_CMD_RING_BASE_MSB_RING_SIZE	0x0000ffff
+#define HAL_TQM_HOST_STATUS_RING_BASE_MSB_RING_SIZE	0x0000ffff
 #define HAL_CE_SRC_RING_BASE_MSB_RING_SIZE		0x0000ffff
 #define HAL_CE_DST_RING_BASE_MSB_RING_SIZE		0x0000ffff
 #define HAL_CE_DST_STATUS_RING_BASE_MSB_RING_SIZE	0x0000ffff
@@ -1090,6 +1099,8 @@ void ath12k_wifi8_hal_reoq_lut_addr_read_enable(struct ath12k_base *ab);
 void ath12k_wifi8_hal_reoq_lut_set_max_peerid(struct ath12k_base *ab);
 void ath12k_wifi8_hal_write_reoq_lut_addr(struct ath12k_base *ab,
 					  dma_addr_t paddr);
+void ath12k_wifi8_hal_tqm_init_cmd_ring(struct ath12k_base *ab,
+					struct hal_srng *srng);
 void ath12k_wifi8_hal_write_ml_reoq_lut_addr(struct ath12k_base *ab,
 					     dma_addr_t paddr);
 void ath12k_wifi8_hal_reo_init_cmd_ring(struct ath12k_base *ab,

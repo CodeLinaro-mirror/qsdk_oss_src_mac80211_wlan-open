@@ -93,4 +93,6 @@ void ath12k_tx_classify_info_free(struct ath12k_dp_hw_group *dp_hw_grp,
 				  dma_addr_t txpt_paddr);
 void ath12k_peer_free_static_queues(struct ath12k_dp_hw_group *dp_hw_grp,
 				    struct ath12k_dp_peer *peer);
+void ath12k_dp_peer_free_queues(struct ath12k_dp_hw_group *dp_hw_grp,
+				struct ath12k_dp_peer *peer);
 #endif
