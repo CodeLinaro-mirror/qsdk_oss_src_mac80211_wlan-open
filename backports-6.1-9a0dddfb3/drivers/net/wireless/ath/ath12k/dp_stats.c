@@ -428,6 +428,8 @@ s8 ath12k_dp_get_rssi_value(s8 snr,
 	if (!link_peer)
 		return 0;
 
+	if (ack_rssi && snr < 0)
+		return 0;
 
 	if (!ack_rssi && link_peer->peer_stats.rx_stats) {
 		bw_info = link_peer->peer_stats.rx_stats->bw_info;

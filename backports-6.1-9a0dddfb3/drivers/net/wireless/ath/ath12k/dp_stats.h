@@ -897,7 +897,7 @@ struct ath12k_dp_link_peer_rx_signal_stats {
 	u8 snr;
 	u16 snr_avg;
 	struct ewma_avg_snr avg_snr;
-	u8 rssi_region_offset;
+	s8 rssi_region_offset;
 	u8 snr_dp;
 	u16 snr_dp_avg;
 	struct ewma_avg_snr_dp avg_snr_dp;

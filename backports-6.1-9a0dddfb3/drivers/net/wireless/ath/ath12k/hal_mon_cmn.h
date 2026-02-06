@@ -289,7 +289,7 @@ struct hal_rx_mon_ppdu_info {
 	struct hal_rx_mon_msdu_info msdu_info[HAL_MAX_UL_MU_USERS];
 	u8 user_id;
 	u16 retried_msdu_count;
-	u8 rssi_region_offset;
+	s8 rssi_region_offset;
 	u16 punctured_pattern;
 	u16 punc_bw;
 	struct hal_rx_user_ctrl_frm_info ctrl_frm_info[HAL_MAX_UL_MU_USERS];

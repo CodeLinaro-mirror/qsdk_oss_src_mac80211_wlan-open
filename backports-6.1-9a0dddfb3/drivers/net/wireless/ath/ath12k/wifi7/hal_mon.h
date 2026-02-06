@@ -434,14 +434,16 @@ struct hal_rx_he_sig_b2_ofdma_info {
 
 #define HAL_RX_PHYRX_RSSI_LEGACY_INFO_INFO0_RECEPTION		GENMASK(3, 0)
 #define HAL_RX_PHYRX_RSSI_LEGACY_INFO_INFO0_RX_BW		GENMASK(7, 5)
-#define HAL_RX_PHYRX_RSSI_LEGACY_INFO_INFO1_RSSI_COMB		GENMASK(15, 8)
-#define HAL_RX_PHYRX_RSSI_LEGACY_INFO_RSVD5_REGION_OFFSET	GENMASK(16, 9)
+#define HAL_RX_PHYRX_RSSI_LEGACY_INFO_INFO1_REGION_OFFSET	GENMASK(16, 9)
+#define HAL_RX_PHYRX_RSSI_LEGACY_INFO_INFO2_RSSI_COMB		GENMASK(15, 8)
 
 struct hal_rx_phyrx_rssi_legacy_info {
 	__le32 info0;
-	__le32 rsvd0[39];
+	__le32 rsvd0[4];
 	__le32 info1;
-	__le32 rsvd1;
+	__le32 rsvd1[34];
+	__le32 info2;
+	__le32 rsvd2;
 } __packed;
 
 #define HAL_RX_MPDU_START_INFO0_ENCYRPT_TYP		GENMASK(5, 2)
