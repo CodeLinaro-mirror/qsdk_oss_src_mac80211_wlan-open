@@ -128,6 +128,9 @@ static struct ath12k_hw_ring_mask ath12k_wifi8_hw_ring_mask_qcn9625_msi8 = {
 	.tcl_status = {
 		ATH12K_TCL_STATUS_RING_MASK_0,
 	},
+	.tqm_status = {
+		ATH12K_TQM_STATUS_RING_MASK_0,
+	},
 };
 
 #define ATH12K_PPE2TCL_RING_MASK_0 0x1
@@ -211,6 +214,9 @@ static struct ath12k_hw_ring_mask ath12k_wifi8_hw_ring_mask_qcn9625 = {
 	},
 	.tcl_status = {
 		ATH12K_TCL_STATUS_RING_MASK_0,
+	},
+	.tqm_status = {
+		ATH12K_TQM_STATUS_RING_MASK_0,
 	},
 };
 

@@ -254,6 +254,8 @@ enum ath12k_dp_eapol_key_type {
 #define DP_TX_IDR_SIZE			DP_TX_COMP_RING_SIZE
 #define DP_TCL_CMD_RING_SIZE		32
 #define DP_TCL_STATUS_RING_SIZE		32
+#define DP_TQM_CMD_RING_SIZE		256
+#define DP_TQM_STATUS_RING_SIZE		2048
 #define DP_REO_DST_RING_SIZE		8192
 #define DP_REO_REINJECT_RING_SIZE	32
 #define DP_REO_EXCEPTION_RING_SIZE	128
@@ -691,6 +693,7 @@ struct ath12k_dp {
 	struct wbm_idle_scatter_list scatter_list[DP_IDLE_SCATTER_BUFS_MAX];
 	struct list_head reo_cmd_list;
 	struct list_head reo_cmd_cache_flush_list;
+	struct list_head tqm_cmd_list;
 	u32 reo_cmd_cache_flush_count;
 
 	/* htt_logger_handle */
@@ -702,6 +705,7 @@ struct ath12k_dp {
 	 * - reo_cmd_cache_flush_count
 	 */
 	spinlock_t reo_cmd_lock;
+	spinlock_t tqm_cmd_lock;
 	struct list_head reo_cmd_update_rx_queue_list;
 	/* protects access to below field,
 	 * - reo_cmd_update_rx_queue_list

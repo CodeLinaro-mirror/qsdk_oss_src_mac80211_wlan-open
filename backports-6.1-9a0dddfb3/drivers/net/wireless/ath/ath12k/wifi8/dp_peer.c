@@ -12,6 +12,7 @@
 #include "dp_tx_queue.h"
 #include "dp_tx_flow_info.h"
 #include "../telemetry_agent_if.h"
+#include "dp_tx.h"
 
 static u16 ath12k_wifi8_peer_id_alloc(struct ath12k_dp_hw *dp_hw)
 {
@@ -387,6 +388,268 @@ exit:
 	spin_unlock_bh(&dp->dp_lock);
 }
 
+int ath12k_dp_tqm_remove_msduq_send(struct ath12k_base *ab,
+				    struct ath12k_dp_msdu_q_info *sw_msduq_ptr,
+				    struct ath12k_dp_peer *dp_peer)
+{
+	struct ath12k_hal_tqm_cmd cmd;
+	int ret = 0;
+
+	if (!sw_msduq_ptr)
+		return ret;
+
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.std.peer_id = (u16)dp_peer->peer_id;
+	cmd.remove_msdu_params.type = HAL_WIFIREMOVE_MSDUS_AND_DISABLE_FLOW;
+	cmd.remove_msdu_params.block_tx_notify_frame_removal = 0;
+	cmd.remove_msdu_params.count = 0xFFFF;
+	cmd.remove_msdu_params.qtype = sw_msduq_ptr->flow_info.flow_type;
+	cmd.remove_msdu_params.msdu_q_paddr = sw_msduq_ptr->msdu_q_paddr;
+
+	ret = ath12k_wifi8_dp_tqm_cmd_send(ab, HAL_TQM_REMOVE_MSDU_BO, &cmd,
+					   NULL, NULL);
+
+	return ret;
+}
+
+
+int ath12k_dp_tqm_remove_mpduq_send(struct ath12k_base *ab,
+				    struct ath12k_dp_mpdu_q_info *sw_mpduq_ptr,
+				    struct ath12k_dp_peer *dp_peer)
+{
+	struct ath12k_hal_tqm_cmd cmd;
+	int ret = 0;
+
+	if (!sw_mpduq_ptr)
+		return ret;
+
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.std.peer_id = (u16)dp_peer->peer_id;
+	cmd.remove_mpdu_params.type = HAL_WIFIREMOVE_MPDUS_AND_DISABLE_QUEUE;
+	cmd.remove_mpdu_params.block_tx_notify_frame_removal = 0;
+	cmd.remove_mpdu_params.count = 0xFFF; //need to check if ffff?
+	cmd.remove_mpdu_params.mpdu_q_paddr = sw_mpduq_ptr->mpdu_q_paddr;
+
+	ret = ath12k_wifi8_dp_tqm_cmd_send(ab, HAL_TQM_REMOVE_MPDU_BO, &cmd,
+					   NULL, NULL);
+
+	return ret;
+}
+
+
+int ath12k_dp_tqm_remove_mcast_queues(struct ath12k_base *ab,
+				      struct ath12k_dp_peer *dp_peer)
+{
+	struct ath12k_dp_tx_flow_info *tx_flow_info;
+	struct ath12k_dp_msdu_q_info *sw_msduq_ptr = NULL;
+	struct ath12k_dp_mpdu_q_info *sw_mpduq_ptr = NULL;
+	int ret = 0;
+
+	tx_flow_info = ath12k_dp_get_tx_flow_info_from_peer(dp_peer);
+	spin_lock_bh(&tx_flow_info->tx_q_lock);
+
+	sw_msduq_ptr = tx_flow_info->mcast_msduq;
+	ret = ath12k_dp_tqm_remove_msduq_send(ab,
+					      sw_msduq_ptr,
+					      dp_peer);
+	if (ret) {
+		ath12k_err(ab,
+			   "TQM MSDUQ send failed for MCAST frame for peer %pM id %d",
+			   dp_peer->addr, dp_peer->peer_id);
+		spin_unlock_bh(&tx_flow_info->tx_q_lock);
+		return ret;
+	}
+	if (sw_msduq_ptr)
+		sw_msduq_ptr->tqm_send = 1;
+
+	sw_mpduq_ptr = tx_flow_info->mcast_mpduq;
+	ret = ath12k_dp_tqm_remove_mpduq_send(ab,
+					      sw_mpduq_ptr,
+					      dp_peer);
+	if (ret) {
+		ath12k_err(ab,
+			   "TQM MPDUQ send failed for MCAST frame for peer %pM id %d",
+			   dp_peer->addr, dp_peer->peer_id);
+		spin_unlock_bh(&tx_flow_info->tx_q_lock);
+		return ret; //whether to ret or retry?
+	}
+	if (sw_mpduq_ptr)
+		sw_mpduq_ptr->tqm_send = 1;
+
+	spin_unlock_bh(&tx_flow_info->tx_q_lock);
+	return ret;
+}
+
+int ath12k_dp_tqm_remove_data_queues(struct ath12k_base *ab,
+				     struct ath12k_dp_peer *dp_peer)
+{
+	struct ath12k_dp_tx_flow_info *tx_flow_info;
+	struct ath12k_dp_msdu_q_info *sw_msduq_ptr = NULL;
+	struct ath12k_dp_mpdu_q_info *sw_mpduq_ptr = NULL;
+	int tid, q;
+	int ret = 0;
+
+	tx_flow_info = ath12k_dp_get_tx_flow_info_from_peer(dp_peer);
+	spin_lock_bh(&tx_flow_info->tx_q_lock);
+
+	sw_msduq_ptr = tx_flow_info->hol_msduq;
+	ret = ath12k_dp_tqm_remove_msduq_send(ab,
+					      sw_msduq_ptr,
+					      dp_peer);
+	if (ret) {
+		ath12k_err(ab,
+			   "TQM MSDUQ send failed for HOL frame for peer %pM id %d",
+			   dp_peer->addr, dp_peer->peer_id);
+		spin_unlock_bh(&tx_flow_info->tx_q_lock);
+		return ret;
+	}
+	if (sw_msduq_ptr)
+		sw_msduq_ptr->tqm_send = 1;
+
+	for (tid = 0; tid < ATH12K_MAX_NUM_DATA_TIDS; tid++) {
+		for (q = 0; q < ATH12K_MAX_DP_MSDUQ_PER_TID; q++) {
+			sw_msduq_ptr = tx_flow_info->tid_info[tid].msduq[q];
+			ret = ath12k_dp_tqm_remove_msduq_send(ab,
+							      sw_msduq_ptr,
+							      dp_peer);
+			if (ret) {
+				ath12k_err(
+				ab,
+				"TQM MSDUQ fail: data frame %d tid %d peer %pM id %d",
+				q, tid, dp_peer->addr, dp_peer->peer_id);
+				spin_unlock_bh(&tx_flow_info->tx_q_lock);
+				return ret; //whether to return or continue
+			}
+			if (sw_msduq_ptr)
+				sw_msduq_ptr->tqm_send = 1;
+		}
+		sw_mpduq_ptr = tx_flow_info->tid_info[tid].mpduq;
+		ret = ath12k_dp_tqm_remove_mpduq_send(ab,
+						      sw_mpduq_ptr,
+						      dp_peer);
+		if (ret) {
+			ath12k_err(ab,
+				   "TQM MPDUQ fail: data frame tid %d peer %pM id %d",
+				   tid, dp_peer->addr, dp_peer->peer_id);
+			spin_unlock_bh(&tx_flow_info->tx_q_lock);
+			return ret; //whether to return or continue
+		}
+		if (sw_mpduq_ptr)
+			sw_mpduq_ptr->tqm_send = 1;
+	}
+
+	spin_unlock_bh(&tx_flow_info->tx_q_lock);
+	return ret;
+}
+
+int ath12k_dp_tqm_remove_mgmt_queues(struct ath12k_base *ab,
+				     struct ath12k_dp_peer *dp_peer)
+{
+	struct ath12k_dp_tx_flow_info *tx_flow_info;
+	struct ath12k_dp_msdu_q_info *sw_msduq_ptr = NULL;
+	struct ath12k_dp_mpdu_q_info *sw_mpduq_ptr = NULL;
+	int q;
+	int ret = 0;
+
+	tx_flow_info = ath12k_dp_get_tx_flow_info_from_peer(dp_peer);
+	spin_lock_bh(&tx_flow_info->tx_q_lock);
+
+	for (q = 0; q < MGMT_MSDUQ_TYPE_MAX; q++) {
+		sw_msduq_ptr = tx_flow_info->mgmt_msduq[q];
+		ret = ath12k_dp_tqm_remove_msduq_send(ab,
+						      sw_msduq_ptr,
+						      dp_peer);
+		if (ret) {
+			ath12k_err(ab,
+				   "TQM MSDUQ fail: MGMT frame %d peer %pM id %d",
+				   q, dp_peer->addr, dp_peer->peer_id);
+			spin_unlock_bh(&tx_flow_info->tx_q_lock);
+			return ret;
+		}
+		if (sw_msduq_ptr)
+			sw_msduq_ptr->tqm_send = 1;
+	}
+	sw_mpduq_ptr = tx_flow_info->mgmt_mpduq;
+	ret = ath12k_dp_tqm_remove_mpduq_send(ab,
+					      sw_mpduq_ptr,
+					      dp_peer);
+	if (ret) {
+		ath12k_err(ab,
+			   "TQM MPDUQ fail: MGMT frame peer %pM id %d",
+			   dp_peer->addr, dp_peer->peer_id);
+		spin_unlock_bh(&tx_flow_info->tx_q_lock);
+		return ret; //whether to return or continue
+	}
+	if (sw_mpduq_ptr)
+		sw_mpduq_ptr->tqm_send = 1;
+
+	spin_unlock_bh(&tx_flow_info->tx_q_lock);
+	return ret;
+}
+
+static inline
+int ath12k_dp_tqm_sync_remove_queues(struct ath12k_base *ab,
+				     struct ath12k_dp_peer *dp_peer,
+				     struct ath12k_dp_tx_queue *data)
+{
+	struct ath12k_hal_tqm_cmd cmd;
+	int ret = 0;
+
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.std.peer_id = 0xFFFF;
+	cmd.tqm_sync_params.cb_func = ath12k_dp_peer_cleanup_tqm_sync;
+	cmd.tqm_sync_params.cb_ctxt = dp_peer;
+	cmd.tqm_sync_params.cb_data = 0;
+	if (!cmd.tqm_sync_params.cb_func)
+		cmd.tqm_sync_params.data_only = 1;
+
+	ret = ath12k_wifi8_dp_tqm_cmd_send(ab, HAL_TQM_SYNC_CMD_BO, &cmd, data,
+					   ath12k_dp_peer_cleanup_tqm_sync);
+	return ret;
+}
+
+static inline
+int ath12k_dp_tqm_remove_queues_cmd(struct ath12k_base *ab,
+				    struct ath12k_dp_peer *dp_peer,
+				    u8 hw_link_id)
+{
+	struct ath12k_dp *central_dp = ath12k_get_central_dp(ab->dp);
+	struct ath12k_dp_tx_queue data;
+	int ret_mcast = 0, ret_data = 0, ret_mgmt = 0, ret_sync = 0;
+	//do we need to do this only for primary peer?
+
+	ab = central_dp->ab;
+
+	if (dp_peer->is_vdev_peer) {
+		ret_mcast = ath12k_dp_tqm_remove_mcast_queues(ab, dp_peer);
+		if (ret_mcast) {
+			ath12k_err(ab,
+				   "Error: TQM Remove MCAST queue peer %d",
+				   dp_peer->peer_id);
+			return ret_mcast;
+		}
+	} else {
+		ret_data = ath12k_dp_tqm_remove_data_queues(ab, dp_peer);
+		ret_mgmt = ath12k_dp_tqm_remove_mgmt_queues(ab, dp_peer);
+		if (ret_data || ret_mgmt) {
+			ath12k_err(
+			ab,
+			"Error: TQM Remove DATA/MGMT queue peer %d ret_data %d ret_mgmt %d",
+			dp_peer->peer_id, ret_data, ret_mgmt);
+			return ret_data ? ret_data : ret_mgmt;
+		}
+	}
+	data.peer_id = dp_peer->peer_id;
+	data.hw_link_id = hw_link_id;
+	ret_sync = ath12k_dp_tqm_sync_remove_queues(ab, dp_peer, &data);
+	if (ret_sync) {
+		ath12k_err(ab, "Error: TQM SYNC peer %d",
+			   dp_peer->peer_id);
+		return ret_sync;
+	}
+	return 0;
+}
+
 void ath12k_dp_peer_cleanup_indication(struct ath12k_dp *dp,
 				       u16 peer_id,
 				       u8 hw_link_id)
@@ -397,6 +660,7 @@ void ath12k_dp_peer_cleanup_indication(struct ath12k_dp *dp,
 	struct ath12k_dp_hw *dp_hw;
 	struct ath12k_dp_peer *dp_peer;
 	u8 pdev_id;
+	int ret = 0;
 
 	pdev_id = ath12k_hw_mac_id_to_pdev_id(dp->hw_params,
 					      dp_hw_grp->hw_links[hw_link_id].pdev_idx);
@@ -436,31 +700,15 @@ void ath12k_dp_peer_cleanup_indication(struct ath12k_dp *dp,
 		return;
 	}
 
-	if (dp_peer->dp_peer_state < ATH12K_DP_PEER_LOGICALLY_DELETED) {
-		ath12k_dp_ast_entry_delete(dp->dp_hw_grp,
-					   dp_peer->peer_ext_ctx->ast_index);
+	ret = ath12k_dp_tqm_remove_queues_cmd(dp->ab, dp_peer, hw_link_id);
+	if (ret) {
+		ath12k_err(dp->ab,
+			   "ERROR: TQM REMOVE QUEUE CMD peer %d",
+			   dp_peer->peer_id);
 	}
 
-	/*
-	 * 1. Free the MSDUQ Queues
-	 * 2. Free the MPDU Queues
-	 * 3. Free the PN Address
-	 * 4. Free who classify info
-	 */
-
-	kfree(dp_peer->peer_ext_ctx);
-	dp_peer->peer_ext_ctx = NULL;
-
-	if (dp_peer->dp_peer_state < ATH12K_DP_PEER_LOGICALLY_DELETED) {
-		dp_peer->dp_peer_state = ATH12K_DP_PEER_LOGICALLY_DELETED;
-		spin_unlock_bh(&dp_hw->peer_lock);
-		rcu_read_unlock();
-	} else {
-		ath12k_wifi8_dp_peer_cleanup(dp_hw, dp_peer);
-		spin_unlock_bh(&dp_hw->peer_lock);
-		rcu_read_unlock();
-		kfree_rcu(dp_peer, rcu_head);
-	}
+	rcu_read_unlock();
+	spin_unlock_bh(&dp_hw->peer_lock);
 }
 
 void ath12k_wifi8_dp_link_peer_assoc(struct ath12k_dp_hw *dp_hw,

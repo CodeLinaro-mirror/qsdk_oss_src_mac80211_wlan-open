@@ -412,7 +412,6 @@ void *ath12k_hal_srng_dst_get_next_entry(struct ath12k_base *ab,
 
 	if (srng->u.dst_ring.tp == srng->u.dst_ring.cached_hp)
 		return NULL;
-
 	desc = srng->ring_base_vaddr + srng->u.dst_ring.tp;
 
 	srng->u.dst_ring.tp = (srng->u.dst_ring.tp + srng->entry_size);

@@ -346,6 +346,9 @@ static int ath12k_dp_srng_calculate_msi_group(struct ath12k_base *ab,
 	case HAL_TCL_STATUS:
 		grp_mask = &ab->hw_params->ring_mask->tcl_status[0];
 		break;
+	case HAL_TQM_STATUS:
+		grp_mask = &ab->hw_params->ring_mask->tqm_status[0];
+		break;
 	case HAL_RXDMA_MONITOR_BUF:
 		grp_mask = &ab->hw_params->ring_mask->host2rxmon[0];
 		size = ATH12K_EXT_IRQ_GRP_NUM_MAX;
@@ -572,6 +575,8 @@ skip_dma_alloc:
 	case HAL_TCL_DATA:
 	case HAL_TCL_CMD:
 	case HAL_TCL_STATUS:
+	case HAL_TQM_CMD:
+	case HAL_TQM_STATUS:
 	case HAL_WBM_IDLE_LINK:
 	case HAL_SW2WBM_RELEASE:
 	case HAL_RXDMA_DST:
