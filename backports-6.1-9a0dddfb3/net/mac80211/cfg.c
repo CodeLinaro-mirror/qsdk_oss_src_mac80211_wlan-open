@@ -1999,7 +1999,7 @@ static int ieee80211_stop_ap(struct wiphy *wiphy, struct net_device *dev,
 
 	link_conf = link->conf;
 	old_beacon = sdata_dereference(link->u.ap.beacon, sdata);
-	if (!old_beacon)
+	if (!old_beacon && !wdev_is_scan_radio(wdev))
 		return -ENOENT;
 	old_probe_resp = sdata_dereference(link->u.ap.probe_resp,
 					   sdata);
