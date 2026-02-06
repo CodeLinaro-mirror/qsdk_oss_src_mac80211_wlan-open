@@ -10439,6 +10439,16 @@ ath12k_mac_set_peer_ht_fixed_rate(struct ath12k_link_vif *arvif,
 	return ret;
 }
 
+static enum wmi_phy_mode ath12k_mac_get_phymode(struct ath12k *ar,
+						enum nl80211_band band,
+						enum nl80211_chan_width width)
+{
+	if (ath12k_scan_radio_supported(ar->pdev))
+		return ath12k_ax_phymodes[band][width];
+	else
+		return ath12k_phymodes[band][width];
+}
+
 static int ath12k_mac_set_6g_nonht_dup_conf(struct ath12k_link_vif *arvif,
 					    const struct cfg80211_chan_def *chandef)
 {
@@ -10448,8 +10458,10 @@ static int ath12k_mac_set_6g_nonht_dup_conf(struct ath12k_link_vif *arvif,
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ieee80211_bss_conf *link_conf;
 	bool is_psc = cfg80211_channel_is_psc(chandef->chan);
-	enum wmi_phy_mode mode = ath12k_phymodes[chandef->chan->band][chandef->width];
+	enum wmi_phy_mode mode = MODE_UNKNOWN;
 	bool nontransmitted;
+
+	mode = ath12k_mac_get_phymode(ar, chandef->chan->band, chandef->width);
 
         rcu_read_lock();
         link_conf = ath12k_mac_get_link_bss_conf(arvif);
@@ -19517,7 +19529,10 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 		arg.freq = chandef->chan->center_freq;
 		arg.band_center_freq1 = chandef->center_freq1;
 		arg.band_center_freq2 = chandef->center_freq2;
-		arg.mode = ath12k_phymodes[chandef->chan->band][chandef->width];
+
+		arg.mode = ath12k_mac_get_phymode(ar,
+						  chandef->chan->band,
+						  chandef->width);
 
 		arg.mode = ath12k_mac_check_down_grade_phy_mode(ar, arg.mode,
 								chandef->chan->band,
@@ -20073,13 +20088,8 @@ ath12k_mac_multi_vdev_restart(struct ath12k *ar,
 	arg.vdev_start_arg.freq = chandef->chan->center_freq;
 	arg.vdev_start_arg.band_center_freq1 = chandef->center_freq1;
 	arg.vdev_start_arg.band_center_freq2 = chandef->center_freq2;
-	if (ath12k_scan_radio_supported(ar->pdev)) {
-		arg.vdev_start_arg.mode =
-			ath12k_ax_phymodes[chandef->chan->band][chandef->width];
-	} else {
-		arg.vdev_start_arg.mode =
-			ath12k_phymodes[chandef->chan->band][chandef->width];
-	}
+	arg.vdev_start_arg.mode =
+		ath12k_mac_get_phymode(ar, chandef->chan->band, chandef->width);
 
 	arg.vdev_start_arg.min_power = 0;
 	arg.vdev_start_arg.max_power = chandef->chan->max_power;
@@ -23687,7 +23697,9 @@ int ath12k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 
 	arg->chan_list.chan = chaninfo;
 	arg->chan_list.chan[0].freq = chan->center_freq;
-	arg->chan_list.chan[0].phymode = ath12k_phymodes[chandef->chan->band][chandef->width];
+
+	arg->chan_list.chan[0].phymode =
+		ath12k_mac_get_phymode(ar, chandef->chan->band, chandef->width);
 
 	/* Wide Band Scan is required for bandwidth > 20_NoHT mode */
 	if (chandef->width > NL80211_CHAN_WIDTH_20_NOHT) {
