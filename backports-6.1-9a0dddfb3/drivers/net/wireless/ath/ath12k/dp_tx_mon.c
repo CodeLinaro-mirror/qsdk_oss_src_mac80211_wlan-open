@@ -7,6 +7,288 @@
 #include "dp_tx_mon.h"
 
 /**
+ * ath12k_dp_mon_tx_setup_ppdu_desc() - Setup TX monitor PPDU descriptor pool
+ * @dp_pdev: Pointer to DP PDEV context for device-specific operations
+ *
+ * This function initializes the TX monitor PPDU descriptor pool and associated
+ * management structures. It allocates memory for descriptor pool, initializes
+ * list management structures, and populates the free descriptor list for
+ * efficient descriptor allocation during TX monitor operations.
+ *
+ * The function performs the following initialization sequence:
+ * 1. Allocates memory pool for PPDU descriptors using kcalloc()
+ * 2. Initializes spinlock for thread-safe descriptor list operations
+ * 3. Initializes free, used, and processing descriptor lists
+ * 4. Populates free list with all allocated descriptors
+ * 5. Updates statistics counters for descriptor tracking
+ *
+ * Context: Called during TX monitor initialization in process context
+ * Locking: Initializes and uses tx_mon_ppdu_desc_lock for list operations
+ *
+ * Return: 0 on success, -ENOMEM on memory allocation failure
+ */
+static int
+ath12k_dp_mon_tx_setup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	size_t alloc_size = sizeof(struct ath12k_dp_mon_ppdu_desc);
+	int i;
+
+	if (dp_mon_pdev->tx_mon_ppdu_desc_pool) {
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "TX monitor PPDU desc pool already allocated, reusing\n");
+		dp_mon_pdev->tx_mon_ppdu_desc_initialized = true;
+		return 0;
+	}
+
+	dp_mon_pdev->tx_mon_ppdu_desc_pool = kcalloc(ATH12K_DP_MON_NUM_PPDU_DESC,
+						     alloc_size, GFP_KERNEL);
+	if (unlikely(!dp_mon_pdev->tx_mon_ppdu_desc_pool)) {
+		ath12k_warn(dp_pdev->dp->ab,
+			    "Failed to allocate monitor PPDU desc pool\n");
+		return -ENOMEM;
+	}
+
+	ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+		   "TX MON SETUP: Allocated PPDU desc pool at %p, size=%zu\n",
+		   dp_mon_pdev->tx_mon_ppdu_desc_pool,
+		   alloc_size * ATH12K_DP_MON_NUM_PPDU_DESC);
+
+	spin_lock_init(&dp_mon_pdev->tx_mon_ppdu_desc_lock);
+	INIT_LIST_HEAD(&dp_mon_pdev->tx_mon_ppdu_desc_free_list);
+	INIT_LIST_HEAD(&dp_mon_pdev->tx_mon_ppdu_desc_used_list);
+	INIT_LIST_HEAD(&dp_mon_pdev->tx_mon_ppdu_desc_proc_list);
+
+	spin_lock_bh(&dp_mon_pdev->tx_mon_ppdu_desc_lock);
+	for (i = 0; i < ATH12K_DP_MON_NUM_PPDU_DESC; i++) {
+		INIT_LIST_HEAD(&dp_mon_pdev->tx_mon_ppdu_desc_pool[i].list);
+		list_add_tail(&dp_mon_pdev->tx_mon_ppdu_desc_pool[i].list,
+			      &dp_mon_pdev->tx_mon_ppdu_desc_free_list);
+		dp_mon_pdev->mon_stats.ppdu_desc_free++;
+	}
+	spin_unlock_bh(&dp_mon_pdev->tx_mon_ppdu_desc_lock);
+	dp_mon_pdev->tx_mon_ppdu_desc_initialized = true;
+
+	return 0;
+}
+
+/**
+ * ath12k_dp_mon_tx_wq_init() - Initialize TX monitor work queue
+ * @dp_pdev: DP pdev handle
+ *
+ * This function initializes the TX monitor work queue and related structures.
+ * with proper error handling and initialization order.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static int ath12k_dp_mon_tx_wq_init(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev;
+	struct ath12k_mon_data *mon_data;
+	size_t radiotap_vendor_size = sizeof(struct ieee80211_radiotap_vendor_ns) +
+		sizeof(struct ath12k_rtap_vendor_ns);
+
+	if (!dp_pdev || !dp_pdev->dp_mon_pdev)
+		return -EINVAL;
+
+	dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	mon_data = &dp_mon_pdev->mon_data;
+	if (!mon_data->rtap_vendor_tlv) {
+		mon_data->rtap_vendor_tlv = kzalloc(radiotap_vendor_size,
+						    GFP_KERNEL);
+		if (!mon_data->rtap_vendor_tlv)
+			return -ENOMEM;
+
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "TX monitor vendor TLV allocated\n");
+	} else {
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "TX monitor vendor TLV already allocated, reusing\n");
+	}
+
+	if (WARN_ON(dp_mon_pdev->txmon_wq)) {
+		ath12k_err(dp_pdev->dp->ab,
+			   "TX monitor work queue not cleaned up properly\n");
+		return -EINVAL;
+	}
+
+	INIT_LIST_HEAD(&dp_mon_pdev->tx_mon_desc_work_list);
+
+	dp_mon_pdev->txmon_wq =
+		alloc_workqueue("ath12k_txmon_wq",
+				WQ_UNBOUND, 1);
+	if (!dp_mon_pdev->txmon_wq) {
+		ath12k_warn(dp_pdev->dp->ab,
+			    "TX monitor work queue allocation failed\n");
+		goto free_vendor_tlv;
+	}
+
+	return 0;
+
+free_vendor_tlv:
+	kfree(mon_data->rtap_vendor_tlv);
+	mon_data->rtap_vendor_tlv = NULL;
+	return -ENOMEM;
+}
+
+/**
+ * ath12k_dp_mon_tx_cleanup_ppdu_desc() - Cleanup TX monitor PPDU descriptors
+ * @dp_pdev: Pointer to DP PDEV context for cleanup operations
+ *
+ * This function performs complete cleanup of TX monitor PPDU descriptor pool
+ * and associated resources. It safely deallocates the descriptor pool memory
+ * and resets the pool pointer to prevent use-after-free conditions.
+ *
+ * The function ensures safe cleanup by:
+ * 1. Acquiring the descriptor pool spinlock to prevent concurrent access
+ * 2. Freeing the allocated descriptor pool memory using kfree()
+ * 3. Setting the pool pointer to NULL to prevent dangling pointer access
+ * 4. Releasing the spinlock after cleanup completion
+ *
+ * Context: Called during TX monitor shutdown in process context
+ * Locking: Uses tx_mon_ppdu_desc_lock for safe memory deallocation
+ */
+static void ath12k_dp_mon_tx_cleanup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+
+	if (!dp_mon_pdev)
+		return;
+
+	spin_lock_bh(&dp_mon_pdev->tx_mon_ppdu_desc_lock);
+	kfree(dp_mon_pdev->tx_mon_ppdu_desc_pool);
+	dp_mon_pdev->tx_mon_ppdu_desc_pool = NULL;
+	dp_mon_pdev->tx_mon_ppdu_desc_initialized = false;
+	spin_unlock_bh(&dp_mon_pdev->tx_mon_ppdu_desc_lock);
+}
+
+/**
+ * ath12k_dp_mon_tx_wq_deinit() - Deinitialize TX monitor work queue
+ * @dp_pdev: DP pdev handle
+ *
+ * This function deinitializes the TX monitor work queue and frees resources.
+ */
+static void ath12k_dp_mon_tx_wq_deinit(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev;
+	struct ath12k_mon_data *mon_data;
+
+	if (!dp_pdev || !dp_pdev->dp_mon_pdev)
+		return;
+
+	dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	mon_data = &dp_mon_pdev->mon_data;
+
+	if (dp_mon_pdev->txmon_wq) {
+		cancel_work_sync(&dp_mon_pdev->txmon_work);
+		destroy_workqueue(dp_mon_pdev->txmon_wq);
+		dp_mon_pdev->txmon_wq = NULL;
+	}
+
+	kfree(mon_data->rtap_vendor_tlv);
+	mon_data->rtap_vendor_tlv = NULL;
+}
+
+/**
+ * ath12k_dp_mon_tx_wq_start() - Start TX monitor work queue and PPDU descriptors
+ * @dp_pdev: Pointer to DP PDEV context for device access and configuration
+ * @mac_id: MAC ID for the physical device (used for logging and identification)
+ *
+ * This function initializes the TX monitor work queue infrastructure and sets up
+ * PPDU descriptor management for TX monitor functionality. It should be called
+ * after basic TX monitor ring allocation is complete but before any TX monitor
+ * operations begin.
+ *
+ * The function performs initialization in the following order:
+ * 1. Setup PPDU descriptors for TX monitor frame processing
+ * 2. Initialize work queue for asynchronous TX monitor processing
+ * 3. Provide proper cleanup on any failure
+ *
+ * This function is typically called during interface bring-up or when TX monitor
+ * functionality needs to be activated. It complements the basic resource allocation
+ * done in ath12k_dp_mon_tx_pdev_alloc().
+ *
+ * Context: Can be called from process context during interface initialization.
+ * Locking: Uses internal locking through architecture-specific operations.
+ *
+ * Return: 0 on success, negative error code on failure
+ *         -EINVAL if invalid parameters or missing operations
+ *         Architecture-specific error codes from setup operations
+ */
+int ath12k_dp_mon_tx_wq_start(struct ath12k_pdev_dp *dp_pdev, u32 mac_id)
+{
+	int ret = 0;
+
+	if (unlikely(!dp_pdev)) {
+		ath12k_err(NULL, "Tx Mon: Invalid DP Pdev\n");
+		return -EINVAL;
+	}
+
+	ret = ath12k_dp_mon_tx_setup_ppdu_desc(dp_pdev);
+	if (ret) {
+		ath12k_warn(dp_pdev->dp->ab,
+			    "failed to setup TX mon ppdu desc: %d\n", ret);
+		return ret;
+	}
+
+	ret = ath12k_dp_mon_tx_wq_init(dp_pdev);
+	if (ret) {
+		ath12k_warn(dp_pdev->dp->ab,
+			    "failed to init TX mon workqueue for pdev_id %d: %d\n",
+			    mac_id, ret);
+		goto cleanup_ppdu_desc;
+	}
+	return 0;
+
+cleanup_ppdu_desc:
+	ath12k_dp_mon_tx_cleanup_ppdu_desc(dp_pdev);
+	return ret;
+}
+
+/**
+ * ath12k_dp_mon_tx_wq_stop() - Stop TX monitor work queue and cleanup descriptors
+ * @dp_pdev: Pointer to DP PDEV context for cleanup operations
+ *
+ * This function performs complete cleanup of TX monitor work queue infrastructure
+ * and PPDU descriptor resources. It should be called during interface shutdown
+ * or when TX monitor functionality needs to be deactivated.
+ *
+ * The function performs cleanup in the following order:
+ * 1. Deinitialize work queue and cancel any pending work
+ * 2. Cleanup PPDU descriptors and free associated resources
+ * 3. Ensure all resources are properly released
+ *
+ * This function is the counterpart to ath12k_dp_mon_tx_wq_start() and should
+ * be called during interface teardown. It complements the basic resource
+ * deallocation done in ath12k_dp_mon_tx_pdev_free().
+ *
+ * Context: Can be called from process context during interface shutdown.
+ * Locking: Uses internal locking through architecture-specific operations.
+ */
+void ath12k_dp_mon_tx_wq_stop(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev;
+
+	if (unlikely(!dp_pdev))
+		return;
+
+	dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	if (!dp_mon_pdev)
+		return;
+
+	if (dp_mon_pdev->tx_mon_wq_initialized) {
+		ath12k_dp_mon_tx_wq_deinit(dp_pdev);
+		dp_mon_pdev->tx_mon_wq_initialized = false;
+	}
+
+	if (dp_mon_pdev->tx_mon_ppdu_desc_initialized) {
+		ath12k_dp_mon_tx_cleanup_ppdu_desc(dp_pdev);
+		dp_mon_pdev->tx_mon_ppdu_desc_initialized = false;
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_wq_stop);
+
+/**
  * ath12k_dp_mon_tx_desc_free() - Free monitor descriptors
  * @local_list: List of descriptors to free
  * @dp_mon: DP monitor handle

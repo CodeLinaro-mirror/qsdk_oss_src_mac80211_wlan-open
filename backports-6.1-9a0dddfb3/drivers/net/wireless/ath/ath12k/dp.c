@@ -1182,6 +1182,12 @@ int ath12k_dp_pdev_pre_alloc(struct ath12k *ar)
 			goto mon_pdev_tx_free;
 		}
 
+		ret = ath12k_dp_mon_tx_wq_start(dp, dp->mac_id);
+		if (ret) {
+			ath12k_warn(ab, "failed to start TX mon WQ for mac_id %d: %d\n",
+				    dp->mac_id, ret);
+			goto mon_pdev_tx_free;
+		}
 		dp->dp_mon_pdev_configured = true;
 	}
 
