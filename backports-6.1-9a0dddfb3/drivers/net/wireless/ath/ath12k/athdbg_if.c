@@ -129,7 +129,7 @@ int athdbg_if_get_service(struct ath12k_base *ab, enum athdbg_service srv)
 		athdbg_do_dump_minidump(ab);
 		break;
 	case ATHDBG_SRV_COLLECT_MINIDUMP_REFERENCES:
-		athdbg_collect_reference_segments(ab);
+		athdbg_collect_reference_segments(ab, TRUE);
 		break;
 	case ATHDBG_SRV_QMI_DEINIT:
 		athdbg_qmi_deinit(ab);
