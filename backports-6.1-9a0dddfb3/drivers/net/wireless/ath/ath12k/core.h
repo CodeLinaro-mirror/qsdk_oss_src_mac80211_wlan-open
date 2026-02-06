@@ -1792,7 +1792,15 @@ struct ath12k_stats_work_context {
 	struct list_head work_list;
 };
 
-#define ATH12K_REPORT_LOW_ACK_NUM_PKT	0xFFFF
+#define ATH12K_OP_REPORT_LOW_ACK   0xC000
+#define ATH12K_OP_REPORT_RSSI      0x8000
+#define ATH12K_PAYLOAD_MASK        0x3FFF
+
+#define ATH12K_REPORT_LOW_ACK_ALL  (ATH12K_OP_REPORT_LOW_ACK | ATH12K_PAYLOAD_MASK)
+#define ATH12K_REPORT_RSSI_ALL     (ATH12K_OP_REPORT_RSSI | ATH12K_PAYLOAD_MASK)
+
+/* Legacy */
+#define ATH12K_REPORT_LOW_ACK_NUM_PKT   ATH12K_REPORT_LOW_ACK_ALL
 #define ATH12K_IS_UMAC_RESET_IN_PROGRESS        BIT(0)
 
 struct ath12k_mlo_dp_umac_reset {
