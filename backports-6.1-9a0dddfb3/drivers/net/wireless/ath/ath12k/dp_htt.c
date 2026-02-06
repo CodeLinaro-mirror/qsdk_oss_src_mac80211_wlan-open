@@ -1325,6 +1325,17 @@ void ath12k_htt_free_ppdu_info(struct ath12k_pdev_dp *dp_pdev,
 	}
 }
 
+static void
+ath12k_dp_htt_fill_user_stats_peer_mac(struct htt_ppdu_user_stats *user_stats,
+				       struct ath12k_dp_link_peer *peer)
+{
+	if (!peer) {
+		memset(user_stats->peer_mac, 0, ETH_ALEN);
+		return;
+	}
+	memcpy(user_stats->peer_mac, peer->addr, ETH_ALEN);
+}
+
 void ath12k_htt_update_ppdu_stats(struct ath12k_pdev_dp *dp_pdev,
 				  struct htt_ppdu_stats_info *ppdu_info)
 {
@@ -1352,6 +1363,7 @@ void ath12k_htt_update_ppdu_stats(struct ath12k_pdev_dp *dp_pdev,
 			continue;
 		}
 
+		ath12k_dp_htt_fill_user_stats_peer_mac(usr_stats, peer);
 		ath12k_dp_tx_ctrl_stats_update(dp_pdev, peer, user, ppdu_info);
 
 		if (ppdu_info->frame_type != HTT_STATS_PPDU_FTYPE_CTRL)

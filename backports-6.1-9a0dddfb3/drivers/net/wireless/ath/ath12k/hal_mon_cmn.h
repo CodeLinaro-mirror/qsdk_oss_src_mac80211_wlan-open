@@ -136,6 +136,7 @@ struct hal_rx_user_status {
 	u32 ba_bitmap[32];
 	u16 ba_bitmap_sz;
 	u16 aid;
+	u8 peer_mac[ETH_ALEN];
 };
 
 struct hal_rx_eht_info {
