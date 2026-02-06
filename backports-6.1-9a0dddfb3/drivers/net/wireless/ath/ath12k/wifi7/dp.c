@@ -451,6 +451,7 @@ static void ath12k_wifi7_dp_link_vif_configure(struct ath12k_dp *dp,
 		 */
 		ath12k_wifi7_hal_vdev_mcast_ctrl_set(ab, arvif->vdev_id,
 				HAL_TX_PACKET_CONTROL_CONFIG_TO_FW_EXCEPTION);
+		ath12k_mac_vif_unref(dp, ahvif->vif);
 		return;
 	} else if (optype == ATH12K_DP_OP_INIT) {
 		dp_link_vif->vdev_id = arvif->vdev_id;

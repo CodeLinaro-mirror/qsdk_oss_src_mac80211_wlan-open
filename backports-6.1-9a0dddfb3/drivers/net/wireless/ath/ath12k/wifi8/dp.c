@@ -447,6 +447,7 @@ static void ath12k_wifi8_dp_vif_configure(struct ath12k_dp *dp,
 		 */
 		ath12k_wifi8_hal_vdev_mcast_ctrl_set(central_ab, dp_vif->dp_vif_id,
 						HAL_TX_PACKET_CONTROL_CONFIG_DISABLE);
+		ath12k_mac_vif_unref(central_dp, ahvif->vif);
 		return;
 	} else if (optype == ATH12K_DP_OP_INIT) {
 		/*TODO keep vdev_id check disabled for initial emulation */
