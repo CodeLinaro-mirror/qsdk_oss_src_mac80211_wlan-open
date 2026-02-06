@@ -25,6 +25,7 @@ struct ath12k_link_sta;
 struct ath12k_dp_vif;
 enum ath12k_mlo_recovery_mode;
 enum ath12k_dp_tx_enq_error;
+struct ath12k_dp;
 
 struct ath12k_generic_iter {
 	struct ath12k *ar;
@@ -766,4 +767,5 @@ int ath12k_mac_op_set_mtu(struct ieee80211_hw *hw, struct ieee80211_vif *vif, in
 #endif
 void ath12k_mac_cache_smart_mon_filter(struct ath12k_pdev_dp *pdev, u8 smart_mon_filter);
 u8 ath12k_mac_get_cached_smart_mon_filter(struct ath12k_pdev_dp *pdev);
+void ath12k_mac_vif_unref(struct ath12k_dp *dp, struct ieee80211_vif *vif);
 #endif
