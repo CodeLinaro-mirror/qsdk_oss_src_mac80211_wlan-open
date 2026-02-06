@@ -85,11 +85,12 @@ struct hal_rx_tlv_aggr_info {
 
 struct hal_rx_user_status {
 	u32 mcs:4,
-	nss:3,
-	ofdma_info_valid:1,
-	ul_ofdma_ru_start_index:7,
-	ul_ofdma_ru_width:7,
-	ul_ofdma_ru_size:8;
+	    nss:3,
+	    ofdma_info_valid:1,
+	    ul_ofdma_ru_start_index:7,
+	    ul_ofdma_ru_width:7,
+	    ul_ofdma_ru_size:8,
+	    is_ampdu:1;
 	u32 ul_ofdma_user_v0_word0;
 	u32 ul_ofdma_user_v0_word1;
 	u16 ast_index; // End User Stat
@@ -300,6 +301,8 @@ struct hal_rx_mon_ppdu_info {
 	u16 punc_bw;
 	struct hal_rx_user_ctrl_frm_info ctrl_frm_info[HAL_MAX_UL_MU_USERS];
 	struct hal_mon_ppdu_info_extn ppdu_info_extn;
+	u8 ampdu_flag;
+	u8 band;
 };
 
 /* in the bitmap 0 indicates no puncturing and 1 indicate that sub channel is punctured */
@@ -411,16 +414,20 @@ struct hal_tx_mon_packet_info {
  * @ba_user_id: block ack user id. keeps track for ba payload build
  * @packet_info: packet information
  * @rx_status: monitor mode rx status information
+ * @rx_user_status: per user status
  */
 struct hal_tx_mon_ppdu_info {
 	u32 ppdu_id;
-	u8  num_users;
-	u32 cur_usr_idx : 8,
-	    ack_recvd : 1,
-	    cts_recvd : 1,
-	    su_or_mu :2,
-	    mu_type :1,
-	    reserved : 19;
+	u32 num_users      :8,
+	    is_used        :1,
+	    is_data        :1,
+	    cur_usr_idx    :8,
+	    ack_recvd      :1,
+	    cts_recvd      :1,
+	    su_or_mu       :2,
+	    mu_type        :1,
+	    is_sw_filter_done :1,
+	    reserved       :8;
 	u32 prot_tlv_status;
 	u8  ack_rssi;
 	u8  ba_user_id;

@@ -641,6 +641,172 @@ ath12k_dp_mon_tx_deep_free_ppdu_info(struct ath12k_pdev_dp *pdev_dp,
 }
 
 /**
+ * ath12k_dp_tx_mon_update_stats() - Update comprehensive TX monitor statistics
+ * @dp_pdev: DP PDEV context
+ * @ppdu_info: PPDU information from TLV parsing
+ *
+ * This function updates detailed TX monitor statistics based on parsed PPDU
+ * information. It tracks frame types, PHY modes, rates, transmission status,
+ * and other detailed metrics for monitoring and debugging purposes.
+ */
+static void ath12k_dp_tx_mon_update_stats(struct ath12k_pdev_dp *dp_pdev,
+					  struct dp_mon_tx_ppdu_info *ppdu_info)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev;
+	struct ath12k_pdev_tx_mon_stats *tx_stats;
+	struct hal_tx_mon_ppdu_info *tx_info;
+
+	if (unlikely(!dp_pdev || !ppdu_info))
+		return;
+
+	dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	if (unlikely(!dp_mon_pdev))
+		return;
+
+	tx_stats = &dp_mon_pdev->tx_mon_stats;
+	tx_info = &ppdu_info->tx_info;
+
+	tx_stats->tx_ppdu_processed++;
+
+	if (tx_info->is_data)
+		tx_stats->tx_data_frames++;
+
+	if (tx_info->num_users > 1) {
+		tx_stats->tx_mu_ppdu_count++;
+		tx_stats->tx_mu_user_count += tx_info->num_users;
+	} else {
+		tx_stats->tx_su_ppdu_count++;
+	}
+
+	dp_mon_pdev->mon_stats.num_ppdu_processed++;
+	if (tx_info->is_data)
+		dp_mon_pdev->mon_stats.pkt_tlv_processed++;
+}
+
+/**
+ * ath12k_dp_tx_mon_update_ampdu_info() - Update AMPDU aggregation information
+ * @ppdu_info: Pointer to PPDU information structure to update
+ * @user_idx: User index for multi-user scenarios (0-based)
+ *
+ * This function analyzes MPDU count and user status information to determine
+ * if the current transmission represents an AMPDU (Aggregated MPDU) and sets
+ * appropriate flags for radiotap header generation and frame analysis.
+ *
+ * AMPDU Detection Logic:
+ * The function uses different detection methods based on transmission type:
+ * - Single User: AMPDU detected when MPDU count > 1
+ * - Multi User: AMPDU detected when per-user MPDU count > 1 OR user has AMPDU flag set
+ *
+ * For single user transmissions, the function examines the total MPDU count
+ * in the PPDU. For multi-user transmissions, it analyzes per-user statistics
+ * from the rx_user_status array to determine aggregation on a per-user basis.
+ *
+ * When AMPDU is detected, the function sets the RX_FLAG_AMPDU_DETAILS flag
+ * in the rx_status structure, which is used by the radiotap generation code
+ * to include appropriate AMPDU information in monitor mode frames.
+ */
+static void
+ath12k_dp_tx_mon_update_ampdu_info(struct dp_mon_tx_ppdu_info *ppdu_info,
+				   u8 user_idx)
+{
+	struct hal_tx_mon_ppdu_info *tx_info = &ppdu_info->tx_info;
+	struct hal_rx_mon_ppdu_info *rx_status = &tx_info->rx_status;
+	bool is_ampdu = false;
+	u32 mpdu_count = 0;
+	struct hal_rx_user_status *rx_user_status = tx_info->rx_status.userstats;
+
+	if (tx_info->num_users == 1) {
+		mpdu_count = ppdu_info->num_mpdu_fcs_ok;
+		is_ampdu = (mpdu_count > 1);
+	} else if (user_idx < tx_info->num_users) {
+		mpdu_count = rx_user_status[user_idx].mpdu_cnt_fcs_ok;
+		is_ampdu = (mpdu_count > 1) || rx_user_status[user_idx].is_ampdu;
+	} else {
+		return;
+	}
+
+	if (is_ampdu)
+		rx_status->ampdu_flag |= RX_FLAG_AMPDU_DETAILS;
+}
+
+/**
+ * ath12k_dp_mon_tx_populate_ppdu_info() - Populate PPDU with channel and metadata
+ * @dp_pdev: Pointer to DP PDEV context for accessing radio information
+ * @status_desc: Pointer to status descriptor (currently unused but reserved)
+ * @mon_data: Pointer to monitor data containing PPDU information structures
+ *
+ * This function populates PPDU information structures with essential metadata
+ * including channel information, band classification, and AMPDU detection for
+ * both protection and data frame PPDUs. It serves as the central point for
+ * enriching hardware-provided PPDU data with software-derived information.
+ *
+ * Channel Information Population:
+ * The function extracts current channel information from the active radio
+ * context (ar->rx_channel) and populates both data and protection PPDU
+ * structures with:
+ * - Channel frequency in MHz for radiotap channel field
+ * - Channel number for protocol analysis
+ * - Band classification (2.4GHz, 5GHz, 6GHz) for proper frame handling
+ */
+static void
+ath12k_dp_mon_tx_populate_ppdu_info(struct ath12k_pdev_dp *dp_pdev,
+				    struct ath12k_dp_mon_status_desc *status_desc,
+				    struct ath12k_mon_data *mon_data)
+{
+	struct dp_mon_tx_ppdu_info *data_ppdu_info = &mon_data->data_ppdu_info;
+	struct dp_mon_tx_ppdu_info *prot_ppdu_info = &mon_data->prot_ppdu_info;
+	struct hal_tx_mon_ppdu_info *data_hal_info = &data_ppdu_info->tx_info;
+	struct hal_tx_mon_ppdu_info *prot_hal_info = &prot_ppdu_info->tx_info;
+	struct hal_rx_mon_ppdu_info *data_rx_status = &data_hal_info->rx_status;
+	struct hal_rx_mon_ppdu_info *prot_rx_status = &prot_hal_info->rx_status;
+	struct ath12k *ar = dp_pdev->ar;
+	u32 usr_idx, num_users;
+
+	num_users = data_hal_info->num_users;
+
+	if (ar && ar->rx_channel) {
+		u32 chan_freq = ar->rx_channel->center_freq;
+		u32 chan_num = ar->rx_channel->hw_value;
+		u32 band;
+
+		if (chan_freq >= 2412 && chan_freq <= 2484)
+			band = NL80211_BAND_2GHZ;
+		else if (chan_freq >= 5170 && chan_freq <= 5895)
+			band = NL80211_BAND_5GHZ;
+		else if (chan_freq >= 5925 && chan_freq <= 7125)
+			band = NL80211_BAND_6GHZ;
+		else
+			band = NL80211_BAND_2GHZ;
+
+		if (unlikely(!data_rx_status->freq)) {
+			data_ppdu_info->chan_freq = chan_freq;
+			data_ppdu_info->chan_num = chan_num;
+			data_rx_status->freq = chan_freq;
+			data_rx_status->chan_num = chan_num;
+			data_rx_status->band = band;
+		}
+
+		if (unlikely(!prot_rx_status->freq)) {
+			prot_ppdu_info->chan_freq = chan_freq;
+			prot_ppdu_info->chan_num = chan_num;
+			prot_rx_status->freq = chan_freq;
+			prot_rx_status->chan_num = chan_num;
+			prot_rx_status->band = band;
+		}
+	}
+
+	if (num_users == 1) {
+		ath12k_dp_tx_mon_update_ampdu_info(data_ppdu_info, 0);
+	} else {
+		for (usr_idx = 0;
+		     usr_idx < num_users && usr_idx < HAL_MAX_UL_MU_USERS;
+		     usr_idx++) {
+			ath12k_dp_tx_mon_update_ampdu_info(data_ppdu_info, usr_idx);
+		}
+	}
+}
+
+/**
  * ath12k_dp_tx_mon_process_ppdu() - Work queue handler for TX monitor
  * @work: Work structure containing the monitor pdev context
  *
@@ -721,6 +887,15 @@ void ath12k_dp_tx_mon_process_ppdu(struct work_struct *work)
 						   status_desc->paddr,
 						   ATH12K_DP_MON_TX_BUF_SIZE,
 						   DMA_FROM_DEVICE);
+
+			ath12k_dp_mon_tx_populate_ppdu_info(pdev_dp,
+							    status_desc,
+							    mon_data);
+
+			if (status_desc->end_of_ppdu) {
+				ath12k_dp_tx_mon_update_stats(pdev_dp,
+							      &mon_data->data_ppdu_info);
+			}
 
 			page_frag_free(status_desc->mon_buf);
 			status_desc->mon_buf = NULL;
