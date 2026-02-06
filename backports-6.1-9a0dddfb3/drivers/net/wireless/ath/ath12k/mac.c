@@ -18370,7 +18370,7 @@ exit:
 }
 EXPORT_SYMBOL(ath12k_mac_op_add_interface);
 
-static void ath12k_mac_vif_unref(struct ath12k_dp *dp, struct ieee80211_vif *vif)
+void ath12k_mac_vif_unref(struct ath12k_dp *dp, struct ieee80211_vif *vif)
 {
 	struct ath12k_tx_desc_info *tx_desc_info;
 	struct ath12k_skb_cb *skb_cb;
@@ -18405,6 +18405,7 @@ static void ath12k_mac_vif_unref(struct ath12k_dp *dp, struct ieee80211_vif *vif
 		spin_unlock_bh(&dp->tx_desc_lock[i]);
 	}
 }
+EXPORT_SYMBOL(ath12k_mac_vif_unref);
 
 bool ath12k_mac_validate_active_radio_count(struct ath12k_hw *ah)
 {
@@ -18523,7 +18524,6 @@ err_vdev_del:
 
 	if (!ath12k_scan_radio_supported(ar->pdev)) {
 		dp = ath12k_ab_to_dp(ab);
-		ath12k_mac_vif_unref(dp, vif);
 		ath12k_dp_arch_dp_link_vif_configure(ab->dp, ahvif, arvif->link_id,
 						     ATH12K_DP_OP_DEINIT);
 		if (arvif->splitphy_ds_bank_id != DP_INVALID_BANK_ID)

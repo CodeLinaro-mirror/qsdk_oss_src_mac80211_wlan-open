@@ -3163,7 +3163,7 @@ int ath12k_wifi8_dp_rx_process_err(struct ath12k_dp *dp,
 	struct ath12k_rx_desc_info *desc_info;
 	struct ath12k_device_dp_stats *device_stats = &dp->device_stats;
 	u8 hw_link_id;
-	int ret, pdev_id;
+	int ret;
 	struct hal_rx_desc *msdu_data;
 	struct ath12k_vif *ahvif;
 	struct ath12k_dp_link_peer *link_peer;
@@ -3310,7 +3310,7 @@ int ath12k_wifi8_dp_rx_process_err(struct ath12k_dp *dp,
 		}
 		ar = dp_pdev->ar;
 
-		if (!ar || !rcu_dereference(ar->ab->pdevs_active[pdev_id])) {
+		if (!ar || !rcu_dereference(ar->ab->pdevs_active[dp_pdev->mac_id])) {
 			ath12k_wifi8_dp_rx_wbm_err_dev_free_skb(dp, msdu,
 								WBM_ERR_DROP_NULL_AR);
 			continue;
