@@ -4012,7 +4012,7 @@ ath12k_wifi7_hal_mon_tx_status_get_num_user(struct ath12k_hal *hal,
 		*num_users =
 		u32_get_bits(info,
 			     HAL_TX_MON_RX_RESPONSE_REQUIRED_INFO1_RESPONSE_STA_COUNT);
-		tlv_status = HAL_RX_MON_RESPONSE_REQUIRED_INFO;
+		tlv_status = HAL_TX_MON_RESPONSE_REQUIRED_INFO;
 		break;
 	}
 	}
@@ -4106,7 +4106,7 @@ ath12k_wifi7_hal_mon_tx_parse_status_tlv(struct ath12k_hal *hal,
 			status_info->transmission_type =
 						HAL_RX_RECEPTION_TYPE_MU_MIMO;
 
-		status = HAL_RX_MON_RESPONSE_REQUIRED_INFO;
+		status = HAL_TX_MON_RESPONSE_REQUIRED_INFO;
 		break;
 	}
 
