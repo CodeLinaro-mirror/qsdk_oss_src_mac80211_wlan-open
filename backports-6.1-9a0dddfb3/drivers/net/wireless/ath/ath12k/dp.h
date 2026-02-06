@@ -413,7 +413,6 @@ struct ath12k_tx_desc_info {
 	u8 pool_id;
 };
 
-//#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 struct ath12k_ppeds_tx_desc_info {
 	union {
 		u8 align[64];
@@ -436,7 +435,6 @@ struct ath12k_dp_tx_comp_status {
 	u32 desc_id;
 	int htt_status;
 };
-//#endif
 
 struct ath12k_spt_info {
 	dma_addr_t paddr;
