@@ -2642,6 +2642,8 @@ static int ath12k_wifi8_dp_rx_h_null_q_desc(struct ath12k_pdev_dp *dp_pdev,
 		return -EINVAL;
 	}
 
+	rx_msdu_info.first_msdu = rx_desc_data->is_first_msdu;
+	rx_msdu_info.last_msdu =  rx_desc_data->is_last_msdu;
 	rx_msdu_info.to_ds = rx_desc_data->is_to_ds;
 	rx_msdu_info.fr_ds = rx_desc_data->is_from_ds;
 	rx_msdu_info.da_is_mcbc = rx_desc_data->is_mcbc;
