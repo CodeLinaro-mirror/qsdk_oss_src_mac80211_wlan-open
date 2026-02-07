@@ -2452,6 +2452,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_MGMT_MPDU_FLOWQ_PARAMS = 0x514,
 	WMI_TAG_MGMT_MSDU_FLOWQ_PARAMS = 0x515,
 	WMI_TAG_HOL_MSDU_FLOWQ_PARAMS = 0x516,
+	WMI_TAG_MAC_PHY_CAPABILITIES_EXT2 = 0x526,
 	WMI_TAG_MLO_PEER_TID_TO_LINK_MAP_EVENT_FIXED_PARAM = 0x544,
 	WMI_TAG_PEER_ASSOC_CIP_INFO,
 	WMI_TAG_MAX
@@ -3327,8 +3328,8 @@ struct ath12k_wmi_soc_hal_reg_caps_params {
 #define WMI_MAX_EHTCAP_PHY_SIZE  3
 #define WMI_MAX_EHTCAP_RATE_SET  3
 
-#define WMI_MAX_UHRCAP_MAC_SIZE  2
-#define WMI_MAX_UHRCAP_PHY_SIZE  1
+#define WMI_MAX_UHRCAP_MAC_SIZE  4
+#define WMI_MAX_UHRCAP_PHY_SIZE  8
 
 /* Used for EHT MCS-NSS array. Data at each array index follows the format given
  * in IEEE P802.11be/D2.0, May 20229.4.2.313.4.
@@ -3389,6 +3390,13 @@ struct ath12k_wmi_caps_ext_params {
 	__le32 eml_capability;
 	__le32 mld_capability;
 	__le32 ext_mld_capability;
+} __packed;
+
+struct ath12k_wmi_caps_ext2_params {
+	__le32 hw_mode_id;
+	__le32 pdev_and_hw_link_ids;
+	__le32 phy_id;
+	__le32 wireless_modes_ext;
 	__le32 uhr_cap_mac_info_2ghz[WMI_MAX_UHRCAP_MAC_SIZE];
 	__le32 uhr_cap_mac_info_5ghz[WMI_MAX_UHRCAP_MAC_SIZE];
 	__le32 uhr_cap_phy_info_2ghz[WMI_MAX_UHRCAP_PHY_SIZE];
@@ -9682,6 +9690,18 @@ ath12k_wmi_caps_ext_get_pdev_id(const struct ath12k_wmi_caps_ext_params *param)
 
 static inline u32
 ath12k_wmi_caps_ext_get_hw_link_id(const struct ath12k_wmi_caps_ext_params *param)
+{
+	return le32_get_bits(param->pdev_and_hw_link_ids, WMI_CAPS_PARAMS_HW_LINK_ID);
+}
+
+static inline u32
+ath12k_wmi_caps_ext2_get_pdev_id(const struct ath12k_wmi_caps_ext2_params *param)
+{
+	return le32_get_bits(param->pdev_and_hw_link_ids, WMI_CAPS_PARAMS_PDEV_ID);
+}
+
+static inline u32
+ath12k_wmi_caps_ext2_get_hw_link_id(const struct ath12k_wmi_caps_ext2_params *param)
 {
 	return le32_get_bits(param->pdev_and_hw_link_ids, WMI_CAPS_PARAMS_HW_LINK_ID);
 }
