@@ -7,6 +7,7 @@
 #define ATH12K_MGMT_RX_WIFI8_H
 
 #include "hw.h"
+#include "../mgmt_rx.h"
 
 struct ath12k_base;
 

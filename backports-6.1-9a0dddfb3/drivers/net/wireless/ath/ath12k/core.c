@@ -42,6 +42,7 @@
 #include "erp.h"
 #include "sdwf.h"
 #include "telemetry_agent_if.h"
+#include "mgmt_rx.h"
 
 #ifdef CPTCFG_ATHDEBUG
 #include "athdbg_if.h"

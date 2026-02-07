@@ -55,7 +55,6 @@
 #endif
 #endif
 #endif
-#include "mgmt_rx.h"
 
 #ifdef CPTCFG_ATHDEBUG
 #include "ath_debug/athdbg_qmi.h"
@@ -154,6 +153,8 @@ extern bool ath12k_mlo_3_link_tx;
 extern bool ath12k_waltest_mode;
 struct ath12k_dp;
 struct ath12k_hp_update_timer;
+struct ath12k_mgmt;
+struct ath12k_mgmt_irq_grp;
 
 /* Wifi classifier metadata
  * ----------------------------------------------------------------------------
