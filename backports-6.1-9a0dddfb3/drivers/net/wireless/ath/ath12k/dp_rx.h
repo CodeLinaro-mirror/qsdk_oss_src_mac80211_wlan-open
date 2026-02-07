@@ -312,4 +312,7 @@ void ath12k_dp_rx_skb_free(struct sk_buff *skb, struct ath12k_dp *dp, int ring,
 void ath12k_dp_rx_classify_mscs(struct ath12k_base *ab,
 				struct ath12k_dp_peer *peer,
 				struct sk_buff *msdu, u8 tid);
+void ath12k_dp_rx_peer_tid_ba_config(struct ath12k_dp *dp, u8 tid, u32 *ba_win_size,
+				     u16 *ssn);
+bool ath12k_dp_rx_peer_tid_skip_pn_replay(struct ath12k_dp *dp, u8 tid);
 #endif /* ATH12K_DP_RX_H */

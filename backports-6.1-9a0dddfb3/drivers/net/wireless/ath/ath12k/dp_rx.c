@@ -940,7 +940,7 @@ int ath12k_dp_rx_peer_pn_replay_config(struct ath12k_link_vif *arvif,
 
 	for (tid = 0; tid < ab->hal.hal_params->num_tids; tid++) {
 		rx_tid = &peer->dp_peer->rx_tid[tid];
-		if (!rx_tid->active)
+		if (!rx_tid->active || ath12k_dp_rx_peer_tid_skip_pn_replay(dp, tid))
 			continue;
 
 		ath12k_dp_arch_setup_pn_check_reo_cmd(dp, &cmd, rx_tid, key->cipher,
@@ -1764,3 +1764,22 @@ void ath12k_dp_rx_skb_free(struct sk_buff *skb, struct ath12k_dp *dp, int ring,
 	dev_kfree_skb_any(skb);
 }
 EXPORT_SYMBOL(ath12k_dp_rx_skb_free);
+
+void ath12k_dp_rx_peer_tid_ba_config(struct ath12k_dp *dp, u8 tid, u32 *ba_win_size,
+				     u16 *ssn)
+{
+	*ba_win_size = 1;
+	*ssn = 0;
+
+	if (dp->ab->hw_params->hw_ops->rx_peer_ba_config)
+		dp->ab->hw_params->hw_ops->rx_peer_ba_config(dp->ab, tid, ba_win_size,
+							    ssn);
+}
+
+bool ath12k_dp_rx_peer_tid_skip_pn_replay(struct ath12k_dp *dp, u8 tid)
+{
+	if  (dp->ab->hw_params->hw_ops->rx_peer_tid_skip_pn_replay)
+		return dp->ab->hw_params->hw_ops->rx_peer_tid_skip_pn_replay(dp->ab, tid);
+
+	return false;
+}

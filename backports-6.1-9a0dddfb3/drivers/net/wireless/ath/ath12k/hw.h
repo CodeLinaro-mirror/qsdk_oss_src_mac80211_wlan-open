@@ -350,6 +350,9 @@ struct ath12k_hw_ops {
 				  struct ath12k_cfr_peer_tx_param *params);
 	bool (*hw_link_id_required_in_mgmt_send)(struct ath12k_base *ab);
 	int (*mgmt_rxdma_ring_sel_config)(struct ath12k_base *ab);
+	void (*rx_peer_ba_config)(struct ath12k_base *ab, u8 tid, u32 *ba_win_size,
+				  u16 *ssn);
+	bool (*rx_peer_tid_skip_pn_replay)(struct ath12k_base *ab, u8 tid);
 };
 
 static inline
