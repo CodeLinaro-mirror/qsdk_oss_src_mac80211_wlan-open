@@ -335,11 +335,35 @@ struct dp_mon_mpdu {
  *            Provides channel context for frame analysis and filtering
  * @num_mpdu_fcs_ok: Count of MPDUs within this PPDU that passed FCS validation.
  *                   Used for statistics and determining transmission success rate
- *
- * This structure represents a complete PPDU (PHY Protocol Data Unit) captured
- * by the TX monitor functionality. It combines hardware-provided metadata from
- * the HAL layer with software-managed buffer information for efficient frame
- * processing and delivery to the monitor stack.
+ * @buffer_addr: Virtual address of extracted packet buffer from hardware descriptor
+ *   - Points to page fragment containing actual packet data
+ *   - Ownership transferred from monitor descriptor during BUFFER_ADDR TLV processing
+ *   - Set to NULL after fragment is added to SKB (when take_ref=false)
+ *   - Used by ath12k_dp_tx_mon_generate_data_frm() to add fragments
+ *   - Must be freed with page_frag_free() if not consumed by SKB
+ * @buffer_length: Length of valid data in buffer_addr in bytes
+ *   - Extracted from packet_info->dma_length during BUFFER_ADDR processing
+ *   - Represents actual packet payload size, not buffer allocation size
+ *   - Used as fragment length when adding to SKB via skb_add_rx_frag()
+ *   - Must be <= ATH12K_DP_MON_TX_BUF_SIZE for validation
+ * @msdu_continuation: Indicates if this buffer is part of a fragmented MSDU
+ *   - true: More fragments follow for this MSDU
+ *                     - false: This is the last (or only) fragment of the MSDU
+ *                     - Extracted from packet_info->msdu_continuation
+ *                     - Used for proper MSDU reassembly in multi-fragment scenarios
+ * @truncated: Indicates if the packet data was truncated by hardware
+ *             - true: Packet was larger than buffer size, data is incomplete
+ *             - false: Complete packet data is available in buffer
+ *             - Extracted from packet_info->truncated
+ *             - Used for debugging and packet validation purposes
+ * @has_buffer_data: Flag indicating if valid buffer data is available
+ *      - true: buffer_addr contains valid packet data
+ *      - false: No buffer data available (e.g., control frames without payload)
+ *      - Set during BUFFER_ADDR TLV processing
+ *      - Checked by ath12k_dp_tx_mon_generate_data_frm() before adding fragments
+ *      - Reset to false after buffer ownership is transferred to SKB
+ * @contains_host_frames: True if this PPDU contains host-generated frames
+
  */
 struct dp_mon_tx_ppdu_info {
 	bool is_used;
@@ -349,6 +373,12 @@ struct dp_mon_tx_ppdu_info {
 	u16 chan_freq;
 	u16 chan_num;
 	u32 num_mpdu_fcs_ok;
+	void *buffer_addr;
+	u32 buffer_length;
+	bool msdu_continuation;
+	bool truncated;
+	bool has_buffer_data;
+	bool contains_host_frames;
 };
 
 #define SNR_INVALID 255
