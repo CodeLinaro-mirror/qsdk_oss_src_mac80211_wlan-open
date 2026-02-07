@@ -13,6 +13,7 @@
 #define HAL_RX_MAX_MPDU				256
 #define HAL_RX_NUM_WORDS_PER_PPDU_BITMAP	(HAL_RX_MAX_MPDU >> 5)
 #define EHT_MAX_USER_INFO	4
+#define UHR_MAX_USER_INFO	4
 #define HAL_MAX_UL_MU_USERS	37
 #define HAL_RX_MON_FCS_LEN	4
 
@@ -68,12 +69,16 @@ struct ath12k_mon_ring_desc_info;
 #define HAL_TLV_64_USR_ID		GENMASK(31, 26)
 
 struct hal_rx_u_sig_info {
+	u8 phy_version;
 	bool ul_dl;
 	u8 bw;
 	u8 ppdu_type_comp_mode;
 	u8 eht_sig_mcs;
 	u8 num_eht_sig_sym;
+	u16 sta_id;
+	u8 cosr_cobf_disable;
 	struct ieee80211_radiotap_eht_usig usig;
+	struct ieee80211_radiotap_uhr_usig uhr_usig;
 };
 
 struct hal_rx_tlv_aggr_info {
@@ -81,6 +86,20 @@ struct hal_rx_tlv_aggr_info {
 	u16 cur_len;
 	u16 tlv_tag;
 	u8 buf[HAL_RX_MON_MAX_AGGR_SIZE];
+};
+
+struct hal_rx_uhr_info {
+	u8 num_user_info;
+	struct hal_rx_radiotap_uhr uhr;
+	__le32 user_info[UHR_MAX_USER_INFO];
+	__le32 user_known[UHR_MAX_USER_INFO];
+};
+
+struct hal_rx_uhr_elr_info {
+	__le32 known;
+	__le32 sig1;
+	__le32 sig2;
+	__le32 mark;
 };
 
 struct hal_rx_user_status {
@@ -280,11 +299,16 @@ struct hal_rx_mon_ppdu_info {
 	u8 medium_prot_type;
 	bool ppdu_continuation;
 	bool eht_usig;
+	bool uhr_usig;
 	u8 usr_nss_sum;
 	u16 usr_ru_tones_sum;
 	struct hal_rx_u_sig_info u_sig_info;
 	bool is_eht;
+	bool is_uhr;
+	bool is_uhr_elr;
 	struct hal_rx_eht_info eht_info;
+	struct hal_rx_uhr_info uhr_info;
+	struct hal_rx_uhr_elr_info elr_info;
 	struct hal_rx_tlv_aggr_info tlv_aggr;
 	struct hal_rx_nrp_info nrp_info;
 	u32 errmap;
