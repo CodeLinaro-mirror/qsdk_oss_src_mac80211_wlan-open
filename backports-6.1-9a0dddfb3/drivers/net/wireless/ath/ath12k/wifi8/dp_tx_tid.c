@@ -10,8 +10,6 @@
 #include "../mac.h"
 #include "../ini.h"
 
-#define ATH12K_WDS_STA_HEADER_LEN 6
-
 struct ath12k_dp_mpdu_q_info
 *ath12k_alloc_peer_tid_mpduq(struct ath12k_dp_hw_group *dp_hw_grp,
 			     struct ath12k_dp_peer *peer,
@@ -123,8 +121,8 @@ u32 ath12k_wifi8_dp_tx_get_header_length(struct ath12k_dp_hw_group *dp_hw_grp,
 {
 	u32 header_len = 0;
 
-	if (peer->is_sta_bss_peer_4addr)
-		header_len += ATH12K_WDS_STA_HEADER_LEN;
+	if (peer->is_sta_bss_peer_4addr || peer->is_11s_mesh_peer)
+		header_len += ETH_ALEN;
 
 	header_len += ath12k_wifi8_dp_tx_get_he_header_length(dp_hw_grp,
 							      peer, tid_num);
