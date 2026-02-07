@@ -8,6 +8,7 @@
 
 #include "hw.h"
 #include "hal.h"
+#include "ini.h"
 
 struct ath12k_mgmt;
 
@@ -167,6 +168,12 @@ static inline int ath12k_mgmt_arch_htt_setup(struct ath12k_mgmt *mgmt)
 {
 	if (!mgmt || !mgmt->arch_ops->mgmt_op_htt_setup)
 		return 0;
+
+	if (ath12k_cfg_get(mgmt->ab, ATH12K_CFG_REO_MGMT_PATH_DISABLE)) {
+		ath12k_info(mgmt->ab,
+			    "REO2SW management path is disabled, not configuring RDIs");
+		return 0;
+	}
 
 	return mgmt->arch_ops->mgmt_op_htt_setup(mgmt);
 }
