@@ -1075,9 +1075,67 @@ void ath12k_wifi8_mgmt_op_device_deinit(struct ath12k_mgmt *mgmt)
 	ath12k_wifi8_mgmt_rx_ring_free(ab);
 }
 
+int ath12k_wifi8_mgmt_wbm_ring_sel_config_qcn9625(struct ath12k_base *ab)
+{
+	struct ath12k_mgmt *mgmt = ab->mgmt;
+	struct ath12k_mgmt_wifi8 *mgmt_wifi8 = ath12k_get_mgmt_wifi8(mgmt);
+	struct htt_rx_ring_tlv_filter tlv_filter = {0};
+	u32 hal_rx_desc_sz = ab->hal.hal_desc_sz;
+	int ret;
+
+	tlv_filter.rx_filter = HTT_RX_TLV_FLAGS_RXDMA_RING;
+	tlv_filter.rxmon_disable = true;
+	tlv_filter.enable_fp = 1;
+
+	ath12k_core_srng_get_htt_mgmt_filter(ab, &tlv_filter.fp_mgmt_filter);
+
+	tlv_filter.offset_valid = true;
+	tlv_filter.rx_packet_offset = hal_rx_desc_sz;
+
+	tlv_filter.rx_mpdu_start_offset =
+		ath12k_wifi8_hal_rx_desc_get_mpdu_start_offset_qcn9625();
+	tlv_filter.rx_msdu_end_offset =
+		ath12k_wifi8_hal_rx_desc_get_msdu_end_offset_qcn9625();
+
+	tlv_filter.rx_mpdu_start_wmask =
+		ath12k_wifi8_hal_rx_mpdu_start_wmask_get_qcn9625();
+	tlv_filter.rx_msdu_end_wmask =
+		ath12k_wifi8_hal_rx_msdu_end_wmask_get_qcn9625();
+
+	/* WBM Idle Buffer Pool 1 is used for mgmt */
+	tlv_filter.rdi_based_source_cfg =
+		ath12k_wifi8_hal_get_rdi_source_cfg(ab, SOURCE_RING_CTRL_MGMT);
+
+	/* TODO: Configure RX_MGMT and RX_MGMT_ERR ring RDI from host */
+
+	ath12k_dbg(ab, ATH12K_DBG_MGMT,
+		   "Configuring compact tlv masks: rx_mpdu_start_wmask 0x%x rx_msdu_end_wmask 0x%x",
+		   tlv_filter.rx_mpdu_start_wmask, tlv_filter.rx_msdu_end_wmask);
+
+	ret = ath12k_core_srng_htt_rx_filter_setup(ab,
+						   mgmt_wifi8->wbm_idle_buf_ring.ring_id,
+						   0, HAL_WBM_IDLE_BUF_MGMT,
+						   MGMT_RX_BUFFER_SIZE, &tlv_filter);
+
+	return ret;
+}
+
+static int ath12k_wifi8_mgmt_htt_setup(struct ath12k_mgmt *mgmt)
+{
+	struct ath12k_base *ab = mgmt->ab;
+	int ret;
+
+	ret = ab->hw_params->hw_ops->mgmt_rxdma_ring_sel_config(ab);
+	if (ret)
+		ath12k_err(ab, "Failed to set up MGMT rxdma ring selection: %d", ret);
+
+	return ret;
+}
+
 static struct ath12k_mgmt_arch_ops ath12k_wifi8_mgmt_arch_ops = {
 	.mgmt_op_device_init = ath12k_wifi8_mgmt_op_device_init,
 	.mgmt_op_device_deinit = ath12k_wifi8_mgmt_op_device_deinit,
+	.mgmt_op_htt_setup = ath12k_wifi8_mgmt_htt_setup,
 };
 
 struct ath12k_mgmt *ath12k_wifi8_mgmt_init(struct ath12k_base *ab)

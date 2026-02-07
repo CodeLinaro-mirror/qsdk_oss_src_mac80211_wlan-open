@@ -3397,20 +3397,6 @@ int ath12k_wifi8_dp_alloc_reo_qdesc(struct ath12k_base *ab,
 	return 0;
 }
 
-static int ath12k_wifi8_get_rdi_source_cfg(struct ath12k_base *ab, int source)
-{
-	struct ath12k_hal *hal = &ab->hal;
-	const struct ath12k_hal_rdi_mapping *rdi_mapping = hal->rdi_mapping;
-	unsigned long rdi_based_source_cfg = 0;
-	int i;
-
-	for (i = 0; i < HAL_RDI_MAPPING_MAX; i++)
-		if (rdi_mapping[i].source == source)
-			set_bit(i, &rdi_based_source_cfg);
-
-	return rdi_based_source_cfg;
-}
-
 static int ath12k_wifi8_dp_rx_wbm_idle_buf_0_config_qcn9625(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
@@ -3441,7 +3427,7 @@ static int ath12k_wifi8_dp_rx_wbm_idle_buf_0_config_qcn9625(struct ath12k_base *
 			ath12k_wifi8_hal_rx_msdu_end_wmask_get_qcn9625();
 
 	tlv_filter.rdi_based_source_cfg =
-			ath12k_wifi8_get_rdi_source_cfg(ab, SOURCE_RING_CTRL_SFE);
+			ath12k_wifi8_hal_get_rdi_source_cfg(ab, SOURCE_RING_CTRL_SFE);
 
 	ath12k_dbg(ab, ATH12K_DBG_DATA,
 		   "Configuring compact tlv masks rx_mpdu_start_wmask 0x%x rx_msdu_end_wmask 0x%x\n",

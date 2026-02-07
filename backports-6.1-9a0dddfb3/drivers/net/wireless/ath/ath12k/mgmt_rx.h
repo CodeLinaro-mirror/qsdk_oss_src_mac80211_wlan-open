@@ -64,6 +64,7 @@ struct mgmt_srng {
 struct ath12k_mgmt_arch_ops {
 	int (*mgmt_op_device_init)(struct ath12k_mgmt *mgmt);
 	void (*mgmt_op_device_deinit)(struct ath12k_mgmt *mgmt);
+	int (*mgmt_op_htt_setup)(struct ath12k_mgmt *mgmt);
 };
 
 struct ath12k_mgmt_irq_grp {
@@ -160,5 +161,13 @@ static inline void ath12k_mgmt_arch_op_device_deinit(struct ath12k_mgmt *mgmt)
 		return;
 
 	mgmt->arch_ops->mgmt_op_device_deinit(mgmt);
+}
+
+static inline int ath12k_mgmt_arch_htt_setup(struct ath12k_mgmt *mgmt)
+{
+	if (!mgmt || !mgmt->arch_ops->mgmt_op_htt_setup)
+		return 0;
+
+	return mgmt->arch_ops->mgmt_op_htt_setup(mgmt);
 }
 #endif
