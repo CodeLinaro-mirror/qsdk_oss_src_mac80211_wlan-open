@@ -841,7 +841,7 @@ struct rx_mpdu_desc_info {
 			    release_source_module		:  3,
 			    msdu_link_desc_index		:  4,
 			    ll_pkt				:  1,
-			    high_priority_pkt			:  1,
+			    high_priority_pkt			:  2,
 			    src_link_id				:  3,
 			    reo_push_reason			:  2,
 			    reo_error_code			:  5,
