@@ -849,6 +849,124 @@ ath12k_dp_tx_mon_gen_cts2self(struct ath12k_pdev_dp *pdev_dp,
 }
 
 /**
+ * ath12k_dp_tx_mon_gen_qos_null_3addr() - Generate 3-address QoS NULL frame
+ * @pdev_dp: Pointer to DP PDEV context for device-specific operations
+ * @ppdu_info: PPDU info structure
+ *
+ * Creates 3-address QoS NULL frame for medium protection. Uses standard
+ * 3-address data frame format without window-based logic.
+ *
+ * Return: Generated sk_buff or NULL on failure
+ */
+static struct sk_buff *
+ath12k_dp_tx_mon_gen_qos_null_3addr(struct ath12k_pdev_dp *pdev_dp,
+				    struct dp_mon_tx_ppdu_info *ppdu_info)
+{
+	struct sk_buff *skb;
+	struct ieee80211_qos_hdr *qos_null;
+	struct hal_tx_mon_ppdu_info *tx_info;
+	struct hal_tx_mon_status_info *status_info;
+	u16 duration_le;
+	u16 frame_control;
+	size_t qos_null_frame_size = sizeof(struct ieee80211_qos_hdr);
+
+	if (!ppdu_info)
+		return NULL;
+
+	tx_info = &ppdu_info->tx_info;
+
+	skb = dev_alloc_skb(ATH12K_DP_MON_MAX_RADIO_TAP_HDR +
+			    qos_null_frame_size);
+	if (!skb)
+		return NULL;
+
+	skb_reserve(skb, ATH12K_DP_MON_MAX_RADIO_TAP_HDR);
+
+	qos_null = (struct ieee80211_qos_hdr *)skb_put_zero(skb,
+							    qos_null_frame_size);
+
+	frame_control = IEEE80211_FTYPE_DATA | IEEE80211_STYPE_QOS_NULLFUNC;
+	qos_null->frame_control = cpu_to_le16(frame_control);
+
+	tx_info->rx_status.frame_control = frame_control;
+	tx_info->rx_status.frame_control_info_valid = 1;
+
+	duration_le = cpu_to_le16(tx_info->rx_status.rx_duration);
+	qos_null->duration_id = duration_le;
+
+	status_info = &pdev_dp->dp_mon_pdev->mon_data.data_status_info;
+	memcpy(qos_null->addr1, status_info->addr1, ETH_ALEN);
+	memcpy(qos_null->addr2, status_info->addr2, ETH_ALEN);
+	memcpy(qos_null->addr3, status_info->addr3, ETH_ALEN);
+
+	qos_null->qos_ctrl = cpu_to_le16(0);
+
+	tx_info->is_used = 1;
+
+	return skb;
+}
+
+/**
+ * ath12k_dp_tx_mon_gen_qos_null_4addr() - Generate 4-address QoS NULL frame
+ * @pdev_dp: Pointer to DP PDEV context for device-specific operations
+ * @ppdu_info: PPDU info structure
+ *
+ * Creates 4-address QoS NULL frame for medium protection. Uses standard
+ * 4-address data frame format without window-based logic.
+ *
+ * Return: Generated sk_buff or NULL on failure
+ */
+static struct sk_buff *
+ath12k_dp_tx_mon_gen_qos_null_4addr(struct ath12k_pdev_dp *pdev_dp,
+				    struct dp_mon_tx_ppdu_info *ppdu_info)
+{
+	struct sk_buff *skb;
+	struct ieee80211_qos_hdr_4addr *qos_null_4addr;
+	struct hal_tx_mon_ppdu_info *tx_info;
+	struct hal_tx_mon_status_info *status_info;
+	u16 duration_le;
+	u16 frame_control;
+	size_t frame_size = sizeof(struct ieee80211_qos_hdr_4addr);
+
+	if (!ppdu_info)
+		return NULL;
+
+	tx_info = &ppdu_info->tx_info;
+
+	skb = dev_alloc_skb(ATH12K_DP_MON_MAX_RADIO_TAP_HDR +
+			    frame_size);
+	if (!skb)
+		return NULL;
+
+	skb_reserve(skb, ATH12K_DP_MON_MAX_RADIO_TAP_HDR);
+
+	qos_null_4addr = (struct ieee80211_qos_hdr_4addr *)skb_put_zero(skb,
+									frame_size);
+
+	frame_control = IEEE80211_FTYPE_DATA | IEEE80211_STYPE_QOS_NULLFUNC |
+		IEEE80211_FCTL_TODS | IEEE80211_FCTL_FROMDS;
+	qos_null_4addr->frame_control = cpu_to_le16(frame_control);
+
+	tx_info->rx_status.frame_control = frame_control;
+	tx_info->rx_status.frame_control_info_valid = 1;
+
+	duration_le = cpu_to_le16(tx_info->rx_status.rx_duration);
+	qos_null_4addr->duration_id = duration_le;
+
+	status_info = &pdev_dp->dp_mon_pdev->mon_data.data_status_info;
+
+	memcpy(qos_null_4addr->addr1, status_info->addr1, ETH_ALEN);
+	memcpy(qos_null_4addr->addr2, status_info->addr2, ETH_ALEN);
+	memcpy(qos_null_4addr->addr3, status_info->addr3, ETH_ALEN);
+	memcpy(qos_null_4addr->addr4, status_info->addr2, ETH_ALEN);
+
+	qos_null_4addr->qos_ctrl = cpu_to_le16(0);
+	tx_info->is_used = 1;
+
+	return skb;
+}
+
+/**
  * ath12k_dp_tx_mon_generate_prot_frm() - Generate protection frame
  * @pdev_dp: DP pdev handle
  * @tx_prot_ppdu_info: Protection PPDU information
@@ -894,6 +1012,16 @@ ath12k_dp_tx_mon_generate_prot_frm(struct ath12k_pdev_dp *pdev_dp,
 						    tx_prot_ppdu_info,
 						    status_info,
 						    window_flag);
+		break;
+
+	case DP_MON_TX_MEDIUM_QOS_NULL_NO_ACK_3ADDR:
+		skb = ath12k_dp_tx_mon_gen_qos_null_3addr(pdev_dp,
+							  tx_prot_ppdu_info);
+		break;
+
+	case DP_MON_TX_MEDIUM_QOS_NULL_NO_ACK_4ADDR:
+		skb = ath12k_dp_tx_mon_gen_qos_null_4addr(pdev_dp,
+							  tx_prot_ppdu_info);
 		break;
 
 	default:
