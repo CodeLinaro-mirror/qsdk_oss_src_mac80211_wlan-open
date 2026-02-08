@@ -12,7 +12,6 @@
 #include "debug.h"
 #include "pktlog.h"
 
-#include "dp_tx_mon.h"
 #include "hal_mon_cmn.h"
 #include "qcn_extns/ath12k_cmn_extn.h"
 #include "qcn_extns/dp_stats_extn.h"

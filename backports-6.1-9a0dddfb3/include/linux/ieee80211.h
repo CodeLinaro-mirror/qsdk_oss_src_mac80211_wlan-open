@@ -5409,7 +5409,7 @@ struct ieee80211_mle_tdls_common_info {
  * ieee80211_mle_common_size - check multi-link element common size
  * @data: multi-link element, must already be checked for size using
  *	ieee80211_mle_size_ok()
- * Return: the size of the multi-link element's "common" subfield 
+ * Return: the size of the multi-link element's "common" subfield
  */
 static inline u8 ieee80211_mle_common_size(const u8 *data)
 {
