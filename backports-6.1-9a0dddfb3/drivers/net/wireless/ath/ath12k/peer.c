@@ -35,26 +35,51 @@ static int ath12k_wait_for_peer_common(struct ath12k_base *ab, int vdev_id,
 	return 0;
 }
 
+struct ath12k_peer_cleanup_ctx {
+	struct ath12k *ar;
+	u32 vdev_id;
+};
+
+static bool ath12k_peer_cleanup_match_fn(struct ath12k_dp_link_peer *peer,
+							 void *context)
+{
+	struct ath12k_peer_cleanup_ctx *ctx = context;
+
+	if (peer->vdev_id != ctx->vdev_id)
+		return false;
+
+	if (!peer->sta)
+		return false;
+
+
+	ath12k_warn(ctx->ar->ab,
+		    "removing stale remote peer %pM from vdev_id %d\n",
+		     peer->addr, peer->vdev_id);
+
+	return true;
+}
+
 void ath12k_peer_cleanup(struct ath12k *ar, u32 vdev_id)
 {
-	struct ath12k_dp_link_peer *peer, *tmp;
+	struct ath12k_peer_cleanup_ctx ctx = {
+		.ar = ar,
+		.vdev_id = vdev_id,
+	}
+	;
 	struct ath12k_base *ab = ar->ab;
+	int count;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
-	spin_lock_bh(&ab->dp->dp_lock);
-	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
-		if (peer->vdev_id != vdev_id)
-			continue;
-
-		ath12k_warn(ab, "removing stale peer %pM from vdev_id %d\n",
-			    peer->addr, vdev_id);
-
-		ath12k_link_peer_free(peer);
-		ar->num_peers--;
+	count = ath12k_dp_link_peer_batch_cleanup(ar,
+						  ath12k_peer_cleanup_match_fn,
+						  &ctx);
+	if (count > 0) {
+		ar->num_peers -= count;
+		ath12k_dbg(ab, ATH12K_DBG_PEER,
+			   "cleaned up %d stale peers from vdev_id %d\n",
+			   count, vdev_id);
 	}
-
-	spin_unlock_bh(&ab->dp->dp_lock);
 }
 
 static int ath12k_wait_for_peer_deleted(struct ath12k *ar, int vdev_id, const u8 *addr)
@@ -89,26 +114,11 @@ static int ath12k_peer_delete_send(struct ath12k *ar, u32 vdev_id, const u8 *add
 				   struct ath12k_sta *ahsta)
 {
 	struct ath12k_base *ab = ar->ab;
-	struct ath12k_dp_link_peer *peer;
 	int ret;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
 	reinit_completion(&ar->peer_delete_done);
-	spin_lock_bh(&ar->ab->dp->dp_lock);
-
-	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(ab->dp,
-							    vdev_id, addr);
-	if (peer && !peer->is_bridge_peer) {
-		ret = ath12k_telemetry_peer_agent_delete_handler(ar, vdev_id,
-								 addr);
-		if (ret && ret != -EOPNOTSUPP) {
-			ath12k_dbg(ab, ATH12K_DBG_PEER,
-				   "failed to delete peer reference in TA for vdev_id %d addr %pM ret %d\n",
-				   vdev_id, addr, ret);
-		}
-	}
-	 spin_unlock_bh(&ar->ab->dp->dp_lock);
 
 	ret = ath12k_wmi_send_peer_delete_cmd(ar, addr, vdev_id, ahsta);
 	if (ret) {
