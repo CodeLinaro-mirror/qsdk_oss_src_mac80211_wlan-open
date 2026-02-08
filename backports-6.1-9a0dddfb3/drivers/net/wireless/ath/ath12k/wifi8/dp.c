@@ -35,6 +35,9 @@ static int ath12k_wifi8_dp_service_srng(struct ath12k_dp *dp,
 	int tot_work_done = 0;
 	u8 rx_mask, tx_mask, ring_mask;
 
+	if (unlikely(!ath12k_get_central_dp(dp)))
+		return 0;
+
 	rx_mask = dp->hw_params->ring_mask->rx[grp_id];
 	tx_mask = dp->hw_params->ring_mask->tx[grp_id];
 
