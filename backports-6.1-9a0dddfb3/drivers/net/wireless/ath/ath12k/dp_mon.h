@@ -588,6 +588,10 @@ struct ath12k_pdev_tx_mon_stats {
 	u32 tx_su_ppdu_count;
 	u32 tx_mu_ppdu_count;
 	u32 tx_mu_user_count;
+	u32 tx_ppdu_delivery_errors;
+	u32 tx_prot_ppdu_delivered;
+	u32 tx_data_ppdu_delivered;
+	u32 tx_ppdu_delivered;
 };
 
 /**

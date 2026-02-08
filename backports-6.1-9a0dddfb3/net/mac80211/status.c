@@ -1588,8 +1588,8 @@ free:
 }
 EXPORT_SYMBOL(ieee80211_tx_status_ext);
 
-void ieee80211_tx_monitor_hw_ol(struct ieee80211_hw *hw,
-				struct ieee80211_tx_status *status)
+void ieee80211_tx_monitor_offload(struct ieee80211_hw *hw,
+				  struct ieee80211_tx_status *status)
 {
 	struct ieee80211_local *local = hw_to_local(hw);
 
@@ -1598,7 +1598,7 @@ void ieee80211_tx_monitor_hw_ol(struct ieee80211_hw *hw,
 
 	ieee80211_tx_monitor(local, status->skb, 0, false, status);
 }
-EXPORT_SYMBOL(ieee80211_tx_monitor_hw_ol);
+EXPORT_SYMBOL(ieee80211_tx_monitor_offload);
 
 void ieee80211_tx_rate_update(struct ieee80211_hw *hw,
 			      struct ieee80211_sta *pubsta,

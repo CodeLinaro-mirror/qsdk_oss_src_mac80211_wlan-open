@@ -540,6 +540,9 @@ ath12k_dp_mon_tx_prep_ppdu_info(struct ath12k_pdev_mon_dp *dp_mon_pdev,
 	u32 tlv_userid = 0;
 	int i;
 
+	if (!dp_pdev || !dp_pdev->dp || !dp_pdev->dp->ab)
+		return -EINVAL;
+
 	if (unlikely(!ppdu_desc->status_desc_cnt)) {
 		ath12k_warn(dp_pdev->dp->ab, "status_desc_cnt %d ",
 			    ppdu_desc->status_desc_cnt);
@@ -656,7 +659,7 @@ static void ath12k_dp_tx_mon_update_stats(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_pdev_tx_mon_stats *tx_stats;
 	struct hal_tx_mon_ppdu_info *tx_info;
 
-	if (unlikely(!dp_pdev || !ppdu_info))
+	if (unlikely(!ppdu_info))
 		return;
 
 	dp_mon_pdev = dp_pdev->dp_mon_pdev;
@@ -1985,11 +1988,14 @@ ath12k_dp_mon_tx_populate_ppdu_info(struct ath12k_pdev_dp *dp_pdev,
 		u32 chan_num = ar->rx_channel->hw_value;
 		u32 band;
 
-		if (chan_freq >= 2412 && chan_freq <= 2484)
+		if (chan_freq >= ATH12K_FREQ_2GHZ_MIN &&
+		    chan_freq <= ATH12K_FREQ_2GHZ_MAX)
 			band = NL80211_BAND_2GHZ;
-		else if (chan_freq >= 5170 && chan_freq <= 5895)
+		else if (chan_freq >= ATH12K_FREQ_5GHZ_MIN &&
+			 chan_freq <= ATH12K_FREQ_5GHZ_MAX)
 			band = NL80211_BAND_5GHZ;
-		else if (chan_freq >= 5925 && chan_freq <= 7125)
+		else if (chan_freq >= ATH12K_FREQ_6GHZ_MIN &&
+			 chan_freq <= ATH12K_FREQ_6GHZ_MAX)
 			band = NL80211_BAND_6GHZ;
 		else
 			band = NL80211_BAND_2GHZ;
@@ -2023,6 +2029,329 @@ ath12k_dp_mon_tx_populate_ppdu_info(struct ath12k_pdev_dp *dp_pdev,
 }
 
 /**
+ * ath12k_dp_tx_mon_validate_lsig_support() - Check if frame should have L-SIG
+ * @rx_status: RX status information
+ *
+ * L-SIG is required for all OFDM-based modulations (802.11a/g/n/ac/ax/be)
+ * but not for legacy CCK frames (802.11b).
+ *
+ * Return: true if frame should have L-SIG field in radiotap
+ */
+static bool
+ath12k_dp_tx_mon_validate_lsig_support(struct hal_rx_mon_ppdu_info *rx_status)
+{
+	switch (rx_status->preamble_type) {
+	case HAL_RX_PREAMBLE_11A:
+	case HAL_RX_PREAMBLE_11N:
+	case HAL_RX_PREAMBLE_11AC:
+	case HAL_RX_PREAMBLE_11AX:
+	case HAL_RX_PREAMBLE_11BE:
+		return true;
+
+	case HAL_RX_PREAMBLE_11B:
+		return false;
+
+	default:
+		if (rx_status->freq > ATH12K_FREQ_2GHZ_MAX) {
+			return true;
+		} else {
+			return rx_status->ofdm_flag ||
+				(rx_status->rate >= ATH12K_RATE_6MBPS_KBPS &&
+				 rx_status->rate <= ATH12K_RATE_54MBPS_KBPS);
+		}
+	}
+}
+
+/**
+ * ath12k_dp_mon_tx_update_lsig_info() - Update LSIG radiotap field
+ * @mon_info: Monitor info structure to populate
+ * @rx_status: RX status containing HAL L-SIG data
+ *
+ * Extract L-SIG fields from HAL 32-bit format
+ * Bits 0-3: Rate
+ * Bits 5-16: Length
+ *
+ * Converts 32-bit HAL L-SIG fields to standard IEEE 802.11 radiotap LSIG format
+ */
+static void
+ath12k_dp_mon_tx_update_lsig_info(struct ieee80211_tx_mon_info *mon_info,
+				  struct hal_rx_mon_ppdu_info *rx_status)
+{
+	u32 lsig_a = rx_status->l_sig_a_info;
+	u16 data1 = 0, data2 = 0;
+
+	if (!ath12k_dp_tx_mon_validate_lsig_support(rx_status))
+		return;
+
+	if (lsig_a != 0) {
+		u8 rate = u32_get_bits(lsig_a, ATH12K_LSIG_RATE_MASK);
+		u16 length = u32_get_bits(lsig_a, ATH12K_LSIG_LENGTH_MASK);
+
+		data1 = IEEE80211_RADIOTAP_LSIG_DATA1_RATE_KNOWN |
+			IEEE80211_RADIOTAP_LSIG_DATA1_LENGTH_KNOWN;
+
+		data2 = (rate & IEEE80211_RADIOTAP_LSIG_DATA2_RATE) |
+			((length << ATH12K_RADIOTAP_LSIG_LENGTH_SHIFT) &
+			 IEEE80211_RADIOTAP_LSIG_DATA2_LENGTH);
+
+		mon_info->lsig.data1 = cpu_to_le16(data1);
+		mon_info->lsig.data2 = cpu_to_le16(data2);
+
+		tx_mon_hw_set(mon_info, LSIG_INFO);
+	}
+}
+
+/**
+ * ath12k_dp_tx_mon_get_channel_flags() - Get correct channel flags for radiotap
+ *
+ * Return: Channel flags for radiotap
+ */
+static u16
+ath12k_dp_tx_mon_get_channel_flags(struct hal_rx_mon_ppdu_info *rx_status)
+{
+	u16 flags = 0;
+
+	/* Set band flags */
+	if (rx_status->freq > ATH12K_FREQ_5GHZ_MIN)
+		flags |= IEEE80211_CHAN_5GHZ;
+	else
+		flags |= IEEE80211_CHAN_2GHZ;
+
+	if (rx_status->cck_flag)
+		flags |= IEEE80211_CHAN_CCK;
+
+	if (rx_status->ofdm_flag)
+		flags |= IEEE80211_CHAN_OFDM;
+
+	return flags;
+}
+
+/**
+ * ath12k_dp_mon_tx_update_mon_info() - Comprehensive monitor info population
+ * @pdev_dp: ath12k pdev dp context
+ * @mon_info: mac80211 tx monitor info to fill
+ * @ppdu_info: PPDU info structure containing HAL data
+ * @status_info: HAL TX monitor status info
+ *
+ */
+static void
+ath12k_dp_mon_tx_update_mon_info(struct ath12k_pdev_dp *dp_pdev,
+				 struct ieee80211_tx_mon_info *mon_info,
+				 struct hal_tx_mon_ppdu_info *ppdu_info,
+				 struct hal_tx_mon_status_info *status_info,
+				 u8 user_idx)
+{
+	struct hal_rx_mon_ppdu_info *rx_status;
+	struct ath12k_rtap_vendor_ns *vendor_data;
+	struct ath12k_mon_data *mon_data = &dp_pdev->dp_mon_pdev->mon_data;
+	u8 ATH_OUI[] = {0x00, 0x03, 0x7f};
+	int i;
+
+	if (!mon_info)
+		return;
+
+	memset(mon_info, 0, sizeof(*mon_info));
+
+	rx_status = &ppdu_info->rx_status;
+	if (!rx_status)
+		return;
+
+	if (rx_status->tsft)
+		mon_info->tsft = rx_status->tsft;
+
+	tx_mon_hw_set(mon_info, END);
+	tx_mon_hw_set(mon_info, FLAGS_INFO);
+
+	mon_info->rtap_flags = 0;
+
+	if (rx_status->sgi)
+		mon_info->rtap_flags |= IEEE80211_RADIOTAP_F_SHORTGI;
+
+	if (rx_status->cck_flag)
+		mon_info->rtap_flags |= IEEE80211_RADIOTAP_F_SHORTPRE;
+
+	if (rx_status->num_mpdu_fcs_err > 0)
+		mon_info->rtap_flags |= IEEE80211_RADIOTAP_F_BADFCS;
+
+	if (rx_status->freq) {
+		mon_info->chan_freq = rx_status->freq;
+
+		mon_info->chan_flags =
+			ath12k_dp_tx_mon_get_channel_flags(rx_status);
+
+		tx_mon_hw_set(mon_info, CHAN_INFO);
+	}
+
+	if (rx_status->userstats[user_idx].ampdu_present) {
+		mon_info->ampdu_ref_num = ppdu_info->ppdu_id;
+		mon_info->ampdu_flags = 0;
+		mon_info->ampdu_reserved_flags = 0;
+		tx_mon_hw_set(mon_info, AMPDU_STATUS_INFO);
+	}
+
+	ath12k_dp_mon_tx_update_lsig_info(mon_info, rx_status);
+
+	if (rx_status->he_mu_flags) {
+		mon_info->he_mu.flags1 =
+			cpu_to_le16(rx_status->he_flags1 |
+				    rx_status->userstats[user_idx].he_flags1);
+		mon_info->he_mu.flags2 =
+			cpu_to_le16(rx_status->he_flags2 |
+				    rx_status->userstats[user_idx].he_flags2);
+
+		memcpy(mon_info->he_mu.ru_ch1, &rx_status->userstats[user_idx].he_RU[0],
+		       sizeof(mon_info->he_mu.ru_ch1));
+		memcpy(mon_info->he_mu.ru_ch2, &rx_status->userstats[user_idx].he_RU[4],
+		       sizeof(mon_info->he_mu.ru_ch2));
+
+		tx_mon_hw_set(mon_info, HE_MU_INFO);
+	}
+
+	if (rx_status->usig_flags) {
+		mon_info->eht_usig.common = cpu_to_le32(rx_status->usig_common);
+		mon_info->eht_usig.value = cpu_to_le32(rx_status->usig_value);
+		mon_info->eht_usig.mask = cpu_to_le32(rx_status->usig_mask);
+
+		tx_mon_hw_set(mon_info, EHT_USIG_INFO);
+	}
+
+	if (rx_status->eht_flags) {
+		mon_info->eht.known = cpu_to_le32(rx_status->eht_known);
+
+		for (i = 0; i < ARRAY_SIZE(mon_info->eht.data); i++)
+			mon_info->eht.data[i] = cpu_to_le32(rx_status->eht_data[i]);
+
+		if (rx_status->num_eht_user_info_valid > 0 &&
+		    rx_status->num_eht_user_info_valid <= HAL_MAX_UL_MU_USERS)
+			mon_info->eht_num_users = rx_status->num_eht_user_info_valid;
+		else
+			mon_info->eht_num_users = 1;
+
+		tx_mon_hw_set(mon_info, EHT_INFO);
+	}
+
+	if (mon_data->rtap_vendor_tlv) {
+		mon_info->v_tlv = mon_data->rtap_vendor_tlv;
+		memcpy(mon_info->v_tlv->oui, ATH_OUI, sizeof(ATH_OUI));
+		mon_info->v_tlv->sub_namespace = 0;
+		mon_info->v_tlv->skip_length =
+			cpu_to_le16(sizeof(struct ath12k_rtap_vendor_ns));
+		vendor_data = (struct ath12k_rtap_vendor_ns *)&mon_info->v_tlv->data;
+		vendor_data->device_id = rx_status->device_id;
+		vendor_data->ppdu_start_timestamp = rx_status->tsft;
+
+		tx_mon_hw_set(mon_info, VENDOR_TLV);
+	}
+}
+
+/**
+ * ath12k_dp_mon_tx_deliver_single_ppdu() - Process and deliver MPDUs for single user
+ * @dp_pdev: ath12k pdev dp context
+ * @ppdu_info: PPDU info structure
+ * @status_info: HAL status info structure
+ * @user_idx: User index to process
+ *
+ * Processes all MPDUs in the queue for a specific user and delivers them
+ * to the mac80211 stack. This function dequeues MPDUs from the user's
+ * MPDU queue and sends each one to the stack.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static void
+ath12k_dp_mon_tx_deliver_single_ppdu(struct ath12k_pdev_dp *dp_pdev,
+				     struct hal_tx_mon_ppdu_info *ppdu_info,
+				     struct hal_tx_mon_status_info *status_info,
+				     struct sk_buff_head *mpdu_q,
+				     u8 user_idx)
+{
+	struct ieee80211_hw *hw;
+	struct sk_buff *mpdu;
+	int delivered = 0;
+
+	if (!ppdu_info || !mpdu_q)
+		return;
+
+	if (!dp_pdev || !dp_pdev->dp) {
+		ath12k_dbg(NULL, ATH12K_DBG_DP_MON_TX,
+			   "TX Mon: Invalid dp_pdev or dp_pdev->dp\n");
+		return;
+	}
+
+	if (!dp_pdev->dp->ab || !dp_pdev->ar)
+		return;
+
+	hw = ath12k_ar_to_hw(dp_pdev->ar);
+	if (!hw)
+		return;
+
+	if (!skb_queue_len(mpdu_q))
+		return;
+
+	while ((mpdu = skb_dequeue(mpdu_q))) {
+		struct ieee80211_rate_status rate_status = {};
+		struct ieee80211_tx_status status = {
+			.skb = mpdu,
+			.info = IEEE80211_SKB_CB(mpdu),
+			.rates = &rate_status,
+		};
+
+		ath12k_dp_mon_tx_update_mon_info(dp_pdev, &status.mon_info,
+						 ppdu_info, status_info, user_idx);
+
+		ieee80211_tx_monitor_offload(hw, &status);
+		delivered++;
+	}
+
+	if (delivered > 0) {
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "TX monitor: Delivered %d frames for user %u\n",
+			   delivered, user_idx);
+	}
+}
+
+/**
+ * ath12k_dp_tx_mon_deliver_ppdu() - Main TX monitor delivery function
+ * @dp_pdev: ath12k pdev dp context
+ * @mon_data: Monitor data containing both data and protection PPDU info
+ *
+ * Always process both data and protection PPDUs for all users
+ */
+int ath12k_dp_tx_mon_deliver_ppdu(struct ath12k_pdev_dp *dp_pdev,
+				  struct ath12k_mon_data *mon_data)
+{
+	int i;
+	struct hal_tx_mon_ppdu_info *data_ppdu_info =
+		&mon_data->data_ppdu_info.tx_info;
+	struct hal_tx_mon_ppdu_info *prot_ppdu_info =
+		&mon_data->prot_ppdu_info.tx_info;
+	struct sk_buff_head *mpdu_q;
+	u32 num_users;
+
+	if (!mon_data)
+		return -EINVAL;
+
+	num_users = data_ppdu_info->num_users;
+	if (num_users > HAL_MAX_UL_MU_USERS)
+		num_users = HAL_MAX_UL_MU_USERS;
+
+	for (i = 0; i < num_users; i++) {
+		mpdu_q = &data_ppdu_info->rx_status.mpdu_q[i];
+		ath12k_dp_mon_tx_deliver_single_ppdu(dp_pdev,
+						     data_ppdu_info,
+						     &mon_data->data_status_info,
+						     mpdu_q, i);
+
+		mpdu_q = &prot_ppdu_info->rx_status.mpdu_q[i];
+		ath12k_dp_mon_tx_deliver_single_ppdu(dp_pdev,
+						     prot_ppdu_info,
+						     &mon_data->prot_status_info,
+						     mpdu_q, i);
+	}
+
+	return 0;
+}
+
+/**
  * ath12k_dp_tx_mon_process_ppdu() - Work queue handler for TX monitor
  * @work: Work structure containing the monitor pdev context
  *
@@ -2047,9 +2376,12 @@ void ath12k_dp_tx_mon_process_ppdu(struct work_struct *work)
 	struct ath12k_dp_mon_status_desc *status_desc;
 	struct ath12k_mon_data *mon_data = &dp_mon_pdev->mon_data;
 	struct ath12k_pdev_tx_mon_stats *tx_stats = &dp_mon_pdev->tx_mon_stats;
-	int desc_idx, desc_count = 0;
+	struct hal_tx_mon_ppdu_info *data_info;
+	struct hal_tx_mon_ppdu_info *prot_info;
+	int desc_idx, desc_count;
 	int ppdu_processed = 0;
 	int total_status_desc = 0, prep_failed = 0;
+	int ret;
 
 	if (unlikely(!pdev_dp || !dp_mon_pdev)) {
 		ath12k_err(pdev_dp ? pdev_dp->dp->ab : NULL,
@@ -2113,8 +2445,22 @@ void ath12k_dp_tx_mon_process_ppdu(struct work_struct *work)
 			if (status_desc->end_of_ppdu) {
 				ath12k_dp_tx_mon_update_stats(pdev_dp,
 							      &mon_data->data_ppdu_info);
-			}
 
+				prot_info = &mon_data->prot_ppdu_info.tx_info;
+				data_info = &mon_data->data_ppdu_info.tx_info;
+
+				ret = ath12k_dp_tx_mon_deliver_ppdu(pdev_dp, mon_data);
+				if (ret) {
+					tx_stats->tx_ppdu_delivery_errors++;
+				} else {
+					if (prot_info && prot_info->is_used)
+						tx_stats->tx_prot_ppdu_delivered++;
+
+					if (data_info && data_info->is_used)
+						tx_stats->tx_data_ppdu_delivered++;
+				}
+				tx_stats->tx_ppdu_delivered++;
+			}
 			page_frag_free(status_desc->mon_buf);
 			status_desc->mon_buf = NULL;
 			status_desc->paddr = 0;
