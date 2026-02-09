@@ -840,9 +840,9 @@ ath12k_wifi8_mgmt_rx_reap_err_packets(struct ath12k_base *ab,
 		list_add_tail(&desc_info->list, &rx_desc_used_list);
 
 		rxcb = ATH12K_SKB_RXCB(mmpdu);
-		dma_unmap_single(mgmt->dev, rxcb->paddr,
-				 mmpdu->len + skb_tailroom(mmpdu),
-				 DMA_FROM_DEVICE);
+		ath12k_core_dma_unmap_single(mgmt->dev, rxcb->paddr,
+					     mmpdu->len + skb_tailroom(mmpdu),
+					     DMA_FROM_DEVICE);
 
 		num_buffs_reaped++;
 
