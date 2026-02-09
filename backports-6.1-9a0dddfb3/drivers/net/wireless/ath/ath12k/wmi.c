@@ -10722,6 +10722,10 @@ skip_mgmt_stats:
 		ath12k_update_bcast_ttlm_params(ab, rx_ev.bcast_ttlm_info,
 						rx_ev.num_bcast_ttlm_info);
 
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_mgmt_rx_event_extn(ab, hdr, &rx_ev);
+#endif
+
 	ath12k_dbg(ab, ATH12K_DBG_MGMT,
 		   "event mgmt rx skb %p len %d ftype %02x stype %02x\n",
 		   skb, skb->len,
