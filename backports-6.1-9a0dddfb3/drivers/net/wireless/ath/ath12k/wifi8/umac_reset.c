@@ -125,6 +125,7 @@ void ath12k_wifi8_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 	ath12k_dp_umac_rx_desc_cleanup(cumac_ab);
 
 	ath12k_dp_rx_reo_cmd_list_cleanup(cumac_ab);
+	ath12k_wifi8_dp_tx_tqm_cmd_list_cleanup(cumac_ab);
 }
 
 void ath12k_wifi8_umac_reset_handle_post_reset_complete(struct ath12k_base *ab)
