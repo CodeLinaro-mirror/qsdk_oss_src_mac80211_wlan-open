@@ -13002,7 +13002,6 @@ static void ath12k_mac_group_tx_pn_request(struct ath12k *ar,
 
 static void ath12k_tx_pn_request(struct ath12k *ar,
 				 struct ath12k_link_vif *arvif,
-				 struct ath12k_link_sta *arsta,
 				 u8 keyix)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ar->ab);
@@ -13043,11 +13042,34 @@ static void ath12k_mac_prefetch_group_key_pn(struct ath12k *ar,
 		return;
 
 	/* GTK PN fetch */
-	ath12k_tx_pn_request(ar, arvif, arsta, arvif->last_installed_gtk_keyix);
+	ath12k_tx_pn_request(ar, arvif, arvif->last_installed_gtk_keyix);
 
 	/* BIGTK PN fetch */
-	if (sta->mfp && arvif->beacon_prot)
-		ath12k_tx_pn_request(ar, arvif, arsta, arvif->last_installed_bigtk_keyix);
+	if (sta->mfp && arvif->beacon_prot) {
+		struct ieee80211_bss_conf *link_conf = ath12k_mac_get_link_bss_conf(arvif);
+
+		if (!link_conf) {
+			ath12k_warn(ar->ab, "unable to access bss link conf in prefetch group key pn for vif %pM link %u\n",
+				    vif->addr, arvif->link_id);
+			return;
+		}
+		/* If it is a Non-TX BSS, fetch BIGTK PN from the TX BSS */
+		if (link_conf->nontransmitted) {
+			struct ath12k_link_vif *tx_arvif = ath12k_mac_get_tx_arvif(arvif,
+										   link_conf);
+
+			if (!tx_arvif) {
+				ath12k_warn(ar->ab, "unable to find tx vif in prefetch group key pn for vif %pM link %u\n",
+					    vif->addr, arvif->link_id);
+				return;
+			}
+			ath12k_tx_pn_request(tx_arvif->ar, tx_arvif,
+					     tx_arvif->last_installed_bigtk_keyix);
+		} else {
+			ath12k_tx_pn_request(ar, arvif,
+					     arvif->last_installed_bigtk_keyix);
+		}
+	}
 }
 
 static int ath12k_mac_handle_link_sta_state(struct ieee80211_hw *hw,
