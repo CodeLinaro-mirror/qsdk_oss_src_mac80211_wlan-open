@@ -14641,6 +14641,13 @@ static u8 ath12k_mac_ahsta_get_pri_link_id(struct ath12k_vif *ahvif,
 	}
 
 select_pri_link:
+#ifdef CPTCFG_QCN_EXTN
+	if (ath12k_get_best_primary_umac_w_rssi(ah, ahvif, ahsta,
+	    valid_links, &pri_link_id) == 0) {
+		goto exit_pri_link_selection;
+	}
+#endif
+
 	/* among all available links, get the preferable links bitmap */
 	for_each_set_bit(link_id, &valid_links, IEEE80211_MLD_MAX_NUM_LINKS) {
 		arvif = ath12k_get_arvif_from_link_id(ahvif, link_id);

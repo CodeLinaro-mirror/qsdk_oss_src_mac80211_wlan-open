@@ -1062,6 +1062,11 @@ struct ath12k_link_sta {
 #ifdef CPTCFG_ATH12K_CFR
 	struct ath12k_per_peer_cfr_capture cfr_capture;
 #endif
+#ifdef CPTCFG_QCN_EXTN
+	/* ath12k_link_sta extension structure */
+	struct ath12k_link_sta_extn arsta_extn;
+#endif
+
 };
 
 struct ath12k_sta_migration_data {
@@ -1112,6 +1117,10 @@ struct ath12k_sta {
 	struct work_struct migration_wk;
 	struct ath12k_sta_migration_data migration_data;
 	struct completion dp_migration_event;
+#ifdef CPTCFG_QCN_EXTN
+	struct ath12k_sta_extn ahsta_extn;
+#endif
+
 };
 
 #define ATH12K_INVALID_RSSI_FULL -1
