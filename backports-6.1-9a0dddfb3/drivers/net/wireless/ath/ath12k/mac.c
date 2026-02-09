@@ -17110,6 +17110,9 @@ static int ath12k_mac_setup_vdev_params_mbssid(struct ath12k_link_vif *arvif,
 	}
 	arvif->tx_vdev_id = *tx_vdev_id;
 
+	ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "vdev: %u flags :%u tx_vdev_id: %u\n",
+		   arvif->vdev_id, *flags, arvif->tx_vdev_id);
+
 	if (link_conf->ema_ap)
 		*flags |= WMI_VDEV_MBSSID_FLAGS_EMA_MODE;
 
