@@ -2776,7 +2776,7 @@ void ath12k_ppeds_tx_update_stats(struct ath12k *ar, int skb_len,
 		return;
 	}
 
-	link_id = ath12k_dp_get_link_id(dp_pdev, ts.hw_link_id, peer->dp_peer);
+	link_id = ath12k_dp_peer_get_stats_link_id(ab, peer->dp_peer, ts.hw_link_id);
 
 #ifdef CPTCFG_MAC80211_DS_SUPPORT
 	ieee80211_ppeds_tx_update_stats(ar->ah->hw, peer->sta, &info,
