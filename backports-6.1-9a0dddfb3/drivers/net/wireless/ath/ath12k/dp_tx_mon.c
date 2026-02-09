@@ -2102,6 +2102,19 @@ ath12k_dp_mon_tx_update_lsig_info(struct ieee80211_tx_mon_info *mon_info,
 }
 
 /**
+ * ath12k_dp_tx_mon_get_sifs_time() - Get SIFS time based on frequency
+ * @freq: Channel frequency
+ *
+ * Return: SIFS time in microseconds
+ */
+static u8 ath12k_dp_tx_mon_get_sifs_time(u16 freq)
+{
+	return (freq >= ATH12K_FREQ_2GHZ_MIN &&
+		freq <= ATH12K_FREQ_2GHZ_MAX) ?
+		ATH12K_SIFS_2GHZ_US : ATH12K_SIFS_5GHZ_US;
+}
+
+/**
  * ath12k_dp_tx_mon_get_channel_flags() - Get correct channel flags for radiotap
  *
  * Return: Channel flags for radiotap
@@ -2139,12 +2152,15 @@ ath12k_dp_mon_tx_update_mon_info(struct ath12k_pdev_dp *dp_pdev,
 				 struct ieee80211_tx_mon_info *mon_info,
 				 struct hal_tx_mon_ppdu_info *ppdu_info,
 				 struct hal_tx_mon_status_info *status_info,
+				 bool contains_host_frames,
+				 bool is_response_frame,
 				 u8 user_idx)
 {
 	struct hal_rx_mon_ppdu_info *rx_status;
 	struct ath12k_rtap_vendor_ns *vendor_data;
 	struct ath12k_mon_data *mon_data = &dp_pdev->dp_mon_pdev->mon_data;
 	u8 ATH_OUI[] = {0x00, 0x03, 0x7f};
+	u8 sifs, tx_time;
 	int i;
 
 	if (!mon_info)
@@ -2156,8 +2172,21 @@ ath12k_dp_mon_tx_update_mon_info(struct ath12k_pdev_dp *dp_pdev,
 	if (!rx_status)
 		return;
 
-	if (rx_status->tsft)
-		mon_info->tsft = rx_status->tsft;
+	if (is_response_frame) {
+		sifs = ath12k_dp_tx_mon_get_sifs_time(rx_status->freq);
+
+		if (ppdu_info->ack_recvd)
+			tx_time = ATH12K_ACK_TX_TIME_US;
+		else if (ppdu_info->cts_recvd)
+			tx_time = ATH12K_CTS_TX_TIME_US;
+		else
+			tx_time = ATH12K_ACK_TX_TIME_US;
+
+		mon_info->tsft = rx_status->tsft + sifs + tx_time;
+	} else {
+		if (rx_status->tsft)
+			mon_info->tsft = rx_status->tsft;
+	}
 
 	tx_mon_hw_set(mon_info, END);
 	tx_mon_hw_set(mon_info, FLAGS_INFO);
@@ -2245,30 +2274,200 @@ ath12k_dp_mon_tx_update_mon_info(struct ath12k_pdev_dp *dp_pdev,
 }
 
 /**
+ * ath12k_dp_tx_mon_generate_ack_rx_frm() - Generate ACK response frame
+ * @dp_pdev: DP pdev handle
+ * @mpdu_q: MPDU queue containing original frames
+ * @tx_ppdu_info: TX PPDU info structure
+ *
+ * Generate ACK response frame for TX monitor. Creates just the frame SKB
+ * with proper headroom reserved for radiotap. The radiotap header will be
+ * added later by ath12k_dp_mon_tx_update_mon_info() during delivery.
+ *
+ * Return: SKB containing ACK frame, or NULL on failure
+ */
+struct sk_buff *
+ath12k_dp_tx_mon_generate_ack_rx_frm(struct ath12k_pdev_dp *dp_pdev,
+				     struct sk_buff_head *mpdu_q,
+				     struct hal_tx_mon_ppdu_info *tx_ppdu_info)
+{
+	struct sk_buff *frame_skb = NULL;
+	struct ieee80211_hdr *orig_hdr = NULL;
+	struct sk_buff *valid_frag = NULL;
+	struct ieee80211_frame_min *ack_hdr = NULL;
+	u16 frm_ctl;
+
+	skb_queue_walk(mpdu_q, valid_frag) {
+		if (valid_frag->len >= sizeof(struct ieee80211_hdr)) {
+			orig_hdr = (struct ieee80211_hdr *)valid_frag->data;
+			break;
+		}
+	}
+
+	if (!orig_hdr) {
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "TX Mon: No valid header found for ACK generation\n");
+		return NULL;
+	}
+
+	frame_skb = dev_alloc_skb(ATH12K_DP_MON_TX_MAX_RADIO_TAP_HDR +
+				  sizeof(struct ieee80211_frame_min));
+	if (!frame_skb)
+		return NULL;
+
+	skb_reserve(frame_skb, ATH12K_DP_MON_TX_MAX_RADIO_TAP_HDR);
+
+	ack_hdr = (struct ieee80211_frame_min *)skb_put_zero(frame_skb,
+						sizeof(struct ieee80211_frame_min));
+
+	frm_ctl = IEEE80211_FTYPE_CTL | IEEE80211_STYPE_ACK;
+	ack_hdr->frame_control = cpu_to_le16(frm_ctl);
+	memcpy(ack_hdr->ra, orig_hdr->addr2, ETH_ALEN);
+	ack_hdr->duration = cpu_to_le16(0x0000);
+
+	tx_ppdu_info->rx_status.frame_control = frm_ctl;
+	tx_ppdu_info->rx_status.frame_control_info_valid = 1;
+
+	return frame_skb;
+}
+
+/**
+ * ath12k_dp_tx_mon_generate_cts_rx_frm() - Generate CTS response frame
+ * @dp_pdev: DP pdev handle
+ * @mpdu_q: MPDU queue containing original frames
+ * @tx_ppdu_info: TX PPDU info structure
+ *
+ * Generate CTS response frame for TX monitor. Creates just the frame SKB
+ * with proper headroom reserved for radiotap. The radiotap header will be
+ * added later by ath12k_dp_mon_tx_update_mon_info() during delivery.
+ *
+ * Return: SKB containing CTS frame, or NULL on failure
+ */
+struct sk_buff *
+ath12k_dp_tx_mon_generate_cts_rx_frm(struct ath12k_pdev_dp *dp_pdev,
+				     struct sk_buff_head *mpdu_q,
+				     struct hal_tx_mon_ppdu_info *tx_ppdu_info)
+{
+	struct sk_buff *frame_skb = NULL;
+	struct sk_buff *valid_frag = NULL;
+	struct ieee80211_cts *cts_hdr = NULL;
+	struct ieee80211_hdr *orig_hdr = NULL;
+	u8 sifs;
+	u16 duration = 0;
+	u16 frm_ctl;
+
+	skb_queue_walk(mpdu_q, valid_frag) {
+		if (valid_frag->len >= sizeof(struct ieee80211_hdr)) {
+			orig_hdr = (struct ieee80211_hdr *)valid_frag->data;
+			break;
+		}
+	}
+
+	if (!orig_hdr) {
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "TX Mon: No valid header found for CTS generation\n");
+		return NULL;
+	}
+
+	duration = le16_to_cpu(orig_hdr->duration_id);
+	sifs = ath12k_dp_tx_mon_get_sifs_time(tx_ppdu_info->rx_status.freq);
+
+	if (duration > (ATH12K_CTS_TX_TIME_US + sifs))
+		duration -= (ATH12K_CTS_TX_TIME_US + sifs);
+	else
+		duration = 0;
+
+	frame_skb = dev_alloc_skb(ATH12K_DP_MON_TX_MAX_RADIO_TAP_HDR +
+				  sizeof(struct ieee80211_cts));
+	if (!frame_skb)
+		return NULL;
+
+	skb_reserve(frame_skb, ATH12K_DP_MON_TX_MAX_RADIO_TAP_HDR);
+
+	cts_hdr = (struct ieee80211_cts *)skb_put_zero(frame_skb,
+						       sizeof(struct ieee80211_cts));
+
+	frm_ctl = IEEE80211_FTYPE_CTL | IEEE80211_STYPE_CTS;
+	cts_hdr->frame_control = cpu_to_le16(frm_ctl);
+	memcpy(cts_hdr->ra, orig_hdr->addr2, ETH_ALEN);
+	cts_hdr->duration = cpu_to_le16(duration);
+
+	tx_ppdu_info->rx_status.frame_control = frm_ctl;
+	tx_ppdu_info->rx_status.frame_control_info_valid = 1;
+
+	return frame_skb;
+}
+
+/**
+ * ath12k_dp_mon_tx_deliver_frame() - Helper to deliver single frame to monitor stack
+ * @dp_pdev: ath12k pdev dp context
+ * @hw: ieee80211_hw handle
+ * @skb: Frame to deliver
+ * @ppdu_info: PPDU info structure
+ * @status_info: HAL status info structure
+ * @contains_host_frames: Whether PPDU contains host-generated frames
+ * @is_response_frame: Whether this is a response frame (ACK/CTS)
+ * @user_idx: User index
+ *
+ * Common helper function to deliver a single frame to the monitor stack.
+ * Handles radiotap header population and frame delivery.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static void
+ath12k_dp_mon_tx_deliver_frame(struct ath12k_pdev_dp *dp_pdev,
+			       struct ieee80211_hw *hw,
+			       struct sk_buff *skb,
+			       struct hal_tx_mon_ppdu_info *ppdu_info,
+			       struct hal_tx_mon_status_info *status_info,
+			       bool contains_host_frames,
+			       bool is_response_frame,
+			       u8 user_idx)
+{
+	struct ieee80211_rate_status rate_status = {};
+	struct ieee80211_tx_status status = {
+		.skb = skb,
+		.info = IEEE80211_SKB_CB(skb),
+		.rates = &rate_status,
+	};
+
+	ath12k_dp_mon_tx_update_mon_info(dp_pdev, &status.mon_info,
+					 ppdu_info, status_info,
+					 contains_host_frames,
+					 is_response_frame, user_idx);
+
+	ieee80211_tx_monitor_offload(hw, &status);
+}
+
+/**
  * ath12k_dp_mon_tx_deliver_single_ppdu() - Process and deliver MPDUs for single user
  * @dp_pdev: ath12k pdev dp context
  * @ppdu_info: PPDU info structure
  * @status_info: HAL status info structure
  * @user_idx: User index to process
+ * @ppdu_context: PPDU context containing host frame flag
  *
- * Processes all MPDUs in the queue for a specific user and delivers them
- * to the mac80211 stack. This function dequeues MPDUs from the user's
- * MPDU queue and sends each one to the stack.
+ * - For user 0: generate response frame if ack_recvd/cts_recvd
+ * - Process all TX frames in mpdu_q
+ * - After TX frames, deliver response frame separately
  *
- * Return: 0 on success, negative error code on failure
+ * This ensures TX frames and response frames are handled separately,
+ * not mixed in the same queue.
  */
 static void
 ath12k_dp_mon_tx_deliver_single_ppdu(struct ath12k_pdev_dp *dp_pdev,
 				     struct hal_tx_mon_ppdu_info *ppdu_info,
 				     struct hal_tx_mon_status_info *status_info,
 				     struct sk_buff_head *mpdu_q,
-				     u8 user_idx)
+				     u8 user_idx,
+				     struct dp_mon_tx_ppdu_info *ppdu_context)
 {
 	struct ieee80211_hw *hw;
 	struct sk_buff *mpdu;
+	struct sk_buff *resp_skb = NULL;
 	int delivered = 0;
+	bool contains_host_frames;
 
-	if (!ppdu_info || !mpdu_q)
+	if (!ppdu_info || !mpdu_q || !ppdu_context)
 		return;
 
 	if (!dp_pdev || !dp_pdev->dp) {
@@ -2284,21 +2483,38 @@ ath12k_dp_mon_tx_deliver_single_ppdu(struct ath12k_pdev_dp *dp_pdev,
 	if (!hw)
 		return;
 
-	if (!skb_queue_len(mpdu_q))
-		return;
+	if (user_idx == 0 &&
+	    (ppdu_info->ack_recvd || ppdu_info->cts_recvd)) {
+		if (ppdu_info->ack_recvd && !status_info->explicit_ack_type) {
+			resp_skb = ath12k_dp_tx_mon_generate_ack_rx_frm(dp_pdev,
+									mpdu_q,
+									ppdu_info);
+			if (resp_skb)
+				ppdu_context->contains_host_frames = true;
+		} else if (ppdu_info->cts_recvd) {
+			resp_skb = ath12k_dp_tx_mon_generate_cts_rx_frm(dp_pdev,
+									mpdu_q,
+									ppdu_info);
+			if (resp_skb)
+				ppdu_context->contains_host_frames = true;
+		}
+	}
+
+	contains_host_frames = ppdu_context->contains_host_frames;
 
 	while ((mpdu = skb_dequeue(mpdu_q))) {
-		struct ieee80211_rate_status rate_status = {};
-		struct ieee80211_tx_status status = {
-			.skb = mpdu,
-			.info = IEEE80211_SKB_CB(mpdu),
-			.rates = &rate_status,
-		};
+		ath12k_dp_mon_tx_deliver_frame(dp_pdev, hw, mpdu,
+					       ppdu_info, status_info,
+					       contains_host_frames,
+					       false, user_idx);
+		delivered++;
+	}
 
-		ath12k_dp_mon_tx_update_mon_info(dp_pdev, &status.mon_info,
-						 ppdu_info, status_info, user_idx);
-
-		ieee80211_tx_monitor_offload(hw, &status);
+	if ((user_idx == 0) && resp_skb) {
+		ath12k_dp_mon_tx_deliver_frame(dp_pdev, hw, resp_skb,
+					       ppdu_info, status_info,
+					       contains_host_frames,
+					       true, user_idx);
 		delivered++;
 	}
 
@@ -2339,13 +2555,15 @@ int ath12k_dp_tx_mon_deliver_ppdu(struct ath12k_pdev_dp *dp_pdev,
 		ath12k_dp_mon_tx_deliver_single_ppdu(dp_pdev,
 						     data_ppdu_info,
 						     &mon_data->data_status_info,
-						     mpdu_q, i);
+						     mpdu_q, i,
+						     &mon_data->data_ppdu_info);
 
 		mpdu_q = &prot_ppdu_info->rx_status.mpdu_q[i];
 		ath12k_dp_mon_tx_deliver_single_ppdu(dp_pdev,
 						     prot_ppdu_info,
 						     &mon_data->prot_status_info,
-						     mpdu_q, i);
+						     mpdu_q, i,
+						     &mon_data->prot_ppdu_info);
 	}
 
 	return 0;
@@ -2435,6 +2653,9 @@ void ath12k_dp_tx_mon_process_ppdu(struct work_struct *work)
 						   status_desc->paddr,
 						   ATH12K_DP_MON_TX_BUF_SIZE,
 						   DMA_FROM_DEVICE);
+
+			mon_data->data_ppdu_info.contains_host_frames = false;
+			mon_data->prot_ppdu_info.contains_host_frames = false;
 
 			ath12k_dp_mon_tx_process_tlv(pdev_dp,
 						     status_desc, mon_data);
