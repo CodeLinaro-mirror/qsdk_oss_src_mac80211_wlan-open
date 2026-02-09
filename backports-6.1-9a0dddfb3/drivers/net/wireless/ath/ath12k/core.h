@@ -1087,6 +1087,7 @@ struct ath12k_sta {
 	u32 mlo_hw_link_id_bitmap;
 	/* indicates bitmap of links where peer delete cmd is sent to FW */
 	u32 peer_delete_cmd_sent_bitmap;
+	bool peer_delete_send_mlo_hw_bitmap;
 
 #ifdef CPTCFG_MAC80211_DEBUGFS
 	/* protected by conf_mutex */
