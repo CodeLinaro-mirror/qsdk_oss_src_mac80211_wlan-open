@@ -219,7 +219,11 @@ enum ath12k_dp_eapol_key_type {
 #define DP_RX_BUFFER_SIZE		1856
 #else
 //#ifdef CONFIG_ATH12K_MEM_PROFILE_DEFAULT TODO Fix the Default profile enablement
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#define DP_TX_COMP_RING_SIZE           8192
+#else /* !CPTCFG_EXT_IPA_OFFLOAD */
 #define DP_TX_COMP_RING_SIZE           32768
+#endif /* CPTCFG_EXT_IPA_OFFLOAD */
 #define ATH12K_NUM_POOL_TX_DESC                32768
 #define DP_REO2PPE_RING_SIZE	16384
 #define DP_PPE2TCL_RING_SIZE	8192
@@ -234,7 +238,11 @@ enum ath12k_dp_eapol_key_type {
 #define ATH12K_DP_PDEV_TX_LIMIT        ATH12K_NUM_POOL_TX_DESC
 
 #define DP_WBM_RELEASE_RING_SIZE	64
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#define DP_TCL_DATA_RING_SIZE		8192
+#else /* !CPTCFG_EXT_IPA_OFFLOAD */
 #define DP_TCL_DATA_RING_SIZE		2048
+#endif /* CPTCFG_EXT_IPA_OFFLOAD */
 #define DP_TX_IDR_SIZE			DP_TX_COMP_RING_SIZE
 #define DP_TCL_CMD_RING_SIZE		32
 #define DP_TCL_STATUS_RING_SIZE		32

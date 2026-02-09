@@ -9,6 +9,9 @@
 #include "debug.h"
 #include "debugfs.h"
 #include "telemetry_agent_if.h"
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#include "qcn_extns/ipa/dp_ipa.h"
+#endif
 
 struct ath12k_dp_link_peer *
 ath12k_dp_link_peer_find_by_vdev_id_and_addr(struct ath12k_dp *dp,
@@ -186,10 +189,18 @@ void ath12k_link_peer_free(struct ath12k_dp_link_peer *peer)
 	kfree(peer);
 }
 
-void ath12k_peer_unmap_event(struct ath12k_base *ab, u16 peer_id)
+void ath12k_peer_unmap_event(struct ath12k_base *ab, u8 vdev_id, u16 peer_id,
+			     u8 *mac_addr, bool is_wds)
 {
 	struct ath12k_dp_link_peer *peer;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+
+	if (is_wds) {
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+		ath12k_dp_ipa_peer_unmap_event_wds(ab, vdev_id, peer_id, mac_addr);
+#endif
+		return;
+	}
 
 	spin_lock_bh(&dp->dp_lock);
 
@@ -211,10 +222,17 @@ exit:
 }
 
 void ath12k_peer_map_event(struct ath12k_base *ab, u8 vdev_id, u16 peer_id,
-			   u8 *mac_addr, u16 ast_hash, u16 hw_peer_id)
+			   u8 *mac_addr, u16 ast_hash, u16 hw_peer_id, bool is_wds)
 {
 	struct ath12k_dp_link_peer *peer;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+
+	if (is_wds) {
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+		ath12k_dp_ipa_peer_map_event_wds(ab, vdev_id, peer_id, mac_addr);
+#endif
+		return;
+	}
 
 	spin_lock_bh(&dp->dp_lock);
 	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, vdev_id, mac_addr);
