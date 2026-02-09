@@ -1846,7 +1846,6 @@ core_pdev_create:
 
 		ath12k_debugfs_pdev_create(ab);
 
-		ath12k_hif_irq_enable(ab);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 		ath12k_hif_ppeds_irq_enable(ab, PPEDS_IRQ_REO2PPE);
 		ath12k_hif_ppeds_irq_enable(ab, PPEDS_IRQ_PPE_WBM2SW_REL);

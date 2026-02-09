@@ -312,6 +312,7 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 		goto fail_pn_counter_page_free;
 	}
 
+	ath12k_hif_irq_enable(dp->ab);
 	ath12k_info(ab, "CUMAC init successful");
 	return 0;
 fail_pn_counter_page_free:

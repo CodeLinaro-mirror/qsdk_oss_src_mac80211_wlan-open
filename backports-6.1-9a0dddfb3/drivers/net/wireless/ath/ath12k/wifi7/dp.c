@@ -324,6 +324,7 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 		goto fail_dp_mon_rx_free;
 	}
 
+	ath12k_hif_irq_enable(dp->ab);
 	return 0;
 
 fail_dp_mon_rx_free:
