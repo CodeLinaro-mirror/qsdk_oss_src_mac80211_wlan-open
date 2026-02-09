@@ -5705,6 +5705,8 @@ void ath12k_bss_assoc(struct ath12k *ar,
 	u32 hemode = 0, bandwidth;
 	int ret;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ar->ab);
+	struct ath12k_dp_vif *dp_vif;
+	struct ath12k_me_db *me_db;
 	u16 bridge_bitmap;
 	u8 bssid[ETH_ALEN], num_devices;
 	bool is_bridge_vdev = ath12k_mac_is_bridge_vdev(arvif);
@@ -5724,6 +5726,7 @@ void ath12k_bss_assoc(struct ath12k *ar,
 	ahvif = arvif->ahvif;
 	vif = ath12k_ahvif_to_vif(ahvif);
 	ah = ahvif->ah;
+	dp_vif = &ahvif->dp_vif;
 
 	if (is_bridge_vdev) {
 		link_id = arvif->link_id;
@@ -5912,14 +5915,23 @@ skip_vdev_up:
 
 	spin_unlock_bh(&dp->dp_lock);
 
-	/* Send DMS capability of peer to WMI */
-	ret = ath12k_wmi_set_peer_param(ar, arvif->bssid,
-					arvif->vdev_id,
-					WMI_PEER_PARAM_DMS_SUPPORT,
-					is_peer_dms);
-	if (ret)
-		ath12k_warn(ar->ab, "Unable to set dms capability: %d\n", ret);
+	me_db = ath12k_me_db_get(dp_vif);
+	if (!me_db)
+		goto skip_dms_peer_notify;
 
+	if (me_db->me_flags & ATH12K_ME_FLAGS_BIT_ME6) {
+		/* Send DMS capability of peer to WMI */
+		ret = ath12k_wmi_set_peer_param(ar, arvif->bssid,
+						arvif->vdev_id,
+						WMI_PEER_PARAM_DMS_SUPPORT,
+						is_peer_dms);
+		if (ret)
+			ath12k_warn(ar->ab, "Unable to set dms capability:%d\n", ret);
+	}
+
+	ath12k_me_db_put(me_db);
+
+skip_dms_peer_notify:
 	/* Authorize BSS Peer */
 	if (is_auth) {
 		ret = ath12k_wmi_set_peer_param(ar, arvif->bssid,
@@ -12300,6 +12312,9 @@ static int ath12k_mac_station_authorize(struct ath12k *ar,
 					struct ath12k_link_sta *arsta)
 {
 	struct ath12k_dp_link_peer *peer;
+	struct ath12k_vif *ahvif;
+	struct ath12k_dp_vif *dp_vif = NULL;
+	struct ath12k_me_db *me_db;
 	bool is_peer_dms = false;
 	int ret;
 
@@ -12319,16 +12334,27 @@ static int ath12k_mac_station_authorize(struct ath12k *ar,
 
 	spin_unlock_bh(&ar->ab->dp->dp_lock);
 
-	/* Send DMS capability of the peer to WMI */
-	ret = ath12k_wmi_set_peer_param(ar, arsta->addr,
-					arvif->vdev_id,
-					WMI_PEER_PARAM_DMS_SUPPORT,
-					is_peer_dms);
-	if (ret) {
-		ath12k_warn(ar->ab, "Unable to set dms capability: %d\n", ret);
-		return ret;
+	ahvif = arvif->ahvif;
+	if (ahvif) {
+		dp_vif = &ahvif->dp_vif;
+		me_db = ath12k_me_db_get(dp_vif);
+		if (!me_db)
+			goto skip_dms_peer_notify;
+		if (me_db->me_flags & ATH12K_ME_FLAGS_BIT_ME6) {
+			/* Send DMS capability of the peer to WMI */
+			ret = ath12k_wmi_set_peer_param(ar, arsta->addr,
+							arvif->vdev_id,
+							WMI_PEER_PARAM_DMS_SUPPORT,
+							is_peer_dms);
+			if (ret)
+				ath12k_warn(ar->ab, "Unable to set dms capability: %d\n",
+					    ret);
+		}
+
+		ath12k_me_db_put(me_db);
 	}
 
+skip_dms_peer_notify:
 	if (arvif->is_up) {
 		ret = ath12k_wmi_set_peer_param(ar, arsta->addr,
 						arvif->vdev_id,
