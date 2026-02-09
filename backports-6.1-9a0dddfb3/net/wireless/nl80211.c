@@ -7578,6 +7578,10 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 			goto out;
 	}
 
+	if (info->attrs[NL80211_ATTR_DPS_ASSIST] &&
+	    !nla_get_u8(info->attrs[NL80211_ATTR_DPS_ASSIST]))
+		params->dps_assist_disable = true;
+
 	/* FIXME: validate MLO/link-id against driver capabilities */
 
 	err = rdev_start_ap(rdev, dev, params);

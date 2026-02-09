@@ -1835,6 +1835,7 @@ struct cfg80211_ttlm_params {
  * @ml_max_rec_links_valid: Indicates valid ML Max recommended links
  * @ml_max_rec_links: ML Max recommended links
  * @ttlm_params: tid-to-link mapping parameters
+ * @dps_assist_disable: indicates AP to disable DPS Assist Support.
  */
 struct cfg80211_ap_settings {
 	struct cfg80211_chan_def chandef;
@@ -1878,6 +1879,7 @@ struct cfg80211_ap_settings {
 	enum nl80211_regulatory_power_modes he_6ghz_power_type;
 	struct cfg80211_ttlm_params ttlm_params;
 	bool is_cfp_enabled;
+	bool dps_assist_disable;
 };
 
 
