@@ -996,7 +996,8 @@ int ath12k_pci_power_up(struct ath12k_base *ab)
 
 	ab_pci->register_window = 0;
 	clear_bit(ATH12K_PCI_FLAG_INIT_DONE, &ab_pci->flags);
-	ath12k_pci_sw_reset(ab_pci->ab, true);
+	if (!ath12k_skip_sw_reset)
+		ath12k_pci_sw_reset(ab_pci->ab, true);
 
 	/* Disable ASPM during firmware download due to problems switching
 	 * to AMSS state.
