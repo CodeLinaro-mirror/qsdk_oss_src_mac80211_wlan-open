@@ -63,6 +63,10 @@ ath12k-$(CPTCFG_QCN_EXTN) += \
 	qcn_extns/dcs_extn.o \
 	qcn_extns/dp_stats_extn.o
 
+ath12k-$(CPTCFG_EXT_IPA_OFFLOAD) += \
+	qcn_extns/ipa/dp_ipa.o \
+	qcn_extns/ipa/dp_ipa_perf.o
+
 ath12k-$(CPTCFG_ATH12K_DEBUGFS) += debugfs.o debugfs_htt_stats.o debugfs_sta.o
 ath12k-$(CONFIG_ACPI) += acpi.o
 ath12k-$(CPTCFG_ATH12K_TRACING) += trace.o
