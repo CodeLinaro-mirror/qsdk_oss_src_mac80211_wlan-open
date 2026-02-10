@@ -1783,8 +1783,10 @@ int ath12k_mac_partner_peer_cleanup(struct ath12k_base *ab)
 				if (!ar)
 					continue;
 
+				bool bitmap_flag = ahsta->peer_delete_send_mlo_hw_bitmap;
 				ret = ath12k_peer_delete(ar, vid, addr, false,
-							 ahsta->mlo_hw_link_id_bitmap);
+							 ahsta->mlo_hw_link_id_bitmap,
+							 bitmap_flag);
 				if (ret) {
 					ath12k_err(partner_ab,
 						   "failed to delete peer vdev_id %d addr %pM ret %d\n",
@@ -6237,7 +6239,8 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 			    arvif->vdev_id, ret);
 
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
-		ret = ath12k_peer_delete(ar, arvif->vdev_id, arvif->bssid, false, 0);
+		ret = ath12k_peer_delete(ar, arvif->vdev_id, arvif->bssid,
+					 false, 0, false);
 		if (ret)
 			ath12k_warn(ar->ab, "failed to submit AP self-peer removal on vdev %d link id %d: %d"
 				    "num_peers: %d",
@@ -12332,7 +12335,8 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 		skip_peer_del = wdev->is_netdev_going_down;
 
 	ret = ath12k_peer_delete(ar, arvif->vdev_id, arsta->addr, skip_peer_del,
-				 ahsta->mlo_hw_link_id_bitmap);
+				 ahsta->mlo_hw_link_id_bitmap,
+				 ahsta->peer_delete_send_mlo_hw_bitmap);
 	if (ret)
 		ath12k_warn(ar->ab, "Failed to delete peer: %pM for VDEV: %d ar->num_peers: %d arvif->num_peers: %d\n",
 			    arsta->addr, arvif->vdev_id, ar->num_peers, arvif->num_peers);
@@ -12459,7 +12463,8 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 
 free_peer:
 	ath12k_peer_delete(ar, arvif->vdev_id, arsta->addr, false,
-			   arsta->ahsta->mlo_hw_link_id_bitmap);
+			   arsta->ahsta->mlo_hw_link_id_bitmap,
+			   arsta->ahsta->peer_delete_send_mlo_hw_bitmap);
 	if (arsta->ahsta->peer_delete_cmd_sent_bitmap & BIT(arsta->link_id)) {
 		ath12k_mac_station_post_remove(ar, arvif, arsta->addr, arsta->ahsta,
 					       arsta->link_id);
@@ -13112,6 +13117,7 @@ static int ath12k_mac_handle_link_sta_state(struct ieee80211_hw *hw,
 			ath12k_warn(ar->ab, "Failed to add station: %pM for VDEV: %d\n",
 				    arsta->addr, arvif->vdev_id);
 		arsta->ahsta->low_ack_sent = false;
+		arsta->ahsta->peer_delete_send_mlo_hw_bitmap = false;
 
 	/* IEEE80211_STA_AUTH -> IEEE80211_STA_ASSOC: Send station assoc command for
 	 * peer associated to AP/Mesh/ADHOC vif type.
@@ -14111,6 +14117,7 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 	u16 removed_link_map;
 	u8 link_id, tmp_link_id, pri_link_id;
 	int ret, assoc_status, result;
+	bool bitmap_flag = 0;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -14122,6 +14129,9 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 		return ath12k_sta_ml_reconfig_handler(hw, vif, sta,
 					       old_links, new_links);
 	}
+
+	if (ahsta)
+		bitmap_flag = ahsta->peer_delete_send_mlo_hw_bitmap;
 
 	if (new_links > old_links) {
 		if (!ahsta->is_mlo) {
@@ -14184,7 +14194,8 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 									   link_id,
 									   false, 0,
 									   link_addr,
-									   hw_link_bmap);
+									   hw_link_bmap,
+									   bitmap_flag);
 					if (result)
 						ath12k_warn(ar->ab, "ml arsta %pM remove failed\n",
 							    link_addr);
@@ -14299,7 +14310,8 @@ skip_pri_link_selection:
 									 link_id,
 									 false, 0,
 									 link_addr,
-									 hw_link_bmap);
+									 hw_link_bmap,
+									 bitmap_flag);
 				if (ret)
 					ath12k_warn(ar->ab, "Failed to remove ml station: %pM for VDEV: %d\n",
 						    link_addr, arvif->vdev_id);
@@ -18099,7 +18111,8 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 err_peer_del:
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
-		fbret = ath12k_peer_delete(ar, arvif->vdev_id, link_addr, false, 0);
+		fbret = ath12k_peer_delete(ar, arvif->vdev_id, link_addr,
+					   false, 0, false);
 		if (fbret) {
 			ath12k_warn(ar->ab, "failed to delete peer %pM vdev_id %d ret %d\n",
 				    link_addr, arvif->vdev_id, fbret);
