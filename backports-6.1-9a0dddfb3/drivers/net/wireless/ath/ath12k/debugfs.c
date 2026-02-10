@@ -25,6 +25,7 @@
 #include "dp_cmn.h"
 #include "pktlog.h"
 #include "dp_stats.h"
+#include "mgmt_rx.h"
 
 #define SEGMENT_ID	GENMASK(1,0)
 #define CHRIP_ID	BIT(2)

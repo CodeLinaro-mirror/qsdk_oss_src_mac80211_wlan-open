@@ -3,7 +3,7 @@
  *  Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
-#include "core.h"
+#include "mgmt_rx.h"
 #include "hif.h"
 #include "hal.h"
 #include "debug.h"
