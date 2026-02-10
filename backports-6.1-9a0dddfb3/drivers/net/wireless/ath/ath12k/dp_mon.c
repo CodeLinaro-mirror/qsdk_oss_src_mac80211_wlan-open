@@ -133,6 +133,80 @@ ath12k_dp_mon_rx_update_radiotap_he_mu(struct hal_rx_mon_ppdu_info *rx_status,
 }
 
 static void
+ath12k_dp_mon_update_radiotap_uhr(struct hal_rx_mon_ppdu_info *ppduinfo,
+				  struct sk_buff *mon_skb,
+				  struct ieee80211_rx_status *rxs)
+{
+	struct ieee80211_radiotap_tlv *tlv;
+	struct ieee80211_radiotap_uhr *uhr;
+	struct ieee80211_radiotap_uhr_usig *uhr_usig;
+	struct ieee80211_radiotap_uhr_elr *uhr_elr;
+	u16 uhr_len = 0, len = 0, uhr_usig_len, i, uhr_elr_len = 0;
+	u8 user;
+
+	if (ppduinfo->is_uhr && !ppduinfo->is_uhr_elr) {
+		uhr_len = struct_size(uhr, user, ppduinfo->uhr_info.num_user_info);
+		len += sizeof(*tlv) + uhr_len;
+	}
+
+	if (ppduinfo->is_uhr && ppduinfo->is_uhr_elr) {
+		uhr_elr_len = sizeof(*uhr_elr);
+		len += sizeof(*tlv) + uhr_elr_len;
+	}
+
+	if (ppduinfo->uhr_usig) {
+		uhr_usig_len = sizeof(*uhr_usig);
+		len += sizeof(*tlv) + uhr_usig_len;
+	}
+
+	rxs->flag |= RX_FLAG_RADIOTAP_TLV_AT_END;
+	rxs->encoding = RX_ENC_UHR;
+
+	skb_reset_mac_header(mon_skb);
+
+	tlv = skb_push(mon_skb, len);
+
+	if (ppduinfo->uhr_usig) {
+		tlv->type = cpu_to_le16(IEEE80211_RADIOTAP_EHT_USIG);
+		tlv->len = cpu_to_le16(uhr_usig_len);
+		uhr_usig = (struct ieee80211_radiotap_uhr_usig *)tlv->data;
+		*uhr_usig = ppduinfo->u_sig_info.uhr_usig;
+		tlv = (struct ieee80211_radiotap_tlv *)&(tlv->data[uhr_usig_len]);
+	}
+
+	if (ppduinfo->is_uhr && !ppduinfo->is_uhr_elr) {
+		tlv->type = cpu_to_le16(IEEE80211_RADIOTAP_UHR);
+		tlv->len = cpu_to_le16(uhr_len);
+		uhr = (struct ieee80211_radiotap_uhr *)tlv->data;
+		uhr->known = ppduinfo->uhr_info.uhr.known;
+		for (i = 0;
+		     i < ARRAY_SIZE(uhr->data) &&
+		     i < ARRAY_SIZE(ppduinfo->uhr_info.uhr.data);
+		     i++)
+			uhr->data[i] = ppduinfo->uhr_info.uhr.data[i];
+
+		for (user = 0; user < ppduinfo->uhr_info.num_user_info; user++) {
+			put_unaligned_le32(ppduinfo->uhr_info.user_known[user],
+					   &uhr->user[user].known);
+			put_unaligned_le32(ppduinfo->uhr_info.user_info[user],
+					   &uhr->user[user].info);
+			}
+
+		tlv = (struct ieee80211_radiotap_tlv *)&tlv->data[uhr_len];
+	}
+
+	if (ppduinfo->is_uhr && ppduinfo->is_uhr_elr) {
+		tlv->type = cpu_to_le16(IEEE80211_RADIOTAP_UHR_ELR);
+		tlv->len = cpu_to_le16(uhr_elr_len);
+		uhr_elr = (struct ieee80211_radiotap_uhr_elr *)tlv->data;
+		uhr_elr->known = ppduinfo->elr_info.known;
+		uhr_elr->sig1 = ppduinfo->elr_info.sig1;
+		uhr_elr->sig2 = ppduinfo->elr_info.sig2;
+		uhr_elr->mark = ppduinfo->elr_info.mark;
+	}
+}
+
+static void
 ath12k_dp_mon_update_radiotap_eht(struct hal_rx_mon_ppdu_info *ppduinfo,
 				  struct sk_buff *mon_skb,
 				  struct ieee80211_rx_status *rxs)
@@ -162,6 +236,15 @@ ath12k_dp_mon_update_radiotap_eht(struct hal_rx_mon_ppdu_info *ppduinfo,
 
 	tlv = skb_push(mon_skb, len);
 
+	if (ppduinfo->eht_usig) {
+		tlv->type = cpu_to_le16(IEEE80211_RADIOTAP_EHT_USIG);
+		tlv->len = cpu_to_le16(usig_len);
+
+		usig = (struct ieee80211_radiotap_eht_usig *)tlv->data;
+		*usig = ppduinfo->u_sig_info.usig;
+		tlv = (struct ieee80211_radiotap_tlv *)&(tlv->data[usig_len]);
+	}
+
 	if (ppduinfo->is_eht) {
 		tlv->type = cpu_to_le16(IEEE80211_RADIOTAP_EHT);
 		tlv->len = cpu_to_le16(eht_len);
@@ -180,14 +263,6 @@ ath12k_dp_mon_update_radiotap_eht(struct hal_rx_mon_ppdu_info *ppduinfo,
 					   &eht->user_info[user]);
 
 		tlv = (struct ieee80211_radiotap_tlv *)&tlv->data[eht_len];
-	}
-
-	if (ppduinfo->eht_usig) {
-		tlv->type = cpu_to_le16(IEEE80211_RADIOTAP_EHT_USIG);
-		tlv->len = cpu_to_le16(usig_len);
-
-		usig = (struct ieee80211_radiotap_eht_usig *)tlv->data;
-		*usig = ppduinfo->u_sig_info.usig;
 	}
 }
 
@@ -210,7 +285,9 @@ void ath12k_dp_mon_update_radiotap(struct ath12k_pdev_dp *dp_pdev,
 		rxs->ampdu_reference = ppduinfo->userstats[ppduinfo->userid].ampdu_id;
 	}
 
-	if (ppduinfo->is_eht || ppduinfo->eht_usig) {
+	if (ppduinfo->is_uhr || ppduinfo->uhr_usig) {
+		ath12k_dp_mon_update_radiotap_uhr(ppduinfo, mon_skb, rxs);
+	} else if (ppduinfo->is_eht || ppduinfo->eht_usig) {
 		ath12k_dp_mon_update_radiotap_eht(ppduinfo, mon_skb, rxs);
 	} else if (ppduinfo->he_mu_flags) {
 		rxs->flag |= RX_FLAG_RADIOTAP_HE_MU;
