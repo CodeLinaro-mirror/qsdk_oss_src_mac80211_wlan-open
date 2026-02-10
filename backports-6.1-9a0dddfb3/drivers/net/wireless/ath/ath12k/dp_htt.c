@@ -484,7 +484,7 @@ ath12k_dp_ppdu_stats_flush_tlv_parse_update(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	if (tid >= ATH12K_DSCP_PRIORITY) {
-		ath12k_err(dp_pdev->dp->ab, "Invalid tid: %d", tid);
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DATA, "Invalid tid: %d", tid);
 		rcu_read_unlock();
 		return;
 	}
