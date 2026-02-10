@@ -889,14 +889,16 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 	struct ath12k *ar;
 	struct ath12k_device_dp_stats *device_stats = &ab->dp->device_stats;
 	int len = 0, i, j, retval;
-	const int size = 4096;
+	const int size = 16384;
 	int tx_enqueued[DP_TCL_NUM_RING_MAX];
 	int non_fast_rx[DP_REO_DST_RING_MAX][ATH12K_MAX_SOCS];
 	static const char *rxdma_err[HAL_REO_ENTR_RING_RXDMA_ECODE_MAX] = {
 			"Overflow", "MPDU len", "FCS", "Decrypt", "TKIP MIC",
 			"Unencrypt", "MSDU len", "MSDU limit", "WiFi parse",
 			"AMSDU parse", "SA timeout", "DA timeout",
-			"Flow timeout", "Flush req", "AMSDU frag", "Multicast echo"};
+			"Flow timeout", "Flush req", "AMSDU frag", "Multicast echo",
+			"AMSDU addr mismatch", "Unauthorized WDS",
+			"Groupcast AMSDU or WDS", "CFP MIC", "CFP PN check"};
 	static const char *reo_err[HAL_REO_DEST_RING_ERROR_CODE_MAX] = {
 			"Desc addr zero", "Desc inval", "AMPDU in non BA",
 			"Non BA dup", "BA dup", "Frame 2k jump", "BAR 2k jump",
@@ -1031,24 +1033,14 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 			 device_stats->tx_null_frame[3]);
 
 	len += scnprintf(buf + len, size - len, "\ntqm_rel_reason:\n");
-	for (j=0; j < MAX_TX_COMP_RING; j++)
-		len += scnprintf(buf + len, size - len,
-			"Ring%d: 0:%u 1:%u 2:%u 3:%u 4:%u 5:%u 6:%u 7:%u 8:%u 9:%u 10:%u 11:%u 12:%u 13:%u 14:%u\n",
-			j, device_stats->tx_comp_stats[j].tqm_rel_reason[0],
-			device_stats->tx_comp_stats[j].tqm_rel_reason[1],
-			device_stats->tx_comp_stats[j].tqm_rel_reason[2],
-			device_stats->tx_comp_stats[j].tqm_rel_reason[3],
-			device_stats->tx_comp_stats[j].tqm_rel_reason[4],
-			device_stats->tx_comp_stats[j].tqm_rel_reason[5],
-			device_stats->tx_comp_stats[j].tqm_rel_reason[6],
-			device_stats->tx_comp_stats[j].tqm_rel_reason[7],
-			device_stats->tx_comp_stats[j].tqm_rel_reason[8],
-			device_stats->tx_comp_stats[j].tqm_rel_reason[9],
-			device_stats->tx_comp_stats[j].tqm_rel_reason[10],
-			device_stats->tx_comp_stats[j].tqm_rel_reason[11],
-			device_stats->tx_comp_stats[j].tqm_rel_reason[12],
-			device_stats->tx_comp_stats[j].tqm_rel_reason[13],
-			device_stats->tx_comp_stats[j].tqm_rel_reason[14]);
+	for (j = 0; j < MAX_TX_COMP_RING; j++) {
+		len += scnprintf(buf + len, size - len, "Ring%d:", j);
+		for (i = 0; i < MAX_TQM_RELEASE_REASON; i++) {
+			len += scnprintf(buf + len, size - len, " %u:%u", i,
+				device_stats->tx_comp_stats[j].tqm_rel_reason[i]);
+		}
+		len += scnprintf(buf + len, size - len, "\n");
+	}
 
 	len += scnprintf(buf + len, size - len, "\nfw_tx_status:\n");
 	for (j=0; j < MAX_TX_COMP_RING; j++)
@@ -4832,23 +4824,12 @@ static ssize_t ath12k_debugfs_dump_ppeds_stats(struct file *file,
 			 ppeds_stats->num_rx_desc_freed);
 	len += scnprintf(buf + len, size - len, "num_rx_desc_realloc %u\n",
 			 ppeds_stats->num_rx_desc_realloc);
-	len += scnprintf(buf + len, size - len,
-			 "\ntqm_rel_reason: 0:%u 1:%u 2:%u 3:%u 4:%u 5:%u 6:%u 7:%u 8:%u 9:%u 10:%u 11:%u 12:%u 13:%u 14:%u\n",
-			 ppeds_stats->tqm_rel_reason[0],
-			 ppeds_stats->tqm_rel_reason[1],
-			 ppeds_stats->tqm_rel_reason[2],
-			 ppeds_stats->tqm_rel_reason[3],
-			 ppeds_stats->tqm_rel_reason[4],
-			 ppeds_stats->tqm_rel_reason[5],
-			 ppeds_stats->tqm_rel_reason[6],
-			 ppeds_stats->tqm_rel_reason[7],
-			 ppeds_stats->tqm_rel_reason[8],
-			 ppeds_stats->tqm_rel_reason[9],
-			 ppeds_stats->tqm_rel_reason[10],
-			 ppeds_stats->tqm_rel_reason[11],
-			 ppeds_stats->tqm_rel_reason[12],
-			 ppeds_stats->tqm_rel_reason[13],
-			 ppeds_stats->tqm_rel_reason[14]);
+	len += scnprintf(buf + len, size - len, "\ntqm_rel_reason:");
+	for (i = 0; i < HAL_WBM_TQM_REL_REASON_MAX; i++) {
+		len += scnprintf(buf + len, size - len, " %u:%u", i,
+				 ppeds_stats->tqm_rel_reason[i]);
+	}
+	len += scnprintf(buf + len, size - len, "\n");
 
 	len += scnprintf(buf + len, size - len, "SRNG Ring index Dump:\n");
 
