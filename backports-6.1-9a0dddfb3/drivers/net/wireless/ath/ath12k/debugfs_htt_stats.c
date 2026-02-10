@@ -7100,6 +7100,17 @@ ath12k_htt_print_ul_ofdma_trigger_stats(const void *tag_buf, u16 tag_len,
 			 "ul_ofdma_basic_trigger_rx_qos_null_only = %u\n\n",
 			 le32_to_cpu(htt_stats_buf->ul_ofdma_bsc_trig_rx_qos_null_only));
 
+	len += scnprintf(buf + len, buf_len - len, "\n");
+	len += scnprintf(buf + len, buf_len - len, "ulofdma_implicit_trig_tried = %u\n",
+			le32_to_cpu(htt_stats_buf->ulofdma_implicit_trig_tried));
+	len += scnprintf(buf + len, buf_len - len,
+			"ulofdma_implicit_trig_qos_null = %u\n",
+			le32_to_cpu(htt_stats_buf->ulofdma_implicit_trig_qos_null));
+
+	len += print_array_to_buf(buf, len, "tcp_aware_implicit_trig_hist_ms",
+			htt_stats_buf->tcp_aware_implicit_trig_hist_ms,
+			ATH12K_HTT_NUM_TCP_IMPLICIT_TRIG_INTR, "\n");
+
 	stats_req->buf_len = len;
 }
 
@@ -9859,6 +9870,19 @@ ath12k_htt_print_be_bn_ul_trigger_stats_tlv(const void *tag_buf, u16 tag_len,
 			 "bn_ul_ofdma_basic_trigger_rx_qos_null_only = %u\n",
 			 le32_to_cpu(stats_buf->bn_ul_ofdma_basic_trig_rx_qos_null_only));
 
+	len += scnprintf(buf + len, buf_len - len, "\n");
+	len += scnprintf(buf + len, buf_len - len,
+			"be_ulofdma_implicit_trig_tried = %u\n",
+			le32_to_cpu(stats_buf->be_ulofdma_implicit_trig_tried));
+	len += scnprintf(buf + len, buf_len - len,
+			"be_ulofdma_implicit_trig_qos_null = %u\n",
+			le32_to_cpu(stats_buf->be_ulofdma_implicit_trig_qos_null));
+	len += scnprintf(buf + len, buf_len - len,
+			"bn_ulofdma_implicit_trig_tried = %u\n",
+			le32_to_cpu(stats_buf->bn_ulofdma_implicit_trig_tried));
+	len += scnprintf(buf + len, buf_len - len,
+			"bn_ulofdma_implicit_trig_qos_null = %u\n",
+			le32_to_cpu(stats_buf->bn_ulofdma_implicit_trig_qos_null));
 	stats_req->buf_len = len;
 }
 
