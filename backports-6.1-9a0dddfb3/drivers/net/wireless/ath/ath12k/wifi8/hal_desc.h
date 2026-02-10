@@ -2134,6 +2134,8 @@ struct hal_tqm_remove_msdu {
 	__le32 info1;
 	__le32 info2;
 	__le32 info3;
+	__le32 info4;
+	__le32 info5;
 } __packed;
 
 //info0
