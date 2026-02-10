@@ -10788,10 +10788,10 @@ static int ath12k_vendor_get_sta_info_dumpit(struct wiphy *wiphy,
 	struct ath12k_vif *ahvif;
 	struct ath12k_link_vif *arvif;
 	struct ath12k_link_sta *arsta;
-	const u8 *peer_mac;
 	u8 link_id = 0;
 	s8 data_min_rssi = 0, data_max_rssi = 0;
 	int ret;
+	const u8 *peer_mac;
 
 	lockdep_assert_wiphy(wiphy);
 
@@ -10837,7 +10837,7 @@ static int ath12k_vendor_get_sta_info_dumpit(struct wiphy *wiphy,
 	else
 		arvif = wiphy_dereference(wiphy, ahvif->link[link_id]);
 
-	if (!arvif) {
+	if (!arvif || !arvif->ar || !arvif->ar->ab) {
 		ath12k_err(NULL, "sta_info: arvif not found for link %u\n", link_id);
 		return -ENOLINK;
 	}
@@ -10870,6 +10870,10 @@ static int ath12k_vendor_get_sta_info_dumpit(struct wiphy *wiphy,
 	if (nla_put_s8(skb, QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_MIN_RSSI,
 		       data_min_rssi < arsta->min_rssi ?
 		       data_min_rssi : arsta->min_rssi))
+		goto unlock;
+
+	if (nla_put_u8(skb, QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_PS_STATE,
+		       arsta->peer_ps_state))
 		goto unlock;
 
 	spin_unlock_bh(&arvif->ar->ab->base_lock);

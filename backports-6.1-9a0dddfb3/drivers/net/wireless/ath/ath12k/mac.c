@@ -17044,6 +17044,13 @@ int ath12k_mac_start(struct ath12k *ar)
 		goto err;
 	}
 
+	ret = ath12k_wmi_pdev_set_param(ar,
+					WMI_PDEV_PEER_STA_PS_STATECHG_ENABLE,
+					WMI_PEER_PS_STATE_ON, pdev->pdev_id);
+	if (ret)
+		ath12k_warn(ab, "failed to enable peer PS state change events: %d\n",
+			    ret);
+
 	ret = ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_SET_CONG_CTRL_MAX_MSDUS,
 					ATH12K_NUM_POOL_TX_DESC, pdev->pdev_id);
 	if (ret) {
