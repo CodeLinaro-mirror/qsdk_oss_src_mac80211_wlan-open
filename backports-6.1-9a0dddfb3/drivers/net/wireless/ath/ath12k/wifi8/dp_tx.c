@@ -2097,6 +2097,8 @@ ath12k_wifi8_dp_tx_update_txcompl(struct ath12k_pdev_dp *dp_pdev,
 		txrate.flags = RATE_INFO_FLAGS_EHT_MCS;
 		txrate.eht_gi = ath12k_mac_eht_gi_to_nl80211_eht_gi(ts->sgi);
 		break;
+	case HAL_TX_RATE_STATS_PKT_TYPE_11BN:
+		return;
 	default:
 		ath12k_warn(ab, "Invalid tx pkt type: %d\n", ts->pkt_type);
 		return;
