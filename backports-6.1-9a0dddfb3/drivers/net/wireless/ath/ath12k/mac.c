@@ -17718,9 +17718,15 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 	ath12k_mac_update_vif_offload(arvif);
 
-	nss = hweight32(ar->cfg_tx_chainmask) ? : 1;
+	if (ar->ab && ar->ab->num_radios > 1)
+		nss = min_t(u32, 0x2, hweight32(ar->cfg_tx_chainmask));
+	else
+		nss = min_t(u32, 0x4, hweight32(ar->cfg_tx_chainmask));
+
 	ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
 					    WMI_VDEV_PARAM_NSS, nss);
+	ath12k_dbg(ab, ATH12K_DBG_MAC, "Set vdev %d chainmask 0x%x, nss %d : %d\n",
+		   arvif->vdev_id, ar->cfg_tx_chainmask, nss, ret);
 	if (ret) {
 		ath12k_warn(ab, "failed to set vdev %d chainmask 0x%x, nss %d :%d\n",
 			    arvif->vdev_id, ar->cfg_tx_chainmask, nss, ret);
@@ -19375,9 +19381,10 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 	}
 
 	arg.punct_bitmap = ~punct_bitmap;
-	arg.pref_tx_streams = ar->num_tx_chains;
-	arg.pref_rx_streams = ar->num_rx_chains;
-
+	arg.pref_tx_streams = min_t(u32, (ar->ab->num_radios > 1) ? 2 : 4,
+				    hweight32(ar->cfg_tx_chainmask));
+	arg.pref_rx_streams = min_t(u32, (ar->ab->num_radios > 1) ? 2 : 4,
+				    hweight32(ar->cfg_rx_chainmask));
 	if (is_bridge_vdev)
 		arg.mbssid_flags = 0;
 	else

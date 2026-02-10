@@ -49,4 +49,5 @@ int ath12k_mhi_set_state(struct ath12k_pci *ab_pci,
 			 enum ath12k_mhi_state mhi_state);
 void *ath12k_pci_get_priv(struct ath12k_base *ab);
 void ath12k_mhi_q6_boot_debug_timeout_hdlr(struct timer_list *t);
+void ath12k_coredump_q6crash_reason(struct ath12k_base *ab);
 #endif

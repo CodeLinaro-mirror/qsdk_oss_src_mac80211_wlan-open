@@ -171,6 +171,18 @@ module_param_named(reorder_VI_timeout, ath12k_reorder_VI_timeout, uint, 0644);
 MODULE_PARM_DESC(reorder_VI_timeout, "Reorder VI timeout (ms)");
 EXPORT_SYMBOL(ath12k_reorder_VI_timeout);
 
+bool ath12k_qdss_support = true;
+module_param_named(qdss_support, ath12k_qdss_support, bool, 0644);
+MODULE_PARM_DESC(qdss_support, "QDSS trace support: 0-disable, 1-enable");
+
+bool ath12k_skip_ssr;
+module_param_named(skip_ssr, ath12k_skip_ssr, bool, 0644);
+MODULE_PARM_DESC(skip_ssr, "Skip SSR: 0-disable, 1-enable");
+
+bool ath12k_skip_sw_reset;
+module_param_named(skip_sw_reset, ath12k_skip_sw_reset, bool, 0644);
+MODULE_PARM_DESC(skip_sw_reset, "Skip software reset: 0-disable, 1-enable");
+
 /* protected with ath12k_hw_group_mutex */
 static struct list_head ath12k_hw_group_list = LIST_HEAD_INIT(ath12k_hw_group_list);
 
@@ -1911,6 +1923,9 @@ static int ath12k_core_start_firmware(struct ath12k_base *ab,
 	 * configuration in both Mission and FTM modes.
 	 */
 #ifdef CPTCFG_ATHDEBUG
+	if (!ath12k_qdss_support)
+		return ret;
+
 	if (ab->hw_params->en_qdsslog && !ath12k_waltest_mode) {
 		ath12k_info(ab, "QDSS trace enabled\n");
 		qdss_ret = athdbg_if_get_service(ab, ATHDBG_SRV_CONFIG_QDSS);
@@ -4023,6 +4038,9 @@ static void ath12k_core_reset(struct work_struct *work)
 		   !ab->fw_recovery_support) {
 		ath12k_core_trigger_bug_on(ab);
 	}
+
+	if (ath12k_skip_ssr)
+		return;
 
 	atomic_set(&ab->recovery_count, 0);
 

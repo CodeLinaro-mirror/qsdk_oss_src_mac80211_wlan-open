@@ -471,7 +471,7 @@ void ath12k_coredump_upload(struct work_struct *work)
 }
 #endif
 
-static void ath12k_coredump_q6crash_reason(struct ath12k_base *ab)
+void ath12k_coredump_q6crash_reason(struct ath12k_base *ab)
 {
         int i = 0;
         uint64_t coredump_offset = 0;
