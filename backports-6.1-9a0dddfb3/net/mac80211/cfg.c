@@ -4588,7 +4588,10 @@ static int __ieee80211_csa_finalize(struct ieee80211_link_data *link_data)
 	dfs_required = cfg80211_chandef_dfs_required(local->hw.wiphy,
 						     &link_conf->chanreq.oper,
 						     sdata->vif.type);
-	if (dfs_required <= 0) {
+
+	if (dfs_required <= 0 ||
+	    cfg80211_chandef_dfs_available(local->hw.wiphy,
+					   &link_conf->chanreq.oper)) {
 		ieee80211_link_info_change_notify(sdata, link_data, changed);
 		ieee80211_vif_unblock_queues_csa(sdata);
 	} else {
