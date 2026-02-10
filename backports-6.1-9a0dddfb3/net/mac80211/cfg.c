@@ -4484,6 +4484,10 @@ static int ieee80211_set_after_csa_beacon(struct ieee80211_link_data *link_data,
 
 	switch (sdata->vif.type) {
 	case NL80211_IFTYPE_AP:
+		/* Skip Beacon Assignment for Scan Radio */
+		if (wdev_is_scan_radio(&sdata->wdev))
+			break;
+
 		if (!link_data->u.ap.next_beacon)
 			return -EINVAL;
 
