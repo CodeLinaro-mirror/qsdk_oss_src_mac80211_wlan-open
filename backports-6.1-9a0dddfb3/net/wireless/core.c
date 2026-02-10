@@ -1703,6 +1703,7 @@ static int cfg80211_netdev_notifier_call(struct notifier_block *nb,
 	case NETDEV_UP:
 		wiphy_lock(&rdev->wiphy);
 		cfg80211_update_iface_num(rdev, wdev->iftype, 1);
+		wdev->is_netdev_going_down = false;
 		switch (wdev->iftype) {
 #ifdef CPTCFG_CFG80211_WEXT
 		case NL80211_IFTYPE_ADHOC:
