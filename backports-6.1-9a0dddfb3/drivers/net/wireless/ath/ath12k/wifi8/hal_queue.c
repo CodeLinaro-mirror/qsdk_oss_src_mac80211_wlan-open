@@ -106,6 +106,7 @@ int ath12k_wifi8_hal_tx_mpdu_queue_setup(struct ath12k_dp_hw_group *dp_hw_grp,
 					ath12k_get_dp_hw_group_wifi8(dp_hw_grp);
 	u32 paddr_lo;
 	u8 paddr_hi;
+	u16 hdr_sz;
 
 	mpduq = pool_node_from_id(dp_hw_grp_wifi8->mpduq_ctxt, mpduq_idx);
 	if (!mpduq) {
@@ -147,21 +148,15 @@ int ath12k_wifi8_hal_tx_mpdu_queue_setup(struct ath12k_dp_hw_group *dp_hw_grp,
 		mpduq->info5 |= le32_encode_bits(2, HAL_TX_MPDU_QUEUE_HEAD_PN_INC_VALUE);
 	else
 		mpduq->info5 |= le32_encode_bits(1, HAL_TX_MPDU_QUEUE_HEAD_PN_INC_VALUE);
-	if (ti->encap_type == ATH12K_HW_TXRX_RAW ||
-	    ti->encap_type == ATH12K_HW_TXRX_NATIVE_WIFI || ti->is_mgmtq) {
-		mpduq->info5 |= le32_encode_bits(0, HAL_TX_MPDU_QUEUE_HEAD_MPDU_HDR_LEN);
+	if (ti->encap_type == ATH12K_HW_TXRX_RAW || ti->is_mgmtq) {
+		hdr_sz = 0;
 	} else {
 		if (ti->tid > MAX_VALID_DATA_TID)
-			mpduq->info5 |=
-				le32_encode_bits(ATH12K_FRAME_HEADER_SIZE +
-						 ti->header_len,
-						 HAL_TX_MPDU_QUEUE_HEAD_MPDU_HDR_LEN);
+			hdr_sz = ATH12K_FRAME_HEADER_SIZE + ti->header_len;
 		else
-			mpduq->info5 |=
-				le32_encode_bits(ATH12K_QOS_FRAME_HEADER_SIZE +
-						 ti->header_len,
-						 HAL_TX_MPDU_QUEUE_HEAD_MPDU_HDR_LEN);
+			hdr_sz = ATH12K_QOS_FRAME_HEADER_SIZE + ti->header_len;
 	}
+	mpduq->info5 |= le32_encode_bits(hdr_sz, HAL_TX_MPDU_QUEUE_HEAD_MPDU_HDR_LEN);
 	mpduq->info5 |= le32_encode_bits(ATH12K_MAX_NUM_OF_EXT_DESCRIPTORS,
 					 HAL_TX_MPDU_QUEUE_HEAD_NUM_OF_EXT_DESC);
 	mpduq->info9 = le32_encode_bits(ti->assoc_link_id,
