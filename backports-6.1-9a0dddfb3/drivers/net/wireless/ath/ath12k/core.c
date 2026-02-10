@@ -2067,6 +2067,14 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 		goto err_firmware_stop;
 	}
 
+	mutex_lock(&ab->core_lock);
+	if (ath12k_cfg_init(ab))
+		ath12k_err(ab, "Failed to initialize per radio INI data in driver\n");
+	else
+		ath12k_info(ab, "Initialized per radio INI data in driver\n");
+
+	mutex_unlock(&ab->core_lock);
+
 	ret = ath12k_dp_cmn_device_init(ab->dp);
 	if (ret) {
 		ath12k_err(ab, "failed to init DP: %d\n", ret);
@@ -2082,10 +2090,6 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 	mutex_lock(&ag->mutex);
 	mutex_lock(&ab->core_lock);
 
-	if (ath12k_cfg_init(ab))
-		ath12k_err(ab, "Failed to initialize per radio INI data in driver\n");
-	else
-		ath12k_info(ab, "Initialized per radio INI data in driver\n");
 
 	ret = ath12k_core_start(ab);
 	if (ret) {
