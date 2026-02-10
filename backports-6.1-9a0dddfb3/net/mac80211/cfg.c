@@ -4126,6 +4126,14 @@ __ieee80211_is_scan_ongoing(struct wiphy *wiphy,
 			chan = scan_req->channels[i];
 			chan_hw_idx = cfg80211_get_hw_idx_by_chan(wiphy, chan);
 			if (chan_hw_idx == req_hw_idx) {
+				/* Ind Rptr: If Rep STA scan is ongoing, allow
+				 * channel switch/CAC in same link for Rep AP
+				 */
+				if (local->scan_sdata &&
+				    local->scan_sdata->vif.type ==
+						NL80211_IFTYPE_STATION) {
+					break;
+				}
 				rcu_read_unlock();
 				return true;
 			}
