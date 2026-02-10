@@ -15312,8 +15312,11 @@ ath12k_create_vht_cap(struct ath12k *ar, u32 rate_cap_tx_chainmask,
 
 	ath12k_set_vht_txbf_cap(ar, &vht_cap.cap);
 
-	/* 80P80 is not supported */
-	vht_cap.cap &= ~IEEE80211_VHT_CAP_SUPP_CHAN_WIDTH_160_80PLUS80MHZ;
+	/* TODO: 80+80 is applicable for wifi6. Revise this for wifi7 scan radio*/
+	if (!ath12k_scan_radio_supported(ar->pdev)) {
+		/* 80P80 is not supported */
+		vht_cap.cap &= ~IEEE80211_VHT_CAP_SUPP_CHAN_WIDTH_160_80PLUS80MHZ;
+	}
 
 	rxmcs_map = 0;
 	txmcs_map = 0;
@@ -15364,12 +15367,9 @@ static void ath12k_mac_setup_ht_vht_cap(struct ath12k *ar,
 			*ht_cap_info = ht_cap;
 		band->ht_cap = ath12k_create_ht_cap(ar, ht_cap,
 						    rate_cap_rx_chainmask);
-		band->vht_cap = ath12k_create_vht_cap(ar, rate_cap_tx_chainmask,
-						    rate_cap_rx_chainmask);
 		/* Update wiphy sband info if sband structure is set/cleared */
 		if (band != band_wiphy) {
 			band_wiphy->ht_cap =  band->ht_cap;
-			band_wiphy->vht_cap = band->vht_cap;
 			/* set/clear the value if it was duped */
 			band_wiphy->vht_cap.vht_mcs.tx_highest ^=
 				cpu_to_le16(IEEE80211_VHT_EXT_NSS_BW_CAPABLE);
