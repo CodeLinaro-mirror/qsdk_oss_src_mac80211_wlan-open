@@ -13550,6 +13550,162 @@ static void ath12k_htt_print_enhanced_ctl_stats(const void *tag_buf, u16 tag_len
 	stats_req->buf_len = len;
 }
 
+static void ath12k_htt_print_dpd_halphy_tlv(const void *tag_buf, u16 tag_len,
+struct debug_htt_stats_req *stats_req)
+{
+	const struct ath12k_htt_stats_dpd_halphy_tlv *htt_stats_buf = tag_buf;
+	u8  i, *buf = stats_req->buf;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE, len = stats_req->buf_len;
+
+	if (tag_len < sizeof(*htt_stats_buf))
+		return;
+
+	len += scnprintf(buf + len, buf_len - len,
+			"===================== DPD HALPHY Stats =====================\n");
+
+	len += scnprintf(buf + len, buf_len - len, "pdev_id = %u\n",
+			le32_to_cpu(htt_stats_buf->pdev_id));
+	len += scnprintf(buf + len, buf_len - len, "dpd_cal_start_time = %u\n",
+			le32_to_cpu(htt_stats_buf->dpd_cal_start_time));
+	len += scnprintf(buf + len, buf_len - len, "dpd_cal_end_time = %u\n",
+			le32_to_cpu(htt_stats_buf->dpd_cal_end_time));
+	len += scnprintf(buf + len, buf_len - len, "total_tx_pass_cnt = %u\n",
+			le32_to_cpu(htt_stats_buf->total_tx_pass_cnt));
+	len += scnprintf(buf + len, buf_len - len, "total_tx_fail_cnt = %u\n",
+			le32_to_cpu(htt_stats_buf->total_tx_fail_cnt));
+	len += scnprintf(buf + len, buf_len - len, "dpd_trigger_reason = %u\n",
+			le32_to_cpu(htt_stats_buf->dpd_trigger_reason));
+
+	for (i = 0; i < ATH12K_HTT_STATS_MAX_CHAINS; i++) {
+		len += scnprintf(buf + len, buf_len - len,
+				 "dpd_training_temp[%u]=", i);
+		len += print_array_to_buf_s32(buf, len, NULL, 0,
+					      (s32 *)htt_stats_buf->dpd_training_temp[i],
+					      ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+	}
+
+	len += scnprintf(buf + len, buf_len - len, "cal_start_temp = %d\n",
+			a_sle32_to_cpu(htt_stats_buf->cal_start_temp));
+	len += scnprintf(buf + len, buf_len - len, "cal_end_temp = %d\n",
+			a_sle32_to_cpu(htt_stats_buf->cal_end_temp));
+	len += scnprintf(buf + len, buf_len - len, "cal_channel = %u\n",
+			le32_to_cpu(htt_stats_buf->cal_channel));
+	len += scnprintf(buf + len, buf_len - len, "cal_phy_mode = %u\n",
+			le32_to_cpu(htt_stats_buf->cal_phy_mode));
+	len += scnprintf(buf + len, buf_len - len, "cal_chan_flags = %u\n",
+			le32_to_cpu(htt_stats_buf->cal_chan_flags));
+	len += scnprintf(buf + len, buf_len - len,
+			"mem_dpd_post_proc_trigger_cnt = %u\n",
+			le32_to_cpu(htt_stats_buf->mem_dpd_post_proc_trigger_cnt));
+	len += scnprintf(buf + len, buf_len - len,
+			"mem_dpd_post_proc_complete_cnt = %u\n",
+			le32_to_cpu(htt_stats_buf->mem_dpd_post_proc_complete_cnt));
+	len += scnprintf(buf + len, buf_len - len, "dpd_cal_state = %u\n",
+			le32_to_cpu(htt_stats_buf->dpd_cal_state));
+	len += scnprintf(buf + len, buf_len - len, "dpd_cal_status = %u\n",
+			le32_to_cpu(htt_stats_buf->dpd_cal_status));
+	len += scnprintf(buf + len, buf_len - len, "dpd_fail_reason = %u\n",
+			le32_to_cpu(htt_stats_buf->dpd_fail_reason));
+
+	for (i = 0; i < ATH12K_HTT_STATS_MAX_CHAINS; i++) {
+		len += scnprintf(buf + len, buf_len - len,
+				 "sch_cmd_result_per_chain[%u]=", i);
+		len += print_array_to_buf(buf, len, NULL,
+					  htt_stats_buf->sch_cmd_result_per_chain[i],
+					  ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+	}
+
+	for (i = 0; i < ATH12K_HTT_STATS_MAX_CHAINS; i++) {
+		len += scnprintf(buf + len, buf_len - len,
+				 "tx_status_per_chain[%u]=", i);
+		len += print_array_to_buf(buf, len, NULL,
+					  htt_stats_buf->tx_status_per_chain[i],
+					  ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+	}
+
+	stats_req->buf_len = len;
+}
+
+static void ath12k_htt_print_dpd_hw_cal_params_tlv(const void *tag_buf,
+u16 tag_len, struct debug_htt_stats_req *stats_req)
+{
+	const struct ath12k_htt_stats_dpd_hw_cal_parm_tlv *htt_stats_buf = tag_buf;
+	u8  i, *buf = stats_req->buf;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE, len = stats_req->buf_len;
+
+	if (tag_len < sizeof(*htt_stats_buf))
+		return;
+
+	len += scnprintf(buf + len, buf_len - len,
+			"===================== DPD HW Cal Params =====================\n");
+
+	for (i = 0; i < ATH12K_HTT_STATS_MAX_CHAINS; i++) {
+		len += scnprintf(buf + len, buf_len - len,
+				 "dpd_rx_gain[%u]=", i);
+		len += print_array_to_buf(buf, len, NULL,
+					  htt_stats_buf->dpd_rx_gain[i],
+					  ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+	}
+
+	for (i = 0; i < ATH12K_HTT_STATS_MAX_CHAINS; i++) {
+		len += scnprintf(buf + len, buf_len - len,
+				 "tpc_gain_idx[%u]=", i);
+		len += print_array_to_buf(buf, len, NULL,
+					  htt_stats_buf->tpc_gain_idx[i],
+					  ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+	}
+
+	for (i = 0; i < ATH12K_HTT_STATS_MAX_CHAINS; i++) {
+		len += scnprintf(buf + len, buf_len - len,
+				 "tpc_glut[%u]=", i);
+		len += print_array_to_buf(buf, len, NULL,
+					  htt_stats_buf->tpc_glut[i],
+					  ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+	}
+
+	stats_req->buf_len = len;
+}
+
+static void ath12k_htt_print_dpd_hw_cal_results_tlv(const void *tag_buf,
+u16 tag_len, struct debug_htt_stats_req *stats_req)
+{
+	const struct ath12k_htt_stats_dpd_hw_cal_res_tlv *htt_stats_buf = tag_buf;
+	u8  i, *buf = stats_req->buf;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE, len = stats_req->buf_len;
+
+	if (tag_len < sizeof(*htt_stats_buf))
+		return;
+
+	len += scnprintf(buf + len, buf_len - len,
+			"===================== DPD HW Cal Results =====================\n");
+
+	for (i = 0; i < ATH12K_HTT_STATS_MAX_CHAINS; i++) {
+		len += scnprintf(buf + len, buf_len - len,
+				 "sq_value[%u]=", i);
+		len += print_array_to_buf(buf, len, NULL,
+					  htt_stats_buf->sq_value[i],
+					  ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+	}
+
+	for (i = 0; i < ATH12K_HTT_STATS_MAX_CHAINS; i++) {
+		len += scnprintf(buf + len, buf_len - len,
+				 "sq_idx[%u]=", i);
+		len += print_array_to_buf(buf, len, NULL,
+					  htt_stats_buf->sq_idx[i],
+					  ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+	}
+
+	for (i = 0; i < ATH12K_HTT_STATS_MAX_CHAINS; i++) {
+		len += scnprintf(buf + len, buf_len - len,
+				 "nmse_chain[%u]=", i);
+		len += print_array_to_buf_s32(buf, len, NULL, 0,
+					      (s32 *)htt_stats_buf->nmse_chain[i],
+					      ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+	}
+
+	stats_req->buf_len = len;
+}
+
 static int ath12k_dbg_htt_ext_stats_parse(struct ath12k_base *ab,
 					  struct ath12k_pdev_dp *dp_pdev,
 					  u16 tag, u16 len, const void *tag_buf,
@@ -14258,12 +14414,26 @@ static int ath12k_dbg_htt_ext_stats_parse(struct ath12k_base *ab,
 		ath12k_htt_print_sched_txq_combined_seq_state_tlv(tag_buf, len,
 								  stats_req);
 		break;
+
 	case HTT_STATS_CTL_TAG:
 		ath12k_htt_print_ctl_stats(tag_buf, len, stats_req);
 		break;
 	case HTT_STATS_ENHANCED_CTL_TAG:
 		ath12k_htt_print_enhanced_ctl_stats(tag_buf, len, stats_req);
 		break;
+
+	case HTT_STATS_DPD_HALPHY_TAG:
+		ath12k_htt_print_dpd_halphy_tlv(tag_buf, len, stats_req);
+		break;
+
+	case HTT_STATS_DPD_HW_CAL_PARAMS_TAG:
+		ath12k_htt_print_dpd_hw_cal_params_tlv(tag_buf, len, stats_req);
+		break;
+
+	case HTT_STATS_DPD_HW_CAL_RESULTS_TAG:
+		ath12k_htt_print_dpd_hw_cal_results_tlv(tag_buf, len, stats_req);
+		break;
+
 	default:
 		break;
 	}
