@@ -14,7 +14,9 @@
 #include "debug.h"
 #include "dp_mon.h"
 #include "dp_mon_filter.h"
-#include "ini.h"
+#ifdef CPTCFG_QCN_EXTN
+#include "qcn_extns/ini.h"
+#endif
 #include "telemetry_agent_if.h"
 #include "ath12k_notif.h"
 

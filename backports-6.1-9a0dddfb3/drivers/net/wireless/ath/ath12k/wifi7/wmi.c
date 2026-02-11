@@ -6,7 +6,9 @@
 
 #include "../core.h"
 #include "wmi.h"
-#include "../ini.h"
+#ifdef CPTCFG_QCN_EXTN
+#include "../qcn_extns/ini.h"
+#endif
 
 void ath12k_wifi7_wmi_init_qcn9274(struct ath12k_base *ab,
 				   struct ath12k_wmi_resource_config_arg *config)

@@ -8,7 +8,10 @@
 
 #include "hw.h"
 #include "hal.h"
-#include "ini.h"
+#include "debug.h"
+#ifdef CPTCFG_QCN_EXTN
+#include "qcn_extns/ini.h"
+#endif
 
 struct ath12k_mgmt;
 

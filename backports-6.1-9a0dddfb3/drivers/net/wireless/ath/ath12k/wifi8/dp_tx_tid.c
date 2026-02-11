@@ -8,7 +8,9 @@
 #include "../dp_cmn.h"
 #include "dp.h"
 #include "../mac.h"
-#include "../ini.h"
+#ifdef CPTCFG_QCN_EXTN
+#include "../qcn_extns/ini.h"
+#endif
 #include "../dp_tx.h"
 
 #define ATH12K_FRAME_HEADER_SIZE 24

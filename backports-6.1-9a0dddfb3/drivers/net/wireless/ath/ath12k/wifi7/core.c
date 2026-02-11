@@ -11,7 +11,9 @@
 #include "pci.h"
 #include "ahb.h"
 #include "../vendor_services.h"
-#include "../ini.h"
+#ifdef CPTCFG_QCN_EXTN
+#include "../qcn_extns/ini.h"
+#endif
 
 static int ahb_err, pci_err;
 
