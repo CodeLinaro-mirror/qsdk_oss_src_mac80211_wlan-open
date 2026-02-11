@@ -41,7 +41,7 @@
 
 #define ATH12K_PPE2TCL_RING_MASK_0 0x1
 #define ATH12K_REO2PPE_RING_MASK_0 0x1
-#define ATH12K_PPE_WBM2SW_RELEASE_RING_MASK_0 0x1
+#define ATH12K_PPE_TQM2SW_RELEASE_RING_MASK_0 0x1
 
 static const int ath12k_wifi8_ext_irq_grp_affinity[] = {
 	0, /* grp0  -> cpu0 */

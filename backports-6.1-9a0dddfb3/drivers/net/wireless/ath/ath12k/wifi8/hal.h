@@ -53,15 +53,18 @@ extern const struct ath12k_hw_version_map ath12k_wifi8_hw_ver_map[];
 #define HAL_MGMT_BCAST_TID 18
 #define HAL_MGMT_SENSING_TID 19
 
+/*
+ * PPE_VP_CONFIG_TABLE DETAILS
+ */
 #define HAL_TX_PPE_VP_CFG_WILDCARD_LMAC_ID 3
-#define HAL_TX_PPE_VP_CFG_VP_NUM                GENMASK(7, 0)
-#define HAL_TX_PPE_VP_CFG_PMAC_ID               GENMASK(9, 8)
-#define HAL_TX_PPE_VP_CFG_BANK_ID               GENMASK(15, 10)
-#define HAL_TX_PPE_VP_CFG_VDEV_ID               GENMASK(23, 16)
-#define HAL_TX_PPE_VP_CFG_SRCH_IDX_REG_NUM      GENMASK(26, 24)
-#define HAL_TX_PPE_VP_CFG_USE_PPE_INT_PRI       BIT(27)
-#define HAL_TX_PPE_VP_CFG_TO_FW                 BIT(28)
-#define HAL_TX_PPE_VP_CFG_DROP_PREC_EN          BIT(29)
+#define HAL_TX_PPE_VP_CFG_ENTRY_VALID           BIT(0)
+#define HAL_TX_PPE_VP_CFG_LMAC_ID               GENMASK(3, 1)
+#define HAL_TX_PPE_VP_CFG_BANK_ID               GENMASK(11, 4)
+#define HAL_TX_PPE_VP_CFG_VDEV_ID               GENMASK(19, 12)
+#define HAL_TX_PPE_VP_CFG_SRCH_IDX_REG_NUM      GENMASK(25, 20)
+#define HAL_TX_PPE_VP_CFG_USE_PPE_INT_PRI       BIT(26)
+#define HAL_TX_PPE_VP_CFG_TO_FW                 BIT(27)
+#define HAL_TX_PPE_VP_CFG_DROP_PREC_EN          BIT(28)
 
 enum rdi_based_destination_ring_selection {
 	DESTINATION_RING_CTRL_SW0,
@@ -233,6 +236,7 @@ enum rdi_based_source_ring_selection {
 /*TQM2SW Ring address */
 #define HAL_TQM2SW0_RELEASE_RING_HP		0x3078
 #define HAL_TQM2SW1_RELEASE_RING_HP		0x3080
+#define HAL_TQM2SW6_RELEASE_RING_HP		0x30A8
 
 #define HAL_TCL_PPE_INDEX_MAPPING_OFFSET 0x214
 #define HAL_TCL_PPE_INDEX_MAPPING_SLOT_SIZE 0x4
@@ -361,6 +365,11 @@ enum rdi_based_source_ring_selection {
 #define REO2PPE_DST_RING_MAP 11
 #define REO_DEST_CTRL_IX_0_RING6_MAP_MASK 0xF
 #define REO_DEST_CTRL_IX_0_RING6_MAP_SHFT 24
+
+/* REO2PPE cookie conversion enable bits */
+#define HAL_REO2PPE_COOKIE_CONV_EN_RING		BIT(11)
+#define HAL_REO2PPE1_COOKIE_CONV_EN_RING	BIT(12)
+#define HAL_REO2PPE2_COOKIE_CONV_EN_RING	BIT(13)
 
 #define HAL_REO1_QDESC_ADDR(hal)                ((hal)->regs->hal_reo1_qdesc_addr)
 #define HAL_REO1_QDESC_MAX_PEERID(hal)  ((hal)->regs->hal_reo1_qdesc_max_peerid)
@@ -503,9 +512,10 @@ enum rdi_based_source_ring_selection {
 #define HAL_WBM_SW_RELEASE_RING_HP		0x3010
 #define HAL_WBM_FW_RELEASE_RING_HP		0x3018
 
-/* WBM2SW R0 release address */
+/* TQM2SW R0 release address */
 #define HAL_TQM2SW0_RELEASE_RING_BASE_LSB	0x73c
 #define HAL_TQM2SW1_RELEASE_RING_BASE_LSB	0x7b4
+#define HAL_TQM2SW6_RELEASE_RING_BASE_LSB	0xA0C
 
 /* REO2SW8 ring */
 #define HAL_REO2SW8_RING_BASE_LSB	0xb90
@@ -700,7 +710,6 @@ enum rdi_based_source_ring_selection {
 
 #define HAL_WBM2SW_REL_ERR_RING_NUM 5
 #define HAL_WBM2SW_PPEDS_TX_CMPLN_MAP_ID 11
-#define HAL_WBM2SW_PPEDS_TX_CMPLN_RING_NUM 6
 
 #define HAL_RX_MAX_BA_WINDOW	256
 

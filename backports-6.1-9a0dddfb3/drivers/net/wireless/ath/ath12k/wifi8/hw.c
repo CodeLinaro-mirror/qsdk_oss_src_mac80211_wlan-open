@@ -201,7 +201,7 @@ static struct ath12k_hw_ring_mask ath12k_wifi8_hw_ring_mask_qcn9625 = {
 		0, 0, 0, 0,
 		0, 0, 0, 0,
 		0, 0, 0, 0,
-		ATH12K_PPE_WBM2SW_RELEASE_RING_MASK_0
+		ATH12K_PPE_TQM2SW_RELEASE_RING_MASK_0
 	},
 #endif
 	/* Group 22 */
@@ -322,7 +322,9 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.support_umac_reset = true,
 		.umac_irq_line_reset = false,
 		.umac_reset_ipc = 0,
-		.ds_support = false,
+		.ds_support = true,
+		.ds_txrx_hw_auto_idx = false,
+		.ds_hw_buff_mgmt = false,
 		.mlo_3_link_tx_support = true,
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,

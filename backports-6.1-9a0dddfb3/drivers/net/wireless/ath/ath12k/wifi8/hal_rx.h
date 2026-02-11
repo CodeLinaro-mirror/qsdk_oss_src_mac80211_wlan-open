@@ -407,8 +407,7 @@ struct hal_rx_flow {
 	u16 service_code;
 	u8 reo_destination_handler;
 	u8 reo_indication;
-	u8 use_ppe      :1,
-	drop         :1;
+	u8 drop:1;
 
 	u32 timestamp;
 
