@@ -121,6 +121,7 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_WLAN_TELEMETRY_WDEV = 263,
 	QCA_NL80211_VENDOR_SUBCMD_ATF_OFFLOAD_OPS = 268,
 	QCA_NL80211_VENDOR_SUBCMD_DCS_CONFIG = 269,
+	QCA_NL80211_VENDOR_SUBCMD_EXTENDED_MONITOR = 272,
 	QCA_NL80211_VENDOR_SUBCMD_ME_LIST = 374,
 	QCA_NL80211_VENDOR_SUBCMD_ME_CONFIG = 375,
 
@@ -4085,6 +4086,465 @@ enum qca_wlan_vendor_attr_me_list {
 	QCA_WLAN_VENDOR_ATTR_ME_LIST_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_ME_LIST_MAX =
 		QCA_WLAN_VENDOR_ATTR_ME_LIST_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_vendor_attr_extended_monitor - Attributes used by
+ * QCA_NL80211_VENDOR_SUBCMD_EXTENDED_MONITOR.
+ * Same subcommand is used by both user application to send request and driver
+ * to send the response back.
+ *
+ * @QCA_VENDOR_ATTR_EXT_MON_CMD_TYPE: u8 attribute.
+ *     Mandatory attribute defining the type of operation.
+ *     The possible types are defined in
+ *     enum qca_vendor_extended_monitor_cmd_type.
+ *
+ * @QCA_VENDOR_ATTR_EXT_MON_DIRECTION: u8 attribute.
+ *     Mandatory attribute defining the direction for which the configuration is
+ *     to be applied or retrieved. The possible directions are defined in
+ *     enum qca_vendor_extended_monitor_direction.
+ *
+ * @QCA_VENDOR_ATTR_EXT_MON_STATUS_CODE: u8 attribute.
+ *    Reports the result of an extended monitor operation.
+ *    For set commands, this field indicates whether the requested configuration
+ *    was applied successfully. On failure, it contains an error code.
+ *    For get commands, this field is populated with an error code if retrieving
+ *    the configuration fails.
+ *    The possible error codes are defined in the
+ *    enum qca_vendor_extended_monitor_status_code.
+ *
+ * @QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG: Nested attribute.
+ *    Contains direction-specific configuration for extended monitor operations.
+ *    This attribute is valid only when %QCA_VENDOR_ATTR_EXT_MON_CMD_TYPE is
+ *    %QCA_VENDOR_EXT_MON_CMD_TYPE_SET_FILTER or
+ *    %QCA_VENDOR_EXT_MON_CMD_TYPE_GET_FILTER.
+ *
+ *    The nested data encapsulates the full set of monitor parameters as
+ *    defined in enum qca_vendor_attr_extended_monitor_filter_config.
+ *
+ *    For SET_FILTER operations, the contents of this attribute are used to
+ *    program user-requested monitoring behavior (filters, reporting
+ *    controls, and any hardware/firmware-specific monitoring options).
+ *    For GET_FILTER operations, the driver populates this attribute with the
+ *    currently active monitor configuration for the requested direction.
+ *
+ * @QCA_VENDOR_ATTR_EXT_MON_PEER_CONFIG: Nested attribute.
+ *    Contains peer-specific configuration for extended monitor operations.
+ *    This attribute is valid only when %QCA_VENDOR_ATTR_EXT_MON_CMD_TYPE is
+ *    %QCA_VENDOR_EXT_MON_CMD_TYPE_SET_PEER or
+ *    %QCA_VENDOR_EXT_MON_CMD_TYPE_GET_PEER.
+ *
+ *    The nested attributes follow the layout defined in
+ *    enum qca_vendor_attr_extended_monitor_peer_config, describing the
+ *    peer configuration for SET_PEER or GET_PEER commands.
+ *    configuration maintained by the driver (for GET_PEER).
+ *
+ *    The interpretation of the peer configuration depends on the value of
+ *    QCA_VENDOR_ATTR_EXT_MON_DIRECTION. When the direction is set to
+ *    RX, this attribute carries or returns RX monitor specific peer
+ *    configuration. When the direction is set to TX, it carries or returns
+ *    TX monitor specific peer configuration.
+ */
+enum qca_vendor_attr_extended_monitor {
+	QCA_VENDOR_ATTR_EXT_MON_INVALID = 0,
+	QCA_VENDOR_ATTR_EXT_MON_CMD_TYPE = 1,
+	QCA_VENDOR_ATTR_EXT_MON_DIRECTION = 2,
+	QCA_VENDOR_ATTR_EXT_MON_STATUS_CODE = 3,
+	QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG = 4,
+	QCA_VENDOR_ATTR_EXT_MON_PEER_CONFIG = 5,
+
+	/* keep last */
+	QCA_VENDOR_ATTR_EXT_MON_AFTER_LAST,
+	QCA_VENDOR_ATTR_EXT_MON_MAX =
+		QCA_VENDOR_ATTR_EXT_MON_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_vendor_extended_monitor_cmd_type - Operation type for
+ * QCA_NL80211_VENDOR_SUBCMD_EXTENDED_MONITOR.
+ *
+ * Defines the type of configuration operation requested by the user.
+ * These values indicate whether the command intends to set or
+ * retrieve filter-based monitor configuration or peer-specific
+ * monitor configuration.
+ *
+ * @QCA_VENDOR_EXT_MON_CMD_TYPE_SET_FILTER:
+ *    Set request for filter-based monitor configuration.
+ *    The corresponding filter configuration is supplied through
+ *    %QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG, depending on the
+ *    %QCA_VENDOR_ATTR_EXT_MON_DIRECTION.
+ *
+ * @QCA_VENDOR_EXT_MON_CMD_TYPE_GET_FILTER:
+ *    Get request for retrieving the currently active filter-based monitor
+ *    configuration for a direction. Direction is indicated in
+ *    %QCA_VENDOR_ATTR_EXT_MON_DIRECTION. Driver returns the configuration
+ *    via %QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG.
+ *
+ * @QCA_VENDOR_EXT_MON_CMD_TYPE_SET_PEER:
+ *    Set request for programming peer-specific monitor configuration.
+ *    The peer configuration must be provided through the nested attribute
+ *    %QCA_VENDOR_ATTR_EXT_MON_PEER_CONFIG. The interpretation of the
+ *    peer configuration (RX or TX) depends on
+ *    %QCA_VENDOR_ATTR_EXT_MON_DIRECTION.
+ *
+ * @QCA_VENDOR_EXT_MON_CMD_TYPE_GET_PEER:
+ *    Get request for retrieving peer-specific monitor configuration already
+ *    stored by the driver. The driver returns the peer configuration through
+ *    %QCA_VENDOR_ATTR_EXT_MON_PEER_CONFIG, with RX/TX semantics governed
+ *    by %QCA_VENDOR_ATTR_EXT_MON_DIRECTION.
+ */
+enum qca_vendor_extended_monitor_cmd_type {
+	QCA_VENDOR_EXT_MON_CMD_TYPE_SET_FILTER = 1,
+	QCA_VENDOR_EXT_MON_CMD_TYPE_GET_FILTER = 2,
+	QCA_VENDOR_EXT_MON_CMD_TYPE_SET_PEER = 3,
+	QCA_VENDOR_EXT_MON_CMD_TYPE_GET_PEER = 4,
+};
+
+/**
+ * enum qca_vendor_extended_monitor_direction - Direction selector for
+ * extended monitor mode capture.
+ * It is used to indicate the direction in %QCA_VENDOR_ATTR_EXT_MON_DIRECTION
+ * which is a mandatory attribute alongwith %QCA_VENDOR_ATTR_EXT_MON_CMD_TYPE
+ * for application requests. This enum defines the direction for all the cmd
+ * types defined in enum qca_vendor_extended_monitor_cmd_type.
+ *
+ * @QCA_VENDOR_EXT_MON_DIRECTION_RX: Capture RX frames only.
+ * @QCA_VENDOR_EXT_MON_DIRECTION_TX: Capture TX frames only.
+ */
+enum qca_vendor_extended_monitor_direction {
+	QCA_VENDOR_EXT_MON_DIRECTION_RX = 1,
+	QCA_VENDOR_EXT_MON_DIRECTION_TX = 2,
+};
+
+/**
+ * enum qca_vendor_extended_monitor_status_code - Error codes for extended monitor
+ * tool failure in driver. Each error code corresponds to a failure in driver,
+ * which is sent to the application in the response using
+ * %QCA_VENDOR_ATTR_EXT_MON_STATUS_CODE.
+ *
+ * @QCA_VENDOR_EXT_MON_SUCCESS: Application request is processed successfully.
+ * @QCA_VENDOR_EXT_MON_VALIDATION_FAIL: Request failure indicating that the configs
+ * are incorrect as per the driver.
+ * @QCA_VENDOR_EXT_MON_FILTER_SETUP_FAIL: Request failure indicating failure in
+ * sending the HTT message to set the requested filter.
+ * @QCA_VENDOR_EXT_MON_PEER_SETUP_FAIL: Request failure indicating failure in
+ * configuring the requested peers.
+ */
+enum qca_vendor_extended_monitor_status_code {
+	QCA_VENDOR_EXT_MON_SUCCESS = 0,
+	QCA_VENDOR_EXT_MON_VALIDATION_FAIL = 1,
+	QCA_VENDOR_EXT_MON_FILTER_SETUP_FAIL = 2,
+	QCA_VENDOR_EXT_MON_PEER_SETUP_FAIL = 3,
+};
+
+/**
+ * enum qca_vendor_attr_extended_monitor_filter_config - Nested attributes for filter
+ * configuration used with %QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG.
+ *
+ * @QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_LEVEL: u8 attribute.
+ *     Level of filtering applied. This controls the granularity of frame capture.
+ *     Uses enum qca_vendor_extended_monitor_filter_level.
+ *
+ * @QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_DISABLE: Flag attribute.
+ *     If set, disables extended monitor filter settings for direction set in
+ *     %QCA_VENDOR_ATTR_EXT_MON_DIRECTION
+ *
+ * @QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_ALL_PEER: Nested attribute.
+ *     Filter settings for frames from connected clients.
+ *     The filter settings are provided using
+ *     enum qca_vendor_attr_extended_monitor_pkt_config_filter.
+ *
+ * @QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_ALL_NEIGHBOR: Nested attribute.
+ *     Filter settings for frames from non-associated clients (neighbors).
+ *     The filter settings are provided using
+ *     enum qca_vendor_attr_extended_monitor_pkt_config_filter.
+ *
+ * @QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_TARGET_PEER: Nested attribute.
+ *     Filter settings for frames from clients that are added using
+ *     the set peer command. The filter settings are provided using
+ *     enum qca_vendor_attr_extended_monitor_pkt_config_filter.
+ *
+ * @QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_TARGET_NEIGHBOR: Nested attribute.
+ *     Filter settings for frames from neighbors added using
+ *     the set peer command. The filter settings are provided using
+ *     enum qca_vendor_attr_extended_monitor_pkt_config_filter.
+ *
+ * @QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_META_DATA: u8 attribute.
+ *     Indicates packet metadata bitmap configured by the user.
+ *     The bitmap definition is application-specific and should be agreed upon
+ *     between the driver and the user space application.
+ */
+enum qca_vendor_attr_extended_monitor_filter_config {
+	QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_INVALID = 0,
+	QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_LEVEL = 1,
+	QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_DISABLE = 2,
+	QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_ALL_PEER = 3,
+	QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_ALL_NEIGHBOR = 4,
+	QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_TARGET_PEER = 5,
+	QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_TARGET_NEIGHBOR = 6,
+	QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_META_DATA = 7,
+
+	/* keep last */
+	QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_AFTER_LAST,
+	QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_MAX =
+		QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_vendor_extended_monitor_filter_level - Filter level selector
+ * Enum defining the supported filter levels. These values control the
+ * granularity of frame capture.
+ *
+ * @QCA_VENDOR_EXT_MON_FILTER_LEVEL_MSDU: Capture all MSDUs.
+ *     This level captures every MSDU (MAC Service Data Unit) individually.
+ *
+ * @QCA_VENDOR_EXT_MON_FILTER_LEVEL_MPDU: Capture the first MSDU of every MPDU.
+ *     This level captures only the first MSDU from each MPDU (MAC Protocol
+ *     Data Unit), reducing the capture volume while maintaining frame flow
+ *     visibility.
+
+ * @QCA_VENDOR_EXT_MON_FILTER_LEVEL_PPDU: Capture the first MSDU of the first
+ *     MPDU of every PPDU. This level captures only the first MPDU from each PPDU
+ *     (Physical Layer Protocol Data Unit), providing the most coarse-grained
+ *     capture with minimal overhead.
+ */
+enum qca_vendor_extended_monitor_filter_level {
+	QCA_VENDOR_EXT_MON_FILTER_LEVEL_MSDU = 1,
+	QCA_VENDOR_EXT_MON_FILTER_LEVEL_MPDU = 2,
+	QCA_VENDOR_EXT_MON_FILTER_LEVEL_PPDU = 3,
+};
+
+/**
+ * enum qca_vendor_attr_extended_monitor_packet_config - Nested attribute.
+ * Defines the packet configuration for a particular type for the below attributes:
+ * %QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_ALL_PEER,
+ * %QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_ALL_NEIGHBOR,
+ * %QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_TARGET_PEER
+ * %QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_TARGET_NEIGHBOR
+ *
+ * @QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER: Nested attribute.
+ *     Defines the subtype bitmask for different frame types.
+ *     This bitmask controls which frame subtypes are allowed for a
+ *     particular frame type.
+ *     See enum qca_vendor_attr_extended_monitor_pkt_config_filter.
+ *
+ * @QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN: Nested attribute.
+ *     Defines the packet length configured for different frame types.
+ *     See enum qca_vendor_attr_extended_monitor_pkt_config_len
+ */
+enum qca_vendor_attr_extended_monitor_packet_config {
+	QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_INVALID = 0,
+	QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER = 1,
+	QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN = 2,
+
+	/* keep last */
+	QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_AFTER_LAST,
+	QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_MAX =
+		QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_vendor_attr_extended_monitor_pkt_config_filter - Nested attribute.
+ * Defines subtype frame masks for management, control, and data frames.
+ *
+ * @QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_MGMT: u32 attribute.
+ *     Subtype frame mask for management frames.
+ *     Subtype bit numbering follows IEEE 802.11 specification.
+ *
+ * @QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_CTRL: u32 attribute.
+ *     Subtype frame mask for control frames.
+ *     Subtype bit numbering follows IEEE 802.11 specification.
+ *
+ * @QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_DATA: u32 attribute.
+ *     Frame mask for data frames (extended monitor specific).
+ *     The following are examples of supported masks:
+ *       - 0xFFFF : ALL data frames
+ *       - 0x0001 : Subtype Data
+ *       - 0x0008 : Subtype Null
+ *       - 0x4000 : Multicast frames
+ *       - 0x8000 : Unicast frames
+ */
+enum qca_vendor_attr_extended_monitor_pkt_config_filter {
+	QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_INVALID = 0,
+	QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_MGMT = 1,
+	QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_CTRL = 2,
+	QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_DATA = 3,
+
+	/* keep last */
+	QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_AFTER_LAST,
+	QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_MAX =
+		QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_vendor_attr_extended_monitor_pkt_config_len - Nested attribute.
+ * Each attribute's possible values are defined as per
+ * enum qca_vendor_extended_monitor_len.
+ *
+ * @QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN_MGMT: u8 attribute.
+ *     Frame length limit for management frames.
+ *
+ * @QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN_CTRL: u8 attribute.
+ *     Frame length limit for control frames.
+ *
+ * @QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN_DATA: u8 attribute.
+ *     Frame length limit for data frames.
+ */
+enum qca_vendor_attr_extended_monitor_pkt_config_len {
+	QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN_INVALID = 0,
+	QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN_MGMT = 1,
+	QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN_CTRL = 2,
+	QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN_DATA = 3,
+
+	/* keep last */
+	QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN_AFTER_LAST,
+	QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN_MAX =
+		QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_vendor_extended_monitor_len - Length selector
+ * Enum defining the supported frame length presets.
+ * The enum values are selectors that map to specific hardware capture lengths.
+ * User space and driver must use a common mapping:
+ *   QCA_VENDOR_EXT_MON_LEN_64B      -> 64 bytes
+ *   QCA_VENDOR_EXT_MON_LEN_128B     -> 128 bytes
+ *   QCA_VENDOR_EXT_MON_LEN_256B     -> 256 bytes
+ *   QCA_VENDOR_EXT_MON_LEN_FULL_PKT -> Full packet capture
+ *
+ * These selector values are passed through the u8 netlink attributes defined in
+ * enum qca_vendor_attr_extended_monitor_pkt_config_len.
+ */
+enum qca_vendor_extended_monitor_len {
+	QCA_VENDOR_EXT_MON_LEN_INVALID = 0,
+	QCA_VENDOR_EXT_MON_LEN_64B = 1,
+	QCA_VENDOR_EXT_MON_LEN_128B = 2,
+	QCA_VENDOR_EXT_MON_LEN_256B = 3,
+	QCA_VENDOR_EXT_MON_LEN_FULL_PKT = 4,
+};
+
+/**
+ * enum qca_vendor_attr_extended_monitor_peer_config - Nested attributes for peer
+ * management, used in both Rx/Tx peer settings.
+ * When cmd type is set to QCA_VENDOR_EXT_MON_CMD_TYPE_SET_PEER,
+ * it contains per-peer information provided by user.
+ * When cmd type is set to %QCA_VENDOR_EXT_MON_CMD_TYPE_GET_PEER,
+ * it contains information on all currently configured peers in driver.
+ *
+ * @QCA_VENDOR_ATTR_EXT_MON_PEER_ACTION: u8 attribute.
+ *    See enum qca_vendor_extended_monitor_peer_action.
+ *
+ * @QCA_VENDOR_ATTR_EXT_MON_PEER_COUNT: u8 attribute.
+ *    Number of peer entries present in %QCA_VENDOR_ATTR_EXT_MON_PEER_INFO.
+ *
+ * @QCA_VENDOR_ATTR_EXT_MON_PEER_INFO: Array of Nested attribute.
+ *    Each array element is a nested container encoded with
+ *    enum qca_vendor_attr_extended_monitor_peer_info:
+ *      - QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_MAC_ADDR (6 bytes)
+ *      - QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_BITMAP (u8)
+ *    Array encoding: QCA_VENDOR_ATTR_EXT_MON_PEER_INFO contains N nested
+ *    elements (indices 0..N-1). Each element in turn contains the MAC/bitmap
+ *    fields.
+ */
+enum qca_vendor_attr_extended_monitor_peer_config {
+	QCA_VENDOR_ATTR_EXT_MON_PEER_INVALID = 0,
+	QCA_VENDOR_ATTR_EXT_MON_PEER_ACTION = 1,
+	QCA_VENDOR_ATTR_EXT_MON_PEER_COUNT = 2,
+	QCA_VENDOR_ATTR_EXT_MON_PEER_INFO = 3,
+
+	/* keep last */
+	QCA_VENDOR_ATTR_EXT_MON_PEER_AFTER_LAST,
+	QCA_VENDOR_ATTR_EXT_MON_PEER_MAX =
+		QCA_VENDOR_ATTR_EXT_MON_PEER_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_vendor_extended_monitor_peer_action - Action for extended monitor
+ * peer entry.
+ *
+ * @QCA_VENDOR_EXT_MON_PEER_ACTION_ADD: Add peer entry.
+ *
+ * @QCA_VENDOR_EXT_MON_PEER_ACTION_REMOVE: Remove peer entry.
+ */
+enum qca_vendor_extended_monitor_peer_action {
+	QCA_VENDOR_EXT_MON_PEER_ACTION_ADD = 1,
+	QCA_VENDOR_EXT_MON_PEER_ACTION_REMOVE = 2,
+};
+
+/**
+ * enum qca_vendor_attr_extended_monitor_snr_info - Nested attribute.
+ * Consists of peer's snr related information
+ *
+ * @QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_SNR: s8 attribute
+ *     Latest value of SNR for the peer.
+ *
+ * @QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_AVG_SNR: s8 attribute
+ *     Average value of SNR for the peer so far
+ *
+ * @QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_TSTAMP: u64 attribute
+ *     Timestamp at which the latest SNR was populated for the peer.
+ */
+enum qca_vendor_attr_extended_monitor_snr_info {
+	QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_INVALID = 0,
+	QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_SNR = 1,
+	QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_AVG_SNR = 2,
+	QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_TSTAMP = 3,
+
+	QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_AFTER_LAST,
+	QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_MAX =
+		QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_vendor_attr_extended_monitor_peer_info - Nested attribute.
+ * Consists of per-peer information used in extended monitor peer
+ * configuration.
+ *
+ * @QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_MAC_ADDR: 6-Byte MAC Address.
+ *     Peer MAC address, either requested by user or reported by driver.
+ *
+ * @QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_ADDR_IS_RA: Flag attribute.
+ *    Set if the peer mac address present in
+ *    %QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_MAC_ADDR is a receiving mac address.
+ *    If this flag is set then the filters are applied to all the frames received
+ *    by this peer, else the filter are applied to all the frames transmitted by
+ *    this peer, which is the default behavior.
+ *
+ * @QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_BITMAP: u8 attribute.
+ *     Bitmap controlling which major frame types are enabled for this peer.
+ *     Bits may be independently enabled or combined.
+ *     Bit definitions (LSB = bit 0):
+ *       Bit 0 – Management frame enable
+ *       Bit 1 – Control frame enable
+ *       Bit 2 – Data frame enable
+ *
+ *     When a bit is enabled for a peer, actual frame capture is further
+ *     qualified by the subtype mask defined in the global filter
+ *     configuration:
+ *       - For connected peers, subtype filtering is controlled by
+ *         %QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_TARGET_PEER.
+ *       - For non‑connected peers, subtype filtering is controlled by
+ *         %QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_TARGET_NEIGHBOR.
+ *
+ *     These subtype masks apply globally to all peers whose MAC addresses
+ *     are included in the extended monitor peer configuration, but the
+ *     per‑peer bitmap determines which major frame categories are enabled
+ *     for each individual peer.
+ *
+ * @QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_SNR_INFO: Nested attribute
+ *     Defines peer's snr related information.
+ *     See enum qca_vendor_attr_extended_monitor_snr_info
+ */
+enum qca_vendor_attr_extended_monitor_peer_info {
+	QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_INVALID = 0,
+	QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_MAC_ADDR = 1,
+	QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_ADDR_IS_RA = 2,
+	QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_BITMAP = 3,
+	QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_SNR_INFO = 4,
+
+	QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_AFTER_LAST,
+	QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_MAX =
+		QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_AFTER_LAST - 1,
 };
 
 #define ATH12K_VENDOR_PUT(vendor_event, type, attr, param)             \
