@@ -40,7 +40,9 @@ ath12k-y += core.o \
 	    pktlog.o \
 	    ce_stats.o \
 	    mgmt_rx.o \
-	    event.o
+	    event.o \
+	    me.o \
+	    dp_me.o
 
 ath12k-$(CPTCFG_ATHDEBUG) += athdbg_if.o
 ath12k-$(CPTCFG_ATH12K_AHB) += ahb.o
