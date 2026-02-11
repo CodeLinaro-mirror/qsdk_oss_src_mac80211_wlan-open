@@ -17,6 +17,9 @@
 #define DP_WBM_REFILL_RING_SIZE        512
 #define DP_WBM_IDLE_BUF_RING_SIZE      8192
 #define DP_FSE_CMD_RING_SIZE		256
+#define DP_PPE2WBM_REFILL_RING_MAX     3
+#define DP_PPE2WBM_REFILL_RING_SIZE    512
+#define DP_PPE2WBM_IDLE_BUF_RING_SIZE  8192
 
 struct ath12k_base;
 struct ath12k_dp;
@@ -33,6 +36,8 @@ struct ath12k_dp_wifi8 {
 	struct dp_srng tqm_cmd_ring;
 	struct dp_srng tqm_status_ring;
 	struct dp_srng fse_cmd_ring;
+	struct dp_srng ppe2wbm_refill_ring[DP_PPE2WBM_REFILL_RING_MAX];
+	struct dp_srng ppe2wbm_idle_buf_ring;
 };
 
 struct ath12k_dp_hw_group_wifi8 {

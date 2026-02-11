@@ -402,6 +402,8 @@ static int ath12k_dp_srng_calculate_msi_group(struct ath12k_base *ab,
 	case HAL_CE_DST_STATUS:
 	case HAL_WBM_BUF:
 	case HAL_WBM_IDLE_BUF:
+	case HAL_PPE2WBM_BUF:
+	case HAL_PPE2WBM_IDLE_BUF:
 	default:
 		return -ENOENT;
 	}
@@ -595,6 +597,8 @@ skip_dma_alloc:
 	case HAL_RXDMA_MONITOR_DESC:
 	case HAL_WBM_BUF:
 	case HAL_WBM_IDLE_BUF:
+	case HAL_PPE2WBM_BUF:
+	case HAL_PPE2WBM_IDLE_BUF:
 	case HAL_TX_MONITOR_DST:
 		params.intr_batch_cntr_thres_entries =
 					HAL_SRNG_INT_BATCH_THRESHOLD_OTHER;

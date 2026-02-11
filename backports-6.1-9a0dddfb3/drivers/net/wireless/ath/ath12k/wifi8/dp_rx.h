@@ -12,6 +12,11 @@
 #include "hal_desc.h"
 #include "hal.h"
 
+enum dp_rx_ppeds_wbm_refill_ring {
+	PPE2WBM_HW_REFILL_RING = 0,
+	PPE2WBM_SW_REFILL_RING = 1,
+};
+
 struct dp_rx_fse {
 	struct hal_rx_fse *hal_fse;
 	u32 flow_hash;
