@@ -44,6 +44,8 @@ extern const struct ath12k_hw_version_map ath12k_wifi8_hw_ver_map[];
 #define HAL_WIFI8_REOQ_LUT_SIZE       327680
 #define HAL_WIFI8_NUM_TIDS     20
 
+#define HAL_WIFI8_DP_RX_ERR_RDI 0
+
 #define HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX    128
 #define HAL_DSCP_TID_TBL_SIZE                   24
 
