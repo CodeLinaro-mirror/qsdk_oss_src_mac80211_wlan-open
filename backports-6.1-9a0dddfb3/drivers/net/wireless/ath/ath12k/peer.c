@@ -456,6 +456,8 @@ void ath12k_peer_cleanup(struct ath12k *ar, u32 vdev_id)
 
 			ath12k_link_peer_free(peer);
 			ar->num_peers--;
+			if (peer->mlo && !peer->is_bridge_peer)
+				ar->num_ml_peers--;
 		}
 	}
 
@@ -518,6 +520,7 @@ static int __ath12k_peer_delete(struct ath12k *ar, u32 vdev_id, u8 *addr,
 	struct ath12k_sta *ahsta = NULL;
 	int link_id = -1;
 	int ret;
+	bool was_mlo = false;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -529,6 +532,9 @@ static int __ath12k_peer_delete(struct ath12k *ar, u32 vdev_id, u8 *addr,
 		ahsta = ath12k_sta_to_ahsta(peer->sta);
 		link_id = peer->link_id;
 	}
+	if (peer && peer->mlo && !peer->is_bridge_peer)
+		was_mlo = true;
+
 	spin_unlock_bh(&ar->ab->dp->dp_lock);
 
 	ath12k_dp_link_peer_unassign(ar, vdev_id, addr);
@@ -564,6 +570,9 @@ static int __ath12k_peer_delete(struct ath12k *ar, u32 vdev_id, u8 *addr,
 	}
 
 	rcu_read_unlock();
+	/* Decrement ML peer count for this radio if it was an MLO station */
+	if (was_mlo)
+		ar->num_ml_peers--;
 
 	if (arvif)
 		arvif->num_peers--;
@@ -753,6 +762,9 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 			ether_addr_copy(peer->ml_addr, sta->addr);
 
 			peer->mlo = true;
+			/* Count one ML peer per radio for real link peers */
+			if (!peer->is_bridge_peer)
+				ar->num_ml_peers++;
 		} else {
 			peer->ml_id = ATH12K_MLO_PEER_ID_INVALID;
 			peer->mlo = false;

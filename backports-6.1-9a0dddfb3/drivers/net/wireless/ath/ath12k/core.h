@@ -1483,6 +1483,7 @@ struct ath12k {
 	struct completion vdev_delete_done;
 
 	int num_peers;
+	int num_ml_peers;
 	int max_num_peers;
 	u32 num_started_vdevs;
 	u32 num_created_vdevs;
