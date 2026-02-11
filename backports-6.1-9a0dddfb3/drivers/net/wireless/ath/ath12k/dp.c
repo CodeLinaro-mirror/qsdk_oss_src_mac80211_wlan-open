@@ -1267,6 +1267,23 @@ void ath12k_dp_update_vdev_search(struct ath12k_vif *ahvif)
 }
 EXPORT_SYMBOL(ath12k_dp_update_vdev_search);
 
+void ath12k_dp_tx_ext_desc_free(struct ath12k_dp *dp,
+				struct ath12k_tx_desc_info *tx_desc)
+{
+	/* Unmap extension descriptor DMA*/
+	if (!tx_desc->paddr_ext_desc || !tx_desc->ext_desc)
+		return;
+
+	ath12k_core_dma_unmap_single(dp->dev, tx_desc->paddr_ext_desc,
+				     tx_desc->ext_desc_len, DMA_TO_DEVICE);
+	kmem_cache_free(dp->ext_cache, tx_desc->ext_desc);
+
+	tx_desc->ext_desc = NULL;
+	tx_desc->ext_desc_len = 0;
+	tx_desc->paddr_ext_desc = 0;
+}
+EXPORT_SYMBOL(ath12k_dp_tx_ext_desc_free);
+
 void ath12k_dp_cc_cleanup(struct ath12k_base *ab)
 {
 	struct ath12k_rx_desc_info *desc_info;
@@ -1341,6 +1358,10 @@ void ath12k_dp_cc_cleanup(struct ath12k_base *ab)
 					tx_desc_info[k].skb_ext_desc = NULL;
 				}
 
+				/* Cleanup extension descriptor based on type */
+				if (tx_desc_info[k].ext_desc)
+					ath12k_dp_tx_ext_desc_free(dp, &tx_desc_info[k]);
+
 				/* if we are unregistering, hw would've been destroyed and
 				 * ar is no longer valid.
 				 */
@@ -1362,6 +1383,8 @@ void ath12k_dp_cc_cleanup(struct ath12k_base *ab)
 		spin_unlock_bh(&dp->tx_desc_lock[i]);
 	}
 
+	/* Destroy tx extension descriptor cache */
+	ath12k_dp_ext_desc_cache_deinit(dp);
 	for (pool_id = 0; pool_id < ATH12K_HW_MAX_QUEUES; pool_id++) {
 		spin_lock_bh(&dp->tx_desc_lock[pool_id]);
 
@@ -1832,6 +1855,12 @@ int ath12k_dp_cc_init(struct ath12k_base *ab)
 		goto free;
 	}
 
+	/* Initialize extension descriptor cache */
+	ret = ath12k_dp_ext_desc_cache_init(dp);
+	if (ret) {
+		ath12k_err(ab, "Failed to initialize ext descriptor cache: %d\n", ret);
+		goto free;
+	}
 	return 0;
 free:
 	ath12k_dp_cc_cleanup(ab);
@@ -2100,6 +2129,10 @@ void ath12k_dp_umac_txrx_desc_cleanup(struct ath12k_base *ab)
 					dev_kfree_skb_any(tx_desc_info[k].skb_ext_desc);
 					tx_desc_info[k].skb_ext_desc = NULL;
 				}
+
+				/* Cleanup extension descriptor based on type */
+				if (tx_desc_info[k].ext_desc)
+					ath12k_dp_tx_ext_desc_free(dp, &tx_desc_info[k]);
 
 				ath12k_core_dma_unmap_single(ab->dev, tx_desc_info[k].paddr,
 							     tx_desc_info[k].len, DMA_TO_DEVICE);

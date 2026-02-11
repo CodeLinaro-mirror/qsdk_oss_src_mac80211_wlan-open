@@ -8,6 +8,7 @@
 #define ATH12K_DP_TX_H
 
 #include "core.h"
+#include "dp_ext_desc.h"
 
 #define DP_SDWF_DEFINED_Q_PTID_MAX 2
 #define DP_SDWF_DEFAULT_Q_PTID_MAX 2

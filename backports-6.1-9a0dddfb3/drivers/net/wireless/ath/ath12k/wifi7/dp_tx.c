@@ -943,6 +943,88 @@ ath12k_wifi7_dp_tx_populate_tcl_desc(struct ath12k_pdev_dp *dp_pdev,
 }
 #endif
 
+/*
+ * ath12k_wifi7_dp_ext_tx() - Light weight TX API which can be used
+ * with tx extension descriptors. Currently used for ME feature.
+ * Return: DP_TX_ENQ_SUCCESS on success, error code otherwise
+ */
+enum ath12k_dp_tx_enq_error
+ath12k_wifi7_dp_ext_tx(struct ath12k_pdev_dp *pdev, struct ath12k_dp_vif *vif,
+		       struct ath12k_dp_link_vif *link_vif,
+		       struct ath12k_tx_desc_info *tx_desc)
+{
+	enum ath12k_dp_tx_enq_error err = DP_TX_ENQ_SUCCESS;
+	struct ath12k_dp *dp = pdev->dp;
+	struct ath12k_base *ab = dp->ab;
+	struct ath12k_hal *hal = dp->hal;
+	struct hal_tcl_data_cmd *tcl_cmd;
+	struct hal_tx_info ti = {0};
+	struct dp_tx_ring *tx_ring;
+	struct hal_srng *tcl_ring;
+	u8 cpu = smp_processor_id();
+	u8 hal_ring_id;
+
+	DP_STATS_INC_PKT(vif, tx_i.recv_from_stack, 1, tx_desc->len, cpu);
+
+	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags))
+		return DP_TX_ENQ_DROP_CRASH_FLUSH;
+
+	/* Populate hal_tx_info structure from tx_desc and dp_link_vif */
+	ti.dscp_tid_tbl_idx = 0;
+	ti.lookup_override = false;
+	ti.desc_id = tx_desc->desc_id;
+	ti.bank_id = link_vif->bank_id;
+	ti.lmac_id = link_vif->lmac_id;
+	ti.vdev_id = link_vif->vdev_id;
+	ti.search_type = vif->search_type;
+	ti.bss_ast_idx = link_vif->ast_idx;
+	ti.paddr = tx_desc->paddr_ext_desc;
+	ti.data_len = tx_desc->ext_desc_len;
+	ti.type = HAL_TCL_DESC_TYPE_EXT_DESC;
+	ti.bss_ast_hash = link_vif->ast_hash;
+	ti.meta_data_flags = tx_desc->tcl_metadata;
+	ti.ring_id = cpu % dp->hw_params->max_tx_ring;
+	ti.addr_search_flags = vif->hal_addr_search_flags;
+	ti.rbm_id = hal->tcl_to_cmp_rbm_map[ti.ring_id].rbm_id;
+
+	if (tx_desc->to_fw) {
+		ti.paddr = tx_desc->paddr;
+		ti.data_len = tx_desc->len;
+		ti.type = HAL_TCL_DESC_TYPE_BUFFER;
+		ti.flags0 |= u32_encode_bits(1, HAL_TCL_DATA_CMD_INFO2_TO_FW);
+	}
+
+	/* Default encap and encrypt types - can be overridden by caller if needed */
+	ti.pkt_offset = 0;
+	ti.encap_type = vif->tx_encap_type;
+	ti.encrypt_type = HAL_ENCRYPT_TYPE_OPEN;
+
+	tx_ring = &dp->tx_ring[ti.ring_id];
+	hal_ring_id = tx_ring->tcl_data_ring.ring_id;
+	tcl_ring = &hal->srng_list[hal_ring_id];
+	ath12k_hal_srng_access_begin_no_lock(tcl_ring);
+	tcl_cmd = ath12k_hal_srng_src_get_next_entry(ab, tcl_ring);
+
+	if (unlikely(!tcl_cmd)) {
+		/* Note: it is highly unlikely we'll be running out of tcl_ring
+		 * desc because the desc is directly enqueued onto hw queue.
+		 */
+		ath12k_hal_srng_access_umac_src_ring_end_nolock_fast(tcl_ring);
+		dp->device_stats.tx_err.desc_na[ti.ring_id]++;
+		return DP_TX_ENQ_DROP_TCL_DESC_NA;
+	}
+
+	/* Use ath12k_wifi7_hal_tx_cmd_desc_setup to program the descriptor */
+	ath12k_wifi7_hal_tx_cmd_desc_setup(ab, tcl_cmd, &ti);
+	dp->device_stats.tx_unicast[ti.ring_id]++;
+	ath12k_hal_srng_access_end_no_lock(ab, tcl_ring);
+
+	DP_STATS_INC_PKT(vif, tx_i.enque_to_hw, 1, ti.data_len, ti.ring_id);
+	atomic_inc(&pdev->num_tx_pending);
+
+	return err;
+}
+
 enum ath12k_dp_tx_enq_error
 ath12k_wifi7_dp_tx_fast(struct ath12k_pdev_dp *dp_pdev,
 			struct ath12k_link_vif *arvif,
@@ -2426,6 +2508,17 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 		sw_metadata->flags = tx_desc->flags;
 
 		if (unlikely(!(sw_metadata->flags & DP_TX_DESC_FLAG_FAST))) {
+			if (tx_desc->ext_desc) {
+				ath12k_core_dma_unmap_single(dp->dev,
+						tx_desc->paddr_ext_desc,
+						tx_desc->ext_desc_len,
+						DMA_TO_DEVICE);
+				kmem_cache_free(dp->ext_cache, tx_desc->ext_desc);
+				tx_desc->paddr_ext_desc = 0;
+				tx_desc->ext_desc_len = 0;
+				tx_desc->ext_desc = NULL;
+			}
+
 			sw_metadata->skb_ext_desc = tx_desc->skb_ext_desc;
 			sw_metadata->paddr_ext_desc = tx_desc->paddr_ext_desc;
 			tx_desc->skb_ext_desc = NULL;
