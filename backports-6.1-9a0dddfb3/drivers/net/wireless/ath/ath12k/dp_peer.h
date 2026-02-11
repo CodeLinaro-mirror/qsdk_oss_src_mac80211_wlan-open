@@ -153,7 +153,7 @@ struct ath12k_dp_peer {
 	u16 peer_id;
 	u16 sta_id;
 	u8 addr[ETH_ALEN];
-	bool dms_capable;	/* Peer is DMS capable (use ME6) */
+	bool dms_disable;       /* Peer DMS capability (use ME6) */
 	bool is_mlo;
 	bool is_vdev_peer;
 	bool is_sta_bss_peer;

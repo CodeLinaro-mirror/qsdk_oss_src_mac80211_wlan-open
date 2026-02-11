@@ -102,13 +102,94 @@ fail_no_mem:
 }
 
 static int ath12k_dp_tx_me6(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
-			    struct ath12k_dp_link_vif *dp_link_vif,
+			    struct ath12k_dp_link_vif *link_vif,
 			    struct ath12k_dp_peer *dp_peer,
 			    struct ath12k_me_ctx *me_ctx)
 {
-	/* TODO: Implement ME6 (DMS) multicast-to-unicast conversion */
-	ath12k_dbg(NULL, ATH12K_DBG_DP_TX, "ME6 offload not yet implemented\n");
-	return -EOPNOTSUPP;
+	enum ath12k_dp_tx_enq_error enq_err = DP_TX_ENQ_SUCCESS;
+	struct ath12k_dp_link_peer *link_peer;
+	struct ath12k_tx_desc_info *tx_desc;
+	struct sk_buff *skb = me_ctx->skb;
+	struct ath12k_pdev_dp *dp_pdev;
+	u8 ring_id = smp_processor_id();
+	dma_addr_t paddr;
+	u16 mdata = 0;
+	u16 peer_id;
+
+	dp_pdev = ath12k_dp_to_dp_pdev(dp, link_vif->pdev_idx);
+	if (unlikely(!dp_pdev)) {
+		ath12k_dbg(NULL, ATH12K_DBG_DP_TX, "%p:Could not find dp_pdev\n", dp);
+		goto fail1;
+	}
+
+	link_peer = ath12k_dp_link_peer_find_by_id(dp, dp_peer->peer_id);
+	if (!link_peer) {
+		ath12k_dbg(NULL, ATH12K_DBG_DP_TX, "%p:Link Peer NOT FOUND IN ME6", dp);
+		goto fail1;
+	}
+
+	/* Assign peer_id of link peer*/
+	peer_id = link_peer->peer_id;
+
+	/* Allocate tx_desc and populate */
+	tx_desc = ath12k_dp_tx_assign_buffer(dp, ring_id);
+	if (unlikely(!tx_desc)) {
+		ath12k_dbg(NULL, ATH12K_DBG_DP_TX,
+			   "%p:Unable to assign software tx_desc\n", dp);
+		dp->device_stats.tx_err.txbuf_na[ring_id]++;
+		goto fail1;
+	}
+
+	/*
+	 * Prepare metadata with peer_id
+	 */
+	mdata |= u16_encode_bits(HTT_TCL_META_DATA_TYPE_PEER_BASED,
+				HTT_TCL_META_DATA_TYPE);
+	mdata |= u16_encode_bits(peer_id, HTT_TCL_META_DATA_PEER_ID);
+
+	/*
+	 * Map and get reference on skb
+	 */
+	paddr = ath12k_core_dma_map_single(dp->dev, skb->data, skb->len, DMA_TO_DEVICE);
+	if (!paddr) {
+		ath12k_dbg(NULL, ATH12K_DBG_DP_TX, "%p:DMA mapping failed for skb\n", dp);
+		goto fail2;
+	}
+
+	/*
+	 * Load the TX desc for ME6 offload
+	 * Note: Take reference of the SKB for this transmision
+	 */
+	tx_desc->mac_id = link_vif->pdev_idx;
+	tx_desc->skb = skb_get(skb);
+	tx_desc->tcl_metadata = mdata;
+	tx_desc->paddr = paddr;
+	tx_desc->to_fw = 1;
+	tx_desc->len = skb->len;
+
+	enq_err = ath12k_dp_ext_tx(dp, dp_pdev, dp_vif, link_vif, tx_desc);
+	if (enq_err) {
+		ath12k_dbg(NULL, ATH12K_DBG_DP_TX,
+			   "TX enqueue failed for MCUC with error code: %d\n", enq_err);
+		goto fail3;
+	}
+
+	/* TODO: Update MCUC statistics and return*/
+	return 0;
+
+fail3:
+	ath12k_core_dma_unmap_single(dp->dev, paddr, skb->len, DMA_TO_DEVICE);
+	/*
+	 * Drop the SKB reference taken above
+	 */
+	dev_kfree_skb_any(tx_desc->skb);
+fail2:
+
+	/* Free TX descriptor */
+	ath12k_dp_tx_release_txbuf(dp, tx_desc, ring_id);
+fail1:
+	/* TODO: Update stats */
+	return -ENOMEM;
 }
 
 static int ath12k_dp_me_check(struct ath12k_dp_vif *dp_vif, struct ath12k_me_ctx *ctx)
@@ -175,7 +256,7 @@ int ath12k_dp_me_tx_ucast_peer(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vi
 	u32 flags;
 
 	flags = ctx->me_flags & ATH12K_ME_OFFLOAD_MASK;
-	if (!dp_peer->dms_capable)
+	if (dp_peer->dms_disable)
 		flags = ATH12K_ME_FLAGS_BIT_ME5;
 
 	switch (flags) {

@@ -5692,6 +5692,7 @@ void ath12k_bss_assoc(struct ath12k *ar,
 	struct ieee80211_he_6ghz_capa he_6ghz_cap;
 	struct ath12k_hw_group *ag;
 	bool is_auth = false;
+	bool is_peer_dms = false;
 	u32 hemode = 0, bandwidth;
 	int ret;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ar->ab);
@@ -5893,10 +5894,22 @@ skip_vdev_up:
 
 	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, arvif->vdev_id,
 							    arvif->bssid);
-	if (peer && peer->is_authorized)
-		is_auth = true;
+	if (peer) {
+		if (peer->dp_peer)
+			is_peer_dms = !peer->dp_peer->dms_disable;
+		if (peer->is_authorized)
+			is_auth = true;
+	}
 
 	spin_unlock_bh(&dp->dp_lock);
+
+	/* Send DMS capability of peer to WMI */
+	ret = ath12k_wmi_set_peer_param(ar, arvif->bssid,
+					arvif->vdev_id,
+					WMI_PEER_PARAM_DMS_SUPPORT,
+					is_peer_dms);
+	if (ret)
+		ath12k_warn(ar->ab, "Unable to set dms capability: %d\n", ret);
 
 	/* Authorize BSS Peer */
 	if (is_auth) {
@@ -11651,8 +11664,11 @@ static int ath12k_mac_station_assoc(struct ath12k *ar,
 	if (peer && peer_arg) {
 		spin_lock_bh(&ar->ah->dp_hw.peer_lock);
 		if (peer->dp_peer) {
-			peer->dp_peer->dms_capable =
-				!(peer_arg->peer_phymode <= MODE_11NA_HT40);
+			bool dms_disable = (peer_arg->peer_phymode <= MODE_11NA_HT40);
+
+			peer->dp_peer->dms_disable = dms_disable;
+			ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "phy_mode = %d, no_dms =%d\n",
+				   peer_arg->peer_phymode, dms_disable);
 		}
 		spin_unlock_bh(&ar->ah->dp_hw.peer_lock);
 	}
@@ -12275,6 +12291,7 @@ static int ath12k_mac_station_authorize(struct ath12k *ar,
 					struct ath12k_link_sta *arsta)
 {
 	struct ath12k_dp_link_peer *peer;
+	bool is_peer_dms = false;
 	int ret;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
@@ -12285,11 +12302,23 @@ static int ath12k_mac_station_authorize(struct ath12k *ar,
 							    arsta->addr);
 	if (peer) {
 		peer->is_authorized = true;
-		if (peer->dp_peer)
+		if (peer->dp_peer) {
 			peer->dp_peer->is_authorized = true;
+			is_peer_dms = !peer->dp_peer->dms_disable;
+		}
 	}
 
 	spin_unlock_bh(&ar->ab->dp->dp_lock);
+
+	/* Send DMS capability of the peer to WMI */
+	ret = ath12k_wmi_set_peer_param(ar, arsta->addr,
+					arvif->vdev_id,
+					WMI_PEER_PARAM_DMS_SUPPORT,
+					is_peer_dms);
+	if (ret) {
+		ath12k_warn(ar->ab, "Unable to set dms capability: %d\n", ret);
+		return ret;
+	}
 
 	if (arvif->is_up) {
 		ret = ath12k_wmi_set_peer_param(ar, arsta->addr,
@@ -12301,6 +12330,7 @@ static int ath12k_mac_station_authorize(struct ath12k *ar,
 				    arsta->addr, arvif->vdev_id, ret);
 			return ret;
 		}
+
 	}
 
 	return 0;
