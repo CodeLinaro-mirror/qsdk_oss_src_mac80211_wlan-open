@@ -18,15 +18,87 @@
 #include "dp_ext_desc.h"
 #include "me.h"
 #include "debug.h"
+#include "dp_tx.h"
+#include "dp_ext_desc.h"
 
 static int ath12k_dp_tx_me5(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
-			    struct ath12k_dp_link_vif *dp_link_vif,
+			    struct ath12k_dp_link_vif *link_vif,
 			    struct ath12k_dp_peer *dp_peer,
 			    struct ath12k_me_ctx *me_ctx)
 {
-	/* TODO: Implement ME5 multicast-to-unicast conversion */
-	ath12k_dbg(NULL, ATH12K_DBG_DP_TX, "ME5 offload not yet implemented\n");
-	return -EOPNOTSUPP;
+	struct ath12k_tx_desc_info *tx_desc = NULL;
+	struct ath12k_dp_ext_desc *ext_desc;
+	struct sk_buff *skb = me_ctx->skb;
+	u8 ring_id = smp_processor_id();
+	struct ath12k_pdev_dp *dp_pdev;
+	dma_addr_t paddr;
+	u8 *mac_addr;
+
+	dp_pdev = ath12k_dp_to_dp_pdev(dp, link_vif->pdev_idx);
+	if (!dp_pdev)
+		goto fail_no_mem;
+
+	/*
+	 * Prepare Tx Descriptor
+	 */
+	tx_desc = ath12k_dp_tx_assign_buffer(dp, ring_id);
+	if (unlikely(!tx_desc))
+		goto fail_no_mem;
+
+	ext_desc = kmem_cache_alloc(dp->ext_cache, GFP_DMA | __GFP_ZERO);
+	if (!ext_desc) {
+		ath12k_warn(dp->ab, "Ext Descriptor not allocated\n");
+		goto fail_txbuf_free;
+	}
+
+	paddr = ath12k_core_dma_map_single(dp->dev, skb->data, skb->len, DMA_TO_DEVICE);
+	if (!paddr) {
+		ath12k_dbg(NULL, ATH12K_DBG_DP_TX, "%p:DMA mapping failed for skb\n", dp);
+		goto fail_ext_desc_free;
+	}
+
+	/*
+	 * Load the mac address in the EXT descriptor
+	 */
+	mac_addr = ath12k_dp_ext_desc_get_spare(ext_desc, ETH_ALEN);
+	ether_addr_copy(mac_addr, dp_peer->addr);
+	ath12k_dp_ext_desc_set_buf0(ext_desc, virt_to_phys(mac_addr), ETH_ALEN);
+
+	/*
+	 * Load the SKB payload minus MAC address in the EXT descriptor
+	 */
+	paddr += ETH_ALEN; /* move the payload by the MAC offset */
+	ath12k_dp_ext_desc_set_buf1(ext_desc, paddr, skb->len - ETH_ALEN);
+
+	tx_desc->len = skb->len;
+	tx_desc->skb = skb_get(skb);
+	tx_desc->mac_id = link_vif->pdev_idx;
+
+	tx_desc->ext_desc = ext_desc;
+	tx_desc->paddr_ext_desc = ath12k_dp_ext_desc_map(dp, ext_desc);
+
+	tx_desc->ext_desc_len = ATH12K_DP_EXT_DESC_SZ;
+
+	if (ath12k_dp_ext_tx(dp, dp_pdev, dp_vif, link_vif, tx_desc)) {
+		ath12k_warn(dp->ab, "DP ME Transmission Failed\n");
+		goto fail_desc_unmap;
+	}
+
+	return 0;
+
+fail_desc_unmap:
+	ath12k_dp_ext_desc_unmap(dp, tx_desc->paddr_ext_desc);
+	dev_kfree_skb_any(tx_desc->skb);
+	ath12k_core_dma_unmap_single(dp->dev, paddr - ETH_ALEN, skb->len, DMA_TO_DEVICE);
+fail_ext_desc_free:
+	kmem_cache_free(dp->ext_cache, ext_desc);
+fail_txbuf_free:
+	ath12k_dp_tx_release_txbuf(dp, tx_desc, ring_id);
+fail_no_mem:
+	/*
+	 * TODO: stats update
+	 */
+	return -ENOMEM;
 }
 
 static int ath12k_dp_tx_me6(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
@@ -188,6 +260,11 @@ int ath12k_dp_me_tx(struct ath12k_dp_vif *dp_vif, struct sk_buff *skb)
 	}
 	rcu_read_unlock_bh();
 
+	/*
+	 * Unconditionally, free the original SKB since the UCAST FN have already
+	 * taken the references. This will ensure that intermediate send failures
+	 * doesn't leak the SKB
+	 */
 	dev_kfree_skb_any(skb);
 
 	return 0;
