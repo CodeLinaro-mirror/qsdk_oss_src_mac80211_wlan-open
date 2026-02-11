@@ -43,7 +43,8 @@ ath12k-y += core.o \
 	    event.o \
 	    me.o \
 	    dp_ext_desc.o \
-	    dp_me.o
+	    dp_me.o \
+	    me_hmmc.o
 
 ath12k-$(CPTCFG_ATHDEBUG) += athdbg_if.o
 ath12k-$(CPTCFG_ATH12K_AHB) += ahb.o

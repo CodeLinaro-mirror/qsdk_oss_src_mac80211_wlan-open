@@ -14,9 +14,17 @@
  */
 void ath12k_me_db_reset(struct ath12k_me_db *db)
 {
-	/* Reset flags and limits */
+	if (!db)
+		return;
+
+	/*
+	 * Reset the Lists, flags and limits.
+	 */
+	spin_lock_bh(&db->lock);
+	ath12k_me_hmmc_list_reset(db);
 	db->me_flags = 0;
 	db->grp_limit = 0;
+	spin_unlock_bh(&db->lock);
 }
 
 /**
@@ -32,13 +40,19 @@ int ath12k_me_db_deinit(struct ath12k_dp_vif *dp_vif)
 	if (!dp_vif)
 		return -EINVAL;
 
-	db = rcu_dereference_protected(dp_vif->me_db, true);
+	/* Prevents new readers from accessing the database */
+	db = rcu_replace_pointer(dp_vif->me_db, NULL, true);
 	if (!db)
 		return 0;
 
+	/* Flush the List entries here */
+	spin_lock_bh(&db->lock);
+	ath12k_me_hmmc_list_flush(db);
+	spin_unlock_bh(&db->lock);
+
+	/* Reset the database */
 	ath12k_me_db_reset(db);
 
-	rcu_assign_pointer(dp_vif->me_db, NULL);
 	synchronize_rcu();
 	kfree(db);
 
@@ -62,7 +76,17 @@ int ath12k_me_db_init(struct ath12k_dp_vif *dp_vif)
 	if (!db)
 		return -ENOMEM;
 
+	/*
+	 * Initialize the spin lock for ME DB protection
+	 */
+	spin_lock_init(&db->lock);
+
 	ath12k_me_db_reset(db);
+
+	/*
+	 * Initialize the HMMC list here.
+	 */
+	ath12k_me_hmmc_list_init(db);
 	rcu_assign_pointer(dp_vif->me_db, db);
 
 	return 0;
