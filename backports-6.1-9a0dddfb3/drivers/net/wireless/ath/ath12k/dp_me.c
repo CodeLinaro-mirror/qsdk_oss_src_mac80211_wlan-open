@@ -14,8 +14,29 @@
 #include <linux/skbuff.h>
 #include <linux/errno.h>
 
+#include "dp_peer.h"
 #include "me.h"
 #include "debug.h"
+
+static int ath12k_dp_tx_me5(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
+			    struct ath12k_dp_link_vif *dp_link_vif,
+			    struct ath12k_dp_peer *dp_peer,
+			    struct ath12k_me_ctx *me_ctx)
+{
+	/* TODO: Implement ME5 multicast-to-unicast conversion */
+	ath12k_dbg(NULL, ATH12K_DBG_DP_TX, "ME5 offload not yet implemented\n");
+	return -EOPNOTSUPP;
+}
+
+static int ath12k_dp_tx_me6(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
+			    struct ath12k_dp_link_vif *dp_link_vif,
+			    struct ath12k_dp_peer *dp_peer,
+			    struct ath12k_me_ctx *me_ctx)
+{
+	/* TODO: Implement ME6 (DMS) multicast-to-unicast conversion */
+	ath12k_dbg(NULL, ATH12K_DBG_DP_TX, "ME6 offload not yet implemented\n");
+	return -EOPNOTSUPP;
+}
 
 static int ath12k_dp_me_check(struct ath12k_dp_vif *dp_vif, struct ath12k_me_ctx *ctx)
 {
@@ -62,15 +83,60 @@ fail:
 }
 
 /**
+ * ath12k_dp_me_tx_ucast_peer(): Decide and perform the desired MCUC
+ * @dp: Data Path ptr
+ * @dp_vif: Data Path Virtual Interface
+ * @dp_link_vif : Data path Link specific obj
+ * @dp_peer: DP Peer Object
+ * @app_data: Desired App_data sent
+ *
+ * Return: Status for MCUC Success/Failure.
+ */
+int ath12k_dp_me_tx_ucast_peer(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
+			       struct ath12k_dp_link_vif *dp_link_vif,
+			       struct ath12k_dp_peer *dp_peer,
+			       void *app_data)
+{
+	struct ath12k_me_ctx *ctx = app_data;
+	int ret = 0;
+	u32 flags;
+
+	flags = ctx->me_flags & ATH12K_ME_OFFLOAD_MASK;
+	if (!dp_peer->dms_capable)
+		flags = ATH12K_ME_FLAGS_BIT_ME5;
+
+	switch (flags) {
+	case ATH12K_ME_FLAGS_BIT_ME5:
+		ret = ath12k_dp_tx_me5(dp, dp_vif, dp_link_vif, dp_peer, ctx);
+		if (ret < 0)
+			ath12k_dbg(NULL, ATH12K_DBG_DP_TX, "Failed to convert ME5\n");
+		break;
+	case ATH12K_ME_FLAGS_BIT_ME6:
+		ret = ath12k_dp_tx_me6(dp, dp_vif, dp_link_vif, dp_peer, ctx);
+		if (ret < 0)
+			ath12k_dbg(NULL, ATH12K_DBG_DP_TX, "Failed to convert ME6\n");
+		break;
+	default:
+		ath12k_dbg(NULL, ATH12K_DBG_DP_TX, "Invalid ME flags(0%x) for TX\n",
+			   ctx->me_flags);
+		ret = -EINVAL;
+		break;
+	}
+
+	return ret;
+}
+
+/**
  * ath12k_dp_me_tx(): Transmit function for Multicast packets
  * @dp_vif - Pointer to Data path virtual interface structure
  * @skb: Pointer to socket buffer
  *
- * Return: status of success or failure.
+ * Return: Success or Failure.
  */
 int ath12k_dp_me_tx(struct ath12k_dp_vif *dp_vif, struct sk_buff *skb)
 {
 	struct ath12k_me_ctx ctx = {0};
+	int ret = 0;
 
 	if (!dp_vif->me_db)
 		return -ENOENT;
@@ -81,7 +147,48 @@ int ath12k_dp_me_tx(struct ath12k_dp_vif *dp_vif, struct sk_buff *skb)
 	if (ath12k_dp_me_check(dp_vif, &ctx) < 0)
 		return -EINVAL;
 
+	/*
+	 * Perform MCUC across all the peers here.
+	 */
+	rcu_read_lock_bh();
+	for (u8 link_id = 0; link_id < ATH12K_NUM_MAX_LINKS; link_id++) {
+		struct ath12k_dp_link_vif *dp_link_vif;
+		struct ath12k_link_vif *arvif;
+		struct ath12k_vif *ahvif;
+		struct ath12k_dp *dp;
+		struct ath12k *ar;
+
+		ahvif = container_of(dp_vif, struct ath12k_vif, dp_vif);
+
+		dp_link_vif = &dp_vif->dp_link_vif[link_id];
+
+		arvif = rcu_dereference(ahvif->link[link_id]);
+		if (!arvif)
+			continue;
+
+		ar = arvif->ar;
+		if (!ar || !ar->ab)
+			continue;
+
+		dp = ar->ab->dp;
+		if (!dp)
+			continue;
+
+		/*
+		 * Perform MCUC across all the relevant peers.
+		 */
+		ret = ath12k_dp_peer_walk_action(dp, dp_vif, dp_link_vif,
+						 ath12k_dp_me_tx_ucast_peer, &ctx);
+		if (ret) {
+			/* TODO:
+			 * Can Increment the peer specific stats here.
+			 */
+		}
+	}
+	rcu_read_unlock_bh();
+
 	dev_kfree_skb_any(skb);
+
 	return 0;
 }
 EXPORT_SYMBOL_GPL(ath12k_dp_me_tx);
