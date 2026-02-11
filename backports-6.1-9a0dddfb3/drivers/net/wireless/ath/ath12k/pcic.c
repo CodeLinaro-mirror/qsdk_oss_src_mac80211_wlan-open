@@ -489,7 +489,7 @@ int ath12k_pcic_ext_cfg_gic_msi_irq(struct ath12k_base *ab,
 	    ab->hw_params->ring_mask->host2rxdma[i] ||
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	    ab->hw_params->ring_mask->ppe2tcl[i] ||
-	    ab->hw_params->ring_mask->wbm2sw6_ppeds_tx_cmpln[i] ||
+	    ab->hw_params->ring_mask->ppeds_tx_cmpln[i] ||
 	    ab->hw_params->ring_mask->reo2ppe[i] ||
 #endif
 	    ab->hw_params->ring_mask->rx_mon_dest[i] ||
@@ -513,7 +513,7 @@ int ath12k_pcic_ext_cfg_gic_msi_irq(struct ath12k_base *ab,
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 		if (ab->hw_params->ring_mask->ppe2tcl[i] ||
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-		    ab->hw_params->ring_mask->wbm2sw6_ppeds_tx_cmpln[i] ||
+		    ab->hw_params->ring_mask->ppeds_tx_cmpln[i] ||
 #endif
 		    ab->hw_params->ring_mask->reo2ppe[i]) {
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
@@ -736,64 +736,70 @@ int ath12k_pcic_ppeds_register_interrupts(struct ath12k_base *ab, int type, int 
 	struct ath12k_ahb *ab_ahb;
 	int ret = -EINVAL, irq;
 	u8 bus_id;
+	struct ath12k_dp *dp;
 
 	ab_ahb = ath12k_ab_to_ahb(ab);
 	bus_id = ab_ahb->userpd_id - 1;
 	pdev = ab->pdev;
+	dp = ab->dp;
 
-	if (ab->dp->ppe.ppeds_soc_idx == -1) {
+	if (dp->ppe.ppeds_soc_idx == -1) {
 		ath12k_err(ab, "invalid ppeds_soc_idx in ppeds_register_interrupts\n");
 		return -EINVAL;
 	}
 
 	if (type == HAL_PPE2TCL) {
-		irq = ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE2TCL];
+		irq = dp->ppe.ppeds_irq[PPEDS_IRQ_PPE2TCL];
 		if (!irq)
 			goto irq_fail;
 		irq_set_status_flags(irq, IRQ_DISABLE_UNLAZY);
-		snprintf(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL],
-			 sizeof(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL]),
-			 "pcic%d_ppe2tcl_%d", bus_id, ab->dp->ppe.ppeds_soc_idx);
+		snprintf(dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL],
+			 sizeof(dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL]),
+			 "pcic%d_ppe2tcl_%d", bus_id, dp->ppe.ppeds_soc_idx);
 		ret = devm_request_irq(&pdev->dev, irq,
-				       ab->dp->ppe.ppe_ops->ppe2tcl_irq_handler,
+				       dp->ppe.ppe_ops->ath12k_ppeds_ppe2tcl_irq_handler,
 				       IRQF_NO_SUSPEND,
-				       ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL],
+				       dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL],
 				       (void *)ab);
 		if (ret)
 			goto irq_fail;
-		ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE2TCL] = irq;
+		dp->ppe.ppeds_irq[PPEDS_IRQ_PPE2TCL] = irq;
 	} else if (type == HAL_REO2PPE) {
-		irq = ab->dp->ppe.ppeds_irq[PPEDS_IRQ_REO2PPE];
+		irq = dp->ppe.ppeds_irq[PPEDS_IRQ_REO2PPE];
 		if (!irq)
 			goto irq_fail;
 		irq_set_status_flags(irq, IRQ_DISABLE_UNLAZY);
-		snprintf(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE],
-			 sizeof(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE]),
-			 "pcic%d_reo2ppe_%d", bus_id, ab->dp->ppe.ppeds_soc_idx);
+		snprintf(dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE],
+			 sizeof(dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE]),
+			 "pcic%d_reo2ppe_%d", bus_id, dp->ppe.ppeds_soc_idx);
 		ret = devm_request_irq(&pdev->dev, irq,
-				       ab->dp->ppe.ppe_ops->reo2ppe_irq_handler,
+				       dp->ppe.ppe_ops->ath12k_ppeds_reo2ppe_irq_handler,
 				       IRQF_SHARED,
-				       ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE],
+				       dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE],
 				       (void *)ab);
 		if (ret)
 			goto irq_fail;
-		ab->dp->ppe.ppeds_irq[PPEDS_IRQ_REO2PPE] = irq;
-	} else if (type == HAL_WBM2SW_RELEASE && ring_num == HAL_WBM2SW_PPEDS_TX_CMPLN_RING_NUM) {
-		irq = ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE_WBM2SW_REL];
+		dp->ppe.ppeds_irq[PPEDS_IRQ_REO2PPE] = irq;
+	} else if ((type == HAL_WBM2SW_RELEASE &&
+			ring_num == HAL_WBM2SW_PPEDS_TX_CMPLN_RING_NUM) ||
+			(type == HAL_TX_COMPLETION &&
+			ring_num == HAL_TQM2SW_PPEDS_TX_CMPLN_RING_NUM)) {
+
+		irq = dp->ppe.ppeds_irq[PPEDS_IRQ_TX_COMPLETION];
 		if (!irq)
 			goto irq_fail;
 		irq_set_status_flags(irq, IRQ_DISABLE_UNLAZY);
-		snprintf(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE_WBM2SW_REL],
-			 sizeof(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE_WBM2SW_REL]),
-			 "pcic%d_ppe_wbm_rel_%d", bus_id, ab->dp->ppe.ppeds_soc_idx);
+		snprintf(dp->ppe.ppeds_irq_name[PPEDS_IRQ_TX_COMPLETION],
+			 sizeof(dp->ppe.ppeds_irq_name[PPEDS_IRQ_TX_COMPLETION]),
+			 "pcic%d_ppe_wbm_rel_%d", bus_id, dp->ppe.ppeds_soc_idx);
 		ret = devm_request_irq(&pdev->dev, irq,
-				       ab->dp->ppe.ppe_ops->ppe2tcl_tx_compln,
+				       dp->ppe.ppe_ops->ath12k_ppeds_ppe2tcl_tx_compln,
 				       IRQF_SHARED,
-				       ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE_WBM2SW_REL],
+				       dp->ppe.ppeds_irq_name[PPEDS_IRQ_TX_COMPLETION],
 				       (void *)ab);
 		if (ret)
 			goto irq_fail;
-		ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE_WBM2SW_REL] = irq;
+		dp->ppe.ppeds_irq[PPEDS_IRQ_TX_COMPLETION] = irq;
 	} else {
 		return 0;
 	}
@@ -824,8 +830,8 @@ void ath12k_pcic_ppeds_free_interrupts(struct ath12k_base *ab)
 	disable_irq_nosync(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_REO2PPE]);
 	devm_free_irq(ab->dev, ab->dp->ppe.ppeds_irq[PPEDS_IRQ_REO2PPE], ab);
 
-	disable_irq_nosync(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE_WBM2SW_REL]);
-	devm_free_irq(ab->dev, ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE_WBM2SW_REL], ab);
+	disable_irq_nosync(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_TX_COMPLETION]);
+	devm_free_irq(ab->dev, ab->dp->ppe.ppeds_irq[PPEDS_IRQ_TX_COMPLETION], ab);
 }
 
 irqreturn_t ath12k_pcic_dummy_irq_handler(int irq, void *context)
@@ -845,10 +851,12 @@ int ath12k_pcic_get_msi_data(struct ath12k_base *ab, struct msi_desc *msi_desc,
 	} else if (ab->hw_params->ring_mask->reo2ppe[i]) {
 		type = PPEDS_IRQ_REO2PPE;
 		hal_type = HAL_REO2PPE;
-	} else if (ab->hw_params->ring_mask->wbm2sw6_ppeds_tx_cmpln[i]) {
-		type = PPEDS_IRQ_PPE_WBM2SW_REL;
-		hal_type = HAL_WBM2SW_RELEASE;
-		ring = HAL_WBM2SW_PPEDS_TX_CMPLN_RING_NUM;
+	} else if (ab->hw_params->ring_mask->ppeds_tx_cmpln[i]) {
+		type = PPEDS_IRQ_TX_COMPLETION;
+		if (ab->hw_params->ds_hw_buff_mgmt) {
+			hal_type = HAL_TX_COMPLETION;
+			ring = HAL_TQM2SW_PPEDS_TX_CMPLN_RING_NUM;
+		}
 	} else {
 		return -EINVAL;
 	}
@@ -1007,7 +1015,7 @@ int ath12k_pcic_ext_irq_config(struct ath12k_base *ab,
 		    ab->hw_params->ring_mask->host2rxdma[i] ||
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 		    ab->hw_params->ring_mask->ppe2tcl[i] ||
-		    ab->hw_params->ring_mask->wbm2sw6_ppeds_tx_cmpln[i] ||
+		    ab->hw_params->ring_mask->ppeds_tx_cmpln[i] ||
 		    ab->hw_params->ring_mask->reo2ppe[i] ||
 #endif
 		    ab->hw_params->ring_mask->rx_mon_dest[i] ||
@@ -1317,14 +1325,17 @@ int ath12k_pci_ppeds_register_interrupts(struct ath12k_base *ab, int type, int v
 	int irq;
 	u8 bus_id = pci_domain_nr(ar_pci->pdev->bus);
 	int ret;
+	struct ath12k_dp *dp = ab->dp;
 
 	if (type != HAL_REO2PPE && type != HAL_PPE2TCL &&
 	    !(type == HAL_WBM2SW_RELEASE &&
-	    ring_num == HAL_WBM2SW_PPEDS_TX_CMPLN_RING_NUM)) {
+	    ring_num == HAL_WBM2SW_PPEDS_TX_CMPLN_RING_NUM) &&
+	    !(type == HAL_TX_COMPLETION &&
+	    ring_num == HAL_TQM2SW_PPEDS_TX_CMPLN_RING_NUM)) {
 		return 0;
 	}
 
-	if (ab->dp->ppe.ppeds_soc_idx == -1) {
+	if (dp->ppe.ppeds_soc_idx == -1) {
 		ath12k_err(ab, "invalid ppeds_node_idx in ppeds_register_interrupts\n");
 		return -EINVAL;
 	}
@@ -1333,46 +1344,48 @@ int ath12k_pci_ppeds_register_interrupts(struct ath12k_base *ab, int type, int v
 
 	irq_set_status_flags(irq, IRQ_DISABLE_UNLAZY);
 	if (type == HAL_PPE2TCL) {
-		snprintf(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL],
-			 sizeof(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL]),
-			 "pci%d_ppe2tcl_%d", bus_id, ab->dp->ppe.ppeds_soc_idx);
+		snprintf(dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL],
+			 sizeof(dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL]),
+			 "pci%d_ppe2tcl_%d", bus_id, dp->ppe.ppeds_soc_idx);
 		ret = devm_request_irq(ab->dev, irq,
-				       ab->dp->ppe.ppe_ops->ppe2tcl_irq_handler,
+				       dp->ppe.ppe_ops->ath12k_ppeds_ppe2tcl_irq_handler,
 				       IRQF_SHARED,
-				       ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL],
+				       dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL],
 				       (void *)ab);
 		if (ret)
 			goto irq_fail;
 
-		ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE2TCL] = irq;
+		dp->ppe.ppeds_irq[PPEDS_IRQ_PPE2TCL] = irq;
 	} else if (type == HAL_REO2PPE) {
-		snprintf(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE],
-			 sizeof(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE]),
-			 "pci%d_reo2ppe%d_irq%d", bus_id, ab->dp->ppe.ppeds_soc_idx,
+		snprintf(dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE],
+			 sizeof(dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE]),
+			 "pci%d_reo2ppe%d_irq%d", bus_id, dp->ppe.ppeds_soc_idx,
 			 irq);
 		ret = devm_request_irq(ab->dev, irq,
-				       ab->dp->ppe.ppe_ops->reo2ppe_irq_handler,
+				       dp->ppe.ppe_ops->ath12k_ppeds_reo2ppe_irq_handler,
 				       IRQF_SHARED,
-				       ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE],
+				       dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE],
 				       (void *)ab);
 		if (ret)
 			goto irq_fail;
 
-		ab->dp->ppe.ppeds_irq[PPEDS_IRQ_REO2PPE] = irq;
-	} else if (type == HAL_WBM2SW_RELEASE &&
-		   ring_num == HAL_WBM2SW_PPEDS_TX_CMPLN_RING_NUM) {
-		snprintf(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE_WBM2SW_REL],
-			 sizeof(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE_WBM2SW_REL]),
-			 "pci%d_ppe_wbm_rel_%d", bus_id, ab->dp->ppe.ppeds_soc_idx);
+		dp->ppe.ppeds_irq[PPEDS_IRQ_REO2PPE] = irq;
+	} else if ((type == HAL_WBM2SW_RELEASE &&
+			ring_num == HAL_WBM2SW_PPEDS_TX_CMPLN_RING_NUM) ||
+			(type == HAL_TX_COMPLETION &&
+			ring_num == HAL_TQM2SW_PPEDS_TX_CMPLN_RING_NUM)) {
+		snprintf(dp->ppe.ppeds_irq_name[PPEDS_IRQ_TX_COMPLETION],
+			 sizeof(dp->ppe.ppeds_irq_name[PPEDS_IRQ_TX_COMPLETION]),
+			 "pci%d_ppe_txcmp_%d", bus_id, dp->ppe.ppeds_soc_idx);
 		ret = devm_request_irq(ab->dev, irq,
-				       ab->dp->ppe.ppe_ops->ppe2tcl_tx_compln,
+				       dp->ppe.ppe_ops->ath12k_ppeds_ppe2tcl_tx_compln,
 				       IRQF_SHARED,
-				       ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE_WBM2SW_REL],
+				       dp->ppe.ppeds_irq_name[PPEDS_IRQ_TX_COMPLETION],
 				       (void *)ab);
 		if (ret)
 			goto irq_fail;
 
-		ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE_WBM2SW_REL] = irq;
+		dp->ppe.ppeds_irq[PPEDS_IRQ_TX_COMPLETION] = irq;
 	} else {
 		return 0;
 	}
@@ -1402,8 +1415,8 @@ void ath12k_pci_ppeds_free_interrupts(struct ath12k_base *ab)
 	disable_irq_nosync(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_REO2PPE]);
 	devm_free_irq(ab->dev, ab->dp->ppe.ppeds_irq[PPEDS_IRQ_REO2PPE], ab);
 
-	disable_irq_nosync(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE_WBM2SW_REL]);
-	devm_free_irq(ab->dev, ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE_WBM2SW_REL], ab);
+	disable_irq_nosync(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_TX_COMPLETION]);
+	devm_free_irq(ab->dev, ab->dp->ppe.ppeds_irq[PPEDS_IRQ_TX_COMPLETION], ab);
 }
 #endif
 

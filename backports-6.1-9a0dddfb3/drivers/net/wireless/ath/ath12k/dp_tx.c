@@ -194,7 +194,7 @@ u16 dp_sawf_msduq_peer_id_set(u16 peer_id, u8 msduq)
 }
 
 int ath12k_sdwf_reinject_handler(struct ath12k_base *ab, struct sk_buff *skb,
-				 struct htt_tx_wbm_completion *status_desc, u8 mac_id)
+				 struct htt_tx_completion *status_desc, u8 mac_id)
 {
 	struct ath12k_dp_link_peer *peer;
 	struct ath12k_dp_peer_qos *qos;
@@ -292,7 +292,7 @@ int ath12k_sdwf_reinject_handler(struct ath12k_base *ab, struct sk_buff *skb,
 
 void ath12k_ppeds_reinject_handler(struct ath12k_base *ab,
 				   struct ath12k_ppeds_tx_desc_info *tx_desc,
-				   struct htt_tx_wbm_completion *status_desc)
+				   struct htt_tx_completion *status_desc)
 {
 	u8 reinject_reason;
 	int status;

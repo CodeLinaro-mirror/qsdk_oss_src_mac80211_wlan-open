@@ -880,12 +880,17 @@ int ath12k_ahb_ppeds_register_interrupts(struct ath12k_base *ab, int type, int v
 	int ret = -EINVAL, irq;
 	struct platform_device *pdev = ab->pdev;
 	int irq_idx;
+	struct ath12k_dp *dp = ab->dp;
 
-	if (ab->dp->ppe.ppeds_soc_idx == ATH12K_PPEDS_INVALID_SOC_IDX) {
+	if (dp->ppe.ppeds_soc_idx == ATH12K_PPEDS_INVALID_SOC_IDX) {
 		ath12k_err(ab, "invalid soc idx in ppeds IRQ registration\n");
 		goto irq_fail;
 	}
-	if (type == HAL_WBM2SW_RELEASE && ring_num == HAL_WBM2SW_PPEDS_TX_CMPLN_RING_NUM) {
+	if ((type == HAL_WBM2SW_RELEASE &&
+		ring_num == HAL_WBM2SW_PPEDS_TX_CMPLN_RING_NUM) ||
+		(type == HAL_TX_COMPLETION &&
+		ring_num == HAL_TQM2SW_PPEDS_TX_CMPLN_RING_NUM)) {
+
 		irq_idx = ATH12K_IRQ_PPE_OFFSET + 1;
 		irq = platform_get_irq_byname(ab->pdev,
 					      irq_name[irq_idx]);
@@ -897,21 +902,21 @@ int ath12k_ahb_ppeds_register_interrupts(struct ath12k_base *ab, int type, int v
 		ab->irq_num[irq_idx] = irq;
 		irq_set_status_flags(irq, IRQ_DISABLE_UNLAZY);
 
-		snprintf(&ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE_WBM2SW_REL][0],
-			 sizeof(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE_WBM2SW_REL]),
-			 "ppe_wbm_rel_%d", ab->dp->ppe.ds_node_id);
+		snprintf(&dp->ppe.ppeds_irq_name[PPEDS_IRQ_TX_COMPLETION][0],
+			 sizeof(dp->ppe.ppeds_irq_name[PPEDS_IRQ_TX_COMPLETION]),
+			 "ppe_wbm_rel_%d", dp->ppe.ds_node_id);
 
 		ret = devm_request_irq(&pdev->dev, irq,
-				       ab->dp->ppe.ppe_ops->ppe2tcl_tx_compln,
+				       dp->ppe.ppe_ops->ath12k_ppeds_ppe2tcl_tx_compln,
 				       IRQF_NO_AUTOEN | IRQF_NO_SUSPEND,
-				       ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE_WBM2SW_REL],
+				       dp->ppe.ppeds_irq_name[PPEDS_IRQ_TX_COMPLETION],
 				       (void *)ab);
 
 		if (ret) {
 			ath12k_err(ab, "ppeds RegIRQ: req_irq fail:%d\n", ret);
 			goto irq_fail;
 		}
-		ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE_WBM2SW_REL] = irq;
+		dp->ppe.ppeds_irq[PPEDS_IRQ_TX_COMPLETION] = irq;
 
 	} else if (type == HAL_PPE2TCL) {
 		irq_idx = ATH12K_IRQ_PPE_OFFSET + 2;
@@ -925,20 +930,20 @@ int ath12k_ahb_ppeds_register_interrupts(struct ath12k_base *ab, int type, int v
 		ab->irq_num[irq_idx] = irq;
 		irq_set_status_flags(irq, IRQ_DISABLE_UNLAZY);
 
-		snprintf(&ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL][0],
-			 sizeof(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL]),
-			 "ppe2tcl_%d",  ab->dp->ppe.ds_node_id);
+		snprintf(&dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL][0],
+			 sizeof(dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL]),
+			 "ppe2tcl_%d",  dp->ppe.ds_node_id);
 
 		ret = devm_request_irq(&pdev->dev, irq,
-				       ab->dp->ppe.ppe_ops->ppe2tcl_irq_handler,
+				       dp->ppe.ppe_ops->ath12k_ppeds_ppe2tcl_irq_handler,
 				       IRQF_NO_AUTOEN | IRQF_NO_SUSPEND,
-				       ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL],
+				       dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL],
 				       (void *)ab);
 		if (ret) {
 			ath12k_err(ab, "ppeds RegIRQ: req_irq fail:%d\n", ret);
 			goto irq_fail;
 		}
-		ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE2TCL] = irq;
+		dp->ppe.ppeds_irq[PPEDS_IRQ_PPE2TCL] = irq;
 
 	} else if (type == HAL_REO2PPE) {
 		irq_idx = ATH12K_IRQ_PPE_OFFSET;
@@ -952,20 +957,20 @@ int ath12k_ahb_ppeds_register_interrupts(struct ath12k_base *ab, int type, int v
 		ab->irq_num[irq_idx] = irq;
 		irq_set_status_flags(irq, IRQ_DISABLE_UNLAZY);
 
-		snprintf(&ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE][0],
-			 sizeof(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE]),
-			 "reo2ppe_%d", ab->dp->ppe.ds_node_id);
+		snprintf(&dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE][0],
+			 sizeof(dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE]),
+			 "reo2ppe_%d", dp->ppe.ds_node_id);
 
 		ret = devm_request_irq(&pdev->dev, irq,
-				       ab->dp->ppe.ppe_ops->reo2ppe_irq_handler,
+				       dp->ppe.ppe_ops->ath12k_ppeds_reo2ppe_irq_handler,
 				       IRQF_SHARED | IRQF_NO_SUSPEND,
-				       ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE],
+				       dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE],
 				       (void *)ab);
 		if (ret) {
 			ath12k_err(ab, "ppeds RegIRQ: req_irq fail:%d\n", ret);
 			goto irq_fail;
 		}
-		ab->dp->ppe.ppeds_irq[PPEDS_IRQ_REO2PPE] = irq;
+		dp->ppe.ppeds_irq[PPEDS_IRQ_REO2PPE] = irq;
 		disable_irq_nosync(irq);
 	}
 
@@ -993,8 +998,8 @@ void ath12k_ahb_ppeds_free_interrupts(struct ath12k_base *ab)
 	disable_irq_nosync(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_REO2PPE]);
 	devm_free_irq(ab->dev, ab->dp->ppe.ppeds_irq[PPEDS_IRQ_REO2PPE], ab);
 
-	disable_irq_nosync(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE_WBM2SW_REL]);
-	devm_free_irq(ab->dev, ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE_WBM2SW_REL], ab);
+	disable_irq_nosync(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_TX_COMPLETION]);
+	devm_free_irq(ab->dev, ab->dp->ppe.ppeds_irq[PPEDS_IRQ_TX_COMPLETION], ab);
 }
 #endif
 
@@ -1686,7 +1691,7 @@ static int ath12k_ahb_probe(struct platform_device *pdev)
 			goto err_core_free;
 		}
 	}
- 
+
 	ath12k_fw_map(ab);
 
 	ret = ath12k_ahb_resource_init(ab);

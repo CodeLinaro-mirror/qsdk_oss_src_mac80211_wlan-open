@@ -75,7 +75,7 @@ enum htt_tx_fw2wbm_reinject_reason {
 	HTT_TX_FW2WBM_REINJECT_REASON_MAX,
 };
 
-struct htt_tx_wbm_completion {
+struct htt_tx_completion {
 	__le32 rsvd0[2];
 	__le32 info0;
 	__le32 info1;

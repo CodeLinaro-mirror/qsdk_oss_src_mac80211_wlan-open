@@ -4038,7 +4038,9 @@ void ath12k_wifi8_dp_pdev_free(struct ath12k_base *ab)
 		}
 	}
 
-	ath12k_dp_ppeds_stop(ab);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	dp->ppe.ppe_ops->ath12k_ppeds_stop(ab);
+#endif
 }
 
 int ath12k_wifi8_dp_pdev_alloc(struct ath12k_base *ab)
@@ -4111,7 +4113,7 @@ int ath12k_wifi8_dp_pdev_alloc(struct ath12k_base *ab)
 		}
 	}
 
-	ret = ath12k_dp_ppeds_start(ab);
+	ret = ab->dp->ppe.ppe_ops->ath12k_ppeds_start(ab);
 	if (ret) {
 		ath12k_err(ab, "failed to start DP PPEDS\n");
 		goto err_cleanup_pdevs;
@@ -4145,7 +4147,9 @@ err_cleanup_pdevs:
 		}
 	}
 
-	ath12k_dp_ppeds_stop(ab);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	dp->ppe.ppe_ops->ath12k_ppeds_stop(ab);
+#endif
 out:
 	return ret;
 }
