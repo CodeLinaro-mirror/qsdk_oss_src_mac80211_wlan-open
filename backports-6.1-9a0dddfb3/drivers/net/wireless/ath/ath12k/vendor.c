@@ -10165,6 +10165,14 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.maxattr = QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_MAX,
 		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
 	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_DCS_SIM,
+		.doit = ath12k_vendor_dcs_sim_handler,
+		.policy = ath12k_vendor_dcs_sim_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_DCS_SIM_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
+	},
 #endif
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
