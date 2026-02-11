@@ -2161,6 +2161,7 @@ struct ath12k_base {
 #endif /* CONFIG_ACPI */
 
 	struct notifier_block panic_nb;
+	struct notifier_block me_nb;
 
 	struct ath12k_hw_group *ag;
 	struct ath12k_wsi_info wsi_info;

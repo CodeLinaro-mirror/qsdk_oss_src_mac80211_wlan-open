@@ -20,6 +20,7 @@
 #include "debug.h"
 #include "dp_tx.h"
 #include "dp_ext_desc.h"
+#include "qcn_extns/me_snoop_extn.h"
 
 static int ath12k_dp_tx_me5(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
 			    struct ath12k_dp_link_vif *link_vif,
@@ -294,23 +295,29 @@ int ath12k_dp_me_tx(struct ath12k_dp_vif *dp_vif, struct sk_buff *skb)
 			 struct ath12k_dp_link_vif *dp_link_vif,
 			 struct ath12k_dp_peer *dp_peer, void *app_data);
 	struct ath12k_me_ctx ctx = {0};
+	struct ath12k_me_db *me_db;
 	union nf_inet_addr addr = {0};
 	int ret = 0;
 	int action;
 	bool is_v6;
 
-	if (!dp_vif->me_db)
+	me_db = ath12k_me_db_get(dp_vif);
+	if (!me_db)
 		return -ENOENT;
 
-	ctx.me_flags = dp_vif->me_db->me_flags;
+	ctx.me_flags = me_db->me_flags;
 	ctx.skb = skb;
 
-	if (ath12k_dp_me_check(dp_vif, &ctx) < 0)
+	if (ath12k_dp_me_check(dp_vif, &ctx) < 0) {
+		ath12k_me_db_put(me_db);
 		return -EINVAL;
+	}
 
 	is_v6 = __skb_get_inet_daddr(skb, &addr);
 
-	action = ath12k_me_hmmc_lookup(dp_vif->me_db, (__be32 *)&addr, is_v6);
+	action = ath12k_me_hmmc_lookup(me_db, (__be32 *)&addr, is_v6);
+	ath12k_me_db_put(me_db);
+
 	switch (action) {
 	case ATH12K_ME_HMMC_ACTION:
 		action_fn = ath12k_dp_me_tx_ucast_peer;
@@ -322,6 +329,17 @@ int ath12k_dp_me_tx(struct ath12k_dp_vif *dp_vif, struct sk_buff *skb)
 	default:
 		break;
 	}
+
+#if defined(CONFIG_BRIDGE_MCAST_OFFLOAD)
+	if (action != ATH12K_ME_HMMC_ACTION) {
+		ctx.grp = ath12k_me_snoop_grp_find(dp_vif, skb);
+		if (!ctx.grp)
+			return -EINVAL;
+
+		bitmap_zero(ctx.tx_bmap, ATH12K_ME_MAX_SNOOP_PEERS);
+		action_fn = ath12k_dp_me_tx_ucast_grp_extn;
+	}
+#endif
 
 	/*
 	 * Iterate across all the dp link vifs.
