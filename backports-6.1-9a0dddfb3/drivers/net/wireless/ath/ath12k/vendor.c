@@ -9291,6 +9291,8 @@ ath12k_vendor_bandwidth_to_chan_width(u32 bandwidth)
 		return NL80211_CHAN_WIDTH_8;
 	case 16:
 		return NL80211_CHAN_WIDTH_16;
+	case 320:
+		return NL80211_CHAN_WIDTH_320;
 	default:
 		return bandwidth;
 	}
@@ -9332,20 +9334,35 @@ ath12k_vendor_validate_cs_time_chandef(struct wiphy *wiphy,
 		center_freq1 = freq;
 		center_freq2 = 0;
 		break;
-	case NL80211_CHAN_WIDTH_40:
-	case NL80211_CHAN_WIDTH_80:
+	case NL80211_CHAN_WIDTH_320:
+		if (center_freq1 == freq + 150 ||
+		    center_freq1 == freq + 130 ||
+		    center_freq1 == freq + 110 ||
+		    center_freq1 == freq + 90 ||
+		    center_freq1 == freq - 90 ||
+		    center_freq1 == freq - 110 ||
+		    center_freq1 == freq - 130 ||
+		    center_freq1 == freq - 150)
+			break;
+		fallthrough;
 	case NL80211_CHAN_WIDTH_160:
-		if (center_freq2)
-			return -EINVAL;
-		if (!center_freq1)
-			center_freq1 = freq;
-		center_freq2 = 0;
-		break;
+		if (center_freq1 == freq + 70 ||
+		    center_freq1 == freq + 50 ||
+		    center_freq1 == freq - 50 ||
+		    center_freq1 == freq - 70)
+			break;
+		fallthrough;
 	case NL80211_CHAN_WIDTH_80P80:
-		if (!center_freq1 || !center_freq2 ||
-		    center_freq1 == center_freq2)
-			return -EINVAL;
-		break;
+	case NL80211_CHAN_WIDTH_80:
+		if (center_freq1 == freq + 30 ||
+		    center_freq1 == freq - 30)
+			break;
+		fallthrough;
+	case NL80211_CHAN_WIDTH_40:
+		if (center_freq1 == freq + 10 ||
+		    center_freq1 == freq - 10)
+			break;
+		fallthrough;
 	default:
 		return -EINVAL;
 	}
