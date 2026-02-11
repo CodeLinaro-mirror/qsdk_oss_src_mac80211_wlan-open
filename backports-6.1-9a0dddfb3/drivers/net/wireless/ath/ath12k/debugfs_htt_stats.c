@@ -12894,6 +12894,157 @@ static void ath12k_htt_print_reg_6g_oobe_tlv(const void *tag_buf, u16 tag_len
 	stats_req->buf_len = len;
 }
 
+/* Selfgen_resp_frame_stats */
+static const char
+	*ath12k_htt_stats_resp_frame_type_id_to_name(u32 resp_frame_type_id)
+{
+	switch (resp_frame_type_id) {
+	case ATH12K_HTT_STATS_RESP_FRAME_TYPE_ACK_CTS_CCK_11L_MBPS:
+		return "ACK_CTS_CCK_11L_MBPS";
+	case ATH12K_HTT_STATS_RESP_FRAME_TYPE_ACK_CTS_CCK_5_5L_MBPS:
+		return "ACK_CTS_CCK_5_5L_MBPS";
+	case ATH12K_HTT_STATS_RESP_FRAME_TYPE_ACK_CTS_CCK_2L_MBPS:
+		return "ACK_CTS_CCK_2L_MBPS";
+	case ATH12K_HTT_STATS_RESP_FRAME_TYPE_ACK_CTS_CCK_1L_MBPS:
+		return "ACK_CTS_CCK_1L_MBPS";
+	case ATH12K_HTT_STATS_RESP_FRAME_TYPE_ACK_CTS_CCK_11S_MBPS:
+		return "ACK_CTS_CCK_11S_MBPS";
+	case ATH12K_HTT_STATS_RESP_FRAME_TYPE_ACK_CTS_CCK_5_5S_MBPS:
+		return "ACK_CTS_CCK_5_5S_MBPS";
+	case ATH12K_HTT_STATS_RESP_FRAME_TYPE_ACK_CTS_CCK_2S_MBPS:
+		return "ACK_CTS_CCK_2S_MBPS";
+	case ATH12K_HTT_STATS_RESP_FRAME_TYPE_ACK_CTS_OFDM_6_MBPS:
+		return "ACK_CTS_OFDM_6_MBPS";
+	case ATH12K_HTT_STATS_RESP_FRAME_TYPE_ACK_CTS_OFDM_9_MBPS:
+		return "ACK_CTS_OFDM_9_MBPS";
+	case ATH12K_HTT_STATS_RESP_FRAME_TYPE_ACK_CTS_OFDM_12_MBPS:
+		return "ACK_CTS_OFDM_12_MBPS";
+	case ATH12K_HTT_STATS_RESP_FRAME_TYPE_ACK_CTS_OFDM_18_MBPS:
+		return "ACK_CTS_OFDM_18_MBPS";
+	case ATH12K_HTT_STATS_RESP_FRAME_TYPE_ACK_CTS_OFDM_24_MBPS:
+		return "ACK_CTS_OFDM_24_MBPS";
+	case ATH12K_HTT_STATS_RESP_FRAME_TYPE_ACK_CTS_OFDM_36_MBPS:
+		return "ACK_CTS_OFDM_36_MBPS";
+	case ATH12K_HTT_STATS_RESP_FRAME_TYPE_ACK_CTS_OFDM_48_MBPS:
+		return "ACK_CTS_OFDM_48_MBPS";
+	case ATH12K_HTT_STATS_RESP_FRAME_TYPE_ACK_CTS_OFDM_54_MBPS:
+		return "ACK_CTS_OFDM_54_MBPS";
+	case ATH12K_HTT_STATS_RESP_FRAME_TYPE_CBF_11AC:
+		return "CBF_11AC";
+	case ATH12K_HTT_STATS_RESP_FRAME_TYPE_CBF_11AX:
+		return "CBF_11AX";
+	case ATH12K_HTT_STATS_RESP_FRAME_TYPE_CBF_11BE:
+		return "CBF_11BE";
+	case ATH12K_HTT_STATS_RESP_FRAME_TYPE_CBF_11AX_EXT:
+		return "CBF_11AX_EXT";
+	case ATH12K_HTT_STATS_RESP_FRAME_TYPE_ACK_CTS_11AX_EXT_DCM:
+		return "ACK_CTS_11AX_EXT_DCM";
+	case ATH12K_HTT_STATS_RESP_FRAME_TYPE_RTT_11N_MCS0:
+		return "RTT_11N_MCS0";
+	case ATH12K_HTT_STATS_RESP_FRAME_TYPE_RTT_11N_MCS1:
+		return "RTT_11N_MCS1";
+	case ATH12K_HTT_STATS_RESP_FRAME_TYPE_RTT_11N_MCS3:
+		return "RTT_11N_MCS3";
+	case ATH12K_HTT_STATS_RESP_FRAME_TYPE_RTT_11AC_MCS0:
+		return "RTT_11AC_MCS0";
+	case ATH12K_HTT_STATS_RESP_FRAME_TYPE_RTT_11AC_MCS1:
+		return "RTT_11AC_MCS1";
+	case ATH12K_HTT_STATS_RESP_FRAME_TYPE_RTT_11AC_MCS3:
+		return "RTT_11AC_MCS3";
+	case ATH12K_HTT_STATS_RESP_FRAME_TYPE_RTT_11A_6_MBPS:
+		return "RTT_11A_6_MBPS";
+	case ATH12K_HTT_STATS_RESP_FRAME_TYPE_RTT_11A_12_MBPS:
+		return "RTT_11A_12_MBPS";
+	case ATH12K_HTT_STATS_RESP_FRAME_TYPE_RTT_11A_24_MBPS:
+		return "RTT_11A_24_MBPS";
+	case ATH12K_HTT_STATS_RESP_FRAME_TYPE_RTT_11AX_MCS0:
+		return "RTT_11AX_MCS0";
+	case ATH12K_HTT_STATS_RESP_FRAME_TYPE_RTT_11AX_MCS1:
+		return "RTT_11AX_MCS1";
+	case ATH12K_HTT_STATS_RESP_FRAME_TYPE_RTT_11AX_MCS3:
+		return "RTT_11AX_MCS3";
+	case ATH12K_HTT_STATS_RESP_FRAME_TYPE_AX_BE_EXT_DEF:
+		return "AX_BE_EXT_DEF";
+	case ATH12K_HTT_STATS_RESP_FRAME_TYPE_11BE_MCS14_MCS15:
+		return "11BE_MCS14_MCS15";
+	default:
+		return "UNKNOWN";
+	}
+}
+
+static void
+ath12k_htt_print_tx_selfgen_resp_frame_stats_tlv(const void *tag_buf, u16 tag_len,
+						 struct debug_htt_stats_req *stats_req)
+{
+	const struct ath12k_htt_stats_tx_selfgen_resp_frame_stats_tlv
+		*htt_stats_buf = tag_buf;
+	u8 *buf = stats_req->buf;
+	u32 len = stats_req->buf_len;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
+	u32 i;
+	struct ath12k_htt_stats_whal_selfgen_resp_frame_entry frame_entry;
+	struct ath12k_htt_stats_whal_selfgen_channel_context chan_ctx;
+	u32 channel_info, type_rate, tx_pwr;
+
+	if (tag_len < sizeof(*htt_stats_buf))
+		return;
+
+	len += scnprintf(buf + len, buf_len - len,
+			"HTT_STATS_TX_SELFGEN_RESP_FRAME_STATS_TLV:\n\n");
+
+	/* Print Channel Context */
+	chan_ctx = htt_stats_buf->channel_context;
+	channel_info = le32_to_cpu(chan_ctx.channel_info);
+
+	len += scnprintf(buf + len, buf_len - len, "Channel Context:\n\n");
+	len += scnprintf(buf + len, buf_len - len, "  mhz = %u\n",
+			 ATH12K_HTT_STATS_WHAL_SELFGEN_CHANNEL_MHZ_GET(channel_info));
+	len += scnprintf(buf + len, buf_len - len, "  flags = 0x%x\n",
+			 ATH12K_HTT_STATS_WHAL_SELFGEN_CHANNEL_FLAGS_GET(channel_info));
+	len += scnprintf(buf + len, buf_len - len, "  phy_mode = %u\n\n",
+			 le32_to_cpu(chan_ctx.phy_mode));
+
+	/* Print Frame Data */
+	for (i = 0; i < ATH12K_HTT_STATS_RESP_FRAME_TYPE_MAX; i++) {
+		frame_entry = htt_stats_buf->frame_data[i];
+		type_rate = le32_to_cpu(frame_entry.type_rate_chainmask);
+		tx_pwr = le32_to_cpu(frame_entry.tx_pwr_alt);
+
+		len += scnprintf(buf + len, buf_len - len,
+				 "Frame Type [%u]: FRAME_TYPE_%s:\n\n",
+				 i, ath12k_htt_stats_resp_frame_type_id_to_name(i));
+
+		len += scnprintf(buf + len, buf_len - len, "  pkt_type = %u\n",
+				 ATH12K_HTT_STATS_WHAL_SELFGEN_PKT_TYPE_GET(type_rate));
+		len += scnprintf(buf + len, buf_len - len, "  nss = %u\n",
+				 ATH12K_HTT_STATS_WHAL_SELFGEN_NSS_GET(type_rate));
+		len += scnprintf(buf + len, buf_len - len, "  rate_mcs = %u\n",
+				 ATH12K_HTT_STATS_WHAL_SELFGEN_RATE_MCS_GET(type_rate));
+		len += scnprintf(buf + len, buf_len - len, "  bandwidth = %u Mhz\n",
+				 ATH12K_HTT_STATS_WHAL_SELFGEN_BANDWIDTH_GET(type_rate));
+		len += scnprintf(buf + len, buf_len - len, "  chain_mask = 0x%x\n",
+				 ATH12K_HTT_STATS_WHAL_SELFGEN_CHAIN_MASK_GET(type_rate));
+		len += scnprintf(buf + len, buf_len - len, "  alt_chain_mask = 0x%x\n",
+				 ATH12K_HTT_STATS_WHAL_SELFGEN_ALT_CHAIN_MASK_GET
+				 (type_rate));
+
+		len += scnprintf(buf + len, buf_len - len,
+				 "  tx_pwr = %u dBm in quarter scale\n",
+				 ATH12K_HTT_STATS_WHAL_SELFGEN_TX_PWR_GET(tx_pwr));
+		len += scnprintf(buf + len, buf_len - len,
+				 "  tx_pwr_1 = %u dBm in quarter scale\n",
+				 ATH12K_HTT_STATS_WHAL_SELFGEN_TX_PWR_1_GET(tx_pwr));
+		len += scnprintf(buf + len, buf_len - len,
+				 "  alt_tx_pwr = %u dBm in quarter scale\n",
+				 ATH12K_HTT_STATS_WHAL_SELFGEN_ALT_TX_PWR_GET(tx_pwr));
+		len += scnprintf(buf + len, buf_len - len,
+				 "  alt_tx_pwr_1 = %u dBm in quarter scale\n\n",
+				 ATH12K_HTT_STATS_WHAL_SELFGEN_ALT_TX_PWR_1_GET(tx_pwr));
+	}
+
+	stats_req->buf_len = len;
+}
+
 static int ath12k_dbg_htt_ext_stats_parse(struct ath12k_base *ab,
 					  struct ath12k_pdev_dp *dp_pdev,
 					  u16 tag, u16 len, const void *tag_buf,
@@ -13561,6 +13712,10 @@ static int ath12k_dbg_htt_ext_stats_parse(struct ath12k_base *ab,
 
 	case HTT_STATS_REG_6G_OOBE_TAG:
 		ath12k_htt_print_reg_6g_oobe_tlv(tag_buf, len, stats_req);
+		break;
+
+	case HTT_STATS_TX_SELFGEN_RESP_FRAME_STATS_TAG:
+		ath12k_htt_print_tx_selfgen_resp_frame_stats_tlv(tag_buf, len, stats_req);
 		break;
 
 	default:
