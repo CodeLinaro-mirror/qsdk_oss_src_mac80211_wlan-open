@@ -1230,6 +1230,7 @@ static void __ieee80211_tx_status(struct ieee80211_hw *hw,
 	bool noack_success;
 	struct ieee80211_bar *bar;
 	int tid = IEEE80211_NUM_TIDS;
+	bool mon_hw_offload;
 
 	lockdep_assert(rcu_read_lock_held());
 
@@ -1374,11 +1375,13 @@ static void __ieee80211_tx_status(struct ieee80211_hw *hw,
 	send_to_cooked = !!(info->flags & IEEE80211_TX_CTL_INJECTED) ||
 			 !(ieee80211_is_data(fc));
 
+	mon_hw_offload = ieee80211_hw_check(hw, SUPPORTS_TX_MONITOR_OFFLOAD);
 	/*
 	 * This is a bit racy but we can avoid a lot of work
 	 * with this test...
 	 */
-	if (!local->tx_mntrs && (!send_to_cooked || !local->cooked_mntrs)) {
+	if (mon_hw_offload ||
+	    (!local->tx_mntrs && (!send_to_cooked || !local->cooked_mntrs))) {
 		if (status->free_list)
 			list_add_tail(&skb->list, status->free_list);
 		else
@@ -1386,9 +1389,8 @@ static void __ieee80211_tx_status(struct ieee80211_hw *hw,
 		return;
 	}
 
-	/* send to monitor interfaces if tx monitor h/w support is not aviable*/
-	if (!ieee80211_hw_check(hw, SUPPORTS_TX_MONITOR_OFFLOAD))
-		ieee80211_tx_monitor(local, skb, retry_count, send_to_cooked, status);
+	/* send to monitor interfaces if tx monitor h/w support is not available*/
+	ieee80211_tx_monitor(local, skb, retry_count, send_to_cooked, status);
 }
 
 void ieee80211_tx_status_skb(struct ieee80211_hw *hw, struct sk_buff *skb)
