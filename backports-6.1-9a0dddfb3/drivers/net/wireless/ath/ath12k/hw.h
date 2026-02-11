@@ -208,7 +208,7 @@ struct ath12k_hw_ring_mask {
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	u8 ppe2tcl[ATH12K_EXT_IRQ_NUM_MAX];
 	u8 reo2ppe[ATH12K_EXT_IRQ_NUM_MAX];
-	u8 wbm2sw6_ppeds_tx_cmpln[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 ppeds_tx_cmpln[ATH12K_EXT_IRQ_NUM_MAX];
 #endif
 	u8 umac_dp_reset[ATH12K_EXT_IRQ_NUM_MAX];
 	u8 tx_exception[ATH12K_EXT_IRQ_NUM_MAX];
@@ -319,7 +319,13 @@ struct ath12k_hw_params {
 	bool handle_beacon_miss;
 	bool en_qdsslog;
 	bool support_fse;
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	bool ds_support;
+	bool ds_txrx_hw_auto_idx; /* HW index movement of TxRx rings */
+	bool ds_hw_buff_mgmt;	/* HW buffer management of Rxfill/Tx completion rings */
+#endif
+
 	u8 ext_irq_grp_num_max;
 	u8 route_wbm_release;
 	bool supports_ap_ps;
@@ -422,7 +428,7 @@ static inline const char *ath12k_bd_ie_type_str(enum ath12k_bd_ie_type type)
 	case ATH12K_BD_IE_BOARD:
 		return "board data";
 	case ATH12K_BD_IE_REGDB:
-		return "regdb data";	
+		return "regdb data";
 	case ATH12K_BD_IE_RXGAINLUT:
 		return "rxgainlut data";
 	}

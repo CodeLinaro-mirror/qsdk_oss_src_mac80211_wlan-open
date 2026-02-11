@@ -1265,8 +1265,8 @@ static void ath12k_umac_reset_restore_irqs(struct ath12k_base *ab,
 		ath12k_hif_irq_enable(ab);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 		if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags)) {
-			ath12k_dp_ppeds_start(ab);
-			ath12k_dp_ppeds_interrupt_start(ab);
+			ab->dp->ppe.ppe_ops->ath12k_ppeds_start(ab);
+			ab->dp->ppe.ppe_ops->ath12k_ppeds_interrupt_start(ab);
 		}
 #endif
 		ath12k_hif_mgmt_irq_enable(ab);
@@ -1305,7 +1305,7 @@ static void ath12k_umac_reset_cleanup_from_state(struct ath12k_base *ab,
 		/* A dummy registration is needed to avoid breaking
 		 * the state machine at the DS module
 		 */
-		ath12k_dp_ppeds_register_soc(ab->dp, &idx);
+		ab->dp->ppe.ppe_ops->ath12k_ppeds_register_soc(ab->dp, &idx);
 		ath12k_umac_reset_restore_irqs(ab, state);
 		break;
 

@@ -318,6 +318,7 @@ int ath12k_hal_srng_get_max_entries(struct ath12k_base *ab, u32 ring_type)
 
 	return (srng_config->max_size / srng_config->entry_size);
 }
+EXPORT_SYMBOL(ath12k_hal_srng_get_max_entries);
 
 void ath12k_hal_srng_get_params(struct ath12k_base *ab, struct hal_srng *srng,
 				struct hal_srng_params *params)
@@ -986,6 +987,7 @@ void ath12k_hal_reo_config_reo2ppe_dest_info(struct ath12k_base *ab)
 {
 	ab->hal.hal_ops->hal_reo_config_reo2ppe_dest_info(ab);
 }
+EXPORT_SYMBOL(ath12k_hal_reo_config_reo2ppe_dest_info);
 
 void
 ath12k_hal_get_tlv_params(struct ath12k_hal *hal,

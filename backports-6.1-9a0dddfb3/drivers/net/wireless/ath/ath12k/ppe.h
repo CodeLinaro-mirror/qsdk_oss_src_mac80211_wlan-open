@@ -24,7 +24,7 @@ struct ath12k_link_sta;
 enum ppeds_irq_type {
 	PPEDS_IRQ_PPE2TCL,
 	PPEDS_IRQ_REO2PPE,
-	PPEDS_IRQ_PPE_WBM2SW_REL,
+	PPEDS_IRQ_TX_COMPLETION,
 };
 
 struct dp_ppe_ds_idxs {
@@ -51,7 +51,7 @@ struct dp_ppe_ds_idxs {
 
 #define ATH12K_DP_RX_FSE_FLOW_METADATA_MASK      0xFFFF
 
-#define PPE_VP_ENTRIES_MAX 32
+#define PPE_VP_ENTRIES_MAX 192
 #define MAX_PPEDS_IRQ_NAME_LEN 20
 #define MAX_PPEDS_IRQS 3
 
@@ -66,10 +66,11 @@ struct ath12k_dp_ppe_vp_profile {
 	u8 to_fw;
 	u8 use_ppe_int_pri;
 	struct ath12k_link_vif *arvif;
+	bool entry_valid;
 };
 
 struct dp_ppeds_tx_comp_ring {
-	struct dp_srng ppe_wbm2sw_ring;
+	struct dp_srng ppeds_txcmpl_ring;
 	struct hal_wbm_completion_ring_tx *tx_status;
 	int tx_status_head;
 	int tx_status_tail;
@@ -95,10 +96,34 @@ struct ath12k_ppeds_stats {
 	u32 tqm_rel_reason[HAL_WBM_TQM_REL_REASON_MAX];
 };
 
+/*
+ * DP arch ops to communicate from common module
+ * to arch specific module
+ */
 struct ath12k_ppeds_arch_ops {
-	irqreturn_t (*ppe2tcl_irq_handler)(int irq, void *ctxt);
-	irqreturn_t (*reo2ppe_irq_handler)(int irq, void *ctxt);
-	irqreturn_t (*ppe2tcl_tx_compln)(int irq, void *ctxt);
+	irqreturn_t (*ath12k_ppeds_ppe2tcl_irq_handler)(int irq, void *ctxt);
+	irqreturn_t (*ath12k_ppeds_reo2ppe_irq_handler)(int irq, void *ctxt);
+	irqreturn_t (*ath12k_ppeds_ppe2tcl_tx_compln)(int irq, void *ctxt);
+	int (*ath12k_ppeds_start)(struct ath12k_base *ab);
+	void (*ath12k_ppeds_stop)(struct ath12k_base *ab);
+	int (*ath12k_ppeds_attach)(struct ath12k_base *ab);
+	int (*ath12k_ppeds_detach)(struct ath12k_base *ab);
+	int (*ath12k_ppeds_register_soc)(struct ath12k_dp *dp,
+						struct dp_ppe_ds_idxs *idx);
+	int (*ath12k_ppeds_srng_setup)(struct ath12k_base *ab);
+	void (*ath12k_ppeds_srng_cleanup)(struct ath12k_base *ab);
+	void (*ath12k_ppeds_interrupt_start)(struct ath12k_base *ab);
+	void (*ath12k_ppeds_interrupt_stop)(struct ath12k_base *ab);
+	int (*ath12k_dp_ppeds_alloc_ppe_vp_profile)(struct ath12k_base *ab,
+					struct ath12k_dp_ppe_vp_profile **vp_profile,
+					int vp_num);
+	void (*ath12k_dp_ppeds_dealloc_ppe_vp_profile)(struct ath12k_base *ab,
+							     int ppe_vp_profile_idx,
+							     enum nl80211_iftype type);
+	int (*ath12k_dp_ppeds_alloc_vp_tbl_entry)(struct ath12k_base *ab,
+						int ppe_vp_profile_idx);
+	int (*ath12k_dp_ppeds_alloc_vp_search_idx_tbl_entry)(struct ath12k_base *ab,
+						int ppe_vp_profile_idx);
 };
 
 struct ath12k_ppeds_napi {
@@ -135,6 +160,7 @@ struct ath12k_ppe {
 	u8 num_ppe_vp_entries;
 	u8 ppeds_int_mode_enabled;
 	u8 ppeds_stopped;
+	u8 hw_auto_index_en; /**< Auto index enabled / disabled for PPE2TCL/REO2PPE*/
 	struct ath12k_ppeds_stats ppeds_stats;
 	struct nss_plugins_ops *nss_plugin_ops;
 	struct ppe_ds_wlan_ops_v2 *ppeds_wlanops;
@@ -144,7 +170,7 @@ struct ath12k_ppe {
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 
 extern bool ath12k_ppe_rfs_support;
-extern atomic_t num_ppeds_nodes;
+extern atomic_t ath12k_num_ppeds_nodes;
 extern struct ath12k_base *ds_node_map[PPE_DS_MAX_NODE];
 
 int ath12k_ppe_rfs_get_core_mask(void);
@@ -159,7 +185,6 @@ void ath12k_dp_srng_ppeds_cleanup(struct ath12k_base *ab);
 int ath12k_dp_srng_ppeds_setup(struct ath12k_base *ab);
 int ath12k_dp_ppeds_register_soc(struct ath12k_dp *dp,
 				 struct dp_ppe_ds_idxs *idx);
-void ath12k_dp_ppeds_stop(struct ath12k_base *ab);
 int ath12k_dp_ppeds_start(struct ath12k_base *ab);
 int ath12k_ppeds_detach(struct ath12k_base *ab);
 int ath12k_ppeds_attach(struct ath12k_base *ab);
@@ -189,7 +214,6 @@ void ath12k_vif_free_vp(struct ath12k_vif *ahvif, struct net_device *dev);
 void ath12k_dp_ppeds_service_enable_disable(struct ath12k_base *ab,
 					    bool enable);
 void ath12k_dp_ppeds_interrupt_stop(struct ath12k_base *ab);
-void ath12k_dp_ppeds_stop(struct ath12k_base *ab);
 void ath12k_dp_ppeds_interrupt_start(struct ath12k_base *ab);
 int ath12k_nss_plugin_register_ops(struct ath12k_base *ab);
 void ath12k_nss_plugin_unregister_ops(struct ath12k_base *ab);
@@ -199,7 +223,36 @@ void ath12k_dp_ppeds_tx_release_desc_list_bulk(struct ath12k_dp *dp,
 					       int local_list_len,
 					       struct list_head *local_list_no_skb,
 					       int list_no_skb_count);
+void ath12k_dp_ppeds_setup_vp_entry(struct ath12k_base *ab,
+				    struct ath12k *ar,
+				    struct ath12k_link_vif *arvif,
+				    struct ath12k_dp_ppe_vp_profile *ppe_vp_profile);
 
+int ath12k_ppeds_attach_link_apvlan_vif(struct ath12k_link_vif *arvif, int vp_num,
+					struct ath12k_vlan_iface *vlan_iface,
+					int link_id);
+
+int ath12k_dp_srng_init_idx(struct ath12k_base *ab, struct dp_srng *ring,
+			    enum hal_ring_type type, int ring_num,
+			    int mac_id,
+			    int num_entries, u32 restore_idx);
+
+int ath12k_dp_srng_alloc(struct ath12k_base *ab, struct dp_srng *ring,
+			 enum hal_ring_type type, int ring_num,
+			 int num_entries);
+
+int ath12k_ppeds_dp_srng_init(struct ath12k_base *ab, struct dp_srng *ring,
+			      enum hal_ring_type type, int ring_num,
+			      int mac_id, int num_entries,
+			      u32 restore_idx);
+void ath12k_dp_ppeds_tx_set_ppe_vp_entry(struct ath12k_base *ab,
+					 struct ath12k_dp_ppe_vp_profile *ppe_vp_profile,
+					 u32 ppe_vp_idx, u32 vdev_id,
+					 u32 bank_id, u32 lmac_id);
+int ath12k_ppeds_dp_srng_alloc(struct ath12k_base *ab, struct dp_srng *ring,
+			       enum hal_ring_type type, int ring_num,
+			       int num_entries);
+void ath12k_dp_ppeds_stop(struct ath12k_base *ab);
 #else
 static inline void ath12k_dp_srng_ppeds_cleanup(struct ath12k_base *ab)
 {

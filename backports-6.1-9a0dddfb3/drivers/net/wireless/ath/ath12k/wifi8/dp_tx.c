@@ -1924,7 +1924,7 @@ ath12k_wifi8_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 					   struct hal_tx_status *ts,
 					   int ring_id, u32 htt_status)
 {
-	struct htt_tx_wbm_completion *status_desc;
+	struct htt_tx_completion *status_desc;
 	struct ath12k_pdev_dp *dp_pdev;
 	struct ath12k_dp_peer *peer = NULL;
 	u8 link_id = 0;
@@ -3002,13 +3002,13 @@ int ath12k_wifi8_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 	struct ath12k *ar;
 	struct ath12k_pdev_dp *dp_pdev;
 	struct dp_ppeds_tx_comp_ring *tx_ring = &dp->ppe.ppeds_comp_ring;
-	int hal_ring_id = tx_ring->ppe_wbm2sw_ring.ring_id;
+	int hal_ring_id = tx_ring->ppeds_txcmpl_ring.ring_id;
 	struct hal_srng *status_ring = &ab->hal.srng_list[hal_ring_id];
 	struct ath12k_ppeds_tx_desc_info *tx_desc = NULL;
 	struct ath12k_dp_tx_comp_status tx_status;
 	int valid_entries, count = 0;
 	int list_no_skb_count = 0;
-	struct htt_tx_wbm_completion *status_desc;
+	struct htt_tx_completion *status_desc;
 	struct hal_tqm2sw_completion_ring *desc;
 	struct list_head local_list;
 	struct list_head local_list_no_skb;

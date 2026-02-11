@@ -414,6 +414,7 @@ static int ath12k_pci_claim(struct ath12k_pci *ab_pci, struct pci_dev *pdev)
 	ab->ath12k_base_extn.mem_pa = pci_resource_start(pdev, ATH12K_PCI_BAR_NUM);
 #endif
 
+	ab->mem_pa = pci_resource_start(pdev, ATH12K_PCI_BAR_NUM);
 	ath12k_dbg(ab, ATH12K_DBG_BOOT, "boot pci_mem 0x%p\n", ab->mem);
 	return 0;
 
@@ -767,6 +768,22 @@ void ath12k_pci_write32(struct ath12k_base *ab, u32 offset, u32 value)
 	    ab_pci->pci_ops->release && !ret)
 		ab_pci->pci_ops->release(ab);
 }
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+dma_addr_t ath12k_pci_ppeds_get_umac_reg_paddr(struct ath12k_base *ab, u32 offset)
+{
+	u32 window_start;
+	dma_addr_t paddr;
+
+	window_start = ath12k_pcic_get_window_start(ab, offset);
+	paddr = ab->mem_pa + window_start + (offset & WINDOW_RANGE_MASK);
+
+	ath12k_dbg(ab, ATH12K_DBG_PCI,
+			"mem_pa:%pad window_start:%x paddr:%pad\n",
+			&ab->mem_pa, window_start, &paddr);
+	return paddr;
+}
+#endif
 
 #ifdef CPTCFG_ATH12K_COREDUMP
 static int ath12k_pci_coredump_calculate_size(struct ath12k_base *ab, u32 *dump_seg_sz)
@@ -1174,6 +1191,7 @@ static const struct ath12k_hif_ops ath12k_pci_hif_ops = {
 	.ppeds_free_interrupts = ath12k_pci_ppeds_free_interrupts,
 	.ppeds_irq_enable = ath12k_pci_ppeds_irq_enable,
 	.ppeds_irq_disable = ath12k_pci_ppeds_irq_disable,
+	.ppeds_get_pci_window_umac_reg_paddr = ath12k_pci_ppeds_get_umac_reg_paddr,
 #endif
 	.dp_umac_reset_irq_config = ath12k_dp_umac_pci_config_irq,
 	.dp_umac_reset_enable_irq = ath12k_pci_dp_umac_reset_enable_irq,

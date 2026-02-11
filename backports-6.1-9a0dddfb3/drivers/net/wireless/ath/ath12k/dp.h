@@ -1392,8 +1392,8 @@ ssize_t ath12k_dp_dump_device_ring_stats(struct ath12k_base *ab,
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 struct ath12k_ppeds_tx_desc_info *ath12k_dp_get_ppeds_tx_desc(struct ath12k_base *ab,
 							      u32 desc_id);
-int ath12k_dp_cc_ppeds_desc_init(struct ath12k_base *ab);
-int ath12k_dp_cc_ppeds_desc_cleanup(struct ath12k_base *ab);
+int ath12k_dp_ppeds_cc_desc_init(struct ath12k_base *ab);
+int ath12k_dp_ppeds_cc_desc_cleanup(struct ath12k_base *ab);
 void ath12k_dp_ppeds_tx_cmem_init(struct ath12k_base *ab, struct ath12k_dp *dp);
 int ath12k_dp_ppe_rxole_rxdma_cfg(struct ath12k_base *ab);
 #endif
@@ -1435,14 +1435,14 @@ void ath12k_dp_umac_rx_desc_cleanup(struct ath12k_base *ab);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 void ath12k_ppeds_reinject_handler(struct ath12k_base *ab,
 				   struct ath12k_ppeds_tx_desc_info *tx_desc,
-				   struct htt_tx_wbm_completion *status_desc);
+				   struct htt_tx_completion *status_desc);
 void ath12k_dp_ppeds_tx_comp_get_desc(struct ath12k_base *ab,
 				      struct ath12k_dp_tx_comp_status *tx_comp_status,
 				      struct ath12k_ppeds_tx_desc_info **tx_desc);
 struct ath12k_ppeds_tx_desc_info *ath12k_dp_get_ppeds_tx_desc(struct ath12k_base *ab,
 							      u32 desc_id);
-int ath12k_dp_cc_ppeds_desc_init(struct ath12k_base *ab);
-int ath12k_dp_cc_ppeds_desc_cleanup(struct ath12k_base *ab);
+int ath12k_dp_ppeds_cc_desc_init(struct ath12k_base *ab);
+int ath12k_dp_ppeds_cc_desc_cleanup(struct ath12k_base *ab);
 void ath12k_dp_ppeds_tx_cmem_init(struct ath12k_base *ab, struct ath12k_dp *dp);
 int ath12k_dp_ppe_rxole_rxdma_cfg(struct ath12k_base *ab);
 void ath12k_dp_increment_bank_num_users(struct ath12k_dp *dp,

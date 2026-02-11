@@ -311,7 +311,7 @@ static int ath12k_dp_srng_calculate_msi_group(struct ath12k_base *ab,
 			ring_num = 0;
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 		} else if (ring_num == HAL_WBM2SW_PPEDS_TX_CMPLN_RING_NUM) {
-			grp_mask = &ring_mask->wbm2sw6_ppeds_tx_cmpln[0];
+			grp_mask = &ring_mask->ppeds_tx_cmpln[0];
 			ring_num = 0;
 #endif
 		} else {
@@ -380,6 +380,12 @@ static int ath12k_dp_srng_calculate_msi_group(struct ath12k_base *ab,
 			}
 		}
 		grp_mask = &ab->hw_params->ring_mask->tx[0];
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+		if (ring_num == HAL_TQM2SW_PPEDS_TX_CMPLN_RING_NUM) {
+			grp_mask = &ring_mask->ppeds_tx_cmpln[0];
+			ring_num = 0;
+		}
+#endif
 		break;
 	case HAL_SAM_STATUS:
 		grp_mask = &ab->hw_params->ring_mask->sam_status[0];
@@ -757,9 +763,8 @@ void ath12k_dp_srng_common_cleanup(struct ath12k_base *ab)
 	ath12k_dp_srng_cleanup(ab, &dp->rx_rel_ring);
 	ath12k_dp_srng_cleanup(ab, &dp->reo_reinject_ring);
 	ath12k_dp_srng_cleanup(ab, &dp->wbm_desc_rel_ring);
-
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	ath12k_dp_srng_ppeds_cleanup(ab);
+	dp->ppe.ppe_ops->ath12k_ppeds_srng_cleanup(ab);
 #endif
 }
 EXPORT_SYMBOL(ath12k_dp_srng_common_cleanup);
@@ -819,7 +824,7 @@ int ath12k_dp_srng_common_setup(struct ath12k_base *ab)
 
 skip_reo_setup:
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	ret = ath12k_dp_srng_ppeds_setup(ab);
+	ret = dp->ppe.ppe_ops->ath12k_ppeds_srng_setup(ab);
 	if (ret) {
 		ath12k_warn(ab, "failed to set up ppe-ds srngs :%d\n", ret);
 		goto err;
@@ -1531,6 +1536,7 @@ void ath12k_dp_ppeds_tx_cmem_init(struct ath12k_base *ab, struct ath12k_dp *dp)
 					   dp->spt_info[i].paddr >> ATH12K_SPT_4K_ALIGN_OFFSET);
 	}
 }
+EXPORT_SYMBOL(ath12k_dp_ppeds_tx_cmem_init);
 
 void ath12k_dp_ppeds_tx_desc_cleanup(struct ath12k_base *ab)
 {
@@ -1574,7 +1580,7 @@ void ath12k_dp_ppeds_tx_desc_cleanup(struct ath12k_base *ab)
 }
 EXPORT_SYMBOL(ath12k_dp_ppeds_tx_desc_cleanup);
 
-int ath12k_dp_cc_ppeds_desc_cleanup(struct ath12k_base *ab)
+int ath12k_dp_ppeds_cc_desc_cleanup(struct ath12k_base *ab)
 {
 	struct ath12k_ppeds_tx_desc_info *ppeds_tx_descs;
 	struct ath12k_dp *dp = ab->dp;
@@ -1622,8 +1628,9 @@ int ath12k_dp_cc_ppeds_desc_cleanup(struct ath12k_base *ab)
 
 	return 0;
 }
+EXPORT_SYMBOL(ath12k_dp_ppeds_cc_desc_cleanup);
 
-int ath12k_dp_cc_ppeds_desc_init(struct ath12k_base *ab)
+int ath12k_dp_ppeds_cc_desc_init(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ab->dp;
 	struct ath12k_ppeds_tx_desc_info *ppeds_tx_descs;
@@ -1651,7 +1658,7 @@ int ath12k_dp_cc_ppeds_desc_init(struct ath12k_base *ab)
 					 GFP_ATOMIC);
 		if (!ppeds_tx_descs) {
 			spin_unlock_bh(&dp->ppe.ppeds_tx_desc_lock);
-			ath12k_dp_cc_ppeds_desc_cleanup(ab);
+			ath12k_dp_ppeds_cc_desc_cleanup(ab);
 			return -ENOMEM;
 		}
 		dp->ppedstxbaddr[i] = &ppeds_tx_descs[0];
@@ -1673,6 +1680,7 @@ int ath12k_dp_cc_ppeds_desc_init(struct ath12k_base *ab)
 
 	return 0;
 }
+EXPORT_SYMBOL(ath12k_dp_ppeds_cc_desc_init);
 #endif
 
 static int ath12k_dp_cc_desc_init(struct ath12k_base *ab)
