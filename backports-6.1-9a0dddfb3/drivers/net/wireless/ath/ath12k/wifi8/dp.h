@@ -18,6 +18,9 @@
 #define DP_WBM_REFILL_RING_SIZE        512
 #define DP_WBM_IDLE_BUF_RING_SIZE      16384
 #define DP_FSE_CMD_RING_SIZE		256
+#define DP_PPE2WBM_REFILL_RING_MAX     3
+#define DP_PPE2WBM_REFILL_RING_SIZE    512
+#define DP_PPE2WBM_IDLE_BUF_RING_SIZE  8192
 
 #if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || \
 	defined(CPTCFG_ATH12K_MEM_PROFILE_512M)
@@ -87,6 +90,8 @@ struct ath12k_dp_wifi8 {
 
 	/* SAM command ring staging in words */
 	u32 *sam_cmd_staging;
+	struct dp_srng ppe2wbm_refill_ring[DP_PPE2WBM_REFILL_RING_MAX];
+	struct dp_srng ppe2wbm_idle_buf_ring;
 };
 
 struct ath12k_dp_hw_group_wifi8 {
