@@ -105,6 +105,7 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_WLAN_CTL_TABLE = 514,
 	QCA_NL80211_VENDOR_SUBCMD_GET_CHANNEL_SWITCH_TIME = 515,
 	QCA_NL80211_VENDOR_SUBCMD_REPURPOSE_LINK_INDICATION = 516,
+	QCA_NL80211_VENDOR_SUBCMD_DCS_SIM = 517,
 };
 
 enum qca_nl80211_vendor_events {
@@ -3906,6 +3907,28 @@ enum qca_wlan_vendor_attr_mon_scan_stats {
 	QCA_WLAN_VENDOR_ATTR_RX_MON_SCAN_STATS_LAST,
 	QCA_WLAN_VENDOR_ATTR_RX_MON_SCAN_STATS_MAX =
 		QCA_WLAN_VENDOR_ATTR_RX_MON_SCAN_STATS_LAST - 1,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_dcs_sim - Attributes used by
+ * %QCA_NL80211_VENDOR_SUBCMD_DCS_SIM.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_DCS_SIM_LINK_ID: 8-bit unsigned value for link ID.
+ * Specifies which link to simulate in a multi-link setup.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_DCS_SIM_TYPE: 16-bit unsigned value for DCS simulation
+ * type. Selects the interference simulation mode the driver should execute.
+ * Userspace must provide this attribute. QCA_WLAN_VENDOR_ATTR_DCS_SIM_LINK_ID
+ * is also required in multi-link AP scenarios.
+ */
+enum qca_wlan_vendor_attr_dcs_sim {
+	QCA_WLAN_VENDOR_ATTR_DCS_SIM_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_DCS_SIM_LINK_ID,
+	QCA_WLAN_VENDOR_ATTR_DCS_SIM_TYPE,
+
+	QCA_WLAN_VENDOR_ATTR_DCS_SIM_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_DCS_SIM_MAX =
+		QCA_WLAN_VENDOR_ATTR_DCS_SIM_AFTER_LAST - 1
 };
 
 #define ATH12K_VENDOR_PUT(vendor_event, type, attr, param)             \
