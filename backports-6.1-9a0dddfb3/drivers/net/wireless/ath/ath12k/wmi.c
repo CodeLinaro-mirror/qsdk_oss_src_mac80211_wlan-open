@@ -12916,6 +12916,12 @@ ath12k_wmi_dcs_interference_event(struct ath12k_base *ab,
 		ath12k_wmi_dcs_cw_interference_event_extn(ab, skb, pdev_id);
 		break;
 	case WMI_DCS_WLAN_INTF:
+#ifdef CPTCFG_QCN_EXTN
+		ath12k_wmi_dcs_wlan_interference_event_extn(ab, skb, pdev_id);
+#else
+		ath12k_dbg(ab, ATH12K_DBG_WMI,
+			   "WLAN interference event not handled\n");
+#endif
 		break;
 	case WMI_DCS_AWGN_INTF:
 		ath12k_wmi_dcs_awgn_interference_event(ab, skb, pdev_id);
