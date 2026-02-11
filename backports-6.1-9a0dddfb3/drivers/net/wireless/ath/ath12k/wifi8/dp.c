@@ -25,9 +25,9 @@
 #include "umac_reset.h"
 #include "mgmt_rx.h"
 #include "dp_peer.h"
+#include "ppeds.h"
 
-extern struct ppe_ds_wlan_ops_v2 ppeds_wlanops_v2;
-struct ath12k_ppeds_arch_ops ath12k_wifi8_arch_ppeds_ops;
+extern struct ppe_ds_wlan_ops_v2 ppeds_wifi8_wlanops_v2;
 
 static int ath12k_wifi8_non_cumac_dp_service_srng(struct ath12k_dp *dp,
 						  struct ath12k_ext_irq_grp *irq_grp,
@@ -1074,6 +1074,11 @@ struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab)
 	dp_wifi8->dp = dp;
 
 	dp->arch_ops = &ath12k_wifi8_dp_arch_ops;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	dp->ppe.ppeds_wlanops = &ppeds_wlan_ops_v2_wifi8;
+	dp->ppe.ppe_ops = &ath12k_wifi8_arch_ppeds_ops;
+#endif
+
 	dp->ab = ab;
 	dp->dev = ab->dev;
 	dp->hw_params = ab->hw_params;

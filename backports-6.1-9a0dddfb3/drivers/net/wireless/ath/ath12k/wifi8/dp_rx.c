@@ -3970,7 +3970,6 @@ int ath12k_wifi8_dp_rx_flow_add_entry(struct ath12k_dp *dp,
 	flow.reo_destination_handler = HAL_RX_FSE_REO_DEST_FT;
 	flow.fse_metadata |= flow_info->fse_metadata;
 	if (flow_info->use_ppe) {
-		flow.use_ppe = flow_info->use_ppe;
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 		flow.service_code = PPE_DRV_SC_SPF_BYPASS;
 		flow.ppe_classify_read_hint = PPEDS_CLASSIFY_READ_FULL_PKT;
