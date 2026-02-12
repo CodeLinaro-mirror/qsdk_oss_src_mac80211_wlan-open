@@ -19624,7 +19624,7 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 	struct ath12k* ar=arvif->ar;
 	struct ieee80211_hw* hw=ath12k_ar_to_hw(ar);
 	struct wmi_vdev_start_req_arg arg={};
-	struct ieee80211_bss_conf* link_conf;
+	struct ieee80211_bss_conf *link_conf = NULL;
 	s16 punct_bitmap=arvif->punct_bitmap;
 	struct ieee80211_channel* channel;
 	struct ath12k_base* ab=ar->ab;
@@ -19718,8 +19718,18 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 	}
 
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
-		arg.ssid = ahvif->u.ap.ssid;
-		arg.ssid_len = ahvif->u.ap.ssid_len;
+		/*
+		 * Use ssid from link if it is available, repurposed link(s)
+		 * can have unique ssid.
+		 */
+		if (link_conf && link_conf->ssid_len) {
+			arg.ssid = link_conf->ssid;
+			arg.ssid_len = link_conf->ssid_len;
+		} else {
+			arg.ssid = ahvif->u.ap.ssid;
+			arg.ssid_len = ahvif->u.ap.ssid_len;
+		}
+
 		arg.hidden_ssid = ahvif->u.ap.hidden_ssid;
 
 		/* For now allow DFS in AP mode for vdevs except
