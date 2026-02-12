@@ -580,11 +580,11 @@ struct ath12k_dp_arch_ops {
 						 struct ath12k_dp_link_vif *dp_link_vif,
 						 struct ath12k_tx_desc_info *tx_desc,
 						 struct ath12k_dp_ext_info *info);
-
 	/* UMAC reset operations */
 	void (*umac_reset_handle_pre_reset)(struct ath12k_base *ab);
 	void (*umac_reset_handle_post_reset_start)(struct ath12k_base *ab);
 	void (*umac_reset_handle_post_reset_complete)(struct ath12k_base *ab);
+	ssize_t (*dump_srng_stats)(struct ath12k_dp *dp, char *buf, int size);
 };
 
 struct ath12k_bp_stats {
