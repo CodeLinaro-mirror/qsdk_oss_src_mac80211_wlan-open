@@ -86,12 +86,15 @@ u32 ath12k_hal_tx_read_bank_register_internal(struct ath12k_base *ab, u8 bank_id
 int ath12k_wifi8_hal_tqm_cmd_send(struct ath12k_base *ab, struct hal_srng *srng,
 				  enum hal_tlv_tag_be type,
 				  struct ath12k_hal_tqm_cmd *cmd);
-int ath12k_wifi8_hal_tqm_remove_msdu_cmd(struct hal_tlv_64_hdr *tlv,
-						struct ath12k_hal_tqm_cmd *cmd);
-int ath12k_wifi8_hal_tqm_remove_mpdu_cmd(struct hal_tlv_64_hdr *tlv,
-						struct ath12k_hal_tqm_cmd *cmd);
-int ath12k_wifi8_hal_tqm_sync_cmd(struct hal_tlv_64_hdr *tlv,
+int ath12k_wifi8_hal_tqm_remove_msdu_cmd(struct ath12k_base *ab,
+					 struct hal_tlv_64_hdr *tlv,
 					 struct ath12k_hal_tqm_cmd *cmd);
+int ath12k_wifi8_hal_tqm_remove_mpdu_cmd(struct ath12k_base *ab,
+					 struct hal_tlv_64_hdr *tlv,
+					 struct ath12k_hal_tqm_cmd *cmd);
+int ath12k_wifi8_hal_tqm_sync_cmd(struct ath12k_base *ab,
+				  struct hal_tlv_64_hdr *tlv,
+				  struct ath12k_hal_tqm_cmd *cmd);
 void ath12k_wifi8_hal_tqm_remove_msdu_status(struct ath12k_base *ab,
 					     struct hal_tlv_64_hdr *tlv,
 					     struct hal_tqm_status *status);
@@ -101,6 +104,4 @@ void ath12k_wifi8_hal_tqm_remove_mpdu_status(struct ath12k_base *ab,
 void ath12k_wifi8_hal_tqm_sync_cmd_status(struct ath12k_base *ab,
 					  struct hal_tlv_64_hdr *tlv,
 					  struct hal_tqm_status *status);
-void ath12k_wifi8_hal_tqm_init_cmd_ring(struct ath12k_base *ab,
-					struct hal_srng *srng);
 #endif

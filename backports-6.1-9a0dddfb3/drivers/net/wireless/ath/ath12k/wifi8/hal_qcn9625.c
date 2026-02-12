@@ -142,11 +142,12 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.max_size = HAL_TCL_STATUS_RING_BASE_MSB_RING_SIZE,
 		.name = "Tcl_status",
 	},
+	/* entry_size is set to minimum value here */
+	/* Get valid entry_size from ath12k_hal_srng_get_tqm_cmd_size */
 	[HAL_TQM_CMD] = {
 		.start_ring_id = HAL_SRNG_RING_ID_TQM_HOST_CMD,
 		.max_rings = 1,
-		.entry_size = (sizeof(struct hal_tlv_64_hdr) +
-			sizeof(struct hal_tqm_sync_cmd)) >> 2,
+		.entry_size = 2,
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_SRC,
 		.max_size = HAL_TQM_HOST_CMD_RING_BASE_MSB_RING_SIZE,

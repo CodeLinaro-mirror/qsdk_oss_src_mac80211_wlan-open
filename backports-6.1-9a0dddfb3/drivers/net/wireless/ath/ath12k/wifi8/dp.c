@@ -253,6 +253,7 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 	spin_lock_init(&dp->tqm_cmd_lock);
 
 	dp->reo_cmd_cache_flush_count = 0;
+	dp->tqm_cmd_num = 1;
 	dp->idle_link_rbm =
 			ath12k_hal_get_idle_link_rbm(&ab->hal, ab->device_id);
 

@@ -1101,8 +1101,6 @@ void ath12k_wifi8_hal_reoq_lut_addr_read_enable(struct ath12k_base *ab);
 void ath12k_wifi8_hal_reoq_lut_set_max_peerid(struct ath12k_base *ab);
 void ath12k_wifi8_hal_write_reoq_lut_addr(struct ath12k_base *ab,
 					  dma_addr_t paddr);
-void ath12k_wifi8_hal_tqm_init_cmd_ring(struct ath12k_base *ab,
-					struct hal_srng *srng);
 void ath12k_wifi8_hal_write_ml_reoq_lut_addr(struct ath12k_base *ab,
 					     dma_addr_t paddr);
 void ath12k_wifi8_hal_reo_init_cmd_ring(struct ath12k_base *ab,
@@ -1116,7 +1114,9 @@ u32 ath12k_wifi8_hal_reo_qdesc_size(u32 ba_window_size, u8 tid);
 void ath12k_wifi8_hal_reo_qdesc_setup(struct hal_rx_reo_queue *qdesc,
 				      int tid, u32 ba_window_size,
 				      u32 start_seq, enum hal_pn_type type);
-
+void *ath12k_hal_srng_src_get_tqm_next_entry(struct ath12k_base *ab,
+					     struct hal_srng *srng,
+					     enum hal_tlv_tag_be type);
 void ath12k_wifi8_hal_ppeds_cfg_ast_override_map_reg(struct ath12k_base *ab, u8 idx,
 						     u32 ppeds_idx_map_val);
 void ath12k_wifi8_hal_srng_hw_disable(struct ath12k_base *ab,

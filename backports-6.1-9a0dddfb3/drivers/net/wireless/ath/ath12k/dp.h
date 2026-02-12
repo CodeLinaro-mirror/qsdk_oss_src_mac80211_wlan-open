@@ -254,7 +254,7 @@ enum ath12k_dp_eapol_key_type {
 #define DP_TX_IDR_SIZE			DP_TX_COMP_RING_SIZE
 #define DP_TCL_CMD_RING_SIZE		32
 #define DP_TCL_STATUS_RING_SIZE		32
-#define DP_TQM_CMD_RING_SIZE		256
+#define DP_TQM_CMD_RING_SIZE		4096
 #define DP_TQM_STATUS_RING_SIZE		2048
 #define DP_REO_DST_RING_SIZE		8192
 #define DP_REO_REINJECT_RING_SIZE	32
@@ -679,6 +679,7 @@ struct ath12k_dp {
 	u8 htt_tgt_ver_minor;
 	struct dp_link_desc_bank link_desc_banks[DP_LINK_DESC_BANKS_MAX];
 	u8 idle_link_rbm;
+	u32 tqm_cmd_num;
 	struct dp_srng wbm_idle_ring;
 	struct dp_srng wbm_desc_rel_ring;
 	struct dp_srng reo_reinject_ring;

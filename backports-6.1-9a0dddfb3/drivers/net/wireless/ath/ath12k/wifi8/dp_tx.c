@@ -2780,7 +2780,6 @@ int ath12k_wifi8_dp_tx_ring_setup(struct ath12k_base *ab)
 	struct ath12k_dp *dp = ab->dp;
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
 	const struct ath12k_hal_tcl_to_cmp_rbm_map *map;
-	struct hal_srng *srng;
 	int ret;
 	u8 rbm_id;
 
@@ -2847,9 +2846,6 @@ int ath12k_wifi8_dp_tx_ring_setup(struct ath12k_base *ab)
 		ath12k_warn(ab, "failed to set up tqm_status ring :%d\n", ret);
 		goto err;
 	}
-
-	srng = &ab->hal.srng_list[dp_wifi8->tqm_cmd_ring.ring_id];
-	ath12k_wifi8_hal_tqm_init_cmd_ring(ab, srng);
 
 	return 0;
 

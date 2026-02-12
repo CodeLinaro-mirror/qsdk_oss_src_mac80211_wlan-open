@@ -15,6 +15,7 @@
 #include "../hif.h"
 #include "../pcic.h"
 #include "ppeds.h"
+#include "../hal.h"
 
 const struct ath12k_hw_version_map ath12k_wifi8_hw_ver_map[] = {
 	[ATH12K_HW_QCN9625_HW10] = {
@@ -987,4 +988,66 @@ int ath12k_wifi8_hal_get_rdi_source_cfg(struct ath12k_base *ab, int source)
 			set_bit(i, &rdi_based_source_cfg);
 
 	return rdi_based_source_cfg;
+}
+
+static inline
+u32 ath12k_hal_srng_src_get_words_available(u32 hp, u32 tp,
+					    u32 ring_size)
+{
+	/* Keeping 1-word gap so hp==tp means empty */
+	if (tp <= hp)
+		return (ring_size - hp + tp - 1);
+	else
+		return (tp - hp - 1);
+}
+
+static inline
+u32 ath12k_hal_srng_get_tqm_cmd_size(enum hal_tlv_tag_be type)
+{
+	if (type == HAL_TQM_REMOVE_MSDU_BO)
+		return ((sizeof(struct hal_tlv_64_hdr) +
+			sizeof(struct hal_tqm_remove_msdu)) >> 2);
+	else if (type == HAL_TQM_REMOVE_MPDU_BO)
+		return ((sizeof(struct hal_tlv_64_hdr) +
+			sizeof(struct hal_tqm_remove_mpdu)) >> 2);
+	else if (type == HAL_TQM_SYNC_CMD_BO)
+		return ((sizeof(struct hal_tlv_64_hdr) +
+			sizeof(struct hal_tqm_sync_cmd)) >> 2);
+	return 0;
+}
+
+void *ath12k_hal_srng_src_get_tqm_next_entry(struct ath12k_base *ab,
+					     struct hal_srng *srng,
+					     enum hal_tlv_tag_be type)
+{
+	u32 entry_size, ring_size, hp, tp;
+	void *desc;
+	u32 words_available, next_hp;
+
+	lockdep_assert_held(&srng->lock);
+
+	entry_size = ath12k_hal_srng_get_tqm_cmd_size(type);
+	ring_size = srng->ring_size;
+	hp = srng->u.src_ring.hp;
+	tp = READ_ONCE(srng->u.src_ring.cached_tp);
+
+	if (!entry_size || entry_size >= ring_size)
+		return NULL;
+
+	words_available = ath12k_hal_srng_src_get_words_available(
+						hp, tp, ring_size);
+
+	if (unlikely(words_available < entry_size))
+		return NULL; /* not enough total space */
+
+	desc = (u32 *)srng->ring_base_vaddr + hp;
+
+	next_hp = hp + entry_size;
+	if (next_hp >= ring_size)
+		next_hp -= ring_size;
+
+	srng->u.src_ring.hp = next_hp;
+	srng->u.src_ring.reap_hp = next_hp;
+
+	return desc;
 }
