@@ -26,6 +26,7 @@
 #include "pktlog.h"
 #include "dp_stats.h"
 #include "mgmt_rx.h"
+#include "telemetry_agent_if.h"
 
 #define SEGMENT_ID	GENMASK(1,0)
 #define CHRIP_ID	BIT(2)
@@ -6407,6 +6408,8 @@ static ssize_t ath12k_write_reset_dp_stats(struct file *file,
 		ar = &ah->radio[0];
 		if (ar && ath12k_proto_stats_enabled(&ar->dp))
 			ath12k_dp_peer_reset_proto_stats(dp_peer);
+
+		ath12k_telemetry_reset_peer_stats(dp_peer->addr);
 
 		struct ath12k_dp_link_peer *tmp_peer = NULL;
 		unsigned long peer_links_map, scan_links_map;
