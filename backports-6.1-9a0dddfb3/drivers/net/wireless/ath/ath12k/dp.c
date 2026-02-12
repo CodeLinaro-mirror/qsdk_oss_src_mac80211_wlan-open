@@ -3540,8 +3540,7 @@ void ath12k_dp_free_proto_stats_vif(struct ath12k_dp_tx_vif_stats *vif_stats)
 	vif_stats->proto = NULL;
 }
 
-int ath12k_dp_alloc_proto_stats_peer(struct ath12k *ar,
-				     struct ath12k_dp_peer *dp_peer)
+int ath12k_dp_alloc_proto_stats_peer(struct ath12k_dp_peer *dp_peer)
 {
 	u8 index;
 
@@ -3563,6 +3562,7 @@ err_peer_cleanup:
 	ath12k_dp_free_proto_stats_peer(dp_peer);
 	return -ENOMEM;
 }
+EXPORT_SYMBOL(ath12k_dp_alloc_proto_stats_peer);
 
 void ath12k_dp_free_proto_stats_peer(struct ath12k_dp_peer *dp_peer)
 {
@@ -3575,6 +3575,7 @@ void ath12k_dp_free_proto_stats_peer(struct ath12k_dp_peer *dp_peer)
 		peer_stats->proto = NULL;
 	}
 }
+EXPORT_SYMBOL(ath12k_dp_free_proto_stats_peer);
 
 static inline u8
 ath12k_dp_get_eapol_keytype(struct sk_buff *skb)
