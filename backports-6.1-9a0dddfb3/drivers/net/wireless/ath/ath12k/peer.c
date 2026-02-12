@@ -681,6 +681,16 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 	reinit_completion(&ar->peer_create_done);
 
+	/* Do not send peer create to FW if recovery is in progress */
+	if (test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags)) {
+		ath12k_warn(ar->ab,
+			    "skipped peer create cmd for vdev_id %d addr %pM during recovery ret:%d\n",
+			    arg->vdev_id, arg->peer_addr, -EHOSTDOWN);
+		ath12k_dp_arch_link_peer_delete(dp, ar->ab,
+						arg->vdev_id, arg->peer_addr);
+		return -EHOSTDOWN;
+	}
+
 	ret = ath12k_wmi_send_peer_create_cmd(ar, arg);
 	if (ret) {
 		ath12k_warn(ar->ab,
