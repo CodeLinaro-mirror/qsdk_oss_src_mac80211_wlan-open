@@ -1783,10 +1783,17 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	sdata->vif.cfg.s1g = params->chandef.chan->band ==
 				  NL80211_BAND_S1GHZ;
 
-	sdata->vif.cfg.ssid_len = params->ssid_len;
-	if (params->ssid_len)
-		memcpy(sdata->vif.cfg.ssid, params->ssid,
-		       params->ssid_len);
+	/* Update ML SSID in vif only when non-repurposed link is started */
+	if (!(sdata->vif.repurposed_links & BIT(link_id)))
+		sdata->vif.cfg.ssid_len = params->ssid_len;
+	link_conf->ssid_len = params->ssid_len;
+	if (params->ssid_len) {
+		if (!(sdata->vif.repurposed_links & BIT(link_id)))
+			memcpy(sdata->vif.cfg.ssid, params->ssid,
+			       params->ssid_len);
+
+		memcpy(link_conf->ssid, params->ssid, params->ssid_len);
+	}
 	link_conf->hidden_ssid =
 		(params->hidden_ssid != NL80211_HIDDEN_SSID_NOT_IN_USE);
 
@@ -2089,6 +2096,7 @@ static int ieee80211_stop_ap(struct wiphy *wiphy, struct net_device *dev,
 	link_conf->mbssid_tx_vif_linkid = -1;
 	sdata->beacon_rate_set = false;
 	sdata->vif.cfg.ssid_len = 0;
+	link_conf->ssid_len = 0;
 	clear_bit(SDATA_STATE_OFFCHANNEL_BEACON_STOPPED, &sdata->state);
 	ieee80211_link_info_change_notify(sdata, link,
 					  BSS_CHANGED_BEACON_ENABLED);

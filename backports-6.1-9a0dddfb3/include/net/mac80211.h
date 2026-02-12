@@ -640,6 +640,8 @@ struct ieee80211_parsed_tpe {
  *	responses.
  * @addr: (link) address used locally
  * @link_id: link ID, or 0 for non-MLO
+ * @ssid: The SSID of the current link when this link of the MLD is repurposed
+ * @ssid_len: Length of SSID given in @ssid.
  * @htc_trig_based_pkt_ext: default PE in 4us units, if BSS supports HE
  * @uora_exists: is the UORA element advertised by AP
  * @uora_ocw_range: UORA element's OCW Range field
@@ -810,6 +812,8 @@ struct ieee80211_bss_conf {
 	const u8 *bssid;
 	unsigned int link_id;
 	u8 addr[ETH_ALEN] __aligned(2);
+	u8 ssid[IEEE80211_MAX_SSID_LEN];
+	size_t ssid_len;
 	u8 htc_trig_based_pkt_ext;
 	bool uora_exists;
 	u8 uora_ocw_range;

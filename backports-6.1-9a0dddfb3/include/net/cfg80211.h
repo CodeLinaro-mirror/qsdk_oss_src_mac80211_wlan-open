@@ -7249,6 +7249,8 @@ enum ieee80211_ap_reg_power {
  *	unprotected beacon report
  * @links: array of %IEEE80211_MLD_MAX_NUM_LINKS elements containing @addr
  *	@ap and @client for each link
+ * @links.ap.ssid: per-link SSID used when MLD is repurposed
+ * @links.ap.ssid_len: length of SSID @links.ap.ssid
  * @links.csa_target_chandef: Required Target DFS channel definition, for which channel
  *	switch is expected
  * @links.cac_started: true if DFS channel availability check has been
@@ -7366,6 +7368,9 @@ struct wireless_dev {
 				unsigned int beacon_interval;
 				struct cfg80211_chan_def chandef;
 				bool is_going_down;
+				u8 ssid[IEEE80211_MAX_SSID_LEN];
+				u8 ssid_len;
+
 			} ap;
 			struct {
 				struct cfg80211_internal_bss *current_bss;

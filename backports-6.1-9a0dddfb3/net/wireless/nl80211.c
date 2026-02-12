@@ -4808,6 +4808,17 @@ static int nl80211_send_iface(struct sk_buff *msg, u32 portid, u32 seq, int flag
 			if (nla_put(msg, NL80211_ATTR_MAC, ETH_ALEN,
 				    wdev->links[link_id].addr))
 				goto nla_put_failure;
+			/*
+			 * Repurposed links can have different SSID from its
+			 * MLD, update all link(s) SSID if the MLD has at least
+			 * one repurposed link.
+			 */
+			if (wdev->repurposed_links)
+				if (wdev->links[link_id].ap.ssid_len &&
+				    nla_put(msg, NL80211_ATTR_SSID,
+					    wdev->links[link_id].ap.ssid_len,
+					    wdev->links[link_id].ap.ssid))
+					goto nla_put_failure;
 
 			ret = rdev_get_channel(rdev, wdev, link_id, &chandef);
 			if (ret == 0 && nl80211_send_chandef(msg, &chandef))
@@ -7155,6 +7166,8 @@ static void nl80211_send_ap_started(struct wireless_dev *wdev,
 	struct wiphy *wiphy = wdev->wiphy;
 	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wiphy);
 	struct sk_buff *msg;
+	const u8 *ssid;
+	u8 ssid_len;
 	void *hdr;
 
 	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
@@ -7165,13 +7178,19 @@ static void nl80211_send_ap_started(struct wireless_dev *wdev,
 	if (!hdr)
 		goto out;
 
+	if (wdev->valid_links) {
+		ssid_len = wdev->links[link_id].ap.ssid_len;
+		ssid = wdev->links[link_id].ap.ssid;
+	} else {
+		ssid_len = wdev->u.ap.ssid_len;
+		ssid = wdev->u.ap.ssid;
+	}
 	if (nla_put_u32(msg, NL80211_ATTR_WIPHY, rdev->wiphy_idx) ||
 	    nla_put_u32(msg, NL80211_ATTR_IFINDEX, wdev->netdev->ifindex) ||
 	    nla_put_u64_64bit(msg, NL80211_ATTR_WDEV, wdev_id(wdev),
 			      NL80211_ATTR_PAD) ||
-	    (wdev->u.ap.ssid_len &&
-	     nla_put(msg, NL80211_ATTR_SSID, wdev->u.ap.ssid_len,
-		     wdev->u.ap.ssid)) ||
+	    (ssid_len &&
+	     nla_put(msg, NL80211_ATTR_SSID, ssid_len, ssid)) ||
 	    (wdev->valid_links &&
 	     nla_put_u8(msg, NL80211_ATTR_MLO_LINK_ID, link_id)))
 		goto out;
@@ -7335,9 +7354,10 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 		}
 
 		if (wdev->u.ap.ssid_len &&
+		    !(wdev->repurposed_links & BIT(link_id)) &&
 		    (wdev->u.ap.ssid_len != params->ssid_len ||
 		     memcmp(wdev->u.ap.ssid, params->ssid, params->ssid_len))) {
-			/* require identical SSID for MLO */
+			/* require identical SSID for non-repurposed MLO */
 			err = -EINVAL;
 			goto out;
 		}
@@ -7574,10 +7594,16 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 		wdev->links[link_id].ap.chandef = params->chandef;
 		wdev->links[link_id].reg_6g_power_mode =
 		    params->he_6ghz_power_type;
-		wdev->u.ap.ssid_len = params->ssid_len;
-		memcpy(wdev->u.ap.ssid, params->ssid,
+		/* Update ML SSID in wdev when non-repurposed link is started */
+		if (!(wdev->repurposed_links & BIT(link_id))) {
+			wdev->u.ap.ssid_len = params->ssid_len;
+			memcpy(wdev->u.ap.ssid, params->ssid,
+			       params->ssid_len);
+		}
+		/* Maintain per link ssid to use if the MLD is repurposed. */
+		wdev->links[link_id].ap.ssid_len = params->ssid_len;
+		memcpy(wdev->links[link_id].ap.ssid, params->ssid,
 		       params->ssid_len);
-
 		if (info->attrs[NL80211_ATTR_SOCKET_OWNER])
 			wdev->conn_owner_nlportid = info->snd_portid;
 
@@ -7684,8 +7710,14 @@ static int nl80211_update_ap(struct sk_buff *skb, struct genl_info *info)
 
 	err = rdev_update_ap(rdev, dev, params);
 	if (!err && params->ssid && params->ssid_len > 0) {
-		wdev->u.ap.ssid_len = params->ssid_len;
-		memcpy(wdev->u.ap.ssid, params->ssid,
+		/* Update ML SSID if this is a non-repurposed link */
+		if (!(wdev->repurposed_links & BIT(link_id))) {
+			wdev->u.ap.ssid_len = params->ssid_len;
+			memcpy(wdev->u.ap.ssid, params->ssid,
+			       params->ssid_len);
+		}
+		wdev->links[link_id].ap.ssid_len = params->ssid_len;
+		memcpy(wdev->links[link_id].ap.ssid, params->ssid,
 		       params->ssid_len);
 	}
 
