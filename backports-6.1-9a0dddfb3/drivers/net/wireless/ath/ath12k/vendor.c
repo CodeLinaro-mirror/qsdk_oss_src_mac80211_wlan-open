@@ -129,6 +129,72 @@ ath12k_vendor_me_config_policy[QCA_WLAN_VENDOR_ATTR_ME_CONFIG_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_ME_CONFIG_VALUE] = { .type = NLA_U32 },
 };
 
+static const struct nla_policy
+ath12k_vendor_ext_mon_pkt_config_filter_policy[
+QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_MAX + 1] = {
+	[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_MGMT] = {.type = NLA_U32},
+	[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_CTRL] = {.type = NLA_U32},
+	[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_DATA] = {.type = NLA_U32},
+};
+
+static const struct nla_policy
+ath12k_vendor_ext_mon_pkt_config_len_policy[
+QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN_MAX + 1] = {
+	[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN_MGMT] = {.type = NLA_U8},
+	[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN_CTRL] = {.type = NLA_U8},
+	[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN_DATA] = {.type = NLA_U8},
+};
+
+static const struct nla_policy
+ath12k_vendor_ext_mon_pkt_config_policy[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_MAX + 1] = {
+	[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER] = {.type = NLA_NESTED},
+	[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN] = {.type = NLA_NESTED},
+};
+
+static const struct nla_policy
+ath12k_vendor_ext_mon_filter_config_policy[
+	QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_MAX + 1] = {
+	[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_LEVEL] = {.type = NLA_U8},
+	[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_DISABLE] = {.type = NLA_FLAG},
+	[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_ALL_PEER] = {.type = NLA_NESTED},
+	[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_ALL_NEIGHBOR] = {.type = NLA_NESTED},
+	[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_TARGET_PEER] = {.type = NLA_NESTED},
+	[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_TARGET_NEIGHBOR] = {.type = NLA_NESTED},
+	[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_META_DATA] = {.type = NLA_U8},
+};
+
+static const struct nla_policy
+ath12k_vendor_ext_mon_snr_info_policy[QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_MAX + 1] = {
+	[QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_SNR] = {.type = NLA_S8},
+	[QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_AVG_SNR] = {.type = NLA_S8},
+	[QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_TSTAMP] = {.type = NLA_U64},
+};
+
+static const struct nla_policy
+ath12k_vendor_ext_mon_peer_info_policy[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_MAX + 1] = {
+	[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_MAC_ADDR] = {.type = NLA_BINARY,
+							.len = ETH_ALEN},
+	[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_ADDR_IS_RA] = {.type = NLA_FLAG},
+	[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_BITMAP] = {.type = NLA_U8},
+	[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_SNR_INFO] = {.type = NLA_NESTED},
+};
+
+static const struct nla_policy
+ath12k_vendor_ext_mon_peer_config_policy[QCA_VENDOR_ATTR_EXT_MON_PEER_MAX + 1] = {
+	[QCA_VENDOR_ATTR_EXT_MON_PEER_ACTION] = {.type = NLA_U8},
+	[QCA_VENDOR_ATTR_EXT_MON_PEER_COUNT] = {.type = NLA_U8},
+	[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO] = {.type = NLA_NESTED},
+};
+
+static const struct nla_policy
+ath12k_vendor_ext_mon_policy[QCA_VENDOR_ATTR_EXT_MON_MAX + 1] = {
+	[QCA_VENDOR_ATTR_EXT_MON_CMD_TYPE] = {.type = NLA_U8},
+	[QCA_VENDOR_ATTR_EXT_MON_DIRECTION] = {.type = NLA_U8},
+	[QCA_VENDOR_ATTR_EXT_MON_STATUS_CODE] = {.type = NLA_U8},
+	[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG] = {.type = NLA_NESTED},
+	[QCA_VENDOR_ATTR_EXT_MON_PEER_CONFIG] = {.type = NLA_NESTED},
+};
+
 /**
  * ath12k_vendor_repurpose_link() - Mark an MLO link for repurposing
  * @wiphy: wiphy device pointer
@@ -10634,6 +10700,14 @@ static int ath12k_vendor_hmmc_deny_list_handler(struct wiphy *wiphy,
 	return ret;
 }
 
+static int ath12k_vendor_extended_monitor_handler(struct wiphy *wiphy,
+						  struct wireless_dev *wdev,
+						  const void *data,
+						  int data_len)
+{
+	return 0;
+}
+
 static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
@@ -10876,6 +10950,15 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.policy = ath12k_repurpose_link_policy,
 		.maxattr = QCA_WLAN_VENDOR_ATTR_CONFIG_MAX,
 	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_EXTENDED_MONITOR,
+		.flags = WIPHY_VENDOR_CMD_NEED_WDEV |
+			 WIPHY_VENDOR_CMD_NEED_RUNNING,
+		.doit = ath12k_vendor_extended_monitor_handler,
+		.policy = ath12k_vendor_ext_mon_policy,
+		.maxattr = QCA_VENDOR_ATTR_EXT_MON_MAX,
+	},
 
 };
 
@@ -10931,6 +11014,10 @@ static const struct nl80211_vendor_cmd_info ath12k_vendor_events[] = {
 	[QCA_NL80211_VENDOR_SUBCMD_DCS_INTERFERENCE_COMPUTE_INDEX] = {
 		.vendor_id = QCA_NL80211_VENDOR_ID,
 		.subcmd = QCA_NL80211_VENDOR_SUBCMD_DCS_CONFIG,
+	},
+	[QCA_NL80211_VENDOR_SUBCMD_EXTENDED_MONITOR_INDEX] = {
+	      .vendor_id = QCA_NL80211_VENDOR_ID,
+	      .subcmd = QCA_NL80211_VENDOR_SUBCMD_EXTENDED_MONITOR,
 	},
 };
 
