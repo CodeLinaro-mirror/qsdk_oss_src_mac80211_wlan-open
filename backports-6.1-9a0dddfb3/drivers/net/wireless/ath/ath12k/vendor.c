@@ -23,6 +23,7 @@
 #include "vendor_services.h"
 #include "dp_peer.h"
 #include "dp_mon.h"
+#include "me.h"
 
 static const struct nla_policy
 ath12k_wifi_config_policy[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1] = {
@@ -120,6 +121,12 @@ ath12k_pri_link_migrate_policy[QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MAX + 1] = {
 static const struct nla_policy
 ath12k_repurpose_link_policy[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_MLO_LINK_ID] = { .type = NLA_U8 },
+};
+
+static const struct nla_policy
+ath12k_vendor_me_config_policy[QCA_WLAN_VENDOR_ATTR_ME_CONFIG_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_ME_CONFIG_PARAM] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_ME_CONFIG_VALUE] = { .type = NLA_U32 },
 };
 
 /**
@@ -9981,6 +9988,139 @@ int ath12k_vendor_put_ab_num_links(struct sk_buff *vendor_event,
 	return 0;
 }
 
+static int ath12k_vendor_set_wifi_params_me(struct wiphy *wiphy,
+					    struct wireless_dev *wdev,
+					    struct ath12k_wifi_generic_params *params)
+{
+	u16 grp_limit = ATH12K_ME_MAX_GRP_LIMIT;
+	u32 val = *(u32 *)params->data;
+	struct ath12k_dp_vif *dp_vif;
+	struct ath12k_me_db *me_db;
+	struct ath12k_vif *ahvif;
+	u32 me_flags = 0;
+
+	ahvif = ath12k_get_ahvif_from_wdev(wdev);
+	if (!ahvif) {
+		ath12k_err(NULL, "ahvif not present");
+		return -EINVAL;
+	}
+
+	/* Validate interface type - ME only applicable to AP mode */
+	if (ahvif->vif->type != NL80211_IFTYPE_AP) {
+		ath12k_err(NULL, "ME configuration only supported on AP interfaces");
+		return -EOPNOTSUPP;
+	}
+
+	dp_vif = &ahvif->dp_vif;
+	if (!dp_vif) {
+		ath12k_err(NULL, "dp_vif not present");
+		return -EINVAL;
+	}
+
+	me_db = ath12k_me_db_get(dp_vif);
+	if (!me_db) {
+		ath12k_err(NULL, "me_db not present");
+		return -EINVAL;
+	}
+
+	switch (params->value) {
+	case QCA_WLAN_VENDOR_VDEV_PARAM_ME:
+		if (val == 5)
+			me_flags = ATH12K_ME_FLAGS_BIT_ME5;
+		else if (val == 6)
+			me_flags = ATH12K_ME_FLAGS_BIT_ME6;
+		else if (val == 0)
+			me_flags = 0;
+		else {
+			ath12k_dbg(NULL, ATH12K_DBG_CFG,
+				   "Unsupported value for param: %d value: %d\n",
+				   params->value, val);
+			goto fail;
+		}
+		break;
+
+	case QCA_WLAN_VENDOR_VDEV_PARAM_IGMP_ME:
+		me_flags = val ? ATH12K_ME_FLAGS_BIT_IGMP_EN : 0;
+		break;
+
+	case QCA_WLAN_VENDOR_VDEV_PARAM_ME_GRP_LIMIT:
+		if (val > 0 && val < ATH12K_ME_MAX_GRP_LIMIT)
+			grp_limit = val;
+		break;
+
+	default:
+		ath12k_dbg(NULL, ATH12K_DBG_CFG,
+				"Unsupported param: %d\n", params->value);
+		goto fail;
+	}
+
+	/* Update the ME Database */
+	spin_lock_bh(&me_db->lock);
+
+	/* Clear the older flags */
+	if (params->value == QCA_WLAN_VENDOR_VDEV_PARAM_ME)
+		me_db->me_flags &= ~ATH12K_ME_OFFLOAD_MASK;
+	else if (params->value == QCA_WLAN_VENDOR_VDEV_PARAM_IGMP_ME)
+		me_db->me_flags &= ~ATH12K_ME_FLAGS_BIT_IGMP_EN;
+
+	me_db->me_flags |= me_flags;
+	me_db->grp_limit = grp_limit;
+
+	spin_unlock_bh(&me_db->lock);
+
+	ath12k_print_me_configs(me_db);
+	ath12k_me_db_put(me_db);
+	return 0;
+
+fail:
+	ath12k_me_db_put(me_db);
+	return -EINVAL;
+}
+
+static int ath12k_vendor_me_config_handler(struct wiphy *wiphy,
+					   struct wireless_dev *wdev,
+					   const void *data,
+					   int data_len)
+{
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_ME_CONFIG_MAX + 1];
+	struct ath12k_wifi_generic_params params = {0};
+	u32 value = 0;
+	int ret;
+
+	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_ME_CONFIG_MAX,
+			data, data_len,
+			ath12k_vendor_me_config_policy, NULL);
+	if (ret) {
+		ath12k_err(NULL, "Failed to parse ME config attributes: %d\n", ret);
+		return ret;
+	}
+
+	if (!tb[QCA_WLAN_VENDOR_ATTR_ME_CONFIG_PARAM]) {
+		ath12k_err(NULL, "Missing ME config parameter attribute\n");
+		return -EINVAL;
+	}
+
+	if (!tb[QCA_WLAN_VENDOR_ATTR_ME_CONFIG_VALUE]) {
+		ath12k_err(NULL, "Missing ME config value attribute\n");
+		return -EINVAL;
+	}
+
+	params.value = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_ME_CONFIG_PARAM]);
+	value = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_ME_CONFIG_VALUE]);
+
+	/* Validate parameter ID */
+	if (params.value != QCA_WLAN_VENDOR_VDEV_PARAM_ME &&
+	    params.value != QCA_WLAN_VENDOR_VDEV_PARAM_IGMP_ME &&
+	    params.value != QCA_WLAN_VENDOR_VDEV_PARAM_ME_GRP_LIMIT) {
+		ath12k_err(NULL, "Invalid ME parameter ID: %u\n", params.value);
+		return -EINVAL;
+	}
+
+	params.data = &value;
+
+	return ath12k_vendor_set_wifi_params_me(wiphy, wdev, &params);
+}
+
 static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
@@ -10115,6 +10255,14 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.doit = ath12k_vendor_sdwf_dev_operations,
 		.policy = ath12k_vendor_sdwf_dev_policy,
 		.maxattr = QCA_WLAN_VENDOR_ATTR_SDWF_DEV_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_ME_CONFIG,
+		.doit = ath12k_vendor_me_config_handler,
+		.policy = ath12k_vendor_me_config_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_ME_CONFIG_MAX,
 		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
 	},
 
