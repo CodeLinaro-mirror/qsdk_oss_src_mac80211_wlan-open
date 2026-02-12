@@ -3553,6 +3553,7 @@ int ath12k_wmi_send_peer_assoc_cmd(struct ath12k *ar,
 	ml_params->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_MLO_PEER_ASSOC_PARAMS,
 						       len);
 	ml_params->flags = cpu_to_le32(ATH12K_WMI_FLAG_MLO_ENABLED);
+	ml_params->flags |= cpu_to_le32(ATH12K_WMI_FLAG_MLO_IEEE_LINK_IDX_VALID);
 
 	if (arg->ml.assoc_link)
 		ml_params->flags |= cpu_to_le32(ATH12K_WMI_FLAG_MLO_ASSOC_LINK);
@@ -3676,6 +3677,12 @@ skip_ml_params:
 
 		partner_info->logical_link_idx =
 			cpu_to_le32(arg->ml.partner_info[i].logical_link_idx);
+
+		partner_info->ieee_link_id =
+			cpu_to_le32(arg->ml.partner_info[i].ieee_link_id);
+		partner_info->flags |=
+			     cpu_to_le32(ATH12K_WMI_FLAG_MLO_IEEE_LINK_IDX_VALID_PARTNER);
+
 		ptr += sizeof(*partner_info);
 	}
 

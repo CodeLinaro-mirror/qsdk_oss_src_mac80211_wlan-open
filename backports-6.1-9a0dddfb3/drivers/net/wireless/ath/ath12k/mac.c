@@ -5266,6 +5266,7 @@ static void ath12k_peer_assoc_h_mlo(struct ath12k_link_sta *arsta,
 			   ml->partner_info[i].primary_umac = false;
 		   ml->partner_info[i].logical_link_idx_valid = true;
 		ml->partner_info[i].logical_link_idx = arsta_p->link_idx;
+		ml->partner_info[i].ieee_link_id = arsta_p->link_id;
 		if (sta->reconf.removed_links & BIT(arsta_p->link_id))
 			ml->ml_reconfig = ml->partner_info[i].mlo_link_del = true;
 		if (sta->reconf.added_links & BIT(arsta_p->link_id))
