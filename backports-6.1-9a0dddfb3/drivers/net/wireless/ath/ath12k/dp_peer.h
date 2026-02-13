@@ -355,4 +355,10 @@ int ath12k_dp_peer_walk_action(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vi
 				       struct ath12k_dp_link_vif *,
 				       struct ath12k_dp_peer *, void *),
 			       void *app_data);
+void ath12k_dp_iterate_vdev_link_peer(struct ath12k_dp *dp, int vdev_id,
+				      void (*callback)(struct ath12k_dp *,
+						       struct ath12k_dp_link_peer *));
+void ath12k_dp_iterate_pdev_link_peer(struct ath12k_dp *dp, int pdev_idx,
+				      void (*callback)(struct ath12k_dp *,
+						       struct ath12k_dp_link_peer *));
 #endif
