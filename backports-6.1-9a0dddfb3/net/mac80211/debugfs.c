@@ -858,6 +858,7 @@ static ssize_t stats_ ##name## _read(struct file *file,                 \
 }                                                                       \
                                                                         \
 static const struct file_operations stats_ ##name## _ops = {                 \
+	.open = simple_open,                                            \
         .read = stats_ ##name## _read,                                  \
         .llseek = generic_file_llseek,                                  \
 };
