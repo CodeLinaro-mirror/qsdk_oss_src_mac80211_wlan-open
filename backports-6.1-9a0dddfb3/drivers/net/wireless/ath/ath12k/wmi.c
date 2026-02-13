@@ -10260,6 +10260,18 @@ static const char *ath12k_wmi_vdev_resp_print(u32 vdev_resp_status)
 		return "dfs violation";
 	case WMI_VDEV_START_RESPONSE_INVALID_REGDOMAIN:
 		return "invalid regdomain";
+	case WMI_VDEV_START_RESPONSE_INVALID_BAND:
+		return "invalid band";
+	case WMI_VDEV_START_RESPONSE_INVALID_PREFERRED_TX_RX_STREAMS:
+		return "invalid preferred tx/rx streams";
+	case WMI_VDEV_START_RESPONSE_INVALID_TX_VAP_CONFIG:
+		return "invalid tx vap config";
+	case WMI_VDEV_START_RESPONSE_BSS_PEER_NOT_FOUND:
+		return "bss peer not found";
+	case WMI_VDEV_START_RESPONSE_INCORRECT_CHANNEL_PARAMS:
+		return "incorrect channel params";
+	case WMI_VDEV_START_RESPONSE_GENERIC_VDEV_START_FAILURE:
+		return "generic vdev start failure";
 	default:
 		return "unknown";
 	}
