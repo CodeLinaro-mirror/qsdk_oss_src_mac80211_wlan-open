@@ -1703,20 +1703,7 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 		link_conf->eht_mu_beamformer = false;
 	}
 
-
 	link_conf->dps_assist_support = false;
-	if (params->uhr_cap) {
-		/* If UHR can operate independently below check should be removed */
-		if (!link_conf->eht_support)
-			return -EOPNOTSUPP;
-
-		link_conf->uhr_support = true;
-
-		if ((params->uhr_cap->fixed.mac_cap_info[0] &
-		     IEEE80211_UHR_MAC_CAP0_DPS_ASSISTING_SUPPORT) &&
-		    !params->dps_assist_disable)
-			link_conf->dps_assist_support = true;
-	}
 
 	if (sdata->vif.type == NL80211_IFTYPE_AP &&
 	    params->mbssid_config.tx_wdev) {
