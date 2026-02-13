@@ -124,6 +124,19 @@ enum htt_tx_tid {
  *                    msduq_mpduq_type (in bits 21:17)
  *          b'31:24 - pn_addr_32_39: Upper 40 bits for pn address
  * dword3 - b'31:0  - pn_addr_0_31: First 32 bits for pn address
+ * dword4 - b'0:0   - sam_mpduq_allocated: Indicates whether a SAM MPDUQ has
+ *                    been allocated for this TQM MPDUQ.
+ *          b'11:1  - sam_mpduq_id: The SAM MPDUQ ID assigned by the host for
+ *                    this TQM MPDUQ. The value in this field is ignored if
+ *                    sam_mpduq_allocated is 0.
+ *          b'13:12 - sam_mpduq_priority: The SAM priority assigned by the
+ *                    host. A SAM priority MUST ALWAYS be provided for chipsets
+ *                    that have SAM support, regardless of whether or not a SAM
+ *                    MPDUQ has been allocated.
+ *          b'14:14 - sam_mpduq_sched_eligible: Indicates that this SAM MPDUQ
+ *                    is eligible for autonomous SAM scheduling. The value in
+ *                    this field is ignored if sam_mpduq_allocated is 0.
+ *          b'31:15 – reserved
  * Additional reserved dwords for future use cases
  *
  *
@@ -147,15 +160,37 @@ enum htt_tx_tid {
  * dword2 - b'31:0  - msduq_address_39_8: 256 byte aligned msduq address, since lower
  *                    two octets are zero for 256 byte aligned addresses just passing
  *                    upper 32 bits of 40 bit address
+ * dword3 - b'0:0   - svc_inst_req_type_valid: Indicates whether
+ *                    svc_inst_req_type is valid.
+ *          b'3:1   - svc_inst_req_type: Contains one of the values from
+ *                    HTT_SAWF_SVC_INST_REQ_TYPE. Only valid if
+ *                    svc_inst_req_type_valid is 1.
+ *          b'4:4   - sam_msduq_allocated: Indicates whether a SAM MSDUQ has
+ *                    been allocated for this TQM MSDUQ.
+ *          b'17:5  - sam_msduq_id: The SAM MSDUQ ID assigned by the host for
+ *                    this TQM MSDUQ. The value in this field is ignored if
+ *                    sam_msduq_allocated is 0.
+ *          b'19:18 - sam_msduq_priority: The SAM priority assigned by the
+ *                    host. A SAM priority MUST ALWAYS be provided for chipsets
+ *                    that have SAM support, regardless of whether or not a SAM
+ *                    MSDUQ has been allocated.
+ *          b'20:20 - sam_msduq_sched_eligible: Indicates that this SAM MSDUQ
+ *                    is eligible for autonomous SAM scheduling. The value in
+ *                    this field is ignored if sam_msduq_allocated is 0.
+ *          b'31:21 – reserved
  * Additional reserved dwords for future use cases
  *
  *
  */
 
-#define HTT_MPDUQ_INFO_CMD_INFO1_MPDUQ_ADDR	GENMASK(31, 0)
-#define HTT_MPDUQ_INFO_CMD_INFO2_MPDUQ_NUM	GENMASK(23, 0)
-#define HTT_MPDUQ_INFO_CMD_INFO2_PN_ADDR_39_32	GENMASK(31, 24)
-#define HTT_MPDUQ_INFO_CMD_INFO3_PN_ADDR_31_0	GENMASK(31, 0)
+#define HTT_MPDUQ_INFO_CMD_INFO1_MPDUQ_ADDR			GENMASK(31, 0)
+#define HTT_MPDUQ_INFO_CMD_INFO2_MPDUQ_NUM			GENMASK(23, 0)
+#define HTT_MPDUQ_INFO_CMD_INFO2_PN_ADDR_39_32			GENMASK(31, 24)
+#define HTT_MPDUQ_INFO_CMD_INFO3_PN_ADDR_31_0			GENMASK(31, 0)
+#define HTT_MPDUQ_INFO_CMD_INFO4_SAM_MPDUQ_ALLOCATED		BIT(0)
+#define HTT_MPDUQ_INFO_CMD_INFO4_SAM_MPDUQ_ID			GENMASK(11, 1)
+#define HTT_MPDUQ_INFO_CMD_INFO4_SAM_MPDUQ_PRIORITY		GENMASK(13, 12)
+#define HTT_MPDUQ_INFO_CMD_INFO4_SAM_MPDUQ_SCHED_ELIGIBLE	BIT(14)
 
 struct htt_mpduq_info {
 	__le32 info1;
@@ -169,9 +204,15 @@ struct htt_mpduq_info {
 	__le32 info9;
 } __packed;
 
-#define HTT_MSDUQ_INFO_CMD_INFO1_MSDUQ_NUM	GENMASK(23, 0)
-#define HTT_MSDUQ_INFO_CMD_INFO1_SVC_CLASS_ID	GENMASK(31, 24)
-#define HTT_MSDUQ_INFO_CMD_INFO2_MSDUQ_ADDR	GENMASK(31, 0)
+#define HTT_MSDUQ_INFO_CMD_INFO1_MSDUQ_NUM			GENMASK(23, 0)
+#define HTT_MSDUQ_INFO_CMD_INFO1_SVC_CLASS_ID			GENMASK(31, 24)
+#define HTT_MSDUQ_INFO_CMD_INFO2_MSDUQ_ADDR			GENMASK(31, 0)
+#define HTT_MSDUQ_INFO_CMD_INFO3_SVC_INST_REQ_TYPE_VALID	BIT(0)
+#define HTT_MSDUQ_INFO_CMD_INFO3_SVC_INST_REQ_TYPE		GENMASK(3, 1)
+#define HTT_MSDUQ_INFO_CMD_INFO3_SAM_MSDUQ_ALLOCATED		BIT(4)
+#define HTT_MSDUQ_INFO_CMD_INFO3_SAM_MSDUQ_ID			GENMASK(17, 5)
+#define HTT_MPDUQ_INFO_CMD_INFO3_SAM_MSDUQ_PRIORITY		GENMASK(19, 18)
+#define HTT_MPDUQ_INFO_CMD_INFO3_SAM_MSDUQ_SCHED_ELIGIBLE	BIT(20)
 
 struct htt_msduq_info {
 	__le32 info1;

@@ -75,6 +75,10 @@ static int ath12k_dp_tx_htt_msduq_mpduq_setup(struct ath12k_base *ab,
 					 HTT_MPDUQ_INFO_CMD_INFO2_PN_ADDR_39_32);
 		txq_cmd->mpduq.info3 =
 			le32_encode_bits(pn_addr, HTT_MPDUQ_INFO_CMD_INFO3_PN_ADDR_31_0);
+		txq_cmd->mpduq.info4 =
+			le32_encode_bits(mpduq->mpduq_id,
+					 HTT_MPDUQ_INFO_CMD_INFO4_SAM_MPDUQ_ID) |
+			le32_encode_bits(1, HTT_MPDUQ_INFO_CMD_INFO4_SAM_MPDUQ_ALLOCATED);
 		txq_cmd++;
 	}
 
@@ -93,6 +97,10 @@ static int ath12k_dp_tx_htt_msduq_mpduq_setup(struct ath12k_base *ab,
 		txq_cmd->msduq.info2 =
 			le32_encode_bits((msduq->msdu_q_paddr) >> 8,
 					 HTT_MSDUQ_INFO_CMD_INFO2_MSDUQ_ADDR);
+		txq_cmd->msduq.info3 =
+			le32_encode_bits(msduq->msduq_idx,
+					 HTT_MSDUQ_INFO_CMD_INFO3_SAM_MSDUQ_ID) |
+			le32_encode_bits(1, HTT_MSDUQ_INFO_CMD_INFO3_SAM_MSDUQ_ALLOCATED);
 		txq_cmd++;
 	}
 

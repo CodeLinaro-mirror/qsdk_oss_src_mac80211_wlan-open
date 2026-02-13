@@ -4972,6 +4972,7 @@ struct ath12k_wmi_peer_assoc_arg {
 	bool uhr_flag;
 	u32 peer_uhr_cap_mac[WMI_MAX_UHRCAP_MAC_SIZE];
 	u32 peer_uhr_cap_phy[WMI_MAX_UHRCAP_PHY_SIZE];
+	u32 sta_id;
 };
 
 #define ATH12K_WMI_FLAG_MLO_ENABLED			BIT(0)
@@ -5085,6 +5086,21 @@ struct wmi_peer_assoc_complete_cmd {
 	__le32 peer_eht_cap_phy[WMI_MAX_EHTCAP_PHY_SIZE];
 	__le32 peer_eht_ops;
 	struct ath12k_wmi_ppe_threshold_params peer_eht_ppet;
+	union {
+		struct {
+			__le32 hw_peer_id_valid		: 1,
+			       peer_type_valid		: 1,
+			       peer_cck_rx_support_5ghz	: 1,
+			       peer_cck_tx_support_5ghz	: 1,
+			       sam_peer_id_valid	: 1,
+			       reserved			: 27;
+		};
+		__le32 flags;
+	};
+	__le32 sw_peer_id;
+	__le32 hw_peer_id;
+	__le32 peer_type;
+	__le32 sam_peer_id;
 	__le32 peer_uhr_cap_mac[WMI_MAX_UHRCAP_MAC_SIZE];
 	__le32 peer_uhr_cap_phy[WMI_MAX_UHRCAP_PHY_SIZE];
 } __packed;

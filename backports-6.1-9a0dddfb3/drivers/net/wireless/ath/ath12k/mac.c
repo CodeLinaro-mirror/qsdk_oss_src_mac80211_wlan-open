@@ -3409,6 +3409,11 @@ static void ath12k_peer_assoc_h_basic(struct ath12k *ar,
 	}
 
 	arg->peer_caps = bss_conf->assoc_capability;
+	if (ar && ar->ah)
+		arg->sta_id = ath12k_dp_peer_get_sta_id(&ar->ah->dp_hw,
+							sta->addr);
+	else
+		arg->sta_id = ATH12K_STA_ID_INVALID;
 }
 
 static void ath12k_peer_assoc_h_crypto(struct ath12k *ar,
