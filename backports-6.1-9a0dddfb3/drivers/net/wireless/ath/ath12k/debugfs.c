@@ -3174,8 +3174,10 @@ static ssize_t ath12k_read_mld_stats(struct file *file,
 			"HTT Metadata Err", "TCL Desc NA", "TCL Desc Retry",
 			"Invalid Arvif Fast", "Invalid Pdev Fast",
 			"Max Tx Limit Fast", "Invalid ENCAP Fast",
-			"Bridge vdev", "Arsta NA", "skb clone",
-			"MMesh hdr fail"};
+			"Bridge vdev", "Arsta NA", "Queue Stop",
+			"Feature Error", "HW Enqueue Fail",
+			"MCBC encryption Fail", "MCBC MSDU setup Fail",
+			"FW Recovery"};
 
 	if (!ahvif)
 		return -EINVAL;
@@ -6356,6 +6358,8 @@ static ssize_t ath12k_write_dp_stats_mask(struct file *file,
 	u32 debug_mask;
 	int i = 0, ret;
 	enum dp_mon_stats_mode mode = 0;
+	struct ath12k_link_vif *arvif;
+	struct ath12k_dp_vif *dp_vif;
 
 	wiphy_lock(ah->hw->wiphy);
 
@@ -6389,6 +6393,23 @@ static ssize_t ath12k_write_dp_stats_mask(struct file *file,
 				ath12k_dp_mon_rx_stats_config(ar, false, mode);
 			}
 			ar->dp.dp_stats_mask = debug_mask;
+
+			/* Sync dp_vif->dp_features bit-7 with dp_stats_mask bit-0 */
+			list_for_each_entry(arvif, &ar->arvifs, list) {
+				if (!arvif || !arvif->ahvif)
+					continue;
+				dp_vif = &arvif->ahvif->dp_vif;
+
+				if (debug_mask & DP_ENABLE_STATS)
+					dp_vif->dp_features |= BIT(7);
+				else
+					dp_vif->dp_features &= ~BIT(7);
+
+				ath12k_dbg(ar->ab, ATH12K_DBG_DP_TX,
+					   "dp_stats_mask 0x%x dp_features 0x%x\n",
+					   ar->dp.dp_stats_mask,
+					   dp_vif->dp_features);
+			}
 		}
 	}
 	ret = count;
