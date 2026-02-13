@@ -354,7 +354,7 @@ enum ath12k_dp_eapol_key_type {
 #define DP_TX_DESC_FLAG_MCAST	0x2
 #define DP_TX_DESC_FLAG_BCAST	0x4
 
-#define MAX_TQM_RELEASE_REASON 15
+#define MAX_TQM_RELEASE_REASON 29
 #define MAX_FW_TX_STATUS 7
 #define MAX_TCL_RING 4
 #define MAX_TX_COMP_RING 4
