@@ -3082,10 +3082,6 @@ enum nl80211_commands {
  * @NL80211_ATTR_BITRATE: This attribute is used with %NL80211_CMD_FRAME to
  *     send legacy bitrate information of management packets to userspace.
  *
- * @NL80211_ATTR_UHR_CAPABILITY: UHR Capability information element (from
- *	association request when used with NL80211_CMD_NEW_STATION). Can be set
- *	only if %NL80211_STA_FLAG_WME is set.
- *
  * @NL80211_ATTR_PCIE: Nested attributes associated with PCIe low power and
  *	gen/lane mode transitions. See &enum nl80211_pcie_attrs
  *
@@ -3707,8 +3703,6 @@ enum nl80211_attrs {
 
 	NL80211_ATTR_BITRATE,
 
-	NL80211_ATTR_UHR_CAPABILITY,
-
 	NL80211_ATTR_PCIE,
 	NL80211_ATTR_DCVS,
 	NL80211_ATTR_DPS_ASSIST,
@@ -3789,13 +3783,6 @@ enum nl80211_attrs {
 #define NL80211_IPADDR_MAX_LEN			16
 #define NL80211_TCLAS_TYPE10_MAX_FILTER_LEN	12
 #define NL80211_TCLAS_TYPE4_FLOW_LABEL_LEN	3
-
-/*
- * TODO: as of now used the len same as EHT modify it
- * based on UHR once spec finalized
- */
-#define NL80211_UHR_MIN_CAPABILITY_LEN          2
-#define NL80211_UHR_MAX_CAPABILITY_LEN          51
 
 /**
  * enum nl80211_iftype - (virtual) interface types
