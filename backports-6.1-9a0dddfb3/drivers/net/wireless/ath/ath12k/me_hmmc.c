@@ -115,17 +115,17 @@ static int __trie_node_free_child(struct __trie_node *node, u32 bit)
 {
 	clear_bit(bit, node->bmap);
 
-	RCU_INIT_POINTER(node->child[bit], NULL);
+	rcu_assign_pointer(node->child[bit], NULL);
 
 	/*
-	 * Don't free the node if its a terminating node;
+	 * Don't free the node if its a terminal node;
 	 * Note: __trie_node_free() shd have freed the terminating node
 	 */
 	if (test_bit(__TRIE_NODE_TERM, node->state))
 		return __TRIE_FAIL_INVAL;
 
 	/*
-	 * Don't free the node if there childrens available
+	 * Don't free the node if there are children available
 	 */
 	if (!bitmap_empty(node->bmap, __TRIE_BITS))
 		return __TRIE_FAIL_INVAL;
@@ -163,9 +163,14 @@ static int __trie_node_add(struct __trie_node **node, u32 *addr,
 	set_bit(bit, cur->bmap);
 	set_bit(__TRIE_NODE_INTR, cur->state);
 
+	/*
+	 * Recursively free the children if the add operation fails.
+	 */
 	err = __trie_node_add(&cur->child[bit], addr, max_lvl, ++lvl, val);
-	if (err)
-		__trie_node_free_child(cur, bit);
+	if (err != __TRIE_SUCCESS) {
+		if (__trie_node_free_child(cur, bit) == __TRIE_SUCCESS)
+			rcu_assign_pointer(*node, NULL);
+	}
 
 	return err;
 }
@@ -198,14 +203,25 @@ static int __trie_node_del(struct __trie_node **node, u32 *addr, u16 max_lvl, u1
 	 * check if we need to inspect further down
 	 */
 	bit = __trie_extract_nibble(addr, lvl * __TRIE_STRIDE);
+
+	/*
+	 * Traverse to the terminal node for the given prefix
+	 * to delete it from the hierarchy
+	 */
 	ret = __trie_node_del(&cur->child[bit], addr, max_lvl, ++lvl);
 
 	/*
-	 * Clear the bit in bitmap and potentially the node.
+	 * If terminal node delete succeeds, try freeing up base.
+	 * Note: If there are more children, the node is not deleted.
 	 */
-	if (ret == __TRIE_SUCCESS)
-		ret = __trie_node_free_child(cur, bit);
+	if (ret != __TRIE_SUCCESS)
+		return ret;
 
+	ret = __trie_node_free_child(cur, bit);
+	if (ret != __TRIE_SUCCESS)
+		return ret;
+
+	rcu_assign_pointer(*node, NULL);
 	return ret;
 }
 
@@ -215,6 +231,7 @@ static int __trie_node_del(struct __trie_node **node, u32 *addr, u16 max_lvl, u1
  */
 static int __trie_node_lookup(struct __trie_node *node, u32 *addr, u16 lvl, int *val)
 {
+	struct __trie_node *child;
 	enum __trie_status ret;
 	u16 bit;
 
@@ -222,7 +239,10 @@ static int __trie_node_lookup(struct __trie_node *node, u32 *addr, u16 lvl, int 
 		return __TRIE_FAIL_INVAL;
 
 	bit = __trie_extract_nibble(addr, lvl * __TRIE_STRIDE);
-	ret = __trie_node_lookup(node->child[bit], addr, ++lvl, val);
+
+	/* Safely dereference child node under RCU protection */
+	child = rcu_dereference(node->child[bit]);
+	ret = __trie_node_lookup(child, addr, ++lvl, val);
 
 	/*
 	 * Only use current node's value if child lookup failed
@@ -267,12 +287,12 @@ void ath12k_me_hmmc_list_flush(struct ath12k_me_db *me_db)
 
 	if (db->v4.root) {
 		__trie_node_free_recursive(rcu_dereference_protected(db->v4.root, 1));
-		db->v4.root = NULL;
+		rcu_assign_pointer(db->v4.root, NULL);
 	}
 
 	if (db->v6.root) {
 		__trie_node_free_recursive(rcu_dereference_protected(db->v6.root, 1));
-		db->v6.root = NULL;
+		rcu_assign_pointer(db->v6.root, NULL);
 	}
 }
 EXPORT_SYMBOL(ath12k_me_hmmc_list_flush);
@@ -308,6 +328,7 @@ int ath12k_me_hmmc_add(struct ath12k_me_db *me_db, u32 *addr, bool v6, u16 pfx, 
 	/*
 	 * By default assume IPv4 as the input
 	 */
+	spin_lock_bh(&me_db->lock);
 	trie_db = &me_db->hmmc_db.v4;
 	max_lvl = pfx / __TRIE_STRIDE;
 	ip_addr[0] = ntohl(addr[0]);
@@ -319,8 +340,6 @@ int ath12k_me_hmmc_add(struct ath12k_me_db *me_db, u32 *addr, bool v6, u16 pfx, 
 		ip_addr[3] = ntohl(addr[3]);
 	}
 
-	/* Take spin lock to protect the trie operations */
-	spin_lock_bh(&me_db->lock);
 	ret = __trie_node_add(&trie_db->root, ip_addr, max_lvl, 0, val);
 	spin_unlock_bh(&me_db->lock);
 
@@ -340,6 +359,7 @@ EXPORT_SYMBOL(ath12k_me_hmmc_add);
 int ath12k_me_hmmc_del(struct ath12k_me_db *me_db, u32 *addr, bool v6, u16 pfx)
 {
 	struct __trie_db *trie_db;
+	struct __trie_node *root;
 	u32 ip_addr[4];
 	u16 max_lvl;
 	int ret;
@@ -350,6 +370,7 @@ int ath12k_me_hmmc_del(struct ath12k_me_db *me_db, u32 *addr, bool v6, u16 pfx)
 	/*
 	 * By default assume IPv4 as the input
 	 */
+	spin_lock_bh(&me_db->lock);
 	trie_db = &me_db->hmmc_db.v4;
 	max_lvl = pfx / __TRIE_STRIDE;
 	ip_addr[0] = ntohl(addr[0]);
@@ -361,12 +382,17 @@ int ath12k_me_hmmc_del(struct ath12k_me_db *me_db, u32 *addr, bool v6, u16 pfx)
 		ip_addr[3] = ntohl(addr[3]);
 	}
 
-	/* Take spin lock to protect the trie operations
-	 *
+	/* Check if root exists before attempting deletion */
+	root = rcu_dereference_protected(trie_db->root, 1);
+	if (!root) {
+		spin_unlock_bh(&me_db->lock);
+		return 0; /* Nothing to delete */
+	}
+
+	/*
 	 * Following can return a non-zero ret even though
 	 * the terminal node is cleared because of INTR nodes
 	 */
-	spin_lock_bh(&me_db->lock);
 	ret = __trie_node_del(&trie_db->root, ip_addr, max_lvl, 0);
 	spin_unlock_bh(&me_db->lock);
 
@@ -410,6 +436,7 @@ int ath12k_me_hmmc_lookup(struct ath12k_me_db *me_db, u32 *addr, bool v6)
 	/*
 	 * By default assume IPv4 as the input
 	 */
+	rcu_read_lock_bh();
 	trie_db = &me_db->hmmc_db.v4;
 	ip_addr[0] = ntohl(addr[0]);
 
@@ -420,7 +447,6 @@ int ath12k_me_hmmc_lookup(struct ath12k_me_db *me_db, u32 *addr, bool v6)
 		ip_addr[3] = ntohl(addr[3]);
 	}
 
-	rcu_read_lock_bh();
 	root = rcu_dereference(trie_db->root);
 	if (!root) {
 		rcu_read_unlock_bh();
