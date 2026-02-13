@@ -1931,7 +1931,7 @@ void ath12k_mac_dp_peer_cleanup(struct ath12k_hw *ah,
 	list_for_each_entry_safe(dp_peer, tmp, &dp_hw->peers, list) {
 
 		if (!dp_peer->sta || dp_peer->is_vdev_peer) {
-			ath12k_generic_dbg(ATH12K_DBG_MAC,
+			ath12k_generic_dbg(ATH12K_DBG_MAC, ATH12K_DBG_L1,
 				   	   "Skipping vdev self dp_peer delete on addr %pM\n",
 				   	   dp_peer->addr);
 			continue;
@@ -3206,13 +3206,13 @@ void ath12k_mac_peer_event_callback(struct ath12k_event_queue *queue,
 	if (!peer) {
 		rcu_read_unlock();
 		/* Peer was deleted, skip event */
-		ath12k_generic_dbg(ATH12K_DBG_MAC,
+		ath12k_generic_dbg(ATH12K_DBG_MAC, ATH12K_DBG_L1,
 				   "peer %d deleted while event queued, skipping\n",
 				   peer_event->peer_id);
 		return;
 	}
 
-	ath12k_generic_dbg(ATH12K_DBG_MAC,
+	ath12k_generic_dbg(ATH12K_DBG_MAC, ATH12K_DBG_L1,
 			   "peer: %px, event(link: %d hw link: %d peer id: %d)\n",
 			   peer, event->link_id, event->hw_link_id,
 			   peer_event->peer_id);
@@ -6075,7 +6075,7 @@ static void ath12k_mac_init_arvif_rssi(struct ath12k_link_vif *arvif)
 	arvif->rssi_deauth_cfg.rssi_threshold = -75;
 	arvif->rssi_deauth_cfg.grace_samples = 10;
 	arvif->rssi_deauth_cfg.noise_floor_offset = ATH12K_DEFAULT_NOISE_FLOOR;
-	ath12k_generic_dbg(ATH12K_DBG_MAC,
+	ath12k_generic_dbg(ATH12K_DBG_MAC, ATH12K_DBG_L2,
 			   "rssi deauth: vdev %d initialized - threshold=%d dBm, grace_samples=%u, enabled=%d\n",
 			   arvif->vdev_id,
 			   arvif->rssi_deauth_cfg.rssi_threshold,
@@ -6164,7 +6164,7 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 		ahvif->links_map |= BIT(_link_id);
 	}
 
-	ath12k_generic_dbg(ATH12K_DBG_MAC,
+	ath12k_generic_dbg(ATH12K_DBG_MAC, ATH12K_DBG_L2,
 			   "mac init link arvif (link_id %d%s) for vif %pM. links_map 0x%x",
 			   _link_id, (link_id < 0) ? " deflink" : "", ahvif->vif->addr,
 			   ahvif->links_map);
@@ -6482,7 +6482,7 @@ ath12k_mac_op_change_vif_links(struct ieee80211_hw *hw,
 		}
 	}
 
-	ath12k_generic_dbg(ATH12K_DBG_MAC,
+	ath12k_generic_dbg(ATH12K_DBG_MAC, ATH12K_DBG_L1,
 			   "mac vif link changed for MLD %pM old_links 0x%x new_links 0x%x\n",
 			   vif->addr, old_links, new_links);
 
@@ -6509,7 +6509,8 @@ ath12k_mac_op_change_vif_links(struct ieee80211_hw *hw,
 
 		if (arvif->is_scan_vif && arvif->is_started) {
 			if (ath12k_mac_vdev_stop(arvif)) {
-				ath12k_generic_dbg(ATH12K_DBG_MAC, "failed to stop vdev %d\n",
+				ath12k_generic_dbg(ATH12K_DBG_MAC, ATH12K_DBG_L1,
+						   "failed to stop vdev %d\n",
 						   arvif->vdev_id);
 				return -EINVAL;
 			}
@@ -17935,11 +17936,11 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	else
 		arvif->rssi_deauth_cfg.noise_floor_offset = ATH12K_DEFAULT_NOISE_FLOOR;
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
-		   "rssi deauth: vdev %d initialized - threshold=%d dBm, grace_samples=%u, enabled=%d\n",
-		   arvif->vdev_id, arvif->rssi_deauth_cfg.rssi_threshold,
-		   arvif->rssi_deauth_cfg.grace_samples,
-		   arvif->rssi_deauth_cfg.enabled);
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
+			 "rssi deauth: vdev %d initialized - threshold=%d dBm, grace_samples=%u, enabled=%d\n",
+			 arvif->vdev_id, arvif->rssi_deauth_cfg.rssi_threshold,
+			 arvif->rssi_deauth_cfg.grace_samples,
+			 arvif->rssi_deauth_cfg.enabled);
 
 	if (ahvif->vdev_type != WMI_VDEV_TYPE_STA) {
 		ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
