@@ -420,7 +420,6 @@ enum ieee80211_conn_mode {
 	IEEE80211_CONN_MODE_VHT,
 	IEEE80211_CONN_MODE_HE,
 	IEEE80211_CONN_MODE_EHT,
-	IEEE80211_CONN_MODE_UHR,
 };
 
 #define IEEE80211_CONN_MODE_HIGHEST	IEEE80211_CONN_MODE_UHR
@@ -2881,9 +2880,7 @@ int ieee80211_put_eht_cap(struct sk_buff *skb,
 			  struct ieee80211_sub_if_data *sdata,
 			  const struct ieee80211_supported_band *sband,
 			  const struct ieee80211_conn_settings *conn);
-int ieee80211_put_uhr_cap(struct sk_buff *skb,
-			  struct ieee80211_sub_if_data *sdata,
-			  const struct ieee80211_supported_band *sband);
+
 /* channel management */
 bool ieee80211_chandef_ht_oper(const struct ieee80211_ht_operation *ht_oper,
 			       struct cfg80211_chan_def *chandef);
