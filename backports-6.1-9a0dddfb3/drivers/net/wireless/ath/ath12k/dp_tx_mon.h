@@ -21,6 +21,11 @@
 
 #define ATH12K_MU_BA_CTRL_MULTI_TID  0x0016
 
+#define ATH12K_DP_MON_TX_MU_BA_INFO_SZ(bitmap_sz)  \
+	((ATH12K_DP_MON_TX_BA_START_SQ_CTRL_SZ) +\
+	 (ATH12K_DP_MON_TX_BA_PER_STA_TID_INF_SZ) +\
+	 (4 << (bitmap_sz)))
+
 #define ATH12K_FREQ_2GHZ_MIN               2412
 #define ATH12K_FREQ_2GHZ_MAX               2484
 #define ATH12K_FREQ_5GHZ_MIN               5150
@@ -35,8 +40,18 @@
 #define ATH12K_SIFS_5GHZ_US         16
 #define ATH12K_DEFAULT_NOISE_FLOOR  -95
 
-/* OFDM rate values in kbps */
+/* Rate values in kbps - for rate conversion */
+#define ATH12K_RATE_1MBPS_KBPS             1000
+#define ATH12K_RATE_2MBPS_KBPS             2000
+#define ATH12K_RATE_5_5MBPS_KBPS           5500
 #define ATH12K_RATE_6MBPS_KBPS             6000
+#define ATH12K_RATE_9MBPS_KBPS             9000
+#define ATH12K_RATE_11MBPS_KBPS            11000
+#define ATH12K_RATE_12MBPS_KBPS            12000
+#define ATH12K_RATE_18MBPS_KBPS            18000
+#define ATH12K_RATE_24MBPS_KBPS            24000
+#define ATH12K_RATE_36MBPS_KBPS            36000
+#define ATH12K_RATE_48MBPS_KBPS            48000
 #define ATH12K_RATE_54MBPS_KBPS            54000
 
 /* L-SIG field masks for extracting rate and length */
@@ -44,10 +59,26 @@
 #define ATH12K_LSIG_LENGTH_MASK            GENMASK(16, 5)
 #define ATH12K_RADIOTAP_LSIG_LENGTH_SHIFT  4
 
-#define ATH12K_DP_MON_TX_MU_BA_INFO_SZ(bitmap_sz)  \
-	((ATH12K_DP_MON_TX_BA_START_SQ_CTRL_SZ) +\
-	 (ATH12K_DP_MON_TX_BA_PER_STA_TID_INF_SZ) +\
-	 (4 << (bitmap_sz)))
+/* Legacy rate values in 100kbps units - for radiotap */
+#define ATH12K_LEGACY_RATE_1MBPS_100KBPS   10
+#define ATH12K_LEGACY_RATE_2MBPS_100KBPS   20
+#define ATH12K_LEGACY_RATE_5_5MBPS_100KBPS 55
+#define ATH12K_LEGACY_RATE_6MBPS_100KBPS   60
+#define ATH12K_LEGACY_RATE_9MBPS_100KBPS   90
+#define ATH12K_LEGACY_RATE_11MBPS_100KBPS  110
+#define ATH12K_LEGACY_RATE_12MBPS_100KBPS  120
+#define ATH12K_LEGACY_RATE_18MBPS_100KBPS  180
+#define ATH12K_LEGACY_RATE_24MBPS_100KBPS  240
+#define ATH12K_LEGACY_RATE_36MBPS_100KBPS  360
+#define ATH12K_LEGACY_RATE_48MBPS_100KBPS  480
+#define ATH12K_LEGACY_RATE_54MBPS_100KBPS  540
+#define ATH12K_LEGACY_RATE_DEFAULT_100KBPS 60
+
+/* Rate status configuration */
+#define ATH12K_RATE_STATUS_N_RATES         1
+#define ATH12K_RATE_STATUS_TRY_COUNT       1
+#define ATH12K_RATE_STATUS_DEFAULT_BW      0
+#define ATH12K_RATE_STATUS_DEFAULT_NSS     1
 
 struct ieee80211_frame_min {
 	__le16 frame_control;
