@@ -332,6 +332,7 @@ ath12k_wifi8_mgmt_rx_h_ppdu(struct ath12k *ar, struct ieee80211_rx_status *statu
 	enum rx_msdu_start_pkt_type pkt_type;
 	u32 center_freq, meta_data;
 	u8 channel_num, bw, sgi, rate_mcs, nss;
+	struct ieee80211_hw *hw;
 	bool is_cck;
 
 	status->freq = 0;
@@ -340,28 +341,41 @@ ath12k_wifi8_mgmt_rx_h_ppdu(struct ath12k *ar, struct ieee80211_rx_status *statu
 	status->encoding = RX_ENC_LEGACY;
 	status->bw = RATE_INFO_BW_20;
 	status->enc_flags = 0;
+	status->band = NUM_NL80211_BANDS;
 
 	meta_data = desc_data->freq;
-	channel_num = meta_data;
 	center_freq = meta_data >> 16;
+	channel_num = ieee80211_frequency_to_channel(center_freq);
 
 	if (center_freq >= ATH12K_MIN_6GHZ_FREQ &&
 	    center_freq <= ATH12K_MAX_6GHZ_FREQ) {
 		status->band = NL80211_BAND_6GHZ;
 		status->freq = center_freq;
-	} else if (channel_num >= 1 && channel_num <= 14) {
+	} else if (center_freq >= ATH12K_MIN_2GHZ_FREQ &&
+		   center_freq <= ATH12K_MAX_2GHZ_FREQ) {
 		status->band = NL80211_BAND_2GHZ;
-	} else if (channel_num >= 36 && channel_num <= 173) {
+	} else if (center_freq >= ATH12K_MIN_5GHZ_FREQ &&
+		   center_freq <= ATH12K_MAX_5GHZ_FREQ) {
 		status->band = NL80211_BAND_5GHZ;
-	} else {
+	}
+
+	hw = ar->ah->hw;
+	if (status->band == NUM_NL80211_BANDS || !hw->wiphy->bands[status->band]) {
+		ath12k_err(ar->ab,
+			   "sband invalid for band:%u center_freq=%u channel=%u on pdev=%u",
+			   status->band, center_freq, channel_num, ar->pdev_idx);
 		spin_lock_bh(&ar->data_lock);
 		channel = ar->rx_channel;
 		if (channel) {
 			status->band = channel->band;
 			channel_num =
 				ieee80211_frequency_to_channel(channel->center_freq);
+		} else {
+			ath12k_err(ar->ab, "Failed to derive channel info on pdev=%u",
+				   ar->pdev_idx);
 		}
 		spin_unlock_bh(&ar->data_lock);
+		status->freq = ieee80211_channel_to_frequency(channel_num, status->band);
 	}
 
 	if (status->band != NL80211_BAND_6GHZ)
