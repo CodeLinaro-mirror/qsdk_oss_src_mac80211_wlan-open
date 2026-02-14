@@ -14014,7 +14014,6 @@ static int ath12k_sta_ml_reconfig_handler(struct ieee80211_hw *hw,
 	struct ath12k_hw *ah = hw->priv;
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
 	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
-	struct ath12k_wmi_peer_assoc_arg peer_arg;
 	struct ath12k_link_sta *arsta, *arsta_p;
 	struct ath12k_link_vif *arvif, *arvif_p;
 	struct ieee80211_link_sta *link_sta;
@@ -14026,6 +14025,13 @@ static int ath12k_sta_ml_reconfig_handler(struct ieee80211_hw *hw,
 	u32 flags = 0;
 	u8 link_id;
 	struct ieee80211_key_conf *keys[WMI_MAX_KEY_INDEX + 1] = {0};
+	struct ath12k_wmi_peer_assoc_arg *peer_arg __free(kfree) =
+					kzalloc(sizeof(*peer_arg), GFP_KERNEL);
+
+	if (!peer_arg) {
+		ath12k_err(NULL, "failed to allocate memory for peer_arg\n");
+		return -ENOMEM;
+	}
 
 	valid_links = sta->valid_links;
 
@@ -14103,12 +14109,12 @@ static int ath12k_sta_ml_reconfig_handler(struct ieee80211_hw *hw,
 			ath12k_warn(ar->ab, "Link Sta not found\n");
 			goto out;
 		}
-		ath12k_peer_assoc_prepare(ar, arvif, arsta, &peer_arg,
+		ath12k_peer_assoc_prepare(ar, arvif, arsta, peer_arg,
 					  false, link_sta);
 
 		rcu_read_unlock();
 
-		ret = ath12k_wmi_send_peer_assoc_cmd(ar, &peer_arg);
+		ret = ath12k_wmi_send_peer_assoc_cmd(ar, peer_arg);
 		if (ret) {
 			ath12k_warn(ar->ab, "failed to run peer assoc for vdev %i: %d\n",
 				    arvif->vdev_id, ret);
