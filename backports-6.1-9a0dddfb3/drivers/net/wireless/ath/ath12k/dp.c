@@ -1278,6 +1278,7 @@ void ath12k_dp_tx_ext_desc_free(struct ath12k_dp *dp,
 				     tx_desc->ext_desc_len, DMA_TO_DEVICE);
 	kmem_cache_free(dp->ext_cache, tx_desc->ext_desc);
 
+	tx_desc->ext_kmem = 0;
 	tx_desc->ext_desc = NULL;
 	tx_desc->ext_desc_len = 0;
 	tx_desc->paddr_ext_desc = 0;
@@ -1349,7 +1350,10 @@ void ath12k_dp_cc_cleanup(struct ath12k_base *ab)
 
 				tx_desc_info[k].skb = NULL;
 
-				if (tx_desc_info[k].skb_ext_desc) {
+				/* Cleanup extension descriptor based on type */
+				if (tx_desc_info[k].ext_kmem) {
+					ath12k_dp_tx_ext_desc_free(dp, &tx_desc_info[k]);
+				} else if (tx_desc_info[k].skb_ext_desc) {
 					ath12k_core_dma_unmap_single(ab->dev,
 								     tx_desc_info[k].paddr_ext_desc,
 								     tx_desc_info[k].skb_ext_desc->len,
@@ -1357,10 +1361,6 @@ void ath12k_dp_cc_cleanup(struct ath12k_base *ab)
 					dev_kfree_skb_any(tx_desc_info[k].skb_ext_desc);
 					tx_desc_info[k].skb_ext_desc = NULL;
 				}
-
-				/* Cleanup extension descriptor based on type */
-				if (tx_desc_info[k].ext_desc)
-					ath12k_dp_tx_ext_desc_free(dp, &tx_desc_info[k]);
 
 				/* if we are unregistering, hw would've been destroyed and
 				 * ar is no longer valid.
@@ -2121,7 +2121,10 @@ void ath12k_dp_umac_txrx_desc_cleanup(struct ath12k_base *ab)
 
 				tx_desc_info[k].skb = NULL;
 
-				if (tx_desc_info[k].skb_ext_desc) {
+				/* Cleanup extension descriptor based on type */
+				if (tx_desc_info[k].ext_kmem) {
+					ath12k_dp_tx_ext_desc_free(dp, &tx_desc_info[k]);
+				} else if (tx_desc_info[k].skb_ext_desc) {
 					ath12k_core_dma_unmap_single(ab->dev,
 								     tx_desc_info[k].paddr_ext_desc,
 								     tx_desc_info[k].skb_ext_desc->len,
@@ -2130,9 +2133,6 @@ void ath12k_dp_umac_txrx_desc_cleanup(struct ath12k_base *ab)
 					tx_desc_info[k].skb_ext_desc = NULL;
 				}
 
-				/* Cleanup extension descriptor based on type */
-				if (tx_desc_info[k].ext_desc)
-					ath12k_dp_tx_ext_desc_free(dp, &tx_desc_info[k]);
 
 				ath12k_core_dma_unmap_single(ab->dev, tx_desc_info[k].paddr,
 							     tx_desc_info[k].len, DMA_TO_DEVICE);

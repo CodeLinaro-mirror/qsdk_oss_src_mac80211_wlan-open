@@ -405,17 +405,19 @@ struct ath12k_rx_desc_info {
 struct ath12k_tx_desc_info {
 	struct list_head list;
 	struct sk_buff *skb;
-	struct sk_buff *skb_ext_desc;
-	struct ath12k_dp_ext_desc *ext_desc;
+	union {
+		struct sk_buff *skb_ext_desc;
+		struct ath12k_dp_ext_desc *ext_desc;
+	};
 	dma_addr_t paddr;
 	dma_addr_t paddr_ext_desc;
 	u32 desc_id; /* Cookie */
 	u16 len;
 	u16 ext_desc_len;
-	u16 tcl_metadata;
 	u8 mac_id	: 5,
 	   in_use	: 1,
-	   reserved	: 2;
+	   ext_kmem	: 1,
+	   reserved	: 1;
 	u8 flags	: 3,
 	   reserved1	: 4,
 	   to_fw	: 1;
@@ -576,7 +578,8 @@ struct ath12k_dp_arch_ops {
 	enum ath12k_dp_tx_enq_error (*dp_ext_tx)(struct ath12k_pdev_dp *dp_pdev,
 						 struct ath12k_dp_vif *dp_vif,
 						 struct ath12k_dp_link_vif *dp_link_vif,
-						 struct ath12k_tx_desc_info *tx_desc);
+						 struct ath12k_tx_desc_info *tx_desc,
+						 struct ath12k_dp_ext_info *info);
 };
 
 struct ath12k_bp_stats {
@@ -1289,9 +1292,9 @@ ath12k_dp_arch_peer_migrate_reo_cmd(struct ath12k_dp *dp,
 static inline enum ath12k_dp_tx_enq_error
 ath12k_dp_ext_tx(struct ath12k_dp *dp, struct ath12k_pdev_dp *dp_pdev,
 		 struct ath12k_dp_vif *vif, struct ath12k_dp_link_vif *link_vif,
-		 struct ath12k_tx_desc_info *tx_desc)
+		 struct ath12k_tx_desc_info *tx_desc, struct ath12k_dp_ext_info *info)
 {
-	return dp->arch_ops->dp_ext_tx(dp_pdev, vif, link_vif, tx_desc);
+	return dp->arch_ops->dp_ext_tx(dp_pdev, vif, link_vif, tx_desc, info);
 }
 
 int ath12k_dp_htt_connect(struct ath12k_dp *dp);
