@@ -63,6 +63,12 @@ struct athdbg_mhi_q6_noc_err_reg {
 	u32 reg_offset;
 };
 
+struct pbl_err_to_host_type {
+	u32 magic_cookie;
+	u32 err_region_size;
+	u32 err_region_base;
+};
+
 void athdbg_mhi_q6_dump_bl_sram_mem(struct ath12k_base *ab);
 void athdbg_mhi_q6_boot_debug_timeout_hdlr_internal(struct ath12k_base *ab);
 
