@@ -8,6 +8,7 @@
 #include "../dp.h"
 #include "../dp_rx.h"
 #include "umac_reset.h"
+#include "dp_tx.h"
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #include "../ppe.h"
@@ -149,7 +150,7 @@ static void ath12k_wifi7_umac_reset_handle_post_reset_start(struct ath12k_base *
 		ath12k_warn(ab, "failed to setup link desc: %d\n", ret);
 
 	ath12k_dp_srng_common_setup(ab);
-	dp->arch_ops->dp_tx_ring_setup(ab);
+	ath12k_wifi7_dp_tx_ring_setup(ab);
 
 	ret = ath12k_dp_srng_setup(ab,
 				   &dp->rx_refill_buf_ring.refill_buf_ring,

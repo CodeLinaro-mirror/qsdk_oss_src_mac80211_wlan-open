@@ -521,6 +521,9 @@ int ath12k_umac_reset_notify_target(struct ath12k_base *ab, int tx_event)
 		    ag->wsi_remap_in_progress) {
 			continue;
 		}
+
+		ath12k_umac_reset_invoke_post_send_cb(partner_ab);
+
 		/* Send HTT message to FW */
 		ret = ath12k_umac_reset_send_htt(partner_ab, tx_event);
 		if (ret) {
@@ -529,9 +532,6 @@ int ath12k_umac_reset_notify_target(struct ath12k_base *ab, int tx_event)
 				    tx_event, partner_ab->device_id, ret);
 			continue;
 		}
-
-		/* Invoke post-send callback after successful send */
-		ath12k_umac_reset_invoke_post_send_cb(partner_ab);
 	}
 
 	return 0;

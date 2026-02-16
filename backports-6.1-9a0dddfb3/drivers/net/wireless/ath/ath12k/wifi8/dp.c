@@ -1150,7 +1150,6 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.dump_fst_table = ath12k_wifi8_dp_dump_fst_table,
 	.dp_hw_group_alloc = ath12k_wifi8_dp_hw_group_alloc,
 	.sdwf_reinject_handler = ath12k_wifi8_sdwf_reinject_handler,
-	.dp_tx_ring_setup = ath12k_wifi8_dp_tx_ring_setup,
 	.dp_peer_create = ath12k_wifi8_dp_peer_create,
 	.dp_peer_delete = ath12k_wifi8_dp_peer_delete,
 	.dp_peer_assoc = ath12k_wifi8_dp_peer_assoc,
