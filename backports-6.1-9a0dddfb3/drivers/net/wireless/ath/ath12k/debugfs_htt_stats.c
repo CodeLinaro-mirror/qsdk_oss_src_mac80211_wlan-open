@@ -3086,9 +3086,6 @@ static int ath12k_prep_htt_stats_cfg_params(struct ath12k *ar, u8 type,
 	case ATH12K_DBG_HTT_EXT_STATS_TX_MU_HWQ:
 		cfg_params->cfg0 = HTT_STAT_DEFAULT_CFG0_ALL_HWQS;
 		break;
-	case ATH12K_DBG_HTT_EXT_STATS_PDEV_TX_SCHED:
-		cfg_params->cfg0 = HTT_STAT_DEFAULT_CFG0_ALL_TXQS;
-		break;
 	case ATH12K_DBG_HTT_EXT_STATS_TQM_CMDQ:
 		cfg_params->cfg0 = HTT_STAT_DEFAULT_CFG0_ALL_CMDQS;
 		break;
@@ -3989,8 +3986,29 @@ ath12k_htt_print_tx_pdev_stats_sched_per_txq_tlv(const void *tag_buf,
 			 le32_to_cpu(htt_stats_buf->num_supercycles));
 	len += scnprintf(buf + len, buf_len - len, "num_subcycles_with_sort = %u\n",
 			 le32_to_cpu(htt_stats_buf->num_subcycles_with_sort));
-	len += scnprintf(buf + len, buf_len - len, "num_subcycles_no_sort = %u\n\n",
+	len += scnprintf(buf + len, buf_len - len, "num_subcycles_no_sort = %u\n",
 			 le32_to_cpu(htt_stats_buf->num_subcycles_no_sort));
+	len += scnprintf(buf + len, buf_len - len, "num_dps_client_scheduled = %u\n",
+			 le32_to_cpu(htt_stats_buf->num_dps_client_scheduled));
+	len += scnprintf(buf + len, buf_len - len,
+			 "num_allowed_first_sched_cmd_for_combining = %u\n",
+			 le32_to_cpu
+			 (htt_stats_buf->num_allowed_first_sched_command_for_combining));
+	len += scnprintf(buf + len, buf_len - len,
+			 "num_allowed_second_sched_cmd_for_combining = %u\n",
+			 le32_to_cpu
+			 (htt_stats_buf->num_allowed_second_command_for_combining));
+	len += scnprintf(buf + len, buf_len - len, "num_aborted_first_sched_cmd = %u\n",
+			 le32_to_cpu(htt_stats_buf->num_aborted_first_sched_command));
+	len += scnprintf(buf + len, buf_len - len, "num_aborted_second_sched_cmd = %u\n",
+			 le32_to_cpu(htt_stats_buf->num_aborted_second_sched_command));
+	len += scnprintf(buf + len, buf_len - len,
+			 "total_combined_sched_cmds_success = %u\n",
+			 le32_to_cpu(htt_stats_buf->total_combined_sched_cmds_success));
+	len += scnprintf(buf + len, buf_len - len,
+			 "total_combined_sched_cmds_failed = %u\n\n",
+			 le32_to_cpu(htt_stats_buf->total_combined_sched_cmds_failed));
+
 
 	stats_req->buf_len = len;
 }
@@ -4090,6 +4108,26 @@ ath12k_htt_print_sched_txq_supercycle_trigger_tlv(const void *tag_buf,
 			 "HTT_SCHED_TXQ_SUPERCYCLE_TRIGGER:\n");
 	len += print_array_to_buf(buf, len, "supercycle_triggers",
 				  htt_stats_buf->supercycle_triggers, num_elems, "\n\n");
+
+	stats_req->buf_len = len;
+}
+
+static void
+ath12k_htt_print_sched_txq_combined_seq_state_tlv(const void *tag_buf,
+						  u16 tag_len,
+						  struct debug_htt_stats_req *stats_req)
+{
+	const struct ath12k_htt_stats_sched_txq_combined_seq_state_tlv *htt_stats_buf =
+		     tag_buf;
+	u8 *buf = stats_req->buf;
+	u32 len = stats_req->buf_len, buf_len = ATH12K_HTT_STATS_BUF_SIZE;
+	u16 num_elems = min_t(u16, (tag_len >> 2),
+			      ATH12K_HTT_SCHED_COMBINED_SEQ_STATUS_MAX);
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "HTT_SCHED_TXQ_COMBINED_SEQ_STATE:\n");
+	len += print_array_to_buf(buf, len, "combined_seq_state",
+				  htt_stats_buf->combined_seq_state, num_elems, "\n\n");
 
 	stats_req->buf_len = len;
 }
@@ -7097,10 +7135,9 @@ ath12k_htt_print_ul_ofdma_trigger_stats(const void *tag_buf, u16 tag_len,
 				  htt_stats_buf->uplink_sta_power_headroom,
 				  ATH12K_HTT_RX_UL_MAX_UPLINK_RSSI_TRACK, "\n");
 	len += scnprintf(buf + len, buf_len - len,
-			 "ul_ofdma_basic_trigger_rx_qos_null_only = %u\n\n",
+			 "ul_ofdma_basic_trigger_rx_qos_null_only = %u\n",
 			 le32_to_cpu(htt_stats_buf->ul_ofdma_bsc_trig_rx_qos_null_only));
 
-	len += scnprintf(buf + len, buf_len - len, "\n");
 	len += scnprintf(buf + len, buf_len - len, "ulofdma_implicit_trig_tried = %u\n",
 			le32_to_cpu(htt_stats_buf->ulofdma_implicit_trig_tried));
 	len += scnprintf(buf + len, buf_len - len,
@@ -7110,6 +7147,16 @@ ath12k_htt_print_ul_ofdma_trigger_stats(const void *tag_buf, u16 tag_len,
 	len += print_array_to_buf(buf, len, "tcp_aware_implicit_trig_hist_ms",
 			htt_stats_buf->tcp_aware_implicit_trig_hist_ms,
 			ATH12K_HTT_NUM_TCP_IMPLICIT_TRIG_INTR, "\n");
+
+	len += scnprintf(buf + len, buf_len - len, "ul_ofdma_txop_dur_hist_us =");
+	for (j = 0; j < ATH12K_HTT_PDEV_STATS_TXOP_DUR_HIST_BINS ; j++) {
+		len += scnprintf(buf + len, buf_len - len, " %u-%u : %u,",
+				 j * ATH12K_HTT_PDEV_STATS_TXOP_DUR_HIST_INTERVAL_US,
+				 (j + 1) *
+				 ATH12K_HTT_PDEV_STATS_TXOP_DUR_HIST_INTERVAL_US,
+				 le32_to_cpu(htt_stats_buf->ul_ofdma_txop_dur_hist[j]));
+	}
+	len += scnprintf(buf + len, buf_len - len, "\n\n");
 
 	stats_req->buf_len = len;
 }
@@ -7272,8 +7319,18 @@ ath12k_htt_print_ul_mumimo_trig_stats(const void *tag_buf, u16 tag_len,
 	}
 
 	len += scnprintf(buf + len, buf_len - len,
-			 "ul_mumimo_basic_trigger_rx_qos_null_only = %u\n\n",
+			 "ul_mumimo_basic_trigger_rx_qos_null_only = %u\n",
 			 le32_to_cpu(htt_stats_buf->mumimo_bsc_trig_rx_qos_null_only));
+	len += scnprintf(buf + len, buf_len - len, "ul_mimo_txop_dur_hist_us =");
+	for (j = 0; j < ATH12K_HTT_PDEV_STATS_TXOP_DUR_HIST_BINS ; j++) {
+		len += scnprintf(buf + len, buf_len - len, " %u-%u : %u,",
+				 j * ATH12K_HTT_PDEV_STATS_TXOP_DUR_HIST_INTERVAL_US,
+				 (j + 1) *
+				 ATH12K_HTT_PDEV_STATS_TXOP_DUR_HIST_INTERVAL_US,
+				 le32_to_cpu(htt_stats_buf->ul_mimo_txop_dur_hist[j]));
+	}
+	len += scnprintf(buf + len, buf_len - len, "\n\n");
+
 
 	stats_req->buf_len = len;
 }
@@ -9032,6 +9089,68 @@ ath12k_htt_print_tx_pdev_ppdu_dur_stats_tlv(const void *tag_buf, u16 tag_len,
 				 (i + 1) *
 				 ATH12K_HTT_PDEV_STATS_PPDU_DUR_HIST_INTERVAL_US,
 				 htt_stats_buf->tx_ofdma_ppdu_dur_hist[i]);
+	}
+	len += scnprintf(buf + len, buf_len - len, "\n");
+
+	stats_req->buf_len = len;
+}
+
+static void
+ath12k_htt_print_tx_pdev_txop_dur_stats_tlv(const void *tag_buf, u16 tag_len,
+					    struct debug_htt_stats_req *stats_req)
+{
+	const struct ath12k_htt_tx_pdev_txop_dur_stats_tlv *htt_stats_buf = tag_buf;
+	u8 *buf = stats_req->buf, i;
+	u32 len = stats_req->buf_len, buf_len = ATH12K_HTT_STATS_BUF_SIZE;
+
+	if (tag_len < sizeof(*htt_stats_buf))
+		return;
+
+	len += scnprintf(buf + len, buf_len - len, "\nHTT_TX_PDEV_TXOP_DUR_STATS_TLV:\n");
+
+	len += scnprintf(buf + len, buf_len - len, "tx_su_mdsb_txop_dur_hist_us =");
+
+	for (i = 0; i < ATH12K_HTT_PDEV_STATS_TXOP_DUR_HIST_BINS ; i++) {
+		len += scnprintf(buf + len, buf_len - len, " %u-%u : %u,",
+				 i * ATH12K_HTT_PDEV_STATS_TXOP_DUR_HIST_INTERVAL_US,
+				 (i + 1) *
+				 ATH12K_HTT_PDEV_STATS_TXOP_DUR_HIST_INTERVAL_US,
+				 le32_to_cpu(htt_stats_buf->tx_su_mdsb_txop_dur_hist[i]));
+	}
+	len += scnprintf(buf + len, buf_len - len, "\n");
+
+	len += scnprintf(buf + len, buf_len - len, "tx_ofdma_txop_dur_hist_us =");
+
+	for (i = 0; i < ATH12K_HTT_PDEV_STATS_TXOP_DUR_HIST_BINS ; i++) {
+		len += scnprintf(buf + len, buf_len - len, " %u-%u : %u,",
+				 i * ATH12K_HTT_PDEV_STATS_TXOP_DUR_HIST_INTERVAL_US,
+				 (i + 1) *
+				 ATH12K_HTT_PDEV_STATS_TXOP_DUR_HIST_INTERVAL_US,
+				 le32_to_cpu(htt_stats_buf->tx_ofdma_txop_dur_hist[i]));
+	}
+
+	len += scnprintf(buf + len, buf_len - len, "\n");
+
+	len += scnprintf(buf + len, buf_len - len, "tx_mimo_txop_dur_hist_us =");
+
+	for (i = 0; i < ATH12K_HTT_PDEV_STATS_TXOP_DUR_HIST_BINS ; i++) {
+		len += scnprintf(buf + len, buf_len - len, " %u-%u : %u,",
+				 i * ATH12K_HTT_PDEV_STATS_TXOP_DUR_HIST_INTERVAL_US,
+				 (i + 1) *
+				 ATH12K_HTT_PDEV_STATS_TXOP_DUR_HIST_INTERVAL_US,
+				 le32_to_cpu(htt_stats_buf->tx_mimo_txop_dur_hist[i]));
+	}
+	len += scnprintf(buf + len, buf_len - len, "\n");
+	len += scnprintf(buf + len, buf_len - len,
+			 "combined_sched_cmd_txop_dur_hist_us =");
+
+	for (i = 0; i < ATH12K_HTT_PDEV_STATS_TXOP_DUR_HIST_BINS ; i++) {
+		len += scnprintf(buf + len, buf_len - len, " %u-%u : %u,",
+				 i * ATH12K_HTT_PDEV_STATS_TXOP_DUR_HIST_INTERVAL_US,
+				 (i + 1) *
+				 ATH12K_HTT_PDEV_STATS_TXOP_DUR_HIST_INTERVAL_US,
+				 le32_to_cpu
+				 (htt_stats_buf->combined_sched_cmd_txop_dur_hist[i]));
 	}
 	len += scnprintf(buf + len, buf_len - len, "\n");
 
@@ -13980,6 +14099,15 @@ static int ath12k_dbg_htt_ext_stats_parse(struct ath12k_base *ab,
 
 	case HTT_STATS_ANI_OTA_ERR_TAG:
 		ath12k_htt_print_ani_ota_err_tlv(tag_buf, len, stats_req);
+		break;
+
+	case HTT_STATS_TX_PDEV_TXOP_DUR_TAG:
+		ath12k_htt_print_tx_pdev_txop_dur_stats_tlv(tag_buf, len, stats_req);
+		break;
+
+	case HTT_STATS_TXQ_COMBINED_SEQ_STATE_TAG:
+		ath12k_htt_print_sched_txq_combined_seq_state_tlv(tag_buf, len,
+								  stats_req);
 		break;
 
 	default:
