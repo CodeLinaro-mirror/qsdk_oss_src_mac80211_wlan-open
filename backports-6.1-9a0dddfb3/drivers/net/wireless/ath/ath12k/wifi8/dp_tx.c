@@ -1038,6 +1038,7 @@ static inline void
 ath12k_wifi8_dp_tx_populate_tcl_desc(struct ath12k_pdev_dp *dp_pdev,
 				     struct ath12k_link_vif *arvif,
 				     struct ath12k_dp_link_vif *dp_link_vif,
+				     struct ath12k_vif *vlan_ahvif,
 				     struct sk_buff *skb,
 				     struct hal_tcl_data_cmd *hal_tcl_desc,
 				     struct ath12k_tx_desc_info *tx_desc,
@@ -1046,6 +1047,19 @@ ath12k_wifi8_dp_tx_populate_tcl_desc(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
+	struct ath12k_dp_vif *dp_vlan_vif = &vlan_ahvif->dp_vif;
+	u16 ast_idx;
+	u16 ast_hash;
+	bool ast_overwrite = false;
+
+	if (dp_vlan_vif && dp_vlan_vif->is_wds_4addr) {
+		ast_idx = dp_vlan_vif->ast_idx;
+		ast_hash = dp_vlan_vif->ast_hash;
+		ast_overwrite = true;
+	} else {
+		ast_idx = dp_vif->ast_idx;
+		ast_hash = dp_vif->ast_hash;
+	}
 
 	hal_tcl_desc->buf_addr_info.info0 = (u32)virt_to_phys(skb->data);
 	hal_tcl_desc->buf_addr_info.info1 =
@@ -1054,13 +1068,16 @@ ath12k_wifi8_dp_tx_populate_tcl_desc(struct ath12k_pdev_dp *dp_pdev,
 	hal_tcl_desc->info0 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_BANK_ID,
 					 dp_vif->bank_id) |
 			      FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_VDEV_ID,
-					 dp_vif->dp_vif_id);
-	hal_tcl_desc->info1 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_CACHE_SET_NUM,
-					 dp_vif->ast_hash);
-	hal_tcl_desc->info2 =  skb->len;
+					 dp_vif->dp_vif_id) |
+			      FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_DATA_LENGTH, skb->len);
+
+	hal_tcl_desc->info1 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_CACHE_SET_NUM, ast_hash) |
+			      FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_INDEX_LOOKUP_OVERRIDE,
+					 ast_overwrite);
+	hal_tcl_desc->search_index = ast_idx;
+
 	hal_tcl_desc->info3 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO3_LINK_ID,
 					 HAL_TX_WILD_CARD_LINK_ID);
-	hal_tcl_desc->search_index = dp_vif->ast_idx;
 	hal_tcl_desc->info5 = 0;
 
 	/**
@@ -1089,6 +1106,7 @@ static inline void
 ath12k_wifi8_dp_tx_populate_tcl_desc(struct ath12k_pdev_dp *dp_pdev,
 				     struct ath12k_link_vif *arvif,
 				     struct ath12k_dp_link_vif *dp_link_vif,
+				     struct ath12k_vif *vlan_ahvif,
 				     struct sk_buff *skb,
 				     struct hal_tcl_data_cmd *hal_tcl_desc,
 				     struct ath12k_tx_desc_info *tx_desc,
@@ -1098,6 +1116,20 @@ ath12k_wifi8_dp_tx_populate_tcl_desc(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
 	struct hal_tcl_data_cmd tcl_desc = {0};
+	struct ath12k_dp_vif *dp_vlan_vif = &vlan_ahvif->dp_vif;
+	u16 ast_idx;
+	u16 ast_hash;
+	bool ast_overwrite = false;
+
+	if (dp_vlan_vif && dp_vlan_vif->is_wds_4addr) {
+		ast_idx = dp_vlan_vif->ast_idx;
+		ast_hash = dp_vlan_vif->ast_hash;
+		ast_overwrite = true;
+	} else {
+		ast_idx = dp_vif->ast_idx;
+		ast_hash = dp_vif->ast_hash;
+	}
+
 
 	tcl_desc.buf_addr_info.info0 = (u32)virt_to_phys(skb->data);
 	tcl_desc.buf_addr_info.info1 = (((u64)virt_to_phys(skb->data) >> 32) |
@@ -1105,15 +1137,17 @@ ath12k_wifi8_dp_tx_populate_tcl_desc(struct ath12k_pdev_dp *dp_pdev,
 	tcl_desc.info0 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_BANK_ID,
 				    dp_vif->bank_id) |
 			 FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_VDEV_ID,
-				    dp_vif->dp_vif_id);
+				    dp_vif->dp_vif_id) |
+			 FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_DATA_LENGTH, skb->len);
 
-	tcl_desc.info1 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_CACHE_SET_NUM,
-				    dp_vif->ast_hash);
+	hal_tcl_desc->info1 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_CACHE_SET_NUM, ast_hash) |
+			      FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_INDEX_LOOKUP_OVERRIDE,
+					 ast_overwrite);
+	hal_tcl_desc->search_index = ast_idx;
+
 	tcl_desc.tcl_cmd_number =  dp_link_vif->tcl_metadata;
-	tcl_desc.info2 =  skb->len;
 	tcl_desc.info3 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO3_LINK_ID,
 				    HAL_TX_WILD_CARD_LINK_ID);
-	tcl_desc.search_index = dp_vif->ast_idx;
 	tcl_desc.info5 = 0;
 
 	/**
@@ -1143,6 +1177,7 @@ ath12k_wifi8_dp_tx_populate_tcl_desc(struct ath12k_pdev_dp *dp_pdev,
 enum ath12k_dp_tx_enq_error
 ath12k_wifi8_dp_tx_fast(struct ath12k_pdev_dp *dp_pdev,
 			struct ath12k_link_vif *arvif,
+			struct ath12k_vif *vlan_ahvif,
 			struct sk_buff *skb,
 			u32 qos_nw_delay)
 {
@@ -1223,6 +1258,7 @@ ath12k_wifi8_dp_tx_fast(struct ath12k_pdev_dp *dp_pdev,
 
 	ath12k_wifi8_dp_tx_populate_tcl_desc(dp_pdev, arvif,
 					     dp_link_vif,
+					     vlan_ahvif,
 					     skb, hal_tcl_desc,
 					     tx_desc, qos_nw_delay);
 	dmb(oshst);

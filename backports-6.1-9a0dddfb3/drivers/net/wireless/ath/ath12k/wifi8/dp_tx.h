@@ -35,6 +35,7 @@ ath12k_wifi8_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 enum ath12k_dp_tx_enq_error
 ath12k_wifi8_dp_tx_fast(struct ath12k_pdev_dp *dp_pdev,
 			struct ath12k_link_vif *arvif,
+			struct ath12k_vif *vlan_vif,
 			struct sk_buff *skb,
 			u32 qos_nw_delay);
 u32 ath12k_wifi8_dp_tx_get_vdev_bank_config(struct ath12k_base *ab,
