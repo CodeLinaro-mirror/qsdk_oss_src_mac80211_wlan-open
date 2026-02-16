@@ -700,7 +700,8 @@ void ath12k_dp_rx_frags_cleanup(struct ath12k_dp_rx_tid *rx_tid,
 }
 EXPORT_SYMBOL(ath12k_dp_rx_frags_cleanup);
 
-void ath12k_dp_rx_peer_tid_cleanup(struct ath12k *ar, struct ath12k_dp_link_peer *peer)
+void ath12k_dp_rx_peer_tid_cleanup(struct ath12k *ar,
+				   struct ath12k_dp_link_peer *peer)
 {
 	struct ath12k_dp_rx_tid *rx_tid;
 	int i;
@@ -717,7 +718,6 @@ void ath12k_dp_rx_peer_tid_cleanup(struct ath12k *ar, struct ath12k_dp_link_peer
 
 		ath12k_dp_arch_rx_peer_tid_delete(dp, ar, peer, i);
 		ath12k_dp_rx_frags_cleanup(rx_tid, true);
-
 		spin_unlock_bh(&dp->dp_lock);
 		del_timer_sync(&rx_tid->frag_timer);
 		spin_lock_bh(&dp->dp_lock);
