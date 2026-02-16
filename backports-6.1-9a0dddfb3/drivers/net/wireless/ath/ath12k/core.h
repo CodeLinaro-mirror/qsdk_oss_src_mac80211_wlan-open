@@ -258,6 +258,9 @@ enum ath12k_skb_flags {
 	ATH12K_SKB_MGMT_LINK_AGNOSTIC = BIT(3),
 	ATH12K_SKB_CUSTOM_MGMT_TX = BIT(4),
 	ATH12K_SKB_CUSTOM_OFFCHAN_MGMT_TX = BIT(5),
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	ATH12K_SKB_IPA_MAP_UNMAP = BIT(6),
+#endif
 };
 
 struct ath12k_skb_cb {
@@ -2197,6 +2200,8 @@ struct ath12k_base {
 	enum wide_band_cap wide_band;
 
 	const struct ieee80211_ops *ath12k_ops;
+
+	struct ath12k_base_extn ath12k_base_extn;
 
 	const struct ieee80211_ops_extn *ath12k_ops_extn;
 
