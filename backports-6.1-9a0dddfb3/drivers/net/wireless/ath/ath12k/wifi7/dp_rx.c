@@ -3189,20 +3189,3 @@ int ath12k_wifi7_dp_rx_ring_init(struct ath12k_base *ab)
 
 	return 0;
 }
-
-int ath12k_wifi7_dp_rx_ring_setup(struct ath12k_base *ab)
-{
-	int ret;
-
-	ret = ath12k_wifi7_dp_rx_ring_alloc(ab);
-	if (ret)
-		return ret;
-
-	ret = ath12k_wifi7_dp_rx_ring_init(ab);
-	if (ret) {
-		ath12k_wifi7_dp_rx_ring_free(ab);
-		return ret;
-	}
-
-	return 0;
-}

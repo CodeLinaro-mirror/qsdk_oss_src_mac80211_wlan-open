@@ -198,6 +198,9 @@ static int ath12k_wifi7_dp_reoq_lut_init(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 
+	memset(dp->reoq_lut.vaddr_unaligned, 0, dp->reoq_lut.size);
+	memset(dp->ml_reoq_lut.vaddr_unaligned, 0, dp->ml_reoq_lut.size);
+
 	/* Bits in the register have address [39:8] LUT base address to be
 	 * allocated such that LSBs are assumed to be zero. Also, current
 	 * design supports paddr up to 4 GB max hence it fits in 32 bit register only
@@ -233,23 +236,6 @@ static void ath12k_wifi7_dp_reoq_lut_cleanup(struct ath12k_base *ab)
 	}
 }
 
-static int ath12k_wifi7_dp_reoq_lut_setup(struct ath12k_base *ab)
-{
-	int ret;
-
-	ret = ath12k_wifi7_dp_reoq_lut_alloc(ab);
-	if (ret)
-		return ret;
-
-	ret = ath12k_wifi7_dp_reoq_lut_init(ab);
-	if (ret) {
-		ath12k_wifi7_dp_reoq_lut_cleanup(ab);
-		return ret;
-	}
-
-	return 0;
-}
-
 static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 {
 	int ret;
@@ -277,29 +263,30 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 	dp->idle_link_rbm =
 			ath12k_hal_get_idle_link_rbm(&ab->hal, ab->device_id);
 
-	ret = ath12k_wbm_idle_ring_setup(ab, &n_link_desc);
+	ret = ath12k_wbm_idle_ring_init(ab);
 	if (ret) {
 		ath12k_warn(ab, "failed to setup wbm_idle_ring: %d\n", ret);
 		goto fail_irq_cleanup;
 	}
 
 	srng = &ab->hal.srng_list[dp->wbm_idle_ring.ring_id];
+	n_link_desc = dp->wbm_idle_ring.num_entries;
 
 	/* memset wbm link desc pool to 0 before desc_setup */
 	ath12k_dp_clear_link_desc_pool(dp);
 
-	ret = ath12k_dp_link_desc_setup(ab, dp->link_desc_banks,
-					HAL_WBM_IDLE_LINK, srng, n_link_desc);
+	ret = ath12k_dp_link_desc_init(ab, dp->link_desc_banks,
+				       HAL_WBM_IDLE_LINK, srng, n_link_desc);
 	if (ret) {
 		ath12k_warn(ab, "failed to setup link desc: %d\n", ret);
-		goto fail_link_desc_cleanup;
+		goto fail_irq_cleanup;
 	}
 
 	ret = ath12k_dp_cc_init(ab);
 
 	if (ret) {
 		ath12k_warn(ab, "failed to setup cookie converter %d\n", ret);
-		goto fail_link_desc_cleanup;
+		goto fail_irq_cleanup;
 	}
 
 	ret = ath12k_dp_init_bank_profiles(ab);
@@ -322,18 +309,18 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 	}
 #endif
 
-	ret = ath12k_dp_srng_common_setup(ab);
+	ret = ath12k_dp_srng_common_init(ab);
 	if (ret)
 		goto fail_ppeds_detach;
 
-	ret = ath12k_wifi7_dp_tx_ring_setup(ab);
+	ret = ath12k_wifi7_dp_tx_ring_init(ab);
 	if (ret)
-		goto fail_cmn_srng_cleanup;
+		goto fail_ppeds_detach;
 
-	ret = ath12k_wifi7_dp_reoq_lut_setup(ab);
+	ret = ath12k_wifi7_dp_reoq_lut_init(ab);
 	if (ret) {
-		ath12k_warn(ab, "failed to setup reoq table %d\n", ret);
-		goto fail_tx_ring_cleanup;
+		ath12k_warn(ab, "failed to init reoq table %d\n", ret);
+		goto fail_ppeds_detach;
 	}
 
 	for (i = 0; i < ab->hw_params->max_tx_ring; i++)
@@ -344,10 +331,10 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 
 	ath12k_hal_tx_set_pcp_tid_map(ab, ath12k_default_pcp_tid_map);
 
-	ret = ath12k_wifi7_dp_rx_ring_setup(ab);
+	ret = ath12k_wifi7_dp_rx_ring_init(ab);
 	if (ret) {
-		ath12k_warn(ab, "rx allod failed ret = %d\n", ret);
-		goto fail_dp_rx_free;
+		ath12k_warn(ab, "rx init failed ret = %d\n", ret);
+		goto fail_ppeds_detach;
 	}
 
 	ath12k_dp_mon_cfg_init(dp);
@@ -381,16 +368,6 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 fail_dp_mon_rx_free:
 	ath12k_dp_mon_rx_free(dp);
 
-fail_dp_rx_free:
-	ath12k_wifi7_dp_rx_ring_free(ab);
-	ath12k_wifi7_dp_reoq_lut_cleanup(ab);
-
-fail_tx_ring_cleanup:
-	ath12k_wifi7_dp_tx_ring_cleanup(ab);
-
-fail_cmn_srng_cleanup:
-	ath12k_dp_srng_common_cleanup(ab);
-
 fail_ppeds_detach:
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	dp->ppe.ppe_ops->ath12k_ppeds_detach(ab);
@@ -404,9 +381,6 @@ fail_dp_bank_profiles_cleanup:
 fail_hw_cc_cleanup:
 	ath12k_dp_cc_cleanup(ab);
 
-fail_link_desc_cleanup:
-	ath12k_dp_link_desc_cleanup(ab, dp->link_desc_banks,
-				    HAL_WBM_IDLE_LINK, &dp->wbm_idle_ring);
 fail_irq_cleanup:
 	ath12k_hif_ext_irq_cleanup(dp->ab);
 
@@ -438,17 +412,13 @@ static void ath12k_wifi7_dp_op_device_deinit(struct ath12k_dp *dp)
 	if (!dp->ab)
 		return;
 
-	ath12k_dp_link_desc_cleanup(ab, dp->link_desc_banks,
-				    HAL_WBM_IDLE_LINK, &dp->wbm_idle_ring);
+	ath12k_dp_srng_common_deinit(ab);
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	dp->ppe.ppe_ops->ath12k_ppeds_detach(ab);
 #endif
 	ath12k_dp_cc_cleanup(ab);
-	ath12k_wifi7_dp_reoq_lut_cleanup(ab);
 	ath12k_dp_deinit_bank_profiles(ab);
-	ath12k_wifi7_dp_tx_ring_cleanup(ab);
-	ath12k_dp_srng_common_cleanup(ab);
 
 	ath12k_dp_rx_reo_cmd_list_cleanup(ab);
 
@@ -458,7 +428,6 @@ static void ath12k_wifi7_dp_op_device_deinit(struct ath12k_dp *dp)
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ath12k_nss_plugin_unregister_ops(ab);
 #endif
-	ath12k_wifi7_dp_rx_ring_free(ab);
 
 	ath12k_hif_ext_irq_cleanup(dp->ab);
 }
@@ -649,7 +618,9 @@ static struct ath12k_dp_arch_ops ath12k_wifi7_dp_arch_ops = {
 /* TODO: remove export once this file is built with wifi7 ko */
 struct ath12k_dp *ath12k_wifi7_dp_init(struct ath12k_base *ab)
 {
+	struct hal_srng *srng;
 	struct ath12k_dp *dp;
+	u32 n_link_desc = 0;
 	int ret;
 
 	dp = kzalloc(sizeof(*dp), GFP_KERNEL);
@@ -668,6 +639,52 @@ struct ath12k_dp *ath12k_wifi7_dp_init(struct ath12k_base *ab)
 	dp->hal = &ab->hal;
 	dp->global_peer_id_supported = false;
 
+	/* allocate ring desc here*/
+
+	ab->dp = dp;
+
+	ath12k_dp_init_ring_size(ab);
+
+	ret = ath12k_wbm_idle_ring_alloc(ab, &n_link_desc);
+	if (ret) {
+		ath12k_err(ab, "wbm ring alloc failed %d\n", ret);
+		goto dp_err;
+	}
+
+	srng = &ab->hal.srng_list[dp->wbm_idle_ring.ring_id];
+	n_link_desc = dp->wbm_idle_ring.num_entries;
+
+	ret = ath12k_dp_link_desc_alloc(ab, dp->link_desc_banks,
+					HAL_WBM_IDLE_LINK, srng, n_link_desc);
+	if (ret) {
+		ath12k_err(ab, "dp link desc alloc failed %d\n", ret);
+		goto dp_err;
+	}
+
+	ret = ath12k_dp_srng_common_alloc(ab);
+	if (ret) {
+		ath12k_err(ab, "dp srng common alloc failed %d\n", ret);
+		goto dp_err;
+	}
+
+	ret = ath12k_wifi7_dp_tx_ring_alloc(ab);
+	if (ret) {
+		ath12k_err(ab, "dp tx ring alloc failed %d\n", ret);
+		goto dp_err;
+	}
+
+	ret = ath12k_wifi7_dp_reoq_lut_alloc(ab);
+	if (ret) {
+		ath12k_err(ab, "dp reoq alloc failed %d\n", ret);
+		goto dp_err;
+	}
+
+	ret = ath12k_wifi7_dp_rx_ring_alloc(ab);
+	if (ret) {
+		ath12k_err(ab, "dp rx ring alloc failed %d\n", ret);
+		goto dp_err;
+	}
+
 	ret = ath12k_dp_mon_init(dp);
 	if (ret) {
 		ath12k_warn(dp, "dp_mon_init failed %d\n", ret);
@@ -679,11 +696,19 @@ struct ath12k_dp *ath12k_wifi7_dp_init(struct ath12k_base *ab)
 	return dp;
 dp_err:
 	ath12k_wifi7_dp_deinit(dp);
+	ab->dp = NULL;
 	return NULL;
 }
 
 void ath12k_wifi7_dp_deinit(struct ath12k_dp *dp)
 {
 	ath12k_dp_mon_deinit(dp);
+	ath12k_wifi7_dp_rx_ring_free(dp->ab);
+	ath12k_wifi7_dp_reoq_lut_cleanup(dp->ab);
+	ath12k_wifi7_dp_tx_ring_cleanup(dp->ab);
+	ath12k_dp_srng_common_cleanup(dp->ab);
+	ath12k_dp_link_desc_cleanup(dp->ab, dp->link_desc_banks,
+				    HAL_WBM_IDLE_LINK, &dp->wbm_idle_ring);
+	ath12k_wbm_idle_ring_cleanup(dp->ab);
 	kfree(dp);
 }

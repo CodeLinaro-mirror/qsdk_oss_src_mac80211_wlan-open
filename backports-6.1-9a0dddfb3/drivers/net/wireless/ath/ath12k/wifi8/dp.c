@@ -666,6 +666,8 @@ static int ath12k_wifi8_dp_op_device_init(struct ath12k_dp *dp)
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
 	int ret;
 
+	ath12k_dp_init_ring_size(ab);
+
 	dp->tcl_metadata_ver = HTT_OPTION_TCL_METADATA_VER_V3;
 	dp->htt_tx_mon_cfg_msg_size =
 			(u16)sizeof(struct htt_tx_mon_ring_selection_cfg_cmd);

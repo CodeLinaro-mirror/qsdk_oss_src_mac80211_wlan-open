@@ -1863,13 +1863,17 @@ void ath12k_dp_srng_cleanup(struct ath12k_base *ab, struct dp_srng *ring);
 int ath12k_dp_srng_setup(struct ath12k_base *ab, struct dp_srng *ring,
 			 enum hal_ring_type type, int ring_num,
 			 int mac_id, int num_entries);
+void ath12k_dp_link_desc_cleanup(struct ath12k_base *ab,
+				 struct dp_link_desc_bank *desc_bank,
+				 u32 ring_type, struct dp_srng *ring);
+int ath12k_dp_link_desc_alloc(struct ath12k_base *ab,
+			      struct dp_link_desc_bank *link_desc_banks,
+			      u32 ring_type, struct hal_srng *srng,
+			      u32 n_link_desc);
 int ath12k_dp_link_desc_init(struct ath12k_base *ab,
 			     struct dp_link_desc_bank *link_desc_banks,
 			     u32 ring_type, struct hal_srng *srng,
 			     u32 n_link_desc);
-void ath12k_dp_link_desc_cleanup(struct ath12k_base *ab,
-				 struct dp_link_desc_bank *desc_bank,
-				 u32 ring_type, struct dp_srng *ring);
 int ath12k_dp_link_desc_setup(struct ath12k_base *ab,
 			      struct dp_link_desc_bank *link_desc_banks,
 			      u32 ring_type, struct hal_srng *srng,
@@ -1896,9 +1900,12 @@ int ath12k_dp_init_bank_profiles(struct ath12k_base *ab);
 void ath12k_dp_deinit_bank_profiles(struct ath12k_base *ab);
 int ath12k_dp_cc_init(struct ath12k_base *ab);
 void ath12k_dp_cc_cleanup(struct ath12k_base *ab);
+int ath12k_wbm_idle_ring_alloc(struct ath12k_base *ab, u32 *n_link_desc);
 int ath12k_wbm_idle_ring_init(struct ath12k_base *ab);
 int ath12k_wbm_idle_ring_setup(struct ath12k_base *ab, u32 *n_link_desc);
 void ath12k_wbm_idle_ring_cleanup(struct ath12k_base *ab);
+int ath12k_dp_srng_common_alloc(struct ath12k_base *ab);
+void ath12k_dp_srng_common_deinit(struct ath12k_base *ab);
 int ath12k_dp_srng_common_init(struct ath12k_base *ab);
 int ath12k_dp_srng_common_setup(struct ath12k_base *ab);
 void ath12k_dp_srng_common_cleanup(struct ath12k_base *ab);
@@ -1956,6 +1963,7 @@ void ath12k_dp_srng_hw_ring_disable(struct ath12k_base *ab);
 void ath12k_dp_umac_tx_desc_cleanup(struct ath12k_base *ab);
 void ath12k_dp_umac_rx_desc_cleanup(struct ath12k_base *ab);
 void ath12k_dp_srng_hw_disable(struct ath12k_base *ab, struct dp_srng *ring);
+void ath12k_dp_init_ring_size(struct ath12k_base *ab);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 void ath12k_ppeds_reinject_handler(struct ath12k_base *ab,
 				   struct ath12k_ppeds_tx_desc_info *tx_desc,

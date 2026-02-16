@@ -946,8 +946,8 @@ void ath12k_dp_srng_common_cleanup(struct ath12k_base *ab)
 	ath12k_dp_srng_cleanup(ab, &dp->reo_reinject_ring);
 	ath12k_dp_srng_cleanup(ab, &dp->wbm_desc_rel_ring);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	if (ab->dp->ppe.ppe_ops && dp->ppe.ppe_ops->ath12k_ppeds_srng_cleanup)
-		dp->ppe.ppe_ops->ath12k_ppeds_srng_cleanup(ab);
+	if (ab->dp->ppe.ppe_ops && ab->dp->ppe.ppe_ops->ath12k_ppeds_srng_cleanup)
+		ab->dp->ppe.ppe_ops->ath12k_ppeds_srng_cleanup(ab);
 #endif
 }
 EXPORT_SYMBOL(ath12k_dp_srng_common_cleanup);
@@ -1002,6 +1002,16 @@ err:
 
 	return ret;
 }
+EXPORT_SYMBOL(ath12k_dp_srng_common_alloc);
+
+void ath12k_dp_srng_common_deinit(struct ath12k_base *ab)
+{
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	if (ab->dp->ppe.ppe_ops && ab->dp->ppe.ppe_ops->ath12k_ppeds_srng_cleanup)
+		ab->dp->ppe.ppe_ops->ath12k_ppeds_srng_cleanup(ab);
+#endif
+}
+EXPORT_SYMBOL(ath12k_dp_srng_common_deinit);
 
 int ath12k_dp_srng_common_init(struct ath12k_base *ab)
 {
@@ -1416,6 +1426,7 @@ fail_desc_bank_free:
 
 	return ret;
 }
+EXPORT_SYMBOL(ath12k_dp_link_desc_alloc);
 
 int ath12k_dp_link_desc_init(struct ath12k_base *ab,
 			     struct dp_link_desc_bank *link_desc_banks,
@@ -2506,11 +2517,8 @@ void ath12k_dp_cmn_device_deinit(struct ath12k_dp *dp)
 	ath12k_dp_link_peer_rhash_tbl_destroy(dp);
 }
 
-int ath12k_dp_cmn_device_init(struct ath12k_dp *dp)
+void ath12k_dp_init_ring_size(struct ath12k_base *ab)
 {
-	int ret;
-	struct ath12k_base *ab = dp->ab;
-
 	ath12k_dp_reo_dst_ring_size[0] = DP_REO_DST_RING0_SIZE;
 	ath12k_dp_reo_dst_ring_size[1] = DP_REO_DST_RING1_SIZE;
 	ath12k_dp_reo_dst_ring_size[2] = DP_REO_DST_RING2_SIZE;
@@ -2528,6 +2536,12 @@ int ath12k_dp_cmn_device_init(struct ath12k_dp *dp)
 	ath12k_dp_tx_comp_ring_size[2] = DP_TX_COMP_RING2_SIZE;
 	ath12k_dp_tx_comp_ring_size[3] = DP_TX_COMP_RING3_SIZE;
 	ath12k_dp_tx_comp_ring_size[4] = DP_TX_COMP_RING4_SIZE;
+}
+EXPORT_SYMBOL(ath12k_dp_init_ring_size);
+
+int ath12k_dp_cmn_device_init(struct ath12k_dp *dp)
+{
+	int ret;
 
 	if (test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &dp->ab->dev_flags)) {
 		ath12k_info(dp->ab, "Skip DP re-init during Q6 BCR RESET\n");

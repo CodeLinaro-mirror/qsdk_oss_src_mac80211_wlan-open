@@ -140,7 +140,8 @@ int ath12k_wifi7_dp_peer_migrate_reo_cmd(struct ath12k_dp *dp,
 void ath12k_dp_rx_tid_del_func(struct ath12k_dp *dp, void *ctx,
 			       struct hal_reo_status *status);
 void ath12k_wifi7_dp_rx_ring_free(struct ath12k_base *ab);
-int ath12k_wifi7_dp_rx_ring_setup(struct ath12k_base *ab);
+int ath12k_wifi7_dp_rx_ring_alloc(struct ath12k_base *ab);
+int ath12k_wifi7_dp_rx_ring_init(struct ath12k_base *ab);
 int ath12k_wifi7_dp_rx_flow_fse_cache_operation(struct ath12k_base *ab,
 						enum dp_flow_fst_operation op_code,
 						struct hal_flow_tuple_info *tuple_info);
