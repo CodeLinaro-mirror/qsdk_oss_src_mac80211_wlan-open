@@ -700,6 +700,7 @@ struct ath12k_dp {
 	struct dp_rxdma_ring rx_refill_buf_ring;
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 	struct dp_rxdma_ring rx_refill_buf_ring2;
+	struct dp_rxdma_ring rx_refill_buf_ring3;
 #endif
 	struct dp_srng rx_mac_buf_ring[MAX_RXDMA_PER_PDEV];
 	struct dp_srng rxdma_err_dst_ring[MAX_RXDMA_PER_PDEV];
