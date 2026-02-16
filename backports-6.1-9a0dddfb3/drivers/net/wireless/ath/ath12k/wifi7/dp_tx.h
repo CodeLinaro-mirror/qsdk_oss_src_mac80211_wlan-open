@@ -27,7 +27,8 @@ enum ath12k_dp_tx_enq_error
 ath12k_wifi7_dp_ext_tx(struct ath12k_pdev_dp *dp_pdev,
 		       struct ath12k_dp_vif *dp_vif,
 		       struct ath12k_dp_link_vif *dp_link_vif,
-		       struct ath12k_tx_desc_info *tx_desc);
+		       struct ath12k_tx_desc_info *tx_desc,
+		       struct ath12k_dp_ext_info *info);
 u32 ath12k_wifi7_dp_tx_get_vdev_bank_config(struct ath12k_base *ab,
 					    struct ath12k_vif *ahvif,
 					    u8 link_id,

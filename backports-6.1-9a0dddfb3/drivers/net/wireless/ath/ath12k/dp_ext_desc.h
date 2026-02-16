@@ -46,6 +46,14 @@ struct ath12k_dp_ext_desc {
 	u8 spare_bytes[ATH12K_DP_EXT_DESC_SPARE_SZ];	/* Spare mem of ext descriptor */
 } __packed;
 
+/*
+ * Required to pass any additional information for ext operations.
+ */
+struct ath12k_dp_ext_info {
+	u16 tcl_metadata;
+	u8 reserved[2];
+};
+
 static inline void
 __ext_desc_set_ctl(struct ath12k_dp_ext_desc_hw *desc, u32 val, u8 widx)
 {
