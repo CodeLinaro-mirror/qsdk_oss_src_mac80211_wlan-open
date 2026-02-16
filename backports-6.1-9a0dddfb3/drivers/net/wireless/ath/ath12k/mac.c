@@ -40,6 +40,9 @@
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 #include "qcn_extns/ipa/dp_ipa.h"
 #endif
+#ifdef CPTCFG_EXT_IPA_STATS
+#include "qcn_extns/ipa/dp_ipa_stats.h"
+#endif
 
 #define CHAN2G(_channel, _freq, _flags) { \
 	.band                   = NL80211_BAND_2GHZ, \
@@ -5455,7 +5458,10 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 	INIT_LIST_HEAD(&arvif->peer_migrate_list);
 
 	ath12k_mac_init_arvif_extn(ahvif);
-
+#ifdef CPTCFG_EXT_IPA_STATS
+	arvif->extn.stats
+		= kzalloc(sizeof(struct ath12k_dp_ipa_stats_vif_hw_stats), GFP_KERNEL);
+#endif
 	wiphy_work_init(&arvif->set_dscp_tid_work,
 			ath12k_set_dscp_tid_work);
 
@@ -5640,7 +5646,10 @@ static void ath12k_mac_unassign_link_vif(struct ath12k_link_vif *arvif)
 	struct ath12k_hw *ah = ahvif->ah;
 
 	lockdep_assert_wiphy(ah->hw->wiphy);
-
+#ifdef CPTCFG_EXT_IPA_STATS
+	kfree(arvif->extn.stats);
+	arvif->extn.stats = NULL;
+#endif
 	ahvif->links_map &= ~BIT(arvif->link_id);
 	rcu_assign_pointer(ahvif->link[arvif->link_id], NULL);
 	synchronize_rcu();
