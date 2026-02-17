@@ -1393,4 +1393,9 @@ ath12k_wifi7_hal_mon_tx_pcu_ppdu_setup_init_info_parse
 			(const void *tlv_data,
 			 struct hal_tx_mon_status_info *status_info,
 			 u16 tlv_len);
+
+int
+ath12k_wifi7_extract_tx_mon_ring_desc(struct ath12k_hal *hal,
+				      void *ring_entry,
+				      struct ath12k_mon_ring_desc_info *desc_info);
 #endif

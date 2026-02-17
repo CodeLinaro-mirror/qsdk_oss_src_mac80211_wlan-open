@@ -194,6 +194,25 @@ struct ath12k_dp_arch_mon_ops {
 	void (*mon_tx_dst_ring_cleanup)(struct ath12k_pdev_dp *dp_pdev);
 };
 
+/**
+ * enum hal_mon_end_reason - HAL monitor descriptor completion reasons
+ * @HAL_MON_STATUS_BUFFER_FULL: Monitor status buffer reached capacity limit
+ * @HAL_MON_FLUSH_DETECTED: Hardware detected flush condition, forcing completion
+ * @HAL_MON_END_OF_PPDU: Normal PPDU completion, all data successfully captured
+ * @HAL_MON_PPDU_TRUNCATED: PPDU was truncated due to buffer or hardware limits
+ *
+ * This enumeration defines the possible reasons why hardware completes a
+ * monitor descriptor, as reported in the monitor destination ring descriptor.
+ * These values are used by both RX and TX monitor functionality across
+ * different WiFi architectures (WiFi7/WiFi8).
+ */
+enum hal_mon_end_reason {
+	HAL_MON_STATUS_BUFFER_FULL,
+	HAL_MON_FLUSH_DETECTED,
+	HAL_MON_END_OF_PPDU,
+	HAL_MON_PPDU_TRUNCATED,
+};
+
 struct ath12k_dp_mon {
 	struct ath12k_dp *dp;
 	struct dp_rxdma_mon_ring rxdma_mon_buf_ring;
@@ -406,6 +425,38 @@ struct ath12k_pdev_mon_dp_stats {
 	u32 restitch_insuff_frags_cnt;
 };
 
+/**
+ * struct ath12k_pdev_tx_mon_stats - TX Monitor Statistics
+ * @empty_descriptors: Incremented when hardware provides empty descriptors
+ * @truncated_ppdu: Incremented when PPDUs are truncated due to insufficient
+ *                  buffer space or hardware limitations. This can indicate
+ *                  buffer pool exhaustion.
+ */
+struct ath12k_pdev_tx_mon_stats {
+	u32 empty_descriptors;
+	u32 truncated_ppdu;
+};
+
+/**
+ * struct ath12k_mon_ring_desc_info - Extracted monitor ring descriptor info
+ * @mon_desc: Pointer to monitor descriptor containing frame data and metadata
+ * @ppdu_id: PPDU identifier for correlating related descriptors and frames
+ * @end_offset: End offset indicating the valid data length in the buffer
+ * @end_reason: Hardware-provided reason code for descriptor completion
+ * @empty_desc: Flag indicating whether this descriptor contains no frame data
+ *
+ * This structure serves as an abstraction layer for monitor ring descriptor
+ * information, allowing architecture-specific extraction functions to populate
+ * common fields that can be processed by generic monitor code.
+ */
+struct ath12k_mon_ring_desc_info {
+	struct ath12k_dp_mon_desc *mon_desc;
+	u32 ppdu_id;
+	u32 end_offset;
+	u32 end_reason;
+	bool empty_desc;
+};
+
 struct ath12k_pdev_mon_dp {
 	struct ath12k_dp_mon *dp_mon;
 	struct ath12k_pdev_dp *dp_pdev;
@@ -457,6 +508,8 @@ struct ath12k_pdev_mon_dp {
 
 	bool tx_monitor_started:1;
 	struct ath12k_pdev_mon_dp_extn pdev_mon_dp_extn;
+	struct ath12k_pdev_tx_mon_stats tx_mon_stats;
+	struct list_head tx_mon_desc_work_list;
 };
 
 enum ath12k_dp_mon_desc_in_use {
