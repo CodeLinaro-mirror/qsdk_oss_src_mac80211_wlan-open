@@ -193,6 +193,7 @@ enum ath12k_bdf_search {
 #define ATH12K_VHT_MCS_MAX	9
 #define ATH12K_HE_MCS_MAX	11
 #define ATH12K_EHT_MCS_MAX	15
+#define ATH12K_UHR_MCS_MAX	23
 
 /* EHT MCS_NSS_FOR_20_MHZ_ONLY_STA */
 #define EHT_MCS_20_MHZ_ONLY_0_7_RX    GENMASK(3, 0)
