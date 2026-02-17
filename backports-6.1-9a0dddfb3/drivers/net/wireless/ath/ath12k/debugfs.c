@@ -6280,7 +6280,7 @@ static ssize_t ath12k_read_dp_stats_mask(struct file *file,
 {
 	struct ath12k_hw *ah = file->private_data;
 	struct ath12k *ar;
-	char buf[8];
+	char buf[16];
 	int len = 0, i;
 
 	wiphy_lock(ah->hw->wiphy);
