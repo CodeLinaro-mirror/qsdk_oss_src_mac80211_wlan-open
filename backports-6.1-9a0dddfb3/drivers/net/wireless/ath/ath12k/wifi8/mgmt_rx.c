@@ -1051,10 +1051,41 @@ static void ath12k_wifi8_mgmt_rx_ring_free(struct ath12k_base *ab)
 	ath12k_mgmt_srng_cleanup(ab, &mgmt_wifi8->reo_dst_rx_ring);
 }
 
+struct ath12k_mgmt *ath12k_wifi8_get_cumac_mgmt(struct ath12k_mgmt *mgmt)
+{
+	struct ath12k_hw_group *ag = mgmt->ab->ag;
+	struct ath12k_base *partner_ab;
+	int i;
+
+	lockdep_assert_held(&ag->mutex);
+
+	for (i = 0; i < ag->num_devices; i++) {
+		partner_ab = ag->ab[i];
+		if (!partner_ab || partner_ab->is_bypassed || !partner_ab->mgmt)
+			continue;
+
+		if (partner_ab->is_cumac_chip)
+			return partner_ab->mgmt;
+	}
+
+	return NULL;
+}
+
 int ath12k_wifi8_mgmt_op_device_init(struct ath12k_mgmt *mgmt)
 {
 	struct ath12k_base *ab = mgmt->ab;
 	int ret;
+
+	/* Assign device_id=0 chip as C-UMAC; it will be cleaned up later by
+	 * C-UMAC selection algorithm.
+	 */
+	ab->is_cumac_chip = ab->device_id == 0;
+
+	if (!ab->is_cumac_chip) {
+		ath12k_dbg(ab, ATH12K_DBG_MGMT,
+			   "Skip mgmt op init for non C-UMAC device %d", ab->device_id);
+		return 0;
+	}
 
 	ret = ath12k_mgmt_rx_desc_init(ab);
 	if (ret) {
@@ -1078,6 +1109,7 @@ int ath12k_wifi8_mgmt_op_device_init(struct ath12k_mgmt *mgmt)
 
 	ath12k_hif_mgmt_irq_enable(ab);
 
+	ath12k_info(ab, "C-UMAC init is success for mgmt on device %d", ab->device_id);
 	return 0;
 
 fail_srng_free:
@@ -1093,8 +1125,15 @@ void ath12k_wifi8_mgmt_op_device_deinit(struct ath12k_mgmt *mgmt)
 {
 	struct ath12k_base *ab = mgmt->ab;
 
+	if (!ab->is_cumac_chip) {
+		ath12k_dbg(ab, ATH12K_DBG_MGMT,
+			   "Skip mgmt op deinit for non C-UMAC device %d", ab->device_id);
+		return;
+	}
+
 	ath12k_hif_mgmt_irq_disable(ab);
 	ath12k_hif_mgmt_irq_cleanup(ab);
+
 	ath12k_mgmt_rx_desc_cleanup(ab);
 	ath12k_mgmt_irq_grp_cleanup(mgmt);
 	ath12k_hif_mgmt_irq_cleanup(ab);
@@ -1103,13 +1142,22 @@ void ath12k_wifi8_mgmt_op_device_deinit(struct ath12k_mgmt *mgmt)
 
 int ath12k_wifi8_mgmt_wbm_ring_sel_config_qcn9625(struct ath12k_base *ab)
 {
-	struct ath12k_mgmt *mgmt = ab->mgmt;
-	struct ath12k_mgmt_wifi8 *mgmt_wifi8 = ath12k_get_mgmt_wifi8(mgmt);
 	struct htt_rx_ring_tlv_filter tlv_filter = {0};
-	u32 hal_rx_desc_sz = ab->hal.hal_desc_sz;
+	struct ath12k_mgmt_wifi8 *cumac_mgmt_wifi8;
+	u32 hal_rx_desc_sz, wbm_ring_id;
+	struct ath12k_mgmt *cumac_mgmt;
 	int ret;
 
-	/* TODO: Configure HTT command with reference to C-UMAC mgmt rings */
+	hal_rx_desc_sz = ab->hal.hal_desc_sz;
+
+	cumac_mgmt = ath12k_wifi8_get_cumac_mgmt(ab->mgmt);
+	if (!cumac_mgmt) {
+		ath12k_err(ab, "Failed to get C-UMAC mgmt for HTT setup");
+		return -EINVAL;
+	}
+
+	cumac_mgmt_wifi8 = ath12k_get_mgmt_wifi8(cumac_mgmt);
+	wbm_ring_id = cumac_mgmt_wifi8->wbm_idle_buf_ring.ring_id;
 
 	tlv_filter.rx_filter = HTT_RX_TLV_FLAGS_RXDMA_RING;
 	tlv_filter.rxmon_disable = true;
@@ -1134,15 +1182,12 @@ int ath12k_wifi8_mgmt_wbm_ring_sel_config_qcn9625(struct ath12k_base *ab)
 	tlv_filter.rdi_based_source_cfg =
 		ath12k_wifi8_hal_get_rdi_source_cfg(ab, SOURCE_RING_CTRL_MGMT);
 
-	/* TODO: Configure RX_MGMT and RX_MGMT_ERR ring RDI from host */
-
 	ath12k_dbg(ab, ATH12K_DBG_MGMT,
 		   "Configuring compact tlv masks: rx_mpdu_start_wmask 0x%x rx_msdu_end_wmask 0x%x",
 		   tlv_filter.rx_mpdu_start_wmask, tlv_filter.rx_msdu_end_wmask);
 
-	ret = ath12k_core_srng_htt_rx_filter_setup(ab,
-						   mgmt_wifi8->wbm_idle_buf_ring.ring_id,
-						   0, HAL_WBM_IDLE_BUF_MGMT,
+	ret = ath12k_core_srng_htt_rx_filter_setup(ab, wbm_ring_id, 0,
+						   HAL_WBM_IDLE_BUF_MGMT,
 						   MGMT_RX_BUFFER_SIZE, &tlv_filter);
 
 	return ret;
