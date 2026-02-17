@@ -891,9 +891,13 @@ DECLARE_EWMA(avg_rssi_dp, 10, 8)
  * @rssi_dp_avg:      Averaged DP-specific RSSI value
  * @avg_rssi_dp:      EWMA tracker for DP-specific RSSI
  *
+ * @channel_bw:       Represents the effective channel width (in MHz) associated with
+ *                    the peer’s signal. Used to compute bandwidth-dependent offsets
+ *                    during RSSI calculations.
+ *
  * This structure holds both instantaneous and averaged signal quality
  * metrics (SNR and RSSI) for a given peer, including data path specific
- * values and EWMA smoothing helpers.
+ * values and EWMA smoothing helpers along with current bw info of signal.
  */
 struct ath12k_dp_link_peer_rx_signal_stats {
 	u8 snr;
@@ -910,6 +914,8 @@ struct ath12k_dp_link_peer_rx_signal_stats {
 	s8 rssi_dp;
 	s16 rssi_dp_avg;
 	struct ewma_avg_rssi_dp avg_rssi_dp;
+
+	u8 channel_bw;
 };
 
 /**
@@ -1078,7 +1084,7 @@ void ath12k_dp_free_preserved_stats(struct ath12k_dp_preserved_stats *stats);
 s8 ath12k_dp_get_rssi_value(s8 snr,
 			    struct ath12k_dp_link_peer_rx_signal_stats *stats,
 			    struct wmi_rssi_dbm_conv_offsets *rssi_offsets,
-			    struct ath12k_dp_link_peer *link_peer, bool ack_rssi);
+			    bool ack_rssi);
 
 #define SKB_TRAC_ETH_TYPE_OFFSET			12
 #define DP_ETH_TYPE_8021Q				0x8100
