@@ -333,13 +333,17 @@ int ath12k_peer_alloc_mcast_queues(struct ath12k_dp_hw_group *dp_hw_grp,
 	int ret = 0;
 	struct ath12k_dp_tx_flow_info *tx_flow_info =
 			ath12k_dp_get_tx_flow_info_from_peer(peer);
+	u8 tidno = NON_QOS_TID;
+
+	if (peer->is_11s_mesh_peer)
+		tidno = DEFAULT_TID;
 
 	spin_lock_bh(&tx_flow_info->tx_q_lock);
 	tx_flow_info->mcast_mpduq = ath12k_peer_alloc_tid(dp_hw_grp, peer,
-							  dp_vif, NON_QOS_TID,
+							  dp_vif, tidno,
 							  &tid, HTT_TID_MSDUQ_MCAST);
 	tx_flow_info->mcast_msduq = ath12k_init_alloc_tx_msdu_flowq(dp_hw_grp, peer,
-								    NON_QOS_TID,
+								    tidno,
 								    HTT_TID_MSDUQ_MCAST,
 								    MGMT_MSDUQ_TYPE_MAX);
 
