@@ -120,13 +120,14 @@ int ath12k_wifi8_dp_reo_cmd_send(struct ath12k_base *ab,
 	struct hal_srng *cmd_ring;
 	int cmd_num;
 	struct ath12k_dp *central_dp = ath12k_get_central_dp(dp);
+	struct ath12k_base *central_ab = central_dp->ab;
 
-	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags) ||
-	    test_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags))
+	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &central_ab->dev_flags) ||
+	    test_bit(ATH12K_FLAG_UMAC_PRERESET_START, &central_ab->dev_flags))
 		return -ESHUTDOWN;
 
-	cmd_ring = &ab->hal.srng_list[central_dp->reo_cmd_ring.ring_id];
-	cmd_num = ath12k_wifi8_hal_reo_cmd_send(ab, cmd_ring, type, cmd);
+	cmd_ring = &central_ab->hal.srng_list[central_dp->reo_cmd_ring.ring_id];
+	cmd_num = ath12k_wifi8_hal_reo_cmd_send(central_ab, cmd_ring, type, cmd);
 
 	/* cmd_num should start from 1, during failure return the error code */
 	if (cmd_num < 0)
@@ -370,6 +371,8 @@ void ath12k_wifi8_dp_rx_peer_tid_delete(struct ath12k *ar,
 	struct dp_reo_update_rx_queue_elem *elem, *tmp;
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_dp *dp   = ath12k_ab_to_dp(ab);
+	struct ath12k_dp *central_dp = ath12k_get_central_dp(dp);
+	struct ath12k_base *central_ab = central_dp->ab;
 
 	if (!rx_tid->active)
 		return;
@@ -386,14 +389,15 @@ void ath12k_wifi8_dp_rx_peer_tid_delete(struct ath12k *ar,
 
 	memcpy(&elem->data, rx_tid, sizeof(*rx_tid));
 
-	spin_lock_bh(&dp->reo_cmd_update_rx_queue_lock);
-	list_add_tail(&elem->list, &dp->reo_cmd_update_rx_queue_list);
+	spin_lock_bh(&central_dp->reo_cmd_update_rx_queue_lock);
+	list_add_tail(&elem->list, &central_dp->reo_cmd_update_rx_queue_list);
 
-	list_for_each_entry_safe(elem, tmp, &dp->reo_cmd_update_rx_queue_list,
+	list_for_each_entry_safe(elem, tmp, &central_dp->reo_cmd_update_rx_queue_list,
 				 list) {
 		temp_rx_tid = &elem->data;
 
-		if (ath12k_wifi8_peer_rx_tid_delete_handler(ab, temp_rx_tid, elem->tid)) {
+		if (ath12k_wifi8_peer_rx_tid_delete_handler(central_ab, temp_rx_tid,
+							    elem->tid)) {
 			temp_rx_tid->active = true;
 			elem->reo_cmd_update_rx_queue_resend_flag = true;
 			break;
@@ -407,11 +411,11 @@ void ath12k_wifi8_dp_rx_peer_tid_delete(struct ath12k *ar,
 		list_del(&elem->list);
 		kfree(elem);
 	}
-	spin_unlock_bh(&dp->reo_cmd_update_rx_queue_lock);
+	spin_unlock_bh(&central_dp->reo_cmd_update_rx_queue_lock);
 
 	rx_tid->active = false;
-	ath12k_wifi8_peer_rx_tid_qref_reset(ab, peer->dp_peer->peer_id, tid);
-	ath12k_wifi8_hal_reo_shared_qaddr_cache_clear(ab);
+	ath12k_wifi8_peer_rx_tid_qref_reset(central_ab, peer->dp_peer->peer_id, tid);
+	ath12k_wifi8_hal_reo_shared_qaddr_cache_clear(central_ab);
 	rx_tid->vaddr = NULL;
 	rx_tid->paddr = 0;
 	rx_tid->size = 0;
