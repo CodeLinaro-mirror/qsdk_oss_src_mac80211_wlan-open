@@ -4838,3 +4838,8 @@ int ath12k_wifi7_extract_tx_mon_ring_desc(struct ath12k_hal *hal,
 
 	return 0;
 }
+
+bool ath12k_wifi7_is_mon_buf_addr_tlv(u32 tlv_tag)
+{
+	return (tlv_tag == HAL_MON_BUF_ADDR);
+}

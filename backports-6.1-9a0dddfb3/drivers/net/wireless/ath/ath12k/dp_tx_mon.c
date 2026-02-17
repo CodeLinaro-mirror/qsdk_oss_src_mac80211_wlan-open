@@ -11,12 +11,165 @@
  * @local_list: List of descriptors to free
  * @dp_mon: DP monitor handle
  */
-void ath12k_dp_mon_tx_desc_free(struct list_head *local_list,
-				struct ath12k_dp_mon *dp_mon)
+static void
+ath12k_dp_mon_tx_desc_free(struct list_head *local_list,
+			   struct ath12k_dp_mon *dp_mon)
 {
 	spin_lock_bh(&dp_mon->tx_mon_desc_lock);
 	list_splice_tail_init(local_list, &dp_mon->tx_mon_desc_free_list);
 	spin_unlock_bh(&dp_mon->tx_mon_desc_lock);
+}
+
+/**
+ * ath12k_dp_mon_tx_free_pkt_buf() - Free packet buffers from TLV data
+ * @pdev_dp: Pointer to DP PDEV context containing device and statistics info
+ * @mon_buf: Pointer to monitor buffer containing TLV data to be parsed
+ * @mon_buf_len: Length of valid data in the monitor buffer
+ *
+ * This function parses TLV data from a monitor status buffer and frees any
+ * packet buffers referenced by HAL_TX_MON_BUF_ADDR TLVs. It performs
+ * comprehensive validation and cleanup of monitor descriptors and their
+ * associated DMA buffers.
+ *
+ * The function handles:
+ * - TLV parsing using HAL 64-bit TLV header format with proper alignment
+ * - Cookie validation using magic number verification for memory safety
+ * - DMA buffer unmapping to ensure proper cache coherency
+ * - Page fragment deallocation to prevent memory leaks
+ * - Descriptor state validation and error reporting
+ * - Statistics tracking for monitoring system health
+ *
+ * TLV Processing Flow:
+ * 1. Parse each TLV header to extract tag and length
+ * 2. For HAL_TX_MON_BUF_ADDR TLVs, extract packet info and descriptor cookie
+ * 3. Validate descriptor magic number and usage state
+ * 4. Unmap DMA buffer and free page fragment
+ * 5. Add descriptor to cleanup list for return to free pool
+ * 6. Continue to next TLV with proper alignment
+ *
+ * Context: Called from work queue context during TLV flushing operations.
+ * Locking: Uses internal locking for descriptor list management.
+ */
+static void
+ath12k_dp_mon_tx_free_pkt_buf(struct ath12k_pdev_dp *pdev_dp,
+			      u8 *mon_buf, u32 mon_buf_len)
+{
+	struct ath12k_dp *dp = pdev_dp->dp;
+	struct ath12k_base *ab = dp->ab;
+	struct ath12k_hal *hal = &ab->hal;
+	struct dp_mon_packet_info *packet_info;
+	struct hal_tlv_64_hdr *tlv;
+	struct ath12k_dp_mon_desc *pkt_desc;
+	struct list_head mon_desc_used_list;
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
+	struct ath12k_pdev_tx_mon_stats *tx_mon_stats;
+	u8 *ptr = mon_buf;
+	u16 tlv_tag, tlv_len;
+
+	tx_mon_stats = &pdev_dp->dp_mon_pdev->tx_mon_stats;
+	INIT_LIST_HEAD(&mon_desc_used_list);
+
+	do {
+		tlv = (struct hal_tlv_64_hdr *)ptr;
+		tlv_tag = le64_get_bits(tlv->tl, HAL_TLV_64_HDR_TAG);
+		ptr += sizeof(*tlv);
+
+		tlv_len = le64_get_bits(tlv->tl, HAL_TLV_64_HDR_LEN);
+
+		if (ath12k_hal_is_mon_buf_addr_tlv(hal, tlv_tag)) {
+			packet_info = (struct dp_mon_packet_info *)ptr;
+			pkt_desc = (struct ath12k_dp_mon_desc *)
+				(uintptr_t)(packet_info->cookie);
+
+			if (unlikely(!pkt_desc)) {
+				ath12k_warn(ab,
+					    "mon_flush: NULL pkt_desc received in macid %d\n",
+					    pdev_dp->mac_id);
+				goto next_tlv;
+			}
+
+			if (unlikely(pkt_desc->magic !=
+				     ATH12K_MON_MAGIC_VALUE)) {
+				ath12k_warn(ab,
+					    "mon_flush: invalid magic value in macid %d\n",
+					    pdev_dp->mac_id);
+				goto next_tlv;
+			}
+
+			list_add_tail(&pkt_desc->list, &mon_desc_used_list);
+
+			if (unlikely(pkt_desc->in_use != DP_MON_DESC_TO_HW)) {
+				ath12k_warn(ab,
+					    "mon_flush: invalid in_use=[%d] flag, macid %d\n",
+					    pkt_desc->in_use, pdev_dp->mac_id);
+				goto next_tlv;
+			}
+
+			ath12k_core_dma_unmap_page(dp->dev, pkt_desc->paddr,
+						   ATH12K_DP_MON_TX_BUF_SIZE,
+						   DMA_FROM_DEVICE);
+			tx_mon_stats->tx_pkt_tlv_free++;
+
+			page_frag_free(pkt_desc->mon_buf);
+			pkt_desc->mon_buf = NULL;
+			pkt_desc->in_use = DP_MON_DESC_H_PROC_ERR;
+		}
+
+next_tlv:
+		ptr += tlv_len;
+		ptr = PTR_ALIGN(ptr, HAL_TLV_64_ALIGN);
+	} while ((ptr - mon_buf) < mon_buf_len);
+
+	if (likely(!list_empty(&mon_desc_used_list)))
+		ath12k_dp_mon_tx_desc_free(&mon_desc_used_list, dp_mon);
+}
+
+/**
+ * ath12k_dp_tx_mon_flush_tlv() - Flush TLV data and free associated resources
+ * @pdev_dp: Pointer to DP PDEV context for device access and statistics
+ * @status_desc: Pointer to status descriptor containing TLV buffer information
+ *
+ * This function performs comprehensive cleanup of a monitor status descriptor
+ * by flushing its TLV data and freeing all associated resources. It serves as
+ * the primary cleanup function for monitor status buffers that contain TLV
+ * data with embedded packet buffer references.
+ *
+ * The function orchestrates the complete cleanup process:
+ * - Delegates TLV parsing and packet buffer cleanup to helper function
+ * - Updates system statistics for monitoring buffer usage
+ * - Frees the monitor status buffer itself using page fragment allocator
+ * - Ensures all resources are properly released to prevent memory leaks
+ *
+ * This function is called in several scenarios:
+ * - Normal PPDU processing completion when TLV data is no longer needed
+ * - Error recovery when PPDU processing fails and cleanup is required
+ * - Descriptor list flushing during system shutdown or error conditions
+ * - Ring processing overflow when descriptors must be discarded
+ *
+ * Resource Management:
+ * - Calls ath12k_dp_mon_tx_free_pkt_buf() for embedded packet buffer cleanup
+ * - Updates mon_stats->status_buf_free counter for buffer tracking
+ * - Uses page_frag_free() for efficient memory deallocation
+ * - Ensures proper cleanup ordering to prevent use-after-free conditions
+ *
+ * Context: Called from work queue context or error handling paths.
+ * Locking: Internal locking handled by called functions.
+ * Memory: Frees both embedded packet buffers and the status buffer itself.
+ */
+static void
+ath12k_dp_tx_mon_flush_tlv(struct ath12k_pdev_dp *pdev_dp,
+			   struct ath12k_dp_mon_status_desc *status_desc)
+{
+	struct ath12k_pdev_tx_mon_stats *mon_stats;
+	u8 *mon_buf = status_desc->mon_buf;
+	u32 mon_buf_len = status_desc->buf_len;
+	u8 *ptr = mon_buf;
+
+	ath12k_dp_mon_tx_free_pkt_buf(pdev_dp, ptr, mon_buf_len);
+
+	mon_stats = &pdev_dp->dp_mon_pdev->tx_mon_stats;
+	mon_stats->tx_status_buf_free++;
+	page_frag_free(mon_buf);
 }
 
 /**
@@ -31,11 +184,13 @@ void ath12k_dp_mon_tx_desc_free(struct list_head *local_list,
  * Called from NAPI context when PPDU preparation fails or during
  * error recovery scenarios.
  */
-void ath12k_dp_tx_mon_flush_desc_list(struct ath12k_pdev_dp *dp_pdev,
-				      struct list_head *mon_desc_list)
+static void
+ath12k_dp_tx_mon_flush_desc_list(struct ath12k_pdev_dp *dp_pdev,
+				 struct list_head *mon_desc_list)
 {
 	struct ath12k_dp_mon_desc *tmp_desc, *entry_desc;
 	struct ath12k_dp_mon *dp_mon = dp_pdev->dp_mon_pdev->dp_mon;
+	struct ath12k_dp_mon_status_desc desc;
 
 	list_for_each_entry_safe(entry_desc, tmp_desc,
 				 mon_desc_list, list) {
@@ -45,6 +200,16 @@ void ath12k_dp_tx_mon_flush_desc_list(struct ath12k_pdev_dp *dp_pdev,
 		ath12k_core_dma_unmap_page(dp_pdev->dp->dev, entry_desc->paddr,
 					   ATH12K_DP_MON_TX_BUF_SIZE,
 					   DMA_FROM_DEVICE);
+
+		desc.mon_buf = entry_desc->mon_buf;
+		desc.buf_len = entry_desc->buf_len;
+		desc.end_of_ppdu = entry_desc->end_of_ppdu;
+
+		ath12k_dp_tx_mon_flush_tlv(dp_pdev, &desc);
+
+		entry_desc->mon_buf = NULL;
+		entry_desc->buf_len = 0;
+		entry_desc->end_of_ppdu = false;
 	}
 
 	/* Free descriptor list */

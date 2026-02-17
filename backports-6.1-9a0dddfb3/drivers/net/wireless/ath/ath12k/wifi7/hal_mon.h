@@ -1398,4 +1398,6 @@ int
 ath12k_wifi7_extract_tx_mon_ring_desc(struct ath12k_hal *hal,
 				      void *ring_entry,
 				      struct ath12k_mon_ring_desc_info *desc_info);
+
+bool ath12k_wifi7_is_mon_buf_addr_tlv(u32 tlv_tag);
 #endif

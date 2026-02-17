@@ -71,6 +71,7 @@
 #define DP_MON_RX_HDR_LEN			128
 
 #define DP_SMART_MON_VALID       BIT(0)
+#define ATH12K_DP_MON_STATUS_BUF   320
 
 struct ath12k_mon_data;
 struct dp_mon_rx_filter;
@@ -431,10 +432,59 @@ struct ath12k_pdev_mon_dp_stats {
  * @truncated_ppdu: Incremented when PPDUs are truncated due to insufficient
  *                  buffer space or hardware limitations. This can indicate
  *                  buffer pool exhaustion.
+ * @tx_pkt_tlv_free: Count of TX packet TLV buffers freed back to the pool.
+ *                  Used for tracking buffer lifecycle and detecting leaks
+ * @tx_status_buf_free: Count of TX status buffers freed back to the pool.
  */
 struct ath12k_pdev_tx_mon_stats {
 	u32 empty_descriptors;
 	u32 truncated_ppdu;
+	u32 tx_pkt_tlv_free;
+	u32 tx_status_buf_free;
+};
+
+/**
+ * struct ath12k_dp_mon_status_desc - TX Monitor Status Descriptor
+ * @paddr: Physical address of the monitor buffer
+ * @mon_buf: Virtual address pointer to monitor buffer containing TLV data
+ * @buf_len: Length of valid data in the monitor buffer
+ * @end_of_ppdu: Flag indicating if this descriptor contains end of PPDU marker
+ *
+ * This structure represents a single status descriptor containing TLV fragments
+ * from the TX monitor destination ring. Multiple status descriptors may be
+ * required to represent a complete PPDU.
+ *
+ * The buffer pointed to by mon_buf contains raw TLV data from hardware that
+ * needs to be parsed to extract PPDU information for frame generation.
+ */
+struct ath12k_dp_mon_status_desc {
+	dma_addr_t paddr;
+	u8 *mon_buf;
+	u32 buf_len;
+	bool end_of_ppdu;
+};
+
+/**
+ * struct ath12k_dp_mon_ppdu_desc - TX Monitor PPDU Descriptor
+ * @list: List entry for PPDU descriptor management
+ * @ppdu_id: Unique PPDU identifier from hardware
+ * @timestamp: PPDU timestamp for correlation
+ * @status_desc: Array of status descriptors containing TLV data
+ * @status_desc_cnt: Number of valid status descriptors in the array
+ *
+ * This structure represents a complete PPDU for TX monitor processing.
+ * It aggregates multiple status descriptors that contain TLV fragments
+ * for a single PPDU. Used by both WiFi7 and WiFi8 implementations.
+ *
+ * The structure is allocated from a free list during ring processing
+ * and queued for work queue processing when end_of_ppdu is detected.
+ */
+struct ath12k_dp_mon_ppdu_desc {
+	struct list_head list;
+	u32 ppdu_id;
+	u32 timestamp;
+	struct ath12k_dp_mon_status_desc status_desc[ATH12K_DP_MON_STATUS_BUF];
+	u32 status_desc_cnt;
 };
 
 /**
