@@ -1736,6 +1736,9 @@ struct ath12k_pdev_cap {
 	u32 ext_mld_cap;
 	bool nss_ratio_enabled;
 	u8 nss_ratio_info;
+	/* Advertised max NSS from FW (11BN specific) */
+	u8 max_tx_nss;
+	u8 max_rx_nss;
 	u32 scan_radio_caps;
 };
 

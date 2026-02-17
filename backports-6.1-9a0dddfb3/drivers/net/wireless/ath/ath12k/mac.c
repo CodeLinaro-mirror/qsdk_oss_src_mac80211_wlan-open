@@ -2050,6 +2050,14 @@ static int ath12k_mac_monitor_vdev_start(struct ath12k *ar, int vdev_id,
 	arg.pref_rx_streams = ar->num_rx_chains;
 	arg.punct_bitmap = 0xFFFFFFFF;
 
+	/* Cap preferred streams on monitor vdev if FW provides max NSS */
+	if (ar->pdev->cap.max_tx_nss)
+		arg.pref_tx_streams = min_t(u8, arg.pref_tx_streams,
+					    ar->pdev->cap.max_tx_nss);
+	if (ar->pdev->cap.max_rx_nss)
+		arg.pref_rx_streams = min_t(u8, arg.pref_rx_streams,
+					    ar->pdev->cap.max_rx_nss);
+
 	arg.passive |= !!(chandef->chan->flags & IEEE80211_CHAN_NO_IR);
 
 	reinit_completion(&ar->vdev_setup_done);
@@ -3861,6 +3869,26 @@ ath12k_peer_assoc_h_vht_limit(u16 tx_mcs_set,
 	return tx_mcs_set;
 }
 
+/* Helper to compute effective TX chains capped by FW max NSS */
+static inline u32 ath12k_effective_tx_chains(struct ath12k *ar, u32 chainmask)
+{
+	u32 chains = hweight32(chainmask);
+
+	if (ar->pdev->cap.max_tx_nss)
+		return min_t(u32, chains, ar->pdev->cap.max_tx_nss);
+	return chains;
+}
+
+/* Helper to compute effective RX chains capped by FW max NSS */
+static inline u32 ath12k_effective_rx_chains(struct ath12k *ar, u32 chainmask)
+{
+	u32 chains = hweight32(chainmask);
+
+	if (ar->pdev->cap.max_rx_nss)
+		return min_t(u32, chains, ar->pdev->cap.max_rx_nss);
+	return chains;
+}
+
 static u8 ath12k_get_nss_160mhz(struct ath12k *ar,
 				u8 max_nss)
 {
@@ -5379,7 +5407,8 @@ static void ath12k_peer_assoc_prepare(struct ath12k *ar,
 	arsta->peer_nss = arg->peer_nss;
 
 	WARN_ON_ONCE(arsta->peer_nss < 1 ||
-             (arsta->peer_nss > hweight32(ar->pdev->cap.tx_chain_mask)));
+		(arsta->peer_nss > ath12k_effective_tx_chains(ar,
+							ar->pdev->cap.tx_chain_mask)));
 
 	/* TODO: amsdu_disable req? */
 }
@@ -16084,7 +16113,7 @@ int ath12k_mac_set_tx_antenna(struct ath12k *ar, u32 tx_ant)
 
 	ar->cfg_tx_chainmask = tx_ant;
 
-	ar->num_tx_chains = hweight32(tx_ant);
+	ar->num_tx_chains = ath12k_effective_tx_chains(ar, tx_ant);
 
 	/* Reload HT/VHT/HE capability */
 	ath12k_mac_setup_ht_vht_cap(ar, &ar->pdev->cap, NULL);
@@ -16124,7 +16153,7 @@ int ath12k_mac_set_rx_antenna(struct ath12k *ar, u32 rx_ant)
 
 	ar->cfg_rx_chainmask = rx_ant;
 
-	ar->num_rx_chains = hweight32(rx_ant);
+	ar->num_rx_chains = ath12k_effective_rx_chains(ar, rx_ant);
 
 	/* Reload HT/VHT/HE capability */
 	ath12k_mac_setup_ht_vht_cap(ar, &ar->pdev->cap, NULL);
@@ -16174,8 +16203,8 @@ static int __ath12k_set_antenna(struct ath12k *ar, u32 tx_ant, u32 rx_ant,
 	ar->cfg_tx_chainmask = tx_ant;
 	ar->cfg_rx_chainmask = rx_ant;
 
-	ar->num_tx_chains = hweight32(tx_ant);
-	ar->num_rx_chains = hweight32(rx_ant);
+	ar->num_tx_chains = ath12k_effective_tx_chains(ar, tx_ant);
+	ar->num_rx_chains = ath12k_effective_rx_chains(ar, rx_ant);
 
 	/* Reload HT/VHT/HE capability */
 	ath12k_mac_setup_ht_vht_cap(ar, &ar->pdev->cap, NULL);
@@ -17997,7 +18026,10 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 	ath12k_mac_update_vif_offload(arvif);
 
+	/* Set vdev NSS, cap by FW max Tx NSS if provided */
 	nss = hweight32(ar->cfg_tx_chainmask) ? : 1;
+	if (ar->pdev->cap.max_tx_nss)
+		nss = min_t(u16, nss, ar->pdev->cap.max_tx_nss);
 	ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
 					    WMI_VDEV_PARAM_NSS, nss);
 	if (ret) {
@@ -19701,6 +19733,13 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 	arg.punct_bitmap = ~punct_bitmap;
 	arg.pref_tx_streams = ar->num_tx_chains;
 	arg.pref_rx_streams = ar->num_rx_chains;
+	/* Cap preferred streams if FW provides max NSS */
+	if (ar->pdev->cap.max_tx_nss)
+		arg.pref_tx_streams = min_t(u8, arg.pref_tx_streams,
+					    ar->pdev->cap.max_tx_nss);
+	if (ar->pdev->cap.max_rx_nss)
+		arg.pref_rx_streams = min_t(u8, arg.pref_rx_streams,
+					    ar->pdev->cap.max_rx_nss);
 
 	if (is_bridge_vdev)
 		arg.mbssid_flags = 0;
@@ -25700,8 +25739,8 @@ static int ath12k_mac_setup(struct ath12k *ar)
 
 	ar->cfg_tx_chainmask = pdev->cap.tx_chain_mask;
 	ar->cfg_rx_chainmask = pdev->cap.rx_chain_mask;
-	ar->num_tx_chains = hweight32(pdev->cap.tx_chain_mask);
-	ar->num_rx_chains = hweight32(pdev->cap.rx_chain_mask);
+	ar->num_tx_chains = ath12k_effective_tx_chains(ar, pdev->cap.tx_chain_mask);
+	ar->num_rx_chains = ath12k_effective_rx_chains(ar, pdev->cap.rx_chain_mask);
 	ar->scan.arvif = NULL;
 	ar->monitor_vdev_id = -1;
 	ar->monitor_started = false;
