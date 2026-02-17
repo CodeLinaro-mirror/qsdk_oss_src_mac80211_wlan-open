@@ -28,6 +28,9 @@
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 #include "../qcn_extns/ipa/dp_ipa.h"
 #endif
+#ifdef CPTCFG_EXT_IPA_STATS
+#include "../qcn_extns/ipa/dp_ipa_stats.h"
+#endif
 #include "../fse.h"
 
 #define ATH12K_DP_RX_FRAGMENT_TIMEOUT_MS (2 * HZ)
@@ -2701,9 +2704,15 @@ static inline void ath12k_wifi7_dp_rx_h_err_update_peer_stats(struct ath12k_pdev
 		switch(rxcb->err_rel_src) {
 		case HAL_WBM_REL_SRC_MODULE_REO:
 			DP_PEER_LINK_STATS_CNT(peer, wbm_err.reo_error[rxcb->err_code], 1, link_id);
+#ifdef CPTCFG_EXT_IPA_STATS
+			ath12k_dp_ipa_rx_error_stats(dp_pdev, rxcb, link_id);
+#endif
 			break;
 		case HAL_WBM_REL_SRC_MODULE_RXDMA:
 			DP_PEER_LINK_STATS_CNT(peer, wbm_err.rxdma_error[rxcb->err_code], 1, link_id);
+#ifdef CPTCFG_EXT_IPA_STATS
+			ath12k_dp_ipa_rx_error_stats(dp_pdev, rxcb, link_id);
+#endif
 			break;
 		default:
 			break;
