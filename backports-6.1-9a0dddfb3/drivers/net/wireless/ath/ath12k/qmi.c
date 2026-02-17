@@ -5280,6 +5280,16 @@ static void ath12k_qmi_ext_fw_bin_free(struct ath12k_base *ab,
 	ext_fw_bin_mem->size = 0;
 }
 
+static void ath12k_qmi_ext_fw_bin_clear(struct ath12k_base *ab)
+{
+	int type;
+
+	for (type = 0; type < QMI_WLANFW_EXT_FW_MAX_BIN_TYPE; type++) {
+		if (ab->qmi.ext_fw_bin_mem[type].vaddr)
+			ath12k_qmi_ext_fw_bin_free(ab, type);
+	}
+}
+
 static int ath12k_qmi_ext_fw_bin_load(struct ath12k_base *ab,
 				      enum qmi_wlanfw_ext_fw_bin_type_enum_v01 type)
 {
@@ -5476,10 +5486,6 @@ int ath12k_qmi_wlanfw_ext_fw_bin_mem_info_send(struct ath12k_base *ab)
 		goto out;
 	}
 out:
-	for (type = 0; type < QMI_WLANFW_EXT_FW_MAX_BIN_TYPE; type++) {
-		if (ab->qmi.ext_fw_bin_mem[type].vaddr)
-			ath12k_qmi_ext_fw_bin_free(ab, type);
-	}
 	kfree(req);
 	kfree(resp);
 
@@ -6763,6 +6769,7 @@ void ath12k_qmi_deinit_service(struct ath12k_base *ab)
 	cancel_work_sync(&ab->qmi.event_work);
 	destroy_workqueue(ab->qmi.event_wq);
 	ath12k_qmi_m3_free(ab);
+	ath12k_qmi_ext_fw_bin_clear(ab);
 	ath12k_qmi_free_resource(ab);
 #ifdef CPTCFG_ATHDEBUG
 	athdbg_if_get_service(ab, ATHDBG_SRV_QMI_DEINIT);
