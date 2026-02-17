@@ -270,7 +270,7 @@ int ath12k_wifi8_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 			&peer_ext_ctx->tx_flow_info.assoc_hw_links_bitmap);
 
 		if (dp_peer->is_vdev_peer) {
-			vdev_peer_link_id = i;
+			vdev_peer_link_id = dp_peer->hw_links[link_peer->hw_link_id];
 			break;
 		}
 	}
