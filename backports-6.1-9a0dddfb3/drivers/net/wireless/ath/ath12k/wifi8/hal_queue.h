@@ -64,6 +64,7 @@ struct hal_uniform_descriptor_header {
 	__le32 info0;
 } __packed;
 
+#define HAL_TX_MSDU_FLOW_QUEUE_SAM_ID                      GENMASK(12, 0)
 #define HAL_TX_MSDU_FLOW_FLOW_VALID                        BIT(20)
 #define HAL_TX_MSDU_FLOW_EMPTY_TO_N_EMPTY                  BIT(21)
 #define HAL_TX_MSDU_FLOW_N_EMPTY_TO_EMPTY                  BIT(22)
@@ -135,6 +136,12 @@ struct hal_tx_msdu_flow {
 	__le32 info32;
 } __packed;
 
+struct ath12k_tx_rate_stats_info {
+	__le32 info0;
+	__le32 info1;
+	__le32 info2;
+} __packed;
+
 #define HAL_TX_MPDU_QUEUE_HEAD_MLO_VALID                        BIT(0)
 #define HAL_TX_MPDU_QUEUE_HEAD_MPDU_TYPE                        BIT(15)
 
@@ -155,6 +162,8 @@ struct hal_tx_msdu_flow {
 #define HAL_TX_MPDU_QUEUE_HEAD_LINK0_ID                         GENMASK(19, 17)
 #define HAL_TX_MPDU_QUEUE_HEAD_LINK1_ID                         GENMASK(22, 20)
 #define HAL_TX_MPDU_QUEUE_HEAD_LINK2_ID                         GENMASK(25, 23)
+
+#define HAL_TX_MPDU_QUEUE_HEAD_SAM_ID                           GENMASK(10, 0)
 
 struct hal_tx_mpdu_queue_head {
 	struct hal_uniform_descriptor_header header;
@@ -180,20 +189,17 @@ struct hal_tx_mpdu_queue_head {
 	__le32 info16;
 	__le32 info17;
 	__le32 info18;
-	__le32 info19; // tx_rate_stats_info link0
-	__le32 info20; // tx_rate_stats_info link0
-	__le32 info21; // tx_rate_stats_info link1
-	__le32 info22; // tx_rate_stats_info link1
-	__le32 info23; // tx_rate_stats_info link2
-	__le32 info24; // tx_rate_stats_info link2
+	struct ath12k_tx_rate_stats_info tx_rate_stats_info_link0;
+	struct ath12k_tx_rate_stats_info tx_rate_stats_info_link1;
+	struct ath12k_tx_rate_stats_info tx_rate_stats_info_link2;
 	struct ath12k_buffer_addr buf_addr_info_link0;
 	struct ath12k_buffer_addr buf_addr_info_link1;
 	struct ath12k_buffer_addr buf_addr_info_link2;
 	struct ath12k_buffer_addr buf_addr_info_link3;
-	struct ath12k_buffer_addr buf_addr_info_next_fes_ext;
-	struct ath12k_buffer_addr buf_addr_info_next_fes_link_desc;
-	__le32 info25;
-	__le32 info26;
+	struct ath12k_buffer_addr last_listed_mpdu_queue_ext_pointer;
+	__le32 info19;
+	__le32 info20;
+	__le32 info21;
 } __packed;
 
 #define HAL_TXPT_CLASSIFY_TQM_FLOW_PTR_NON_UDP_39_8     GENMASK(31, 0)
