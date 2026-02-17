@@ -3241,6 +3241,17 @@ void ath12k_mac_peer_event_callback(struct ath12k_event_queue *queue,
 	/* Read and clear flags atomically from event structure */
 	flags = atomic_xchg(&event->flags, 0);
 	ath12k_mac_handle_peer_event(ahvif, peer, flags);
+
+	clear_bit(ATH12K_EVENT_QUEUED, &peer_event->state);
+
+	/* Close the race: producer may have set new flags after our xchg
+	 * but saw EVENT_QUEUED bit set and skipped enqueue.
+	 */
+	if (atomic_read(&event->flags)) {
+		if (!test_and_set_bit(ATH12K_EVENT_QUEUED, &peer_event->state))
+			ath12k_event_enqueue(queue, event);
+	}
+
 	rcu_read_unlock();
 }
 
