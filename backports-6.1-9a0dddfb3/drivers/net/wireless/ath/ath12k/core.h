@@ -1842,7 +1842,7 @@ struct ath12k_umac_reset_task;
  * @csd: Per-CPU call_single_data for async SMP calls
  */
 struct ath12k_mlo_dp_umac_reset {
-	atomic_t response_chip;
+	unsigned long task_map;                /* Bitmap tracking active tasks */
 	atomic_t request_chip;
 	spinlock_t lock;
 	u8 umac_reset_info;
