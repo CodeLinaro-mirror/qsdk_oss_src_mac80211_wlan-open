@@ -309,6 +309,10 @@ int ath12k_dp_umac_reset_init(struct ath12k_base *ab)
 	umac_reset->magic_num = ATH12K_DP_UMAC_RESET_SHMEM_MAGIC_NUM;
 	umac_reset->post_send_cb = NULL;
 
+	/* Initialize SKB queues for deferred cleanup */
+	skb_queue_head_init(&umac_reset->tx_skb_queue);
+	skb_queue_head_init(&umac_reset->rx_skb_queue);
+
 	alloc_size = sizeof(struct ath12k_dp_htt_umac_reset_recovery_msg_shmem_t) +
 			    ATH12K_DP_UMAC_RESET_SHMEM_ALIGN - 1;
 
