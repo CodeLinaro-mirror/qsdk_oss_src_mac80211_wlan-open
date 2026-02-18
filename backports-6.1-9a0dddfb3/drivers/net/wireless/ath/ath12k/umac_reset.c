@@ -476,16 +476,17 @@ int ath12k_umac_reset_initiate_recovery(struct ath12k_base *ab,
 
 	spin_lock_bh(&mlo_umac_reset->lock);
 
-	if (mlo_umac_reset->umac_reset_info &
-	    ATH12K_IS_UMAC_RESET_IN_PROGRESS) {
+	if (mlo_umac_reset->umac_reset_info & ATH12K_IS_UMAC_RESET_IN_PROGRESS) {
 		spin_unlock_bh(&mlo_umac_reset->lock);
 		ath12k_warn(ab, "UMAC RECOVERY IS IN PROGRESS\n");
 		WARN_ON(1);
 		return -ECANCELED;
 	}
+
 	mlo_umac_reset->umac_reset_info = BIT(0); /* UMAC recovery is in progress */
 	if (target_recovery)
 		mlo_umac_reset->umac_reset_info |= BIT(1); /* Target recovery */
+
 	atomic_set(&mlo_umac_reset->response_chip, 0);
 	mlo_umac_reset->initiator_chip = ab->device_id;
 
@@ -596,12 +597,48 @@ void ath12k_umac_reset_handle_post_reset_complete(struct ath12k_base *ab)
 	return;
 }
 
-void ath12k_dp_umac_reset_action(struct ath12k_base *ab,
-				 enum dp_umac_reset_recover_action rx_event)
+static void ath12k_umac_reset_handle_init_recovery(struct ath12k_base *ab)
 {
-	int ret;
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
+	int tx_event = ATH12K_UMAC_RESET_TX_CMD_TRIGGER_DONE;
+
+	if (mlo_umac_reset->initiator_chip == ab->device_id)
+		ath12k_umac_reset_notify_target(ab, tx_event);
+}
+
+/* Static table mapping rx_event to handler functions */
+typedef void (*umac_reset_handler_fn)(struct ath12k_base *ab);
+
+static const umac_reset_handler_fn umac_reset_handlers[] = {
+	[ATH12K_UMAC_RESET_RX_EVENT_NONE] = NULL,
+	[ATH12K_UMAC_RESET_INIT_UMAC_RECOVERY] =
+					ath12k_umac_reset_handle_init_recovery,
+	[ATH12K_UMAC_RESET_INIT_TARGET_RECOVERY_SYNC_USING_UMAC] =
+					ath12k_umac_reset_handle_init_recovery,
+	[ATH12K_UMAC_RESET_DO_PRE_RESET] = ath12k_umac_reset_handle_pre_reset,
+	[ATH12K_UMAC_RESET_DO_POST_RESET_START] =
+					ath12k_umac_reset_handle_post_reset_start,
+	[ATH12K_UMAC_RESET_DO_POST_RESET_COMPLETE] =
+					ath12k_umac_reset_handle_post_reset_complete,
+};
+
+static int
+ath12k_dp_umac_reset_check_n_change_state(struct ath12k_base *ab,
+					  enum dp_umac_reset_recover_action rx_event)
+{
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
 	bool target_recovery = false;
 	enum ath12k_umac_reset_state next_state;
+	int ret = 0;
+
+	/* Validate rx_event is within valid range */
+	if (rx_event <= ATH12K_UMAC_RESET_RX_EVENT_NONE ||
+	    rx_event >= ARRAY_SIZE(umac_reset_handlers)) {
+		ath12k_warn(ab, "Invalid UMAC RESET event: %d\n", rx_event);
+		return -EINVAL;
+	}
 
 	switch(rx_event) {
 	case ATH12K_UMAC_RESET_INIT_TARGET_RECOVERY_SYNC_USING_UMAC:
@@ -609,11 +646,14 @@ void ath12k_dp_umac_reset_action(struct ath12k_base *ab,
 		fallthrough;
 	case ATH12K_UMAC_RESET_INIT_UMAC_RECOVERY:
 		if (!target_recovery && ab->is_reset)
-			return;
+			return ret;
 
 		ret = ath12k_umac_reset_initiate_recovery(ab, target_recovery);
-		if (ret)
-			ath12k_umac_reset_notify_target(ab, ATH12K_UMAC_RESET_TX_CMD_TRIGGER_DONE);
+		if (ret) {
+			ath12k_warn(ab, "Failed to transition to initate Umac recovery\n");
+			break;
+		}
+		atomic_set(&mlo_umac_reset->request_chip, ag->num_started);
 
 		break;
 	case ATH12K_UMAC_RESET_DO_PRE_RESET:
@@ -624,7 +664,8 @@ void ath12k_dp_umac_reset_action(struct ath12k_base *ab,
 			ath12k_warn(ab, "Failed to transition to PRE_RESET_START state\n");
 			break;
 		}
-		ath12k_umac_reset_handle_pre_reset(ab);
+
+		atomic_inc(&mlo_umac_reset->request_chip);
 		break;
 	case ATH12K_UMAC_RESET_DO_POST_RESET_START:
 		/* Transition to POST_RESET_START state */
@@ -634,7 +675,7 @@ void ath12k_dp_umac_reset_action(struct ath12k_base *ab,
 			ath12k_warn(ab, "Failed to transition to POST_RESET_START state\n");
 			break;
 		}
-		ath12k_umac_reset_handle_post_reset_start(ab);
+		atomic_inc(&mlo_umac_reset->request_chip);
 		break;
 	case ATH12K_UMAC_RESET_DO_POST_RESET_COMPLETE:
 		/* Transition to POST_RESET_COMPLETE state */
@@ -644,12 +685,14 @@ void ath12k_dp_umac_reset_action(struct ath12k_base *ab,
 			ath12k_warn(ab, "Failed to transition to POST_RESET_COMPLETE state\n");
 			break;
 		}
-		ath12k_umac_reset_handle_post_reset_complete(ab);
+		atomic_inc(&mlo_umac_reset->request_chip);
 		break;
 	default:
 		ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET, "Unknown UMAC RESET event received\n");
 		break;
 	}
+
+	return ret;
 }
 
 irqreturn_t ath12k_umac_reset_interrupt_handler(int irq, void *arg)
@@ -719,10 +762,14 @@ irqreturn_t ath12k_umac_reset_interrupt_handler(int irq, void *arg)
 void ath12k_dp_umac_reset_handle(struct ath12k_base *ab)
 {
 	struct ath12k_dp_umac_reset *umac_reset = &ab->dp_umac_reset;
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
 	struct ath12k_dp_htt_umac_reset_recovery_msg_shmem_t *shmem_vaddr;
+	struct ath12k_base *partner_ab;
 	enum ath12k_umac_reset_state current_state;
 	int rx_event, num_event = 0;
 	u32 t2h_msg;
+	int i;
 
 	shmem_vaddr = umac_reset->shmem_vaddr_aligned;
 	if (!shmem_vaddr) {
@@ -780,7 +827,41 @@ void ath12k_dp_umac_reset_handle(struct ath12k_base *ab)
 		return;
 	}
 
-	ath12k_dp_umac_reset_action(ab, rx_event);
+	/* First, validate the event */
+	if (ath12k_dp_umac_reset_check_n_change_state(ab, rx_event)) {
+		ath12k_warn(ab, "UMAC reset event validation failed for event %d\n",
+			    rx_event);
+		return;
+	}
+
+	/* Check if all chips have sent requests */
+	if (atomic_read(&mlo_umac_reset->request_chip) < ag->num_started) {
+		ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET,
+			   "Not all chips ready: request_chip=%d num_started=%d, exiting early\n",
+			   atomic_read(&mlo_umac_reset->request_chip), ag->num_started);
+		return;
+	}
+
+	/* Reset request counter after processing all chips */
+	atomic_set(&mlo_umac_reset->request_chip, 0);
+
+	/* All chips have sent requests - process event for entire group serially */
+	ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET,
+		   "All chips ready: request_chip=%d, processing event for entire group\n",
+		   atomic_read(&mlo_umac_reset->request_chip));
+
+	/* Process event for all partner devices in the group */
+	for (i = 0; i < ag->num_devices; i++) {
+		partner_ab = ag->ab[i];
+
+		if (partner_ab->is_bypassed ||
+		    test_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags))
+			continue;
+
+		if (umac_reset_handlers[rx_event])
+			umac_reset_handlers[rx_event](partner_ab);
+	}
+
 	return;
 }
 

@@ -1824,11 +1824,20 @@ struct ath12k_stats_work_context {
 #define ATH12K_REPORT_LOW_ACK_NUM_PKT   ATH12K_REPORT_LOW_ACK_ALL
 #define ATH12K_IS_UMAC_RESET_IN_PROGRESS        BIT(0)
 
+ /**
+  * struct ath12k_mlo_dp_umac_reset:  mlo umac_reset context
+  * @response_chip : Number of chips the event is handled for
+  * @request_chip : Number of chips send the event
+  * @lock : locl for prtecting the umac_reset context
+  * @umac_reset_info: place holder for umac reset related falgs
+  * @initiator_chip: device_id of the initiator chip
+  */
 struct ath12k_mlo_dp_umac_reset {
-        atomic_t response_chip;
-        spinlock_t lock;
-        u8 umac_reset_info;
-        u8 initiator_chip;
+	atomic_t response_chip;
+	atomic_t request_chip;
+	spinlock_t lock;
+	u8 umac_reset_info;
+	u8 initiator_chip;
 };
 
 #define WSI_INVALID_ORDER	0xFF

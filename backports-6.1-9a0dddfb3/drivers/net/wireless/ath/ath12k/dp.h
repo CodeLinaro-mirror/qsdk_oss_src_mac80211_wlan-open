@@ -1346,12 +1346,12 @@ struct ath12k_rx_desc_info *ath12k_dp_get_rx_desc(struct ath12k_dp *dp,
 						  u32 cookie);
 struct ath12k_tx_desc_info *ath12k_dp_get_tx_desc(struct ath12k_dp *dp,
 						  u32 desc_id);
-bool ath12k_dp_wmask_compaction_rx_tlv_supported(struct ath12k_base *ab);
 bool ath12k_dp_umac_reset_in_progress(struct ath12k_base *ab);
+bool ath12k_dp_wmask_compaction_rx_tlv_supported(struct ath12k_base *ab);
 void ath12k_umac_reset_notify_target_sync_and_send(struct ath12k_base *ab,
                                        enum dp_umac_reset_tx_cmd tx_event);
-void ath12k_umac_reset_handle_post_reset_start(struct ath12k_base *ab);
 bool ath12k_dp_umac_reset_in_progress(struct ath12k_base *ab);
+void ath12k_umac_reset_handle_post_reset_start(struct ath12k_base *ab);
 void ath12k_dp_reoq_lut_addr_reset(struct ath12k_dp *dp);
 void ath12k_dp_srng_msi_setup(struct ath12k_base *ab,
 			      struct hal_srng_params *ring_params,
