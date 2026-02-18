@@ -926,9 +926,6 @@ ath12k_dp_umac_reset_check_n_change_state(struct ath12k_base *ab,
 		target_recovery = true;
 		fallthrough;
 	case ATH12K_UMAC_RESET_INIT_UMAC_RECOVERY:
-		if (!target_recovery && ab->is_reset)
-			return ret;
-
 		ret = ath12k_umac_reset_initiate_recovery(ab, target_recovery);
 		if (ret) {
 			ath12k_warn(ab, "Failed to transition to initate Umac recovery\n");
