@@ -426,9 +426,11 @@ void ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *
 EXPORT_SYMBOL(ath12k_dp_rx_h_undecap_raw);
 
 static void ath12k_dp_rx_enqueue_free(struct ath12k_dp *dp,
-				      struct list_head *used_list)
+				      struct list_head *used_list,
+				      bool reuse)
 {
 	struct ath12k_rx_desc_info *rx_desc, *tmp_rx_desc;
+	struct ath12k_base *ab;
 	struct sk_buff *skb;
 	const void *end;
 
@@ -443,9 +445,19 @@ static void ath12k_dp_rx_enqueue_free(struct ath12k_dp *dp,
 			end = rx_desc->vaddr + DP_RX_BUFFER_SIZE;
 			ath12k_core_dmac_inv_range(rx_desc->vaddr, end);
 
-			dev_kfree_skb_any(skb);
+			/* Save SKB to queue instead of freeing */
+			if (reuse) {
+				ab = dp->ab;
+				skb_queue_tail(&ab->dp_umac_reset.rx_skb_queue, skb);
+			} else {
+				dev_kfree_skb_any(skb);
+			}
 		}
 		dp->device_stats.free_excess_alloc_skb++;
+
+		rx_desc->skb = NULL;
+		rx_desc->vaddr = NULL;
+		rx_desc->paddr = 0;
 	}
 	spin_lock_bh(&dp->rx_desc_lock);
 	list_splice_tail(used_list, &dp->rx_desc_free_list);
@@ -455,7 +467,7 @@ static void ath12k_dp_rx_enqueue_free(struct ath12k_dp *dp,
 /* Returns number of Rx buffers replenished */
 void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 				 struct hal_srng *srng,
-				 struct list_head *used_list)
+				 struct list_head *used_list, bool reuse)
 {
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_buffer_addr *desc;
@@ -466,39 +478,49 @@ void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 	int allocated_entries = 0;
 	bool is_dma_inv_done = false;
 
-	list_for_each_entry_safe(rx_desc, tmp_rx_desc, used_list, list) {
+	/* Check if descriptors are already initialized (reuse mode) */
+	if (reuse) {
+		/* Count entries for reuse */
+		list_for_each_entry_safe(rx_desc, tmp_rx_desc, used_list, list) {
+			allocated_entries++;
+		}
+	} else {
+		/* Normal mode: allocate and initialize new descriptors */
+		list_for_each_entry_safe(rx_desc, tmp_rx_desc, used_list, list) {
 #ifdef CPTCFG_MAC80211_SFE_SUPPORT
-		skb = netdev_alloc_skb_fast(NULL, DP_RX_BUFFER_SIZE);
+			skb = netdev_alloc_skb_fast(NULL, DP_RX_BUFFER_SIZE);
 #else
-		skb = dev_alloc_skb(DP_RX_BUFFER_SIZE);
+			skb = dev_alloc_skb(DP_RX_BUFFER_SIZE);
 #endif
-		if (unlikely(!skb))
-			break;
+			if (unlikely(!skb))
+				break;
 
 #ifndef CONFIG_IO_COHERENCY
-		if (unlikely(!skb->fast_recycled)) {
+			if (unlikely(!skb->fast_recycled)) {
 #ifndef PLATFORM_SDX85
-			dmac_inv_range_no_dsb(skb->data, skb->data + DP_RX_BUFFER_SIZE);
+				dmac_inv_range_no_dsb(skb->data,
+						      skb->data + DP_RX_BUFFER_SIZE);
 #endif
-			is_dma_inv_done = true;
-		}
+				is_dma_inv_done = true;
+			}
 #endif
-		paddr = virt_to_phys(skb->data);
-		if(unlikely(!paddr)) {
-			ath12k_dp_rx_skb_free(skb, dp, 0,
-					      DP_RX_ERR_DROP_REPLENISH);
-			break;
+			paddr = virt_to_phys(skb->data);
+			if (unlikely(!paddr)) {
+				ath12k_dp_rx_skb_free(skb, dp, 0,
+						      DP_RX_ERR_DROP_REPLENISH);
+				break;
+			}
+
+			allocated_entries++;
+			rx_desc->skb = skb;
+			rx_desc->paddr = paddr;
+			rx_desc->vaddr = skb->data;
+			rx_desc->is_frag = 0;
 		}
 
-		allocated_entries++;
-		rx_desc->skb = skb;
-		rx_desc->paddr = paddr;
-		rx_desc->vaddr = skb->data;
-		rx_desc->is_frag = 0;
+		if (unlikely(is_dma_inv_done))
+			dsb(st);
 	}
-
-	if (unlikely(is_dma_inv_done))
-		dsb(st);
 
 	spin_lock_bh(&srng->lock);
 	ath12k_hal_srng_access_begin(ab, srng);
@@ -524,7 +546,7 @@ out:
 	spin_unlock_bh(&srng->lock);
 
 	if (unlikely(!list_empty(used_list)))
-		ath12k_dp_rx_enqueue_free(dp, used_list);
+		ath12k_dp_rx_enqueue_free(dp, used_list, reuse);
 
 }
 EXPORT_SYMBOL(ath12k_dp_rx_bufs_replenish);
@@ -542,7 +564,7 @@ static int ath12k_dp_rxdma_ring_buf_setup(struct ath12k_base *ab,
 	refill_srng = &ab->hal.srng_list[rx_ring->refill_buf_ring.ring_id];
 	req_entries = ath12k_dp_get_req_entries_from_buf_ring(ab, refill_srng, &list);
 	if (req_entries)
-		ath12k_dp_rx_bufs_replenish(ab->dp, refill_srng, &list);
+		ath12k_dp_rx_bufs_replenish(ab->dp, refill_srng, &list, false);
 
 	return 0;
 }

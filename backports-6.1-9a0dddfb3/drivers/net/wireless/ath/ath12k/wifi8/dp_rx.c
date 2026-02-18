@@ -1782,7 +1782,7 @@ int ath12k_wifi8_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 	refill_srng = &ab->hal.srng_list[dp_wifi8->wbm_refill_ring[cpu_id %
 					DP_WBM_REFILL_RING_MAX].ring_id];
 
-	ath12k_dp_rx_bufs_replenish(dp, refill_srng, &rx_desc_used_list);
+	ath12k_dp_rx_bufs_replenish(dp, refill_srng, &rx_desc_used_list, false);
 
 	ath12k_wifi8_dp_rx_process_received_packets(dp, napi, rx_status_desc,
 						    ring_id, total_msdu_reaped);
@@ -3301,7 +3301,7 @@ int ath12k_wifi8_dp_rx_process_err(struct ath12k_dp *dp,
 
 	refill_srng = &ab->hal.srng_list[dp_wifi8->wbm_refill_ring[cpu_id %
 					DP_WBM_REFILL_RING_MAX].ring_id];
-	ath12k_dp_rx_bufs_replenish(dp, refill_srng, &rx_desc_used_list);
+	ath12k_dp_rx_bufs_replenish(dp, refill_srng, &rx_desc_used_list, false);
 
 	rcu_read_lock();
 	while ((msdu = __skb_dequeue(&msdu_list))) {
@@ -4135,7 +4135,7 @@ int ath12k_wifi8_dp_rx_wbm_buf_ring_init(struct ath12k_base *ab)
 	idle_buf_srng = &ab->hal.srng_list[dp_wifi8->wbm_idle_buf_ring.ring_id];
 	req_entries = ath12k_dp_get_req_entries_from_buf_ring(ab, idle_buf_srng, &list);
 	if (req_entries)
-		ath12k_dp_rx_bufs_replenish(ab->dp, idle_buf_srng, &list);
+		ath12k_dp_rx_bufs_replenish(ab->dp, idle_buf_srng, &list, false);
 
 	return 0;
 }

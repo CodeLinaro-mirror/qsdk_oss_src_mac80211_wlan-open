@@ -1424,7 +1424,6 @@ void ath12k_dp_ppeds_tx_desc_cleanup(struct ath12k_base *ab);
 void ath12k_dp_srng_hw_ring_disable(struct ath12k_base *ab);
 void ath12k_dp_umac_tx_desc_cleanup(struct ath12k_base *ab);
 void ath12k_dp_umac_rx_desc_cleanup(struct ath12k_base *ab);
-int ath12k_dp_rxdma_ring_setup(struct ath12k_base *ab);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 void ath12k_ppeds_reinject_handler(struct ath12k_base *ab,
 				   struct ath12k_ppeds_tx_desc_info *tx_desc,

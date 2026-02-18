@@ -147,7 +147,7 @@ static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 								      refill_srng,
 								      &list);
 		if (req_entries)
-			ath12k_dp_rx_bufs_replenish(dp, refill_srng, &list);
+			ath12k_dp_rx_bufs_replenish(dp, refill_srng, &list, false);
 	}
 
 	if (dp->hw_params->ring_mask->host2rxmon[grp_id])
