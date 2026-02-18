@@ -12,7 +12,7 @@
 #include "../ppe.h"
 #endif
 
-void ath12k_wifi7_umac_reset_handle_pre_reset(struct ath12k_base *ab)
+static void ath12k_wifi7_umac_reset_handle_pre_reset(struct ath12k_base *ab)
 {
 	struct ath12k_hw_group *ag = ab->ag;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
@@ -42,7 +42,17 @@ void ath12k_wifi7_umac_reset_handle_pre_reset(struct ath12k_base *ab)
 	ath12k_dp_clear_link_desc_pool(dp);
 }
 
-void ath12k_wifi7_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
+void ath12k_wifi7_umac_reset_handle_pre_reset_wrapper(struct ath12k_base *ab)
+{
+	struct ath12k_hw_group *ag = ab->ag;
+
+	ath12k_umac_reset_enqueue_task(ag,
+				       ath12k_wifi7_umac_reset_handle_pre_reset,
+				       ab,
+				       ATH12K_UMAC_RESET_DO_PRE_RESET);
+}
+
+static void ath12k_wifi7_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp;
 	enum dp_umac_reset_tx_cmd tx_event;
@@ -109,7 +119,17 @@ void ath12k_wifi7_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 	ath12k_umac_reset_notify_target_sync_and_send(ab, tx_event);
 }
 
-void ath12k_wifi7_umac_reset_handle_post_reset_complete(struct ath12k_base *ab)
+void ath12k_wifi7_umac_reset_handle_post_reset_start_wrapper(struct ath12k_base *ab)
+{
+	struct ath12k_hw_group *ag = ab->ag;
+
+	ath12k_umac_reset_enqueue_task(ag,
+				       ath12k_wifi7_umac_reset_handle_post_reset_start,
+				       ab,
+				       ATH12K_UMAC_RESET_DO_POST_RESET_START);
+}
+
+static void ath12k_wifi7_umac_reset_handle_post_reset_complete(struct ath12k_base *ab)
 {
 	enum dp_umac_reset_tx_cmd tx_event;
 	struct ath12k_hw_group *ag = ab->ag;
@@ -130,4 +150,14 @@ void ath12k_wifi7_umac_reset_handle_post_reset_complete(struct ath12k_base *ab)
 
 	tx_event = ATH12K_UMAC_RESET_TX_CMD_POST_RESET_COMPLETE_DONE;
 	ath12k_umac_reset_notify_target_sync_and_send(ab, tx_event);
+}
+
+void ath12k_wifi7_umac_reset_handle_post_reset_complete_wrapper(struct ath12k_base *ab)
+{
+	struct ath12k_hw_group *ag = ab->ag;
+
+	ath12k_umac_reset_enqueue_task(ag,
+				       ath12k_wifi7_umac_reset_handle_post_reset_complete,
+				       ab,
+				       ATH12K_UMAC_RESET_DO_POST_RESET_COMPLETE);
 }

@@ -552,11 +552,11 @@ static struct ath12k_dp_arch_ops ath12k_wifi7_dp_arch_ops = {
 	.dp_ext_tx = ath12k_wifi7_dp_ext_tx,
 
 	/* UMAC reset operations */
-	.umac_reset_handle_pre_reset = ath12k_wifi7_umac_reset_handle_pre_reset,
+	.umac_reset_handle_pre_reset = ath12k_wifi7_umac_reset_handle_pre_reset_wrapper,
 	.umac_reset_handle_post_reset_start =
-				ath12k_wifi7_umac_reset_handle_post_reset_start,
+			ath12k_wifi7_umac_reset_handle_post_reset_start_wrapper,
 	.umac_reset_handle_post_reset_complete =
-				ath12k_wifi7_umac_reset_handle_post_reset_complete,
+			ath12k_wifi7_umac_reset_handle_post_reset_complete_wrapper,
 };
 
 /* TODO: remove export once this file is built with wifi7 ko */
