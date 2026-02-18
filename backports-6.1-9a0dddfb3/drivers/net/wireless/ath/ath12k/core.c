@@ -52,6 +52,7 @@
 #include "mgmt_rx.h"
 #include "me.h"
 #include "qcn_extns/me_snoop_extn.h"
+#include "umac_reset.h"
 
 #ifdef CPTCFG_ATHDEBUG
 #include "athdbg_if.h"
@@ -4165,7 +4166,7 @@ bool ath12k_core_hw_group_create_ready(struct ath12k_hw_group *ag)
 static struct ath12k_hw_group *ath12k_core_hw_group_alloc(struct ath12k_base *ab)
 {
 	struct ath12k_hw_group *ag;
-	int count = 0;
+	int i, count = 0;
 
 	lockdep_assert_held(&ath12k_hw_group_mutex);
 
@@ -4200,6 +4201,17 @@ static struct ath12k_hw_group *ath12k_core_hw_group_alloc(struct ath12k_base *ab
 	/* Initialize UMAC reset synchronization counters */
 	atomic_set(&ag->mlo_umac_reset.request_chip, 0);
 	atomic_set(&ag->mlo_umac_reset.response_chip, 0);
+
+	/* Initialize multi-core task queue infrastructure */
+	INIT_LIST_HEAD(&ag->mlo_umac_reset.task_queue);
+	spin_lock_init(&ag->mlo_umac_reset.task_queue_lock);
+	atomic_set(&ag->mlo_umac_reset.task_id, 0);
+
+	/* Initialize high-priority tasklet for each possible CPU */
+	for (i = 0; i < num_possible_cpus(); i++) {
+		tasklet_setup(&ag->mlo_umac_reset.tasklet[i],
+			      ath12k_umac_reset_tasklet_handler_percpu);
+	}
 #ifdef CPTCFG_ATH12K_POWER_OPTIMIZATION
 	ath12k_global_ps_ctx.ag = ag;
 #endif
