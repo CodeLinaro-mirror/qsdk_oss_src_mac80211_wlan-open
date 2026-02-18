@@ -121,7 +121,8 @@ u32 ath12k_wifi8_dp_tx_get_header_length(struct ath12k_dp_hw_group *dp_hw_grp,
 {
 	u32 header_len = 0;
 
-	if (peer->is_sta_bss_peer_4addr || peer->is_11s_mesh_peer)
+	if (peer->is_sta_bss_peer_4addr ||
+	    (peer->is_11s_mesh_peer && !peer->is_vdev_peer))
 		header_len += ETH_ALEN;
 
 	header_len += ath12k_wifi8_dp_tx_get_he_header_length(dp_hw_grp,
