@@ -12,6 +12,7 @@
 #include <linux/of.h>
 #include <linux/of_graph.h>
 #include <linux/pci.h>
+#include <linux/kernel.h>
 #if defined(CONFIG_BRIDGE_MCAST_OFFLOAD)
 #include <linux/netfilter_bridge.h>
 #endif
@@ -4089,6 +4090,11 @@ static void ath12k_core_reset(struct work_struct *work)
 		    !ath12k_check_erp_power_down(ag)) ||
 		    ab->is_bypassed)
 			continue;
+		/* Skip recovery incase during reboot */
+		if (system_state == SYSTEM_RESTART) {
+			mutex_unlock(&ag->mutex);
+			return;
+		}
 
 		ath12k_qmi_free_resource(ab);
 		ath12k_hif_power_up(ab);
