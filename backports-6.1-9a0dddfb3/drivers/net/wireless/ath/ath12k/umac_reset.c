@@ -307,6 +307,7 @@ int ath12k_dp_umac_reset_init(struct ath12k_base *ab)
 
 	umac_reset = &ab->dp_umac_reset;
 	umac_reset->magic_num = ATH12K_DP_UMAC_RESET_SHMEM_MAGIC_NUM;
+	umac_reset->post_send_cb = NULL;
 
 	alloc_size = sizeof(struct ath12k_dp_htt_umac_reset_recovery_msg_shmem_t) +
 			    ATH12K_DP_UMAC_RESET_SHMEM_ALIGN - 1;
@@ -413,7 +414,7 @@ void ath12k_umac_reset_completion(struct ath12k_base *ab)
 	spin_unlock_bh(&mlo_umac_reset->lock);
 }
 
-void ath12k_umac_reset_send_htt(struct ath12k_base *ab, int tx_event)
+int ath12k_umac_reset_send_htt(struct ath12k_base *ab, int tx_event)
 {
 	struct ath12k_dp_umac_reset *umac_reset = &ab->dp_umac_reset;
 	struct ath12k_dp_htt_umac_reset_recovery_msg_shmem_t *shmem_vaddr_aligned;
@@ -430,9 +431,12 @@ void ath12k_umac_reset_send_htt(struct ath12k_base *ab, int tx_event)
 		ret = ath12k_htt_umac_reset_send_start_pre_reset_cmd(ab,
 								     is_initiator,
 								     is_target_recovery);
-		if (ret)
+		if (ret) {
 			ath12k_warn(ab, "Unable to send umac trigger\n");
-		/* Transition to PRE_RESET_DONE state */
+			return ret;
+		}
+
+		/* Transition to TRIGGER_SENT state */
 		next_state = ATH12K_UMAC_RESET_STATE_TRIGGER_SENT;
 		ath12k_umac_reset_state_transition(ab, next_state);
 		break;
@@ -457,6 +461,9 @@ void ath12k_umac_reset_send_htt(struct ath12k_base *ab, int tx_event)
 		next_state = ATH12K_UMAC_RESET_STATE_IDLE;
 		ath12k_umac_reset_state_transition(ab, next_state);
 		break;
+	default:
+		ath12k_warn(ab, "Invalid tx_event: %d\n", tx_event);
+		return -EINVAL;
         }
 
 	if (tx_event == ATH12K_UMAC_RESET_TX_CMD_POST_RESET_COMPLETE_DONE) {
@@ -464,14 +471,39 @@ void ath12k_umac_reset_send_htt(struct ath12k_base *ab, int tx_event)
 		ath12k_info(ab, "MLO UMAC Recovery completed\n");
 	}
 
-	return;
+	return 0;
+}
+
+/**
+ * ath12k_umac_reset_invoke_post_send_cb - Invoke and clear post-send callback
+ * @ab: Pointer to ath12k_base structure
+ *
+ * Reads the callback, clears it to NULL, then invokes it if non-NULL.
+ * This ensures the callback is only called once per stage.
+ */
+static void ath12k_umac_reset_invoke_post_send_cb(struct ath12k_base *ab)
+{
+	void (*cb)(struct ath12k_base *ab);
+
+	/* Read callback pointer safely */
+	cb = READ_ONCE(ab->dp_umac_reset.post_send_cb);
+
+	/* Clear callback before invocation to prevent re-entry */
+	WRITE_ONCE(ab->dp_umac_reset.post_send_cb, NULL);
+
+	/* Invoke callback if it was set */
+	if (cb) {
+		ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET,
+			   "Invoking post-send callback\n");
+		cb(ab);
+	}
 }
 
 int ath12k_umac_reset_notify_target(struct ath12k_base *ab, int tx_event)
 {
 	struct ath12k_base *partner_ab;
 	struct ath12k_hw_group *ag = ab->ag;
-	int i;
+	int i, ret;
 
 	for (i = 0; i < ag->num_devices; i++) {
 		partner_ab = ag->ab[i];
@@ -480,7 +512,17 @@ int ath12k_umac_reset_notify_target(struct ath12k_base *ab, int tx_event)
 		    test_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags))
 			continue;
 
-		ath12k_umac_reset_send_htt(partner_ab, tx_event);
+		/* Send HTT message to FW */
+		ret = ath12k_umac_reset_send_htt(partner_ab, tx_event);
+		if (ret) {
+			ath12k_warn(partner_ab,
+				    "Failed to send HTT message for tx_event %d (devide : %d): %d\n",
+				    tx_event, partner_ab->device_id, ret);
+			continue;
+		}
+
+		/* Invoke post-send callback after successful send */
+		ath12k_umac_reset_invoke_post_send_cb(partner_ab);
 	}
 
 	return 0;
@@ -615,6 +657,21 @@ void ath12k_dummy_pre_reset_callback(struct ath12k_base *ab)
 		   smp_processor_id());
 }
 EXPORT_SYMBOL(ath12k_dummy_pre_reset_callback);
+
+/**
+ * ath12k_umac_reset_set_post_send_cb - Set post-send callback
+ * @ab: Pointer to ath12k_base structure
+ * @cb: Callback function pointer (or NULL to clear)
+ *
+ * Sets the callback to be executed after FW message send completes.
+ * Uses WRITE_ONCE for safe concurrent access.
+ */
+void ath12k_umac_reset_set_post_send_cb(struct ath12k_base *ab,
+					void (*cb)(struct ath12k_base *ab))
+{
+	WRITE_ONCE(ab->dp_umac_reset.post_send_cb, cb);
+}
+EXPORT_SYMBOL(ath12k_umac_reset_set_post_send_cb);
 
 void ath12k_umac_reset_handle_pre_reset(struct ath12k_base *ab)
 {
@@ -794,6 +851,28 @@ void ath12k_umac_reset_tasklet_handler_percpu(struct tasklet_struct *t)
 		   "CPU %d: no more suitable tasks in queue\n", cpu);
 }
 
+/**
+ * ath12k_umac_reset_schedule_all_tasklets - Schedule tasklets on all online CPUs
+ * @ag: Hardware group
+ *
+ * Triggers SMP calls to schedule tasklets on all online CPUs if there are
+ * pending tasks in the queue. This allows parallel processing of enqueued tasks.
+ */
+void ath12k_umac_reset_schedule_all_tasklets(struct ath12k_hw_group *ag)
+{
+	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
+	int cpu;
+
+	/* Only schedule if there are tasks pending */
+	if (list_empty(&mlo_umac_reset->task_queue))
+		return;
+
+	/* Trigger SMP calls to schedule tasklets on all online CPUs */
+	for_each_online_cpu(cpu)
+		smp_call_function_single_async(cpu, &mlo_umac_reset->csd[cpu]);
+}
+EXPORT_SYMBOL(ath12k_umac_reset_schedule_all_tasklets);
+
 /* Static table mapping rx_event to handler functions */
 static const umac_reset_handler_fn umac_reset_handlers[] = {
 	[ATH12K_UMAC_RESET_RX_EVENT_NONE] = NULL,
@@ -967,6 +1046,7 @@ void ath12k_dp_umac_reset_handle(struct ath12k_base *ab)
 	enum ath12k_umac_reset_state current_state;
 	enum dp_umac_reset_tx_cmd tx_cmd;
 	int rx_event, num_event = 0;
+	unsigned long flags;
 	u32 t2h_msg;
 	int i;
 
@@ -1053,7 +1133,11 @@ void ath12k_dp_umac_reset_handle(struct ath12k_base *ab)
 	 * Without this there is a possibility of task_map becoming 0 before other tasks
 	 * are even enqueued and we end up sending response to firmware
 	 */
+	spin_lock_irqsave(&mlo_umac_reset->task_queue_lock, flags);
+
 	set_bit(0, &mlo_umac_reset->task_map);
+
+	spin_unlock_irqrestore(&mlo_umac_reset->task_queue_lock, flags);
 
 	/* Process event for all partner devices in the group */
 	for (i = 0; i < ag->num_devices; i++) {
@@ -1068,13 +1152,7 @@ void ath12k_dp_umac_reset_handle(struct ath12k_base *ab)
 	}
 
 	/* After handlers, schedule tasklets if tasks were enqueued */
-	if (!list_empty(&mlo_umac_reset->task_queue)) {
-		int cpu;
-		call_single_data_t *csd = &mlo_umac_reset->csd[cpu];
-
-		for_each_cpu(cpu, cpu_online_mask)
-			smp_call_function_single_async(cpu, csd);
-	}
+	ath12k_umac_reset_schedule_all_tasklets(ag);
 
 	/* At this poing we are assured that all tasks are enququed
 	 * and there is no premature response to firmware

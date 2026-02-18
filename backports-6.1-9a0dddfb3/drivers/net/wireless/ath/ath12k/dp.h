@@ -952,6 +952,12 @@ struct ath12k_dp_umac_reset {
 	/* Error handling */
 	u32 state_error_count;
 	enum ath12k_umac_reset_state error_from_state;
+
+	/* Post-send callback - executed after FW message send completes */
+	void (*post_send_cb)(struct ath12k_base *ab);
+
+	/* CPU affinity tracking for reset operations */
+	int pre_reset_cpu_id;  /* CPU that processed pre_reset clear task */
 };
 
 #define HTT_T2H_EXT_STATS_INFO1_DONE	BIT(11)

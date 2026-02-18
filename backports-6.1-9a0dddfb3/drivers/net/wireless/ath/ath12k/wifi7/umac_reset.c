@@ -12,10 +12,65 @@
 #include "../ppe.h"
 #endif
 
+/**
+ * ath12k_wifi7_clear_link_desc_pool_task - Task to clear link desc pool
+ * @ab: Pointer to ath12k_base structure
+ *
+ * This task clears the WBM link descriptor pool for a specific AB.
+ * Multiple instances of this task run in parallel (one per AB in the group).
+ */
+static void ath12k_wifi7_clear_link_desc_pool_task(struct ath12k_base *ab)
+{
+	/* Clear link desc pool for this AB */
+	ath12k_dp_clear_link_desc_pool(ath12k_ab_to_dp(ab));
+}
+
+/**
+ * ath12k_wifi7_post_pre_reset_send_cb - Callback after pre_reset message sent
+ * @ab: Pointer to ath12k_base structure
+ *
+ * This callback executes immediately after the pre_reset HTT message is
+ * successfully sent to firmware. It enqueues tasks to clear the WBM link
+ * descriptor pool for all ABs in the hardware group, then triggers SMP
+ * calls to schedule tasklets on all online CPUs for parallel processing.
+ */
+static void ath12k_wifi7_post_pre_reset_send_cb(struct ath12k_base *ab)
+{
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
+	unsigned long flags;
+
+	/* Enqueue clear_link_desc_pool task for the current ab */
+	if (ab->is_bypassed || test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags))
+		return;
+
+	spin_lock_irqsave(&mlo_umac_reset->task_queue_lock, flags);
+	/*
+	 * Mark bit 0 to avoid premature response to fw. Do this only
+	 * when post reset processing hasnt already started.
+	 */
+	if (bitmap_empty(&mlo_umac_reset->task_map, BITS_PER_LONG))
+		set_bit(0, &mlo_umac_reset->task_map);
+
+	spin_unlock_irqrestore(&mlo_umac_reset->task_queue_lock, flags);
+
+	/* Enqueue unbound task - any CPU can process it */
+	ath12k_umac_reset_enqueue_task(ag,
+				       ath12k_wifi7_clear_link_desc_pool_task,
+				       ab,
+				       ATH12K_UMAC_RESET_DO_PRE_RESET,
+				       ATH12K_UMAC_RESET_TX_CMD_POST_RESET_START_DONE,
+				       ATH12K_UMAC_RESET_CPU_UNBOUND);
+
+	/* Trigger SMP calls to schedule tasklets on all online CPUs.
+	 * This allows parallel processing of the clear_link_desc_pool tasks
+	 * while FW processes the pre_reset message.
+	 */
+	ath12k_umac_reset_schedule_all_tasklets(ag);
+}
+
 static void ath12k_wifi7_umac_reset_handle_pre_reset(struct ath12k_base *ab)
 {
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-
 	set_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags);
 	ath12k_hif_mgmt_irq_disable(ab);
 
@@ -29,13 +84,11 @@ static void ath12k_wifi7_umac_reset_handle_pre_reset(struct ath12k_base *ab)
 	}
 #endif
 
- /*
-  * Memset the wbm link desc pool to 0 at this point, so that by the time
-  * FW responds with post_reset_start, we would have finished the memset.
-  * This will save a few milliseconds.
-  */
-
-	ath12k_dp_clear_link_desc_pool(dp);
+	/* Set callback to clear link desc pool after pre_reset message is sent.
+	 * This ensures the memset happens after successful message send and
+	 * overlaps with FW processing time.
+	 */
+	ath12k_umac_reset_set_post_send_cb(ab, ath12k_wifi7_post_pre_reset_send_cb);
 }
 
 void ath12k_wifi7_umac_reset_handle_pre_reset_wrapper(struct ath12k_base *ab)
@@ -126,9 +179,8 @@ static void ath12k_wifi7_umac_reset_handle_post_reset_start(struct ath12k_base *
 
 void ath12k_wifi7_umac_reset_handle_post_reset_start_wrapper(struct ath12k_base *ab)
 {
-	struct ath12k_hw_group *ag = ab->ag;
-
-	ath12k_umac_reset_enqueue_task(ag,
+	/* Enqueue post_reset_start task bound to the same CPU that did the clear */
+	ath12k_umac_reset_enqueue_task(ab->ag,
 				       ath12k_wifi7_umac_reset_handle_post_reset_start,
 				       ab,
 				       ATH12K_UMAC_RESET_DO_POST_RESET_START,

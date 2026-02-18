@@ -94,4 +94,25 @@ void ath12k_dummy_pre_reset_callback(struct ath12k_base *ab);
 void ath12k_umac_reset_notify_target_sync_and_send(struct ath12k_base *ab,
 						   enum dp_umac_reset_tx_cmd tx_cmd,
 						   int task_bit);
+/**
+ * ath12k_umac_reset_set_post_send_cb - Set post-send callback for UMAC reset
+ * @ab: Pointer to ath12k_base structure
+ * @cb: Callback function to execute after FW message send completes
+ *
+ * Sets a callback that will be executed immediately after the host completes
+ * sending UMAC reset messages to firmware. The callback takes struct ath12k_base *ab
+ * as parameter. The callback is automatically cleared before invocation to prevent
+ * re-entry.
+ */
+void ath12k_umac_reset_set_post_send_cb(struct ath12k_base *ab,
+					void (*cb)(struct ath12k_base *ab));
+
+/**
+ * ath12k_umac_reset_schedule_all_tasklets - Schedule tasklets on all online CPUs
+ * @ag: Pointer to hardware group
+ *
+ * Triggers SMP calls to schedule tasklets on all online CPUs if there are
+ * pending tasks in the queue. This allows parallel processing of enqueued tasks.
+ */
+void ath12k_umac_reset_schedule_all_tasklets(struct ath12k_hw_group *ag);
 #endif /*ATH12K_UMAC_RESET_H*/
