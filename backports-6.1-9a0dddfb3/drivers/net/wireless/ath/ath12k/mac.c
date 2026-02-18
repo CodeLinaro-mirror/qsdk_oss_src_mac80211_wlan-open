@@ -3667,11 +3667,12 @@ ath12k_peer_assoc_h_ht_masked(const u8 *ht_mcs_mask)
 	return true;
 }
 
-static enum wmi_phy_mode ath12k_mac_get_phymode_uhr(struct ieee80211_link_sta *link_sta)
+static enum wmi_phy_mode ath12k_mac_get_phymode_uhr(struct ath12k *ar,
+						    struct ieee80211_link_sta *link_sta)
 {
 	if (link_sta->bandwidth == IEEE80211_STA_RX_BW_320)
-		if (link_sta->uhr_cap.uhr_cap_elem.phy_cap_info[0] &
-		    IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_NDP_SOUNDING_320MHZ)
+		if (link_sta->eht_cap.eht_cap_elem.phy_cap_info[0] &
+		    IEEE80211_EHT_PHY_CAP0_320MHZ_IN_6GHZ)
 			return MODE_11BN_UHR320;
 
 	if (link_sta->bandwidth == IEEE80211_STA_RX_BW_160) {
@@ -3679,9 +3680,8 @@ static enum wmi_phy_mode ath12k_mac_get_phymode_uhr(struct ieee80211_link_sta *l
 		    IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_160MHZ_IN_5G)
 			return MODE_11BN_UHR160;
 
-		if (link_sta->he_cap.he_cap_elem.phy_cap_info[0] &
-			 IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_80PLUS80_MHZ_IN_5G)
-			return MODE_11BN_UHR80_80;
+		ath12k_warn(ar->ab, "invalid UHR PHY capability info for 160 Mhz: %d\n",
+			    link_sta->he_cap.he_cap_elem.phy_cap_info[0]);
 
 		return MODE_UNKNOWN;
 	}
@@ -4867,7 +4867,7 @@ static void ath12k_peer_assoc_h_phymode(struct ath12k *ar,
 	case NL80211_BAND_6GHZ:
 		/* Check UHR first */
 		if (link_sta->uhr_cap.has_uhr) {
-			phymode = ath12k_mac_get_phymode_uhr(link_sta);
+			phymode = ath12k_mac_get_phymode_uhr(ar, link_sta);
 		} else if (link_sta->eht_cap.has_eht) {
 			phymode = ath12k_mac_get_phymode_eht(ar, link_sta);
 		} else if (link_sta->he_cap.has_he &&
