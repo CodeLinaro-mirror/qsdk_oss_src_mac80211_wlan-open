@@ -20,6 +20,7 @@
 #include "dp_htt.h"
 #include "dp_tx_flow_info.h"
 #include "dp_mon.h"
+#include "umac_reset.h"
 
 extern struct ppe_ds_wlan_ops_v2 ppeds_wlanops_v2;
 struct ath12k_ppeds_arch_ops ath12k_wifi8_arch_ppeds_ops;
@@ -581,6 +582,13 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.dp_link_vif_configure = ath12k_wifi8_dp_link_vif_configure,
 	.rx_flow_fse_cache_operation = ath12k_wifi8_dp_rx_flow_fse_cache_operation,
 	.get_peer_init_status = ath12k_wifi8_dp_get_peer_init_status,
+
+	/* UMAC reset operations */
+	.umac_reset_handle_pre_reset = ath12k_wifi8_umac_reset_handle_pre_reset,
+	.umac_reset_handle_post_reset_start =
+				ath12k_wifi8_umac_reset_handle_post_reset_start,
+	.umac_reset_handle_post_reset_complete =
+				ath12k_wifi8_umac_reset_handle_post_reset_complete,
 };
 
 struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab)

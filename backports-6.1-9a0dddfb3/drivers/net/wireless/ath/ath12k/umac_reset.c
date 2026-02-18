@@ -1,6 +1,6 @@
-/* SPDX-License-Identifier: BSD-3-Clause-Clear */
+// SPDX-License-Identifier: BSD-3-Clause-Clear
 /*
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #include <linux/module.h>
 #include <linux/slab.h>
@@ -458,6 +458,25 @@ int ath12k_umac_reset_notify_target(struct ath12k_base *ab, int tx_event)
 	return 0;
 }
 
+bool ath12k_dp_umac_reset_in_progress(struct ath12k_base *ab)
+{
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
+	bool umac_in_progress = false;
+
+	if (!ab->hw_params->support_umac_reset)
+		return umac_in_progress;
+
+	spin_lock_bh(&mlo_umac_reset->lock);
+	if (mlo_umac_reset->umac_reset_info &
+			ATH12K_IS_UMAC_RESET_IN_PROGRESS)
+		umac_in_progress = true;
+	spin_unlock_bh(&mlo_umac_reset->lock);
+
+	return umac_in_progress;
+}
+EXPORT_SYMBOL(ath12k_dp_umac_reset_in_progress);
+
 int ath12k_umac_reset_initiate_recovery(struct ath12k_base *ab,
 					bool target_recovery)
 {
@@ -529,6 +548,7 @@ void ath12k_umac_reset_notify_target_sync_and_send(struct ath12k_base *ab,
 	}
 	return;
 }
+EXPORT_SYMBOL(ath12k_umac_reset_notify_target_sync_and_send);
 
 void ath12k_umac_reset_notify_pre_reset_done(struct ath12k_base *ab)
 {
@@ -547,54 +567,26 @@ EXPORT_SYMBOL(ath12k_umac_reset_notify_pre_reset_done);
 
 void ath12k_umac_reset_handle_pre_reset(struct ath12k_base *ab)
 {
-	struct ath12k_hw_group *ag = ab->ag;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
 
-	set_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags);
-	ath12k_hif_mgmt_irq_disable(ab);
-	ath12k_hif_irq_disable(ab);
-	atomic_inc(&mlo_umac_reset->response_chip);
-	ab->dp_umac_reset.umac_pre_reset_in_prog = true;
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags)) {
-		ath12k_dp_ppeds_service_enable_disable(ab, true);
-		ath12k_dp_ppeds_interrupt_stop(ab);
-		ath12k_dp_ppeds_stop(ab);
-		ath12k_dp_ppeds_service_enable_disable(ab, false);
-	}
-#endif
-	ath12k_umac_reset_notify_pre_reset_done(ab);
+	if (dp && dp->arch_ops && dp->arch_ops->umac_reset_handle_pre_reset)
+		dp->arch_ops->umac_reset_handle_pre_reset(ab);
+}
 
- /*
-  * Memset the wbm link desc pool to 0 at this point, so that by the time
-  * FW responds with post_reset_start, we would have finished the memset.
-  * This will save a few milliseconds.
-  */
+void ath12k_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 
-	ath12k_dp_clear_link_desc_pool(dp);
-	return;
+	if (dp && dp->arch_ops && dp->arch_ops->umac_reset_handle_post_reset_start)
+		dp->arch_ops->umac_reset_handle_post_reset_start(ab);
 }
 
 void ath12k_umac_reset_handle_post_reset_complete(struct ath12k_base *ab)
 {
-	struct ath12k_hw_group *ag = ab->ag;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
 
-	dp->service_rings_running = 0;
-	atomic_inc(&mlo_umac_reset->response_chip);
-	ath12k_hif_irq_enable(ab);
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags)) {
-		ath12k_dp_ppeds_start(ab);
-		ath12k_dp_ppeds_interrupt_start(ab);
-	}
-#endif
-	ath12k_hif_mgmt_irq_enable(ab);
-	clear_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags);
-	ath12k_umac_reset_notify_target_sync_and_send(ab, ATH12K_UMAC_RESET_TX_CMD_POST_RESET_COMPLETE_DONE);
-	return;
+	if (dp && dp->arch_ops && dp->arch_ops->umac_reset_handle_post_reset_complete)
+		dp->arch_ops->umac_reset_handle_post_reset_complete(ab);
 }
 
 static void ath12k_umac_reset_handle_init_recovery(struct ath12k_base *ab)

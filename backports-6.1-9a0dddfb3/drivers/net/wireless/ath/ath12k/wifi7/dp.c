@@ -18,6 +18,7 @@
 #include "dp_mon.h"
 #include "dp_peer.h"
 #include "../wmi.h"
+#include "umac_reset.h"
 
 static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 					struct ath12k_ext_irq_grp *irq_grp,
@@ -549,6 +550,13 @@ static struct ath12k_dp_arch_ops ath12k_wifi7_dp_arch_ops = {
 	.dp_link_vif_configure = ath12k_wifi7_dp_link_vif_configure,
 	.rx_flow_fse_cache_operation = ath12k_wifi7_dp_rx_flow_fse_cache_operation,
 	.dp_ext_tx = ath12k_wifi7_dp_ext_tx,
+
+	/* UMAC reset operations */
+	.umac_reset_handle_pre_reset = ath12k_wifi7_umac_reset_handle_pre_reset,
+	.umac_reset_handle_post_reset_start =
+				ath12k_wifi7_umac_reset_handle_post_reset_start,
+	.umac_reset_handle_post_reset_complete =
+				ath12k_wifi7_umac_reset_handle_post_reset_complete,
 };
 
 /* TODO: remove export once this file is built with wifi7 ko */

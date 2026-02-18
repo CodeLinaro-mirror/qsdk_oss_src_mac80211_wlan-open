@@ -580,6 +580,11 @@ struct ath12k_dp_arch_ops {
 						 struct ath12k_dp_link_vif *dp_link_vif,
 						 struct ath12k_tx_desc_info *tx_desc,
 						 struct ath12k_dp_ext_info *info);
+
+	/* UMAC reset operations */
+	void (*umac_reset_handle_pre_reset)(struct ath12k_base *ab);
+	void (*umac_reset_handle_post_reset_start)(struct ath12k_base *ab);
+	void (*umac_reset_handle_post_reset_complete)(struct ath12k_base *ab);
 };
 
 struct ath12k_bp_stats {
@@ -1348,10 +1353,6 @@ struct ath12k_tx_desc_info *ath12k_dp_get_tx_desc(struct ath12k_dp *dp,
 						  u32 desc_id);
 bool ath12k_dp_umac_reset_in_progress(struct ath12k_base *ab);
 bool ath12k_dp_wmask_compaction_rx_tlv_supported(struct ath12k_base *ab);
-void ath12k_umac_reset_notify_target_sync_and_send(struct ath12k_base *ab,
-                                       enum dp_umac_reset_tx_cmd tx_event);
-bool ath12k_dp_umac_reset_in_progress(struct ath12k_base *ab);
-void ath12k_umac_reset_handle_post_reset_start(struct ath12k_base *ab);
 void ath12k_dp_reoq_lut_addr_reset(struct ath12k_dp *dp);
 void ath12k_dp_srng_msi_setup(struct ath12k_base *ab,
 			      struct hal_srng_params *ring_params,
@@ -1391,8 +1392,6 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 			     u8 link_id);
 void ath12k_dp_get_pdev_stats(struct ath12k_pdev_dp *pdev,
 			      struct ath12k_telemetry_dp_radio *telemetry_radio);
-void ath12k_dp_clear_link_desc_pool(struct ath12k_dp *dp);
-
 int ath12k_dp_alloc_proto_stats_vif(struct ath12k_dp_vif *dp_vif);
 void ath12k_dp_free_proto_stats_vif(struct ath12k_dp_tx_vif_stats *vif_stats);
 int ath12k_dp_alloc_proto_stats(struct ath12k *ar);
@@ -1414,6 +1413,11 @@ int ath12k_dp_alloc_reoq_lut(struct ath12k_base *ab,
 			     struct ath12k_reo_q_addr_lut *lut);
 void ath12k_dp_update_vdev_search(struct ath12k_vif *ahvif);
 int ath12k_dp_tx_get_bank_profile(struct ath12k_dp *dp, u32 bank_config);
+void ath12k_dp_clear_link_desc_pool(struct ath12k_dp *dp);
+void ath12k_dp_ppeds_tx_desc_cleanup(struct ath12k_base *ab);
+void ath12k_dp_srng_hw_ring_disable(struct ath12k_base *ab);
+void ath12k_dp_umac_txrx_desc_cleanup(struct ath12k_base *ab);
+int ath12k_dp_rxdma_ring_setup(struct ath12k_base *ab);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 void ath12k_ppeds_reinject_handler(struct ath12k_base *ab,
 				   struct ath12k_ppeds_tx_desc_info *tx_desc,

@@ -1505,6 +1505,7 @@ void ath12k_dp_tid_cleanup(struct ath12k_base *ab)
         }
         spin_unlock_bh(&ab->dp->dp_lock);
 }
+EXPORT_SYMBOL(ath12k_dp_tid_cleanup);
 
 void ath12k_dp_peer_reo_tid_setup(struct ath12k *ar, int vdev_id,
                                  const u8 *peer_mac)
