@@ -900,6 +900,19 @@ enum dp_umac_reset_tx_cmd {
 	ATH12K_UMAC_RESET_TX_CMD_POST_RESET_COMPLETE_DONE,
 };
 
+enum ath12k_umac_reset_state {
+	ATH12K_UMAC_RESET_STATE_IDLE = 0,
+	ATH12K_UMAC_RESET_STATE_INIT,
+	ATH12K_UMAC_RESET_STATE_TRIGGER_SENT,
+	ATH12K_UMAC_RESET_STATE_PRE_RESET_START,
+	ATH12K_UMAC_RESET_STATE_PRE_RESET_DONE,
+	ATH12K_UMAC_RESET_STATE_POST_RESET_START,
+	ATH12K_UMAC_RESET_STATE_POST_RESET_DONE,
+	ATH12K_UMAC_RESET_STATE_POST_RESET_COMPLETE,
+	ATH12K_UMAC_RESET_STATE_ERROR,
+	ATH12K_UMAC_RESET_STATE_MAX
+};
+
 struct ath12k_umac_reset_ts {
 	u64 trigger_start;
 	u64 trigger_done;
@@ -924,6 +937,19 @@ struct ath12k_dp_umac_reset {
 	int irq_num;
 	struct ath12k_umac_reset_ts ts;
 	bool umac_pre_reset_in_prog;
+
+	/* State machine fields */
+	enum ath12k_umac_reset_state current_state;
+	enum ath12k_umac_reset_state prev_state;
+	spinlock_t state_lock; /* Protects state transitions */
+
+	/* State transition tracking */
+	u32 state_transition_count[ATH12K_UMAC_RESET_STATE_MAX];
+	u64 state_entry_time[ATH12K_UMAC_RESET_STATE_MAX];
+
+	/* Error handling */
+	u32 state_error_count;
+	enum ath12k_umac_reset_state error_from_state;
 };
 
 #define HTT_T2H_EXT_STATS_INFO1_DONE	BIT(11)
