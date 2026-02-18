@@ -153,7 +153,7 @@ static int ath12k_umac_reset_state_transition(struct ath12k_base *ab,
 	return 0;
 }
 
-static enum ath12k_umac_reset_state ath12k_umac_reset_get_state(struct ath12k_base *ab)
+enum ath12k_umac_reset_state ath12k_umac_reset_get_state(struct ath12k_base *ab)
 {
 	struct ath12k_dp_umac_reset *umac_reset = &ab->dp_umac_reset;
 	enum ath12k_umac_reset_state state;
@@ -165,6 +165,7 @@ static enum ath12k_umac_reset_state ath12k_umac_reset_get_state(struct ath12k_ba
 
 	return state;
 }
+EXPORT_SYMBOL(ath12k_umac_reset_get_state);
 
 int ath12k_htt_umac_reset_msg_send(struct ath12k_base *ab,
 				   struct ath12k_htt_umac_reset_setup_cmd_params *params)
@@ -1174,6 +1175,307 @@ void ath12k_umac_reset_tasklet_handler(struct tasklet_struct *umac_cntxt)
 	ath12k_hif_dp_umac_intr_line_reset(ab);
 	ath12k_dp_umac_reset_handle(ab);
 }
+
+/**
+ * ath12k_umac_reset_free_skb_queues - Free accumulated SKBs
+ * @ab: Pointer to ath12k_base structure
+ *
+ * Frees all SKBs that were accumulated in tx_skb_queue and rx_skb_queue
+ * during UMAC reset flow. These queues hold packets that couldn't be
+ * processed due to the reset.
+ */
+static void ath12k_umac_reset_free_skb_queues(struct ath12k_base *ab)
+{
+	struct ath12k_dp_umac_reset *umac_reset = &ab->dp_umac_reset;
+	struct sk_buff *skb;
+	u32 tx_count = 0, rx_count = 0;
+
+	/* Free all saved TX SKBs */
+	while ((skb = skb_dequeue(&umac_reset->tx_skb_queue)) != NULL) {
+		dev_kfree_skb_any(skb);
+		tx_count++;
+	}
+
+	/* Free all saved RX SKBs */
+	while ((skb = skb_dequeue(&umac_reset->rx_skb_queue)) != NULL) {
+		dev_kfree_skb_any(skb);
+		rx_count++;
+	}
+
+	if (tx_count || rx_count)
+		ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET,
+			   "Freed %u TX SKBs and %u RX SKBs during fallback cleanup\n",
+			   tx_count, rx_count);
+}
+
+/**
+ * ath12k_umac_reset_clear_task_queue - Clear pending task queue
+ * @ag: Pointer to hardware group
+ *
+ * Clears all pending tasks from the UMAC reset task queue and resets
+ * the task_map bitmap. This ensures no stale tasks remain after a
+ * failed reset attempt.
+ */
+static void ath12k_umac_reset_clear_task_queue(struct ath12k_hw_group *ag)
+{
+	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
+	struct ath12k_umac_reset_task *task, *tmp;
+	unsigned long flags;
+	u32 cleared_count = 0;
+
+	spin_lock_irqsave(&mlo_umac_reset->task_queue_lock, flags);
+
+	/* Clear all pending tasks */
+	list_for_each_entry_safe(task, tmp, &mlo_umac_reset->task_queue, list) {
+		list_del(&task->list);
+		kfree(task);
+		cleared_count++;
+	}
+
+	/* Reset task_map bitmap */
+	mlo_umac_reset->task_map = 0;
+
+	/* Reset task_id counter */
+	atomic_set(&mlo_umac_reset->task_id, 0);
+
+	spin_unlock_irqrestore(&mlo_umac_reset->task_queue_lock, flags);
+
+	if (cleared_count)
+		ath12k_dbg(ag->ab[0], ATH12K_DBG_DP_UMAC_RESET,
+			   "Cleared %u pending tasks from queue\n", cleared_count);
+}
+
+/**
+ * ath12k_umac_reset_restore_irqs - Re-enable IRQs if they were disabled
+ * @ab: Pointer to ath12k_base structure
+ * @state: Current UMAC reset state
+ *
+ * Re-enables IRQs that were disabled during UMAC reset flow based on
+ * the state where the reset got stuck.
+ */
+static void ath12k_umac_reset_restore_irqs(struct ath12k_base *ab,
+					   enum ath12k_umac_reset_state state)
+{
+	/* IRQs are disabled during PRE_RESET phase */
+	if (state >= ATH12K_UMAC_RESET_STATE_PRE_RESET_START &&
+	    state < ATH12K_UMAC_RESET_STATE_POST_RESET_COMPLETE) {
+		ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET,
+			   "Re-enabling IRQs during fallback cleanup\n");
+
+		ath12k_hif_irq_enable(ab);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+		if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags)) {
+			ath12k_dp_ppeds_start(ab);
+			ath12k_dp_ppeds_interrupt_start(ab);
+		}
+#endif
+		ath12k_hif_mgmt_irq_enable(ab);
+	}
+}
+
+/**
+ * ath12k_umac_reset_cleanup_from_state - Perform state-specific cleanup
+ * @ab: Pointer to ath12k_base structure
+ * @state: Current UMAC reset state
+ *
+ * Performs cleanup operations specific to the state where UMAC reset
+ * got stuck. Different states require different cleanup actions.
+ */
+static void ath12k_umac_reset_cleanup_from_state(struct ath12k_base *ab,
+						 enum ath12k_umac_reset_state state)
+{
+	struct ath12k_hw_group *ag = ab->ag;
+	struct dp_ppe_ds_idxs idx;
+
+	ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET,
+		   "Performing fallback cleanup from state: %s\n",
+		   ath12k_umac_reset_state_to_str(state));
+
+	switch (state) {
+	case ATH12K_UMAC_RESET_STATE_IDLE:
+	case ATH12K_UMAC_RESET_STATE_INIT:
+	case ATH12K_UMAC_RESET_STATE_TRIGGER_SENT:
+	case ATH12K_UMAC_RESET_STATE_PRE_RESET_START:
+		/* Nothing to clean up */
+		break;
+
+	case ATH12K_UMAC_RESET_STATE_PRE_RESET_DONE:
+	case ATH12K_UMAC_RESET_STATE_POST_RESET_START:
+		ath12k_umac_reset_clear_task_queue(ag);
+		/* A dummy registration is needed to avoid breaking
+		 * the state machine at the DS module
+		 */
+		ath12k_dp_ppeds_register_soc(ab->dp, &idx);
+		ath12k_umac_reset_restore_irqs(ab, state);
+		break;
+
+	case ATH12K_UMAC_RESET_STATE_POST_RESET_DONE:
+		/* Hardware rings modified, IRQs still disabled */
+		ath12k_umac_reset_free_skb_queues(ab);
+		ath12k_umac_reset_clear_task_queue(ag);
+		ath12k_umac_reset_restore_irqs(ab, state);
+		break;
+
+	case ATH12K_UMAC_RESET_STATE_POST_RESET_COMPLETE:
+		/* Almost complete - just free SKBs */
+		ath12k_umac_reset_free_skb_queues(ab);
+		ath12k_umac_reset_clear_task_queue(ag);
+		break;
+
+	case ATH12K_UMAC_RESET_STATE_ERROR:
+		/* Already in error state - just clean up resources */
+		ath12k_umac_reset_free_skb_queues(ab);
+		ath12k_umac_reset_clear_task_queue(ag);
+		ath12k_warn(ab, "Invalid UMAC reset state: %d\n", state);
+		break;
+
+	default:
+		ath12k_warn(ab, "Unknown UMAC reset state: %d\n", state);
+		break;
+	}
+}
+
+/**
+ * ath12k_umac_reset_transition_to_idle - Transition state machine to IDLE
+ * @ab: Pointer to ath12k_base structure
+ * @current_state: Current UMAC reset state
+ *
+ * Transitions the UMAC reset state machine from current state to ERROR
+ * state, and then to IDLE state. This ensures proper state machine
+ * cleanup even when firmware doesn't respond.
+ */
+static
+void ath12k_umac_reset_transition_to_idle(struct ath12k_base *ab,
+					  enum ath12k_umac_reset_state current_state)
+{
+	struct ath12k_dp_umac_reset *umac_reset = &ab->dp_umac_reset;
+	unsigned long flags;
+
+	if (current_state == ATH12K_UMAC_RESET_STATE_IDLE)
+		return;
+
+	spin_lock_irqsave(&umac_reset->state_lock, flags);
+
+	/* Transition to ERROR state if not already there */
+	if (current_state != ATH12K_UMAC_RESET_STATE_ERROR) {
+		umac_reset->prev_state = current_state;
+		umac_reset->current_state = ATH12K_UMAC_RESET_STATE_ERROR;
+		umac_reset->state_error_count++;
+		umac_reset->error_from_state = current_state;
+		umac_reset->state_transition_count[ATH12K_UMAC_RESET_STATE_ERROR]++;
+		umac_reset->state_entry_time[ATH12K_UMAC_RESET_STATE_ERROR] =
+			jiffies_to_msecs(jiffies);
+
+		ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET,
+			   "Fallback: Transitioned to ERROR state from %s\n",
+			   ath12k_umac_reset_state_to_str(current_state));
+	}
+
+	/* Transition from ERROR to IDLE */
+	umac_reset->prev_state = ATH12K_UMAC_RESET_STATE_ERROR;
+	umac_reset->current_state = ATH12K_UMAC_RESET_STATE_IDLE;
+	umac_reset->state_transition_count[ATH12K_UMAC_RESET_STATE_IDLE]++;
+	umac_reset->state_entry_time[ATH12K_UMAC_RESET_STATE_IDLE] =
+		jiffies_to_msecs(jiffies);
+
+	spin_unlock_irqrestore(&umac_reset->state_lock, flags);
+
+	ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET,
+		   "Fallback: Transitioned to IDLE state\n");
+}
+
+/**
+ * ath12k_umac_reset_clear_mlo_flags - Clear MLO reset flags and counters
+ * @ab: Pointer to ath12k_base structure
+ *
+ * Clears MLO-specific UMAC reset flags and resets counters to ensure
+ * clean state after fallback cleanup.
+ */
+static void ath12k_umac_reset_clear_mlo_flags(struct ath12k_base *ab)
+{
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
+	unsigned long flags;
+
+	spin_lock_irqsave(&mlo_umac_reset->lock, flags);
+
+	/* Clear UMAC reset in progress flag */
+	mlo_umac_reset->umac_reset_info = 0;
+
+	/* Clear initiator chip ID */
+	mlo_umac_reset->initiator_chip = 0;
+
+	/* Reset request chip counter */
+	atomic_set(&mlo_umac_reset->request_chip, 0);
+
+	spin_unlock_irqrestore(&mlo_umac_reset->lock, flags);
+
+	ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET,
+		   "Cleared MLO UMAC reset flags\n");
+}
+
+/**
+ * ath12k_umac_reset_fallback_cleanup - Main fallback cleanup function
+ * @ab: Pointer to ath12k_base structure
+ *
+ * This is the main entry point for UMAC reset fallback cleanup. It is
+ * called from ath12k_core_cleanup() when the system is being torn down
+ * and UMAC reset may not have completed successfully.
+ *
+ * The function:
+ * 1. Checks if UMAC reset was in progress
+ * 2. Performs state-aware cleanup based on current state
+ * 3. Frees accumulated resources (SKBs, tasks)
+ * 4. Restores IRQs if needed
+ * 5. Transitions state machine to IDLE
+ * 6. Clears MLO reset flags
+ * 7. Calls ath12k_umac_reset_completion() to finish cleanup
+ */
+void ath12k_umac_reset_fallback_cleanup(struct ath12k_base *ab)
+{
+	struct ath12k_hw_group *ag = ab->ag;
+	enum ath12k_umac_reset_state current_state;
+	bool was_in_progress = false;
+
+	if (!ab->hw_params->support_umac_reset)
+		goto complete;
+
+	if (!ag) {
+		ath12k_warn(ab, "Hardware group not available for fallback cleanup\n");
+		goto complete;
+	}
+
+	/* Get current state */
+	current_state = ath12k_umac_reset_get_state(ab);
+
+	/* Check if UMAC reset was in progress */
+	if (current_state != ATH12K_UMAC_RESET_STATE_IDLE) {
+		was_in_progress = true;
+		ath12k_warn(ab, "UMAC reset incomplete at state %s, performing fallback cleanup\n",
+			    ath12k_umac_reset_state_to_str(current_state));
+	}
+
+	/* Perform state-specific cleanup */
+	if (was_in_progress) {
+		ath12k_umac_reset_cleanup_from_state(ab, current_state);
+
+		/* Transition state machine to IDLE */
+		ath12k_umac_reset_transition_to_idle(ab, current_state);
+
+		/* Clear MLO reset flags */
+		ath12k_umac_reset_clear_mlo_flags(ab);
+
+		/* Clear the UMAC recovery in progress flag */
+		clear_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags);
+
+		ath12k_info(ab, "UMAC reset fallback cleanup completed\n");
+	}
+
+complete:
+	/* Always call completion to clear MLO reset info */
+	ath12k_umac_reset_completion(ab);
+}
+EXPORT_SYMBOL(ath12k_umac_reset_fallback_cleanup);
 
 void ath12k_dp_umac_reset_deinit(struct ath12k_base *ab)
 {

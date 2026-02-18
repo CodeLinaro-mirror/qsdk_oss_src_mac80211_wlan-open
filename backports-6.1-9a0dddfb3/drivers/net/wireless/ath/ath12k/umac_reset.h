@@ -80,6 +80,17 @@ int ath12k_umac_reset_enqueue_task(struct ath12k_hw_group *ag,
 				   int bound_cpu_id);
 
 void ath12k_dummy_pre_reset_callback(struct ath12k_base *ab);
+
+/**
+ * ath12k_umac_reset_get_state - Get current UMAC reset state
+ * @ab: Pointer to ath12k_base structure
+ *
+ * Returns the current state of the UMAC reset state machine in a thread-safe manner.
+ *
+ * Return: Current UMAC reset state
+ */
+enum ath12k_umac_reset_state ath12k_umac_reset_get_state(struct ath12k_base *ab);
+
 /**
  * ath12k_umac_reset_notify_target_sync_and_send - Atomically clear task bit, notify fw
  * @ab: Pointer to ath12k_base structure
@@ -115,4 +126,22 @@ void ath12k_umac_reset_set_post_send_cb(struct ath12k_base *ab,
  * pending tasks in the queue. This allows parallel processing of enqueued tasks.
  */
 void ath12k_umac_reset_schedule_all_tasklets(struct ath12k_hw_group *ag);
+
+/**
+ * ath12k_umac_reset_fallback_cleanup - Fallback cleanup for incomplete UMAC reset
+ * @ab: Pointer to ath12k_base structure
+ *
+ * This function performs cleanup when UMAC reset doesn't complete successfully
+ * due to firmware not responding. It is called from ath12k_core_cleanup() to
+ * ensure proper resource cleanup and state machine reset.
+ *
+ * The function:
+ * - Detects if UMAC reset was in progress
+ * - Performs state-aware cleanup based on current state
+ * - Frees accumulated SKBs and clears task queue
+ * - Re-enables IRQs if they were disabled
+ * - Transitions state machine to IDLE
+ * - Clears MLO reset flags
+ */
+void ath12k_umac_reset_fallback_cleanup(struct ath12k_base *ab);
 #endif /*ATH12K_UMAC_RESET_H*/
