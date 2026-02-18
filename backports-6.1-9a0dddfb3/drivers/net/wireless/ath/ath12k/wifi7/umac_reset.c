@@ -49,13 +49,13 @@ void ath12k_wifi7_umac_reset_handle_pre_reset_wrapper(struct ath12k_base *ab)
 	ath12k_umac_reset_enqueue_task(ag,
 				       ath12k_wifi7_umac_reset_handle_pre_reset,
 				       ab,
-				       ATH12K_UMAC_RESET_DO_PRE_RESET);
+				       ATH12K_UMAC_RESET_DO_PRE_RESET,
+				       ATH12K_UMAC_RESET_TX_CMD_NONE);
 }
 
 static void ath12k_wifi7_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp;
-	enum dp_umac_reset_tx_cmd tx_event;
 	struct ath12k_hw_group *ag = ab->ag;
 	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
 	int i, n_link_desc, ret;
@@ -114,9 +114,6 @@ static void ath12k_wifi7_umac_reset_handle_post_reset_start(struct ath12k_base *
 	ath12k_dp_tid_cleanup(ab);
 
 	atomic_inc(&mlo_umac_reset->response_chip);
-
-	tx_event = ATH12K_UMAC_RESET_TX_CMD_POST_RESET_START_DONE;
-	ath12k_umac_reset_notify_target_sync_and_send(ab, tx_event);
 }
 
 void ath12k_wifi7_umac_reset_handle_post_reset_start_wrapper(struct ath12k_base *ab)
@@ -126,12 +123,12 @@ void ath12k_wifi7_umac_reset_handle_post_reset_start_wrapper(struct ath12k_base 
 	ath12k_umac_reset_enqueue_task(ag,
 				       ath12k_wifi7_umac_reset_handle_post_reset_start,
 				       ab,
-				       ATH12K_UMAC_RESET_DO_POST_RESET_START);
+				       ATH12K_UMAC_RESET_DO_POST_RESET_START,
+				       ATH12K_UMAC_RESET_TX_CMD_POST_RESET_START_DONE);
 }
 
 static void ath12k_wifi7_umac_reset_handle_post_reset_complete(struct ath12k_base *ab)
 {
-	enum dp_umac_reset_tx_cmd tx_event;
 	struct ath12k_hw_group *ag = ab->ag;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
@@ -147,9 +144,6 @@ static void ath12k_wifi7_umac_reset_handle_post_reset_complete(struct ath12k_bas
 #endif
 	ath12k_hif_mgmt_irq_enable(ab);
 	clear_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags);
-
-	tx_event = ATH12K_UMAC_RESET_TX_CMD_POST_RESET_COMPLETE_DONE;
-	ath12k_umac_reset_notify_target_sync_and_send(ab, tx_event);
 }
 
 void ath12k_wifi7_umac_reset_handle_post_reset_complete_wrapper(struct ath12k_base *ab)
@@ -159,5 +153,6 @@ void ath12k_wifi7_umac_reset_handle_post_reset_complete_wrapper(struct ath12k_ba
 	ath12k_umac_reset_enqueue_task(ag,
 				       ath12k_wifi7_umac_reset_handle_post_reset_complete,
 				       ab,
-				       ATH12K_UMAC_RESET_DO_POST_RESET_COMPLETE);
+				       ATH12K_UMAC_RESET_DO_POST_RESET_COMPLETE,
+				       ATH12K_UMAC_RESET_TX_CMD_POST_RESET_COMPLETE_DONE);
 }
