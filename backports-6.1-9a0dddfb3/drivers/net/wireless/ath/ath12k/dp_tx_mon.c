@@ -329,6 +329,22 @@ int ath12k_dp_mon_tx_process_ring(struct ath12k_pdev_dp *dp_pdev,
 			goto move_next;
 		}
 
+		mon_desc->in_use = DP_MON_DESC_STATUS_REAP;
+
+		/* The hardware reports buffer length as (actual_length - 1),
+		 * likely due to internal indexing or alignment constraints.
+		 * To obtain the true buffer length for processing, increment
+		 * the reported end_offset by 1 before using it.
+		 */
+		end_offset += 1;
+		if (unlikely(end_offset > ATH12K_DP_MON_TX_BUF_SIZE)) {
+			ath12k_warn(ab, "TX Mon: invalid offset %u received in mac_id %d\n",
+				    end_offset, mac_id);
+			end_offset = ATH12K_DP_MON_TX_BUF_SIZE - 1;
+		}
+		mon_desc->buf_len = end_offset;
+		list_add_tail(&mon_desc->list, mon_desc_head);
+
 		status_frag = (u8 *)mon_desc->mon_buf;
 		if (unlikely(!status_frag)) {
 			ath12k_err(ab, "TX Mon: NULL buffer received in mac_id %d\n",
@@ -336,27 +352,14 @@ int ath12k_dp_mon_tx_process_ring(struct ath12k_pdev_dp *dp_pdev,
 			goto move_next;
 		}
 
-		mon_desc->in_use = DP_MON_DESC_STATUS_REAP;
-		list_add_tail(&mon_desc->list, mon_desc_head);
 		if (end_reason == HAL_MON_FLUSH_DETECTED ||
 		    end_reason == HAL_MON_PPDU_TRUNCATED) {
 			ath12k_dp_tx_mon_flush_desc_list(dp_pdev,
 							 mon_desc_head);
+			ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX,
+				   "TX Mon: Flush Detected - Buffers Dropped\n");
 			goto move_next;
 		}
-
-		if (unlikely(end_offset > ATH12K_DP_MON_TX_BUF_SIZE)) {
-			ath12k_warn(ab, "TX Mon: invalid offset %u received in mac_id %d\n",
-				    end_offset, mac_id);
-			end_offset = ATH12K_DP_MON_TX_BUF_SIZE - 1;
-		}
-
-		/* The hardware reports buffer length as (actual_length - 1),
-		 * likely due to internal indexing or alignment constraints.
-		 * To obtain the true buffer length for processing, increment
-		 * the reported end_offset by 1 before using it.
-		 */
-		mon_desc->buf_len = end_offset + 1;
 
 		if (end_reason == HAL_MON_END_OF_PPDU) {
 			*budget -= 1;
