@@ -1002,24 +1002,25 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 	int tx_enqueued[DP_TCL_NUM_RING_MAX];
 	int non_fast_rx[DP_REO_DST_RING_MAX][ATH12K_MAX_SOCS];
 	static const char *rxdma_err[HAL_REO_ENTR_RING_RXDMA_ECODE_MAX] = {
-			"Overflow", "MPDU len", "FCS", "Decrypt", "TKIP MIC",
-			"Unencrypt", "MSDU len", "MSDU limit", "WiFi parse",
-			"AMSDU parse", "SA timeout", "DA timeout",
-			"Flow timeout", "Flush req", "AMSDU frag", "Multicast echo",
-			"AMSDU addr mismatch", "Unauthorized WDS",
-			"Groupcast AMSDU or WDS", "CFP MIC", "CFP PN check"};
+			"Overflow", "MPDU_len", "FCS", "Decrypt", "TKIP_MIC",
+			"Unencrypt", "MSDU_len", "MSDU_limit", "WiFi_parse",
+			"AMSDU_parse", "SA_timeout", "DA_timeout",
+			"Flow_timeout", "Flush_req", "AMSDU_frag", "Multicast_echo",
+			"AMSDU_addr_mismatch", "Unauthorized_WDS",
+			"Groupcast_AMSDU_or_WDS", "CFP_MIC", "CFP_PN_check"};
 	static const char *reo_err[HAL_REO_DEST_RING_ERROR_CODE_MAX] = {
-			"Desc addr zero", "Desc inval", "AMPDU in non BA",
-			"Non BA dup", "BA dup", "Frame 2k jump", "BAR 2k jump",
-			"Frame OOR", "BAR OOR", "No BA session",
-			"Frame SN equal SSN", "PN check fail", "2k err",
-			"PN err", "Desc blocked"};
+			"Desc_addr_zero", "Desc_inval", "AMPDU_in_non_BA",
+			"Non_BA_dup", "BA_dup", "Frame_2k_jump", "BAR_2k_jump",
+			"Frame_OOR", "BAR_OOR", "No_BA_session",
+			"Frame_SN_equal_SSN", "PN_check_fail", "2k_err",
+			"PN_err", "Desc_blocked"};
 	static const char *wbm_rx_drop[WBM_ERR_DROP_MAX] = {
-			"SW desc error", "SW desc from cookie error", "Invalid Peer id error",
-			"Desc parse error", "Invalid Cookie", "Invalid Push reason",
-			"Invalid hw id", "Null Partner dp", "Process Null Partner dp",
-			"Null Pdev", "Null ar", "CAC Running", "Scatter Gather",
-			"Invalid NWifi Hdr len", "REO Generic", "RXDMA Generic"};
+			"SW_desc_error", "SW_desc_from_cookie_error",
+			"Invalid_Peer_id_error", "Desc_parse_error",
+			"Invalid_Cookie", "Invalid_Push_reason",
+			"Invalid_hw_id", "Null_Partner_dp", "Process_Null_Partner_dp",
+			"Null_Pdev", "Null_ar", "CAC_Running", "Scatter_Gather",
+			"Invalid_NWifi_Hdr_len", "REO_Generic", "RXDMA_Generic"};
 
 	static const char *wbm_rel_src[HAL_WBM_REL_SRC_MODULE_MAX] = {
                         "TQM", "Rxdma", "Reo", "FW", "SW" };
@@ -1047,7 +1048,7 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 	}
 
 	len += scnprintf(buf + len, size - len,
-			 "SOC DP STATS (timestamp: %llums):\n",
+			 "SOC_DP_STATS:\ntimestamp(ms)= %llu\n",
 			 ktime_to_ms(ktime_get()));
 
 	for (i = 0; i < ab->num_radios; i++) {
@@ -1059,14 +1060,14 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 				center_freq = ar->rx_channel->center_freq;
 			spin_unlock_bh(&ar->data_lock);
 			len += scnprintf(buf + len, size - len,
-					 "\nradio_%u centre freq:%u\n",
+					 "\nradio_%u_centre_freq= %u\n",
 					 i, center_freq);
 		}
 	}
 
-	len += scnprintf(buf + len, size - len, "\nSOC TX STATS:\n");
+	len += scnprintf(buf + len, size - len, "\nSOC_TX_STATS:\n");
 
-	len += scnprintf(buf + len, size - len, "tx_enqueued:");
+	len += scnprintf(buf + len, size - len, "tx_enqueued=");
 	for (j = 0; j < DP_TCL_NUM_RING_MAX; j++)
 		len += scnprintf(buf + len, size - len, " %d:%u", j, tx_enqueued[j]);
 	len += scnprintf(buf + len, size - len, "\n");
@@ -1074,72 +1075,73 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 	len += scnprintf(buf + len, size - len, "\ntx_wbm_rel_source:\n");
 	for (j=0; j < MAX_TX_COMP_RING; j++)
 		len += scnprintf(buf + len, size - len,
-				 "Ring%d: 0:%u 1:%u 2:%u 3:%u 4:%u\n", j,
+				 "Ring%d= 0:%u 1:%u 2:%u 3:%u 4:%u\n", j,
 				 device_stats->tx_comp_stats[j].tx_wbm_rel_source[0],
 				 device_stats->tx_comp_stats[j].tx_wbm_rel_source[1],
 				 device_stats->tx_comp_stats[j].tx_wbm_rel_source[2],
 				 device_stats->tx_comp_stats[j].tx_wbm_rel_source[3],
 				 device_stats->tx_comp_stats[j].tx_wbm_rel_source[4]);
 
-	len += scnprintf(buf + len, size - len, "\ntx_multicast:");
+	len += scnprintf(buf + len, size - len, "\ntx_multicast=");
 	for (j = 0; j < MAX_TCL_RING; j++)
 		len += scnprintf(buf + len, size - len, " %d:%u",
 				 j, device_stats->tx_mcast[j]);
 	len += scnprintf(buf + len, size - len, "\n");
 
-	len += scnprintf(buf + len, size - len, "\ntx_unicast:");
+	len += scnprintf(buf + len, size - len, "\ntx_unicast=");
 	for (j = 0; j < MAX_TCL_RING; j++)
 		len += scnprintf(buf + len, size - len, " %d:%u",
 				 j, device_stats->tx_unicast[j]);
 	len += scnprintf(buf + len, size - len, "\n");
 
-	len += scnprintf(buf + len, size - len, "\ntx_eapol:");
+	len += scnprintf(buf + len, size - len, "\ntx_eapol=");
 	for (j = 0; j < MAX_TCL_RING; j++)
 		len += scnprintf(buf + len, size - len, " %d:%u",
 				 j, device_stats->tx_eapol[j]);
 	len += scnprintf(buf + len, size - len, "\n");
 
-	len += scnprintf(buf + len, size - len, "\ntx eapol M1\t");
+	len += scnprintf(buf + len, size - len, "\ntx_eapol_M1= ");
 	for (j=0; j < DP_TCL_NUM_RING_MAX; j++)
 		len += scnprintf(buf + len, size - len,
-				"%u\t",device_stats->tx_eapol_type[0][j]);
+				"%u ", device_stats->tx_eapol_type[0][j]);
 
-	len += scnprintf(buf + len, size - len, "\ntx eapol M2\t");
+	len += scnprintf(buf + len, size - len, "\ntx_eapol_M2= ");
 	for (j=0; j < DP_TCL_NUM_RING_MAX; j++)
 		len += scnprintf(buf + len, size - len,
-				 "%u\t",device_stats->tx_eapol_type[1][j]);
+				 "%u ", device_stats->tx_eapol_type[1][j]);
 
-	len += scnprintf(buf + len, size - len, "\ntx eapol M3\t");
+	len += scnprintf(buf + len, size - len, "\ntx_eapol_M3= ");
 	for (j=0; j < DP_TCL_NUM_RING_MAX; j++)
 		len += scnprintf(buf + len, size - len,
-				 "%u\t",device_stats->tx_eapol_type[2][j]);
+				 "%u ", device_stats->tx_eapol_type[2][j]);
 
-	len += scnprintf(buf + len, size - len, "\ntx eapol M4\t");
+	len += scnprintf(buf + len, size - len, "\ntx_eapol_M4= ");
 	for (j=0; j < DP_TCL_NUM_RING_MAX; j++)
 		len += scnprintf(buf + len, size - len,
-				 "%u\t",device_stats->tx_eapol_type[3][j]);
+				 "%u ", device_stats->tx_eapol_type[3][j]);
 
-	len += scnprintf(buf + len, size - len, "\ntx eapol G1\t");
+	len += scnprintf(buf + len, size - len, "\ntx_eapol_G1= ");
 	for (j=0; j < DP_TCL_NUM_RING_MAX; j++)
 		len += scnprintf(buf + len, size - len,
-				"%u\t",device_stats->tx_eapol_type[4][j]);
+				"%u ", device_stats->tx_eapol_type[4][j]);
 
-	len += scnprintf(buf + len, size - len, "\ntx eapol G2\t");
+	len += scnprintf(buf + len, size - len, "\ntx_eapol_G2= ");
 	for (j=0; j < DP_TCL_NUM_RING_MAX; j++)
 		len += scnprintf(buf + len, size - len,
-				"%u\t",device_stats->tx_eapol_type[5][j]);
+				"%u ", device_stats->tx_eapol_type[5][j]);
 
 	len += scnprintf(buf + len, size - len, "\n");
 
-	len += scnprintf(buf + len, size - len, "\ntx_null_frame:");
+	len += scnprintf(buf + len, size - len, "\ntx_null_frame=");
 	for (j = 0; j < MAX_TCL_RING; j++)
 		len += scnprintf(buf + len, size - len, " %d:%u",
 				 j, device_stats->tx_null_frame[j]);
 	len += scnprintf(buf + len, size - len, "\n");
 
 	len += scnprintf(buf + len, size - len, "\ntqm_rel_reason:\n");
+
 	for (j = 0; j < MAX_TX_COMP_RING; j++) {
-		len += scnprintf(buf + len, size - len, "Ring%d:", j);
+		len += scnprintf(buf + len, size - len, "Ring%d=", j);
 		for (i = 0; i < MAX_TQM_RELEASE_REASON; i++) {
 			len += scnprintf(buf + len, size - len, " %u:%u", i,
 				device_stats->tx_comp_stats[j].tqm_rel_reason[i]);
@@ -1150,7 +1152,7 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 	len += scnprintf(buf + len, size - len, "\nfw_tx_status:\n");
 	for (j=0; j < MAX_TX_COMP_RING; j++)
 		len += scnprintf(buf + len, size - len,
-			"Ring%d: 0:%u 1:%u 2:%u 3:%u 4:%u 5:%u 6:%u\n", j,
+			"Ring%d= 0:%u 1:%u 2:%u 3:%u 4:%u 5:%u 6:%u\n", j,
 			device_stats->tx_comp_stats[j].fw_tx_status[0],
 			device_stats->tx_comp_stats[j].fw_tx_status[1],
 			device_stats->tx_comp_stats[j].fw_tx_status[2],
@@ -1159,66 +1161,66 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 			device_stats->tx_comp_stats[j].fw_tx_status[5],
 			device_stats->tx_comp_stats[j].fw_tx_status[6]);
 
-	len += scnprintf(buf + len, size - len, "\ntx_completed:");
+	len += scnprintf(buf + len, size - len, "\ntx_completed=");
 	for (j = 0; j < MAX_TX_COMP_RING; j++)
 		len += scnprintf(buf + len, size - len, " %d:%u",
 				 j, device_stats->tx_comp_stats[j].tx_completed);
 	len += scnprintf(buf + len, size - len, "\n");
 
-	len += scnprintf(buf + len, size - len, "\nTCL Ring Full Failures:\n");
+	len += scnprintf(buf + len, size - len, "\nTCL_Ring_Full_Failures:\n");
 
 	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++)
-		len += scnprintf(buf + len, size - len, "ring%d: %u\n",
+		len += scnprintf(buf + len, size - len, "ring%d= %u\n",
 				 i, device_stats->tx_err.desc_na[i]);
 
-	len += scnprintf(buf + len, size - len, "\nTCL Ring Buffer Alloc Failures:\n");
+	len += scnprintf(buf + len, size - len, "\nTCL_Ring_Buffer_Alloc_Failures:\n");
 	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++)
-		len += scnprintf(buf + len, size - len, "ring%d: %u\n",
+		len += scnprintf(buf + len, size - len, "ring%d= %u\n",
 			 i, device_stats->tx_err.txbuf_na[i]);
 
 	len += scnprintf(buf + len, size - len,
-			"\nTransmit Threshold limit: %d\n",
+			"\nTransmit_Threshold_limit= %d\n",
 			device_stats->tx_err.threshold_limit);
 
 	len += scnprintf(buf + len, size - len,
-			 "\nMisc Transmit Failures: %d\n",
+			 "\nMisc_Transmit_Failures= %d\n",
 			 atomic_read(&device_stats->tx_err.misc_fail));
 
-	len += scnprintf(buf + len, size - len, "\nFast xmit Tx stats:\n");
+	len += scnprintf(buf + len, size - len, "\nFast_xmit_Tx_unicast_stats:\n");
 	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++)
-	len += scnprintf(buf + len, size - len, "ring%d: fast_unicast:%u \n",
-			 i, device_stats->tx_fast_unicast[i]);
+		len += scnprintf(buf + len, size - len, "ring%d= %u\n",
+				 i, device_stats->tx_fast_unicast[i]);
 
-	len += scnprintf(buf + len, size - len, "\nSOC RX STATS:\n\n");
-	len += scnprintf(buf + len, size - len, "err ring pkts: %u\n",
+	len += scnprintf(buf + len, size - len, "\nSOC_RX_STATS:\n");
+	len += scnprintf(buf + len, size - len, "err_ring_pkts= %u\n",
 			 device_stats->err_ring_pkts);
-	len += scnprintf(buf + len, size - len, "Invalid RBM: %u\n\n",
+	len += scnprintf(buf + len, size - len, "Invalid_RBM= %u\n",
 			 device_stats->invalid_rbm);
-	len += scnprintf(buf + len, size - len, "free excess alloc skb: %u\n\n",
+	len += scnprintf(buf + len, size - len, "free_excess_alloc_skb= %u\n\n",
 			 device_stats->free_excess_alloc_skb);
-	len += scnprintf(buf + len, size - len, "RXDMA errors:\n");
+	len += scnprintf(buf + len, size - len, "RXDMA_errors:\n");
 	for (i = 0; i < HAL_REO_ENTR_RING_RXDMA_ECODE_MAX; i++)
-		len += scnprintf(buf + len, size - len, "%s: %u\n",
+		len += scnprintf(buf + len, size - len, "%s= %u\n",
 				 rxdma_err[i], device_stats->wbm_err.rxdma_error[i]);
 
-	len += scnprintf(buf + len, size - len, "\nREO errors:\n");
+	len += scnprintf(buf + len, size - len, "\nREO_errors:\n");
 	for (i = 0; i < HAL_REO_DEST_RING_ERROR_CODE_MAX; i++)
-		len += scnprintf(buf + len, size - len, "%s: %u\n",
+		len += scnprintf(buf + len, size - len, "%s= %u\n",
 				 reo_err[i], device_stats->wbm_err.reo_error[i]);
 
-	len += scnprintf(buf + len, size - len, "\n WBM Rx Drop Count:\n");
+	len += scnprintf(buf + len, size - len, "\nWBM_Rx_Drop_Count:\n");
 	for (i = 0; i < WBM_ERR_DROP_MAX; i++)
-		len += scnprintf(buf + len, size - len, "%s: %u\n",
+		len += scnprintf(buf + len, size - len, "%s= %u\n",
 				 wbm_rx_drop[i], device_stats->wbm_err.drop[i]);
 
-	len += scnprintf(buf + len, size - len, "\nHAL REO errors:\n");
+	len += scnprintf(buf + len, size - len, "\nHAL_REO_errors:\n");
 	for (j = 0; j < DP_REO_DST_RING_MAX; j++)
-		len += scnprintf(buf + len, size - len, "ring%d: %u\n",
+		len += scnprintf(buf + len, size - len, "ring%d= %u\n",
 				 j, device_stats->hal_reo_error[j]);
 
-	len += scnprintf(buf + len, size - len, "\nREO Rx Received:");
+	len += scnprintf(buf + len, size - len, "\nREO_Rx_Received:");
 	for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
-		len += scnprintf(buf + len, size - len, "\nRing%d: ", i + 1);
+		len += scnprintf(buf + len, size - len, "\nRing%d= ", i + 1);
 		for (j = 0; j < ab->ag->num_devices; j++)
 			len += scnprintf(buf + len, size - len,
 					 "%d:%u\t", j,
@@ -1227,9 +1229,9 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 
 	len += scnprintf(buf + len, size - len, "\n");
 
-	len += scnprintf(buf + len, size - len, "\nREO Fast Rx:\n");
+	len += scnprintf(buf + len, size - len, "\nREO_Fast_Rx:");
 	for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
-		len += scnprintf(buf + len, size - len, "\nRing%d: ", i + 1);
+		len += scnprintf(buf + len, size - len, "\nRing%d= ", i + 1);
 		for (j = 0; j < ab->ag->num_devices; j++)
 			len += scnprintf(buf + len, size - len,
 					 "%d:%u\t", j,
@@ -1237,9 +1239,9 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 	}
 
 	len += scnprintf(buf + len, size - len, "\n");
-	len += scnprintf(buf + len, size - len, "\nREO Non-Fast Rx:\n");
+	len += scnprintf(buf + len, size - len, "\nREO_Non-Fast_Rx:");
 	for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
-		len += scnprintf(buf + len, size - len, "\nRing%d: ", i + 1);
+		len += scnprintf(buf + len, size - len, "\nRing%d= ", i + 1);
 		for (j = 0; j < ab->ag->num_devices; j++)
 			len += scnprintf(buf + len, size - len,
 					 "%d:%u\t", j,
@@ -1247,9 +1249,9 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 	}
 
 	len += scnprintf(buf + len, size - len, "\n");
-	len += scnprintf(buf + len, size - len, "\nMcast Non-Fast Rx:\n");
+	len += scnprintf(buf + len, size - len, "\nMcast_Non-Fast_Rx:");
 	for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
-		len += scnprintf(buf + len, size - len, "\nRing%d: ", i + 1);
+		len += scnprintf(buf + len, size - len, "\nRing%d= ", i + 1);
 		for (j = 0; j < ab->ag->num_devices; j++)
 			len += scnprintf(buf + len, size - len,
 					 "%d:%u\t", j,
@@ -1257,9 +1259,9 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 	}
 
 	len += scnprintf(buf + len, size - len, "\n");
-	len += scnprintf(buf + len, size - len, "\nUnicast Non-Fast Rx:\n");
+	len += scnprintf(buf + len, size - len, "\nUnicast_Non-Fast_Rx:");
 	for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
-		len += scnprintf(buf + len, size - len, "\nRing%d: ", i + 1);
+		len += scnprintf(buf + len, size - len, "\nRing%d= ", i + 1);
 		for (j = 0; j < ab->ag->num_devices; j++)
 			len += scnprintf(buf + len, size - len,
 					 "%d:%u\t", j,
@@ -1268,52 +1270,52 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 
 	len += scnprintf(buf + len, size - len, "\n");
 
-	len += scnprintf(buf + len, size - len, "\nRx WBM Rel Eapol:\n");
+	len += scnprintf(buf + len, size - len, "\nRx_WBM_Rel_Eapol= ");
 	for (i = 0; i < ab->ag->num_devices; i++)
 		len += scnprintf(buf + len, size - len, "%d:%u\t", i,
 				 device_stats->rx_eapol[i]);
 
 	len += scnprintf(buf + len, size - len, "\n");
 
-	len += scnprintf(buf + len, size - len, "\nRx eapol M1\t");
+	len += scnprintf(buf + len, size - len, "\nRx_eapol_M1= ");
 	for (i = 0; i < ab->ag->num_devices; i++)
 		len += scnprintf(buf + len, size - len, "%d:%u\t", i,
 				 device_stats->rx_eapol_type[0][i]);
 
-	len += scnprintf(buf + len, size - len, "\nRx eapol M2\t");
+	len += scnprintf(buf + len, size - len, "\nRx_eapol_M2= ");
 	for (i = 0; i < ab->ag->num_devices; i++)
 		len += scnprintf(buf + len, size - len, "%d:%u\t", i,
 				 device_stats->rx_eapol_type[1][i]);
 
-	len += scnprintf(buf + len, size - len, "\nRx eapol M3\t");
+	len += scnprintf(buf + len, size - len, "\nRx_eapol_M3= ");
 	for (i = 0; i < ab->ag->num_devices; i++)
 		len += scnprintf(buf + len, size - len, "%d:%u\t", i,
 				 device_stats->rx_eapol_type[2][i]);
 
-	len += scnprintf(buf + len, size - len, "\nRx eapol M4\t");
+	len += scnprintf(buf + len, size - len, "\nRx_eapol_M4= ");
 	for (i = 0; i < ab->ag->num_devices; i++)
 		len += scnprintf(buf + len, size - len, "%d:%u\t", i,
                                  device_stats->rx_eapol_type[3][i]);
 
-	len += scnprintf(buf + len, size - len, "\nRx eapol G1\t");
+	len += scnprintf(buf + len, size - len, "\nRx_eapol_G1= ");
 	for (i = 0; i < ab->ag->num_devices; i++)
 		len += scnprintf(buf + len, size - len, "%d:%u\t", i,
 				 device_stats->rx_eapol_type[4][i]);
 
-	len += scnprintf(buf + len, size - len,"\nRx eapol G2\t");
+	len += scnprintf(buf + len, size - len, "\nRx_eapol_G2= ");
 	for (i = 0; i < ab->ag->num_devices; i++)
-                len += scnprintf(buf + len, size - len, "%d:%u\t", i,
-                                 device_stats->rx_eapol_type[5][i]);
+		len += scnprintf(buf + len, size - len, "%d:%u\t", i,
+				 device_stats->rx_eapol_type[5][i]);
 
 	len += scnprintf(buf + len, size - len, "\n");
 
-	len += scnprintf(buf + len, size - len, "\nNull frame Rx: %u Rx dropped: %u\n",
+	len += scnprintf(buf + len, size - len, "\nNull_frame_Rx= %u\nRx_dropped= %u\n",
 			 device_stats->rx_pkt_null_frame_handled,
 			 device_stats->rx_pkt_null_frame_dropped);
 
-	len += scnprintf(buf + len, size - len, "\nRx WBM REL SRC Errors:\n");
+	len += scnprintf(buf + len, size - len, "\nRx_WBM_REL_SRC_Errors:");
 	for (i = 0; i < HAL_WBM_REL_SRC_MODULE_MAX; i++) {
-		len += scnprintf(buf + len, size - len, "\n%s\t: ", wbm_rel_src[i]);
+		len += scnprintf(buf + len, size - len, "\n%s=\t", wbm_rel_src[i]);
 		for (j = 0; j < ab->ag->num_devices; j++)
 			len += scnprintf(buf + len, size - len,
 					 "%d:%u\t", j,
@@ -1321,7 +1323,7 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 	}
 
 	len += scnprintf(buf + len, size - len,
-			 "\nFIRST/LAST MSDU BIT MISSING COUNT: %u\n",
+			 "\n\nFIRSTLAST_MSDU_BIT_MISSING_COUNT= %u\n",
 			 device_stats->first_and_last_msdu_bit_miss);
 
 	rcu_read_lock();
@@ -1335,7 +1337,7 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 	}
 	rcu_read_unlock();
 	len += scnprintf(buf + len, size - len,
-			 "\nTx Desc In use: %d\n", tx_desc_in_use);
+			 "\nTx_desc_in_use= %d\n", tx_desc_in_use);
 
 	if (ab->dp->arch_ops->dump_device_dp_stats)
 		len += ab->dp->arch_ops->dump_device_dp_stats(ab->dp, buf + len,
@@ -4915,60 +4917,60 @@ static ssize_t ath12k_debugfs_dump_ppeds_stats(struct file *file,
 	if (!buf)
 		return -ENOMEM;
 
-	len += scnprintf(buf + len, size - len, "PPEDS STATS\n");
-	len += scnprintf(buf + len, size - len, "-----------\n");
-	len += scnprintf(buf + len, size - len, "tcl_prod_cnt %u\n",
+	len += scnprintf(buf + len, size - len, "PPEDS_STATS:\n");
+	len += scnprintf(buf + len, size - len, "tcl_prod_cnt= %u\n",
 			 ppeds_stats->tcl_prod_cnt);
-	len += scnprintf(buf + len, size - len, "tcl_cons_cnt %u\n",
+	len += scnprintf(buf + len, size - len, "tcl_cons_cnt= %u\n",
 			 ppeds_stats->tcl_cons_cnt);
-	len += scnprintf(buf + len, size - len, "reo_prod_cnt %u\n",
+	len += scnprintf(buf + len, size - len, "reo_prod_cnt= %u\n",
 			 ppeds_stats->reo_prod_cnt);
-	len += scnprintf(buf + len, size - len, "reo_cons_cnt %u\n",
+	len += scnprintf(buf + len, size - len, "reo_cons_cnt= %u\n",
 			 ppeds_stats->reo_cons_cnt);
-	len += scnprintf(buf + len, size - len, "get_tx_desc_cnt %u\n",
+	len += scnprintf(buf + len, size - len, "get_tx_desc_cnt= %u\n",
 			 ppeds_stats->get_tx_desc_cnt);
-	len += scnprintf(buf + len, size - len, "enable_intr_cnt %u\n",
+	len += scnprintf(buf + len, size - len, "enable_intr_cnt= %u\n",
 			 ppeds_stats->enable_intr_cnt);
-	len += scnprintf(buf + len, size - len, "disable_intr_cnt %u\n",
+	len += scnprintf(buf + len, size - len, "disable_intr_cnt= %u\n",
 			 ppeds_stats->disable_intr_cnt);
-	len += scnprintf(buf + len, size - len, "release_tx_single_cnt %u\n",
+	len += scnprintf(buf + len, size - len, "release_tx_single_cnt= %u\n",
 			 ppeds_stats->release_tx_single_cnt);
-	len += scnprintf(buf + len, size - len, "release_rx_desc_cnt %u\n",
+	len += scnprintf(buf + len, size - len, "release_rx_desc_cnt= %u\n",
 			 ppeds_stats->release_rx_desc_cnt);
-	len += scnprintf(buf + len, size - len, "tx_desc_allocated %u\n",
+	len += scnprintf(buf + len, size - len, "tx_desc_allocated= %u\n",
 			 ppeds_stats->tx_desc_allocated);
-	len += scnprintf(buf + len, size - len, "tx_desc_alloc_fails %u\n",
+	len += scnprintf(buf + len, size - len, "tx_desc_alloc_fails= %u\n",
 			 ppeds_stats->tx_desc_alloc_fails);
-	len += scnprintf(buf + len, size - len, "tx_desc_freed %u\n",
+	len += scnprintf(buf + len, size - len, "tx_desc_freed= %u\n",
 			 ppeds_stats->tx_desc_freed);
-	len += scnprintf(buf + len, size - len, "fw2wbm_pkt_drops %u\n",
+	len += scnprintf(buf + len, size - len, "fw2wbm_pkt_drops= %u\n",
 			 ppeds_stats->fw2wbm_pkt_drops);
-	len += scnprintf(buf + len, size - len, "num_rx_desc_freed %u\n",
+	len += scnprintf(buf + len, size - len, "num_rx_desc_freed= %u\n",
 			 ppeds_stats->num_rx_desc_freed);
-	len += scnprintf(buf + len, size - len, "num_rx_desc_realloc %u\n",
+	len += scnprintf(buf + len, size - len, "num_rx_desc_realloc= %u\n",
 			 ppeds_stats->num_rx_desc_realloc);
-	len += scnprintf(buf + len, size - len, "\ntqm_rel_reason:");
+
+	len += scnprintf(buf + len, size - len, "\ntqm_rel_reason=");
 	for (i = 0; i < HAL_WBM_TQM_REL_REASON_MAX; i++) {
 		len += scnprintf(buf + len, size - len, " %u:%u", i,
 				 ppeds_stats->tqm_rel_reason[i]);
 	}
 	len += scnprintf(buf + len, size - len, "\n");
 
-	len += scnprintf(buf + len, size - len, "SRNG Ring index Dump:\n");
+	len += scnprintf(buf + len, size - len, "\nSRNG_Ring_index_Dump:\n");
 
 	srng = &ab->hal.srng_list[ppe2tcl_ring_id];
 	if (srng) {
-		len += scnprintf(buf + len, size - len, "ppe2tcl hp 0x%x\n",
+		len += scnprintf(buf + len, size - len, "ppe2tcl_hp= 0x%x\n",
 				srng->u.src_ring.hp);
-		len += scnprintf(buf + len, size - len, "ppe2tcl tp 0x%x\n",
+		len += scnprintf(buf + len, size - len, "ppe2tcl_tp= 0x%x\n",
 				 *(volatile u32 *)(srng->u.src_ring.tp_addr));
 	}
 
 	srng = &ab->hal.srng_list[reo2ppe_ring_id];
 	if (srng) {
-		len += scnprintf(buf + len, size - len, "reo2ppe hp 0x%x\n",
+		len += scnprintf(buf + len, size - len, "reo2ppe_hp= 0x%x\n",
 				 *(volatile u32 *)(srng->u.dst_ring.hp_addr));
-		len += scnprintf(buf + len, size - len, "reo2ppe tp 0x%x\n",
+		len += scnprintf(buf + len, size - len, "reo2ppe_tp= 0x%x\n",
 				 srng->u.dst_ring.tp);
 	}
 
