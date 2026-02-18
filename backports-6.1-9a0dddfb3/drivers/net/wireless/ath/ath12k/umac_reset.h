@@ -11,8 +11,6 @@
 #include "hif.h"
 #include "debug.h"
 bool ath12k_dp_umac_reset_in_progress(struct ath12k_base *ab);
-void ath12k_umac_reset_notify_target_sync_and_send(struct ath12k_base *ab,
-						   enum dp_umac_reset_tx_cmd tx_event);
 /**
  * typedef umac_reset_handler_fn - Function pointer type for UMAC reset handlers
  * @ab: Pointer to ath12k_base structure
@@ -82,4 +80,18 @@ int ath12k_umac_reset_enqueue_task(struct ath12k_hw_group *ag,
 				   int bound_cpu_id);
 
 void ath12k_dummy_pre_reset_callback(struct ath12k_base *ab);
+/**
+ * ath12k_umac_reset_notify_target_sync_and_send - Atomically clear task bit, notify fw
+ * @ab: Pointer to ath12k_base structure
+ * @tx_cmd: TX command to send to target
+ * @task_bit: Task bit to clear from task_map
+ *
+ * Atomically clears the specified task bit from task_map and checks if all tasks
+ * are complete. If all tasks are done and tx_cmd is not NONE, sends the response
+ * to firmware. This prevents race conditions where multiple threads could send
+ * duplicate responses.
+ */
+void ath12k_umac_reset_notify_target_sync_and_send(struct ath12k_base *ab,
+						   enum dp_umac_reset_tx_cmd tx_cmd,
+						   int task_bit);
 #endif /*ATH12K_UMAC_RESET_H*/

@@ -565,20 +565,38 @@ int ath12k_umac_reset_initiate_recovery(struct ath12k_base *ab,
 }
 
 void ath12k_umac_reset_notify_target_sync_and_send(struct ath12k_base *ab,
-						   enum dp_umac_reset_tx_cmd tx_cmd)
+						   enum dp_umac_reset_tx_cmd tx_cmd,
+						   int task_bit)
 {
 	struct ath12k_hw_group *ag = ab->ag;
 	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
+	unsigned long flags;
+	bool should_send = false;
 
-	if (tx_cmd == ATH12K_UMAC_RESET_TX_CMD_NONE)
-		return;
+	/* Atomically clear bit and check if map is empty */
+	spin_lock_irqsave(&mlo_umac_reset->task_queue_lock, flags);
 
-	/* Send only when all task bits are cleared */
+	clear_bit(task_bit, &mlo_umac_reset->task_map);
+
+	/* Check if this was the last bit */
 	if (bitmap_empty(&mlo_umac_reset->task_map, BITS_PER_LONG)) {
-		ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET, "All tasks complete, sending notify\n");
+		should_send = true;
+	}
+
+	spin_unlock_irqrestore(&mlo_umac_reset->task_queue_lock, flags);
+
+	/* Handle based on tx_cmd - check NONE first for early exit */
+	if (tx_cmd == ATH12K_UMAC_RESET_TX_CMD_NONE) {
+		ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET,
+			   "Task %d complete (no cmd to send)\n", task_bit);
+	} else if (should_send) {
+		ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET,
+			   "Task %d complete, all tasks done, sending notify for cmd %d\n",
+			   task_bit, tx_cmd);
 		ath12k_umac_reset_notify_target(ab, tx_cmd);
 	} else {
-		ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET, "Tasks pending in task_map, holding notify\n");
+		ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET,
+			   "Task %d complete, tasks still pending\n", task_bit);
 	}
 }
 EXPORT_SYMBOL(ath12k_umac_reset_notify_target_sync_and_send);
@@ -763,12 +781,10 @@ void ath12k_umac_reset_tasklet_handler_percpu(struct tasklet_struct *t)
 
 			task->callback(task->ab);
 
-			/* task_id is the bit position */
-			clear_bit(task->task_id, &mlo_umac_reset->task_map);
-
-			/* Always call notify; it will decide based on task_map */
+			/* Atomically clear bit and notify target if all tasks complete */
 			ath12k_umac_reset_notify_target_sync_and_send(task->ab,
-								      task->tx_cmd);
+								      task->tx_cmd,
+								      task->task_id);
 		}
 		kfree(task);
 	}
@@ -1063,13 +1079,12 @@ void ath12k_dp_umac_reset_handle(struct ath12k_base *ab)
 	/* At this poing we are assured that all tasks are enququed
 	 * and there is no premature response to firmware
 	 */
-	clear_bit(0, &mlo_umac_reset->task_map);
 
 	/* Look up the corresponding TX command for this RX event */
 	tx_cmd = umac_reset_rx_to_tx_map[rx_event];
 
-	/* Call notify; as we finished task 0 */
-	ath12k_umac_reset_notify_target_sync_and_send(ab, tx_cmd);
+	/* Atomically clear reserved bit 0 and notify target if all tasks complete */
+	ath12k_umac_reset_notify_target_sync_and_send(ab, tx_cmd, 0);
 }
 
 void ath12k_umac_reset_tasklet_handler(struct tasklet_struct *umac_cntxt)
