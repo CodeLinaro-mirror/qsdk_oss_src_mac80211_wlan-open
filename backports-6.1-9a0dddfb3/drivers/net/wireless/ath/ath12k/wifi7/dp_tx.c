@@ -1054,7 +1054,7 @@ ath12k_wifi7_dp_tx_fast(struct ath12k_pdev_dp *dp_pdev,
 	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags))
 		return DP_TX_ENQ_DROP_CRASH_FLUSH;
 
-	if (test_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags)) {
+	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags)) {
 		kfree_skb(skb);
 		return DP_TX_ENQ_SUCCESS;
 	}
@@ -1229,7 +1229,7 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags))
 		return DP_TX_ENQ_DROP_CRASH_FLUSH;
 
-	if (test_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags)) {
+	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags)) {
 		kfree_skb(skb);
 		return err;
 	}
