@@ -5829,13 +5829,6 @@ void ath12k_bss_assoc(struct ath12k *ar,
 		return;
 	}
 
-	ret = ath12k_dp_arch_get_peer_init_status(dp, &ah->dp_hw, vif->cfg.ap_addr);
-	if (ret) {
-		ath12k_warn(ar->ab, "failed to get successful peer assoc init status for %pM\n",
-			    vif->cfg.ap_addr);
-		return;
-	}
-
 	spin_lock_bh(&dp->dp_lock);
 	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, arvif->vdev_id, arsta->addr);
 	if (peer && !peer->assoc_success) {
@@ -7173,6 +7166,17 @@ void ath12k_mac_op_vif_cfg_changed(struct ieee80211_hw *hw,
 				ath12k_bss_disassoc(ar, arvif);
 			}
 		}
+		if (ar && vif->cfg.assoc) {
+			ret = ath12k_dp_arch_get_peer_init_status(ar->ab->dp,
+								  &ah->dp_hw,
+								  vif->cfg.ap_addr);
+			if (ret) {
+				ath12k_warn(ar->ab,
+					    "failed to get successful peer assoc init status for %pM\n",
+					    vif->cfg.ap_addr);
+				return;
+			}
+		}
 	}
 
 	if (changed & BSS_CHANGED_MLD_ADV_TTLM) {
@@ -8460,7 +8464,18 @@ skip_pending_cs_up:
 			ath12k_dp_arch_peer_assoc(ar->ab->dp, &ar->ah->dp_hw,
 						  &ahvif->dp_vif,
 						  vif->cfg.ap_addr);
+
 			ath12k_bss_assoc(ar, arvif, info);
+
+			ret = ath12k_dp_arch_get_peer_init_status(ar->ab->dp,
+								  &ar->ah->dp_hw,
+								  vif->cfg.ap_addr);
+			if (ret) {
+				ath12k_warn(ar->ab,
+					    "failed to get successful peer assoc init status for %pM\n",
+					    vif->cfg.ap_addr);
+				return;
+			}
 		} else {
 			ath12k_bss_disassoc(ar, arvif);
 		}
