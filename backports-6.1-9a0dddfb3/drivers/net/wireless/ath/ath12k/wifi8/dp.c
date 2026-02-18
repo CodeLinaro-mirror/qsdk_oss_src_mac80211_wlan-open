@@ -186,7 +186,6 @@ static void ath12k_wifi8_dp_umac_deinit(struct ath12k_dp *dp)
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ath12k_nss_plugin_unregister_ops(ab);
 #endif
-
 	ath12k_wifi8_dp_rx_ring_free(ab);
 	ath12k_dp_ast_table_deinit(dp->dp_hw_grp);
 	ath12k_dp_pn_counter_page_free(dp->dp_hw_grp);

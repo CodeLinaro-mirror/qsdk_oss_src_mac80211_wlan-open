@@ -20,7 +20,6 @@ static void ath12k_wifi7_umac_reset_handle_pre_reset(struct ath12k_base *ab)
 	ath12k_hif_mgmt_irq_disable(ab);
 
 	ath12k_hif_irq_disable(ab);
-	ab->dp_umac_reset.umac_pre_reset_in_prog = true;
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags)) {
 		ath12k_dp_ppeds_service_enable_disable(ab, true);
@@ -29,7 +28,6 @@ static void ath12k_wifi7_umac_reset_handle_pre_reset(struct ath12k_base *ab)
 		ath12k_dp_ppeds_service_enable_disable(ab, false);
 	}
 #endif
-	ath12k_umac_reset_notify_pre_reset_done(ab);
 
  /*
   * Memset the wbm link desc pool to 0 at this point, so that by the time
@@ -43,12 +41,28 @@ static void ath12k_wifi7_umac_reset_handle_pre_reset(struct ath12k_base *ab)
 void ath12k_wifi7_umac_reset_handle_pre_reset_wrapper(struct ath12k_base *ab)
 {
 	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
+	int cpu;
 
-	ath12k_umac_reset_enqueue_task(ag,
-				       ath12k_wifi7_umac_reset_handle_pre_reset,
-				       ab,
-				       ATH12K_UMAC_RESET_DO_PRE_RESET,
-				       ATH12K_UMAC_RESET_TX_CMD_NONE);
+	ath12k_wifi7_umac_reset_handle_pre_reset(ab);
+
+	/* Schedule dummy tasks on all online CPUs to ensure
+	 * no ath12k_wifi7_dp_service_srng instances are running.
+	 * Each task is bound to a specific CPU, and only after all
+	 * CPU-bound tasks complete will pre_reset_done be sent.
+	 */
+
+	if (mlo_umac_reset->initiator_chip != ab->device_id)
+		return;
+
+	for_each_online_cpu(cpu) {
+		ath12k_umac_reset_enqueue_task(ag,
+					       ath12k_dummy_pre_reset_callback,
+					       ab,
+					       ATH12K_UMAC_RESET_DO_PRE_RESET,
+					       ATH12K_UMAC_RESET_TX_CMD_PRE_RESET_DONE,
+					       cpu);  /* Bind to specific CPU */
+	}
 }
 
 static void ath12k_wifi7_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
@@ -118,14 +132,12 @@ void ath12k_wifi7_umac_reset_handle_post_reset_start_wrapper(struct ath12k_base 
 				       ath12k_wifi7_umac_reset_handle_post_reset_start,
 				       ab,
 				       ATH12K_UMAC_RESET_DO_POST_RESET_START,
-				       ATH12K_UMAC_RESET_TX_CMD_POST_RESET_START_DONE);
+				       ATH12K_UMAC_RESET_TX_CMD_POST_RESET_START_DONE,
+				       ATH12K_UMAC_RESET_CPU_UNBOUND);
 }
 
 static void ath12k_wifi7_umac_reset_handle_post_reset_complete(struct ath12k_base *ab)
 {
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-
-	dp->service_rings_running = 0;
 	ath12k_hif_irq_enable(ab);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags)) {
@@ -145,5 +157,6 @@ void ath12k_wifi7_umac_reset_handle_post_reset_complete_wrapper(struct ath12k_ba
 				       ath12k_wifi7_umac_reset_handle_post_reset_complete,
 				       ab,
 				       ATH12K_UMAC_RESET_DO_POST_RESET_COMPLETE,
-				       ATH12K_UMAC_RESET_TX_CMD_POST_RESET_COMPLETE_DONE);
+				       ATH12K_UMAC_RESET_TX_CMD_POST_RESET_COMPLETE_DONE,
+				       ATH12K_UMAC_RESET_CPU_UNBOUND);
 }

@@ -583,20 +583,20 @@ void ath12k_umac_reset_notify_target_sync_and_send(struct ath12k_base *ab,
 }
 EXPORT_SYMBOL(ath12k_umac_reset_notify_target_sync_and_send);
 
-void ath12k_umac_reset_notify_pre_reset_done(struct ath12k_base *ab)
+/* Dummy callback for CPU synchronization during pre-reset */
+void ath12k_dummy_pre_reset_callback(struct ath12k_base *ab)
 {
-	struct ath12k_dp *dp;
+	/* This callback intentionally does nothing.
+	 * Its purpose is to ensure that when it runs on a CPU,
+	 * no ath12k_wifi_dp_service_srng instances are running
+	 * on that CPU anymore (due to the early return check).
+	 */
 
-	dp = ath12k_ab_to_dp(ab);
-
-	if (dp->service_rings_running)
-		return;
-
-	ath12k_umac_reset_notify_target_sync_and_send(ab,
-						      ATH12K_UMAC_RESET_TX_CMD_PRE_RESET_DONE);
-	ab->dp_umac_reset.umac_pre_reset_in_prog = false;
+	ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET,
+		   "Dummy pre-reset callback executed on CPU %d\n",
+		   smp_processor_id());
 }
-EXPORT_SYMBOL(ath12k_umac_reset_notify_pre_reset_done);
+EXPORT_SYMBOL(ath12k_dummy_pre_reset_callback);
 
 void ath12k_umac_reset_handle_pre_reset(struct ath12k_base *ab)
 {
@@ -641,6 +641,7 @@ static void ath12k_umac_reset_handle_init_recovery(struct ath12k_base *ab)
  * @ab: Device context
  * @event: Event type for debugging
  * @tx_cmd: Command to send to target after callback completion
+ * @bound_cpu_id: CPU ID to bind task to, or ATH12K_UMAC_RESET_CPU_UNBOUND
  *
  * Returns: 0 on success, negative error code on failure
  */
@@ -648,7 +649,8 @@ int ath12k_umac_reset_enqueue_task(struct ath12k_hw_group *ag,
 				   umac_reset_handler_fn callback,
 				   struct ath12k_base *ab,
 				   enum dp_umac_reset_recover_action event,
-				   enum dp_umac_reset_tx_cmd tx_cmd)
+				   enum dp_umac_reset_tx_cmd tx_cmd,
+				   int bound_cpu_id)
 {
 	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
 	struct ath12k_umac_reset_task *task;
@@ -679,6 +681,7 @@ int ath12k_umac_reset_enqueue_task(struct ath12k_hw_group *ag,
 	task->event = event;
 	task->tx_cmd = tx_cmd;
 	task->task_id = next_id;
+	task->bound_cpu_id = bound_cpu_id;
 
 	/* Use direct bit mapping (no modulo) - task_id is the bit position */
 	set_bit(task->task_id, &mlo_umac_reset->task_map);
@@ -688,31 +691,45 @@ int ath12k_umac_reset_enqueue_task(struct ath12k_hw_group *ag,
 	spin_unlock_irqrestore(&mlo_umac_reset->task_queue_lock, flags);
 
 	ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET,
-		   "Enqueued task %u for event %d with tx_cmd %d (bit %u set)\n",
-		   task->task_id, event, tx_cmd, task->task_id);
+		   "Enqueued task %u for event %d with tx_cmd %d (bit %u set, bound_cpu: %d)\n",
+		   task->task_id, event, tx_cmd, task->task_id, bound_cpu_id);
 
 	return 0;
 }
 EXPORT_SYMBOL(ath12k_umac_reset_enqueue_task);
 
 /**
- * ath12k_umac_reset_dequeue_task - Dequeue a task for processing
+ * ath12k_umac_reset_dequeue_task - Dequeue a task for specific CPU
  * @ag: Hardware group
+ * @cpu: CPU ID to find task for
  *
- * Returns: Task structure or NULL if queue is empty
+ * Scans the queue and returns the first task that is either:
+ * - Bound to the specified CPU
+ * - Unbound (can run on any CPU)
+ *
+ * Returns: Task structure or NULL if no suitable task found
  */
-struct ath12k_umac_reset_task *ath12k_umac_reset_dequeue_task(struct ath12k_hw_group *ag)
+struct ath12k_umac_reset_task *ath12k_umac_reset_dequeue_task(struct ath12k_hw_group *ag,
+							      int cpu)
 {
 	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
 	struct ath12k_umac_reset_task *task = NULL;
+	struct ath12k_umac_reset_task *tmp;
 	unsigned long flags;
 
 	spin_lock_irqsave(&mlo_umac_reset->task_queue_lock, flags);
-	if (!list_empty(&mlo_umac_reset->task_queue)) {
-		task = list_first_entry(&mlo_umac_reset->task_queue,
-					struct ath12k_umac_reset_task, list);
-		list_del(&task->list);
+
+	/* Scan the queue for a task suitable for this CPU */
+	list_for_each_entry(tmp, &mlo_umac_reset->task_queue, list) {
+		if (tmp->bound_cpu_id == ATH12K_UMAC_RESET_CPU_UNBOUND ||
+		    tmp->bound_cpu_id == cpu) {
+			/* Found a suitable task */
+			task = tmp;
+			list_del(&task->list);
+			break;
+		}
 	}
+
 	spin_unlock_irqrestore(&mlo_umac_reset->task_queue_lock, flags);
 
 	return task;
@@ -722,7 +739,9 @@ struct ath12k_umac_reset_task *ath12k_umac_reset_dequeue_task(struct ath12k_hw_g
  * ath12k_umac_reset_tasklet_handler_percpu - Per-CPU tasklet handler
  * @t: Tasklet structure
  *
- * Processes tasks from the queue until empty
+ * Processes tasks from the queue using smart dequeue that automatically
+ * finds tasks suitable for this CPU (either bound to this CPU or unbound).
+ * This eliminates the need for skip tracking and re-enqueuing logic.
  */
 void ath12k_umac_reset_tasklet_handler_percpu(struct tasklet_struct *t)
 {
@@ -735,17 +754,16 @@ void ath12k_umac_reset_tasklet_handler_percpu(struct tasklet_struct *t)
 	mlo_umac_reset = container_of(t, struct ath12k_mlo_dp_umac_reset, tasklet[cpu]);
 	ag = container_of(mlo_umac_reset, struct ath12k_hw_group, mlo_umac_reset);
 
-	/* Process tasks until queue is empty */
-	while ((task = ath12k_umac_reset_dequeue_task(ag)) != NULL) {
+	/* Process tasks until no more suitable tasks for this CPU */
+	while ((task = ath12k_umac_reset_dequeue_task(ag, cpu)) != NULL) {
 		if (task->callback) {
 			ath12k_dbg(task->ab, ATH12K_DBG_DP_UMAC_RESET,
-				   "CPU %d processing task %u for event %d\n",
-				   cpu, task->task_id, task->event);
+				   "CPU %d processing task %u (bound_cpu: %d) for event %d\n",
+				   cpu, task->task_id, task->bound_cpu_id, task->event);
+
 			task->callback(task->ab);
 
-			/* Use direct bit mapping (no modulo)
-			 * task_id is the bit position
-			 */
+			/* task_id is the bit position */
 			clear_bit(task->task_id, &mlo_umac_reset->task_map);
 
 			/* Always call notify; it will decide based on task_map */
@@ -754,6 +772,10 @@ void ath12k_umac_reset_tasklet_handler_percpu(struct tasklet_struct *t)
 		}
 		kfree(task);
 	}
+
+	/* No more tasks for this CPU */
+	ath12k_dbg(ag->ab[0], ATH12K_DBG_DP_UMAC_RESET,
+		   "CPU %d: no more suitable tasks in queue\n", cpu);
 }
 
 /* Static table mapping rx_event to handler functions */
@@ -1012,10 +1034,10 @@ void ath12k_dp_umac_reset_handle(struct ath12k_base *ab)
 	/* After handlers, schedule tasklets if tasks were enqueued */
 	if (!list_empty(&mlo_umac_reset->task_queue)) {
 		int cpu;
+		call_single_data_t *csd = &mlo_umac_reset->csd[cpu];
 
-		for_each_cpu(cpu, cpu_online_mask) {
-			smp_call_function_single_async(cpu, &mlo_umac_reset->csd[cpu]);
-		}
+		for_each_cpu(cpu, cpu_online_mask)
+			smp_call_function_single_async(cpu, csd);
 	}
 
 	return;
