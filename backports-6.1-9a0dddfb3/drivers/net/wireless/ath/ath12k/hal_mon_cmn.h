@@ -347,11 +347,6 @@ enum hal_rx_mon_status {
 	HAL_RX_MON_STATUS_DROP_TLV,
 };
 
-enum hal_tx_mon_tlv_grp {
-	HAL_TX_MON_PROTECTED_TLV,
-	HAL_TX_MON_REG_TLV
-};
-
 enum hal_tx_mon_status {
 	HAL_TX_MON_STATUS_PPDU_NOT_DONE,
 	HAL_TX_MON_MPDU_START,
@@ -741,12 +736,12 @@ ru_alloc_offset[HAL_MAX_UL_MU_USERS][MAX_RU_INDEX] = {
 struct hal_mon_ops {
 	enum hal_tx_mon_status
 	(*tx_parse_status_tlv)(struct ath12k_hal *hal,
+			       struct ath12k_mon_data *mon_data,
 			       struct hal_tx_mon_ppdu_info *ppdu_info,
 			       u16 tlv_tag,
 			       const void *tlv_data,
 			       u32 userid,
 			       u16 tlv_len,
-			       struct hal_tx_mon_status_info *status_info,
 			       u8 *status_frag);
 	enum hal_tx_mon_status
 	(*tx_status_get_num_user)(struct ath12k_hal *hal,
@@ -769,7 +764,8 @@ struct hal_mon_ops {
 					  u32 tlv_len);
 	u8* (*rx_desc_get_msdu_payload)(void *desc);
 	struct dp_mon_tx_ppdu_info *
-	(*hal_mon_tx_ppdu_info)(struct ath12k_mon_data *pmon,
+	(*hal_mon_tx_ppdu_info)(struct ath12k_hal *hal,
+				struct ath12k_mon_data *pmon,
 				u16 tlv_tag);
 	void (*hal_mon_set_mon_buf_desc)(void *desc, u32 addr_lo,
 					 u32 addr_hi, u64 cookie);
@@ -805,22 +801,28 @@ struct hal_mon_ops {
 					void *ring_entry,
 					struct ath12k_mon_ring_desc_info *desc_info);
 	bool (*is_mon_buf_addr_tlv)(u32 tlv_tag);
-	enum hal_tx_mon_tlv_grp
-		(*tx_get_tlv_grp) (u16 tlv_tag, u32 *prot_tlv_status);
 };
+
+static inline struct dp_mon_tx_ppdu_info *
+ath12k_hal_mon_tx_ppdu_info(struct ath12k_hal *hal,
+			      struct ath12k_mon_data *mon_data,
+			      u16 tlv_tag)
+{
+	return hal->hal_mon_ops->hal_mon_tx_ppdu_info(hal, mon_data, tlv_tag);
+}
 
 static inline enum hal_tx_mon_status
 ath12k_hal_mon_tx_parse_status(struct ath12k_hal *hal,
+			       struct ath12k_mon_data *mon_data,
 			       struct hal_tx_mon_ppdu_info *ppdu_info,
 			       u16 tlv_tag, const void *tlv_data,
 			       u32 userid, u16 tlv_len,
-			       struct hal_tx_mon_status_info *status_info,
 			       u8 *status_frag)
 {
-	return hal->hal_mon_ops->tx_parse_status_tlv(hal, ppdu_info,
+	return hal->hal_mon_ops->tx_parse_status_tlv(hal, mon_data, ppdu_info,
 						     tlv_tag, tlv_data,
 						     userid, tlv_len,
-						     status_info, status_frag);
+						     status_frag);
 }
 
 static inline enum hal_tx_mon_status
@@ -919,14 +921,6 @@ ath12k_hal_mon_rx_desc_get_msdu_payload(struct ath12k_hal *hal,
 		return hal->hal_mon_ops->rx_desc_get_msdu_payload(rx_desc);
 
 	return NULL;
-}
-
-static inline struct dp_mon_tx_ppdu_info *
-ath12k_hal_mon_tx_ppdu_info(struct ath12k_hal *hal,
-			    struct ath12k_mon_data *pmon,
-			    u16 tlv_tag)
-{
-	return hal->hal_mon_ops->hal_mon_tx_ppdu_info(pmon, tlv_tag);
 }
 
 static inline void ath12k_hal_mon_set_mon_buf_desc(struct ath12k_hal *hal,
@@ -1037,15 +1031,6 @@ ath12k_hal_mon_tx_pcu_ppdu_setup_init_info_get(struct ath12k_hal *hal,
 		hal->hal_mon_ops->tx_pcu_ppdu_setup_init_info_get(tlv,
 								  status_info,
 								  tlv_len);
-}
-
-static inline enum hal_tx_mon_tlv_grp
-ath12k_hal_mon_tx_get_tlv_grp(struct ath12k_hal *hal,
-			      u16 tlv_tag,
-			      u32 *prot_tlv_status)
-{
-	return hal->hal_mon_ops->tx_get_tlv_grp(tlv_tag,
-						prot_tlv_status);
 }
 
 static __always_inline void

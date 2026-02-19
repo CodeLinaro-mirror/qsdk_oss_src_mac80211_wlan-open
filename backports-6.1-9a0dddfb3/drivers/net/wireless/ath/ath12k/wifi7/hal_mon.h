@@ -1326,10 +1326,10 @@ ath12k_wifi7_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 					 struct hal_tlv_parsed_hdr *tlv_parsed_hdr);
 enum hal_tx_mon_status
 ath12k_wifi7_hal_mon_tx_parse_status_tlv(struct ath12k_hal *hal,
+					 struct ath12k_mon_data *mon_data,
 					 struct hal_tx_mon_ppdu_info *ppdu_info,
 					 u16 tlv_tag, const void *tlv_data,
 					 u32 userid, u16 tlv_len,
-					 struct hal_tx_mon_status_info *status_info,
 					 u8 *status_frag);
 enum hal_tx_mon_status
 ath12k_wifi7_hal_mon_tx_status_get_num_user(struct ath12k_hal *hal,
@@ -1400,6 +1400,10 @@ ath12k_wifi7_extract_tx_mon_ring_desc(struct ath12k_hal *hal,
 				      struct ath12k_mon_ring_desc_info *desc_info);
 
 bool ath12k_wifi7_is_mon_buf_addr_tlv(u32 tlv_tag);
+struct dp_mon_tx_ppdu_info *ath12k_wifi7_hal_mon_tx_ppdu_info
+			(struct ath12k_hal *hal,
+			 struct ath12k_mon_data *pmon,
+			 u16 tlv_tag);
 enum hal_tx_mon_tlv_grp
 ath12k_wifi7_hal_mon_tx_get_tlv_grp(u16 tlv_tag, u32 *prot_tlv_status);
 #endif
