@@ -940,8 +940,6 @@ struct ieee80211_hw *ieee80211_alloc_hw_nm(size_t priv_data_len,
 			local->wlan_name = "wlan2";
 		else if (!strcmp(requested_name, PHY_6GHZ))
 			local->wlan_name = "wlan3";
-		else if (!strcmp(requested_name, PHY_SCAN_RADIO))
-			local->wlan_name = "scan0";
 		else
 			local->wlan_name = "wlan%d";
 	} else
