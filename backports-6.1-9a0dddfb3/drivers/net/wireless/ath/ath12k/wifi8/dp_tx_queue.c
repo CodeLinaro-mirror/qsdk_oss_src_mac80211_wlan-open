@@ -168,7 +168,9 @@ int ath12k_tx_classify_info_alloc(struct ath12k_dp_hw_group *dp_hw_grp,
 		if (peer->sta) {
 			rcu_read_lock();
 			ahsta = ath12k_sta_to_ahsta(peer->sta);
-			ti.assoc_link_id = ahsta->assoc_link_id;
+			ti.assoc_link_id = peer->sta->mlo ?
+					   ahsta->assoc_link_id :
+					   ahsta->deflink.link_id;
 			rcu_read_unlock();
 		}
 
