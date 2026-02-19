@@ -1156,6 +1156,7 @@ void ath12k_hal_dump_srng_stats(struct ath12k_base *ab)
 		if (!srng->initialized)
 			continue;
 
+#ifndef CPTCFG_EXT_IPA_OFFLOAD
 		if (srng->ring_dir == HAL_SRNG_DIR_SRC)
 			ath12k_err(ab,
 				   "src srng id %u hp %u, reap_hp %u, cur tp %u, cached tp %u last tp %u napi processed before %ums\n",
@@ -1172,6 +1173,7 @@ void ath12k_hal_dump_srng_stats(struct ath12k_base *ab)
 				   srng->u.dst_ring.cached_hp,
 				   srng->u.dst_ring.last_hp,
 				   jiffies_to_msecs(jiffies - srng->timestamp));
+#endif
 	}
 }
 

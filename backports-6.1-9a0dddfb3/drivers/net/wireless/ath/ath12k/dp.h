@@ -388,6 +388,9 @@ struct ath12k_rx_desc_info {
 	struct sk_buff *skb;
 	u32 magic;
 	u64 rsvd0;
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	bool ipa_mapped;
+#endif
 };
 
 struct ath12k_tx_desc_info {
