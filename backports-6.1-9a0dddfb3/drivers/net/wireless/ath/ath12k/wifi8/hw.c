@@ -637,9 +637,9 @@ static void ath12k_wifi8_mac_op_tx(struct ieee80211_hw *hw,
 	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct ieee80211_vif *vif = info->control.vif;
-	struct ieee80211_vif *vlan_vif = control ? control->vlan_vif : NULL;
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
-	struct ath12k_vif *vlan_ahvif = ath12k_vif_to_ahvif(vlan_vif);
+	struct ieee80211_vif *vlan_vif = control->vlan_vif;
+	struct ath12k_vif *vlan_ahvif = vlan_vif ? ath12k_vif_to_ahvif(vlan_vif) : NULL;
 	struct ath12k_link_vif *arvif = &ahvif->deflink;
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
 	struct ieee80211_key_conf *key = info->control.hw_key;
