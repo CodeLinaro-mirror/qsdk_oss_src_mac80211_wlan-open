@@ -1940,13 +1940,14 @@ int ath12k_wmi_send_peer_create_cmd(struct ath12k *ar,
 
 	ptr += sizeof(*ml_param);
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_PEER | ATH12K_DBG_MLME,
-		   "WMI peer create vdev_id %d peer_addr %pM ml_flags 0x%x num_peer:%d bridge peer %d\n",
-		   arg->vdev_id, arg->peer_addr, ml_param->flags, ar->num_peers, arg->mlo_bridge_peer);
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER | ATH12K_DBG_MLME, ATH12K_DBG_L1,
+			 "WMI peer create vdev_id %d peer_addr %pM ml_flags 0x%x num_peer:%d bridge peer %d\n",
+			 arg->vdev_id, arg->peer_addr, ml_param->flags,
+			 ar->num_peers, arg->mlo_bridge_peer);
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_PEER | ATH12K_DBG_MLME,
-		   "WMI peer create peer_addr:%pM flags:%d peer_id:%d sta_id:%d\n",
-		   arg->peer_addr, cmd->flags, arg->peer_id, arg->sta_id);
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER | ATH12K_DBG_MLME, ATH12K_DBG_L1,
+			 "WMI peer create peer_addr:%pM flags:%d peer_id:%d sta_id:%d\n",
+			 arg->peer_addr, cmd->flags, arg->peer_id, arg->sta_id);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_PEER_CREATE_CMDID);
 	if (ret) {
@@ -2003,9 +2004,9 @@ int ath12k_wmi_send_peer_delete_cmd(struct ath12k *ar,
 
 	mlo_params->mlo_hw_link_id_bitmap = cpu_to_le32(mlo_hw_link_id_bitmap);
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_PEER | ATH12K_DBG_MLME,
-		   "WMI peer delete vdev_id %d peer_addr %pM num_peer : %d hw_link_id_bitmap 0x%x\n",
-		   vdev_id,  peer_addr, ar->num_peers, mlo_hw_link_id_bitmap);
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER | ATH12K_DBG_MLME, ATH12K_DBG_L0,
+			 "WMI peer delete vdev_id %d peer_addr %pM num_peer : %d hw_link_id_bitmap 0x%x\n",
+			 vdev_id,  peer_addr, ar->num_peers, mlo_hw_link_id_bitmap);
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
 		   "WMI peer delete peer_delete_send_mlo_hw_bitmap: 0x%x\n",
@@ -3154,9 +3155,9 @@ int ath12k_wmi_vdev_install_key(struct ath12k *ar,
 	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_BYTE, key_len_aligned);
 	memcpy(tlv->value, arg->key_data, arg->key_len);
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_WMI | ATH12K_DBG_EAPOL,
-		   "WMI vdev install key idx %d cipher %d len %d\n",
-		   arg->key_idx, arg->key_cipher, arg->key_len);
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_WMI | ATH12K_DBG_EAPOL, ATH12K_DBG_L1,
+			 "WMI vdev install key idx %d cipher %d len %d\n",
+			 arg->key_idx, arg->key_cipher, arg->key_len);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_VDEV_INSTALL_KEY_CMDID);
 	if (ret) {
@@ -3799,23 +3800,23 @@ send_holq:
 send:
 	ptr = ath12k_wmi_peer_assoc_v2_cmd(ar, ptr, arg, &cmd_id);
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_WMI | ATH12K_DBG_MLME,
-		   "wmi peer assoc vdev id %d assoc id %d peer mac %pM peer_flags %x rate_caps %x peer_caps %x listen_intval %d ht_caps %x max_mpdu %d nss %d phymode %d peer_mpdu_density %d vht_caps %x he cap_info %x he ops %x he cap_info_ext %x he phy %x %x %x peer_bw_rxnss_override %x peer_flags_ext %x eht mac_cap %x %x eht phy_cap %x %x %x peer_eht_ops %x uhr mac_cap %x %x uhr phy_cap %x\n",
-		   cmd->vdev_id, cmd->peer_associd, arg->peer_mac,
-		   cmd->peer_flags, cmd->peer_rate_caps, cmd->peer_caps,
-		   cmd->peer_listen_intval, cmd->peer_ht_caps,
-		   cmd->peer_max_mpdu, cmd->peer_nss, cmd->peer_phymode,
-		   cmd->peer_mpdu_density,
-		   cmd->peer_vht_caps, cmd->peer_he_cap_info,
-		   cmd->peer_he_ops, cmd->peer_he_cap_info_ext,
-		   cmd->peer_he_cap_phy[0], cmd->peer_he_cap_phy[1],
-		   cmd->peer_he_cap_phy[2],
-		   cmd->peer_bw_rxnss_override, cmd->peer_flags_ext,
-		   cmd->peer_eht_cap_mac[0], cmd->peer_eht_cap_mac[1],
-		   cmd->peer_eht_cap_phy[0], cmd->peer_eht_cap_phy[1],
-		   cmd->peer_eht_cap_phy[2], cmd->peer_eht_ops,
-		   cmd->peer_uhr_cap_mac[0], cmd->peer_uhr_cap_mac[1],
-		   cmd->peer_uhr_cap_phy[0]);
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_WMI | ATH12K_DBG_MLME, ATH12K_DBG_L1,
+			 "wmi peer assoc vdev id %d assoc id %d peer mac %pM peer_flags %x rate_caps %x peer_caps %x listen_intval %d ht_caps %x max_mpdu %d nss %d phymode %d peer_mpdu_density %d vht_caps %x he cap_info %x he ops %x he cap_info_ext %x he phy %x %x %x peer_bw_rxnss_override %x peer_flags_ext %x eht mac_cap %x %x eht phy_cap %x %x %x peer_eht_ops %x uhr mac_cap %x %x uhr phy_cap %x\n",
+			 cmd->vdev_id, cmd->peer_associd, arg->peer_mac,
+			 cmd->peer_flags, cmd->peer_rate_caps, cmd->peer_caps,
+			 cmd->peer_listen_intval, cmd->peer_ht_caps,
+			 cmd->peer_max_mpdu, cmd->peer_nss, cmd->peer_phymode,
+			 cmd->peer_mpdu_density,
+			 cmd->peer_vht_caps, cmd->peer_he_cap_info,
+			 cmd->peer_he_ops, cmd->peer_he_cap_info_ext,
+			 cmd->peer_he_cap_phy[0], cmd->peer_he_cap_phy[1],
+			 cmd->peer_he_cap_phy[2],
+			 cmd->peer_bw_rxnss_override, cmd->peer_flags_ext,
+			 cmd->peer_eht_cap_mac[0], cmd->peer_eht_cap_mac[1],
+			 cmd->peer_eht_cap_phy[0], cmd->peer_eht_cap_phy[1],
+			 cmd->peer_eht_cap_phy[2], cmd->peer_eht_ops,
+			 cmd->peer_uhr_cap_mac[0], cmd->peer_uhr_cap_mac[1],
+			 cmd->peer_uhr_cap_phy[0]);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, cmd_id);
 	if (ret) {
@@ -9622,8 +9623,9 @@ static int wmi_process_mgmt_tx_comp(struct ath12k *ar, u32 desc_id,
 		frm_stype = FIELD_GET(IEEE80211_FCTL_STYPE, hdr->frame_control);
 		vif = skb_cb->vif;
 		if (ATH12K_MGMT_MLME_FRAME(hdr->frame_control))
-			ath12k_dbg(ar->ab, ATH12K_DBG_MLME, "Tx completion for %s frame to STA %pM status %u\n",
-				   mgmt_frame_name[frm_stype], hdr->addr1, status);
+			ath12k_dbg_level(ar->ab, ATH12K_DBG_MLME, ATH12K_DBG_L0,
+					 "Tx completion for %s frame to STA %pM status %u\n",
+					 mgmt_frame_name[frm_stype], hdr->addr1, status);
 
 		if (!vif) {
 			ath12k_warn(ar->ab, "failed to find vif to update txcompl mgmt stats\n");
@@ -10524,9 +10526,9 @@ static void ath12k_peer_delete_resp_event(struct ath12k_base *ab, struct sk_buff
 
 	rcu_read_unlock();
 
-	ath12k_dbg(ab, ATH12K_DBG_PEER | ATH12K_DBG_MLME,
-		   "peer delete resp for vdev id %d addr %pM\n",
-		   peer_del_resp.vdev_id, peer_del_resp.peer_macaddr.addr);
+	ath12k_dbg_level(ab, ATH12K_DBG_PEER | ATH12K_DBG_MLME, ATH12K_DBG_L1,
+			 "peer delete resp for vdev id %d addr %pM\n",
+			 peer_del_resp.vdev_id, peer_del_resp.peer_macaddr.addr);
 }
 
 static void ath12k_vdev_delete_resp_event(struct ath12k_base *ab,
@@ -10620,8 +10622,8 @@ static void ath12k_vdev_start_resp_event(struct ath12k_base *ab, struct sk_buff 
 
 	rcu_read_unlock();
 
-	ath12k_dbg(ab, (ATH12K_DBG_WMI | ATH12K_DBG_MAC | ATH12K_DBG_MLME), "vdev start resp for vdev id %d",
-		   vdev_start_resp.vdev_id);
+	ath12k_dbg_level(ab, (ATH12K_DBG_WMI | ATH12K_DBG_MAC), ATH12K_DBG_L1,
+			      "vdev start resp for vdev id %d", vdev_start_resp.vdev_id);
 }
 
 static void ath12k_bcn_tx_status_event(struct ath12k_base *ab, struct sk_buff *skb)
@@ -10806,8 +10808,9 @@ static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 	frm_stype = FIELD_GET(IEEE80211_FCTL_STYPE, fc);
 
 	if (ATH12K_MGMT_MLME_FRAME(hdr->frame_control))
-		ath12k_dbg(ar->ab, ATH12K_DBG_MLME, "Received %s frame from STA %pM\n",
-			   mgmt_frame_name[frm_stype], hdr->addr2);
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_MLME, ATH12K_DBG_L0,
+				 "Received %s frame from STA %pM\n",
+				 mgmt_frame_name[frm_stype], hdr->addr2);
 
 	dp = ath12k_ab_to_dp(ab);
 	spin_lock_bh(&dp->dp_lock);
@@ -11384,10 +11387,10 @@ static void ath12k_vdev_install_key_compl_event(struct ath12k_base *ab,
 		return;
 	}
 
-	ath12k_dbg(ab, ATH12K_DBG_WMI | ATH12K_DBG_EAPOL,
-		   "vdev install key ev idx %d flags %08x macaddr %pM status %d\n",
-		   install_key_compl.key_idx, install_key_compl.key_flags,
-		   install_key_compl.macaddr, install_key_compl.status);
+	ath12k_dbg_level(ab, ATH12K_DBG_WMI | ATH12K_DBG_EAPOL, ATH12K_DBG_L1,
+			 "vdev install key ev idx %d flags %08x macaddr %pM status %d\n",
+			 install_key_compl.key_idx, install_key_compl.key_flags,
+			 install_key_compl.macaddr, install_key_compl.status);
 
 	rcu_read_lock();
 	ar = ath12k_mac_get_ar_by_vdev_id(ab, install_key_compl.vdev_id);
@@ -11492,10 +11495,10 @@ static void ath12k_peer_assoc_conf_event(struct ath12k_base *ab, struct sk_buff 
 		return;
 	}
 
-	ath12k_dbg(ab, ATH12K_DBG_WMI | ATH12K_DBG_MLME,
-		   "peer assoc conf ev vdev id %d macaddr %pM status:%d\n",
-		   peer_assoc_conf.vdev_id, peer_assoc_conf.macaddr,
-		   peer_assoc_conf.status);
+	ath12k_dbg_level(ab, ATH12K_DBG_WMI | ATH12K_DBG_MLME, ATH12K_DBG_L1,
+			 "peer assoc conf ev vdev id %d macaddr %pM status:%d\n",
+			 peer_assoc_conf.vdev_id, peer_assoc_conf.macaddr,
+			 peer_assoc_conf.status);
 
 	rcu_read_lock();
 	ar = ath12k_mac_get_ar_by_vdev_id(ab, peer_assoc_conf.vdev_id);
@@ -14791,9 +14794,9 @@ static void ath12k_wmi_peer_create_conf_event(struct ath12k_base *ab,
 	complete(&ar->peer_create_done);
 	rcu_read_unlock();
 
-	ath12k_dbg(ab, ATH12K_DBG_WMI | ATH12K_DBG_MLME,
-		   "Peer create conf event for %pM status %d",
-		   arg.mac_addr, arg.status);
+	ath12k_dbg_level(ab, ATH12K_DBG_WMI | ATH12K_DBG_MLME, ATH12K_DBG_L1,
+			 "Peer create conf event for %pM status %d",
+			 arg.mac_addr, arg.status);
 }
 
 static int ath12k_wmi_pdev_sscan_fft_bin_index_parse(struct ath12k_base *soc,
@@ -19745,4 +19748,3 @@ int ath12k_wmi_send_aggr_size_cmd(struct ath12k *ar,
 
 	return ret;
 }
-

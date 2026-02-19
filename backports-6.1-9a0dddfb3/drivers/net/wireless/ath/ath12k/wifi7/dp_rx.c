@@ -3327,9 +3327,11 @@ static void ath12k_wifi7_dp_rx_wbm_err(struct ath12k_pdev_dp *dp_pdev,
 		subtype = ath12k_dp_get_eapol_subtype(msdu->data + hdr_len + LLC_SNAP_HDR_LEN);
 		if (subtype != DP_EAPOL_KEY_TYPE_MAX && subtype > 0) {
 			dp->device_stats.rx_eapol_type[subtype-1][ab->device_id]++;
-			ath12k_dbg(ab, ATH12K_DBG_EAPOL, "Received %s%d EAPOL frame from "
-				   "STA %pM\n", subtype <= 4 ? "M" : "G",
-				   subtype <= 4 ? subtype : (subtype - 4), hdr->addr2);
+			ath12k_dbg_level(ab, ATH12K_DBG_EAPOL, ATH12K_DBG_L0,
+					 "Received %s%d EAPOL frame from STA %pM\n",
+					 subtype <= 4 ? "M" : "G",
+					 subtype <= 4 ? subtype : (subtype - 4),
+					 hdr->addr2);
 		}
 	}
 

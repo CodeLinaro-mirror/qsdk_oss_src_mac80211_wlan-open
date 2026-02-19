@@ -1626,22 +1626,22 @@ skip_htt_metadata:
 							      LLC_SNAP_HDR_LEN);
 			if (subtype != DP_EAPOL_KEY_TYPE_MAX && subtype > 0) {
 				ab->dp->device_stats.tx_eapol_type[subtype - 1][ti.ring_id]++;
-				ath12k_dbg(ab, ATH12K_DBG_EAPOL,
-					   "Transmit %s%d EAPOL frame to STA %pM\n",
-					    subtype <= 4 ? "M" : "G",
-					   subtype <= 4 ? subtype : (subtype - 4),
-					   hdr->addr1);
+				ath12k_dbg_level(ab, ATH12K_DBG_EAPOL, ATH12K_DBG_L0,
+						 "Transmit %s%d EAPOL frame to STA %pM\n",
+						 subtype <= 4 ? "M" : "G",
+						 subtype <= 4 ? subtype : (subtype - 4),
+						 hdr->addr1);
 			}
 		} else {
 			eth = (struct ethhdr *)skb->data;
 			subtype = ath12k_dp_get_eapol_subtype(skb->data + ETH_HLEN);
 			if (subtype != DP_EAPOL_KEY_TYPE_MAX && subtype > 0) {
 				ab->dp->device_stats.tx_eapol_type[subtype - 1][ti.ring_id]++;
-				ath12k_dbg(ab, ATH12K_DBG_EAPOL,
-					   "Transmit %s%d EAPOL frame to STA %pM\n",
-					   subtype <= 4 ? "M" : "G",
-					   subtype <= 4 ? subtype : (subtype - 4),
-					   eth->h_dest);
+				ath12k_dbg_level(ab, ATH12K_DBG_EAPOL, ATH12K_DBG_L0,
+						 "Transmit %s%d EAPOL frame to STA %pM\n",
+						 subtype <= 4 ? "M" : "G",
+						 subtype <= 4 ? subtype : (subtype - 4),
+						 eth->h_dest);
 			}
 		}
 
@@ -1849,22 +1849,22 @@ ath12k_wifi8_dp_tx_htt_tx_complete_buf(struct ath12k_dp *dp,
 			eth = (struct ethhdr *)msdu->data;
 			subtype = ath12k_dp_get_eapol_subtype(msdu->data + ETH_HLEN);
 			if (subtype != DP_EAPOL_KEY_TYPE_MAX)
-				ath12k_dbg(ab, ATH12K_DBG_EAPOL,
-					   "Tx completion success for %s%d EAPOL frame to STA %pM\n",
-					   subtype <= 4 ? "M" : "G",
-					   subtype <= 4 ? subtype : (subtype - 4),
-					   eth->h_dest);
+				ath12k_dbg_level(ab, ATH12K_DBG_EAPOL, ATH12K_DBG_L0,
+						 "Tx completion success for %s%d EAPOL frame to STA %pM\n",
+						 subtype <= 4 ? "M" : "G",
+						 subtype <= 4 ? subtype : (subtype - 4),
+						 eth->h_dest);
 		} else {
 			hdr = (struct ieee80211_hdr *)msdu->data;
 			hdrlen = ieee80211_get_hdrlen_from_skb(msdu);
 			subtype = ath12k_dp_get_eapol_subtype(msdu->data + hdrlen +
 							      LLC_SNAP_HDR_LEN);
 			if (subtype != DP_EAPOL_KEY_TYPE_MAX)
-				ath12k_dbg(ab, ATH12K_DBG_EAPOL,
-					   "Tx completion success for %s%d EAPOL frame to STA %pM\n",
-					   subtype <= 4 ? "M" : "G",
-					   subtype <= 4 ? subtype : (subtype - 4),
-					   hdr->addr1);
+				ath12k_dbg_level(ab, ATH12K_DBG_EAPOL, ATH12K_DBG_L0,
+						 "Tx completion success for %s%d EAPOL frame to STA %pM\n",
+						 subtype <= 4 ? "M" : "G",
+						 subtype <= 4 ? subtype : (subtype - 4),
+						 hdr->addr1);
 		}
 	}
 

@@ -12405,9 +12405,10 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 		ath12k_warn(ar->ab, "Failed to delete peer: %pM for VDEV: %d ar->num_peers: %d arvif->num_peers: %d\n",
 			    arsta->addr, arvif->vdev_id, ar->num_peers, arvif->num_peers);
 	else
-		ath12k_dbg(ar->ab, ATH12K_DBG_PEER | ATH12K_DBG_MLME,
-			   "Removed peer: %pM for VDEV: %d ar->num_peers: %d arvif->num_peers: %d\n",
-			   arsta->addr, arvif->vdev_id, ar->num_peers, arvif->num_peers);
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER | ATH12K_DBG_MLME, ATH12K_DBG_L1,
+				 "Removed peer: %pM for VDEV: %d ar->num_peers: %d arvif->num_peers: %d\n",
+				 arsta->addr, arvif->vdev_id,
+				 ar->num_peers, arvif->num_peers);
 
 	if (!skip_peer_del)
 		ath12k_mac_station_post_remove(ar, arvif, arsta->addr, ahsta,
@@ -16355,8 +16356,9 @@ static int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arv
 	}
 
 	if (is_mlme)
-		ath12k_dbg(ab, ATH12K_DBG_MLME, "Transmit %s to STA %pM over WMI\n",
-			   mgmt_frame_name[frm_stype], sta_addr);
+		ath12k_dbg_level(ab, ATH12K_DBG_MLME, ATH12K_DBG_L0,
+				 "Transmit %s to STA %pM over WMI\n",
+				 mgmt_frame_name[frm_stype], sta_addr);
 	return 0;
 
 err_unmap_buf:
