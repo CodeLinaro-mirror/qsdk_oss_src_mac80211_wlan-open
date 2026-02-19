@@ -17568,6 +17568,13 @@ void ath12k_mac_op_update_vif_offload(struct ieee80211_hw *hw,
 
 	lockdep_assert_wiphy(hw->wiphy);
 
+	/* AP_VLAN interfaces don't have their own vdev in firmware,
+	 * so skip offload updates for them. The parent AP interface
+	 * handles the offload configuration.
+	 */
+	if (vif->type == NL80211_IFTYPE_AP_VLAN)
+		return;
+
 	/* TODO check if this updated of offload flags is needed?
 	 * as based on ath12k_frame_mode we are already setting
 	 * SUPPORTS_TX_ENCAP_OFFLOAD.
