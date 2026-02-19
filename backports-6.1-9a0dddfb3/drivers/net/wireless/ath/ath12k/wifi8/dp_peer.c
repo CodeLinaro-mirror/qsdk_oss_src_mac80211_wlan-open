@@ -897,3 +897,25 @@ int ath12k_wifi8_dp_get_peer_init_status(struct ath12k_dp *dp,
 
 	return 0;
 }
+
+void ath12k_wifi8_dp_vif_update_4addr(struct ath12k_dp_hw *dp_hw,
+				      struct ath12k_dp_vif *dp_vif,
+				      u8 *addr)
+{
+	struct ath12k_dp_peer *dp_peer;
+
+	spin_lock_bh(&dp_hw->peer_lock);
+	dp_peer = ath12k_dp_peer_find(dp_hw, addr);
+
+	if (!dp_peer) {
+		ath12k_dbg(NULL, ATH12K_DBG_PEER, "unable for find peer for mac addr in set 4 addr %pM",
+			   addr);
+		spin_unlock_bh(&dp_hw->peer_lock);
+		return;
+	}
+
+	dp_vif->is_wds_4addr = true;
+	dp_vif->ast_idx = dp_peer->peer_ext_ctx->ast_index;
+	dp_vif->ast_hash = dp_peer->peer_ext_ctx->ast_hash;
+	spin_unlock_bh(&dp_hw->peer_lock);
+}

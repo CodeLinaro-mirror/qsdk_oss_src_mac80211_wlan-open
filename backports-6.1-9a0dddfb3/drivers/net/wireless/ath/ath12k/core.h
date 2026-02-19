@@ -764,6 +764,7 @@ struct ath12k_dp_vif {
 	u8 hal_addr_search_flags;
 	u8 vdev_id_check_en;
 	u16 dp_vif_id;
+	bool is_wds_4addr;
 	int bank_id;
 	u16 ast_idx;
 	u16 ast_hash;
