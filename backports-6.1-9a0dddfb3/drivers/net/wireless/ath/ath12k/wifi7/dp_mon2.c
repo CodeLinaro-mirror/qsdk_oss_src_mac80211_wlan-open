@@ -51,6 +51,7 @@ const struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_dual_ring_ops = {
 	.rx_enable_packet_filters = ath12k_dp_mon_rx_enable_packet_filters,
 	.pktlog_config = ath12k_dp_mon_pktlog_config_filter,
 	.htt_rx_filter_rxmon_cfg = ath12k_dp_htt_rx_filter_rxmon_cfg,
+	.ext_mon_validate_request = ath12k_wifi7_dp_ext_mon_validate_request,
 
 	/* Below are TxMonitor Ops */
 	/* At Device Init/Exit */
@@ -1875,4 +1876,49 @@ void ath12k_dp_mon_rx_wq_deinit(struct ath12k_pdev_dp *dp_pdev)
 
 	flush_workqueue(mon_pdev->rxmon_wq);
 	destroy_workqueue(mon_pdev->rxmon_wq);
+}
+
+int ath12k_wifi7_dp_ext_mon_validate_request(struct ath12k_pdev_dp *dp_pdev,
+					     const struct ath12k_ext_mon_config *req)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev;
+	const struct ath12k_ext_mon_peer_info *peer = NULL;
+	int i = 0;
+
+	dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	if (!dp_mon_pdev) {
+		ath12k_warn(dp_pdev->dp, "monitor pdev is null");
+		return -EINVAL;
+	}
+
+	/*
+	 * For wifi7, we cannot configure different frame length for different mode.
+	 * i.e. all_peer, all_neighbor, target_peer and target_neighbor have same mgmt,
+	 * ctrl and data frame length. Hence application sets the same lengths for all
+	 * the modes
+	 */
+	if (memcmp(req->filter.all_peer.len, req->filter.target_peer.len,
+		   sizeof(req->filter.all_peer.len)) ||
+	    memcmp(req->filter.all_peer.len, req->filter.all_neighbor.len,
+		   sizeof(req->filter.all_peer.len)) ||
+	    memcmp(req->filter.all_peer.len, req->filter.target_neighbor.len,
+		   sizeof(req->filter.all_peer.len))) {
+		ath12k_warn(dp_pdev->dp, "filter length arrays mismatch");
+		return -EINVAL;
+	}
+
+	if (req->peer.action == ATH12K_EXT_MON_PEER_ACTION_ADD) {
+		for (i = 0; i < req->peer.count; i++) {
+			peer = &req->peer.peer_info[i];
+			if (peer->ra_addr || peer->bitmap !=
+					ATH12K_EXT_MON_DEFAULT_PEER_BITMAP) {
+				ath12k_warn(dp_pdev->dp,
+					    "invalid ra_addr: %d or bitmap: %02x",
+					    peer->ra_addr, peer->bitmap);
+				return -EINVAL;
+			}
+		}
+	}
+
+	return 0;
 }

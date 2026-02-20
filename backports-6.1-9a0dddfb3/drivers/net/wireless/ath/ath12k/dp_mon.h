@@ -84,9 +84,13 @@
 	(ATH12K_EXT_MON_METADATA_RTAP_HDR | \
 	 ATH12K_EXT_MON_METADATA_META_HDR)
 
+#define ATH12K_EXT_MON_MAX_PEERS		16
+#define ATH12K_EXT_MON_DEFAULT_PEER_BITMAP	0xFF
+
 struct ath12k_mon_data;
 struct dp_mon_rx_filter;
 struct dp_mon_tx_filter;
+struct ath12k_ext_mon_config;
 
 struct ath12k_dp_mon_pad_params {
 	u32 frag_size;
@@ -195,6 +199,8 @@ struct ath12k_dp_arch_mon_ops {
 			      u32 filter, bool enable);
 	void (*htt_rx_filter_rxmon_cfg)(void *ptr,
 					struct htt_rx_ring_tlv_filter *tlv_filter);
+	int (*ext_mon_validate_request)(struct ath12k_pdev_dp *dp_pdev,
+					const struct ath12k_ext_mon_config *req);
 
 	/* Below are TxMonitor ops */
 	int (*mon_tx_srng_alloc_setup)(struct ath12k_dp *dp);
@@ -847,6 +853,11 @@ enum ath12k_ext_mon_frame_type {
 	ATH12K_EXT_MON_FRAME_MAX = 3,
 };
 
+enum ath12k_ext_mon_peer_action {
+	ATH12K_EXT_MON_PEER_ACTION_ADD = 1,
+	ATH12K_EXT_MON_PEER_ACTION_REMOVE = 2,
+};
+
 struct ath12k_ext_mon_pkt_config {
 	u32 filter[ATH12K_EXT_MON_FRAME_MAX];
 	u8 len[ATH12K_EXT_MON_FRAME_MAX];
@@ -1025,6 +1036,9 @@ u64 ath12k_get_timestamp_in_us(void);
 void ath12k_dp_mon_fill_rx_rate(struct ath12k_pdev_dp *dp_pdev,
 				struct hal_rx_mon_ppdu_info *ppdu_info,
 				struct ieee80211_rx_status *rx_status);
+void ath12k_dp_ext_mon_process_request(struct ath12k_pdev_dp *dp_pdev,
+				       const struct ath12k_ext_mon_config *req,
+				       struct ath12k_ext_mon_config *resp);
 
 int ath12k_dp_mon_tx_wq_start(struct ath12k_pdev_dp *dp_pdev, u32 mac_id);
 void ath12k_dp_mon_tx_wq_stop(struct ath12k_pdev_dp *dp_pdev);

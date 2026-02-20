@@ -2946,3 +2946,22 @@ int ath12k_dp_mon_get_link_peer_rssi(struct ath12k *ar, const u8 *peer_mac,
 	return 0;
 }
 EXPORT_SYMBOL(ath12k_dp_mon_get_link_peer_rssi);
+
+void ath12k_dp_ext_mon_process_request(struct ath12k_pdev_dp *dp_pdev,
+				       const struct ath12k_ext_mon_config *req,
+				       struct ath12k_ext_mon_config *resp)
+{
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	int ret = 0;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp_pdev->dp);
+	if (mon_ops && mon_ops->ext_mon_validate_request) {
+		ret = mon_ops->ext_mon_validate_request(dp_pdev, req);
+		if (ret) {
+			ath12k_warn(dp_pdev->dp, "extmon validation failed: %d\n", ret);
+			resp->status_code = ATH12K_EXT_MON_VALIDATION_FAIL;
+			return;
+		}
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_ext_mon_process_request);
