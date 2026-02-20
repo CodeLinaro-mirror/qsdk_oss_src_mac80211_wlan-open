@@ -4133,12 +4133,7 @@ void ath12k_qmi_free_target_mem_chunk(struct ath12k_base *ab)
 	struct ath12k_hw_group *ag = ab->ag;
 	int i, mlo_idx;
 
-	if (ath12k_check_erp_power_down(ag) &&
-	    ab->powered_off)
-		return;
-
 	for (i = 0, mlo_idx = 0; i < ab->qmi.mem_seg_count; i++) {
-
 		if (ab->qmi.target_mem[i].type == MLO_GLOBAL_MEM_REGION_TYPE) {
 			if (ab->is_bypassed)
 				continue;
@@ -5920,9 +5915,7 @@ int ath12k_qmi_process_coldboot_calibration(struct ath12k_base *ab)
 	ath12k_info(ab, "power down to restart firmware in mission mode\n");
 	ath12k_qmi_firmware_stop(ab);
 
-	if (!ab->powered_off)
-		ath12k_hif_power_down(ab, false);
-
+	ath12k_hif_power_down(ab, false);
 	ath12k_qmi_free_target_mem_chunk(ab);
 	ath12k_info(ab, "power up to restart firmware in mission mode\n");
 	/* reset host fixed mem off to zero */

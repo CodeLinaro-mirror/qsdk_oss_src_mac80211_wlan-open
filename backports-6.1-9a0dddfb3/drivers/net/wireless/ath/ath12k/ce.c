@@ -607,7 +607,7 @@ void ath12k_ce_cleanup_pipes(struct ath12k_base *ab)
 	struct ath12k_ce_pipe *pipe;
 	int pipe_num;
 
-	if (ab->powered_off)
+	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
 	for (pipe_num = 0; pipe_num < ab->hw_params->ce_count; pipe_num++) {

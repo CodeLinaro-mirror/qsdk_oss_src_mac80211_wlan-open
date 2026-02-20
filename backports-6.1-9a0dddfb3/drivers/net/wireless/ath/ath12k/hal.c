@@ -1044,7 +1044,7 @@ void ath12k_hal_srng_deinit(struct ath12k_base *ab)
 {
 	struct ath12k_hal *hal = &ab->hal;
 
-	if (ab->powered_off)
+	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
 	ath12k_hal_unregister_srng_lock_keys(hal);
