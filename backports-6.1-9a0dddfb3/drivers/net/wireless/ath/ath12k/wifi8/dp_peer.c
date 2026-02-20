@@ -370,6 +370,8 @@ int ath12k_wifi8_dp_link_peer_create(struct ath12k_base *ab, u32 vdev_id, u8 *ad
 	ether_addr_copy(peer->addr, addr);
 	list_add(&peer->list, &dp->peers);
 	ewma_avg_rssi_init(&peer->avg_rssi);
+	peer->max_rssi = S8_MIN;
+	peer->min_rssi = S8_MAX;
 
 	spin_unlock_bh(&dp->dp_lock);
 

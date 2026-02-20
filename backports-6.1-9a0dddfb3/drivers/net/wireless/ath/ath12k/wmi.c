@@ -10819,6 +10819,10 @@ static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 	struct ath12k_mgmt_frame_stats *mgmt_stats;
 	u16 frm_stype;
 	struct ath12k_dp *dp;
+	struct ath12k_link_vif *arvif;
+	struct ieee80211_sta *sta;
+	struct ath12k_sta *ahsta;
+	s8 rssi;
 
 	rx_ev.num_link_removal_info = 0;
 	if (ath12k_pull_mgmt_rx_params_tlv(ab, skb, &rx_ev) != 0) {
@@ -10917,6 +10921,32 @@ static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 	mgmt_stats = &ahvif->mgmt_stats;
 	mgmt_stats->rx_cnt[frm_stype]++;
 	mgmt_stats->aggr_rx_mgmt++;
+
+	rcu_read_lock();
+	arvif = ath12k_mac_get_arvif(ar, peer->vdev_id);
+	if (arvif) {
+		rssi = status->signal;
+
+		sta = ieee80211_find_sta_by_ifaddr(ath12k_ar_to_hw(ar),
+						   hdr->addr2, NULL);
+		if (!sta)
+			goto skip_rssi_update;
+		ahsta = ath12k_sta_to_ahsta(sta);
+		if (!ahsta)
+			goto skip_rssi_update;
+
+		if (peer->link_id < IEEE80211_MLD_MAX_NUM_LINKS)
+			arsta = rcu_dereference(ahsta->link[peer->link_id]);
+		if (!arsta)
+			arsta = &ahsta->deflink;
+
+		if (arsta) {
+			arsta->max_rssi = max(arsta->max_rssi, rssi);
+			arsta->min_rssi = min(arsta->min_rssi, rssi);
+		}
+	}
+skip_rssi_update:
+	rcu_read_unlock();
 
 	spin_unlock_bh(&ar->data_lock);
 
@@ -12143,6 +12173,7 @@ static int ath12k_wmi_tlv_fw_stats_data_parse(struct ath12k_base *ab,
 	struct ath12k_link_sta *arsta;
 	int i, ret = 0;
 	const void *data = ptr;
+	s8 rssi;
 
 	if (!ev) {
 		ath12k_warn(ab, "failed to fetch update stats ev");
@@ -12189,6 +12220,24 @@ static int ath12k_wmi_tlv_fw_stats_data_parse(struct ath12k_base *ab,
 				ath12k_dbg(ab, ATH12K_DBG_WMI,
 					   "not found station bssid %pM for vdev stat\n",
 					   arvif->bssid);
+			}
+
+			if (le32_to_cpu(src->beacon_snr)) {
+				rssi = le32_to_cpu(src->beacon_snr) +
+				       ar->rssi_offsets.rssi_offset;
+				if (arsta) {
+					arsta->max_rssi = max(arsta->max_rssi, rssi);
+					arsta->min_rssi = min(arsta->min_rssi, rssi);
+				}
+			}
+
+			if (le32_to_cpu(src->data_snr)) {
+				rssi = le32_to_cpu(src->data_snr) +
+				       ar->rssi_offsets.rssi_offset;
+				if (arsta) {
+					arsta->max_rssi = max(arsta->max_rssi, rssi);
+					arsta->min_rssi = min(arsta->min_rssi, rssi);
+				}
 			}
 		}
 
