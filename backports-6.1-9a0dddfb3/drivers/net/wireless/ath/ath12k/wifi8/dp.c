@@ -565,6 +565,37 @@ static void ath12k_wifi8_dp_link_vif_configure(struct ath12k_dp *dp,
 		ath12k_wifi8_dp_vif_configure(dp, ahvif, ATH12K_DP_OP_UPDATE);
 }
 
+static ssize_t ath12k_wifi8_dump_srng_stats(struct ath12k_dp *dp,
+					    char *buf, int size)
+{
+	int len = 0;
+	int i;
+	struct ath12k_base *ab = dp->ab;
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+
+	for (i = 0; i < DP_WBM_REFILL_RING_MAX; i++)
+		len += ath12k_hal_dump_ring_stats(ab, HAL_WBM_BUF,
+						  dp_wifi8->wbm_refill_ring[i].ring_id,
+						  buf + len, size - len);
+
+	len += ath12k_hal_dump_ring_stats(ab, HAL_WBM_IDLE_BUF,
+					  dp_wifi8->wbm_idle_buf_ring.ring_id,
+					  buf + len, size - len);
+
+	len += ath12k_hal_dump_ring_stats(ab, HAL_TX_EXCEPTION,
+					  dp_wifi8->tx_exception.ring_id,
+					  buf + len, size - len);
+
+	len += ath12k_hal_dump_ring_stats(ab, HAL_TCL_CMD,
+					  dp_wifi8->tcl_cmd_ring.ring_id,
+					  buf + len, size - len);
+
+	len += ath12k_hal_dump_ring_stats(ab, HAL_TCL_STATUS,
+					  dp_wifi8->tcl_status_ring.ring_id,
+					  buf + len, size - len);
+	return len;
+}
+
 static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.dp_op_device_init = ath12k_wifi8_dp_op_device_init,
 	.dp_op_device_deinit = ath12k_wifi8_dp_op_device_deinit,
@@ -607,13 +638,13 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.dp_link_vif_configure = ath12k_wifi8_dp_link_vif_configure,
 	.rx_flow_fse_cache_operation = ath12k_wifi8_dp_rx_flow_fse_cache_operation,
 	.get_peer_init_status = ath12k_wifi8_dp_get_peer_init_status,
-
 	/* UMAC reset operations */
 	.umac_reset_handle_pre_reset = ath12k_wifi8_umac_reset_handle_pre_reset,
 	.umac_reset_handle_post_reset_start =
 				ath12k_wifi8_umac_reset_handle_post_reset_start,
 	.umac_reset_handle_post_reset_complete =
 				ath12k_wifi8_umac_reset_handle_post_reset_complete,
+	.dump_srng_stats = ath12k_wifi8_dump_srng_stats,
 };
 
 struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab)
