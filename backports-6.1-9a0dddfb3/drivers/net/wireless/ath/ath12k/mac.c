@@ -12143,7 +12143,7 @@ static void ath12k_mac_free_unassign_link_sta(struct ath12k_hw *ah,
 	ahsta->links_map &= ~BIT(link_id);
 	ahsta->device_bitmap &= ~BIT(ab->wsi_info.index);
 	ahsta->mlo_hw_link_id_bitmap &= ~BIT(arvif->ar->pdev->hw_link_id);
-	ahsta->num_peer--;
+	ahsta->free_logical_idx_map |= BIT(arsta->link_idx);
 	rcu_assign_pointer(ahsta->link[link_id], NULL);
 	synchronize_rcu();
 
@@ -12573,6 +12573,7 @@ static int ath12k_mac_assign_link_sta(struct ath12k_hw *ah,
 	struct ath12k_link_vif *arvif;
 	struct ath12k_base *ab;
 	bool is_bridge_peer;
+	int link_idx;
 
 	lockdep_assert_wiphy(ah->hw->wiphy);
 
@@ -12600,8 +12601,18 @@ static int ath12k_mac_assign_link_sta(struct ath12k_hw *ah,
 		ether_addr_copy(arsta->addr, link_sta->addr);
 	}
 
-	/* logical index of the link sta in order of creation */
-	arsta->link_idx = ahsta->num_peer++;
+	if (!ahsta->free_logical_idx_map) {
+		ath12k_warn(ab, "No free logical index available for link sta %pM\n",
+			    arsta->addr);
+		return -ENOSPC;
+	}
+
+	/* Allocate a logical link index by selecting the first available bit
+	 * from the free logical index map
+	 */
+	link_idx = __ffs(ahsta->free_logical_idx_map);
+	ahsta->free_logical_idx_map &= ~BIT(link_idx);
+	arsta->link_idx = link_idx;
 
 	arsta->link_id = link_id;
 	ath12k_mac_map_link_sta(ahsta, link_id);
@@ -13410,6 +13421,7 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 			arsta = &ahsta->deflink;
 		}
 
+		ahsta->free_logical_idx_map = U16_MAX;
 		/* ML sta */
 		links_map = ahsta->links_map;
 		if (sta->mlo && ((!ahsta->links_map &&

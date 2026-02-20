@@ -1123,7 +1123,7 @@ struct ath12k_sta {
 #ifdef CPTCFG_QCN_EXTN
 	struct ath12k_sta_extn ahsta_extn;
 #endif
-
+	u16 free_logical_idx_map;
 };
 
 #define ATH12K_INVALID_RSSI_FULL -1
