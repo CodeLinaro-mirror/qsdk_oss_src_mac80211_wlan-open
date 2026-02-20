@@ -2395,6 +2395,27 @@ ath12k_wifi7_dp_tx_status_parse(struct ath12k_base *ab,
 	ath12k_wifi7_dp_tx_get_hw_link_id_from_ppdu_id(ts, ab->dp);
 }
 
+static void ath12k_dp_tx_update_tid_stats(struct ath12k_dp *dp,
+					  struct ath12k_pdev_dp *dp_pdev,
+					  struct sk_buff *skb,
+					  u32 peer_id,
+					  int reason)
+{
+	struct ath12k_dp_link_peer *link_peer;
+	struct ath12k_vif *ahvif;
+	u8 tid;
+
+	link_peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev,
+							     peer_id);
+	if (link_peer && link_peer->vif) {
+		ahvif = ath12k_vif_to_ahvif(link_peer->vif);
+		if (ahvif) {
+			tid = skb->priority & IEEE80211_QOS_CTL_TID_MASK;
+			ath12k_tid_tx_stats(ahvif, tid, skb->len, reason);
+		}
+	}
+}
+
 int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int budget)
 {
 	struct ath12k_base *ab = dp->ab;
@@ -2411,9 +2432,6 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 	int valid_entries;
 #endif
 	int orig_budget = budget;
-	struct ath12k_skb_cb *skb_cb;
-	struct sk_buff *msdu = NULL;
-	struct ath12k_vif *ahvif = NULL;
 	bool fast_flag;
 	int pdev_tx_comp_cnt[MAX_RADIOS] = {0};
 	u8 mac_id = 0;
@@ -2445,7 +2463,6 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 	u32 tqm_rel_reason[MAX_TQM_RELEASE_REASON] = {0};
 	u32 fw_tx_status[MAX_FW_TX_STATUS] = {0};
 	u32 htt_status = 0, tx_completed = 0;
-	u8 tid = 0;
 
 	INIT_LIST_HEAD(&desc_free_list);
 	skb_queue_head_init(&free_list_head);
@@ -2572,15 +2589,6 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 
 		tx_wbm_rel_source[ts.buf_rel_source]++;
 
-		if (dp_pdev && ath12k_dp_stats_enabled(dp_pdev) &&
-		    ath12k_tid_stats_enabled(dp_pdev)) {
-			msdu = sw_metadata->skb;
-			skb_cb = ATH12K_SKB_CB(msdu);
-			ahvif = ath12k_vif_to_ahvif(skb_cb->vif);
-			tid = msdu->priority & IEEE80211_QOS_CTL_TID_MASK;
-			ath12k_tid_tx_stats(ahvif, tid, msdu->len,
-					    ATH_TX_WBM_REL_SRC);
-		}
 
                 if (ts.buf_rel_source == HAL_WBM_REL_SRC_MODULE_TQM) {
                         ts.status = le32_get_bits(tx_status->info0,
@@ -2590,13 +2598,16 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
                         htt_status = le32_get_bits(tx_status->info0,
                                                    HTT_TX_WBM_COMP_INFO0_STATUS);
                         fw_tx_status[htt_status]++;
+
 			if (dp_pdev && ath12k_dp_stats_enabled(dp_pdev) &&
 			    ath12k_tid_stats_enabled(dp_pdev)) {
-				tid = msdu->priority & IEEE80211_QOS_CTL_TID_MASK;
-				ath12k_tid_tx_stats(ahvif, tid, msdu->len,
-						    ATH_TX_FW_STATUS);
+				rcu_read_lock();
+				ath12k_dp_tx_update_tid_stats(dp, dp_pdev,
+							      sw_metadata->skb,
+							      ts.peer_id,
+							      ATH_TX_FW_STATUS);
+				rcu_read_unlock();
 			}
-
 			ath12k_wifi7_dp_tx_process_htt_tx_complete(dp, (void *)tx_status,
 								   sw_metadata->skb,
 								   tx_ring, sw_metadata,
@@ -2628,9 +2639,15 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 			ath12k_wifi7_dp_tx_status_parse(ab, tx_status, &ts);
 			if (ath12k_dp_stats_enabled(dp_pdev) &&
 			    ath12k_tid_stats_enabled(dp_pdev)) {
-				tid = msdu->priority & IEEE80211_QOS_CTL_TID_MASK;
-				ath12k_tid_tx_stats(ahvif, tid, msdu->len,
-						    ATH_TX_COMPLETED_PKTS);
+				ath12k_dp_tx_update_tid_stats(dp, dp_pdev,
+							      sw_metadata->skb,
+							      ts.peer_id,
+							      ATH_TX_COMPLETED_PKTS);
+				if (ts.buf_rel_source == HAL_WBM_REL_SRC_MODULE_TQM)
+					ath12k_dp_tx_update_tid_stats(dp, dp_pdev,
+								      sw_metadata->skb,
+								      ts.peer_id,
+								      ATH_TX_WBM_REL_SRC);
 			}
 			ath12k_wifi7_dp_tx_complete_msdu(dp_pdev, sw_metadata->skb, &ts,
 					sw_metadata, sw_metadata->mac_id,
