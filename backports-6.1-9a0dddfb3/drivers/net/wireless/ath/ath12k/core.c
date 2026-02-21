@@ -78,6 +78,12 @@ module_param_named(ppe_ds_enable, ath12k_ppe_ds_enabled, uint, 0644);
 MODULE_PARM_DESC(ppe_ds_enable, "ppe_ds_enable: 0-disable, 1-enable");
 #endif
 
+#define ATH12K_PROBE_ORDER_MASK 0xF
+#define ATH12K_PROBE_ORDER_SHIFT 4
+int ath12k_valid_probe_order;
+unsigned int ath12k_probe_order_param;
+module_param_named(probe_order, ath12k_probe_order_param, uint, 0644);
+MODULE_PARM_DESC(probe_order, "Probe order (hex bitfield, 4-bit per device)");
 #ifdef CPTCFG_ATH12K_POWER_OPTIMIZATION
 extern struct ath12k_ps_context ath12k_global_ps_ctx;
 #endif
@@ -4474,6 +4480,45 @@ static int ath12k_core_get_wsi_index(struct ath12k_hw_group *ag,
 	return 0;
 }
 
+static int validate_probe_order_param(unsigned int probe_order, u8 num_devices,
+					struct ath12k_base *ab)
+{
+	unsigned int temp_val = probe_order;
+	int i, max_soc = 0;
+	u8 seen_ids = 0;
+
+	while (temp_val) {
+		temp_val = temp_val >> ATH12K_PROBE_ORDER_SHIFT;
+		max_soc++;
+	}
+	temp_val = probe_order;
+	if (num_devices !=  max_soc) {
+		ath12k_dbg(ab, ATH12K_DBG_BOOT,
+				"Invalid module param\n");
+		return -1;
+	}
+	for (i = 0; i < num_devices; i++) {
+		unsigned int temp1_val = (temp_val >> (i *
+						ATH12K_PROBE_ORDER_SHIFT));
+		u8 device_id = temp1_val & ATH12K_PROBE_ORDER_MASK;
+		if ((device_id  == 0) || (device_id > num_devices)) {
+			ath12k_dbg(ab, ATH12K_DBG_BOOT,
+				"ath12k: invalid device ID %u at position %d in probe_order\n",
+					device_id, i);
+			return -1;
+		}
+		if (seen_ids & BIT(device_id)) {
+			ath12k_dbg(ab, ATH12K_DBG_BOOT,
+				"ath12k: duplicate device ID %u in probe_order\n",
+					 device_id);
+			return -1;
+		}
+		seen_ids |= BIT(device_id);
+
+	}
+	return 0;
+}
+
 static struct ath12k_hw_group *ath12k_core_hw_group_assign(struct ath12k_base *ab)
 {
 	struct ath12k_wsi_info *wsi = &ab->wsi_info;
@@ -4551,7 +4596,22 @@ exit:
 	}
 
 	ab->device_id = ag->num_probed++;
+	if (ath12k_probe_order_param) {
+		if (!ath12k_valid_probe_order) {
+			if (validate_probe_order_param(
+						ath12k_probe_order_param,
+						ag->num_devices, ab) == 0)
+				ath12k_valid_probe_order = 1;
+			else
+				ath12k_probe_order_param = 0;
+		}
 
+		if (ath12k_valid_probe_order) {
+			ab->device_id = (ath12k_probe_order_param &
+					ATH12K_PROBE_ORDER_MASK) - 1;
+			ath12k_probe_order_param >>= ATH12K_PROBE_ORDER_SHIFT;
+		}
+	}
 	if (ag->id != ATH12K_INVALID_GROUP_ID)
 		ab->is_static_bypassed = (ath12k_wsi_bypass_bmap & (1 << wsi->index));
 	else if (ath12k_wsi_bypass_bmap)
