@@ -1230,6 +1230,24 @@ static const struct qmi_elem_info qmi_wlanfw_ind_register_req_msg_v01_ei[] = {
 					   m3_dump_upload_req_enable),
 	},
 	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x26,
+		.offset         = offsetof(struct qmi_wlanfw_ind_register_req_msg_v01,
+					   ddr_dump_region_enable_valid),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_1_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x26,
+		.offset         = offsetof(struct qmi_wlanfw_ind_register_req_msg_v01,
+					   ddr_dump_region_enable),
+	},
+	{
 		.data_type	= QMI_EOTI,
 		.array_type	= NO_ARRAY,
 		.tlv_type	= QMI_COMMON_TLV_TYPE,
@@ -3914,6 +3932,8 @@ static int ath12k_qmi_fw_ind_register_send(struct ath12k_base *ab)
 	req->qdss_trace_free_enable_valid = 1;
 	req->m3_dump_upload_req_enable_valid = 1;
 	req->m3_dump_upload_req_enable = 1;
+	req->ddr_dump_region_enable_valid = 1;
+	req->ddr_dump_region_enable = 1;
 
 	req->pin_connect_result_enable_valid = 0;
 	req->pin_connect_result_enable = 0;
@@ -6750,6 +6770,10 @@ int ath12k_qmi_init_service(struct ath12k_base *ab)
 		return ret;
 	}
 
+#ifdef CPTCFG_ATHDEBUG
+	ret = athdbg_if_get_service(ab, ATHDBG_SRV_QMI_INIT);
+#endif
+
 	return ret;
 }
 
@@ -6758,15 +6782,15 @@ void ath12k_qmi_deinit_service(struct ath12k_base *ab)
 	if (!ab->qmi.ab)
 		return;
 
+#ifdef CPTCFG_ATHDEBUG
+	athdbg_if_get_service(ab, ATHDBG_SRV_QMI_DEINIT);
+#endif
 	qmi_handle_release(&ab->qmi.handle);
 	cancel_work_sync(&ab->qmi.event_work);
 	destroy_workqueue(ab->qmi.event_wq);
 	ath12k_qmi_m3_free(ab);
 	ath12k_qmi_ext_fw_bin_clear(ab);
 	ath12k_qmi_free_resource(ab);
-#ifdef CPTCFG_ATHDEBUG
-	athdbg_if_get_service(ab, ATHDBG_SRV_QMI_DEINIT);
-#endif
 	ab->qmi.ab = NULL;
 }
 

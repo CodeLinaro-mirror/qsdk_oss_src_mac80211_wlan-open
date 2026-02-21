@@ -112,6 +112,7 @@ enum athdbg_qmi_event_type {
 	ATHDBG_QMI_EVENT_QDSS_TRACE_REQ_MEM = 15,
 	ATHDBG_QMI_EVENT_QDSS_TRACE_SAVE,
 	ATHDBG_QMI_EVENT_QDSS_TRACE_REQ_DATA,
+	ATHDBG_QMI_EVENT_DDR_DUMP_REGION_REQ,
 	ATHDBG_QMI_EVENT_MAX,
 };
 
@@ -130,6 +131,32 @@ struct athdbg_qmi {
 	struct target_mem_chunk qdss_mem[ATH12K_QMI_WLANFW_MAX_NUM_MEM_SEG_V01];
 	u32 qdss_mem_seg_len;
 	struct m3_mem_region m3_mem;
+};
+
+#define QMI_WLFW_DDR_DUMP_REGION_IND_V01		0x0062
+#define WLANFW_DDR_DUMP_REGION_IND_MSG_V01_MAX_MSG_LEN	907
+struct wlanfw_ddr_dump_region_ind_msg_v01 {
+	u32 mem_seg_len;
+	struct qmi_wlanfw_mem_seg_resp_s_v01
+		mem_seg[ATH12K_QMI_WLANFW_MAX_NUM_MEM_SEG_V01];
+	u8 file_name_valid;
+	char file_name[QMI_WLANFW_MAX_STR_LEN_V01 + 1];
+};
+
+extern struct qmi_elem_info qmi_wlanfw_ddr_dump_region_ind_msg_v01_ei[];
+struct ath12k_fw_mem {
+	size_t size;
+	void *va;
+	phys_addr_t pa;
+	u8 valid;
+	u32 type;
+};
+
+struct ath12k_qmi_event_ddr_dump_region {
+	u32 total_size;
+	u32 mem_seg_len;
+	struct ath12k_fw_mem mem_seg[ATH12K_QMI_WLANFW_MAX_NUM_MEM_SEG_V01];
+	char file_name[QMI_WLANFW_MAX_STR_LEN_V01 + 1];
 };
 
 void athdbg_wlfw_qdss_trace_req_mem_ind_cb(struct qmi_handle *qmi_hdl,
@@ -159,4 +186,8 @@ void athdbg_qmi_event_qdss_trace_save_hdlr(struct athdbg_qmi *dbg_qmi,
 int athdbg_qmi_handle_init(struct qmi_handle *qmi, size_t recv_buf_size,
 		const struct qmi_ops *ops,
 		const struct qmi_msg_handler *handlers);
+void athdbg_qmi_wlanfw_ddr_dump_region_ind_cb(struct qmi_handle *qmi_hdl,
+					      struct sockaddr_qrtr *sq,
+					      struct qmi_txn *txn,
+					      const void *data);
 #endif

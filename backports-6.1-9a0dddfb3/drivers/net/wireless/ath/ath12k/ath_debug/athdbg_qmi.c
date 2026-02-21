@@ -201,8 +201,65 @@ static struct qmi_msg_handler athdbg_qmi_msg_handlers[] = {
 				sizeof(struct qmi_wlanfw_qdss_trace_save_ind_msg_v01),
 		.fn = athdbg_wlfw_qdss_trace_save_ind_cb,
 	},
+	{
+		.type = QMI_INDICATION,
+		.msg_id = QMI_WLFW_DDR_DUMP_REGION_IND_V01,
+		.ei = qmi_wlanfw_ddr_dump_region_ind_msg_v01_ei,
+		.decoded_size =
+			sizeof(struct wlanfw_ddr_dump_region_ind_msg_v01),
+		.fn = athdbg_qmi_wlanfw_ddr_dump_region_ind_cb,
+	},
 	/* end of list */
 	{},
+};
+
+struct qmi_elem_info qmi_wlanfw_ddr_dump_region_ind_msg_v01_ei[] = {
+	{
+		.data_type      = QMI_DATA_LEN,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x01,
+		.offset         = offsetof(struct
+					   wlanfw_ddr_dump_region_ind_msg_v01,
+					   mem_seg_len),
+	},
+	{
+		.data_type      = QMI_STRUCT,
+		.elem_len       = ATH12K_QMI_WLANFW_MAX_NUM_MEM_SEG_V01,
+		.elem_size      = sizeof(struct qmi_wlanfw_mem_seg_resp_s_v01),
+		.array_type       = VAR_LEN_ARRAY,
+		.tlv_type       = 0x01,
+		.offset         = offsetof(struct
+					   wlanfw_ddr_dump_region_ind_msg_v01,
+					   mem_seg),
+		.ei_array      = qmi_wlanfw_mem_seg_resp_s_v01_ei,
+	},
+	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x10,
+		.offset         = offsetof(struct
+					   wlanfw_ddr_dump_region_ind_msg_v01,
+					   file_name_valid),
+	},
+	{
+		.data_type      = QMI_STRING,
+		.elem_len       = QMI_WLANFW_MAX_STR_LEN_V01 + 1,
+		.elem_size      = sizeof(char),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x10,
+		.offset         = offsetof(struct
+					   wlanfw_ddr_dump_region_ind_msg_v01,
+					   file_name),
+	},
+	{
+		.data_type      = QMI_EOTI,
+		.array_type       = NO_ARRAY,
+		.tlv_type       = QMI_COMMON_TLV_TYPE,
+	},
 };
 
 static const struct qmi_elem_info qmi_wlanfw_respond_mem_resp_msg_v01_ei[] = {
@@ -226,7 +283,7 @@ static const struct qmi_elem_info qmi_wlanfw_respond_mem_resp_msg_v01_ei[] = {
 #ifdef CONFIG_UPSTREAM_BUILD
 #define NUM_HANDLER 5
 #else
-#define NUM_HANDLER 8
+#define NUM_HANDLER 9
 #endif
 
 struct qmi_msg_handler *athdbg_append_dbg_handler(const struct qmi_msg_handler *handlers)
@@ -234,9 +291,9 @@ struct qmi_msg_handler *athdbg_append_dbg_handler(const struct qmi_msg_handler *
 	struct qmi_msg_handler *wdbg_handlers;
 	int ath12k_qmi_handler_index;
 
-	wdbg_handlers = kzalloc(sizeof(struct qmi_msg_handler) * NUM_HANDLER, GFP_KERNEL);
+	wdbg_handlers = kzalloc(sizeof(*wdbg_handlers) * NUM_HANDLER, GFP_KERNEL);
 
-	if (wdbg_handlers == NULL)
+	if (!wdbg_handlers)
 		return NULL;
 
 	ath12k_qmi_handler_index = NUM_GENERIC_QMI_HANDLER;
@@ -246,14 +303,14 @@ struct qmi_msg_handler *athdbg_append_dbg_handler(const struct qmi_msg_handler *
 
 	//append debug handler
 	memcpy(&wdbg_handlers[ath12k_qmi_handler_index], athdbg_qmi_msg_handlers,
-	       sizeof(struct qmi_msg_handler) * 2);
+	       sizeof(struct qmi_msg_handler) * 3);
 
 	return wdbg_handlers;
 }
 
 int athdbg_qmi_handle_init(struct qmi_handle *qmi, size_t recv_buf_size,
-				const struct qmi_ops *ops,
-				const struct qmi_msg_handler *handlers)
+			   const struct qmi_ops *ops,
+			   const struct qmi_msg_handler *handlers)
 {
 	int ret;
 	struct qmi_msg_handler *wdbg_handlers;
@@ -279,6 +336,82 @@ out:
 	return ret;
 }
 EXPORT_SYMBOL(athdbg_qmi_handle_init);
+
+static void athdbg_coredump_ddr_dump(struct ath12k_base *ab,
+				     struct ath12k_qmi_event_ddr_dump_region *event_data)
+{
+	struct ath12k_dump_segment *segment;
+	void *dump = NULL;
+	size_t offset = 0;
+	int i;
+
+	segment = vzalloc(sizeof(*segment));
+	if (!segment)
+		return;
+
+	if (event_data->total_size) {
+		dump = vzalloc(event_data->total_size);
+		if (!dump) {
+			vfree(segment);
+			return;
+		}
+	} else {
+		pr_err("Invalid total_size: 0\n");
+		vfree(segment);
+		return;
+	}
+
+	for (i = 0; i < event_data->mem_seg_len; i++) {
+		if (!event_data->mem_seg[i].va || !event_data->mem_seg[i].size)
+			continue;
+
+		pr_debug("Copying seg-%d: va %p, size 0x%zx to offset 0x%zx\n",
+			 i, event_data->mem_seg[i].va, event_data->mem_seg[i].size,
+			 offset);
+
+		memcpy_fromio(dump + offset, event_data->mem_seg[i].va,
+			      event_data->mem_seg[i].size);
+		offset += event_data->mem_seg[i].size;
+	}
+
+	if (offset != event_data->total_size) {
+		pr_warn("Copied size 0x%zx != expected 0x%x\n",
+			offset, event_data->total_size);
+	}
+
+	segment->len = event_data->total_size;
+	segment->vaddr = dump;
+	segment->type = FW_CRASH_DUMP_REMOTE_MEM_DATA;
+
+	pr_info("DDR dump collected: %s, size 0x%x bytes\n",
+		event_data->file_name, segment->len);
+
+#ifndef CONFIG_UPSTREAM_BUILD
+	athdbg_base->dbg_to_ath_ops->coredump_dump_segment(ab, segment, segment->len);
+#else
+	/* dev_coredumpv() takes ownership of the buffer */
+	dev_coredumpv(ab->dev, segment->vaddr, segment->len, GFP_KERNEL);
+	vfree(segment);
+	return;
+#endif
+
+	vfree(segment);
+	vfree(dump);
+}
+
+static void athdbg_qmi_event_ddr_dump_region_req(struct athdbg_qmi *dbg_qmi, void *data)
+{
+	struct ath12k_base *ab = container_of(dbg_qmi, struct ath12k_base, dbg_qmi);
+	struct ath12k_qmi_event_ddr_dump_region *event_data = data;
+	int i;
+
+	athdbg_coredump_ddr_dump(ab, event_data);
+
+	for (i = 0; i < event_data->mem_seg_len; i++) {
+		if (event_data->mem_seg[i].valid && event_data->mem_seg[i].va)
+			iounmap(event_data->mem_seg[i].va);
+	}
+}
 
 static void athdbg_qmi_driver_event_work(struct work_struct *work)
 {
@@ -312,6 +445,9 @@ static void athdbg_qmi_driver_event_work(struct work_struct *work)
 			if (ret < 0)
 				pr_err("failed to collect phy logs : %d\n", ret);
 
+			break;
+		case ATHDBG_QMI_EVENT_DDR_DUMP_REGION_REQ:
+			athdbg_qmi_event_ddr_dump_region_req(dbg_qmi, event->data);
 			break;
 		default:
 			pr_err("invalid event type: %d", event->type);
@@ -687,9 +823,8 @@ out:
 		return ret;
 }
 
-
 int athdbg_qmi_driver_event_post(struct ath12k_qmi *qmi, enum athdbg_qmi_event_type type,
-								 void *data)
+				 void *data)
 {
 
 	struct athdbg_qmi_driver_event *event;
@@ -710,6 +845,130 @@ int athdbg_qmi_driver_event_post(struct ath12k_qmi *qmi, enum athdbg_qmi_event_t
 	queue_work(dbg_qmi->event_wq, &dbg_qmi->event_work);
 
 	return 0;
+}
+
+void athdbg_qmi_wlanfw_ddr_dump_region_ind_cb(struct qmi_handle *qmi_hdl,
+					      struct sockaddr_qrtr *sq,
+					      struct qmi_txn *txn,
+					      const void *data)
+{
+	struct ath12k_qmi *qmi = container_of(qmi_hdl, struct ath12k_qmi, handle);
+	struct ath12k_base *ab = qmi->ab;
+	const struct wlanfw_ddr_dump_region_ind_msg_v01 *ind_msg = data;
+	struct athdbg_qmi_event_qdss_trace_save_data qdss_data = {0};
+	struct ath12k_qmi_event_ddr_dump_region *event_data;
+	struct ath12k_fw_mem *mem_seg = NULL;
+	struct target_mem_chunk *fw_mem = NULL;
+	uintptr_t offset = 0;
+	int i, j, qdss_seg_count = 0;
+
+	if (!txn || !ind_msg) {
+		pr_err("Spurious indication\n");
+		return;
+	}
+
+	if (!ind_msg->mem_seg_len) {
+		pr_err("Number of DDR Dump region is not given\n");
+		return;
+	}
+
+	if (ind_msg->mem_seg_len > ATH12K_QMI_WLANFW_MAX_NUM_MEM_SEG_V01) {
+		pr_err("DDR Dump region count %u exceeds max %u\n",
+		       ind_msg->mem_seg_len, ATH12K_QMI_WLANFW_MAX_NUM_MEM_SEG_V01);
+		return;
+	}
+
+	for (i = 0; i < ind_msg->mem_seg_len; i++) {
+		if (ind_msg->mem_seg[i].type == QMI_WLANFW_MEM_QDSS_V01)
+			qdss_seg_count++;
+	}
+
+	if (qdss_seg_count && qdss_seg_count == ind_msg->mem_seg_len) {
+		pr_info("Received QMI WLFW QDSS Dump indication\n");
+		qdss_data.mem_seg_len = ind_msg->mem_seg_len;
+		for (i = 0; i < ind_msg->mem_seg_len; i++) {
+			qdss_data.total_size += ind_msg->mem_seg[i].size;
+			qdss_data.mem_seg[i].addr = ind_msg->mem_seg[i].addr;
+			qdss_data.mem_seg[i].size = ind_msg->mem_seg[i].size;
+		}
+		athdbg_coredump_qdss_dump(ab, &qdss_data);
+		return;
+	}
+
+	pr_info("Received QMI WLFW DDR Dump region indication\n");
+	event_data = kzalloc(sizeof(*event_data), GFP_KERNEL);
+	if (!event_data)
+		return;
+
+	if (ind_msg->file_name_valid)
+		strscpy(event_data->file_name, ind_msg->file_name,
+			QMI_WLANFW_MAX_STR_LEN_V01 + 1);
+	else
+		strscpy(event_data->file_name, "ddr_dump_region",
+			QMI_WLANFW_MAX_STR_LEN_V01 + 1);
+
+	pr_info("DDR Dump region filename: %s\n", event_data->file_name);
+
+	fw_mem = ab->qmi.target_mem;
+	for (i = 0, j = 0; i < ab->qmi.mem_seg_count && j < ind_msg->mem_seg_len; i++) {
+		if (ind_msg->mem_seg[j].type != fw_mem[i].type)
+			continue;
+
+		mem_seg = &event_data->mem_seg[j];
+
+		if (ind_msg->mem_seg[j].addr < fw_mem[i].paddr ||
+		    (ind_msg->mem_seg[j].addr + ind_msg->mem_seg[j].size) >
+		    (fw_mem[i].paddr + fw_mem[i].size)) {
+			pr_err("seg-%d: addr 0x%llx size 0x%x outside allocated region (0x%llx-0x%llx)\n",
+			       j, ind_msg->mem_seg[j].addr, ind_msg->mem_seg[j].size,
+			       (u64)fw_mem[i].paddr,
+			       (u64)(fw_mem[i].paddr + fw_mem[i].size));
+			goto cleanup_and_free;
+		}
+
+		event_data->total_size += ind_msg->mem_seg[j].size;
+		mem_seg->pa = (phys_addr_t)ind_msg->mem_seg[j].addr;
+		mem_seg->size = ind_msg->mem_seg[j].size;
+		mem_seg->type = ind_msg->mem_seg[j].type;
+
+		if (!fw_mem[i].v.addr) {
+			mem_seg->va = ioremap(mem_seg->pa, mem_seg->size);
+			if (!mem_seg->va) {
+				pr_err("seg-%d: ioremap failed for addr 0x%pa size 0x%zx\n",
+				       j, &mem_seg->pa, mem_seg->size);
+				goto cleanup_and_free;
+			}
+			mem_seg->valid = true;
+		} else {
+			offset = mem_seg->pa - fw_mem[i].paddr;
+			mem_seg->va = (void *)((char *)fw_mem[i].v.addr + offset);
+			mem_seg->valid = false;
+		}
+
+		pr_debug("seg-%d: va 0x%pK, pa 0x%pa, size 0x%zx, type %u\n",
+			 j, mem_seg->va, &mem_seg->pa, mem_seg->size, mem_seg->type);
+		j++;
+		if (j == ind_msg->mem_seg_len)
+			break;
+	}
+
+	event_data->mem_seg_len = j;
+
+	if (!j) {
+		pr_err("No valid segments found matching allocated DDR regions\n");
+		goto cleanup_and_free;
+	}
+
+	athdbg_qmi_driver_event_post(qmi, ATHDBG_QMI_EVENT_DDR_DUMP_REGION_REQ,
+				     event_data);
+	return;
+
+cleanup_and_free:
+	for (i = 0; i < j; i++) {
+		if (event_data->mem_seg[i].valid && event_data->mem_seg[i].va)
+			iounmap(event_data->mem_seg[i].va);
+	}
+	kfree(event_data);
 }
 
 int athdbg_qmi_worker_init(void *qmi_ab)

@@ -332,16 +332,15 @@ static void ath12k_coredump_free_q6dump(void *data)
 static ssize_t ath12k_coredump_read(char *buffer, loff_t offset, size_t count,
                        void *data, size_t datalen)
 {
-    struct ath12k_dump_segment *segments = data;
+	struct ath12k_dump_segment *segments = data;
 
-    int ret = 0;
+	int ret = 0;
 
-    ret = memory_read_from_buffer(buffer, count, &offset,
-                      segments->vaddr, datalen);
-    if (!ret)
-        ath12k_info(NULL, "Ramdump complete, %lld  bytes read\n", offset);
+	ret = memory_read_from_buffer(buffer, count, &offset, segments->vaddr, datalen);
+	if (!ret)
+		ath12k_info(NULL, "Ramdump complete, %lld  bytes read\n", offset);
 
-    return ret;
+	return ret;
 }
 
 static void ath12k_coredump_free(void *data)
@@ -354,15 +353,15 @@ static void ath12k_coredump_free(void *data)
 void ath12k_coredump_dump_segment(struct ath12k_base *ab,
                   struct ath12k_dump_segment *segments, size_t seg_len)
 {
-    struct device *dev;
+	struct device *dev;
 
-    dev = ab->dev;
-    init_completion(&segments->dump_done);
+	dev = ab->dev;
+	init_completion(&segments->dump_done);
 
-    dev_coredumpm(dev, THIS_MODULE,segments, seg_len, GFP_KERNEL,
-              ath12k_coredump_read, ath12k_coredump_free);
+	dev_coredumpm(dev, THIS_MODULE, segments, seg_len, GFP_KERNEL,
+		      ath12k_coredump_read, ath12k_coredump_free);
 
-    wait_for_completion(&segments->dump_done);
+	wait_for_completion(&segments->dump_done);
 }
 
 void ath12k_coredump_build_inline(struct ath12k_base *ab,

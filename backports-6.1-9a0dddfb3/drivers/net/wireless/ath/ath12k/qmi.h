@@ -438,7 +438,8 @@ struct qmi_wlanfw_ind_register_req_msg_v01 {
 	u8 qdss_trace_free_enable;
 	u8 m3_dump_upload_req_enable_valid;
 	u8 m3_dump_upload_req_enable;
-
+	u8 ddr_dump_region_enable_valid;
+	u8 ddr_dump_region_enable;
 };
 
 struct qmi_wlanfw_ind_register_resp_msg_v01 {
@@ -470,6 +471,13 @@ enum qmi_wlanfw_mem_type_enum_v01 {
 	QMI_WLANFW_MEM_M3_V01 = 3,
 	QMI_WLANFW_MEM_CAL_V01 = 4,
 	QMI_WLANFW_MEM_DPD_V01 = 5,
+	QMI_WLANFW_MEM_QDSS_V01 = 6,
+	QMI_WLANFW_MEM_HANG_DATA_V01 = 7,
+	QMI_WLANFW_MLO_GLOBAL_MEM_V01 = 8,
+	QMI_WLANFW_PAGEABLE_MEM_V01 = 9,
+	QMI_WLANFW_AFC_MEM_V01 = 10,
+	QMI_WLANFW_MEM_LPASS_SHARED_V01 = 11,
+	QMI_WLANFW_MEM_CALDB_SEG_V01 = 12,
 	WLANFW_MEM_TYPE_ENUM_MAX_VAL_V01 = INT_MAX,
 };
 
