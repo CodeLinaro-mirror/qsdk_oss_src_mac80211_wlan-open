@@ -499,6 +499,92 @@ ath12k_dp_tx_mon_flush_desc_list(struct ath12k_pdev_dp *dp_pdev,
 }
 
 /**
+ * ath12k_dp_tx_mon_get_ppdu_desc() - Get PPDU descriptor from free list
+ * @dp_mon_pdev: Monitor PDEV context
+ *
+ * Allocates a PPDU descriptor from the free list for use in TX monitor
+ * processing. The descriptor is initialized and ready for use.
+ *
+ * Return: Pointer to PPDU descriptor on success, NULL if free list empty
+ */
+static struct ath12k_dp_mon_ppdu_desc *
+ath12k_dp_tx_mon_get_ppdu_desc(struct ath12k_pdev_mon_dp *dp_mon_pdev)
+{
+	struct ath12k_dp_mon_ppdu_desc *ppdu_desc;
+
+	spin_lock_bh(&dp_mon_pdev->tx_mon_ppdu_desc_lock);
+	ppdu_desc = list_first_entry_or_null(&dp_mon_pdev->tx_mon_ppdu_desc_free_list,
+					     struct ath12k_dp_mon_ppdu_desc, list);
+	if (likely(ppdu_desc)) {
+		list_del(&ppdu_desc->list);
+		dp_mon_pdev->mon_stats.ppdu_desc_free--;
+	}
+
+	spin_unlock_bh(&dp_mon_pdev->tx_mon_ppdu_desc_lock);
+
+	return ppdu_desc;
+}
+
+/**
+ * ath12k_dp_tx_mon_prep_wq() - Prepare descriptors for work queue processing
+ * @mon_desc_used_list: List of monitor descriptors containing TLV data
+ * @dp_mon_pdev: Monitor PDEV context
+ *
+ * This function prepares monitor descriptors for work queue processing by:
+ * 1. Allocating a PPDU descriptor from free list
+ * 2. Associating monitor descriptors with the PPDU descriptor
+ * 3. Queuing the PPDU descriptor for work queue processing
+ *
+ * This is called from NAPI context when end of PPDU is detected during
+ * ring processing. The actual heavy processing is deferred to work queue.
+ *
+ * Return: 0 on success, -ENOENT if no PPDU descriptor available
+ */
+static int ath12k_dp_tx_mon_prep_wq(struct list_head *mon_desc_used_list,
+				    struct ath12k_pdev_mon_dp *dp_mon_pdev)
+{
+	struct ath12k_dp_mon_ppdu_desc *ppdu_desc;
+	struct ath12k_dp_mon_desc *desc;
+	struct ath12k_pdev_mon_dp_stats *mon_stats = &dp_mon_pdev->mon_stats;
+	int desc_cnt;
+
+	ppdu_desc = ath12k_dp_tx_mon_get_ppdu_desc(dp_mon_pdev);
+	if (unlikely(!ppdu_desc)) {
+		mon_stats->ppdu_desc_free_list_empty_cnt++;
+		return -ENOENT;
+	}
+
+	/* Copy monitor descriptors to PPDU descriptor */
+	list_for_each_entry(desc, mon_desc_used_list, list) {
+		desc_cnt = ppdu_desc->status_desc_cnt;
+		if (unlikely(desc_cnt >= ATH12K_DP_MON_STATUS_BUF)) {
+			/* On overflow, reset and add to used list, return error */
+			ath12k_dp_mon_reset_ppdu_desc(ppdu_desc);
+			spin_lock_bh(&dp_mon_pdev->tx_mon_ppdu_desc_lock);
+			list_add_tail(&ppdu_desc->list,
+				      &dp_mon_pdev->tx_mon_ppdu_desc_free_list);
+			mon_stats->ppdu_desc_free++;
+			spin_unlock_bh(&dp_mon_pdev->tx_mon_ppdu_desc_lock);
+			return -EOVERFLOW;
+		}
+
+		/* Copy individual fields from descriptor to status_desc */
+		ppdu_desc->status_desc[desc_cnt].mon_buf = desc->mon_buf;
+		ppdu_desc->status_desc[desc_cnt].paddr = desc->paddr;
+		ppdu_desc->status_desc[desc_cnt].buf_len = desc->buf_len;
+		ppdu_desc->status_desc[desc_cnt].end_of_ppdu = desc->end_of_ppdu;
+		ppdu_desc->status_desc_cnt++;
+	}
+
+	/* Add PPDU descriptor to used list for work queue processing */
+	spin_lock_bh(&dp_mon_pdev->tx_mon_ppdu_desc_lock);
+	list_add_tail(&ppdu_desc->list, &dp_mon_pdev->tx_mon_ppdu_desc_used_list);
+	spin_unlock_bh(&dp_mon_pdev->tx_mon_ppdu_desc_lock);
+
+	return 0;
+}
+
+/**
  * ath12k_dp_mon_tx_process_ring() - Process TX monitor destination ring
  * @dp: DP context
  * @mac_id: MAC ID for the radio
@@ -646,6 +732,20 @@ int ath12k_dp_mon_tx_process_ring(struct ath12k_pdev_dp *dp_pdev,
 		if (end_reason == HAL_MON_END_OF_PPDU) {
 			*budget -= 1;
 			mon_desc->end_of_ppdu = true;
+			ret = ath12k_dp_tx_mon_prep_wq(mon_desc_head,
+						       dp_mon_pdev);
+			if (ret) {
+				ath12k_warn(ab,
+					    "TX Mon: Failed to add mon desc to ppdu ret %d",
+					    ret);
+				ath12k_dp_tx_mon_flush_desc_list(dp_pdev,
+								 mon_desc_head);
+				goto move_next;
+			}
+
+			if (queue_work(dp_mon_pdev->txmon_wq, &dp_mon_pdev->txmon_work))
+				dp_mon_pdev->tx_mon_stats.tx_work_queue_scheduled++;
+
 			ath12k_dp_mon_tx_desc_free(mon_desc_head, dp_mon);
 		}
 
