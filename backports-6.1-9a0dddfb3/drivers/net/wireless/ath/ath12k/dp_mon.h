@@ -457,12 +457,14 @@ struct ath12k_pdev_mon_dp_stats {
  * @tx_pkt_tlv_free: Count of TX packet TLV buffers freed back to the pool.
  *                  Used for tracking buffer lifecycle and detecting leaks
  * @tx_status_buf_free: Count of TX status buffers freed back to the pool.
+ * @tx_work_queue_scheduled: Number of times work queue is scheduled
  */
 struct ath12k_pdev_tx_mon_stats {
 	u32 empty_descriptors;
 	u32 truncated_ppdu;
 	u32 tx_pkt_tlv_free;
 	u32 tx_status_buf_free;
+	u32 tx_work_queue_scheduled;
 };
 
 /**
@@ -825,6 +827,7 @@ void ath12k_dp_mon_fill_rx_rate(struct ath12k_pdev_dp *dp_pdev,
 
 int ath12k_dp_mon_tx_wq_start(struct ath12k_pdev_dp *dp_pdev, u32 mac_id);
 void ath12k_dp_mon_tx_wq_stop(struct ath12k_pdev_dp *dp_pdev);
+void ath12k_dp_mon_reset_ppdu_desc(struct ath12k_dp_mon_ppdu_desc *ppdu_desc);
 int ath12k_dp_mon_tx_srng_alloc_setup(struct ath12k_dp *dp);
 void ath12k_dp_mon_tx_srng_cleanup(struct ath12k_dp *dp);
 int ath12k_dp_mon_tx_desc_pool_alloc(struct ath12k_dp *dp);

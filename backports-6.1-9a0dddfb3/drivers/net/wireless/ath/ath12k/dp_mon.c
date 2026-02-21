@@ -3048,6 +3048,23 @@ u32 ath12k_dp_mon_get_num_frags_in_fraglist(struct sk_buff *skb)
 }
 EXPORT_SYMBOL(ath12k_dp_mon_get_num_frags_in_fraglist);
 
+/**
+ * ath12k_dp_mon_reset_ppdu_desc() - Reset PPDU descriptor
+ * @ppdu_desc: PPDU descriptor to reset
+ *
+ * Resets the PPDU descriptor by clearing the status descriptor array and
+ * resetting the count. This prepares the descriptor for reuse in TX and RX
+ * monitor processing.
+ */
+void
+ath12k_dp_mon_reset_ppdu_desc(struct ath12k_dp_mon_ppdu_desc *ppdu_desc)
+{
+	memset(ppdu_desc->status_desc, 0,
+	       ppdu_desc->status_desc_cnt * sizeof(*ppdu_desc->status_desc));
+	ppdu_desc->status_desc_cnt = 0;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_reset_ppdu_desc);
+
 void
 ath12k_dp_mon_fill_rx_rate(struct ath12k_pdev_dp *dp_pdev,
 			   struct hal_rx_mon_ppdu_info *ppdu_info,
