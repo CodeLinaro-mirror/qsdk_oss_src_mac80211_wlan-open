@@ -1170,13 +1170,28 @@ static int ath12k_prepare_group_key_metadata(struct sk_buff *skb,
 	if (!meta)
 		return -1;
 
-	meta->info0 |= le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_ENCRYPT_FLAG);
-	meta->info0 |= le32_encode_bits(0, HAL_TX_MSDU_METADATA_INFO0_ENCRYPT_TYPE);
+	meta->info0 |= le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_HOST_TX_DESC_POOL);
 	meta->info0 |= le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_KEY_FLAGS);
 	meta->info2 |= le32_encode_bits(group_slot,
 					HAL_TX_MSDU_METADATA_INFO2_KEY_FLAGS);
 
 	return htt_desc_size_aligned;
+}
+
+static void ath12k_dp_tx_update_gsn_metadata(struct hal_tx_info *ti,
+					     struct ath12k_link_vif *arvif,
+					     int mcbc_gsn)
+{
+	ti->meta_data_flags |=
+		u32_encode_bits(HTT_TCL_META_DATA_TYPE_GLOBAL_SEQ_NUM,
+				HTT_TCL_META_DATA_TYPE) |
+		u32_encode_bits(mcbc_gsn,
+				HTT_TCL_META_DATA_GLOBAL_SEQ_NUM);
+
+	ti->meta_data_flags |= HTT_TCL_META_DATA_GLOBAL_HTT_EXT_PRESENT;
+	if (arvif->nawds_support)
+		ti->meta_data_flags |=
+			u32_encode_bits(1, HTT_TCL_META_DATA_GSN_INSPECTED);
 }
 
 /* TODO: Remove the export once this file is built with wifi7 ko */
@@ -1462,6 +1477,22 @@ skip_htt_metadata:
 				goto fail_free_ext_skb;
 			}
 		}
+
+		if (group_slot > 0) {
+			htt_hdr_size = ath12k_prepare_group_key_metadata(skb_ext_desc,
+									 group_slot);
+			if (htt_hdr_size < 0) {
+				ath12k_info(ab, "failed to set group key metadata");
+				err = DP_TX_ENQ_DROP_HTT_MDATA_ERR;
+				goto fail_free_ext_skb;
+			}
+
+			if (gsn_valid)
+				ath12k_dp_tx_update_gsn_metadata(&ti, arvif, mcbc_gsn);
+			ti.meta_data_flags |= HTT_TCL_META_DATA_VALID_HTT;
+			ti.flags0 |= u32_encode_bits(1, HAL_TCL_DATA_CMD_INFO2_TO_FW);
+		}
+
 #ifndef CONFIG_IO_COHERENCY
 		ti.paddr = dma_map_single(dp->dev, skb_ext_desc->data,
 					  skb_ext_desc->len, DMA_TO_DEVICE);
@@ -1483,35 +1514,6 @@ skip_htt_metadata:
 		tx_desc->paddr_ext_desc = ti.paddr;
 		tx_desc->ext_desc_len = ti.data_len;
 		tx_desc->skb_ext_desc = skb_ext_desc;
-	}
-
-	if (group_slot > 0)  {
-		htt_hdr_size = ath12k_prepare_group_key_metadata(skb, group_slot);
-		if (htt_hdr_size < 0) {
-			ath12k_info(ab, "failed to set group key metadata");
-			err = DP_TX_ENQ_DROP_HTT_MDATA_ERR;
-			goto fail_unmap_dma_ext;
-		}
-
-		if (gsn_valid) {
-			/* Reset and Initialize meta_data_flags with Global Sequence
-			 * Number (GSN) info.
-			 */
-			ti.meta_data_flags =
-				u32_encode_bits(HTT_TCL_META_DATA_TYPE_GLOBAL_SEQ_NUM,
-						HTT_TCL_META_DATA_TYPE) |
-				u32_encode_bits(mcbc_gsn,
-						HTT_TCL_META_DATA_GLOBAL_SEQ_NUM);
-
-			ti.meta_data_flags |= HTT_TCL_META_DATA_GLOBAL_HTT_EXT_PRESENT;
-			if (arvif->nawds_support)
-				ti.meta_data_flags |=
-					u32_encode_bits(1,
-							HTT_TCL_META_DATA_GSN_INSPECTED);
-		}
-		ti.meta_data_flags |= HTT_TCL_META_DATA_VALID_HTT;
-		ti.flags0 |= u32_encode_bits(1, HAL_TCL_DATA_CMD_INFO2_TO_FW);
-		ti.pkt_offset = htt_hdr_size;
 	}
 
 	hal_ring_id = tx_ring->tcl_data_ring.ring_id;
