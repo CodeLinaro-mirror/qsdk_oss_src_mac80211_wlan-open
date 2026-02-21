@@ -105,7 +105,7 @@ void ath12k_pcic_config_static_window(struct ath12k_base *ab)
 			(ce_window << ab_ahb->reg_base->ce_window_shift);
 
 	iowrite32(WINDOW_ENABLE_BIT | window,
-		  ab->mem + ab_ahb->reg_base->pcie_window_reg_address);
+		  ab->mem + ab_ahb->window_reg_addr);
 }
 
 static void ath12k_pcic_select_static_window(struct ath12k_base *ab, u32 addr)
@@ -123,7 +123,7 @@ static void ath12k_pcic_select_static_window(struct ath12k_base *ab, u32 addr)
 
 	window = ath12k_get_mask_bits(addr, ab_ahb->reg_base->window_value_mask);
 
-	prev_window = readl_relaxed(ab->mem + ab_ahb->reg_base->pcie_window_reg_address);
+	prev_window = readl_relaxed(ab->mem + ab_ahb->window_reg_addr);
 
 	/* Clear out dynamic window bits (6-bit or 7-bit) */
 	prev_window &= ~(ab_ahb->reg_base->window_dynamic_mask);
@@ -140,15 +140,14 @@ static void ath12k_pcic_select_static_window(struct ath12k_base *ab, u32 addr)
 		return;
 
 	cur_val = WINDOW_ENABLE_BIT | curr_window;
-	writel_relaxed(cur_val, ab->mem + ab_ahb->reg_base->pcie_window_reg_address);
+	writel_relaxed(cur_val, ab->mem + ab_ahb->window_reg_addr);
 
-	read_val = readl_relaxed(ab->mem + ab_ahb->reg_base->pcie_window_reg_address);
+	read_val = readl_relaxed(ab->mem + ab_ahb->window_reg_addr);
 
 	/* If value written is not yet reflected, wait till it is reflected */
 	while ((read_val != cur_val) && (retry < 10)) {
 		mdelay(1);
-		read_val = readl_relaxed(ab->mem +
-				ab_ahb->reg_base->pcie_window_reg_address);
+		read_val = readl_relaxed(ab->mem + ab_ahb->window_reg_addr);
 		retry++;
 	}
 	if (retry == 10)

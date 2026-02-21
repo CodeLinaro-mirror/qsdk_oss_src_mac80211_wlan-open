@@ -92,6 +92,7 @@ struct ath12k_ahb {
 	void *rpd_notifier;
 	void *interrupt_reset_base_addr;
 	const struct ath12k_reg_base *reg_base;
+	u32 window_reg_addr;
 };
 
 struct ath12k_ahb_driver {
