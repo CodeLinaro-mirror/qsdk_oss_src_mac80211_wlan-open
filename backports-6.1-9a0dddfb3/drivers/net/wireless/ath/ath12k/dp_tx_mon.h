@@ -28,6 +28,13 @@
 #define ATH12K_FREQ_6GHZ_MIN               5925
 #define ATH12K_FREQ_6GHZ_MAX               7125
 
+/* Frame timing constants */
+#define ATH12K_ACK_TX_TIME_US       44
+#define ATH12K_CTS_TX_TIME_US       44
+#define ATH12K_SIFS_2GHZ_US         10
+#define ATH12K_SIFS_5GHZ_US         16
+#define ATH12K_DEFAULT_NOISE_FLOOR  -95
+
 /* OFDM rate values in kbps */
 #define ATH12K_RATE_6MBPS_KBPS             6000
 #define ATH12K_RATE_54MBPS_KBPS            54000
