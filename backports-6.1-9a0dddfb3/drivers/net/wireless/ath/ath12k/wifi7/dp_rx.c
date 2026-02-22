@@ -4479,10 +4479,13 @@ int ath12k_wifi7_dp_pdev_alloc(struct ath12k_base *ab)
 		}
 	}
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	ret = ab->dp->ppe.ppe_ops->ath12k_ppeds_start(ab);
-	if (ret) {
-		ath12k_err(ab, "failed to start DP PPEDS\n");
-		goto err_cleanup_pdevs;
+	if (ab->dp->ppe.ppe_ops &&
+		ab->dp->ppe.ppe_ops->ath12k_ppeds_start) {
+		ret = ab->dp->ppe.ppe_ops->ath12k_ppeds_start(ab);
+		if (ret) {
+			ath12k_err(ab, "failed to start DP PPEDS\n");
+			goto err_cleanup_pdevs;
+		}
 	}
 #endif
 

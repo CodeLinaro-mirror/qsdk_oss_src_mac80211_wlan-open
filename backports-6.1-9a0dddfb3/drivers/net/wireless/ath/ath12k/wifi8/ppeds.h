@@ -8,12 +8,14 @@
 
 #include "hal.h"
 #include "../ppe.h"
+#include "dp_rx.h"
 
-#define PPEDS_TQM2SW_RING_SIZE 8192
 #define PPEDS_TX_CMPLN_RING_NUM 6
 #define PPE_VP_WIFI8_ENTRIES_MAX 192
 #define PPE_VP_WIFI8_START_IDX 64
 #define PPEDS_CLASSIFY_READ_FULL_PKT 3
+#define PPEDS_TQM2PPE_TX_CMPLN_RING_NUM 0
+#define PPEDS_ARCH_MODE_WIFI8 8
 
 struct ath12k_base;
 struct ath12k_vif;
@@ -26,6 +28,14 @@ extern struct sk_buff *
 ath12k_dp_ppeds_tx_release_desc(struct ath12k_dp *dp,
 				struct ath12k_ppeds_tx_desc_info *tx_desc);
 
+extern unsigned int ath12k_ppeds_ppe2tcl_rings_max;
+extern unsigned int ath12k_ppeds_reo2ppe_rings_max;
+extern unsigned int ath12k_ppeds_txrx_hw_auto_idx;
+extern unsigned int ath12k_ppeds_hw_buff_mgmt;
+extern unsigned int ath12k_ppeds_ppe2tcl_ring_size;
+extern unsigned int ath12k_ppeds_reo2ppe_ring_size;
+extern unsigned int ath12k_ppeds_tqm2ppe_ring_size;
+extern unsigned int ath12k_ppeds_ppe2wbm_ring_size;
 
 enum ath12k_reo2ppe_rdi {
 	PPEDS_REO2PPE1_RDI = 11,

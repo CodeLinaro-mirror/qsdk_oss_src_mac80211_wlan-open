@@ -610,6 +610,11 @@ skip_dma_alloc:
 			HAL_SRNG_INT_BATCH_THRESHOLD_TX;
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_TX;
 		break;
+	case HAL_TQM2PPE:
+		params.intr_batch_cntr_thres_entries =
+			HAL_SRNG_INT_BATCH_THRESHOLD_TX;
+		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_TX;
+		break;
 	default:
 		ath12k_warn(ab, "Not a valid ring type in dp :%d\n", type);
 		return -EINVAL;
@@ -818,8 +823,8 @@ int ath12k_dp_srng_common_setup(struct ath12k_base *ab)
 
 skip_reo_setup:
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	if (dp->ppe.ppe_ops && dp->ppe.ppe_ops->ath12k_ppeds_srng_setup) {
-		ret = dp->ppe.ppe_ops->ath12k_ppeds_srng_setup(ab);
+	if (dp->ppe.ppe_ops && dp->ppe.ppe_ops->ath12k_ppeds_srng_cmn_setup) {
+		ret = dp->ppe.ppe_ops->ath12k_ppeds_srng_cmn_setup(ab);
 		if (ret) {
 			ath12k_warn(ab, "failed to set up ppe-ds srngs :%d\n", ret);
 			goto err;

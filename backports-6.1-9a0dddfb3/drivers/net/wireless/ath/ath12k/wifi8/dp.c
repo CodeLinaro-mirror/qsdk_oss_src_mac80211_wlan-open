@@ -434,6 +434,13 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 		goto fail_dp_rx_free;
 	}
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	ret = dp->ppe.ppe_ops->ath12k_ppeds_srng_setup(ab);
+	if (ret) {
+		ath12k_warn(ab, "failed to set up ppe-ds srngs :%d\n", ret);
+		goto fail_dp_rx_free;
+	}
+#endif
 	/* Initialize cumac pointer in hw_group */
 	dp_hw_group_wifi8->cumac_dp = dp;
 
@@ -486,6 +493,23 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 	atomic_set(&dp_hw_group_wifi8->retry_work_active, 1);
 
 	ath12k_wifi8_enable_hif_interrupts(dp, ath12k_wifi8_cumac_dp_service_srng);
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	if (ab->dp->ppe.ppe_ops &&
+		ab->dp->ppe.ppe_ops->ath12k_ppeds_start) {
+		ret = dp->ppe.ppe_ops->ath12k_ppeds_start(ab);
+		if (ret) {
+			ath12k_err(ab, "failed to start DP PPEDS\n");
+			goto fail_pn_counter_page_free;
+		}
+	}
+#endif
+
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	ab->dp->ppe.ppe_ops->ath12k_ppeds_interrupt_start(ab);
+#endif
+
 	ath12k_info(ab, "CUMAC init successful");
 	return 0;
 fail_pn_counter_page_free:

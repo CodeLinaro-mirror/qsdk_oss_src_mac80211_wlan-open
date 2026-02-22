@@ -73,6 +73,71 @@ static unsigned int ath12k_hal_reo1_ring_misc_offset(struct ath12k_hal *hal)
 	return HAL_REO1_RING_MISC(hal) - HAL_REO1_RING_BASE_LSB(hal);
 }
 
+void ath12k_wifi8_hal_srng_hw_enable(struct ath12k_base *ab,
+		struct hal_srng *srng)
+{
+	u32 reg_base, val, addr;
+	struct ath12k_hal *hal = &ab->hal;
+
+	reg_base = srng->hwreg_base[HAL_SRNG_REG_GRP_R0];
+	if (srng->ring_dir == HAL_SRNG_DIR_SRC) {
+		if (srng->ring_id == HAL_SRNG_RING_ID_WBM_IDLE_LINK)
+			addr = HAL_SEQ_WCSS_UMAC_WBM_REG +
+				HAL_WBM_IDLE_LINK_RING_MISC_ADDR(hal);
+		else
+			addr = reg_base + HAL_TCL1_RING_MISC_OFFSET(hal);
+		val = ath12k_hif_read32(ab, addr);
+		val |= HAL_TCL1_RING_MISC_SRNG_ENABLE;
+		ath12k_hif_write32(ab, addr, val);
+	} else {
+		val = ath12k_hif_read32(ab, reg_base + HAL_REO1_RING_MISC_OFFSET);
+		val |= HAL_REO1_RING_MISC_SRNG_ENABLE;
+		ath12k_hif_write32(ab, reg_base + HAL_REO1_RING_MISC_OFFSET, val);
+	}
+}
+
+void ath12k_wifi8_hal_srng_idx_update_addr(struct ath12k_base *ab, struct hal_srng *srng,
+					void __iomem *hp_vaddr, dma_addr_t hp_paddr,
+					void __iomem *tp_vaddr, dma_addr_t tp_paddr)
+{
+	struct ath12k_hal *hal = &ab->hal;
+	u32 reg_base;
+
+	reg_base = srng->hwreg_base[HAL_SRNG_REG_GRP_R0];
+
+	/*
+	 * Disable the ring.
+	 */
+	ath12k_wifi8_hal_srng_hw_disable(ab, srng);
+
+	if (srng->ring_dir == HAL_SRNG_DIR_SRC) {
+		ath12k_hif_write32(ab,
+				reg_base + HAL_TCL1_RING_TP_ADDR_LSB_OFFSET(hal),
+				tp_paddr & HAL_ADDR_LSB_REG_MASK);
+		ath12k_hif_write32(ab,
+				reg_base + HAL_TCL1_RING_TP_ADDR_MSB_OFFSET(hal),
+				((u64)tp_paddr >> HAL_ADDR_MSB_REG_SHIFT));
+		srng->u.src_ring.tp_addr = tp_vaddr;
+		ath12k_info(ab, "PPEDS SRC_SRNG tp_paddr:%pad tp_vaddr:%p ring_id:%d\n",
+				&tp_paddr, tp_vaddr, srng->ring_id);
+	} else {
+		ath12k_hif_write32(ab,
+				reg_base + ath12k_hal_reo1_ring_hp_addr_lsb_offset(hal),
+				hp_paddr & HAL_ADDR_LSB_REG_MASK);
+		ath12k_hif_write32(ab,
+				reg_base + ath12k_hal_reo1_ring_hp_addr_msb_offset(hal),
+				((u64)hp_paddr >> HAL_ADDR_MSB_REG_SHIFT));
+		srng->u.dst_ring.hp_addr = hp_vaddr;
+		ath12k_info(ab, "PPEDS DST_SRNG hp_paddr:%pad hp_vaddr:%p ring_id:%d\n",
+				&hp_paddr, hp_vaddr, srng->ring_id);
+	}
+
+	/*
+	 * Enable the ring.
+	 */
+	ath12k_wifi8_hal_srng_hw_enable(ab, srng);
+}
+
 void ath12k_wifi8_hal_ce_dst_setup(struct ath12k_base *ab,
 				   struct hal_srng *srng, int ring_num)
 {
@@ -681,7 +746,7 @@ void ath12k_wifi8_hal_cc_config(struct ath12k_base *ab)
 	 * PPEDS - HBM enabled case: Disable cookie conversion disable on REO2PPE
 	 */
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	if (ab->hw_params->ds_hw_buff_mgmt) {
+	if (ab->dp->ppe.hw_buff_mgmt) {
 		val = ath12k_hif_read32(ab, reo_base + HAL_REO1_COOKIE_CONV_EN_RING);
 		val &= ~HAL_REO2PPE_COOKIE_CONV_EN_RING;
 		val &= ~HAL_REO2PPE1_COOKIE_CONV_EN_RING;
@@ -720,6 +785,10 @@ void ath12k_wifi8_hal_cc_config(struct ath12k_base *ab)
 
 	val = ath12k_hif_read32(ab, tqm_base + HAL_TQM_SW_COOKIE_CONVERT_CFG2);
 	val |= ab->hal.hal_params->tqm2sw_cc_enable2;
+
+	/* PPEDS - Disable cookie conversion on TQM2PPE ring */
+	if (val & HAL_TQM_SW_COOKIE_CONV_CFG2_TQM2PPE_EN)
+		val &= ~(HAL_TQM_SW_COOKIE_CONV_CFG2_TQM2PPE_EN);
 
 	ath12k_hif_write32(ab, tqm_base + HAL_TQM_SW_COOKIE_CONVERT_CFG2, val);
 }

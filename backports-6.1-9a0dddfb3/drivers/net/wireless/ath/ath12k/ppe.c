@@ -280,6 +280,7 @@ int ath12k_ppeds_attach_link_apvlan_vif(struct ath12k_link_vif *arvif, int vp_nu
 		vp_profile->use_ppe_int_pri = 0;
 		vp_profile->drop_prec_enable = 0;
 		vp_profile->arvif = arvif;
+		vp_profile->entry_valid = true;
 
 		vlan_iface->ppe_vp_profile_idx[link_id] = ppe_vp_profile_idx;
 	} else {
@@ -490,6 +491,7 @@ int ath12k_ppeds_attach_link_vif(struct ath12k_link_vif *arvif, int vp_num,
 		vp_profile->use_ppe_int_pri = 0;
 		vp_profile->drop_prec_enable = 0;
 		vp_profile->arvif = arvif;
+		vp_profile->entry_valid = true;
 
 		*link_ppe_vp_profile_idx = ppe_vp_profile_idx;
 	} else {

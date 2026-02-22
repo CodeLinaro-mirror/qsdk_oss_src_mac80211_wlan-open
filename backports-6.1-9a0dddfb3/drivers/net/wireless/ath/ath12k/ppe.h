@@ -25,11 +25,15 @@ enum ppeds_irq_type {
 	PPEDS_IRQ_PPE2TCL,
 	PPEDS_IRQ_REO2PPE,
 	PPEDS_IRQ_TX_COMPLETION,
+	PPEDS_IRQ_PPE2TCL_1,
+	PPEDS_IRQ_REO2PPE_1,
+	PPEDS_IRQ_TX_COMPLETION_1,
 };
 
 struct dp_ppe_ds_idxs {
 	u32 ppe2tcl_start_idx;
 	u32 reo2ppe_start_idx;
+	u32 tqm2ppe_start_idx;
 };
 
 #ifndef PPE_DS_TXCMPL_DEF_BUDGET
@@ -53,7 +57,10 @@ struct dp_ppe_ds_idxs {
 
 #define PPE_VP_ENTRIES_MAX 192
 #define MAX_PPEDS_IRQ_NAME_LEN 20
-#define MAX_PPEDS_IRQS 3
+#define MAX_PPEDS_IRQS 6
+#define ATH12K_PPEDS_IRQ_NEXT_RING 3
+#define ATH12K_PPE2TCL_MAX_RINGS 2
+#define ATH12K_REO2PPE_MAX_RINGS 2
 
 
 struct ath12k_dp_ppe_vp_profile {
@@ -67,6 +74,14 @@ struct ath12k_dp_ppe_vp_profile {
 	u8 use_ppe_int_pri;
 	struct ath12k_link_vif *arvif;
 	bool entry_valid;
+};
+
+struct dp_ppeds_hbm_tx_comp_ring {
+	struct dp_srng tqm2ppe;
+	struct  buffer_addr_info *tx_status;
+	int tx_status_head;
+	int tx_status_tail;
+	u8 macid[DP_PPEDS_SERVICE_BUDGET];
 };
 
 struct dp_ppeds_tx_comp_ring {
@@ -124,6 +139,7 @@ struct ath12k_ppeds_arch_ops {
 						int ppe_vp_profile_idx);
 	int (*ath12k_dp_ppeds_alloc_vp_search_idx_tbl_entry)(struct ath12k_base *ab,
 						int ppe_vp_profile_idx);
+	int (*ath12k_ppeds_srng_cmn_setup)(struct ath12k_base *ab);
 };
 
 struct ath12k_ppeds_napi {
@@ -133,8 +149,8 @@ struct ath12k_ppeds_napi {
 
 struct ath12k_ppe {
 	struct ath12k_base *ab;
-	struct dp_srng reo2ppe_ring;
-	struct dp_srng ppe2tcl_ring;
+	struct dp_srng reo2ppe_ring[ATH12K_REO2PPE_MAX_RINGS];
+	struct dp_srng ppe2tcl_ring[ATH12K_PPE2TCL_MAX_RINGS];
 	struct dp_ppeds_tx_comp_ring ppeds_comp_ring;
 	struct list_head ppeds_tx_desc_free_list;
 	struct list_head ppeds_tx_desc_reuse_list;
@@ -160,7 +176,10 @@ struct ath12k_ppe {
 	u8 num_ppe_vp_entries;
 	u8 ppeds_int_mode_enabled;
 	u8 ppeds_stopped;
-	u8 hw_auto_index_en; /**< Auto index enabled / disabled for PPE2TCL/REO2PPE*/
+	u8 txrx_hw_auto_idx; /**< Auto index enabled / disabled for PPE2TCL/REO2PPE*/
+	u8 hw_buff_mgmt; /**< HW buffer management */
+	struct dp_srng tqm2ppe_txcmp_ring; /**< TQM2PPE tx completion ring */
+	struct dp_srng ppe2wbm_refill_ring;	/**< PPE2WBM refill ring*/
 	struct ath12k_ppeds_stats ppeds_stats;
 	struct nss_plugins_ops *nss_plugin_ops;
 	struct ppe_ds_wlan_ops_v2 *ppeds_wlanops;
