@@ -694,6 +694,8 @@ enum ath12k_dbg_htt_tlv_tag {
 	HTT_STATS_TX_SELFGEN_RESP_FRAME_STATS_TAG       = 252,
 	HTT_STATS_TX_PDEV_TXOP_DUR_TAG                  = 256,
 	HTT_STATS_TXQ_COMBINED_SEQ_STATE_TAG            = 257,
+	HTT_STATS_CTL_TAG                               = 258,
+	HTT_STATS_ENHANCED_CTL_TAG                      = 259,
 	HTT_STATS_MAX_TAG,
 };
 
@@ -6183,10 +6185,10 @@ struct ath12k_htt_stats_regdb_regdomain_tlv {
 	__le32 rd_type;	/*enum ath12k_htt_stats_regdb_regdomain_type*/
 	union {
 		struct {
-			__le32 ctl_region : 8,
-			    cca_region : 8,
-			    dfs_region : 8,
-			    rsvd       : 8;
+			__le32 ctl_region    : 8,
+			    cca_region       : 8,
+			    dfs_region       : 8,
+			    domain_ctl_index : 8;
 		};
 		__le32 ctl_cca_dfs;
 	};
@@ -6205,6 +6207,7 @@ struct ath12k_htt_stats_regdb_regdomain_tlv {
 #define ATH12K_HTT_STATS_REGDOMAIN_CTL_REGION	GENMASK(7, 0)
 #define ATH12K_HTT_STATS_REGDOMAIN_CCA_REGION	GENMASK(15, 8)
 #define ATH12K_HTT_STATS_REGDOMAIN_DFS_REGION	GENMASK(23, 16)
+#define ATH12K_HTT_STATS_REGDOMAIN_DOMAIN_CTL_INDEX   GENMASK(31, 24)
 #define ATH12K_HTT_STATS_REGDOMAIN_NUM_RULES	GENMASK(15, 0)
 #define ATH12K_HTT_STATS_REGDOMAIN_RULE_SIZE	GENMASK(31, 16)
 
@@ -6320,6 +6323,36 @@ struct ath12k_htt_stats_reg_6g_oobe_tlv {
 #define ATH12K_QUARTER_DBM_TO_DBM_INT(q)	((q) / 4)
 #define ATH12K_QUARTER_DBM_TO_DBM_FRAC(q)	(((q) % 4) * 25 * ((q) < 0 ? -1 : 1))
 
+struct ath12k_htt_stats_ctl_tlv {
+	 __le32 array_gain_cap[HTT_STATS_MAX_CHAINS * ((HTT_STATS_MAX_CHAINS / 2) + 1)];
+	union {
+		struct {
+			 __le32 reg_rule_index:16,
+				power_rule_index:8,
+				rsvd:8;
+		};
+				__le32 ctl_args;
+	};
+};
+struct ath12k_htt_stats_enhanced_ctl_tlv {
+	union {
+		struct {
+			 __le32 enhanced_ctl_enable:1,
+				rsvd:7,
+				domain_ctl_idx:8,
+				array_gain_cap_ctl_region:8,
+				exception_ctl_region:8;
+		};
+			__le32 enhanced_ctl_args;
+	};
+};
+
+#define ATH12K_HTT_STATS_GET_ENHANCED_CTL_ENABLE GENMASK(0, 0)
+#define ATH12K_HTT_STATS_GET_DOMAIN_CTL_INDEX GENMASK(15, 8)
+#define ATH12K_HTT_STATS_GET_ARRAY_GAIN_CAP_CTL_REGION GENMASK(23, 16)
+#define ATH12K_HTT_STATS_GET_EXCEPTION_CTL_REGION GENMASK(31, 24)
+#define ATH12K_HTT_STATS_GET_REG_RULE_INDEX GENMASK(15, 0)
+#define ATH12K_HTT_STATS_GET_POWER_RULE_INDEX GENMASK(23, 16)
 
 /*======= Selfgen Response stats ====================*/
 
