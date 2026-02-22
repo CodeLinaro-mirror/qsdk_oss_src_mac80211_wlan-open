@@ -3229,6 +3229,14 @@ ath12k_wifi7_hal_mon_tx_parse_eht_sig_non_mumimo_user_info
 			IEEE80211_RADIOTAP_EHT_USER_INFO_CODING_KNOWN |
 			IEEE80211_RADIOTAP_EHT_USER_INFO_NSS_KNOWN_O |
 			IEEE80211_RADIOTAP_EHT_USER_INFO_BEAMFORMING_KNOWN_O;
+
+	if (ppdu_info->rx_status.eht_info.num_user_info <
+		ARRAY_SIZE(ppdu_info->rx_status.eht_info.user_info)) {
+		u32 user_idx = ppdu_info->rx_status.eht_info.num_user_info++;
+
+		ppdu_info->rx_status.eht_info.user_info[user_idx] =
+			ppdu_info->rx_status.userstats[user_idx].eht_user_info;
+	}
 }
 
 static __always_inline void
@@ -3260,6 +3268,17 @@ ath12k_wifi7_hal_mon_tx_parse_eht_sig_mumimo_user_info
 			IEEE80211_RADIOTAP_EHT_USER_INFO_MCS_KNOWN |
 			IEEE80211_RADIOTAP_EHT_USER_INFO_CODING_KNOWN |
 			IEEE80211_RADIOTAP_EHT_USER_INFO_SPATIAL_CONFIG_KNOWN_M;
+	ppdu_info->rx_status.eht_info.num_user_info = ppdu_info->num_users;
+	ppdu_info->rx_status.eht_info.user_info[userid] =
+			ppdu_info->rx_status.userstats[userid].eht_user_info;
+
+	if (ppdu_info->rx_status.eht_info.num_user_info <
+		ARRAY_SIZE(ppdu_info->rx_status.eht_info.user_info)) {
+		u32 user_idx = ppdu_info->rx_status.eht_info.num_user_info++;
+
+		ppdu_info->rx_status.eht_info.user_info[user_idx] =
+			ppdu_info->rx_status.userstats[user_idx].eht_user_info;
+	}
 }
 
 static __always_inline void
@@ -3372,6 +3391,8 @@ ath12k_wifi7_hal_mon_tx_populate_eht_sig_per_user
 	ppdu_info->rx_status.eht_known |= IEEE80211_RADIOTAP_EHT_KNOWN_LDPC_EXTRA_SYM_OM;
 	ppdu_info->rx_status.eht_data[0] |= (usr->ldpc_extra_symbol <<
 					EHT_LDPC_EXTRA_SYMBOL_SEG_SHIFT);
+	ppdu_info->rx_status.eht_info.eht.known = ppdu_info->rx_status.eht_known;
+	ppdu_info->rx_status.eht_info.eht.data[0] = ppdu_info->rx_status.eht_data[0];
 }
 
 static __always_inline void
@@ -3629,9 +3650,13 @@ ath12k_wifi7_hal_mon_tx_populate_eht_sig_common
 	eht_known |= (num_ru_allocation_known <<
 						EHT_NUM_KNOWN_RU_ALLOCATIONS_SHIFT);
 	ppdu_info->rx_status.eht_known |= eht_known;
+	ppdu_info->rx_status.eht_info.eht.known = ppdu_info->rx_status.eht_known;
 
-	for (i = 0; i < 4; i++)
+	for (i = 0; i < 4; i++) {
 		ppdu_info->rx_status.eht_data[i] |= eht_data[i];
+		ppdu_info->rx_status.eht_info.eht.data[i] =
+						ppdu_info->rx_status.eht_data[i];
+	}
 }
 
 static __always_inline void
@@ -3665,6 +3690,10 @@ ath12k_wifi7_hal_mon_tx_parse_user_desc_common(const void *tlv_data,
 				IEEE80211_RADIOTAP_EHT_KNOWN_NR_NON_OFDMA_USERS_M;
 			ppdu_info->rx_status.eht_data[7] |=
 				num_users << EHT_NUM_NON_OFDMA_USERS_SHIFT;
+			ppdu_info->rx_status.eht_info.eht.known =
+						ppdu_info->rx_status.eht_known;
+			ppdu_info->rx_status.eht_info.eht.data[7] =
+						ppdu_info->rx_status.eht_data[7];
 		}
 	break;
 	}
@@ -4651,6 +4680,12 @@ ath12k_wifi7_hal_mon_tx_parse_status_tlv(struct ath12k_hal *hal,
 					USIG_CRC_SHIFT);
 		tx_ppdu_info->rx_status.usig_value |= (usig_mu->tail <<
 					USIG_TAIL_SHIFT);
+		tx_ppdu_info->rx_status.u_sig_info.usig.common =
+						tx_ppdu_info->rx_status.usig_common;
+		tx_ppdu_info->rx_status.u_sig_info.usig.value =
+						tx_ppdu_info->rx_status.usig_value;
+		tx_ppdu_info->rx_status.u_sig_info.usig.mask =
+						tx_ppdu_info->rx_status.usig_mask;
 		break;
 	}
 
@@ -4687,6 +4722,12 @@ ath12k_wifi7_hal_mon_tx_parse_status_tlv(struct ath12k_hal *hal,
 					USIG_CRC_SHIFT);
 		tx_ppdu_info->rx_status.usig_value |= (usig_tb->tail <<
 					USIG_TAIL_SHIFT);
+		tx_ppdu_info->rx_status.u_sig_info.usig.common =
+						tx_ppdu_info->rx_status.usig_common;
+		tx_ppdu_info->rx_status.u_sig_info.usig.value =
+						tx_ppdu_info->rx_status.usig_value;
+		tx_ppdu_info->rx_status.u_sig_info.usig.mask =
+						tx_ppdu_info->rx_status.usig_mask;
 		break;
 	}
 
