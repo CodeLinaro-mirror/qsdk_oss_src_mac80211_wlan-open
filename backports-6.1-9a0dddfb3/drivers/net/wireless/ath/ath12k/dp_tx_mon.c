@@ -743,7 +743,6 @@ ath12k_dp_mon_tx_process_tlv(struct ath12k_pdev_dp *pdev_dp,
 			     struct ath12k_dp_mon_status_desc *status_desc,
 			     struct ath12k_mon_data *mon_data)
 {
-	struct hal_tx_mon_status_info *status_info;
 	struct dp_mon_tx_ppdu_info *ppdu_info;
 	struct hal_tlv_64_hdr *tlv_hdr;
 	u16 tlv_tag, tlv_len, tlv_userid;
@@ -751,8 +750,6 @@ ath12k_dp_mon_tx_process_tlv(struct ath12k_pdev_dp *pdev_dp,
 	u8 *tx_tlv_start = status_desc->mon_buf;
 	u8 *mon_buf_iter = status_desc->mon_buf;
 	enum hal_tx_mon_status tlv_status;
-	enum hal_tx_mon_tlv_grp tlv_grp;
-	u32 *prot_tlv_status = &mon_data->prot_ppdu_info.tx_info.prot_tlv_status;
 
 	do {
 		tlv_hdr = (struct hal_tlv_64_hdr *)mon_buf_iter;
@@ -761,25 +758,17 @@ ath12k_dp_mon_tx_process_tlv(struct ath12k_pdev_dp *pdev_dp,
 		tlv_len = le64_get_bits(tlv_hdr->tl, HAL_TLV_64_HDR_LEN);
 		tlv_userid = le64_get_bits(tlv_hdr->tl, HAL_TLV_64_USR_ID);
 
-		tlv_grp =  ath12k_hal_mon_tx_get_tlv_grp(&pdev_dp->dp->ab->hal,
-							 tlv_tag,
-							 prot_tlv_status);
-
-		if (tlv_grp == HAL_TX_MON_PROTECTED_TLV) {
-			status_info = &mon_data->prot_status_info;
-			ppdu_info = &mon_data->prot_ppdu_info;
-		} else {
-			status_info = &mon_data->data_status_info;
-			ppdu_info = &mon_data->data_ppdu_info;
-		}
+		ppdu_info = ath12k_hal_mon_tx_ppdu_info(&pdev_dp->dp->ab->hal,
+							mon_data, tlv_tag);
 
 		tlv_status =
 			ath12k_hal_mon_tx_parse_status(&pdev_dp->dp->ab->hal,
+						       mon_data,
 						       &ppdu_info->tx_info,
 						       tlv_tag,
 						       mon_buf_iter + sizeof(*tlv_hdr),
 						       tlv_userid, tlv_len,
-						       status_info, tx_tlv_start);
+						       tx_tlv_start);
 
 		mon_buf_iter += sizeof(*tlv_hdr) + tlv_len;
 		mon_buf_iter = PTR_ALIGN(mon_buf_iter, HAL_TLV_64_ALIGN);

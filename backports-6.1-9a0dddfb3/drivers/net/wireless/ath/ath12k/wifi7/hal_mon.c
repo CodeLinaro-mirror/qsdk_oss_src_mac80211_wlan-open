@@ -4023,59 +4023,18 @@ ath12k_wifi7_hal_mon_tx_status_get_num_user(struct ath12k_hal *hal,
 	return tlv_status;
 }
 
-enum hal_tx_mon_tlv_grp
-ath12k_wifi7_hal_mon_tx_get_tlv_grp(u16 tlv_tag, u32 *prot_tlv_status)
-{
-	switch (tlv_tag) {
-	case HAL_TX_FES_SETUP:
-	case HAL_TX_FLUSH:
-	case HAL_PCU_PPDU_SETUP_INIT:
-	case HAL_TX_PEER_ENTRY:
-	case HAL_TX_QUEUE_EXTENSION:
-	case HAL_TX_MPDU_START:
-	case HAL_TX_MSDU_START:
-	case HAL_TX_DATA:
-	case HAL_MON_BUF_ADDR:
-	case HAL_TX_MPDU_END:
-	case HAL_TX_MSDU_END:
-	case HAL_TX_LAST_MPDU_FETCHED:
-	case HAL_TX_LAST_MPDU_END:
-	case HAL_COEX_TX_REQ:
-	case HAL_TX_RAW_OR_NATIVE_FRAME_SETUP:
-	case HAL_NDP_PREAMBLE_DONE:
-	case HAL_SCH_CRITICAL_TLV_REFERENCE:
-	case HAL_TX_LOOPBACK_SETUP:
-	case HAL_TX_FES_SETUP_COMPLETE:
-	case HAL_TQM_MPDU_GLOBAL_START:
-	case HAL_TX_WUR_DATA:
-	case HAL_SCHEDULER_END:
-	case HAL_TX_FES_STATUS_START_PPDU:
-		return HAL_TX_MON_REG_TLV;
-	default:
-		break;
-
-	}
-
-	if (*prot_tlv_status == HAL_TX_FES_STATUS_START_PROT) {
-		return HAL_TX_MON_PROTECTED_TLV;
-	} else if (tlv_tag == HAL_TX_FES_STATUS_PROT ||
-		   tlv_tag == HAL_TX_FES_STATUS_START_PROT) {
-		*prot_tlv_status = tlv_tag;
-		return HAL_TX_MON_PROTECTED_TLV;
-	}
-
-	return HAL_TX_MON_REG_TLV;
-}
-
 enum hal_tx_mon_status
 ath12k_wifi7_hal_mon_tx_parse_status_tlv(struct ath12k_hal *hal,
+					 struct ath12k_mon_data *mon_data,
 					 struct hal_tx_mon_ppdu_info *tx_ppdu_info,
 					 u16 tlv_tag, const void *tlv_data,
 					 u32 userid, u16 tlv_len,
-					 struct hal_tx_mon_status_info *status_info,
 					 u8 *status_frag)
 {
 	enum hal_tx_mon_status status = HAL_TX_MON_STATUS_PPDU_NOT_DONE;
+	struct hal_tx_mon_status_info *status_info =
+			(tx_ppdu_info == &mon_data->data_ppdu_info.tx_info) ?
+			&mon_data->data_status_info : &mon_data->prot_status_info;
 	struct hal_tx_mon_packet_info *packet_info = NULL;
 	u32 info[7] = {0};
 
@@ -4152,6 +4111,7 @@ ath12k_wifi7_hal_mon_tx_parse_status_tlv(struct ath12k_hal *hal,
 	}
 
 	case HAL_PCU_PPDU_SETUP_INIT: {
+		status_info = &mon_data->prot_status_info;
 		ath12k_hal_mon_tx_pcu_ppdu_setup_init_info_get(hal, tlv_data,
 							       status_info, tlv_len);
 		status = HAL_TX_MON_PCU_PPDU_SETUP_INIT;
@@ -4178,6 +4138,7 @@ ath12k_wifi7_hal_mon_tx_parse_status_tlv(struct ath12k_hal *hal,
 
 		info[0] = __le32_to_cpu(tx_fes_start->info0);
 
+		status_info = &mon_data->prot_status_info;
 		status_info->medium_prot_type =
 			u32_get_bits(info[0],
 				     HAL_TX_MON_FES_START_INFO0_MEDIUM_PROT_TYPE);
@@ -4881,6 +4842,55 @@ int ath12k_wifi7_extract_tx_mon_ring_desc(struct ath12k_hal *hal,
 		return -EINVAL;
 
 	return 0;
+}
+
+struct dp_mon_tx_ppdu_info *
+ath12k_wifi7_hal_mon_tx_ppdu_info(struct ath12k_hal *hal,
+				  struct ath12k_mon_data *pmon,
+				  u16 tlv_tag)
+{
+	switch (tlv_tag) {
+	case HAL_TX_FES_SETUP:
+	case HAL_TX_FLUSH:
+	case HAL_PCU_PPDU_SETUP_INIT:
+	case HAL_TX_PEER_ENTRY:
+	case HAL_TX_QUEUE_EXTENSION:
+	case HAL_TX_MPDU_START:
+	case HAL_TX_MSDU_START:
+	case HAL_TX_DATA:
+	case HAL_MON_BUF_ADDR:
+	case HAL_TX_MPDU_END:
+	case HAL_TX_MSDU_END:
+	case HAL_TX_LAST_MPDU_FETCHED:
+	case HAL_TX_LAST_MPDU_END:
+	case HAL_COEX_TX_REQ:
+	case HAL_TX_RAW_OR_NATIVE_FRAME_SETUP:
+	case HAL_NDP_PREAMBLE_DONE:
+	case HAL_SCH_CRITICAL_TLV_REFERENCE:
+	case HAL_TX_FES_SETUP_COMPLETE:
+	case HAL_TQM_MPDU_GLOBAL_START:
+	case HAL_SCHEDULER_END:
+	case HAL_TX_FES_STATUS_USER_PPDU:
+	case HAL_TX_FES_STATUS_START_PPDU:
+		break;
+	case HAL_TX_FES_STATUS_PROT: {
+		if (!pmon->prot_ppdu_info.is_used)
+			pmon->prot_ppdu_info.is_used = true;
+
+		return &pmon->prot_ppdu_info;
+	}
+	case HAL_TX_FES_STATUS_START_PROT: {
+		if (!pmon->prot_ppdu_info.is_used)
+			pmon->prot_ppdu_info.is_used = true;
+
+		return &pmon->prot_ppdu_info;
+	}
+	}
+
+	if (!pmon->data_ppdu_info.is_used)
+		pmon->data_ppdu_info.is_used = true;
+
+	return &pmon->data_ppdu_info;
 }
 
 bool ath12k_wifi7_is_mon_buf_addr_tlv(u32 tlv_tag)
