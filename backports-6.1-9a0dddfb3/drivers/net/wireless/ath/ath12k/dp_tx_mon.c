@@ -730,6 +730,258 @@ ath12k_dp_tx_mon_update_ampdu_info(struct dp_mon_tx_ppdu_info *ppdu_info,
 }
 
 /**
+ * ath12k_dp_tx_mon_gen_rts() - Generate RTS frame
+ * @ppdu_info: PPDU info structure
+ * @status_info: TX status info for address selection
+ * @window_flag: Initiator window flag for address ordering
+ *
+ * Creates RTS frame with proper 802.11 header fields.
+ * Radiotap space will be added separately during delivery processing.
+ *
+ * Return: Generated sk_buff or NULL on failure
+ */
+static struct sk_buff *
+ath12k_dp_tx_mon_gen_rts(struct ath12k_pdev_dp *pdev_dp,
+			 struct dp_mon_tx_ppdu_info *ppdu_info,
+			 struct hal_tx_mon_status_info *status_info,
+			 u8 window_flag)
+{
+	struct sk_buff *skb;
+	struct ieee80211_rts *rts;
+	struct hal_tx_mon_ppdu_info *tx_info;
+	u16 duration_le;
+	u16 frame_control;
+	size_t rts_frame_size = sizeof(struct ieee80211_rts);
+
+	if (!ppdu_info || !status_info)
+		return NULL;
+
+	tx_info = &ppdu_info->tx_info;
+
+	skb = dev_alloc_skb(ATH12K_DP_MON_MAX_RADIO_TAP_HDR +
+			    rts_frame_size);
+	if (!skb)
+		return NULL;
+
+	skb_reserve(skb, ATH12K_DP_MON_MAX_RADIO_TAP_HDR);
+
+	rts = (struct ieee80211_rts *)skb_put_zero(skb, rts_frame_size);
+
+	frame_control = IEEE80211_FTYPE_CTL | IEEE80211_STYPE_RTS;
+	rts->frame_control = cpu_to_le16(frame_control);
+
+	tx_info->rx_status.frame_control = frame_control;
+	tx_info->rx_status.frame_control_info_valid = 1;
+
+	duration_le = cpu_to_le16(tx_info->rx_status.rx_duration);
+	rts->duration = duration_le;
+
+	if (!status_info->protection_addr)
+		status_info = &pdev_dp->dp_mon_pdev->mon_data.data_status_info;
+
+	if (window_flag == INITIATOR_WINDOW) {
+		memcpy(rts->ra, status_info->addr1, ETH_ALEN);
+		memcpy(rts->ta, status_info->addr2, ETH_ALEN);
+	} else {
+		memcpy(rts->ra, status_info->addr2, ETH_ALEN);
+		memcpy(rts->ta, status_info->addr1, ETH_ALEN);
+	}
+
+	tx_info->is_used = 1;
+	return skb;
+}
+
+/**
+ * ath12k_dp_tx_mon_gen_cts2self() - Generate CTS frame
+ * @ppdu_info: PPDU info structure
+ * @status_info: TX status info for address selection
+ * @window_flag: Window flag for address ordering
+ *
+ * Creates CTS-to-self frame for medium protection. Uses standard
+ * CTS frame format with self-addressing.
+ *
+ * Return: Generated sk_buff or NULL on failure
+ */
+static struct sk_buff *
+ath12k_dp_tx_mon_gen_cts2self(struct ath12k_pdev_dp *pdev_dp,
+			      struct dp_mon_tx_ppdu_info *ppdu_info,
+			      struct hal_tx_mon_status_info *status_info,
+			      u8 window_flag)
+{
+	struct sk_buff *skb;
+	struct ieee80211_cts *cts;
+	struct hal_tx_mon_ppdu_info *tx_info;
+	u16 duration_le;
+	u16 frame_control;
+	size_t cts_frame_size = sizeof(struct ieee80211_cts);
+
+	if (!ppdu_info || !status_info)
+		return NULL;
+
+	tx_info = &ppdu_info->tx_info;
+
+	skb = dev_alloc_skb(ATH12K_DP_MON_MAX_RADIO_TAP_HDR +
+			    cts_frame_size);
+	if (!skb)
+		return NULL;
+
+	skb_reserve(skb, ATH12K_DP_MON_MAX_RADIO_TAP_HDR);
+
+	cts = (struct ieee80211_cts *)skb_put_zero(skb,
+						   cts_frame_size);
+
+	frame_control = IEEE80211_FTYPE_CTL | IEEE80211_STYPE_CTS;
+	cts->frame_control = cpu_to_le16(frame_control);
+
+	tx_info->rx_status.frame_control = frame_control;
+	tx_info->rx_status.frame_control_info_valid = 1;
+
+	duration_le = cpu_to_le16(tx_info->rx_status.rx_duration);
+	cts->duration = duration_le;
+
+	if (window_flag != INITIATOR_WINDOW)
+		status_info = &pdev_dp->dp_mon_pdev->mon_data.data_status_info;
+
+	memcpy(cts->ra, status_info->addr2, ETH_ALEN);
+
+	tx_info->is_used = 1;
+	return skb;
+}
+
+/**
+ * ath12k_dp_tx_mon_generate_prot_frm() - Generate protection frame
+ * @pdev_dp: DP pdev handle
+ * @tx_prot_ppdu_info: Protection PPDU information
+ *
+ * Generates protection frames (RTS/CTS) based on protection type
+ * specified in PPDU information. The generated frame is added to
+ * the protection PPDU's MPDU queue for delivery to monitor stack.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static int
+ath12k_dp_tx_mon_generate_prot_frm(struct ath12k_pdev_dp *pdev_dp,
+				   struct dp_mon_tx_ppdu_info *tx_prot_ppdu_info)
+{
+	struct sk_buff *skb = NULL;
+	struct hal_tx_mon_ppdu_info *tx_info;
+	struct sk_buff_head *mpdu_q;
+	struct hal_tx_mon_status_info *status_info;
+	u32 protection_type;
+	u8 window_flag = INITIATOR_WINDOW;
+
+	tx_info = &tx_prot_ppdu_info->tx_info;
+	mpdu_q = &tx_info->rx_status.mpdu_q[0];
+
+	status_info = &pdev_dp->dp_mon_pdev->mon_data.prot_status_info;
+	protection_type = status_info->medium_prot_type;
+
+	switch (protection_type) {
+	case DP_MON_TX_MEDIUM_NO_PROTECTION:
+		tx_info->is_used = 0;
+		return 0;
+	case DP_MON_TX_MEDIUM_RTS_LEGACY:
+	case DP_MON_TX_MEDIUM_RTS_11AC_STATIC_BW:
+	case DP_MON_TX_MEDIUM_RTS_11AC_DYNAMIC_BW:
+		skb = ath12k_dp_tx_mon_gen_rts(pdev_dp,
+					       tx_prot_ppdu_info,
+					       status_info,
+					       window_flag);
+		break;
+
+	case DP_MON_TX_MEDIUM_CTS2SELF:
+		skb = ath12k_dp_tx_mon_gen_cts2self(pdev_dp,
+						    tx_prot_ppdu_info,
+						    status_info,
+						    window_flag);
+		break;
+
+	default:
+		ath12k_dbg(pdev_dp->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "TX monitor: No protection frame needed, type=%u\n",
+			   protection_type);
+		return 0;
+	}
+
+	if (!skb) {
+		ath12k_dbg(pdev_dp->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "TX monitor: Failed to generate protection frame type %u\n",
+			   protection_type);
+		return -ENOMEM;
+	}
+
+	skb_queue_tail(mpdu_q, skb);
+
+	ath12k_dbg(pdev_dp->dp->ab, ATH12K_DBG_DP_MON_TX,
+		   "TX monitor: Generated protection frame type %u\n",
+		   protection_type);
+
+	return 0;
+}
+
+/**
+ * ath12k_dp_tx_mon_update_ppdu_info_status() - Update PPDU info based on TLV status
+ * @pdev_dp: DP pdev handle
+ * @tx_ppdu_info: Could be either of below
+ * tx_data_ppdu_info: Data PPDU information structure
+ * tx_prot_ppdu_info: Protection PPDU information structure
+ * @tx_tlv_hdr: TLV header pointer
+ * @status_frag: Status fragment buffer
+ * @tlv_status: TLV status from HAL parsing
+ *
+ * This function processes different TLV status types and performs
+ * appropriate actions including frame generation, buffer management,
+ * and PPDU information updates. It serves as the central dispatcher
+ * for TLV-based processing in TX monitor.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static int
+ath12k_dp_tx_mon_update_ppdu_info_status(struct ath12k_pdev_dp *pdev_dp,
+					 struct dp_mon_tx_ppdu_info *tx_ppdu_info,
+					 u32 tlv_status)
+{
+	struct hal_tx_mon_status_info *status_info;
+	int ret = 0;
+
+	if (unlikely(!tx_ppdu_info))
+		return -EINVAL;
+
+	switch (tlv_status) {
+	case HAL_TX_MON_FES_SETUP:
+		break;
+
+	case HAL_TX_MON_RESPONSE_REQUIRED_INFO:
+		break;
+
+	case HAL_TX_MON_FES_STATUS_START_PROT:
+		break;
+
+	case HAL_TX_MON_FES_STATUS_START_PPDU:
+		break;
+
+	case HAL_TX_MON_FES_STATUS_PROT:
+		tx_ppdu_info->tx_info.rx_status.ppdu_ts =
+			tx_ppdu_info->tx_info.rx_status.ppdu_ts << 1;
+
+		ret = ath12k_dp_tx_mon_generate_prot_frm(pdev_dp,
+							 tx_ppdu_info);
+		break;
+
+	case HAL_TX_MON_FW2SW:
+		status_info = &pdev_dp->dp_mon_pdev->mon_data.data_status_info;
+		tx_ppdu_info->tx_info.rx_status.freq = status_info->freq;
+
+		break;
+
+	default:
+		break;
+	}
+
+	return ret;
+}
+
+/**
  * ath12k_dp_mon_tx_process_tlv() - Process TLV data with early filtering
  * @pdev_dp: DP PDEV context
  * @status_desc: Status descriptor containing TLV data
@@ -750,6 +1002,7 @@ ath12k_dp_mon_tx_process_tlv(struct ath12k_pdev_dp *pdev_dp,
 	u8 *tx_tlv_start = status_desc->mon_buf;
 	u8 *mon_buf_iter = status_desc->mon_buf;
 	enum hal_tx_mon_status tlv_status;
+	int ret;
 
 	do {
 		tlv_hdr = (struct hal_tlv_64_hdr *)mon_buf_iter;
@@ -769,6 +1022,15 @@ ath12k_dp_mon_tx_process_tlv(struct ath12k_pdev_dp *pdev_dp,
 						       mon_buf_iter + sizeof(*tlv_hdr),
 						       tlv_userid, tlv_len,
 						       tx_tlv_start);
+
+		/* Process TLV status and update PPDU information */
+		ret = ath12k_dp_tx_mon_update_ppdu_info_status(pdev_dp,
+							       ppdu_info,
+							       tlv_status);
+		if (ret) {
+			ath12k_dbg(pdev_dp->dp->ab, ATH12K_DBG_DP_MON_TX,
+				   "TLV status processing failed: %d", ret);
+		}
 
 		mon_buf_iter += sizeof(*tlv_hdr) + tlv_len;
 		mon_buf_iter = PTR_ALIGN(mon_buf_iter, HAL_TLV_64_ALIGN);
