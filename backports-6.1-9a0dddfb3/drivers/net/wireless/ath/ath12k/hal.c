@@ -1220,6 +1220,7 @@ ssize_t ath12k_debugfs_hal_dump_srng_stats(struct ath12k_base *ab, char *buf, in
 	struct ath12k_dp *dp = ab->dp;
 	struct ath12k_pdev_dp *dp_pdev;
 	struct ath12k_pdev_mon_dp *dp_mon_pdev;
+	struct ath12k_mgmt *mgmt = ab->mgmt;
 	struct ath12k_ext_irq_grp *irq_grp;
 	struct ath12k_ce_pipe *ce_pipe;
 	int len = 0, ring_id;
@@ -1319,6 +1320,10 @@ ssize_t ath12k_debugfs_hal_dump_srng_stats(struct ath12k_base *ab, char *buf, in
 
 	if (dp->arch_ops->dump_srng_stats)
 		len += dp->arch_ops->dump_srng_stats(dp, buf + len, size - len);
+
+	if (mgmt && mgmt->arch_ops->mgmt_op_dump_ring_stats)
+		len += mgmt->arch_ops->mgmt_op_dump_ring_stats(mgmt, buf + len,
+							       size - len);
 
 	return len;
 }

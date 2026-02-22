@@ -1136,10 +1136,41 @@ static int ath12k_wifi8_mgmt_htt_setup(struct ath12k_mgmt *mgmt)
 	return ret;
 }
 
+static int
+ath12k_wifi8_mgmt_dump_ring_stats(struct ath12k_mgmt *mgmt, char *buf, int size)
+{
+	struct ath12k_mgmt_wifi8 *mgmt_wifi8 = ath12k_get_mgmt_wifi8(mgmt);
+	struct ath12k_base *ab = mgmt->ab;
+	int len = 0;
+
+	if (len < size)
+		len += ath12k_hal_dump_ring_stats(ab, HAL_REO_DST_MGMT,
+						  mgmt_wifi8->reo_dst_rx_ring.ring_id,
+						  buf + len, size - len);
+
+	if (len < size)
+		len += ath12k_hal_dump_ring_stats(ab, HAL_REO_EXCEPTION_MGMT,
+						  mgmt_wifi8->reo_dst_rx_err_ring.ring_id,
+						  buf + len, size - len);
+
+	if (len < size)
+		len += ath12k_hal_dump_ring_stats(ab, HAL_WBM_BUF_MGMT,
+						  mgmt_wifi8->wbm_refill_ring.ring_id,
+						  buf + len, size - len);
+
+	if (len < size)
+		len += ath12k_hal_dump_ring_stats(ab, HAL_WBM_IDLE_BUF_MGMT,
+						  mgmt_wifi8->wbm_idle_buf_ring.ring_id,
+						  buf + len, size - len);
+
+	return len;
+}
+
 static struct ath12k_mgmt_arch_ops ath12k_wifi8_mgmt_arch_ops = {
 	.mgmt_op_device_init = ath12k_wifi8_mgmt_op_device_init,
 	.mgmt_op_device_deinit = ath12k_wifi8_mgmt_op_device_deinit,
 	.mgmt_op_htt_setup = ath12k_wifi8_mgmt_htt_setup,
+	.mgmt_op_dump_ring_stats = ath12k_wifi8_mgmt_dump_ring_stats,
 };
 
 struct ath12k_mgmt *ath12k_wifi8_mgmt_init(struct ath12k_base *ab)
