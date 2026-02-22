@@ -369,6 +369,51 @@ struct ath12k_pdev_mon_stats {
 
 #define DP_MON_MAX_STATUS_BUF 32
 
+/**
+ * struct ath12k_mon_data - Monitor mode data processing context
+ * @link_desc_banks: Array of link descriptor banks for DMA buffer management
+ *                   Used for efficient allocation and tracking of monitor buffers
+ * @mon_ppdu_info: RX monitor PPDU information structure containing parsed
+ *                 frame metadata, PHY parameters, and reception status
+ * @mon_ppdu_status: Current PPDU processing status flags indicating parsing
+ *                   state and completion status for RX monitor frames
+ * @mon_last_buf_cookie: Cookie value of the last processed monitor buffer
+ *                       Used for buffer tracking and leak detection
+ * @mon_last_linkdesc_paddr: Physical address of last processed link descriptor
+ *                           Used for descriptor chain validation and debugging
+ * @chan_noise_floor: Channel noise floor measurement in dBm for signal quality
+ *                    analysis and RSSI calculations in monitor mode
+ * @err_bitmap: Bitmap of error conditions encountered during monitor processing
+ *              Used for error tracking and debugging monitor frame issues
+ * @decap_format: Decapsulation format for monitor frames (raw, native WiFi, etc.)
+ *                Determines how captured frames are presented to upper layers
+ * @rx_mon_stats: RX monitor statistics structure containing performance counters
+ *                and error tracking for RX monitor functionality
+ * @buf_state: Current state of monitor status buffer processing (idle, busy, etc.)
+ *             Used for state machine management in monitor buffer handling
+ * @mon_lock: Spinlock protecting concurrent access to monitor data structures
+ *            Ensures thread safety between interrupt and process contexts
+ * @rx_status_q: Queue of RX status sk_buffs awaiting processing or delivery
+ *               Used for buffering monitor frames before mac80211 delivery
+ * @mon_mpdu: Pointer to current MPDU being processed in monitor mode
+ *            Contains frame data and metadata during active processing
+ * @dp_rx_mon_mpdu_list: List of RX monitor MPDUs pending processing
+ *                       Used for batching and efficient MPDU handling
+ * @prot_status_info: TX monitor status information for protection frames
+ *                    (RTS/CTS, Block ACK, etc.) containing timing and status data
+ * @data_status_info: TX monitor status information for data frames containing
+ *                    transmission parameters, retry counts, and completion status
+ * @prot_ppdu_info: TX monitor PPDU information for protection frames including
+ *                  PHY parameters, timing, and frame generation metadata
+ * @data_ppdu_info: TX monitor PPDU information for data frames including
+ *                  transmission parameters, MCS, and channel information
+ * @rtap_vendor_tlv: Pointer to radiotap vendor-specific TLV data for ATH12K
+ *                   chipset metadata including timing and hardware-specific info
+ *
+ * This structure serves as the central context for all monitor mode operations,
+ * encompassing both RX and TX monitor functionality. It maintains state information,
+ * statistics, and processing contexts required for efficient monitor frame handling.
+ */
 struct ath12k_mon_data {
 	struct dp_link_desc_bank link_desc_banks[DP_LINK_DESC_BANKS_MAX];
 	struct hal_rx_mon_ppdu_info mon_ppdu_info;
@@ -387,8 +432,10 @@ struct ath12k_mon_data {
 	struct sk_buff_head rx_status_q;
 	struct dp_mon_mpdu *mon_mpdu;
 	struct list_head dp_rx_mon_mpdu_list;
-	struct dp_mon_tx_ppdu_info *tx_prot_ppdu_info;
-	struct dp_mon_tx_ppdu_info *tx_data_ppdu_info;
+	struct hal_tx_mon_status_info prot_status_info;
+	struct hal_tx_mon_status_info data_status_info;
+	struct dp_mon_tx_ppdu_info prot_ppdu_info;
+	struct dp_mon_tx_ppdu_info data_ppdu_info;
 	struct ieee80211_radiotap_vendor_ns *rtap_vendor_tlv;
 };
 
@@ -458,6 +505,13 @@ struct ath12k_pdev_mon_dp_stats {
  *                  Used for tracking buffer lifecycle and detecting leaks
  * @tx_status_buf_free: Count of TX status buffers freed back to the pool.
  * @tx_work_queue_scheduled: Number of times work queue is scheduled
+ * @tx_ppdu_desc_invalid: Number of invalid PPDU descriptors encountered
+ * @tx_ppdu_desc_overflow: Number of PPDU descriptor buffer overflows
+ * @tx_work_queue_stalls: Work queue stall events (processing hangs)
+ * @tx_ppdu_parse_errors: Number of PPDU parsing errors
+ * @tx_status_buf_null: Number of null status buffer pointers encountered
+ * @tx_ppdu_processed: Total number of TX PPDUs processed in work queue
+ * @tx_status_desc_processed: Total number of status descriptors processed
  */
 struct ath12k_pdev_tx_mon_stats {
 	u32 empty_descriptors;
@@ -465,6 +519,13 @@ struct ath12k_pdev_tx_mon_stats {
 	u32 tx_pkt_tlv_free;
 	u32 tx_status_buf_free;
 	u32 tx_work_queue_scheduled;
+	u32 tx_ppdu_desc_invalid;
+	u32 tx_ppdu_desc_overflow;
+	u32 tx_work_queue_stalls;
+	u32 tx_ppdu_parse_errors;
+	u32 tx_status_buf_null;
+	u32 tx_ppdu_processed;
+	u32 tx_status_desc_processed;
 };
 
 /**

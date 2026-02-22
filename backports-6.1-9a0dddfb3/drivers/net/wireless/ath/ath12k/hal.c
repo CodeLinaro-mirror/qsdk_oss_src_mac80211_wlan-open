@@ -958,6 +958,17 @@ void ath12k_hal_reo_config_reo2ppe_dest_info(struct ath12k_base *ab)
 	ab->hal.hal_ops->hal_reo_config_reo2ppe_dest_info(ab);
 }
 
+void
+ath12k_hal_get_tlv_params(struct ath12k_hal *hal,
+			  __le64 tlv_header,
+			  u16 *tlv_tag,
+			  u32 *tlv_userid,
+			  u16 *tlv_len)
+{
+	hal->hal_ops->hal_get_tlv_tag_params(tlv_header, tlv_tag,
+					     tlv_userid, tlv_len);
+}
+
 void ath12k_hal_srng_get_shadow_config(struct ath12k_base *ab,
 				       u32 **cfg, u32 *len)
 {
