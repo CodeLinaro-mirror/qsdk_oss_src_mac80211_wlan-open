@@ -3,6 +3,8 @@
  * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
+#define ATH12K_DP_MON_TX_MAX_RADIO_TAP_HDR 512
+
 #define INITIATOR_WINDOW 0
 
 int ath12k_dp_mon_tx_process_ring(struct ath12k_pdev_dp *dp_pdev, int mac_id,

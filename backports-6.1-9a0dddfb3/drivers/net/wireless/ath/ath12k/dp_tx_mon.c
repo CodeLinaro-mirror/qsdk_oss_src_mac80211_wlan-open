@@ -1039,12 +1039,278 @@ ath12k_dp_tx_mon_generate_prot_frm(struct ath12k_pdev_dp *pdev_dp,
 	}
 
 	skb_queue_tail(mpdu_q, skb);
+	tx_prot_ppdu_info->contains_host_frames = true;
 
 	ath12k_dbg(pdev_dp->dp->ab, ATH12K_DBG_DP_MON_TX,
 		   "TX monitor: Generated protection frame type %u\n",
 		   protection_type);
 
 	return 0;
+}
+
+/**
+ * ath12k_dp_tx_mon_free_last_mpdu_q() - Free incomplete MPDU from queue
+ * @dp_mon_pdev: Monitor pdev context
+ * @tx_ppdu_info: PPDU info structure
+ * @usr_idx: User index
+ *
+ * Frees the last incomplete MPDU from the specified user's queue.
+ */
+void ath12k_dp_tx_mon_free_last_mpdu_q(struct ath12k_pdev_mon_dp *dp_mon_pdev,
+				       struct dp_mon_tx_ppdu_info *tx_ppdu_info,
+				       u32 usr_idx)
+{
+	struct hal_rx_mon_mpdu_info *mpdu_info;
+	struct sk_buff_head *mpdu_q;
+	struct sk_buff *skb;
+
+	if (!dp_mon_pdev || !tx_ppdu_info)
+		return;
+
+	mpdu_info = &tx_ppdu_info->tx_info.rx_status.mpdu_info[usr_idx];
+	mpdu_q = &tx_ppdu_info->tx_info.rx_status.mpdu_q[usr_idx];
+
+	/*
+	 * Only clean up if MPDU end was not received
+	 * This indicates an incomplete MPDU that needs cleanup
+	 */
+	if (!mpdu_info->mpdu_end_received) {
+		skb = skb_dequeue_tail(mpdu_q);
+		if (skb)
+			dev_kfree_skb_any(skb);
+
+		/* Mark MPDU as ended to prevent further processing */
+		mpdu_info->mpdu_end_received = true;
+		mpdu_info->mpdu_start_received = false;
+	}
+}
+
+/**
+ * ath12k_dp_tx_mon_process_mpdu_start() - Process MPDU start TLV
+ * @dp_pdev: DP pdev handle
+ * @tx_ppdu_info: PPDU info structure
+ * @usr_idx: User index
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static int
+ath12k_dp_tx_mon_process_mpdu_start(struct ath12k_pdev_dp *dp_pdev,
+				    struct dp_mon_tx_ppdu_info *tx_ppdu_info,
+				    u32 usr_idx)
+{
+	struct sk_buff_head *mpdu_q;
+	struct sk_buff *skb;
+	struct hal_rx_mon_mpdu_info *mpdu_info;
+	struct ath12k_dp_mon *dp_mon = dp_pdev->dp_mon_pdev->dp_mon;
+
+	if (usr_idx >= HAL_MAX_UL_MU_USERS) {
+		ath12k_warn(dp_pdev->dp->ab,
+			    "TX Mon: Invalid user index %u >= %u\n",
+			    usr_idx, HAL_MAX_UL_MU_USERS);
+		return -EINVAL;
+	}
+
+	mpdu_q = &tx_ppdu_info->tx_info.rx_status.mpdu_q[usr_idx];
+	mpdu_info = &tx_ppdu_info->tx_info.rx_status.mpdu_info[usr_idx];
+
+	if (!mpdu_info->mpdu_end_received) {
+		skb = skb_dequeue_tail(mpdu_q);
+		if (likely(skb))
+			dev_kfree_skb_any(skb);
+	}
+
+	mpdu_info->mpdu_start_received = true;
+	mpdu_info->mpdu_end_received = false;
+
+	skb = dev_alloc_skb(ATH12K_DP_MON_TX_MAX_RADIO_TAP_HDR);
+	if (unlikely(!skb)) {
+		ath12k_warn(dp_pdev->dp->ab,
+			    "TX Mon: SKB allocation failed for user %u\n",
+			    usr_idx);
+		mpdu_info->mpdu_start_received = false;
+		return -ENOMEM;
+	}
+
+	skb_reserve(skb, ATH12K_DP_MON_TX_MAX_RADIO_TAP_HDR);
+	tx_ppdu_info->contains_host_frames = false;
+	skb_queue_tail(mpdu_q, skb);
+
+	ath12k_dbg(dp_mon->dp->ab, ATH12K_DBG_DP_MON_TX,
+		   "TX Mon: MPDU header SKB allocated for user %u (reserved=%u)\n",
+		   usr_idx, ATH12K_DP_MON_TX_MAX_RADIO_TAP_HDR);
+
+	return 0;
+}
+
+/**
+ * ath12k_dp_tx_mon_generate_data_frm() - Generate data frame with fragments
+ * @ppdu_info: Data PPDU information
+ * @user_idx: User index
+ * @take_ref: Whether to take reference on buffer page
+ *           - true: Increment page reference count (buffer may be reused)
+ *           - false: Transfer page ownership (buffer consumed)
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int ath12k_dp_tx_mon_generate_data_frm(struct dp_mon_tx_ppdu_info *ppdu_info,
+				       u8 user_idx, bool take_ref)
+{
+	struct sk_buff *skb;
+	struct hal_rx_mon_ppdu_info *rx_status;
+	struct sk_buff_head *mpdu_q;
+	struct hal_tx_mon_ppdu_info *tx_info;
+	void *buffer_addr;
+	u32 buffer_length;
+	struct page *page;
+	int frag_offset;
+
+	if (!ppdu_info || user_idx >= HAL_MAX_UL_MU_USERS)
+		return -EINVAL;
+
+	tx_info = &ppdu_info->tx_info;
+	rx_status = &tx_info->rx_status;
+	mpdu_q = &rx_status->mpdu_q[user_idx];
+
+	skb = skb_peek_tail(mpdu_q);
+	if (!skb)
+		return -ENOENT;
+
+	if (ppdu_info->has_buffer_data && ppdu_info->buffer_addr) {
+		buffer_addr = ppdu_info->buffer_addr;
+		buffer_length = ppdu_info->buffer_length;
+
+		page = virt_to_head_page(buffer_addr);
+		frag_offset = buffer_addr - page_address(page);
+
+		skb_add_rx_frag(skb, skb_shinfo(skb)->nr_frags,
+				page,
+				frag_offset,
+				buffer_length,
+				ATH12K_DP_MON_TX_BUF_SIZE);
+
+		if (take_ref)
+			skb_frag_ref(skb, skb_shinfo(skb)->nr_frags);
+	}
+	return 0;
+}
+
+/**
+ * ath12k_dp_tx_mon_extract_buffer_info() - Extract buffer information only
+ * @dp_mon: DP monitor handle
+ * @tx_ppdu_info: PPDU info structure
+ * @usr_idx: User index
+ *
+ * This function ONLY extracts buffer info and stores it in ppdu_info.
+ * It does NOT add fragments - that's done by ath12k_dp_tx_mon_generate_data_frm().
+ * Incorporates robust validation and error handling from original implementation.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static int
+ath12k_dp_tx_mon_extract_buffer_info(struct ath12k_dp_mon *dp_mon,
+				     struct dp_mon_tx_ppdu_info *tx_ppdu_info,
+				     u32 usr_idx)
+{
+	struct hal_tx_mon_ppdu_info *hal_info;
+	struct hal_tx_mon_packet_info *packet_info = NULL;
+	struct list_head mon_desc_used_list;
+	struct ath12k_dp_mon_desc *mon_desc;
+	struct sk_buff_head *mpdu_q;
+	struct sk_buff *header_skb;
+	struct hal_rx_mon_mpdu_info *mpdu_info;
+	int ret = 0;
+
+	INIT_LIST_HEAD(&mon_desc_used_list);
+
+	if (usr_idx >= HAL_MAX_UL_MU_USERS) {
+		ath12k_warn(dp_mon->dp->ab,
+			    "TX Mon: Invalid user index %u >= %u\n",
+			    usr_idx, HAL_MAX_UL_MU_USERS);
+		return -EINVAL;
+	}
+
+	mpdu_info = &tx_ppdu_info->tx_info.rx_status.mpdu_info[usr_idx];
+
+	if (!mpdu_info->mpdu_start_received) {
+		ath12k_dbg(dp_mon->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "TX Mon: Buffer without MPDU start for user %u\n",
+			   usr_idx);
+		return -EINVAL;
+	}
+
+	mpdu_q = &tx_ppdu_info->tx_info.rx_status.mpdu_q[usr_idx];
+
+	hal_info = &tx_ppdu_info->tx_info;
+	packet_info = &hal_info->packet_info;
+
+	if (!packet_info || !packet_info->sw_cookie) {
+		tx_ppdu_info->has_buffer_data = false;
+		ath12k_dbg(dp_mon->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "TX Mon: No packet buffer info for user %u\n",
+			   usr_idx);
+		return 0;
+	}
+
+	mon_desc = (struct ath12k_dp_mon_desc *)(uintptr_t)(packet_info->sw_cookie);
+
+	if (unlikely(mon_desc->magic != ATH12K_MON_MAGIC_VALUE)) {
+		ath12k_warn(dp_mon->dp->ab,
+			    "TX Mon: Invalid magic value 0x%x for user %u\n",
+			    mon_desc->magic, usr_idx);
+		ret = -EINVAL;
+		goto return_mon_desc;
+	}
+
+	if (unlikely(mon_desc->in_use != DP_MON_DESC_TO_HW)) {
+		ath12k_warn(dp_mon->dp->ab,
+			    "TX Mon: Invalid descriptor state %d for user %u\n",
+			    mon_desc->in_use, usr_idx);
+		ret = -EINVAL;
+		goto return_mon_desc;
+	}
+
+	mon_desc->in_use = DP_MON_DESC_REPLENISH;
+	list_add_tail(&mon_desc->list, &mon_desc_used_list);
+	tx_ppdu_info->buffer_addr = mon_desc->mon_buf;
+	mon_desc->mon_buf = NULL;
+
+	if (!tx_ppdu_info->buffer_addr) {
+		ret = -EINVAL;
+		goto return_mon_desc;
+	}
+
+	if (packet_info->dma_length > ATH12K_DP_MON_TX_BUF_SIZE) {
+		ath12k_warn(dp_mon->dp->ab,
+			    "TX Mon: Invalid DMA length %u for user %u\n",
+			    packet_info->dma_length, usr_idx);
+		ret = -EINVAL;
+		page_frag_free(tx_ppdu_info->buffer_addr);
+		goto return_mon_desc;
+	}
+
+	header_skb = skb_peek_tail(mpdu_q);
+	if (!header_skb) {
+		ath12k_warn(dp_mon->dp->ab,
+			    "TX Mon: No header SKB in queue for user %u\n",
+			    usr_idx);
+		ret = -EINVAL;
+		page_frag_free(tx_ppdu_info->buffer_addr);
+		goto return_mon_desc;
+	}
+
+	ath12k_core_dma_unmap_page(dp_mon->dp->dev, mon_desc->paddr,
+				   ATH12K_DP_MON_TX_BUF_SIZE,
+				   DMA_FROM_DEVICE);
+
+	tx_ppdu_info->buffer_length = packet_info->dma_length;
+	tx_ppdu_info->msdu_continuation = packet_info->msdu_continuation;
+	tx_ppdu_info->truncated = packet_info->truncated;
+	tx_ppdu_info->has_buffer_data = true;
+
+return_mon_desc:
+
+	ath12k_dp_mon_tx_desc_free(&mon_desc_used_list, dp_mon);
+	return ret;
 }
 
 /**
@@ -1069,11 +1335,17 @@ ath12k_dp_tx_mon_update_ppdu_info_status(struct ath12k_pdev_dp *pdev_dp,
 					 struct dp_mon_tx_ppdu_info *tx_ppdu_info,
 					 u32 tlv_status)
 {
+	struct hal_tx_mon_ppdu_info *tx_info;
 	struct hal_tx_mon_status_info *status_info;
+	struct hal_rx_mon_mpdu_info *mpdu_info;
+	u32 usr_idx;
 	int ret = 0;
 
 	if (unlikely(!tx_ppdu_info))
 		return -EINVAL;
+
+	tx_info = &tx_ppdu_info->tx_info;
+	usr_idx = tx_info->cur_usr_idx;
 
 	switch (tlv_status) {
 	case HAL_TX_MON_FES_SETUP:
@@ -1094,6 +1366,81 @@ ath12k_dp_tx_mon_update_ppdu_info_status(struct ath12k_pdev_dp *pdev_dp,
 
 		ret = ath12k_dp_tx_mon_generate_prot_frm(pdev_dp,
 							 tx_ppdu_info);
+		break;
+
+	case HAL_TX_MON_MPDU_START:
+		ret = ath12k_dp_tx_mon_process_mpdu_start(pdev_dp,
+							  tx_ppdu_info,
+							  usr_idx);
+		if (ret) {
+			ath12k_warn(pdev_dp->dp->ab,
+				    "TX Mon: Failed to process MPDU start: %d\n",
+				    ret);
+		}
+		break;
+
+	case HAL_TX_MON_MPDU_END:
+		/* MPDU end - mark MPDU as complete */
+		if (usr_idx < HAL_MAX_UL_MU_USERS) {
+			mpdu_info = &tx_ppdu_info->tx_info.rx_status.mpdu_info[usr_idx];
+			mpdu_info->mpdu_end_received = true;
+			mpdu_info->mpdu_start_received = false;
+		}
+		break;
+
+	case HAL_TX_MON_MSDU_START:
+		/* MSDU start processing */
+		break;
+
+	case HAL_TX_MON_DATA:
+		/* Data frame generation - keep buffer reference for reuse */
+		tx_info->is_used = 1;
+		ret = ath12k_dp_tx_mon_generate_data_frm(tx_ppdu_info,
+							 usr_idx, true);
+		if (ret) {
+			ath12k_warn(pdev_dp->dp->ab,
+				    "TX Mon: Failed to gen data frm for user %u: %d\n",
+				    usr_idx, ret);
+			tx_info->is_used = 0;
+		}
+		break;
+
+	case HAL_TX_MON_BUFFER_ADDR:
+		/*
+		 * Buffer address processing - extract buffer and transfer ownership
+		 */
+		tx_info->is_used = 1;
+		ret = ath12k_dp_tx_mon_extract_buffer_info(pdev_dp->dp_mon_pdev->dp_mon,
+							   tx_ppdu_info, usr_idx);
+		if (ret) {
+			ath12k_warn(pdev_dp->dp->ab,
+				    "TX Mon: Failed to extract buffer info: %d\n",
+				    ret);
+			tx_info->is_used = 0;
+		} else {
+			ret = ath12k_dp_tx_mon_generate_data_frm(tx_ppdu_info,
+								 usr_idx, false);
+			if (ret) {
+				ath12k_warn(pdev_dp->dp->ab,
+					    "TX Mon: Failed to add buffer fragment: %d\n",
+					    ret);
+				tx_info->is_used = 0;
+			}
+		}
+		break;
+
+	case HAL_TX_MON_FES_STATUS_END:
+		/*
+		 * FES status end - clean up incomplete MPDUs for all users
+		 */
+		u32 num_users = tx_ppdu_info->tx_info.num_users;
+		u8 i;
+
+		for (i = 0; i < num_users && i < HAL_MAX_UL_MU_USERS; i++) {
+			ath12k_dp_tx_mon_free_last_mpdu_q(pdev_dp->dp_mon_pdev,
+							  tx_ppdu_info,
+							  i);
+		}
 		break;
 
 	case HAL_TX_MON_FW2SW:
