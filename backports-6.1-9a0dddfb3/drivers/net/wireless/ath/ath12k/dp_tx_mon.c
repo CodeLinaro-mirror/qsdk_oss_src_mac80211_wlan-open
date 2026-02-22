@@ -795,7 +795,6 @@ ath12k_dp_tx_mon_gen_rts(struct ath12k_pdev_dp *pdev_dp,
  * ath12k_dp_tx_mon_gen_cts2self() - Generate CTS frame
  * @ppdu_info: PPDU info structure
  * @status_info: TX status info for address selection
- * @window_flag: Window flag for address ordering
  *
  * Creates CTS-to-self frame for medium protection. Uses standard
  * CTS frame format with self-addressing.
@@ -803,10 +802,8 @@ ath12k_dp_tx_mon_gen_rts(struct ath12k_pdev_dp *pdev_dp,
  * Return: Generated sk_buff or NULL on failure
  */
 static struct sk_buff *
-ath12k_dp_tx_mon_gen_cts2self(struct ath12k_pdev_dp *pdev_dp,
-			      struct dp_mon_tx_ppdu_info *ppdu_info,
-			      struct hal_tx_mon_status_info *status_info,
-			      u8 window_flag)
+ath12k_dp_tx_mon_gen_cts2self(struct dp_mon_tx_ppdu_info *ppdu_info,
+			      struct hal_tx_mon_status_info *status_info)
 {
 	struct sk_buff *skb;
 	struct ieee80211_cts *cts;
@@ -838,14 +835,40 @@ ath12k_dp_tx_mon_gen_cts2self(struct ath12k_pdev_dp *pdev_dp,
 
 	duration_le = cpu_to_le16(tx_info->rx_status.rx_duration);
 	cts->duration = duration_le;
-
-	if (window_flag != INITIATOR_WINDOW)
-		status_info = &pdev_dp->dp_mon_pdev->mon_data.data_status_info;
-
 	memcpy(cts->ra, status_info->addr2, ETH_ALEN);
 
 	tx_info->is_used = 1;
+
 	return skb;
+}
+
+/**
+ * ath12k_dp_tx_mon_gen_cts() - Generate CTS frame
+ * @ppdu_info: PPDU info structure
+ * @status_info: TX status info for address selection
+ *
+ * Wrapper to create CTS-to-self frame for medium protection.
+ *
+ * Return: 0 on success
+ */
+static int
+ath12k_dp_tx_mon_gen_cts(struct dp_mon_tx_ppdu_info *ppdu_info,
+			 struct hal_tx_mon_status_info *status_info)
+{
+	struct sk_buff *skb = NULL;
+	struct sk_buff_head *mpdu_q;
+
+	if (!ppdu_info || !status_info)
+		return -EINVAL;
+
+	mpdu_q = &ppdu_info->tx_info.rx_status.mpdu_q[0];
+	skb = ath12k_dp_tx_mon_gen_cts2self(ppdu_info, status_info);
+	if (!skb)
+		return -ENOMEM;
+
+	skb_queue_tail(mpdu_q, skb);
+
+	return 0;
 }
 
 /**
@@ -1008,10 +1031,8 @@ ath12k_dp_tx_mon_generate_prot_frm(struct ath12k_pdev_dp *pdev_dp,
 		break;
 
 	case DP_MON_TX_MEDIUM_CTS2SELF:
-		skb = ath12k_dp_tx_mon_gen_cts2self(pdev_dp,
-						    tx_prot_ppdu_info,
-						    status_info,
-						    window_flag);
+		skb = ath12k_dp_tx_mon_gen_cts2self(tx_prot_ppdu_info,
+						    status_info);
 		break;
 
 	case DP_MON_TX_MEDIUM_QOS_NULL_NO_ACK_3ADDR:
@@ -1314,6 +1335,413 @@ return_mon_desc:
 }
 
 /**
+ * ath12k_dp_tx_mon_generate_ack_frm() - Generate ACK frame
+ * @tx_data_ppdu_info: Data PPDU information
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static int
+ath12k_dp_tx_mon_generate_ack_frm(struct dp_mon_tx_ppdu_info *tx_data_ppdu_info,
+				  struct hal_tx_mon_status_info *status_info)
+{
+	struct sk_buff *skb;
+	struct hal_tx_mon_ppdu_info *tx_info;
+	struct sk_buff_head *usr_mpdu_q;
+	struct ieee80211_frame_min *ack = NULL;
+	u16 frame_control;
+	u32 frame_len = sizeof(struct ieee80211_frame_min);
+
+	if (!tx_data_ppdu_info || !status_info)
+		return -EINVAL;
+
+	tx_info = &tx_data_ppdu_info->tx_info;
+	usr_mpdu_q = &tx_info->rx_status.mpdu_q[0];
+
+	skb = dev_alloc_skb(ATH12K_DP_MON_MAX_RADIO_TAP_HDR + frame_len);
+	if (!skb)
+		return -ENOMEM;
+
+	skb_reserve(skb, ATH12K_DP_MON_MAX_RADIO_TAP_HDR);
+	ack = (struct ieee80211_frame_min *)skb_put_zero(skb, frame_len);
+
+	frame_control = IEEE80211_FTYPE_CTL | IEEE80211_STYPE_ACK;
+	ack->frame_control = cpu_to_le16(frame_control);
+
+	/* Update PPDU info */
+	tx_info->rx_status.frame_control = frame_control;
+	tx_info->rx_status.frame_control_info_valid = 1;
+
+	ack->duration = cpu_to_le16(0);
+
+	memcpy(ack->ra, status_info->addr1, ETH_ALEN);
+
+	skb_queue_tail(usr_mpdu_q, skb);
+	tx_info->is_used = 1;
+	return 0;
+}
+
+/**
+ * ath12k_dp_tx_mon_check_ba_tlv_missing() - Check if BA TLV is missing
+ * @ppdu_info: PPDU info structure
+ *
+ * Simple check if Block ACK TLV information is missing by validating ba_user_id.
+ *
+ * Return: true if BA TLV is missing, false otherwise
+ */
+static inline bool
+ath12k_dp_tx_mon_check_ba_tlv_missing(struct dp_mon_tx_ppdu_info *ppdu_info)
+{
+	struct hal_tx_mon_ppdu_info *tx_info;
+
+	if (unlikely(!ppdu_info))
+		return true;
+
+	tx_info = &ppdu_info->tx_info;
+	if (!tx_info)
+		return true;
+
+	if (unlikely(tx_info->ba_user_id == -1))
+		return true;
+
+	return false;
+}
+
+/**
+ * ath12k_dp_tx_mon_gen_block_ack() - Generate Block ACK frame
+ * @ppdu_info: PPDU info structure
+ * @status_info: TX status info for BA parameters
+ *
+ * Creates Block ACK frame with proper BA control field, sequence control,
+ * and bitmap based on TLV information.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static int
+ath12k_dp_tx_mon_gen_block_ack(struct dp_mon_tx_ppdu_info *ppdu_info,
+			       struct hal_tx_mon_status_info *status_info,
+			       u8 window_flag)
+{
+	struct sk_buff *skb;
+	struct hal_tx_mon_ppdu_info *tx_info;
+	struct sk_buff_head *usr_mpdu_q;
+	struct ieee80211_ctl_frm *ba_hdr;
+	u32 ba_hdr_len = sizeof(struct ieee80211_ctl_frm);
+	u32 user_id, ba_bitmap_sz, bitmap_bytes;
+	u32 total_frame_sz;
+	u16 frm_ctl;
+	u8 *frm;
+
+	if (!status_info)
+		return -EINVAL;
+
+	tx_info = &ppdu_info->tx_info;
+	usr_mpdu_q = &tx_info->rx_status.mpdu_q[0];
+	user_id = tx_info->ba_user_id;
+	ba_bitmap_sz = tx_info->rx_status.userstats[user_id].ba_bitmap_sz;
+
+	if (ba_bitmap_sz > ATH12K_DP_MON_TX_BA_BITMAP_SZ_MAX)
+		return -EINVAL;
+
+	bitmap_bytes = ATH12K_DP_MON_TX_BA_BITMAP_BYTES(ba_bitmap_sz);
+
+	total_frame_sz = ba_hdr_len +
+		ATH12K_DP_MON_TX_BA_CTRL_SZ +
+		ATH12K_DP_MON_TX_BA_START_SQ_CTRL_SZ +
+		bitmap_bytes;
+
+	skb = dev_alloc_skb(ATH12K_DP_MON_MAX_RADIO_TAP_HDR + total_frame_sz);
+	if (!skb)
+		return -ENOMEM;
+
+	skb_reserve(skb, ATH12K_DP_MON_MAX_RADIO_TAP_HDR);
+
+	ba_hdr = (struct ieee80211_ctl_frm *)skb_put_zero(skb, ba_hdr_len);
+
+	frm_ctl = IEEE80211_FTYPE_CTL | IEEE80211_STYPE_BACK;
+	ba_hdr->frame_control = cpu_to_le16(frm_ctl);
+
+	tx_info->rx_status.frame_control = frm_ctl;
+	tx_info->rx_status.frame_control_info_valid = 1;
+
+	ba_hdr->duration = cpu_to_le16(ATH12K_BA_DURATION_US);
+
+	if (window_flag) {
+		memcpy(ba_hdr->addr1, status_info->addr1, ETH_ALEN);
+		memcpy(ba_hdr->addr2, status_info->addr2, ETH_ALEN);
+	} else {
+		memcpy(ba_hdr->addr1, status_info->addr2, ETH_ALEN);
+		memcpy(ba_hdr->addr2, status_info->addr1, ETH_ALEN);
+	}
+
+	frm = skb_put(skb, ATH12K_DP_MON_TX_BA_CTRL_SZ +
+		      ATH12K_DP_MON_TX_BA_START_SQ_CTRL_SZ + bitmap_bytes);
+
+	*((u16 *)frm) = cpu_to_le16(tx_info->rx_status.userstats[user_id].ba_control);
+	frm += 2;
+
+	*((u16 *)frm) = cpu_to_le16(tx_info->rx_status.userstats[user_id].start_seq);
+	frm += 2;
+
+	memcpy(frm, tx_info->rx_status.userstats[user_id].ba_bitmap, bitmap_bytes);
+
+	skb_queue_tail(usr_mpdu_q, skb);
+	tx_info->is_used = 1;
+
+	return 0;
+}
+
+/**
+ * ath12k_dp_tx_mon_add_mu_ba_per_user_info() - Add per-user info to MU Block ACK
+ * @tx_info: HAL PPDU info structure
+ * @frame_ptr: Pointer to current position in frame
+ * @user_id: User index
+ *
+ * Adds per-user TID info, starting sequence, and bitmap to MU Block ACK frame.
+ *
+ * Return: Updated frame pointer or NULL on error
+ */
+static u8 *
+ath12k_dp_tx_mon_add_mu_ba_per_user_info(struct hal_tx_mon_ppdu_info *tx_info,
+					 u8 *frame_ptr, u8 user_id)
+{
+	struct hal_rx_user_status *user_status;
+	u16 per_aid_tid_info;
+	u16 start_seq_ctrl;
+	u8 bitmap_sz;
+	u32 bitmap_bytes;
+
+	user_status = &tx_info->rx_status.userstats[user_id];
+	bitmap_sz = user_status->ba_bitmap_sz;
+	bitmap_bytes = 4 << bitmap_sz;
+
+	per_aid_tid_info = ((user_status->tid << 12) |
+			    (user_status->aid & 0x7FF));
+	*((u16 *)frame_ptr) = cpu_to_le16(per_aid_tid_info);
+	frame_ptr += 2;
+
+	start_seq_ctrl = user_status->start_seq;
+	*((u16 *)frame_ptr) = cpu_to_le16(start_seq_ctrl);
+	frame_ptr += 2;
+
+	memcpy(frame_ptr, user_status->ba_bitmap, bitmap_bytes);
+	frame_ptr += bitmap_bytes;
+
+	return frame_ptr;
+}
+
+/**
+ * ath12k_dp_tx_mon_gen_mu_block_ack() - Generate MU Block ACK frame
+ * @ppdu_info: PPDU info structure
+ * @status_info: TX status info for MU BA parameters
+ *
+ * Creates Multi-User Block ACK frame with per-user BA information
+ * including AID, TID, and sequence numbers for MU scenarios.
+ *
+ * Return: Generated sk_buff or NULL on failure
+ */
+static struct sk_buff *
+ath12k_dp_tx_mon_gen_mu_block_ack(struct hal_tx_mon_ppdu_info *tx_info,
+				  struct hal_tx_mon_status_info *status_info,
+				  u8 window_flag, u8 num_users)
+{
+	struct sk_buff *skb;
+	struct ieee80211_mu_block_ack_hdr *mu_ba_hdr;
+	u32 ba_bitmap_sz, total_frame_sz = 0;
+	u16 frm_ctl;
+	u8 *per_user_info;
+	u8 i;
+
+	total_frame_sz = sizeof(struct ieee80211_mu_block_ack_hdr);
+
+	for (i = 0; i < num_users; i++) {
+		ba_bitmap_sz = tx_info->rx_status.userstats[i].ba_bitmap_sz;
+		total_frame_sz += ATH12K_DP_MON_TX_MU_BA_INFO_SZ(ba_bitmap_sz);
+	}
+
+	skb = dev_alloc_skb(ATH12K_DP_MON_MAX_RADIO_TAP_HDR + total_frame_sz);
+	if (!skb)
+		return NULL;
+
+	skb_reserve(skb, ATH12K_DP_MON_MAX_RADIO_TAP_HDR);
+
+	mu_ba_hdr = (struct ieee80211_mu_block_ack_hdr *)skb_put_zero(skb,
+					sizeof(struct ieee80211_mu_block_ack_hdr));
+
+	frm_ctl = IEEE80211_FTYPE_CTL | IEEE80211_STYPE_BACK;
+	mu_ba_hdr->frame_control = cpu_to_le16(frm_ctl);
+	mu_ba_hdr->duration = cpu_to_le16(0);
+
+	tx_info->rx_status.frame_control = frm_ctl;
+	tx_info->rx_status.frame_control_info_valid = 1;
+
+	if (window_flag == RESPONSE_WINDOW) {
+		memcpy(mu_ba_hdr->ta, status_info->addr2, ETH_ALEN);
+		if (num_users > 1)
+			memset(mu_ba_hdr->ra, 0xFF, ETH_ALEN);
+		else
+			memcpy(mu_ba_hdr->ra, status_info->addr1, ETH_ALEN);
+	} else {
+		memcpy(mu_ba_hdr->ta, status_info->addr1, ETH_ALEN);
+		memcpy(mu_ba_hdr->ra, status_info->addr2, ETH_ALEN);
+	}
+
+	mu_ba_hdr->ba_control = cpu_to_le16(ATH12K_MU_BA_CTRL_MULTI_TID);
+
+	per_user_info =
+		skb_put(skb,
+			total_frame_sz - sizeof(struct ieee80211_mu_block_ack_hdr));
+
+	for (i = 0; i < num_users; i++) {
+		per_user_info = ath12k_dp_tx_mon_add_mu_ba_per_user_info(tx_info,
+									 per_user_info,
+									 i);
+		if (!per_user_info) {
+			dev_kfree_skb(skb);
+			return NULL;
+		}
+	}
+
+	tx_info->is_used = 1;
+	return skb;
+}
+
+/**
+ * ath12k_dp_tx_mon_generate_mu_block_ack_frm() - Generate and enqueue MU Block ACK
+ * @pdev_dp: DP pdev handle
+ * @tx_ppdu_info: PPDU info structure
+ * @window_flag: Window flag for address ordering
+ * @mac_id: MAC ID
+ *
+ * Generates MU Block ACK frame and enqueues to user 0 MPDU queue.
+ * Only processes when called for the last user.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static int
+ath12k_dp_tx_mon_generate_mu_block_ack_frm(struct ath12k_pdev_dp *pdev_dp,
+					   struct dp_mon_tx_ppdu_info *tx_ppdu_info,
+					   struct hal_tx_mon_status_info *status_info,
+					   u8 window_flag)
+{
+	struct sk_buff *mu_ba_skb;
+	struct hal_tx_mon_ppdu_info *tx_info;
+	struct sk_buff_head *usr_mpdu_q;
+	u8 num_users;
+	u8 ba_user_id;
+
+	if (!status_info)
+		return -EINVAL;
+
+	tx_info = &tx_ppdu_info->tx_info;
+	num_users = tx_info->num_users;
+	if (num_users == 0 || num_users > HAL_MAX_UL_MU_USERS) {
+		ath12k_dbg(pdev_dp->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "TX Mon: Invalid users for MU Block ACK\n");
+		return -EINVAL;
+	}
+
+	ba_user_id = tx_info->ba_user_id;
+	/* Only the last user should proceed with MU Block ACK generation */
+	if (ba_user_id != num_users - 1) {
+		ath12k_dbg(pdev_dp->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "TX Mon: Skipping MU Block ACK for user %u (not last user)\n",
+			   ba_user_id);
+		return 0;
+	}
+
+	mu_ba_skb = ath12k_dp_tx_mon_gen_mu_block_ack(tx_info, status_info,
+						      window_flag, num_users);
+	if (!mu_ba_skb) {
+		ath12k_warn(pdev_dp->dp->ab,
+			    "TX Mon: Failed to generate MU Block ACK frame\n");
+		return -ENOMEM;
+	}
+
+	usr_mpdu_q = &tx_info->rx_status.mpdu_q[0];
+	skb_queue_tail(usr_mpdu_q, mu_ba_skb);
+
+	tx_info->rx_status.he_mu_flags = 0;
+
+	ath12k_dbg(pdev_dp->dp->ab, ATH12K_DBG_DP_MON_TX,
+		   "TX Mon: Generated and enqueued MU Block ACK for %u users\n",
+		   num_users);
+
+	return 0;
+}
+
+/**
+ * ath12k_dp_tx_mon_generated_response_frm() - Generate response frames
+ * @pdev_dp: DP pdev handle
+ * @tx_data_ppdu_info: Data PPDU information
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static int
+ath12k_dp_tx_mon_generated_response_frm(struct ath12k_pdev_dp *pdev_dp,
+					struct dp_mon_tx_ppdu_info *tx_data_ppdu_info)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = pdev_dp->dp_mon_pdev;
+	struct hal_tx_mon_status_info *tx_status_info;
+	u8 gen_response = 0;
+	int ret = 0;
+
+	tx_status_info = &dp_mon_pdev->mon_data.data_status_info;
+	gen_response = tx_status_info->generated_response;
+
+	ath12k_dbg(pdev_dp->dp->ab, ATH12K_DBG_DP_MON_TX,
+		   "TX monitor: Processing response frame, type=%u\n",
+		   gen_response);
+
+	switch (gen_response) {
+	case TXMON_GEN_RESP_SELFGEN_ACK:
+		ret = ath12k_dp_tx_mon_generate_ack_frm(tx_data_ppdu_info,
+							tx_status_info);
+		break;
+	case TXMON_GEN_RESP_SELFGEN_CTS:
+		ret = ath12k_dp_tx_mon_gen_cts(tx_data_ppdu_info,
+					       tx_status_info);
+		break;
+	case TXMON_GEN_RESP_SELFGEN_BA:
+		if (ath12k_dp_tx_mon_check_ba_tlv_missing(tx_data_ppdu_info))
+			break;
+
+		ret = ath12k_dp_tx_mon_gen_block_ack(tx_data_ppdu_info,
+						     tx_status_info,
+						     RESPONSE_WINDOW);
+		break;
+	case TXMON_GEN_RESP_SELFGEN_MBA:
+		if (ath12k_dp_tx_mon_check_ba_tlv_missing(tx_data_ppdu_info))
+			break;
+
+		ret = ath12k_dp_tx_mon_generate_mu_block_ack_frm(pdev_dp,
+								 tx_data_ppdu_info,
+								 tx_status_info,
+								 RESPONSE_WINDOW);
+		break;
+	case TXMON_GEN_RESP_SELFGEN_CBF:
+		break;
+	case TXMON_GEN_RESP_SELFGEN_TRIG:
+		break;
+	case TXMON_GEN_RESP_SELFGEN_NDP_LMR:
+		break;
+	default:
+		ath12k_dbg(pdev_dp->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "TX monitor: No response frame needed, type=%u\n",
+			   gen_response);
+		break;
+	}
+
+	if (ret) {
+		ath12k_warn(pdev_dp->dp->ab,
+			    "Failed to generate response frame\n");
+		return ret;
+	}
+
+	tx_data_ppdu_info->contains_host_frames = true;
+	return 0;
+}
+
+/**
  * ath12k_dp_tx_mon_update_ppdu_info_status() - Update PPDU info based on TLV status
  * @pdev_dp: DP pdev handle
  * @tx_ppdu_info: Could be either of below
@@ -1441,6 +1869,11 @@ ath12k_dp_tx_mon_update_ppdu_info_status(struct ath12k_pdev_dp *pdev_dp,
 							  tx_ppdu_info,
 							  i);
 		}
+		break;
+
+	case HAL_TX_MON_RESPONSE_END_STATUS_INFO:
+		ret = ath12k_dp_tx_mon_generated_response_frm(pdev_dp,
+							      tx_ppdu_info);
 		break;
 
 	case HAL_TX_MON_FW2SW:
