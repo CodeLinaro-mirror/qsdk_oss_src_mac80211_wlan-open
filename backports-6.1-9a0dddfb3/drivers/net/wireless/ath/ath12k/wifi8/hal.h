@@ -517,6 +517,15 @@ enum rdi_based_source_ring_selection {
 #define HAL_TQM2SW1_RELEASE_RING_BASE_LSB	0x7b4
 #define HAL_TQM2SW6_RELEASE_RING_BASE_LSB	0xA0C
 
+/* TQM2PPE release ring address */
+#define HAL_TQM2PPE_RELEASE_RING_BASE_LSB	0xB74
+#define HAL_TQM2PPE_RELEASE_RING_HP		0x30C0
+#define HAL_TQM2PPE_RELEASE_RING_MISC		0xB84
+#define HAL_TQM2PPE_RELEASE_RING_MISC_RING_ID_DISABLE	BIT(0)
+#define HAL_TQM2PPE_RELEASE_RING_MISC_LOOPCNT_DISABLE	BIT(1)
+
+
+
 /* REO2SW8 ring */
 #define HAL_REO2SW8_RING_BASE_LSB	0xb90
 #define HAL_REO2SW8_RING_HP		0x30b0
@@ -707,6 +716,7 @@ enum rdi_based_source_ring_selection {
 #define HAL_WBM2PPE_RELEASE_RING_BASE_MSB_RING_SIZE	0x0000ffff
 #define HAL_WBM_IDLE_BUF_RING_MAX_SIZE                 0x000fffff
 #define HAL_WBM_BUF_RING_MAX_SIZE                      0x000fffff
+#define HAL_TQM2PPE_RELEASE_RING_BASE_MSB_RING_SIZE	0x0000ffff
 
 #define HAL_WBM2SW_REL_ERR_RING_NUM 5
 #define HAL_WBM2SW_PPEDS_TX_CMPLN_MAP_ID 11
@@ -1192,6 +1202,11 @@ void ath12k_wifi8_hal_vdev_mcast_ctrl_set(struct ath12k_base *ab, u32 vdev_id,
 int ath12k_wifi8_hal_get_rdi_source_cfg(struct ath12k_base *ab, int source);
 void ath12k_wifi8_hal_txpt_classify_info_flush(struct ath12k_base *ab);
 void ath12k_wifi8_hal_ppeds_tx_configure_skip_hdr_fetch(struct ath12k_base *ab);
+void ath12k_wifi8_hal_srng_idx_update_addr(struct ath12k_base *ab, struct hal_srng *srng,
+		void __iomem *hp_vaddr, dma_addr_t hp_paddr, void __iomem *tp_vaddr,
+		dma_addr_t tp_paddr);
+void ath12k_wifi8_hal_srng_hw_enable(struct ath12k_base *ab,
+		struct hal_srng *srng);
 
 static inline
 void *ath12k_hal_srng_src_begin_get_next_entry_nolock_fast(struct hal_srng *srng)

@@ -358,6 +358,15 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.max_size = HAL_FSE_CMD_RING_BASE_MSB_RING_SIZE,
 		.name = "Fse_cmd",
 	},
+	[HAL_TQM2PPE] = {
+		.start_ring_id = HAL_SRNG_RING_ID_TQM2PPE_RELEASE,
+		.max_rings = 1,
+		.entry_size = sizeof(struct ath12k_buffer_addr) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_DST,
+		.max_size = HAL_TQM2PPE_RELEASE_RING_BASE_MSB_RING_SIZE,
+		.name = "hbm_tx_completion",
+	},
 };
 
 const struct ath12k_hw_regs qcn9625_regs = {
@@ -816,6 +825,10 @@ static int ath12k_wifi8_hal_srng_create_config_qcn9625(struct ath12k_hal *hal)
 	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_WBM_REG + HAL_PPE2WBM_SW_IDLE_BUF_RING_LSB;
 	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_WBM_REG + HAL_PPE2WBM_SW_IDLE_BUF_RING_HP;
 
+	s = &hal->srng_config[HAL_TQM2PPE];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_TQM2PPE_RELEASE_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_TQM2PPE_RELEASE_RING_HP;
+
 	return 0;
 }
 
@@ -948,4 +961,5 @@ const struct hal_ops hal_qcn9625_ops = {
 	.hal_tx_set_ppe_vp_entry = ath12k_wifi8_hal_tx_set_ppe_vp_entry,
 	.hal_get_tlv_tag_params = ath12k_wifi8_get_tlv_tag_params,
 	.hal_mon_ops_init = ath12k_wifi8_hal_mon_ops_init,
+	.hal_srng_idx_update_addr = ath12k_wifi8_hal_srng_idx_update_addr,
 };
