@@ -509,9 +509,11 @@ struct hal_tx_mon_status_info {
 	u32 no_bitmap_avail :1,
 	    explicit_ack : 1,
 	    explicit_ack_type : 4,
+	    r2r_end_status_follow :1,
 	    response_type : 5,
 	    ndp_frame : 2,
-	    reserved : 19;
+	    num_users :8,
+	    reserved : 10;
 	u8  mba_count;
 	u8  mba_fake_bitmap_count;
 	u8  sw_frame_group_id;

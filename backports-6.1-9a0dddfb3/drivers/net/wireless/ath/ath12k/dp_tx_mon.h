@@ -20,6 +20,23 @@
 	(ATH12K_DP_MON_TX_BA_BITMAP_BASE_SZ << (sz))
 
 #define ATH12K_MU_BA_CTRL_MULTI_TID  0x0016
+
+#define ATH12K_FREQ_2GHZ_MIN               2412
+#define ATH12K_FREQ_2GHZ_MAX               2484
+#define ATH12K_FREQ_5GHZ_MIN               5150
+#define ATH12K_FREQ_5GHZ_MAX               5895
+#define ATH12K_FREQ_6GHZ_MIN               5925
+#define ATH12K_FREQ_6GHZ_MAX               7125
+
+/* OFDM rate values in kbps */
+#define ATH12K_RATE_6MBPS_KBPS             6000
+#define ATH12K_RATE_54MBPS_KBPS            54000
+
+/* L-SIG field masks for extracting rate and length */
+#define ATH12K_LSIG_RATE_MASK              GENMASK(3, 0)
+#define ATH12K_LSIG_LENGTH_MASK            GENMASK(16, 5)
+#define ATH12K_RADIOTAP_LSIG_LENGTH_SHIFT  4
+
 #define ATH12K_DP_MON_TX_MU_BA_INFO_SZ(bitmap_sz)  \
 	((ATH12K_DP_MON_TX_BA_START_SQ_CTRL_SZ) +\
 	 (ATH12K_DP_MON_TX_BA_PER_STA_TID_INF_SZ) +\
