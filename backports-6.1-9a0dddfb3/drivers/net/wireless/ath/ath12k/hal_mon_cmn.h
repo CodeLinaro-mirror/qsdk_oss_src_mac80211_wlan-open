@@ -347,6 +347,11 @@ enum hal_rx_mon_status {
 	HAL_RX_MON_STATUS_DROP_TLV,
 };
 
+enum hal_tx_mon_tlv_grp {
+	HAL_TX_MON_PROTECTED_TLV,
+	HAL_TX_MON_REG_TLV
+};
+
 enum hal_tx_mon_status {
 	HAL_TX_MON_STATUS_PPDU_NOT_DONE,
 	HAL_TX_MON_MPDU_START,
@@ -800,6 +805,8 @@ struct hal_mon_ops {
 					void *ring_entry,
 					struct ath12k_mon_ring_desc_info *desc_info);
 	bool (*is_mon_buf_addr_tlv)(u32 tlv_tag);
+	enum hal_tx_mon_tlv_grp
+		(*tx_get_tlv_grp) (u16 tlv_tag, u32 *prot_tlv_status);
 };
 
 static inline enum hal_tx_mon_status
@@ -1030,6 +1037,15 @@ ath12k_hal_mon_tx_pcu_ppdu_setup_init_info_get(struct ath12k_hal *hal,
 		hal->hal_mon_ops->tx_pcu_ppdu_setup_init_info_get(tlv,
 								  status_info,
 								  tlv_len);
+}
+
+static inline enum hal_tx_mon_tlv_grp
+ath12k_hal_mon_tx_get_tlv_grp(struct ath12k_hal *hal,
+			      u16 tlv_tag,
+			      u32 *prot_tlv_status)
+{
+	return hal->hal_mon_ops->tx_get_tlv_grp(tlv_tag,
+						prot_tlv_status);
 }
 
 static __always_inline void

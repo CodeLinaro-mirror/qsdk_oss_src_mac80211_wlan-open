@@ -1400,4 +1400,6 @@ ath12k_wifi7_extract_tx_mon_ring_desc(struct ath12k_hal *hal,
 				      struct ath12k_mon_ring_desc_info *desc_info);
 
 bool ath12k_wifi7_is_mon_buf_addr_tlv(u32 tlv_tag);
+enum hal_tx_mon_tlv_grp
+ath12k_wifi7_hal_mon_tx_get_tlv_grp(u16 tlv_tag, u32 *prot_tlv_status);
 #endif

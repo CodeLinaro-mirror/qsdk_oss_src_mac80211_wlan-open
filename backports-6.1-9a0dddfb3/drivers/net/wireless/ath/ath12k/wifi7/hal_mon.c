@@ -4023,6 +4023,50 @@ ath12k_wifi7_hal_mon_tx_status_get_num_user(struct ath12k_hal *hal,
 	return tlv_status;
 }
 
+enum hal_tx_mon_tlv_grp
+ath12k_wifi7_hal_mon_tx_get_tlv_grp(u16 tlv_tag, u32 *prot_tlv_status)
+{
+	switch (tlv_tag) {
+	case HAL_TX_FES_SETUP:
+	case HAL_TX_FLUSH:
+	case HAL_PCU_PPDU_SETUP_INIT:
+	case HAL_TX_PEER_ENTRY:
+	case HAL_TX_QUEUE_EXTENSION:
+	case HAL_TX_MPDU_START:
+	case HAL_TX_MSDU_START:
+	case HAL_TX_DATA:
+	case HAL_MON_BUF_ADDR:
+	case HAL_TX_MPDU_END:
+	case HAL_TX_MSDU_END:
+	case HAL_TX_LAST_MPDU_FETCHED:
+	case HAL_TX_LAST_MPDU_END:
+	case HAL_COEX_TX_REQ:
+	case HAL_TX_RAW_OR_NATIVE_FRAME_SETUP:
+	case HAL_NDP_PREAMBLE_DONE:
+	case HAL_SCH_CRITICAL_TLV_REFERENCE:
+	case HAL_TX_LOOPBACK_SETUP:
+	case HAL_TX_FES_SETUP_COMPLETE:
+	case HAL_TQM_MPDU_GLOBAL_START:
+	case HAL_TX_WUR_DATA:
+	case HAL_SCHEDULER_END:
+	case HAL_TX_FES_STATUS_START_PPDU:
+		return HAL_TX_MON_REG_TLV;
+	default:
+		break;
+
+	}
+
+	if (*prot_tlv_status == HAL_TX_FES_STATUS_START_PROT) {
+		return HAL_TX_MON_PROTECTED_TLV;
+	} else if (tlv_tag == HAL_TX_FES_STATUS_PROT ||
+		   tlv_tag == HAL_TX_FES_STATUS_START_PROT) {
+		*prot_tlv_status = tlv_tag;
+		return HAL_TX_MON_PROTECTED_TLV;
+	}
+
+	return HAL_TX_MON_REG_TLV;
+}
+
 enum hal_tx_mon_status
 ath12k_wifi7_hal_mon_tx_parse_status_tlv(struct ath12k_hal *hal,
 					 struct hal_tx_mon_ppdu_info *tx_ppdu_info,

@@ -730,6 +730,64 @@ ath12k_dp_tx_mon_update_ampdu_info(struct dp_mon_tx_ppdu_info *ppdu_info,
 }
 
 /**
+ * ath12k_dp_mon_tx_process_tlv() - Process TLV data with early filtering
+ * @pdev_dp: DP PDEV context
+ * @status_desc: Status descriptor containing TLV data
+ * @mon_data: Monitor data structure
+ *
+ * This function parses TLV data using HAL functions and applies early software
+ * filtering during TLV processing for optimal performance.
+ */
+static void
+ath12k_dp_mon_tx_process_tlv(struct ath12k_pdev_dp *pdev_dp,
+			     struct ath12k_dp_mon_status_desc *status_desc,
+			     struct ath12k_mon_data *mon_data)
+{
+	struct hal_tx_mon_status_info *status_info;
+	struct dp_mon_tx_ppdu_info *ppdu_info;
+	struct hal_tlv_64_hdr *tlv_hdr;
+	u16 tlv_tag, tlv_len, tlv_userid;
+	u16 buf_len = status_desc->buf_len;
+	u8 *tx_tlv_start = status_desc->mon_buf;
+	u8 *mon_buf_iter = status_desc->mon_buf;
+	enum hal_tx_mon_status tlv_status;
+	enum hal_tx_mon_tlv_grp tlv_grp;
+	u32 *prot_tlv_status = &mon_data->prot_ppdu_info.tx_info.prot_tlv_status;
+
+	do {
+		tlv_hdr = (struct hal_tlv_64_hdr *)mon_buf_iter;
+
+		tlv_tag = le64_get_bits(tlv_hdr->tl, HAL_TLV_64_HDR_TAG);
+		tlv_len = le64_get_bits(tlv_hdr->tl, HAL_TLV_64_HDR_LEN);
+		tlv_userid = le64_get_bits(tlv_hdr->tl, HAL_TLV_64_USR_ID);
+
+		tlv_grp =  ath12k_hal_mon_tx_get_tlv_grp(&pdev_dp->dp->ab->hal,
+							 tlv_tag,
+							 prot_tlv_status);
+
+		if (tlv_grp == HAL_TX_MON_PROTECTED_TLV) {
+			status_info = &mon_data->prot_status_info;
+			ppdu_info = &mon_data->prot_ppdu_info;
+		} else {
+			status_info = &mon_data->data_status_info;
+			ppdu_info = &mon_data->data_ppdu_info;
+		}
+
+		tlv_status =
+			ath12k_hal_mon_tx_parse_status(&pdev_dp->dp->ab->hal,
+						       &ppdu_info->tx_info,
+						       tlv_tag,
+						       mon_buf_iter + sizeof(*tlv_hdr),
+						       tlv_userid, tlv_len,
+						       status_info, tx_tlv_start);
+
+		mon_buf_iter += sizeof(*tlv_hdr) + tlv_len;
+		mon_buf_iter = PTR_ALIGN(mon_buf_iter, HAL_TLV_64_ALIGN);
+
+	} while ((mon_buf_iter - tx_tlv_start) < buf_len);
+}
+
+/**
  * ath12k_dp_mon_tx_populate_ppdu_info() - Populate PPDU with channel and metadata
  * @dp_pdev: Pointer to DP PDEV context for accessing radio information
  * @status_desc: Pointer to status descriptor (currently unused but reserved)
@@ -763,7 +821,6 @@ ath12k_dp_mon_tx_populate_ppdu_info(struct ath12k_pdev_dp *dp_pdev,
 	u32 usr_idx, num_users;
 
 	num_users = data_hal_info->num_users;
-
 	if (ar && ar->rx_channel) {
 		u32 chan_freq = ar->rx_channel->center_freq;
 		u32 chan_num = ar->rx_channel->hw_value;
@@ -888,6 +945,8 @@ void ath12k_dp_tx_mon_process_ppdu(struct work_struct *work)
 						   ATH12K_DP_MON_TX_BUF_SIZE,
 						   DMA_FROM_DEVICE);
 
+			ath12k_dp_mon_tx_process_tlv(pdev_dp,
+						     status_desc, mon_data);
 			ath12k_dp_mon_tx_populate_ppdu_info(pdev_dp,
 							    status_desc,
 							    mon_data);

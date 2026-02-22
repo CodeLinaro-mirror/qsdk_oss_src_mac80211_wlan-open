@@ -345,6 +345,7 @@ const struct hal_mon_ops hal_qcn9274_mon_ops = {
 		ath12k_wifi7_hal_mon_tx_pcu_ppdu_setup_init_info_parse,
 	.extract_tx_mon_ring_desc = ath12k_wifi7_extract_tx_mon_ring_desc,
 	.is_mon_buf_addr_tlv = ath12k_wifi7_is_mon_buf_addr_tlv,
+	.tx_get_tlv_grp = ath12k_wifi7_hal_mon_tx_get_tlv_grp,
 };
 
 const struct hal_mon_ops hal_ipq5332_mon_ops = {
@@ -387,6 +388,7 @@ const struct hal_mon_ops hal_ipq5332_mon_ops = {
 		ath12k_wifi7_hal_mon_tx_pcu_ppdu_setup_init_info_parse,
 	.extract_tx_mon_ring_desc = ath12k_wifi7_extract_tx_mon_ring_desc,
 	.is_mon_buf_addr_tlv = ath12k_wifi7_is_mon_buf_addr_tlv,
+	.tx_get_tlv_grp = ath12k_wifi7_hal_mon_tx_get_tlv_grp,
 };
 
 const struct hal_mon_ops hal_ipq5424_mon_ops = {
@@ -429,6 +431,7 @@ const struct hal_mon_ops hal_ipq5424_mon_ops = {
 		ath12k_wifi7_hal_mon_tx_pcu_ppdu_setup_init_info_parse,
 	.extract_tx_mon_ring_desc = ath12k_wifi7_extract_tx_mon_ring_desc,
 	.is_mon_buf_addr_tlv = ath12k_wifi7_is_mon_buf_addr_tlv,
+	.tx_get_tlv_grp = ath12k_wifi7_hal_mon_tx_get_tlv_grp,
 };
 
 const struct hal_mon_ops hal_qcn6432_mon_ops = {
@@ -471,4 +474,5 @@ const struct hal_mon_ops hal_qcn6432_mon_ops = {
 		ath12k_wifi7_hal_mon_tx_pcu_ppdu_setup_init_info_parse,
 	.extract_tx_mon_ring_desc = ath12k_wifi7_extract_tx_mon_ring_desc,
 	.is_mon_buf_addr_tlv = ath12k_wifi7_is_mon_buf_addr_tlv,
+	.tx_get_tlv_grp = ath12k_wifi7_hal_mon_tx_get_tlv_grp,
 };
