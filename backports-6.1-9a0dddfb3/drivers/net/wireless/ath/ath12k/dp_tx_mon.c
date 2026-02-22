@@ -2398,6 +2398,222 @@ ath12k_dp_tx_mon_generate_cts_rx_frm(struct ath12k_pdev_dp *dp_pdev,
 }
 
 /**
+ * ath12k_dp_tx_mon_frame_trim_mic() - Trim MIC from encrypted frames
+ * @skb: SKB containing the frame
+ * @ppdu_info: PPDU info structure
+ * @user_idx: User index for encryption info
+ * @contains_host_frames: Context flag indicating host-generated frames
+ *
+ * Removes Message Integrity Check (MIC) bytes from encrypted TX monitor
+ * frames. This ensures that captured frames have the correct length for
+ * analysis tools like Wireshark.
+ *
+ * For encrypted frames (WEP bit set), the MIC length depends on encryption type:
+ * - CCMP-128/256: 8 bytes
+ * - GCMP-128/256: 16 bytes
+ * - TKIP: 8 bytes
+ * - Other types: No trimming
+ */
+static void
+ath12k_dp_tx_mon_frame_trim_mic(struct sk_buff *skb,
+				struct hal_tx_mon_ppdu_info *ppdu_info,
+				u8 user_idx,
+				bool contains_host_frames)
+{
+	struct ieee80211_hdr *hdr;
+	struct hal_rx_user_status *user_status;
+	u32 trim_len = 0;
+	int frag_count;
+
+	if (contains_host_frames)
+		return;
+
+	if (skb->len < sizeof(struct ieee80211_hdr))
+		return;
+
+	hdr = (struct ieee80211_hdr *)skb->data;
+	if (!ieee80211_has_protected(hdr->frame_control))
+		return;
+
+	user_status = &ppdu_info->rx_status.userstats[user_idx];
+
+	switch (user_status->enc_type) {
+	case HAL_ENCRYPT_TYPE_CCMP_128:
+	case HAL_ENCRYPT_TYPE_CCMP_256:
+	case HAL_ENCRYPT_TYPE_TKIP_NO_MIC:
+	case HAL_ENCRYPT_TYPE_TKIP_MIC:
+		trim_len = 8;
+		break;
+	case HAL_ENCRYPT_TYPE_GCMP_128:
+	case HAL_ENCRYPT_TYPE_AES_GCMP_256:
+		trim_len = 16;
+		break;
+	default:
+		return;
+	}
+
+	if (trim_len && skb->len < trim_len)
+		return;
+
+	frag_count = ath12k_dp_mon_get_num_frags_in_fraglist(skb);
+	if (frag_count > 0)
+		skb_coalesce_rx_frag(skb, frag_count - 1, -trim_len, 0);
+	else
+		skb_trim(skb, skb->len - trim_len);
+}
+
+/**
+ * ath12k_dp_tx_mon_get_legacy_rate() - Convert rate kbps to legacy format
+ * @rate_kbps: Rate in kbps
+ *
+ * Converts rate from kbps to legacy rate format (100kbps units).
+ * This is used for populating status->rates[0].rate_idx.legacy.
+ */
+static u16 ath12k_dp_tx_mon_get_legacy_rate(u32 rate_kbps)
+{
+	switch (rate_kbps) {
+	case ATH12K_RATE_1MBPS_KBPS:
+		return ATH12K_LEGACY_RATE_1MBPS_100KBPS;
+	case ATH12K_RATE_2MBPS_KBPS:
+		return ATH12K_LEGACY_RATE_2MBPS_100KBPS;
+	case ATH12K_RATE_5_5MBPS_KBPS:
+		return ATH12K_LEGACY_RATE_5_5MBPS_100KBPS;
+	case ATH12K_RATE_6MBPS_KBPS:
+		return ATH12K_LEGACY_RATE_6MBPS_100KBPS;
+	case ATH12K_RATE_9MBPS_KBPS:
+		return ATH12K_LEGACY_RATE_9MBPS_100KBPS;
+	case ATH12K_RATE_11MBPS_KBPS:
+		return ATH12K_LEGACY_RATE_11MBPS_100KBPS;
+	case ATH12K_RATE_12MBPS_KBPS:
+		return ATH12K_LEGACY_RATE_12MBPS_100KBPS;
+	case ATH12K_RATE_18MBPS_KBPS:
+		return ATH12K_LEGACY_RATE_18MBPS_100KBPS;
+	case ATH12K_RATE_24MBPS_KBPS:
+		return ATH12K_LEGACY_RATE_24MBPS_100KBPS;
+	case ATH12K_RATE_36MBPS_KBPS:
+		return ATH12K_LEGACY_RATE_36MBPS_100KBPS;
+	case ATH12K_RATE_48MBPS_KBPS:
+		return ATH12K_LEGACY_RATE_48MBPS_100KBPS;
+	case ATH12K_RATE_54MBPS_KBPS:
+		return ATH12K_LEGACY_RATE_54MBPS_100KBPS;
+	default:
+		return ATH12K_LEGACY_RATE_DEFAULT_100KBPS;
+	}
+}
+
+/**
+ * ath12k_dp_tx_mon_he_gi_to_nl80211() - Convert HAL HE GI to nl80211
+ * @hal_gi: HAL guard interval value from rx_status->sgi
+ *
+ * Directly converts HAL guard interval values to nl80211 format.
+ *
+ * Return: nl80211 HE guard interval constant
+ */
+static u8 ath12k_dp_tx_mon_he_gi_to_nl80211(u8 hal_gi)
+{
+	switch (hal_gi) {
+	case HE_GI_0_8:
+		return NL80211_RATE_INFO_HE_GI_0_8;
+	case HE_GI_1_6:
+		return NL80211_RATE_INFO_HE_GI_1_6;
+	case HE_GI_3_2:
+		return NL80211_RATE_INFO_HE_GI_3_2;
+	default:
+		return NL80211_RATE_INFO_HE_GI_0_8;
+	}
+}
+
+/**
+ * ath12k_dp_mon_tx_fill_rate_status() - Populate tx_status->rates from HAL info
+ * @pdev_dp: ath12k pdev dp context
+ * @ppdu_info: PPDU info structure containing HAL data
+ * @status: TX status structure to populate
+ *
+ * This function converts HAL rate information into ieee80211_rate_status
+ * format so mac80211 can generate accurate radiotap rate fields.
+ */
+static void
+ath12k_dp_mon_tx_fill_rate_status(struct ath12k_pdev_dp *dp_pdev,
+				  struct hal_tx_mon_ppdu_info *ppdu_info,
+				  struct ieee80211_tx_status *status,
+				  bool contains_host_frames)
+{
+	struct hal_rx_mon_ppdu_info *rx_status;
+	struct ieee80211_rate_status *st_rate;
+	struct rate_info *ri;
+
+	if (!status)
+		return;
+
+	rx_status = &ppdu_info->rx_status;
+	if (!rx_status)
+		return;
+
+	status->n_rates = ATH12K_RATE_STATUS_N_RATES;
+	st_rate = &status->rates[0];
+	memset(st_rate, 0, sizeof(*st_rate));
+	st_rate->try_count = ATH12K_RATE_STATUS_TRY_COUNT;
+	ri = &st_rate->rate_idx;
+
+	if (contains_host_frames) {
+		ri->flags = 0;
+
+		if (rx_status->freq >= ATH12K_FREQ_2GHZ_MIN &&
+		    rx_status->freq <= ATH12K_FREQ_2GHZ_MAX) {
+			ri->legacy =
+				ath12k_dp_tx_mon_get_legacy_rate(ATH12K_RATE_1MBPS_KBPS);
+		} else {
+			ri->legacy =
+				ath12k_dp_tx_mon_get_legacy_rate(ATH12K_RATE_6MBPS_KBPS);
+		}
+
+		ri->bw = ath12k_mac_bw_to_mac80211_bw(rx_status->bw ?
+						      rx_status->bw :
+						      ATH12K_RATE_STATUS_DEFAULT_BW);
+		ri->nss = rx_status->nss ?
+			  rx_status->nss : ATH12K_RATE_STATUS_DEFAULT_NSS;
+	} else {
+		ri->flags = 0;
+		ri->legacy = ath12k_dp_tx_mon_get_legacy_rate(rx_status->rate ?
+							      rx_status->rate :
+							      ATH12K_RATE_6MBPS_KBPS);
+
+		ri->mcs = rx_status->mcs;
+		ri->bw = ath12k_mac_bw_to_mac80211_bw(rx_status->bw);
+		ri->nss = rx_status->nss;
+
+		switch (rx_status->preamble_type) {
+		case HAL_RX_PREAMBLE_11N:
+			ri->flags |= RATE_INFO_FLAGS_MCS;
+			if (rx_status->sgi)
+				ri->flags |= RATE_INFO_FLAGS_SHORT_GI;
+			break;
+
+		case HAL_RX_PREAMBLE_11AC:
+			ri->flags |= RATE_INFO_FLAGS_VHT_MCS;
+			if (rx_status->sgi)
+				ri->flags |= RATE_INFO_FLAGS_SHORT_GI;
+			break;
+
+		case HAL_RX_PREAMBLE_11AX:
+			ri->flags |= RATE_INFO_FLAGS_HE_MCS;
+			ri->he_gi = ath12k_dp_tx_mon_he_gi_to_nl80211(rx_status->sgi);
+			break;
+
+		case HAL_RX_PREAMBLE_11BA:
+		case HAL_RX_PREAMBLE_11BE:
+			ri->flags |= RATE_INFO_FLAGS_EHT_MCS;
+			break;
+
+		case HAL_RX_PREAMBLE_11B:
+		case HAL_RX_PREAMBLE_11A:
+		default:
+			break;
+		}
+	}
+}
+
+/**
  * ath12k_dp_mon_tx_deliver_frame() - Helper to deliver single frame to monitor stack
  * @dp_pdev: ath12k pdev dp context
  * @hw: ieee80211_hw handle
@@ -2430,10 +2646,17 @@ ath12k_dp_mon_tx_deliver_frame(struct ath12k_pdev_dp *dp_pdev,
 		.rates = &rate_status,
 	};
 
+	if (!is_response_frame)
+		ath12k_dp_tx_mon_frame_trim_mic(skb, ppdu_info,
+						user_idx, contains_host_frames);
+
 	ath12k_dp_mon_tx_update_mon_info(dp_pdev, &status.mon_info,
 					 ppdu_info, status_info,
 					 contains_host_frames,
 					 is_response_frame, user_idx);
+
+	ath12k_dp_mon_tx_fill_rate_status(dp_pdev, ppdu_info,
+					  &status, contains_host_frames);
 
 	ieee80211_tx_monitor_offload(hw, &status);
 }
