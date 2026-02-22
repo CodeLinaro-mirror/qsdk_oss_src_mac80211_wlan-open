@@ -319,11 +319,36 @@ struct dp_mon_mpdu {
 	u8 decap_format;
 };
 
+/**
+ * struct dp_mon_tx_ppdu_info - TX monitor PPDU information structure
+ * @is_used: Flag indicating if this PPDU info structure is currently in use
+ * @tx_info: HAL layer TX monitor PPDU information containing hardware-specific
+ *           data including TLV parsing results, user status, and packet metadata
+ * @dp_tx_mon_mpdu_list: List head for managing MPDUs associated with this PPDU.
+ *                       Used to chain multiple MPDU structures for complex
+ *                       aggregated transmissions
+ * @tx_mon_mpdu: Pointer to the current MPDU structure being processed within
+ *               this PPDU. Points to individual MPDU data for frame generation
+ * @chan_freq: Channel frequency in MHz on which this PPDU was transmitted.
+ *             Used for radiotap channel information and monitor mode delivery
+ * @chan_num: Channel number corresponding to the transmission frequency.
+ *            Provides channel context for frame analysis and filtering
+ * @num_mpdu_fcs_ok: Count of MPDUs within this PPDU that passed FCS validation.
+ *                   Used for statistics and determining transmission success rate
+ *
+ * This structure represents a complete PPDU (PHY Protocol Data Unit) captured
+ * by the TX monitor functionality. It combines hardware-provided metadata from
+ * the HAL layer with software-managed buffer information for efficient frame
+ * processing and delivery to the monitor stack.
+ */
 struct dp_mon_tx_ppdu_info {
 	bool is_used;
 	struct hal_tx_mon_ppdu_info tx_info;
 	struct list_head dp_tx_mon_mpdu_list;
 	struct dp_mon_mpdu *tx_mon_mpdu;
+	u16 chan_freq;
+	u16 chan_num;
+	u32 num_mpdu_fcs_ok;
 };
 
 #define SNR_INVALID 255
@@ -512,6 +537,10 @@ struct ath12k_pdev_mon_dp_stats {
  * @tx_status_buf_null: Number of null status buffer pointers encountered
  * @tx_ppdu_processed: Total number of TX PPDUs processed in work queue
  * @tx_status_desc_processed: Total number of status descriptors processed
+ * @tx_data_frames: Total number of data frames transmitted
+ * @tx_su_ppdu_count: Number of Single User (SU) PPDUs transmitted
+ * @tx_mu_ppdu_count: Number of Multi User (MU) PPDUs transmitted
+ * @tx_mu_user_count: Total number of users in all MU PPDUs
  */
 struct ath12k_pdev_tx_mon_stats {
 	u32 empty_descriptors;
@@ -526,6 +555,10 @@ struct ath12k_pdev_tx_mon_stats {
 	u32 tx_status_buf_null;
 	u32 tx_ppdu_processed;
 	u32 tx_status_desc_processed;
+	u32 tx_data_frames;
+	u32 tx_su_ppdu_count;
+	u32 tx_mu_ppdu_count;
+	u32 tx_mu_user_count;
 };
 
 /**
