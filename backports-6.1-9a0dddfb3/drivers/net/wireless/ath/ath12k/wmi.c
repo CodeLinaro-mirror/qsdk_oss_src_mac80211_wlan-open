@@ -11365,6 +11365,7 @@ ath12k_pdev_bss_chan_info_event(struct ath12k_base *ab, struct sk_buff *skb)
 			     SURVEY_INFO_TIME |
 			     SURVEY_INFO_TIME_BUSY |
 			     SURVEY_INFO_TIME_RX |
+			     SURVEY_INFO_TIME_BSS_RX |
 			     SURVEY_INFO_TIME_TX);
 exit:
 	spin_unlock_bh(&ar->data_lock);
