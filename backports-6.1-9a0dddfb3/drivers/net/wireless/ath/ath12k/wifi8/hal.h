@@ -54,6 +54,16 @@ extern const struct ath12k_hw_version_map ath12k_wifi8_hw_ver_map[];
 #define HAL_MGMT_BCAST_TID 18
 #define HAL_MGMT_SENSING_TID 19
 
+#define HAL_TX_PPE_VP_CFG_WILDCARD_LMAC_ID 3
+#define HAL_TX_PPE_VP_CFG_VP_NUM                GENMASK(7, 0)
+#define HAL_TX_PPE_VP_CFG_PMAC_ID               GENMASK(9, 8)
+#define HAL_TX_PPE_VP_CFG_BANK_ID               GENMASK(15, 10)
+#define HAL_TX_PPE_VP_CFG_VDEV_ID               GENMASK(23, 16)
+#define HAL_TX_PPE_VP_CFG_SRCH_IDX_REG_NUM      GENMASK(26, 24)
+#define HAL_TX_PPE_VP_CFG_USE_PPE_INT_PRI       BIT(27)
+#define HAL_TX_PPE_VP_CFG_TO_FW                 BIT(28)
+#define HAL_TX_PPE_VP_CFG_DROP_PREC_EN          BIT(29)
+
 struct ath12k_hal_wifi8 {
 	const struct ath12k_hal_reset_rings *reset_rings;
 	struct ath12k_cumac_hw_reset_timestamps ssr_ts;
@@ -434,7 +444,10 @@ enum rdi_based_source_ring_selection {
 		(HAL_REO1_RING_MISC(hal) - HAL_REO1_RING_BASE_LSB(hal))
 
 #define HAL_REO1_REO2PPE_DST_VAL		0x2000
-#define HAL_REO1_REO2PPE_DST_INFO		0x00000cf0
+#define HAL_REO1_REO2PPE_DST_INFO		0x00001af0
+#define HAL_REO_COPY_PPE_INFO_FROM_MSDU_VAL	BIT(2)
+#define HAL_REO_PPE_JUMBO_FRAME_SUPPORT_EN	BIT(1)
+#define HAL_REO_PPE_DEST_OVERRIDE_EN		BIT(0)
 
 #define HAL_WIFI8_HASH_ROUTING_RING_SW0 0
 #define HAL_WIFI8_HASH_ROUTING_RING_SW1 1
@@ -655,9 +668,12 @@ enum rdi_based_source_ring_selection {
 /* TODO: CORE DP TX needs any update from Host */
 #define HAL_TCL1_CMN_CONFIG	(HAL_SEQ_WCSS_UMAC_TCL_REG + 0x38)
 #define HAL_TCL1_CMN_CONFIG_PPE	(HAL_SEQ_WCSS_UMAC_TCL_REG + 0x44)
+#define HAL_TCL1_CMN_CONFIG1_PPE	(HAL_SEQ_WCSS_UMAC_TCL_REG + 0x48)
 #define HAL_TCL1_RBM_MAPPING0	(HAL_SEQ_WCSS_UMAC_TCL_REG + 0xd8)
 #define HAL_TCL1_RBM_MAPPING1	(HAL_SEQ_WCSS_UMAC_TCL_REG + 0xdc)
 #define HAL_TCL1_LINK_ID_TO_CHIP_ID_MAP	(HAL_SEQ_WCSS_UMAC_TCL_REG + 0x9c)
+
+#define HAL_TCL1_DISABLE_SKIP_HDR_FETCH 0x2
 
 /* REO ring field mask and offset */
 #define HAL_REO1_RING_BASE_MSB_RING_SIZE		0xfffff00
@@ -1412,6 +1428,7 @@ void ath12k_wifi8_hal_vdev_mcast_ctrl_set(struct ath12k_base *ab, u32 vdev_id,
 					  u8 mcast_ctrl_val);
 int ath12k_wifi8_hal_get_rdi_source_cfg(struct ath12k_base *ab, int source);
 void ath12k_wifi8_hal_txpt_classify_info_flush(struct ath12k_base *ab);
+void ath12k_wifi8_hal_ppeds_tx_configure_skip_hdr_fetch(struct ath12k_base *ab);
 
 static inline
 void *ath12k_hal_srng_src_begin_get_next_entry_nolock_fast(struct hal_srng *srng)

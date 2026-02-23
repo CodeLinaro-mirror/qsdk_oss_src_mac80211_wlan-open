@@ -6,16 +6,16 @@
 #ifndef ATH12K_WIFI8_PPE_H
 #define ATH12K_WIFI8_PPE_H
 
-#define HAL_TX_PPE_VP_CFG_WILDCARD_LMAC_ID 3
-#define HAL_TX_PPE_VP_CFG_VP_NUM                GENMASK(7, 0)
-#define HAL_TX_PPE_VP_CFG_PMAC_ID               GENMASK(9, 8)
-#define HAL_TX_PPE_VP_CFG_BANK_ID               GENMASK(15, 10)
-#define HAL_TX_PPE_VP_CFG_VDEV_ID               GENMASK(23, 16)
-#define HAL_TX_PPE_VP_CFG_SRCH_IDX_REG_NUM      GENMASK(26, 24)
-#define HAL_TX_PPE_VP_CFG_USE_PPE_INT_PRI       BIT(27)
-#define HAL_TX_PPE_VP_CFG_TO_FW                 BIT(28)
-#define HAL_TX_PPE_VP_CFG_DROP_PREC_EN          BIT(29)
+#define PPEDS_CLASSIFY_READ_FULL_PKT 3
 
 extern struct ppe_ds_wlan_ops_v2 ppeds_wlanops_v2;
 extern struct ath12k_ppeds_arch_ops ath12k_wifi8_arch_ppeds_ops;
+
+enum ath12k_reo2ppe_rdi {
+	PPEDS_REO2PPE1_RDI = 11,
+	PPEDS_REO2PPE2_RDI = 12,
+	PPEDS_REO2PPE3_RDI = 13,
+
+};
+
 #endif

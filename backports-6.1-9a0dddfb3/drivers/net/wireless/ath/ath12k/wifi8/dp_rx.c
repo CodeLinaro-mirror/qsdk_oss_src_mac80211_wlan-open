@@ -31,6 +31,9 @@
 #include "../fse.h"
 #include "dp_ast.h"
 #include "dp.h"
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+#include "ppeds.h"
+#endif
 
 #define ATH12K_DP_RX_FRAGMENT_TIMEOUT_MS (2 * HZ)
 
@@ -3967,6 +3970,17 @@ int ath12k_wifi8_dp_rx_flow_add_entry(struct ath12k_dp *dp,
 		flow.use_ppe = flow_info->use_ppe;
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 		flow.service_code = PPE_DRV_SC_SPF_BYPASS;
+		flow.ppe_classify_read_hint = PPEDS_CLASSIFY_READ_FULL_PKT;
+		flow.reo_indication = PPEDS_REO2PPE1_RDI;
+		flow.dest_info = ((flow.fse_metadata &
+				ATH12K_DP_RX_FSE_FL_EGRESS_MACID_MASK) >>
+				ATH12K_DP_RX_FSE_FL_EGRESS_MACID_SHIFT);
+		flow.dest_info_valid = 1;
+		flow.int_priority = 0;
+		flow.int_priority_valid = 1;
+		ath12k_info(ab, "read_hint:%u rdi:%u dest_info:%u",
+				flow.ppe_classify_read_hint,
+				flow.reo_indication, flow.dest_info);
 #endif
 	}
 
