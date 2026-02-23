@@ -328,13 +328,15 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 		ath12k_warn(ab, "failed to register nss plugin %d\n", ret);
 		goto fail_dp_bank_profiles_cleanup;
 	}
-#endif
 
 	ret = dp->ppe.ppe_ops->ath12k_ppeds_attach(ab);
 	if (ret) {
 		ath12k_warn(ab, "failed to attach PPE DS %d\n", ret);
 		goto fail_nss_plugin_unregister;
 	}
+
+	ath12k_wifi8_hal_ppeds_tx_configure_skip_hdr_fetch(ab);
+#endif
 
 	ret = ath12k_dp_srng_common_setup(ab);
 	if (ret)
