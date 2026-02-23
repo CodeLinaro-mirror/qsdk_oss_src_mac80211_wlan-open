@@ -1827,19 +1827,26 @@ void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_link_vif *arvif, *tmp_vif;
 	struct ath12k_dp_hw *dp_hw = &ar->ah->dp_hw;
+	struct ath12k_dp_rx_tid *rx_tid;
+	int i, num_tids;
 	u16 peerid_index;
 
 	INIT_LIST_HEAD(&peers);
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
+	num_tids = ab->hal.hal_params->num_tids;
 	spin_lock_bh(&dp->dp_lock);
 	list_for_each_entry_safe(peer, tmp, &dp->peers, list) {
-		/* Skip Rx TID cleanup for self peer */
-		if (peer->sta && peer->dp_peer)
-			ath12k_dp_rx_peer_tid_cleanup(ar, peer);
+		/*Skip this for non primary_links and vdev peers*/
+		if (peer->sta && peer->dp_peer && peer->primary_link) {
+			for (i = 0; i < num_tids; i++) {
+				rx_tid = &peer->dp_peer->rx_tid[i];
 
-		peer->sta = NULL;
+				ath12k_dp_arch_rx_peer_tid_delete(dp, ar, peer, i);
+				ath12k_dp_rx_frags_cleanup(rx_tid, true);
+			}
+		}
 
 		/* cleanup dp peer */
 		spin_lock_bh(&dp_hw->peer_lock);
@@ -1854,8 +1861,6 @@ void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 		spin_unlock_bh(&dp_hw->peer_lock);
 
 		ath12k_dp_link_peer_rhash_delete(dp, peer);
-		peer->dp_peer = NULL;
-
 		list_del(&peer->list);
 		list_add(&peer->list, &peers);
 	}
@@ -1863,8 +1868,18 @@ void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 
 	synchronize_rcu();
 
-	list_for_each_entry_safe(peer, tmp, &peers, list)
+	list_for_each_entry_safe(peer, tmp, &peers, list) {
+		if (peer->sta && peer->dp_peer && peer->primary_link) {
+			for (i = 0; i < num_tids; i++) {
+				rx_tid = &peer->dp_peer->rx_tid[i];
+
+				del_timer_sync(&rx_tid->frag_timer);
+			}
+		}
+		peer->sta = NULL;
+		peer->dp_peer = NULL;
 		ath12k_link_peer_free(peer);
+	}
 
 	ath12k_debugfs_nrp_cleanup_all(ar);
 
@@ -2146,7 +2161,7 @@ static int ath12k_mac_monitor_vdev_delete(struct ath12k *ar)
 int ath12k_mac_monitor_start(struct ath12k *ar)
 {
 	struct ath12k_mac_get_any_chanctx_conf_arg arg;
-	int ret;
+	int ret, cleanup_ret;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -2172,7 +2187,7 @@ int ath12k_mac_monitor_start(struct ath12k *ar)
 	ret = ath12k_dp_mon_rx_update_filter(ar);
 	if (ret) {
 		ath12k_warn(ar->ab, "fail to set monitor filter: %d\n", ret);
-		return ret;
+		goto err_filter;
 	}
 
 	ar->monitor_started = true;
@@ -2180,6 +2195,15 @@ int ath12k_mac_monitor_start(struct ath12k *ar)
 	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L0, "mac monitor started\n");
 
 	return 0;
+
+err_filter:
+	ath12k_dp_mon_rx_config_monitor_mode(ar, true);
+	cleanup_ret = ath12k_mac_monitor_vdev_stop(ar);
+	if (cleanup_ret)
+		ath12k_warn(ar->ab,
+			    "failed to stop monitor vdev after filter failure: %d\n",
+			    cleanup_ret);
+	return ret;
 }
 
 static int ath12k_mac_monitor_stop(struct ath12k *ar)
@@ -3217,6 +3241,17 @@ void ath12k_mac_peer_event_callback(struct ath12k_event_queue *queue,
 	/* Read and clear flags atomically from event structure */
 	flags = atomic_xchg(&event->flags, 0);
 	ath12k_mac_handle_peer_event(ahvif, peer, flags);
+
+	clear_bit(ATH12K_EVENT_QUEUED, &peer_event->state);
+
+	/* Close the race: producer may have set new flags after our xchg
+	 * but saw EVENT_QUEUED bit set and skipped enqueue.
+	 */
+	if (atomic_read(&event->flags)) {
+		if (!test_and_set_bit(ATH12K_EVENT_QUEUED, &peer_event->state))
+			ath12k_event_enqueue(queue, event);
+	}
+
 	rcu_read_unlock();
 }
 
@@ -4442,7 +4477,6 @@ static void ath12k_peer_assoc_h_he_6ghz(struct ath12k *ar,
 }
 
 static int ath12k_get_smps_from_capa(const struct ieee80211_sta_ht_cap *ht_cap,
-				     const struct ieee80211_sta_he_cap *he_cap,
 				     const struct ieee80211_he_6ghz_capa *he_6ghz_capa,
 				     int *smps)
 {
@@ -4451,13 +4485,6 @@ static int ath12k_get_smps_from_capa(const struct ieee80211_sta_ht_cap *ht_cap,
 	else
 		*smps = le16_get_bits(he_6ghz_capa->capa,
 				      IEEE80211_HE_6GHZ_CAP_SM_PS);
-
-	if (he_cap->has_he) {
-		if (he_cap->he_cap_elem.mac_cap_info[5] &
-		    IEEE80211_HE_MAC_CAP5_HE_DYNAMIC_SM_PS) {
-			*smps = WLAN_HT_CAP_SM_PS_DYNAMIC;
-		}
-	}
 
 	if (*smps >= ARRAY_SIZE(ath12k_smps_map))
 		return -EINVAL;
@@ -4473,7 +4500,6 @@ static void ath12k_peer_assoc_h_smps(struct ath12k_link_sta *arsta,
 	const struct ieee80211_he_6ghz_capa *he_6ghz_capa;
 	struct ath12k_link_vif *arvif = arsta->arvif;
 	const struct ieee80211_sta_ht_cap *ht_cap;
-	const struct ieee80211_sta_he_cap *he_cap;
 	struct ath12k *ar = arvif->ar;
 	int smps;
 
@@ -4485,19 +4511,12 @@ static void ath12k_peer_assoc_h_smps(struct ath12k_link_sta *arsta,
 
 	he_6ghz_capa = &link_sta->he_6ghz_capa;
 	ht_cap = &link_sta->ht_cap;
-	he_cap = &link_sta->he_cap;
 
-	if (!ht_cap->ht_supported && !he_cap->has_he && !he_6ghz_capa->capa)
+	if (!ht_cap->ht_supported && !he_6ghz_capa->capa)
 		return;
 
-	if (ath12k_get_smps_from_capa(ht_cap, he_cap, he_6ghz_capa, &smps))
+	if (ath12k_get_smps_from_capa(ht_cap, he_6ghz_capa, &smps))
 		return;
-
-	if (he_cap->has_he) {
-		if (he_cap->he_cap_elem.mac_cap_info[5] & IEEE80211_HE_MAC_CAP5_HE_DYNAMIC_SM_PS) {
-			smps = WLAN_HT_CAP_SM_PS_DYNAMIC;
-		}
-	}
 
 	switch (smps) {
 	case WLAN_HT_CAP_SM_PS_STATIC:
@@ -5389,15 +5408,14 @@ static void ath12k_peer_assoc_prepare(struct ath12k *ar,
 static int ath12k_setup_peer_smps(struct ath12k *ar, struct ath12k_link_vif *arvif,
 				  const u8 *addr,
 				  const struct ieee80211_sta_ht_cap *ht_cap,
-				  const struct ieee80211_sta_he_cap *he_cap,
 				  const struct ieee80211_he_6ghz_capa *he_6ghz_capa)
 {
 	int smps, ret = 0;
 
-	if (!ht_cap->ht_supported && !he_6ghz_capa && !he_6ghz_capa)
+	if (!ht_cap->ht_supported && !he_6ghz_capa)
 		return 0;
 
-	ret = ath12k_get_smps_from_capa(ht_cap, he_cap, he_6ghz_capa, &smps);
+	ret = ath12k_get_smps_from_capa(ht_cap, he_6ghz_capa, &smps);
 	if (ret < 0)
 		return ret;
 
@@ -5848,7 +5866,7 @@ void ath12k_bss_assoc(struct ath12k *ar,
 	ath12k_dp_arch_link_peer_assoc(dp, &ar->ah->dp_hw,
 				       vif->cfg.ap_addr, ar->hw_link_id);
 	ret = ath12k_setup_peer_smps(ar, arvif, bssid,
-				     &ht_cap, &he_cap, &he_6ghz_cap);
+				     &ht_cap, &he_6ghz_cap);
 	if (ret) {
 		ath12k_warn(ar->ab, "failed to setup peer SMPS for vdev %d: %d\n",
 			    arvif->vdev_id, ret);
@@ -11731,7 +11749,6 @@ static int ath12k_mac_station_assoc(struct ath12k *ar,
 
 	ret = ath12k_setup_peer_smps(ar, arvif, arsta->addr,
 				     &ht_cap,
-				     &he_cap,
 				     &he_6ghz_cap);
 	if (ret) {
 		ath12k_warn(ar->ab, "failed to setup peer SMPS for vdev %d: %d\n",
@@ -18690,7 +18707,7 @@ exit:
 }
 EXPORT_SYMBOL(ath12k_mac_op_add_interface);
 
-static void ath12k_mac_vif_unref(struct ath12k_dp *dp, struct ieee80211_vif *vif)
+void ath12k_mac_vif_unref(struct ath12k_dp *dp, struct ieee80211_vif *vif)
 {
 	struct ath12k_tx_desc_info *tx_desc_info;
 	struct ath12k_skb_cb *skb_cb;
@@ -18725,6 +18742,7 @@ static void ath12k_mac_vif_unref(struct ath12k_dp *dp, struct ieee80211_vif *vif
 		spin_unlock_bh(&dp->tx_desc_lock[i]);
 	}
 }
+EXPORT_SYMBOL(ath12k_mac_vif_unref);
 
 bool ath12k_mac_validate_active_radio_count(struct ath12k_hw *ah)
 {
@@ -18843,7 +18861,6 @@ err_vdev_del:
 
 	if (!ath12k_scan_radio_supported(ar->pdev)) {
 		dp = ath12k_ab_to_dp(ab);
-		ath12k_mac_vif_unref(dp, vif);
 		ath12k_dp_arch_dp_link_vif_configure(ab->dp, ahvif, arvif->link_id,
 						     ATH12K_DP_OP_DEINIT);
 		if (arvif->splitphy_ds_bank_id != DP_INVALID_BANK_ID)

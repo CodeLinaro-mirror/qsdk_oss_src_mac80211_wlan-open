@@ -163,6 +163,7 @@ static void ath12k_wifi8_dp_umac_deinit(struct ath12k_dp *dp)
 {
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_group_wifi8;
 
 	if (!dp_wifi8->cumac) {
 		ath12k_warn(ab, "Skipping ring deinit for non-cumac target");
@@ -189,6 +190,10 @@ static void ath12k_wifi8_dp_umac_deinit(struct ath12k_dp *dp)
 	ath12k_dp_ast_table_deinit(dp->dp_hw_grp);
 	ath12k_dp_pn_counter_page_free(dp->dp_hw_grp);
 	ath12k_wifi8_dp_tx_pool_destroy(dp->dp_hw_grp);
+
+	dp_hw_group_wifi8 = ath12k_get_dp_hw_group_wifi8(dp->dp_hw_grp);
+	dp_hw_group_wifi8->cumac_dp = NULL;
+	ath12k_info(ab, "CUMAC de-init successful");
 }
 
 static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
@@ -448,6 +453,7 @@ static void ath12k_wifi8_dp_vif_configure(struct ath12k_dp *dp,
 		 */
 		ath12k_wifi8_hal_vdev_mcast_ctrl_set(central_ab, dp_vif->dp_vif_id,
 						HAL_TX_PACKET_CONTROL_CONFIG_DISABLE);
+		ath12k_mac_vif_unref(central_dp, ahvif->vif);
 		return;
 	} else if (optype == ATH12K_DP_OP_INIT) {
 		/*TODO keep vdev_id check disabled for initial emulation */

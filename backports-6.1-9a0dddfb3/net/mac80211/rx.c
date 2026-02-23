@@ -952,10 +952,6 @@ ieee80211_rx_monitor(struct ieee80211_local *local, struct sk_buff *origskb,
 
 		chandef = &sdata->vif.bss_conf.chanreq.oper;
 
-		if (!(wdev_is_scan_radio(wdev)) &&
-		    sdata->u.mntr.flags & MONITOR_FLAG_SKIP_RX)
-			continue;
-
 		if (chandef->chan &&
 		    chandef->chan->center_freq != status->freq) {
 			if (!(sdata->flags & IEEE80211_SDATA_OFFCHAN_PACKETS))
@@ -972,6 +968,11 @@ ieee80211_rx_monitor(struct ieee80211_local *local, struct sk_buff *origskb,
 			    sdata->chan_hw_idx != hw_idx)
 				continue;
 		}
+
+		if (!(wdev_is_scan_radio(wdev)) &&
+		    sdata->u.mntr.flags & MONITOR_FLAG_SKIP_RX)
+			continue;
+
 		if (!prev_sdata) {
 			prev_sdata = sdata;
 			continue;

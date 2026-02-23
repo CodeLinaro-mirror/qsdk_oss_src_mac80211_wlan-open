@@ -487,20 +487,25 @@ ath12k_wifi8_mgmt_rx_h_mpdu(struct ath12k_mgmt *mgmt, struct sk_buff *mmpdu,
 	enum hal_encrypt_type enctype = HAL_ENCRYPT_TYPE_OPEN;
 	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(mmpdu);
 	u32 err_bitmap = desc_data->err_bitmap;
-	struct ath12k_base *ab = mgmt->ab;
+	struct ath12k_base *partner_ab;
 	struct ath12k_link_sta *arsta;
+	struct ath12k *partner_ar;
 	bool is_decrypted = false;
 
-	spin_lock_bh(&ab->base_lock);
+	partner_ar = ath12k_core_ar_from_hw_link_id(mgmt->ab, rxcb->hw_link_id);
+	partner_ab = partner_ar->ab;
 
-	arsta = ath12k_link_sta_find_by_addr(ab, hdr->addr2); /* for AP */
+	spin_lock_bh(&partner_ab->base_lock);
+
+	/* Fetch arsta from A2 on AP and A1 on STA */
+	arsta = ath12k_link_sta_find_by_addr(partner_ab, hdr->addr2);
 	if (!arsta)
-		arsta = ath12k_link_sta_find_by_addr(ab, hdr->addr1); /* for STA */
+		arsta = ath12k_link_sta_find_by_addr(partner_ab, hdr->addr1);
 
 	if (arsta)
 		enctype = arsta->ahsta->enctype;
 
-	spin_unlock_bh(&ab->base_lock);
+	spin_unlock_bh(&partner_ab->base_lock);
 
 	desc_data->enctype = enctype;
 
