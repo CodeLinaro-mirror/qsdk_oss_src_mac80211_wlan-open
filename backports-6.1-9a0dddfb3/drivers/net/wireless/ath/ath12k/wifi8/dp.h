@@ -75,6 +75,7 @@ struct ath12k_dp_wifi8 {
 	struct dp_srng reo_dst_high_prio_ring;
 	struct dp_srng wbm_refill_ring[DP_WBM_REFILL_RING_MAX];
 	struct dp_srng wbm_idle_buf_ring;
+	struct dp_srng reo_high_prio_cmd_ring;
 	struct dp_srng tqm_cmd_ring;
 	struct dp_srng tqm_status_ring;
 	struct dp_srng fse_cmd_ring;
