@@ -440,28 +440,55 @@ static int ath12k_wait_for_peer_common(struct ath12k_base *ab, int vdev_id,
 	return 0;
 }
 
+struct ath12k_peer_cleanup_ctx {
+	struct ath12k *ar;
+	u32 vdev_id;
+	u32 num_ml_peers;
+};
+
+static bool ath12k_peer_cleanup_vdev_match(struct ath12k_dp_link_peer *peer,
+					   void *context)
+{
+	struct ath12k_peer_cleanup_ctx *ctx = context;
+
+	if (peer->vdev_id != ctx->vdev_id)
+		return false;
+
+	if (!peer->sta)
+		return false;
+
+	if (peer->mlo && !peer->is_bridge_peer)
+		ctx->num_ml_peers++;
+
+	ath12k_warn(ctx->ar->ab,
+		    "removing stale remote peer %pM from vdev_id %d\n",
+		    peer->addr, peer->vdev_id);
+
+	return true;
+}
+
 void ath12k_peer_cleanup(struct ath12k *ar, u32 vdev_id)
 {
-	struct ath12k_dp_link_peer *peer, *tmp;
+	struct ath12k_peer_cleanup_ctx ctx = {
+		.ar = ar,
+		.vdev_id = vdev_id,
+		.num_ml_peers = 0,
+	};
 	struct ath12k_base *ab = ar->ab;
+	int count;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
-	spin_lock_bh(&ab->dp->dp_lock);
-	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
-		if (peer->vdev_id == vdev_id && peer->sta) {
-			ath12k_warn(ab,
-				    "removing stale remote peer %pM from vdev_id %d\n",
-				    peer->addr, vdev_id);
-
-			ath12k_link_peer_free(peer);
-			ar->num_peers--;
-			if (peer->mlo && !peer->is_bridge_peer)
-				ar->num_ml_peers--;
-		}
+	count = ath12k_dp_link_peer_batch_cleanup(ar,
+						  ath12k_peer_cleanup_vdev_match,
+						  &ctx);
+	if (count > 0) {
+		ar->num_peers -= count;
+		ar->num_ml_peers -= ctx.num_ml_peers;
+		ath12k_dbg(ab, ATH12K_DBG_PEER,
+			   "cleaned up %d stale peers from vdev_id %d\n",
+			   count, vdev_id);
 	}
-
-	spin_unlock_bh(&ab->dp->dp_lock);
 }
 
 static int ath12k_peer_delete_send(struct ath12k *ar, u32 vdev_id, const u8 *addr,

@@ -201,8 +201,6 @@ void ath12k_peer_unmap_event(struct ath12k_base *ab, u16 peer_id, bool is_wds)
 		       "htt peer unmap vdev %d peer %pM id %d\n",
 		       peer->vdev_id, peer->addr, peer_id);
 
-	ath12k_link_peer_free(peer);
-
 exit:
 	spin_unlock_bh(&dp->dp_lock);
 }
@@ -1020,6 +1018,58 @@ void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr)
 	/* Important: Link peer delete is done after synchronization */
 	__ath12k_link_peer_free(peer);
 }
+
+/**
+ * ath12k_dp_link_peer_batch_cleanup()
+ * @ar: ath12k radio instance
+ * @peer_match: Callback to determine if peer should be cleaned up
+ * @context: Context data for peer_match
+ *
+ * Must be called from process context (not atomic context).
+ *
+ * Returns: Number of peers cleaned up
+ */
+int
+ath12k_dp_link_peer_batch_cleanup(struct ath12k *ar,
+				  bool (*peer_match)(struct ath12k_dp_link_peer *,
+						     void *),
+				  void *context)
+{
+	struct ath12k_dp *dp = ar->dp.dp;
+	struct ath12k_dp_hw *dp_hw = &ar->ah->dp_hw;
+	struct ath12k_dp_link_peer *peer, *tmp;
+	struct list_head cleanup_list;
+	int count = 0;
+
+	INIT_LIST_HEAD(&cleanup_list);
+
+	spin_lock_bh(&dp->dp_lock);
+
+	list_for_each_entry_safe(peer, tmp, &dp->peers, list) {
+		if (peer_match && !peer_match(peer, context))
+			continue;
+
+		__ath12k_dp_link_peer_unassign(ar, dp, dp_hw, peer, NULL, peer->addr);
+
+		list_add_tail(&peer->list, &cleanup_list);
+		count++;
+	}
+
+	spin_unlock_bh(&dp->dp_lock);
+
+	if (!count)
+		return count;
+
+	synchronize_rcu();
+
+	list_for_each_entry_safe(peer, tmp, &cleanup_list, list) {
+		list_del(&peer->list);
+		__ath12k_link_peer_free(peer);
+	}
+
+	return count;
+}
+EXPORT_SYMBOL(ath12k_dp_link_peer_batch_cleanup);
 
 unsigned long ath12k_link_peer_last_active(struct ath12k_dp_link_peer *link_peer)
 {
