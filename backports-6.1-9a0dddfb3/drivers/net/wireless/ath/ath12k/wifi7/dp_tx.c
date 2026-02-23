@@ -951,7 +951,8 @@ ath12k_wifi7_dp_tx_populate_tcl_desc(struct ath12k_pdev_dp *dp_pdev,
 enum ath12k_dp_tx_enq_error
 ath12k_wifi7_dp_ext_tx(struct ath12k_pdev_dp *pdev, struct ath12k_dp_vif *vif,
 		       struct ath12k_dp_link_vif *link_vif,
-		       struct ath12k_tx_desc_info *tx_desc)
+		       struct ath12k_tx_desc_info *tx_desc,
+		       struct ath12k_dp_ext_info *info)
 {
 	enum ath12k_dp_tx_enq_error err = DP_TX_ENQ_SUCCESS;
 	struct ath12k_dp *dp = pdev->dp;
@@ -982,7 +983,7 @@ ath12k_wifi7_dp_ext_tx(struct ath12k_pdev_dp *pdev, struct ath12k_dp_vif *vif,
 	ti.data_len = tx_desc->ext_desc_len;
 	ti.type = HAL_TCL_DESC_TYPE_EXT_DESC;
 	ti.bss_ast_hash = link_vif->ast_hash;
-	ti.meta_data_flags = tx_desc->tcl_metadata;
+	ti.meta_data_flags = info->tcl_metadata;
 	ti.ring_id = cpu % dp->hw_params->max_tx_ring;
 	ti.addr_search_flags = vif->hal_addr_search_flags;
 	ti.rbm_id = hal->tcl_to_cmp_rbm_map[ti.ring_id].rbm_id;
@@ -1053,7 +1054,7 @@ ath12k_wifi7_dp_tx_fast(struct ath12k_pdev_dp *dp_pdev,
 	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags))
 		return DP_TX_ENQ_DROP_CRASH_FLUSH;
 
-	if (test_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags)) {
+	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags)) {
 		kfree_skb(skb);
 		return DP_TX_ENQ_SUCCESS;
 	}
@@ -1228,7 +1229,7 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags))
 		return DP_TX_ENQ_DROP_CRASH_FLUSH;
 
-	if (test_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags)) {
+	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags)) {
 		kfree_skb(skb);
 		return err;
 	}
@@ -2508,7 +2509,7 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 		sw_metadata->flags = tx_desc->flags;
 
 		if (unlikely(!(sw_metadata->flags & DP_TX_DESC_FLAG_FAST))) {
-			if (tx_desc->ext_desc) {
+			if (tx_desc->ext_kmem) {
 				ath12k_core_dma_unmap_single(dp->dev,
 						tx_desc->paddr_ext_desc,
 						tx_desc->ext_desc_len,
@@ -2517,6 +2518,7 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 				tx_desc->paddr_ext_desc = 0;
 				tx_desc->ext_desc_len = 0;
 				tx_desc->ext_desc = NULL;
+				tx_desc->ext_kmem = 0;
 			}
 
 			sw_metadata->skb_ext_desc = tx_desc->skb_ext_desc;

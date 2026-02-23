@@ -61,6 +61,11 @@
 #define ATH12K_LE64_DEC_ENC(value, dec_bits, enc_bits) \
 		u32_encode_bits(le64_get_bits(value, dec_bits), enc_bits)
 struct ath12k_mon_data;
+struct ath12k_mon_ring_desc_info;
+
+#define HAL_TLV_64_HDR_TAG		GENMASK(9, 1)
+#define HAL_TLV_64_HDR_LEN		GENMASK(21, 10)
+#define HAL_TLV_64_USR_ID		GENMASK(31, 26)
 
 struct hal_rx_u_sig_info {
 	bool ul_dl;
@@ -784,6 +789,10 @@ struct hal_mon_ops {
 	void (*tx_pcu_ppdu_setup_init_info_get)(const void *tlv_data,
 						struct hal_tx_mon_status_info *status,
 						u16 tlv_len);
+	int (*extract_tx_mon_ring_desc)(struct ath12k_hal *hal,
+					void *ring_entry,
+					struct ath12k_mon_ring_desc_info *desc_info);
+	bool (*is_mon_buf_addr_tlv)(u32 tlv_tag);
 };
 
 static inline enum hal_tx_mon_status
@@ -1054,5 +1063,26 @@ ath12k_hal_mon_tx_get_wmask_config(struct ath12k_hal *hal,
 {
 	if (hal->hal_mon_ops->get_tx_mon_wmask_config)
 		hal->hal_mon_ops->get_tx_mon_wmask_config(wmsk);
+}
+
+static inline int
+ath12k_hal_mon_extract_tx_mon_ring_desc(struct ath12k_hal *hal,
+					void *ring_entry,
+					struct ath12k_mon_ring_desc_info *desc_info)
+{
+	if (hal->hal_mon_ops->extract_tx_mon_ring_desc)
+		return hal->hal_mon_ops->extract_tx_mon_ring_desc(hal,
+								  ring_entry,
+								  desc_info);
+	return 0;
+}
+
+static inline bool
+ath12k_hal_is_mon_buf_addr_tlv(struct ath12k_hal *hal, u32 tlv_tag)
+{
+	if (hal->hal_mon_ops->is_mon_buf_addr_tlv)
+		return hal->hal_mon_ops->is_mon_buf_addr_tlv(tlv_tag);
+
+	return false;
 }
 #endif

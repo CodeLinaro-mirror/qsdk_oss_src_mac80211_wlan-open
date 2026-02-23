@@ -16,6 +16,7 @@
 #include "dp_mon_filter.h"
 #include "ini.h"
 #include "telemetry_agent_if.h"
+#include "ath12k_notif.h"
 
 /**
  * ath12k_htt_send() - Send htt packet from host
@@ -1111,8 +1112,7 @@ ath12k_update_htt_stats_txrate(struct ath12k_pdev_dp *dp_pdev,
 	is_mcast = HTT_PPDU_STATS_USR_CMN_IS_MCAST(usr_stats->common.info);
 	snr = le32_to_cpu(usr_stats->cmpltn_cmn.ack_rssi);
 	ack_rssi = ath12k_dp_get_rssi_value(snr, &peer->signal_stats,
-					    &dp_pdev->ar->rssi_offsets, peer,
-					    true);
+					    &dp_pdev->ar->rssi_offsets, true);
 	if (!is_mcast) {
 		peer->peer_stats.last_ack_rssi = ack_rssi;
 		ewma_avg_ack_rssi_add(&peer->peer_stats.avg_ack_rssi,
@@ -1543,11 +1543,45 @@ bool ath12k_dp_htt_is_ppdu_completed(struct htt_ppdu_stats_info *ppdu_info)
 	return false;
 }
 
+static void ath12k_dp_htt_ppdu_notify(struct htt_ppdu_stats_info *ppdu_info)
+{
+	struct ath12k_ppdu_event event;
+	struct sk_buff *skb;
+	struct ath12k_ppdu_tx_info *ppdu_evt_data;
+	unsigned int len;
+
+	/* Early exit if no one is listening for TX events - avoid unnecessary work */
+	if (!ath12k_ppdu_notifier_has_listeners(ATH12K_EVENT_PPDU_TX_COMPLETE))
+		return;
+
+	len = sizeof(*ppdu_evt_data);
+
+	skb = alloc_skb(len, GFP_ATOMIC);
+	if (!skb)
+		return;
+
+	ppdu_evt_data = skb_put_zero(skb, len);
+	memcpy(&ppdu_evt_data->ppdu_info, ppdu_info, sizeof(*ppdu_info));
+
+	memset(&event, 0, sizeof(event));
+	event.skb = skb;
+
+	ath12k_ppdu_notifier_call_chain(ATH12K_EVENT_PPDU_TX_COMPLETE, &event);
+
+	if (refcount_read(&skb->users) > 1)
+		ath12k_dbg(NULL, ATH12K_DBG_TELEMETRY,
+			   "Current SKB ref cnt held by TX PPDU evt listeners = %d\n",
+			   refcount_read(&skb->users));
+	kfree_skb(skb);
+}
+
 void ath12k_dp_htt_deliver_ppdu(struct ath12k_pdev_dp *dp_pdev,
 				struct htt_ppdu_stats_info *ppdu_info)
 {
 	/* Update tx completion stats */
 	ath12k_dp_htt_ppdu_stats_update_tx_comp_stats(dp_pdev, ppdu_info);
+	/* Send PPDU notification to registered listeners */
+	ath12k_dp_htt_ppdu_notify(ppdu_info);
 }
 
 struct htt_ppdu_stats_info *

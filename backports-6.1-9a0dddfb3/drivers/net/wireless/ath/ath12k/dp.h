@@ -405,24 +405,25 @@ struct ath12k_rx_desc_info {
 struct ath12k_tx_desc_info {
 	struct list_head list;
 	struct sk_buff *skb;
-	struct sk_buff *skb_ext_desc;
-	struct ath12k_dp_ext_desc *ext_desc;
+	union {
+		struct sk_buff *skb_ext_desc;
+		struct ath12k_dp_ext_desc *ext_desc;
+	};
 	dma_addr_t paddr;
 	dma_addr_t paddr_ext_desc;
 	u32 desc_id; /* Cookie */
 	u16 len;
 	u16 ext_desc_len;
-	u16 tcl_metadata;
 	u8 mac_id	: 5,
 	   in_use	: 1,
-	   reserved	: 2;
+	   ext_kmem	: 1,
+	   reserved	: 1;
 	u8 flags	: 3,
 	   reserved1	: 4,
 	   to_fw	: 1;
 	u8 pool_id;
 };
 
-//#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 struct ath12k_ppeds_tx_desc_info {
 	union {
 		u8 align[64];
@@ -445,7 +446,6 @@ struct ath12k_dp_tx_comp_status {
 	u32 desc_id;
 	int htt_status;
 };
-//#endif
 
 struct ath12k_spt_info {
 	dma_addr_t paddr;
@@ -578,7 +578,13 @@ struct ath12k_dp_arch_ops {
 	enum ath12k_dp_tx_enq_error (*dp_ext_tx)(struct ath12k_pdev_dp *dp_pdev,
 						 struct ath12k_dp_vif *dp_vif,
 						 struct ath12k_dp_link_vif *dp_link_vif,
-						 struct ath12k_tx_desc_info *tx_desc);
+						 struct ath12k_tx_desc_info *tx_desc,
+						 struct ath12k_dp_ext_info *info);
+
+	/* UMAC reset operations */
+	void (*umac_reset_handle_pre_reset)(struct ath12k_base *ab);
+	void (*umac_reset_handle_post_reset_start)(struct ath12k_base *ab);
+	void (*umac_reset_handle_post_reset_complete)(struct ath12k_base *ab);
 };
 
 struct ath12k_bp_stats {
@@ -795,7 +801,6 @@ struct ath12k_dp {
 	/*Neighbors Peer list for NAC RSSI*/
 	struct list_head neighbor_peers;
 	int num_nrps;
-	unsigned long service_rings_running;
 	bool stats_disable;
 
 	/* Extension descriptor cache for kmem_cache allocation */
@@ -893,21 +898,33 @@ struct ath12k_dp {
  };
 
 enum dp_umac_reset_tx_cmd {
+	ATH12K_UMAC_RESET_TX_CMD_NONE,
 	ATH12K_UMAC_RESET_TX_CMD_TRIGGER_DONE,
 	ATH12K_UMAC_RESET_TX_CMD_PRE_RESET_DONE,
 	ATH12K_UMAC_RESET_TX_CMD_POST_RESET_START_DONE,
 	ATH12K_UMAC_RESET_TX_CMD_POST_RESET_COMPLETE_DONE,
 };
 
+enum ath12k_umac_reset_state {
+	ATH12K_UMAC_RESET_STATE_IDLE = 0,
+	ATH12K_UMAC_RESET_STATE_INIT,
+	ATH12K_UMAC_RESET_STATE_TRIGGER_SENT,
+	ATH12K_UMAC_RESET_STATE_PRE_RESET_START,
+	ATH12K_UMAC_RESET_STATE_PRE_RESET_DONE,
+	ATH12K_UMAC_RESET_STATE_POST_RESET_START,
+	ATH12K_UMAC_RESET_STATE_POST_RESET_DONE,
+	ATH12K_UMAC_RESET_STATE_POST_RESET_COMPLETE,
+	ATH12K_UMAC_RESET_STATE_ERROR,
+	ATH12K_UMAC_RESET_STATE_MAX
+};
+
 struct ath12k_umac_reset_ts {
-	u64 trigger_start;
-	u64 trigger_done;
-	u64 pre_reset_start;
-	u64 pre_reset_done;
-	u64 post_reset_start;
-	u64 post_reset_done;
-	u64 post_reset_complete_start;
-	u64 post_reset_complete_done;
+	/* Interrupt arrival timestamps for each event */
+	u64 event_irq_init_umac_recovery;
+	u64 event_irq_init_target_recovery;
+	u64 event_irq_pre_reset;
+	u64 event_irq_post_reset_start;
+	u64 event_irq_post_reset_complete;
 };
 
 struct ath12k_dp_umac_reset {
@@ -922,7 +939,26 @@ struct ath12k_dp_umac_reset {
 	struct tasklet_struct intr_tq;
 	int irq_num;
 	struct ath12k_umac_reset_ts ts;
-	bool umac_pre_reset_in_prog;
+
+	/* State machine fields */
+	enum ath12k_umac_reset_state current_state;
+	enum ath12k_umac_reset_state prev_state;
+	spinlock_t state_lock; /* Protects state transitions */
+
+	/* State transition tracking */
+	u32 state_transition_count[ATH12K_UMAC_RESET_STATE_MAX];
+	u64 state_entry_time[ATH12K_UMAC_RESET_STATE_MAX];
+
+	/* Error handling */
+	u32 state_error_count;
+	enum ath12k_umac_reset_state error_from_state;
+
+	/* Post-send callback - executed after FW message send completes */
+	void (*post_send_cb)(struct ath12k_base *ab);
+
+	/* SKB queues for deferred cleanup during UMAC reset */
+	struct sk_buff_head tx_skb_queue;
+	struct sk_buff_head rx_skb_queue;
 };
 
 #define HTT_T2H_EXT_STATS_INFO1_DONE	BIT(11)
@@ -1291,9 +1327,9 @@ ath12k_dp_arch_peer_migrate_reo_cmd(struct ath12k_dp *dp,
 static inline enum ath12k_dp_tx_enq_error
 ath12k_dp_ext_tx(struct ath12k_dp *dp, struct ath12k_pdev_dp *dp_pdev,
 		 struct ath12k_dp_vif *vif, struct ath12k_dp_link_vif *link_vif,
-		 struct ath12k_tx_desc_info *tx_desc)
+		 struct ath12k_tx_desc_info *tx_desc, struct ath12k_dp_ext_info *info)
 {
-	return dp->arch_ops->dp_ext_tx(dp_pdev, vif, link_vif, tx_desc);
+	return dp->arch_ops->dp_ext_tx(dp_pdev, vif, link_vif, tx_desc, info);
 }
 
 int ath12k_dp_htt_connect(struct ath12k_dp *dp);
@@ -1321,12 +1357,8 @@ struct ath12k_rx_desc_info *ath12k_dp_get_rx_desc(struct ath12k_dp *dp,
 						  u32 cookie);
 struct ath12k_tx_desc_info *ath12k_dp_get_tx_desc(struct ath12k_dp *dp,
 						  u32 desc_id);
+bool ath12k_dp_umac_reset_in_progress(struct ath12k_base *ab);
 bool ath12k_dp_wmask_compaction_rx_tlv_supported(struct ath12k_base *ab);
-bool ath12k_dp_umac_reset_in_progress(struct ath12k_base *ab);
-void ath12k_umac_reset_notify_target_sync_and_send(struct ath12k_base *ab,
-                                       enum dp_umac_reset_tx_cmd tx_event);
-void ath12k_umac_reset_handle_post_reset_start(struct ath12k_base *ab);
-bool ath12k_dp_umac_reset_in_progress(struct ath12k_base *ab);
 void ath12k_dp_reoq_lut_addr_reset(struct ath12k_dp *dp);
 void ath12k_dp_srng_msi_setup(struct ath12k_base *ab,
 			      struct hal_srng_params *ring_params,
@@ -1366,8 +1398,6 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 			     u8 link_id);
 void ath12k_dp_get_pdev_stats(struct ath12k_pdev_dp *pdev,
 			      struct ath12k_telemetry_dp_radio *telemetry_radio);
-void ath12k_dp_clear_link_desc_pool(struct ath12k_dp *dp);
-
 int ath12k_dp_alloc_proto_stats_vif(struct ath12k_dp_vif *dp_vif);
 void ath12k_dp_free_proto_stats_vif(struct ath12k_dp_tx_vif_stats *vif_stats);
 int ath12k_dp_alloc_proto_stats(struct ath12k *ar);
@@ -1389,6 +1419,11 @@ int ath12k_dp_alloc_reoq_lut(struct ath12k_base *ab,
 			     struct ath12k_reo_q_addr_lut *lut);
 void ath12k_dp_update_vdev_search(struct ath12k_vif *ahvif);
 int ath12k_dp_tx_get_bank_profile(struct ath12k_dp *dp, u32 bank_config);
+void ath12k_dp_clear_link_desc_pool(struct ath12k_dp *dp);
+void ath12k_dp_ppeds_tx_desc_cleanup(struct ath12k_base *ab);
+void ath12k_dp_srng_hw_ring_disable(struct ath12k_base *ab);
+void ath12k_dp_umac_tx_desc_cleanup(struct ath12k_base *ab);
+void ath12k_dp_umac_rx_desc_cleanup(struct ath12k_base *ab);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 void ath12k_ppeds_reinject_handler(struct ath12k_base *ab,
 				   struct ath12k_ppeds_tx_desc_info *tx_desc,

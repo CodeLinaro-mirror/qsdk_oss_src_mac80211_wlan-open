@@ -52,13 +52,17 @@ struct ath12k_mscs_ctxt {
  * struct ath12k_peer_event - Peer-specific event (optimized)
  * @common: Base event structure (includes flags)
  * @peer_id: Peer ID for safe lookup
+ * @state: State flags for queue management (e.g. ATH12K_EVENT_QUEUED)
  *
  * Optimized event structure containing only fields needed for
  * safe and efficient event processing. The link_id is NOT needed
  * as it's available from peer->link_id after successful lookup.
  */
+#define ATH12K_EVENT_QUEUED 0
+
 struct ath12k_peer_event {
 	struct ath12k_event common;
+	unsigned long state;
 	u16 peer_id;
 };
 
@@ -355,4 +359,22 @@ int ath12k_dp_peer_walk_action(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vi
 				       struct ath12k_dp_link_vif *,
 				       struct ath12k_dp_peer *, void *),
 			       void *app_data);
+void ath12k_dp_iterate_vdev_link_peer(struct ath12k_dp *dp, int vdev_id,
+				      void (*callback)(struct ath12k_dp *,
+						       struct ath12k_dp_link_peer *));
+void ath12k_dp_iterate_pdev_link_peer(struct ath12k_dp *dp, int pdev_idx,
+				      void (*callback)(struct ath12k_dp *,
+						       struct ath12k_dp_link_peer *));
+
+static inline void ath12k_peer_event_set_and_queue(struct ath12k_dp_link_peer *peer,
+						   struct ath12k_event_queue *queue,
+						   u32 event_flag)
+{
+	atomic_or(event_flag, &peer->event.common.flags);
+
+	/* Queue the node once */
+	if (!test_and_set_bit(ATH12K_EVENT_QUEUED, &peer->event.state))
+		ath12k_event_enqueue(queue, &peer->event.common);
+}
+
 #endif

@@ -12,6 +12,7 @@
 #include <linux/of.h>
 #include <linux/of_graph.h>
 #include <linux/pci.h>
+#include <linux/kernel.h>
 #if defined(CONFIG_BRIDGE_MCAST_OFFLOAD)
 #include <linux/netfilter_bridge.h>
 #endif
@@ -44,10 +45,14 @@
 #include "ini.h"
 #include "erp.h"
 #include "sdwf.h"
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#include "qcn_extns/ipa/dp_ipa.h"
+#endif
 #include "telemetry_agent_if.h"
 #include "mgmt_rx.h"
 #include "me.h"
 #include "qcn_extns/me_snoop_extn.h"
+#include "umac_reset.h"
 
 #ifdef CPTCFG_ATHDEBUG
 #include "athdbg_if.h"
@@ -1011,6 +1016,8 @@ int ath12k_core_power_up(struct ath12k_hw_group *ag)
 
 static void ath12k_core_cleanup(struct ath12k_base *ab)
 {
+	ath12k_umac_reset_fallback_cleanup(ab);
+
 	mutex_lock(&ab->core_lock);
 	ath12k_core_pdev_deinit(ab);
 	ath12k_dp_arch_pdev_free(ab->dp);
@@ -1022,7 +1029,6 @@ static void ath12k_core_cleanup(struct ath12k_base *ab)
 	ath12k_dp_cmn_device_deinit(ab->dp);
 	ath12k_hal_srng_deinit(ab);
 	ath12k_dp_umac_reset_deinit(ab);
-	ath12k_umac_reset_completion(ab);
 }
 
 void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag, bool standby_mode)
@@ -1081,6 +1087,7 @@ void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag, bool standby_
 
 		if (!skip_power_down && !ab->powered_off) {
 			ab->qmi.num_radios = U8_MAX;
+			ath12k_umac_reset_fallback_cleanup(ab);
 			ath12k_hif_mgmt_irq_disable(ab);
 			ath12k_hif_irq_disable(ab);
 			ath12k_hif_ce_irq_disable(ab);
@@ -1465,7 +1472,9 @@ static int ath12k_core_start(struct ath12k_base *ab)
 		goto err_hif_stop;
 	}
 
+#ifndef CPTCFG_EXT_IPA_OFFLOAD
 	ath12k_hal_cc_config(ab);
+#endif
 
 	ret = ath12k_wmi_cmd_init(ab);
 	if (ret) {
@@ -1861,7 +1870,13 @@ core_pdev_create:
 			if (ath12k_enable_fwlog(ab))
 				ath12k_err(ab, "failed to enable fwlog: %d\n", ret);
 		}
-
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+		ret = ath12k_dp_rxdma_buf_setup(ab);
+		if (ret) {
+			ath12k_warn(ab, "failed to setup rxdma ring\n");
+			goto err;
+		}
+#endif
 		ret = ath12k_dp_umac_reset_init(ab);
 		if (ret) {
 			mutex_unlock(&ab->core_lock);
@@ -2100,6 +2115,17 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 	if (is_ready)
 		*is_ready = hw_grp_ready;
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	if (IPA_CTX(ab)->ipa_ops &&
+	    IPA_CTX(ab)->ipa_ops->ipa_register_is_ipa_ready) {
+		ret = IPA_CTX(ab)->ipa_ops->ipa_register_is_ipa_ready
+			(ab);
+		if (ret) {
+			ath12k_warn(ab, "failed to check IPA readiness");
+			goto err_core_stop;
+		}
+	}
+#endif
 	if (hw_grp_ready) {
 		if (!ag->wsi_remap_in_progress) {
 			ret = ath12k_qmi_mlo_global_snapshot_mem_init(ab);
@@ -2125,7 +2151,6 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 			goto err_core_stop;
 		}
 		ath12k_dbg(ab, ATH12K_DBG_BOOT, "group %d started\n", ag->id);
-
 		if (ath12k_ftm_mode)
 			ath12k_info(ab, "FTM mode interface is up\n");
 
@@ -2220,6 +2245,11 @@ err_core_stop:
 			continue;
 
 		mutex_lock(&ab->core_lock);
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+		if (IPA_CTX(ab)->ipa_ops &&
+		    IPA_CTX(ab)->ipa_ops->ipa_uc_ol_deinit)
+			IPA_CTX(ab)->ipa_ops->ipa_uc_ol_deinit(ab);
+#endif
 		ath12k_core_stop(ab);
 		mutex_unlock(&ab->core_lock);
 	}
@@ -4063,6 +4093,11 @@ static void ath12k_core_reset(struct work_struct *work)
 		    !ath12k_check_erp_power_down(ag)) ||
 		    ab->is_bypassed)
 			continue;
+		/* Skip recovery incase during reboot */
+		if (system_state == SYSTEM_RESTART) {
+			mutex_unlock(&ag->mutex);
+			return;
+		}
 
 		ath12k_qmi_free_resource(ab);
 		ath12k_hif_power_up(ab);
@@ -4133,7 +4168,7 @@ bool ath12k_core_hw_group_create_ready(struct ath12k_hw_group *ag)
 static struct ath12k_hw_group *ath12k_core_hw_group_alloc(struct ath12k_base *ab)
 {
 	struct ath12k_hw_group *ag;
-	int count = 0;
+	int i, count = 0;
 
 	lockdep_assert_held(&ath12k_hw_group_mutex);
 
@@ -4164,6 +4199,21 @@ static struct ath12k_hw_group *ath12k_core_hw_group_alloc(struct ath12k_base *ab
 	ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
 	ag->wsi_load_info = NULL;
 	ag->wsi_peer_clean_timeout = ATH12K_MAC_PEER_CLEANUP_TIMEOUT_MSECS;
+
+	/* Initialize UMAC reset synchronization counters */
+	atomic_set(&ag->mlo_umac_reset.request_chip, 0);
+	ag->mlo_umac_reset.task_map = 0;
+
+	/* Initialize multi-core task queue infrastructure */
+	INIT_LIST_HEAD(&ag->mlo_umac_reset.task_queue);
+	spin_lock_init(&ag->mlo_umac_reset.task_queue_lock);
+	atomic_set(&ag->mlo_umac_reset.task_id, 0);
+
+	/* Initialize high-priority tasklet for each possible CPU */
+	for (i = 0; i < num_possible_cpus(); i++) {
+		tasklet_setup(&ag->mlo_umac_reset.tasklet[i],
+			      ath12k_umac_reset_tasklet_handler_percpu);
+	}
 #ifdef CPTCFG_ATH12K_POWER_OPTIMIZATION
 	ath12k_global_ps_ctx.ag = ag;
 #endif

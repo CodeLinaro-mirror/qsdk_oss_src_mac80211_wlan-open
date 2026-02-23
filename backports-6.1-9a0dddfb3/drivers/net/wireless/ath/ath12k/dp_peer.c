@@ -1569,3 +1569,57 @@ int ath12k_dp_peer_walk_action(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vi
 
 	return ret;
 }
+
+/**
+ * ath12k_dp_iterate_vdev_link_peer - Iterate over all peers in a vdev
+ * @dp: Data path context
+ * @vdev_id: Virtual device ID to filter peers
+ * @callback: Function to call for each matching peer
+ *
+ * Iterates over all link peers associated with the specified vdev_id and
+ * invokes the callback function for each match. Caller must hold dp->dp_lock.
+ */
+void ath12k_dp_iterate_vdev_link_peer(struct ath12k_dp *dp, int vdev_id,
+				      void (*callback)(struct ath12k_dp *,
+						       struct ath12k_dp_link_peer *))
+{
+	struct ath12k_dp_link_peer *peer;
+
+	if (!dp || !callback)
+		return;
+
+	lockdep_assert_held(&dp->dp_lock);
+
+	list_for_each_entry(peer, &dp->peers, list) {
+		if (peer->vdev_id == vdev_id)
+			callback(dp, peer);
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_iterate_vdev_link_peer);
+
+/**
+ * ath12k_dp_iterate_pdev_link_peer - Iterate over all peers in a pdev
+ * @dp: Data path context
+ * @pdev_idx: Physical device ID to filter peers
+ * @callback: Function to call for each matching peer
+ *
+ * Iterates over all link peers associated with the specified pdev_idx and
+ * invokes the callback function for each match. Caller must hold dp->dp_lock.
+ */
+void ath12k_dp_iterate_pdev_link_peer(struct ath12k_dp *dp, int pdev_idx,
+				      void (*callback)(struct ath12k_dp *,
+						       struct ath12k_dp_link_peer *))
+{
+	struct ath12k_dp_link_peer *peer;
+
+	if (!dp || !callback)
+		return;
+
+	lockdep_assert_held(&dp->dp_lock);
+
+	list_for_each_entry(peer, &dp->peers, list) {
+		if (peer->pdev_idx == pdev_idx)
+			callback(dp, peer);
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_iterate_pdev_link_peer);

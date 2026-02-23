@@ -28,6 +28,7 @@ static int ath12k_dp_tx_me5(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
 			    struct ath12k_me_ctx *me_ctx)
 {
 	struct ath12k_tx_desc_info *tx_desc = NULL;
+	struct ath12k_dp_ext_info info = {0};
 	struct ath12k_dp_ext_desc *ext_desc;
 	struct sk_buff *skb = me_ctx->skb;
 	u8 ring_id = smp_processor_id();
@@ -75,12 +76,13 @@ static int ath12k_dp_tx_me5(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
 	tx_desc->skb = skb_get(skb);
 	tx_desc->mac_id = link_vif->pdev_idx;
 
+	tx_desc->ext_kmem = 1;
 	tx_desc->ext_desc = ext_desc;
 	tx_desc->paddr_ext_desc = ath12k_dp_ext_desc_map(dp, ext_desc);
 
 	tx_desc->ext_desc_len = ATH12K_DP_EXT_DESC_SZ;
 
-	if (ath12k_dp_ext_tx(dp, dp_pdev, dp_vif, link_vif, tx_desc)) {
+	if (ath12k_dp_ext_tx(dp, dp_pdev, dp_vif, link_vif, tx_desc, &info)) {
 		ath12k_warn(dp->ab, "DP ME Transmission Failed\n");
 		goto fail_desc_unmap;
 	}
@@ -108,6 +110,7 @@ static int ath12k_dp_tx_me6(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
 			    struct ath12k_me_ctx *me_ctx)
 {
 	enum ath12k_dp_tx_enq_error enq_err = DP_TX_ENQ_SUCCESS;
+	struct ath12k_dp_ext_info info = {0};
 	struct ath12k_dp_link_peer *link_peer;
 	struct ath12k_tx_desc_info *tx_desc;
 	struct sk_buff *skb = me_ctx->skb;
@@ -163,12 +166,14 @@ static int ath12k_dp_tx_me6(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
 	 */
 	tx_desc->mac_id = link_vif->pdev_idx;
 	tx_desc->skb = skb_get(skb);
-	tx_desc->tcl_metadata = mdata;
 	tx_desc->paddr = paddr;
 	tx_desc->to_fw = 1;
 	tx_desc->len = skb->len;
+	tx_desc->ext_kmem = 0;
 
-	enq_err = ath12k_dp_ext_tx(dp, dp_pdev, dp_vif, link_vif, tx_desc);
+	info.tcl_metadata = mdata;
+
+	enq_err = ath12k_dp_ext_tx(dp, dp_pdev, dp_vif, link_vif, tx_desc, &info);
 	if (enq_err) {
 		ath12k_dbg(NULL, ATH12K_DBG_DP_TX,
 			   "TX enqueue failed for MCUC with error code: %d\n", enq_err);

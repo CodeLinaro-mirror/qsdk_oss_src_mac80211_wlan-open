@@ -61,25 +61,21 @@ static int ath12k_dp_ppeds_tx_comp_poll(struct napi_struct *napi, int budget)
 	int total_budget = (budget << 2) - 1;
 	int work_done;
 
-	set_bit(ATH12K_DP_PPEDS_TX_COMP_NAPI_BIT, &dp->service_rings_running);
-	work_done = dp->arch_ops->dp_ppeds_tx_completion_handler(ab, total_budget);
+	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags)) {
+		napi_complete(napi);
+		ath12k_hif_ppeds_irq_enable(ab, PPEDS_IRQ_PPE_WBM2SW_REL);
+		return 0;
+	}
 
+	work_done = dp->arch_ops->dp_ppeds_tx_completion_handler(ab, total_budget);
 	if (!ab->stats_disable)
 		ab->dp->ppe.ppeds_stats.tx_desc_freed += work_done;
 
 	work_done = (work_done + 1) >> 2;
-	clear_bit(ATH12K_DP_PPEDS_TX_COMP_NAPI_BIT,
-		  &dp->service_rings_running);
 
 	if (budget > work_done) {
 		napi_complete(napi);
 		ath12k_hif_ppeds_irq_enable(ab, PPEDS_IRQ_PPE_WBM2SW_REL);
-		if (ab->dp_umac_reset.umac_pre_reset_in_prog)
-			ath12k_umac_reset_notify_pre_reset_done(ab);
-	} else if (ab->dp_umac_reset.umac_pre_reset_in_prog) {
-		 /* UMAC reset may fail in this case.
-		  */
-		WARN_ON_ONCE(1);
 	}
 
 	return (work_done > budget) ? budget : work_done;
@@ -1654,14 +1650,19 @@ EXPORT_SYMBOL(ath12k_dp_rx_ppeds_fse_del_flow_entry);
 void ath12k_dp_ppeds_service_enable_disable(struct ath12k_base *ab,
 					    bool enable)
 {
+	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ab->ag->mlo_umac_reset;
 	struct ath12k_dp *dp = ab->dp;
 
-	if (enable)
-		set_bit(ATH12K_DP_PPEDS_NAPI_DONE_BIT, &dp->service_rings_running);
+	if (enable) {
+		ab->dp->ppe.task_id = atomic_inc_return(&mlo_umac_reset->task_id);
+		atomic_set(&mlo_umac_reset->task_id, ab->dp->ppe.task_id);
+	}
 
-	if (ab->dp->ppe.nss_plugin_ops)
-		ab->dp->ppe.nss_plugin_ops->service_status_update(ab->dp->ppe.ds_node_id, enable);
+	if (dp->ppe.nss_plugin_ops)
+		dp->ppe.nss_plugin_ops->service_status_update(dp->ppe.ds_node_id,
+							      enable);
 }
+EXPORT_SYMBOL(ath12k_dp_ppeds_service_enable_disable);
 
 void ath12k_dp_ppeds_interrupt_stop(struct ath12k_base *ab)
 {
@@ -1671,12 +1672,14 @@ void ath12k_dp_ppeds_interrupt_stop(struct ath12k_base *ab)
 	ath12k_hif_ppeds_irq_disable(ab, PPEDS_IRQ_REO2PPE);
 	ath12k_hif_ppeds_irq_disable(ab, PPEDS_IRQ_PPE_WBM2SW_REL);
 }
+EXPORT_SYMBOL(ath12k_dp_ppeds_interrupt_stop);
 
 void ath12k_dp_ppeds_interrupt_start(struct ath12k_base *ab)
 {
 	ath12k_hif_ppeds_irq_enable(ab, PPEDS_IRQ_REO2PPE);
 	ath12k_hif_ppeds_irq_enable(ab, PPEDS_IRQ_PPE_WBM2SW_REL);
 }
+EXPORT_SYMBOL(ath12k_dp_ppeds_interrupt_start);
 
 int ath12k_vif_get_vp_num(struct ath12k_vif *ahvif, struct net_device *dev)
 {

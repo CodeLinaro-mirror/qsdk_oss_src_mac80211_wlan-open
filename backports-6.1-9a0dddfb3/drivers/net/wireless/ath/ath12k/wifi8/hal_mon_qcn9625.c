@@ -19,6 +19,11 @@ ath12k_wifi8_hal_mon_set_mon_buf_desc(void *desc, u32 addr_lo,
 	mon_buf_desc->cookie = cookie;
 }
 
+bool ath12k_wifi8_is_mon_buf_addr_tlv(u32 tlv_tag)
+{
+	return (tlv_tag == HAL_MON_BUF_ADDR);
+}
+
 const struct hal_mon_ops hal_qcn9625_mon_ops = {
 	.get_mon_mpdu_start_wmask =
 		ath12k_wifi8_hal_mon_rx_mpdu_start_wmask_get,
@@ -37,4 +42,5 @@ const struct hal_mon_ops hal_qcn9625_mon_ops = {
 	.rx_desc_get_msdu_payload =
 		ath12k_wifi8_hal_mon_rx_desc_get_msdu_payload,
 	.hal_mon_set_mon_buf_desc = ath12k_wifi8_hal_mon_set_mon_buf_desc,
+	.is_mon_buf_addr_tlv = ath12k_wifi8_is_mon_buf_addr_tlv,
 };

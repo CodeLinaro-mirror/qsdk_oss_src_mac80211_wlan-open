@@ -1333,21 +1333,19 @@ static void ath12k_dp_mon_check_rssi_deauth(struct ath12k_dp_link_peer *peer,
 	peer->rssi_mon.low_rssi_count++;
 
 	/* Check if we've hit the grace period */
-	if (peer->rssi_mon.low_rssi_count >= cfg->grace_samples) {
-		/* Set atomic event flag in event structure */
-		atomic_or(ATH12K_PEER_EVENT_RSSI_LOW, &peer->event.common.flags);
-		peer->event.peer_id = peer->peer_id;
-		peer->event.common.link_id = peer->link_id;
-		peer->event.common.hw_link_id = peer->hw_link_id;
-
+	if (peer->rssi_mon.low_rssi_count == cfg->grace_samples) {
 		ath12k_generic_dbg(ATH12K_DBG_PEER,
 				   "Enqueue peer for deauth: (%pM vif type: %d low rssi count: %d), cfg (en: %d thres %d grace: %d) last rssi: %d\n",
 				   peer->addr, peer->vif->type,
 				   peer->rssi_mon.low_rssi_count,
 				   cfg->enabled, cfg->rssi_threshold,
 				   cfg->grace_samples, signal_dbm);
-		/* Enqueue event - hw_link_id already set during peer assignment */
-		ath12k_event_enqueue(&ahvif->event_queue, &peer->event.common);
+
+		peer->event.peer_id = peer->peer_id;
+		peer->event.common.link_id = peer->link_id;
+		peer->event.common.hw_link_id = peer->hw_link_id;
+		ath12k_peer_event_set_and_queue(peer, &ahvif->event_queue,
+						ATH12K_PEER_EVENT_RSSI_LOW);
 	}
 }
 
@@ -1740,10 +1738,10 @@ ath12k_dp_calc_rx_peer_rssi(struct ath12k_pdev_dp *dp_pdev,
 
 	stats = &link_peer->signal_stats;
 	rssi = ath12k_dp_get_rssi_value(stats->snr, stats, &ar->rssi_offsets,
-					link_peer, false);
+					false);
 	stats->rssi = rssi;
 	rssi_dp = ath12k_dp_get_rssi_value(stats->snr_dp, stats,
-					   &ar->rssi_offsets, link_peer, false);
+					   &ar->rssi_offsets, false);
 	stats->rssi_dp = rssi_dp;
 	ewma_avg_rssi_add(&stats->avg_rssi, (stats->rssi + RSSI_OFFSET) << 8);
 	stats->rssi_avg =
@@ -1782,6 +1780,7 @@ ath12k_dp_mon_link_peer_signal_stats(struct ath12k_pdev_dp *dp_pdev,
 	stats->rssi_region_offset = ppdu_info->rssi_region_offset;
 	ewma_avg_snr_add(&stats->avg_snr, stats->snr);
 	stats->snr_avg = ewma_avg_snr_read(&stats->avg_snr);
+	stats->channel_bw = ppdu_info->bw;
 
 	if (likely(ppdu_info->fc_valid)) {
 		switch (ppdu_info->frame_control & 0x00F0) {

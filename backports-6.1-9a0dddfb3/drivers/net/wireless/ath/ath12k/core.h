@@ -19,6 +19,7 @@
 #include <linux/average.h>
 #include <linux/rhashtable.h>
 #include <linux/rcupdate.h>
+#include <linux/smp.h>
 #include "qmi.h"
 #include "htc.h"
 #include "wmi.h"
@@ -193,6 +194,7 @@ enum ath12k_bdf_search {
 #define ATH12K_VHT_MCS_MAX	9
 #define ATH12K_HE_MCS_MAX	11
 #define ATH12K_EHT_MCS_MAX	15
+#define ATH12K_UHR_MCS_MAX	23
 
 /* EHT MCS_NSS_FOR_20_MHZ_ONLY_STA */
 #define EHT_MCS_20_MHZ_ONLY_0_7_RX    GENMASK(3, 0)
@@ -258,6 +260,9 @@ enum ath12k_skb_flags {
 	ATH12K_SKB_MGMT_LINK_AGNOSTIC = BIT(3),
 	ATH12K_SKB_CUSTOM_MGMT_TX = BIT(4),
 	ATH12K_SKB_CUSTOM_OFFCHAN_MGMT_TX = BIT(5),
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	ATH12K_SKB_IPA_MAP_UNMAP = BIT(6),
+#endif
 };
 
 struct ath12k_skb_cb {
@@ -464,8 +469,7 @@ enum ath12k_dev_flags {
 	ATH12K_FLAG_WMI_INIT_DONE,
 	ATH12K_FLAG_Q6_POWER_DOWN,
 	ATH12K_FLAG_PPE_DS_ENABLED,
-	ATH12K_FLAG_UMAC_PRERESET_START,
-	ATH12K_FLAG_UMAC_RESET_COMPLETE,
+	ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS,
 	ATH12K_FLAG_UMAC_RECOVERY_START,
 	ATH12K_FLAG_SOC_CREATE_FAIL,
 	ATH12K_FLAG_MGMT_IRQ_ENABLED,
@@ -1819,12 +1823,37 @@ struct ath12k_stats_work_context {
 /* Legacy */
 #define ATH12K_REPORT_LOW_ACK_NUM_PKT   ATH12K_REPORT_LOW_ACK_ALL
 #define ATH12K_IS_UMAC_RESET_IN_PROGRESS        BIT(0)
+#define ATH12K_IS_UMAC_RESET_TYPE_RECOVERY	BIT(1)
 
+/* Forward declaration for task structure */
+struct ath12k_umac_reset_task;
+
+/**
+ * struct ath12k_mlo_dp_umac_reset:  mlo umac_reset context
+ * @response_chip : Number of chips the event is handled for
+ * @request_chip : Number of chips send the event
+ * @lock : locl for prtecting the umac_reset context
+ * @umac_reset_info: place holder for umac reset related falgs
+ * @initiator_chip: device_id of the initiator chip
+ * @task_queue: Queue of pending tasks
+ * @task_queue_lock: Protects task_queue
+ * @task_id: Monotonically increasing task ID
+ * @tasklet: Hi-priority tasklet per CPU
+ * @csd: Per-CPU call_single_data for async SMP calls
+ */
 struct ath12k_mlo_dp_umac_reset {
-        atomic_t response_chip;
-        spinlock_t lock;
-        u8 umac_reset_info;
-        u8 initiator_chip;
+	unsigned long task_map;                /* Bitmap tracking active tasks */
+	atomic_t request_chip;
+	spinlock_t lock;
+	u8 umac_reset_info;
+	u8 initiator_chip;
+
+	/* Multi-core task queue infrastructure */
+	struct list_head task_queue;
+	spinlock_t task_queue_lock;
+	atomic_t task_id;
+	struct tasklet_struct tasklet[NR_CPUS];
+	call_single_data_t csd[NR_CPUS];
 };
 
 #define WSI_INVALID_ORDER	0xFF
@@ -2198,6 +2227,8 @@ struct ath12k_base {
 
 	const struct ieee80211_ops *ath12k_ops;
 
+	struct ath12k_base_extn ath12k_base_extn;
+
 	const struct ieee80211_ops_extn *ath12k_ops_extn;
 
 	/* To synchronize rhash tbl write operation */
@@ -2411,7 +2442,6 @@ void ath12k_dp_umac_reset_handle(struct ath12k_base *ab);
 int ath12k_dp_umac_reset_init(struct ath12k_base *ab);
 void ath12k_dp_umac_reset_deinit(struct ath12k_base *ab);
 void ath12k_umac_reset_completion(struct ath12k_base *ab);
-void ath12k_umac_reset_notify_pre_reset_done(struct ath12k_base *ab);
 struct reserved_mem *ath12k_core_get_reserved_mem_by_name(struct ath12k_base *ab,
 						  const char* name);
 u8 ath12k_core_get_total_num_vdevs(struct ath12k_base *ab);

@@ -1545,49 +1545,63 @@ void ath12k_wifi7_hal_rx_flow_delete_entry(struct ath12k_base *ab,
 		hal_fse->info2 = u32_encode_bits(0, HAL_RX_FSE_VALID);
 }
 
-void ath12k_wifi7_hal_reset_rx_reo_tid_q(void *vaddr,
-		u32 ba_window_size, u8 tid)
+void ath12k_wifi7_hal_reset_rx_reo_tid_q(void *vaddr, u32 size, u8 tid)
 {
 	struct hal_rx_reo_queue *qdesc = (struct hal_rx_reo_queue *)vaddr;
-	struct hal_rx_reo_queue_ext *ext_desc;
-	u32 size, info0, info1, rx_queue_num;
+	int i, j;
 
-	size = ath12k_wifi7_hal_reo_qdesc_size(ba_window_size, tid);
+	if (!qdesc)
+		return;
 
-	rx_queue_num = qdesc->rx_queue_num;
-	info0 = qdesc->info0;
-	info1 = qdesc->info1;
+	u32_replace_bits(qdesc->info1, 0, HAL_RX_REO_QUEUE_INFO1_SVLD);
+	u32_replace_bits(qdesc->info1, 0, HAL_RX_REO_QUEUE_INFO1_SSN);
+	u32_replace_bits(qdesc->info1, 0, HAL_RX_REO_QUEUE_INFO1_CURRENT_IDX);
+	u32_replace_bits(qdesc->info1, 0, HAL_RX_REO_QUEUE_INFO1_PN_VALID);
 
-	memset(qdesc, 0, size);
+	memset(&qdesc->pn[0], 0, 4 * sizeof(qdesc->pn[0]));
 
-	ath12k_wifi7_hal_reo_set_desc_hdr(&qdesc->desc_hdr, HAL_DESC_REO_OWNED,
-					  HAL_DESC_REO_QUEUE_DESC,
-					  REO_QUEUE_DESC_MAGIC_DEBUG_PATTERN_0);
+	qdesc->last_rx_enqueue_timestamp = 0;
+	qdesc->last_rx_dequeue_timestamp = 0;
 
-	qdesc->rx_queue_num = rx_queue_num;
-	qdesc->info0 = info0;
-	qdesc->info1 = info1;
+	memset(&qdesc->next_aging_queue[0], 0,
+	       2 * sizeof(qdesc->next_aging_queue[0]));
 
-	qdesc->info1 |= u32_encode_bits(0, HAL_RX_REO_QUEUE_INFO1_SVLD);
-	qdesc->info1 |= u32_encode_bits(0, HAL_RX_REO_QUEUE_INFO1_SSN);
+	memset(&qdesc->prev_aging_queue[0], 0,
+	       2 * sizeof(qdesc->prev_aging_queue[0]));
+
+	qdesc->info2 = 0;
+	qdesc->info3 = 0;
 
 	if (tid == HAL_NON_QOS_TID)
 		return;
 
-	ext_desc = qdesc->ext_desc;
-	memset(ext_desc, 0, REO_QUEUE_EXT_DESC_MAX * sizeof(*ext_desc));
+	if (size > sizeof(struct hal_rx_reo_queue)) {
+		struct hal_rx_reo_queue_ext *ext_desc;
+		struct hal_rx_reo_queue_1k *kdesc;
 
-	ath12k_wifi7_hal_reo_set_desc_hdr(&ext_desc->desc_hdr, HAL_DESC_REO_OWNED,
-					  HAL_DESC_REO_QUEUE_EXT_DESC,
-					  REO_QUEUE_DESC_MAGIC_DEBUG_PATTERN_1);
-	ext_desc++;
+		i = ((size - sizeof(struct hal_rx_reo_queue)) /
+				sizeof(struct hal_rx_reo_queue_ext));
 
-	ath12k_wifi7_hal_reo_set_desc_hdr(&ext_desc->desc_hdr, HAL_DESC_REO_OWNED,
-					  HAL_DESC_REO_QUEUE_EXT_DESC,
-					  REO_QUEUE_DESC_MAGIC_DEBUG_PATTERN_2);
-	ext_desc++;
+		if (i > 10) {
+			i = 10;
+			kdesc = (struct hal_rx_reo_queue_1k *)
+				(vaddr + sizeof(struct hal_rx_reo_queue) +
+				 (10 * sizeof(struct hal_rx_reo_queue_ext)));
 
-	ath12k_wifi7_hal_reo_set_desc_hdr(&ext_desc->desc_hdr, HAL_DESC_REO_OWNED,
-					  HAL_DESC_REO_QUEUE_EXT_DESC,
-					  REO_QUEUE_DESC_MAGIC_DEBUG_PATTERN_3);
+			for (j = 0; j < 23; j++)
+				kdesc->rx_bitmap_1023_288[j] = 0;
+		}
+
+		ext_desc = (struct hal_rx_reo_queue_ext *)
+			(vaddr + (sizeof(struct hal_rx_reo_queue)));
+
+		while (i > 0) {
+			for (j = 0; j < 15; j++)
+				memset(&ext_desc->mpdu_link[j], 0,
+				       sizeof(ext_desc->mpdu_link[j]));
+
+			ext_desc++;
+			i--;
+		}
+	}
 }

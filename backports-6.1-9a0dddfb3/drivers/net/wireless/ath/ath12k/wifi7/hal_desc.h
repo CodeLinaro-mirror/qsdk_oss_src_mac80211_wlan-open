@@ -12,10 +12,6 @@
 #define HAL_TLV_HDR_LEN		GENMASK(25, 10)
 #define HAL_TLV_USR_ID		GENMASK(31, 26)
 
-#define HAL_TLV_64_HDR_TAG		GENMASK(9, 1)
-#define HAL_TLV_64_HDR_LEN		GENMASK(21, 10)
-#define HAL_TLV_64_USR_ID		GENMASK(31, 26)
-
 enum hal_tlv_tag {
 	HAL_MACTX_CBF_START					= 0 /* 0x0 */,
 	HAL_PHYRX_DATA						= 1 /* 0x1 */,
@@ -1808,13 +1804,6 @@ struct hal_wbm_release_ring {
 
 struct hal_wbm_buffer_ring {
 	struct ath12k_buffer_addr buf_addr_info;
-};
-
-enum hal_mon_end_reason {
-	HAL_MON_STATUS_BUFFER_FULL,
-	HAL_MON_FLUSH_DETECTED,
-	HAL_MON_END_OF_PPDU,
-	HAL_MON_PPDU_TRUNCATED,
 };
 
 #define HAL_SW_MONITOR_RING_INFO0_RXDMA_PUSH_REASON	GENMASK(1, 0)

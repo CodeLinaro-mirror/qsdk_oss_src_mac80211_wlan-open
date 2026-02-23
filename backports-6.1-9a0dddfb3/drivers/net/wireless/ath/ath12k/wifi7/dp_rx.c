@@ -119,7 +119,7 @@ int ath12k_wifi7_dp_reo_cmd_send(struct ath12k_base *ab,
 	int cmd_num;
 
 	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags) ||
-	    test_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags))
+	    test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
 		return -ESHUTDOWN;
 
 	cmd_ring = &ab->hal.srng_list[dp->reo_cmd_ring.ring_id];
@@ -1871,7 +1871,7 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 		refill_srng =
 			&partner_dp->ab->hal.srng_list[rx_ring->refill_buf_ring.ring_id];
 		ath12k_dp_rx_bufs_replenish(partner_dp, refill_srng,
-					    &rx_desc_used_list[device_id]);
+					    &rx_desc_used_list[device_id], false);
 	}
 
 	ath12k_wifi7_dp_rx_process_received_packets(dp, napi, rx_status_desc,
@@ -2714,7 +2714,7 @@ exit:
 		refill_srng =
 			&partner_dp->ab->hal.srng_list[rx_ring->refill_buf_ring.ring_id];
 		ath12k_dp_rx_bufs_replenish(partner_dp, refill_srng,
-					    &rx_desc_used_list[device_id]);
+					    &rx_desc_used_list[device_id], false);
 	}
 
 	return tot_n_bufs_reaped;
@@ -3507,7 +3507,7 @@ int ath12k_wifi7_dp_rx_process_wbm_err(struct ath12k_dp *dp,
 		refill_srng =
 			&partner_dp->ab->hal.srng_list[rx_ring->refill_buf_ring.ring_id];
 		ath12k_dp_rx_bufs_replenish(partner_dp, refill_srng,
-					    &rx_desc_used_list[device_id]);
+					    &rx_desc_used_list[device_id], false);
 	}
 
 	rcu_read_lock();

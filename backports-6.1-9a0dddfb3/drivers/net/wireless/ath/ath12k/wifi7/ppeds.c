@@ -19,6 +19,7 @@
 #include "../ppe.h"
 #include "ppeds.h"
 #include "../ppe_public.h"
+#include "../umac_reset.h"
 
 /* PPE-DS release interrupt */
 irqreturn_t ath12k_dp_ppeds_handle_tx_comp(int irq, void *ctxt)
@@ -434,13 +435,11 @@ EXPORT_SYMBOL(ath12k_ppeds_get_batched_tx_desc_v2);
 
 void ath12k_ppeds_notify_napi_done_v2(int ds_node_id)
 {
+	enum dp_umac_reset_tx_cmd tx_cmd = ATH12K_UMAC_RESET_TX_CMD_PRE_RESET_DONE;
 	struct ath12k_base *ab = ds_node_map[ds_node_id];
-	struct ath12k_dp *dp = ab->dp;
 
-	clear_bit(ATH12K_DP_PPEDS_NAPI_DONE_BIT, &dp->service_rings_running);
-
-	if (ab->dp_umac_reset.umac_pre_reset_in_prog)
-		ath12k_umac_reset_notify_pre_reset_done(ab);
+	ath12k_umac_reset_notify_target_sync_and_send(ab, ab->dp->ppe.task_id,
+						      tx_cmd);
 }
 EXPORT_SYMBOL(ath12k_ppeds_notify_napi_done_v2);
 

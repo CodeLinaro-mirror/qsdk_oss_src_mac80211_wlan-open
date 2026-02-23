@@ -669,12 +669,11 @@ enum qca_wlan_vendor_attr_config {
 	 */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_VAP_SUBMODE = 141,
 
-	/* Nested attribute to configure Estimated Service Parameters (ESP) to
-	 * the firmware. This attribute contains nested attributes defined in
-	 * enum qca_wlan_vendor_attr_config_esp_param. This attribute is also
-	 * used to retrieve the parameters from firmware.
+	/* Nested attribute to configure or report Estimated Service Parameters
+	 * (ESP). This contains nested attributes defined in
+	 * enum qca_wlan_vendor_attr_config_esp_param.
 	 */
-	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PARAMS = 142,
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PARAMS = 143,
 
 	/* 8-bit unsigned value. Used to specify the HW Radio Index of a wiphy
 	 * device that is being configured. This attribute may be included in
@@ -2832,6 +2831,16 @@ enum qca_vendor_vdev_param {
 	QCA_WLAN_VENDOR_VDEV_PARAM_HWCTS2SELF_OFDMA = 13,
 	QCA_WLAN_VENDOR_VDEV_PARAM_VDEV_TSF = 14,
 	QCA_WLAN_VENDOR_VDEV_PARAM_BCN_TX_POWER = 15,
+	QCA_WLAN_VENDOR_VDEV_PARAM_RSSI_MIN_THRESH = 16,
+	QCA_WLAN_VENDOR_VDEV_PARAM_RSSI_MAX_THRESH = 17,
+	QCA_WLAN_VENDOR_VDEV_PARAM_ACKRSSI_MIN_THRESH = 18,
+	QCA_WLAN_VENDOR_VDEV_PARAM_ACKRSSI_MAX_THRESH = 19,
+	QCA_WLAN_VENDOR_VDEV_PARAM_TXRATE_MIN_THRESH = 20,
+	QCA_WLAN_VENDOR_VDEV_PARAM_TXRATE_MAX_THRESH = 21,
+	QCA_WLAN_VENDOR_VDEV_PARAM_RXRATE_MIN_THRESH = 22,
+	QCA_WLAN_VENDOR_VDEV_PARAM_RXRATE_MAX_THRESH = 23,
+	QCA_WLAN_VENDOR_VDEV_PARAM_GET_RSSI_RATE_THRESHOLDS = 24,
+	QCA_WLAN_VENDOR_VDEV_PARAM_RSSI_RATE_BREACH_MASK = 25,
 	QCA_WLAN_VENDOR_VDEV_PARAM_AMPDU = 26,
 	QCA_WLAN_VENDOR_VDEV_PARAM_AMSDU = 27,
 	QCA_WLAN_VENDOR_VDEV_PARAM_BA_BUFSIZE = 28,
@@ -2844,31 +2853,6 @@ enum qca_vendor_vdev_param {
 	/* Add new params above */
 	QCA_WLAN_VENDOR_VDEV_PARAM_LAST,
 	QCA_WLAN_VENDOR_VDEV_PARAM_MAX = QCA_WLAN_VENDOR_VDEV_PARAM_LAST - 1,
-};
-
-/**
- * enum qca_vendor_global_param - Global vendor parameters
- *
- * This enum defines global parameters that are handled
- * by ath12k_vendor_set_arvif_params_extn() but stored globally in the
- * telemetry agent.
- */
-enum qca_vendor_global_param {
-	/* Global RSSI/Rate threshold crossing parameters */
-	QCA_WLAN_VENDOR_GLOBAL_RSSI_MIN_THRESH = 16,
-	QCA_WLAN_VENDOR_GLOBAL_RSSI_MAX_THRESH = 17,
-	QCA_WLAN_VENDOR_GLOBAL_ACKRSSI_MIN_THRESH = 18,
-	QCA_WLAN_VENDOR_GLOBAL_ACKRSSI_MAX_THRESH = 19,
-	QCA_WLAN_VENDOR_GLOBAL_TXRATE_MIN_THRESH = 20,
-	QCA_WLAN_VENDOR_GLOBAL_TXRATE_MAX_THRESH = 21,
-	QCA_WLAN_VENDOR_GLOBAL_RXRATE_MIN_THRESH = 22,
-	QCA_WLAN_VENDOR_GLOBAL_RXRATE_MAX_THRESH = 23,
-	QCA_WLAN_VENDOR_GLOBAL_GET_RSSI_RATE_THRESHOLDS = 24,
-	QCA_WLAN_VENDOR_GLOBAL_RSSI_RATE_BREACH_MASK = 25,
-
-	/* Add new global params above */
-	QCA_WLAN_VENDOR_GLOBAL_PARAM_LAST,
-	QCA_WLAN_VENDOR_GLOBAL_PARAM_MAX = QCA_WLAN_VENDOR_GLOBAL_PARAM_LAST - 1,
 };
 
 enum qca_vendor_radio_param {
@@ -3722,43 +3706,65 @@ enum qca_vendor_wlan_home_offchan_tx_rx_frame_attr {
 /**
  * enum qca_wlan_vendor_attr_config_esp_param - Parameters for ESP configuration
  *
- * This enum defines the attributes used to configure and retrieve
- * Estimated Service Parameters (ESP) settings.
+ * Attributes used to configure (set command) or report (get command)
+ * Estimated Service Parameters (ESP). ESP describes predicted service
+ * characteristics such as airtime availability, PPDU duration, and Block Ack
+ * window size per access category and it is advertised in the Estimated Service
+ * Parameters Inbound element (see IEEE Std 802.11-2024, 9.4.2.172).
  *
- * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_ENABLE: u8 attribute. Enable or disable ESP
- * functionality. Set to 1 to enable ESP, 0 to disable. When enabled,
- * the ESP parameters (airtime, PPDU duration, BA window) are advertised in
- * management frames.
+ * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_ENABLE: u8. Enable (1) or disable (0)
+ * the advertisement of the Estimated Service Parameters Inbound element
+ * in Beacon and Probe Response frames.
  *
- * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AIRTIME: u32 attribute. Represents the
- * predicted percentage of airtime that a new STA joining the BSS can expect
- * to be available for the transmission. The lower 8 bits represent the airtime
- * of BE AC, linearly scaled with 255 representing 100% and 0 representing 0%.
- * Bits 8-15 represent BK AC, bits 16-23 represent VI AC, and bits 24-31
- * represent VO AC (if applicable). When used to report airtime of all ACs,
- * each byte represents one AC.
+ * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AIRTIME_BE: u8. Predicted percentage of
+ * airtime available for AC_BE. This is the exact 8-bit value used in the ESP
+ * Information field as defined in IEEE Std 802.11-2024, 9.4.2.172. The
+ * value is linearly scaled: 0 represents 0% airtime, 255 represents 100%
+ * airtime.
  *
- * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PPDU_DUR: u8 attribute. Indicates the
- * expected target duration of PPDUs transmitted to the STA, in microseconds.
- * Valid range: 0-255 microseconds.
+ * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PPDU_DUR_BE: u8. BE Access Category "target"
+ * duration for PPDUs that carry Data MPDUs, i.e., how long the AP expects a
+ * typical data transmission PPDU to last for the BE AC. Encoded in unts of 50
+ * microseconds (actual_duration_us = value × 50) as defined in IEEE Std
+ * 802.11-2024, 9.4.2.172.
+ * Range: 0..255 units (0..12.75 ms). Example: value 16 -> 800 microseconds.
  *
- * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_BA_WINDOW: u8 attribute. Specifies the
- * Block Ack (BA) window size. Valid range: 0-7, where 0 represents Block
- * Ack not expected to be used, and rest of the values representing how many
- * MPDUs can be acknowledged in one Block Ack frame. Value 1 for 2 MPDUs,
- * value 2 for 4 MPDUs and so on up to the value 7 for 64 MPDUs.
+ * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_BA_WINDOW_BE: u8. BA Window Size subfield
+ * for AC_BE as defined in IEEE Std 802.11-2024, Table 9-334 (BA Window Size
+ * subfield encoding).
+ *
+ * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AIRTIME_BK: u8. Airtime for AC_BK.
+ * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PPDU_DUR_BK: u8. PPDU duration for AC_BK.
+ * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_BA_WINDOW_BK: u8. BA window for AC_BK.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AIRTIME_VI: u8. Airtime for AC_VI.
+ * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PPDU_DUR_VI: u8. PPDU duration for AC_VI.
+ * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_BA_WINDOW_VI: u8. BA window for AC_VI.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AIRTIME_VO: u8. Airtime for AC_VO.
+ * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PPDU_DUR_VO: u8. PPDU duration for AC_VO.
+ * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_BA_WINDOW_VO: u8. BA window for AC_VO.
  */
 enum qca_wlan_vendor_attr_config_esp_param {
 	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_INVALID = 0,
 	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_ENABLE = 1,
-	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AIRTIME = 2,
-	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PPDU_DUR = 3,
-	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_BA_WINDOW = 4,
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AIRTIME_BE = 2,
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PPDU_DUR_BE = 3,
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_BA_WINDOW_BE = 4,
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AIRTIME_BK = 5,
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PPDU_DUR_BK = 6,
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_BA_WINDOW_BK = 7,
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AIRTIME_VI = 8,
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PPDU_DUR_VI = 9,
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_BA_WINDOW_VI = 10,
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AIRTIME_VO = 11,
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PPDU_DUR_VO = 12,
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_BA_WINDOW_VO = 13,
 
 	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_MAX =
-		QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AFTER_LAST - 1,
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AFTER_LAST - 1,
 };
 
 /**

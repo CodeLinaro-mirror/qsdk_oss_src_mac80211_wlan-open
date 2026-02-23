@@ -12,6 +12,7 @@
 #include "debug.h"
 #include "pktlog.h"
 
+#include "dp_tx_mon.h"
 #include "hal_mon_cmn.h"
 #include "qcn_extns/ath12k_cmn_extn.h"
 #include "qcn_extns/dp_stats_extn.h"
@@ -71,6 +72,8 @@
 #define DP_MON_RX_HDR_LEN			128
 
 #define DP_SMART_MON_VALID       BIT(0)
+#define ATH12K_DP_MON_STATUS_BUF   320
+#define ATH12K_DP_MON_NUM_PPDU_DESC 128
 
 struct ath12k_mon_data;
 struct dp_mon_rx_filter;
@@ -192,6 +195,25 @@ struct ath12k_dp_arch_mon_ops {
 	int (*mon_tx_filter_update)(struct ath12k_pdev_dp *dp_pdev);
 	int (*mon_tx_dst_ring_alloc_setup)(struct ath12k_pdev_dp *dp_pdev, u32 mac_id);
 	void (*mon_tx_dst_ring_cleanup)(struct ath12k_pdev_dp *dp_pdev);
+};
+
+/**
+ * enum hal_mon_end_reason - HAL monitor descriptor completion reasons
+ * @HAL_MON_STATUS_BUFFER_FULL: Monitor status buffer reached capacity limit
+ * @HAL_MON_FLUSH_DETECTED: Hardware detected flush condition, forcing completion
+ * @HAL_MON_END_OF_PPDU: Normal PPDU completion, all data successfully captured
+ * @HAL_MON_PPDU_TRUNCATED: PPDU was truncated due to buffer or hardware limits
+ *
+ * This enumeration defines the possible reasons why hardware completes a
+ * monitor descriptor, as reported in the monitor destination ring descriptor.
+ * These values are used by both RX and TX monitor functionality across
+ * different WiFi architectures (WiFi7/WiFi8).
+ */
+enum hal_mon_end_reason {
+	HAL_MON_STATUS_BUFFER_FULL,
+	HAL_MON_FLUSH_DETECTED,
+	HAL_MON_END_OF_PPDU,
+	HAL_MON_PPDU_TRUNCATED,
 };
 
 struct ath12k_dp_mon {
@@ -367,7 +389,27 @@ struct ath12k_mon_data {
 	struct list_head dp_rx_mon_mpdu_list;
 	struct dp_mon_tx_ppdu_info *tx_prot_ppdu_info;
 	struct dp_mon_tx_ppdu_info *tx_data_ppdu_info;
+	struct ieee80211_radiotap_vendor_ns *rtap_vendor_tlv;
 };
+
+/**
+ * struct ath12k_rtap_vendor_ns - ATH12K vendor-specific radiotap namespace
+ * @lsig: Legacy Signal field containing PHY-level transmission parameters
+ *        including data rate, length, and parity information from L-SIG
+ * @device_id: Hardware device identifier for distinguishing between different
+ *             ATH12K chipset variants and revisions in multi-device systems
+ * @lsig_b: Legacy Signal B field containing additional PHY parameters for
+ *          backward compatibility with 802.11b/g legacy rate information
+ * @ppdu_start_timestamp: Hardware timestamp marking the start of PPDU
+ *                        transmission, used for precise timing analysis
+ *                        and frame correlation in monitor mode
+ */
+struct ath12k_rtap_vendor_ns {
+	u32 lsig;
+	u32 device_id;
+	u32 lsig_b;
+	u32 ppdu_start_timestamp;
+} __packed;
 
 struct ath12k_pdev_mon_dp_stats {
 	u32 status_buf_reaped;
@@ -406,6 +448,160 @@ struct ath12k_pdev_mon_dp_stats {
 	u32 restitch_insuff_frags_cnt;
 };
 
+/**
+ * struct ath12k_pdev_tx_mon_stats - TX Monitor Statistics
+ * @empty_descriptors: Incremented when hardware provides empty descriptors
+ * @truncated_ppdu: Incremented when PPDUs are truncated due to insufficient
+ *                  buffer space or hardware limitations. This can indicate
+ *                  buffer pool exhaustion.
+ * @tx_pkt_tlv_free: Count of TX packet TLV buffers freed back to the pool.
+ *                  Used for tracking buffer lifecycle and detecting leaks
+ * @tx_status_buf_free: Count of TX status buffers freed back to the pool.
+ */
+struct ath12k_pdev_tx_mon_stats {
+	u32 empty_descriptors;
+	u32 truncated_ppdu;
+	u32 tx_pkt_tlv_free;
+	u32 tx_status_buf_free;
+};
+
+/**
+ * struct ath12k_dp_mon_status_desc - TX Monitor Status Descriptor
+ * @paddr: Physical address of the monitor buffer
+ * @mon_buf: Virtual address pointer to monitor buffer containing TLV data
+ * @buf_len: Length of valid data in the monitor buffer
+ * @end_of_ppdu: Flag indicating if this descriptor contains end of PPDU marker
+ *
+ * This structure represents a single status descriptor containing TLV fragments
+ * from the TX monitor destination ring. Multiple status descriptors may be
+ * required to represent a complete PPDU.
+ *
+ * The buffer pointed to by mon_buf contains raw TLV data from hardware that
+ * needs to be parsed to extract PPDU information for frame generation.
+ */
+struct ath12k_dp_mon_status_desc {
+	dma_addr_t paddr;
+	u8 *mon_buf;
+	u32 buf_len;
+	bool end_of_ppdu;
+};
+
+/**
+ * struct ath12k_dp_mon_ppdu_desc - TX Monitor PPDU Descriptor
+ * @list: List entry for PPDU descriptor management
+ * @ppdu_id: Unique PPDU identifier from hardware
+ * @timestamp: PPDU timestamp for correlation
+ * @status_desc: Array of status descriptors containing TLV data
+ * @status_desc_cnt: Number of valid status descriptors in the array
+ *
+ * This structure represents a complete PPDU for TX monitor processing.
+ * It aggregates multiple status descriptors that contain TLV fragments
+ * for a single PPDU. Used by both WiFi7 and WiFi8 implementations.
+ *
+ * The structure is allocated from a free list during ring processing
+ * and queued for work queue processing when end_of_ppdu is detected.
+ */
+struct ath12k_dp_mon_ppdu_desc {
+	struct list_head list;
+	u32 ppdu_id;
+	u32 timestamp;
+	struct ath12k_dp_mon_status_desc status_desc[ATH12K_DP_MON_STATUS_BUF];
+	u32 status_desc_cnt;
+};
+
+/**
+ * struct ath12k_mon_ring_desc_info - Extracted monitor ring descriptor info
+ * @mon_desc: Pointer to monitor descriptor containing frame data and metadata
+ * @ppdu_id: PPDU identifier for correlating related descriptors and frames
+ * @end_offset: End offset indicating the valid data length in the buffer
+ * @end_reason: Hardware-provided reason code for descriptor completion
+ * @empty_desc: Flag indicating whether this descriptor contains no frame data
+ *
+ * This structure serves as an abstraction layer for monitor ring descriptor
+ * information, allowing architecture-specific extraction functions to populate
+ * common fields that can be processed by generic monitor code.
+ */
+struct ath12k_mon_ring_desc_info {
+	struct ath12k_dp_mon_desc *mon_desc;
+	u32 ppdu_id;
+	u32 end_offset;
+	u32 end_reason;
+	bool empty_desc;
+};
+
+/**
+ * struct ath12k_pdev_mon_dp - Per-pdev monitor mode data path context
+ * @dp_mon: Pointer to global DP monitor context for shared resources
+ * @dp_pdev: Pointer to parent pdev DP context for device-specific operations
+ * @rxdma_mon_dst_ring: Array of RX DMA monitor destination rings per RXDMA engine
+ * @tx_mon_dst_ring: TX monitor destination ring for capturing transmitted frames
+ * @rx_status: IEEE 802.11 RX status structure for monitor frame metadata
+ * @mon_data: Monitor data structure containing RX/TX frame processing state
+ * @rx_filter: Pointer to array of RX monitor filters for frame selection
+ * @tx_mon_filter: Pointer to array of TX monitor filters for frame selection
+ * @ppdu_desc_pool: Pool of PPDU descriptors for RX monitor frame processing
+ * @ppdu_desc_used_list: List of currently used RX PPDU descriptors
+ * @ppdu_desc_free_list: List of available RX PPDU descriptors for allocation
+ * @ppdu_desc_proc_list: List of RX PPDU descriptors pending processing
+ * @ppdu_desc_lock: Spinlock protecting RX PPDU descriptor list operations
+ * @mon_desc_used_list: List of monitor descriptors currently in use
+ * @mon_stats: RX monitor statistics counters for performance tracking
+ * @rxmon_work: Work structure for RX monitor processing in work queue context
+ * @rxmon_wq: Dedicated work queue for RX monitor frame processing
+ * @smart_mon_filter: Smart monitor filter configuration (4-bit CMDV format)
+ * @smart_mon_state: Current state of smart monitor functionality
+ * @tx_mon_stats: TX monitor statistics counters for performance tracking
+ * @txmon_wq: Dedicated work queue for TX monitor frame processing
+ * @txmon_work: Work structure for TX monitor processing in work queue context
+ * @ppdu_desc_list: List of PPDU descriptors for TX monitor processing
+ * @ppdu_desc_list_lock: Spinlock protecting TX PPDU descriptor list access
+ * @ppdu_desc_list_depth: Current depth/count of TX PPDU descriptor list
+ * @tx_mon_ppdu_desc_lock: Spinlock protecting TX monitor PPDU descriptor operations
+ * @tx_mon_ppdu_desc_pool: Pool of PPDU descriptors for TX monitor processing
+ * @tx_mon_desc_work_list: List of TX monitor descriptors for tasklet processing
+ * @tx_mon_ppdu_desc_used_list: List of currently used TX PPDU descriptors
+ * @tx_mon_ppdu_desc_free_list: List of available TX PPDU descriptors
+ * @tx_mon_ppdu_desc_proc_list: List of TX PPDU descriptors pending processing
+ * @tx_monitor_started: Flag indicating if TX monitor is currently active
+ *
+ * @tx_mon_ppdu_desc_initialized: State flag indicating TX monitor PPDU descriptor
+ * pool has been successfully initialized and allocated. Used to prevent double-free
+ * during error cleanup and ensure proper resource lifecycle management.
+ *
+ * @tx_mon_wq_initialized: State flag indicating TX monitor work queue has been
+ * successfully created and initialized. Used to prevent cleanup attempts on
+ * uninitialized work queues and ensure proper shutdown sequencing
+ * during error recovery.
+ *
+ * This structure represents the complete monitor mode data path context for a
+ * single pdev (physical device). It manages both RX and TX monitor functionality,
+ * including frame capture, filtering, and processing infrastructure.
+ *
+ * Smart Monitor Filter Details:
+ * The smart_mon_filter field uses a 4-bit encoding (CMDV format):
+ * - Bit 0 (V): Valid bit - must be 1 for filter to be active
+ * - Bit 1 (D): Data frame filter (0=capture, 1=filter out)
+ * - Bit 2 (M): Management frame filter (0=capture, 1=filter out)
+ * - Bit 3 (C): Control frame filter (0=capture, 1=filter out)
+ *
+ * Smart Monitor Behavior:
+ * - 0x0: Regular monitor mode - captures ALL packets immediately
+ * - Non-zero: Smart monitor mode - requires NAC (Network Access Control) setup
+ *   - Monitor VAP starts but captures no packets initially
+ *   - Packet capture begins only after NAC MAC addresses are configured
+ *   - Filters applied based on frame type and NAC list matching
+ *
+ * Work Queue Architecture:
+ * - rxmon_wq/rxmon_work: Handles RX monitor frame processing in process context
+ * - txmon_wq/txmon_work: Handles TX monitor frame processing in process context
+ * This design moves heavy processing out of interrupt/NAPI context for better
+ * system responsiveness.
+ *
+ * Memory Management:
+ * The structure maintains separate descriptor pools and lists for RX and TX
+ * monitor functionality, using a three-list architecture (free/used/processing)
+ * for efficient descriptor lifecycle management.
+ */
 struct ath12k_pdev_mon_dp {
 	struct ath12k_dp_mon *dp_mon;
 	struct ath12k_pdev_dp *dp_pdev;
@@ -457,6 +653,19 @@ struct ath12k_pdev_mon_dp {
 
 	bool tx_monitor_started:1;
 	struct ath12k_pdev_mon_dp_extn pdev_mon_dp_extn;
+	struct ath12k_pdev_tx_mon_stats tx_mon_stats;
+	struct workqueue_struct *txmon_wq;
+	struct work_struct txmon_work;
+	struct list_head ppdu_desc_list;
+	/* Spinlock protecting TX monitor PPDU descriptor operations */
+	spinlock_t tx_mon_ppdu_desc_lock;
+	struct ath12k_dp_mon_ppdu_desc *tx_mon_ppdu_desc_pool;
+	struct list_head tx_mon_desc_work_list;
+	struct list_head tx_mon_ppdu_desc_used_list;
+	struct list_head tx_mon_ppdu_desc_free_list;
+	struct list_head tx_mon_ppdu_desc_proc_list;
+	bool tx_mon_ppdu_desc_initialized:1;
+	bool tx_mon_wq_initialized:1;
 };
 
 enum ath12k_dp_mon_desc_in_use {
@@ -614,6 +823,8 @@ void ath12k_dp_mon_fill_rx_rate(struct ath12k_pdev_dp *dp_pdev,
 				struct hal_rx_mon_ppdu_info *ppdu_info,
 				struct ieee80211_rx_status *rx_status);
 
+int ath12k_dp_mon_tx_wq_start(struct ath12k_pdev_dp *dp_pdev, u32 mac_id);
+void ath12k_dp_mon_tx_wq_stop(struct ath12k_pdev_dp *dp_pdev);
 int ath12k_dp_mon_tx_srng_alloc_setup(struct ath12k_dp *dp);
 void ath12k_dp_mon_tx_srng_cleanup(struct ath12k_dp *dp);
 int ath12k_dp_mon_tx_desc_pool_alloc(struct ath12k_dp *dp);
@@ -1234,6 +1445,7 @@ void ath12k_dp_mon_tx_pdev_free(struct ath12k_pdev_dp *dp_pdev)
 	if (!mon_ops)
 		return;
 
+	ath12k_dp_mon_tx_wq_stop(dp_pdev);
 	if (mon_ops->mon_tx_dst_ring_cleanup)
 		mon_ops->mon_tx_dst_ring_cleanup(dp_pdev);
 }

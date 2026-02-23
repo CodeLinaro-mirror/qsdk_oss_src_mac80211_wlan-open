@@ -2415,7 +2415,6 @@ struct htt_ext_stats_cfg_cmd {
 /* htt stats config default params */
 #define HTT_STAT_DEFAULT_RESET_START_OFFSET 0
 #define HTT_STAT_DEFAULT_CFG0_ALL_HWQS 0xffffffff
-#define HTT_STAT_DEFAULT_CFG0_ALL_TXQS 0xffffffff
 #define HTT_STAT_DEFAULT_CFG0_ALL_CMDQS 0xffff
 #define HTT_STAT_DEFAULT_CFG0_ALL_RINGS 0xffff
 #define HTT_STAT_DEFAULT_CFG0_ACTIVE_PEERS 0xff

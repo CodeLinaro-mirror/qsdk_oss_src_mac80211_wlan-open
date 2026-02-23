@@ -335,18 +335,26 @@ void ath12k_dp_tx_encap_nwifi(struct sk_buff *skb)
 }
 EXPORT_SYMBOL(ath12k_dp_tx_encap_nwifi);
 
+void ath12k_dp_tx_release_txbuf_nolock(struct ath12k_dp *dp,
+				       struct ath12k_tx_desc_info *tx_desc,
+				       u8 pool_id)
+{
+	tx_desc->skb = NULL;
+	tx_desc->skb_ext_desc = NULL;
+	tx_desc->in_use = false;
+	tx_desc->flags = 0;
+	tx_desc->to_fw = 0;
+	tx_desc->ext_kmem = 0;
+	list_add_tail(&tx_desc->list, &dp->tx_desc_free_list[pool_id]);
+}
+EXPORT_SYMBOL(ath12k_dp_tx_release_txbuf_nolock);
+
 void ath12k_dp_tx_release_txbuf(struct ath12k_dp *dp,
 				struct ath12k_tx_desc_info *tx_desc,
 				u8 pool_id)
 {
 	spin_lock_bh(&dp->tx_desc_lock[pool_id]);
-	tx_desc->skb_ext_desc = NULL;
-	tx_desc->in_use = false;
-	tx_desc->flags = 0;
-	tx_desc->to_fw = 0;
-	tx_desc->ext_desc = NULL;
-	tx_desc->tcl_metadata = 0;
-	list_add_tail(&tx_desc->list, &dp->tx_desc_free_list[pool_id]);
+	ath12k_dp_tx_release_txbuf_nolock(dp, tx_desc, pool_id);
 	spin_unlock_bh(&dp->tx_desc_lock[pool_id]);
 }
 EXPORT_SYMBOL(ath12k_dp_tx_release_txbuf);

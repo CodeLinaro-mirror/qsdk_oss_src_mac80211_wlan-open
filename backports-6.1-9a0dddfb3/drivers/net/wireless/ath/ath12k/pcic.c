@@ -328,7 +328,7 @@ static void __ath12k_pcic_ext_irq_disable(struct ath12k_base *sc)
 		 * will lead to sleep in atmoic context that's why avoiding napi sync
 		 * during umac reset.
 		 */
-		if (test_bit(ATH12K_FLAG_UMAC_PRERESET_START, &sc->dev_flags))
+		if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &sc->dev_flags))
 			continue;
 
 		if (irq_grp->napi_enabled) {
@@ -892,7 +892,7 @@ void ath12k_pcic_ext_irq_disable(struct ath12k_base *ab)
 
 	__ath12k_pcic_ext_irq_disable(ab);
 
-	if (!test_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags))
+	if (!test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
 		ath12k_pcic_sync_ext_irqs(ab);
 }
 
@@ -1525,7 +1525,7 @@ void ath12k_pcic_mgmt_irq_free(struct ath12k_base *ab)
 	struct ath12k_mgmt *mgmt = ab->mgmt;
 	int i, j;
 
-	for (i = 0; i < ATH12K_MGMT_IRQ_GRP_NUM_MAX; i++) {
+	for (i = 0; i < mgmt->num_irq_grp; i++) {
 		struct ath12k_mgmt_irq_grp *irq_grp = &mgmt->irq_grp[i];
 
 		for (j = 0; j < irq_grp->num_irq; j++)

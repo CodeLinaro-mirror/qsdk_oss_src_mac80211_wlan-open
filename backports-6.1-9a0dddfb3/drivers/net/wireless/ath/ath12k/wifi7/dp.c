@@ -18,6 +18,7 @@
 #include "dp_mon.h"
 #include "dp_peer.h"
 #include "../wmi.h"
+#include "umac_reset.h"
 
 static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 					struct ath12k_ext_irq_grp *irq_grp,
@@ -25,7 +26,6 @@ static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 {
 	struct napi_struct *napi = &irq_grp->napi;
 	struct ath12k_base *ab = dp->ab;
-	int cpu_id = smp_processor_id();
 	int grp_id = irq_grp->grp_id;
 	int work_done = 0;
 	int i = 0, j;
@@ -37,7 +37,6 @@ static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 	if (ath12k_dp_umac_reset_in_progress(ab))
 		return 0;
 
-	set_bit(cpu_id, &dp->service_rings_running);
 	rx_mask = dp->hw_params->ring_mask->rx[grp_id];
 	tx_mask = dp->hw_params->ring_mask->tx[grp_id];
 
@@ -148,7 +147,7 @@ static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 								      refill_srng,
 								      &list);
 		if (req_entries)
-			ath12k_dp_rx_bufs_replenish(dp, refill_srng, &list);
+			ath12k_dp_rx_bufs_replenish(dp, refill_srng, &list, false);
 	}
 
 	if (dp->hw_params->ring_mask->host2rxmon[grp_id])
@@ -160,10 +159,6 @@ static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 	/* TODO: Implement handler for other interrupts */
 
 done:
-	clear_bit(cpu_id, &dp->service_rings_running);
-	if (ab->dp_umac_reset.umac_pre_reset_in_prog)
-		ath12k_umac_reset_notify_pre_reset_done(ab);
-
 	return tot_work_done;
 }
 
@@ -459,6 +454,7 @@ static void ath12k_wifi7_dp_link_vif_configure(struct ath12k_dp *dp,
 		 */
 		ath12k_wifi7_hal_vdev_mcast_ctrl_set(ab, arvif->vdev_id,
 				HAL_TX_PACKET_CONTROL_CONFIG_TO_FW_EXCEPTION);
+		ath12k_mac_vif_unref(dp, ahvif->vif);
 		return;
 	} else if (optype == ATH12K_DP_OP_INIT) {
 		dp_link_vif->vdev_id = arvif->vdev_id;
@@ -548,6 +544,13 @@ static struct ath12k_dp_arch_ops ath12k_wifi7_dp_arch_ops = {
 	.dp_link_vif_configure = ath12k_wifi7_dp_link_vif_configure,
 	.rx_flow_fse_cache_operation = ath12k_wifi7_dp_rx_flow_fse_cache_operation,
 	.dp_ext_tx = ath12k_wifi7_dp_ext_tx,
+
+	/* UMAC reset operations */
+	.umac_reset_handle_pre_reset = ath12k_wifi7_umac_reset_handle_pre_reset_wrapper,
+	.umac_reset_handle_post_reset_start =
+			ath12k_wifi7_umac_reset_handle_post_reset_start_wrapper,
+	.umac_reset_handle_post_reset_complete =
+			ath12k_wifi7_umac_reset_handle_post_reset_complete_wrapper,
 };
 
 /* TODO: remove export once this file is built with wifi7 ko */

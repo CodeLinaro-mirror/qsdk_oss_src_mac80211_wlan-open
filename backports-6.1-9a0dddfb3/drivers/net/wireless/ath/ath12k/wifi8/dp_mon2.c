@@ -411,7 +411,7 @@ ath12k_wifi8_dp_mon_free_pkt_buf(struct ath12k_pdev_dp *pdev_dp,
 		else
 			tlv_len = le64_get_bits(tlv->tl, HAL_TLV_64_HDR_LEN);
 
-		if (tlv_tag == HAL_MON_BUFFER_ADDR) {
+		if (tlv_tag == HAL_MON_BUF_ADDR) {
 			packet_info = (struct dp_mon_packet_info *)ptr;
 			pkt_desc = (struct ath12k_dp_mon_desc *)
 				    (uintptr_t)(packet_info->cookie);
