@@ -213,6 +213,7 @@ static int ieee80211_tx_radiotap_len(struct ieee80211_local *local,
 	struct ieee80211_rate_status *status_rate = NULL;
 	int len = sizeof(struct ieee80211_radiotap_header);
 	bool has_mon_offload;
+	struct sk_buff *skb = status ? status->skb : NULL;
 
 	if (status && status->n_rates)
 		status_rate = &status->rates[status->n_rates - 1];
@@ -296,6 +297,15 @@ static int ieee80211_tx_radiotap_len(struct ieee80211_local *local,
 		len += 4; /* 2 x u16 fields */
 	}
 
+	/* IEEE80211_RADIOTAP_TLV (field 28) - 4-byte alignment, variable */
+	if (has_mon_offload && tx_mon_hw_check(&status->mon_info, TLV_AT_END)) {
+		if (!skb || !skb_mac_header_was_set(skb))
+			return len;
+		len = ALIGN(len, 4);
+		/* TLVs until the mac header - Header */
+		len += skb_mac_header(skb) - skb->data;
+	}
+
 	/* IEEE80211_RADIOTAP_VENDOR_NAMESPACE (field 30) - 2-byte alignment, variable */
 	if (has_mon_offload && tx_mon_hw_check(&status->mon_info, VENDOR_TLV) &&
 	    status->mon_info.v_tlv) {
@@ -353,7 +363,9 @@ ieee80211_add_tx_radiotap_header(struct ieee80211_local *local,
 	bool has_mon_offload;
 	bool has_eht_usig;
 	bool has_eht;
+	bool has_tlv_at_end;
 	__le32 *it_present;
+	u32 end_tlvs_len = 0;
 
 	if (status && status->n_rates)
 		status_rate = &status->rates[status->n_rates - 1];
@@ -368,11 +380,24 @@ ieee80211_add_tx_radiotap_header(struct ieee80211_local *local,
 		       tx_mon_hw_check(&status->mon_info, EHT_USIG_INFO);
 	has_eht = has_mon_offload &&
 		  tx_mon_hw_check(&status->mon_info, EHT_INFO);
+	has_tlv_at_end = has_mon_offload &&
+			 tx_mon_hw_check(&status->mon_info, TLV_AT_END);
 
-	rthdr = skb_push(skb, rtap_len);
-	memset(rthdr, 0, rtap_len);
+	if (WARN_ON_ONCE(has_tlv_at_end && !skb_mac_header_was_set(skb))) {
+		dev_kfree_skb(skb);
+		return;
+	}
+
+	if (has_tlv_at_end)
+		end_tlvs_len = skb_mac_header(skb) - skb->data;
+
+	rthdr = skb_push(skb, rtap_len - end_tlvs_len);
+	memset(rthdr, 0, rtap_len - end_tlvs_len);
 	rthdr->it_len = cpu_to_le16(rtap_len);
 	it_present = &rthdr->it_present;
+
+	if (has_tlv_at_end)
+		rthdr->it_present |=  BIT(IEEE80211_RADIOTAP_TLV);
 
 	/* Check if we need extended present flags for EHT fields */
 	if (has_eht_usig || has_eht) {
