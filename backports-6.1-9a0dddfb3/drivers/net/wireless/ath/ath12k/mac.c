@@ -20539,6 +20539,9 @@ ath12k_mac_update_vif_chan_mvr(struct ath12k *ar,
 		time_left = wait_for_completion_timeout(&ar->mvr_complete,
 							WMI_MVR_CMD_TIMEOUT_HZ);
 		if (!time_left) {
+			spin_lock_bh(&ar->data_lock);
+			ar->chanctx_switch_stats.mvr_timeout_count++;
+			spin_unlock_bh(&ar->data_lock);
 			kfree(vdev_ids);
 			ath12k_err(ar->ab, "mac mvr cmd response timed out\n");
 			/* fallback to restarting one-by-one */
@@ -21589,6 +21592,7 @@ ath12k_mac_op_switch_vif_chanctx(struct ieee80211_hw *hw,
 	struct ieee80211_chanctx_conf *curr_ctx;
 	int i, ret = 0, next_ctx_idx = 0, curr_ctx_n_vifs = 0;
 	bool is_bridge_vdev;
+	u64 ts_start = ath12k_get_timestamp_in_us();
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -21651,6 +21655,10 @@ ath12k_mac_op_switch_vif_chanctx(struct ieee80211_hw *hw,
 		is_bridge_vdev = ath12k_mac_is_bridge_vdev_present(ar);
 		/* Control will reach here only for the last vif for curr_ctx */
 		if (ath12k_wmi_is_mvr_supported(ar->ab) || is_bridge_vdev) {
+			spin_lock_bh(&ar->data_lock);
+			ar->chanctx_switch_stats.entry_time_us = ts_start;
+			ar->chanctx_switch_stats.total_switches++;
+			spin_unlock_bh(&ar->data_lock);
 			struct ath12k_mac_change_chanctx_arg arg = {};
 
 			arg.ar = ar;

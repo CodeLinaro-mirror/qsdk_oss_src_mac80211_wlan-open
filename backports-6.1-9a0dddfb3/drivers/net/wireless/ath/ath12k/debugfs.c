@@ -710,6 +710,104 @@ static const struct file_operations fops_dump_mgmt_stats = {
 	.open = simple_open
 };
 
+static ssize_t ath12k_dump_chanctx_switch_stats(struct file *file,
+						char __user *ubuf,
+						size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	struct ath12k_chanctx_switch_stats *stats = &ar->chanctx_switch_stats;
+	int len = 0, ret;
+	const int size = 1024;
+
+	char *buf __free(kfree) = kzalloc(size, GFP_KERNEL);
+
+	if (ar->ah->state != ATH12K_HW_STATE_ON)
+		return -ENETDOWN;
+
+	if (!buf)
+		return -ENOMEM;
+
+	spin_lock_bh(&ar->data_lock);
+
+	len += scnprintf(buf + len, size - len,
+			 "Channel Switch Stats:\n");
+	len += scnprintf(buf + len, size - len,
+			 "  total_switches          = %llu\n",
+			 stats->total_switches);
+	len += scnprintf(buf + len, size - len,
+			 "  last_switch_time_us     = %llu\n",
+			 stats->last_switch_time_us);
+	len += scnprintf(buf + len, size - len,
+			 "  min_switch_time_us      = %llu\n",
+			 stats->min_switch_time_us);
+	len += scnprintf(buf + len, size - len,
+			 "  max_switch_time_us      = %llu\n",
+			 stats->max_switch_time_us);
+	len += scnprintf(buf + len, size - len,
+			 "  avg_switch_time_us      = %llu\n",
+			 stats->avg_switch_time_us);
+	len += scnprintf(buf + len, size - len,
+			 "\nTiming Breakdown (last switch):\n");
+	len += scnprintf(buf + len, size - len,
+			 "  entry_time_us           = %llu\n",
+			 stats->entry_time_us);
+	len += scnprintf(buf + len, size - len,
+			 "  mvr_posting_time_us     = %llu\n",
+			 stats->mvr_posting_time_us);
+	len += scnprintf(buf + len, size - len,
+			 "  mvr_resp_time_us        = %llu\n",
+			 stats->mvr_resp_time_us);
+	len += scnprintf(buf + len, size - len,
+			 "Error Tracking:\n");
+	len += scnprintf(buf + len, size - len,
+			 "  mvr_timeout_count       = %llu\n",
+			 stats->mvr_timeout_count);
+
+	spin_unlock_bh(&ar->data_lock);
+
+	if (len > size)
+		len = size;
+
+	ret = simple_read_from_buffer(ubuf, count, ppos, buf, len);
+	return ret;
+}
+
+static ssize_t ath12k_write_chanctx_switch_stats(struct file *file,
+						 const char __user *ubuf,
+						 size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	char buf[20] = {0};
+	int ret;
+
+	if (count > sizeof(buf))
+		return -EINVAL;
+
+	ret = copy_from_user(buf, ubuf, count);
+	if (ret)
+		return -EFAULT;
+
+	/* Ensure null termination */
+	buf[count] = '\0';
+
+	if (strstr(buf, "reset")) {
+		spin_lock_bh(&ar->data_lock);
+		memset(&ar->chanctx_switch_stats, 0,
+		       sizeof(ar->chanctx_switch_stats));
+		spin_unlock_bh(&ar->data_lock);
+	}
+
+	return count;
+}
+
+static const struct file_operations fops_chanctx_switch_stats = {
+	.read = ath12k_dump_chanctx_switch_stats,
+	.write = ath12k_write_chanctx_switch_stats,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 static ssize_t ath12k_debug_get_tt_stats_configs(struct file *file,
 						 char __user *user_buf,
 						 size_t count, loff_t *ppos)
@@ -6601,6 +6699,10 @@ void ath12k_debugfs_register(struct ath12k *ar)
 	debugfs_create_file("dump_mgmt_stats", 0644,
 				ar->debug.debugfs_pdev, ar,
 				&fops_dump_mgmt_stats);
+
+	debugfs_create_file("chanctx_switch_stats", 0644,
+			    ar->debug.debugfs_pdev, ar,
+			    &fops_chanctx_switch_stats);
 
 	debugfs_create_file("set_tt_configs", 0600, ar->debug.debugfs_pdev, ar,
 			    &tt_configs);
