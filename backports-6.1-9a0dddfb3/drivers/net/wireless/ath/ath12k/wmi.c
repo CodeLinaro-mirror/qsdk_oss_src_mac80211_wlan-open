@@ -13134,6 +13134,8 @@ ath12k_wmi_pdev_dfs_radar_detected_event(struct ath12k_base *ab, struct sk_buff 
 	ath12k_dbg(ar->ab, ATH12K_DBG_REG, "DFS Radar Detected in pdev %d\n",
 		   ev->pdev_id);
 
+	do_full_bw_nol |= !READ_ONCE(ar->dfs_sub_channel_marking);
+
 	if (ar->dfs_block_radar_events)
 		ath12k_info(ab, "DFS Radar detected, but ignored as requested\n");
 	else

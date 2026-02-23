@@ -17070,9 +17070,10 @@ int ath12k_mac_start(struct ath12k *ar)
 	/* Enable(1)/Disable(0) sub channel marking */
 	if (pdev->cap.supported_bands & WMI_HOST_WLAN_5GHZ_CAP) {
 		ret = ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_SUB_CHANNEL_MARKING,
-						1, pdev->pdev_id);
+						ar->dfs_sub_channel_marking ? 1 : 0,
+						pdev->pdev_id);
 		if (ret) {
-			ath12k_err(ab, "failed to enable SUB CHANNEL MARKING: %d\n", ret);
+			ath12k_err(ab, "failed to set SUB CHANNEL MARKING: %d\n", ret);
 			goto err;
 		}
 	}
@@ -25804,6 +25805,7 @@ static int ath12k_mac_setup(struct ath12k *ar)
 	ar->monitor_vdev_created = false;
 	ar->vdev_id_11d_scan = ATH12K_11D_INVALID_VDEV_ID;
 	ar->mgmt_tx_retry_limit = ATH12K_MGMT_TX_RETRY_LIMIT_DEFAULT;
+	ar->dfs_sub_channel_marking = true;
 
 	spin_lock_init(&ar->data_lock);
 	INIT_LIST_HEAD(&ar->arvifs);
