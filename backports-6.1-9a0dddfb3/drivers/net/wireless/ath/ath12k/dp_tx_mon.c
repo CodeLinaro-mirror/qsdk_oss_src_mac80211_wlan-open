@@ -564,8 +564,10 @@ ath12k_dp_mon_tx_prep_ppdu_info(struct ath12k_pdev_mon_dp *dp_mon_pdev,
 	}
 
 	tlv_hdr = (struct hal_tlv_64_hdr *)status_desc->mon_buf;
-	ath12k_hal_get_tlv_params(dp_pdev->dp->hal, tlv_hdr->tl,
-				  &tlv_tag, &tlv_userid, &tlv_len);
+
+	tlv_tag = le64_get_bits(tlv_hdr->tl, HAL_TLV_64_HDR_TAG);
+	tlv_len = le64_get_bits(tlv_hdr->tl, HAL_TLV_64_HDR_LEN);
+	tlv_userid = le64_get_bits(tlv_hdr->tl, HAL_TLV_64_USR_ID);
 
 	if (sizeof(struct hal_tlv_64_hdr) + tlv_len > status_desc->buf_len) {
 		ath12k_warn(dp_pdev->dp->ab,
