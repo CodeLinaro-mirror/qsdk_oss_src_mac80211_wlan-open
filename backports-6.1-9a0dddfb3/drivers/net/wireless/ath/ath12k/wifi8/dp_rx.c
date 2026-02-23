@@ -3934,12 +3934,6 @@ int ath12k_wifi8_dp_rx_htt_setup(struct ath12k_base *ab)
 		return ret;
 	}
 
-	ret = ath12k_dp_rx_ast_info_setup(dp);
-	if (ret) {
-		ath12k_warn(ab, "failed to setup rx ast info %d\n", ret);
-		return ret;
-	}
-
 	return 0;
 }
 
