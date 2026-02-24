@@ -517,7 +517,8 @@ int ath12k_pcic_ext_cfg_gic_msi_irq(struct ath12k_base *ab,
 				  "pcic%u_wlan_dp_%u", userpd_idx, i);
 			irq_set_status_flags(msi_desc->irq, IRQ_DISABLE_UNLAZY);
 			ret = devm_request_irq(&pdev->dev, msi_desc->irq,
-					       ath12k_pcic_ext_interrupt_handler, IRQF_SHARED,
+					       ath12k_pcic_ext_interrupt_handler,
+					       IRQF_NO_AUTOEN,
 					       dp_pcic_irq_name[userpd_idx][i], irq_grp);
 			if (ret) {
 				ath12k_warn(ab, "failed to request irq %d: %d\n", irq_idx, ret);
@@ -527,7 +528,6 @@ int ath12k_pcic_ext_cfg_gic_msi_irq(struct ath12k_base *ab,
 			ab->irq_num[irq_idx] = msi_desc->irq;
 			ab->ipci.dp_irq_num[vector] = msi_desc->irq;
 			ab->ipci.dp_msi_data[i] = msi_desc->msg.data;
-			disable_irq_nosync(ab->irq_num[irq_idx]);
 		}
 	}
 	return ret;
@@ -1018,15 +1018,13 @@ int ath12k_pcic_ext_irq_config(struct ath12k_base *ab,
 			irq_set_status_flags(irq, IRQ_DISABLE_UNLAZY);
 			ret = devm_request_irq(ab->dev, irq,
 					       ath12k_pcic_ext_interrupt_handler,
-					       IRQF_SHARED, dp_irq_name[bus_id][i],
+					       IRQF_NO_AUTOEN, dp_irq_name[bus_id][i],
 						   irq_grp);
 			if (ret) {
 				ath12k_err(ab, "failed request irq %d: %d\n",
 					   vector, ret);
 				return ret;
 			}
-
-			disable_irq_nosync(ab->irq_num[irq_idx]);
 		}
 	}
 
