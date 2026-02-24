@@ -1161,6 +1161,9 @@ ath12k_dp_tx_mon_process_mpdu_start(struct ath12k_pdev_dp *dp_pdev,
 	tx_ppdu_info->contains_host_frames = false;
 	skb_queue_tail(mpdu_q, skb);
 
+	if (skb_queue_len(mpdu_q) > 1)
+		tx_ppdu_info->tx_info.rx_status.userstats[usr_idx].ampdu_present = true;
+
 	ath12k_dbg(dp_mon->dp->ab, ATH12K_DBG_DP_MON_TX,
 		   "TX Mon: MPDU header SKB allocated for user %u (reserved=%u)\n",
 		   usr_idx, ATH12K_DP_MON_TX_MAX_RADIO_TAP_HDR);
@@ -2142,6 +2145,75 @@ ath12k_dp_tx_mon_get_channel_flags(struct hal_rx_mon_ppdu_info *rx_status)
 }
 
 /**
+ * ath12k_dp_tx_mon_update_radiotap_eht() - prepend EHT/U-SIG radiotap TLVs for
+ * TX monitor frames.
+ * This helper is part of the ath12k TX-monitor “radiotap at end” encoding
+ * scheme. When the hardware provides 802.11be (EHT) and U-SIG information
+ * for a PPDU, the driver serializes that information into radiotap TLVs and
+ * prepends them into the skb (using skb_push()), then marks the skb as
+ * containing an “end-TLV block” via TX_MON_FLAG_TLV_AT_END (TLV_AT_END).
+ *
+ * @mon_skb: monitor skb that will carry the radiotap header + 802.11 frame
+ * @mon_info: tx monitor metadata bitmap/state used by mac80211 formatting
+ * @ppdu_info: HAL TX monitor PPDU status carrying EHT and U-SIG decode results
+ */
+static void ath12k_dp_tx_mon_update_radiotap_eht(struct sk_buff *mon_skb,
+						 struct ieee80211_tx_mon_info *mon_info,
+						 struct hal_tx_mon_ppdu_info *ppdu_info)
+{
+	struct hal_rx_mon_ppdu_info *rx_status = &ppdu_info->rx_status;
+	struct ieee80211_radiotap_tlv *tlv;
+	struct ieee80211_radiotap_eht *eht;
+	struct ieee80211_radiotap_eht_usig *usig;
+	u16 len = 0, i, eht_len = 0, usig_len;
+	u8 user;
+
+	if (!rx_status->eht_flags && !rx_status->usig_flags)
+		return;
+
+	if (rx_status->eht_flags) {
+		eht_len = struct_size(eht, user_info,
+				      rx_status->eht_info.num_user_info);
+		len += sizeof(*tlv) + eht_len;
+	}
+
+	if (rx_status->usig_flags) {
+		usig_len = sizeof(*usig);
+		len += sizeof(*tlv) + usig_len;
+	}
+
+	skb_reset_mac_header(mon_skb);
+	tlv = skb_push(mon_skb, len);
+	tx_mon_hw_set(mon_info, TLV_AT_END);
+
+	if (rx_status->eht_flags) {
+		tlv->type = cpu_to_le16(IEEE80211_RADIOTAP_EHT);
+		tlv->len = cpu_to_le16(eht_len);
+
+		eht = (struct ieee80211_radiotap_eht *)tlv->data;
+		eht->known = cpu_to_le32(rx_status->eht_info.eht.known);
+
+		for (i = 0; i < ARRAY_SIZE(eht->data) &&
+		     i < ARRAY_SIZE(rx_status->eht_info.eht.data); i++)
+			eht->data[i] = cpu_to_le32(rx_status->eht_info.eht.data[i]);
+
+		for (user = 0; user < rx_status->eht_info.num_user_info; user++)
+			put_unaligned_le32(cpu_to_le32
+					   (rx_status->eht_info.user_info[user]),
+					   &eht->user_info[user]);
+
+		tlv = (struct ieee80211_radiotap_tlv *)&tlv->data[eht_len];
+	}
+
+	if (rx_status->usig_flags) {
+		tlv->type = cpu_to_le16(IEEE80211_RADIOTAP_EHT_USIG);
+		tlv->len = cpu_to_le16(usig_len);
+		usig = (struct ieee80211_radiotap_eht_usig *)tlv->data;
+		*usig = rx_status->u_sig_info.usig;
+	}
+}
+
+/**
  * ath12k_dp_mon_tx_update_mon_info() - Comprehensive monitor info population
  * @pdev_dp: ath12k pdev dp context
  * @mon_info: mac80211 tx monitor info to fill
@@ -2159,11 +2231,8 @@ ath12k_dp_mon_tx_update_mon_info(struct ath12k_pdev_dp *dp_pdev,
 				 u8 user_idx)
 {
 	struct hal_rx_mon_ppdu_info *rx_status;
-	struct ath12k_rtap_vendor_ns *vendor_data;
-	struct ath12k_mon_data *mon_data = &dp_pdev->dp_mon_pdev->mon_data;
-	u8 ATH_OUI[] = {0x00, 0x03, 0x7f};
 	u8 sifs, tx_time;
-	int i;
+	bool is_qos_data;
 
 	if (!mon_info)
 		return;
@@ -2213,7 +2282,9 @@ ath12k_dp_mon_tx_update_mon_info(struct ath12k_pdev_dp *dp_pdev,
 		tx_mon_hw_set(mon_info, CHAN_INFO);
 	}
 
-	if (rx_status->userstats[user_idx].ampdu_present) {
+	is_qos_data = ieee80211_is_data_qos(rx_status->frame_control);
+
+	if (is_qos_data && rx_status->userstats[user_idx].ampdu_present) {
 		mon_info->ampdu_ref_num = ppdu_info->ppdu_id;
 		mon_info->ampdu_flags = 0;
 		mon_info->ampdu_reserved_flags = 0;
@@ -2222,7 +2293,7 @@ ath12k_dp_mon_tx_update_mon_info(struct ath12k_pdev_dp *dp_pdev,
 
 	ath12k_dp_mon_tx_update_lsig_info(mon_info, rx_status);
 
-	if (rx_status->he_mu_flags) {
+	if (is_qos_data && rx_status->he_mu_flags) {
 		mon_info->he_mu.flags1 =
 			cpu_to_le16(rx_status->he_flags1 |
 				    rx_status->userstats[user_idx].he_flags1);
@@ -2236,42 +2307,6 @@ ath12k_dp_mon_tx_update_mon_info(struct ath12k_pdev_dp *dp_pdev,
 		       sizeof(mon_info->he_mu.ru_ch2));
 
 		tx_mon_hw_set(mon_info, HE_MU_INFO);
-	}
-
-	if (rx_status->usig_flags) {
-		mon_info->eht_usig.common = cpu_to_le32(rx_status->usig_common);
-		mon_info->eht_usig.value = cpu_to_le32(rx_status->usig_value);
-		mon_info->eht_usig.mask = cpu_to_le32(rx_status->usig_mask);
-
-		tx_mon_hw_set(mon_info, EHT_USIG_INFO);
-	}
-
-	if (rx_status->eht_flags) {
-		mon_info->eht.known = cpu_to_le32(rx_status->eht_known);
-
-		for (i = 0; i < ARRAY_SIZE(mon_info->eht.data); i++)
-			mon_info->eht.data[i] = cpu_to_le32(rx_status->eht_data[i]);
-
-		if (rx_status->num_eht_user_info_valid > 0 &&
-		    rx_status->num_eht_user_info_valid <= HAL_MAX_UL_MU_USERS)
-			mon_info->eht_num_users = rx_status->num_eht_user_info_valid;
-		else
-			mon_info->eht_num_users = 1;
-
-		tx_mon_hw_set(mon_info, EHT_INFO);
-	}
-
-	if (mon_data->rtap_vendor_tlv) {
-		mon_info->v_tlv = mon_data->rtap_vendor_tlv;
-		memcpy(mon_info->v_tlv->oui, ATH_OUI, sizeof(ATH_OUI));
-		mon_info->v_tlv->sub_namespace = 0;
-		mon_info->v_tlv->skip_length =
-			cpu_to_le16(sizeof(struct ath12k_rtap_vendor_ns));
-		vendor_data = (struct ath12k_rtap_vendor_ns *)&mon_info->v_tlv->data;
-		vendor_data->device_id = rx_status->device_id;
-		vendor_data->ppdu_start_timestamp = rx_status->tsft;
-
-		tx_mon_hw_set(mon_info, VENDOR_TLV);
 	}
 }
 
@@ -2563,10 +2598,10 @@ ath12k_dp_mon_tx_fill_rate_status(struct ath12k_pdev_dp *dp_pdev,
 		if (rx_status->freq >= ATH12K_FREQ_2GHZ_MIN &&
 		    rx_status->freq <= ATH12K_FREQ_2GHZ_MAX) {
 			ri->legacy =
-				ath12k_dp_tx_mon_get_legacy_rate(ATH12K_RATE_1MBPS_KBPS);
+				ath12k_dp_tx_mon_get_legacy_rate(ATH12K_RATE_11MBPS_KBPS);
 		} else {
 			ri->legacy =
-				ath12k_dp_tx_mon_get_legacy_rate(ATH12K_RATE_6MBPS_KBPS);
+				ath12k_dp_tx_mon_get_legacy_rate(ATH12K_RATE_24MBPS_KBPS);
 		}
 
 		ri->bw = ath12k_mac_bw_to_mac80211_bw(rx_status->bw ?
@@ -2576,10 +2611,6 @@ ath12k_dp_mon_tx_fill_rate_status(struct ath12k_pdev_dp *dp_pdev,
 			  rx_status->nss : ATH12K_RATE_STATUS_DEFAULT_NSS;
 	} else {
 		ri->flags = 0;
-		ri->legacy = ath12k_dp_tx_mon_get_legacy_rate(rx_status->rate ?
-							      rx_status->rate :
-							      ATH12K_RATE_6MBPS_KBPS);
-
 		ri->mcs = rx_status->mcs;
 		ri->bw = ath12k_mac_bw_to_mac80211_bw(rx_status->bw);
 		ri->nss = rx_status->nss;
@@ -2610,6 +2641,11 @@ ath12k_dp_mon_tx_fill_rate_status(struct ath12k_pdev_dp *dp_pdev,
 		case HAL_RX_PREAMBLE_11B:
 		case HAL_RX_PREAMBLE_11A:
 		default:
+			if (!ieee80211_is_data_qos(rx_status->frame_control))
+				ri->legacy = ath12k_dp_tx_mon_get_legacy_rate
+							(rx_status->rate ?
+							rx_status->rate :
+							ATH12K_RATE_6MBPS_KBPS);
 			break;
 		}
 	}
@@ -2656,6 +2692,9 @@ ath12k_dp_mon_tx_deliver_frame(struct ath12k_pdev_dp *dp_pdev,
 					 ppdu_info, status_info,
 					 contains_host_frames,
 					 is_response_frame, user_idx);
+
+	if (ieee80211_is_data_qos(ppdu_info->rx_status.frame_control))
+		ath12k_dp_tx_mon_update_radiotap_eht(skb, &status.mon_info, ppdu_info);
 
 	ath12k_dp_mon_tx_fill_rate_status(dp_pdev, ppdu_info,
 					  &status, contains_host_frames);
