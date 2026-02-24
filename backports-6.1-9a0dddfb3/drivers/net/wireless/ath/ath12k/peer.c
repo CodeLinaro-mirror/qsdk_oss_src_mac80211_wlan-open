@@ -917,11 +917,6 @@ int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif,
 		    primary_link_id == link_going_down)
 			continue;
 
-		if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags) ||
-		    test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags) ||
-		    test_bit(ATH12K_FLAG_UMAC_RECOVERY_START, &ar->ab->dev_flags))
-			continue;
-
 		if (ahsta->peer_delete_cmd_sent_bitmap & BIT(link_id)) {
 			ar->num_peers--;
 			arvif->num_peers--;
