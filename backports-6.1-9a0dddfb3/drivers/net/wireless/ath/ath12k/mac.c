@@ -12376,7 +12376,8 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 	wiphy_work_cancel(ar->ah->hw->wiphy, &arsta->update_wk);
 
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
-		WARN_ON(!arvif->is_started);
+		if (!test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags))
+			WARN_ON(!arvif->is_started);
 		ath12k_bss_disassoc(ar, arvif);
 
 		ret = ath12k_mac_vdev_stop(arvif);
