@@ -1391,6 +1391,11 @@
  *	features and also to notify userspace about the status response with
  *	attributes defined in %NL80211_ATTR_QOS_MGMT.
  *
+ * @NL80211_CMD_AP_POWER_SAVE: Command to configure AP powersave parameters.
+ *	Command needs %NL80211_ATTR_IFINDEX and NL80211_ATTR_MLO_LINK_ID;
+ *	can be used to configure %NL80211_ATTR_PCIE, NL80211_ATTR_DCVS and
+ *	NL80211_ATTR_DPS_ASSIST.
+ *
  * @NL80211_CMD_MAX: highest used command number
  * @__NL80211_CMD_AFTER_LAST: internal use
  */
@@ -1670,6 +1675,8 @@ enum nl80211_commands {
 	NL80211_CMD_ERP,
 
 	NL80211_CMD_QOS_MGMT,
+
+	NL80211_CMD_AP_POWER_SAVE,
 
 	/* add new commands above here */
 
@@ -3083,6 +3090,14 @@ enum nl80211_commands {
  *  this feature during association. This is a flag attribute.
  *	Currently only supported in mac80211 drivers.
  *
+ * @NL80211_ATTR_PCIE: Nested attributes associated with PCIe low power and
+ *	gen/lane mode transitions. See &enum nl80211_pcie_attrs
+ *
+ * @NL80211_ATTR_DCVS: (u32) Dynamic Clock and Voltage Scaling (DCVS) modes.
+ *	See @enum nl80211_dcvs_attrs.
+ *
+ * @NL80211_ATTR_DPS_ASSIST: Enable/disable DPS assisting role.
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
@@ -3699,6 +3714,10 @@ enum nl80211_attrs {
 	NL80211_ATTR_UHR_CAPABILITY,
 
 	NL80211_ATTR_DISABLE_UHR,
+
+	NL80211_ATTR_PCIE,
+	NL80211_ATTR_DCVS,
+	NL80211_ATTR_DPS_ASSIST,
 
 	/* add attributes here, update the policy in nl80211.c */
 
@@ -9062,6 +9081,57 @@ enum nl80211_6ghz_dev_deployment_type {
 	NL80211_6GHZ_DEV_DEPLOYMENT_TYPE_UNKNOWN,
 	NL80211_6GHZ_DEV_DEPLOYMENT_TYPE_INDOOR,
 	NL80211_6GHZ_DEV_DEPLOYMENT_TYPE_OUTDOOR,
+};
+
+/**
+ * enum nl80211_pcie_attrs - set PCIe attributes
+ *
+ * @NL80211_PCIE_ATTR_TYPE: (u8) PCIe transition type
+ * @NL80211_PCIE_ATTR_ENABLE: (flag) enable/disable PCIe transition
+ *	type
+ * @NL80211_PCIE_ATTR_CONFIG_TYPE: (u8) configuration of PCIe transition type
+ * @NL80211_PCIE_ATTR_GEN: (u8)
+ * @NL80211_PCIE_ATTR_LANE: (u8)
+ *
+ * @__NL80211_PCIE_ATTR_LAST : internal use
+ * @NL80211_PCIE_ATTR_MAX : maximum PCIe attributes
+ *
+ */
+enum nl80211_pcie_attrs {
+	__NL80211_PCIE_ATTR_INVALID,
+
+	NL80211_PCIE_ATTR_TYPE,
+	NL80211_PCIE_ATTR_ENABLE,
+	NL80211_PCIE_ATTR_CONFIG_TYPE,
+	NL80211_PCIE_ATTR_GEN,
+	NL80211_PCIE_ATTR_LANE,
+
+	/* keep last */
+	__NL80211_PCIE_ATTR_LAST,
+	NL80211_PCIE_ATTR_MAX = __NL80211_PCIE_ATTR_LAST - 1
+};
+
+/**
+ * enum nl80211_dcvs_attrs - set DCVS attributes
+ *
+ * @NL80211_DCVS_ATTR_ON: (flag) turn on radio DCVS in driver.
+ * @NL80211_DCVS_ATTR_OFF: (flag) turn off radio DCVS in driver.
+ * @NL80211_DCVS_ATTR_NO_LIMIT: (flag) operate with no limitation.
+ *
+ * @__NL80211_DCVS_ATTR_LAST : internal use
+ * @NL80211_DCVS_ATTR_MAX : maximum DCVS attributes
+ *
+ */
+enum nl80211_dcvs_attrs {
+	__NL80211_DCVS_ATTR_INVALID,
+
+	NL80211_DCVS_ATTR_ON,
+	NL80211_DCVS_ATTR_OFF,
+	NL80211_DCVS_ATTR_NO_LIMIT,
+
+	/* keep last */
+	__NL80211_DCVS_ATTR_LAST,
+	NL80211_DCVS_ATTR_MAX = __NL80211_DCVS_ATTR_LAST - 1
 };
 
 #endif /* __LINUX_NL80211_H */

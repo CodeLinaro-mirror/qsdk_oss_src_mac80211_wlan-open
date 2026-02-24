@@ -5057,6 +5057,119 @@ struct cfg80211_qm_resp_data {
 };
 
 /**
+ * enum cfg80211_pcie_cmds - PCIe command types
+ *
+ * Defines types of commands for PCIe.
+ *
+ * @CFG80211_PCIE_CMD_INVALID: invalid command
+ * @CFG80211_PCIE_CMD_GEN_LANE: PCIe gen/lane transition
+ * @CFG80211_PCIE_CMD_LOW_POWER: PCIe lower power state transition
+ */
+enum cfg80211_pcie_cmds {
+	CFG80211_PCIE_CMD_INVALID,
+	CFG80211_PCIE_CMD_GEN_LANE,
+	CFG80211_PCIE_CMD_LOW_POWER,
+};
+
+/**
+ * enum cfg80211_pcie_gen_lane_config - PCIe Gen X Lane types
+ *
+ * Defines types of PCIe Gen X Lane configuration.
+ *
+ * @CFG80211_PCIE_GEN_LANE_CBW: Channel bandwidth based semi static PCIe
+ *	configuration
+ * @CFG80211_PCIE_GEN_LANE_STATIC: forced static PCIe configuration
+ */
+enum cfg80211_pcie_gen_lane_config {
+	CFG80211_PCIE_GEN_LANE_CBW,
+	CFG80211_PCIE_GEN_LANE_STATIC,
+};
+
+/**
+ * enum cfg80211_pcie_low_power_config - PCIe Low Power types
+ *
+ * Defines types of PCIe Low Power configuration.
+ *
+ * @CFG80211_PCIE_LOW_POWER_INVALID: invalid command
+ * @CFG80211_PCIE_LOW_POWER_L0S: PCIe L0S power state
+ * @CFG80211_PCIE_LOW_POWER_L1:  PCIe L1 power state
+ * @CFG80211_PCIE_LOW_POWER_BOTH: Both PCIe L0S and L1 power states
+ */
+enum cfg80211_pcie_low_power_config {
+	CFG80211_PCIE_LOW_POWER_INVALID,
+	CFG80211_PCIE_LOW_POWER_L0S,
+	CFG80211_PCIE_LOW_POWER_L1,
+	CFG80211_PCIE_LOW_POWER_BOTH,
+};
+
+/**
+ * struct cfg80211_pcie_params - PCIe parameters
+ *
+ * Used for PCIe enable/disable commands from userspace.
+ *
+ * @cmd: PCIe command, see enum cfg80211_pcie_cmds.
+ * @enable: enable or disable PCIe transition type
+ * @config_type: types of PCIe configuration
+ * @pcie_gen: PCIe Gen
+ * @pcie_lane: PCIe Lane
+ */
+struct cfg80211_pcie_params {
+	enum cfg80211_pcie_cmds cmd;
+	bool enable;
+	u8 config_type;
+	u8 pcie_gen;
+	u8 pcie_lane;
+};
+
+/**
+ * enum cfg80211_dcvs_cmds - DCVS command types
+ *
+ * Defines types of commands for DCVS mode.
+ *
+ * @CFG80211_DCVS_CMD_ON: turn on radio DCVS
+ * @CFG80211_DCVS_CMD_OFF: turn off radio DCVS
+ * @CFG80211_DCVS_CMD_NO_LIMIT: operate with no limitation
+ */
+enum cfg80211_dcvs_cmds {
+	CFG80211_DCVS_CMD_ON,
+	CFG80211_DCVS_CMD_OFF,
+	CFG80211_DCVS_CMD_NO_LIMIT,
+};
+
+#define CFG80211_DPS_ASSIST_CMD_DISABLE		0
+#define CFG80211_DPS_ASSIST_CMD_ENABLE		1
+
+/**
+ * enum cfg80211_ap_power_save_type - AP Powersave types
+ *
+ * Defines types of AP Power Save.
+ *
+ * @CFG80211_TYPE_PCIE: PCIe gen/lane and low power state transitions
+ * @CFG80211_TYPE_DCVS: Dynamic Clock and Voltage Scaling
+ * @CFG80211_TYPE_DPS_ASSIST: Dynamic Power Save AP Assisting Role
+ */
+enum cfg80211_ap_power_save_type {
+	CFG80211_TYPE_PCIE		= BIT(0),
+	CFG80211_TYPE_DCVS		= BIT(1),
+	CFG80211_TYPE_DPS_ASSIST	= BIT(2),
+};
+
+/**
+ * struct cfg80211_ap_power_save_params - AP Power Save Parameters
+ *
+ * @types: AP power save types which parameters are set
+ * @pcie: PCIe parameters from userspace
+ * @dcvs_mode: DCVS mode being set from userspace
+ * @dps_assist_enable: Enable/disable DPS AP Assist
+ */
+struct cfg80211_ap_power_save_params {
+	u32 types;
+	struct cfg80211_pcie_params pcie;
+	u32 dcvs_mode;
+	bool dps_assist_enable;
+};
+
+/**
  * struct cfg80211_ops - backend description for wireless configuration
  *
  * This struct is registered by fullmac card drivers and/or wireless stacks
@@ -5487,6 +5600,8 @@ struct cfg80211_qm_resp_data {
  * @get_afc_eirp_pwr: Get the EIRP power received in the AFC payload for the
  *	given freq
  * @get_6ghz_dev_deployment_type: Get the 6 GHz device deployment type
+ *
+ * @ap_power_save : Configure AP Power Save parameters
  */
 struct cfg80211_ops {
 	int	(*suspend)(struct wiphy *wiphy, struct cfg80211_wowlan *wow);
@@ -5881,6 +5996,9 @@ struct cfg80211_ops {
 				    u32 freq, u32 *eirp);
 	enum nl80211_6ghz_dev_deployment_type
 		(*get_6ghz_dev_deployment_type)(struct wiphy *wiphy);
+	int     (*ap_power_save)(struct wiphy *wiphy, struct wireless_dev *wdev,
+				 int link_id,
+				 struct cfg80211_ap_power_save_params *params);
 };
 
 /*

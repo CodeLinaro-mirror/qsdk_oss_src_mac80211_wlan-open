@@ -1693,4 +1693,19 @@ rdev_get_6ghz_dev_deployment_type(struct cfg80211_registered_device *rdev)
 	trace_rdev_return_int(&rdev->wiphy, (int)dep_type);
 	return dep_type;
 }
+
+static inline int rdev_ap_power_save(struct cfg80211_registered_device *rdev,
+				     struct wireless_dev *wdev, int link_id,
+				     struct cfg80211_ap_power_save_params *params)
+{
+	int ret;
+
+	if (!rdev->ops->ap_power_save)
+		return -EOPNOTSUPP;
+
+	trace_rdev_ap_power_save(&rdev->wiphy, wdev, link_id, params);
+	ret = rdev->ops->ap_power_save(&rdev->wiphy, wdev, link_id, params);
+	trace_rdev_return_int(&rdev->wiphy, ret);
+	return ret;
+}
 #endif /* __CFG80211_RDEV_OPS */
