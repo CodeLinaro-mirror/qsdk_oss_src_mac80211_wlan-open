@@ -38,6 +38,7 @@
 #include "vendor_services.h"
 #include "ini.h"
 #include "hal.h"
+#include "qcn_extns/ath12k_cmn_extn.h"
 
 #define CHAN2G(_channel, _freq, _flags) { \
 	.band                   = NL80211_BAND_2GHZ, \
@@ -22890,6 +22891,11 @@ ath12k_mac_reconfig_complete(struct ieee80211_hw *hw,
 		/* Send vendor event to notify userspace about fw recovery completion */
 		ath12k_vendor_send_event(ab,
 					 QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_RECOVERY_DONE);
+
+#ifdef CPTCFG_QCN_EXTN
+		/* Re-config extn parameters after recovery */
+		ath12k_extn_reconfig_extn_params(ar);
+#endif
 	}
 
 	ath12k_reconfig_qos_profiles(ab);
