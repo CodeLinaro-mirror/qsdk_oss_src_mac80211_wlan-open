@@ -2206,9 +2206,10 @@ err_filter:
 	return ret;
 }
 
-static int ath12k_mac_monitor_stop(struct ath12k *ar)
+static int ath12k_mac_monitor_stop(struct ath12k *ar, struct ath12k_vif *ahvif)
 {
 	int ret;
+	u32 stop_tx_mon = MONITOR_FLAG_SKIP_TX | MONITOR_FLAG_CHANGED;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -2228,6 +2229,7 @@ static int ath12k_mac_monitor_stop(struct ath12k *ar)
 	ar->num_started_vdevs--;
 	ath12k_dp_mon_rx_config_monitor_mode(ar, true);
 	ret = ath12k_dp_mon_rx_update_filter(ar);
+	ath12k_dp_mon_tx_set_monitor_flags(ar, stop_tx_mon, &ahvif->dp_vif.monitor_flags);
 	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
 			 "mac monitor stopped ret %d\n", ret);
 	return ret;
@@ -21019,7 +21021,7 @@ ath12k_mac_unassign_vif_chanctx_handle(struct ieee80211_hw *hw,
 		WARN_ON(!arvif->is_started);
 
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
-		ret = ath12k_mac_monitor_stop(ar);
+		ret = ath12k_mac_monitor_stop(ar, ahvif);
 		if (ret)
 			return;
 
@@ -28048,6 +28050,11 @@ int ath12k_mac_op_set_monitor_flags(struct ieee80211_hw *hw,
 	u32 *current_flags;
 
 	lockdep_assert_wiphy(hw->wiphy);
+
+	if (!(flags & MONITOR_FLAG_CHANGED)) {
+		ath12k_err(NULL, "Flags unchanged - updated rejected\n");
+		return ret;
+	}
 
 	ahvif = ath12k_vif_to_ahvif(vif);
 	if (!ahvif) {
