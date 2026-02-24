@@ -8598,6 +8598,10 @@ skip_pending_cs_up:
 
 	if (changed & BSS_CHANGED_ML_MAX_REC_LINKS)
 		ath12k_mac_vdev_ml_max_rec_links(arvif, info->ml_max_rec_links);
+
+	if (changed & BSS_CHANGED_AP_DPS_ASSIST)
+		ath12k_wmi_send_dps_assist_cmd(ar, arvif->vdev_id,
+					       info->dps_assist_support);
 }
 
 static struct ath12k_vif_cache *ath12k_ahvif_get_link_cache(struct ath12k_vif *ahvif,
