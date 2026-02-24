@@ -18239,10 +18239,8 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 		return -ENOMEM;
 	}
 
-	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA ||
-	    ahvif->vdev_type == WMI_VDEV_TYPE_AP)
-		ath12k_dp_arch_dp_vif_configure(ah->ag->dp_hw_grp, ahvif,
-						ATH12K_DP_OP_INIT);
+	ath12k_dp_arch_dp_vif_configure(ah->ag->dp_hw_grp, ahvif,
+					ATH12K_DP_OP_INIT);
 
 	/* Check the PPE VP type and update it accordingly.
 	 */

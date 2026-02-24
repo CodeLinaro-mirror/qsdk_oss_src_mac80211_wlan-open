@@ -471,6 +471,10 @@ static void ath12k_wifi8_dp_vif_configure(struct ath12k_dp *dp,
 	}
 
 	central_dp = central_ab->dp;
+	ath12k_dbg(central_ab, ATH12K_DBG_DP_TX,
+		   "vif configure vdev type = %d optype = %d\n",
+		   ahvif->vdev_type, optype);
+
 	if (optype == ATH12K_DP_OP_DEINIT) {
 		if (dp_vif->bank_id != DP_INVALID_BANK_ID)
 			ath12k_dp_tx_put_bank_profile(central_dp, dp_vif->bank_id);
@@ -478,6 +482,15 @@ static void ath12k_wifi8_dp_vif_configure(struct ath12k_dp *dp,
 		return;
 	} else if (optype == ATH12K_DP_OP_INIT) {
 		/*TODO keep vdev_id check disabled for initial emulation */
+		dp_vif->bank_id = DP_INVALID_BANK_ID;
+
+		 if (ahvif->vdev_type != WMI_VDEV_TYPE_STA &&
+		     ahvif->vdev_type != WMI_VDEV_TYPE_AP) {
+			ath12k_dbg(central_ab, ATH12K_DBG_DP_TX, "ignoring bank init vdev type = %d\n",
+				   ahvif->vdev_type);
+			return;
+		}
+
 		dp_vif->vdev_id_check_en = false;
 		ath12k_dp_update_vdev_search(ahvif);
 
@@ -506,6 +519,12 @@ static void ath12k_wifi8_dp_vif_configure(struct ath12k_dp *dp,
 			return;
 		}
 	} else if (optype == ATH12K_DP_OP_UPDATE) {
+		if (dp_vif->bank_id == DP_INVALID_BANK_ID) {
+			ath12k_dbg(central_ab, ATH12K_DBG_DP_TX, "bank id is not inited type = %d\n",
+				   ahvif->vdev_type);
+			return;
+		}
+
 		old_bank_config = ath12k_dp_tx_get_bank_config_from_id(central_dp,
 								   dp_vif->bank_id);
 		new_bank_config = ath12k_wifi8_dp_tx_get_vdev_bank_config(ab, ahvif,
@@ -553,11 +572,7 @@ static void ath12k_wifi8_dp_link_vif_configure(struct ath12k_dp *dp,
 		dp_link_vif->tcl_metadata &= ~HTT_TCL_META_DATA_VALID_HTT;
 	}
 
-	/* TODO for now update dp_vif when link params updated */
-	if (dp_vif->bank_id == DP_INVALID_BANK_ID)
-		ath12k_wifi8_dp_vif_configure(dp, ahvif, ATH12K_DP_OP_INIT);
-	else
-		ath12k_wifi8_dp_vif_configure(dp, ahvif, ATH12K_DP_OP_UPDATE);
+	ath12k_wifi8_dp_vif_configure(dp, ahvif, ATH12K_DP_OP_UPDATE);
 }
 
 static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
