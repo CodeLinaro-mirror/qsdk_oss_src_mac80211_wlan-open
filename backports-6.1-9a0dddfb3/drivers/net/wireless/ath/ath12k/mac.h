@@ -514,6 +514,9 @@ int ath12k_mac_set_he_txbf_conf(struct ath12k_link_vif *arvif);
 int ath12k_mac_pdev_resume(struct ath12k *ar);
 int ath12k_mac_op_set_monitor_flags(struct ieee80211_hw *hw,
 				    struct ieee80211_vif *vif, u32 flags);
+int ath12k_mac_op_ap_power_save(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+				int link_id,
+				struct cfg80211_ap_power_save_params *params);
 /* In the bitmap 0 indicates no puncturing and 1 indicated that sub channel is
  * punctured
  */

@@ -493,6 +493,7 @@ enum wmi_cmd_group {
 	WMI_GRP_LATENCY        = 0x47,
 	WMI_GRP_MLO            = 0x48,
 	WMI_GRP_SAWF           = 0x49,
+	WMI_GRP_ENERGY_MGMT    = 0x4e,
 };
 
 #define WMI_CMD_GRP(grp_id) (((grp_id) << 12) | 0x1)
@@ -634,6 +635,8 @@ enum wmi_tlv_cmd_id {
         WMI_VDEV_GET_BIG_DATA_P2_CMDID,
         /** set TPC PSD/non-PSD power */
         WMI_VDEV_SET_TPC_POWER_CMDID,
+	/** WMI cmd used to control DPS Assisting AP role config */
+	WMI_VDEV_ENERGY_MGMT_DPS_ASSISTING_ROLE_CONFIG_CMDID = 0x503D,
 	WMI_PEER_CREATE_CMDID = WMI_TLV_CMD(WMI_GRP_PEER),
 	WMI_PEER_DELETE_CMDID,
 	WMI_PEER_FLUSH_TIDS_CMDID,
@@ -971,6 +974,13 @@ enum wmi_tlv_cmd_id {
 	WMI_MLO_LINK_TTLM_COMPLETE_CMDID,
 	WMI_SAWF_SERVICE_CLASS_CFG_CMDID = WMI_TLV_CMD(WMI_GRP_SAWF),
 	WMI_SAWF_SERVICE_CLASS_DISABLE_CMDID,
+	/** WMI commands specific to Energy Management **/
+	/** WMI cmd used to control PCIe config */
+	WMI_ENERGY_MGMT_PCIE_CONFIG_CMDID = WMI_TLV_CMD(WMI_GRP_ENERGY_MGMT),
+	/** WMI cmd used to control PCIe LPM */
+	WMI_ENERGY_MGMT_PCIE_LPM_CMDID,
+	/** WMI cmd used to control Clock and Voltage config */
+	WMI_ENERGY_MGMT_DCVS_CONFIG_CMDID,
 };
 
 enum wmi_tlv_event_id {
@@ -2449,9 +2459,13 @@ enum wmi_tlv_tag {
 	WMI_TAG_TWT_VDEV_CONFIG_CMD = 0x4DE,
 	WMI_TAG_MLO_TLT_SELECTION_FOR_TID_SPRAY_EVENT_FIXED_PARAM = 0x4e0,
 	WMI_PDEV_SUSPEND_EVENT_FIXED_PARAM = 0x509,
+	WMI_TAG_ENERGY_MGMT_PCIE_CMD_FIXED_PARAM = 0x50E,
+	WMI_TAG_ENERGY_MGMT_PCIE_LPM__CMD_FIXED_PARAM = 0x50F,
+	WMI_TAG_ENERGY_MGMT_DCVS_CMD_FIXED_PARAM = 0x510,
 	WMI_TAG_MGMT_MPDU_FLOWQ_PARAMS = 0x514,
 	WMI_TAG_MGMT_MSDU_FLOWQ_PARAMS = 0x515,
 	WMI_TAG_HOL_MSDU_FLOWQ_PARAMS = 0x516,
+	WMI_TAG_ENERGY_MGMT_DPS_ASSISTING_ROLE_CMD_FIXED_PARAM = 0x525,
 	WMI_TAG_MAC_PHY_CAPABILITIES_EXT2 = 0x526,
 	WMI_TAG_MLO_PEER_TID_TO_LINK_MAP_EVENT_FIXED_PARAM = 0x544,
 	WMI_TAG_PEER_ASSOC_CIP_INFO,
@@ -9496,6 +9510,59 @@ struct wmi_pdev_set_ctl_table_cmd_fixed_param {
 	__le32 ctl_len;
 } __packed;
 
+enum wmi_pcie_gen_lane_config_type {
+	/* Channel bandwidth based semi static PCIe config */
+	WMI_PCIE_CHANNEL_BANDWIDTH,
+	/* Force a specific PCIe config */
+	WMI_PCIE_FORCED_STATIC,
+};
+
+struct wmi_energy_mgmt_pcie_cmd {
+	__le32 tlv_header;
+	__le32 enable;
+	__le32 config;
+	__le32 pcie_gen;
+	__le32 pcie_lane;
+} __packed;
+
+enum wmi_pcie_low_power_config_type {
+	WMI_PCIE_LPM_UNKNOWN,
+	WMI_PCIE_LPM_L0S,
+	WMI_PCIE_LPM_L1,
+	WMI_PCIE_LPM_L0S_L1,
+};
+
+struct wmi_energy_mgmt_pcie_lpm_cmd {
+	__le32 tlv_header;
+	__le32 enable;
+	__le32 config;
+} __packed;
+
+enum wmi_dcvs_config_type {
+	/* Enable clock and voltage scaling */
+	WMI_DCVS_ENABLE,
+	/* Disable clock and voltage scaling */
+	WMI_DCVS_DISABLE,
+	/* Operate with no limitation */
+	WMI_DCVS_NO_LIMITATION,
+};
+
+struct wmi_energy_mgmt_dcvs_cmd {
+	__le32 tlv_header;
+	__le32 config;
+} __packed;
+
+enum wmi_dps_assist_config_type {
+	WMI_DPS_ASSIST_DISABLE,
+	WMI_DPS_ASSIST_ENABLE,
+};
+
+struct wmi_energy_mgmt_dps_assist_cmd {
+	__le32 tlv_header;
+	__le32 vdev_id;
+	__le32 config;
+} __packed;
+
 int ath12k_wmi_cmd_send(struct ath12k_wmi_pdev *wmi, struct sk_buff *skb,
 			u32 cmd_id);
 struct sk_buff *ath12k_wmi_alloc_skb(struct ath12k_wmi_base *wmi_sc, u32 len);
@@ -9820,4 +9887,9 @@ int ath12k_wmi_atf_send_peer_config(struct ath12k *ar,
 int ath12k_wmi_peer_delete_all(struct ath12k_link_vif *arvif);
 int ath12k_wmi_send_aggr_size_cmd(struct ath12k *ar,
 				  struct set_custom_aggr_size_params *params);
+int ath12k_wmi_send_pcie_gen_lane(struct ath12k *ar, u32 enable, u32 config_type,
+				  u32 pcie_gen, u32 pcie_lane);
+int ath12k_wmi_send_pcie_low_power(struct ath12k *ar, u32 enable, u32 config_type);
+int ath12k_wmi_send_dcvs_cmd(struct ath12k *ar, u32 config);
+int ath12k_wmi_send_dps_assist_cmd(struct ath12k *ar, u32 vdev_id, u32 config);
 #endif
