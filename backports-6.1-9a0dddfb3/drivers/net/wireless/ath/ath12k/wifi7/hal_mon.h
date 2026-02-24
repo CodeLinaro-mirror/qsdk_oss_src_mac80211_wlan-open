@@ -213,12 +213,12 @@ struct hal_mon_usig_hdr {
 } __packed;
 
 #define HAL_RX_PHY_CMN_USER_INFO0_GI		GENMASK(17, 16)
-#define HAL_RX_PHY_CMN_USER_INFO0_PUNC_PAT	GENMASK(15, 0)
+#define HAL_RX_PHY_CMN_USER_INFO1_PUNC_PAT	GENMASK(31, 16)
 
 struct hal_phyrx_common_user_info {
 	__le32 rsvd0[2];
 	__le32 info0;
-	__le32 rsvd1;
+	__le32 info1;
 } __packed;
 
 #define HAL_RX_EHT_SIG_NDP_CMN_INFO0_SPATIAL_REUSE	GENMASK(3, 0)
