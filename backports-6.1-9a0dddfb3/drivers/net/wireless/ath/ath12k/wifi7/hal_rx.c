@@ -976,6 +976,32 @@ void ath12k_hal_reo_ring_ctrl_hash_ix0_setup(struct ath12k_base *ab)
 			   val);
 }
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+void ath12k_hal_reo_ring_ipa_ctrl_hash_ix0_setup(struct ath12k_base *ab)
+{
+	u32 reo_base = HAL_SEQ_WCSS_UMAC_REO_REG;
+	u32 curr, val;
+
+	curr = ath12k_hif_read32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_IX_0);
+
+	val = HAL_WIFI7_HASH_ROUTING_RING_SW4 |
+			HAL_WIFI7_HASH_ROUTING_RING_SW4 << 4 |
+			HAL_WIFI7_HASH_ROUTING_RING_SW4 << 8 |
+			HAL_WIFI7_HASH_ROUTING_RING_SW4 << 12 |
+			HAL_WIFI7_HASH_ROUTING_RING_SW4 << 16 |
+			HAL_WIFI7_HASH_ROUTING_RING_SW4 << 20 |
+			HAL_WIFI7_HASH_ROUTING_RING_SW4 << 24 |
+			HAL_WIFI7_HASH_ROUTING_RING_SW4 << 28;
+
+	ath12k_hif_write32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_IX_0,
+			   val);
+	ath12k_hif_write32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_IX_2,
+			   val);
+	ath12k_hif_write32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_IX_3,
+			   val);
+}
+#endif
+
 void ath12k_wifi7_hal_reo_hw_setup(struct ath12k_base *ab)
 {
 	struct ath12k_hal *hal = &ab->hal;

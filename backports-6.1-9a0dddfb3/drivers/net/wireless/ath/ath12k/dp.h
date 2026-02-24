@@ -223,7 +223,11 @@ enum ath12k_dp_eapol_key_type {
 #define DP_AVG_MPDUS_PER_TID_MAX 128
 #define DP_AVG_MSDUS_PER_MPDU 4
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#define DP_RX_HASH_ENABLE	0 /* Disable hash based Rx steering for IPA*/
+#else
 #define DP_RX_HASH_ENABLE	1 /* Enable hash based Rx steering */
+#endif
 
 #define DP_BA_WIN_SZ_MAX	1024
 
@@ -251,7 +255,11 @@ enum ath12k_dp_eapol_key_type {
 #define DP_RX_BUFFER_SIZE       1856
 #else
 //#ifdef CONFIG_ATH12K_MEM_PROFILE_DEFAULT TODO Fix the Default profile enablement
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#define DP_TX_COMP_RING_SIZE           8192
+#else
 #define DP_TX_COMP_RING_SIZE           32768
+#endif
 #define ATH12K_NUM_POOL_TX_DESC                32768
 #define DP_REO2PPE_RING_SIZE	16384
 #define DP_PPE2TCL_RING_SIZE	8192
@@ -266,7 +274,11 @@ enum ath12k_dp_eapol_key_type {
 #define ATH12K_DP_PDEV_TX_LIMIT        ATH12K_NUM_POOL_TX_DESC
 
 #define DP_WBM_RELEASE_RING_SIZE	64
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#define DP_TCL_DATA_RING_SIZE		8192
+#else
 #define DP_TCL_DATA_RING_SIZE		2048
+#endif
 #define DP_TX_IDR_SIZE			DP_TX_COMP_RING_SIZE
 #define DP_TCL_CMD_RING_SIZE		32
 #define DP_TCL_STATUS_RING_SIZE		32
@@ -277,7 +289,11 @@ enum ath12k_dp_eapol_key_type {
 #define DP_REO_EXCEPTION_RING_SIZE	128
 #define DP_REO_CMD_RING_SIZE		256
 #define DP_REO_STATUS_RING_SIZE		2048
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#define DP_RX_MAC_BUF_RING_SIZE		8192
+#else
 #define DP_RX_MAC_BUF_RING_SIZE		2048
+#endif
 #define DP_RXDMA_REFILL_RING_SIZE	2048
 #define DP_RXDMA_ERR_DST_RING_SIZE	1024
 
@@ -764,6 +780,9 @@ struct ath12k_dp {
 	spinlock_t tx_desc_lock[ATH12K_HW_MAX_QUEUES];
 
 	struct dp_rxdma_ring rx_refill_buf_ring;
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	struct ath12k_dp_extn ath12k_dp_extn;
+#endif
 	struct dp_srng rx_mac_buf_ring[MAX_RXDMA_PER_PDEV];
 	struct dp_srng rxdma_err_dst_ring[MAX_RXDMA_PER_PDEV];
 	struct ath12k_reo_q_addr_lut reoq_lut;

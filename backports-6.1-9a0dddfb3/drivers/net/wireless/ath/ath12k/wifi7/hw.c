@@ -252,7 +252,11 @@ static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274_msi8 = {
         .tx  = {
                 ATH12K_TX_RING_MASK_0,
                 ATH12K_TX_RING_MASK_1,
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+		ATH12K_TX_RING_MASK_2,
+#else
                 ATH12K_TX_RING_MASK_2 | ATH12K_TX_RING_MASK_3,
+#endif
                 0, 0, 0, 0, 0
         },
 	.host2rxmon = {
@@ -270,7 +274,11 @@ static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274_msi8 = {
                 0, 0, 0,
                 ATH12K_RX_RING_MASK_0,
                 ATH12K_RX_RING_MASK_1,
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+		ATH12K_RX_RING_MASK_2,
+#else
                 ATH12K_RX_RING_MASK_2 | ATH12K_RX_RING_MASK_3,
+#endif
 		0, 0
         },
 	.rx_err = {
@@ -290,7 +298,11 @@ static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274_msi8 = {
         },
         .host2rxdma = {
                 0, 0,
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+		0,
+#else
                 ATH12K_HOST2RXDMA_RING_MASK_0,
+#endif
                 0, 0, 0, 0
         },
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
@@ -324,7 +336,11 @@ static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274 = {
 		ATH12K_TX_RING_MASK_0,
 		ATH12K_TX_RING_MASK_1,
 		ATH12K_TX_RING_MASK_2,
+#ifndef CPTCFG_EXT_IPA_OFFLOAD
 		ATH12K_TX_RING_MASK_3,
+#else
+		0,
+#endif
 		0, 0, 0, 0,
 		0, 0, 0, 0, 0,
 	},
@@ -345,7 +361,11 @@ static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274 = {
 		ATH12K_RX_RING_MASK_0,
 		ATH12K_RX_RING_MASK_1,
 		ATH12K_RX_RING_MASK_2,
+#ifndef CPTCFG_EXT_IPA_OFFLOAD
 		ATH12K_RX_RING_MASK_3,
+#else
+		0,
+#endif
 		0, 0, 0, 0, 0,
 	},
 	.rx_err = {
@@ -866,7 +886,11 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.rxdma1_enable = true,
 		.num_rxdma_per_pdev = 1,
 		.num_rxdma_dst_ring = 0,
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+		.rx_mac_buf_ring = true,
+#else
 		.rx_mac_buf_ring = false,
+#endif
 		.vdev_start_delay = false,
 
 		.interface_modes = BIT(NL80211_IFTYPE_STATION) |
