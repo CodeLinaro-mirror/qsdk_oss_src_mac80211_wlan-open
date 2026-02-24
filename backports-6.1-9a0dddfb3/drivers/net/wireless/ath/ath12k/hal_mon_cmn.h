@@ -160,6 +160,7 @@ struct hal_rx_mon_mpdu_info {
 	    truncated:1;
 	u32 err_bitmap;
 	bool mpdu_end_received;
+	bool full_pkt;
 };
 
 struct hal_rx_nrp_info {

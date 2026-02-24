@@ -275,7 +275,8 @@ enum ath12k_dp_smart_mon_state {
 
 struct ath12k_dp_mon_mpdu_meta {
 	u8 decap_type;
-	u8 truncated:1;
+	u8 truncated:1,
+	   full_pkt:1;
 	u32 err_bitmap;
 };
 
