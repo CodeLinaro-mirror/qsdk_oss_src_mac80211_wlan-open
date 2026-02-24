@@ -3079,6 +3079,8 @@ static int ath12k_mlo_recovery_link_vif_reconfig(struct ath12k *ar,
 			params.cw_max = p->cwmax;
 			params.aifs = p->aifs;
 			params.txop = p->txop;
+			params.acm = p->acm;
+			params.noack = p->no_ack;
 
 			ath12k_mac_conf_tx(arvif, i, &params);
 		}
