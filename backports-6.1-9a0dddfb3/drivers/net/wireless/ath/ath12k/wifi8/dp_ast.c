@@ -164,27 +164,6 @@ ath12k_dp_ast_param_init(struct ath12k_dp_global_ast_table *ast_base,
 	ast_info->paddr = ast_base->ast_paddr;
 }
 
-int ath12k_dp_rx_ast_info_setup(struct ath12k_dp *dp)
-{
-	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
-	struct ath12k_hal_ast_param ast_info = {0};
-	struct ath12k_dp_global_ast_table *ast_base;
-
-	if (!dp_hw_grp) {
-		ath12k_err(NULL, "ast info setup dp_hw_grp is NULL\n");
-		return -EINVAL;
-	}
-
-	ast_base = ath12k_dp_get_global_ast_table(dp_hw_grp);
-	if (!ast_base) {
-		ath12k_err(NULL, "ast info setup unable to fetch ast_base\n");
-		return -EINVAL;
-	}
-
-	ath12k_dp_ast_param_init(ast_base, &ast_info);
-	return ath12k_dp_rx_htt_ast_info_setup(dp->ab, &ast_info);
-}
-
 int ath12k_ast_entry_rhash_add(struct ath12k_dp_hw_group *dp_hw_grp,
 			       struct ath12k_ast_entry *sw_ast_entry)
 {
@@ -308,6 +287,8 @@ int ath12k_dp_ast_table_init(struct ath12k_dp_hw_group *dp_hw_grp)
 	int ret;
 	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8 =
 			ath12k_get_dp_hw_group_wifi8(dp_hw_grp);
+	struct ath12k_dp *dp = NULL;
+	int i = 0;
 
 	if (!dp_hw_grp) {
 		ath12k_err(NULL, "ASE init dp_hw_grp is NULL\n");
@@ -379,8 +360,22 @@ int ath12k_dp_ast_table_init(struct ath12k_dp_hw_group *dp_hw_grp)
 
 	ast_base->ase_tx_cache_en = 1;
 	ath12k_dp_ast_param_init(ast_base, &ast_info);
-	if (!ath12k_ftm_mode)
+	if (!ath12k_ftm_mode) {
 		ath12k_wifi8_hal_hw_ase_init(ab, &ast_info);
+
+		/* send htt to all the chips */
+		for (i = 0; i < ATH12K_MAX_SOCS; i++) {
+			dp = dp_hw_grp->dp[i];
+			if (!dp)
+				continue;
+
+			ret = ath12k_dp_rx_htt_ast_info_setup(dp->ab, &ast_info);
+			if (ret) {
+				ath12k_err(ab, "failed to send ASE htt ret = %d", ret);
+				goto free_sw_ast_table;
+			}
+		}
+	}
 
 	if (ath12k_wifi8_dp_ase_tx_cache_enabled(dp_hw_grp))
 		init_completion(&dp_hw_grp_wifi8->peer_init_done);

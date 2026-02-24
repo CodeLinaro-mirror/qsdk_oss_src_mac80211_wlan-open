@@ -118,7 +118,6 @@ int ath12k_wifi8_dp_tx_cmd_status_handler(struct ath12k_dp *dp,
 bool ath12k_wifi8_dp_ase_tx_cache_enabled(struct ath12k_dp_hw_group *dp_hw_grp);
 int ath12k_dp_ast_table_init(struct ath12k_dp_hw_group *dp_hw_grp);
 void ath12k_dp_ast_table_deinit(struct ath12k_dp_hw_group *dp_hw_grp);
-int ath12k_dp_rx_ast_info_setup(struct ath12k_dp *dp);
 int ath12k_dp_ast_entry_create(struct ath12k_dp_hw_group *dp_hw_grp,
 			       struct ath12k_ast_entry_config_params *param);
 void ath12k_dp_ast_entry_delete(struct ath12k_dp_hw_group *dp_hw_grp,
