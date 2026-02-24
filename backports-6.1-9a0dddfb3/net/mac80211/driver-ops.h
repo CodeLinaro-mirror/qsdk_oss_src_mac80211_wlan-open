@@ -1934,4 +1934,24 @@ drv_qos_mgmt_cfg(struct ieee80211_sub_if_data *sdata,
 	return ret;
 }
 
+static inline int drv_ap_power_save(struct ieee80211_local *local,
+				    struct ieee80211_sub_if_data *sdata,
+				    int link_id,
+				    struct cfg80211_ap_power_save_params *params)
+{
+	int ret = -EOPNOTSUPP;
+
+	might_sleep();
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	if (local->ops->ap_power_save) {
+		trace_drv_ap_power_save(local, sdata, link_id, params);
+		ret = local->ops->ap_power_save(&local->hw, sdata ? &sdata->vif : NULL,
+						link_id, params);
+	}
+
+	trace_drv_return_int(local, ret);
+	return ret;
+}
+
 #endif /* __MAC80211_DRIVER_OPS */

@@ -4959,6 +4959,8 @@ struct ieee80211_ppe_vp_ds_params {
  * @get_afc_eirp_pwr: Get EIRP value for a given freq from the AFC payload.
  * @get_netstats: Get net stats for a netdevice
  * @get_6ghz_dev_deployment_type: Get the 6 GHz device deployment type.
+ * @ap_power_save: Introduces infrastructure in mac80211 to support forwarding of
+ *	AP Powersave configuration parameters from user space to driver.
  */
 struct ieee80211_ops {
 	void (*tx)(struct ieee80211_hw *hw,
@@ -5394,6 +5396,9 @@ struct ieee80211_ops {
 				u32 freq, u32 *eirp);
 	enum nl80211_6ghz_dev_deployment_type
 		(*get_6ghz_dev_deployment_type)(struct ieee80211_hw *hw);
+	int (*ap_power_save)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+			     int link_id,
+			     struct cfg80211_ap_power_save_params *params);
 };
 
 /**
