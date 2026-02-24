@@ -643,6 +643,9 @@ ath12k_dp_mon_tx_deep_free_ppdu_info(struct ath12k_pdev_dp *pdev_dp,
 		while ((mpdu = skb_dequeue(mpdu_q)))
 			dev_kfree_skb_any(mpdu);
 	}
+
+	mon_data->prot_ppdu_info.tx_info.ba_user_id = -1;
+	mon_data->data_ppdu_info.tx_info.ba_user_id = -1;
 }
 
 /**
