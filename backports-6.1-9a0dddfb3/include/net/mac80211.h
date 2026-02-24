@@ -421,6 +421,7 @@ enum ieee80211_bss_change {
 	BSS_CHANGED_ML_MAX_REC_LINKS	= BIT_ULL(39),
 	BSS_CHANGED_MLD_ADV_TTLM	= BIT_ULL(40),
 	BSS_CHANGED_LINK_ADV_TTLM	= BIT_ULL(41),
+	BSS_CHANGED_AP_DPS_ASSIST	= BIT_ULL(42),
 	/* when adding here, make sure to change ieee80211_reconfig */
 };
 
@@ -802,6 +803,7 @@ struct ieee80211_parsed_tpe {
  * @beacon_tx_mode: Beacon Tx Mode setting.
  * @ml_max_rec_links: ML Max recommended links
  * @uhr_support: does this BSS support UHR
+ * @dps_assist_support: does this BSS support DPS Assist Support.
  */
 struct ieee80211_bss_conf {
 	struct ieee80211_vif *vif;
@@ -922,6 +924,7 @@ struct ieee80211_bss_conf {
 	u8 ml_max_rec_links;
 	bool is_cfp_enabled;
 	bool uhr_support;
+	bool dps_assist_support;
 };
 
 /**
