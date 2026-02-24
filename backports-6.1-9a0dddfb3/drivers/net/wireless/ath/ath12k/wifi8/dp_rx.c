@@ -571,7 +571,7 @@ static bool ath12k_wifi8_dp_rx_check_fast_rx(struct ath12k_dp *dp,
 static int ath12k_wifi8_dp_rx_msdu_coalesce(struct ath12k_dp *dp,
 					    struct hal_rx_spd_data *rx_status_desc,
 					    struct sk_buff *first, u8 l3pad_bytes,
-					    int msdu_len, struct hal_rx_desc *desc,
+					    int msdu_len, struct hal_rx_desc **desc,
 					    int *idx, int num_msdus)
 {
 	struct ath12k_base *ab = dp->ab;
@@ -630,6 +630,9 @@ static int ath12k_wifi8_dp_rx_msdu_coalesce(struct ath12k_dp *dp,
 		return -ENOMEM;
 	}
 
+	if (space_extra > 0)
+		*desc = (struct hal_rx_desc *)(first->data - buf_first_hdr_len);
+
 	rem_len = msdu_len - buf_first_len;
 	msdu_idx++;
 	for (; msdu_idx < num_msdus && rem_len > 0; msdu_idx++) {
@@ -640,7 +643,7 @@ static int ath12k_wifi8_dp_rx_msdu_coalesce(struct ath12k_dp *dp,
 			buf_len = DP_RX_BUFFER_SIZE - hal_rx_desc_sz;
 		} else {
 			ldesc = (struct hal_rx_desc *)skb->data;
-			ath12k_wifi8_dp_rx_desc_end_tlv_copy(ab, desc, ldesc);
+			ath12k_wifi8_dp_rx_desc_end_tlv_copy(ab, *desc, ldesc);
 			ath12k_wifi8_dp_extract_rx_spd_data(hal, spd_desc_l, ldesc, 0);
 			buf_len = rem_len;
 		}
@@ -1390,7 +1393,8 @@ ath12k_wifi8_dp_rx_process_msdu(struct ath12k_pdev_dp *dp_pdev,
 	} else {
 		ret = ath12k_wifi8_dp_rx_msdu_coalesce(dp, rx_status_desc,
 						       msdu, l3_pad_bytes, msdu_len,
-						       rx_desc, &msdu_idx, num_msdus);
+						       &rx_desc, &msdu_idx,
+						       num_msdus);
 
 		*idx = msdu_idx;
 		if (ret) {
