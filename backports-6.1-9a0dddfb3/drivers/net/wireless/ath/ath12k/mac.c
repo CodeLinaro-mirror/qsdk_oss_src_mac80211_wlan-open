@@ -13646,6 +13646,7 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 	peer_param.ml_enabled = sta->mlo;
 	peer_param.peer_id = ath12k_dp_peer_get_peer_id(&ar->ah->dp_hw, sta->addr);
 	peer_param.sta_id = ath12k_dp_peer_get_sta_id(&ar->ah->dp_hw, sta->addr);
+	peer_param.epp_peer = sta->epp_peer;
 
 	ret = ath12k_peer_create(ar, arvif, sta, &peer_param);
 	if (ret) {
