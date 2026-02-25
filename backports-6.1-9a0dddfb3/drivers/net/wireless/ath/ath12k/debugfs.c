@@ -917,8 +917,10 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
                         "TQM", "Rxdma", "Reo", "FW", "SW" };
 
 	struct ath12k_pdev *pdev;
+	struct ath12k_pdev_dp *dp_pdev;
 	char *buf;
 	u32 center_freq = 0;
+	int tx_desc_in_use = 0;
 
 	buf = kzalloc(size, GFP_KERNEL);
 	if (!buf)
@@ -1224,6 +1226,19 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 	len += scnprintf(buf + len, size - len,
 			 "\nFIRST/LAST MSDU BIT MISSING COUNT: %u\n",
 			 device_stats->first_and_last_msdu_bit_miss);
+
+	rcu_read_lock();
+	if (ab->dp) {
+		for (i = 0; i < MAX_RADIOS; i++) {
+			dp_pdev = rcu_dereference(ab->dp->dp_pdevs[i]);
+			if (dp_pdev)
+				tx_desc_in_use +=
+					atomic_read(&dp_pdev->num_tx_pending);
+		}
+	}
+	rcu_read_unlock();
+	len += scnprintf(buf + len, size - len,
+			 "\nTx Desc In use: %d\n", tx_desc_in_use);
 
 	if (len > size)
 		len = size;
