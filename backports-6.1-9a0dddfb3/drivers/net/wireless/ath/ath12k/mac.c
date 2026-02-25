@@ -17861,7 +17861,7 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 			 */
 			memcpy(link_addr, link_conf->addr, ETH_ALEN);
 			if (arvif->link_id == ATH12K_DEFAULT_SCAN_LINK &&
-			    vif->valid_links && vif->type == NL80211_IFTYPE_STATION)
+			    vif->valid_links)
 				eth_random_addr(link_addr);
 			memcpy(arvif->bssid, link_addr, ETH_ALEN);
 		} else {
