@@ -2772,6 +2772,8 @@ void ath12k_wifi8_dp_tx_ring_cleanup(struct ath12k_base *ab)
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
 	int i;
 
+	ath12k_wifi8_hal_tqm_cmd_staging_free(ab);
+
 	for (i = 0; i < ab->hw_params->max_tx_ring; i++) {
 		ath12k_dp_srng_cleanup(ab, &dp->tx_ring[i].tcl_comp_ring);
 		ath12k_dp_srng_cleanup(ab, &dp->tx_ring[i].tcl_data_ring);
@@ -2789,7 +2791,6 @@ int ath12k_wifi8_dp_tx_ring_setup(struct ath12k_base *ab)
 	struct ath12k_dp *dp = ab->dp;
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
 	const struct ath12k_hal_tcl_to_cmp_rbm_map *map;
-	struct hal_srng *srng;
 	int ret;
 	u8 rbm_id;
 
@@ -2850,15 +2851,18 @@ int ath12k_wifi8_dp_tx_ring_setup(struct ath12k_base *ab)
 		goto err;
 	}
 
+	ret = ath12k_wifi8_hal_tqm_cmd_staging_alloc(ab);
+	if (ret) {
+		ath12k_warn(ab, "failed to allocate tqm staging buffer :%d\n", ret);
+		goto err;
+	}
+
 	ret = ath12k_dp_srng_setup(ab, &dp_wifi8->tqm_status_ring, HAL_TQM_STATUS, 0, 0,
 				   DP_TQM_STATUS_RING_SIZE);
 	if (ret) {
 		ath12k_warn(ab, "failed to set up tqm_status ring :%d\n", ret);
 		goto err;
 	}
-
-	srng = &ab->hal.srng_list[dp_wifi8->tqm_cmd_ring.ring_id];
-	ath12k_wifi8_hal_tqm_init_cmd_ring(ab, srng);
 
 	return 0;
 
