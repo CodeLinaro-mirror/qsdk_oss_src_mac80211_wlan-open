@@ -5,6 +5,7 @@
 
 #include "dp_tx_queue.h"
 #include "dp.h"
+#include "../dp_tx.h"
 
 u8 ath12k_tx_get_bank_id(struct ath12k_dp_peer *peer,
 			 enum htt_tx_tid_msduq_mpdu_type msduq_idx,
@@ -90,6 +91,7 @@ int ath12k_tx_classify_info_alloc(struct ath12k_dp_hw_group *dp_hw_grp,
 	enum ath12k_classify_bank_subid bank_sub_id;
 	struct device *dev = ath12k_dp_get_dev_from_dp_hw_group(dp_hw_grp);
 	struct ath12k_sta *ahsta;
+	u8 assoc_link_id;
 
 	if (!peer)
 		return -EINVAL;
@@ -168,9 +170,14 @@ int ath12k_tx_classify_info_alloc(struct ath12k_dp_hw_group *dp_hw_grp,
 		if (peer->sta) {
 			rcu_read_lock();
 			ahsta = ath12k_sta_to_ahsta(peer->sta);
-			ti.assoc_link_id = peer->sta->mlo ?
-					   ahsta->assoc_link_id :
-					   ahsta->deflink.link_id;
+			assoc_link_id = peer->sta->mlo ?
+					ahsta->assoc_link_id :
+					ahsta->deflink.link_id;
+			ti.assoc_link_id = ath12k_dp_get_hw_link_id(peer, assoc_link_id);
+			if (ti.assoc_link_id == ATH12K_INVALID_HW_LINKID) {
+				rcu_read_unlock();
+				return -EINVAL;
+			}
 			rcu_read_unlock();
 		}
 

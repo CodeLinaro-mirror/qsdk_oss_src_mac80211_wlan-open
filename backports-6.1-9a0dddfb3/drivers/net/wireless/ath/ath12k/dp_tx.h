@@ -10,6 +10,8 @@
 #include "core.h"
 #include "dp_ext_desc.h"
 
+#define ATH12K_INVALID_HW_LINKID 0xFF
+
 #define DP_SDWF_DEFINED_Q_PTID_MAX 2
 #define DP_SDWF_DEFAULT_Q_PTID_MAX 2
 #define DP_SDWF_TID_MAX 8
@@ -49,6 +51,8 @@ struct ath12k_tx_desc_info *ath12k_dp_tx_assign_buffer(struct ath12k_dp *dp,
 int ath12k_dp_tx_htt_h2t_vdev_stats_ol_req(struct ath12k *ar, u64 reset_bitmask);
 u8 ath12k_dp_get_link_id(struct ath12k_pdev_dp *dp_pdev,
 			 u8 hw_link_id, struct ath12k_dp_peer *peer);
+u8 ath12k_dp_get_hw_link_id(struct ath12k_dp_peer *peer,
+			    u8 link_id);
 void ath12k_dp_tx_update_peer_basic_stats(struct ath12k_dp_peer *peer,
 					  u32 msdu_len, u8 tx_status,
 					  u8 link_id, int ring_id);
