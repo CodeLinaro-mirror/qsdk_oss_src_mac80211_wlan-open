@@ -472,6 +472,24 @@ struct ath12k_dp_peer *ath12k_dp_vdev_peer_find(struct ath12k_dp_hw *dp_hw,
 }
 EXPORT_SYMBOL(ath12k_dp_vdev_peer_find);
 
+struct ath12k_dp_peer *ath12k_dp_vdev_peer_check(struct ath12k_dp_hw *dp_hw,
+						 u8 *addr, u8 hw_link_id)
+{
+	struct ath12k_dp_peer *dp_peer;
+
+	lockdep_assert_held(&dp_hw->peer_lock);
+
+	list_for_each_entry(dp_peer, &dp_hw->peers, list) {
+		if (ether_addr_equal(dp_peer->addr, addr) &&
+		    (dp_peer->hw_link_id == hw_link_id ||
+		     !dp_peer->is_vdev_peer))
+			return dp_peer;
+	}
+
+	return NULL;
+}
+EXPORT_SYMBOL(ath12k_dp_vdev_peer_check);
+
 struct ath12k_dp_peer *ath12k_dp_peer_create_find(struct ath12k_dp_hw *dp_hw, u8 *addr,
 						  struct ieee80211_sta *sta,
 						  bool mlo_peer)
