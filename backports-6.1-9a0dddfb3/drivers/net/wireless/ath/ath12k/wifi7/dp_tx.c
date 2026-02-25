@@ -2070,7 +2070,9 @@ ath12k_wifi7_dp_tx_update_txcompl(struct ath12k_pdev_dp *dp_pdev,
 		}
 
 		if (txrate.nss < 1 ||
-		    (txrate.nss > hweight32(dp_pdev->ar->pdev->cap.tx_chain_mask)))
+		    (dp_pdev->ar->pdev->cap.max_tx_nss &&
+		     (txrate.nss > dp_pdev->ar->pdev->cap.max_tx_nss)) ||
+		      (txrate.nss > hweight32(dp_pdev->ar->pdev->cap.tx_chain_mask)))
 			ath12k_warn(ab, "Invalid nss value: %d", txrate.nss);
 		else
 			txrate.mcs = ts->mcs + 8 * (txrate.nss - 1);

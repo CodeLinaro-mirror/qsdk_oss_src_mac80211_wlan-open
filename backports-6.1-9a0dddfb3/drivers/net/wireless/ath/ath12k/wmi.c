@@ -7851,6 +7851,7 @@ ath12k_wmi_tlv_mac_phy_caps_ext2_parse(struct ath12k_base *ab,
 				       struct ath12k_pdev *pdev)
 {
 	u32 bands = 0;
+	u32 nss_info;
 	int i;
 
 	if (ab->hw_params->single_pdev_only) {
@@ -7886,6 +7887,27 @@ ath12k_wmi_tlv_mac_phy_caps_ext2_parse(struct ath12k_base *ab,
 		ath12k_wmi_uhr_caps_parse(pdev, NL80211_BAND_6GHZ,
 					  caps->uhr_cap_mac_info_5ghz,
 					  caps->uhr_cap_phy_info_5ghz);
+	}
+
+	/* FW provides max TX/RX NSS info via nss_info in EXT2 caps */
+	nss_info = le32_to_cpu(caps->nss_info);
+	pdev->cap.max_tx_nss =
+		le32_get_bits(nss_info, WMI_MAC_PHY_CAPABILITIES_EXT2_MAX_TX_NSS_MASK);
+	pdev->cap.max_rx_nss =
+		le32_get_bits(nss_info, WMI_MAC_PHY_CAPABILITIES_EXT2_MAX_RX_NSS_MASK);
+
+	/* Sanity check FW-provided NSS values; cap to max supported (8) */
+	if (pdev->cap.max_tx_nss > WMI_MAX_NUM_SS) {
+		ath12k_dbg(ab, ATH12K_DBG_WMI,
+			   "pdev %d: Invalid max_tx_nss %d from FW, capping to %d\n",
+			   pdev->pdev_id, pdev->cap.max_tx_nss, WMI_MAX_NUM_SS);
+		pdev->cap.max_tx_nss = 0; /* Fallback to legacy behavior */
+	}
+	if (pdev->cap.max_rx_nss > WMI_MAX_NUM_SS) {
+		ath12k_dbg(ab, ATH12K_DBG_WMI,
+			   "pdev %d: Invalid max_rx_nss %d from FW, capping to %d\n",
+			   pdev->pdev_id, pdev->cap.max_rx_nss, WMI_MAX_NUM_SS);
+		pdev->cap.max_rx_nss = 0; /* Fallback to legacy behavior */
 	}
 
 	return 0;
@@ -19867,4 +19889,3 @@ int ath12k_wmi_send_aggr_size_cmd(struct ath12k *ar,
 
 	return ret;
 }
-

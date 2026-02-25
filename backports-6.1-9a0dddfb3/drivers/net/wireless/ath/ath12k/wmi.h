@@ -3416,7 +3416,20 @@ struct ath12k_wmi_caps_ext2_params {
 	__le32 uhr_cap_mac_info_5ghz[WMI_MAX_UHRCAP_MAC_SIZE];
 	__le32 uhr_cap_phy_info_2ghz[WMI_MAX_UHRCAP_PHY_SIZE];
 	__le32 uhr_cap_phy_info_5ghz[WMI_MAX_UHRCAP_PHY_SIZE];
+	__le32 npca_capability;
+	struct ath12k_wmi_ppe_threshold_params uhr_ppet_2ghz;
+	struct ath12k_wmi_ppe_threshold_params uhr_ppet_5ghz;
+	/* nss_info:
+	 * Bits  3:0  - Maximum supported Tx NSS
+	 * Bits  7:4  - Maximum supported Rx NSS
+	 * Bits 31:8  - Reserved
+	 */
+	__le32 nss_info;
 } __packed;
+
+/* NSS information GET macros for MAC/PHY capabilities EXT2 */
+#define WMI_MAC_PHY_CAPABILITIES_EXT2_MAX_TX_NSS_MASK GENMASK(3, 0)
+#define WMI_MAC_PHY_CAPABILITIES_EXT2_MAX_RX_NSS_MASK GENMASK(7, 4)
 
 #define WMI_HOST_WLAN_FLEXI_TWT_CAP	BIT(1)
 
