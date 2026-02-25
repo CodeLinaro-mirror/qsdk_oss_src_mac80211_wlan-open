@@ -628,7 +628,7 @@ struct ath12k_vap_cfg {
 	u32 he_snd_mode;
 	u32 gtx_enable;
 	u32 hwcts2self_ofdma;
-	u8 bcn_tx_power;
+	s32 bcn_tx_power;
 	u32 ampdu_aggr_size;
 	u32 amsdu_aggr_size;
 	u32 ba_bufsize;
