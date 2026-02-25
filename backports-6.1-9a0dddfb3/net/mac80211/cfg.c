@@ -1996,7 +1996,7 @@ static int ieee80211_stop_ap(struct wiphy *wiphy, struct net_device *dev,
 	 */
 	if ((rcu_access_pointer(link->conf->tx_bss_conf) == link->conf) ||
 	    wdev->is_netdev_going_down)
-		ieee80211_stop_mbssid(sdata, link_id);
+		ieee80211_stop_mbssid(sdata);
 	RCU_INIT_POINTER(link_conf->tx_bss_conf, NULL);
 
 	link_conf->enable_beacon = false;
