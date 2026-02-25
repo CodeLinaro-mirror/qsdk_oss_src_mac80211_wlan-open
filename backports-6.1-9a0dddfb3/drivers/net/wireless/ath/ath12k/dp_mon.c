@@ -964,7 +964,7 @@ static void ath12k_dp_mon_check_rssi_deauth(struct ath12k_dp_link_peer *peer,
 
 	cfg = &arvif->rssi_deauth_cfg;
 	if (!cfg) {
-		ath12k_generic_dbg(ATH12K_DBG_DATA,
+		ath12k_generic_dbg(ATH12K_DBG_DATA, ATH12K_DBG_L0,
 				   "failed to find the configured rssi threshold for peer_id %d\n",
 				   peer->peer_id);
 		return;
@@ -974,7 +974,7 @@ static void ath12k_dp_mon_check_rssi_deauth(struct ath12k_dp_link_peer *peer,
 	if (likely(!cfg->enabled))
 		return;
 
-	ath12k_generic_dbg(ATH12K_DBG_PEER,
+	ath12k_generic_dbg(ATH12K_DBG_PEER, ATH12K_DBG_L1,
 			   "peer: (%pM vif type: %d low rssi count: %d), cfg (en: %d thres %d grace: %d) last rssi: %d\n",
 			   peer->addr, peer->vif->type, peer->rssi_mon.low_rssi_count,
 			   cfg->enabled, cfg->rssi_threshold, cfg->grace_samples,
@@ -998,7 +998,7 @@ static void ath12k_dp_mon_check_rssi_deauth(struct ath12k_dp_link_peer *peer,
 
 	/* Check if we've hit the grace period */
 	if (peer->rssi_mon.low_rssi_count == cfg->grace_samples) {
-		ath12k_generic_dbg(ATH12K_DBG_PEER,
+		ath12k_generic_dbg(ATH12K_DBG_PEER, ATH12K_DBG_L1,
 				   "Enqueue peer for deauth: (%pM vif type: %d low rssi count: %d), cfg (en: %d thres %d grace: %d) last rssi: %d\n",
 				   peer->addr, peer->vif->type,
 				   peer->rssi_mon.low_rssi_count,
@@ -1359,9 +1359,9 @@ ath12k_dp_mon_ppdu_per_user_rx_time_update(struct ath12k_pdev_dp *dp_pdev,
 	peer = ath12k_dp_link_peer_find_by_peerid_index(dp_pdev->dp, dp_pdev,
 							user_stats->sw_peer_id);
 	if (!peer || !peer->sta) {
-		ath12k_dbg(dp_pdev->ar->ab, ATH12K_DBG_PEER,
-			   "peer stats not found on ppdu peer id %d\n",
-			   user_stats->sw_peer_id);
+		ath12k_dbg_level(dp_pdev->ar->ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+				 "peer stats not found on ppdu peer id %d\n",
+				 user_stats->sw_peer_id);
 		return;
 	}
 
@@ -1432,9 +1432,9 @@ ath12k_dp_mon_link_peer_signal_stats(struct ath12k_pdev_dp *dp_pdev,
 	peer = ath12k_dp_link_peer_find_by_peerid_index(dp_pdev->dp, dp_pdev,
 							user_stats->sw_peer_id);
 	if (!peer) {
-		ath12k_dbg(dp_pdev->ar->ab, ATH12K_DBG_PEER,
-			   "peer stats not found on ppdu peer id %d\n",
-			   user_stats->sw_peer_id);
+		ath12k_dbg_level(dp_pdev->ar->ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+				 "peer stats not found on ppdu peer id %d\n",
+				 user_stats->sw_peer_id);
 		rcu_read_unlock();
 		return;
 	}
@@ -1507,9 +1507,9 @@ ath12k_dp_mon_per_user_ppdu_rssi_update(struct ath12k_pdev_dp *dp_pdev,
 	peer = ath12k_dp_link_peer_find_by_peerid_index(dp_pdev->dp, dp_pdev,
 							user_stats->sw_peer_id);
 	if (!peer || !peer->sta) {
-		ath12k_dbg(dp_pdev->ar->ab, ATH12K_DBG_PEER,
-			   "peer stats not found on ppdu peer id %d\n",
-			   user_stats->sw_peer_id);
+		ath12k_dbg_level(dp_pdev->ar->ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+				 "peer stats not found on ppdu peer id %d\n",
+				 user_stats->sw_peer_id);
 		return;
 	}
 

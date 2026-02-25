@@ -1273,8 +1273,8 @@ void ath12k_dp_mon_tx_prepare_filter(struct ath12k_dp *dp,
 		dest_wmask->rxpcu_user_setup |= src_wmask->rxpcu_user_setup;
 		dest_wmask->compaction_enable |= src_wmask->compaction_enable;
 
-		ath12k_generic_dbg(ATH12K_DBG_DP_MON_TX, "Updated Tx filters for mode: %d",
-				   mode);
+		ath12k_generic_dbg(ATH12K_DBG_DP_MON_TX, ATH12K_DBG_L1,
+				   "Updated Tx filters for mode: %d", mode);
 		ath12k_dp_mon_tx_display_filters(dp, mode, tx_mon_filter);
 	}
 }
