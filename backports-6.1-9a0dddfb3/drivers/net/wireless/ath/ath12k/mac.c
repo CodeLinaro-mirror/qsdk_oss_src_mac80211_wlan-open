@@ -11696,6 +11696,7 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 	struct ath12k_wmi_peer_create_arg peer_param = {0};
 	int ret;
 	struct ath12k_link_sta *temp_arsta = NULL;
+	struct ath12k_sta *ahsta = arsta->ahsta;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -11765,6 +11766,46 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 				    arsta->addr, ret);
 			goto free_peer;
 		}
+	}
+
+	/*Fetch TK from EPPKE initiated link and install the same key for setup link
+	 *For EPPKE initiated link set key will be handled from userspace
+	 */
+	if (sta->mlo && sta->epp_peer &&
+	    ahsta->assoc_link_id != arsta->link_id) {
+		struct ath12k_link_sta *assoc_sta = &ahsta->deflink;
+		struct ath12k_link_vif *assoc_vif = assoc_sta->arvif;
+		struct ath12k *assoc_ar = assoc_vif->ar;
+		struct ath12k_base *assoc_ab = assoc_ar->ab;
+		struct ieee80211_key_conf *key = NULL;
+		struct ath12k_dp_link_peer *assoc_link_peer = NULL;
+		struct ath12k_dp *assoc_dp = ath12k_ab_to_dp(assoc_ar->ab);
+
+		spin_lock_bh(&assoc_ab->dp->dp_lock);
+		assoc_link_peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(assoc_dp,
+									       assoc_vif->vdev_id,
+									       assoc_sta->addr);
+		if (!assoc_link_peer) {
+			ath12k_warn(assoc_ab,
+				    "Failed to find Assoc peer vdev_id %d addr %pM\n",
+				    assoc_vif->vdev_id, assoc_sta->addr);
+			spin_unlock_bh(&assoc_ab->dp->dp_lock);
+			goto free_peer;
+		}
+		key = assoc_link_peer->dp_peer->keys[assoc_link_peer->dp_peer->ucast_keyidx];
+		if (!key) {
+			ath12k_warn(assoc_ab,
+				    "No pairwaise key found for EPPKE initiated link\n");
+			spin_unlock_bh(&assoc_ab->dp->dp_lock);
+			goto free_peer;
+		}
+		spin_unlock_bh(&assoc_ab->dp->dp_lock);
+
+		ret = ath12k_mac_set_key(arvif->ar, SET_KEY, arvif,
+					 arsta, key);
+		if (ret)
+			goto free_peer;
+		arsta->keys[key->keyidx] = key;
 	}
 
 	if (ab->hw_params->vdev_start_delay &&
