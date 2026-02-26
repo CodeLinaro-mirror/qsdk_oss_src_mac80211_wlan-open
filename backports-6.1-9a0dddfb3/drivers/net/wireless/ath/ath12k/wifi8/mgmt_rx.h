@@ -8,6 +8,7 @@
 
 #include "hw.h"
 #include "../mgmt_rx.h"
+#include "../qcn_extns/ath12k_cmn_extn.h"
 
 struct ath12k_base;
 
@@ -16,6 +17,9 @@ struct ath12k_mgmt_wifi8 {
 	struct mgmt_srng reo_dst_rx_err_ring;
 	struct mgmt_srng wbm_refill_ring;
 	struct mgmt_srng wbm_idle_buf_ring;
+#ifdef CPTCFG_QCN_EXTN
+	struct ath12k_mgmt_wifi8_extn mgmt_wifi8_extn;
+#endif
 };
 
 struct ath12k_mgmt *ath12k_wifi8_mgmt_init(struct ath12k_base *ab);
