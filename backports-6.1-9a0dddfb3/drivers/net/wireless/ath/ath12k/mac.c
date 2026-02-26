@@ -13376,7 +13376,7 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 	struct wireless_dev *wdev;
 	struct ath12k *ar = ah->radio;
 	struct ath12k_hw_group *ag = ar->ab->ag;
-	unsigned long links_map;
+	unsigned long links_map = 0;
 	bool is_recovery = false;
 	u8 link_id = 0, active_num_devices;
 	u8 t_link_id = 0;
@@ -13661,6 +13661,7 @@ ml_station_remove:
 	 * needs special handling. Normal sta will be handled in generic
 	 * handler below
 	 */
+	links_map = ahsta->links_map;
 	if (old_state == IEEE80211_STA_NONE &&
 	    new_state == IEEE80211_STA_NOTEXIST) {
 		if (sta->mlo) {
@@ -13675,7 +13676,6 @@ ml_station_remove:
 			if (!WARN_ON(!arvif || !arsta))
 				ath12k_mac_station_remove(arvif->ar, arvif, arsta);
 		}
-		links_map = ahsta->links_map;
 		for_each_set_bit(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
 			arvif = wiphy_dereference(wiphy, ahvif->link[link_id]);
 			if (arvif)
