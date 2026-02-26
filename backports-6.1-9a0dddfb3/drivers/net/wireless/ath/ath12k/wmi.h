@@ -1006,6 +1006,8 @@ enum wmi_tlv_cmd_id {
 	WMI_ENERGY_MGMT_PCIE_LPM_CMDID,
 	/** WMI cmd used to control Clock and Voltage config */
 	WMI_ENERGY_MGMT_DCVS_CONFIG_CMDID,
+	/** Command to Handle Energy Management OEM's opaque data */
+	WMI_ENERGY_MGMT_OEM_DATA_CMDID = 0x4E007,
 };
 
 enum wmi_tlv_event_id {
@@ -1257,6 +1259,7 @@ enum wmi_tlv_event_id {
 	WMI_MLO_PRIMARY_LINK_PEER_MIGRATION_EVENT_ID,
 	WMI_MLO_TLT_SELECTION_FOR_TID_SPRAY_EVENTID = 0x4800C,
 	WMI_ESP_ESTIMATE_EVENTID = WMI_EVT_GRP_START_ID(WMI_GRP_ESP),
+	WMI_ENERGY_MGMT_OEM_DATA_EVENTID = WMI_EVT_GRP_START_ID(WMI_GRP_ENERGY_MGMT),
 };
 
 enum wmi_tlv_pdev_param {
@@ -2509,6 +2512,8 @@ enum wmi_tlv_tag {
 	WMI_TAG_MAC_PHY_CAPABILITIES_EXT2 = 0x526,
 	WMI_TAG_PEER_ASSOC_CIP_INFO = 0x527,
 	WMI_TAG_MLO_PEER_TID_TO_LINK_MAP_EVENT_FIXED_PARAM = 0x544,
+	WMI_ENERGY_MGMT_OEM_DATA_FIXED_PARAM = 0x56E,
+	WMI_ENERGY_MGMT_OEM_DATA_EVENT_FIXED_PARAM,
 	WMI_TAG_SHARED_CU_MEM_CONFIG = 0x577,
 	WMI_TAG_SHARED_MEM_TBTT_OFFSET_INFO = 0x578,
 	WMI_TAG_PDEV_SET_CUMAC_CHIP = 0x57A,
@@ -9955,6 +9960,17 @@ struct wmi_energy_mgmt_dps_assist_cmd {
 	__le32 config;
 } __packed;
 
+struct wmi_energy_mgmt_oem_data_cmd {
+	__le32 tlv_header;
+	__le32 content_type;
+	__le32 num_bytes_valid;
+} __packed;
+
+struct wmi_energy_mgmt_oem_data_event {
+	__le32 content_type;
+	__le32 num_bytes_valid;
+} __packed;
+
 int ath12k_wmi_cmd_send(struct ath12k_wmi_pdev *wmi, struct sk_buff *skb,
 			u32 cmd_id);
 struct sk_buff *ath12k_wmi_alloc_skb(struct ath12k_wmi_base *wmi_sc, u32 len);
@@ -10291,4 +10307,6 @@ int ath12k_wmi_send_dcvs_cmd(struct ath12k *ar, u32 config);
 int ath12k_wmi_send_dps_assist_cmd(struct ath12k *ar, u32 vdev_id, u32 config);
 int ath12k_wmi_send_tdma_schedule_request(struct ath12k *ar,
 					  const struct ath12k_tdma_sched_info *sched);
+int ath12k_wmi_send_energy_mgmt_oem_data(struct ath12k *ar, u32 content_type,
+					 u32 num_bytes_valid, u8 *data);
 #endif

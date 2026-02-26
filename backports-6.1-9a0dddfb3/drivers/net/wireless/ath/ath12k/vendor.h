@@ -28,6 +28,8 @@
 #define QCA_VENDOR_WLAN_TELEMETRY_MCS_MAX \
 	(QCA_VENDOR_WLAN_TELEMETRY_EHT_MCS_MAX + 1)
 
+#define QCA_VENDOR_WLAN_OEM_DATA_BUF_MAX_SIZE		1024
+
 #define INVALID_RADIO_INDEX 0xFF
 
 #define ATH12K_MGMT_TX_RETRY_LIMIT_MIN 1
@@ -101,6 +103,13 @@ struct ieee80211_wlanconfig_me_list {
 	enum ieee80211_me_list me_list_type;	/* ME List type */
 };
 
+struct oem_vendor_build {
+	u8 l_radio_id;
+	__le32 l_content_type;
+	__le32 l_num_bytes_valid;
+	u8 l_data[];
+} __packed;
+
 /**
  * @QCA_NL80211_VENDOR_SUBCMD_WLAN_CTL_TABLE: This vendor subcommand is used to
  *     configure the CTL (Conformance Test Limit) table for a specific band.
@@ -118,6 +127,7 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_GET_CAP_INFO = 160,
 	QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_GET_STATUS = 161,
 	QCA_NL80211_VENDOR_SUBCMD_GET_RROP_INFO = 163,
+	QCA_NL80211_VENDOR_SUBCMD_OEM_DATA = 182,
 	QCA_NL80211_VENDOR_SUBCMD_GET_STA_INFO = 186,
 	QCA_NL80211_VENDOR_SUBCMD_RM_GENERIC = 206,
 	QCA_NL80211_VENDOR_SUBCMD_SCS_RULE_CONFIG = 218,
@@ -175,6 +185,7 @@ enum qca_nl80211_vendor_events {
 	QCA_NL80211_VENDOR_SUBCMD_EXTENDED_MONITOR_INDEX = 14,
 	QCA_NL80211_VENDOR_SUBCMD_TPC_EIRP_EVENT_INDEX = 15,
 	QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_COMPLETE_INDEX = 16,
+	QCA_NL80211_VENDOR_SUBCMD_OEM_DATA_INDEX = 17,
 };
 
 /**
@@ -5552,6 +5563,58 @@ enum qca_wlan_vendor_attr_get_sta_info {
 	QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_AFTER_LAST - 1,
 };
 
+/**
+ * enum qca_vendor_oem_device_type - Represents the target device in firmware.
+ * It is used by QCA_WLAN_VENDOR_ATTR_OEM_DEVICE_INFO.
+ *
+ * @QCA_VENDOR_OEM_DEVICE_VIRTUAL: The command is intended for
+ * a virtual device.
+ *
+ * @QCA_VENDOR_OEM_DEVICE_PHYSICAL: The command is intended for
+ * a physical device.
+ */
+enum qca_vendor_oem_device_type {
+	QCA_VENDOR_OEM_DEVICE_VIRTUAL = 0,
+	QCA_VENDOR_OEM_DEVICE_PHYSICAL = 1,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_oem_data_params - Used by the vendor command/event
+ * QCA_NL80211_VENDOR_SUBCMD_OEM_DATA.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_OEM_DATA_CMD_DATA: This NLA_BINARY attribute is
+ * used to set/query the data to/from the firmware. On query, the same
+ * attribute is used to carry the respective data in the reply sent by the
+ * driver to userspace. The request to set/query the data and the format of the
+ * respective data from the firmware are embedded in the attribute. The
+ * maximum size of the attribute payload is 1024 bytes.
+ * Userspace has to set the QCA_WLAN_VENDOR_ATTR_OEM_DATA_RESPONSE_EXPECTED
+ * attribute when the data is queried from the firmware.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_OEM_DEVICE_INFO: The binary blob will be routed
+ * based on this field. This optional attribute is included to specify whether
+ * the device type is a virtual device or a physical device for the
+ * command/event. This attribute can be omitted for a virtual device (default)
+ * command/event.
+ * This u8 attribute is used to carry information for the device type using
+ * values defined by enum qca_vendor_oem_device_type.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_OEM_DATA_RESPONSE_EXPECTED: This NLA_FLAG attribute
+ * is set when the userspace queries data from the firmware. This attribute
+ * should not be set when userspace sets the OEM data to the firmware.
+ */
+enum qca_wlan_vendor_attr_oem_data_params {
+	QCA_WLAN_VENDOR_ATTR_OEM_DATA_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_OEM_DATA_CMD_DATA = 1,
+	QCA_WLAN_VENDOR_ATTR_OEM_DEVICE_INFO = 2,
+	QCA_WLAN_VENDOR_ATTR_OEM_DATA_RESPONSE_EXPECTED = 3,
+
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_OEM_DATA_PARAMS_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_OEM_DATA_PARAMS_MAX =
+		QCA_WLAN_VENDOR_ATTR_OEM_DATA_PARAMS_AFTER_LAST - 1,
+};
+
 #define ATH12K_VENDOR_PUT(vendor_event, type, attr, param)             \
 	do {                                                            \
 		if (nla_put_##type(vendor_event, attr, param)) {        \
@@ -5592,6 +5655,8 @@ void ath12k_vendor_rssi_rate_notify_breach(struct ieee80211_vif *vif, u8 *mac_ad
 					   u8 breach_type, u32 threshold_value,
 					   u32 detected_value, bool set_clear,
 					   u8 *mld_addr);
+int ath12k_vendor_send_es_oem_data(struct ieee80211_hw *hw, u8 radio_id, u32 content_type,
+				   u32 num_bytes_valid, const u8 *data);
 int ath12k_vendor_register(struct ath12k_hw *ah);
 int ath12k_vendor_put_umac_migration_notif(struct ieee80211_vif *vif,
 					   u8 *mld_addr, u8 link_id);

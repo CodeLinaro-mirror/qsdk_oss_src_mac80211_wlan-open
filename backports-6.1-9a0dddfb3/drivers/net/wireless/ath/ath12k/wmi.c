@@ -17294,6 +17294,95 @@ int ath12k_wmi_send_tdma_schedule_request(struct ath12k *ar,
 	return ret;
 }
 
+int ath12k_wmi_send_energy_mgmt_oem_data(struct ath12k *ar, u32 content_type,
+					 u32 num_bytes_valid, u8 *data)
+{
+	struct wmi_energy_mgmt_oem_data_cmd *cmd;
+	size_t aligned_len;
+	struct wmi_tlv *tlv;
+	struct sk_buff *skb;
+	int len, ret;
+	void *ptr;
+
+	aligned_len = roundup(num_bytes_valid, sizeof(u32));
+	len = sizeof(*cmd) + TLV_HDR_SIZE + aligned_len;
+
+	skb = ath12k_wmi_alloc_skb(ar->wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	ptr = skb->data;
+	cmd = (struct wmi_energy_mgmt_oem_data_cmd *)skb->data;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_ENERGY_MGMT_OEM_DATA_FIXED_PARAM,
+						 sizeof(*cmd));
+	cmd->content_type = content_type;
+	cmd->num_bytes_valid = num_bytes_valid;
+
+	ptr += sizeof(*cmd);
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_ARRAY_BYTE, aligned_len);
+	memcpy(tlv->value, data, num_bytes_valid);
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "WMI energy service OEM Data cmd content type %u\n",
+		   content_type);
+
+	ret = ath12k_wmi_cmd_send(ar->wmi, skb, WMI_ENERGY_MGMT_OEM_DATA_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed to send energy service OEM Data wmi cmd\n");
+		dev_kfree_skb(skb);
+		return ret;
+	}
+
+	return 0;
+}
+
+static void ath12k_wmi_energy_mgmt_oem_data_event(struct ath12k_base *ab,
+						  struct sk_buff *skb)
+{
+	const struct wmi_energy_mgmt_oem_data_event *oem_data_event;
+	const struct wmi_tlv *tlv;
+	struct ieee80211_hw *hw;
+	struct ath12k *ar;
+	u32 content_type, num_bytes_valid;
+	const void **tb;
+	u8 radio_id;
+
+	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
+	if (IS_ERR(tb)) {
+		ath12k_warn(ab, "failed to parse OEM data tlv\n");
+		return;
+	}
+	oem_data_event = tb[WMI_ENERGY_MGMT_OEM_DATA_EVENT_FIXED_PARAM];
+	if (!oem_data_event) {
+		ath12k_warn(ab, "failed to fetch OEM data event\n");
+		kfree(tb);
+		return;
+	}
+
+	content_type = le32_to_cpu(oem_data_event->content_type);
+	num_bytes_valid = le32_to_cpu(oem_data_event->num_bytes_valid);
+
+	tlv = tb[WMI_TAG_ARRAY_BYTE];
+
+	rcu_read_lock();
+	ar = ath12k_mac_get_any_ar(ab);
+	if (!ar) {
+		ath12k_warn(ab, "invalid ar for Energy Service OEM data event\n");
+		rcu_read_unlock();
+		return;
+	}
+	hw = ar->ah->hw;
+	radio_id = ar->radio_idx;
+	rcu_read_unlock();
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "Energy Service OEM data event");
+
+	ath12k_vendor_send_es_oem_data(hw, radio_id, content_type,
+				       num_bytes_valid, tlv->value);
+}
+
 static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
@@ -17561,6 +17650,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 		break;
 	case WMI_GPIO_INPUT_EVENTID:
 		ath12k_wmi_gpio_input_event(ab, skb);
+		break;
+	case WMI_ENERGY_MGMT_OEM_DATA_EVENTID:
+		ath12k_wmi_energy_mgmt_oem_data_event(ab, skb);
 		break;
 	default:
 		if (!ath12k_wmi_op_rx_extn(id, ab, skb))

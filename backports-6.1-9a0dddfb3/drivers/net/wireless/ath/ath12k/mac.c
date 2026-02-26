@@ -1310,6 +1310,30 @@ struct ath12k *ath12k_mac_get_ar_by_pdev_id(struct ath12k_base *ab, u32 pdev_id)
 	return NULL;
 }
 
+struct ath12k *ath12k_mac_get_any_ar(struct ath12k_base *ab)
+{
+	int i;
+	struct ath12k_pdev *pdev;
+
+	if (ab->hw_params->single_pdev_only) {
+		pdev = rcu_dereference(ab->pdevs_active[0]);
+		return pdev ? pdev->ar : NULL;
+	}
+
+	for (i = 0; i < ab->num_radios; i++) {
+		if (ab->fw_mode == ATH12K_FIRMWARE_MODE_FTM ||
+		    ab->ag->wsi_remap_in_progress)
+			pdev = &ab->pdevs[i];
+		else
+			pdev = rcu_dereference(ab->pdevs_active[i]);
+
+		if (pdev && pdev->ar)
+			return pdev->ar;
+	}
+
+	return NULL;
+}
+
 bool ath12k_mac_is_ml_arvif(struct ath12k_link_vif *arvif)
 {
 	struct ath12k_vif *ahvif = arvif->ahvif;

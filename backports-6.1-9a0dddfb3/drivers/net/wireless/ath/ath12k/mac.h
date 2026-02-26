@@ -264,6 +264,7 @@ int ath12k_mac_btcoex_config(struct ath12k *ar, struct ath12k_link_vif *arvif,
 			   int coex, u32 wlan_prio_mask, u8 wlan_weight);
 struct ath12k *ath12k_mac_get_ar_by_vdev_id(struct ath12k_base *ab, u32 vdev_id);
 struct ath12k *ath12k_mac_get_ar_by_pdev_id(struct ath12k_base *ab, u32 pdev_id);
+struct ath12k *ath12k_mac_get_any_ar(struct ath12k_base *ab);
 
 void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
 				  struct ath12k_link_vif *arvif,
