@@ -441,6 +441,14 @@ static const struct nla_policy nl80211_txattr_policy[NL80211_TXRATE_MAX + 1] = {
 	[NL80211_TXRATE_EHT_LTF] = NLA_POLICY_RANGE(NLA_U8,
 						    NL80211_RATE_INFO_EHT_1XLTF,
 						    NL80211_RATE_INFO_EHT_4XLTF),
+	[NL80211_TXRATE_UHR] =
+		NLA_POLICY_EXACT_LEN(sizeof(struct nl80211_txrate_uhr)),
+	[NL80211_TXRATE_UHR_GI] =  NLA_POLICY_RANGE(NLA_U8,
+						    NL80211_RATE_INFO_UHR_GI_0_8,
+						    NL80211_RATE_INFO_UHR_GI_3_2),
+	[NL80211_TXRATE_UHR_LTF] = NLA_POLICY_RANGE(NLA_U8,
+						    NL80211_RATE_INFO_UHR_1XLTF,
+						    NL80211_RATE_INFO_UHR_4XLTF),
 };
 
 static const struct nla_policy
@@ -6349,6 +6357,56 @@ static bool eht_set_mcs_mask(struct genl_info *info, struct wireless_dev *wdev,
 	return true;
 }
 
+static bool uhr_set_mcs_mask(struct genl_info *info, struct wireless_dev *wdev,
+			     struct ieee80211_supported_band *sband,
+			     struct nl80211_txrate_uhr *txrate,
+			     u32 mcs[NL80211_UHR_NSS_MAX])
+{
+	const struct ieee80211_sta_he_cap *he_cap;
+	const struct ieee80211_sta_eht_cap *eht_cap;
+	const struct ieee80211_sta_uhr_cap *uhr_cap;
+	u32 tx_mcs_mask[NL80211_UHR_NSS_MAX] = { 0 };
+	u16 eht_mcs_mask[NL80211_EHT_NSS_MAX] = { 0 };
+	u8 i;
+
+	he_cap = ieee80211_get_he_iftype_cap(sband, wdev->iftype);
+	if (!he_cap)
+		return false;
+
+	eht_cap = ieee80211_get_eht_iftype_cap(sband, wdev->iftype);
+	if (!eht_cap)
+		return false;
+
+	uhr_cap = ieee80211_get_uhr_iftype_cap(sband, wdev->iftype);
+	if (!uhr_cap)
+		return false;
+
+	/* Build uhr_mcs_mask from EHT and HE capabilities */
+	if (eht_build_mcs_mask(info, he_cap, eht_cap, eht_mcs_mask))
+		return false;
+
+	/* MCS 14 is not defined in UHR as per Draft P802.11bn_D1.4*/
+	eht_mcs_mask[0] &= ~0x4000;
+
+	memset(mcs, 0, sizeof(u32) * NL80211_UHR_NSS_MAX);
+	for (i = 0; i < NL80211_UHR_NSS_MAX; i++) {
+		tx_mcs_mask[i] = eht_mcs_mask[i];
+		/* EHT-MCS 0-7 are mapped to UHR-MCS 0-7 and iMCS 17, 19, 20 */
+		if (tx_mcs_mask[i] & 0xFF)
+			tx_mcs_mask[i] |= 0x1A0000;
+		/* EHT-MCS 8-9 are mapped to UHR-MCS 8-9 and iMCS 23 */
+		if (tx_mcs_mask[i] & 0x300)
+			tx_mcs_mask[i] |= 0x800000;
+
+		if ((tx_mcs_mask[i] & txrate->mcs[i]) == txrate->mcs[i])
+			mcs[i] = txrate->mcs[i];
+		else
+			return false;
+	}
+
+	return true;
+}
+
 static int nl80211_parse_tx_bitrate_mask(struct genl_info *info,
 					 struct nlattr *attrs[],
 					 enum nl80211_attrs attr,
@@ -6361,7 +6419,7 @@ static int nl80211_parse_tx_bitrate_mask(struct genl_info *info,
 	struct nlattr *tb[NL80211_TXRATE_MAX + 1];
 	struct cfg80211_registered_device *rdev = info->user_ptr[0];
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
-	int rem, i;
+	int rem, i, j;
 	struct nlattr *tx_rates;
 	struct ieee80211_supported_band *sband;
 	u16 vht_tx_mcs_map, he_tx_mcs_map;
@@ -6371,6 +6429,7 @@ static int nl80211_parse_tx_bitrate_mask(struct genl_info *info,
 	for (i = 0; i < NUM_NL80211_BANDS; i++) {
 		const struct ieee80211_sta_he_cap *he_cap;
 		const struct ieee80211_sta_eht_cap *eht_cap;
+		const struct ieee80211_sta_uhr_cap *uhr_cap;
 
 		if (!default_all_enabled)
 			break;
@@ -6410,12 +6469,30 @@ static int nl80211_parse_tx_bitrate_mask(struct genl_info *info,
 		mask->control[i].eht_gi = 0xFF;
 		mask->control[i].eht_ltf = 0xFF;
 
+		uhr_cap = ieee80211_get_uhr_iftype_cap(sband, wdev->iftype);
+		if (!uhr_cap)
+			continue;
+
+		for (j = 0; j < NL80211_UHR_NSS_MAX; j++) {
+			mask->control[i].uhr_mcs[j] = mask->control[i].eht_mcs[j];
+			/* EHT-MCS 0-7 are mapped to UHR-MCS 0-7 and iMCS 17, 19, 20 */
+			if (mask->control[i].uhr_mcs[j] & 0xFF)
+				mask->control[i].uhr_mcs[j] |= 0x1A0000;
+			/* EHT-MCS 8-9 are mapped to UHR-MCS 8-9 and iMCS 23 */
+			if (mask->control[i].uhr_mcs[j] & 0x300)
+				mask->control[i].uhr_mcs[j] |= 0x800000;
+		}
+
+		mask->control[i].uhr_gi = 0xFF;
+		mask->control[i].uhr_ltf = 0xFF;
+
 		mask->control[i].legacy_mcs_changed = false;
 		mask->control[i].ht_mcs_changed = false;
 		mask->control[i].vht_mcs_changed = false;
 		mask->control[i].he_mcs_changed = false;
 		mask->control[i].he_ul_mcs_changed = false;
 		mask->control[i].eht_mcs_changed = false;
+		mask->control[i].uhr_mcs_changed = false;
 	}
 
 	if (!attrs[attr])
@@ -6522,14 +6599,32 @@ static int nl80211_parse_tx_bitrate_mask(struct genl_info *info,
 			mask->control[band].eht_ltf =
 				nla_get_u8(tb[NL80211_TXRATE_EHT_LTF]);
 
+		if (tb[NL80211_TXRATE_UHR] &&
+		    !uhr_set_mcs_mask(info, wdev, sband,
+				      nla_data(tb[NL80211_TXRATE_UHR]),
+				      mask->control[band].uhr_mcs))
+			return -EINVAL;
+
+		if (tb[NL80211_TXRATE_UHR])
+			mask->control[band].uhr_mcs_changed = true;
+
+		if (tb[NL80211_TXRATE_UHR_GI])
+			mask->control[band].uhr_gi =
+				nla_get_u8(tb[NL80211_TXRATE_UHR_GI]);
+
+		if (tb[NL80211_TXRATE_UHR_LTF])
+			mask->control[band].uhr_ltf =
+				nla_get_u8(tb[NL80211_TXRATE_UHR_LTF]);
+
 		if (mask->control[band].legacy == 0) {
-			/* don't allow empty legacy rates if HT, VHT or HE
-			 * are not even supported.
+			/* don't allow empty legacy rates if HT, VHT, HE, EHT
+			 * or UHR are not even supported.
 			 */
 			if (!(rdev->wiphy.bands[band]->ht_cap.ht_supported ||
 			      rdev->wiphy.bands[band]->vht_cap.vht_supported ||
 			      ieee80211_get_he_iftype_cap(sband, wdev->iftype) ||
-			      ieee80211_get_eht_iftype_cap(sband, wdev->iftype)))
+			      ieee80211_get_eht_iftype_cap(sband, wdev->iftype) ||
+			      ieee80211_get_uhr_iftype_cap(sband, wdev->iftype)))
 				return -EINVAL;
 
 			for (i = 0; i < IEEE80211_HT_MCS_MASK_LEN; i++)
@@ -6546,6 +6641,10 @@ static int nl80211_parse_tx_bitrate_mask(struct genl_info *info,
 
 			for (i = 0; i < NL80211_EHT_NSS_MAX; i++)
 				if (mask->control[band].eht_mcs[i])
+					goto out;
+
+			for (i = 0; i < NL80211_UHR_NSS_MAX; i++)
+				if (mask->control[band].uhr_mcs[i])
 					goto out;
 
 			/* legacy and mcs rates may not be both empty */

@@ -4028,6 +4028,30 @@ enum nl80211_eht_ru_alloc {
 };
 
 /**
+ * enum nl80211_uhr_gi - UHR guard interval
+ * @NL80211_RATE_INFO_UHR_GI_0_8: 0.8 usec
+ * @NL80211_RATE_INFO_UHR_GI_1_6: 1.6 usec
+ * @NL80211_RATE_INFO_UHR_GI_3_2: 3.2 usec
+ */
+enum nl80211_uhr_gi {
+	NL80211_RATE_INFO_UHR_GI_0_8,
+	NL80211_RATE_INFO_UHR_GI_1_6,
+	NL80211_RATE_INFO_UHR_GI_3_2,
+};
+
+/**
+ * enum nl80211_uhr_ltf - UHR long training field
+ * @NL80211_RATE_INFO_UHR_1xLTF: 3.2 usec
+ * @NL80211_RATE_INFO_UHR_2xLTF: 6.4 usec
+ * @NL80211_RATE_INFO_UHR_4xLTF: 12.8 usec
+ */
+enum nl80211_uhr_ltf {
+	NL80211_RATE_INFO_UHR_1XLTF,
+	NL80211_RATE_INFO_UHR_2XLTF,
+	NL80211_RATE_INFO_UHR_4XLTF,
+};
+
+/**
  * enum nl80211_rate_info - bitrate information
  *
  * These attribute types are used with %NL80211_STA_INFO_TXRATE
@@ -5867,6 +5891,10 @@ enum nl80211_key_attributes {
  * 	see &struct nl80211_txrate_eht
  * @NL80211_TXRATE_EHT_GI: configure EHT GI, 0.8us, 1.6us and 3.2us.
  * @NL80211_TXRATE_EHT_LTF: configure EHT LTF, 1XLTF, 2XLTF and 4XLTF.
+ * @NL80211_TXRATE_UHR: UHR rates allowed for TX rate selection,
+ *	see &struct nl80211_txrate_uhr
+ * @NL80211_TXRATE_UHR_GI: configure UHR GI, 0.8us, 1.6us and 3.2us.
+ * @NL80211_TXRATE_UHR_LTF: configure UHR LTF, 1XLTF, 2XLTF and 4XLTF.
  * @__NL80211_TXRATE_AFTER_LAST: internal
  * @NL80211_TXRATE_MAX: highest TX rate attribute
  */
@@ -5883,6 +5911,9 @@ enum nl80211_tx_rate_attributes {
 	NL80211_TXRATE_EHT,
 	NL80211_TXRATE_EHT_GI,
 	NL80211_TXRATE_EHT_LTF,
+	NL80211_TXRATE_UHR,
+	NL80211_TXRATE_UHR_GI,
+	NL80211_TXRATE_UHR_LTF,
 
 	/* keep last */
 	__NL80211_TXRATE_AFTER_LAST,
@@ -5902,6 +5933,8 @@ struct nl80211_txrate_vht {
 
 #define NL80211_HE_NSS_MAX		8
 #define NL80211_EHT_NSS_MAX             16
+#define NL80211_UHR_NSS_MAX             16
+
 /**
  * struct nl80211_txrate_he - HE MCS/NSS txrate bitmap
  * @mcs: MCS bitmap table for each NSS (array index 0 for 1 stream, etc.)
@@ -5922,6 +5955,14 @@ enum nl80211_txrate_gi {
  */
 struct nl80211_txrate_eht {
 	__u16 mcs[NL80211_EHT_NSS_MAX];
+};
+
+/**
+ * struct nl80211_txrate_uhr - UHR MCS/NSS txrate bitmap
+ * @mcs: MCS bitmap table for each NSS (array index 0 for 1 stream, etc.)
+ */
+struct nl80211_txrate_uhr {
+	__u32 mcs[NL80211_UHR_NSS_MAX];
 };
 
 /**

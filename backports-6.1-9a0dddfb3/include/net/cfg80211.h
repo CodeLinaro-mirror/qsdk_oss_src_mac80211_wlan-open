@@ -916,7 +916,11 @@ struct cfg80211_bitrate_mask {
 		u16 eht_mcs[NL80211_EHT_NSS_MAX];
 		enum nl80211_eht_gi eht_gi;
 		enum nl80211_eht_ltf eht_ltf;
+		u32 uhr_mcs[NL80211_UHR_NSS_MAX];
+		enum nl80211_uhr_gi uhr_gi;
+		enum nl80211_uhr_ltf uhr_ltf;
 		bool legacy_mcs_changed;
+		bool uhr_mcs_changed;
 		bool eht_mcs_changed;
 		bool he_mcs_changed;
 		bool he_ul_mcs_changed;
