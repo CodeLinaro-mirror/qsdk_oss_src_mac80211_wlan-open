@@ -3062,6 +3062,9 @@ enum nl80211_commands {
  * @NL80211_ATTR_6GHZ_DEVICE_DEPLOYMENT_TYPE: Attribute denoting the 6 GHz
  *	device deployment type.
  *
+ * @NL80211_ATTR_EPP_PEER: A flag attribute to indicate if the peer is an EPP
+ *	STA. Used with %NL80211_CMD_NEW_STA and %NL80211_CMD_ADD_LINK_STA
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
@@ -3661,6 +3664,8 @@ enum nl80211_attrs {
 	NL80211_ATTR_QOS_MGMT,
 
 	NL80211_ATTR_6GHZ_DEVICE_DEPLOYMENT_TYPE,
+
+	NL80211_ATTR_EPP_PEER,
 
 	/* add attributes here, update the policy in nl80211.c */
 
