@@ -114,13 +114,13 @@ int athdbg_uio_register(struct ath12k_base *ab)
 	ctx->dbg_size_bytes  = ATH12K_UIO_DBG_SIZE_BYTES;
 	ctx->crit_size_bytes = ATH12K_UIO_CRIT_SIZE_BYTES;
 
-	ctx->dbg_buf  = vzalloc(ctx->dbg_size_bytes);
+	ctx->dbg_buf  = kzalloc(ctx->dbg_size_bytes, GFP_KERNEL);
 	if (!ctx->dbg_buf) {
 		ret = -ENOMEM;
 		goto err_unreg_pdev;
 	}
 
-	ctx->crit_buf = vzalloc(ctx->crit_size_bytes);
+	ctx->crit_buf = kzalloc(ctx->crit_size_bytes, GFP_KERNEL);
 	if (!ctx->crit_buf) {
 		ret = -ENOMEM;
 		goto err_free_dbg_buf;
@@ -146,7 +146,10 @@ int athdbg_uio_register(struct ath12k_base *ab)
 	ctx->uio_info->irq        = UIO_IRQ_CUSTOM;
 	ctx->uio_info->irqcontrol = athdbg_uio_irqcontrol;
 
+	#ifdef CONFIG_UIO
 	ret = uio_register_device(ctx->uio_dev, ctx->uio_info);
+	#endif
+
 	if (ret)
 		goto err_free_rings;
 	ret = athdbg_put_ctx(ab, ctx);
@@ -159,11 +162,13 @@ int athdbg_uio_register(struct ath12k_base *ab)
 	return 0;
 
 err_free_rings:
+	#ifdef CONFIG_UIO
 	if (ctx->uio_info)
 		uio_unregister_device(ctx->uio_info);
-	vfree(ctx->crit_buf);
+	#endif
+	kfree(ctx->crit_buf);
 err_free_dbg_buf:
-	vfree(ctx->dbg_buf);
+	kfree(ctx->dbg_buf);
 err_unreg_pdev:
 	if (ctx->pdev)
 		platform_device_unregister(ctx->pdev);
@@ -184,12 +189,13 @@ void athdbg_uio_unregister(struct ath12k_base *ab)
 
 	if (default_uio_ctx == ctx)
 		default_uio_ctx = NULL;
+
+	#ifdef CONFIG_UIO
 	if (ctx->uio_info)
 		uio_unregister_device(ctx->uio_info);
-	if (ctx->dbg_buf)
-		vfree(ctx->dbg_buf);
-	if (ctx->crit_buf)
-		vfree(ctx->crit_buf);
+	#endif
+	kfree(ctx->dbg_buf);
+	kfree(ctx->crit_buf);
 	if (ctx->pdev)
 		platform_device_unregister(ctx->pdev);
 
@@ -240,8 +246,10 @@ void athdbg_uio_log_warn(struct ath12k_base *ab, const char *fmt, va_list args)
 
 	__athdbg_ring_write(ctx, true, ATH12K_LOG_LEVEL_WARN,
 			    ATH12K_DBG_ANY, msg);
+	#ifdef CONFIG_UIO
 	if (ctx->uio_info)
 		uio_event_notify(ctx->uio_info);
+	#endif
 }
 EXPORT_SYMBOL(athdbg_uio_log_warn);
 
@@ -265,8 +273,10 @@ void athdbg_uio_log_err(struct ath12k_base *ab, const char *fmt, va_list args)
 
 	__athdbg_ring_write(ctx, true, ATH12K_LOG_LEVEL_ERR,
 			    ATH12K_DBG_ANY, msg);
+	#ifdef CONFIG_UIO
 	if (ctx->uio_info)
 		uio_event_notify(ctx->uio_info);
+	#endif
 }
 EXPORT_SYMBOL(athdbg_uio_log_err);
 
