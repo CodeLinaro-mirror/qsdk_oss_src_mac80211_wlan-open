@@ -163,7 +163,9 @@ int ath12k_tx_send_mpduq_init(struct ath12k_dp_hw_group *dp_hw_grp,
 	if (peer->sta) {
 		rcu_read_lock();
 		ahsta = ath12k_sta_to_ahsta(peer->sta);
-		ti.assoc_link_id = ahsta->assoc_link_id;
+		ti.assoc_link_id = peer->sta->mlo ?
+				   ahsta->assoc_link_id :
+				   ahsta->deflink.link_id;
 		for (i = 0; i < ATH12K_NUM_MAX_LINKS; i++) {
 			link_peer = rcu_dereference(peer->link_peers[i]);
 			if (!link_peer)

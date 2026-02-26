@@ -3229,6 +3229,14 @@ ath12k_wifi7_hal_mon_tx_parse_eht_sig_non_mumimo_user_info
 			IEEE80211_RADIOTAP_EHT_USER_INFO_CODING_KNOWN |
 			IEEE80211_RADIOTAP_EHT_USER_INFO_NSS_KNOWN_O |
 			IEEE80211_RADIOTAP_EHT_USER_INFO_BEAMFORMING_KNOWN_O;
+
+	if (ppdu_info->rx_status.eht_info.num_user_info <
+		ARRAY_SIZE(ppdu_info->rx_status.eht_info.user_info)) {
+		u32 user_idx = ppdu_info->rx_status.eht_info.num_user_info++;
+
+		ppdu_info->rx_status.eht_info.user_info[user_idx] =
+			ppdu_info->rx_status.userstats[user_idx].eht_user_info;
+	}
 }
 
 static __always_inline void
@@ -3260,6 +3268,17 @@ ath12k_wifi7_hal_mon_tx_parse_eht_sig_mumimo_user_info
 			IEEE80211_RADIOTAP_EHT_USER_INFO_MCS_KNOWN |
 			IEEE80211_RADIOTAP_EHT_USER_INFO_CODING_KNOWN |
 			IEEE80211_RADIOTAP_EHT_USER_INFO_SPATIAL_CONFIG_KNOWN_M;
+	ppdu_info->rx_status.eht_info.num_user_info = ppdu_info->num_users;
+	ppdu_info->rx_status.eht_info.user_info[userid] =
+			ppdu_info->rx_status.userstats[userid].eht_user_info;
+
+	if (ppdu_info->rx_status.eht_info.num_user_info <
+		ARRAY_SIZE(ppdu_info->rx_status.eht_info.user_info)) {
+		u32 user_idx = ppdu_info->rx_status.eht_info.num_user_info++;
+
+		ppdu_info->rx_status.eht_info.user_info[user_idx] =
+			ppdu_info->rx_status.userstats[user_idx].eht_user_info;
+	}
 }
 
 static __always_inline void
@@ -3372,6 +3391,8 @@ ath12k_wifi7_hal_mon_tx_populate_eht_sig_per_user
 	ppdu_info->rx_status.eht_known |= IEEE80211_RADIOTAP_EHT_KNOWN_LDPC_EXTRA_SYM_OM;
 	ppdu_info->rx_status.eht_data[0] |= (usr->ldpc_extra_symbol <<
 					EHT_LDPC_EXTRA_SYMBOL_SEG_SHIFT);
+	ppdu_info->rx_status.eht_info.eht.known = ppdu_info->rx_status.eht_known;
+	ppdu_info->rx_status.eht_info.eht.data[0] = ppdu_info->rx_status.eht_data[0];
 }
 
 static __always_inline void
@@ -3629,9 +3650,13 @@ ath12k_wifi7_hal_mon_tx_populate_eht_sig_common
 	eht_known |= (num_ru_allocation_known <<
 						EHT_NUM_KNOWN_RU_ALLOCATIONS_SHIFT);
 	ppdu_info->rx_status.eht_known |= eht_known;
+	ppdu_info->rx_status.eht_info.eht.known = ppdu_info->rx_status.eht_known;
 
-	for (i = 0; i < 4; i++)
+	for (i = 0; i < 4; i++) {
 		ppdu_info->rx_status.eht_data[i] |= eht_data[i];
+		ppdu_info->rx_status.eht_info.eht.data[i] =
+						ppdu_info->rx_status.eht_data[i];
+	}
 }
 
 static __always_inline void
@@ -3665,6 +3690,10 @@ ath12k_wifi7_hal_mon_tx_parse_user_desc_common(const void *tlv_data,
 				IEEE80211_RADIOTAP_EHT_KNOWN_NR_NON_OFDMA_USERS_M;
 			ppdu_info->rx_status.eht_data[7] |=
 				num_users << EHT_NUM_NON_OFDMA_USERS_SHIFT;
+			ppdu_info->rx_status.eht_info.eht.known =
+						ppdu_info->rx_status.eht_known;
+			ppdu_info->rx_status.eht_info.eht.data[7] =
+						ppdu_info->rx_status.eht_data[7];
 		}
 	break;
 	}
@@ -4012,7 +4041,7 @@ ath12k_wifi7_hal_mon_tx_status_get_num_user(struct ath12k_hal *hal,
 		*num_users =
 		u32_get_bits(info,
 			     HAL_TX_MON_RX_RESPONSE_REQUIRED_INFO1_RESPONSE_STA_COUNT);
-		tlv_status = HAL_RX_MON_RESPONSE_REQUIRED_INFO;
+		tlv_status = HAL_TX_MON_RESPONSE_REQUIRED_INFO;
 		break;
 	}
 	}
@@ -4025,13 +4054,16 @@ ath12k_wifi7_hal_mon_tx_status_get_num_user(struct ath12k_hal *hal,
 
 enum hal_tx_mon_status
 ath12k_wifi7_hal_mon_tx_parse_status_tlv(struct ath12k_hal *hal,
+					 struct ath12k_mon_data *mon_data,
 					 struct hal_tx_mon_ppdu_info *tx_ppdu_info,
 					 u16 tlv_tag, const void *tlv_data,
 					 u32 userid, u16 tlv_len,
-					 struct hal_tx_mon_status_info *status_info,
 					 u8 *status_frag)
 {
 	enum hal_tx_mon_status status = HAL_TX_MON_STATUS_PPDU_NOT_DONE;
+	struct hal_tx_mon_status_info *status_info =
+			(tx_ppdu_info == &mon_data->data_ppdu_info.tx_info) ?
+			&mon_data->data_status_info : &mon_data->prot_status_info;
 	struct hal_tx_mon_packet_info *packet_info = NULL;
 	u32 info[7] = {0};
 
@@ -4103,11 +4135,12 @@ ath12k_wifi7_hal_mon_tx_parse_status_tlv(struct ath12k_hal *hal,
 			status_info->transmission_type =
 						HAL_RX_RECEPTION_TYPE_MU_MIMO;
 
-		status = HAL_RX_MON_RESPONSE_REQUIRED_INFO;
+		status = HAL_TX_MON_RESPONSE_REQUIRED_INFO;
 		break;
 	}
 
 	case HAL_PCU_PPDU_SETUP_INIT: {
+		status_info = &mon_data->prot_status_info;
 		ath12k_hal_mon_tx_pcu_ppdu_setup_init_info_get(hal, tlv_data,
 							       status_info, tlv_len);
 		status = HAL_TX_MON_PCU_PPDU_SETUP_INIT;
@@ -4134,6 +4167,7 @@ ath12k_wifi7_hal_mon_tx_parse_status_tlv(struct ath12k_hal *hal,
 
 		info[0] = __le32_to_cpu(tx_fes_start->info0);
 
+		status_info = &mon_data->prot_status_info;
 		status_info->medium_prot_type =
 			u32_get_bits(info[0],
 				     HAL_TX_MON_FES_START_INFO0_MEDIUM_PROT_TYPE);
@@ -4646,6 +4680,12 @@ ath12k_wifi7_hal_mon_tx_parse_status_tlv(struct ath12k_hal *hal,
 					USIG_CRC_SHIFT);
 		tx_ppdu_info->rx_status.usig_value |= (usig_mu->tail <<
 					USIG_TAIL_SHIFT);
+		tx_ppdu_info->rx_status.u_sig_info.usig.common =
+						tx_ppdu_info->rx_status.usig_common;
+		tx_ppdu_info->rx_status.u_sig_info.usig.value =
+						tx_ppdu_info->rx_status.usig_value;
+		tx_ppdu_info->rx_status.u_sig_info.usig.mask =
+						tx_ppdu_info->rx_status.usig_mask;
 		break;
 	}
 
@@ -4682,6 +4722,12 @@ ath12k_wifi7_hal_mon_tx_parse_status_tlv(struct ath12k_hal *hal,
 					USIG_CRC_SHIFT);
 		tx_ppdu_info->rx_status.usig_value |= (usig_tb->tail <<
 					USIG_TAIL_SHIFT);
+		tx_ppdu_info->rx_status.u_sig_info.usig.common =
+						tx_ppdu_info->rx_status.usig_common;
+		tx_ppdu_info->rx_status.u_sig_info.usig.value =
+						tx_ppdu_info->rx_status.usig_value;
+		tx_ppdu_info->rx_status.u_sig_info.usig.mask =
+						tx_ppdu_info->rx_status.usig_mask;
 		break;
 	}
 
@@ -4837,6 +4883,55 @@ int ath12k_wifi7_extract_tx_mon_ring_desc(struct ath12k_hal *hal,
 		return -EINVAL;
 
 	return 0;
+}
+
+struct dp_mon_tx_ppdu_info *
+ath12k_wifi7_hal_mon_tx_ppdu_info(struct ath12k_hal *hal,
+				  struct ath12k_mon_data *pmon,
+				  u16 tlv_tag)
+{
+	switch (tlv_tag) {
+	case HAL_TX_FES_SETUP:
+	case HAL_TX_FLUSH:
+	case HAL_PCU_PPDU_SETUP_INIT:
+	case HAL_TX_PEER_ENTRY:
+	case HAL_TX_QUEUE_EXTENSION:
+	case HAL_TX_MPDU_START:
+	case HAL_TX_MSDU_START:
+	case HAL_TX_DATA:
+	case HAL_MON_BUF_ADDR:
+	case HAL_TX_MPDU_END:
+	case HAL_TX_MSDU_END:
+	case HAL_TX_LAST_MPDU_FETCHED:
+	case HAL_TX_LAST_MPDU_END:
+	case HAL_COEX_TX_REQ:
+	case HAL_TX_RAW_OR_NATIVE_FRAME_SETUP:
+	case HAL_NDP_PREAMBLE_DONE:
+	case HAL_SCH_CRITICAL_TLV_REFERENCE:
+	case HAL_TX_FES_SETUP_COMPLETE:
+	case HAL_TQM_MPDU_GLOBAL_START:
+	case HAL_SCHEDULER_END:
+	case HAL_TX_FES_STATUS_USER_PPDU:
+	case HAL_TX_FES_STATUS_START_PPDU:
+		break;
+	case HAL_TX_FES_STATUS_PROT: {
+		if (!pmon->prot_ppdu_info.is_used)
+			pmon->prot_ppdu_info.is_used = true;
+
+		return &pmon->prot_ppdu_info;
+	}
+	case HAL_TX_FES_STATUS_START_PROT: {
+		if (!pmon->prot_ppdu_info.is_used)
+			pmon->prot_ppdu_info.is_used = true;
+
+		return &pmon->prot_ppdu_info;
+	}
+	}
+
+	if (!pmon->data_ppdu_info.is_used)
+		pmon->data_ppdu_info.is_used = true;
+
+	return &pmon->data_ppdu_info;
 }
 
 bool ath12k_wifi7_is_mon_buf_addr_tlv(u32 tlv_tag)

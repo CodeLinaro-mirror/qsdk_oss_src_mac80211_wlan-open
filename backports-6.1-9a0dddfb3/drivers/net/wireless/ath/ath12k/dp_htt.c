@@ -485,7 +485,7 @@ ath12k_dp_ppdu_stats_flush_tlv_parse_update(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	if (tid >= ATH12K_DSCP_PRIORITY) {
-		ath12k_err(dp_pdev->dp->ab, "Invalid tid: %d", tid);
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DATA, "Invalid tid: %d", tid);
 		rcu_read_unlock();
 		return;
 	}
@@ -754,7 +754,7 @@ ath12k_update_extd_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_htt_tx_stats *tx_stats;
 	struct ath12k_vif *ahvif;
 	u32 punc_mode, res_mcs;
-	u32 tlv_bitmap;
+	u32 tlv_bitmap, retry_mpdus;
 
 	if (usr_stats->processed_tlv_bitmap &
 			BIT(HTT_PPDU_STATS_TAG_USR_COMPLTN_ACK_BA_STATUS))
@@ -767,8 +767,11 @@ ath12k_update_extd_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 		return;
 
 	if (usr_stats->cmpltn_cmn.status != HTT_PPDU_STATS_USER_STATUS_OK) {
-		DP_STATS_INCR(peer->peer_stats.tx_stats, retries_mpdu,
-			      peer_stats->mpdu_tried - peer_stats->succ_mpdu_pkts);
+		if (peer_stats->mpdu_tried > peer_stats->succ_mpdu_pkts) {
+			retry_mpdus = peer_stats->mpdu_tried - peer_stats->succ_mpdu_pkts;
+			DP_STATS_INCR(peer->peer_stats.tx_stats, retries_mpdu,
+				      retry_mpdus);
+		}
 
 		ath12k_debugfs_sta_update_retry(peer, peer_stats);
 		return;
@@ -821,8 +824,10 @@ ath12k_update_extd_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 		      is_mcast);
 	DP_STATS_INCR(tx_stats, tx_ppdus, 1);
 	DP_STATS_INCR(tx_stats, tx_mpdus_success, peer_stats->succ_mpdu_pkts);
-	DP_STATS_INCR(tx_stats, retries_mpdu,
-		      (peer_stats->mpdu_tried - peer_stats->succ_mpdu_pkts));
+
+	if (peer_stats->mpdu_tried > peer_stats->succ_mpdu_pkts)
+		DP_STATS_INCR(tx_stats, retries_mpdu,
+			      (peer_stats->mpdu_tried - peer_stats->succ_mpdu_pkts));
 	if (!is_mcast) {
 		DP_STATS_UPD(tx_stats, last_ack_rssi,
 			     peer->peer_stats.last_ack_rssi);

@@ -116,6 +116,20 @@ struct ath12k_wmi_svc_rdy_ext2_parse {
 	bool scan_radio_caps_done;
 	bool hal_reg_caps_ext2_done;
 	bool twt_caps_param_done;
+	bool htt_msdu_idx_to_qtype_map;
+	bool wmi_dbs_or_sbs_cap_ext;
+	bool cus_bdf_ver_cap;
+	bool soft_calib_support;
+	bool wmi_coex_fix_channel_cap;
+	bool wmi_aux_dev_cap;
+	bool aoa_caps_exchange;
+	bool aoa_per_band_caps;
+	bool wmi_sar_flag_tlv_param;
+	bool wmi_power_boost_cap;
+	bool wmi_rssi_accuracy_improvement_cap;
+	bool ltf_cap;
+	bool chain_cap;
+	bool mac_phy_caps_ext2_done;
 };
 
 struct ath12k_wmi_rdy_parse {
@@ -7716,20 +7730,6 @@ static int ath12k_pull_peer_tx_pn_ev(struct ath12k_base *ab, struct sk_buff *skb
 	return 0;
 }
 
-static void ath12k_wmi_uhr_caps_parse(struct ath12k_pdev *pdev, u32 band,
-				      const __le32 cap_mac_info[],
-				      const __le32 cap_phy_info[])
-{
-	struct ath12k_band_cap *cap_band = &pdev->cap.band[band];
-	u8 i;
-
-	for (i = 0; i < WMI_MAX_UHRCAP_MAC_SIZE; i++)
-		cap_band->uhr_cap_mac_info[i] = le32_to_cpu(cap_mac_info[i]);
-
-	for (i = 0; i < WMI_MAX_UHRCAP_PHY_SIZE; i++)
-		cap_band->uhr_cap_phy_info[i] = le32_to_cpu(cap_phy_info[i]);
-}
-
 static int
 ath12k_wmi_tlv_mac_phy_caps_ext_parse(struct ath12k_base *ab,
 				      const struct ath12k_wmi_caps_ext_params *caps,
@@ -7764,17 +7764,13 @@ ath12k_wmi_tlv_mac_phy_caps_ext_parse(struct ath12k_base *ab,
 		bands = pdev->cap.supported_bands;
 	}
 
-	if (bands & WMI_HOST_WLAN_2GHZ_CAP) {
+	if (bands & WMI_HOST_WLAN_2GHZ_CAP)
 		ath12k_wmi_eht_caps_parse(pdev, NL80211_BAND_2GHZ,
 					  caps->eht_cap_mac_info_2ghz,
 					  caps->eht_cap_phy_info_2ghz,
 					  caps->eht_supp_mcs_ext_2ghz,
 					  &caps->eht_ppet_2ghz,
 					  caps->eht_cap_info_internal);
-		ath12k_wmi_uhr_caps_parse(pdev, NL80211_BAND_2GHZ,
-					  caps->uhr_cap_mac_info_2ghz,
-					  caps->uhr_cap_phy_info_2ghz);
-	}
 
 	if (bands & WMI_HOST_WLAN_5GHZ_CAP) {
 		ath12k_wmi_eht_caps_parse(pdev, NL80211_BAND_5GHZ,
@@ -7790,14 +7786,6 @@ ath12k_wmi_tlv_mac_phy_caps_ext_parse(struct ath12k_base *ab,
 					  caps->eht_supp_mcs_ext_5ghz,
 					  &caps->eht_ppet_5ghz,
 					  caps->eht_cap_info_internal);
-
-		ath12k_wmi_uhr_caps_parse(pdev, NL80211_BAND_5GHZ,
-					  caps->uhr_cap_mac_info_5ghz,
-					  caps->uhr_cap_phy_info_5ghz);
-
-		ath12k_wmi_uhr_caps_parse(pdev, NL80211_BAND_6GHZ,
-					  caps->uhr_cap_mac_info_5ghz,
-					  caps->uhr_cap_phy_info_5ghz);
 	}
 
 	pdev->cap.eml_cap = le32_to_cpu(caps->eml_capability);
@@ -7836,7 +7824,103 @@ static int ath12k_wmi_tlv_mac_phy_caps_ext(struct ath12k_base *ab, u16 tag,
 	if (ret) {
 		ath12k_warn(ab,
 			    "failed to parse extended MAC PHY capabilities for pdev %d: %d\n",
-			    ret, ab->pdevs[i].pdev_id);
+			    ab->pdevs[i].pdev_id, ret);
+		return ret;
+	}
+
+	return 0;
+}
+
+static void ath12k_wmi_uhr_caps_parse(struct ath12k_pdev *pdev, u32 band,
+				      const __le32 cap_mac_info[],
+				      const __le32 cap_phy_info[])
+{
+	struct ath12k_band_cap *cap_band = &pdev->cap.band[band];
+	u8 i;
+
+	for (i = 0; i < WMI_MAX_UHRCAP_MAC_SIZE; i++)
+		cap_band->uhr_cap_mac_info[i] = le32_to_cpu(cap_mac_info[i]);
+
+	for (i = 0; i < WMI_MAX_UHRCAP_PHY_SIZE; i++)
+		cap_band->uhr_cap_phy_info[i] = le32_to_cpu(cap_phy_info[i]);
+}
+
+static int
+ath12k_wmi_tlv_mac_phy_caps_ext2_parse(struct ath12k_base *ab,
+				       const struct ath12k_wmi_caps_ext2_params *caps,
+				       struct ath12k_pdev *pdev)
+{
+	u32 bands = 0;
+	int i;
+
+	if (ab->hw_params->single_pdev_only) {
+		if (caps->hw_mode_id == WMI_HOST_HW_MODE_SINGLE)
+			return 0;
+
+		for (i = 0; i < ab->fw_pdev_count; i++) {
+			struct ath12k_fw_pdev *fw_pdev = &ab->fw_pdev[i];
+
+			if (fw_pdev->pdev_id == ath12k_wmi_caps_ext2_get_pdev_id(caps) &&
+			    fw_pdev->phy_id == le32_to_cpu(caps->phy_id)) {
+				bands = fw_pdev->supported_bands;
+				break;
+			}
+		}
+
+		if (i == ab->fw_pdev_count)
+			return -EINVAL;
+	} else {
+		bands = pdev->cap.supported_bands;
+	}
+
+	if (bands & WMI_HOST_WLAN_2GHZ_CAP)
+		ath12k_wmi_uhr_caps_parse(pdev, NL80211_BAND_2GHZ,
+					  caps->uhr_cap_mac_info_2ghz,
+					  caps->uhr_cap_phy_info_2ghz);
+
+	if (bands & WMI_HOST_WLAN_5GHZ_CAP) {
+		ath12k_wmi_uhr_caps_parse(pdev, NL80211_BAND_5GHZ,
+					  caps->uhr_cap_mac_info_5ghz,
+					  caps->uhr_cap_phy_info_5ghz);
+
+		ath12k_wmi_uhr_caps_parse(pdev, NL80211_BAND_6GHZ,
+					  caps->uhr_cap_mac_info_5ghz,
+					  caps->uhr_cap_phy_info_5ghz);
+	}
+
+	return 0;
+}
+
+static int ath12k_wmi_tlv_mac_phy_caps_ext2(struct ath12k_base *ab, u16 tag,
+					    u16 len, const void *ptr,
+					    void *data)
+{
+	const struct ath12k_wmi_caps_ext2_params *caps = ptr;
+	int i = 0, ret;
+
+	if (tag != WMI_TAG_MAC_PHY_CAPABILITIES_EXT2)
+		return -EPROTO;
+
+	if (ab->hw_params->single_pdev_only) {
+		if (ab->wmi_ab.preferred_hw_mode != le32_to_cpu(caps->hw_mode_id) &&
+		    caps->hw_mode_id != WMI_HOST_HW_MODE_SINGLE)
+			return 0;
+	} else {
+		for (i = 0; i < ab->num_radios; i++) {
+			if (ab->pdevs[i].pdev_id ==
+			    ath12k_wmi_caps_ext2_get_pdev_id(caps))
+				break;
+		}
+
+		if (i == ab->num_radios)
+			return -EINVAL;
+	}
+
+	ret = ath12k_wmi_tlv_mac_phy_caps_ext2_parse(ab, caps, &ab->pdevs[i]);
+	if (ret) {
+		ath12k_warn(ab,
+			    "failed to parse extended 2 MAC PHY capabilities for pdev %d: %d\n",
+			    ab->pdevs[i].pdev_id, ret);
 		return ret;
 	}
 
@@ -7931,6 +8015,83 @@ static int ath12k_wmi_svc_rdy_ext2_parse(struct ath12k_base *ab,
 			}
 
 			parse->twt_caps_param_done = true;
+		} else if (!parse->htt_msdu_idx_to_qtype_map) {
+			/* TODO: This is a place-holder as WMI tag
+			 * before WMI_TAG_MAC_PHY_CAPABILITIES_EXT2
+			 */
+			parse->htt_msdu_idx_to_qtype_map = true;
+		} else if (!parse->wmi_dbs_or_sbs_cap_ext) {
+			/* TODO: This is a place-holder as WMI tag
+			 * before WMI_TAG_MAC_PHY_CAPABILITIES_EXT2
+			 */
+			parse->wmi_dbs_or_sbs_cap_ext = true;
+		} else if (!parse->cus_bdf_ver_cap) {
+			/* TODO: This is a place-holder as WMI tag
+			 * before WMI_TAG_MAC_PHY_CAPABILITIES_EXT2
+			 */
+			parse->cus_bdf_ver_cap = true;
+		} else if (!parse->soft_calib_support) {
+			/* TODO: This is a place-holder as WMI tag
+			 * before WMI_TAG_MAC_PHY_CAPABILITIES_EXT2
+			 */
+			parse->soft_calib_support = true;
+		} else if (!parse->wmi_coex_fix_channel_cap) {
+			/* TODO: This is a place-holder as WMI tag
+			 * before WMI_TAG_MAC_PHY_CAPABILITIES_EXT2
+			 */
+			parse->wmi_coex_fix_channel_cap = true;
+		} else if (!parse->wmi_aux_dev_cap) {
+			/* TODO: This is a place-holder as WMI tag
+			 * before WMI_TAG_MAC_PHY_CAPABILITIES_EXT2
+			 */
+			parse->wmi_aux_dev_cap = true;
+		} else if (!parse->aoa_caps_exchange) {
+			/* TODO: This is a place-holder as WMI tag
+			 * before WMI_TAG_MAC_PHY_CAPABILITIES_EXT2
+			 */
+			parse->aoa_caps_exchange = true;
+		} else if (!parse->aoa_per_band_caps) {
+			/* TODO: This is a place-holder as WMI tag
+			 * before WMI_TAG_MAC_PHY_CAPABILITIES_EXT2
+			 */
+			parse->aoa_per_band_caps = true;
+		} else if (!parse->wmi_sar_flag_tlv_param) {
+			/* TODO: This is a place-holder as WMI tag
+			 * before WMI_TAG_MAC_PHY_CAPABILITIES_EXT2
+			 */
+			parse->wmi_sar_flag_tlv_param = true;
+		} else if (!parse->wmi_power_boost_cap) {
+			/* TODO: This is a place-holder as WMI tag
+			 * before WMI_TAG_MAC_PHY_CAPABILITIES_EXT2
+			 */
+			parse->wmi_power_boost_cap = true;
+		} else if (!parse->wmi_rssi_accuracy_improvement_cap) {
+			/* TODO: This is a place-holder as WMI tag
+			 * before WMI_TAG_MAC_PHY_CAPABILITIES_EXT2
+			 */
+			parse->wmi_rssi_accuracy_improvement_cap = true;
+		} else if (!parse->ltf_cap) {
+			/* TODO: This is a place-holder as WMI tag
+			 * before WMI_TAG_MAC_PHY_CAPABILITIES_EXT2
+			 */
+			parse->ltf_cap = true;
+		} else if (!parse->chain_cap) {
+			/* TODO: This is a place-holder as WMI tag
+			 * before WMI_TAG_MAC_PHY_CAPABILITIES_EXT2
+			 */
+			parse->chain_cap = true;
+		} else if (!parse->mac_phy_caps_ext2_done) {
+			ret = ath12k_wmi_tlv_iter(ab, ptr, len,
+						  ath12k_wmi_tlv_mac_phy_caps_ext2,
+						  parse);
+			if (ret) {
+				ath12k_warn(ab,
+					    "failed to parse EXT2 MAC PHY cap WMI TLV: %d\n",
+					    ret);
+				return ret;
+			}
+
+			parse->mac_phy_caps_ext2_done = true;
 		}
 		break;
 	default:
@@ -11204,6 +11365,7 @@ ath12k_pdev_bss_chan_info_event(struct ath12k_base *ab, struct sk_buff *skb)
 			     SURVEY_INFO_TIME |
 			     SURVEY_INFO_TIME_BUSY |
 			     SURVEY_INFO_TIME_RX |
+			     SURVEY_INFO_TIME_BSS_RX |
 			     SURVEY_INFO_TIME_TX);
 exit:
 	spin_unlock_bh(&ar->data_lock);

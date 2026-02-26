@@ -12,7 +12,6 @@
 #include "debug.h"
 #include "pktlog.h"
 
-#include "dp_tx_mon.h"
 #include "hal_mon_cmn.h"
 #include "qcn_extns/ath12k_cmn_extn.h"
 #include "qcn_extns/dp_stats_extn.h"
@@ -319,11 +318,66 @@ struct dp_mon_mpdu {
 	u8 decap_format;
 };
 
+/**
+ * struct dp_mon_tx_ppdu_info - TX monitor PPDU information structure
+ * @is_used: Flag indicating if this PPDU info structure is currently in use
+ * @tx_info: HAL layer TX monitor PPDU information containing hardware-specific
+ *           data including TLV parsing results, user status, and packet metadata
+ * @dp_tx_mon_mpdu_list: List head for managing MPDUs associated with this PPDU.
+ *                       Used to chain multiple MPDU structures for complex
+ *                       aggregated transmissions
+ * @tx_mon_mpdu: Pointer to the current MPDU structure being processed within
+ *               this PPDU. Points to individual MPDU data for frame generation
+ * @chan_freq: Channel frequency in MHz on which this PPDU was transmitted.
+ *             Used for radiotap channel information and monitor mode delivery
+ * @chan_num: Channel number corresponding to the transmission frequency.
+ *            Provides channel context for frame analysis and filtering
+ * @num_mpdu_fcs_ok: Count of MPDUs within this PPDU that passed FCS validation.
+ *                   Used for statistics and determining transmission success rate
+ * @buffer_addr: Virtual address of extracted packet buffer from hardware descriptor
+ *   - Points to page fragment containing actual packet data
+ *   - Ownership transferred from monitor descriptor during BUFFER_ADDR TLV processing
+ *   - Set to NULL after fragment is added to SKB (when take_ref=false)
+ *   - Used by ath12k_dp_tx_mon_generate_data_frm() to add fragments
+ *   - Must be freed with page_frag_free() if not consumed by SKB
+ * @buffer_length: Length of valid data in buffer_addr in bytes
+ *   - Extracted from packet_info->dma_length during BUFFER_ADDR processing
+ *   - Represents actual packet payload size, not buffer allocation size
+ *   - Used as fragment length when adding to SKB via skb_add_rx_frag()
+ *   - Must be <= ATH12K_DP_MON_TX_BUF_SIZE for validation
+ * @msdu_continuation: Indicates if this buffer is part of a fragmented MSDU
+ *   - true: More fragments follow for this MSDU
+ *                     - false: This is the last (or only) fragment of the MSDU
+ *                     - Extracted from packet_info->msdu_continuation
+ *                     - Used for proper MSDU reassembly in multi-fragment scenarios
+ * @truncated: Indicates if the packet data was truncated by hardware
+ *             - true: Packet was larger than buffer size, data is incomplete
+ *             - false: Complete packet data is available in buffer
+ *             - Extracted from packet_info->truncated
+ *             - Used for debugging and packet validation purposes
+ * @has_buffer_data: Flag indicating if valid buffer data is available
+ *      - true: buffer_addr contains valid packet data
+ *      - false: No buffer data available (e.g., control frames without payload)
+ *      - Set during BUFFER_ADDR TLV processing
+ *      - Checked by ath12k_dp_tx_mon_generate_data_frm() before adding fragments
+ *      - Reset to false after buffer ownership is transferred to SKB
+ * @contains_host_frames: True if this PPDU contains host-generated frames
+
+ */
 struct dp_mon_tx_ppdu_info {
 	bool is_used;
 	struct hal_tx_mon_ppdu_info tx_info;
 	struct list_head dp_tx_mon_mpdu_list;
 	struct dp_mon_mpdu *tx_mon_mpdu;
+	u16 chan_freq;
+	u16 chan_num;
+	u32 num_mpdu_fcs_ok;
+	void *buffer_addr;
+	u32 buffer_length;
+	bool msdu_continuation;
+	bool truncated;
+	bool has_buffer_data;
+	bool contains_host_frames;
 };
 
 #define SNR_INVALID 255
@@ -369,6 +423,51 @@ struct ath12k_pdev_mon_stats {
 
 #define DP_MON_MAX_STATUS_BUF 32
 
+/**
+ * struct ath12k_mon_data - Monitor mode data processing context
+ * @link_desc_banks: Array of link descriptor banks for DMA buffer management
+ *                   Used for efficient allocation and tracking of monitor buffers
+ * @mon_ppdu_info: RX monitor PPDU information structure containing parsed
+ *                 frame metadata, PHY parameters, and reception status
+ * @mon_ppdu_status: Current PPDU processing status flags indicating parsing
+ *                   state and completion status for RX monitor frames
+ * @mon_last_buf_cookie: Cookie value of the last processed monitor buffer
+ *                       Used for buffer tracking and leak detection
+ * @mon_last_linkdesc_paddr: Physical address of last processed link descriptor
+ *                           Used for descriptor chain validation and debugging
+ * @chan_noise_floor: Channel noise floor measurement in dBm for signal quality
+ *                    analysis and RSSI calculations in monitor mode
+ * @err_bitmap: Bitmap of error conditions encountered during monitor processing
+ *              Used for error tracking and debugging monitor frame issues
+ * @decap_format: Decapsulation format for monitor frames (raw, native WiFi, etc.)
+ *                Determines how captured frames are presented to upper layers
+ * @rx_mon_stats: RX monitor statistics structure containing performance counters
+ *                and error tracking for RX monitor functionality
+ * @buf_state: Current state of monitor status buffer processing (idle, busy, etc.)
+ *             Used for state machine management in monitor buffer handling
+ * @mon_lock: Spinlock protecting concurrent access to monitor data structures
+ *            Ensures thread safety between interrupt and process contexts
+ * @rx_status_q: Queue of RX status sk_buffs awaiting processing or delivery
+ *               Used for buffering monitor frames before mac80211 delivery
+ * @mon_mpdu: Pointer to current MPDU being processed in monitor mode
+ *            Contains frame data and metadata during active processing
+ * @dp_rx_mon_mpdu_list: List of RX monitor MPDUs pending processing
+ *                       Used for batching and efficient MPDU handling
+ * @prot_status_info: TX monitor status information for protection frames
+ *                    (RTS/CTS, Block ACK, etc.) containing timing and status data
+ * @data_status_info: TX monitor status information for data frames containing
+ *                    transmission parameters, retry counts, and completion status
+ * @prot_ppdu_info: TX monitor PPDU information for protection frames including
+ *                  PHY parameters, timing, and frame generation metadata
+ * @data_ppdu_info: TX monitor PPDU information for data frames including
+ *                  transmission parameters, MCS, and channel information
+ * @rtap_vendor_tlv: Pointer to radiotap vendor-specific TLV data for ATH12K
+ *                   chipset metadata including timing and hardware-specific info
+ *
+ * This structure serves as the central context for all monitor mode operations,
+ * encompassing both RX and TX monitor functionality. It maintains state information,
+ * statistics, and processing contexts required for efficient monitor frame handling.
+ */
 struct ath12k_mon_data {
 	struct dp_link_desc_bank link_desc_banks[DP_LINK_DESC_BANKS_MAX];
 	struct hal_rx_mon_ppdu_info mon_ppdu_info;
@@ -387,8 +486,10 @@ struct ath12k_mon_data {
 	struct sk_buff_head rx_status_q;
 	struct dp_mon_mpdu *mon_mpdu;
 	struct list_head dp_rx_mon_mpdu_list;
-	struct dp_mon_tx_ppdu_info *tx_prot_ppdu_info;
-	struct dp_mon_tx_ppdu_info *tx_data_ppdu_info;
+	struct hal_tx_mon_status_info prot_status_info;
+	struct hal_tx_mon_status_info data_status_info;
+	struct dp_mon_tx_ppdu_info prot_ppdu_info;
+	struct dp_mon_tx_ppdu_info data_ppdu_info;
 	struct ieee80211_radiotap_vendor_ns *rtap_vendor_tlv;
 };
 
@@ -457,12 +558,40 @@ struct ath12k_pdev_mon_dp_stats {
  * @tx_pkt_tlv_free: Count of TX packet TLV buffers freed back to the pool.
  *                  Used for tracking buffer lifecycle and detecting leaks
  * @tx_status_buf_free: Count of TX status buffers freed back to the pool.
+ * @tx_work_queue_scheduled: Number of times work queue is scheduled
+ * @tx_ppdu_desc_invalid: Number of invalid PPDU descriptors encountered
+ * @tx_ppdu_desc_overflow: Number of PPDU descriptor buffer overflows
+ * @tx_work_queue_stalls: Work queue stall events (processing hangs)
+ * @tx_ppdu_parse_errors: Number of PPDU parsing errors
+ * @tx_status_buf_null: Number of null status buffer pointers encountered
+ * @tx_ppdu_processed: Total number of TX PPDUs processed in work queue
+ * @tx_status_desc_processed: Total number of status descriptors processed
+ * @tx_data_frames: Total number of data frames transmitted
+ * @tx_su_ppdu_count: Number of Single User (SU) PPDUs transmitted
+ * @tx_mu_ppdu_count: Number of Multi User (MU) PPDUs transmitted
+ * @tx_mu_user_count: Total number of users in all MU PPDUs
  */
 struct ath12k_pdev_tx_mon_stats {
 	u32 empty_descriptors;
 	u32 truncated_ppdu;
 	u32 tx_pkt_tlv_free;
 	u32 tx_status_buf_free;
+	u32 tx_work_queue_scheduled;
+	u32 tx_ppdu_desc_invalid;
+	u32 tx_ppdu_desc_overflow;
+	u32 tx_work_queue_stalls;
+	u32 tx_ppdu_parse_errors;
+	u32 tx_status_buf_null;
+	u32 tx_ppdu_processed;
+	u32 tx_status_desc_processed;
+	u32 tx_data_frames;
+	u32 tx_su_ppdu_count;
+	u32 tx_mu_ppdu_count;
+	u32 tx_mu_user_count;
+	u32 tx_ppdu_delivery_errors;
+	u32 tx_prot_ppdu_delivered;
+	u32 tx_data_ppdu_delivered;
+	u32 tx_ppdu_delivered;
 };
 
 /**
@@ -825,6 +954,7 @@ void ath12k_dp_mon_fill_rx_rate(struct ath12k_pdev_dp *dp_pdev,
 
 int ath12k_dp_mon_tx_wq_start(struct ath12k_pdev_dp *dp_pdev, u32 mac_id);
 void ath12k_dp_mon_tx_wq_stop(struct ath12k_pdev_dp *dp_pdev);
+void ath12k_dp_mon_reset_ppdu_desc(struct ath12k_dp_mon_ppdu_desc *ppdu_desc);
 int ath12k_dp_mon_tx_srng_alloc_setup(struct ath12k_dp *dp);
 void ath12k_dp_mon_tx_srng_cleanup(struct ath12k_dp *dp);
 int ath12k_dp_mon_tx_desc_pool_alloc(struct ath12k_dp *dp);

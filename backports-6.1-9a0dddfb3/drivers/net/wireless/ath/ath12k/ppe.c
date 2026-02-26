@@ -1666,7 +1666,7 @@ EXPORT_SYMBOL(ath12k_dp_ppeds_service_enable_disable);
 
 void ath12k_dp_ppeds_interrupt_stop(struct ath12k_base *ab)
 {
-	if (ab->powered_off)
+	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
 	ath12k_hif_ppeds_irq_disable(ab, PPEDS_IRQ_REO2PPE);

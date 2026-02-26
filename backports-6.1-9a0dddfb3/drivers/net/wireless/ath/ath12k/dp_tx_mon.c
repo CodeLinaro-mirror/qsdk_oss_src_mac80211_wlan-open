@@ -123,6 +123,10 @@ static int ath12k_dp_mon_tx_wq_init(struct ath12k_pdev_dp *dp_pdev)
 		goto free_vendor_tlv;
 	}
 
+	INIT_WORK(&dp_mon_pdev->txmon_work,
+		  ath12k_dp_tx_mon_process_ppdu);
+	dp_mon_pdev->tx_mon_wq_initialized = true;
+
 	return 0;
 
 free_vendor_tlv:
@@ -499,6 +503,2571 @@ ath12k_dp_tx_mon_flush_desc_list(struct ath12k_pdev_dp *dp_pdev,
 }
 
 /**
+ * ath12k_dp_mon_tx_prep_ppdu_info() - Prepare PPDU information for TX monitor processing
+ * @dp_mon_pdev: Pointer to monitor PDEV context containing processing state
+ * @ppdu_desc: Pointer to PPDU descriptor containing status descriptors with TLV data
+ *
+ * This function prepares PPDU information structures for TX monitor frame processing
+ * by parsing the initial TLV data to extract user count and initializing the
+ * processing contexts for both protection and data frames.
+ *
+ * The function performs the following key operations:
+ * 1. Validates PPDU descriptor and status descriptor availability
+ * 2. Parses the first TLV header to extract tag, length, and user ID information
+ * 3. Determines the number of users in the PPDU from HAL TLV parsing
+ * 4. Initializes protection and data PPDU info structures with user counts
+ * 5. Initializes MPDU queues for all potential users (up to HAL_MAX_UL_MU_USERS)
+ *
+ * TLV Processing Details:
+ * The function examines the first status descriptor's monitor buffer, which contains
+ * TLV data from the hardware. It extracts the TLV header using HAL operations to
+ * determine the TLV tag, user ID, and length. This information is then used to
+ * parse the number of users in the PPDU through HAL-specific parsing functions.
+ */
+static int
+ath12k_dp_mon_tx_prep_ppdu_info(struct ath12k_pdev_mon_dp *dp_mon_pdev,
+				struct ath12k_dp_mon_ppdu_desc *ppdu_desc)
+{
+	struct ath12k_mon_data *mon_data = &dp_mon_pdev->mon_data;
+	struct ath12k_pdev_dp *dp_pdev = dp_mon_pdev->dp_pdev;
+	u8 num_users = 0;
+	struct ath12k_dp_mon_status_desc *status_desc;
+	enum hal_tx_mon_status hal_status = HAL_TX_MON_STATUS_PPDU_NOT_DONE;
+	struct sk_buff_head *mpdu_q;
+	struct hal_tlv_64_hdr *tlv_hdr;
+	void *tlv_data;
+	u16 tlv_tag, tlv_len;
+	u32 tlv_userid = 0;
+	int i;
+
+	if (!dp_pdev || !dp_pdev->dp || !dp_pdev->dp->ab)
+		return -EINVAL;
+
+	if (unlikely(!ppdu_desc->status_desc_cnt)) {
+		ath12k_warn(dp_pdev->dp->ab, "status_desc_cnt %d ",
+			    ppdu_desc->status_desc_cnt);
+		return -EINVAL;
+	}
+
+	status_desc = &ppdu_desc->status_desc[0];
+	if (unlikely(!status_desc || !status_desc->mon_buf)) {
+		ath12k_warn(dp_pdev->dp->ab, "status desc %p , mon buf%p ",
+			    status_desc, status_desc ? status_desc->mon_buf : 0);
+		return -EINVAL;
+	}
+
+	if (status_desc->buf_len < sizeof(struct hal_tlv_64_hdr)) {
+		ath12k_warn(dp_pdev->dp->ab,
+			    "TX Mon: Buffer too small for TLV header: %u < %zu\n",
+			    status_desc->buf_len, sizeof(struct hal_tlv_64_hdr));
+		return -EINVAL;
+	}
+
+	tlv_hdr = (struct hal_tlv_64_hdr *)status_desc->mon_buf;
+
+	tlv_tag = le64_get_bits(tlv_hdr->tl, HAL_TLV_64_HDR_TAG);
+	tlv_len = le64_get_bits(tlv_hdr->tl, HAL_TLV_64_HDR_LEN);
+	tlv_userid = le64_get_bits(tlv_hdr->tl, HAL_TLV_64_USR_ID);
+
+	if (sizeof(struct hal_tlv_64_hdr) + tlv_len > status_desc->buf_len) {
+		ath12k_warn(dp_pdev->dp->ab,
+			    "TX Mon: TLV length exceeds buffer: %u + %u > %u\n",
+			    (u32)sizeof(struct hal_tlv_64_hdr),
+			    tlv_len, status_desc->buf_len);
+		return -EINVAL;
+	}
+
+	tlv_data = (u8 *)status_desc->mon_buf + sizeof(struct hal_tlv_64_hdr);
+
+	hal_status = ath12k_hal_mon_tx_status_get_num_user(dp_pdev->dp->hal,
+							   tlv_tag,
+							   tlv_data,
+							   &num_users,
+							   tlv_len);
+	if (hal_status == HAL_TX_MON_STATUS_PPDU_NOT_DONE || !num_users) {
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "TX Mon: Failed to get num_users");
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "hal_status=%d, num_users=%u, tlv_tag=0x%x\n",
+			   hal_status, num_users, tlv_tag);
+		return -EINVAL;
+	}
+
+	mon_data->prot_ppdu_info.tx_info.num_users = 1;
+	mon_data->data_ppdu_info.tx_info.num_users = num_users;
+
+	for (i = 0; i < HAL_MAX_UL_MU_USERS; i++) {
+		mpdu_q = mon_data->prot_ppdu_info.tx_info.rx_status.mpdu_q;
+		skb_queue_head_init(&mpdu_q[i]);
+		mpdu_q = mon_data->data_ppdu_info.tx_info.rx_status.mpdu_q;
+		skb_queue_head_init(&mpdu_q[i]);
+	}
+
+	return 0;
+}
+
+/**
+ * ath12k_dp_mon_tx_deep_free_ppdu_info() - Deep cleanup of PPDU info structures
+ * @pdev_dp: Pointer to DP PDEV context for device-specific operations
+ * @mon_data: Pointer to monitor data containing PPDU info structures to clean
+ *
+ * This function performs comprehensive cleanup of all MPDU socket buffers
+ * queued in both protection and data PPDU information structures. It ensures
+ * complete memory deallocation to prevent memory leaks during TX monitor
+ * processing cleanup or error recovery scenarios.
+ *
+ * The function performs deep cleanup by:
+ * 1. Iterating through all possible user queues (up to HAL_MAX_UL_MU_USERS)
+ * 2. Dequeuing and freeing all MPDU socket buffers from data PPDU queues
+ * 3. Dequeuing and freeing all MPDU socket buffers from protection PPDU queues
+ * 4. Using dev_kfree_skb_any() for safe deallocation in any context
+ */
+static void
+ath12k_dp_mon_tx_deep_free_ppdu_info(struct ath12k_pdev_dp *pdev_dp,
+				     struct ath12k_mon_data *mon_data)
+{
+	int i;
+	struct hal_tx_mon_ppdu_info *data_ppdu_info =
+		&mon_data->data_ppdu_info.tx_info;
+	struct hal_tx_mon_ppdu_info *prot_ppdu_info =
+		&mon_data->prot_ppdu_info.tx_info;
+
+	struct sk_buff_head *mpdu_q;
+	struct sk_buff *mpdu;
+
+	for (i = 0; i < HAL_MAX_UL_MU_USERS; i++) {
+		mpdu_q = &data_ppdu_info->rx_status.mpdu_q[i];
+		while ((mpdu = skb_dequeue(mpdu_q)))
+			dev_kfree_skb_any(mpdu);
+		mpdu_q = &prot_ppdu_info->rx_status.mpdu_q[i];
+		while ((mpdu = skb_dequeue(mpdu_q)))
+			dev_kfree_skb_any(mpdu);
+	}
+
+	mon_data->prot_ppdu_info.tx_info.ba_user_id = -1;
+	mon_data->data_ppdu_info.tx_info.ba_user_id = -1;
+}
+
+/**
+ * ath12k_dp_tx_mon_update_stats() - Update comprehensive TX monitor statistics
+ * @dp_pdev: DP PDEV context
+ * @ppdu_info: PPDU information from TLV parsing
+ *
+ * This function updates detailed TX monitor statistics based on parsed PPDU
+ * information. It tracks frame types, PHY modes, rates, transmission status,
+ * and other detailed metrics for monitoring and debugging purposes.
+ */
+static void ath12k_dp_tx_mon_update_stats(struct ath12k_pdev_dp *dp_pdev,
+					  struct dp_mon_tx_ppdu_info *ppdu_info)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev;
+	struct ath12k_pdev_tx_mon_stats *tx_stats;
+	struct hal_tx_mon_ppdu_info *tx_info;
+
+	if (unlikely(!ppdu_info))
+		return;
+
+	dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	if (unlikely(!dp_mon_pdev))
+		return;
+
+	tx_stats = &dp_mon_pdev->tx_mon_stats;
+	tx_info = &ppdu_info->tx_info;
+
+	tx_stats->tx_ppdu_processed++;
+
+	if (tx_info->is_data)
+		tx_stats->tx_data_frames++;
+
+	if (tx_info->num_users > 1) {
+		tx_stats->tx_mu_ppdu_count++;
+		tx_stats->tx_mu_user_count += tx_info->num_users;
+	} else {
+		tx_stats->tx_su_ppdu_count++;
+	}
+
+	dp_mon_pdev->mon_stats.num_ppdu_processed++;
+	if (tx_info->is_data)
+		dp_mon_pdev->mon_stats.pkt_tlv_processed++;
+}
+
+/**
+ * ath12k_dp_tx_mon_update_ampdu_info() - Update AMPDU aggregation information
+ * @ppdu_info: Pointer to PPDU information structure to update
+ * @user_idx: User index for multi-user scenarios (0-based)
+ *
+ * This function analyzes MPDU count and user status information to determine
+ * if the current transmission represents an AMPDU (Aggregated MPDU) and sets
+ * appropriate flags for radiotap header generation and frame analysis.
+ *
+ * AMPDU Detection Logic:
+ * The function uses different detection methods based on transmission type:
+ * - Single User: AMPDU detected when MPDU count > 1
+ * - Multi User: AMPDU detected when per-user MPDU count > 1 OR user has AMPDU flag set
+ *
+ * For single user transmissions, the function examines the total MPDU count
+ * in the PPDU. For multi-user transmissions, it analyzes per-user statistics
+ * from the rx_user_status array to determine aggregation on a per-user basis.
+ *
+ * When AMPDU is detected, the function sets the RX_FLAG_AMPDU_DETAILS flag
+ * in the rx_status structure, which is used by the radiotap generation code
+ * to include appropriate AMPDU information in monitor mode frames.
+ */
+static void
+ath12k_dp_tx_mon_update_ampdu_info(struct dp_mon_tx_ppdu_info *ppdu_info,
+				   u8 user_idx)
+{
+	struct hal_tx_mon_ppdu_info *tx_info = &ppdu_info->tx_info;
+	struct hal_rx_mon_ppdu_info *rx_status = &tx_info->rx_status;
+	bool is_ampdu = false;
+	u32 mpdu_count = 0;
+	struct hal_rx_user_status *rx_user_status = tx_info->rx_status.userstats;
+
+	if (tx_info->num_users == 1) {
+		mpdu_count = ppdu_info->num_mpdu_fcs_ok;
+		is_ampdu = (mpdu_count > 1);
+	} else if (user_idx < tx_info->num_users) {
+		mpdu_count = rx_user_status[user_idx].mpdu_cnt_fcs_ok;
+		is_ampdu = (mpdu_count > 1) || rx_user_status[user_idx].is_ampdu;
+	} else {
+		return;
+	}
+
+	if (is_ampdu)
+		rx_status->ampdu_flag |= RX_FLAG_AMPDU_DETAILS;
+}
+
+/**
+ * ath12k_dp_tx_mon_gen_rts() - Generate RTS frame
+ * @ppdu_info: PPDU info structure
+ * @status_info: TX status info for address selection
+ * @window_flag: Initiator window flag for address ordering
+ *
+ * Creates RTS frame with proper 802.11 header fields.
+ * Radiotap space will be added separately during delivery processing.
+ *
+ * Return: Generated sk_buff or NULL on failure
+ */
+static struct sk_buff *
+ath12k_dp_tx_mon_gen_rts(struct ath12k_pdev_dp *pdev_dp,
+			 struct dp_mon_tx_ppdu_info *ppdu_info,
+			 struct hal_tx_mon_status_info *status_info,
+			 u8 window_flag)
+{
+	struct sk_buff *skb;
+	struct ieee80211_rts *rts;
+	struct hal_tx_mon_ppdu_info *tx_info;
+	u16 duration_le;
+	u16 frame_control;
+	size_t rts_frame_size = sizeof(struct ieee80211_rts);
+
+	if (!ppdu_info || !status_info)
+		return NULL;
+
+	tx_info = &ppdu_info->tx_info;
+
+	skb = dev_alloc_skb(ATH12K_DP_MON_MAX_RADIO_TAP_HDR +
+			    rts_frame_size);
+	if (!skb)
+		return NULL;
+
+	skb_reserve(skb, ATH12K_DP_MON_MAX_RADIO_TAP_HDR);
+
+	rts = (struct ieee80211_rts *)skb_put_zero(skb, rts_frame_size);
+
+	frame_control = IEEE80211_FTYPE_CTL | IEEE80211_STYPE_RTS;
+	rts->frame_control = cpu_to_le16(frame_control);
+
+	tx_info->rx_status.frame_control = frame_control;
+	tx_info->rx_status.frame_control_info_valid = 1;
+
+	duration_le = cpu_to_le16(tx_info->rx_status.rx_duration);
+	rts->duration = duration_le;
+
+	if (!status_info->protection_addr)
+		status_info = &pdev_dp->dp_mon_pdev->mon_data.data_status_info;
+
+	if (window_flag == INITIATOR_WINDOW) {
+		memcpy(rts->ra, status_info->addr1, ETH_ALEN);
+		memcpy(rts->ta, status_info->addr2, ETH_ALEN);
+	} else {
+		memcpy(rts->ra, status_info->addr2, ETH_ALEN);
+		memcpy(rts->ta, status_info->addr1, ETH_ALEN);
+	}
+
+	tx_info->is_used = 1;
+	return skb;
+}
+
+/**
+ * ath12k_dp_tx_mon_gen_cts2self() - Generate CTS frame
+ * @ppdu_info: PPDU info structure
+ * @status_info: TX status info for address selection
+ *
+ * Creates CTS-to-self frame for medium protection. Uses standard
+ * CTS frame format with self-addressing.
+ *
+ * Return: Generated sk_buff or NULL on failure
+ */
+static struct sk_buff *
+ath12k_dp_tx_mon_gen_cts2self(struct dp_mon_tx_ppdu_info *ppdu_info,
+			      struct hal_tx_mon_status_info *status_info)
+{
+	struct sk_buff *skb;
+	struct ieee80211_cts *cts;
+	struct hal_tx_mon_ppdu_info *tx_info;
+	u16 duration_le;
+	u16 frame_control;
+	size_t cts_frame_size = sizeof(struct ieee80211_cts);
+
+	if (!ppdu_info || !status_info)
+		return NULL;
+
+	tx_info = &ppdu_info->tx_info;
+
+	skb = dev_alloc_skb(ATH12K_DP_MON_MAX_RADIO_TAP_HDR +
+			    cts_frame_size);
+	if (!skb)
+		return NULL;
+
+	skb_reserve(skb, ATH12K_DP_MON_MAX_RADIO_TAP_HDR);
+
+	cts = (struct ieee80211_cts *)skb_put_zero(skb,
+						   cts_frame_size);
+
+	frame_control = IEEE80211_FTYPE_CTL | IEEE80211_STYPE_CTS;
+	cts->frame_control = cpu_to_le16(frame_control);
+
+	tx_info->rx_status.frame_control = frame_control;
+	tx_info->rx_status.frame_control_info_valid = 1;
+
+	duration_le = cpu_to_le16(tx_info->rx_status.rx_duration);
+	cts->duration = duration_le;
+	memcpy(cts->ra, status_info->addr2, ETH_ALEN);
+
+	tx_info->is_used = 1;
+
+	return skb;
+}
+
+/**
+ * ath12k_dp_tx_mon_gen_cts() - Generate CTS frame
+ * @ppdu_info: PPDU info structure
+ * @status_info: TX status info for address selection
+ *
+ * Wrapper to create CTS-to-self frame for medium protection.
+ *
+ * Return: 0 on success
+ */
+static int
+ath12k_dp_tx_mon_gen_cts(struct dp_mon_tx_ppdu_info *ppdu_info,
+			 struct hal_tx_mon_status_info *status_info)
+{
+	struct sk_buff *skb = NULL;
+	struct sk_buff_head *mpdu_q;
+
+	if (!ppdu_info || !status_info)
+		return -EINVAL;
+
+	mpdu_q = &ppdu_info->tx_info.rx_status.mpdu_q[0];
+	skb = ath12k_dp_tx_mon_gen_cts2self(ppdu_info, status_info);
+	if (!skb)
+		return -ENOMEM;
+
+	skb_queue_tail(mpdu_q, skb);
+
+	return 0;
+}
+
+/**
+ * ath12k_dp_tx_mon_gen_qos_null_3addr() - Generate 3-address QoS NULL frame
+ * @pdev_dp: Pointer to DP PDEV context for device-specific operations
+ * @ppdu_info: PPDU info structure
+ *
+ * Creates 3-address QoS NULL frame for medium protection. Uses standard
+ * 3-address data frame format without window-based logic.
+ *
+ * Return: Generated sk_buff or NULL on failure
+ */
+static struct sk_buff *
+ath12k_dp_tx_mon_gen_qos_null_3addr(struct ath12k_pdev_dp *pdev_dp,
+				    struct dp_mon_tx_ppdu_info *ppdu_info)
+{
+	struct sk_buff *skb;
+	struct ieee80211_qos_hdr *qos_null;
+	struct hal_tx_mon_ppdu_info *tx_info;
+	struct hal_tx_mon_status_info *status_info;
+	u16 duration_le;
+	u16 frame_control;
+	size_t qos_null_frame_size = sizeof(struct ieee80211_qos_hdr);
+
+	if (!ppdu_info)
+		return NULL;
+
+	tx_info = &ppdu_info->tx_info;
+
+	skb = dev_alloc_skb(ATH12K_DP_MON_MAX_RADIO_TAP_HDR +
+			    qos_null_frame_size);
+	if (!skb)
+		return NULL;
+
+	skb_reserve(skb, ATH12K_DP_MON_MAX_RADIO_TAP_HDR);
+
+	qos_null = (struct ieee80211_qos_hdr *)skb_put_zero(skb,
+							    qos_null_frame_size);
+
+	frame_control = IEEE80211_FTYPE_DATA | IEEE80211_STYPE_QOS_NULLFUNC;
+	qos_null->frame_control = cpu_to_le16(frame_control);
+
+	tx_info->rx_status.frame_control = frame_control;
+	tx_info->rx_status.frame_control_info_valid = 1;
+
+	duration_le = cpu_to_le16(tx_info->rx_status.rx_duration);
+	qos_null->duration_id = duration_le;
+
+	status_info = &pdev_dp->dp_mon_pdev->mon_data.data_status_info;
+	memcpy(qos_null->addr1, status_info->addr1, ETH_ALEN);
+	memcpy(qos_null->addr2, status_info->addr2, ETH_ALEN);
+	memcpy(qos_null->addr3, status_info->addr3, ETH_ALEN);
+
+	qos_null->qos_ctrl = cpu_to_le16(0);
+
+	tx_info->is_used = 1;
+
+	return skb;
+}
+
+/**
+ * ath12k_dp_tx_mon_gen_qos_null_4addr() - Generate 4-address QoS NULL frame
+ * @pdev_dp: Pointer to DP PDEV context for device-specific operations
+ * @ppdu_info: PPDU info structure
+ *
+ * Creates 4-address QoS NULL frame for medium protection. Uses standard
+ * 4-address data frame format without window-based logic.
+ *
+ * Return: Generated sk_buff or NULL on failure
+ */
+static struct sk_buff *
+ath12k_dp_tx_mon_gen_qos_null_4addr(struct ath12k_pdev_dp *pdev_dp,
+				    struct dp_mon_tx_ppdu_info *ppdu_info)
+{
+	struct sk_buff *skb;
+	struct ieee80211_qos_hdr_4addr *qos_null_4addr;
+	struct hal_tx_mon_ppdu_info *tx_info;
+	struct hal_tx_mon_status_info *status_info;
+	u16 duration_le;
+	u16 frame_control;
+	size_t frame_size = sizeof(struct ieee80211_qos_hdr_4addr);
+
+	if (!ppdu_info)
+		return NULL;
+
+	tx_info = &ppdu_info->tx_info;
+
+	skb = dev_alloc_skb(ATH12K_DP_MON_MAX_RADIO_TAP_HDR +
+			    frame_size);
+	if (!skb)
+		return NULL;
+
+	skb_reserve(skb, ATH12K_DP_MON_MAX_RADIO_TAP_HDR);
+
+	qos_null_4addr = (struct ieee80211_qos_hdr_4addr *)skb_put_zero(skb,
+									frame_size);
+
+	frame_control = IEEE80211_FTYPE_DATA | IEEE80211_STYPE_QOS_NULLFUNC |
+		IEEE80211_FCTL_TODS | IEEE80211_FCTL_FROMDS;
+	qos_null_4addr->frame_control = cpu_to_le16(frame_control);
+
+	tx_info->rx_status.frame_control = frame_control;
+	tx_info->rx_status.frame_control_info_valid = 1;
+
+	duration_le = cpu_to_le16(tx_info->rx_status.rx_duration);
+	qos_null_4addr->duration_id = duration_le;
+
+	status_info = &pdev_dp->dp_mon_pdev->mon_data.data_status_info;
+
+	memcpy(qos_null_4addr->addr1, status_info->addr1, ETH_ALEN);
+	memcpy(qos_null_4addr->addr2, status_info->addr2, ETH_ALEN);
+	memcpy(qos_null_4addr->addr3, status_info->addr3, ETH_ALEN);
+	memcpy(qos_null_4addr->addr4, status_info->addr2, ETH_ALEN);
+
+	qos_null_4addr->qos_ctrl = cpu_to_le16(0);
+	tx_info->is_used = 1;
+
+	return skb;
+}
+
+/**
+ * ath12k_dp_tx_mon_generate_prot_frm() - Generate protection frame
+ * @pdev_dp: DP pdev handle
+ * @tx_prot_ppdu_info: Protection PPDU information
+ *
+ * Generates protection frames (RTS/CTS) based on protection type
+ * specified in PPDU information. The generated frame is added to
+ * the protection PPDU's MPDU queue for delivery to monitor stack.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static int
+ath12k_dp_tx_mon_generate_prot_frm(struct ath12k_pdev_dp *pdev_dp,
+				   struct dp_mon_tx_ppdu_info *tx_prot_ppdu_info)
+{
+	struct sk_buff *skb = NULL;
+	struct hal_tx_mon_ppdu_info *tx_info;
+	struct sk_buff_head *mpdu_q;
+	struct hal_tx_mon_status_info *status_info;
+	u32 protection_type;
+	u8 window_flag = INITIATOR_WINDOW;
+
+	tx_info = &tx_prot_ppdu_info->tx_info;
+	mpdu_q = &tx_info->rx_status.mpdu_q[0];
+
+	status_info = &pdev_dp->dp_mon_pdev->mon_data.prot_status_info;
+	protection_type = status_info->medium_prot_type;
+
+	switch (protection_type) {
+	case DP_MON_TX_MEDIUM_NO_PROTECTION:
+		tx_info->is_used = 0;
+		return 0;
+	case DP_MON_TX_MEDIUM_RTS_LEGACY:
+	case DP_MON_TX_MEDIUM_RTS_11AC_STATIC_BW:
+	case DP_MON_TX_MEDIUM_RTS_11AC_DYNAMIC_BW:
+		skb = ath12k_dp_tx_mon_gen_rts(pdev_dp,
+					       tx_prot_ppdu_info,
+					       status_info,
+					       window_flag);
+		break;
+
+	case DP_MON_TX_MEDIUM_CTS2SELF:
+		skb = ath12k_dp_tx_mon_gen_cts2self(tx_prot_ppdu_info,
+						    status_info);
+		break;
+
+	case DP_MON_TX_MEDIUM_QOS_NULL_NO_ACK_3ADDR:
+		skb = ath12k_dp_tx_mon_gen_qos_null_3addr(pdev_dp,
+							  tx_prot_ppdu_info);
+		break;
+
+	case DP_MON_TX_MEDIUM_QOS_NULL_NO_ACK_4ADDR:
+		skb = ath12k_dp_tx_mon_gen_qos_null_4addr(pdev_dp,
+							  tx_prot_ppdu_info);
+		break;
+
+	default:
+		ath12k_dbg(pdev_dp->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "TX monitor: No protection frame needed, type=%u\n",
+			   protection_type);
+		return 0;
+	}
+
+	if (!skb) {
+		ath12k_dbg(pdev_dp->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "TX monitor: Failed to generate protection frame type %u\n",
+			   protection_type);
+		return -ENOMEM;
+	}
+
+	skb_queue_tail(mpdu_q, skb);
+	tx_prot_ppdu_info->contains_host_frames = true;
+
+	ath12k_dbg(pdev_dp->dp->ab, ATH12K_DBG_DP_MON_TX,
+		   "TX monitor: Generated protection frame type %u\n",
+		   protection_type);
+
+	return 0;
+}
+
+/**
+ * ath12k_dp_tx_mon_free_last_mpdu_q() - Free incomplete MPDU from queue
+ * @dp_mon_pdev: Monitor pdev context
+ * @tx_ppdu_info: PPDU info structure
+ * @usr_idx: User index
+ *
+ * Frees the last incomplete MPDU from the specified user's queue.
+ */
+void ath12k_dp_tx_mon_free_last_mpdu_q(struct ath12k_pdev_mon_dp *dp_mon_pdev,
+				       struct dp_mon_tx_ppdu_info *tx_ppdu_info,
+				       u32 usr_idx)
+{
+	struct hal_rx_mon_mpdu_info *mpdu_info;
+	struct sk_buff_head *mpdu_q;
+	struct sk_buff *skb;
+
+	if (!dp_mon_pdev || !tx_ppdu_info)
+		return;
+
+	mpdu_info = &tx_ppdu_info->tx_info.rx_status.mpdu_info[usr_idx];
+	mpdu_q = &tx_ppdu_info->tx_info.rx_status.mpdu_q[usr_idx];
+
+	/*
+	 * Only clean up if MPDU end was not received
+	 * This indicates an incomplete MPDU that needs cleanup
+	 */
+	if (!mpdu_info->mpdu_end_received) {
+		skb = skb_dequeue_tail(mpdu_q);
+		if (skb)
+			dev_kfree_skb_any(skb);
+
+		/* Mark MPDU as ended to prevent further processing */
+		mpdu_info->mpdu_end_received = true;
+		mpdu_info->mpdu_start_received = false;
+	}
+}
+
+/**
+ * ath12k_dp_tx_mon_process_mpdu_start() - Process MPDU start TLV
+ * @dp_pdev: DP pdev handle
+ * @tx_ppdu_info: PPDU info structure
+ * @usr_idx: User index
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static int
+ath12k_dp_tx_mon_process_mpdu_start(struct ath12k_pdev_dp *dp_pdev,
+				    struct dp_mon_tx_ppdu_info *tx_ppdu_info,
+				    u32 usr_idx)
+{
+	struct sk_buff_head *mpdu_q;
+	struct sk_buff *skb;
+	struct hal_rx_mon_mpdu_info *mpdu_info;
+	struct ath12k_dp_mon *dp_mon = dp_pdev->dp_mon_pdev->dp_mon;
+
+	if (usr_idx >= HAL_MAX_UL_MU_USERS) {
+		ath12k_warn(dp_pdev->dp->ab,
+			    "TX Mon: Invalid user index %u >= %u\n",
+			    usr_idx, HAL_MAX_UL_MU_USERS);
+		return -EINVAL;
+	}
+
+	mpdu_q = &tx_ppdu_info->tx_info.rx_status.mpdu_q[usr_idx];
+	mpdu_info = &tx_ppdu_info->tx_info.rx_status.mpdu_info[usr_idx];
+
+	if (!mpdu_info->mpdu_end_received) {
+		skb = skb_dequeue_tail(mpdu_q);
+		if (likely(skb))
+			dev_kfree_skb_any(skb);
+	}
+
+	mpdu_info->mpdu_start_received = true;
+	mpdu_info->mpdu_end_received = false;
+
+	skb = dev_alloc_skb(ATH12K_DP_MON_TX_MAX_RADIO_TAP_HDR);
+	if (unlikely(!skb)) {
+		ath12k_warn(dp_pdev->dp->ab,
+			    "TX Mon: SKB allocation failed for user %u\n",
+			    usr_idx);
+		mpdu_info->mpdu_start_received = false;
+		return -ENOMEM;
+	}
+
+	skb_reserve(skb, ATH12K_DP_MON_TX_MAX_RADIO_TAP_HDR);
+	tx_ppdu_info->contains_host_frames = false;
+	skb_queue_tail(mpdu_q, skb);
+
+	if (skb_queue_len(mpdu_q) > 1)
+		tx_ppdu_info->tx_info.rx_status.userstats[usr_idx].ampdu_present = true;
+
+	ath12k_dbg(dp_mon->dp->ab, ATH12K_DBG_DP_MON_TX,
+		   "TX Mon: MPDU header SKB allocated for user %u (reserved=%u)\n",
+		   usr_idx, ATH12K_DP_MON_TX_MAX_RADIO_TAP_HDR);
+
+	return 0;
+}
+
+/**
+ * ath12k_dp_tx_mon_generate_data_frm() - Generate data frame with fragments
+ * @ppdu_info: Data PPDU information
+ * @user_idx: User index
+ * @take_ref: Whether to take reference on buffer page
+ *           - true: Increment page reference count (buffer may be reused)
+ *           - false: Transfer page ownership (buffer consumed)
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int ath12k_dp_tx_mon_generate_data_frm(struct dp_mon_tx_ppdu_info *ppdu_info,
+				       u8 user_idx, bool take_ref)
+{
+	struct sk_buff *skb;
+	struct hal_rx_mon_ppdu_info *rx_status;
+	struct sk_buff_head *mpdu_q;
+	struct hal_tx_mon_ppdu_info *tx_info;
+	void *buffer_addr;
+	u32 buffer_length;
+	struct page *page;
+	int frag_offset;
+
+	if (!ppdu_info || user_idx >= HAL_MAX_UL_MU_USERS)
+		return -EINVAL;
+
+	tx_info = &ppdu_info->tx_info;
+	rx_status = &tx_info->rx_status;
+	mpdu_q = &rx_status->mpdu_q[user_idx];
+
+	skb = skb_peek_tail(mpdu_q);
+	if (!skb)
+		return -ENOENT;
+
+	if (ppdu_info->has_buffer_data && ppdu_info->buffer_addr) {
+		buffer_addr = ppdu_info->buffer_addr;
+		buffer_length = ppdu_info->buffer_length;
+
+		page = virt_to_head_page(buffer_addr);
+		frag_offset = buffer_addr - page_address(page);
+
+		skb_add_rx_frag(skb, skb_shinfo(skb)->nr_frags,
+				page,
+				frag_offset,
+				buffer_length,
+				ATH12K_DP_MON_TX_BUF_SIZE);
+
+		if (take_ref)
+			skb_frag_ref(skb, skb_shinfo(skb)->nr_frags);
+	}
+	return 0;
+}
+
+/**
+ * ath12k_dp_tx_mon_extract_buffer_info() - Extract buffer information only
+ * @dp_mon: DP monitor handle
+ * @tx_ppdu_info: PPDU info structure
+ * @usr_idx: User index
+ *
+ * This function ONLY extracts buffer info and stores it in ppdu_info.
+ * It does NOT add fragments - that's done by ath12k_dp_tx_mon_generate_data_frm().
+ * Incorporates robust validation and error handling from original implementation.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static int
+ath12k_dp_tx_mon_extract_buffer_info(struct ath12k_dp_mon *dp_mon,
+				     struct dp_mon_tx_ppdu_info *tx_ppdu_info,
+				     u32 usr_idx)
+{
+	struct hal_tx_mon_ppdu_info *hal_info;
+	struct hal_tx_mon_packet_info *packet_info = NULL;
+	struct list_head mon_desc_used_list;
+	struct ath12k_dp_mon_desc *mon_desc;
+	struct sk_buff_head *mpdu_q;
+	struct sk_buff *header_skb;
+	struct hal_rx_mon_mpdu_info *mpdu_info;
+	int ret = 0;
+
+	INIT_LIST_HEAD(&mon_desc_used_list);
+
+	if (usr_idx >= HAL_MAX_UL_MU_USERS) {
+		ath12k_warn(dp_mon->dp->ab,
+			    "TX Mon: Invalid user index %u >= %u\n",
+			    usr_idx, HAL_MAX_UL_MU_USERS);
+		return -EINVAL;
+	}
+
+	mpdu_info = &tx_ppdu_info->tx_info.rx_status.mpdu_info[usr_idx];
+
+	if (!mpdu_info->mpdu_start_received) {
+		ath12k_dbg(dp_mon->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "TX Mon: Buffer without MPDU start for user %u\n",
+			   usr_idx);
+		return -EINVAL;
+	}
+
+	mpdu_q = &tx_ppdu_info->tx_info.rx_status.mpdu_q[usr_idx];
+
+	hal_info = &tx_ppdu_info->tx_info;
+	packet_info = &hal_info->packet_info;
+
+	if (!packet_info || !packet_info->sw_cookie) {
+		tx_ppdu_info->has_buffer_data = false;
+		ath12k_dbg(dp_mon->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "TX Mon: No packet buffer info for user %u\n",
+			   usr_idx);
+		return 0;
+	}
+
+	mon_desc = (struct ath12k_dp_mon_desc *)(uintptr_t)(packet_info->sw_cookie);
+
+	if (unlikely(mon_desc->magic != ATH12K_MON_MAGIC_VALUE)) {
+		ath12k_warn(dp_mon->dp->ab,
+			    "TX Mon: Invalid magic value 0x%x for user %u\n",
+			    mon_desc->magic, usr_idx);
+		ret = -EINVAL;
+		goto return_mon_desc;
+	}
+
+	if (unlikely(mon_desc->in_use != DP_MON_DESC_TO_HW)) {
+		ath12k_warn(dp_mon->dp->ab,
+			    "TX Mon: Invalid descriptor state %d for user %u\n",
+			    mon_desc->in_use, usr_idx);
+		ret = -EINVAL;
+		goto return_mon_desc;
+	}
+
+	mon_desc->in_use = DP_MON_DESC_REPLENISH;
+	list_add_tail(&mon_desc->list, &mon_desc_used_list);
+	tx_ppdu_info->buffer_addr = mon_desc->mon_buf;
+	mon_desc->mon_buf = NULL;
+
+	if (!tx_ppdu_info->buffer_addr) {
+		ret = -EINVAL;
+		goto return_mon_desc;
+	}
+
+	if (packet_info->dma_length > ATH12K_DP_MON_TX_BUF_SIZE) {
+		ath12k_warn(dp_mon->dp->ab,
+			    "TX Mon: Invalid DMA length %u for user %u\n",
+			    packet_info->dma_length, usr_idx);
+		ret = -EINVAL;
+		page_frag_free(tx_ppdu_info->buffer_addr);
+		goto return_mon_desc;
+	}
+
+	header_skb = skb_peek_tail(mpdu_q);
+	if (!header_skb) {
+		ath12k_warn(dp_mon->dp->ab,
+			    "TX Mon: No header SKB in queue for user %u\n",
+			    usr_idx);
+		ret = -EINVAL;
+		page_frag_free(tx_ppdu_info->buffer_addr);
+		goto return_mon_desc;
+	}
+
+	ath12k_core_dma_unmap_page(dp_mon->dp->dev, mon_desc->paddr,
+				   ATH12K_DP_MON_TX_BUF_SIZE,
+				   DMA_FROM_DEVICE);
+
+	tx_ppdu_info->buffer_length = packet_info->dma_length;
+	tx_ppdu_info->msdu_continuation = packet_info->msdu_continuation;
+	tx_ppdu_info->truncated = packet_info->truncated;
+	tx_ppdu_info->has_buffer_data = true;
+
+return_mon_desc:
+
+	ath12k_dp_mon_tx_desc_free(&mon_desc_used_list, dp_mon);
+	return ret;
+}
+
+/**
+ * ath12k_dp_tx_mon_generate_ack_frm() - Generate ACK frame
+ * @tx_data_ppdu_info: Data PPDU information
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static int
+ath12k_dp_tx_mon_generate_ack_frm(struct dp_mon_tx_ppdu_info *tx_data_ppdu_info,
+				  struct hal_tx_mon_status_info *status_info)
+{
+	struct sk_buff *skb;
+	struct hal_tx_mon_ppdu_info *tx_info;
+	struct sk_buff_head *usr_mpdu_q;
+	struct ieee80211_frame_min *ack = NULL;
+	u16 frame_control;
+	u32 frame_len = sizeof(struct ieee80211_frame_min);
+
+	if (!tx_data_ppdu_info || !status_info)
+		return -EINVAL;
+
+	tx_info = &tx_data_ppdu_info->tx_info;
+	usr_mpdu_q = &tx_info->rx_status.mpdu_q[0];
+
+	skb = dev_alloc_skb(ATH12K_DP_MON_MAX_RADIO_TAP_HDR + frame_len);
+	if (!skb)
+		return -ENOMEM;
+
+	skb_reserve(skb, ATH12K_DP_MON_MAX_RADIO_TAP_HDR);
+	ack = (struct ieee80211_frame_min *)skb_put_zero(skb, frame_len);
+
+	frame_control = IEEE80211_FTYPE_CTL | IEEE80211_STYPE_ACK;
+	ack->frame_control = cpu_to_le16(frame_control);
+
+	/* Update PPDU info */
+	tx_info->rx_status.frame_control = frame_control;
+	tx_info->rx_status.frame_control_info_valid = 1;
+
+	ack->duration = cpu_to_le16(0);
+
+	memcpy(ack->ra, status_info->addr1, ETH_ALEN);
+
+	skb_queue_tail(usr_mpdu_q, skb);
+	tx_info->is_used = 1;
+	return 0;
+}
+
+/**
+ * ath12k_dp_tx_mon_check_ba_tlv_missing() - Check if BA TLV is missing
+ * @ppdu_info: PPDU info structure
+ *
+ * Simple check if Block ACK TLV information is missing by validating ba_user_id.
+ *
+ * Return: true if BA TLV is missing, false otherwise
+ */
+static inline bool
+ath12k_dp_tx_mon_check_ba_tlv_missing(struct dp_mon_tx_ppdu_info *ppdu_info)
+{
+	struct hal_tx_mon_ppdu_info *tx_info;
+
+	if (unlikely(!ppdu_info))
+		return true;
+
+	tx_info = &ppdu_info->tx_info;
+	if (!tx_info)
+		return true;
+
+	if (unlikely(tx_info->ba_user_id == -1))
+		return true;
+
+	return false;
+}
+
+/**
+ * ath12k_dp_tx_mon_gen_block_ack() - Generate Block ACK frame
+ * @ppdu_info: PPDU info structure
+ * @status_info: TX status info for BA parameters
+ *
+ * Creates Block ACK frame with proper BA control field, sequence control,
+ * and bitmap based on TLV information.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static int
+ath12k_dp_tx_mon_gen_block_ack(struct dp_mon_tx_ppdu_info *ppdu_info,
+			       struct hal_tx_mon_status_info *status_info,
+			       u8 window_flag)
+{
+	struct sk_buff *skb;
+	struct hal_tx_mon_ppdu_info *tx_info;
+	struct sk_buff_head *usr_mpdu_q;
+	struct ieee80211_ctl_frm *ba_hdr;
+	u32 ba_hdr_len = sizeof(struct ieee80211_ctl_frm);
+	u32 user_id, ba_bitmap_sz, bitmap_bytes;
+	u32 total_frame_sz;
+	u16 frm_ctl;
+	u8 *frm;
+
+	if (!status_info)
+		return -EINVAL;
+
+	tx_info = &ppdu_info->tx_info;
+	usr_mpdu_q = &tx_info->rx_status.mpdu_q[0];
+	user_id = tx_info->ba_user_id;
+	ba_bitmap_sz = tx_info->rx_status.userstats[user_id].ba_bitmap_sz;
+
+	if (ba_bitmap_sz > ATH12K_DP_MON_TX_BA_BITMAP_SZ_MAX)
+		return -EINVAL;
+
+	bitmap_bytes = ATH12K_DP_MON_TX_BA_BITMAP_BYTES(ba_bitmap_sz);
+
+	total_frame_sz = ba_hdr_len +
+		ATH12K_DP_MON_TX_BA_CTRL_SZ +
+		ATH12K_DP_MON_TX_BA_START_SQ_CTRL_SZ +
+		bitmap_bytes;
+
+	skb = dev_alloc_skb(ATH12K_DP_MON_MAX_RADIO_TAP_HDR + total_frame_sz);
+	if (!skb)
+		return -ENOMEM;
+
+	skb_reserve(skb, ATH12K_DP_MON_MAX_RADIO_TAP_HDR);
+
+	ba_hdr = (struct ieee80211_ctl_frm *)skb_put_zero(skb, ba_hdr_len);
+
+	frm_ctl = IEEE80211_FTYPE_CTL | IEEE80211_STYPE_BACK;
+	ba_hdr->frame_control = cpu_to_le16(frm_ctl);
+
+	tx_info->rx_status.frame_control = frm_ctl;
+	tx_info->rx_status.frame_control_info_valid = 1;
+
+	ba_hdr->duration = cpu_to_le16(ATH12K_BA_DURATION_US);
+
+	if (window_flag) {
+		memcpy(ba_hdr->addr1, status_info->addr1, ETH_ALEN);
+		memcpy(ba_hdr->addr2, status_info->addr2, ETH_ALEN);
+	} else {
+		memcpy(ba_hdr->addr1, status_info->addr2, ETH_ALEN);
+		memcpy(ba_hdr->addr2, status_info->addr1, ETH_ALEN);
+	}
+
+	frm = skb_put(skb, ATH12K_DP_MON_TX_BA_CTRL_SZ +
+		      ATH12K_DP_MON_TX_BA_START_SQ_CTRL_SZ + bitmap_bytes);
+
+	*((u16 *)frm) = cpu_to_le16(tx_info->rx_status.userstats[user_id].ba_control);
+	frm += 2;
+
+	*((u16 *)frm) = cpu_to_le16(tx_info->rx_status.userstats[user_id].start_seq);
+	frm += 2;
+
+	memcpy(frm, tx_info->rx_status.userstats[user_id].ba_bitmap, bitmap_bytes);
+
+	skb_queue_tail(usr_mpdu_q, skb);
+	tx_info->is_used = 1;
+
+	return 0;
+}
+
+/**
+ * ath12k_dp_tx_mon_add_mu_ba_per_user_info() - Add per-user info to MU Block ACK
+ * @tx_info: HAL PPDU info structure
+ * @frame_ptr: Pointer to current position in frame
+ * @user_id: User index
+ *
+ * Adds per-user TID info, starting sequence, and bitmap to MU Block ACK frame.
+ *
+ * Return: Updated frame pointer or NULL on error
+ */
+static u8 *
+ath12k_dp_tx_mon_add_mu_ba_per_user_info(struct hal_tx_mon_ppdu_info *tx_info,
+					 u8 *frame_ptr, u8 user_id)
+{
+	struct hal_rx_user_status *user_status;
+	u16 per_aid_tid_info;
+	u16 start_seq_ctrl;
+	u8 bitmap_sz;
+	u32 bitmap_bytes;
+
+	user_status = &tx_info->rx_status.userstats[user_id];
+	bitmap_sz = user_status->ba_bitmap_sz;
+	bitmap_bytes = 4 << bitmap_sz;
+
+	per_aid_tid_info = ((user_status->tid << 12) |
+			    (user_status->aid & 0x7FF));
+	*((u16 *)frame_ptr) = cpu_to_le16(per_aid_tid_info);
+	frame_ptr += 2;
+
+	start_seq_ctrl = user_status->start_seq;
+	*((u16 *)frame_ptr) = cpu_to_le16(start_seq_ctrl);
+	frame_ptr += 2;
+
+	memcpy(frame_ptr, user_status->ba_bitmap, bitmap_bytes);
+	frame_ptr += bitmap_bytes;
+
+	return frame_ptr;
+}
+
+/**
+ * ath12k_dp_tx_mon_gen_mu_block_ack() - Generate MU Block ACK frame
+ * @ppdu_info: PPDU info structure
+ * @status_info: TX status info for MU BA parameters
+ *
+ * Creates Multi-User Block ACK frame with per-user BA information
+ * including AID, TID, and sequence numbers for MU scenarios.
+ *
+ * Return: Generated sk_buff or NULL on failure
+ */
+static struct sk_buff *
+ath12k_dp_tx_mon_gen_mu_block_ack(struct hal_tx_mon_ppdu_info *tx_info,
+				  struct hal_tx_mon_status_info *status_info,
+				  u8 window_flag, u8 num_users)
+{
+	struct sk_buff *skb;
+	struct ieee80211_mu_block_ack_hdr *mu_ba_hdr;
+	u32 ba_bitmap_sz, total_frame_sz = 0;
+	u16 frm_ctl;
+	u8 *per_user_info;
+	u8 i;
+
+	total_frame_sz = sizeof(struct ieee80211_mu_block_ack_hdr);
+
+	for (i = 0; i < num_users; i++) {
+		ba_bitmap_sz = tx_info->rx_status.userstats[i].ba_bitmap_sz;
+		total_frame_sz += ATH12K_DP_MON_TX_MU_BA_INFO_SZ(ba_bitmap_sz);
+	}
+
+	skb = dev_alloc_skb(ATH12K_DP_MON_MAX_RADIO_TAP_HDR + total_frame_sz);
+	if (!skb)
+		return NULL;
+
+	skb_reserve(skb, ATH12K_DP_MON_MAX_RADIO_TAP_HDR);
+
+	mu_ba_hdr = (struct ieee80211_mu_block_ack_hdr *)skb_put_zero(skb,
+					sizeof(struct ieee80211_mu_block_ack_hdr));
+
+	frm_ctl = IEEE80211_FTYPE_CTL | IEEE80211_STYPE_BACK;
+	mu_ba_hdr->frame_control = cpu_to_le16(frm_ctl);
+	mu_ba_hdr->duration = cpu_to_le16(0);
+
+	tx_info->rx_status.frame_control = frm_ctl;
+	tx_info->rx_status.frame_control_info_valid = 1;
+
+	if (window_flag == RESPONSE_WINDOW) {
+		memcpy(mu_ba_hdr->ta, status_info->addr2, ETH_ALEN);
+		if (num_users > 1)
+			memset(mu_ba_hdr->ra, 0xFF, ETH_ALEN);
+		else
+			memcpy(mu_ba_hdr->ra, status_info->addr1, ETH_ALEN);
+	} else {
+		memcpy(mu_ba_hdr->ta, status_info->addr1, ETH_ALEN);
+		memcpy(mu_ba_hdr->ra, status_info->addr2, ETH_ALEN);
+	}
+
+	mu_ba_hdr->ba_control = cpu_to_le16(ATH12K_MU_BA_CTRL_MULTI_TID);
+
+	per_user_info =
+		skb_put(skb,
+			total_frame_sz - sizeof(struct ieee80211_mu_block_ack_hdr));
+
+	for (i = 0; i < num_users; i++) {
+		per_user_info = ath12k_dp_tx_mon_add_mu_ba_per_user_info(tx_info,
+									 per_user_info,
+									 i);
+		if (!per_user_info) {
+			dev_kfree_skb(skb);
+			return NULL;
+		}
+	}
+
+	tx_info->is_used = 1;
+	return skb;
+}
+
+/**
+ * ath12k_dp_tx_mon_generate_mu_block_ack_frm() - Generate and enqueue MU Block ACK
+ * @pdev_dp: DP pdev handle
+ * @tx_ppdu_info: PPDU info structure
+ * @window_flag: Window flag for address ordering
+ * @mac_id: MAC ID
+ *
+ * Generates MU Block ACK frame and enqueues to user 0 MPDU queue.
+ * Only processes when called for the last user.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static int
+ath12k_dp_tx_mon_generate_mu_block_ack_frm(struct ath12k_pdev_dp *pdev_dp,
+					   struct dp_mon_tx_ppdu_info *tx_ppdu_info,
+					   struct hal_tx_mon_status_info *status_info,
+					   u8 window_flag)
+{
+	struct sk_buff *mu_ba_skb;
+	struct hal_tx_mon_ppdu_info *tx_info;
+	struct sk_buff_head *usr_mpdu_q;
+	u8 num_users;
+	u8 ba_user_id;
+
+	if (!status_info)
+		return -EINVAL;
+
+	tx_info = &tx_ppdu_info->tx_info;
+	num_users = tx_info->num_users;
+	if (num_users == 0 || num_users > HAL_MAX_UL_MU_USERS) {
+		ath12k_dbg(pdev_dp->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "TX Mon: Invalid users for MU Block ACK\n");
+		return -EINVAL;
+	}
+
+	ba_user_id = tx_info->ba_user_id;
+	/* Only the last user should proceed with MU Block ACK generation */
+	if (ba_user_id != num_users - 1) {
+		ath12k_dbg(pdev_dp->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "TX Mon: Skipping MU Block ACK for user %u (not last user)\n",
+			   ba_user_id);
+		return 0;
+	}
+
+	mu_ba_skb = ath12k_dp_tx_mon_gen_mu_block_ack(tx_info, status_info,
+						      window_flag, num_users);
+	if (!mu_ba_skb) {
+		ath12k_warn(pdev_dp->dp->ab,
+			    "TX Mon: Failed to generate MU Block ACK frame\n");
+		return -ENOMEM;
+	}
+
+	usr_mpdu_q = &tx_info->rx_status.mpdu_q[0];
+	skb_queue_tail(usr_mpdu_q, mu_ba_skb);
+
+	tx_info->rx_status.he_mu_flags = 0;
+
+	ath12k_dbg(pdev_dp->dp->ab, ATH12K_DBG_DP_MON_TX,
+		   "TX Mon: Generated and enqueued MU Block ACK for %u users\n",
+		   num_users);
+
+	return 0;
+}
+
+/**
+ * ath12k_dp_tx_mon_generated_response_frm() - Generate response frames
+ * @pdev_dp: DP pdev handle
+ * @tx_data_ppdu_info: Data PPDU information
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static int
+ath12k_dp_tx_mon_generated_response_frm(struct ath12k_pdev_dp *pdev_dp,
+					struct dp_mon_tx_ppdu_info *tx_data_ppdu_info)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = pdev_dp->dp_mon_pdev;
+	struct hal_tx_mon_status_info *tx_status_info;
+	u8 gen_response = 0;
+	int ret = 0;
+
+	tx_status_info = &dp_mon_pdev->mon_data.data_status_info;
+	gen_response = tx_status_info->generated_response;
+
+	ath12k_dbg(pdev_dp->dp->ab, ATH12K_DBG_DP_MON_TX,
+		   "TX monitor: Processing response frame, type=%u\n",
+		   gen_response);
+
+	switch (gen_response) {
+	case TXMON_GEN_RESP_SELFGEN_ACK:
+		ret = ath12k_dp_tx_mon_generate_ack_frm(tx_data_ppdu_info,
+							tx_status_info);
+		break;
+	case TXMON_GEN_RESP_SELFGEN_CTS:
+		ret = ath12k_dp_tx_mon_gen_cts(tx_data_ppdu_info,
+					       tx_status_info);
+		break;
+	case TXMON_GEN_RESP_SELFGEN_BA:
+		if (ath12k_dp_tx_mon_check_ba_tlv_missing(tx_data_ppdu_info))
+			break;
+
+		ret = ath12k_dp_tx_mon_gen_block_ack(tx_data_ppdu_info,
+						     tx_status_info,
+						     RESPONSE_WINDOW);
+		break;
+	case TXMON_GEN_RESP_SELFGEN_MBA:
+		if (ath12k_dp_tx_mon_check_ba_tlv_missing(tx_data_ppdu_info))
+			break;
+
+		ret = ath12k_dp_tx_mon_generate_mu_block_ack_frm(pdev_dp,
+								 tx_data_ppdu_info,
+								 tx_status_info,
+								 RESPONSE_WINDOW);
+		break;
+	case TXMON_GEN_RESP_SELFGEN_CBF:
+		break;
+	case TXMON_GEN_RESP_SELFGEN_TRIG:
+		break;
+	case TXMON_GEN_RESP_SELFGEN_NDP_LMR:
+		break;
+	default:
+		ath12k_dbg(pdev_dp->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "TX monitor: No response frame needed, type=%u\n",
+			   gen_response);
+		break;
+	}
+
+	if (ret) {
+		ath12k_warn(pdev_dp->dp->ab,
+			    "Failed to generate response frame\n");
+		return ret;
+	}
+
+	tx_data_ppdu_info->contains_host_frames = true;
+	return 0;
+}
+
+/**
+ * ath12k_dp_tx_mon_update_ppdu_info_status() - Update PPDU info based on TLV status
+ * @pdev_dp: DP pdev handle
+ * @tx_ppdu_info: Could be either of below
+ * tx_data_ppdu_info: Data PPDU information structure
+ * tx_prot_ppdu_info: Protection PPDU information structure
+ * @tx_tlv_hdr: TLV header pointer
+ * @status_frag: Status fragment buffer
+ * @tlv_status: TLV status from HAL parsing
+ *
+ * This function processes different TLV status types and performs
+ * appropriate actions including frame generation, buffer management,
+ * and PPDU information updates. It serves as the central dispatcher
+ * for TLV-based processing in TX monitor.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static int
+ath12k_dp_tx_mon_update_ppdu_info_status(struct ath12k_pdev_dp *pdev_dp,
+					 struct dp_mon_tx_ppdu_info *tx_ppdu_info,
+					 u32 tlv_status)
+{
+	struct hal_tx_mon_ppdu_info *tx_info;
+	struct hal_tx_mon_status_info *status_info;
+	struct hal_rx_mon_mpdu_info *mpdu_info;
+	u32 usr_idx;
+	int ret = 0;
+
+	if (unlikely(!tx_ppdu_info))
+		return -EINVAL;
+
+	tx_info = &tx_ppdu_info->tx_info;
+	usr_idx = tx_info->cur_usr_idx;
+
+	switch (tlv_status) {
+	case HAL_TX_MON_FES_SETUP:
+		break;
+
+	case HAL_TX_MON_RESPONSE_REQUIRED_INFO:
+		break;
+
+	case HAL_TX_MON_FES_STATUS_START_PROT:
+		break;
+
+	case HAL_TX_MON_FES_STATUS_START_PPDU:
+		break;
+
+	case HAL_TX_MON_FES_STATUS_PROT:
+		tx_ppdu_info->tx_info.rx_status.ppdu_ts =
+			tx_ppdu_info->tx_info.rx_status.ppdu_ts << 1;
+
+		ret = ath12k_dp_tx_mon_generate_prot_frm(pdev_dp,
+							 tx_ppdu_info);
+		break;
+
+	case HAL_TX_MON_MPDU_START:
+		ret = ath12k_dp_tx_mon_process_mpdu_start(pdev_dp,
+							  tx_ppdu_info,
+							  usr_idx);
+		if (ret) {
+			ath12k_warn(pdev_dp->dp->ab,
+				    "TX Mon: Failed to process MPDU start: %d\n",
+				    ret);
+		}
+		break;
+
+	case HAL_TX_MON_MPDU_END:
+		/* MPDU end - mark MPDU as complete */
+		if (usr_idx < HAL_MAX_UL_MU_USERS) {
+			mpdu_info = &tx_ppdu_info->tx_info.rx_status.mpdu_info[usr_idx];
+			mpdu_info->mpdu_end_received = true;
+			mpdu_info->mpdu_start_received = false;
+		}
+		break;
+
+	case HAL_TX_MON_MSDU_START:
+		/* MSDU start processing */
+		break;
+
+	case HAL_TX_MON_DATA:
+		/* Data frame generation - keep buffer reference for reuse */
+		tx_info->is_used = 1;
+		ret = ath12k_dp_tx_mon_generate_data_frm(tx_ppdu_info,
+							 usr_idx, true);
+		if (ret) {
+			ath12k_warn(pdev_dp->dp->ab,
+				    "TX Mon: Failed to gen data frm for user %u: %d\n",
+				    usr_idx, ret);
+			tx_info->is_used = 0;
+		}
+		break;
+
+	case HAL_TX_MON_BUFFER_ADDR:
+		/*
+		 * Buffer address processing - extract buffer and transfer ownership
+		 */
+		tx_info->is_used = 1;
+		ret = ath12k_dp_tx_mon_extract_buffer_info(pdev_dp->dp_mon_pdev->dp_mon,
+							   tx_ppdu_info, usr_idx);
+		if (ret) {
+			ath12k_warn(pdev_dp->dp->ab,
+				    "TX Mon: Failed to extract buffer info: %d\n",
+				    ret);
+			tx_info->is_used = 0;
+		} else {
+			ret = ath12k_dp_tx_mon_generate_data_frm(tx_ppdu_info,
+								 usr_idx, false);
+			if (ret) {
+				ath12k_warn(pdev_dp->dp->ab,
+					    "TX Mon: Failed to add buffer fragment: %d\n",
+					    ret);
+				tx_info->is_used = 0;
+			}
+		}
+		break;
+
+	case HAL_TX_MON_FES_STATUS_END:
+		/*
+		 * FES status end - clean up incomplete MPDUs for all users
+		 */
+		u32 num_users = tx_ppdu_info->tx_info.num_users;
+		u8 i;
+
+		for (i = 0; i < num_users && i < HAL_MAX_UL_MU_USERS; i++) {
+			ath12k_dp_tx_mon_free_last_mpdu_q(pdev_dp->dp_mon_pdev,
+							  tx_ppdu_info,
+							  i);
+		}
+		break;
+
+	case HAL_TX_MON_RESPONSE_END_STATUS_INFO:
+		ret = ath12k_dp_tx_mon_generated_response_frm(pdev_dp,
+							      tx_ppdu_info);
+		break;
+
+	case HAL_TX_MON_FW2SW:
+		status_info = &pdev_dp->dp_mon_pdev->mon_data.data_status_info;
+		tx_ppdu_info->tx_info.rx_status.freq = status_info->freq;
+
+		break;
+
+	default:
+		break;
+	}
+
+	return ret;
+}
+
+/**
+ * ath12k_dp_mon_tx_process_tlv() - Process TLV data with early filtering
+ * @pdev_dp: DP PDEV context
+ * @status_desc: Status descriptor containing TLV data
+ * @mon_data: Monitor data structure
+ *
+ * This function parses TLV data using HAL functions and applies early software
+ * filtering during TLV processing for optimal performance.
+ */
+static void
+ath12k_dp_mon_tx_process_tlv(struct ath12k_pdev_dp *pdev_dp,
+			     struct ath12k_dp_mon_status_desc *status_desc,
+			     struct ath12k_mon_data *mon_data)
+{
+	struct dp_mon_tx_ppdu_info *ppdu_info;
+	struct hal_tlv_64_hdr *tlv_hdr;
+	u16 tlv_tag, tlv_len, tlv_userid;
+	u16 buf_len = status_desc->buf_len;
+	u8 *tx_tlv_start = status_desc->mon_buf;
+	u8 *mon_buf_iter = status_desc->mon_buf;
+	enum hal_tx_mon_status tlv_status;
+	int ret;
+
+	do {
+		tlv_hdr = (struct hal_tlv_64_hdr *)mon_buf_iter;
+
+		tlv_tag = le64_get_bits(tlv_hdr->tl, HAL_TLV_64_HDR_TAG);
+		tlv_len = le64_get_bits(tlv_hdr->tl, HAL_TLV_64_HDR_LEN);
+		tlv_userid = le64_get_bits(tlv_hdr->tl, HAL_TLV_64_USR_ID);
+
+		ppdu_info = ath12k_hal_mon_tx_ppdu_info(&pdev_dp->dp->ab->hal,
+							mon_data, tlv_tag);
+
+		tlv_status =
+			ath12k_hal_mon_tx_parse_status(&pdev_dp->dp->ab->hal,
+						       mon_data,
+						       &ppdu_info->tx_info,
+						       tlv_tag,
+						       mon_buf_iter + sizeof(*tlv_hdr),
+						       tlv_userid, tlv_len,
+						       tx_tlv_start);
+
+		/* Process TLV status and update PPDU information */
+		ret = ath12k_dp_tx_mon_update_ppdu_info_status(pdev_dp,
+							       ppdu_info,
+							       tlv_status);
+		if (ret) {
+			ath12k_dbg(pdev_dp->dp->ab, ATH12K_DBG_DP_MON_TX,
+				   "TLV status processing failed: %d", ret);
+		}
+
+		mon_buf_iter += sizeof(*tlv_hdr) + tlv_len;
+		mon_buf_iter = PTR_ALIGN(mon_buf_iter, HAL_TLV_64_ALIGN);
+
+	} while ((mon_buf_iter - tx_tlv_start) < buf_len);
+}
+
+/**
+ * ath12k_dp_mon_tx_populate_ppdu_info() - Populate PPDU with channel and metadata
+ * @dp_pdev: Pointer to DP PDEV context for accessing radio information
+ * @status_desc: Pointer to status descriptor (currently unused but reserved)
+ * @mon_data: Pointer to monitor data containing PPDU information structures
+ *
+ * This function populates PPDU information structures with essential metadata
+ * including channel information, band classification, and AMPDU detection for
+ * both protection and data frame PPDUs. It serves as the central point for
+ * enriching hardware-provided PPDU data with software-derived information.
+ *
+ * Channel Information Population:
+ * The function extracts current channel information from the active radio
+ * context (ar->rx_channel) and populates both data and protection PPDU
+ * structures with:
+ * - Channel frequency in MHz for radiotap channel field
+ * - Channel number for protocol analysis
+ * - Band classification (2.4GHz, 5GHz, 6GHz) for proper frame handling
+ */
+static void
+ath12k_dp_mon_tx_populate_ppdu_info(struct ath12k_pdev_dp *dp_pdev,
+				    struct ath12k_dp_mon_status_desc *status_desc,
+				    struct ath12k_mon_data *mon_data)
+{
+	struct dp_mon_tx_ppdu_info *data_ppdu_info = &mon_data->data_ppdu_info;
+	struct dp_mon_tx_ppdu_info *prot_ppdu_info = &mon_data->prot_ppdu_info;
+	struct hal_tx_mon_ppdu_info *data_hal_info = &data_ppdu_info->tx_info;
+	struct hal_tx_mon_ppdu_info *prot_hal_info = &prot_ppdu_info->tx_info;
+	struct hal_rx_mon_ppdu_info *data_rx_status = &data_hal_info->rx_status;
+	struct hal_rx_mon_ppdu_info *prot_rx_status = &prot_hal_info->rx_status;
+	struct ath12k *ar = dp_pdev->ar;
+	u32 usr_idx, num_users;
+
+	num_users = data_hal_info->num_users;
+	if (ar && ar->rx_channel) {
+		u32 chan_freq = ar->rx_channel->center_freq;
+		u32 chan_num = ar->rx_channel->hw_value;
+		u32 band;
+
+		if (chan_freq >= ATH12K_FREQ_2GHZ_MIN &&
+		    chan_freq <= ATH12K_FREQ_2GHZ_MAX)
+			band = NL80211_BAND_2GHZ;
+		else if (chan_freq >= ATH12K_FREQ_5GHZ_MIN &&
+			 chan_freq <= ATH12K_FREQ_5GHZ_MAX)
+			band = NL80211_BAND_5GHZ;
+		else if (chan_freq >= ATH12K_FREQ_6GHZ_MIN &&
+			 chan_freq <= ATH12K_FREQ_6GHZ_MAX)
+			band = NL80211_BAND_6GHZ;
+		else
+			band = NL80211_BAND_2GHZ;
+
+		if (unlikely(!data_rx_status->freq)) {
+			data_ppdu_info->chan_freq = chan_freq;
+			data_ppdu_info->chan_num = chan_num;
+			data_rx_status->freq = chan_freq;
+			data_rx_status->chan_num = chan_num;
+			data_rx_status->band = band;
+		}
+
+		if (unlikely(!prot_rx_status->freq)) {
+			prot_ppdu_info->chan_freq = chan_freq;
+			prot_ppdu_info->chan_num = chan_num;
+			prot_rx_status->freq = chan_freq;
+			prot_rx_status->chan_num = chan_num;
+			prot_rx_status->band = band;
+		}
+	}
+
+	if (num_users == 1) {
+		ath12k_dp_tx_mon_update_ampdu_info(data_ppdu_info, 0);
+	} else {
+		for (usr_idx = 0;
+		     usr_idx < num_users && usr_idx < HAL_MAX_UL_MU_USERS;
+		     usr_idx++) {
+			ath12k_dp_tx_mon_update_ampdu_info(data_ppdu_info, usr_idx);
+		}
+	}
+}
+
+/**
+ * ath12k_dp_tx_mon_validate_lsig_support() - Check if frame should have L-SIG
+ * @rx_status: RX status information
+ *
+ * L-SIG is required for all OFDM-based modulations (802.11a/g/n/ac/ax/be)
+ * but not for legacy CCK frames (802.11b).
+ *
+ * Return: true if frame should have L-SIG field in radiotap
+ */
+static bool
+ath12k_dp_tx_mon_validate_lsig_support(struct hal_rx_mon_ppdu_info *rx_status)
+{
+	switch (rx_status->preamble_type) {
+	case HAL_RX_PREAMBLE_11A:
+	case HAL_RX_PREAMBLE_11N:
+	case HAL_RX_PREAMBLE_11AC:
+	case HAL_RX_PREAMBLE_11AX:
+	case HAL_RX_PREAMBLE_11BE:
+		return true;
+
+	case HAL_RX_PREAMBLE_11B:
+		return false;
+
+	default:
+		if (rx_status->freq > ATH12K_FREQ_2GHZ_MAX) {
+			return true;
+		} else {
+			return rx_status->ofdm_flag ||
+				(rx_status->rate >= ATH12K_RATE_6MBPS_KBPS &&
+				 rx_status->rate <= ATH12K_RATE_54MBPS_KBPS);
+		}
+	}
+}
+
+/**
+ * ath12k_dp_mon_tx_update_lsig_info() - Update LSIG radiotap field
+ * @mon_info: Monitor info structure to populate
+ * @rx_status: RX status containing HAL L-SIG data
+ *
+ * Extract L-SIG fields from HAL 32-bit format
+ * Bits 0-3: Rate
+ * Bits 5-16: Length
+ *
+ * Converts 32-bit HAL L-SIG fields to standard IEEE 802.11 radiotap LSIG format
+ */
+static void
+ath12k_dp_mon_tx_update_lsig_info(struct ieee80211_tx_mon_info *mon_info,
+				  struct hal_rx_mon_ppdu_info *rx_status)
+{
+	u32 lsig_a = rx_status->l_sig_a_info;
+	u16 data1 = 0, data2 = 0;
+
+	if (!ath12k_dp_tx_mon_validate_lsig_support(rx_status))
+		return;
+
+	if (lsig_a != 0) {
+		u8 rate = u32_get_bits(lsig_a, ATH12K_LSIG_RATE_MASK);
+		u16 length = u32_get_bits(lsig_a, ATH12K_LSIG_LENGTH_MASK);
+
+		data1 = IEEE80211_RADIOTAP_LSIG_DATA1_RATE_KNOWN |
+			IEEE80211_RADIOTAP_LSIG_DATA1_LENGTH_KNOWN;
+
+		data2 = (rate & IEEE80211_RADIOTAP_LSIG_DATA2_RATE) |
+			((length << ATH12K_RADIOTAP_LSIG_LENGTH_SHIFT) &
+			 IEEE80211_RADIOTAP_LSIG_DATA2_LENGTH);
+
+		mon_info->lsig.data1 = cpu_to_le16(data1);
+		mon_info->lsig.data2 = cpu_to_le16(data2);
+
+		tx_mon_hw_set(mon_info, LSIG_INFO);
+	}
+}
+
+/**
+ * ath12k_dp_tx_mon_get_sifs_time() - Get SIFS time based on frequency
+ * @freq: Channel frequency
+ *
+ * Return: SIFS time in microseconds
+ */
+static u8 ath12k_dp_tx_mon_get_sifs_time(u16 freq)
+{
+	return (freq >= ATH12K_FREQ_2GHZ_MIN &&
+		freq <= ATH12K_FREQ_2GHZ_MAX) ?
+		ATH12K_SIFS_2GHZ_US : ATH12K_SIFS_5GHZ_US;
+}
+
+/**
+ * ath12k_dp_tx_mon_get_channel_flags() - Get correct channel flags for radiotap
+ *
+ * Return: Channel flags for radiotap
+ */
+static u16
+ath12k_dp_tx_mon_get_channel_flags(struct hal_rx_mon_ppdu_info *rx_status)
+{
+	u16 flags = 0;
+
+	/* Set band flags */
+	if (rx_status->freq > ATH12K_FREQ_5GHZ_MIN)
+		flags |= IEEE80211_CHAN_5GHZ;
+	else
+		flags |= IEEE80211_CHAN_2GHZ;
+
+	if (rx_status->cck_flag)
+		flags |= IEEE80211_CHAN_CCK;
+
+	if (rx_status->ofdm_flag)
+		flags |= IEEE80211_CHAN_OFDM;
+
+	return flags;
+}
+
+/**
+ * ath12k_dp_tx_mon_update_radiotap_eht() - prepend EHT/U-SIG radiotap TLVs for
+ * TX monitor frames.
+ * This helper is part of the ath12k TX-monitor “radiotap at end” encoding
+ * scheme. When the hardware provides 802.11be (EHT) and U-SIG information
+ * for a PPDU, the driver serializes that information into radiotap TLVs and
+ * prepends them into the skb (using skb_push()), then marks the skb as
+ * containing an “end-TLV block” via TX_MON_FLAG_TLV_AT_END (TLV_AT_END).
+ *
+ * @mon_skb: monitor skb that will carry the radiotap header + 802.11 frame
+ * @mon_info: tx monitor metadata bitmap/state used by mac80211 formatting
+ * @ppdu_info: HAL TX monitor PPDU status carrying EHT and U-SIG decode results
+ */
+static void ath12k_dp_tx_mon_update_radiotap_eht(struct sk_buff *mon_skb,
+						 struct ieee80211_tx_mon_info *mon_info,
+						 struct hal_tx_mon_ppdu_info *ppdu_info)
+{
+	struct hal_rx_mon_ppdu_info *rx_status = &ppdu_info->rx_status;
+	struct ieee80211_radiotap_tlv *tlv;
+	struct ieee80211_radiotap_eht *eht;
+	struct ieee80211_radiotap_eht_usig *usig;
+	u16 len = 0, i, eht_len = 0, usig_len;
+	u8 user;
+
+	if (!rx_status->eht_flags && !rx_status->usig_flags)
+		return;
+
+	if (rx_status->eht_flags) {
+		eht_len = struct_size(eht, user_info,
+				      rx_status->eht_info.num_user_info);
+		len += sizeof(*tlv) + eht_len;
+	}
+
+	if (rx_status->usig_flags) {
+		usig_len = sizeof(*usig);
+		len += sizeof(*tlv) + usig_len;
+	}
+
+	skb_reset_mac_header(mon_skb);
+	tlv = skb_push(mon_skb, len);
+	tx_mon_hw_set(mon_info, TLV_AT_END);
+
+	if (rx_status->eht_flags) {
+		tlv->type = cpu_to_le16(IEEE80211_RADIOTAP_EHT);
+		tlv->len = cpu_to_le16(eht_len);
+
+		eht = (struct ieee80211_radiotap_eht *)tlv->data;
+		eht->known = cpu_to_le32(rx_status->eht_info.eht.known);
+
+		for (i = 0; i < ARRAY_SIZE(eht->data) &&
+		     i < ARRAY_SIZE(rx_status->eht_info.eht.data); i++)
+			eht->data[i] = cpu_to_le32(rx_status->eht_info.eht.data[i]);
+
+		for (user = 0; user < rx_status->eht_info.num_user_info; user++)
+			put_unaligned_le32(cpu_to_le32
+					   (rx_status->eht_info.user_info[user]),
+					   &eht->user_info[user]);
+
+		tlv = (struct ieee80211_radiotap_tlv *)&tlv->data[eht_len];
+	}
+
+	if (rx_status->usig_flags) {
+		tlv->type = cpu_to_le16(IEEE80211_RADIOTAP_EHT_USIG);
+		tlv->len = cpu_to_le16(usig_len);
+		usig = (struct ieee80211_radiotap_eht_usig *)tlv->data;
+		*usig = rx_status->u_sig_info.usig;
+	}
+}
+
+/**
+ * ath12k_dp_mon_tx_update_mon_info() - Comprehensive monitor info population
+ * @pdev_dp: ath12k pdev dp context
+ * @mon_info: mac80211 tx monitor info to fill
+ * @ppdu_info: PPDU info structure containing HAL data
+ * @status_info: HAL TX monitor status info
+ *
+ */
+static void
+ath12k_dp_mon_tx_update_mon_info(struct ath12k_pdev_dp *dp_pdev,
+				 struct ieee80211_tx_mon_info *mon_info,
+				 struct hal_tx_mon_ppdu_info *ppdu_info,
+				 struct hal_tx_mon_status_info *status_info,
+				 bool contains_host_frames,
+				 bool is_response_frame,
+				 u8 user_idx)
+{
+	struct hal_rx_mon_ppdu_info *rx_status;
+	u8 sifs, tx_time;
+	bool is_qos_data;
+
+	if (!mon_info)
+		return;
+
+	memset(mon_info, 0, sizeof(*mon_info));
+
+	rx_status = &ppdu_info->rx_status;
+	if (!rx_status)
+		return;
+
+	if (is_response_frame) {
+		sifs = ath12k_dp_tx_mon_get_sifs_time(rx_status->freq);
+
+		if (ppdu_info->ack_recvd)
+			tx_time = ATH12K_ACK_TX_TIME_US;
+		else if (ppdu_info->cts_recvd)
+			tx_time = ATH12K_CTS_TX_TIME_US;
+		else
+			tx_time = ATH12K_ACK_TX_TIME_US;
+
+		mon_info->tsft = rx_status->tsft + sifs + tx_time;
+	} else {
+		if (rx_status->tsft)
+			mon_info->tsft = rx_status->tsft;
+	}
+
+	tx_mon_hw_set(mon_info, END);
+	tx_mon_hw_set(mon_info, FLAGS_INFO);
+
+	mon_info->rtap_flags = 0;
+
+	if (rx_status->sgi)
+		mon_info->rtap_flags |= IEEE80211_RADIOTAP_F_SHORTGI;
+
+	if (rx_status->cck_flag)
+		mon_info->rtap_flags |= IEEE80211_RADIOTAP_F_SHORTPRE;
+
+	if (rx_status->num_mpdu_fcs_err > 0)
+		mon_info->rtap_flags |= IEEE80211_RADIOTAP_F_BADFCS;
+
+	if (rx_status->freq) {
+		mon_info->chan_freq = rx_status->freq;
+
+		mon_info->chan_flags =
+			ath12k_dp_tx_mon_get_channel_flags(rx_status);
+
+		tx_mon_hw_set(mon_info, CHAN_INFO);
+	}
+
+	is_qos_data = ieee80211_is_data_qos(rx_status->frame_control);
+
+	if (is_qos_data && rx_status->userstats[user_idx].ampdu_present) {
+		mon_info->ampdu_ref_num = ppdu_info->ppdu_id;
+		mon_info->ampdu_flags = 0;
+		mon_info->ampdu_reserved_flags = 0;
+		tx_mon_hw_set(mon_info, AMPDU_STATUS_INFO);
+	}
+
+	ath12k_dp_mon_tx_update_lsig_info(mon_info, rx_status);
+
+	if (is_qos_data && rx_status->he_mu_flags) {
+		mon_info->he_mu.flags1 =
+			cpu_to_le16(rx_status->he_flags1 |
+				    rx_status->userstats[user_idx].he_flags1);
+		mon_info->he_mu.flags2 =
+			cpu_to_le16(rx_status->he_flags2 |
+				    rx_status->userstats[user_idx].he_flags2);
+
+		memcpy(mon_info->he_mu.ru_ch1, &rx_status->userstats[user_idx].he_RU[0],
+		       sizeof(mon_info->he_mu.ru_ch1));
+		memcpy(mon_info->he_mu.ru_ch2, &rx_status->userstats[user_idx].he_RU[4],
+		       sizeof(mon_info->he_mu.ru_ch2));
+
+		tx_mon_hw_set(mon_info, HE_MU_INFO);
+	}
+}
+
+/**
+ * ath12k_dp_tx_mon_generate_ack_rx_frm() - Generate ACK response frame
+ * @dp_pdev: DP pdev handle
+ * @mpdu_q: MPDU queue containing original frames
+ * @tx_ppdu_info: TX PPDU info structure
+ *
+ * Generate ACK response frame for TX monitor. Creates just the frame SKB
+ * with proper headroom reserved for radiotap. The radiotap header will be
+ * added later by ath12k_dp_mon_tx_update_mon_info() during delivery.
+ *
+ * Return: SKB containing ACK frame, or NULL on failure
+ */
+struct sk_buff *
+ath12k_dp_tx_mon_generate_ack_rx_frm(struct ath12k_pdev_dp *dp_pdev,
+				     struct sk_buff_head *mpdu_q,
+				     struct hal_tx_mon_ppdu_info *tx_ppdu_info)
+{
+	struct sk_buff *frame_skb = NULL;
+	struct ieee80211_hdr *orig_hdr = NULL;
+	struct sk_buff *valid_frag = NULL;
+	struct ieee80211_frame_min *ack_hdr = NULL;
+	u16 frm_ctl;
+
+	skb_queue_walk(mpdu_q, valid_frag) {
+		if (valid_frag->len >= sizeof(struct ieee80211_hdr)) {
+			orig_hdr = (struct ieee80211_hdr *)valid_frag->data;
+			break;
+		}
+	}
+
+	if (!orig_hdr) {
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "TX Mon: No valid header found for ACK generation\n");
+		return NULL;
+	}
+
+	frame_skb = dev_alloc_skb(ATH12K_DP_MON_TX_MAX_RADIO_TAP_HDR +
+				  sizeof(struct ieee80211_frame_min));
+	if (!frame_skb)
+		return NULL;
+
+	skb_reserve(frame_skb, ATH12K_DP_MON_TX_MAX_RADIO_TAP_HDR);
+
+	ack_hdr = (struct ieee80211_frame_min *)skb_put_zero(frame_skb,
+						sizeof(struct ieee80211_frame_min));
+
+	frm_ctl = IEEE80211_FTYPE_CTL | IEEE80211_STYPE_ACK;
+	ack_hdr->frame_control = cpu_to_le16(frm_ctl);
+	memcpy(ack_hdr->ra, orig_hdr->addr2, ETH_ALEN);
+	ack_hdr->duration = cpu_to_le16(0x0000);
+
+	tx_ppdu_info->rx_status.frame_control = frm_ctl;
+	tx_ppdu_info->rx_status.frame_control_info_valid = 1;
+
+	return frame_skb;
+}
+
+/**
+ * ath12k_dp_tx_mon_generate_cts_rx_frm() - Generate CTS response frame
+ * @dp_pdev: DP pdev handle
+ * @mpdu_q: MPDU queue containing original frames
+ * @tx_ppdu_info: TX PPDU info structure
+ *
+ * Generate CTS response frame for TX monitor. Creates just the frame SKB
+ * with proper headroom reserved for radiotap. The radiotap header will be
+ * added later by ath12k_dp_mon_tx_update_mon_info() during delivery.
+ *
+ * Return: SKB containing CTS frame, or NULL on failure
+ */
+struct sk_buff *
+ath12k_dp_tx_mon_generate_cts_rx_frm(struct ath12k_pdev_dp *dp_pdev,
+				     struct sk_buff_head *mpdu_q,
+				     struct hal_tx_mon_ppdu_info *tx_ppdu_info)
+{
+	struct sk_buff *frame_skb = NULL;
+	struct sk_buff *valid_frag = NULL;
+	struct ieee80211_cts *cts_hdr = NULL;
+	struct ieee80211_hdr *orig_hdr = NULL;
+	u8 sifs;
+	u16 duration = 0;
+	u16 frm_ctl;
+
+	skb_queue_walk(mpdu_q, valid_frag) {
+		if (valid_frag->len >= sizeof(struct ieee80211_hdr)) {
+			orig_hdr = (struct ieee80211_hdr *)valid_frag->data;
+			break;
+		}
+	}
+
+	if (!orig_hdr) {
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "TX Mon: No valid header found for CTS generation\n");
+		return NULL;
+	}
+
+	duration = le16_to_cpu(orig_hdr->duration_id);
+	sifs = ath12k_dp_tx_mon_get_sifs_time(tx_ppdu_info->rx_status.freq);
+
+	if (duration > (ATH12K_CTS_TX_TIME_US + sifs))
+		duration -= (ATH12K_CTS_TX_TIME_US + sifs);
+	else
+		duration = 0;
+
+	frame_skb = dev_alloc_skb(ATH12K_DP_MON_TX_MAX_RADIO_TAP_HDR +
+				  sizeof(struct ieee80211_cts));
+	if (!frame_skb)
+		return NULL;
+
+	skb_reserve(frame_skb, ATH12K_DP_MON_TX_MAX_RADIO_TAP_HDR);
+
+	cts_hdr = (struct ieee80211_cts *)skb_put_zero(frame_skb,
+						       sizeof(struct ieee80211_cts));
+
+	frm_ctl = IEEE80211_FTYPE_CTL | IEEE80211_STYPE_CTS;
+	cts_hdr->frame_control = cpu_to_le16(frm_ctl);
+	memcpy(cts_hdr->ra, orig_hdr->addr2, ETH_ALEN);
+	cts_hdr->duration = cpu_to_le16(duration);
+
+	tx_ppdu_info->rx_status.frame_control = frm_ctl;
+	tx_ppdu_info->rx_status.frame_control_info_valid = 1;
+
+	return frame_skb;
+}
+
+/**
+ * ath12k_dp_tx_mon_frame_trim_mic() - Trim MIC from encrypted frames
+ * @skb: SKB containing the frame
+ * @ppdu_info: PPDU info structure
+ * @user_idx: User index for encryption info
+ * @contains_host_frames: Context flag indicating host-generated frames
+ *
+ * Removes Message Integrity Check (MIC) bytes from encrypted TX monitor
+ * frames. This ensures that captured frames have the correct length for
+ * analysis tools like Wireshark.
+ *
+ * For encrypted frames (WEP bit set), the MIC length depends on encryption type:
+ * - CCMP-128/256: 8 bytes
+ * - GCMP-128/256: 16 bytes
+ * - TKIP: 8 bytes
+ * - Other types: No trimming
+ */
+static void
+ath12k_dp_tx_mon_frame_trim_mic(struct sk_buff *skb,
+				struct hal_tx_mon_ppdu_info *ppdu_info,
+				u8 user_idx,
+				bool contains_host_frames)
+{
+	struct ieee80211_hdr *hdr;
+	struct hal_rx_user_status *user_status;
+	u32 trim_len = 0;
+	int frag_count;
+
+	if (contains_host_frames)
+		return;
+
+	if (skb->len < sizeof(struct ieee80211_hdr))
+		return;
+
+	hdr = (struct ieee80211_hdr *)skb->data;
+	if (!ieee80211_has_protected(hdr->frame_control))
+		return;
+
+	user_status = &ppdu_info->rx_status.userstats[user_idx];
+
+	switch (user_status->enc_type) {
+	case HAL_ENCRYPT_TYPE_CCMP_128:
+	case HAL_ENCRYPT_TYPE_CCMP_256:
+	case HAL_ENCRYPT_TYPE_TKIP_NO_MIC:
+	case HAL_ENCRYPT_TYPE_TKIP_MIC:
+		trim_len = 8;
+		break;
+	case HAL_ENCRYPT_TYPE_GCMP_128:
+	case HAL_ENCRYPT_TYPE_AES_GCMP_256:
+		trim_len = 16;
+		break;
+	default:
+		return;
+	}
+
+	if (trim_len && skb->len < trim_len)
+		return;
+
+	frag_count = ath12k_dp_mon_get_num_frags_in_fraglist(skb);
+	if (frag_count > 0)
+		skb_coalesce_rx_frag(skb, frag_count - 1, -trim_len, 0);
+	else
+		skb_trim(skb, skb->len - trim_len);
+}
+
+/**
+ * ath12k_dp_tx_mon_get_legacy_rate() - Convert rate kbps to legacy format
+ * @rate_kbps: Rate in kbps
+ *
+ * Converts rate from kbps to legacy rate format (100kbps units).
+ * This is used for populating status->rates[0].rate_idx.legacy.
+ */
+static u16 ath12k_dp_tx_mon_get_legacy_rate(u32 rate_kbps)
+{
+	switch (rate_kbps) {
+	case ATH12K_RATE_1MBPS_KBPS:
+		return ATH12K_LEGACY_RATE_1MBPS_100KBPS;
+	case ATH12K_RATE_2MBPS_KBPS:
+		return ATH12K_LEGACY_RATE_2MBPS_100KBPS;
+	case ATH12K_RATE_5_5MBPS_KBPS:
+		return ATH12K_LEGACY_RATE_5_5MBPS_100KBPS;
+	case ATH12K_RATE_6MBPS_KBPS:
+		return ATH12K_LEGACY_RATE_6MBPS_100KBPS;
+	case ATH12K_RATE_9MBPS_KBPS:
+		return ATH12K_LEGACY_RATE_9MBPS_100KBPS;
+	case ATH12K_RATE_11MBPS_KBPS:
+		return ATH12K_LEGACY_RATE_11MBPS_100KBPS;
+	case ATH12K_RATE_12MBPS_KBPS:
+		return ATH12K_LEGACY_RATE_12MBPS_100KBPS;
+	case ATH12K_RATE_18MBPS_KBPS:
+		return ATH12K_LEGACY_RATE_18MBPS_100KBPS;
+	case ATH12K_RATE_24MBPS_KBPS:
+		return ATH12K_LEGACY_RATE_24MBPS_100KBPS;
+	case ATH12K_RATE_36MBPS_KBPS:
+		return ATH12K_LEGACY_RATE_36MBPS_100KBPS;
+	case ATH12K_RATE_48MBPS_KBPS:
+		return ATH12K_LEGACY_RATE_48MBPS_100KBPS;
+	case ATH12K_RATE_54MBPS_KBPS:
+		return ATH12K_LEGACY_RATE_54MBPS_100KBPS;
+	default:
+		return ATH12K_LEGACY_RATE_DEFAULT_100KBPS;
+	}
+}
+
+/**
+ * ath12k_dp_tx_mon_he_gi_to_nl80211() - Convert HAL HE GI to nl80211
+ * @hal_gi: HAL guard interval value from rx_status->sgi
+ *
+ * Directly converts HAL guard interval values to nl80211 format.
+ *
+ * Return: nl80211 HE guard interval constant
+ */
+static u8 ath12k_dp_tx_mon_he_gi_to_nl80211(u8 hal_gi)
+{
+	switch (hal_gi) {
+	case HE_GI_0_8:
+		return NL80211_RATE_INFO_HE_GI_0_8;
+	case HE_GI_1_6:
+		return NL80211_RATE_INFO_HE_GI_1_6;
+	case HE_GI_3_2:
+		return NL80211_RATE_INFO_HE_GI_3_2;
+	default:
+		return NL80211_RATE_INFO_HE_GI_0_8;
+	}
+}
+
+/**
+ * ath12k_dp_mon_tx_fill_rate_status() - Populate tx_status->rates from HAL info
+ * @pdev_dp: ath12k pdev dp context
+ * @ppdu_info: PPDU info structure containing HAL data
+ * @status: TX status structure to populate
+ *
+ * This function converts HAL rate information into ieee80211_rate_status
+ * format so mac80211 can generate accurate radiotap rate fields.
+ */
+static void
+ath12k_dp_mon_tx_fill_rate_status(struct ath12k_pdev_dp *dp_pdev,
+				  struct hal_tx_mon_ppdu_info *ppdu_info,
+				  struct ieee80211_tx_status *status,
+				  bool contains_host_frames)
+{
+	struct hal_rx_mon_ppdu_info *rx_status;
+	struct ieee80211_rate_status *st_rate;
+	struct rate_info *ri;
+
+	if (!status)
+		return;
+
+	rx_status = &ppdu_info->rx_status;
+	if (!rx_status)
+		return;
+
+	status->n_rates = ATH12K_RATE_STATUS_N_RATES;
+	st_rate = &status->rates[0];
+	memset(st_rate, 0, sizeof(*st_rate));
+	st_rate->try_count = ATH12K_RATE_STATUS_TRY_COUNT;
+	ri = &st_rate->rate_idx;
+
+	if (contains_host_frames) {
+		ri->flags = 0;
+
+		if (rx_status->freq >= ATH12K_FREQ_2GHZ_MIN &&
+		    rx_status->freq <= ATH12K_FREQ_2GHZ_MAX) {
+			ri->legacy =
+				ath12k_dp_tx_mon_get_legacy_rate(ATH12K_RATE_11MBPS_KBPS);
+		} else {
+			ri->legacy =
+				ath12k_dp_tx_mon_get_legacy_rate(ATH12K_RATE_24MBPS_KBPS);
+		}
+
+		ri->bw = ath12k_mac_bw_to_mac80211_bw(rx_status->bw ?
+						      rx_status->bw :
+						      ATH12K_RATE_STATUS_DEFAULT_BW);
+		ri->nss = rx_status->nss ?
+			  rx_status->nss : ATH12K_RATE_STATUS_DEFAULT_NSS;
+	} else {
+		ri->flags = 0;
+		ri->mcs = rx_status->mcs;
+		ri->bw = ath12k_mac_bw_to_mac80211_bw(rx_status->bw);
+		ri->nss = rx_status->nss;
+
+		switch (rx_status->preamble_type) {
+		case HAL_RX_PREAMBLE_11N:
+			ri->flags |= RATE_INFO_FLAGS_MCS;
+			if (rx_status->sgi)
+				ri->flags |= RATE_INFO_FLAGS_SHORT_GI;
+			break;
+
+		case HAL_RX_PREAMBLE_11AC:
+			ri->flags |= RATE_INFO_FLAGS_VHT_MCS;
+			if (rx_status->sgi)
+				ri->flags |= RATE_INFO_FLAGS_SHORT_GI;
+			break;
+
+		case HAL_RX_PREAMBLE_11AX:
+			ri->flags |= RATE_INFO_FLAGS_HE_MCS;
+			ri->he_gi = ath12k_dp_tx_mon_he_gi_to_nl80211(rx_status->sgi);
+			break;
+
+		case HAL_RX_PREAMBLE_11BA:
+		case HAL_RX_PREAMBLE_11BE:
+			ri->flags |= RATE_INFO_FLAGS_EHT_MCS;
+			break;
+
+		case HAL_RX_PREAMBLE_11B:
+		case HAL_RX_PREAMBLE_11A:
+		default:
+			if (!ieee80211_is_data_qos(rx_status->frame_control))
+				ri->legacy = ath12k_dp_tx_mon_get_legacy_rate
+							(rx_status->rate ?
+							rx_status->rate :
+							ATH12K_RATE_6MBPS_KBPS);
+			break;
+		}
+	}
+}
+
+/**
+ * ath12k_dp_mon_tx_deliver_frame() - Helper to deliver single frame to monitor stack
+ * @dp_pdev: ath12k pdev dp context
+ * @hw: ieee80211_hw handle
+ * @skb: Frame to deliver
+ * @ppdu_info: PPDU info structure
+ * @status_info: HAL status info structure
+ * @contains_host_frames: Whether PPDU contains host-generated frames
+ * @is_response_frame: Whether this is a response frame (ACK/CTS)
+ * @user_idx: User index
+ *
+ * Common helper function to deliver a single frame to the monitor stack.
+ * Handles radiotap header population and frame delivery.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static void
+ath12k_dp_mon_tx_deliver_frame(struct ath12k_pdev_dp *dp_pdev,
+			       struct ieee80211_hw *hw,
+			       struct sk_buff *skb,
+			       struct hal_tx_mon_ppdu_info *ppdu_info,
+			       struct hal_tx_mon_status_info *status_info,
+			       bool contains_host_frames,
+			       bool is_response_frame,
+			       u8 user_idx)
+{
+	struct ieee80211_rate_status rate_status = {};
+	struct ieee80211_tx_status status = {
+		.skb = skb,
+		.info = IEEE80211_SKB_CB(skb),
+		.rates = &rate_status,
+	};
+
+	if (!is_response_frame)
+		ath12k_dp_tx_mon_frame_trim_mic(skb, ppdu_info,
+						user_idx, contains_host_frames);
+
+	ath12k_dp_mon_tx_update_mon_info(dp_pdev, &status.mon_info,
+					 ppdu_info, status_info,
+					 contains_host_frames,
+					 is_response_frame, user_idx);
+
+	if (ieee80211_is_data_qos(ppdu_info->rx_status.frame_control))
+		ath12k_dp_tx_mon_update_radiotap_eht(skb, &status.mon_info, ppdu_info);
+
+	ath12k_dp_mon_tx_fill_rate_status(dp_pdev, ppdu_info,
+					  &status, contains_host_frames);
+
+	ieee80211_tx_monitor_offload(hw, &status);
+}
+
+/**
+ * ath12k_dp_mon_tx_deliver_single_ppdu() - Process and deliver MPDUs for single user
+ * @dp_pdev: ath12k pdev dp context
+ * @ppdu_info: PPDU info structure
+ * @status_info: HAL status info structure
+ * @user_idx: User index to process
+ * @ppdu_context: PPDU context containing host frame flag
+ *
+ * - For user 0: generate response frame if ack_recvd/cts_recvd
+ * - Process all TX frames in mpdu_q
+ * - After TX frames, deliver response frame separately
+ *
+ * This ensures TX frames and response frames are handled separately,
+ * not mixed in the same queue.
+ */
+static void
+ath12k_dp_mon_tx_deliver_single_ppdu(struct ath12k_pdev_dp *dp_pdev,
+				     struct hal_tx_mon_ppdu_info *ppdu_info,
+				     struct hal_tx_mon_status_info *status_info,
+				     struct sk_buff_head *mpdu_q,
+				     u8 user_idx,
+				     struct dp_mon_tx_ppdu_info *ppdu_context)
+{
+	struct ieee80211_hw *hw;
+	struct sk_buff *mpdu;
+	struct sk_buff *resp_skb = NULL;
+	int delivered = 0;
+	bool contains_host_frames;
+
+	if (!ppdu_info || !mpdu_q || !ppdu_context)
+		return;
+
+	if (!dp_pdev || !dp_pdev->dp) {
+		ath12k_dbg(NULL, ATH12K_DBG_DP_MON_TX,
+			   "TX Mon: Invalid dp_pdev or dp_pdev->dp\n");
+		return;
+	}
+
+	if (!dp_pdev->dp->ab || !dp_pdev->ar)
+		return;
+
+	hw = ath12k_ar_to_hw(dp_pdev->ar);
+	if (!hw)
+		return;
+
+	if (user_idx == 0 &&
+	    (ppdu_info->ack_recvd || ppdu_info->cts_recvd)) {
+		if (ppdu_info->ack_recvd && !status_info->explicit_ack_type) {
+			resp_skb = ath12k_dp_tx_mon_generate_ack_rx_frm(dp_pdev,
+									mpdu_q,
+									ppdu_info);
+			if (resp_skb)
+				ppdu_context->contains_host_frames = true;
+		} else if (ppdu_info->cts_recvd) {
+			resp_skb = ath12k_dp_tx_mon_generate_cts_rx_frm(dp_pdev,
+									mpdu_q,
+									ppdu_info);
+			if (resp_skb)
+				ppdu_context->contains_host_frames = true;
+		}
+	}
+
+	contains_host_frames = ppdu_context->contains_host_frames;
+
+	while ((mpdu = skb_dequeue(mpdu_q))) {
+		ath12k_dp_mon_tx_deliver_frame(dp_pdev, hw, mpdu,
+					       ppdu_info, status_info,
+					       contains_host_frames,
+					       false, user_idx);
+		delivered++;
+	}
+
+	if ((user_idx == 0) && resp_skb) {
+		ath12k_dp_mon_tx_deliver_frame(dp_pdev, hw, resp_skb,
+					       ppdu_info, status_info,
+					       contains_host_frames,
+					       true, user_idx);
+		delivered++;
+	}
+
+	if (delivered > 0) {
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "TX monitor: Delivered %d frames for user %u\n",
+			   delivered, user_idx);
+	}
+}
+
+/**
+ * ath12k_dp_tx_mon_deliver_ppdu() - Main TX monitor delivery function
+ * @dp_pdev: ath12k pdev dp context
+ * @mon_data: Monitor data containing both data and protection PPDU info
+ *
+ * Always process both data and protection PPDUs for all users
+ */
+int ath12k_dp_tx_mon_deliver_ppdu(struct ath12k_pdev_dp *dp_pdev,
+				  struct ath12k_mon_data *mon_data)
+{
+	int i;
+	struct hal_tx_mon_ppdu_info *data_ppdu_info =
+		&mon_data->data_ppdu_info.tx_info;
+	struct hal_tx_mon_ppdu_info *prot_ppdu_info =
+		&mon_data->prot_ppdu_info.tx_info;
+	struct sk_buff_head *mpdu_q;
+	u32 num_users;
+
+	if (!mon_data)
+		return -EINVAL;
+
+	num_users = data_ppdu_info->num_users;
+	if (num_users > HAL_MAX_UL_MU_USERS)
+		num_users = HAL_MAX_UL_MU_USERS;
+
+	for (i = 0; i < num_users; i++) {
+		mpdu_q = &data_ppdu_info->rx_status.mpdu_q[i];
+		ath12k_dp_mon_tx_deliver_single_ppdu(dp_pdev,
+						     data_ppdu_info,
+						     &mon_data->data_status_info,
+						     mpdu_q, i,
+						     &mon_data->data_ppdu_info);
+
+		mpdu_q = &prot_ppdu_info->rx_status.mpdu_q[i];
+		ath12k_dp_mon_tx_deliver_single_ppdu(dp_pdev,
+						     prot_ppdu_info,
+						     &mon_data->prot_status_info,
+						     mpdu_q, i,
+						     &mon_data->prot_ppdu_info);
+	}
+
+	return 0;
+}
+
+/**
+ * ath12k_dp_tx_mon_process_ppdu() - Work queue handler for TX monitor
+ * @work: Work structure containing the monitor pdev context
+ *
+ * This function processes PPDU descriptors in work queue context, performing
+ * heavy TLV parsing, software filtering, frame generation, and stack delivery.
+ * It follows the efficient batch processing pattern while adding
+ * comprehensive error handling and bridge functions for complete functionality.
+ *
+ * Processing Flow:
+ * 1. Move descriptors from used to processing list (batch processing)
+ * 2. Process each PPDU with validation and error handling
+ * 3. Perform TLV parsing and software filtering
+ * 4. Generate frames and deliver to stack
+ * 5. Return descriptors to free pool for reuse
+ */
+void ath12k_dp_tx_mon_process_ppdu(struct work_struct *work)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev =
+		container_of(work, struct ath12k_pdev_mon_dp, txmon_work);
+	struct ath12k_pdev_dp *pdev_dp = dp_mon_pdev->dp_pdev;
+	struct ath12k_dp_mon_ppdu_desc *ppdu_desc;
+	struct ath12k_dp_mon_status_desc *status_desc;
+	struct ath12k_mon_data *mon_data = &dp_mon_pdev->mon_data;
+	struct ath12k_pdev_tx_mon_stats *tx_stats = &dp_mon_pdev->tx_mon_stats;
+	struct hal_tx_mon_ppdu_info *data_info;
+	struct hal_tx_mon_ppdu_info *prot_info;
+	int desc_idx, desc_count;
+	int ppdu_processed = 0;
+	int total_status_desc = 0, prep_failed = 0;
+	int ret;
+
+	if (unlikely(!pdev_dp || !dp_mon_pdev)) {
+		ath12k_err(pdev_dp ? pdev_dp->dp->ab : NULL,
+			   "TX Mon: Invalid parameters in work queue\n");
+		return;
+	}
+
+	spin_lock_bh(&dp_mon_pdev->tx_mon_ppdu_desc_lock);
+	list_splice_init(&dp_mon_pdev->tx_mon_ppdu_desc_used_list,
+			 &dp_mon_pdev->tx_mon_ppdu_desc_proc_list);
+	spin_unlock_bh(&dp_mon_pdev->tx_mon_ppdu_desc_lock);
+
+	list_for_each_entry(ppdu_desc,
+			    &dp_mon_pdev->tx_mon_ppdu_desc_proc_list,
+			    list) {
+		if (unlikely(ppdu_desc->status_desc_cnt == 0)) {
+			ath12k_warn(pdev_dp->dp->ab,
+				    "TX Mon: Invalid PPDU desc or zero status count\n");
+			tx_stats->tx_ppdu_desc_invalid++;
+			desc_count++;
+			continue;
+		}
+
+		if (unlikely(ppdu_desc->status_desc_cnt > ATH12K_DP_MON_STATUS_BUF)) {
+			ath12k_warn(pdev_dp->dp->ab,
+				    "TX Mon: PPDU desc overflow count=%u max=%u\n",
+				    ppdu_desc->status_desc_cnt, ATH12K_DP_MON_STATUS_BUF);
+			tx_stats->tx_ppdu_desc_overflow++;
+			ppdu_desc->status_desc_cnt = ATH12K_DP_MON_STATUS_BUF;
+			tx_stats->tx_work_queue_stalls++;
+		}
+
+		if (ath12k_dp_mon_tx_prep_ppdu_info(dp_mon_pdev, ppdu_desc)) {
+			tx_stats->tx_ppdu_parse_errors++;
+			prep_failed++;
+			goto ppdu_prep_failed;
+		}
+
+		for (desc_idx = 0; desc_idx < ppdu_desc->status_desc_cnt; desc_idx++) {
+			status_desc = &ppdu_desc->status_desc[desc_idx];
+
+			if (unlikely(!status_desc->mon_buf)) {
+				ath12k_dbg(pdev_dp->dp->ab, ATH12K_DBG_DP_MON_TX,
+					   "TX Mon: Null buffer address in ppdu desc idx=%d\n",
+					   desc_idx);
+				tx_stats->tx_status_buf_null++;
+				continue;
+			}
+
+			ath12k_core_dma_unmap_page(pdev_dp->dp->dev,
+						   status_desc->paddr,
+						   ATH12K_DP_MON_TX_BUF_SIZE,
+						   DMA_FROM_DEVICE);
+
+			mon_data->data_ppdu_info.contains_host_frames = false;
+			mon_data->prot_ppdu_info.contains_host_frames = false;
+
+			ath12k_dp_mon_tx_process_tlv(pdev_dp,
+						     status_desc, mon_data);
+			ath12k_dp_mon_tx_populate_ppdu_info(pdev_dp,
+							    status_desc,
+							    mon_data);
+
+			if (status_desc->end_of_ppdu) {
+				ath12k_dp_tx_mon_update_stats(pdev_dp,
+							      &mon_data->data_ppdu_info);
+
+				prot_info = &mon_data->prot_ppdu_info.tx_info;
+				data_info = &mon_data->data_ppdu_info.tx_info;
+
+				ret = ath12k_dp_tx_mon_deliver_ppdu(pdev_dp, mon_data);
+				if (ret) {
+					tx_stats->tx_ppdu_delivery_errors++;
+				} else {
+					if (prot_info && prot_info->is_used)
+						tx_stats->tx_prot_ppdu_delivered++;
+
+					if (data_info && data_info->is_used)
+						tx_stats->tx_data_ppdu_delivered++;
+				}
+				tx_stats->tx_ppdu_delivered++;
+			}
+			page_frag_free(status_desc->mon_buf);
+			status_desc->mon_buf = NULL;
+			status_desc->paddr = 0;
+			status_desc->buf_len = 0;
+			status_desc->end_of_ppdu = false;
+			total_status_desc++;
+		}
+		ppdu_processed++;
+
+ppdu_prep_failed:
+		desc_count++;
+		/* Reset PPDU descriptor for reuse */
+		ath12k_dp_mon_reset_ppdu_desc(ppdu_desc);
+		/* Deep cleanup of PPDU info */
+		ath12k_dp_mon_tx_deep_free_ppdu_info(pdev_dp, mon_data);
+	}
+
+	spin_lock_bh(&dp_mon_pdev->tx_mon_ppdu_desc_lock);
+	list_splice_tail_init(&dp_mon_pdev->tx_mon_ppdu_desc_proc_list,
+			      &dp_mon_pdev->tx_mon_ppdu_desc_free_list);
+	dp_mon_pdev->mon_stats.ppdu_desc_free += desc_count;
+	spin_unlock_bh(&dp_mon_pdev->tx_mon_ppdu_desc_lock);
+
+	/* Update statistics */
+	tx_stats->tx_ppdu_processed += ppdu_processed;
+	tx_stats->tx_status_desc_processed += total_status_desc;
+
+	ath12k_dbg(pdev_dp->dp->ab, ATH12K_DBG_DP_MON_TX,
+		   "TX Mon: Work queue processed %d PPDUs, %d status descriptors\n",
+		   ppdu_processed, total_status_desc);
+}
+
+/**
+ * ath12k_dp_tx_mon_get_ppdu_desc() - Get PPDU descriptor from free list
+ * @dp_mon_pdev: Monitor PDEV context
+ *
+ * Allocates a PPDU descriptor from the free list for use in TX monitor
+ * processing. The descriptor is initialized and ready for use.
+ *
+ * Return: Pointer to PPDU descriptor on success, NULL if free list empty
+ */
+static struct ath12k_dp_mon_ppdu_desc *
+ath12k_dp_tx_mon_get_ppdu_desc(struct ath12k_pdev_mon_dp *dp_mon_pdev)
+{
+	struct ath12k_dp_mon_ppdu_desc *ppdu_desc;
+
+	spin_lock_bh(&dp_mon_pdev->tx_mon_ppdu_desc_lock);
+	ppdu_desc = list_first_entry_or_null(&dp_mon_pdev->tx_mon_ppdu_desc_free_list,
+					     struct ath12k_dp_mon_ppdu_desc, list);
+	if (likely(ppdu_desc)) {
+		list_del(&ppdu_desc->list);
+		dp_mon_pdev->mon_stats.ppdu_desc_free--;
+	}
+
+	spin_unlock_bh(&dp_mon_pdev->tx_mon_ppdu_desc_lock);
+
+	return ppdu_desc;
+}
+
+/**
+ * ath12k_dp_tx_mon_prep_wq() - Prepare descriptors for work queue processing
+ * @mon_desc_used_list: List of monitor descriptors containing TLV data
+ * @dp_mon_pdev: Monitor PDEV context
+ *
+ * This function prepares monitor descriptors for work queue processing by:
+ * 1. Allocating a PPDU descriptor from free list
+ * 2. Associating monitor descriptors with the PPDU descriptor
+ * 3. Queuing the PPDU descriptor for work queue processing
+ *
+ * This is called from NAPI context when end of PPDU is detected during
+ * ring processing. The actual heavy processing is deferred to work queue.
+ *
+ * Return: 0 on success, -ENOENT if no PPDU descriptor available
+ */
+static int ath12k_dp_tx_mon_prep_wq(struct list_head *mon_desc_used_list,
+				    struct ath12k_pdev_mon_dp *dp_mon_pdev)
+{
+	struct ath12k_dp_mon_ppdu_desc *ppdu_desc;
+	struct ath12k_dp_mon_desc *desc;
+	struct ath12k_pdev_mon_dp_stats *mon_stats = &dp_mon_pdev->mon_stats;
+	int desc_cnt;
+
+	ppdu_desc = ath12k_dp_tx_mon_get_ppdu_desc(dp_mon_pdev);
+	if (unlikely(!ppdu_desc)) {
+		mon_stats->ppdu_desc_free_list_empty_cnt++;
+		return -ENOENT;
+	}
+
+	/* Copy monitor descriptors to PPDU descriptor */
+	list_for_each_entry(desc, mon_desc_used_list, list) {
+		desc_cnt = ppdu_desc->status_desc_cnt;
+		if (unlikely(desc_cnt >= ATH12K_DP_MON_STATUS_BUF)) {
+			/* On overflow, reset and add to used list, return error */
+			ath12k_dp_mon_reset_ppdu_desc(ppdu_desc);
+			spin_lock_bh(&dp_mon_pdev->tx_mon_ppdu_desc_lock);
+			list_add_tail(&ppdu_desc->list,
+				      &dp_mon_pdev->tx_mon_ppdu_desc_free_list);
+			mon_stats->ppdu_desc_free++;
+			spin_unlock_bh(&dp_mon_pdev->tx_mon_ppdu_desc_lock);
+			return -EOVERFLOW;
+		}
+
+		/* Copy individual fields from descriptor to status_desc */
+		ppdu_desc->status_desc[desc_cnt].mon_buf = desc->mon_buf;
+		ppdu_desc->status_desc[desc_cnt].paddr = desc->paddr;
+		ppdu_desc->status_desc[desc_cnt].buf_len = desc->buf_len;
+		ppdu_desc->status_desc[desc_cnt].end_of_ppdu = desc->end_of_ppdu;
+		ppdu_desc->status_desc_cnt++;
+	}
+
+	/* Add PPDU descriptor to used list for work queue processing */
+	spin_lock_bh(&dp_mon_pdev->tx_mon_ppdu_desc_lock);
+	list_add_tail(&ppdu_desc->list, &dp_mon_pdev->tx_mon_ppdu_desc_used_list);
+	spin_unlock_bh(&dp_mon_pdev->tx_mon_ppdu_desc_lock);
+
+	return 0;
+}
+
+/**
  * ath12k_dp_mon_tx_process_ring() - Process TX monitor destination ring
  * @dp: DP context
  * @mac_id: MAC ID for the radio
@@ -611,6 +3180,22 @@ int ath12k_dp_mon_tx_process_ring(struct ath12k_pdev_dp *dp_pdev,
 			goto move_next;
 		}
 
+		mon_desc->in_use = DP_MON_DESC_STATUS_REAP;
+
+		/* The hardware reports buffer length as (actual_length - 1),
+		 * likely due to internal indexing or alignment constraints.
+		 * To obtain the true buffer length for processing, increment
+		 * the reported end_offset by 1 before using it.
+		 */
+		end_offset += 1;
+		if (unlikely(end_offset > ATH12K_DP_MON_TX_BUF_SIZE)) {
+			ath12k_warn(ab, "TX Mon: invalid offset %u received in mac_id %d\n",
+				    end_offset, mac_id);
+			end_offset = ATH12K_DP_MON_TX_BUF_SIZE - 1;
+		}
+		mon_desc->buf_len = end_offset;
+		list_add_tail(&mon_desc->list, mon_desc_head);
+
 		status_frag = (u8 *)mon_desc->mon_buf;
 		if (unlikely(!status_frag)) {
 			ath12k_err(ab, "TX Mon: NULL buffer received in mac_id %d\n",
@@ -618,31 +3203,32 @@ int ath12k_dp_mon_tx_process_ring(struct ath12k_pdev_dp *dp_pdev,
 			goto move_next;
 		}
 
-		mon_desc->in_use = DP_MON_DESC_STATUS_REAP;
-		list_add_tail(&mon_desc->list, mon_desc_head);
 		if (end_reason == HAL_MON_FLUSH_DETECTED ||
 		    end_reason == HAL_MON_PPDU_TRUNCATED) {
 			ath12k_dp_tx_mon_flush_desc_list(dp_pdev,
 							 mon_desc_head);
+			ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX,
+				   "TX Mon: Flush Detected - Buffers Dropped\n");
 			goto move_next;
 		}
-
-		if (unlikely(end_offset > ATH12K_DP_MON_TX_BUF_SIZE)) {
-			ath12k_warn(ab, "TX Mon: invalid offset %u received in mac_id %d\n",
-				    end_offset, mac_id);
-			end_offset = ATH12K_DP_MON_TX_BUF_SIZE - 1;
-		}
-
-		/* The hardware reports buffer length as (actual_length - 1),
-		 * likely due to internal indexing or alignment constraints.
-		 * To obtain the true buffer length for processing, increment
-		 * the reported end_offset by 1 before using it.
-		 */
-		mon_desc->buf_len = end_offset + 1;
 
 		if (end_reason == HAL_MON_END_OF_PPDU) {
 			*budget -= 1;
 			mon_desc->end_of_ppdu = true;
+			ret = ath12k_dp_tx_mon_prep_wq(mon_desc_head,
+						       dp_mon_pdev);
+			if (ret) {
+				ath12k_warn(ab,
+					    "TX Mon: Failed to add mon desc to ppdu ret %d",
+					    ret);
+				ath12k_dp_tx_mon_flush_desc_list(dp_pdev,
+								 mon_desc_head);
+				goto move_next;
+			}
+
+			if (queue_work(dp_mon_pdev->txmon_wq, &dp_mon_pdev->txmon_work))
+				dp_mon_pdev->tx_mon_stats.tx_work_queue_scheduled++;
+
 			ath12k_dp_mon_tx_desc_free(mon_desc_head, dp_mon);
 		}
 

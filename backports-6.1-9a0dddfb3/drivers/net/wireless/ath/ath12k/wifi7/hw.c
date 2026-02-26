@@ -1759,6 +1759,27 @@ skip_peer_find:
 	}
 }
 
+static void ath12k_wifi7_mac_op_sta_set_4addr(struct ieee80211_hw *hw,
+					      struct ieee80211_vif *vif,
+					      struct ieee80211_sta *sta,
+					      bool enabled)
+{
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
+	struct ath12k_vlan_iface *vlan_iface = ahvif->vlan_iface;
+
+	if (enabled && !ahsta->use_4addr_set) {
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+		ahsta->ppe_vp_num = ahvif->dp_vif.ppe_vp_num;
+		ahsta->vlan_iface = ahvif->vlan_iface;
+#endif
+		wiphy_work_queue(hw->wiphy, &ahsta->set_4addr_wk);
+		ahsta->use_4addr_set = true;
+		if (vif->type == NL80211_IFTYPE_AP_VLAN && vlan_iface)
+			vlan_iface->is_wds_4addr = true;
+	}
+}
+
 static const struct ieee80211_ops ath12k_ops_wifi7 = {
 	.tx				= ath12k_wifi7_mac_op_tx,
 	.wake_tx_queue			= ieee80211_handle_wake_tx_queue,
@@ -1769,7 +1790,7 @@ static const struct ieee80211_ops ath12k_ops_wifi7 = {
 	.remove_interface		= ath12k_mac_op_remove_interface,
 	.update_vif_offload		= ath12k_mac_op_update_vif_offload,
 	.config                         = ath12k_mac_op_config,
-	.sta_set_4addr			= ath12k_mac_op_sta_set_4addr,
+	.sta_set_4addr			= ath12k_wifi7_mac_op_sta_set_4addr,
 	.link_info_changed              = ath12k_mac_op_link_info_changed,
 	.start_ap                       = ath12k_mac_op_start_ap,
 	.vif_cfg_changed		= ath12k_mac_op_vif_cfg_changed,

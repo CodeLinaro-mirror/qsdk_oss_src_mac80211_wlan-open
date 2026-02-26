@@ -207,7 +207,7 @@ ieee80211_determine_ap_chan(struct ieee80211_sub_if_data *sdata,
 
 	/* get special 6 GHz case out of the way */
 	if (sband->band == NL80211_BAND_6GHZ) {
-		enum ieee80211_conn_mode mode = IEEE80211_CONN_MODE_EHT;
+		enum ieee80211_conn_mode mode = IEEE80211_CONN_MODE_HIGHEST;
 
 		/* this is an error */
 		if (conn->mode < IEEE80211_CONN_MODE_HE)
@@ -230,7 +230,9 @@ ieee80211_determine_ap_chan(struct ieee80211_sub_if_data *sdata,
 			return IEEE80211_CONN_MODE_LEGACY;
 		}
 
-		return mode;
+		if (mode <= IEEE80211_CONN_MODE_HE)
+			return mode;
+		goto check_uhr;
 	}
 
 	/* now we have the progression HT, VHT, ... */
@@ -384,6 +386,7 @@ ieee80211_determine_ap_chan(struct ieee80211_sub_if_data *sdata,
 	if (ieee802_11_determine_ap_chan_extn(elems, chandef, sdata))
 		return IEEE80211_CONN_MODE_HE;
 
+check_uhr:
 	/* stick to EHT if we or the AP don't have UHR */
 	if (conn->mode < IEEE80211_CONN_MODE_UHR || !uhr_oper)
 		return IEEE80211_CONN_MODE_EHT;

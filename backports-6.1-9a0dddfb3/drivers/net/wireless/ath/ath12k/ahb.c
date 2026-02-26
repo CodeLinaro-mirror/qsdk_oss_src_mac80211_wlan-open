@@ -320,7 +320,7 @@ static void ath12k_ahb_ce_irqs_disable(struct ath12k_base *ab)
 {
 	int i;
 
-	if (ab->powered_off)
+	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
 	for (i = 0; i < ab->hw_params->ce_count; i++) {
@@ -355,7 +355,7 @@ static void ath12k_ahb_ext_irq_enable(struct ath12k_base *ab)
 
 static void ath12k_ahb_ext_irq_disable(struct ath12k_base *ab)
 {
-	if (ab->powered_off)
+	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
 	__ath12k_ahb_ext_irq_disable(ab);
@@ -860,7 +860,7 @@ static void ath12k_ahb_free_ext_irq(struct ath12k_base *ab)
 {
 	int i, j;
 
-	if (ab->powered_off)
+	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
 	for (i = 0; i < ATH12K_EXT_IRQ_GRP_NUM_MAX; i++) {
@@ -1052,19 +1052,19 @@ static void ath12k_ahb_dp_umac_reset_enable_irq(struct ath12k_base *ab)
 
 static void ath12k_ahb_dp_umac_reset_free_irq(struct ath12k_base *ab)
 {
-        struct ath12k_dp_umac_reset *umac_reset = &ab->dp_umac_reset;
-        struct ath12k_ahb *ab_ahb = ath12k_ab_to_ahb(ab);
+	struct ath12k_dp_umac_reset *umac_reset = &ab->dp_umac_reset;
+	struct ath12k_ahb *ab_ahb = ath12k_ab_to_ahb(ab);
 
-	if (ab->powered_off)
+	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
-        if (ab->hw_params->umac_irq_line_reset) {
-                iounmap(ab_ahb->interrupt_reset_base_addr);
-                ab_ahb->interrupt_reset_base_addr = NULL;
-        }
+	if (ab->hw_params->umac_irq_line_reset) {
+		iounmap(ab_ahb->interrupt_reset_base_addr);
+		ab_ahb->interrupt_reset_base_addr = NULL;
+	}
 
-        disable_irq_nosync(umac_reset->irq_num);
-        free_irq(umac_reset->irq_num, ab);
+	disable_irq_nosync(umac_reset->irq_num);
+	free_irq(umac_reset->irq_num, ab);
 }
 
 void ath12k_ahb_umac_intr_line_reset(struct ath12k_base *ab)

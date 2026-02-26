@@ -325,8 +325,9 @@ enum hal_mon_reception_type {
 /* info2 subfields */
 #define HAL_RX_FSE_L4_PROTOCOL			GENMASK(7, 0)
 #define HAL_RX_FSE_VALID			GENMASK(8, 8)
-#define HAL_RX_FSE_SERVICE_CODE			GENMASK(21, 13)
-#define HAL_RX_FSE_USE_PPE			GENMASK(23, 23)
+#define HAL_RX_FSE_RESERVED			GENMASK(13, 9)
+#define HAL_RX_FSE_SERVICE_CODE			GENMASK(22, 14)
+#define HAL_RX_FSE_PRIORITY_VLD			GENMASK(23, 23)
 #define HAL_RX_FSE_REO_INDICATION		GENMASK(28, 24)
 #define HAL_RX_FSE_MSDU_DROP			GENMASK(29, 29)
 #define HAL_RX_FSE_REO_DESTINATION_HANDLER	GENMASK(31, 30)
@@ -334,6 +335,42 @@ enum hal_mon_reception_type {
 /* info 3 subfields */
 
 /* info4 subfields */
+/*
+ * Mapping provided fields to info4:
+ *  - dest_info                 : [11:0]
+ *  - dest_info_valid           : [12]
+ *  - int_priority              : [16:13]
+ *  - int_priority_valid        : [17]
+ *  - ppe_classify_read_hint    : [19:18]
+ *  - c_tdma_lut_ptr            : [25:20]
+ *  - ll_pkt                    : [26]
+ *  - rx_sdwf_policer_id        : [31:27]
+ */
+#define HAL_RX_FSE_DEST_INFO			GENMASK(11, 0)
+#define HAL_RX_FSE_DEST_INFO_VALID		GENMASK(12, 12)
+#define HAL_RX_FSE_INT_PRIORITY		GENMASK(16, 13)
+#define HAL_RX_FSE_INT_PRIORITY_VALID		GENMASK(17, 17)
+#define HAL_RX_FSE_PPE_CLASSIFY_READ_HINT	GENMASK(19, 18)
+#define HAL_RX_FSE_C_TDMA_LUT_PTR		GENMASK(25, 20)
+#define HAL_RX_FSE_LL_PKT			GENMASK(26, 26)
+#define HAL_RX_FSE_RX_SDWF_POLICER_ID		GENMASK(31, 27)
+
+/* info5 subfields */
+/*
+ * Mapping provided fields to info5:
+ *  - telemetry_stream_id_valid  : [0]
+ *  - telemetry_stream_id        : [8:1]
+ *  - sw_peer_id_check_enable    : [9]
+ *  - sw_peer_id                 : [25:10]
+ *  - rx_sdwf_priority           : [26]
+ *  - reserved_15                : [31:27]
+ */
+#define HAL_RX_FSE_TELEMETRY_STREAM_ID_VALID	GENMASK(0, 0)
+#define HAL_RX_FSE_TELEMETRY_STREAM_ID	GENMASK(8, 1)
+#define HAL_RX_FSE_SW_PEER_ID_CHECK_ENABLE	GENMASK(9, 9)
+#define HAL_RX_FSE_SW_PEER_ID			GENMASK(25, 10)
+#define HAL_RX_FSE_RX_SDWF_PRIORITY		GENMASK(26, 26)
+#define HAL_RX_FSE_RESERVED_15			GENMASK(31, 27)
 
 /* This structure should not be modified as it is shared with HW */
 struct hal_rx_fse {
@@ -352,7 +389,7 @@ struct hal_rx_fse {
 	u32 msdu_byte_count;
 	u32 timestamp;
 	u32 info4;
-	u32 tcp_sequence_number;
+	u32 info5;
 };
 
 #define HAL_FST_HASH_DATA_SIZE		37
@@ -371,7 +408,26 @@ struct hal_rx_flow {
 	u8 reo_destination_handler;
 	u8 reo_indication;
 	u8 use_ppe      :1,
-	   drop         :1;
+	drop         :1;
+
+	u32 timestamp;
+
+	/* info4 fields */
+	u32 dest_info                                               : 12, // [11:0]
+	    dest_info_valid                                         :  1, // [12:12]
+	    int_priority                                            :  4, // [16:13]
+	    int_priority_valid                                      :  1, // [17:17]
+	    ppe_classify_read_hint                                  :  2, // [19:18]
+	    c_tdma_lut_ptr                                          :  6, // [25:20]
+	    ll_pkt                                                  :  1, // [26:26]
+	    rx_sdwf_policer_id                                      :  5; // [31:27]
+
+	/* info5 fields */
+	u32 telemetry_stream_id_valid                               :  1, // [0:0]
+	    telemetry_stream_id                                     :  8, // [8:1]
+	    sw_peer_id_check_enable                                 :  1, // [9:9]
+	    sw_peer_id                                              : 16, // [25:10]
+	    rx_sdwf_priority                                        :  6; // [31:26]
 };
 
 void ath12k_wifi8_hal_reo_status_queue_stats(struct ath12k_base *ab,

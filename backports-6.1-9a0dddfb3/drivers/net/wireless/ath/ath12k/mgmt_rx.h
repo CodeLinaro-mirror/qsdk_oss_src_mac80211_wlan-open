@@ -66,6 +66,7 @@ struct ath12k_mgmt_arch_ops {
 	int (*mgmt_op_device_init)(struct ath12k_mgmt *mgmt);
 	void (*mgmt_op_device_deinit)(struct ath12k_mgmt *mgmt);
 	int (*mgmt_op_htt_setup)(struct ath12k_mgmt *mgmt);
+	int (*mgmt_op_dump_ring_stats)(struct ath12k_mgmt *mgmt, char *buf, int size);
 };
 
 struct ath12k_mgmt_irq_grp {

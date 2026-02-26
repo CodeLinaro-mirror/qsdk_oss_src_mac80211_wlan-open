@@ -16,6 +16,9 @@
 #include "../dp_stats.h"
 #include "../dp_peer.h"
 #include "../telemetry.h"
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#include "../qcn_extns/ipa/dp_ipa.h"
+#endif
 #include "../telemetry_agent_if.h"
 #include "dp_peer.h"
 
@@ -1170,13 +1173,28 @@ static int ath12k_prepare_group_key_metadata(struct sk_buff *skb,
 	if (!meta)
 		return -1;
 
-	meta->info0 |= le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_ENCRYPT_FLAG);
-	meta->info0 |= le32_encode_bits(0, HAL_TX_MSDU_METADATA_INFO0_ENCRYPT_TYPE);
+	meta->info0 |= le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_HOST_TX_DESC_POOL);
 	meta->info0 |= le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_KEY_FLAGS);
 	meta->info2 |= le32_encode_bits(group_slot,
 					HAL_TX_MSDU_METADATA_INFO2_KEY_FLAGS);
 
 	return htt_desc_size_aligned;
+}
+
+static void ath12k_dp_tx_update_gsn_metadata(struct hal_tx_info *ti,
+					     struct ath12k_link_vif *arvif,
+					     int mcbc_gsn)
+{
+	ti->meta_data_flags |=
+		u32_encode_bits(HTT_TCL_META_DATA_TYPE_GLOBAL_SEQ_NUM,
+				HTT_TCL_META_DATA_TYPE) |
+		u32_encode_bits(mcbc_gsn,
+				HTT_TCL_META_DATA_GLOBAL_SEQ_NUM);
+
+	ti->meta_data_flags |= HTT_TCL_META_DATA_GLOBAL_HTT_EXT_PRESENT;
+	if (arvif->nawds_support)
+		ti->meta_data_flags |=
+			u32_encode_bits(1, HTT_TCL_META_DATA_GSN_INSPECTED);
 }
 
 /* TODO: Remove the export once this file is built with wifi7 ko */
@@ -1397,6 +1415,9 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 map:
 #ifndef CONFIG_IO_COHERENCY
 	ti.paddr = dma_map_single(dp->dev, skb->data, skb->len, DMA_TO_DEVICE);
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	ATH12K_SKB_CB(skb)->paddr = ti.paddr;
+#endif
 	if (dma_mapping_error(dp->dev, ti.paddr)) {
 		atomic_inc(&dp->device_stats.tx_err.misc_fail);
 		ath12k_warn(ab, "failed to DMA map data Tx buffer\n");
@@ -1462,6 +1483,22 @@ skip_htt_metadata:
 				goto fail_free_ext_skb;
 			}
 		}
+
+		if (group_slot > 0) {
+			htt_hdr_size = ath12k_prepare_group_key_metadata(skb_ext_desc,
+									 group_slot);
+			if (htt_hdr_size < 0) {
+				ath12k_info(ab, "failed to set group key metadata");
+				err = DP_TX_ENQ_DROP_HTT_MDATA_ERR;
+				goto fail_free_ext_skb;
+			}
+
+			if (gsn_valid)
+				ath12k_dp_tx_update_gsn_metadata(&ti, arvif, mcbc_gsn);
+			ti.meta_data_flags |= HTT_TCL_META_DATA_VALID_HTT;
+			ti.flags0 |= u32_encode_bits(1, HAL_TCL_DATA_CMD_INFO2_TO_FW);
+		}
+
 #ifndef CONFIG_IO_COHERENCY
 		ti.paddr = dma_map_single(dp->dev, skb_ext_desc->data,
 					  skb_ext_desc->len, DMA_TO_DEVICE);
@@ -1485,45 +1522,24 @@ skip_htt_metadata:
 		tx_desc->skb_ext_desc = skb_ext_desc;
 	}
 
-	if (group_slot > 0)  {
-		htt_hdr_size = ath12k_prepare_group_key_metadata(skb, group_slot);
-		if (htt_hdr_size < 0) {
-			ath12k_info(ab, "failed to set group key metadata");
-			err = DP_TX_ENQ_DROP_HTT_MDATA_ERR;
-			goto fail_unmap_dma_ext;
-		}
-
-		if (gsn_valid) {
-			/* Reset and Initialize meta_data_flags with Global Sequence
-			 * Number (GSN) info.
-			 */
-			ti.meta_data_flags =
-				u32_encode_bits(HTT_TCL_META_DATA_TYPE_GLOBAL_SEQ_NUM,
-						HTT_TCL_META_DATA_TYPE) |
-				u32_encode_bits(mcbc_gsn,
-						HTT_TCL_META_DATA_GLOBAL_SEQ_NUM);
-
-			ti.meta_data_flags |= HTT_TCL_META_DATA_GLOBAL_HTT_EXT_PRESENT;
-			if (arvif->nawds_support)
-				ti.meta_data_flags |=
-					u32_encode_bits(1,
-							HTT_TCL_META_DATA_GSN_INSPECTED);
-		}
-		ti.meta_data_flags |= HTT_TCL_META_DATA_VALID_HTT;
-		ti.flags0 |= u32_encode_bits(1, HAL_TCL_DATA_CMD_INFO2_TO_FW);
-		ti.pkt_offset = htt_hdr_size;
-	}
-
 	hal_ring_id = tx_ring->tcl_data_ring.ring_id;
 	tcl_ring = &hal->srng_list[hal_ring_id];
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	ath12k_hal_srng_access_begin(ab, tcl_ring);
+#else
 	ath12k_hal_srng_access_begin_no_lock(tcl_ring);
+#endif
 	hal_tcl_desc = ath12k_hal_srng_src_get_next_entry(ab, tcl_ring);
 	if (!hal_tcl_desc) {
 		/* NOTE: It is highly unlikely we'll be running out of tcl_ring
 		 * desc because the desc is directly enqueued onto hw queue.
 		 */
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+		ath12k_hal_srng_access_end(ab, tcl_ring);
+#else
 		ath12k_hal_srng_access_end_no_lock(ab, tcl_ring);
+#endif
 		dp->device_stats.tx_err.desc_na[ti.ring_id]++;
 		if (ath12k_dp_stats_enabled(dp_pdev) &&
 		    ath12k_tid_stats_enabled(dp_pdev)) {
@@ -1631,7 +1647,11 @@ skip_htt_metadata:
 					     qos_tag, arsta->addr);
 	}
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+		ath12k_hal_srng_access_end(ab, tcl_ring);
+#else
 	ath12k_hal_srng_access_end_no_lock(ab, tcl_ring);
+#endif
 
 	DP_STATS_INC_PKT(dp_vif, tx_i.enque_to_hw, 1, ti.data_len, ti.ring_id);
 
@@ -1924,9 +1944,21 @@ ath12k_wifi7_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 		/* This event is to be handled only when the driver decides to
 		 * use WDS offload functionality.
 		 */
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+		ath12k_core_dma_unmap_single(dp->dev,
+					     ATH12K_SKB_CB(msdu)->paddr,
+					     msdu->len, DMA_TO_DEVICE);
+		dev_kfree_skb_any(msdu);
+#endif
 		break;
 	default:
 		ath12k_warn(dp->ab, "Unknown htt tx status %d\n", htt_status);
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+		ath12k_core_dma_unmap_single(dp->dev,
+					     ATH12K_SKB_CB(msdu)->paddr,
+					     msdu->len, DMA_TO_DEVICE);
+		dev_kfree_skb_any(msdu);
+#endif
 		break;
 	}
 
@@ -2458,13 +2490,31 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 		if (!ath12k_wifi7_hal_tx_completion_process(tx_status,
 							    &sw_status))
 			continue;
-
+#ifndef CPTCFG_EXT_IPA_OFFLOAD
 		tx_desc =
 			(struct ath12k_tx_desc_info *)((unsigned long)sw_status.tx_desc);
+#endif
 		if (unlikely(!tx_desc)) {
-			DP_DEVICE_STATS_INC(dp, tx_err.tx_comp_err[DP_TX_COMP_ERR_INVALID_DESC][ring_id], 1);
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+			u32 cookie = le32_get_bits(desc->buf_addr_info.info1,
+						   BUFFER_ADDR_INFO1_SW_COOKIE);
+
+			tx_desc = ath12k_dp_get_tx_desc(dp, cookie);
+			if (unlikely(!tx_desc)) {
+				DP_DEVICE_STATS_INC(dp,
+						    tx_err.tx_comp_err
+						    [DP_TX_COMP_ERR_INVALID_DESC]
+						    [ring_id],
+						    1);
+				ath12k_warn(ab, "unable to retrieve tx_desc!");
+				continue;
+			}
+#else
+			DP_DEVICE_STATS_INC(dp, tx_err.tx_comp_err
+					    [DP_TX_COMP_ERR_INVALID_DESC][ring_id], 1);
 			ath12k_warn(ab, "unable to retrieve tx_desc!");
 			continue;
+#endif
 		}
 
 		tx_status_entry->tx_desc = tx_desc;

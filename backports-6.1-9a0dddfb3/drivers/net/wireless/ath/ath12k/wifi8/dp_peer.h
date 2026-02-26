@@ -50,4 +50,7 @@ int ath12k_wifi8_dp_get_peer_init_status(struct ath12k_dp *dp,
 					 u8 *addr);
 void ath12k_wifi8_dp_peer_cleanup(struct ath12k_dp_hw *dp_hw,
 				  struct ath12k_dp_peer *dp_peer);
+void ath12k_wifi8_dp_vif_update_4addr(struct ath12k_dp_hw *dp_hw,
+				      struct ath12k_dp_vif *dp_vif,
+				      u8 *addr);
 #endif

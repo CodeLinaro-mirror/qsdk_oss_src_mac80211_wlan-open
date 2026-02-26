@@ -78,6 +78,12 @@ module_param_named(ppe_ds_enable, ath12k_ppe_ds_enabled, uint, 0644);
 MODULE_PARM_DESC(ppe_ds_enable, "ppe_ds_enable: 0-disable, 1-enable");
 #endif
 
+#define ATH12K_PROBE_ORDER_MASK 0xF
+#define ATH12K_PROBE_ORDER_SHIFT 4
+int ath12k_valid_probe_order;
+unsigned int ath12k_probe_order_param;
+module_param_named(probe_order, ath12k_probe_order_param, uint, 0644);
+MODULE_PARM_DESC(probe_order, "Probe order (hex bitfield, 4-bit per device)");
 #ifdef CPTCFG_ATH12K_POWER_OPTIMIZATION
 extern struct ath12k_ps_context ath12k_global_ps_ctx;
 #endif
@@ -357,8 +363,7 @@ int ath12k_core_suspend_late(struct ath12k_base *ab)
 	ath12k_hif_irq_disable(ab);
 	ath12k_hif_ce_irq_disable(ab);
 
-	if (!ab->powered_off)
-		ath12k_hif_power_down(ab, true);
+	ath12k_hif_power_down(ab, true);
 
 	return 0;
 }
@@ -996,9 +1001,9 @@ int ath12k_core_power_up(struct ath12k_hw_group *ag)
 	reinit_completion(&ag->power_up);
 	for (i = 0; i < ag->num_probed; i++) {
 		ab =  ag->ab[i];
-		if (ab->powered_off && !ath12k_hw_group_recovery_in_progress(ag)) {
+		if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags) &&
+		    !ath12k_hw_group_recovery_in_progress(ag)) {
 			ath12k_hif_power_up(ab);
-			ab->powered_off = false;
 			ab->powerup_triggered = true;
 			ath12k_info(ab, "Q6 power up is started\n");
 		}
@@ -1085,7 +1090,8 @@ void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag, bool standby_
 			}
 		}
 
-		if (!skip_power_down && !ab->powered_off) {
+		if (!skip_power_down &&
+		    !test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags)) {
 			ab->qmi.num_radios = U8_MAX;
 			ath12k_umac_reset_fallback_cleanup(ab);
 			ath12k_hif_mgmt_irq_disable(ab);
@@ -1102,7 +1108,6 @@ void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag, bool standby_
 			ab->free_vdev_stats_id_map = 0;
 			ath12k_core_to_group_ref_put(ab);
 			ath12k_qmi_free_resource(ab);
-			ab->powered_off = true;
 			ath12k_info(ab, "Q6 power down\n");
 		}
 	}
@@ -1262,8 +1267,7 @@ static void ath12k_core_soc_destroy(struct ath12k_base *ab)
 	if (ab->ce_pipe_init_done && !ab->is_bypassed)
 		ath12k_ce_cleanup_pipes(ab);
 
-	if (!ab->powered_off)
-		ath12k_hif_power_down(ab, false);
+	ath12k_hif_power_down(ab, false);
 
 	ath12k_reg_free(ab);
 	ath12k_debugfs_soc_destroy(ab);
@@ -1348,7 +1352,7 @@ static int ath12k_core_pdev_init(struct ath12k_base *ab)
 
 void ath12k_core_pdev_deinit(struct ath12k_base *ab)
 {
-	if (ab->powered_off)
+	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
 	ath12k_dp_accel_cfg_deinit(ab);
@@ -1617,7 +1621,7 @@ static void ath12k_core_hw_group_stop(struct ath12k_hw_group *ag)
 		ath12k_core_device_cleanup(ab);
 
 		if (ab->hw_params->reoq_lut_support &&
-		    !ab->powered_off) {
+		    !test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags)) {
 			mutex_lock(&ab->core_lock);
 			ath12k_dp_reoq_lut_addr_reset(ath12k_ab_to_dp(ab));
 			mutex_unlock(&ab->core_lock);
@@ -3937,7 +3941,7 @@ static void ath12k_core_reset(struct work_struct *work)
 		 */
 		if (ab->hif.bus != ATH12K_BUS_PCI) {
 			ath12k_info(ab, "Collecting the userpd dumps before full crash\n");
-			if (!ab->powered_off)
+			if (!test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 				ath12k_core_upd_power_down(ab);
 		}
 
@@ -4064,7 +4068,7 @@ static void ath12k_core_reset(struct work_struct *work)
 		if (ab->hif.bus == ATH12K_BUS_PCI) {
 			ath12k_hif_power_down(ab, false);
 		} else {
-			if (!ab->powered_off)
+			if (!test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 				ath12k_core_upd_power_down(ab);
 		}
 	}
@@ -4089,9 +4093,9 @@ static void ath12k_core_reset(struct work_struct *work)
 
 	for (i = 0; i < ag->num_devices; i++) {
 		ab = ag->ab[i];
-		if ((!ab->is_reset &&
-		    !ath12k_check_erp_power_down(ag)) ||
-		    ab->is_bypassed)
+
+		if (ab->is_bypassed ||
+		    !test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 			continue;
 		/* Skip recovery incase during reboot */
 		if (system_state == SYSTEM_RESTART) {
@@ -4102,10 +4106,8 @@ static void ath12k_core_reset(struct work_struct *work)
 		ath12k_qmi_free_resource(ab);
 		ath12k_hif_power_up(ab);
 
-		if (ath12k_check_erp_power_down(ag)) {
-			ab->powered_off = false;
+		if (ath12k_check_erp_power_down(ag))
 			ab->powerup_triggered = true;
-		}
 
 		if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2 &&
 		    ab->hif.bus == ATH12K_BUS_PCI)
@@ -4478,6 +4480,45 @@ static int ath12k_core_get_wsi_index(struct ath12k_hw_group *ag,
 	return 0;
 }
 
+static int validate_probe_order_param(unsigned int probe_order, u8 num_devices,
+					struct ath12k_base *ab)
+{
+	unsigned int temp_val = probe_order;
+	int i, max_soc = 0;
+	u8 seen_ids = 0;
+
+	while (temp_val) {
+		temp_val = temp_val >> ATH12K_PROBE_ORDER_SHIFT;
+		max_soc++;
+	}
+	temp_val = probe_order;
+	if (num_devices !=  max_soc) {
+		ath12k_dbg(ab, ATH12K_DBG_BOOT,
+				"Invalid module param\n");
+		return -1;
+	}
+	for (i = 0; i < num_devices; i++) {
+		unsigned int temp1_val = (temp_val >> (i *
+						ATH12K_PROBE_ORDER_SHIFT));
+		u8 device_id = temp1_val & ATH12K_PROBE_ORDER_MASK;
+		if ((device_id  == 0) || (device_id > num_devices)) {
+			ath12k_dbg(ab, ATH12K_DBG_BOOT,
+				"ath12k: invalid device ID %u at position %d in probe_order\n",
+					device_id, i);
+			return -1;
+		}
+		if (seen_ids & BIT(device_id)) {
+			ath12k_dbg(ab, ATH12K_DBG_BOOT,
+				"ath12k: duplicate device ID %u in probe_order\n",
+					 device_id);
+			return -1;
+		}
+		seen_ids |= BIT(device_id);
+
+	}
+	return 0;
+}
+
 static struct ath12k_hw_group *ath12k_core_hw_group_assign(struct ath12k_base *ab)
 {
 	struct ath12k_wsi_info *wsi = &ab->wsi_info;
@@ -4555,7 +4596,22 @@ exit:
 	}
 
 	ab->device_id = ag->num_probed++;
+	if (ath12k_probe_order_param) {
+		if (!ath12k_valid_probe_order) {
+			if (validate_probe_order_param(
+						ath12k_probe_order_param,
+						ag->num_devices, ab) == 0)
+				ath12k_valid_probe_order = 1;
+			else
+				ath12k_probe_order_param = 0;
+		}
 
+		if (ath12k_valid_probe_order) {
+			ab->device_id = (ath12k_probe_order_param &
+					ATH12K_PROBE_ORDER_MASK) - 1;
+			ath12k_probe_order_param >>= ATH12K_PROBE_ORDER_SHIFT;
+		}
+	}
 	if (ag->id != ATH12K_INVALID_GROUP_ID)
 		ab->is_static_bypassed = (ath12k_wsi_bypass_bmap & (1 << wsi->index));
 	else if (ath12k_wsi_bypass_bmap)

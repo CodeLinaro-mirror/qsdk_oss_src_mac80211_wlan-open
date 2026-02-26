@@ -2206,9 +2206,10 @@ err_filter:
 	return ret;
 }
 
-static int ath12k_mac_monitor_stop(struct ath12k *ar)
+static int ath12k_mac_monitor_stop(struct ath12k *ar, struct ath12k_vif *ahvif)
 {
 	int ret;
+	u32 stop_tx_mon = MONITOR_FLAG_SKIP_TX | MONITOR_FLAG_CHANGED;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -2228,6 +2229,7 @@ static int ath12k_mac_monitor_stop(struct ath12k *ar)
 	ar->num_started_vdevs--;
 	ath12k_dp_mon_rx_config_monitor_mode(ar, true);
 	ret = ath12k_dp_mon_rx_update_filter(ar);
+	ath12k_dp_mon_tx_set_monitor_flags(ar, stop_tx_mon, &ahvif->dp_vif.monitor_flags);
 	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
 			 "mac monitor stopped ret %d\n", ret);
 	return ret;
@@ -2400,27 +2402,6 @@ int ath12k_mac_op_config(struct ieee80211_hw *hw, int radio_idx, u32 changed)
 	return 0;
 }
 EXPORT_SYMBOL(ath12k_mac_op_config);
-
-void ath12k_mac_op_sta_set_4addr(struct ieee80211_hw *hw,
-					struct ieee80211_vif *vif,
-					struct ieee80211_sta *sta, bool enabled)
-{
-	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
-	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
-	struct ath12k_vlan_iface *vlan_iface = ahvif->vlan_iface;
-
-	if (enabled && !ahsta->use_4addr_set) {
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-		ahsta->ppe_vp_num = ahvif->dp_vif.ppe_vp_num;
-		ahsta->vlan_iface = ahvif->vlan_iface;
-#endif
-		wiphy_work_queue(hw->wiphy, &ahsta->set_4addr_wk);
-		ahsta->use_4addr_set = true;
-		if (vif->type == NL80211_IFTYPE_AP_VLAN && vlan_iface)
-			vlan_iface->is_wds_4addr = true;
-	}
-}
-EXPORT_SYMBOL(ath12k_mac_op_sta_set_4addr);
 
 static int ath12k_mac_setup_bcn_p2p_ie(struct ath12k_link_vif *arvif,
 				       struct sk_buff *bcn)
@@ -14040,7 +14021,6 @@ static int ath12k_sta_ml_reconfig_handler(struct ieee80211_hw *hw,
 	struct ath12k_hw *ah = hw->priv;
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
 	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
-	struct ath12k_wmi_peer_assoc_arg peer_arg;
 	struct ath12k_link_sta *arsta, *arsta_p;
 	struct ath12k_link_vif *arvif, *arvif_p;
 	struct ieee80211_link_sta *link_sta;
@@ -14052,6 +14032,13 @@ static int ath12k_sta_ml_reconfig_handler(struct ieee80211_hw *hw,
 	u32 flags = 0;
 	u8 link_id;
 	struct ieee80211_key_conf *keys[WMI_MAX_KEY_INDEX + 1] = {0};
+	struct ath12k_wmi_peer_assoc_arg *peer_arg __free(kfree) =
+					kzalloc(sizeof(*peer_arg), GFP_KERNEL);
+
+	if (!peer_arg) {
+		ath12k_err(NULL, "failed to allocate memory for peer_arg\n");
+		return -ENOMEM;
+	}
 
 	valid_links = sta->valid_links;
 
@@ -14129,12 +14116,12 @@ static int ath12k_sta_ml_reconfig_handler(struct ieee80211_hw *hw,
 			ath12k_warn(ar->ab, "Link Sta not found\n");
 			goto out;
 		}
-		ath12k_peer_assoc_prepare(ar, arvif, arsta, &peer_arg,
+		ath12k_peer_assoc_prepare(ar, arvif, arsta, peer_arg,
 					  false, link_sta);
 
 		rcu_read_unlock();
 
-		ret = ath12k_wmi_send_peer_assoc_cmd(ar, &peer_arg);
+		ret = ath12k_wmi_send_peer_assoc_cmd(ar, peer_arg);
 		if (ret) {
 			ath12k_warn(ar->ab, "failed to run peer assoc for vdev %i: %d\n",
 				    arvif->vdev_id, ret);
@@ -17290,7 +17277,7 @@ void ath12k_mac_stop(struct ath12k *ar)
 	int ret;
 	enum dp_mon_stats_mode mode = ATH12k_DP_MON_BASIC_STATS;
 
-	if (ar->ab->powered_off)
+	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ar->ab->dev_flags))
 		return;
 
 	lockdep_assert_held(&ah->hw_mutex);
@@ -21034,7 +21021,7 @@ ath12k_mac_unassign_vif_chanctx_handle(struct ieee80211_hw *hw,
 		WARN_ON(!arvif->is_started);
 
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
-		ret = ath12k_mac_monitor_stop(ar);
+		ret = ath12k_mac_monitor_stop(ar, ahvif);
 		if (ret)
 			return;
 
@@ -28063,6 +28050,11 @@ int ath12k_mac_op_set_monitor_flags(struct ieee80211_hw *hw,
 	u32 *current_flags;
 
 	lockdep_assert_wiphy(hw->wiphy);
+
+	if (!(flags & MONITOR_FLAG_CHANGED)) {
+		ath12k_err(NULL, "Flags unchanged - updated rejected\n");
+		return ret;
+	}
 
 	ahvif = ath12k_vif_to_ahvif(vif);
 	if (!ahvif) {

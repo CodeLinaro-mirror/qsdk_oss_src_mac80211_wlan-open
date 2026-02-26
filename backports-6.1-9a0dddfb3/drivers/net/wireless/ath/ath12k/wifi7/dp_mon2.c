@@ -1183,14 +1183,6 @@ static void ath12k_wifi7_dp_mon_h_flush_tlv(struct ath12k_pdev_dp *pdev_dp,
 	page_frag_free(mon_buf);
 }
 
-static inline void
-ath12k_wifi7_dp_mon_rx_reset_ppdu_desc(struct ath12k_dp_mon_ppdu_desc *ppdu_desc)
-{
-	memset(ppdu_desc->status_desc, 0,
-	       ppdu_desc->status_desc_cnt * sizeof(*ppdu_desc->status_desc));
-	ppdu_desc->status_desc_cnt = 0;
-}
-
 static void ath12k_wifi7_dp_mon_rx_h_empty_desc(struct ath12k_pdev_dp *pdev_dp)
 {
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = pdev_dp->dp_mon_pdev;
@@ -1222,7 +1214,7 @@ static void ath12k_wifi7_dp_mon_rx_h_empty_desc(struct ath12k_pdev_dp *pdev_dp)
 	}
 
 free_desc:
-	ath12k_wifi7_dp_mon_rx_reset_ppdu_desc(last_ppdu_desc);
+	ath12k_dp_mon_reset_ppdu_desc(last_ppdu_desc);
 	list_add_tail(&last_ppdu_desc->list, &dp_mon_pdev->ppdu_desc_free_list);
 }
 
@@ -1300,7 +1292,7 @@ static int ath12k_wifi7_dp_mon_rx_add_ppdu_desc(struct list_head *mon_desc_used_
 			ath12k_warn(dp_mon->dp,
 				    "status desc buffer full (count = %u, max = %u)",
 				    ppdu_desc->status_desc_cnt, ATH12K_DP_MON_STATUS_BUF);
-			ath12k_wifi7_dp_mon_rx_reset_ppdu_desc(ppdu_desc);
+			ath12k_dp_mon_reset_ppdu_desc(ppdu_desc);
 			spin_lock_bh(&dp_mon_pdev->ppdu_desc_lock);
 			list_add_tail(&ppdu_desc->list,
 				      &dp_mon_pdev->ppdu_desc_free_list);
@@ -1625,7 +1617,7 @@ free_buf:
 next_ppdu:
 		mon_stats->num_ppdu_processed++;
 		ppdu_desc_prcd++;
-		ath12k_wifi7_dp_mon_rx_reset_ppdu_desc(ppdu_desc);
+		ath12k_dp_mon_reset_ppdu_desc(ppdu_desc);
 		ath12k_wifi7_dp_mon_rx_memset_ppdu_info(pdev_dp, ppdu_info);
 	}
 
@@ -1829,7 +1821,10 @@ int ath12k_dp_mon_rx_wq_init(struct ath12k_pdev_dp *dp_pdev)
 {
 	struct ath12k_pdev_mon_dp *mon_pdev = dp_pdev->dp_mon_pdev;
 
-	mon_pdev->rxmon_wq = alloc_workqueue("rxmon_wq", WQ_UNBOUND, 0);
+	mon_pdev->rxmon_wq = alloc_workqueue("rxmon_%s-%s%d", WQ_UNBOUND | WQ_SYSFS, 0,
+					     ath12k_bus_str(dp_pdev->dp->ab->hif.bus),
+					     dev_name(dp_pdev->dp->ab->dev),
+					     dp_pdev->mac_id);
 	if (unlikely(!mon_pdev->rxmon_wq)) {
 		ath12k_warn(dp_pdev->dp,
 			    "failed to allocate rxmon workqueue for mac_id %d\n",

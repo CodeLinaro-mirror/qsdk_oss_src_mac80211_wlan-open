@@ -25,16 +25,54 @@
 extern struct ppe_ds_wlan_ops_v2 ppeds_wlanops_v2;
 struct ath12k_ppeds_arch_ops ath12k_wifi8_arch_ppeds_ops;
 
-static int ath12k_wifi8_dp_service_srng(struct ath12k_dp *dp,
-					struct ath12k_ext_irq_grp *irq_grp,
-					int budget)
+static int ath12k_wifi8_non_cumac_dp_service_srng(struct ath12k_dp *dp,
+						  struct ath12k_ext_irq_grp *irq_grp,
+						  int budget)
 {
 	struct napi_struct *napi = &irq_grp->napi;
 	int grp_id = irq_grp->grp_id;
 	int work_done = 0;
 	int i = 0, j;
 	int tot_work_done = 0;
-	u8 rx_mask, tx_mask, ring_mask;
+	u8 ring_mask;
+
+	if (dp->hw_params->ring_mask->rx_mon_dest[grp_id]) {
+		ring_mask = dp->hw_params->ring_mask->rx_mon_dest[grp_id];
+		for (i = 0; i < dp->num_radios; i++) {
+			for (j = 0; j < dp->hw_params->num_rxdma_per_pdev; j++) {
+				int id = i * dp->hw_params->num_rxdma_per_pdev + j;
+
+				if (ring_mask & BIT(id)) {
+					work_done =
+					ath12k_dp_rx_mon_process_ring(dp, id,
+								      napi, budget);
+					budget -= work_done;
+					tot_work_done += work_done;
+
+					if (budget <= 0)
+						goto done;
+				}
+			}
+		}
+	}
+
+	if (dp->hw_params->ring_mask->host2rxmon[grp_id])
+		ath12k_dp_mon_rx_process_low_thres(dp);
+
+done:
+	return tot_work_done;
+}
+
+static int ath12k_wifi8_cumac_dp_service_srng(struct ath12k_dp *dp,
+					      struct ath12k_ext_irq_grp *irq_grp,
+					      int budget)
+{
+	struct napi_struct *napi = &irq_grp->napi;
+	int grp_id = irq_grp->grp_id;
+	int work_done = 0;
+	int i = 0;
+	int tot_work_done = 0;
+	u8 rx_mask, tx_mask;
 
 	rx_mask = dp->hw_params->ring_mask->rx[grp_id];
 	tx_mask = dp->hw_params->ring_mask->tx[grp_id];
@@ -86,34 +124,10 @@ static int ath12k_wifi8_dp_service_srng(struct ath12k_dp *dp,
 			goto done;
 	}
 
-	if (dp->hw_params->ring_mask->rx_mon_dest[grp_id]) {
-		ring_mask = dp->hw_params->ring_mask->rx_mon_dest[grp_id];
-		for (i = 0; i < dp->num_radios; i++) {
-			for (j = 0; j < dp->hw_params->num_rxdma_per_pdev; j++) {
-				int id = i * dp->hw_params->num_rxdma_per_pdev + j;
-
-				if (ring_mask & BIT(id)) {
-					work_done =
-					ath12k_dp_rx_mon_process_ring(dp, id,
-								      napi, budget);
-					budget -= work_done;
-					tot_work_done += work_done;
-
-					if (budget <= 0)
-						goto done;
-				}
-			}
-		}
-	}
-
 	if (dp->hw_params->ring_mask->reo_status[grp_id])
 		ath12k_wifi8_dp_rx_process_reo_status(dp);
 
-	if (dp->hw_params->ring_mask->host2rxmon[grp_id])
-		ath12k_dp_mon_rx_process_low_thres(dp);
-
-	/* TODO: Implement handler for other interrupts */
-
+	tot_work_done += ath12k_wifi8_non_cumac_dp_service_srng(dp, irq_grp, budget);
 done:
 	return tot_work_done;
 }
@@ -196,6 +210,24 @@ static void ath12k_wifi8_dp_umac_deinit(struct ath12k_dp *dp)
 	ath12k_info(ab, "CUMAC de-init successful");
 }
 
+static int ath12k_enable_hif_interrupts(struct ath12k_dp *dp,
+					int (*handler)(struct ath12k_dp *dp,
+						       struct ath12k_ext_irq_grp *grp,
+						       int budget))
+{
+	int ret;
+
+	ret = ath12k_hif_ext_irq_setup(dp->ab, handler, dp);
+	if (ret) {
+		ath12k_warn(dp, "hif ext irq setup failed %d\n", ret);
+		return ret;
+	}
+
+	ath12k_hif_irq_enable(dp->ab);
+
+	return 0;
+}
+
 static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 {
 	int ret;
@@ -208,6 +240,7 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 
 	if (!dp_wifi8->cumac) {
 		ath12k_warn(ab, "Skipping ring init for non-cumac target");
+		ath12k_enable_hif_interrupts(dp, ath12k_wifi8_non_cumac_dp_service_srng);
 		return 0;
 	}
 
@@ -314,7 +347,8 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 		goto fail_pn_counter_page_free;
 	}
 
-	ath12k_hif_irq_enable(dp->ab);
+	ath12k_enable_hif_interrupts(dp, ath12k_wifi8_cumac_dp_service_srng);
+
 	ath12k_info(ab, "CUMAC init successful");
 	return 0;
 fail_pn_counter_page_free:
@@ -360,12 +394,6 @@ static int ath12k_wifi8_dp_op_device_init(struct ath12k_dp *dp)
 {
 	int ret;
 
-	ret = ath12k_hif_ext_irq_setup(dp->ab, ath12k_wifi8_dp_service_srng, dp);
-	if (ret) {
-		ath12k_warn(dp, "hif ext irq setup failed %d\n", ret);
-		return ret;
-	}
-
 	ret = ath12k_dp_mon_rx_alloc(dp);
 	if (ret) {
 		ath12k_warn(dp->ab, "failed to setup rxdma rings ret = %d\n", ret);
@@ -376,8 +404,6 @@ static int ath12k_wifi8_dp_op_device_init(struct ath12k_dp *dp)
 
 fail_dp_mon_rx_free:
 	ath12k_dp_mon_rx_free(dp);
-	ath12k_hif_ext_irq_cleanup(dp->ab);
-
 	return ret;
 }
 
@@ -539,6 +565,37 @@ static void ath12k_wifi8_dp_link_vif_configure(struct ath12k_dp *dp,
 		ath12k_wifi8_dp_vif_configure(dp, ahvif, ATH12K_DP_OP_UPDATE);
 }
 
+static ssize_t ath12k_wifi8_dump_srng_stats(struct ath12k_dp *dp,
+					    char *buf, int size)
+{
+	int len = 0;
+	int i;
+	struct ath12k_base *ab = dp->ab;
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+
+	for (i = 0; i < DP_WBM_REFILL_RING_MAX; i++)
+		len += ath12k_hal_dump_ring_stats(ab, HAL_WBM_BUF,
+						  dp_wifi8->wbm_refill_ring[i].ring_id,
+						  buf + len, size - len);
+
+	len += ath12k_hal_dump_ring_stats(ab, HAL_WBM_IDLE_BUF,
+					  dp_wifi8->wbm_idle_buf_ring.ring_id,
+					  buf + len, size - len);
+
+	len += ath12k_hal_dump_ring_stats(ab, HAL_TX_EXCEPTION,
+					  dp_wifi8->tx_exception.ring_id,
+					  buf + len, size - len);
+
+	len += ath12k_hal_dump_ring_stats(ab, HAL_TCL_CMD,
+					  dp_wifi8->tcl_cmd_ring.ring_id,
+					  buf + len, size - len);
+
+	len += ath12k_hal_dump_ring_stats(ab, HAL_TCL_STATUS,
+					  dp_wifi8->tcl_status_ring.ring_id,
+					  buf + len, size - len);
+	return len;
+}
+
 static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.dp_op_device_init = ath12k_wifi8_dp_op_device_init,
 	.dp_op_device_deinit = ath12k_wifi8_dp_op_device_deinit,
@@ -581,13 +638,13 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.dp_link_vif_configure = ath12k_wifi8_dp_link_vif_configure,
 	.rx_flow_fse_cache_operation = ath12k_wifi8_dp_rx_flow_fse_cache_operation,
 	.get_peer_init_status = ath12k_wifi8_dp_get_peer_init_status,
-
 	/* UMAC reset operations */
 	.umac_reset_handle_pre_reset = ath12k_wifi8_umac_reset_handle_pre_reset,
 	.umac_reset_handle_post_reset_start =
 				ath12k_wifi8_umac_reset_handle_post_reset_start,
 	.umac_reset_handle_post_reset_complete =
 				ath12k_wifi8_umac_reset_handle_post_reset_complete,
+	.dump_srng_stats = ath12k_wifi8_dump_srng_stats,
 };
 
 struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab)

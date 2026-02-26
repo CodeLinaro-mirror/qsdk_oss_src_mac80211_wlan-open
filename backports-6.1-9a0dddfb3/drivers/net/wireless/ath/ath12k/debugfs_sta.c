@@ -141,6 +141,8 @@ ath12k_debugfs_sta_update_retry(struct ath12k_dp_link_peer *peer,
 	bw = ath12k_mac_mac80211_bw_to_ath12k_bw(txrate->bw);
 	nss = txrate->nss - 1;
 
+	if (peer_stats->mpdu_tried < peer_stats->succ_mpdu_pkts)
+		return;
 	mpdu_retry_pkts = peer_stats->mpdu_tried - peer_stats->succ_mpdu_pkts;
 	retry_bytes = peer_stats->retry_bytes;
 	ru_type = peer_stats->ru_tones;

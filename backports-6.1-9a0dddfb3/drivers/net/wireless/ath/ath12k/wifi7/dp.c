@@ -509,6 +509,29 @@ static void ath12k_wifi7_dp_link_vif_configure(struct ath12k_dp *dp,
 	}
 }
 
+static ssize_t ath12k_wifi7_dump_srng_stats(struct ath12k_dp *dp,
+					    char *buf, int size)
+{
+	int len = 0;
+	struct ath12k_base *ab = dp->ab;
+	int i;
+
+	for (i = 0; i < ab->hw_params->max_tx_ring; i++)
+		len += ath12k_hal_dump_ring_stats(ab, HAL_WBM2SW_RELEASE,
+						  dp->tx_ring[i].tcl_comp_ring.ring_id,
+						  buf + len, size - len);
+
+	len += ath12k_hal_dump_ring_stats(ab, HAL_WBM2SW_RELEASE,
+					  dp->rx_rel_ring.ring_id,
+					  buf + len, size - len);
+
+	len += ath12k_hal_dump_ring_stats(ab, HAL_RXDMA_BUF,
+					  dp->rx_refill_buf_ring.refill_buf_ring.ring_id,
+					  buf + len, size - len);
+
+	return len;
+}
+
 static struct ath12k_dp_arch_ops ath12k_wifi7_dp_arch_ops = {
 	.dp_op_device_init = ath12k_wifi7_dp_op_device_init,
 	.dp_op_device_deinit = ath12k_wifi7_dp_op_device_deinit,
@@ -544,13 +567,13 @@ static struct ath12k_dp_arch_ops ath12k_wifi7_dp_arch_ops = {
 	.dp_link_vif_configure = ath12k_wifi7_dp_link_vif_configure,
 	.rx_flow_fse_cache_operation = ath12k_wifi7_dp_rx_flow_fse_cache_operation,
 	.dp_ext_tx = ath12k_wifi7_dp_ext_tx,
-
 	/* UMAC reset operations */
 	.umac_reset_handle_pre_reset = ath12k_wifi7_umac_reset_handle_pre_reset_wrapper,
 	.umac_reset_handle_post_reset_start =
 			ath12k_wifi7_umac_reset_handle_post_reset_start_wrapper,
 	.umac_reset_handle_post_reset_complete =
 			ath12k_wifi7_umac_reset_handle_post_reset_complete_wrapper,
+	.dump_srng_stats = ath12k_wifi7_dump_srng_stats,
 };
 
 /* TODO: remove export once this file is built with wifi7 ko */

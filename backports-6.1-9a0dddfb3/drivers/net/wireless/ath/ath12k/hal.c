@@ -958,6 +958,17 @@ void ath12k_hal_reo_config_reo2ppe_dest_info(struct ath12k_base *ab)
 	ab->hal.hal_ops->hal_reo_config_reo2ppe_dest_info(ab);
 }
 
+void
+ath12k_hal_get_tlv_params(struct ath12k_hal *hal,
+			  __le64 tlv_header,
+			  u16 *tlv_tag,
+			  u32 *tlv_userid,
+			  u16 *tlv_len)
+{
+	hal->hal_ops->hal_get_tlv_tag_params(tlv_header, tlv_tag,
+					     tlv_userid, tlv_len);
+}
+
 void ath12k_hal_srng_get_shadow_config(struct ath12k_base *ab,
 				       u32 **cfg, u32 *len)
 {
@@ -1044,7 +1055,7 @@ void ath12k_hal_srng_deinit(struct ath12k_base *ab)
 {
 	struct ath12k_hal *hal = &ab->hal;
 
-	if (ab->powered_off)
+	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
 	ath12k_hal_unregister_srng_lock_keys(hal);
@@ -1213,12 +1224,14 @@ ssize_t ath12k_hal_dump_ring_stats(struct ath12k_base *ab, enum hal_ring_type ty
 	spin_unlock_bh(&srng->lock);
 	return len;
 }
+EXPORT_SYMBOL(ath12k_hal_dump_ring_stats);
 
 ssize_t ath12k_debugfs_hal_dump_srng_stats(struct ath12k_base *ab, char *buf, int size)
 {
 	struct ath12k_dp *dp = ab->dp;
 	struct ath12k_pdev_dp *dp_pdev;
 	struct ath12k_pdev_mon_dp *dp_mon_pdev;
+	struct ath12k_mgmt *mgmt = ab->mgmt;
 	struct ath12k_ext_irq_grp *irq_grp;
 	struct ath12k_ce_pipe *ce_pipe;
 	int len = 0, ring_id;
@@ -1275,10 +1288,6 @@ ssize_t ath12k_debugfs_hal_dump_srng_stats(struct ath12k_base *ab, char *buf, in
 			dp->reo_status_ring.ring_id,
                         buf + len, size - len);
 
-	len += ath12k_hal_dump_ring_stats(ab, HAL_WBM2SW_RELEASE,
-			dp->rx_rel_ring.ring_id,
-			buf + len, size - len);
-
 	len += ath12k_hal_dump_ring_stats(ab, HAL_SW2WBM_RELEASE,
 			dp->wbm_desc_rel_ring.ring_id,
                         buf + len, size - len);
@@ -1292,16 +1301,6 @@ ssize_t ath12k_debugfs_hal_dump_srng_stats(struct ath12k_base *ab, char *buf, in
 		len += ath12k_hal_dump_ring_stats(ab, HAL_TCL_DATA,
 				dp->tx_ring[i].tcl_data_ring.ring_id,
 				buf + len, size - len);
-
-	for (i = 0; i < ab->hw_params->max_tx_ring; i++)
-		len += ath12k_hal_dump_ring_stats(ab, HAL_WBM2SW_RELEASE,
-                               dp->tx_ring[i].tcl_comp_ring.ring_id,
-			       buf + len, size - len);
-
-	/*lmac rings*/
-	len += ath12k_hal_dump_ring_stats(ab, HAL_RXDMA_BUF,
-			dp->rx_refill_buf_ring.refill_buf_ring.ring_id,
-                        buf + len, size - len);
 
 	if (likely(dp->dp_mon)) {
 		ring_id = dp->dp_mon->rxdma_mon_buf_ring.refill_buf_ring.ring_id;
@@ -1329,6 +1328,13 @@ ssize_t ath12k_debugfs_hal_dump_srng_stats(struct ath12k_base *ab, char *buf, in
 		len += ath12k_hal_dump_ring_stats(ab, HAL_RXDMA_DST,
 			dp->rxdma_err_dst_ring[i].ring_id,
                         buf + len, size - len);
+
+	if (dp->arch_ops->dump_srng_stats)
+		len += dp->arch_ops->dump_srng_stats(dp, buf + len, size - len);
+
+	if (mgmt && mgmt->arch_ops->mgmt_op_dump_ring_stats)
+		len += mgmt->arch_ops->mgmt_op_dump_ring_stats(mgmt, buf + len,
+							       size - len);
 
 	return len;
 }

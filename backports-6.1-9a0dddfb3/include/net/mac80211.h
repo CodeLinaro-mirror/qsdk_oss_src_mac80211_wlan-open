@@ -1443,6 +1443,7 @@ enum mac80211_tx_mon_flags {
 	TX_MON_FLAG_EHT_USIG_INFO,
 	TX_MON_FLAG_EHT_INFO,
 	TX_MON_FLAG_VENDOR_TLV,
+	TX_MON_FLAG_TLV_AT_END,
 	TX_MON_FLAG_END,
 };
 
@@ -1692,7 +1693,7 @@ ieee80211_tx_info_clear_status(struct ieee80211_tx_info *info)
  * @RX_FLAG_AMPDU_EOF_BIT_KNOWN: The EOF value is known
  * @RX_FLAG_RADIOTAP_HE: HE radiotap data is present
  *	(&struct ieee80211_radiotap_he, mac80211 will fill in
- *	
+ *
  *	 - DATA3_DATA_MCS
  *	 - DATA3_DATA_DCM
  *	 - DATA3_CODING
@@ -1700,7 +1701,7 @@ ieee80211_tx_info_clear_status(struct ieee80211_tx_info *info)
  *	 - DATA5_DATA_BW_RU_ALLOC
  *	 - DATA6_NSTS
  *	 - DATA3_STBC
- *	
+ *
  *	from the RX info data, so leave those zeroed when building this data)
  * @RX_FLAG_RADIOTAP_HE_MU: HE MU radiotap data is present
  *	(&struct ieee80211_radiotap_he_mu)
