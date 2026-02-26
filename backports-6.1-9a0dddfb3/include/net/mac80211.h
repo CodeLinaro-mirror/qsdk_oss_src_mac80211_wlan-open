@@ -2774,6 +2774,8 @@ struct ieee80211_sta {
 	struct net_device *dev;
 	struct ieee80211_neg_ttlm neg_ttlm;
 
+	bool epp_peer;
+
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
 };
