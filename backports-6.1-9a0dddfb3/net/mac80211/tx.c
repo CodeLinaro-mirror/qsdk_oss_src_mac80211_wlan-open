@@ -1392,6 +1392,18 @@ ieee80211_tx_prepare(struct ieee80211_sub_if_data *sdata,
 		}
 		if (!tx->sta && !is_multicast_ether_addr(hdr->addr1)) {
 			tx->sta = sta_info_get_bss(sdata, hdr->addr1);
+#ifdef CPTCFG_QCN_EXTN
+			/*
+			 * Look up if there is a link station with A1
+			 */
+			if (!tx->sta) {
+				struct link_sta_info *link_sta;
+
+				link_sta = link_sta_info_get_bss(sdata, hdr->addr1);
+				if (link_sta)
+					tx->sta = link_sta->sta;
+			}
+#endif /* CPTCFG_QCN_EXTN */
 			aggr_check = true;
 		}
 		/*
