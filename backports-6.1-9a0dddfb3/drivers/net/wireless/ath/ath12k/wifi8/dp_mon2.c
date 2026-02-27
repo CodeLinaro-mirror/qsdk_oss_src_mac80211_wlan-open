@@ -553,6 +553,14 @@ int ath12k_wifi8_dp_mon_update_band_and_get_freq(struct ath12k_base *ab, int pde
 	struct ieee80211_channel *channel;
 	int freq = -1;
 
+	/* WAR: Firmware currently sends zero as channel number in PPDU_START_TLV,
+	 * causing invalid frequency calculation from channel number. Return -1 to
+	 * prevent updating rxs.freq, keeping the PPDU_START's center frequency
+	 * instead of the incorrectly calculated frequency from zero channel number.
+	 * Remove this workaround once firmware fix is available.
+	 */
+	return freq;
+
 	if (unlikely(rxs->band == NUM_NL80211_BANDS ||
 		     !ath12k_ar_to_hw(ar)->wiphy->bands[rxs->band])) {
 		ath12k_dbg(ab, ATH12K_DBG_DATA,
