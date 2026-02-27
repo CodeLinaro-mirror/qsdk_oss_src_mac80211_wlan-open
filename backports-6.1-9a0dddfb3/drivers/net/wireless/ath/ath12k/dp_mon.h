@@ -155,6 +155,7 @@ struct ath12k_dp_arch_mon_ops {
 					  u32 mac_id);
 	void (*mon_pdev_rx_attach)(struct ath12k_pdev_dp *dp_pdev);
 	int (*setup_mon_link_desc)(struct ath12k_pdev_dp *dp_pdev);
+	void (*cleanup_mon_link_desc)(struct ath12k_pdev_dp *dp_pdev);
 	void (*mon_pdev_rx_mpdu_list_init)(struct ath12k_mon_data *pmon);
 	int (*mon_rx_srng_process)(struct ath12k_pdev_dp *dp_pdev, int mac_id,
 				      struct napi_struct *napi, int *budget);
@@ -890,6 +891,7 @@ void ath12k_dp_mon_pdev_rx_srng_cleanup(struct ath12k_pdev_dp *dp_pdev);
 int ath12k_dp_mon_pdev_rx_htt_srng_setup(struct ath12k_pdev_dp *dp_pdev,
 					 u32 mac_id);
 void ath12k_dp_mon_pdev_rx_attach(struct ath12k_pdev_dp *dp_pdev);
+void ath12k_dp_mon_pdev_rx_detach(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_pdev_rx_mpdu_list_init(struct ath12k_mon_data *pmon);
 void ath12k_dp_rx_mon_dest_process(struct ath12k *ar, int mac_id,
 				   u32 quota, struct napi_struct *napi);
@@ -1159,6 +1161,8 @@ int ath12k_dp_mon_pdev_rx_htt_setup(struct ath12k_pdev_dp *dp_pdev, u32 mac_id)
 		if (ret) {
 			ath12k_warn(dp, "failed to setup monitor rx filter ret = %d\n",
 				    ret);
+			ath12k_dp_mon_pdev_rx_detach(dp_pdev);
+			return ret;
 		}
 	}
 	return 0;
@@ -1208,6 +1212,8 @@ void ath12k_dp_mon_pdev_rx_free(struct ath12k_pdev_dp *dp_pdev)
 		ath12k_warn(dp, "mon ops is NULL during mon pdev free\n");
 		return;
 	}
+	ath12k_dp_mon_pdev_rx_detach(dp_pdev);
+
 
 	if (mon_ops->mon_rx_wq_deinit)
 		mon_ops->mon_rx_wq_deinit(dp_pdev);

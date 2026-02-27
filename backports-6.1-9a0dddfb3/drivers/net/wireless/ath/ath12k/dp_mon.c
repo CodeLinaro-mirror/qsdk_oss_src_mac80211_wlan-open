@@ -2083,6 +2083,16 @@ void ath12k_dp_mon_pdev_free(struct ath12k_pdev_dp *dp_pdev)
 }
 EXPORT_SYMBOL(ath12k_dp_mon_pdev_free);
 
+void ath12k_dp_mon_pdev_rx_detach(struct ath12k_pdev_dp *dp_pdev)
+{
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp_pdev->dp);
+	if (mon_ops && mon_ops->cleanup_mon_link_desc)
+		mon_ops->cleanup_mon_link_desc(dp_pdev);
+}
+EXPORT_SYMBOL(ath12k_dp_mon_pdev_rx_detach);
+
 void ath12k_dp_mon_pdev_rx_attach(struct ath12k_pdev_dp *dp_pdev)
 {
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
