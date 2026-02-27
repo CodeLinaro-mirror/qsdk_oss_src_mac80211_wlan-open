@@ -1411,6 +1411,33 @@ struct ath12k_radio_cfg {
 	u32 msdu_ttl;
 };
 
+/**
+ * struct ath12k_chanctx_switch_stats - Channel context switch profiling statistics
+ * @total_switches: Total number of channel switches completed
+ * @last_switch_time_us: Duration of the most recent channel switch in microseconds
+ * @min_switch_time_us: Minimum channel switch duration observed in microseconds
+ * @max_switch_time_us: Maximum channel switch duration observed in microseconds
+ * @entry_time_us: Timestamp when entering switch_vif_chanctx operation
+ * @mvr_posting_time_us: Time taken to post MVR (Multi-VDEV Restart) command
+ * @mvr_resp_time_us: Time taken to receive MVR response from firmware
+ * @mvr_timeout_count: Number of times MVR response timed out
+ */
+struct ath12k_chanctx_switch_stats {
+	u64 total_switches;
+	u64 last_switch_time_us;
+	u64 min_switch_time_us;
+	u64 max_switch_time_us;
+	u64 avg_switch_time_us;
+
+	/* Timing breakdown */
+	u64 entry_time_us;
+	u64 mvr_posting_time_us;
+	u64 mvr_resp_time_us;
+
+	/* Error tracking */
+	u64 mvr_timeout_count;
+};
+
 struct ath12k {
 	struct ath12k_base *ab;
 	u8 pdev_idx;
@@ -1654,6 +1681,7 @@ struct ath12k {
 	struct rhashtable_params rhash_tx_skb_param;
 	/* To synchronize rhash tbl write operation */
 	spinlock_t rhash_tx_lock;
+	struct ath12k_chanctx_switch_stats chanctx_switch_stats;
 };
 
 struct ath12k_6ghz_sp_reg_rule {

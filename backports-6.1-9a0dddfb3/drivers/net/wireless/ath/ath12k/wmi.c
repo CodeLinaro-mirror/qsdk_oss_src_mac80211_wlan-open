@@ -762,6 +762,7 @@ static void ath12k_wmi_process_mvr_event(struct ath12k_base *ab, u32 *vdev_id_bm
 	struct ath12k *ar = NULL;
 	struct ath12k_link_vif *arvif = NULL;
 	u32 vdev_bitmap, bit_pos;
+	u64 switch_time_us, avg_switch_time_us = 0, mvr_resp_time_us;
 
 	ath12k_dbg(ab, ATH12K_DBG_WMI,
 		   "wmi mvr resp num_vdev_bm %d vdev_id_bm[0]=0x%x vdev_id_bm[1]=0x%x\n",
@@ -796,8 +797,48 @@ static void ath12k_wmi_process_mvr_event(struct ath12k_base *ab, u32 *vdev_id_bm
 	if (arvif)
 		ar = arvif->ar;
 
+	mvr_resp_time_us = ath12k_get_timestamp_in_us();
+
 	if (ar)
 		complete(&ar->mvr_complete);
+
+	/* Last channel switch time */
+	switch_time_us = mvr_resp_time_us -
+			 ar->chanctx_switch_stats.entry_time_us;
+
+	/* More robust running average calculation to prevent overflow:
+	 * new_avg = old_avg + (new_value - old_avg) / n
+	 */
+	if (ar->chanctx_switch_stats.total_switches > 1) {
+		u64 old_avg = ar->chanctx_switch_stats.avg_switch_time_us;
+
+		if (switch_time_us > old_avg)
+			avg_switch_time_us = old_avg +
+				div_u64(switch_time_us - old_avg,
+					ar->chanctx_switch_stats.total_switches);
+		else
+			avg_switch_time_us = old_avg -
+				div_u64(old_avg - switch_time_us,
+					ar->chanctx_switch_stats.total_switches);
+	} else {
+		avg_switch_time_us = switch_time_us;
+	}
+
+	spin_lock_bh(&ar->data_lock);
+	ar->chanctx_switch_stats.mvr_resp_time_us = mvr_resp_time_us;
+	ar->chanctx_switch_stats.last_switch_time_us = switch_time_us;
+	ar->chanctx_switch_stats.avg_switch_time_us = avg_switch_time_us;
+
+	/* Update min/max statistics */
+	if (ar->chanctx_switch_stats.min_switch_time_us == 0 ||
+	    switch_time_us < ar->chanctx_switch_stats.min_switch_time_us)
+		ar->chanctx_switch_stats.min_switch_time_us = switch_time_us;
+
+	if (switch_time_us > ar->chanctx_switch_stats.max_switch_time_us)
+		ar->chanctx_switch_stats.max_switch_time_us = switch_time_us;
+
+	spin_unlock_bh(&ar->data_lock);
+
 }
 
 static int ath12k_wmi_tlv_mvr_event_parse(struct ath12k_base *ab,
@@ -18500,6 +18541,9 @@ int ath12k_wmi_pdev_multiple_vdev_restart(struct ath12k *ar,
 		ptr += sizeof(*chan_device);
 	}
 
+	spin_lock_bh(&ar->data_lock);
+	ar->chanctx_switch_stats.mvr_posting_time_us = ath12k_get_timestamp_in_us();
+	spin_unlock_bh(&ar->data_lock);
 	ret = ath12k_wmi_cmd_send(wmi, skb,
 				  WMI_PDEV_MULTIPLE_VDEV_RESTART_REQUEST_CMDID);
 	if (ret) {
