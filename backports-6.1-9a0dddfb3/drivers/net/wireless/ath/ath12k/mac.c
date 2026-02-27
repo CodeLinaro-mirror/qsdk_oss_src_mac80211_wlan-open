@@ -2002,8 +2002,10 @@ static int ath12k_mac_monitor_vdev_start(struct ath12k *ar, int vdev_id,
 	arg.max_reg_power = channel->max_reg_power;
 	arg.max_antenna_gain = channel->max_antenna_gain;
 
-	arg.pref_tx_streams = ar->num_tx_chains;
-	arg.pref_rx_streams = ar->num_rx_chains;
+	arg.pref_tx_streams = min_t(u32, (ar->ab->num_radios > 1) ? 2 : 4,
+				    hweight8(ar->cfg_tx_chainmask));
+	arg.pref_rx_streams = min_t(u32, (ar->ab->num_radios > 1) ? 2 : 4,
+				    hweight8(ar->cfg_rx_chainmask));
 	arg.punct_bitmap = 0xFFFFFFFF;
 
 	arg.passive |= !!(chandef->chan->flags & IEEE80211_CHAN_NO_IR);
