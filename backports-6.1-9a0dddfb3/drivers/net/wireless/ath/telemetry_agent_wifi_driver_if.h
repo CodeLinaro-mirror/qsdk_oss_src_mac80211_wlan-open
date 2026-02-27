@@ -14,6 +14,7 @@
 #define MU_USERS 37
 #define MUMIMO_USERS 8
 #define SAWF_NUM_QUEUES (NUM_TID * 2)
+#define RSSI_MIN_VALID -100
 
 #define SET_PEER_FLAG(_val, _attr) \
 	((_val) |= (1 << (PEER_FLAGS_##_attr##_BIT)))
@@ -268,6 +269,11 @@ enum telemetry_threshold_type {
 	THRESHOLD_MAX,
 };
 
+enum hysteresis_type {
+	HYSTERESIS_TYPE_RSSI = 0,
+	HYSTERESIS_TYPE_RATE = 1,
+};
+
 /* Path type for datapath source */
 enum telemetry_path_type {
 	PATH_TYPE_RX = 0,     /* RX path: RSSI + RX Rate */
@@ -446,6 +452,8 @@ struct telemetry_agent_ops {
 					      u32 threshold_value,
 					      u32 detected_value,
 					      bool set_clear);
+	int (*agent_set_hysteresis)(u8 type, u32 value);
+	int (*agent_get_hysteresis)(u8 type, u64 *hyst_value);
 };
 
 void wlan_cfg80211_t2lm_app_reply_generic_response(void *gen_data,
