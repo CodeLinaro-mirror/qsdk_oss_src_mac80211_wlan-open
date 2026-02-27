@@ -2469,4 +2469,53 @@ struct hal_tqm_status {
 		struct hal_tqm_status_sync_cmd sync_status;
 	};
 };
+
+#define HAL_FSE_CMD_HDR_INFO0_SEND_TO_CHIP0		BIT(0)
+#define HAL_FSE_CMD_HDR_INFO0_SEND_TO_CHIP1		BIT(1)
+#define HAL_FSE_CMD_HDR_INFO0_SEND_TO_CHIP2		BIT(2)
+#define HAL_FSE_CMD_HDR_INFO0_SEND_TO_CHIP3		BIT(3)
+#define HAL_FSE_CMD_HDR_INFO0_SEND_TO_CHIP4		BIT(4)
+
+#define HAL_FSE_CMD_INFO0_SRC_PORT			GENMASK(15, 0)
+#define HAL_FSE_CMD_INFO0_DEST_PORT			GENMASK(31, 16)
+
+#define HAL_FSE_CMD_INFO1_L4_PROTOCOL			GENMASK(7, 0)
+#define HAL_FSE_CMD_INFO1_GSE_CTRL			GENMASK(11, 8)
+#define HAL_FSE_CMD_INFO1_INDEX_SEARCH_EN		BIT(12)
+#define HAL_FSE_CMD_INFO1_CACHE_SET_NUM			GENMASK(17, 13)
+
+#define HAL_FSE_CMD_INFO2_SEARCH_INDEX			GENMASK(19, 0)
+#define HAL_FSE_CMD_INFO2_RING_ID			GENMASK(27, 20)
+#define HAL_FSE_CMD_INFO2_LOOPING_COUNT			GENMASK(31, 28)
+
+/* GSE Control operations */
+enum hal_fse_gse_ctrl {
+	HAL_FSE_GSE_CTRL_RD_STAT = 0,
+	HAL_FSE_GSE_CTRL_SRCH_DIS = 1,
+	HAL_FSE_GSE_CTRL_WR_BK_SINGLE = 2,
+	HAL_FSE_GSE_CTRL_WR_BK_ALL = 3,
+	HAL_FSE_GSE_CTRL_INVAL_SINGLE = 4,
+	HAL_FSE_GSE_CTRL_INVAL_ALL = 5,
+	HAL_FSE_GSE_CTRL_WR_BK_INVAL_SINGLE = 6,
+	HAL_FSE_GSE_CTRL_WR_BK_INVAL_ALL = 7,
+	HAL_FSE_GSE_CTRL_CLR_STAT_SINGLE = 8,
+};
+
+/* FSE Command structures */
+struct hal_fse_cmd_hdr {
+	__le32 info0;
+} __packed;
+
+
+struct hal_fse_cmd {
+	struct hal_fse_cmd_hdr cmd;
+	__le32 src_ip[4];
+	__le32 dest_ip[4];
+	__le32 info0;
+	__le32 info1;
+	__le32 meta_data[2];
+	__le32 rsvd[2];
+	__le32 info2;
+} __packed;
+
 #endif /* ATH12K_HAL_DESC_H */
