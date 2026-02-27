@@ -17412,6 +17412,11 @@ ath12k_mac_get_vdev_stats_id(struct ath12k_link_vif *arvif)
 	struct ath12k_base *ab = arvif->ar->ab;
 	u8 vdev_stats_id = 0;
 
+	if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
+		arvif->vdev_stats_id = ATH12K_INVAL_VDEV_STATS_ID;
+		return ATH12K_INVAL_VDEV_STATS_ID;
+	}
+
 	do {
 		if (ab->free_vdev_stats_id_map & (1LL << vdev_stats_id)) {
 			vdev_stats_id++;
@@ -18869,6 +18874,9 @@ static int ath12k_mac_vdev_delete(struct ath12k *ar, struct ath12k_link_vif *arv
 
 	spin_lock_bh(&ar->ab->base_lock);
 	ab->free_vdev_map |= 1LL << arvif->vdev_id;
+	if (arvif->vdev_stats_id != ATH12K_INVAL_VDEV_STATS_ID)
+		ab->free_vdev_stats_id_map &= ~(1LL << arvif->vdev_stats_id);
+
 	spin_unlock_bh(&ar->ab->base_lock);
 
 	ar->allocated_vdev_map &= ~(1LL << arvif->vdev_id);
