@@ -10290,9 +10290,29 @@ skip_mgmt_stats:
 	 * including group privacy action frames.
 	 */
 	if (ieee80211_has_protected(hdr->frame_control)) {
+		struct ieee80211_sta *sta;
+		bool epp_assoc_req;
+
+		spin_lock_bh(&ab->base_lock);
+		arsta = ath12k_link_sta_find_by_addr(ab, hdr->addr2);
+		if (!arsta) {
+			spin_unlock_bh(&ab->base_lock);
+			ath12k_warn(ab, "arsta not found %pM\n",
+				    hdr->addr2);
+			dev_kfree_skb(skb);
+			goto exit;
+		}
+
+		sta = ath12k_ahsta_to_sta(arsta->ahsta);
+		spin_unlock_bh(&ab->base_lock);
+
+		epp_assoc_req = sta && sta->epp_peer &&
+				(ieee80211_is_assoc_req(fc) || ieee80211_is_reassoc_req(fc));
+
 		status->flag |= RX_FLAG_DECRYPTED;
 
-		if (!ieee80211_is_robust_mgmt_frame(skb)) {
+		if (!ieee80211_is_robust_mgmt_frame(skb) &&
+		    !epp_assoc_req) {
 			status->flag |= RX_FLAG_IV_STRIPPED |
 					RX_FLAG_MMIC_STRIPPED;
 			hdr->frame_control = __cpu_to_le16(fc &
