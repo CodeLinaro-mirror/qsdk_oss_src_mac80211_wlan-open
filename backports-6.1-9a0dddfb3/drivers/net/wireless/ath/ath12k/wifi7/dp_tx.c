@@ -19,6 +19,9 @@
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 #include "../qcn_extns/ipa/dp_ipa.h"
 #endif
+#ifdef CPTCFG_EXT_IPA_STATS
+#include "../qcn_extns/ipa/dp_ipa_stats.h"
+#endif
 #include "../telemetry_agent_if.h"
 
 struct ath12k_tx_sw_metadata {
@@ -2370,6 +2373,10 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 			ath12k_tid_tx_stats(ahvif, tid, msdu->len,
 					    ATH_TX_WBM_REL_SRC);
 		}
+
+#ifdef CPTCFG_EXT_IPA_STATS
+		ath12k_dp_ipa_tx_mcbc_stats(sw_metadata->skb, dp_pdev);
+#endif
 
                 if (ts.buf_rel_source == HAL_WBM_REL_SRC_MODULE_TQM) {
                         ts.status = le32_get_bits(tx_status->info0,
