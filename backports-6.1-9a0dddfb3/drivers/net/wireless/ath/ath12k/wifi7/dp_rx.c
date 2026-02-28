@@ -1712,6 +1712,7 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 			ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap(ab,
 					msdu, DP_RX_BUFFER_SIZE, 0,
 					ab->ath12k_base_extn.ipa_ctx->hdl);
+		desc_info->ipa_mapped = false;
 
 		ath12k_core_dma_unmap_single(dp->dev, ATH12K_SKB_CB(msdu)->paddr,
 					     DP_RX_BUFFER_SIZE,
@@ -2060,6 +2061,9 @@ ath12k_wifi7_dp_rx_h_defrag_reo_reinject(struct ath12k_dp *dp,
 	desc_info->paddr = buf_paddr;
 	desc_info->vaddr = defrag_skb->data;
 	desc_info->is_frag = 1;
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	desc_info->ipa_mapped = true;
+#endif
 
 	list_del(&desc_info->list);
 	spin_unlock_bh(&dp->rx_desc_lock);
@@ -2127,6 +2131,9 @@ err_free_desc:
 	spin_lock_bh(&dp->rx_desc_lock);
 	desc_info->in_use = false;
 	desc_info->skb = NULL;
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	desc_info->ipa_mapped = false;
+#endif
 	list_add_tail(&desc_info->list, &dp->rx_desc_free_list);
 	spin_unlock_bh(&dp->rx_desc_lock);
 err_unmap_dma:
@@ -2419,6 +2426,7 @@ ath12k_wifi7_dp_process_rx_err_buf(struct ath12k_pdev_dp *dp_pdev,
 		ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap(ab,
 				msdu, DP_RX_BUFFER_SIZE, 0,
 				ab->ath12k_base_extn.ipa_ctx->hdl);
+	desc_info->ipa_mapped = false;
 	ath12k_core_dma_unmap_single(ab->dev,
 				     ATH12K_SKB_CB(msdu)->paddr,
 				     DP_RX_BUFFER_SIZE, DMA_FROM_DEVICE);
@@ -2527,6 +2535,20 @@ static int ath12k_wifi7_handle_msdu_buftype(struct ath12k_dp *dp,
 
 	end = desc_info->vaddr + DP_RX_BUFFER_SIZE;
 	ath12k_core_dmac_inv_range(desc_info->vaddr, end);
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	{
+		struct ath12k_base *ab = dp->ab;
+		if (ab->ath12k_base_extn.ipa_ctx &&
+		    ab->ath12k_base_extn.ipa_ctx->ipa_ops &&
+		    ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap)
+			ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap(ab,
+					msdu, DP_RX_BUFFER_SIZE, 0,
+					ab->ath12k_base_extn.ipa_ctx->hdl);
+		ath12k_core_dma_unmap_single(dp->dev, ATH12K_SKB_CB(msdu)->paddr,
+					     DP_RX_BUFFER_SIZE, DMA_FROM_DEVICE);
+		desc_info->ipa_mapped = false;
+	}
+#endif
 	dev_kfree_skb_any(msdu);
 
 	return 0;
@@ -3385,6 +3407,7 @@ int ath12k_wifi7_dp_rx_process_wbm_err(struct ath12k_dp *dp,
 			ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap(ab,
 					msdu, DP_RX_BUFFER_SIZE, 0,
 					ab->ath12k_base_extn.ipa_ctx->hdl);
+		desc_info->ipa_mapped = false;
 		ath12k_core_dma_unmap_single(dp->dev, ATH12K_SKB_CB(msdu)->paddr,
 					     DP_RX_BUFFER_SIZE, DMA_FROM_DEVICE);
 #endif

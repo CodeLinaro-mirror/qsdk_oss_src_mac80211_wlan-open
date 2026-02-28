@@ -455,6 +455,7 @@ static void ath12k_dp_rx_enqueue_free(struct ath12k_dp *dp,
 		ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap
 			(ab, skb, DP_RX_BUFFER_SIZE, 0,
 			 ab->ath12k_base_extn.ipa_ctx->hdl);
+	rx_desc->ipa_mapped = false;
 
 	ath12k_core_dma_unmap_single(dp->dev,
 				     ATH12K_SKB_CB(skb)->paddr,
@@ -528,6 +529,7 @@ void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 			ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap
 				(ab, skb, DP_RX_BUFFER_SIZE, 1,
 				 ab->ath12k_base_extn.ipa_ctx->hdl);
+		rx_desc->ipa_mapped = true;
 #endif
 	}
 
