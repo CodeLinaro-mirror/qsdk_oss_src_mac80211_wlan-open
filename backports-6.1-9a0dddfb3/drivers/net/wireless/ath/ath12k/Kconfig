@@ -57,6 +57,12 @@ config EXT_IPA_OFFLOAD
 	help
 	  Enable IPA offload
 
+config EXT_IPA_STATS
+	bool "Enable IPA stats"
+	depends on EXT_IPA_OFFLOAD
+	help
+	  Enable IPA stats
+
 config ATH12K_DEBUGFS
 	bool "QTI ath12k debugfs support"
 	depends on ATH12K && MAC80211_DEBUGFS
