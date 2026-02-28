@@ -22,7 +22,7 @@ struct ath12k_dp_tqm_cmd {
 	enum hal_tlv_tag_be cmd_type;
 	int cmd_num;
 	void (*handler)(struct ath12k_dp *dp, void *ctx,
-			enum hal_tqm_cmd_execution_status status);
+			struct hal_tqm_status *tqm_status);
 };
 
 int ath12k_wifi8_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int budget);
@@ -72,9 +72,9 @@ int ath12k_wifi8_dp_tqm_cmd_send(struct ath12k_base *ab,
 				 void (*callback_fn)(
 					 struct ath12k_dp *dp,
 					 void *ctx,
-					 enum hal_tqm_cmd_execution_status status));
+					 struct hal_tqm_status *tqm_status));
 void ath12k_wifi8_dp_tx_process_tqm_status(struct ath12k_dp *dp);
 void ath12k_dp_peer_cleanup_tqm_sync(struct ath12k_dp *dp, void *ctx,
-				     enum hal_tqm_cmd_execution_status status);
+				     struct hal_tqm_status *tqm_status);
 void ath12k_wifi8_dp_tx_tqm_cmd_list_cleanup(struct ath12k_base *ab);
 #endif
