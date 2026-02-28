@@ -145,6 +145,24 @@ dma_addr_t ath12k_dp_get_page_paddr(struct ath12k_dp_hw_group *dp_hw_grp,
 	return (dma_addr_t)(((u8 *)page_paddr) + page_offset);
 }
 
+void *ath12k_dp_get_page_vaddr(struct ath12k_dp_hw_group *dp_hw_grp,
+			       u16 sw_peer_id)
+{
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8 =
+					ath12k_get_dp_hw_group_wifi8(dp_hw_grp);
+	struct ath12k_pn_page_info *pn_info = dp_hw_grp_wifi8->pn_page_info;
+	u8 page_index = u16_get_bits(sw_peer_id, ATH12K_DP_PN_PAGE_INDEX);
+	u8 page_offset = u16_get_bits(sw_peer_id, ATH12K_DP_PN_PAGE_OFFSET);
+	void *page_vaddr;
+
+	if (!pn_info)
+		return NULL;
+
+	page_vaddr = pn_info[page_index].vaddr;
+	page_offset = page_offset * ATH12K_DP_PN_COUNTER_SIZE;
+	return (void *)(((u8 *)page_vaddr) + page_offset);
+}
+
 int ath12k_wifi8_dp_tx_pool_create(struct ath12k_dp_hw_group *dp_hw_grp)
 {
 	struct ath12k_base *ab = ath12k_dp_get_ab_from_dp_hw_group(dp_hw_grp);

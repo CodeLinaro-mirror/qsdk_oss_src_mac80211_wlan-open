@@ -136,6 +136,8 @@ void ath12k_dp_tx_classify_info_free(struct ath12k_dp_hw_group *dp_hw_grp,
 				     void *tx_classify_info_vaddr);
 dma_addr_t ath12k_dp_get_page_paddr(struct ath12k_dp_hw_group *dp_hw_grp,
 				    u16 sw_peer_id);
+void *ath12k_dp_get_page_vaddr(struct ath12k_dp_hw_group *dp_hw_grp,
+			       u16 sw_peer_id);
 int ath12k_dp_pn_counter_page_init(struct ath12k_dp_hw_group *dp_hw_grp);
 void ath12k_dp_pn_counter_page_free(struct ath12k_dp_hw_group *dp_hw_grp);
 int ath12k_dp_tx_peer_msduq_mpduq_setup(struct ath12k_dp_hw_group *dp_hw_grp,

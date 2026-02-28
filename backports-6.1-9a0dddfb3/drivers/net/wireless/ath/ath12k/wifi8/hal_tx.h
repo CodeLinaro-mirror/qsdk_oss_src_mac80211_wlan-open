@@ -114,4 +114,10 @@ void ath12k_wifi8_hal_tqm_sync_cmd_status(struct ath12k_base *ab,
 					  struct hal_tqm_status *status);
 int ath12k_wifi8_hal_tqm_cmd_staging_alloc(struct ath12k_base *ab);
 void ath12k_wifi8_hal_tqm_cmd_staging_free(struct ath12k_base *ab);
+void ath12k_wifi8_hal_tqm_get_mpduq_stats_cmd_status(struct ath12k_base *ab,
+						     struct hal_tlv_64_hdr *tlv,
+						     struct hal_tqm_status *status);
+void ath12k_wifi8_hal_tqm_update_mpduq_cmd_status(struct ath12k_base *ab,
+						  struct hal_tlv_64_hdr *tlv,
+						  struct hal_tqm_status *status);
 #endif
