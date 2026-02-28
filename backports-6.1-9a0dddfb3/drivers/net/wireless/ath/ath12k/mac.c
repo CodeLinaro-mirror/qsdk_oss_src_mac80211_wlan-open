@@ -16913,7 +16913,6 @@ int ath12k_mac_start(struct ath12k *ar)
 	struct ath12k_pdev *pdev = ar->pdev;
 	int ret;
 	enum dp_mon_stats_mode mode = ATH12k_DP_MON_BASIC_STATS;
-	u8 dcs_enable_bitmap;
 
 	lockdep_assert_held(&ah->hw_mutex);
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
@@ -17077,20 +17076,6 @@ int ath12k_mac_start(struct ath12k *ar)
 			ath12k_err(ab, "failed to enable idle ps: %d\n", ret);
 			goto err;
 		}
-	}
-
-	spin_lock_bh(&ar->data_lock);
-	if (ar->dcs_enable_bitmap) {
-		dcs_enable_bitmap = ar->dcs_enable_bitmap;
-		spin_unlock_bh(&ar->data_lock);
-		ret = ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_DCS,
-						dcs_enable_bitmap, ar->pdev->pdev_id);
-		if (ret) {
-			ath12k_err(ab, "failed to enable Interference Detect:%d\n", ret);
-			goto err;
-		}
-	} else {
-		spin_unlock_bh(&ar->data_lock);
 	}
 
 	rcu_assign_pointer(ab->pdevs_active[ar->pdev_idx],

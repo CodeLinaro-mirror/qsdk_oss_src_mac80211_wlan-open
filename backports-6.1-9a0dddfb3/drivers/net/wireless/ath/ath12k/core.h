@@ -1637,7 +1637,6 @@ struct ath12k {
 	bool commitatf;
 	bool atf_strict_scheduling;
 	u64 atf_stats_accum_start_time;
-	u8 dcs_enable_bitmap;
 	/* ath12k extension structure */
 	struct ath12k_extn ar_extn;
 	struct completion delete_all_peer_done;
