@@ -23,6 +23,9 @@
 #include "vendor_services.h"
 #include "dp_peer.h"
 #include "dp_mon.h"
+#ifdef CPTCFG_EXT_IPA_STATS
+#include "qcn_extns/ipa/dp_ipa_stats.h"
+#endif
 
 static const struct nla_policy
 ath12k_wifi_config_policy[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1] = {
@@ -1331,6 +1334,7 @@ static int ath12k_prepare_telemetry_common_vendor_attr(struct sk_buff *vendor_ev
 	return 0;
 }
 
+#ifndef CPTCFG_EXT_IPA_STATS
 static int ath12k_fill_rxdma_err_attrs(struct ath12k_base *ab,
 				       struct sk_buff *vendor_event,
 				       uint32_t *rxdma_error)
@@ -2508,7 +2512,26 @@ static int ath12k_fill_peer_rx_stats(struct sk_buff *vendor_event,
 
 	return 0;
 }
+#else
+int ath12k_get_dp_vendor_event_len(struct ath12k_telemetry_command *cmd)
+{
+	int total_size;
 
+	total_size = ath12k_dp_ipa_get_common_nl_event_attr_size();
+
+	switch (cmd->obj) {
+	case STATS_OBJ_VIF:
+		total_size += ath12k_dp_ipa_get_dp_vif_attr_len(cmd);
+		break;
+	default:
+		ath12k_err(NULL, "Invalid obj Type");
+	}
+
+	return NLMSG_HDRLEN + total_size;
+}
+#endif
+
+#ifndef CPTCFG_EXT_IPA_STATS
 static int ath12k_tele_sdwftx_stats_update(struct sk_buff *skb, struct ath12k_tele_qos_tx *tx,
 					   u8 tid, u8 q_id)
 {
@@ -3069,6 +3092,7 @@ out:
 	kfree_skb(vendor_event);
 	return ret;
 }
+#endif
 
 static struct ath12k_vif *ath12k_get_ahvif_from_wdev(struct wireless_dev *wdev)
 {
@@ -3086,6 +3110,7 @@ static struct ath12k_vif *ath12k_get_ahvif_from_wdev(struct wireless_dev *wdev)
 	return ahvif;
 }
 
+#ifndef CPTCFG_EXT_IPA_STATS
 static int ath12k_stats_peer_setup(struct ath12k_telemetry_command *cmd)
 {
 	struct ath12k_vif *ahvif = NULL;
@@ -3440,6 +3465,15 @@ out:
 	vfree(telemetry_vif);
 	return ret;
 }
+#else
+static int ath12k_prepare_vif_vendor_event(struct sk_buff *vendor_event,
+					   struct ath12k_vif *ahvif,
+					   struct ath12k_telemetry_command *cmd)
+{
+	return ath12k_dp_ipa_prepare_vif_vendor_event(vendor_event, ahvif, cmd);
+}
+#endif
+
 
 static int ath12k_stats_vif_setup(struct ath12k_telemetry_command *cmd)
 {
@@ -3489,6 +3523,7 @@ out:
 	return ret;
 }
 
+#ifndef CPTCFG_EXT_IPA_STATS
 static int ath12k_fill_radio_rx_stats(struct sk_buff *vendor_event,
 				      struct ath12k_telemetry_dp_radio *telemetry_radio)
 {
@@ -3659,6 +3694,23 @@ int ath12k_wifi_stats_reply_setup(struct ath12k_telemetry_command *cmd)
 
 	return ret;
 }
+#else
+int ath12k_wifi_stats_reply_setup(struct ath12k_telemetry_command *cmd)
+{
+	int ret;
+
+	switch (cmd->obj) {
+	case STATS_OBJ_VIF:
+		ret = ath12k_stats_vif_setup(cmd);
+		break;
+	default:
+		ath12k_err(NULL, "Invalid obj type\n");
+		ret = -EINVAL;
+	}
+
+	return ret;
+}
+#endif
 
 static int ath12k_wifi_stats_reply_setup_schedule(struct ath12k_telemetry_command *cmd)
 {
