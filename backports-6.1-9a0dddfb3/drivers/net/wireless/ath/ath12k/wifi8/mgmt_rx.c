@@ -47,6 +47,9 @@ static void ath12k_wifi8_mgmt_rx_replenish_buffs(struct ath12k_mgmt *mgmt,
 		}
 
 		allocated_entries++;
+
+		ATH12K_SKB_RXCB(skb)->paddr = paddr;
+
 		rx_desc->skb = skb;
 		rx_desc->paddr = paddr;
 		rx_desc->vaddr = skb->data;
