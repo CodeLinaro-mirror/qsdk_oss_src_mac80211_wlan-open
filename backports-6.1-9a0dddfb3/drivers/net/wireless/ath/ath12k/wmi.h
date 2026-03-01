@@ -3765,6 +3765,7 @@ struct wmi_ml_partner_info {
 	bool mlo_bridge_link;
 	bool bridge_peer;
 	u32 logical_link_idx;
+	u32 ieee_link_id;
 	bool mlo_link_add;
 	bool mlo_link_del;
 };
@@ -4985,6 +4986,7 @@ struct wmi_peer_assoc_mlo_partner_info_params {
 	__le32 hw_link_id;
 	__le32 flags;
 	__le32 logical_link_idx;
+	__le32 ieee_link_id;
 } __packed;
 
 struct wmi_peer_assoc_mlo_params {
