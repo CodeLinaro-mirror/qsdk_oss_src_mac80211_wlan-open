@@ -79,11 +79,12 @@ int ath12k_wifi7_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 		dp_peer = ath12k_dp_peer_create_find(dp_hw, addr, params->sta,
 						     params->is_mlo);
 	else
-		dp_peer = ath12k_dp_vdev_peer_find(dp_hw, addr, params->hw_link_id);
+		dp_peer = ath12k_dp_vdev_peer_check(dp_hw, addr, params->hw_link_id);
 
 	if (dp_peer) {
+		ath12k_hw_warn(ah, "wifi7: dp peer already exists %pM vdev_peer %d\n",
+			       addr, dp_peer->is_vdev_peer);
 		spin_unlock_bh(&dp_hw->peer_lock);
-		ath12k_hw_warn(ah, "dp peer already exists %pM", addr);
 		return -EEXIST;
 	}
 
