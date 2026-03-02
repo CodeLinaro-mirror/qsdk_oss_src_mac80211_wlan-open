@@ -13051,20 +13051,27 @@ static void ath12k_htt_print_regdb_regdomain_tlv(const void *tag_buf, u16 tag_le
 	if (num_rules == 0) {
 		len += scnprintf(buf + len, max_buf_size - len, "(not supported)\n");
 	} else {
-		len += scnprintf(buf + len, max_buf_size - len, "Regdomain Code : 0x%X\n"
+		len += scnprintf(buf + len, max_buf_size - len
+				, "Regdomain Code        : 0x%X\n"
 				, le32_to_cpu(regdmn_stats->rd_code));
-		len += scnprintf(buf + len, max_buf_size - len, "CTL Region     : 0x%X\n"
+		len += scnprintf(buf + len, max_buf_size - len
+				, "CTL Region            : 0x%X\n"
 				, u32_get_bits(ctl_cca_dfs
-					, ATH12K_HTT_STATS_REGDOMAIN_CTL_REGION));
-		len += scnprintf(buf + len, max_buf_size - len, "CCA Region     : 0x%X\n"
+				, ATH12K_HTT_STATS_REGDOMAIN_CTL_REGION));
+		len += scnprintf(buf + len, max_buf_size - len
+				, "CCA Region            : 0x%X\n"
 				, u32_get_bits(ctl_cca_dfs
-					, ATH12K_HTT_STATS_REGDOMAIN_CCA_REGION));
+				, ATH12K_HTT_STATS_REGDOMAIN_CCA_REGION));
 		if (regdmn_type == ATH12K_HTT_STATS_REGULATORY_REG_DMN_5G) {
 			len += scnprintf(buf + len, max_buf_size - len
-					, "DFS Region     : 0x%X\n"
-					, u32_get_bits(ctl_cca_dfs
-						, ATH12K_HTT_STATS_REGDOMAIN_DFS_REGION));
+				, "DFS Region            : 0x%X\n"
+				, u32_get_bits(ctl_cca_dfs
+				, ATH12K_HTT_STATS_REGDOMAIN_DFS_REGION));
 		}
+		len += scnprintf(buf + len, max_buf_size - len
+				, "Domain CTL Index      : %d\n"
+				, u32_get_bits(ctl_cca_dfs
+				, ATH12K_HTT_STATS_REGDOMAIN_DOMAIN_CTL_INDEX));
 		len += scnprintf(buf + len, max_buf_size - len, "Reg Rules      :\n");
 		len += scnprintf(buf + len, max_buf_size - len, "%s%s\n"
 				, border_line_left, border_line_right);
@@ -13469,6 +13476,77 @@ ath12k_htt_print_tx_selfgen_resp_frame_stats_tlv(const void *tag_buf, u16 tag_le
 				 ATH12K_HTT_STATS_WHAL_SELFGEN_ALT_TX_PWR_1_GET(tx_pwr));
 	}
 
+	stats_req->buf_len = len;
+}
+static void ath12k_htt_print_ctl_stats(const void *tag_buf, u16 tag_len,
+					struct debug_htt_stats_req *stats_req)
+{
+	const struct ath12k_htt_stats_ctl_tlv *ctl_stats = tag_buf;
+	const u32 max_buf_size = ATH12K_HTT_STATS_BUF_SIZE;
+	u32 len = stats_req->buf_len;
+	u8 ntx = 0, nss = 0, i = 0; /* i indicates array gain cap loop */
+	u32 ctl_args = ctl_stats->ctl_args;
+	u8 *buf = stats_req->buf;
+
+	if (tag_len < sizeof(*ctl_stats))
+		return;
+	/* skip nss > ntx  as it is not a valid case */
+	len += scnprintf(buf + len, max_buf_size - len
+		, "=== CTL stats ===\n");
+	for (i = 0; i < (HTT_STATS_MAX_CHAINS + 1) * HTT_STATS_MAX_CHAINS / 2; i++) {
+		len += scnprintf(buf + len, max_buf_size - len
+				, "Array Gain Cap[ntx:%u][nss:%u]  : %d\n",
+				ntx + 1, nss + 1,
+				le32_to_cpu(ctl_stats->array_gain_cap[i]));
+		if (nss == ntx) {
+			ntx++;
+			nss = 0;
+		} else {
+			nss++;
+		}
+	}
+	len += scnprintf(buf + len, max_buf_size - len
+			, "Reg Rule Index                : %u\n"
+			, u32_get_bits(ctl_args
+			, ATH12K_HTT_STATS_GET_REG_RULE_INDEX));
+	len += scnprintf(buf + len, max_buf_size - len
+			, "Power Rule Index              : %u\n"
+			, u32_get_bits(ctl_args
+			, ATH12K_HTT_STATS_GET_POWER_RULE_INDEX));
+	len += scnprintf(buf + len, max_buf_size - len, "\n");
+	stats_req->buf_len = len;
+}
+static void ath12k_htt_print_enhanced_ctl_stats(const void *tag_buf, u16 tag_len,
+						struct debug_htt_stats_req *stats_req)
+{
+	const struct ath12k_htt_stats_enhanced_ctl_tlv *ctl_stats = tag_buf;
+	const u32 max_buf_size = ATH12K_HTT_STATS_BUF_SIZE;
+	u32 len = stats_req->buf_len;
+	u32 enhanced_ctl_args = ctl_stats->enhanced_ctl_args;
+	u8 *buf = stats_req->buf;
+
+	if (tag_len < sizeof(*ctl_stats))
+		return;
+
+	len += scnprintf(buf + len, max_buf_size - len
+			, "=== Enhanced CTL stats ===\n");
+
+	len += scnprintf(buf + len, max_buf_size - len
+			, "Enhanced CTL Region enabled   : %u\n"
+			, u32_get_bits(enhanced_ctl_args
+			, ATH12K_HTT_STATS_GET_ENHANCED_CTL_ENABLE));
+	len += scnprintf(buf + len, max_buf_size - len
+			, "Domain CTL Index              : %u\n"
+			, u32_get_bits(enhanced_ctl_args
+			, ATH12K_HTT_STATS_GET_DOMAIN_CTL_INDEX));
+	len += scnprintf(buf + len, max_buf_size - len
+			, "Array Gain Cap CTL Region     : %u\n"
+			, u32_get_bits(enhanced_ctl_args
+			, ATH12K_HTT_STATS_GET_ARRAY_GAIN_CAP_CTL_REGION));
+	len += scnprintf(buf + len, max_buf_size - len
+			, "Exception CTL Region          : %u\n"
+			, u32_get_bits(enhanced_ctl_args
+			, ATH12K_HTT_STATS_GET_EXCEPTION_CTL_REGION));
 	stats_req->buf_len = len;
 }
 
@@ -14180,7 +14258,12 @@ static int ath12k_dbg_htt_ext_stats_parse(struct ath12k_base *ab,
 		ath12k_htt_print_sched_txq_combined_seq_state_tlv(tag_buf, len,
 								  stats_req);
 		break;
-
+	case HTT_STATS_CTL_TAG:
+		ath12k_htt_print_ctl_stats(tag_buf, len, stats_req);
+		break;
+	case HTT_STATS_ENHANCED_CTL_TAG:
+		ath12k_htt_print_enhanced_ctl_stats(tag_buf, len, stats_req);
+		break;
 	default:
 		break;
 	}
