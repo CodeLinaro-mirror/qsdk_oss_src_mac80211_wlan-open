@@ -18,6 +18,26 @@
 #include "telemetry_agent_if.h"
 #include "ath12k_notif.h"
 
+static void
+ath12k_dp_fill_txrate_gi(struct rate_info *txrate, u8 preamble, u8 gi)
+{
+	switch (preamble) {
+	case WMI_RATE_PREAMBLE_HT:
+	case WMI_RATE_PREAMBLE_VHT:
+		if (gi == HTT_PPDU_STATS_SGI_0_4_US)
+			txrate->flags |= RATE_INFO_FLAGS_SHORT_GI;
+		break;
+	case WMI_RATE_PREAMBLE_HE:
+		txrate->he_gi = ath12k_he_gi_to_nl80211_he_gi(gi);
+		break;
+	case WMI_RATE_PREAMBLE_EHT:
+		txrate->eht_gi = ath12k_eht_gi_to_nl80211_eht_gi(gi);
+		break;
+	default:
+		break;
+	}
+}
+
 /**
  * ath12k_htt_send() - Send htt packet from host
  * @ab : ath12k base handle
@@ -1079,20 +1099,15 @@ ath12k_update_htt_stats_txrate(struct ath12k_pdev_dp *dp_pdev,
 	case WMI_RATE_PREAMBLE_HT:
 		peer->txrate.mcs = mcs + 8 * (nss - 1);
 		peer->txrate.flags = RATE_INFO_FLAGS_MCS;
-		if (sgi)
-			peer->txrate.flags |= RATE_INFO_FLAGS_SHORT_GI;
 		break;
 	case WMI_RATE_PREAMBLE_VHT:
 		peer->txrate.mcs = mcs;
 		peer->txrate.flags = RATE_INFO_FLAGS_VHT_MCS;
-		if (sgi)
-			peer->txrate.flags |= RATE_INFO_FLAGS_SHORT_GI;
 		break;
 	case WMI_RATE_PREAMBLE_HE:
 		peer->txrate.mcs = mcs;
 		peer->txrate.flags = RATE_INFO_FLAGS_HE_MCS;
 		peer->txrate.he_dcm = dcm;
-		peer->txrate.he_gi = ath12k_he_gi_to_nl80211_he_gi(sgi);
 		peer->txrate.he_ru_alloc = ru_tones;
 		peer_stats->ru_tones = peer->txrate.he_ru_alloc;
 		break;
@@ -1100,13 +1115,14 @@ ath12k_update_htt_stats_txrate(struct ath12k_pdev_dp *dp_pdev,
 		peer->txrate.mcs = mcs;
 		peer->txrate.flags = RATE_INFO_FLAGS_EHT_MCS;
 		peer->txrate.he_dcm = dcm;
-		peer->txrate.eht_gi = ath12k_eht_gi_to_nl80211_eht_gi(sgi);
 		tones = le16_to_cpu(user_rate->ru_end) -
 			le16_to_cpu(user_rate->ru_start) + 1;
 		v = ath12k_mac_eht_ru_tones_to_nl80211_eht_ru_alloc(tones);
 		peer->txrate.eht_ru_alloc = v;
 		break;
 	}
+
+	ath12k_dp_fill_txrate_gi(&peer->txrate, flags, sgi);
 
 	peer->txrate.nss = nss;
 	usr_stats->nss = nss;
