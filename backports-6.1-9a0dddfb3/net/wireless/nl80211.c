@@ -12022,8 +12022,6 @@ static int nl80211_start_radar_detection(struct sk_buff *skb,
 	if (dfs_region == NL80211_DFS_UNSET)
 		return -EINVAL;
 
-	if (!wdev->valid_links && netif_carrier_ok(dev))
-		return -EBUSY;
 
 	err = nl80211_parse_chandef(rdev, info, &chandef, wdev);
 	if (err)
@@ -12080,6 +12078,8 @@ static int nl80211_start_radar_detection(struct sk_buff *skb,
 			/* During MLO other link(s) can beacon, only the current link
 			 * can not already beacon
 			 */
+		} else if (!wdev->valid_links && netif_carrier_ok(dev)) {
+			return -EBUSY;
 		} else {
 			return -EBUSY;
 		}
