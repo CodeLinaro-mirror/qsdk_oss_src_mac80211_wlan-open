@@ -1113,6 +1113,8 @@ ath12k_link_peer_get_sta_rate_info_stats(struct ath12k_dp_link_peer *link_peer,
 	rate_info->txrate.he_gi = link_peer->txrate.he_gi;
 	rate_info->txrate.he_dcm = link_peer->txrate.he_dcm;
 	rate_info->txrate.he_ru_alloc = link_peer->txrate.he_ru_alloc;
+	rate_info->txrate.eht_gi = link_peer->txrate.eht_gi;
+	rate_info->txrate.eht_ru_alloc = link_peer->txrate.eht_ru_alloc;
 	rate_info->txrate.flags = link_peer->txrate.flags;
 	rate_info->rssi_comb = link_peer->rssi_comb;
 	rate_info->signal_avg = ewma_avg_rssi_read(&link_peer->avg_rssi);
