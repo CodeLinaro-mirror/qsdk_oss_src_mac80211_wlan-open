@@ -5428,6 +5428,10 @@ struct ieee80211_ops {
 	int (*ap_power_save)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			     int link_id,
 			     struct cfg80211_ap_power_save_params *params);
+#ifdef CPTCFG_QCN_EXTN
+	int (*set_muedca_mode)(struct ieee80211_hw *hw, int radio_idx,
+			       u8 muedca_mode);
+#endif /* CPTCFG_QCN_EXTN */
 };
 
 /**
