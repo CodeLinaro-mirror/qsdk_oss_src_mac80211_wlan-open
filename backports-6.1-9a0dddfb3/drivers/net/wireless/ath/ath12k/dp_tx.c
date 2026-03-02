@@ -538,6 +538,18 @@ u8 ath12k_dp_get_link_id(struct ath12k_pdev_dp *dp_pdev,
 }
 EXPORT_SYMBOL(ath12k_dp_get_link_id);
 
+u8 ath12k_dp_get_hw_link_id(struct ath12k_dp_peer *peer,
+			    u8 link_id)
+{
+	struct ath12k_dp_link_peer *link_peer;
+
+	link_peer = rcu_dereference(peer->link_peers[link_id]);
+	if (!link_peer)
+		return ATH12K_INVALID_HW_LINKID;
+	return link_peer->hw_link_id;
+}
+EXPORT_SYMBOL(ath12k_dp_get_hw_link_id);
+
 void ath12k_dp_tx_update_peer_basic_stats(struct ath12k_dp_peer *peer,
 					  u32 msdu_len, u8 tx_status,
 					  u8 link_id, int ring_id)

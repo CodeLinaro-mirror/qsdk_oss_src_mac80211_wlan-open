@@ -9,6 +9,7 @@
 #include "dp.h"
 #include "../mac.h"
 #include "../ini.h"
+#include "../dp_tx.h"
 
 struct ath12k_dp_mpdu_q_info
 *ath12k_alloc_peer_tid_mpduq(struct ath12k_dp_hw_group *dp_hw_grp,
@@ -140,6 +141,7 @@ int ath12k_tx_send_mpduq_init(struct ath12k_dp_hw_group *dp_hw_grp,
 	struct ath12k_sta *ahsta;
 	struct ath12k_dp_link_peer *link_peer;
 	u8 hw_link_id;
+	u8 assoc_link_id;
 	int i;
 
 	ti.paddr = sw_mpduq_ptr->mpdu_q_paddr;
@@ -163,9 +165,14 @@ int ath12k_tx_send_mpduq_init(struct ath12k_dp_hw_group *dp_hw_grp,
 	if (peer->sta) {
 		rcu_read_lock();
 		ahsta = ath12k_sta_to_ahsta(peer->sta);
-		ti.assoc_link_id = peer->sta->mlo ?
-				   ahsta->assoc_link_id :
-				   ahsta->deflink.link_id;
+		assoc_link_id = peer->sta->mlo ?
+				ahsta->assoc_link_id :
+				ahsta->deflink.link_id;
+		ti.assoc_link_id = ath12k_dp_get_hw_link_id(peer, assoc_link_id);
+		if (ti.assoc_link_id == ATH12K_INVALID_HW_LINKID) {
+			rcu_read_unlock();
+			return -EINVAL;
+		}
 		for (i = 0; i < ATH12K_NUM_MAX_LINKS; i++) {
 			link_peer = rcu_dereference(peer->link_peers[i]);
 			if (!link_peer)
