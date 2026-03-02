@@ -15,6 +15,7 @@
 #include "qcn_extns/ath12k_cmn_extn.h"
 #include "qcn_extns/vendor_extn.h"
 #include "qcn_extns/me_hmmc_extn.h"
+#include "qcn_extns/me_extn.h"
 #include "mac.h"
 #include "ppe.h"
 #include "vendor.h"
@@ -299,6 +300,12 @@ ath12k_tid_map_prty_policy[QCA_WLAN_VENDOR_ATTR_TID_MAP_PRECEDENCE_MAX + 1] = {
 };
 
 static const struct nla_policy
+ath12k_vendor_me_dump_policy[QCA_WLAN_VENDOR_ATTR_ME_STATS_PRINT_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_ME_STATS_PRINT_OPERATION] = { .type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_ME_STATS_PRINT_TYPE]      = { .type = NLA_U8 },
+};
+
+static const struct nla_policy
 ath12k_multi_bss_param_policy[QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAM_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAM_REF_BSS_IFINDEX] = {.type = NLA_U32,},
 	[QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAM_REF_BSS_LINKID] = { .type = NLA_U8 },
@@ -316,7 +323,7 @@ static int ath12k_vendor_send_multi_bss_vdev_param_wmi_cmd(struct ath12k_link_vi
 							   u32 param_id, u32 param_value)
 
 {
-	u32 val, wmi_param_id = 0;
+	u32 val = 0, wmi_param_id = 0;
 	int ret = 0;
 
 	switch (param_id) {
@@ -335,7 +342,6 @@ static int ath12k_vendor_send_multi_bss_vdev_param_wmi_cmd(struct ath12k_link_vi
 				   param_id);
 			return ret;
 		}
-		param_value = val;
 		wmi_param_id = WMI_VDEV_PARAM_TXBF;
 		break;
 	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_EHT_BFME_SS_80:
@@ -355,7 +361,6 @@ static int ath12k_vendor_send_multi_bss_vdev_param_wmi_cmd(struct ath12k_link_vi
 				   param_id);
 			return ret;
 		}
-		param_value = val;
 		wmi_param_id = WMI_VDEV_PARAM_SET_HEMU_MODE;
 		break;
 	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_HE_RTS_THRESHOLD:
@@ -375,7 +380,6 @@ static int ath12k_vendor_send_multi_bss_vdev_param_wmi_cmd(struct ath12k_link_vi
 				   param_id);
 			return ret;
 		}
-		param_value = val;
 		wmi_param_id = WMI_VDEV_PARAM_SET_EHT_MU_MODE;
 		break;
 	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_EHT_LTF:
@@ -387,7 +391,7 @@ static int ath12k_vendor_send_multi_bss_vdev_param_wmi_cmd(struct ath12k_link_vi
 	}
 
 	ret = ath12k_wmi_multi_vdev_set_param(arvif->ar, arvif->mbssid_info,
-					      wmi_param_id, param_value);
+					      wmi_param_id, val ? val : param_value);
 	if (ret) {
 		ath12k_info(arvif->ar->ab,
 			    "failed multi vdev wmi for param_id:%u vdev_id:%u ret:%d",
@@ -449,10 +453,10 @@ static int ath12k_vendor_apply_cmn_param_to_vdevs(struct ath12k_link_vif *arvif,
 	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_EHT_BFME_SS_80:
 	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_EHT_BFME_SS_160:
 	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_EHT_BFME_SS_320:
-	/*
-	 * Setting these parameters to non-zero in userspace enables
-	 * EHT SU beamformee (SU_BFMEE)
-	 */
+		/*
+		 * Setting these parameters to non-zero in userspace enables
+		 * EHT SU beamformee (SU_BFMEE)
+		 */
 		if (val > 0)
 			bss_conf->eht_su_beamformee = 1;
 		break;
@@ -469,8 +473,7 @@ static int ath12k_vendor_set_cmn_param(struct ath12k_link_vif *arvif,
 				       u32 param_id, u32 value)
 {
 	struct ath12k_mbssid_info *mbssid_info = arvif->mbssid_info;
-	struct ieee80211_bss_conf *bss_conf =
-				ath12k_mac_get_link_bss_conf(arvif);
+	struct ieee80211_bss_conf *bss_conf = NULL;
 	struct ath12k_link_vif *tmp_arvif;
 	struct ath12k *ar = arvif->ar;
 	int ret;
@@ -485,6 +488,7 @@ static int ath12k_vendor_set_cmn_param(struct ath12k_link_vif *arvif,
 		return -EINVAL;
 	}
 
+	bss_conf = ath12k_mac_get_link_bss_conf(arvif);
 	if (!bss_conf || !bss_conf->mbssid_tx_vif) {
 		ath12k_err(ar->ab, "mbssid_tx_vif  NULL");
 		return -EINVAL;
@@ -13798,6 +13802,49 @@ static int ath12k_vendor_me_config_handler(struct wiphy *wiphy,
 	return ath12k_vendor_set_wifi_params_me(wiphy, wdev, &params);
 }
 
+static int ath12k_vendor_me_dump(struct wiphy *wiphy,
+				 struct wireless_dev *wdev,
+				 const void *data, int data_len)
+{
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_ME_STATS_PRINT_MAX + 1];
+	struct ath12k_dp_vif *dp_vif;
+	struct ath12k_me_db *me_db;
+	struct ieee80211_vif *vif;
+	struct ath12k_vif *ahvif;
+	int ret;
+
+	if (nla_parse(tb, QCA_WLAN_VENDOR_ATTR_ME_STATS_PRINT_MAX,
+		      data, data_len,
+		      ath12k_vendor_me_dump_policy, NULL)) {
+		return -EINVAL;
+	}
+
+	if (!tb[QCA_WLAN_VENDOR_ATTR_ME_STATS_PRINT_TYPE])
+		return -EINVAL;
+
+	vif = wdev_to_ieee80211_vif(wdev);
+	if (!vif)
+		return -EINVAL;
+
+	ahvif = ath12k_vif_to_ahvif(vif);
+	dp_vif = &ahvif->dp_vif;
+
+	me_db = ath12k_me_db_get(dp_vif);
+	if (!me_db)
+		return -ENOENT;
+
+	switch (nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_ME_STATS_PRINT_TYPE])) {
+	case IEEE80211_ME_STATS_PRINT_INFO:
+		ret = ath12k_me_info_print_extn(me_db, dp_vif);
+		break;
+	default:
+		ret = -EINVAL;
+	}
+
+	ath12k_me_db_put(me_db);
+	return ret;
+}
+
 static const struct nla_policy
 ath12k_vendor_me_list_policy[QCA_WLAN_VENDOR_ATTR_ME_LIST_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_ME_LIST_OPERATION] = { .type = NLA_U8 },
@@ -16677,6 +16724,14 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.policy = ath12k_vendor_me_list_policy,
 		.maxattr = QCA_WLAN_VENDOR_ATTR_ME_LIST_MAX,
 		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd    = QCA_NL80211_VENDOR_SUBCMD_ME_STATS_PRINT,
+		.doit           = ath12k_vendor_me_dump,
+		.policy         = ath12k_vendor_me_dump_policy,
+		.maxattr        = QCA_WLAN_VENDOR_ATTR_ME_STATS_PRINT_MAX,
+		.flags          = WIPHY_VENDOR_CMD_NEED_NETDEV,
 	},
 
 #ifdef CPTCFG_QCN_EXTN
