@@ -3831,7 +3831,7 @@ static void ath12k_core_reset(struct work_struct *work)
 	ath12k_dbg(ab, ATH12K_DBG_BOOT, "reset starting\n");
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE0) {
-		ath12k_dbg(ab, ATH12K_DBG_IPA, "IPA SSR Reset Started\n");
+		ath12k_info(ab, "IPA SSR Reset Started\n");
 		ath12k_core_ipa_ap_disconnect(ab);
 		ath12k_ipa_plugin_deregister_ops(ab);
 	}
