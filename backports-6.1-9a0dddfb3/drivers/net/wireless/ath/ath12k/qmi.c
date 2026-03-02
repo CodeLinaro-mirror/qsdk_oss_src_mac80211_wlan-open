@@ -4891,11 +4891,11 @@ int ath12k_qmi_request_target_cap(struct ath12k_base *ab)
 		ab->qmi.target.chip_family = resp.chip_info.chip_family;
 	}
 
-	if (!of_property_read_u32(dev->of_node, "qcom,board_id", &board_id) &&
-	    board_id != 0xFF)
-		ab->qmi.target.board_id = board_id;
-	else if (resp.board_info_valid)
+	if (resp.board_info_valid && resp.board_info.board_id != ATH12K_BOARD_ID_INVALID)
 		ab->qmi.target.board_id = resp.board_info.board_id;
+	else if (!of_property_read_u32(dev->of_node, "qcom,board_id", &board_id) &&
+		 board_id != ATH12K_BOARD_ID_DEFAULT)
+		ab->qmi.target.board_id = board_id;
 	else
 		ab->qmi.target.board_id = ATH12K_BOARD_ID_DEFAULT;
 
