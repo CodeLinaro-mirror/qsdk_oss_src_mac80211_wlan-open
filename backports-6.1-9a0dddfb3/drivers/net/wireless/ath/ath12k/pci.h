@@ -51,6 +51,8 @@
 	((hal)->regs->pcie_gcc_gcc_pcie_hot_rst)
 #define PCIE_PCIE_LOCAL_REG_PCIE_LOCAL_RSV0(hal) \
 	((hal)->regs->pcie_pcie_local_qrtr_ins_reg)
+#define PCIE_PCIE_LOCAL_REG_PCIE_LOCAL_RSV1(hal) \
+	((hal)->regs->pcie_pcie_local_unified_fw_board_id_reg)
 #define PCIE_QSERDES_COM_SYSCLK_EN_SEL_REG(ab) \
 	((hal)->regs->pcie_qserdes_sysclk_en_sel)
 #define PCIE_QSERDES_COM_SYSCLK_EN_SEL_VAL	0x10
@@ -146,6 +148,7 @@ struct ath12k_pci {
 	const struct ath12k_reg_base *reg_base;
 	u16 def_link_speed;
 	u16 def_link_width;
+	u32 unified_fw_board_id;
 };
 
 struct ath12k_pci_driver {

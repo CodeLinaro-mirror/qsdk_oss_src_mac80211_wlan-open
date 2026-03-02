@@ -383,6 +383,7 @@ const struct ath12k_hw_regs qcn9625_regs = {
 
 	/*PCIe qrtr node id reg*/
 	.pcie_pcie_local_qrtr_ins_reg = 0x1E03300,
+	.pcie_pcie_local_unified_fw_board_id_reg = 0x1E03304,
 
 	/*PCIe hot reset reg*/
 	.pcie_gcc_gcc_pcie_hot_rst = 0x1E38438,

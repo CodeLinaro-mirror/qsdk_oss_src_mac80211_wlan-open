@@ -476,6 +476,18 @@ static void ath12k_pci_update_qrtr_node_id(struct ath12k_base *ab)
 		   reg, ab_pci->qmi_instance, ath12k_pci_read32(ab, reg));
 }
 
+static void ath12k_pci_update_unified_fw_board_id(struct ath12k_base *ab)
+{
+	struct ath12k_pci *ab_pci = ath12k_pci_priv(ab);
+	u32 reg;
+
+	reg = PCIE_PCIE_LOCAL_REG_PCIE_LOCAL_RSV1(&ab->hal) & WINDOW_RANGE_MASK;
+	ath12k_pci_write32(ab, reg, ab_pci->unified_fw_board_id);
+
+	ath12k_dbg(ab, ATH12K_DBG_PCI, "pci reg 0x%x unified_fw_board_id 0x%x read val 0x%x\n",
+		   reg, ab_pci->unified_fw_board_id, ath12k_pci_read32(ab, reg));
+}
+
 static void ath12k_pci_aspm_restore(struct ath12k_pci *ab_pci)
 {
 	if (ab_pci->ab->hw_params->supports_aspm &&
@@ -1014,6 +1026,9 @@ int ath12k_pci_power_up(struct ath12k_base *ab)
 
 	if (ab->fw.api_version == ATH12K_FW_API_V1 || test_bit(ATH12K_FW_FEATURE_MULTI_QRTR_ID, ab->fw.fw_features))
 		ath12k_pci_update_qrtr_node_id(ab);
+
+	if (ab->hw_params->fw.unified_fw_image)
+		ath12k_pci_update_unified_fw_board_id(ab);
 
 	ret = ath12k_mhi_start(ab_pci);
 	if (ret) {

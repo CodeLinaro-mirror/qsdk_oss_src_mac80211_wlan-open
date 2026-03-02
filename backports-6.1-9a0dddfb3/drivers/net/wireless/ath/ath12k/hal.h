@@ -1154,6 +1154,7 @@ struct ath12k_hw_regs {
 	u32 pcie_qserdes_sysclk_en_sel;
 	u32 pcie_pcs_osc_dtct_config_base;
 	u32 pcie_pcie_local_qrtr_ins_reg;
+	u32 pcie_pcie_local_unified_fw_board_id_reg;
 	u32 pcie_gcc_gcc_pcie_hot_rst;
 
 	u32 hal_umac_ce0_src_reg_base;
