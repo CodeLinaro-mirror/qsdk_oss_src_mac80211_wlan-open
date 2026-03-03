@@ -54,6 +54,7 @@ enum dp_mon_filter_mode {
 	DP_MON_FILTER_NRP_MODE,
 	DP_MON_FILTER_PKTLOG_FULL_MODE,
 	DP_MON_FILTER_PKTLOG_LITE_MODE,
+	DP_MON_FILTER_EXT_MON_MODE,
 	DP_MON_FILTER_MAX_MODE
 };
 
@@ -126,4 +127,6 @@ void ath12k_dp_htt_rx_filter_rxmon_cfg(void *ptr,
 int ath12k_dp_mon_tx_filter_alloc(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_tx_filter_free(struct ath12k_pdev_dp *dp_pdev);
 int ath12k_dp_mon_tx_update_ring_filter(struct ath12k_pdev_dp *dp_pdev);
+void ath12k_dp_ext_mon_rx_config_filter(struct ath12k_pdev_dp *dp_pdev,
+					bool enable);
 #endif

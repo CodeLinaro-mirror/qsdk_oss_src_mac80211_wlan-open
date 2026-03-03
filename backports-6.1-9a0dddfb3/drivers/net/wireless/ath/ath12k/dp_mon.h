@@ -839,6 +839,13 @@ struct ath12k_dp_mon_desc {
 	u8 end_of_ppdu;
 };
 
+enum ath12k_ext_mon_frame_len {
+	ATH12K_EXT_MON_LEN_64B = 1,
+	ATH12K_EXT_MON_LEN_128B = 2,
+	ATH12K_EXT_MON_LEN_256B = 3,
+	ATH12K_EXT_MON_LEN_FULL_PKT = 4,
+};
+
 enum ath12k_ext_mon_filter_level {
 	ATH12K_EXT_MON_FILTER_LEVEL_MSDU = 1,
 	ATH12K_EXT_MON_FILTER_LEVEL_MPDU,
@@ -915,6 +922,10 @@ struct ath12k_dp_rx_ext_mon {
 	bool enable;
 	enum ath12k_ext_mon_filter_level level;
 	uint8_t metadata;
+	bool fp_enabled;
+	bool mo_enabled;
+	bool fpmo_enabled;
+	bool md_enabled;
 	struct ath12k_ext_mon_pkt_config fp;
 	struct ath12k_ext_mon_pkt_config mo;
 	struct ath12k_ext_mon_pkt_config fpmo;
@@ -1812,5 +1823,53 @@ ath12k_dp_mon_rx_scan_radio_stats_update(struct ath12k *ar,
 	mon_dp_extn = &ar->dp.dp_mon_pdev->pdev_mon_dp_extn;
 	ath12k_dp_rx_scan_radio_stats_update(telemetry_vif,
 					     &mon_dp_extn->rx_scan_radio_stats);
+}
+
+static inline bool
+ath12k_dp_ext_mon_is_mode_enabled(const struct ath12k_ext_mon_pkt_config *config)
+{
+	u8 i;
+
+	for (i = 0; i < ATH12K_EXT_MON_FRAME_MAX; i++)
+		if (config->filter[i])
+			return true;
+
+	return false;
+}
+
+static inline bool
+ath12k_dp_ext_mon_full_pkt_enabled(const struct ath12k_dp_rx_ext_mon *config,
+				   enum ath12k_ext_mon_frame_type type) {
+	return (config->fp.len[type] == ATH12K_EXT_MON_LEN_FULL_PKT ||
+		config->mo.len[type] == ATH12K_EXT_MON_LEN_FULL_PKT ||
+		config->fpmo.len[type] == ATH12K_EXT_MON_LEN_FULL_PKT ||
+		config->md.len[type] == ATH12K_EXT_MON_LEN_FULL_PKT);
+}
+
+static inline enum ath12k_ext_mon_frame_len
+ath12k_ext_mon_get_max_shortpkt_len(const struct ath12k_dp_rx_ext_mon *config)
+{
+	enum ath12k_ext_mon_frame_len len, max_len = 0;
+	u8 i;
+
+	for (i = 0; i < ATH12K_EXT_MON_FRAME_MAX; i++) {
+		len = config->fp.len[i];
+		if (len != ATH12K_EXT_MON_LEN_FULL_PKT && len > max_len)
+			max_len = len;
+
+		len = config->mo.len[i];
+		if (len != ATH12K_EXT_MON_LEN_FULL_PKT && len > max_len)
+			max_len = len;
+
+		len = config->md.len[i];
+		if (len != ATH12K_EXT_MON_LEN_FULL_PKT && len > max_len)
+			max_len = len;
+
+		len = config->fpmo.len[i];
+		if (len != ATH12K_EXT_MON_LEN_FULL_PKT && len > max_len)
+			max_len = len;
+	}
+
+	return max_len;
 }
 #endif
