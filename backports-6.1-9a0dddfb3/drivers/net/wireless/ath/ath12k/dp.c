@@ -3351,6 +3351,36 @@ void ath12k_dp_aggr_rx_mon_stats(struct ath12k *ar,
 	rcu_read_unlock();
 }
 
+static void
+ath12k_dp_update_legacy_peer_stats(struct ath12k *ar,
+				   struct ath12k_dp_peer *peer,
+				   struct ath12k_telemetry_dp_peer *telemetry_peer,
+				   struct ath12k_dp_peer_stats *peer_stats,
+				   struct ath12k_dp_link_peer_stats *link_stats)
+{
+	unsigned long peer_links_map, scan_links_map;
+	int stats_link_id;
+
+	peer_links_map = peer->peer_links_map;
+	scan_links_map = ATH12K_SCAN_LINKS_MASK;
+	telemetry_peer->peer_type = ATH12K_LEGACY_PEER;
+	/* Iterate over data links in peer_links_map, excluding scan links
+	 * to find the correct stats_link_id for this legacy peer.
+	 */
+	for_each_andnot_bit(stats_link_id, &peer_links_map,
+			    &scan_links_map, ATH12K_NUM_MAX_LINKS) {
+		if (stats_link_id >= ATH12K_DP_MAX_MLO_LINKS)
+			continue;
+		ath12k_dp_update_per_pkt_peer_stats(&ar->dp,
+						    peer_stats,
+						    &peer->stats[stats_link_id],
+						    peer->is_vdev_peer);
+		ath12k_update_ext_stats(ar, peer, stats_link_id,
+					link_stats);
+		break;
+	}
+}
+
 int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
 			     struct ath12k_telemetry_dp_peer *telemetry_peer,
 			     u8 *addr, u8 link_id)
@@ -3407,21 +3437,21 @@ int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
 			}
 			goto unlock;
 		} else {
-			/*legacy peer stats handling*/
+			/* Non-MLO peer handling :
+			 * For non-MLO (legacy/WDS) peers, find the link the peer is
+			 * associated on by scanning peer_links_map. A non-MLO peer
+			 * has exactly one bit set in peer_links_map; that bit index
+			 * is the link_id, which is also the index into peer->stats[].
+			 *
+			 * Note: On a multi-link AP the deflink may be on a different
+			 *  radio than the peer. Using ahvif->deflink  would
+			 * read the wrong peer->stats[] slot and return zero counters.
+			 */
 			if (peer && !peer->is_mlo) {
-				arvif =  &ahvif->deflink;
-				if (arvif) {
-					telemetry_peer->peer_type = ATH12K_LEGACY_PEER;
-					stats_link_id = peer->hw_links[arvif->ar->hw_link_id];
-					if (stats_link_id < ATH12K_DP_MAX_MLO_LINKS) {
-						ath12k_dp_update_per_pkt_peer_stats(&ar->dp,
-										    peer_stats,
-										    &peer->stats[stats_link_id],
-										    peer->is_vdev_peer);
-						ath12k_update_ext_stats(ar, peer, 0,
-									link_stats);
-					}
-				}
+				ath12k_dp_update_legacy_peer_stats(ar, peer,
+								   telemetry_peer,
+								   peer_stats,
+								   link_stats);
 			} else {
 				telemetry_peer->peer_type = ATH12K_MLD_PEER;
 				/* Aggregated peer stats of all link in MLD peer*/
