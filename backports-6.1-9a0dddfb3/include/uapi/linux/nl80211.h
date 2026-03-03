@@ -3086,10 +3086,6 @@ enum nl80211_commands {
  *	association request when used with NL80211_CMD_NEW_STATION). Can be set
  *	only if %NL80211_STA_FLAG_WME is set.
  *
- * @NL80211_ATTR_DISABLE_UHR: Force UHR capable interfaces to disable
- *  this feature during association. This is a flag attribute.
- *	Currently only supported in mac80211 drivers.
- *
  * @NL80211_ATTR_PCIE: Nested attributes associated with PCIe low power and
  *	gen/lane mode transitions. See &enum nl80211_pcie_attrs
  *
@@ -3712,8 +3708,6 @@ enum nl80211_attrs {
 	NL80211_ATTR_BITRATE,
 
 	NL80211_ATTR_UHR_CAPABILITY,
-
-	NL80211_ATTR_DISABLE_UHR,
 
 	NL80211_ATTR_PCIE,
 	NL80211_ATTR_DCVS,
