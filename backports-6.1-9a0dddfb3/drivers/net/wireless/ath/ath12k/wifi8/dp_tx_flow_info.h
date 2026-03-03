@@ -70,6 +70,7 @@ struct ath12k_dp_msdu_q_info  {
 	void *msdu_q_vaddr;
 	dma_addr_t msdu_q_paddr;
 	u32 msduq_idx;
+	u16 msduq_sam_id;
 	enum ath12k_tx_q_state msduq_state;
 	union {
 		u32 queue_number:24,
@@ -90,6 +91,7 @@ struct ath12k_dp_mpdu_q_info {
 	dma_addr_t mpdu_q_paddr;
 	dma_addr_t pn_addr;
 	u32 mpduq_id;
+	u16 mpduq_sam_id;
 	enum ath12k_tx_q_state mpduq_state;
 	union {
 		u32 queue_number:24,

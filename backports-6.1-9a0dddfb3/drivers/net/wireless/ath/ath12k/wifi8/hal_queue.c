@@ -51,7 +51,8 @@ int ath12k_wifi8_hal_tx_msdu_queue_setup(struct ath12k_dp_hw_group *dp_hw_grp,
 					       HAL_TX_DESCRIPTOR_HEADER_BUFFER_TYPE) |
 			      le32_encode_bits(ti->queue_number,
 					       HAL_TX_DESCRIPTOR_HEADER_QUEUE_NUMBER);
-	msduq->info0 = le32_encode_bits(msduq_idx, HAL_TX_MSDU_FLOW_QUEUE_SAM_ID) |
+
+	msduq->info0 = le32_encode_bits(ti->msduq_sam_id, HAL_TX_MSDU_FLOW_QUEUE_SAM_ID) |
 		       le32_encode_bits(1, HAL_TX_MSDU_FLOW_FLOW_VALID) |
 		       le32_encode_bits(1, HAL_TX_MSDU_FLOW_EMPTY_TO_N_EMPTY) |
 		       le32_encode_bits(1, HAL_TX_MSDU_FLOW_N_EMPTY_TO_EMPTY) |
@@ -156,7 +157,7 @@ int ath12k_wifi8_hal_tx_mpdu_queue_setup(struct ath12k_dp_hw_group *dp_hw_grp,
 		       le32_encode_bits(ti->link_id1, HAL_TX_MPDU_QUEUE_HEAD_LINK1_ID) |
 		       le32_encode_bits(ti->link_id2, HAL_TX_MPDU_QUEUE_HEAD_LINK2_ID);
 
-	mpduq->info21 = le32_encode_bits(mpduq_idx, HAL_TX_MPDU_QUEUE_HEAD_SAM_ID);
+	mpduq->info21 = le32_encode_bits(ti->mpduq_sam_id, HAL_TX_MPDU_QUEUE_HEAD_SAM_ID);
 
 	ath12k_core_dma_sync_single_for_device(dev, ti->paddr,
 					       MPDU_STRUCT_SZ,
