@@ -31,6 +31,7 @@ struct ath12k_dp_link_peer;
 #define QOS_TID_MAX 8
 #define QOS_TID_MDSUQ_MAX 2
 #define QOS_TID_DEF_MSDUQ_MAX 2
+#define VOW_DATA_TID_MAX 9
 
 #define MAX_MCS_11B 7
 #define MAX_MCS_11A 8
@@ -347,6 +348,10 @@ enum ath12k_mu_packet_type {
 			_handle->stats[_link].proto->_dir[_ring][_lvl]._field += _delta; \
 	} while (0)
 
+/* PDEV TID STATS MACROS */
+#define DP_PDEV_TID_TX_REASON_INC(dp_pdev, ring, tid, array, reason) \
+	((dp_pdev)->tid_stats.tid_tx[ring][tid].array[reason]++)
+
 struct ath12k_wbm_tx_stats {
 	u64 wbm_tx_comp_stats[HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX];
 };
@@ -572,6 +577,33 @@ struct delay_stats {
 	u32 invalid_delay_pkts;
 	u64 delay_success;
 	u64 delay_failure;
+};
+
+/**
+ * struct ath12k_tid_tx_stats - Per-TID TX statistics
+ * @tqm_status_cnt: TQM release reason counters
+ * @htt_status_cnt: HTT completion status counters
+ */
+struct ath12k_tid_tx_stats {
+	u32 tqm_status_cnt[HAL_WBM_TQM_REL_REASON_MAX];
+	u32 htt_status_cnt[HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX];
+};
+
+/**
+ * struct ath12k_dp_pdev_tid_stats - VoW TID statistics
+ * @tid_tx: Per-ring, per-TID TX statistics [ring][tid]
+ */
+struct ath12k_dp_pdev_tid_stats {
+	struct ath12k_tid_tx_stats tid_tx[DP_TCL_NUM_RING_MAX][VOW_DATA_TID_MAX];
+};
+
+/**
+ * struct ath12k_dp_aggr_pdev_tid_stats
+ * @tid_tx: per-TID TX statistics [tid]
+ * Per-TID stats aggregated across rings
+ */
+struct ath12k_dp_aggr_pdev_tid_stats {
+	struct ath12k_tid_tx_stats tid_tx[VOW_DATA_TID_MAX];
 };
 
 struct ath12k_qos_stats {
@@ -1117,6 +1149,9 @@ s8 ath12k_dp_get_rssi_value(s8 snr,
 			    struct wmi_rssi_dbm_conv_offsets *rssi_offsets,
 			    bool ack_rssi);
 
+int ath12k_dp_pdev_get_tid_stats(struct ath12k *ar,
+				 struct ath12k_dp_aggr_pdev_tid_stats *tid_stats);
+
 #define SKB_TRAC_ETH_TYPE_OFFSET			12
 #define DP_ETH_TYPE_8021Q				0x8100
 #define DP_ETH_TYPE_8021AD				0x88a8
@@ -1459,6 +1494,15 @@ static inline enum ath12k_dp_pkt_l5_proto_type
 ath12k_dp_get_l5_protocol_subtype(struct sk_buff *skb)
 {
 	return ath12k_dp_get_dhcp_subtype(skb->data);
+}
+
+static inline u8
+ath12k_vow_tid_validate(u8 tid)
+{
+	if (tid >= VOW_DATA_TID_MAX)
+		return VOW_DATA_TID_MAX - 1;
+
+	return tid;
 }
 
 #endif

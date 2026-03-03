@@ -2635,6 +2635,7 @@ ath12k_wifi7_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 	int link_id = -1;
 	u32 msdu_len = msdu->len;
 	u8 tx_desc_flags = sw_metadata->flags;
+	u8 vow_tid = 0;
 
 	status_desc = desc;
 
@@ -2727,6 +2728,15 @@ ath12k_wifi7_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 								peer,
 								ts->buf_rel_source);
 #endif
+			if (unlikely(ath12k_dp_vow_stats_enabled(dp_pdev))) {
+				vow_tid = ath12k_vow_tid_validate(ts->tid);
+				if (htt_status < HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX)
+					DP_PDEV_TID_TX_REASON_INC(dp_pdev,
+								      ring_id,
+								      vow_tid,
+								      htt_status_cnt,
+								      htt_status);
+			}
 		}
 	} else {
 		DP_DEVICE_STATS_INC(dp, tx_err.tx_comp_err[DP_TX_COMP_ERR_INVALID_PEER][ring_id], 1);
@@ -2917,6 +2927,7 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 	u8 link_id = 0;
 	u8 reason = 0;
 	u8 tid = 0;
+	u8 vow_tid = 0;
 	enum ath12k_dp_tx_comp_error drop_reason = DP_TX_COMP_ERR_MISC;
 	u32 msdu_len = msdu->len;
 	u8 tx_desc_flags = sw_metadata->flags;
@@ -3010,6 +3021,15 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 								peer,
 								ts->buf_rel_source);
 #endif
+			if (unlikely(ath12k_dp_vow_stats_enabled(dp_pdev))) {
+				vow_tid = ath12k_vow_tid_validate(ts->tid);
+				if (ts->status < HAL_WBM_TQM_REL_REASON_MAX)
+					DP_PDEV_TID_TX_REASON_INC(dp_pdev,
+								      ring,
+								      vow_tid,
+								      tqm_status_cnt,
+								      ts->status);
+			}
 		}
 	} else {
 		DP_DEVICE_STATS_INC(dp, tx_err.tx_comp_err[DP_TX_COMP_ERR_INVALID_PEER][ring], 1);
@@ -3649,6 +3669,8 @@ void ath12k_ppeds_tx_update_stats(struct ath12k *ar, int skb_len,
 	bool tx_status_default = false;
 	struct ieee80211_tx_info info;
 	u8 reason, link_id;
+	int ring_id = 0;
+	int vow_tid = 0;
 
 	memset(&info, 0, sizeof(info));
 	info.status.rates[0].idx = -1;
@@ -3703,17 +3725,31 @@ void ath12k_ppeds_tx_update_stats(struct ath12k *ar, int skb_len,
 		return;
 	}
 
-	if (ath12k_dp_stats_enabled(dp_pdev) &&
-	    ath12k_tid_stats_enabled(dp_pdev)) {
-		ahvif = ath12k_vif_to_ahvif(ath12k_dp_link_peer_get_vif(peer));
-		if (tx_drop) {
-			ath12k_tid_tx_drop_stats(ahvif, ts.tid, skb_len,
-						 reason);
-		} else {
-			ath12k_tid_tx_stats(ahvif, ts.tid, skb_len,
-					    ATH_TX_PPEDS_PKTS);
-			ath12k_tid_tx_stats(ahvif, ts.tid, skb_len,
-					    ATH_TX_COMPLETED_PKTS);
+	if (ath12k_dp_stats_enabled(dp_pdev)) {
+		if (ath12k_tid_stats_enabled(dp_pdev)) {
+			ahvif = ath12k_vif_to_ahvif(ath12k_dp_link_peer_get_vif(peer));
+			if (tx_drop) {
+				ath12k_tid_tx_drop_stats(ahvif, ts.tid, skb_len,
+							 reason);
+			} else {
+				ath12k_tid_tx_stats(ahvif, ts.tid, skb_len,
+						    ATH_TX_PPEDS_PKTS);
+				ath12k_tid_tx_stats(ahvif, ts.tid, skb_len,
+						    ATH_TX_COMPLETED_PKTS);
+			}
+		}
+
+		if (unlikely(ath12k_dp_vow_stats_enabled(dp_pdev))) {
+			/* Track TQM status */
+			if (ts.buf_rel_source == HAL_WBM_REL_SRC_MODULE_TQM) {
+				vow_tid = ath12k_vow_tid_validate(ts.tid);
+				if (ts.status < HAL_WBM_TQM_REL_REASON_MAX)
+					DP_PDEV_TID_TX_REASON_INC(dp_pdev,
+								      ring_id,
+								      vow_tid,
+								      tqm_status_cnt,
+								      ts.status);
+			}
 		}
 	}
 

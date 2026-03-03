@@ -195,6 +195,7 @@ struct ath12k_pdev_dp {
 	bool dp_mon_pdev_configured;
 	struct ath12k_pdev_mon_dp *dp_mon_pdev;
 	struct ath12k_wmm_stats wmm_stats;
+	struct ath12k_dp_pdev_tid_stats tid_stats;
 	/* Protected by ab: base lock
 	 * determine when this stats is calculated based on peers
 	 */
