@@ -5371,10 +5371,10 @@ static void ath12k_peer_assoc_h_uhr(struct ath12k *ar,
 
 	arg->uhr_flag = true;
 
-	memcpy(&arg->peer_uhr_cap_mac, uhr_cap->uhr_cap_elem.mac_cap_info,
-	       sizeof(uhr_cap->uhr_cap_elem.mac_cap_info));
-	memcpy(&arg->peer_uhr_cap_phy, uhr_cap->uhr_cap_elem.phy_cap_info,
-	       sizeof(uhr_cap->uhr_cap_elem.phy_cap_info));
+	memcpy(&arg->peer_uhr_cap_mac, uhr_cap->mac.mac_cap,
+	       sizeof(uhr_cap->mac.mac_cap));
+	memcpy(&arg->peer_uhr_cap_phy, &uhr_cap->phy.cap,
+	       sizeof(uhr_cap->phy.cap));
 }
 
 static void ath12k_peer_assoc_prepare(struct ath12k *ar,
@@ -16025,27 +16025,25 @@ static void ath12k_mac_copy_uhr_cap(struct ath12k *ar,
 				    int iftype,
 				    struct ieee80211_sta_uhr_cap *uhr_cap)
 {
-	struct ieee80211_uhr_cap_elem_fixed *uhr_cap_elem = &uhr_cap->uhr_cap_elem;
-
 	if (!(test_bit(WMI_TLV_SERVICE_11BN, ar->ab->wmi_ab.svc_map)))
 		return;
 
 	memset(uhr_cap, 0, sizeof(struct ieee80211_sta_uhr_cap));
 	uhr_cap->has_uhr = true;
 	ath12k_phymodes = ath12k_phymodes_uhr;
-	memcpy(uhr_cap_elem->mac_cap_info, band_cap->uhr_cap_mac_info,
-	       sizeof(uhr_cap_elem->mac_cap_info));
-	memcpy(uhr_cap_elem->phy_cap_info, band_cap->uhr_cap_phy_info,
-	       sizeof(uhr_cap_elem->phy_cap_info));
+	memcpy(uhr_cap->mac.mac_cap, band_cap->uhr_cap_mac_info,
+	       sizeof(uhr_cap->mac.mac_cap));
+	memcpy(&uhr_cap->phy.cap, band_cap->uhr_cap_phy_info,
+	       sizeof(uhr_cap->phy.cap));
 
 	switch (iftype) {
 	case NL80211_IFTYPE_AP:
-		uhr_cap_elem->phy_cap_info[0] &=
-			~IEEE80211_UHR_PHY_CAP0_MAX_NSS_TOTAL_RX_DL_MUMIMO_80MHZ;
-		uhr_cap_elem->phy_cap_info[0] &=
-			~IEEE80211_UHR_PHY_CAP0_MAX_NSS_TOTAL_RX_DL_MUMIMO_160MHZ;
-		uhr_cap_elem->phy_cap_info[0] &=
-			~IEEE80211_UHR_PHY_CAP0_MAX_NSS_TOTAL_RX_DL_MUMIMO_320MHZ;
+		uhr_cap->phy.cap &=
+			~IEEE80211_UHR_PHY_CAP_MAX_NSS_RX_DL_MU_LE80;
+		uhr_cap->phy.cap &=
+			~IEEE80211_UHR_PHY_CAP_MAX_NSS_RX_DL_MU_160;
+		uhr_cap->phy.cap &=
+			~IEEE80211_UHR_PHY_CAP_MAX_NSS_RX_DL_MU_320;
 		break;
 	case NL80211_IFTYPE_STATION:
 		/* add if anything needs to be cleared for STA mode */
