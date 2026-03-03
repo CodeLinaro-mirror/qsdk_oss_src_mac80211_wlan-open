@@ -33,7 +33,7 @@ static bool ath12k_skip_caldata;
 module_param_named(skip_caldata, ath12k_skip_caldata, bool, 0444);
 MODULE_PARM_DESC(skip_caldata, "Skip caldata download");
 
-bool ath12k_cold_boot_cal = 1;
+bool ath12k_cold_boot_cal = 0;
 module_param_named(cold_boot_cal, ath12k_cold_boot_cal, bool, 0644);
 MODULE_PARM_DESC(cold_boot_cal,
 		 "Decrease the channel switch time but increase the driver load time (Default: true)");
