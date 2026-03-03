@@ -87,7 +87,7 @@ int ath12k_wifi8_dp_tqm_cmd_send(struct ath12k_base *ab,
 				 struct ath12k_hal_tqm_cmd *cmd,
 				 struct ath12k_dp_tx_queue *data,
 				 void (*callback_fn)(struct ath12k_dp *dp,
-				 void *ctx, enum hal_tqm_cmd_execution_status status))
+				 void *ctx, struct hal_tqm_status *tqm_status))
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
@@ -177,8 +177,7 @@ void ath12k_wifi8_dp_tx_process_tqm_status(struct ath12k_dp *dp)
 		spin_unlock_bh(&dp->tqm_cmd_lock);
 
 		if (found) {
-			cmd->handler(dp, (void *)&cmd->data,
-				     tqm_status.status_hdr.cmd_execution_status);
+			cmd->handler(dp, (void *)&cmd->data, &tqm_status);
 			kfree(cmd);
 		}
 		found = false;
@@ -189,7 +188,7 @@ void ath12k_wifi8_dp_tx_process_tqm_status(struct ath12k_dp *dp)
 }
 
 void ath12k_dp_peer_cleanup_tqm_sync(struct ath12k_dp *dp, void *ctx,
-				     enum hal_tqm_cmd_execution_status status)
+				     struct hal_tqm_status *tqm_status)
 {
 	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
 	struct ath12k_dp_tx_queue *data = ctx;
@@ -203,9 +202,13 @@ void ath12k_dp_peer_cleanup_tqm_sync(struct ath12k_dp *dp, void *ctx,
 	dma_addr_t tx_classify_info_paddr;
 	void *tx_classify_info_vaddr;
 
-	if (status != HAL_TQM_SUCCESSFUL_EXECUTION) {
+	if (!tqm_status) {
+		ath12k_err(ab, "Error: TQM STATUS is not valid");
+		return;
+	}
+	if (tqm_status->status_hdr.cmd_execution_status != HAL_TQM_SUCCESSFUL_EXECUTION) {
 		ath12k_err(ab, "Error: TQM STATUS FAILED with reason %d",
-			   status);
+			   tqm_status->status_hdr.cmd_execution_status);
 		return;
 	}
 
