@@ -6,7 +6,7 @@
  * Copyright 2007	Johannes Berg <johannes@sipsolutions.net>
  * Copyright 2013-2014  Intel Mobile Communications GmbH
  * Copyright (C) 2015-2017	Intel Deutschland GmbH
- * Copyright (C) 2018-2024 Intel Corporation
+ * Copyright (C) 2018-2025 Intel Corporation
  *
  * element parsing for mac80211
  */
@@ -299,6 +299,24 @@ _ieee802_11_parse_elems_full(struct ieee80211_elems_parse_params *params,
 
 	bitmap_zero(seen_elems, 256);
 
+	switch (params->type) {
+	/* we don't need to parse assoc request, luckily (it's value 0) */
+	case IEEE80211_FTYPE_MGMT | IEEE80211_STYPE_ASSOC_REQ:
+	case IEEE80211_FTYPE_MGMT | IEEE80211_STYPE_REASSOC_REQ:
+	default:
+		WARN(1, "invalid frame type 0x%x for element parsing\n",
+		     params->type);
+		break;
+	case IEEE80211_FTYPE_MGMT | IEEE80211_STYPE_ASSOC_RESP:
+	case IEEE80211_FTYPE_MGMT | IEEE80211_STYPE_REASSOC_RESP:
+	case IEEE80211_FTYPE_MGMT | IEEE80211_STYPE_PROBE_REQ:
+	case IEEE80211_FTYPE_MGMT | IEEE80211_STYPE_PROBE_RESP:
+	case IEEE80211_FTYPE_MGMT | IEEE80211_STYPE_BEACON:
+	case IEEE80211_FTYPE_MGMT | IEEE80211_STYPE_ACTION:
+	case IEEE80211_FTYPE_EXT | IEEE80211_STYPE_S1G_BEACON:
+		break;
+	}
+
 	for_each_element(elem, params->start, params->len) {
 		const struct element *subelem;
 		u8 elem_parse_failed;
@@ -584,7 +602,8 @@ _ieee802_11_parse_elems_full(struct ieee80211_elems_parse_params *params,
 			if (params->mode < IEEE80211_CONN_MODE_VHT)
 				break;
 
-			if (!params->action) {
+			if (params->type != (IEEE80211_FTYPE_MGMT |
+					     IEEE80211_STYPE_ACTION)) {
 				elem_parse_failed =
 					IEEE80211_PARSE_ERR_UNEXPECTED_ELEM;
 				break;
@@ -600,7 +619,8 @@ _ieee802_11_parse_elems_full(struct ieee80211_elems_parse_params *params,
 		case WLAN_EID_CHANNEL_SWITCH_WRAPPER:
 			if (params->mode < IEEE80211_CONN_MODE_VHT)
 				break;
-			if (params->action) {
+			if (params->type == (IEEE80211_FTYPE_MGMT |
+					     IEEE80211_STYPE_ACTION)) {
 				elem_parse_failed =
 					IEEE80211_PARSE_ERR_UNEXPECTED_ELEM;
 				break;
@@ -899,7 +919,7 @@ static void ieee80211_mle_parse_link(struct ieee80211_elems_parse *elems_parse,
 	struct ieee80211_mle_per_sta_profile *prof;
 	struct ieee80211_elems_parse_params sub = {
 		.mode = params->mode,
-		.action = params->action,
+		.type = params->type,
 		.from_ap = params->from_ap,
 		.link_id = -1,
 	};
@@ -1048,7 +1068,7 @@ ieee802_11_parse_elems_full(struct ieee80211_elems_parse_params *params)
 			.mode = params->mode,
 			.start = nontransmitted_profile,
 			.len = nontransmitted_profile_len,
-			.action = params->action,
+			.type = params->type,
 			.link_id = params->link_id,
 		};
 
