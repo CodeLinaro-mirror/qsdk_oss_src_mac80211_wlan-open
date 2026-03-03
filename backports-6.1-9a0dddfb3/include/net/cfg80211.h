@@ -1348,6 +1348,16 @@ bool cfg80211_chandef_dfs_usable(struct wiphy *wiphy,
 				 const struct cfg80211_chan_def *chandef);
 
 /**
+ * cfg80211_chandef_dfs_nol_clear - Check if chandef is not present in NOL
+ * @wiphy: the wiphy to validate against
+ * @chandef: the channel definition to check
+ *
+ * Return: true if all the channels in chandef are not present in NOL
+ */
+bool cfg80211_chandef_dfs_nol_clear(struct wiphy *wiphy,
+				    const struct cfg80211_chan_def *chandef);
+
+/**
  * cfg80211_chandef_dfs_cac_time - get maximum dfs cac time traversing
  * through the entire channel width
  * @wiphy: the wiphy to validate against
