@@ -17953,12 +17953,14 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 	dp_link_vif = &ahvif->dp_vif.dp_link_vif[arvif->link_id];
 	/* Allocate link_peer_delete_stats */
-	dp_link_vif->link_peer_delete_stats = ath12k_dp_alloc_preserved_stats();
-	if (!dp_link_vif->link_peer_delete_stats) {
-		ath12k_info(ar->ab, "Failed to allocate link_peer_delete_stats for vdev %d\n",
-			    arvif->vdev_id);
-		ret = -EINVAL;
-		goto err;
+	if (arvif->link_id < ATH12K_DEFAULT_SCAN_LINK) {
+		dp_link_vif->link_peer_delete_stats = ath12k_dp_alloc_preserved_stats();
+		if (!dp_link_vif->link_peer_delete_stats) {
+			ath12k_info(ar->ab, "Failed to allocate link_peer_delete_stats for vdev %d\n",
+					arvif->vdev_id);
+			ret = -EINVAL;
+			goto err;
+		}
 	}
 
 	switch (vif->type) {
@@ -18037,7 +18039,7 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	if (ret) {
 		ath12k_warn(ab, "failed to create WMI vdev %d: %d\n",
 			    arvif->vdev_id, ret);
-		return ret;
+		goto err;
 	}
 
 	if (is_bridge_vdev)
@@ -18280,6 +18282,7 @@ err_dp_peer_del:
 
 err_vdev_del:
 	ath12k_wmi_vdev_delete(ar, arvif->vdev_id);
+	ath12k_debugfs_remove_interface(arvif);
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
 		ar->monitor_vdev_created = false;
 		ar->monitor_vdev_id = -1;
@@ -18304,6 +18307,10 @@ err_vdev_del:
 		list_del(&arvif->list);
 	spin_unlock_bh(&ar->data_lock);
 err:
+	if (dp_link_vif && dp_link_vif->link_peer_delete_stats) {
+		ath12k_dp_free_preserved_stats(dp_link_vif->link_peer_delete_stats);
+		dp_link_vif->link_peer_delete_stats = NULL;
+	}
 	arvif->ar = NULL;
 	return ret;
 }
@@ -18636,13 +18643,6 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 		return -ENOMEM;
 	ath12k_mac_init_arvif(ahvif, arvif, -1, false);
 
-	/* Pre-allocate the aggregate stats structure */
-	ahvif->dp_vif.link_vif_delete_stats = ath12k_dp_alloc_preserved_stats();
-	if (!ahvif->dp_vif.link_vif_delete_stats) {
-		ath12k_info(NULL, "Failed to allocate link_vif_delete_stats\n");
-		return -ENOMEM;
-	}
-
 	ath12k_dp_arch_dp_vif_configure(ah->ag->dp_hw_grp, ahvif,
 					ATH12K_DP_OP_INIT);
 
@@ -18756,6 +18756,12 @@ ppe_vp_config:
 			   (ret < 0) ? "failed" : "succeeded");
 	}
 
+	/* Pre-allocate the aggregate stats structure */
+	ahvif->dp_vif.link_vif_delete_stats = ath12k_dp_alloc_preserved_stats();
+	if (!ahvif->dp_vif.link_vif_delete_stats) {
+		ath12k_info(NULL, "Failed to allocate link_vif_delete_stats\n");
+		return -ENOMEM;
+	}
 	/* Defer vdev creation until assign_chanctx or hw_scan is initiated as driver
 	 * will not know if this interface is an ML vif at this point.
 	 */
