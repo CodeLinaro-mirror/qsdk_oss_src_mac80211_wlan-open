@@ -487,15 +487,15 @@ u8 ath12k_sdwf_get_peer_msduq(struct ath12k *ar,
                goto err_unlock;
        }
 
-       if (!peer->sta)
-               goto err_unlock;
+	if (!ath12k_dp_link_peer_get_sta(peer))
+		goto err_unlock;
 
-       if (!peer->sta->valid_links)
-	       goto err_unlock;
+	if (!ath12k_dp_link_peer_get_sta(peer)->valid_links)
+		goto err_unlock;
 
-       if (hweight16(peer->sta->valid_links) !=
-           ATH12K_3LINK_MLO_MAX_STA_LINKS)
-               goto err_unlock;
+	if (hweight16(ath12k_dp_link_peer_get_sta(peer)->valid_links) !=
+	    ATH12K_3LINK_MLO_MAX_STA_LINKS)
+		goto err_unlock;
 
        if (peer->primary_link &&
            ab->hw_params->mlo_3_link_tx_support) {
@@ -614,11 +614,11 @@ ath12k_sdwf_3_link_peer_dl_flow_count(struct wireless_dev *wdev,
 	rcu_read_lock();
 	spin_lock_bh(&dp->dp_lock);
 	peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev, peer_id);
-	if (!peer || !peer->sta)
+	if (!peer || !ath12k_dp_link_peer_get_sta(peer))
 		goto err_unlock;
 
-	if (!peer->sta->valid_links ||
-	    (hweight16(peer->sta->valid_links) !=
+	if (!ath12k_dp_link_peer_get_sta(peer)->valid_links ||
+	    (hweight16(ath12k_dp_link_peer_get_sta(peer)->valid_links) !=
 	     ATH12K_3LINK_MLO_MAX_STA_LINKS))
 		goto err_unlock;
 

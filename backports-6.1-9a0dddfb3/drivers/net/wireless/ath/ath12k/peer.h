@@ -93,10 +93,10 @@ struct ath12k_link_sta *ath12k_peer_get_link_sta(struct ath12k_base *ab,
 	struct ath12k_sta *ahsta;
 	struct ath12k_link_sta *arsta;
 
-	if (!peer->sta)
+	if (!ath12k_dp_link_peer_get_sta(peer))
 		return NULL;
 
-	ahsta = ath12k_sta_to_ahsta(peer->sta);
+	ahsta = ath12k_sta_to_ahsta(ath12k_dp_link_peer_get_sta(peer));
 	if (peer->ml_id & ATH12K_PEER_ML_ID_VALID) {
 		if (!(ahsta->links_map & BIT(peer->link_id))) {
 			ath12k_dbg(ab, ATH12K_DBG_PEER,

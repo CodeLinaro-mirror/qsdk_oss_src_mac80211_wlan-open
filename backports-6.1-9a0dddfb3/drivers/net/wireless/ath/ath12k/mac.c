@@ -1703,13 +1703,13 @@ int ath12k_mac_partner_peer_cleanup(struct ath12k_base *ab)
 		list_for_each_entry_safe(peer, tmp, &partner_ab->dp->peers, list) {
 			int ix, pdv_id;
 
-			if (!peer->sta || !peer->mlo ||
+			if (!ath12k_dp_link_peer_get_sta(peer) || !peer->mlo ||
 			    !ath12k_dp_link_peer_get_vif(peer))
 				continue;
 
 			link_id = peer->link_id;
 			/* get arsta */
-			sta = peer->sta;
+			sta = ath12k_dp_link_peer_get_sta(peer);
 			ahsta = ath12k_sta_to_ahsta(sta);
 			arsta = wiphy_dereference(wiphy, ahsta->link[link_id]);
 
@@ -1759,8 +1759,8 @@ int ath12k_mac_partner_peer_cleanup(struct ath12k_base *ab)
 				peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp,
 										    vid,
 										    addr);
-				if (!peer || !peer->sta || !peer->mlo ||
-				    !ath12k_dp_link_peer_get_vif(peer)) {
+				if (!peer || !ath12k_dp_link_peer_get_sta(peer) ||
+				    !peer->mlo || !ath12k_dp_link_peer_get_vif(peer)) {
 					spin_unlock_bh(&dp->dp_lock);
 					continue;
 				}
@@ -1770,7 +1770,7 @@ int ath12k_mac_partner_peer_cleanup(struct ath12k_base *ab)
 				ahvif = (struct ath12k_vif *)vif->drv_priv;
 
 				/* get arsta */
-				sta = peer->sta;
+				sta = ath12k_dp_link_peer_get_sta(peer);
 				ahsta = ath12k_sta_to_ahsta(sta);
 				arsta = wiphy_dereference(wiphy, ahsta->link[link_id]);
 
@@ -1842,7 +1842,8 @@ void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 	spin_lock_bh(&dp->dp_lock);
 	list_for_each_entry_safe(peer, tmp, &dp->peers, list) {
 		/*Skip this for non primary_links and vdev peers*/
-		if (peer->sta && peer->dp_peer && peer->primary_link) {
+		if (ath12k_dp_link_peer_get_sta(peer) && peer->dp_peer &&
+		    peer->primary_link) {
 			for (i = 0; i < num_tids; i++) {
 				rx_tid = &peer->dp_peer->rx_tid[i];
 
@@ -1872,14 +1873,14 @@ void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 	synchronize_rcu();
 
 	list_for_each_entry_safe(peer, tmp, &peers, list) {
-		if (peer->sta && peer->dp_peer && peer->primary_link) {
+		if (ath12k_dp_link_peer_get_sta(peer) && peer->dp_peer &&
+		    peer->primary_link) {
 			for (i = 0; i < num_tids; i++) {
 				rx_tid = &peer->dp_peer->rx_tid[i];
 
 				del_timer_sync(&rx_tid->frag_timer);
 			}
 		}
-		peer->sta = NULL;
 		peer->dp_peer = NULL;
 		ath12k_link_peer_free(peer);
 	}
@@ -1933,7 +1934,7 @@ void ath12k_mac_dp_peer_cleanup(struct ath12k_hw *ah,
 	spin_lock_bh(&dp_hw->peer_lock);
 	list_for_each_entry_safe(dp_peer, tmp, &dp_hw->peers, list) {
 
-		if (!dp_peer->sta || dp_peer->is_vdev_peer) {
+		if (!ath12k_dp_peer_get_sta(dp_peer) || dp_peer->is_vdev_peer) {
 			ath12k_generic_dbg(ATH12K_DBG_MAC, ATH12K_DBG_L1,
 				   	   "Skipping vdev self dp_peer delete on addr %pM\n",
 				   	   dp_peer->addr);
@@ -1947,7 +1948,7 @@ void ath12k_mac_dp_peer_cleanup(struct ath12k_hw *ah,
 			continue;
 
 		if (dp_peer->is_mlo && dp_peer->peer_id != ATH12K_MLO_PEER_ID_INVALID) {
-			ahsta = ath12k_sta_to_ahsta(dp_peer->sta);
+			ahsta = ath12k_sta_to_ahsta(ath12k_dp_peer_get_sta(dp_peer));
 			peerid_index = dp_peer->peer_id;
 			rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], NULL);
 			clear_bit(dp_peer->peer_id, dp_hw->free_peer_id_map);
@@ -2621,7 +2622,7 @@ static void ath12k_wmi_migration_cmd_work(struct work_struct *work)
 
 		if (ml_peer &&
 		    ml_peer->dp_peer_state < ATH12K_DP_PEER_LOGICALLY_DELETED) {
-			ahsta = ath12k_sta_to_ahsta(ml_peer->sta);
+			ahsta = ath12k_sta_to_ahsta(ath12k_dp_peer_get_sta(ml_peer));
 			ahsta->is_migration_in_progress = false;
 		}
 
@@ -3176,16 +3177,17 @@ static void ath12k_mac_handle_peer_event(struct ath12k_vif *ahvif,
 			return;
 		}
 
-		if (!peer->sta)
+		if (!ath12k_dp_link_peer_get_sta(peer))
 			return;
 
 		ath12k_info(ab,
 			    "rssi deauth: sta %pM peer: %pM RSSI %d dBm below threshold %d dBm for %u samples\n",
-			    peer->sta->addr, peer->addr, peer->rssi_mon.last_rssi,
+			    ath12k_dp_link_peer_get_sta(peer)->addr, peer->addr,
+			    peer->rssi_mon.last_rssi,
 			    peer->rssi_mon.cfg->rssi_threshold,
 			    peer->rssi_mon.low_rssi_count);
 
-		ath12k_mac_report_low_ack_wrapper(peer->sta,
+		ath12k_mac_report_low_ack_wrapper(ath12k_dp_link_peer_get_sta(peer),
 						  ATH12K_REPORT_RSSI_ALL);
 	}
 }
@@ -12283,7 +12285,8 @@ static void ath12k_sta_set_4addr_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 #endif
 				if (ath12k_dp_link_peer_get_vif_type(peer) ==
 								NL80211_IFTYPE_AP)
-					peer->dp_peer->dev = peer->dp_peer->sta->dev;
+					peer->dp_peer->dev =
+					ath12k_dp_peer_get_sta(peer->dp_peer)->dev;
 			}
 		}
 
@@ -14904,7 +14907,7 @@ ath12k_mac_free_link_migr_peer_list(struct ath12k_hw *ah,
 
 		if (ml_peer &&
 		    ml_peer->dp_peer_state < ATH12K_DP_PEER_LOGICALLY_DELETED) {
-			ahsta = ath12k_sta_to_ahsta(ml_peer->sta);
+			ahsta = ath12k_sta_to_ahsta(ath12k_dp_peer_get_sta(ml_peer));
 			ahsta->is_migration_in_progress = false;
 		}
 
@@ -14919,7 +14922,7 @@ ath12k_mac_get_link_migr_peer_node(struct ath12k_dp_peer *ml_peer,
 				   u8 pri_link_id)
 {
 	struct ath12k_mac_pri_link_migr_peer_node *node;
-	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(ml_peer->sta);
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(ath12k_dp_peer_get_sta(ml_peer));
 	struct ath12k_vif *ahvif = ahsta->ahvif;
 	struct ath12k_hw *ah = ahvif->ah;
 	struct ath12k_link_sta *arsta = ahsta->link[pri_link_id];
@@ -15035,7 +15038,7 @@ ath12k_mac_process_link_migrate_req(struct ath12k_vif *ahvif,
 			goto exit_link_migrate_req;
 		}
 
-		ahsta = ath12k_sta_to_ahsta(ml_peer->sta);
+		ahsta = ath12k_sta_to_ahsta(ath12k_dp_peer_get_sta(ml_peer));
 
 		arvif = ath12k_get_arvif_from_link_id(ahvif, ahsta->primary_link_id);
 		if (!arvif || !arvif->is_up || !arvif->ar) {
@@ -15074,7 +15077,7 @@ ath12k_mac_process_link_migrate_req(struct ath12k_vif *ahvif,
 		if (!ml_peer->is_mlo || ml_peer->is_vdev_peer)
 			continue;
 
-		ahsta = ath12k_sta_to_ahsta(ml_peer->sta);
+		ahsta = ath12k_sta_to_ahsta(ath12k_dp_peer_get_sta(ml_peer));
 
 		valid_links = ahsta->links_map;
 		found = false;
@@ -22623,6 +22626,7 @@ ath12k_mac_validate_fixed_rate_settings(struct ath12k *ar, enum nl80211_band ban
 	bool he_ul_fixed_rate = false;
 	u8 vht_nss, he_nss, eht_nss, he_ul_nss;
 	int ret = true;
+	struct ieee80211_sta *sta;
 
 	vht_mcs_mask = mask->control[band].vht_mcs;
 	he_mcs_mask = mask->control[band].he_mcs;
@@ -22652,8 +22656,9 @@ ath12k_mac_validate_fixed_rate_settings(struct ath12k *ar, enum nl80211_band ban
 	rcu_read_lock();
 	spin_lock_bh(&ar->ab->dp->dp_lock);
 	list_for_each_entry_safe(peer, tmp, &ar->ab->dp->peers, list) {
-		if (peer->sta) {
-			link_sta = rcu_dereference(peer->sta->link[link_id]);
+		if (ath12k_dp_link_peer_get_sta(peer)) {
+			sta = ath12k_dp_link_peer_get_sta(peer);
+			link_sta = rcu_dereference(sta->link[link_id]);
 			if (!link_sta) {
 				ret = false;
 				goto exit;
@@ -27996,7 +28001,7 @@ void ath12k_mac_wsi_remap_peer_cleanup(struct ath12k_base *ab,
 	ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS, "Bypass: Starting peer cleanup\n");
 	spin_lock_bh(&dp->dp_lock);
 	list_for_each_entry_safe(link_peer, tmp, &dp->peers, list) {
-		sta = link_peer->sta;
+		sta = ath12k_dp_link_peer_get_sta(link_peer);
 		if (!sta)
 			continue;
 

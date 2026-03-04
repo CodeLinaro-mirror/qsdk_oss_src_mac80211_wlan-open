@@ -68,7 +68,6 @@ struct ath12k_peer_event {
 
 struct ath12k_dp_link_peer {
 	struct list_head list;
-	struct ieee80211_sta *sta;
 	struct ath12k_dp_peer *dp_peer;
 	int vdev_id;
 	u8 addr[ETH_ALEN];
@@ -304,6 +303,18 @@ struct ath12k_dp_link_peer *
 ath12k_dp_link_peer_find_by_ml_peer_vdev_id(struct ath12k_dp *dp,
 					    int peer_id,
 					    int vdev_id);
+
+static inline struct ieee80211_sta *
+ath12k_dp_peer_get_sta(const struct ath12k_dp_peer *peer)
+{
+	return peer->sta;
+}
+
+static inline struct ieee80211_sta *
+ath12k_dp_link_peer_get_sta(const struct ath12k_dp_link_peer *link_peer)
+{
+	return link_peer->dp_peer->sta;
+}
 
 static inline struct ieee80211_vif *
 ath12k_dp_peer_get_vif(struct ath12k_dp_peer *peer)

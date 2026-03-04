@@ -8595,7 +8595,7 @@ static void ath12k_atf_offload_reset_stats(struct ath12k *ar)
 
 	spin_lock_bh(&ab_dp->dp_lock);
 	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
-		if (peer->pdev_idx != ar->pdev_idx && !peer->sta)
+		if (peer->pdev_idx != ar->pdev_idx && !ath12k_dp_link_peer_get_sta(peer))
 			continue;
 
 		peer->atf_actual_airtime = 0;
@@ -8629,7 +8629,7 @@ static void ath12k_atf_offload_update_peer_airtime(struct ath12k *ar)
 	dp = ath12k_ab_to_dp(ar->ab);
 	spin_lock_bh(&dp->dp_lock);
 	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
-		if (peer->pdev_idx != ar->pdev_idx && !peer->sta)
+		if (peer->pdev_idx != ar->pdev_idx && !ath12k_dp_link_peer_get_sta(peer))
 			continue;
 		peer_airtime = 0;
 		peer_ul_airtime = 0;
@@ -8738,7 +8738,7 @@ static void ath12k_atf_offload_print_stats(struct timer_list *t)
 		if (peer->pdev_idx != ar->pdev_idx)
 			continue;
 
-		if (!peer->sta)
+		if (!ath12k_dp_link_peer_get_sta(peer))
 			continue;
 
 		memcpy(peer_stats[peer_count].addr, peer->addr, ETH_ALEN);
@@ -8941,7 +8941,7 @@ static int ath12k_vendor_atf_stats_dumpit(struct wiphy *wiphy,
 	tailroom = skb_tailroom(msg);
 	spin_lock_bh(&dp->dp_lock);
 	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
-		if (peer->pdev_idx != ar->pdev_idx && !peer->sta)
+		if (peer->pdev_idx != ar->pdev_idx && !ath12k_dp_link_peer_get_sta(peer))
 			continue;
 
 		if (tailroom <= nested_range)

@@ -129,8 +129,8 @@ int ath12k_telemetry_ab_peer_agent_create(struct ath12k_base *ab)
 
 	spin_lock_bh(&ab->dp->dp_lock);
 	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
-		if (!ath12k_dp_link_peer_get_vif(peer) || !peer->sta ||
-		    !peer->assoc_success)
+		if (!ath12k_dp_link_peer_get_vif(peer) ||
+		    !ath12k_dp_link_peer_get_sta(peer) || !peer->assoc_success)
 			continue;
 
 		if (ath12k_dp_link_peer_get_vif_type(peer) != NL80211_IFTYPE_AP) {
@@ -276,7 +276,8 @@ int ath12k_telemetry_ab_peer_agent_destroy(struct ath12k_base *ab)
 
 	spin_lock_bh(&ab->dp->dp_lock);
 	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
-		if (!ath12k_dp_link_peer_get_vif(peer) || !peer->sta)
+		if (!ath12k_dp_link_peer_get_vif(peer) ||
+		    !ath12k_dp_link_peer_get_sta(peer))
 			continue;
 
 		if (ath12k_dp_link_peer_get_vif_type(peer) != NL80211_IFTYPE_AP)
@@ -484,7 +485,7 @@ static int ath12k_calculate_link_rssi(struct ath12k_dp_link_peer *peer)
 	u8 bw_offset;
 
 	WARN_ON(!rcu_read_lock_held());
-	sta = peer->sta;
+	sta = ath12k_dp_link_peer_get_sta(peer);
 	link_sta = rcu_dereference(sta->link[peer->link_id]);
 	bw = link_sta->bandwidth;
 
@@ -518,7 +519,7 @@ int ath12k_get_peer_stats(int obj_id, void *parent,
 	spin_lock_bh(&ab->dp->dp_lock);
 	peer = ath12k_dp_link_peer_find_by_id(ab->dp, peer_id);
 	if (!peer || peer->is_bridge_peer || !peer->assoc_success ||
-	    !peer->sta) {
+	    !ath12k_dp_link_peer_get_sta(peer)) {
 		spin_unlock_bh(&ab->dp->dp_lock);
 		return -EINVAL;
 	}

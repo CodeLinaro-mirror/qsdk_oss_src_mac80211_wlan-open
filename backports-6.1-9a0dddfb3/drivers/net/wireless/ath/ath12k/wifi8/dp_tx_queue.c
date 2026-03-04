@@ -190,10 +190,10 @@ int ath12k_tx_classify_info_alloc(struct ath12k_dp_hw_group *dp_hw_grp,
 		ti.flow_loop_handler = HAL_WIFITXPT_LOOP_TO_TQM;
 		ti.msdu_drop = 0;
 		ti.metadata = peer ? peer->peer_id : HAL_INVALID_PEERID;
-		if (peer->sta) {
+		if (ath12k_dp_peer_get_sta(peer)) {
 			rcu_read_lock();
-			ahsta = ath12k_sta_to_ahsta(peer->sta);
-			assoc_link_id = peer->sta->mlo ?
+			ahsta = ath12k_sta_to_ahsta(ath12k_dp_peer_get_sta(peer));
+			assoc_link_id = ath12k_dp_peer_get_sta(peer)->mlo ?
 					ahsta->assoc_link_id :
 					ahsta->deflink.link_id;
 			ti.assoc_link_id = ath12k_dp_get_hw_link_id(peer, assoc_link_id);
@@ -795,7 +795,7 @@ void ath12k_peer_free_static_queues(struct ath12k_dp_hw_group *dp_hw_grp,
 	if (peer->is_vdev_peer) {
 		ath12k_peer_free_mcast_queues(dp_hw_grp, peer);
 	} else {
-		if (peer->sta->wme)
+		if (ath12k_dp_peer_get_sta(peer)->wme)
 			is_qos = true;
 		else
 			is_qos = false;

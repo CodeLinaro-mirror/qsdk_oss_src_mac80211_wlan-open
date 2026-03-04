@@ -186,7 +186,7 @@ int ath12k_dp_peer_setup(struct ath12k *ar, struct ath12k_link_vif *arvif, const
 		goto free_shash;
 	}
 
-	sta = peer->sta;
+	sta = ath12k_dp_link_peer_get_sta(peer);
 	ahsta = ath12k_sta_to_ahsta(sta);
 	if (peer->mlo && peer->link_id != ahsta->primary_link_id) {
 		peer->primary_link = false;

@@ -1419,8 +1419,8 @@ ath12k_dp_mon_rx_update_peer_stats_ds(struct ath12k_pdev_dp *pdev_dp,
 			continue;
 
 #ifdef CPTCFG_MAC80211_DS_SUPPORT
-		ieee80211_rx_update_stats(ar->ah->hw, peer->sta, peer->link_id,
-					  ppdu_info->mpdu_len, &status);
+		ieee80211_rx_update_stats(ar->ah->hw, ath12k_dp_link_peer_get_sta(peer),
+					  peer->link_id, ppdu_info->mpdu_len, &status);
 #endif
 	}
 }
