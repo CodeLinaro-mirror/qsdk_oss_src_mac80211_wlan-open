@@ -115,7 +115,7 @@ struct ath12k_generic_iter {
 #define ATH12K_ERP_BRIDGE_VDEV_REMOVAL_THRESHOLD	2
 
 /* Default management Tx retry limit in firmware */
-#define ATH12K_MGMT_TX_RETRY_LIMIT_DEFAULT 3
+#define ATH12K_MGMT_TX_RETRY_LIMIT_DEFAULT 4
 
 enum ath12k_supported_bw {
 	ATH12K_BW_20    = 0,
