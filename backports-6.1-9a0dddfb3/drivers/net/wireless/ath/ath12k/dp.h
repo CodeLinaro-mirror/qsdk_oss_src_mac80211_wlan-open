@@ -54,6 +54,7 @@ struct ath12k_ext_irq_grp;
 struct ath12k_dp_rx_tid;
 struct ath12k_hal_reo_cmd;
 struct hal_reo_dest_ring;
+struct hal_reo_status;
 enum hal_wbm_rel_bm_act;
 struct dp_rx_fst;
 struct ath12k_dp_mon;
@@ -516,11 +517,11 @@ struct ath12k_dp_arch_ops {
 					  u8 link_id,
 					  bool vdev_id_check_en);
 	int (*dp_reo_cmd_send)(struct ath12k_base *ab,
-			       struct ath12k_dp_rx_tid *rx_tid,
+			       void *data, size_t len,
 			       enum hal_reo_cmd_type type,
 			       struct ath12k_hal_reo_cmd *cmd,
 			       void (*cb)(struct ath12k_dp *dp, void *ctx,
-				          enum hal_reo_cmd_status status));
+						  struct hal_reo_status *status));
 	void (*setup_pn_check_reo_cmd)(struct ath12k_hal_reo_cmd *cmd,
 				       struct ath12k_dp_rx_tid *rx_tid,
 				       u32 cipher, enum set_key_cmd key_cmd);
@@ -1026,13 +1027,13 @@ static inline u32 ath12k_dp_arch_tx_get_vdev_bank_config(struct ath12k_dp *dp,
 }
 
 static inline int ath12k_dp_arch_reo_cmd_send(struct ath12k_dp *dp,
-					      struct ath12k_dp_rx_tid *rx_tid,
+					      void *data, size_t len,
 					      enum hal_reo_cmd_type type,
 					      struct ath12k_hal_reo_cmd *cmd,
 					      void (*cb)(struct ath12k_dp *dp, void *ctx,
-							 enum hal_reo_cmd_status status))
+							 struct hal_reo_status *status))
 {
-	return dp->arch_ops->dp_reo_cmd_send(dp->ab, rx_tid, type, cmd, cb);
+	return dp->arch_ops->dp_reo_cmd_send(dp->ab, data, len, type, cmd, cb);
 }
 
 static inline void ath12k_dp_arch_setup_pn_check_reo_cmd(struct ath12k_dp *dp,

@@ -110,11 +110,11 @@ static void ath12k_wifi7_dp_clean_up_skb_list(struct sk_buff_head *skb_list)
 }
 
 int ath12k_wifi7_dp_reo_cmd_send(struct ath12k_base *ab,
-				 struct ath12k_dp_rx_tid *rx_tid,
+				 void *data, size_t len,
 				 enum hal_reo_cmd_type type,
 				 struct ath12k_hal_reo_cmd *cmd,
 				 void (*cb)(struct ath12k_dp *dp, void *ctx,
-					    enum hal_reo_cmd_status status))
+					    struct hal_reo_status *status))
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_dp_rx_reo_cmd *dp_cmd;
@@ -148,7 +148,9 @@ int ath12k_wifi7_dp_reo_cmd_send(struct ath12k_base *ab,
 	if (!dp_cmd)
 		return -ENOMEM;
 
-	memcpy(&dp_cmd->data, rx_tid, sizeof(*rx_tid));
+	if (WARN_ON(len > sizeof(dp_cmd->u)))
+		return -EINVAL;
+	memcpy(&dp_cmd->u.data, data, len);
 	dp_cmd->cmd_num = cmd_num;
 	dp_cmd->handler = cb;
 
@@ -180,7 +182,7 @@ int ath12k_wifi7_dp_reo_cache_flush(struct ath12k_base *ab,
 	if (rx_tid->tid != HAL_NON_QOS_TID)
 		cmd.flag |= HAL_REO_CMD_FLG_FLUSH_QUEUE_1K_DESC;
 
-	ret = ath12k_wifi7_dp_reo_cmd_send(ab, rx_tid,
+	ret = ath12k_wifi7_dp_reo_cmd_send(ab, rx_tid, sizeof(*rx_tid),
 					   HAL_REO_CMD_FLUSH_CACHE,
 					   &cmd, ath12k_dp_reo_cmd_free);
 
@@ -228,19 +230,19 @@ void ath12k_wifi7_peer_rx_tid_qref_setup(struct ath12k_base *ab, u16 peer_id, u1
 }
 
 void ath12k_wifi7_dp_rx_tid_del_func(struct ath12k_dp *dp, void *ctx,
-				     enum hal_reo_cmd_status status)
+				     struct hal_reo_status *status)
 {
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_dp_rx_tid *rx_tid = ctx, *update_rx_tid;
 	struct ath12k_dp_rx_reo_cache_flush_elem *elem, *tmp;
 	struct dp_reo_update_rx_queue_elem *qelem, *qtmp;
 
-	if (status == HAL_REO_CMD_DRAIN) {
+	if (!status || status->uniform_hdr.cmd_status == HAL_REO_CMD_DRAIN) {
 		goto free_desc;
-	} else if (status != HAL_REO_CMD_SUCCESS) {
+	} else if (status->uniform_hdr.cmd_status != HAL_REO_CMD_SUCCESS) {
 		/* Shouldn't happen! Cleanup in case of other failure? */
 		ath12k_warn(ab, "failed to delete rx tid %d hw descriptor %d\n",
-			    rx_tid->tid, status);
+			    rx_tid->tid, status->uniform_hdr.cmd_status);
 		return;
 	}
 
@@ -339,7 +341,7 @@ static int ath12k_wifi7_peer_rx_tid_delete_handler(struct ath12k_base *ab,
 			      rx_tid->ba_win_sz : DP_BA_WIN_SZ_MAX;
 	cmd.upd1 |= HAL_REO_CMD_UPD1_VLD;
 
-	return ath12k_wifi7_dp_reo_cmd_send(ab, rx_tid,
+	return ath12k_wifi7_dp_reo_cmd_send(ab, rx_tid, sizeof(*rx_tid),
 					    HAL_REO_CMD_UPDATE_RX_QUEUE, &cmd,
 					    ath12k_wifi7_dp_rx_tid_del_func);
 }
@@ -511,7 +513,7 @@ int ath12k_wifi7_peer_rx_tid_reo_update(struct ath12k *ar,
 		cmd.upd2 = u32_encode_bits(ssn, HAL_REO_CMD_UPD2_SSN);
 	}
 
-	ret = ath12k_wifi7_dp_reo_cmd_send(ar->ab, rx_tid,
+	ret = ath12k_wifi7_dp_reo_cmd_send(ar->ab, rx_tid, sizeof(*rx_tid),
 					   HAL_REO_CMD_UPDATE_RX_QUEUE, &cmd,
 					   NULL);
 	if (ret) {
@@ -3874,8 +3876,7 @@ void ath12k_wifi7_dp_rx_process_reo_status(struct ath12k_dp *dp)
 		spin_unlock_bh(&dp->reo_cmd_lock);
 
 		if (found) {
-			cmd->handler(dp, (void *)&cmd->data,
-				     reo_status.uniform_hdr.cmd_status);
+			cmd->handler(dp, &cmd->u.data, &reo_status);
 			kfree(cmd);
 		}
 
@@ -4214,7 +4215,7 @@ int ath12k_wifi7_dp_peer_migrate_reo_cmd(struct ath12k_dp *dp,
 		cmd.addr_lo = lower_32_bits(rx_tid->paddr);
 		cmd.addr_hi = upper_32_bits(rx_tid->paddr);
 		cmd.flag |= HAL_REO_CMD_FLG_NEED_STATUS;
-		ret = ath12k_wifi7_dp_reo_cmd_send(ab, rx_tid,
+		ret = ath12k_wifi7_dp_reo_cmd_send(ab, rx_tid, sizeof(*rx_tid),
 						   HAL_REO_CMD_FLUSH_QUEUE,
 						   &cmd, NULL);
 		if (ret) {
@@ -4234,7 +4235,7 @@ int ath12k_wifi7_dp_peer_migrate_reo_cmd(struct ath12k_dp *dp,
 	cmd.flag |= HAL_REO_CMD_FLG_NEED_STATUS;
 	cmd.flag |= HAL_REO_CMD_FLG_FLUSH_ALL;
 
-	ret = ath12k_wifi7_dp_reo_cmd_send(ab, rx_tid,
+	ret = ath12k_wifi7_dp_reo_cmd_send(ab, rx_tid, sizeof(*rx_tid),
 					   HAL_REO_CMD_FLUSH_CACHE,
 					   &cmd,
 					   ath12k_dp_primary_peer_migrate_setup);
@@ -4246,7 +4247,7 @@ int ath12k_wifi7_dp_peer_migrate_reo_cmd(struct ath12k_dp *dp,
 	cmd.flag = 0;
 	cmd.flag = HAL_REO_CMD_FLG_UNBLK_CACHE;
 
-	ret = ath12k_wifi7_dp_reo_cmd_send(ab, rx_tid,
+	ret = ath12k_wifi7_dp_reo_cmd_send(ab, rx_tid, sizeof(*rx_tid),
 					  HAL_REO_CMD_UNBLOCK_CACHE,
 					  &cmd, NULL);
 	if (ret)
