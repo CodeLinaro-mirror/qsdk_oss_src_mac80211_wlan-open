@@ -185,24 +185,14 @@ ath12k_wifi8_dp_mon_rx_parse_status_buf(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	if (ppdu_info->mpdu_info[user_id].decap_type == DP_RX_DECAP_TYPE_RAW) {
-		if (ppdu_info->mpdu_info[user_id].first_rx_hdr_rcvd) {
-			ath12k_dp_mon_skb_remove_frag(dp, tmp_skb, 0,
-						      ATH12K_DP_MON_RX_BUF_SIZE);
-			ath12k_dp_mon_add_rx_frag(tmp_skb, mon_buf,
-						  ATH12K_MON_RX_PKT_OFFSET,
-						  pkt_len, false);
-			ppdu_info->mpdu_info[user_id].first_rx_hdr_rcvd = false;
-		} else {
-			ath12k_dp_mon_add_rx_frag(tmp_skb, mon_buf,
-						  ATH12K_MON_RX_PKT_OFFSET,
-						  pkt_len, false);
+		ath12k_dp_mon_add_rx_frag(tmp_skb, mon_buf, ATH12K_MON_RX_PKT_OFFSET,
+					  pkt_len, false);
 
-			/* Adjust parent skb length if a fragment gets added to the skb
-			 * which got fetched from frag_list.
-			 */
-			if (tmp_skb != skb)
-				ath12k_dp_mon_update_skb_len(skb, pkt_len);
-		}
+		/* Adjust parent skb length if a fragment gets added to the skb
+		 * which got fetched from frag_list.
+		 */
+		if (tmp_skb != skb)
+			ath12k_dp_mon_update_skb_len(skb, pkt_len);
 
 		mon_stats->pkt_tlv_processed++;
 	} else {
@@ -269,10 +259,11 @@ ath12k_wifi8_dp_mon_parse_status_rx_hdr(struct ath12k_pdev_dp *dp_pdev,
 
 		mon_stats->num_skb_alloc++;
 		skb_queue_tail(&ppdu_info->mpdu_q[user_id], skb);
-		ath12k_dp_mon_add_rx_frag(skb, mon_buf, offset, frag_len, true);
+
+		if (ppdu_info->mpdu_info[user_id].decap_type != DP_RX_DECAP_TYPE_RAW)
+			ath12k_dp_mon_add_rx_frag(skb, mon_buf, offset, frag_len, true);
+
 		ppdu_info->mpdu_info[user_id].mpdu_start_received = true;
-		ppdu_info->mpdu_info[user_id].first_rx_hdr_rcvd = true;
-		ppdu_info->mpdu_info[user_id].decap_type = DP_RX_DECAP_TYPE_INVALID;
 
 		/*
 		 * The first 64 bytes of skb->data are used for storing MPDU metadata.
