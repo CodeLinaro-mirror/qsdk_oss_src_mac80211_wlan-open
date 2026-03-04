@@ -469,6 +469,9 @@ enum ath12k_dbg_htt_ext_stats_type {
 	ATH12K_DBG_HTT_DBG_EXT_STATS_ANI_HISTOGRAM		= 81,
 	ATH12K_DBG_HTT_DBG_EXT_STATS_RESET_HISTORY		= 82,
 	ATH12K_DBG_HTT_STATS_REGULATORY				= 83,
+	ATH12K_DBG_HTT_DBG_EXT_STATS_DPD_STATS_EXT		= 85,
+
+	/* keep this last */
 	ATH12K_DBG_HTT_NUM_EXT_STATS,
 };
 
@@ -694,6 +697,9 @@ enum ath12k_dbg_htt_tlv_tag {
 	HTT_STATS_REG_6G_CH_PWR_INFO_TAG		= 250,
 	HTT_STATS_REG_6G_OOBE_TAG			= 251,
 	HTT_STATS_TX_SELFGEN_RESP_FRAME_STATS_TAG       = 252,
+	HTT_STATS_DPD_HALPHY_TAG				= 253,
+	HTT_STATS_DPD_HW_CAL_PARAMS_TAG			= 254,
+	HTT_STATS_DPD_HW_CAL_RESULTS_TAG		= 255,
 	HTT_STATS_TX_PDEV_TXOP_DUR_TAG                  = 256,
 	HTT_STATS_TXQ_COMBINED_SEQ_STATE_TAG            = 257,
 	HTT_STATS_CTL_TAG                               = 258,
@@ -3992,6 +3998,7 @@ struct ath12k_htt_dl_pager_stats_tlv {
 #define ATH12K_HTT_MAX_PHY_TX_ABORT_CNT		10
 #define ATH12K_HTT_MAX_NEGATIVE_POWER_LEVEL 10 /* 0 to -10 dBm */
 #define ATH12K_HTT_MAX_POWER_LEVEL 32 /* 0 to 32 dBm */
+#define ATH12K_HTT_MAX_DPD_CAL_TABLE 12
 
 #define HTT_STATS_ANI_MODE_M	GENMASK(7, 0)
 #define HTT_STATS_CURR_EANI_MODE_M  GENMASK(7, 0)
@@ -6519,6 +6526,7 @@ struct ath12k_htt_stats_tx_selfgen_resp_frame_stats_tlv {
 	struct ath12k_htt_stats_whal_selfgen_resp_frame_entry
 		frame_data[ATH12K_HTT_STATS_RESP_FRAME_TYPE_MAX];
 } __packed;
+
 #define HTT_STATS_RESET_HISTORY_MAX_ENTRIES 10
 
 /**
@@ -6576,5 +6584,48 @@ struct htt_stats_reset_history_tlv {
 #define HTT_STATS_RESET_HISTORY_PHY_ID_GET                      GENMASK(23, 16)
 #define HTT_STATS_RESET_HISTORY_SWPROFILE_GET                   GENMASK(31, 24)
 #define HTT_STATS_RESET_HISTORY_IS_HOME_CHAN_GET                GENMASK(0, 0)
+
+struct ath12k_htt_stats_dpd_halphy_tlv {
+	__le32 pdev_id;
+	__le32 dpd_cal_start_time;
+	__le32 dpd_cal_end_time;
+	__le32 total_tx_pass_cnt;
+	__le32 total_tx_fail_cnt;
+	__le32 dpd_trigger_reason;
+	a_sle32 dpd_training_temp[ATH12K_HTT_STATS_MAX_CHAINS]
+		[ATH12K_HTT_MAX_DPD_CAL_TABLE];
+	a_sle32 cal_start_temp;
+	a_sle32 cal_end_temp;
+	__le32 cal_channel;
+	__le32 cal_phy_mode;
+	__le32 cal_chan_flags;
+	__le32 mem_dpd_post_proc_trigger_cnt;
+	__le32 mem_dpd_post_proc_complete_cnt;
+	__le32 sch_cmd_result_per_chain[ATH12K_HTT_STATS_MAX_CHAINS]
+		[ATH12K_HTT_MAX_DPD_CAL_TABLE];
+	__le32 tx_status_per_chain[ATH12K_HTT_STATS_MAX_CHAINS]
+		[ATH12K_HTT_MAX_DPD_CAL_TABLE];
+	__le32 dpd_cal_state;
+	__le32 dpd_cal_status;
+	__le32 dpd_fail_reason;
+} __packed;
+
+struct ath12k_htt_stats_dpd_hw_cal_parm_tlv {
+	__le32 dpd_rx_gain[ATH12K_HTT_STATS_MAX_CHAINS]
+		[ATH12K_HTT_MAX_DPD_CAL_TABLE];
+	__le32 tpc_gain_idx[ATH12K_HTT_STATS_MAX_CHAINS]
+		[ATH12K_HTT_MAX_DPD_CAL_TABLE];
+	__le32 tpc_glut[ATH12K_HTT_STATS_MAX_CHAINS]
+		[ATH12K_HTT_MAX_DPD_CAL_TABLE];
+} __packed;
+
+struct ath12k_htt_stats_dpd_hw_cal_res_tlv {
+	__le32 sq_value[ATH12K_HTT_STATS_MAX_CHAINS]
+		[ATH12K_HTT_MAX_DPD_CAL_TABLE];
+	__le32 sq_idx[ATH12K_HTT_STATS_MAX_CHAINS]
+		[ATH12K_HTT_MAX_DPD_CAL_TABLE];
+	a_sle32 nmse_chain[ATH12K_HTT_STATS_MAX_CHAINS]
+		[ATH12K_HTT_MAX_DPD_CAL_TABLE];
+} __packed;
 
 #endif
