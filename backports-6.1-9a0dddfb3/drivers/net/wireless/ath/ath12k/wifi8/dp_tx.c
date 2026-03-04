@@ -1075,7 +1075,7 @@ ath12k_wifi8_dp_tx_populate_tcl_desc(struct ath12k_pdev_dp *dp_pdev,
 			      FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_INDEX_LOOKUP_OVERRIDE,
 					 ast_overwrite);
 	hal_tcl_desc->search_index = ast_idx;
-
+	hal_tcl_desc->tcl_cmd_number = dp_link_vif->tcl_metadata;
 	hal_tcl_desc->info3 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO3_LINK_ID,
 					 HAL_TX_WILD_CARD_LINK_ID);
 	hal_tcl_desc->info5 = 0;
@@ -1140,12 +1140,11 @@ ath12k_wifi8_dp_tx_populate_tcl_desc(struct ath12k_pdev_dp *dp_pdev,
 				    dp_vif->dp_vif_id) |
 			 FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_DATA_LENGTH, skb->len);
 
-	hal_tcl_desc->info1 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_CACHE_SET_NUM, ast_hash) |
-			      FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_INDEX_LOOKUP_OVERRIDE,
-					 ast_overwrite);
-	hal_tcl_desc->search_index = ast_idx;
-
-	tcl_desc.tcl_cmd_number =  dp_link_vif->tcl_metadata;
+	tcl_desc.info1 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_CACHE_SET_NUM, ast_hash) |
+			 FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_INDEX_LOOKUP_OVERRIDE,
+				    ast_overwrite);
+	tcl_desc.search_index = ast_idx;
+	tcl_desc.tcl_cmd_number = dp_link_vif->tcl_metadata;
 	tcl_desc.info3 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO3_LINK_ID,
 				    HAL_TX_WILD_CARD_LINK_ID);
 	tcl_desc.info5 = 0;
