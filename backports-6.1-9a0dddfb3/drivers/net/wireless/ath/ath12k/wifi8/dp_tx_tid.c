@@ -11,6 +11,9 @@
 #include "../ini.h"
 #include "../dp_tx.h"
 
+#define ATH12K_FRAME_HEADER_SIZE 24
+#define ATH12K_QOS_FRAME_HEADER_SIZE 26
+
 struct ath12k_dp_mpdu_q_info
 *ath12k_alloc_peer_tid_mpduq(struct ath12k_dp_hw_group *dp_hw_grp,
 			     struct ath12k_dp_peer *peer,
@@ -86,6 +89,9 @@ u32 ath12k_wifi8_dp_tx_get_he_header_length(struct ath12k_dp_hw_group *dp_hw_grp
 	if (!peer || !peer->sta)
 		return 0;
 
+	if (tid_num >= NON_QOS_TID)
+		return 0;
+
 	rcu_read_lock();
 	for (i = 0; i < ATH12K_NUM_MAX_LINKS; i++) {
 		link_peer = rcu_dereference(peer->link_peers[i]);
@@ -108,19 +114,31 @@ u32 ath12k_wifi8_dp_tx_get_he_header_length(struct ath12k_dp_hw_group *dp_hw_grp
 	if (arsta->arvif->ahvif->vif->type == NL80211_IFTYPE_STATION &&
 	    peer->is_sta_bss_peer && peer->sta->wme &&
 	    rep_ul_resp &&
-	    ht_he_cap) {
-		if (tid_num < NON_QOS_TID)
+	    ht_he_cap)
 			header_size = 4;
-	}
+
 	rcu_read_unlock();
 	return header_size;
 }
 
 static inline
 u32 ath12k_wifi8_dp_tx_get_header_length(struct ath12k_dp_hw_group *dp_hw_grp,
-					 struct ath12k_dp_peer *peer, u8 tid_num)
+					 struct ath12k_dp_peer *peer,
+					 struct hal_tx_mpdu_queue_head_info *ti,
+					 u8 tid_num)
 {
 	u32 header_len = 0;
+
+	if (ti->encap_type == ATH12K_HW_TXRX_RAW || ti->is_mgmtq) {
+		header_len = 0;
+		return header_len;
+	}
+
+	/* Set header length based on QoS vs non-QoS data TID */
+	if (ti->tid > MAX_VALID_DATA_TID)
+		header_len += ATH12K_FRAME_HEADER_SIZE;
+	else
+		header_len += ATH12K_QOS_FRAME_HEADER_SIZE;
 
 	if (peer->is_sta_bss_peer_4addr ||
 	    (peer->is_11s_mesh_peer && !peer->is_vdev_peer))
@@ -195,7 +213,7 @@ int ath12k_tx_send_mpduq_init(struct ath12k_dp_hw_group *dp_hw_grp,
 	ti.mlo = peer->is_mlo;
 	ti.pn_dma_addr = sw_mpduq_ptr->pn_addr;
 	ti.header_len = ath12k_wifi8_dp_tx_get_header_length(dp_hw_grp, peer,
-							     tid_num);
+							     &ti, tid_num);
 
 	return ath12k_wifi8_hal_tx_mpdu_queue_setup(dp_hw_grp,
 						    sw_mpduq_ptr->mpduq_id,
