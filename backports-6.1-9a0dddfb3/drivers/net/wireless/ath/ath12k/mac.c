@@ -949,6 +949,9 @@ ath12k_mac_get_tx_arvif(struct ath12k_link_vif *arvif,
 	struct ieee80211_bss_conf *tx_bss_conf;
 	struct ath12k_vif *tx_ahvif;
 
+	if (!arvif->ar)
+		return NULL;
+
 	lockdep_assert_wiphy(ath12k_ar_to_hw(arvif->ar)->wiphy);
 
 	tx_bss_conf = wiphy_dereference(ath12k_ar_to_hw(arvif->ar)->wiphy,
