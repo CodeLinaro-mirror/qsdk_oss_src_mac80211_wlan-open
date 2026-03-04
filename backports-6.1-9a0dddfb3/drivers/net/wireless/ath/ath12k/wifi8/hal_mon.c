@@ -3069,6 +3069,21 @@ ath12k_wifi8_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 	case HAL_DUMMY:
 		return HAL_RX_MON_STATUS_BUF_DONE;
 	case HAL_RX_HEADER:
+		const struct hal_mon_rx_hdr *rx_hdr = tlv_data;
+
+		if (userid < HAL_MAX_UL_MU_USERS) {
+			ppdu_info->mpdu_info[userid].raw_mpdu =
+				le32_get_bits(rx_hdr->info0,
+					      HAL_MON_RX_HDR_INFO0_RAW_MPDU);
+
+			if (ppdu_info->mpdu_info[userid].raw_mpdu)
+				ppdu_info->mpdu_info[userid].decap_type =
+						DP_RX_DECAP_TYPE_RAW;
+			else
+				ppdu_info->mpdu_info[userid].decap_type =
+					le32_get_bits(rx_hdr->info0,
+						      HAL_MON_RX_HDR_INFO0_DECAP_TYPE);
+		}
 		return HAL_RX_MON_STATUS_RX_HDR;
 	case HAL_MON_DROP:
 		ppdu_info->is_drop_tlv = true;

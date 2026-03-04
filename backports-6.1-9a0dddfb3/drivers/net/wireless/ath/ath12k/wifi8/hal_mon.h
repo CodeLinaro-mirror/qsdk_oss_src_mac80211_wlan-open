@@ -873,6 +873,23 @@ struct hal_rx_mon_ppdu_end_user_stats_compact {
 	__le32 info11;
 } __packed;
 
+enum hal_mon_rx_hdr_pkt_type {
+	HAL_MON_RX_HDR_PKT_TYPE_MGMT,
+	HAL_MON_RX_HDR_PKT_TYPE_CTRL,
+	HAL_MON_RX_HDR_PKT_TYPE_DATA,
+	HAL_MON_RX_HDR_PKT_TYPE_RSVD,
+};
+
+#define HAL_MON_RX_HDR_INFO0_PKT_TYPE		GENMASK(1, 0)
+#define HAL_MON_RX_HDR_INFO0_MPDU_FILTER_TYPE	GENMASK(5, 4)
+#define HAL_MON_RX_HDR_INFO0_DECAP_TYPE		GENMASK(7, 6)
+#define HAL_MON_RX_HDR_INFO0_RAW_MPDU		BIT(8)
+
+struct hal_mon_rx_hdr {
+	__le32 rsvd;
+	__le32 info0;
+} __packed;
+
 static __always_inline void
 ath12k_wifi8_hal_mon_parse_rx_msdu_end_err(u32 info, u32 *errmap)
 {
