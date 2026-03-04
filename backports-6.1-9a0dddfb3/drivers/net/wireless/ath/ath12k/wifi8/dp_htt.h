@@ -290,4 +290,5 @@ int ath12k_dp_rx_htt_ast_info_setup(struct ath12k_base *ab,
 void ath12k_dp_htt_peer_cleanup_indication(struct ath12k_dp *dp,
 					   struct sk_buff *skb);
 int ath12k_wifi8_dp_msdu_htt_connect(struct ath12k_dp *dp);
+void ath12k_dp_tx_htt_retry_work(struct work_struct *work);
 #endif

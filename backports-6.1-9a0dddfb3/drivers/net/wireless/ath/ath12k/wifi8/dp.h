@@ -21,6 +21,11 @@
 struct ath12k_base;
 struct ath12k_dp;
 
+struct ath12k_dp_htt_cmd_retry_info {
+	DECLARE_BITMAP(htt_retry_peer_id_map, ATH12K_MAX_PEER_ID);
+	u8 retry_count;
+};
+
 struct ath12k_dp_wifi8 {
 	struct ath12k_dp *dp;
 	bool cumac;
@@ -48,6 +53,12 @@ struct ath12k_dp_hw_group_wifi8 {
 	spinlock_t tx_pool_lock;
 	u8 num_pn_pages;
 	struct completion peer_init_done;
+
+	struct ath12k_dp_htt_cmd_retry_info retry_info[ATH12K_GROUP_MAX_RADIO];
+	/* lock for htt cmd retry info */
+	spinlock_t htt_cmd_retry_lock;
+	struct delayed_work dp_htt_retry_dwork;
+	atomic_t retry_work_active;
 };
 
 static inline struct ath12k_dp_wifi8 *ath12k_get_dp_wifi8(struct ath12k_dp *dp)

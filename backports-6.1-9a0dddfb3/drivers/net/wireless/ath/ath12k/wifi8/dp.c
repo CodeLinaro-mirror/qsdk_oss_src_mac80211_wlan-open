@@ -206,6 +206,8 @@ static void ath12k_wifi8_dp_umac_deinit(struct ath12k_dp *dp)
 	ath12k_wifi8_dp_tx_pool_destroy(dp->dp_hw_grp);
 
 	dp_hw_group_wifi8 = ath12k_get_dp_hw_group_wifi8(dp->dp_hw_grp);
+	atomic_set(&dp_hw_group_wifi8->retry_work_active, 0);
+	cancel_delayed_work_sync(&dp_hw_group_wifi8->dp_htt_retry_dwork);
 	dp_hw_group_wifi8->cumac_dp = NULL;
 	ath12k_info(ab, "CUMAC de-init successful");
 }
@@ -386,8 +388,12 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 		goto fail_pn_counter_page_free;
 	}
 
-	ath12k_wifi8_enable_hif_interrupts(dp, ath12k_wifi8_cumac_dp_service_srng);
+	spin_lock_init(&dp_hw_group_wifi8->htt_cmd_retry_lock);
+	INIT_DELAYED_WORK(&dp_hw_group_wifi8->dp_htt_retry_dwork,
+			  ath12k_dp_tx_htt_retry_work);
+	atomic_set(&dp_hw_group_wifi8->retry_work_active, 1);
 
+	ath12k_wifi8_enable_hif_interrupts(dp, ath12k_wifi8_cumac_dp_service_srng);
 	ath12k_info(ab, "CUMAC init successful");
 	return 0;
 fail_pn_counter_page_free:
