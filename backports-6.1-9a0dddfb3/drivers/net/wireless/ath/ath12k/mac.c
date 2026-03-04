@@ -25077,6 +25077,7 @@ static void ath12k_mac_fetch_coex_info(struct ath12k *ar)
                 ath12k_err(ab, "No qcom,pta-priority entry in dev-tree.\n");
         }
 
+	ar->coex.pta_algorithm = ar->coex.coex_algo_type;
         if (ar->coex.coex_algo_type == COEX_ALGO_OCS) {
                 ar->coex.duty_cycle = 100000;
                 ar->coex.wlan_duration = 80000;
