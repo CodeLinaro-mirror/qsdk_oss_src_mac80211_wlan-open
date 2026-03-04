@@ -715,9 +715,8 @@ void ath12k_qos_stats_update(struct ath12k *ar, struct sk_buff *skb,
 				   link_id);
 			return;
 		}
-
-		if (link_peer->vif) {
-			ahvif = ath12k_vif_to_ahvif(link_peer->vif);
+		if (ath12k_dp_peer_get_vif(mld_peer)) {
+			ahvif = ath12k_vif_to_ahvif(ath12k_dp_peer_get_vif(mld_peer));
 		} else {
 			ath12k_err(ar->ab, "vif not present with link_id: %u\n",
 				   link_id);
@@ -2942,14 +2941,14 @@ void ath12k_ppeds_tx_update_stats(struct ath12k *ar, int skb_len,
 	rcu_read_lock();
 
 	peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev, ts.peer_id);
-	if (unlikely(!peer || !peer->sta || !peer->vif)) {
+	if (unlikely(!peer || !peer->sta || !ath12k_dp_link_peer_get_vif(peer))) {
 		rcu_read_unlock();
 		return;
 	}
 
 	if (ath12k_dp_stats_enabled(dp_pdev) &&
 	    ath12k_tid_stats_enabled(dp_pdev)) {
-		ahvif = ath12k_vif_to_ahvif(peer->vif);
+		ahvif = ath12k_vif_to_ahvif(ath12k_dp_link_peer_get_vif(peer));
 		if (tx_drop) {
 			ath12k_tid_tx_drop_stats(ahvif, ts.tid, skb_len,
 						 reason);
@@ -3196,7 +3195,6 @@ static int ath12k_wifi8_dp_tx_null_flowq_handler(
 	u8 hw_link_id, link_id;
 	bool non_qos, is_tcp, is_udp, mcast;
 	u8 bank_id;
-	struct ath12k_dp_link_peer *link_peer;
 	struct ath12k_vif *ahvif;
 	struct ath12k_dp_vif *dp_vif;
 	int ret;
@@ -3236,15 +3234,8 @@ static int ath12k_wifi8_dp_tx_null_flowq_handler(
 		link_id = ath12k_dp_get_link_id(dp_pdev, hw_link_id, peer);
 
 	if (link_id < ATH12K_NUM_MAX_LINKS) {
-		link_peer = rcu_dereference(peer->link_peers[link_id]);
-		if (!link_peer) {
-			ath12k_err(dp->ab, "link_peer is invalid for link_id %d",
-				   link_id);
-			ret = -EINVAL;
-			goto end;
-		}
-		if (link_peer->vif) {
-			ahvif = ath12k_vif_to_ahvif(link_peer->vif);
+		if (ath12k_dp_peer_get_vif(peer)) {
+			ahvif = ath12k_vif_to_ahvif(ath12k_dp_peer_get_vif(peer));
 		} else {
 			ath12k_err(dp->ab, "vif is invalid for link_id %d",
 				   link_id);

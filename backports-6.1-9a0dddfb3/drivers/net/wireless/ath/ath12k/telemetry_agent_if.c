@@ -129,10 +129,11 @@ int ath12k_telemetry_ab_peer_agent_create(struct ath12k_base *ab)
 
 	spin_lock_bh(&ab->dp->dp_lock);
 	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
-		if (!peer->vif || !peer->sta || !peer->assoc_success)
+		if (!ath12k_dp_link_peer_get_vif(peer) || !peer->sta ||
+		    !peer->assoc_success)
 			continue;
 
-		if (ath12k_peer_get_peer_type(peer) != NL80211_IFTYPE_AP) {
+		if (ath12k_dp_link_peer_get_vif_type(peer) != NL80211_IFTYPE_AP) {
 			ath12k_dbg(NULL, ATH12K_DBG_RM,
 				   "Peer reference for non sta type is not supported\n");
 			continue;
@@ -275,10 +276,10 @@ int ath12k_telemetry_ab_peer_agent_destroy(struct ath12k_base *ab)
 
 	spin_lock_bh(&ab->dp->dp_lock);
 	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
-		if (!peer->vif || !peer->sta)
+		if (!ath12k_dp_link_peer_get_vif(peer) || !peer->sta)
 			continue;
 
-		if (ath12k_peer_get_peer_type(peer) != NL80211_IFTYPE_AP)
+		if (ath12k_dp_link_peer_get_vif_type(peer) != NL80211_IFTYPE_AP)
 			continue;
 
 		pdev = &ab->pdevs[peer->pdev_idx];
@@ -657,7 +658,7 @@ int ath12k_telemetry_peer_agent_create_handler(struct ath12k *ar,
 		return -EINVAL;
 
 	/* Create only for STA type */
-	if (ath12k_peer_get_peer_type(peer) != NL80211_IFTYPE_AP)
+	if (ath12k_dp_link_peer_get_vif_type(peer) != NL80211_IFTYPE_AP)
 		return -EOPNOTSUPP;
 
 	ath12k_telemetry_peer_agent_update(ab, pdev, peer, true);
@@ -689,7 +690,7 @@ int ath12k_telemetry_peer_agent_delete_handler(struct ath12k *ar,
 	}
 
 	/* Create only for STA type */
-	if (ath12k_peer_get_peer_type(peer) != NL80211_IFTYPE_AP) {
+	if (ath12k_dp_link_peer_get_vif_type(peer) != NL80211_IFTYPE_AP) {
 		ath12k_dbg(NULL, ATH12K_DBG_RM,
 			   "Peer reference for non sta type is not supported\n");
 		return -EOPNOTSUPP;

@@ -164,12 +164,12 @@ ath12k_dp_ppdu_stats_flush_tlv_parse(struct ath12k_base *ab,
 		return;
 	}
 
-	if (peer->vif->type != NL80211_IFTYPE_MESH_POINT) {
+	if (ath12k_dp_link_peer_get_vif_type(peer) != NL80211_IFTYPE_MESH_POINT) {
 		rcu_read_unlock();
 		return;
 	}
 
-	if (ether_addr_equal(peer->addr, peer->vif->addr)) {
+	if (ether_addr_equal(peer->addr, ath12k_dp_link_peer_get_vif(peer)->addr)) {
 		rcu_read_unlock();
 		return;
 	}
@@ -826,7 +826,7 @@ ath12k_update_extd_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 			ath12k_tid_to_ac(tid > ATH12K_DSCP_PRIORITY ? 0 : tid);
 	dp_pdev->wmm_stats.total_wmm_tx_pkts[dp_pdev->wmm_stats.tx_type]++;
 
-	ahvif = ath12k_vif_to_ahvif(peer->vif);
+	ahvif = ath12k_vif_to_ahvif(ath12k_dp_link_peer_get_vif(peer));
 	ahvif->wmm_stats.tx_type = dp_pdev->wmm_stats.tx_type;
 	ahvif->wmm_stats.total_wmm_tx_pkts[ahvif->wmm_stats.tx_type]++;
 
@@ -945,8 +945,8 @@ ath12k_htt_update_tx_rate_stats(struct ath12k_dp_link_peer *peer,
 	else
 		WEIGHTED_AVG_UPDATE(tx_stats->avg_tx_rate, tx_stats->tx_rate);
 
-	if (peer->vif) {
-		if (peer->vif->type == NL80211_IFTYPE_AP &&
+	if (ath12k_dp_link_peer_get_vif(peer)) {
+		if (ath12k_dp_link_peer_get_vif_type(peer) == NL80211_IFTYPE_AP &&
 		    peer->dp_peer->is_vdev_peer) {
 			DP_STATS_UPD(tx_stats, mcast_last_tx_rate, ratekbps);
 			DP_STATS_UPD(tx_stats, mcast_last_tx_rate_mcs, peer_stats->mcs);
@@ -1520,12 +1520,14 @@ ath12k_dp_htt_ppdu_stats_update_tx_comp_stats(struct ath12k_pdev_dp *dp_pdev,
 			continue;
 		}
 
-		if (peer->vif->type != NL80211_IFTYPE_MESH_POINT) {
+		if (ath12k_dp_link_peer_get_vif_type(peer) !=
+							NL80211_IFTYPE_MESH_POINT) {
 			rcu_read_unlock();
 			return;
 		}
 
-		if (ether_addr_equal(peer->addr, peer->vif->addr)) {
+		if (ether_addr_equal(peer->addr,
+				     ath12k_dp_link_peer_get_vif(peer)->addr)) {
 			rcu_read_unlock();
 			continue;
 		}

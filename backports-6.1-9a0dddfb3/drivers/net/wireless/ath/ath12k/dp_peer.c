@@ -944,8 +944,8 @@ void ath12k_dp_cp_link_peer_unassign(struct ath12k *ar,
 		return;
 	}
 
-	if (peer->vif) {
-		ahvif = ath12k_vif_to_ahvif(peer->vif);
+	if (ath12k_dp_link_peer_get_vif(peer)) {
+		ahvif = ath12k_vif_to_ahvif(ath12k_dp_link_peer_get_vif(peer));
 		if (ahvif) {
 			/* Flush the pending events to be safe */
 			ath12k_event_queue_flush(&ahvif->event_queue);
@@ -1689,3 +1689,21 @@ void ath12k_dp_iterate_pdev_link_peer(struct ath12k_dp *dp, int pdev_idx,
 	}
 }
 EXPORT_SYMBOL(ath12k_dp_iterate_pdev_link_peer);
+
+struct ath12k_dp_vif *ath12k_dp_peer_get_dp_vif(struct ath12k_dp_peer *dp_peer)
+{
+	struct ieee80211_vif *vif = ath12k_dp_peer_get_vif(dp_peer);
+
+	if (vif)
+		return (struct ath12k_dp_vif *)(&ath12k_vif_to_ahvif(vif)->dp_vif);
+	else
+		return NULL;
+}
+EXPORT_SYMBOL(ath12k_dp_peer_get_dp_vif);
+
+struct ath12k_dp_vif *
+ath12k_dp_link_peer_get_dp_vif(struct ath12k_dp_link_peer *link_peer)
+{
+	return ath12k_dp_peer_get_dp_vif(link_peer->dp_peer);
+}
+EXPORT_SYMBOL(ath12k_dp_link_peer_get_dp_vif);

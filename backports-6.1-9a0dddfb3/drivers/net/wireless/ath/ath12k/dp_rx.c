@@ -1097,10 +1097,8 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 
 	if (ath12k_dp_stats_enabled(dp_pdev) &&
 	    ath12k_tid_stats_enabled(dp_pdev)) {
-		link_peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev,
-								     peer_id);
-		if (link_peer) {
-			ahvif = ath12k_vif_to_ahvif(link_peer->vif);
+		if (peer) {
+			ahvif = ath12k_vif_to_ahvif(ath12k_dp_peer_get_vif(peer));
 			ath12k_tid_rx_stats(ahvif, tid, msdu->len,
 					    ATH_RX_TOTAL_OUT_PKTS);
 		}
@@ -1661,7 +1659,8 @@ ath12k_dp_primary_peer_migrate_setup(struct ath12k_dp *dp, void *ctx,
 	peer->primary_link = true;
 
 	spin_unlock_bh(&mig_dp->dp_lock);
-	ret = ath12k_vendor_put_umac_migration_notif(peer->vif, peer->sta->addr, peer->link_id);
+	ret = ath12k_vendor_put_umac_migration_notif(ath12k_dp_link_peer_get_vif(peer),
+						     peer->sta->addr, peer->link_id);
 	if (ret)
 		ath12k_warn(mig_ab, "failed to send notify UMAC migration event\n");
 	complete(&ahsta->dp_migration_event);
