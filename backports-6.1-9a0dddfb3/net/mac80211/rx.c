@@ -33,7 +33,9 @@
 #include "tkip.h"
 #include "wme.h"
 #include "rate.h"
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 #include "qcn_extns/cmn_extn.h"
+#endif
 
 extern int debug_param;
 
@@ -3905,8 +3907,11 @@ ieee80211_rx_h_mgmt_check(struct ieee80211_rx_data *rx)
 		return RX_DROP_U_RUNT_ACTION;
 	}
 
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 	if (ieee80211_process_mesh_peer_beacon(rx) == RX_DROP_MONITOR)
 		return RX_DROP_MONITOR;
+#endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */
+
 
 	if (rx->sdata->vif.type == NL80211_IFTYPE_AP &&
 	    ieee80211_is_beacon(mgmt->frame_control) &&

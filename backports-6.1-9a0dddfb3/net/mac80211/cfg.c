@@ -1588,7 +1588,9 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	struct ieee80211_link_data *link;
 	struct ieee80211_bss_conf *link_conf;
 	struct ieee80211_chan_req chanreq = { .oper = params->chandef };
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
+#endif
 
 	lockdep_assert_wiphy(local->hw.wiphy);
 
@@ -1885,7 +1887,9 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 			netif_carrier_on(vlan->dev);
 	}
 
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 	ieee80211_mesh_ap_setup(wdev, sdata, params, link_conf);
+#endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */
 
 	ieee80211_set_critical_update(sdata, link_id, &params->beacon.cu_params, false);
 	return 0;
@@ -2115,7 +2119,9 @@ static int ieee80211_stop_ap(struct wiphy *wiphy, struct net_device *dev,
 				   GFP_KERNEL, link_id);
 	}
 
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 	ieee80211_mesh_ap_cleanup(wdev, sdata, link_conf);
+#endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */
 
 	drv_stop_ap(sdata->local, sdata, link_conf);
 

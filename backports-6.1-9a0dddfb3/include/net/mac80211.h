@@ -900,7 +900,9 @@ struct ieee80211_bss_conf {
 	bool mu_mimo_owner;
 	struct ieee80211_chanctx_conf __rcu *chanctx_conf;
 
+#ifdef CPTCFG_QCN_EXTN
 	struct ieee80211_bss_conf_extn *bss_conf_extn;
+#endif /* CPTCFG_QCN_EXTN */
 
 	bool color_change_active;
 	u8 color_change_color;
@@ -2871,7 +2873,9 @@ struct ieee80211_sta {
 	bool support_p2p_ps;
 	enum nl80211_mgmt_rts_cts_conf mgmt_rts_cts;
 
+#ifdef CPTCFG_QCN_EXTN
 	struct ieee80211_sta_extn sta_extn;
+#endif /* CPTCFG_QCN_EXTN */
 
 	struct ieee80211_txq *txq[IEEE80211_NUM_TIDS + 1];
 

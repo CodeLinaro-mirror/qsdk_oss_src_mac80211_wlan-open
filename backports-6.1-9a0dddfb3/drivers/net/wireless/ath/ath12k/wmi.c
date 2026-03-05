@@ -3886,7 +3886,7 @@ send:
 
 	return ret;
 }
-#ifdef CPTCFG_QCN_EXTN
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 EXPORT_SYMBOL(ath12k_wmi_send_peer_assoc_cmd);
 #endif
 

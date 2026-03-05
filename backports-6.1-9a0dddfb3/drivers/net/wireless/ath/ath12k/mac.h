@@ -313,7 +313,7 @@ struct ieee80211_bss_conf *ath12k_mac_get_link_bss_conf(struct ath12k_link_vif *
 struct ath12k *ath12k_get_ar_by_vif(struct ieee80211_hw *hw,
 				    struct ieee80211_vif *vif,
 				    u8 link_id);
-#ifdef CPTCFG_QCN_EXTN
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 void ath12k_peer_assoc_prepare(struct ath12k *ar,
 			       struct ath12k_link_vif *arvif,
 			       struct ath12k_link_sta *arsta,
