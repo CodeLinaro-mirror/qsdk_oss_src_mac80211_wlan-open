@@ -18,6 +18,13 @@
 #include "hal.h"
 #include "mgmt_rx.h"
 
+#define ATH12K_PCI_T8_SOC_HW_VERSION_1	1
+#define ATH12K_PCI_T8_SOC_HW_VERSION_2	2
+
+#define TCSR_SOC_HW_VERSION		0x1B00000
+#define TCSR_SOC_HW_VERSION_MAJOR_MASK	GENMASK(15, 8)
+#define TCSR_SOC_HW_VERSION_MINOR_MASK	GENMASK(7, 0)
+
 static const struct pci_device_id ath12k_wifi8_pci_id_table[] = {
 	{ PCI_VDEVICE(QCOM, QCN9625_DEVICE_ID) },
 	{ PCI_VDEVICE(QCOM, QCN9589_DEVICE_ID) },
@@ -26,10 +33,21 @@ static const struct pci_device_id ath12k_wifi8_pci_id_table[] = {
 
 MODULE_DEVICE_TABLE(pci, ath12k_wifi8_pci_id_table);
 
+static void ath12k_wifi8_pci_read_hw_version(struct ath12k_base *ab,
+					     u32 *major, u32 *minor)
+{
+	u32 soc_hw_version;
+
+	soc_hw_version = ath12k_pci_read32(ab, TCSR_SOC_HW_VERSION);
+	*major = u32_get_bits(soc_hw_version, TCSR_SOC_HW_VERSION_MAJOR_MASK);
+	*minor = u32_get_bits(soc_hw_version, TCSR_SOC_HW_VERSION_MINOR_MASK);
+}
+
 static int ath12k_wifi8_pci_probe(struct pci_dev *pdev,
 				  const struct pci_device_id *pci_dev)
 {
 	struct ath12k_base *ab = pci_get_drvdata(pdev);
+	u32 soc_hw_version_major, soc_hw_version_minor;
 	struct ath12k_pci *ab_pci;
 	u32 msi;
 	int ret;
@@ -44,6 +62,33 @@ static int ath12k_wifi8_pci_probe(struct pci_dev *pdev,
 
 	switch (pci_dev->device) {
 	case QCN9625_DEVICE_ID:
+		if (!of_property_read_u32(ab->dev->of_node, "qcom,msi", &msi) &&
+		    msi == ATH12K_MSI_16) {
+			dev_info(&pdev->dev, "ath12k supported MSI %d\n", msi);
+			ab->msi.config =
+				&ath12k_wifi7_msi_config[ATH12K_MSI_CONFIG_PCI_16];
+		} else {
+			ab->msi.config = &ath12k_wifi8_msi_config[0];
+		}
+		ab->static_window_map = true;
+		/* window_reg_addr must be initialized before reading HW version */
+		ab_pci->window_reg_addr = PCIE_WINDOW_REG_ADDRESS;
+		ath12k_wifi8_pci_read_hw_version(ab, &soc_hw_version_major,
+						 &soc_hw_version_minor);
+		switch (soc_hw_version_major) {
+		case ATH12K_PCI_T8_SOC_HW_VERSION_2:
+			ab->hw_rev = ATH12K_HW_QCN9625_HW20;
+			break;
+		case ATH12K_PCI_T8_SOC_HW_VERSION_1:
+			ab->hw_rev = ATH12K_HW_QCN9625_HW10;
+			break;
+		default:
+			dev_err(&pdev->dev,
+				"Unknown hardware version found for QCN9625: 0x%x\n",
+				soc_hw_version_major);
+			return -EOPNOTSUPP;
+		}
+		break;
 	case QCN9589_DEVICE_ID:
 		if (!of_property_read_u32(ab->dev->of_node, "qcom,msi", &msi) &&
 		    msi == ATH12K_MSI_16) {
@@ -54,8 +99,7 @@ static int ath12k_wifi8_pci_probe(struct pci_dev *pdev,
 			ab->msi.config = &ath12k_wifi8_msi_config[0];
 		}
 		ab->static_window_map = true;
-		ab->hw_rev = (pci_dev->device == QCN9625_DEVICE_ID) ?
-			      ATH12K_HW_QCN9625_HW10 : ATH12K_HW_QCN9589_HW10;
+		ab->hw_rev = ATH12K_HW_QCN9589_HW10;
 		ab_pci->window_reg_addr = PCIE_WINDOW_REG_ADDRESS;
 		break;
 

@@ -1499,12 +1499,21 @@ static int ath12k_wifi8_hal_init_qcn9625(struct ath12k_hal *hal, u8 hw_version)
 {
 	struct ath12k_hal_wifi8 *hal_wifi8;
 
-	hal->regs = ath12k_wifi8_hw_ver_map[hw_version].hw_regs;
+	switch (hw_version) {
+	case ATH12K_HW_QCN9625_HW10:
+	case ATH12K_HW_QCN9625_HW20:
+	case ATH12K_HW_QCN9589_HW10:
+		hal->regs = &qcn9625_regs;
+		hal->hal_params = &ath12k_wifi8_hw_hal_params_qcn9625;
+		break;
+	default:
+		return -EINVAL;
+	}
+
 	hal->tcl_to_cmp_rbm_map = ath12k_wifi8_hal_tcl_to_cmp_rbm_map_qcn9625;
 	hal->rdi_mapping = ath12k_wifi8_hal_rdi_mapping_qcn9625;
 	hal->hal_ops = &hal_qcn9625_ops;
 	hal->hal_desc_sz = ath12k_wifi8_hal_get_rx_desc_size_qcn9625();
-	hal->hal_params = ath12k_wifi8_hw_ver_map[hw_version].hal_params;
 	hal_wifi8 = kzalloc(sizeof(*hal_wifi8), GFP_KERNEL);
 	if (!hal_wifi8)
 		return -ENOMEM;

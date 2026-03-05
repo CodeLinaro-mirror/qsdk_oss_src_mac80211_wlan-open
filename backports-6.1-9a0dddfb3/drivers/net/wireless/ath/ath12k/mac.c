@@ -19027,7 +19027,8 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		if (wdev && wdev->vap_submode) {
 			ahvif->vap_submode = wdev->vap_submode;
 			arvif->vdev_subtype = WMI_VDEV_SUBTYPE_MESH_NON_11S;
-			if (ab->hw_rev == ATH12K_HW_QCN9625_HW10) {
+			if (ab->hw_rev == ATH12K_HW_QCN9625_HW10 ||
+			    ab->hw_rev == ATH12K_HW_QCN9625_HW20) {
 				WARN_ONCE(1, "MMESH is not supported in QCN9625\n");
 				return -EINVAL;
 			}

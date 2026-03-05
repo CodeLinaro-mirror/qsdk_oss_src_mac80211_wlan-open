@@ -570,6 +570,126 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
 	},
+	{
+		.name = "qcn9625 hw2.0",
+		.hw_rev = ATH12K_HW_QCN9625_HW20,
+		.fw = {
+			.dir = "QCN9625/hw1.0",
+			.board_size = 256 * 1024,
+			.cal_offset = 128 * 1024,
+			.m3_loader = ath12k_m3_fw_loader_driver,
+			.std_elf_img = true,
+			.unified_fw_image = true,
+		},
+		.max_radios = 2,
+		.single_pdev_only = false,
+		.qmi_service_ins_id = ATH12K_QMI_WLFW_SERVICE_INS_ID_V01_QCN9625,
+		.internal_sleep_clock = false,
+
+		.hw_ops = &qcn9625_ops,
+		.ring_mask = &ath12k_wifi8_hw_ring_mask_qcn9625,
+
+		.host_ce_config = ath12k_wifi8_host_ce_config_qcn9625,
+		.ce_count = 16,
+		.target_ce_config = ath12k_wifi8_target_ce_config_wlan_qcn9625,
+		.target_ce_count = 13,
+		/* TODO: CP: update CE maps and definitions later when available */
+		.svc_to_ce_map =
+			ath12k_wifi8_target_service_to_ce_map_wlan_qcn9625,
+		.svc_to_ce_map_len = 21,
+		.rxdma1_enable = true,
+		.num_rxdma_per_pdev = 1,
+		.num_rxdma_dst_ring = 0,
+		.rx_mac_buf_ring = false,
+		.vdev_start_delay = false,
+
+		.interface_modes = BIT(NL80211_IFTYPE_STATION) |
+					BIT(NL80211_IFTYPE_AP) |
+					BIT(NL80211_IFTYPE_MESH_POINT) |
+					BIT(NL80211_IFTYPE_AP_VLAN),
+#ifndef CONFIG_ATH12K_MEM_PROFILE_512M
+		.supports_monitor = true,
+		.max_clients_supported = 512,
+		.max_clients_dbs = 256,
+		.max_clients_dbs_sbs = 170,
+#endif
+
+		.idle_ps = false,
+		.cold_boot_calib = true,
+		.download_calib = true,
+		.supports_suspend = false,
+		.reoq_lut_support = true,
+		.supports_shadow_regs = false,
+
+		.num_tcl_banks = 128,
+		.max_tx_ring = MIN(NR_CPUS, 5),
+
+		.mhi_config = &ath12k_wifi8_mhi_config_qcn9625,
+
+		.wmi_init = ath12k_wifi8_wmi_init_qcn9625,
+
+		.hal_ops = &hal_qcn9625_ops,
+		.cp_arch_ops = &ath12k_wifi8_cp_ops,
+
+		.qmi_cnss_feature_bitmap = BIT(CNSS_QDSS_CFG_MISS_V01) |
+					   BIT(CNSS_AUX_UC_SUPPORT_V01),
+
+		.rfkill_pin = 0,
+		.rfkill_cfg = 0,
+		.rfkill_on_level = 0,
+
+		.rddm_size = 0x600000,
+
+		.def_num_link = 0,
+		.max_mlo_peer = 256,
+
+		.otp_board_id_register = QCN9274_QFPROM_RAW_RFA_PDET_ROW13_LSB,
+
+		.supports_sta_ps = false,
+
+		.acpi_guid = NULL,
+		.supports_dynamic_smps_6ghz = true,
+
+		.iova_mask = 0,
+
+		.supports_aspm = true,
+
+		.current_cc_support = false,
+
+		.ce_ie_addr = NULL,
+		.ce_remap = NULL,
+		.handle_beacon_miss = true,
+		.en_qdsslog = true,
+		.support_fse = true,
+		.cumac_support = false,
+		.alloc_cacheable_memory = true,
+		.spectral = {
+			.fft_sz = 7,
+			.fft_pad_sz = 0,
+			.summary_pad_sz = 16,
+			.fft_hdr_len = 24,
+			.max_fft_bins = 512,
+			.fragment_160mhz = true,
+		},
+		.supports_ap_ps = true,
+		.support_ce_manual_poll = true,
+		.ftm_responder = true,
+		.credit_flow = false,
+		.is_plink_preferable = true,
+		.support_umac_reset = true,
+		.umac_irq_line_reset = false,
+		.umac_reset_ipc = 0,
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+		.ds_support = true,
+		.ds_txrx_hw_auto_idx = true,
+		.ds_hw_buff_mgmt = true,
+#endif
+		.mlo_3_link_tx_support = true,
+		.board_magic = "QCA-ATH12K-BOARD",
+		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
+		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
+		.peer_del_all_support = true,
+	},
 };
 
 static bool ath12k_wifi8_mac_is_mgmt_action_link_agnostic(struct sk_buff *skb)

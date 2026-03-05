@@ -3095,6 +3095,7 @@ void ath12k_wifi8_hal_mon_ops_init(struct ath12k_hal *hal,
 	switch (hw_version) {
 	case ATH12K_HW_QCN9625_HW10:
 	case ATH12K_HW_QCN9589_HW10:
+	case ATH12K_HW_QCN9625_HW20:
 		hal->hal_mon_ops = &hal_qcn9625_mon_ops;
 		break;
 	default:
