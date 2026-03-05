@@ -6435,6 +6435,17 @@ ath12k_fill_band_to_mac_param(struct ath12k_base  *soc,
 			else if (hal_reg_cap->low_5ghz_chan >= ATH12K_MAX_5G_LOW_BAND_FREQ &&
 				 hal_reg_cap->high_5ghz_chan <= ATH12K_MIN_6GHZ_FREQ)
 				pdev->phy_name = ATH12K_PHY_5GHZ_HIGH;
+			else if (hal_reg_cap->low_5ghz_chan >= ATH12K_MIN_5GHZ_FREQ &&
+				 hal_reg_cap->high_5ghz_chan <= ATH12K_MAX_5GHZ_FREQ)
+				pdev->phy_name = ATH12K_PHY_5GHZ;
+			else if (hal_reg_cap->low_5ghz_chan >= ATH12K_MIN_6GHZ_FREQ &&
+				 hal_reg_cap->high_5ghz_chan <=
+				 ATH12K_MAX_6G_LOW_BAND_FREQ)
+				pdev->phy_name = ATH12K_PHY_6GHZ_LOW;
+			else if (hal_reg_cap->low_5ghz_chan >=
+				 ATH12K_MAX_6G_LOW_BAND_FREQ &&
+				 hal_reg_cap->high_5ghz_chan <= ATH12K_MAX_6GHZ_FREQ)
+				pdev->phy_name = ATH12K_PHY_6GHZ_HIGH;
 			else if (hal_reg_cap->low_5ghz_chan >= ATH12K_MIN_6GHZ_FREQ &&
 				 hal_reg_cap->high_5ghz_chan <= ATH12K_MAX_6GHZ_FREQ)
 				pdev->phy_name = ATH12K_PHY_6GHZ;

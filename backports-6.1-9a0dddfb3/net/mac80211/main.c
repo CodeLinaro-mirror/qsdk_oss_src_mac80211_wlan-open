@@ -39,6 +39,8 @@
 #define PHY_5GHZ_LOW "phy01"
 #define PHY_5GHZ_HIGH "phy02"
 #define PHY_6GHZ "phy03"
+#define PHY_6GHZ_LOW "phy03"
+#define PHY_6GHZ_HIGH "phy04"
 #define PHY_SCAN_RADIO "phy-scan-00"
 
 void ieee80211_configure_filter(struct ieee80211_local *local)
@@ -938,8 +940,11 @@ struct ieee80211_hw *ieee80211_alloc_hw_nm(size_t priv_data_len,
 			local->wlan_name = "wlan1";
 		else if (!strcmp(requested_name, PHY_5GHZ_HIGH))
 			local->wlan_name = "wlan2";
-		else if (!strcmp(requested_name, PHY_6GHZ))
+		else if (!strcmp(requested_name, PHY_6GHZ) ||
+			 !strcmp(requested_name, PHY_6GHZ_LOW))
 			local->wlan_name = "wlan3";
+		else if (!strcmp(requested_name, PHY_6GHZ_HIGH))
+			local->wlan_name = "wlan4";
 		else
 			local->wlan_name = "wlan%d";
 	} else
