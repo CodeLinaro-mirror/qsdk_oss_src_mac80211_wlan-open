@@ -644,6 +644,12 @@ ath12k_dp_mon_tx_deep_free_ppdu_info(struct ath12k_pdev_dp *pdev_dp,
 			dev_kfree_skb_any(mpdu);
 	}
 
+	memset(&mon_data->prot_status_info, 0, sizeof(mon_data->prot_status_info));
+	memset(&mon_data->data_status_info, 0, sizeof(mon_data->data_status_info));
+
+	memset(&mon_data->prot_ppdu_info, 0, sizeof(mon_data->prot_ppdu_info));
+	memset(&mon_data->data_ppdu_info, 0, sizeof(mon_data->data_ppdu_info));
+
 	mon_data->prot_ppdu_info.tx_info.ba_user_id = -1;
 	mon_data->data_ppdu_info.tx_info.ba_user_id = -1;
 }
@@ -2285,7 +2291,7 @@ ath12k_dp_mon_tx_update_mon_info(struct ath12k_pdev_dp *dp_pdev,
 		tx_mon_hw_set(mon_info, CHAN_INFO);
 	}
 
-	is_qos_data = ieee80211_is_data_qos(rx_status->frame_control);
+	is_qos_data = ieee80211_is_data_qos(cpu_to_le16(rx_status->frame_control));
 
 	if (is_qos_data && rx_status->userstats[user_idx].ampdu_present) {
 		mon_info->ampdu_ref_num = ppdu_info->ppdu_id;
@@ -2644,7 +2650,7 @@ ath12k_dp_mon_tx_fill_rate_status(struct ath12k_pdev_dp *dp_pdev,
 		case HAL_RX_PREAMBLE_11B:
 		case HAL_RX_PREAMBLE_11A:
 		default:
-			if (!ieee80211_is_data_qos(rx_status->frame_control))
+			if (!ieee80211_is_data_qos(cpu_to_le16(rx_status->frame_control)))
 				ri->legacy = ath12k_dp_tx_mon_get_legacy_rate
 							(rx_status->rate ?
 							rx_status->rate :
@@ -2696,7 +2702,7 @@ ath12k_dp_mon_tx_deliver_frame(struct ath12k_pdev_dp *dp_pdev,
 					 contains_host_frames,
 					 is_response_frame, user_idx);
 
-	if (ieee80211_is_data_qos(ppdu_info->rx_status.frame_control))
+	if (ieee80211_is_data_qos(cpu_to_le16(ppdu_info->rx_status.frame_control)))
 		ath12k_dp_tx_mon_update_radiotap_eht(skb, &status.mon_info, ppdu_info);
 
 	ath12k_dp_mon_tx_fill_rate_status(dp_pdev, ppdu_info,
