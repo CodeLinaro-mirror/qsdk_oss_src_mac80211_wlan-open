@@ -3181,9 +3181,6 @@ static void ath12k_mac_handle_peer_event(struct ath12k_vif *ahvif,
 
 		ath12k_mac_report_low_ack_wrapper(peer->sta,
 						  ATH12K_REPORT_RSSI_ALL);
-
-		peer->rssi_mon.low_rssi_count = 0;
-		peer->rssi_mon.first_low_jiffies = 0;
 	}
 }
 
@@ -3210,10 +3207,8 @@ void ath12k_mac_peer_event_callback(struct ath12k_event_queue *queue,
 	}
 	ar = arvif->ar;
 
-	spin_lock_bh(&ar->dp.dp->dp_lock);
-	peer = ath12k_dp_link_peer_find_by_id(ar->dp.dp, peer_event->peer_id);
-	spin_unlock_bh(&ar->dp.dp->dp_lock);
-
+	peer = ath12k_dp_link_peer_find_by_peerid_index(ar->ab->dp, &ar->dp,
+							peer_event->peer_id);
 	if (!peer) {
 		rcu_read_unlock();
 		/* Peer was deleted, skip event */

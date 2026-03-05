@@ -947,6 +947,8 @@ void ath12k_dp_cp_link_peer_unassign(struct ath12k *ar,
 	if (peer->vif) {
 		ahvif = ath12k_vif_to_ahvif(peer->vif);
 		if (ahvif) {
+			/* Flush the pending events to be safe */
+			ath12k_event_queue_flush(&ahvif->event_queue);
 			dp_vif = &ahvif->dp_vif;
 			if (peer->link_id < ATH12K_NUM_MAX_LINKS)
 				dp_link_vif = &dp_vif->dp_link_vif[peer->link_id];
