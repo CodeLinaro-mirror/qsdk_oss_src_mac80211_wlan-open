@@ -3910,14 +3910,14 @@ ath12k_wifi7_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 				     HAL_RX_PHYRX_RSSI_LEGACY_INFO_INFO1_REGION_OFFSET);
 		break;
 	}
-	case HAL_PHYRX_OTHER_RECEIVE_INFO: {
+	case HAL_PHYRX_COMMON_USER_INFO: {
 		const struct hal_phyrx_common_user_info *cmn_usr_info = tlv_data;
 
 		ppdu_info->gi = le32_get_bits(cmn_usr_info->info0,
 					      HAL_RX_PHY_CMN_USER_INFO0_GI);
 		ppdu_info->punctured_pattern =
-			le32_get_bits(cmn_usr_info->info0,
-				      HAL_RX_PHY_CMN_USER_INFO0_PUNC_PAT);
+			le32_get_bits(cmn_usr_info->info1,
+				      HAL_RX_PHY_CMN_USER_INFO1_PUNC_PAT);
 
 		ath12k_hal_wifi7_hal_mon_populate_ppdu_info(ppdu_info);
 		break;
