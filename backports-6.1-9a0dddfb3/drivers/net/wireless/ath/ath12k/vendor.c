@@ -10178,12 +10178,24 @@ static int ath12k_vendor_set_wifi_params_me(struct wiphy *wiphy,
 		break;
 
 	case QCA_WLAN_VENDOR_VDEV_PARAM_IGMP_ME:
+		if (val != 0 && val != 1) {
+			ath12k_dbg(NULL, ATH12K_DBG_CFG,
+				   "Unsupported value for param: %d value: %d\n",
+				   params->value, val);
+			goto fail;
+		}
 		me_flags = val ? ATH12K_ME_FLAGS_BIT_IGMP_EN : 0;
 		break;
 
 	case QCA_WLAN_VENDOR_VDEV_PARAM_ME_GRP_LIMIT:
-		if (val > 0 && val < ATH12K_ME_MAX_GRP_LIMIT)
+		if (val > 0 && val < ATH12K_ME_MAX_GRP_LIMIT) {
 			grp_limit = val;
+		} else {
+			ath12k_dbg(NULL, ATH12K_DBG_CFG,
+				   "Unsupported value for param: %d value: %d\n",
+				   params->value, val);
+			goto fail;
+		}
 		break;
 
 	default:
