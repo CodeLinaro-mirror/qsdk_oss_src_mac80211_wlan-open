@@ -329,7 +329,6 @@ enum ath12k_firmware_mode {
 extern bool ath12k_cold_boot_cal;
 
 #define ATH12K_IRQ_NUM_MAX 61
-#define ATH12K_EXT_IRQ_NUM_MAX	16
 #define ATH12K_MAX_TCL_RING_NUM	3
 
 struct ath12k_ext_irq_grp {
@@ -2088,7 +2087,7 @@ struct ath12k_base {
 	bool wmi_ready;
 	u32 wlan_init_status;
 	int irq_num[ATH12K_IRQ_NUM_MAX];
-	struct ath12k_ext_irq_grp ext_irq_grp[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
+	struct ath12k_ext_irq_grp ext_irq_grp[ATH12K_EXT_IRQ_NUM_MAX];
 	struct napi_struct *napi;
 	struct ath12k_wmi_target_cap_arg target_caps;
 	u32 ext_service_bitmap[WMI_SERVICE_EXT_BM_SIZE];

@@ -211,42 +211,6 @@ static const struct ath12k_hw_ops wcn7850_ops = {
 	.dp_srng_is_tx_comp_ring = ath12k_wifi7_dp_srng_is_comp_ring_wcn7850,
 };
 
-#define ATH12K_TX_RING_MASK_0 0x1
-#define ATH12K_TX_RING_MASK_1 0x2
-#define ATH12K_TX_RING_MASK_2 0x4
-#define ATH12K_TX_RING_MASK_3 0x8
-#define ATH12K_TX_RING_MASK_4 0x10
-
-#define ATH12K_RX_RING_MASK_0 0x1
-#define ATH12K_RX_RING_MASK_1 0x2
-#define ATH12K_RX_RING_MASK_2 0x4
-#define ATH12K_RX_RING_MASK_3 0x8
-
-#define ATH12K_RX_ERR_RING_MASK_0 0x1
-
-#define ATH12K_RX_WBM_REL_RING_MASK_0 0x1
-
-#define ATH12K_REO_STATUS_RING_MASK_0 0x1
-
-#define ATH12K_HOST2RXDMA_RING_MASK_0 0x1
-#define ATH12K_HOST2RXDMA_RING_MASK_1 0x2
-#define ATH12K_HOST2RXDMA_RING_MASK_2 0x4
-
-#define	ATH12K_HOST2RXMON_RING_MASK_0	0x1
-
-#define ATH12K_RX_MON_RING_MASK_0 0x1
-#define ATH12K_RX_MON_RING_MASK_1 0x2
-#define ATH12K_RX_MON_RING_MASK_2 0x4
-
-#define ATH12K_TX_MON_RING_MASK_0 0x1
-#define ATH12K_TX_MON_RING_MASK_1 0x2
-#define ATH12K_HOST2TX_MON_RING_MASK_0 0x1
-#define ATH12K_UMAC_RESET_INTR_MASK_0   0x1
-
-#define ATH12K_PPE2TCL_RING_MASK_0 0x1
-#define ATH12K_REO2PPE_RING_MASK_0 0x1
-#define ATH12K_PPE_WBM2SW_RELEASE_RING_MASK_0 0x1
-
 /* To support 8 MSI DP grouping */
 static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274_msi8 = {
         .tx  = {
@@ -326,10 +290,6 @@ static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274_msi8 = {
 		ATH12K_UMAC_RESET_INTR_MASK_0
         },
 };
-
-#define ATH12K_RX_MON_STATUS_RING_MASK_0 0x1
-#define ATH12K_RX_MON_STATUS_RING_MASK_1 0x2
-#define ATH12K_RX_MON_STATUS_RING_MASK_2 0x4
 
 static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274 = {
 	.tx  = {
@@ -746,6 +706,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.mlo_3_link_tx_support = false,
 		.quad_ring_monitor_support = false,
 		.board_magic = "QCA-ATH12K-BOARD",
+		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 	},
 	{
 		.name = "wcn7850 hw2.0",
@@ -856,6 +817,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.mlo_3_link_tx_support = false,
 		.quad_ring_monitor_support = true,
 		.board_magic = "QCA-ATH12K-BOARD",
+		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 	},
 	{
 		.name = "qcn9274 hw2.0",
@@ -978,6 +940,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.mlo_3_link_tx_support = true,
 		.quad_ring_monitor_support = false,
 		.board_magic = "QCA-ATH12K-BOARD",
+		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 	},
 	{
 		.name = "ipq5332 hw1.0",
@@ -1089,6 +1052,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.send_platform_model = true,
 		.quad_ring_monitor_support = false,
 		.board_magic = "QCA-ATH12K-BOARD",
+		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 	},
 	{
 		.name = "qcn6432 hw1.0",
@@ -1178,6 +1142,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.mlo_3_link_tx_support = false,
 		.quad_ring_monitor_support = false,
 		.board_magic = "QCA-ATH12K-BOARD",
+		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 	},
 	{
 		.name = "ipq5424 hw1.0",
@@ -1293,6 +1258,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.send_platform_model = true,
 		.quad_ring_monitor_support = false,
 		.board_magic = "QCA-ATH12K-BOARD",
+		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 	},
 };
 
