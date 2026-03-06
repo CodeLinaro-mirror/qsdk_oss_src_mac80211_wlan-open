@@ -15796,36 +15796,32 @@ static void ath12k_process_ocac_complete_event(struct ath12k_base *ab,
 	}
 
 	ev = tb[WMI_TAG_VDEV_ADFS_OCAC_COMPLETE_EVENT];
-
 	if (!ev) {
-		ath12k_warn(ab, "failed to fetch ocac completed ev");
+		ath12k_warn(ab, "failed to fetch ocac completed ev\n");
 		kfree(tb);
 		return;
 	}
 
 	vdev_id = __le32_to_cpu(ev->vdev_id);
 	status = __le32_to_cpu(ev->status);
-	ath12k_dbg(ab, ATH12K_DBG_WMI,
-		   "pdev dfs ocac complete event on pdev %d, chan freq %d,"
-		   "chan_width %d, status %d  freq %d, freq1  %d, freq2 %d",
-		   ev->vdev_id, __le32_to_cpu(ev->chan_freq),
-		   __le32_to_cpu(ev->chan_width), status,
-		   __le32_to_cpu(ev->center_freq), __le32_to_cpu(ev->center_freq1),
-		   __le32_to_cpu(ev->center_freq2));
-
 	ar = ath12k_mac_get_ar_by_vdev_id(ab, vdev_id);
 
 	if (!ar) {
-		ath12k_warn(ab, "OCAC complete event in invalid vdev %d\n",
-			    ev->vdev_id);
+		ath12k_warn(ab, "OCAC complete event in invalid vdev %u\n",
+			    vdev_id);
 		goto exit;
 	}
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,"aDFS ocac complete event in vdev %d\n",
-		   __le32_to_cpu(ev->vdev_id));
-
+	ath12k_dbg(ab, ATH12K_DBG_WMI,
+		   "aDFS OCAC %s on vdev %u: status %u, chan freq %u, chan_width %u, center %u, center1 %u, center2 %u\n",
+		   status ? "aborted" : "completed", vdev_id,
+		   status, __le32_to_cpu(ev->chan_freq),
+		   __le32_to_cpu(ev->chan_width),
+		   __le32_to_cpu(ev->center_freq),
+		   __le32_to_cpu(ev->center_freq1),
+		   __le32_to_cpu(ev->center_freq2));
 	if (status) {
-	    ath12k_mac_background_dfs_event(ar, ATH12K_BGDFS_ABORT);
+		ath12k_mac_background_dfs_event(ar, ATH12K_BGDFS_ABORT);
 	} else {
 		memset(&ar->agile_chandef, 0, sizeof(struct cfg80211_chan_def));
 		ar->agile_chandef.chan = NULL;
