@@ -438,8 +438,8 @@ void ath12k_ppeds_notify_napi_done_v2(int ds_node_id)
 	enum dp_umac_reset_tx_cmd tx_cmd = ATH12K_UMAC_RESET_TX_CMD_PRE_RESET_DONE;
 	struct ath12k_base *ab = ds_node_map[ds_node_id];
 
-	ath12k_umac_reset_notify_target_sync_and_send(ab, ab->dp->ppe.task_id,
-						      tx_cmd);
+	ath12k_umac_reset_notify_target_sync_and_send(ab, tx_cmd,
+						      ab->dp->ppe.task_id);
 }
 EXPORT_SYMBOL(ath12k_ppeds_notify_napi_done_v2);
 
