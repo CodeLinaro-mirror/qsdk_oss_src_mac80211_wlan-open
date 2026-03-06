@@ -23959,6 +23959,8 @@ int ath12k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 	arg->max_scan_time = scan_time_msec;
 	arg->scan_f_passive = 1;
 	arg->scan_f_filter_prb_req = 1;
+	arg->dwell_time_active_6g = scan_time_msec;
+	arg->dwell_time_passive_6g = scan_time_msec;
 
 	/*these flags enables fw to tx offchan frame to unknown STA*/
 	arg->scan_f_offchan_mgmt_tx = 1;
