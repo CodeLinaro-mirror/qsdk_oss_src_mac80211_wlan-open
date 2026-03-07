@@ -11,6 +11,14 @@
 
 struct hal_rx_mon_ppdu_info;
 
+/* Maximum payload across current TQM types (update if a larger one is added). */
+#define HAL_TQM_VALUE_MAX_BYTES (sizeof(struct hal_tqm_sync_cmd))
+
+#define HAL_TLV64_HDR_BYTES   (sizeof(struct hal_tlv_64_hdr))
+#define HAL_TLV64_HDR_WORDS   (HAL_TLV64_HDR_BYTES >> 2)
+#define HAL_TQM_CMD_MAX_BYTES (HAL_TLV64_HDR_BYTES + HAL_TQM_VALUE_MAX_BYTES)
+#define HAL_TQM_CMD_MAX_WORDS (HAL_TQM_CMD_MAX_BYTES >> 2)
+
 /* TODO: check all these data can be managed with struct ath12k_tx_desc_info for perf */
 struct hal_tx_info {
 	u16 meta_data_flags; /* %HAL_TCL_DATA_CMD_INFO0_META_ */
@@ -86,12 +94,15 @@ u32 ath12k_hal_tx_read_bank_register_internal(struct ath12k_base *ab, u8 bank_id
 int ath12k_wifi8_hal_tqm_cmd_send(struct ath12k_base *ab, struct hal_srng *srng,
 				  enum hal_tlv_tag_be type,
 				  struct ath12k_hal_tqm_cmd *cmd);
-int ath12k_wifi8_hal_tqm_remove_msdu_cmd(struct hal_tlv_64_hdr *tlv,
-						struct ath12k_hal_tqm_cmd *cmd);
-int ath12k_wifi8_hal_tqm_remove_mpdu_cmd(struct hal_tlv_64_hdr *tlv,
-						struct ath12k_hal_tqm_cmd *cmd);
-int ath12k_wifi8_hal_tqm_sync_cmd(struct hal_tlv_64_hdr *tlv,
+int ath12k_wifi8_hal_tqm_remove_msdu_cmd(struct ath12k_base *ab,
+					 struct hal_tlv_64_hdr *tlv,
 					 struct ath12k_hal_tqm_cmd *cmd);
+int ath12k_wifi8_hal_tqm_remove_mpdu_cmd(struct ath12k_base *ab,
+					 struct hal_tlv_64_hdr *tlv,
+					 struct ath12k_hal_tqm_cmd *cmd);
+int ath12k_wifi8_hal_tqm_sync_cmd(struct ath12k_base *ab,
+				  struct hal_tlv_64_hdr *tlv,
+				  struct ath12k_hal_tqm_cmd *cmd);
 void ath12k_wifi8_hal_tqm_remove_msdu_status(struct ath12k_base *ab,
 					     struct hal_tlv_64_hdr *tlv,
 					     struct hal_tqm_status *status);
@@ -101,6 +112,6 @@ void ath12k_wifi8_hal_tqm_remove_mpdu_status(struct ath12k_base *ab,
 void ath12k_wifi8_hal_tqm_sync_cmd_status(struct ath12k_base *ab,
 					  struct hal_tlv_64_hdr *tlv,
 					  struct hal_tqm_status *status);
-void ath12k_wifi8_hal_tqm_init_cmd_ring(struct ath12k_base *ab,
-					struct hal_srng *srng);
+int ath12k_wifi8_hal_tqm_cmd_staging_alloc(struct ath12k_base *ab);
+void ath12k_wifi8_hal_tqm_cmd_staging_free(struct ath12k_base *ab);
 #endif

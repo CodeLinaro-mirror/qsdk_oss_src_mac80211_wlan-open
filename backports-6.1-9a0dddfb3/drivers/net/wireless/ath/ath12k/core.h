@@ -2052,6 +2052,8 @@ struct ath12k_base {
 	struct ath12k_ce ce;
 	struct timer_list rx_replenish_retry;
 	struct ath12k_hal hal;
+	/* TQM command ring staging in words */
+	u32 *tqm_cmd_staging;
 	/* To synchronize core_start/core_stop */
 	struct mutex core_lock;
 	/* Protects data like peers */
