@@ -1872,4 +1872,17 @@ ath12k_ext_mon_get_max_shortpkt_len(const struct ath12k_dp_rx_ext_mon *config)
 
 	return max_len;
 }
+
+static inline int
+ath12k_dp_ext_mon_find_mon_vdev_id(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_link_vif *arvif;
+
+	list_for_each_entry(arvif, &dp_pdev->ar->arvifs, list) {
+		if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR &&
+		    arvif->is_started)
+			return arvif->vdev_id;
+	}
+	return -1;
+}
 #endif
