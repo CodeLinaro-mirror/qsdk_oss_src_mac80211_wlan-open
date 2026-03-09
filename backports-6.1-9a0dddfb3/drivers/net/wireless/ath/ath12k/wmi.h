@@ -5011,12 +5011,6 @@ struct wmi_peer_assoc_mlo_params {
 	};
 } __packed;
 
-enum {
-	WMI_MGMT_TID_MSDUQ_LINK_SPECIFIC,
-	WMI_MGMT_TID_MSDUQ_LINK_AGNOSTIC,
-	WMI_MGMT_TID_MSDUQ_TYPE_MAX,
-};
-
 #define WMI_MGMTQ_LINK_ID	GENMASK(2, 0)
 #define WMI_MGMTQ_MSDU_TYPE	GENMASK(7, 3)
 
