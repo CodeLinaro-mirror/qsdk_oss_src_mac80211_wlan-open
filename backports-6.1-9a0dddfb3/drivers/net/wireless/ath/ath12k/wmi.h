@@ -6479,13 +6479,15 @@ enum wmi_cipher_type {
 #define WMI_FIXED_RATE_NONE	(0xffff)
 
 #define ATH12K_RC_VERSION_OFFSET	28
+#define ATH12K_RC_UEQM_PATTERN_OFFSET	24
 #define ATH12K_RC_PREAMBLE_OFFSET	8
 #define ATH12K_RC_NSS_OFFSET		5
 
-#define ATH12K_HW_RATE_CODE(rate, nss, preamble)	\
+#define ATH12K_HW_RATE_CODE(rate, nss, preamble, ueqm_p)	\
 	((1 << ATH12K_RC_VERSION_OFFSET) |		\
 	 ((nss) << ATH12K_RC_NSS_OFFSET) |		\
 	 ((preamble) << ATH12K_RC_PREAMBLE_OFFSET) |	\
+	 ((ueqm_p) << ATH12K_RC_UEQM_PATTERN_OFFSET) |	\
 	 (rate))
 
 /* Preamble types to be used with VDEV fixed rate configuration */

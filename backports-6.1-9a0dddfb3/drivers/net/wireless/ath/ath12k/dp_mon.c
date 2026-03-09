@@ -658,7 +658,7 @@ static void ath12k_dp_rx_update_rate_stats(struct ath12k_rx_peer_stats *rx_stats
 	else
 		rx_stats->rx_ratecode =
 			ATH12K_HW_RATE_CODE(rate->mcs, rate->nss,
-					    rx_stats->preamble_info);
+					    rx_stats->preamble_info, 0);
 }
 
 static u8 ath12k_dp_rx_rate_convert_bw(u8 bw)

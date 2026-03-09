@@ -6131,7 +6131,7 @@ u32 ath12k_mac_get_rate_hw_value(int bitrate)
 			continue;
 
 		hw_value = ath12k_legacy_rates[i].hw_value;
-		rate = ATH12K_HW_RATE_CODE(hw_value, 0, preamble);
+		rate = ATH12K_HW_RATE_CODE(hw_value, 0, preamble, 0);
 
 		return rate;
 	}
@@ -8933,7 +8933,7 @@ skip_pending_cs_up:
 		else
 			preamble = WMI_RATE_PREAMBLE_OFDM;
 
-		rate = ATH12K_HW_RATE_CODE(hw_value, 0, preamble);
+		rate = ATH12K_HW_RATE_CODE(hw_value, 0, preamble, 0);
 
 		ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
 				 "mac vdev %d mcast_rate %x\n",
@@ -9128,7 +9128,7 @@ EXPORT_SYMBOL(ath12k_mac_op_link_info_changed);
 		if (hweight16(mask->control[band]._mcs[i]) == 1) {		\
 			rate_idx = ffs(mask->control[band]._mcs[i]) - 1;	\
 			return ATH12K_HW_RATE_CODE(rate_idx, nss,		\
-						   WMI_RATE_PREAMBLE_##_mode);	\
+						   WMI_RATE_PREAMBLE_##_mode, 0);	\
 		}								\
 	}									\
 })
@@ -9164,7 +9164,7 @@ static u32 ath12k_mac_beacon_tx_rate(struct cfg80211_bitrate_mask *mask,
 		else
 			preamble = WMI_RATE_PREAMBLE_OFDM;
 
-		return ATH12K_HW_RATE_CODE(hw_rate, 0, preamble);
+		return ATH12K_HW_RATE_CODE(hw_rate, 0, preamble, 0);
 	}
 
 	return 0;
@@ -10844,7 +10844,7 @@ ath12k_mac_set_peer_vht_fixed_rate(struct ath12k_link_vif *arvif,
 			 arsta->addr);
 
 	rate_code = ATH12K_HW_RATE_CODE(vht_rate, nss - 1,
-					WMI_RATE_PREAMBLE_VHT);
+					WMI_RATE_PREAMBLE_VHT, 0);
 	ret = ath12k_wmi_set_peer_param(ar, arsta->addr,
 					arvif->vdev_id,
 					WMI_PEER_PARAM_FIXED_RATE,
@@ -10908,7 +10908,7 @@ ath12k_mac_set_peer_ht_fixed_rate(struct ath12k_link_vif *arvif,
 			sta->addr);
 
 	rate_code = ATH12K_HW_RATE_CODE(ht_rate, nss - 1,
-					WMI_RATE_PREAMBLE_HT);
+					WMI_RATE_PREAMBLE_HT, 0);
 	ret = ath12k_wmi_set_peer_param(ar, sta->addr,
 					arvif->vdev_id,
 					WMI_PEER_PARAM_FIXED_RATE,
@@ -11026,7 +11026,7 @@ ath12k_mac_set_peer_he_fixed_rate(struct ath12k_link_vif *arvif,
 			 arsta->addr);
 
 	rate_code = ATH12K_HW_RATE_CODE(he_rate, nss - 1,
-					WMI_RATE_PREAMBLE_HE);
+					WMI_RATE_PREAMBLE_HE, 0);
 
 	ret = ath12k_wmi_set_peer_param(ar, arsta->addr,
 					arvif->vdev_id,
@@ -11965,7 +11965,7 @@ ath12k_mac_set_peer_eht_fixed_rate(struct ath12k_link_vif *arvif,
 			 arsta->addr);
 
 	rate_code = ATH12K_HW_RATE_CODE(eht_rate, nss - 1,
-					WMI_RATE_PREAMBLE_EHT);
+					WMI_RATE_PREAMBLE_EHT, 0);
 
 	ret = ath12k_wmi_set_peer_param(ar, arsta->addr,
 					arvif->vdev_id,
@@ -22642,7 +22642,7 @@ ath12k_mac_get_single_legacy_rate(struct ath12k *ar,
 		preamble = WMI_RATE_PREAMBLE_OFDM;
 
 	*nss = 1;
-	*rate = ATH12K_HW_RATE_CODE(hw_rate, 0, preamble);
+	*rate = ATH12K_HW_RATE_CODE(hw_rate, 0, preamble, 0);
 
 	return 0;
 }
@@ -22886,7 +22886,7 @@ static int ath12k_mac_set_rate_params(struct ath12k_link_vif *arvif,
 		return 0;
 
 	rate_code = ATH12K_HW_RATE_CODE(he_ul_rate, he_ul_nss - 1,
-					WMI_RATE_PREAMBLE_HE);
+					WMI_RATE_PREAMBLE_HE, 0);
 
 	vdev_param = WMI_VDEV_PARAM_UL_FIXED_RATE;
 	ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
