@@ -900,6 +900,35 @@ struct cfg80211_chan_def {
 	u32 center_freq_device;
 };
 
+/**
+ * struct cfg80211_uhr_ueqm_pattern - UHR UEQM pattern
+ * @pattern: UEQM pattern indexed by NSS and MCS
+ */
+struct cfg80211_uhr_ueqm_pattern {
+	u8 pattern[NL80211_UHR_UEQM_NSS_COUNT][NL80211_UHR_UEQM_MCS_COL_COUNT];
+};
+
+/**
+ * cfg80211_get_uhr_ueqm_map - returns the UHR UEQM pattern bitmap
+ * for the given nss and mcs
+ * @pattern: UEQM pattern indexed by NSS and MCS
+ * Return: for valid nss and mcs, returns the UHR UEQM bitmap
+ */
+static inline u8
+cfg80211_get_uhr_ueqm_map(const u8 pattern[][NL80211_UHR_UEQM_MCS_COL_COUNT],
+			  u8 nss, u8 mcs)
+{
+	if ((nss < NL80211_UHR_UEQM_NSS_MIN) ||
+	    (nss > NL80211_UHR_UEQM_NSS_MAX))
+		return 0;
+
+	if (mcs >= (NL80211_UHR_UEQM_MCS_COL_COUNT * 2))
+		return 0;
+
+	return ((pattern[nss - NL80211_UHR_UEQM_NSS_MIN][mcs / 2]
+		 >> (4 * (mcs & BIT(0)))) & 0x0F);
+}
+
 /*
  * cfg80211_bitrate_mask - masks for bitrate control
  */
@@ -919,6 +948,7 @@ struct cfg80211_bitrate_mask {
 		u32 uhr_mcs[NL80211_UHR_NSS_MAX];
 		enum nl80211_uhr_gi uhr_gi;
 		enum nl80211_uhr_ltf uhr_ltf;
+		struct cfg80211_uhr_ueqm_pattern ueqm_pattern;
 		bool legacy_mcs_changed;
 		bool uhr_mcs_changed;
 		bool eht_mcs_changed;
@@ -928,7 +958,6 @@ struct cfg80211_bitrate_mask {
 		bool ht_mcs_changed;
 	} control[NUM_NL80211_BANDS];
 };
-
 
 /**
  * struct cfg80211_tid_cfg - TID specific configuration

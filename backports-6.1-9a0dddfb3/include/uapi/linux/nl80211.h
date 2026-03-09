@@ -4052,6 +4052,24 @@ enum nl80211_uhr_ltf {
 };
 
 /**
+ * enum nl80211_uhr_ueqm_p - UHR UEQM Pattern
+ * (as per Draft P802.11bn_D1.3 Table 38-33)
+ * @NL80211_RATE_INFO_UHR_UEQM_P_0: pattern 0
+ * @NL80211_RATE_INFO_UHR_UEQM_P_1: pattern 1
+ * @NL80211_RATE_INFO_UHR_UEQM_P_2: pattern 2
+ * @NL80211_RATE_INFO_UHR_UEQM_P_3: pattern 3
+ * @NL80211_RATE_INFO_UHR_UEQM_P_COUNT: number of patterns
+ */
+enum nl80211_uhr_ueqm_p {
+	NL80211_RATE_INFO_UHR_UEQM_P_0,
+	NL80211_RATE_INFO_UHR_UEQM_P_1,
+	NL80211_RATE_INFO_UHR_UEQM_P_2,
+	NL80211_RATE_INFO_UHR_UEQM_P_3,
+
+	NL80211_RATE_INFO_UHR_UEQM_P_COUNT,
+};
+
+/**
  * enum nl80211_rate_info - bitrate information
  *
  * These attribute types are used with %NL80211_STA_INFO_TXRATE
@@ -5895,6 +5913,7 @@ enum nl80211_key_attributes {
  *	see &struct nl80211_txrate_uhr
  * @NL80211_TXRATE_UHR_GI: configure UHR GI, 0.8us, 1.6us and 3.2us.
  * @NL80211_TXRATE_UHR_LTF: configure UHR LTF, 1XLTF, 2XLTF and 4XLTF.
+ * @NL80211_TXRATE_UHR_UEQM_P: configure UEQM Pattern.
  * @__NL80211_TXRATE_AFTER_LAST: internal
  * @NL80211_TXRATE_MAX: highest TX rate attribute
  */
@@ -5914,6 +5933,7 @@ enum nl80211_tx_rate_attributes {
 	NL80211_TXRATE_UHR,
 	NL80211_TXRATE_UHR_GI,
 	NL80211_TXRATE_UHR_LTF,
+	NL80211_TXRATE_UHR_UEQM_P,
 
 	/* keep last */
 	__NL80211_TXRATE_AFTER_LAST,
@@ -5963,6 +5983,21 @@ struct nl80211_txrate_eht {
  */
 struct nl80211_txrate_uhr {
 	__u32 mcs[NL80211_UHR_NSS_MAX];
+};
+
+#define NL80211_UHR_UEQM_NSS_MIN        2
+#define NL80211_UHR_UEQM_NSS_MAX        4
+
+#define NL80211_UHR_UEQM_NSS_COUNT      3
+#define NL80211_UHR_UEQM_MCS_COL_COUNT  12
+
+/**
+ * struct nl80211_uhr_ueqm_pattern - UHR UEQM pattern bitmap
+ * @pattern: UEQM pattern indexed by NSS and MCS
+ */
+struct nl80211_uhr_ueqm_pattern {
+	__u8 pattern[NL80211_UHR_UEQM_NSS_COUNT]
+		    [NL80211_UHR_UEQM_MCS_COL_COUNT];
 };
 
 /**

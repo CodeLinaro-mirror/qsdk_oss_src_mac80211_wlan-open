@@ -449,6 +449,8 @@ static const struct nla_policy nl80211_txattr_policy[NL80211_TXRATE_MAX + 1] = {
 	[NL80211_TXRATE_UHR_LTF] = NLA_POLICY_RANGE(NLA_U8,
 						    NL80211_RATE_INFO_UHR_1XLTF,
 						    NL80211_RATE_INFO_UHR_4XLTF),
+	[NL80211_TXRATE_UHR_UEQM_P] =
+		NLA_POLICY_EXACT_LEN(sizeof(struct nl80211_uhr_ueqm_pattern)),
 };
 
 static const struct nla_policy
@@ -6407,6 +6409,78 @@ static bool uhr_set_mcs_mask(struct genl_info *info, struct wireless_dev *wdev,
 	return true;
 }
 
+static bool uhr_set_ueqm_pattern(struct wireless_dev *wdev,
+				 struct ieee80211_supported_band *sband,
+				 struct nl80211_uhr_ueqm_pattern *ueqm_pattern,
+				 u32 uhr_mcs[NL80211_UHR_NSS_MAX],
+				 struct cfg80211_uhr_ueqm_pattern *ueqm)
+{
+	const struct ieee80211_sta_uhr_cap *uhr_cap;
+	unsigned long mcs_map;
+	unsigned long ueqm_map;
+	u8 mcs, nss;
+	u8 pattern;
+
+	uhr_cap = ieee80211_get_uhr_iftype_cap(sband, wdev->iftype);
+	if (!uhr_cap)
+		return false;
+
+	if (!memchr_inv(ueqm_pattern->pattern, 0,
+			NL80211_UHR_UEQM_NSS_COUNT *
+			NL80211_UHR_UEQM_MCS_COL_COUNT))
+		return false;
+
+	/*
+	 * Per IEEE P802.11bn D1.3 (Tables 38‑32/38‑33), UEQM applies only
+	 * when using 2 to 4 spatial streams.
+	 */
+	for (nss = NL80211_UHR_UEQM_NSS_MIN;
+	     nss <= NL80211_UHR_UEQM_NSS_MAX; nss++) {
+		mcs_map = uhr_mcs[nss - 1];
+		for_each_set_bit(mcs, &mcs_map,
+				 NL80211_UHR_UEQM_MCS_COL_COUNT * 2) {
+			ueqm_map =
+				cfg80211_get_uhr_ueqm_map(ueqm_pattern->pattern,
+							  nss, mcs);
+			for_each_set_bit(pattern, &ueqm_map,
+					 NL80211_RATE_INFO_UHR_UEQM_P_COUNT) {
+				/*
+				 * Per P802.11bn D1.3 Table 38‑32:
+				 * UEQM pattern 0 allows only
+				 * MCS 3 to 13, 19, 23.
+				 * UEQM patterns 1 to 3 allow only
+				 * MCS 5, 6, 8 to 13, 23.
+				 */
+				switch (pattern) {
+				case NL80211_RATE_INFO_UHR_UEQM_P_0:
+					if (!((mcs >= 3 && mcs <= 13) ||
+					      mcs == 19 || mcs == 23))
+						return false;
+					break;
+				case NL80211_RATE_INFO_UHR_UEQM_P_1:
+				case NL80211_RATE_INFO_UHR_UEQM_P_2:
+				case NL80211_RATE_INFO_UHR_UEQM_P_3:
+					if (pattern >= nss)
+						return false;
+
+					if (!(mcs == 5 || mcs == 6 ||
+					      (mcs >= 8 && mcs <= 13) ||
+					      mcs == 23))
+						return false;
+					break;
+				default:
+					return false;
+				}
+			}
+		}
+	}
+
+	memcpy(ueqm->pattern, ueqm_pattern->pattern,
+	       NL80211_UHR_UEQM_NSS_COUNT * NL80211_UHR_UEQM_MCS_COL_COUNT);
+
+	return true;
+}
+
 static int nl80211_parse_tx_bitrate_mask(struct genl_info *info,
 					 struct nlattr *attrs[],
 					 enum nl80211_attrs attr,
@@ -6615,6 +6689,14 @@ static int nl80211_parse_tx_bitrate_mask(struct genl_info *info,
 		if (tb[NL80211_TXRATE_UHR_LTF])
 			mask->control[band].uhr_ltf =
 				nla_get_u8(tb[NL80211_TXRATE_UHR_LTF]);
+
+		if (tb[NL80211_TXRATE_UHR_UEQM_P] &&
+		    !uhr_set_ueqm_pattern(
+				wdev, sband,
+				nla_data(tb[NL80211_TXRATE_UHR_UEQM_P]),
+				mask->control[band].uhr_mcs,
+				&mask->control[band].ueqm_pattern))
+			return -EINVAL;
 
 		if (mask->control[band].legacy == 0) {
 			/* don't allow empty legacy rates if HT, VHT, HE, EHT
