@@ -2868,7 +2868,6 @@ int ath12k_dp_mon_tx_monitor_start_stop(struct ath12k *ar, bool state)
 
 int ath12k_dp_mon_tx_set_monitor_flags(struct ath12k *ar, u32 new_flags, u32 *cur_flags)
 {
-	bool tx_mon_state_change;
 	bool req_state;
 	int ret = -EINVAL;
 	struct ath12k_pdev_mon_dp *dp_mon_pdev;
@@ -2877,14 +2876,6 @@ int ath12k_dp_mon_tx_set_monitor_flags(struct ath12k *ar, u32 new_flags, u32 *cu
 	if (!dp_mon_pdev) {
 		ath12k_warn(ar->ab, "Tx Monitor: Invalid Pdev (%d)\n", ret);
 		return ret;
-	}
-
-	tx_mon_state_change = (*cur_flags & MONITOR_FLAG_SKIP_TX) !=
-						  (new_flags & MONITOR_FLAG_SKIP_TX);
-	if (!tx_mon_state_change) {
-		ath12k_dbg(ar->ab, ATH12K_DBG_DP_MON, "Tx Mon: State Unchanged :%d\n",
-			   dp_mon_pdev->tx_monitor_started);
-		return 0; /*requested flag is already set, return success*/
 	}
 
 	req_state = !(new_flags & MONITOR_FLAG_SKIP_TX);
@@ -2897,7 +2888,7 @@ int ath12k_dp_mon_tx_set_monitor_flags(struct ath12k *ar, u32 new_flags, u32 *cu
 	}
 	*cur_flags &= ~MONITOR_FLAG_SKIP_TX; // Clear Flag
 	*cur_flags |= new_flags & MONITOR_FLAG_SKIP_TX;
-	ath12k_dbg(ar->ab, ATH12K_DBG_DP_MON, "State :%d attempt status %d\n",
+	ath12k_dbg(ar->ab, ATH12K_DBG_DP_MON_TX, "Tx Monitor req. state:%d ret (%d)\n",
 		   dp_mon_pdev->tx_monitor_started, ret);
 	return ret;
 }

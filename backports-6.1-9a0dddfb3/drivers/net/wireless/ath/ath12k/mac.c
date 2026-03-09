@@ -28141,14 +28141,17 @@ int ath12k_mac_op_set_monitor_flags(struct ieee80211_hw *hw,
 
 	lockdep_assert_wiphy(hw->wiphy);
 
+	ath12k_dbg(NULL, ATH12K_DBG_DP_MON_TX | ATH12K_DBG_DP_MON,
+		   "Monitor Flags update received 0x%X :\n", flags);
+
 	if (!(flags & MONITOR_FLAG_CHANGED)) {
-		ath12k_err(NULL, "Flags unchanged - updated rejected\n");
+		ath12k_err(NULL, "Monitor Flags unchanged - updated rejected\n");
 		return ret;
 	}
 
 	ahvif = ath12k_vif_to_ahvif(vif);
 	if (!ahvif) {
-		ath12k_err(NULL, "Invalid ath12k vif\n");
+		ath12k_err(NULL, "Monitor Flags update : Invalid ath12k vif\n");
 		return ret;
 	}
 
@@ -28162,7 +28165,7 @@ int ath12k_mac_op_set_monitor_flags(struct ieee80211_hw *hw,
 		 */
 		*current_flags = flags;
 		ath12k_err(NULL,
-			   "Radio interface not found, flags stored & are dormant\n");
+			   "Radio not found, Monitor flags stored & are dormant\n");
 		return 0;
 	}
 
