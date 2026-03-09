@@ -128,4 +128,9 @@ void ath12k_wifi7_wmi_init_wcn7850(struct ath12k_base *ab,
 	config->num_wow_filters = 0x16;
 	config->num_keep_alive_pattern = 0;
 	config->max_num_group_keys = ATH12K_GROUP_KEYS_NUM_MAX;
+
+	if (test_bit(WMI_TLV_SERVICE_PEER_METADATA_V1A_V1B_SUPPORT, ab->wmi_ab.svc_map))
+		config->peer_metadata_ver = ATH12K_PEER_METADATA_V1A;
+	else
+		config->peer_metadata_ver = ab->wmi_ab.dp_peer_meta_data_ver;
 }

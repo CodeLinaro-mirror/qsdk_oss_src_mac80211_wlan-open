@@ -3427,6 +3427,8 @@ struct ath12k_wmi_soc_hal_reg_caps_params {
 #define WMI_EHT_MCS_NSS_10_11  GENMASK(11, 8)
 #define WMI_EHT_MCS_NSS_12_13  GENMASK(15, 12)
 
+#define WMI_TARGET_CAP_FLAGS_RX_PEER_METADATA_VERSION	GENMASK(1, 0)
+
 /**
  * struct wmi_service_ready_ext2_event - extended service ready event params
  * @afc_deployment_type: AFC deployment type indicated by FW (indoor,outdoor)
@@ -7821,6 +7823,8 @@ struct ath12k_wmi_base {
 	enum wmi_host_hw_mode_config_type preferred_hw_mode;
 
 	struct ath12k_wmi_target_cap_arg *targ_cap;
+
+	u8 dp_peer_meta_data_ver;
 };
 
 struct wmi_pdev_set_bios_interface_cmd {
