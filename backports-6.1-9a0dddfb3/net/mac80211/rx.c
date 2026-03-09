@@ -6145,7 +6145,8 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 			rx.sdata = prev;
 			if (prev_flag) {
 				status->link_valid = (prev_linkid >= 0);
-				if (status->link_valid)
+				if (status->link_valid &&
+				    prev_linkid != IEEE80211_MLD_MAX_NUM_LINKS)
 					status->link_id = prev_linkid;
 			}
 			ieee80211_rx_for_interface(&rx, skb, false, is_mgmt);
@@ -6217,7 +6218,8 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 		if (flag) {
 			rx.sdata = prev;
 			status->link_valid = !!valid_links;
-			if (status->link_valid)
+			if (status->link_valid &&
+			    link_id != IEEE80211_MLD_MAX_NUM_LINKS)
 				status->link_id = link_id;
 
 			if (ieee80211_rx_for_interface(&rx, skb, true, is_mgmt))
