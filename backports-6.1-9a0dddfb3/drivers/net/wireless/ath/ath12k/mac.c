@@ -21681,16 +21681,8 @@ ath12k_mac_op_switch_vif_chanctx(struct ieee80211_hw *hw,
 	 */
 	for (i = 0; i < n_vifs; i++) {
 		curr_ar = ath12k_get_ar_by_ctx(hw, vifs[i].old_ctx);
-		if (vifs[i].old_ctx->def.chan->band !=
-		    vifs[i].new_ctx->def.chan->band) {
-			if (!ath12k_scan_radio_supported(curr_ar->pdev)) {
-				WARN_ON(1);
-				ret = -EINVAL;
-				break;
-			}
-		}
-
 		new_ar = ath12k_get_ar_by_ctx(hw, vifs[i].new_ctx);
+
 		if (!curr_ar || !new_ar) {
 			ath12k_err(NULL,
 				   "unable to determine device for the passed channel ctx");
@@ -21702,6 +21694,15 @@ ath12k_mac_op_switch_vif_chanctx(struct ieee80211_hw *hw,
 				   new_ar ? "valid" : "invalid");
 			ret = -EINVAL;
 			break;
+		}
+
+		if (vifs[i].old_ctx->def.chan->band !=
+		    vifs[i].new_ctx->def.chan->band) {
+			if (!ath12k_scan_radio_supported(curr_ar->pdev)) {
+				WARN_ON(1);
+				ret = -EINVAL;
+				break;
+			}
 		}
 
 		/* Switching a vif between two radios is not allowed */
