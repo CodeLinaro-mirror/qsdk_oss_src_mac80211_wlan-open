@@ -2223,6 +2223,45 @@ static void ath12k_dp_tx_mon_update_radiotap_eht(struct sk_buff *mon_skb,
 }
 
 /**
+ * ath12k_dp_mon_tx_update_rtap_vendor_tlv() - Populate ATH12K vendor radiotap TLV
+ * @dp_pdev: Per-pdev DP context; provides the pre-allocated vendor TLV buffer
+ * @mon_info: TX monitor info to update; VENDOR_TLV flag set on return
+ * @rx_status: HAL PPDU status supplying device_id, tsft, l_sig_a/b_info
+ *
+ * Writes OUI, sub-namespace, skip_length, device_id, ppdu_start_timestamp,
+ * lsig, and lsig_b into the reused vendor TLV buffer and attaches it to
+ * @mon_info for radiotap delivery. All fields are refreshed on every call
+ * to prevent stale values from a previous PPDU.
+ */
+static void
+ath12k_dp_mon_tx_update_rtap_vendor_tlv(struct ath12k_pdev_dp *dp_pdev,
+					struct ieee80211_tx_mon_info *mon_info,
+					struct hal_rx_mon_ppdu_info *rx_status)
+{
+	struct ath12k_mon_data *mon_data = &dp_pdev->dp_mon_pdev->mon_data;
+	struct ieee80211_radiotap_vendor_ns *v_tlv = mon_data->rtap_vendor_tlv;
+	struct ath12k_rtap_vendor_ns *vendor_data;
+	u8 ath_oui[] = {0x00, 0x03, 0x7f};
+
+	if (!v_tlv) {
+		ath12k_err(dp_pdev->dp->ab,
+			   "TX Mon: Invalid Vendor TLV allocation in work queue\n");
+		return;
+	}
+
+	mon_info->v_tlv = v_tlv;
+	memcpy(v_tlv->oui, ath_oui, sizeof(v_tlv->oui));
+	v_tlv->sub_namespace = 0;
+	v_tlv->skip_length = cpu_to_le16(sizeof(struct ath12k_rtap_vendor_ns));
+	vendor_data = (struct ath12k_rtap_vendor_ns *)&v_tlv->data;
+	vendor_data->device_id = rx_status->device_id;
+	vendor_data->ppdu_start_timestamp = rx_status->tsft;
+	vendor_data->lsig = rx_status->l_sig_a_info;
+	vendor_data->lsig_b = rx_status->l_sig_b_info;
+	tx_mon_hw_set(mon_info, VENDOR_TLV);
+}
+
+/**
  * ath12k_dp_mon_tx_update_mon_info() - Comprehensive monitor info population
  * @pdev_dp: ath12k pdev dp context
  * @mon_info: mac80211 tx monitor info to fill
@@ -2317,6 +2356,9 @@ ath12k_dp_mon_tx_update_mon_info(struct ath12k_pdev_dp *dp_pdev,
 
 		tx_mon_hw_set(mon_info, HE_MU_INFO);
 	}
+
+	/* Always add vendor ns TLV */
+	ath12k_dp_mon_tx_update_rtap_vendor_tlv(dp_pdev, mon_info, rx_status);
 }
 
 /**
