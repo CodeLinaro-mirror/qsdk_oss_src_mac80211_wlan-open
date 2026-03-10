@@ -354,6 +354,11 @@ ath12k_dp_htt_process_stats_common_tlv(const u32 *tlv_desc,
 		else
 			ppdu_info->frame_type = HTT_STATS_PPDU_FTYPE_DATA;
 		break;
+	case HTT_STATS_FTYPE_SGEN_MU_BAR:
+	case HTT_STATS_FTYPE_SGEN_BAR:
+	case HTT_STATS_FTYPE_SGEN_BE_MU_BAR:
+		ppdu_info->frame_type = HTT_STATS_PPDU_FTYPE_BAR;
+		break;
 	default:
 		ppdu_info->frame_type = HTT_STATS_PPDU_FTYPE_CTRL;
 		break;
@@ -706,10 +711,68 @@ int ath12k_dp_htt_tlv_iter(struct ath12k_base *ab, struct ath12k_pdev_dp *dp_pde
 	}
 	return 0;
 }
-
-static u32 ath12k_dp_rx_ru_alloc_from_ru_size(u16 ru_size)
+static u32 ath12k_dp_eht_ru_alloc_from_ru_size(u16 ru_size)
 {
-       u32 width = 0;
+	u32 width = 0;
+
+	switch (ru_size) {
+	case HTT_PPDU_STATS_RU_26:
+		width = NL80211_RATE_INFO_EHT_RU_ALLOC_26;
+		break;
+	case HTT_PPDU_STATS_RU_52:
+		width = NL80211_RATE_INFO_EHT_RU_ALLOC_52;
+		break;
+	case HTT_PPDU_STATS_RU_52_26:
+		width = NL80211_RATE_INFO_EHT_RU_ALLOC_52P26;
+		break;
+	case HTT_PPDU_STATS_RU_106:
+		width = NL80211_RATE_INFO_EHT_RU_ALLOC_106;
+		break;
+	case HTT_PPDU_STATS_RU_106_26:
+		width = NL80211_RATE_INFO_EHT_RU_ALLOC_106P26;
+		break;
+	case HTT_PPDU_STATS_RU_242:
+		width = NL80211_RATE_INFO_EHT_RU_ALLOC_242;
+		break;
+	case HTT_PPDU_STATS_RU_484:
+		width = NL80211_RATE_INFO_EHT_RU_ALLOC_484;
+		break;
+	case HTT_PPDU_STATS_RU_484_242:
+		width = NL80211_RATE_INFO_EHT_RU_ALLOC_484P242;
+		break;
+	case HTT_PPDU_STATS_RU_996:
+		width = NL80211_RATE_INFO_EHT_RU_ALLOC_996;
+		break;
+	case HTT_PPDU_STATS_RU_996_484:
+		width =  NL80211_RATE_INFO_EHT_RU_ALLOC_996P484;
+		break;
+	case HTT_PPDU_STATS_RU_996_484_242:
+		width = NL80211_RATE_INFO_EHT_RU_ALLOC_996P484P242;
+		break;
+	case HTT_PPDU_STATS_RU_996x2:
+		width = NL80211_RATE_INFO_EHT_RU_ALLOC_2x996;
+		break;
+	case HTT_PPDU_STATS_RU_996x2_484:
+		width = NL80211_RATE_INFO_EHT_RU_ALLOC_2x996P484;
+		break;
+	case HTT_PPDU_STATS_RU_996x3:
+		width = NL80211_RATE_INFO_EHT_RU_ALLOC_3x996;
+		break;
+	case HTT_PPDU_STATS_RU_996x3_484:
+		width = NL80211_RATE_INFO_EHT_RU_ALLOC_3x996P484;
+		break;
+	case HTT_PPDU_STATS_RU_996x4:
+		width = NL80211_RATE_INFO_EHT_RU_ALLOC_4x996;
+		break;
+	default:
+		width = NL80211_RATE_INFO_EHT_RU_ALLOC_26;
+	}
+	return width;
+}
+
+static u32 ath12k_dp_he_ru_alloc_from_ru_size(u16 ru_size)
+{
+	u32 width = 0;
 
        switch (ru_size) {
        case HTT_PPDU_STATS_RU_26:
@@ -971,10 +1034,10 @@ ath12k_update_htt_stats_txrate(struct ath12k_pdev_dp *dp_pdev,
 	u8 flags, mcs, nss, bw, sgi, dcm, rate_idx = 0;
 	struct htt_ppdu_stats_user_rate *user_rate;
 	struct htt_ppdu_user_stats *usr_stats;
-	u16 rate = 0, ru_start, ru_end, tones;
+	u16 rate = 0, ru_start, ru_end;
 	struct ath12k_htt_tx_stats *tx_stats;
 	struct ath12k_dp *dp = dp_pdev->dp;
-	u32 v, ppdu_type;
+	u32 ppdu_type;
 	struct ath12k_base *ab = dp->ab;
 	int ack_rssi, snr;
 	int ret;
@@ -1007,16 +1070,16 @@ ath12k_update_htt_stats_txrate(struct ath12k_pdev_dp *dp_pdev,
 				       HTT_PPDU_STATS_USER_RATE_INFO1_RESP_TYPE_VALID);
 	if (resp_type_valid) {
 		rate_flags = user_rate->resp_rate_flags;
-	        ru_start = user_rate->resp_ru_start;
-		ru_end = user_rate->ru_end;
-	        ppdu_type = HTT_USR_RESP_RATE_PPDU_TYPE(user_rate->resp_rate_flags);
+		ru_start = user_rate->resp_ru_start;
+		ru_end = user_rate->resp_ru_end;
+		ppdu_type = HTT_USR_RESP_RATE_PPDU_TYPE(user_rate->resp_rate_flags);
 		if (ppdu_type == HTT_PPDU_STATS_RESP_PPDU_TYPE_MU_OFDMA_UL)
 	                ppdu_type = HTT_PPDU_STATS_PPDU_TYPE_MU_OFDMA;
 		else
 	                ppdu_type = HTT_PPDU_STATS_PPDU_TYPE_MU_MIMO;
 	} else {
 		rate_flags = user_rate->rate_flags;
-	        ru_start = user_rate->ru_start;
+		ru_start = user_rate->ru_start;
 		ru_end = user_rate->ru_end;
 	}
 
@@ -1031,12 +1094,17 @@ ath12k_update_htt_stats_txrate(struct ath12k_pdev_dp *dp_pdev,
 	ru_format = FIELD_GET(HTT_PPDU_STATS_USER_RATE_INFO0_RU_SIZE,
 			      user_rate->info0);
 
-	if (ru_format == 1)
-		ru_tones = ath12k_dp_rx_ru_alloc_from_ru_size(ru_start);
+	if (ru_format == 1) {
+		if (flags == WMI_RATE_PREAMBLE_HE)
+			ru_tones = ath12k_dp_he_ru_alloc_from_ru_size(ru_start);
+		else if (flags == WMI_RATE_PREAMBLE_EHT)
+			ru_tones = ath12k_dp_eht_ru_alloc_from_ru_size(ru_start);
+	}
 	else if (!ru_format)
-		ru_tones = ru_end - ru_start + 1;
+		ru_tones = le16_to_cpu(ru_end) - le16_to_cpu(ru_start) + 1;
 	else
-		ru_tones = ath12k_dp_rx_ru_alloc_from_ru_size(HTT_PPDU_STATS_RU_26);
+		ath12k_warn(ab, "unknown ru_format %u for peer %u\n",
+				    ru_format, usr_stats->peer_id);
 
 	is_ofdma = (ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_OFDMA) |
 			(ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_MIMO_OFDMA);
@@ -1105,10 +1173,8 @@ ath12k_update_htt_stats_txrate(struct ath12k_pdev_dp *dp_pdev,
 		peer->txrate.mcs = mcs;
 		peer->txrate.flags = RATE_INFO_FLAGS_EHT_MCS;
 		peer->txrate.he_dcm = dcm;
-		tones = le16_to_cpu(user_rate->ru_end) -
-			le16_to_cpu(user_rate->ru_start) + 1;
-		v = ath12k_mac_eht_ru_tones_to_nl80211_eht_ru_alloc(tones);
-		peer->txrate.eht_ru_alloc = v;
+		peer->txrate.eht_ru_alloc = ru_tones;
+		peer_stats->ru_tones = peer->txrate.eht_ru_alloc;
 		break;
 	}
 
@@ -1146,7 +1212,6 @@ ath12k_update_htt_stats_txrate(struct ath12k_pdev_dp *dp_pdev,
 		 */
 		if (!tx_stats)
 			return;
-
 		tx_stats->ppdu_type = ppdu_type;
 		tx_stats->ru_tones = ru_tones;
 		tx_stats->rate_idx = rate_idx;
@@ -1377,9 +1442,16 @@ void ath12k_htt_update_ppdu_stats(struct ath12k_pdev_dp *dp_pdev,
 		ath12k_dp_htt_fill_user_stats_peer_mac(usr_stats, peer);
 		ath12k_dp_tx_ctrl_stats_update(dp_pdev, peer, user, ppdu_info);
 
-		if (ppdu_info->frame_type != HTT_STATS_PPDU_FTYPE_CTRL)
+		if (ppdu_info->frame_type != HTT_STATS_PPDU_FTYPE_CTRL) {
+			if ((ppdu_info->htt_frame_type == HTT_STATS_FTYPE_TIDQ_DATA_MU) &&
+			    !(tlv_bitmap &
+			    (1 << HTT_PPDU_STATS_TAG_USR_COMPLTN_ACK_BA_STATUS))) {
+				spin_unlock_bh(&dp_pdev->dp->dp_lock);
+				rcu_read_unlock();
+				continue;
+			}
 			ath12k_update_per_peer_tx_stats(dp_pdev, peer, user, ppdu_info);
-
+		}
 		spin_unlock_bh(&dp_pdev->dp->dp_lock);
 		rcu_read_unlock();
 
