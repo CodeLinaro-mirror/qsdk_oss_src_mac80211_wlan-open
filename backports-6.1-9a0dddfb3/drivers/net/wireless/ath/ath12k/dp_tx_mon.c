@@ -1167,6 +1167,8 @@ ath12k_dp_tx_mon_process_mpdu_start(struct ath12k_pdev_dp *dp_pdev,
 		return -ENOMEM;
 	}
 
+	IEEE80211_SKB_CB(skb)->status.rates[0].idx = ATH12K_RATE_STATUS_DEFAULT_IDX;
+
 	skb_reserve(skb, ATH12K_DP_MON_TX_MAX_RADIO_TAP_HDR);
 	tx_ppdu_info->contains_host_frames = false;
 	skb_queue_tail(mpdu_q, skb);
@@ -2071,8 +2073,8 @@ ath12k_dp_tx_mon_validate_lsig_support(struct hal_rx_mon_ppdu_info *rx_status)
 			return true;
 		} else {
 			return rx_status->ofdm_flag ||
-				(rx_status->rate >= ATH12K_RATE_6MBPS_KBPS &&
-				 rx_status->rate <= ATH12K_RATE_54MBPS_KBPS);
+				(rx_status->rate >= ATH12K_RATE_6MBPS_500KBPS &&
+				 rx_status->rate <= ATH12K_RATE_54MBPS_500KBPS);
 		}
 	}
 }
@@ -2140,7 +2142,7 @@ ath12k_dp_tx_mon_get_channel_flags(struct hal_rx_mon_ppdu_info *rx_status)
 	u16 flags = 0;
 
 	/* Set band flags */
-	if (rx_status->freq > ATH12K_FREQ_5GHZ_MIN)
+	if (rx_status->freq >= ATH12K_FREQ_5GHZ_MIN)
 		flags |= IEEE80211_CHAN_5GHZ;
 	else
 		flags |= IEEE80211_CHAN_2GHZ;
@@ -2566,39 +2568,40 @@ ath12k_dp_tx_mon_frame_trim_mic(struct sk_buff *skb,
 		skb_trim(skb, skb->len - trim_len);
 }
 
+
 /**
  * ath12k_dp_tx_mon_get_legacy_rate() - Convert rate kbps to legacy format
- * @rate_kbps: Rate in kbps
+ * @rate_500kbps: Rate in 500 kbps units
  *
- * Converts rate from kbps to legacy rate format (100kbps units).
+ * Converts rate from 500 kbps units to legacy rate format (100kbps units).
  * This is used for populating status->rates[0].rate_idx.legacy.
  */
-static u16 ath12k_dp_tx_mon_get_legacy_rate(u32 rate_kbps)
+static u16 ath12k_dp_tx_mon_get_legacy_rate(u8 rate_500kbps)
 {
-	switch (rate_kbps) {
-	case ATH12K_RATE_1MBPS_KBPS:
+	switch (rate_500kbps) {
+	case ATH12K_RATE_1MBPS_500KBPS:
 		return ATH12K_LEGACY_RATE_1MBPS_100KBPS;
-	case ATH12K_RATE_2MBPS_KBPS:
+	case ATH12K_RATE_2MBPS_500KBPS:
 		return ATH12K_LEGACY_RATE_2MBPS_100KBPS;
-	case ATH12K_RATE_5_5MBPS_KBPS:
+	case ATH12K_RATE_5_5MBPS_500KBPS:
 		return ATH12K_LEGACY_RATE_5_5MBPS_100KBPS;
-	case ATH12K_RATE_6MBPS_KBPS:
+	case ATH12K_RATE_6MBPS_500KBPS:
 		return ATH12K_LEGACY_RATE_6MBPS_100KBPS;
-	case ATH12K_RATE_9MBPS_KBPS:
+	case ATH12K_RATE_9MBPS_500KBPS:
 		return ATH12K_LEGACY_RATE_9MBPS_100KBPS;
-	case ATH12K_RATE_11MBPS_KBPS:
+	case ATH12K_RATE_11MBPS_500KBPS:
 		return ATH12K_LEGACY_RATE_11MBPS_100KBPS;
-	case ATH12K_RATE_12MBPS_KBPS:
+	case ATH12K_RATE_12MBPS_500KBPS:
 		return ATH12K_LEGACY_RATE_12MBPS_100KBPS;
-	case ATH12K_RATE_18MBPS_KBPS:
+	case ATH12K_RATE_18MBPS_500KBPS:
 		return ATH12K_LEGACY_RATE_18MBPS_100KBPS;
-	case ATH12K_RATE_24MBPS_KBPS:
+	case ATH12K_RATE_24MBPS_500KBPS:
 		return ATH12K_LEGACY_RATE_24MBPS_100KBPS;
-	case ATH12K_RATE_36MBPS_KBPS:
+	case ATH12K_RATE_36MBPS_500KBPS:
 		return ATH12K_LEGACY_RATE_36MBPS_100KBPS;
-	case ATH12K_RATE_48MBPS_KBPS:
+	case ATH12K_RATE_48MBPS_500KBPS:
 		return ATH12K_LEGACY_RATE_48MBPS_100KBPS;
-	case ATH12K_RATE_54MBPS_KBPS:
+	case ATH12K_RATE_54MBPS_500KBPS:
 		return ATH12K_LEGACY_RATE_54MBPS_100KBPS;
 	default:
 		return ATH12K_LEGACY_RATE_DEFAULT_100KBPS;
@@ -2606,14 +2609,87 @@ static u16 ath12k_dp_tx_mon_get_legacy_rate(u32 rate_kbps)
 }
 
 /**
- * ath12k_dp_tx_mon_he_gi_to_nl80211() - Convert HAL HE GI to nl80211
+ * ath12k_dp_tx_mon_set_rate_a() - Convert MCS to 11a rate
+ * @rx_status: RX status structure
+ * Converts legacy MCS index to 11a rate in 500 kbps units for OFDM rates.
+ * This is used for 5GHz and 2.4GHz OFDM transmissions.
+ */
+static void ath12k_dp_tx_mon_set_rate_a(struct hal_rx_mon_ppdu_info *rx_status)
+{
+	switch (rx_status->mcs) {
+	case ATH12K_LEGACY_MCS0:
+		rx_status->rate = ATH12K_11A_RATE_0MCS;
+		break;
+	case ATH12K_LEGACY_MCS1:
+		rx_status->rate = ATH12K_11A_RATE_1MCS;
+		break;
+	case ATH12K_LEGACY_MCS2:
+		rx_status->rate = ATH12K_11A_RATE_2MCS;
+		break;
+	case ATH12K_LEGACY_MCS3:
+		rx_status->rate = ATH12K_11A_RATE_3MCS;
+		break;
+	case ATH12K_LEGACY_MCS4:
+		rx_status->rate = ATH12K_11A_RATE_4MCS;
+		break;
+	case ATH12K_LEGACY_MCS5:
+		rx_status->rate = ATH12K_11A_RATE_5MCS;
+		break;
+	case ATH12K_LEGACY_MCS6:
+		rx_status->rate = ATH12K_11A_RATE_6MCS;
+		break;
+	case ATH12K_LEGACY_MCS7:
+		rx_status->rate = ATH12K_11A_RATE_7MCS;
+		break;
+	default:
+		break;
+	}
+}
+
+/**
+ * ath12k_dp_tx_mon_set_rate_b() - Convert MCS to 11b rate
+ * @rx_status: RX status structure
+ * Converts legacy MCS index to 11b rate in 500 kbps units for CCK rates.
+ * This is used for 2.4GHz CCK transmissions.
+ */
+static void ath12k_dp_tx_mon_set_rate_b(struct hal_rx_mon_ppdu_info *rx_status)
+{
+	switch (rx_status->mcs) {
+	case ATH12K_LEGACY_MCS0:
+		rx_status->rate = ATH12K_11B_RATE_0MCS;
+		break;
+	case ATH12K_LEGACY_MCS1:
+		rx_status->rate = ATH12K_11B_RATE_1MCS;
+		break;
+	case ATH12K_LEGACY_MCS2:
+		rx_status->rate = ATH12K_11B_RATE_2MCS;
+		break;
+	case ATH12K_LEGACY_MCS3:
+		rx_status->rate = ATH12K_11B_RATE_3MCS;
+		break;
+	case ATH12K_LEGACY_MCS4:
+		rx_status->rate = ATH12K_11B_RATE_4MCS;
+		break;
+	case ATH12K_LEGACY_MCS5:
+		rx_status->rate = ATH12K_11B_RATE_5MCS;
+		break;
+	case ATH12K_LEGACY_MCS6:
+		rx_status->rate = ATH12K_11B_RATE_6MCS;
+		break;
+	default:
+		break;
+	}
+}
+
+/**
+ * ath12k_dp_tx_mon_gi_to_nl80211() - Convert HAL GI to nl80211
  * @hal_gi: HAL guard interval value from rx_status->sgi
  *
  * Directly converts HAL guard interval values to nl80211 format.
  *
- * Return: nl80211 HE guard interval constant
+ * Return: nl80211 guard interval constant
  */
-static u8 ath12k_dp_tx_mon_he_gi_to_nl80211(u8 hal_gi)
+static u8 ath12k_dp_tx_mon_gi_to_nl80211(u8 hal_gi)
 {
 	switch (hal_gi) {
 	case HE_GI_0_8:
@@ -2639,8 +2715,7 @@ static u8 ath12k_dp_tx_mon_he_gi_to_nl80211(u8 hal_gi)
 static void
 ath12k_dp_mon_tx_fill_rate_status(struct ath12k_pdev_dp *dp_pdev,
 				  struct hal_tx_mon_ppdu_info *ppdu_info,
-				  struct ieee80211_tx_status *status,
-				  bool contains_host_frames)
+				  struct ieee80211_tx_status *status)
 {
 	struct hal_rx_mon_ppdu_info *rx_status;
 	struct ieee80211_rate_status *st_rate;
@@ -2654,70 +2729,63 @@ ath12k_dp_mon_tx_fill_rate_status(struct ath12k_pdev_dp *dp_pdev,
 		return;
 
 	status->n_rates = ATH12K_RATE_STATUS_N_RATES;
-	st_rate = &status->rates[0];
+	st_rate = &status->rates[status->n_rates - 1];
 	memset(st_rate, 0, sizeof(*st_rate));
 	st_rate->try_count = ATH12K_RATE_STATUS_TRY_COUNT;
 	ri = &st_rate->rate_idx;
 
-	if (contains_host_frames) {
-		ri->flags = 0;
+	ri->flags = 0;
+	ri->mcs = rx_status->mcs;
+	ri->bw = ath12k_mac_bw_to_mac80211_bw(rx_status->bw);
+	ri->nss = rx_status->nss ? rx_status->nss : 1;
 
-		if (rx_status->freq >= ATH12K_FREQ_2GHZ_MIN &&
-		    rx_status->freq <= ATH12K_FREQ_2GHZ_MAX) {
-			ri->legacy =
-				ath12k_dp_tx_mon_get_legacy_rate(ATH12K_RATE_11MBPS_KBPS);
-		} else {
-			ri->legacy =
-				ath12k_dp_tx_mon_get_legacy_rate(ATH12K_RATE_24MBPS_KBPS);
+	switch (rx_status->preamble_type) {
+	case HAL_RX_PREAMBLE_11A:
+	case HAL_RX_PREAMBLE_11B:
+		if (!rx_status->rate) {
+			if (rx_status->preamble_type == HAL_RX_PREAMBLE_11B)
+				ath12k_dp_tx_mon_set_rate_b(rx_status);
+			else
+				ath12k_dp_tx_mon_set_rate_a(rx_status);
 		}
-
-		ri->bw = ath12k_mac_bw_to_mac80211_bw(rx_status->bw ?
-						      rx_status->bw :
-						      ATH12K_RATE_STATUS_DEFAULT_BW);
-		ri->nss = rx_status->nss ?
-			  rx_status->nss : ATH12K_RATE_STATUS_DEFAULT_NSS;
-	} else {
+		ri->legacy = ath12k_dp_tx_mon_get_legacy_rate(rx_status->rate);
 		ri->flags = 0;
+		break;
+
+	case HAL_RX_PREAMBLE_11N:
+		ri->flags = RATE_INFO_FLAGS_MCS;
+		ri->mcs = rx_status->mcs + 8 * (ri->nss - 1);
+		if (rx_status->sgi)
+			ri->flags |= RATE_INFO_FLAGS_SHORT_GI;
+		break;
+
+	case HAL_RX_PREAMBLE_11AC:
+		ri->flags = RATE_INFO_FLAGS_VHT_MCS;
 		ri->mcs = rx_status->mcs;
-		ri->bw = ath12k_mac_bw_to_mac80211_bw(rx_status->bw);
-		ri->nss = rx_status->nss;
+		if (rx_status->sgi)
+			ri->flags |= RATE_INFO_FLAGS_SHORT_GI;
+		break;
 
-		switch (rx_status->preamble_type) {
-		case HAL_RX_PREAMBLE_11N:
-			ri->flags |= RATE_INFO_FLAGS_MCS;
-			if (rx_status->sgi)
-				ri->flags |= RATE_INFO_FLAGS_SHORT_GI;
-			break;
+	case HAL_RX_PREAMBLE_11AX:
+		ri->flags = RATE_INFO_FLAGS_HE_MCS;
+		ri->mcs = rx_status->mcs;
+		ri->he_gi = ath12k_dp_tx_mon_gi_to_nl80211(rx_status->sgi);
+		break;
 
-		case HAL_RX_PREAMBLE_11AC:
-			ri->flags |= RATE_INFO_FLAGS_VHT_MCS;
-			if (rx_status->sgi)
-				ri->flags |= RATE_INFO_FLAGS_SHORT_GI;
-			break;
+	case HAL_RX_PREAMBLE_11BA:
+	case HAL_RX_PREAMBLE_11BE:
+		ri->flags = RATE_INFO_FLAGS_EHT_MCS;
+		ri->mcs = rx_status->mcs;
+		ri->eht_gi = ath12k_dp_tx_mon_gi_to_nl80211(rx_status->sgi);
+		break;
 
-		case HAL_RX_PREAMBLE_11AX:
-			ri->flags |= RATE_INFO_FLAGS_HE_MCS;
-			ri->he_gi = ath12k_dp_tx_mon_he_gi_to_nl80211(rx_status->sgi);
-			ri->he_dcm = rx_status->dcm;
-			if (rx_status->bw == RATE_INFO_BW_HE_RU)
-				ri->he_ru_alloc = rx_status->ru_alloc;
-			break;
-
-		case HAL_RX_PREAMBLE_11BA:
-		case HAL_RX_PREAMBLE_11BE:
-			ri->flags |= RATE_INFO_FLAGS_EHT_MCS;
-			break;
-
-		case HAL_RX_PREAMBLE_11B:
-		case HAL_RX_PREAMBLE_11A:
-		default:
-			if (!ieee80211_is_data_qos(cpu_to_le16(rx_status->frame_control)))
-				ri->legacy = ath12k_dp_tx_mon_get_legacy_rate
-							(rx_status->rate ?
-							rx_status->rate :
-							ATH12K_RATE_6MBPS_KBPS);
-			break;
-		}
+	default:
+		ri->legacy = (rx_status->freq >= ATH12K_FREQ_2GHZ_MIN &&
+			      rx_status->freq <= ATH12K_FREQ_2GHZ_MAX) ?
+			      ATH12K_LEGACY_RATE_1MBPS_100KBPS :
+			      ATH12K_LEGACY_RATE_6MBPS_100KBPS;
+		ri->flags = 0;
+		break;
 	}
 }
 
@@ -2762,11 +2830,13 @@ ath12k_dp_mon_tx_deliver_frame(struct ath12k_pdev_dp *dp_pdev,
 					 contains_host_frames,
 					 is_response_frame, user_idx);
 
-	if (ieee80211_is_data_qos(cpu_to_le16(ppdu_info->rx_status.frame_control)))
+	if (!ieee80211_is_data_qos(cpu_to_le16(ppdu_info->rx_status.frame_control))) {
+		status.n_rates = ATH12K_RATE_STATUS_N_RATES;
+		status.rates = &rate_status;
+		ath12k_dp_mon_tx_fill_rate_status(dp_pdev, ppdu_info, &status);
+	} else {
 		ath12k_dp_tx_mon_update_radiotap_eht(skb, &status.mon_info, ppdu_info);
-
-	ath12k_dp_mon_tx_fill_rate_status(dp_pdev, ppdu_info,
-					  &status, contains_host_frames);
+	}
 
 	ieee80211_tx_monitor_offload(hw, &status);
 }
@@ -2817,6 +2887,7 @@ ath12k_dp_mon_tx_deliver_single_ppdu(struct ath12k_pdev_dp *dp_pdev,
 		return;
 
 	if (user_idx == 0 &&
+	    !ppdu_context->contains_host_frames &&
 	    (ppdu_info->ack_recvd || ppdu_info->cts_recvd)) {
 		if (ppdu_info->ack_recvd && !status_info->explicit_ack_type) {
 			resp_skb = ath12k_dp_tx_mon_generate_ack_rx_frm(dp_pdev,
