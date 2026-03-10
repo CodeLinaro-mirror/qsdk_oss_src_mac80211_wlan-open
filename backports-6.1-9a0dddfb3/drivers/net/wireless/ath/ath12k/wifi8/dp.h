@@ -74,7 +74,40 @@ struct ath12k_dp_hw_group_wifi8 {
 	spinlock_t htt_cmd_retry_lock;
 	struct delayed_work dp_htt_retry_dwork;
 	atomic_t retry_work_active;
+	struct timer_list hw_grp_timer;
+	/* lock for hw grp timer */
+	spinlock_t hw_grp_timer_lock;
+	struct list_head timer_list_head;
+	u32 current_timer_val;
+	u32 timer_entry_count;
+	struct list_head mec_entry_list_head;
+	u16 mec_timer_key;
 };
+
+struct dp_hw_grp_timer_entry {
+	void *arg;
+	u32 timeout_ms;
+	u8 scaling_factor;
+	u8 counter;
+	u16 key_value;
+	struct list_head list;
+	void (*cmd_callback)(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8,
+			     void *arg);
+};
+
+struct ath12k_dp_hw_grp_timer_entry_param {
+	u32 timeout_ms;
+	void *arg;
+	void (*callback)(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8,
+			 void *arg);
+	u16 key_value;
+};
+
+void ath12k_dp_hw_group_timer_fn(struct timer_list *timer);
+int ath12k_dp_hw_group_add_timer_entry(struct ath12k_dp_hw_group *dp_hw_grp,
+				       struct ath12k_dp_hw_grp_timer_entry_param *param);
+bool ath12k_dp_hw_group_del_timer_entry(struct ath12k_dp_hw_group *dp_hw_grp,
+					u16 key_value);
 
 static inline struct ath12k_dp_wifi8 *ath12k_get_dp_wifi8(struct ath12k_dp *dp)
 {

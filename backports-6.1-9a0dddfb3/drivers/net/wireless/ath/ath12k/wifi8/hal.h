@@ -118,7 +118,7 @@ enum rdi_based_source_ring_selection {
 
 /* To set mcast pkt ctrl vlaues */
 #define HAL_TCL_R0_VDEV_MCAST_PACKET_CTRL_MAP_n_ADDR(reg_idx) \
-	(0x00F132D0 + (0x4 * (reg_idx)))
+	(0x00F132E4 + (0x4 * (reg_idx)))
 #define HAL_TCL_VDEV_MCAST_PACKET_CTRL_REG_ID(vdev_id) ((vdev_id) >> 0x3)
 #define HAL_TCL_VDEV_MCAST_PACKET_CTRL_INDEX_IN_REG(vdev_id) ((vdev_id) & 0x7)
 #define HAL_TCL_VDEV_MCAST_PACKET_CTRL_MASK 0x7
@@ -1163,7 +1163,7 @@ void ath12k_wifi8_hal_tx_set_ppe_vp_entry(struct ath12k_base *ab,
 void ath12k_wifi8_hal_ppeds_cfg_ast_override_map_reg(struct ath12k_base *ab, u8 idx,
 						     u32 ppeds_idx_map_val);
 void ath12k_wifi8_hal_reo_config_reo2ppe_dest_info(struct ath12k_base *ab);
-bool ath12k_wifi8_hal_tx_completion_process(struct hal_tqm2sw_completion_ring *desc,
+void ath12k_wifi8_hal_tx_completion_process(struct hal_tqm2sw_completion_ring *desc,
 					    struct ath12k_dp_tx_comp_status *tx_comp_status);
 void ath12k_wifi8_hal_hw_ase_init(struct ath12k_base *ab,
 				  struct ath12k_hal_ast_param *ast_param);

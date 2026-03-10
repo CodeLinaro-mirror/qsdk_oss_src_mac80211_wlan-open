@@ -3033,7 +3033,7 @@ int ath12k_wifi7_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 		if (unlikely(tx_status.buf_rel_source == HAL_WBM_REL_SRC_MODULE_FW)) {
 			status_desc = (void *)desc;
 
-			htt_status = tx_status.htt_status;
+			htt_status = tx_status.u.htt_status;
 
 			if (htt_status == HAL_WBM_REL_HTT_TX_COMP_STATUS_REINJ)
 				ath12k_ppeds_reinject_handler(ab, tx_desc, status_desc);

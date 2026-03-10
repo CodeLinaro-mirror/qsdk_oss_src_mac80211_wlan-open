@@ -932,11 +932,11 @@ bool ath12k_wifi7_hal_tx_completion_process(struct hal_wbm_completion_ring_tx *d
 	}
 
 	if (tx_status->buf_rel_source == HAL_WBM_REL_SRC_MODULE_FW) {
-		tx_status->htt_status =
+		tx_status->u.htt_status =
 			le32_get_bits(desc->info0, HAL_TX_COMP_TQM_RELEASE_REASON_MASK);
 
 		/* Dont consider HTT_TX_COMP_STATUS_MEC_NOTIFY */
-		if (tx_status->htt_status ==
+		if (tx_status->u.htt_status ==
 				HAL_WBM_REL_HTT_TX_COMP_STATUS_MEC_NOTIFY)
 			return false;
 	}

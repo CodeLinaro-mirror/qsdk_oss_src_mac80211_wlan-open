@@ -449,7 +449,10 @@ struct ath12k_dp_tx_comp_status {
 	int buf_rel_source;
 	struct ath12k_ppeds_tx_desc_info *tx_desc;
 	u32 desc_id;
-	int htt_status;
+	union {
+		int htt_status;
+		int tqm_status;
+	} u;
 };
 
 struct ath12k_spt_info {
