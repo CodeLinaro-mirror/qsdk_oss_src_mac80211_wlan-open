@@ -1101,13 +1101,13 @@ void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag, bool standby_
 			ath12k_dp_ppeds_interrupt_stop(ab);
 #endif
 			ath12k_qmi_firmware_stop(ab);
-			ath12k_hif_power_down(ab, false);
 			ath12k_core_cleanup(ab);
 			total_vdevs = ath12k_core_get_total_num_vdevs(ab);
 			ab->free_vdev_map = (1LL << (ab->num_radios * total_vdevs)) - 1;
 			ab->free_vdev_stats_id_map = 0;
 			ath12k_core_to_group_ref_put(ab);
 			ath12k_qmi_free_resource(ab);
+			ath12k_hif_power_down(ab, false);
 			ath12k_info(ab, "Q6 power down\n");
 		}
 	}
