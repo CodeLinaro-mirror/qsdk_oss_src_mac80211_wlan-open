@@ -290,6 +290,7 @@ void ath12k_wifi7_hal_rx_desc_get_fse_info_qcn9274(struct hal_rx_desc *desc,
 						   struct rx_mpdu_desc_info
 						   *rx_mpdu_info)
 {
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	__le32 flow_idx_info = desc->u.qcn9274_compact.msdu_end.info7;
 
 	rx_mpdu_info->flow_idx_timeout =
@@ -301,5 +302,6 @@ void ath12k_wifi7_hal_rx_desc_get_fse_info_qcn9274(struct hal_rx_desc *desc,
 	rx_mpdu_info->flow_info.flow_metadata =
 		le16_get_bits(desc->u.qcn9274_compact.msdu_end.fse_metadata,
 			      ATH12K_DP_RX_FSE_FLOW_METADATA_MASK);
+#endif
 }
 

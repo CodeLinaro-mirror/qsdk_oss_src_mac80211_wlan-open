@@ -13,7 +13,9 @@
 #include <linux/dma-mapping.h>
 #include <linux/cacheflush.h>
 #include "hif.h"
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #include "ppe.h"
+#endif
 #include "dp.h"
 #include "fse.h"
 #include "wifi7/hal.h"
@@ -544,6 +546,7 @@ static struct ppe_ds_wlan_ops_v2 ppeds_ops_v2 = {
 	.notify_napi_done = ath12k_ppeds_notify_napi_done_v2,
 };
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 void ath12k_dp_peer_ppeds_route_setup(struct ath12k *ar, struct ath12k_link_vif *arvif,
 				      struct ath12k_link_sta *arsta)
 {
@@ -603,6 +606,7 @@ void ath12k_dp_peer_ppeds_route_setup(struct ath12k *ar, struct ath12k_link_vif 
 					     src_info, ppe_routing_enable,
 					     use_ppe);
 }
+#endif
 
 #define HAL_TX_PPE_VP_CONFIG_TABLE_ADDR  0x00a44194
 #define HAL_TX_PPE_VP_CONFIG_TABLE_OFFSET 4
@@ -1512,36 +1516,6 @@ int ath12k_dp_ppeds_register_soc(struct ath12k_dp *dp, struct dp_ppe_ds_idxs *id
 	return 0;
 }
 
-#define HAL_TCL_RBM_MAPPING0_ADDR_OFFSET        0x00000088
-#define HAL_TCL_RBM_MAPPING_SHFT 4
-#define HAL_TCL_RBM_MAPPING_BMSK 0xF
-#define HAL_TCL_RBM_MAPPING_PPE2TCL_OFFSET  7
-#define HAL_TCL_RBM_MAPPING_TCL_CMD_CREDIT_OFFSET  6
-
-void ath12k_hal_tx_config_rbm_mapping(struct ath12k_base *ab, u8 ring_num,
-				      u8 rbm_id, int ring_type)
-{
-	u32 curr_map, new_map;
-
-	if (ring_type == HAL_PPE2TCL)
-		ring_num = ring_num + HAL_TCL_RBM_MAPPING_PPE2TCL_OFFSET;
-	else if (ring_type == HAL_TCL_CMD)
-		ring_num = ring_num + HAL_TCL_RBM_MAPPING_TCL_CMD_CREDIT_OFFSET;
-
-	curr_map = ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_TCL_REG +
-				     HAL_TCL_RBM_MAPPING0_ADDR_OFFSET);
-
-	/* Protect the other values and clear the specific fields to be updated */
-	curr_map &= (~(HAL_TCL_RBM_MAPPING_BMSK <<
-		     (HAL_TCL_RBM_MAPPING_SHFT * ring_num)));
-	new_map = curr_map | ((HAL_TCL_RBM_MAPPING_BMSK & rbm_id) <<
-			      (HAL_TCL_RBM_MAPPING_SHFT * ring_num));
-
-	ath12k_hif_write32(ab, HAL_SEQ_WCSS_UMAC_TCL_REG +
-			   HAL_TCL_RBM_MAPPING0_ADDR_OFFSET, new_map);
-}
-EXPORT_SYMBOL(ath12k_hal_tx_config_rbm_mapping);
-
 static int ath12k_dp_srng_init_idx(struct ath12k_base *ab, struct dp_srng *ring,
 				   enum hal_ring_type type, int ring_num,
 				   int mac_id,
@@ -1563,7 +1537,9 @@ static int ath12k_dp_srng_init_idx(struct ath12k_base *ab, struct dp_srng *ring,
 
 	switch (type) {
 	case HAL_REO_DST:
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	case HAL_REO2PPE:
+#endif
 			params.intr_batch_cntr_thres_entries =
 				HAL_SRNG_INT_BATCH_THRESHOLD_RX;
 			params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_RX;
@@ -1580,11 +1556,13 @@ static int ath12k_dp_srng_init_idx(struct ath12k_base *ab, struct dp_srng *ring,
 			HAL_SRNG_INT_BATCH_THRESHOLD_OTHER;
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_OTHER;
 		break;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	case HAL_PPE2TCL:
 		params.intr_batch_cntr_thres_entries =
 			HAL_SRNG_INT_BATCH_THRESHOLD_PPE2TCL;
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_PPE2TCL;
 		break;
+#endif
 	default:
 		ath12k_warn(ab, "Not a valid ring type in dp :%d\n", type);
 		return -EINVAL;
@@ -1784,6 +1762,7 @@ void ath12k_dp_srng_ppeds_cleanup(struct ath12k_base *ab)
 	ath12k_dp_srng_cleanup(ab, &dp->ppe.ppeds_comp_ring.ppe_wbm2sw_ring);
 }
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 int ath12k_ppe_rfs_get_core_mask(void)
 {
 	return ATH12K_PPE_DEFAULT_CORE_MASK;
@@ -1824,7 +1803,6 @@ int ath12k_change_core_mask_for_ppe_rfs(struct ath12k_base *ab,
 	return 0;
 }
 
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 static bool ath12k_stats_update_ppe_vp(struct net_device *dev, ppe_vp_hw_stats_t *vp_stats)
 {
 	struct pcpu_sw_netstats *tstats = this_cpu_ptr(netdev_tstats(dev));
@@ -1936,35 +1914,6 @@ int ath12k_vif_set_mtu(struct ath12k_vif *ahvif, int mtu)
 }
 EXPORT_SYMBOL(ath12k_vif_set_mtu);
 
-int ath12k_vif_get_vp_num(struct ath12k_vif *ahvif, struct net_device *dev)
-{
-	int ppe_vp_num = ATH12K_INVALID_PPE_VP_NUM;
-	struct nss_plugins_ops *plugin_ops = ath12k_get_registered_nss_plugin_ops();
-
-	if (dev->ieee80211_ptr &&
-	    dev->ieee80211_ptr->iftype == NL80211_IFTYPE_MONITOR)
-		return 0;
-
-	if (!plugin_ops)
-		return -EINVAL;
-
-	ppe_vp_num = plugin_ops->get_vp_num(dev);
-
-	if (ppe_vp_num <= 0) {
-		ath12k_dbg(NULL, ATH12K_DBG_PPE,
-			   "Error in getting VP num for netdev %s err %d\n",
-			   dev->name, ppe_vp_num);
-		return -ENOSR;
-	}
-
-	ahvif->dp_vif.ppe_vp_num = ppe_vp_num;
-
-	ath12k_dbg(NULL, ATH12K_DBG_PPE,
-		   "PPE VP assignment: device '%s' VP num %d assigned by ath client\n",
-		   dev->name, ahvif->dp_vif.ppe_vp_num);
-	return 0;
-}
-EXPORT_SYMBOL(ath12k_vif_get_vp_num);
 
 static void
 ath12k_dp_rx_ppeds_fse_update_flow_info(struct ath12k_base *ab,
@@ -2149,6 +2098,36 @@ void ath12k_dp_ppeds_interrupt_start(struct ath12k_base *ab)
 	ath12k_hif_ppeds_irq_enable(ab, PPEDS_IRQ_REO2PPE);
 	ath12k_hif_ppeds_irq_enable(ab, PPEDS_IRQ_PPE_WBM2SW_REL);
 }
+
+int ath12k_vif_get_vp_num(struct ath12k_vif *ahvif, struct net_device *dev)
+{
+	int ppe_vp_num = ATH12K_INVALID_PPE_VP_NUM;
+	struct nss_plugins_ops *plugin_ops = ath12k_get_registered_nss_plugin_ops();
+
+	if (dev->ieee80211_ptr &&
+	    dev->ieee80211_ptr->iftype == NL80211_IFTYPE_MONITOR)
+		return 0;
+
+	if (!plugin_ops)
+		return -EINVAL;
+
+	ppe_vp_num = plugin_ops->get_vp_num(dev);
+
+	if (ppe_vp_num <= 0) {
+		ath12k_dbg(NULL, ATH12K_DBG_PPE,
+			   "Error in getting VP num for netdev %s err %d\n",
+			   dev->name, ppe_vp_num);
+		return -ENOSR;
+	}
+
+	ahvif->dp_vif.ppe_vp_num = ppe_vp_num;
+
+	ath12k_dbg(NULL, ATH12K_DBG_PPE,
+		   "PPE VP assignment: device '%s' VP num %d assigned by ath client\n",
+		   dev->name, ahvif->dp_vif.ppe_vp_num);
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_vif_get_vp_num);
 
 int ath12k_nss_plugin_register_ops(struct ath12k_base *ab)
 {

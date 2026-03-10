@@ -2090,11 +2090,15 @@ void ath12k_mac_op_sta_set_4addr(struct ieee80211_hw *hw,
 					struct ieee80211_sta *sta, bool enabled)
 {
 	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
+#endif
 
 	if (enabled && !ahsta->use_4addr_set) {
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 		ahsta->ppe_vp_num = ahvif->dp_vif.ppe_vp_num;
 		ahsta->vlan_iface = ahvif->vlan_iface;
+#endif
 		wiphy_work_queue(hw->wiphy, &ahsta->set_4addr_wk);
 		ahsta->use_4addr_set = true;
 	}
@@ -10967,8 +10971,10 @@ static void ath12k_sta_set_4addr_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 	sta = container_of((void *)ahsta, struct ieee80211_sta, drv_priv);
 	links = ahsta->links_map;
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (ahsta->vlan_iface)
 		ath12k_ppe_ds_attach_vlan_vif_link(ahsta->vlan_iface, ahsta->ppe_vp_num);
+#endif
 
 	for_each_set_bit(link_id, &links, ATH12K_NUM_MAX_LINKS) {
 		arsta = rcu_dereference(ahsta->link[link_id]);
@@ -11009,7 +11015,9 @@ static void ath12k_sta_set_4addr_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 		if (ahvif->dp_vif.tx_encap_type != ATH12K_HW_TXRX_ETHERNET)
 			continue;
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 		ath12k_dp_peer_ppeds_route_setup(ar, arvif, arsta);
+#endif
 
 		ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
                                                     WMI_VDEV_PARAM_AP_ENABLE_NAWDS,
@@ -11977,6 +11985,7 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (!ahsta->ppe_vp_num)
 		ahsta->ppe_vp_num = ahvif->dp_vif.ppe_vp_num;
+#endif
 
 	if (vif->type == NL80211_IFTYPE_AP_VLAN) {
 		wdev = ieee80211_vif_to_wdev(vif);
@@ -11986,15 +11995,15 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 			ret = -EINVAL;
 			goto exit;
 		}
-
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 		ahsta->ppe_vp_num = ahvif->dp_vif.ppe_vp_num;
 		if (ahvif->vlan_iface && !ahvif->vlan_iface->attach_link_done)
 			ath12k_ppe_ds_attach_vlan_vif_link(ahvif->vlan_iface,
 							   ahvif->dp_vif.ppe_vp_num);
+#endif
 		/* Update ahvif with parent vif */
 		ahvif = ath12k_vif_to_ahvif(vif);
 	}
-#endif
 
 	if (ieee80211_vif_is_mld(vif) && sta->valid_links) {
 		WARN_ON(!sta->mlo && hweight16(sta->valid_links) != 1);
@@ -16868,8 +16877,10 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 	 * which is allocated during netdev initialization.
 	 * This also handles Subsystem Recovery scenarios.
 	 */
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (ath12k_vif_get_vp_num(ahvif, wdev->netdev))
 		ath12k_dbg(NULL, ATH12K_DBG_PPE, "failed to get VP num from nss-wifi-plugin\n");
+#endif
 
 	if (ahvif->dp_vif.ppe_vp_num > 0) {
 		ppe_vp_num = ahvif->dp_vif.ppe_vp_num;
@@ -16889,6 +16900,7 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 	ahvif->ah = ah;
 	ahvif->vif = vif;
 	arvif = &ahvif->deflink;
+
 	/* Restore the VP information if VP is allocated
 	 * successfully at the time of iface init.
 	 */
@@ -16905,7 +16917,9 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 	switch (wdev->ppe_vp_type) {
 	case PPE_VP_USER_TYPE_PASSIVE:
 	case PPE_VP_USER_TYPE_ACTIVE:
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	case PPE_VP_USER_TYPE_DS:
+#endif
 		ppe_vp_type = wdev->ppe_vp_type;
 		break;
 	default:
@@ -16969,7 +16983,9 @@ ppe_vp_config:
 
 		ahvif->links_map = links_map;
 		ahvif->vlan_iface = vlan_iface;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 		ath12k_ppe_ds_attach_vlan_vif_link(ahvif->vlan_iface, ahvif->dp_vif.ppe_vp_num);
+#endif
 		goto exit;
 	}
 
@@ -17210,7 +17226,9 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 			continue;
 
 		if (vif->type == NL80211_IFTYPE_AP_VLAN) {
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 			ath12k_ppeds_detach_link_apvlan_vif(arvif, ahvif->vlan_iface, link_id);
+#endif
 			continue;
 		}
 		ar = arvif->ar;
@@ -19059,11 +19077,12 @@ ath12k_mac_assign_vif_chanctx_handle(struct ieee80211_hw *hw,
 
 	ath12k_vendor_link_state_update(ar->pdev_idx, ab, arvif,
 					ATH12K_VENDOR_LINK_STATE_ADDED);
-
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ret = ath12k_ppeds_attach_link_vif(arvif, ahvif->dp_vif.ppe_vp_num,
 					   &arvif->ppe_vp_profile_idx, vif);
 	if (ret)
 		ath12k_info(ab, "Unable to attach ppe ds node for arvif\n");
+#endif
 
 	if (ctx)
 		ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
@@ -19259,8 +19278,10 @@ ath12k_mac_unassign_vif_chanctx_handle(struct ieee80211_hw *hw,
 		else
 			arvif->is_started = false;
 	}
-
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ath12k_ppeds_detach_link_vif(arvif, arvif->ppe_vp_profile_idx);
+#endif
+
 	if (ahvif->vdev_type != WMI_VDEV_TYPE_STA)
 		arvif->is_started = false;
 

@@ -4135,8 +4135,8 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 	struct ath12k_wifi_generic_params wifi_params;
 	struct ieee80211_vif *vif = NULL;
 	struct ath12k_vif *ahvif = NULL;
-	int ppe_vp_type = 0;
-	char *type = NULL;
+	int ppe_vp_type = 1;
+	char *type = "passive";
 	int ret = 0;
 
 	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_CONFIG_MAX, data, data_len,
@@ -4179,6 +4179,7 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 	if (tb[QCA_WLAN_VENDOR_ATTR_IF_OFFLOAD_TYPE]) {
 		ppe_vp_type = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_IF_OFFLOAD_TYPE]);
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (ppe_vp_type > PPE_VP_USER_TYPE_DS) {
 		ath12k_dbg(NULL, ATH12K_DBG_PPE, "ppe_vp_type value greater than 4 (%d)(%s)\n",
 			   ppe_vp_type, wdev->netdev->name);
@@ -4206,6 +4207,7 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 		ppe_vp_type = 1;
 		pr_err("Overriding offload type to passive as DS isn't enabled\n");
 	}
+#endif
 
 	if (wdev->ppe_vp_type != ppe_vp_type)
 		wdev->ppe_vp_type = ppe_vp_type;
@@ -4226,6 +4228,7 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 		ath12k_dbg(NULL, ATH12K_DBG_PPE, "ahvif is NULL\n");
 		return ret;
 	}
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (ppe_vp_type != ATH12K_INVALID_PPE_VP_TYPE &&
 	    ahvif->dp_vif.ppe_vp_num != ATH12K_INVALID_PPE_VP_NUM) {
 		ret = ath12k_vif_update_vp_config(ahvif, ppe_vp_type);
@@ -4235,6 +4238,7 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 		else
 			wdev->ppe_vp_type = ppe_vp_type;
 	}
+#endif
 
 	pr_info("[%s] vendor cmd type [%s] %d (%s) state %d\n",
 		current->comm,  wdev->netdev->name, wdev->ppe_vp_type,
@@ -4366,10 +4370,12 @@ static int ath12k_vendor_get_wifi_config_handler(struct wiphy *wiphy,
 			goto err;
 		}
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 		if (nla_put_u8(skb, QCA_WLAN_VENDOR_ATTR_IF_OFFLOAD_TYPE, ahvif->dp_vif.ppe_vp_type)) {
 			ret = -EINVAL;
 			goto err;
 		}
+#endif
 	}
 
 	ret = cfg80211_vendor_cmd_reply(skb);

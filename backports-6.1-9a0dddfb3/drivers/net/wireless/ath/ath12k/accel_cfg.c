@@ -89,6 +89,7 @@ void ath12k_get_ingress_mlo_dev_info(struct net_device *ndev,
 
 	ab = arvif->ar->ab;
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	/* Update DS node_id only if the chipset support DS */
 	if (ahvif->dp_vif.ppe_vp_type != PPE_VP_USER_TYPE_DS ||
 	    !test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
@@ -96,6 +97,7 @@ void ath12k_get_ingress_mlo_dev_info(struct net_device *ndev,
 
 	*node_id = ab->dp->ppe.ds_node_id;
 unlock:
+#endif
 	rcu_read_unlock();
 
 	ath12k_dbg(ab, ATH12K_DBG_MAC,
@@ -428,8 +430,10 @@ static bool ath12k_ds_get_node_id(struct ieee80211_vif *vif,
 	if (!ahvif)
 		return false;
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (ahvif->dp_vif.ppe_vp_type != PPE_VP_USER_TYPE_DS)
 		return false;
+#endif
 
 	if (ahvif->vdev_type != WMI_VDEV_TYPE_STA &&
 	    ahvif->vdev_type != WMI_VDEV_TYPE_AP)
@@ -461,12 +465,14 @@ static bool ath12k_ds_get_node_id(struct ieee80211_vif *vif,
 
 	ab = arvif->ar->ab;
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	/* Update and return DS node_id only if the chipset support DS*/
 	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags) ||
 	    arvif->ppe_vp_profile_idx == ATH12K_INVALID_VP_PROFILE_IDX)
 		goto unlock_n_fail;
 
 	*node_id = ab->dp->ppe.ds_node_id;
+#endif
 
 	rcu_read_unlock();
 

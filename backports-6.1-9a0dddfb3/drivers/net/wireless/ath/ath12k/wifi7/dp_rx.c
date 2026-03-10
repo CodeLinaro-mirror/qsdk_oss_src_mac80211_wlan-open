@@ -506,6 +506,7 @@ int ath12k_wifi7_peer_rx_tid_reo_update(struct ath12k *ar,
 	return 0;
 }
 
+#if defined(CPTCFG_ATH12K_PPE_DS_SUPPORT)
 static inline
 void ath12k_wifi7_dp_rx_update_ppe_msdu_mark(struct ath12k_base *ab,
 					     struct ath12k_dp_peer *peer,
@@ -528,6 +529,7 @@ void ath12k_wifi7_dp_rx_update_ppe_msdu_mark(struct ath12k_base *ab,
 			u32_encode_bits(rx_mpdu_info->flow_info.flow_metadata,
 					ATH12K_PPE_VP_NUM);
 }
+#endif
 
 static bool ath12k_wifi7_dp_rx_check_fast_rx(struct ath12k_dp *dp,
 					     struct sk_buff *msdu,
@@ -966,6 +968,7 @@ static int ath12k_wifi7_dp_rx_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 		if (likely(*fast_rx &&
 		    ath12k_wifi7_dp_rx_check_fast_rx(dp, msdu, rx_msdu_info,
 							 tlv_info, peer))) {
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 			if (peer->ppe_vp_num) {
 				dp->hal->hal_ops->rx_desc_get_fse_info(rx_desc,
 								       rx_mpdu_info);
@@ -988,6 +991,7 @@ static int ath12k_wifi7_dp_rx_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 					}
 				}
 			}
+#endif
 
 #ifdef CONFIG_IO_COHERENCY
 			prefetch(skb_shinfo(msdu));
@@ -1029,8 +1033,10 @@ static int ath12k_wifi7_dp_rx_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 		}
 		rcu_read_unlock();
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 		ath12k_wifi7_dp_rx_update_ppe_msdu_mark(dp->ab, peer, msdu,
 							rx_mpdu_info, rx_desc);
+#endif
 
 	} else {
 		enctype = HAL_ENCRYPT_TYPE_OPEN;
@@ -3882,10 +3888,12 @@ int ath12k_wifi7_dp_rx_flow_add_entry(struct ath12k_dp *dp,
 	fse->reo_indication = flow.reo_indication;
 	flow.reo_destination_handler = HAL_RX_FSE_REO_DEST_FT;
 	flow.fse_metadata |= flow_info->fse_metadata;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (flow_info->use_ppe) {
 		flow.use_ppe = flow_info->use_ppe;
 		flow.service_code = PPE_DRV_SC_SPF_BYPASS;
 	}
+#endif
 
 	fse->hal_fse = ath12k_wifi7_hal_rx_flow_setup_fse(ab, fst->hal_rx_fst,
 							  fse->flow_id, &flow);
@@ -4106,8 +4114,9 @@ void ath12k_wifi7_dp_pdev_free(struct ath12k_base *ab)
 			ar->dp.dp_mon_pdev_configured = false;
 		}
 	}
-
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ath12k_dp_ppeds_stop(ab);
+#endif
 }
 
 int ath12k_wifi7_dp_pdev_alloc(struct ath12k_base *ab)
@@ -4178,12 +4187,13 @@ int ath12k_wifi7_dp_pdev_alloc(struct ath12k_base *ab)
 			dp_pdev->dp_mon_pdev_configured = true;
 		}
 	}
-
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ret = ath12k_dp_ppeds_start(ab);
 	if (ret) {
 		ath12k_err(ab, "failed to start DP PPEDS\n");
 		goto err_cleanup_pdevs;
 	}
+#endif
 
 	spin_lock_bh(&dp->dp_lock);
 	for (i = 0; i < ab->num_radios; i++) {
@@ -4212,7 +4222,10 @@ err_cleanup_pdevs:
 		}
 	}
 
+	ath12k_wifi7_dp_pdev_free(ab);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ath12k_dp_ppeds_stop(ab);
+#endif
 out:
 	return ret;
 }

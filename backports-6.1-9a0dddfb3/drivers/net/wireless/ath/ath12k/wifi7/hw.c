@@ -1290,6 +1290,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 	},
 };
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 static int ath12k_mac_op_create_datapath_offload_if(struct ieee80211_hw *hw,
 						    struct ieee80211_vif *vif,
 						    struct net_device *dev)
@@ -1332,6 +1333,7 @@ static int ath12k_mac_op_set_mtu(struct ieee80211_hw *hw,
 
 	return ret;
 }
+#endif
 
 void ath12k_wifi7_ieee80211_free_txskb(struct ieee80211_hw *hw,
 				       struct sk_buff *skb,
