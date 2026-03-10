@@ -11,6 +11,7 @@
 #ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ath12k_cmn_extn.h"
 #endif
+#include <linux/hashtable.h>
 
 /* Max number of links for MLO connection */
 #define ATH12K_DP_PEER_MAX_MLO_LINKS 5
@@ -130,6 +131,9 @@ struct ath12k_dp_hw_link {
 #define ATH12K_DP_PCP_TID_MAP_SIZE	8
 #define ATH12K_DP_MAX_TID_PRECEDENCE_VAL 11
 
+/* Hash table size: 2^11 = 2048 buckets for up to 2048 peers */
+#define ATH12K_DP_PEER_HASH_BITS 11
+
 struct ath12k_dp_hw {
 	struct ath12k_dp_peer __rcu *dp_peer_list[MAX_DP_PEER_LIST_SIZE];
 	DECLARE_BITMAP(free_peer_id_map, ATH12K_MAX_PEER_ID);
@@ -137,9 +141,14 @@ struct ath12k_dp_hw {
 	u16 last_peer_id;
 	u16 last_sta_id;
 
-	/* Lock for protection of dp_peer_list and peers */
-	spinlock_t peer_lock;
+	/* Lock for protection of linked list of ath12k_dp_peer*/
+	spinlock_t peer_list_lock;
 	struct list_head peers;
+
+	/* Lock for protection of dp_peer_list and hashtable */
+	spinlock_t peer_hash_lock;
+	/* Generic hash table for fast MAC address lookup */
+	DECLARE_HASHTABLE(peer_hash, ATH12K_DP_PEER_HASH_BITS);
 };
 
 struct ath12k_dp_hw_group {
@@ -262,7 +271,6 @@ int ath12k_dp_mon_init(struct ath12k_dp *dp);
 void ath12k_dp_mon_deinit(struct ath12k_dp *dp);
 void ath12k_dp_cp_link_peer_unassign(struct ath12k *ar, struct ath12k_link_vif *arvif,
 				     struct ath12k_sta *ahsta, u8 link_id, u8 *addr);
-struct ath12k_dp_peer *ath12k_dp_peer_find(struct ath12k_dp_hw *dp_hw, const u8 *addr);
 u16 ath12k_dp_peer_get_peer_id(struct ath12k_dp_hw *dp_hw, u8 *addr);
 u16 ath12k_dp_peer_get_sta_id(struct ath12k_dp_hw *dp_hw, u8 *addr);
 
@@ -348,7 +356,7 @@ union ath12k_config_param {
  *  - _by_mac_addr(): use when ath12k_sta is NOT available, e.g. for
  *    non-associated peers (bcast/mcast, AP self-peer), or paths that
  *    receive only a MAC address (debugfs, vendor commands, OEM callbacks).
- *    Internally takes peer_lock and performs a hash lookup.
+ *    Internally takes peer_hash_lock and performs a hash lookup.
  */
 int ath12k_dp_peer_set_param_by_dp_peer(void *ptr, enum ath12k_dp_peer_param param,
 					union ath12k_config_param *val);
@@ -384,7 +392,7 @@ int ath12k_dp_peer_get_param_by_peer_id(struct ath12k_pdev_dp *dp_pdev, u16 peer
  *  - _by_mld_and_link_mac(): use when ath12k_sta is NOT available and only
  *    the MLD MAC and link MAC addresses are known, e.g. for non-associated
  *    peers, or paths driven by MAC addresses (debugfs, vendor commands, OEM
- *    callbacks). Internally takes peer_lock and performs two hash lookups
+ *    callbacks). Internally takes peer_hash_lock and performs two hash lookups
  *    (MLD MAC -> dp_peer, link MAC -> link_peer).
  *
  *  - _by_mld_mac_and_link_id(): use when ath12k_sta is NOT available and

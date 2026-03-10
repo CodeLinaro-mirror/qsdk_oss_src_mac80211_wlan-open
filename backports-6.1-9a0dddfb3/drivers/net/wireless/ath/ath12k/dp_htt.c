@@ -2229,13 +2229,13 @@ static int ath12k_fw_mpdu_stats_update(struct ath12k_base *ab,
 			rcu_read_unlock();
 			return -ENOENT;
 		}
-		spin_lock_bh(&dp_hw->peer_lock);
+		spin_lock_bh(&dp_hw->peer_hash_lock);
 		ath12k_svc_burst_stats_update(ab, dp_peer, tid,
 					      q_type, svc_int_success,
 					      svc_int_failure,
 					      burst_sz_success,
 					      burst_sz_failure);
-		spin_unlock_bh(&dp_hw->peer_lock);
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		rcu_read_unlock();
 	} else {
 		rcu_read_unlock();

@@ -588,8 +588,8 @@ ath12k_dbg_sta_read_qos_msduq(struct file *file, char __user *user_buf,
 	u8 *buf __free(kfree) = kzalloc(size, GFP_ATOMIC);
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
 
-	spin_lock_bh(&ah->dp_hw.peer_lock);
-	peer = ath12k_dp_peer_find(&ah->dp_hw, sta->addr);
+	spin_lock_bh(&ah->dp_hw.peer_hash_lock);
+	peer = ath12k_dp_peer_find_by_addr(&ah->dp_hw, sta->addr);
 	if (!peer) {
 		goto ret;
 	}
@@ -632,7 +632,7 @@ ret:
 		len += scnprintf(buf + len, size - len,
 				 "No MSDUQ allocated\n");
 
-	spin_unlock_bh(&ah->dp_hw.peer_lock);
+	spin_unlock_bh(&ah->dp_hw.peer_hash_lock);
 	ret = simple_read_from_buffer(user_buf, count, ppos, buf, len);
 	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -722,10 +722,10 @@ static ssize_t ath12k_dbg_sta_write_fetch_reo_ctx(struct file *file,
 	}
 
 	/* dp_peer is keyed by MLD address (sta->addr), not per-link address */
-	spin_lock_bh(&ah->dp_hw.peer_lock);
-	dp_peer = ath12k_dp_peer_find(&ah->dp_hw, sta->addr);
+	spin_lock_bh(&ah->dp_hw.peer_hash_lock);
+	dp_peer = ath12k_dp_peer_find_by_addr(&ah->dp_hw, sta->addr);
 	if (!dp_peer) {
-		spin_unlock_bh(&ah->dp_hw.peer_lock);
+		spin_unlock_bh(&ah->dp_hw.peer_hash_lock);
 		ret = -ENOENT;
 		goto out;
 	}
@@ -758,7 +758,7 @@ static ssize_t ath12k_dbg_sta_write_fetch_reo_ctx(struct file *file,
 		}
 		sent = true;
 	}
-	spin_unlock_bh(&ah->dp_hw.peer_lock);
+	spin_unlock_bh(&ah->dp_hw.peer_hash_lock);
 
 	if (!ret)
 		ret = sent ? count : -ENOENT;
@@ -800,9 +800,9 @@ ath12k_dbg_sta_read_scs(struct file *file, char __user *user_buf,
 		return -ENOMEM;
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
-	spin_lock_bh(&ah->dp_hw.peer_lock);
+	spin_lock_bh(&ah->dp_hw.peer_hash_lock);
 
-	peer = ath12k_dp_peer_find(&ah->dp_hw, arsta->addr);
+	peer = ath12k_dp_peer_find_by_addr(&ah->dp_hw, arsta->addr);
 	if (!peer)
 		goto ret;
 
@@ -851,7 +851,7 @@ ath12k_dbg_sta_read_scs(struct file *file, char __user *user_buf,
 
 	ret = 0;
 ret:
-	spin_unlock_bh(&ah->dp_hw.peer_lock);
+	spin_unlock_bh(&ah->dp_hw.peer_hash_lock);
 	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
 
 	ret = simple_read_from_buffer(user_buf, count, ppos, buf, len);

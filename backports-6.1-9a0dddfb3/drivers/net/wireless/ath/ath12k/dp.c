@@ -310,11 +310,11 @@ int ath12k_dp_peer_setup(struct ath12k *ar, struct ath12k_link_vif *arvif, const
 		peer->primary_link = false;
 		arvif->primary_sta_link = false;
 		if (ar->dp.dp_hw) {
-			spin_lock_bh(&ar->dp.dp_hw->peer_lock);
+			spin_lock_bh(&ar->dp.dp_hw->peer_hash_lock);
 			if (peer->dp_peer->qos_stats_lvl ==
 			    ATH12K_QOS_MULTI_LINK_STATS)
 				ath12k_dp_qos_stats_alloc(ar, vif, peer);
-			spin_unlock_bh(&ar->dp.dp_hw->peer_lock);
+			spin_unlock_bh(&ar->dp.dp_hw->peer_hash_lock);
 		}
 		spin_unlock_bh(&dp->dp_lock);
 		goto free_shash;
@@ -4332,8 +4332,8 @@ int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
 	bool ds_wds_peer = false;
 	bool is_vdev_peer = false;
 
-	spin_lock_bh(&dp_hw->peer_lock);
-	peer = ath12k_dp_peer_find(dp_hw, addr);
+	spin_lock_bh(&dp_hw->peer_hash_lock);
+	peer = ath12k_dp_peer_find_by_addr(dp_hw, addr);
 	peer_stats = &telemetry_peer->peer_stats;
 	mld_stats = &telemetry_peer->mld_stats;
 	link_stats = &telemetry_peer->link_peer_stats;
@@ -4345,14 +4345,14 @@ int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
 	if (peer) {
 		/*Error case handling for legacy peer*/
 		if (!peer->is_mlo && valid_link) {
-			spin_unlock_bh(&dp_hw->peer_lock);
+			spin_unlock_bh(&dp_hw->peer_hash_lock);
 			ath12k_err(NULL, "Error legacy peer with valid link id");
 			return -EINVAL;
 		}
 
 		/* Error case handling for non-associated links */
 		if (valid_link && !(peer->peer_links_map & BIT(link_id))) {
-			spin_unlock_bh(&dp_hw->peer_lock);
+			spin_unlock_bh(&dp_hw->peer_hash_lock);
 			ath12k_err(NULL, "Error MLO peer with invalid link id");
 			return -EINVAL;
 		}
@@ -4422,7 +4422,7 @@ int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
 					ath12k_dp_get_sojourn_stats(ar, peer, peer_stats);
 				}
 			}
-			spin_unlock_bh(&dp_hw->peer_lock);
+			spin_unlock_bh(&dp_hw->peer_hash_lock);
 			return ret;
 		}
 	} else {
@@ -4455,7 +4455,7 @@ int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
 
 unlock:
 	rcu_read_unlock();
-	spin_unlock_bh(&dp_hw->peer_lock);
+	spin_unlock_bh(&dp_hw->peer_hash_lock);
 	return ret;
 }
 
