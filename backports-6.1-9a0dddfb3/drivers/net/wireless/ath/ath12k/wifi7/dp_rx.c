@@ -180,7 +180,7 @@ int ath12k_wifi7_dp_reo_cmd_send(struct ath12k_base *ab,
 
 	if (WARN_ON(len > sizeof(dp_cmd->u)))
 		return -EINVAL;
-	memcpy(&dp_cmd->u.data, data, len);
+	memcpy(&dp_cmd->u, data, len);
 	dp_cmd->cmd_num = cmd_num;
 	dp_cmd->handler = cb;
 

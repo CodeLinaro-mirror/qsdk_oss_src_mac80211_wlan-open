@@ -1577,8 +1577,10 @@ struct hal_rx_reo_queue {
 #define HAL_REO_UPD_RX_QUEUE_INFO0_UPD_SVLD			BIT(25)
 #define HAL_REO_UPD_RX_QUEUE_INFO0_UPD_SSN			BIT(26)
 #define HAL_REO_UPD_RX_QUEUE_INFO0_UPD_SEQ_2K_ERR		BIT(27)
+#define HAL_REO_UPD_RX_QUEUE_INFO0_UPD_PN_ERR			BIT(28)
 #define HAL_REO_UPD_RX_QUEUE_INFO0_UPD_PN_VALID			BIT(29)
 #define HAL_REO_UPD_RX_QUEUE_INFO0_UPD_PN			BIT(30)
+#define HAL_REO_UPD_RX_QUEUE_INFO0_CLR_STATS_COUNTERS		BIT(31)
 
 #define HAL_REO_UPD_RX_QUEUE_INFO1_RX_QUEUE_NUMBER		GENMASK(15, 0)
 #define HAL_REO_UPD_RX_QUEUE_INFO1_VLD				BIT(16)
@@ -1597,7 +1599,7 @@ struct hal_rx_reo_queue {
 #define HAL_REO_UPD_RX_QUEUE_INFO2_PN_HANDLE_ENABLE		BIT(0)
 #define HAL_REO_UPD_RX_QUEUE_INFO2_IGNORE_AMPDU_FLG		BIT(1)
 #define HAL_REO_UPD_RX_QUEUE_INFO2_BA_WINDOW_SIZE		GENMASK(11, 2)
-#define HAL_REO_UPD_RX_QUEUE_INFO2_PN_SIZE			GENMASK(13, 11)
+#define HAL_REO_UPD_RX_QUEUE_INFO2_PN_SIZE			GENMASK(13, 12)
 #define HAL_REO_UPD_RX_QUEUE_INFO2_SVLD				BIT(14)
 #define HAL_REO_UPD_RX_QUEUE_INFO2_SSN				GENMASK(26, 15)
 #define HAL_REO_UPD_RX_QUEUE_INFO2_SEQ_2K_ERR			BIT(27)
@@ -1612,7 +1614,12 @@ struct hal_reo_update_rx_queue {
 	__le32 info0;
 	__le32 info1;
 	__le32 info2;
-	__le32 pn[4];
+	__le32 pn_31_0;
+	__le16 pn_47_32;
+	__le16 pn_127_48_info;
+	__le32 rsvd0;
+	__le32 rsvd1;
+	__le32 tlv64_pad;
 } __packed;
 
 struct hal_rx_reo_queue_1k {
@@ -1665,6 +1672,8 @@ struct hal_reo_status_hdr {
 #define HAL_REO_GET_Q_STATS_STATUS_INFO0_SSN			GENMASK(11, 0)
 #define HAL_REO_GET_Q_STATS_STATUS_INFO0_CURRENT_INDEX		GENMASK(21, 12)
 
+#define HAL_REO_GET_Q_STATS_STATUS_INFO1_PN_127_48_INFO		GENMASK(1, 0)
+
 #define HAL_REO_GET_Q_STATS_STATUS_INFO3_CURRENT_MPDU_COUNT	GENMASK(6, 0)
 #define HAL_REO_GET_Q_STATS_STATUS_INFO3_CURRENT_MSDU_COUNT	GENMASK(31, 7)
 #define HAL_REO_GET_Q_STATS_STATUS_INFO4_WINDOW_JUMP_2K		GENMASK(3, 0)
@@ -1673,6 +1682,7 @@ struct hal_reo_status_hdr {
 #define HAL_REO_GET_Q_STATS_STATUS_INFO5_FRAMES_IN_ORDER_COUNT	GENMASK(23, 0)
 #define HAL_REO_GET_Q_STATS_STATUS_INFO5_BAR_RECEIVED_COUNT	GENMASK(31, 24)
 #define HAL_REO_GET_Q_STATS_STATUS_INFO6_LATE_RCV_MPDU_COUNT	GENMASK(11, 0)
+#define HAL_REO_GET_Q_STATS_STATUS_INFO6_HOLE_COUNT		GENMASK(27, 12)
 #define HAL_REO_GET_Q_STATS_STATUS_INFO6_GET_Q_1K_SSTAT_FOLLOW	BIT(28)
 #define HAL_REO_GET_Q_STATS_STATUS_INFO7_LOOPING_COUNT		GENMASK(15, 12)
 
@@ -1705,7 +1715,18 @@ struct hal_reo_get_queue_stats_status {
 	__le32 info6;
 	__le16 aging_drop_mpdu_count;
 	__le16 info7;
-};
+} __packed;
+
+#define HAL_REO_GET_Q_1K_STATS_STATUS_INFO0_LOOPING_COUNT	GENMASK(31, 28)
+
+/* REO status TLV carrying the extension bitmap bits 288..1023 for the
+ * preceding HAL_REO_GET_QUEUE_STATS_STATUS response (when requested).
+ */
+struct hal_reo_get_queue_1k_stats_status {
+	struct hal_reo_status_hdr hdr;
+	__le32 rx_bitmap1023_288[23];
+	__le32 info0;
+} __packed;
 
 #define HAL_REO_FLUSH_QUEUE_INFO0_ERR_DETECTED	BIT(0)
 

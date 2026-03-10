@@ -117,4 +117,20 @@ int ath12k_wifi8_dp_rx_flow_fse_cache_operation(struct ath12k_base *ab,
 						enum dp_flow_fst_operation op_code,
 						struct hal_flow_tuple_info *tuple_info);
 int ath12k_wifi8_dp_rx_process_reo_flush_err(struct ath12k_dp *dp, int budget);
+int
+ath12k_wifi8_peer_rx_tid_reo_update_for_smd(struct ath12k_base *ab,
+					    struct ath12k_dp_hw *dp_hw,
+					    const u8 *peer_addr,
+					    struct ath12k_rx_smd_ctx_per_tid *rx_tid_ctx);
+int ath12k_wifi8_peer_rx_tid_reo_clear_vld(struct ath12k_base *ab,
+					   struct ath12k_dp_hw *dp_hw,
+					   const u8 *peer_addr,
+					   u8 tid);
+/* Module parameter: controls whether REO VLD is cleared after fetching SMD ctx.
+ * Declared in wifi8/core.c; extern here so dp.c and any future SMD callers
+ * can gate their behaviour without adding new function arguments.
+ */
+extern bool ath12k_wifi8_clear_vld_after_smd_ctx_fetch;
+extern bool ath12k_wifi8_smd_skip_bitmap_update;
+
 #endif
