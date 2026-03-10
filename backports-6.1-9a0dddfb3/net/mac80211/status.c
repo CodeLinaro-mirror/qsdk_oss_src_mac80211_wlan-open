@@ -214,6 +214,7 @@ static int ieee80211_tx_radiotap_len(struct ieee80211_local *local,
 	int len = sizeof(struct ieee80211_radiotap_header);
 	bool has_mon_offload;
 	struct sk_buff *skb = status ? status->skb : NULL;
+	bool has_tlv_at_end;
 
 	if (status && status->n_rates)
 		status_rate = &status->rates[status->n_rates - 1];
@@ -221,6 +222,12 @@ static int ieee80211_tx_radiotap_len(struct ieee80211_local *local,
 	/* Check if monitor offload is supported */
 	has_mon_offload = status &&
 			  ieee80211_hw_check(&local->hw, SUPPORTS_TX_MONITOR_OFFLOAD);
+	has_tlv_at_end = has_mon_offload &&
+			 tx_mon_hw_check(&status->mon_info, TLV_AT_END);
+
+	/* add additional it_present for TLV_AT_END to support Vendor TLV */
+	if (has_tlv_at_end)
+		len += sizeof(__le32);
 
 	/* IEEE80211_RADIOTAP_TSFT (field 0) - 8-byte alignment */
 	if (has_mon_offload) {
@@ -297,15 +304,6 @@ static int ieee80211_tx_radiotap_len(struct ieee80211_local *local,
 		len += 4; /* 2 x u16 fields */
 	}
 
-	/* IEEE80211_RADIOTAP_TLV (field 28) - 4-byte alignment, variable */
-	if (has_mon_offload && tx_mon_hw_check(&status->mon_info, TLV_AT_END)) {
-		if (!skb || !skb_mac_header_was_set(skb))
-			return len;
-		len = ALIGN(len, 4);
-		/* TLVs until the mac header - Header */
-		len += skb_mac_header(skb) - skb->data;
-	}
-
 	/* IEEE80211_RADIOTAP_VENDOR_NAMESPACE (field 30) - 2-byte alignment, variable */
 	if (has_mon_offload && tx_mon_hw_check(&status->mon_info, VENDOR_TLV) &&
 	    status->mon_info.v_tlv) {
@@ -314,17 +312,14 @@ static int ieee80211_tx_radiotap_len(struct ieee80211_local *local,
 		       le16_to_cpu(status->mon_info.v_tlv->skip_length);
 	}
 
-	/* IEEE80211_RADIOTAP_EHT_USIG (field 33) - 4-byte alignment, 12 bytes */
-	if (has_mon_offload && tx_mon_hw_check(&status->mon_info, EHT_USIG_INFO)) {
+	/* IEEE80211_RADIOTAP_TLV (field 28) - 4-byte alignment, variable
+	 * As TLV_AT_END falls to next it_present(it_optional), this should always be
+	 * the last length to be aligned and calculated
+	 */
+	if (has_tlv_at_end) {
 		len = ALIGN(len, 4);
-		len += 12; /* 3 x u32 fields */
-	}
-
-	/* IEEE80211_RADIOTAP_EHT (field 34) - 4-byte alignment, variable */
-	if (has_mon_offload && tx_mon_hw_check(&status->mon_info, EHT_INFO)) {
-		len = ALIGN(len, 4);
-		/* known (u32) + data[9] (9 x u32) + user_info[] (eht_num_users x u32) */
-		len += 4 + (9 * 4) + (status->mon_info.eht_num_users * 4);
+		/* TLVs until the mac header - Header */
+		len += skb_mac_header(skb) - skb->data;
 	}
 
 	return len;
@@ -383,11 +378,6 @@ ieee80211_add_tx_radiotap_header(struct ieee80211_local *local,
 	has_tlv_at_end = has_mon_offload &&
 			 tx_mon_hw_check(&status->mon_info, TLV_AT_END);
 
-	if (WARN_ON_ONCE(has_tlv_at_end && !skb_mac_header_was_set(skb))) {
-		dev_kfree_skb(skb);
-		return;
-	}
-
 	if (has_tlv_at_end)
 		end_tlvs_len = skb_mac_header(skb) - skb->data;
 
@@ -396,27 +386,18 @@ ieee80211_add_tx_radiotap_header(struct ieee80211_local *local,
 	rthdr->it_len = cpu_to_le16(rtap_len);
 	it_present = &rthdr->it_present;
 
-	if (has_tlv_at_end)
-		rthdr->it_present |=  BIT(IEEE80211_RADIOTAP_TLV);
-
-	/* Check if we need extended present flags for EHT fields */
-	if (has_eht_usig || has_eht) {
-		/* Set EXT bit in first present word */
+	/* Check if we need extended present flags for TLV_AT_END fields. */
+	if (has_tlv_at_end) {
+		/* Set EXT bit in first word i.e. it_present */
 		rthdr->it_present |= cpu_to_le32(BIT(IEEE80211_RADIOTAP_EXT));
 
-		/* Build second present word with EHT field bits
-		 * Bit positions in extended words are: bit_position % 32
-		 * IEEE80211_RADIOTAP_EHT_USIG = 33, so: 33 % 32 = bit 1
-		 * IEEE80211_RADIOTAP_EHT = 34, so: 34 % 32 = bit 2
-		 */
-		if (has_eht_usig)
-			it_present_val |= BIT(IEEE80211_RADIOTAP_EHT_USIG % 32);
-
-		if (has_eht)
-			it_present_val |= BIT(IEEE80211_RADIOTAP_EHT % 32);
+		/* Set IEEE80211_RADIOTAP_TLV bit in next present(it_optional) word */
+		it_present_val |= BIT(IEEE80211_RADIOTAP_TLV);
 
 		/* Write second present word to it_optional[0] */
 		put_unaligned_le32(it_present_val, &rthdr->it_optional[0]);
+
+		/* increment the it_present for proper pos calculation */
 		it_present++;
 	}
 
@@ -780,37 +761,6 @@ he_mu_parsing:
 			pos += le16_to_cpu(status->mon_info.v_tlv->skip_length);
 		}
 	}
-
-	/* IEEE80211_RADIOTAP_EHT (USIG) */
-	if (has_eht_usig) {
-		/* required alignment from rthdr */
-		pos = (u8 *)rthdr + ALIGN(pos - (u8 *)rthdr, 4);
-		put_unaligned_le32(status->mon_info.eht_usig.common, pos);
-		pos += 4;
-		put_unaligned_le32(status->mon_info.eht_usig.value, pos);
-		pos += 4;
-		put_unaligned_le32(status->mon_info.eht_usig.mask, pos);
-		pos += 4;
-	}
-
-	/* IEEE80211_RADIOTAP_EHT (full EHT header) */
-	if (has_eht) {
-		/* required alignment from rthdr */
-		pos = (u8 *)rthdr + ALIGN(pos - (u8 *)rthdr, 4);
-		/* Copy known field */
-		put_unaligned_le32(status->mon_info.eht.known, pos);
-		pos += 4;
-
-		/* Copy data[9] array */
-		memcpy(pos, status->mon_info.eht.data, 9 * 4);
-		pos += 9 * 4;
-
-		/* Copy user_info[] array */
-		memcpy(pos, status->mon_info.eht.user_info,
-		       status->mon_info.eht_num_users * 4);
-		pos += status->mon_info.eht_num_users * 4;
-	}
-
 }
 
 /*
@@ -1178,6 +1128,24 @@ static int ieee80211_tx_get_rates(struct ieee80211_hw *hw,
 	return i - 1;
 }
 
+static bool
+ieee80211_tx_monitor_check_end_tlvs(struct ieee80211_local *local,
+				    struct ieee80211_tx_status *status)
+{
+	struct sk_buff *skb = status ? status->skb : NULL;
+	bool has_tlv = status &&
+		       ieee80211_hw_check(&local->hw, SUPPORTS_TX_MONITOR_OFFLOAD) &&
+		       tx_mon_hw_check(&status->mon_info, TLV_AT_END);
+
+	if (!has_tlv)
+		return true;
+
+	if (!skb || !skb_mac_header_was_set(skb))
+		return false;
+
+	return true;
+}
+
 void ieee80211_tx_monitor(struct ieee80211_local *local, struct sk_buff *skb,
 			  int retry_count, bool send_to_cooked,
 			  struct ieee80211_tx_status *status)
@@ -1187,6 +1155,14 @@ void ieee80211_tx_monitor(struct ieee80211_local *local, struct sk_buff *skb,
 	struct ieee80211_sub_if_data *sdata;
 	struct net_device *prev_dev = NULL;
 	int rtap_len;
+	bool tlv_check_ok;
+
+	/* check valid TLV_AT_END */
+	tlv_check_ok = ieee80211_tx_monitor_check_end_tlvs(local, status);
+	if (WARN_ON_ONCE(!tlv_check_ok)) {
+		dev_kfree_skb(skb);
+		return;
+	}
 
 	/* send frame to monitor interfaces now */
 	rtap_len = ieee80211_tx_radiotap_len(local, info, status);
@@ -1195,6 +1171,7 @@ void ieee80211_tx_monitor(struct ieee80211_local *local, struct sk_buff *skb,
 		dev_kfree_skb(skb);
 		return;
 	}
+
 	ieee80211_add_tx_radiotap_header(local, skb, retry_count,
 					 rtap_len, status);
 
