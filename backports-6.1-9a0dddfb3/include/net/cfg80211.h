@@ -11141,6 +11141,15 @@ void cfg80211_mlo_reconf_add_done(struct net_device *dev,
 void cfg80211_schedule_channels_check(struct wireless_dev *wdev);
 
 /**
+ * cfg80211_schedule_dfs_chan_update - schedule DFS channel update
+ * @wiphy: the wiphy to update
+ *
+ * Schedule the internal cfg80211 work that updates DFS channel states,
+ * e.g. when NOP timers expire.
+ */
+void cfg80211_schedule_dfs_chan_update(struct wiphy *wiphy);
+
+/**
  * cfg80211_epcs_changed - Notify about a change in EPCS state
  * @netdev: the wireless device whose EPCS state changed
  * @enabled: set to true if EPCS was enabled, otherwise set to false.

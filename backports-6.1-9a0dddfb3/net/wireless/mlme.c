@@ -1014,6 +1014,18 @@ bool cfg80211_rx_mgmt_ext(struct wireless_dev *wdev,
 }
 EXPORT_SYMBOL(cfg80211_rx_mgmt_ext);
 
+/**
+ * cfg80211_schedule_dfs_chan_update() - Schedule DFS channel state updates
+ * @wiphy: Wiphy whose DFS channels should be refreshed
+ *
+ * Return: None.
+ */
+void cfg80211_schedule_dfs_chan_update(struct wiphy *wiphy)
+{
+	cfg80211_sched_dfs_chan_update(wiphy_to_rdev(wiphy));
+}
+EXPORT_SYMBOL(cfg80211_schedule_dfs_chan_update);
+
 void cfg80211_sched_dfs_chan_update(struct cfg80211_registered_device *rdev)
 {
 	cancel_delayed_work(&rdev->dfs_update_channels_wk);
