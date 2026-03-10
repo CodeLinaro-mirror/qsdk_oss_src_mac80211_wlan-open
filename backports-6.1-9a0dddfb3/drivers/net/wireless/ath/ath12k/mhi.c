@@ -210,19 +210,21 @@ static void ath12k_mhi_op_status_cb(struct mhi_controller *mhi_cntrl,
 		break;
 	case MHI_CB_EE_RDDM:
 		clear_bit(ATH12K_MHI_MISSION_MODE, &ab_pci->mhi_state);
-		if (ab_pci->mhi_pre_cb == MHI_CB_EE_RDDM) {
-			ath12k_dbg(ab, ATH12K_DBG_BOOT,
-				   "do not queue again for consecutive RDDM event\n");
-			break;
-		}
-
 		/* In-case of rddm for mhi soc reset */
-		if(test_bit(ATH12K_MHI_SOC_RESET, &ab_pci->mhi_state)) {
+		if (test_bit(ATH12K_MHI_SOC_RESET, &ab_pci->mhi_state)) {
 			ath12k_dbg(ab, ATH12K_DBG_BOOT, "Triggering RDDM from mhi soc reset\n");
 			clear_bit(ATH12K_MHI_SOC_RESET, &ab_pci->mhi_state);
 			complete(&ab->rddm_reset_done);
 			return;
 		}
+
+		/* Skip consecutive RDDM events to avoid redundant recovery */
+		if (mhi_get_exec_env(ab_pci->mhi_ctrl) == mhi_cntrl->ee) {
+			ath12k_dbg(ab, ATH12K_DBG_BOOT,
+				   "Ignore RDDM event as MHI is in same state\n");
+			return;
+		}
+
 		ath12k_mhi_set_state_bit(ab_pci, ATH12K_MHI_RDDM);
 		set_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags);
 
@@ -237,8 +239,6 @@ static void ath12k_mhi_op_status_cb(struct mhi_controller *mhi_cntrl,
 	default:
 		break;
 	}
-
-	ab_pci->mhi_pre_cb = cb;
 }
 
 static int ath12k_mhi_op_read_reg(struct mhi_controller *mhi_cntrl,
@@ -280,7 +280,6 @@ int ath12k_mhi_register(struct ath12k_pci *ab_pci)
 
 	timer_setup(&ab_pci->mhi_q6_boot_debug_timer,
 			    ath12k_mhi_q6_boot_debug_timeout_hdlr, 0);
-	ab_pci->mhi_pre_cb = MHI_CB_INVALID;
 	ab_pci->mhi_ctrl = mhi_ctrl;
 	mhi_ctrl->cntrl_dev = ab->dev;
 	mhi_ctrl->regs = ab->mem;
