@@ -8,6 +8,7 @@
 #define ATH12K_HIF_H
 
 #include "core.h"
+#include <linux/delay.h>
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #include "pci.h"
 #endif
@@ -178,6 +179,97 @@ static inline void ath12k_hif_write32(struct ath12k_base *ab, u32 address,
 				      u32 data)
 {
 	ab->hif.ops->write32(ab, address, data);
+}
+
+/**
+ * ath12k_hif_rmw32 - Read-modify-write 32-bit register field
+ * @ab: ath12k base context
+ * @address: register address to update
+ * @mask: contiguous bitmask of the field to update
+ * @value: raw (lsb-aligned) field value to write
+ *
+ * Performs a read-modify-write where only bits covered by @mask are
+ * updated from @value. @value is a raw field value (not pre-shifted).
+ * This helper automatically aligns it to @mask before updating. If the
+ * computed new value matches the current register value, the write is
+ * skipped. If @mask is zero, the function returns without making changes.
+ */
+static inline void ath12k_hif_rmw32(struct ath12k_base *ab, u32 address,
+				    u32 mask, u32 value)
+{
+	u32 orig, newv, shift;
+
+	if (!mask)
+		return;
+
+	shift = ffs(mask) - 1;
+
+	orig = ath12k_hif_read32(ab, address);
+	newv = (orig & ~mask) | ((value << shift) & mask);
+	if (newv != orig)
+		ath12k_hif_write32(ab, address, newv);
+}
+
+/**
+ * ath12k_hif_poll32 - Poll register until masked field matches
+ * @ab: ath12k base context
+ * @address: register address to read
+ * @expected: raw (lsb-aligned) field value expected
+ * @mask: contiguous bitmask of bits to compare
+ * @delay: microseconds to delay between reads
+ * @timeout: total timeout (same units as @delay)
+ *
+ * Repeatedly reads @address until the masked field matches @expected,
+ * comparing ((read & @mask) >> lsb(@mask)) against @expected. For a full
+ * 32-bit comparison, pass @mask = 0xFFFFFFFF and @expected as the full
+ * value. Returns 0 on success, -EINVAL if @mask is zero or if the timeout
+ * expires before a match.
+ */
+static inline int ath12k_hif_poll32(struct ath12k_base *ab, u32 address,
+				     u32 expected, u32 mask,
+				     u32 delay, u32 timeout)
+{
+	u32 wait, val, shift;
+
+	if (!mask || !delay)
+		return -EINVAL;
+
+	shift = ffs(mask) - 1;
+
+	for (wait = timeout/delay; wait != 0; wait--) {
+		val = ath12k_hif_read32(ab, address);
+		if (((val & mask) >> shift) == expected)
+			return 0;
+
+		udelay(delay);
+	}
+
+	return -EINVAL;
+}
+
+/**
+ * ath12k_hif_read32_masked - Read a masked 32-bit register field
+ * @ab: ath12k base context
+ * @address: register address to read
+ * @mask: contiguous bitmask of the field to extract
+ *
+ * Reads @address and returns the field covered by @mask as a raw
+ * (lsb-aligned) value, i.e. right-shifted to remove leading zeros.
+ * If @mask is zero, returns 0. Assumes @mask is a valid contiguous
+ * genmask.
+ */
+static inline u32 ath12k_hif_read32_masked(struct ath12k_base *ab, u32 address,
+					   u32 mask)
+{
+	u32 val, shift;
+
+	if (!mask)
+		return 0;
+
+	shift = ffs(mask) - 1;
+
+	val = ath12k_hif_read32(ab, address);
+	return (val & mask) >> shift;
 }
 
 static inline int ath12k_hif_power_up(struct ath12k_base *ab)
