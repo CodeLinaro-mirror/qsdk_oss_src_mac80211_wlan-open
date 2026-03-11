@@ -8,6 +8,7 @@
 
 #include "cmn_defs.h"
 #include "hw.h"
+#include "dp.h"
 
 /* Max number of links for MLO connection */
 #define ATH12K_DP_MAX_MLO_LINKS 4
@@ -58,6 +59,16 @@ struct ath12k_dp_hw_group {
 	struct dp_rx_fst *fst;
 	u8 *tx_status_buf[ATH12K_HW_MAX_QUEUES];
 	u8 *rx_status_buf[DP_REO_DST_RING_MAX];
+	struct ath12k_spt_info *spt_info;
+	u32 num_spt_pages;
+	struct ath12k_tx_desc_info *txbaddr[256];
+	struct list_head tx_desc_free_list[ATH12K_HW_MAX_QUEUES];
+	/* protects the free and used desc lists */
+	spinlock_t tx_desc_lock[ATH12K_HW_MAX_QUEUES];
+	bool tx_desc_initialized;
+	/* protects shared TX SPT page and descriptor pool initialization across SOCs */
+	struct mutex tx_init_lock;
+	struct device *tx_spt_dev;
 
 	/* Keep Last */
 	u8 arch_data[] __aligned(sizeof(void *));

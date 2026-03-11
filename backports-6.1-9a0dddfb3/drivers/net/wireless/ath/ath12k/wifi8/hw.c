@@ -878,19 +878,6 @@ static void ath12k_wifi8_mac_op_tx(struct ieee80211_hw *hw,
 			return;
 		}
 
-		ret = ath12k_mac_tx_check_max_limit(dp_pdev, skb);
-		if (unlikely(ret)) {
-			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
-					 "failed due to limit check pdev idx %d\n",
-					 ar->pdev_idx);
-			ath12k_mac_ieee80211_free_txskb(hw, skb, dp_pdev,
-							sta, dp_vif,
-							DP_TX_ENQ_DROP_MAX_TX_LIMIT_FAST,
-							ring_id, false);
-
-			return;
-		}
-
 		switch (ahvif->dp_vif.tx_encap_type) {
 		case ATH12K_HW_TXRX_ETHERNET:
 			skb_cb->flags |= ATH12K_SKB_HW_80211_ENCAP;
@@ -1069,18 +1056,6 @@ static void ath12k_wifi8_mac_op_tx(struct ieee80211_hw *hw,
 	if (!vif->valid_links || !is_mcast || is_dvlan ||
 	    (is_eth && (!is_mcast || sta)) ||
 	    test_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ar->ab->ag->flags)) {
-		ret = ath12k_mac_tx_check_max_limit(dp_pdev, skb);
-		if (ret) {
-			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
-					 "failed due to limit check pdev idx %d\n",
-					 ar->pdev_idx);
-			ath12k_mac_ieee80211_free_txskb(hw, skb, dp_pdev,
-							sta, dp_vif,
-							DP_TX_ENQ_DROP_MAX_TX_LIMIT,
-							ring_id, false);
-			return;
-		}
-
 		err = ath12k_wifi8_dp_tx(dp_pdev, arvif, skb, false, 0, is_mcast,
 					 arsta, ring_id, qos_nw_delay);
 		if (unlikely(err)) {
@@ -1114,15 +1089,6 @@ static void ath12k_wifi8_mac_op_tx(struct ieee80211_hw *hw,
 							   tmp_ar->pdev_idx);
 			if (!tmp_dp_pdev)
 				continue;
-
-			ret = ath12k_mac_tx_check_max_limit(tmp_dp_pdev, skb);
-			if (ret) {
-				ath12k_dbg_level(tmp_ar->ab, ATH12K_DBG_MAC,
-						 ATH12K_DBG_L2,
-						 "failed mcast tx due to limit check pdev idx %d\n",
-						 tmp_ar->pdev_idx);
-				continue;
-			}
 
 			if (is_eth) {
 				msdu_copied = skb_clone(skb, GFP_ATOMIC);

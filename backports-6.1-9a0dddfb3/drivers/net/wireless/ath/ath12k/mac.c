@@ -19506,6 +19506,7 @@ EXPORT_SYMBOL(ath12k_mac_op_add_interface);
 
 void ath12k_mac_vif_unref(struct ath12k_dp *dp, struct ieee80211_vif *vif)
 {
+	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
 	struct ath12k_tx_desc_info *tx_desc_info;
 	struct ath12k_skb_cb *skb_cb;
 	struct sk_buff *skb;
@@ -19513,11 +19514,11 @@ void ath12k_mac_vif_unref(struct ath12k_dp *dp, struct ieee80211_vif *vif)
 	int i, j, k;
 
 	for (i = 0; i < ATH12K_HW_MAX_QUEUES; i++) {
-		spin_lock_bh(&dp->tx_desc_lock[i]);
+		spin_lock_bh(&dp_hw_grp->tx_desc_lock[i]);
 
 		for (j = 0; j < ATH12K_TX_SPT_PAGES_PER_POOL; j++) {
 			tx_spt_page = j + i * ATH12K_TX_SPT_PAGES_PER_POOL;
-			tx_desc_info = dp->txbaddr[tx_spt_page];
+			tx_desc_info = dp_hw_grp->txbaddr[tx_spt_page];
 
 			if (!tx_desc_info)
 				continue;
@@ -19536,7 +19537,7 @@ void ath12k_mac_vif_unref(struct ath12k_dp *dp, struct ieee80211_vif *vif)
 			}
 		}
 
-		spin_unlock_bh(&dp->tx_desc_lock[i]);
+		spin_unlock_bh(&dp_hw_grp->tx_desc_lock[i]);
 	}
 }
 EXPORT_SYMBOL(ath12k_mac_vif_unref);

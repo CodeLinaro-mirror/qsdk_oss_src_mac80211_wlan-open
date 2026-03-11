@@ -340,6 +340,8 @@ void ath12k_dp_tx_release_txbuf_nolock(struct ath12k_dp *dp,
 				       struct ath12k_tx_desc_info *tx_desc,
 				       u8 pool_id)
 {
+	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
+
 	tx_desc->skb = NULL;
 	tx_desc->skb_ext_desc = NULL;
 	tx_desc->in_use = false;
@@ -349,7 +351,7 @@ void ath12k_dp_tx_release_txbuf_nolock(struct ath12k_dp *dp,
 	tx_desc->flags = 0;
 	tx_desc->to_fw = 0;
 	tx_desc->ext_kmem = 0;
-	list_add_tail(&tx_desc->list, &dp->tx_desc_free_list[pool_id]);
+	list_add_tail(&tx_desc->list, &dp_hw_grp->tx_desc_free_list[pool_id]);
 }
 EXPORT_SYMBOL(ath12k_dp_tx_release_txbuf_nolock);
 
@@ -357,9 +359,11 @@ void ath12k_dp_tx_release_txbuf(struct ath12k_dp *dp,
 				struct ath12k_tx_desc_info *tx_desc,
 				u8 pool_id)
 {
-	spin_lock_bh(&dp->tx_desc_lock[pool_id]);
+	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
+
+	spin_lock_bh(&dp_hw_grp->tx_desc_lock[pool_id]);
 	ath12k_dp_tx_release_txbuf_nolock(dp, tx_desc, pool_id);
-	spin_unlock_bh(&dp->tx_desc_lock[pool_id]);
+	spin_unlock_bh(&dp_hw_grp->tx_desc_lock[pool_id]);
 }
 EXPORT_SYMBOL(ath12k_dp_tx_release_txbuf);
 
@@ -367,26 +371,27 @@ struct ath12k_tx_desc_info *ath12k_dp_tx_assign_buffer(struct ath12k_dp *dp,
 						       u8 pool_id)
 {
 	struct ath12k_tx_desc_info *desc, *next_desc;
+	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
 
-	spin_lock_bh(&dp->tx_desc_lock[pool_id]);
-	desc = list_first_entry_or_null(&dp->tx_desc_free_list[pool_id],
+	spin_lock_bh(&dp_hw_grp->tx_desc_lock[pool_id]);
+	desc = list_first_entry_or_null(&dp_hw_grp->tx_desc_free_list[pool_id],
 					struct ath12k_tx_desc_info,
 					list);
 	if (!desc) {
-		spin_unlock_bh(&dp->tx_desc_lock[pool_id]);
+		spin_unlock_bh(&dp_hw_grp->tx_desc_lock[pool_id]);
 		return NULL;
 	}
 
 	list_del(&desc->list);
 	desc->in_use = true;
 
-	next_desc = list_first_entry_or_null(&dp->tx_desc_free_list[pool_id],
+	next_desc = list_first_entry_or_null(&dp_hw_grp->tx_desc_free_list[pool_id],
 					     struct ath12k_tx_desc_info,
 			list);
 	if (next_desc)
 		prefetch(next_desc);
 
-	spin_unlock_bh(&dp->tx_desc_lock[pool_id]);
+	spin_unlock_bh(&dp_hw_grp->tx_desc_lock[pool_id]);
 
 	return desc;
 }
