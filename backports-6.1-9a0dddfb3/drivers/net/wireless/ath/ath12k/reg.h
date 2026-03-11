@@ -9,6 +9,9 @@
 
 #include <linux/kernel.h>
 #include <net/regulatory.h>
+#ifdef CPTCFG_QCN_EXTN
+#include "qcn_extns/ath12k_cmn_extn.h"
+#endif
 
 struct ath12k_base;
 struct ath12k;
@@ -553,6 +556,10 @@ struct ath12k_reg_info {
 	enum wmi_reg_6g_client_type client_type;
 	bool rnr_tpe_usable;
 	bool unspecified_ap_usable;
+#ifdef CPTCFG_QCN_EXTN
+	/*  To store ath12k_reg_info extn members */
+	struct ath12k_reg_info_extn reg_info_extn;
+#endif
 	/* TODO: All 6G related info can be stored only for required
 	 * combination instead of all types, to optimize memory usage.
 	 */

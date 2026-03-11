@@ -220,6 +220,10 @@ static const struct ath12k_wmi_tlv_policy ath12k_wmi_tlv_policies[] = {
 		.min_len = sizeof(struct wmi_vdev_tpc_ie_power_event) },
 	[WMI_TAG_REG_CHAN_LIST_CC_EXT_EVENT] = {
 		.min_len = sizeof(struct wmi_reg_chan_list_cc_ext_event) },
+#ifdef CPTCFG_QCN_EXTN
+	[WMI_TAG_REG_CHAN_PRIORITY] = {
+		.min_len = sizeof(struct ath12k_wmi_reg_chan_priority) },
+#endif
 	[WMI_TAG_MGMT_RX_HDR] = {
 		.min_len = sizeof(struct ath12k_wmi_mgmt_rx_params) },
 	[WMI_TAG_MGMT_TX_COMPL_EVENT] = {
@@ -9258,6 +9262,11 @@ static int ath12k_pull_reg_chan_list_ext_update_ev(struct ath12k_base *ab,
                   ath12k_6g_client_type_to_str(reg_info->client_type),
                   ath12k_super_reg_6g_to_str(reg_info->domain_code_6g_super_id));
 
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_reg_chan_list_cc_ext_parse_extn(ab, ext_wmi_reg_rule,
+					       &reg_info->reg_info_extn);
+#endif
+
 	ath12k_dbg(ab, ATH12K_DBG_WMI, "processed regulatory ext channel list\n");
 
 	kfree(tb);
@@ -10507,6 +10516,11 @@ static int ath12k_reg_handle_chan_list(struct ath12k_base *ab,
 	ab->regd_freed = false;
 	ab->dfs_region = reg_info->dfs_region;
 	spin_unlock_bh(&ab->base_lock);
+
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_reg_handle_chan_list_extn(ab, pdev_idx,
+					 &reg_info->reg_info_extn);
+#endif
 
 	return 0;
 
