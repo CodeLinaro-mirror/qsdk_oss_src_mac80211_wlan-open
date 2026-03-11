@@ -434,7 +434,8 @@ struct ath12k_tx_desc_info {
 	   ext_kmem	: 1,
 	   mmesh	: 1;
 	u8 flags	: 4,
-	   reserved1	: 3,
+	   spl_desc	: 1,
+	   reserved1	: 2,
 	   to_fw	: 1;
 	u8 pool_id;
 } __packed __aligned(64);

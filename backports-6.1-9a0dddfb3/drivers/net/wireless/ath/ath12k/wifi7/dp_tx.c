@@ -2234,13 +2234,33 @@ void ath12k_wifi7_ucast_handler(struct ath12k_dp_vif *dp_vif,
 	/* Assign TX descriptor */
 	dp = dp_pdev->dp;
 	prefetch(dp->device_stats.tx_fast_unicast);
-	tx_desc = ath12k_dp_tx_assign_buffer(dp, ring_id);
+
+	if (unlikely(!(skb_ctrl->flags & DP_SKB_FAST_TX))) {
+		if (unlikely(skb->protocol == cpu_to_be16(ETH_P_PAE))) {
+			struct list_head *spl_desc_free_list;
+
+			spl_desc_free_list = dp->dp_hw_grp->tx_spl_desc_free_list;
+			tx_desc = ath12k_dp_tx_assign_buffer(dp->dp_hw_grp,
+							     spl_desc_free_list, ring_id);
+			if (unlikely(!tx_desc)) {
+				dp->device_stats.tx_err.txbuf_na[ring_id]++;
+				drop_reason = DP_TX_ENQ_DROP_SW_DESC_NA;
+				goto fail;
+			}
+			goto skip_assign_buffer;
+		}
+	}
+
+	tx_desc = ath12k_dp_tx_assign_buffer(dp->dp_hw_grp,
+					     dp->dp_hw_grp->tx_desc_free_list, ring_id);
+
 	if (unlikely(!tx_desc)) {
 		dp->device_stats.tx_err.txbuf_na[ring_id]++;
 		drop_reason = DP_TX_ENQ_DROP_SW_DESC_NA;
 		goto fail;
 	}
 
+skip_assign_buffer:
 	dma_map = ath12k_dp_tx_dma_map(dp, skb, len, tx_desc, &msdu_info,
 				       skb_ctrl);
 	if (unlikely(!dma_map)) {
@@ -2327,7 +2347,9 @@ ath12k_wifi7_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 	u32 qos_nw_delay = msdu_info->qos_nw_delay;
 	int ret;
 
-	tx_desc = ath12k_dp_tx_assign_buffer(dp, ring_id);
+	tx_desc = ath12k_dp_tx_assign_buffer(dp->dp_hw_grp,
+					     dp->dp_hw_grp->tx_desc_free_list,
+					     ring_id);
 	if (!tx_desc) {
 		drop_reason = DP_TX_ENQ_DROP_SW_DESC_NA;
 		goto fail;
@@ -3301,7 +3323,11 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 			continue;
 		}
 
-		list_add_tail(&tx_desc->list, &desc_free_list);
+		if (likely(!tx_desc->spl_desc))
+			list_add_tail(&tx_desc->list, &desc_free_list);
+		else
+			list_add_tail(&tx_desc->list,
+				      &dp->dp_hw_grp->tx_spl_desc_free_list[ring_id]);
 
 		sw_metadata->skb = tx_desc->skb;
 		sw_metadata->paddr = tx_desc->paddr;
