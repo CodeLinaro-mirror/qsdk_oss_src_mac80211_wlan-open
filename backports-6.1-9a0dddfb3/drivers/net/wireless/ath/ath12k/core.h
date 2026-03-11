@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause-Clear */
 /*
- * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2018-2021, 2026 The Linux Foundation. All rights reserved.
  * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
@@ -18,6 +18,8 @@
 #include <linux/panic_notifier.h>
 #include <linux/average.h>
 #include <linux/rhashtable.h>
+#include <linux/rcupdate.h>
+#include <linux/smp.h>
 #include "qmi.h"
 #include "htc.h"
 #include "wmi.h"
@@ -39,6 +41,9 @@
 #include "qcn_extns/ath12k_cmn_extn.h"
 #include "qcn_extns/vendor_extn.h"
 #include <linux/atomic.h>
+#include "event.h"
+#include "me.h"
+#include "me_hmmc.h"
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #include <ppe_ds_wlan.h>
@@ -55,7 +60,6 @@
 #endif
 #endif
 #endif
-#include "mgmt_rx.h"
 
 #ifdef CPTCFG_ATHDEBUG
 #include "ath_debug/athdbg_qmi.h"
@@ -154,6 +158,8 @@ extern bool ath12k_mlo_3_link_tx;
 extern bool ath12k_waltest_mode;
 struct ath12k_dp;
 struct ath12k_hp_update_timer;
+struct ath12k_mgmt;
+struct ath12k_mgmt_irq_grp;
 
 /* Wifi classifier metadata
  * ----------------------------------------------------------------------------
@@ -188,6 +194,7 @@ enum ath12k_bdf_search {
 #define ATH12K_VHT_MCS_MAX	9
 #define ATH12K_HE_MCS_MAX	11
 #define ATH12K_EHT_MCS_MAX	15
+#define ATH12K_UHR_MCS_MAX	23
 
 /* EHT MCS_NSS_FOR_20_MHZ_ONLY_STA */
 #define EHT_MCS_20_MHZ_ONLY_0_7_RX    GENMASK(3, 0)
@@ -220,6 +227,10 @@ enum ath12k_bdf_search {
 		   (min(u8_get_bits((eht_map) >> (idx), \
 		   IEEE80211_EHT_MCS_NSS_TX), nss))
 
+#define ATH12K_CHAN_SWITCH_RESTART_TIME_DELAY	100
+#define ATH12K_CSA_FW_RESTART_TIME_DELAY	50
+#define ATH12K_CSA_CALDB_UNDONE_TIME		500
+
 enum ath12k_crypt_mode {
 	/* Only use hardware crypto engine */
 	ATH12K_CRYPT_MODE_HW,
@@ -249,6 +260,9 @@ enum ath12k_skb_flags {
 	ATH12K_SKB_MGMT_LINK_AGNOSTIC = BIT(3),
 	ATH12K_SKB_CUSTOM_MGMT_TX = BIT(4),
 	ATH12K_SKB_CUSTOM_OFFCHAN_MGMT_TX = BIT(5),
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	ATH12K_SKB_IPA_MAP_UNMAP = BIT(6),
+#endif
 };
 
 struct ath12k_skb_cb {
@@ -314,7 +328,7 @@ enum ath12k_firmware_mode {
 
 extern bool ath12k_cold_boot_cal;
 
-#define ATH12K_IRQ_NUM_MAX 60
+#define ATH12K_IRQ_NUM_MAX 61
 #define ATH12K_EXT_IRQ_NUM_MAX	16
 #define ATH12K_MAX_TCL_RING_NUM	3
 
@@ -455,8 +469,7 @@ enum ath12k_dev_flags {
 	ATH12K_FLAG_WMI_INIT_DONE,
 	ATH12K_FLAG_Q6_POWER_DOWN,
 	ATH12K_FLAG_PPE_DS_ENABLED,
-	ATH12K_FLAG_UMAC_PRERESET_START,
-	ATH12K_FLAG_UMAC_RESET_COMPLETE,
+	ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS,
 	ATH12K_FLAG_UMAC_RECOVERY_START,
 	ATH12K_FLAG_SOC_CREATE_FAIL,
 	ATH12K_FLAG_MGMT_IRQ_ENABLED,
@@ -617,7 +630,19 @@ struct ath12k_vap_cfg {
 	u32 gtx_enable;
 	u32 hwcts2self_ofdma;
 	u8 bcn_tx_power;
+	u32 ampdu_aggr_size;
+	u32 amsdu_aggr_size;
+	u32 ba_bufsize;
+	u32 tx_encap_type;
+	u32 rx_decap_type;
 };
+
+struct ath12k_rssi_deauth_config {
+	bool enabled;
+	s8 rssi_threshold;
+	u32 grace_samples;
+	s8 noise_floor_offset;
+} __packed;
 
 struct ath12k_link_vif {
 	u32 vdev_id;
@@ -648,6 +673,8 @@ struct ath12k_link_vif {
 	u8 link_id;
 	struct ath12k_vif *ahvif;
 	struct ath12k_rekey_data rekey_data;
+
+	struct ath12k_rssi_deauth_config rssi_deauth_cfg;
 
 	u8 current_cntdown_counter;
 	struct ath12k_link_stats link_stats;
@@ -737,6 +764,7 @@ struct ath12k_dp_vif {
 	u8 hal_addr_search_flags;
 	u8 vdev_id_check_en;
 	u16 dp_vif_id;
+	bool is_wds_4addr;
 	int bank_id;
 	u16 ast_idx;
 	u16 ast_hash;
@@ -744,11 +772,14 @@ struct ath12k_dp_vif {
 	atomic_t mcbc_gsn;
 	struct ath12k_dp_link_vif dp_link_vif[ATH12K_NUM_MAX_LINKS];
 	struct ath12k_dp_tx_vif_stats stats[DP_TCL_NUM_RING_MAX];
+	struct ath12k_me_db __rcu *me_db;
+
 	/* PPE mode independent variables */
 	int ppe_vp_num;
 	int ppe_core_mask;
 	u8 ppe_vp_type;
 	bool mscs_hlos_tid_override;
+	u32 monitor_flags;
 	struct ath12k_dp_preserved_stats *link_vif_delete_stats;
 };
 
@@ -856,6 +887,11 @@ struct netdev_tid_stats {
 	struct tid_netstats tid_stats[IEEE80211_NUM_TIDS];
 };
 
+/* Generic VIF Event Types */
+enum ath12k_vif_event_type {
+	ATH12K_VIF_EVENT_TYPE_PEER,
+};
+
 struct ath12k_vif {
 	/* Should be the first member in the structure */
 	struct ath12k_dp_vif dp_vif;
@@ -914,6 +950,7 @@ struct ath12k_vif {
 #endif /* CPTCFG_ATH12K_DEBUGFS */
 
 	struct ath12k_mgmt_frame_stats mgmt_stats;
+	u16 repurposed_links;
 
 	/* Must be last - ends in a flexible-array member.
 	 *
@@ -922,6 +959,8 @@ struct ath12k_vif {
 	 */
 	struct ieee80211_chanctx_conf chanctx;
 	struct ath12k_reg_tpc_power_info reg_tpc_info;
+
+	struct ath12k_event_queue event_queue;
 };
 
 struct ath12k_vif_iter {
@@ -1028,6 +1067,11 @@ struct ath12k_link_sta {
 #ifdef CPTCFG_ATH12K_CFR
 	struct ath12k_per_peer_cfr_capture cfr_capture;
 #endif
+#ifdef CPTCFG_QCN_EXTN
+	/* ath12k_link_sta extension structure */
+	struct ath12k_link_sta_extn arsta_extn;
+#endif
+
 };
 
 struct ath12k_sta_migration_data {
@@ -1043,6 +1087,7 @@ struct ath12k_sta_migration_data {
 struct ath12k_sta {
 	struct ath12k_vif *ahvif;
 	enum hal_pn_type pn_type;
+	enum hal_encrypt_type enctype;
 	struct ath12k_link_sta deflink;
 	struct ath12k_link_sta __rcu *link[ATH12K_NUM_MAX_LINKS];
 	/* indicates bitmap of link sta created in FW */
@@ -1058,6 +1103,7 @@ struct ath12k_sta {
 	u32 mlo_hw_link_id_bitmap;
 	/* indicates bitmap of links where peer delete cmd is sent to FW */
 	u32 peer_delete_cmd_sent_bitmap;
+	bool peer_delete_send_mlo_hw_bitmap;
 
 #ifdef CPTCFG_MAC80211_DEBUGFS
 	/* protected by conf_mutex */
@@ -1076,6 +1122,10 @@ struct ath12k_sta {
 	struct work_struct migration_wk;
 	struct ath12k_sta_migration_data migration_data;
 	struct completion dp_migration_event;
+#ifdef CPTCFG_QCN_EXTN
+	struct ath12k_sta_extn ahsta_extn;
+#endif
+	u16 free_logical_idx_map;
 };
 
 #define ATH12K_INVALID_RSSI_FULL -1
@@ -1358,6 +1408,34 @@ struct ath12k_radio_cfg {
 	/* Temperature monitoring */
 	s32 temperature;                    /* Last temperature reading in °C */
 	u8 temperature_query_pending;       /* Query sent, waiting for response */
+	u32 msdu_ttl;
+};
+
+/**
+ * struct ath12k_chanctx_switch_stats - Channel context switch profiling statistics
+ * @total_switches: Total number of channel switches completed
+ * @last_switch_time_us: Duration of the most recent channel switch in microseconds
+ * @min_switch_time_us: Minimum channel switch duration observed in microseconds
+ * @max_switch_time_us: Maximum channel switch duration observed in microseconds
+ * @entry_time_us: Timestamp when entering switch_vif_chanctx operation
+ * @mvr_posting_time_us: Time taken to post MVR (Multi-VDEV Restart) command
+ * @mvr_resp_time_us: Time taken to receive MVR response from firmware
+ * @mvr_timeout_count: Number of times MVR response timed out
+ */
+struct ath12k_chanctx_switch_stats {
+	u64 total_switches;
+	u64 last_switch_time_us;
+	u64 min_switch_time_us;
+	u64 max_switch_time_us;
+	u64 avg_switch_time_us;
+
+	/* Timing breakdown */
+	u64 entry_time_us;
+	u64 mvr_posting_time_us;
+	u64 mvr_resp_time_us;
+
+	/* Error tracking */
+	u64 mvr_timeout_count;
 };
 
 struct ath12k {
@@ -1451,6 +1529,7 @@ struct ath12k {
 	struct completion vdev_delete_done;
 
 	int num_peers;
+	int num_ml_peers;
 	int max_num_peers;
 	u32 num_started_vdevs;
 	u32 num_created_vdevs;
@@ -1585,11 +1664,8 @@ struct ath12k {
 	bool commitatf;
 	bool atf_strict_scheduling;
 	u64 atf_stats_accum_start_time;
-	u8 dcs_enable_bitmap;
 	/* ath12k extension structure */
 	struct ath12k_extn ar_extn;
-	struct list_head wlan_intf_list;
-	struct work_struct wlan_intf_work;
 	struct completion delete_all_peer_done;
 	struct wmi_vdev_host_tsf_arg tsf_report;
 	struct completion tsf_report_done;
@@ -1604,6 +1680,7 @@ struct ath12k {
 	struct rhashtable_params rhash_tx_skb_param;
 	/* To synchronize rhash tbl write operation */
 	spinlock_t rhash_tx_lock;
+	struct ath12k_chanctx_switch_stats chanctx_switch_stats;
 };
 
 struct ath12k_6ghz_sp_reg_rule {
@@ -1686,6 +1763,9 @@ struct ath12k_pdev_cap {
 	u32 ext_mld_cap;
 	bool nss_ratio_enabled;
 	u8 nss_ratio_info;
+	/* Advertised max NSS from FW (11BN specific) */
+	u8 max_tx_nss;
+	u8 max_rx_nss;
 	u32 scan_radio_caps;
 };
 
@@ -1764,14 +1844,47 @@ struct ath12k_stats_work_context {
 	struct list_head work_list;
 };
 
-#define ATH12K_REPORT_LOW_ACK_NUM_PKT	0xFFFF
-#define ATH12K_IS_UMAC_RESET_IN_PROGRESS        BIT(0)
+#define ATH12K_OP_REPORT_LOW_ACK   0xC000
+#define ATH12K_OP_REPORT_RSSI      0x8000
+#define ATH12K_PAYLOAD_MASK        0x3FFF
 
+#define ATH12K_REPORT_LOW_ACK_ALL  (ATH12K_OP_REPORT_LOW_ACK | ATH12K_PAYLOAD_MASK)
+#define ATH12K_REPORT_RSSI_ALL     (ATH12K_OP_REPORT_RSSI | ATH12K_PAYLOAD_MASK)
+
+/* Legacy */
+#define ATH12K_REPORT_LOW_ACK_NUM_PKT   ATH12K_REPORT_LOW_ACK_ALL
+#define ATH12K_IS_UMAC_RESET_IN_PROGRESS        BIT(0)
+#define ATH12K_IS_UMAC_RESET_TYPE_RECOVERY	BIT(1)
+
+/* Forward declaration for task structure */
+struct ath12k_umac_reset_task;
+
+/**
+ * struct ath12k_mlo_dp_umac_reset:  mlo umac_reset context
+ * @response_chip : Number of chips the event is handled for
+ * @request_chip : Number of chips send the event
+ * @lock : locl for prtecting the umac_reset context
+ * @umac_reset_info: place holder for umac reset related falgs
+ * @initiator_chip: device_id of the initiator chip
+ * @task_queue: Queue of pending tasks
+ * @task_queue_lock: Protects task_queue
+ * @task_id: Monotonically increasing task ID
+ * @tasklet: Hi-priority tasklet per CPU
+ * @csd: Per-CPU call_single_data for async SMP calls
+ */
 struct ath12k_mlo_dp_umac_reset {
-        atomic_t response_chip;
-        spinlock_t lock;
-        u8 umac_reset_info;
-        u8 initiator_chip;
+	unsigned long task_map;                /* Bitmap tracking active tasks */
+	atomic_t request_chip;
+	spinlock_t lock;
+	u8 umac_reset_info;
+	u8 initiator_chip;
+
+	/* Multi-core task queue infrastructure */
+	struct list_head task_queue;
+	spinlock_t task_queue_lock;
+	atomic_t task_id;
+	struct tasklet_struct tasklet[NR_CPUS];
+	call_single_data_t csd[NR_CPUS];
 };
 
 #define WSI_INVALID_ORDER	0xFF
@@ -1939,6 +2052,8 @@ struct ath12k_base {
 	struct ath12k_ce ce;
 	struct timer_list rx_replenish_retry;
 	struct ath12k_hal hal;
+	/* TQM command ring staging in words */
+	u32 *tqm_cmd_staging;
 	/* To synchronize core_start/core_stop */
 	struct mutex core_lock;
 	/* Protects data like peers */
@@ -2118,6 +2233,7 @@ struct ath12k_base {
 #endif /* CONFIG_ACPI */
 
 	struct notifier_block panic_nb;
+	struct notifier_block me_nb;
 
 	struct ath12k_hw_group *ag;
 	struct ath12k_wsi_info wsi_info;
@@ -2144,6 +2260,8 @@ struct ath12k_base {
 
 	const struct ieee80211_ops *ath12k_ops;
 
+	struct ath12k_base_extn ath12k_base_extn;
+
 	const struct ieee80211_ops_extn *ath12k_ops_extn;
 
 	/* To synchronize rhash tbl write operation */
@@ -2151,7 +2269,7 @@ struct ath12k_base {
 
 	struct rhashtable *rhead_sta_addr;
 	struct rhashtable_params rhash_sta_addr_param;
-	
+
 	bool in_coldboot_fwreset;
 	u32 chwidth_num_peer_caps;
 
@@ -2166,7 +2284,6 @@ struct ath12k_base {
 	struct work_struct recovery_work;
 	struct ath12k_dp_umac_reset dp_umac_reset;
 	bool early_cal_support;
-	bool powered_off;
 	bool powerup_triggered;
 	struct ath12k_wsi_info bypass_wsi_info;
 	bool is_bypassed;
@@ -2357,7 +2474,6 @@ void ath12k_dp_umac_reset_handle(struct ath12k_base *ab);
 int ath12k_dp_umac_reset_init(struct ath12k_base *ab);
 void ath12k_dp_umac_reset_deinit(struct ath12k_base *ab);
 void ath12k_umac_reset_completion(struct ath12k_base *ab);
-void ath12k_umac_reset_notify_pre_reset_done(struct ath12k_base *ab);
 struct reserved_mem *ath12k_core_get_reserved_mem_by_name(struct ath12k_base *ab,
 						  const char* name);
 u8 ath12k_core_get_total_num_vdevs(struct ath12k_base *ab);
@@ -2724,6 +2840,21 @@ static inline int ath12k_get_peer_count(struct ath12k_base *ab, bool get_max)
        return peer_count;
 }
 
+static inline void
+ath12k_core_srng_get_htt_mgmt_filter(struct ath12k_base *ab, u16 *mgmt_filter)
+{
+	ath12k_dp_get_htt_mgmt_filter(ab, mgmt_filter);
+}
+
+static inline int
+ath12k_core_srng_htt_rx_filter_setup(struct ath12k_base *ab, u32 ring_id, int mac_id,
+				     enum hal_ring_type ring_type, int rx_buf_size,
+				     struct htt_rx_ring_tlv_filter *tlv_filter)
+{
+	return ath12k_dp_tx_htt_rx_filter_setup(ab, ring_id, mac_id, ring_type,
+						rx_buf_size, tlv_filter);
+}
+
 extern unsigned int ath12k_mlo_capable;
 
 int ath12k_wsi_load_info_init(struct ath12k_base *ab);
@@ -2745,11 +2876,16 @@ void ath12k_telemetry_notify_breach(u8 *mac_addr, u8 svc_id, u8 param,
 void ath12k_rssi_rate_notify_breach_event(u8 *mac_addr, u8 breach_type,
 					  u32 threshold_value, u32 detected_value,
 					  bool set_clear);
-void ath12k_vendor_wlan_intf_stats(struct work_struct *work);
-void ath12k_debug_print_dcs_wlan_intf_stats(struct ath12k_base *ab,
-					    struct wmi_dcs_wlan_interference_stats *info);
 struct ath12k_hw_group *ath12k_core_get_ag(void);
 void ath12k_core_trigger_partner_device_crash(struct ath12k_base *ab);
 void ath12k_core_pdev_deinit(struct ath12k_base *ab);
 int ath12k_core_radio_start(struct ath12k_hw *ah);
+
+struct ath12k *ath12k_core_ar_from_hw_link_id(struct ath12k_base *ab, u8 hw_link_id);
+
+/* Below APIs will be cleaned up to be common utils */
+int ath12k_core_crypto_param_len(struct ath12k_base *ab, enum hal_encrypt_type enctype);
+int ath12k_core_crypto_icv_len(struct ath12k_base *ab, enum hal_encrypt_type enctype);
+int ath12k_core_crypto_mic_len(struct ath12k_base *ab, enum hal_encrypt_type enctype);
+
 #endif /* _CORE_H_ */

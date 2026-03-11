@@ -7,7 +7,7 @@
  * Copyright 2007-2010	Johannes Berg <johannes@sipsolutions.net>
  * Copyright 2013-2014  Intel Mobile Communications GmbH
  * Copyright (C) 2015 - 2017 Intel Deutschland GmbH
- * Copyright (C) 2018 - 2024 Intel Corporation
+ * Copyright (C) 2018 - 2026 Intel Corporation
  */
 
 #ifndef MAC80211_H
@@ -421,6 +421,7 @@ enum ieee80211_bss_change {
 	BSS_CHANGED_ML_MAX_REC_LINKS	= BIT_ULL(39),
 	BSS_CHANGED_MLD_ADV_TTLM	= BIT_ULL(40),
 	BSS_CHANGED_LINK_ADV_TTLM	= BIT_ULL(41),
+	BSS_CHANGED_AP_DPS_ASSIST	= BIT_ULL(42),
 	/* when adding here, make sure to change ieee80211_reconfig */
 };
 
@@ -640,6 +641,8 @@ struct ieee80211_parsed_tpe {
  *	responses.
  * @addr: (link) address used locally
  * @link_id: link ID, or 0 for non-MLO
+ * @ssid: The SSID of the current link when this link of the MLD is repurposed
+ * @ssid_len: Length of SSID given in @ssid.
  * @htc_trig_based_pkt_ext: default PE in 4us units, if BSS supports HE
  * @uora_exists: is the UORA element advertised by AP
  * @uora_ocw_range: UORA element's OCW Range field
@@ -753,6 +756,7 @@ struct ieee80211_parsed_tpe {
  * @pwr_reduction: power constraint of BSS.
  * @eht_support: does this BSS support EHT
  * @epcs_support: does this BSS support EPCS
+ * @uhr_support: does this BSS support UHR
  * @csa_active: marks whether a channel switch is going on.
  * @deferred_up: On CSA to target DFS channel, mark the flag for deferred
  *	vap up post CAC, and skip vap down
@@ -801,7 +805,7 @@ struct ieee80211_parsed_tpe {
  * 	see &enum ieee80211_critical_updates
  * @beacon_tx_mode: Beacon Tx Mode setting.
  * @ml_max_rec_links: ML Max recommended links
- * @uhr_support: does this BSS support UHR
+ * @dps_assist_support: does this BSS support DPS Assist Support.
  */
 struct ieee80211_bss_conf {
 	struct ieee80211_vif *vif;
@@ -810,6 +814,8 @@ struct ieee80211_bss_conf {
 	const u8 *bssid;
 	unsigned int link_id;
 	u8 addr[ETH_ALEN] __aligned(2);
+	u8 ssid[IEEE80211_MAX_SSID_LEN];
+	size_t ssid_len;
 	u8 htc_trig_based_pkt_ext;
 	bool uora_exists;
 	u8 uora_ocw_range;
@@ -884,6 +890,8 @@ struct ieee80211_bss_conf {
 	u8 pwr_reduction;
 	bool eht_support;
 	bool epcs_support;
+	bool uhr_support;
+
 	bool csa_active;
 	bool deferred_up;
 	bool enable_mcs15;
@@ -918,11 +926,10 @@ struct ieee80211_bss_conf {
 	bool elemid_added;
 	bool elemid_modified;
 	u32 rts_threshold;
-	u8 intf_detect_bitmap;
 	enum nl80211_beacon_tx_mode beacon_tx_mode;
 	u8 ml_max_rec_links;
 	bool is_cfp_enabled;
-	bool uhr_support;
+	bool dps_assist_support;
 };
 
 /**
@@ -1444,6 +1451,7 @@ enum mac80211_tx_mon_flags {
 	TX_MON_FLAG_EHT_USIG_INFO,
 	TX_MON_FLAG_EHT_INFO,
 	TX_MON_FLAG_VENDOR_TLV,
+	TX_MON_FLAG_TLV_AT_END,
 	TX_MON_FLAG_END,
 };
 
@@ -1693,7 +1701,7 @@ ieee80211_tx_info_clear_status(struct ieee80211_tx_info *info)
  * @RX_FLAG_AMPDU_EOF_BIT_KNOWN: The EOF value is known
  * @RX_FLAG_RADIOTAP_HE: HE radiotap data is present
  *	(&struct ieee80211_radiotap_he, mac80211 will fill in
- *	
+ *
  *	 - DATA3_DATA_MCS
  *	 - DATA3_DATA_DCM
  *	 - DATA3_CODING
@@ -1701,7 +1709,7 @@ ieee80211_tx_info_clear_status(struct ieee80211_tx_info *info)
  *	 - DATA5_DATA_BW_RU_ALLOC
  *	 - DATA6_NSTS
  *	 - DATA3_STBC
- *	
+ *
  *	from the RX info data, so leave those zeroed when building this data)
  * @RX_FLAG_RADIOTAP_HE_MU: HE MU radiotap data is present
  *	(&struct ieee80211_radiotap_he_mu)
@@ -1712,9 +1720,6 @@ ieee80211_tx_info_clear_status(struct ieee80211_tx_info *info)
  *	known the frame shouldn't be reported.
  * @RX_FLAG_8023: the frame has an 802.3 header (decap offload performed by
  *	hardware or driver)
- *	@RX_FLAG_USIG_HEADER: Universal field carries information necessary to
- *	interpret EHT PPDUs
- *	RX_FLAG_EHT_HEADER: EHT radiotap data is present
  */
 enum mac80211_rx_flags {
 	RX_FLAG_MMIC_ERROR		= BIT(0),
@@ -1733,7 +1738,6 @@ enum mac80211_rx_flags {
 	RX_FLAG_AMPDU_IS_LAST		= BIT(13),
 	RX_FLAG_AMPDU_DELIM_CRC_ERROR	= BIT(14),
 	/* one free bit at 15 */
-	RX_FLAG_USIG_HEADER		= BIT(15),
 	RX_FLAG_MACTIME			= BIT(16) | BIT(17),
 	RX_FLAG_MACTIME_PLCP_START	= 1 << 16,
 	RX_FLAG_MACTIME_START		= 2 << 16,
@@ -1751,7 +1755,6 @@ enum mac80211_rx_flags {
 	RX_FLAG_RADIOTAP_LSIG		= BIT(28),
 	RX_FLAG_NO_PSDU			= BIT(29),
 	RX_FLAG_8023			= BIT(30),
-	RX_FLAG_EHT_HEADER      = BIT(31),
 };
 
 /**
@@ -1785,6 +1788,7 @@ enum mac80211_rx_encoding {
 	RX_ENC_HE,
 	RX_ENC_S1G,
 	RX_ENC_EHT,
+	RX_ENC_UHR,
 };
 
 /**
@@ -1818,9 +1822,8 @@ enum mac80211_rx_encoding {
  * @antenna: antenna used
  * @rate_idx: index of data rate into band's supported rates or MCS index if
  *	HT or VHT is used (%RX_FLAG_HT/%RX_FLAG_VHT)
- * @nss: number of streams (VHT, HE and EHT only)
+ * @nss: number of streams (VHT, HE, EHT and UHR only)
  * @flag: %RX_FLAG_\*
- * @ext_flag: %RX_FLAG_\*
  * @encoding: &enum mac80211_rx_encoding
  * @bw: &enum rate_info_bw
  * @enc_flags: uses bits from &enum mac80211_rx_encoding_flags
@@ -1830,6 +1833,11 @@ enum mac80211_rx_encoding {
  * @eht: EHT specific rate information
  * @eht.ru: EHT RU, from &enum nl80211_eht_ru_alloc
  * @eht.gi: EHT GI, from &enum nl80211_eht_gi
+ * @uhr: UHR specific rate information
+ * @uhr.ru: UHR RU, from &enum nl80211_eht_ru_alloc
+ * @uhr.gi: UHR GI, from &enum nl80211_eht_gi
+ * @uhr.elr: UHR ELR MCS was used
+ * @uhr.im: UHR interference mitigation was used
  * @rx_flags: internal RX flags for mac80211
  * @ampdu_reference: A-MPDU reference number, must be a different value for
  *	each A-MPDU but the same for each subframe within one A-MPDU
@@ -1861,6 +1869,12 @@ struct ieee80211_rx_status {
 			u8 ru:4;
 			u8 gi:2;
 		} eht;
+		struct {
+			u8 ru:4;
+			u8 gi:2;
+			u8 elr:1;
+			u8 im:1;
+		} uhr;
 	};
 	u8 rate_idx;
 	u8 nss;
@@ -1872,7 +1886,6 @@ struct ieee80211_rx_status {
 	s8 chain_signal[IEEE80211_MAX_CHAINS];
 	u8 zero_length_psdu_type: 4, band: 4;
 	u8 link_valid:1, link_id:4;
-	u8 eht_num_user;
 	u8 tid;
 };
 
@@ -2090,6 +2103,7 @@ enum ieee80211_vif_flags {
  *	mac80211.
  * @IEEE80211_OFFLOAD_ENCAP_MCAST: support multicast packet encapsulation
  *	offload.
+ * @IEEE80211_OFFLOAD_TXRX_STATS: support for tx and rx stats offload to driver
  */
 
 enum ieee80211_offload_flags {
@@ -2097,6 +2111,7 @@ enum ieee80211_offload_flags {
 	IEEE80211_OFFLOAD_ENCAP_4ADDR		= BIT(1),
 	IEEE80211_OFFLOAD_DECAP_ENABLED		= BIT(2),
 	IEEE80211_OFFLOAD_ENCAP_MCAST		= BIT(3),
+	IEEE80211_OFFLOAD_TXRX_STATS            = BIT(4),
 };
 
 /**
@@ -2248,6 +2263,7 @@ struct ieee80211_advertised_ttlm_info {
  *	suspended due to negotiated TTLM, and could be activated in the
  *	future by tearing down the TTLM negotiation.
  *	0 for non-MLO.
+ * @repurposed_links: Bitmap of links of the MLD, which are in non-11be mode.
  * @neg_ttlm: negotiated TID to link mapping info.
  *	see &struct ieee80211_neg_ttlm.
  * @adv_ttlm: Config of advertised TTLM when triggered on AP interface.
@@ -2292,6 +2308,7 @@ struct ieee80211_vif {
 	struct ieee80211_bss_conf bss_conf;
 	struct ieee80211_bss_conf __rcu *link_conf[IEEE80211_MLD_MAX_NUM_LINKS];
 	u16 valid_links, active_links, dormant_links, suspended_links;
+	u16 repurposed_links;
 	struct ieee80211_neg_ttlm neg_ttlm;
 	struct ieee80211_advertised_ttlm_info adv_ttlm;
 	u8 addr[ETH_ALEN] __aligned(2);
@@ -2731,6 +2748,7 @@ struct ieee80211_sta_aggregates {
  * @he_cap: HE capabilities of this STA
  * @he_6ghz_capa: on 6 GHz, holds the HE 6 GHz band capabilities
  * @eht_cap: EHT capabilities of this STA
+ * @uhr_cap: UHR capabilities of this STA
  * @punctured: RU Puncturing bitmap of this STA
  * @agg: per-link data for multi-link aggregation
  * @bandwidth: current bandwidth the station can receive with
@@ -2739,7 +2757,6 @@ struct ieee80211_sta_aggregates {
  *	notifications and capabilities. The value is only valid after
  *	the station moves to associated state.
  * @txpwr: the station tx power configuration
- * @uhr_cap: UHR capabilities of this STA
  *
  */
 struct ieee80211_link_sta {
@@ -2755,6 +2772,7 @@ struct ieee80211_link_sta {
 	struct ieee80211_sta_he_cap he_cap;
 	struct ieee80211_he_6ghz_capa he_6ghz_capa;
 	struct ieee80211_sta_eht_cap eht_cap;
+	struct ieee80211_sta_uhr_cap uhr_cap;
 	u32 punctured;
 
 	struct ieee80211_sta_aggregates agg;
@@ -2763,7 +2781,6 @@ struct ieee80211_link_sta {
 	enum ieee80211_sta_rx_bandwidth bandwidth;
 	enum ieee80211_sta_rx_bandwidth sta_max_bandwidth;
 	struct ieee80211_sta_txpwr txpwr;
-	struct ieee80211_sta_uhr_cap uhr_cap;
 };
 
 /**
@@ -4960,7 +4977,10 @@ struct ieee80211_ppe_vp_ds_params {
  * nl80211. Enable drivers to parse and apply QM request descriptors and
  * populate response data accordingly.
  * @get_afc_eirp_pwr: Get EIRP value for a given freq from the AFC payload.
+ * @get_netstats: Get net stats for a netdevice
  * @get_6ghz_dev_deployment_type: Get the 6 GHz device deployment type.
+ * @ap_power_save: Introduces infrastructure in mac80211 to support forwarding of
+ *	AP Powersave configuration parameters from user space to driver.
  */
 struct ieee80211_ops {
 	void (*tx)(struct ieee80211_hw *hw,
@@ -5390,10 +5410,15 @@ struct ieee80211_ops {
 			    struct ieee80211_sta *sta,
 			    struct cfg80211_qm_req_data *qm_req,
 			    struct cfg80211_qm_resp_data *qm_resp);
+	void (*get_netstats)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+			     struct rtnl_link_stats64 *stats);
 	int (*get_afc_eirp_pwr)(struct ieee80211_hw *hw,
 				u32 freq, u32 *eirp);
 	enum nl80211_6ghz_dev_deployment_type
 		(*get_6ghz_dev_deployment_type)(struct ieee80211_hw *hw);
+	int (*ap_power_save)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+			     int link_id,
+			     struct cfg80211_ap_power_save_params *params);
 };
 
 /**
@@ -5940,6 +5965,13 @@ void ieee80211_tx_rate_update(struct ieee80211_hw *hw,
  */
 void ieee80211_tx_status_skb(struct ieee80211_hw *hw,
 			     struct sk_buff *skb);
+
+/**
+ * ieee80211_tx_status_offload - transmit status callback
+ * when offload enabled
+ */
+void ieee80211_tx_status_offload(struct ieee80211_hw *hw,
+				 struct ieee80211_tx_status *status);
 
 /**
  * ieee80211_tx_status_ext - extended transmit status callback
@@ -7416,14 +7448,6 @@ void ieee80211_channel_switch_disconnect(struct ieee80211_vif *vif);
 void ieee80211_awgn_detected(struct ieee80211_hw *hw, u32 chan_bw_interference_bitmap,
 			     struct ieee80211_channel *awgn_channel);
 
-/**
- * ieee80211_cw_detected - inform that cw interference is detected
- *
- * @hw: pointer as obtained from ieee80211_alloc_hw()
- * @cw_channel: Channel pointer on which Continous Wave Interference is detected. Mandatory to pass
- *	for MLO drivers. For non-MLO %NULL can be passed
- */
-void ieee80211_cw_detected(struct ieee80211_hw *hw, struct ieee80211_channel *cw_channel);
 
 /**
  * ieee80211_request_smps - request SM PS transition
@@ -8657,4 +8681,33 @@ int ieee80211_get_link_assoc_status(struct ieee80211_vif *vif, u8 link_id);
  */
 void ieee80211_tx_monitor_offload(struct ieee80211_hw *hw,
 				  struct ieee80211_tx_status *status);
+
+/**
+ * ieee80211_set_repurpose_link - Mark a link for repurposing
+ * @vif: virtual interface
+ * @link_id: link identifier
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int ieee80211_set_repurpose_link(struct ieee80211_vif *vif, u8 link_id);
+
+/**
+ * ieee80211_clear_repurpose_link - Clear repurpose mark for a link
+ * @vif: virtual interface
+ * @link_id: link identifier
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int ieee80211_clear_repurpose_link(struct ieee80211_vif *vif, u8 link_id);
+
+/**
+ * ieee80211_enable_offchan_packet_capture - Enable offchan packet capture
+ *
+ * This function enables offchan packet capyure through monitor interface
+ *
+ * @vif:  vif for which offchan packet capture
+ * @enable: enable/disable offchan packet capture
+ */
+void ieee80211_enable_offchan_packet_capture(struct ieee80211_vif *vif,
+					     bool enable);
 #endif /* MAC80211_H */

@@ -9,7 +9,7 @@
  * Copyright (c) 2006, Michael Wu <flamingice@sourmilk.net>
  * Copyright (c) 2013 - 2014 Intel Mobile Communications GmbH
  * Copyright (c) 2016 - 2017 Intel Deutschland GmbH
- * Copyright (c) 2018 - 2024 Intel Corporation
+ * Copyright (c) 2018 - 2026 Intel Corporation
  */
 
 #ifndef LINUX_IEEE80211_H
@@ -43,6 +43,7 @@
 #define IEEE80211_FCTL_VERS		0x0003
 #define IEEE80211_FCTL_FTYPE		0x000c
 #define IEEE80211_FCTL_STYPE		0x00f0
+#define IEEE80211_FCTL_TYPE		(IEEE80211_FCTL_FTYPE | IEEE80211_FCTL_STYPE)
 #define IEEE80211_FCTL_TODS		0x0100
 #define IEEE80211_FCTL_FROMDS		0x0200
 #define IEEE80211_FCTL_MOREFRAGS	0x0400
@@ -1605,8 +1606,9 @@ struct ieee80211_mgmt {
 #define BSS_MEMBERSHIP_SELECTOR_SAE_H2E 123
 #define BSS_MEMBERSHIP_SELECTOR_HE_PHY	122
 #define BSS_MEMBERSHIP_SELECTOR_EHT_PHY	121
+#define BSS_MEMBERSHIP_SELECTOR_UHR_PHY	120
 
-#define BSS_MEMBERSHIP_SELECTOR_MIN	BSS_MEMBERSHIP_SELECTOR_EHT_PHY
+#define BSS_MEMBERSHIP_SELECTOR_MIN	BSS_MEMBERSHIP_SELECTOR_UHR_PHY
 
 /* mgmt header + 1 byte category code */
 #define IEEE80211_MIN_ACTION_SIZE offsetof(struct ieee80211_mgmt, u.action.u)
@@ -2315,41 +2317,6 @@ struct ieee80211_eht_mcs_nss_supp_20mhz_only {
 };
 
 /**
- * struct ieee80211_uhr_mcs_nss_supp_20mhz_only - EHT 20MHz only station max
- * supported NSS for per MCS.
- *
- * For each field below, bits 0 - 3 indicate the maximal number of spatial
- * streams for Rx, and bits 4 - 7 indicate the maximal number of spatial streams
- * for Tx.
- *
- * @rx_tx_mcs7_max_nss: indicates the maximum number of spatial streams
- *     supported for reception and the maximum number of spatial streams
- *     supported for transmission for MCS 0 - 7.
- * @rx_tx_mcs9_max_nss: indicates the maximum number of spatial streams
- *     supported for reception and the maximum number of spatial streams
- *     supported for transmission for MCS 8 - 9.
- * @rx_tx_mcs11_max_nss: indicates the maximum number of spatial streams
- *     supported for reception and the maximum number of spatial streams
- *     supported for transmission for MCS 10 - 11.
- * @rx_tx_mcs13_max_nss: indicates the maximum number of spatial streams
- *     supported for reception and the maximum number of spatial streams
- *     supported for transmission for MCS 12 - 13.
- * @rx_tx_max_nss: array of the previous fields for easier loop access
- */
-struct ieee80211_uhr_mcs_nss_supp_20mhz_only {
-	union {
-		struct {
-			u8 rx_tx_mcs7_max_nss;
-			u8 rx_tx_mcs9_max_nss;
-			u8 rx_tx_mcs11_max_nss;
-			u8 rx_tx_mcs13_max_nss;
-		};
-		u8 rx_tx_max_nss[4];
-	};
-};
-
-
-/**
  * struct ieee80211_eht_mcs_nss_supp_bw - EHT max supported NSS per MCS (except
  * 20MHz only stations).
  *
@@ -2409,29 +2376,6 @@ struct ieee80211_eht_cap_elem {
 	u8 optional[];
 } __packed;
 
-/**
- * struct ieee80211_uhr_cap_elem_fixed - UHR capabilities fixed data
- *
- * This structure is the "UHR Capabilities element" fixed fields as
- * described in P802.11bn_D1.0 section 9.4.2.aa2.
- *
- * @mac_cap_info: MAC capabilities, see IEEE80211_UHR_MAC_CAP*
- * @phy_cap_info: PHY capabilities, see IEEE80211_UHR_PHY_CAP*
- */
-struct ieee80211_uhr_cap_elem_fixed {
-	u8 mac_cap_info[5];
-	u8 phy_cap_info[1];
-} __packed;
-
-/**
- * struct ieee80211_UHR_cap_elem - UHR capabilities element
- * @fixed: fixed parts, see &ieee80211_uhr_cap_elem_fixed
- * @optional: optional parts
- */
-struct ieee80211_uhr_cap_elem {
-	struct ieee80211_uhr_cap_elem_fixed fixed;
-} __packed;
-
 #define IEEE80211_EHT_OPER_INFO_PRESENT	                        0x01
 #define IEEE80211_EHT_OPER_DISABLED_SUBCHANNEL_BITMAP_PRESENT	0x02
 #define IEEE80211_EHT_OPER_EHT_DEF_PE_DURATION	                0x04
@@ -2470,80 +2414,6 @@ struct ieee80211_eht_operation_info {
 	u8 control;
 	u8 ccfs0;
 	u8 ccfs1;
-	u8 optional[];
-} __packed;
-
-#define IEEE80211_UHR_OPER_DPS_ENABLED		BIT(0)
-#define IEEE80211_UHR_OPER_NPCA_OPER_PRESENT	BIT(1)
-#define IEEE80211_UHR_OPER_DBE_ENABLED		BIT(2)
-#define IEEE80211_UHR_OPER_P_EDCA_ENABLED	BIT(3)
-
-struct ieee80211_dbe_info {
-	/* TODO: Convert this into structure bitfield
-	 * As per spec dbe_params defined as below
-	 * dbe_bandwidth				:3
-	 * reserved					:5
-	 * dbe_disabled_subchannel_bitmap		:16
-	 */
-	u8 dbe_bandwidth;
-	u16 dbe_disabled_subchannel_bitmap;
-} __packed;
-
-struct ieee80211_p_edca_info {
-	/* TODO: Convert this into structure bitfield
-	 * As per spec p_edca_params defined as below
-	 * p_edca_ecwmin		:4
-	 * p_edca_ecwmax		:4
-	 */
-	u8 p_edca_ec;
-
-	/* p_edca_aifsn			:4
-	 * p_edca_cw_ds			:2
-	 * p_edca_psrc_thres		:3
-	 * p_edca_qsrc_thres		:2
-	 * reserved			:4
-	 */
-	u16 p_edca_params;
-} __packed;
-
-struct ieee80211_npca_info {
-	/* TODO: Convert this into structure bitfield
-	 * As per spec npca_params defined as below
-	 * npca_primary_chan					:4
-	 * npca_min_dur_threshold				:4
-	 * npca_switching_delay					:6
-	 * npca_switch_back_delay				:6
-	 * npca_initial_qsrc					:2
-	 * npca_moplen						:1
-	 * npca_disabled_subchan_bitmap_pres			:1
-	 * reserved						:8
-	 */
-	u32 npca_params;
-	u16 npca_disabled_subchan_bitmap;
-} __packed;
-
-struct ieee80211_uhr_operation_info {
-	struct ieee80211_npca_info npca_info;
-	struct ieee80211_p_edca_info p_edca_info;
-	struct ieee80211_dbe_info dbe_info;
-} __packed;
-
-/**
- * struct ieee80211_uhr_operation - uhr operation element
- *
- * This structure is the "UHR Operation Element" fields as
- * described in P802.11bn_D1.0 section 9.4.2.aa1
- *
- * @params: UHR operation element parameters. See &IEEE80211_UHR_OPER_*
- * @basic_mcs_nss: indicates the UHR-MCSs for each number of spatial streams in
- *     UHR PPDUs that are supported by all UHR STAs in the BSS in transmit and
- *     receive.
- * @optional: optional parts
- */
-
-struct ieee80211_uhr_operation {
-	u16 params;
-	struct ieee80211_uhr_mcs_nss_supp_20mhz_only basic_mcs_nss;
 	u8 optional[];
 } __packed;
 
@@ -3399,45 +3269,6 @@ ieee80211_he_spr_size(const u8 *he_spr_ie)
 #define IEEE80211_EHT_PHY_CAP8_20MHZ_ONLY_TRIGGER_MUBF_FL_BW_FB_DLMUMIMO   0x08
 #define IEEE80211_EHT_PHY_CAP8_20MHZ_ONLY_MRU_SUPP                         0x10
 
-/* UHR MAC capabilities as defined in P802.11bn_D1.0 section 9.4.2.aa2.2 */
-#define IEEE80211_UHR_MAC_CAP0_DPS_SUPPORT					BIT(0)
-#define IEEE80211_UHR_MAC_CAP0_DPS_ASSISTING_SUPPORT				BIT(1)
-#define IEEE80211_UHR_MAC_CAP0_DPS_AP_STATIC_HCM_SUPPORT			BIT(2)
-#define IEEE80211_UHR_MAC_CAP0_ML_POWER_MANAGEMENT				BIT(3)
-#define IEEE80211_UHR_MAC_CAP0_NPCA_SUPPORTED					BIT(4)
-#define IEEE80211_UHR_MAC_CAP0_ENHANCED_BSR_SUPPORT				BIT(5)
-#define IEEE80211_UHR_MAC_CAP0_ADDITIONAL_MAPPED_TID_SUPPORT			BIT(6)
-#define IEEE80211_UHR_MAC_CAP0_EOTSP_SUPPORT					BIT(7)
-#define IEEE80211_UHR_MAC_CAP1_DSO_SUPPORT					BIT(8)
-#define IEEE80211_UHR_MAC_CAP1_P_EDCA_SUPPORT					BIT(9)
-#define IEEE80211_UHR_MAC_CAP1_DBE_SUPPORT					BIT(10)
-#define IEEE80211_UHR_MAC_CAP1_UL_LLI_SUPPORT					BIT(11)
-#define IEEE80211_UHR_MAC_CAP1_P2P_LLI_SUPPORT					BIT(12)
-#define IEEE80211_UHR_MAC_CAP1_PUO_SUPPORT					BIT(13)
-#define IEEE80211_UHR_MAC_CAP1_AP_PUO_SUPPORT					BIT(14)
-#define IEEE80211_UHR_MAC_CAP1_DUO_SUPPORT					BIT(15)
-#define IEEE80211_UHR_MAC_CAP2_OM_CTRL_UL_MU_DATA_DISABLE_RX_SUPPORT		BIT(16)
-#define IEEE80211_UHR_MAC_CAP2_AOM_SUPPORT					BIT(17)
-#define IEEE80211_UHR_MAC_CAP2_IFCS_SUPPORT					BIT(18)
-#define IEEE80211_UHR_MAC_CAP2_UHR_TRS_SUPPORT					BIT(19)
-#define IEEE80211_UHR_MAC_CAP2_TXSPG_SUPPORT					BIT(20)
-#define IEEE80211_UHR_MAC_CAP2_TXOP_RETURN_SUPPORT_INTXSPG			BIT(21)
-#define IEEE80211_UHR_MAC_CAP3_UHR_OPER_MODE_PARAM_UPDATE_TIMEOUT		GENMASK(25, 22)
-#define IEEE80211_UHR_MAC_CAP3_PARAM_UPDATE_ADV_NOTIFY_INT			GENMASK(28, 26)
-#define IEEE80211_UHR_MAC_CAP4_UPDATE_IND_IN_TIM_INT				GENMASK(33, 29)
-#define IEEE80211_UHR_MAC_CAP4_BOUNDED_ESS					BIT(34)
-#define IEEE80211_UHR_MAC_CAP4_BTM_ASSURANCE					BIT(35)
-
-/* UHR PHY capabilities as defined in P802.11bn_D1.0 section 9.4.2.aa2.3 */
-#define IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_NDP_SOUNDING_80MHZ		BIT(0)
-#define IEEE80211_UHR_PHY_CAP0_MAX_NSS_TOTAL_RX_DL_MUMIMO_80MHZ	BIT(1)
-#define IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_NDP_SOUNDING_160MHZ		BIT(2)
-#define IEEE80211_UHR_PHY_CAP0_MAX_NSS_TOTAL_RX_DL_MUMIMO_160MHZ	BIT(3)
-#define IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_NDP_SOUNDING_320MHZ		BIT(4)
-#define IEEE80211_UHR_PHY_CAP0_MAX_NSS_TOTAL_RX_DL_MUMIMO_320MHZ	BIT(5)
-#define IEEE80211_UHR_PHY_CAP0_ELR_RX_SUPPORT				BIT(6)
-#define IEEE80211_UHR_PHY_CAP0_ELR_TX_SUPPORT				BIT(7)
-
 /*
  * EHT operation channel width as defined in P802.11be_D2.0 section 9.4.2.311
  */
@@ -3566,29 +3397,6 @@ ieee80211_eht_oper_size_ok(const u8 *data, u8 len)
 		    IEEE80211_EHT_OPER_DISABLED_SUBCHANNEL_BITMAP_PRESENT)
 			needed += 2;
 	}
-
-	return len >= needed;
-}
-
-static inline bool
-ieee80211_uhr_capa_size_ok(const u8 *data, u8 len)
-{
-	u8 needed = sizeof(struct ieee80211_uhr_cap_elem_fixed);
-
-	return len >= needed;
-}
-
-static inline bool
-ieee80211_uhr_oper_size_ok(const u8 *data, u8 len, bool is_bcn)
-{
-	const struct ieee80211_uhr_operation *elem = (const void *)data;
-	u8 needed = sizeof(*elem);
-
-	if (len < needed)
-		return false;
-
-	if (!is_bcn)
-		needed += sizeof(struct ieee80211_uhr_operation_info);
 
 	return len >= needed;
 }
@@ -4108,8 +3916,15 @@ enum ieee80211_eid_ext {
 	WLAN_EID_EXT_EHT_CAPABILITY = 108,
 	WLAN_EID_EXT_TID_TO_LINK_MAPPING = 109,
 	WLAN_EID_EXT_BANDWIDTH_INDICATION = 135,
-	WLAN_EID_EXT_UHR_OPERATION = 151,
-	WLAN_EID_EXT_UHR_CAPABILITY = 152,
+	WLAN_EID_EXT_UHR_OPER = 151,
+	WLAN_EID_EXT_UHR_CAPA = 152,
+	WLAN_EID_EXT_MACP = 153,
+	WLAN_EID_EXT_SMD = 154,
+	WLAN_EID_EXT_BSS_SMD_TRANS_PARAMS = 155,
+	WLAN_EID_EXT_CHAN_USAGE = 156,
+	WLAN_EID_EXT_UHR_MODE_CHG = 157,
+	WLAN_EID_EXT_UHR_PARAM_UPD = 158,
+	WLAN_EID_EXT_TXPI = 159,
 };
 
 /* Action category code */
@@ -5221,6 +5036,22 @@ static inline bool for_each_element_completed(const struct element *element,
 #define WLAN_RSNX_CAPA_PROTECTED_TWT BIT(4)
 #define WLAN_RSNX_CAPA_SAE_H2E BIT(5)
 
+/* EBPCC = Enhanced BSS Parameter Change Count */
+#define IEEE80211_ENH_CRIT_UPD_EBPCC		0x0F
+#define IEEE80211_ENH_CRIT_UPD_TYPE		0x70
+#define IEEE80211_ENH_CRIT_UPD_TYPE_NO_UHR	0
+#define IEEE80211_ENH_CRIT_UPD_TYPE_UHR		1
+#define IEEE80211_ENH_CRIT_UPD_ALL		0x80
+
+/**
+ * struct ieee80211_enh_crit_upd - enhanced critical update (UHR)
+ * @v: value of the enhanced critical update data,
+ *	see %IEEE80211_ENH_CRIT_UPD_* to parse the bits
+ */
+struct ieee80211_enh_crit_upd {
+	u8 v;
+} __packed;
+
 /*
  * reduced neighbor report, based on Draft P802.11ax_D6.1,
  * section 9.4.2.170 and accepted contributions.
@@ -5239,6 +5070,7 @@ static inline bool for_each_element_completed(const struct element *element,
 #define IEEE80211_RNR_TBTT_PARAMS_COLOC_ESS			0x10
 #define IEEE80211_RNR_TBTT_PARAMS_PROBE_ACTIVE			0x20
 #define IEEE80211_RNR_TBTT_PARAMS_COLOC_AP			0x40
+#define IEEE80211_RNR_TBTT_PARAMS_SAME_SMD			0x80
 
 #define IEEE80211_RNR_TBTT_PARAMS_PSD_NO_LIMIT			127
 #define IEEE80211_RNR_TBTT_PARAMS_PSD_RESERVED			-128
@@ -5291,6 +5123,7 @@ struct ieee80211_tbtt_info_ge_11 {
 	u8 bss_params;
 	s8 psd_20;
 	struct ieee80211_rnr_mld_params mld_params;
+	struct ieee80211_enh_crit_upd enh_crit_upd;
 } __packed;
 
 /* multi-link device */
@@ -5409,7 +5242,7 @@ struct ieee80211_mle_tdls_common_info {
  * ieee80211_mle_common_size - check multi-link element common size
  * @data: multi-link element, must already be checked for size using
  *	ieee80211_mle_size_ok()
- * Return: the size of the multi-link element's "common" subfield 
+ * Return: the size of the multi-link element's "common" subfield
  */
 static inline u8 ieee80211_mle_common_size(const u8 *data)
 {
@@ -6009,5 +5842,7 @@ enum ieee80211_qos_mgmt_req_type {
 /* QM Status codes */
 #define IEEE80211_QM_REQ_SUCCESS	0
 #define IEEE80211_QM_REQ_DECLINED	1
+
+#include "ieee80211-uhr.h"
 
 #endif /* LINUX_IEEE80211_H */

@@ -213,6 +213,7 @@ static int ieee80211_tx_radiotap_len(struct ieee80211_local *local,
 	struct ieee80211_rate_status *status_rate = NULL;
 	int len = sizeof(struct ieee80211_radiotap_header);
 	bool has_mon_offload;
+	struct sk_buff *skb = status ? status->skb : NULL;
 
 	if (status && status->n_rates)
 		status_rate = &status->rates[status->n_rates - 1];
@@ -296,6 +297,15 @@ static int ieee80211_tx_radiotap_len(struct ieee80211_local *local,
 		len += 4; /* 2 x u16 fields */
 	}
 
+	/* IEEE80211_RADIOTAP_TLV (field 28) - 4-byte alignment, variable */
+	if (has_mon_offload && tx_mon_hw_check(&status->mon_info, TLV_AT_END)) {
+		if (!skb || !skb_mac_header_was_set(skb))
+			return len;
+		len = ALIGN(len, 4);
+		/* TLVs until the mac header - Header */
+		len += skb_mac_header(skb) - skb->data;
+	}
+
 	/* IEEE80211_RADIOTAP_VENDOR_NAMESPACE (field 30) - 2-byte alignment, variable */
 	if (has_mon_offload && tx_mon_hw_check(&status->mon_info, VENDOR_TLV) &&
 	    status->mon_info.v_tlv) {
@@ -353,7 +363,9 @@ ieee80211_add_tx_radiotap_header(struct ieee80211_local *local,
 	bool has_mon_offload;
 	bool has_eht_usig;
 	bool has_eht;
+	bool has_tlv_at_end;
 	__le32 *it_present;
+	u32 end_tlvs_len = 0;
 
 	if (status && status->n_rates)
 		status_rate = &status->rates[status->n_rates - 1];
@@ -368,11 +380,24 @@ ieee80211_add_tx_radiotap_header(struct ieee80211_local *local,
 		       tx_mon_hw_check(&status->mon_info, EHT_USIG_INFO);
 	has_eht = has_mon_offload &&
 		  tx_mon_hw_check(&status->mon_info, EHT_INFO);
+	has_tlv_at_end = has_mon_offload &&
+			 tx_mon_hw_check(&status->mon_info, TLV_AT_END);
 
-	rthdr = skb_push(skb, rtap_len);
-	memset(rthdr, 0, rtap_len);
+	if (WARN_ON_ONCE(has_tlv_at_end && !skb_mac_header_was_set(skb))) {
+		dev_kfree_skb(skb);
+		return;
+	}
+
+	if (has_tlv_at_end)
+		end_tlvs_len = skb_mac_header(skb) - skb->data;
+
+	rthdr = skb_push(skb, rtap_len - end_tlvs_len);
+	memset(rthdr, 0, rtap_len - end_tlvs_len);
 	rthdr->it_len = cpu_to_le16(rtap_len);
 	it_present = &rthdr->it_present;
+
+	if (has_tlv_at_end)
+		rthdr->it_present |=  BIT(IEEE80211_RADIOTAP_TLV);
 
 	/* Check if we need extended present flags for EHT fields */
 	if (has_eht_usig || has_eht) {
@@ -1230,6 +1255,7 @@ static void __ieee80211_tx_status(struct ieee80211_hw *hw,
 	bool noack_success;
 	struct ieee80211_bar *bar;
 	int tid = IEEE80211_NUM_TIDS;
+	bool mon_hw_offload;
 
 	lockdep_assert(rcu_read_lock_held());
 
@@ -1374,11 +1400,13 @@ static void __ieee80211_tx_status(struct ieee80211_hw *hw,
 	send_to_cooked = !!(info->flags & IEEE80211_TX_CTL_INJECTED) ||
 			 !(ieee80211_is_data(fc));
 
+	mon_hw_offload = ieee80211_hw_check(hw, SUPPORTS_TX_MONITOR_OFFLOAD);
 	/*
 	 * This is a bit racy but we can avoid a lot of work
 	 * with this test...
 	 */
-	if (!local->tx_mntrs && (!send_to_cooked || !local->cooked_mntrs)) {
+	if (mon_hw_offload ||
+	    (!local->tx_mntrs && (!send_to_cooked || !local->cooked_mntrs))) {
 		if (status->free_list)
 			list_add_tail(&skb->list, status->free_list);
 		else
@@ -1386,9 +1414,8 @@ static void __ieee80211_tx_status(struct ieee80211_hw *hw,
 		return;
 	}
 
-	/* send to monitor interfaces if tx monitor h/w support is not aviable*/
-	if (!ieee80211_hw_check(hw, SUPPORTS_TX_MONITOR_OFFLOAD))
-		ieee80211_tx_monitor(local, skb, retry_count, send_to_cooked, status);
+	/* send to monitor interfaces if tx monitor h/w support is not available*/
+	ieee80211_tx_monitor(local, skb, retry_count, send_to_cooked, status);
 }
 
 void ieee80211_tx_status_skb(struct ieee80211_hw *hw, struct sk_buff *skb)
@@ -1411,6 +1438,29 @@ void ieee80211_tx_status_skb(struct ieee80211_hw *hw, struct sk_buff *skb)
 	rcu_read_unlock();
 }
 EXPORT_SYMBOL(ieee80211_tx_status_skb);
+
+void ieee80211_tx_status_offload(struct ieee80211_hw *hw,
+				 struct ieee80211_tx_status *status)
+{
+	struct ieee80211_local *local;
+	struct sk_buff *skb;
+
+	if (!hw || !status)
+		return;
+
+	local = hw_to_local(hw);
+	skb = status->skb;
+
+	if (!skb)
+		return;
+
+	ieee80211_report_used_skb(local, skb, false, status->ack_hwtstamp);
+	if (status->free_list)
+		list_add_tail(&skb->list, status->free_list);
+	else
+		dev_kfree_skb(skb);
+}
+EXPORT_SYMBOL(ieee80211_tx_status_offload);
 
 void ieee80211_tx_status_ext(struct ieee80211_hw *hw,
 			     struct ieee80211_tx_status *status)
@@ -1563,8 +1613,8 @@ free:
 }
 EXPORT_SYMBOL(ieee80211_tx_status_ext);
 
-void ieee80211_tx_monitor_hw_ol(struct ieee80211_hw *hw,
-				struct ieee80211_tx_status *status)
+void ieee80211_tx_monitor_offload(struct ieee80211_hw *hw,
+				  struct ieee80211_tx_status *status)
 {
 	struct ieee80211_local *local = hw_to_local(hw);
 
@@ -1573,7 +1623,7 @@ void ieee80211_tx_monitor_hw_ol(struct ieee80211_hw *hw,
 
 	ieee80211_tx_monitor(local, status->skb, 0, false, status);
 }
-EXPORT_SYMBOL(ieee80211_tx_monitor_hw_ol);
+EXPORT_SYMBOL(ieee80211_tx_monitor_offload);
 
 void ieee80211_tx_rate_update(struct ieee80211_hw *hw,
 			      struct ieee80211_sta *pubsta,
@@ -1604,11 +1654,12 @@ void ieee80211_ppeds_tx_update_stats(struct ieee80211_hw *hw,
 	int rates_idx, retry_count;
 
 	rcu_read_lock();
-	if (link_id >= 0) {
+	if (link_id >= 0 && link_id < ARRAY_SIZE(sta->link) &&
+	   (sta->sta.valid_links & BIT(link_id))) {
 		link_sta = rcu_dereference(sta->link[link_id]);
-		if (WARN_ON_ONCE(!link_sta)) {
-			rcu_read_unlock();
-			return;
+		if (!link_sta) {
+			/* Fallback to the deflink in case of incorrect link_id */
+			link_sta = &sta->deflink;
 		}
 	} else {
 		link_sta = &sta->deflink;

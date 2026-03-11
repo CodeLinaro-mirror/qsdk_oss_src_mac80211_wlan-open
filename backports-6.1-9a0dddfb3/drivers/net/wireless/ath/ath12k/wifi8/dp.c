@@ -20,20 +20,59 @@
 #include "dp_htt.h"
 #include "dp_tx_flow_info.h"
 #include "dp_mon.h"
+#include "umac_reset.h"
 
 extern struct ppe_ds_wlan_ops_v2 ppeds_wlanops_v2;
 struct ath12k_ppeds_arch_ops ath12k_wifi8_arch_ppeds_ops;
 
-static int ath12k_wifi8_dp_service_srng(struct ath12k_dp *dp,
-					struct ath12k_ext_irq_grp *irq_grp,
-					int budget)
+static int ath12k_wifi8_non_cumac_dp_service_srng(struct ath12k_dp *dp,
+						  struct ath12k_ext_irq_grp *irq_grp,
+						  int budget)
 {
 	struct napi_struct *napi = &irq_grp->napi;
 	int grp_id = irq_grp->grp_id;
 	int work_done = 0;
 	int i = 0, j;
 	int tot_work_done = 0;
-	u8 rx_mask, tx_mask, ring_mask;
+	u8 ring_mask;
+
+	if (dp->hw_params->ring_mask->rx_mon_dest[grp_id]) {
+		ring_mask = dp->hw_params->ring_mask->rx_mon_dest[grp_id];
+		for (i = 0; i < dp->num_radios; i++) {
+			for (j = 0; j < dp->hw_params->num_rxdma_per_pdev; j++) {
+				int id = i * dp->hw_params->num_rxdma_per_pdev + j;
+
+				if (ring_mask & BIT(id)) {
+					work_done =
+					ath12k_dp_rx_mon_process_ring(dp, id,
+								      napi, budget);
+					budget -= work_done;
+					tot_work_done += work_done;
+
+					if (budget <= 0)
+						goto done;
+				}
+			}
+		}
+	}
+
+	if (dp->hw_params->ring_mask->host2rxmon[grp_id])
+		ath12k_dp_mon_rx_process_low_thres(dp);
+
+done:
+	return tot_work_done;
+}
+
+static int ath12k_wifi8_cumac_dp_service_srng(struct ath12k_dp *dp,
+					      struct ath12k_ext_irq_grp *irq_grp,
+					      int budget)
+{
+	struct napi_struct *napi = &irq_grp->napi;
+	int grp_id = irq_grp->grp_id;
+	int work_done = 0;
+	int i = 0;
+	int tot_work_done = 0;
+	u8 rx_mask, tx_mask;
 
 	rx_mask = dp->hw_params->ring_mask->rx[grp_id];
 	tx_mask = dp->hw_params->ring_mask->tx[grp_id];
@@ -45,6 +84,17 @@ static int ath12k_wifi8_dp_service_srng(struct ath12k_dp *dp,
 		if (budget <= 0)
 			goto done;
 	}
+
+	if (dp->hw_params->ring_mask->tcl_status[grp_id]) {
+		work_done = ath12k_wifi8_dp_tx_cmd_status_handler(dp, budget);
+		budget -= work_done;
+		tot_work_done += work_done;
+		if (budget <= 0)
+			goto done;
+	}
+
+	if (dp->hw_params->ring_mask->tqm_status[grp_id])
+		ath12k_wifi8_dp_tx_process_tqm_status(dp);
 
 	while (tx_mask) {
 		i = fls(tx_mask) - 1;
@@ -74,34 +124,10 @@ static int ath12k_wifi8_dp_service_srng(struct ath12k_dp *dp,
 			goto done;
 	}
 
-	if (dp->hw_params->ring_mask->rx_mon_dest[grp_id]) {
-		ring_mask = dp->hw_params->ring_mask->rx_mon_dest[grp_id];
-		for (i = 0; i < dp->num_radios; i++) {
-			for (j = 0; j < dp->hw_params->num_rxdma_per_pdev; j++) {
-				int id = i * dp->hw_params->num_rxdma_per_pdev + j;
-
-				if (ring_mask & BIT(id)) {
-					work_done =
-					ath12k_dp_rx_mon_process_ring(dp, id,
-								      napi, budget);
-					budget -= work_done;
-					tot_work_done += work_done;
-
-					if (budget <= 0)
-						goto done;
-				}
-			}
-		}
-	}
-
 	if (dp->hw_params->ring_mask->reo_status[grp_id])
 		ath12k_wifi8_dp_rx_process_reo_status(dp);
 
-	if (dp->hw_params->ring_mask->host2rxmon[grp_id])
-		ath12k_dp_mon_rx_process_low_thres(dp);
-
-	/* TODO: Implement handler for other interrupts */
-
+	tot_work_done += ath12k_wifi8_non_cumac_dp_service_srng(dp, irq_grp, budget);
 done:
 	return tot_work_done;
 }
@@ -152,6 +178,7 @@ static void ath12k_wifi8_dp_umac_deinit(struct ath12k_dp *dp)
 {
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_group_wifi8;
 
 	if (!dp_wifi8->cumac) {
 		ath12k_warn(ab, "Skipping ring deinit for non-cumac target");
@@ -169,14 +196,36 @@ static void ath12k_wifi8_dp_umac_deinit(struct ath12k_dp *dp)
 	ath12k_dp_srng_common_cleanup(ab);
 
 	ath12k_dp_rx_reo_cmd_list_cleanup(ab);
+	ath12k_wifi8_dp_tx_tqm_cmd_list_cleanup(ab);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ath12k_nss_plugin_unregister_ops(ab);
 #endif
-
 	ath12k_wifi8_dp_rx_ring_free(ab);
 	ath12k_dp_ast_table_deinit(dp->dp_hw_grp);
 	ath12k_dp_pn_counter_page_free(dp->dp_hw_grp);
 	ath12k_wifi8_dp_tx_pool_destroy(dp->dp_hw_grp);
+
+	dp_hw_group_wifi8 = ath12k_get_dp_hw_group_wifi8(dp->dp_hw_grp);
+	dp_hw_group_wifi8->cumac_dp = NULL;
+	ath12k_info(ab, "CUMAC de-init successful");
+}
+
+static int ath12k_enable_hif_interrupts(struct ath12k_dp *dp,
+					int (*handler)(struct ath12k_dp *dp,
+						       struct ath12k_ext_irq_grp *grp,
+						       int budget))
+{
+	int ret;
+
+	ret = ath12k_hif_ext_irq_setup(dp->ab, handler, dp);
+	if (ret) {
+		ath12k_warn(dp, "hif ext irq setup failed %d\n", ret);
+		return ret;
+	}
+
+	ath12k_hif_irq_enable(dp->ab);
+
+	return 0;
 }
 
 static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
@@ -191,6 +240,7 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 
 	if (!dp_wifi8->cumac) {
 		ath12k_warn(ab, "Skipping ring init for non-cumac target");
+		ath12k_enable_hif_interrupts(dp, ath12k_wifi8_non_cumac_dp_service_srng);
 		return 0;
 	}
 
@@ -199,7 +249,11 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 	INIT_LIST_HEAD(&dp->reo_cmd_update_rx_queue_list);
 	spin_lock_init(&dp->reo_cmd_update_rx_queue_lock);
 	spin_lock_init(&dp->reo_cmd_lock);
+	INIT_LIST_HEAD(&dp->tqm_cmd_list);
+	spin_lock_init(&dp->tqm_cmd_lock);
+
 	dp->reo_cmd_cache_flush_count = 0;
+	atomic_set(&dp->tqm_cmd_num, 0);
 	dp->idle_link_rbm =
 			ath12k_hal_get_idle_link_rbm(&ab->hal, ab->device_id);
 
@@ -276,6 +330,14 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 	dp_hw_group_wifi8 = ath12k_get_dp_hw_group_wifi8(dp->dp_hw_grp);
 	dp_hw_group_wifi8->cumac_dp = dp;
 
+	ret = ath12k_wifi8_dp_rx_flow_fse_cache_operation(ab,
+							  DP_FST_CACHE_INVALIDATE_FULL,
+							  NULL);
+	if (ret) {
+		ath12k_err(ab, "Unable to invalidate Full cache ret %d", ret);
+		return ret;
+	}
+
 	ret = ath12k_dp_ast_table_init(dp->dp_hw_grp);
 	if (ret) {
 		ath12k_warn(ab, "dp ast table init failed %d\n", ret);
@@ -293,6 +355,8 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 		ath12k_warn(dp, "dp pool create for queues failed %d\n", ret);
 		goto fail_pn_counter_page_free;
 	}
+
+	ath12k_enable_hif_interrupts(dp, ath12k_wifi8_cumac_dp_service_srng);
 
 	ath12k_info(ab, "CUMAC init successful");
 	return 0;
@@ -339,12 +403,6 @@ static int ath12k_wifi8_dp_op_device_init(struct ath12k_dp *dp)
 {
 	int ret;
 
-	ret = ath12k_hif_ext_irq_setup(dp->ab, ath12k_wifi8_dp_service_srng, dp);
-	if (ret) {
-		ath12k_warn(dp, "hif ext irq setup failed %d\n", ret);
-		return ret;
-	}
-
 	ret = ath12k_dp_mon_rx_alloc(dp);
 	if (ret) {
 		ath12k_warn(dp->ab, "failed to setup rxdma rings ret = %d\n", ret);
@@ -355,8 +413,6 @@ static int ath12k_wifi8_dp_op_device_init(struct ath12k_dp *dp)
 
 fail_dp_mon_rx_free:
 	ath12k_dp_mon_rx_free(dp);
-	ath12k_hif_ext_irq_cleanup(dp->ab);
-
 	return ret;
 }
 
@@ -423,12 +479,32 @@ static void ath12k_wifi8_dp_vif_configure(struct ath12k_dp *dp,
 	}
 
 	central_dp = central_ab->dp;
+	ath12k_dbg(central_ab, ATH12K_DBG_DP_TX,
+		   "vif configure vdev type = %d optype = %d\n",
+		   ahvif->vdev_type, optype);
+
 	if (optype == ATH12K_DP_OP_DEINIT) {
 		if (dp_vif->bank_id != DP_INVALID_BANK_ID)
 			ath12k_dp_tx_put_bank_profile(central_dp, dp_vif->bank_id);
+
+		/* Reset VDEV multicast packet control bits for this vdev_id
+		 * to prevent stale entry on vdev_id reuse.
+		 */
+		ath12k_wifi8_hal_vdev_mcast_ctrl_set(central_ab, dp_vif->dp_vif_id,
+						HAL_TX_PACKET_CONTROL_CONFIG_DISABLE);
+		ath12k_mac_vif_unref(central_dp, ahvif->vif);
 		return;
 	} else if (optype == ATH12K_DP_OP_INIT) {
 		/*TODO keep vdev_id check disabled for initial emulation */
+		dp_vif->bank_id = DP_INVALID_BANK_ID;
+
+		if (ahvif->vdev_type != WMI_VDEV_TYPE_STA &&
+		    ahvif->vdev_type != WMI_VDEV_TYPE_AP) {
+			ath12k_dbg(central_ab, ATH12K_DBG_DP_TX, "ignoring bank init vdev type = %d\n",
+				   ahvif->vdev_type);
+			return;
+		}
+
 		dp_vif->vdev_id_check_en = false;
 		ath12k_dp_update_vdev_search(ahvif);
 
@@ -457,6 +533,12 @@ static void ath12k_wifi8_dp_vif_configure(struct ath12k_dp *dp,
 			return;
 		}
 	} else if (optype == ATH12K_DP_OP_UPDATE) {
+		if (dp_vif->bank_id == DP_INVALID_BANK_ID) {
+			ath12k_dbg(central_ab, ATH12K_DBG_DP_TX, "bank id is not inited type = %d\n",
+				   ahvif->vdev_type);
+			return;
+		}
+
 		old_bank_config = ath12k_dp_tx_get_bank_config_from_id(central_dp,
 								   dp_vif->bank_id);
 		new_bank_config = ath12k_wifi8_dp_tx_get_vdev_bank_config(ab, ahvif,
@@ -504,11 +586,38 @@ static void ath12k_wifi8_dp_link_vif_configure(struct ath12k_dp *dp,
 		dp_link_vif->tcl_metadata &= ~HTT_TCL_META_DATA_VALID_HTT;
 	}
 
-	/* TODO for now update dp_vif when link params updated */
-	if (dp_vif->bank_id == DP_INVALID_BANK_ID)
-		ath12k_wifi8_dp_vif_configure(dp, ahvif, ATH12K_DP_OP_INIT);
-	else
-		ath12k_wifi8_dp_vif_configure(dp, ahvif, ATH12K_DP_OP_UPDATE);
+	ath12k_wifi8_dp_vif_configure(dp, ahvif, ATH12K_DP_OP_UPDATE);
+}
+
+static ssize_t ath12k_wifi8_dump_srng_stats(struct ath12k_dp *dp,
+					    char *buf, int size)
+{
+	int len = 0;
+	int i;
+	struct ath12k_base *ab = dp->ab;
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+
+	for (i = 0; i < DP_WBM_REFILL_RING_MAX; i++)
+		len += ath12k_hal_dump_ring_stats(ab, HAL_WBM_BUF,
+						  dp_wifi8->wbm_refill_ring[i].ring_id,
+						  buf + len, size - len);
+
+	len += ath12k_hal_dump_ring_stats(ab, HAL_WBM_IDLE_BUF,
+					  dp_wifi8->wbm_idle_buf_ring.ring_id,
+					  buf + len, size - len);
+
+	len += ath12k_hal_dump_ring_stats(ab, HAL_TX_EXCEPTION,
+					  dp_wifi8->tx_exception.ring_id,
+					  buf + len, size - len);
+
+	len += ath12k_hal_dump_ring_stats(ab, HAL_TCL_CMD,
+					  dp_wifi8->tcl_cmd_ring.ring_id,
+					  buf + len, size - len);
+
+	len += ath12k_hal_dump_ring_stats(ab, HAL_TCL_STATUS,
+					  dp_wifi8->tcl_status_ring.ring_id,
+					  buf + len, size - len);
+	return len;
 }
 
 static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
@@ -552,6 +661,14 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.dp_vif_configure = ath12k_wifi8_dp_vif_configure,
 	.dp_link_vif_configure = ath12k_wifi8_dp_link_vif_configure,
 	.rx_flow_fse_cache_operation = ath12k_wifi8_dp_rx_flow_fse_cache_operation,
+	.get_peer_init_status = ath12k_wifi8_dp_get_peer_init_status,
+	/* UMAC reset operations */
+	.umac_reset_handle_pre_reset = ath12k_wifi8_umac_reset_handle_pre_reset,
+	.umac_reset_handle_post_reset_start =
+				ath12k_wifi8_umac_reset_handle_post_reset_start,
+	.umac_reset_handle_post_reset_complete =
+				ath12k_wifi8_umac_reset_handle_post_reset_complete,
+	.dump_srng_stats = ath12k_wifi8_dump_srng_stats,
 };
 
 struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab)
@@ -599,4 +716,17 @@ void ath12k_wifi8_dp_deinit(struct ath12k_dp *dp)
 {
 	ath12k_dp_mon_deinit(dp);
 	kfree(dp);
+}
+
+void ath12k_wifi8_dp_tx_tqm_cmd_list_cleanup(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp_tqm_cmd *cmd, *tmp;
+
+	spin_lock_bh(&dp->tqm_cmd_lock);
+	list_for_each_entry_safe(cmd, tmp, &dp->tqm_cmd_list, list) {
+		list_del(&cmd->list);
+		kfree(cmd);
+	}
+	spin_unlock_bh(&dp->tqm_cmd_lock);
 }

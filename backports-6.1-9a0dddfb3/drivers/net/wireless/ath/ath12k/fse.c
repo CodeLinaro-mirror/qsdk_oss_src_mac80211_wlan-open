@@ -90,7 +90,7 @@ ath12k_sfe_update_flow_info(struct rx_flow_info *flow_info,
 {
 	struct hal_flow_tuple_info *tuple_info = &flow_info->flow_tuple_info;
 
-	ath12k_generic_dbg(ATH12K_DBG_DP_FST,
+	ath12k_generic_dbg(ATH12K_DBG_DP_FST, ATH12K_DBG_L0,
 			   "%s S_IP:%x:%x:%x:%x,sPort:%u,D_IP:%x:%x:%x:%x,dPort:%u,Proto:%d,Ver:%d\n",
 			   fse_state_to_string(operation),
 			   src_ip[0], src_ip[1], src_ip[2], src_ip[3], src_port,

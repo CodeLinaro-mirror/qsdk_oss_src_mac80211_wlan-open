@@ -62,18 +62,18 @@ void ath11k_debugfs_sta_add_tx_stats(struct ath11k_sta *arsta,
 	he_gi = ath11k_he_gi_to_nl80211_he_gi(gi);
 	idx = mcs * 12 + 12 * 12 * nss;
 	idx += bw * 3 + he_gi;
-	if (mcs < 0 || mcs >= ATH11K_HE_MCS_NUM ||
-	    nss < 0 || nss >= ATH11K_NSS_NUM ||
+	if (nss < 0 || nss >= ATH11K_NSS_NUM ||
 	    gi < 0 || gi >= ATH11K_GI_NUM ||
 	    bw < 0 || bw >= ATH11K_BW_NUM ||
-	    idx < 0 || idx >= ATH11K_TX_RATE_TABLE_11AX_NUM) {
-	    WARN_ONCE(1,
-		      "tx_stats: invalid mcs %d nss %d gi %d bw %d idx %d (out of bounds)",
-		      mcs, nss, gi, bw, idx);
-	    ath11k_dbg(ab, ATH11K_DBG_PEER,
-		       "tx_stats: invalid mcs %d nss %d gi %d bw %d idx %d (out of bounds)",
-			mcs, nss, gi, bw, idx);
-	    return;
+	    ((idx < 0 || idx >= ATH11K_TX_RATE_TABLE_11AX_NUM) &&
+	     (txrate->flags & RATE_INFO_FLAGS_HE_MCS))) {
+		WARN_ONCE(1,
+			  "tx_stats: invalid nss %d gi %d bw %d idx %d flags 0x%x (out of bounds)",
+			  nss, gi, bw, idx, txrate->flags);
+		ath11k_dbg(ab, ATH11K_DBG_PEER,
+			   "tx_stats: invalid nss %d gi %d bw %d idx %d flags 0x%x (out of bounds)",
+			nss, gi, bw, idx, txrate->flags);
+		return;
 	}
 #define STATS_OP_FMT(name) tx_stats->stats[ATH11K_STATS_TYPE_##name]
 
@@ -171,15 +171,17 @@ void ath11k_debugfs_sta_add_tx_stats(struct ath11k_sta *arsta,
 			peer_stats->succ_bytes + peer_stats->retry_bytes;
 		STATS_OP_FMT(AMPDU).gi[0][gi] +=
 			peer_stats->succ_bytes + peer_stats->retry_bytes;
-		STATS_OP_FMT(AMPDU).rate_table[0][idx] +=
-			peer_stats->succ_bytes + peer_stats->retry_bytes;
+		if (txrate->flags & RATE_INFO_FLAGS_HE_MCS) {
+			STATS_OP_FMT(AMPDU).rate_table[0][idx] +=
+				peer_stats->succ_bytes + peer_stats->retry_bytes;
+			STATS_OP_FMT(AMPDU).rate_table[1][idx] +=
+				peer_stats->succ_pkts + peer_stats->retry_pkts;
+		}
 		STATS_OP_FMT(AMPDU).bw[1][bw] +=
 			peer_stats->succ_pkts + peer_stats->retry_pkts;
 		STATS_OP_FMT(AMPDU).nss[1][nss] +=
 			peer_stats->succ_pkts + peer_stats->retry_pkts;
 		STATS_OP_FMT(AMPDU).gi[1][gi] +=
-			peer_stats->succ_pkts + peer_stats->retry_pkts;
-		STATS_OP_FMT(AMPDU).rate_table[1][idx] +=
 			peer_stats->succ_pkts + peer_stats->retry_pkts;
 	} else {
 		tx_stats->ack_fails += peer_stats->ba_fails;
@@ -209,7 +211,7 @@ void ath11k_debugfs_sta_add_tx_stats(struct ath11k_sta *arsta,
 	STATS_OP_FMT(RETRY).nss[1][nss] += peer_stats->retry_pkts;
 	STATS_OP_FMT(RETRY).gi[1][gi] += peer_stats->retry_pkts;
 
-	if (txrate->flags >= RATE_INFO_FLAGS_MCS) {
+	if (txrate->flags & RATE_INFO_FLAGS_MCS) {
 		STATS_OP_FMT(SUCC).rate_table[0][idx] += peer_stats->succ_bytes;
 		STATS_OP_FMT(SUCC).rate_table[1][idx] += peer_stats->succ_pkts;
 		STATS_OP_FMT(FAIL).rate_table[0][idx] += peer_stats->failed_bytes;

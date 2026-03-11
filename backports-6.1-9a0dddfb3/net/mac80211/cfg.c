@@ -5,7 +5,7 @@
  * Copyright 2006-2010	Johannes Berg <johannes@sipsolutions.net>
  * Copyright 2013-2015  Intel Mobile Communications GmbH
  * Copyright (C) 2015-2017 Intel Deutschland GmbH
- * Copyright (C) 2018-2025 Intel Corporation
+ * Copyright (C) 2018-2026 Intel Corporation
  */
 
 #include <linux/ieee80211.h>
@@ -241,6 +241,67 @@ void ieee80211_ttlm_info_expec_dur_update(struct ieee80211_vif *vif,
 	wdev->ttlm_expec_dur_update_flag = true;
 }
 EXPORT_SYMBOL(ieee80211_ttlm_info_expec_dur_update);
+
+/**
+ * ieee80211_set_repurpose_link() - Mark a link for repurposing in mac80211
+ * @vif: virtual interface pointer
+ * @link_id: link identifier to mark for repurposing
+ *
+ * This function sets the repurpose bit for the specified link in the
+ * ieee80211_vif structure.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int ieee80211_set_repurpose_link(struct ieee80211_vif *vif, u8 link_id)
+{
+	struct ieee80211_sub_if_data *sdata = vif_to_sdata(vif);
+
+	if (!sdata)
+		return -EINVAL;
+
+	lockdep_assert_wiphy(sdata->local->hw.wiphy);
+
+	if (cfg80211_set_repurpose_link(ieee80211_vif_to_wdev(vif), link_id))
+		return -EINVAL;
+
+	vif->repurposed_links |= BIT(link_id);
+
+	return 0;
+}
+EXPORT_SYMBOL(ieee80211_set_repurpose_link);
+
+/**
+ * ieee80211_clear_repurpose_link() - Clear repurpose mark for a link
+ * @vif: virtual interface pointer
+ * @link_id: link identifier to clear
+ *
+ * This function clears the repurpose bit for the specified link.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int ieee80211_clear_repurpose_link(struct ieee80211_vif *vif, u8 link_id)
+{
+	struct ieee80211_sub_if_data *sdata = vif_to_sdata(vif);
+
+	if (!sdata)
+		return -EINVAL;
+
+	lockdep_assert_wiphy(sdata->local->hw.wiphy);
+
+	if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
+		return -EINVAL;
+
+	if (!(vif->valid_links & BIT(link_id)))
+		return -EINVAL;
+
+	if (cfg80211_clear_repurpose_link(ieee80211_vif_to_wdev(vif), link_id))
+		return -EINVAL;
+
+	vif->repurposed_links &= ~BIT(link_id);
+
+	return 0;
+}
+EXPORT_SYMBOL(ieee80211_clear_repurpose_link);
 
 static struct wireless_dev *ieee80211_add_iface(struct wiphy *wiphy,
 						const char *name,
@@ -1518,7 +1579,8 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 		      BSS_CHANGED_BEACON |
 		      BSS_CHANGED_P2P_PS |
 		      BSS_CHANGED_TXPOWER |
-		      BSS_CHANGED_TWT;
+		      BSS_CHANGED_TWT |
+		      BSS_CHANGED_AP_DPS_ASSIST;
 	int i, err;
 	int prev_beacon_int;
 	unsigned int link_id = params->beacon.link_id;
@@ -1641,8 +1703,8 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 		link_conf->eht_mu_beamformer = false;
 	}
 
-	if (params->uhr_cap) {
-		/* If UHR can operate independently below check should be removed */
+	link_conf->dps_assist_support = false;
+	if (params->uhr_oper) {
 		if (!link_conf->eht_support)
 			return -EOPNOTSUPP;
 
@@ -1722,10 +1784,17 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	sdata->vif.cfg.s1g = params->chandef.chan->band ==
 				  NL80211_BAND_S1GHZ;
 
-	sdata->vif.cfg.ssid_len = params->ssid_len;
-	if (params->ssid_len)
-		memcpy(sdata->vif.cfg.ssid, params->ssid,
-		       params->ssid_len);
+	/* Update ML SSID in vif only when non-repurposed link is started */
+	if (!(sdata->vif.repurposed_links & BIT(link_id)))
+		sdata->vif.cfg.ssid_len = params->ssid_len;
+	link_conf->ssid_len = params->ssid_len;
+	if (params->ssid_len) {
+		if (!(sdata->vif.repurposed_links & BIT(link_id)))
+			memcpy(sdata->vif.cfg.ssid, params->ssid,
+			       params->ssid_len);
+
+		memcpy(link_conf->ssid, params->ssid, params->ssid_len);
+	}
 	link_conf->hidden_ssid =
 		(params->hidden_ssid != NL80211_HIDDEN_SSID_NOT_IN_USE);
 
@@ -1862,11 +1931,6 @@ static int ieee80211_update_ap(struct wiphy *wiphy, struct net_device *dev,
 	if (err < 0)
 		return err;
 
-	if (link_conf->intf_detect_bitmap != params->intf_detect_bitmap) {
-		link_conf->intf_detect_bitmap = params->intf_detect_bitmap;
-		changed |= BSS_CHANGED_INTF_DETECT;
-	}
-
 	if (ieee80211_hw_check(&sdata->local->hw, SUPPORTS_AP_PS) &&
 	    params->ap_ps_valid) {
 		link_conf->ap_ps_enable = params->ap_ps_enable;
@@ -1943,7 +2007,7 @@ static int ieee80211_stop_ap(struct wiphy *wiphy, struct net_device *dev,
 
 	link_conf = link->conf;
 	old_beacon = sdata_dereference(link->u.ap.beacon, sdata);
-	if (!old_beacon)
+	if (!old_beacon && !wdev_is_scan_radio(wdev))
 		return -ENOENT;
 	old_probe_resp = sdata_dereference(link->u.ap.probe_resp,
 					   sdata);
@@ -2025,7 +2089,7 @@ static int ieee80211_stop_ap(struct wiphy *wiphy, struct net_device *dev,
 	 */
 	if ((rcu_access_pointer(link->conf->tx_bss_conf) == link->conf) ||
 	    wdev->is_netdev_going_down)
-		ieee80211_stop_mbssid(sdata, link_id);
+		ieee80211_stop_mbssid(sdata);
 	RCU_INIT_POINTER(link_conf->tx_bss_conf, NULL);
 
 	link_conf->enable_beacon = false;
@@ -2033,6 +2097,7 @@ static int ieee80211_stop_ap(struct wiphy *wiphy, struct net_device *dev,
 	link_conf->mbssid_tx_vif_linkid = -1;
 	sdata->beacon_rate_set = false;
 	sdata->vif.cfg.ssid_len = 0;
+	link_conf->ssid_len = 0;
 	clear_bit(SDATA_STATE_OFFCHANNEL_BEACON_STOPPED, &sdata->state);
 	ieee80211_link_info_change_notify(sdata, link,
 					  BSS_CHANGED_BEACON_ENABLED);
@@ -2212,6 +2277,7 @@ static int sta_link_apply_parameters(struct ieee80211_local *local,
 		       params->vht_capa ||
 		       params->he_capa ||
 		       params->eht_capa ||
+		       params->uhr_capa ||
 		       params->opmode_notif_used;
 
 	switch (mode) {
@@ -3888,28 +3954,42 @@ static void ieee80211_set_cqm_rssi_link(struct ieee80211_sub_if_data *sdata,
 	conf->cqm_rssi_high = rssi_high;
 	link->u.mgd.last_cqm_event_signal = 0;
 
-	if (!ieee80211_vif_link_active(&sdata->vif, link->link_id))
-		return;
+	if (sdata->vif.type == NL80211_IFTYPE_STATION ||
+	    sdata->vif.type == NL80211_IFTYPE_P2P_CLIENT) {
+		if (!ieee80211_vif_link_active(&sdata->vif, link->link_id))
+			return;
 
-	if (sdata->u.mgd.associated &&
-	    (sdata->vif.driver_flags & IEEE80211_VIF_SUPPORTS_CQM_RSSI))
-		ieee80211_link_info_change_notify(sdata, link, BSS_CHANGED_CQM);
+		if (sdata->u.mgd.associated &&
+		    (sdata->vif.driver_flags & IEEE80211_VIF_SUPPORTS_CQM_RSSI))
+			ieee80211_link_info_change_notify(sdata, link, BSS_CHANGED_CQM);
+	} else if (sdata->vif.type == NL80211_IFTYPE_AP) {
+		if (sdata->vif.driver_flags & IEEE80211_VIF_SUPPORTS_CQM_RSSI)
+			ieee80211_link_info_change_notify(sdata, link, BSS_CHANGED_CQM);
+	}
 }
 
 static int ieee80211_set_cqm_rssi_config(struct wiphy *wiphy,
 					 struct net_device *dev,
-					 s32 rssi_thold, u32 rssi_hyst)
+					 s32 rssi_thold, u32 rssi_hyst,
+					 int link_id)
 {
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	struct ieee80211_vif *vif = &sdata->vif;
-	int link_id;
+	int idx;
 
 	if (vif->driver_flags & IEEE80211_VIF_BEACON_FILTER &&
 	    !(vif->driver_flags & IEEE80211_VIF_SUPPORTS_CQM_RSSI))
 		return -EOPNOTSUPP;
 
-	/* For MLD, handle CQM change on all the active links */
-	for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS; link_id++) {
+	if (link_id < 0) {
+		for (idx = 0; idx < IEEE80211_MLD_MAX_NUM_LINKS; idx++) {
+			struct ieee80211_link_data *link =
+				sdata_dereference(sdata->link[idx], sdata);
+
+			ieee80211_set_cqm_rssi_link(sdata, link, rssi_thold, rssi_hyst,
+						    0, 0);
+		}
+	} else {
 		struct ieee80211_link_data *link =
 			sdata_dereference(sdata->link[link_id], sdata);
 
@@ -4056,6 +4136,14 @@ __ieee80211_is_scan_ongoing(struct wiphy *wiphy,
 			chan = scan_req->channels[i];
 			chan_hw_idx = cfg80211_get_hw_idx_by_chan(wiphy, chan);
 			if (chan_hw_idx == req_hw_idx) {
+				/* Ind Rptr: If Rep STA scan is ongoing, allow
+				 * channel switch/CAC in same link for Rep AP
+				 */
+				if (local->scan_sdata &&
+				    local->scan_sdata->vif.type ==
+						NL80211_IFTYPE_STATION) {
+					break;
+				}
 				rcu_read_unlock();
 				return true;
 			}
@@ -4406,6 +4494,10 @@ static int ieee80211_set_after_csa_beacon(struct ieee80211_link_data *link_data,
 
 	switch (sdata->vif.type) {
 	case NL80211_IFTYPE_AP:
+		/* Skip Beacon Assignment for Scan Radio */
+		if (wdev_is_scan_radio(&sdata->wdev))
+			break;
+
 		if (!link_data->u.ap.next_beacon)
 			return -EINVAL;
 
@@ -4510,7 +4602,10 @@ static int __ieee80211_csa_finalize(struct ieee80211_link_data *link_data)
 	dfs_required = cfg80211_chandef_dfs_required(local->hw.wiphy,
 						     &link_conf->chanreq.oper,
 						     sdata->vif.type);
-	if (dfs_required <= 0) {
+
+	if (dfs_required <= 0 ||
+	    cfg80211_chandef_dfs_available(local->hw.wiphy,
+					   &link_conf->chanreq.oper)) {
 		ieee80211_link_info_change_notify(sdata, link_data, changed);
 		ieee80211_vif_unblock_queues_csa(sdata);
 	} else {
@@ -6439,6 +6534,22 @@ ieee80211_get_6ghz_dev_deployment_type(struct wiphy *wiphy)
 	return dep_type;
 }
 
+static int ieee80211_ap_power_save(struct wiphy *wiphy,
+				   struct wireless_dev *wdev,
+				   int link_id,
+				   struct cfg80211_ap_power_save_params *params)
+{
+	struct ieee80211_local *local = wiphy_priv(wiphy);
+	struct ieee80211_sub_if_data *sdata = NULL;
+
+	lockdep_assert_wiphy(wiphy);
+
+	if (wdev)
+		sdata = IEEE80211_WDEV_TO_SUB_IF(wdev);
+
+	return drv_ap_power_save(local, sdata, link_id, params);
+}
+
 const struct cfg80211_ops mac80211_config_ops = {
 	.add_virtual_intf = ieee80211_add_iface,
 	.del_virtual_intf = ieee80211_del_iface,
@@ -6563,4 +6674,5 @@ const struct cfg80211_ops mac80211_config_ops = {
 	.set_qos_mgmt_cfg = ieee80211_set_qos_mgmt_cfg,
 	.get_afc_eirp_pwr = ieee80211_get_afc_eirp_pwr,
 	.get_6ghz_dev_deployment_type = ieee80211_get_6ghz_dev_deployment_type,
+	.ap_power_save = ieee80211_ap_power_save,
 };

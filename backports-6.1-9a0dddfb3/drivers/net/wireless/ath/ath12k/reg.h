@@ -67,6 +67,7 @@ enum ath12k_afc_event_state {
  * @REG_AFC_EXPIRY_EVENT_START: Start expiry event
  * @REG_AFC_EXPIRY_EVENT_RENEW: Renew expiry event
  * @REG_AFC_EXPIRY_EVENT_SWITCH_TO_LPI: Switch to LPI expiry event
+ * @REG_AFC_EXPIRY_EVENT_STOP_TX: Stop Transmission event
  *
  * Enumeration of different AFC expiry event subtypes.
  */
@@ -74,6 +75,7 @@ enum ath12k_afc_expiry_event_subtype {
 	REG_AFC_EXPIRY_EVENT_START = 1,
 	REG_AFC_EXPIRY_EVENT_RENEW = 2,
 	REG_AFC_EXPIRY_EVENT_SWITCH_TO_LPI = 3,
+	REG_AFC_EXPIRY_EVENT_STOP_TX = 4,
 };
 
 enum ath12k_afc_power_event_status_code {
@@ -680,4 +682,32 @@ void ath12k_reg_get_afc_eirp_power_for_bw(struct ath12k *ar, u16 *start_freq,
  * Return: None
  */
 void ath12k_free_afc_power_event_info(struct ath12k_afc_info *afc);
+
+/**
+ * ath12k_get_opclasses_and_channels - Get operating classes and channels
+ * @p_frange_lst: Pointer to frequency range list
+ * @num_opclasses: Pointer to store number of operating classes
+ * @opclass_lst: Pointer to store operating class list (caller must free)
+ * @chansize_lst: Pointer to store channel size list (caller must free)
+ * @channel_lists: Pointer to store channel lists array (caller must free)
+ * @band: 2G/5G/6G band info.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int ath12k_get_opclasses_and_channels(struct ath12k_afc_frange_list *p_frange_lst,
+				      u8 *num_opclasses,
+				      u8 **opclass_lst,
+				      u8 **chansize_lst,
+				      u8 ***channel_lists,
+				      enum nl80211_band band);
+
+/**
+ * ath12k_free_opclasses_and_channels - Free operating classes and channels
+ * @num_opclasses: Number of operating classes
+ * @opclass_lst: Pointer to operating class list
+ * @chansize_lst: Pointer to channel size list
+ * @channel_lists: Pointer to channel lists
+ */
+void ath12k_free_opclasses_and_channels(u8 num_opclasses, u8 *opclass_lst,
+					u8 *chansize_lst, u8 *channel_lists[]);
 #endif

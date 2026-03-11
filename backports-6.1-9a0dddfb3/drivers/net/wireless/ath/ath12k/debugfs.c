@@ -25,6 +25,8 @@
 #include "dp_cmn.h"
 #include "pktlog.h"
 #include "dp_stats.h"
+#include "mgmt_rx.h"
+#include "telemetry_agent_if.h"
 
 #define SEGMENT_ID	GENMASK(1,0)
 #define CHRIP_ID	BIT(2)
@@ -708,6 +710,104 @@ static const struct file_operations fops_dump_mgmt_stats = {
 	.open = simple_open
 };
 
+static ssize_t ath12k_dump_chanctx_switch_stats(struct file *file,
+						char __user *ubuf,
+						size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	struct ath12k_chanctx_switch_stats *stats = &ar->chanctx_switch_stats;
+	int len = 0, ret;
+	const int size = 1024;
+
+	char *buf __free(kfree) = kzalloc(size, GFP_KERNEL);
+
+	if (ar->ah->state != ATH12K_HW_STATE_ON)
+		return -ENETDOWN;
+
+	if (!buf)
+		return -ENOMEM;
+
+	spin_lock_bh(&ar->data_lock);
+
+	len += scnprintf(buf + len, size - len,
+			 "Channel Switch Stats:\n");
+	len += scnprintf(buf + len, size - len,
+			 "  total_switches          = %llu\n",
+			 stats->total_switches);
+	len += scnprintf(buf + len, size - len,
+			 "  last_switch_time_us     = %llu\n",
+			 stats->last_switch_time_us);
+	len += scnprintf(buf + len, size - len,
+			 "  min_switch_time_us      = %llu\n",
+			 stats->min_switch_time_us);
+	len += scnprintf(buf + len, size - len,
+			 "  max_switch_time_us      = %llu\n",
+			 stats->max_switch_time_us);
+	len += scnprintf(buf + len, size - len,
+			 "  avg_switch_time_us      = %llu\n",
+			 stats->avg_switch_time_us);
+	len += scnprintf(buf + len, size - len,
+			 "\nTiming Breakdown (last switch):\n");
+	len += scnprintf(buf + len, size - len,
+			 "  entry_time_us           = %llu\n",
+			 stats->entry_time_us);
+	len += scnprintf(buf + len, size - len,
+			 "  mvr_posting_time_us     = %llu\n",
+			 stats->mvr_posting_time_us);
+	len += scnprintf(buf + len, size - len,
+			 "  mvr_resp_time_us        = %llu\n",
+			 stats->mvr_resp_time_us);
+	len += scnprintf(buf + len, size - len,
+			 "Error Tracking:\n");
+	len += scnprintf(buf + len, size - len,
+			 "  mvr_timeout_count       = %llu\n",
+			 stats->mvr_timeout_count);
+
+	spin_unlock_bh(&ar->data_lock);
+
+	if (len > size)
+		len = size;
+
+	ret = simple_read_from_buffer(ubuf, count, ppos, buf, len);
+	return ret;
+}
+
+static ssize_t ath12k_write_chanctx_switch_stats(struct file *file,
+						 const char __user *ubuf,
+						 size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	char buf[20] = {0};
+	int ret;
+
+	if (count > sizeof(buf))
+		return -EINVAL;
+
+	ret = copy_from_user(buf, ubuf, count);
+	if (ret)
+		return -EFAULT;
+
+	/* Ensure null termination */
+	buf[count] = '\0';
+
+	if (strstr(buf, "reset")) {
+		spin_lock_bh(&ar->data_lock);
+		memset(&ar->chanctx_switch_stats, 0,
+		       sizeof(ar->chanctx_switch_stats));
+		spin_unlock_bh(&ar->data_lock);
+	}
+
+	return count;
+}
+
+static const struct file_operations fops_chanctx_switch_stats = {
+	.read = ath12k_dump_chanctx_switch_stats,
+	.write = ath12k_write_chanctx_switch_stats,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 static ssize_t ath12k_debug_get_tt_stats_configs(struct file *file,
 						 char __user *user_buf,
 						 size_t count, loff_t *ppos)
@@ -888,14 +988,16 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 	struct ath12k *ar;
 	struct ath12k_device_dp_stats *device_stats = &ab->dp->device_stats;
 	int len = 0, i, j, retval;
-	const int size = 4096;
+	const int size = 16384;
 	int tx_enqueued[DP_TCL_NUM_RING_MAX];
 	int non_fast_rx[DP_REO_DST_RING_MAX][ATH12K_MAX_SOCS];
 	static const char *rxdma_err[HAL_REO_ENTR_RING_RXDMA_ECODE_MAX] = {
 			"Overflow", "MPDU len", "FCS", "Decrypt", "TKIP MIC",
 			"Unencrypt", "MSDU len", "MSDU limit", "WiFi parse",
 			"AMSDU parse", "SA timeout", "DA timeout",
-			"Flow timeout", "Flush req", "AMSDU frag", "Multicast echo"};
+			"Flow timeout", "Flush req", "AMSDU frag", "Multicast echo",
+			"AMSDU addr mismatch", "Unauthorized WDS",
+			"Groupcast AMSDU or WDS", "CFP MIC", "CFP PN check"};
 	static const char *reo_err[HAL_REO_DEST_RING_ERROR_CODE_MAX] = {
 			"Desc addr zero", "Desc inval", "AMPDU in non BA",
 			"Non BA dup", "BA dup", "Frame 2k jump", "BAR 2k jump",
@@ -1030,24 +1132,14 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 			 device_stats->tx_null_frame[3]);
 
 	len += scnprintf(buf + len, size - len, "\ntqm_rel_reason:\n");
-	for (j=0; j < MAX_TX_COMP_RING; j++)
-		len += scnprintf(buf + len, size - len,
-			"Ring%d: 0:%u 1:%u 2:%u 3:%u 4:%u 5:%u 6:%u 7:%u 8:%u 9:%u 10:%u 11:%u 12:%u 13:%u 14:%u\n",
-			j, device_stats->tx_comp_stats[j].tqm_rel_reason[0],
-			device_stats->tx_comp_stats[j].tqm_rel_reason[1],
-			device_stats->tx_comp_stats[j].tqm_rel_reason[2],
-			device_stats->tx_comp_stats[j].tqm_rel_reason[3],
-			device_stats->tx_comp_stats[j].tqm_rel_reason[4],
-			device_stats->tx_comp_stats[j].tqm_rel_reason[5],
-			device_stats->tx_comp_stats[j].tqm_rel_reason[6],
-			device_stats->tx_comp_stats[j].tqm_rel_reason[7],
-			device_stats->tx_comp_stats[j].tqm_rel_reason[8],
-			device_stats->tx_comp_stats[j].tqm_rel_reason[9],
-			device_stats->tx_comp_stats[j].tqm_rel_reason[10],
-			device_stats->tx_comp_stats[j].tqm_rel_reason[11],
-			device_stats->tx_comp_stats[j].tqm_rel_reason[12],
-			device_stats->tx_comp_stats[j].tqm_rel_reason[13],
-			device_stats->tx_comp_stats[j].tqm_rel_reason[14]);
+	for (j = 0; j < MAX_TX_COMP_RING; j++) {
+		len += scnprintf(buf + len, size - len, "Ring%d:", j);
+		for (i = 0; i < MAX_TQM_RELEASE_REASON; i++) {
+			len += scnprintf(buf + len, size - len, " %u:%u", i,
+				device_stats->tx_comp_stats[j].tqm_rel_reason[i]);
+		}
+		len += scnprintf(buf + len, size - len, "\n");
+	}
 
 	len += scnprintf(buf + len, size - len, "\nfw_tx_status:\n");
 	for (j=0; j < MAX_TX_COMP_RING; j++)
@@ -2385,6 +2477,7 @@ void ath12k_debugfs_nrp_cleanup_all(struct ath12k *ar)
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_neighbor_peer *nrp, *tmp;
+	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
 
 	spin_lock_bh(&dp->dp_lock);
 
@@ -2399,6 +2492,7 @@ void ath12k_debugfs_nrp_cleanup_all(struct ath12k *ar)
 	}
 
 	dp->num_nrps = 0;
+	dp_pdev->num_nrps = 0;
 	spin_unlock_bh(&dp->dp_lock);
 
 	debugfs_remove_recursive(ar->debug.debugfs_nrp);
@@ -2409,6 +2503,8 @@ void ath12k_debugfs_nrp_clean(struct ath12k *ar, const u8 *addr, int num_nrp)
 {
 	int i, j;
 	char fname[MAC_UNIT_LEN * ETH_ALEN] = {0};
+	struct ath12k_link_vif *arvif = NULL;
+	struct ieee80211_vif *vif = NULL;
 
 	for (i = 0, j = 0; i < (MAC_UNIT_LEN * ETH_ALEN); i += MAC_UNIT_LEN, j++) {
 		if (j == ETH_ALEN - 1) {
@@ -2422,10 +2518,20 @@ void ath12k_debugfs_nrp_clean(struct ath12k *ar, const u8 *addr, int num_nrp)
 	if (!num_nrp) {
 		debugfs_remove_recursive(ar->debug.debugfs_nrp);
 		ar->debug.debugfs_nrp = NULL;
-		if (!ath12k_dp_smart_mon_enabled(ar))
+		if (!ath12k_dp_smart_mon_enabled(ar)) {
 			ath12k_reset_nrp_filter(ar, true);
-		else
+		} else {
 			ath12k_reset_smart_mon_filter(ar, true);
+			list_for_each_entry(arvif, &ar->arvifs, list) {
+				if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR &&
+				    arvif->is_started) {
+					vif = arvif->ahvif->vif;
+					ieee80211_enable_offchan_packet_capture(vif,
+										FALSE);
+					break;
+				}
+			}
+		}
 	}
 }
 
@@ -2495,6 +2601,7 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 	struct ath12k *ar = file->private_data;
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
 	struct ath12k_neighbor_peer *nrp = NULL, *tmp = NULL;
 	struct ath12k_dp_link_peer *peer = NULL;
 	struct ath12k_link_vif *arvif = NULL;
@@ -2590,7 +2697,7 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 	switch (action) {
 	case WMI_FILTER_NRP_ACTION_ADD:
 		spin_lock_bh(&dp->dp_lock);
-		if (dp->num_nrps >= (ATH12K_MAX_NRPS)) {
+		if (dp_pdev->num_nrps >= (ATH12K_MAX_NRPS)) {
 			spin_unlock_bh(&dp->dp_lock);
 			ath12k_warn(ab, "max nrp reached, cannot create more\n");
 			ret = -ENOMEM;
@@ -2675,7 +2782,7 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 		ether_addr_copy(param->nrp_addr, nrp->addr);
 
 		spin_lock_bh(&dp->dp_lock);
-		num_nrp = dp->num_nrps;
+		num_nrp = dp_pdev->num_nrps;
 		spin_unlock_bh(&dp->dp_lock);
 		if (!num_nrp) {
 			ar->debug.debugfs_nrp = debugfs_create_dir("nrp_rssi",
@@ -2692,15 +2799,18 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 				ret = -ENOENT;
 				goto err_free;
 			}
-			if (!smart_mon_enabled)
+			if (!smart_mon_enabled) {
 				ath12k_reset_nrp_filter(ar, false);
-			else
+			} else {
 				ath12k_reset_smart_mon_filter(ar, false);
+				ieee80211_enable_offchan_packet_capture(arvif->ahvif->vif,
+									TRUE);
+			}
 		}
 		spin_lock_bh(&dp->dp_lock);
 		list_add_tail(&nrp->list, &dp->neighbor_peers);
 		dp->num_nrps++;
-		num_nrp = dp->num_nrps;
+		dp_pdev->num_nrps++;
 		spin_unlock_bh(&dp->dp_lock);
 
 		debugfs_create_file(fname, 0644,
@@ -2709,7 +2819,7 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 		break;
 	case WMI_FILTER_NRP_ACTION_REMOVE:
 		spin_lock_bh(&dp->dp_lock);
-		if (!dp->num_nrps) {
+		if (!dp_pdev->num_nrps) {
 			spin_unlock_bh(&dp->dp_lock);
 			ath12k_warn(ab,
 				    "nrp list is empty, can't delete this mac: %pM for the pdev_id: %d\n",
@@ -2723,6 +2833,7 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 			    nrp->pdev_id == ar->pdev->pdev_id) {
 				list_del(&nrp->list);
 				dp->num_nrps--;
+				dp_pdev->num_nrps--;
 				del_nrp = true;
 				break;
 			}
@@ -2735,12 +2846,12 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 			ret = -EINVAL;
 			goto err_free;
 		} else {
-			ath12k_debugfs_nrp_clean(ar, mac, dp->num_nrps);
+			spin_lock_bh(&dp->dp_lock);
+			num_nrp = dp_pdev->num_nrps;
+			spin_unlock_bh(&dp->dp_lock);
+			ath12k_debugfs_nrp_clean(ar, mac, num_nrp);
 			param->vdev_id = nrp->vdev_id;
 			ether_addr_copy(param->nrp_addr, nrp->addr);
-			spin_lock_bh(&dp->dp_lock);
-			num_nrp = dp->num_nrps;
-			spin_unlock_bh(&dp->dp_lock);
 			kfree(nrp);
 		}
 		break;
@@ -4812,23 +4923,12 @@ static ssize_t ath12k_debugfs_dump_ppeds_stats(struct file *file,
 			 ppeds_stats->num_rx_desc_freed);
 	len += scnprintf(buf + len, size - len, "num_rx_desc_realloc %u\n",
 			 ppeds_stats->num_rx_desc_realloc);
-	len += scnprintf(buf + len, size - len,
-			 "\ntqm_rel_reason: 0:%u 1:%u 2:%u 3:%u 4:%u 5:%u 6:%u 7:%u 8:%u 9:%u 10:%u 11:%u 12:%u 13:%u 14:%u\n",
-			 ppeds_stats->tqm_rel_reason[0],
-			 ppeds_stats->tqm_rel_reason[1],
-			 ppeds_stats->tqm_rel_reason[2],
-			 ppeds_stats->tqm_rel_reason[3],
-			 ppeds_stats->tqm_rel_reason[4],
-			 ppeds_stats->tqm_rel_reason[5],
-			 ppeds_stats->tqm_rel_reason[6],
-			 ppeds_stats->tqm_rel_reason[7],
-			 ppeds_stats->tqm_rel_reason[8],
-			 ppeds_stats->tqm_rel_reason[9],
-			 ppeds_stats->tqm_rel_reason[10],
-			 ppeds_stats->tqm_rel_reason[11],
-			 ppeds_stats->tqm_rel_reason[12],
-			 ppeds_stats->tqm_rel_reason[13],
-			 ppeds_stats->tqm_rel_reason[14]);
+	len += scnprintf(buf + len, size - len, "\ntqm_rel_reason:");
+	for (i = 0; i < HAL_WBM_TQM_REL_REASON_MAX; i++) {
+		len += scnprintf(buf + len, size - len, " %u:%u", i,
+				 ppeds_stats->tqm_rel_reason[i]);
+	}
+	len += scnprintf(buf + len, size - len, "\n");
 
 	len += scnprintf(buf + len, size - len, "SRNG Ring index Dump:\n");
 
@@ -6278,7 +6378,7 @@ static ssize_t ath12k_read_dp_stats_mask(struct file *file,
 {
 	struct ath12k_hw *ah = file->private_data;
 	struct ath12k *ar;
-	char buf[8];
+	char buf[16];
 	int len = 0, i;
 
 	wiphy_lock(ah->hw->wiphy);
@@ -6387,7 +6487,14 @@ static ssize_t ath12k_write_reset_dp_stats(struct file *file,
 	if (!reset)
 		return -EINVAL;
 
+	/*Clear only scan related stats*/
+	if (reset == 2) {
+		ath12k_dp_rx_scan_radio_stats_reset(ah);
+		return count;
+	}
+
 	wiphy_lock(ah->hw->wiphy);
+
 	spin_lock_bh(&ah->dp_hw.peer_lock);
 	list_for_each_entry(dp_peer, &ah->dp_hw.peers, list) {
 		memset(&dp_peer->stats, 0, sizeof(dp_peer->stats));
@@ -6399,6 +6506,8 @@ static ssize_t ath12k_write_reset_dp_stats(struct file *file,
 		ar = &ah->radio[0];
 		if (ar && ath12k_proto_stats_enabled(&ar->dp))
 			ath12k_dp_peer_reset_proto_stats(dp_peer);
+
+		ath12k_telemetry_reset_peer_stats(dp_peer->addr);
 
 		struct ath12k_dp_link_peer *tmp_peer = NULL;
 		unsigned long peer_links_map, scan_links_map;
@@ -6591,6 +6700,10 @@ void ath12k_debugfs_register(struct ath12k *ar)
 				ar->debug.debugfs_pdev, ar,
 				&fops_dump_mgmt_stats);
 
+	debugfs_create_file("chanctx_switch_stats", 0644,
+			    ar->debug.debugfs_pdev, ar,
+			    &fops_chanctx_switch_stats);
+
 	debugfs_create_file("set_tt_configs", 0600, ar->debug.debugfs_pdev, ar,
 			    &tt_configs);
 
@@ -6674,6 +6787,185 @@ static const struct file_operations fops_dump_hal_stats = {
        .open = simple_open,
        .owner = THIS_MODULE,
        .llseek = default_llseek,
+};
+
+static ssize_t ath12k_read_umac_reset_stats(struct file *file,
+					    char __user *user_buf,
+					    size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_base *partner_ab;
+	struct ath12k_dp_umac_reset *umac_reset;
+	struct ath12k_umac_reset_ts *ts;
+	char *buf;
+	int len = 0, i, j, state;
+	const int size = 8192;
+	u64 state_times[ATH12K_UMAC_RESET_STATE_MAX];
+	u32 state_counts[ATH12K_UMAC_RESET_STATE_MAX];
+	u64 irq_ts[5];
+	u64 overall_duration, step_duration;
+
+	static const char * const state_names[] = {
+		[ATH12K_UMAC_RESET_STATE_IDLE] = "IDLE",
+		[ATH12K_UMAC_RESET_STATE_INIT] = "INIT",
+		[ATH12K_UMAC_RESET_STATE_TRIGGER_SENT] = "TRIGGER_SENT",
+		[ATH12K_UMAC_RESET_STATE_PRE_RESET_START] = "PRE_RESET_START",
+		[ATH12K_UMAC_RESET_STATE_PRE_RESET_DONE] = "PRE_RESET_DONE",
+		[ATH12K_UMAC_RESET_STATE_POST_RESET_START] = "POST_RESET_START",
+		[ATH12K_UMAC_RESET_STATE_POST_RESET_DONE] = "POST_RESET_DONE",
+		[ATH12K_UMAC_RESET_STATE_POST_RESET_COMPLETE] = "POST_RESET_COMPLETE",
+		[ATH12K_UMAC_RESET_STATE_ERROR] = "ERROR",
+	};
+
+	buf = kzalloc(size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	len += scnprintf(buf + len, size - len,
+			 "UMAC Reset Statistics for HW Group\n");
+	len += scnprintf(buf + len, size - len,
+			 "===================================\n\n");
+
+	if (!ag) {
+		len += scnprintf(buf + len, size - len,
+				 "No HW group available\n");
+		goto out;
+	}
+
+	for (i = 0; i < ag->num_devices; i++) {
+		partner_ab = ag->ab[i];
+		if (!partner_ab || partner_ab->is_bypassed)
+			continue;
+
+		umac_reset = &partner_ab->dp_umac_reset;
+		ts = &umac_reset->ts;
+
+		len += scnprintf(buf + len, size - len,
+				 "Device %d (chip_id: %d):\n", i, partner_ab->device_id);
+		len += scnprintf(buf + len, size - len,
+				 "----------------------------------------\n");
+
+		/* Copy IRQ timestamps */
+		irq_ts[0] = ts->event_irq_init_umac_recovery;
+		irq_ts[1] = ts->event_irq_init_target_recovery;
+		irq_ts[2] = ts->event_irq_pre_reset;
+		irq_ts[3] = ts->event_irq_post_reset_start;
+		irq_ts[4] = ts->event_irq_post_reset_complete;
+
+		/* Copy state transition times and counts */
+		for (j = 0; j < ATH12K_UMAC_RESET_STATE_MAX; j++) {
+			state_times[j] = umac_reset->state_entry_time[j];
+			state_counts[j] = umac_reset->state_transition_count[j];
+		}
+
+		/* Display IRQ Event Timestamps */
+		len += scnprintf(buf + len, size - len,
+				 "  IRQ Event Timestamps:\n");
+		len += scnprintf(buf + len, size - len,
+				 "    Init UMAC Recovery      : %llu %s\n",
+				 irq_ts[0], irq_ts[0] ? "" : " (not triggered)");
+		len += scnprintf(buf + len, size - len,
+				 "    Init Target Recovery    : %llu %s\n",
+				 irq_ts[1], irq_ts[1] ? "" : " (not triggered)");
+		len += scnprintf(buf + len, size - len,
+				 "    Pre Reset               : %llu %s\n",
+				 irq_ts[2], irq_ts[2] ? "" : " (not triggered)");
+		len += scnprintf(buf + len, size - len,
+				 "    Post Reset Start        : %llu %s\n",
+				 irq_ts[3], irq_ts[3] ? "" : " (not triggered)");
+		len += scnprintf(buf + len, size - len,
+				 "    Post Reset Complete     : %llu %s\n\n",
+				 irq_ts[4], irq_ts[4] ? "" : " (not triggered)");
+
+		/* Display State Transition Timestamps */
+		len += scnprintf(buf + len, size - len,
+				 "  State Transition Timestamps:\n");
+		for (j = 0; j < ATH12K_UMAC_RESET_STATE_MAX; j++) {
+			if (state_times[j])
+				len += scnprintf(buf + len, size - len,
+						 "    %-24s: %llu\n",
+						 state_names[j], state_times[j]);
+		}
+		len += scnprintf(buf + len, size - len, "\n");
+
+		/* Calculate and display step durations */
+		len += scnprintf(buf + len, size - len,
+				 "  Step Durations:\n");
+
+		/* IRQ to TRIGGER_SENT */
+		state = ATH12K_UMAC_RESET_STATE_TRIGGER_SENT;
+		if (irq_ts[0] && state_times[state]) {
+			step_duration = state_times[state] - irq_ts[0];
+			len += scnprintf(buf + len, size - len,
+					 "    IRQ to TRIGGER_SENT     : %llu ms\n",
+					 step_duration);
+		}
+
+		/* PRE_RESET processing (IRQ arrival to DONE sent) */
+		state = ATH12K_UMAC_RESET_STATE_PRE_RESET_DONE;
+		if (irq_ts[2] && state_times[state]) {
+			step_duration = state_times[state] - irq_ts[2];
+			len += scnprintf(buf + len, size - len,
+					 "    PRE_RESET processing    : %llu ms\n",
+					 step_duration);
+		}
+
+		/* POST_RESET_START processing (IRQ arrival to DONE sent) */
+		state = ATH12K_UMAC_RESET_STATE_POST_RESET_DONE;
+		if (irq_ts[3] && state_times[state]) {
+			step_duration = state_times[state] - irq_ts[3];
+			len += scnprintf(buf + len, size - len,
+					 "    POST_RESET_START process: %llu ms\n",
+					 step_duration);
+		}
+
+		/* POST_RESET_COMPLETE processing (IRQ arrival to DONE sent) */
+		state = ATH12K_UMAC_RESET_STATE_IDLE;
+		if (irq_ts[4] && state_times[state]) {
+			step_duration = state_times[state] - irq_ts[4];
+			len += scnprintf(buf + len, size - len,
+					 "    POST_RESET_COMPLETE proc: %llu ms\n",
+					 step_duration);
+		}
+
+		/* Overall duration (INIT to IDLE) */
+		if (state_times[ATH12K_UMAC_RESET_STATE_INIT] &&
+		    state_times[ATH12K_UMAC_RESET_STATE_IDLE]) {
+			overall_duration = state_times[ATH12K_UMAC_RESET_STATE_IDLE] -
+					   state_times[ATH12K_UMAC_RESET_STATE_INIT];
+			len += scnprintf(buf + len, size - len,
+					 "\n  Overall Duration          : %llu ms (INIT to IDLE)\n",
+					 overall_duration);
+		}
+
+		/* Display state transition counts */
+		len += scnprintf(buf + len, size - len,
+				 "\n  State Transition Counts:\n");
+		for (j = 0; j < ATH12K_UMAC_RESET_STATE_MAX; j++) {
+			if (state_counts[j])
+				len += scnprintf(buf + len, size - len,
+						 "    %-24s: %u\n",
+						 state_names[j], state_counts[j]);
+		}
+
+		len += scnprintf(buf + len, size - len, "\n");
+	}
+
+out:
+	if (len > size)
+		len = size;
+
+	i = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	kfree(buf);
+	return i;
+}
+
+static const struct file_operations fops_umac_reset_stats = {
+	.read = ath12k_read_umac_reset_stats,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
 };
 
 static ssize_t ath12k_read_simulate_host_crash(struct file *file,
@@ -6883,37 +7175,32 @@ void ath12k_send_fw_hang_cmd(struct ath12k_base *ab,
 		recovery_mode = ATH12K_WMI_DISABLE_FW_RECOVERY;
 		break;
 	}
-	if (ag->mlo_capable) {
-		for (i = 0; i < ag->num_devices; i++) {
-			ab = ag->ab[i];
-			if (ab->is_bypassed)
-				continue;
-			mutex_lock(&ab->core_lock);
-			ab->fw_recovery_support = value;
-			mutex_unlock(&ab->core_lock);
 
-			/*
-			 * TODO: Instead of checking recovery mode addr from
-			 * TLV, need to check WMI caps once the support is
-			 * added from FW.
-			 */
-			if (ab->recovery_mode_address) {
+	for (i = 0; i < ag->num_devices; i++) {
+		ab = ag->ab[i];
+		if (ab->is_bypassed)
+			continue;
+		mutex_lock(&ab->core_lock);
+		ab->fw_recovery_support = value;
+		mutex_unlock(&ab->core_lock);
 
-				if (ath12k_check_erp_power_down(ag) &&
-				    ab->powered_off)
-					continue;
+		/*
+		 * TODO: Instead of checking recovery mode addr from
+		 * TLV, need to check WMI caps once the support is
+		 * added from FW.
+		 */
+		if (ag->mlo_capable && !ab->recovery_mode_address)
+			continue;
 
-				ath12k_debug_multipd_wmi_pdev_set_param(ab, value);
+		if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
+			continue;
 
-				ret =
-				ath12k_wmi_force_fw_hang_cmd(ab->pdevs[0].ar,
-							     recovery_mode,
-							     ATH12K_WMI_FW_HANG_DELAY,
-							     false);
-				ath12k_info(ab, "setting FW assert mode [%d] ret [%d]\n",
-					    recovery_mode, ret);
-			}
-		}
+		ath12k_debug_multipd_wmi_pdev_set_param(ab, value);
+
+		ret = ath12k_wmi_force_fw_hang_cmd(ab->pdevs[0].ar, recovery_mode,
+						   ATH12K_WMI_FW_HANG_DELAY, false);
+		ath12k_info(ab, "setting FW assert mode [%d] ret [%d]\n", recovery_mode,
+			    ret);
 	}
 }
 
@@ -6931,6 +7218,13 @@ static ssize_t ath12k_debug_write_fw_recovery(struct file *file,
 	if (value < ATH12K_FW_RECOVERY_DISABLE ||
 	    value > ATH12K_FW_RECOVERY_ENABLE_MODE2) {
 		ath12k_warn(ab, "Please enter: 0 = Disable, 1 = Mode - 0 recovery 2 = Mode - 1 recovery 3 = Mode - 2 recovery\n");
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	if (ab && ab->ag && !ab->ag->mlo_capable &&
+	    value > ATH12K_WMI_FW_HANG_RECOVERY_MODE0) {
+		ath12k_err(ab, "Only mode 0 recovery supports for non-MLO devices\n");
 		ret = -EINVAL;
 		goto exit;
 	}
@@ -7150,10 +7444,11 @@ static ssize_t ath12k_dump_dp_mon_pdev_stats(struct file *file, char __user *use
 	struct ath12k_base *ab = file->private_data;
 	struct ath12k *ar;
 	struct ath12k_pdev_mon_dp_stats *mon_stats = NULL;
+	struct ath12k_pdev_mon_stats *rx_mon_stats = NULL;
 	struct ath12k_pdev *pdev;
 	struct ath12k_dp_mon *dp_mon = ab->dp->dp_mon;
 	u32 tot_used_frags = 0, tot_free_frags = dp_mon->num_frag_free;
-	int len = 0, i, ret, size = 2048;
+	int len = 0, i, j, ret, size = 2048, ppdu_id;
 	u8 *buf;
 
 	buf = kzalloc(size, GFP_KERNEL);
@@ -7169,82 +7464,163 @@ static ssize_t ath12k_dump_dp_mon_pdev_stats(struct file *file, char __user *use
 			continue;
 
 		mon_stats = &ar->dp.dp_mon_pdev->mon_stats;
+		rx_mon_stats = &ar->dp.dp_mon_pdev->mon_data.rx_mon_stats;
+
 		len += scnprintf(buf + len, size - len,
 				 "*******************radio[%u]*****************\n", i);
-		len += scnprintf(buf + len, size - len,
-				 "status frags reap: %u process: %u free: %u\n",
-				 mon_stats->status_buf_reaped,
-				 mon_stats->status_buf_processed,
-				 mon_stats->status_buf_free);
-		len += scnprintf(buf + len, size - len,
-				 "pkt frags proc %u free %u to_mac80211 %u truncated %u\n"
-				 , mon_stats->pkt_tlv_processed,
-				 mon_stats->pkt_tlv_free,
-				 mon_stats->pkt_tlv_to_mac80211,
-				 mon_stats->pkt_tlv_truncated);
-		len += scnprintf(buf + len, size - len,
-				 "Ring desc empty: %u flush %u truncated %u droptlv %u\n",
-				 mon_stats->ring_desc_empty,
-				 mon_stats->ring_desc_flush,
-				 mon_stats->ring_desc_trunc,
-				 mon_stats->drop_tlv);
-		len += scnprintf(buf + len, size - len,
-				 "skb alloc: %u free: %u to_mac80211: %u\n",
-				 mon_stats->num_skb_alloc,
-				 mon_stats->num_skb_free,
-				 mon_stats->num_skb_to_mac80211);
-		len += scnprintf(buf + len, size - len,
-				 "raw mode skb: %u frag %u eth mode skb: %u frag:%u\n",
-				 mon_stats->num_skb_raw,
-				 mon_stats->num_frag_raw,
-				 mon_stats->num_skb_eth,
-				 mon_stats->num_frag_eth);
-		len += scnprintf(buf + len, size - len,
-				 "Num of PPDU reaped %u processed %u\n",
-				 mon_stats->num_ppdu_reaped,
-				 mon_stats->num_ppdu_processed);
-		len += scnprintf(buf + len, size - len,
-				 "Empty desc free list: %u\n",
-				 mon_stats->ppdu_desc_free_list_empty_cnt);
-		len += scnprintf(buf + len, size - len,
-				 "Insufficient restitch frags cnt %u\n",
-				 mon_stats->restitch_insuff_frags_cnt);
 
-		tot_used_frags +=
-			mon_stats->status_buf_processed + mon_stats->pkt_tlv_processed;
+		if (ab->hw_params->quad_ring_monitor_support) {
+			len += scnprintf(buf + len, size - len,
+					 "monitor type: quad ring\n");
+			/* Status ring summary */
+			len += scnprintf(buf + len, size - len, "\n");
+			len += scnprintf(buf + len, size - len,
+					 "STATUS RING:\n");
+			len += scnprintf(buf + len, size - len,
+					 "ppdu_done %u invalid_desc %u tlv_tag_err %u buf_done_war %u\n",
+					 rx_mon_stats->status_ppdu_done,
+					 rx_mon_stats->status_desc_invalid,
+					 rx_mon_stats->status_tlv_tag_err,
+					 rx_mon_stats->status_buf_done_war);
+			len += scnprintf(buf + len, size - len,
+					 "rx_err_desc_sanity_fail %u\n",
+					 rx_mon_stats->rx_err_desc_sanity_fail);
+			/* Destination ring summary */
+			len += scnprintf(buf + len, size - len, "\n");
+			len += scnprintf(buf + len, size - len,
+					 "DEST RING:\n");
+			len += scnprintf(buf + len, size - len,
+					 "ppdu_done %u mpdu_done %u mpdu_drop %u\n",
+					 rx_mon_stats->dest_ppdu_done,
+					 rx_mon_stats->dest_mpdu_done,
+					 rx_mon_stats->dest_mpdu_drop);
+			len += scnprintf(buf + len, size - len,
+					 "dup_linkdesc %u dup_buf %u empty_sw_desc %u\n",
+					 rx_mon_stats->dup_mon_linkdesc_cnt,
+					 rx_mon_stats->dup_mon_buf_cnt,
+					 rx_mon_stats->empty_mon_sw_desc_cnt);
+			len += scnprintf(buf + len, size - len,
+					 "stuck %u not_reaped %u invalid_msdu %u\n",
+					 rx_mon_stats->dest_mon_stuck,
+					 rx_mon_stats->dest_mon_not_reaped,
+					 rx_mon_stats->invalid_msdu_cnt);
+			/* PPDU ID correlation */
+			len += scnprintf(buf + len, size - len, "\n");
+			len += scnprintf(buf + len, size - len,
+					 "PPDU ID CORRELATION:\n");
+			len += scnprintf(buf + len, size - len,
+					 "match %u mismatch %u (hist_idx %u)\n",
+					 rx_mon_stats->ppdu_id_match,
+					 rx_mon_stats->ppdu_id_mismatch,
+					 rx_mon_stats->ppdu_id_hist_idx);
+			len += scnprintf(buf + len, size - len,
+					 "status_ring_ppdu_id_hist (MISMATCH context):\n");
+			for (j = 0; j < MAX_PPDU_ID_HIST; j++) {
+				ppdu_id = rx_mon_stats->status_ring_ppdu_id_hist[j];
+				len += scnprintf(buf + len, size - len, "%u%s",
+						 ppdu_id,
+						 ((j + 1) % 16) ? " " : "\n");
+				if (len >= size - 64)
+					break;
+			}
+			len += scnprintf(buf + len, size - len,
+					 "\ndest_ring_ppdu_id_hist (MISMATCH context):\n");
+			for (j = 0; j < MAX_PPDU_ID_HIST; j++) {
+				ppdu_id = rx_mon_stats->dest_ring_ppdu_id_hist[j];
+				len += scnprintf(buf + len, size - len, "%u%s",
+						 ppdu_id,
+						 ((j + 1) % 16) ? " " : "\n");
+				if (len >= size - 64)
+					break;
+			}
+			len += scnprintf(buf + len, size - len, "\n");
+		} else {
+			len += scnprintf(buf + len, size - len,
+					 "monitor type: dual ring\n");
+			len += scnprintf(buf + len, size - len,
+					 "status frags reap: %u process: %u free: %u\n",
+					 mon_stats->status_buf_reaped,
+					 mon_stats->status_buf_processed,
+					 mon_stats->status_buf_free);
+			len += scnprintf(buf + len, size - len,
+					 "pkt frags proc %u free %u to_mac80211 %u truncated %u\n"
+					 , mon_stats->pkt_tlv_processed,
+					 mon_stats->pkt_tlv_free,
+					 mon_stats->pkt_tlv_to_mac80211,
+					 mon_stats->pkt_tlv_truncated);
+			len += scnprintf(buf + len, size - len,
+					 "Ring desc empty: %u flush %u truncated %u droptlv %u\n",
+					 mon_stats->ring_desc_empty,
+					 mon_stats->ring_desc_flush,
+					 mon_stats->ring_desc_trunc,
+					 mon_stats->drop_tlv);
+			len += scnprintf(buf + len, size - len,
+					 "skb alloc: %u free: %u to_mac80211: %u\n",
+					 mon_stats->num_skb_alloc,
+					 mon_stats->num_skb_free,
+					 mon_stats->num_skb_to_mac80211);
+			len += scnprintf(buf + len, size - len,
+					 "raw mode skb: %u frag %u eth mode skb: %u frag:%u\n",
+					 mon_stats->num_skb_raw,
+					 mon_stats->num_frag_raw,
+					 mon_stats->num_skb_eth,
+					 mon_stats->num_frag_eth);
+			len += scnprintf(buf + len, size - len,
+					 "Num of PPDU reaped %u processed %u\n",
+					 mon_stats->num_ppdu_reaped,
+					 mon_stats->num_ppdu_processed);
+			len += scnprintf(buf + len, size - len,
+					"Empty desc free list: %u\n",
+					 mon_stats->ppdu_desc_free_list_empty_cnt);
+			len += scnprintf(buf + len, size - len,
+					 "Insufficient restitch frags cnt %u\n",
+					 mon_stats->restitch_insuff_frags_cnt);
 
-		tot_free_frags +=
-			mon_stats->status_buf_free + mon_stats->pkt_tlv_free +
-			mon_stats->pkt_tlv_to_mac80211;
+			tot_used_frags += mon_stats->status_buf_processed +
+					  mon_stats->pkt_tlv_processed;
+
+			tot_free_frags +=
+				mon_stats->status_buf_free + mon_stats->pkt_tlv_free +
+				mon_stats->pkt_tlv_to_mac80211;
+		}
 	}
 
-	len += scnprintf(buf + len, size - len,
-			 "frags replenished_cnt: %u used cnt %u tot_free_frags %u\n",
-			 dp_mon->num_frag_replenish, tot_used_frags, tot_free_frags);
+	if (!ab->hw_params->quad_ring_monitor_support) {
+		len += scnprintf(buf + len, size - len,
+				 "frags replenished_cnt: %u used cnt %u tot_free_frags %u\n",
+				 dp_mon->num_frag_replenish,
+				 tot_used_frags,
+				 tot_free_frags);
 
-	tot_used_frags = mon_stats->status_buf_reaped + mon_stats->pkt_tlv_processed +
-			 dp_mon->num_frag_free;
-	len += scnprintf(buf + len, size - len, "\nFrags hold by HW: %u\n",
-			 dp_mon->num_frag_replenish - tot_used_frags);
+		tot_used_frags = mon_stats->status_buf_reaped +
+				 mon_stats->pkt_tlv_processed +
+				 dp_mon->num_frag_free;
+		len += scnprintf(buf + len, size - len,
+				 "\nFrags hold by HW: %u\n",
+				 dp_mon->num_frag_replenish - tot_used_frags);
 
-	tot_used_frags = mon_stats->status_buf_reaped + mon_stats->pkt_tlv_processed;
-	tot_free_frags = mon_stats->status_buf_free + mon_stats->pkt_tlv_free +
-			 mon_stats->pkt_tlv_to_mac80211;
-	len += scnprintf(buf + len, size - len, "\nFrags hold by SW: %u\n",
-			 (tot_used_frags - tot_free_frags));
+		tot_used_frags = mon_stats->status_buf_reaped +
+				 mon_stats->pkt_tlv_processed;
+		tot_free_frags = mon_stats->status_buf_free +
+				 mon_stats->pkt_tlv_free +
+				 mon_stats->pkt_tlv_to_mac80211;
+		len += scnprintf(buf + len, size - len, "\nFrags hold by SW: %u\n",
+				 (tot_used_frags - tot_free_frags));
 
-	len += scnprintf(buf + len, size - len, "\n SKBs hold by SW: %u\n",
-			 mon_stats->num_skb_alloc -
-			 (mon_stats->num_skb_free + mon_stats->num_skb_to_mac80211));
+		len += scnprintf(buf + len, size - len, "\n SKBs hold by SW: %u\n",
+				 mon_stats->num_skb_alloc -
+				 (mon_stats->num_skb_free +
+				  mon_stats->num_skb_to_mac80211));
 
-	len += scnprintf(buf + len, size - len, "\n ppdu_desc_used: %u\n",
-			 mon_stats->ppdu_desc_used);
+		len += scnprintf(buf + len, size - len, "\n ppdu_desc_used: %u\n",
+				 mon_stats->ppdu_desc_used);
 
-	len += scnprintf(buf + len, size - len, "\n ppdu_desc_proc: %u\n",
-			 mon_stats->ppdu_desc_proc);
+		len += scnprintf(buf + len, size - len, "\n ppdu_desc_proc: %u\n",
+				 mon_stats->ppdu_desc_proc);
 
-	len += scnprintf(buf + len, size - len, "\n ppdu_desc_free: %u\n",
-			 mon_stats->ppdu_desc_free);
+		len += scnprintf(buf + len, size - len, "\n ppdu_desc_free: %u\n",
+				 mon_stats->ppdu_desc_free);
+	}
 
 	ret = simple_read_from_buffer(user_buf, count, ppos, buf, len);
 	kfree(buf);
@@ -7258,6 +7634,7 @@ ath12k_debugfs_write_dp_mon_stats(struct file *file, const char __user *user_buf
 {
 	struct ath12k_base *ab = file->private_data;
 	struct ath12k_pdev_mon_dp_stats *mon_stats;
+	struct ath12k_pdev_mon_stats *rx_mon_stats;
 	struct ath12k *ar;
 	struct ath12k_pdev *pdev;
 	struct ath12k_dp_mon *dp_mon = ab->dp->dp_mon;
@@ -7279,7 +7656,9 @@ ath12k_debugfs_write_dp_mon_stats(struct file *file, const char __user *user_buf
 			ar = pdev->ar;
 			if (ar) {
 				mon_stats = &ar->dp.dp_mon_pdev->mon_stats;
+				rx_mon_stats = &ar->dp.dp_mon_pdev->mon_data.rx_mon_stats;
 				memset(mon_stats, 0, sizeof(*mon_stats));
+				memset(rx_mon_stats, 0, sizeof(*rx_mon_stats));
 			}
 		}
 	}
@@ -7340,6 +7719,85 @@ u32 ath12k_dbg_dump_qos_profile(struct ath12k_base *ab,
 	return len;
 }
 
+static ssize_t ath12k_debugfs_dump_device_mgmt_srng_stats(struct file *file,
+							  char __user *user_buf,
+							  size_t count,
+							  loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	struct ath12k_device_mgmt_srng_stats *device_stats;
+	static const char *frm_stype[ATH12K_SRNG_STATS_MGMT_FRM_STYPE_MAX - 1] = {
+			"Association request", "Association response",
+			"Reassociation request", "Reassociation response",
+			"Probe request", "Probe response", "Timing Advertisement",
+			"Reserved", "Beacon", "ATIM", "Disassociation", "Authentication",
+			"Deauthentication", "Action", "Action NoAck"};
+	static const char *rxdma_err[HAL_REO_ENTR_RING_RXDMA_ECODE_MAX] = {
+			"Overflow", "MPDU len", "FCS", "Decrypt", "TKIP MIC",
+			"Unencrypt", "MSDU len", "MSDU limit", "WiFi parse",
+			"AMSDU parse", "SA timeout", "DA timeout",
+			"Flow timeout", "Flush req", "AMSDU frag", "mcast echo",
+			"AMSDU addr mismatch", "Unauth WDS", "Gcast AMSDU WDS"};
+	static const char *reo_err[HAL_REO_DEST_RING_ERROR_CODE_MAX] = {
+			"Desc addr zero", "Desc invalid", "AMPDU in non BA",
+			"Non BA dup", "BA dup", "Frame 2k jump", "BAR 2k jump",
+			"Frame OOR", "BAR OOR", "No BA session",
+			"Frame SN equal SSN", "PN check", "2k err",
+			"PN err", "Desc blocked"};
+	int len = 0, i;
+	const int size = 4096;
+
+	char *buf __free(kfree) = kzalloc(size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	if (!ab->mgmt)
+		return -EINVAL;
+
+	device_stats = &ab->mgmt->srng_stats;
+
+	if (ath12k_cfg_get(ab, ATH12K_CFG_REO_MGMT_PATH_DISABLE))
+		ath12k_info(ab, "REO2SW management path is disabled");
+
+	len += scnprintf(buf + len, size - len, "SOC MGMT SRNG RX STATS:\n\n");
+
+	len += scnprintf(buf + len, size - len, "Delivered packets:\n");
+	for (i = 0; i < ATH12K_SRNG_STATS_MGMT_FRM_STYPE_MAX-1; i++)
+		len += scnprintf(buf + len, size - len, "  %s: %u\n",
+				 frm_stype[i], device_stats->rx_pkts[i]);
+
+	len += scnprintf(buf + len, size - len, "Invalid push reason packets: %u\n",
+			 device_stats->invalid_push_pkts);
+
+	len += scnprintf(buf + len, size - len, "Invalid type packets: %u\n",
+			 device_stats->invalid_pkts);
+
+	len += scnprintf(buf + len, size - len, "Error ring packets: %u\n",
+			 device_stats->err_ring_pkts);
+
+	len += scnprintf(buf + len, size - len, "Fragment packets: %u\n",
+			 device_stats->frag_pkts);
+
+	len += scnprintf(buf + len, size - len, "RXDMA errors:\n");
+	for (i = 0; i < HAL_REO_ENTR_RING_RXDMA_ECODE_MAX; i++)
+		len += scnprintf(buf + len, size - len, "  %s: %u\n",
+				 rxdma_err[i], device_stats->rxdma_err[i]);
+
+	len += scnprintf(buf + len, size - len, "REO errors:\n");
+	for (i = 0; i < HAL_REO_DEST_RING_ERROR_CODE_MAX; i++)
+		len += scnprintf(buf + len, size - len, "  %s: %u\n",
+				 reo_err[i], device_stats->reo_err[i]);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static const struct file_operations fops_device_mgmt_srng_stats = {
+	.read = ath12k_debugfs_dump_device_mgmt_srng_stats,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 void ath12k_debugfs_pdev_create(struct ath12k_base *ab) {
 	debugfs_create_file("simulate_fw_crash", 0600, ab->debugfs_soc, ab,
 			    &fops_simulate_fw_crash);
@@ -7357,6 +7815,8 @@ void ath12k_debugfs_pdev_create(struct ath12k_base *ab) {
 			    &fops_fw_dbglog);
 	debugfs_create_file("fw_reset_stats", 0400, ab->debugfs_soc, ab,
 			    &fops_fw_reset_stats);
+	debugfs_create_file("umac_reset_stats", 0400, ab->debugfs_soc, ab,
+			    &fops_umac_reset_stats);
 	debugfs_create_file("device_dp_stats", 0600, ab->debugfs_soc, ab,
 			    &fops_device_dp_stats);
 	debugfs_create_file("stats_disable", 0600, ab->debugfs_soc, ab,
@@ -7365,6 +7825,8 @@ void ath12k_debugfs_pdev_create(struct ath12k_base *ab) {
 			    &fops_device_mon_stats);
 	debugfs_create_file("dump_srng_stats", 0600, ab->debugfs_soc, ab,
 			    &fops_dump_hal_stats);
+	debugfs_create_file("device_mgmt_srng_stats", 0600, ab->debugfs_soc, ab,
+			    &fops_device_mgmt_srng_stats);
 	if (test_bit(WMI_TLV_SERVICE_DYNAMIC_WSI_REMAP_SUPPORT, ab->wmi_ab.svc_map))
 		debugfs_create_file("wsi_bypass_device", 0600, ab->debugfs_soc, ab,
 				    &fops_wsi_bypass_device);

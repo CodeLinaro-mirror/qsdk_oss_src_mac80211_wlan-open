@@ -152,7 +152,12 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 	},
 	[HAL_RXDMA_BUF] = {
 		.start_ring_id = HAL_SRNG_SW2RXDMA_BUF0,
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+		.max_rings = 3,
+#else
 		.max_rings = 1,
+#endif
+
 		.entry_size = sizeof(struct hal_wbm_buffer_ring) >> 2,
 		.mac_type = ATH12K_HAL_SRNG_DMAC,
 		.ring_dir = HAL_SRNG_DIR_SRC,
@@ -729,6 +734,7 @@ const struct ath12k_hw_hal_params ath12k_wifi7_hw_hal_params_ipq5332 = {
 	.dscp_tid_map_tbl_max_entries = HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX_5332,
 	.num_tids = HAL_WIFI7_NUM_TIDS,
 	.reoq_lut_size = HAL_WIFI7_REOQ_LUT_SIZE,
+	.dp_rx_err_rdi = HAL_WIFI7_DP_RX_ERR_RDI,
 };
 
 const struct ath12k_hw_hal_params ath12k_wifi7_hw_hal_params_qcn9274 = {
@@ -748,6 +754,7 @@ const struct ath12k_hw_hal_params ath12k_wifi7_hw_hal_params_qcn9274 = {
 	.dscp_tid_map_tbl_max_entries = HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX_9274,
 	.num_tids = HAL_WIFI7_NUM_TIDS,
 	.reoq_lut_size = HAL_WIFI7_REOQ_LUT_SIZE,
+	.dp_rx_err_rdi = HAL_WIFI7_DP_RX_ERR_RDI,
 };
 
 u32 ath12k_wifi7_hal_rx_h_mpdu_err_qcn9274(struct hal_rx_desc *desc)
@@ -1097,6 +1104,9 @@ const struct hal_ops hal_qcn9274_ops = {
 	.hal_mon_ops_init = ath12k_wifi7_hal_mon_ops_init,
 	.get_hw_hptp = ath12k_wifi7_hal_get_hw_hptp,
 	.rx_desc_get_fse_info = ath12k_wifi7_hal_rx_desc_get_fse_info_qcn9274,
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	.reo_hw_setup_ipa = ath12k_hal_reo_ring_ipa_ctrl_hash_ix0_setup,
+#endif
 	.hal_tx_ppe2tcl_ring_halt_get = ath12k_wifi7_hal_tx_ppe2tcl_ring_halt_get,
 	.hal_tx_ppe2tcl_ring_halt_set = ath12k_wifi7_hal_tx_ppe2tcl_ring_halt_set,
 	.hal_tx_ppe2tcl_ring_halt_reset = ath12k_wifi7_hal_tx_ppe2tcl_ring_halt_reset,

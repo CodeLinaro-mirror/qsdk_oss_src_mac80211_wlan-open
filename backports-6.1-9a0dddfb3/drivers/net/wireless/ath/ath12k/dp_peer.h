@@ -7,6 +7,7 @@
 #ifndef ATH12K_DP_PEER_H
 #define ATH12K_DP_PEER_H
 
+#include "event.h"
 #include "dp_rx.h"
 #include "dp_stats.h"
 #define ATH12K_DP_PEER_ID_INVALID              0xFFFF
@@ -16,7 +17,14 @@
 /* 17 tids for DP, 2 for mgmt, and 1 shared between DP and mgmt */
 #define ATH12K_MAX_TIDS 20
 
+struct ath12k_dp_link_vif;
 struct ath12k_dp_peer_ext_ctx;
+
+enum ath12k_dp_peer_state {
+	ATH12K_DP_PEER_CREATED,
+	ATH12K_DP_PEER_LOGICALLY_DELETED,
+	ATH12K_DP_PEER_DELETED,
+};
 
 struct ppdu_user_delayba {
 	u16 sw_peer_id;
@@ -38,6 +46,24 @@ struct ath12k_mscs_ctxt {
 	u8 user_priority_bitmap;
 	u8 user_priority_limit;
 	u8 tclas_mask;
+};
+
+/**
+ * struct ath12k_peer_event - Peer-specific event (optimized)
+ * @common: Base event structure (includes flags)
+ * @peer_id: Peer ID for safe lookup
+ * @state: State flags for queue management (e.g. ATH12K_EVENT_QUEUED)
+ *
+ * Optimized event structure containing only fields needed for
+ * safe and efficient event processing. The link_id is NOT needed
+ * as it's available from peer->link_id after successful lookup.
+ */
+#define ATH12K_EVENT_QUEUED 0
+
+struct ath12k_peer_event {
+	struct ath12k_event common;
+	unsigned long state;
+	u16 peer_id;
 };
 
 struct ath12k_dp_link_peer {
@@ -107,16 +133,31 @@ struct ath12k_dp_link_peer {
 	bool is_assigned;
 
 	struct ath12k_dp_link_peer_rx_signal_stats signal_stats;
+	/* Generic Event Mechanism */
+	struct ath12k_peer_event event;
+
+	/* RSSI-based deauthentication monitoring */
+	struct {
+		s8 last_rssi;				/* Last measured RSSI in dBm */
+		u32 low_rssi_count;			/* Consecutive low RSSI samples */
+		unsigned long first_low_jiffies;	/* Timestamp of first low RSSI */
+		struct ath12k_rssi_deauth_config *cfg;	/* Cached config pointer */
+	} rssi_mon;
 };
+
+#define ATH12K_PEER_EVENT_RSSI_LOW      BIT(0)
 
 struct ath12k_dp_peer {
 	struct list_head list;
 	struct ieee80211_sta *sta;
 	struct net_device *dev;
+	struct rcu_head rcu_head;
+	enum ath12k_dp_peer_state dp_peer_state;
 	u16 tcl_metadata;
 	u16 peer_id;
 	u16 sta_id;
 	u8 addr[ETH_ALEN];
+	bool dms_disable;       /* Peer DMS capability (use ME6) */
 	bool is_mlo;
 	bool is_vdev_peer;
 	bool is_sta_bss_peer;
@@ -162,6 +203,8 @@ struct ath12k_dp_peer {
 	bool mscs_session_exists;
 	struct ath12k_dp_preserved_stats *link_peer_delete_stats;
 	struct ath12k_dp_peer_ext_ctx *peer_ext_ctx;
+	bool is_sta_bss_peer_4addr;
+	bool is_11s_mesh_peer;
 };
 
 #define QOS_MSDUQ_MAX ((QOS_TID_MDSUQ_MAX * QOS_TID_MAX) + MSDUQ_MAX_DEF)
@@ -302,7 +345,38 @@ void ath12k_link_peer_free(struct ath12k_dp_link_peer *peer);
 int ath12k_link_sta_rhash_delete(struct ath12k_base *ab, struct ath12k_link_sta *arsta);
 struct ath12k_dp_peer *ath12k_dp_vdev_peer_find(struct ath12k_dp_hw *dp_hw,
 						u8 *addr, u8 hw_link_id);
+struct ath12k_dp_peer *ath12k_dp_vdev_peer_check(struct ath12k_dp_hw *dp_hw,
+						 u8 *addr, u8 hw_link_id);
 u8 ath12k_dp_peer_get_stats_link_id(struct ath12k_base *ab,
 				    struct ath12k_dp_peer *peer,
 				    u8 hw_link_id);
+
+/*
+ * Peer Walk API - Walks across DP peers and performs the desired action.
+ */
+int ath12k_dp_peer_walk_action(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
+			       struct ath12k_dp_link_vif *dp_link_vif,
+			       int (*)(struct ath12k_dp *dp,
+				       struct ath12k_dp_vif *,
+				       struct ath12k_dp_link_vif *,
+				       struct ath12k_dp_peer *, void *),
+			       void *app_data);
+void ath12k_dp_iterate_vdev_link_peer(struct ath12k_dp *dp, int vdev_id,
+				      void (*callback)(struct ath12k_dp *,
+						       struct ath12k_dp_link_peer *));
+void ath12k_dp_iterate_pdev_link_peer(struct ath12k_dp *dp, int pdev_idx,
+				      void (*callback)(struct ath12k_dp *,
+						       struct ath12k_dp_link_peer *));
+
+static inline void ath12k_peer_event_set_and_queue(struct ath12k_dp_link_peer *peer,
+						   struct ath12k_event_queue *queue,
+						   u32 event_flag)
+{
+	atomic_or(event_flag, &peer->event.common.flags);
+
+	/* Queue the node once */
+	if (!test_and_set_bit(ATH12K_EVENT_QUEUED, &peer->event.state))
+		ath12k_event_enqueue(queue, &peer->event.common);
+}
+
 #endif

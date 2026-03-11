@@ -13,7 +13,10 @@
 #include "pktlog.h"
 
 #include "hal_mon_cmn.h"
+#include "qcn_extns/ath12k_cmn_extn.h"
+#include "qcn_extns/dp_stats_extn.h"
 
+#define ATH12K_DP_MON_TX_BUF_SIZE	2048
 #define ATH12K_DP_MON_RX_BUF_SIZE	2048
 #define ATH12K_MON_MAGIC_VALUE		0xDECAFEED
 #define ATH12K_DP_MON_MAX_RADIO_TAP_HDR 128
@@ -34,8 +37,12 @@
 
 #define DP_RXDMA_MON_STATUS_RING_SIZE	1024
 #define DP_RXDMA_MONITOR_DESC_RING_SIZE	4096
-#if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined (CPTCFG_ATH12K_MEM_PROFILE_512M)
-#define DP_RXDMA_MONITOR_BUF_RING_SIZE  512
+#if defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
+#define DP_RXDMA_MONITOR_BUF_RING_SIZE  256
+#define DP_RXDMA_MONITOR_DST_RING_SIZE  512
+#define ATH12K_DP_SMART_MON_FILTER_DEFAULT DP_SMART_MON_VALID
+#elif defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined(CPTCFG_ATH12K_MEM_PROFILE_512M)
+#define DP_RXDMA_MONITOR_BUF_RING_SIZE  256
 #define DP_RXDMA_MONITOR_DST_RING_SIZE  512
 #define ATH12K_DP_SMART_MON_FILTER_DEFAULT DP_SMART_MON_VALID
 #else
@@ -43,8 +50,8 @@
 #define DP_RXDMA_MONITOR_DST_RING_SIZE 8192
 #define ATH12K_DP_SMART_MON_FILTER_DEFAULT 0
 #endif
-#define DP_TX_MONITOR_BUF_RING_SIZE	4096
-#define DP_TX_MONITOR_DEST_RING_SIZE	2048
+#define DP_TX_MONITOR_BUF_RING_SIZE	8192
+#define DP_TX_MONITOR_DEST_RING_SIZE	8192
 
 #define DP_TX_MONITOR_BUF_SIZE		2048
 #define DP_TX_MONITOR_BUF_SIZE_MIN	48
@@ -65,9 +72,12 @@
 #define DP_MON_RX_HDR_LEN			128
 
 #define DP_SMART_MON_VALID       BIT(0)
+#define ATH12K_DP_MON_STATUS_BUF   320
+#define ATH12K_DP_MON_NUM_PPDU_DESC 128
 
 struct ath12k_mon_data;
 struct dp_mon_rx_filter;
+struct dp_mon_tx_filter;
 
 struct ath12k_dp_mon_pad_params {
 	u32 frag_size;
@@ -83,6 +93,15 @@ struct dp_rxdma_mon_ring {
 	/* Protects bufs_idr */
 	spinlock_t idr_lock;
 	int bufs_max;
+};
+
+struct dp_mon_desc_list_params {
+	/* Lock for  @free_list */
+	spinlock_t *desc_lock;
+	struct list_head *free_list;
+	struct list_head *list_local;
+	struct page_frag_cache *pf_cache;
+	size_t buff_size;
 };
 
 enum dp_mon_stats_mode {
@@ -135,6 +154,7 @@ struct ath12k_dp_arch_mon_ops {
 	int (*mon_pdev_rx_htt_srng_setup)(struct ath12k_pdev_dp *dp_pdev,
 					  u32 mac_id);
 	void (*mon_pdev_rx_attach)(struct ath12k_pdev_dp *dp_pdev);
+	int (*setup_mon_link_desc)(struct ath12k_pdev_dp *dp_pdev);
 	void (*mon_pdev_rx_mpdu_list_init)(struct ath12k_mon_data *pmon);
 	int (*mon_rx_srng_process)(struct ath12k_pdev_dp *dp_pdev, int mac_id,
 				      struct napi_struct *napi, int *budget);
@@ -163,6 +183,37 @@ struct ath12k_dp_arch_mon_ops {
 	void (*pktlog_config)(struct ath12k_pdev_dp *dp_pdev,
 			      enum ath12k_pktlog_mode mode,
 			      u32 filter, bool enable);
+	void (*htt_rx_filter_rxmon_cfg)(void *ptr,
+					struct htt_rx_ring_tlv_filter *tlv_filter);
+
+	/* Below are TxMonitor ops */
+	int (*mon_tx_srng_alloc_setup)(struct ath12k_dp *dp);
+	void (*mon_tx_srng_cleanup)(struct ath12k_dp *dp);
+	int (*mon_tx_htt_srng_setup)(struct ath12k_dp *dp);
+	void (*mon_tx_htt_srng_cleanup)(struct ath12k_dp *dp);
+	int (*mon_tx_filter_configure)(struct ath12k_pdev_dp *dp_pdev, bool state);
+	int (*mon_tx_filter_update)(struct ath12k_pdev_dp *dp_pdev);
+	int (*mon_tx_dst_ring_alloc_setup)(struct ath12k_pdev_dp *dp_pdev, u32 mac_id);
+	void (*mon_tx_dst_ring_cleanup)(struct ath12k_pdev_dp *dp_pdev);
+};
+
+/**
+ * enum hal_mon_end_reason - HAL monitor descriptor completion reasons
+ * @HAL_MON_STATUS_BUFFER_FULL: Monitor status buffer reached capacity limit
+ * @HAL_MON_FLUSH_DETECTED: Hardware detected flush condition, forcing completion
+ * @HAL_MON_END_OF_PPDU: Normal PPDU completion, all data successfully captured
+ * @HAL_MON_PPDU_TRUNCATED: PPDU was truncated due to buffer or hardware limits
+ *
+ * This enumeration defines the possible reasons why hardware completes a
+ * monitor descriptor, as reported in the monitor destination ring descriptor.
+ * These values are used by both RX and TX monitor functionality across
+ * different WiFi architectures (WiFi7/WiFi8).
+ */
+enum hal_mon_end_reason {
+	HAL_MON_STATUS_BUFFER_FULL,
+	HAL_MON_FLUSH_DETECTED,
+	HAL_MON_END_OF_PPDU,
+	HAL_MON_PPDU_TRUNCATED,
 };
 
 struct ath12k_dp_mon {
@@ -170,17 +221,27 @@ struct ath12k_dp_mon {
 	struct dp_rxdma_mon_ring rxdma_mon_buf_ring;
 	struct dp_rxdma_mon_ring tx_mon_buf_ring;
 	struct dp_rxdma_mon_ring rx_mon_status_refill_ring[MAX_RXDMA_PER_PDEV];
+	struct dp_srng rxdma_mon_desc_ring;
 	const struct ath12k_dp_arch_mon_ops *mon_ops;
 	u32 mon_dest_ring_stuck_cnt;
 	struct ath12k_dp_mon_desc *mon_desc_pool;
 	struct list_head mon_desc_free_list;
 
-	/* lock for ath12k_dp_mon_desc */
+	/* lock for mon_desc_pool */
 	spinlock_t mon_desc_lock;
 	struct page_frag_cache rx_mon_pf_cache;
 
 	u32 num_frag_replenish;
 	u32 num_frag_free;
+
+	struct ath12k_dp_mon_desc *tx_mon_desc_pool;
+	/* lock for tx_mon_desc_pool */
+	spinlock_t tx_mon_desc_lock;
+	struct list_head tx_mon_desc_free_list;
+	struct page_frag_cache tx_mon_pf_cache;
+	u32 tx_num_frag_replenish;
+	u32 tx_num_frag_free;
+	bool tx_mon_buf_ring_ready;
 };
 
 enum dp_monitor_type {
@@ -258,11 +319,66 @@ struct dp_mon_mpdu {
 	u8 decap_format;
 };
 
+/**
+ * struct dp_mon_tx_ppdu_info - TX monitor PPDU information structure
+ * @is_used: Flag indicating if this PPDU info structure is currently in use
+ * @tx_info: HAL layer TX monitor PPDU information containing hardware-specific
+ *           data including TLV parsing results, user status, and packet metadata
+ * @dp_tx_mon_mpdu_list: List head for managing MPDUs associated with this PPDU.
+ *                       Used to chain multiple MPDU structures for complex
+ *                       aggregated transmissions
+ * @tx_mon_mpdu: Pointer to the current MPDU structure being processed within
+ *               this PPDU. Points to individual MPDU data for frame generation
+ * @chan_freq: Channel frequency in MHz on which this PPDU was transmitted.
+ *             Used for radiotap channel information and monitor mode delivery
+ * @chan_num: Channel number corresponding to the transmission frequency.
+ *            Provides channel context for frame analysis and filtering
+ * @num_mpdu_fcs_ok: Count of MPDUs within this PPDU that passed FCS validation.
+ *                   Used for statistics and determining transmission success rate
+ * @buffer_addr: Virtual address of extracted packet buffer from hardware descriptor
+ *   - Points to page fragment containing actual packet data
+ *   - Ownership transferred from monitor descriptor during BUFFER_ADDR TLV processing
+ *   - Set to NULL after fragment is added to SKB (when take_ref=false)
+ *   - Used by ath12k_dp_tx_mon_generate_data_frm() to add fragments
+ *   - Must be freed with page_frag_free() if not consumed by SKB
+ * @buffer_length: Length of valid data in buffer_addr in bytes
+ *   - Extracted from packet_info->dma_length during BUFFER_ADDR processing
+ *   - Represents actual packet payload size, not buffer allocation size
+ *   - Used as fragment length when adding to SKB via skb_add_rx_frag()
+ *   - Must be <= ATH12K_DP_MON_TX_BUF_SIZE for validation
+ * @msdu_continuation: Indicates if this buffer is part of a fragmented MSDU
+ *   - true: More fragments follow for this MSDU
+ *                     - false: This is the last (or only) fragment of the MSDU
+ *                     - Extracted from packet_info->msdu_continuation
+ *                     - Used for proper MSDU reassembly in multi-fragment scenarios
+ * @truncated: Indicates if the packet data was truncated by hardware
+ *             - true: Packet was larger than buffer size, data is incomplete
+ *             - false: Complete packet data is available in buffer
+ *             - Extracted from packet_info->truncated
+ *             - Used for debugging and packet validation purposes
+ * @has_buffer_data: Flag indicating if valid buffer data is available
+ *      - true: buffer_addr contains valid packet data
+ *      - false: No buffer data available (e.g., control frames without payload)
+ *      - Set during BUFFER_ADDR TLV processing
+ *      - Checked by ath12k_dp_tx_mon_generate_data_frm() before adding fragments
+ *      - Reset to false after buffer ownership is transferred to SKB
+ * @contains_host_frames: True if this PPDU contains host-generated frames
+
+ */
 struct dp_mon_tx_ppdu_info {
 	bool is_used;
 	struct hal_tx_mon_ppdu_info tx_info;
 	struct list_head dp_tx_mon_mpdu_list;
 	struct dp_mon_mpdu *tx_mon_mpdu;
+	u16 chan_freq;
+	u16 chan_num;
+	u32 num_mpdu_fcs_ok;
+	void *buffer_addr;
+	u32 buffer_length;
+	bool msdu_continuation;
+	bool truncated;
+	bool has_buffer_data;
+	bool contains_host_frames;
 };
 
 #define SNR_INVALID 255
@@ -276,6 +392,7 @@ struct dp_mon_tx_ppdu_info {
 #define WEIGHTED_AVG_IN(x)  (AVG_MUL((x), AVG_MULTIPLIER))
 #define AVG(x, y) ((((x) << 2) + (y) - (x)) >> 2)
 #define WEIGHTED_AVG_UPDATE(x, y) ((x) = AVG((x), WEIGHTED_AVG_IN(y)))
+#define MAX_PPDU_ID_HIST 128
 
 struct ath12k_pdev_mon_stats {
 	u32 status_ppdu_state;
@@ -285,17 +402,73 @@ struct ath12k_pdev_mon_stats {
 	u32 status_ppdu_start_mis;
 	u32 status_ppdu_end_mis;
 	u32 status_ppdu_done;
+	u32 status_desc_invalid;
+	u32 status_tlv_tag_err;
+	u32 status_buf_done_war;
+	u32 rx_err_desc_sanity_fail;
 	u32 dest_ppdu_done;
 	u32 dest_mpdu_done;
 	u32 dest_mpdu_drop;
 	u32 dup_mon_linkdesc_cnt;
 	u32 dup_mon_buf_cnt;
+	u32 empty_mon_sw_desc_cnt;
 	u32 dest_mon_stuck;
 	u32 dest_mon_not_reaped;
+	u32 invalid_msdu_cnt;
+	u32 ppdu_id_mismatch;
+	u32 ppdu_id_match;
+	u32 status_ring_ppdu_id_hist[MAX_PPDU_ID_HIST];
+	u32 dest_ring_ppdu_id_hist[MAX_PPDU_ID_HIST];
+	u32 ppdu_id_hist_idx;
 };
 
 #define DP_MON_MAX_STATUS_BUF 32
 
+/**
+ * struct ath12k_mon_data - Monitor mode data processing context
+ * @link_desc_banks: Array of link descriptor banks for DMA buffer management
+ *                   Used for efficient allocation and tracking of monitor buffers
+ * @mon_ppdu_info: RX monitor PPDU information structure containing parsed
+ *                 frame metadata, PHY parameters, and reception status
+ * @mon_ppdu_status: Current PPDU processing status flags indicating parsing
+ *                   state and completion status for RX monitor frames
+ * @mon_last_buf_cookie: Cookie value of the last processed monitor buffer
+ *                       Used for buffer tracking and leak detection
+ * @mon_last_linkdesc_paddr: Physical address of last processed link descriptor
+ *                           Used for descriptor chain validation and debugging
+ * @chan_noise_floor: Channel noise floor measurement in dBm for signal quality
+ *                    analysis and RSSI calculations in monitor mode
+ * @err_bitmap: Bitmap of error conditions encountered during monitor processing
+ *              Used for error tracking and debugging monitor frame issues
+ * @decap_format: Decapsulation format for monitor frames (raw, native WiFi, etc.)
+ *                Determines how captured frames are presented to upper layers
+ * @rx_mon_stats: RX monitor statistics structure containing performance counters
+ *                and error tracking for RX monitor functionality
+ * @buf_state: Current state of monitor status buffer processing (idle, busy, etc.)
+ *             Used for state machine management in monitor buffer handling
+ * @mon_lock: Spinlock protecting concurrent access to monitor data structures
+ *            Ensures thread safety between interrupt and process contexts
+ * @rx_status_q: Queue of RX status sk_buffs awaiting processing or delivery
+ *               Used for buffering monitor frames before mac80211 delivery
+ * @mon_mpdu: Pointer to current MPDU being processed in monitor mode
+ *            Contains frame data and metadata during active processing
+ * @dp_rx_mon_mpdu_list: List of RX monitor MPDUs pending processing
+ *                       Used for batching and efficient MPDU handling
+ * @prot_status_info: TX monitor status information for protection frames
+ *                    (RTS/CTS, Block ACK, etc.) containing timing and status data
+ * @data_status_info: TX monitor status information for data frames containing
+ *                    transmission parameters, retry counts, and completion status
+ * @prot_ppdu_info: TX monitor PPDU information for protection frames including
+ *                  PHY parameters, timing, and frame generation metadata
+ * @data_ppdu_info: TX monitor PPDU information for data frames including
+ *                  transmission parameters, MCS, and channel information
+ * @rtap_vendor_tlv: Pointer to radiotap vendor-specific TLV data for ATH12K
+ *                   chipset metadata including timing and hardware-specific info
+ *
+ * This structure serves as the central context for all monitor mode operations,
+ * encompassing both RX and TX monitor functionality. It maintains state information,
+ * statistics, and processing contexts required for efficient monitor frame handling.
+ */
 struct ath12k_mon_data {
 	struct dp_link_desc_bank link_desc_banks[DP_LINK_DESC_BANKS_MAX];
 	struct hal_rx_mon_ppdu_info mon_ppdu_info;
@@ -314,9 +487,31 @@ struct ath12k_mon_data {
 	struct sk_buff_head rx_status_q;
 	struct dp_mon_mpdu *mon_mpdu;
 	struct list_head dp_rx_mon_mpdu_list;
-	struct dp_mon_tx_ppdu_info *tx_prot_ppdu_info;
-	struct dp_mon_tx_ppdu_info *tx_data_ppdu_info;
+	struct hal_tx_mon_status_info prot_status_info;
+	struct hal_tx_mon_status_info data_status_info;
+	struct dp_mon_tx_ppdu_info prot_ppdu_info;
+	struct dp_mon_tx_ppdu_info data_ppdu_info;
+	struct ieee80211_radiotap_vendor_ns *rtap_vendor_tlv;
 };
+
+/**
+ * struct ath12k_rtap_vendor_ns - ATH12K vendor-specific radiotap namespace
+ * @lsig: Legacy Signal field containing PHY-level transmission parameters
+ *        including data rate, length, and parity information from L-SIG
+ * @device_id: Hardware device identifier for distinguishing between different
+ *             ATH12K chipset variants and revisions in multi-device systems
+ * @lsig_b: Legacy Signal B field containing additional PHY parameters for
+ *          backward compatibility with 802.11b/g legacy rate information
+ * @ppdu_start_timestamp: Hardware timestamp marking the start of PPDU
+ *                        transmission, used for precise timing analysis
+ *                        and frame correlation in monitor mode
+ */
+struct ath12k_rtap_vendor_ns {
+	u32 lsig;
+	u32 device_id;
+	u32 lsig_b;
+	u32 ppdu_start_timestamp;
+} __packed;
 
 struct ath12k_pdev_mon_dp_stats {
 	u32 status_buf_reaped;
@@ -355,15 +550,198 @@ struct ath12k_pdev_mon_dp_stats {
 	u32 restitch_insuff_frags_cnt;
 };
 
+/**
+ * struct ath12k_pdev_tx_mon_stats - TX Monitor Statistics
+ * @empty_descriptors: Incremented when hardware provides empty descriptors
+ * @truncated_ppdu: Incremented when PPDUs are truncated due to insufficient
+ *                  buffer space or hardware limitations. This can indicate
+ *                  buffer pool exhaustion.
+ * @tx_pkt_tlv_free: Count of TX packet TLV buffers freed back to the pool.
+ *                  Used for tracking buffer lifecycle and detecting leaks
+ * @tx_status_buf_free: Count of TX status buffers freed back to the pool.
+ * @tx_work_queue_scheduled: Number of times work queue is scheduled
+ * @tx_ppdu_desc_invalid: Number of invalid PPDU descriptors encountered
+ * @tx_ppdu_desc_overflow: Number of PPDU descriptor buffer overflows
+ * @tx_work_queue_stalls: Work queue stall events (processing hangs)
+ * @tx_ppdu_parse_errors: Number of PPDU parsing errors
+ * @tx_status_buf_null: Number of null status buffer pointers encountered
+ * @tx_ppdu_processed: Total number of TX PPDUs processed in work queue
+ * @tx_status_desc_processed: Total number of status descriptors processed
+ * @tx_data_frames: Total number of data frames transmitted
+ * @tx_su_ppdu_count: Number of Single User (SU) PPDUs transmitted
+ * @tx_mu_ppdu_count: Number of Multi User (MU) PPDUs transmitted
+ * @tx_mu_user_count: Total number of users in all MU PPDUs
+ */
+struct ath12k_pdev_tx_mon_stats {
+	u32 empty_descriptors;
+	u32 truncated_ppdu;
+	u32 tx_pkt_tlv_free;
+	u32 tx_status_buf_free;
+	u32 tx_work_queue_scheduled;
+	u32 tx_ppdu_desc_invalid;
+	u32 tx_ppdu_desc_overflow;
+	u32 tx_work_queue_stalls;
+	u32 tx_ppdu_parse_errors;
+	u32 tx_status_buf_null;
+	u32 tx_ppdu_processed;
+	u32 tx_status_desc_processed;
+	u32 tx_data_frames;
+	u32 tx_su_ppdu_count;
+	u32 tx_mu_ppdu_count;
+	u32 tx_mu_user_count;
+	u32 tx_ppdu_delivery_errors;
+	u32 tx_prot_ppdu_delivered;
+	u32 tx_data_ppdu_delivered;
+	u32 tx_ppdu_delivered;
+};
+
+/**
+ * struct ath12k_dp_mon_status_desc - TX Monitor Status Descriptor
+ * @paddr: Physical address of the monitor buffer
+ * @mon_buf: Virtual address pointer to monitor buffer containing TLV data
+ * @buf_len: Length of valid data in the monitor buffer
+ * @end_of_ppdu: Flag indicating if this descriptor contains end of PPDU marker
+ *
+ * This structure represents a single status descriptor containing TLV fragments
+ * from the TX monitor destination ring. Multiple status descriptors may be
+ * required to represent a complete PPDU.
+ *
+ * The buffer pointed to by mon_buf contains raw TLV data from hardware that
+ * needs to be parsed to extract PPDU information for frame generation.
+ */
+struct ath12k_dp_mon_status_desc {
+	dma_addr_t paddr;
+	u8 *mon_buf;
+	u32 buf_len;
+	bool end_of_ppdu;
+};
+
+/**
+ * struct ath12k_dp_mon_ppdu_desc - TX Monitor PPDU Descriptor
+ * @list: List entry for PPDU descriptor management
+ * @ppdu_id: Unique PPDU identifier from hardware
+ * @timestamp: PPDU timestamp for correlation
+ * @status_desc: Array of status descriptors containing TLV data
+ * @status_desc_cnt: Number of valid status descriptors in the array
+ *
+ * This structure represents a complete PPDU for TX monitor processing.
+ * It aggregates multiple status descriptors that contain TLV fragments
+ * for a single PPDU. Used by both WiFi7 and WiFi8 implementations.
+ *
+ * The structure is allocated from a free list during ring processing
+ * and queued for work queue processing when end_of_ppdu is detected.
+ */
+struct ath12k_dp_mon_ppdu_desc {
+	struct list_head list;
+	u32 ppdu_id;
+	u32 timestamp;
+	struct ath12k_dp_mon_status_desc status_desc[ATH12K_DP_MON_STATUS_BUF];
+	u32 status_desc_cnt;
+};
+
+/**
+ * struct ath12k_mon_ring_desc_info - Extracted monitor ring descriptor info
+ * @mon_desc: Pointer to monitor descriptor containing frame data and metadata
+ * @ppdu_id: PPDU identifier for correlating related descriptors and frames
+ * @end_offset: End offset indicating the valid data length in the buffer
+ * @end_reason: Hardware-provided reason code for descriptor completion
+ * @empty_desc: Flag indicating whether this descriptor contains no frame data
+ *
+ * This structure serves as an abstraction layer for monitor ring descriptor
+ * information, allowing architecture-specific extraction functions to populate
+ * common fields that can be processed by generic monitor code.
+ */
+struct ath12k_mon_ring_desc_info {
+	struct ath12k_dp_mon_desc *mon_desc;
+	u32 ppdu_id;
+	u32 end_offset;
+	u32 end_reason;
+	bool empty_desc;
+};
+
+/**
+ * struct ath12k_pdev_mon_dp - Per-pdev monitor mode data path context
+ * @dp_mon: Pointer to global DP monitor context for shared resources
+ * @dp_pdev: Pointer to parent pdev DP context for device-specific operations
+ * @rxdma_mon_dst_ring: Array of RX DMA monitor destination rings per RXDMA engine
+ * @tx_mon_dst_ring: TX monitor destination ring for capturing transmitted frames
+ * @rx_status: IEEE 802.11 RX status structure for monitor frame metadata
+ * @mon_data: Monitor data structure containing RX/TX frame processing state
+ * @rx_filter: Pointer to array of RX monitor filters for frame selection
+ * @tx_mon_filter: Pointer to array of TX monitor filters for frame selection
+ * @ppdu_desc_pool: Pool of PPDU descriptors for RX monitor frame processing
+ * @ppdu_desc_used_list: List of currently used RX PPDU descriptors
+ * @ppdu_desc_free_list: List of available RX PPDU descriptors for allocation
+ * @ppdu_desc_proc_list: List of RX PPDU descriptors pending processing
+ * @ppdu_desc_lock: Spinlock protecting RX PPDU descriptor list operations
+ * @mon_desc_used_list: List of monitor descriptors currently in use
+ * @mon_stats: RX monitor statistics counters for performance tracking
+ * @rxmon_work: Work structure for RX monitor processing in work queue context
+ * @rxmon_wq: Dedicated work queue for RX monitor frame processing
+ * @smart_mon_filter: Smart monitor filter configuration (4-bit CMDV format)
+ * @smart_mon_state: Current state of smart monitor functionality
+ * @tx_mon_stats: TX monitor statistics counters for performance tracking
+ * @txmon_wq: Dedicated work queue for TX monitor frame processing
+ * @txmon_work: Work structure for TX monitor processing in work queue context
+ * @ppdu_desc_list: List of PPDU descriptors for TX monitor processing
+ * @ppdu_desc_list_lock: Spinlock protecting TX PPDU descriptor list access
+ * @ppdu_desc_list_depth: Current depth/count of TX PPDU descriptor list
+ * @tx_mon_ppdu_desc_lock: Spinlock protecting TX monitor PPDU descriptor operations
+ * @tx_mon_ppdu_desc_pool: Pool of PPDU descriptors for TX monitor processing
+ * @tx_mon_desc_work_list: List of TX monitor descriptors for tasklet processing
+ * @tx_mon_ppdu_desc_used_list: List of currently used TX PPDU descriptors
+ * @tx_mon_ppdu_desc_free_list: List of available TX PPDU descriptors
+ * @tx_mon_ppdu_desc_proc_list: List of TX PPDU descriptors pending processing
+ * @tx_monitor_started: Flag indicating if TX monitor is currently active
+ *
+ * @tx_mon_ppdu_desc_initialized: State flag indicating TX monitor PPDU descriptor
+ * pool has been successfully initialized and allocated. Used to prevent double-free
+ * during error cleanup and ensure proper resource lifecycle management.
+ *
+ * @tx_mon_wq_initialized: State flag indicating TX monitor work queue has been
+ * successfully created and initialized. Used to prevent cleanup attempts on
+ * uninitialized work queues and ensure proper shutdown sequencing
+ * during error recovery.
+ *
+ * This structure represents the complete monitor mode data path context for a
+ * single pdev (physical device). It manages both RX and TX monitor functionality,
+ * including frame capture, filtering, and processing infrastructure.
+ *
+ * Smart Monitor Filter Details:
+ * The smart_mon_filter field uses a 4-bit encoding (CMDV format):
+ * - Bit 0 (V): Valid bit - must be 1 for filter to be active
+ * - Bit 1 (D): Data frame filter (0=capture, 1=filter out)
+ * - Bit 2 (M): Management frame filter (0=capture, 1=filter out)
+ * - Bit 3 (C): Control frame filter (0=capture, 1=filter out)
+ *
+ * Smart Monitor Behavior:
+ * - 0x0: Regular monitor mode - captures ALL packets immediately
+ * - Non-zero: Smart monitor mode - requires NAC (Network Access Control) setup
+ *   - Monitor VAP starts but captures no packets initially
+ *   - Packet capture begins only after NAC MAC addresses are configured
+ *   - Filters applied based on frame type and NAC list matching
+ *
+ * Work Queue Architecture:
+ * - rxmon_wq/rxmon_work: Handles RX monitor frame processing in process context
+ * - txmon_wq/txmon_work: Handles TX monitor frame processing in process context
+ * This design moves heavy processing out of interrupt/NAPI context for better
+ * system responsiveness.
+ *
+ * Memory Management:
+ * The structure maintains separate descriptor pools and lists for RX and TX
+ * monitor functionality, using a three-list architecture (free/used/processing)
+ * for efficient descriptor lifecycle management.
+ */
 struct ath12k_pdev_mon_dp {
 	struct ath12k_dp_mon *dp_mon;
 	struct ath12k_pdev_dp *dp_pdev;
 	struct dp_srng rxdma_mon_dst_ring[MAX_RXDMA_PER_PDEV];
-	struct dp_srng tx_mon_dst_ring[MAX_RXDMA_PER_PDEV];
+	struct dp_srng tx_mon_dst_ring;
 
 	struct ieee80211_rx_status rx_status;
 	struct ath12k_mon_data mon_data;
 	struct dp_mon_rx_filter **rx_filter;
+	struct dp_mon_tx_filter **tx_mon_filter;
 	struct ath12k_dp_mon_ppdu_desc *ppdu_desc_pool;
 	struct list_head ppdu_desc_used_list;
 	struct list_head ppdu_desc_free_list;
@@ -402,6 +780,22 @@ struct ath12k_pdev_mon_dp {
 	 */
 	u8 smart_mon_filter;
 	enum ath12k_dp_smart_mon_state smart_mon_state;
+
+	bool tx_monitor_started:1;
+	struct ath12k_pdev_mon_dp_extn pdev_mon_dp_extn;
+	struct ath12k_pdev_tx_mon_stats tx_mon_stats;
+	struct workqueue_struct *txmon_wq;
+	struct work_struct txmon_work;
+	struct list_head ppdu_desc_list;
+	/* Spinlock protecting TX monitor PPDU descriptor operations */
+	spinlock_t tx_mon_ppdu_desc_lock;
+	struct ath12k_dp_mon_ppdu_desc *tx_mon_ppdu_desc_pool;
+	struct list_head tx_mon_desc_work_list;
+	struct list_head tx_mon_ppdu_desc_used_list;
+	struct list_head tx_mon_ppdu_desc_free_list;
+	struct list_head tx_mon_ppdu_desc_proc_list;
+	bool tx_mon_ppdu_desc_initialized:1;
+	bool tx_mon_wq_initialized:1;
 };
 
 enum ath12k_dp_mon_desc_in_use {
@@ -439,10 +833,31 @@ const struct ath12k_dp_arch_mon_ops *ath12k_dp_mon_ops_get(struct ath12k_dp *dp)
 	return NULL;
 }
 
+static inline bool ath12k_dp_mon_rxdma1_enable(struct ath12k_dp *dp)
+{
+	return dp->hw_params->rxdma1_enable;
+}
+
+static inline bool
+ath12k_dp_mon_rx_get_quad_ring_support(struct ath12k_dp *dp)
+{
+	return dp->hw_params->quad_ring_monitor_support;
+}
+
+/* Wrapper functions for RX and TX buffer replenishment */
+int ath12k_dp_mon_rx_buf_replenish(struct ath12k_dp *dp,
+				   struct dp_rxdma_mon_ring *buf_ring,
+				   struct list_head *used_list,
+				   int req_entries);
+int ath12k_dp_mon_tx_buf_replenish(struct ath12k_dp *dp,
+				   struct dp_rxdma_mon_ring *buf_ring,
+				   struct list_head *used_list,
+				   int req_entries);
+/* Core buffer replenishment function */
 int ath12k_dp_mon_buf_replenish(struct ath12k_dp *dp,
 				struct dp_rxdma_mon_ring *buf_ring,
-				struct list_head *used_list,
-				int req_entries);
+				int req_entries,
+				struct dp_mon_desc_list_params *list_params);
 struct sk_buff *ath12k_dp_mon_tx_alloc_skb(void);
 enum hal_tx_mon_status
 ath12k_dp_mon_tx_parse_mon_status(struct ath12k_pdev_dp *dp_pdev,
@@ -500,9 +915,6 @@ void ath12k_dp_mon_rx_smart_mon_set(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_rx_smart_mon_reset(struct ath12k_pdev_dp *dp_pdev);
 size_t ath12k_dp_mon_list_cut_nodes(struct list_head *list, struct list_head *head,
 				    size_t count);
-size_t ath12k_dp_mon_get_req_entries_from_buf_ring(struct ath12k_dp *dp,
-						   struct dp_rxdma_mon_ring *rx_ring,
-						   struct list_head *list);
 void ath12k_dp_mon_rx_deliver_skb(struct ath12k_pdev_dp *dp_pdev,
 				  struct napi_struct *napi, struct sk_buff *msdu,
 				  struct ieee80211_rx_status *status,
@@ -525,6 +937,7 @@ void ath12k_dp_mon_add_rx_frag(struct sk_buff *skb, const void *mon_buf,
 			       int offset, int frag_len, bool take_frag_ref);
 int ath12k_dp_mon_get_puncture_type(u16 puncture_pattern, u8 bw);
 void ath12k_dp_mon_rx_process_low_thres(struct ath12k_dp *dp);
+void ath12k_dp_mon_tx_process_low_thres(struct ath12k_dp *dp);
 void
 ath12k_dp_mon_cnt_skb_and_frags(struct sk_buff *skb, u32 *skb_count, u32 *frag_count);
 void ath12k_dp_mon_pktlog_config_filter(struct ath12k_pdev_dp *dp_pdev,
@@ -539,6 +952,24 @@ u64 ath12k_get_timestamp_in_us(void);
 void ath12k_dp_mon_fill_rx_rate(struct ath12k_pdev_dp *dp_pdev,
 				struct hal_rx_mon_ppdu_info *ppdu_info,
 				struct ieee80211_rx_status *rx_status);
+
+int ath12k_dp_mon_tx_wq_start(struct ath12k_pdev_dp *dp_pdev, u32 mac_id);
+void ath12k_dp_mon_tx_wq_stop(struct ath12k_pdev_dp *dp_pdev);
+void ath12k_dp_mon_reset_ppdu_desc(struct ath12k_dp_mon_ppdu_desc *ppdu_desc);
+int ath12k_dp_mon_tx_srng_alloc_setup(struct ath12k_dp *dp);
+void ath12k_dp_mon_tx_srng_cleanup(struct ath12k_dp *dp);
+int ath12k_dp_mon_tx_desc_pool_alloc(struct ath12k_dp *dp);
+void ath12k_dp_mon_tx_desc_pool_free(struct ath12k_dp *dp);
+int ath12k_dp_mon_tx_dst_ring_alloc_setup(struct ath12k_pdev_dp *dp_pdev, u32 mac_id);
+void ath12k_dp_mon_tx_dst_ring_cleanup(struct ath12k_pdev_dp *dp_pdev);
+int ath12k_dp_mon_tx_buff_alloc(struct ath12k_dp *dp);
+int ath12k_dp_mon_tx_htt_srng_setup(struct ath12k_dp *dp);
+void ath12k_dp_mon_tx_htt_srng_cleanup(struct ath12k_dp *dp);
+int ath12k_dp_mon_tx_htt_dst_ring_setup(struct ath12k_pdev_dp *dp_pdev, u32 mac_id);
+int ath12k_dp_mon_tx_config_filter(struct ath12k_pdev_dp *dp_pdev, bool enable);
+int ath12k_dp_mon_tx_monitor_start_stop(struct ath12k *ar, bool state);
+int ath12k_dp_mon_tx_set_monitor_flags(struct ath12k *ar, u32 new_flags, u32 *cur_flags);
+
 static inline
 int ath12k_dp_mon_rx_alloc(struct ath12k_dp *dp)
 {
@@ -597,7 +1028,6 @@ int ath12k_dp_mon_rx_htt_setup(struct ath12k_dp *dp)
 		ret = mon_ops->rx_htt_srng_setup(dp);
 
 	return ret;
-
 }
 
 static inline
@@ -731,8 +1161,35 @@ int ath12k_dp_mon_pdev_rx_htt_setup(struct ath12k_pdev_dp *dp_pdev, u32 mac_id)
 				    ret);
 		}
 	}
-
 	return 0;
+}
+
+static inline
+int ath12k_dp_mon_tx_update_filter(struct ath12k *ar)
+{
+	struct ath12k_base *ab;
+	struct ath12k_dp *dp;
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	struct ath12k_pdev_dp *dp_pdev;
+	int ret = -EINVAL;
+
+	if (unlikely(!ar || !ar->ab)) {
+		ath12k_err(NULL, "Invalid Radio / Radio base\n");
+		return -EINVAL;
+	}
+
+	ab = ar->ab;
+	dp_pdev = &ar->dp;
+	dp = ath12k_ab_to_dp(ab);
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (mon_ops && dp_pdev && mon_ops->mon_tx_filter_update)
+		ret = mon_ops->mon_tx_filter_update(dp_pdev);
+
+	if (ret)
+		ath12k_warn(ab, "Tx Mon : Filter update failed\n");
+
+	return ret;
 }
 
 static inline
@@ -850,7 +1307,6 @@ void ath12k_dp_mon_rx_config_monitor_mode(struct ath12k *ar, bool reset)
 		if(mon_ops && mon_ops->rx_monitor_mode_reset)
 			mon_ops->rx_monitor_mode_reset(dp_pdev);
 	}
-
 }
 
 static inline
@@ -873,7 +1329,6 @@ void ath12k_dp_mon_rx_nrp_config(struct ath12k *ar, bool reset)
 		if (mon_ops && mon_ops->rx_nrp_reset)
 			mon_ops->rx_nrp_reset(dp_pdev);
 	}
-
 }
 
 static inline
@@ -898,6 +1353,21 @@ void ath12k_dp_mon_rx_smart_mon_config(struct ath12k *ar, bool reset)
 			mon_ops->rx_smart_mon_reset(dp_pdev);
 		dp_pdev->dp_mon_pdev->smart_mon_state = ATH12K_DP_SMART_MON_IDLE;
 	}
+}
+
+static inline
+void ath12k_dp_mon_rx_enable(struct ath12k_dp *dp, void *cmd,
+			     struct htt_rx_ring_tlv_filter *tlv_filter)
+{
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+
+	if (unlikely(!dp || !dp->dp_mon))
+		return;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (mon_ops && mon_ops->htt_rx_filter_rxmon_cfg)
+		mon_ops->htt_rx_filter_rxmon_cfg(cmd, tlv_filter);
 }
 
 static inline
@@ -939,7 +1409,6 @@ ath12k_dp_mon_rx_config_packet_type_hdr_len(struct ath12k_dp *dp, void *ptr,
 		return;
 
 	mon_ops = ath12k_dp_mon_ops_get(dp);
-
 }
 
 static inline void
@@ -1015,5 +1484,190 @@ ath12k_dp_smart_mon_enabled(struct ath12k *ar)
 		return true;
 
 	return false;
+}
+
+static inline
+int ath12k_dp_mon_tx_srng_alloc(struct ath12k_dp *dp)
+{
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	int ret = 0;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (!mon_ops) {
+		ath12k_err(dp->ab, "TX Monitor: No monitor ops available");
+		return -EINVAL;
+	}
+
+	if (mon_ops->mon_tx_srng_alloc_setup) {
+		ret = mon_ops->mon_tx_srng_alloc_setup(dp);
+		if (ret)
+			ath12k_err(dp->ab, "TX Monitor: SRNG setup failed, ret=%d", ret);
+	}
+
+	return ret;
+}
+
+static inline
+void ath12k_dp_mon_tx_htt_src_ring_cleanup(struct ath12k_dp *dp)
+{
+	const struct ath12k_dp_arch_mon_ops *mon_ops  = ath12k_dp_mon_ops_get(dp);
+
+	if (mon_ops && mon_ops->mon_tx_htt_srng_cleanup)
+		mon_ops->mon_tx_htt_srng_cleanup(dp);
+}
+
+static inline
+void ath12k_dp_mon_tx_srng_free(struct ath12k_dp *dp)
+{
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	ath12k_dp_mon_tx_htt_src_ring_cleanup(dp);
+
+	if (mon_ops && mon_ops->mon_tx_srng_cleanup)
+		mon_ops->mon_tx_srng_cleanup(dp);
+}
+
+static inline
+int ath12k_dp_mon_tx_pdev_alloc(struct ath12k_pdev_dp *dp_pdev,
+				u32 mac_id)
+{
+	struct ath12k_dp *dp;
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	int ret = 0;
+
+	if (unlikely(!dp_pdev)) {
+		ath12k_err(NULL, "Tx Mon: Invalid DP Pdev\n");
+		return -EINVAL;
+	}
+
+	dp = dp_pdev->dp;
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (!mon_ops) {
+		ath12k_warn(dp, "Tx Mon: mon ops is NULL\n");
+		return -EINVAL;
+	}
+
+	if (mon_ops->mon_tx_dst_ring_alloc_setup) {
+		ret = mon_ops->mon_tx_dst_ring_alloc_setup(dp_pdev, mac_id);
+		if (ret)
+			ath12k_warn(dp, "Tx Mon: failed to alloc dst ring\n");
+	}
+	return ret;
+}
+
+static inline
+void ath12k_dp_mon_tx_pdev_free(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_dp *dp;
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+
+	if (unlikely(!dp_pdev)) {
+		ath12k_err(NULL, "Tx Mon: Invalid DP Pdev\n");
+		return;
+	}
+
+	dp = dp_pdev->dp;
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (!mon_ops)
+		return;
+
+	ath12k_dp_mon_tx_wq_stop(dp_pdev);
+	if (mon_ops->mon_tx_dst_ring_cleanup)
+		mon_ops->mon_tx_dst_ring_cleanup(dp_pdev);
+}
+
+static inline
+int ath12k_dp_mon_tx_htt_src_ring_setup(struct ath12k_dp *dp)
+{
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	int ret = -EINVAL;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (mon_ops && mon_ops->mon_tx_htt_srng_setup) {
+		ret = mon_ops->mon_tx_htt_srng_setup(dp);
+		if (ret)
+			ath12k_err(dp->ab, "TX Monitor: srng htt setup failed(%d)", ret);
+	}
+
+	return ret;
+}
+
+static inline
+int ath12k_dp_mon_tx_config_monitor_mode(struct ath12k *ar, bool set)
+{
+	struct ath12k_base *ab;
+	struct ath12k_dp *dp;
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	struct ath12k_pdev_dp *dp_pdev;
+	int ret = -EINVAL;
+
+	if (unlikely(!ar || !ar->ab)) {
+		ath12k_err(NULL, "Invalid Radio / Radio base\n");
+		return -EINVAL;
+	}
+
+	ab = ar->ab;
+	dp = ath12k_ab_to_dp(ab);
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+	dp_pdev = &ar->dp;
+
+	if (set) {
+		ret = ath12k_dp_mon_tx_htt_src_ring_setup(dp);
+		if (ret) {
+			ath12k_err(dp->ab, "TX Monitor: HTT setup failed, ret=%d", ret);
+			return ret;
+		}
+	}
+
+	if (mon_ops && mon_ops->mon_tx_filter_configure) {
+		ret = mon_ops->mon_tx_filter_configure(dp_pdev, set);
+		if (ret)
+			ath12k_err(dp->ab, "TX Monitor: Filter config failed, ret=%d",
+				   ret);
+	}
+
+	return ret;
+}
+
+static inline void
+ath12k_dp_rx_scan_radio_stats_reset(struct ath12k_hw *ah)
+{
+	int i = 0;
+	struct ath12k *ar;
+
+	wiphy_lock(ah->hw->wiphy);
+	for (i = 0; i < ah->num_radio; i++) {
+		ar = &ah->radio[i];
+
+		if (!ar->dp.dp_mon_pdev)
+			continue;
+
+		memset(&ar->dp.dp_mon_pdev->pdev_mon_dp_extn, 0,
+		       sizeof(ar->dp.dp_mon_pdev->pdev_mon_dp_extn));
+	}
+	wiphy_unlock(ah->hw->wiphy);
+}
+
+static inline void
+ath12k_dp_mon_rx_scan_radio_stats_update(struct ath12k *ar,
+					 struct ath12k_telemetry_dp_vif *telemetry_vif)
+{
+	struct ath12k_pdev_mon_dp_extn *mon_dp_extn;
+
+	if (unlikely(!ar || !telemetry_vif))
+		return;
+
+	if (!ar->dp.dp_mon_pdev)
+		return;
+
+	mon_dp_extn = &ar->dp.dp_mon_pdev->pdev_mon_dp_extn;
+	ath12k_dp_rx_scan_radio_stats_update(telemetry_vif,
+					     &mon_dp_extn->rx_scan_radio_stats);
 }
 #endif

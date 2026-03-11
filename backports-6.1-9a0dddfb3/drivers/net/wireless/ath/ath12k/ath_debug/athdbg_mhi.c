@@ -36,6 +36,82 @@ static const struct athdbg_mhi_q6_noc_err_reg qcn9274_noc_err_regs[] = {
 	{"PCNOC_ERL_ErrLog3_High", QCN9224_PCNOC_ERL_ErrLog3_High},
 };
 
+static inline u32 athdbg_mhi_pci_read32(struct ath12k_base *ab, u32 offset)
+{
+	const struct athdbg_to_ath12k_ops *ops = athdbg_base->dbg_to_ath_ops;
+
+	if (!ops || !ops->pci_read32)
+		return 0;
+
+	return ops->pci_read32(ab, offset);
+}
+
+/**
+ * athdbg_mhi_read_pbl_ram_info - Read PBL RAM information from TCSR_DEBUG_REG0
+ * @ab: structure of ath12k base
+ * @pbl_ram_start: pointer to store PBL RAM start address
+ * @pbl_ram_size: pointer to store PBL RAM size
+ *
+ * Read PBL RAM information from TCSR_DEBUG_REG0 register. This register points
+ * to a structure that contains the magic cookie, error region size, and error
+ * region base address. If the magic cookie matches, use the error region base
+ * and size as the PBL RAM start address and size. Otherwise, use default values.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static int athdbg_mhi_read_pbl_ram_info(struct ath12k_base *ab,
+					u32 *pbl_ram_start, u32 *pbl_ram_size)
+{
+	u32 tcsr_debug_reg0_val = 0;
+	struct pbl_err_to_host_type pbl_err_info = {0};
+
+	if (!ab) {
+		pr_err("Invalid input parameters\n");
+		return -EINVAL;
+	}
+
+	/* Read the value from TCSR_DEBUG_REG0 */
+	tcsr_debug_reg0_val = athdbg_mhi_pci_read32(ab, TCSR_DEBUG_REG0);
+	if (!tcsr_debug_reg0_val) {
+		pr_err("Failed to read TCSR_DEBUG_REG0\n");
+		return tcsr_debug_reg0_val;
+	}
+
+	/* Read the pbl_err_to_host_type structure using sizeof(u32) for field offsets */
+	pbl_err_info.magic_cookie = athdbg_mhi_pci_read32(ab, tcsr_debug_reg0_val);
+	if (!pbl_err_info.magic_cookie) {
+		pr_err("Failed to read magic_cookie\n");
+		return -EINVAL;
+	}
+
+	/* Verify magic cookie */
+	if (pbl_err_info.magic_cookie != PBL_ERR_MAGIC_COOKIE) {
+		pr_err("Invalid magic cookie: 0x%x, expected: 0x%x\n",
+		       pbl_err_info.magic_cookie, PBL_ERR_MAGIC_COOKIE);
+		return -EINVAL;
+	}
+
+	*pbl_ram_size = athdbg_mhi_pci_read32(ab, tcsr_debug_reg0_val + sizeof(u32));
+	if (*pbl_ram_size == 0) {
+		pr_err("Failed to read err_region_size\n");
+		return -EINVAL;
+	}
+
+	*pbl_ram_start = athdbg_mhi_pci_read32(ab,
+					       tcsr_debug_reg0_val + (2 * sizeof(u32)));
+	if (*pbl_ram_start == 0) {
+		pr_err("Failed to read err_region_base\n");
+		return -EINVAL;
+	}
+
+	pbl_err_info.err_region_size = *pbl_ram_size;
+	pbl_err_info.err_region_base = *pbl_ram_start;
+
+	pr_debug("Using PBL RAM info from TCSR_DEBUG_REG0: start=0x%x, size=%u\n",
+		 *pbl_ram_start, *pbl_ram_size);
+
+	return 0;
+}
 
 static inline struct ath12k_pci *athdbg_mhi_get_pci_priv(
 						struct ath12k_base *ab)
@@ -81,16 +157,6 @@ static inline void *athdbg_mhi_get_pci_dev(struct ath12k_base *ab)
 		return NULL;
 
 	return ab_pci->pdev;
-}
-
-static inline u32 athdbg_mhi_pci_read32(struct ath12k_base *ab, u32 offset)
-{
-	const struct athdbg_to_ath12k_ops *ops = athdbg_base->dbg_to_ath_ops;
-
-	if (!ops || !ops->pci_read32)
-		return 0;
-
-	return ops->pci_read32(ab, offset);
 }
 
 static bool athdbg_mhi_q6_scan_rddm_cookie(struct ath12k_base *ab,
@@ -267,6 +333,16 @@ static int athdbg_mhi_q6_debug_read_misc_data(struct ath12k_base *ab,
 		pbl_sbl_err->gcc_ramss_cbcr = athdbg_mhi_pci_read32(ab,
 				QCN9224_GCC_RAMSS_CBCR);
 		break;
+	case QCN9625_DEVICE_ID:
+		pbl_sbl_err->remap_bar_ctrl = athdbg_mhi_pci_read32(ab,
+				QCN9625_PCIE_PCIE_LOCAL_REG_REMAP_BAR_CTRL);
+		pbl_sbl_err->soc_rc_shadow_reg = athdbg_mhi_pci_read32(ab,
+				QCN9224_WLAON_SOC_RESET_CAUSE_SHADOW_REG);
+		pbl_sbl_err->parf_ltssm = athdbg_mhi_pci_read32(ab,
+				QCN9224_PCIE_PCIE_PARF_LTSSM);
+		pbl_sbl_err->gcc_ramss_cbcr = athdbg_mhi_pci_read32(ab,
+				QCN9625_GCC_RAMSS_CBCR);
+		break;
 	default:
 		break;
 	}
@@ -324,6 +400,7 @@ static void athdbg_mhi_q6_debug_collect_bl_data(struct ath12k_base *ab,
 		if (pci_dev) {
 			switch (pci_dev->device) {
 			case QCN9274_DEVICE_ID:
+			case QCN9625_DEVICE_ID:
 				pbl_sbl_err->noc_tbl = qcn9274_noc_err_regs;
 				pbl_sbl_err->noc_len = ARRAY_SIZE(qcn9274_noc_err_regs);
 
@@ -424,7 +501,7 @@ static void athdbg_mhi_q6_debug_print_bl_data(struct ath12k_base *ab,
 
 	pr_info("TCSR_PBL_LOGGING: 0x%08x PCIE_BHI_ERRDBG: Start: 0x%08x\n",
 		   pbl_sbl_err->pbl_stage, pbl_sbl_err->sbl_log_start);
-	pr_info("PBL_WLAN_BOOT_CFG: 0x%08x PBL_BOOTSTRAP_STATUS: 0x%08x\n",
+	pr_info("PBL_WLAN_BOOT_CONFIG: 0x%08x PBL_BOOTSTRAP_STATUS: 0x%08x\n",
 		   pbl_sbl_err->pbl_wlan_boot_cfg,
 		   pbl_sbl_err->pbl_bootstrap_status);
 
@@ -512,7 +589,27 @@ void athdbg_mhi_q6_dump_bl_sram_mem(struct ath12k_base *ab)
 
 		pbl_data.pbl_log_sram_max_size = QCN9224_PBL_LOG_SRAM_MAX_SIZE;
 		pbl_data.tcsr_pbl_logging_reg = QCN9224_TCSR_PBL_LOGGING_REG;
-		pbl_data.pbl_wlan_boot_cfg = QCN9224_PBL_WLAN_BOOT_CFG;
+		pbl_data.pbl_wlan_boot_cfg = QCN9224_PBL_WLAN_BOOT_CONFIG;
+		pbl_data.pbl_bootstrap_status = QCN9224_PBL_BOOTSTRAP_STATUS;
+		break;
+	case QCN9625_DEVICE_ID:
+		sbl_data.sbl_sram_start = QCN9625_SRAM_START;
+		sbl_data.sbl_sram_end = QCN9625_SRAM_END;
+		sbl_data.sbl_log_start_reg = QCN9224_PCIE_BHI_ERRDBG2_REG;
+		sbl_data.sbl_log_size_reg = QCN9224_PCIE_BHI_ERRDBG3_REG;
+		sbl_data.sbl_log_size_shift = 0;
+
+		if (athdbg_mhi_read_pbl_ram_info(ab,
+						 &pbl_data.pbl_log_sram_start,
+						 &pbl_data.pbl_log_sram_max_size) != 0) {
+			pbl_data.pbl_log_sram_start = QCN9625_PBL_LOG_SRAM_START;
+			pbl_data.pbl_log_sram_max_size = QCN9224_PBL_LOG_SRAM_MAX_SIZE;
+			pr_info("Using default PBL RAM values: start=0x%x, size=%u\n",
+				pbl_data.pbl_log_sram_start,
+				pbl_data.pbl_log_sram_max_size);
+		}
+		pbl_data.tcsr_pbl_logging_reg = QCN9224_TCSR_PBL_LOGGING_REG;
+		pbl_data.pbl_wlan_boot_cfg = QCN9625_PBL_WLAN_BOOT_CONFIG;
 		pbl_data.pbl_bootstrap_status = QCN9224_PBL_BOOTSTRAP_STATUS;
 		break;
 	default:

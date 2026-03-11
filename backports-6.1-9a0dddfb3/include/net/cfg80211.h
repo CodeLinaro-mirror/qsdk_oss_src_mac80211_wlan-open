@@ -7,7 +7,7 @@
  * Copyright 2006-2010	Johannes Berg <johannes@sipsolutions.net>
  * Copyright 2013-2014 Intel Mobile Communications GmbH
  * Copyright 2015-2017	Intel Deutschland GmbH
- * Copyright (C) 2018-2025 Intel Corporation
+ * Copyright (C) 2018-2026 Intel Corporation
  */
 
 #include <linux/ethtool.h>
@@ -444,18 +444,15 @@ struct ieee80211_sta_eht_cap {
 
 /**
  * struct ieee80211_sta_uhr_cap - STA's UHR capabilities
- *
- * This structure describes most essential parameters needed
- * to describe 802.11bn UHR capabilities for a STA.
- *
- * @has_uhr: true if UHR data is valid.
- * @uhr_cap_elem: Fixed portion of the uhr capabilities element.
+ * @has_uhr: true iff UHR is supported and data is valid
+ * @mac: fixed MAC capabilities
+ * @phy: fixed PHY capabilities
  */
 struct ieee80211_sta_uhr_cap {
 	bool has_uhr;
-	struct ieee80211_uhr_cap_elem_fixed uhr_cap_elem;
+	struct ieee80211_uhr_cap_mac mac;
+	struct ieee80211_uhr_cap_phy phy;
 };
-
 
 /* sparse defines __CHECKER__; see Documentation/dev-tools/sparse.rst */
 #ifdef __CHECKER__
@@ -1150,6 +1147,17 @@ cfg80211_chandef_compatible(const struct cfg80211_chan_def *chandef1,
 int nl80211_chan_width_to_mhz(enum nl80211_chan_width chan_width);
 
 /**
+ * cfg80211_chandef_get_width - return chandef width in MHz
+ * @c: chandef to return bandwidth for
+ * Return: channel width in MHz for the given chandef; note that it returns
+ *     80 for 80+80 configurations
+ */
+static inline int cfg80211_chandef_get_width(const struct cfg80211_chan_def *c)
+{
+	return nl80211_chan_width_to_mhz(c->width);
+}
+
+/**
  * cfg80211_chandef_valid - check if a channel definition is valid
  * @chandef: the channel definition to check
  * Return: %true if the channel definition is valid. %false otherwise.
@@ -1818,8 +1826,7 @@ struct cfg80211_ttlm_params {
  * @he_cap: HE capabilities (or %NULL if HE isn't enabled)
  * @eht_cap: EHT capabilities (or %NULL if EHT isn't enabled)
  * @eht_oper: EHT operation IE (or %NULL if EHT isn't enabled)
- * @uhr_cap: UHR capabilities (or %NULL if UHR isn't enabled)
- * @uhr_oper: UHR operation IE (or %NULL if UHR isn't enabled)
+ * @uhr_oper: UHR operation (or %NULL if UHR isn't enabled)
  * @ht_required: stations must support HT
  * @vht_required: stations must support VHT
  * @twt_responder: Enable Target Wait Time
@@ -1831,12 +1838,11 @@ struct cfg80211_ttlm_params {
  * @fils_discovery: FILS discovery transmission parameters
  * @unsol_bcast_probe_resp: Unsolicited broadcast probe response parameters
  * @mbssid_config: AP settings for multiple bssid
- * @intf_detect_bitmap: Interference detection bitmap.
- *	BIT(0) represents - CW Interference.
  * @beacon_tx_mode: Beacon Tx Mode setting
  * @ml_max_rec_links_valid: Indicates valid ML Max recommended links
  * @ml_max_rec_links: ML Max recommended links
  * @ttlm_params: tid-to-link mapping parameters
+ * @dps_assist_disable: indicates AP to disable DPS Assist Support.
  */
 struct cfg80211_ap_settings {
 	struct cfg80211_chan_def chandef;
@@ -1863,7 +1869,6 @@ struct cfg80211_ap_settings {
 	const struct ieee80211_he_operation *he_oper;
 	const struct ieee80211_eht_cap_elem *eht_cap;
 	const struct ieee80211_eht_operation *eht_oper;
-	const struct ieee80211_uhr_cap_elem *uhr_cap;
 	const struct ieee80211_uhr_operation *uhr_oper;
 	bool ht_required, vht_required, he_required, sae_h2e_required;
 	bool twt_responder;
@@ -1874,13 +1879,13 @@ struct cfg80211_ap_settings {
 	struct cfg80211_mbssid_config mbssid_config;
 	bool ap_ps_valid;
 	bool ap_ps_enable;
-	u8 intf_detect_bitmap;
 	enum nl80211_beacon_tx_mode beacon_tx_mode;
 	bool ml_max_rec_links_valid;
 	u8 ml_max_rec_links;
 	enum nl80211_regulatory_power_modes he_6ghz_power_type;
 	struct cfg80211_ttlm_params ttlm_params;
 	bool is_cfp_enabled;
+	bool dps_assist_disable;
 };
 
 
@@ -2046,7 +2051,7 @@ struct sta_txpwr {
  * @eht_capa_len: the length of the EHT capabilities
  * @eml_cap: EML capabilities of station
  * @mld_oper: MLD capabilites and operation field of station
- * @uhr_capa: UHR capabilities of station
+ * @uhr_capa: UHR capabilities of the station
  * @uhr_capa_len: the length of the UHR capabilities
  */
 struct link_station_parameters {
@@ -2069,7 +2074,7 @@ struct link_station_parameters {
 	u8 eht_capa_len;
 	u16 eml_cap;
 	u16 mld_oper;
-	const struct ieee80211_uhr_cap_elem *uhr_capa;
+	const struct ieee80211_uhr_cap *uhr_capa;
 	u8 uhr_capa_len;
 };
 
@@ -2238,6 +2243,11 @@ int cfg80211_check_station_change(struct wiphy *wiphy,
  * @RATE_INFO_FLAGS_EXTENDED_SC_DMG: 60GHz extended SC MCS
  * @RATE_INFO_FLAGS_EHT_MCS: EHT MCS information
  * @RATE_INFO_FLAGS_S1G_MCS: MCS field filled with S1G MCS
+ * @RATE_INFO_FLAGS_UHR_MCS: UHR MCS information
+ * @RATE_INFO_FLAGS_UHR_ELR_MCS: UHR ELR MCS was used
+ *	(set together with @RATE_INFO_FLAGS_UHR_MCS)
+ * @RATE_INFO_FLAGS_UHR_IM: UHR Interference Mitigation
+ *	was used
  */
 enum rate_info_flags {
 	RATE_INFO_FLAGS_MCS			= BIT(0),
@@ -2249,6 +2259,9 @@ enum rate_info_flags {
 	RATE_INFO_FLAGS_EXTENDED_SC_DMG		= BIT(6),
 	RATE_INFO_FLAGS_EHT_MCS			= BIT(7),
 	RATE_INFO_FLAGS_S1G_MCS			= BIT(8),
+	RATE_INFO_FLAGS_UHR_MCS			= BIT(9),
+	RATE_INFO_FLAGS_UHR_ELR_MCS		= BIT(10),
+	RATE_INFO_FLAGS_UHR_IM			= BIT(11),
 };
 
 /**
@@ -2264,7 +2277,7 @@ enum rate_info_flags {
  * @RATE_INFO_BW_160: 160 MHz bandwidth
  * @RATE_INFO_BW_HE_RU: bandwidth determined by HE RU allocation
  * @RATE_INFO_BW_320: 320 MHz bandwidth
- * @RATE_INFO_BW_EHT_RU: bandwidth determined by EHT RU allocation
+ * @RATE_INFO_BW_EHT_RU: bandwidth determined by EHT/UHR RU allocation
  * @RATE_INFO_BW_1: 1 MHz bandwidth
  * @RATE_INFO_BW_2: 2 MHz bandwidth
  * @RATE_INFO_BW_4: 4 MHz bandwidth
@@ -2295,7 +2308,7 @@ enum rate_info_bw {
  *
  * @flags: bitflag of flags from &enum rate_info_flags
  * @legacy: bitrate in 100kbit/s for 802.11abg
- * @mcs: mcs index if struct describes an HT/VHT/HE/EHT/S1G rate
+ * @mcs: mcs index if struct describes an HT/VHT/HE/EHT/S1G/UHR rate
  * @nss: number of streams (VHT & HE only)
  * @bw: bandwidth (from &enum rate_info_bw)
  * @he_gi: HE guard interval (from &enum nl80211_he_gi)
@@ -3631,7 +3644,7 @@ struct cfg80211_ml_reconf_req {
  *	Drivers shall disable MLO features for the current association if this
  *	flag is not set.
  * @ASSOC_REQ_SPP_AMSDU: SPP A-MSDUs will be used on this connection (if any)
- * @ASSOC_REQ_DISABLE_UHR:  Disable UHR
+ * @ASSOC_REQ_DISABLE_UHR: Disable UHR
  */
 enum cfg80211_assoc_req_flags {
 	ASSOC_REQ_DISABLE_HT			= BIT(0),
@@ -5060,6 +5073,119 @@ struct cfg80211_qm_resp_data {
 };
 
 /**
+ * enum cfg80211_pcie_cmds - PCIe command types
+ *
+ * Defines types of commands for PCIe.
+ *
+ * @CFG80211_PCIE_CMD_INVALID: invalid command
+ * @CFG80211_PCIE_CMD_GEN_LANE: PCIe gen/lane transition
+ * @CFG80211_PCIE_CMD_LOW_POWER: PCIe lower power state transition
+ */
+enum cfg80211_pcie_cmds {
+	CFG80211_PCIE_CMD_INVALID,
+	CFG80211_PCIE_CMD_GEN_LANE,
+	CFG80211_PCIE_CMD_LOW_POWER,
+};
+
+/**
+ * enum cfg80211_pcie_gen_lane_config - PCIe Gen X Lane types
+ *
+ * Defines types of PCIe Gen X Lane configuration.
+ *
+ * @CFG80211_PCIE_GEN_LANE_CBW: Channel bandwidth based semi static PCIe
+ *	configuration
+ * @CFG80211_PCIE_GEN_LANE_STATIC: forced static PCIe configuration
+ */
+enum cfg80211_pcie_gen_lane_config {
+	CFG80211_PCIE_GEN_LANE_CBW,
+	CFG80211_PCIE_GEN_LANE_STATIC,
+};
+
+/**
+ * enum cfg80211_pcie_low_power_config - PCIe Low Power types
+ *
+ * Defines types of PCIe Low Power configuration.
+ *
+ * @CFG80211_PCIE_LOW_POWER_INVALID: invalid command
+ * @CFG80211_PCIE_LOW_POWER_L0S: PCIe L0S power state
+ * @CFG80211_PCIE_LOW_POWER_L1:  PCIe L1 power state
+ * @CFG80211_PCIE_LOW_POWER_BOTH: Both PCIe L0S and L1 power states
+ */
+enum cfg80211_pcie_low_power_config {
+	CFG80211_PCIE_LOW_POWER_INVALID,
+	CFG80211_PCIE_LOW_POWER_L0S,
+	CFG80211_PCIE_LOW_POWER_L1,
+	CFG80211_PCIE_LOW_POWER_BOTH,
+};
+
+/**
+ * struct cfg80211_pcie_params - PCIe parameters
+ *
+ * Used for PCIe enable/disable commands from userspace.
+ *
+ * @cmd: PCIe command, see enum cfg80211_pcie_cmds.
+ * @enable: enable or disable PCIe transition type
+ * @config_type: types of PCIe configuration
+ * @pcie_gen: PCIe Gen
+ * @pcie_lane: PCIe Lane
+ */
+struct cfg80211_pcie_params {
+	enum cfg80211_pcie_cmds cmd;
+	bool enable;
+	u8 config_type;
+	u8 pcie_gen;
+	u8 pcie_lane;
+};
+
+/**
+ * enum cfg80211_dcvs_cmds - DCVS command types
+ *
+ * Defines types of commands for DCVS mode.
+ *
+ * @CFG80211_DCVS_CMD_ON: turn on radio DCVS
+ * @CFG80211_DCVS_CMD_OFF: turn off radio DCVS
+ * @CFG80211_DCVS_CMD_NO_LIMIT: operate with no limitation
+ */
+enum cfg80211_dcvs_cmds {
+	CFG80211_DCVS_CMD_ON,
+	CFG80211_DCVS_CMD_OFF,
+	CFG80211_DCVS_CMD_NO_LIMIT,
+};
+
+#define CFG80211_DPS_ASSIST_CMD_DISABLE		0
+#define CFG80211_DPS_ASSIST_CMD_ENABLE		1
+
+/**
+ * enum cfg80211_ap_power_save_type - AP Powersave types
+ *
+ * Defines types of AP Power Save.
+ *
+ * @CFG80211_TYPE_PCIE: PCIe gen/lane and low power state transitions
+ * @CFG80211_TYPE_DCVS: Dynamic Clock and Voltage Scaling
+ * @CFG80211_TYPE_DPS_ASSIST: Dynamic Power Save AP Assisting Role
+ */
+enum cfg80211_ap_power_save_type {
+	CFG80211_TYPE_PCIE		= BIT(0),
+	CFG80211_TYPE_DCVS		= BIT(1),
+	CFG80211_TYPE_DPS_ASSIST	= BIT(2),
+};
+
+/**
+ * struct cfg80211_ap_power_save_params - AP Power Save Parameters
+ *
+ * @types: AP power save types which parameters are set
+ * @pcie: PCIe parameters from userspace
+ * @dcvs_mode: DCVS mode being set from userspace
+ * @dps_assist_enable: Enable/disable DPS AP Assist
+ */
+struct cfg80211_ap_power_save_params {
+	u32 types;
+	struct cfg80211_pcie_params pcie;
+	u32 dcvs_mode;
+	bool dps_assist_enable;
+};
+
+/**
  * struct cfg80211_ops - backend description for wireless configuration
  *
  * This struct is registered by fullmac card drivers and/or wireless stacks
@@ -5490,6 +5616,8 @@ struct cfg80211_qm_resp_data {
  * @get_afc_eirp_pwr: Get the EIRP power received in the AFC payload for the
  *	given freq
  * @get_6ghz_dev_deployment_type: Get the 6 GHz device deployment type
+ *
+ * @ap_power_save : Configure AP Power Save parameters
  */
 struct cfg80211_ops {
 	int	(*suspend)(struct wiphy *wiphy, struct cfg80211_wowlan *wow);
@@ -5693,7 +5821,8 @@ struct cfg80211_ops {
 
 	int	(*set_cqm_rssi_config)(struct wiphy *wiphy,
 				       struct net_device *dev,
-				       s32 rssi_thold, u32 rssi_hyst);
+				       s32 rssi_thold, u32 rssi_hyst,
+				       int link_id);
 
 	int	(*set_cqm_rssi_range_config)(struct wiphy *wiphy,
 					     struct net_device *dev,
@@ -5883,6 +6012,9 @@ struct cfg80211_ops {
 				    u32 freq, u32 *eirp);
 	enum nl80211_6ghz_dev_deployment_type
 		(*get_6ghz_dev_deployment_type)(struct wiphy *wiphy);
+	int     (*ap_power_save)(struct wiphy *wiphy, struct wireless_dev *wdev,
+				 int link_id,
+				 struct cfg80211_ap_power_save_params *params);
 };
 
 /*
@@ -7251,6 +7383,8 @@ enum ieee80211_ap_reg_power {
  *	unprotected beacon report
  * @links: array of %IEEE80211_MLD_MAX_NUM_LINKS elements containing @addr
  *	@ap and @client for each link
+ * @links.ap.ssid: per-link SSID used when MLD is repurposed
+ * @links.ap.ssid_len: length of SSID @links.ap.ssid
  * @links.csa_target_chandef: Required Target DFS channel definition, for which channel
  *	switch is expected
  * @links.cac_started: true if DFS channel availability check has been
@@ -7263,6 +7397,8 @@ enum ieee80211_ap_reg_power {
  * @link_removal_flag: ML link reconfigure removal params updated on anyone
  * 	wdev link
  * @radio_mask: Bitmask of radios that this interface is allowed to operate on.
+ * @repurposed_links: Bitmap of links of MLD, which are repurposed to non-11be
+ *	 mode.
  */
 struct wireless_dev {
 	struct wiphy *wiphy;
@@ -7366,6 +7502,9 @@ struct wireless_dev {
 				unsigned int beacon_interval;
 				struct cfg80211_chan_def chandef;
 				bool is_going_down;
+				u8 ssid[IEEE80211_MAX_SSID_LEN];
+				u8 ssid_len;
+
 			} ap;
 			struct {
 				struct cfg80211_internal_bss *current_bss;
@@ -7392,6 +7531,7 @@ struct wireless_dev {
 	bool link_removal_flag;
 	bool ttlm_expec_dur_update_flag;
 	u8 vap_submode;
+	u16 repurposed_links;
 };
 
 #define WDEV_VAP_SUBMODE_NONE  0
@@ -9914,18 +10054,6 @@ void cfg80211_awgn_event(struct wiphy *wiphy, struct cfg80211_chan_def *chandef,
 			 gfp_t gfp, u32 chan_bw_interference_bitmap);
 
 /**
- * cfg80211_cw_event - CW detection event
- * @wiphy: the wiphy
- * @chandef: chandef for the current channel
- * @gfp: context flags
- *
- * This function is called when Continous Wave
- * is detected on the current channel.
- */
-void cfg80211_cw_event(struct wiphy *wiphy, struct cfg80211_chan_def *chandef,
-			 gfp_t gfp);
-
-/**
  * cfg80211_sta_opmode_change_notify - STA's ht/vht operation mode change event
  * @dev: network device
  * @mac: MAC address of a station which opmode got modified
@@ -11072,4 +11200,22 @@ int cfg80211_adv_ttlm_evt_notify(struct net_device *dev, gfp_t gfp,
 int cfg80211_rx_send_mscs_tuple(struct net_device *dev, const u8 *addr,
 				struct cfg80211_qm_tclas4_params flow_params,
 				u8 tid);
+
+/**
+ * cfg80211_set_repurpose_link - Mark a link for repurposing
+ * @wdev: wireless device
+ * @link_id: link identifier
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int cfg80211_set_repurpose_link(struct wireless_dev *wdev, u8 link_id);
+
+/**
+ * cfg80211_clear_repurpose_link - Clear repurpose mark for a link
+ * @wdev: wireless device
+ * @link_id: link identifier
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int cfg80211_clear_repurpose_link(struct wireless_dev *wdev, u8 link_id);
 #endif /* __NET_CFG80211_H */

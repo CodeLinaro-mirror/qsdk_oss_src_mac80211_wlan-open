@@ -18,6 +18,10 @@
 #include "debugfs.h"
 #include "fw.h"
 #include "pcic.h"
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#include <linux/iommu.h>
+#include "qcn_extns/ipa/dp_ipa.h"
+#endif
 
 #define ATH12K_PCI_BAR_NUM		0
 #define ATH12K_PCI_DMA_MASK		32
@@ -406,6 +410,9 @@ static int ath12k_pci_claim(struct ath12k_pci *ab_pci, struct pci_dev *pdev)
 		ret = -EIO;
 		goto release_region;
 	}
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	ab->ath12k_base_extn.mem_pa = pci_resource_start(pdev, ATH12K_PCI_BAR_NUM);
+#endif
 
 	ath12k_dbg(ab, ATH12K_DBG_BOOT, "boot pci_mem 0x%p\n", ab->mem);
 	return 0;
@@ -1024,6 +1031,11 @@ int ath12k_pci_power_up(struct ath12k_base *ab)
 void ath12k_pci_power_down(struct ath12k_base *ab, bool is_suspend)
 {
 	struct ath12k_pci *ab_pci = ath12k_pci_priv(ab);
+	bool scan_radio = FALSE;
+
+	scan_radio = !strncmp(ab->hw_params->board_magic,
+			   ATH12K_SCAN_RADIO,
+			   strlen(ATH12K_SCAN_RADIO));
 
 #ifdef CONFIG_IO_COHERENCY
        int ret;
@@ -1032,14 +1044,17 @@ void ath12k_pci_power_down(struct ath12k_base *ab, bool is_suspend)
 	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
-	ath12k_mhi_set_state(ab_pci, ATH12K_MHI_SOC_RESET);
-	if (!wait_for_completion_timeout(&ab->rddm_reset_done,
-					 msecs_to_jiffies(3000))) {
-		ath12k_warn(ab, "failed to set RDDM mode\n");
-		if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags)) {
-			ath12k_warn(ab, "failed to clear MHI SOC RESET as mhi already in rddm state due to recovery in progress, clearing it here\n");
-			clear_bit(ATH12K_MHI_SOC_RESET, &ab_pci->mhi_state);
-			reinit_completion(&ab->rddm_reset_done);
+	if (!scan_radio || !test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags)) {
+		ath12k_mhi_set_state(ab_pci, ATH12K_MHI_SOC_RESET);
+		if (!wait_for_completion_timeout(&ab->rddm_reset_done,
+						 msecs_to_jiffies(3000))) {
+			ath12k_warn(ab, "failed to set MHI SOC RESET\n");
+			if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags)) {
+				ath12k_warn(ab, "MHI in RDDM mode due to recovery\n");
+				ath12k_warn(ab, "Clearing MHI SOC RESET\n");
+				clear_bit(ATH12K_MHI_SOC_RESET, &ab_pci->mhi_state);
+				reinit_completion(&ab->rddm_reset_done);
+			}
 		}
 	}
 
@@ -1048,9 +1063,6 @@ void ath12k_pci_power_down(struct ath12k_base *ab, bool is_suspend)
        if (ret)
                ath12k_err(ab, "failed to configure IOCoherency: %d\n", ret);
 #endif
-
-	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
-		return;
 
 	/* restore aspm in case firmware bootup fails */
 	ath12k_pci_aspm_restore(ab_pci);
@@ -1111,7 +1123,7 @@ static void ath12k_pci_dp_umac_reset_free_irq(struct ath12k_base *ab)
 {
         struct ath12k_dp_umac_reset *umac_reset = &ab->dp_umac_reset;
 
-	if (ab->powered_off)
+	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
         disable_irq_nosync(umac_reset->irq_num);
@@ -1263,6 +1275,14 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
 	ab_pci->device_ops = &ath12k_pci_family_drivers[device_id]->ops;
 	ab_pci->reg_base = ath12k_pci_family_drivers[device_id]->reg_base;
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	/* Init smmu for SDX */
+	ret = ath12k_pci_init_smmu_extn(ab_pci);
+	if (ret) {
+		ath12k_err(ab, "failed to SMMU_INIT device: %d\n", ret);
+		goto err_pci_free_region;
+	}
+#endif
 	/* Call device specific probe. This is the callback that can
 	 * be used to override any ops in future
 	 */
@@ -1270,7 +1290,11 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
 		ret = ab_pci->device_ops->probe(pdev, pci_dev);
 		if (ret) {
 			ath12k_err(ab, "failed to probe device: %d\n", ret);
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+			goto err_pci_deinit_smmu;
+#else
 			goto err_pci_free_region;
+#endif
 		}
 	}
 
@@ -1282,7 +1306,11 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
 	ret = ath12k_pci_msi_alloc(ab_pci);
 	if (ret) {
 		ath12k_err(ab, "failed to alloc msi: %d\n", ret);
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+		goto err_pci_deinit_smmu;
+#else
 		goto err_pci_free_region;
+#endif
 	}
 
 	ath12k_fw_map(ab);
@@ -1299,9 +1327,19 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
 		goto err_irq_affinity_cleanup;
 	}
 
-	ret = ath12k_hal_srng_init(ab);
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	ret = ath12k_ipa_plugin_register_ops(ab);
 	if (ret)
 		goto err_mhi_unregister;
+	ath12k_info(ab, "IPA: ipa plugin are registered");
+#endif
+	ret = ath12k_hal_srng_init(ab);
+	if (ret)
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+		goto ipa_plugin_unregister;
+#else
+		goto err_mhi_unregister;
+#endif
 
 	ret = ath12k_ce_alloc_pipes(ab);
 	if (ret) {
@@ -1383,6 +1421,11 @@ err_ce_free:
 err_hal_srng_deinit:
 	ath12k_hal_srng_deinit(ab);
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+ipa_plugin_unregister:
+	ath12k_ipa_plugin_deregister_ops(ab);
+#endif
+
 err_mhi_unregister:
 	ath12k_mhi_unregister(ab_pci);
 
@@ -1391,6 +1434,11 @@ err_irq_affinity_cleanup:
 
 err_pci_msi_free:
 	ath12k_pci_msi_free(ab_pci);
+
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+err_pci_deinit_smmu:
+	ath12k_pci_deinit_smmu_extn(ab_pci);
+#endif
 
 err_pci_free_region:
 	ath12k_pci_free_region(ab_pci);
@@ -1438,6 +1486,9 @@ qmi_fail:
 	if (ab_pci->device_ops->dp_deinit)
 		ab_pci->device_ops->dp_deinit(ab->dp);
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	ath12k_ipa_plugin_deregister_ops(ab);
+#endif
 	ath12k_pci_msi_free(ab_pci);
 	ath12k_core_free(ab);
 }
@@ -1450,7 +1501,7 @@ static void ath12k_pci_shutdown(struct pci_dev *pdev)
 	ath12k_pci_set_irq_affinity_hint(ab_pci, NULL);
 
 	if (ath12k_check_erp_power_down(ab->ag) &&
-	    ab->powered_off)
+	    test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
 	ath12k_qmi_firmware_stop(ab);

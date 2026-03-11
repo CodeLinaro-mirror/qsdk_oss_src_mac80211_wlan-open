@@ -8,6 +8,7 @@
 #include "../hal.h"
 #include "hal.h"
 #include "../hif.h"
+#include "../debug.h"
 
 #define HAL_TX_BITS_PER_TID 3
 #define HAL_TX_NUM_DSCP_REG_SIZE 32
@@ -184,4 +185,369 @@ void ath12k_wifi8_hal_tx_set_dscp_tid_map(struct ath12k_base *ab, u8 *map, int i
 	ath12k_hif_write32(ab, HAL_SEQ_WCSS_UMAC_TCL_REG +
 			   HAL_TCL1_RING_CMN_CTRL_REG,
 			   ctrl_reg_val);
+}
+
+int
+ath12k_wifi8_hal_invalidate_tx_cache_cmd_send(struct ath12k_base *ab,
+					      struct hal_srng *srng,
+					      struct ath12k_hal_tx_cmd_ring_param *param)
+{
+	struct hal_tcl_gse_cmd *tx_gse_cmd;
+	int ret = 0;
+
+	spin_lock_bh(&srng->lock);
+
+	ath12k_hal_srng_access_begin(ab, srng);
+	tx_gse_cmd = ath12k_hal_srng_src_get_next_entry(ab, srng);
+	if (!tx_gse_cmd) {
+		ret = -ENOBUFS;
+		goto out;
+	}
+	tx_gse_cmd->control_buffer_addr_31_0 = cpu_to_le32(param->ctrl_buf_addr);
+	tx_gse_cmd->info0 =
+		le32_encode_bits(((u64)param->ctrl_buf_addr >> HAL_ADDR_MSB_REG_SHIFT),
+				 HAL_TCL_GSE_CMD_INFO0_CONTROL_BUFFER_ADDR_39_32) |
+		le32_encode_bits(param->cmd_num,
+				 HAL_TCL_GSE_CMD_INFO0_GSE_CTRL) |
+		le32_encode_bits(0, /*tcl2sw */
+				 HAL_TCL_GSE_CMD_INFO0_STATUS_DESTINATION_RING_ID);
+	tx_gse_cmd->info1 = le32_encode_bits(1, /*tcl cmd ring */
+					     HAL_TCL_GSE_CMD_INFO1_TCL_CMD_TYPE);
+	tx_gse_cmd->cmd_meta_data_31_0 = cpu_to_le32(param->meta_data_0);
+out:
+	ath12k_hal_srng_access_end(ab, srng);
+	spin_unlock_bh(&srng->lock);
+
+	return ret;
+}
+
+int ath12k_wifi8_hal_tqm_remove_msdu_cmd(struct ath12k_base *ab,
+					 struct hal_tlv_64_hdr *tlv,
+					 struct ath12k_hal_tqm_cmd *cmd)
+{
+	struct hal_tqm_remove_msdu *desc;
+	u32 paddr_lo;
+	u8 paddr_hi;
+	struct ath12k_dp *dp = ab->dp;
+	u32 cmd_num;
+
+	tlv->tl = le64_encode_bits(HAL_TQM_REMOVE_MSDU_BO, HAL_TLV_HDR_TAG) |
+		  le64_encode_bits(sizeof(*desc), HAL_TLV_HDR_LEN);
+
+	desc = (struct hal_tqm_remove_msdu *)tlv->value;
+	memset_startat(desc, 0, cmd_hdr.info0);
+
+	cmd_num = atomic_inc_return(&dp->tqm_cmd_num);
+	if (unlikely(cmd_num == 0))
+		cmd_num = atomic_inc_return(&dp->tqm_cmd_num);
+	desc->cmd_hdr.info0 = le32_encode_bits(cmd_num, HAL_TQM_CMD_NUMBER);
+
+	desc->cmd_hdr.info1 = le32_encode_bits(0x7F, HAL_TQM_SESSION_ID) |
+		le32_encode_bits(1, HAL_TQM_STATUS_REQUIRED_FOR_HOST) |
+		le32_encode_bits(HAL_TQM_HOST_STATUS_RING_0,
+				 HAL_TQM_HOST_STATUS_RING) |
+		le32_encode_bits(cmd->std.peer_id,
+				 HAL_TQM_SW_PEER_ID_FOR_COMPARISON);
+
+	paddr_lo = lower_32_bits(cmd->remove_msdu_params.msdu_q_paddr);
+	paddr_hi = (u8)(upper_32_bits(cmd->remove_msdu_params.msdu_q_paddr)
+			& 0x000000ff);
+	desc->info0 = le32_encode_bits(paddr_lo,
+				       HAL_TQM_MSDU_FLOW_DESC_ADDR_31_0);
+
+	desc->info1 = le32_encode_bits(paddr_hi,
+				       HAL_TQM_MSDU_FLOW_DESC_ADDR_39_32);
+
+	desc->info2 = le32_encode_bits(cmd->remove_msdu_params.type,
+				       HAL_TQM_MSDU_REMOVE_MSDU_CMD_TYPE) |
+		le32_encode_bits(cmd->remove_msdu_params.count,
+				 HAL_TQM_MSDU_REMOVE_COUNT) |
+		le32_encode_bits(
+			cmd->remove_msdu_params.block_tx_notify_frame_removal,
+			HAL_TQM_MSDU_BLOCK_TX_NOTIFY_FRAME_REMOVAL);
+
+	return le32_get_bits(desc->cmd_hdr.info0, HAL_TQM_CMD_NUMBER);
+}
+
+int ath12k_wifi8_hal_tqm_remove_mpdu_cmd(struct ath12k_base *ab,
+					 struct hal_tlv_64_hdr *tlv,
+					 struct ath12k_hal_tqm_cmd *cmd)
+{
+	struct hal_tqm_remove_mpdu *desc;
+	u32 paddr_lo;
+	u8 paddr_hi;
+	struct ath12k_dp *dp = ab->dp;
+	u32 cmd_num;
+
+	tlv->tl = le64_encode_bits(HAL_TQM_REMOVE_MPDU_BO, HAL_TLV_HDR_TAG) |
+		  le64_encode_bits(sizeof(*desc), HAL_TLV_HDR_LEN);
+
+	desc = (struct hal_tqm_remove_mpdu *)tlv->value;
+	memset_startat(desc, 0, cmd_hdr.info0);
+
+	cmd_num = atomic_inc_return(&dp->tqm_cmd_num);
+	if (unlikely(cmd_num == 0))
+		cmd_num = atomic_inc_return(&dp->tqm_cmd_num);
+	desc->cmd_hdr.info0 = le32_encode_bits(cmd_num, HAL_TQM_CMD_NUMBER);
+
+	desc->cmd_hdr.info1 = le32_encode_bits(0x7F, HAL_TQM_SESSION_ID) |
+		le32_encode_bits(1, HAL_TQM_STATUS_REQUIRED_FOR_HOST) |
+		le32_encode_bits(HAL_TQM_HOST_STATUS_RING_0,
+				 HAL_TQM_HOST_STATUS_RING) |
+		le32_encode_bits(cmd->std.peer_id,
+				 HAL_TQM_SW_PEER_ID_FOR_COMPARISON);
+
+	paddr_lo = lower_32_bits(cmd->remove_mpdu_params.mpdu_q_paddr);
+	paddr_hi = (u8)(upper_32_bits(cmd->remove_mpdu_params.mpdu_q_paddr)
+			& 0x000000ff);
+	desc->info0 = le32_encode_bits(paddr_lo,
+				       HAL_TQM_MPDU_QUEUE_DESC_ADDR_31_0);
+
+	desc->info1 = le32_encode_bits(paddr_hi,
+				       HAL_TQM_MPDU_QUEUE_DESC_ADDR_39_32) |
+		le32_encode_bits(
+			cmd->remove_mpdu_params.block_tx_notify_frame_removal,
+			HAL_TQM_MPDU_BLOCK_TX_NOTIFY_FRAME_REMOVAL);
+
+	desc->info2 = le32_encode_bits(cmd->remove_mpdu_params.type,
+				       HAL_TQM_MPDU_REMOVE_MPDU_CMD_TYPE) |
+		le32_encode_bits(cmd->remove_mpdu_params.count,
+				 HAL_TQM_MPDU_REMOVE_COUNT);
+
+	return le32_get_bits(desc->cmd_hdr.info0, HAL_TQM_CMD_NUMBER);
+}
+
+int ath12k_wifi8_hal_tqm_sync_cmd(struct ath12k_base *ab,
+				  struct hal_tlv_64_hdr *tlv,
+				  struct ath12k_hal_tqm_cmd *cmd)
+{
+	struct hal_tqm_sync_cmd *desc;
+	u32 data_lo, data_hi;
+	uintptr_t cb_func_addr, cb_ctxt_addr;
+	struct ath12k_dp *dp = ab->dp;
+	u32 cmd_num;
+
+	tlv->tl = le64_encode_bits(HAL_TQM_SYNC_CMD_BO, HAL_TLV_HDR_TAG) |
+		  le64_encode_bits(sizeof(*desc), HAL_TLV_HDR_LEN);
+
+	desc = (struct hal_tqm_sync_cmd *)tlv->value;
+	memset_startat(desc, 0, cmd_hdr.info0);
+
+	cmd_num = atomic_inc_return(&dp->tqm_cmd_num);
+	if (unlikely(cmd_num == 0))
+		cmd_num = atomic_inc_return(&dp->tqm_cmd_num);
+	desc->cmd_hdr.info0 = le32_encode_bits(cmd_num, HAL_TQM_CMD_NUMBER);
+
+	desc->cmd_hdr.info1 = le32_encode_bits(0x7F, HAL_TQM_SESSION_ID) |
+		le32_encode_bits(1, HAL_TQM_STATUS_REQUIRED_FOR_HOST) |
+		le32_encode_bits(HAL_TQM_HOST_STATUS_RING_0,
+				 HAL_TQM_HOST_STATUS_RING) |
+		le32_encode_bits(cmd->std.peer_id,
+				 HAL_TQM_SW_PEER_ID_FOR_COMPARISON);
+
+	if (cmd->tqm_sync_params.data_only) {
+		data_lo = lower_32_bits(cmd->tqm_sync_params.cb_data);
+		data_hi = upper_32_bits(cmd->tqm_sync_params.cb_data);
+		desc->info0 = le32_encode_bits(data_lo, HAL_TQM_SYNC_SW_METADATA_31_0);
+		desc->info1 = le32_encode_bits(data_hi, HAL_TQM_SYNC_SW_METADATA_63_32);
+	} else {
+		cb_func_addr = (u64)(uintptr_t)cmd->tqm_sync_params.cb_func;
+		cb_ctxt_addr = (u64)(uintptr_t)cmd->tqm_sync_params.cb_ctxt;
+		desc->info0 = le32_encode_bits(lower_32_bits(cb_func_addr),
+					       HAL_TQM_SYNC_SW_METADATA_31_0);
+		desc->info1 = le32_encode_bits(upper_32_bits(cb_func_addr),
+					       HAL_TQM_SYNC_SW_METADATA_63_32);
+		desc->info2 = le32_encode_bits(lower_32_bits(cb_ctxt_addr),
+					       HAL_TQM_SYNC_SW_METADATA_95_64);
+		desc->info3 = le32_encode_bits(upper_32_bits(cb_ctxt_addr),
+					       HAL_TQM_SYNC_SW_METADATA_127_96);
+		data_lo = lower_32_bits(cmd->tqm_sync_params.cb_data);
+		data_hi = upper_32_bits(cmd->tqm_sync_params.cb_data);
+		desc->info4 = le32_encode_bits(data_lo, HAL_TQM_SYNC_SW_METADATA_159_128);
+		desc->info5 = le32_encode_bits(data_hi, HAL_TQM_SYNC_SW_METADATA_191_160);
+	}
+	return le32_get_bits(desc->cmd_hdr.info0, HAL_TQM_CMD_NUMBER);
+}
+
+static inline
+int ath12k_wifi8_hal_srng_write_words(struct ath12k_base *ab,
+				      struct hal_srng *srng,
+				      u32 cmd_size,
+				      void *desc_start,
+				      const u32 *src_words)
+{
+	u32 hp, ring_size, i, ring_idx;
+	u32 *ring_base;
+
+	ring_base = (u32 *)srng->ring_base_vaddr;
+	hp = (u32)((u32 *)desc_start - ring_base);
+	ring_size = srng->ring_size;
+	ring_idx = hp;
+	for (i = 0; i < cmd_size; i++) {
+		ring_base[ring_idx] = src_words[i];
+		ring_idx++;
+		if (ring_idx == ring_size)
+			ring_idx = 0;
+	}
+	return 0;
+}
+
+int ath12k_wifi8_hal_tqm_cmd_send(struct ath12k_base *ab, struct hal_srng *srng,
+				  enum hal_tlv_tag_be type,
+				  struct ath12k_hal_tqm_cmd *cmd)
+{
+	struct hal_tlv_64_hdr *tqm_desc;
+	struct hal_tlv_64_hdr *tlv_desc;
+	u32 cmd_size;
+	int ret;
+	int err;
+
+	if (!ab->tqm_cmd_staging) {
+		ath12k_err(ab, "TQM staging buffer not allocated\n");
+		return -ENOMEM;
+	}
+	spin_lock_bh(&srng->lock);
+	ath12k_hal_srng_access_begin(ab, srng);
+
+	tlv_desc = (struct hal_tlv_64_hdr *)ab->tqm_cmd_staging;
+	if (!tlv_desc) {
+		ret = -ENOMEM;
+		goto out;
+	}
+	switch (type) {
+	case HAL_TQM_REMOVE_MSDU_BO:
+		ret = ath12k_wifi8_hal_tqm_remove_msdu_cmd(ab, tlv_desc, cmd);
+		break;
+	case HAL_TQM_REMOVE_MPDU_BO:
+		ret = ath12k_wifi8_hal_tqm_remove_mpdu_cmd(ab, tlv_desc, cmd);
+		break;
+	case HAL_TQM_SYNC_CMD_BO:
+		ret = ath12k_wifi8_hal_tqm_sync_cmd(ab, tlv_desc, cmd);
+		break;
+	default:
+		ath12k_warn(ab, "Unknown tqm command %d\n", type);
+		ret = -EINVAL;
+		goto out;
+	}
+
+	tqm_desc = (struct hal_tlv_64_hdr *)ath12k_hal_srng_src_get_tqm_next_entry(
+								ab, srng, type);
+	if (!tqm_desc) {
+		ret = -ENOBUFS;
+		goto out;
+	}
+
+	cmd_size = ath12k_hal_srng_get_tqm_cmd_size(type);
+	if (!cmd_size || cmd_size >= srng->ring_size ||
+	    cmd_size > HAL_TQM_CMD_MAX_WORDS) {
+		ret = -EINVAL;
+		goto out;
+	}
+	err = ath12k_wifi8_hal_srng_write_words(ab, srng, cmd_size,
+						(void *)tqm_desc,
+						ab->tqm_cmd_staging);
+	if (err) {
+		ret = err;
+		goto out;
+	}
+
+out:
+	ath12k_hal_srng_access_end(ab, srng);
+	spin_unlock_bh(&srng->lock);
+
+	return ret;
+}
+
+void ath12k_wifi8_hal_tqm_remove_msdu_status(struct ath12k_base *ab,
+					     struct hal_tlv_64_hdr *tlv,
+					     struct hal_tqm_status *status)
+{
+	struct hal_tqm_remove_msdu_status *desc =
+		(struct hal_tqm_remove_msdu_status *)tlv->value;
+
+	status->status_hdr.status_num =  le32_get_bits(desc->status_hdr.info0,
+						       HAL_TQM_STATUS_NUMBER);
+	status->status_hdr.cmd_execution_status = le32_get_bits(
+						desc->status_hdr.info2,
+						HAL_TQM_STATUS_CMD_EXECUTION_STATUS);
+	status->status_hdr.tqm_status_ring = le32_get_bits(desc->status_hdr.info2,
+							   HAL_TQM_STATUS_RING);
+	status->remove_msdu.remove_msdu_cmd_type = le32_get_bits(
+						desc->info0,
+						HAL_TQM_MSDU_REMOVE_MSDU_CMD_TYPE);
+	status->remove_msdu.removed_msdu_count = le32_get_bits(
+						desc->info0,
+						HAL_TQM_MSDU_REMOVED_MSDU_COUNT);
+	status->remove_msdu.tx_flow_number = le32_get_bits(
+						desc->info4,
+						HAL_TQM_MSDU_TX_FLOW_NUMBER);
+}
+
+void ath12k_wifi8_hal_tqm_remove_mpdu_status(struct ath12k_base *ab,
+					     struct hal_tlv_64_hdr *tlv,
+					     struct hal_tqm_status *status)
+{
+	struct hal_tqm_remove_mpdu_status *desc =
+		(struct hal_tqm_remove_mpdu_status *)tlv->value;
+
+	status->status_hdr.status_num =  le32_get_bits(desc->status_hdr.info0,
+						       HAL_TQM_STATUS_NUMBER);
+	status->status_hdr.cmd_execution_status = le32_get_bits(
+						desc->status_hdr.info2,
+						HAL_TQM_STATUS_CMD_EXECUTION_STATUS);
+	status->status_hdr.tqm_status_ring = le32_get_bits(desc->status_hdr.info2,
+							   HAL_TQM_STATUS_RING);
+	status->remove_mpdu.remove_mpdu_cmd_type = le32_get_bits(
+						desc->info0,
+						HAL_TQM_MPDU_REMOVE_MPDU_CMD_TYPE);
+	status->remove_mpdu.removed_mpdu_count = le32_get_bits(
+						desc->info0,
+						HAL_TQM_MPDU_REMOVED_MPDU_COUNT);
+	status->remove_mpdu.tx_mpdu_queue_number = le32_get_bits(
+						desc->info8,
+						HAL_TQM_MPDU_TX_MPDU_QUEUE_NUMBER);
+}
+
+void ath12k_wifi8_hal_tqm_sync_cmd_status(struct ath12k_base *ab,
+					  struct hal_tlv_64_hdr *tlv,
+					  struct hal_tqm_status *status)
+{
+	struct hal_tqm_sync_cmd_status *desc =
+		(struct hal_tqm_sync_cmd_status *)tlv->value;
+
+	status->status_hdr.status_num =  le32_get_bits(desc->status_hdr.info0,
+						       HAL_TQM_STATUS_NUMBER);
+	status->status_hdr.cmd_execution_status = le32_get_bits(
+						desc->status_hdr.info2,
+						HAL_TQM_STATUS_CMD_EXECUTION_STATUS);
+	status->status_hdr.tqm_status_ring = le32_get_bits(desc->status_hdr.info2,
+							   HAL_TQM_STATUS_RING);
+	status->sync_status.metadata_0 = le32_get_bits(
+						desc->info0,
+						HAL_TQM_SYNC_STATUS_SW_METADATA_31_0);
+	status->sync_status.metadata_1 = le32_get_bits(
+						desc->info1,
+						HAL_TQM_SYNC_STATUS_SW_METADATA_63_32);
+	status->sync_status.metadata_2 = le32_get_bits(
+						desc->info2,
+						HAL_TQM_SYNC_STATUS_SW_METADATA_95_64);
+}
+
+int ath12k_wifi8_hal_tqm_cmd_staging_alloc(struct ath12k_base *ab)
+{
+	/* Allocate single staging buffer in ab for the TQM command ring. */
+	ab->tqm_cmd_staging = kzalloc(HAL_TQM_CMD_MAX_BYTES,
+				      GFP_KERNEL);
+
+	if (!ab->tqm_cmd_staging) {
+		ath12k_err(ab, "failed to alloc TQM staging");
+		return -ENOMEM;
+	}
+	return 0;
+}
+
+void ath12k_wifi8_hal_tqm_cmd_staging_free(struct ath12k_base *ab)
+{
+	kfree(ab->tqm_cmd_staging);
+	ab->tqm_cmd_staging = NULL;
 }

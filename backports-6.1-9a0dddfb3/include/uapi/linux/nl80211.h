@@ -1371,7 +1371,7 @@
  *	%NL80211_ATTR_AWGN_INTERFERENCE_BITMAP
  * @NL80211_ATTR_AWGN_INTERFERENCE_BITMAP: u32 attribute specifying the
  *	interference bitmap of operating bandwidth for %NL80211_CMD_AWGN_DETECT
- * @NL80211_CMD_INTERFERENCE_DETECT: Once any interference is detected on the
+ * * @NL80211_CMD_INTERFERENCE_DETECT: Once any interference is detected on the
  *	operating channel, userspace would be notified of it
  *	using %NL80211_ATTR_INTERFERENCE_TYPE.
  *
@@ -1390,6 +1390,11 @@
  *	userspace to send control path QoS information of QoS Management
  *	features and also to notify userspace about the status response with
  *	attributes defined in %NL80211_ATTR_QOS_MGMT.
+ *
+ * @NL80211_CMD_AP_POWER_SAVE: Command to configure AP powersave parameters.
+ *	Command needs %NL80211_ATTR_IFINDEX and NL80211_ATTR_MLO_LINK_ID;
+ *	can be used to configure %NL80211_ATTR_PCIE, NL80211_ATTR_DCVS and
+ *	NL80211_ATTR_DPS_ASSIST.
  *
  * @NL80211_CMD_MAX: highest used command number
  * @__NL80211_CMD_AFTER_LAST: internal use
@@ -1670,6 +1675,8 @@ enum nl80211_commands {
 	NL80211_CMD_ERP,
 
 	NL80211_CMD_QOS_MGMT,
+
+	NL80211_CMD_AP_POWER_SAVE,
 
 	/* add new commands above here */
 
@@ -3075,13 +3082,20 @@ enum nl80211_commands {
  * @NL80211_ATTR_BITRATE: This attribute is used with %NL80211_CMD_FRAME to
  *     send legacy bitrate information of management packets to userspace.
  *
- * @NL80211_ATTR_UHR_CAPABILITY: UHR Capability information element (from
+ * * @NL80211_ATTR_UHR_CAPABILITY: UHR Capability information element (from
  *	association request when used with NL80211_CMD_NEW_STATION). Can be set
- *	only if %NL80211_STA_FLAG_WME is set.
- *
+ *	only if HE/EHT are also available.
  * @NL80211_ATTR_DISABLE_UHR: Force UHR capable interfaces to disable
- *  this feature during association. This is a flag attribute.
+ *	this feature during association. This is a flag attribute.
  *	Currently only supported in mac80211 drivers.
+ *
+ * @NL80211_ATTR_PCIE: Nested attributes associated with PCIe low power and
+ *	gen/lane mode transitions. See &enum nl80211_pcie_attrs
+ *
+ * @NL80211_ATTR_DCVS: (u32) Dynamic Clock and Voltage Scaling (DCVS) modes.
+ *	See @enum nl80211_dcvs_attrs.
+ *
+ * @NL80211_ATTR_DPS_ASSIST: Enable/disable DPS assisting role.
  *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
@@ -3697,8 +3711,11 @@ enum nl80211_attrs {
 	NL80211_ATTR_BITRATE,
 
 	NL80211_ATTR_UHR_CAPABILITY,
-
 	NL80211_ATTR_DISABLE_UHR,
+
+	NL80211_ATTR_PCIE,
+	NL80211_ATTR_DCVS,
+	NL80211_ATTR_DPS_ASSIST,
 
 	/* add attributes here, update the policy in nl80211.c */
 
@@ -3776,13 +3793,6 @@ enum nl80211_attrs {
 #define NL80211_IPADDR_MAX_LEN			16
 #define NL80211_TCLAS_TYPE10_MAX_FILTER_LEN	12
 #define NL80211_TCLAS_TYPE4_FLOW_LABEL_LEN	3
-
-/*
- * TODO: as of now used the len same as EHT modify it
- * based on UHR once spec finalized
- */
-#define NL80211_UHR_MIN_CAPABILITY_LEN          2
-#define NL80211_UHR_MAX_CAPABILITY_LEN          51
 
 /**
  * enum nl80211_iftype - (virtual) interface types
@@ -4065,6 +4075,12 @@ enum nl80211_eht_ru_alloc {
  * @NL80211_RATE_INFO_4_MHZ_WIDTH: 4 MHz S1G rate
  * @NL80211_RATE_INFO_8_MHZ_WIDTH: 8 MHz S1G rate
  * @NL80211_RATE_INFO_16_MHZ_WIDTH: 16 MHz S1G rate
+ * @NL80211_RATE_INFO_UHR_MCS: UHR MCS index (u8, 0-15, 17, 19, 20, 23)
+ *	Note that the other EHT attributes (such as @NL80211_RATE_INFO_EHT_NSS)
+ *	are used in conjunction with this where applicable
+ * @NL80211_RATE_INFO_UHR_ELR: UHR ELR flag, which restricts NSS to 1,
+ *	MCS to 0 or 1, and GI to %NL80211_RATE_INFO_EHT_GI_1_6.
+ * @NL80211_RATE_INFO_UHR_IM: UHR Interference Mitigation flag
  * @__NL80211_RATE_INFO_AFTER_LAST: internal use
  */
 enum nl80211_rate_info {
@@ -4098,6 +4114,9 @@ enum nl80211_rate_info {
 	NL80211_RATE_INFO_4_MHZ_WIDTH,
 	NL80211_RATE_INFO_8_MHZ_WIDTH,
 	NL80211_RATE_INFO_16_MHZ_WIDTH,
+	NL80211_RATE_INFO_UHR_MCS,
+	NL80211_RATE_INFO_UHR_ELR,
+	NL80211_RATE_INFO_UHR_IM,
 
 	/* keep last */
 	__NL80211_RATE_INFO_AFTER_LAST,
@@ -4441,9 +4460,9 @@ enum nl80211_mpath_info {
  * @NL80211_BAND_IFTYPE_ATTR_EHT_CAP_PPE: EHT PPE thresholds information as
  *	defined in EHT capabilities element
  * @NL80211_BAND_IFTYPE_ATTR_UHR_CAP_MAC: UHR MAC capabilities as in UHR
- * capabilities element
+ *	capabilities element
  * @NL80211_BAND_IFTYPE_ATTR_UHR_CAP_PHY: UHR PHY capabilities as in UHR
- * capabilities element
+ *	capabilities element
  * @__NL80211_BAND_IFTYPE_ATTR_AFTER_LAST: internal use
  * @NL80211_BAND_IFTYPE_ATTR_MAX: highest band attribute currently defined
  */
@@ -4988,7 +5007,7 @@ enum nl80211_reg_rule_flags {
 	NL80211_RRF_NO_6GHZ_AFC_CLIENT      = 1 << 23,
 	NL80211_RRF_ALLOW_6GHZ_VLP_AP       = 1 << 24,
 	NL80211_RRF_ALLOW_20MHZ_ACTIVITY    = 1 << 25,
-	NL80211_RRF_NO_UHR                  = 1 << 26,
+	NL80211_RRF_NO_UHR		    = 1 << 26,
 };
 
 #define NL80211_RRF_PASSIVE_SCAN	NL80211_RRF_NO_IR
@@ -8841,21 +8860,6 @@ enum nl80211_set_cu_attrs {
 };
 
 /**
- * enum nl80211_interference_type -
- *
- * @NL80211_CW_INTERFERENCE_DETECTED : Continous Wave Interference Detected.
- * @NL80211_AWGN_INTERFERENCE_DETECTED : AWGN Interference Detected.
-*/
-enum nl80211_interference_type {
-	NL80211_INTERFERENCE_TYPE_INVALID,
-	NL80211_INTERFERENCE_TYPE_CW,
-	NL80211_INTERFERENCE_TYPE_AWGN,
-
-	NL80211_INTERFERENCE_TYPE_LAST,
-	NL80211_INTERFERENCE_TYPE_MAX = NL80211_INTERFERENCE_TYPE_LAST - 1,
-};
-
-/**
  * enum nl80211_erp_attrs - set ErP attributes during entry/exit
  *
  * @NL80211_ERP_ATTR_ENTER: (flag) enter into ErP mode.
@@ -9077,6 +9081,57 @@ enum nl80211_6ghz_dev_deployment_type {
 	NL80211_6GHZ_DEV_DEPLOYMENT_TYPE_UNKNOWN,
 	NL80211_6GHZ_DEV_DEPLOYMENT_TYPE_INDOOR,
 	NL80211_6GHZ_DEV_DEPLOYMENT_TYPE_OUTDOOR,
+};
+
+/**
+ * enum nl80211_pcie_attrs - set PCIe attributes
+ *
+ * @NL80211_PCIE_ATTR_TYPE: (u8) PCIe transition type
+ * @NL80211_PCIE_ATTR_ENABLE: (flag) enable/disable PCIe transition
+ *	type
+ * @NL80211_PCIE_ATTR_CONFIG_TYPE: (u8) configuration of PCIe transition type
+ * @NL80211_PCIE_ATTR_GEN: (u8)
+ * @NL80211_PCIE_ATTR_LANE: (u8)
+ *
+ * @__NL80211_PCIE_ATTR_LAST : internal use
+ * @NL80211_PCIE_ATTR_MAX : maximum PCIe attributes
+ *
+ */
+enum nl80211_pcie_attrs {
+	__NL80211_PCIE_ATTR_INVALID,
+
+	NL80211_PCIE_ATTR_TYPE,
+	NL80211_PCIE_ATTR_ENABLE,
+	NL80211_PCIE_ATTR_CONFIG_TYPE,
+	NL80211_PCIE_ATTR_GEN,
+	NL80211_PCIE_ATTR_LANE,
+
+	/* keep last */
+	__NL80211_PCIE_ATTR_LAST,
+	NL80211_PCIE_ATTR_MAX = __NL80211_PCIE_ATTR_LAST - 1
+};
+
+/**
+ * enum nl80211_dcvs_attrs - set DCVS attributes
+ *
+ * @NL80211_DCVS_ATTR_ON: (flag) turn on radio DCVS in driver.
+ * @NL80211_DCVS_ATTR_OFF: (flag) turn off radio DCVS in driver.
+ * @NL80211_DCVS_ATTR_NO_LIMIT: (flag) operate with no limitation.
+ *
+ * @__NL80211_DCVS_ATTR_LAST : internal use
+ * @NL80211_DCVS_ATTR_MAX : maximum DCVS attributes
+ *
+ */
+enum nl80211_dcvs_attrs {
+	__NL80211_DCVS_ATTR_INVALID,
+
+	NL80211_DCVS_ATTR_ON,
+	NL80211_DCVS_ATTR_OFF,
+	NL80211_DCVS_ATTR_NO_LIMIT,
+
+	/* keep last */
+	__NL80211_DCVS_ATTR_LAST,
+	NL80211_DCVS_ATTR_MAX = __NL80211_DCVS_ATTR_LAST - 1
 };
 
 #endif /* __LINUX_NL80211_H */

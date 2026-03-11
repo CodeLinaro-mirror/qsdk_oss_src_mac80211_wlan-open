@@ -16,6 +16,7 @@
 #include <linux/rhashtable.h>
 #include "dp_stats.h"
 #include "dp_htt_logger.h"
+#include "dp_ext_desc.h"
 
 #define HTT_TCL_META_DATA_PEER_ID_MISSION       GENMASK(15, 3)
 
@@ -61,6 +62,7 @@ struct ath12k_hp_update_timer;
 struct peer_assoc_flowq_params;
 struct peer_assoc_holq_params;
 struct ath12k_dp_vif;
+struct ath12k_dp_link_vif;
 
 #define DP_MON_PURGE_TIMEOUT_MS     100
 #define DP_MON_SERVICE_BUDGET       128
@@ -186,6 +188,8 @@ struct ath12k_pdev_dp {
 	 */
 	struct ath12k_pdev_dp_stats stats;
 	u8 qos_stats;
+	/*Neighbors Peer count per pdev*/
+	int num_nrps;
 };
 
 #define EAPOL_WPA_KEY_INFO_KEY_TYPE		BIT(3)
@@ -219,7 +223,11 @@ enum ath12k_dp_eapol_key_type {
 #define DP_AVG_MPDUS_PER_TID_MAX 128
 #define DP_AVG_MSDUS_PER_MPDU 4
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#define DP_RX_HASH_ENABLE	0 /* Disable hash based Rx steering for IPA*/
+#else
 #define DP_RX_HASH_ENABLE	1 /* Enable hash based Rx steering */
+#endif
 
 #define DP_BA_WIN_SZ_MAX	1024
 
@@ -235,9 +243,23 @@ enum ath12k_dp_eapol_key_type {
 /* TODO: revisit this count during testing */
 #define ATH12K_RX_DESC_COUNT           (8192)
 #define DP_RX_BUFFER_SIZE		1856
+#elif defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
+#define DP_TX_COMP_RING_SIZE           16384
+#define ATH12K_NUM_POOL_TX_DESC        16384
+#define DP_REO2PPE_RING_SIZE    2048
+#define DP_PPE2TCL_RING_SIZE    2048
+#define DP_PPE_WBM2SW_RING_SIZE 8192
+#define DP_RXDMA_BUF_RING_SIZE      4096
+/* TODO: revisit this count during testing */
+#define ATH12K_RX_DESC_COUNT           (8192)
+#define DP_RX_BUFFER_SIZE       1856
 #else
 //#ifdef CONFIG_ATH12K_MEM_PROFILE_DEFAULT TODO Fix the Default profile enablement
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#define DP_TX_COMP_RING_SIZE           8192
+#else
 #define DP_TX_COMP_RING_SIZE           32768
+#endif
 #define ATH12K_NUM_POOL_TX_DESC                32768
 #define DP_REO2PPE_RING_SIZE	16384
 #define DP_PPE2TCL_RING_SIZE	8192
@@ -252,21 +274,33 @@ enum ath12k_dp_eapol_key_type {
 #define ATH12K_DP_PDEV_TX_LIMIT        ATH12K_NUM_POOL_TX_DESC
 
 #define DP_WBM_RELEASE_RING_SIZE	64
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#define DP_TCL_DATA_RING_SIZE		8192
+#else
 #define DP_TCL_DATA_RING_SIZE		2048
+#endif
 #define DP_TX_IDR_SIZE			DP_TX_COMP_RING_SIZE
 #define DP_TCL_CMD_RING_SIZE		32
 #define DP_TCL_STATUS_RING_SIZE		32
+#define DP_TQM_CMD_RING_SIZE		16384
+#define DP_TQM_STATUS_RING_SIZE		2048
 #define DP_REO_DST_RING_SIZE		8192
 #define DP_REO_REINJECT_RING_SIZE	32
 #define DP_REO_EXCEPTION_RING_SIZE	128
 #define DP_REO_CMD_RING_SIZE		256
 #define DP_REO_STATUS_RING_SIZE		2048
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#define DP_RX_MAC_BUF_RING_SIZE		8192
+#else
 #define DP_RX_MAC_BUF_RING_SIZE		2048
+#endif
 #define DP_RXDMA_REFILL_RING_SIZE	2048
 #define DP_RXDMA_ERR_DST_RING_SIZE	1024
 
-#if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined (CPTCFG_ATH12K_MEM_PROFILE_512M)
+#if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined(CPTCFG_ATH12K_MEM_PROFILE_512M)
 #define DP_RX_RELEASE_RING_SIZE		8192
+#elif defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
+#define DP_RX_RELEASE_RING_SIZE     8192
 #else
 #define DP_RX_RELEASE_RING_SIZE		16384
 #endif
@@ -358,7 +392,7 @@ enum ath12k_dp_eapol_key_type {
 #define DP_TX_DESC_FLAG_MCAST	0x2
 #define DP_TX_DESC_FLAG_BCAST	0x4
 
-#define MAX_TQM_RELEASE_REASON 15
+#define MAX_TQM_RELEASE_REASON 29
 #define MAX_FW_TX_STATUS 7
 #define MAX_TCL_RING 4
 #define MAX_TX_COMP_RING 4
@@ -387,7 +421,10 @@ struct ath12k_rx_desc_info {
 struct ath12k_tx_desc_info {
 	struct list_head list;
 	struct sk_buff *skb;
-	struct sk_buff *skb_ext_desc;
+	union {
+		struct sk_buff *skb_ext_desc;
+		struct ath12k_dp_ext_desc *ext_desc;
+	};
 	dma_addr_t paddr;
 	dma_addr_t paddr_ext_desc;
 	u32 desc_id; /* Cookie */
@@ -395,13 +432,14 @@ struct ath12k_tx_desc_info {
 	u16 ext_desc_len;
 	u8 mac_id	: 5,
 	   in_use	: 1,
-	   reserved	: 2;
+	   ext_kmem	: 1,
+	   reserved	: 1;
 	u8 flags	: 3,
-	   reserved1	: 5;
+	   reserved1	: 4,
+	   to_fw	: 1;
 	u8 pool_id;
 };
 
-//#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 struct ath12k_ppeds_tx_desc_info {
 	union {
 		u8 align[64];
@@ -424,7 +462,6 @@ struct ath12k_dp_tx_comp_status {
 	u32 desc_id;
 	int htt_status;
 };
-//#endif
 
 struct ath12k_spt_info {
 	dma_addr_t paddr;
@@ -551,6 +588,19 @@ struct ath12k_dp_arch_ops {
 				 enum ath12k_dp_op_type optype);
 	void (*dp_link_vif_configure)(struct ath12k_dp *dp, struct ath12k_vif *ahvif,
 				      u8 link_id, enum ath12k_dp_op_type optype);
+	int (*get_peer_init_status)(struct ath12k_dp *dp,
+				    struct ath12k_dp_hw *dp_hw,
+				    u8 *addr);
+	enum ath12k_dp_tx_enq_error (*dp_ext_tx)(struct ath12k_pdev_dp *dp_pdev,
+						 struct ath12k_dp_vif *dp_vif,
+						 struct ath12k_dp_link_vif *dp_link_vif,
+						 struct ath12k_tx_desc_info *tx_desc,
+						 struct ath12k_dp_ext_info *info);
+	/* UMAC reset operations */
+	void (*umac_reset_handle_pre_reset)(struct ath12k_base *ab);
+	void (*umac_reset_handle_post_reset_start)(struct ath12k_base *ab);
+	void (*umac_reset_handle_post_reset_complete)(struct ath12k_base *ab);
+	ssize_t (*dump_srng_stats)(struct ath12k_dp *dp, char *buf, int size);
 };
 
 struct ath12k_bp_stats {
@@ -629,6 +679,7 @@ struct ath12k_device_dp_stats {
 	struct ath12k_device_dp_rx_wbm_err_stats wbm_err;
 	u32 tx_mcast[MAX_TCL_RING];
 	u32 tx_unicast[MAX_TCL_RING];
+	u32 tx_mcuc[MAX_TCL_RING];
 	u32 tx_eapol[MAX_TCL_RING];
 	u32 tx_eapol_type[DP_EAPOL_KEY_TYPE_MAX][MAX_TCL_RING];
 	u32 tx_null_frame[MAX_TCL_RING];
@@ -679,6 +730,7 @@ struct ath12k_dp {
 	u8 htt_tgt_ver_minor;
 	struct dp_link_desc_bank link_desc_banks[DP_LINK_DESC_BANKS_MAX];
 	u8 idle_link_rbm;
+	atomic_t tqm_cmd_num;
 	struct dp_srng wbm_idle_ring;
 	struct dp_srng wbm_desc_rel_ring;
 	struct dp_srng reo_reinject_ring;
@@ -693,6 +745,7 @@ struct ath12k_dp {
 	struct wbm_idle_scatter_list scatter_list[DP_IDLE_SCATTER_BUFS_MAX];
 	struct list_head reo_cmd_list;
 	struct list_head reo_cmd_cache_flush_list;
+	struct list_head tqm_cmd_list;
 	u32 reo_cmd_cache_flush_count;
 
 	/* htt_logger_handle */
@@ -704,6 +757,7 @@ struct ath12k_dp {
 	 * - reo_cmd_cache_flush_count
 	 */
 	spinlock_t reo_cmd_lock;
+	spinlock_t tqm_cmd_lock;
 	struct list_head reo_cmd_update_rx_queue_list;
 	/* protects access to below field,
 	 * - reo_cmd_update_rx_queue_list
@@ -727,6 +781,9 @@ struct ath12k_dp {
 	spinlock_t tx_desc_lock[ATH12K_HW_MAX_QUEUES];
 
 	struct dp_rxdma_ring rx_refill_buf_ring;
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	struct ath12k_dp_extn ath12k_dp_extn;
+#endif
 	struct dp_srng rx_mac_buf_ring[MAX_RXDMA_PER_PDEV];
 	struct dp_srng rxdma_err_dst_ring[MAX_RXDMA_PER_PDEV];
 	struct ath12k_reo_q_addr_lut reoq_lut;
@@ -764,8 +821,10 @@ struct ath12k_dp {
 	/*Neighbors Peer list for NAC RSSI*/
 	struct list_head neighbor_peers;
 	int num_nrps;
-	unsigned long service_rings_running;
 	bool stats_disable;
+
+	/* Extension descriptor cache for kmem_cache allocation */
+	struct kmem_cache *ext_cache;
 
 	/* HW link ID position in PPDU_ID */
 	u8 link_id_offset;
@@ -859,21 +918,33 @@ struct ath12k_dp {
  };
 
 enum dp_umac_reset_tx_cmd {
+	ATH12K_UMAC_RESET_TX_CMD_NONE,
 	ATH12K_UMAC_RESET_TX_CMD_TRIGGER_DONE,
 	ATH12K_UMAC_RESET_TX_CMD_PRE_RESET_DONE,
 	ATH12K_UMAC_RESET_TX_CMD_POST_RESET_START_DONE,
 	ATH12K_UMAC_RESET_TX_CMD_POST_RESET_COMPLETE_DONE,
 };
 
+enum ath12k_umac_reset_state {
+	ATH12K_UMAC_RESET_STATE_IDLE = 0,
+	ATH12K_UMAC_RESET_STATE_INIT,
+	ATH12K_UMAC_RESET_STATE_TRIGGER_SENT,
+	ATH12K_UMAC_RESET_STATE_PRE_RESET_START,
+	ATH12K_UMAC_RESET_STATE_PRE_RESET_DONE,
+	ATH12K_UMAC_RESET_STATE_POST_RESET_START,
+	ATH12K_UMAC_RESET_STATE_POST_RESET_DONE,
+	ATH12K_UMAC_RESET_STATE_POST_RESET_COMPLETE,
+	ATH12K_UMAC_RESET_STATE_ERROR,
+	ATH12K_UMAC_RESET_STATE_MAX
+};
+
 struct ath12k_umac_reset_ts {
-	u64 trigger_start;
-	u64 trigger_done;
-	u64 pre_reset_start;
-	u64 pre_reset_done;
-	u64 post_reset_start;
-	u64 post_reset_done;
-	u64 post_reset_complete_start;
-	u64 post_reset_complete_done;
+	/* Interrupt arrival timestamps for each event */
+	u64 event_irq_init_umac_recovery;
+	u64 event_irq_init_target_recovery;
+	u64 event_irq_pre_reset;
+	u64 event_irq_post_reset_start;
+	u64 event_irq_post_reset_complete;
 };
 
 struct ath12k_dp_umac_reset {
@@ -888,7 +959,26 @@ struct ath12k_dp_umac_reset {
 	struct tasklet_struct intr_tq;
 	int irq_num;
 	struct ath12k_umac_reset_ts ts;
-	bool umac_pre_reset_in_prog;
+
+	/* State machine fields */
+	enum ath12k_umac_reset_state current_state;
+	enum ath12k_umac_reset_state prev_state;
+	spinlock_t state_lock; /* Protects state transitions */
+
+	/* State transition tracking */
+	u32 state_transition_count[ATH12K_UMAC_RESET_STATE_MAX];
+	u64 state_entry_time[ATH12K_UMAC_RESET_STATE_MAX];
+
+	/* Error handling */
+	u32 state_error_count;
+	enum ath12k_umac_reset_state error_from_state;
+
+	/* Post-send callback - executed after FW message send completes */
+	void (*post_send_cb)(struct ath12k_base *ab);
+
+	/* SKB queues for deferred cleanup during UMAC reset */
+	struct sk_buff_head tx_skb_queue;
+	struct sk_buff_head rx_skb_queue;
 };
 
 #define HTT_T2H_EXT_STATS_INFO1_DONE	BIT(11)
@@ -1048,9 +1138,9 @@ ath12k_dp_arch_dump_fst_table(struct ath12k_dp *dp, char *buf, int size)
 }
 
 static inline int
-ath12k_dp_arch_rx_flow_fse_cache_operation(struct ath12k_dp *dp,
-					   enum dp_flow_fst_operation op_code,
-					   struct hal_flow_tuple_info *tuple_info)
+ath12k_dp_arch_rx_flow_fse_cache_op(struct ath12k_dp *dp,
+				    enum dp_flow_fst_operation op_code,
+				    struct hal_flow_tuple_info *tuple_info)
 {
 	return dp->arch_ops->rx_flow_fse_cache_operation(dp->ab, op_code, tuple_info);
 }
@@ -1179,6 +1269,16 @@ static inline void ath12k_dp_arch_dp_link_vif_configure(struct ath12k_dp *dp,
 		dp->arch_ops->dp_link_vif_configure(dp, ahvif, link_id, optype);
 }
 
+static inline int ath12k_dp_arch_get_peer_init_status(struct ath12k_dp *dp,
+						      struct ath12k_dp_hw *dp_hw,
+						      u8 *addr)
+{
+	if (dp->arch_ops->get_peer_init_status)
+		return dp->arch_ops->get_peer_init_status(dp, dp_hw, addr);
+
+	return 0;
+}
+
 static inline void ath12k_dp_get_mac_addr(u32 addr_l32, u16 addr_h16, u8 *addr)
 {
 	memcpy(addr, &addr_l32, 4);
@@ -1244,6 +1344,14 @@ ath12k_dp_arch_peer_migrate_reo_cmd(struct ath12k_dp *dp,
 						  chip_id);
 }
 
+static inline enum ath12k_dp_tx_enq_error
+ath12k_dp_ext_tx(struct ath12k_dp *dp, struct ath12k_pdev_dp *dp_pdev,
+		 struct ath12k_dp_vif *vif, struct ath12k_dp_link_vif *link_vif,
+		 struct ath12k_tx_desc_info *tx_desc, struct ath12k_dp_ext_info *info)
+{
+	return dp->arch_ops->dp_ext_tx(dp_pdev, vif, link_vif, tx_desc, info);
+}
+
 int ath12k_dp_htt_connect(struct ath12k_dp *dp);
 void ath12k_dp_partner_cc_init(struct ath12k_base *ab);
 int ath12k_dp_get_pdev_telemetry_stats(struct ath12k_base *ab,
@@ -1269,12 +1377,8 @@ struct ath12k_rx_desc_info *ath12k_dp_get_rx_desc(struct ath12k_dp *dp,
 						  u32 cookie);
 struct ath12k_tx_desc_info *ath12k_dp_get_tx_desc(struct ath12k_dp *dp,
 						  u32 desc_id);
+bool ath12k_dp_umac_reset_in_progress(struct ath12k_base *ab);
 bool ath12k_dp_wmask_compaction_rx_tlv_supported(struct ath12k_base *ab);
-bool ath12k_dp_umac_reset_in_progress(struct ath12k_base *ab);
-void ath12k_umac_reset_notify_target_sync_and_send(struct ath12k_base *ab,
-                                       enum dp_umac_reset_tx_cmd tx_event);
-void ath12k_umac_reset_handle_post_reset_start(struct ath12k_base *ab);
-bool ath12k_dp_umac_reset_in_progress(struct ath12k_base *ab);
 void ath12k_dp_reoq_lut_addr_reset(struct ath12k_dp *dp);
 void ath12k_dp_srng_msi_setup(struct ath12k_base *ab,
 			      struct hal_srng_params *ring_params,
@@ -1284,6 +1388,8 @@ void ath12k_hal_tx_config_rbm_mapping(struct ath12k_base *ab, u8 ring_num,
 size_t ath12k_dp_get_req_entries_from_buf_ring(struct ath12k_base *ab,
 					       struct hal_srng *srng,
 					       struct list_head *list);
+void ath12k_dp_tx_ext_desc_free(struct ath12k_dp *dp,
+				struct ath12k_tx_desc_info *tx_desc);
 int ath12k_dp_init_bank_profiles(struct ath12k_base *ab);
 void ath12k_dp_deinit_bank_profiles(struct ath12k_base *ab);
 int ath12k_dp_cc_init(struct ath12k_base *ab);
@@ -1312,8 +1418,6 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 			     u8 link_id);
 void ath12k_dp_get_pdev_stats(struct ath12k_pdev_dp *pdev,
 			      struct ath12k_telemetry_dp_radio *telemetry_radio);
-void ath12k_dp_clear_link_desc_pool(struct ath12k_dp *dp);
-
 int ath12k_dp_alloc_proto_stats_vif(struct ath12k_dp_vif *dp_vif);
 void ath12k_dp_free_proto_stats_vif(struct ath12k_dp_tx_vif_stats *vif_stats);
 int ath12k_dp_alloc_proto_stats(struct ath12k *ar);
@@ -1335,6 +1439,11 @@ int ath12k_dp_alloc_reoq_lut(struct ath12k_base *ab,
 			     struct ath12k_reo_q_addr_lut *lut);
 void ath12k_dp_update_vdev_search(struct ath12k_vif *ahvif);
 int ath12k_dp_tx_get_bank_profile(struct ath12k_dp *dp, u32 bank_config);
+void ath12k_dp_clear_link_desc_pool(struct ath12k_dp *dp);
+void ath12k_dp_ppeds_tx_desc_cleanup(struct ath12k_base *ab);
+void ath12k_dp_srng_hw_ring_disable(struct ath12k_base *ab);
+void ath12k_dp_umac_tx_desc_cleanup(struct ath12k_base *ab);
+void ath12k_dp_umac_rx_desc_cleanup(struct ath12k_base *ab);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 void ath12k_ppeds_reinject_handler(struct ath12k_base *ab,
 				   struct ath12k_ppeds_tx_desc_info *tx_desc,

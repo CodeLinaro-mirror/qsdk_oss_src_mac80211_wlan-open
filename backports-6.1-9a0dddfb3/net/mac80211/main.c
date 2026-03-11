@@ -5,7 +5,7 @@
  * Copyright 2006-2007	Jiri Benc <jbenc@suse.cz>
  * Copyright 2013-2014  Intel Mobile Communications GmbH
  * Copyright (C) 2017     Intel Deutschland GmbH
- * Copyright (C) 2018-2024 Intel Corporation
+ * Copyright (C) 2018-2026 Intel Corporation
  */
 
 #include <net/mac80211.h>
@@ -501,7 +501,6 @@ static void ieee80211_restart_work(struct work_struct *work)
 	wiphy_lock(local->hw.wiphy);
 	wiphy_work_flush(local->hw.wiphy, NULL);
         flush_work(&local->awgn_detected_work);
-	flush_work(&local->cw_detected_work);
 
 	wiphy_work_cancel(local->hw.wiphy, &local->sched_scan_stopped_work);
 	wiphy_work_cancel(local->hw.wiphy, &local->radar_detected_work);
@@ -941,8 +940,6 @@ struct ieee80211_hw *ieee80211_alloc_hw_nm(size_t priv_data_len,
 			local->wlan_name = "wlan2";
 		else if (!strcmp(requested_name, PHY_6GHZ))
 			local->wlan_name = "wlan3";
-		else if (!strcmp(requested_name, PHY_SCAN_RADIO))
-			local->wlan_name = "scan0";
 		else
 			local->wlan_name = "wlan%d";
 	} else
@@ -1027,8 +1024,6 @@ struct ieee80211_hw *ieee80211_alloc_hw_nm(size_t priv_data_len,
 			ieee80211_dfs_radar_detected_work);
 	INIT_WORK(&local->awgn_detected_work,
 		  ieee80211_awgn_detected_work);
-	INIT_WORK(&local->cw_detected_work,
-		  ieee80211_cw_detected_work);
 	INIT_LIST_HEAD(&local->awgn_info_list);
 	INIT_LIST_HEAD(&local->cw_info_list);
 
@@ -1576,11 +1571,12 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
 				3 + sizeof(struct ieee80211_eht_cap_elem) +
 				sizeof(struct ieee80211_eht_mcs_nss_supp) +
 				IEEE80211_EHT_PPE_THRES_MAX_LEN;
-
-		if (supp_uhr)
-			local->scan_ies_len +=
-				3 + sizeof(struct ieee80211_uhr_cap_elem);
 	}
+
+	if (supp_uhr)
+		local->scan_ies_len +=
+			3 + sizeof(struct ieee80211_uhr_cap) +
+			sizeof(struct ieee80211_uhr_cap_phy);
 
 	if (!local->ops->hw_scan) {
 		/* For hw_scan, driver needs to set these up. */
@@ -1844,7 +1840,6 @@ void ieee80211_unregister_hw(struct ieee80211_hw *hw)
 	rtnl_unlock();
 
 	flush_work(&local->awgn_detected_work);
-	flush_work(&local->cw_detected_work);
 	cancel_work_sync(&local->restart_work);
 
 	on_each_cpu((void (*)(void *))ieee80211_clear_tx_pending, local, 1);

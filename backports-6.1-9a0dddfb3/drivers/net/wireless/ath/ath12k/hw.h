@@ -206,6 +206,7 @@ struct ath12k_hw_ring_mask {
 	u8 reo_status[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
 	u8 host2rxdma[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
 	u8 tx_mon_dest[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
+	u8 tx_mon_buff[ATH12K_EXT_IRQ_DP_NUM_VECTORS]; /*host2txmon buff ring*/
 	u8 host2rxmon[ATH12K_EXT_IRQ_GRP_NUM_MAX];
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	u8 ppe2tcl[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
@@ -215,6 +216,7 @@ struct ath12k_hw_ring_mask {
 	u8 umac_dp_reset[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
 	u8 tx_exception[ATH12K_EXT_IRQ_GRP_NUM_MAX];
 	u8 tcl_status[ATH12K_EXT_IRQ_GRP_NUM_MAX];
+	u8 tqm_status[ATH12K_EXT_IRQ_GRP_NUM_MAX];
 };
 
 enum ath12k_m3_fw_loaders {
@@ -278,6 +280,7 @@ struct ath12k_hw_params {
 	bool supports_shadow_regs:1;
 	bool supports_aspm:1;
 	bool current_cc_support:1;
+	bool supports_tx_monitor:1;
 
 	u32 num_tcl_banks;
 	u32 max_tx_ring;
@@ -334,6 +337,7 @@ struct ath12k_hw_params {
 	u32 cfr_num_stream_bufs;
 	u32 cfr_stream_buf_size;
 	bool mlo_3_link_tx_support;
+	bool quad_ring_monitor_support;
 	const char *board_magic;
 };
 
@@ -347,13 +351,18 @@ struct ath12k_hw_ops {
 	void (*fill_cfr_hdr_info)(struct ath12k *ar,
 				  struct ath12k_csi_cfr_header *header,
 				  struct ath12k_cfr_peer_tx_param *params);
+	bool (*hw_link_id_required_in_mgmt_send)(struct ath12k_base *ab);
+	int (*mgmt_rxdma_ring_sel_config)(struct ath12k_base *ab);
+	void (*rx_peer_ba_config)(struct ath12k_base *ab, u8 tid, u32 *ba_win_size,
+				  u16 *ssn);
+	bool (*rx_peer_tid_skip_pn_replay)(struct ath12k_base *ab, u8 tid);
 };
 
 static inline
 int ath12k_hw_get_mac_from_pdev_id(const struct ath12k_hw_params *hw,
 				   int pdev_idx)
 {
-	if (hw->hw_ops->get_hw_mac_from_pdev_id)
+	if (hw->hw_ops && hw->hw_ops->get_hw_mac_from_pdev_id)
 		return hw->hw_ops->get_hw_mac_from_pdev_id(pdev_idx);
 
 	return 0;

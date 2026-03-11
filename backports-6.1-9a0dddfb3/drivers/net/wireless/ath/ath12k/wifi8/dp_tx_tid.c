@@ -7,6 +7,12 @@
 #include "dp_pool.h"
 #include "../dp_cmn.h"
 #include "dp.h"
+#include "../mac.h"
+#include "../ini.h"
+#include "../dp_tx.h"
+
+#define ATH12K_FRAME_HEADER_SIZE 24
+#define ATH12K_QOS_FRAME_HEADER_SIZE 26
 
 struct ath12k_dp_mpdu_q_info
 *ath12k_alloc_peer_tid_mpduq(struct ath12k_dp_hw_group *dp_hw_grp,
@@ -36,6 +42,113 @@ struct ath12k_dp_mpdu_q_info
 	return sw_mpduq_ptr;
 }
 
+static inline
+bool ath12k_tx_get_he_mac_cap(struct ath12k_dp_hw_group *dp_hw_grp,
+			      struct ath12k_dp_link_peer *link_peer)
+{
+	struct ath12k_base *ab = ath12k_dp_get_ab_from_dp_hw_group(dp_hw_grp);
+	struct ath12k_link_sta *arsta;
+	struct ieee80211_link_sta *link_sta;
+	const struct ieee80211_sta_he_cap *he_cap;
+	bool ht_he_cap = false;
+
+	arsta = ath12k_peer_get_link_sta(ab, link_peer);
+	if (!arsta || !arsta->arvif) {
+		ath12k_warn(ab, "arsta or arvif is NULL");
+		return false;
+	}
+	link_sta = ath12k_mac_get_link_sta(arsta);
+	if (!link_sta) {
+		ath12k_warn(ab, "link sta is NULL");
+		return false;
+	}
+	he_cap = &link_sta->he_cap;
+	if (!he_cap) {
+		ath12k_warn(ab, "he_cap is NULL");
+		return false;
+	}
+	if ((he_cap->he_cap_elem.mac_cap_info[0] & 0x1u) != 0)
+		ht_he_cap = true;
+
+	return ht_he_cap;
+}
+
+static inline
+u32 ath12k_wifi8_dp_tx_get_he_header_length(struct ath12k_dp_hw_group *dp_hw_grp,
+					    struct ath12k_dp_peer *peer, u8 tid_num)
+{
+	bool ht_he_cap;
+	struct ath12k_dp_link_peer *link_peer = NULL;
+	struct ath12k_base *ab = ath12k_dp_get_ab_from_dp_hw_group(dp_hw_grp);
+	struct ath12k_link_sta *arsta;
+	int i;
+	u32 header_size = 0;
+	u32 rep_ul_resp;
+	struct ath12k *ar;
+
+	if (!peer || !peer->sta)
+		return 0;
+
+	if (tid_num >= NON_QOS_TID)
+		return 0;
+
+	rcu_read_lock();
+	for (i = 0; i < ATH12K_NUM_MAX_LINKS; i++) {
+		link_peer = rcu_dereference(peer->link_peers[i]);
+		if (link_peer)
+			break;
+	}
+
+	arsta = ath12k_peer_get_link_sta(ab, link_peer);
+	if (!arsta || !arsta->arvif || !arsta->arvif->ahvif ||
+	    !arsta->arvif->ahvif->vif) {
+		rcu_read_unlock();
+		return 0;
+	}
+
+	ht_he_cap = ath12k_tx_get_he_mac_cap(dp_hw_grp, link_peer);
+	ar = arsta->arvif->ar;
+	rep_ul_resp = ((ath12k_cfg_get(ab, ATH12K_CFG_REP_UL_RESP) >>
+			ar->pdev->pdev_id) & 01);
+	//do we need STA check if we are checking sta_bss_peer
+	if (arsta->arvif->ahvif->vif->type == NL80211_IFTYPE_STATION &&
+	    peer->is_sta_bss_peer && peer->sta->wme &&
+	    rep_ul_resp &&
+	    ht_he_cap)
+			header_size = 4;
+
+	rcu_read_unlock();
+	return header_size;
+}
+
+static inline
+u32 ath12k_wifi8_dp_tx_get_header_length(struct ath12k_dp_hw_group *dp_hw_grp,
+					 struct ath12k_dp_peer *peer,
+					 struct hal_tx_mpdu_queue_head_info *ti,
+					 u8 tid_num)
+{
+	u32 header_len = 0;
+
+	if (ti->encap_type == ATH12K_HW_TXRX_RAW || ti->is_mgmtq) {
+		header_len = 0;
+		return header_len;
+	}
+
+	/* Set header length based on QoS vs non-QoS data TID */
+	if (ti->tid > MAX_VALID_DATA_TID)
+		header_len += ATH12K_FRAME_HEADER_SIZE;
+	else
+		header_len += ATH12K_QOS_FRAME_HEADER_SIZE;
+
+	if (peer->is_sta_bss_peer_4addr ||
+	    (peer->is_11s_mesh_peer && !peer->is_vdev_peer))
+		header_len += ETH_ALEN;
+
+	header_len += ath12k_wifi8_dp_tx_get_he_header_length(dp_hw_grp,
+							      peer, tid_num);
+	return header_len;
+}
+
 int ath12k_tx_send_mpduq_init(struct ath12k_dp_hw_group *dp_hw_grp,
 			      struct ath12k_dp_peer *peer,
 			      struct ath12k_dp_vif *dp_vif,
@@ -46,12 +159,14 @@ int ath12k_tx_send_mpduq_init(struct ath12k_dp_hw_group *dp_hw_grp,
 	struct ath12k_sta *ahsta;
 	struct ath12k_dp_link_peer *link_peer;
 	u8 hw_link_id;
+	u8 assoc_link_id;
 	int i;
 
 	ti.paddr = sw_mpduq_ptr->mpdu_q_paddr;
 	ti.queue_number = (sw_mpduq_ptr->queue_number & 0xFFFFFF);
 	ti.peer_id = peer->peer_id;
 	if (tid_num ==  MLO_MGMT_TID) {
+		ti.is_mgmtq = true;
 		ti.tid = TQM_NON_DATA_TID;
 	} else {
 		/*
@@ -63,12 +178,19 @@ int ath12k_tx_send_mpduq_init(struct ath12k_dp_hw_group *dp_hw_grp,
 	ti.encap_type = dp_vif->tx_encap_type;
 	//TBD: ti.wapi
 	ti.assoc_link_id = ATH12K_INVALID_LINK_ID;
-	ti.link_id1 = ATH12K_INVALID_LINK_ID;
+	ti.link_id1 = ATH12K_INVALID_LINK_ID - 1;
 	ti.link_id2 = ATH12K_INVALID_LINK_ID;
 	if (peer->sta) {
 		rcu_read_lock();
 		ahsta = ath12k_sta_to_ahsta(peer->sta);
-		ti.assoc_link_id = ahsta->assoc_link_id;
+		assoc_link_id = peer->sta->mlo ?
+				ahsta->assoc_link_id :
+				ahsta->deflink.link_id;
+		ti.assoc_link_id = ath12k_dp_get_hw_link_id(peer, assoc_link_id);
+		if (ti.assoc_link_id == ATH12K_INVALID_HW_LINKID) {
+			rcu_read_unlock();
+			return -EINVAL;
+		}
 		for (i = 0; i < ATH12K_NUM_MAX_LINKS; i++) {
 			link_peer = rcu_dereference(peer->link_peers[i]);
 			if (!link_peer)
@@ -77,7 +199,7 @@ int ath12k_tx_send_mpduq_init(struct ath12k_dp_hw_group *dp_hw_grp,
 			hw_link_id = link_peer->hw_link_id;
 			if (hw_link_id == ti.assoc_link_id)
 				continue;
-			if (ti.link_id1 == ATH12K_INVALID_LINK_ID) {
+			if (ti.link_id1 == (ATH12K_INVALID_LINK_ID - 1)) {
 				ti.link_id1 = hw_link_id;
 				continue;
 			}
@@ -90,6 +212,8 @@ int ath12k_tx_send_mpduq_init(struct ath12k_dp_hw_group *dp_hw_grp,
 	}
 	ti.mlo = peer->is_mlo;
 	ti.pn_dma_addr = sw_mpduq_ptr->pn_addr;
+	ti.header_len = ath12k_wifi8_dp_tx_get_header_length(dp_hw_grp, peer,
+							     &ti, tid_num);
 
 	return ath12k_wifi8_hal_tx_mpdu_queue_setup(dp_hw_grp,
 						    sw_mpduq_ptr->mpduq_id,

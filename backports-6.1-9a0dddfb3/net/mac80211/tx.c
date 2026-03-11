@@ -47,6 +47,10 @@ static void ieee80211_8023_xmit(struct ieee80211_sub_if_data *sdata,
 static inline void ieee80211_tx_stats(struct net_device *dev, u32 len)
 {
 	struct pcpu_sw_netstats *tstats = this_cpu_ptr(netdev_tstats(dev));
+	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+
+	if (sdata->vif.offload_flags & IEEE80211_OFFLOAD_TXRX_STATS)
+		return;
 
 	u64_stats_update_begin(&tstats->syncp);
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
@@ -59,6 +63,28 @@ static inline void ieee80211_tx_stats(struct net_device *dev, u32 len)
 	u64_stats_update_end(&tstats->syncp);
 }
 /* misc utils */
+
+static void ieee80211_update_tx_stats(struct sta_info *sta,
+				      struct sk_buff *skb, u16 ac,
+				      u8 tid)
+{
+	struct link_sta_info *deflink = &sta->deflink;
+
+	/* When driver TXRX stats offload enabled, stop accounting it in here*/
+	if (sta->sdata->vif.offload_flags & IEEE80211_OFFLOAD_TXRX_STATS)
+		return;
+
+	if (skb_shinfo(skb)->gso_size)
+		deflink->tx_stats.msdu[tid] +=
+			DIV_ROUND_UP(skb->len, skb_shinfo(skb)->gso_size);
+	else
+		deflink->tx_stats.msdu[tid]++;
+
+	if (ac < IEEE80211_NUM_ACS) {
+		deflink->tx_stats.bytes[ac] += skb->len;
+		deflink->tx_stats.packets[ac]++;
+	}
+}
 
 static inline void ieee80211_tid_classifier(struct sk_buff *skb,
 					    struct ieee80211_sub_if_data *sdata,
@@ -969,8 +995,7 @@ ieee80211_tx_h_sequence(struct ieee80211_tx_data *tx)
 		/* for pure STA mode without beacons, we can do it */
 		hdr->seq_ctrl = cpu_to_le16(tx->sdata->sequence_number);
 		tx->sdata->sequence_number += 0x10;
-		tid = IEEE80211_NUM_TIDS;
-		goto tx_stats;
+		return TX_CONTINUE;
 	}
 
 	/*
@@ -986,9 +1011,6 @@ ieee80211_tx_h_sequence(struct ieee80211_tx_data *tx)
 
 	hdr->seq_ctrl = ieee80211_tx_next_seq(tx->sta, tid);
 
-tx_stats:
-	if (tx->sta && !tx->sta->sta.valid_links)
-		tx->sta->deflink.tx_stats.msdu[tid]++;
 	return TX_CONTINUE;
 }
 
@@ -1136,9 +1158,10 @@ static ieee80211_tx_result debug_noinline
 ieee80211_tx_h_stats(struct ieee80211_tx_data *tx)
 {
 	struct sk_buff *skb;
-	int ac = -1;
+	u16 ac;
 	struct ieee80211_hdr *hdr;
 	bool nss_offload;
+	int tid;
 
 	if (!tx->sta)
 		return TX_CONTINUE;
@@ -1149,17 +1172,15 @@ ieee80211_tx_h_stats(struct ieee80211_tx_data *tx)
 		/* Do not increment stats for data packets if NSS offload is enabled.
 		 * As we use the stats from NSS, this will be a duplication
 		 */
+		hdr = (void *)skb->data;
 		if (nss_offload) {
-			hdr = (void *) skb->data;
 			if (ieee80211_is_data(hdr->frame_control))
 				continue;
 		}
 		if (!tx->sta->sta.valid_links) {
 			ac = skb_get_queue_mapping(skb);
-			if (ac >= 0) {
-				tx->sta->deflink.tx_stats.bytes[ac] += skb->len;
-				tx->sta->deflink.tx_stats.packets[ac]++;
-			}
+			tid = ieee80211_get_tid(hdr);
+			ieee80211_update_tx_stats(tx->sta, skb, ac, tid);
 		}
 	}
 
@@ -3839,7 +3860,6 @@ ieee80211_xmit_fast_finish(struct ieee80211_sub_if_data *sdata,
 
 	if (key)
 		info->control.hw_key = &key->conf;
-
 	ieee80211_tx_stats(skb->dev, skb->len);
 
 	if (hdr->frame_control & cpu_to_le16(IEEE80211_STYPE_QOS_DATA)) {
@@ -3851,23 +3871,13 @@ ieee80211_xmit_fast_finish(struct ieee80211_sub_if_data *sdata,
 		sdata->sequence_number += 0x10;
 	}
 
-	if (!sta->sta.valid_links) {
-		if (skb_shinfo(skb)->gso_size)
-			sta->deflink.tx_stats.msdu[tid] +=
-				DIV_ROUND_UP(skb->len, skb_shinfo(skb)->gso_size);
-		else
-			sta->deflink.tx_stats.msdu[tid]++;
-	}
-
 	info->hw_queue = sdata->vif.hw_queue[skb_get_queue_mapping(skb)];
 
 	/* statistics normally done by ieee80211_tx_h_stats (but that
 	 * has to consider fragmentation, so is more complex)
 	 */
-	if (!sta->sta.valid_links) {
-		sta->deflink.tx_stats.bytes[skb_get_queue_mapping(skb)] += skb->len;
-		sta->deflink.tx_stats.packets[skb_get_queue_mapping(skb)]++;
-	}
+	if (!sta->sta.valid_links)
+		ieee80211_update_tx_stats(sta, skb, skb_get_queue_mapping(skb), tid);
 
 	if (pn_offs) {
 		u64 pn;
@@ -5153,10 +5163,8 @@ static void ieee80211_8023_xmit(struct ieee80211_sub_if_data *sdata,
 
 	ieee80211_tx_stats(dev, len);
 	if (!ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD) && sta) {
-		if (!sta->sta.valid_links) {
-			sta->deflink.tx_stats.packets[queue] += skbs;
-			sta->deflink.tx_stats.bytes[queue] += len;
-		}
+		if (!sta->sta.valid_links)
+			ieee80211_update_tx_stats(sta, skb, queue, tid);
 	}
 
 	ieee80211_tpt_led_trig_tx(local, len);
@@ -5184,6 +5192,7 @@ void ieee80211_8023_xmit_ap(struct ieee80211_sub_if_data *sdata,
 	unsigned long flags;
 	int q;
 	u16 q_map;
+	int tid;
 	struct ethhdr *ehdr = (struct ethhdr *)skb->data;
 	unsigned char *ra = ehdr->h_dest;
 	bool multicast = is_multicast_ether_addr(ra);
@@ -5226,8 +5235,9 @@ void ieee80211_8023_xmit_ap(struct ieee80211_sub_if_data *sdata,
 
 	if (sta) {
 		if (!sta->sta.valid_links) {
-			sta->deflink.tx_stats.packets[q_map]++;
-			sta->deflink.tx_stats.bytes[q_map] += skb->len;
+			skb->priority = cfg80211_classify8021d(skb, NULL);
+			tid = skb->priority & IEEE80211_QOS_CTL_TAG1D_MASK;
+			ieee80211_update_tx_stats(sta, skb, q_map, tid);
 		}
 		atomic_inc(&sta->tx_netif_pkts);
 	}
@@ -6142,16 +6152,14 @@ ieee80211_beacon_get_ap_ema_list(struct ieee80211_hw *hw,
 				 struct ieee80211_chanctx_conf *chanctx_conf)
 {
 	struct ieee80211_ema_beacons *ema = NULL;
+	u8 cnt = (beacon->mbssid_ies && beacon->mbssid_ies->cnt) ?
+			beacon->mbssid_ies->cnt : 1;
 
-	if (!beacon->mbssid_ies || !beacon->mbssid_ies->cnt)
-		return NULL;
-
-	ema = kzalloc(struct_size(ema, bcn, beacon->mbssid_ies->cnt),
-		      GFP_ATOMIC);
+	ema = kzalloc(struct_size(ema, bcn, cnt), GFP_ATOMIC);
 	if (!ema)
 		return NULL;
 
-	for (ema->cnt = 0; ema->cnt < beacon->mbssid_ies->cnt; ema->cnt++) {
+	for (ema->cnt = 0; ema->cnt < cnt; ema->cnt++) {
 		ema->bcn[ema->cnt].skb =
 			ieee80211_beacon_get_ap(hw, vif, link,
 						&ema->bcn[ema->cnt].offs,
@@ -6161,7 +6169,7 @@ ieee80211_beacon_get_ap_ema_list(struct ieee80211_hw *hw,
 			break;
 	}
 
-	if (ema->cnt == beacon->mbssid_ies->cnt)
+	if (ema->cnt == cnt)
 		return ema;
 
 	ieee80211_beacon_free_ema_list(ema);

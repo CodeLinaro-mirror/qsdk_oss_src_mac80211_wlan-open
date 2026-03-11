@@ -12,10 +12,6 @@
 #define HAL_TLV_HDR_LEN		GENMASK(25, 10)
 #define HAL_TLV_USR_ID		GENMASK(31, 26)
 
-#define HAL_TLV_64_HDR_TAG		GENMASK(9, 1)
-#define HAL_TLV_64_HDR_LEN		GENMASK(21, 10)
-#define HAL_TLV_64_USR_ID		GENMASK(31, 26)
-
 enum hal_tlv_tag {
 	HAL_MACTX_CBF_START					= 0 /* 0x0 */,
 	HAL_PHYRX_DATA						= 1 /* 0x1 */,
@@ -228,7 +224,7 @@ enum hal_tlv_tag {
 	HAL_MACTX_COEX_PHY_CTRL					= 224 /* 0xe0 */,
 	HAL_COEX_STATUS_BROADCAST				= 225 /* 0xe1 */,
 	HAL_RESPONSE_START_STATUS				= 226 /* 0xe2 */,
-	HAL_RESPONSEND_STATUS					= 227 /* 0xe3 */,
+	HAL_RESPONSEND_END_STATUS				= 227 /* 0xe3 */,
 	HAL_CRYPTO_STATUS					= 228 /* 0xe4 */,
 	HAL_RECEIVED_TRIGGER_INFO				= 229 /* 0xe5 */,
 	HAL_COEX_TX_STOP_CTRL					= 230 /* 0xe6 */,
@@ -396,8 +392,8 @@ enum hal_tlv_tag {
 	HAL_SCHEDULER_STATUS_WRAPPER				= 395 /* 0x18b */,
 	HAL_MPDU_INFO_6X					= 396 /* 0x18c */,
 	HAL_MACTX_11AZ_USER_DESC_PER_USER			= 397 /* 0x18d */,
-	HAL_MACTX_U_SIGHT_SU_MU					= 398 /* 0x18e */,
-	HAL_MACTX_U_SIGHT_TB					= 399 /* 0x18f */,
+	HAL_MACTX_U_SIG_EHT_SU_MU				= 398 /* 0x18e */,
+	HAL_MACTX_U_SIG_EHT_TB					= 399 /* 0x18f */,
 	HAL_PHYRX_U_SIGHT_SU_MU					= 403 /* 0x193 */,
 	HAL_PHYRX_U_SIGHT_TB					= 404 /* 0x194 */,
 	HAL_MACRX_LMR_READ_REQUEST				= 408 /* 0x198 */,
@@ -435,7 +431,7 @@ enum hal_tlv_tag {
 	HAL_MPDU_INFO_1K_BITMAP					= 441 /* 0x1b9 */,
 	HAL_MON_BUF_ADDR					= 442 /* 0x1ba */,
 	HAL_TX_FRAG_STATE					= 443 /* 0x1bb */,
-	HAL_MACTXHT_SIG_USR_OFDMA				= 446 /* 0x1be */,
+	HAL_MACTX_EHT_SIG_USR_OFDMA				= 446 /* 0x1be */,
 	HAL_PHYRXHT_SIG_CMN_PUNC				= 448 /* 0x1c0 */,
 	HAL_PHYRXHT_SIG_CMN_OFDMA				= 450 /* 0x1c2 */,
 	HAL_PHYRXHT_SIG_USR_OFDMA				= 454 /* 0x1c6 */,
@@ -446,8 +442,8 @@ enum hal_tlv_tag {
 	HAL_PHYRX_11AZ_INTEGRITY_DATA				= 461 /* 0x1cd */,
 	HAL_PHYTX_LOCATION					= 462 /* 0x1ce */,
 	HAL_PHYTX_11AZ_INTEGRITY_DATA				= 463 /* 0x1cf */,
-	HAL_MACTXHT_SIG_USR_SU					= 466 /* 0x1d2 */,
-	HAL_MACTXHT_SIG_USR_MU_MIMO				= 467 /* 0x1d3 */,
+	HAL_MACTX_EHT_SIG_USR_SU				= 466 /* 0x1d2 */,
+	HAL_MACTX_EHT_SIG_USR_MU_MIMO				= 467 /* 0x1d3 */,
 	HAL_PHYRXHT_SIG_USR_SU					= 468 /* 0x1d4 */,
 	HAL_PHYRXHT_SIG_USR_MU_MIMO				= 469 /* 0x1d5 */,
 	HAL_PHYRX_GENERIC_U_SIG					= 470 /* 0x1d6 */,
@@ -1808,13 +1804,6 @@ struct hal_wbm_release_ring {
 
 struct hal_wbm_buffer_ring {
 	struct ath12k_buffer_addr buf_addr_info;
-};
-
-enum hal_mon_end_reason {
-	HAL_MON_STATUS_BUFFER_FULL,
-	HAL_MON_FLUSH_DETECTED,
-	HAL_MON_END_OF_PPDU,
-	HAL_MON_PPDU_TRUNCATED,
 };
 
 #define HAL_SW_MONITOR_RING_INFO0_RXDMA_PUSH_REASON	GENMASK(1, 0)

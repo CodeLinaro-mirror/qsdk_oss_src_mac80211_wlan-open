@@ -6,7 +6,7 @@
  * Copyright 2007	Johannes Berg <johannes@sipsolutions.net>
  * Copyright 2013-2014  Intel Mobile Communications GmbH
  * Copyright (C) 2015-2017	Intel Deutschland GmbH
- * Copyright (C) 2018-2025 Intel Corporation
+ * Copyright (C) 2018-2026 Intel Corporation
  *
  * utilities for mac80211
  */
@@ -47,7 +47,7 @@ struct ieee80211_hw *wiphy_to_ieee80211_hw(struct wiphy *wiphy)
 EXPORT_SYMBOL(wiphy_to_ieee80211_hw);
 
 const struct ieee80211_conn_settings ieee80211_conn_settings_unlimited = {
-	.mode = IEEE80211_CONN_MODE_UHR,
+	.mode = IEEE80211_CONN_MODE_EHT,
 	.bw_limit = IEEE80211_CONN_BW_LIMIT_320,
 };
 
@@ -1068,23 +1068,6 @@ void ieee80211_awgn_detected(struct ieee80211_hw *hw, u32 chan_bw_interference_b
 }
 EXPORT_SYMBOL(ieee80211_awgn_detected);
 
-void ieee80211_cw_detected(struct ieee80211_hw *hw, struct ieee80211_channel *cw_channel)
-{
-	struct ieee80211_local *local = hw_to_local(hw);
-	struct channel_cw_info *cw_info;
-
-	cw_info = kzalloc(sizeof(*cw_info), GFP_ATOMIC);
-	if (!cw_info)
-		return;
-
-	INIT_LIST_HEAD(&cw_info->list);
-	cw_info->cw_channel = cw_channel;
-
-	list_add_tail(&cw_info->list, &local->cw_info_list);
-	schedule_work(&local->cw_detected_work);
-}
-EXPORT_SYMBOL(ieee80211_cw_detected);
-
 /*
  * Nothing should have been stuffed into the workqueue during
  * the suspend->resume cycle. Since we can't check each caller
@@ -1576,18 +1559,16 @@ static int ieee80211_put_preq_ies_band(struct sk_buff *skb,
 			return err;
 	}
 
+	err = ieee80211_put_he_6ghz_cap(skb, sdata, IEEE80211_SMPS_OFF);
+	if (err)
+		return err;
+
 	if (cfg80211_any_usable_channels(local->hw.wiphy, BIT(sband->band),
-					 IEEE80211_CHAN_NO_HE |
-					 IEEE80211_CHAN_NO_EHT |
 					 IEEE80211_CHAN_NO_UHR)) {
 		err = ieee80211_put_uhr_cap(skb, sdata, sband);
 		if (err)
 			return err;
 	}
-
-	err = ieee80211_put_he_6ghz_cap(skb, sdata, IEEE80211_SMPS_OFF);
-	if (err)
-		return err;
 
 	/*
 	 * If adding more here, adjust code in main.c
@@ -2898,34 +2879,53 @@ u8 *ieee80211_ie_build_ht_oper(u8 *pos, struct ieee80211_sta_ht_cap *ht_cap,
 u8 *ieee80211_ie_build_wide_bw_cs(u8 *pos,
 				  const struct cfg80211_chan_def *chandef)
 {
-	*pos++ = WLAN_EID_WIDE_BW_CHANNEL_SWITCH;	/* EID */
-	*pos++ = 3;					/* IE length */
-	/* New channel width */
-	switch (chandef->width) {
+	struct cfg80211_chan_def tmp_chandef = *chandef;
+	u8 center_seg0 = 0, center_seg1 = 0;
+
+	if (tmp_chandef.width > NL80211_CHAN_WIDTH_160)
+		ieee80211_chandef_downgrade(&tmp_chandef, NULL);
+
+	center_seg0 = ieee80211_frequency_to_channel(tmp_chandef.center_freq1);
+	if (tmp_chandef.center_freq2)
+		center_seg1 = ieee80211_frequency_to_channel(tmp_chandef.center_freq2);
+
+	*pos++ = WLAN_EID_WIDE_BW_CHANNEL_SWITCH;
+	*pos++ = 3;
+
+	/* bandwidth: 0: 40, 1: 80, 160, 80+80, 4 to 255 reserved as per
+	 * IEEE Std 802.11-2024, 9.4.2.157 and Table 9-316 (VHT Operation
+	 * Information subfields).
+	 *
+	 * Update the CCFS0 and CCFS1 values in the element based on
+	 * IEEE Std 802.11-2024, Table 9-316 (VHT Operation
+	 * Information subfields).
+	 */
+	switch (tmp_chandef.width) {
+	case NL80211_CHAN_WIDTH_160:
+		/* CCFS1 - The channel center frequency index of the 160 MHz channel. */
+		center_seg1 = center_seg0;
+		/* CCFS0 - The channel center frequency index of the 80 MHz
+		 * channel segment that contains the primary channel.
+		 */
+		if (tmp_chandef.chan->center_freq < tmp_chandef.center_freq1)
+			center_seg0 -= 8;
+		else
+			center_seg0 += 8;
+
+		fallthrough;
+	case NL80211_CHAN_WIDTH_80P80:
 	case NL80211_CHAN_WIDTH_80:
 		*pos++ = IEEE80211_VHT_CHANWIDTH_80MHZ;
 		break;
-	case NL80211_CHAN_WIDTH_160:
-		*pos++ = IEEE80211_VHT_CHANWIDTH_160MHZ;
-		break;
-	case NL80211_CHAN_WIDTH_80P80:
-		*pos++ = IEEE80211_VHT_CHANWIDTH_80P80MHZ;
-		break;
-	case NL80211_CHAN_WIDTH_320:
-		/* The behavior is not defined for 320 MHz channels */
-		WARN_ON(1);
-		fallthrough;
 	default:
+		/* Wide Bandwidth Channel Switch element is present only
+		 * when the new channel width is wider than 20 MHz.
+		 */
 		*pos++ = IEEE80211_VHT_CHANWIDTH_USE_HT;
 	}
 
-	/* new center frequency segment 0 */
-	*pos++ = ieee80211_frequency_to_channel(chandef->center_freq1);
-	/* new center frequency segment 1 */
-	if (chandef->center_freq2)
-		*pos++ = ieee80211_frequency_to_channel(chandef->center_freq2);
-	else
-		*pos++ = 0;
+	*pos++ = center_seg0;
+	*pos++ = center_seg1;
 
 	return pos;
 }
@@ -4052,40 +4052,6 @@ static void ieee80211_awgn_detected_processing(struct ieee80211_local *local,
 				    interference_bitmap);
 }
 
-static void ieee80211_cw_detected_processing(struct ieee80211_local *local,
-					     struct ieee80211_channel *cw_channel)
-{
-	struct cfg80211_chan_def chandef = local->hw.conf.chandef;
-	struct cfg80211_chan_def *cw_chandef = NULL;
-	struct ieee80211_chanctx *ctx;
-	int num_chanctx = 0;
-
-	list_for_each_entry(ctx, &local->chanctx_list, list) {
-		if (ctx->replace_state == IEEE80211_CHANCTX_REPLACES_OTHER)
-			continue;
-
-		num_chanctx++;
-		chandef = ctx->conf.def;
-
-		if (cw_channel &&
-		    (chandef.chan == cw_channel))
-			cw_chandef = &ctx->conf.def;
-	}
-
-	if (num_chanctx > 1) {
-		if (local->hw.wiphy->flags & WIPHY_FLAG_SUPPORTS_MLO) {
-			if (WARN_ON(!cw_chandef))
-				return;
-			cfg80211_cw_event(local->hw.wiphy, cw_chandef, GFP_KERNEL);
-		} else {
-			/* multi-channel is not supported */
-			WARN_ON_ONCE(1);
-		}
-	} else {
-		cfg80211_cw_event(local->hw.wiphy, &chandef, GFP_KERNEL);
-	}
-}
-
 void ieee80211_awgn_detected_work(struct work_struct *work)
 {
 	struct ieee80211_local *local =
@@ -4106,26 +4072,6 @@ void ieee80211_awgn_detected_work(struct work_struct *work)
 
 		list_del(&awgn_info->list);
 		kfree(awgn_info);
-	}
-}
-
-void ieee80211_cw_detected_work(struct work_struct *work)
-{
-	struct ieee80211_local *local =
-		container_of(work, struct ieee80211_local, cw_detected_work);
-	struct channel_cw_info *cw_info, *temp;
-	struct ieee80211_channel *cw_channel;
-
-	if (WARN_ON(list_empty(&local->cw_info_list)))
-		return;
-
-	list_for_each_entry_safe(cw_info, temp, &local->cw_info_list, list) {
-		cw_channel = cw_info->cw_channel;
-
-		ieee80211_cw_detected_processing(local, cw_channel);
-
-		list_del(&cw_info->list);
-		kfree(cw_info);
 	}
 }
 
@@ -4410,7 +4356,8 @@ int ieee80211_send_action_csa(struct ieee80211_sub_if_data *sdata,
 
 	if (csa_settings->chandef.width == NL80211_CHAN_WIDTH_80 ||
 	    csa_settings->chandef.width == NL80211_CHAN_WIDTH_80P80 ||
-	    csa_settings->chandef.width == NL80211_CHAN_WIDTH_160) {
+	    csa_settings->chandef.width == NL80211_CHAN_WIDTH_160 ||
+	    csa_settings->chandef.width == NL80211_CHAN_WIDTH_320) {
 		skb_put(skb, 5);
 		pos = ieee80211_ie_build_wide_bw_cs(pos, &csa_settings->chandef);
 	}
@@ -5083,27 +5030,25 @@ int ieee80211_put_uhr_cap(struct sk_buff *skb,
 {
 	const struct ieee80211_sta_uhr_cap *uhr_cap =
 		ieee80211_get_uhr_iftype_cap_vif(sband, &sdata->vif);
-	struct ieee80211_uhr_cap_elem_fixed fixed;
-	u8 ie_len;
+	int len;
 
-	/* Make sure we have place for the IE */
 	if (!uhr_cap)
 		return 0;
 
-	fixed = uhr_cap->uhr_cap_elem;
+	len = 2 + 1 + sizeof(struct ieee80211_uhr_cap) +
+	      sizeof(struct ieee80211_uhr_cap_phy);
 
-	ie_len = 2 + 1 + sizeof(uhr_cap->uhr_cap_elem);
-	if (skb_tailroom(skb) < ie_len)
+	if (skb_tailroom(skb) < len)
 		return -ENOBUFS;
 
 	skb_put_u8(skb, WLAN_EID_EXTENSION);
-	skb_put_u8(skb, ie_len - 2);
-	skb_put_u8(skb, WLAN_EID_EXT_UHR_CAPABILITY);
-	skb_put_data(skb, &fixed, sizeof(fixed));
+	skb_put_u8(skb, len - 2);
+	skb_put_u8(skb, WLAN_EID_EXT_UHR_CAPA);
+	skb_put_data(skb, &uhr_cap->mac, sizeof(uhr_cap->mac));
+	skb_put_data(skb, &uhr_cap->phy, sizeof(uhr_cap->phy));
 
 	return 0;
 }
-
 
 const char *ieee80211_conn_mode_str(enum ieee80211_conn_mode mode)
 {

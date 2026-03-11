@@ -19,6 +19,16 @@ extern const struct ath12k_hw_hal_params ath12k_wifi8_hw_hal_params_qcn9625;
 
 extern const struct ath12k_hw_version_map ath12k_wifi8_hw_ver_map[];
 
+/* Peer Metadata classification */
+/* Version 0 */
+#define RX_MPDU_DESC_META_DATA_V0_PEER_ID_WIFI8		GENMASK(11, 0)
+/* Version 1 */
+#define RX_MPDU_DESC_META_DATA_V1_PEER_ID_WIFI8		GENMASK(11, 0)
+/* Version 1A */
+#define RX_MPDU_DESC_META_DATA_V1A_PEER_ID_WIFI8	GENMASK(11, 0)
+/* Version 1B */
+#define RX_MPDU_DESC_META_DATA_V1B_PEER_ID_WIFI8	GENMASK(11, 0)
+
 #define PCIE_WINDOW_REG_ADDRESS			0x3278
 #define WINDOW_VALUE_MASK			GENMASK(25, 19)
 #define WINDOW_STATIC_MASK			GENMASK(31, 7)
@@ -34,8 +44,14 @@ extern const struct ath12k_hw_version_map ath12k_wifi8_hw_ver_map[];
 #define HAL_WIFI8_REOQ_LUT_SIZE       327680
 #define HAL_WIFI8_NUM_TIDS     20
 
+#define HAL_WIFI8_DP_RX_ERR_RDI 0
+
 #define HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX    128
 #define HAL_DSCP_TID_TBL_SIZE                   24
+
+#define HAL_MGMT_UCAST_TID HAL_NON_QOS_TID
+#define HAL_MGMT_BCAST_TID 18
+#define HAL_MGMT_SENSING_TID 19
 
 enum rdi_based_destination_ring_selection {
 	DESTINATION_RING_CTRL_SW0,
@@ -171,6 +187,17 @@ enum rdi_based_source_ring_selection {
 #define HAL_TCL1_RING_TP_OFFSET \
 		(HAL_TCL1_RING_TP - HAL_TCL1_RING_HP)
 
+/*TCL CMD ring address */
+#define HAL_TCL_CMD_RING_BASE_LSB		0x00001944
+#define HAL_TCL_CMD_RING_HP			0x00004038
+/*TQM CMD ring address */
+#define HAL_TQM_HOST_CMD_RING_BASE_LSB		0x0000028C
+#define HAL_TQM_HOST_CMD_RING_HP		0x00003028
+
+/*TQM STATUS ring address */
+#define HAL_TQM_HOST_STATUS_RING_BASE_LSB	0x000005D4
+#define HAL_TQM_HOST_STATUS_RING_HP		0x00003060
+
 /* TCL STATUS ring address */
 #define HAL_TCL_STATUS_RING_BASE_LSB(hal) \
 	((hal)->regs->hal_tcl_status_ring_base_lsb)
@@ -279,6 +306,17 @@ enum rdi_based_source_ring_selection {
 #define HAL_REO1_MISC_CFG_1_REO_MSDU_FETCH_OPTIMIZE	BIT(1)
 #define HAL_REO1_MISC_CFG_1_REO_MSDU_LINK_SHARING_EN	BIT(10)
 
+#define HAL_REO1_COOKIE_CONV_EN_RING			0x1910
+#define HAL_REO1_COOKIE_CONV_REO2SW8_EN			BIT(8)
+#define HAL_REO1_COOKIE_CONV_REO2SW9_EN			BIT(9)
+#define HAL_REO1_COOKIE_CONV_REO2SW11_EN		BIT(20)
+
+#define HAL_REO1_ERROR_RING_CFG_FOR_DEST_IX1		0x1c88
+#define HAL_REO1_ERROR_RING_CFG_FOR_DEST_REO2SW9_ERR	GENMASK(24, 20)
+
+#define HAL_REO1_ERROR_RING_CFG_FOR_DEST_IX2		0x1c8c
+#define HAL_REO1_ERROR_RING_CFG_FOR_DEST_REO2SW11_ERR	GENMASK(24, 20)
+
 #define HAL_REO1_MISC_CFG_2				0x1c7c
 #define HAL_REO1_MISC_CFG_2_BAR_REO_ERR_DELINK_ENABLE	BIT(12)
 
@@ -378,6 +416,12 @@ enum rdi_based_source_ring_selection {
 
 /* REO CMD R2 address */
 #define HAL_REO_CMD_HP				0x3020
+
+/* FSE CMD Cache ring R0 address */
+#define HAL_FSE_CMD_RING_BASE_LSB		0x1bc0
+
+/* FSE CMD Cache ring R2 address */
+#define HAL_FSE_CMD_HP				0x3180
 
 /* SW2REO R0 address */
 #define	HAL_SW2REO_RING_BASE_LSB(hal) \
@@ -553,6 +597,8 @@ enum rdi_based_source_ring_selection {
 #define HAL_REO1_RING_MISC_HOST_FW_SWAP		0x10
 #define HAL_REO1_RING_MISC_DATA_TLV_SWAP	0x20
 #define HAL_REO1_RING_MISC_SRNG_ENABLE		0x40
+#define HAL_REO1_RING_MISC_RING_ID_DISABLE	0x1
+#define HAL_REO1_RING_MISC_LOOPCNT_DISABLE	0x2
 #define HAL_REO1_RING_PRDR_INT_SETUP_INTR_TMR_THOLD	0xffff0000
 #define HAL_REO1_RING_PRDR_INT_SETUP_BATCH_COUNTER_THOLD	0x7fff
 #define HAL_REO1_RING_MSI1_BASE_MSB_MSI1_ENABLE		0x100
@@ -603,12 +649,15 @@ enum rdi_based_source_ring_selection {
 #define HAL_REO_SW2REO_RING_BASE_MSB_RING_SIZE		0x0000ffff
 #define HAL_REO_CMD_RING_BASE_MSB_RING_SIZE		0x0000ffff
 #define HAL_REO_STATUS_RING_BASE_MSB_RING_SIZE		0x0000ffff
+#define HAL_FSE_CMD_RING_BASE_MSB_RING_SIZE		0x0000ffff
 #define HAL_REO2PPE_RING_BASE_MSB_RING_SIZE		0xffffffff
 #define HAL_PPE2TCL_RING_BASE_MSB_RING_SIZE		0x000fffff
 #define HAL_SW2TCL1_RING_BASE_MSB_RING_SIZE		0x000fffff
 #define HAL_SW2TCL1_CMD_RING_BASE_MSB_RING_SIZE		0x000fffff
 #define HAL_TCL_STATUS_RING_BASE_MSB_RING_SIZE		0x0000ffff
 #define HAL_TX_EXCEPTION_RING_BASE_MSB_RING_SIZE	0x0000ffff
+#define HAL_TQM_HOST_CMD_RING_BASE_MSB_RING_SIZE	0x0000ffff
+#define HAL_TQM_HOST_STATUS_RING_BASE_MSB_RING_SIZE	0x0000ffff
 #define HAL_CE_SRC_RING_BASE_MSB_RING_SIZE		0x0000ffff
 #define HAL_CE_DST_RING_BASE_MSB_RING_SIZE		0x0000ffff
 #define HAL_CE_DST_STATUS_RING_BASE_MSB_RING_SIZE	0x0000ffff
@@ -632,7 +681,7 @@ enum rdi_based_source_ring_selection {
 #define HAL_DEFAULT_BE_BK_VI_REO_TIMEOUT_USEC	(100 * 1000)
 #define HAL_DEFAULT_VO_REO_TIMEOUT_USEC		(40 * 1000)
 
-#define HAL_SRNG_TLV_HDR_TAG		GENMASK(9, 1)
+#define HAL_SRNG_TLV_HDR_TAG		GENMASK(9, 0)
 #define HAL_SRNG_TLV_HDR_LEN		GENMASK(25, 10)
 
 #define HAL_SRNG_DESC_LOOP_CNT		0xf0000000
@@ -801,7 +850,7 @@ struct rx_mpdu_desc_info {
 			    release_source_module		:  3,
 			    msdu_link_desc_index		:  4,
 			    ll_pkt				:  1,
-			    high_priority_pkt			:  1,
+			    high_priority_pkt			:  2,
 			    src_link_id				:  3,
 			    reo_push_reason			:  2,
 			    reo_error_code			:  5,
@@ -1072,7 +1121,10 @@ u32 ath12k_wifi8_hal_reo_qdesc_size(u32 ba_window_size, u8 tid);
 void ath12k_wifi8_hal_reo_qdesc_setup(struct hal_rx_reo_queue *qdesc,
 				      int tid, u32 ba_window_size,
 				      u32 start_seq, enum hal_pn_type type);
-
+u32 ath12k_hal_srng_get_tqm_cmd_size(enum hal_tlv_tag_be type);
+void *ath12k_hal_srng_src_get_tqm_next_entry(struct ath12k_base *ab,
+					     struct hal_srng *srng,
+					     enum hal_tlv_tag_be type);
 void ath12k_wifi8_hal_ppeds_cfg_ast_override_map_reg(struct ath12k_base *ab, u8 idx,
 						     u32 ppeds_idx_map_val);
 void ath12k_wifi8_hal_srng_hw_disable(struct ath12k_base *ab,
@@ -1100,6 +1152,8 @@ void ath12k_wifi8_hal_hw_ase_init(struct ath12k_base *ab,
 
 void ath12k_wifi8_hal_vdev_mcast_ctrl_set(struct ath12k_base *ab, u32 vdev_id,
 					  u8 mcast_ctrl_val);
+int ath12k_wifi8_hal_get_rdi_source_cfg(struct ath12k_base *ab, int source);
+
 static inline
 void *ath12k_hal_srng_src_begin_get_next_entry_nolock_fast(struct hal_srng *srng)
 {
@@ -1132,6 +1186,13 @@ void *ath12k_hal_srng_src_begin_get_next_entry_nolock_fast(struct hal_srng *srng
 	srng->u.src_ring.reap_hp = next_hp;
 
 	return desc;
+}
+
+static inline bool ath12k_wifi8_hal_is_reo_nonqos_mgmt_tid(u8 tid)
+{
+	return (tid == HAL_NON_QOS_TID ||
+		tid == HAL_MGMT_BCAST_TID ||
+		tid == HAL_MGMT_SENSING_TID);
 }
 
 #endif

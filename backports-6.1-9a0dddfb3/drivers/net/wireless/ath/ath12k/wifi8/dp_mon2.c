@@ -42,6 +42,7 @@ const struct ath12k_dp_arch_mon_ops ath12k_wifi8_dp_arch_mon_dual_ring_ops = {
 	.mon_rx_wq_deinit = ath12k_wifi8_dp_mon_rx_wq_deinit,
 	.mon_rx_wmask = ath12k_dp_mon_rx_wmask_subscribe,
 	.rx_enable_packet_filters = ath12k_dp_mon_rx_enable_packet_filters,
+	.pktlog_config = ath12k_dp_mon_pktlog_config_filter,
 };
 
 static inline void
@@ -410,7 +411,7 @@ ath12k_wifi8_dp_mon_free_pkt_buf(struct ath12k_pdev_dp *pdev_dp,
 		else
 			tlv_len = le64_get_bits(tlv->tl, HAL_TLV_64_HDR_LEN);
 
-		if (tlv_tag == HAL_MON_BUFFER_ADDR) {
+		if (tlv_tag == HAL_MON_BUF_ADDR) {
 			packet_info = (struct dp_mon_packet_info *)ptr;
 			pkt_desc = (struct ath12k_dp_mon_desc *)
 				    (uintptr_t)(packet_info->cookie);

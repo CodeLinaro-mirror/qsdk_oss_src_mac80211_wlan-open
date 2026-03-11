@@ -11,6 +11,7 @@
 #include "cmn_defs.h"
 #include "dp.h"
 #include <linux/ip.h>
+#include "qcn_extns/ath12k_cmn_extn.h"
 
 struct ath12k_dp_link_peer;
 
@@ -573,13 +574,21 @@ struct ath12k_mld_qos_stats {
 	struct fw_mpdu_stats svc_intval_stats;
 	struct fw_mpdu_stats burst_size_stats;
 };
+
+DECLARE_EWMA(avg_ack_rssi, 10, 8)
+
 struct ath12k_dp_link_peer_stats {
 	struct ath12k_htt_tx_stats *tx_stats;
 	struct ath12k_rx_peer_stats *rx_stats;
 	struct ath12k_dp_mon_peer_stats dp_mon_stats;
 	struct ath12k_qos_stats *qos_stats;
+	struct ath12k_dp_pkt_info tx_dropped;
+	unsigned long last_ack;
+	unsigned long last_rx;
+	u32 rx_dropped;
 	u32 rx_retries;
 	int last_ack_rssi;
+	struct ewma_avg_ack_rssi avg_ack_rssi;
 };
 
 struct ath12k_dp_peer_rx_stats {
@@ -780,6 +789,7 @@ struct ath12k_telemetry_dp_peer {
 struct ath12k_telemetry_dp_vif {
 	bool is_extended;
 	struct ath12k_dp_aggr_vif_stats aggr_vif_stats;
+	struct ath12k_dp_rx_scan_radio_stats rx_scan_radio_stats;
 };
 
 /* Telemetry Radio Stats */
@@ -881,15 +891,19 @@ DECLARE_EWMA(avg_rssi_dp, 10, 8)
  * @rssi_dp_avg:      Averaged DP-specific RSSI value
  * @avg_rssi_dp:      EWMA tracker for DP-specific RSSI
  *
+ * @channel_bw:       Represents the effective channel width (in MHz) associated with
+ *                    the peer’s signal. Used to compute bandwidth-dependent offsets
+ *                    during RSSI calculations.
+ *
  * This structure holds both instantaneous and averaged signal quality
  * metrics (SNR and RSSI) for a given peer, including data path specific
- * values and EWMA smoothing helpers.
+ * values and EWMA smoothing helpers along with current bw info of signal.
  */
 struct ath12k_dp_link_peer_rx_signal_stats {
 	u8 snr;
 	u16 snr_avg;
 	struct ewma_avg_snr avg_snr;
-	u8 rssi_region_offset;
+	s8 rssi_region_offset;
 	u8 snr_dp;
 	u16 snr_dp_avg;
 	struct ewma_avg_snr_dp avg_snr_dp;
@@ -900,6 +914,8 @@ struct ath12k_dp_link_peer_rx_signal_stats {
 	s8 rssi_dp;
 	s16 rssi_dp_avg;
 	struct ewma_avg_rssi_dp avg_rssi_dp;
+
+	u8 channel_bw;
 };
 
 /**
@@ -934,7 +950,6 @@ struct ath12k_dp_link_peer_rx_signal_stats {
  * @num_mpdus: Total number of MPDUs received.
  * @num_mpdu_retry_count: Number of MPDU retries.
  * @num_ppdus: Total number of PPDUs received.
- * @num_ppdu_duration: Aggregate PPDU duration.
  *
  * Bitfield info:
  * @nss_info: Number of spatial streams (NSS).
@@ -946,7 +961,6 @@ struct ath12k_dp_link_peer_rx_signal_stats {
  * Advance Stats:
  * @bar_count: Number of BlockAck Request (BAR) frames received.
  * @ndpa_count: Number of NDP Announcement (NDPA) frames received for MU-MIMO sounding.
- * @num_mpdu_count: Array of MPDU counts per MCS index (indexed by MAX_MCS).
  * @ppdu_reception: Number of PPDUs received per reception type
  *                  (indexed by HAL_RX_RECEPTION_TYPE_MAX).
  * @ppdu_nss: Number of PPDUs received per spatial stream (indexed by HAL_RX_MAX_NSS).
@@ -993,7 +1007,6 @@ struct ath12k_rx_peer_stats {
 	u64 num_mpdus;
 	u32 num_mpdu_retry_count;
 	u64 num_ppdus;
-	u32 num_ppdu_duration;
 
 	u32 nss_info:4,
 	    mcs_info:4,
@@ -1004,7 +1017,6 @@ struct ath12k_rx_peer_stats {
 	/* Advance Stats */
 	u32 num_bar;
 	u32 num_ndpa;
-	u64 num_mpdu_count[MAX_MCS];
 	u64 ppdu_reception[HAL_RX_RECEPTION_TYPE_MAX];
 	u64 ppdu_nss[HAL_RX_MAX_NSS];
 	struct pkt_type proto_type[DOT11_MAX];
@@ -1072,7 +1084,7 @@ void ath12k_dp_free_preserved_stats(struct ath12k_dp_preserved_stats *stats);
 s8 ath12k_dp_get_rssi_value(s8 snr,
 			    struct ath12k_dp_link_peer_rx_signal_stats *stats,
 			    struct wmi_rssi_dbm_conv_offsets *rssi_offsets,
-			    struct ath12k_dp_link_peer *link_peer, bool ack_rssi);
+			    bool ack_rssi);
 
 #define SKB_TRAC_ETH_TYPE_OFFSET			12
 #define DP_ETH_TYPE_8021Q				0x8100

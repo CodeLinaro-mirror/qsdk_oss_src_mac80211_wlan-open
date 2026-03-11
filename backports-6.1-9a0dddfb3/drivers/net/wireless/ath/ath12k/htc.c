@@ -30,6 +30,10 @@ EXPORT_SYMBOL(ath12k_htc_alloc_skb);
 static void ath12k_htc_control_tx_complete(struct ath12k_base *ab,
 					   struct sk_buff *skb)
 {
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	dma_unmap_single(ab->dev, ATH12K_SKB_CB(skb)->paddr, skb->len,
+			 DMA_TO_DEVICE);
+#endif
 	kfree_skb(skb);
 }
 
@@ -282,6 +286,10 @@ void ath12k_htc_tx_completion_handler(struct ath12k_base *ab,
 	ep_tx_complete = ep->ep_ops.ep_tx_complete;
 	spin_unlock_bh(&htc->tx_lock);
 	if (!ep_tx_complete) {
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+		dma_unmap_single(ab->dev, ATH12K_SKB_CB(skb)->paddr, skb->len,
+				 DMA_TO_DEVICE);
+#endif
 		dev_kfree_skb_any(skb);
 		return;
 	}

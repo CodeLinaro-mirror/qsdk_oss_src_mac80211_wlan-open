@@ -176,6 +176,55 @@ struct wmi_gpio_input_event {
 	__le32 value;
 };
 
+#define WMI_VDEV_AGGR_AC			GENMASK(2, 0)
+#define WMI_VDEV_AGGR_TYPE			GENMASK(3, 2)
+#define WMI_VDEV_TX_AGGR_SZ_DISABLE		GENMASK(4, 3)
+#define WMI_VDEV_RX_AGGR_SZ_DISABLE		GENMASK(5, 4)
+#define WMI_VDEV_AGGR_AC_ENABLE			GENMASK(6, 5)
+
+struct set_custom_aggr_size_params {
+	u32 vdev_id;
+	u32 tx_aggr_size;
+	u32 rx_aggr_size;
+	u32 ac;
+	u32 aggr_type;
+	u32 tx_aggr_size_disable;
+	u32 rx_aggr_size_disable;
+	u32 tx_ac_enable;
+};
+
+/**
+ * struct wmi_set_custom_aggr_size_params_cmd - Send custom aggregation param
+ * @tlv_header: Type-Length-Value header used for identifying and parsing
+ * @vdev_id: ID of the vdev to which this custom aggr param to be applied
+ * @tx_aggr_size: Size for tx aggregation. Max MPDUs per A-MPDU or max MSDUs
+ * per A-MSDU based on aggr_type field.
+ * @rx_aggr_size: Size for rx aggregation. Block ack window size limit for a
+ * given vdev.
+ * @enable_bitmap: To set TX aggregation size limits per VDEV per AC
+ * bits 1:0 (ac): Access Category (0x0=BE, 0x1=BK, 0x2=VI, 0x3=VO). If
+ * tx_ac_enable bit is not set, tx_aggr_size is applied for all Access
+ * Categories
+ * bit 2 (aggr_type):            TX Aggregation Type (0=A-MPDU, 1=A-MSDU)
+ * bit 3 (tx_aggr_size_disable): If set tx_aggr_size is invalid
+ * bit 4 (rx_aggr_size_disable): If set rx_aggr_size is invalid
+ * bit 5 (tx_ac_enable):         If set, above ac bitmap is valid.
+ * bits 31:6:                    Reserved bits. should be set to zero.
+ */
+struct wmi_set_custom_aggr_size_params_cmd {
+	u32 tlv_header;
+	u32 vdev_id;
+	u32 tx_aggr_size;
+	u32 rx_aggr_size;
+	u32 enable_bitmap;
+} __packed;
+
+enum wmi_vdev_aggr_type {
+	WMI_VDEV_CUSTOM_AGGR_TYPE_AMPDU = 0,
+	WMI_VDEV_CUSTOM_AGGR_TYPE_AMSDU = 1,
+	WMI_VDEV_CUSTOM_AGGR_TYPE_MAX,
+};
+
 #define WMI_TLV_LEN	GENMASK(15, 0)
 #define WMI_TLV_TAG	GENMASK(31, 16)
 #define TLV_HDR_SIZE	sizeof_field(struct wmi_tlv, header)
@@ -444,6 +493,7 @@ enum wmi_cmd_group {
 	WMI_GRP_LATENCY        = 0x47,
 	WMI_GRP_MLO            = 0x48,
 	WMI_GRP_SAWF           = 0x49,
+	WMI_GRP_ENERGY_MGMT    = 0x4e,
 };
 
 #define WMI_CMD_GRP(grp_id) (((grp_id) << 12) | 0x1)
@@ -585,6 +635,8 @@ enum wmi_tlv_cmd_id {
         WMI_VDEV_GET_BIG_DATA_P2_CMDID,
         /** set TPC PSD/non-PSD power */
         WMI_VDEV_SET_TPC_POWER_CMDID,
+	/** WMI cmd used to control DPS Assisting AP role config */
+	WMI_VDEV_ENERGY_MGMT_DPS_ASSISTING_ROLE_CONFIG_CMDID = 0x503D,
 	WMI_PEER_CREATE_CMDID = WMI_TLV_CMD(WMI_GRP_PEER),
 	WMI_PEER_DELETE_CMDID,
 	WMI_PEER_FLUSH_TIDS_CMDID,
@@ -922,6 +974,13 @@ enum wmi_tlv_cmd_id {
 	WMI_MLO_LINK_TTLM_COMPLETE_CMDID,
 	WMI_SAWF_SERVICE_CLASS_CFG_CMDID = WMI_TLV_CMD(WMI_GRP_SAWF),
 	WMI_SAWF_SERVICE_CLASS_DISABLE_CMDID,
+	/** WMI commands specific to Energy Management **/
+	/** WMI cmd used to control PCIe config */
+	WMI_ENERGY_MGMT_PCIE_CONFIG_CMDID = WMI_TLV_CMD(WMI_GRP_ENERGY_MGMT),
+	/** WMI cmd used to control PCIe LPM */
+	WMI_ENERGY_MGMT_PCIE_LPM_CMDID,
+	/** WMI cmd used to control Clock and Voltage config */
+	WMI_ENERGY_MGMT_DCVS_CONFIG_CMDID,
 };
 
 enum wmi_tlv_event_id {
@@ -2375,6 +2434,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_MLO_LINK_REMOVAL_EVENT_FIXED_PARAM,
 	WMI_TAG_MLO_LINK_REMOVAL_CMD_FIXED_PARAM = 0x464,
 	WMI_CTRL_PATH_PMLO_STATS = 0x479,
+	WMI_TAG_SCAN_BLANKING_PARAMS_INFO = 0x486,
 	WMI_TAG_MLO_PRIMARY_LINK_PEER_MIGRATION_FIXED_PARAM = 0x4a3,
 	WMI_TAG_MLO_NEW_PRIMARY_LINK_PEER_INFO = 0x4a4,
 	WMI_TAG_MLO_PRIMARY_LINK_PEER_MIGRATION_COMPL_FIXED_PARAM = 0x4a5,
@@ -2383,6 +2443,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_ATF_PEER_REQUEST_EVENT_V2 = 0x4A8,
 	WMI_TAG_PDEV_WSI_STATS_INFO_CMD = 0x4b1,
 	WMI_TAG_PDEV_DFS_RADAR_FLAGS = 0x4b4,
+	WMI_TAG_DCS_OBSS_INT_TYPE = 0x4CF,
 	WMI_TAG_VDEV_CH_PSD_POWER_INFO = 0x4bc,
 	WMI_TAG_VDEV_CH_EIRP_POWER_INFO = 0x4bd,
 	WMI_TAG_PDEV_UTF_CMD_FIXED_PARAM = 0x4be,
@@ -2398,9 +2459,14 @@ enum wmi_tlv_tag {
 	WMI_TAG_TWT_VDEV_CONFIG_CMD = 0x4DE,
 	WMI_TAG_MLO_TLT_SELECTION_FOR_TID_SPRAY_EVENT_FIXED_PARAM = 0x4e0,
 	WMI_PDEV_SUSPEND_EVENT_FIXED_PARAM = 0x509,
+	WMI_TAG_ENERGY_MGMT_PCIE_CMD_FIXED_PARAM = 0x50E,
+	WMI_TAG_ENERGY_MGMT_PCIE_LPM__CMD_FIXED_PARAM = 0x50F,
+	WMI_TAG_ENERGY_MGMT_DCVS_CMD_FIXED_PARAM = 0x510,
 	WMI_TAG_MGMT_MPDU_FLOWQ_PARAMS = 0x514,
 	WMI_TAG_MGMT_MSDU_FLOWQ_PARAMS = 0x515,
 	WMI_TAG_HOL_MSDU_FLOWQ_PARAMS = 0x516,
+	WMI_TAG_ENERGY_MGMT_DPS_ASSISTING_ROLE_CMD_FIXED_PARAM = 0x525,
+	WMI_TAG_MAC_PHY_CAPABILITIES_EXT2 = 0x526,
 	WMI_TAG_MLO_PEER_TID_TO_LINK_MAP_EVENT_FIXED_PARAM = 0x544,
 	WMI_TAG_PEER_ASSOC_CIP_INFO,
 	WMI_TAG_MAX
@@ -2655,6 +2721,7 @@ enum wmi_tlv_service {
 	WMI_TLV_SERVICE_BOTH_PSD_EIRP_FOR_AP_SP_CLIENT_SP_SUPPORT = 393,
 	WMI_TLV_SERVICE_PDEV_PARAM_IN_UTF_WMI = 394,
 	WMI_TLV_SERVICE_SW_PROG_DFS_SUPPORT = 395,
+	WMI_TLV_SERVICE_DCS_OBSS_INT_SUPPORT = 402,
 	WMI_TLV_SERVICE_DYNAMIC_WSI_REMAP_SUPPORT = 403,
 	WMI_SERVICE_MLO_MODE2_RECOVERY_SUPPORTED = 406,
 	WMI_TLV_SERVICE_THERM_THROT_POUT_REDUCTION = 410,
@@ -2715,6 +2782,7 @@ enum wmi_peer_param {
 	WMI_PEER_SET_MAX_TX_RATE = 17,
 	WMI_PEER_SET_MIN_TX_RATE = 18,
 	WMI_PEER_SET_DEFAULT_ROUTING = 19,
+	WMI_PEER_PARAM_DMS_SUPPORT = 42,
 };
 
 #define WMI_PEER_PUNCTURE_BITMAP		GENMASK(23, 8)
@@ -3275,8 +3343,8 @@ struct ath12k_wmi_soc_hal_reg_caps_params {
 #define WMI_MAX_EHTCAP_PHY_SIZE  3
 #define WMI_MAX_EHTCAP_RATE_SET  3
 
-#define WMI_MAX_UHRCAP_MAC_SIZE  2
-#define WMI_MAX_UHRCAP_PHY_SIZE  1
+#define WMI_MAX_UHRCAP_MAC_SIZE  4
+#define WMI_MAX_UHRCAP_PHY_SIZE  8
 
 /* Used for EHT MCS-NSS array. Data at each array index follows the format given
  * in IEEE P802.11be/D2.0, May 20229.4.2.313.4.
@@ -3337,11 +3405,31 @@ struct ath12k_wmi_caps_ext_params {
 	__le32 eml_capability;
 	__le32 mld_capability;
 	__le32 ext_mld_capability;
+} __packed;
+
+struct ath12k_wmi_caps_ext2_params {
+	__le32 hw_mode_id;
+	__le32 pdev_and_hw_link_ids;
+	__le32 phy_id;
+	__le32 wireless_modes_ext;
 	__le32 uhr_cap_mac_info_2ghz[WMI_MAX_UHRCAP_MAC_SIZE];
 	__le32 uhr_cap_mac_info_5ghz[WMI_MAX_UHRCAP_MAC_SIZE];
 	__le32 uhr_cap_phy_info_2ghz[WMI_MAX_UHRCAP_PHY_SIZE];
 	__le32 uhr_cap_phy_info_5ghz[WMI_MAX_UHRCAP_PHY_SIZE];
+	__le32 npca_capability;
+	struct ath12k_wmi_ppe_threshold_params uhr_ppet_2ghz;
+	struct ath12k_wmi_ppe_threshold_params uhr_ppet_5ghz;
+	/* nss_info:
+	 * Bits  3:0  - Maximum supported Tx NSS
+	 * Bits  7:4  - Maximum supported Rx NSS
+	 * Bits 31:8  - Reserved
+	 */
+	__le32 nss_info;
 } __packed;
+
+/* NSS information GET macros for MAC/PHY capabilities EXT2 */
+#define WMI_MAC_PHY_CAPABILITIES_EXT2_MAX_TX_NSS_MASK GENMASK(3, 0)
+#define WMI_MAC_PHY_CAPABILITIES_EXT2_MAX_RX_NSS_MASK GENMASK(7, 4)
 
 #define WMI_HOST_WLAN_FLEXI_TWT_CAP	BIT(1)
 
@@ -3677,6 +3765,7 @@ struct wmi_ml_partner_info {
 	bool mlo_bridge_link;
 	bool bridge_peer;
 	u32 logical_link_idx;
+	u32 ieee_link_id;
 	bool mlo_link_add;
 	bool mlo_link_del;
 };
@@ -4897,6 +4986,7 @@ struct wmi_peer_assoc_mlo_partner_info_params {
 	__le32 hw_link_id;
 	__le32 flags;
 	__le32 logical_link_idx;
+	__le32 ieee_link_id;
 } __packed;
 
 struct wmi_peer_assoc_mlo_params {
@@ -5416,6 +5506,12 @@ enum wmi_vdev_start_resp_status_code {
 	WMI_VDEV_START_RESPONSE_NOT_SUPPORTED = 2,
 	WMI_VDEV_START_RESPONSE_DFS_VIOLATION = 3,
 	WMI_VDEV_START_RESPONSE_INVALID_REGDOMAIN = 4,
+	WMI_VDEV_START_RESPONSE_INVALID_BAND = 5,
+	WMI_VDEV_START_RESPONSE_INVALID_PREFERRED_TX_RX_STREAMS = 6,
+	WMI_VDEV_START_RESPONSE_INVALID_TX_VAP_CONFIG = 7,
+	WMI_VDEV_START_RESPONSE_BSS_PEER_NOT_FOUND = 8,
+	WMI_VDEV_START_RESPONSE_INCORRECT_CHANNEL_PARAMS = 9,
+	WMI_VDEV_START_RESPONSE_GENERIC_VDEV_START_FAILURE = 10,
 };
 
 enum wmi_reg_6g_ap_type {
@@ -5688,6 +5784,7 @@ struct wmi_pdev_radar_flags_param {
 #define WMI_DCS_CW_INTF         0x01
 #define WMI_DCS_WLAN_INTF       0x02
 #define WMI_DCS_AWGN_INTF       0x04
+#define WMI_DCS_OBSS_INTF	0x10
 
 struct wmi_dcs_awgn_info {
         u32 channel_width;
@@ -5695,6 +5792,14 @@ struct wmi_dcs_awgn_info {
         u32 center_freq0;
         u32 center_freq1;
         u32 chan_bw_interference_bitmap;
+} __packed;
+
+struct wmi_dcs_obss_info {
+	u32 channel_width;
+	u32 chan_freq;
+	u32 center_freq0;
+	u32 center_freq1;
+	u32 chan_bw_interference_bitmap;
 } __packed;
 
 struct wmi_dcs_cw_info {
@@ -9420,6 +9525,59 @@ struct wmi_pdev_set_ctl_table_cmd_fixed_param {
 	__le32 ctl_len;
 } __packed;
 
+enum wmi_pcie_gen_lane_config_type {
+	/* Channel bandwidth based semi static PCIe config */
+	WMI_PCIE_CHANNEL_BANDWIDTH,
+	/* Force a specific PCIe config */
+	WMI_PCIE_FORCED_STATIC,
+};
+
+struct wmi_energy_mgmt_pcie_cmd {
+	__le32 tlv_header;
+	__le32 enable;
+	__le32 config;
+	__le32 pcie_gen;
+	__le32 pcie_lane;
+} __packed;
+
+enum wmi_pcie_low_power_config_type {
+	WMI_PCIE_LPM_UNKNOWN,
+	WMI_PCIE_LPM_L0S,
+	WMI_PCIE_LPM_L1,
+	WMI_PCIE_LPM_L0S_L1,
+};
+
+struct wmi_energy_mgmt_pcie_lpm_cmd {
+	__le32 tlv_header;
+	__le32 enable;
+	__le32 config;
+} __packed;
+
+enum wmi_dcvs_config_type {
+	/* Enable clock and voltage scaling */
+	WMI_DCVS_ENABLE,
+	/* Disable clock and voltage scaling */
+	WMI_DCVS_DISABLE,
+	/* Operate with no limitation */
+	WMI_DCVS_NO_LIMITATION,
+};
+
+struct wmi_energy_mgmt_dcvs_cmd {
+	__le32 tlv_header;
+	__le32 config;
+} __packed;
+
+enum wmi_dps_assist_config_type {
+	WMI_DPS_ASSIST_DISABLE,
+	WMI_DPS_ASSIST_ENABLE,
+};
+
+struct wmi_energy_mgmt_dps_assist_cmd {
+	__le32 tlv_header;
+	__le32 vdev_id;
+	__le32 config;
+} __packed;
+
 int ath12k_wmi_cmd_send(struct ath12k_wmi_pdev *wmi, struct sk_buff *skb,
 			u32 cmd_id);
 struct sk_buff *ath12k_wmi_alloc_skb(struct ath12k_wmi_base *wmi_sc, u32 len);
@@ -9468,7 +9626,8 @@ int ath12k_wmi_set_sta_ps_param(struct ath12k *ar, u32 vdev_id,
 int ath12k_wmi_force_fw_hang_cmd(struct ath12k *ar, u32 type, u32 delay_time_ms, bool nowait);
 int ath12k_wmi_send_peer_delete_cmd(struct ath12k *ar,
 				    const u8 *peer_addr, u8 vdev_id,
-				    u32 mlo_hw_link_id_bitmap);
+				    u32 mlo_hw_link_id_bitmap,
+				    bool peer_delete_send_mlo_hw_bitmap);
 int ath12k_wmi_vdev_delete(struct ath12k *ar, u8 vdev_id);
 void ath12k_wmi_start_scan_init(struct ath12k *ar,
 				struct ath12k_wmi_scan_req_arg *arg,
@@ -9626,6 +9785,18 @@ ath12k_wmi_caps_ext_get_hw_link_id(const struct ath12k_wmi_caps_ext_params *para
 }
 
 static inline u32
+ath12k_wmi_caps_ext2_get_pdev_id(const struct ath12k_wmi_caps_ext2_params *param)
+{
+	return le32_get_bits(param->pdev_and_hw_link_ids, WMI_CAPS_PARAMS_PDEV_ID);
+}
+
+static inline u32
+ath12k_wmi_caps_ext2_get_hw_link_id(const struct ath12k_wmi_caps_ext2_params *param)
+{
+	return le32_get_bits(param->pdev_and_hw_link_ids, WMI_CAPS_PARAMS_HW_LINK_ID);
+}
+
+static inline u32
 ath12k_wmi_mac_phy_get_pdev_id(const struct ath12k_wmi_mac_phy_caps_params *param)
 {
 	return le32_get_bits(param->pdev_and_hw_link_ids,
@@ -9729,4 +9900,11 @@ int ath12k_wmi_atf_send_group_config(struct ath12k *ar);
 int ath12k_wmi_atf_send_peer_config(struct ath12k *ar,
 				    struct ath12k_atf_peer_params *peer_param);
 int ath12k_wmi_peer_delete_all(struct ath12k_link_vif *arvif);
+int ath12k_wmi_send_aggr_size_cmd(struct ath12k *ar,
+				  struct set_custom_aggr_size_params *params);
+int ath12k_wmi_send_pcie_gen_lane(struct ath12k *ar, u32 enable, u32 config_type,
+				  u32 pcie_gen, u32 pcie_lane);
+int ath12k_wmi_send_pcie_low_power(struct ath12k *ar, u32 enable, u32 config_type);
+int ath12k_wmi_send_dcvs_cmd(struct ath12k *ar, u32 config);
+int ath12k_wmi_send_dps_assist_cmd(struct ath12k *ar, u32 vdev_id, u32 config);
 #endif

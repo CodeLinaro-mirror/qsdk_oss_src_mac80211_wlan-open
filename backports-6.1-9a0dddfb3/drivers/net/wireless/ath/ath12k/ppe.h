@@ -36,9 +36,6 @@ struct dp_ppe_ds_idxs {
 #define PPE_DS_TXCMPL_DEF_BUDGET 256
 #endif
 
-#define ATH12K_DP_PPEDS_NAPI_DONE_BIT		16
-#define ATH12K_DP_PPEDS_TX_COMP_NAPI_BIT	17
-
 #define PPE_DS_MAX_NODE	            4   /* Max DS node supported */
 #define DP_PPEDS_SERVICE_BUDGET     256
 
@@ -123,6 +120,7 @@ struct ath12k_ppe {
 	char ppeds_irq_name[MAX_PPEDS_IRQS][MAX_PPEDS_IRQ_NAME_LEN];
 	int ppeds_irq[MAX_PPEDS_IRQS];
 	int ds_node_id;
+	int task_id;
 	/* used for per node enumeration*/
 	int ppeds_node_idx;
 	int ppe_vp_tbl_registered[PPE_VP_ENTRIES_MAX];

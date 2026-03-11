@@ -16,6 +16,27 @@
 #include "dp_mon_filter.h"
 #include "ini.h"
 #include "telemetry_agent_if.h"
+#include "ath12k_notif.h"
+
+static void
+ath12k_dp_fill_txrate_gi(struct rate_info *txrate, u8 preamble, u8 gi)
+{
+	switch (preamble) {
+	case WMI_RATE_PREAMBLE_HT:
+	case WMI_RATE_PREAMBLE_VHT:
+		if (gi == HTT_PPDU_STATS_SGI_0_4_US)
+			txrate->flags |= RATE_INFO_FLAGS_SHORT_GI;
+		break;
+	case WMI_RATE_PREAMBLE_HE:
+		txrate->he_gi = ath12k_he_gi_to_nl80211_he_gi(gi);
+		break;
+	case WMI_RATE_PREAMBLE_EHT:
+		txrate->eht_gi = ath12k_eht_gi_to_nl80211_eht_gi(gi);
+		break;
+	default:
+		break;
+	}
+}
 
 /**
  * ath12k_htt_send() - Send htt packet from host
@@ -484,7 +505,7 @@ ath12k_dp_ppdu_stats_flush_tlv_parse_update(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	if (tid >= ATH12K_DSCP_PRIORITY) {
-		ath12k_err(dp_pdev->dp->ab, "Invalid tid: %d", tid);
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DATA, "Invalid tid: %d", tid);
 		rcu_read_unlock();
 		return;
 	}
@@ -753,7 +774,7 @@ ath12k_update_extd_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_htt_tx_stats *tx_stats;
 	struct ath12k_vif *ahvif;
 	u32 punc_mode, res_mcs;
-	u32 tlv_bitmap;
+	u32 tlv_bitmap, retry_mpdus;
 
 	if (usr_stats->processed_tlv_bitmap &
 			BIT(HTT_PPDU_STATS_TAG_USR_COMPLTN_ACK_BA_STATUS))
@@ -766,8 +787,11 @@ ath12k_update_extd_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 		return;
 
 	if (usr_stats->cmpltn_cmn.status != HTT_PPDU_STATS_USER_STATUS_OK) {
-		DP_STATS_INCR(peer->peer_stats.tx_stats, retries_mpdu,
-			      peer_stats->mpdu_tried - peer_stats->succ_mpdu_pkts);
+		if (peer_stats->mpdu_tried > peer_stats->succ_mpdu_pkts) {
+			retry_mpdus = peer_stats->mpdu_tried - peer_stats->succ_mpdu_pkts;
+			DP_STATS_INCR(peer->peer_stats.tx_stats, retries_mpdu,
+				      retry_mpdus);
+		}
 
 		ath12k_debugfs_sta_update_retry(peer, peer_stats);
 		return;
@@ -820,11 +844,16 @@ ath12k_update_extd_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 		      is_mcast);
 	DP_STATS_INCR(tx_stats, tx_ppdus, 1);
 	DP_STATS_INCR(tx_stats, tx_mpdus_success, peer_stats->succ_mpdu_pkts);
-	DP_STATS_INCR(tx_stats, retries_mpdu,
-		      (peer_stats->mpdu_tried - peer_stats->succ_mpdu_pkts));
-	if (!is_mcast)
+
+	if (peer_stats->mpdu_tried > peer_stats->succ_mpdu_pkts)
+		DP_STATS_INCR(tx_stats, retries_mpdu,
+			      (peer_stats->mpdu_tried - peer_stats->succ_mpdu_pkts));
+	if (!is_mcast) {
 		DP_STATS_UPD(tx_stats, last_ack_rssi,
 			     peer->peer_stats.last_ack_rssi);
+		ewma_avg_ack_rssi_add(&peer->peer_stats.avg_ack_rssi,
+				      peer->peer_stats.last_ack_rssi);
+	}
 
 	/* Update debugfs stats */
 	ath12k_debugfs_sta_update_success(peer, peer_stats);
@@ -1070,20 +1099,15 @@ ath12k_update_htt_stats_txrate(struct ath12k_pdev_dp *dp_pdev,
 	case WMI_RATE_PREAMBLE_HT:
 		peer->txrate.mcs = mcs + 8 * (nss - 1);
 		peer->txrate.flags = RATE_INFO_FLAGS_MCS;
-		if (sgi)
-			peer->txrate.flags |= RATE_INFO_FLAGS_SHORT_GI;
 		break;
 	case WMI_RATE_PREAMBLE_VHT:
 		peer->txrate.mcs = mcs;
 		peer->txrate.flags = RATE_INFO_FLAGS_VHT_MCS;
-		if (sgi)
-			peer->txrate.flags |= RATE_INFO_FLAGS_SHORT_GI;
 		break;
 	case WMI_RATE_PREAMBLE_HE:
 		peer->txrate.mcs = mcs;
 		peer->txrate.flags = RATE_INFO_FLAGS_HE_MCS;
 		peer->txrate.he_dcm = dcm;
-		peer->txrate.he_gi = ath12k_he_gi_to_nl80211_he_gi(sgi);
 		peer->txrate.he_ru_alloc = ru_tones;
 		peer_stats->ru_tones = peer->txrate.he_ru_alloc;
 		break;
@@ -1091,13 +1115,14 @@ ath12k_update_htt_stats_txrate(struct ath12k_pdev_dp *dp_pdev,
 		peer->txrate.mcs = mcs;
 		peer->txrate.flags = RATE_INFO_FLAGS_EHT_MCS;
 		peer->txrate.he_dcm = dcm;
-		peer->txrate.eht_gi = ath12k_eht_gi_to_nl80211_eht_gi(sgi);
 		tones = le16_to_cpu(user_rate->ru_end) -
 			le16_to_cpu(user_rate->ru_start) + 1;
 		v = ath12k_mac_eht_ru_tones_to_nl80211_eht_ru_alloc(tones);
 		peer->txrate.eht_ru_alloc = v;
 		break;
 	}
+
+	ath12k_dp_fill_txrate_gi(&peer->txrate, flags, sgi);
 
 	peer->txrate.nss = nss;
 	usr_stats->nss = nss;
@@ -1108,10 +1133,12 @@ ath12k_update_htt_stats_txrate(struct ath12k_pdev_dp *dp_pdev,
 	is_mcast = HTT_PPDU_STATS_USR_CMN_IS_MCAST(usr_stats->common.info);
 	snr = le32_to_cpu(usr_stats->cmpltn_cmn.ack_rssi);
 	ack_rssi = ath12k_dp_get_rssi_value(snr, &peer->signal_stats,
-					    &dp_pdev->ar->rssi_offsets, peer,
-					    true);
-	if (!is_mcast)
+					    &dp_pdev->ar->rssi_offsets, true);
+	if (!is_mcast) {
 		peer->peer_stats.last_ack_rssi = ack_rssi;
+		ewma_avg_ack_rssi_add(&peer->peer_stats.avg_ack_rssi,
+				      ack_rssi);
+	}
 
 	memcpy(&peer->last_txrate, &peer->txrate, sizeof(struct rate_info));
 
@@ -1319,6 +1346,17 @@ void ath12k_htt_free_ppdu_info(struct ath12k_pdev_dp *dp_pdev,
 	}
 }
 
+static void
+ath12k_dp_htt_fill_user_stats_peer_mac(struct htt_ppdu_user_stats *user_stats,
+				       struct ath12k_dp_link_peer *peer)
+{
+	if (!peer) {
+		memset(user_stats->peer_mac, 0, ETH_ALEN);
+		return;
+	}
+	memcpy(user_stats->peer_mac, peer->addr, ETH_ALEN);
+}
+
 void ath12k_htt_update_ppdu_stats(struct ath12k_pdev_dp *dp_pdev,
 				  struct htt_ppdu_stats_info *ppdu_info)
 {
@@ -1346,6 +1384,7 @@ void ath12k_htt_update_ppdu_stats(struct ath12k_pdev_dp *dp_pdev,
 			continue;
 		}
 
+		ath12k_dp_htt_fill_user_stats_peer_mac(usr_stats, peer);
 		ath12k_dp_tx_ctrl_stats_update(dp_pdev, peer, user, ppdu_info);
 
 		if (ppdu_info->frame_type != HTT_STATS_PPDU_FTYPE_CTRL)
@@ -1525,11 +1564,45 @@ bool ath12k_dp_htt_is_ppdu_completed(struct htt_ppdu_stats_info *ppdu_info)
 	return false;
 }
 
+static void ath12k_dp_htt_ppdu_notify(struct htt_ppdu_stats_info *ppdu_info)
+{
+	struct ath12k_ppdu_event event;
+	struct sk_buff *skb;
+	struct ath12k_ppdu_tx_info *ppdu_evt_data;
+	unsigned int len;
+
+	/* Early exit if no one is listening for TX events - avoid unnecessary work */
+	if (!ath12k_ppdu_notifier_has_listeners(ATH12K_EVENT_PPDU_TX_COMPLETE))
+		return;
+
+	len = sizeof(*ppdu_evt_data);
+
+	skb = alloc_skb(len, GFP_ATOMIC);
+	if (!skb)
+		return;
+
+	ppdu_evt_data = skb_put_zero(skb, len);
+	memcpy(&ppdu_evt_data->ppdu_info, ppdu_info, sizeof(*ppdu_info));
+
+	memset(&event, 0, sizeof(event));
+	event.skb = skb;
+
+	ath12k_ppdu_notifier_call_chain(ATH12K_EVENT_PPDU_TX_COMPLETE, &event);
+
+	if (refcount_read(&skb->users) > 1)
+		ath12k_dbg(NULL, ATH12K_DBG_TELEMETRY,
+			   "Current SKB ref cnt held by TX PPDU evt listeners = %d\n",
+			   refcount_read(&skb->users));
+	kfree_skb(skb);
+}
+
 void ath12k_dp_htt_deliver_ppdu(struct ath12k_pdev_dp *dp_pdev,
 				struct htt_ppdu_stats_info *ppdu_info)
 {
 	/* Update tx completion stats */
 	ath12k_dp_htt_ppdu_stats_update_tx_comp_stats(dp_pdev, ppdu_info);
+	/* Send PPDU notification to registered listeners */
+	ath12k_dp_htt_ppdu_notify(ppdu_info);
 }
 
 struct htt_ppdu_stats_info *
@@ -2353,6 +2426,14 @@ ath12k_dp_tx_get_ring_id_type(struct ath12k_base *ab,
 			if (ring_id == HAL_SRNG_SW2RXDMA_BUF0) {
 				*htt_ring_id = HTT_HOST1_TO_FW_RXBUF_RING;
 				*htt_ring_type = HTT_SW_TO_SW_RING;
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+			} else if (ring_id == HAL_SRNG_SW2RXDMA_BUF1) {
+				*htt_ring_id = HTT_RXDMA_HOST_BUF_RING;
+				*htt_ring_type = HTT_SW_TO_HW_RING;
+			} else if (ring_id == HAL_SRNG_SW2RXDMA_BUF2) {
+				*htt_ring_id = HTT_HOST2_TO_FW_RXBUF_RING;
+				*htt_ring_type = HTT_SW_TO_SW_RING;
+#endif
 			} else {
 				*htt_ring_id = HTT_RXDMA_HOST_BUF_RING;
 				*htt_ring_type = HTT_SW_TO_HW_RING;
@@ -2364,7 +2445,10 @@ ath12k_dp_tx_get_ring_id_type(struct ath12k_base *ab,
 		*htt_ring_type = HTT_HW_TO_SW_RING;
 		break;
 	case HAL_RXDMA_MONITOR_BUF:
-		*htt_ring_id = HTT_RX_MON_HOST2MON_BUF_RING;
+		if (ath12k_dp_mon_rx_get_quad_ring_support(ab->dp))
+			*htt_ring_id = HTT_RXDMA_MONITOR_BUF_RING;
+		else
+			*htt_ring_id = HTT_RX_MON_HOST2MON_BUF_RING;
 		*htt_ring_type = HTT_SW_TO_HW_RING;
 		break;
 	case HAL_RXDMA_MONITOR_STATUS:
@@ -2372,7 +2456,10 @@ ath12k_dp_tx_get_ring_id_type(struct ath12k_base *ab,
 		*htt_ring_type = HTT_SW_TO_HW_RING;
 		break;
 	case HAL_RXDMA_MONITOR_DST:
-		*htt_ring_id = HTT_RX_MON_MON2HOST_DEST_RING;
+		if (ath12k_dp_mon_rx_get_quad_ring_support(ab->dp))
+			*htt_ring_id = HTT_RXDMA_MONITOR_DEST_RING;
+		else
+			*htt_ring_id = HTT_RX_MON_MON2HOST_DEST_RING;
 		*htt_ring_type = HTT_HW_TO_SW_RING;
 		break;
 	case HAL_RXDMA_MONITOR_DESC:
@@ -2382,6 +2469,18 @@ ath12k_dp_tx_get_ring_id_type(struct ath12k_base *ab,
 	case HAL_WBM_IDLE_BUF:
 		*htt_ring_type = HTT_SW_TO_HW_RING;
 		*htt_ring_id = HTT_RXDMA_WBM_BUF0_RING;
+		break;
+	case HAL_TX_MONITOR_BUF:
+		*htt_ring_id = HTT_TX_MON_HOST2MON_BUF_RING;
+		*htt_ring_type = HTT_SW_TO_HW_RING;
+		break;
+	case HAL_TX_MONITOR_DST:
+		*htt_ring_id = HTT_TX_MON_MON2HOST_DEST_RING;
+		*htt_ring_type = HTT_HW_TO_SW_RING;
+		break;
+	case HAL_WBM_IDLE_BUF_MGMT:
+		*htt_ring_type = HTT_SW_TO_HW_RING;
+		*htt_ring_id = HTT_RXDMA_WBM_BUF1_RING;
 		break;
 	default:
 		ath12k_warn(ab, "Unsupported ring type in DP :%d\n", ring_type);
@@ -2508,6 +2607,15 @@ err_free:
 	return ret;
 }
 EXPORT_SYMBOL(ath12k_dp_tx_htt_srng_setup);
+
+void ath12k_dp_get_htt_mgmt_filter(struct ath12k_base *ab, u16 *mgmt_filter)
+{
+	u16 filter = FILTER_MGMT_ALL;
+
+	filter &= ~(FILTER_MGMT_PROBE_RESP | FILTER_MGMT_BEACON);
+	*mgmt_filter = filter;
+}
+EXPORT_SYMBOL(ath12k_dp_get_htt_mgmt_filter);
 
 void ath12k_dp_tx_htt_rx_mgmt_flag0_fp_filter_set(u32 *ptr, u16 filter)
 {
@@ -2907,10 +3015,8 @@ int ath12k_dp_tx_htt_rx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 	cmd->info0 |=
 		le32_encode_bits(tlv_filter->drop_threshold_valid,
 				 HTT_RX_RING_SELECTION_CFG_CMD_INFO0_DROP_THRES_VAL);
-	cmd->info0 |= le32_encode_bits(!tlv_filter->rxmon_disable,
-				       HTT_RX_RING_SELECTION_CFG_CMD_INFO0_EN_RXMON);
-	cmd->info0 |= le32_encode_bits(!tlv_filter->rxmon_disable,
-				       HTT_RX_RING_SELECTION_CFG_CMD_INFO0_PKT_TYPE_EN_DATA);
+
+	ath12k_dp_mon_rx_enable(dp, cmd, tlv_filter);
 
 	cmd->info1 = le32_encode_bits(rx_buf_size,
 				      HTT_RX_RING_SELECTION_CFG_CMD_INFO1_BUF_SIZE);
@@ -3047,37 +3153,6 @@ int ath12k_dp_tx_htt_rx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 	cmd->info4 |= le32_encode_bits(tlv_filter->rx_mon_enable_hdr_per_ppdu,
 			HTT_RX_RING_SEL_CFG_CMD_INFO4_RXMON_ENABLE_HDR_PER_PPDU);
 
-	cmd->info5 = le32_encode_bits(tlv_filter->sw0_buf_src_ppdu_hdr_en,
-			HTT_RX_RING_SEL_CFG_CMD_INFO5_SW0_BUF_SRC_HDR_EN);
-	cmd->info5 |= le32_encode_bits(tlv_filter->mo_ppdu_hdr_en,
-			HTT_RX_RING_SEL_CFG_CMD_INFO5_MO_HDR_EN);
-	cmd->info5 |= le32_encode_bits(tlv_filter->md_ppdu_hdr_en,
-			HTT_RX_RING_SEL_CFG_CMD_INFO5_MD_HDR_EN);
-	cmd->info5 |= le32_encode_bits(tlv_filter->fp_ppdu_hdr_en,
-			HTT_RX_RING_SEL_CFG_CMD_INFO5_FP_HDR_EN);
-	cmd->info5 |= le32_encode_bits(tlv_filter->fpmo_ppdu_hdr_en,
-			HTT_RX_RING_SEL_CFG_CMD_INFO5_FPMO_HDR_EN);
-	cmd->info5 |= le32_encode_bits(tlv_filter->fpmo_qos_null_data_ppdu_hdr_en,
-			HTT_RX_RING_SEL_CFG_CMD_INFO5_FPMO_QOS_NULL_DATA_HDR_EN);
-	cmd->info5 |= le32_encode_bits(tlv_filter->fpmo_qos_null_tb_data_ppdu_hdr_en,
-			HTT_RX_RING_SEL_CFG_CMD_INFO5_FPMO_QOS_NULL_TB_DATA_HDR_EN);
-	cmd->info5 |= le32_encode_bits(tlv_filter->fpmo_null_data_ppdu_hdr_en,
-			HTT_RX_RING_SEL_CFG_CMD_INFO5_FPMO_NULL_DATA_HDR_EN);
-	cmd->info5 |= le32_encode_bits(tlv_filter->fpmo_ucast_data_ppdu_hdr_en,
-			HTT_RX_RING_SEL_CFG_CMD_INFO5_FPMO_UCAST_DATA_HDR_EN);
-	cmd->info5 |= le32_encode_bits(tlv_filter->fpmo_mcast_data_ppdu_hdr_en,
-			HTT_RX_RING_SEL_CFG_CMD_INFO5_FPMO_MCAST_DATA_HDR_EN);
-	cmd->info5 |= le32_encode_bits(tlv_filter->fp_qos_null_data_ppdu_hdr_en,
-			HTT_RX_RING_SEL_CFG_CMD_INFO5_FP_QOS_NULL_DATA_HDR_EN);
-	cmd->info5 |= le32_encode_bits(tlv_filter->fp_qos_null_tb_data_ppdu_hdr_en,
-			HTT_RX_RING_SEL_CFG_CMD_INFO5_FP_QOS_NULL_TB_DATA_HDR_EN);
-	cmd->info5 |= le32_encode_bits(tlv_filter->fp_null_data_ppdu_hdr_en,
-			HTT_RX_RING_SEL_CFG_CMD_INFO5_FP_NULL_DATA_HDR_EN);
-	cmd->info5 |= le32_encode_bits(tlv_filter->fp_ucast_data_ppdu_hdr_en,
-			HTT_RX_RING_SEL_CFG_CMD_INFO5_FP_UCAST_DATA_HDR_EN);
-	cmd->info5 |= le32_encode_bits(tlv_filter->fp_mcast_data_ppdu_hdr_en,
-			HTT_RX_RING_SEL_CFG_CMD_INFO5_FP_MCAST_DATA_HDR_EN);
-
 	ret = ath12k_htt_send(ab, dp, skb, HTT_H2T_MSG_TYPE_RX_RING_SELECTION_CFG,
 			      (u8 *)cmd);
 	if (ret)
@@ -3138,13 +3213,13 @@ ath12k_dp_tx_htt_h2t_ext_stats_req(struct ath12k *ar, u8 type,
 	return 0;
 }
 
-int ath12k_dp_tx_htt_tx_filter_setup(struct ath12k_base *ab, u32 ring_id,
-				     int mac_id, enum hal_ring_type ring_type,
-				     int tx_buf_size,
-				     struct htt_tx_ring_tlv_filter *htt_tlv_filter)
+int ath12k_dp_htt_mon_tx_filter_setup(struct ath12k_base *ab, u32 ring_id,
+				      int mac_id, enum hal_ring_type ring_type,
+				      int tx_buf_size,
+				      struct htt_tx_ring_tlv_filter *htt_tlv_filter)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	struct htt_tx_ring_selection_cfg_cmd *cmd;
+	struct htt_tx_mon_ring_selection_cfg_cmd *cmd;
 	struct hal_srng *srng = &ab->hal.srng_list[ring_id];
 	struct hal_srng_params params;
 	struct sk_buff *skb;
@@ -3168,73 +3243,185 @@ int ath12k_dp_tx_htt_tx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 		goto err_free;
 
 	skb_put(skb, len);
-	cmd = (struct htt_tx_ring_selection_cfg_cmd *)skb->data;
+	cmd = (struct htt_tx_mon_ring_selection_cfg_cmd *)skb->data;
+	memset(cmd, 0, len);
+
+	/*word 0*/
 	cmd->info0 = le32_encode_bits(HTT_H2T_MSG_TYPE_TX_MONITOR_CFG,
-				      HTT_TX_RING_SELECTION_CFG_CMD_INFO0_MSG_TYPE);
+				      HTT_TX_MON_RING_CFG_CMD_INFO0_MSG_TYPE);
 	if (htt_ring_type == HTT_SW_TO_HW_RING ||
 	    htt_ring_type == HTT_HW_TO_SW_RING)
 		cmd->info0 |=
 			le32_encode_bits(DP_SW2HW_MACID(mac_id),
-					 HTT_TX_RING_SELECTION_CFG_CMD_INFO0_PDEV_ID);
+					 HTT_TX_MON_RING_CFG_CMD_INFO0_PDEV_ID);
 	else
 		cmd->info0 |=
 			le32_encode_bits(mac_id,
-					 HTT_TX_RING_SELECTION_CFG_CMD_INFO0_PDEV_ID);
-	cmd->info0 |= le32_encode_bits(htt_ring_id,
-				       HTT_TX_RING_SELECTION_CFG_CMD_INFO0_RING_ID);
-	cmd->info0 |= le32_encode_bits(!!(params.flags & HAL_SRNG_FLAGS_MSI_SWAP),
-				       HTT_TX_RING_SELECTION_CFG_CMD_INFO0_SS);
-	cmd->info0 |= le32_encode_bits(!!(params.flags & HAL_SRNG_FLAGS_DATA_TLV_SWAP),
-				       HTT_TX_RING_SELECTION_CFG_CMD_INFO0_PS);
+					 HTT_TX_MON_RING_CFG_CMD_INFO0_PDEV_ID);
 
+	cmd->info0 |= le32_encode_bits(!htt_tlv_filter->txmon_disable,
+				       HTT_TX_MON_RING_CFG_CMD_INFO0_EN_TXMON);
+	cmd->info0 |= le32_encode_bits(htt_ring_id,
+				       HTT_TX_MON_RING_CFG_CMD_INFO0_RING_ID);
+	cmd->info0 |= le32_encode_bits(!!(params.flags & HAL_SRNG_FLAGS_MSI_SWAP),
+				       HTT_TX_MON_RING_CFG_CMD_INFO0_SS);
+	cmd->info0 |= le32_encode_bits(!!(params.flags & HAL_SRNG_FLAGS_DATA_TLV_SWAP),
+				       HTT_TX_MON_RING_CFG_CMD_INFO0_PS);
+
+	/*Custom Classify Filter*/
+	cmd->info0 |=
+		le32_encode_bits(!!htt_tlv_filter->mac_addr_filter_en,
+				 HTT_TX_MON_RING_CFG_CMD_INFO0_MAC_ADDR_FLTR_CMD);
+	/*word 1*/
 	cmd->info1 |=
 		le32_encode_bits(tx_buf_size,
-				 HTT_TX_RING_SELECTION_CFG_CMD_INFO1_RING_BUFF_SIZE);
+				 HTT_TX_MON_RING_CFG_CMD_INFO1_RING_BUFF_SIZE);
 
+	/*word 1 & 2*/
 	if (htt_tlv_filter->tx_mon_mgmt_filter) {
 		cmd->info1 |=
-			le32_encode_bits(HTT_STATS_FRAME_CTRL_TYPE_MGMT,
-					 HTT_TX_RING_SELECTION_CFG_CMD_INFO1_PKT_TYPE);
-		cmd->info1 |=
-		le32_encode_bits(htt_tlv_filter->tx_mon_pkt_dma_len,
-				 HTT_TX_RING_SELECTION_CFG_CMD_INFO1_CONF_LEN_MGMT);
+		le32_encode_bits(htt_tlv_filter->tx_mon_mgmt_pkt_dma_len,
+				 HTT_TX_MON_RING_CFG_CMD_INFO1_CONF_DMA_LEN_MGMT);
 		cmd->info2 |=
-		le32_encode_bits(HTT_STATS_FRAME_CTRL_TYPE_MGMT,
-				 HTT_TX_RING_SELECTION_CFG_CMD_INFO2_PKT_TYPE_EN_FLAG);
+		le32_encode_bits(!!htt_tlv_filter->tx_mon_mgmt_filter,
+				 HTT_TX_MON_FRAME_CTRL_INFO2_TYPE_MGMT);
 	}
-
+	/*word 1 & 2*/
 	if (htt_tlv_filter->tx_mon_data_filter) {
 		cmd->info1 |=
-			le32_encode_bits(HTT_STATS_FRAME_CTRL_TYPE_CTRL,
-					 HTT_TX_RING_SELECTION_CFG_CMD_INFO1_PKT_TYPE);
-		cmd->info1 |=
-		le32_encode_bits(htt_tlv_filter->tx_mon_pkt_dma_len,
-				 HTT_TX_RING_SELECTION_CFG_CMD_INFO1_CONF_LEN_CTRL);
+		le32_encode_bits(htt_tlv_filter->tx_mon_data_pkt_dma_len,
+				 HTT_TX_MON_RING_CFG_CMD_INFO1_CONF_DMA_LEN_DATA);
 		cmd->info2 |=
-		le32_encode_bits(HTT_STATS_FRAME_CTRL_TYPE_CTRL,
-				 HTT_TX_RING_SELECTION_CFG_CMD_INFO2_PKT_TYPE_EN_FLAG);
+		le32_encode_bits(!!htt_tlv_filter->tx_mon_data_filter,
+				 HTT_TX_MON_FRAME_CTRL_INFO2_TYPE_DATA);
 	}
-
+	/*word 1 & 2*/
 	if (htt_tlv_filter->tx_mon_ctrl_filter) {
 		cmd->info1 |=
-			le32_encode_bits(HTT_STATS_FRAME_CTRL_TYPE_DATA,
-					 HTT_TX_RING_SELECTION_CFG_CMD_INFO1_PKT_TYPE);
-		cmd->info1 |=
-		le32_encode_bits(htt_tlv_filter->tx_mon_pkt_dma_len,
-				 HTT_TX_RING_SELECTION_CFG_CMD_INFO1_CONF_LEN_DATA);
+		le32_encode_bits(htt_tlv_filter->tx_mon_ctrl_pkt_dma_len,
+				 HTT_TX_MON_RING_CFG_CMD_INFO1_CONF_DMA_LEN_CTRL);
 		cmd->info2 |=
-		le32_encode_bits(HTT_STATS_FRAME_CTRL_TYPE_DATA,
-				 HTT_TX_RING_SELECTION_CFG_CMD_INFO2_PKT_TYPE_EN_FLAG);
+		le32_encode_bits(!!htt_tlv_filter->tx_mon_ctrl_filter,
+				 HTT_TX_MON_FRAME_CTRL_INFO2_TYPE_CTRL);
 	}
+	/*word 2*/
+	cmd->info2 |= le32_encode_bits(!!htt_tlv_filter->mgmt_mpdu_start,
+				       HTT_TX_MON_FRAME_CTRL_INFO2_MPSM);
+	cmd->info2 |= le32_encode_bits(!!htt_tlv_filter->ctrl_mpdu_start,
+				       HTT_TX_MON_FRAME_CTRL_INFO2_MPSC);
+	cmd->info2 |= le32_encode_bits(!!htt_tlv_filter->data_mpdu_start,
+				       HTT_TX_MON_FRAME_CTRL_INFO2_MPSD);
 
+	cmd->info2 |= le32_encode_bits(!!htt_tlv_filter->mgmt_msdu_start,
+				       HTT_TX_MON_FRAME_CTRL_INFO2_MSSM);
+	cmd->info2 |= le32_encode_bits(!!htt_tlv_filter->ctrl_msdu_start,
+				       HTT_TX_MON_FRAME_CTRL_INFO2_MSSC);
+	cmd->info2 |= le32_encode_bits(!!htt_tlv_filter->data_msdu_start,
+				       HTT_TX_MON_FRAME_CTRL_INFO2_MSSD);
+
+	cmd->info2 |= le32_encode_bits(!!htt_tlv_filter->mgmt_mpdu_end,
+				       HTT_TX_MON_FRAME_CTRL_INFO2_MPEM);
+	cmd->info2 |= le32_encode_bits(!!htt_tlv_filter->ctrl_mpdu_end,
+				       HTT_TX_MON_FRAME_CTRL_INFO2_MPEC);
+	cmd->info2 |= le32_encode_bits(!!htt_tlv_filter->data_mpdu_end,
+				       HTT_TX_MON_FRAME_CTRL_INFO2_MPED);
+
+	cmd->info2 |= le32_encode_bits(!!htt_tlv_filter->mgmt_msdu_end,
+				       HTT_TX_MON_FRAME_CTRL_INFO2_MSEM);
+	cmd->info2 |= le32_encode_bits(!!htt_tlv_filter->ctrl_msdu_end,
+				       HTT_TX_MON_FRAME_CTRL_INFO2_MSEC);
+	cmd->info2 |= le32_encode_bits(!!htt_tlv_filter->data_msdu_end,
+				       HTT_TX_MON_FRAME_CTRL_INFO2_MSED);
+	cmd->info2 |=
+		le32_encode_bits(!!htt_tlv_filter->wmask.compaction_enable,
+				 HTT_TX_MON_FRAME_CTRL_INFO2_EN_COMPACTION);
+
+	/*word 3*/
 	cmd->tlv_filter_mask_in0 =
 		cpu_to_le32(htt_tlv_filter->tx_mon_downstream_tlv_flags);
+
+	/*word 4*/
 	cmd->tlv_filter_mask_in1 =
 		cpu_to_le32(htt_tlv_filter->tx_mon_upstream_tlv_flags0);
+
+	/*word 5*/
 	cmd->tlv_filter_mask_in2 =
 		cpu_to_le32(htt_tlv_filter->tx_mon_upstream_tlv_flags1);
+
+	/*word 6*/
 	cmd->tlv_filter_mask_in3 =
 		cpu_to_le32(htt_tlv_filter->tx_mon_upstream_tlv_flags2);
+
+	/*word 7*/
+	cmd->tlv_word_mask_in0 |=
+		le32_encode_bits(htt_tlv_filter->wmask.tx_fes_setup,
+				 HTT_TX_MON_WMASK_IN0_FES_SETUP_MASK);
+
+	cmd->tlv_word_mask_in0 |=
+		le32_encode_bits(htt_tlv_filter->wmask.tx_peer_entry,
+				 HTT_TX_MON_WMASK_IN0_PEER_ENTRY_MASK_V1);
+
+	cmd->tlv_word_mask_in0 |=
+		le32_encode_bits(htt_tlv_filter->wmask.tx_queue_ext,
+				 HTT_TX_MON_WMASK_IN0_TX_QUEUE_EXT_MASK_V1);
+
+	cmd->tlv_word_mask_in0 |=
+		le32_encode_bits(htt_tlv_filter->wmask.tx_msdu_start,
+				 HTT_TX_MON_WMASK_IN0_MSDU_START_MASK);
+
+	/*word 8*/
+	cmd->tlv_word_mask_in1 |=
+		le32_encode_bits(htt_tlv_filter->wmask.pcu_ppdu_setup_init,
+				 HTT_TX_MON_WMASK_IN1_PCU_PPDU_SETUP_INIT_MASK);
+
+	/*word 9*/
+	cmd->tlv_word_mask_in2 |=
+		le32_encode_bits(htt_tlv_filter->wmask.tx_mpdu_start,
+				 HTT_TX_MON_WMASK_IN2_MPDU_START_MASK);
+	cmd->tlv_word_mask_in2 |=
+		le32_encode_bits(htt_tlv_filter->wmask.rxpcu_user_setup,
+				 HTT_TX_MON_WMASK_IN2_RXPCU_USER_SETUP_MASK);
+	cmd->tlv_word_mask_in2 |=
+		le32_encode_bits(htt_tlv_filter->mgmt_mpdu_msdu_log_en,
+				 HTT_TX_MON_WMASK_IN2_MGMT_MPDU_MSDU_LOG_EN);
+	cmd->tlv_word_mask_in2 |=
+		le32_encode_bits(!!htt_tlv_filter->ctrl_mpdu_msdu_log_en,
+				 HTT_TX_MON_WMASK_IN2_CTRL_MPDU_MSDU_LOG_EN);
+	cmd->tlv_word_mask_in2 |=
+		le32_encode_bits(!!htt_tlv_filter->data_mpdu_msdu_log_en,
+				 HTT_TX_MON_WMASK_IN2_DATA_MPDU_MSDU_LOG_EN);
+
+	cmd->tlv_word_mask_in2 |=
+		le32_encode_bits(!!htt_tlv_filter->mgmt_log_typ,
+				 HTT_TX_MON_WMASK_IN2_MGMT_LOG_TYP);
+	cmd->tlv_word_mask_in2 |=
+		le32_encode_bits(!!htt_tlv_filter->ctrl_log_typ,
+				 HTT_TX_MON_WMASK_IN2_CTRL_LOG_TYP);
+	cmd->tlv_word_mask_in2 |=
+		le32_encode_bits(!!htt_tlv_filter->data_log_typ,
+				 HTT_TX_MON_WMASK_IN2_DATA_LOG_TYP);
+
+	/*word 10*/
+	cmd->tlv_word_mask_in3 |=
+		le32_encode_bits(htt_tlv_filter->wmask.tx_queue_ext,
+				 HTT_TX_MON_WMASK_IN3_TX_QUEUE_EXT_MASK_V2);
+
+	cmd->tlv_word_mask_in3 |=
+	le32_encode_bits(htt_tlv_filter->wmask.tx_peer_entry,
+			 HTT_TX_MON_WMASK_IN3_PEER_ENTRY_MASK_V2);
+
+	/*word 11*/
+	cmd->tlv_word_mask_in4 |=
+		le32_encode_bits(htt_tlv_filter->wmask.tx_fes_status_end,
+				 HTT_TX_MON_WMASK_IN4_FES_STATUS_END_MASK);
+	cmd->tlv_word_mask_in4 |=
+		le32_encode_bits(htt_tlv_filter->wmask.response_end_status,
+				 HTT_TX_MON_WMASK_IN4_RESPONSE_END_STATUS_MASK);
+
+	/*word 12*/
+	cmd->tlv_word_mask_in5 |=
+		le32_encode_bits(htt_tlv_filter->wmask.tx_fes_status_prot,
+				 HTT_TX_MON_WMASK_IN5_FES_STATUS_PROT_MASK);
 
 	ret = ath12k_htt_send(ab, dp, skb, HTT_H2T_MSG_TYPE_TX_MONITOR_CFG,
 			      (u8 *)cmd);
@@ -3422,3 +3609,4 @@ err_free:
 	dev_kfree_skb_any(skb);
 	return ret;
 }
+

@@ -353,6 +353,7 @@ static int ieee80211_vif_update_links(struct ieee80211_sub_if_data *sdata,
 {
 	u16 old_links = sdata->vif.valid_links;
 	u16 old_active = sdata->vif.active_links;
+	unsigned long repurposed_links = sdata->vif.repurposed_links;
 	unsigned long add = new_links & ~old_links;
 	unsigned long rem = old_links & ~new_links;
 	unsigned int link_id;
@@ -432,6 +433,11 @@ static int ieee80211_vif_update_links(struct ieee80211_sub_if_data *sdata,
 		/* for keys we will not be able to undo this */
 		ieee80211_tear_down_links(sdata, to_free, rem);
 
+		/* clear repurpose link bitmap of removed links */
+		if (rem)
+			for_each_set_bit(link_id, &rem, IEEE80211_MLD_MAX_NUM_LINKS)
+				ieee80211_clear_repurpose_link(&sdata->vif,
+							       link_id);
 		ieee80211_set_vif_links_bitmaps(sdata, new_links, dormant_links);
 
 		ieee80211_debugfs_add_link(sdata, add);
@@ -453,6 +459,9 @@ static int ieee80211_vif_update_links(struct ieee80211_sub_if_data *sdata,
 		memcpy(sdata->link, old_data, sizeof(old_data));
 		memcpy(sdata->vif.link_conf, old, sizeof(old));
 		ieee80211_set_vif_links_bitmaps(sdata, old_links, dormant_links);
+		for_each_set_bit(link_id, &repurposed_links,
+				 IEEE80211_MLD_MAX_NUM_LINKS)
+			ieee80211_set_repurpose_link(&sdata->vif, link_id);
 		/* and free (only) the newly allocated links */
 		memset(to_free, 0, sizeof(links));
 		goto free;

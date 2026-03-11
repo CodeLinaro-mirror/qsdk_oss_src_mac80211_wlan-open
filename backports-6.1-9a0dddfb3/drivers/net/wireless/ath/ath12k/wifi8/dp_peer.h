@@ -45,4 +45,12 @@ int ath12k_wifi8_get_mgmt_flowq(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw
 				u8 *addr, struct peer_assoc_flowq_params *flowq_params);
 int ath12k_wifi8_get_holq(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 			  u8 *addr, struct peer_assoc_holq_params *holq_params);
+int ath12k_wifi8_dp_get_peer_init_status(struct ath12k_dp *dp,
+					 struct ath12k_dp_hw *dp_hw,
+					 u8 *addr);
+void ath12k_wifi8_dp_peer_cleanup(struct ath12k_dp_hw *dp_hw,
+				  struct ath12k_dp_peer *dp_peer);
+void ath12k_wifi8_dp_vif_update_4addr(struct ath12k_dp_hw *dp_hw,
+				      struct ath12k_dp_vif *dp_vif,
+				      u8 *addr);
 #endif

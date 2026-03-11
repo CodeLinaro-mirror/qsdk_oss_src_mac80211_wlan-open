@@ -316,6 +316,15 @@ static int validate_supported_selectors(const struct nlattr *attr,
 	return 0;
 }
 
+static int validate_uhr_capa(const struct nlattr *attr,
+			     struct netlink_ext_ack *extack)
+{
+	const u8 *data = nla_data(attr);
+	unsigned int len = nla_len(attr);
+
+	return ieee80211_uhr_capa_size_ok(data, len, false);
+}
+
 /* policy for the attributes */
 static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR];
 
@@ -640,6 +649,15 @@ nl80211_qm_policy[NL80211_QM_ATTR_MAX + 1] = {
 	[NL80211_QM_ATTR_DIALOG_TOKEN] = { .type = NLA_U8 },
 	[NL80211_QM_ATTR_DESCRIPTOR_PARAMS] =
 			NLA_POLICY_NESTED_ARRAY(nl80211_qm_desc_params_policy),
+};
+
+static const struct nla_policy
+nl80211_pcie_policy[NL80211_PCIE_ATTR_MAX + 1] = {
+	[NL80211_PCIE_ATTR_TYPE] = { .type = NLA_U8 },
+	[NL80211_PCIE_ATTR_ENABLE] = { .type = NLA_U8 },
+	[NL80211_PCIE_ATTR_CONFIG_TYPE] = { .type = NLA_U8 },
+	[NL80211_PCIE_ATTR_GEN] = { .type = NLA_U8 },
+	[NL80211_PCIE_ATTR_LANE] = { .type = NLA_U8 },
 };
 
 #if LINUX_VERSION_IS_GEQ(6,7,0)
@@ -1057,7 +1075,6 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_SET_CRITICAL_UPDATE] = NLA_POLICY_NESTED(nl80211_set_critical_update_policy),
 	[NL80211_ATTR_CHANNEL_WIDTH_DEVICE] = { .type = NLA_U32 },
 	[NL80211_ATTR_CENTER_FREQ_DEVICE] = { .type = NLA_U32 },
-	[NL80211_ATTR_INTERFERENCE_TYPE] = { .type = NLA_U8 },
 	[NL80211_ATTR_AP_REMOVAL_COUNT] = { .type = NLA_U32 },
 	[NL80211_ATTR_TSF] = { .type = NLA_U64 },
 	[NL80211_ATTR_WIPHY_ANTENNA_GAIN] = { .type = NLA_U32 },
@@ -1076,8 +1093,11 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_CFP] = { .type = NLA_FLAG },
 	[NL80211_ATTR_CIGTK] = { .type = NLA_FLAG },
 	[NL80211_ATTR_UHR_CAPABILITY] =
-		NLA_POLICY_BINARY_RANGE(NL80211_UHR_MIN_CAPABILITY_LEN, NL80211_UHR_MAX_CAPABILITY_LEN),
+		NLA_POLICY_VALIDATE_FN(NLA_BINARY, validate_uhr_capa, 255),
 	[NL80211_ATTR_DISABLE_UHR] = { .type = NLA_FLAG },
+	[NL80211_ATTR_PCIE] = NLA_POLICY_NESTED(nl80211_pcie_policy),
+	[NL80211_ATTR_DCVS] = { .type = NLA_U32 },
+	[NL80211_ATTR_DPS_ASSIST] = { .type = NLA_U8 },
 };
 
 /* policy for the key attributes */
@@ -1436,6 +1456,9 @@ static int nl80211_msg_put_channel(struct sk_buff *msg, struct wiphy *wiphy,
 			goto nla_put_failure;
 		if (nla_put_flag(msg, __NL80211_FREQUENCY_ATTR_NO_IBSS))
 			goto nla_put_failure;
+		if ((chan->flags & IEEE80211_CHAN_NO_UHR) &&
+		    nla_put_flag(msg, NL80211_FREQUENCY_ATTR_NO_UHR))
+			goto nla_put_failure;
 	}
 	if (chan->flags & IEEE80211_CHAN_RADAR) {
 		if (nla_put_flag(msg, NL80211_FREQUENCY_ATTR_RADAR))
@@ -1525,9 +1548,6 @@ static int nl80211_msg_put_channel(struct sk_buff *msg, struct wiphy *wiphy,
 		if ((chan->flags & IEEE80211_CHAN_ALLOW_20MHZ_ACTIVITY) &&
 		    nla_put_flag(msg,
 				 NL80211_FREQUENCY_ATTR_ALLOW_20MHZ_ACTIVITY))
-			goto nla_put_failure;
-		if ((chan->flags & IEEE80211_CHAN_NO_UHR) &&
-		    nla_put_flag(msg, NL80211_FREQUENCY_ATTR_NO_UHR))
 			goto nla_put_failure;
 	}
 
@@ -2244,21 +2264,19 @@ nl80211_send_iftype_data(struct sk_buff *msg,
 			return -ENOBUFS;
 	}
 
+	if (uhr_cap->has_uhr) {
+		if (nla_put(msg, NL80211_BAND_IFTYPE_ATTR_UHR_CAP_MAC,
+			    sizeof(uhr_cap->mac), &uhr_cap->mac) ||
+		    nla_put(msg, NL80211_BAND_IFTYPE_ATTR_UHR_CAP_PHY,
+			    sizeof(uhr_cap->phy), &uhr_cap->phy))
+			return -ENOBUFS;
+	}
+
 	if (sband->band == NL80211_BAND_6GHZ &&
 	    nla_put(msg, NL80211_BAND_IFTYPE_ATTR_HE_6GHZ_CAPA,
 		    sizeof(iftdata->he_6ghz_capa),
 		    &iftdata->he_6ghz_capa))
 		return -ENOBUFS;
-
-	if (uhr_cap->has_uhr) {
-		if (nla_put(msg, NL80211_BAND_IFTYPE_ATTR_UHR_CAP_MAC,
-			    sizeof(uhr_cap->uhr_cap_elem.mac_cap_info),
-			    uhr_cap->uhr_cap_elem.mac_cap_info) ||
-		    nla_put(msg, NL80211_BAND_IFTYPE_ATTR_UHR_CAP_PHY,
-			    sizeof(uhr_cap->uhr_cap_elem.phy_cap_info),
-			    uhr_cap->uhr_cap_elem.phy_cap_info))
-			return -ENOBUFS;
-	}
 
 	if (iftdata->vendor_elems.data && iftdata->vendor_elems.len &&
 	    nla_put(msg, NL80211_BAND_IFTYPE_ATTR_VENDOR_ELEMS,
@@ -4809,6 +4827,17 @@ static int nl80211_send_iface(struct sk_buff *msg, u32 portid, u32 seq, int flag
 			if (nla_put(msg, NL80211_ATTR_MAC, ETH_ALEN,
 				    wdev->links[link_id].addr))
 				goto nla_put_failure;
+			/*
+			 * Repurposed links can have different SSID from its
+			 * MLD, update all link(s) SSID if the MLD has at least
+			 * one repurposed link.
+			 */
+			if (wdev->repurposed_links)
+				if (wdev->links[link_id].ap.ssid_len &&
+				    nla_put(msg, NL80211_ATTR_SSID,
+					    wdev->links[link_id].ap.ssid_len,
+					    wdev->links[link_id].ap.ssid))
+					goto nla_put_failure;
 
 			ret = rdev_get_channel(rdev, wdev, link_id, &chandef);
 			if (ret == 0 && nl80211_send_chandef(msg, &chandef))
@@ -7065,7 +7094,8 @@ static int nl80211_calculate_ap_params(struct cfg80211_ap_settings *params)
 						cap->datalen - 1))
 			return -EINVAL;
 	}
-	cap = cfg80211_find_ext_elem(WLAN_EID_EXT_UHR_OPERATION, ies, ies_len);
+
+	cap = cfg80211_find_ext_elem(WLAN_EID_EXT_UHR_OPER, ies, ies_len);
 	if (cap) {
 		if (!cap->datalen)
 			return -EINVAL;
@@ -7156,6 +7186,8 @@ static void nl80211_send_ap_started(struct wireless_dev *wdev,
 	struct wiphy *wiphy = wdev->wiphy;
 	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wiphy);
 	struct sk_buff *msg;
+	const u8 *ssid;
+	u8 ssid_len;
 	void *hdr;
 
 	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
@@ -7166,13 +7198,19 @@ static void nl80211_send_ap_started(struct wireless_dev *wdev,
 	if (!hdr)
 		goto out;
 
+	if (wdev->valid_links) {
+		ssid_len = wdev->links[link_id].ap.ssid_len;
+		ssid = wdev->links[link_id].ap.ssid;
+	} else {
+		ssid_len = wdev->u.ap.ssid_len;
+		ssid = wdev->u.ap.ssid;
+	}
 	if (nla_put_u32(msg, NL80211_ATTR_WIPHY, rdev->wiphy_idx) ||
 	    nla_put_u32(msg, NL80211_ATTR_IFINDEX, wdev->netdev->ifindex) ||
 	    nla_put_u64_64bit(msg, NL80211_ATTR_WDEV, wdev_id(wdev),
 			      NL80211_ATTR_PAD) ||
-	    (wdev->u.ap.ssid_len &&
-	     nla_put(msg, NL80211_ATTR_SSID, wdev->u.ap.ssid_len,
-		     wdev->u.ap.ssid)) ||
+	    (ssid_len &&
+	     nla_put(msg, NL80211_ATTR_SSID, ssid_len, ssid)) ||
 	    (wdev->valid_links &&
 	     nla_put_u8(msg, NL80211_ATTR_MLO_LINK_ID, link_id)))
 		goto out;
@@ -7198,8 +7236,7 @@ static int nl80211_validate_ap_phy_operation(struct cfg80211_ap_settings *params
 	    (channel->flags & IEEE80211_CHAN_NO_EHT))
 		return -EOPNOTSUPP;
 
-	if ((params->uhr_cap || params->uhr_oper) &&
-	    (channel->flags & IEEE80211_CHAN_NO_UHR))
+	if (params->uhr_oper && (channel->flags & IEEE80211_CHAN_NO_UHR))
 		return -EOPNOTSUPP;
 
 	return 0;
@@ -7272,9 +7309,20 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 
 	/* these are required for START_AP */
 	if (!info->attrs[NL80211_ATTR_BEACON_INTERVAL] ||
-	    !info->attrs[NL80211_ATTR_DTIM_PERIOD] ||
-	    !info->attrs[NL80211_ATTR_BEACON_HEAD])
+	    !info->attrs[NL80211_ATTR_DTIM_PERIOD])
 		return -EINVAL;
+
+	/* Check beacon head requirement based on interface type */
+	if (wdev_is_scan_radio(wdev)) {
+		/* Scan radio MUST NOT have beacon head */
+		if (info->attrs[NL80211_ATTR_BEACON_HEAD])
+			return -EINVAL;
+	} else {
+		/* Normal AP MUST have beacon head */
+		if (!info->attrs[NL80211_ATTR_BEACON_HEAD])
+			return -EINVAL;
+	}
+
 
 	if (info->attrs[NL80211_ATTR_SMPS_MODE] &&
 	    nla_get_u8(info->attrs[NL80211_ATTR_SMPS_MODE]) != NL80211_SMPS_OFF)
@@ -7325,9 +7373,10 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 		}
 
 		if (wdev->u.ap.ssid_len &&
+		    !(wdev->repurposed_links & BIT(link_id)) &&
 		    (wdev->u.ap.ssid_len != params->ssid_len ||
 		     memcmp(wdev->u.ap.ssid, params->ssid, params->ssid_len))) {
-			/* require identical SSID for MLO */
+			/* require identical SSID for non-repurposed MLO */
 			err = -EINVAL;
 			goto out;
 		}
@@ -7556,6 +7605,10 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 			goto out;
 	}
 
+	if (info->attrs[NL80211_ATTR_DPS_ASSIST] &&
+	    !nla_get_u8(info->attrs[NL80211_ATTR_DPS_ASSIST]))
+		params->dps_assist_disable = true;
+
 	/* FIXME: validate MLO/link-id against driver capabilities */
 
 	err = rdev_start_ap(rdev, dev, params);
@@ -7564,10 +7617,16 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 		wdev->links[link_id].ap.chandef = params->chandef;
 		wdev->links[link_id].reg_6g_power_mode =
 		    params->he_6ghz_power_type;
-		wdev->u.ap.ssid_len = params->ssid_len;
-		memcpy(wdev->u.ap.ssid, params->ssid,
+		/* Update ML SSID in wdev when non-repurposed link is started */
+		if (!(wdev->repurposed_links & BIT(link_id))) {
+			wdev->u.ap.ssid_len = params->ssid_len;
+			memcpy(wdev->u.ap.ssid, params->ssid,
+			       params->ssid_len);
+		}
+		/* Maintain per link ssid to use if the MLD is repurposed. */
+		wdev->links[link_id].ap.ssid_len = params->ssid_len;
+		memcpy(wdev->links[link_id].ap.ssid, params->ssid,
 		       params->ssid_len);
-
 		if (info->attrs[NL80211_ATTR_SOCKET_OWNER])
 			wdev->conn_owner_nlportid = info->snd_portid;
 
@@ -7632,11 +7691,6 @@ static int nl80211_update_ap(struct sk_buff *skb, struct genl_info *info)
 			    nla_data(info->attrs[NL80211_ATTR_SSID]);
 	}
 
-	if (info->attrs[NL80211_ATTR_INTERFERENCE_TYPE]) {
-		params->intf_detect_bitmap = nla_get_u8(info->attrs[NL80211_ATTR_INTERFERENCE_TYPE]);
-		haveinfo = true;
-	}
-
 	err = nl80211_parse_beacon(rdev, info->attrs, &params->beacon,
 				   info->extack);
 	if (err && !haveinfo)
@@ -7679,8 +7733,14 @@ static int nl80211_update_ap(struct sk_buff *skb, struct genl_info *info)
 
 	err = rdev_update_ap(rdev, dev, params);
 	if (!err && params->ssid && params->ssid_len > 0) {
-		wdev->u.ap.ssid_len = params->ssid_len;
-		memcpy(wdev->u.ap.ssid, params->ssid,
+		/* Update ML SSID if this is a non-repurposed link */
+		if (!(wdev->repurposed_links & BIT(link_id))) {
+			wdev->u.ap.ssid_len = params->ssid_len;
+			memcpy(wdev->u.ap.ssid, params->ssid,
+			       params->ssid_len);
+		}
+		wdev->links[link_id].ap.ssid_len = params->ssid_len;
+		memcpy(wdev->links[link_id].ap.ssid, params->ssid,
 		       params->ssid_len);
 	}
 
@@ -7858,7 +7918,8 @@ bool nl80211_put_sta_rate(struct sk_buff *msg, struct rate_info *info, int attr)
 		break;
 	case RATE_INFO_BW_EHT_RU:
 		rate_flg = 0;
-		WARN_ON(!(info->flags & RATE_INFO_FLAGS_EHT_MCS));
+		WARN_ON(!(info->flags & RATE_INFO_FLAGS_EHT_MCS) &&
+			!(info->flags & RATE_INFO_FLAGS_UHR_MCS));
 		break;
 	}
 
@@ -7910,6 +7971,23 @@ bool nl80211_put_sta_rate(struct sk_buff *msg, struct rate_info *info, int attr)
 		if (info->bw == RATE_INFO_BW_EHT_RU &&
 		    nla_put_u8(msg, NL80211_RATE_INFO_EHT_RU_ALLOC,
 			       info->eht_ru_alloc))
+			return false;
+	} else if (info->flags & RATE_INFO_FLAGS_UHR_MCS) {
+		if (nla_put_u8(msg, NL80211_RATE_INFO_UHR_MCS, info->mcs))
+			return false;
+		if (nla_put_u8(msg, NL80211_RATE_INFO_EHT_NSS, info->nss))
+			return false;
+		if (nla_put_u8(msg, NL80211_RATE_INFO_EHT_GI, info->eht_gi))
+			return false;
+		if (info->bw == RATE_INFO_BW_EHT_RU &&
+		    nla_put_u8(msg, NL80211_RATE_INFO_EHT_RU_ALLOC,
+			       info->eht_ru_alloc))
+			return false;
+		if (info->flags & RATE_INFO_FLAGS_UHR_ELR_MCS &&
+		    nla_put_flag(msg, NL80211_RATE_INFO_UHR_ELR))
+			return false;
+		if (info->flags & RATE_INFO_FLAGS_UHR_IM &&
+		    nla_put_flag(msg, NL80211_RATE_INFO_UHR_IM))
 			return false;
 	}
 
@@ -8795,7 +8873,8 @@ int cfg80211_check_station_change(struct wiphy *wiphy,
 		if (params->ext_capab || params->link_sta_params.ht_capa ||
 		    params->link_sta_params.vht_capa ||
 		    params->link_sta_params.he_capa ||
-		    params->link_sta_params.eht_capa)
+		    params->link_sta_params.eht_capa ||
+		    params->link_sta_params.uhr_capa)
 			return -EINVAL;
 		if (params->sta_flags_mask & BIT(NL80211_STA_FLAG_SPP_AMSDU))
 			return -EINVAL;
@@ -9010,17 +9089,16 @@ static int nl80211_set_station_tdls(struct genl_info *info,
 							false))
 				return -EINVAL;
 		}
+	}
 
-		if (info->attrs[NL80211_ATTR_UHR_CAPABILITY]) {
-			params->link_sta_params.uhr_capa =
-				nla_data(info->attrs[NL80211_ATTR_UHR_CAPABILITY]);
-			params->link_sta_params.uhr_capa_len =
-				nla_len(info->attrs[NL80211_ATTR_UHR_CAPABILITY]);
+	if (info->attrs[NL80211_ATTR_UHR_CAPABILITY]) {
+		if (!params->link_sta_params.eht_capa)
+			return -EINVAL;
 
-			if (!ieee80211_uhr_capa_size_ok((const u8 *)params->link_sta_params.uhr_capa,
-							params->link_sta_params.uhr_capa_len))
-				return -EINVAL;
-		}
+		params->link_sta_params.uhr_capa =
+			nla_data(info->attrs[NL80211_ATTR_UHR_CAPABILITY]);
+		params->link_sta_params.uhr_capa_len =
+			nla_len(info->attrs[NL80211_ATTR_UHR_CAPABILITY]);
 	}
 
 	err = nl80211_parse_sta_channel_info(info, params);
@@ -9359,18 +9437,17 @@ static int nl80211_new_station(struct sk_buff *skb, struct genl_info *info)
 							lsta_params->eht_capa_len,
 							false))
 				return -EINVAL;
-
-			if (info->attrs[NL80211_ATTR_UHR_CAPABILITY]) {
-				lsta_params->uhr_capa =
-					nla_data(info->attrs[NL80211_ATTR_UHR_CAPABILITY]);
-				lsta_params->uhr_capa_len =
-					nla_len(info->attrs[NL80211_ATTR_UHR_CAPABILITY]);
-
-				if (!ieee80211_uhr_capa_size_ok((const u8 *)lsta_params->uhr_capa,
-								lsta_params->uhr_capa_len))
-					return -EINVAL;
-			}
 		}
+	}
+
+	if (info->attrs[NL80211_ATTR_UHR_CAPABILITY]) {
+		if (!params.link_sta_params.eht_capa)
+			return -EINVAL;
+
+		params.link_sta_params.uhr_capa =
+			nla_data(info->attrs[NL80211_ATTR_UHR_CAPABILITY]);
+		params.link_sta_params.uhr_capa_len =
+			nla_len(info->attrs[NL80211_ATTR_UHR_CAPABILITY]);
 	}
 
 	if (info->attrs[NL80211_ATTR_EML_CAPABILITY]) {
@@ -9422,10 +9499,10 @@ static int nl80211_new_station(struct sk_buff *skb, struct genl_info *info)
 	if (parse_station_flags(info, dev->ieee80211_ptr->iftype, &params))
 		return -EINVAL;
 
-	/* HT/VHT/EHT and UHR requires QoS, but if we don't have that just
-	 * ignore HT/VHT/ EHT and UHR as userspace might just pass through
-	 * the capabilities from the IEs directly, rather than enforcing
-	 * this restriction and returning an error in this case.
+	/* HT/VHT requires QoS, but if we don't have that just ignore HT/VHT
+	 * as userspace might just pass through the capabilities from the IEs
+	 * directly, rather than enforcing this restriction and returning an
+	 * error in this case.
 	 */
 	if (!(params.sta_flags_set & BIT(NL80211_STA_FLAG_WME))) {
 		lsta_params->ht_capa = NULL;
@@ -15194,6 +15271,24 @@ static int cfg80211_cqm_rssi_update(struct cfg80211_registered_device *rdev,
 	return rdev_set_cqm_rssi_range_config(rdev, dev, low, high);
 }
 
+static int nl80211_set_ap_cqm_rssi(struct genl_info *info,
+				   const s32 *thresholds, int n_thresholds,
+				   u32 hysteresis)
+{
+	struct cfg80211_registered_device *rdev = info->user_ptr[0];
+	struct net_device *dev = info->user_ptr[1];
+	int link_id = nl80211_link_id_or_invalid(info->attrs);
+
+	/* Only support single threshold */
+	if (n_thresholds != 1 || thresholds[0] > 0)
+		return -EINVAL;
+
+	if (!rdev->ops->set_cqm_rssi_config)
+		return -EOPNOTSUPP;
+
+	return rdev_set_cqm_rssi_config(rdev, dev, thresholds[0], hysteresis, link_id);
+}
+
 static int nl80211_set_cqm_rssi(struct genl_info *info,
 				const s32 *thresholds, int n_thresholds,
 				u32 hysteresis)
@@ -15258,14 +15353,14 @@ static int nl80211_set_cqm_rssi(struct genl_info *info,
 		else
 			err = rdev_set_cqm_rssi_config(rdev, dev,
 						       thresholds[0],
-						       hysteresis);
+						       hysteresis, -1);
 	} else {
 		RCU_INIT_POINTER(wdev->cqm_config, NULL);
 		/* if enabled as range also disable via range */
 		if (old->use_range_api)
 			err = rdev_set_cqm_rssi_range_config(rdev, dev, 0, 0);
 		else
-			err = rdev_set_cqm_rssi_config(rdev, dev, 0, 0);
+			err = rdev_set_cqm_rssi_config(rdev, dev, 0, 0, -1);
 	}
 
 	if (err) {
@@ -15281,6 +15376,8 @@ static int nl80211_set_cqm_rssi(struct genl_info *info,
 static int nl80211_set_cqm(struct sk_buff *skb, struct genl_info *info)
 {
 	struct nlattr *attrs[NL80211_ATTR_CQM_MAX + 1];
+	struct wireless_dev *wdev = NULL;
+	struct net_device *dev = NULL;
 	struct nlattr *cqm;
 	int err;
 
@@ -15304,8 +15401,15 @@ static int nl80211_set_cqm(struct sk_buff *skb, struct genl_info *info)
 		if (len % 4)
 			return -EINVAL;
 
-		return nl80211_set_cqm_rssi(info, thresholds, len / 4,
-					    hysteresis);
+		dev = info->user_ptr[1];
+		wdev = dev->ieee80211_ptr;
+
+		if (wdev->iftype == NL80211_IFTYPE_AP)
+			return nl80211_set_ap_cqm_rssi(info, thresholds, len / 4,
+						       hysteresis);
+		else
+			return nl80211_set_cqm_rssi(info, thresholds, len / 4,
+						    hysteresis);
 	}
 
 	if (attrs[NL80211_ATTR_CQM_TXE_RATE] &&
@@ -18555,18 +18659,17 @@ nl80211_add_mod_link_station(struct sk_buff *skb, struct genl_info *info,
 							params.eht_capa_len,
 							false))
 				return -EINVAL;
-
-			if (info->attrs[NL80211_ATTR_UHR_CAPABILITY]) {
-				params.uhr_capa =
-					nla_data(info->attrs[NL80211_ATTR_UHR_CAPABILITY]);
-				params.uhr_capa_len =
-					nla_len(info->attrs[NL80211_ATTR_UHR_CAPABILITY]);
-
-				if (!ieee80211_uhr_capa_size_ok((const u8 *)params.uhr_capa,
-								params.uhr_capa_len))
-					return -EINVAL;
-			}
 		}
+	}
+
+	if (info->attrs[NL80211_ATTR_UHR_CAPABILITY]) {
+		if (!params.eht_capa)
+			return -EINVAL;
+
+		params.uhr_capa =
+			nla_data(info->attrs[NL80211_ATTR_UHR_CAPABILITY]);
+		params.uhr_capa_len =
+			nla_len(info->attrs[NL80211_ATTR_UHR_CAPABILITY]);
 	}
 
 	if (info->attrs[NL80211_ATTR_HE_6GHZ_CAPABILITY])
@@ -19566,6 +19669,124 @@ nl80211_qos_mgmt_cfg(struct sk_buff *skb, struct genl_info *info)
 	return 0;
 }
 
+static int nl80211_send_ap_powersave(struct cfg80211_registered_device *rdev,
+				     struct sk_buff *msg,
+				     enum nl80211_commands cmd,
+				     int ifindex, u8 link_id,
+				     bool dps_assist_enable)
+{
+	void *hdr;
+
+	hdr = nl80211hdr_put(msg, 0, 0, 0, cmd);
+	if (!hdr)
+		return -ENOBUFS;
+
+	if (nla_put_u32(msg, NL80211_ATTR_IFINDEX, ifindex) ||
+	    nla_put_u8(msg, NL80211_ATTR_MLO_LINK_ID, link_id) ||
+	    nla_put_u8(msg, NL80211_ATTR_DPS_ASSIST, dps_assist_enable)) {
+		goto nla_ap_ps_fail;
+	}
+
+	genlmsg_end(msg, hdr);
+
+	genlmsg_multicast_netns(&nl80211_fam, wiphy_net(&rdev->wiphy), msg, 0,
+				NL80211_MCGRP_CONFIG, GFP_KERNEL);
+
+	return 0;
+
+nla_ap_ps_fail:
+	nlmsg_free(msg);
+	return -ENOBUFS;
+}
+
+static int nl80211_ap_power_save(struct sk_buff *skb, struct genl_info *info)
+{
+	struct cfg80211_registered_device *rdev = info->user_ptr[0];
+	struct net_device *dev = info->user_ptr[1];
+	struct wireless_dev *wdev = dev->ieee80211_ptr;
+	struct nlattr *attrs[NL80211_PCIE_ATTR_MAX + 1];
+	struct cfg80211_ap_power_save_params params = {};
+	struct sk_buff *msg;
+	int err;
+
+	if (info->attrs[NL80211_ATTR_PCIE]) {
+		struct cfg80211_pcie_params *pcie = &params.pcie;
+
+		params.types |= CFG80211_TYPE_PCIE;
+
+		err = nla_parse_nested(attrs, NL80211_PCIE_ATTR_MAX,
+				       info->attrs[NL80211_ATTR_PCIE],
+				       nl80211_pcie_policy, NULL);
+		if (err)
+			return err;
+
+		if (!attrs[NL80211_PCIE_ATTR_TYPE] ||
+		    !attrs[NL80211_PCIE_ATTR_ENABLE] ||
+		    !attrs[NL80211_PCIE_ATTR_CONFIG_TYPE])
+			return -EINVAL;
+
+		pcie->cmd = nla_get_u8(attrs[NL80211_PCIE_ATTR_TYPE]);
+		pcie->enable = nla_get_u8(attrs[NL80211_PCIE_ATTR_ENABLE]);
+		pcie->config_type = nla_get_u8(attrs[NL80211_PCIE_ATTR_CONFIG_TYPE]);
+
+		if (pcie->cmd == CFG80211_PCIE_CMD_GEN_LANE) {
+			if (pcie->config_type == CFG80211_PCIE_GEN_LANE_STATIC) {
+				if (!attrs[NL80211_PCIE_ATTR_GEN] ||
+				    !attrs[NL80211_PCIE_ATTR_LANE])
+					return -EINVAL;
+				pcie->pcie_gen = nla_get_u8(attrs[NL80211_PCIE_ATTR_GEN]);
+				pcie->pcie_lane =
+						nla_get_u8(attrs[NL80211_PCIE_ATTR_LANE]);
+			}
+		}
+	}
+
+	if (info->attrs[NL80211_ATTR_DCVS]) {
+		params.types |= CFG80211_TYPE_DCVS;
+
+		switch (nla_get_u32(info->attrs[NL80211_ATTR_DCVS])) {
+		case NL80211_DCVS_ATTR_ON:
+			params.dcvs_mode = CFG80211_DCVS_CMD_ON;
+			break;
+		case NL80211_DCVS_ATTR_OFF:
+			params.dcvs_mode = CFG80211_DCVS_CMD_OFF;
+			break;
+		case NL80211_DCVS_ATTR_NO_LIMIT:
+			params.dcvs_mode = CFG80211_DCVS_CMD_NO_LIMIT;
+			break;
+		default:
+			return -EINVAL;
+		}
+	}
+
+	if (info->attrs[NL80211_ATTR_DPS_ASSIST]) {
+		params.types |= CFG80211_TYPE_DPS_ASSIST;
+		params.dps_assist_enable = CFG80211_DPS_ASSIST_CMD_DISABLE;
+
+		if (nla_get_u8(info->attrs[NL80211_ATTR_DPS_ASSIST]))
+			params.dps_assist_enable = CFG80211_DPS_ASSIST_CMD_ENABLE;
+	}
+
+	err = rdev_ap_power_save(rdev, wdev,
+				 nl80211_link_id_or_invalid(info->attrs),
+				 &params);
+	if (err)
+		return err;
+
+	if (params.types & CFG80211_TYPE_DPS_ASSIST) {
+		msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
+		if (!msg)
+			return -ENOMEM;
+
+		return nl80211_send_ap_powersave(rdev, msg, NL80211_CMD_AP_POWER_SAVE,
+						 wdev->netdev->ifindex,
+						 nl80211_link_id_or_invalid(info->attrs),
+						 params.dps_assist_enable);
+	}
+
+	return 0;
+}
+
 #define NL80211_FLAG_NEED_WIPHY		0x01
 #define NL80211_FLAG_NEED_NETDEV	0x02
 #define NL80211_FLAG_NEED_RTNL		0x04
@@ -20358,7 +20579,8 @@ static const struct genl_small_ops nl80211_small_ops[] = {
 		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.doit = nl80211_set_cqm,
 		.flags = GENL_UNS_ADMIN_PERM,
-		.internal_flags = IFLAGS(NL80211_FLAG_NEED_NETDEV),
+		.internal_flags = IFLAGS(NL80211_FLAG_NEED_NETDEV |
+					 NL80211_FLAG_MLO_VALID_LINK_ID),
 	},
 	{
 		.cmd = NL80211_CMD_SET_CHANNEL,
@@ -20809,6 +21031,13 @@ static const struct genl_small_ops nl80211_small_ops[] = {
 		.doit = nl80211_qos_mgmt_cfg,
 		.flags = GENL_UNS_ADMIN_PERM,
 		.internal_flags = IFLAGS(NL80211_FLAG_NEED_NETDEV_UP),
+	},
+	{
+		.cmd = NL80211_CMD_AP_POWER_SAVE,
+		.doit = nl80211_ap_power_save,
+		.flags = GENL_UNS_ADMIN_PERM,
+		.internal_flags = IFLAGS(NL80211_FLAG_NEED_NETDEV |
+					 NL80211_FLAG_MLO_VALID_LINK_ID),
 	},
 };
 
@@ -23291,54 +23520,6 @@ void nl80211_awgn_notify(struct cfg80211_registered_device *rdev,
 
 	if (nla_put_u32(msg, NL80211_ATTR_AWGN_INTERFERENCE_BITMAP,
 			chan_bw_interference_bitmap))
-		goto nla_put_failure;
-
-	genlmsg_end(msg, hdr);
-
-	ret = genlmsg_multicast_netns(&nl80211_fam, wiphy_net(&rdev->wiphy), msg, 0,
-				      NL80211_MCGRP_MLME, gfp);
-	return;
-
-nla_put_failure:
-	nlmsg_free(msg);
-}
-
-void nl80211_cw_notify(struct cfg80211_registered_device *rdev,
-			 struct cfg80211_chan_def *chandef,
-			 struct net_device *netdev,
-			 gfp_t gfp)
-{
-	struct sk_buff *msg;
-	void *hdr;
-	int ret;
-
-	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, gfp);
-	if (!msg)
-		return;
-
-	hdr = nl80211hdr_put(msg, 0, 0, 0, NL80211_CMD_INTERFERENCE_DETECT);
-	if (!hdr) {
-		nlmsg_free(msg);
-		return;
-	}
-
-	 if (nla_put_u32(msg, NL80211_ATTR_WIPHY, rdev->wiphy_idx))
-		 goto nla_put_failure;
-
-	if (netdev) {
-		struct wireless_dev *wdev = netdev->ieee80211_ptr;
-
-		if (nla_put_u32(msg, NL80211_ATTR_IFINDEX, netdev->ifindex) ||
-		    nla_put_u64_64bit(msg, NL80211_ATTR_WDEV, wdev_id(wdev),
-				      NL80211_ATTR_PAD))
-			goto nla_put_failure;
-	}
-
-	if (nla_put_u32(msg, NL80211_ATTR_INTERFERENCE_TYPE, NL80211_INTERFERENCE_TYPE_CW)) {
-		goto nla_put_failure;
-	}
-
-	if (nl80211_send_chandef(msg, chandef))
 		goto nla_put_failure;
 
 	genlmsg_end(msg, hdr);

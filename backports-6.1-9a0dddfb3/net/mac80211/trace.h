@@ -3518,6 +3518,50 @@ TRACE_EVENT(drv_erp,
 	)
 );
 
+TRACE_EVENT(drv_ap_power_save,
+	TP_PROTO(struct ieee80211_local *local,
+		 struct ieee80211_sub_if_data *sdata,
+		 int link_id, struct cfg80211_ap_power_save_params *params),
+
+	TP_ARGS(local, sdata, link_id, params),
+
+	TP_STRUCT__entry(
+		LOCAL_ENTRY
+		__field(int, link_id)
+		__field(u32, types)
+		__field(u32, cmd)
+		__field(bool, enable)
+		__field(u8, config_type)
+		__field(u8, pcie_gen)
+		__field(u8, pcie_lane)
+		__field(u32, dcvs_mode)
+		__field(bool, dps_assist_enable)
+	),
+
+	TP_fast_assign(
+		LOCAL_ASSIGN;
+		__entry->link_id = link_id;
+		__entry->types = params->types;
+		__entry->cmd = params->pcie.cmd;
+		__entry->enable = params->pcie.enable;
+		__entry->config_type = params->pcie.config_type;
+		__entry->pcie_gen = params->pcie.pcie_gen;
+		__entry->pcie_lane = params->pcie.pcie_lane;
+		__entry->dcvs_mode = params->dcvs_mode;
+		__entry->dps_assist_enable = params->dps_assist_enable;
+	),
+
+	TP_printk(
+		LOCAL_PR_FMT ", link_id:%d, types %u, PCIe (cmd:%u, enable: %d, config_type: %u,"
+		" pcie_gen: %u, pcie_lane: %u) DCVS (dcvs_mode: %d) DPS Assist (dps_assist_enable %d)",
+
+		LOCAL_PR_ARG, __entry->link_id, __entry->types,__entry->cmd,
+		__entry->enable, __entry->config_type, __entry->pcie_gen,
+		__entry->pcie_lane, __entry->dcvs_mode,
+		__entry->dps_assist_enable
+	)
+);
+
 #endif /* !__MAC80211_DRIVER_TRACE || TRACE_HEADER_MULTI_READ */
 
 #undef TRACE_INCLUDE_PATH

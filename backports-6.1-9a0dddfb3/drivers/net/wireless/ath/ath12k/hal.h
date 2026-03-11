@@ -230,6 +230,9 @@ enum hal_srng_ring_id {
 	HAL_SRNG_RING_ID_TCL_STATUS,
 	HAL_SRNG_RING_ID_TX_EXCEPTION,
 
+	HAL_SRNG_RING_ID_TQM_HOST_CMD = 39,
+	HAL_SRNG_RING_ID_TQM_HOST_STATUS,
+
 	HAL_SRNG_RING_ID_WBM_BUF1 = 41,
 	HAL_SRNG_RING_ID_WBM_BUF2,
 	HAL_SRNG_RING_ID_WBM_BUF3,
@@ -337,6 +340,7 @@ enum hal_srng_ring_id {
 	HAL_SRNG_RING_ID_WBM2SW5_RELEASE,
 	HAL_SRNG_RING_ID_WBM2SW6_RELEASE,
 	HAL_SRNG_RING_ID_WBM2SW7_RELEASE,
+	HAL_SRNG_RING_ID_FSE_CMD,
 	HAL_SRNG_RING_ID_UMAC_ID_END = 169,
 
 	/* Common DMAC rings shared by all LMACs */
@@ -371,6 +375,7 @@ enum hal_ring_type {
 	HAL_REO_CMD,
 	HAL_REO_STATUS,
 	HAL_REO2PPE,
+	HAL_RXOLE_FSE_CMD,
 	HAL_TCL_DATA,
 	HAL_TCL_CMD,
 	HAL_TCL_STATUS,
@@ -402,6 +407,8 @@ enum hal_ring_type {
 	HAL_WBM_IDLE_BUF,
 	HAL_WBM_BUF_MGMT,
 	HAL_WBM_IDLE_BUF_MGMT,
+	HAL_TQM_CMD,
+	HAL_TQM_STATUS,
 	HAL_MAX_RING_TYPES,
 };
 
@@ -486,6 +493,8 @@ enum hal_reo_entr_rxdma_ecode {
 	HAL_REO_ENTR_RING_RXDMA_ECODE_AMSDU_ADDR_MISMATCH_ERR,
 	HAL_REO_ENTR_RING_RXDMA_ECODE_UNAUTH_WDS_ERR,
 	HAL_REO_ENTR_RING_RXDMA_ECODE_GROUPCAST_AMSDU_OR_WDS_ERR,
+	HAL_REO_ENTR_RING_RXDMA_ECODE_CFP_MIC_ERR,
+	HAL_REO_ENTR_RING_RXDMA_ECODE_CFP_PN_CHK_ERR,
 	HAL_REO_ENTR_RING_RXDMA_ECODE_MAX,
 };
 
@@ -589,6 +598,33 @@ enum hal_reo_cmd_status {
  * @HAL_WBM_TQM_REL_REASON_MULTICAST_DROP: Dropped due mcast drop set for VDEV
  * @HAL_WBM_TQM_REL_REASON_VDEV_MISMATCH_DROP: Dropped due to being set with
  *	'TCL_drop_reason'
+ * @HAL_WBM_TQM_REL_REASON_GEN_CMD_USED_TREE_EXT: Generic command used tree
+ *	extension.
+ * @HAL_WBM_TQM_REL_REASON_TCL_DROP_FROM_PEER_CCE_OR_FLOW_TABLE: Dropped by TCL
+ *	due to Peer CCE or Flow table.
+ * @HAL_WBM_TQM_REL_REASON_TCL_MULTICAST_REINJECT_FOR_VDEV: TCL multicast
+ *	reinjection for VDEV.
+ * @HAL_WBM_TQM_REL_REASON_TCL_MEC_SEARCH_FAIL_FOR_VDEV: TCL MEC search
+ *	failed for VDEV.
+ * @HAL_WBM_TQM_REL_REASON_TCL_ASE_SEARCH_FAIL: TCL ASE search failed.
+ * @HAL_WBM_TQM_REL_REASON_TCL_SMD_ROAMING_DROP: TCL dropped due to SMD
+ *	roaming.
+ * @HAL_WBM_TQM_REL_REASON_TCL_STRIP_VLAN_TCI_MISMATCH_DROP: TCL dropped due
+ *	to strip VLAN TCI mismatch.
+ * @HAL_WBM_TQM_REL_REASON_TCL_MEC_KEEP_ALIVE_FOR_VDEV: TCL MEC keep alive
+ *	for VDEV.
+ * @HAL_WBM_TQM_REL_REASON_TCL_RESERVED_DROP_REASON1: TCL reserved drop
+ *	reason 1.
+ * @HAL_WBM_TQM_REL_REASON_TCL_RESERVED_DROP_REASON2: TCL reserved drop
+ *	reason 2.
+ * @HAL_WBM_TQM_REL_REASON_TQM_REM_MSDU_SMD_ROAMING: TQM remove MSDU due to
+ *	SMD roaming.
+ * @HAL_WBM_TQM_REL_REASON_TQM_REM_MPDU_SMD_ROAMING: TQM remove MPDU due to
+ *	SMD roaming.
+ * @HAL_WBM_TQM_REL_REASON_TQM_RESERVED_DROP_REASON3: TQM reserved drop
+ *	reason 3.
+ * @HAL_WBM_TQM_REL_REASON_TQM_RESERVED_DROP_REASON4: TQM reserved drop
+ *	reason 4.
  */
 enum hal_wbm_tqm_rel_reason {
 	HAL_WBM_TQM_REL_REASON_FRAME_ACKED,
@@ -606,6 +642,20 @@ enum hal_wbm_tqm_rel_reason {
 	HAL_WBM_TQM_REL_REASON_DROP_OR_INVALID_MSDU,
 	HAL_WBM_TQM_REL_REASON_MULTICAST_DROP,
 	HAL_WBM_TQM_REL_REASON_VDEV_MISMATCH_DROP,
+	HAL_WBM_TQM_REL_REASON_GEN_CMD_USED_TREE_EXT,
+	HAL_WBM_TQM_REL_REASON_TCL_DROP_FROM_PEER_CCE_OR_FLOW_TABLE,
+	HAL_WBM_TQM_REL_REASON_TCL_MULTICAST_REINJECT_FOR_VDEV,
+	HAL_WBM_TQM_REL_REASON_TCL_MEC_SEARCH_FAIL_FOR_VDEV,
+	HAL_WBM_TQM_REL_REASON_TCL_ASE_SEARCH_FAIL,
+	HAL_WBM_TQM_REL_REASON_TCL_SMD_ROAMING_DROP,
+	HAL_WBM_TQM_REL_REASON_TCL_STRIP_VLAN_TCI_MISMATCH_DROP,
+	HAL_WBM_TQM_REL_REASON_TCL_MEC_KEEP_ALIVE_FOR_VDEV,
+	HAL_WBM_TQM_REL_REASON_TCL_RESERVED_DROP_REASON1,
+	HAL_WBM_TQM_REL_REASON_TCL_RESERVED_DROP_REASON2,
+	HAL_WBM_TQM_REL_REASON_TQM_REM_MSDU_SMD_ROAMING,
+	HAL_WBM_TQM_REL_REASON_TQM_REM_MPDU_SMD_ROAMING,
+	HAL_WBM_TQM_REL_REASON_TQM_RESERVED_DROP_REASON3,
+	HAL_WBM_TQM_REL_REASON_TQM_RESERVED_DROP_REASON4,
 
 	/* Keep Last */
 	HAL_WBM_TQM_REL_REASON_MAX,
@@ -1061,6 +1111,7 @@ struct ath12k_hw_hal_params {
 	u16 dscp_tid_map_tbl_max_entries;
 	u8 num_tids;
 	u32 reoq_lut_size;
+	u32 dp_rx_err_rdi;
 };
 
 struct ath12k_hw_regs {
@@ -1405,6 +1456,9 @@ struct hal_ops {
 	void (*reo_init_cmd_ring)(struct ath12k_base *ab,
 				  struct hal_srng *srng);
 	void (*reo_hw_setup)(struct ath12k_base *ab);
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	void (*reo_hw_setup_ipa)(struct ath12k_base *ab);
+#endif
 	void (*cc_config)(struct ath12k_base *ab);
 	void (*srng_hw_disable)(struct ath12k_base *ab, struct hal_srng *srng);
 	void (*reset_rx_reo_tid_q)(void *vaddr, u32 ba_window_size, u8 tid);
@@ -1651,6 +1705,11 @@ void ath12k_hal_reoq_lut_set_max_peerid(struct ath12k_base *ab);
 void ath12k_hal_reo_init_cmd_ring(struct ath12k_base *ab,
                                  struct hal_srng *srng);
 void ath12k_hal_reo_hw_setup(struct ath12k_base *ab);
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+void *ath12k_hal_srng_dst_get_next_hp_entry(struct ath12k_base *ab,
+					    struct hal_srng *srng);
+void ath12k_hal_reo_hw_setup_ipa(struct ath12k_base *ab);
+#endif
 void ath12k_hal_rx_buf_addr_info_set(struct ath12k_buffer_addr *binfo,
 				     dma_addr_t paddr, u32 cookie, u8 manager);
 void ath12k_hal_rx_buf_addr_info_get(struct ath12k_buffer_addr *binfo,
@@ -1691,4 +1750,12 @@ void ath12k_hal_rx_msdu_list_get(struct ath12k_hal *hal,
 				 u16 *num_msdus);
 u8 ath12k_hal_rx_h_l3pad_get(struct ath12k_hal *hal,
 			     struct hal_rx_desc *desc);
+ssize_t ath12k_hal_dump_ring_stats(struct ath12k_base *ab, enum hal_ring_type type,
+				   int ring_id, char *buf, int size);
+void
+ath12k_hal_get_tlv_params(struct ath12k_hal *hal,
+			  __le64 tlv_header,
+			  u16 *tlv_tag,
+			  u32 *tlv_userid,
+			  u16 *tlv_len);
 #endif

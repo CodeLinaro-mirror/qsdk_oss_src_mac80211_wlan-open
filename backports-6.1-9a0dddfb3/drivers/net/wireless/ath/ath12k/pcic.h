@@ -13,6 +13,7 @@
 #include "hif.h"
 #include <linux/msi.h>
 #include "pci.h"
+#include "mgmt_rx.h"
 
 #define ATH12K_PCI_IRQ_CE0_OFFSET		3
 

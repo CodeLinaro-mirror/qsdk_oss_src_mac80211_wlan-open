@@ -56,6 +56,7 @@ enum ath12k_debug_mask {
 	ATH12K_DBG_ACTION		= BIT_ULL(39),
 	ATH12K_DBG_MLO			= BIT_ULL(40),
 	ATH12K_DBG_POWER		= BIT_ULL(41),
+	ATH12K_DBG_DP_MON_TX		= BIT_ULL(42),
 
 	ATH12K_DBG_ANY			= GENMASK_ULL(63, 0),
 };
@@ -75,7 +76,7 @@ __printf(2, 3) void __ath12k_warn(struct device *dev, const char *fmt, ...);
 #define ath12k_hw_warn(ah, fmt, ...) __ath12k_warn((ah)->dev, fmt, ##__VA_ARGS__)
 #define ath12k_dbg_level(ab, dbg_mask, dbg_level, fmt, ...)				\
 do {											\
-	if (dbg_level && ath12k_debug_mask_level >= dbg_level)		\
+	if (ath12k_debug_mask_level >= dbg_level)		\
 		ath12k_dbg(ab, dbg_mask, fmt, ##__VA_ARGS__);				\
 } while (0)
 
@@ -101,13 +102,6 @@ void ath12k_dbg_dump(struct ath12k_base *ab,
 		     u64 mask,
 		     const char *msg, const char *prefix,
 		     const void *buf, size_t len);
-
-#define ath12k_log(_printer, _ab, _rid, _vid, _fmt, ...)                       \
-do {                                                                           \
-	char __pfx[128];                                                           \
-	ath12k_format_log_prefix((_ab), (_rid), (_vid), __pfx, sizeof(__pfx));       \
-	_printer((_ab), "%s" _fmt, __pfx, ##__VA_ARGS__);                         \
-} while (0)
 
 #define ath12k_dbg_tag(ab, dbg_mask, dbg_level, rid, vid, fmt, ...)            \
 do {                                                                           \
@@ -143,7 +137,9 @@ do {                                                     \
 		__ath12k_dbg(ab, __mask, fmt, ##__VA_ARGS__);    \
 } while (0)
 
-#define ath12k_generic_dbg(dbg_mask, fmt, ...)			\
-	ath12k_dbg(NULL, dbg_mask, fmt, ##__VA_ARGS__)
-
+#define ath12k_generic_dbg(dbg_mask, dbg_level, fmt, ...)			\
+do {										\
+	if (ath12k_debug_mask_level >= dbg_level)				\
+		ath12k_dbg(NULL, dbg_mask, fmt, ##__VA_ARGS__);                 \
+} while (0)
 #endif /* _ATH12K_DEBUG_H_ */

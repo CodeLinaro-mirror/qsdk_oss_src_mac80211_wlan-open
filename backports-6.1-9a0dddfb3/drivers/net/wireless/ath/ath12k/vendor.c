@@ -23,6 +23,7 @@
 #include "vendor_services.h"
 #include "dp_peer.h"
 #include "dp_mon.h"
+#include "me.h"
 
 static const struct nla_policy
 ath12k_wifi_config_policy[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1] = {
@@ -116,11 +117,119 @@ ath12k_pri_link_migrate_policy[QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_NEW_PRI_LINK_ID] = {.type =  NLA_U8},
 };
 
+/* NLA policy for repurpose link command */
 static const struct nla_policy
-ath12k_vendor_dcs_policy[QCA_WLAN_VENDOR_ATTR_DCS_MAX + 1] = {
-	[QCA_WLAN_VENDOR_ATTR_DCS_MLO_LINK_ID] = {.type = NLA_U8},
-	[QCA_WLAN_VENDOR_ATTR_DCS_WLAN_INTERFERENCE_CONFIGURE] = {.type = NLA_U8},
+ath12k_repurpose_link_policy[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_MLO_LINK_ID] = { .type = NLA_U8 },
 };
+
+static const struct nla_policy
+ath12k_vendor_me_config_policy[QCA_WLAN_VENDOR_ATTR_ME_CONFIG_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_ME_CONFIG_PARAM] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_ME_CONFIG_VALUE] = { .type = NLA_U32 },
+};
+
+/**
+ * ath12k_vendor_repurpose_link() - Mark an MLO link for repurposing
+ * @wiphy: wiphy device pointer
+ * @wdev: wireless device pointer
+ * @data: vendor command data
+ * @data_len: vendor command data length
+ *
+ * This vendor command marks a specific MLO link as being repurposed.
+ * The link ID is extracted from the vendor attributes and the corresponding
+ * bit is set in the repurpose_links_bmap across ath12k_vif, ieee80211_vif,
+ * and wireless_dev structures.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static int ath12k_vendor_repurpose_link(struct wiphy *wiphy,
+					struct wireless_dev *wdev,
+					const void *data, int data_len)
+{
+	struct ieee80211_vif *vif = wdev_to_ieee80211_vif(wdev);
+	struct ath12k_vif *ahvif;
+	struct ath12k_link_vif *arvif;
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1];
+	u8 link_id;
+	int ret;
+
+	if (!vif)
+		return -EINVAL;
+
+	if (vif->type != NL80211_IFTYPE_AP) {
+		ath12k_err(NULL,
+			   "Repurpose not supported on vif type: %d",
+			   vif->type);
+		return -EOPNOTSUPP;
+	}
+
+	ahvif = ath12k_vif_to_ahvif(vif);
+	if (!ahvif) {
+		ath12k_err(NULL, "ath12k VIF is NULL");
+		return -EINVAL;
+	}
+
+	/* Parse vendor attributes */
+	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_CONFIG_MAX, data, data_len,
+			ath12k_repurpose_link_policy, NULL);
+	if (ret) {
+		ath12k_err(NULL, "Failed to parse vendor attributes: %d", ret);
+		return ret;
+	}
+
+	/* Check if link ID attribute is present */
+	if (!tb[QCA_WLAN_VENDOR_ATTR_CONFIG_MLO_LINK_ID]) {
+		ath12k_err(NULL, "Link ID attribute missing");
+		return -EINVAL;
+	}
+
+	link_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_CONFIG_MLO_LINK_ID]);
+
+	/* Validate link ID range */
+	if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS) {
+		ath12k_err(NULL, "Invalid link ID %u (max %u)",
+			   link_id, IEEE80211_MLD_MAX_NUM_LINKS - 1);
+		return -EINVAL;
+	}
+
+	/* Do not allow repurpose setting on active link */
+	arvif = ath12k_get_arvif_from_link_id(ahvif, link_id);
+	if (!arvif) {
+		ath12k_err(NULL, "No arvif found for the repurposing link");
+		return -EINVAL;
+	}
+	if (arvif->is_started) {
+		ath12k_err(NULL, "Cannot repurpose active link ID %u",
+			   link_id);
+		return -EBUSY;
+	}
+
+	/* Check if link is already marked for repurposing */
+	if (ahvif->repurposed_links & BIT(link_id)) {
+		ath12k_err(NULL, "Link ID %u already marked for repurposing",
+			   link_id);
+		return 0;
+	}
+
+	/* Mark link for repurposing in ieee80211_vif via mac80211 helper */
+	ret = ieee80211_set_repurpose_link(vif, link_id);
+	if (ret) {
+		ath12k_err(NULL,
+			   "Failed to set repurpose link in mac80211: %d",
+			   ret);
+		return ret;
+	}
+
+	/* Mark link for repurposing in ath12k_vif */
+	ahvif->repurposed_links |= BIT(link_id);
+
+	ath12k_dbg(NULL, ATH12K_DBG_MAC,
+		   "Link ID %u marked for repurposing (bmap: 0x%x)",
+		   link_id, ahvif->repurposed_links);
+
+	return ret;
+}
 
 static void
 ath12k_afc_response_buffer_display(struct ath12k_base *ab,
@@ -1088,30 +1197,6 @@ int ath12k_send_afc_payload_reset(struct ath12k *ar)
 	int ret = -EINVAL;
 	int vendor_buffer_len, hw_index;
 	struct ath12k_base *ab = ar->ab;
-	struct ath12k_link_vif *tmp_arvif = NULL, *arvif;
-	struct wireless_dev *wdev;
-
-	list_for_each_entry(arvif, &ar->arvifs, list) {
-		if (arvif->is_started) {
-			tmp_arvif = arvif;
-			break;
-		}
-	}
-
-	if (!tmp_arvif || !tmp_arvif->ahvif) {
-		ath12k_warn(ar->ab, "Unable to send AFC payload reset event, no vif started\n");
-		goto out;
-	}
-
-	wdev = ieee80211_vif_to_wdev(tmp_arvif->ahvif->vif);
-	/* Hostapd application is a consumer of this afc payload reset event, without
-	 * the presence of the vif, it cannot take any action on the received payload
-	 * reset event. Hence, send this event only when a vif is present.
-	 */
-	if (!wdev) {
-		ath12k_warn(ar->ab, "Unable to send AFC payload reset event, no wdev\n");
-		goto out;
-	}
 
 	hw_index = cfg80211_get_hw_idx_by_freq(ar->ah->hw->wiphy,
 					       ar->freq_range.start_freq);
@@ -1123,7 +1208,7 @@ int ath12k_send_afc_payload_reset(struct ath12k *ar)
 
 	vendor_buffer_len = afc_payload_reset_evt_get_data_len();
 	vendor_event = cfg80211_vendor_event_alloc(ar->ah->hw->wiphy,
-						   wdev,
+						   NULL,
 						   vendor_buffer_len,
 						   QCA_NL80211_VENDOR_SUBCMD_AFC_EVENT_INDEX,
 						   GFP_ATOMIC);
@@ -2354,7 +2439,6 @@ static int ath12k_vendor_get_rx_mon_stats_size(void)
 	total_size += nla_total_size(sizeof(stats.num_mpdu_retry_count));
 
 	total_size += nla_total_size_64bit(sizeof(stats.num_ppdus));
-	total_size += nla_total_size(sizeof(stats.num_ppdu_duration));
 
 	total_size += nla_total_size(sizeof(stats.num_bar));
 	total_size += nla_total_size(sizeof(stats.num_ndpa));
@@ -2372,11 +2456,6 @@ static int ath12k_vendor_get_rx_mon_stats_size(void)
 	/* PPDU nss array */
 	payload_size = nla_total_size(sizeof(stats.ppdu_nss[0]) *
 			HAL_RX_MAX_NSS);
-	total_size += nla_total_size_nested(payload_size);
-
-	/* rx mpdu count array */
-	payload_size = nla_total_size(sizeof(stats.num_mpdu_count[0]) *
-			MAX_MCS);
 	total_size += nla_total_size_nested(payload_size);
 
 	/* punc bw array */
@@ -2551,6 +2630,9 @@ static int ath12k_get_dp_vif_attr_len(struct ath12k_telemetry_command *cmd)
 
 	if (cmd->feat.feat_proto)
 		total_size += ath12k_get_feat_proto_vap_attr_size();
+
+	if (cmd->feat.feat_rx)
+		total_size += ath12k_get_dp_rx_scan_radio_stats_len();
 
 	/*Aggregated Sta Stats Size */
 	total_size += ath12k_get_dp_peer_attr_len(cmd);
@@ -4543,13 +4625,13 @@ static int ath12k_put_rx_mu_stats(struct sk_buff *skb,
 static int ath12k_vendor_fill_rx_mon_stats(struct sk_buff *skb,
 					   struct ath12k_rx_peer_stats *rx_stats,
 					   bool is_extended,
-					   int peer_type)
+					   int peer_type, struct ath12k *ar)
 {
 	struct nlattr *coding_attr, *tid_attr, *pream_attr;
 	struct nlattr *reception_attr, *ru_attr;
 	struct nlattr *pkt_stats_attr, *byte_stats_attr, *signal_stat_attr;
 	struct nlattr *ppdu_nss_attr, *punc_bw_attr, *su_ppdu_cnt_attr;
-	struct nlattr *nla_wme, *rx_mpdu_cnt_attr, *ppdu_cnt_attr;
+	struct nlattr *nla_wme, *ppdu_cnt_attr;
 	struct nlattr *pkt_type_attr, *mu_stats;
 	struct nlattr *pkt_type_nest, *pkt_type_mu_stats;
 	int i, j;
@@ -4591,12 +4673,6 @@ static int ath12k_vendor_fill_rx_mon_stats(struct sk_buff *skb,
 			ath12k_err(NULL, "nla failure: RX mon stats - rx duration");
 			return -EMSGSIZE;
 		}
-		if (nla_put_u32(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_NUM_PPDU_DURATION,
-				rx_stats->num_ppdu_duration)) {
-			ath12k_err(NULL, "nla failure: RX mon stats ppdu duration");
-			return -EMSGSIZE;
-		}
-
 	}
 
 	/* Coding count array */
@@ -4749,7 +4825,7 @@ static int ath12k_vendor_fill_rx_mon_stats(struct sk_buff *skb,
 	nla_nest_end(skb, signal_stat_attr);
 
 	/* Extended stats placeholder */
-	if (!is_extended)
+	if (!ath12k_dp_advance_stats_enabled(&ar->dp))
 		return 0;
 
 	if (nla_put_u32(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_NUM_BAR,
@@ -4759,20 +4835,6 @@ static int ath12k_vendor_fill_rx_mon_stats(struct sk_buff *skb,
 		ath12k_err(NULL, "nla failure: Failed to put extended RX mon stats");
 		return -EMSGSIZE;
 	}
-
-	rx_mpdu_cnt_attr = nla_nest_start(skb,
-					  QCA_VENDOR_ATTR_WLAN_TELEMETRY_NUM_MPDU_COUNT);
-	if (!rx_mpdu_cnt_attr)
-		return -EMSGSIZE;
-
-	for (i = 0; i < QCA_VENDOR_WLAN_TELEMETRY_EHT_MCS_MAX; i++) {
-		if (nla_put_u64_64bit(skb, i + 1, rx_stats->num_mpdu_count[i],
-				      NL80211_ATTR_PAD)) {
-			nla_nest_cancel(skb, rx_mpdu_cnt_attr);
-			return -EMSGSIZE;
-		}
-	}
-	nla_nest_end(skb, rx_mpdu_cnt_attr);
 
 	ppdu_cnt_attr = nla_nest_start(skb,
 				       QCA_VENDOR_ATTR_WLAN_TELEMETRY_PPDU_RECEPTION);
@@ -4980,7 +5042,7 @@ static int ath12k_fill_peer_rx_stats(struct ath12k *ar,
 		}
 
 		if (ath12k_vendor_fill_rx_mon_stats(vendor_event, rx_mon_stats,
-						    is_extended, peer_type)) {
+						    is_extended, peer_type, ar)) {
 			ath12k_err(NULL, "nla put failure: RX monitor stats");
 			nla_nest_cancel(vendor_event, attr);
 			return -EMSGSIZE;
@@ -5678,6 +5740,13 @@ static int ath12k_fill_vap_rx_stats(struct ath12k *ar,
 				    struct ath12k_telemetry_dp_vif *telemetry_vif)
 {
 	int ret;
+
+	/*Rx scan stats */
+	if (ath12k_scan_radio_supported(ar->pdev)) {
+		ret = ath12k_fill_rx_scan_radio_stats(
+				vendor_event, &telemetry_vif->rx_scan_radio_stats);
+		return ret;
+	}
 
 	/* Aggregated Peer Rx Stats */
 	ret = ath12k_fill_peer_rx_stats(ar,
@@ -6971,31 +7040,15 @@ ath12k_vendor_send_power_update_complete(struct ath12k *ar,
 					 struct ath12k_afc_info *afc)
 {
 	struct ath12k_afc_sp_reg_info *afc_reg_info = afc->afc_reg_info;
-	struct ath12k_link_vif *tmp_arvif = NULL, *arvif;
 	struct sk_buff *vendor_event;
-	struct wireless_dev *wdev;
 	int vendor_buffer_len;
-
-	list_for_each_entry(arvif, &ar->arvifs, list) {
-		if (!tmp_arvif && arvif->is_started) {
-			tmp_arvif = arvif;
-			break;
-		}
-	}
-
-	if (!tmp_arvif || !tmp_arvif->ahvif)
-		return -EINVAL;
-
-	wdev = ieee80211_vif_to_wdev(tmp_arvif->ahvif->vif);
-	if (!wdev)
-		return -EINVAL;
 
 	vendor_buffer_len =
 		ath12k_afc_power_event_update_or_get_len(ar, NULL,
 							 afc_reg_info);
 
 	vendor_event =
-	cfg80211_vendor_event_alloc(ar->ah->hw->wiphy, wdev, vendor_buffer_len,
+	cfg80211_vendor_event_alloc(ar->ah->hw->wiphy, NULL, vendor_buffer_len,
 				    QCA_NL80211_VENDOR_SUBCMD_AFC_EVENT_INDEX,
 				    GFP_ATOMIC);
 	if (!vendor_event) {
@@ -7021,7 +7074,10 @@ fail:
 	return -EINVAL;
 }
 
-static struct ath12k *ath12k_get_ar_from_wdev(struct wireless_dev *wdev, u8 link_id)
+#ifndef CPTCFG_QCN_EXTN
+static
+#endif
+struct ath12k *ath12k_get_ar_from_wdev(struct wireless_dev *wdev, u8 link_id)
 {
 	struct ieee80211_vif *vif =  NULL;
 	struct ath12k_vif *ahvif = NULL;
@@ -9132,6 +9188,7 @@ static int ath12k_vendor_get_reg_eirp_handler(struct wiphy *wiphy, struct wirele
 		    wdev->links[link_id].ap.chandef.chan->band == NL80211_BAND_6GHZ)
 			break;
 	}
+
 	if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
 		return -EINVAL;
 
@@ -9189,6 +9246,290 @@ static int ath12k_vendor_get_reg_eirp_handler(struct wiphy *wiphy, struct wirele
 free_eirp:
 	kfree(chan_eirp_list);
 	return ret_val;
+}
+
+static const struct nla_policy
+ath12k_vendor_channel_switch_time_policy[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_FREQ] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_BANDWIDTH] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_CENTER_FREQ1] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_CENTER_FREQ2] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_PUNCT_BMAP] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_TOTAL] = { .type = NLA_U32 },
+};
+
+int ath12k_get_num_beaconing_vifs(struct ath12k *ar)
+{
+	u32 count = 0;
+	struct ath12k_link_vif *arvif;
+
+	list_for_each_entry(arvif, &ar->arvifs, list) {
+		if (arvif->is_up &&
+		    arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP &&
+		    arvif->beacon_interval > 0)
+			count++;
+	}
+	return count;
+}
+
+static enum nl80211_chan_width
+ath12k_vendor_bandwidth_to_chan_width(u32 bandwidth)
+{
+	switch (bandwidth) {
+	case 20:
+		return NL80211_CHAN_WIDTH_20;
+	case 40:
+		return NL80211_CHAN_WIDTH_40;
+	case 80:
+		return NL80211_CHAN_WIDTH_80;
+	case 160:
+		return NL80211_CHAN_WIDTH_160;
+	case 5:
+		return NL80211_CHAN_WIDTH_5;
+	case 10:
+		return NL80211_CHAN_WIDTH_10;
+	case 1:
+		return NL80211_CHAN_WIDTH_1;
+	case 2:
+		return NL80211_CHAN_WIDTH_2;
+	case 4:
+		return NL80211_CHAN_WIDTH_4;
+	case 8:
+		return NL80211_CHAN_WIDTH_8;
+	case 16:
+		return NL80211_CHAN_WIDTH_16;
+	case 320:
+		return NL80211_CHAN_WIDTH_320;
+	default:
+		return bandwidth;
+	}
+}
+
+static int
+ath12k_vendor_validate_cs_time_chandef(struct wiphy *wiphy,
+				       u32 freq, u32 bandwidth_attr,
+				       u32 center_freq1, u32 center_freq2,
+				       struct cfg80211_chan_def *chandef)
+{
+	struct ieee80211_channel *channel;
+
+	if (!freq)
+		return -EINVAL;
+
+	channel = ieee80211_get_channel(wiphy, freq);
+	if (!channel)
+		return -EINVAL;
+
+	memset(chandef, 0, sizeof(*chandef));
+	chandef->chan = channel;
+	chandef->width = ath12k_vendor_bandwidth_to_chan_width(bandwidth_attr);
+
+	switch (chandef->width) {
+	case NL80211_CHAN_WIDTH_20_NOHT:
+	case NL80211_CHAN_WIDTH_20:
+	case NL80211_CHAN_WIDTH_5:
+	case NL80211_CHAN_WIDTH_10:
+	case NL80211_CHAN_WIDTH_1:
+	case NL80211_CHAN_WIDTH_2:
+	case NL80211_CHAN_WIDTH_4:
+	case NL80211_CHAN_WIDTH_8:
+	case NL80211_CHAN_WIDTH_16:
+		if (center_freq2)
+			return -EINVAL;
+		if (center_freq1 && center_freq1 != freq)
+			return -EINVAL;
+		center_freq1 = freq;
+		center_freq2 = 0;
+		break;
+	case NL80211_CHAN_WIDTH_320:
+		if (center_freq1 == freq + 150 ||
+		    center_freq1 == freq + 130 ||
+		    center_freq1 == freq + 110 ||
+		    center_freq1 == freq + 90 ||
+		    center_freq1 == freq - 90 ||
+		    center_freq1 == freq - 110 ||
+		    center_freq1 == freq - 130 ||
+		    center_freq1 == freq - 150)
+			break;
+		fallthrough;
+	case NL80211_CHAN_WIDTH_160:
+		if (center_freq1 == freq + 70 ||
+		    center_freq1 == freq + 50 ||
+		    center_freq1 == freq - 50 ||
+		    center_freq1 == freq - 70)
+			break;
+		fallthrough;
+	case NL80211_CHAN_WIDTH_80P80:
+	case NL80211_CHAN_WIDTH_80:
+		if (center_freq1 == freq + 30 ||
+		    center_freq1 == freq - 30)
+			break;
+		fallthrough;
+	case NL80211_CHAN_WIDTH_40:
+		if (center_freq1 == freq + 10 ||
+		    center_freq1 == freq - 10)
+			break;
+		fallthrough;
+	default:
+		return -EINVAL;
+	}
+
+	chandef->center_freq1 = center_freq1;
+	chandef->center_freq2 = center_freq2;
+	return 0;
+}
+
+static int ath12k_vendor_get_channel_switch_time(struct wiphy *wiphy,
+						 struct wireless_dev *wdev,
+						 const void *data,
+						 int data_len)
+{
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_MAX + 1];
+	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
+	struct ath12k_hw *ah = hw->priv;
+	struct ieee80211_vif *vif;
+	struct ath12k_vif *ahvif;
+	u32 beacon_time, restart_time, dfs_time;
+	struct ath12k_link_vif *arvif;
+	u64 tot_chan_switch_time;
+	struct ath12k *ar;
+	int dfs_required;
+	u8 link_id;
+	struct ath12k_base *ab;
+	struct sk_buff *reply;
+	u32 tgt_restart_time;
+	u32 drv_restart_time;
+	u32 active_vifs;
+	u32 freq = 0, center_freq1 = 0, center_freq2 = 0;
+	u32 bandwidth_attr = NL80211_CHAN_WIDTH_20_NOHT;
+	u32 channel_switch_time = 0;
+	struct cfg80211_chan_def chandef;
+	int ret;
+
+	if (!wdev || !wdev->netdev)
+		return -EINVAL;
+
+	vif = wdev_to_ieee80211_vif(wdev);
+	if (!vif)
+		return -EINVAL;
+
+	ahvif = ath12k_vif_to_ahvif(vif);
+	if (!ahvif)
+		return -EINVAL;
+
+	if (!data || !data_len) {
+		ath12k_dbg(NULL, ATH12K_DBG_MAC,
+			   "No data provided for channel switch time\n");
+		return -EINVAL;
+	}
+
+	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_MAX,
+			data, data_len, ath12k_vendor_channel_switch_time_policy,
+			NULL);
+	if (ret) {
+		ath12k_dbg(NULL, ATH12K_DBG_MAC,
+			   "Failed to parse channel switch time attributes: %d\n", ret);
+		return ret;
+	}
+
+	if (!tb[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_FREQ]) {
+		ath12k_dbg(NULL, ATH12K_DBG_MAC,
+			   "Channel switch time: missing freq\n");
+		return -EINVAL;
+	}
+
+	freq = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_FREQ]);
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_BANDWIDTH])
+		bandwidth_attr =
+		      nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_BANDWIDTH]);
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_CENTER_FREQ1])
+		center_freq1 =
+		   nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_CENTER_FREQ1]);
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_CENTER_FREQ2])
+		center_freq2 =
+		   nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_CENTER_FREQ2]);
+
+	ret = ath12k_vendor_validate_cs_time_chandef(hw->wiphy, freq,
+						     bandwidth_attr,
+						     center_freq1,
+						     center_freq2,
+						     &chandef);
+	if (ret) {
+		ath12k_dbg(NULL, ATH12K_DBG_MAC,
+			   "Channel switch time: invalid chandef params (freq=%u width=%u cf1=%u cf2=%u)\n",
+			   freq, bandwidth_attr, center_freq1, center_freq2);
+		return ret;
+	}
+
+	/*
+	 * Get beacon interval of link vif that corresponds to the channel.
+	 * Use ath12k_mac_select_scan_device to get the ar corresponding
+	 * to this channel freq and get corresponding link.
+	 */
+	ar = ath12k_mac_select_scan_device(hw, vif, center_freq1);
+	if (!ar)
+		return -EINVAL;
+
+	link_id = ath12k_mac_find_link_id_by_ar(ahvif, ar);
+	arvif = wiphy_dereference(ah->hw->wiphy, ahvif->link[link_id]);
+	if (!arvif)
+		return -EINVAL;
+	/*
+	 * Accounts for two beacon intervals:
+	 * 1. Time to receive CSA completion event from firmware.
+	 * 2. Time for firmware to transmit a beacon on the new channel
+	 *    after processing the vdev up command from the host.
+	 */
+	beacon_time = arvif->beacon_interval * 2;
+
+	ab = ar->ab;
+	if (!ab)
+		return -EINVAL;
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+		   "vendor get channel switch time: freq=%u bw=%u cf1=%u cf2=%u\n",
+		   freq, bandwidth_attr, center_freq1, center_freq2);
+
+	active_vifs = ath12k_get_num_beaconing_vifs(ar);
+	tgt_restart_time = ATH12K_CSA_FW_RESTART_TIME_DELAY;
+	drv_restart_time = (active_vifs * ATH12K_CHAN_SWITCH_RESTART_TIME_DELAY);
+
+	restart_time = tgt_restart_time + drv_restart_time;
+
+	if (!ab->qmi.cal_done)
+		restart_time += ATH12K_CSA_CALDB_UNDONE_TIME;
+
+	dfs_required = cfg80211_chandef_dfs_required(hw->wiphy, &chandef,
+						     vif->type);
+	if (dfs_required > 0)
+		dfs_time = chandef.chan->dfs_cac_ms;
+	else
+		dfs_time = 0;
+
+	tot_chan_switch_time = beacon_time + restart_time + dfs_time;
+	if (tot_chan_switch_time > U32_MAX)
+		channel_switch_time = U32_MAX;
+	else
+		channel_switch_time = tot_chan_switch_time;
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+		   "get channel switch time: beacon=%u restart=%u dfs=%u total=%u\n",
+		   beacon_time, restart_time, dfs_time, channel_switch_time);
+
+	reply = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, 100);
+	if (!reply)
+		return -ENOMEM;
+
+	if (nla_put_u32(reply, QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_TOTAL,
+			channel_switch_time)) {
+		kfree_skb(reply);
+		return -ENOBUFS;
+	}
+
+	return cfg80211_vendor_cmd_reply(reply);
 }
 
 static int ath12k_vendor_sdwf_streaming_stats_configure(struct wireless_dev *wdev,
@@ -9647,193 +9988,650 @@ int ath12k_vendor_put_ab_num_links(struct sk_buff *vendor_event,
 	return 0;
 }
 
-void ath12k_vendor_wlan_intf_stats(struct work_struct *work)
+static int ath12k_vendor_set_wifi_params_me(struct wiphy *wiphy,
+					    struct wireless_dev *wdev,
+					    struct ath12k_wifi_generic_params *params)
 {
-	struct ath12k *ar = container_of(work, struct ath12k, wlan_intf_work);
-	struct sk_buff *msg = NULL;
-	struct wireless_dev *wdev;
-	struct ath12k_link_vif *tmp_arvif = NULL, *arvif;
-	struct ath12k_dcs_wlan_interference *dcs_wlan_intf = NULL, *temp;
-	int tmp;
-	u8 dcs_enable_bitmap;
-	bool disable_wlan_intf = false;
+	u16 grp_limit = ATH12K_ME_MAX_GRP_LIMIT;
+	u32 val = *(u32 *)params->data;
+	struct ath12k_dp_vif *dp_vif;
+	struct ath12k_me_db *me_db;
+	struct ath12k_vif *ahvif;
+	u32 me_flags = 0;
 
-	if (!ar || !ar->ah || !ar->ah->hw || !ar->ah->hw->wiphy)
-		return;
+	ahvif = ath12k_get_ahvif_from_wdev(wdev);
+	if (!ahvif) {
+		ath12k_err(NULL, "ahvif not present");
+		return -EINVAL;
+	}
 
-	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+	/* Validate interface type - ME only applicable to AP mode */
+	if (ahvif->vif->type != NL80211_IFTYPE_AP) {
+		ath12k_err(NULL, "ME configuration only supported on AP interfaces");
+		return -EOPNOTSUPP;
+	}
 
-	list_for_each_entry(arvif, &ar->arvifs, list) {
-		if (arvif->ahvif->vdev_type != WMI_VDEV_TYPE_AP) {
-			disable_wlan_intf = true;
-			break;
-		} else if (arvif->vdev_subtype == WMI_VDEV_SUBTYPE_MESH_11S) {
-			disable_wlan_intf = true;
-			break;
+	dp_vif = &ahvif->dp_vif;
+	if (!dp_vif) {
+		ath12k_err(NULL, "dp_vif not present");
+		return -EINVAL;
+	}
+
+	me_db = ath12k_me_db_get(dp_vif);
+	if (!me_db) {
+		ath12k_err(NULL, "me_db not present");
+		return -EINVAL;
+	}
+
+	switch (params->value) {
+	case QCA_WLAN_VENDOR_VDEV_PARAM_ME:
+		if (val == 5)
+			me_flags = ATH12K_ME_FLAGS_BIT_ME5;
+		else if (val == 6)
+			me_flags = ATH12K_ME_FLAGS_BIT_ME6;
+		else if (val == 0)
+			me_flags = 0;
+		else {
+			ath12k_dbg(NULL, ATH12K_DBG_CFG,
+				   "Unsupported value for param: %d value: %d\n",
+				   params->value, val);
+			goto fail;
 		}
+		break;
 
-		if (!tmp_arvif && arvif->is_started)
-			tmp_arvif = arvif;
+	case QCA_WLAN_VENDOR_VDEV_PARAM_IGMP_ME:
+		me_flags = val ? ATH12K_ME_FLAGS_BIT_IGMP_EN : 0;
+		break;
+
+	case QCA_WLAN_VENDOR_VDEV_PARAM_ME_GRP_LIMIT:
+		if (val > 0 && val < ATH12K_ME_MAX_GRP_LIMIT)
+			grp_limit = val;
+		break;
+
+	default:
+		ath12k_dbg(NULL, ATH12K_DBG_CFG,
+				"Unsupported param: %d\n", params->value);
+		goto fail;
 	}
 
-	if (disable_wlan_intf) {
-		spin_lock_bh(&ar->data_lock);
-		ar->dcs_enable_bitmap &= ~WMI_DCS_WLAN_INTF;
-		dcs_enable_bitmap = ar->dcs_enable_bitmap;
-		spin_unlock_bh(&ar->data_lock);
-		ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_DCS,
-					  dcs_enable_bitmap, ar->pdev->pdev_id);
-		ath12k_err(ar->ab, "Disabling wlan interference, only AP mode supported.\n");
-		goto cleanup;
-	}
+	/* Update the ME Database */
+	spin_lock_bh(&me_db->lock);
 
-	if (!tmp_arvif || !tmp_arvif->ahvif)
-		goto cleanup;
+	/* Clear the older flags */
+	if (params->value == QCA_WLAN_VENDOR_VDEV_PARAM_ME)
+		me_db->me_flags &= ~ATH12K_ME_OFFLOAD_MASK;
+	else if (params->value == QCA_WLAN_VENDOR_VDEV_PARAM_IGMP_ME)
+		me_db->me_flags &= ~ATH12K_ME_FLAGS_BIT_IGMP_EN;
 
-	wdev = ieee80211_vif_to_wdev(tmp_arvif->ahvif->vif);
+	me_db->me_flags |= me_flags;
+	me_db->grp_limit = grp_limit;
 
-	if (!wdev || !wdev->wiphy)
-		goto cleanup;
+	spin_unlock_bh(&me_db->lock);
 
-	spin_lock_bh(&ar->data_lock);
-	list_for_each_entry_safe(dcs_wlan_intf, temp, &ar->wlan_intf_list, list) {
-		list_del(&dcs_wlan_intf->list);
-		spin_unlock_bh(&ar->data_lock);
-		ath12k_debug_print_dcs_wlan_intf_stats(ar->ab, &dcs_wlan_intf->info);
-		tmp = QCA_NL80211_VENDOR_SUBCMD_DCS_WLAN_INTERFERENCE_COMPUTE_INDEX;
-		msg = cfg80211_vendor_event_alloc(wdev->wiphy, wdev, NLMSG_DEFAULT_SIZE,
-						  tmp, GFP_KERNEL);
-		if (!msg)
-			goto nla_put_failure;
+	ath12k_print_me_configs(me_db);
+	ath12k_me_db_put(me_db);
+	return 0;
 
-		if (nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_TSF,
-				dcs_wlan_intf->info.reg_tsf32))
-			goto nla_put_failure;
-
-		if (nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_WLAN_LAST_ACK_RSSI,
-				dcs_wlan_intf->info.last_ack_rssi))
-			goto nla_put_failure;
-
-		tmp = QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_TX_WASTE_TIME;
-		if (nla_put_u32(msg, tmp, dcs_wlan_intf->info.tx_waste_time))
-			goto nla_put_failure;
-
-		if (nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_RX_TIME,
-				dcs_wlan_intf->info.rx_time))
-			goto nla_put_failure;
-
-		tmp = QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_PHY_ERR_COUNT;
-		if (nla_put_u32(msg, tmp, dcs_wlan_intf->info.phyerr_cnt))
-			goto nla_put_failure;
-
-		tmp = QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_LISTEN_TIME;
-		if (nla_put_u32(msg, tmp, dcs_wlan_intf->info.listen_time))
-			goto nla_put_failure;
-
-		tmp = QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_TX_FRAME_COUNT;
-		if (nla_put_u32(msg, tmp, dcs_wlan_intf->info.reg_tx_frame_cnt))
-			goto nla_put_failure;
-
-		tmp = QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_RX_FRAME_COUNT;
-		if (nla_put_u32(msg, tmp,
-				dcs_wlan_intf->info.reg_rx_frame_cnt))
-			goto nla_put_failure;
-
-		tmp = QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_RX_CLR_COUNT;
-		if (nla_put_u32(msg, tmp,
-				dcs_wlan_intf->info.reg_rxclr_cnt))
-			goto nla_put_failure;
-
-		tmp = QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_CYCLE_COUNT;
-		if (nla_put_u32(msg, tmp,
-				dcs_wlan_intf->info.reg_cycle_cnt))
-			goto nla_put_failure;
-
-		tmp = QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_RX_CLR_EXT_COUNT;
-		if (nla_put_u32(msg, tmp,
-				dcs_wlan_intf->info.reg_rxclr_ext_cnt))
-			goto nla_put_failure;
-
-		tmp = QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_OFDM_PHYERR_COUNT;
-		if (nla_put_u32(msg, tmp,
-				dcs_wlan_intf->info.reg_ofdm_phyerr_cnt))
-			goto nla_put_failure;
-
-		tmp = QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_CCK_PHYERR_COUNT;
-		if (nla_put_u32(msg, tmp,
-				dcs_wlan_intf->info.reg_cck_phyerr_cnt))
-			goto nla_put_failure;
-
-		tmp = QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_CHANNEL_NF;
-		if (nla_put_s32(msg, tmp,
-				dcs_wlan_intf->info.chan_nf))
-			goto nla_put_failure;
-
-		tmp = QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_MY_BSS_RX_CYCLE_COUNT;
-		if (nla_put_u32(msg, tmp,
-				dcs_wlan_intf->info.my_bss_rx_cycle_count))
-			goto nla_put_failure;
-
-		cfg80211_vendor_event(msg, GFP_KERNEL);
-		kfree(dcs_wlan_intf);
-		dcs_wlan_intf = NULL;
-		spin_lock_bh(&ar->data_lock);
-	}
-	spin_unlock_bh(&ar->data_lock);
-	goto exit;
-
-nla_put_failure:
-	kfree(dcs_wlan_intf);
-	kfree(msg);
-cleanup:
-	ath12k_dcs_wlan_intf_cleanup(ar);
-exit:
-	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+fail:
+	ath12k_me_db_put(me_db);
+	return -EINVAL;
 }
 
-static int ath12k_vendor_dcs_handler(struct wiphy *wihpy,
-				     struct wireless_dev *wdev,
-				     const void *data,
-				     int data_len)
+static int ath12k_vendor_me_config_handler(struct wiphy *wiphy,
+					   struct wireless_dev *wdev,
+					   const void *data,
+					   int data_len)
 {
-	int ret, link_id = 0, wlan_intf, vendor_intf_bitmap, tmp;
-	struct ath12k *ar;
-	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_DCS_MAX + 1];
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_ME_CONFIG_MAX + 1];
+	struct ath12k_wifi_generic_params params = {0};
+	u32 value = 0;
+	int ret;
 
-	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_DCS_MAX, data, data_len,
-			ath12k_vendor_dcs_policy, NULL);
-
+	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_ME_CONFIG_MAX,
+			data, data_len,
+			ath12k_vendor_me_config_policy, NULL);
 	if (ret) {
-		ath12k_err(NULL, "Invalid attribute in dcs_handler %d\n", ret);
+		ath12k_err(NULL, "Failed to parse ME config attributes: %d\n", ret);
 		return ret;
 	}
 
-	if (wdev->valid_links) { /* MLO case */
-		if (!tb[QCA_WLAN_VENDOR_ATTR_DCS_MLO_LINK_ID])
-			return -EINVAL;
-		link_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_DCS_MLO_LINK_ID]);
-		if (!(wdev->valid_links & BIT(link_id)))
-			return -ENOLINK;
-	} else { /* NON-MLO case */
-		if (tb[QCA_WLAN_VENDOR_ATTR_DCS_MLO_LINK_ID])
-			return -EINVAL;
-		link_id = 0;
+	if (!tb[QCA_WLAN_VENDOR_ATTR_ME_CONFIG_PARAM]) {
+		ath12k_err(NULL, "Missing ME config parameter attribute\n");
+		return -EINVAL;
 	}
 
-	if (!tb[QCA_WLAN_VENDOR_ATTR_DCS_WLAN_INTERFERENCE_CONFIGURE])
+	if (!tb[QCA_WLAN_VENDOR_ATTR_ME_CONFIG_VALUE]) {
+		ath12k_err(NULL, "Missing ME config value attribute\n");
+		return -EINVAL;
+	}
+
+	params.value = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_ME_CONFIG_PARAM]);
+	value = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_ME_CONFIG_VALUE]);
+
+	/* Validate parameter ID */
+	if (params.value != QCA_WLAN_VENDOR_VDEV_PARAM_ME &&
+	    params.value != QCA_WLAN_VENDOR_VDEV_PARAM_IGMP_ME &&
+	    params.value != QCA_WLAN_VENDOR_VDEV_PARAM_ME_GRP_LIMIT) {
+		ath12k_err(NULL, "Invalid ME parameter ID: %u\n", params.value);
+		return -EINVAL;
+	}
+
+	params.data = &value;
+
+	return ath12k_vendor_set_wifi_params_me(wiphy, wdev, &params);
+}
+
+static const struct nla_policy
+ath12k_vendor_me_list_policy[QCA_WLAN_VENDOR_ATTR_ME_LIST_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_ME_LIST_OPERATION] = { .type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_ME_LIST_TYPE] = { .type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_ME_LIST_IP_TYPE] = { .type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_ME_LIST_IPV4_ADDR] = { .type = NLA_BINARY,
+						.len = ATH12K_IPV4_ADDR_LEN },
+	[QCA_WLAN_VENDOR_ATTR_ME_LIST_IPV6_ADDR] = { .type = NLA_BINARY,
+						.len = ATH12K_IPV6_ADDR_LEN },
+	[QCA_WLAN_VENDOR_ATTR_ME_LIST_MASK] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_ME_LIST_PREFIX] = { .type = NLA_U32 },
+};
+
+/**
+ * ath12k_parse_me_list_entry - Parse ME list entry from netlink attributes
+ * @tb: netlink attribute table
+ * @me_entry: output ME entry structure
+ * @ip_type: IP type (IPv4 or IPv6)
+ */
+static int ath12k_parse_me_list_entry(struct nlattr **tb,
+				      struct ieee80211_wlanconfig_me_list *me_entry,
+				      u8 ip_type)
+{
+	ath12k_dbg(NULL, ATH12K_DBG_CFG, "Parsing ME list entry, IP type: %u\n", ip_type);
+
+	if (ip_type == QCA_WLAN_VENDOR_ME_IP_TYPE_IPV4) {
+		/* Parse IPv4 address */
+		if (!tb[QCA_WLAN_VENDOR_ATTR_ME_LIST_IPV4_ADDR] ||
+			nla_len(tb[QCA_WLAN_VENDOR_ATTR_ME_LIST_IPV4_ADDR])
+				!= ATH12K_IPV4_ADDR_LEN) {
+			ath12k_err(NULL, "Invalid IPv4 address\n");
+			return -EINVAL;
+		}
+		memcpy(&me_entry->ip,
+			nla_data(tb[QCA_WLAN_VENDOR_ATTR_ME_LIST_IPV4_ADDR]),
+			ATH12K_IPV4_ADDR_LEN);
+
+		/* Parse IPv4 mask */
+		if (!tb[QCA_WLAN_VENDOR_ATTR_ME_LIST_MASK]) {
+			ath12k_err(NULL, "Missing IPv4 mask\n");
+			return -EINVAL;
+		}
+		me_entry->mask = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_ME_LIST_MASK]);
+
+		ath12k_dbg(NULL, ATH12K_DBG_CFG,
+			"IPv4 ME entry: %pI4, mask: 0x%08x\n",
+			&me_entry->ip, me_entry->mask);
+	} else if (ip_type == QCA_WLAN_VENDOR_ME_IP_TYPE_IPV6) {
+		/* Parse IPv6 address */
+		if (!tb[QCA_WLAN_VENDOR_ATTR_ME_LIST_IPV6_ADDR] ||
+			nla_len(tb[QCA_WLAN_VENDOR_ATTR_ME_LIST_IPV6_ADDR])
+				!= ATH12K_IPV6_ADDR_LEN) {
+			ath12k_err(NULL, "Invalid IPv6 address\n");
+			return -EINVAL;
+		}
+		memcpy(me_entry->ipv6,
+			nla_data(tb[QCA_WLAN_VENDOR_ATTR_ME_LIST_IPV6_ADDR]),
+			ATH12K_IPV6_ADDR_LEN);
+
+		/* Parse IPv6 prefix */
+		if (!tb[QCA_WLAN_VENDOR_ATTR_ME_LIST_PREFIX]) {
+			ath12k_err(NULL, "Missing IPv6 prefix\n");
+			return -EINVAL;
+		}
+		me_entry->mask = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_ME_LIST_PREFIX]);
+
+		ath12k_dbg(NULL, ATH12K_DBG_CFG,
+			   "IPv6 ME entry: %pI6, prefix: %u\n",
+			   me_entry->ipv6, me_entry->mask);
+	} else {
+		ath12k_err(NULL, "Invalid IP type: %u\n", ip_type);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+/**
+ * ath12k_validate_me_list_entry - Validate ME list entry
+ * @me_entry: ME entry to validate
+ */
+static int ath12k_validate_me_list_entry(struct ieee80211_wlanconfig_me_list *me_entry)
+{
+	bool is_ipv6 = (me_entry->me_list_type == IEEE80211_HMMC_LIST_V6 ||
+			me_entry->me_list_type == IEEE80211_DENY_LIST_V6);
+
+	if (is_ipv6) {
+		/* IPv6 multicast addresses start with 0xFF */
+		u8 *ipv6_bytes = (u8 *)me_entry->ipv6;
+
+		if (ipv6_bytes[0] != 0xFF) {
+			ath12k_err(NULL, "Invalid IPv6 multicast address: %pI6\n",
+				   me_entry->ipv6);
+			return -EINVAL;
+		}
+
+		/* Validate prefix length */
+		if (me_entry->mask > 128) {
+			ath12k_err(NULL, "Invalid IPv6 prefix length: %u\n",
+				   me_entry->mask);
+			return -EINVAL;
+		}
+	} else {
+		/* IPv4 multicast range: 224.0.0.0 to 239.255.255.255 */
+		u32 addr = ntohl(me_entry->ip);
+
+		if ((addr & 0xF0000000) != 0xE0000000) {
+			ath12k_err(NULL, "Invalid IPv4 multicast address: %pI4\n",
+				   &me_entry->ip);
+			return -EINVAL;
+		}
+	}
+
+	return 0;
+}
+
+/**
+ * ath12k_add_me_list_entry - Add entry to ME list
+ * @ahvif: ath12k_vif pointer
+ * @me_entry: ME entry to add
+ */
+static int ath12k_add_me_list_entry(struct ath12k_vif *ahvif,
+				    struct ieee80211_wlanconfig_me_list *me_entry)
+{
+	struct ath12k_dp_vif *dp_vif;
+	struct ath12k_me_db *me_db;
+	int ret = 0;
+
+	dp_vif = &ahvif->dp_vif;
+
+	/* This will take the ref on me_db */
+	me_db = ath12k_me_db_get(dp_vif);
+	if (!me_db) {
+		ath12k_err(NULL, "me_db is NULL");
+		return -EINVAL;
+	}
+
+	ath12k_dbg(NULL, ATH12K_DBG_CFG,
+		   "Adding ME list entry, type: %u\n", me_entry->me_list_type);
+
+	/* Select target list based on list type */
+	switch (me_entry->me_list_type) {
+	case IEEE80211_HMMC_LIST:
+		ret = ath12k_me_hmmc_add(me_db, &me_entry->ip, false,
+					 me_entry->mask, ATH12K_ME_HMMC_ACTION);
+		if (ret < 0) {
+			/* TODO: Increment the stats */
+			ath12k_dbg(NULL, ATH12K_DBG_CFG,
+				   "Failed adding HMMC IPV4 entry to db:%p, me_entry: %p\n",
+				   &me_db->hmmc_db, me_entry);
+			ath12k_me_db_put(me_db);
+			return ret;
+		}
+		break;
+	case IEEE80211_HMMC_LIST_V6:
+		ret = ath12k_me_hmmc_add(me_db, me_entry->ipv6, true,
+					 me_entry->mask, ATH12K_ME_HMMC_ACTION);
+		if (ret < 0) {
+			/* TODO: Increment the stats */
+			ath12k_dbg(NULL, ATH12K_DBG_CFG,
+				   "Failed adding HMMC IPV6 entry to db:%p, me_entry: %p\n",
+				   &me_db->hmmc_db, me_entry);
+			ath12k_me_db_put(me_db);
+			return ret;
+		}
+		break;
+	case IEEE80211_DENY_LIST:
+		ret = ath12k_me_hmmc_add(me_db, &me_entry->ip, false,
+					 me_entry->mask, ATH12K_ME_DENYLIST_ACTION);
+		if (ret < 0) {
+			/* TODO: Increment the stats */
+			ath12k_dbg(NULL, ATH12K_DBG_CFG,
+				   "Failed adding DENY IPV4 entry to db:%p, me_entry: %p\n",
+				   &me_db->hmmc_db, me_entry);
+			ath12k_me_db_put(me_db);
+			return ret;
+		}
+		break;
+	case IEEE80211_DENY_LIST_V6:
+		ret = ath12k_me_hmmc_add(me_db, me_entry->ipv6, true,
+					 me_entry->mask, ATH12K_ME_DENYLIST_ACTION);
+		if (ret < 0) {
+			/* TODO: Increment the stats */
+			ath12k_dbg(NULL, ATH12K_DBG_CFG,
+				   "Failed adding DENY IPV6 entry to db:%p, me_entry: %p\n",
+				   &me_db->hmmc_db, me_entry);
+			ath12k_me_db_put(me_db);
+			return ret;
+		}
+		break;
+	default:
+		ath12k_err(NULL, "Invalid ME list type: %u\n", me_entry->me_list_type);
+		ath12k_me_db_put(me_db);
+		return -EINVAL;
+	}
+
+	/*TODO: Increment the stats counter */
+	ath12k_dbg(NULL, ATH12K_DBG_CFG,
+		   "Added a ME list entry to db:%p, me_entry: %p\n",
+		   &me_db->hmmc_db, me_entry);
+
+	/* This will drop the ref for me_db */
+	ath12k_me_db_put(me_db);
+	return ret;
+}
+
+/**
+ * ath12k_del_me_list_entry - Delete entry from ME list
+ * @ahvif: ath12k_vif pointer
+ * @me_entry: ME entry to delete
+ */
+static int ath12k_del_me_list_entry(struct ath12k_vif *ahvif,
+				    struct ieee80211_wlanconfig_me_list *me_entry)
+{
+	struct ath12k_dp_vif *dp_vif;
+	struct ath12k_me_db *me_db;
+	int ret = 0;
+
+	dp_vif = &ahvif->dp_vif;
+
+	/* This will take the ref on me_db */
+	me_db = ath12k_me_db_get(dp_vif);
+	if (!me_db) {
+		ath12k_err(NULL, "me_db is NULL");
+		return -EINVAL;
+	}
+
+	ath12k_dbg(NULL, ATH12K_DBG_CFG,
+		   "Deleting ME list entry, type: %u\n", me_entry->me_list_type);
+
+	switch (me_entry->me_list_type) {
+	case IEEE80211_HMMC_LIST:
+		ret = ath12k_me_hmmc_del(me_db, &me_entry->ip, false,
+					 me_entry->mask);
+		if (ret < 0) {
+			/* TODO: Increment the stats */
+			ath12k_dbg(NULL, ATH12K_DBG_CFG,
+				   "Failed deleting HMMC IPV4 entry from db:%p, me_entry: %p\n",
+				   &me_db->hmmc_db, me_entry);
+			ath12k_me_db_put(me_db);
+			return ret;
+		}
+		break;
+	case IEEE80211_HMMC_LIST_V6:
+		ret = ath12k_me_hmmc_del(me_db, me_entry->ipv6, true,
+					 me_entry->mask);
+		if (ret < 0) {
+			/* TODO: Increment the stats */
+			ath12k_dbg(NULL, ATH12K_DBG_CFG,
+				   "Failed deleting HMMC IPV6 entry from db:%p, me_entry: %p\n",
+				   &me_db->hmmc_db, me_entry);
+			ath12k_me_db_put(me_db);
+			return ret;
+		}
+		break;
+	case IEEE80211_DENY_LIST:
+		ret = ath12k_me_hmmc_del(me_db, &me_entry->ip, false,
+					 me_entry->mask);
+		if (ret < 0) {
+			/* TODO: Increment the stats */
+			ath12k_dbg(NULL, ATH12K_DBG_CFG,
+				   "Failed deleting DENY IPV4 entry from db:%p, me_entry: %p\n",
+				   &me_db->hmmc_db, me_entry);
+			ath12k_me_db_put(me_db);
+			return ret;
+		}
+		break;
+	case IEEE80211_DENY_LIST_V6:
+		ret = ath12k_me_hmmc_del(me_db, me_entry->ipv6, true,
+					 me_entry->mask);
+		if (ret < 0) {
+			/* TODO: Increment the stats */
+			ath12k_dbg(NULL, ATH12K_DBG_CFG,
+				   "Failed deleting DENY IPV6 entry from db:%p, me_entry: %p\n",
+				   &me_db->hmmc_db, me_entry);
+			ath12k_me_db_put(me_db);
+			return ret;
+		}
+		break;
+	default:
+		ath12k_err(NULL, "Invalid ME list type: %u\n", me_entry->me_list_type);
+		ath12k_me_db_put(me_db);
+		return -EINVAL;
+	}
+
+	/* TODO: Increment the stats */
+	ath12k_dbg(NULL, ATH12K_DBG_CFG,
+		   "Deleted ME list entry from db: %p\n", &me_db->hmmc_db);
+
+	/* This will drop the ref for me_db */
+	ath12k_me_db_put(me_db);
+	return ret;
+}
+
+/**
+ * ath12k_dump_me_list_entries - Dump ME list entries
+ * @ar: ath12k radio pointer
+ * @list_type: ME list type to dump
+ */
+static int ath12k_dump_me_list_entries(struct ath12k_vif *ahvif, u8 list_type)
+{
+	struct ath12k_dp_vif *dp_vif;
+	struct ath12k_me_db *me_db;
+	bool is_ipv6;
+	u16 count;
+
+	dp_vif = &ahvif->dp_vif;
+
+	/* This will take the ref on me_db */
+	me_db = ath12k_me_db_get(dp_vif);
+	if (!me_db) {
+		ath12k_err(NULL, "me_db is NULL");
+		return -EINVAL;
+	}
+
+	ath12k_dbg(NULL, ATH12K_DBG_CFG,
+		   "Dumping ME list entries from db: %p, list_type: %u\n",
+		   &me_db->hmmc_db, list_type);
+
+	/* Select target list and count based on list type */
+	switch (list_type) {
+	case IEEE80211_HMMC_LIST:
+		is_ipv6 = false;
+
+		/* TODO:
+		 * Iterate and print info for each valid entry.
+		 */
+
+		ath12k_info(NULL, "HMMC IPv4 List (%u entries):\n", count);
+
+		break;
+	case IEEE80211_HMMC_LIST_V6:
+		is_ipv6 = true;
+
+		/* TODO:
+		 * Iterate and print info for each valid entry.
+		 */
+
+		ath12k_info(NULL, "HMMC IPv6 List (%u entries):\n", count);
+
+		break;
+	case IEEE80211_DENY_LIST:
+		is_ipv6 = false;
+
+		/* TODO:
+		 * Iterate and print info for each valid entry.
+		 */
+
+		ath12k_info(NULL, "Deny IPv4 List (%u entries):\n", count);
+
+		break;
+	case IEEE80211_DENY_LIST_V6:
+		is_ipv6 = true;
+
+		/* TODO:
+		 * Iterate and print info for each valid entry.
+		 */
+
+		ath12k_info(NULL, "Deny IPv6 List (%u entries):\n", count);
+
+		break;
+	default:
+		ath12k_err(NULL, "Invalid ME list type: %u\n", list_type);
+		ath12k_me_db_put(me_db);
+		return -EINVAL;
+	}
+
+	/* This will drop the ref for me_db */
+	ath12k_me_db_put(me_db);
+	return 0;
+}
+
+/**
+ * ath12k_vendor_hmmc_deny_list_handler - Handle ME list vendor command
+ * @wiphy: wiphy device pointer
+ * @wdev: wireless device pointer
+ * @data: vendor command data
+ * @data_len: vendor command data length
+ *
+ * This function handles ME list configuration commands from userspace.
+ * It supports both HMMC and Deny lists with IPv4/IPv6 addresses.
+ */
+static int ath12k_vendor_hmmc_deny_list_handler(struct wiphy *wiphy,
+						struct wireless_dev *wdev,
+						const void *data,
+						int data_len)
+{
+	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
+	struct ath12k_hw *ah = hw->priv;
+	struct ath12k *ar;
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_ME_LIST_MAX + 1];
+	struct ieee80211_wlanconfig_me_list me_entry;
+	u8 operation, list_type, ip_type, hw_idx = 0;
+	int ifidx = 0;
+	int ret = 0;
+	struct ath12k_vif *ahvif;
+
+	ath12k_dbg(NULL, ATH12K_DBG_CFG, "Received ME list command\n");
+
+	/* Validate input parameters */
+	if (!data || !data_len) {
+		ath12k_err(NULL, "Invalid ME list data\n");
+		return -EINVAL;
+	}
+
+	ahvif = ath12k_get_ahvif_from_wdev(wdev);
+	if (!ahvif) {
+		ath12k_err(NULL, "Failed to retrieve ahvif\n");
+		return -EINVAL;
+	}
+
+	/* Validate interface type - HMMC configs are for AP mode alone */
+	if (ahvif->vif->type != NL80211_IFTYPE_AP) {
+		ath12k_err(NULL, "HMMC config is only supported on AP interfaces");
+		return -EOPNOTSUPP;
+	}
+
+	/* Parse netlink attributes */
+	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_ME_LIST_MAX, data, data_len,
+			ath12k_vendor_me_list_policy, NULL);
+	if (ret) {
+		ath12k_err(NULL, "Failed to parse ME list attributes: %d\n", ret);
+		return ret;
+	}
+
+	if (!tb[NL80211_ATTR_IFINDEX]) {
+		ath12k_err(NULL, "Not a valid interface index for ME\n");
+		return -EINVAL;
+	}
+	ifidx = nla_get_u32(tb[NL80211_ATTR_IFINDEX]);
+
+	if (ifidx < 0)
 		return -EINVAL;
 
-	tmp = QCA_WLAN_VENDOR_ATTR_DCS_WLAN_INTERFERENCE_CONFIGURE;
-	wlan_intf = nla_get_u8(tb[tmp]);
-	tmp = ~WMI_DCS_WLAN_INTF & ATH12K_VENDOR_VALID_INTF_BITMAP;
-	vendor_intf_bitmap = wlan_intf ? WMI_DCS_WLAN_INTF : tmp;
+	/* Extract operation */
+	if (!tb[QCA_WLAN_VENDOR_ATTR_ME_LIST_OPERATION]) {
+		ath12k_err(NULL, "Missing ME list operation\n");
+		return -EINVAL;
+	}
+	operation = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_ME_LIST_OPERATION]);
 
-	ar = ath12k_get_ar_from_wdev(wdev, link_id);
-	if (!ar)
-		return -ENODATA;
+	/* Extract list type */
+	if (!tb[QCA_WLAN_VENDOR_ATTR_ME_LIST_TYPE]) {
+		ath12k_err(NULL, "Missing ME list type\n");
+		return -EINVAL;
+	}
+	list_type = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_ME_LIST_TYPE]);
 
-	ath12k_mac_set_vendor_intf_detect(ar, vendor_intf_bitmap);
-	return 0;
+	/* Extract IP type */
+	if (!tb[QCA_WLAN_VENDOR_ATTR_ME_LIST_IP_TYPE]) {
+		ath12k_err(NULL, "Missing ME list IP type\n");
+		return -EINVAL;
+	}
+	ip_type = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_ME_LIST_IP_TYPE]);
+
+	/* Get radio instance */
+	ar = &ah->radio[hw_idx];
+	if (!ar) {
+		ath12k_err(NULL, "Invalid radio instance\n");
+		return -ENODEV;
+	}
+
+	ath12k_dbg(NULL, ATH12K_DBG_CFG,
+		   "ME list operation: %u, list_type: %u, ip_type: %u\n",
+		   operation, list_type, ip_type);
+
+	/* Initialize ME entry */
+	memset(&me_entry, 0, sizeof(me_entry));
+	me_entry.me_list_type = list_type;
+
+	/* Process based on operation */
+	switch (operation) {
+	case IEEE80211_WLANCONFIG_ME_LIST_ADD:
+	case IEEE80211_WLANCONFIG_ME_LIST_DEL:
+
+		/* Extract IP address and mask/prefix */
+		ret = ath12k_parse_me_list_entry(tb, &me_entry, ip_type);
+		if (ret) {
+			ath12k_err(NULL, "Failed to parse ME list entry: %d\n", ret);
+			return ret;
+		}
+
+		/* Validate multicast address */
+		ret = ath12k_validate_me_list_entry(&me_entry);
+		if (ret) {
+			ath12k_err(NULL, "Invalid ME list entry: %d\n", ret);
+			return ret;
+		}
+
+		/* Process ADD/DEL operation */
+		if (operation == IEEE80211_WLANCONFIG_ME_LIST_ADD)
+			ret = ath12k_add_me_list_entry(ahvif, &me_entry);
+		else
+			ret = ath12k_del_me_list_entry(ahvif, &me_entry);
+		break;
+
+	case IEEE80211_WLANCONFIG_ME_LIST_DUMP:
+		ret = ath12k_dump_me_list_entries(ahvif, list_type);
+		break;
+
+	default:
+		ath12k_err(NULL, "Invalid ME list operation: %u\n", operation);
+		ret = -EINVAL;
+		break;
+	}
+
+	ath12k_dbg(NULL, ATH12K_DBG_CFG,
+		   "ME list operation %u completed with result: %d\n",
+		   operation, ret);
+
+	return ret;
 }
 
 static struct wiphy_vendor_command ath12k_vendor_commands[] = {
@@ -9974,14 +10772,30 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 	},
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
-		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_DCS_WLAN_INTERFERENCE_COMPUTE,
-		.doit = ath12k_vendor_dcs_handler,
-		.policy = ath12k_vendor_dcs_policy,
-		.maxattr = QCA_WLAN_VENDOR_ATTR_DCS_MAX,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_ME_CONFIG,
+		.doit = ath12k_vendor_me_config_handler,
+		.policy = ath12k_vendor_me_config_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_ME_CONFIG_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_ME_LIST,
+		.doit = ath12k_vendor_hmmc_deny_list_handler,
+		.policy = ath12k_vendor_me_list_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_ME_LIST_MAX,
 		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
 	},
 
 #ifdef CPTCFG_QCN_EXTN
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_GET_RROP_INFO,
+		.doit = ath12k_vendor_get_rropinfo,
+		.policy = ath12k_rrop_info_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_CONFIG_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
+	},
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
 		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_240MHZ_INFO,
@@ -10021,7 +10835,47 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.maxattr = QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_MAX,
 		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
 	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_DCS_CONFIG,
+		.doit = ath12k_vendor_dcs_config_handler,
+		.policy = ath12k_vendor_dcs_config_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_DCS_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_GET_CHANNEL_SWITCH_TIME,
+		.doit = ath12k_vendor_get_channel_switch_time,
+		.policy = ath12k_vendor_channel_switch_time_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_DCS_SIM,
+		.doit = ath12k_vendor_dcs_sim_handler,
+		.policy = ath12k_vendor_dcs_sim_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_DCS_SIM_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_REG_PARAMS,
+		.doit = ath12k_vendor_reg_params_handler,
+		.policy = ath12k_reg_params_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_REG_PARAMS_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
+	},
 #endif
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_REPURPOSE_LINK_INDICATION,
+		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
+		.doit = ath12k_vendor_repurpose_link,
+		.policy = ath12k_repurpose_link_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_CONFIG_MAX,
+	},
 
 };
 
@@ -10058,10 +10912,6 @@ static const struct nl80211_vendor_cmd_info ath12k_vendor_events[] = {
 		.vendor_id = QCA_NL80211_VENDOR_ID,
 		.subcmd = QCA_NL80211_VENDOR_SUBCMD_PRI_LINK_MIGRATE,
 	},
-	[QCA_NL80211_VENDOR_SUBCMD_DCS_WLAN_INTERFERENCE_COMPUTE_INDEX] = {
-		.vendor_id = QCA_NL80211_VENDOR_ID,
-		.subcmd = QCA_NL80211_VENDOR_SUBCMD_DCS_WLAN_INTERFERENCE_COMPUTE,
-	},
 	[QCA_NL80211_VENDOR_SUBCMD_SCS_RULE_CONFIG_INDEX] = {
 		.vendor_id = QCA_NL80211_VENDOR_ID,
 		.subcmd = QCA_NL80211_VENDOR_SUBCMD_SCS_RULE_CONFIG,
@@ -10077,6 +10927,10 @@ static const struct nl80211_vendor_cmd_info ath12k_vendor_events[] = {
 	[QCA_NL80211_VENDOR_SUBCMD_WLAN_HOME_OFFCHAN_TX_RX_INDEX] = {
 		.vendor_id = QCA_NL80211_VENDOR_ID,
 		.subcmd = QCA_NL80211_VENDOR_SUBCMD_WLAN_HOME_OFFCHAN_TX_RX,
+	},
+	[QCA_NL80211_VENDOR_SUBCMD_DCS_INTERFERENCE_COMPUTE_INDEX] = {
+		.vendor_id = QCA_NL80211_VENDOR_ID,
+		.subcmd = QCA_NL80211_VENDOR_SUBCMD_DCS_CONFIG,
 	},
 };
 

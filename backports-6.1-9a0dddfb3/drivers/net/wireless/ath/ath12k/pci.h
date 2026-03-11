@@ -12,6 +12,8 @@
 #include "core.h"
 
 #define QCN9274_DEVICE_ID       0x1109
+#define QCN9625_DEVICE_ID       0x1113
+
 #define MHI_POWER_ON_DEBUG_TIMEOUT_MS 7000
 #define PCIE_SOC_GLOBAL_RESET			0x3008
 #define PCIE_SOC_GLOBAL_RESET_V			1
@@ -129,6 +131,9 @@ struct ath12k_pci {
 	enum mhi_callback mhi_pre_cb;
 	u32 register_window;
 	struct timer_list mhi_q6_boot_debug_timer;
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	struct ath12k_pci_extn ath12k_pci_extn;
+#endif
 	/* protects register_window above */
 	spinlock_t window_lock;
 

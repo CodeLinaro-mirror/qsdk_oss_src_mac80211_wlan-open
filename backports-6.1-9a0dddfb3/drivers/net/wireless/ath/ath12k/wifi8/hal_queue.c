@@ -12,8 +12,6 @@
 
 #define ATH12K_MAX_AMSDU_AGGR_LIMIT 256
 #define ATH12K_WIFI_DESC_HARD_DROP_THRESHOLD 10240
-#define ATH12K_FRAME_HEADER_SIZE 24
-#define ATH12K_QOS_FRAME_HEADER_SIZE 26
 #define ATH12K_MAX_NUM_OF_EXT_DESCRIPTORS 24
 #define ATH12K_MPDU_SEQ_NUM_MASK 0xFFF
 #define ATH12K_PN_ADDR_HIGH_BYTE_MASK 0x000000FF
@@ -147,17 +145,9 @@ int ath12k_wifi8_hal_tx_mpdu_queue_setup(struct ath12k_dp_hw_group *dp_hw_grp,
 		mpduq->info5 |= le32_encode_bits(2, HAL_TX_MPDU_QUEUE_HEAD_PN_INC_VALUE);
 	else
 		mpduq->info5 |= le32_encode_bits(1, HAL_TX_MPDU_QUEUE_HEAD_PN_INC_VALUE);
-	if (ti->encap_type == ATH12K_HW_TXRX_RAW ||
-	    ti->encap_type == ATH12K_HW_TXRX_NATIVE_WIFI) {
-		mpduq->info5 |= le32_encode_bits(0, HAL_TX_MPDU_QUEUE_HEAD_MPDU_HDR_LEN);
-	} else {
-		if (ti->tid > MAX_VALID_DATA_TID)
-			mpduq->info5 |= le32_encode_bits(ATH12K_FRAME_HEADER_SIZE,
-						HAL_TX_MPDU_QUEUE_HEAD_MPDU_HDR_LEN);
-		else
-			mpduq->info5 |= le32_encode_bits(ATH12K_QOS_FRAME_HEADER_SIZE,
-						HAL_TX_MPDU_QUEUE_HEAD_MPDU_HDR_LEN);
-	}
+
+	mpduq->info5 |= le32_encode_bits(ti->header_len,
+					 HAL_TX_MPDU_QUEUE_HEAD_MPDU_HDR_LEN);
 	mpduq->info5 |= le32_encode_bits(ATH12K_MAX_NUM_OF_EXT_DESCRIPTORS,
 					 HAL_TX_MPDU_QUEUE_HEAD_NUM_OF_EXT_DESC);
 	mpduq->info9 = le32_encode_bits(ti->assoc_link_id,
@@ -216,7 +206,9 @@ void ath12k_wifi8_hal_txpt_classify_info_setup(struct ath12k_dp_hw_group *dp_hw_
 			    le32_encode_bits(ti->msdu_drop,
 					     HAL_TXPT_CLASSIFY_MSDU_DROP) |
 			    le32_encode_bits(ti->metadata,
-					     HAL_TXPT_CLASSIFY_METADATA);
+					     HAL_TXPT_CLASSIFY_METADATA) |
+			    le32_encode_bits(ti->assoc_link_id,
+					     HAL_TXPT_CLASSIFY_TCL_FW_LINK_ID);
 
 	ath12k_core_dma_sync_single_for_device(dev, ti->paddr,
 					       ATH12K_SIZE_OF_TID_INFO,

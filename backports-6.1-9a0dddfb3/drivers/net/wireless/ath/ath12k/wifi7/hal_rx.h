@@ -27,7 +27,20 @@ struct hal_rx_wbm_rel_info {
 	__le32 peer_metadata;
 };
 
+#define BA_TS_BITMAP 0x10
+#define BA_TS_OFFSET 0x3
+#define BA_TS_LSB 0x20
+#define BA_TS_BITMAP_SZ 0x4
+#define HT_SGI_PRESENT 0x80
 #define VHT_SIG_SU_NSS_MASK 0x7
+#define VHT_SIG_SU_PARTIAL_AID_MASK 0x1FF
+#define HE_NSTS_DATA6_MASK 0xF
+#define HE_MU_NUM_USER_MASK 0xFFFE
+#define HE_DATA5_INFO_MASK 0xFFF0
+#define EHT_DISREGARD_MASK 0xF
+#define EHT_USIG_VALIDATE_MASK 0x1
+#define EHT_USIG_SU_MU_DISREGARD_MASK 0x1F
+#define EHT_USIG_TB_DISREGARD_MASK 0x3F
 
 #define HAL_RX_MPDU_INFO_PN_GET_BYTE1(__val) \
 	le32_get_bits((__val), GENMASK(7, 0))
@@ -57,6 +70,22 @@ enum hal_rx_ul_reception_type {
 	HAL_RECEPTION_TYPE_ULMIMO,
 	HAL_RECEPTION_TYPE_OTHER,
 	HAL_RECEPTION_TYPE_FRAMELESS
+};
+
+enum hal_he_ppdu_subtype {
+	HE_SUBTYPE_SU = 0,
+	HE_SUBTYPE_TRIG = 1,
+	HE_SUBTYPE_MU = 2,
+	HE_SUBTYPE_EXT_SU = 3,
+};
+
+enum hal_tx_coex_status_reason {
+	COEX_FES_TX_START,
+	COEX_FES_TX_END,
+	COEX_FES_END,
+	COEX_RESPONSE_TX_START,
+	COEX_RESPONSE_TX_END,
+	COEX_NO_TX_ONGOING
 };
 
 struct hal_rx_rxpcu_classification_overview {
@@ -106,6 +135,7 @@ struct hal_rx_msdu_list {
 #define HE_LTF_SYMBOLS_KNOWN 0x0004
 #define HE_PRE_FEC_PADDING_KNOWN 0x0008
 #define HE_MIDABLE_PERIODICITY_KNOWN 0x0080
+#define HE_RU_ALLOCATION_SHIFT 8
 
 /* HE radiotap data3 shift values */
 #define HE_BEAM_CHANGE_SHIFT 6
@@ -118,6 +148,7 @@ struct hal_rx_msdu_list {
 
 /* HE radiotap data4 shift values */
 #define HE_STA_ID_SHIFT 4
+#define HE_SIG_A_PUNC_BW_SHIFT 8
 
 /* HE radiotap data5 */
 #define HE_GI_SHIFT 4
@@ -142,6 +173,7 @@ struct hal_rx_msdu_list {
 #define HE_DCM_FLAG_1_SHIFT 5
 #define HE_SPATIAL_REUSE_MU_KNOWN 0x0100
 #define HE_SIG_B_COMPRESSION_FLAG_1_KNOWN 0x4000
+#define HE_CHANNEL_1_CENTER_26_RU_SHIFT 13
 
 /* HE radiotap HE-MU flags2 */
 #define HE_SIG_B_COMPRESSION_FLAG_2_SHIFT 3
@@ -151,6 +183,7 @@ struct hal_rx_msdu_list {
 #define HE_NUM_SIG_B_FLAG_2_SHIFT 9
 #define HE_LTF_FLAG_2_SYMBOLS_SHIFT 12
 #define HE_LTF_KNOWN 0x8000
+#define HE_CHANNEL_2_CENTER_26_RU_SHIFT 11
 
 /* HE radiotap per_user_1 */
 #define HE_STA_SPATIAL_SHIFT 11
@@ -181,6 +214,72 @@ struct hal_rx_msdu_list {
 #define HAL_RX_MPDU_ERR_MPDU_LEN		BIT(6)
 #define HAL_RX_MPDU_ERR_UNENCRYPTED_FRAME	BIT(7)
 
+/* EHT radiotap known values */
+#define EHT_EHT_LTF_KNOWN			0x00000008
+
+/* EHT radiotap shift values */
+#define EHT_STA_ID_SHIFT			8
+#define EHT_CODING_SHIFT			19
+#define EHT_MCS_SHIFT				20
+#define EHT_NSS_SHIFT				24
+#define EHT_SPATIAL_CONFIG_SHIFT		24
+#define EHT_BEAMFORMING_SHIFT			29
+#define EHT_NUM_NON_OFDMA_USERS_SHIFT		17
+#define EHT_SPATIAL_REUSE_SHIFT			3
+#define EHT_GI_SHIFT				7
+#define EHT_LTF_SHIFT				9
+#define EHT_EHT_LTF_SHIFT			11
+#define EHT_PRE_FEC_PADDING_FACTOR_SHIFT	15
+#define EHT_PE_DISAMBIGUITY_SHIFT		17
+#define EHT_DISREGARD_SHIFT			18
+#define EHT_LDPC_EXTRA_SYMBOL_SEG_SHIFT		14
+#define EHT_NUM_KNOWN_RU_ALLOCATIONS_SHIFT	10
+#define EHT_RU_ALLOCATION1_1_SHIFT		13
+#define EHT_RU_ALLOCATION1_2_SHIFT		22
+#define EHT_RU_ALLOCATION2_1_SHIFT		0
+#define EHT_RU_ALLOCATION2_2_SHIFT		9
+#define EHT_RU_ALLOCATION2_3_SHIFT		18
+#define EHT_RU_ALLOCATION2_4_SHIFT		0
+#define EHT_RU_ALLOCATION2_5_SHIFT		9
+#define EHT_RU_ALLOCATION2_6_SHIFT		18
+
+/* U-SIG Common Mask */
+#define USIG_PHY_VERSION_SHIFT			12
+#define USIG_BW_SHIFT				15
+#define USIG_UL_DL_SHIFT			18
+#define USIG_BSS_COLOR_SHIFT			19
+#define USIG_TXOP_SHIFT				25
+
+/* U-SIG MU/TB Value */
+#define USIG_DISREGARD_SHIFT			0
+#define USIG_PPDU_TYPE_N_COMP_MODE_SHIFT	6
+#define USIG_VALIDATE_SHIFT			8
+#define USIG_MU_VALIDATE1_SHIFT			5
+#define USIG_MU_PUNCTURE_CH_INFO_SHIFT		9
+#define USIG_MU_VALIDATE2_SHIFT			14
+#define USIG_MU_EHT_SIG_MCS_SHIFT		15
+#define USIG_MU_NUM_EHT_SIG_SYM_SHIFT		17
+#define USIG_TB_SPATIAL_REUSE_1_SHIFT		9
+#define USIG_TB_SPATIAL_REUSE_2_SHIFT		13
+#define USIG_TB_DISREGARD1_SHIFT		17
+#define USIG_CRC_SHIFT				22
+#define USIG_TAIL_SHIFT				26
+
+/* U-SIG MU/TB Mask */
+#define USIG_DISREGARD_KNOWN			0x00000001
+#define USIG_PPDU_TYPE_N_COMP_MODE_KNOWN	0x00000004
+#define USIG_VALIDATE_KNOWN			0x00000008
+#define USIG_MU_VALIDATE1_KNOWN			0x00000002
+#define USIG_MU_PUNCTURE_CH_INFO_KNOWN		0x00000010
+#define USIG_MU_VALIDATE2_KNOWN			0x00000020
+#define USIG_MU_EHT_SIG_MCS_KNOWN		0x00000040
+#define USIG_MU_NUM_EHT_SIG_SYM_KNOWN		0x00000080
+#define USIG_TB_SPATIAL_REUSE_1_KNOWN		0x00000010
+#define USIG_TB_SPATIAL_REUSE_2_KNOWN		0x00000020
+#define USIG_TB_DISREGARD1_KNOWN		0x00000040
+#define USIG_CRC_KNOWN				0x00000100
+#define USIG_TAIL_KNOWN				0x00000200
+
 enum hal_eht_bw {
 	HAL_EHT_BW_20,
 	HAL_EHT_BW_40,
@@ -199,6 +298,33 @@ enum hal_mon_reception_type {
 	HAL_RECEPTION_TYPE_UL_MU_OFDMA,
 	HAL_RECEPTION_TYPE_UL_MU_OFDMA_MIMO,
 };
+
+/* Rate Table */
+#define HAL_11B_RATE_0MCS (11 * 2)
+#define HAL_11B_RATE_1MCS (5.5 * 2)
+#define HAL_11B_RATE_2MCS (2 * 2)
+#define HAL_11B_RATE_3MCS (1 * 2)
+#define HAL_11B_RATE_4MCS HAL_11B_RATE_0MCS
+#define HAL_11B_RATE_5MCS HAL_11B_RATE_1MCS
+#define HAL_11B_RATE_6MCS HAL_11B_RATE_2MCS
+
+#define HAL_11A_RATE_0MCS (48 * 2)
+#define HAL_11A_RATE_1MCS (24 * 2)
+#define HAL_11A_RATE_2MCS (12 * 2)
+#define HAL_11A_RATE_3MCS (6 * 2)
+#define HAL_11A_RATE_4MCS (54 * 2)
+#define HAL_11A_RATE_5MCS (36 * 2)
+#define HAL_11A_RATE_6MCS (18 * 2)
+#define HAL_11A_RATE_7MCS (9 * 2)
+
+#define HAL_LEGACY_MCS0 0
+#define HAL_LEGACY_MCS1 1
+#define HAL_LEGACY_MCS2 2
+#define HAL_LEGACY_MCS3 3
+#define HAL_LEGACY_MCS4 4
+#define HAL_LEGACY_MCS5 5
+#define HAL_LEGACY_MCS6 6
+#define HAL_LEGACY_MCS7 7
 
 /* Different allowed RU in 11BE */
 #define HAL_EHT_RU_26		0ULL

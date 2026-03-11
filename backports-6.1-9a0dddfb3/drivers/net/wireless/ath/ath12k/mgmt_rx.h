@@ -8,6 +8,7 @@
 
 #include "hw.h"
 #include "hal.h"
+#include "ini.h"
 
 struct ath12k_mgmt;
 
@@ -41,6 +42,11 @@ struct ath12k_mgmt;
 
 #define ATH12K_MGMT_RX_DESC_MAGIC          0xABBAABBA
 
+enum ath12k_mgmt_srng_pkt_type {
+	ATH12K_MGMT_SRNG_PKT_TYPE_RX,
+	ATH12K_MGMT_SRNG_PKT_TYPE_RX_ERR,
+};
+
 struct mgmt_srng {
 	u32 *vaddr_unaligned;
 	u32 *vaddr;
@@ -59,6 +65,8 @@ struct mgmt_srng {
 struct ath12k_mgmt_arch_ops {
 	int (*mgmt_op_device_init)(struct ath12k_mgmt *mgmt);
 	void (*mgmt_op_device_deinit)(struct ath12k_mgmt *mgmt);
+	int (*mgmt_op_htt_setup)(struct ath12k_mgmt *mgmt);
+	int (*mgmt_op_dump_ring_stats)(struct ath12k_mgmt *mgmt, char *buf, int size);
 };
 
 struct ath12k_mgmt_irq_grp {
@@ -76,6 +84,18 @@ struct ath12k_mgmt_irq_grp {
 	int irqs[ATH12K_MGMT_IRQ_PER_GRP_NUM_MAX];
 };
 
+#define ATH12K_SRNG_STATS_MGMT_FRM_STYPE_MAX 16
+struct ath12k_device_mgmt_srng_stats {
+	u32 invalid_pkts; /* non-mgmt pkts invalidly routed to mgmt srng */
+	u32 invalid_push_pkts; /* pkts with invalid push reason */
+	u32 rx_pkts[ATH12K_SRNG_STATS_MGMT_FRM_STYPE_MAX];
+	u32 err_ring_pkts;
+	/* subset of err_ring_pkts */
+	u32 rxdma_err[HAL_REO_ENTR_RING_RXDMA_ECODE_MAX];
+	u32 reo_err[HAL_REO_DEST_RING_ERROR_CODE_MAX];
+	u32 frag_pkts;
+};
+
 struct ath12k_mgmt {
 	struct ath12k_base *ab;
 	struct device *dev;
@@ -91,6 +111,8 @@ struct ath12k_mgmt {
 	/* protects rx descriptors for arch-specific rx_refill_ring */
 	spinlock_t rx_desc_lock;
 	struct list_head rx_desc_free_list;
+
+	struct ath12k_device_mgmt_srng_stats srng_stats;
 
 	/* must be last */
 	u8 arch_priv[] __aligned(sizeof(void *));
@@ -114,6 +136,8 @@ static inline u32 ath12k_mgmt_gen_rx_desc_cookie(u16 block, u16 slot)
 	return (u32)block << MGMT_RX_DESC_COOKIE_SHIFT | slot;
 }
 
+struct ath12k_rx_desc_info *ath12k_mgmt_get_rx_desc_from_cookie(struct ath12k_mgmt *mgmt,
+								u32 cookie);
 int ath12k_mgmt_rx_desc_init(struct ath12k_base *ab);
 void ath12k_mgmt_rx_desc_cleanup(struct ath12k_base *ab);
 size_t ath12k_mgmt_rx_desc_list_cut_nodes(struct list_head *used_list,
@@ -122,6 +146,8 @@ size_t ath12k_mgmt_rx_desc_list_cut_nodes(struct list_head *used_list,
 size_t ath12k_mgmt_get_req_entries_from_refill_ring(struct ath12k_base *ab,
 						    struct mgmt_srng *rx_refill_ring,
 						    struct list_head *list);
+struct sk_buff *ath12k_mgmt_rx_get_mmpdu_last_buf(struct sk_buff_head *mmpdu_list,
+						  struct sk_buff *first);
 
 static inline int ath12k_mgmt_arch_op_device_init(struct ath12k_mgmt *mgmt)
 {
@@ -137,5 +163,19 @@ static inline void ath12k_mgmt_arch_op_device_deinit(struct ath12k_mgmt *mgmt)
 		return;
 
 	mgmt->arch_ops->mgmt_op_device_deinit(mgmt);
+}
+
+static inline int ath12k_mgmt_arch_htt_setup(struct ath12k_mgmt *mgmt)
+{
+	if (!mgmt || !mgmt->arch_ops->mgmt_op_htt_setup)
+		return 0;
+
+	if (ath12k_cfg_get(mgmt->ab, ATH12K_CFG_REO_MGMT_PATH_DISABLE)) {
+		ath12k_info(mgmt->ab,
+			    "REO2SW management path is disabled, not configuring RDIs");
+		return 0;
+	}
+
+	return mgmt->arch_ops->mgmt_op_htt_setup(mgmt);
 }
 #endif

@@ -36,7 +36,8 @@ static inline void drv_tx(struct ieee80211_local *local,
 {
 	struct ieee80211_sub_if_data *orig_sdata;
 
-	if (ieee80211_hw_check(&local->hw, VLAN_GROUP_KEY_HW_OFFLOAD)) {
+	if (ieee80211_hw_check(&local->hw, VLAN_GROUP_KEY_HW_OFFLOAD) &&
+			       skb->dev) {
 		orig_sdata = IEEE80211_DEV_TO_SUB_IF(skb->dev);
 		if (orig_sdata->vif.type == NL80211_IFTYPE_AP_VLAN)
 			control->vlan_vif = &orig_sdata->vif;
@@ -685,6 +686,17 @@ static inline void drv_link_sta_statistics(struct ieee80211_local *local,
 		local->ops->link_sta_statistics(&local->hw, &sdata->vif,
 						link_sta, link_sinfo);
 	trace_drv_return_void(local);
+}
+
+static inline void
+drv_get_netstats(struct ieee80211_local *local,
+		 struct ieee80211_sub_if_data *sdata,
+		 struct rtnl_link_stats64 *stats)
+{
+	if (local->ops->get_netstats) {
+		local->ops->get_netstats(&local->hw, &sdata->vif,
+					 stats);
+	}
 }
 
 int drv_conf_tx(struct ieee80211_local *local,
@@ -1919,6 +1931,26 @@ drv_qos_mgmt_cfg(struct ieee80211_sub_if_data *sdata,
 					       sta, qm_req, qm_resp);
 	trace_drv_return_int(local, ret);
 
+	return ret;
+}
+
+static inline int drv_ap_power_save(struct ieee80211_local *local,
+				    struct ieee80211_sub_if_data *sdata,
+				    int link_id,
+				    struct cfg80211_ap_power_save_params *params)
+{
+	int ret = -EOPNOTSUPP;
+
+	might_sleep();
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	if (local->ops->ap_power_save) {
+		trace_drv_ap_power_save(local, sdata, link_id, params);
+		ret = local->ops->ap_power_save(&local->hw, sdata ? &sdata->vif : NULL,
+						link_id, params);
+	}
+
+	trace_drv_return_int(local, ret);
 	return ret;
 }
 

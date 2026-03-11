@@ -35,6 +35,7 @@
 
 #define ATH12K_TX_EXCEPTION_RING_MASK_0 0x1
 #define ATH12K_TCL_STATUS_RING_MASK_0 0x1
+#define ATH12K_TQM_STATUS_RING_MASK_0 0x1
 
 struct ath12k_base;
 int ath12k_wifi8_hw_init(struct ath12k_base *ab);

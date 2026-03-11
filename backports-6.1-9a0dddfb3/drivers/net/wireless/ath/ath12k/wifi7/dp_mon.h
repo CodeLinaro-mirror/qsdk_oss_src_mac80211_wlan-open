@@ -4,6 +4,7 @@
  */
 
 #include "../dp_mon.h"
+#include "../dp_tx_mon.h"
 
 extern const struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_quad_ring_ops;
 extern const struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_dual_ring_ops;
@@ -52,6 +53,20 @@ static inline
 int ath12k_dp_tx_mon_process_ring(struct ath12k_dp *dp, int mac_id,
 				  struct napi_struct *napi, int budget)
 {
-	/* TODO: Implement Tx Processing */
-	return 0;
+	struct ath12k_pdev_dp *dp_pdev;
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	u8 pdev_id = ath12k_hw_mac_id_to_pdev_id(dp->hw_params, mac_id);
+	int num_buffs_reaped = 0;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	dp_pdev = ath12k_dp_to_dp_pdev(dp, pdev_id);
+	if (unlikely(!dp_pdev || !dp_pdev->dp_mon_pdev))
+		return 0;
+
+	num_buffs_reaped =
+		ath12k_dp_mon_tx_process_ring(dp_pdev, mac_id,
+					      napi, &budget);
+
+	return num_buffs_reaped;
 }

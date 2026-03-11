@@ -22,9 +22,39 @@ enum ath12k_classify_bank_subid {
 
 extern u32 link_to_mgmt_type_map[];
 
+#define MGMT_MSDUQ_LINK(n) \
+	MGMT_MSDUQ_LINK_##n
+
+#define HTT_TID_MSDUQ_MGMT_LINK_SPECIFIC(n) \
+	HTT_TID_MSDUQ_MGMT_LINK_SPECIFIC_##n
+
+static inline u32 ath12k_link_num_to_mgmt_type(u8 link_num)
+{
+	switch (link_num) {
+	case 0:  return MGMT_MSDUQ_LINK(0);
+	case 1:  return MGMT_MSDUQ_LINK(1);
+	case 2:  return MGMT_MSDUQ_LINK(2);
+	case 3:  return MGMT_MSDUQ_LINK(3);
+	default: return MGMT_MSDUQ_TYPE_MAX;
+	}
+}
+
+static inline u32 ath12k_link_num_to_msduq_type(u8 link_num)
+{
+	switch (link_num) {
+	case 0:  return HTT_TID_MSDUQ_MGMT_LINK_SPECIFIC(0);
+	case 1:  return HTT_TID_MSDUQ_MGMT_LINK_SPECIFIC(1);
+	case 2:  return HTT_TID_MSDUQ_MGMT_LINK_SPECIFIC(2);
+	case 3:  return HTT_TID_MSDUQ_MGMT_LINK_SPECIFIC(3);
+	default: return HTT_TID_MSDUQ_MGMT_LINK_SPECIFIC_4;
+	}
+}
+
 #define ATH12K_LINK_TO_MGMT_TYPE(link_num) \
-	((link_num < ATH12K_WMI_MLO_MAX_LINKS) ? \
-	 link_to_mgmt_type_map[(link_num)] : MGMT_MSDUQ_TYPE_MAX)
+	ath12k_link_num_to_mgmt_type((u8)(link_num))
+
+#define ATH12K_LINK_TO_MSDUQ_TYPE(link_num) \
+	ath12k_link_num_to_msduq_type((u8)(link_num))
 
 #define HTT_MSDUQ_INDEX_TO_CLASSIFY_BANK_ID(htt_msduq_idx)    ((htt_msduq_idx) >> 0x1)
 #define HTT_MSDUQ_INDEX_TO_CLASSIFY_BANK_SUBID(htt_msduq_idx) ((htt_msduq_idx) &  0x1)
@@ -63,4 +93,6 @@ void ath12k_tx_classify_info_free(struct ath12k_dp_hw_group *dp_hw_grp,
 				  dma_addr_t txpt_paddr);
 void ath12k_peer_free_static_queues(struct ath12k_dp_hw_group *dp_hw_grp,
 				    struct ath12k_dp_peer *peer);
+void ath12k_dp_peer_free_queues(struct ath12k_dp_hw_group *dp_hw_grp,
+				struct ath12k_dp_peer *peer);
 #endif

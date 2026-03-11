@@ -13,6 +13,42 @@
 #include "debugfs.h"
 #include "dp_cmn.h"
 
+static enum htt_ppdu_stats_gi
+ath12k_debugfs_sta_get_gi_idx(const struct rate_info *txrate)
+{
+	if (txrate->flags & RATE_INFO_FLAGS_EHT_MCS) {
+		switch (txrate->eht_gi) {
+		case NL80211_RATE_INFO_EHT_GI_0_8:
+			return HTT_PPDU_STATS_SGI_0_8_US;
+		case NL80211_RATE_INFO_EHT_GI_1_6:
+			return HTT_PPDU_STATS_SGI_1_6_US;
+		case NL80211_RATE_INFO_EHT_GI_3_2:
+			return HTT_PPDU_STATS_SGI_3_2_US;
+		default:
+			return HTT_PPDU_STATS_SGI_0_8_US;
+		}
+	}
+
+	if (txrate->flags & RATE_INFO_FLAGS_HE_MCS) {
+		switch (txrate->he_gi) {
+		case NL80211_RATE_INFO_HE_GI_0_8:
+			return HTT_PPDU_STATS_SGI_0_8_US;
+		case NL80211_RATE_INFO_HE_GI_1_6:
+			return HTT_PPDU_STATS_SGI_1_6_US;
+		case NL80211_RATE_INFO_HE_GI_3_2:
+			return HTT_PPDU_STATS_SGI_3_2_US;
+		default:
+			return HTT_PPDU_STATS_SGI_0_8_US;
+		}
+	}
+
+	if (txrate->flags & (RATE_INFO_FLAGS_VHT_MCS | RATE_INFO_FLAGS_MCS))
+		return (txrate->flags & RATE_INFO_FLAGS_SHORT_GI) ?
+			HTT_PPDU_STATS_SGI_0_4_US : HTT_PPDU_STATS_SGI_0_8_US;
+
+	return HTT_PPDU_STATS_SGI_0_8_US;
+}
+
 void
 ath12k_debugfs_sta_update_success(struct ath12k_dp_link_peer *peer,
 				  struct ath12k_per_peer_tx_stats *peer_stats)
@@ -27,7 +63,7 @@ ath12k_debugfs_sta_update_success(struct ath12k_dp_link_peer *peer,
 	if (!tx_stats)
 		return;
 
-	gi = FIELD_GET(RATE_INFO_FLAGS_SHORT_GI, txrate->flags);
+	gi = ath12k_debugfs_sta_get_gi_idx(txrate);
 	mcs = txrate->mcs;
 	bw = ath12k_mac_mac80211_bw_to_ath12k_bw(txrate->bw);
 	nss = txrate->nss - 1;
@@ -136,11 +172,13 @@ ath12k_debugfs_sta_update_retry(struct ath12k_dp_link_peer *peer,
 	if (!tx_stats)
 		return;
 
-	gi = FIELD_GET(RATE_INFO_FLAGS_SHORT_GI, txrate->flags);
+	gi = ath12k_debugfs_sta_get_gi_idx(txrate);
 	mcs = txrate->mcs;
 	bw = ath12k_mac_mac80211_bw_to_ath12k_bw(txrate->bw);
 	nss = txrate->nss - 1;
 
+	if (peer_stats->mpdu_tried < peer_stats->succ_mpdu_pkts)
+		return;
 	mpdu_retry_pkts = peer_stats->mpdu_tried - peer_stats->succ_mpdu_pkts;
 	retry_bytes = peer_stats->retry_bytes;
 	ru_type = peer_stats->ru_tones;
@@ -204,7 +242,7 @@ ath12k_debugfs_sta_update_failure(struct ath12k_dp_link_peer *peer,
 	if (!tx_stats)
 		return;
 
-	gi = FIELD_GET(RATE_INFO_FLAGS_SHORT_GI, txrate->flags);
+	gi = ath12k_debugfs_sta_get_gi_idx(txrate);
 	mcs = txrate->mcs;
 	bw = ath12k_mac_mac80211_bw_to_ath12k_bw(txrate->bw);
 	nss = txrate->nss - 1;

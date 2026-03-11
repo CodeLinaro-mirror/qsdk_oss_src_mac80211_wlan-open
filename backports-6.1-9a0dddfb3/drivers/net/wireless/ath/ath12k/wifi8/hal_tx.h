@@ -11,6 +11,14 @@
 
 struct hal_rx_mon_ppdu_info;
 
+/* Maximum payload across current TQM types (update if a larger one is added). */
+#define HAL_TQM_VALUE_MAX_BYTES (sizeof(struct hal_tqm_sync_cmd))
+
+#define HAL_TLV64_HDR_BYTES   (sizeof(struct hal_tlv_64_hdr))
+#define HAL_TLV64_HDR_WORDS   (HAL_TLV64_HDR_BYTES >> 2)
+#define HAL_TQM_CMD_MAX_BYTES (HAL_TLV64_HDR_BYTES + HAL_TQM_VALUE_MAX_BYTES)
+#define HAL_TQM_CMD_MAX_WORDS (HAL_TQM_CMD_MAX_BYTES >> 2)
+
 /* TODO: check all these data can be managed with struct ath12k_tx_desc_info for perf */
 struct hal_tx_info {
 	u16 meta_data_flags; /* %HAL_TCL_DATA_CMD_INFO0_META_ */
@@ -59,6 +67,17 @@ extern u8 ath12k_default_dscp_tid_map[DSCP_TID_MAP_TBL_ENTRY_SIZE];
 
 #define HAL_TX_WILD_CARD_LINK_ID       7
 
+struct ath12k_hal_tx_cmd_ring_param {
+	dma_addr_t ctrl_buf_addr;
+	u32 meta_data_0;
+	u8 cmd_num:4,
+	   reserved:4;
+};
+
+int
+ath12k_wifi8_hal_invalidate_tx_cache_cmd_send(struct ath12k_base *ab,
+					      struct hal_srng *srng,
+					      struct ath12k_hal_tx_cmd_ring_param *param);
 void ath12k_wifi8_hal_tx_set_dscp_tid_map(struct ath12k_base *ab, u8 *map, int id);
 void ath12k_wifi8_hal_tx_update_dscp_tid_map(struct ath12k_base *ab,
 					     int id, u8 dscp, u8 tid);
@@ -72,4 +91,27 @@ void ath12k_wifi8_hal_tx_configure_bank_register(struct ath12k_base *ab,
 						 u32 bank_config,
 						 u8 bank_id);
 u32 ath12k_hal_tx_read_bank_register_internal(struct ath12k_base *ab, u8 bank_id);
+int ath12k_wifi8_hal_tqm_cmd_send(struct ath12k_base *ab, struct hal_srng *srng,
+				  enum hal_tlv_tag_be type,
+				  struct ath12k_hal_tqm_cmd *cmd);
+int ath12k_wifi8_hal_tqm_remove_msdu_cmd(struct ath12k_base *ab,
+					 struct hal_tlv_64_hdr *tlv,
+					 struct ath12k_hal_tqm_cmd *cmd);
+int ath12k_wifi8_hal_tqm_remove_mpdu_cmd(struct ath12k_base *ab,
+					 struct hal_tlv_64_hdr *tlv,
+					 struct ath12k_hal_tqm_cmd *cmd);
+int ath12k_wifi8_hal_tqm_sync_cmd(struct ath12k_base *ab,
+				  struct hal_tlv_64_hdr *tlv,
+				  struct ath12k_hal_tqm_cmd *cmd);
+void ath12k_wifi8_hal_tqm_remove_msdu_status(struct ath12k_base *ab,
+					     struct hal_tlv_64_hdr *tlv,
+					     struct hal_tqm_status *status);
+void ath12k_wifi8_hal_tqm_remove_mpdu_status(struct ath12k_base *ab,
+					     struct hal_tlv_64_hdr *tlv,
+					     struct hal_tqm_status *status);
+void ath12k_wifi8_hal_tqm_sync_cmd_status(struct ath12k_base *ab,
+					  struct hal_tlv_64_hdr *tlv,
+					  struct hal_tqm_status *status);
+int ath12k_wifi8_hal_tqm_cmd_staging_alloc(struct ath12k_base *ab);
+void ath12k_wifi8_hal_tqm_cmd_staging_free(struct ath12k_base *ab);
 #endif

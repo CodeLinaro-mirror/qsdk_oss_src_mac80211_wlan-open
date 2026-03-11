@@ -90,7 +90,11 @@ static const char *irq_name[ATH12K_IRQ_NUM_MAX] = {
 	"umac_reset",
 	"reo2ppe",
 	"ppe_wbm_rel",
-	"ppe2tcl"
+	"ppe2tcl",
+	"txmon2host-monitor-destination-mac3",
+	"txmon2host-monitor-destination-mac2",
+	"txmon2host-monitor-destination-mac1",
+	"host2tx-monitor-ring1"
 };
 
 enum ext_irq_num {
@@ -134,7 +138,11 @@ enum ext_irq_num {
 	umac_reset,
 	reo2ppe,
 	ppe_wbm_rel,
-	ppe2tcl
+	ppe2tcl,
+	txmon2host_monitor_destination_mac3,
+	txmon2host_monitor_destination_mac2,
+	txmon2host_monitor_destination_mac1,
+	host2tx_monitor_ring1
 };
 
 static u32 ath12k_ahb_read32(struct ath12k_base *ab, u32 offset)
@@ -191,7 +199,7 @@ static void __ath12k_ahb_ext_irq_disable(struct ath12k_base *ab)
 
 		ath12k_ahb_ext_grp_disable(irq_grp);
 
-		if (test_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags))
+		if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
 			continue;
 
 		if (irq_grp->napi_enabled) {
@@ -312,7 +320,7 @@ static void ath12k_ahb_ce_irqs_disable(struct ath12k_base *ab)
 {
 	int i;
 
-	if (ab->powered_off)
+	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
 	for (i = 0; i < ab->hw_params->ce_count; i++) {
@@ -347,12 +355,12 @@ static void ath12k_ahb_ext_irq_enable(struct ath12k_base *ab)
 
 static void ath12k_ahb_ext_irq_disable(struct ath12k_base *ab)
 {
-	if (ab->powered_off)
+	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
 	__ath12k_ahb_ext_irq_disable(ab);
 
-	if (!test_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags))
+	if (!test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
 		ath12k_ahb_sync_ext_irqs(ab);
 }
 
@@ -727,6 +735,18 @@ ath12k_ahb_config_ext_irq(struct ath12k_base *ab,
 			if (ring_mask->rx_mon_dest[i] & BIT(j))
 				irq_grp->irqs[num_irq++] =
 					rxdma2host_monitor_destination_mac1;
+
+			if (ring_mask->tx_mon_dest[i] & BIT(j))
+				irq_grp->irqs[num_irq++] =
+					txmon2host_monitor_destination_mac1;
+
+			if (ring_mask->tx_mon_buff[i] & BIT(j))
+				irq_grp->irqs[num_irq++] =
+					host2tx_monitor_ring1;
+
+			if (ring_mask->host2rxmon[i] & BIT(j))
+				irq_grp->irqs[num_irq++] =
+					host2rxdma_monitor_ring1;
 		}
 
 		irq_grp->num_irq = num_irq;
@@ -840,7 +860,7 @@ static void ath12k_ahb_free_ext_irq(struct ath12k_base *ab)
 {
 	int i, j;
 
-	if (ab->powered_off)
+	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
 	for (i = 0; i < ATH12K_EXT_IRQ_GRP_NUM_MAX; i++) {
@@ -1032,19 +1052,19 @@ static void ath12k_ahb_dp_umac_reset_enable_irq(struct ath12k_base *ab)
 
 static void ath12k_ahb_dp_umac_reset_free_irq(struct ath12k_base *ab)
 {
-        struct ath12k_dp_umac_reset *umac_reset = &ab->dp_umac_reset;
-        struct ath12k_ahb *ab_ahb = ath12k_ab_to_ahb(ab);
+	struct ath12k_dp_umac_reset *umac_reset = &ab->dp_umac_reset;
+	struct ath12k_ahb *ab_ahb = ath12k_ab_to_ahb(ab);
 
-	if (ab->powered_off)
+	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
-        if (ab->hw_params->umac_irq_line_reset) {
-                iounmap(ab_ahb->interrupt_reset_base_addr);
-                ab_ahb->interrupt_reset_base_addr = NULL;
-        }
+	if (ab->hw_params->umac_irq_line_reset) {
+		iounmap(ab_ahb->interrupt_reset_base_addr);
+		ab_ahb->interrupt_reset_base_addr = NULL;
+	}
 
-        disable_irq_nosync(umac_reset->irq_num);
-        free_irq(umac_reset->irq_num, ab);
+	disable_irq_nosync(umac_reset->irq_num);
+	free_irq(umac_reset->irq_num, ab);
 }
 
 void ath12k_ahb_umac_intr_line_reset(struct ath12k_base *ab)

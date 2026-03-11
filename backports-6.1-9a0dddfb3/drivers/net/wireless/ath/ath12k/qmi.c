@@ -4133,12 +4133,7 @@ void ath12k_qmi_free_target_mem_chunk(struct ath12k_base *ab)
 	struct ath12k_hw_group *ag = ab->ag;
 	int i, mlo_idx;
 
-	if (ath12k_check_erp_power_down(ag) &&
-	    ab->powered_off)
-		return;
-
 	for (i = 0, mlo_idx = 0; i < ab->qmi.mem_seg_count; i++) {
-
 		if (ab->qmi.target_mem[i].type == MLO_GLOBAL_MEM_REGION_TYPE) {
 			if (ab->is_bypassed)
 				continue;
@@ -4249,11 +4244,24 @@ static int ath12k_qmi_alloc_target_mem_chunk(struct ath12k_base *ab)
 		case AFC_REGION_TYPE:
 		case PAGEABLE_MEM_REGION_TYPE:
 		case CALDB_MEM_REGION_TYPE:
+			if ((chunk->type == CALDB_MEM_REGION_TYPE &&
+			     !ab->hw_params->cold_boot_calib) ||
+			     !chunk->size) {
+				chunk->paddr = 0;
+				chunk->v.addr = NULL;
+				break;
+			}
 			ret = ath12k_qmi_alloc_chunk(ab, chunk);
 			if (ret)
 				goto err;
 			break;
 		case MLO_GLOBAL_MEM_REGION_TYPE:
+			if (!chunk->size) {
+				chunk->paddr = 0;
+				chunk->v.addr = NULL;
+				mlo_idx++;
+				break;
+			}
 			mlo_size += chunk->size;
 			if (ag->mlo_mem.mlo_mem_size &&
 			    mlo_size > ag->mlo_mem.mlo_mem_size) {
@@ -4534,7 +4542,13 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 
 		switch (ab->qmi.target_mem[i].type) {
 		case CALDB_MEM_REGION_TYPE:
-			if (!ab->hw_params->cold_boot_calib) {
+		case HOST_DDR_REGION_TYPE:
+		case BDF_MEM_REGION_TYPE:
+		case M3_DUMP_REGION_TYPE:
+		case PAGEABLE_MEM_REGION_TYPE:
+			if ((ab->qmi.target_mem[i].type == CALDB_MEM_REGION_TYPE &&
+			     !ab->hw_params->cold_boot_calib) ||
+			     !ab->qmi.target_mem[i].size) {
 				ab->qmi.target_mem[idx].paddr = 0;
 				ab->qmi.target_mem[idx].v.ioaddr = NULL;
 				ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
@@ -4542,12 +4556,6 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 				idx++;
 				break;
 			}
-
-			fallthrough;
-		case HOST_DDR_REGION_TYPE:
-		case BDF_MEM_REGION_TYPE:
-		case M3_DUMP_REGION_TYPE:
-		case PAGEABLE_MEM_REGION_TYPE:
 			if (ddr_rmem->size - sz < ab->qmi.target_mem[i].size) {
 				avail_sz = ddr_rmem->size - sz;
 				goto print_err;
@@ -4568,6 +4576,14 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 			idx++;
 			break;
 		case MLO_GLOBAL_MEM_REGION_TYPE:
+			if (!ab->qmi.target_mem[i].size) {
+				ab->qmi.target_mem[idx].paddr = 0;
+				ab->qmi.target_mem[idx].v.ioaddr = NULL;
+				ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
+				ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
+				idx++;
+				break;
+			}
 			rmem = ath12k_core_get_reserved_mem_by_name(ab, "mlo-global-mem");
 			if (!rmem) {
 				ret = -EINVAL;
@@ -4685,7 +4701,13 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 
 		switch (ab->qmi.target_mem[i].type) {
 		case CALDB_MEM_REGION_TYPE:
-			if (!ab->hw_params->cold_boot_calib) {
+		case HOST_DDR_REGION_TYPE:
+		case BDF_MEM_REGION_TYPE:
+		case M3_DUMP_REGION_TYPE:
+		case PAGEABLE_MEM_REGION_TYPE:
+			if ((ab->qmi.target_mem[i].type == CALDB_MEM_REGION_TYPE &&
+			     !ab->hw_params->cold_boot_calib) ||
+			     !ab->qmi.target_mem[i].size) {
 				ab->qmi.target_mem[idx].paddr = 0;
 				ab->qmi.target_mem[idx].v.ioaddr = NULL;
 				ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
@@ -4693,12 +4715,6 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 				idx++;
 				break;
 			}
-
-			fallthrough;
-		case HOST_DDR_REGION_TYPE:
-		case BDF_MEM_REGION_TYPE:
-		case M3_DUMP_REGION_TYPE:
-		case PAGEABLE_MEM_REGION_TYPE:
 			if (ddr_rmem->size - sz < ab->qmi.target_mem[i].size) {
 				avail_sz = ddr_rmem->size - sz;
 				goto print_err;
@@ -4722,6 +4738,14 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 			idx++;
 			break;
 		case MLO_GLOBAL_MEM_REGION_TYPE:
+			if (!ab->qmi.target_mem[i].size) {
+				ab->qmi.target_mem[idx].paddr = 0;
+				ab->qmi.target_mem[idx].v.ioaddr = NULL;
+				ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
+				ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
+				idx++;
+				break;
+			}
 			rmem = ath12k_core_get_reserved_mem_by_name(ab, "mlo-global-mem");
 			if (!rmem) {
 				ret = -EINVAL;
@@ -4748,13 +4772,13 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 			}
 
 			ab->qmi.target_mem[idx].paddr = mlo_chunk->paddr;
-                        ab->qmi.target_mem[idx].v.ioaddr = mlo_chunk->v.ioaddr;
+			ab->qmi.target_mem[idx].v.ioaddr = mlo_chunk->v.ioaddr;
 			ab->qmi.target_mem[idx].size = mlo_chunk->size;
 			ab->qmi.target_mem[idx].type = mlo_chunk->type;
 
 			if (!ag->mlo_mem.mlo_mem_size) {
 				ag->mlo_mem.mlo_mem_size = mlo_chunk->size;
-			} else if(ag->mlo_mem.mlo_mem_size != mlo_chunk->size){
+			} else if (ag->mlo_mem.mlo_mem_size != mlo_chunk->size) {
 				ath12k_err(ab, "QMI MLO memory size error, expected size is %d"
 					   "but requested size is %d", ag->mlo_mem.mlo_mem_size,
 					   mlo_chunk->size);
@@ -5251,6 +5275,16 @@ static void ath12k_qmi_ext_fw_bin_free(struct ath12k_base *ab,
 	ext_fw_bin_mem->size = 0;
 }
 
+static void ath12k_qmi_ext_fw_bin_clear(struct ath12k_base *ab)
+{
+	int type;
+
+	for (type = 0; type < QMI_WLANFW_EXT_FW_MAX_BIN_TYPE; type++) {
+		if (ab->qmi.ext_fw_bin_mem[type].vaddr)
+			ath12k_qmi_ext_fw_bin_free(ab, type);
+	}
+}
+
 static int ath12k_qmi_ext_fw_bin_load(struct ath12k_base *ab,
 				      enum qmi_wlanfw_ext_fw_bin_type_enum_v01 type)
 {
@@ -5447,10 +5481,6 @@ int ath12k_qmi_wlanfw_ext_fw_bin_mem_info_send(struct ath12k_base *ab)
 		goto out;
 	}
 out:
-	for (type = 0; type < QMI_WLANFW_EXT_FW_MAX_BIN_TYPE; type++) {
-		if (ab->qmi.ext_fw_bin_mem[type].vaddr)
-			ath12k_qmi_ext_fw_bin_free(ab, type);
-	}
 	kfree(req);
 	kfree(resp);
 
@@ -5885,9 +5915,7 @@ int ath12k_qmi_process_coldboot_calibration(struct ath12k_base *ab)
 	ath12k_info(ab, "power down to restart firmware in mission mode\n");
 	ath12k_qmi_firmware_stop(ab);
 
-	if (!ab->powered_off)
-		ath12k_hif_power_down(ab, false);
-
+	ath12k_hif_power_down(ab, false);
 	ath12k_qmi_free_target_mem_chunk(ab);
 	ath12k_info(ab, "power up to restart firmware in mission mode\n");
 	/* reset host fixed mem off to zero */
@@ -6734,6 +6762,7 @@ void ath12k_qmi_deinit_service(struct ath12k_base *ab)
 	cancel_work_sync(&ab->qmi.event_work);
 	destroy_workqueue(ab->qmi.event_wq);
 	ath12k_qmi_m3_free(ab);
+	ath12k_qmi_ext_fw_bin_clear(ab);
 	ath12k_qmi_free_resource(ab);
 #ifdef CPTCFG_ATHDEBUG
 	athdbg_if_get_service(ab, ATHDBG_SRV_QMI_DEINIT);

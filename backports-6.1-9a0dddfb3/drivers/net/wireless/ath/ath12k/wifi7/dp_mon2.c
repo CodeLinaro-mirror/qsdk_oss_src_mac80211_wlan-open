@@ -15,6 +15,7 @@
 #include "../dp_mon_filter.h"
 #include "dp_mon2.h"
 #include "../trace.h"
+#include "../ath12k_notif.h"
 
 const struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_dual_ring_ops = {
 	.rx_srng_setup = ath12k_dp_mon_rx_srng_setup,
@@ -49,6 +50,20 @@ const struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_dual_ring_ops = {
 	.mon_rx_wmask = ath12k_dp_mon_rx_wmask_subscribe,
 	.rx_enable_packet_filters = ath12k_dp_mon_rx_enable_packet_filters,
 	.pktlog_config = ath12k_dp_mon_pktlog_config_filter,
+	.htt_rx_filter_rxmon_cfg = ath12k_dp_htt_rx_filter_rxmon_cfg,
+
+	/* Below are TxMonitor Ops */
+	/* At Device Init/Exit */
+	.mon_tx_srng_alloc_setup = ath12k_dp_mon_tx_srng_alloc_setup,
+	.mon_tx_srng_cleanup = ath12k_dp_mon_tx_srng_cleanup,
+	/* At VAP up/down */
+	.mon_tx_htt_srng_setup = ath12k_dp_mon_tx_htt_srng_setup,
+	.mon_tx_htt_srng_cleanup = ath12k_dp_mon_tx_htt_srng_cleanup,
+	.mon_tx_filter_configure = ath12k_dp_mon_tx_config_filter,
+	.mon_tx_filter_update = ath12k_dp_mon_tx_update_ring_filter,
+	/* At Pdev Init/Exit */
+	.mon_tx_dst_ring_alloc_setup = ath12k_dp_mon_tx_dst_ring_alloc_setup,
+	.mon_tx_dst_ring_cleanup = ath12k_dp_mon_tx_dst_ring_cleanup,
 };
 
 static inline void
@@ -1168,14 +1183,6 @@ static void ath12k_wifi7_dp_mon_h_flush_tlv(struct ath12k_pdev_dp *pdev_dp,
 	page_frag_free(mon_buf);
 }
 
-static inline void
-ath12k_wifi7_dp_mon_rx_reset_ppdu_desc(struct ath12k_dp_mon_ppdu_desc *ppdu_desc)
-{
-	memset(ppdu_desc->status_desc, 0,
-	       ppdu_desc->status_desc_cnt * sizeof(*ppdu_desc->status_desc));
-	ppdu_desc->status_desc_cnt = 0;
-}
-
 static void ath12k_wifi7_dp_mon_rx_h_empty_desc(struct ath12k_pdev_dp *pdev_dp)
 {
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = pdev_dp->dp_mon_pdev;
@@ -1207,7 +1214,7 @@ static void ath12k_wifi7_dp_mon_rx_h_empty_desc(struct ath12k_pdev_dp *pdev_dp)
 	}
 
 free_desc:
-	ath12k_wifi7_dp_mon_rx_reset_ppdu_desc(last_ppdu_desc);
+	ath12k_dp_mon_reset_ppdu_desc(last_ppdu_desc);
 	list_add_tail(&last_ppdu_desc->list, &dp_mon_pdev->ppdu_desc_free_list);
 }
 
@@ -1285,7 +1292,7 @@ static int ath12k_wifi7_dp_mon_rx_add_ppdu_desc(struct list_head *mon_desc_used_
 			ath12k_warn(dp_mon->dp,
 				    "status desc buffer full (count = %u, max = %u)",
 				    ppdu_desc->status_desc_cnt, ATH12K_DP_MON_STATUS_BUF);
-			ath12k_wifi7_dp_mon_rx_reset_ppdu_desc(ppdu_desc);
+			ath12k_dp_mon_reset_ppdu_desc(ppdu_desc);
 			spin_lock_bh(&dp_mon_pdev->ppdu_desc_lock);
 			list_add_tail(&ppdu_desc->list,
 				      &dp_mon_pdev->ppdu_desc_free_list);
@@ -1342,6 +1349,42 @@ ath12k_dp_rx_pktlog_process(struct ath12k_pdev_dp *pdev_dp,
 				log_type, status_desc->buf_len);
 	ath12k_dp_rx_stats_buf_pktlog_process(ar, status_desc->mon_buf,
 					      log_type, status_desc->buf_len);
+}
+
+static void ath12k_dp_rx_mon_ppdu_notify(struct ath12k_pdev_dp *pdev_dp,
+					 struct hal_rx_mon_ppdu_info *ppdu_info)
+{
+	struct ath12k_ppdu_event event;
+	struct sk_buff *skb;
+	struct ath12k_ppdu_rx_info *ppdu_evt_data;
+	unsigned int len;
+
+	if (ppdu_info->peer_id == HAL_INVALID_PEERID)
+		return;
+
+	/* Early exit if no one is listening for RX events - avoid unnecessary work */
+	if (!ath12k_ppdu_notifier_has_listeners(ATH12K_EVENT_PPDU_RX_COMPLETE))
+		return;
+
+	len = sizeof(*ppdu_evt_data);
+	skb = alloc_skb(len, GFP_ATOMIC);
+	if (!skb) {
+		ath12k_dbg(NULL, ATH12K_DBG_TELEMETRY,
+			   "Allocation failed for RX PPDU evt notification data");
+		return;
+	}
+
+	ppdu_evt_data = skb_put_zero(skb, len);
+	memcpy(&ppdu_evt_data->ppdu_info, ppdu_info, sizeof(*ppdu_info));
+	memset(&event, 0, sizeof(event));
+	event.skb = skb;
+
+	ath12k_ppdu_notifier_call_chain(ATH12K_EVENT_PPDU_RX_COMPLETE, &event);
+	if (refcount_read(&skb->users) > 1)
+		ath12k_dbg(NULL, ATH12K_DBG_TELEMETRY,
+			   "SKB ref cnt held by Rx PPDU listener = %d\n",
+			   refcount_read(&skb->users));
+	kfree_skb(skb);
 }
 
 static void
@@ -1562,6 +1605,8 @@ ath12k_wifi7_dp_mon_rx_process_ppdu(struct work_struct *work)
 								      ppdu_info);
 #endif
 			}
+			/* Send PPDU notification to registered listeners */
+			ath12k_dp_rx_mon_ppdu_notify(pdev_dp, ppdu_info);
 unlock:
 			spin_unlock_bh(&dp->dp_lock);
 			rcu_read_unlock_bh();
@@ -1572,7 +1617,7 @@ free_buf:
 next_ppdu:
 		mon_stats->num_ppdu_processed++;
 		ppdu_desc_prcd++;
-		ath12k_wifi7_dp_mon_rx_reset_ppdu_desc(ppdu_desc);
+		ath12k_dp_mon_reset_ppdu_desc(ppdu_desc);
 		ath12k_wifi7_dp_mon_rx_memset_ppdu_info(pdev_dp, ppdu_info);
 	}
 
@@ -1776,7 +1821,10 @@ int ath12k_dp_mon_rx_wq_init(struct ath12k_pdev_dp *dp_pdev)
 {
 	struct ath12k_pdev_mon_dp *mon_pdev = dp_pdev->dp_mon_pdev;
 
-	mon_pdev->rxmon_wq = alloc_workqueue("rxmon_wq", WQ_UNBOUND, 0);
+	mon_pdev->rxmon_wq = alloc_workqueue("rxmon_%s-%s%d", WQ_UNBOUND | WQ_SYSFS, 0,
+					     ath12k_bus_str(dp_pdev->dp->ab->hif.bus),
+					     dev_name(dp_pdev->dp->ab->dev),
+					     dp_pdev->mac_id);
 	if (unlikely(!mon_pdev->rxmon_wq)) {
 		ath12k_warn(dp_pdev->dp,
 			    "failed to allocate rxmon workqueue for mac_id %d\n",

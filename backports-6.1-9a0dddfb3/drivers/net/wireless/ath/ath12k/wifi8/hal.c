@@ -15,6 +15,7 @@
 #include "../hif.h"
 #include "../pcic.h"
 #include "ppeds.h"
+#include "../hal.h"
 
 const struct ath12k_hw_version_map ath12k_wifi8_hw_ver_map[] = {
 	[ATH12K_HW_QCN9625_HW10] = {
@@ -161,6 +162,8 @@ void ath12k_wifi8_hal_srng_dst_hw_init(struct ath12k_base *ab,
 	if (srng->flags & HAL_SRNG_FLAGS_MSI_SWAP)
 		val |= HAL_REO1_RING_MISC_MSI_SWAP;
 	val |= HAL_REO1_RING_MISC_SRNG_ENABLE;
+	val |= HAL_REO1_RING_MISC_RING_ID_DISABLE;
+	val |= HAL_REO1_RING_MISC_LOOPCNT_DISABLE;
 
 	ath12k_hif_write32(ab, reg_base + ath12k_hal_reo1_ring_misc_offset(hal), val);
 }
@@ -254,11 +257,8 @@ void ath12k_wifi8_hal_srng_src_hw_init(struct ath12k_base *ab,
 
 	/* Loop count is not used for SRC rings */
 	val |= HAL_TCL1_RING_MISC_MSI_LOOPCNT_DISABLE;
-
+	val |= HAL_TCL1_RING_MISC_MSI_RING_ID_DISABLE;
 	val |= HAL_TCL1_RING_MISC_SRNG_ENABLE;
-
-	if (srng->ring_id == HAL_SRNG_RING_ID_WBM_IDLE_LINK)
-		val |= HAL_TCL1_RING_MISC_MSI_RING_ID_DISABLE;
 
 	/* descriptor/head_ptr is from/to host DDR */
 	val |= HAL_TCL1_RING_MISC_TRANSACTION_TYPE;
@@ -974,4 +974,79 @@ void ath12k_wifi8_hal_vdev_mcast_ctrl_set(struct ath12k_base *ab, u32 vdev_id,
 		   (HAL_TCL_VDEV_MCAST_PACKET_CTRL_SHIFT * index_in_reg));
 
 	ath12k_hif_write32(ab, reg_addr, reg_val);
+}
+
+int ath12k_wifi8_hal_get_rdi_source_cfg(struct ath12k_base *ab, int source)
+{
+	struct ath12k_hal *hal = &ab->hal;
+	const struct ath12k_hal_rdi_mapping *rdi_mapping = hal->rdi_mapping;
+	unsigned long rdi_based_source_cfg = 0;
+	int i;
+
+	for (i = 0; i < HAL_RDI_MAPPING_MAX; i++)
+		if (rdi_mapping[i].source == source)
+			set_bit(i, &rdi_based_source_cfg);
+
+	return rdi_based_source_cfg;
+}
+
+static inline
+u32 ath12k_hal_srng_src_get_words_available(u32 hp, u32 tp,
+					    u32 ring_size)
+{
+	/* Keeping 1-word gap so hp==tp means empty */
+	if (tp <= hp)
+		return (ring_size - hp + tp - 1);
+	else
+		return (tp - hp - 1);
+}
+
+u32 ath12k_hal_srng_get_tqm_cmd_size(enum hal_tlv_tag_be type)
+{
+	if (type == HAL_TQM_REMOVE_MSDU_BO)
+		return ((sizeof(struct hal_tlv_64_hdr) +
+			sizeof(struct hal_tqm_remove_msdu)) >> 2);
+	else if (type == HAL_TQM_REMOVE_MPDU_BO)
+		return ((sizeof(struct hal_tlv_64_hdr) +
+			sizeof(struct hal_tqm_remove_mpdu)) >> 2);
+	else if (type == HAL_TQM_SYNC_CMD_BO)
+		return ((sizeof(struct hal_tlv_64_hdr) +
+			sizeof(struct hal_tqm_sync_cmd)) >> 2);
+	return 0;
+}
+
+void *ath12k_hal_srng_src_get_tqm_next_entry(struct ath12k_base *ab,
+					     struct hal_srng *srng,
+					     enum hal_tlv_tag_be type)
+{
+	u32 entry_size, ring_size, hp, tp;
+	void *desc;
+	u32 words_available, next_hp;
+
+	lockdep_assert_held(&srng->lock);
+
+	entry_size = ath12k_hal_srng_get_tqm_cmd_size(type);
+	ring_size = srng->ring_size;
+	hp = srng->u.src_ring.hp;
+	tp = READ_ONCE(srng->u.src_ring.cached_tp);
+
+	if (!entry_size || entry_size >= ring_size)
+		return NULL;
+
+	words_available = ath12k_hal_srng_src_get_words_available(
+						hp, tp, ring_size);
+
+	if (unlikely(words_available < entry_size))
+		return NULL; /* not enough total space */
+
+	desc = (u32 *)srng->ring_base_vaddr + hp;
+
+	next_hp = hp + entry_size;
+	if (next_hp >= ring_size)
+		next_hp -= ring_size;
+
+	srng->u.src_ring.hp = next_hp;
+	srng->u.src_ring.reap_hp = next_hp;
+
+	return desc;
 }

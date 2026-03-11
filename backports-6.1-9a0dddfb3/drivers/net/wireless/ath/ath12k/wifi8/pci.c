@@ -18,8 +18,6 @@
 #include "hal.h"
 #include "mgmt_rx.h"
 
-#define QCN9625_DEVICE_ID		0x1113
-
 static const struct pci_device_id ath12k_wifi8_pci_id_table[] = {
 	{ PCI_VDEVICE(QCOM, QCN9625_DEVICE_ID) },
 	{0}

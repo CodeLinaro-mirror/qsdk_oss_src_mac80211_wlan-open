@@ -61,6 +61,7 @@ struct ath12k_hw_group;
 enum ath12k_target_mem_mode {
 	ATH12K_QMI_TARGET_MEM_MODE_DEFAULT = 0,
 	ATH12K_QMI_TARGET_MEM_MODE_512M,
+	ATH12K_QMI_TARGET_MEM_MODE_256M,
 };
 
 enum ath12k_qmi_file_type {

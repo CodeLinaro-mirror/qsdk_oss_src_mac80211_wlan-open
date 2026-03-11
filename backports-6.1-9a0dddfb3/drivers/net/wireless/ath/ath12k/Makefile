@@ -39,7 +39,14 @@ ath12k-y += core.o \
 	    vendor_services.o \
 	    pktlog.o \
 	    ce_stats.o \
-	    mgmt_rx.o
+	    mgmt_rx.o \
+	    event.o \
+	    dp_tx_mon.o \
+	    me.o \
+	    dp_ext_desc.o \
+	    dp_me.o \
+	    me_hmmc.o \
+	    ath12k_notif.o
 
 ath12k-$(CPTCFG_ATHDEBUG) += athdbg_if.o
 ath12k-$(CPTCFG_ATH12K_AHB) += ahb.o
@@ -54,11 +61,23 @@ obj-$(CPTCFG_ATH12K) += wifi7/
 obj-$(CPTCFG_ATH12K) += wifi8/
 obj-$(CPTCFG_ATHDEBUG) += ath_debug/
 
+ccflags-y += -I$(src)
+
 ath12k-$(CPTCFG_QCN_EXTN) += \
 	qcn_extns/core_extn.o \
 	qcn_extns/vendor_extn.o \
 	qcn_extns/esp_extn.o \
-	qcn_extns/txrx_extn.o
+	qcn_extns/txrx_extn.o \
+	qcn_extns/dcs_extn.o \
+	qcn_extns/dp_stats_extn.o
+
+ath12k-$(CPTCFG_EXT_IPA_OFFLOAD) += \
+	qcn_extns/ipa/dp_ipa.o \
+	qcn_extns/ipa/dp_ipa_perf.o
+
+ifneq ($(CONFIG_BRIDGE_MCAST_OFFLOAD),)
+ath12k-$(CPTCFG_QCN_EXTN) += qcn_extns/me_snoop_extn.o
+endif
 
 ath12k-$(CPTCFG_ATH12K_DEBUGFS) += debugfs.o debugfs_htt_stats.o debugfs_sta.o
 ath12k-$(CONFIG_ACPI) += acpi.o

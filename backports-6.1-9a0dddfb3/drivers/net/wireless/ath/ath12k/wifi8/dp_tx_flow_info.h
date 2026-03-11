@@ -80,6 +80,7 @@ struct ath12k_dp_msdu_q_info  {
 	u8 bitmap;
 	u8 mlo:1,
 	   qos:1,
+	   tqm_send:1,
 	   allocated:1;
 };
 
@@ -94,6 +95,7 @@ struct ath12k_dp_mpdu_q_info {
 		    reserved:8;
 		struct ath12k_flow_metadata flow_info;
 	};
+	bool tqm_send;
 	struct list_head list;
 };
 

@@ -209,7 +209,7 @@ void ath12k_pcic_free_ext_irq(struct ath12k_base *ab)
 {
 	int i, j;
 
-	if (ab->powered_off)
+	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
 	for (i = 0; i < ATH12K_EXT_IRQ_GRP_NUM_MAX; i++) {
@@ -328,7 +328,7 @@ static void __ath12k_pcic_ext_irq_disable(struct ath12k_base *sc)
 		 * will lead to sleep in atmoic context that's why avoiding napi sync
 		 * during umac reset.
 		 */
-		if (test_bit(ATH12K_FLAG_UMAC_PRERESET_START, &sc->dev_flags))
+		if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &sc->dev_flags))
 			continue;
 
 		if (irq_grp->napi_enabled) {
@@ -467,7 +467,9 @@ int ath12k_pcic_ext_cfg_gic_msi_irq(struct ath12k_base *ab,
 	if (!napi_ndev)
 		return -ENOMEM;
 
-	if (ab->hw_params->ring_mask->rx_mon_dest[i])
+	if (ab->hw_params->ring_mask->rx_mon_dest[i] ||
+	    ab->hw_params->ring_mask->tx_mon_dest[i] ||
+	    ab->hw_params->ring_mask->tx_mon_buff[i])
 		budget = NAPI_POLL_WEIGHT;
 	else
 		budget = ath12k_napi_poll_budget;
@@ -487,7 +489,9 @@ int ath12k_pcic_ext_cfg_gic_msi_irq(struct ath12k_base *ab,
 	    ab->hw_params->ring_mask->wbm2sw6_ppeds_tx_cmpln[i] ||
 	    ab->hw_params->ring_mask->reo2ppe[i] ||
 #endif
-	    ab->hw_params->ring_mask->rx_mon_dest[i]) {
+	    ab->hw_params->ring_mask->rx_mon_dest[i] ||
+	    ab->hw_params->ring_mask->tx_mon_dest[i] ||
+	    ab->hw_params->ring_mask->tx_mon_buff[i]) {
 		num_irq = 1;
 	}
 
@@ -521,7 +525,8 @@ int ath12k_pcic_ext_cfg_gic_msi_irq(struct ath12k_base *ab,
 				  "pcic%u_wlan_dp_%u", userpd_idx, i);
 			irq_set_status_flags(msi_desc->irq, IRQ_DISABLE_UNLAZY);
 			ret = devm_request_irq(&pdev->dev, msi_desc->irq,
-					       ath12k_pcic_ext_interrupt_handler, IRQF_SHARED,
+					       ath12k_pcic_ext_interrupt_handler,
+					       IRQF_SHARED,
 					       dp_pcic_irq_name[userpd_idx][i], irq_grp);
 			if (ret) {
 				ath12k_warn(ab, "failed to request irq %d: %d\n", irq_idx, ret);
@@ -620,7 +625,7 @@ static void ath12k_pcic_sync_ce_irqs(struct ath12k_base *ab)
 
 void ath12k_pcic_ce_irq_disable_sync(struct ath12k_base *ab)
 {
-	if (ab->powered_off)
+	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
 	ath12k_pcic_ce_irqs_disable(ab);
@@ -883,12 +888,12 @@ void ath12k_pcic_ext_irq_disable(struct ath12k_base *ab)
 {
 
 	if (!test_bit(ATH12K_FLAG_EXT_IRQ_ENABLED, &ab->dev_flags) ||
-	    ab->powered_off)
+	    test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
 	__ath12k_pcic_ext_irq_disable(ab);
 
-	if (!test_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags))
+	if (!test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
 		ath12k_pcic_sync_ext_irqs(ab);
 }
 
@@ -970,7 +975,9 @@ int ath12k_pcic_ext_irq_config(struct ath12k_base *ab,
 			goto fail_allocate;
 		}
 
-		if (ab->hw_params->ring_mask->rx_mon_dest[i])
+		if (ab->hw_params->ring_mask->rx_mon_dest[i] ||
+		    ab->hw_params->ring_mask->tx_mon_dest[i] ||
+		    ab->hw_params->ring_mask->tx_mon_buff[i])
 			budget = NAPI_POLL_WEIGHT;
 		else
 			budget = ath12k_napi_poll_budget;
@@ -996,7 +1003,9 @@ int ath12k_pcic_ext_irq_config(struct ath12k_base *ab,
 		    ab->hw_params->ring_mask->reo2ppe[i] ||
 #endif
 		    ab->hw_params->ring_mask->rx_mon_dest[i] ||
-		    ab->hw_params->ring_mask->rx_mon_status[i]) {
+		    ab->hw_params->ring_mask->rx_mon_status[i] ||
+		    ab->hw_params->ring_mask->tx_mon_dest[i] ||
+		    ab->hw_params->ring_mask->tx_mon_buff[i]) {
 			num_irq = 1;
 		}
 
@@ -1517,7 +1526,7 @@ void ath12k_pcic_mgmt_irq_free(struct ath12k_base *ab)
 	struct ath12k_mgmt *mgmt = ab->mgmt;
 	int i, j;
 
-	for (i = 0; i < ATH12K_MGMT_IRQ_GRP_NUM_MAX; i++) {
+	for (i = 0; i < mgmt->num_irq_grp; i++) {
 		struct ath12k_mgmt_irq_grp *irq_grp = &mgmt->irq_grp[i];
 
 		for (j = 0; j < irq_grp->num_irq; j++)

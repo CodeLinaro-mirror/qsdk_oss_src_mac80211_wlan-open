@@ -16,6 +16,7 @@
 #define DP_WBM_REFILL_RING_MAX         4
 #define DP_WBM_REFILL_RING_SIZE        512
 #define DP_WBM_IDLE_BUF_RING_SIZE      8192
+#define DP_FSE_CMD_RING_SIZE		256
 
 struct ath12k_base;
 struct ath12k_dp;
@@ -29,6 +30,9 @@ struct ath12k_dp_wifi8 {
 	struct dp_srng reo_dst_high_prio_ring;
 	struct dp_srng wbm_refill_ring[DP_WBM_REFILL_RING_MAX];
 	struct dp_srng wbm_idle_buf_ring;
+	struct dp_srng tqm_cmd_ring;
+	struct dp_srng tqm_status_ring;
+	struct dp_srng fse_cmd_ring;
 };
 
 struct ath12k_dp_hw_group_wifi8 {
@@ -43,6 +47,7 @@ struct ath12k_dp_hw_group_wifi8 {
 	/* lock for tx flow pool */
 	spinlock_t tx_pool_lock;
 	u8 num_pn_pages;
+	struct completion peer_init_done;
 };
 
 static inline struct ath12k_dp_wifi8 *ath12k_get_dp_wifi8(struct ath12k_dp *dp)

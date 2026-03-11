@@ -18,6 +18,7 @@
 #include "dp_mon.h"
 #include "dp_peer.h"
 #include "../wmi.h"
+#include "umac_reset.h"
 
 static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 					struct ath12k_ext_irq_grp *irq_grp,
@@ -25,7 +26,6 @@ static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 {
 	struct napi_struct *napi = &irq_grp->napi;
 	struct ath12k_base *ab = dp->ab;
-	int cpu_id = smp_processor_id();
 	int grp_id = irq_grp->grp_id;
 	int work_done = 0;
 	int i = 0, j;
@@ -37,7 +37,6 @@ static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 	if (ath12k_dp_umac_reset_in_progress(ab))
 		return 0;
 
-	set_bit(cpu_id, &dp->service_rings_running);
 	rx_mask = dp->hw_params->ring_mask->rx[grp_id];
 	tx_mask = dp->hw_params->ring_mask->tx[grp_id];
 
@@ -120,19 +119,17 @@ static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 	if (dp->hw_params->ring_mask->tx_mon_dest[grp_id]) {
 		ring_mask = dp->hw_params->ring_mask->tx_mon_dest[grp_id];
 		for (i = 0; i < dp->num_radios; i++) {
-			for (j = 0; j < dp->hw_params->num_rxdma_per_pdev; j++) {
-				int id = i * dp->hw_params->num_rxdma_per_pdev + j;
+			int mac_id = i;
 
-				if (ring_mask & BIT(id)) {
-					work_done =
-					ath12k_dp_tx_mon_process_ring(dp, id, napi,
-								      budget);
-					budget -= work_done;
-					tot_work_done += work_done;
+			if (ring_mask & BIT(mac_id)) {
+				work_done =
+				ath12k_dp_tx_mon_process_ring(dp, mac_id, napi,
+							      budget);
+				budget -= work_done;
+				tot_work_done += work_done;
 
-					if (budget <= 0)
-						goto done;
-				}
+				if (budget <= 0)
+					goto done;
 			}
 		}
 	}
@@ -150,19 +147,18 @@ static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 								      refill_srng,
 								      &list);
 		if (req_entries)
-			ath12k_dp_rx_bufs_replenish(dp, refill_srng, &list);
+			ath12k_dp_rx_bufs_replenish(dp, refill_srng, &list, false);
 	}
 
 	if (dp->hw_params->ring_mask->host2rxmon[grp_id])
 		ath12k_dp_mon_rx_process_low_thres(dp);
 
+	if (dp->hw_params->ring_mask->tx_mon_buff[grp_id])
+		ath12k_dp_mon_tx_process_low_thres(dp);
+
 	/* TODO: Implement handler for other interrupts */
 
 done:
-	clear_bit(cpu_id, &dp->service_rings_running);
-	if (ab->dp_umac_reset.umac_pre_reset_in_prog)
-		ath12k_umac_reset_notify_pre_reset_done(ab);
-
 	return tot_work_done;
 }
 
@@ -326,7 +322,17 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 		goto fail_dp_mon_rx_free;
 	}
 
+	ret = ath12k_dp_mon_tx_srng_alloc(dp);
+	if (ret) {
+		ath12k_warn(ab, "Tx Mon: failed to setup rings ret = %d\n", ret);
+		goto fail_dp_mon_tx_free;
+	}
+
+	ath12k_hif_irq_enable(dp->ab);
 	return 0;
+
+fail_dp_mon_tx_free:
+	ath12k_dp_mon_tx_srng_free(dp);
 
 fail_dp_mon_rx_free:
 	ath12k_dp_mon_rx_free(dp);
@@ -367,6 +373,23 @@ fail_irq_cleanup:
 
 }
 
+static int ath12k_wifi7_dp_op_mlo_init(struct ath12k_dp *dp)
+{
+	int ret;
+
+	ath12k_dp_partner_cc_init(dp->ab);
+
+	ret = ath12k_wifi7_dp_rx_flow_fse_cache_operation(dp->ab,
+							  DP_FST_CACHE_INVALIDATE_FULL,
+							  NULL);
+	if (ret) {
+		ath12k_err(dp->ab, "Unable to invalidate Full cache ret %d", ret);
+		return ret;
+	}
+
+	return 0;
+}
+
 static void ath12k_wifi7_dp_op_device_deinit(struct ath12k_dp *dp)
 {
 	struct ath12k_base *ab = dp->ab;
@@ -389,6 +412,8 @@ static void ath12k_wifi7_dp_op_device_deinit(struct ath12k_dp *dp)
 	ath12k_dp_rx_reo_cmd_list_cleanup(ab);
 
 	ath12k_dp_mon_rx_free(dp);
+	ath12k_dp_mon_tx_srng_free(dp);
+
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ath12k_nss_plugin_unregister_ops(ab);
 #endif
@@ -433,6 +458,13 @@ static void ath12k_wifi7_dp_link_vif_configure(struct ath12k_dp *dp,
 	if (optype == ATH12K_DP_OP_DEINIT) {
 		if (dp_link_vif->bank_id != DP_INVALID_BANK_ID)
 			ath12k_dp_tx_put_bank_profile(dp, dp_link_vif->bank_id);
+
+		/* Reset VDEV multicast packet control bits for this vdev_id
+		 * to prevent stale entry on vdev_id reuse.
+		 */
+		ath12k_wifi7_hal_vdev_mcast_ctrl_set(ab, arvif->vdev_id,
+				HAL_TX_PACKET_CONTROL_CONFIG_TO_FW_EXCEPTION);
+		ath12k_mac_vif_unref(dp, ahvif->vif);
 		return;
 	} else if (optype == ATH12K_DP_OP_INIT) {
 		dp_link_vif->vdev_id = arvif->vdev_id;
@@ -487,9 +519,33 @@ static void ath12k_wifi7_dp_link_vif_configure(struct ath12k_dp *dp,
 	}
 }
 
+static ssize_t ath12k_wifi7_dump_srng_stats(struct ath12k_dp *dp,
+					    char *buf, int size)
+{
+	int len = 0;
+	struct ath12k_base *ab = dp->ab;
+	int i;
+
+	for (i = 0; i < ab->hw_params->max_tx_ring; i++)
+		len += ath12k_hal_dump_ring_stats(ab, HAL_WBM2SW_RELEASE,
+						  dp->tx_ring[i].tcl_comp_ring.ring_id,
+						  buf + len, size - len);
+
+	len += ath12k_hal_dump_ring_stats(ab, HAL_WBM2SW_RELEASE,
+					  dp->rx_rel_ring.ring_id,
+					  buf + len, size - len);
+
+	len += ath12k_hal_dump_ring_stats(ab, HAL_RXDMA_BUF,
+					  dp->rx_refill_buf_ring.refill_buf_ring.ring_id,
+					  buf + len, size - len);
+
+	return len;
+}
+
 static struct ath12k_dp_arch_ops ath12k_wifi7_dp_arch_ops = {
 	.dp_op_device_init = ath12k_wifi7_dp_op_device_init,
 	.dp_op_device_deinit = ath12k_wifi7_dp_op_device_deinit,
+	.dp_op_mlo_init = ath12k_wifi7_dp_op_mlo_init,
 	.dp_tx_get_vdev_bank_config = ath12k_wifi7_dp_tx_get_vdev_bank_config,
 	.dp_reo_cmd_send = ath12k_wifi7_dp_reo_cmd_send,
 	.setup_pn_check_reo_cmd = ath12k_wifi7_dp_setup_pn_check_reo_cmd,
@@ -520,6 +576,14 @@ static struct ath12k_dp_arch_ops ath12k_wifi7_dp_arch_ops = {
 	.dp_vif_configure = ath12k_wifi7_dp_vif_configure,
 	.dp_link_vif_configure = ath12k_wifi7_dp_link_vif_configure,
 	.rx_flow_fse_cache_operation = ath12k_wifi7_dp_rx_flow_fse_cache_operation,
+	.dp_ext_tx = ath12k_wifi7_dp_ext_tx,
+	/* UMAC reset operations */
+	.umac_reset_handle_pre_reset = ath12k_wifi7_umac_reset_handle_pre_reset_wrapper,
+	.umac_reset_handle_post_reset_start =
+			ath12k_wifi7_umac_reset_handle_post_reset_start_wrapper,
+	.umac_reset_handle_post_reset_complete =
+			ath12k_wifi7_umac_reset_handle_post_reset_complete_wrapper,
+	.dump_srng_stats = ath12k_wifi7_dump_srng_stats,
 };
 
 /* TODO: remove export once this file is built with wifi7 ko */

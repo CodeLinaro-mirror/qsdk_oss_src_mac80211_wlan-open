@@ -107,6 +107,11 @@ struct wireless_dev *ath12k_get_wdev_from_netdev(struct net_device *dev)
 {
 	struct  wireless_dev *wdev = NULL;
 
+	if (!dev) {
+		ath12k_err(NULL, "netdev is NULL\n");
+		return NULL;
+	}
+
 	wdev = dev->ieee80211_ptr;
 	if (!wdev) {
 		/* If the netdev is vlan, it may not have ieee80211_ptr.

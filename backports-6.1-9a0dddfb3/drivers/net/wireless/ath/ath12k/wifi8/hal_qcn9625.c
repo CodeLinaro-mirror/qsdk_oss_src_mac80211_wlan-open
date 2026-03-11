@@ -125,15 +125,44 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.max_size = HAL_SW2TCL1_RING_BASE_MSB_RING_SIZE,
 		.name = "Tcl_data",
 	},
+	[HAL_TCL_CMD] = {
+		.start_ring_id = HAL_SRNG_RING_ID_SW2TCL_CMD,
+		.max_rings = 1,
+		.entry_size = sizeof(struct hal_tcl_gse_cmd) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_SRC,
+		.max_size = HAL_SW2TCL1_RING_BASE_MSB_RING_SIZE,
+		.name = "Tcl_cmd",
+	},
 	[HAL_TCL_STATUS] = {
 		.start_ring_id = HAL_SRNG_RING_ID_TCL_STATUS,
 		.max_rings = 1,
-		.entry_size = (sizeof(struct hal_tlv_hdr) +
-			     sizeof(struct hal_tcl_status_ring)) >> 2,
+		.entry_size = sizeof(struct hal_tcl_status_ring) >> 2,
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_DST,
 		.max_size = HAL_TCL_STATUS_RING_BASE_MSB_RING_SIZE,
 		.name = "Tcl_status",
+	},
+	/* entry_size is set to minimum value here */
+	/* Get valid entry_size from ath12k_hal_srng_get_tqm_cmd_size */
+	[HAL_TQM_CMD] = {
+		.start_ring_id = HAL_SRNG_RING_ID_TQM_HOST_CMD,
+		.max_rings = 1,
+		.entry_size = 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_SRC,
+		.max_size = HAL_TQM_HOST_CMD_RING_BASE_MSB_RING_SIZE,
+		.name = "Tqm_cmd",
+	},
+	[HAL_TQM_STATUS] = {
+		.start_ring_id = HAL_SRNG_RING_ID_TQM_HOST_STATUS,
+		.max_rings = 1,
+		.entry_size = (sizeof(struct hal_tlv_64_hdr) +
+			sizeof(struct hal_tqm_sync_cmd_status)) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_DST,
+		.max_size = HAL_TQM_HOST_STATUS_RING_BASE_MSB_RING_SIZE,
+		.name = "Tqm_status",
 	},
 	/* TCL2SW Exception Ring */
 	[HAL_TX_EXCEPTION] = {
@@ -302,6 +331,15 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.max_size = HAL_WBM_IDLE_BUF_RING_MAX_SIZE,
 		.name = "WBM_idle_buf_mgmt",
 	},
+	[HAL_RXOLE_FSE_CMD] = {
+		.start_ring_id = HAL_SRNG_RING_ID_FSE_CMD,
+		.max_rings = 1,
+		.entry_size = sizeof(struct hal_fse_cmd) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_SRC,
+		.max_size = HAL_FSE_CMD_RING_BASE_MSB_RING_SIZE,
+		.name = "Fse_cmd",
+	},
 };
 
 const struct ath12k_hw_regs qcn9625_regs = {
@@ -419,6 +457,7 @@ const struct ath12k_hw_hal_params ath12k_wifi8_hw_hal_params_qcn9625 = {
 	.dscp_tid_map_tbl_max_entries = HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX,
 	.num_tids = HAL_WIFI8_NUM_TIDS,
 	.reoq_lut_size = HAL_WIFI8_REOQ_LUT_SIZE,
+	.dp_rx_err_rdi = HAL_WIFI8_DP_RX_ERR_RDI,
 };
 
 u32 ath12k_wifi8_hal_rx_h_mpdu_err_qcn9625(struct hal_rx_desc *desc)
@@ -611,6 +650,18 @@ static int ath12k_wifi8_hal_srng_create_config_qcn9625(struct ath12k_hal *hal)
 	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO_STATUS_RING_BASE_LSB(hal);
 	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO_STATUS_HP;
 
+	s = &hal->srng_config[HAL_TQM_CMD];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_TQM_HOST_CMD_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_TQM_HOST_CMD_RING_HP;
+
+	s = &hal->srng_config[HAL_TQM_STATUS];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_TQM_HOST_STATUS_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_TQM_HOST_STATUS_RING_HP;
+
+	s = &hal->srng_config[HAL_RXOLE_FSE_CMD];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_WBM_REG + HAL_FSE_CMD_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_WBM_REG + HAL_FSE_CMD_HP;
+
 	s = &hal->srng_config[HAL_REO2PPE];
 	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO2PPE_RING_BASE_LSB(hal);
 	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO2PPE_HP;
@@ -665,6 +716,11 @@ static int ath12k_wifi8_hal_srng_create_config_qcn9625(struct ath12k_hal *hal)
 	s = &hal->srng_config[HAL_TCL_STATUS];
 	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL_STATUS_RING_BASE_LSB(hal);
 	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL_STATUS_RING_HP;
+
+	/* SW2TCL CMD */
+	s = &hal->srng_config[HAL_TCL_CMD];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL_CMD_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL_CMD_RING_HP;
 
 	/* TCL2SW1_EXCEPTION */
 	s = &hal->srng_config[HAL_TX_EXCEPTION];

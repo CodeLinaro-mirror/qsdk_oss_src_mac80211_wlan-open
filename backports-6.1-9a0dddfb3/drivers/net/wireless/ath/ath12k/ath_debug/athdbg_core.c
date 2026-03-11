@@ -50,6 +50,8 @@ u64 athdbg_conv_str_to_dbgmask(const char *dbgmask)
 		return ATH12K_DBG_DATA;
 	else if (!strcmp(dbgmask, "mgmt"))
 		return ATH12K_DBG_MGMT;
+	else if (!strcmp(dbgmask, "reg"))
+		return ATH12K_DBG_REG;
 	else if (!strcmp(dbgmask, "hal"))
 		return ATH12K_DBG_HAL;
 	else if (!strcmp(dbgmask, "pci"))
@@ -63,6 +65,10 @@ u64 athdbg_conv_str_to_dbgmask(const char *dbgmask)
 #ifndef CONFIG_UPSTREAM_BUILD
 	else if (!strcmp(dbgmask, "fst"))
 		return ATH12K_DBG_DP_FST;
+	else if (!strcmp(dbgmask, "mlme"))
+		return ATH12K_DBG_MLME;
+	else if (!strcmp(dbgmask, "eapol"))
+		return ATH12K_DBG_EAPOL;
 	else if (!strcmp(dbgmask, "peer"))
 		return ATH12K_DBG_PEER;
 	else if (!strcmp(dbgmask, "scan"))
@@ -83,6 +89,8 @@ u64 athdbg_conv_str_to_dbgmask(const char *dbgmask)
 		return ATH12K_DBG_MLO;
 	else if (!strcmp(dbgmask, "power"))
 		return ATH12K_DBG_POWER;
+	else if (!strcmp(dbgmask, "tx_mon"))
+		return ATH12K_DBG_DP_MON_TX;
 #endif
 	else
 		return 0;
@@ -112,6 +120,8 @@ int athdbg_dbgmask_to_str(u64 mask, char *buf, size_t buflen)
 		{ ATH12K_DBG_WOW, "wow" },
 #ifndef CONFIG_UPSTREAM_BUILD
 		{ ATH12K_DBG_DP_FST, "fst" },
+		{ ATH12K_DBG_MLME, "mlme" },
+		{ ATH12K_DBG_EAPOL, "eapol" },
 		{ ATH12K_DBG_PEER, "peer" },
 		{ ATH12K_DBG_SCAN, "scan" },
 		{ ATH12K_DBG_ASSOC, "assoc" },
@@ -122,6 +132,7 @@ int athdbg_dbgmask_to_str(u64 mask, char *buf, size_t buflen)
 		{ ATH12K_DBG_ACTION, "action" },
 		{ ATH12K_DBG_MLO, "mlo" },
 		{ ATH12K_DBG_POWER, "power" },
+		{ ATH12K_DBG_DP_MON_TX, "tx_mon" },
 #endif
 	};
 

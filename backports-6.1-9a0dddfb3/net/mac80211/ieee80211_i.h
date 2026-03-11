@@ -5,7 +5,7 @@
  * Copyright 2006-2007	Jiri Benc <jbenc@suse.cz>
  * Copyright 2007-2010	Johannes Berg <johannes@sipsolutions.net>
  * Copyright 2013-2015  Intel Mobile Communications GmbH
- * Copyright (C) 2018-2025 Intel Corporation
+ * Copyright (C) 2018-2026 Intel Corporation
  */
 
 #ifndef IEEE80211_I_H
@@ -423,7 +423,7 @@ enum ieee80211_conn_mode {
 	IEEE80211_CONN_MODE_UHR,
 };
 
-#define IEEE80211_CONN_MODE_HIGHEST	IEEE80211_CONN_MODE_EHT
+#define IEEE80211_CONN_MODE_HIGHEST	IEEE80211_CONN_MODE_UHR
 
 enum ieee80211_conn_bw_limit {
 	IEEE80211_CONN_BW_LIMIT_20,
@@ -875,6 +875,7 @@ struct ieee80211_if_mesh {
  * @IEEE80211_SDATA_IN_DRIVER: indicates interface was added to driver
  * @IEEE80211_SDATA_DISCONNECT_HW_RESTART: Disconnect after hardware restart
  *  recovery
+ * @IEEE80211_SDATA_OFFCHAN_PACKETS: interface expects offchan monitor packets
  */
 enum ieee80211_sub_if_data_flags {
 	IEEE80211_SDATA_ALLMULTI		= BIT(0),
@@ -882,6 +883,7 @@ enum ieee80211_sub_if_data_flags {
 	IEEE80211_SDATA_DISCONNECT_RESUME	= BIT(4),
 	IEEE80211_SDATA_IN_DRIVER		= BIT(5),
 	IEEE80211_SDATA_DISCONNECT_HW_RESTART	= BIT(6),
+	IEEE80211_SDATA_OFFCHAN_PACKETS		= BIT(7),
 };
 
 /**
@@ -1296,6 +1298,8 @@ struct ieee80211_sub_if_data {
 	u32 tx_dropped;
 	u32 rx_dropped;
 
+	int chan_hw_idx;
+
 	/* must be last, dynamically sized area in this! */
 	struct ieee80211_vif vif;
 };
@@ -1511,11 +1515,6 @@ struct channel_awgn_info {
 	struct list_head list;
 	struct ieee80211_channel *awgn_channel;
 	u32 chan_bw_interference_bitmap;
-};
-
-struct channel_cw_info {
-	struct list_head list;
-	struct ieee80211_channel *cw_channel;
 };
 
 struct ieee80211_tasklet_data {
@@ -1815,7 +1814,6 @@ struct ieee80211_local {
 
 	struct mac80211_memory_stats memory_stats;
 	struct work_struct awgn_detected_work;
-	struct work_struct cw_detected_work;
 
 	bool enable_tx_latency_stats;
 
@@ -1982,7 +1980,7 @@ struct ieee802_11_elems {
 	const struct ieee80211_multi_link_elem *ml_epcs;
 	const struct ieee80211_bandwidth_indication *bandwidth_indication;
 	const struct ieee80211_ttlm_elem *ttlm[IEEE80211_TTLM_MAX_CNT];
-	const struct ieee80211_uhr_cap_elem *uhr_cap;
+	const struct ieee80211_uhr_cap *uhr_cap;
 	const struct ieee80211_uhr_operation *uhr_operation;
 
 	/* not the order in the psd values is per element, not per chandef */
@@ -2008,6 +2006,8 @@ struct ieee802_11_elems {
 	u8 country_elem_len;
 	u8 bssid_index_len;
 	u8 eht_cap_len;
+	u8 uhr_cap_len;
+	u8 uhr_operation_len;
 
 	/* mult-link element can be de-fragmented and thus u8 is not sufficient */
 	size_t ml_basic_len;
@@ -2024,7 +2024,6 @@ struct ieee802_11_elems {
 	struct ieee80211_mle_per_sta_profile *prof;
 	size_t sta_prof_len;
 
-	u8 uhr_cap_len;
 	/* whether/which parse error occurred while retrieving these elements */
 	u8 parse_error;
 };
@@ -2592,8 +2591,8 @@ static inline void ieee80211_tx_skb(struct ieee80211_sub_if_data *sdata,
  * @mode: connection mode for parsing
  * @start: pointer to the elements
  * @len: length of the elements
- * @action: %true if the elements came from an action frame
- * @is_beacon: %true if the elements came from beacon frame
+ * @type: type of the frame the elements came from
+ *	(action, probe response, beacon, etc.)
  * @filter: bitmap of element IDs to filter out while calculating
  *	the element CRC
  * @crc: CRC starting value
@@ -2611,8 +2610,7 @@ struct ieee80211_elems_parse_params {
 	enum ieee80211_conn_mode mode;
 	const u8 *start;
 	size_t len;
-	bool action;
-	bool is_beacon;
+	u8 type;
 	u64 filter;
 	u32 crc;
 	struct cfg80211_bss *bss;
@@ -2625,29 +2623,19 @@ struct ieee802_11_elems *
 ieee802_11_parse_elems_full(struct ieee80211_elems_parse_params *params);
 
 static inline struct ieee802_11_elems *
-ieee802_11_parse_elems_crc(const u8 *start, size_t len, bool action,
-			   u64 filter, u32 crc,
-			   struct cfg80211_bss *bss)
+ieee802_11_parse_elems(const u8 *start, size_t len, u8 type,
+		       struct cfg80211_bss *bss)
 {
 	struct ieee80211_elems_parse_params params = {
 		.mode = IEEE80211_CONN_MODE_HIGHEST,
 		.start = start,
 		.len = len,
-		.action = action,
-		.filter = filter,
-		.crc = crc,
+		.type = type,
 		.bss = bss,
 		.link_id = -1,
 	};
 
 	return ieee802_11_parse_elems_full(&params);
-}
-
-static inline struct ieee802_11_elems *
-ieee802_11_parse_elems(const u8 *start, size_t len, bool action,
-		       struct cfg80211_bss *bss)
-{
-	return ieee802_11_parse_elems_crc(start, len, action, 0, 0, bss);
 }
 
 extern const int ieee802_1d_to_ac[8];
@@ -2886,6 +2874,7 @@ int ieee80211_put_eht_cap(struct sk_buff *skb,
 int ieee80211_put_uhr_cap(struct sk_buff *skb,
 			  struct ieee80211_sub_if_data *sdata,
 			  const struct ieee80211_supported_band *sband);
+
 /* channel management */
 bool ieee80211_chandef_ht_oper(const struct ieee80211_ht_operation *ht_oper,
 			       struct cfg80211_chan_def *chandef);
@@ -2979,7 +2968,6 @@ void ieee80211_dfs_cac_timer_work(struct wiphy *wiphy, struct wiphy_work *work);
 void ieee80211_dfs_cac_cancel(struct ieee80211_local *local);
 void ieee80211_dfs_radar_detected_work(struct wiphy *wiphy, struct wiphy_work *work);
 void ieee80211_awgn_detected_work(struct work_struct *work);
-void ieee80211_cw_detected_work(struct work_struct *work);
 int ieee80211_send_action_csa(struct ieee80211_sub_if_data *sdata,
 			      struct cfg80211_csa_settings *csa_settings);
 
@@ -3046,12 +3034,6 @@ ieee80211_eht_cap_ie_to_sta_eht_cap(struct ieee80211_sub_if_data *sdata,
 				    const struct ieee80211_eht_cap_elem *eht_cap_ie_elem,
 				    u8 eht_cap_len,
 				    struct link_sta_info *link_sta);
-void
-ieee80211_uhr_cap_ie_to_sta_uhr_cap(struct ieee80211_sub_if_data *sdata,
-				    struct ieee80211_supported_band *sband,
-				    const struct ieee80211_uhr_cap_elem *uhr_cap_ie_elem,
-				    u8 uhr_cap_len,
-				    struct link_sta_info *link_sta);
 void ieee80211_process_neg_ttlm_req(struct ieee80211_sub_if_data *sdata,
 				    struct ieee80211_mgmt *mgmt, size_t len);
 void ieee80211_process_neg_ttlm_res(struct ieee80211_sub_if_data *sdata,
@@ -3078,7 +3060,14 @@ int ieee80211_mgd_assoc_ml_reconf(struct ieee80211_sub_if_data *sdata,
 
 void ieee80211_process_ml_reconf_resp(struct ieee80211_sub_if_data *sdata,
 				      struct ieee80211_mgmt *mgmt, size_t len);
-void ieee80211_stop_mbssid(struct ieee80211_sub_if_data *sdata, int _link_id);
+void ieee80211_stop_mbssid(struct ieee80211_sub_if_data *sdata);
+
+void
+ieee80211_uhr_cap_ie_to_sta_uhr_cap(struct ieee80211_sub_if_data *sdata,
+				    struct ieee80211_supported_band *sband,
+				    const struct ieee80211_uhr_cap *uhr_cap,
+				    u8 uhr_cap_len,
+				    struct link_sta_info *link_sta);
 
 #if IS_ENABLED(CPTCFG_MAC80211_KUNIT_TEST)
 #define EXPORT_SYMBOL_IF_MAC80211_KUNIT(sym) EXPORT_SYMBOL_IF_KUNIT(sym)

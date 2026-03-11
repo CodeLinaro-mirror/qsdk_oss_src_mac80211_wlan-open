@@ -866,7 +866,7 @@ int ath12k_telemetry_set_threshold(u8 type, u32 value)
 	if (g_agent_ops && g_agent_ops->agent_set_rssi_rate_threshold)
 		return g_agent_ops->agent_set_rssi_rate_threshold(type, value);
 
-	return -ENOENT;
+	return -ENOTCONN;
 }
 
 int ath12k_telemetry_print_thresholds(void)
@@ -874,7 +874,7 @@ int ath12k_telemetry_print_thresholds(void)
 	if (g_agent_ops && g_agent_ops->agent_print_rssi_rate_thresholds)
 		return g_agent_ops->agent_print_rssi_rate_thresholds();
 
-	return -ENOENT;
+	return -ENOTCONN;
 }
 
 int ath12k_telemetry_set_breach_mask(u8 mask)
@@ -882,7 +882,23 @@ int ath12k_telemetry_set_breach_mask(u8 mask)
 	if (g_agent_ops && g_agent_ops->agent_set_rssi_rate_breach_mask)
 		return g_agent_ops->agent_set_rssi_rate_breach_mask(mask);
 
-	return -ENOENT;
+	return -ENOTCONN;
+}
+
+int ath12k_get_rssi_rate_threshold(u8 type)
+{
+	if (g_agent_ops && g_agent_ops->agent_get_rssi_rate_threshold)
+		return g_agent_ops->agent_get_rssi_rate_threshold(type);
+
+	return -ENOTCONN;
+}
+
+int ath12k_get_rssi_rate_breach_mask(void)
+{
+	if (g_agent_ops && g_agent_ops->agent_get_rssi_rate_breach_mask)
+		return g_agent_ops->agent_get_rssi_rate_breach_mask();
+
+	return -ENOTCONN;
 }
 
 void *ath12k_telemetry_peer_ctx_alloc(void *peer, void *sawf_stats,

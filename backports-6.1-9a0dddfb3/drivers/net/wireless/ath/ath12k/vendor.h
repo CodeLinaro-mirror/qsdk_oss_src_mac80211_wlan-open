@@ -33,6 +33,9 @@
 #define ATH12K_MGMT_TX_RETRY_LIMIT_MIN 1
 #define ATH12K_MGMT_TX_RETRY_LIMIT_MAX 14
 
+#define ATH12K_IPV4_ADDR_LEN         4
+#define ATH12K_IPV6_ADDR_LEN         16
+
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 extern unsigned int ath12k_ppe_ds_enabled;
 #endif
@@ -64,6 +67,37 @@ struct atf_peer_stat {
 	u32 atf_actual_ul_duration;
 };
 
+/* ME List Types */
+enum ieee80211_me_list {
+	IEEE80211_HMMC_LIST = 0,
+	IEEE80211_DENY_LIST = 1,
+	IEEE80211_HMMC_LIST_V6 = 2,
+	IEEE80211_DENY_LIST_V6 = 3,
+};
+
+/* ME List Operations */
+enum ieee80211_wlanconfig_me_op {
+	IEEE80211_WLANCONFIG_ME_LIST_ADD = 0,
+	IEEE80211_WLANCONFIG_ME_LIST_DEL = 1,
+	IEEE80211_WLANCONFIG_ME_LIST_DUMP = 2,
+};
+
+/* IP Address Types */
+enum qca_wlan_vendor_me_ip_type {
+	QCA_WLAN_VENDOR_ME_IP_TYPE_IPV4 = 0,
+	QCA_WLAN_VENDOR_ME_IP_TYPE_IPV6 = 1,
+};
+
+/* ME List Entry Structure */
+struct ieee80211_wlanconfig_me_list {
+	union {
+		u_int32_t ip;			/* IPv4 address */
+		u_int32_t ipv6[4];		/* IPv6 address (128-bit) */
+	};
+	u_int32_t mask;				/* Mask or Prefix for IPv4 or IPv6 */
+	enum ieee80211_me_list me_list_type;	/* ME List type */
+};
+
 /**
  * @QCA_NL80211_VENDOR_SUBCMD_WLAN_CTL_TABLE: This vendor subcommand is used to
  *     configure the CTL (Conformance Test Limit) table for a specific band.
@@ -74,6 +108,7 @@ enum qca_nl80211_vendor_subcmds {
 	/* Wi-Fi configuration subcommand */
 	QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION = 74,
 	QCA_NL80211_VENDOR_SUBCMD_GET_WIFI_CONFIGURATION = 75,
+	QCA_NL80211_VENDOR_SUBCMD_GET_RROP_INFO = 163,
 	QCA_NL80211_VENDOR_SUBCMD_WIFI_PARAMS = 200,
 	QCA_NL80211_VENDOR_SUBCMD_RM_GENERIC = 206,
 	QCA_NL80211_VENDOR_SUBCMD_SCS_RULE_CONFIG = 218,
@@ -85,6 +120,9 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_WLAN_TELEMETRY_WIPHY = 262,
 	QCA_NL80211_VENDOR_SUBCMD_WLAN_TELEMETRY_WDEV = 263,
 	QCA_NL80211_VENDOR_SUBCMD_ATF_OFFLOAD_OPS = 268,
+	QCA_NL80211_VENDOR_SUBCMD_DCS_CONFIG = 269,
+	QCA_NL80211_VENDOR_SUBCMD_ME_LIST = 374,
+	QCA_NL80211_VENDOR_SUBCMD_ME_CONFIG = 375,
 
 	/* Yet to upstream */
 	QCA_NL80211_VENDOR_SUBCMD_SET_6GHZ_POWER_MODE = 500,
@@ -96,12 +134,15 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_GET_WIPHY_CONFIGURATION = 506,
 	QCA_NL80211_VENDOR_SUBCMD_AFC_GET_REG_EIRP = 507,
 	QCA_NL80211_VENDOR_SUBCMD_240MHZ_INFO = 508,
-	QCA_NL80211_VENDOR_SUBCMD_DCS_WLAN_INTERFERENCE_COMPUTE = 509,
 	QCA_NL80211_VENDOR_SUBCMD_AFC_FETCH_POWER_EVENT = 510,
 	QCA_NL80211_VENDOR_SUBCMD_WLAN_FW_RECOVERY_EVENT = 511,
 	QCA_NL80211_VENDOR_SUBCMD_DERIVE_LINK_BSS_ADDR = 512,
 	QCA_NL80211_VENDOR_SUBCMD_WLAN_HOME_OFFCHAN_TX_RX = 513,
 	QCA_NL80211_VENDOR_SUBCMD_WLAN_CTL_TABLE = 514,
+	QCA_NL80211_VENDOR_SUBCMD_GET_CHANNEL_SWITCH_TIME = 515,
+	QCA_NL80211_VENDOR_SUBCMD_REPURPOSE_LINK_INDICATION = 516,
+	QCA_NL80211_VENDOR_SUBCMD_DCS_SIM = 517,
+	QCA_NL80211_VENDOR_SUBCMD_REG_PARAMS = 518,
 };
 
 enum qca_nl80211_vendor_events {
@@ -113,11 +154,11 @@ enum qca_nl80211_vendor_events {
 	QCA_NL80211_VENDOR_SUBCMD_IFACE_RELOAD_INDEX = 5,
 	QCA_NL80211_VENDOR_SUBCMD_SDWF_DEV_OPS_INDEX = 6,
 	QCA_NL80211_VENDOR_SUBCMD_PRI_LINK_MIGRATE_INDEX = 7,
-	QCA_NL80211_VENDOR_SUBCMD_DCS_WLAN_INTERFERENCE_COMPUTE_INDEX = 8,
 	QCA_NL80211_VENDOR_SUBCMD_SCS_RULE_CONFIG_INDEX = 9,
 	QCA_NL80211_VENDOR_SUBCMD_ESP_ESTIMATE_INDEX = 10,
 	QCA_NL80211_VENDOR_SUBCMD_WLAN_FW_RECOVERY_INDEX = 11,
 	QCA_NL80211_VENDOR_SUBCMD_WLAN_HOME_OFFCHAN_TX_RX_INDEX = 12,
+	QCA_NL80211_VENDOR_SUBCMD_DCS_INTERFERENCE_COMPUTE_INDEX = 13,
 };
 
 /**
@@ -526,6 +567,37 @@ enum qca_wlan_vendor_attr_afc_event {
 	QCA_WLAN_VENDOR_ATTR_AFC_EVENT_AFTER_LAST - 1,
 };
 
+enum qca_wlan_vendor_attr_reg_params {
+	QCA_WLAN_VENDOR_ATTR_REG_PARAMS_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_REG_PARAMS_CMD = 1,
+	QCA_WLAN_VENDOR_ATTR_REG_PARAMS_OPCLASS_CHAN = 2,
+	QCA_WLAN_VENDOR_ATTR_REG_PARAMS_LINKID = 3,
+
+	QCA_WLAN_VENDOR_ATTR_REG_PARAMS_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_REG_PARAMS_MAX =
+	QCA_WLAN_VENDOR_ATTR_REG_PARAMS_AFTER_LAST - 1,
+};
+
+enum qca_wlan_vendor_reg_params {
+	QCA_WLAN_VENDOR_REG_PARAMS_NUM_OPCLASS = 0,
+	QCA_WLAN_VENDOR_REG_PARAMS_CHAN_NUM = 1,
+	QCA_WLAN_VENDOR_REG_PARAMS_TXPOWER = 2,
+	QCA_WLAN_VENDOR_REG_PARAMS_OPCLASS_LIST = 3,
+};
+
+enum qca_wlan_vendor_attr_reg_params_update {
+	QCA_WLAN_VENDOR_ATTR_REG_PARAMS_UPDATE_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_REG_PARAMS_UPDATE_NUM_OPCLASS = 1,
+	QCA_WLAN_VENDOR_ATTR_REG_PARAMS_UPDATE_CHAN_NUM = 2,
+	QCA_WLAN_VENDOR_ATTR_REG_PARAMS_UPDATE_TXPOWER = 3,
+	QCA_WLAN_VENDOR_ATTR_REG_PARAMS_UPDATE_OPCLASS_LIST = 4,
+	QCA_WLAN_VENDOR_ATTR_REG_PARAMS_UPDATE_OPCLASS_CHAN = 5,
+
+	QCA_WLAN_VENDOR_ATTR_REG_PARAMS_UPDATE_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_REG_PARAMS_UPDATE_MAX =
+	QCA_WLAN_VENDOR_ATTR_REG_PARAMS_UPDATE_AFTER_LAST - 1,
+};
+
 /**
  * enum qca_wlan_vendor_vap_submode_type - VAP submode types for QCA WLAN vendor
  *
@@ -597,12 +669,11 @@ enum qca_wlan_vendor_attr_config {
 	 */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_VAP_SUBMODE = 141,
 
-	/* Nested attribute to configure Estimated Service Parameters (ESP) to
-	 * the firmware. This attribute contains nested attributes defined in
-	 * enum qca_wlan_vendor_attr_config_esp_param. This attribute is also
-	 * used to retrieve the parameters from firmware.
+	/* Nested attribute to configure or report Estimated Service Parameters
+	 * (ESP). This contains nested attributes defined in
+	 * enum qca_wlan_vendor_attr_config_esp_param.
 	 */
-	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PARAMS = 142,
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PARAMS = 143,
 
 	/* 8-bit unsigned value. Used to specify the HW Radio Index of a wiphy
 	 * device that is being configured. This attribute may be included in
@@ -1637,6 +1708,8 @@ enum qca_vendor_wlan_telemetry_rx_stats_attr {
 	/* New RX monitor stats block - nested attributes */
 	QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_MON_STATS,
 
+	QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_MON_SCAN_STATS,
+
 	QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_STATS_AFTER_LAST,
 	QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_STATS_MAX =
 		QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_STATS_AFTER_LAST - 1,
@@ -1705,23 +1778,21 @@ enum qca_vendor_wlan_telemetry_rx_mon_stats {
 	QCA_VENDOR_ATTR_WLAN_TELEMETRY_NUM_MPDU = 22,
 	QCA_VENDOR_ATTR_WLAN_TELEMETRY_NUM_MPDU_RETRY_COUNT = 23,
 	QCA_VENDOR_ATTR_WLAN_TELEMETRY_NUM_PPDU = 24,
-	QCA_VENDOR_ATTR_WLAN_TELEMETRY_NUM_PPDU_DURATION = 25,
 	/* Advance stats */
-	QCA_VENDOR_ATTR_WLAN_TELEMETRY_NUM_BAR = 26,
-	QCA_VENDOR_ATTR_WLAN_TELEMETRY_NUM_NDPA = 27,
-	QCA_VENDOR_ATTR_WLAN_TELEMETRY_NUM_MPDU_COUNT = 28,
-	QCA_VENDOR_ATTR_WLAN_TELEMETRY_PPDU_RECEPTION = 29,
-	QCA_VENDOR_ATTR_WLAN_TELEMETRY_PPDU_NSS = 30,
-	QCA_VENDOR_ATTR_WLAN_TELEMETRY_PROTO_TYPE = 31,
-	QCA_VENDOR_ATTR_WLAN_TELEMETRY_WME_AC_TYPE = 32,
-	QCA_VENDOR_ATTR_WLAN_TELEMETRY_SU_PPDU_COUNT = 33,
-	QCA_VENDOR_ATTR_WLAN_TELEMETRY_PUNC_BW = 34,
-	QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_MU = 35,
-	QCA_VENDOR_ATTR_WLAN_TELEMETRY_LAST_RX_RATE = 36,
-	QCA_VENDOR_ATTR_WLAN_TELEMETRY_RND_AVG_RX_RATE = 37,
-	QCA_VENDOR_ATTR_WLAN_TELEMETRY_AVG_RX_RATE = 38,
-	QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_RATECODE = 39,
-	QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_SIGNAL_STATS = 40,
+	QCA_VENDOR_ATTR_WLAN_TELEMETRY_NUM_BAR = 25,
+	QCA_VENDOR_ATTR_WLAN_TELEMETRY_NUM_NDPA = 26,
+	QCA_VENDOR_ATTR_WLAN_TELEMETRY_PPDU_RECEPTION = 27,
+	QCA_VENDOR_ATTR_WLAN_TELEMETRY_PPDU_NSS = 28,
+	QCA_VENDOR_ATTR_WLAN_TELEMETRY_PROTO_TYPE = 29,
+	QCA_VENDOR_ATTR_WLAN_TELEMETRY_WME_AC_TYPE = 30,
+	QCA_VENDOR_ATTR_WLAN_TELEMETRY_SU_PPDU_COUNT = 31,
+	QCA_VENDOR_ATTR_WLAN_TELEMETRY_PUNC_BW = 32,
+	QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_MU = 33,
+	QCA_VENDOR_ATTR_WLAN_TELEMETRY_LAST_RX_RATE = 34,
+	QCA_VENDOR_ATTR_WLAN_TELEMETRY_RND_AVG_RX_RATE = 35,
+	QCA_VENDOR_ATTR_WLAN_TELEMETRY_AVG_RX_RATE = 36,
+	QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_RATECODE = 37,
+	QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_SIGNAL_STATS = 38,
 
 	/* Keep last */
 	QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_MON_AFTER_LAST,
@@ -2320,6 +2391,8 @@ enum qca_vendor_wlan_telemetry_rxdma_attr {
 	QCA_VENDOR_ATTR_RXDMA_AMSDU_ADDR_MISMATCH,
 	QCA_VENDOR_ATTR_RXDMA_UNAUTH_WDS,
 	QCA_VENDOR_ATTR_RXDMA_GROUPCAST_AMSDU_OR_WDS,
+	QCA_VENDOR_ATTR_RXDMA_CFP_MIC_ERR,
+	QCA_VENDOR_ATTR_RXDMA_CFP_PN_CHK_ERR,
 
 	QCA_VENDOR_ATTR_RXDMA_AFTER_LAST,
 	QCA_VENDOR_ATTR_RXDMA_ERR_MAX =
@@ -2602,6 +2675,20 @@ enum qca_vendor_wlan_telemetry_wbm_tqm_rel_reason {
 	QCA_VENDOR_ATTR_WBM_TQM_REL_REASON_DROP_OR_INVALID_MSDU,
 	QCA_VENDOR_ATTR_WBM_TQM_REL_REASON_MULTICAST_DROP,
 	QCA_VENDOR_ATTR_WBM_TQM_REL_REASON_VDEV_MISMATCH_DROP,
+	QCA_VENDOR_ATTR_WBM_TQM_REL_REASON_GEN_CMD_USED_TREE_EXT,
+	QCA_VENDOR_ATTR_WBM_TQM_REL_REASON_TCL_DROP_FROM_PEER_CCE_OR_FLOW_TABLE,
+	QCA_VENDOR_ATTR_WBM_TQM_REL_REASON_TCL_MULTICAST_REINJECT_FOR_VDEV,
+	QCA_VENDOR_ATTR_WBM_TQM_REL_REASON_TCL_MEC_SEARCH_FAIL_FOR_VDEV,
+	QCA_VENDOR_ATTR_WBM_TQM_REL_REASON_TCL_ASE_SEARCH_FAIL,
+	QCA_VENDOR_ATTR_WBM_TQM_REL_REASON_TCL_SMD_ROAMING_DROP,
+	QCA_VENDOR_ATTR_WBM_TQM_REL_REASON_TCL_STRIP_VLAN_TCI_MISMATCH_DROP,
+	QCA_VENDOR_ATTR_WBM_TQM_REL_REASON_TCL_MEC_KEEP_ALIVE_FOR_VDEV,
+	QCA_VENDOR_ATTR_WBM_TQM_REL_REASON_TCL_RESERVED_DROP_REASON1,
+	QCA_VENDOR_ATTR_WBM_TQM_REL_REASON_TCL_RESERVED_DROP_REASON2,
+	QCA_VENDOR_ATTR_WBM_TQM_REL_REASON_TQM_REM_MSDU_SMD_ROAMING,
+	QCA_VENDOR_ATTR_WBM_TQM_REL_REASON_TQM_REM_MPDU_SMD_ROAMING,
+	QCA_VENDOR_ATTR_WBM_TQM_REL_REASON_TQM_RESERVED_DROP_REASON3,
+	QCA_VENDOR_ATTR_WBM_TQM_REL_REASON_TQM_RESERVED_DROP_REASON4,
 
 	/* keep last */
 	QCA_VENDOR_ATTR_WBM_TQM_REL_REASON_AFTER_LAST,
@@ -2744,35 +2831,28 @@ enum qca_vendor_vdev_param {
 	QCA_WLAN_VENDOR_VDEV_PARAM_HWCTS2SELF_OFDMA = 13,
 	QCA_WLAN_VENDOR_VDEV_PARAM_VDEV_TSF = 14,
 	QCA_WLAN_VENDOR_VDEV_PARAM_BCN_TX_POWER = 15,
+	QCA_WLAN_VENDOR_VDEV_PARAM_RSSI_MIN_THRESH = 16,
+	QCA_WLAN_VENDOR_VDEV_PARAM_RSSI_MAX_THRESH = 17,
+	QCA_WLAN_VENDOR_VDEV_PARAM_ACKRSSI_MIN_THRESH = 18,
+	QCA_WLAN_VENDOR_VDEV_PARAM_ACKRSSI_MAX_THRESH = 19,
+	QCA_WLAN_VENDOR_VDEV_PARAM_TXRATE_MIN_THRESH = 20,
+	QCA_WLAN_VENDOR_VDEV_PARAM_TXRATE_MAX_THRESH = 21,
+	QCA_WLAN_VENDOR_VDEV_PARAM_RXRATE_MIN_THRESH = 22,
+	QCA_WLAN_VENDOR_VDEV_PARAM_RXRATE_MAX_THRESH = 23,
+	QCA_WLAN_VENDOR_VDEV_PARAM_GET_RSSI_RATE_THRESHOLDS = 24,
+	QCA_WLAN_VENDOR_VDEV_PARAM_RSSI_RATE_BREACH_MASK = 25,
+	QCA_WLAN_VENDOR_VDEV_PARAM_AMPDU = 26,
+	QCA_WLAN_VENDOR_VDEV_PARAM_AMSDU = 27,
+	QCA_WLAN_VENDOR_VDEV_PARAM_BA_BUFSIZE = 28,
+	QCA_WLAN_VENDOR_VDEV_PARAM_TX_ENCAP_TYPE = 29,
+	QCA_WLAN_VENDOR_VDEV_PARAM_RX_DECAP_TYPE = 30,
+	QCA_WLAN_VENDOR_VDEV_PARAM_ME = 31,
+	QCA_WLAN_VENDOR_VDEV_PARAM_IGMP_ME = 32,
+	QCA_WLAN_VENDOR_VDEV_PARAM_ME_GRP_LIMIT = 33,
 
 	/* Add new params above */
 	QCA_WLAN_VENDOR_VDEV_PARAM_LAST,
 	QCA_WLAN_VENDOR_VDEV_PARAM_MAX = QCA_WLAN_VENDOR_VDEV_PARAM_LAST - 1,
-};
-
-/**
- * enum qca_vendor_global_param - Global vendor parameters
- *
- * This enum defines global parameters that are handled
- * by ath12k_vendor_set_arvif_params_extn() but stored globally in the
- * telemetry agent.
- */
-enum qca_vendor_global_param {
-	/* Global RSSI/Rate threshold crossing parameters */
-	QCA_WLAN_VENDOR_GLOBAL_RSSI_MIN_THRESH = 16,
-	QCA_WLAN_VENDOR_GLOBAL_RSSI_MAX_THRESH = 17,
-	QCA_WLAN_VENDOR_GLOBAL_ACKRSSI_MIN_THRESH = 18,
-	QCA_WLAN_VENDOR_GLOBAL_ACKRSSI_MAX_THRESH = 19,
-	QCA_WLAN_VENDOR_GLOBAL_TXRATE_MIN_THRESH = 20,
-	QCA_WLAN_VENDOR_GLOBAL_TXRATE_MAX_THRESH = 21,
-	QCA_WLAN_VENDOR_GLOBAL_RXRATE_MIN_THRESH = 22,
-	QCA_WLAN_VENDOR_GLOBAL_RXRATE_MAX_THRESH = 23,
-	QCA_WLAN_VENDOR_GLOBAL_GET_RSSI_RATE_THRESHOLDS = 24,
-	QCA_WLAN_VENDOR_GLOBAL_RSSI_RATE_BREACH_MASK = 25,
-
-	/* Add new global params above */
-	QCA_WLAN_VENDOR_GLOBAL_PARAM_LAST,
-	QCA_WLAN_VENDOR_GLOBAL_PARAM_MAX = QCA_WLAN_VENDOR_GLOBAL_PARAM_LAST - 1,
 };
 
 enum qca_vendor_radio_param {
@@ -2850,6 +2930,7 @@ enum qca_vendor_radio_param {
 	QCA_WLAN_VENDOR_RADIO_PARAM_GPIO_OUTPUT = 70,
 	QCA_WLAN_VENDOR_RADIO_PARAM_GPIO_INPUT  = 71,
 	QCA_WLAN_VENDOR_RADIO_PARAM_GET_TEMPERATURE = 72,
+	QCA_WLAN_VENDOR_RADIO_PARAM_MSDU_TTL = 73,
 
 	/* Add new params above */
 	QCA_WLAN_VENDOR_RADIO_PARAM_LAST,
@@ -3011,104 +3092,6 @@ enum qca_wlan_vendor_attr_pri_link_migrate {
        QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_AFTER_LAST,
        QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MAX =
        QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_AFTER_LAST - 1,
-};
-
-enum qca_wlan_vendor_attr_dcs {
-	QCA_WLAN_VENDOR_ATTR_DCS_INVALID = 0,
-	QCA_WLAN_VENDOR_ATTR_DCS_MLO_LINK_ID,
-	QCA_WLAN_VENDOR_ATTR_DCS_WLAN_INTERFERENCE_CONFIGURE,
-
-	/* Keep last */
-	QCA_WLAN_VENDOR_ATTR_DCS_AFTER_LAST,
-	QCA_WLAN_VENDOR_ATTR_DCS_MAX =
-		QCA_WLAN_VENDOR_ATTR_DCS_AFTER_LAST - 1
-};
-
-/**
- * @QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_TSF:
- * Required (u32).
- * Current running timestamp in the firmware; tsf - time synchronize function.
- *
- * @QCA_WLAN_VENDOR_ATTR_WLAN_LAST_ACK_RSSI:
- * Required (u32).
- * RSSI value of Last ACK frame.
- *
- * @QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_TX_WASTE_TIME:
- * Required (u32).
- * Sum of all the failed durations in the last one second interval.
- *
- * It's the amount of time that we spent in backoff or waiting for other
- * transmit/receive to complete; since these parameters are receieved
- * in the userspace every one second, hence the calculation for
- * wasted time would be _tx_waste_time/delta_tsf
- *
- * @QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_RX_TIME:
- * Required (u32)
- * Sum of all the Rx Frame Duration(microsecond), in a period of one second.
- *
- * @QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_PHY_ERR_COUNT:
- * Required (u32).
- * Current running phy error/CRC Error packet count.
- *
- * @QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_LISTEN_TIME:
- * Required (u32)
- * Listen time is the time spent by HW in Rx + noise reception in millisecond.
- *
- * @QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_TX_FRAME_COUNT:
- * Required (u32)
- * The current running tx frame count in micorsecond.
- *
- * @QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_RX_FRAME_COUNT:
- * Required (u32)
- * The current running rx frame count in microsecond.
- *
- * @QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_RX_CLR_COUNT:
- * Required (u32)
- * The current running rx clear count in microsecond.
- *
- * @QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_CYCLE_COUNT:
- * Required (u32)
- * Cycle count is just the fixed count Of a given period, here we
- * sample cycle counter at 1 sec interval , the delta between successive
- * counts will be ~ 1,000 ms
- *
- * QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_OFDM_PHYERR_COUNT:
- * Required (u32)
- * The current running OFDM phy Error Count in microsecond.
- *
- * @QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_CCK_PHYERR_COUNT:
- * Required (u32)
- * The current running CCK Phy Error Count in microsecond.
- *
- * @QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_CHANNEL_NF:
- * Required (s32)
- * Channel noise floor (units are dBr)
- *
- * @QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_MY_BSS_RX_CYCLE_COUNT:
- * Required (u32)
- * The Current running counter for th Rx Frames destined to my BSS in microsecond
- *
- */
-
-enum qca_wlan_vendor_wlan_interference_attr {
-	QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_TSF,
-	QCA_WLAN_VENDOR_ATTR_WLAN_LAST_ACK_RSSI,
-	QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_TX_WASTE_TIME,
-	QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_RX_TIME,
-	QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_PHY_ERR_COUNT,
-	QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_LISTEN_TIME,
-	QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_TX_FRAME_COUNT,
-	QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_RX_FRAME_COUNT,
-	QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_RX_CLR_COUNT,
-	QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_CYCLE_COUNT,
-	QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_RX_CLR_EXT_COUNT,
-	QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_OFDM_PHYERR_COUNT,
-	QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_CCK_PHYERR_COUNT,
-	QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_CHANNEL_NF,
-	QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_MY_BSS_RX_CYCLE_COUNT,
-	QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_LAST,
-	QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_MAX =
-		QCA_WLAN_VENDOR_ATTR_WLAN_INTERFERENCE_PARAM_LAST - 1,
 };
 
 /**
@@ -3723,43 +3706,65 @@ enum qca_vendor_wlan_home_offchan_tx_rx_frame_attr {
 /**
  * enum qca_wlan_vendor_attr_config_esp_param - Parameters for ESP configuration
  *
- * This enum defines the attributes used to configure and retrieve
- * Estimated Service Parameters (ESP) settings.
+ * Attributes used to configure (set command) or report (get command)
+ * Estimated Service Parameters (ESP). ESP describes predicted service
+ * characteristics such as airtime availability, PPDU duration, and Block Ack
+ * window size per access category and it is advertised in the Estimated Service
+ * Parameters Inbound element (see IEEE Std 802.11-2024, 9.4.2.172).
  *
- * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_ENABLE: u8 attribute. Enable or disable ESP
- * functionality. Set to 1 to enable ESP, 0 to disable. When enabled,
- * the ESP parameters (airtime, PPDU duration, BA window) are advertised in
- * management frames.
+ * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_ENABLE: u8. Enable (1) or disable (0)
+ * the advertisement of the Estimated Service Parameters Inbound element
+ * in Beacon and Probe Response frames.
  *
- * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AIRTIME: u32 attribute. Represents the
- * predicted percentage of airtime that a new STA joining the BSS can expect
- * to be available for the transmission. The lower 8 bits represent the airtime
- * of BE AC, linearly scaled with 255 representing 100% and 0 representing 0%.
- * Bits 8-15 represent BK AC, bits 16-23 represent VI AC, and bits 24-31
- * represent VO AC (if applicable). When used to report airtime of all ACs,
- * each byte represents one AC.
+ * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AIRTIME_BE: u8. Predicted percentage of
+ * airtime available for AC_BE. This is the exact 8-bit value used in the ESP
+ * Information field as defined in IEEE Std 802.11-2024, 9.4.2.172. The
+ * value is linearly scaled: 0 represents 0% airtime, 255 represents 100%
+ * airtime.
  *
- * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PPDU_DUR: u8 attribute. Indicates the
- * expected target duration of PPDUs transmitted to the STA, in microseconds.
- * Valid range: 0-255 microseconds.
+ * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PPDU_DUR_BE: u8. BE Access Category "target"
+ * duration for PPDUs that carry Data MPDUs, i.e., how long the AP expects a
+ * typical data transmission PPDU to last for the BE AC. Encoded in unts of 50
+ * microseconds (actual_duration_us = value × 50) as defined in IEEE Std
+ * 802.11-2024, 9.4.2.172.
+ * Range: 0..255 units (0..12.75 ms). Example: value 16 -> 800 microseconds.
  *
- * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_BA_WINDOW: u8 attribute. Specifies the
- * Block Ack (BA) window size. Valid range: 0-7, where 0 represents Block
- * Ack not expected to be used, and rest of the values representing how many
- * MPDUs can be acknowledged in one Block Ack frame. Value 1 for 2 MPDUs,
- * value 2 for 4 MPDUs and so on up to the value 7 for 64 MPDUs.
+ * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_BA_WINDOW_BE: u8. BA Window Size subfield
+ * for AC_BE as defined in IEEE Std 802.11-2024, Table 9-334 (BA Window Size
+ * subfield encoding).
+ *
+ * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AIRTIME_BK: u8. Airtime for AC_BK.
+ * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PPDU_DUR_BK: u8. PPDU duration for AC_BK.
+ * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_BA_WINDOW_BK: u8. BA window for AC_BK.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AIRTIME_VI: u8. Airtime for AC_VI.
+ * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PPDU_DUR_VI: u8. PPDU duration for AC_VI.
+ * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_BA_WINDOW_VI: u8. BA window for AC_VI.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AIRTIME_VO: u8. Airtime for AC_VO.
+ * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PPDU_DUR_VO: u8. PPDU duration for AC_VO.
+ * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_BA_WINDOW_VO: u8. BA window for AC_VO.
  */
 enum qca_wlan_vendor_attr_config_esp_param {
 	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_INVALID = 0,
 	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_ENABLE = 1,
-	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AIRTIME = 2,
-	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PPDU_DUR = 3,
-	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_BA_WINDOW = 4,
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AIRTIME_BE = 2,
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PPDU_DUR_BE = 3,
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_BA_WINDOW_BE = 4,
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AIRTIME_BK = 5,
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PPDU_DUR_BK = 6,
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_BA_WINDOW_BK = 7,
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AIRTIME_VI = 8,
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PPDU_DUR_VI = 9,
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_BA_WINDOW_VI = 10,
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AIRTIME_VO = 11,
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PPDU_DUR_VO = 12,
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_BA_WINDOW_VO = 13,
 
 	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_MAX =
-		QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AFTER_LAST - 1,
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AFTER_LAST - 1,
 };
 
 /**
@@ -3784,6 +3789,302 @@ enum qca_wlan_vendor_attr_ctl_table {
 	QCA_WLAN_VENDOR_ATTR_CTL_TABLE_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_CTL_TABLE_MAX =
 	QCA_WLAN_VENDOR_ATTR_CTL_TABLE_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_dcs - Attributes used by
+ * %QCA_NL80211_VENDOR_SUBCMD_DCS_CONFIG.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_DCS_LINK_ID: 8-bit unsigned value for link ID.
+ * Specifies which link to set/get in a multi-link setup.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_DCS_CMD_TYPE: 8-bit unsigned value for DCS command type
+ *     0: GET – Retrieve the current DCS configuration.
+ *        Userspace must provide QCA_WLAN_VENDOR_ATTR_DCS_CMD_TYPE.
+ *        QCA_WLAN_VENDOR_ATTR_DCS_LINK_ID is also required in multi-link AP
+ *        scenarios.
+ *        The driver will return the following attributes:
+ *             QCA_WLAN_VENDOR_ATTR_DCS_ENABLE
+ *             QCA_WLAN_VENDOR_ATTR_DCS_INTERFERENCE_DETECTION_THRESHOLD
+ *             QCA_WLAN_VENDOR_ATTR_DCS_PHY_ERR_PENALTY
+ *             QCA_WLAN_VENDOR_ATTR_DCS_PHY_ERR_THRESHOLD
+ *             QCA_WLAN_VENDOR_ATTR_DCS_RADAR_ERR_THRESHOLD
+ *             QCA_WLAN_VENDOR_ATTR_DCS_TX_ERR_THRESHOLD
+ *             QCA_WLAN_VENDOR_ATTR_DCS_INTERFERENCE_DETECTION_WINDOW
+ *             QCA_WLAN_VENDOR_ATTR_DCS_COCHANNEL_INTERFERENCE_THRESHOLD
+ *             QCA_WLAN_VENDOR_ATTR_DCS_MAX_CU
+ *     1: SET – Update the DCS configuration.
+ *        Userspaxce must provide QCA_WLAN_VENDOR_ATTR_DCS_CMD_TYPE.
+ *        QCA_WLAN_VENDOR_ATTR_DCS_LINK_ID is also required in multi-link AP
+ *        scenarios.
+ *        One or more of the above attributes must be included with new
+ *        values to apply the configuration update.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_DCS_ENABLE: 16-bit bitmap to set/get enable/disable DCS
+ *     bit 0: Enable Continuous Wave Interference Management (CW IM)
+ *     bit 1: Enable WLAN Interference Management (WLAN IM)
+ *
+ * @QCA_WLAN_VENDOR_ATTR_DCS_INTERFERENCE_DETECTION_THRESHOLD: 32-bit unsigned
+ * value to set/get interference detection threshold. This attribute specifies
+ * the number of interference events required to trigger a channel switch.
+ * Higher values decrease sensitivity, making DCS less likely to switch.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_DCS_PHY_ERR_PENALTY: 32-bit unsigned value to set/get
+ * the PHY error penalty. This value specifies the amount of channel time
+ * (in microseconds) counted as wasted for each PHY error when estimating
+ * interference.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_DCS_PHY_ERR_THRESHOLD: 32-bit unsigned value to set/get
+ * the PHY error count threshold.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_DCS_RADAR_ERR_THRESHOLD: 32-bit unsigned value to
+ * set/get radar error count threshold.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_DCS_TX_ERR_THRESHOLD: 32-bit unsigned value to set/get
+ * TX error count threshold.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_DCS_INTERFERENCE_DETECTION_WINDOW: 32-bit unsigned
+ * value to set/get the interference detection sampling window. The unit is a
+ * count of sampling intervals, where each interval corresponds to one second.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_DCS_COCHANNEL_INTERFERENCE_THRESHOLD: 8-bit unsigned
+ * value to set/get the co-channel interference threshold level, interpreted as
+ * a percentage of channel time affected by same-channel interference.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_DCS_MAX_CU: 8-bit unsigned value to set/get the maximum
+ * channel utilization percentage allowed. If the combined TX and RX channel
+ * utilization exceeds this configured maximum CU, treats the condition as WLAN
+ * interference.
+ */
+enum qca_wlan_vendor_attr_dcs {
+	QCA_WLAN_VENDOR_ATTR_DCS_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_DCS_LINK_ID = 1,
+	QCA_WLAN_VENDOR_ATTR_DCS_CMD_TYPE = 2,
+	QCA_WLAN_VENDOR_ATTR_DCS_ENABLE = 3,
+	QCA_WLAN_VENDOR_ATTR_DCS_INTERFERENCE_DETECTION_THRESHOLD = 4,
+	QCA_WLAN_VENDOR_ATTR_DCS_PHY_ERR_PENALTY = 5,
+	QCA_WLAN_VENDOR_ATTR_DCS_PHY_ERR_THRESHOLD = 6,
+	QCA_WLAN_VENDOR_ATTR_DCS_RADAR_ERR_THRESHOLD = 7,
+	QCA_WLAN_VENDOR_ATTR_DCS_TX_ERR_THRESHOLD = 8,
+	QCA_WLAN_VENDOR_ATTR_DCS_INTERFERENCE_DETECTION_WINDOW = 9,
+	QCA_WLAN_VENDOR_ATTR_DCS_COCHANNEL_INTERFERENCE_THRESHOLD = 10,
+	QCA_WLAN_VENDOR_ATTR_DCS_MAX_CU = 11,
+	QCA_WLAN_VENDOR_ATTR_DCS_INTERFERENCE_BITMAP = 12,
+
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_DCS_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_DCS_MAX =
+		QCA_WLAN_VENDOR_ATTR_DCS_AFTER_LAST - 1
+};
+
+/*
+ * enum qca_wlan_vendor_attr_rrop_info - Specifies vendor specific
+ * Representative RF Operating Parameter (RROP) information. It is sent for the
+ * vendor command QCA_NL80211_VENDOR_SUBCMD_GET_RROP_INFO. This information is
+ * intended for use by external Auto Channel Selection applications. It provides
+ * guidance values for some RF parameters that are used by the system during
+ * operation. These values could vary by channel, band, radio, and so on.
+ */
+enum qca_wlan_vendor_attr_rrop_info {
+	QCA_WLAN_VENDOR_ATTR_RROP_INFO_INVALID = 0,
+
+	/* Representative Tx Power List (RTPL) which has an array of nested
+	 * values as per attributes in enum qca_wlan_vendor_attr_rtplinst.
+	 */
+	QCA_WLAN_VENDOR_ATTR_RROP_INFO_RTPL = 1,
+
+	QCA_WLAN_VENDOR_ATTR_RROP_INFO_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_RROP_INFO_MAX =
+	QCA_WLAN_VENDOR_ATTR_RROP_INFO_AFTER_LAST - 1
+};
+
+/**
+ * enum qca_wlan_vendor_attr_rtplinst - Specifies attributes for individual list
+ * entry instances in the Representative Tx Power List (RTPL). It provides
+ * simplified power values intended for helping external Auto channel Selection
+ * applications compare potential Tx power performance between channels, other
+ * operating conditions remaining identical. These values are not necessarily
+ * the actual Tx power values that will be used by the system. They are also not
+ * necessarily the max or average values that will be used. Instead, they are
+ * relative, summarized keys for algorithmic use computed by the driver or
+ * underlying firmware considering a number of vendor specific factors.
+ */
+enum qca_wlan_vendor_attr_rtplinst {
+	QCA_WLAN_VENDOR_ATTR_RTPLINST_INVALID = 0,
+
+	/* Primary channel number (u8).
+	 * Note: If both the driver and user space application support the
+	 * 6 GHz band, this attribute is deprecated and
+	 * QCA_WLAN_VENDOR_ATTR_RTPLINST_PRIMARY_FREQUENCY should be used. To
+	 * maintain backward compatibility,
+	 * QCA_WLAN_VENDOR_ATTR_RTPLINST_PRIMARY is still used if either the
+	 * driver or user space application or both do not support the 6 GHz
+	 * band.
+	 */
+	QCA_WLAN_VENDOR_ATTR_RTPLINST_PRIMARY = 1,
+	/* Representative Tx power in dBm (s32) with emphasis on throughput. */
+	QCA_WLAN_VENDOR_ATTR_RTPLINST_TXPOWER_THROUGHPUT = 2,
+	/* Representative Tx power in dBm (s32) with emphasis on range. */
+	QCA_WLAN_VENDOR_ATTR_RTPLINST_TXPOWER_RANGE = 3,
+	/* Primary channel center frequency (u32) in MHz */
+	QCA_WLAN_VENDOR_ATTR_RTPLINST_PRIMARY_FREQUENCY = 4,
+
+	QCA_WLAN_VENDOR_ATTR_RTPLINST_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_RTPLINST_MAX =
+		QCA_WLAN_VENDOR_ATTR_RTPLINST_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_channel_switch_time - Attributes for
+ * %QCA_NL80211_VENDOR_SUBCMD_GET_CHANNEL_SWITCH_TIME.
+ *
+ * This vendor command is used to query the driver for the estimated time
+ * required to complete a channel switch operation.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_FREQ: Required (u32).
+ * Center frequency of the target channel in MHz.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_BANDWIDTH: Optional (u32).
+ * Channel bandwidth. Uses values from enum nl80211_chan_width.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_CENTER_FREQ1: Optional (u32).
+ * Center frequency of the first segment in MHz (for VHT/HE).
+ *
+ * @QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_CENTER_FREQ2: Optional (u32).
+ * Center frequency of the second segment in MHz (for 80+80 MHz).
+ *
+ * @QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_TOTAL: Response attribute (u32).
+ * Total estimated channel switch time in microseconds.
+ */
+enum qca_wlan_vendor_attr_channel_switch_time {
+	QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_FREQ = 1,
+	QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_BANDWIDTH = 2,
+	QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_CENTER_FREQ1 = 3,
+	QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_CENTER_FREQ2 = 4,
+	QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_PUNCT_BMAP = 5,
+	QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_TOTAL = 6,
+
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_MAX =
+		QCA_WLAN_VENDOR_ATTR_CHANNEL_SWITCH_TIME_AFTER_LAST - 1,
+};
+
+enum qca_wlan_vendor_attr_mon_scan_stats {
+	QCA_WLAN_VENDOR_ATTR_RX_MON_SCAN_STATS_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_RX_MON_SCAN_STATS_RX_OK_PKTS,
+	QCA_WLAN_VENDOR_ATTR_RX_MON_SCAN_STATS_RX_OK_BYTES,
+	QCA_WLAN_VENDOR_ATTR_RX_MON_SCAN_STATS_RX_ERR_PKTS,
+	QCA_WLAN_VENDOR_ATTR_RX_MON_SCAN_STATS_RX_ERR_BYTES,
+	QCA_WLAN_VENDOR_ATTR_RX_MON_SCAN_STATS_RX_MGMT_PKTS,
+	QCA_WLAN_VENDOR_ATTR_RX_MON_SCAN_STATS_RX_CTRL_PKTS,
+	QCA_WLAN_VENDOR_ATTR_RX_MON_SCAN_STATS_RX_DATA_PKTS,
+
+	QCA_WLAN_VENDOR_ATTR_RX_MON_SCAN_STATS_LAST,
+	QCA_WLAN_VENDOR_ATTR_RX_MON_SCAN_STATS_MAX =
+		QCA_WLAN_VENDOR_ATTR_RX_MON_SCAN_STATS_LAST - 1,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_dcs_sim - Attributes used by
+ * %QCA_NL80211_VENDOR_SUBCMD_DCS_SIM.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_DCS_SIM_LINK_ID: 8-bit unsigned value for link ID.
+ * Specifies which link to simulate in a multi-link setup.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_DCS_SIM_TYPE: 16-bit unsigned value for DCS simulation
+ * type. Selects the interference simulation mode the driver should execute.
+ * Userspace must provide this attribute. QCA_WLAN_VENDOR_ATTR_DCS_SIM_LINK_ID
+ * is also required in multi-link AP scenarios.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_DCS_SIM_INTERFERENCE_BITMAP: 32-bit bitmap to get the
+ * channel bandwidth interference bitmap value from userspace.
+ */
+enum qca_wlan_vendor_attr_dcs_sim {
+	QCA_WLAN_VENDOR_ATTR_DCS_SIM_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_DCS_SIM_LINK_ID,
+	QCA_WLAN_VENDOR_ATTR_DCS_SIM_TYPE,
+	QCA_WLAN_VENDOR_ATTR_DCS_SIM_INTERFERENCE_BITMAP,
+
+	QCA_WLAN_VENDOR_ATTR_DCS_SIM_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_DCS_SIM_MAX =
+		QCA_WLAN_VENDOR_ATTR_DCS_SIM_AFTER_LAST - 1
+};
+
+/*
+ * enum qca_wlan_vendor_attr_me_config - Attributes for ME vendor command
+ * @QCA_WLAN_VENDOR_ATTR_ME_CONFIG_INVALID: Invalid attribute
+ * @QCA_WLAN_VENDOR_ATTR_ME_CONFIG_PARAM: Parameter selector (u32)
+ *      One of the vdev_param IDs:
+ *      - QCA_WLAN_VENDOR_VDEV_PARAM_ME
+ *      - QCA_WLAN_VENDOR_VDEV_PARAM_IGMP_ME
+ *      - QCA_WLAN_VENDOR_VDEV_PARAM_ME_GRP_LIMIT
+ * @QCA_WLAN_VENDOR_ATTR_ME_CONFIG_VALUE: Value to set for the parameter (u32)
+ * @QCA_WLAN_VENDOR_ATTR_ME_CONFIG_GET: Flag to indicate a get/query operation
+ * @QCA_WLAN_VENDOR_ATTR_ME_CONFIG_AFTER_LAST: Last attribute
+ * @QCA_WLAN_VENDOR_ATTR_ME_CONFIG_MAX: Maximum attribute value
+ */
+enum qca_wlan_vendor_attr_me_config {
+	QCA_WLAN_VENDOR_ATTR_ME_CONFIG_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_ME_CONFIG_PARAM = 1,
+	QCA_WLAN_VENDOR_ATTR_ME_CONFIG_VALUE = 2,
+
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_ME_CONFIG_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_ME_CONFIG_MAX =
+		QCA_WLAN_VENDOR_ATTR_ME_CONFIG_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_me_list: Represents the List of attributes
+ * used for HMMC/DENY Lists for ME Enhancements.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ME_LIST_INVALID: Information passed for HMMC/DENY list
+ * is invalid.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ME_LIST_OPERATION: u8, represents the exact list operation
+ * being performed (add, delete, dump). This is included in the commands sent from
+ * userspace to the driver.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ME_LIST_TYPE: u8, represents the type of the list for
+ * which the relevant operation is being perfomed(hmmc, deny). This is included
+ * in the commands sent from userspace to the driver.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ME_LIST_IP_TYPE: u8, represents the IP version used
+ * for the operation being performed (ipv4/ipv6). This is included in the commands
+ * sent from userspace to the driver.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ME_LIST_IPV4_ADDR: 4 Bytes, represents the IPv4 address used
+ * for the operation being performed. This is included in the commands
+ * sent from userspace to the driver.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ME_LIST_IPV6_ADDR: 16 Bytes, represents the IPv6 address used
+ * for the operation being performed. This is included in the commands
+ * sent from userspace to the driver.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ME_LIST_MASK: u32, represents the IPv4 Mask used
+ * for the operation being performed. This is included in the commands
+ * sent from userspace to the driver.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ME_LIST_PREFIX: u32, represents the IPv6 Prefix used
+ * for the operation being performed. This is included in the commands
+ * sent from userspace to the driver.
+ */
+enum qca_wlan_vendor_attr_me_list {
+	QCA_WLAN_VENDOR_ATTR_ME_LIST_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_ME_LIST_OPERATION = 1,    /* u8: ADD/DEL/DUMP */
+	QCA_WLAN_VENDOR_ATTR_ME_LIST_TYPE = 2,         /* u8: List type */
+	QCA_WLAN_VENDOR_ATTR_ME_LIST_IP_TYPE = 3,      /* u8: IPv4/IPv6 */
+	QCA_WLAN_VENDOR_ATTR_ME_LIST_IPV4_ADDR = 4,    /* binary: 4 bytes */
+	QCA_WLAN_VENDOR_ATTR_ME_LIST_IPV6_ADDR = 5,    /* binary: 16 bytes */
+	QCA_WLAN_VENDOR_ATTR_ME_LIST_MASK = 6,         /* u32: IPv4 mask */
+	QCA_WLAN_VENDOR_ATTR_ME_LIST_PREFIX = 7,       /* u32: IPv6 prefix */
+
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_ME_LIST_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_ME_LIST_MAX =
+		QCA_WLAN_VENDOR_ATTR_ME_LIST_AFTER_LAST - 1,
 };
 
 #define ATH12K_VENDOR_PUT(vendor_event, type, attr, param)             \
