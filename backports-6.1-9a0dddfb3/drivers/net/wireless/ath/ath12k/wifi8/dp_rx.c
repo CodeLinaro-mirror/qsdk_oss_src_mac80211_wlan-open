@@ -3979,7 +3979,11 @@ int ath12k_wifi8_dp_rx_flow_add_entry(struct ath12k_dp *dp,
 	if (flow_info->use_ppe) {
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 		flow.service_code = PPE_DRV_SC_SPF_BYPASS;
-		flow.ppe_classify_read_hint = PPEDS_CLASSIFY_READ_FULL_PKT;
+		if (ath12k_ppeds_pkt_pre_hdr_mode >= 0 &&
+			ath12k_ppeds_pkt_pre_hdr_mode  < PPEDS_CLASSIFY_READ_FULL_PKT)
+			flow.ppe_classify_read_hint = ath12k_ppeds_pkt_pre_hdr_mode;
+		else
+			flow.ppe_classify_read_hint = PPEDS_CLASSIFY_READ_FULL_PKT;
 		flow.reo_indication = PPEDS_REO2PPE1_RDI;
 		flow.dest_info = ((flow.fse_metadata &
 				ATH12K_DP_RX_FSE_FL_EGRESS_MACID_MASK) >>

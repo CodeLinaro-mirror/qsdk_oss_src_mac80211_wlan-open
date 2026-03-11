@@ -118,6 +118,11 @@ unsigned int ath12k_ppeds_ppe2wbm_ring_size = 512;
 module_param_named(ppe2wbm_ring_size, ath12k_ppeds_ppe2wbm_ring_size, uint, 0644);
 MODULE_PARM_DESC(ppe2wbm_ring_size, "PPE2WBM Ring size");
 EXPORT_SYMBOL(ath12k_ppeds_ppe2wbm_ring_size);
+
+unsigned int ath12k_ppeds_pkt_pre_hdr_mode = 3;
+module_param_named(pkt_pre_hdr_mode, ath12k_ppeds_pkt_pre_hdr_mode, uint, 0644);
+MODULE_PARM_DESC(pkt_pre_hdr_mode, "pkt_pre_hdr_mode: 3-default");
+EXPORT_SYMBOL(ath12k_ppeds_pkt_pre_hdr_mode);
 #endif
 
 #define ATH12K_PROBE_ORDER_MASK 0xF
