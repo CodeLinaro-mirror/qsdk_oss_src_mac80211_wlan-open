@@ -14,6 +14,7 @@
 #include "../net/wireless/core.h"
 #include "qcn_extns/ath12k_cmn_extn.h"
 #include "qcn_extns/vendor_extn.h"
+#include "qcn_extns/me_hmmc_extn.h"
 #include "mac.h"
 #include "ppe.h"
 #include "vendor.h"
@@ -10545,15 +10546,16 @@ static int ath12k_del_me_list_entry(struct ath12k_vif *ahvif,
 
 /**
  * ath12k_dump_me_list_entries - Dump ME list entries
- * @ar: ath12k radio pointer
+ * @ahvif: ath12k_vif pointer
  * @list_type: ME list type to dump
  */
 static int ath12k_dump_me_list_entries(struct ath12k_vif *ahvif, u8 list_type)
 {
 	struct ath12k_dp_vif *dp_vif;
 	struct ath12k_me_db *me_db;
-	bool is_ipv6;
-	u16 count;
+	u32 filter_flags;
+	u16 count = 0;
+	int ret;
 
 	dp_vif = &ahvif->dp_vif;
 
@@ -10568,47 +10570,22 @@ static int ath12k_dump_me_list_entries(struct ath12k_vif *ahvif, u8 list_type)
 		   "Dumping ME list entries from db: %p, list_type: %u\n",
 		   &me_db->hmmc_db, list_type);
 
-	/* Select target list and count based on list type */
+	/* Map list_type to dump filter flags */
 	switch (list_type) {
 	case IEEE80211_HMMC_LIST:
-		is_ipv6 = false;
-
-		/* TODO:
-		 * Iterate and print info for each valid entry.
-		 */
-
-		ath12k_info(NULL, "HMMC IPv4 List (%u entries):\n", count);
-
+		filter_flags = ATH12K_ME_DUMP_HMMC_V4;
 		break;
 	case IEEE80211_HMMC_LIST_V6:
-		is_ipv6 = true;
-
-		/* TODO:
-		 * Iterate and print info for each valid entry.
-		 */
-
-		ath12k_info(NULL, "HMMC IPv6 List (%u entries):\n", count);
-
+		filter_flags = ATH12K_ME_DUMP_HMMC_V6;
 		break;
 	case IEEE80211_DENY_LIST:
-		is_ipv6 = false;
-
-		/* TODO:
-		 * Iterate and print info for each valid entry.
-		 */
-
-		ath12k_info(NULL, "Deny IPv4 List (%u entries):\n", count);
-
+		filter_flags = ATH12K_ME_DUMP_DENY_V4;
 		break;
 	case IEEE80211_DENY_LIST_V6:
-		is_ipv6 = true;
-
-		/* TODO:
-		 * Iterate and print info for each valid entry.
-		 */
-
-		ath12k_info(NULL, "Deny IPv6 List (%u entries):\n", count);
-
+		filter_flags = ATH12K_ME_DUMP_DENY_V6;
+		break;
+	case IEEE80211_ME_LIST_ALL:
+		filter_flags = ATH12K_ME_DUMP_ALL;
 		break;
 	default:
 		ath12k_err(NULL, "Invalid ME list type: %u\n", list_type);
@@ -10616,9 +10593,17 @@ static int ath12k_dump_me_list_entries(struct ath12k_vif *ahvif, u8 list_type)
 		return -EINVAL;
 	}
 
+	ret = ath12k_me_hmmc_dump_extn(me_db, filter_flags, &count);
+	if (ret < 0)
+		ath12k_err(NULL, "Error dumping ME list entries (type %u)\n",
+			   list_type);
+	else
+		ath12k_dbg(NULL, ATH12K_DBG_CFG,
+			   "ME list dump complete: %u entries\n", count);
+
 	/* This will drop the ref for me_db */
 	ath12k_me_db_put(me_db);
-	return 0;
+	return ret;
 }
 
 /**

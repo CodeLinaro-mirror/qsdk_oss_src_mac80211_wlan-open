@@ -73,6 +73,7 @@ enum ieee80211_me_list {
 	IEEE80211_DENY_LIST = 1,
 	IEEE80211_HMMC_LIST_V6 = 2,
 	IEEE80211_DENY_LIST_V6 = 3,
+	IEEE80211_ME_LIST_ALL = 4,
 };
 
 /* ME List Operations */
