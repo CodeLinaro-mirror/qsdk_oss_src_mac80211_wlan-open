@@ -137,7 +137,7 @@ try_again:
 	if (unlikely(!valid_entries)) {
 		ath12k_hal_srng_access_end(ab, srng);
 		spin_unlock_bh(&srng->lock);
-		return -EINVAL;
+		return 0;
 	}
 	ath12k_hal_srng_dst_invalidate_entry(ab->dp, srng, valid_entries);
 #endif
@@ -722,13 +722,8 @@ static void ath12k_wifi8_mgmt_rx_process(struct ath12k_base *ab,
 	__skb_queue_head_init(&mmpdu_list);
 
 	ret = ath12k_wifi8_mgmt_rx_reap_packets(ab, ring, &mmpdu_list);
-	if (ret <= 0) {
-		if (ret < 0)
-			ath12k_err(ab,
-				   "Failed to reap packets from mgmt reo_dst_rx_ring: %d",
-				   ret);
+	if (!ret)
 		return;
-	}
 
 	ath12k_wifi8_mgmt_rx_process_packets(ab->mgmt, &mmpdu_list,
 					     ATH12K_MGMT_SRNG_PKT_TYPE_RX);
@@ -833,7 +828,7 @@ ath12k_wifi8_mgmt_rx_reap_err_packets(struct ath12k_base *ab,
 	if (unlikely(!valid_entries)) {
 		ath12k_hal_srng_access_end(ab, srng);
 		spin_unlock_bh(&srng->lock);
-		return -EINVAL;
+		return 0;
 	}
 	ath12k_hal_srng_dst_invalidate_entry(ab->dp, srng, valid_entries);
 #endif
@@ -913,13 +908,8 @@ static void ath12k_wifi8_mgmt_rx_process_err(struct ath12k_base *ab,
 	__skb_queue_head_init(&mmpdu_list);
 
 	ret = ath12k_wifi8_mgmt_rx_reap_err_packets(ab, ring, &mmpdu_list);
-	if (ret <= 0) {
-		if (ret < 0)
-			ath12k_err(ab,
-				   "Failed to reap packets from mgmt reo_dst_rx_ring: %d",
-				   ret);
+	if (!ret)
 		return;
-	}
 
 	ath12k_wifi8_mgmt_rx_process_packets(ab->mgmt, &mmpdu_list,
 					     ATH12K_MGMT_SRNG_PKT_TYPE_RX_ERR);
