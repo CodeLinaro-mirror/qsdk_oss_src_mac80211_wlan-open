@@ -2041,6 +2041,10 @@ enum hal_tlv_tag_be {
 	HAL_TQM_REMOVE_MPDU_STATUS_BO = 182,
 	HAL_TQM_SYNC_CMD_BO = 332,
 	HAL_TQM_SYNC_CMD_STATUS_BO = 334,
+	HAL_TQM_GET_MPDUQ_STATS_BO		= 211,
+	HAL_TQM_GET_MPDUQ_STATS_STATUS_BO	= 238,
+	HAL_TQM_UPDATE_MPDUQ_BO			= 368,
+	HAL_TQM_UPDATE_MPDUQ_STATUS_BO		= 370,
 };
 
 enum hal_tqm_remove_msdu_cmd_type {
@@ -2397,6 +2401,112 @@ struct hal_tqm_sync_cmd_status {
 	__le32 info20;
 };
 
+#define HAL_TQM_GET_MPDUQ_STATS_INFO0_MPDUQ_ADDR_LO     GENMASK(31, 0)
+#define HAL_TQM_GET_MPDUQ_STATS_INFO1_MPDUQ_ADDR_HI     GENMASK(7, 0)
+#define HAL_TQM_GET_MPDUQ_STATS_INFO1_CLEAR_STATS       BIT(8)
+
+struct hal_tqm_get_mpduq_stats {
+	struct hal_uniform_tqm_cmd_hdr cmd_hdr;
+	__le32 info0;
+	__le32 info1;
+};
+
+#define HAL_TQM_GET_MPDUQ_STATS_STATUS_INFO0_MPDU_COUNT		GENMASK(31, 16)
+#define HAL_TQM_GET_MPDUQ_STATS_STATUS_INFO2_START_SEQ_NUM	GENMASK(11, 0)
+#define HAL_TQM_GET_MPDUQ_STATS_STATUS_INFO2_TID		GENMASK(26, 23)
+#define HAL_TQM_GET_MPDUQ_STATS_STATUS_INFO3_PN_31_0		GENMASK(31, 0)
+#define HAL_TQM_GET_MPDUQ_STATS_STATUS_INFO4_PN_47_32		GENMASK(15, 0)
+#define HAL_TQM_GET_MPDUQ_STATS_STATUS_INFO4_SW_PEER_ID		GENMASK(31, 16)
+
+#define HAL_TQM_GET_MPDUQ_STATS_STATUS_INFO15_LAST_SEQ_NUM	GENMASK(11, 0)
+#define HAL_TQM_GET_MPDUQ_STATS_STATUS_INFO15_MAX_LSN		GENMASK(23, 12)
+#define HAL_TQM_GET_MPDUQ_STATS_STATUS_INFO15_MAX_LSN_VALID	BIT(24)
+
+struct hal_tqm_get_mpduq_stats_cmd_status {
+	struct hal_uniform_tqm_status_hdr status_hdr;
+	__le32 info0;
+	__le32 info1;
+	__le32 info2;
+	__le32 info3;
+	__le32 info4;
+	__le32 info5;
+	__le32 info6;
+	__le32 info7;
+	__le32 info8;
+	__le32 info9;
+	__le32 info10;
+	__le32 info11;
+	__le32 info12;
+	__le32 info13;
+	__le32 info14;
+	__le32 info15;
+	__le32 info16;
+	__le32 info17;
+	__le32 info18;
+	__le32 info19;
+	__le32 info20;
+};
+
+#define HAL_TQM_UPDATE_MPDUQ_INFO0_MPDUQ_ADDR_LO		GENMASK(31, 0)
+#define HAL_TQM_UPDATE_MPDUQ_INFO1_MPDUQ_ADDR_HI		GENMASK(7, 0)
+#define HAL_TQM_UPDATE_MPDUQ_INFO1_SEQ_NUM_UPDATE_VALID		BIT(9)
+#define HAL_TQM_UPDATE_MPDUQ_INFO2_START_SEQ_NUM		GENMASK(11, 0)
+#define HAL_TQM_UPDATE_MPDUQ_INFO2_LAST_SEQ_NUM			GENMASK(27, 16)
+#define HAL_TQM_UPDATE_MPDUQ_INFO14_MAX_LSN			GENMASK(29, 18)
+#define HAL_TQM_UPDATE_MPDUQ_INFO14_MAX_LSN_VALID		BIT(30)
+#define HAL_TQM_UPDATE_MPDUQ_INFO16_UPDATE_MAX_LSN		BIT(24)
+#define HAL_TQM_UPDATE_MPDUQ_INFO16_UPDATE_MAX_LSN_VALID	BIT(25)
+
+struct hal_tqm_update_mpduq {
+	struct hal_uniform_tqm_cmd_hdr cmd_hdr;
+	__le32 info0;
+	__le32 info1;
+	__le32 info2;
+	__le32 info3;
+	__le32 info4;
+	__le32 info5;
+	__le32 info6;
+	__le32 info7;
+	__le32 info8;
+	__le32 info9;
+	__le32 info10;
+	__le32 info11;
+	__le32 info12;
+	__le32 info13;
+	__le32 info14;
+	__le32 info15;
+	__le32 info16;
+	__le32 info17;
+	__le32 info18;
+	__le32 info19;
+};
+
+#define HAL_TQM_UPDATE_MPDUQ_CMD_STATUS_INFO0_UPDATE_REQ_MET	BIT(0)
+struct hal_tqm_update_mpduq_cmd_status {
+	struct hal_uniform_tqm_status_hdr status_hdr;
+	__le32 info0;
+	__le32 info1;
+	__le32 info2;
+	__le32 info3;
+	__le32 info4;
+	__le32 info5;
+	__le32 info6;
+	__le32 info7;
+	__le32 info8;
+	__le32 info9;
+	__le32 info10;
+	__le32 info11;
+	__le32 info12;
+	__le32 info13;
+	__le32 info14;
+	__le32 info15;
+	__le32 info16;
+	__le32 info17;
+	__le32 info18;
+	__le32 info19;
+	__le32 info20;
+};
+
 struct hal_tqm_cmd_params_std {
 	u16 peer_id;
 };
@@ -2423,12 +2533,28 @@ struct hal_tqm_sync_cmd_params {
 	u64 cb_data;
 };
 
+struct hal_tqm_get_mpdu_queue_stats {
+	dma_addr_t mpdu_q_paddr;
+	bool clear_stats;
+};
+
+struct hal_tqm_update_mpdu_queue_params {
+	dma_addr_t mpdu_q_paddr;
+	u32 max_lsn_valid:1,
+	    sn_num_valid:1,
+	    max_lsn:12,
+	    sn_num:12,
+	    reserved:6;
+};
+
 struct ath12k_hal_tqm_cmd {
 	struct hal_tqm_cmd_params_std std;
 	union {
 		struct hal_tqm_remove_msdu_params remove_msdu_params;
 		struct hal_tqm_remove_mpdu_params remove_mpdu_params;
 		struct hal_tqm_sync_cmd_params tqm_sync_params;
+		struct hal_tqm_get_mpdu_queue_stats get_mpduq_stats;
+		struct hal_tqm_update_mpdu_queue_params update_mpduq;
 	};
 };
 
@@ -2461,12 +2587,26 @@ struct hal_tqm_status_sync_cmd {
 	u32 metadata_2;
 };
 
+struct hal_tqm_get_mpduq_stats_status {
+	u16 mpdu_cnt;
+	u16 start_seq_num;
+	u16 last_seq_num;
+	u16 sw_peer_id;
+	u32 pn_31_0;
+	u32 pn_47_32;
+	u32 tid:8,
+	    max_lsn:12,
+	    max_lsn_valid:1,
+	    reserved:11;
+};
+
 struct hal_tqm_status {
 	struct hal_tqm_status_hdr status_hdr;
 	union {
 		struct hal_tqm_status_remove_msdu remove_msdu;
 		struct hal_tqm_status_remove_mpdu remove_mpdu;
 		struct hal_tqm_status_sync_cmd sync_status;
+		struct hal_tqm_get_mpduq_stats_status mpduq_stats;
 	};
 };
 

@@ -161,6 +161,16 @@ void ath12k_wifi8_dp_tx_process_tqm_status(struct ath12k_dp *dp)
 			ath12k_wifi8_hal_tqm_sync_cmd_status(ab, hdr,
 							     &tqm_status);
 			break;
+		case HAL_TQM_GET_MPDUQ_STATS_STATUS_BO:
+			ath12k_wifi8_hal_tqm_get_mpduq_stats_cmd_status(ab,
+									hdr,
+									&tqm_status);
+			break;
+		case HAL_TQM_UPDATE_MPDUQ_STATUS_BO:
+			ath12k_wifi8_hal_tqm_update_mpduq_cmd_status(ab,
+								     hdr,
+								     &tqm_status);
+			break;
 		default:
 			ath12k_warn(ab, "unknown tqm status type %d", tag);
 			continue;
