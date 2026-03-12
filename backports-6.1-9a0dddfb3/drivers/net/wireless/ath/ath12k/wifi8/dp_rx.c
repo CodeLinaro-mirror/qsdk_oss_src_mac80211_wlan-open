@@ -1877,9 +1877,7 @@ ath12k_wifi8_dp_rx_process_msdu(struct ath12k_pdev_dp *dp_pdev,
 
 	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, peer_id);
 	if (peer) {
-		link_id = ath12k_dp_peer_get_stats_link_id(
-					dp->ab,
-					peer,
+		link_id = ath12k_dp_validate_hw_link_id(
 					spd_desc_l->rx_mpdu_info.src_link_id);
 		DP_PEER_STATS_PKT_LEN(peer, rx, ring_id, recv_from_reo, link_id,
 				      1, msdu_len);
@@ -3057,10 +3055,7 @@ static inline void ath12k_wifi8_dp_rx_h_err_update_peer_stats(struct ath12k_pdev
 									  rxcb->peer_id);
 
 	if (peer) {
-		u8 link_id = ath12k_dp_peer_get_stats_link_id(
-							dp->ab,
-							peer,
-							rxcb->hw_link_id);
+		u8 link_id = ath12k_dp_validate_hw_link_id(rxcb->hw_link_id);
 		switch (rxcb->err_rel_src) {
 		case HAL_WBM_REL_SRC_MODULE_REO:
 			DP_PEER_LINK_STATS_CNT(peer, wbm_err.reo_error[rxcb->err_code],

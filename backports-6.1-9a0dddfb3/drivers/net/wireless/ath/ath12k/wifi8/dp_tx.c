@@ -2003,8 +2003,7 @@ ath12k_wifi8_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 
 	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, ts->peer_id);
 	if (peer) {
-		link_id = ath12k_dp_peer_get_stats_link_id(dp->ab, peer,
-							   ts->hw_link_id);
+		link_id = ath12k_dp_validate_hw_link_id(ts->hw_link_id);
 		ath12k_dp_tx_update_peer_basic_stats(peer, msdu_len,
 						     htt_status,
 						     link_id, ring_id);
@@ -2289,8 +2288,7 @@ static void ath12k_wifi8_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 
 	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, ts->peer_id);
 	if (peer) {
-		link_id = ath12k_dp_peer_get_stats_link_id(dp->ab, peer,
-							   ts->hw_link_id);
+		link_id = ath12k_dp_validate_hw_link_id(ts->hw_link_id);
 		ath12k_dp_tx_update_peer_basic_stats(peer, msdu_len, ts->status,
 						     link_id, ring);
 

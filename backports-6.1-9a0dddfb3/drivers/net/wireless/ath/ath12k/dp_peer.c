@@ -904,7 +904,7 @@ static void __ath12k_dp_link_peer_unassign(struct ath12k *ar,
 	spin_lock_bh(&dp_hw->peer_lock);
 
 	dp_peer = peer->dp_peer;
-	stats_link_id = peer->link_id;
+	stats_link_id = peer->hw_link_id;
 
 	dp_peer->l2h_link_map[peer->link_id] = ATH12K_DP_HW_LINK_ID_INVALID;
 
@@ -1601,27 +1601,18 @@ void ath12k_peer_qos_queue_ind_handler(struct ath12k_base *ab,
 	spin_unlock_bh(&ab->dp->dp_lock);
 }
 
-u8 ath12k_dp_peer_get_stats_link_id(struct ath12k_base *ab,
-				    struct ath12k_dp_peer *peer,
-				    u8 hw_link_id)
+u8 ath12k_dp_validate_hw_link_id(u8 hw_link_id)
 {
 	/* Sanity check: ensure the HW link id is within bounds */
 	if (unlikely(hw_link_id >= ATH12K_DP_PEER_MAX_MLO_LINKS)) {
-		ath12k_dbg(ab, ATH12K_DBG_TELEMETRY, "Invalid HW link id %u\n",
-			   hw_link_id);
+		ath12k_dbg(NULL, ATH12K_DBG_TELEMETRY,
+			   "Invalid HW link id %u\n", hw_link_id);
 		return 0;
 	}
 
-	/* Sanity check: ensure stats link id is within bounds */
-	if (unlikely(peer->hw_links[hw_link_id] > ATH12K_DP_PEER_MAX_MLO_LINKS)) {
-		ath12k_dbg(ab, ATH12K_DBG_TELEMETRY, "Invalid stats link %u\n",
-			   peer->hw_links[hw_link_id]);
-		return 0;
-	}
-
-	return peer->hw_links[hw_link_id];
+	return hw_link_id;
 }
-EXPORT_SYMBOL(ath12k_dp_peer_get_stats_link_id);
+EXPORT_SYMBOL(ath12k_dp_validate_hw_link_id);
 
 /**
  * ath12k_dp_me_peer_walk_action(): Walks across DP peers and performs desired action.

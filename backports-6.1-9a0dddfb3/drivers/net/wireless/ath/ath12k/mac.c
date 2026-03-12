@@ -23938,7 +23938,7 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 	hw_link_id = ar->hw_link_id;
 	if (link_peer->hw_link_id == hw_link_id) {
 		peer = link_peer->dp_peer;
-		stats_link_id = peer->hw_links[hw_link_id];
+		stats_link_id = hw_link_id;
 		if (peer && stats_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS)
 			peer_stats = &peer->stats[stats_link_id];
 	}
@@ -24167,7 +24167,7 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 	hw_link_id = ar->hw_link_id;
 	if (link_peer->hw_link_id == hw_link_id) {
 		peer = link_peer->dp_peer;
-		stats_link_id = peer->hw_links[hw_link_id];
+		stats_link_id = hw_link_id;
 		if (peer && stats_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS)
 			peer_stats = &peer->stats[stats_link_id];
 	}
@@ -28428,7 +28428,7 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 			if (!peer)
 				continue;
 
-			stats_link_id = peer->hw_links[ar->hw_link_id];
+			stats_link_id = ar->hw_link_id;
 			if (stats_link_id >= ATH12K_DP_PEER_MAX_MLO_LINKS)
 				continue;
 			peer_stats = &peer->stats[stats_link_id];

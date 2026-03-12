@@ -3032,7 +3032,7 @@ static void ath12k_dp_aggr_peer_stats(struct ath12k_link_vif *arvif,
 		return;
 
 	peer = link_peer->dp_peer;
-	stats_link_id = peer->hw_links[ar->hw_link_id];
+	stats_link_id = ar->hw_link_id;
 	link_peer_stats = &aggr_vif_stats->link_peer_stats;
 	if (stats_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS) {
 		ath12k_dp_aggr_per_pkt_peer_stats(dp_pdev, &aggr_vif_stats->peer_stats,
@@ -3366,7 +3366,7 @@ ath12k_dp_get_link_peer_stats(struct ath12k_link_vif *arvif,
 
 		if (link_peer->hw_link_id == hw_link_id) {
 			peer = link_peer->dp_peer;
-			stats_link_id = peer->hw_links[hw_link_id];
+			stats_link_id = hw_link_id;
 			src_htt_stats = link_peer->peer_stats.tx_stats;
 			if (stats_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS) {
 				ath12k_dp_update_per_pkt_peer_stats(dp_pdev, peer_stats,
@@ -3472,26 +3472,15 @@ ath12k_dp_update_legacy_peer_stats(struct ath12k *ar,
 				   struct ath12k_dp_peer_stats *peer_stats,
 				   struct ath12k_dp_link_peer_stats *link_stats)
 {
-	unsigned long peer_links_map, scan_links_map;
-	int stats_link_id;
+	u8 link_id;
 
-	peer_links_map = peer->peer_links_map;
-	scan_links_map = ATH12K_SCAN_LINKS_MASK;
 	telemetry_peer->peer_type = ATH12K_LEGACY_PEER;
-	/* Iterate over data links in peer_links_map, excluding scan links
-	 * to find the correct stats_link_id for this legacy peer.
-	 */
-	for_each_andnot_bit(stats_link_id, &peer_links_map,
-			    &scan_links_map, ATH12K_NUM_MAX_LINKS) {
-		if (stats_link_id >= ATH12K_DP_PEER_MAX_MLO_LINKS)
-			continue;
+	for (link_id = 0; link_id < ATH12K_DP_PEER_MAX_MLO_LINKS; link_id++) {
 		ath12k_dp_update_per_pkt_peer_stats(&ar->dp,
 						    peer_stats,
-						    &peer->stats[stats_link_id],
+						    &peer->stats[link_id],
 						    peer->is_vdev_peer);
-		ath12k_update_ext_stats(ar, peer, stats_link_id,
-					link_stats);
-		break;
+		ath12k_update_ext_stats(ar, peer, link_id, link_stats);
 	}
 }
 
@@ -3539,13 +3528,13 @@ int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
 			arvif = rcu_dereference(ahvif->link[link_id]);
 			if (arvif) {
 				telemetry_peer->peer_type = ATH12K_LINK_PEER;
-				stats_link_id = peer->hw_links[arvif->ar->hw_link_id];
+				stats_link_id = arvif->ar->hw_link_id;
 				if (stats_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS) {
 					ath12k_dp_update_per_pkt_peer_stats(&ar->dp,
 									    peer_stats,
 									    &peer->stats[stats_link_id],
 									    peer->is_vdev_peer);
-					ath12k_update_ext_stats(ar, peer, link_id,
+					ath12k_update_ext_stats(ar, peer, stats_link_id,
 								link_stats);
 				}
 			}

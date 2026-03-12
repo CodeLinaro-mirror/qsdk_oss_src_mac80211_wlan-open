@@ -2640,7 +2640,10 @@ ath12k_wifi7_dp_tx_htt_tx_complete_buf(struct ath12k_dp *dp,
 		status.info = info;
 		if (status.sta && status.sta->valid_links && (link_id >= 0)) {
 			status.link_valid = 1;
-			status.link_id = link_id;
+			status.link_id =
+				ath12k_dp_peer_convert_hw_to_logical_link_id(
+								peer->dp_peer,
+								link_id);
 		}
 		ieee80211_tx_status_ext(ath12k_dp_pdev_to_hw(dp_pdev), &status);
 	}
@@ -2723,8 +2726,7 @@ ath12k_wifi7_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 
 	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, ts->peer_id);
 	if (peer)
-		link_id = ath12k_dp_peer_get_stats_link_id(dp->ab, peer,
-							   ts->hw_link_id);
+		link_id = ath12k_dp_validate_hw_link_id(ts->hw_link_id);
 
 	switch (htt_status) {
 	case HAL_WBM_REL_HTT_TX_COMP_STATUS_OK:
@@ -3046,8 +3048,7 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, ts->peer_id);
 
 	if (peer) {
-		link_id = ath12k_dp_peer_get_stats_link_id(dp->ab, peer,
-							   ts->hw_link_id);
+		link_id = ath12k_dp_validate_hw_link_id(ts->hw_link_id);
 		ath12k_dp_tx_update_peer_basic_stats(peer, msdu_len, ts->status,
 						     link_id, ring);
 
@@ -3195,7 +3196,10 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 
 		if (status.sta && status.sta->valid_links && (link_id >= 0)) {
 			status.link_valid = 1;
-			status.link_id = link_id;
+			status.link_id =
+			ath12k_dp_peer_convert_hw_to_logical_link_id(
+								peer,
+								link_id);
 		}
 		ieee80211_tx_status_ext(ath12k_dp_pdev_to_hw(dp_pdev), &status);
 	}
@@ -3788,6 +3792,7 @@ void ath12k_ppeds_tx_update_stats(struct ath12k *ar, int skb_len,
 	u8 reason, link_id = 0;
 	int ring_id = 0;
 	int vow_tid = 0;
+	u8 hw_link_id = 0;
 
 	memset(&info, 0, sizeof(info));
 	info.status.rates[0].idx = -1;
@@ -3841,7 +3846,11 @@ void ath12k_ppeds_tx_update_stats(struct ath12k *ar, int skb_len,
 		rcu_read_unlock();
 		return;
 	}
-	link_id = ath12k_dp_peer_get_stats_link_id(ab, peer->dp_peer, ts.hw_link_id);
+
+	hw_link_id = ath12k_dp_validate_hw_link_id(ts.hw_link_id);
+	link_id = ath12k_dp_peer_convert_hw_to_logical_link_id(peer->dp_peer,
+							       hw_link_id);
+
 	/* Update peer TX statistics for PPE DS offload path */
 	ath12k_dp_tx_ppeds_update_peer_basic_stats(peer->dp_peer, ts.status, link_id);
 
