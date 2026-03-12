@@ -2477,8 +2477,7 @@ ath12k_wifi8_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 
 	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, ts->peer_id);
 	if (peer)
-		link_id = ath12k_dp_peer_get_stats_link_id(dp->ab, peer,
-							   ts->hw_link_id);
+		link_id = ath12k_dp_validate_hw_link_id(ts->hw_link_id);
 
 	/* For FAST path packets (bypassing mac80211), collect peer stats and
 	 * free the SKB with dev_kfree_skb_any() before reaching the switch
@@ -2744,7 +2743,7 @@ static void ath12k_wifi8_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp_link_peer *link_peer;
 	struct ath12k *ar;
 	struct ath12k_dp_peer *peer = NULL;
-	u8 link_id = 0;
+	u8 hw_link_id = 0;
 	u8 reason = 0;
 	u8 tid = 0;
 	enum ath12k_dp_tx_comp_error drop_reason = DP_TX_COMP_ERR_MISC;
@@ -2808,17 +2807,16 @@ static void ath12k_wifi8_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 
 	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, ts->peer_id);
 	if (peer) {
-		link_id = ath12k_dp_peer_get_stats_link_id(dp->ab, peer,
-							   ts->hw_link_id);
+		hw_link_id = ath12k_dp_validate_hw_link_id(ts->hw_link_id);
 		ath12k_dp_tx_update_peer_basic_stats(peer, msdu_len, ts->status,
-						     link_id, ring);
+						     hw_link_id, ring);
 
 		if (unlikely(ath12k_dp_stats_enabled(dp_pdev))) {
 			if (ath12k_dp_debug_stats_enabled(dp_pdev))
 				ath12k_dp_tx_comp_update_peer_stats(peer, ts,
 								    ring,
 								    tx_desc_flags,
-								    link_id,
+								    hw_link_id,
 								    msdu_len);
 			if (unlikely(ath12k_debugfs_is_qos_stats_enabled(ar)))
 				ath12k_qos_stats_update(ar, msdu, ts,

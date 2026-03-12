@@ -2458,7 +2458,10 @@ ath12k_wifi7_dp_tx_htt_tx_complete_buf(struct ath12k_dp *dp,
 		status.info = info;
 		if (status.sta && status.sta->valid_links && (link_id >= 0)) {
 			status.link_valid = 1;
-			status.link_id = link_id;
+			status.link_id =
+				ath12k_dp_peer_convert_hw_to_logical_link_id(
+								peer->dp_peer,
+								link_id);
 		}
 		ieee80211_tx_status_ext(ath12k_dp_pdev_to_hw(dp_pdev), &status);
 	}
@@ -2588,8 +2591,7 @@ ath12k_wifi7_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 
 	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, ts->peer_id);
 	if (peer)
-		link_id = ath12k_dp_peer_get_stats_link_id(dp->ab, peer,
-							   ts->hw_link_id);
+		link_id = ath12k_dp_validate_hw_link_id(ts->hw_link_id);
 
 	/* For FAST path packets (bypassing mac80211), collect peer stats and
 	 * free the SKB with dev_kfree_skb_any() before reaching the switch
@@ -2844,7 +2846,7 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp_pkt_info *tx_dropped;
 	struct ath12k *ar;
 	struct ath12k_dp_peer *peer = NULL;
-	u8 link_id = 0;
+	u8 hw_link_id = 0;
 	u8 reason = 0;
 	u8 tid = 0;
 	u8 vow_tid = 0;
@@ -2905,17 +2907,16 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, ts->peer_id);
 
 	if (peer) {
-		link_id = ath12k_dp_peer_get_stats_link_id(dp->ab, peer,
-							   ts->hw_link_id);
+		hw_link_id = ath12k_dp_validate_hw_link_id(ts->hw_link_id);
 		ath12k_dp_tx_update_peer_basic_stats(peer, msdu_len, ts->status,
-						     link_id, ring);
+						     hw_link_id, ring);
 
 		if (unlikely(ath12k_dp_stats_enabled(dp_pdev))) {
 			if (ath12k_dp_debug_stats_enabled(dp_pdev))
 				ath12k_dp_tx_comp_update_peer_stats(peer, ts,
 								    ring,
 								    tx_desc_flags,
-								    link_id,
+								    hw_link_id,
 								    msdu_len);
 			if (unlikely(ath12k_debugfs_is_qos_stats_enabled(ar)))
 				ath12k_qos_stats_update(ar, msdu, ts,
@@ -2924,8 +2925,11 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 
 			/* Update peer level protocol stats at TX completion */
 			if (unlikely(ath12k_proto_stats_enabled(dp_pdev))) {
-				ath12k_dp_tx_peer_update_proto_stats(peer, link_id, msdu,
-								     TX_COMP, ring);
+				ath12k_dp_tx_peer_update_proto_stats(peer,
+								     hw_link_id,
+								     msdu,
+								     TX_COMP,
+								     ring);
 			}
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 			if (peer->is_mmesh_peer)
@@ -3053,9 +3057,12 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 		status.rates = &status_rate;
 		status.n_rates = 1;
 
-		if (status.sta && status.sta->valid_links && (link_id >= 0)) {
+		if (status.sta && status.sta->valid_links && (hw_link_id >= 0)) {
 			status.link_valid = 1;
-			status.link_id = link_id;
+			status.link_id =
+				ath12k_dp_peer_convert_hw_to_logical_link_id(
+								peer,
+								hw_link_id);
 		}
 		ieee80211_tx_status_ext(ath12k_dp_pdev_to_hw(dp_pdev), &status);
 	}
@@ -3655,6 +3662,7 @@ void ath12k_ppeds_tx_update_stats(struct ath12k *ar, int skb_len,
 	u8 reason, link_id = 0;
 	int ring_id = 0;
 	int vow_tid = 0;
+	u8 hw_link_id = 0;
 
 	memset(&info, 0, sizeof(info));
 	info.status.rates[0].idx = -1;
@@ -3708,12 +3716,17 @@ void ath12k_ppeds_tx_update_stats(struct ath12k *ar, int skb_len,
 		rcu_read_unlock();
 		return;
 	}
-	link_id = ath12k_dp_peer_get_stats_link_id(ab, peer->dp_peer, ts.hw_link_id);
+
+	hw_link_id = ath12k_dp_validate_hw_link_id(ts.hw_link_id);
+	link_id = ath12k_dp_peer_convert_hw_to_logical_link_id(peer->dp_peer,
+							       hw_link_id);
+
 	/* Update peer TX statistics for PPE DS offload path */
-	ath12k_dp_tx_ppeds_update_peer_basic_stats(peer->dp_peer, ts.status, link_id);
+	ath12k_dp_tx_ppeds_update_peer_basic_stats(peer->dp_peer, ts.status, hw_link_id);
 
 	if (unlikely(ath12k_dp_stats_enabled(dp_pdev))) {
-		ath12k_dp_tx_ppeds_update_peer_debug_stats(peer->dp_peer, &ts, link_id);
+		ath12k_dp_tx_ppeds_update_peer_debug_stats(peer->dp_peer, &ts,
+							   hw_link_id);
 		if (unlikely(ath12k_tid_stats_enabled(dp_pdev))) {
 			ahvif = ath12k_vif_to_ahvif(ath12k_dp_link_peer_get_vif(peer));
 			if (tx_drop) {

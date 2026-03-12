@@ -128,7 +128,10 @@ void ath12k_wifi7_convert_n_deliver_nw_frame(struct ath12k_pdev_dp *dp_pdev,
 	pubsta = peer->sta;
 	if (pubsta && pubsta->valid_links) {
 		status->link_valid = 1;
-		status->link_id = peer->hw_links[rx_spd->reo.src_link_id];
+		status->link_id =
+			ath12k_dp_peer_convert_hw_to_logical_link_id(
+							peer,
+							rx_spd->reo.src_link_id);
 	}
 
 	msdu->priority = rx_mpdu_info->tid;
@@ -512,6 +515,7 @@ ath12k_wifi7_dp_process_wbm_rx_packets(struct ath12k_dp *dp,
 			continue;
 		}
 
+		hw_link_id = ath12k_dp_validate_hw_link_id(hw_link_id);
 		link_id = peer->hw_links[hw_link_id];
 		ahvif = ath12k_vif_to_ahvif(peer->vif);
 
@@ -572,7 +576,7 @@ ath12k_wifi7_dp_process_wbm_rx_packets(struct ath12k_dp *dp,
 				DP_DEVICE_STATS_INC(dp, wbm_err.reo_error[error_code], 1);
 				DP_PEER_LINK_STATS_CNT(peer,
 						       wbm_err.reo_error[error_code], 1,
-						       link_id);
+						       hw_link_id);
 			} else {
 				reason = WBM_ERR_DROP_INVALID_PUSH_REASON;
 				ath12k_wifi7_dp_rx_wbm_err_dev_free_skb(dp, msdu, reason);
@@ -619,11 +623,11 @@ ath12k_wifi7_dp_process_wbm_rx_packets(struct ath12k_dp *dp,
 						    1);
 				DP_PEER_LINK_STATS_CNT(peer,
 						       wbm_err.rxdma_error[error_code],
-						       1, link_id);
+						       1, hw_link_id);
 				break;
 			case HAL_REO_ENTR_RING_RXDMA_ECODE_MULTICAST_ECHO_ERR:
 				drop = ath12k_dp_rx_h_mec_drop(dp_pdev, ahvif,
-							       link_id, peer_id);
+							       hw_link_id, peer_id);
 				if (drop)
 					drop_reason = ATH_RX_ECHO_ERR;
 				break;
