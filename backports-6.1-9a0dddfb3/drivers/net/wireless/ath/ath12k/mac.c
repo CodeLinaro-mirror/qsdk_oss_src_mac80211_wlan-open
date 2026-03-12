@@ -18453,15 +18453,17 @@ static struct ath12k *ath12k_mac_assign_vif_to_vdev(struct ieee80211_hw *hw,
 		if (arvif->ar->ab->is_bypassed)
 			return arvif->ar;
 
-		/* This is not expected really */
-		if (!test_bit(ATH12K_FLAG_RECOVERY,&arvif->ar->ab->dev_flags) && !arvif->is_created) {
-			WARN_ON(1);
-			arvif->ar = NULL;
-			return NULL;
-		}
+		if (!test_bit(ATH12K_FLAG_RECOVERY, &arvif->ar->ab->dev_flags)) {
+			/* This is not expected really */
+			if (!arvif->is_created) {
+				WARN_ON(1);
+				arvif->ar = NULL;
+				return NULL;
+			}
 
-		if (ah->num_radio == 1)
-			return arvif->ar;
+			if (ah->num_radio == 1)
+				return arvif->ar;
+		}
 
 		/* This can happen as scan vdev gets created during multiple scans
 		 * across different radios before a vdev is brought up in
@@ -18573,8 +18575,6 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 	ahvif->ah = ah;
 	ahvif->vif = vif;
 	arvif = &ahvif->deflink;
-	/* Clear pre-allocated deflink to reset the old residual data */
-	memset(arvif, 0, sizeof(*arvif));
 
 	ath12k_event_queue_init(&ahvif->event_queue, hw->wiphy, ahvif);
 

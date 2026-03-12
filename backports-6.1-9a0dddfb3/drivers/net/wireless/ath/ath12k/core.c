@@ -3808,10 +3808,10 @@ void ath12k_core_trigger_partner_device_crash(struct ath12k_base *ab)
 		 * method to ensure recovery of all partner chips in MODE0 instead of
 		 * relying on firmware to crash partner chips
 		 */
+		clear_bit(ATH12K_FLAG_UMAC_RECOVERY_START, &partner_ab->dev_flags);
 		if (!test_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags)) {
 			ath12k_info(ab, "sending fw_hang cmd to partner chipset(s)\n");
 			set_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags);
-			clear_bit(ATH12K_FLAG_UMAC_RECOVERY_START, &partner_ab->dev_flags);
 			partner_ab->qmi.num_radios = U8_MAX;
 			ath12k_wmi_force_fw_hang_cmd(partner_ab->pdevs[0].ar,
 					ATH12K_WMI_FW_HANG_ASSERT_TYPE,
