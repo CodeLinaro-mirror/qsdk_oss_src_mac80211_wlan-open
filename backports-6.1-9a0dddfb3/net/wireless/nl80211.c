@@ -23438,7 +23438,6 @@ void cfg80211_ch_switch_notify(struct net_device *dev,
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
 	struct wiphy *wiphy = wdev->wiphy;
 	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wiphy);
-	int dfs_required;
 
 	lockdep_assert_wiphy(wdev->wiphy);
 	WARN_INVALID_LINK_ID(wdev, link_id);
@@ -23470,13 +23469,8 @@ void cfg80211_ch_switch_notify(struct net_device *dev,
 		break;
 	}
 
-	dfs_required = cfg80211_chandef_dfs_required(wiphy, chandef, wdev->iftype);
-	if (nl80211_support_csa_on_dfs(rdev) && dfs_required > 0) {
-		cancel_delayed_work(&rdev->dfs_update_channels_wk);
-	} else {
-		cfg80211_schedule_channels_check(wdev);
-		cfg80211_sched_dfs_chan_update(rdev);
-	}
+	cfg80211_schedule_channels_check(wdev);
+	cfg80211_sched_dfs_chan_update(rdev);
 
 	nl80211_ch_switch_notify(rdev, dev, link_id, chandef, GFP_KERNEL,
 				 NL80211_CMD_CH_SWITCH_NOTIFY, 0, false);
