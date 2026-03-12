@@ -952,7 +952,7 @@ ieee80211_rx_monitor(struct ieee80211_local *local, struct sk_buff *origskb,
 
 		chandef = &sdata->vif.bss_conf.chanreq.oper;
 
-		if (chandef->chan &&
+		if (!chandef->chan ||
 		    chandef->chan->center_freq != status->freq) {
 			if (!(sdata->flags & IEEE80211_SDATA_OFFCHAN_PACKETS))
 				continue;
