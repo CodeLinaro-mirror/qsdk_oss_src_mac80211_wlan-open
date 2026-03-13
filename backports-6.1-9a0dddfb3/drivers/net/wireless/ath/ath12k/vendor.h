@@ -1089,6 +1089,10 @@ enum qca_wlan_vendor_attr_240mhz_info {
  *     Indicates that firmware recovery has completed successfully and the
  *     device is operational again.
  *
+ * @QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_DUMP_READY:
+ *     Indicates that the firmware crash dump or diagnostic data collection
+ *     is ready.
+ *
  * @QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_DUMP_COMPLETED:
  *     Indicates that the firmware crash dump or diagnostic data collection
  *     has finished.
@@ -1100,8 +1104,9 @@ enum qca_wlan_vendor_attr_240mhz_info {
 enum qca_nl80211_vendor_fw_recovery_event_type {
 	QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_RECOVERY_INVALID = 0,
 	QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_RECOVERY_DONE = 1,
-	QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_DUMP_COMPLETED = 2,
-	QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_FW_ASSERT = 3,
+	QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_DUMP_READY = 2,
+	QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_DUMP_COMPLETED = 3,
+	QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_FW_ASSERT = 4,
 };
 
 /**
