@@ -1229,6 +1229,9 @@ struct ath12k_hw_hal_params {
 	u32 reoq_lut_size;
 	u32 dp_rx_err_rdi;
 	u8 rx_mgmt_buf_rbm;
+	u16 rx_mon_refill_ring_size;
+	u16 rx_refill_ring_size;
+	u16 rx_mon_err_dst_ring_size;
 };
 
 struct ath12k_hw_regs {
