@@ -1027,7 +1027,7 @@ static int ath12k_wifi8_mgmt_rx_ring_setup(struct ath12k_base *ab)
 	ret = ath12k_wifi8_mgmt_rx_refill_ring_setup(ab);
 	if (ret) {
 		ath12k_err(ab, "Failed to initialize mgmt refill rings: %d", ret);
-		return ret;
+		goto err_srng_cleanup;
 	}
 
 	/* Initialize WBM ring with descriptors and buffers */
@@ -1072,8 +1072,11 @@ int ath12k_wifi8_mgmt_op_device_init(struct ath12k_mgmt *mgmt)
 	ret = ath12k_hif_mgmt_irq_setup(ab, mgmt);
 	if (ret) {
 		ath12k_warn(ab, "Failed to configure mgmt IRQs: %d", ret);
+		ath12k_mgmt_irq_grp_cleanup(mgmt);
 		goto fail_srng_free;
 	}
+
+	ath12k_hif_mgmt_irq_enable(ab);
 
 	return 0;
 
@@ -1090,6 +1093,8 @@ void ath12k_wifi8_mgmt_op_device_deinit(struct ath12k_mgmt *mgmt)
 {
 	struct ath12k_base *ab = mgmt->ab;
 
+	ath12k_hif_mgmt_irq_disable(ab);
+	ath12k_hif_mgmt_irq_cleanup(ab);
 	ath12k_mgmt_rx_desc_cleanup(ab);
 	ath12k_mgmt_irq_grp_cleanup(mgmt);
 	ath12k_hif_mgmt_irq_cleanup(ab);
@@ -1103,6 +1108,8 @@ int ath12k_wifi8_mgmt_wbm_ring_sel_config_qcn9625(struct ath12k_base *ab)
 	struct htt_rx_ring_tlv_filter tlv_filter = {0};
 	u32 hal_rx_desc_sz = ab->hal.hal_desc_sz;
 	int ret;
+
+	/* TODO: Configure HTT command with reference to C-UMAC mgmt rings */
 
 	tlv_filter.rx_filter = HTT_RX_TLV_FLAGS_RXDMA_RING;
 	tlv_filter.rxmon_disable = true;
@@ -1141,7 +1148,7 @@ int ath12k_wifi8_mgmt_wbm_ring_sel_config_qcn9625(struct ath12k_base *ab)
 	return ret;
 }
 
-static int ath12k_wifi8_mgmt_htt_setup(struct ath12k_mgmt *mgmt)
+static int ath12k_wifi8_mgmt_op_htt_setup(struct ath12k_mgmt *mgmt)
 {
 	struct ath12k_base *ab = mgmt->ab;
 	int ret;
@@ -1186,7 +1193,7 @@ ath12k_wifi8_mgmt_dump_ring_stats(struct ath12k_mgmt *mgmt, char *buf, int size)
 static struct ath12k_mgmt_arch_ops ath12k_wifi8_mgmt_arch_ops = {
 	.mgmt_op_device_init = ath12k_wifi8_mgmt_op_device_init,
 	.mgmt_op_device_deinit = ath12k_wifi8_mgmt_op_device_deinit,
-	.mgmt_op_htt_setup = ath12k_wifi8_mgmt_htt_setup,
+	.mgmt_op_htt_setup = ath12k_wifi8_mgmt_op_htt_setup,
 	.mgmt_op_dump_ring_stats = ath12k_wifi8_mgmt_dump_ring_stats,
 };
 
