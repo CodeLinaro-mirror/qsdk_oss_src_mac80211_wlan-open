@@ -56,6 +56,7 @@ enum ath12k_tx_q_state {
 	ATH12K_TX_Q_CREATED,
 	ATH12K_TX_Q_INIT_DONE,
 	ATH12K_TX_Q_DELETED,
+	ATH12K_TX_Q_MODIFIED,
 };
 
 struct ath12k_flow_metadata {
