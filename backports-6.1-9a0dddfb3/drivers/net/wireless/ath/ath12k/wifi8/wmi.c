@@ -67,6 +67,12 @@ void ath12k_wifi8_wmi_init_qcn9625(struct ath12k_base *ab,
 	if (test_bit(WMI_TLV_SERVICE_SDWF_LEVEL0, ab->wmi_ab.svc_map))
 		config->qos = true;
 
+	if (test_bit(WMI_TLV_SERVICE_ATF, ab->wmi_ab.svc_map)) {
+		config->atf_config |= WMI_RSRC_CFG_FLAG1_ATF_OFFLOAD_ENABLE;
+		config->carrier_config = ath12k_cfg_get(ab,
+							ATH12K_CFG_CARRIER_PROFILE_CFG);
+	}
+
 	config->max_beacon_size = ath12k_cfg_get(ab, ATH12K_CFG_AP_MAX_MGMT_FRM_SZ);
 	config->max_num_group_keys = ATH12K_GROUP_KEYS_NUM_MAX;
 	config->rep_ul_resp = ath12k_cfg_get(ab, ATH12K_CFG_REP_UL_RESP);
