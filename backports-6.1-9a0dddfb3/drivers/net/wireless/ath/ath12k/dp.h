@@ -1421,8 +1421,7 @@ void ath12k_dp_get_pdev_stats(struct ath12k_pdev_dp *pdev,
 int ath12k_dp_alloc_proto_stats_vif(struct ath12k_dp_vif *dp_vif);
 void ath12k_dp_free_proto_stats_vif(struct ath12k_dp_tx_vif_stats *vif_stats);
 int ath12k_dp_alloc_proto_stats(struct ath12k *ar);
-int ath12k_dp_alloc_proto_stats_peer(struct ath12k *ar,
-				     struct ath12k_dp_peer *dp_peer);
+int ath12k_dp_alloc_proto_stats_peer(struct ath12k_dp_peer *dp_peer);
 void ath12k_dp_free_proto_stats(struct ath12k *ar);
 void ath12k_dp_free_proto_stats_peer(struct ath12k_dp_peer *dp_peer);
 
