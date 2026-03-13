@@ -194,7 +194,7 @@ static void __ath12k_ahb_ext_irq_disable(struct ath12k_base *ab)
 {
 	int i;
 
-	for (i = 0; i < ATH12K_EXT_IRQ_GRP_NUM_MAX; i++) {
+	for (i = 0; i < ab->hw_params->ext_irq_grp_num_max; i++) {
 		struct ath12k_ext_irq_grp *irq_grp = &ab->ext_irq_grp[i];
 
 		ath12k_ahb_ext_grp_disable(irq_grp);
@@ -295,7 +295,7 @@ static void ath12k_ahb_sync_ext_irqs(struct ath12k_base *ab)
 	int i, j;
 	int irq_idx;
 
-	for (i = 0; i < ATH12K_EXT_IRQ_GRP_NUM_MAX; i++) {
+	for (i = 0; i < ab->hw_params->ext_irq_grp_num_max; i++) {
 		struct ath12k_ext_irq_grp *irq_grp = &ab->ext_irq_grp[i];
 
 		for (j = 0; j < irq_grp->num_irq; j++) {
@@ -343,7 +343,7 @@ static void ath12k_ahb_ext_irq_enable(struct ath12k_base *ab)
 	struct ath12k_ext_irq_grp *irq_grp;
 	int i;
 
-	for (i = 0; i < ATH12K_EXT_IRQ_GRP_NUM_MAX; i++) {
+	for (i = 0; i < ab->hw_params->ext_irq_grp_num_max; i++) {
 		irq_grp = &ab->ext_irq_grp[i];
 		if (!irq_grp->napi_enabled) {
 			napi_enable(&irq_grp->napi);
@@ -686,7 +686,7 @@ ath12k_ahb_config_ext_irq(struct ath12k_base *ab,
 
 	ring_mask = ab->hw_params->ring_mask;
 	hal_ops = ab->hw_params->hal_ops;
-	for (i = 0; i < ATH12K_EXT_IRQ_GRP_NUM_MAX; i++) {
+	for (i = 0; i < ab->hw_params->ext_irq_grp_num_max; i++) {
 		irq_grp = &ab->ext_irq_grp[i];
 		num_irq = 0;
 
@@ -863,7 +863,7 @@ static void ath12k_ahb_free_ext_irq(struct ath12k_base *ab)
 	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
-	for (i = 0; i < ATH12K_EXT_IRQ_GRP_NUM_MAX; i++) {
+	for (i = 0; i < ab->hw_params->ext_irq_grp_num_max; i++) {
 		struct ath12k_ext_irq_grp *irq_grp = &ab->ext_irq_grp[i];
 
 		for (j = 0; j < irq_grp->num_irq; j++)

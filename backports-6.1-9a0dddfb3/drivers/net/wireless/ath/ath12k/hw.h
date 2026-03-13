@@ -187,9 +187,7 @@ enum ath12k_bus {
 };
 
 /* Regular 12 Host DP interrupts + 3 PPEDS interrupts + 1 DP UMAC RESET interrupt*/
-#define ATH12K_EXT_IRQ_DP_NUM_VECTORS 16
-#define ATH12K_EXT_IRQ_GRP_NUM_MAX 12
-
+#define ATH12K_EXT_IRQ_NUM_MAX	16
 
 struct hal_rx_desc;
 struct hal_tcl_data_cmd;
@@ -197,26 +195,26 @@ struct htt_rx_ring_tlv_filter;
 enum hal_encrypt_type;
 
 struct ath12k_hw_ring_mask {
-	u8 tx[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
-	u8 rx_mon_dest[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
-	u8 rx_mon_status[ATH12K_EXT_IRQ_GRP_NUM_MAX];
-	u8 rx[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
-	u8 rx_err[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
-	u8 rx_wbm_rel[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
-	u8 reo_status[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
-	u8 host2rxdma[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
-	u8 tx_mon_dest[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
-	u8 tx_mon_buff[ATH12K_EXT_IRQ_DP_NUM_VECTORS]; /*host2txmon buff ring*/
-	u8 host2rxmon[ATH12K_EXT_IRQ_GRP_NUM_MAX];
+	u8 tx[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 rx_mon_dest[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 rx_mon_status[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 rx[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 rx_err[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 rx_wbm_rel[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 reo_status[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 host2rxdma[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 tx_mon_dest[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 tx_mon_buff[ATH12K_EXT_IRQ_NUM_MAX]; /*host2txmon buff ring*/
+	u8 host2rxmon[ATH12K_EXT_IRQ_NUM_MAX];
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	u8 ppe2tcl[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
-	u8 reo2ppe[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
-	u8 wbm2sw6_ppeds_tx_cmpln[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
+	u8 ppe2tcl[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 reo2ppe[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 wbm2sw6_ppeds_tx_cmpln[ATH12K_EXT_IRQ_NUM_MAX];
 #endif
-	u8 umac_dp_reset[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
-	u8 tx_exception[ATH12K_EXT_IRQ_GRP_NUM_MAX];
-	u8 tcl_status[ATH12K_EXT_IRQ_GRP_NUM_MAX];
-	u8 tqm_status[ATH12K_EXT_IRQ_GRP_NUM_MAX];
+	u8 umac_dp_reset[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 tx_exception[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 tcl_status[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 tqm_status[ATH12K_EXT_IRQ_NUM_MAX];
 };
 
 enum ath12k_m3_fw_loaders {

@@ -102,71 +102,6 @@ static const struct ath12k_hw_ops qcn9625_ops = {
 	.rx_peer_tid_skip_pn_replay = ath12k_wifi8_rx_peer_tid_skip_pn_replay_qcn9625,
 };
 
-/* To support 8 MSI DP grouping */
-static struct ath12k_hw_ring_mask ath12k_wifi8_hw_ring_mask_qcn9625_msi8 = {
-	.tx  = {
-		ATH12K_TX_RING_MASK_0,
-		ATH12K_TX_RING_MASK_1,
-		ATH12K_TX_RING_MASK_2 | ATH12K_TX_RING_MASK_3,
-		0, 0, 0, 0, 0
-	},
-	.host2rxmon = {
-		0, 0, 0,
-		ATH12K_HOST2RXMON_RING_MASK_0,
-	},
-	.rx_mon_dest = {
-		0, 0,
-		ATH12K_RX_MON_RING_MASK_0,
-		ATH12K_RX_MON_RING_MASK_1,
-		ATH12K_RX_MON_RING_MASK_2,
-		0, 0, 0
-	},
-	.rx = {
-		0, 0, 0,
-		ATH12K_RX_RING_MASK_0,
-		ATH12K_RX_RING_MASK_1,
-		ATH12K_RX_RING_MASK_2 | ATH12K_RX_RING_MASK_3,
-		0, 0
-	},
-	.rx_err = {
-		0, 0,
-		ATH12K_RX_ERR_RING_MASK_0,
-		0, 0, 0, 0
-	},
-	.rx_wbm_rel = {
-		0, 0,
-		ATH12K_RX_WBM_REL_RING_MASK_0,
-		0, 0, 0, 0
-	},
-	.reo_status = {
-		0, 0,
-		ATH12K_REO_STATUS_RING_MASK_0,
-		0, 0, 0, 0
-	},
-	.tx_mon_dest = {
-		ATH12K_TX_MON_RING_MASK_0,
-		ATH12K_TX_MON_RING_MASK_1,
-		0, 0, 0, 0, 0, 0
-	},
-	.umac_dp_reset = {
-		0, 0, 0, 0, 0, 0, 0,
-		ATH12K_UMAC_RESET_INTR_MASK_0
-	},
-	.tx_exception = {
-		ATH12K_TX_EXCEPTION_RING_MASK_0,
-	},
-	.tcl_status = {
-		ATH12K_TCL_STATUS_RING_MASK_0,
-	},
-	.tqm_status = {
-		ATH12K_TQM_STATUS_RING_MASK_0,
-	},
-};
-
-#define ATH12K_PPE2TCL_RING_MASK_0 0x1
-#define ATH12K_REO2PPE_RING_MASK_0 0x1
-#define ATH12K_PPE_WBM2SW_RELEASE_RING_MASK_0 0x1
-
 static struct ath12k_hw_ring_mask ath12k_wifi8_hw_ring_mask_qcn9625 = {
 	.tx  = {
 		ATH12K_TX_RING_MASK_0,
@@ -358,6 +293,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.ds_support = false,
 		.mlo_3_link_tx_support = true,
 		.board_magic = "QCA-ATH12K-BOARD",
+		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 	},
 };
 
@@ -1162,7 +1098,6 @@ static const struct ieee80211_ops ath12k_ops_wifi8 = {
 int ath12k_wifi8_hw_init(struct ath12k_base *ab)
 {
 	struct ath12k_hw_params *hw_params = NULL;
-	struct ath12k_hw_params *hw_params_msi8 = NULL;
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(ath12k_wifi8_hw_params); i++) {
@@ -1178,17 +1113,7 @@ int ath12k_wifi8_hw_init(struct ath12k_base *ab)
 		return -EINVAL;
 	}
 
-	if (ab->hif.bus == ATH12K_BUS_PCI &&
-	    ab->msi.config->total_vectors == ATH12K_MSI_16) {
-		hw_params_msi8 = kzalloc(sizeof(*hw_params_msi8), GFP_KERNEL);
-		if (!hw_params_msi8)
-			return -ENOMEM;
-		memcpy(hw_params_msi8, hw_params, sizeof(struct ath12k_hw_params));
-		hw_params_msi8->ring_mask = &ath12k_wifi8_hw_ring_mask_qcn9625_msi8;
-		ab->hw_params = hw_params_msi8;
-	} else {
-		ab->hw_params = hw_params;
-	}
+	ab->hw_params = hw_params;
 	ab->ath12k_ops = &ath12k_ops_wifi8;
 
 	ath12k_info(ab, "WiFi8 Hardware name: %s\n", ab->hw_params->name);

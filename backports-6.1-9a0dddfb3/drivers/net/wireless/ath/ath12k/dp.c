@@ -282,12 +282,12 @@ void ath12k_dp_srng_cleanup(struct ath12k_base *ab, struct dp_srng *ring)
 }
 EXPORT_SYMBOL(ath12k_dp_srng_cleanup);
 
-static int ath12k_dp_srng_find_ring_in_mask(int ring_num, const u8 *grp_mask, int size)
+static int ath12k_dp_srng_find_ring_in_mask(int ring_num, const u8 *grp_mask)
 {
 	int ext_group_num;
 	u8 mask = 1 << ring_num;
 
-	for (ext_group_num = 0; ext_group_num < size; ext_group_num++) {
+	for (ext_group_num = 0; ext_group_num < ATH12K_EXT_IRQ_NUM_MAX; ext_group_num++) {
 		if (mask & grp_mask[ext_group_num])
 			return ext_group_num;
 	}
@@ -301,7 +301,7 @@ static int ath12k_dp_srng_calculate_msi_group(struct ath12k_base *ab,
 	const struct ath12k_hal_tcl_to_cmp_rbm_map *map;
 	struct ath12k_hw_ring_mask *ring_mask;
 	const u8 *grp_mask;
-	int i, size = ATH12K_EXT_IRQ_DP_NUM_VECTORS;
+	int i;
 
 	ring_mask = ab->hw_params->ring_mask;
 	switch (type) {
@@ -337,7 +337,6 @@ static int ath12k_dp_srng_calculate_msi_group(struct ath12k_base *ab,
 		break;
 	case HAL_RXDMA_MONITOR_STATUS:
 		grp_mask = &ab->hw_params->ring_mask->rx_mon_status[0];
-		size = ATH12K_EXT_IRQ_GRP_NUM_MAX;
 		break;
 	case HAL_RXDMA_MONITOR_DST:
 		grp_mask = &ring_mask->rx_mon_dest[0];
@@ -370,7 +369,6 @@ static int ath12k_dp_srng_calculate_msi_group(struct ath12k_base *ab,
 		break;
 	case HAL_RXDMA_MONITOR_BUF:
 		grp_mask = &ab->hw_params->ring_mask->host2rxmon[0];
-		size = ATH12K_EXT_IRQ_GRP_NUM_MAX;
 		break;
 
 	case HAL_TX_COMPLETION:
@@ -402,7 +400,7 @@ static int ath12k_dp_srng_calculate_msi_group(struct ath12k_base *ab,
 		return -ENOENT;
 	}
 
-	return ath12k_dp_srng_find_ring_in_mask(ring_num, grp_mask, size);
+	return ath12k_dp_srng_find_ring_in_mask(ring_num, grp_mask);
 }
 
 void ath12k_dp_srng_msi_setup(struct ath12k_base *ab,
