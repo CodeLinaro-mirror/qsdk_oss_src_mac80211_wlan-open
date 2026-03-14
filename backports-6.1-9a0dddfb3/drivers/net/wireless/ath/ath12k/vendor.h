@@ -664,16 +664,16 @@ enum qca_wlan_vendor_attr_config {
 	 */
 	QCA_WLAN_VENDOR_ATTR_IF_OFFLOAD_TYPE = 120,
 
-	/* 8-bit unsigned value to configure VAP submodes, This enables to
-	 * have QCA Proprietary VAP modes.
-	 */
-	QCA_WLAN_VENDOR_ATTR_CONFIG_VAP_SUBMODE = 141,
-
 	/* Nested attribute to configure or report Estimated Service Parameters
 	 * (ESP). This contains nested attributes defined in
 	 * enum qca_wlan_vendor_attr_config_esp_param.
 	 */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PARAMS = 143,
+
+	/* 8-bit unsigned value to configure VAP submodes, This enables to
+	 * have QCA Proprietary VAP modes.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_VAP_SUBMODE = 144,
 
 	/* 8-bit unsigned value. Used to specify the HW Radio Index of a wiphy
 	 * device that is being configured. This attribute may be included in
