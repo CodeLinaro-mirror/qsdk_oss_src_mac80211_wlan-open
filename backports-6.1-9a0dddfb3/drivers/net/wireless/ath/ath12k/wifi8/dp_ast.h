@@ -28,6 +28,8 @@ struct ath12k_dp_hw_group;
 
 /* TODO: Enable ASE RX cache once HW offload for intra-BSS traffic is available */
 #define ATH12K_ASE_RX_CACHE_EN	0
+#define ATH12K_AST_INDEX_SHIFT			0x4
+#define ATH12K_AST_HASH_MASK			0xF
 
 struct ath12k_dp_hw_group;
 struct ath12k_dp;
