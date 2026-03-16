@@ -5411,6 +5411,9 @@ void ath12k_peer_assoc_prepare(struct ath12k *ar,
 	ath12k_peer_assoc_h_ttlm(arsta, arg);
 	ath12k_peer_assoc_h_flowq(arsta, arvif, arg);
 	ath12k_peer_assoc_h_holq(arsta, arvif, arg);
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	ath12k_peer_assoc_h_auth_extn(arvif, arsta, arg);
+#endif
 
 	arsta->peer_nss = arg->peer_nss;
 
@@ -5420,7 +5423,7 @@ void ath12k_peer_assoc_prepare(struct ath12k *ar,
 
 	/* TODO: amsdu_disable req? */
 }
-#ifdef CPTCFG_QCN_EXTN
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 EXPORT_SYMBOL(ath12k_peer_assoc_prepare);
 #endif
 
