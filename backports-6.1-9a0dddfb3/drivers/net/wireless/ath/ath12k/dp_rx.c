@@ -455,6 +455,7 @@ static void ath12k_dp_rx_enqueue_free(struct ath12k_dp *dp,
 		ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap
 			(ab, skb, DP_RX_BUFFER_SIZE, 0,
 			 ab->ath12k_base_extn.ipa_ctx->hdl);
+	rx_desc->ipa_mapped = false;
 
 	ath12k_core_dma_unmap_single(dp->dev,
 				     ATH12K_SKB_CB(skb)->paddr,
@@ -528,6 +529,7 @@ void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 			ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap
 				(ab, skb, DP_RX_BUFFER_SIZE, 1,
 				 ab->ath12k_base_extn.ipa_ctx->hdl);
+		rx_desc->ipa_mapped = true;
 #endif
 	}
 
@@ -1684,6 +1686,12 @@ ath12k_dp_primary_peer_migrate_setup(struct ath12k_dp *dp, void *ctx,
 	arsta->arvif->primary_sta_link = true;
 	peer->primary_link = true;
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	ath12k_info(mig_ab, "primary_link migration complete. sending WLAN_CLIENT_CONNECT_EX ml_addr=%pM",
+		    peer->ml_addr);
+	ath12k_ipa_enqueue_evt(WLAN_CLIENT_CONNECT_EX, arsta->arvif, peer->ml_addr, true);
+#endif
+
 	spin_unlock_bh(&mig_dp->dp_lock);
 	ret = ath12k_vendor_put_umac_migration_notif(peer->vif, peer->sta->addr, peer->link_id);
 	if (ret)
@@ -1742,6 +1750,12 @@ ath12k_dp_peer_migrate(struct ath12k_sta *ahsta, u16 peer_id,
 
 	peer->primary_link = false;
 	arsta->arvif->primary_sta_link = false;
+
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	ath12k_info(ab, "primary_link migration started. sending WLAN_CLIENT_DISCONNECT ml_addr=%pM",
+		    peer->ml_addr);
+	ath12k_ipa_enqueue_evt(WLAN_CLIENT_DISCONNECT, arsta->arvif, peer->ml_addr, true);
+#endif
 
 	ret = ath12k_dp_arch_peer_migrate_reo_cmd(dp, peer, peer_id,
 						  chip_id);

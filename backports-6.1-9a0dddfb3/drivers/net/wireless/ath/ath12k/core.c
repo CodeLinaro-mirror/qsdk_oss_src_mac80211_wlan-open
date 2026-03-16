@@ -2467,6 +2467,35 @@ static void ath12k_core_pre_reconfigure_recovery(struct ath12k_base *ab)
 	wake_up(&ab->peer_mapping_wq);
 }
 
+/* Notify IPA of AP disconnect before list is cleared */
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+static void ath12k_core_ipa_ap_disconnect(struct ath12k_base *ab)
+{
+	struct ath12k *ar;
+	struct ath12k_link_vif *arvif;
+	struct ieee80211_vif *vif;
+	bool is_mlo;
+	int j;
+
+	for (j = 0; j < ab->num_radios; j++) {
+		ar = ab->pdevs[j].ar;
+		if (!ar || ar->ab->is_bypassed)
+			continue;
+
+		list_for_each_entry(arvif, &ar->arvifs, list) {
+			vif = arvif->ahvif ? arvif->ahvif->vif : NULL;
+			if (arvif->ahvif &&
+					arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP
+					&& vif) {
+				is_mlo = vif->valid_links ? true : false;
+				ath12k_ipa_enqueue_evt(WLAN_AP_DISCONNECT, arvif,
+						       arvif->bssid, is_mlo);
+			}
+		}
+	}
+}
+#endif
+
 static void ath12k_update_11d(struct work_struct *work)
 {
 	struct ath12k_base *ab = container_of(work, struct ath12k_base, update_11d_work);
@@ -3800,6 +3829,13 @@ static void ath12k_core_reset(struct work_struct *work)
 	}
 
 	ath12k_dbg(ab, ATH12K_DBG_BOOT, "reset starting\n");
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE0) {
+		ath12k_info(ab, "IPA SSR Reset Started\n");
+		ath12k_core_ipa_ap_disconnect(ab);
+		ath12k_ipa_plugin_deregister_ops(ab);
+	}
+#endif
 
 	mutex_lock(&ag->mutex);
 

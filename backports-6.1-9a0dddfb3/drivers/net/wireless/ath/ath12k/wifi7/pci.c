@@ -149,6 +149,10 @@ static int ath12k_wifi7_pci_probe(struct pci_dev *pdev,
 		return ret;
 	}
 
+#ifdef PLATFORM_SDX85
+	device_set_wakeup_enable(ab->dev, true);
+	pm_stay_awake(ab->dev);
+#endif
 	return 0;
 }
 

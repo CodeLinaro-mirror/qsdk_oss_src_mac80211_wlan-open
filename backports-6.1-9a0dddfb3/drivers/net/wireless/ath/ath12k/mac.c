@@ -40,6 +40,9 @@
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 #include "qcn_extns/ipa/dp_ipa.h"
 #endif
+#ifdef CPTCFG_EXT_IPA_STATS
+#include "qcn_extns/ipa/dp_ipa_stats.h"
+#endif
 
 #define CHAN2G(_channel, _freq, _flags) { \
 	.band                   = NL80211_BAND_2GHZ, \
@@ -5455,7 +5458,10 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 	INIT_LIST_HEAD(&arvif->peer_migrate_list);
 
 	ath12k_mac_init_arvif_extn(ahvif);
-
+#ifdef CPTCFG_EXT_IPA_STATS
+	arvif->extn.stats
+		= kzalloc(sizeof(struct ath12k_dp_ipa_stats_vif_hw_stats), GFP_KERNEL);
+#endif
 	wiphy_work_init(&arvif->set_dscp_tid_work,
 			ath12k_set_dscp_tid_work);
 
@@ -5640,7 +5646,10 @@ static void ath12k_mac_unassign_link_vif(struct ath12k_link_vif *arvif)
 	struct ath12k_hw *ah = ahvif->ah;
 
 	lockdep_assert_wiphy(ah->hw->wiphy);
-
+#ifdef CPTCFG_EXT_IPA_STATS
+	kfree(arvif->extn.stats);
+	arvif->extn.stats = NULL;
+#endif
 	ahvif->links_map &= ~BIT(arvif->link_id);
 	rcu_assign_pointer(ahvif->link[arvif->link_id], NULL);
 	synchronize_rcu();
@@ -15716,6 +15725,11 @@ ath12k_mac_get_vdev_stats_id(struct ath12k_link_vif *arvif)
 	struct ath12k_base *ab = arvif->ar->ab;
 	u8 vdev_stats_id = 0;
 
+	if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
+		arvif->vdev_stats_id = ATH12K_INVAL_VDEV_STATS_ID;
+		return ATH12K_INVAL_VDEV_STATS_ID;
+	}
+
 	do {
 		if (ab->free_vdev_stats_id_map & (1LL << vdev_stats_id)) {
 			vdev_stats_id++;
@@ -17001,6 +17015,9 @@ static int ath12k_mac_vdev_delete(struct ath12k *ar, struct ath12k_link_vif *arv
 
 	spin_lock_bh(&ar->ab->base_lock);
 	ab->free_vdev_map |= 1LL << arvif->vdev_id;
+	if (arvif->vdev_stats_id != ATH12K_INVAL_VDEV_STATS_ID)
+		ab->free_vdev_stats_id_map &= ~(1LL << arvif->vdev_stats_id);
+
 	spin_unlock_bh(&ar->ab->base_lock);
 
 	ar->allocated_vdev_map &= ~(1LL << arvif->vdev_id);

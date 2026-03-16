@@ -28,6 +28,9 @@
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 #include "../qcn_extns/ipa/dp_ipa.h"
 #endif
+#ifdef CPTCFG_EXT_IPA_STATS
+#include "../qcn_extns/ipa/dp_ipa_stats.h"
+#endif
 #include "../fse.h"
 
 #define ATH12K_DP_RX_FRAGMENT_TIMEOUT_MS (2 * HZ)
@@ -1712,6 +1715,7 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 			ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap(ab,
 					msdu, DP_RX_BUFFER_SIZE, 0,
 					ab->ath12k_base_extn.ipa_ctx->hdl);
+		desc_info->ipa_mapped = false;
 
 		ath12k_core_dma_unmap_single(dp->dev, ATH12K_SKB_CB(msdu)->paddr,
 					     DP_RX_BUFFER_SIZE,
@@ -2060,6 +2064,9 @@ ath12k_wifi7_dp_rx_h_defrag_reo_reinject(struct ath12k_dp *dp,
 	desc_info->paddr = buf_paddr;
 	desc_info->vaddr = defrag_skb->data;
 	desc_info->is_frag = 1;
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	desc_info->ipa_mapped = true;
+#endif
 
 	list_del(&desc_info->list);
 	spin_unlock_bh(&dp->rx_desc_lock);
@@ -2127,6 +2134,9 @@ err_free_desc:
 	spin_lock_bh(&dp->rx_desc_lock);
 	desc_info->in_use = false;
 	desc_info->skb = NULL;
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	desc_info->ipa_mapped = false;
+#endif
 	list_add_tail(&desc_info->list, &dp->rx_desc_free_list);
 	spin_unlock_bh(&dp->rx_desc_lock);
 err_unmap_dma:
@@ -2419,6 +2429,7 @@ ath12k_wifi7_dp_process_rx_err_buf(struct ath12k_pdev_dp *dp_pdev,
 		ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap(ab,
 				msdu, DP_RX_BUFFER_SIZE, 0,
 				ab->ath12k_base_extn.ipa_ctx->hdl);
+	desc_info->ipa_mapped = false;
 	ath12k_core_dma_unmap_single(ab->dev,
 				     ATH12K_SKB_CB(msdu)->paddr,
 				     DP_RX_BUFFER_SIZE, DMA_FROM_DEVICE);
@@ -2527,6 +2538,20 @@ static int ath12k_wifi7_handle_msdu_buftype(struct ath12k_dp *dp,
 
 	end = desc_info->vaddr + DP_RX_BUFFER_SIZE;
 	ath12k_core_dmac_inv_range(desc_info->vaddr, end);
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	{
+		struct ath12k_base *ab = dp->ab;
+		if (ab->ath12k_base_extn.ipa_ctx &&
+		    ab->ath12k_base_extn.ipa_ctx->ipa_ops &&
+		    ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap)
+			ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap(ab,
+					msdu, DP_RX_BUFFER_SIZE, 0,
+					ab->ath12k_base_extn.ipa_ctx->hdl);
+		ath12k_core_dma_unmap_single(dp->dev, ATH12K_SKB_CB(msdu)->paddr,
+					     DP_RX_BUFFER_SIZE, DMA_FROM_DEVICE);
+		desc_info->ipa_mapped = false;
+	}
+#endif
 	dev_kfree_skb_any(msdu);
 
 	return 0;
@@ -2701,9 +2726,15 @@ static inline void ath12k_wifi7_dp_rx_h_err_update_peer_stats(struct ath12k_pdev
 		switch(rxcb->err_rel_src) {
 		case HAL_WBM_REL_SRC_MODULE_REO:
 			DP_PEER_LINK_STATS_CNT(peer, wbm_err.reo_error[rxcb->err_code], 1, link_id);
+#ifdef CPTCFG_EXT_IPA_STATS
+			ath12k_dp_ipa_rx_error_stats(dp_pdev, rxcb, link_id);
+#endif
 			break;
 		case HAL_WBM_REL_SRC_MODULE_RXDMA:
 			DP_PEER_LINK_STATS_CNT(peer, wbm_err.rxdma_error[rxcb->err_code], 1, link_id);
+#ifdef CPTCFG_EXT_IPA_STATS
+			ath12k_dp_ipa_rx_error_stats(dp_pdev, rxcb, link_id);
+#endif
 			break;
 		default:
 			break;
@@ -3385,6 +3416,7 @@ int ath12k_wifi7_dp_rx_process_wbm_err(struct ath12k_dp *dp,
 			ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap(ab,
 					msdu, DP_RX_BUFFER_SIZE, 0,
 					ab->ath12k_base_extn.ipa_ctx->hdl);
+		desc_info->ipa_mapped = false;
 		ath12k_core_dma_unmap_single(dp->dev, ATH12K_SKB_CB(msdu)->paddr,
 					     DP_RX_BUFFER_SIZE, DMA_FROM_DEVICE);
 #endif

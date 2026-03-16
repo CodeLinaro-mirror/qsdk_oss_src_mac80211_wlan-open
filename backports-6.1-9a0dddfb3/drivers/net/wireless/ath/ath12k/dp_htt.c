@@ -14,6 +14,10 @@
 #include "dp_mon.h"
 #include "dp_mon_filter.h"
 
+#ifdef CPTCFG_EXT_IPA_STATS
+#include "qcn_extns/ipa/dp_ipa_stats.h"
+#endif
+
 static void ath12k_dp_htt_htc_tx_complete(struct ath12k_base *ab,
 					  struct sk_buff *skb)
 {
@@ -1573,6 +1577,11 @@ void ath12k_dp_htt_htc_t2h_msg_handler(struct ath12k_base *ab,
 	case HTT_T2H_MSG_TYPE_PRIMARY_LINK_PEER_MIGRATE_IND:
 		ath12k_htt_pri_link_peer_migrate_indication(ab, skb);
 		break;
+#ifdef CPTCFG_EXT_IPA_STATS
+	case HTT_T2H_MSG_TYPE_VDEV_TXRX_STATS_PERIODIC_IND:
+		ath12k_dp_ipa_htt_vdev_txrx_stats_handler(ab, skb);
+		break;
+#endif
 	default:
 		ath12k_dbg(ab, ATH12K_DBG_DP_HTT, "dp_htt event %d not handled\n",
 			   type);
