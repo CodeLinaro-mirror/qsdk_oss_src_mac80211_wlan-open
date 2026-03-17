@@ -10292,7 +10292,7 @@ ath12k_htt_print_rx_pdev_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 	for (j = 0; j < ATH12K_HTT_RX_PDEV_STATS_NUM_SPATIAL_STREAMS; j++) {
 		len += scnprintf(buf + len, buf_len - len,
 				 "pilot_evm_db[%u] =", j);
-		len += print_array_to_buf(buf, len, NULL,
+		len += print_array_to_buf_s32(buf, len, NULL, 0,
 					  htt_stats_buf->rx_pil_evm_db[j],
 					  ATH12K_HTT_RX_PDEV_STATS_RXEVM_MAX_PILOTS_NSS,
 					  "\n");
