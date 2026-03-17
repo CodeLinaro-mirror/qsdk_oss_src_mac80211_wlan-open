@@ -4487,6 +4487,8 @@ static int ath12k_core_get_wsi_index(struct ath12k_hw_group *ag,
 	ab->bypass_wsi_info.index = (ag->num_devices + node_index - wsi_controller_index) %
 		ag->num_devices;
 
+	ath12k_dbg(ab, ATH12K_DBG_BOOT, "WSI index: %d, num_devices: %d\n",
+		   ab->wsi_info.index, ag->num_devices);
 	return 0;
 }
 
@@ -4627,6 +4629,7 @@ exit:
 	else if (ath12k_wsi_bypass_bmap)
 		ath12k_warn(ab, "single device does not support static WSI bypass\n");
 
+	ath12k_dbg(ab, ATH12K_DBG_BOOT, "chip_id: %d\n", ab->device_id);
 	ag->ab[ab->device_id] = ab;
 	ab->ag = ag;
 
