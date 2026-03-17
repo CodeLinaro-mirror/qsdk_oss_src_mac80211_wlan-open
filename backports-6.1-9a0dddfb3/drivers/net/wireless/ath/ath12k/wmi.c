@@ -211,6 +211,8 @@ static const struct ath12k_wmi_tlv_policy ath12k_wmi_tlv_policies[] = {
 		.min_len = sizeof(struct wmi_bcn_tx_status_event) },
 	[WMI_TAG_VDEV_STOPPED_EVENT] = {
 		.min_len = sizeof(struct wmi_vdev_stopped_event) },
+	[WMI_TAG_VDEV_TPC_IE_POWER_EVENT] = {
+		.min_len = sizeof(struct wmi_vdev_tpc_ie_power_event) },
 	[WMI_TAG_REG_CHAN_LIST_CC_EXT_EVENT] = {
 		.min_len = sizeof(struct wmi_reg_chan_list_cc_ext_event) },
 	[WMI_TAG_MGMT_RX_HDR] = {
@@ -16599,6 +16601,66 @@ int ath12k_wmi_send_dps_assist_cmd(struct ath12k *ar, u32 vdev_id, u32 config)
 	return ret;
 }
 
+static void ath12k_vdev_tpc_ie_power_event(struct ath12k_base *ab,
+					   struct sk_buff *skb)
+{
+	const struct wmi_vdev_tpc_ie_power_event *ev;
+	struct ath12k_link_vif *arvif;
+	const void **tb;
+	u32 vdev_id;
+	s32 tx_pwr_qdbm;
+	s32 tpc_eirp_dbm;
+	s32 old_tpc_eirp_dbm;
+
+	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
+	if (IS_ERR(tb)) {
+		ath12k_warn(ab, "failed to parse tpc ie power event tlv: %ld\n",
+			    PTR_ERR(tb));
+		return;
+	}
+
+	ev = tb[WMI_TAG_VDEV_TPC_IE_POWER_EVENT];
+	if (!ev) {
+		ath12k_warn(ab, "failed to fetch tpc ie power event\n");
+		kfree(tb);
+		return;
+	}
+
+	vdev_id = le32_to_cpu(ev->vdev_id);
+	tx_pwr_qdbm = a_sle32_to_cpu(ev->tx_pwr);
+	tpc_eirp_dbm = tx_pwr_qdbm / ATH12K_TPC_QDBM_PER_DBM;
+	if (tpc_eirp_dbm > ATH12K_TPC_EIRP_DBM_MAX)
+		tpc_eirp_dbm = ATH12K_TPC_EIRP_DBM_MAX;
+	else if (tpc_eirp_dbm < ATH12K_TPC_EIRP_DBM_MIN)
+		tpc_eirp_dbm = ATH12K_TPC_EIRP_DBM_MIN;
+
+	rcu_read_lock();
+	arvif = ath12k_mac_get_arvif_by_vdev_id(ab, vdev_id);
+	if (!arvif) {
+		ath12k_warn(ab, "invalid vdev id in tpc ie power event %u\n",
+			    vdev_id);
+		rcu_read_unlock();
+		kfree(tb);
+		return;
+	}
+
+	old_tpc_eirp_dbm = arvif->tpc_ie_eirp;
+	if (old_tpc_eirp_dbm == tpc_eirp_dbm) {
+		rcu_read_unlock();
+		kfree(tb);
+		return;
+	}
+
+	arvif->tpc_ie_eirp = tpc_eirp_dbm;
+
+	if (arvif->is_up && arvif->ar)
+		wiphy_work_queue(ath12k_ar_to_hw(arvif->ar)->wiphy,
+				 &arvif->tpc_ie_eirp_work);
+
+	rcu_read_unlock();
+	kfree(tb);
+}
+
 static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
@@ -16659,6 +16721,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 		break;
 	case WMI_VDEV_STOPPED_EVENTID:
 		ath12k_vdev_stopped_event(ab, skb);
+		break;
+	case WMI_VDEV_TPC_IE_POWER_EVENTID:
+		ath12k_vdev_tpc_ie_power_event(ab, skb);
 		break;
 	case WMI_MGMT_RX_EVENTID:
 		ath12k_mgmt_rx_event(ab, skb);

@@ -110,6 +110,10 @@
 #define ATH12K_STA_ID_INVALID		0xFFFF
 #define ATH12K_VENDOR_VALID_INTF_BITMAP WMI_DCS_WLAN_INTF
 
+#define ATH12K_TPC_EIRP_DBM_MIN		(-128)
+#define ATH12K_TPC_EIRP_DBM_MAX		127
+#define ATH12K_TPC_QDBM_PER_DBM		4
+
 #define ATH12K_MAX_ADJACENT_CHIPS   2
 #define ATH12K_WSI_MAX_ARGS 4
 
@@ -663,6 +667,7 @@ struct ath12k_link_vif {
 	int num_legacy_stations;
 	int rtscts_prot_mode;
 	int txpower;
+	int tpc_ie_eirp;
 	bool rsnie_present;
 	bool wpaie_present;
 	struct ieee80211_chanctx_conf chanctx;
@@ -727,6 +732,7 @@ struct ath12k_link_vif {
 	bool set_wds_vdev_param;
 	int num_peers;
 	struct wiphy_work update_bcn_tx_status_work;
+	struct wiphy_work tpc_ie_eirp_work;
 	struct ath12k_vap_cfg vap_cfg;
 	u8 gtk_pn[IEEE80211_MAX_PN_LEN];
 	u8 bigtk_pn[IEEE80211_MAX_PN_LEN];

@@ -9,6 +9,7 @@
 #include <linux/etherdevice.h>
 #include <linux/bitfield.h>
 #include <linux/inetdevice.h>
+#include <linux/limits.h>
 #include <linux/of.h>
 #include <linux/module.h>
 #include <net/if_inet6.h>
@@ -2960,18 +2961,73 @@ static void ath12k_update_bcn_tx_status_work(struct wiphy *wiphy,
 	ath12k_mac_bcn_tx_event(arvif);
 }
 
-static void ath12k_update_bcn_template_work(struct wiphy *wiphy,
-					    struct wiphy_work *work)
+static int ath12k_vendor_send_tpc_eirp_event(struct ath12k_link_vif *arvif,
+					     s32 tpc_eirp_dbm)
 {
-        struct ath12k_link_vif *arvif = container_of(work, struct ath12k_link_vif,
-                                        update_bcn_template_work);
-        struct ath12k *ar = arvif->ar;
-        int ret = -EINVAL;
+	struct wireless_dev *wdev;
+	struct sk_buff *vendor_event;
+	int vendor_buffer_len = nla_total_size(sizeof(s32));
+
+	wdev = ieee80211_vif_to_wdev(arvif->ahvif->vif);
+	if (!wdev)
+		return -EINVAL;
+
+	if (wdev->valid_links)
+		vendor_buffer_len += nla_total_size(sizeof(u8));
+
+	vendor_event =
+	cfg80211_vendor_event_alloc(arvif->ar->ah->hw->wiphy, wdev,
+				    vendor_buffer_len,
+				    QCA_NL80211_VENDOR_SUBCMD_TPC_EIRP_EVENT_INDEX,
+				    GFP_KERNEL);
+	if (!vendor_event)
+		return -ENOMEM;
+
+	if (wdev->valid_links &&
+	    nla_put_u8(vendor_event,
+		       QCA_WLAN_VENDOR_ATTR_TPC_EIRP_EVENT_LINK_ID,
+		       arvif->link_id))
+		goto fail;
+
+	if (nla_put_s32(vendor_event,
+			QCA_WLAN_VENDOR_ATTR_TPC_EIRP_EVENT_EIRP_DBM,
+			tpc_eirp_dbm))
+		goto fail;
+
+	cfg80211_vendor_event(vendor_event, GFP_KERNEL);
+	return 0;
+
+fail:
+	kfree_skb(vendor_event);
+	return -EINVAL;
+}
+
+static void ath12k_update_tpc_ie_eirp_work(struct wiphy *wiphy,
+					   struct wiphy_work *work)
+{
+	struct ath12k_link_vif *arvif = container_of(work, struct ath12k_link_vif,
+						     tpc_ie_eirp_work);
 
 	lockdep_assert_wiphy(wiphy);
 
-        if (!ar)
-                return;
+	if (!arvif->ar || !arvif->ahvif || !arvif->ahvif->vif)
+		return;
+
+	ath12k_vendor_send_tpc_eirp_event(arvif, arvif->tpc_ie_eirp);
+}
+
+static void ath12k_update_bcn_template_work(struct wiphy *wiphy,
+					    struct wiphy_work *work)
+{
+	struct ath12k_link_vif *arvif = container_of(work, struct ath12k_link_vif,
+						     update_bcn_template_work);
+	struct ath12k *ar = arvif->ar;
+	int ret = -EINVAL;
+
+	lockdep_assert_wiphy(wiphy);
+
+	if (!ar)
+		return;
 
 	if (arvif->is_created && arvif->is_started)
 		ret = ath12k_mac_setup_bcn_tmpl(arvif);
@@ -6149,6 +6205,7 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 	arvif->num_stations = 0;
 	arvif->num_peers = 0;
 	arvif->splitphy_ds_bank_id = DP_INVALID_BANK_ID;
+	arvif->tpc_ie_eirp = INT_MIN;
 
 	ath12k_mac_init_arvif_rssi(arvif);
 
@@ -6157,6 +6214,8 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 		  ath12k_wmi_peer_chan_width_switch_work);
 	wiphy_work_init(&arvif->update_bcn_tx_status_work,
 			ath12k_update_bcn_tx_status_work);
+	wiphy_work_init(&arvif->tpc_ie_eirp_work,
+			ath12k_update_tpc_ie_eirp_work);
 
 	/* Initialize vap_cfg parameters to default values */
 	arvif->vap_cfg.bcn_tx_power = 255;
@@ -18957,6 +19016,8 @@ err_vdev_del:
 
 	wiphy_work_cancel(ath12k_ar_to_hw(ar)->wiphy,
 			  &arvif->update_bcn_tx_status_work);
+	wiphy_work_cancel(ath12k_ar_to_hw(ar)->wiphy,
+			  &arvif->tpc_ie_eirp_work);
 
 	return ret;
 }
