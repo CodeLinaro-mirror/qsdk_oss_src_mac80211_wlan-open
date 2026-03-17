@@ -3708,7 +3708,7 @@ void ath12k_dp_rx_update_protocol_stats(struct ath12k_dp_peer *dp_peer,
 {
 	u8 field = 0;
 
-	if (unlikely(!dp_peer->stats[link_id].proto))
+	if (!dp_peer || unlikely(!dp_peer->stats[link_id].proto))
 		return;
 
 	field = ath12k_dp_get_l3_protocol_type(skb);
