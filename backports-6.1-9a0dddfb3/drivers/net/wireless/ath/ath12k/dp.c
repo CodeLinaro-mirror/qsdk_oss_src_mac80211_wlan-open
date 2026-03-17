@@ -1299,7 +1299,10 @@ void ath12k_dp_cc_cleanup(struct ath12k_base *ab)
 	/* RX Descriptor cleanup */
 	spin_lock_bh(&dp->rx_desc_lock);
 
-	for (i = 0; i < ATH12K_NUM_RX_SPT_PAGES; i++) {
+	if (!dp->rxbaddr)
+		goto skip_rx_desc_cleanup;
+
+	for (i = 0; i < ab->hw_params->num_rx_spt_pages; i++) {
 		const void *end;
 
 		desc_info = dp->rxbaddr[i];
@@ -1320,7 +1323,7 @@ void ath12k_dp_cc_cleanup(struct ath12k_base *ab)
 		}
 	}
 
-	for (i = 0; i < ATH12K_NUM_RX_SPT_PAGES; i++) {
+	for (i = 0; i < ab->hw_params->num_rx_spt_pages; i++) {
 		if (!dp->rxbaddr[i])
 			continue;
 
@@ -1328,6 +1331,10 @@ void ath12k_dp_cc_cleanup(struct ath12k_base *ab)
 		dp->rxbaddr[i] = NULL;
 	}
 
+	kfree(dp->rxbaddr);
+	dp->rxbaddr = NULL;
+
+skip_rx_desc_cleanup:
 	spin_unlock_bh(&dp->rx_desc_lock);
 
 	/* TX Descriptor cleanup */
@@ -1433,7 +1440,7 @@ struct ath12k_rx_desc_info *ath12k_dp_get_rx_desc(struct ath12k_dp *dp,
 	spt_idx = u32_get_bits(cookie, ATH12K_DP_CC_COOKIE_SPT);
 
 	start_ppt_idx = dp->rx_ppt_base + ATH12K_RX_SPT_PAGE_OFFSET;
-	end_ppt_idx = start_ppt_idx + ATH12K_NUM_RX_SPT_PAGES;
+	end_ppt_idx = start_ppt_idx + dp->ab->hw_params->num_rx_spt_pages;
 
 	if (ppt_idx < start_ppt_idx ||
 	    ppt_idx >= end_ppt_idx ||
@@ -1672,10 +1679,15 @@ static int ath12k_dp_cc_desc_init(struct ath12k_base *ab)
 	u32 i, j, pool_id, tx_spt_page;
 	u32 ppt_idx, cookie_ppt_idx;
 
+	dp->rxbaddr = kcalloc(ab->hw_params->num_rx_spt_pages,
+			      sizeof(*dp->rxbaddr), GFP_KERNEL);
+	if (!dp->rxbaddr)
+		return -ENOMEM;
+
 	spin_lock_bh(&dp->rx_desc_lock);
 
-	/* First ATH12K_NUM_RX_SPT_PAGES of allocated SPT pages are used for RX */
-	for (i = 0; i < ATH12K_NUM_RX_SPT_PAGES; i++) {
+	/* First ab->hw_params->num_rx_spt_pages of allocated SPT pages are used for RX */
+	for (i = 0; i < ab->hw_params->num_rx_spt_pages; i++) {
 		rx_descs = kcalloc(ATH12K_MAX_SPT_ENTRIES, sizeof(*rx_descs),
 				   GFP_ATOMIC);
 
@@ -1756,7 +1768,7 @@ static int ath12k_dp_cmem_init(struct ath12k_base *ab,
 	case ATH12K_DP_RX_DESC:
 		cmem_base += ATH12K_PPT_ADDR_OFFSET(dp->rx_ppt_base);
 		start = ATH12K_RX_SPT_PAGE_OFFSET;
-		end = start + ATH12K_NUM_RX_SPT_PAGES;
+		end = start + ab->hw_params->num_rx_spt_pages;
 		break;
 	default:
 		ath12k_err(ab, "invalid descriptor type %d in cmem init\n", type);
@@ -1803,7 +1815,9 @@ int ath12k_dp_cc_init(struct ath12k_base *ab)
 		spin_lock_init(&dp->tx_desc_lock[i]);
 	}
 
-	dp->num_spt_pages = ATH12K_NUM_SPT_PAGES;
+	dp->num_spt_pages = ATH12K_NUM_TX_SPT_PAGES + ab->hw_params->num_rx_spt_pages +
+			ATH12K_NUM_PPEDS_TX_SPT_PAGES;
+
 	if (dp->num_spt_pages > ATH12K_MAX_PPT_ENTRIES)
 		dp->num_spt_pages = ATH12K_MAX_PPT_ENTRIES;
 
@@ -1815,7 +1829,7 @@ int ath12k_dp_cc_init(struct ath12k_base *ab)
 		return -ENOMEM;
 	}
 
-	dp->rx_ppt_base = ab->device_id * ATH12K_NUM_RX_SPT_PAGES;
+	dp->rx_ppt_base = ab->device_id * ab->hw_params->num_rx_spt_pages;
 
 	for (i = 0; i < dp->num_spt_pages; i++) {
 		dp->spt_info[i].vaddr = ath12k_hal_dma_alloc_coherent(ab->dev,
@@ -2077,7 +2091,7 @@ void ath12k_dp_umac_rx_desc_cleanup(struct ath12k_base *ab)
 	/* RX Descriptor cleanup */
 	spin_lock_bh(&dp->rx_desc_lock);
 
-	for (i = 0; i < ATH12K_NUM_RX_SPT_PAGES; i++) {
+	for (i = 0; i < ab->hw_params->num_rx_spt_pages; i++) {
 		desc_info = dp->rxbaddr[i];
 
 		for (j = 0; j < ATH12K_MAX_SPT_ENTRIES; j++) {

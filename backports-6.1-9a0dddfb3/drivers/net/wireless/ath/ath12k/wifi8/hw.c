@@ -25,6 +25,7 @@
 #include "../dp_peer.h"
 #include "../dp_tx.h"
 #include "dp_tx.h"
+#include "dp.h"
 #include "hal_qcn9625.h"
 #include "mgmt_rx.h"
 #include "dp_peer.h"
@@ -325,6 +326,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.mlo_3_link_tx_support = true,
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
+		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
 	},
 };
 

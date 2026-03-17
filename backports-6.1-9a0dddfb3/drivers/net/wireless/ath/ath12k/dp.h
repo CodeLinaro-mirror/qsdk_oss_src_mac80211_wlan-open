@@ -241,7 +241,6 @@ enum ath12k_dp_eapol_key_type {
 #define DP_PPE_WBM2SW_RING_SIZE	8192
 #define DP_RXDMA_BUF_RING_SIZE		4096
 /* TODO: revisit this count during testing */
-#define ATH12K_RX_DESC_COUNT           (8192)
 #define DP_RX_BUFFER_SIZE		1856
 #elif defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
 #define DP_TX_COMP_RING_SIZE           16384
@@ -251,7 +250,6 @@ enum ath12k_dp_eapol_key_type {
 #define DP_PPE_WBM2SW_RING_SIZE 8192
 #define DP_RXDMA_BUF_RING_SIZE      4096
 /* TODO: revisit this count during testing */
-#define ATH12K_RX_DESC_COUNT           (8192)
 #define DP_RX_BUFFER_SIZE       1856
 #else
 //#ifdef CONFIG_ATH12K_MEM_PROFILE_DEFAULT TODO Fix the Default profile enablement
@@ -266,7 +264,6 @@ enum ath12k_dp_eapol_key_type {
 #define DP_PPE_WBM2SW_RING_SIZE	32768
 #define DP_RXDMA_BUF_RING_SIZE		8192
 /* TODO: revisit this count during testing */
-#define ATH12K_RX_DESC_COUNT           (12288)
 #define DP_RX_BUFFER_SIZE		2048
 #endif
 
@@ -333,8 +330,6 @@ enum ath12k_dp_eapol_key_type {
 /* Total 512 entries in a SPT, i.e 4K Page/8 */
 #define ATH12K_MAX_SPT_ENTRIES	512
 
-#define ATH12K_NUM_RX_SPT_PAGES	((ATH12K_RX_DESC_COUNT) / ATH12K_MAX_SPT_ENTRIES)
-
 #define ATH12K_TX_SPT_PAGES_PER_POOL (ATH12K_NUM_POOL_TX_DESC / \
 					  ATH12K_MAX_SPT_ENTRIES)
 #define ATH12K_NUM_TX_SPT_PAGES	(ATH12K_TX_SPT_PAGES_PER_POOL * ATH12K_HW_MAX_QUEUES)
@@ -349,14 +344,6 @@ enum ath12k_dp_eapol_key_type {
 #else
 #define ATH12K_NUM_PPEDS_TX_SPT_PAGES 0
 #endif
-
-#define ATH12K_NUM_SPT_PAGES	(ATH12K_NUM_TX_SPT_PAGES + ATH12K_NUM_RX_SPT_PAGES + \
-				 ATH12K_NUM_PPEDS_TX_SPT_PAGES)
-
-/* The SPT pages are divided for RX and TX, first block for RX
- * and remaining for TX
- */
-#define ATH12K_NUM_TX_SPT_PAGE_START ATH12K_NUM_RX_SPT_PAGES
 
 #define ATH12K_DP_RX_DESC_MAGIC	0xBABABABA
 
@@ -768,7 +755,7 @@ struct ath12k_dp {
 	struct ath12k_spt_info *spt_info;
 	u32 num_spt_pages;
 	u32 rx_ppt_base;
-	struct ath12k_rx_desc_info *rxbaddr[ATH12K_NUM_RX_SPT_PAGES];
+	struct ath12k_rx_desc_info **rxbaddr;
 	struct ath12k_tx_desc_info *txbaddr[ATH12K_NUM_TX_SPT_PAGES];
 	struct ath12k_ppeds_tx_desc_info **ppedstxbaddr;
 	struct list_head rx_ppeds_reuse_list;

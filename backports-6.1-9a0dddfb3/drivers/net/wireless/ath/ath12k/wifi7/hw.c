@@ -29,6 +29,7 @@
 #include "../dp_peer.h"
 #include "../dp_tx.h"
 #include "dp_tx.h"
+#include "dp.h"
 #include "hal_qcn9274.h"
 #include "hal_wcn7850.h"
 #include "../cfr.h"
@@ -707,6 +708,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.quad_ring_monitor_support = false,
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
+		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
 	},
 	{
 		.name = "wcn7850 hw2.0",
@@ -818,6 +820,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.quad_ring_monitor_support = true,
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
+		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
 	},
 	{
 		.name = "qcn9274 hw2.0",
@@ -941,6 +944,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.quad_ring_monitor_support = false,
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
+		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
 	},
 	{
 		.name = "ipq5332 hw1.0",
@@ -1053,6 +1057,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.quad_ring_monitor_support = false,
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
+		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
 	},
 	{
 		.name = "qcn6432 hw1.0",
@@ -1143,6 +1148,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.quad_ring_monitor_support = false,
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
+		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
 	},
 	{
 		.name = "ipq5424 hw1.0",
@@ -1259,6 +1265,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.quad_ring_monitor_support = false,
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
+		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
 	},
 };
 
