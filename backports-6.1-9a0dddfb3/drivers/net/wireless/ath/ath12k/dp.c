@@ -2139,7 +2139,6 @@ void ath12k_dp_umac_tx_desc_cleanup(struct ath12k_base *ab)
 								     tx_desc_info[k].paddr_ext_desc,
 								     tx_desc_info[k].skb_ext_desc->len,
 								     DMA_TO_DEVICE);
-					tx_desc_info[k].skb_ext_desc = NULL;
 					skb_queue_tail(&ab->dp_umac_reset.tx_skb_queue,
 						       tx_desc_info[k].skb_ext_desc);
 				}
