@@ -1441,6 +1441,7 @@ struct ieee80211_rate_status {
  * @TX_MON_FLAG_CHAN_INFO: info for IEEE80211_RADIOTAP_CHANNEL
  * @TX_MON_FLAG_AMPDU_STATUS_INFO: info for IEEE80211_RADIOTAP_AMPDU_STATUS
  * @TX_MON_FLAG_LSIG_INFO: info for IEEE80211_RADIOTAP_LSIG (L-SIG field)
+ * @TX_MON_FLAG_HE_INFO: info for IEEE80211_RADIOTAP_HE (HE fields)
  * @TX_MON_FLAG_HE_MU_INFO: info for IEEE80211_RADIOTAP_HE_MU (HE MU fields)
  * @TX_MON_FLAG_EHT_USIG_INFO: info for IEEE80211_RADIOTAP_EHT_USIG (EHT U-SIG)
  * @TX_MON_FLAG_EHT_INFO: info for IEEE80211_RADIOTAP_EHT (EHT header)
@@ -1452,6 +1453,7 @@ enum mac80211_tx_mon_flags {
 	TX_MON_FLAG_CHAN_INFO,
 	TX_MON_FLAG_AMPDU_STATUS_INFO,
 	TX_MON_FLAG_LSIG_INFO,
+	TX_MON_FLAG_HE_INFO,
 	TX_MON_FLAG_HE_MU_INFO,
 	TX_MON_FLAG_EHT_USIG_INFO,
 	TX_MON_FLAG_EHT_INFO,
@@ -1488,6 +1490,7 @@ struct ieee80211_tx_mon_info {
 	u16 ampdu_flags;
 	u16 ampdu_reserved_flags;
 	struct ieee80211_radiotap_lsig lsig;
+	struct ieee80211_radiotap_he he;
 	struct ieee80211_radiotap_he_mu he_mu;
 	struct ieee80211_radiotap_eht_usig eht_usig;
 	u32 eht_num_users;

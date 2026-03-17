@@ -289,7 +289,8 @@ static int ieee80211_tx_radiotap_len(struct ieee80211_local *local,
 	}
 
 	/* IEEE80211_RADIOTAP_HE (field 23) - 2-byte alignment, 12 bytes */
-	if (status_rate && (status_rate->rate_idx.flags & RATE_INFO_FLAGS_HE_MCS))
+	if ((status_rate && (status_rate->rate_idx.flags & RATE_INFO_FLAGS_HE_MCS)) ||
+	    (has_mon_offload && tx_mon_hw_check(&status->mon_info, HE_INFO)))
 		len = ALIGN(len, 2) + 12;
 
 	/* IEEE80211_RADIOTAP_HE_MU (field 24) - 2-byte alignment, 12 bytes */
@@ -576,65 +577,78 @@ ieee80211_add_tx_radiotap_header(struct ieee80211_local *local,
 		pos = (u8 *)rthdr + ALIGN(pos - (u8 *)rthdr, 2);
 		he = (struct ieee80211_radiotap_he *)pos;
 
-		he->data1 = cpu_to_le16(IEEE80211_RADIOTAP_HE_DATA1_FORMAT_SU |
-					IEEE80211_RADIOTAP_HE_DATA1_DATA_MCS_KNOWN |
-					IEEE80211_RADIOTAP_HE_DATA1_DATA_DCM_KNOWN |
-					IEEE80211_RADIOTAP_HE_DATA1_BW_RU_ALLOC_KNOWN);
+		/* IEEE80211_RADIOTAP_HE - Hardware offload path */
+		if (has_mon_offload && tx_mon_hw_check(&status->mon_info, HE_INFO)) {
+			he->data1 = status->mon_info.he.data1;
+			he->data2 = status->mon_info.he.data2;
+			he->data3 = status->mon_info.he.data3;
+			he->data4 = status->mon_info.he.data4;
+			he->data5 = status->mon_info.he.data5;
+			he->data6 = status->mon_info.he.data6;
+		} else {
+			he->data1 = cpu_to_le16
+					(IEEE80211_RADIOTAP_HE_DATA1_FORMAT_SU |
+					 IEEE80211_RADIOTAP_HE_DATA1_DATA_MCS_KNOWN |
+					 IEEE80211_RADIOTAP_HE_DATA1_DATA_DCM_KNOWN |
+					 IEEE80211_RADIOTAP_HE_DATA1_BW_RU_ALLOC_KNOWN);
 
-		he->data2 = cpu_to_le16(IEEE80211_RADIOTAP_HE_DATA2_GI_KNOWN);
+			he->data2 = cpu_to_le16(IEEE80211_RADIOTAP_HE_DATA2_GI_KNOWN);
 
 #define HE_PREP(f, val) le16_encode_bits(val, IEEE80211_RADIOTAP_HE_##f)
 
-		he->data6 |= HE_PREP(DATA6_NSTS, status_rate->rate_idx.nss);
+			he->data6 |= HE_PREP(DATA6_NSTS, status_rate->rate_idx.nss);
 
 #define CHECK_GI(s) \
 	BUILD_BUG_ON(IEEE80211_RADIOTAP_HE_DATA5_GI_##s != \
 	(int)NL80211_RATE_INFO_HE_GI_##s)
+			CHECK_GI(0_8);
+			CHECK_GI(1_6);
+			CHECK_GI(3_2);
 
-		CHECK_GI(0_8);
-		CHECK_GI(1_6);
-		CHECK_GI(3_2);
+			he->data3 |= HE_PREP(DATA3_DATA_MCS,
+					status_rate->rate_idx.mcs);
+			he->data3 |= HE_PREP(DATA3_DATA_DCM,
+					status_rate->rate_idx.he_dcm);
 
-		he->data3 |= HE_PREP(DATA3_DATA_MCS, status_rate->rate_idx.mcs);
-		he->data3 |= HE_PREP(DATA3_DATA_DCM, status_rate->rate_idx.he_dcm);
+			he->data5 |= HE_PREP(DATA5_GI, status_rate->rate_idx.he_gi);
 
-		he->data5 |= HE_PREP(DATA5_GI, status_rate->rate_idx.he_gi);
-
-		switch (status_rate->rate_idx.bw) {
-		case RATE_INFO_BW_20:
-			he->data5 |= HE_PREP(DATA5_DATA_BW_RU_ALLOC,
-					     IEEE80211_RADIOTAP_HE_DATA5_DATA_BW_RU_ALLOC_20MHZ);
-			break;
-		case RATE_INFO_BW_40:
-			he->data5 |= HE_PREP(DATA5_DATA_BW_RU_ALLOC,
-					     IEEE80211_RADIOTAP_HE_DATA5_DATA_BW_RU_ALLOC_40MHZ);
-			break;
-		case RATE_INFO_BW_80:
-			he->data5 |= HE_PREP(DATA5_DATA_BW_RU_ALLOC,
-					     IEEE80211_RADIOTAP_HE_DATA5_DATA_BW_RU_ALLOC_80MHZ);
-			break;
-		case RATE_INFO_BW_160:
-			he->data5 |= HE_PREP(DATA5_DATA_BW_RU_ALLOC,
-					     IEEE80211_RADIOTAP_HE_DATA5_DATA_BW_RU_ALLOC_160MHZ);
-			break;
-		case RATE_INFO_BW_HE_RU:
+			switch (status_rate->rate_idx.bw) {
+			case RATE_INFO_BW_20:
+				he->data5 |= HE_PREP(DATA5_DATA_BW_RU_ALLOC,
+				IEEE80211_RADIOTAP_HE_DATA5_DATA_BW_RU_ALLOC_20MHZ);
+				break;
+			case RATE_INFO_BW_40:
+				he->data5 |= HE_PREP(DATA5_DATA_BW_RU_ALLOC,
+				IEEE80211_RADIOTAP_HE_DATA5_DATA_BW_RU_ALLOC_40MHZ);
+				break;
+			case RATE_INFO_BW_80:
+				he->data5 |= HE_PREP(DATA5_DATA_BW_RU_ALLOC,
+				IEEE80211_RADIOTAP_HE_DATA5_DATA_BW_RU_ALLOC_80MHZ);
+				break;
+			case RATE_INFO_BW_160:
+				he->data5 |= HE_PREP(DATA5_DATA_BW_RU_ALLOC,
+				IEEE80211_RADIOTAP_HE_DATA5_DATA_BW_RU_ALLOC_160MHZ);
+				break;
+			case RATE_INFO_BW_HE_RU:
 #define CHECK_RU_ALLOC(s) \
 	BUILD_BUG_ON(IEEE80211_RADIOTAP_HE_DATA5_DATA_BW_RU_ALLOC_##s##T != \
 	NL80211_RATE_INFO_HE_RU_ALLOC_##s + 4)
 
-			CHECK_RU_ALLOC(26);
-			CHECK_RU_ALLOC(52);
-			CHECK_RU_ALLOC(106);
-			CHECK_RU_ALLOC(242);
-			CHECK_RU_ALLOC(484);
-			CHECK_RU_ALLOC(996);
-			CHECK_RU_ALLOC(2x996);
+				CHECK_RU_ALLOC(26);
+				CHECK_RU_ALLOC(52);
+				CHECK_RU_ALLOC(106);
+				CHECK_RU_ALLOC(242);
+				CHECK_RU_ALLOC(484);
+				CHECK_RU_ALLOC(996);
+				CHECK_RU_ALLOC(2x996);
 
-			he->data5 |= HE_PREP(DATA5_DATA_BW_RU_ALLOC,
-					     status_rate->rate_idx.he_ru_alloc + 4);
-			break;
-		default:
-			WARN_ONCE(1, "Invalid SU BW %d\n", status_rate->rate_idx.bw);
+				he->data5 |= HE_PREP(DATA5_DATA_BW_RU_ALLOC,
+						status_rate->rate_idx.he_ru_alloc + 4);
+				break;
+			default:
+				WARN_ONCE(1, "Invalid SU BW %d\n",
+					  status_rate->rate_idx.bw);
+			}
 		}
 
 		pos += sizeof(struct ieee80211_radiotap_he);
