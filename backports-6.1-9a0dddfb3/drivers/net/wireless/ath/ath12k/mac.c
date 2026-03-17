@@ -6016,6 +6016,7 @@ u32 ath12k_mac_get_rate_hw_value(int bitrate)
 
 	return -EINVAL;
 }
+EXPORT_SYMBOL(ath12k_mac_get_rate_hw_value);
 
 static void ath12k_recalculate_mgmt_rate(struct ath12k *ar,
 					 struct ath12k_link_vif *arvif,
@@ -6162,6 +6163,8 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 	INIT_LIST_HEAD(&arvif->peer_migrate_list);
 
 	ath12k_mac_init_arvif_extn(ahvif);
+
+	arvif->bcast_rate_configured = false;
 
 	wiphy_work_init(&arvif->set_dscp_tid_work,
 			ath12k_set_dscp_tid_work);
@@ -8554,13 +8557,24 @@ skip_pending_cs_up:
 				    "failed to set mcast rate on vdev %i: %d\n",
 				    arvif->vdev_id,  ret);
 
-		vdev_param = WMI_VDEV_PARAM_BCAST_DATA_RATE;
-		ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
-						    vdev_param, rate);
-		if (ret)
-			ath12k_warn(ar->ab,
-				    "failed to set bcast rate on vdev %i: %d\n",
-				    arvif->vdev_id,  ret);
+		if (!arvif->bcast_rate_configured) {
+			vdev_param = WMI_VDEV_PARAM_BCAST_DATA_RATE;
+			ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
+							    vdev_param, rate);
+			if (ret) {
+				ath12k_warn(ar->ab,
+					    "failed to set bcast rate on vdev %i: %d\n",
+					    arvif->vdev_id,  ret);
+			} else {
+				/** Update driver state to reflect value
+				 *  sent to firmware
+				 */
+				arvif->bcast_rate = bitrate;
+				ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
+						 "mac vdev %d bcast_rate updated to %u (auto)\n",
+						 arvif->vdev_id, bitrate);
+			}
+		}
 	}
 
 	if (changed & BSS_CHANGED_BASIC_RATES &&
