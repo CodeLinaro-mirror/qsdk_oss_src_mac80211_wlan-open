@@ -53,6 +53,8 @@ struct ath12k_dp_wifi8 {
 	struct dp_srng fse_cmd_ring;
 	struct dp_srng sam_cmd_ring;
 	struct dp_srng sam_status_ring;
+	struct dp_srng rx_ase_cmd_ring;
+	struct dp_srng rx_ase_status_ring;
 };
 
 struct ath12k_dp_hw_group_wifi8 {

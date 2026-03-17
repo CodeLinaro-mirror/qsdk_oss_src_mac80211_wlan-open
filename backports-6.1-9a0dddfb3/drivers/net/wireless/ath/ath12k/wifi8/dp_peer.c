@@ -1056,7 +1056,8 @@ int ath12k_wifi8_dp_get_peer_init_status(struct ath12k_dp *dp,
 	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8 =
 			ath12k_get_dp_hw_group_wifi8(dp_hw_grp);
 
-	if (!ath12k_wifi8_dp_ase_tx_cache_enabled(dp_hw_grp))
+	if (!(ath12k_wifi8_dp_ase_tx_cache_enabled(dp_hw_grp) ||
+	      ath12k_wifi8_dp_ase_rx_cache_enabled(dp_hw_grp)))
 		return 0;
 
 	if (!wait_for_completion_timeout(&dp_hw_grp_wifi8->peer_init_done, 1 * HZ)) {

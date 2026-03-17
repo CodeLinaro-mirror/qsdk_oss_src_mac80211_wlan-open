@@ -2478,6 +2478,10 @@ ath12k_dp_tx_get_ring_id_type(struct ath12k_base *ab,
 		*htt_ring_type = HTT_SW_TO_HW_RING;
 		*htt_ring_id = HTT_RXDMA_WBM_BUF1_RING;
 		break;
+	case HAL_ASE_STATUS_RING:
+		*htt_ring_id = HTT_RXOLE_ASE_STATUS_RING;
+		*htt_ring_type = HTT_HW_TO_SW_RING;
+		break;
 	default:
 		ath12k_warn(ab, "Unsupported ring type in DP :%d\n", ring_type);
 		ret = -EINVAL;

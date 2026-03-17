@@ -430,6 +430,24 @@ struct hal_rx_flow {
 	    rx_sdwf_priority                                        :  6; // [31:26]
 };
 
+struct ath12k_hal_rx_cmd_ring_param {
+	u32 mac_addr_31_0;
+	u32 mac_addr_47_32:16,
+	    is_mcast:1,
+	    is_mec:1,
+	    ad1_match:1,
+	    link_id:3,
+	    reserved_0:10;
+	u32 meta_data_0;
+	u8 cmd_num:4,
+	   reserved:4;
+	u8 hw_link_bitmap;
+};
+
+int
+ath12k_wifi8_hal_invalidate_rx_cache_cmd_send(struct ath12k_base *ab,
+					      struct hal_srng *srng,
+					      struct ath12k_hal_rx_cmd_ring_param *param);
 void ath12k_wifi8_hal_reo_status_queue_stats(struct ath12k_base *ab,
 					     struct hal_tlv_64_hdr *tlv,
 					     struct hal_reo_status *status);

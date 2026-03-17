@@ -208,6 +208,10 @@ enum rdi_based_source_ring_selection {
 #define HAL_TX_EXCEPTION_RING_BASE_LSB		0x1dec
 #define HAL_TX_EXCEPTION_RING_HP		0x4080
 
+/* SW2WBM_ASE_CMD_RING address */
+#define HAL_SW2WBM_ASE_CMD_RING_BASE_LSB	0x1b48
+#define HAL_SW2WBM_ASE_CMD_RING_HP		0x3178
+
 /* PPE2TCL1 Ring address */
 #define HAL_TCL_PPE2TCL1_RING_BASE_LSB(hal) \
 	((hal)->regs->hal_tcl_ppe2tcl_ring_base_lsb)
@@ -682,6 +686,8 @@ enum rdi_based_source_ring_selection {
 #define HAL_RXDMA_RING_MAX_SIZE				0x000fffff
 #define HAL_RXDMA_RING_MAX_SIZE_BE			0x000fffff
 #define HAL_WBM2PPE_RELEASE_RING_BASE_MSB_RING_SIZE	0x0000ffff
+#define HAL_SW2WBM_ASE_CMD_RING_BASE_MSB_RING_SIZE	0x0000ffff
+#define HAL_SW2WBM_ASE_STATUS_RING_BASE_MSB_RING_SIZE	0x0000ffff
 #define HAL_WBM_IDLE_BUF_RING_MAX_SIZE                 0x000fffff
 #define HAL_WBM_BUF_RING_MAX_SIZE                      0x000fffff
 #define HAL_SAM_HOST_CMD_RING_BASE_MSB_RING_SIZE	0x000fffff

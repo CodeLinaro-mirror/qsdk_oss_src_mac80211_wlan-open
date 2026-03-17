@@ -25,6 +25,9 @@ struct ath12k_dp_hw_group;
 #define ATH12K_NUM_TX_CLASSIFY_BANKS		4
 #define ATH12K_MAX_TX_ASE_CMD_SEQ_NUM		0x7FFF
 
+/* TODO: Enable ASE RX cache once HW offload for intra-BSS traffic is available */
+#define ATH12K_ASE_RX_CACHE_EN	0
+
 struct ath12k_dp_hw_group;
 struct ath12k_dp;
 
@@ -37,6 +40,10 @@ enum ATH12K_AST_ENTRY_FLAGS {
 };
 
 enum ATH12K_AST_ENTRY_INVALIDATE_STATUS_FLAGS {
+	ATH12K_AST_ENTRY_RX_INVAL_STATUS_CHIP_0,
+	ATH12K_AST_ENTRY_RX_INVAL_STATUS_CHIP_1,
+	ATH12K_AST_ENTRY_RX_INVAL_STATUS_CHIP_2,
+	ATH12K_AST_ENTRY_RX_INVAL_STATUS_CHIP_3,
 	ATH12K_AST_ENTRY_TX_INVAL_STATUS,
 };
 
@@ -62,6 +69,7 @@ struct ath12k_ast_entry {
 	struct rhash_head rhash_addr;
 	bool rhash_done;
 	unsigned long ast_create_invalidate_status;
+	unsigned long ast_delete_invalidate_status;
 	u16 tx_cmd_seq_num;
 };
 
@@ -86,7 +94,8 @@ struct ath12k_dp_global_ast_table {
 	u16 num_ast_entries;
 	u8 skid_len;
 	u8 ase_tx_cache_en:1,
-	   reserved:7;
+	   ase_rx_cache_en:1,
+	   reserved:6;
 
 	struct ath12k_ast_entry **ast_entries;
 	struct rhashtable *rhead_ast_entry;
@@ -110,12 +119,22 @@ struct ath12k_ase_cache_op_param {
 	int cmd;
 	u32 meta_data_0;
 	u16 ast_index;
+	u32 mac_addr_31_0;
+	u16 mac_addr_47_32;
+	u16 is_mcast:1,
+	   is_mec:1,
+	   ad1_match:1,
+	   link_id:3,
+	   chip_id_bitmap:8,
+	   reserved_0:2;
 };
 
 int ath12k_wifi8_invalidate_peer_ase_cache_table(struct ath12k_dp_hw_group *dp_hw_grp);
 int ath12k_wifi8_dp_tx_cmd_status_handler(struct ath12k_dp *dp,
 					  int budget);
 bool ath12k_wifi8_dp_ase_tx_cache_enabled(struct ath12k_dp_hw_group *dp_hw_grp);
+bool ath12k_wifi8_dp_ase_rx_cache_enabled(struct ath12k_dp_hw_group *dp_hw_grp);
+int ath12k_wifi8_dp_rx_ase_cmd_status_handler(struct ath12k_dp *dp, int budget);
 int ath12k_dp_ast_table_init(struct ath12k_dp_hw_group *dp_hw_grp);
 void ath12k_dp_ast_table_deinit(struct ath12k_dp_hw_group *dp_hw_grp);
 int ath12k_dp_ast_entry_create(struct ath12k_dp_hw_group *dp_hw_grp,

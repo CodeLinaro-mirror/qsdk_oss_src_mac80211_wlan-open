@@ -3992,10 +3992,26 @@ int ath12k_wifi8_dp_peer_migrate_reo_cmd(struct ath12k_dp *dp,
 	return ret;
 }
 
+int ath12k_wifi8_dp_rx_ase_htt_srng_setup(struct ath12k_base *ab)
+{
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(ab->dp);
+	u32 ring_id;
+
+	ring_id = dp_wifi8->rx_ase_status_ring.ring_id;
+	return ath12k_dp_tx_htt_srng_setup(ab, ring_id, 0, HAL_ASE_STATUS_RING);
+}
+
 int ath12k_wifi8_dp_rx_htt_setup(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	int ret;
+
+	ret = ath12k_wifi8_dp_rx_ase_htt_srng_setup(ab);
+	if (ret) {
+		ath12k_warn(ab, "failed to configure ASE status ring %d\n",
+			    ret);
+		return ret;
+	}
 
 	ret = ath12k_dp_mon_rx_htt_setup(dp);
 	if (ret) {

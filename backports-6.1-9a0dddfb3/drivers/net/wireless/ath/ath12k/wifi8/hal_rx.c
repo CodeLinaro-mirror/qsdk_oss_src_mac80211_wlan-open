@@ -1692,3 +1692,53 @@ out:
 
 	return ret;
 }
+
+int
+ath12k_wifi8_hal_invalidate_rx_cache_cmd_send(struct ath12k_base *ab,
+					      struct hal_srng *srng,
+					      struct ath12k_hal_rx_cmd_ring_param *param)
+{
+	struct hal_ase_cmd *ase_cmd;
+	int ret = 0;
+
+	spin_lock_bh(&srng->lock);
+
+	ath12k_hal_srng_access_begin(ab, srng);
+	ase_cmd = ath12k_hal_srng_src_get_next_entry(ab, srng);
+	if (!ase_cmd) {
+		ret = -ENOBUFS;
+		goto out;
+	}
+	memset(ase_cmd, 0x0, sizeof(*ase_cmd));
+
+	ase_cmd->info0 = le32_encode_bits(param->hw_link_bitmap,
+					  HAL_ASE_CMD_RING_INFO0_CMD_TO_CHIP_0) |
+			 le32_encode_bits(param->hw_link_bitmap,
+					  HAL_ASE_CMD_RING_INFO0_CMD_TO_CHIP_1) |
+			 le32_encode_bits(param->hw_link_bitmap,
+					  HAL_ASE_CMD_RING_INFO0_CMD_TO_CHIP_2) |
+			 le32_encode_bits(param->hw_link_bitmap,
+					  HAL_ASE_CMD_RING_INFO0_CMD_TO_CHIP_3) |
+			 le32_encode_bits(param->hw_link_bitmap,
+					  HAL_ASE_CMD_RING_INFO0_CMD_TO_CHIP_4);
+	ase_cmd->info1 = le32_encode_bits(param->mac_addr_31_0,
+					  HAL_ASE_CMD_RING_INFO1_MAC_ADDR_31_0);
+	ase_cmd->info2 = le32_encode_bits(param->mac_addr_47_32,
+					  HAL_ASE_CMD_RING_INFO2_MAC_ADDR_47_32) |
+			 le32_encode_bits(param->is_mcast,
+					  HAL_ASE_CMD_RING_INFO2_IS_MCAST) |
+			 le32_encode_bits(param->is_mec,
+					  HAL_ASE_CMD_RING_INFO2_IS_MEC) |
+			 le32_encode_bits(param->ad1_match,
+					  HAL_ASE_CMD_RING_INFO2_AD1_MATCH) |
+			 le32_encode_bits(param->link_id,
+					  HAL_ASE_CMD_RING_INFO2_LINK_ID) |
+			 le32_encode_bits(param->cmd_num,
+					  HAL_ASE_CMD_RING_INFO2_GSE_CTRL);
+	ase_cmd->cmd_meta_data_31_0 = cpu_to_le32(param->meta_data_0);
+out:
+	ath12k_hal_srng_access_end(ab, srng);
+	spin_unlock_bh(&srng->lock);
+
+	return ret;
+}

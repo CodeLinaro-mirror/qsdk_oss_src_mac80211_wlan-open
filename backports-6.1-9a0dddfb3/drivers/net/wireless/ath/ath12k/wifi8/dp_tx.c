@@ -2799,6 +2799,8 @@ void ath12k_wifi8_dp_tx_ring_cleanup(struct ath12k_base *ab)
 	ath12k_dp_srng_cleanup(ab, &dp_wifi8->tqm_cmd_ring);
 	ath12k_dp_srng_cleanup(ab, &dp_wifi8->sam_status_ring);
 	ath12k_dp_srng_cleanup(ab, &dp_wifi8->sam_cmd_ring);
+	ath12k_dp_srng_cleanup(ab, &dp_wifi8->rx_ase_cmd_ring);
+	ath12k_dp_srng_cleanup(ab, &dp_wifi8->rx_ase_status_ring);
 }
 
 int ath12k_wifi8_dp_tx_ring_setup(struct ath12k_base *ab)
@@ -2878,6 +2880,12 @@ int ath12k_wifi8_dp_tx_ring_setup(struct ath12k_base *ab)
 				   DP_TQM_STATUS_RING_SIZE);
 	if (ret) {
 		ath12k_warn(ab, "failed to set up tqm_status ring :%d\n", ret);
+		goto err;
+	}
+	ret = ath12k_dp_srng_setup(ab, &dp_wifi8->rx_ase_cmd_ring, HAL_ASE_CMD_RING, 0, 0,
+				   DP_RX_ASE_CMD_RING_SIZE);
+	if (ret) {
+		ath12k_warn(ab, "failed to set up ase_cmd ring :%d\n", ret);
 		goto err;
 	}
 
