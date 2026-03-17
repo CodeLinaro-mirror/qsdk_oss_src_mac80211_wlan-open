@@ -1328,7 +1328,7 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
 	}
 
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
-	ret = ath12k_ipa_plugin_register_ops(ab);
+	ret = ath12k_dp_ipa_plugin_register_ops_extn(ab);
 	if (ret)
 		goto err_mhi_unregister;
 	ath12k_info(ab, "IPA: ipa plugin are registered");
@@ -1423,7 +1423,7 @@ err_hal_srng_deinit:
 
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 ipa_plugin_unregister:
-	ath12k_ipa_plugin_deregister_ops(ab);
+	ath12k_dp_ipa_plugin_deregister_ops_extn(ab);
 #endif
 
 err_mhi_unregister:
@@ -1487,7 +1487,7 @@ qmi_fail:
 		ab_pci->device_ops->dp_deinit(ab->dp);
 
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
-	ath12k_ipa_plugin_deregister_ops(ab);
+	ath12k_dp_ipa_plugin_deregister_ops_extn(ab);
 #endif
 	ath12k_pci_msi_free(ab_pci);
 	ath12k_core_free(ab);

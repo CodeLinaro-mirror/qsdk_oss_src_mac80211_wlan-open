@@ -1286,8 +1286,8 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 
 	ti.ring_id = ring_selector % dp->hw_params->max_tx_ring;
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
-	if (ti.ring_id == IPA_TCL_RING)
-		ti.ring_id = IPA_TCL_SW_RING;
+	if (ti.ring_id == ATH12K_IPA_TCL_RING)
+		ti.ring_id = ATH12K_IPA_TCL_SW_RING;
 #endif
 
 	ti.rbm_id = hal->tcl_to_cmp_rbm_map[ti.ring_id].rbm_id;
