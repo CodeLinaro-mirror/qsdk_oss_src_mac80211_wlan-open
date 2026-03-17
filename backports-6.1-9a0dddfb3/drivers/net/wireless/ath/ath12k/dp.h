@@ -252,7 +252,7 @@ enum ath12k_dp_eapol_key_type {
 #define DP_PPE2TCL_RING_SIZE	2048
 #define DP_PPE_WBM2SW_RING_SIZE	8192
 #define DP_TQM2PPE_RING_SIZE 8192
-#define DP_RXDMA_BUF_RING_SIZE		4096
+#define DP_RXDMA_BUF_RING_SIZE		8192
 /* TODO: revisit this count during testing */
 #define DP_RX_BUFFER_SIZE		1856
 #elif defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
