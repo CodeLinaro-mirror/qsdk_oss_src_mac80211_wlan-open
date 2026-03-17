@@ -289,7 +289,7 @@ int ath12k_mhi_register(struct ath12k_pci *ab_pci)
 
 	if (hw_params->otp_board_id_register) {
 		if (!of_property_read_u32(ab->dev->of_node, "qcom,board_id", &board_id) &&
-		    board_id != 0xFF) {
+		    board_id != ATH12K_BOARD_ID_DEFAULT) {
 			board_id = u32_get_bits(board_id, OTP_BOARD_ID_MASK);
 		} else {
 			board_id =
@@ -305,9 +305,12 @@ int ath12k_mhi_register(struct ath12k_pci *ab_pci)
 			ath12k_dbg(ab, ATH12K_DBG_BOOT,
 				   "dualmac fw selected for board id: %x\n", board_id);
 		}
+
+		if (hw_params->fw.unified_fw_image)
+			ab_pci->unified_fw_board_id = board_id;
 	}
 
-	if (dualmac) {
+	if (!hw_params->fw.unified_fw_image && dualmac) {
 		ab->is_dualmac = true;
 		if (ab->fw.amss_dualmac_data && ab->fw.amss_dualmac_len > 0) {
 			/* use MHI firmware file from firmware-N.bin */
