@@ -3012,58 +3012,27 @@ void ath12k_dp_get_pdev_stats(struct ath12k_pdev_dp *pdev,
 	struct ath12k *ar = pdev->ar;
 	struct ath12k_dp_aggr_vif_stats *aggr_vif_stats;
 	struct ath12k_link_vif *arvif;
-	struct ath12k_htt_tx_stats *htt_stats = NULL;
-	struct ath12k_rx_peer_stats *rx_mon_stats = NULL;
 	struct ath12k_dp_aggr_pdev_stats *aggr_pdev_stats =
 					&telemetry_radio->aggr_pdev_stats;
-	struct ath12k_dp_link_peer_stats *link_peer_stats =
-					  &aggr_pdev_stats->link_peer_stats;
-	bool is_extd_tx_stats_en = false;
-	bool is_extd_rx_stats_en = false;
 
 	if (ath12k_dp_stats_enabled(&ar->dp) &&
 	    ath12k_dp_debug_stats_enabled(&ar->dp))
 		telemetry_radio->is_extended = true;
 
-	is_extd_tx_stats_en = ath12k_extd_tx_stats_enabled(ar);
-	is_extd_rx_stats_en = ath12k_extd_rx_stats_enabled(ar);
-	aggr_vif_stats = vmalloc(sizeof(*aggr_vif_stats));
+	aggr_vif_stats = vzalloc(sizeof(*aggr_vif_stats));
 	if (aggr_vif_stats) {
-		memset(aggr_vif_stats, 0, sizeof(*aggr_vif_stats));
-		if (is_extd_tx_stats_en) {
-			htt_stats = vzalloc(sizeof(*htt_stats));
-			if (!htt_stats) {
-				vfree(aggr_vif_stats);
-				return;
-			}
-			aggr_vif_stats->link_peer_stats.tx_stats = htt_stats;
-		}
-		if (is_extd_rx_stats_en) {
-			rx_mon_stats = vzalloc(sizeof(*rx_mon_stats));
-			if (!rx_mon_stats) {
-				if (htt_stats)
-					vfree(htt_stats);
-				vfree(aggr_vif_stats);
-				return;
-			}
-			aggr_vif_stats->link_peer_stats.rx_stats = rx_mon_stats;
-		}
+		aggr_vif_stats->link_peer_stats.tx_stats =
+					aggr_pdev_stats->link_peer_stats.tx_stats;
+		aggr_vif_stats->link_peer_stats.rx_stats =
+					aggr_pdev_stats->link_peer_stats.rx_stats;
 		list_for_each_entry(arvif, &ar->arvifs, list) {
 			ath12k_vif_iterate_peer(arvif, aggr_vif_stats);
 			/* Include deleted link peer stats stored at link VIF */
 			ath12k_dp_aggr_link_vif_del_stats(arvif, aggr_vif_stats);
-			ath12k_dp_aggr_per_pkt_peer_stats(pdev, &aggr_pdev_stats->peer_stats,
-							  &aggr_vif_stats->peer_stats, 1);
-			ath12k_dp_update_tx_ext_htt_aggr_stats(ar,
-							       link_peer_stats->tx_stats,
-							       htt_stats);
-			ath12k_dp_aggregate_link_rx_mon_stats(link_peer_stats->rx_stats,
-							      rx_mon_stats);
 		}
-		if (is_extd_tx_stats_en)
-			vfree(htt_stats);
-		if (rx_mon_stats)
-			vfree(rx_mon_stats);
+		memcpy(&aggr_pdev_stats->peer_stats, &aggr_vif_stats->peer_stats,
+		       sizeof(aggr_pdev_stats->peer_stats));
+
 		vfree(aggr_vif_stats);
 	}
 }
