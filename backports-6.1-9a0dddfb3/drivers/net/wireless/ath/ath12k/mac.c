@@ -1982,14 +1982,18 @@ static int ath12k_mac_vdev_setup_sync(struct ath12k *ar)
 {
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
-	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags))
-		return -ESHUTDOWN;
-
 	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
 			 "vdev setup timeout %d\n", ATH12K_VDEV_SETUP_TIMEOUT_HZ);
 
 	if (!wait_for_completion_timeout(&ar->vdev_setup_done,
 					 ATH12K_VDEV_SETUP_TIMEOUT_HZ)){
+		/*
+		 * FW assertion right after wait start can trigger WARN_ON.
+		 * Skip it by checking on CRASH_FLUSH.
+		 */
+		if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags))
+			return -ESHUTDOWN;
+
 		WARN_ON(1);
 		return -ETIMEDOUT;
 	}
