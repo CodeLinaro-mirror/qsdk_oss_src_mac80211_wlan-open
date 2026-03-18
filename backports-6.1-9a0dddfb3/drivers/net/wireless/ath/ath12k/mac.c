@@ -5376,7 +5376,7 @@ static void ath12k_peer_assoc_h_uhr(struct ath12k *ar,
 	       sizeof(uhr_cap->phy.cap));
 }
 
-#ifndef CPTCFG_QCN_EXTN
+#ifndef CPTCFG_QCN_EXTN_MESH_SUPPORT
 static void ath12k_peer_assoc_prepare(struct ath12k *ar,
 				      struct ath12k_link_vif *arvif,
 				      struct ath12k_link_sta *arsta,
