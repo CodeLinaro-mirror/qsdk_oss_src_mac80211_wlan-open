@@ -949,7 +949,6 @@ static int ath12k_dp_link_desc_bank_alloc(struct ath12k_base *ab,
 					  int n_link_desc_bank,
 					  int last_bank_sz)
 {
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	int i;
 	int ret = 0;
 	int desc_sz = DP_LINK_DESC_ALLOC_SIZE_THRESH;
@@ -978,7 +977,7 @@ static int ath12k_dp_link_desc_bank_alloc(struct ath12k_base *ab,
 	return 0;
 
 err:
-	ath12k_dp_link_desc_bank_free(ab, dp->link_desc_banks);
+	ath12k_dp_link_desc_bank_free(ab, desc_bank);
 
 	return ret;
 }
