@@ -1159,4 +1159,5 @@ const struct hal_ops hal_qcn9274_ops = {
 	.hal_reo_config_reo2ppe_dest_info = ath12k_wifi7_hal_reo_config_reo2ppe_dest_info,
 	.hal_tx_set_ppe_vp_entry = ath12k_wifi7_hal_tx_set_ppe_vp_entry,
 	.hal_get_tlv_tag_params = ath12k_wifi7_get_tlv_tag_params,
+	.hal_rx_h_mpdu_err = ath12k_wifi7_hal_rx_h_mpdu_err_qcn9274,
 };

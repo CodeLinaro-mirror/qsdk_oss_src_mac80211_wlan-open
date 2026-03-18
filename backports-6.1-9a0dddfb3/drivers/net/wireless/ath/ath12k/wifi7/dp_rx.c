@@ -34,35 +34,6 @@
 
 #define ATH12K_DP_RX_FRAGMENT_TIMEOUT_MS (2 * HZ)
 
-#ifndef CPTCFG_EXT_IPA_OFFLOAD
-
-
-#define VIRT_TO_PHYS(defrag_skb, buf_paddr) \
-({ \
-	(buf_paddr) = (dma_addr_t)virt_to_phys((defrag_skb)->data); \
-})
-
-#define ATH12K_CORE_DMAC_INV_RANGE(desc_info) \
-	ath12k_core_dmac_inv_range((desc_info)->vaddr, \
-				   (desc_info)->vaddr + DP_RX_BUFFER_SIZE)
-
-#define RETURN_IPA_CODE(...) ((void)0)
-
-#define ATH12K_DP_RXDMA_RING_CONFIG(ring_id, dp) \
-({ \
-	ring_id = dp->rx_refill_buf_ring.refill_buf_ring.ring_id; \
-})
-
-#define ATH12K_CORE_DMA_UNMAP_SINGLE(partner_dp, desc_info) \
-	ath12k_core_dma_unmap_single(partner_dp->dev, desc_info->paddr, \
-					     DP_RX_BUFFER_SIZE, DMA_FROM_DEVICE)
-
-#define IPA_SET_RX_BUF_SMMU_MAP(...) ((void)0)
-#define IPA_SET_RX_BUF_SMMU_UNMAP(...) ((void)0)
-#define ATH12K_IPA_DMA_MAP_SINGLE(...) ((void)0)
-
-#endif
-
 extern bool ath12k_debug_critical;
 
 static int ath12k_wifi7_peer_rx_tid_delete_handler(struct ath12k_base *ab,
@@ -525,36 +496,6 @@ void ath12k_wifi7_dp_rx_update_ppe_msdu_mark(struct ath12k_base *ab,
 #endif
 }
 
-static bool ath12k_wifi7_dp_rx_check_fast_rx(struct ath12k_dp *dp,
-					     struct sk_buff *msdu,
-					     struct rx_msdu_desc_info *rx_msdu_info,
-					     struct rx_tlv_info_1 *tlv_info,
-					     struct ath12k_dp_peer *peer)
-{
-	if (unlikely(!peer->mscs_session_exists && (!dp->stats_disable ||
-		     tlv_info->decap != DP_RX_DECAP_TYPE_ETHERNET2_DIX)))
-		return false;
-
-	/* mcbc packets go through mac80211 for PN validation */
-	if (unlikely(rx_msdu_info->da_is_mcbc))
-		return false;
-
-	if (unlikely(!peer->is_authorized))
-		return false;
-#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
-	if (unlikely(peer->is_mmesh_peer))
-		return false;
-#endif
-
-	/* check if the msdu needs to be bridged to our connected peer */
-	if (unlikely(rx_msdu_info->intra_bss))
-		return false;
-
-	/* allow direct rx */
-	return true;
-}
-
-
 static void ath12k_get_dot11_hdr_from_rx_desc(struct ath12k_pdev_dp *dp_pdev,
 					      struct sk_buff *msdu,
 					      struct ieee80211_rx_status *status,
@@ -598,13 +539,13 @@ static void ath12k_get_dot11_hdr_from_rx_desc(struct ath12k_pdev_dp *dp_pdev,
 	}
 }
 
-static void ath12k_wifi7_dp_rx_h_undecap_eth(struct ath12k_pdev_dp *dp_pdev,
-					     struct sk_buff *msdu,
-					     enum hal_encrypt_type enctype,
-					     struct ieee80211_rx_status *status,
-					     bool mesh_ctrl_present,
-					     struct hal_rx_desc *desc,
-					     bool is_mcbc, u16 tid)
+void ath12k_wifi7_dp_rx_h_undecap_eth(struct ath12k_pdev_dp *dp_pdev,
+				      struct sk_buff *msdu,
+				      enum hal_encrypt_type enctype,
+				      struct ieee80211_rx_status *status,
+				      bool mesh_ctrl_present,
+				      struct hal_rx_desc *desc,
+				      bool is_mcbc, u16 tid)
 {
 	struct ieee80211_hdr *hdr;
 	struct ethhdr *eth;
@@ -631,6 +572,7 @@ static void ath12k_wifi7_dp_rx_h_undecap_eth(struct ath12k_pdev_dp *dp_pdev,
 	status->flag &= ~RX_FLAG_8023;
 }
 
+static
 int ath12k_wifi7_dp_rx_h_undecap(struct ath12k_pdev_dp *dp_pdev,
 				 struct sk_buff *msdu,
 				 struct hal_rx_desc *desc,
@@ -675,7 +617,7 @@ int ath12k_wifi7_dp_rx_h_undecap(struct ath12k_pdev_dp *dp_pdev,
 		 */
 		status->flag |= RX_FLAG_8023;
 
-		is_mcbc = rx_msdu_info->ra_is_mcbc;
+		is_mcbc = rx_msdu_info->da_is_mcbc;
 		/* mac80211 allows fast path only for authorized STA */
 		if (ehdr->h_proto == cpu_to_be16(ETH_P_PAE) ||
 		    enctype == HAL_ENCRYPT_TYPE_TKIP_MIC) {
@@ -751,198 +693,6 @@ int ath12k_wifi7_dp_rx_h_undecap(struct ath12k_pdev_dp *dp_pdev,
 	return 0;
 }
 
-int ath12k_wifi7_dp_rx_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
-			      struct sk_buff *msdu,
-			      struct hal_rx_desc *rx_desc,
-			      struct ieee80211_rx_status *rx_status,
-			      struct rx_msdu_desc_info *rx_msdu_info,
-			      struct rx_mpdu_desc_info *rx_mpdu_info,
-			      struct rx_tlv_info_1 *tlv_info,
-			      u32 err_bitmap, bool *fast_rx,
-			      struct ath12k_dp_peer *peer)
-{
-	struct ath12k_dp *dp = dp_pdev->dp;
-	enum hal_encrypt_type enctype;
-	bool is_decrypted = false;
-	bool is_4addr_sta = false;
-	struct ieee80211_hdr *hdr;
-	struct ath12k_dp_rx_tid *rx_tid;
-	struct ath12k_dp_peer *dp_peer;
-	struct  ath12k_vif *ahvif;
-	u8 tid;
-	int ret = 0;
-	u16 peer_id;
-#ifdef CPTCFG_MAC80211_PPE_SUPPORT
-	u8 macid;
-	u16 flow_metadata;
-#endif
-
-	peer_id = rx_mpdu_info->flow_info.peer_id;
-
-	tid = rx_mpdu_info->tid;
-	/* PN for multicast packets will be checked in mac80211 */
-
-	ath12k_wifi7_dp_rx_h_csum_offload(msdu, rx_msdu_info);
-
-	if (likely(peer)) {
-		msdu->dev = peer->dev;
-		if (unlikely(peer->mscs_session_exists)) {
-			if (tlv_info->decap == DP_RX_DECAP_TYPE_ETHERNET2_DIX) {
-				/* Get the FSE metadata to check if flow entry
-				 * has been programmed and if yes, check if
-				 * metadata has the MSCS tag. If it has, do not
-				 * classify the UL packet.
-				 */
-				dp->hal->hal_ops->rx_desc_get_fse_info(rx_desc,
-						rx_mpdu_info);
-				/* Update skb priority with the tid received
-				 * in rx_mpdu_info.
-				 * This has to be done per packet since
-				 * a packet from the same flow can have
-				 * different tid values
-				 */
-				msdu->priority = tid;
-				/** Check if the flow has been timed out
-				 * or if the flow is invalid
-				 * If the flow is invalid, check for five-tuple info and
-				 * then program the FST entry with MSCS tag
-				 * If tid is 0, which is the default case,
-				 * do not program the FSE entry and MSCS rule
-				 */
-				if (tid && !rx_mpdu_info->flow_idx_timeout &&
-				    !(rx_mpdu_info->flow_info.flow_metadata &
-				    ATH12K_RX_FSE_FLOW_MSCS_RULE_PROGRAMMED))
-					ath12k_dp_rx_classify_mscs(dp->ab, peer, msdu, tid);
-			}
-		}
-
-		if (likely(*fast_rx &&
-		    ath12k_wifi7_dp_rx_check_fast_rx(dp, msdu, rx_msdu_info,
-							 tlv_info, peer))) {
-#ifdef CPTCFG_MAC80211_PPE_SUPPORT
-			if (peer->ppe_vp_num) {
-				dp->hal->hal_ops->rx_desc_get_fse_info(rx_desc,
-								       rx_mpdu_info);
-				/**
-				 * Check if flow has been timed out
-				 * or if the flow is invalid
-				 */
-				if (!rx_mpdu_info->flow_idx_timeout &&
-				    !rx_mpdu_info->flow_idx_invalid &&
-				    rx_mpdu_info->flow_info.flow_metadata) {
-					/**
-					 * Based on the metadata tag, send the
-					 * packet to the PPE driver if ppe_vp_num
-					 * is valid.
-					 */
-					flow_metadata =
-					 rx_mpdu_info->flow_info.flow_metadata;
-					macid =
-					 FIELD_GET(ATH12K_DP_RX_FSE_FL_EGRESS_MACID_MASK,
-						   flow_metadata);
-					msdu->mark =
-					 u32_replace_bits(msdu->mark, macid,
-							  ATH12K_EGRESS_MACID_MASK);
-					if ((rx_mpdu_info->flow_info.flow_metadata &
-					    ATH12K_RX_FSE_FLOW_MATCH_USE_PPE)) {
-						if (peer->dev->offload_ops->recv(peer->dev, msdu))
-							return 0;
-					}
-				}
-			}
-#endif
-
-#ifdef CONFIG_IO_COHERENCY
-			prefetch(skb_shinfo(msdu));
-#endif
-			msdu->protocol = eth_type_trans(msdu, peer->dev);
-			netif_receive_skb(msdu);
-			return ret;
-		}
-
-		/* restting 4addr da mcbc packets as in 4addr mcbc packets are
-		 * unicast only and sta send sends unicast pkts only.
-		 */
-		rx_msdu_info->ra_is_mcbc =
-				rx_msdu_info->da_is_mcbc && !peer->is_reset_mcbc;
-
-		is_4addr_sta = peer->vdev_type_4addr & BIT(NL80211_IFTYPE_STATION);
-		if (rx_msdu_info->ra_is_mcbc)
-			enctype = peer->sec_type_grp;
-		else
-			enctype = peer->sec_type;
-
-		rx_tid = &peer->rx_tid[tid];
-		dp_pdev->wmm_stats.rx_type =
-			ath12k_tid_to_ac(rx_tid->tid >
-					 ATH12K_DSCP_PRIORITY ? 0: rx_tid->tid);
-		dp_pdev->wmm_stats.total_wmm_rx_pkts[dp_pdev->wmm_stats.rx_type]++;
-
-		rcu_read_lock();
-		dp_peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, peer_id);
-		if (dp_peer) {
-			ahvif = ath12k_vif_to_ahvif(ath12k_dp_peer_get_vif(dp_peer));
-			ahvif->wmm_stats.rx_type = dp_pdev->wmm_stats.rx_type;
-			ahvif->wmm_stats.total_wmm_rx_pkts[ahvif->wmm_stats.rx_type]++;
-			if (ath12k_dp_stats_enabled(dp_pdev) &&
-			    ath12k_tid_stats_enabled(dp_pdev))
-				ath12k_tid_rx_stats(ahvif, tid, msdu->len,
-						    ATH_RX_SFE_PKTS);
-		}
-		rcu_read_unlock();
-
-		ath12k_wifi7_dp_rx_update_ppe_msdu_mark(dp->ab, peer, msdu,
-							rx_mpdu_info, rx_desc);
-
-	} else {
-		enctype = HAL_ENCRYPT_TYPE_OPEN;
-	}
-
-	*fast_rx = false;
-
-	tlv_info->is_decrypted = ath12k_hal_rx_h_is_decrypted(dp->hal, rx_desc);
-
-	if (enctype != HAL_ENCRYPT_TYPE_OPEN && !err_bitmap)
-		is_decrypted = tlv_info->is_decrypted;
-
-	/* Clear per-MPDU flags while leaving per-PPDU flags intact */
-	rx_status->flag &= ~(RX_FLAG_FAILED_FCS_CRC |
-			     RX_FLAG_MMIC_ERROR |
-			     RX_FLAG_DECRYPTED |
-			     RX_FLAG_IV_STRIPPED |
-			     RX_FLAG_MMIC_STRIPPED);
-
-	if (err_bitmap & HAL_RX_MPDU_ERR_FCS)
-		rx_status->flag |= RX_FLAG_FAILED_FCS_CRC;
-	if (err_bitmap & HAL_RX_MPDU_ERR_TKIP_MIC)
-		rx_status->flag |= RX_FLAG_MMIC_ERROR;
-
-	if (is_decrypted) {
-		rx_status->flag |= RX_FLAG_DECRYPTED | RX_FLAG_MMIC_STRIPPED;
-
-		if (rx_msdu_info->ra_is_mcbc)
-			rx_status->flag |= RX_FLAG_MIC_STRIPPED |
-					RX_FLAG_ICV_STRIPPED;
-		else
-			rx_status->flag |= RX_FLAG_IV_STRIPPED |
-					   RX_FLAG_PN_VALIDATED;
-	}
-
-	ret = ath12k_wifi7_dp_rx_h_undecap(dp_pdev, msdu, rx_desc, enctype, rx_status,
-					   is_decrypted, is_4addr_sta, rx_msdu_info,
-					   tlv_info, peer, peer_id, tid);
-
-	if (!is_decrypted || rx_msdu_info->ra_is_mcbc)
-		return ret;
-
-	if (tlv_info->decap != DP_RX_DECAP_TYPE_ETHERNET2_DIX) {
-		hdr = (void *)msdu->data;
-		hdr->frame_control &= ~__cpu_to_le16(IEEE80211_FCTL_PROTECTED);
-	}
-
-	return ret;
-}
-
 static bool ath12k_wifi7_dp_rx_h_rate(struct ath12k_pdev_dp *dp_pdev,
 				      struct ieee80211_rx_status *rx_status,
 				      struct rx_tlv_info_1 *tlv_info)
@@ -971,7 +721,7 @@ static bool ath12k_wifi7_dp_rx_h_rate(struct ath12k_pdev_dp *dp_pdev,
 		if (rate_mcs > ATH12K_HT_MCS_MAX) {
 			ath12k_warn(dp->ab,
 				    "Received with invalid mcs in HT mode %d\n",
-				     rate_mcs);
+				    rate_mcs);
 			return true;
 		}
 		rx_status->rate_idx = rate_mcs + (8 * (nss - 1));
@@ -985,7 +735,7 @@ static bool ath12k_wifi7_dp_rx_h_rate(struct ath12k_pdev_dp *dp_pdev,
 		if (rate_mcs > ATH12K_VHT_MCS_MAX) {
 			ath12k_warn(dp->ab,
 				    "Received with invalid mcs in VHT mode %d\n",
-				     rate_mcs);
+				    rate_mcs);
 			return true;
 		}
 		rx_status->nss = nss;
@@ -1151,7 +901,46 @@ u16 ath12k_wifi7_dp_rx_get_peer_id(struct ath12k_base *ab,
 	}
 }
 
-void
+void ath12k_wifi7_dp_adjust_skb(struct ath12k_pdev_dp *dp_pdev,
+				struct hal_rx_spd_data *spd_desc_l,
+				struct link_peer_rx_tid_stats *stats,
+				struct ieee80211_rx_status *rx_status,
+				int *msdu_idx, u32 hal_rx_desc_sz)
+{
+	struct sk_buff *msdu = spd_desc_l->msdu;
+	struct rx_msdu_desc_info *rx_msdu_info = &spd_desc_l->rx_msdu_info;
+	struct rx_mpdu_desc_info *rx_mpdu_info = &spd_desc_l->rx_mpdu_info;
+	int l3_pad_bytes = rx_msdu_info->l3_header_padding_msb ? 2 : 0;
+	int msdu_len = rx_msdu_info->msdu_length;
+	int idx;
+
+	if (unlikely(rx_mpdu_info->fragment_flag))
+		/* an ieee80211 rx fragmented MPDU is handled in
+		 * exception path, only TLV need to pulled from skb
+		 */
+		skb_pull(msdu, hal_rx_desc_sz);
+	else if (unlikely(spd_desc_l->first_sg_frame)) {
+		/* create a frag_list for MSDUs which are spread across
+		 * multiple buffers/skbs. pulling of TLV header and
+		 * setting of length is done in below API.
+		 */
+		idx = ath12k_wifi7_rx_create_fraglist(dp_pdev,
+						      &spd_desc_l,
+						      hal_rx_desc_sz,
+						      rx_status);
+		*msdu_idx += idx;
+		if (stats) {
+			stats->sg_cnt++;
+			stats->sg_bytes++;
+		}
+	} else {
+		/* this is the most likely case, a regular MSDU */
+		skb_put(msdu, hal_rx_desc_sz + l3_pad_bytes + msdu_len);
+		skb_pull(msdu, hal_rx_desc_sz + l3_pad_bytes);
+	}
+}
+
+static void
 ath12k_wifi7_dp_process_reo_rx_packets(struct ath12k_dp *dp,
 				       struct napi_struct *napi,
 				       struct hal_rx_spd_data *rx_spd,
@@ -1170,7 +959,6 @@ ath12k_wifi7_dp_process_reo_rx_packets(struct ath12k_dp *dp,
 	u8 hw_link_id, pdev_id;
 	u8 prev_hw_link_id = 0xff;
 	int msdu_idx = 0;
-	int idx = 0;
 	struct ath12k_hal *hal = dp->hal;
 	u32 hal_rx_desc_sz = hal->hal_desc_sz;
 	u16 msdu_len;
@@ -1308,28 +1096,8 @@ ath12k_wifi7_dp_process_reo_rx_packets(struct ath12k_dp *dp,
 		msdu_len = rx_msdu_info->msdu_length;
 		l3_pad_bytes = rx_msdu_info->l3_header_padding_msb ? 2 : 0;
 
-		if (unlikely(rx_mpdu_info->fragment_flag))
-			/* an ieee80211 rx fragmented MPDU is handled in
-			 * exception path, only TLV need to pulled from skb
-			 */
-			skb_pull(msdu, hal_rx_desc_sz);
-		else if (unlikely(spd_desc_l->first_sg_frame)) {
-			/* create a frag_list for MSDUs which are spread across
-			 * multiple buffers/skbs. pulling of TLV header and
-			 * setting of length is done in below API.
-			 */
-			idx = ath12k_wifi7_rx_create_fraglist(dp_pdev,
-							      &spd_desc_l,
-							      hal_rx_desc_sz,
-							      &rx_status);
-			msdu_idx += idx;
-			stats->sg_cnt++;
-			stats->sg_bytes++;
-		} else {
-			/* this is the most likely case, a regular MSDU */
-			skb_put(msdu, hal_rx_desc_sz + l3_pad_bytes + msdu_len);
-			skb_pull(msdu, hal_rx_desc_sz + l3_pad_bytes);
-		}
+		ath12k_wifi7_dp_adjust_skb(dp_pdev, spd_desc_l, stats,
+					   &rx_status, &msdu_idx, hal_rx_desc_sz);
 
 		/* beyond this point RX TLV info could be over-written by
 		 * user-specific meta data, hence copy all the nessacary info

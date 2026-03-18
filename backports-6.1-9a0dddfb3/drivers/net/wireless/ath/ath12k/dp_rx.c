@@ -28,17 +28,6 @@
 #endif
 #include "vendor.h"
 
-#ifndef CPTCFG_EXT_IPA_OFFLOAD
-#define VIRT_TO_PHYS(defrag_skb, buf_paddr) \
-({ \
-	(buf_paddr) = (dma_addr_t)virt_to_phys((defrag_skb)->data); \
-})
-
-#define IPA_SET_RX_BUF_SMMU_MAP(...) ((void)0)
-#define IPA_SET_RX_BUF_SMMU_UNMAP(...) ((void)0)
-#define ATH12K_IPA_DMA_MAP_SINGLE(...) ((void)0)
-#endif
-
 void ath12k_tid_rx_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason)
 {
 	struct pcpu_netdev_tid_stats *tstats = this_cpu_ptr(ahvif->tstats);

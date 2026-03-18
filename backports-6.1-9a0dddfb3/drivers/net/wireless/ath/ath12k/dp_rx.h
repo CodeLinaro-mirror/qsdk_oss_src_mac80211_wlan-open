@@ -16,6 +16,17 @@ struct ath12k_sta;
 
 #define ip_hdrlen(iph) ((iph)->ihl * 4)
 
+#ifndef CPTCFG_EXT_IPA_OFFLOAD
+#define VIRT_TO_PHYS(defrag_skb, buf_paddr) \
+({ \
+	(buf_paddr) = (dma_addr_t)virt_to_phys((defrag_skb)->data); \
+})
+
+#define IPA_SET_RX_BUF_SMMU_MAP(...) ((void)0)
+#define IPA_SET_RX_BUF_SMMU_UNMAP(...) ((void)0)
+#define ATH12K_IPA_DMA_MAP_SINGLE(...) ((void)0)
+#endif
+
 /* different supported pkt types for routing */
 enum ath12k_routing_pkt_type {
 	ATH12K_PKT_TYPE_ARP_IPV4,

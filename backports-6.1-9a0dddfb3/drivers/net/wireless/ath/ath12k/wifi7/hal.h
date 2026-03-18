@@ -650,8 +650,7 @@ struct rx_msdu_desc_info {
 	    to_ds                       :  1,
 	    intra_bss                   :  1,
 	    dest_chip_id                :  2,
-	    ra_is_mcbc			:  1,
-	    reserved			:  2;
+	    reserved			:  3;
 };
 
 struct rx_tlv_info_1 {
@@ -679,17 +678,18 @@ struct reo_info {
 };
 
 struct wbm_info {
-	u32 release_source_module               : 3,
-	    bm_action                           : 3,
-	    buffer_or_desc_type                 : 4,
-	    reserved_2a                         : 2,
-	    cache_id                            : 1,
-	    cookie_conversion_status            : 1,
-	    rxdma_push_reason                   : 2,
-	    rxdma_error_code                    : 5,
-	    reo_push_reason                     : 2,
-	    reo_error_code                      : 5,
-	    wbm_internal_error                  : 1;
+	u32 release_source_module               :  3,
+	    bm_action				:  3,
+	    buffer_or_desc_type			:  3,
+	    first_msdu_index			:  4,
+	    reserved_2a				:  2,
+	    cache_id                            :  1,
+	    cookie_conversion_status            :  1,
+	    rxdma_push_reason                   :  2,
+	    rxdma_error_code                    :  5,
+	    reo_push_reason                     :  2,
+	    reo_error_code                      :  5,
+	    wbm_internal_error                  :  1;
 };
 
 struct hal_rx_spd_data {

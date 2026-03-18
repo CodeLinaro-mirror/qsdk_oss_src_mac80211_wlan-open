@@ -135,6 +135,7 @@ struct ath12k_dp_hw_link {
 #define DP_TCL_DESC_TYPE_MAX 2
 #define ATH12K_MAX_AHVIF_ID	255
 #define ATH12K_INVALID_AHVIF_ID	0
+#define DP_TOTAL_REO_DST_RINGS (DP_REO_DST_RING_MAX + 1)
 
 #define ATH12K_DP_PCP_TID_MAP_SIZE	8
 #define ATH12K_DP_MAX_TID_PRECEDENCE_VAL 11
@@ -156,7 +157,7 @@ struct ath12k_dp_hw_group {
 	struct ath12k_dp *dp[ATH12K_MAX_SOCS];
 	struct dp_rx_fst *fst;
 	u8 *tx_status_buf[ATH12K_HW_MAX_QUEUES];
-	u8 *rx_status_buf[DP_REO_DST_RING_MAX];
+	u8 *rx_status_buf[DP_TOTAL_REO_DST_RINGS];
 	struct ath12k_spt_info *spt_info;
 	u32 num_spt_pages;
 	struct ath12k_tx_desc_info *txbaddr[ATH12K_NUM_TX_SPT_PAGES];
