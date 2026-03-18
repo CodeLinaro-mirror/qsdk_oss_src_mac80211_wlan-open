@@ -1711,36 +1711,6 @@ int ath12k_vif_get_vp_num(struct ath12k_vif *ahvif, struct net_device *dev)
 }
 EXPORT_SYMBOL(ath12k_vif_get_vp_num);
 
-int ath12k_vif_get_vp_num(struct ath12k_vif *ahvif, struct net_device *dev)
-{
-	int ppe_vp_num = ATH12K_INVALID_PPE_VP_NUM;
-	struct nss_plugins_ops *plugin_ops = ath12k_get_registered_nss_plugin_ops();
-
-	if (dev->ieee80211_ptr &&
-	    dev->ieee80211_ptr->iftype == NL80211_IFTYPE_MONITOR)
-		return 0;
-
-	if (!plugin_ops)
-		return -EINVAL;
-
-	ppe_vp_num = plugin_ops->get_vp_num(dev);
-
-	if (ppe_vp_num <= 0) {
-		ath12k_dbg(NULL, ATH12K_DBG_PPE,
-			   "Error in getting VP num for netdev %s err %d\n",
-			   dev->name, ppe_vp_num);
-		return -ENOSR;
-	}
-
-	ahvif->dp_vif.ppe_vp_num = ppe_vp_num;
-
-	ath12k_dbg(NULL, ATH12K_DBG_PPE,
-		   "PPE VP assignment: device '%s' VP num %d assigned by ath client\n",
-		   dev->name, ahvif->dp_vif.ppe_vp_num);
-	return 0;
-}
-EXPORT_SYMBOL(ath12k_vif_get_vp_num);
-
 int ath12k_nss_plugin_register_ops(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ab->dp;
