@@ -12456,9 +12456,10 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 		ath12k_warn(ar->ab, "Failed to delete peer: %pM for VDEV: %d ar->num_peers: %d arvif->num_peers: %d\n",
 			    arsta->addr, arvif->vdev_id, ar->num_peers, arvif->num_peers);
 	else
-		ath12k_dbg(ar->ab, ATH12K_DBG_PEER | ATH12K_DBG_MLME,
-			   "Removed peer: %pM for VDEV: %d ar->num_peers: %d arvif->num_peers: %d\n",
-			   arsta->addr, arvif->vdev_id, ar->num_peers, arvif->num_peers);
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER | ATH12K_DBG_MLME, ATH12K_DBG_L1,
+				 "Removed peer: %pM for VDEV: %d ar->num_peers: %d arvif->num_peers: %d\n",
+				 arsta->addr, arvif->vdev_id,
+				 ar->num_peers, arvif->num_peers);
 
 	if (!skip_peer_del)
 		ath12k_mac_station_post_remove(ar, arvif, arsta->addr, ahsta,
@@ -16416,8 +16417,9 @@ static int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arv
 	}
 
 	if (is_mlme)
-		ath12k_dbg(ab, ATH12K_DBG_MLME, "Transmit %s to STA %pM over WMI\n",
-			   mgmt_frame_name[frm_stype], sta_addr);
+		ath12k_dbg_level(ab, ATH12K_DBG_MLME, ATH12K_DBG_L0,
+				 "Transmit %s to STA %pM over WMI\n",
+				 mgmt_frame_name[frm_stype], sta_addr);
 	return 0;
 
 err_unmap_buf:
@@ -18451,15 +18453,17 @@ static struct ath12k *ath12k_mac_assign_vif_to_vdev(struct ieee80211_hw *hw,
 		if (arvif->ar->ab->is_bypassed)
 			return arvif->ar;
 
-		/* This is not expected really */
-		if (!test_bit(ATH12K_FLAG_RECOVERY,&arvif->ar->ab->dev_flags) && !arvif->is_created) {
-			WARN_ON(1);
-			arvif->ar = NULL;
-			return NULL;
-		}
+		if (!test_bit(ATH12K_FLAG_RECOVERY, &arvif->ar->ab->dev_flags)) {
+			/* This is not expected really */
+			if (!arvif->is_created) {
+				WARN_ON(1);
+				arvif->ar = NULL;
+				return NULL;
+			}
 
-		if (ah->num_radio == 1)
-			return arvif->ar;
+			if (ah->num_radio == 1)
+				return arvif->ar;
+		}
 
 		/* This can happen as scan vdev gets created during multiple scans
 		 * across different radios before a vdev is brought up in
@@ -18571,8 +18575,6 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 	ahvif->ah = ah;
 	ahvif->vif = vif;
 	arvif = &ahvif->deflink;
-	/* Clear pre-allocated deflink to reset the old residual data */
-	memset(arvif, 0, sizeof(*arvif));
 
 	ath12k_event_queue_init(&ahvif->event_queue, hw->wiphy, ahvif);
 
@@ -21679,16 +21681,8 @@ ath12k_mac_op_switch_vif_chanctx(struct ieee80211_hw *hw,
 	 */
 	for (i = 0; i < n_vifs; i++) {
 		curr_ar = ath12k_get_ar_by_ctx(hw, vifs[i].old_ctx);
-		if (vifs[i].old_ctx->def.chan->band !=
-		    vifs[i].new_ctx->def.chan->band) {
-			if (!ath12k_scan_radio_supported(curr_ar->pdev)) {
-				WARN_ON(1);
-				ret = -EINVAL;
-				break;
-			}
-		}
-
 		new_ar = ath12k_get_ar_by_ctx(hw, vifs[i].new_ctx);
+
 		if (!curr_ar || !new_ar) {
 			ath12k_err(NULL,
 				   "unable to determine device for the passed channel ctx");
@@ -21700,6 +21694,15 @@ ath12k_mac_op_switch_vif_chanctx(struct ieee80211_hw *hw,
 				   new_ar ? "valid" : "invalid");
 			ret = -EINVAL;
 			break;
+		}
+
+		if (vifs[i].old_ctx->def.chan->band !=
+		    vifs[i].new_ctx->def.chan->band) {
+			if (!ath12k_scan_radio_supported(curr_ar->pdev)) {
+				WARN_ON(1);
+				ret = -EINVAL;
+				break;
+			}
 		}
 
 		/* Switching a vif between two radios is not allowed */
@@ -25090,6 +25093,7 @@ static void ath12k_mac_fetch_coex_info(struct ath12k *ar)
                 ath12k_err(ab, "No qcom,pta-priority entry in dev-tree.\n");
         }
 
+	ar->coex.pta_algorithm = ar->coex.coex_algo_type;
         if (ar->coex.coex_algo_type == COEX_ALGO_OCS) {
                 ar->coex.duty_cycle = 100000;
                 ar->coex.wlan_duration = 80000;
@@ -28141,14 +28145,17 @@ int ath12k_mac_op_set_monitor_flags(struct ieee80211_hw *hw,
 
 	lockdep_assert_wiphy(hw->wiphy);
 
+	ath12k_dbg(NULL, ATH12K_DBG_DP_MON_TX | ATH12K_DBG_DP_MON,
+		   "Monitor Flags update received 0x%X :\n", flags);
+
 	if (!(flags & MONITOR_FLAG_CHANGED)) {
-		ath12k_err(NULL, "Flags unchanged - updated rejected\n");
+		ath12k_err(NULL, "Monitor Flags unchanged - updated rejected\n");
 		return ret;
 	}
 
 	ahvif = ath12k_vif_to_ahvif(vif);
 	if (!ahvif) {
-		ath12k_err(NULL, "Invalid ath12k vif\n");
+		ath12k_err(NULL, "Monitor Flags update : Invalid ath12k vif\n");
 		return ret;
 	}
 
@@ -28162,7 +28169,7 @@ int ath12k_mac_op_set_monitor_flags(struct ieee80211_hw *hw,
 		 */
 		*current_flags = flags;
 		ath12k_err(NULL,
-			   "Radio interface not found, flags stored & are dormant\n");
+			   "Radio not found, Monitor flags stored & are dormant\n");
 		return 0;
 	}
 

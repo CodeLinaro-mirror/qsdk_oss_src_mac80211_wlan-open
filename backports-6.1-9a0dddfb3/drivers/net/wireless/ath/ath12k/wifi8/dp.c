@@ -210,10 +210,38 @@ static void ath12k_wifi8_dp_umac_deinit(struct ath12k_dp *dp)
 	ath12k_info(ab, "CUMAC de-init successful");
 }
 
-static int ath12k_enable_hif_interrupts(struct ath12k_dp *dp,
-					int (*handler)(struct ath12k_dp *dp,
-						       struct ath12k_ext_irq_grp *grp,
-						       int budget))
+static void ath12k_wifi8_set_ext_irq_affinity(struct ath12k_dp *dp)
+{
+	int i, j, ret;
+
+	for (i = 0; i < ARRAY_SIZE(ath12k_wifi8_ext_irq_grp_affinity); i++) {
+		struct ath12k_ext_irq_grp *irq_grp = &dp->ab->ext_irq_grp[i];
+		int cpu = ath12k_wifi8_ext_irq_grp_affinity[i];
+
+		if (!cpu_online(cpu)) {
+			ath12k_err(dp->ab,
+				   "ext irq grp %d: cpu%d is offline, skipping affinity\n",
+				   i, cpu);
+			continue;
+		}
+
+		for (j = 0; j < irq_grp->num_irq; j++) {
+			int irq = dp->ab->irq_num[irq_grp->irqs[j]];
+
+			ret = irq_set_affinity(irq, cpumask_of(cpu));
+			if (ret)
+				ath12k_err(dp->ab,
+					   "ext irq grp %d: failed to set affinity for irq %d to cpu%d, ret %d\n",
+					   i, irq, cpu, ret);
+		}
+	}
+}
+
+static int
+ath12k_wifi8_enable_hif_interrupts(struct ath12k_dp *dp,
+				   int (*handler)(struct ath12k_dp *dp,
+						  struct ath12k_ext_irq_grp *grp,
+						  int budget))
 {
 	int ret;
 
@@ -224,6 +252,8 @@ static int ath12k_enable_hif_interrupts(struct ath12k_dp *dp,
 	}
 
 	ath12k_hif_irq_enable(dp->ab);
+
+	ath12k_wifi8_set_ext_irq_affinity(dp);
 
 	return 0;
 }
@@ -240,7 +270,7 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 
 	if (!dp_wifi8->cumac) {
 		ath12k_warn(ab, "Skipping ring init for non-cumac target");
-		ath12k_enable_hif_interrupts(dp, ath12k_wifi8_non_cumac_dp_service_srng);
+		ath12k_wifi8_enable_hif_interrupts(dp, ath12k_wifi8_non_cumac_dp_service_srng);
 		return 0;
 	}
 
@@ -356,7 +386,7 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 		goto fail_pn_counter_page_free;
 	}
 
-	ath12k_enable_hif_interrupts(dp, ath12k_wifi8_cumac_dp_service_srng);
+	ath12k_wifi8_enable_hif_interrupts(dp, ath12k_wifi8_cumac_dp_service_srng);
 
 	ath12k_info(ab, "CUMAC init successful");
 	return 0;

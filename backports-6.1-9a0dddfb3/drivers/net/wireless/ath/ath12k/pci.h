@@ -128,7 +128,6 @@ struct ath12k_pci {
 	struct mhi_controller *mhi_ctrl;
 	const struct ath12k_msi_config *msi_config;
 	unsigned long mhi_state;
-	enum mhi_callback mhi_pre_cb;
 	u32 register_window;
 	struct timer_list mhi_q6_boot_debug_timer;
 #ifdef CPTCFG_EXT_IPA_OFFLOAD

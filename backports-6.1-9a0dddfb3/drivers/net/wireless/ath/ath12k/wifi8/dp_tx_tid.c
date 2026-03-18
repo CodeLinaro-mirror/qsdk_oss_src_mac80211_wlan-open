@@ -151,7 +151,7 @@ u32 ath12k_wifi8_dp_tx_get_header_length(struct ath12k_dp_hw_group *dp_hw_grp,
 
 int ath12k_tx_send_mpduq_init(struct ath12k_dp_hw_group *dp_hw_grp,
 			      struct ath12k_dp_peer *peer,
-			      struct ath12k_dp_vif *dp_vif,
+			      enum hal_tcl_encap_type tx_encap_type,
 			      struct ath12k_dp_mpdu_q_info *sw_mpduq_ptr)
 {
 	u8 tid_num = sw_mpduq_ptr->flow_info.tid_num;
@@ -175,7 +175,7 @@ int ath12k_tx_send_mpduq_init(struct ath12k_dp_hw_group *dp_hw_grp,
 		 */
 		ti.tid = (tid_num < NON_QOS_TID) ? tid_num : TQM_NON_DATA_TID;
 	}
-	ti.encap_type = dp_vif->tx_encap_type;
+	ti.encap_type = tx_encap_type;
 	//TBD: ti.wapi
 	ti.assoc_link_id = ATH12K_INVALID_LINK_ID;
 	ti.link_id1 = ATH12K_INVALID_LINK_ID - 1;
@@ -237,7 +237,7 @@ struct ath12k_dp_tx_tid_info *ath12k_dp_get_tid(struct ath12k_dp_peer *peer, u8 
 
 struct ath12k_dp_mpdu_q_info *ath12k_peer_alloc_tid(struct ath12k_dp_hw_group *dp_hw_grp,
 						    struct ath12k_dp_peer *peer,
-						    struct ath12k_dp_vif *dp_vif,
+						    enum hal_tcl_encap_type encap_type,
 						    u8 tidno,
 						    struct ath12k_dp_tx_tid_info **ptid,
 						    u8 flow_type)
@@ -270,7 +270,7 @@ create_mpdu:
 		spin_unlock_bh(&dp_hw_grp_wifi8->tx_pool_lock);
 		goto error;
 	}
-	ret = ath12k_tx_send_mpduq_init(dp_hw_grp, peer, dp_vif, sw_mpduq_ptr);
+	ret = ath12k_tx_send_mpduq_init(dp_hw_grp, peer, encap_type, sw_mpduq_ptr);
 	if (ret) {
 		ath12k_err(ab, "HAL MPDUQ INIT FAILED\n");
 		sw_mpduq_ptr->mpduq_state = ATH12K_TX_Q_DELETED;

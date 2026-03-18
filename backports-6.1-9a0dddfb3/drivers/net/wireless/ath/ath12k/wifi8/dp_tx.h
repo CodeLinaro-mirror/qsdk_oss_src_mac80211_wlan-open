@@ -15,6 +15,7 @@
 struct ath12k_dp_tx_queue {
 	u16 peer_id;
 	u8 hw_link_id;
+	u8 addr[ETH_ALEN];
 };
 struct ath12k_dp_tqm_cmd {
 	struct list_head list;

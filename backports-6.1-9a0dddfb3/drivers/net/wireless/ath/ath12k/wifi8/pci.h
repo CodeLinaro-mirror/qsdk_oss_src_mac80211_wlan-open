@@ -14,8 +14,8 @@ static const struct ath12k_msi_config ath12k_wifi8_msi_config[] = {
 		.users = (struct ath12k_msi_user[]) {
 			{ .name = "MHI", .num_vectors = 3, .base_vector = 0 },
 			{ .name = "CE", .num_vectors = 5, .base_vector = 3 },
-			{ .name = "DP", .num_vectors = 16, .base_vector = 8 },
-			{ .name = "MGMT", .num_vectors = 2, .base_vector = 24 },
+			{ .name = "MGMT", .num_vectors = 2, .base_vector = 8 },
+			{ .name = "DP", .num_vectors = 22, .base_vector = 10 },
 		},
 	},
 };

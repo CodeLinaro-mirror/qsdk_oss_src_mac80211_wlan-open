@@ -100,7 +100,7 @@ struct hal_rx_user_status {
 	u16 tcp_ack_msdu_count;
 	u16 udp_msdu_count;
 	u16 other_msdu_count;
-	u8 frame_control;
+	u16 frame_control;
 	u8 frame_control_info_valid:1,
 	data_sequence_control_info_valid:1;
 	u16 first_data_seq_ctrl;
@@ -227,7 +227,7 @@ struct hal_rx_mon_ppdu_info {
 	u8 reception_type;
 	u64 tsft;
 	u64 rx_duration;
-	u8 frame_control;
+	u16 frame_control;
 	u16 ast_index;
 	u8  rtap_flags;
 	u8 rs_fcs_err;

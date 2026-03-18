@@ -151,7 +151,7 @@
 
 #define ATH12K_CFG_AP_MAX_MGMT_FRM_SZ \
 	ATH12K_CFG_INI_UINT("ap_max_mgmt_frm_sz", \
-	1500, 2000, 1500, \
+	1500, 2000, 2000, \
 	ATH12K_CFG_VALUE_OR_DEFAULT, "AP max mgmt frame size for beacon and probe resp")
 
 /* Note: This is a dev-only INI exposed for dealing with unanticipated scenarios */

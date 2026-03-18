@@ -249,6 +249,8 @@ enum rdi_based_source_ring_selection {
 #define HAL_TCL_ASE_SEARCH_CTRL_CACHE_DISABLE			BIT(9)
 #define HAL_TCL_ASE_SEARCH_CTRL_CACHE_FAILURES_ENABLE		BIT(10)
 
+#define HAL_TCL_ASE_PEER_FETCH_CACHE_CTRL      0xF130A4
+#define HAL_TCL_ASE_PEER_FETCH_CACHE_FLUSH     BIT(1)
 /* WBM PPE Release Ring address */
 #define HAL_TQM_PPE_RELEASE_RING_BASE_LSB(hal) \
 	((hal)->regs->hal_ppe_rel_ring_base)
@@ -1153,6 +1155,7 @@ void ath12k_wifi8_hal_hw_ase_init(struct ath12k_base *ab,
 void ath12k_wifi8_hal_vdev_mcast_ctrl_set(struct ath12k_base *ab, u32 vdev_id,
 					  u8 mcast_ctrl_val);
 int ath12k_wifi8_hal_get_rdi_source_cfg(struct ath12k_base *ab, int source);
+void ath12k_wifi8_hal_txpt_classify_info_flush(struct ath12k_base *ab);
 
 static inline
 void *ath12k_hal_srng_src_begin_get_next_entry_nolock_fast(struct hal_srng *srng)

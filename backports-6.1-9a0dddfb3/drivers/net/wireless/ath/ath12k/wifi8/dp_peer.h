@@ -11,6 +11,8 @@
 #include "hw.h"
 #include "dp_tx_flow_info.h"
 
+#define ATH12K_SMD_MGMT_TID	BIT(15)
+
 struct peer_assoc_flowq_params;
 struct ath12k_dp_peer_ext_ctx {
 	struct ath12k_dp_tx_flow_info tx_flow_info;
@@ -53,4 +55,7 @@ void ath12k_wifi8_dp_peer_cleanup(struct ath12k_dp_hw *dp_hw,
 void ath12k_wifi8_dp_vif_update_4addr(struct ath12k_dp_hw *dp_hw,
 				      struct ath12k_dp_vif *dp_vif,
 				      u8 *addr);
+int ath12k_dp_peer_fetch_smd_tx_ctx(struct ath12k_base *ab,
+				    struct ath12k_dp_peer *dp_peer,
+				    u32 tx_tid_bitmap);
 #endif

@@ -4433,6 +4433,11 @@ ath12k_wifi7_hal_mon_tx_parse_status_tlv(struct ath12k_hal *hal,
 		he_ppdu_subtype = u32_get_bits(info[3],
 					       HAL_TX_MON_PHY_DESC_INFO3_HE_PPDU_SUBTYPE);
 
+		tx_ppdu_info->rx_status.preamble_type = pkt_type;
+		tx_ppdu_info->rx_status.ltf_size = ltf_size;
+		tx_ppdu_info->rx_status.is_stbc = is_stbc;
+		tx_ppdu_info->rx_status.bw = bandwidth;
+
 		switch (tx_ppdu_info->rx_status.preamble_type) {
 		case HAL_RX_PREAMBLE_11N:
 			tx_ppdu_info->rx_status.ht_flags = 1;
@@ -4470,11 +4475,6 @@ ath12k_wifi7_hal_mon_tx_parse_status_tlv(struct ath12k_hal *hal,
 		he_data3 |= (is_stbc << HE_STBC_SHIFT);
 
 		hal_get_radiotap_he_gi_ltf(&gi, &ltf_size);
-
-		tx_ppdu_info->rx_status.ltf_size = ltf_size;
-		tx_ppdu_info->rx_status.is_stbc = is_stbc;
-		tx_ppdu_info->rx_status.bw = bandwidth;
-		tx_ppdu_info->rx_status.preamble_type = pkt_type;
 
 		he_data1 |= IEEE80211_RADIOTAP_HE_DATA1_BW_RU_ALLOC_KNOWN;
 		he_data2 |= IEEE80211_RADIOTAP_HE_DATA2_GI_KNOWN;

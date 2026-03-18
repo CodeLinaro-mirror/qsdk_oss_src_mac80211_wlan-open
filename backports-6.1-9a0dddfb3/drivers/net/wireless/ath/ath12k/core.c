@@ -88,7 +88,7 @@ MODULE_PARM_DESC(probe_order, "Probe order (hex bitfield, 4-bit per device)");
 extern struct ath12k_ps_context ath12k_global_ps_ctx;
 #endif
 
-u64 ath12k_debug_mask = ATH12K_DBG_MAC;
+u64 ath12k_debug_mask = ATH12K_DBG_MAC | ATH12K_DBG_EAPOL | ATH12K_DBG_MLME;
 module_param_named(debug_mask, ath12k_debug_mask, ullong, 0644);
 MODULE_PARM_DESC(debug_mask, "Debugging mask (64-bit)");
 EXPORT_SYMBOL(ath12k_debug_mask);
@@ -1101,13 +1101,13 @@ void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag, bool standby_
 			ath12k_dp_ppeds_interrupt_stop(ab);
 #endif
 			ath12k_qmi_firmware_stop(ab);
-			ath12k_hif_power_down(ab, false);
 			ath12k_core_cleanup(ab);
 			total_vdevs = ath12k_core_get_total_num_vdevs(ab);
 			ab->free_vdev_map = (1LL << (ab->num_radios * total_vdevs)) - 1;
 			ab->free_vdev_stats_id_map = 0;
 			ath12k_core_to_group_ref_put(ab);
 			ath12k_qmi_free_resource(ab);
+			ath12k_hif_power_down(ab, false);
 			ath12k_info(ab, "Q6 power down\n");
 		}
 	}
@@ -3808,10 +3808,10 @@ void ath12k_core_trigger_partner_device_crash(struct ath12k_base *ab)
 		 * method to ensure recovery of all partner chips in MODE0 instead of
 		 * relying on firmware to crash partner chips
 		 */
+		clear_bit(ATH12K_FLAG_UMAC_RECOVERY_START, &partner_ab->dev_flags);
 		if (!test_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags)) {
 			ath12k_info(ab, "sending fw_hang cmd to partner chipset(s)\n");
 			set_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags);
-			clear_bit(ATH12K_FLAG_UMAC_RECOVERY_START, &partner_ab->dev_flags);
 			partner_ab->qmi.num_radios = U8_MAX;
 			ath12k_wmi_force_fw_hang_cmd(partner_ab->pdevs[0].ar,
 					ATH12K_WMI_FW_HANG_ASSERT_TYPE,

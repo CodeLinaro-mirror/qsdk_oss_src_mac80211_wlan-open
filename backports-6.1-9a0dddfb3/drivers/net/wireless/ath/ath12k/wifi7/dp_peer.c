@@ -7,6 +7,7 @@
 #include "../debug.h"
 #include "../dp_cmn.h"
 #include "../dp_peer.h"
+#include "../dp.h"
 #include "dp.h"
 #include "../telemetry_agent_if.h"
 #include "../dp_stats.h"
@@ -67,6 +68,7 @@ int ath12k_wifi7_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 	struct ath12k_sta *ahsta = NULL;
 	struct ath12k_dp_hw *dp_hw = &ah->dp_hw;
 	struct wireless_dev *wdev;
+	struct ath12k_pdev_dp *dp_pdev;
 
 	if (params->sta) {
 		sta = params->sta;
@@ -134,6 +136,13 @@ int ath12k_wifi7_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 	if (wdev)
 		dp_peer->dev = wdev->netdev;
 
+	rcu_read_lock();
+	dp_pdev = ath12k_dp_hw_grp_to_dp_pdev(ah->ag->dp_hw_grp, params->hw_link_id);
+
+	if (dp_pdev && ath12k_proto_stats_enabled(dp_pdev))
+		ath12k_dp_alloc_proto_stats_peer(dp_peer);
+	rcu_read_unlock();
+
 	spin_lock_bh(&dp_hw->peer_lock);
 
 	list_add(&dp_peer->list, &dp_hw->peers);
@@ -187,6 +196,7 @@ void ath12k_wifi7_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 	synchronize_rcu();
 	kfree(dp_peer->qos);
 	ath12k_dp_free_preserved_stats(dp_peer->link_peer_delete_stats);
+	ath12k_dp_free_proto_stats_peer(dp_peer);
 	kfree(dp_peer);
 }
 

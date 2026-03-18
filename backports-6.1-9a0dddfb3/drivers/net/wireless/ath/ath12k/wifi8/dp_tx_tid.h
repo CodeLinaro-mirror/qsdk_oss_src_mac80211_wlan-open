@@ -42,14 +42,14 @@ struct ath12k_dp_mpdu_q_info
 			     u8 flow_type);
 int ath12k_tx_send_mpduq_init(struct ath12k_dp_hw_group *dp_hw_grp,
 			      struct ath12k_dp_peer *peer,
-			      struct ath12k_dp_vif *dp_vif,
+			      enum hal_tcl_encap_type encap_type,
 			      struct ath12k_dp_mpdu_q_info *sw_mpduq_ptr);
 struct ath12k_dp_tx_tid_info *ath12k_dp_get_tid(struct ath12k_dp_peer *peer,
 						u8 tidno);
 struct ath12k_dp_mpdu_q_info
 *ath12k_peer_alloc_tid(struct ath12k_dp_hw_group *dp_hw_grp,
 		       struct ath12k_dp_peer *peer,
-		       struct ath12k_dp_vif *dp_vif, u8 tidno,
+		       enum hal_tcl_encap_type encap_type, u8 tidno,
 		       struct ath12k_dp_tx_tid_info **ptid, u8 flow_type);
 void ath12k_peer_free_tid(struct ath12k_dp_hw_group *dp_hw_grp,
 			  struct ath12k_dp_mpdu_q_info *sw_mpduq_ptr,

@@ -1116,7 +1116,7 @@ void ath12k_hal_dump_srng_stats(struct ath12k_base *ab)
 	}
 
 	ath12k_err(ab, "\nLast interrupt received for each group:\n");
-	for (i = 0; i < ATH12K_EXT_IRQ_GRP_NUM_MAX; i++) {
+	for (i = 0; i < ab->hw_params->ext_irq_grp_num_max; i++) {
 		irq_grp = &ab->ext_irq_grp[i];
 		ath12k_err(ab, "group_id %d %ums before\n",
 			   irq_grp->grp_id,
@@ -1285,7 +1285,7 @@ ssize_t ath12k_debugfs_hal_dump_srng_stats(struct ath12k_base *ab, char *buf, in
 
 	len += scnprintf(buf + len, size - len, "\nLast interrupt received for each group:\n");
 	len += scnprintf(buf + len, size - len, "%5s %20s\n", "group_id", "delay in ms");
-	for (i = 0; i < ATH12K_EXT_IRQ_GRP_NUM_MAX; i++) {
+	for (i = 0; i < ab->hw_params->ext_irq_grp_num_max; i++) {
 		irq_grp = &ab->ext_irq_grp[i];
 		len += scnprintf(buf + len, size - len, "%-20d  %-20u\n",
 				 irq_grp->grp_id,

@@ -2031,16 +2031,18 @@ static inline void ath12k_htt_print_tx_peer_rate_stats_tlv(const void *tag_buf,
 	for (j = 0; j < HTT_TX_PEER_STATS_NUM_GI_COUNTERS; j++) {
 		index = 0;
 		for (i = 0; i < HTT_TX_PEER_STATS_NUM_MCS_COUNTERS; i++)
-			index += snprintf(&tx_gi[j][index], HTT_MAX_STRING_LEN - index,
-					  " %u:%u,", i, htt_stats_buf->tx_gi[j][i]);
+			index += scnprintf(&tx_gi[j][index], HTT_MAX_STRING_LEN - index,
+					   "%s%u:%u,", index ? ", " : "",
+					   i, htt_stats_buf->tx_gi[j][i]);
 
 		for (i = 0; i < HTT_TX_PEER_STATS_NUM_EXTRA_MCS_COUNTERS; i++)
-			index += snprintf(&tx_gi[j][index], HTT_MAX_STRING_LEN - index,
-					  " %u:%u,", i + HTT_TX_PEER_STATS_NUM_MCS_COUNTERS,
-					  htt_stats_buf->tx_gi_ext[j][i]);
+			index += scnprintf(&tx_gi[j][index], HTT_MAX_STRING_LEN - index,
+					   "%s%u:%u,", index ? ", " : "",
+					   i + HTT_TX_PEER_STATS_NUM_MCS_COUNTERS,
+					   htt_stats_buf->tx_gi_ext[j][i]);
 
-		len += scnprintf(buf + len, buf_len - len, "tx_gi[%u] = %s ", j, tx_gi[j]);
-		len += scnprintf(buf + len, buf_len - len, "\n");
+		len += scnprintf(buf + len, buf_len - len,
+				 "tx_gi[%u] = %s\n", j, tx_gi[j]);
 	}
 
 	len += print_array_to_buf(buf, len, "tx_dcm", htt_stats_buf->tx_dcm,
@@ -9707,14 +9709,14 @@ ath12k_htt_print_tx_pdev_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 	len += scnprintf(buf + len, buf_len - len, "\n");
 
 	for (j = 0; j < ATH12K_HTT_TX_PDEV_STATS_NUM_GI_COUNTERS; j++) {
-		len += scnprintf(buf + len, (buf_len - len),
-				 "tx_gi[%u] =", j);
-		len += scnprintf(buf + len, buf_len - len, " -2:%u,-1:%u ",
-				 htt_stats_buf->tx_gi_ext_2[j][0],
+		len += scnprintf(buf + len, buf_len - len,
+				 "tx_gi[%u] = -2:%u,-1:%u",
+				 j, htt_stats_buf->tx_gi_ext_2[j][0],
 				 htt_stats_buf->tx_gi_ext_2[j][1]);
 		for (i = 0; i < ATH12K_HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS; i++) {
-			len += scnprintf(buf + len, buf_len - len, " %u:%u,",
-				j, le32_to_cpu(htt_stats_buf->tx_gi[j][i]));
+			len += scnprintf(buf + len, buf_len - len,
+					 ", %u:%u", i,
+					 le32_to_cpu(htt_stats_buf->tx_gi[j][i]));
 			if (u32_get_bits(htt_stats_bn_rate_stats_buf_global.mac_id__word,
 				HTT_TX_PDEV_BN_RATE_STATS_WIFI_VERSION)
 				>= HTT_WIFI_VER_11BN) {
@@ -9723,28 +9725,28 @@ ath12k_htt_print_tx_pdev_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 				switch (i) {
 				case ATH12K_HTT_TX_RX_MCS_RATE_1:
 				k = 0;
-				len += scnprintf(buf + len, buf_len - len, " 1.1:%u,",
+				len += scnprintf(buf + len, buf_len - len, ", 1.1:%u",
 				le32_to_cpu
 				(htt_stats_bn_rate_stats_buf_global.tx_gi_ext_3[j][k]));
 				break;
 
 				case ATH12K_HTT_TX_RX_MCS_RATE_3:
 				k = 1;
-				len += scnprintf(buf + len, buf_len - len, " 3.1:%u,",
+				len += scnprintf(buf + len, buf_len - len, ", 3.1:%u",
 				le32_to_cpu
 				(htt_stats_bn_rate_stats_buf_global.tx_gi_ext_3[j][k]));
 				break;
 
 				case ATH12K_HTT_TX_RX_MCS_RATE_4:
 				k = 2;
-				len += scnprintf(buf + len, buf_len - len, " 4.1:%u,",
+				len += scnprintf(buf + len, buf_len - len, ", 4.1:%u",
 				le32_to_cpu
 				(htt_stats_bn_rate_stats_buf_global.tx_gi_ext_3[j][k]));
 				break;
 
 				case ATH12K_HTT_TX_RX_MCS_RATE_7:
 				k = 3;
-				len += scnprintf(buf + len, buf_len - len, " 7.1:%u,",
+				len += scnprintf(buf + len, buf_len - len, ", 7.1:%u",
 				le32_to_cpu
 				(htt_stats_bn_rate_stats_buf_global.tx_gi_ext_3[j][k]));
 				break;
@@ -9753,7 +9755,7 @@ ath12k_htt_print_tx_pdev_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 		}
 
 		for (i = 0; i < ATH12K_HTT_TX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS; i++)
-			len += scnprintf(buf + len, buf_len - len, " %u:%u,",
+			len += scnprintf(buf + len, buf_len - len, ", %u:%u",
 					 i + ATH12K_HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS,
 					 le32_to_cpu(htt_stats_buf->tx_gi_ext[j][i]));
 		len += scnprintf(buf + len, buf_len - len, "\n");

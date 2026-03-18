@@ -79,9 +79,12 @@ static const char *irq_name[ATH12K_IRQ_NUM_MAX] = {
 	"tcl2host-status-ring",
 };
 
-char dp_irq_name[ATH12K_MAX_PCI_DOMAINS + 1][ATH12K_EXT_IRQ_DP_NUM_VECTORS][DP_IRQ_NAME_LEN] = {};
-char dp_pcic_irq_name[ATH12K_MAX_PCI_DOMAINS + 1][ATH12K_EXT_IRQ_DP_NUM_VECTORS][DP_IRQ_NAME_LEN] = {};
-char ce_irq_name[ATH12K_MAX_PCI_DOMAINS + 1][ATH12K_IRQ_NUM_MAX][DP_IRQ_NAME_LEN] = {};
+char dp_irq_name[ATH12K_MAX_PCI_DOMAINS + 1]
+	[ATH12K_EXT_IRQ_NUM_MAX][DP_IRQ_NAME_LEN] = {};
+char dp_pcic_irq_name[ATH12K_MAX_PCI_DOMAINS + 1]
+	[ATH12K_EXT_IRQ_NUM_MAX][DP_IRQ_NAME_LEN] = {};
+char ce_irq_name[ATH12K_MAX_PCI_DOMAINS + 1]
+	[ATH12K_IRQ_NUM_MAX][DP_IRQ_NAME_LEN] = {};
 
 void ath12k_pcic_config_static_window(struct ath12k_base *ab)
 {
@@ -212,7 +215,7 @@ void ath12k_pcic_free_ext_irq(struct ath12k_base *ab)
 	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
-	for (i = 0; i < ATH12K_EXT_IRQ_GRP_NUM_MAX; i++) {
+	for (i = 0; i < ab->hw_params->ext_irq_grp_num_max; i++) {
 		struct ath12k_ext_irq_grp *irq_grp = &ab->ext_irq_grp[i];
 
 		for (j = 0; j < irq_grp->num_irq; j++)
@@ -319,7 +322,7 @@ static void __ath12k_pcic_ext_irq_disable(struct ath12k_base *sc)
 {
 	int i;
 
-	for (i = 0; i < ATH12K_EXT_IRQ_GRP_NUM_MAX; i++) {
+	for (i = 0; i < sc->hw_params->ext_irq_grp_num_max; i++) {
 		struct ath12k_ext_irq_grp *irq_grp = &sc->ext_irq_grp[i];
 
 		ath12k_pcic_ext_grp_disable(irq_grp);
@@ -352,7 +355,7 @@ static void ath12k_pcic_sync_ext_irqs(struct ath12k_base *ab)
 {
 	int i, j, irq_idx;
 
-	for (i = 0; i < ATH12K_EXT_IRQ_GRP_NUM_MAX; i++) {
+	for (i = 0; i < ab->hw_params->ext_irq_grp_num_max; i++) {
 		struct ath12k_ext_irq_grp *irq_grp = &ab->ext_irq_grp[i];
 
 		for (j = 0; j < irq_grp->num_irq; j++) {
@@ -490,8 +493,13 @@ int ath12k_pcic_ext_cfg_gic_msi_irq(struct ath12k_base *ab,
 	    ab->hw_params->ring_mask->reo2ppe[i] ||
 #endif
 	    ab->hw_params->ring_mask->rx_mon_dest[i] ||
+	    ab->hw_params->ring_mask->rx_mon_status[i] ||
+	    ab->hw_params->ring_mask->host2rxmon[i] ||
 	    ab->hw_params->ring_mask->tx_mon_dest[i] ||
-	    ab->hw_params->ring_mask->tx_mon_buff[i]) {
+	    ab->hw_params->ring_mask->tx_mon_buff[i] ||
+	    ab->hw_params->ring_mask->tx_exception[i] ||
+	    ab->hw_params->ring_mask->tqm_status[i] ||
+	    ab->hw_params->ring_mask->tcl_status[i]) {
 		num_irq = 1;
 	}
 
@@ -870,7 +878,7 @@ void ath12k_pcic_ext_irq_enable(struct ath12k_base *ab)
 {
 	int i;
 
-	for (i = 0; i < ATH12K_EXT_IRQ_GRP_NUM_MAX; i++) {
+	for (i = 0; i < ab->hw_params->ext_irq_grp_num_max; i++) {
 		struct ath12k_ext_irq_grp *irq_grp = &ab->ext_irq_grp[i];
 
 		if (!irq_grp->napi_enabled) {
@@ -955,7 +963,7 @@ int ath12k_pcic_ext_irq_config(struct ath12k_base *ab,
 	if (ath12k_napi_poll_budget < NAPI_POLL_WEIGHT)
 		ath12k_napi_poll_budget = NAPI_POLL_WEIGHT;
 
-	for (i = 0; i < ATH12K_EXT_IRQ_GRP_NUM_MAX; i++) {
+	for (i = 0; i < ab->hw_params->ext_irq_grp_num_max; i++) {
 		irq_grp = &ab->ext_irq_grp[i];
 		u32 num_irq = 0;
 
@@ -1004,8 +1012,12 @@ int ath12k_pcic_ext_irq_config(struct ath12k_base *ab,
 #endif
 		    ab->hw_params->ring_mask->rx_mon_dest[i] ||
 		    ab->hw_params->ring_mask->rx_mon_status[i] ||
+		    ab->hw_params->ring_mask->host2rxmon[i] ||
 		    ab->hw_params->ring_mask->tx_mon_dest[i] ||
-		    ab->hw_params->ring_mask->tx_mon_buff[i]) {
+		    ab->hw_params->ring_mask->tx_mon_buff[i] ||
+		    ab->hw_params->ring_mask->tx_exception[i] ||
+		    ab->hw_params->ring_mask->tqm_status[i] ||
+		    ab->hw_params->ring_mask->tcl_status[i]) {
 			num_irq = 1;
 		}
 
@@ -1130,7 +1142,7 @@ int ath12k_pcic_msi_desc_assign_irq(struct ath12k_base *ab,
 			continue;
 		}
 
-		if (i >= (base_vector + num_vectors) || *k >= ATH12K_EXT_IRQ_DP_NUM_VECTORS)
+		if (i >= (base_vector + num_vectors) || *k >= ATH12K_EXT_IRQ_NUM_MAX)
 			break;
 
 		ret = ath12k_pcic_ext_cfg_gic_msi_irq(ab, irq_handler, dp,

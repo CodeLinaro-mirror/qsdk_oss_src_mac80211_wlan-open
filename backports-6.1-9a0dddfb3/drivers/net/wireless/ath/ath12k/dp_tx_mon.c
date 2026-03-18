@@ -644,6 +644,12 @@ ath12k_dp_mon_tx_deep_free_ppdu_info(struct ath12k_pdev_dp *pdev_dp,
 			dev_kfree_skb_any(mpdu);
 	}
 
+	memset(&mon_data->prot_status_info, 0, sizeof(mon_data->prot_status_info));
+	memset(&mon_data->data_status_info, 0, sizeof(mon_data->data_status_info));
+
+	memset(&mon_data->prot_ppdu_info, 0, sizeof(mon_data->prot_ppdu_info));
+	memset(&mon_data->data_ppdu_info, 0, sizeof(mon_data->data_ppdu_info));
+
 	mon_data->prot_ppdu_info.tx_info.ba_user_id = -1;
 	mon_data->data_ppdu_info.tx_info.ba_user_id = -1;
 }
@@ -2217,6 +2223,45 @@ static void ath12k_dp_tx_mon_update_radiotap_eht(struct sk_buff *mon_skb,
 }
 
 /**
+ * ath12k_dp_mon_tx_update_rtap_vendor_tlv() - Populate ATH12K vendor radiotap TLV
+ * @dp_pdev: Per-pdev DP context; provides the pre-allocated vendor TLV buffer
+ * @mon_info: TX monitor info to update; VENDOR_TLV flag set on return
+ * @rx_status: HAL PPDU status supplying device_id, tsft, l_sig_a/b_info
+ *
+ * Writes OUI, sub-namespace, skip_length, device_id, ppdu_start_timestamp,
+ * lsig, and lsig_b into the reused vendor TLV buffer and attaches it to
+ * @mon_info for radiotap delivery. All fields are refreshed on every call
+ * to prevent stale values from a previous PPDU.
+ */
+static void
+ath12k_dp_mon_tx_update_rtap_vendor_tlv(struct ath12k_pdev_dp *dp_pdev,
+					struct ieee80211_tx_mon_info *mon_info,
+					struct hal_rx_mon_ppdu_info *rx_status)
+{
+	struct ath12k_mon_data *mon_data = &dp_pdev->dp_mon_pdev->mon_data;
+	struct ieee80211_radiotap_vendor_ns *v_tlv = mon_data->rtap_vendor_tlv;
+	struct ath12k_rtap_vendor_ns *vendor_data;
+	u8 ath_oui[] = {0x00, 0x03, 0x7f};
+
+	if (!v_tlv) {
+		ath12k_err(dp_pdev->dp->ab,
+			   "TX Mon: Invalid Vendor TLV allocation in work queue\n");
+		return;
+	}
+
+	mon_info->v_tlv = v_tlv;
+	memcpy(v_tlv->oui, ath_oui, sizeof(v_tlv->oui));
+	v_tlv->sub_namespace = 0;
+	v_tlv->skip_length = cpu_to_le16(sizeof(struct ath12k_rtap_vendor_ns));
+	vendor_data = (struct ath12k_rtap_vendor_ns *)&v_tlv->data;
+	vendor_data->device_id = rx_status->device_id;
+	vendor_data->ppdu_start_timestamp = rx_status->tsft;
+	vendor_data->lsig = rx_status->l_sig_a_info;
+	vendor_data->lsig_b = rx_status->l_sig_b_info;
+	tx_mon_hw_set(mon_info, VENDOR_TLV);
+}
+
+/**
  * ath12k_dp_mon_tx_update_mon_info() - Comprehensive monitor info population
  * @pdev_dp: ath12k pdev dp context
  * @mon_info: mac80211 tx monitor info to fill
@@ -2285,7 +2330,7 @@ ath12k_dp_mon_tx_update_mon_info(struct ath12k_pdev_dp *dp_pdev,
 		tx_mon_hw_set(mon_info, CHAN_INFO);
 	}
 
-	is_qos_data = ieee80211_is_data_qos(rx_status->frame_control);
+	is_qos_data = ieee80211_is_data_qos(cpu_to_le16(rx_status->frame_control));
 
 	if (is_qos_data && rx_status->userstats[user_idx].ampdu_present) {
 		mon_info->ampdu_ref_num = ppdu_info->ppdu_id;
@@ -2311,6 +2356,9 @@ ath12k_dp_mon_tx_update_mon_info(struct ath12k_pdev_dp *dp_pdev,
 
 		tx_mon_hw_set(mon_info, HE_MU_INFO);
 	}
+
+	/* Always add vendor ns TLV */
+	ath12k_dp_mon_tx_update_rtap_vendor_tlv(dp_pdev, mon_info, rx_status);
 }
 
 /**
@@ -2644,7 +2692,7 @@ ath12k_dp_mon_tx_fill_rate_status(struct ath12k_pdev_dp *dp_pdev,
 		case HAL_RX_PREAMBLE_11B:
 		case HAL_RX_PREAMBLE_11A:
 		default:
-			if (!ieee80211_is_data_qos(rx_status->frame_control))
+			if (!ieee80211_is_data_qos(cpu_to_le16(rx_status->frame_control)))
 				ri->legacy = ath12k_dp_tx_mon_get_legacy_rate
 							(rx_status->rate ?
 							rx_status->rate :
@@ -2696,7 +2744,7 @@ ath12k_dp_mon_tx_deliver_frame(struct ath12k_pdev_dp *dp_pdev,
 					 contains_host_frames,
 					 is_response_frame, user_idx);
 
-	if (ieee80211_is_data_qos(ppdu_info->rx_status.frame_control))
+	if (ieee80211_is_data_qos(cpu_to_le16(ppdu_info->rx_status.frame_control)))
 		ath12k_dp_tx_mon_update_radiotap_eht(skb, &status.mon_info, ppdu_info);
 
 	ath12k_dp_mon_tx_fill_rate_status(dp_pdev, ppdu_info,
