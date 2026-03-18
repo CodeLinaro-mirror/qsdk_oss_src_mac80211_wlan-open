@@ -851,8 +851,8 @@ ath12k_update_extd_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 	if (!is_mcast) {
 		DP_STATS_UPD(tx_stats, last_ack_rssi,
 			     peer->peer_stats.last_ack_rssi);
-		ewma_avg_ack_rssi_add(&peer->peer_stats.avg_ack_rssi,
-				      peer->peer_stats.last_ack_rssi);
+		DP_STATS_UPD(tx_stats, avg_ack_rssi,
+			     -(s8)ewma_avg_ack_rssi_read(&peer->peer_stats.avg_ack_rssi));
 	}
 
 	/* Update debugfs stats */
@@ -885,14 +885,6 @@ ath12k_update_extd_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 	if (is_ppdu_cookie_valid)
 		DP_STATS_INCR(tx_stats, num_ppdu_cookie_valid, 1);
 	DP_STATS_INCC(tx_stats, pream_punct_cnt, 1, is_pream_punct);
-	if (!is_mcast) {
-		if (tx_stats->avg_ack_rssi == INVALID_RSSI)
-			tx_stats->avg_ack_rssi =
-				WEIGHTED_AVG_IN(tx_stats->last_ack_rssi);
-		else
-			WEIGHTED_AVG_UPDATE(tx_stats->avg_ack_rssi,
-					    tx_stats->last_ack_rssi);
-	}
 
 	for (idx = 0; idx < HTT_STATS_MAX_CHAINS; idx++)
 		DP_STATS_UPD(tx_stats, rssi_chain[idx],
@@ -1137,7 +1129,7 @@ ath12k_update_htt_stats_txrate(struct ath12k_pdev_dp *dp_pdev,
 	if (!is_mcast) {
 		peer->peer_stats.last_ack_rssi = ack_rssi;
 		ewma_avg_ack_rssi_add(&peer->peer_stats.avg_ack_rssi,
-				      ack_rssi);
+				      -ack_rssi);
 	}
 
 	memcpy(&peer->last_txrate, &peer->txrate, sizeof(struct rate_info));
