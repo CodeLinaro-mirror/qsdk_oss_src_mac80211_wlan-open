@@ -17994,8 +17994,10 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		fallthrough;
 	case NL80211_IFTYPE_AP:
 		ahvif->vdev_type = WMI_VDEV_TYPE_AP;
-		if (wdev && wdev->vap_submode)
+		if (wdev && wdev->vap_submode) {
 			ahvif->vap_submode = wdev->vap_submode;
+			arvif->vdev_subtype = WMI_VDEV_SUBTYPE_MESH_NON_11S;
+		}
 
 		if (vif->p2p)
 			arvif->vdev_subtype = WMI_VDEV_SUBTYPE_P2P_GO;
