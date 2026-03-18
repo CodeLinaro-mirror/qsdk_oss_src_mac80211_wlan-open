@@ -68,6 +68,7 @@ struct ath12k_wifi8_dp_stats {
 struct ath12k_dp_wifi8 {
 	struct ath12k_dp *dp;
 	bool cumac;
+	atomic_t sam_cmd_num;
 	struct dp_srng tx_exception;
 	struct dp_srng tcl_cmd_ring;
 	struct dp_srng tcl_status_ring;
@@ -82,6 +83,9 @@ struct ath12k_dp_wifi8 {
 	struct dp_srng rx_ase_cmd_ring;
 	struct dp_srng rx_ase_status_ring;
 	struct ath12k_wifi8_dp_stats stats;
+
+	/* SAM command ring staging in words */
+	u32 *sam_cmd_staging;
 };
 
 struct ath12k_dp_hw_group_wifi8 {
