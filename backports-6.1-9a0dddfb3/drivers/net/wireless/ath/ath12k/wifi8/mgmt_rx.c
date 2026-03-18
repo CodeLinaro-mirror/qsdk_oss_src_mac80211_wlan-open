@@ -631,10 +631,18 @@ ath12k_wifi8_mgmt_rx_deliver_mmpdu(struct ath12k_mgmt *mgmt, struct ath12k *ar,
 				   struct ieee80211_rx_status *status,
 				   enum ath12k_mgmt_srng_pkt_type pkt_type)
 {
+	struct ieee80211_hw *hw = ath12k_ar_to_hw(ar);
+	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
 	struct ieee80211_rx_status *rx_status;
 	struct ieee80211_hdr *hdr;
 	struct ath12k_device_mgmt_srng_stats *mgmt_srng_stats;
 	u16 frm_stype, fc;
+
+	if (ah->state != ATH12K_HW_STATE_ON && ah->state != ATH12K_HW_STATE_RESTARTED) {
+		/* drop packets received before mac start */
+		dev_kfree_skb_any(mmpdu);
+		return;
+	}
 
 	hdr = (struct ieee80211_hdr *)mmpdu->data;
 	fc = le16_to_cpu(hdr->frame_control);
@@ -646,7 +654,7 @@ ath12k_wifi8_mgmt_rx_deliver_mmpdu(struct ath12k_mgmt *mgmt, struct ath12k *ar,
 	rx_status = IEEE80211_SKB_RXCB(mmpdu);
 	*rx_status = *status;
 
-	ieee80211_rx_ni(ath12k_ar_to_hw(ar), mmpdu);
+	ieee80211_rx_ni(hw, mmpdu);
 }
 
 static void ath12k_wifi8_mgmt_rx_process_err_mmpdu(struct ath12k_mgmt *mgmt,
