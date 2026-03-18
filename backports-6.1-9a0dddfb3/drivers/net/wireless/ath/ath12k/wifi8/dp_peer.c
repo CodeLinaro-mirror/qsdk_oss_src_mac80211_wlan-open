@@ -715,6 +715,8 @@ int ath12k_dp_tqm_remove_mgmt_queues(struct ath12k_base *ab,
 
 	for (q = 0; q < MGMT_MSDUQ_TYPE_MAX; q++) {
 		sw_msduq_ptr = tx_flow_info->mgmt_msduq[q];
+		if (!sw_msduq_ptr || sw_msduq_ptr->tqm_send)
+			continue;
 		ret = ath12k_dp_tqm_remove_msduq_send(ab,
 						      sw_msduq_ptr,
 						      dp_peer);
@@ -747,6 +749,36 @@ int ath12k_dp_tqm_remove_mgmt_queues(struct ath12k_base *ab,
 }
 
 static inline
+int ath12k_dp_tqm_remove_link_mgmt_queues(struct ath12k_base *ab,
+					  struct ath12k_dp_peer *dp_peer,
+					  u8 hw_link_id)
+{
+	struct ath12k_dp_tx_flow_info *tx_flow_info;
+	struct ath12k_dp_msdu_q_info *sw_msduq_ptr = NULL;
+	int ret = 0;
+	u8 idx;
+
+	tx_flow_info = ath12k_dp_get_tx_flow_info_from_peer(dp_peer);
+	spin_lock_bh(&tx_flow_info->tx_q_lock);
+
+	idx = ATH12K_LINK_TO_MGMT_TYPE(hw_link_id);
+	sw_msduq_ptr = tx_flow_info->mgmt_msduq[idx];
+	ret = ath12k_dp_tqm_remove_msduq_send(ab, sw_msduq_ptr,
+					      dp_peer);
+	if (ret) {
+		ath12k_err(ab,
+			   "TQM Link mgmt MSDUQ fail: peer %pM linkid %d",
+			   dp_peer->addr, hw_link_id);
+		spin_unlock_bh(&tx_flow_info->tx_q_lock);
+		return ret;
+	}
+	if (sw_msduq_ptr)
+		sw_msduq_ptr->tqm_send = 1;
+	spin_unlock_bh(&tx_flow_info->tx_q_lock);
+	return ret;
+}
+
+static inline
 int ath12k_dp_tqm_sync_remove_queues(struct ath12k_base *ab,
 				     struct ath12k_dp_peer *dp_peer,
 				     struct ath12k_dp_tx_queue *data)
@@ -768,6 +800,31 @@ int ath12k_dp_tqm_sync_remove_queues(struct ath12k_base *ab,
 }
 
 static inline
+int ath12k_dp_tqm_remove_mgmt_link_queues(struct ath12k_base *ab,
+				    struct ath12k_dp_peer *dp_peer,
+				    u8 hw_link_id)
+{
+	struct ath12k_dp *central_dp = ath12k_get_central_dp(ab->dp);
+	int ret_mgmt = 0;
+
+	ab = central_dp->ab;
+
+	if (dp_peer->is_vdev_peer) {
+		ath12k_err(ab, "peer %d is mcast peer",
+			   dp_peer->peer_id);
+		return 0;
+	}
+	ret_mgmt = ath12k_dp_tqm_remove_link_mgmt_queues(ab, dp_peer, hw_link_id);
+	if (ret_mgmt) {
+		ath12k_err(ab,
+			   "Error: TQM Remove link MGMT queue peer %d link_id %d",
+			   dp_peer->peer_id, hw_link_id);
+		return ret_mgmt;
+	}
+	return 0;
+}
+
+static inline
 int ath12k_dp_tqm_remove_queues_cmd(struct ath12k_base *ab,
 				    struct ath12k_dp_peer *dp_peer,
 				    u8 hw_link_id)
@@ -775,7 +832,6 @@ int ath12k_dp_tqm_remove_queues_cmd(struct ath12k_base *ab,
 	struct ath12k_dp *central_dp = ath12k_get_central_dp(ab->dp);
 	struct ath12k_dp_tx_queue data;
 	int ret_mcast = 0, ret_data = 0, ret_mgmt = 0, ret_sync = 0;
-	//do we need to do this only for primary peer?
 
 	ab = central_dp->ab;
 
@@ -852,6 +908,13 @@ void ath12k_dp_peer_cleanup_indication(struct ath12k_dp *dp,
 	}
 
 	clear_bit(hw_link_id, &tx_info->txq_hw_links_bitmap);
+
+	ret = ath12k_dp_tqm_remove_mgmt_link_queues(dp->ab, dp_peer, hw_link_id);
+	if (ret) {
+		ath12k_err(dp->ab,
+			   "ERROR: TQM REMOVE MGMT LINK QUEUE CMD peer %d link %d",
+			   dp_peer->peer_id, hw_link_id);
+	}
 	/* Check whether event is for last link or not */
 	if (tx_info->txq_hw_links_bitmap) {
 		spin_unlock_bh(&dp_hw->peer_lock);
@@ -875,6 +938,9 @@ void ath12k_wifi8_dp_link_peer_assoc(struct ath12k_dp_hw *dp_hw,
 				     u8 *addr, u32 hw_link_id)
 {
 	struct ath12k_dp_peer *dp_peer;
+	struct ath12k_dp_msdu_q_info *sw_msduq_ptr = NULL;
+	struct ath12k_dp_tx_flow_info *tx_flow_info;
+	u8 idx;
 
 	spin_lock_bh(&dp_hw->peer_lock);
 	dp_peer = ath12k_dp_peer_find(dp_hw, addr);
@@ -883,6 +949,15 @@ void ath12k_wifi8_dp_link_peer_assoc(struct ath12k_dp_hw *dp_hw,
 		spin_unlock_bh(&dp_hw->peer_lock);
 		return;
 	}
+
+	/* During link addition if existing queues are re-used; reset tqm_send */
+	tx_flow_info = ath12k_dp_get_tx_flow_info_from_peer(dp_peer);
+	spin_lock_bh(&tx_flow_info->tx_q_lock);
+	idx = ATH12K_LINK_TO_MGMT_TYPE(hw_link_id);
+	sw_msduq_ptr = tx_flow_info->mgmt_msduq[idx];
+	if (sw_msduq_ptr)
+		sw_msduq_ptr->tqm_send = 0;
+	spin_unlock_bh(&tx_flow_info->tx_q_lock);
 
 	ath12k_dp_tx_peer_msduq_mpduq_setup(dp->dp_hw_grp, dp_peer, hw_link_id);
 	spin_unlock_bh(&dp_hw->peer_lock);
