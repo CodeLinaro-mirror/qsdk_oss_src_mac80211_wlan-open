@@ -42,6 +42,18 @@ struct link_peer_rx_tid_stats {
 	u8 mpdu_retry;
 } __aligned(64);
 
+bool ath12k_dp_rx_check_nwifi_hdr_len_valid(struct ath12k_dp *dp,
+					    u8 decap_type,
+					    struct sk_buff *msdu);
+int ath12k_wifi7_dp_rx_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
+			      struct sk_buff *msdu,
+			      struct hal_rx_desc *rx_desc,
+			      struct ieee80211_rx_status *rx_status,
+			      struct rx_msdu_desc_info *rx_msdu_info,
+			      struct rx_mpdu_desc_info *rx_mpdu_info,
+			      struct rx_tlv_info_1 *tlv_info,
+			      u32 err_bitmap, bool *fast_rx,
+			      struct ath12k_dp_peer *peer);
 int ath12k_wifi7_dp_reo_cmd_send(struct ath12k_base *ab,
 				 void *data, size_t len,
 				 enum hal_reo_cmd_type type,
@@ -122,6 +134,73 @@ int ath12k_wifi7_dp_rx_ring_setup(struct ath12k_base *ab);
 int ath12k_wifi7_dp_rx_flow_fse_cache_operation(struct ath12k_base *ab,
 						enum dp_flow_fst_operation op_code,
 						struct hal_flow_tuple_info *tuple_info);
+int ath12k_wifi7_dp_rx_h_undecap(struct ath12k_pdev_dp *dp_pdev,
+				 struct sk_buff *msdu,
+				 struct hal_rx_desc *desc,
+				 enum hal_encrypt_type enctype,
+				 struct ieee80211_rx_status *status,
+				 bool decrypted, bool is_4addr_sta,
+				 struct rx_msdu_desc_info *rx_msdu_info,
+				 struct rx_tlv_info_1 *tlv_info,
+				 struct ath12k_dp_peer *peer, u16 peer_id, u16 tid);
+static inline u8 ath12k_wifi7_dp_rx_get_msdu_src_link(struct ath12k_dp *dp,
+						      struct hal_rx_desc *desc)
+{
+	return dp->hw_params->hal_ops->rx_desc_get_msdu_src_link_id(desc);
+}
+
+static inline void ath12k_wifi7_dp_rx_desc_end_tlv_copy(struct ath12k_base *ab,
+							struct hal_rx_desc *fdesc,
+							struct hal_rx_desc *ldesc)
+{
+	ab->hw_params->hal_ops->rx_desc_copy_end_tlv(fdesc, ldesc);
+}
+
+static inline void ath12k_wifi7_dp_rxdesc_set_msdu_len(struct ath12k_base *ab,
+						       struct hal_rx_desc *desc,
+						       u16 len)
+{
+	ab->hw_params->hal_ops->rx_desc_set_msdu_len(desc, len);
+}
+
+static inline void ath12k_wifi7_dp_rx_desc_get_dot11_hdr(struct ath12k_base *ab,
+							 struct hal_rx_desc *desc,
+							 struct ieee80211_hdr *hdr)
+{
+	ab->hw_params->hal_ops->rx_desc_get_dot11_hdr(desc, hdr);
+}
+
+static inline u16 ath12k_wifi7_dp_rxdesc_get_mpdu_frame_ctrl(struct ath12k_base *ab,
+							     struct hal_rx_desc *desc)
+{
+	return ab->hw_params->hal_ops->rx_desc_get_mpdu_frame_ctl(desc);
+}
+
+static inline bool ath12k_wifi7_dp_rx_h_more_frags(struct ath12k_base *ab,
+						   struct sk_buff *skb)
+{
+	struct ieee80211_hdr *hdr;
+
+	hdr = (struct ieee80211_hdr *)(skb->data + ab->hal.hal_desc_sz);
+	return ieee80211_has_morefrags(hdr->frame_control);
+}
+
+static inline u16 ath12k_wifi7_dp_rx_h_frag_no(struct ath12k_base *ab,
+					       struct sk_buff *skb)
+{
+	struct ieee80211_hdr *hdr;
+
+	hdr = (struct ieee80211_hdr *)(skb->data + ab->hal.hal_desc_sz);
+	return le16_to_cpu(hdr->seq_ctrl) & IEEE80211_SCTL_FRAG;
+}
+
+static inline void ath12k_wifi7_dp_clean_up_skb_list(struct sk_buff_head *skb_list)
+{
+	struct sk_buff *skb;
+
+	while ((skb = __skb_dequeue(skb_list)))
+		dev_kfree_skb_any(skb);
+}
 
 static inline
 void ath12k_wifi7_dp_rx_h_csum_offload(struct sk_buff *msdu,
