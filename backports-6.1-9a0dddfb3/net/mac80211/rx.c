@@ -2855,6 +2855,9 @@ bool ieee80211_is_our_addr(struct ieee80211_sub_if_data *sdata,
 			   const u8 *addr, int *out_link_id)
 {
 	unsigned int link_id;
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	struct sta_info *sta;
+#endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */
 
 	/* non-MLO, or MLD address replaced by hardware */
 	if (ether_addr_equal(sdata->vif.addr, addr))
@@ -2876,6 +2879,16 @@ bool ieee80211_is_our_addr(struct ieee80211_sub_if_data *sdata,
 			return true;
 		}
 	}
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	if (sdata->wdev.vap_submode == IEEE80211_EXTN_VAP_SUBMODE_MESH) {
+		sta = sta_info_get_bss(sdata, addr);
+		if (sta) {
+			/* TODO: Assign link_id properly if MLO is enabled */
+			*out_link_id = 0;
+			return true;
+		}
+	}
+#endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */
 
 	return false;
 }
@@ -5111,6 +5124,11 @@ static bool ieee80211_accept_frame(struct ieee80211_rx_data *rx)
 		return ether_addr_equal(sdata->vif.addr, hdr->addr1);
 	case NL80211_IFTYPE_AP_VLAN:
 	case NL80211_IFTYPE_AP:
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+		if (sdata->wdev.vap_submode == IEEE80211_EXTN_VAP_SUBMODE_MESH && bssid)
+			return ieee80211_is_our_addr(sdata, bssid, &rx->link_id);
+#endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */
+
 		if (!bssid)
 			return ieee80211_is_our_addr(sdata, hdr->addr1,
 						     &rx->link_id);
