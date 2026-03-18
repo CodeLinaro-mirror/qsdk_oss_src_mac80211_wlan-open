@@ -22410,10 +22410,9 @@ static void ath12k_mac_vdev_ml_max_rec_links(struct ath12k_link_vif *arvif,
 static u32 ath12k_mac_nlgi_to_wmigi(enum nl80211_txrate_gi gi)
 {
 	switch (gi) {
-	case NL80211_TXRATE_DEFAULT_GI:
-		return WMI_GI_400_NS;
 	case NL80211_TXRATE_FORCE_LGI:
 		return WMI_GI_800_NS;
+	case NL80211_TXRATE_FORCE_SGI:
 	default:
 		return WMI_GI_400_NS;
 	}
@@ -22814,11 +22813,6 @@ ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 	he_ul_mcs_mask = mask->control[band].he_ul_mcs;
 
 	sgi = mask->control[band].gi;
-	if (sgi == NL80211_TXRATE_FORCE_SGI) {
-		ret = -EINVAL;
-		goto out;
-	}
-
 	he_gi = mask->control[band].he_gi;
 	he_ltf = mask->control[band].he_ltf;
 
