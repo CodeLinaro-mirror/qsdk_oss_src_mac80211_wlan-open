@@ -15027,6 +15027,8 @@ static int nl80211_tx_mgmt(struct sk_buff *skb, struct genl_info *info)
 					      &params.rate);
 		if (err)
 			return err;
+
+		params.tx_rate_valid = true;
 	}
 
 	params.buf = nla_data(info->attrs[NL80211_ATTR_FRAME]);
