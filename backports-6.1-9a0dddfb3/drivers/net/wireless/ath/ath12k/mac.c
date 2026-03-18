@@ -5376,12 +5376,21 @@ static void ath12k_peer_assoc_h_uhr(struct ath12k *ar,
 	       sizeof(uhr_cap->phy.cap));
 }
 
+#ifndef CPTCFG_QCN_EXTN
 static void ath12k_peer_assoc_prepare(struct ath12k *ar,
 				      struct ath12k_link_vif *arvif,
 				      struct ath12k_link_sta *arsta,
 				      struct ath12k_wmi_peer_assoc_arg *arg,
 				      bool reassoc,
 				      struct ieee80211_link_sta *link_sta)
+#else
+void ath12k_peer_assoc_prepare(struct ath12k *ar,
+			       struct ath12k_link_vif *arvif,
+			       struct ath12k_link_sta *arsta,
+			       struct ath12k_wmi_peer_assoc_arg *arg,
+			       bool reassoc,
+			       struct ieee80211_link_sta *link_sta)
+#endif
 {
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -5415,6 +5424,9 @@ static void ath12k_peer_assoc_prepare(struct ath12k *ar,
 
 	/* TODO: amsdu_disable req? */
 }
+#ifdef CPTCFG_QCN_EXTN
+EXPORT_SYMBOL(ath12k_peer_assoc_prepare);
+#endif
 
 static int ath12k_setup_peer_smps(struct ath12k *ar, struct ath12k_link_vif *arvif,
 				  const u8 *addr,
