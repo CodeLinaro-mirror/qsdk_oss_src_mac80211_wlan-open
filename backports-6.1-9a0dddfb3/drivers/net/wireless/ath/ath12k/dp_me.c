@@ -72,6 +72,8 @@ static int ath12k_dp_tx_me5(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
 	paddr += ETH_ALEN; /* move the payload by the MAC offset */
 	ath12k_dp_ext_desc_set_buf1(ext_desc, paddr, skb->len - ETH_ALEN);
 
+	/* Ensure to_fw bit is set to 0 for ME5 */
+	tx_desc->to_fw = 0;
 	tx_desc->len = skb->len;
 	tx_desc->skb = skb_get(skb);
 	tx_desc->mac_id = link_vif->pdev_idx;
@@ -81,6 +83,9 @@ static int ath12k_dp_tx_me5(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
 	tx_desc->paddr_ext_desc = ath12k_dp_ext_desc_map(dp, ext_desc);
 
 	tx_desc->ext_desc_len = ATH12K_DP_EXT_DESC_SZ;
+
+	/* Configure the appropriate tcl_metadata as needed for ME5 */
+	info.tcl_metadata = link_vif->tcl_metadata;
 
 	if (ath12k_dp_ext_tx(dp, dp_pdev, dp_vif, link_vif, tx_desc, &info)) {
 		ath12k_warn(dp->ab, "DP ME Transmission Failed\n");
