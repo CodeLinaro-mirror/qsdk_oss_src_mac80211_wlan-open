@@ -392,3 +392,24 @@ struct sk_buff *ath12k_mgmt_rx_get_mmpdu_last_buf(struct sk_buff_head *mmpdu_lis
 	return NULL;
 }
 EXPORT_SYMBOL(ath12k_mgmt_rx_get_mmpdu_last_buf);
+
+int ath12k_mgmt_htt_setup(struct ath12k_hw_group *ag)
+{
+	struct ath12k_base *partner_ab;
+	int i, ret;
+
+	for (i = 0; i < ag->num_devices; i++) {
+		partner_ab = ag->ab[i];
+
+		if (!partner_ab || partner_ab->is_bypassed || !partner_ab->mgmt)
+			continue;
+
+		ret = ath12k_mgmt_arch_op_htt_setup(partner_ab->mgmt);
+		if (ret) {
+			ath12k_err(partner_ab, "Failed to set up MGMT HTT: %d", ret);
+			return ret;
+		}
+	}
+
+	return 0;
+}
