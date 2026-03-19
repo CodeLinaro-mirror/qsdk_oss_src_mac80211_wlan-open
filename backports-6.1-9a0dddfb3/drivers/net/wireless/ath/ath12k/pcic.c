@@ -999,6 +999,11 @@ int ath12k_pcic_ext_irq_config(struct ath12k_base *ab,
 		netif_napi_add_weight(napi_ndev, &irq_grp->napi,
 				      ath12k_pcic_ext_grp_napi_poll, budget);
 
+		if (!irq_grp->napi_enabled) {
+			napi_enable(&irq_grp->napi);
+			irq_grp->napi_enabled = true;
+		}
+
 		if (ab->hw_params->ring_mask->tx[i] ||
 		    ab->hw_params->ring_mask->rx[i] ||
 		    ab->hw_params->ring_mask->rx_err[i] ||
