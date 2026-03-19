@@ -1074,6 +1074,8 @@ struct ath12k_link_sta {
 	/* ath12k_link_sta extension structure */
 	struct ath12k_link_sta_extn arsta_extn;
 #endif
+	s8 min_rssi;
+	s8 max_rssi;
 
 };
 

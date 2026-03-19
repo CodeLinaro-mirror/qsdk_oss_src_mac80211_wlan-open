@@ -12657,6 +12657,8 @@ static int ath12k_mac_assign_link_sta(struct ath12k_hw *ah,
 		return -EINVAL;
 
 	memset(arsta, 0, sizeof(*arsta));
+	arsta->max_rssi = S8_MIN;
+	arsta->min_rssi = S8_MAX;
 
 	/* For bridge peer, generate random mac_addr using kernel API
 	 */

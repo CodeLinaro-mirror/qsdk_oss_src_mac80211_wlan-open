@@ -234,6 +234,8 @@ void ath12k_peer_map_event(struct ath12k_base *ab, u8 vdev_id, u16 peer_id,
 		ewma_avg_snr_dp_init(&peer->signal_stats.avg_snr_dp);
 		ewma_avg_rssi_init(&peer->signal_stats.avg_rssi);
 		ewma_avg_rssi_dp_init(&peer->signal_stats.avg_rssi_dp);
+		peer->max_rssi = S8_MIN;
+		peer->min_rssi = S8_MAX;
 
 		/* Initialize generic event mechanism (FR_RSSI)
 		 * Note: llist_node does not need explicit initialization.
