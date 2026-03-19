@@ -1041,6 +1041,14 @@ struct ath12k_link_sta {
 	u32 nss;
 	u32 smps;
 
+	/* Peer power-save tracking */
+	enum ath12k_wmi_peer_ps_state peer_ps_state;
+	u64 ps_start_time;
+	u64 ps_start_jiffies;
+	u64 ps_total_duration;
+	u32 ps_state;
+	bool peer_current_ps_valid;
+
 	struct wiphy_work update_wk;
 	u8 link_id;
 	u32 bw_prev;
