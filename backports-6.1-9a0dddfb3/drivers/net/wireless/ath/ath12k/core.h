@@ -2309,6 +2309,9 @@ struct ath12k_base {
 #endif
 
 	u32 twt_cap_bitmap;
+
+	bool is_cumac_chip;
+
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
 };
