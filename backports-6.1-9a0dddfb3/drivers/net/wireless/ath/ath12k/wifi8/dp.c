@@ -268,6 +268,12 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 	u32 n_link_desc = 0;
 	int i;
 
+	if (ab->device_id == 0)
+		dp_wifi8->cumac = true;
+	else
+		dp_wifi8->cumac = false;
+	ath12k_info(ab, "chip_id: %d, CUMAC: %d\n", ab->device_id, dp_wifi8->cumac);
+
 	if (!dp_wifi8->cumac) {
 		ath12k_warn(ab, "Skipping ring init for non-cumac target");
 		ath12k_wifi8_enable_hif_interrupts(dp, ath12k_wifi8_non_cumac_dp_service_srng);
