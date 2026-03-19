@@ -968,8 +968,9 @@ void ath12k_mac_peer_disassoc(struct ath12k_base *ab, struct ieee80211_sta *sta,
 	struct ath12k_hw_group *ag = ab->ag;
 
 	if (!ahsta->low_ack_sent) {
-		ath12k_dbg(ab, debug_mask, "sending low ack for/disassoc:%pM\n",
-			   sta->addr);
+		ath12k_dbg_level(ab, debug_mask, ATH12K_DBG_L1,
+				 "sending low ack for/disassoc:%pM\n",
+				 sta->addr);
 		/* set num of packets to maximum so that we distinguish in
 		 * the hostapd to send disassoc irrespective of hostapd conf
 		 */
