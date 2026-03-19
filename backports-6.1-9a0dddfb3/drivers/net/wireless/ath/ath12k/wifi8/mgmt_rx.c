@@ -636,6 +636,7 @@ ath12k_wifi8_mgmt_rx_deliver_mmpdu(struct ath12k_mgmt *mgmt, struct ath12k *ar,
 	struct ieee80211_rx_status *rx_status;
 	struct ieee80211_hdr *hdr;
 	struct ath12k_device_mgmt_srng_stats *mgmt_srng_stats;
+	struct ath12k_mgmt *partner_mgmt;
 	u16 frm_stype, fc;
 
 	if (ah->state != ATH12K_HW_STATE_ON && ah->state != ATH12K_HW_STATE_RESTARTED) {
@@ -648,7 +649,9 @@ ath12k_wifi8_mgmt_rx_deliver_mmpdu(struct ath12k_mgmt *mgmt, struct ath12k *ar,
 	fc = le16_to_cpu(hdr->frame_control);
 	frm_stype = FIELD_GET(IEEE80211_FCTL_STYPE, fc);
 
-	mgmt_srng_stats = &mgmt->srng_stats;
+	partner_mgmt = ar->ab->mgmt ? ar->ab->mgmt : mgmt;
+
+	mgmt_srng_stats = &partner_mgmt->srng_stats;
 	mgmt_srng_stats->rx_pkts[frm_stype]++;
 
 	rx_status = IEEE80211_SKB_RXCB(mmpdu);
