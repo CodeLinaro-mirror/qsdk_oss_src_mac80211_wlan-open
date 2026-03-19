@@ -91,6 +91,8 @@ int ath12k_telemetry_print_thresholds(void);
 int ath12k_telemetry_set_breach_mask(u8 mask);
 int ath12k_get_rssi_rate_threshold(u8 type);
 int ath12k_get_rssi_rate_breach_mask(void);
+int ath12k_telemetry_set_hysteresis(u8 type, u32 value);
+int ath12k_telemetry_get_hysteresis(u8 type, u64 *hyst_value);
 int ath12k_telemetry_get_rate(void *telemetry_ctx, u8 tid,
 			      u8 queue, u32 *egress_rate,
 			      u32 *ingress_rate);
