@@ -475,7 +475,6 @@ int ath12k_dp_srng_setup(struct ath12k_base *ab, struct dp_srng *ring,
 	if (num_entries > max_entries)
 		num_entries = max_entries;
 
-	ring->size = (num_entries * entry_sz) + HAL_RING_BASE_ALIGN - 1;
 #ifndef CONFIG_IO_COHERENCY
 	if (ab->hw_params->alloc_cacheable_memory) {
 		/* Allocate the reo dst and tx completion rings from cacheable memory */
@@ -497,20 +496,9 @@ int ath12k_dp_srng_setup(struct ath12k_base *ab, struct dp_srng *ring,
 	if (ath12k_dp_umac_reset_in_progress(ab))
 		goto skip_dma_alloc;
 
-	if (cached) {
-		ring->vaddr_unaligned = kzalloc(ring->size, GFP_KERNEL);
-		ring->paddr_unaligned = virt_to_phys(ring->vaddr_unaligned);
-	} else {
-		ring->vaddr_unaligned = dma_alloc_coherent(ab->dev, ring->size,
-							   &ring->paddr_unaligned,
-							   GFP_KERNEL);
-	}
-	if (!ring->vaddr_unaligned)
-		return -ENOMEM;
-
-	ring->vaddr = PTR_ALIGN(ring->vaddr_unaligned, HAL_RING_BASE_ALIGN);
-	ring->paddr = ring->paddr_unaligned + ((unsigned long)ring->vaddr -
-		      (unsigned long)ring->vaddr_unaligned);
+	ret = ath12k_dp_srng_alloc_aligned(ab, ring, num_entries, entry_sz, cached);
+	if (ret)
+		return ret;
 
 skip_dma_alloc:
 	params.ring_base_vaddr = ring->vaddr;
@@ -2048,6 +2036,67 @@ void ath12k_dp_cmn_hw_group_assign(struct ath12k_dp *dp,
 			BUG_ON(1);
 		}
 	}
+}
+
+int ath12k_dp_srng_alloc_aligned(struct ath12k_base *ab,
+				 struct dp_srng *ring,
+				 int num_entries,
+				 int entry_sz,
+				 bool cached)
+{
+	size_t ring_sz = num_entries * entry_sz;
+
+	ring->cached = cached;
+	ring->size = ring_sz;
+	ring->vaddr = NULL;
+	ring->paddr = 0;
+
+	if (cached)
+		ring->vaddr_unaligned = kzalloc(ring->size, GFP_KERNEL);
+	else
+		ring->vaddr_unaligned = dma_alloc_coherent(ab->dev, ring->size,
+							   &ring->paddr_unaligned,
+							   GFP_KERNEL);
+
+	if (!ring->vaddr_unaligned)
+		return -ENOMEM;
+
+	if (cached)
+		ring->paddr_unaligned = virt_to_phys(ring->vaddr_unaligned);
+
+	if (IS_ALIGNED((unsigned long)ring->vaddr_unaligned, HAL_RING_BASE_ALIGN)) {
+		ring->vaddr = ring->vaddr_unaligned;
+		ring->paddr = ring->paddr_unaligned;
+	} else {
+		size_t unaligned_sz = ring->size;
+
+		ring->size = ring_sz + HAL_RING_BASE_ALIGN - 1;
+		if (cached) {
+			kfree(ring->vaddr_unaligned);
+			ring->vaddr_unaligned = kzalloc(ring->size, GFP_KERNEL);
+		} else {
+			dma_free_coherent(ab->dev, unaligned_sz,
+					  ring->vaddr_unaligned,
+					  ring->paddr_unaligned);
+			ring->vaddr_unaligned = dma_alloc_coherent(ab->dev, ring->size,
+								   &ring->paddr_unaligned,
+								   GFP_KERNEL);
+		}
+
+		if (!ring->vaddr_unaligned) {
+			ring->paddr_unaligned = 0;
+			return -ENOMEM;
+		}
+
+		if (cached)
+			ring->paddr_unaligned = virt_to_phys(ring->vaddr_unaligned);
+
+		ring->vaddr = PTR_ALIGN(ring->vaddr_unaligned, HAL_RING_BASE_ALIGN);
+		ring->paddr = ring->paddr_unaligned + ((unsigned long)ring->vaddr -
+						(unsigned long)ring->vaddr_unaligned);
+	}
+
+	return 0;
 }
 
 static void ath12k_dp_srng_hw_disable(struct ath12k_base *ab, struct dp_srng *ring)
