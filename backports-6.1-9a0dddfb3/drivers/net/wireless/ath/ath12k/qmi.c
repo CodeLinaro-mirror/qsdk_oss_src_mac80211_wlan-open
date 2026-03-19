@@ -4517,6 +4517,50 @@ int ath12k_qmi_mlo_global_snapshot_mem_init(struct ath12k_base *ab)
 }
 
 #ifndef PLATFORM_SDX85
+static int ath12k_qmi_alloc_afc_reserved_mem(struct ath12k_base *ab, int dst_idx,
+					    int afc_seg_idx)
+{
+	dma_addr_t m3_paddr = 0;
+	u32 m3_size = 0;
+	int j;
+
+	for (j = 0; j < ab->qmi.mem_seg_count; j++) {
+		if (ab->qmi.target_mem[j].type == M3_DUMP_REGION_TYPE) {
+			m3_paddr = ab->qmi.target_mem[j].paddr;
+			m3_size = ab->qmi.target_mem[j].size;
+			break;
+		}
+	}
+
+	if (!m3_paddr || !m3_size) {
+		ath12k_err(ab, "AFC alloc: M3 region not found\n");
+		return -EINVAL;
+	}
+
+	if (ab->qmi.target_mem[afc_seg_idx].size >
+	    (m3_size - ATH12K_HOST_AFC_QCN6432_MEM_OFFSET)) {
+		ath12k_dbg(ab, ATH12K_DBG_QMI,
+			   "failed to assign mem type %d req size %d avail size %u\n",
+			   ab->qmi.target_mem[afc_seg_idx].type,
+			   ab->qmi.target_mem[afc_seg_idx].size,
+			   m3_size - ATH12K_HOST_AFC_QCN6432_MEM_OFFSET);
+		return -EINVAL;
+	}
+
+	ab->qmi.target_mem[dst_idx].paddr =
+		m3_paddr + ATH12K_HOST_AFC_QCN6432_MEM_OFFSET;
+	ab->qmi.target_mem[dst_idx].v.ioaddr =
+		ioremap(ab->qmi.target_mem[dst_idx].paddr,
+			ab->qmi.target_mem[afc_seg_idx].size);
+	if (!ab->qmi.target_mem[dst_idx].v.ioaddr) {
+		ath12k_err(ab, "AFC ioremap failed\n");
+		ab->qmi.target_mem[dst_idx].paddr = 0;
+		return -EIO;
+	}
+
+	return 0;
+}
+
 static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 {
 	struct reserved_mem *ddr_rmem = NULL, *rmem = NULL;
@@ -4627,18 +4671,37 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 			if (ab->qmi.target_mem[i].size > AFC_MEM_SIZE) {
 				ath12k_warn(ab, "AFC mem request size %d is larger than allowed value\n",
 					    ab->qmi.target_mem[i].size);
+				mutex_unlock(&ag->mutex);
 				return -EINVAL;
 			}
-			ab->qmi.target_mem[idx].v.addr =
-				dma_alloc_coherent(ab->dev, ab->qmi.target_mem[i].size,
+
+			/* For multi-pd platforms, AFC_REGION_TYPE needs
+			 * to be allocated from within M3_DUMP_REGION.
+			 * This is because multi-pd platforms cannot access memory
+			 * regions allocated outside FW reserved memory.
+			 * AFC_REGION_TYPE is supported for 6 GHz.
+			 */
+
+			if (ab->hif.bus == ATH12K_BUS_HYBRID) {
+				ret = ath12k_qmi_alloc_afc_reserved_mem(ab, idx, i);
+				if (ret)
+					goto out;
+			} else {
+				ab->qmi.target_mem[idx].v.addr =
+					dma_alloc_coherent(ab->dev,
+						ab->qmi.target_mem[i].size,
 						&ab->qmi.target_mem[idx].paddr,
 						GFP_KERNEL);
 
-			if (!ab->qmi.target_mem[idx].v.addr) {
-				ath12k_err(ab, "AFC mem allocation failed\n");
-				ab->qmi.target_mem[idx].paddr = 0;
-				return -ENOMEM;
+				if (!ab->qmi.target_mem[idx].v.addr) {
+					ath12k_err(ab, "AFC mem allocation failed\n");
+					ab->qmi.target_mem[idx].paddr = 0;
+					mutex_unlock(&ag->mutex);
+					return -ENOMEM;
+				}
+
 			}
+
 
 			ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
 			ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
