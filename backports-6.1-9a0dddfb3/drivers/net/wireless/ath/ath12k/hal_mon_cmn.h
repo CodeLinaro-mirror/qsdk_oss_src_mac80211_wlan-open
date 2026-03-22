@@ -60,7 +60,8 @@
 		u32_encode_bits(le32_get_bits(value, dec_bits), enc_bits)
 
 #define ATH12K_LE64_DEC_ENC(value, dec_bits, enc_bits) \
-		u32_encode_bits(le64_get_bits(value, dec_bits), enc_bits)
+		u64_encode_bits(le64_get_bits(value, dec_bits), enc_bits)
+
 struct ath12k_mon_data;
 struct ath12k_mon_ring_desc_info;
 
