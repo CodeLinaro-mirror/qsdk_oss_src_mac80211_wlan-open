@@ -3266,9 +3266,9 @@ int ath12k_dp_mon_tx_process_ring(struct ath12k_pdev_dp *dp_pdev,
 			ret = ath12k_dp_tx_mon_prep_wq(mon_desc_head,
 						       dp_mon_pdev);
 			if (ret) {
-				ath12k_warn(ab,
-					    "TX Mon: Failed to add mon desc to ppdu ret %d",
-					    ret);
+				ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX,
+					   "TX Mon: Add mon desc to ppdu fail - ret %d",
+					   ret);
 				ath12k_dp_tx_mon_flush_desc_list(dp_pdev,
 								 mon_desc_head);
 				goto move_next;
