@@ -505,10 +505,14 @@ struct hal_rx_msdu_end {
 } __packed;
 
 #define HAL_RX_PPDU_END_DURATION	GENMASK(23, 0)
+#define HAL_RX_PPDU_END_DURATION_INFO0_RX_ANTENNA	GENMASK(23, 0)
+
 struct hal_rx_ppdu_end_duration {
-	__le32 rsvd0[9];
+	__le32 rsvd0[2];
 	__le32 info0;
-	__le32 rsvd1[18];
+	__le32 rsvd1[6];
+	__le32 info1;
+	__le32 rsvd2[18];
 } __packed;
 
 #define HAL_TX_MON_FES_SETUP_INFO0_NUM_OF_USERS		GENMASK(28, 23)

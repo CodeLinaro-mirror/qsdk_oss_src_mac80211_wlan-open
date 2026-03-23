@@ -3931,6 +3931,10 @@ ath12k_wifi7_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 		u32 info[1];
 
 		info[0] = __le32_to_cpu(ppdu_rx_duration->info0);
+		ppdu_info->rx_antenna =
+			u32_get_bits(info[0],
+				     HAL_RX_PPDU_END_DURATION_INFO0_RX_ANTENNA);
+		info[0] = __le32_to_cpu(ppdu_rx_duration->info1);
 		ppdu_info->rx_duration =
 			u32_get_bits(info[0], HAL_RX_PPDU_END_DURATION);
 		ppdu_info->tsft = __le32_to_cpu(ppdu_rx_duration->rsvd0[1]);
