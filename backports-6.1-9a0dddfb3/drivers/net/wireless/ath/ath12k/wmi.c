@@ -7783,6 +7783,7 @@ static int ath12k_pull_peer_tx_pn_ev(struct ath12k_base *ab, struct sk_buff *skb
 	const struct wmi_peer_tx_pn_event *ev;
 	const void **tb;
 	int ret;
+	u64 *tsc;
 
 	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
 	if (IS_ERR(tb)) {
@@ -7804,6 +7805,17 @@ static int ath12k_pull_peer_tx_pn_ev(struct ath12k_base *ab, struct sk_buff *skb
 	peer_tx_pn->key_idx = le32_to_cpu(ev->key_ix);
 	peer_tx_pn->key_cipher = le32_to_cpu(ev->key_cipher);
 	memcpy(peer_tx_pn->pn, ev->pn, sizeof(ev->pn));
+	/* PN is a 6byte value */
+	tsc = (u64 *)peer_tx_pn->pn;
+
+	/* Firmware always returns the PN of next frame.
+	 * Decrement by 1 so IPN/BIPN added in M3 IGTK/BIGTK
+	 * KDE is that of the previous frame. This is to prevent
+	 * flagging of BIP replay counter errors on the station
+	 * side for the immediate next frame.
+	 */
+	if (*tsc > 0)
+		(*tsc)--;
 
 	kfree(tb);
 	return 0;
