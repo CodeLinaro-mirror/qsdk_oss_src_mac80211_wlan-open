@@ -143,6 +143,9 @@ int athdbg_if_get_service(struct ath12k_base *ab, enum athdbg_service srv)
 	case ATHDBG_SRV_MHI_Q6_BOOT_DEBUG_TIMEOUT:
 		athdbg_mhi_q6_boot_debug_timeout_hdlr_internal(ab);
 		break;
+	case ATHDBG_SRV_QMI_INIT:
+		ret = athdbg_qmi_worker_init(ab);
+		break;
 	}
 
 	return ret;

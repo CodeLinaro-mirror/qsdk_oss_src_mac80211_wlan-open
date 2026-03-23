@@ -17,6 +17,7 @@ enum athdbg_service {
 	ATHDBG_SRV_MHI_Q6_DUMP_BL_SRAM,
 	ATHDBG_SRV_MHI_Q6_BOOT_DEBUG_TIMEOUT,
 #endif
+	ATHDBG_SRV_QMI_INIT,
 };
 
 struct athdbg_to_ath12k_ops {
