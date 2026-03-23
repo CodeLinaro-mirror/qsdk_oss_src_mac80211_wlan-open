@@ -2517,8 +2517,6 @@ ath12k_dp_update_tx_ext_htt_aggr_stats(struct ath12k *ar,
 	dst_peer_stats->tx_ucast_success.num += src_peer_stats->tx_ucast_success.num;
 	dst_peer_stats->tx_ucast_success.bytes += src_peer_stats->tx_ucast_success.bytes;
 
-	dst_peer_stats->tx_mcast_success.num += src_peer_stats->tx_mcast_success.num;
-	dst_peer_stats->tx_mcast_success.bytes += src_peer_stats->tx_mcast_success.bytes;
 
 	/* TX PPDUs */
 	dst_peer_stats->tx_ppdus += src_peer_stats->tx_ppdus;

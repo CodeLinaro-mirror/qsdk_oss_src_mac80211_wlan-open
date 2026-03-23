@@ -3322,28 +3322,6 @@ ath12k_fill_peer_tx_ext_htt_stats_attr(struct ath12k *ar, struct sk_buff *vendor
 	}
 	nla_nest_end(vendor_event, attr);
 
-	/* TX Multicast Success */
-	attr = nla_nest_start(vendor_event,
-			      QCA_VENDOR_WLAN_TELEMETRY_TX_EXT_HTT_STATS_TX_MCAST_SUCC);
-	if (!attr) {
-		ath12k_err(NULL, "nla nest failure: tx mcast success");
-		return -EINVAL;
-	}
-	if (nla_put_u64_64bit(vendor_event,
-			      QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_PKTS,
-			      link_peer_stats->tx_stats->tx_mcast_success.num,
-			      NL80211_ATTR_PAD)) {
-		ath12k_err(NULL, "nla put failed: tx mcast success pkts");
-		return -EINVAL;
-	}
-	if (nla_put_u64_64bit(vendor_event,
-			      QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_BYTES,
-			      link_peer_stats->tx_stats->tx_mcast_success.bytes,
-			      NL80211_ATTR_PAD)) {
-		ath12k_err(NULL, "nla put failed: tx mcast success bytes");
-		return -EINVAL;
-	}
-	nla_nest_end(vendor_event, attr);
 
 	/* TX PPDUs */
 	if (nla_put_u32(vendor_event,

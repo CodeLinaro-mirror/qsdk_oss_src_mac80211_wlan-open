@@ -838,10 +838,6 @@ ath12k_update_extd_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 		      !is_mcast);
 	DP_STATS_INCC(tx_stats, tx_ucast_success.bytes, peer_stats->succ_bytes,
 		      !is_mcast);
-	DP_STATS_INCC(tx_stats, tx_mcast_success.num, peer_stats->succ_pkts,
-		      is_mcast);
-	DP_STATS_INCC(tx_stats, tx_mcast_success.bytes, peer_stats->succ_bytes,
-		      is_mcast);
 	DP_STATS_INCR(tx_stats, tx_ppdus, 1);
 	DP_STATS_INCR(tx_stats, tx_mpdus_success, peer_stats->succ_mpdu_pkts);
 

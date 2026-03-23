@@ -400,7 +400,6 @@ struct ath12k_htt_tx_stats {
 	/* Ext HTT stats */
 	/* MSDU Basic */
 	struct dp_pkt_info tx_ucast_success;
-	struct dp_pkt_info tx_mcast_success;
 
 	/* PPDU Basic */
 	u32 tx_ppdus;
