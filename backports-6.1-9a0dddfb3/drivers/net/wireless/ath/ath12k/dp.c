@@ -2510,6 +2510,41 @@ static void ath12k_dp_aggr_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 	for (i = 0; i < HAL_REO_DEST_RING_ERROR_CODE_MAX; i++)
 		dst_peer_stats->wbm_err.reo_error[i] +=
 			src_peer_stats->wbm_err.reo_error[i];
+
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	dst_peer_stats->mmesh_stat.no_qos +=
+		src_peer_stats->mmesh_stat.no_qos;
+
+	dst_peer_stats->mmesh_stat.no_enc +=
+		src_peer_stats->mmesh_stat.no_enc;
+
+	dst_peer_stats->mmesh_stat.txinfo +=
+		src_peer_stats->mmesh_stat.txinfo;
+
+	dst_peer_stats->mmesh_stat.auto_rate +=
+		src_peer_stats->mmesh_stat.auto_rate;
+
+	dst_peer_stats->mmesh_stat.filter_drop +=
+		src_peer_stats->mmesh_stat.filter_drop;
+
+	dst_peer_stats->mmesh_stat.direct +=
+		src_peer_stats->mmesh_stat.direct;
+
+	dst_peer_stats->mmesh_stat.tofw +=
+		src_peer_stats->mmesh_stat.tofw;
+
+	dst_peer_stats->mmesh_stat.rxhdr_updt +=
+		src_peer_stats->mmesh_stat.rxhdr_updt;
+
+	dst_peer_stats->mmesh_stat.rxkey_lookp_up_fail +=
+		src_peer_stats->mmesh_stat.rxkey_lookp_up_fail;
+
+	dst_peer_stats->mmesh_stat.rxkey_lookp_up_succ +=
+		src_peer_stats->mmesh_stat.rxkey_lookp_up_succ;
+
+	dst_peer_stats->mmesh_stat.rxhdr_alloc_fail +=
+		src_peer_stats->mmesh_stat.rxhdr_alloc_fail;
+#endif
 }
 
 

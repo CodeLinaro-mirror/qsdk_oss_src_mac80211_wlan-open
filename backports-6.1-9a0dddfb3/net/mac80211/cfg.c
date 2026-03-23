@@ -725,7 +725,7 @@ static int ieee80211_add_key(struct wiphy *wiphy, struct net_device *dev,
 	return err;
 }
 
-static struct ieee80211_key *
+struct ieee80211_key *
 ieee80211_lookup_key(struct ieee80211_sub_if_data *sdata, int link_id,
 		     u8 key_idx, bool pairwise, const u8 *mac_addr)
 {
@@ -786,6 +786,7 @@ ieee80211_lookup_key(struct ieee80211_sub_if_data *sdata, int link_id,
 
 	return NULL;
 }
+EXPORT_SYMBOL(ieee80211_lookup_key);
 
 static int ieee80211_del_key(struct wiphy *wiphy, struct net_device *dev,
 			     int link_id, u8 key_idx, bool pairwise,
@@ -1615,6 +1616,7 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	prev_beacon_int = link_conf->beacon_int;
 	link_conf->beacon_int = params->beacon_interval;
 	link_conf->beacon_tx_mode = params->beacon_tx_mode;
+	link_conf->auth_type = params->auth_type;
 
 	if (params->ht_cap)
 		link_conf->ht_ldpc =

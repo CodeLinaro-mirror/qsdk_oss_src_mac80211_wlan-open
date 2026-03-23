@@ -219,6 +219,15 @@ ath12k_wifi7_hal_rxdesc_get_mpdu_start_addr2_wcn7850(struct hal_rx_desc *desc)
 			desc->u.wcn7850.mpdu_start.addr2 : NULL;
 }
 
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+static inline u8
+ath12k_wifi7_hal_rxdesc_get_key_id_octet_wcn7850(struct hal_rx_desc *desc)
+{
+	return u32_get_bits(__le32_to_cpu(desc->u.wcn7850.mpdu_start.info5),
+			    RX_MPDU_START_INFO5_KEY_ID) & 0x3;
+}
+#endif
+
 static inline
 bool ath12k_wifi7_hal_rx_h_is_da_mcbc_wcn7850(struct hal_rx_desc *desc)
 {

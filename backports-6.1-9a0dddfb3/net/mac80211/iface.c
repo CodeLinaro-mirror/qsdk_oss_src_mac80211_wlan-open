@@ -1879,6 +1879,11 @@ static void ieee80211_setup_sdata(struct ieee80211_sub_if_data *sdata,
 #ifdef CPTCFG_MAC80211_PPE_SUPPORT
 	sdata->vif.ppe_vp_num = -1;
 #endif
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	if (!mmeshsim)
+		sdata->vif.mhdr_len =  MMESH_TX_META_HDR;
+#endif
+
 	sdata->wdev.iftype = type;
 
 	sdata->control_port_protocol = cpu_to_be16(ETH_P_PAE);

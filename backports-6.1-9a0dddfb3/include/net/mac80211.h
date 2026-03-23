@@ -935,6 +935,7 @@ struct ieee80211_bss_conf {
 	u8 ml_max_rec_links;
 	bool is_cfp_enabled;
 	bool dps_assist_support;
+	enum nl80211_auth_type auth_type;
 };
 
 /**
@@ -2345,6 +2346,11 @@ struct ieee80211_vif {
 #ifdef CPTCFG_MAC80211_PPE_SUPPORT
 	int ppe_vp_num;
 	u8 ppe_vp_type;
+#endif
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	u32 mhdr;
+	u32 mhdr_len;
+	u32 mdbg;
 #endif
 	bool is_roc;
 	/* must be last */

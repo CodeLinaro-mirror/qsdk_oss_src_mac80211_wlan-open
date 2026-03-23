@@ -3180,7 +3180,8 @@ static ssize_t ath12k_read_mld_stats(struct file *file,
 			"HTT Metadata Err", "TCL Desc NA", "TCL Desc Retry",
 			"Invalid Arvif Fast", "Invalid Pdev Fast",
 			"Max Tx Limit Fast", "Invalid ENCAP Fast",
-			"Bridge vdev", "Arsta NA"};
+			"Bridge vdev", "Arsta NA", "skb clone",
+			"MMesh hdr fail"};
 
 	if (!ahvif)
 		return -EINVAL;

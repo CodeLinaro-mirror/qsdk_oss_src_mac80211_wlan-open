@@ -661,10 +661,15 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 
 	dp_peer->hw_links[peer->hw_link_id] = link_id;
 
-	if (vif->type == NL80211_IFTYPE_AP)
+	if (vif->type == NL80211_IFTYPE_AP) {
 		dp_peer->is_reset_mcbc = true;
-	else if (vif->type == NL80211_IFTYPE_MESH_POINT)
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+		if (ahvif->vap_submode == QCA_WLAN_VENDOR_VAP_SUBMODE_MESH)
+			dp_peer->is_mmesh_peer = true;
+#endif
+	} else if (vif->type == NL80211_IFTYPE_MESH_POINT) {
 		dp_peer->is_11s_mesh_peer = true;
+	}
 
 	/* Do not deliver frames to PPE in fast rx incase of RFS
 	 * RFS is supported only in SFE Mode

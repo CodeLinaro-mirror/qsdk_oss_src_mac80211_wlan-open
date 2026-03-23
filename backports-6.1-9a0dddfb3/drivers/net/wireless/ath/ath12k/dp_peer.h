@@ -204,8 +204,9 @@ struct ath12k_dp_peer {
 	bool mscs_session_exists;
 	struct ath12k_dp_preserved_stats link_peer_delete_stats;
 	struct ath12k_dp_peer_ext_ctx *peer_ext_ctx;
-	bool is_sta_bss_peer_4addr;
-	bool is_11s_mesh_peer;
+	u8 is_sta_bss_peer_4addr :1,
+	   is_11s_mesh_peer      :1,
+	   is_mmesh_peer         :1;
 };
 
 #define QOS_MSDUQ_MAX ((QOS_TID_MDSUQ_MAX * QOS_TID_MAX) + MSDUQ_MAX_DEF)
