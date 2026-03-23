@@ -1154,6 +1154,7 @@ void ieee80211_tx_monitor(struct ieee80211_local *local, struct sk_buff *skb,
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct ieee80211_sub_if_data *sdata;
 	struct net_device *prev_dev = NULL;
+	struct cfg80211_chan_def *chandef;
 	int rtap_len;
 	bool tlv_check_ok;
 
@@ -1194,6 +1195,12 @@ void ieee80211_tx_monitor(struct ieee80211_local *local, struct sk_buff *skb,
 			if ((sdata->u.mntr.flags & MONITOR_FLAG_COOK_FRAMES) &&
 			    !send_to_cooked)
 				continue;
+
+			chandef = &sdata->vif.bss_conf.chanreq.oper;
+			if (!chandef->chan ||
+			    chandef->chan->center_freq != status->mon_info.chan_freq) {
+				continue;
+			}
 
 			if (prev_dev) {
 				skb2 = skb_clone(skb, GFP_ATOMIC);
