@@ -4265,6 +4265,8 @@ struct cfg80211_update_ft_ies_params {
  * @link_id: for MLO, the link ID to transmit on, -1 if not given; note
  *	that the link ID isn't validated (much), it's in range but the
  *	link might not exist (or be used by the receiver STA)
+ * @tx_rate_valid: indicates if the tx rate is set for the mgmt packet
+ * @rate: tx rate information for the mgmt packet
  */
 struct cfg80211_mgmt_tx_params {
 	struct cfg80211_chan_def chandef;
@@ -4277,6 +4279,7 @@ struct cfg80211_mgmt_tx_params {
 	int n_csa_offsets;
 	const u16 *csa_offsets;
 	int link_id;
+	bool tx_rate_valid;
 	struct cfg80211_bitrate_mask rate;
 };
 

@@ -1108,8 +1108,9 @@ int ieee80211_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
 	IEEE80211_SKB_CB(skb)->flags = flags;
 	IEEE80211_SKB_CB(skb)->control.flags |= IEEE80211_TX_CTRL_DONT_USE_RATE_MASK;
 
-	ieee80211_set_tx_rate(local, IEEE80211_SKB_CB(skb),
-			      &params->rate, &params->chandef);
+	if (params->tx_rate_valid)
+		ieee80211_set_tx_rate(local, IEEE80211_SKB_CB(skb),
+				      &params->rate, &params->chandef);
 
 	skb->dev = sdata->dev;
 
