@@ -336,8 +336,8 @@ static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274 = {
 	.tx  = {
 		ATH12K_TX_RING_MASK_0,
 		ATH12K_TX_RING_MASK_1,
-		ATH12K_TX_RING_MASK_2,
 #ifndef CPTCFG_EXT_IPA_OFFLOAD
+		ATH12K_TX_RING_MASK_2,
 		ATH12K_TX_RING_MASK_3,
 #else
 		0,
