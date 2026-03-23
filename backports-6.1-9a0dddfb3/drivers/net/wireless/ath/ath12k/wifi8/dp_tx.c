@@ -2797,6 +2797,8 @@ void ath12k_wifi8_dp_tx_ring_cleanup(struct ath12k_base *ab)
 	ath12k_dp_srng_cleanup(ab, &dp_wifi8->tcl_cmd_ring);
 	ath12k_dp_srng_cleanup(ab, &dp_wifi8->tqm_status_ring);
 	ath12k_dp_srng_cleanup(ab, &dp_wifi8->tqm_cmd_ring);
+	ath12k_dp_srng_cleanup(ab, &dp_wifi8->sam_status_ring);
+	ath12k_dp_srng_cleanup(ab, &dp_wifi8->sam_cmd_ring);
 }
 
 int ath12k_wifi8_dp_tx_ring_setup(struct ath12k_base *ab)
@@ -2805,6 +2807,7 @@ int ath12k_wifi8_dp_tx_ring_setup(struct ath12k_base *ab)
 	struct ath12k_dp *dp = ab->dp;
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
 	const struct ath12k_hal_tcl_to_cmp_rbm_map *map;
+	struct hal_srng *srng;
 	int ret;
 	u8 rbm_id;
 
@@ -2877,6 +2880,25 @@ int ath12k_wifi8_dp_tx_ring_setup(struct ath12k_base *ab)
 		ath12k_warn(ab, "failed to set up tqm_status ring :%d\n", ret);
 		goto err;
 	}
+
+	ret = ath12k_dp_srng_setup(ab, &dp_wifi8->sam_cmd_ring, HAL_SAM_CMD,
+				   0, 0, DP_SAM_CMD_RING_SIZE);
+	if (ret) {
+		ath12k_warn(ab, "failed to setup sam cmd ring: %d\n", ret);
+		goto err;
+	}
+
+	ret = ath12k_dp_srng_setup(ab, &dp_wifi8->sam_status_ring, HAL_SAM_STATUS,
+				   0, 0, DP_SAM_STATUS_RING_SIZE);
+	if (ret) {
+		ath12k_warn(ab, "failed to setup sam status ring: %d\n", ret);
+		goto err;
+	}
+
+	srng = &ab->hal.srng_list[dp_wifi8->sam_cmd_ring.ring_id];
+	ath12k_wifi8_hal_tx_sam_init_cmd_ring(ab, srng);
+
+	ath12k_wifi8_hal_tx_sam_program_clear(ab);
 
 	return 0;
 
@@ -3508,3 +3530,26 @@ tx_buf_release:
 	return quota - budget;
 }
 #endif
+
+void ath12k_wifi8_dp_tx_process_sam_status(struct ath12k_dp *dp)
+{
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+	struct ath12k_base *ab = dp->ab;
+	struct hal_tlv_64_hdr *hdr;
+	struct hal_srng *srng;
+	u16 tag;
+
+	srng = &ab->hal.srng_list[dp_wifi8->sam_status_ring.ring_id];
+
+	spin_lock_bh(&srng->lock);
+	ath12k_hal_srng_access_begin(ab, srng);
+
+	while ((hdr = ath12k_hal_srng_dst_get_next_entry(ab, srng))) {
+		tag = le64_get_bits(hdr->tl, HAL_SRNG_TLV_HDR_TAG);
+
+		ath12k_wifi8_hal_tx_sam_status(ab, hdr);
+	}
+
+	ath12k_hal_srng_access_end(ab, srng);
+	spin_unlock_bh(&srng->lock);
+}

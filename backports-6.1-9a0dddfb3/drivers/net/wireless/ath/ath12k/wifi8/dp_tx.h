@@ -78,4 +78,5 @@ void ath12k_wifi8_dp_tx_process_tqm_status(struct ath12k_dp *dp);
 void ath12k_dp_peer_cleanup_tqm_sync(struct ath12k_dp *dp, void *ctx,
 				     struct hal_tqm_status *tqm_status);
 void ath12k_wifi8_dp_tx_tqm_cmd_list_cleanup(struct ath12k_base *ab);
+void ath12k_wifi8_dp_tx_process_sam_status(struct ath12k_dp *dp);
 #endif

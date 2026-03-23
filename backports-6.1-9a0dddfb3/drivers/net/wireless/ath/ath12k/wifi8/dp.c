@@ -96,6 +96,9 @@ static int ath12k_wifi8_cumac_dp_service_srng(struct ath12k_dp *dp,
 	if (dp->hw_params->ring_mask->tqm_status[grp_id])
 		ath12k_wifi8_dp_tx_process_tqm_status(dp);
 
+	if (dp->hw_params->ring_mask->sam_status[grp_id])
+		ath12k_wifi8_dp_tx_process_sam_status(dp);
+
 	while (tx_mask) {
 		i = fls(tx_mask) - 1;
 		tx_mask ^= 1 << i;
