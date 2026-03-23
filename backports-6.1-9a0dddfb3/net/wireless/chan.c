@@ -1148,8 +1148,10 @@ bool cfg80211_chandef_dfs_nol_clear(struct wiphy *wiphy,
 			return false;
 
 		if (c->flags & IEEE80211_CHAN_RADAR) {
-			if (c->dfs_state == NL80211_DFS_UNAVAILABLE)
+			if (c->dfs_state == NL80211_DFS_UNAVAILABLE &&
+			    !enable_dfs_test_mode) {
 				return false;
+			}
 		}
 	}
 
