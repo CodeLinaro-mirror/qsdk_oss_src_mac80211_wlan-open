@@ -10,6 +10,18 @@
 #include "../dp_cmn.h"
 #include "hw.h"
 
+#if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || \
+	defined(CPTCFG_ATH12K_MEM_PROFILE_512M)
+#define ATH12K_RX_DESC_COUNT	8192
+#elif defined(CONFIG_ATH12K_MEM_PROFILE_256M) || \
+	defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
+#define ATH12K_RX_DESC_COUNT	8192
+#else
+#define ATH12K_RX_DESC_COUNT	12288
+#endif
+
+#define ATH12K_NUM_RX_SPT_PAGES \
+	(ATH12K_RX_DESC_COUNT / ATH12K_MAX_SPT_ENTRIES)
 
 struct ath12k_base;
 struct ath12k_dp;
