@@ -3433,13 +3433,14 @@ int ath12k_wifi8_dp_alloc_reo_qdesc(struct ath12k_base *ab,
 static int ath12k_wifi8_dp_rx_wbm_idle_buf_0_config_qcn9625(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+	struct ath12k_dp_wifi8 *central_dp_wifi8 =
+		ath12k_get_dp_wifi8(ath12k_get_central_dp(dp));
 	struct htt_rx_ring_tlv_filter tlv_filter = {0};
 	u32 ring_id;
 	int ret;
 	u32 hal_rx_desc_sz = ab->hal.hal_desc_sz;
 
-	ring_id = dp_wifi8->wbm_idle_buf_ring.ring_id;
+	ring_id = central_dp_wifi8->wbm_idle_buf_ring.ring_id;
 	tlv_filter.rx_filter = HTT_RX_TLV_FLAGS_RXDMA_RING;
 	tlv_filter.rxmon_disable = true;
 	tlv_filter.enable_fp = 1;
@@ -3999,12 +4000,6 @@ int ath12k_wifi8_dp_rx_htt_setup(struct ath12k_base *ab)
 	ret = ath12k_dp_mon_rx_htt_setup(dp);
 	if (ret) {
 		ath12k_warn(ab, "Failed to setup rxdma monitor rings\n");
-		return ret;
-	}
-
-	ret = ab->hw_params->hw_ops->rxdma_ring_sel_config(ab);
-	if (ret) {
-		ath12k_warn(ab, "failed to setup rxdma ring selection config\n");
 		return ret;
 	}
 
