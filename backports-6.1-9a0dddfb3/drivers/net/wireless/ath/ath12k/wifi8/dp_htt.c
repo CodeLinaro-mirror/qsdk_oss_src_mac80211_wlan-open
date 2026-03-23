@@ -10,6 +10,117 @@
 #include "dp_htt.h"
 #include "dp_tx_flow_info.h"
 #include "dp_peer.h"
+#include "dp.h"
+
+#define ATH12K_HTT_RETRY_TIME_MS	100
+#define MAX_RETRY_COUNT			50
+
+static void ath12k_dp_htt_add_to_retry_list(struct ath12k_dp_hw_group *dp_hw_grp,
+					    u16 peer_id,
+					    u8 hw_link_id)
+{
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8 =
+					ath12k_get_dp_hw_group_wifi8(dp_hw_grp);
+	struct ath12k_dp_htt_cmd_retry_info *retry_info = NULL;
+
+	if (hw_link_id >= ATH12K_GROUP_MAX_RADIO) {
+		ath12k_err(NULL, "unable to add htt retry entry link_id %d", hw_link_id);
+		return;
+	}
+	if (peer_id >= ATH12K_MAX_PEER_ID) {
+		ath12k_err(NULL, "unable to add htt retry entry peer_id %d", peer_id);
+		return;
+	}
+
+	spin_lock_bh(&dp_hw_grp_wifi8->htt_cmd_retry_lock);
+	retry_info = &dp_hw_grp_wifi8->retry_info[hw_link_id];
+	set_bit(peer_id, retry_info->htt_retry_peer_id_map);
+	retry_info->retry_count++;
+	spin_unlock_bh(&dp_hw_grp_wifi8->htt_cmd_retry_lock);
+
+	if (atomic_read(&dp_hw_grp_wifi8->retry_work_active))
+		schedule_delayed_work(&dp_hw_grp_wifi8->dp_htt_retry_dwork,
+				      msecs_to_jiffies(ATH12K_HTT_RETRY_TIME_MS));
+}
+
+static void ath12k_dp_htt_reset_retry_list(struct ath12k_dp_hw_group *dp_hw_grp,
+					   u16 peer_id,
+					   u8 hw_link_id)
+{	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8 =
+					ath12k_get_dp_hw_group_wifi8(dp_hw_grp);
+	struct ath12k_dp_htt_cmd_retry_info *retry_info = NULL;
+
+	spin_lock_bh(&dp_hw_grp_wifi8->htt_cmd_retry_lock);
+	retry_info = &dp_hw_grp_wifi8->retry_info[hw_link_id];
+	clear_bit(peer_id, retry_info->htt_retry_peer_id_map);
+	retry_info->retry_count = 0;
+	spin_unlock_bh(&dp_hw_grp_wifi8->htt_cmd_retry_lock);
+}
+
+void ath12k_dp_tx_htt_retry_work(struct work_struct *work)
+{
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8 =
+				container_of(dwork,
+					     struct ath12k_dp_hw_group_wifi8,
+					     dp_htt_retry_dwork);
+	struct ath12k_dp_hw_group *dp_hw_grp = ath12k_get_dp_hw_group(dp_hw_grp_wifi8);
+	struct ath12k_pdev_dp *dp_pdev = NULL;
+	struct ath12k_dp_hw *dp_hw = NULL;
+	struct ath12k_dp_peer *dp_peer;
+	struct ath12k_dp_htt_cmd_retry_info *retry_info = NULL;
+	u8 hw_link_id = 0;
+	unsigned long peer_id;
+	unsigned long pending_peers[BITS_TO_LONGS(ATH12K_MAX_PEER_ID)];
+
+	rcu_read_lock();
+	for (hw_link_id = 0; hw_link_id < ATH12K_GROUP_MAX_RADIO; hw_link_id++) {
+		dp_pdev = ath12k_dp_hw_grp_to_dp_pdev(dp_hw_grp, hw_link_id);
+		if (unlikely(!dp_pdev))
+			continue;
+
+		dp_hw = dp_pdev->dp_hw;
+		if (!dp_hw)
+			continue;
+
+		spin_lock_bh(&dp_hw_grp_wifi8->htt_cmd_retry_lock);
+		retry_info = &dp_hw_grp_wifi8->retry_info[hw_link_id];
+
+		if (retry_info->retry_count >= MAX_RETRY_COUNT) {
+			spin_unlock_bh(&dp_hw_grp_wifi8->htt_cmd_retry_lock);
+			ath12k_err(NULL, "HTT retry max count reached hw_link_id %d\n",
+				   hw_link_id);
+			WARN_ON_ONCE(1);
+			break;
+		}
+
+		bitmap_copy(pending_peers, retry_info->htt_retry_peer_id_map,
+			    ATH12K_MAX_PEER_ID);
+		spin_unlock_bh(&dp_hw_grp_wifi8->htt_cmd_retry_lock);
+
+		/* iterate over all the required peers */
+		for (peer_id = find_first_bit(pending_peers, ATH12K_MAX_PEER_ID);
+		     peer_id < ATH12K_MAX_PEER_ID;
+		     peer_id = find_next_bit(pending_peers, ATH12K_MAX_PEER_ID,
+					     peer_id + 1)) {
+			dp_peer = rcu_dereference(dp_pdev->dp_hw->dp_peer_list[peer_id]);
+			if (!dp_peer)
+				continue;
+
+			if (dp_peer->dp_peer_state >= ATH12K_DP_PEER_LOGICALLY_DELETED)
+				continue;
+
+			if (dp_peer->is_vdev_peer)
+				(void)ath12k_dp_tx_mcast_msduq_mpduq_setup(dp_hw_grp,
+									   dp_peer);
+			else
+				(void)ath12k_dp_tx_peer_msduq_mpduq_setup(dp_hw_grp,
+									  dp_peer,
+									  hw_link_id);
+		}
+	}
+	rcu_read_unlock();
+}
 
 static int ath12k_dp_tx_htt_msduq_mpduq_setup(struct ath12k_base *ab,
 					      struct list_head *mpduq_list_head,
@@ -127,6 +238,7 @@ int ath12k_dp_tx_htt_peer_msduq_mpduq_setup(struct ath12k_dp_hw_group *dp_hw_grp
 	int ret;
 	u8 hw_link_id;
 	struct ath12k_dp *dp;
+	bool retry = false;
 
 	if (!tx_info)
 		return -EINVAL;
@@ -192,11 +304,21 @@ init_tx_queues:
 								 num_mpduq,
 								 num_msduq,
 								 hw_link_id);
-			/* TODO check for any possible error handling */
 			if (ret) {
-				rcu_read_unlock();
-				goto err_release;
+				retry = true;
+				ath12k_dp_htt_add_to_retry_list(dp_hw_grp,
+								dp_peer->peer_id,
+								hw_link_id);
+				continue;
 			}
+			ath12k_dp_htt_reset_retry_list(dp_hw_grp,
+						       dp_peer->peer_id,
+						       hw_link_id);
+		}
+
+		if (retry) {
+			rcu_read_unlock();
+			goto err_release;
 		}
 	} else {
 		/* send the message to specific soc */
@@ -221,18 +343,23 @@ init_tx_queues:
 					continue;
 			}
 
-			set_bit(hw_link_id, &tx_info->txq_hw_links_bitmap);
 			ret = ath12k_dp_tx_htt_msduq_mpduq_setup(dp->ab,
 								 &mpduq_list_head,
 								 &msduq_list_head,
 								 num_mpduq,
 								 num_msduq,
 								 hw_link_id);
-			/* TODO check for any possible error handling */
 			if (ret) {
+				ath12k_dp_htt_add_to_retry_list(dp_hw_grp,
+								dp_peer->peer_id,
+								hw_link_id);
 				rcu_read_unlock();
 				goto err_release;
 			}
+			set_bit(hw_link_id, &tx_info->txq_hw_links_bitmap);
+			ath12k_dp_htt_reset_retry_list(dp_hw_grp,
+						       dp_peer->peer_id,
+						       hw_link_id);
 			break;
 		}
 	}
@@ -271,7 +398,7 @@ err_release:
 	list_for_each_entry_safe(msduq, msduq_temp, &msduq_list_head, list)
 		list_del(&msduq->list);
 
-	return ret;
+	return 0;
 }
 
 int ath12k_dp_rx_htt_ast_info_setup(struct ath12k_base *ab,
