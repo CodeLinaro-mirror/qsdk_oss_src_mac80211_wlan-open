@@ -165,6 +165,12 @@ struct wmi_vdev_set_tpc_power_cmd {
          */
 } __packed;
 
+struct wmi_vdev_tpc_ie_power_event {
+	__le32 vdev_id;
+	__le32 pdev_id;
+	a_sle32 tx_pwr; /* unit: 0.25 dBm */
+} __packed;
+
 struct wmi_peer_delete_all_cmd {
 	__le32 tlv_header;
 	__le32 vdev_id;
@@ -1042,6 +1048,7 @@ enum wmi_tlv_event_id {
 	WMI_VDEV_ADD_MAC_ADDR_TO_RX_FILTER_STATUS_EVENTID,
 	WMI_VDEV_DELETE_ALL_PEER_RESP_EVENTID =
 		WMI_VDEV_ADD_MAC_ADDR_TO_RX_FILTER_STATUS_EVENTID + 10,
+	WMI_VDEV_TPC_IE_POWER_EVENTID = 0x501f,
 	WMI_PEER_STA_KICKOUT_EVENTID = WMI_TLV_CMD(WMI_GRP_PEER),
 	WMI_PEER_INFO_EVENTID,
 	WMI_PEER_TX_FAIL_CNT_THR_EVENTID,
@@ -2465,6 +2472,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_MGMT_MPDU_FLOWQ_PARAMS = 0x514,
 	WMI_TAG_MGMT_MSDU_FLOWQ_PARAMS = 0x515,
 	WMI_TAG_HOL_MSDU_FLOWQ_PARAMS = 0x516,
+	WMI_TAG_VDEV_TPC_IE_POWER_EVENT = 0x522,
 	WMI_TAG_ENERGY_MGMT_DPS_ASSISTING_ROLE_CMD_FIXED_PARAM = 0x525,
 	WMI_TAG_MAC_PHY_CAPABILITIES_EXT2 = 0x526,
 	WMI_TAG_MLO_PEER_TID_TO_LINK_MAP_EVENT_FIXED_PARAM = 0x544,
