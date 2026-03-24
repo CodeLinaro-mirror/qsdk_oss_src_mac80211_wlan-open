@@ -12204,7 +12204,6 @@ static int ath12k_wmi_tlv_fw_stats_data_parse(struct ath12k_base *ab,
 	struct ath12k_link_sta *arsta;
 	int i, ret = 0;
 	const void *data = ptr;
-	s8 rssi;
 
 	if (!ev) {
 		ath12k_warn(ab, "failed to fetch update stats ev");
@@ -12251,24 +12250,6 @@ static int ath12k_wmi_tlv_fw_stats_data_parse(struct ath12k_base *ab,
 				ath12k_dbg(ab, ATH12K_DBG_WMI,
 					   "not found station bssid %pM for vdev stat\n",
 					   arvif->bssid);
-			}
-
-			if (le32_to_cpu(src->beacon_snr)) {
-				rssi = le32_to_cpu(src->beacon_snr) +
-				       ar->rssi_offsets.rssi_offset;
-				if (arsta) {
-					arsta->max_rssi = max(arsta->max_rssi, rssi);
-					arsta->min_rssi = min(arsta->min_rssi, rssi);
-				}
-			}
-
-			if (le32_to_cpu(src->data_snr)) {
-				rssi = le32_to_cpu(src->data_snr) +
-				       ar->rssi_offsets.rssi_offset;
-				if (arsta) {
-					arsta->max_rssi = max(arsta->max_rssi, rssi);
-					arsta->min_rssi = min(arsta->min_rssi, rssi);
-				}
 			}
 		}
 
