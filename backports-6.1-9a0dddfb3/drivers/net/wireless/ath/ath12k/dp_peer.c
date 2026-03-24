@@ -968,6 +968,7 @@ void ath12k_dp_cp_link_peer_unassign(struct ath12k *ar,
 	ahsta->links_map &= ~BIT(link_id);
 	ahsta->device_bitmap &= ~BIT(ab->wsi_info.index);
 	ahsta->mlo_hw_link_id_bitmap &= ~BIT(arvif->ar->pdev->hw_link_id);
+	ahsta->free_logical_idx_map |= BIT(arsta->link_idx);
 	ahsta->num_peer--;
 	rcu_assign_pointer(ahsta->link[link_id], NULL);
 
