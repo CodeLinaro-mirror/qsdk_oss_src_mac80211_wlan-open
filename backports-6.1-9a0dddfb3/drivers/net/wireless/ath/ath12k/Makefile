@@ -32,8 +32,6 @@ ath12k-y += core.o \
 	    sdwf.o \
 	    telemetry.o \
 	    telemetry_agent_if.o \
-	    ini.o \
-	    ini_parse.o \
 	    dp_mon_filter.o \
 	    erp.o \
 	    vendor_services.o \
@@ -70,6 +68,8 @@ ath12k-$(CPTCFG_QCN_EXTN) += \
 	qcn_extns/txrx_extn.o \
 	qcn_extns/dcs_extn.o \
 	qcn_extns/dp_stats_extn.o \
+	qcn_extns/ini.o \
+	qcn_extns/ini_parse.o
 
 ath12k-$(CPTCFG_QCN_EXTN_MESH_SUPPORT) += \
 	qcn_extns/mesh-extn.o

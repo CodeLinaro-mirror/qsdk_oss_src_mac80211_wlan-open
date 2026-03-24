@@ -37,7 +37,9 @@
 #include "dp_mon.h"
 #include "erp.h"
 #include "vendor_services.h"
-#include "ini.h"
+#ifdef CPTCFG_QCN_EXTN
+#include "qcn_extns/ini.h"
+#endif
 #include "hal.h"
 #include "qcn_extns/ath12k_cmn_extn.h"
 

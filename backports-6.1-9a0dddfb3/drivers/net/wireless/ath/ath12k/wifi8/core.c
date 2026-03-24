@@ -8,8 +8,9 @@
 #include "../pci.h"
 #include "../erp.h"
 #include "pci.h"
-#include "../ini.h"
-
+#ifdef CPTCFG_QCN_EXTN
+#include "../qcn_extns/ini.h"
+#endif
 static int pci_err;
 
 static int ath12k_wifi8_init(void)

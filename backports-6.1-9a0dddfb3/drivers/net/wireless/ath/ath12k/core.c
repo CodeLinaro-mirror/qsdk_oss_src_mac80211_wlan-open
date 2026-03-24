@@ -42,7 +42,9 @@
 #include "telemetry.h"
 #include "ppe.h"
 #include "cfr.h"
-#include "ini.h"
+#ifdef CPTCFG_QCN_EXTN
+#include "qcn_extns/ini.h"
+#endif
 #include "erp.h"
 #include "sdwf.h"
 #ifdef CPTCFG_EXT_IPA_OFFLOAD

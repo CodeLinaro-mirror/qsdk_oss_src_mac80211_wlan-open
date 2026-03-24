@@ -26,7 +26,9 @@
 #include "dp_mon.h"
 #include "vendor.h"
 #include "cfr.h"
-#include "ini.h"
+#ifdef CPTCFG_QCN_EXTN
+#include "qcn_extns/ini.h"
+#endif
 #include "erp.h"
 struct ath12k_wmi_svc_ready_parse {
 	bool wmi_svc_bitmap_done;
