@@ -14762,6 +14762,9 @@ static u8 ath12k_mac_ahsta_get_pri_link_id(struct ath12k_vif *ahvif,
 
 	sta = container_of((void *)ahsta, struct ieee80211_sta, drv_priv);
 
+	if (!ahvif->overide_primary_umac)
+		goto select_pri_link;
+
 	/* Handle conversion of user configured hw link id to primary link id
 	 */
 	if (ahvif->vif->type == NL80211_IFTYPE_STATION || ahvif->vif->type == NL80211_IFTYPE_AP) {
