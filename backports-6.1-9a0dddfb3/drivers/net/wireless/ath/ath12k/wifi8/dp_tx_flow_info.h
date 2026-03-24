@@ -30,7 +30,7 @@
 
 /* HW requirement for these structures are 48 dword size and aligned. */
 #define MSDU_STRUCT_SZ                  256
-/* HW requirement for these structures are 46 dword size and aligned. */
+/* HW requirement for these structures are 48 dword size and aligned. */
 #define MPDU_STRUCT_SZ                  256
 #define NUM_TOTAL_MPDU_QUEUES           4096
 #define NUM_TOTAL_MSDU_QUEUES           8192

@@ -5088,6 +5088,9 @@ struct wmi_peer_assoc_complete_cmd {
 	__le32 peer_eht_cap_phy[WMI_MAX_EHTCAP_PHY_SIZE];
 	__le32 peer_eht_ops;
 	struct ath12k_wmi_ppe_threshold_params peer_eht_ppet;
+	__le32 assoc_flags;
+	__le32 peer_max_tx_nss;
+	__le32 max_downlink_nss;
 	union {
 		struct {
 			__le32 hw_peer_id_valid		: 1,
