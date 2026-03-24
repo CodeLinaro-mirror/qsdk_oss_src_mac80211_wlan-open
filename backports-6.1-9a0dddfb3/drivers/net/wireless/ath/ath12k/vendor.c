@@ -3285,7 +3285,7 @@ ath12k_fill_peer_tx_ext_htt_stats_attr(struct ath12k *ar, struct sk_buff *vendor
 		/* Average ACK RSSI */
 		if (nla_put_u32(vendor_event,
 				QCA_VENDOR_WLAN_TELEMETRY_TX_EXT_HTT_STATS_AVG_ACK_RSSI,
-				WEIGHTED_AVG_OUT(tx_stats->avg_ack_rssi))) {
+				tx_stats->avg_ack_rssi)) {
 			ath12k_err(NULL, "nla put failed: avg ack rssi");
 			return -EINVAL;
 		}
