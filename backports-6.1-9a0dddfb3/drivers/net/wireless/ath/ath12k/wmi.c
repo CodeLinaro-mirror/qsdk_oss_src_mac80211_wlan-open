@@ -13960,6 +13960,49 @@ static void ath12k_wmi_event_teardown_complete(struct ath12k_base *ab,
 	}
 }
 
+static void ath12k_wmi_event_send_cumac_complete(struct ath12k_base *ab,
+						 struct sk_buff *skb)
+{
+	const struct wmi_mlo_send_cumac_complete_event *ev;
+	struct ath12k *ar = NULL;
+	const void **tb;
+	int ret;
+
+	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
+	if (IS_ERR(tb)) {
+		ret = PTR_ERR(tb);
+		ath12k_warn(ab, "failed to parse cumac complete event tlv: %d\n", ret);
+		return;
+	}
+
+	ev = tb[WMI_TAG_PDEV_SET_CUMAC_COMPLETE];
+	if (!ev) {
+		ath12k_warn(ab, "failed to fetch cumac complete event\n");
+		kfree(tb);
+		return;
+	}
+
+	rcu_read_lock();
+	ar = ath12k_mac_get_ar_by_pdev_id(ab, le32_to_cpu(ev->pdev_id));
+	if (!ar) {
+		ath12k_warn(ab, "invalid pdev id in cumac completion event %d",
+			    ev->pdev_id);
+		goto out;
+	}
+
+	if (le32_to_cpu(ev->status) == WMI_PDEV_SET_CUMAC_CHIP_ID_SUCCESS) {
+		complete(&ar->cumac_setup_done);
+		ath12k_dbg(ab, ATH12K_DBG_BOOT, "Received cumac completion status: SUCCESS\n");
+	} else {
+		ath12k_err(ab, "pdev id %d received cumac completion with failure status\n",
+			   ev->pdev_id);
+	}
+
+out:
+	kfree(tb);
+	rcu_read_unlock();
+}
+
 #ifdef CPTCFG_ATH12K_DEBUGFS
 
 void ath12k_wmi_crl_path_stats_list_free(struct ath12k *ar, struct list_head *head)
@@ -16888,6 +16931,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 		break;
 	case WMI_MLO_TEARDOWN_COMPLETE_EVENTID:
 		ath12k_wmi_event_teardown_complete(ab, skb);
+		break;
+	case WMI_PDEV_SET_CUMAC_CHIP_ID_CONFIRMATION_EVENTID:
+		ath12k_wmi_event_send_cumac_complete(ab, skb);
 		break;
 	case WMI_HALPHY_STATS_CTRL_PATH_EVENTID:
 		ath12k_wmi_process_tpc_stats(ab, skb);
@@ -20066,6 +20112,44 @@ int ath12k_wmi_vdev_rate_mask(struct ath12k *ar, struct wmi_vdev_ratemask_arg *a
 		ath12k_warn(ar->ab,
 			    "failed to send vdev %d rate mask cmd: %d\n",
 			    arg->vdev_id, ret);
+		dev_kfree_skb(skb);
+		return ret;
+	}
+
+	return 0;
+}
+
+int ath12k_wmi_send_cumac_config(struct ath12k *ar,
+				 u32 cumac_chip_id)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct ath12k_base *ab = wmi->wmi_ab->ab;
+	struct wmi_send_cumac_cmd *cmd = NULL;
+	struct sk_buff *skb;
+	int ret, len;
+
+	len = sizeof(*cmd);
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_send_cumac_cmd *)skb->data;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_PDEV_SET_CUMAC_CHIP,
+						 sizeof(*cmd));
+
+	cmd->pdev_id = cpu_to_le32(ar->pdev->pdev_id);
+	cmd->cumac_chip_id = cpu_to_le32(cumac_chip_id);
+
+	ath12k_dbg(ab, ATH12K_DBG_BOOT, "wmi send cumac config cumac chip id:%d\n",
+		   cumac_chip_id);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb,
+				  WMI_PDEV_SET_CUMAC_CHIP_CMDID);
+
+	if (ret) {
+		ath12k_warn(ab,
+			    "Failed to send WMI_PDEV_SET_CUMAC_CHIP_CMDID");
 		dev_kfree_skb(skb);
 		return ret;
 	}

@@ -332,6 +332,7 @@ struct ath12k_hw_params {
 	bool umac_irq_line_reset;
 	bool is_plink_preferable;
 	bool cfr_support;
+	bool cumac_support;
 	u32 cfr_dma_hdr_size;
 	u32 cfr_num_stream_bufs;
 	u32 cfr_stream_buf_size;
