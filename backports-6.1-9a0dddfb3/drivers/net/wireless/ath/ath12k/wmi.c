@@ -3528,6 +3528,12 @@ int ath12k_wmi_send_peer_assoc_cmd(struct ath12k *ar,
 	memcpy_and_pad(&cmd->peer_eht_ppet, sizeof(cmd->peer_eht_ppet),
 		       &arg->peer_eht_ppet, sizeof(arg->peer_eht_ppet), 0);
 
+	/* Update SAM information */
+	if (arg->sta_id != ATH12K_STA_ID_INVALID) {
+		cmd->sam_peer_id_valid = 1;
+		cmd->sam_peer_id = cpu_to_le32(arg->sta_id);
+	}
+
 	/* Update 11bn capabilities */
 	memcpy_and_pad(cmd->peer_uhr_cap_mac, sizeof(cmd->peer_uhr_cap_mac),
 		       arg->peer_uhr_cap_mac, sizeof(arg->peer_uhr_cap_mac),
@@ -3867,7 +3873,7 @@ send:
 	ptr = ath12k_wmi_peer_assoc_v2_cmd(ar, ptr, arg, &cmd_id);
 
 	ath12k_dbg_level(ar->ab, ATH12K_DBG_WMI | ATH12K_DBG_MLME, ATH12K_DBG_L1,
-			 "wmi peer assoc vdev id %d assoc id %d peer mac %pM peer_flags %x rate_caps %x peer_caps %x listen_intval %d ht_caps %x max_mpdu %d nss %d phymode %d peer_mpdu_density %d vht_caps %x he cap_info %x he ops %x he cap_info_ext %x he phy %x %x %x peer_bw_rxnss_override %x peer_flags_ext %x eht mac_cap %x %x eht phy_cap %x %x %x peer_eht_ops %x uhr mac_cap %x %x uhr phy_cap %x\n",
+			 "wmi peer assoc vdev id %d assoc id %d peer mac %pM peer_flags %x rate_caps %x peer_caps %x listen_intval %d ht_caps %x max_mpdu %d nss %d phymode %d peer_mpdu_density %d vht_caps %x he cap_info %x he ops %x he cap_info_ext %x he phy %x %x %x peer_bw_rxnss_override %x peer_flags_ext %x eht mac_cap %x %x eht phy_cap %x %x %x peer_eht_ops %x uhr mac_cap %x %x uhr phy_cap %x sam_peer_id_valid %d sam_peer_id %x\n",
 			 cmd->vdev_id, cmd->peer_associd, arg->peer_mac,
 			 cmd->peer_flags, cmd->peer_rate_caps, cmd->peer_caps,
 			 cmd->peer_listen_intval, cmd->peer_ht_caps,
@@ -3882,7 +3888,8 @@ send:
 			 cmd->peer_eht_cap_phy[0], cmd->peer_eht_cap_phy[1],
 			 cmd->peer_eht_cap_phy[2], cmd->peer_eht_ops,
 			 cmd->peer_uhr_cap_mac[0], cmd->peer_uhr_cap_mac[1],
-			 cmd->peer_uhr_cap_phy[0]);
+			 cmd->peer_uhr_cap_phy[0], cmd->sam_peer_id_valid,
+			 cmd->sam_peer_id);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, cmd_id);
 	if (ret) {
