@@ -13,7 +13,61 @@
 #include "dp_tx.h"
 #include "dp_rx.h"
 
-/* WiFi8-specific UMAC reset implementations - currently empty stubs for future use */
+/**
+ * ath12k_wifi8_clear_link_desc_pool_task - Task to clear link desc pool
+ * @ab: Pointer to ath12k_base structure
+ *
+ * This task clears the WBM link descriptor pool for a specific AB.
+ * Multiple instances of this task run in parallel (one per AB in the group).
+ */
+static void ath12k_wifi8_clear_link_desc_pool_task(struct ath12k_base *ab)
+{
+	/* Clear link desc pool for this AB */
+	ath12k_dp_clear_link_desc_pool(ath12k_ab_to_dp(ab));
+}
+
+static void ath12k_q_post_reset_task(struct ath12k_base *ab,
+				     umac_reset_handler_fn callback)
+{
+	struct ath12k_hw_group *ag = ab->ag;
+
+	ath12k_umac_reset_enqueue_task(ag, callback, ab,
+				       ATH12K_UMAC_RESET_DO_PRE_RESET,
+				       ATH12K_UMAC_RESET_TX_CMD_POST_RESET_START_DONE,
+				       ATH12K_UMAC_RESET_CPU_UNBOUND);
+}
+
+static void ath12k_umac_reset_cleanup_tx_queues(struct ath12k_base *ab)
+{
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k *ar;
+	int i, j, ret;
+
+	/* Cleanup TX queues for all peers after UMAC reset */
+	for (i = 0; i < ag->num_devices; i++) {
+		ab = ag->ab[i];
+		if (!ab)
+			continue;
+
+		for (j = 0; j < ab->num_radios; j++) {
+			ar = ab->pdevs[j].ar;
+
+			if (!ar)
+				continue;
+
+			ret = ath12k_wifi8_cleanup_all_peers_tx_queues(&ar->ah->dp_hw,
+								       ag->dp_hw_grp,
+								       &ar->dp);
+			if (ret)
+				ath12k_warn(ab,
+					    "Failed to cleanup TX queues for all peers: %d\n",
+					    ret);
+			else
+				ath12k_dbg(ab, ATH12K_DBG_BOOT,
+					   "Successfully cleaned up TX queues for all peers\n");
+		}
+	}
+}
 
 void ath12k_wifi8_umac_reset_handle_init_recovery(struct ath12k_base *ab)
 {
@@ -22,6 +76,48 @@ void ath12k_wifi8_umac_reset_handle_init_recovery(struct ath12k_base *ab)
 
 	ath12k_hif_irq_disable(ab);
 	ath12k_hif_mgmt_irq_disable(ab);
+}
+
+/**
+ * ath12k_wifi8_post_pre_reset_send_cb - Callback after pre_reset message sent
+ * @ab: Pointer to ath12k_base structure
+ *
+ * This callback executes immediately after the pre_reset HTT message is
+ * successfully sent to firmware. It enqueues tasks, then triggers SMP
+ * calls to schedule tasklets on all online CPUs for parallel processing.
+ */
+static void ath12k_wifi8_post_pre_reset_send_cb(struct ath12k_base *ab)
+{
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
+	unsigned long flags;
+
+	/* Enqueue clear_link_desc_pool task for the current ab */
+	if (ab->is_bypassed || test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags))
+		return;
+
+	spin_lock_irqsave(&mlo_umac_reset->task_queue_lock, flags);
+	/*
+	 * Mark bit 0 to avoid premature response to fw. Do this only
+	 * when post reset processing hasnt already started.
+	 */
+	if (bitmap_empty(&mlo_umac_reset->task_map, BITS_PER_LONG))
+		set_bit(0, &mlo_umac_reset->task_map);
+
+	spin_unlock_irqrestore(&mlo_umac_reset->task_queue_lock, flags);
+
+	/* Enqueue unbound tasks - any CPU can process it */
+	ath12k_q_post_reset_task(ab, ath12k_wifi8_clear_link_desc_pool_task);
+	ath12k_q_post_reset_task(ab, ath12k_dp_umac_tx_desc_cleanup);
+	ath12k_q_post_reset_task(ab, ath12k_dp_rx_reo_cmd_list_cleanup);
+	ath12k_q_post_reset_task(ab, ath12k_wifi8_dp_tx_tqm_cmd_list_cleanup);
+	ath12k_q_post_reset_task(ab, ath12k_umac_reset_cleanup_tx_queues);
+
+	/* Trigger SMP calls to schedule tasklets on all online CPUs.
+	 * This allows parallel processing of the clear_link_desc_pool tasks
+	 * while FW processes the pre_reset message.
+	 */
+	ath12k_umac_reset_schedule_all_tasklets(ag);
 }
 
 void ath12k_wifi8_umac_reset_handle_pre_reset(struct ath12k_base *ab)
@@ -49,6 +145,9 @@ void ath12k_wifi8_umac_reset_handle_pre_reset(struct ath12k_base *ab)
 		}
 	}
 
+	ath12k_umac_reset_set_post_send_cb(cumac_ab,
+					   ath12k_wifi8_post_pre_reset_send_cb);
+
 	/* Schedule dummy tasks on all online CPUs to ensure
 	 * no ath12k_wifi8_dp_service_srng instances are running.
 	 * Each task is bound to a specific CPU, and only after all
@@ -65,16 +164,55 @@ void ath12k_wifi8_umac_reset_handle_pre_reset(struct ath12k_base *ab)
 	}
 }
 
+void ath12k_wifi8_dp_rx_init(struct ath12k_base *ab)
+{
+	ath12k_wifi8_dp_rx_ase_htt_srng_setup(ab);
+	ath12k_wifi8_dp_rx_ring_setup(ab);
+	ath12k_dp_umac_rx_desc_cleanup(ab);
+	ath12k_wifi8_mgmt_rx_refill_ring_init(ab);
+}
+
+void ath12k_wifi8_dp_rx_mgmt_init(struct ath12k_base *ab)
+{
+	ath12k_wifi8_mgmt_rx_ring_setup(ab);
+	ath12k_mgmt_rx_desc_cleanup(ab);
+	ath12k_wifi8_dp_rx_wbm_buf_ring_init(ab);
+}
+
+void ath12k_wifi8_dp_wbm_idle_init(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct hal_srng *srng;
+	int n_link_desc, ret;
+
+	ret = ath12k_wbm_idle_ring_setup(ab, &n_link_desc);
+	if (ret)
+		ath12k_warn(ab, "failed to setup wbm_idle_ring: %d\n", ret);
+
+	srng = &ab->hal.srng_list[dp->wbm_idle_ring.ring_id];
+
+	if (ath12k_dp_link_desc_setup(ab, dp->link_desc_banks,
+				      HAL_WBM_IDLE_LINK, srng, n_link_desc))
+		ath12k_warn(ab, "failed to setup link desc: %d\n", ret);
+}
+
+static void ath12k_dp_srng_common_setup_wrapper(struct ath12k_base *ab)
+{
+	ath12k_dp_srng_common_setup(ab);
+}
+
+static void ath12k_wifi8_dp_tx_ring_setup_wrapper(struct ath12k_base *ab)
+{
+	ath12k_wifi8_dp_tx_ring_setup(ab);
+}
+
 void ath12k_wifi8_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 {
 	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset;
 	struct ath12k_hw_group *ag = ab->ag;
-	int i, n_link_desc, ret, j;
-	struct hal_srng *srng = NULL;
 	struct ath12k_base *cumac_ab;
-	struct ath12k_dp *dp;
 	unsigned long end;
-	struct ath12k *ar;
+	int ret;
 
 	if (!ag)
 		return;
@@ -104,65 +242,16 @@ void ath12k_wifi8_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 
 	while (time_before(jiffies, end))
 		;
-
-	dp = ath12k_ab_to_dp(cumac_ab);
-	ath12k_dp_clear_link_desc_pool(dp);
-
-	/* Cleanup TX queues for all peers after UMAC reset */
-	for (i = 0; i < ag->num_devices; i++) {
-		ab = ag->ab[i];
-		if (!ab)
-			continue;
-
-		for (j = 0; j < ab->num_radios; j++) {
-			ar = ab->pdevs[j].ar;
-
-			if (!ar)
-				continue;
-
-			ret = ath12k_wifi8_cleanup_all_peers_tx_queues(&ar->ah->dp_hw,
-								       ag->dp_hw_grp,
-								       &ar->dp);
-			if (ret)
-				ath12k_warn(cumac_ab, "Failed to cleanup TX queues for all peers: %d\n",
-					    ret);
-			else
-				ath12k_dbg(cumac_ab, ATH12K_DBG_BOOT, "Successfully cleaned up TX queues for all peers\n");
-		}
-	}
-	ret = ath12k_wbm_idle_ring_setup(cumac_ab, &n_link_desc);
-	if (ret)
-		ath12k_warn(cumac_ab, "failed to setup wbm_idle_ring: %d\n", ret);
-
-	srng = &cumac_ab->hal.srng_list[dp->wbm_idle_ring.ring_id];
-
-	ret = ath12k_dp_link_desc_setup(cumac_ab, dp->link_desc_banks,
-					HAL_WBM_IDLE_LINK, srng, n_link_desc);
-	if (ret)
-		ath12k_warn(cumac_ab, "failed to setup link desc: %d\n", ret);
-
-	ath12k_wifi8_dp_rx_ase_htt_srng_setup(cumac_ab);
-
-	ath12k_dp_srng_common_setup(cumac_ab);
-	ath12k_wifi8_dp_tx_ring_setup(cumac_ab);
-	ath12k_wifi8_dp_rx_ring_setup(cumac_ab);
-	ath12k_wifi8_mgmt_rx_ring_setup(cumac_ab);
-
-	ath12k_dp_umac_tx_desc_cleanup(cumac_ab);
-	ath12k_dp_umac_rx_desc_cleanup(cumac_ab);
-	ath12k_mgmt_rx_desc_cleanup(cumac_ab);
-
-	ath12k_dp_rx_reo_cmd_list_cleanup(cumac_ab);
-	ath12k_wifi8_dp_tx_tqm_cmd_list_cleanup(cumac_ab);
-	ath12k_wifi8_clean_pending_ast_entries(cumac_ab);
-
-	ath12k_wifi8_dp_rx_wbm_buf_ring_init(cumac_ab);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	ath12k_wifi8_dp_rx_ppe2wbm_idle_buff_init(cumac_ab);
+	ath12k_q_post_reset_task(cumac_ab, ath12k_wifi8_dp_rx_ppe2wbm_idle_buff_init);
 #endif
-	ath12k_wifi8_mgmt_rx_refill_ring_init(cumac_ab);
-
-	ath12k_dp_tid_cleanup(cumac_ab);
+	ath12k_q_post_reset_task(cumac_ab, ath12k_dp_srng_common_setup_wrapper);
+	ath12k_q_post_reset_task(cumac_ab, ath12k_wifi8_dp_tx_ring_setup_wrapper);
+	ath12k_q_post_reset_task(cumac_ab, ath12k_wifi8_dp_wbm_idle_init);
+	ath12k_q_post_reset_task(cumac_ab, ath12k_wifi8_dp_rx_init);
+	ath12k_q_post_reset_task(cumac_ab, ath12k_wifi8_dp_rx_mgmt_init);
+	ath12k_q_post_reset_task(cumac_ab, ath12k_wifi8_clean_pending_ast_entries);
+	ath12k_q_post_reset_task(cumac_ab, ath12k_dp_tid_cleanup);
 }
 
 /**
