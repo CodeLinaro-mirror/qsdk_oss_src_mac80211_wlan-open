@@ -14916,6 +14916,7 @@ skip_pri_link_selection:
 				spin_lock_bh(&tmp_ar->ab->base_lock);
 				ath12k_link_sta_rhash_add(tmp_ar->ab, def_arsta);
 				spin_unlock_bh(&tmp_ar->ab->base_lock);
+				ath12k_dp_arch_assoc_link_update(tmp_ar->ab->dp, ah, sta);
 			}
 		}
 	}

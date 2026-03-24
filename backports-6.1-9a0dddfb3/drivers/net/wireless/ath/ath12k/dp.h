@@ -600,6 +600,8 @@ struct ath12k_dp_arch_ops {
 	ssize_t (*dump_srng_stats)(struct ath12k_dp *dp, char *buf, int size);
 	ssize_t (*dump_device_dp_stats)(struct ath12k_dp *dp, char *buf, int size);
 	void (*reset_device_dp_stats)(struct ath12k_dp *dp);
+	void (*dp_assoc_link_update)(struct ath12k_dp *dp, struct ath12k_hw *ah,
+				     struct ieee80211_sta *sta);
 };
 
 struct ath12k_bp_stats {
@@ -1185,6 +1187,15 @@ ath12k_dp_arch_peer_delete(struct ath12k_dp *dp,
 {
 	if (dp->arch_ops->dp_peer_delete)
 		dp->arch_ops->dp_peer_delete(dp, ah, addr, sta, hw_link_id);
+}
+
+static inline void
+ath12k_dp_arch_assoc_link_update(struct ath12k_dp *dp,
+				 struct ath12k_hw *ah,
+				 struct ieee80211_sta *sta)
+{
+	if (dp->arch_ops->dp_assoc_link_update)
+		dp->arch_ops->dp_assoc_link_update(dp, ah, sta);
 }
 
 static inline int ath12k_dp_arch_peer_assoc(struct ath12k_dp *dp,
