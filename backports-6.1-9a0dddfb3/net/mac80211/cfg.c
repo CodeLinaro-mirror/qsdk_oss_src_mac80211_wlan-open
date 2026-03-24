@@ -4617,7 +4617,10 @@ static int __ieee80211_csa_finalize(struct ieee80211_link_data *link_data)
 
 	if (dfs_required <= 0 ||
 	    cfg80211_chandef_dfs_available(local->hw.wiphy,
-					   &link_conf->chanreq.oper)) {
+					   &link_conf->chanreq.oper) ||
+	    cfg80211_reg_can_beacon_relax(local->hw.wiphy,
+					  &link_conf->chanreq.oper,
+					  sdata->vif.type)) {
 		ieee80211_link_info_change_notify(sdata, link_data, changed);
 		ieee80211_vif_unblock_queues_csa(sdata);
 	} else {
