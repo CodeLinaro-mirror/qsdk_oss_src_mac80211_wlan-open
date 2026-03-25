@@ -743,6 +743,9 @@ struct ath12k_link_vif {
 	DECLARE_BITMAP(free_groupidx_map, ATH12K_GROUP_KEYS_NUM_MAX);
 	bool bcast_rate_configured;
 	u32 bcast_rate;
+
+	/* Flag to enable peer_del_all optimization when link is going down */
+	bool peer_del_all_enable;
 };
 
 struct ath12k_dp_link_vif {

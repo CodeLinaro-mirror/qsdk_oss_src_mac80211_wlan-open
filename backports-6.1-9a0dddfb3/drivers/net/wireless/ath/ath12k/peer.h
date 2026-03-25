@@ -55,8 +55,7 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		       struct ath12k_wmi_peer_create_arg *arg);
 int ath12k_wait_for_peer_delete_done(struct ath12k *ar, u32 vdev_id,
 				     const u8 *addr);
-int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif, struct ath12k_sta *ahsta,
-				      bool skip_peer_del, int link);
+int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif, struct ath12k_sta *ahsta);
 int ath12k_peer_send_assoc_vendor_response(const struct ath12k_dp_link_peer *peer,
 					   const bool is_assoc);
 
@@ -70,7 +69,6 @@ void ath12k_mac_peer_disassoc(struct ath12k_base *ab, struct ieee80211_sta *sta,
 			      enum ath12k_debug_mask debug_mask);
 int ath12k_peer_dp_cp_link_peer_delete(struct ath12k_link_vif *arvif,
 				       struct ath12k_sta *ahsta, u8 link_id,
-				       bool peer_del_all, int link_going_down,
 				       u8 *addr, u32 mlo_hw_link_id_bitmap,
 				       bool peer_delete_send_mlo_hw_bitmap);
 
