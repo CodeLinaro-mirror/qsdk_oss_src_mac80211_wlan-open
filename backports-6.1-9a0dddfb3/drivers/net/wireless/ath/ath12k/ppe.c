@@ -1168,7 +1168,6 @@ static int ath12k_dp_srng_alloc(struct ath12k_base *ab, struct dp_srng *ring,
 	if (num_entries > max_entries)
 		num_entries = max_entries;
 
-	ring->size = (num_entries * entry_sz) + HAL_RING_BASE_ALIGN - 1;
 #ifndef CONFIG_IO_COHERENCY
 	if (ab->hw_params->alloc_cacheable_memory) {
 		/* Allocate the reo dst and tx completion rings from cacheable memory */
@@ -1184,23 +1183,8 @@ static int ath12k_dp_srng_alloc(struct ath12k_base *ab, struct dp_srng *ring,
 #else
 	cached = true;
 #endif
-	if (cached) {
-		ring->vaddr_unaligned = kzalloc(ring->size, GFP_KERNEL);
-		ring->paddr_unaligned = virt_to_phys(ring->vaddr_unaligned);
-	} else {
-		ring->vaddr_unaligned = dma_alloc_coherent(ab->dev, ring->size,
-							   &ring->paddr_unaligned,
-							   GFP_KERNEL);
-	}
-	if (!ring->vaddr_unaligned)
-		return -ENOMEM;
-
-	memset(ring->vaddr_unaligned, 0, ring->size);
-	ring->vaddr = PTR_ALIGN(ring->vaddr_unaligned, HAL_RING_BASE_ALIGN);
-	ring->paddr = ring->paddr_unaligned + ((unsigned long)ring->vaddr -
-			(unsigned long)ring->vaddr_unaligned);
-
-	return 0;
+	return ath12k_dp_srng_alloc_aligned(ab, ring, num_entries, entry_sz,
+					   cached);
 }
 
 int ath12k_ppeds_dp_srng_alloc(struct ath12k_base *ab, struct dp_srng *ring,
@@ -1213,7 +1197,7 @@ int ath12k_ppeds_dp_srng_alloc(struct ath12k_base *ab, struct dp_srng *ring,
 	if (ret != 0)
 		ath12k_warn(ab, "Failed to allocate dp srng ring.\n");
 
-	return 0;
+	return ret;
 }
 
 static int ath12k_ppeds_dp_srng_init(struct ath12k_base *ab, struct dp_srng *ring,

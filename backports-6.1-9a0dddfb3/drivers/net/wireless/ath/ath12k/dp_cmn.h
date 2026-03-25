@@ -126,6 +126,11 @@ void ath12k_dp_cmn_hw_group_unassign(struct ath12k_dp *dp,
 				     struct ath12k_hw_group *ag);
 void ath12k_dp_cmn_hw_group_assign(struct ath12k_dp *dp,
 				   struct ath12k_hw_group *ag);
+int ath12k_dp_srng_alloc_aligned(struct ath12k_base *ab,
+				 struct dp_srng *ring,
+				 int num_entries,
+				 int entry_sz,
+				 bool cached);
 void ath12k_dp_cmn_update_hw_links(struct ath12k_dp *dp,
 				   struct ath12k_hw_group *ag,
 				   struct ath12k *ar);
