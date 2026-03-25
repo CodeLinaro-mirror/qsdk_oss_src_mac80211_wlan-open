@@ -3417,6 +3417,9 @@ ath12k_htt_print_tx_pdev_stats_cmn_tlv(const void *tag_buf, u16 tag_len,
 			"num_ppdu_tried_ota_per_ac",
 			htt_stats_buf->num_ppdu_tried_ota_per_ac,
 			ATH12K_HTT_NUM_AC_WMM, "\n");
+	len += print_array_to_buf(buf, len, "avg_channel_access_latency(us)",
+				  htt_stats_buf->avg_channel_access_latency_per_ac,
+				  ATH12K_HTT_NUM_AC_WMM, "\n");
 	len += scnprintf(buf + len, buf_len - len, "local_ctrl_mgmt_enqued = %u\n",
 			 le32_to_cpu(htt_stats_buf->local_ctrl_mgmt_enqued));
 	len += scnprintf(buf + len, buf_len - len, "local_ctrl_mgmt_freed = %u\n",

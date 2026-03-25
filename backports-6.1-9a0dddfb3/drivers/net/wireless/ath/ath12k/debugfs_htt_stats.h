@@ -845,6 +845,7 @@ struct ath12k_htt_tx_pdev_stats_cmn_tlv {
 	__le32 hw_reaped_lpi;
 	__le32 hw_reaped_sp;
 	__le32 hw_reaped_vlp;
+	__le32 avg_channel_access_latency_per_ac[ATH12K_HTT_NUM_AC_WMM];
 } __packed;
 
 
