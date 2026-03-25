@@ -1149,6 +1149,7 @@ struct ath12k_htt_tx_pdev_bn_rate_stats_tlv {
 			[ATH12K_HTT_TX_PDEV_STATS_NUM_EXTRA3_MCS_COUNTERS];
 
 	__le32 tx_stbc_ext_3[ATH12K_HTT_TX_PDEV_STATS_NUM_EXTRA3_MCS_COUNTERS];
+	__le32 tx_11bn_su_elr;
 } __packed;
 
 
@@ -1232,6 +1233,7 @@ struct ath12k_htt_rx_pdev_rate_stats_tlv {
 	__le32 rx_ulofdma_non_data_nusers[ATH12K_HTT_RX_PDEV_MAX_OFDMA_NUM_USER];
 	__le32 rx_ulofdma_data_nusers[ATH12K_HTT_RX_PDEV_MAX_OFDMA_NUM_USER];
 	__le32 rx_mcs_ext[ATH12K_HTT_RX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS];
+	__le32 rx_11bn_su_elr;
 };
 
 #define ATH12K_HTT_RX_PDEV_STATS_NUM_REDUCED_CHAN_TYPES		2

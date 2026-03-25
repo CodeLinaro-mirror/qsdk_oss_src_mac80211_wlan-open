@@ -9536,6 +9536,8 @@ ath12k_htt_print_tx_pdev_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 			 le32_to_cpu(htt_stats_buf->ack_rssi));
 	len += scnprintf(buf + len, buf_len - len, "tx_11ax_su_ext = %u\n",
 			 le32_to_cpu(htt_stats_buf->tx_11ax_su_ext));
+	len += scnprintf(buf + len, buf_len - len, "tx_11bn_su_elr = %u\n",
+			le32_to_cpu(htt_stats_bn_rate_stats_buf_global.tx_11bn_su_elr));
 	len += scnprintf(buf + len, buf_len - len,
 			 "Legacy CCK Rates: 1 Mbps: %u, 2 Mbps: %u, 5.5 Mbps: %u, 12 Mbps: %u\n",
 			 le32_to_cpu(htt_stats_buf->tx_legacy_cck_rate[0]),
@@ -10185,6 +10187,8 @@ ath12k_htt_print_rx_pdev_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 			 le32_to_cpu(htt_stats_buf->pilot_count));
 	len += scnprintf(buf + len, buf_len - len, "rx_11ax_su_ext = %u\n",
 			 le32_to_cpu(htt_stats_buf->rx_11ax_su_ext));
+	len += scnprintf(buf + len, buf_len - len, "rx_11bn_su_elr = %u\n",
+			le32_to_cpu(htt_stats_buf->rx_11bn_su_elr));
 	len += scnprintf(buf + len, buf_len - len, "rx_11ac_mumimo = %u\n",
 			 le32_to_cpu(htt_stats_buf->rx_11ac_mumimo));
 	len += scnprintf(buf + len, buf_len - len, "rx_11ax_mumimo = %u\n",
