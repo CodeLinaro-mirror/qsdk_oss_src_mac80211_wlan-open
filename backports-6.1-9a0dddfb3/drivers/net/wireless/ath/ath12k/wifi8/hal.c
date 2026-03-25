@@ -1080,11 +1080,28 @@ void *ath12k_hal_srng_src_get_next_entry_by_cmd_size(struct ath12k_base *ab,
 
 void ath12k_wifi8_hal_txpt_classify_info_flush(struct ath12k_base *ab)
 {
+	int max_retry = 10;
 	u32 val;
 
 	val = ath12k_hif_read32(ab, HAL_TCL_ASE_PEER_FETCH_CACHE_CTRL);
+	/* previous cache flush is in progress */
+	if ((val & HAL_TCL_ASE_PEER_FETCH_CACHE_FLUSH) &&
+	    !(val & HAL_TCL_ASE_PEER_FETCH_CACHE_FLUSH_STATUS))
+		return;
+
 	val |= le32_encode_bits(1, HAL_TCL_ASE_PEER_FETCH_CACHE_FLUSH);
 	ath12k_hif_write32(ab, HAL_TCL_ASE_PEER_FETCH_CACHE_CTRL, val);
+
+	while (max_retry--) {
+		val = ath12k_hif_read32(ab, HAL_TCL_ASE_PEER_FETCH_CACHE_CTRL);
+		if (val & HAL_TCL_ASE_PEER_FETCH_CACHE_FLUSH_STATUS) {
+			val &= ~HAL_TCL_ASE_PEER_FETCH_CACHE_FLUSH;
+			ath12k_hif_write32(ab, HAL_TCL_ASE_PEER_FETCH_CACHE_CTRL, val);
+			return;
+		}
+	}
+	ath12k_warn(ab, "ASE peer fetch cache flush timeout\n");
+	BUG_ON(1);
 }
 
 void ath12k_wifi8_hal_tasc_peer_tx_cfg(struct ath12k_base *ab, bool enable)
