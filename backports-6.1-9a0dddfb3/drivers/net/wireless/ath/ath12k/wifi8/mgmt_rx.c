@@ -1133,8 +1133,6 @@ void ath12k_wifi8_mgmt_op_device_deinit(struct ath12k_mgmt *mgmt)
 	}
 
 	ath12k_hif_mgmt_irq_disable(ab);
-	ath12k_hif_mgmt_irq_cleanup(ab);
-
 	ath12k_mgmt_rx_desc_cleanup(ab);
 	ath12k_mgmt_irq_grp_cleanup(mgmt);
 	ath12k_hif_mgmt_irq_cleanup(ab);
