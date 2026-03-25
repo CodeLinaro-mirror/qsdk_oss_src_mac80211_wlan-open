@@ -11182,7 +11182,53 @@ ath12k_ext_mon_get_filter_config_attr_len(void)
 }
 
 static int
-ath12k_ext_mon_calculate_resp_len(void)
+ath12k_ext_mon_get_snr_info_attr_len(void)
+{
+	int len = 0;
+
+	len = nla_total_size(sizeof(s8));
+	len += nla_total_size(sizeof(s8));
+	len += nla_total_size(sizeof(u64));
+
+	return len;
+}
+
+static int
+ath12k_ext_mon_get_peer_info_attr_len(void)
+{
+	int len = 0;
+	int payload = 0;
+
+	len += nla_total_size(ETH_ALEN);
+	len += nla_total_size(0);
+	len += nla_total_size(sizeof(u8));
+	payload = ath12k_ext_mon_get_snr_info_attr_len();
+	len += nla_total_size(payload);
+
+	return len;
+}
+
+static int
+ath12k_ext_mon_get_peer_config_attr_len(const struct ath12k_ext_mon_config *resp)
+{
+	int len = 0;
+	int payload = 0;
+	int i = 0;
+
+	len += nla_total_size(sizeof(u8));
+	len += nla_total_size(sizeof(u8));
+
+	for (i = 0; i < resp->peer.count; i++) {
+		payload = ath12k_ext_mon_get_peer_info_attr_len();
+		len += nla_total_size(payload);
+	}
+
+	return len;
+}
+
+static int
+ath12k_ext_mon_calculate_resp_len(const struct ath12k_ext_mon_config *req,
+				  const struct ath12k_ext_mon_config *resp)
 {
 	int total_len = 0;
 	int payload = 0;
@@ -11191,9 +11237,13 @@ ath12k_ext_mon_calculate_resp_len(void)
 	total_len += nla_total_size(sizeof(u8));
 	total_len += nla_total_size(sizeof(u8));
 
-	switch (cmd->cmd_type) {
+	switch (req->cmd_type) {
 	case QCA_VENDOR_EXT_MON_CMD_TYPE_GET_FILTER:
 		payload = ath12k_ext_mon_get_filter_config_attr_len();
+		total_len += nla_total_size(payload);
+		break;
+	case QCA_VENDOR_EXT_MON_CMD_TYPE_GET_PEER:
+		payload = ath12k_ext_mon_get_peer_config_attr_len(resp);
 		total_len += nla_total_size(payload);
 		break;
 	default:
@@ -11337,6 +11387,102 @@ err:
 }
 
 static int
+ath12k_ext_mon_put_snr_info(struct sk_buff *skb,
+			    const struct ath12k_ext_mon_snr_info *snr_info)
+{
+	struct nlattr *attr;
+
+	attr = nla_nest_start(skb, QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_SNR_INFO);
+	if (!attr)
+		return -EMSGSIZE;
+
+	if (nla_put_s8(skb, QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_SNR,
+		       snr_info->snr) ||
+	    nla_put_s8(skb, QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_AVG_SNR,
+		       snr_info->avg_snr) ||
+	    nla_put_u64_64bit(skb, QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_TSTAMP,
+			      snr_info->timestamp, NL80211_ATTR_PAD)) {
+		nla_nest_cancel(skb, attr);
+		return -EMSGSIZE;
+	}
+
+	nla_nest_end(skb, attr);
+	return 0;
+}
+
+static int
+ath12k_ext_mon_put_peer_info(struct sk_buff *skb, int idx,
+			     const struct ath12k_ext_mon_peer_info *peer_info)
+{
+	struct nlattr *attr;
+	int ret;
+
+	attr = nla_nest_start(skb, idx);
+	if (!attr)
+		return -EMSGSIZE;
+
+	if (nla_put(skb, QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_MAC_ADDR,
+		    ETH_ALEN, peer_info->mac_addr))
+		goto err;
+
+	if (peer_info->ra_addr &&
+	    nla_put_flag(skb, QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_ADDR_IS_RA))
+		goto err;
+
+	if (nla_put_u8(skb, QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_BITMAP,
+		       peer_info->bitmap))
+		goto err;
+
+	ret = ath12k_ext_mon_put_snr_info(skb, &peer_info->snr_info);
+	if (ret)
+		goto err;
+
+	nla_nest_end(skb, attr);
+	return 0;
+
+err:
+	nla_nest_cancel(skb, attr);
+	return -EMSGSIZE;
+}
+
+static int
+ath12k_ext_mon_put_peer_config(struct sk_buff *skb,
+			       const struct ath12k_ext_mon_peer_config *peer)
+{
+	struct nlattr *attr;
+	struct nlattr *peer_info_attr;
+	int ret;
+	int i;
+
+	attr = nla_nest_start(skb, QCA_VENDOR_ATTR_EXT_MON_PEER_CONFIG);
+	if (!attr)
+		return -EMSGSIZE;
+
+	if (nla_put_u8(skb, QCA_VENDOR_ATTR_EXT_MON_PEER_COUNT, peer->count))
+		goto err;
+
+	peer_info_attr = nla_nest_start(skb, QCA_VENDOR_ATTR_EXT_MON_PEER_INFO);
+	if (!peer_info_attr)
+		goto err;
+
+	for (i = 0; i < peer->count; i++) {
+		ret = ath12k_ext_mon_put_peer_info(skb, i, &peer->peer_info[i]);
+		if (ret)
+			goto err_peer_info;
+	}
+
+	nla_nest_end(skb, peer_info_attr);
+	nla_nest_end(skb, attr);
+	return 0;
+
+err_peer_info:
+	nla_nest_cancel(skb, peer_info_attr);
+err:
+	nla_nest_cancel(skb, attr);
+	return -EMSGSIZE;
+}
+
+static int
 ath12k_ext_mon_put_response(struct sk_buff *skb,
 			    const struct ath12k_ext_mon_config *req,
 			    const struct ath12k_ext_mon_config *resp)
@@ -11352,6 +11498,8 @@ ath12k_ext_mon_put_response(struct sk_buff *skb,
 	switch (req->cmd_type) {
 	case QCA_VENDOR_EXT_MON_CMD_TYPE_GET_FILTER:
 		return ath12k_ext_mon_put_filter_config(skb, &resp->filter);
+	case QCA_VENDOR_EXT_MON_CMD_TYPE_GET_PEER:
+		return ath12k_ext_mon_put_peer_config(skb, &resp->peer);
 	default:
 		return 0;
 	}
@@ -11369,7 +11517,7 @@ ath12k_ext_mon_handle_request(struct wiphy *wiphy,
 
 	ath12k_dp_ext_mon_process_request(dp_pdev, req, &resp);
 
-	resp_len = ath12k_ext_mon_calculate_resp_len();
+	resp_len = ath12k_ext_mon_calculate_resp_len(req, &resp);
 	skb = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, resp_len);
 	if (!skb)
 		return -ENOMEM;
