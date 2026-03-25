@@ -982,7 +982,7 @@ ieee80211_rx_monitor(struct ieee80211_local *local, struct sk_buff *origskb,
 		}
 
 		if (ieee80211_hw_check(&local->hw, NO_VIRTUAL_MONITOR))
-			ieee80211_handle_mu_mimo_mon(sdata, origskb, rtap_space);
+			ieee80211_handle_mu_mimo_mon(prev_sdata, origskb, rtap_space);
 
 		if (!monskb)
 			monskb = ieee80211_make_monitor_skb(local, &origskb,
@@ -998,9 +998,9 @@ ieee80211_rx_monitor(struct ieee80211_local *local, struct sk_buff *origskb,
 		skb->dev = prev_sdata->dev;
 		ieee80211_rx_stats(skb->dev, skb->len);
 		if (!tid_stats_disable) {
-			ieee80211_rx_stats_reason(sdata, skb->len, status->tid,
+			ieee80211_rx_stats_reason(prev_sdata, skb->len, status->tid,
 						  RX_TOTAL_PKTS);
-			ieee80211_rx_stats_reason(sdata, skb->len, status->tid,
+			ieee80211_rx_stats_reason(prev_sdata, skb->len, status->tid,
 						  RX_NETIF_PKTS);
 		}
 		netif_receive_skb(skb);
@@ -1018,10 +1018,10 @@ ieee80211_rx_monitor(struct ieee80211_local *local, struct sk_buff *origskb,
 			skb->dev = prev_sdata->dev;
 			ieee80211_rx_stats(skb->dev, skb->len);
 			if (!tid_stats_disable) {
-				ieee80211_rx_stats_reason(sdata, skb->len, status->tid,
-							  RX_TOTAL_PKTS);
-				ieee80211_rx_stats_reason(sdata, skb->len, status->tid,
-							  RX_NETIF_PKTS);
+				ieee80211_rx_stats_reason(prev_sdata, skb->len,
+							  status->tid, RX_TOTAL_PKTS);
+				ieee80211_rx_stats_reason(prev_sdata, skb->len,
+							  status->tid, RX_NETIF_PKTS);
 			}
 			netif_receive_skb(skb);
 		}
