@@ -755,7 +755,7 @@ struct ath12k_dp_link_vif {
 	u8 lmac_id;
 	int bank_id;
 	u8 map_id;
-	struct ath12k_dp_preserved_stats *link_peer_delete_stats;
+	struct ath12k_dp_preserved_stats link_peer_delete_stats;
 };
 
 struct ath12k_vlan_iface {
@@ -789,7 +789,7 @@ struct ath12k_dp_vif {
 	u8 ppe_vp_type;
 	bool mscs_hlos_tid_override;
 	u32 monitor_flags;
-	struct ath12k_dp_preserved_stats *link_vif_delete_stats;
+	struct ath12k_dp_preserved_stats link_vif_delete_stats;
 };
 
 enum ath12k_tx_pkt_reasons {

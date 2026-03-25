@@ -111,14 +111,6 @@ int ath12k_wifi7_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 		return -ENOMEM;
 	}
 
-	dp_peer->link_peer_delete_stats = ath12k_dp_alloc_preserved_stats();
-	if (!dp_peer->link_peer_delete_stats) {
-		ath12k_err(NULL, "Failed to allocate link peer delete stats");
-		if (sta && sta->mlo)
-			ath12k_wifi7_peer_ml_id_free(ah, ahsta);
-		kfree(dp_peer);
-		return -ENOMEM;
-	}
 	ether_addr_copy(dp_peer->addr, addr);
 	dp_peer->sta = params->sta;
 	dp_peer->vif = vif;
@@ -196,7 +188,6 @@ void ath12k_wifi7_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 
 	synchronize_rcu();
 	kfree(dp_peer->qos);
-	ath12k_dp_free_preserved_stats(dp_peer->link_peer_delete_stats);
 	ath12k_dp_free_proto_stats_peer(dp_peer);
 	kfree(dp_peer);
 }

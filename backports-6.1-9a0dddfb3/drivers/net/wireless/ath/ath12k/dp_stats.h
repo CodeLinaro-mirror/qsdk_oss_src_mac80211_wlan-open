@@ -1061,25 +1061,26 @@ void ath12k_dp_aggr_per_pkt_tx_stats(struct ath12k_dp_peer_tx_stats *dst,
 				     struct ath12k_dp_peer_tx_stats *src);
 void ath12k_dp_aggr_per_pkt_rx_stats(struct ath12k_dp_peer_rx_stats *dst,
 				     struct ath12k_dp_peer_rx_stats *src);
-void ath12k_dp_aggr_htt_tx_stats(struct ath12k_htt_tx_stats *dst,
-				 const struct ath12k_htt_tx_stats *src);
-void ath12k_dp_aggr_rx_peer_stats(struct ath12k_rx_peer_stats *dst,
+void
+ath12k_dp_update_tx_ext_htt_aggr_stats(struct ath12k *ar,
+				       struct ath12k_htt_tx_stats *dst_peer_stats,
+				       struct ath12k_htt_tx_stats *src_peer_stats);
+void ath12k_dp_aggr_rx_peer_stats(struct ath12k *ar, struct ath12k_rx_peer_stats *dst,
 				  const struct ath12k_rx_peer_stats *src);
 void ath12k_dp_aggr_wbm_rx_stats(struct ath12k_wbm_rx_stats *dst,
 				 struct ath12k_wbm_rx_stats *src);
-void ath12k_dp_aggr_deleted_stats(struct ath12k *ar,
-				  struct ath12k_dp_peer_stats *dst_peer_stats,
-				  struct ath12k_dp_link_peer_stats *dst_link_peer_stats,
-				  struct ath12k_dp_preserved_stats *src,
-				  const char *stats_type);
+void ath12k_dp_aggr_del_stats(struct ath12k *ar,
+			      struct ath12k_dp_peer_stats *dst_peer_stats,
+			      struct ath12k_dp_link_peer_stats *dst_link_peer_stats,
+			      struct ath12k_dp_preserved_stats *src,
+			      const char *stats_type);
 
 /* Stats clear functions */
 void ath12k_dp_clear_per_pkt_tx_stats(struct ath12k_dp_peer_stats *tx_peer_stats);
 void ath12k_dp_clear_per_pkt_rx_stats(struct ath12k_dp_peer_stats *rx_peer_stats);
 void ath12k_dp_clear_wbm_rx_stats(struct ath12k_wbm_rx_stats *wbm_stats);
+void ath12k_dp_clear_preserved_stats(struct ath12k_dp_preserved_stats *stats);
 
-struct ath12k_dp_preserved_stats *ath12k_dp_alloc_preserved_stats(void);
-void ath12k_dp_free_preserved_stats(struct ath12k_dp_preserved_stats *stats);
 s8 ath12k_dp_get_rssi_value(s8 snr,
 			    struct ath12k_dp_link_peer_rx_signal_stats *stats,
 			    struct wmi_rssi_dbm_conv_offsets *rssi_offsets,
