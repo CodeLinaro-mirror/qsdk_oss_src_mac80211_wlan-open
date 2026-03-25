@@ -805,6 +805,8 @@ struct ath12k_dp_arch_ops {
 					  struct ath12k_dp_hw *dp_hw,
 					  const u8 *peer_addr,
 					  struct ath12k_tx_smd_ctx_per_tid *tx_tid_ctx);
+	ssize_t (*dump_svc_sorted_list)(struct ath12k_dp *dp, u8 ac_mask,
+					char *buf, int size);
 };
 
 struct ath12k_bp_stats {
@@ -921,6 +923,10 @@ struct ath12k_dp_htt_rxdma_ppe_cfg_param {
 	u8 ip_frag_override;
 };
 
+struct ath12k_dbg_dp_svc_sort_stats {
+	u8 ac_mask;
+};
+
 struct ath12k_dp {
 	struct ath12k_base *ab;
 	u8 num_bank_profiles;
@@ -1031,6 +1037,8 @@ struct ath12k_dp {
 	u8 link_id_offset;
 	u8 link_id_bits;
 	u8 tcl_metadata_ver;
+
+	struct ath12k_dbg_dp_svc_sort_stats svc_sort_stats;
 
 	/* Keep Last */
 	u8 arch_data[] __aligned(sizeof(void *));

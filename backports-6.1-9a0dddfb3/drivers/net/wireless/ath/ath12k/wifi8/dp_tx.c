@@ -165,6 +165,10 @@ int ath12k_wifi8_dp_tx_process_tqm_status(struct ath12k_dp *dp, int budget)
 									hdr,
 									&tqm_status);
 			break;
+		case HAL_TQM_UPDATE_MSDUQ_STATUS_BO:
+			ath12k_wifi8_hal_tqm_update_msduq_cmd_status(ab, hdr,
+								     &tqm_status);
+			break;
 		case HAL_TQM_UPDATE_MPDUQ_STATUS_BO:
 			ath12k_wifi8_hal_tqm_update_mpduq_cmd_status(ab,
 								     hdr,
@@ -4388,4 +4392,42 @@ int ath12k_wifi8_dp_tx_process_sam_status(struct ath12k_dp *dp, int budget)
 	spin_unlock_bh(&srng->lock);
 
 	return quota - budget;
+}
+
+ssize_t ath12k_wifi8_dp_tx_dump_svc_sorted_list(struct ath12k_dp *dp, u8 ac_mask,
+						char *buf, int size)
+{
+	enum hal_tqm_service_category svc;
+	u32 flow_number, high_msdu_count;
+	int len = 0, ret;
+	u8 idx;
+
+	dp = ath12k_get_central_dp(dp);
+
+	len += scnprintf(buf + len, size - len,
+			 "SVC\tidx\tFlow number\tmsdu_count\n");
+
+	ath12k_wifi8_hal_tqm_sorting_latch(&dp->ab->hal);
+
+	while (ac_mask) {
+		svc = fls(ac_mask) - 1;
+		ac_mask ^= 1 << svc;
+		for (idx = 0; idx < HAL_TQM_MAX_SORTED_FLOW; idx++) {
+			ret = ath12k_wifi8_hal_tqm_get_svc_sorted_list(&dp->ab->hal,
+								       svc,
+								       idx,
+								       &flow_number,
+								       &high_msdu_count);
+			if (ret) {
+				flow_number = -1;
+				high_msdu_count = -1;
+			}
+
+			len += scnprintf(buf + len, size - len,
+					 "SC%d\t%d\t0x%x\t\t%d\n",
+					 svc, idx, flow_number, high_msdu_count);
+		}
+	}
+
+	return len;
 }

@@ -1165,6 +1165,9 @@ u32 ath12k_hal_srng_get_cmd_size(enum hal_tlv_tag_be type)
 	else if (type == HAL_TQM_GET_MPDUQ_STATS_BO)
 		return ((sizeof(struct hal_tlv_64_hdr) +
 			sizeof(struct hal_tqm_get_mpduq_stats)) >> 2);
+	else if (type == HAL_TQM_UPDATE_MSDUQ_BO)
+		return ((sizeof(struct hal_tlv_64_hdr) +
+			 sizeof(struct hal_tqm_update_tx_msdu_flow)) >> 2);
 	else if (type == HAL_TQM_UPDATE_MPDUQ_BO)
 		return ((sizeof(struct hal_tlv_64_hdr) +
 			sizeof(struct hal_tqm_update_mpduq)) >> 2);
