@@ -37,6 +37,7 @@ ath12k_wifi_config_policy[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_MLO_LINK_ID] = {.type = NLA_U8 },
 	[QCA_WLAN_VENDOR_ATTR_IF_OFFLOAD_TYPE] = {.type = NLA_U8},
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX] = {.type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_6GHZ_VLP_PRIORITY_THRESH_FREQ] = {.type = NLA_U16 },
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_VAP_SUBMODE] = {.type = NLA_U8 },
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PARAMS] = { .type = NLA_NESTED },
 };
@@ -7045,6 +7046,10 @@ static int ath12k_vendor_get_wiphy_config_handler(struct wiphy *wiphy,
 			goto err;
 		}
 	}
+
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_vendor_get_wiphy_config_handler_extn(wiphy, tb, skb);
+#endif
 
 	ret = cfg80211_vendor_cmd_reply(skb);
 	if (ret) {
