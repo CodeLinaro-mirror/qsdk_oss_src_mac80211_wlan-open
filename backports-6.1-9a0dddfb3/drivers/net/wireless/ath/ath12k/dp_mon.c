@@ -1470,6 +1470,11 @@ ath12k_dp_mon_link_peer_signal_stats(struct ath12k_pdev_dp *dp_pdev,
 	}
 	ath12k_dp_calc_rx_peer_rssi(dp_pdev, peer);
 
+	if (IS_VALID_RSSI(stats->rssi)) {
+		peer->max_rssi = max(peer->max_rssi, stats->rssi);
+		peer->min_rssi = min(peer->min_rssi, stats->rssi);
+	}
+
 	if (peer->peer_stats.rx_stats &&
 	    IS_VALID_RATE(peer->peer_stats.rx_stats->last_rx_rate) &&
 	    IS_VALID_RSSI(stats->rssi)) {
@@ -2082,6 +2087,16 @@ void ath12k_dp_mon_pdev_free(struct ath12k_pdev_dp *dp_pdev)
 	dp_pdev->dp_mon_pdev = NULL;
 }
 EXPORT_SYMBOL(ath12k_dp_mon_pdev_free);
+
+void ath12k_dp_mon_pdev_rx_detach(struct ath12k_pdev_dp *dp_pdev)
+{
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp_pdev->dp);
+	if (mon_ops && mon_ops->cleanup_mon_link_desc)
+		mon_ops->cleanup_mon_link_desc(dp_pdev);
+}
+EXPORT_SYMBOL(ath12k_dp_mon_pdev_rx_detach);
 
 void ath12k_dp_mon_pdev_rx_attach(struct ath12k_pdev_dp *dp_pdev)
 {
@@ -2892,3 +2907,46 @@ int ath12k_dp_mon_tx_set_monitor_flags(struct ath12k *ar, u32 new_flags, u32 *cu
 		   dp_mon_pdev->tx_monitor_started, ret);
 	return ret;
 }
+
+int ath12k_dp_mon_get_link_peer_rssi(struct ath12k *ar, const u8 *peer_mac,
+				     s8 *min_rssi, s8 *max_rssi)
+{
+	struct ath12k_base *ab;
+	struct ath12k_dp *dp;
+	struct ath12k_dp_link_peer *link_peer;
+
+	if (!ar || !peer_mac || !min_rssi || !max_rssi) {
+		ath12k_err(NULL, "dp_mon: Invalid parameters\n");
+		return -EINVAL;
+	}
+
+	ab = ar->ab;
+	dp = ath12k_ab_to_dp(ab);
+
+	if (!dp) {
+		ath12k_err(ab, "dp_mon: Invalid dp pointer\n");
+		return -EINVAL;
+	}
+
+	spin_lock_bh(&dp->dp_lock);
+
+	link_peer = ath12k_dp_link_peer_find_by_addr(dp, peer_mac);
+	if (!link_peer) {
+		spin_unlock_bh(&dp->dp_lock);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON,
+			   "dp_mon: link_peer not found for %pM\n", peer_mac);
+		return -ENOENT;
+	}
+
+	*min_rssi = link_peer->min_rssi;
+	*max_rssi = link_peer->max_rssi;
+
+	spin_unlock_bh(&dp->dp_lock);
+
+	ath12k_dbg(ab, ATH12K_DBG_DP_MON,
+		   "dp_mon: Retrieved RSSI for %pM: min=%d, max=%d\n",
+		   peer_mac, *min_rssi, *max_rssi);
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_get_link_peer_rssi);

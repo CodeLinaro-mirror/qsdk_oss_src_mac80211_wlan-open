@@ -143,6 +143,8 @@ struct ath12k_dp_link_peer {
 		unsigned long first_low_jiffies;	/* Timestamp of first low RSSI */
 		struct ath12k_rssi_deauth_config *cfg;	/* Cached config pointer */
 	} rssi_mon;
+	s8 min_rssi;
+	s8 max_rssi;
 };
 
 #define ATH12K_PEER_EVENT_RSSI_LOW      BIT(0)

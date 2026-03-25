@@ -24,6 +24,7 @@
 #include "dp_peer.h"
 #include "dp_mon.h"
 #include "me.h"
+#include "peer.h"
 
 static const struct nla_policy
 ath12k_wifi_config_policy[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1] = {
@@ -124,9 +125,142 @@ ath12k_repurpose_link_policy[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1] = {
 };
 
 static const struct nla_policy
+ath12k_vendor_get_sta_info_policy[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_MAC] = {.type = NLA_BINARY, .len = ETH_ALEN},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_FLAGS] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_GUARD_INTERVAL] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_RX_RETRY_COUNT] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_RX_BC_MC_COUNT] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_TX_RETRY_SUCCEED] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_TX_RETRY_EXHAUSTED] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_TARGET_TX_TOTAL] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_TARGET_TX_RETRY] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_TARGET_TX_RETRY_EXHAUSTED] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_TX_PROBE_REQ_BMISS_COUNT] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_RX_PROBE_RESP_BMISS_COUNT] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_TARGET_TX_ALL_COUNT] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_TX_RTS_COUNT] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_TX_RTS_RETRY_FAIL_COUNT] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_TX_DATA_NON_AGGREGATED_COUNT] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_TX_DATA_AGGREGATED_COUNT] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_RX_FRAMES_GOOD_PLCP_COUNT] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_RX_FRAMES_INVALID_DELIMITER_COUNT] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_RX_FRAMES_CRC_FAIL_COUNT] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_RX_ACKS_GOOD_FCS_COUNT] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_RX_BLOCKACK_COUNT] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_RX_BEACON_COUNT] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_RX_OTHER_BEACON_COUNT] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_RX_UCAST_DATA_GOOD_FCS_COUNT] = {.type = NLA_U64},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_RX_DATA_BC_MC_DROP_COUNT] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_TARGET_POWER_24G_1MBPS] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_TARGET_POWER_24G_6MBPS] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_TARGET_POWER_24G_MCS0] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_TARGET_POWER_5G_6MBPS] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_TARGET_POWER_5G_MCS0] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_RX_HW_BUFFERS_OVERFLOW_COUNT] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_MAX_TX_POWER] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_LATEST_TX_POWER] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_ANI_LEVEL] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_BEACON_IES] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_PROBE_RESP_IES] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_DRIVER_DISCONNECT_REASON] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_BIP_MIC_ERROR_COUNT] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_BIP_REPLAY_COUNT] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_BEACON_MIC_ERROR_COUNT] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_BEACON_REPLAY_COUNT] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_CONNECT_FAIL_REASON_CODE] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_LATEST_TX_RATE] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_LATEST_RIX] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_TSF_OUT_OF_SYNC_COUNT] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_ROAM_TRIGGER_REASON] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_ROAM_FAIL_REASON] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_ROAM_INVOKE_FAIL_REASON] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_UPLINK_DELAY] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_PER_MCS_TX_PACKETS] = {.type = NLA_NESTED},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_PER_MCS_RX_PACKETS] = {.type = NLA_NESTED},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_PAD] = {.type = NLA_U64},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_UPLINK_DELAY_JITTER] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_NSS_PKT_COUNT] = {.type = NLA_NESTED},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_MCS_PKT_COUNT] = {.type = NLA_NESTED},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_BW_PKT_COUNT] = {.type = NLA_NESTED},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_CCA_STAT] = {.type = NLA_NESTED},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_BEACON_MISS_STAT] = {.type = NLA_NESTED},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_LINK_ID] = {.type = NLA_U8},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_MAX_RSSI] = {.type = NLA_S8},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_MIN_RSSI] = {.type = NLA_S8},
+	[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_PS_STATE] = {.type = NLA_U8},
+};
+
+static const struct nla_policy
 ath12k_vendor_me_config_policy[QCA_WLAN_VENDOR_ATTR_ME_CONFIG_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_ME_CONFIG_PARAM] = { .type = NLA_U32 },
 	[QCA_WLAN_VENDOR_ATTR_ME_CONFIG_VALUE] = { .type = NLA_U32 },
+};
+
+static const struct nla_policy
+ath12k_vendor_ext_mon_pkt_config_filter_policy[
+QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_MAX + 1] = {
+	[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_MGMT] = {.type = NLA_U32},
+	[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_CTRL] = {.type = NLA_U32},
+	[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_DATA] = {.type = NLA_U32},
+};
+
+static const struct nla_policy
+ath12k_vendor_ext_mon_pkt_config_len_policy[
+QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN_MAX + 1] = {
+	[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN_MGMT] = {.type = NLA_U8},
+	[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN_CTRL] = {.type = NLA_U8},
+	[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN_DATA] = {.type = NLA_U8},
+};
+
+static const struct nla_policy
+ath12k_vendor_ext_mon_pkt_config_policy[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_MAX + 1] = {
+	[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER] = {.type = NLA_NESTED},
+	[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN] = {.type = NLA_NESTED},
+};
+
+static const struct nla_policy
+ath12k_vendor_ext_mon_filter_config_policy[
+	QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_MAX + 1] = {
+	[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_LEVEL] = {.type = NLA_U8},
+	[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_DISABLE] = {.type = NLA_FLAG},
+	[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_ALL_PEER] = {.type = NLA_NESTED},
+	[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_ALL_NEIGHBOR] = {.type = NLA_NESTED},
+	[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_TARGET_PEER] = {.type = NLA_NESTED},
+	[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_TARGET_NEIGHBOR] = {.type = NLA_NESTED},
+	[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_META_DATA] = {.type = NLA_U8},
+};
+
+static const struct nla_policy
+ath12k_vendor_ext_mon_snr_info_policy[QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_MAX + 1] = {
+	[QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_SNR] = {.type = NLA_S8},
+	[QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_AVG_SNR] = {.type = NLA_S8},
+	[QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_TSTAMP] = {.type = NLA_U64},
+};
+
+static const struct nla_policy
+ath12k_vendor_ext_mon_peer_info_policy[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_MAX + 1] = {
+	[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_MAC_ADDR] = {.type = NLA_BINARY,
+							.len = ETH_ALEN},
+	[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_ADDR_IS_RA] = {.type = NLA_FLAG},
+	[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_BITMAP] = {.type = NLA_U8},
+	[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_SNR_INFO] = {.type = NLA_NESTED},
+};
+
+static const struct nla_policy
+ath12k_vendor_ext_mon_peer_config_policy[QCA_VENDOR_ATTR_EXT_MON_PEER_MAX + 1] = {
+	[QCA_VENDOR_ATTR_EXT_MON_PEER_ACTION] = {.type = NLA_U8},
+	[QCA_VENDOR_ATTR_EXT_MON_PEER_COUNT] = {.type = NLA_U8},
+	[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO] = {.type = NLA_NESTED},
+};
+
+static const struct nla_policy
+ath12k_vendor_ext_mon_policy[QCA_VENDOR_ATTR_EXT_MON_MAX + 1] = {
+	[QCA_VENDOR_ATTR_EXT_MON_CMD_TYPE] = {.type = NLA_U8},
+	[QCA_VENDOR_ATTR_EXT_MON_DIRECTION] = {.type = NLA_U8},
+	[QCA_VENDOR_ATTR_EXT_MON_STATUS_CODE] = {.type = NLA_U8},
+	[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG] = {.type = NLA_NESTED},
+	[QCA_VENDOR_ATTR_EXT_MON_PEER_CONFIG] = {.type = NLA_NESTED},
 };
 
 /**
@@ -6577,9 +6711,13 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 			}
 			break;
 		default:
-			ath12k_dbg(NULL, ATH12K_DBG_CFG,
-				   "Un-supported generic command\n");
-			return -EOPNOTSUPP;
+			ret = ath12k_vendor_wifi_config_handler_extn(wiphy, wdev,
+								     &wifi_params);
+			if (ret) {
+				ath12k_dbg(NULL, ATH12K_DBG_CFG,
+					   "Un-supported generic command\n");
+				return ret;
+			}
 		}
 	}
 
@@ -10634,6 +10772,124 @@ static int ath12k_vendor_hmmc_deny_list_handler(struct wiphy *wiphy,
 	return ret;
 }
 
+static int ath12k_vendor_extended_monitor_handler(struct wiphy *wiphy,
+						  struct wireless_dev *wdev,
+						  const void *data,
+						  int data_len)
+{
+	return 0;
+}
+
+static int ath12k_vendor_get_sta_info_dumpit(struct wiphy *wiphy,
+					     struct wireless_dev *wdev,
+					     struct sk_buff *skb,
+					     const void *data,
+					     int data_len,
+					     unsigned long *storage)
+{
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_MAX + 1];
+	struct ieee80211_vif *vif = wdev_to_ieee80211_vif(wdev);
+	struct ath12k_vif *ahvif;
+	struct ath12k_link_vif *arvif;
+	struct ath12k_link_sta *arsta;
+	u8 link_id = 0;
+	s8 data_min_rssi = 0, data_max_rssi = 0;
+	int ret;
+	const u8 *peer_mac;
+
+	lockdep_assert_wiphy(wiphy);
+
+	if (!vif) {
+		ath12k_err(NULL, "sta_info: invalid vif\n");
+		return -EINVAL;
+	}
+
+	ahvif = ath12k_vif_to_ahvif(vif);
+
+	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_MAX, data, data_len,
+			ath12k_vendor_get_sta_info_policy, NULL);
+	if (ret) {
+		ath12k_err(NULL, "sta_info: invalid data\n");
+		return ret;
+	}
+
+	if (*storage == 1)
+		return 0;
+
+	if (!tb[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_MAC] ||
+	    nla_len(tb[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_MAC]) != ETH_ALEN)
+		return -EINVAL;
+	peer_mac = nla_data(tb[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_MAC]);
+
+	if (wdev->valid_links) {
+		if (!tb[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_LINK_ID]) {
+			ath12k_err(NULL, "sta_info: link_id not found\n");
+			return -EINVAL;
+		}
+
+		link_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_LINK_ID]);
+		if (!(wdev->valid_links & BIT(link_id))) {
+			ath12k_err(NULL, "sta_info: invalid link_id %u\n", link_id);
+			return -ENOLINK;
+		}
+	} else {
+		link_id = 0;
+	}
+
+	if (link_id == 0)
+		arvif = &ahvif->deflink;
+	else
+		arvif = wiphy_dereference(wiphy, ahvif->link[link_id]);
+
+	if (!arvif || !arvif->ar || !arvif->ar->ab) {
+		ath12k_err(NULL, "sta_info: arvif not found for link %u\n", link_id);
+		return -ENOLINK;
+	}
+
+	spin_lock_bh(&arvif->ar->ab->base_lock);
+
+	arsta = ath12k_link_sta_find_by_addr(arvif->ar->ab, peer_mac);
+	if (!arsta) {
+		ath12k_err(NULL, "sta_info: arsta not found\n");
+		spin_unlock_bh(&arvif->ar->ab->base_lock);
+		return -ENOENT;
+	}
+
+	ret = ath12k_dp_mon_get_link_peer_rssi(arvif->ar, peer_mac,
+					       &data_min_rssi,
+					       &data_max_rssi);
+	if (ret) {
+		ath12k_err(NULL,
+			   "sta_info: failed to get link peer rssi for %pM: %d\n",
+			   peer_mac, ret);
+		data_min_rssi = S8_MAX;
+		data_max_rssi = S8_MIN;
+	}
+
+	if (nla_put_s8(skb, QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_MAX_RSSI,
+		       data_max_rssi > arsta->max_rssi ?
+		       data_max_rssi : arsta->max_rssi))
+		goto unlock;
+
+	if (nla_put_s8(skb, QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_MIN_RSSI,
+		       data_min_rssi < arsta->min_rssi ?
+		       data_min_rssi : arsta->min_rssi))
+		goto unlock;
+
+	if (nla_put_u8(skb, QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_PS_STATE,
+		       arsta->peer_ps_state))
+		goto unlock;
+
+	spin_unlock_bh(&arvif->ar->ab->base_lock);
+
+	*storage += 1;
+	return skb->len;
+
+unlock:
+	spin_unlock_bh(&arvif->ar->ab->base_lock);
+	return -ENOBUFS;
+}
+
 static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
@@ -10870,11 +11126,28 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 #endif
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_GET_STA_INFO,
+		.dumpit = ath12k_vendor_get_sta_info_dumpit,
+		.policy = ath12k_vendor_get_sta_info_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_WDEV,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
 		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_REPURPOSE_LINK_INDICATION,
 		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
 		.doit = ath12k_vendor_repurpose_link,
 		.policy = ath12k_repurpose_link_policy,
 		.maxattr = QCA_WLAN_VENDOR_ATTR_CONFIG_MAX,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_EXTENDED_MONITOR,
+		.flags = WIPHY_VENDOR_CMD_NEED_WDEV |
+			 WIPHY_VENDOR_CMD_NEED_RUNNING,
+		.doit = ath12k_vendor_extended_monitor_handler,
+		.policy = ath12k_vendor_ext_mon_policy,
+		.maxattr = QCA_VENDOR_ATTR_EXT_MON_MAX,
 	},
 
 };
@@ -10931,6 +11204,10 @@ static const struct nl80211_vendor_cmd_info ath12k_vendor_events[] = {
 	[QCA_NL80211_VENDOR_SUBCMD_DCS_INTERFERENCE_COMPUTE_INDEX] = {
 		.vendor_id = QCA_NL80211_VENDOR_ID,
 		.subcmd = QCA_NL80211_VENDOR_SUBCMD_DCS_CONFIG,
+	},
+	[QCA_NL80211_VENDOR_SUBCMD_EXTENDED_MONITOR_INDEX] = {
+	      .vendor_id = QCA_NL80211_VENDOR_ID,
+	      .subcmd = QCA_NL80211_VENDOR_SUBCMD_EXTENDED_MONITOR,
 	},
 };
 

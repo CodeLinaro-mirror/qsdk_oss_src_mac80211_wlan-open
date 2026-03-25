@@ -27,6 +27,9 @@
 #include "debugfs_sta.h"
 #include "mesh.h"
 #include "wme.h"
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+#include "qcn_extns/cmn_extn.h"
+#endif
 
 /**
  * DOC: STA information lifetime rules
@@ -642,6 +645,9 @@ __sta_info_alloc(struct ieee80211_sub_if_data *sdata,
 	spin_lock_init(&sta->ps_lock);
 	INIT_WORK(&sta->drv_deliver_wk, sta_deliver_ps_frames);
 	wiphy_work_init(&sta->ampdu_mlme.work, ieee80211_ba_session_work);
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	ieee80211_mesh_init_peer_work(sdata, sta);
+#endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */
 #ifdef CPTCFG_MAC80211_MESH
 	if (ieee80211_vif_is_mesh(&sdata->vif)) {
 		sta->mesh = kzalloc(sizeof(*sta->mesh), gfp);
@@ -1535,6 +1541,9 @@ static void __sta_info_destroy_part2(struct sta_info *sta, bool recalc)
 
 	local->num_sta--;
 	local->sta_generation++;
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	ieee80211_mesh_peer_cleanup(local->hw.wiphy, sdata, sta);
+#endif
 
 	while (sta->sta_state > IEEE80211_STA_NONE) {
 		ret = _sta_info_move_state(sta, sta->sta_state - 1, recalc);

@@ -12427,6 +12427,11 @@ skip_beacons:
 			goto free;
 		}
 
+		if (!cfg80211_chandef_dfs_nol_clear(&rdev->wiphy, &params.chandef)) {
+			err = -EINVAL;
+			goto free;
+		}
+
 		if (nl80211_support_csa_on_dfs(rdev))
 			wdev->links[link_id].csa_target_chandef = params.chandef;
 	}
@@ -15022,6 +15027,8 @@ static int nl80211_tx_mgmt(struct sk_buff *skb, struct genl_info *info)
 					      &params.rate);
 		if (err)
 			return err;
+
+		params.tx_rate_valid = true;
 	}
 
 	params.buf = nla_data(info->attrs[NL80211_ATTR_FRAME]);

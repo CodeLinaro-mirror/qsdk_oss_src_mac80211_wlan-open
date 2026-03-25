@@ -1404,12 +1404,6 @@ static int ath12k_core_pdev_create(struct ath12k_base *ab)
 		}
 	}
 
-	ret = ath12k_mgmt_arch_htt_setup(ab->mgmt);
-	if (ret) {
-		ath12k_err(ab, "Failed to setup MGMT HTT: %d", ret);
-		goto err_pdev_debug;
-	}
-
 	return 0;
 
 err_pdev_debug:
@@ -2101,12 +2095,6 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 		goto err_firmware_stop;
 	}
 
-	ret = ath12k_mgmt_device_init(ab->mgmt);
-	if (ret) {
-		ath12k_err(ab, "Failed to init MGMT: %d", ret);
-		goto err_dp_free;
-	}
-
 	mutex_lock(&ag->mutex);
 	mutex_lock(&ab->core_lock);
 
@@ -2114,7 +2102,7 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 	ret = ath12k_core_start(ab);
 	if (ret) {
 		ath12k_err(ab, "failed to start core: %d\n", ret);
-		goto err_mgmt_free;
+		goto err_dp_free;
 	}
 
 	mutex_unlock(&ab->core_lock);
@@ -2190,7 +2178,7 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 			ath12k_info(ab, "WSI remap: Device re-addition completed\n");
 		}
 
-		/* DP MLO init has to be done post MLO ready event is received */
+		/* DP/MGMT MLO init has to be done post MLO ready event is received */
 		for (i = 0; i < ag->num_devices; i++) {
 			/* Assigning the current initialized soc which will be used
 			 * on error cleanup.
@@ -2198,14 +2186,35 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 			j = i;
 			partner_ab = ag->ab[i];
 
-			if (partner_ab && partner_ab->dp && !partner_ab->is_bypassed) {
+			if (!partner_ab || partner_ab->is_bypassed)
+				continue;
+
+			if (partner_ab->dp) {
 				ret = ath12k_dp_arch_op_mlo_init(partner_ab->dp);
 				if (ret) {
 					ath12k_err(partner_ab, "DP MLO init failed");
-					goto err_dp_mlo_init;
+					goto err_mlo_init;
+				}
+			}
+
+			if (partner_ab->mgmt) {
+				ret = ath12k_mgmt_device_init(partner_ab->mgmt);
+				if (ret) {
+					ath12k_err(partner_ab, "MGMT MLO init failed");
+					/* DP MLO deinit should be done for the
+					 * current device as well if MGMT failed.
+					 */
+					if (partner_ab->dp)
+						ath12k_dp_arch_op_mlo_deinit(
+							partner_ab->dp);
+					goto err_mlo_init;
 				}
 			}
 		}
+
+		ret = ath12k_mgmt_htt_setup(ag);
+		if (ret)
+			goto err_mlo_init;
 
 		if (ath12k_check_erp_power_down(ag)) {
 			complete(&ag->power_up);
@@ -2236,13 +2245,17 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 out:
 	return 0;
 
-err_dp_mlo_init:
+err_mlo_init:
 	/* Do deinits only for the SOCs for which init was successful.
 	 * The failed soc's cleanup is taken care inside mlo_init itself.
 	 */
 	for (i = j - 1; i >= 0; i--) {
 		partner_ab = ag->ab[i];
-		if (partner_ab && partner_ab->dp && !partner_ab->is_bypassed)
+		if (!partner_ab || partner_ab->is_bypassed)
+			continue;
+		if (partner_ab->mgmt)
+			ath12k_mgmt_device_deinit(partner_ab->mgmt);
+		if (partner_ab->dp)
 			ath12k_dp_arch_op_mlo_deinit(partner_ab->dp);
 	}
 
@@ -2263,9 +2276,6 @@ err_core_stop:
 	}
 	mutex_unlock(&ag->mutex);
 	goto exit;
-
-err_mgmt_free:
-	ath12k_mgmt_device_deinit(ab->mgmt);
 
 err_dp_free:
 	ath12k_dp_cmn_device_deinit(ab->dp);

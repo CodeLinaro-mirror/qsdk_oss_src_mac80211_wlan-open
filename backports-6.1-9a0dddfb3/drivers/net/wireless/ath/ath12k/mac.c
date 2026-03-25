@@ -1982,14 +1982,18 @@ static int ath12k_mac_vdev_setup_sync(struct ath12k *ar)
 {
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
-	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags))
-		return -ESHUTDOWN;
-
 	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
 			 "vdev setup timeout %d\n", ATH12K_VDEV_SETUP_TIMEOUT_HZ);
 
 	if (!wait_for_completion_timeout(&ar->vdev_setup_done,
 					 ATH12K_VDEV_SETUP_TIMEOUT_HZ)){
+		/*
+		 * FW assertion right after wait start can trigger WARN_ON.
+		 * Skip it by checking on CRASH_FLUSH.
+		 */
+		if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags))
+			return -ESHUTDOWN;
+
 		WARN_ON(1);
 		return -ETIMEDOUT;
 	}
@@ -5372,12 +5376,21 @@ static void ath12k_peer_assoc_h_uhr(struct ath12k *ar,
 	       sizeof(uhr_cap->phy.cap));
 }
 
+#ifndef CPTCFG_QCN_EXTN_MESH_SUPPORT
 static void ath12k_peer_assoc_prepare(struct ath12k *ar,
 				      struct ath12k_link_vif *arvif,
 				      struct ath12k_link_sta *arsta,
 				      struct ath12k_wmi_peer_assoc_arg *arg,
 				      bool reassoc,
 				      struct ieee80211_link_sta *link_sta)
+#else
+void ath12k_peer_assoc_prepare(struct ath12k *ar,
+			       struct ath12k_link_vif *arvif,
+			       struct ath12k_link_sta *arsta,
+			       struct ath12k_wmi_peer_assoc_arg *arg,
+			       bool reassoc,
+			       struct ieee80211_link_sta *link_sta)
+#endif
 {
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -5411,6 +5424,9 @@ static void ath12k_peer_assoc_prepare(struct ath12k *ar,
 
 	/* TODO: amsdu_disable req? */
 }
+#ifdef CPTCFG_QCN_EXTN
+EXPORT_SYMBOL(ath12k_peer_assoc_prepare);
+#endif
 
 static int ath12k_setup_peer_smps(struct ath12k *ar, struct ath12k_link_vif *arvif,
 				  const u8 *addr,
@@ -6016,6 +6032,7 @@ u32 ath12k_mac_get_rate_hw_value(int bitrate)
 
 	return -EINVAL;
 }
+EXPORT_SYMBOL(ath12k_mac_get_rate_hw_value);
 
 static void ath12k_recalculate_mgmt_rate(struct ath12k *ar,
 					 struct ath12k_link_vif *arvif,
@@ -6162,6 +6179,8 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 	INIT_LIST_HEAD(&arvif->peer_migrate_list);
 
 	ath12k_mac_init_arvif_extn(ahvif);
+
+	arvif->bcast_rate_configured = false;
 
 	wiphy_work_init(&arvif->set_dscp_tid_work,
 			ath12k_set_dscp_tid_work);
@@ -8554,13 +8573,24 @@ skip_pending_cs_up:
 				    "failed to set mcast rate on vdev %i: %d\n",
 				    arvif->vdev_id,  ret);
 
-		vdev_param = WMI_VDEV_PARAM_BCAST_DATA_RATE;
-		ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
-						    vdev_param, rate);
-		if (ret)
-			ath12k_warn(ar->ab,
-				    "failed to set bcast rate on vdev %i: %d\n",
-				    arvif->vdev_id,  ret);
+		if (!arvif->bcast_rate_configured) {
+			vdev_param = WMI_VDEV_PARAM_BCAST_DATA_RATE;
+			ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
+							    vdev_param, rate);
+			if (ret) {
+				ath12k_warn(ar->ab,
+					    "failed to set bcast rate on vdev %i: %d\n",
+					    arvif->vdev_id,  ret);
+			} else {
+				/** Update driver state to reflect value
+				 *  sent to firmware
+				 */
+				arvif->bcast_rate = bitrate;
+				ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
+						 "mac vdev %d bcast_rate updated to %u (auto)\n",
+						 arvif->vdev_id, bitrate);
+			}
+		}
 	}
 
 	if (changed & BSS_CHANGED_BASIC_RATES &&
@@ -12627,6 +12657,8 @@ static int ath12k_mac_assign_link_sta(struct ath12k_hw *ah,
 		return -EINVAL;
 
 	memset(arsta, 0, sizeof(*arsta));
+	arsta->max_rssi = S8_MIN;
+	arsta->min_rssi = S8_MAX;
 
 	/* For bridge peer, generate random mac_addr using kernel API
 	 */
@@ -17042,6 +17074,13 @@ int ath12k_mac_start(struct ath12k *ar)
 		goto err;
 	}
 
+	ret = ath12k_wmi_pdev_set_param(ar,
+					WMI_PDEV_PEER_STA_PS_STATECHG_ENABLE,
+					WMI_PEER_PS_STATE_ON, pdev->pdev_id);
+	if (ret)
+		ath12k_warn(ab, "failed to enable peer PS state change events: %d\n",
+			    ret);
+
 	ret = ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_SET_CONG_CTRL_MAX_MSDUS,
 					ATH12K_NUM_POOL_TX_DESC, pdev->pdev_id);
 	if (ret) {
@@ -17964,8 +18003,10 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		fallthrough;
 	case NL80211_IFTYPE_AP:
 		ahvif->vdev_type = WMI_VDEV_TYPE_AP;
-		if (wdev && wdev->vap_submode)
+		if (wdev && wdev->vap_submode) {
 			ahvif->vap_submode = wdev->vap_submode;
+			arvif->vdev_subtype = WMI_VDEV_SUBTYPE_MESH_NON_11S;
+		}
 
 		if (vif->p2p)
 			arvif->vdev_subtype = WMI_VDEV_SUBTYPE_P2P_GO;

@@ -901,6 +901,25 @@ int ath12k_get_rssi_rate_breach_mask(void)
 	return -ENOTCONN;
 }
 
+int ath12k_telemetry_set_hysteresis(u8 type, u32 value)
+{
+	if (g_agent_ops && g_agent_ops->agent_set_hysteresis)
+		return g_agent_ops->agent_set_hysteresis(type, value);
+
+	return -ENOTCONN;
+}
+
+int ath12k_telemetry_get_hysteresis(u8 type, u64 *hyst_value)
+{
+	if (!hyst_value)
+		return -EINVAL;
+
+	if (g_agent_ops && g_agent_ops->agent_get_hysteresis)
+		return g_agent_ops->agent_get_hysteresis(type, hyst_value);
+
+	return -ENOTCONN;
+}
+
 void *ath12k_telemetry_peer_ctx_alloc(void *peer, void *sawf_stats,
 				      u8 *mac_addr,
 				      u8 svc_id, u8 hostq_id)

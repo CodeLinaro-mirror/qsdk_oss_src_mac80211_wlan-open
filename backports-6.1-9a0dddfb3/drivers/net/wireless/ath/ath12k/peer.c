@@ -656,6 +656,51 @@ static int ath12k_wait_for_peer_create_done(struct ath12k *ar, u32 vdev_id,
 	return 0;
 }
 
+static int ath12k_track_peer_delete(struct ath12k_hw *ah, struct ath12k *ar,
+				    struct ieee80211_sta *sta, const u8 *addr)
+{
+	u8 band;
+	int ret = 0;
+
+	if (sta && (sta->mlo || sta->valid_links)) {
+		/* Same MLO STA reconnects quickly by interchanging the link MACs
+		 * across bands while a previous peer delete of the MACs are
+		 * in-progress. Check peer delete tracker on each radio before
+		 * peer create to avoid duplication, that triggers FW crash.
+		 */
+		if (!ah || ah->num_radio == 0) {
+			ath12k_err(ar->ab,
+				   "peer duplication cannot be checked for peer %pM\n",
+				   addr);
+			return -ENOENT;
+		}
+
+		for_each_ar(ah, ar, band) {
+			if (ath12k_peer_del_tracker_check(ar->pdev, addr))
+				goto wait_for_timeout;
+		}
+		return ret;
+	}
+
+	if (!ath12k_peer_del_tracker_check(ar->pdev, addr))
+		return ret;
+
+wait_for_timeout:
+	ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
+		   "peer %pM delete is pending, waiting for 3 seconds\n",
+		   addr);
+
+	ret = ath12k_peer_del_tracker_wait(ar->pdev, addr,
+					   ATH12K_PEER_DEL_TRACKER_TIMEOUT_MS);
+	if (ret) {
+		ath12k_err(ar->ab,
+			   "peer %pM still in deletion tracker after 3s, cannot create\n",
+			   addr);
+		return ret;
+	}
+	return ret;
+}
+
 int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		       struct ieee80211_sta *sta,
 		       struct ath12k_wmi_peer_create_arg *arg)
@@ -681,20 +726,10 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	}
 
 	/* Check if peer is in deletion tracker and wait if necessary */
-	if (ar->pdev->peer_del_tracker &&
-	    ath12k_peer_del_tracker_check(ar->pdev, arg->peer_addr)) {
-		ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
-			   "peer %pM is pending deletion, waiting up to 3 seconds\n",
-			   arg->peer_addr);
-
-		ret = ath12k_peer_del_tracker_wait(ar->pdev, arg->peer_addr,
-						   ATH12K_PEER_DEL_TRACKER_TIMEOUT_MS);
-		if (ret) {
-			ath12k_err(ar->ab,
-				   "peer %pM still in deletion tracker after timeout, cannot create\n",
-				   arg->peer_addr);
-			return -EBUSY;
-		}
+	if (ar->pdev->peer_del_tracker) {
+		ret = ath12k_track_peer_delete(ahvif->ah, ar, sta, arg->peer_addr);
+		if (ret)
+			return ret;
 	}
 
 	if (ar->num_peers >= (ar->max_num_peers - 1)) {
@@ -933,8 +968,9 @@ void ath12k_mac_peer_disassoc(struct ath12k_base *ab, struct ieee80211_sta *sta,
 	struct ath12k_hw_group *ag = ab->ag;
 
 	if (!ahsta->low_ack_sent) {
-		ath12k_dbg(ab, debug_mask, "sending low ack for/disassoc:%pM\n",
-			   sta->addr);
+		ath12k_dbg_level(ab, debug_mask, ATH12K_DBG_L1,
+				 "sending low ack for/disassoc:%pM\n",
+				 sta->addr);
 		/* set num of packets to maximum so that we distinguish in
 		 * the hostapd to send disassoc irrespective of hostapd conf
 		 */

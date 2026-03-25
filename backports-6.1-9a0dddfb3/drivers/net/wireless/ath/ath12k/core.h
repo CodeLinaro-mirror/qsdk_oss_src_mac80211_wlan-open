@@ -120,6 +120,8 @@
 #define ATH12K_PHY_5GHZ_LOW "phy01"
 #define ATH12K_PHY_5GHZ_HIGH "phy02"
 #define ATH12K_PHY_6GHZ "phy03"
+#define ATH12K_PHY_6GHZ_LOW "phy03"
+#define ATH12K_PHY_6GHZ_HIGH "phy04"
 
 #ifdef CPTCFG_QCN_EXTN
 /* Scan radio uses a single PHY name for all bands */
@@ -733,6 +735,8 @@ struct ath12k_link_vif {
 	u8 last_installed_gtk_keyix;
 	u8 last_installed_bigtk_keyix;
 	DECLARE_BITMAP(free_groupidx_map, ATH12K_GROUP_KEYS_NUM_MAX);
+	bool bcast_rate_configured;
+	u32 bcast_rate;
 };
 
 struct ath12k_dp_link_vif {
@@ -1037,6 +1041,14 @@ struct ath12k_link_sta {
 	u32 nss;
 	u32 smps;
 
+	/* Peer power-save tracking */
+	enum ath12k_wmi_peer_ps_state peer_ps_state;
+	u64 ps_start_time;
+	u64 ps_start_jiffies;
+	u64 ps_total_duration;
+	u32 ps_state;
+	bool peer_current_ps_valid;
+
 	struct wiphy_work update_wk;
 	u8 link_id;
 	u32 bw_prev;
@@ -1070,6 +1082,8 @@ struct ath12k_link_sta {
 	/* ath12k_link_sta extension structure */
 	struct ath12k_link_sta_extn arsta_extn;
 #endif
+	s8 min_rssi;
+	s8 max_rssi;
 
 };
 
@@ -1145,6 +1159,7 @@ struct ath12k_sta {
 #define ATH12K_MIN_6GHZ_FREQ	(ATH12K_6GHZ_MIN_CENTER - ATH12K_HALF_20MHZ_BW)
 #define ATH12K_MAX_6GHZ_FREQ	(ATH12K_6GHZ_MAX_CENTER + ATH12K_HALF_20MHZ_BW)
 
+#define ATH12K_MAX_6G_LOW_BAND_FREQ  6425
 #define ATH12K_MAX_5G_LOW_BAND_FREQ  5330
 #define ATH12K_MIN_5G_HIGH_BAND_FREQ 5490
 
@@ -2294,6 +2309,9 @@ struct ath12k_base {
 #endif
 
 	u32 twt_cap_bitmap;
+
+	bool is_cumac_chip;
+
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
 };

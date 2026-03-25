@@ -370,6 +370,8 @@ int ath12k_wifi8_dp_link_peer_create(struct ath12k_base *ab, u32 vdev_id, u8 *ad
 	ether_addr_copy(peer->addr, addr);
 	list_add(&peer->list, &dp->peers);
 	ewma_avg_rssi_init(&peer->avg_rssi);
+	peer->max_rssi = S8_MIN;
+	peer->min_rssi = S8_MAX;
 
 	spin_unlock_bh(&dp->dp_lock);
 
@@ -904,6 +906,7 @@ int ath12k_wifi8_get_mgmt_flowq(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw
 	struct peer_assoc_mpduq_params *mpduq_params;
 	struct ath12k_dp_link_peer *link_peer;
 	struct ath12k_dp_peer *dp_peer;
+	enum htt_tx_tid_msduq_mpdu_type msduq_type;
 	u64 dma_addr = 0;
 	u8 hw_link_id;
 	int ret = 0;
@@ -932,12 +935,13 @@ int ath12k_wifi8_get_mgmt_flowq(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw
 			if (!tx_info->mgmt_msduq[ATH12K_LINK_TO_MGMT_TYPE(hw_link_id)])
 				continue;
 			idx = ATH12K_LINK_TO_MGMT_TYPE(hw_link_id);
+			msduq_type = ATH12K_LINK_TO_MSDUQ_TYPE(hw_link_id);
 			dma_addr = (u64)tx_info->mgmt_msduq[idx]->msdu_q_paddr;
 			msduq_params =
 				&flowq_params->msduq_params[flowq_params->num_links];
 			msduq_params->mgmt_msduq_address =
 					(u32)((dma_addr >> 0x8) & 0xFFFFFFFF);
-			msduq_params->flow_type = WMI_MGMT_TID_MSDUQ_LINK_SPECIFIC;
+			msduq_params->flow_type = msduq_type;
 			msduq_params->link_id = hw_link_id;
 			flowq_params->num_links++;
 		}
@@ -951,7 +955,7 @@ int ath12k_wifi8_get_mgmt_flowq(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw
 		msduq_params = &flowq_params->msduq_params[flowq_params->num_links];
 		msduq_params->mgmt_msduq_address =
 				(u32)((dma_addr >> 0x8) & 0xFFFFFFFF);
-		msduq_params->flow_type = WMI_MGMT_TID_MSDUQ_LINK_AGNOSTIC;
+		msduq_params->flow_type = HTT_TID_MSDUQ_MGMT_LINK_AGNOSTIC;
 		flowq_params->num_links++;
 	} else {
 		if (!tx_info->mgmt_msduq[MGMT_MSDUQ_NON_ML]) {
@@ -975,7 +979,7 @@ int ath12k_wifi8_get_mgmt_flowq(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw
 		msduq_params = &flowq_params->msduq_params[flowq_params->num_links];
 		msduq_params->mgmt_msduq_address =
 				(u32)((dma_addr >> 0x8) & 0xFFFFFFFF);
-		msduq_params->flow_type = WMI_MGMT_TID_MSDUQ_LINK_SPECIFIC;
+		msduq_params->flow_type = HTT_TID_MSDUQ_MGMT_LINK_SPECIFIC_0;
 		msduq_params->link_id = link_peer->hw_link_id;
 		flowq_params->num_links++;
 	}

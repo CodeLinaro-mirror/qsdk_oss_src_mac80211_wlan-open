@@ -5011,12 +5011,6 @@ struct wmi_peer_assoc_mlo_params {
 	};
 } __packed;
 
-enum {
-	WMI_MGMT_TID_MSDUQ_LINK_SPECIFIC,
-	WMI_MGMT_TID_MSDUQ_LINK_AGNOSTIC,
-	WMI_MGMT_TID_MSDUQ_TYPE_MAX,
-};
-
 #define WMI_MGMTQ_LINK_ID	GENMASK(2, 0)
 #define WMI_MGMTQ_MSDU_TYPE	GENMASK(7, 3)
 
@@ -5740,6 +5734,25 @@ struct wmi_peer_assoc_conf_arg {
 	const u8 *macaddr;
 	u32 status; /* 0 - Pass; 1 - Failure */
 };
+
+enum ath12k_wmi_peer_ps_state {
+	WMI_PEER_PS_STATE_OFF,
+	WMI_PEER_PS_STATE_ON,
+	WMI_PEER_PS_STATE_DISABLED,
+};
+
+enum wmi_peer_ps_supported_bitmap {
+	WMI_PEER_PS_VALID = 0x1,
+	WMI_PEER_PS_STATE_TIMESTAMP = 0x2,
+};
+
+struct wmi_peer_sta_ps_state_chg_event {
+	struct ath12k_wmi_mac_addr_params peer_macaddr;
+	__le32 peer_ps_state;
+	__le32 ps_supported_bitmap;
+	__le32 peer_ps_valid;
+	__le32 peer_ps_timestamp;
+} __packed;
 
 struct wmi_fils_discovery_event {
 	__le32 vdev_id;

@@ -356,6 +356,10 @@ struct ieee80211_if_ap {
 	struct ps_data ps;
 	atomic_t num_mcast_sta; /* number of stations receiving multicast */
 
+#ifdef CPTCFG_QCN_EXTN
+	struct ieee80211_if_ap_extn if_ap_extn;
+#endif
+
 	bool multicast_to_unicast;
 	bool active;
 };
