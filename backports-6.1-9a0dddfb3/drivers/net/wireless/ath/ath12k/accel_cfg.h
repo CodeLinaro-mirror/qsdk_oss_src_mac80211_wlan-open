@@ -9,6 +9,9 @@
 #include <ath/ath_dp_accel_cfg.h>
 
 #define ATH12K_DP_MSCS_VALID_TID_MASK 0x7
+#define ATH12K_UDP_PROTOCOL 17
+#define ATH12K_MSDUQ_NONUDP_FLOW 0
+#define ATH12K_MSDUQ_UDP_FLOW 1
 /**
  * ath12k_dp_mscs_peer_lookup_status - mscs lookup status
  * @ATH12K_DP_MSCS_PEER_LOOKUP_STATUS_ALLOW_MSCS_QOS_TAG_UPDATE
@@ -38,4 +41,8 @@ void ath12k_dp_accel_cfg_init(struct ath12k_base *ab);
  * Return: None
  */
 void ath12k_dp_accel_cfg_deinit(struct ath12k_base *ab);
+struct wireless_dev *ath12k_get_wdev_from_netdev(struct net_device *dev);
+void ath12k_alloc_non_default_tid_queues(struct wireless_dev *wdev,
+					 const u8 *peer_mac,
+					 struct ath_wifi_queue_param *wifi_queue);
 #endif

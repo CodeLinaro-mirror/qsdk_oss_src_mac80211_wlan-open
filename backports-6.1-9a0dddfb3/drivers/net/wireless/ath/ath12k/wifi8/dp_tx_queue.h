@@ -112,4 +112,8 @@ void ath12k_dp_peer_free_queues(struct ath12k_dp_hw_group *dp_hw_grp,
 int ath12k_peer_alloc_dynamic_queue(struct ath12k_dp_hw_group *dp_hw_grp,
 				    struct ath12k_dp_peer *peer,
 				    struct ath12k_dp_tx_queue_metadata *tx_queue_params);
+int ath12k_wifi8_alloc_non_default_queue(struct ath12k_dp *dp,
+					 struct ath12k_dp_peer *peer,
+					 struct ath12k_dp_vif *dp_vif,
+					 u8 tid_no, u8 flow_type);
 #endif

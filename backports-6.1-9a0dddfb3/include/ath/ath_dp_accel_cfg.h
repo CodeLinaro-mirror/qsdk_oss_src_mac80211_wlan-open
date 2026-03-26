@@ -96,6 +96,28 @@ struct ath_ul_params {
 };
 
 /**
+ * struct ath_wifi_queue_param - wifi queue setup parameters
+ * @dev: wlan net device
+ * @peer_mac: Peer MAC address (6 bytes)
+ * @dscp: DSCP value
+ * @qos_tag: QoS tag
+ * @protocol: Protocol type
+ * @sawf_mark: SAWF mark (flow or return depending on direction)
+ * @sawf_service_class: SAWF service class (flow or return depending on direction)
+ * @sawf_rule_valid: SAWF rule validity flag
+ */
+struct ath_wifi_queue_param {
+	struct net_device *dev;
+	uint8_t *peer_mac;
+	uint8_t dscp;
+	uint32_t qos_tag;
+	uint8_t protocol;
+	uint32_t sawf_mark;
+	uint8_t sawf_service_class;
+	bool sawf_rule_valid;
+};
+
+/**
  * ath_mscs_get_priority_param
  *
  * @dst_dev - Destination netdev
@@ -127,6 +149,9 @@ struct ath_dp_accel_cfg_ops {
 	uint32_t (*get_metadata_info)(struct ath_dp_metadata_param *md_param);
 	void (*sdwf_ul_config)(struct ath_ul_params *params);
 	int (*get_mscs_priority)(struct ath_mscs_get_priority_param *params);
+	void (*alloc_non_deafult_tid_queue)(struct wireless_dev *wdev,
+					    const u8 *peer_mac,
+					    struct ath_wifi_queue_param *wifi_queue);
 };
 
 /**
@@ -168,4 +193,12 @@ bool ath_dp_accel_cfg_fetch_ds_node_id(struct ath_dp_accel_cfg *info);
 u32 ath_get_metadata_info(struct ath_dp_metadata_param *dp_metadata_param);
 void ath_sawf_uplink(struct ath_ul_params *params);
 int ath_mscs_peer_lookup_n_get_priority(struct ath_mscs_get_priority_param *params);
+
+/**
+ * ath_setup_peer_wifi_tid_queue() - Setup wifi queue for PPE-DS
+ * @wifi_queue: wifi queue parameters
+ *
+ * Return: None
+ */
+void ath_setup_peer_wifi_tid_queue(struct ath_wifi_queue_param *wifi_queue);
 #endif

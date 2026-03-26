@@ -656,6 +656,10 @@ struct ath12k_dp_arch_ops {
 				 struct sk_buff *skb, struct ath12k_link_sta *arsta,
 				 struct ath12k_dp_skb_ctrl *skb_ctrl,
 				 bool htt_mesh);
+	int (*dp_alloc_non_default_queue)(struct ath12k_dp *dp,
+					  struct ath12k_dp_peer *dp_peer,
+					  struct ath12k_dp_vif *dp_vif,
+					  u8 tidno, u8 flow_type);
 	/* UMAC reset operations */
 	void (*umac_reset_handle_pre_reset)(struct ath12k_base *ab);
 	void (*umac_reset_handle_post_reset_start)(struct ath12k_base *ab);
@@ -1413,7 +1417,17 @@ ath12k_dp_arch_peer_rx_tid_reo_update_for_smd(struct ath12k_dp *dp,
 		return dp->arch_ops->peer_rx_tid_reo_update_for_smd(dp->ab, dp_hw,
 								    peer_addr,
 								    rx_tid_ctx);
+	return 0;
+}
 
+static inline int ath12k_dp_arch_alloc_non_default_queue(struct ath12k_dp *dp,
+							 struct ath12k_dp_peer *dp_peer,
+							 struct ath12k_dp_vif *dp_vif,
+							 u8 tidno, u8 flow_type)
+{
+	if (dp->arch_ops->dp_alloc_non_default_queue)
+		return dp->arch_ops->dp_alloc_non_default_queue(dp, dp_peer, dp_vif,
+								tidno, flow_type);
 	return 0;
 }
 

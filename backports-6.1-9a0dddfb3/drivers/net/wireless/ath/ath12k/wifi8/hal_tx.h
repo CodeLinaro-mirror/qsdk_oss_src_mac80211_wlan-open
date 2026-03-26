@@ -88,6 +88,7 @@ ath12k_wifi8_hal_invalidate_tx_cache_cmd_send(struct ath12k_base *ab,
 void ath12k_wifi8_hal_tx_set_dscp_tid_map(struct ath12k_base *ab, u8 *map, int id);
 void ath12k_wifi8_hal_tx_update_dscp_tid_map(struct ath12k_base *ab,
 					     int id, u8 dscp, u8 tid);
+u8 ath12k_wifi8_hal_tx_get_tid_from_dscp(struct ath12k_base *ab, int id, u8 dscp);
 void ath12k_wifi8_hal_tx_cmd_desc_setup(struct ath12k_base *ab,
 					struct hal_tcl_data_cmd *tcl_cmd,
 					struct hal_tx_info *ti);

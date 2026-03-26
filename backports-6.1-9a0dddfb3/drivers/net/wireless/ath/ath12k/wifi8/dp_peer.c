@@ -843,7 +843,7 @@ int ath12k_dp_tqm_remove_mgmt_link_queues(struct ath12k_base *ab,
 	ab = central_dp->ab;
 
 	if (dp_peer->is_vdev_peer) {
-		ath12k_err(ab, "peer %d is mcast peer",
+		ath12k_dbg(ab, ATH12K_DBG_PEER, "peer %d is mcast peer",
 			   dp_peer->peer_id);
 		return 0;
 	}
