@@ -641,6 +641,21 @@ enum wmi_tlv_cmd_id {
         WMI_VDEV_GET_BIG_DATA_P2_CMDID,
         /** set TPC PSD/non-PSD power */
         WMI_VDEV_SET_TPC_POWER_CMDID,
+	/** IGMP OFFLOAD */
+	WMI_VDEV_IGMP_OFFLOAD_CMDID,
+	/** Enable/Disable Intra Bss for each vdev */
+	WMI_VDEV_ENABLE_DISABLE_INTRA_BSS_CMDID,
+	/* set vdev mu sniffer param */
+	WMI_VDEV_SET_MU_SNIF_CMDID,
+	/** ICMP OFFLOAD */
+	WMI_VDEV_ICMP_OFFLOAD_CMDID,
+	/** Update vdev mac address */
+	WMI_VDEV_UPDATE_MAC_ADDR_CMDID,
+	/* WMI cmd to perform operation on multiple peer based on subcmd type */
+	WMI_VDEV_MULTIPLE_PEER_GROUP_CMDID,
+	/** Set LTF key seed which will be further used to derive LTF keys */
+	WMI_VDEV_SET_LTF_KEY_SEED_CMDID,
+	WMI_VDEV_PN_MGMT_RX_FILTER_CMDID,
 	/** WMI cmd used to control DPS Assisting AP role config */
 	WMI_VDEV_ENERGY_MGMT_DPS_ASSISTING_ROLE_CONFIG_CMDID = 0x503D,
 	WMI_PEER_CREATE_CMDID = WMI_TLV_CMD(WMI_GRP_PEER),
@@ -2433,6 +2448,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_RSSI_DBM_CONVERSION_PARAMS_INFO,
 	WMI_TAG_RSSI_DBM_CONVERSION_TEMP_OFFSET_INFO,
 	WMI_CTRL_PATH_AFC_STATS = 0x42A,
+	WMI_TAG_VDEV_PN_MGMT_RX_FILTER_CMD = 0x42E,
 	WMI_TAG_BCN_TMPL_ML_INFO_CMD = 0x436,
 	WMI_TAG_MLO_MGMT_RX_CU_PARAMS = 0x439,
 	WMI_TAG_MLO_PARAMS_PEER_DELETE = 0x43E,
@@ -5965,6 +5981,7 @@ struct wmi_pdev_update_muedca_event {
 #define WMI_RX_STATUS_ERR_DECRYPT		0x08
 #define WMI_RX_STATUS_ERR_MIC			0x10
 #define WMI_RX_STATUS_ERR_KEY_CACHE_MISS	0x20
+#define WMI_RX_STATUS_ERR_PN                    0x80
 
 #define WLAN_MGMT_TXRX_HOST_MAX_ANTENNA 4
 
@@ -9345,6 +9362,12 @@ struct wmi_vdev_tsf_tstamp_action_cmd {
 	__le32 flags;
 } __packed;
 
+struct wmi_vdev_pn_mgmt_rx_filter_cmd {
+	__le32 tlv_header;
+	__le32 vdev_id;
+	__le32 pn_rx_filter;
+} __packed;
+
 struct wmi_peer_cfr_capture_conf_arg {
 	u32 request;
 	u32 periodicity;
@@ -9889,6 +9912,8 @@ int ath12k_wmi_send_wsi_stats_info(struct ath12k *ar,
 int ath12k_wmi_vdev_set_neighbor_rx_cmd(struct ath12k *ar,
 					struct ath12k_set_neighbor_rx_params *param);
 int ath12k_wmi_vdev_tsf_tstamp_action_cmd(struct ath12k *ar, u8 vdev_id);
+int ath12k_wmi_vdev_set_pn_mgmt_rx_filter_cmd(struct ath12k *ar, u32 vdev_id,
+					      u32 pn_rx_filter);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 int ath12k_wmi_config_peer_ppeds_routing(struct ath12k *ar,
 					 const u8 *peer_addr, u8 vdev_id,
