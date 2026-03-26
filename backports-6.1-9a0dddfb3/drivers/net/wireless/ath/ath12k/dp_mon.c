@@ -2915,18 +2915,14 @@ int ath12k_dp_mon_get_link_peer_rssi(struct ath12k *ar, const u8 *peer_mac,
 	struct ath12k_dp *dp;
 	struct ath12k_dp_link_peer *link_peer;
 
-	if (!ar || !peer_mac || !min_rssi || !max_rssi) {
-		ath12k_err(NULL, "dp_mon: Invalid parameters\n");
+	if (!ar || !peer_mac || !min_rssi || !max_rssi)
 		return -EINVAL;
-	}
 
 	ab = ar->ab;
 	dp = ath12k_ab_to_dp(ab);
 
-	if (!dp) {
-		ath12k_err(ab, "dp_mon: Invalid dp pointer\n");
+	if (!dp)
 		return -EINVAL;
-	}
 
 	spin_lock_bh(&dp->dp_lock);
 
