@@ -669,6 +669,10 @@ static ssize_t ath12k_dump_mgmt_stats(struct file *file,
 
 		len += scnprintf(buf + len, size - len, "  RX stats :\n");
 		len += scnprintf(buf + len, size - len,
+				"  Total RX PN error count :%llu\n",
+				mgmt_stats->rx_pn_err_cnt);
+
+		len += scnprintf(buf + len, size - len,
 				 "  Total RX Mgmt frames = %llu\n",
 				 mgmt_stats->aggr_rx_mgmt);
 		len += scnprintf(buf + len, size - len, "  Success frames:\n");
@@ -692,6 +696,9 @@ static ssize_t ath12k_dump_mgmt_stats(struct file *file,
 		len += scnprintf(buf + len, size - len,
 				 "  Number of connected clients = %d\n",
 				 arvif->num_stations);
+		len += scnprintf(buf + len, size - len,
+				 " Link %u RX PN error count = %llu\n",
+				 arvif->link_id, arvif->rx_pn_err_cnt);
 	}
 
 	spin_unlock_bh(&ar->data_lock);

@@ -10943,6 +10943,15 @@ static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 
 	rcu_read_lock();
 	arvif = ath12k_mac_get_arvif(ar, peer->vdev_id);
+	if (rx_ev.status & WMI_RX_STATUS_ERR_PN) {
+		mgmt_stats->rx_pn_err_cnt++;
+		if (arvif)
+			arvif->rx_pn_err_cnt++;
+		rcu_read_unlock();
+		spin_unlock_bh(&ar->data_lock);
+		dev_kfree_skb(skb);
+		goto exit;
+	}
 	if (arvif) {
 		rssi = status->signal;
 
@@ -20085,5 +20094,39 @@ int ath12k_wmi_send_aggr_size_cmd(struct ath12k *ar,
 		dev_kfree_skb(skb);
 	}
 
+	return ret;
+}
+
+/* pn_rx_filter is a bitmask of IEEE80211_FILTER_TYPE_* values.
+ * Host passes the requested management-frame filter mask to FW,
+ * and FW stores it per vdev as vdev_pn_rx_filter.
+ */
+int ath12k_wmi_vdev_set_pn_mgmt_rx_filter_cmd(struct ath12k *ar, u32 vdev_id,
+					      u32 pn_rx_filter)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct wmi_vdev_pn_mgmt_rx_filter_cmd *cmd;
+	struct sk_buff *skb;
+	int ret, len;
+
+	len = sizeof(*cmd);
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_vdev_pn_mgmt_rx_filter_cmd *)skb->data;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_VDEV_PN_MGMT_RX_FILTER_CMD, len);
+	cmd->vdev_id = cpu_to_le32(vdev_id);
+	cmd->pn_rx_filter = cpu_to_le32(pn_rx_filter);
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "WMI vdev id 0x%x set pn_rx_filter 0x%x\n",
+		   vdev_id, pn_rx_filter);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_VDEV_PN_MGMT_RX_FILTER_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed to send WMI_VDEV_PN_MGMT_RX_FILTER_CMDID\n");
+		dev_kfree_skb(skb);
+	}
 	return ret;
 }
