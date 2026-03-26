@@ -397,7 +397,7 @@ int ath12k_me_hmmc_del(struct ath12k_me_db *me_db, u32 *addr, bool v6, u16 pfx)
 	spin_unlock_bh(&me_db->lock);
 
 	if (ret != __TRIE_SUCCESS) {
-		ath12k_err(NULL,
+		ath12k_dbg(NULL, ATH12K_DBG_CFG,
 			   "HMMC DEL action returns:%d, can be valid for INTR nodes\n",
 			   ret);
 	}

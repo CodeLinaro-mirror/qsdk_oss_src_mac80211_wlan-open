@@ -10647,7 +10647,8 @@ static int ath12k_vendor_hmmc_deny_list_handler(struct wiphy *wiphy,
 
 	/* Validate interface type - HMMC configs are for AP mode alone */
 	if (ahvif->vif->type != NL80211_IFTYPE_AP) {
-		ath12k_err(NULL, "HMMC config is only supported on AP interfaces");
+		ath12k_dbg(NULL, ATH12K_DBG_CFG,
+			   "HMMC config is only supported on AP interfaces\n");
 		return -EOPNOTSUPP;
 	}
 
