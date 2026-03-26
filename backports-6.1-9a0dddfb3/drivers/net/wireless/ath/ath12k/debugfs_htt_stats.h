@@ -2633,8 +2633,6 @@ struct ath12k_htt_tx_de_eapol_packets_stats_tlv {
 
 struct ath12k_htt_tx_de_classify_stats_tlv {
 	__le32 arp_packets;
-	__le32 arp_request;
-	__le32 arp_response;
 	__le32 igmp_packets;
 	__le32 dhcp_packets;
 	__le32 host_inspected;
@@ -2667,6 +2665,8 @@ struct ath12k_htt_tx_de_classify_stats_tlv {
 	__le32 htt_learning_frame;
 	__le32 fse_invalid_peer;
 	__le32 mec_notify;
+	__le32 arp_response;
+	__le32 arp_request;
 } __packed;
 
 struct ath12k_htt_tx_de_classify_failed_stats_tlv {
