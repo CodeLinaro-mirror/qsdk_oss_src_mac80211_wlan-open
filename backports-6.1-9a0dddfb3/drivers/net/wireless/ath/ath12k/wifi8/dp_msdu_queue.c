@@ -94,6 +94,11 @@ u8 ath12k_dp_get_chipid_bitmap(struct ath12k_dp_hw_group *dp_hw_grp,
 				       dp_hw_grp->hw_links[hw_link_id].device_id);
 		if (!partner_dp)
 			continue;
+
+		/* skip programming the cumac chip id */
+		if (partner_dp == ath12k_get_central_dp(partner_dp))
+			continue;
+
 		bitmap |= BIT(partner_dp->device_id);
 	}
 	rcu_read_unlock();
