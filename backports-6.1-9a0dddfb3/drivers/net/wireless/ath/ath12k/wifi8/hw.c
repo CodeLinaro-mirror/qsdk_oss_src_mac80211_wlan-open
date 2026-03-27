@@ -310,7 +310,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 
 		.iova_mask = 0,
 
-		.supports_aspm = false,
+		.supports_aspm = true,
 
 		.current_cc_support = false,
 

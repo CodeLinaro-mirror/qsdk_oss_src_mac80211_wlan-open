@@ -665,6 +665,8 @@ int ath12k_pci_start(struct ath12k_base *ab)
 
 	if (test_bit(ATH12K_PCI_FLAG_MULTI_MSI_VECTORS, &ab_pci->flags))
 		ath12k_pci_aspm_restore(ab_pci);
+	else if (ab->hw_params->supports_aspm)
+		ath12k_info(ab, "PCI ASPM managed by firmware/platform\n");
 	else
 		ath12k_info(ab, "leaving PCI ASPM disabled to avoid MHI M2 problems\n");
 
@@ -1017,10 +1019,12 @@ int ath12k_pci_power_up(struct ath12k_base *ab)
 	clear_bit(ATH12K_PCI_FLAG_INIT_DONE, &ab_pci->flags);
 	ath12k_pci_sw_reset(ab_pci->ab, true);
 
-	/* Disable ASPM during firmware download due to problems switching
-	 * to AMSS state.
+	/* Legacy behavior: disable ASPM for stability and restore later only in
+	 * certain conditions. If firmware/platform manage ASPM (supports_aspm),
+	 * keep L0s/L1 enabled so platform can transition as needed.
 	 */
-	ath12k_pci_aspm_disable(ab_pci);
+	if (!ab->hw_params->supports_aspm)
+		ath12k_pci_aspm_disable(ab_pci);
 
 	ath12k_pci_msi_enable(ab_pci);
 
