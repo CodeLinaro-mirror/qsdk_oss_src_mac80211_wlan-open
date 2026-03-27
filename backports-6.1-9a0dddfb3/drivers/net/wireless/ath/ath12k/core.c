@@ -2436,7 +2436,7 @@ static void ath12k_mac_peer_ab_disassoc(struct ath12k_base *ab)
 		if (ath12k_dp_link_peer_get_vif_type(peer) == NL80211_IFTYPE_STATION)
 			continue;
 
-		sta = peer->sta;
+		sta = ath12k_dp_link_peer_get_sta(peer);
 		if (!sta)
 			continue;
 
@@ -3384,7 +3384,8 @@ static void ath12k_core_peer_disassoc(struct ath12k_hw_group *ag,
 
 		spin_lock_bh(&ab->dp->dp_lock);
 		list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
-			if (!peer->sta || !ath12k_dp_link_peer_get_vif(peer))
+			if (!ath12k_dp_link_peer_get_sta(peer) ||
+			    !ath12k_dp_link_peer_get_vif(peer))
 				continue;
 
 			/* Allow sending disassoc to legacy peer
@@ -3393,7 +3394,7 @@ static void ath12k_core_peer_disassoc(struct ath12k_hw_group *ag,
 			if (!peer->mlo && ab != assert_ab)
 				continue;
 
-			sta = peer->sta;
+			sta = ath12k_dp_link_peer_get_sta(peer);
 			ahsta = (struct ath12k_sta *)sta->drv_priv;
 
 			/* Send low ack to disassoc the MLD station

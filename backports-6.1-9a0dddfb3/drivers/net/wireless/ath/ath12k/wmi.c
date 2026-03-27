@@ -15942,7 +15942,7 @@ static void ath12k_wmi_peer_migration_event(struct ath12k_base *ab,
 			   "peer migration status ML peer id %d status %u\n",
 			   ml_peer_id, status);
 
-		sta = peer->sta;
+		sta = ath12k_dp_link_peer_get_sta(peer);
 		if (!sta)
 			continue;
 
@@ -16277,11 +16277,12 @@ ath12k_update_peer_tlt_selection(struct ath12k_base *ab,
 		return;
 	}
 
-	if (!peer->sta || !peer->sta->valid_links)
+	if (!ath12k_dp_link_peer_get_sta(peer) ||
+	    !ath12k_dp_link_peer_get_sta(peer)->valid_links)
 		return;
 
 	/* non 3 link association */
-	if (hweight16(peer->sta->valid_links) !=
+	if (hweight16(ath12k_dp_link_peer_get_sta(peer)->valid_links) !=
 	    ATH12K_3LINK_MLO_MAX_STA_LINKS)
 		return;
 

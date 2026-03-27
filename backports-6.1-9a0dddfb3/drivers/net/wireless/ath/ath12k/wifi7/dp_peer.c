@@ -183,7 +183,7 @@ void ath12k_wifi7_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 	if (dp_peer->is_mlo) {
 		peerid_index = dp_peer->peer_id;
 		rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], NULL);
-		ahsta = ath12k_sta_to_ahsta(dp_peer->sta);
+		ahsta = ath12k_sta_to_ahsta(ath12k_dp_peer_get_sta(dp_peer));
 		ath12k_wifi7_peer_ml_id_free(ah, ahsta);
 	}
 

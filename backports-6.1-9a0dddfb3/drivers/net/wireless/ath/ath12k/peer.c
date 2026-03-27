@@ -454,7 +454,7 @@ static bool ath12k_peer_cleanup_vdev_match(struct ath12k_dp_link_peer *peer,
 	if (peer->vdev_id != ctx->vdev_id)
 		return false;
 
-	if (!peer->sta)
+	if (!ath12k_dp_link_peer_get_sta(peer))
 		return false;
 
 	if (peer->mlo && !peer->is_bridge_peer)
@@ -555,8 +555,8 @@ static int __ath12k_peer_delete(struct ath12k *ar, u32 vdev_id, u8 *addr,
 
 	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(ab->dp,
 							    vdev_id, addr);
-	if (peer && peer->sta) {
-		ahsta = ath12k_sta_to_ahsta(peer->sta);
+	if (peer && ath12k_dp_link_peer_get_sta(peer)) {
+		ahsta = ath12k_sta_to_ahsta(ath12k_dp_link_peer_get_sta(peer));
 		link_id = peer->link_id;
 	}
 	if (peer && peer->mlo && !peer->is_bridge_peer)
@@ -794,7 +794,6 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	}
 
 	peer->pdev_idx = ar->pdev_idx;
-	peer->sta = sta;
 	peer->is_bridge_peer = arg->mlo_bridge_peer;
 
 	if (vif->type == NL80211_IFTYPE_STATION) {
@@ -1177,7 +1176,7 @@ int ath12k_peer_send_assoc_vendor_response(const struct ath12k_dp_link_peer *pee
 		return -EINVAL;
 	}
 
-	sta = peer->sta;
+	sta = ath12k_dp_link_peer_get_sta(peer);
 	if (!sta) {
 		ath12k_dbg(NULL, ATH12K_DBG_PEER,
 			   "Invalid sta skipped assoc vendor response\n");

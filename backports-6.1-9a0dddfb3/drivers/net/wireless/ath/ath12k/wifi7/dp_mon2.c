@@ -1452,7 +1452,7 @@ ath12k_dp_mon_rx_update_peer_stats_ds(struct ath12k_pdev_dp *pdev_dp,
 
 		peer = ath12k_dp_link_peer_find_by_peerid_index(dp, pdev_dp,
 								user_stats->sw_peer_id);
-		if (!peer || !peer->sta)
+		if (!peer || !ath12k_dp_link_peer_get_sta(peer))
 			continue;
 
 		ahvif = ath12k_vif_to_ahvif(ath12k_dp_link_peer_get_vif(peer));
@@ -1481,8 +1481,8 @@ ath12k_dp_mon_rx_update_peer_stats_ds(struct ath12k_pdev_dp *pdev_dp,
 			continue;
 
 #ifdef CPTCFG_MAC80211_DS_SUPPORT
-		ieee80211_rx_update_stats(ar->ah->hw, peer->sta, peer->link_id,
-					  ppdu_info->mpdu_len, &status);
+		ieee80211_rx_update_stats(ar->ah->hw, ath12k_dp_link_peer_get_sta(peer),
+					  peer->link_id, ppdu_info->mpdu_len, &status);
 #endif
 	}
 }

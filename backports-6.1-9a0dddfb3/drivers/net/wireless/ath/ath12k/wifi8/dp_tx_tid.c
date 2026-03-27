@@ -88,7 +88,7 @@ u32 ath12k_wifi8_dp_tx_get_he_header_length(struct ath12k_dp_hw_group *dp_hw_grp
 	u32 rep_ul_resp;
 	struct ath12k *ar;
 
-	if (!peer || !peer->sta)
+	if (!peer || !ath12k_dp_peer_get_sta(peer))
 		return 0;
 
 	if (tid_num >= NON_QOS_TID)
@@ -114,7 +114,7 @@ u32 ath12k_wifi8_dp_tx_get_he_header_length(struct ath12k_dp_hw_group *dp_hw_grp
 			ar->pdev->pdev_id) & 01);
 	//do we need STA check if we are checking sta_bss_peer
 	if (arsta->arvif->ahvif->vif->type == NL80211_IFTYPE_STATION &&
-	    peer->is_sta_bss_peer && peer->sta->wme &&
+	    peer->is_sta_bss_peer && ath12k_dp_peer_get_sta(peer)->wme &&
 	    rep_ul_resp &&
 	    ht_he_cap)
 			header_size = 4;
@@ -182,10 +182,10 @@ int ath12k_tx_send_mpduq_init(struct ath12k_dp_hw_group *dp_hw_grp,
 	ti.assoc_link_id = ATH12K_INVALID_LINK_ID;
 	ti.link_id1 = ATH12K_INVALID_LINK_ID - 1;
 	ti.link_id2 = ATH12K_INVALID_LINK_ID;
-	if (peer->sta) {
+	if (ath12k_dp_peer_get_sta(peer)) {
 		rcu_read_lock();
-		ahsta = ath12k_sta_to_ahsta(peer->sta);
-		assoc_link_id = peer->sta->mlo ?
+		ahsta = ath12k_sta_to_ahsta(ath12k_dp_peer_get_sta(peer));
+		assoc_link_id = ath12k_dp_peer_get_sta(peer)->mlo ?
 				ahsta->assoc_link_id :
 				ahsta->deflink.link_id;
 		ti.assoc_link_id = ath12k_dp_get_hw_link_id(peer, assoc_link_id);

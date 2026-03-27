@@ -449,7 +449,8 @@ struct ath12k_dp_peer *ath12k_dp_peer_find_by_addr_and_sta(struct ath12k_dp_hw *
 	lockdep_assert_held(&dp_hw->peer_lock);
 
 	list_for_each_entry(dp_peer, &dp_hw->peers, list) {
-		if (ether_addr_equal(dp_peer->addr, addr) && (dp_peer->sta == sta))
+		if (ether_addr_equal(dp_peer->addr, addr) &&
+		    (ath12k_dp_peer_get_sta(dp_peer) == sta))
 			return dp_peer;
 	}
 
@@ -503,7 +504,7 @@ struct ath12k_dp_peer *ath12k_dp_peer_create_find(struct ath12k_dp_hw *dp_hw, u8
 	list_for_each_entry(dp_peer, &dp_hw->peers, list) {
 		if (ether_addr_equal(dp_peer->addr, addr)) {
 			if (!sta || mlo_peer || dp_peer->is_mlo ||
-			    dp_peer->sta == sta)
+			    ath12k_dp_peer_get_sta(dp_peer) == sta)
 				return dp_peer;
 		}
 	}
@@ -699,8 +700,9 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 	/* Cache config pointer for fast data path access
 	 * Prefer per-link configuration when available; fallback to deflink.
 	 */
-	if (peer->sta) {
-		struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(peer->sta);
+	if (ath12k_dp_link_peer_get_sta(peer)) {
+		struct ath12k_sta *ahsta =
+			ath12k_sta_to_ahsta(ath12k_dp_link_peer_get_sta(peer));
 		struct ath12k_link_sta *arsta = NULL;
 		struct ath12k_link_vif *arvif;
 

@@ -299,7 +299,7 @@ int ath12k_wifi8_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 		if (ret)
 			goto free_queues_info;
 	} else {
-		if (dp_peer->sta->wme)
+		if (ath12k_dp_peer_get_sta(dp_peer)->wme)
 			is_qos = true;
 		else
 			is_qos = false;

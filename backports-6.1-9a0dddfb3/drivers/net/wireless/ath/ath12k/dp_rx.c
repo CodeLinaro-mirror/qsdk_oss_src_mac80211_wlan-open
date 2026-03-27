@@ -261,7 +261,8 @@ void ath12k_dp_rx_classify_mscs(struct ath12k_base *ab,
 		return;
 
 	rcu_read_lock();
-	if (ieee80211_rx_send_mscs_tuple(peer->sta, flow_params, tid)) {
+	if (ieee80211_rx_send_mscs_tuple(ath12k_dp_peer_get_sta(peer), flow_params,
+					 tid)) {
 		rcu_read_unlock();
 		return;
 	}
@@ -1072,7 +1073,7 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, peer_id);
 
 	if (peer) {
-		pubsta = peer->sta;
+		pubsta = ath12k_dp_peer_get_sta(peer);
 		memcpy(addr, peer->addr, ETH_ALEN);
 	}
 
@@ -1629,7 +1630,7 @@ ath12k_dp_primary_peer_migrate_setup(struct ath12k_dp *dp, void *ctx,
 	ath12k_info(mig_ab, "htt new primary peer to %pM peer_id 0x%x ml_peer_id 0x%x link_id 0x%x chip_id 0x%x\n",
 		    peer->addr, peer->peer_id, peer->ml_id, peer->link_id, chip_id);
 
-	ahsta = ath12k_sta_to_ahsta(peer->sta);
+	ahsta = ath12k_sta_to_ahsta(ath12k_dp_link_peer_get_sta(peer));
 	arsta = ahsta->link[peer->link_id];
 	if (!arsta || !arsta->arvif) {
 		spin_unlock_bh(&mig_dp->dp_lock);
@@ -1660,7 +1661,8 @@ ath12k_dp_primary_peer_migrate_setup(struct ath12k_dp *dp, void *ctx,
 
 	spin_unlock_bh(&mig_dp->dp_lock);
 	ret = ath12k_vendor_put_umac_migration_notif(ath12k_dp_link_peer_get_vif(peer),
-						     peer->sta->addr, peer->link_id);
+						ath12k_dp_link_peer_get_sta(peer)->addr,
+						peer->link_id);
 	if (ret)
 		ath12k_warn(mig_ab, "failed to send notify UMAC migration event\n");
 	complete(&ahsta->dp_migration_event);

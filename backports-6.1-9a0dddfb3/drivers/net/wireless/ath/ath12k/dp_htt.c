@@ -158,7 +158,7 @@ ath12k_dp_ppdu_stats_flush_tlv_parse(struct ath12k_base *ab,
 
 	sw_peer_id = le16_to_cpu(msg->sw_peer_id);
 	peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev, sw_peer_id);
-	if (unlikely(!peer || !peer->sta)) {
+	if (unlikely(!peer || !ath12k_dp_link_peer_get_sta(peer))) {
 		ath12k_dbg(ab, ATH12K_DBG_DATA,
 			   "dp_tx: failed to find the peer with peer_id %d\n",
 			   sw_peer_id);
@@ -177,7 +177,7 @@ ath12k_dp_ppdu_stats_flush_tlv_parse(struct ath12k_base *ab,
 	}
 
 	memset(&status, 0, sizeof(status));
-	status.sta = peer->sta;
+	status.sta = ath12k_dp_link_peer_get_sta(peer);
 	rate = peer->last_txrate;
 
 	status_rate.rate_idx = rate;
@@ -1368,7 +1368,7 @@ void ath12k_htt_update_ppdu_stats(struct ath12k_pdev_dp *dp_pdev,
 		peer = ath12k_dp_link_peer_find_by_peerid_index(dp_pdev->dp, dp_pdev,
 								usr_stats->peer_id);
 
-		if (!peer || !peer->sta) {
+		if (!peer || !ath12k_dp_link_peer_get_sta(peer)) {
 			spin_unlock_bh(&dp_pdev->dp->dp_lock);
 			rcu_read_unlock();
 			continue;
@@ -1502,7 +1502,7 @@ ath12k_dp_htt_ppdu_stats_update_tx_comp_stats(struct ath12k_pdev_dp *dp_pdev,
 		peer = ath12k_dp_link_peer_find_by_peerid_index(ab->dp,
 								dp_pdev,
 								peer_id);
-		if (unlikely(!peer || !peer->sta)) {
+		if (unlikely(!peer || !ath12k_dp_link_peer_get_sta(peer))) {
 			ath12k_dbg(ab, ATH12K_DBG_DATA,
 				   "dp_tx: failed to find the peer with peer_id %d\n",
 				peer_id);
@@ -1524,7 +1524,7 @@ ath12k_dp_htt_ppdu_stats_update_tx_comp_stats(struct ath12k_pdev_dp *dp_pdev,
 
 		memset(&status, 0, sizeof(status));
 
-		status.sta = peer->sta;
+		status.sta = ath12k_dp_link_peer_get_sta(peer);
 		rate = peer->last_txrate;
 
 		status_rate.rate_idx = rate;
@@ -1974,7 +1974,7 @@ ath12k_htt_pri_link_peer_migrate_indication(struct ath12k_base *ab,
 		goto exit_pri_link_migr_ind;
 	}
 
-	ahsta = ath12k_sta_to_ahsta(peer->sta);
+	ahsta = ath12k_sta_to_ahsta(ath12k_dp_link_peer_get_sta(peer));
 
 	ahsta->migration_data.ab = ab;
 	ahsta->migration_data.vdev_id = vdev_id;

@@ -3185,7 +3185,7 @@ static bool ath12k_dp_rx_h_mec_drop(struct ath12k_pdev_dp *dp_pdev,
 		goto drop;
 	}
 
-	if (peer && peer->sta) {
+	if (peer && ath12k_dp_link_peer_get_sta(peer)) {
 		arsta = ath12k_peer_get_link_sta(ab, peer);
 		if (arsta) {
 			spin_lock_bh(&arsta->arvif->link_stats_lock);
