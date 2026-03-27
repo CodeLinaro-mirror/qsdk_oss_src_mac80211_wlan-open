@@ -3488,13 +3488,14 @@ int ath12k_wifi8_dp_rxdma_ring_sel_config_qcn9625(struct ath12k_base *ab)
 	return 0;
 }
 
-void ath12k_wifi8_dp_rx_process_reo_status(struct ath12k_dp *dp)
+int ath12k_wifi8_dp_rx_process_reo_status(struct ath12k_dp *dp, int budget)
 {
 	struct ath12k_base *ab = dp->ab;
 	struct hal_tlv_64_hdr *hdr;
 	struct hal_srng *srng;
 	struct ath12k_dp_rx_reo_cmd *cmd, *tmp;
 	bool found = false;
+	int quota = budget;
 	u16 tag;
 	struct hal_reo_status reo_status;
 
@@ -3506,7 +3507,7 @@ void ath12k_wifi8_dp_rx_process_reo_status(struct ath12k_dp *dp)
 
 	ath12k_hal_srng_access_begin(ab, srng);
 
-	while ((hdr = ath12k_hal_srng_dst_get_next_entry(ab, srng))) {
+	while (budget-- && (hdr = ath12k_hal_srng_dst_get_next_entry(ab, srng))) {
 		tag = le64_get_bits(hdr->tl, HAL_SRNG_TLV_HDR_TAG);
 
 		switch (tag) {
@@ -3565,6 +3566,8 @@ void ath12k_wifi8_dp_rx_process_reo_status(struct ath12k_dp *dp)
 	ath12k_hal_srng_access_end(ab, srng);
 
 	spin_unlock_bh(&srng->lock);
+
+	return quota - budget;
 }
 
 int ath12k_wifi8_dp_rx_fst_attach(struct ath12k_dp *dp, struct dp_rx_fst *fst)

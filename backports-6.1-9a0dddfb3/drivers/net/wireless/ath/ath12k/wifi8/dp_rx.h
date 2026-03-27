@@ -50,7 +50,7 @@ void ath12k_wifi8_peer_rx_tid_qref_setup(struct ath12k_base *ab, u16 peer_id,
 int ath12k_wifi8_dp_rx_link_desc_return(struct ath12k_dp *dp,
 					struct ath12k_buffer_addr *buf_addr_info,
 					enum hal_wbm_rel_bm_act action);
-void ath12k_wifi8_dp_rx_process_reo_status(struct ath12k_dp *dp);
+int ath12k_wifi8_dp_rx_process_reo_status(struct ath12k_dp *dp, int budget);
 
 int ath12k_wifi8_dp_rx_peer_tid_setup(struct ath12k *ar, const u8 *peer_mac, int vdev_id,
 				      u8 tid, u32 ba_win_sz, u16 ssn,
