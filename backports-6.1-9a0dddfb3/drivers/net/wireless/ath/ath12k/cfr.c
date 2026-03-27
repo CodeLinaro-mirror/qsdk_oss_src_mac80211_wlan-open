@@ -103,6 +103,7 @@ static void ath12k_cfr_free_pending_dbr_events(struct ath12k *ar)
 {
 	struct ath12k_cfr *cfr = &ar->cfr;
 	struct ath12k_cfr_look_up_table *lut = NULL;
+	struct ath12k_dbring_element *buff;
 	int i;
 
 	if (!cfr->lut)
@@ -112,9 +113,23 @@ static void ath12k_cfr_free_pending_dbr_events(struct ath12k *ar)
 		lut = &cfr->lut[i];
 		if (lut->dbr_recv && !lut->tx_recv &&
 		    (lut->dbr_tstamp < cfr->last_success_tstamp)) {
-			ath12k_dbring_bufs_replenish(ar, &cfr->rx_ring, lut->buff,
-						     WMI_DIRECT_BUF_CFR, GFP_ATOMIC);
+			spin_lock_bh(&cfr->rx_ring.idr_lock);
+			buff = idr_find(&cfr->rx_ring.bufs_idr, i);
+			if (!buff) {
+				spin_unlock_bh(&cfr->rx_ring.idr_lock);
+				ath12k_warn(ar->ab,
+					    "Buffer not found in IDR for LUT[%d]\n",
+					    i);
+				ath12k_cfr_release_lut_entry(lut);
+				cfr->flush_dbr_cnt++;
+				continue;
+			}
+			spin_unlock_bh(&cfr->rx_ring.idr_lock);
+
 			ath12k_cfr_release_lut_entry(lut);
+			ath12k_dbring_remove_buf_id(&cfr->rx_ring, i);
+			ath12k_dbring_bufs_replenish(ar, &cfr->rx_ring, buff,
+						     WMI_DIRECT_BUF_CFR, GFP_ATOMIC);
 			cfr->flush_dbr_cnt++;
 		}
 	}
@@ -342,7 +357,6 @@ static int ath12k_cfr_enh_process_data(struct ath12k *ar,
 		ath12k_dbg(ab, ATH12K_DBG_CFR,
 			   "tx event is not yet received holding the buf");
 	} else {
-		ath12k_cfr_release_lut_entry(lut);
 		ret = ATH12K_CORRELATE_STATUS_ERR;
 		ath12k_err(ab, "error in processing buf rel event");
 	}
@@ -367,6 +381,7 @@ int ath12k_process_cfr_capture_event(struct ath12k_base *ab,
 	int ret = 0;
 	int status;
 	int i;
+	int lut_idx = -1;
 
 	rcu_read_lock();
 	arvif = ath12k_mac_get_arvif_by_vdev_id(ab, params->vdev_id);
@@ -421,6 +436,7 @@ int ath12k_process_cfr_capture_event(struct ath12k_base *ab,
 		temp = &cfr->lut[i];
 		if (temp->dbr_address == buf_addr) {
 			lut = &cfr->lut[i];
+			lut_idx = i;
 			break;
 		}
 	}
@@ -455,19 +471,20 @@ int ath12k_process_cfr_capture_event(struct ath12k_base *ab,
 				     sizeof(struct ath12k_csi_cfr_header),
 				     lut->data, lut->data_len,
 				     &end_magic, sizeof(u32));
-		buff = lut->buff;
+		spin_lock_bh(&cfr->rx_ring.idr_lock);
+		buff = idr_find(&cfr->rx_ring.bufs_idr, lut_idx);
+		if (!buff) {
+			spin_unlock_bh(&cfr->rx_ring.idr_lock);
+			return -ENOENT;
+		}
+		spin_unlock_bh(&cfr->rx_ring.idr_lock);
+
 		ath12k_cfr_release_lut_entry(lut);
+		ath12k_dbring_remove_buf_id(&cfr->rx_ring, lut_idx);
 
 		ath12k_dbring_bufs_replenish(ar, &cfr->rx_ring, buff,
 					     WMI_DIRECT_BUF_CFR, GFP_ATOMIC);
-	} else if (status == ATH12K_CORRELATE_STATUS_HOLD) {
-		ath12k_dbg(ab, ATH12K_DBG_CFR,
-			   "dbr event is not yet received holding buf\n");
 	} else {
-		buff = lut->buff;
-		ath12k_cfr_release_lut_entry(lut);
-		ath12k_dbring_bufs_replenish(ar, &cfr->rx_ring, buff,
-					     WMI_DIRECT_BUF_CFR, GFP_ATOMIC);
 		ret = -EINVAL;
 	}
 

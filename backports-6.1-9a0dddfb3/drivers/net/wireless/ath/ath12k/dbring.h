@@ -82,6 +82,7 @@ int ath12k_dbring_bufs_replenish(struct ath12k *ar,
 				 struct ath12k_dbring_element *buff,
 				 enum wmi_direct_buffer_module id,
 				 gfp_t gfp);
+void ath12k_dbring_remove_buf_id(struct ath12k_dbring *ring, int buf_id);
 int ath12k_dbring_wmi_cfg_setup(struct ath12k *ar,
 				struct ath12k_dbring *ring,
 				enum wmi_direct_buffer_module id);
