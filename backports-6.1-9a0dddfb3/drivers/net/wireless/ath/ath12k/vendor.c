@@ -10774,19 +10774,15 @@ static int ath12k_vendor_get_sta_info_dumpit(struct wiphy *wiphy,
 
 	lockdep_assert_wiphy(wiphy);
 
-	if (!vif) {
-		ath12k_err(NULL, "sta_info: invalid vif\n");
+	if (!vif)
 		return -EINVAL;
-	}
 
 	ahvif = ath12k_vif_to_ahvif(vif);
 
 	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_MAX, data, data_len,
 			ath12k_vendor_get_sta_info_policy, NULL);
-	if (ret) {
-		ath12k_err(NULL, "sta_info: invalid data\n");
+	if (ret)
 		return ret;
-	}
 
 	if (*storage == 1)
 		return 0;
@@ -10797,16 +10793,12 @@ static int ath12k_vendor_get_sta_info_dumpit(struct wiphy *wiphy,
 	peer_mac = nla_data(tb[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_MAC]);
 
 	if (wdev->valid_links) {
-		if (!tb[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_LINK_ID]) {
-			ath12k_err(NULL, "sta_info: link_id not found\n");
+		if (!tb[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_LINK_ID])
 			return -EINVAL;
-		}
 
 		link_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_GET_STA_INFO_LINK_ID]);
-		if (!(wdev->valid_links & BIT(link_id))) {
-			ath12k_err(NULL, "sta_info: invalid link_id %u\n", link_id);
+		if (!(wdev->valid_links & BIT(link_id)))
 			return -ENOLINK;
-		}
 	} else {
 		link_id = 0;
 	}
@@ -10816,16 +10808,13 @@ static int ath12k_vendor_get_sta_info_dumpit(struct wiphy *wiphy,
 	else
 		arvif = wiphy_dereference(wiphy, ahvif->link[link_id]);
 
-	if (!arvif || !arvif->ar || !arvif->ar->ab) {
-		ath12k_err(NULL, "sta_info: arvif not found for link %u\n", link_id);
+	if (!arvif || !arvif->ar || !arvif->ar->ab)
 		return -ENOLINK;
-	}
 
 	spin_lock_bh(&arvif->ar->ab->base_lock);
 
 	arsta = ath12k_link_sta_find_by_addr(arvif->ar->ab, peer_mac);
 	if (!arsta) {
-		ath12k_err(NULL, "sta_info: arsta not found\n");
 		spin_unlock_bh(&arvif->ar->ab->base_lock);
 		return -ENOENT;
 	}
@@ -10834,9 +10823,6 @@ static int ath12k_vendor_get_sta_info_dumpit(struct wiphy *wiphy,
 					       &data_min_rssi,
 					       &data_max_rssi);
 	if (ret) {
-		ath12k_err(NULL,
-			   "sta_info: failed to get link peer rssi for %pM: %d\n",
-			   peer_mac, ret);
 		data_min_rssi = S8_MAX;
 		data_max_rssi = S8_MIN;
 	}
