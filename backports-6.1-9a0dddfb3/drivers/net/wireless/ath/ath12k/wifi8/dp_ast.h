@@ -84,6 +84,21 @@ struct ath12k_dp_ast_hash_keys {
 	u32 ase_hash_key3;
 };
 
+struct ath12k_dp_global_ast_stats {
+	u32 num_ast_entry_create_attempted;
+	u32 num_ast_entry_delete;
+
+	/* failure stats */
+	u16 invalid_hw_ast_entry;
+	u16 delete_in_progress;
+	u16 no_free_slot;
+	u16 alloc_fail;
+	u16 hash_tbl_add_fail;
+	u16 hw_sync_fail;
+	u16 sw_ast_not_found;
+	u16 hw_ast_not_found;
+};
+
 struct ath12k_dp_global_ast_table {
 	/* Memory allocation for AST entries.
 	 * Will be programming this address in HW.
@@ -105,6 +120,7 @@ struct ath12k_dp_global_ast_table {
 	struct ath12k_ast_entry **ast_entries;
 	struct rhashtable *rhead_ast_entry;
 	struct rhashtable_params rhash_ast_entry_param;
+	struct ath12k_dp_global_ast_stats ast_stats;
 };
 
 enum ath12k_ase_cache_op {
@@ -150,4 +166,6 @@ void ath12k_mec_entry_expire_handler(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_
 				     void *arg);
 int ath12k_mec_entry_keep_alive_update(struct ath12k_dp_hw_group *dp_hw_grp,
 				       u8 *mac_addr);
+void ath12k_wifi8_global_ast_stats_reset(struct ath12k_dp *dp);
+ssize_t ath12k_wifi8_global_ast_stats(struct ath12k_dp *dp, char *buf, int size);
 #endif

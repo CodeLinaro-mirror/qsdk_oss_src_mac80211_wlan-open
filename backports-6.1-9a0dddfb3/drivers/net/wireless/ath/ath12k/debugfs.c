@@ -1338,6 +1338,10 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 	len += scnprintf(buf + len, size - len,
 			 "\nTx Desc In use: %d\n", tx_desc_in_use);
 
+	if (ab->dp->arch_ops->dump_device_dp_stats)
+		len += ab->dp->arch_ops->dump_device_dp_stats(ab->dp, buf + len,
+							      size - len);
+
 	if (len > size)
 		len = size;
 	retval = simple_read_from_buffer(user_buf, count, ppos, buf, len);
@@ -1366,6 +1370,9 @@ ath12k_debugfs_write_device_dp_stats(struct file *file,
 
        if (strstr(buf, "reset"))
                memset(device_stats, 0, sizeof(struct ath12k_device_dp_stats));
+
+	if (dp->arch_ops->reset_device_dp_stats)
+		dp->arch_ops->reset_device_dp_stats(dp);
 
        return count;
 }

@@ -39,6 +39,31 @@ struct ath12k_dp_htt_cmd_retry_info {
 	u8 retry_count;
 };
 
+struct ath12k_wifi8_tx_exc_stats {
+	u32 tx_exceptions;
+	u32 null_flowq_pkts;
+	u32 reinject_pkts;
+	u32 invalid_desc;
+	u32 vdev_id_check_fail;
+	u32 addrx_invalid;
+	u32 addrx_timeout;
+	u32 msdu_drop;
+	u32 illegal_pkts;
+	u32 illegal_pkt_hdr;
+	u32 peer_ptr_null;
+	u32 bank_not_configured;
+	u32 msdu_len_err;
+	u32 to_sw_pkts;
+	u32 parse_err;
+	u32 classify_info_sel_exceed;
+	u32 bank_id_exceed;
+	u32 buf_len_err;
+};
+
+struct ath12k_wifi8_dp_stats {
+	struct ath12k_wifi8_tx_exc_stats tx_exc_stats;
+};
+
 struct ath12k_dp_wifi8 {
 	struct ath12k_dp *dp;
 	bool cumac;
@@ -55,6 +80,7 @@ struct ath12k_dp_wifi8 {
 	struct dp_srng sam_status_ring;
 	struct dp_srng rx_ase_cmd_ring;
 	struct dp_srng rx_ase_status_ring;
+	struct ath12k_wifi8_dp_stats stats;
 };
 
 struct ath12k_dp_hw_group_wifi8 {
