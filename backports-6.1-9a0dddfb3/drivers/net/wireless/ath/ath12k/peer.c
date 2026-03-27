@@ -857,10 +857,10 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 int ath12k_peer_dp_cp_link_peer_delete(struct ath12k_link_vif *arvif,
 				       struct ath12k_sta *ahsta, u8 link_id,
-				       bool peer_del_all, int link_going_down,
 				       u8 *addr, u32 mlo_hw_link_id_bitmap,
 				       bool peer_delete_send_mlo_hw_bitmap)
 {
+	bool ml_peer_del_all = false;
 	struct ath12k *ar;
 	int ret;
 
@@ -869,16 +869,16 @@ int ath12k_peer_dp_cp_link_peer_delete(struct ath12k_link_vif *arvif,
 
 	ar = arvif->ar;
 
+	ml_peer_del_all = ar->ab->hw_params->peer_del_all_support;
 	ath12k_dp_peer_cleanup(ar, arvif->vdev_id, addr);
 	ath12k_dp_cp_link_peer_unassign(ar, arvif, ahsta, link_id, addr);
 	ath12k_dp_arch_link_peer_delete(ar->ab->dp, ar->ab,
 					arvif->vdev_id, addr);
 
-	if (peer_del_all && link_going_down == arvif->link_id &&
-	    ahsta->primary_link_id == link_going_down) {
+	if (ml_peer_del_all && arvif->peer_del_all_enable) {
 		ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
-			   "Skipping peer delete for %pM due to peer_del_all:%d link_going_down:%d\n",
-			   addr, peer_del_all, link_going_down);
+			   "Skipping peer delete for %pM due to peer_del_all:%d\n",
+			   addr, arvif->peer_del_all_enable);
 		return 0;
 	}
 
@@ -902,9 +902,7 @@ int ath12k_peer_dp_cp_link_peer_delete(struct ath12k_link_vif *arvif,
 }
 
 int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif,
-				      struct ath12k_sta *ahsta,
-				      bool peer_del_all,
-				      int link_going_down)
+				      struct ath12k_sta *ahsta)
 {
 	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(ahsta);
 	struct ath12k_hw *ah = ahvif->ah;
@@ -917,6 +915,7 @@ int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif,
 	u32 mlo_hw_link_id_bitmap;
 	u8 link_id;
 	bool bitmap_flag = 0;
+	bool ml_peer_del_all = false;
 
 	lockdep_assert_wiphy(ah->hw->wiphy);
 
@@ -938,18 +937,17 @@ int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif,
 			continue;
 
 		memcpy(link_addr[link_id], arsta->addr, ETH_ALEN);
+		ml_peer_del_all = ar->ab->hw_params->peer_del_all_support;
 
 		bitmap_flag = ahsta->peer_delete_send_mlo_hw_bitmap;
 		ret = ath12k_peer_dp_cp_link_peer_delete(arvif, ahsta, link_id,
-							 peer_del_all, link_going_down,
 							 link_addr[link_id],
 							 mlo_hw_link_id_bitmap,
 							 bitmap_flag);
 		if (ret)
 			err_ret = ret;
 
-		if (peer_del_all && link_going_down == arvif->link_id &&
-		    primary_link_id == link_going_down)
+		if (ml_peer_del_all && arvif->peer_del_all_enable)
 			continue;
 
 		if (ahsta->peer_delete_cmd_sent_bitmap & BIT(link_id)) {
