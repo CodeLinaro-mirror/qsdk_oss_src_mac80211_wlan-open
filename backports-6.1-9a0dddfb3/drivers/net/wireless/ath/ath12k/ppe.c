@@ -22,7 +22,8 @@
 #include "ppe_public.h"
 
 extern bool ath12k_fse_enable;
-atomic_t num_ppeds_nodes;
+atomic_t ath12k_num_ppeds_nodes;
+EXPORT_SYMBOL(ath12k_num_ppeds_nodes);
 
 
 struct ath12k_base *ds_node_map[PPE_DS_MAX_NODE];
@@ -52,65 +53,6 @@ void *ath12k_dp_get_ppe_ds_ctxt(struct ath12k_base *ab)
 		return ab->dp->ppe.nss_plugin_ops->ds_inst_get_ctx(ab->dp->ppe.ds_node_id);
 
 	return NULL;
-}
-
-static int ath12k_dp_ppeds_tx_comp_poll(struct napi_struct *napi, int budget)
-{
-	struct ath12k_dp *dp = container_of(napi, struct ath12k_dp, ppe.ppeds_napi_ctxt.napi);
-	struct ath12k_base *ab = dp->ab;
-	int total_budget = (budget << 2) - 1;
-	int work_done;
-
-	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags)) {
-		napi_complete(napi);
-		ath12k_hif_ppeds_irq_enable(ab, PPEDS_IRQ_PPE_WBM2SW_REL);
-		return 0;
-	}
-
-	work_done = dp->arch_ops->dp_ppeds_tx_completion_handler(ab, total_budget);
-	if (!ab->stats_disable)
-		ab->dp->ppe.ppeds_stats.tx_desc_freed += work_done;
-
-	work_done = (work_done + 1) >> 2;
-
-	if (budget > work_done) {
-		napi_complete(napi);
-		ath12k_hif_ppeds_irq_enable(ab, PPEDS_IRQ_PPE_WBM2SW_REL);
-	}
-
-	return (work_done > budget) ? budget : work_done;
-}
-
-
-int ath12k_ppe_napi_budget = NAPI_POLL_WEIGHT;
-static int ath12k_dp_ppeds_add_napi_ctxt(struct ath12k_base *ab)
-{
-	struct ath12k_ppeds_napi *napi_ctxt = &ab->dp->ppe.ppeds_napi_ctxt;
-	int ret;
-
-	ret = init_dummy_netdev((struct net_device *)&napi_ctxt->ndev);
-	if (ret) {
-		ath12k_err(ab, "dummy netdev init fail\n");
-		return -ENOSR;
-	}
-
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
-	netif_napi_add(&napi_ctxt->ndev, &napi_ctxt->napi,
-		       ath12k_dp_ppeds_tx_comp_poll);
-#else
-	netif_napi_add_weight(&napi_ctxt->ndev, &napi_ctxt->napi,
-			      ath12k_dp_ppeds_tx_comp_poll, ath12k_ppe_napi_budget);
-#endif
-
-	return 0;
-}
-
-static void ath12k_dp_ppeds_del_napi_ctxt(struct ath12k_base *ab)
-{
-	struct ath12k_ppeds_napi *napi_ctxt = &ab->dp->ppe.ppeds_napi_ctxt;
-
-	netif_napi_del(&napi_ctxt->napi);
-	ath12k_dbg(ab, ATH12K_DBG_PPE, "%s success\n", __func__);
 }
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
@@ -183,184 +125,13 @@ void ath12k_dp_ppeds_tx_set_ppe_vp_entry(struct ath12k_base *ab,
 	ab->hal.hal_ops->hal_tx_set_ppe_vp_entry(ab, ppe_vp_profile, ppe_vp_idx,
 						 vdev_id, bank_id, lmac_id);
 }
+EXPORT_SYMBOL(ath12k_dp_ppeds_tx_set_ppe_vp_entry);
 
-static int ath12k_dp_ppeds_alloc_ppe_vp_profile(struct ath12k_base *ab,
-						struct ath12k_dp_ppe_vp_profile **vp_profile,
-						int vp_num)
-{
-	int i;
 
-	/* If a VP is already allocated with requested vp number, then return
-	 * the same VP instead of creating a new profile
-	 */
-	for (i = 0; i < PPE_VP_ENTRIES_MAX; i++) {
-		if (ab->dp->ppe.ppe_vp_profile[i].is_configured &&
-		    vp_num == ab->dp->ppe.ppe_vp_profile[i].vp_num) {
-			ath12k_dbg(ab, ATH12K_DBG_PPE, "vp profile with num %d will be reused\n", vp_num);
-			goto end;
-		}
-	}
-
-	if (ab->dp->ppe.num_ppe_vp_profiles == PPE_VP_ENTRIES_MAX) {
-		ath12k_err(ab, "Maximum ppe_vp count reached for soc\n");
-		return -ENOSR;
-	}
-
-	for (i = 0; i < PPE_VP_ENTRIES_MAX; i++) {
-		if (!ab->dp->ppe.ppe_vp_profile[i].is_configured)
-			break;
-	}
-
-	if (i == PPE_VP_ENTRIES_MAX) {
-		WARN_ONCE(1, "All ppe vp profile entries are in use!");
-		return -ENOSR;
-	}
-	ab->dp->ppe.num_ppe_vp_profiles++;
-
-	ab->dp->ppe.ppe_vp_profile[i].is_configured = true;
-
-end:
-	ab->dp->ppe.ppe_vp_profile[i].ref_count++;
-	*vp_profile = &ab->dp->ppe.ppe_vp_profile[i];
-	return i;
-}
-
-static void
-ath12k_dp_ppeds_dealloc_vp_search_idx_tbl_entry(struct ath12k_base *ab,
-						int ppe_vp_search_idx)
-{
-	if (ppe_vp_search_idx < 0 || ppe_vp_search_idx >= PPE_VP_ENTRIES_MAX) {
-		ath12k_err(ab, "Invalid PPE VP search table free index");
-		return;
-	}
-
-	ath12k_dbg(ab, ATH12K_DBG_PPE, "dealloc ppe_vp_search_idx %d\n",
-		   ppe_vp_search_idx);
-
-	if (!ab->dp->ppe.ppe_vp_search_idx_tbl_set[ppe_vp_search_idx]) {
-		ath12k_err(ab, "PPE VP search idx table is not configured at idx:%d",
-			   ppe_vp_search_idx);
-		return;
-	}
-
-	ab->dp->ppe.ppe_vp_search_idx_tbl_set[ppe_vp_search_idx] = 0;
-	ab->dp->ppe.num_ppe_vp_search_idx_entries--;
-}
-
-static void ath12k_dp_ppeds_dealloc_vp_tbl_entry(struct ath12k_base *ab,
-						 int ppe_vp_num_idx)
-{
-	if (ppe_vp_num_idx < 0 || ppe_vp_num_idx >= PPE_VP_ENTRIES_MAX) {
-		ath12k_err(ab, "Invalid PPE VP free index");
-		return;
-	}
-
-	/* Prevent register write if SOC is in recovery */
-	if (!test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags))
-		ath12k_dp_ppeds_tx_set_ppe_vp_entry(ab, NULL, ppe_vp_num_idx,
-						    0, 0, 0);
-
-	if (!ab->dp->ppe.ppe_vp_tbl_registered[ppe_vp_num_idx]) {
-		ath12k_err(ab, "PPE VP is not configured at idx:%d", ppe_vp_num_idx);
-		return;
-	}
-
-	ab->dp->ppe.ppe_vp_tbl_registered[ppe_vp_num_idx] = 0;
-	ab->dp->ppe.num_ppe_vp_entries--;
-}
-
-static void
-ath12k_dp_ppeds_dealloc_ppe_vp_profile(struct ath12k_base *ab,
-				       int ppe_vp_profile_idx,
-				       enum nl80211_iftype type)
-{
-	bool dealloced = false;
-	struct ath12k_dp_ppe_vp_profile *vp_profile;
-
-	if (ppe_vp_profile_idx < 0 || ppe_vp_profile_idx >= PPE_VP_ENTRIES_MAX) {
-		ath12k_err(ab, "Invalid PPE VP profile free index");
-		return;
-	}
-
-	vp_profile = &ab->dp->ppe.ppe_vp_profile[ppe_vp_profile_idx];
-
-	if (!vp_profile->is_configured) {
-		ath12k_err(ab, "PPE VP profile is not configured at idx:%d", ppe_vp_profile_idx);
-		return;
-	}
-
-	vp_profile->ref_count--;
-
-	if (!vp_profile->ref_count) {
-		vp_profile->is_configured = false;
-		ab->dp->ppe.num_ppe_vp_profiles--;
-		dealloced = true;
-
-		/* For STA mode ast index table reg also needs to be cleaned */
-		if (type == NL80211_IFTYPE_STATION)
-			ath12k_dp_ppeds_dealloc_vp_search_idx_tbl_entry(ab, vp_profile->search_idx_reg_num);
-
-		ath12k_dp_ppeds_dealloc_vp_tbl_entry(ab, vp_profile->ppe_vp_num_idx);
-	}
-
-	if (dealloced)
-		ath12k_dbg(ab, ATH12K_DBG_PPE, "%s success\n", __func__);
-}
-
-static int ath12k_dp_ppeds_alloc_vp_tbl_entry(struct ath12k_base *ab)
-{
-	int i;
-
-	if (ab->dp->ppe.num_ppe_vp_profiles == PPE_VP_ENTRIES_MAX) {
-		ath12k_err(ab, "Maximum ppe_vp count reached for soc\n");
-		return -ENOSR;
-	}
-
-	for (i = 0; i < PPE_VP_ENTRIES_MAX; i++) {
-		if (!ab->dp->ppe.ppe_vp_tbl_registered[i])
-			break;
-	}
-
-	if (i == PPE_VP_ENTRIES_MAX) {
-		WARN_ONCE(1, "All ppe vp table entries are in use!");
-		return -ENOSR;
-	}
-
-	ab->dp->ppe.num_ppe_vp_entries++;
-	ab->dp->ppe.ppe_vp_tbl_registered[i] = 1;
-
-	return i;
-}
-
-static int ath12k_dp_ppeds_alloc_vp_search_idx_tbl_entry(struct ath12k_base *ab)
-{
-	int i;
-
-	if (ab->dp->ppe.num_ppe_vp_entries == PPE_VP_ENTRIES_MAX) {
-		ath12k_err(ab, "Maximum ppe_vp count reached for soc\n");
-		return -ENOSR;
-	}
-
-	for (i = 0; i < PPE_VP_ENTRIES_MAX; i++) {
-		if (!ab->dp->ppe.ppe_vp_search_idx_tbl_set[i])
-			break;
-	}
-
-	if (i == PPE_VP_ENTRIES_MAX) {
-		WARN_ONCE(1, "All ppe vp table entries are in use!");
-		return -ENOSR;
-	}
-
-	ab->dp->ppe.num_ppe_vp_search_idx_entries++;
-	ab->dp->ppe.ppe_vp_search_idx_tbl_set[i] = 1;
-
-	return i;
-}
-
-static void ath12k_dp_ppeds_setup_vp_entry(struct ath12k_base *ab,
-					   struct ath12k *ar,
-					   struct ath12k_link_vif *arvif,
-					   struct ath12k_dp_ppe_vp_profile *ppe_vp_profile)
+void ath12k_dp_ppeds_setup_vp_entry(struct ath12k_base *ab,
+				    struct ath12k *ar,
+				    struct ath12k_link_vif *arvif,
+				    struct ath12k_dp_ppe_vp_profile *ppe_vp_profile)
 {
 	u8 link_id = arvif->link_id;
 	struct ath12k_dp_link_vif *dp_link_vif = &arvif->ahvif->dp_vif.dp_link_vif[link_id];
@@ -422,8 +193,8 @@ void ath12k_dp_ppeds_update_vp_entry(struct ath12k *ar,
 	spin_unlock(&ppe->ppe_vp_tbl_lock);
 }
 
-static int ath12k_ppeds_attach_link_apvlan_vif(struct ath12k_link_vif *arvif, int vp_num,
-					       struct ath12k_vlan_iface *vlan_iface, int link_id)
+int ath12k_ppeds_attach_link_apvlan_vif(struct ath12k_link_vif *arvif, int vp_num,
+					struct ath12k_vlan_iface *vlan_iface, int link_id)
 {
 	struct wireless_dev *wdev = ieee80211_vif_to_wdev(arvif->ahvif->vif);
 	struct ath12k *ar = arvif->ar;
@@ -437,6 +208,7 @@ static int ath12k_ppeds_attach_link_apvlan_vif(struct ath12k_link_vif *arvif, in
 	int ret;
 	enum nl80211_iftype vif_type;
 	u32 bank_config;
+	struct ath12k_ppeds_arch_ops *ppe_ops = ppe->ppe_ops;
 
 	if (!wdev)
 		return -EOPNOTSUPP;
@@ -449,7 +221,17 @@ static int ath12k_ppeds_attach_link_apvlan_vif(struct ath12k_link_vif *arvif, in
 
 	/*Allocate a ppe vp profile for a vap */
 	spin_lock(&ppe->ppe_vp_tbl_lock);
-	ppe_vp_profile_idx = ath12k_dp_ppeds_alloc_ppe_vp_profile(ab, &vp_profile, vp_num);
+	if (!ppe_ops->ath12k_dp_ppeds_alloc_ppe_vp_profile) {
+		ath12k_dbg(ab, ATH12K_DBG_PPE,
+			   "Profile alloc not registered:%s link %d ",
+			   wdev->netdev->name, arvif->link_id);
+		spin_unlock(&ppe->ppe_vp_tbl_lock);
+		return -EINVAL;
+	}
+
+	ppe_vp_profile_idx =
+			ppe_ops->ath12k_dp_ppeds_alloc_ppe_vp_profile(ab,
+				&vp_profile, vp_num);
 	if (!vp_profile) {
 		ath12k_dbg(ab, ATH12K_DBG_PPE,
 			   "flows for %s link %d will use SFE RFS flow distribution",
@@ -459,17 +241,32 @@ static int ath12k_ppeds_attach_link_apvlan_vif(struct ath12k_link_vif *arvif, in
 	}
 
 	if (vp_profile->ref_count == 1) {
-		ppe_vp_tbl_idx = ath12k_dp_ppeds_alloc_vp_tbl_entry(ab);
+		if (!ppe_ops->ath12k_dp_ppeds_alloc_vp_tbl_entry) {
+			ath12k_err(ab, "Alloc Not registered:vdev_id:%d", vdev_id);
+			ret = -ENOSR;
+			goto dealloc_vp_profile;
+		}
+		ppe_vp_tbl_idx =
+			ppe_ops->ath12k_dp_ppeds_alloc_vp_tbl_entry(ab,
+					ppe_vp_profile_idx);
 		if (ppe_vp_tbl_idx < 0) {
-			ath12k_err(ab, "Failed to allocate PPE VP idx for vdev_id:%d", vdev_id);
+			ath12k_err(ab, "Alloc failed PPE VP idx for vdev_id:%d", vdev_id);
 			ret = -ENOSR;
 			goto dealloc_vp_profile;
 		}
 
 		if (arvif->ahvif->vif->type == NL80211_IFTYPE_STATION) {
-			ppe_vp_search_tbl_idx = ath12k_dp_ppeds_alloc_vp_search_idx_tbl_entry(ab);
+			if (!ppe_ops->ath12k_dp_ppeds_alloc_vp_search_idx_tbl_entry) {
+				ath12k_err(ab, "Handle not present vdev_id:%d",
+					   vdev_id);
+				ret = -ENOSR;
+				goto dealloc_vp_profile;
+			}
+			ppe_vp_search_tbl_idx =
+				ppe_ops->ath12k_dp_ppeds_alloc_vp_search_idx_tbl_entry(ab,
+							ppe_vp_profile_idx);
 			if (ppe_vp_search_tbl_idx < 0) {
-				ath12k_err(ab,"Failed to allocate PPE VP search table idx for vdev_id:%d",
+				ath12k_err(ab, "Alloc failed vp srch tbl en vdev_id:%d",
 					   vdev_id);
 				ret = -ENOSR;
 				goto dealloc_vp_profile;
@@ -513,7 +310,14 @@ static int ath12k_ppeds_attach_link_apvlan_vif(struct ath12k_link_vif *arvif, in
 
 dealloc_vp_profile:
 	vif_type = arvif->ahvif->vif->type;
-	ath12k_dp_ppeds_dealloc_ppe_vp_profile(ab, ppe_vp_profile_idx, vif_type);
+	if (!ppe_ops->ath12k_dp_ppeds_dealloc_ppe_vp_profile) {
+		ath12k_err(ab, "Failed to dealloc vp profile:vdev_id:%d",
+				vdev_id);
+		spin_unlock(&ppe->ppe_vp_tbl_lock);
+		return ret;
+	}
+	ppe_ops->ath12k_dp_ppeds_dealloc_ppe_vp_profile(ab,
+			ppe_vp_profile_idx, vif_type);
 	spin_unlock(&ppe->ppe_vp_tbl_lock);
 
 	return ret;
@@ -608,6 +412,7 @@ int ath12k_ppeds_attach_link_vif(struct ath12k_link_vif *arvif, int vp_num,
 	int ret;
 	enum nl80211_iftype vif_type;
 	u32 bank_config;
+	struct ath12k_ppeds_arch_ops *ppe_ops = ppe->ppe_ops;
 
 	if (!wdev)
 		return -EOPNOTSUPP;
@@ -626,7 +431,16 @@ int ath12k_ppeds_attach_link_vif(struct ath12k_link_vif *arvif, int vp_num,
 
 	/*Allocate a ppe vp profile for a vap */
 	spin_lock(&ppe->ppe_vp_tbl_lock);
-	ppe_vp_profile_idx = ath12k_dp_ppeds_alloc_ppe_vp_profile(ab, &vp_profile, vp_num);
+	if (!ppe_ops->ath12k_dp_ppeds_alloc_ppe_vp_profile) {
+		ath12k_dbg(ab, ATH12K_DBG_PPE,
+			   "Alloc handle not present  %s link %d",
+			   wdev->netdev->name, arvif->link_id);
+		spin_unlock(&ppe->ppe_vp_tbl_lock);
+		return 0;
+	}
+	ppe_vp_profile_idx =
+		ppe_ops->ath12k_dp_ppeds_alloc_ppe_vp_profile(ab,
+				&vp_profile, vp_num);
 	if (!vp_profile) {
 		ath12k_dbg(ab, ATH12K_DBG_PPE,
 			   "flows for %s link %d will use SFE RFS flow distribution",
@@ -636,7 +450,14 @@ int ath12k_ppeds_attach_link_vif(struct ath12k_link_vif *arvif, int vp_num,
 	}
 
 	if (vp_profile->ref_count == 1) {
-		ppe_vp_tbl_idx = ath12k_dp_ppeds_alloc_vp_tbl_entry(ab);
+		if (!ppe_ops->ath12k_dp_ppeds_alloc_vp_tbl_entry) {
+			ath12k_err(ab, "Alloc failed vdev_id:%d", vdev_id);
+			ret = -ENOSR;
+			goto dealloc_vp_profile;
+		}
+		ppe_vp_tbl_idx =
+			ppe_ops->ath12k_dp_ppeds_alloc_vp_tbl_entry(ab,
+					ppe_vp_profile_idx);
 		if (ppe_vp_tbl_idx < 0) {
 			ath12k_err(ab, "Failed to allocate PPE VP idx for vdev_id:%d", vdev_id);
 			ret = -ENOSR;
@@ -644,7 +465,16 @@ int ath12k_ppeds_attach_link_vif(struct ath12k_link_vif *arvif, int vp_num,
 		}
 
 		if (arvif->ahvif->vif->type == NL80211_IFTYPE_STATION) {
-			ppe_vp_search_tbl_idx = ath12k_dp_ppeds_alloc_vp_search_idx_tbl_entry(ab);
+			if (!ppe_ops->ath12k_dp_ppeds_alloc_vp_search_idx_tbl_entry) {
+				ath12k_err(ab,
+					   "Failed entry alloc - vdev_id:%d",
+					   vdev_id);
+				ret = -ENOSR;
+				goto dealloc_vp_profile;
+			}
+			ppe_vp_search_tbl_idx =
+				ppe_ops->ath12k_dp_ppeds_alloc_vp_search_idx_tbl_entry(ab,
+						ppe_vp_profile_idx);
 			if (ppe_vp_search_tbl_idx < 0) {
 				ath12k_err(ab,
 					   "Failed to allocate PPE VP search table idx for vdev_id:%d", vdev_id);
@@ -731,7 +561,14 @@ int ath12k_ppeds_attach_link_vif(struct ath12k_link_vif *arvif, int vp_num,
 
 dealloc_vp_profile:
 	vif_type = arvif->ahvif->vif->type;
-	ath12k_dp_ppeds_dealloc_ppe_vp_profile(ab, ppe_vp_profile_idx, vif_type);
+	if (!ppe_ops->ath12k_dp_ppeds_dealloc_ppe_vp_profile) {
+		ath12k_err(ab, "Failed to dealloc vp profile:vdev_id:%d",
+				vdev_id);
+		spin_unlock(&ppe->ppe_vp_tbl_lock);
+		return ret;
+	}
+	ppe_ops->ath12k_dp_ppeds_dealloc_ppe_vp_profile(ab,
+			ppe_vp_profile_idx, vif_type);
 	spin_unlock(&ppe->ppe_vp_tbl_lock);
 
 	return ret;
@@ -800,7 +637,14 @@ void ath12k_ppeds_detach_link_apvlan_vif(struct ath12k_link_vif *arvif,
 	}
 
 	vif_type = arvif->ahvif->vif->type;
-	ath12k_dp_ppeds_dealloc_ppe_vp_profile(ab, ppe_vp_profile_idx, vif_type);
+	if (!ppe->ppe_ops->ath12k_dp_ppeds_dealloc_ppe_vp_profile) {
+		ath12k_err(ab, "Failed to dealloc vp profile");
+		vlan_iface->ppe_vp_profile_idx[link_id] = ATH12K_INVALID_VP_PROFILE_IDX;
+		spin_unlock(&ppe->ppe_vp_tbl_lock);
+		return;
+	}
+	ppe->ppe_ops->ath12k_dp_ppeds_dealloc_ppe_vp_profile(ab,
+			ppe_vp_profile_idx, vif_type);
 	vlan_iface->ppe_vp_profile_idx[link_id] = ATH12K_INVALID_VP_PROFILE_IDX;
 	ath12k_dbg(ab, ATH12K_DBG_PPE, "PPEDS vdev detach success vpnum %d  ppe_vp_profile_idx %d\n",
 	       vp_profile->vp_num, ppe_vp_profile_idx);
@@ -832,250 +676,17 @@ void ath12k_ppeds_detach_link_vif(struct ath12k_link_vif *arvif, int ppe_vp_prof
 	}
 
 	vif_type = arvif->ahvif->vif->type;
-	ath12k_dp_ppeds_dealloc_ppe_vp_profile(ab, ppe_vp_profile_idx, vif_type);
+	if (!ppe->ppe_ops->ath12k_dp_ppeds_dealloc_ppe_vp_profile) {
+		ath12k_err(ab, "Failed to dealloc vp profile");
+		spin_unlock(&ppe->ppe_vp_tbl_lock);
+		return;
+	}
+	ppe->ppe_ops->ath12k_dp_ppeds_dealloc_ppe_vp_profile(ab,
+			ppe_vp_profile_idx, vif_type);
 	ath12k_dbg(ab, ATH12K_DBG_PPE, "PPEDS vdev detach success vpnum %d  ppe_vp_profile_idx %d\n",
 		   vp_profile->vp_num, ppe_vp_profile_idx);
 	spin_unlock(&ppe->ppe_vp_tbl_lock);
 }
-
-int ath12k_ppeds_attach(struct ath12k_base *ab)
-{
-	int i, ret, ds_node_id;
-
-	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
-		return 0;
-
-	if (!ab->dp->ppe.nss_plugin_ops) {
-		ath12k_err(ab, "nss_plugin_ops not registered for device_id %d\n",
-			   ab->device_id);
-		return -EOPNOTSUPP;
-	}
-
-	ath12k_dp_ppeds_tx_cmem_init(ab, ab->dp);
-	ret = ath12k_dp_cc_ppeds_desc_init(ab);
-	if (ret) {
-		ath12k_err(ab, "Failed to allocate ppe-ds descriptors\n");
-		return -ENOMEM;
-	}
-
-	spin_lock_init(&ab->dp->ppe.ppe_vp_tbl_lock);
-
-	for (i = 0; i < PPE_VP_ENTRIES_MAX; i++) {
-		ab->dp->ppe.ppe_vp_tbl_registered[i] = 0;
-		ab->dp->ppe.ppe_vp_search_idx_tbl_set[i] = 0;
-		memset(&ab->dp->ppe.ppe_vp_profile[i], 0,
-		       sizeof(struct ath12k_dp_ppe_vp_profile));
-	}
-
-	ab->dp->ppe.num_ppe_vp_profiles = 0;
-	ab->dp->ppe.num_ppe_vp_entries = 0;
-
-	ds_node_id = ab->dp->ppe.nss_plugin_ops->ds_inst_alloc(ab->dp->ppe.ppeds_wlanops,
-							       sizeof(struct ath12k_base *));
-
-	if (ds_node_id < 0 || ds_node_id == PPE_VP_DS_INVALID_NODE_ID) {
-		ath12k_err(ab, "Failed to get DS node id for device_id %d\n",
-			   ab->device_id);
-		return -ENOSR;
-	}
-	ab->dp->ppe.ds_node_id = ds_node_id;
-	ds_node_map[ds_node_id] = ab;
-
-	WARN_ON(ab->dp->ppe.ppeds_soc_idx != -1);
-	/* dec ppeds_soc_idx to start from 0 */
-	ab->dp->ppe.ppeds_soc_idx = atomic_inc_return(&num_ppeds_nodes) - 1;
-
-	ath12k_info(ab,
-		   "PPEDS attach ab %px ppeds_soc_idx %d num_ppeds_nodes %d\n",
-		   ab, ab->dp->ppe.ppeds_soc_idx,
-		   atomic_read(&num_ppeds_nodes));
-
-	ret = ath12k_dp_ppeds_add_napi_ctxt(ab);
-	if (ret)
-		return -ENOSR;
-
-	ath12k_info(ab, "PPEDS attach success\n");
-
-	for (i = 0; i < ab->ag->num_devices; i++) {
-		ab->dp->ppe.ppeds_rx_idx[i] = kzalloc((sizeof(u16) * PPE_DS_TXCMPL_DEF_BUDGET),
-						      GFP_ATOMIC);
-		if (!ab->dp->ppe.ppeds_rx_idx[i]) {
-			ath12k_err(ab, "Failed to alloc mem ppeds_rx_desc\n");
-			goto err_ppeds_attach;
-		}
-	}
-
-	ab->dp->ppe.ppeds_rx_num_elem = PPE_DS_TXCMPL_DEF_BUDGET;
-
-	return 0;
-
-err_ppeds_attach:
-	ab->dp->ppe.ppeds_rx_num_elem = 0;
-	for (i = i - 1; i >= 0; i--) {
-		kfree(ab->dp->ppe.ppeds_rx_idx[i]);
-		ab->dp->ppe.ppeds_rx_idx[i] = NULL;
-	}
-
-	return -ENOMEM;
-}
-EXPORT_SYMBOL(ath12k_ppeds_attach);
-
-int ath12k_ppeds_detach(struct ath12k_base *ab)
-{
-	int i;
-
-	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
-		return 0;
-
-	if (!ab->dp->ppe.nss_plugin_ops) {
-		ath12k_err(ab, "nss_plugin_ops not registered for device_id %d\n",
-			   ab->device_id);
-		return -EOPNOTSUPP;
-	}
-
-	ath12k_dp_ppeds_del_napi_ctxt(ab);
-	ath12k_dp_cc_ppeds_desc_cleanup(ab);
-
-	/* free ppe-ds interrupts before freeing the instance */
-	ath12k_hif_ppeds_free_interrupts(ab);
-
-	ab->dp->ppe.nss_plugin_ops->ds_inst_free(ab->dp->ppe.ds_node_id);
-
-	ab->dp->ppe.ppeds_soc_idx = -1;
-	atomic_dec(&num_ppeds_nodes);
-
-	for (i = 0; i < PPE_VP_ENTRIES_MAX; i++) {
-		ab->dp->ppe.ppe_vp_tbl_registered[i] = 0;
-		ab->dp->ppe.ppe_vp_search_idx_tbl_set[i] = 0;
-		memset(&ab->dp->ppe.ppe_vp_profile[i], 0,
-		       sizeof(struct ath12k_dp_ppe_vp_profile));
-	}
-
-	ab->dp->ppe.num_ppe_vp_profiles = 0;
-	ab->dp->ppe.num_ppe_vp_entries = 0;
-
-	ath12k_dbg(ab, ATH12K_DBG_PPE, "PPEDS detach success\n");
-
-	if (ab->dp->ppe.ppeds_rx_num_elem) {
-		ab->dp->ppe.ppeds_rx_num_elem = 0;
-		for (i = 0; i < ab->ag->num_devices; i++) {
-			kfree(ab->dp->ppe.ppeds_rx_idx[i]);
-			ab->dp->ppe.ppeds_rx_idx[i] = NULL;
-		}
-	}
-
-	return 0;
-}
-EXPORT_SYMBOL(ath12k_ppeds_detach);
-
-int ath12k_dp_ppeds_start(struct ath12k_base *ab)
-{
-	struct ath12k_ppeds_napi *napi_ctxt = &ab->dp->ppe.ppeds_napi_ctxt;
-	struct ppe_ds_wlan_ctx_info_handle wlan_info_hdl;
-	bool umac_reset_inprogress;
-
-	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
-		return 0;
-
-	if (!ab->dp->ppe.nss_plugin_ops) {
-		ath12k_err(ab, "nss_plugin_ops not registered for device_id %d\n",
-			   ab->device_id);
-		return -EOPNOTSUPP;
-	}
-
-	umac_reset_inprogress = ath12k_dp_umac_reset_in_progress(ab);
-
-	if (!umac_reset_inprogress)
-		napi_enable(&napi_ctxt->napi);
-
-	ab->dp->ppe.ppeds_stopped = 0;
-	wlan_info_hdl.umac_reset_inprogress = 0;
-
-	if (ab->dp->ppe.nss_plugin_ops->ds_inst_start(&wlan_info_hdl,
-						      ab->dp->ppe.ds_node_id) != 0)
-		return -EINVAL;
-
-	ath12k_dbg(ab, ATH12K_DBG_PPE, "PPEDS start success device_id %d ds_node_id %d ppeds_soc_idx %d",
-		   ab->device_id, ab->dp->ppe.ds_node_id, ab->dp->ppe.ppeds_soc_idx);
-	return 0;
-}
-EXPORT_SYMBOL(ath12k_dp_ppeds_start);
-
-void ath12k_dp_ppeds_stop(struct ath12k_base *ab)
-{
-	struct ath12k_ppeds_napi *napi_ctxt = &ab->dp->ppe.ppeds_napi_ctxt;
-	struct ppe_ds_wlan_ctx_info_handle wlan_info_hdl;
-	bool umac_reset_in_progress;
-
-	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
-		return;
-
-	if (!ab->dp->ppe.nss_plugin_ops) {
-		ath12k_err(ab, "nss_plugin_ops not registered for device_id %d\n",
-			   ab->device_id);
-		return;
-	}
-
-	umac_reset_in_progress = ath12k_dp_umac_reset_in_progress(ab);
-
-	if (ab->dp->ppe.ppeds_stopped) {
-		ath12k_warn(ab, "PPE DS aleady stopped!\n");
-		return;
-	}
-
-	ab->dp->ppe.ppeds_stopped = 1;
-
-	if (!umac_reset_in_progress)
-		napi_disable(&napi_ctxt->napi);
-
-	wlan_info_hdl.umac_reset_inprogress = umac_reset_in_progress;
-
-	ab->dp->ppe.nss_plugin_ops->ds_inst_stop(&wlan_info_hdl,
-						 ab->dp->ppe.ds_node_id);
-
-	ath12k_dbg(ab, ATH12K_DBG_PPE, "PPEDS stop success\n");
-}
-EXPORT_SYMBOL(ath12k_dp_ppeds_stop);
-
-int ath12k_dp_ppeds_register_soc(struct ath12k_dp *dp, struct dp_ppe_ds_idxs *idx)
-{
-	struct ath12k_base *ab = dp->ab;
-	struct hal_srng *ppe2tcl_ring, *reo2ppe_ring;
-	struct ppe_ds_wlan_reg_info reg_info = {0};
-
-	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
-		return 0;
-
-	if (!ab->dp->ppe.nss_plugin_ops) {
-		ath12k_err(ab, "nss_plugin_ops not registered for device_id %d\n",
-			   ab->device_id);
-		return -EOPNOTSUPP;
-	}
-
-	ppe2tcl_ring = &ab->hal.srng_list[dp->ppe.ppe2tcl_ring.ring_id];
-	reo2ppe_ring =  &ab->hal.srng_list[dp->ppe.reo2ppe_ring.ring_id];
-
-	reg_info.ppe2tcl_ba = dp->ppe.ppe2tcl_ring.paddr;
-	reg_info.reo2ppe_ba = dp->ppe.reo2ppe_ring.paddr;
-	reg_info.ppe2tcl_num_desc = DP_PPE2TCL_RING_SIZE;
-	reg_info.reo2ppe_num_desc = DP_REO2PPE_RING_SIZE;
-
-	if (ab->dp->ppe.nss_plugin_ops->ds_inst_register(&reg_info,
-							 ab->dp->ppe.ds_node_id) != true) {
-		ath12k_err(ab, "ppeds not attached");
-		return -EINVAL;
-	}
-
-	idx->ppe2tcl_start_idx = reg_info.ppe2tcl_start_idx;
-	idx->reo2ppe_start_idx = reg_info.reo2ppe_start_idx;
-	ab->dp->ppe.ppeds_int_mode_enabled = reg_info.ppe_ds_int_mode_enabled;
-
-	ath12k_dbg(ab, ATH12K_DBG_PPE, "PPEDS register soc-success device_id %d ppe2tcl_start_idx 0x%x reo2ppe_start_idx 0x%x",
-		   ab->device_id, idx->ppe2tcl_start_idx, idx->reo2ppe_start_idx);
-
-	return 0;
-}
-
 
 void ath12k_hal_tx_config_rbm_mapping(struct ath12k_base *ab, u8 ring_num,
 				      u8 rbm_id, int ring_type)
@@ -1085,10 +696,10 @@ void ath12k_hal_tx_config_rbm_mapping(struct ath12k_base *ab, u8 ring_num,
 }
 EXPORT_SYMBOL(ath12k_hal_tx_config_rbm_mapping);
 
-static int ath12k_dp_srng_init_idx(struct ath12k_base *ab, struct dp_srng *ring,
-				   enum hal_ring_type type, int ring_num,
-				   int mac_id,
-				   int num_entries, u32 restore_idx)
+int ath12k_dp_srng_init_idx(struct ath12k_base *ab, struct dp_srng *ring,
+			    enum hal_ring_type type, int ring_num,
+			    int mac_id,
+			    int num_entries, u32 restore_idx)
 {
 	struct hal_srng_params params = { 0 };
 	bool cached = false;
@@ -1114,6 +725,7 @@ static int ath12k_dp_srng_init_idx(struct ath12k_base *ab, struct dp_srng *ring,
 			params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_RX;
 			break;
 	case HAL_WBM2SW_RELEASE:
+	case HAL_TX_COMPLETION:
 		if (ab->hw_params->hw_ops->dp_srng_is_tx_comp_ring(ring_num)) {
 			params.intr_batch_cntr_thres_entries =
 				HAL_SRNG_INT_BATCH_THRESHOLD_TX;
@@ -1153,10 +765,11 @@ static int ath12k_dp_srng_init_idx(struct ath12k_base *ab, struct dp_srng *ring,
 
 	return 0;
 }
+EXPORT_SYMBOL(ath12k_dp_srng_init_idx);
 
-static int ath12k_dp_srng_alloc(struct ath12k_base *ab, struct dp_srng *ring,
-				enum hal_ring_type type, int ring_num,
-				int num_entries)
+int ath12k_dp_srng_alloc(struct ath12k_base *ab, struct dp_srng *ring,
+			 enum hal_ring_type type, int ring_num,
+			 int num_entries)
 {
 	int entry_sz = ath12k_hal_srng_get_entrysize(ab, type);
 	int max_entries = ath12k_hal_srng_get_max_entries(ab, type);
@@ -1199,11 +812,12 @@ int ath12k_ppeds_dp_srng_alloc(struct ath12k_base *ab, struct dp_srng *ring,
 
 	return ret;
 }
+EXPORT_SYMBOL(ath12k_ppeds_dp_srng_alloc);
 
-static int ath12k_ppeds_dp_srng_init(struct ath12k_base *ab, struct dp_srng *ring,
-				     enum hal_ring_type type, int ring_num,
-				     int mac_id, int num_entries,
-				     u32 restore_idx)
+int ath12k_ppeds_dp_srng_init(struct ath12k_base *ab, struct dp_srng *ring,
+			      enum hal_ring_type type, int ring_num,
+			      int mac_id, int num_entries,
+			      u32 restore_idx)
 {
 	int ret;
 
@@ -1214,107 +828,7 @@ static int ath12k_ppeds_dp_srng_init(struct ath12k_base *ab, struct dp_srng *rin
 
 	return 0;
 }
-
-int ath12k_dp_srng_ppeds_setup(struct ath12k_base *ab)
-{
-	struct ath12k_dp *dp = ab->dp;
-	struct dp_ppe_ds_idxs restore_idx = {0};
-	int ret, size;
-
-	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
-		return 0;
-
-	if (ath12k_dp_umac_reset_in_progress(ab))
-		goto skip_ppeds_dp_srng_ring_alloc;
-
-	/* TODO: retain and use ring idx fetched from ppe for avoiding edma hang during SSR */
-	ret = ath12k_ppeds_dp_srng_alloc(ab, &dp->ppe.reo2ppe_ring, HAL_REO2PPE,
-					 0, DP_REO2PPE_RING_SIZE);
-	if (ret) {
-		ath12k_warn(ab, "failed to set up reo2ppe ring :%d\n", ret);
-		goto err;
-	}
-
-	/* TODO: retain and use ring idx fetched from ppe for avoiding edma hang during SSR */
-	ret = ath12k_ppeds_dp_srng_alloc(ab, &dp->ppe.ppe2tcl_ring, HAL_PPE2TCL,
-					 0, DP_PPE2TCL_RING_SIZE);
-	if (ret) {
-		ath12k_warn(ab, "failed to set up ppe2tcl ring :%d\n", ret);
-		goto err;
-	}
-
-	size = ath12k_hal_srng_get_entrysize(ab, HAL_WBM2SW_RELEASE) *
-					     DP_TX_COMP_RING_SIZE;
-	dp->ppe.ppeds_comp_ring.tx_status_head = 0;
-	dp->ppe.ppeds_comp_ring.tx_status_tail = DP_TX_COMP_RING_SIZE - 1;
-	dp->ppe.ppeds_comp_ring.tx_status = kmalloc(size, GFP_KERNEL);
-
-skip_ppeds_dp_srng_ring_alloc:
-	if (!dp->ppe.ppeds_comp_ring.tx_status) {
-		ath12k_err(ab, "PPE tx status completion buffer alloc failed\n");
-		ret = -ENOMEM;
-		goto err;
-	}
-
-	ret = ath12k_dp_ppeds_register_soc(dp, &restore_idx);
-	if (ret) {
-		ath12k_err(ab, "ppeds registration failed\n");
-		goto err;
-	}
-
-	/* TODO: retain and use ring idx fetched from ppe for avoiding edma hang during SSR */
-	ret = ath12k_ppeds_dp_srng_init(ab, &dp->ppe.reo2ppe_ring, HAL_REO2PPE,
-					0, 0, DP_REO2PPE_RING_SIZE,
-					restore_idx.reo2ppe_start_idx);
-	if (ret) {
-		ath12k_warn(ab, "failed to set up reo2ppe ring :%d\n", ret);
-		goto err;
-	}
-
-	ath12k_hal_reo_config_reo2ppe_dest_info(ab);
-
-	/* TODO: retain and use ring idx fetched from ppe for avoiding edma hang during SSR */
-	ret = ath12k_ppeds_dp_srng_init(ab, &dp->ppe.ppe2tcl_ring, HAL_PPE2TCL,
-					0, 0, DP_PPE2TCL_RING_SIZE,
-					restore_idx.ppe2tcl_start_idx);
-	if (ret) {
-		ath12k_warn(ab, "failed to set up ppe2tcl ring :%d\n", ret);
-		goto err;
-	}
-
-	/* TODO: retain and use ring idx fetched from ppe for avoiding edma hang during SSR */
-	ret = ath12k_dp_srng_setup(ab, &dp->ppe.ppeds_comp_ring.ppe_wbm2sw_ring,
-				   HAL_WBM2SW_RELEASE,
-				   HAL_WBM2SW_PPEDS_TX_CMPLN_RING_NUM, 0,
-				   DP_PPE_WBM2SW_RING_SIZE);
-	if (ret) {
-		ath12k_err(ab,
-			    "failed to set up wbm2sw ppeds tx completion ring :%d\n",
-			    ret);
-		goto err;
-	}
-	ath12k_hal_tx_config_rbm_mapping(ab, 0,
-					 HAL_WBM2SW_PPEDS_TX_CMPLN_MAP_ID,
-					 HAL_PPE2TCL);
-
-err:
-	/* caller takes care of calling ath12k_dp_srng_ppeds_cleanup */
-	return ret;
-}
-
-void ath12k_dp_srng_ppeds_cleanup(struct ath12k_base *ab)
-{
-	struct ath12k_dp *dp = ab->dp;
-
-	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
-		return;
-
-	ath12k_dp_srng_cleanup(ab, &dp->ppe.ppe2tcl_ring);
-	ath12k_dp_srng_cleanup(ab, &dp->ppe.reo2ppe_ring);
-	kfree(dp->ppe.ppeds_comp_ring.tx_status);
-	dp->ppe.ppeds_comp_ring.tx_status = NULL;
-	ath12k_dp_srng_cleanup(ab, &dp->ppe.ppeds_comp_ring.ppe_wbm2sw_ring);
-}
+EXPORT_SYMBOL(ath12k_ppeds_dp_srng_init);
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 int ath12k_ppe_rfs_get_core_mask(void)
@@ -1647,23 +1161,6 @@ void ath12k_dp_ppeds_service_enable_disable(struct ath12k_base *ab,
 							      enable);
 }
 EXPORT_SYMBOL(ath12k_dp_ppeds_service_enable_disable);
-
-void ath12k_dp_ppeds_interrupt_stop(struct ath12k_base *ab)
-{
-	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
-		return;
-
-	ath12k_hif_ppeds_irq_disable(ab, PPEDS_IRQ_REO2PPE);
-	ath12k_hif_ppeds_irq_disable(ab, PPEDS_IRQ_PPE_WBM2SW_REL);
-}
-EXPORT_SYMBOL(ath12k_dp_ppeds_interrupt_stop);
-
-void ath12k_dp_ppeds_interrupt_start(struct ath12k_base *ab)
-{
-	ath12k_hif_ppeds_irq_enable(ab, PPEDS_IRQ_REO2PPE);
-	ath12k_hif_ppeds_irq_enable(ab, PPEDS_IRQ_PPE_WBM2SW_REL);
-}
-EXPORT_SYMBOL(ath12k_dp_ppeds_interrupt_start);
 
 int ath12k_vif_get_vp_num(struct ath12k_vif *ahvif, struct net_device *dev)
 {

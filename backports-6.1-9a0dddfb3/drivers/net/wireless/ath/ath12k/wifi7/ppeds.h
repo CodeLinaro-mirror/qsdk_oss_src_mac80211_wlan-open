@@ -16,6 +16,8 @@
 #define HAL_TX_PPE_VP_CFG_TO_FW                 BIT(28)
 #define HAL_TX_PPE_VP_CFG_DROP_PREC_EN          BIT(29)
 
+#define HAL_TX_PPE_VP_WIFI7_ENTRIES_MAX 32
+
 extern struct ppe_ds_wlan_ops_v2 ppeds_wlanops_v2;
 extern struct ath12k_ppeds_arch_ops ath12k_wifi7_arch_ppeds_ops;
 #endif

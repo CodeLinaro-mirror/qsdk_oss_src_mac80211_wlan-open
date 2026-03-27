@@ -1100,7 +1100,7 @@ void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag, bool standby_
 			ath12k_hif_irq_disable(ab);
 			ath12k_hif_ce_irq_disable(ab);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-			ath12k_dp_ppeds_interrupt_stop(ab);
+			ab->dp->ppe.ppe_ops->ath12k_ppeds_interrupt_stop(ab);
 #endif
 			ath12k_qmi_firmware_stop(ab);
 			ath12k_core_cleanup(ab);
@@ -1849,8 +1849,7 @@ core_pdev_create:
 		ath12k_debugfs_pdev_create(ab);
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-		ath12k_hif_ppeds_irq_enable(ab, PPEDS_IRQ_REO2PPE);
-		ath12k_hif_ppeds_irq_enable(ab, PPEDS_IRQ_PPE_WBM2SW_REL);
+		ab->dp->ppe.ppe_ops->ath12k_ppeds_interrupt_start(ab);
 #endif
 
 		ath12k_hif_mgmt_irq_enable(ab);
@@ -4824,7 +4823,7 @@ int ath12k_core_dynamic_wsi_remap(struct ath12k_base *ab)
 		ath12k_hif_irq_disable(ab);
 		ath12k_hif_ce_irq_disable(ab);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-		ath12k_dp_ppeds_interrupt_stop(ab);
+		ab->dp->ppe.ppe_ops->ath12k_ppeds_interrupt_stop(ab);
 #endif
 
 		ath12k_hif_power_down(ab, false);

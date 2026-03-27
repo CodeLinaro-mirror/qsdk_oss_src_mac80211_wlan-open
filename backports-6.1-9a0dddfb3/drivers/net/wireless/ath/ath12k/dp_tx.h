@@ -61,7 +61,7 @@ void ath12k_dp_tx_comp_update_peer_stats(struct ath12k_dp_peer *peer,
 					 u16 tx_desc_flags, u8 link_id,
 					 u32 msdu_len);
 int ath12k_sdwf_reinject_handler(struct ath12k_base *ab, struct sk_buff *skb,
-				 struct htt_tx_wbm_completion *status_desc, u8 mac_id);
+				 struct htt_tx_completion *status_desc, u8 mac_id);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 struct ath12k_ppeds_tx_desc_info *
 ath12k_dp_ppeds_tx_assign_desc_nolock(struct ath12k_dp *dp);

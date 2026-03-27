@@ -280,10 +280,8 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 		ath12k_warn(ab, "failed to register nss plugin %d\n", ret);
 		goto fail_dp_bank_profiles_cleanup;
 	}
-#endif
 
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	ret = ath12k_ppeds_attach(ab);
+	ret = dp->ppe.ppe_ops->ath12k_ppeds_attach(ab);
 	if (ret) {
 		ath12k_warn(ab, "failed to attach PPE DS %d\n", ret);
 		goto fail_nss_plugin_unregister;
@@ -349,7 +347,7 @@ fail_cmn_srng_cleanup:
 
 fail_ppeds_detach:
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	ath12k_ppeds_detach(ab);
+	dp->ppe.ppe_ops->ath12k_ppeds_detach(ab);
 
 fail_nss_plugin_unregister:
 	ath12k_nss_plugin_unregister_ops(ab);
@@ -401,7 +399,7 @@ static void ath12k_wifi7_dp_op_device_deinit(struct ath12k_dp *dp)
 				    HAL_WBM_IDLE_LINK, &dp->wbm_idle_ring);
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	ath12k_ppeds_detach(ab);
+	dp->ppe.ppe_ops->ath12k_ppeds_detach(ab);
 #endif
 	ath12k_dp_cc_cleanup(ab);
 	ath12k_wifi7_dp_reoq_lut_cleanup(ab);

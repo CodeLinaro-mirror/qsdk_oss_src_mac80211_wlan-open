@@ -194,4 +194,7 @@ void ath12k_pci_ppeds_irq_enable(struct ath12k_base *ab, enum ppeds_irq_type typ
 void ath12k_pci_ppeds_irq_disable(struct ath12k_base *ab, enum ppeds_irq_type type);
 struct pci_dev *ath12k_pci_get_dev_by_ab(struct ath12k_base *ab);
 int ath12k_pci_get_link_status(struct pci_dev *pdev, u16 *speed, u16 *width);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+dma_addr_t ath12k_pci_ppeds_get_umac_reg_paddr(struct ath12k_base *ab, u32 offset);
+#endif
 #endif /* ATH12K_PCI_H */

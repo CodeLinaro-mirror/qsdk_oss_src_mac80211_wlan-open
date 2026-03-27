@@ -2051,6 +2051,7 @@ struct ath12k_base {
 
 	void __iomem *mem;
 	unsigned long mem_len;
+	dma_addr_t mem_pa;
 
 	void __iomem *mem_ce;
 	u32 ce_remap_base_addr;

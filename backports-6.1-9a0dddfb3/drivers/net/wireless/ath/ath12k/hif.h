@@ -54,6 +54,8 @@ struct ath12k_hif_ops {
 	void (*ppeds_free_interrupts)(struct ath12k_base *ab);
 	void (*ppeds_irq_enable)(struct ath12k_base *ab, enum ppeds_irq_type type);
 	void (*ppeds_irq_disable)(struct ath12k_base *ab, enum ppeds_irq_type type);
+	dma_addr_t (*ppeds_get_pci_window_umac_reg_paddr)(struct ath12k_base *ab,
+							u32 offset);
 #endif
 	void (*dp_umac_intr_line_reset)(struct ath12k_base *ab);
 	int (*dp_umac_reset_irq_config)(struct ath12k_base *ab);
@@ -424,6 +426,16 @@ static inline void ath12k_hif_ppeds_irq_disable(struct ath12k_base *ab, enum ppe
 	if (ab->hif.ops->ppeds_irq_disable)
 		ab->hif.ops->ppeds_irq_disable(ab, type);
 }
+
+
+static inline dma_addr_t ath12k_hif_ppeds_get_pci_window_umac_reg_paddr(
+				struct ath12k_base *ab, u32 offset)
+{
+	if (ab->hif.ops->ppeds_get_pci_window_umac_reg_paddr)
+		return ab->hif.ops->ppeds_get_pci_window_umac_reg_paddr(ab, offset);
+
+	return 0;
+}
 #else
 static inline int ath12k_hif_ppeds_register_interrupts(struct ath12k_base *ab, int type, int vector,
 						       int ring_num)
@@ -441,6 +453,11 @@ static inline void ath12k_hif_ppeds_irq_enable(struct ath12k_base *ab, enum pped
 
 static inline void ath12k_hif_ppeds_irq_disable(struct ath12k_base *ab, enum ppeds_irq_type type)
 {
+}
+static inline dma_addr_t ath12k_hif_ppeds_get_pci_window_umac_reg_paddr(
+				struct ath12k_base *ab, u32 offset)
+{
+	return 0;
 }
 #endif
 

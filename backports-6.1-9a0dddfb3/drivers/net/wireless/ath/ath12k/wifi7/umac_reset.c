@@ -79,8 +79,8 @@ static void ath12k_wifi7_umac_reset_handle_pre_reset(struct ath12k_base *ab)
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags)) {
 		ath12k_dp_ppeds_service_enable_disable(ab, true);
-		ath12k_dp_ppeds_interrupt_stop(ab);
-		ath12k_dp_ppeds_stop(ab);
+		ab->dp->ppe.ppe_ops->ath12k_ppeds_interrupt_stop(ab);
+		ab->dp->ppe.ppe_ops->ath12k_ppeds_stop(ab);
 		ath12k_dp_ppeds_service_enable_disable(ab, false);
 	}
 #endif
@@ -230,8 +230,8 @@ static void ath12k_wifi7_umac_reset_handle_post_reset_complete(struct ath12k_bas
 	ath12k_hif_irq_enable(ab);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags)) {
-		ath12k_dp_ppeds_start(ab);
-		ath12k_dp_ppeds_interrupt_start(ab);
+		ab->dp->ppe.ppe_ops->ath12k_ppeds_start(ab);
+		ab->dp->ppe.ppe_ops->ath12k_ppeds_interrupt_start(ab);
 	}
 #endif
 	ath12k_hif_mgmt_irq_enable(ab);
