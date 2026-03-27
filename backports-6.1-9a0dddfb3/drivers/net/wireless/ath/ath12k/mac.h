@@ -371,6 +371,10 @@ int ath12k_mac_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 void ath12k_mac_op_set_rekey_data(struct ieee80211_hw *hw,
 				  struct ieee80211_vif *vif,
 				  struct cfg80211_gtk_rekey_data *data);
+#ifdef CPTCFG_QCN_EXTN
+int ath12k_mac_set_muedca_mode(struct ieee80211_hw *hw, int radio_idx,
+			       u8 muedca_mode);
+#endif /* CPTCFG_QCN_EXTN */
 int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 			    struct ieee80211_vif *vif,
 			    struct ieee80211_sta *sta,

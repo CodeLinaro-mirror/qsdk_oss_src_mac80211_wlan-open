@@ -18347,6 +18347,11 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		ar->rts_threshold = param_value;
 	}
 
+#ifdef CPTCFG_QCN_EXTN
+	/* Initialize MU EDCA mode for the radio*/
+	ar->muedca_mode = NL80211_MUEDCA_FIRMWARE_MODE;
+#endif /* CPTCFG_QCN_EXTN */
+
 	ath12k_mac_ap_ps_recalc(ar);
 
 	/* for scan radio DP attach is not required as there
@@ -24173,6 +24178,76 @@ int ath12k_mac_op_erp(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	}
 }
 EXPORT_SYMBOL(ath12k_mac_op_erp);
+
+#ifdef CPTCFG_QCN_EXTN
+int ath12k_mac_set_muedca_mode(struct ieee80211_hw *hw, int radio_idx,
+			       u8 muedca_mode)
+{
+	int param_id = WMI_PDEV_PARAM_ENABLE_FW_DYNAMIC_HE_EDCA, ret = 0, i;
+	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
+	struct ath12k *ar;
+	u32 fw_mode = 0;
+	int ret_err;
+
+	lockdep_assert_wiphy(hw->wiphy);
+
+	if (radio_idx >= hw->wiphy->n_radio || radio_idx < -1)
+		return -EINVAL;
+
+	if (muedca_mode == NL80211_MUEDCA_FIRMWARE_MODE)
+		fw_mode = 1;
+
+	if (radio_idx != -1) {
+		/* Update MUEDCA mode in specified radio */
+		ar = ath12k_ah_to_ar(ah, radio_idx);
+		ret = ath12k_wmi_pdev_set_param(ar, param_id, fw_mode,
+						ar->pdev->pdev_id);
+		if (ret) {
+			ath12k_warn(ar->ab,
+				    "failed to set MUEDCA mode for pdev %d",
+				    ar->pdev->pdev_id);
+			return ret;
+		}
+
+		ar->muedca_mode = muedca_mode;
+		return 0;
+	}
+
+	/* Radio_index passed is -1, so set MUEDCA mode for all radios */
+	for_each_ar(ah, ar, i) {
+		ret = ath12k_wmi_pdev_set_param(ar, param_id, fw_mode,
+						ar->pdev->pdev_id);
+		if (ret) {
+			ath12k_warn(ar->ab,
+				    "failed to set MUEDCA mode for pdev %d",
+				    ar->pdev->pdev_id);
+			break;
+		}
+	}
+	if (!ret) {
+	/* Setting MU EDCA mode for all radios passed.*/
+		for_each_ar(ah, ar, i)
+			ar->muedca_mode = muedca_mode;
+		return 0;
+	}
+
+	/* MUEDCA mode setting failed, revert to the previous MUEDCA mode value */
+	for (i = i - 1; i >= 0; i--) {
+		ar = ath12k_ah_to_ar(ah, i);
+		ret_err = ath12k_wmi_pdev_set_param(ar, param_id, fw_mode,
+							ar->pdev->pdev_id);
+
+		if (ret_err)
+			ath12k_warn(ar->ab,
+				    "failed to restore MUEDCA mode for pdev %d",
+				    ar->pdev->pdev_id);
+	}
+
+	return ret;
+}
+EXPORT_SYMBOL(ath12k_mac_set_muedca_mode);
+#endif /* CPTCFG_QCN_EXTN */
+
 
 /**
  * ath12k_disable_chans_outside_limit - disable channels outside the freq limits
