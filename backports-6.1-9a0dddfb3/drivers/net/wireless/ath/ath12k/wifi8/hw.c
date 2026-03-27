@@ -196,6 +196,22 @@ static struct ath12k_hw_ring_mask ath12k_wifi8_hw_ring_mask_qcn9625 = {
 		0, 0, 0, 0,
 		ATH12K_HOST2RXMON_RING_MASK_0,
 	},
+	/* Group 13 */
+	.tx_peer_telemetry = {
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		0,
+		ATH12K_TX_PEER_TELEMETRY_RING_MASK
+	},
+	.rx_peer_telemetry = {
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		0,
+		ATH12K_RX_PEER_TELEMETRY_RING_MASK
+	},
+
 	/* Group 19-21 */
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	.ppe2tcl = {

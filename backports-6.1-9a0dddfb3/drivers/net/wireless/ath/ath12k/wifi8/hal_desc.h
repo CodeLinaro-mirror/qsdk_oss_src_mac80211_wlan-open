@@ -2793,4 +2793,175 @@ struct hal_sam_cmd_status {
 	struct hal_uniform_sam_status_hdr status_hdr;
 	__le32 reserved_1a;
 };
+
+#define MAX_TX_PEER_BAND	5
+#define MAX_RX_PEER_BAND	5
+
+#define TX_PEER_BAND_TELEMETRY_STATS_INFO0_LOWER_SUCCESS_BYTES	GENMASK(31, 0)
+#define TX_PEER_BAND_TELEMETRY_STATS_INFO1_UPPER_SUCCESS_BYTES	GENMASK(1, 0)
+#define TX_PEER_BAND_TELEMETRY_STATS_INFO1_NUM_SUCCESS_PACKETS	GENMASK(31, 7)
+#define TX_PEER_BAND_TELEMETRY_STATS_INFO2_NUM_RETRANSMISSIONS	GENMASK(24, 0)
+#define TX_PEER_BAND_TELEMETRY_STATS_INFO4_LOWER_SUM_ACK_RSSI	GENMASK(31, 0)
+#define TX_PEER_BAND_TELEMETRY_STATS_INFO5_UPPER_SUM_ACK_RSSI	BIT(0)
+#define TX_PEER_BAND_TELEMETRY_STATS_INFO5_PPDU_COUNT		GENMASK(22, 1)
+#define TX_PEER_BAND_TELEMETRY_STATS_INFO5_UPPER_SUM_PHY_RATES	GENMASK(31, 25)
+#define TX_PEER_BAND_TELEMETRY_STATS_INFO6_LOWER_SUM_PHY_RATES	GENMASK(31, 0)
+
+/* tx_peer_band_stats
+ *
+ * tx_peer_band_stats: indicate peer_id of the packet
+ * success_bytes: tx successful packets bytes per window per peer per band
+ * num_success_packets: no of successful packets per window per peer per band
+ * num_retransmissions: no of retransmissions per window per peer per band
+ * sum_of_ack_rssi: signed sum of ack rssi per window per peer per band
+ * ppdu_count: no of ppdu for ack rrsi average and transmit phy rate
+ * sum_of_phy_rates: sum of tx phy rates per window per peer per band
+ */
+struct tx_peer_band_telemetry {
+	__le32 info0;
+	__le32 info1;
+	__le32 info2;
+	__le32 info3;
+	__le32 info4;
+	__le32 info5;
+	__le32 info6;
+} __packed;
+
+#define TX_PEER_TELEMETRY_DESC_INFO0_STATS_ID		GENMASK(10, 0)
+#define TX_PEER_TELEMETRY_DESC_INFO0_NUM_WINDOWS		GENMASK(13, 11)
+#define TX_PEER_TELEMETRY_DESC_INFO0_PEER_STATS_SIGNATURE	GENMASK(31, 16)
+#define TX_PEER_TELEMETRY_DESC_LOWER_FAIL_BYTES			GENMASK(31, 0)
+#define TX_PEER_TELEMETRY_DESC_INFO1_UPPER_FAIL_BYTES		GENMASK(1, 0)
+#define TX_PEER_TELEMETRY_DESC_INFO1_UPPER_DROP_BYTES		GENMASK(31, 30)
+#define TX_PEER_TELEMETRY_DESC_LOWER_DROP_BYTES			GENMASK(31, 0)
+#define TX_PEER_TELEMETRY_DESC_NUM_FAIL_PACKETS			GENMASK(24, 0)
+#define TX_PEER_TELEMETRY_DESC_NUM_DROPPED1_PACKETS		GENMASK(24, 0)
+#define TX_PEER_TELEMETRY_DESC_NUM_DROPPED2_PACKETS		GENMASK(24, 0)
+#define TX_PEER_TELEMETRY_DESC_NUM_RETRIED_PACKETS		GENMASK(24, 0)
+#define TX_PEER_TELEMETRY_DESC_INFO2_RING_ID			GENMASK(27, 20)
+#define TX_PEER_TELEMETRY_DESC_INFO_LOOPING_COUNT		GENMASK(31, 28)
+
+/* tx_peer_telemetry_desc
+ * stats_id: indicate TASC stats_id of the packet.
+ * num_windows: The number of windows the stats are reported for -1, in case
+ *	of back-pressure and in case of no backpressure this will be zero.
+ * peer_stats_signature: legal 0x3333
+ * tx_peer_band_stats: per-peer per-band stats information for all bands
+ * fail_bytes: tx failed packet bytes per window per peer
+ * drop_bytes: tx dropped packets bytes per window per peer
+ * num_fail_packets: no of tx failed packets per window per peer
+ * num_dropped1_packets: no of tx dropped packets with reason set 1, per
+ *	window per peer
+ * num_dropped2_packets: no of tx drooped packets with reason set 2, per
+ *	window per peer
+ * num_tried_packets: no of retransmitted packets per window per peer
+ * ring_id: buffer pointer ring ID
+ * looping_count: a count values that indicates the no of times the producer
+ *	of entries into the ring has looped around the ring.
+ */
+struct tx_peer_telemetry_desc {
+	__le32 info0;
+	struct tx_peer_band_telemetry peer_band[MAX_TX_PEER_BAND];
+	__le32 lower_fail_bytes;
+	__le32 info1;
+	__le32 lower_drop_bytes;
+	__le32 num_fail_packets;
+	__le32 num_dropped1_packets;
+	__le32 num_dropped2_packets;
+	__le32 num_retried_packets;
+	__le32 info2;
+} __packed;
+
+#define RX_PEER_BAND_TELEMETRY_STATS_INFO0_LOWER_SUCCESS_BYTES		GENMASK(31, 0)
+#define RX_PEER_BAND_TELEMETRY_STATS_INFO1_UPPER_SUCCESS_BYTES		GENMASK(2, 0)
+#define RX_PEER_BAND_TELEMETRY_STATS_INFO1_UPPER_SUCCESS_GCAST_BYTES	GENMASK(31, 29)
+#define RX_PEER_BAND_TELEMETRY_STATS_INFO2_LOWER_SUCCESS_GCAST_BYTES	GENMASK(31, 0)
+#define RX_PEER_BAND_TELEMETRY_STATS_INFO3_LOWER_FAIL_MPDU_BYTES	GENMASK(31, 0)
+#define RX_PEER_BAND_TELEMETRY_STATS_INFO4_UPPER_FAIL_MPDU_BYTES	GENMASK(2, 0)
+#define RX_PEER_BAND_TELEMETRY_STATS_INFO4_NUM_SUCES_FST_TRY_UCAST_PKT	GENMASK(31, 6)
+#define RX_PEER_BAND_TELEMETRY_STATS_INFO5_NUM_SUCES_RETRIED_UCAST_PKT	GENMASK(25, 0)
+#define RX_PEER_BAND_TELEMETRY_STATS_INFO6_NUM_SUCES_GCAST_PKT		GENMASK(25, 0)
+#define RX_PEER_BAND_TELEMETRY_STATS_INFO7_NUM_FAILED_MPDUS		GENMASK(25, 0)
+#define RX_PEER_BAND_TELEMETRY_STATS_INFO8_NUM_UCAST_DROPPED1_PKTS	GENMASK(25, 0)
+#define RX_PEER_BAND_TELEMETRY_STATS_INFO9_LOWER_SUM_RSSIS		GENMASK(31, 0)
+#define RX_PEER_BAND_TELEMETRY_STATS_INFO10_UPPER_SUM_RSSIS		GENMASK(1, 0)
+#define RX_PEER_BAND_TELEMETRY_STATS_INFO10_PPDU_COUNT			GENMASK(23, 2)
+#define RX_PEER_BAND_TELEMETRY_STATS_INFO10_UPPER_SUM_PHY_RATES		GENMASK(31, 24)
+#define RX_PEER_BAND_TELEMETRY_STATS_INFO11_LOWER_SUM_PHY_RATES		GENMASK(31, 0)
+
+/* rx_peer_band_stats
+ * success_ucast_bytes: rx successful unicast packet bytes per window per
+ *	peer per band
+ * success_gcast_bytes: rx successful multicast/broadcast packet bytes per
+ *	window per peer per band
+ * fail_mpdu_bytes: rx failed mpdu bytes per window per peer per band
+ * num_success_first_try_ucast_packets: no of rx successful unicast packets
+ *	with retry=0 per window per peer per band
+ * num_success_retried_ucast_packets: no of rx successful unicast packets
+ *	with retry=1 per window per peer per band
+ * num_success_gcast_packets: no of rx successful multicast/broadcast
+ *	packets per window per peer per band
+ * num_failed_mpdus: no of rx failed mpdus per window per peer per band
+ * num_ucast_dropped1_packets: no of rx dropped unicast packets per window
+ *	per peer per band
+ * sum_rssi: signed sum of rx rssi per window per peer per band
+ * ppdu_count: no of ppdu for rrsi average and rx phy rate average
+ * sum_of_phy_rates: sum of rx phy rates per window per peer per band
+ */
+
+struct rx_peer_band_telemetry {
+	__le32 info0;
+	__le32 info1;
+	__le32 info2;
+	__le32 info3;
+	__le32 info4;
+	__le32 info5;
+	__le32 info6;
+	__le32 info7;
+	__le32 info8;
+	__le32 info9;
+	__le32 info10;
+	__le32 info11;
+} __packed;
+
+#define RX_PEER_TELEMETRY_DESC_INFO0_STATS_ID		GENMASK(10, 0)
+#define RX_PEER_TELEMETRY_DESC_INFO0_NUM_WINDOWS		GENMASK(13, 11)
+#define RX_PEER_TELEMETRY_DESC_INFO0_PEER_STATS_SIGNATURE	GENMASK(31, 16)
+#define RX_PEER_TELEMETRY_DESC_INFO1_UPPER_DROP_UCAST_BYTES	GENMASK(2, 0)
+#define RX_PEER_TELEMETRY_DESC_INFO1_UPPER_DRP_GCAST_BYTES	GENMASK(31, 29)
+#define RX_PEER_TELEMETRY_DESC_NUM_UCAST_DROPPED2_PACKETS	GENMASK(25, 0)
+#define RX_PEER_TELEMETRY_DESC_NUM_GCAST_DROPPED_PACKETS	GENMASK(25, 0)
+#define RX_PEER_TELEMETRY_DESC_INFO2_RING_ID			GENMASK(27, 20)
+#define RX_PEER_TELEMETRY_DESC_INFO2_LOOPING_COUNT		GENMASK(31, 28)
+
+/* rx_peer_telemetry_desc
+ * stats_id: indicate TASC stats_id of the packet.
+ * num_windows: The number of windows the stats are reported for -1, in case
+ *	of back-pressure and in case of no backpressure this will be zero.
+ * peer_stats_signature: legal 0x3333
+ * rx_peer_band_stats: per-peer per-band stats information for all bands
+ * drop_ucast_bytes: rx dropped unicast packet bytes per window per peer
+ * drop_gcast_bytes: rx_dropped multicast/broadcast packet bytes per window
+ *	per peer
+ * num_ucast_dropped2_packets: no of rx dropped unicast packets per window
+ *	per peer
+ * num_gcast_dropped_packets: no of rx dropped multicast/broadcast packets
++ * per window per peer
+ * ring_id: buffer pointer ring ID
+ * looping_count: a count values that indicates the no of times the producer
+ *	of entries into the ring has looped around the ring.
+ */
+
+struct rx_peer_telemetry_desc {
+	__le32 info0;
+	struct rx_peer_band_telemetry peer_band[MAX_RX_PEER_BAND];
+	__le32 lower_drop_ucast_bytes;
+	__le32 info1;
+	__le32 lower_drop_gcast_bytes;
+	__le32 num_ucast_dropped2_packets;
+	__le32 num_gcast_dropped_packets;
+	__le32 reserved_info0;
+	__le32 info2;
+} __packed;
+
 #endif /* ATH12K_HAL_DESC_H */

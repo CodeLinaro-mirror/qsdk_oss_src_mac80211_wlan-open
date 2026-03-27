@@ -294,6 +294,8 @@ int ath12k_wifi8_hal_tx_msdu_queue_setup(struct ath12k_dp_hw_group *dp_hw_grp,
 					 HAL_TX_MSDU_FLOW_MED_DROP_THRESHOLD) |
 			le32_encode_bits(ATH12K_WIFI_DESC_HARD_DROP_THRESHOLD,
 					 HAL_TX_MSDU_FLOW_HARD_DROP_THRESHOLD);
+	msduq->info17 = le32_encode_bits(ti->stats_id,
+					 HAL_TX_MSDU_FLOW_TQM_STATS_ID);
 
 	ath12k_core_dma_sync_single_for_device(dev, ti->paddr,
 					       MSDU_STRUCT_SZ,
@@ -678,6 +680,8 @@ int ath12k_wifi8_hal_tx_mpdu_queue_setup(struct ath12k_dp_hw_group *dp_hw_grp,
 					HAL_TX_MPDU_QUEUE_HEAD_LINK0_ID) |
 		       le32_encode_bits(ti->link_id1, HAL_TX_MPDU_QUEUE_HEAD_LINK1_ID) |
 		       le32_encode_bits(ti->link_id2, HAL_TX_MPDU_QUEUE_HEAD_LINK2_ID);
+	mpduq->info17 = le32_encode_bits(ti->stats_id,
+					 HAL_TX_MPDU_QUEUE_HEAD_TQM_PER_MLO_STATS_ID);
 
 	mpduq->info21 = le32_encode_bits(ti->mpduq_sam_id, HAL_TX_MPDU_QUEUE_HEAD_SAM_ID);
 
