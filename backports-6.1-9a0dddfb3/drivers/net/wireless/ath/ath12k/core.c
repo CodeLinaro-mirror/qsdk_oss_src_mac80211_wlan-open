@@ -2427,13 +2427,13 @@ static void ath12k_mac_peer_ab_disassoc(struct ath12k_base *ab)
 	spin_lock_bh(&ab->dp->dp_lock);
 	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
 
-		if (!peer->vif)
+		if (!ath12k_dp_link_peer_get_vif(peer))
 			continue;
 
 		/* In case of STA Vif type,
 		 * report disconnect will be sent during sta_restart work.
 		 */
-		if (peer->vif->type == NL80211_IFTYPE_STATION)
+		if (ath12k_dp_link_peer_get_vif_type(peer) == NL80211_IFTYPE_STATION)
 			continue;
 
 		sta = peer->sta;
@@ -3384,7 +3384,7 @@ static void ath12k_core_peer_disassoc(struct ath12k_hw_group *ag,
 
 		spin_lock_bh(&ab->dp->dp_lock);
 		list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
-			if (!peer->sta || !peer->vif)
+			if (!peer->sta || !ath12k_dp_link_peer_get_vif(peer))
 				continue;
 
 			/* Allow sending disassoc to legacy peer
@@ -5540,7 +5540,7 @@ void ath12k_telemetry_notify_breach(u8 *mac_addr, u8 svc_id, u8 param,
 			spin_lock_bh(&ab->dp->dp_lock);
 			peer = ath12k_dp_link_peer_find_by_addr(ab->dp, mac_addr);
 			if (peer) {
-				vif = peer->vif;
+				vif = ath12k_dp_link_peer_get_vif(peer);
 				if (peer->mlo) {
 					ether_addr_copy(mld_addr_buf, peer->ml_addr);
 					mld_addr = mld_addr_buf;
@@ -5602,7 +5602,7 @@ void ath12k_rssi_rate_notify_breach_event(u8 *mac_addr, u8 breach_type,
 			spin_lock_bh(&dp->dp_lock);
 			peer = ath12k_dp_link_peer_find_by_addr(dp, mac_addr);
 			if (peer) {
-				vif = peer->vif;
+				vif = ath12k_dp_link_peer_get_vif(peer);
 				if (peer->mlo) {
 					ether_addr_copy(mld_addr_buf, peer->ml_addr);
 					mld_addr = mld_addr_buf;

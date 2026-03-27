@@ -505,8 +505,8 @@ void ath12k_qos_stats_update(struct ath12k *ar, struct sk_buff *skb,
 			return;
 		}
 
-		if (link_peer->vif) {
-			ahvif = ath12k_vif_to_ahvif(link_peer->vif);
+		if (ath12k_dp_peer_get_vif(mld_peer)) {
+			ahvif = ath12k_vif_to_ahvif(ath12k_dp_peer_get_vif(mld_peer));
 		} else {
 			ath12k_err(ar->ab, "vif not present with link_id: %u\n",
 				   link_id);
@@ -2444,14 +2444,13 @@ static void ath12k_dp_tx_update_tid_stats(struct ath12k_dp *dp,
 					  u32 peer_id,
 					  int reason)
 {
-	struct ath12k_dp_link_peer *link_peer;
+	struct ath12k_dp_peer *dp_peer;
 	struct ath12k_vif *ahvif;
 	u8 tid;
 
-	link_peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev,
-							     peer_id);
-	if (link_peer && link_peer->vif) {
-		ahvif = ath12k_vif_to_ahvif(link_peer->vif);
+	dp_peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, peer_id);
+	if (dp_peer && ath12k_dp_peer_get_vif(dp_peer)) {
+		ahvif = ath12k_vif_to_ahvif(ath12k_dp_peer_get_vif(dp_peer));
 		if (ahvif) {
 			tid = skb->priority & IEEE80211_QOS_CTL_TID_MASK;
 			ath12k_tid_tx_stats(ahvif, tid, skb->len, reason);
@@ -2934,14 +2933,14 @@ void ath12k_ppeds_tx_update_stats(struct ath12k *ar, int skb_len,
 	rcu_read_lock();
 
 	peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev, ts.peer_id);
-	if (unlikely(!peer || !peer->sta || !peer->vif)) {
+	if (unlikely(!peer || !peer->sta || !ath12k_dp_link_peer_get_vif(peer))) {
 		rcu_read_unlock();
 		return;
 	}
 
 	if (ath12k_dp_stats_enabled(dp_pdev) &&
 	    ath12k_tid_stats_enabled(dp_pdev)) {
-		ahvif = ath12k_vif_to_ahvif(peer->vif);
+		ahvif = ath12k_vif_to_ahvif(ath12k_dp_link_peer_get_vif(peer));
 		if (tx_drop) {
 			ath12k_tid_tx_drop_stats(ahvif, ts.tid, skb_len,
 						 reason);

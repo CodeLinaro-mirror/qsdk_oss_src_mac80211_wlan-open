@@ -10950,7 +10950,7 @@ static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 		goto skip_mgmt_stats;
 	}
 
-	vif = peer->vif;
+	vif = ath12k_dp_link_peer_get_vif(peer);
 
 	spin_unlock_bh(&dp->dp_lock);
 
@@ -11290,7 +11290,7 @@ static void ath12k_peer_sta_kickout_event(struct ath12k_base *ab, struct sk_buff
 		goto exit;
 	}
 
-	ahvif = ath12k_vif_to_ahvif(peer->vif);
+	ahvif = ath12k_vif_to_ahvif(ath12k_dp_link_peer_get_vif(peer));
 
 	if (peer->mlo)
 		sta = ieee80211_find_sta_by_link_addrs(ar->ah->hw, arg.mac_addr,

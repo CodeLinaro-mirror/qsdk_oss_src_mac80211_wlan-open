@@ -1708,7 +1708,8 @@ int ath12k_mac_partner_peer_cleanup(struct ath12k_base *ab)
 		list_for_each_entry_safe(peer, tmp, &partner_ab->dp->peers, list) {
 			int ix, pdv_id;
 
-			if (!peer->sta || !peer->mlo || !peer->vif)
+			if (!peer->sta || !peer->mlo ||
+			    !ath12k_dp_link_peer_get_vif(peer))
 				continue;
 
 			link_id = peer->link_id;
@@ -1718,7 +1719,7 @@ int ath12k_mac_partner_peer_cleanup(struct ath12k_base *ab)
 			arsta = wiphy_dereference(wiphy, ahsta->link[link_id]);
 
 			/* get arvif */
-			vif = peer->vif;
+			vif = ath12k_dp_link_peer_get_vif(peer);
 			ahvif = (struct ath12k_vif *)vif->drv_priv;
 			/* TODO: re-write this function or check if a data
 			 * structure needs to be modified to make a critical
@@ -1763,13 +1764,14 @@ int ath12k_mac_partner_peer_cleanup(struct ath12k_base *ab)
 				peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp,
 										    vid,
 										    addr);
-				if (!peer || !peer->sta || !peer->mlo || !peer->vif) {
+				if (!peer || !peer->sta || !peer->mlo ||
+				    !ath12k_dp_link_peer_get_vif(peer)) {
 					spin_unlock_bh(&dp->dp_lock);
 					continue;
 				}
 
 				link_id = peer->link_id;
-				vif = peer->vif;
+				vif = ath12k_dp_link_peer_get_vif(peer);
 				ahvif = (struct ath12k_vif *)vif->drv_priv;
 
 				/* get arsta */
@@ -12343,13 +12345,15 @@ static void ath12k_sta_set_4addr_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 			arsta->ast_hash = peer->ast_hash;
 			arsta->ast_idx = peer->hw_peer_id;
 			if (peer->dp_peer) {
-				peer->dp_peer->vdev_type_4addr |= BIT(peer->vif->type);
+				peer->dp_peer->vdev_type_4addr |=
+					BIT(ath12k_dp_link_peer_get_vif_type(peer));
 				peer->dp_peer->is_reset_mcbc = true;
 				peer->dp_peer->use_4addr = true;
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 				peer->dp_peer->ppe_vp_num = ahsta->ppe_vp_num;
 #endif
-				if (peer->vif->type == NL80211_IFTYPE_AP)
+				if (ath12k_dp_link_peer_get_vif_type(peer) ==
+								NL80211_IFTYPE_AP)
 					peer->dp_peer->dev = peer->dp_peer->sta->dev;
 			}
 		}

@@ -795,7 +795,6 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 	peer->pdev_idx = ar->pdev_idx;
 	peer->sta = sta;
-	peer->vif = vif;
 	peer->is_bridge_peer = arg->mlo_bridge_peer;
 
 	if (vif->type == NL80211_IFTYPE_STATION) {

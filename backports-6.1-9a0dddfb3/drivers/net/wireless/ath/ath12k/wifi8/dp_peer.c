@@ -106,6 +106,7 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 	dp_peer->sta_id = ATH12K_STA_ID_INVALID;
 	ether_addr_copy(dp_peer->addr, addr);
 	dp_peer->sta = params->sta;
+	dp_peer->vif = vif;
 	dp_peer->is_mlo = params->is_mlo;
 	dp_peer->peer_id = ath12k_wifi8_peer_id_alloc(dp_hw);
 	if (dp_peer->peer_id == ATH12K_MLO_PEER_ID_INVALID) {

@@ -976,9 +976,9 @@ static void ath12k_dp_mon_check_rssi_deauth(struct ath12k_dp_link_peer *peer,
 
 	ath12k_generic_dbg(ATH12K_DBG_PEER, ATH12K_DBG_L1,
 			   "peer: (%pM vif type: %d low rssi count: %d), cfg (en: %d thres %d grace: %d) last rssi: %d\n",
-			   peer->addr, peer->vif->type, peer->rssi_mon.low_rssi_count,
-			   cfg->enabled, cfg->rssi_threshold, cfg->grace_samples,
-			   signal_dbm);
+			   peer->addr, ath12k_dp_link_peer_get_vif_type(peer),
+			   peer->rssi_mon.low_rssi_count, cfg->enabled,
+			   cfg->rssi_threshold, cfg->grace_samples, signal_dbm);
 
 	peer->rssi_mon.last_rssi = signal_dbm;
 
@@ -1000,7 +1000,7 @@ static void ath12k_dp_mon_check_rssi_deauth(struct ath12k_dp_link_peer *peer,
 	if (peer->rssi_mon.low_rssi_count == cfg->grace_samples) {
 		ath12k_generic_dbg(ATH12K_DBG_PEER, ATH12K_DBG_L1,
 				   "Enqueue peer for deauth: (%pM vif type: %d low rssi count: %d), cfg (en: %d thres %d grace: %d) last rssi: %d\n",
-				   peer->addr, peer->vif->type,
+				   peer->addr, ath12k_dp_link_peer_get_vif_type(peer),
 				   peer->rssi_mon.low_rssi_count,
 				   cfg->enabled, cfg->rssi_threshold,
 				   cfg->grace_samples, signal_dbm);
@@ -2323,9 +2323,9 @@ static inline void ath12k_pdev_dp_iterate_peer(struct ath12k_base *ab,
                return;
        ar = pdev->ar;
        spin_lock_bh(&ab->dp->dp_lock);
-       list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
-               if (!peer->vif)
-                       continue;
+	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
+		if (!ath12k_dp_link_peer_get_vif(peer))
+			continue;
 
                sta = peer->sta;
                if (!sta)
