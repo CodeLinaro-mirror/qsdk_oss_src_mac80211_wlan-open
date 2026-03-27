@@ -44,6 +44,7 @@
 #include "hal.h"
 #include "mgmt_rx.h"
 #include "qcn_extns/ath12k_cmn_extn.h"
+#include "qcn_extns/ipa/dp_ipa_pub.h"
 
 #define CHAN2G(_channel, _freq, _flags) { \
 	.band                   = NL80211_BAND_2GHZ, \
@@ -1896,6 +1897,7 @@ void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 	num_tids = ab->hal.hal_params->num_tids;
 	spin_lock_bh(&dp->dp_lock);
 	list_for_each_entry_safe(peer, tmp, &dp->peers, list) {
+		ath12k_dp_ipa_peer_notify(ar, peer, NULL, peer->vdev_id, false);
 		/*Skip this for non primary_links and vdev peers*/
 		if (ath12k_dp_link_peer_get_sta(peer) && peer->dp_peer &&
 		    peer->primary_link) {
@@ -2462,6 +2464,7 @@ int ath12k_mac_vdev_stop(struct ath12k_link_vif *arvif)
 				 "CAC Stopped for vdev %d\n",
 				arvif->vdev_id);
 	}
+	ath12k_dp_ipa_vif_notify(arvif, false, false);
 
 	return 0;
 err:
@@ -20761,6 +20764,8 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
 		ar->dp.stats.telemetry_stats.sta_vap_exist = 1;
+
+	ath12k_dp_ipa_vif_notify(arvif, restart, true);
 
 	return 0;
 }

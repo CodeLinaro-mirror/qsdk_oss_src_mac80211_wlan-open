@@ -21,6 +21,7 @@
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 #include "qcn_extns/ipa/dp_ipa.h"
 #endif
+#include "qcn_extns/ipa/dp_ipa_pub.h"
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #include "ppe.h"
 #endif
@@ -230,6 +231,8 @@ void ath12k_dp_peer_cleanup(struct ath12k *ar, int vdev_id, const u8 *addr)
 		return;
 	}
 
+	ath12k_dp_ipa_peer_notify(ar, peer, NULL, vdev_id, false);
+
 	ath12k_dp_rx_peer_tid_cleanup(ar, peer);
 	crypto_free_shash(peer->dp_peer->tfm_mmic);
 	if (peer->primary_link)
@@ -339,6 +342,7 @@ int ath12k_dp_peer_setup(struct ath12k *ar, struct ath12k_link_vif *arvif, const
 		goto tid_clean;
 	}
 
+	ath12k_dp_ipa_peer_notify(ar, peer, arvif, vdev_id, true);
 	spin_unlock_bh(&dp->dp_lock);
 
 	/* TODO: Setup other peer specific resource used in data path */
@@ -2279,6 +2283,8 @@ void ath12k_dp_cmn_hw_group_unassign(struct ath12k_dp *dp,
 		dp_hw_grp->fst = NULL;
 	}
 
+	ath12k_dp_ipa_hw_group_deinit(dp_hw_grp);
+
 	if (dp_hw_grp->tx_desc_initialized && dp->dev == dp_hw_grp->tx_spt_dev)
 		ath12k_dp_tx_spt_free_and_deinit(dp_hw_grp);
 
@@ -2335,6 +2341,11 @@ void ath12k_dp_cmn_hw_group_assign(struct ath12k_dp *dp,
 			kfree(dp_hw_grp->rx_status_buf[i]);
 			dp_hw_grp->rx_status_buf[i] = NULL;
 		}
+	}
+
+	ret = ath12k_dp_ipa_hw_group_init(ab, dp_hw_grp);
+	if (ret) {
+		ath12k_err(ab, "Failed to allocate IPA global context: %d\n", ret);
 	}
 }
 
