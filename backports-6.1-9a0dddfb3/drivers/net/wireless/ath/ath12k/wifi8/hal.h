@@ -1365,6 +1365,29 @@ enum tqm_release_reason {
 	HAL_TQM_RR_TQM_RESERVED_DROP_REASON4
 };
 
+#define RX_DROP_MAP(map, reason, category) \
+	do { \
+		u32 __shift = 2 * reason; \
+		(map) |= (((category) & 0x3) << __shift); \
+	} while (0)
+
+enum rx_drop_reason {
+	HAL_RX_NO_DROP,
+	HAL_RX_BACKPRESSURE_DROP,
+	HAL_RX_MSDU_DROP,
+	HAL_RX_MSDU_BACKPRESSURE_DROP,
+	HAL_RX_SDWF_DROP,
+	HAL_RX_SDWF_BACKPRESSURE_DROP,
+	HAL_RX_SDWF_MSDU_DROP,
+	HAL_RX_SDWF_MSDU_BACKPRESSURE_DROP
+};
+
+enum rx_drop_reason_category {
+	HAL_RX_DROPPED_REASON_1,
+	HAL_RX_DROPPED_REASON_2,
+	HAL_RX_IGNORE_MAP
+};
+
 /* Register address to configure telemetry stats */
 #define HAL_TELEMETRY_PEER_CLK_CYCLE_ADDR		0xF10588
 #define HAL_TELEMETRY_PEER_CLK_CYCLE_DEFAULT_VAL	2097152
@@ -1424,6 +1447,36 @@ enum tqm_release_reason {
 #define HAL_TX_UL_GCAST_PEER_ID_1621			1621
 #define HAL_TX_UL_GCAST_PEER_ID_1622			1622
 #define HAL_TX_UL_GCAST_PEER_ID_1623			1623
+
+#define HAL_RX_TELEMETRY_GLOBAL_CTRL_ADDR		0xF2645C
+#define HAL_RX_TELEMETRY_GLOBAL_CTRL_PEER_STATS_ENABLE	BIT(0)
+
+#define HAL_RX_PEER_STATS_WINDOW_SIZE_CFG_ADDR		0xF26000
+#define HAL_RX_PEER_STATS_WINDOW_SIZE_CFG		GENMASK(11, 0)
+
+#define HAL_RX_NUM_OF_VALID_PEER_CFG_ADDR		0xF26004
+#define HAL_RX_NUM_OF_VALID_UNICAST_PEER		GENMASK(10, 0)
+#define HAL_RX_NUM_OF_VALID_GCAST_PEER			GENMASK(17, 11)
+
+#define HAL_RX_DROP_REASON_MAP_ADDR			0xF26458
+
+#define HAL_RX_PEER_STATS_CONFIG_CTRL_ADDR		0xF26008
+#define HAL_RX_PEER_TELEMETRY_STATS_ID		GENMASK(10, 0)
+#define HAL_RX_PEER_STATS_ENABLE_STATS_ID	BIT(11)
+#define HAL_RX_PEER_STATS_CLEAR_STATS_ID	BIT(12)
+
+#define HAL_RX_PEER_STATS_CFG0_ADDR			0xF2600C
+#define HAL_RX_PEER_STATS_BAND_INDEX_0			GENMASK(10, 0)
+#define HAL_RX_PEER_STATS_BAND_INDEX_1			GENMASK(21, 11)
+
+#define HAL_RX_PEER_STATS_CFG1_ADDR			0xF26010
+#define HAL_RX_PEER_STATS_BAND_INDEX_2			GENMASK(10, 0)
+#define HAL_RX_PEER_STATS_BAND_INDEX_3			GENMASK(21, 11)
+
+#define HAL_RX_PEER_STATS_CFG2_ADDR			0xF26014
+#define HAL_RX_PEER_STATS_BAND_INDEX_4			GENMASK(10, 0)
+
+#define HAL_RX_PEER_STATS_BAND_INDEX_MSB		BIT(31)
 
 extern const struct hal_ops hal_qcn9625_ops;
 
@@ -1535,6 +1588,19 @@ void ath12k_wifi8_hal_tasc_peer_tx_gcast_id_map(struct ath12k_base *ab,
 void ath12k_wifi8_hal_tasc_peer_tx_set_id(struct ath12k_base *ab,
 					  u16 stats_id);
 void ath12k_wifi8_hal_tasc_peer_tx_band(struct ath12k_base *ab,
+					enum tasc_band_index band,
+					u16 band_idx, bool enable);
+void ath12k_wifi8_hal_tasc_peer_rx_cfg(struct ath12k_base *ab, bool enable);
+void ath12k_wifi8_hal_tasc_peer_rx_max_peer(struct ath12k_base *ab,
+					    u16 ucast, u8 gcast);
+void ath12k_wifi8_hal_tasc_peer_rx_window(struct ath12k_base *ab,
+					  u16 time);
+void ath12k_wifi8_hal_tasc_peer_rx_fail_drop_default(struct ath12k_base *ab);
+void ath12k_wifi8_hal_tasc_peer_rx_fail_drop_map(struct ath12k_base *ab,
+						 u32 map);
+void ath12k_wifi8_hal_tasc_peer_rx_set_id(struct ath12k_base *ab,
+					  u16 stats_id);
+void ath12k_wifi8_hal_tasc_peer_rx_band(struct ath12k_base *ab,
 					enum tasc_band_index band,
 					u16 band_idx, bool enable);
 
