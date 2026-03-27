@@ -1076,6 +1076,7 @@ void ath12k_wifi8_hal_extract_rx_desc_data_qcn9625(struct hal_rx_desc_data *rx_d
 	rx_desc_data->is_last_msdu =
 		ath12k_wifi8_hal_rx_h_last_msdu_qcn9625(ldesc);
 	rx_desc_data->freq = ath12k_wifi8_hal_rx_h_freq_qcn9625(rx_desc);
+	rx_desc_data->snr = ath12k_wifi8_hal_rx_h_snr_qcn9625(rx_desc);
 	rx_desc_data->pkt_type = ath12k_wifi8_hal_rx_h_pkt_type_qcn9625(rx_desc);
 	rx_desc_data->bw = ath12k_wifi8_hal_rx_h_rx_bw_qcn9625(rx_desc);
 	rx_desc_data->rate_mcs = ath12k_wifi8_hal_rx_h_rate_mcs_qcn9625(rx_desc);
