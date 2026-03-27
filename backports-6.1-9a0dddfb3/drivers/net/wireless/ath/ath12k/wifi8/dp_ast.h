@@ -24,9 +24,12 @@ struct ath12k_dp_hw_group;
 #define ATH12K_AST_ENTRY_WILDCARD_LINK_ID	0x7
 #define ATH12K_NUM_TX_CLASSIFY_BANKS		4
 #define ATH12K_MAX_TX_ASE_CMD_SEQ_NUM		0x7FFF
+#define ATH12K_MEC_TIMEOUT_MS			5000
 
 struct ath12k_dp_hw_group;
 struct ath12k_dp;
+enum hal_wbm_tqm_rel_reason;
+struct ath12k_dp_hw_group_wifi8;
 
 enum ATH12K_AST_ENTRY_FLAGS {
 	ATH12K_AST_ENTRY_EMPTY_FLAGS	= 0x0,
@@ -34,6 +37,7 @@ enum ATH12K_AST_ENTRY_FLAGS {
 	ATH12K_AST_ENTRY_IS_MCAST	= 0x2,
 	ATH12K_AST_ENTRY_IS_MEC		= 0x4,
 	ATH12K_AST_ENTRY_IS_USE_ADDRX	= 0x8,
+	ATH12K_AST_ENTRY_IS_ACTIVE_MEC	= 0x10,
 };
 
 enum ATH12K_AST_ENTRY_INVALIDATE_STATUS_FLAGS {
@@ -63,6 +67,7 @@ struct ath12k_ast_entry {
 	bool rhash_done;
 	unsigned long ast_create_invalidate_status;
 	u16 tx_cmd_seq_num;
+	struct list_head mec_list;
 };
 
 struct ath12k_dp_ast_hash_keys {
@@ -122,4 +127,8 @@ int ath12k_dp_ast_entry_create(struct ath12k_dp_hw_group *dp_hw_grp,
 			       struct ath12k_ast_entry_config_params *param);
 void ath12k_dp_ast_entry_delete(struct ath12k_dp_hw_group *dp_hw_grp,
 				u16 ast_index);
+void ath12k_mec_entry_expire_handler(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8,
+				     void *arg);
+int ath12k_mec_entry_keep_alive_update(struct ath12k_dp_hw_group *dp_hw_grp,
+				       u8 *mac_addr);
 #endif

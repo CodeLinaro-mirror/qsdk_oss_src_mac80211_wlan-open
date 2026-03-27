@@ -211,6 +211,10 @@ static void ath12k_wifi8_dp_umac_deinit(struct ath12k_dp *dp)
 	dp_hw_group_wifi8 = ath12k_get_dp_hw_group_wifi8(dp->dp_hw_grp);
 	atomic_set(&dp_hw_group_wifi8->retry_work_active, 0);
 	cancel_delayed_work_sync(&dp_hw_group_wifi8->dp_htt_retry_dwork);
+	del_timer_sync(&dp_hw_group_wifi8->hw_grp_timer);
+	if (dp_hw_group_wifi8->mec_timer_key)
+		ath12k_dp_hw_group_del_timer_entry(dp->dp_hw_grp,
+						   dp_hw_group_wifi8->mec_timer_key);
 	dp_hw_group_wifi8->cumac_dp = NULL;
 	ath12k_info(ab, "CUMAC de-init successful");
 }
@@ -269,6 +273,7 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
 	struct ath12k_dp_hw_group_wifi8 *dp_hw_group_wifi8;
+	struct ath12k_dp_hw_grp_timer_entry_param timer_param = {0};
 	struct hal_srng *srng = NULL;
 	u32 n_link_desc = 0;
 	int i;
@@ -370,6 +375,23 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 	/* Initialize cumac pointer in hw_group */
 	dp_hw_group_wifi8 = ath12k_get_dp_hw_group_wifi8(dp->dp_hw_grp);
 	dp_hw_group_wifi8->cumac_dp = dp;
+
+	INIT_LIST_HEAD(&dp_hw_group_wifi8->timer_list_head);
+	spin_lock_init(&dp_hw_group_wifi8->hw_grp_timer_lock);
+	timer_setup(&dp_hw_group_wifi8->hw_grp_timer,
+		    ath12k_dp_hw_group_timer_fn, 0);
+
+	INIT_LIST_HEAD(&dp_hw_group_wifi8->mec_entry_list_head);
+
+	timer_param.timeout_ms = ATH12K_MEC_TIMEOUT_MS;
+	timer_param.callback = ath12k_mec_entry_expire_handler;
+	ret = ath12k_dp_hw_group_add_timer_entry(dp->dp_hw_grp, &timer_param);
+	if (ret) {
+		ath12k_warn(ab, "failed to setup mec timer ret = %d\n", ret);
+		del_timer_sync(&dp_hw_group_wifi8->hw_grp_timer);
+		goto fail_dp_rx_free;
+	}
+	dp_hw_group_wifi8->mec_timer_key = timer_param.key_value;
 
 	ret = ath12k_wifi8_dp_rx_flow_fse_cache_operation(ab,
 							  DP_FST_CACHE_INVALIDATE_FULL,
@@ -559,6 +581,10 @@ static void ath12k_wifi8_dp_vif_configure(struct ath12k_dp *dp,
 		dp_vif->vdev_id_check_en = false;
 		ath12k_dp_update_vdev_search(ahvif);
 
+		/* Disable ADDRX search for STA vdev */
+		if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
+			dp_vif->hal_addr_search_flags &= ~HAL_TX_ADDRX_EN;
+
 		/* convert vdev params into hal_tx_bank_config */
 		new_bank_config = ath12k_wifi8_dp_tx_get_vdev_bank_config(ab, ahvif, 0,
 									  false);
@@ -571,7 +597,7 @@ static void ath12k_wifi8_dp_vif_configure(struct ath12k_dp *dp,
 		    ath12k_frame_mode == ATH12K_HW_TXRX_ETHERNET && mec_support)
 			ath12k_wifi8_hal_vdev_mcast_ctrl_set
 				(central_ab, dp_vif->dp_vif_id,
-				 HAL_TX_PACKET_CONTROL_CONFIG_MEC_NOTIFY_TX);
+				 HAL_TX_PACKET_CONTROL_CONFIG_DISABLE);
 		else
 			/*TODO change this to tqm once mcast tqm path is enabled in FW*/
 			ath12k_wifi8_hal_vdev_mcast_ctrl_set
@@ -669,6 +695,152 @@ static ssize_t ath12k_wifi8_dump_srng_stats(struct ath12k_dp *dp,
 					  dp_wifi8->tcl_status_ring.ring_id,
 					  buf + len, size - len);
 	return len;
+}
+
+static inline u32 ath12k_dp_compute_gcd(u32 num1, u32 num2)
+{
+	u32 temp;
+
+	while (num2 != 0) {
+		temp = num2;
+		num2 = num1 % num2;
+		num1 = temp;
+	}
+
+	return num1;
+}
+
+/* should be called after aquiring the spin lock */
+static inline void
+ath12k_dp_recompute_update_scale_factor(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8)
+{
+	struct dp_hw_grp_timer_entry *timer_entry;
+	u32 new_timer_val = 0;
+
+	list_for_each_entry(timer_entry, &dp_hw_grp_wifi8->timer_list_head, list) {
+		if (new_timer_val == 0)
+			new_timer_val = timer_entry->timeout_ms;
+		else
+			new_timer_val = ath12k_dp_compute_gcd(new_timer_val,
+							      timer_entry->timeout_ms);
+	}
+	dp_hw_grp_wifi8->current_timer_val = new_timer_val;
+
+	list_for_each_entry(timer_entry, &dp_hw_grp_wifi8->timer_list_head, list) {
+		timer_entry->scaling_factor =
+		dp_hw_grp_wifi8->current_timer_val ?
+		(timer_entry->timeout_ms / dp_hw_grp_wifi8->current_timer_val) : 0;
+	}
+}
+
+void ath12k_dp_hw_group_timer_fn(struct timer_list *timer)
+{
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8 =
+			from_timer(dp_hw_grp_wifi8, timer, hw_grp_timer);
+	struct dp_hw_grp_timer_entry *timer_entry, *temp_entry;
+
+	spin_lock_bh(&dp_hw_grp_wifi8->hw_grp_timer_lock);
+	list_for_each_entry_safe(timer_entry, temp_entry,
+				 &dp_hw_grp_wifi8->timer_list_head, list) {
+		timer_entry->counter++;
+		if (timer_entry->counter >= timer_entry->scaling_factor) {
+			if (timer_entry->cmd_callback)
+				timer_entry->cmd_callback(dp_hw_grp_wifi8,
+							  timer_entry->arg);
+			timer_entry->counter = 0;
+		}
+	}
+
+	if (dp_hw_grp_wifi8->current_timer_val && dp_hw_grp_wifi8->timer_entry_count)
+		mod_timer(&dp_hw_grp_wifi8->hw_grp_timer,
+			  jiffies + msecs_to_jiffies(dp_hw_grp_wifi8->current_timer_val));
+
+	spin_unlock_bh(&dp_hw_grp_wifi8->hw_grp_timer_lock);
+}
+
+int ath12k_dp_hw_group_add_timer_entry(struct ath12k_dp_hw_group *dp_hw_grp,
+				       struct ath12k_dp_hw_grp_timer_entry_param *param)
+{
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8 =
+			ath12k_get_dp_hw_group_wifi8(dp_hw_grp);
+	struct dp_hw_grp_timer_entry *timer_entry;
+
+	if (!param->timeout_ms) {
+		ath12k_err(NULL, "Invalid timer timeout");
+		return -EINVAL;
+	}
+
+	timer_entry = kzalloc(sizeof(*timer_entry), GFP_ATOMIC);
+	if (!timer_entry)
+		return -ENOMEM;
+
+	timer_entry->timeout_ms = param->timeout_ms;
+	timer_entry->cmd_callback = param->callback;
+	timer_entry->counter = 0;
+	timer_entry->arg = param->arg;
+
+	spin_lock_bh(&dp_hw_grp_wifi8->hw_grp_timer_lock);
+	list_add_tail(&timer_entry->list, &dp_hw_grp_wifi8->timer_list_head);
+	dp_hw_grp_wifi8->timer_entry_count++;
+
+	param->key_value = dp_hw_grp_wifi8->timer_entry_count;
+	timer_entry->key_value = dp_hw_grp_wifi8->timer_entry_count;
+
+	if (!dp_hw_grp_wifi8->current_timer_val)
+		dp_hw_grp_wifi8->current_timer_val = timer_entry->timeout_ms;
+	else
+		dp_hw_grp_wifi8->current_timer_val =
+			ath12k_dp_compute_gcd(dp_hw_grp_wifi8->current_timer_val,
+					      timer_entry->timeout_ms);
+
+	list_for_each_entry(timer_entry, &dp_hw_grp_wifi8->timer_list_head, list) {
+		timer_entry->scaling_factor =
+			timer_entry->timeout_ms / dp_hw_grp_wifi8->current_timer_val;
+	}
+
+	mod_timer(&dp_hw_grp_wifi8->hw_grp_timer,
+		  jiffies + msecs_to_jiffies(dp_hw_grp_wifi8->current_timer_val));
+	spin_unlock_bh(&dp_hw_grp_wifi8->hw_grp_timer_lock);
+
+	return 0;
+}
+
+bool ath12k_dp_hw_group_del_timer_entry(struct ath12k_dp_hw_group *dp_hw_grp,
+					u16 key_value)
+{
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8 =
+			ath12k_get_dp_hw_group_wifi8(dp_hw_grp);
+	struct dp_hw_grp_timer_entry *timer_entry, *temp_entry;
+	bool entry_found = false;
+
+	spin_lock_bh(&dp_hw_grp_wifi8->hw_grp_timer_lock);
+	list_for_each_entry_safe(timer_entry, temp_entry,
+				 &dp_hw_grp_wifi8->timer_list_head, list) {
+		if (timer_entry->key_value == key_value) {
+			list_del(&timer_entry->list);
+			dp_hw_grp_wifi8->timer_entry_count--;
+			entry_found = true;
+			break;
+		}
+	}
+
+	if (!entry_found) {
+		spin_unlock_bh(&dp_hw_grp_wifi8->hw_grp_timer_lock);
+		return entry_found;
+	}
+
+	ath12k_dp_recompute_update_scale_factor(dp_hw_grp_wifi8);
+
+	if (dp_hw_grp_wifi8->current_timer_val && dp_hw_grp_wifi8->timer_entry_count)
+		mod_timer(&dp_hw_grp_wifi8->hw_grp_timer,
+			  jiffies + msecs_to_jiffies(dp_hw_grp_wifi8->current_timer_val));
+	else
+		del_timer(&dp_hw_grp_wifi8->hw_grp_timer);
+
+	spin_unlock_bh(&dp_hw_grp_wifi8->hw_grp_timer_lock);
+
+	kfree(timer_entry);
+	return entry_found;
 }
 
 static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {

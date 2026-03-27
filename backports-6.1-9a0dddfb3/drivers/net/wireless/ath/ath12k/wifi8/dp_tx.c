@@ -2451,6 +2451,116 @@ ath12k_wifi8_dp_tx_status_parse(struct ath12k_base *ab,
 	ath12k_wifi8_dp_tx_get_hw_link_id_from_ppdu_id(ts, ab->dp);
 }
 
+int ath12k_wifi8_dp_tx_mec_handler(struct ath12k_dp *dp,
+				   struct ath12k_tx_desc_info *tx_desc,
+				   int status)
+{
+	struct ath12k_ast_entry_config_params ast_param = {0};
+	u8 *sa_addr = NULL;
+	struct ethhdr *eth = NULL;
+	struct sk_buff *skb = tx_desc->skb;
+	u8 pdev_id = tx_desc->mac_id;
+	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
+	int ret = 0;
+	struct ath12k_pdev_dp *dp_pdev = NULL;
+	struct ath12k_link_vif *arvif;
+	struct ieee80211_vif *vif;
+	struct ath12k_vif *ahvif;
+	u8 ring_selector = 0, ring_id = 0;
+
+	/* get the src address from the packet */
+	if (skb_cb->flags & ATH12K_SKB_HW_80211_ENCAP) {
+		eth = (struct ethhdr *)skb->data;
+		sa_addr = eth->h_source;
+	} else {
+		sa_addr = ieee80211_get_SA((struct ieee80211_hdr *)(skb->data));
+	}
+
+	if (status == HAL_WBM_TQM_REL_REASON_TCL_MEC_SEARCH_FAIL_FOR_VDEV) {
+		ath12k_core_dma_unmap_single(dp->dev, tx_desc->paddr,
+					     tx_desc->len, DMA_TO_DEVICE);
+		if (tx_desc->paddr_ext_desc) {
+			ath12k_core_dma_unmap_single(dp->dev,
+						     tx_desc->paddr_ext_desc,
+						     tx_desc->ext_desc_len,
+						     DMA_TO_DEVICE);
+			dev_kfree_skb_any(tx_desc->skb_ext_desc);
+		}
+		ath12k_dp_tx_release_txbuf(dp, tx_desc, tx_desc->pool_id);
+
+		rcu_read_lock();
+		dp_pdev = ath12k_dp_hw_grp_to_dp_pdev(dp->dp_hw_grp, pdev_id);
+		if (!dp_pdev) {
+			dev_kfree_skb_any(skb);
+			ath12k_err(dp->ab, "MEC: dp_pdev is null %d", pdev_id);
+			rcu_read_unlock();
+			return -EINVAL;
+		}
+		if (atomic_dec_and_test(&dp_pdev->num_tx_pending))
+			wake_up(&dp_pdev->tx_empty_waitq);
+
+		memcpy(ast_param.mac_addr, sa_addr, ETH_ALEN);
+		ast_param.ast_entry_flags |= ATH12K_AST_ENTRY_IS_MEC;
+		ret = ath12k_dp_ast_entry_create(dp->dp_hw_grp, &ast_param);
+		if (ret && ret != -EALREADY) {
+			dev_kfree_skb_any(skb);
+			ath12k_err(dp->ab, "unable to create the mec entry %pM", sa_addr);
+			rcu_read_unlock();
+			return ret;
+		}
+
+		/* reinject the packet back */
+		vif = skb_cb->vif;
+		if (!vif) {
+			dev_kfree_skb_any(skb);
+			ath12k_err(dp->ab, "MEC: vif is null %d", pdev_id);
+			rcu_read_unlock();
+			return -EINVAL;
+		}
+		ahvif = ath12k_vif_to_ahvif(vif);
+		arvif = rcu_dereference(ahvif->link[skb_cb->link_id]);
+		if (!arvif) {
+			dev_kfree_skb_any(skb);
+			ath12k_err(dp->ab, "MEC: arvif is null %d", pdev_id);
+			rcu_read_unlock();
+			return -EINVAL;
+		}
+		ring_selector = smp_processor_id();
+		ring_id = ring_selector % dp_pdev->dp->hw_params->max_tx_ring;
+		ret = ath12k_wifi8_dp_tx(dp_pdev, arvif, skb,
+					 false, 0, false, NULL, ring_id, 0);
+		if (ret) {
+			dev_kfree_skb_any(skb);
+			ath12k_err(dp->ab, "MEC: enqueue failure %d", ret);
+		}
+
+		rcu_read_unlock();
+	} else if (status == HAL_WBM_TQM_REL_REASON_TCL_MEC_KEEP_ALIVE_FOR_VDEV) {
+		ret = ath12k_mec_entry_keep_alive_update(dp->dp_hw_grp, sa_addr);
+	}
+
+	return ret;
+}
+
+static inline bool
+ath12k_wifi8_dp_tx_mec_filter(struct ath12k_dp *dp,
+			      struct ath12k_tx_desc_info *tx_desc,
+			      int status)
+{
+	int ret;
+
+	if (unlikely(status == HAL_WBM_TQM_REL_REASON_TCL_MEC_SEARCH_FAIL_FOR_VDEV ||
+		     status == HAL_WBM_TQM_REL_REASON_TCL_MEC_KEEP_ALIVE_FOR_VDEV)) {
+		ret = ath12k_wifi8_dp_tx_mec_handler(dp, tx_desc, status);
+		if (ret)
+			ath12k_err(dp->ab, "MEC: pkt drop in MEC handling ret = %d", ret);
+
+		return true;
+	}
+
+	return false;
+}
+
 int ath12k_wifi8_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int budget)
 {
 	struct ath12k_base *ab = dp->ab;
@@ -2509,15 +2619,17 @@ int ath12k_wifi8_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 				dp_hw_grp->tx_status_buf[tx_status_idx];
 	while (budget-- &&
 	       (tx_status = __ath12k_hal_srng_dst_get_next_cached_entry(status_ring, NULL))) {
-		if (!ath12k_wifi8_hal_tx_completion_process(tx_status, &tx_comp_status))
-			continue;
-
+		ath12k_wifi8_hal_tx_completion_process(tx_status, &tx_comp_status);
 		tx_desc = (struct ath12k_tx_desc_info *)((unsigned long)tx_comp_status.tx_desc);
 		if (unlikely(!tx_desc)) {
 			DP_DEVICE_STATS_INC(dp, tx_err.tx_comp_err[DP_TX_COMP_ERR_INVALID_DESC][ring_id], 1);
 			ath12k_warn(ab, "unable to retrieve tx_desc!");
 			continue;
 		}
+
+		if (ath12k_wifi8_dp_tx_mec_filter(dp, tx_desc,
+						  tx_comp_status.u.htt_status))
+			continue;
 
 		tx_status_entry->tx_desc = tx_desc;
 
@@ -3043,9 +3155,10 @@ int ath12k_wifi8_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 
 	while (likely(valid_entries--)) {
 		desc = ath12k_hal_srng_dst_get_next_cached_entry(ab, status_ring, NULL);
-		if (!desc || !ath12k_wifi8_hal_tx_completion_process(desc, &tx_status))
+		if (!desc)
 			continue;
 
+		ath12k_wifi8_hal_tx_completion_process(desc, &tx_status);
 		if (likely(!ab->stats_disable))
 			memcpy(((void *)tx_ring->tx_status) +
 			       (count * status_ring->entry_size),
@@ -3062,7 +3175,7 @@ int ath12k_wifi8_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 		if (unlikely(tx_status.buf_rel_source == HAL_WBM_REL_SRC_MODULE_FW)) {
 			status_desc = (void *)desc;
 
-			htt_status = tx_status.htt_status;
+			htt_status = tx_status.u.htt_status;
 
 			if (htt_status == HAL_WBM_REL_HTT_TX_COMP_STATUS_REINJ)
 				ath12k_ppeds_reinject_handler(ab, tx_desc, status_desc);

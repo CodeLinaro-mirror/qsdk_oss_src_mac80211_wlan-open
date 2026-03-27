@@ -885,7 +885,7 @@ void ath12k_wifi8_hal_reo_config_reo2ppe_dest_info(struct ath12k_base *ab)
 			   val);
 }
 
-bool ath12k_wifi8_hal_tx_completion_process(struct hal_tqm2sw_completion_ring *desc,
+void ath12k_wifi8_hal_tx_completion_process(struct hal_tqm2sw_completion_ring *desc,
 					    struct ath12k_dp_tx_comp_status *tx_comp_status)
 {
 	u64 desc_va = 0;
@@ -893,6 +893,9 @@ bool ath12k_wifi8_hal_tx_completion_process(struct hal_tqm2sw_completion_ring *d
 	tx_comp_status->buf_rel_source =
 		FIELD_GET(HAL_TQM2SW_COMPLETION_RING_INFO0_RELEASE_SOURCE_MODULE,
 			  desc->info0);
+	tx_comp_status->u.tqm_status =
+		       le32_get_bits(desc->info0,
+				     HAL_TQM2SW_COMPLETION_RING_INFO0_TQM_RELEASE_REASON);
 	tx_comp_status->tx_desc = NULL;
 
 	if (likely(HAL_TQM2SW_COMPLETION_RING_INFO3_COOKIE_CONVERSION_STATUS &
@@ -905,18 +908,6 @@ bool ath12k_wifi8_hal_tx_completion_process(struct hal_tqm2sw_completion_ring *d
 		tx_comp_status->desc_id = u32_get_bits(desc->buf_addr_info.info1,
 						       BUFFER_ADDR_INFO1_SW_COOKIE);
 	}
-
-	if (tx_comp_status->buf_rel_source == HAL_WBM_REL_SRC_MODULE_FW) {
-		tx_comp_status->htt_status =
-		       le32_get_bits(desc->info0,
-				     HAL_TQM2SW_COMPLETION_RING_INFO0_TQM_RELEASE_REASON);
-
-		/* Dont consider HTT_TX_COMP_STATUS_MEC_NOTIFY */
-		if (tx_comp_status->htt_status ==
-				HAL_WBM_REL_HTT_TX_COMP_STATUS_MEC_NOTIFY)
-			return false;
-	}
-	return true;
 }
 
 void ath12k_wifi8_hal_hw_ase_init(struct ath12k_base *ab,

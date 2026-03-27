@@ -7,6 +7,7 @@
 #include "dp.h"
 #include "hal.h"
 #include "../debug.h"
+#include "dp_tx.h"
 #include "dp_htt.h"
 
 /* Whenever we configure HW keys, we need to update the below cache.
@@ -643,6 +644,36 @@ int ath12k_dp_hw_ast_entry_sync(struct ath12k_dp_hw_group *dp_hw_grp,
 	return ret;
 }
 
+bool
+ath12k_dp_ast_has_matching_entry(struct ath12k_dp_hw_group *dp_hw_grp,
+				 struct ath12k_ast_entry_config_params *param,
+				 u16 ast_index)
+{
+	struct ath12k_ast_entry *sw_ast_entry = NULL;
+	bool ret = false;
+
+	/* any previous entries present with same config */
+	sw_ast_entry = ath12k_dp_get_sw_ast_entry_by_index(dp_hw_grp, ast_index);
+	if (sw_ast_entry) {
+		if (!(sw_ast_entry->ast_entry_flags & ATH12K_AST_ENTRY_IS_VALID))
+			return ret;
+		if (memcmp(sw_ast_entry->mac_addr, param->mac_addr, ETH_ALEN))
+			return ret;
+		if ((sw_ast_entry->ast_entry_flags & ATH12K_AST_ENTRY_IS_MEC) !=
+		    (param->ast_entry_flags & ATH12K_AST_ENTRY_IS_MEC))
+			return ret;
+		if ((sw_ast_entry->ast_entry_flags & ATH12K_AST_ENTRY_IS_MCAST) !=
+		     (param->ast_entry_flags & ATH12K_AST_ENTRY_IS_MCAST))
+			return ret;
+		if (sw_ast_entry->peer_id != param->peer_id)
+			return ret;
+
+		return true;
+	}
+
+	return false;
+}
+
 int ath12k_dp_ast_entry_create(struct ath12k_dp_hw_group *dp_hw_grp,
 			       struct ath12k_ast_entry_config_params *param)
 {
@@ -652,6 +683,8 @@ int ath12k_dp_ast_entry_create(struct ath12k_dp_hw_group *dp_hw_grp,
 	struct ath12k_ast_entry *sw_ast_entry = NULL;
 	struct ath12k_dp_global_ast_table *ast_base =
 				ath12k_dp_get_global_ast_table(dp_hw_grp);
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8 =
+			ath12k_get_dp_hw_group_wifi8(dp_hw_grp);
 	int ret = -ENOSPC;
 	u16 i;
 	u16 ast_index;
@@ -679,6 +712,11 @@ int ath12k_dp_ast_entry_create(struct ath12k_dp_hw_group *dp_hw_grp,
 			goto error_handle;
 		}
 		if (ath12k_dp_hw_ast_entry_is_valid(hw_ast_entry)) {
+			if (ath12k_dp_ast_has_matching_entry(dp_hw_grp,
+							     param, ast_index)) {
+				ret = -EALREADY;
+				goto error_handle;
+			}
 			ast_index++;
 			continue;
 		}
@@ -716,6 +754,11 @@ int ath12k_dp_ast_entry_create(struct ath12k_dp_hw_group *dp_hw_grp,
 	sw_ast_entry->ast_index = ast_index;
 	sw_ast_entry->ast_hash = ast_hash;
 	sw_ast_entry->ast_entry_flags |= ATH12K_AST_ENTRY_IS_VALID;
+	if (is_mec) {
+		sw_ast_entry->ast_entry_flags |= ATH12K_AST_ENTRY_IS_ACTIVE_MEC;
+		list_add_tail(&sw_ast_entry->mec_list,
+			      &dp_hw_grp_wifi8->mec_entry_list_head);
+	}
 
 	/* Add the SW AST entry in index based and hash tables */
 	ast_base->ast_entries[ast_index] = sw_ast_entry;
@@ -741,6 +784,9 @@ int ath12k_dp_ast_entry_create(struct ath12k_dp_hw_group *dp_hw_grp,
 	return 0;
 
 free_sw_entry:
+	if (is_mec)
+		list_del_init(&sw_ast_entry->mec_list);
+
 	kfree(sw_ast_entry);
 error_handle:
 	spin_unlock_bh(&ast_base->ast_lock);
@@ -794,6 +840,14 @@ void ath12k_dp_ast_entry_delete(struct ath12k_dp_hw_group *dp_hw_grp,
 		return;
 	}
 
+	if (sw_ast_entry->ast_entry_flags & ATH12K_AST_ENTRY_IS_ACTIVE_MEC) {
+		sw_ast_entry->ast_entry_flags &= ~ATH12K_AST_ENTRY_IS_ACTIVE_MEC;
+		spin_unlock_bh(&ast_base->ast_lock);
+		return;
+	}
+
+	if (sw_ast_entry->ast_entry_flags & ATH12K_AST_ENTRY_IS_MEC)
+		list_del_init(&sw_ast_entry->mec_list);
 	/* reset the valid flag */
 	sw_ast_entry->ast_entry_flags &= ~ATH12K_AST_ENTRY_IS_VALID;
 	clear_bit(ATH12K_AST_ENTRY_TX_INVAL_STATUS,
@@ -872,4 +926,69 @@ int ath12k_wifi8_dp_tx_cmd_status_handler(struct ath12k_dp *dp,
 	ath12k_hal_srng_access_end(ab, srng);
 	spin_unlock_bh(&srng->lock);
 	return quota - budget;
+}
+
+void ath12k_mec_entry_expire_handler(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8,
+				     void *arg)
+{
+	struct ath12k_dp_global_ast_table *ast_base = NULL;
+	struct ath12k_dp_hw_group *dp_hw_grp = NULL;
+	struct ath12k_ast_entry *mec_entry, *tmp;
+	DECLARE_BITMAP(delete_mec_list_bmap, MAX_NUM_AST_ENTRIES);
+	unsigned long i;
+
+	bitmap_zero(delete_mec_list_bmap, MAX_NUM_AST_ENTRIES);
+
+	if (!dp_hw_grp_wifi8 || !dp_hw_grp_wifi8->cumac_dp)
+		return;
+
+	dp_hw_grp = ath12k_get_dp_hw_group(dp_hw_grp_wifi8);
+	ast_base = ath12k_dp_get_global_ast_table(dp_hw_grp);
+	spin_lock_bh(&ast_base->ast_lock);
+	if (list_empty(&dp_hw_grp_wifi8->mec_entry_list_head)) {
+		spin_unlock_bh(&ast_base->ast_lock);
+		return;
+	}
+
+	list_for_each_entry_safe(mec_entry, tmp,
+				 &dp_hw_grp_wifi8->mec_entry_list_head, mec_list) {
+		if (mec_entry->ast_entry_flags & ATH12K_AST_ENTRY_IS_ACTIVE_MEC)
+			mec_entry->ast_entry_flags &= ~ATH12K_AST_ENTRY_IS_ACTIVE_MEC;
+		else
+			set_bit(mec_entry->ast_index, delete_mec_list_bmap);
+	}
+	spin_unlock_bh(&ast_base->ast_lock);
+
+	for_each_set_bit(i, delete_mec_list_bmap, MAX_NUM_AST_ENTRIES)
+		ath12k_dp_ast_entry_delete(dp_hw_grp, i);
+}
+
+int ath12k_mec_entry_keep_alive_update(struct ath12k_dp_hw_group *dp_hw_grp,
+				       u8 *mac_addr)
+{
+	struct ath12k_dp_global_ast_table *ast_base =
+					ath12k_dp_get_global_ast_table(dp_hw_grp);
+	struct ath12k_ast_entry *sw_ast_entry = NULL;
+
+	spin_lock_bh(&ast_base->ast_lock);
+	sw_ast_entry = ath12k_ast_entry_find_by_addr(dp_hw_grp, mac_addr);
+	if (!sw_ast_entry) {
+		ath12k_err(NULL, "unable to find the mec entry %pM ", mac_addr);
+		spin_unlock_bh(&ast_base->ast_lock);
+		return -EBUSY;
+	}
+	if (!(sw_ast_entry->ast_entry_flags & ATH12K_AST_ENTRY_IS_MEC)) {
+		ath12k_err(NULL, "AST entry is not mec entry %pM ", mac_addr);
+		spin_unlock_bh(&ast_base->ast_lock);
+		return -EBUSY;
+	}
+	if (list_empty(&sw_ast_entry->mec_list)) {
+		ath12k_err(NULL, "mec entry %pM is aleady delinked", mac_addr);
+		spin_unlock_bh(&ast_base->ast_lock);
+		return -EBUSY;
+	}
+	sw_ast_entry->ast_entry_flags |= ATH12K_AST_ENTRY_IS_ACTIVE_MEC;
+	spin_unlock_bh(&ast_base->ast_lock);
+
+	return 0;
 }
