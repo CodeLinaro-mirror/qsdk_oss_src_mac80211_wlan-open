@@ -20765,6 +20765,9 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 		arg.pref_rx_streams = min_t(u8, arg.pref_rx_streams,
 					    ar->pdev->cap.max_rx_nss);
 
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA && !arvif->is_scan_vif)
+		arg.is_stadfs_en = !!hw->wiphy->sta_dfs_en;
+
 	if (is_bridge_vdev)
 		arg.mbssid_flags = 0;
 	else
@@ -20794,9 +20797,13 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 		}
 
 		arg.hidden_ssid = ahvif->u.ap.hidden_ssid;
+	}
 
-		/* For now allow DFS in AP mode for vdevs except
-		 * bridge vdev.
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_AP ||
+	    (ahvif->vdev_type == WMI_VDEV_TYPE_STA && arg.is_stadfs_en)) {
+
+		/* For now allow DFS in AP mode/STA mode (when sta_dfs enabled)
+		 * for vdevs except bridge vdev.
 		 */
 		if (chandef && !is_bridge_vdev) {
 			/* For Scan Radio, disable radar detection and CAC
@@ -20828,9 +20835,9 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 		ath12k_mac_mlo_get_vdev_args(arvif, &arg.ml);
 
 	ath12k_dbg(ab, ATH12K_DBG_MAC,
-		   "mac vdev %d start center_freq %d phymode %s punct_bitmap 0x%x\n",
+		   "mac vdev %d start center_freq %d phymode %s punct_bitmap 0x%x arg.is_stadfs_en:%d\n",
 		   arg.vdev_id, arg.freq,
-		   ath12k_mac_phymode_str(arg.mode), arg.punct_bitmap);
+		   ath12k_mac_phymode_str(arg.mode), arg.punct_bitmap, arg.is_stadfs_en);
 
 	arvif->peer_del_all_enable = false;
 

@@ -1960,6 +1960,8 @@ static void ath12k_wmi_put_wmi_channel(struct ath12k_wmi_channel_params *chan,
 		chan->info |= cpu_to_le32(WMI_CHAN_INFO_DFS);
 	if (arg->freq2_radar)
 		chan->info |= cpu_to_le32(WMI_CHAN_INFO_DFS_FREQ2);
+	if (arg->is_stadfs_en)
+		chan->info |= cpu_to_le32(WMI_CHAN_INFO_STA_DFS);
 
 	chan->reg_info_1 = le32_encode_bits(arg->max_power,
 					    WMI_CHAN_REG_INFO1_MAX_PWR) |
