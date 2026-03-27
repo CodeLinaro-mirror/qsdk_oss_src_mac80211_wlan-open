@@ -164,6 +164,25 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.max_size = HAL_TQM_HOST_STATUS_RING_BASE_MSB_RING_SIZE,
 		.name = "Tqm_status",
 	},
+	[HAL_ASE_CMD_RING] = {
+		.start_ring_id = HAL_SRNG_RING_ID_ASE_CMD_RING,
+		.max_rings = 1,
+		.entry_size = sizeof(struct hal_ase_cmd) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_SRC,
+		.max_size = HAL_SW2WBM_ASE_CMD_RING_BASE_MSB_RING_SIZE,
+		.name = "ASE_CMD",
+	},
+	[HAL_ASE_STATUS_RING] = {
+		.start_ring_id = HAL_SRNG_RING_ID_ASE_STATUS_RING,
+		.max_rings = 1,
+		.entry_size = sizeof(struct hal_ase_status) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_DMAC,
+		.ring_dir = HAL_SRNG_DIR_DST,
+		.max_size = HAL_SW2WBM_ASE_STATUS_RING_BASE_MSB_RING_SIZE,
+		.name = "ASE_STATUS",
+	},
+
 	/* TCL2SW Exception Ring */
 	[HAL_TX_EXCEPTION] = {
 		.start_ring_id = HAL_SRNG_RING_ID_TX_EXCEPTION,
@@ -747,6 +766,11 @@ static int ath12k_wifi8_hal_srng_create_config_qcn9625(struct ath12k_hal *hal)
 	s = &hal->srng_config[HAL_TX_EXCEPTION];
 	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TX_EXCEPTION_RING_BASE_LSB;
 	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TX_EXCEPTION_RING_HP;
+
+	/* SW2WBM_ASE_CMD_RING */
+	s = &hal->srng_config[HAL_ASE_CMD_RING];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_WBM_REG + HAL_SW2WBM_ASE_CMD_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_WBM_REG + HAL_SW2WBM_ASE_CMD_RING_HP;
 
 	/* Some LMAC rings are not accessed from the host:
 	 * RXDMA_BUG, RXDMA_DST, RXDMA_MONITOR_BUF, RXDMA_MONITOR_STATUS,

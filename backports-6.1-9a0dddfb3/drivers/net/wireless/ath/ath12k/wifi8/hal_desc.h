@@ -1003,9 +1003,9 @@ struct hal_tcl_gse_cmd {
 	__le32 info2;
 } __packed;
 
-enum hal_tcl_cache_op {
-	HAL_TCL_CACHE_OP_INVALIDATE_SINGLE_ENTRY        = 4,
-	HAL_TCL_CACHE_OP_INVALIDATE_ALL                 = 5,
+enum hal_ase_cache_op {
+	HAL_ASE_CACHE_OP_INVALIDATE_SINGLE_ENTRY        = 4,
+	HAL_ASE_CACHE_OP_INVALIDATE_ALL                 = 5,
 };
 
 enum hal_tcl_cache_op_res {
@@ -1025,6 +1025,55 @@ struct hal_tcl_status_ring {
 	__le32 info1;
 	__le16 status_debug_data;
 	__le16 reserved_6a;
+	__le32 info2;
+} __packed;
+
+#define HAL_ASE_CMD_RING_INFO0_CMD_TO_CHIP_0	BIT(0)
+#define HAL_ASE_CMD_RING_INFO0_CMD_TO_CHIP_1	BIT(1)
+#define HAL_ASE_CMD_RING_INFO0_CMD_TO_CHIP_2	BIT(2)
+#define HAL_ASE_CMD_RING_INFO0_CMD_TO_CHIP_3	BIT(3)
+#define HAL_ASE_CMD_RING_INFO0_CMD_TO_CHIP_4	BIT(4)
+
+#define HAL_ASE_CMD_RING_INFO1_MAC_ADDR_31_0	GENMASK(31, 0)
+#define HAL_ASE_CMD_RING_INFO2_MAC_ADDR_47_32	GENMASK(15, 0)
+#define HAL_ASE_CMD_RING_INFO2_IS_MCAST		BIT(16)
+#define HAL_ASE_CMD_RING_INFO2_IS_MEC		BIT(17)
+#define HAL_ASE_CMD_RING_INFO2_AD1_MATCH	BIT(18)
+#define HAL_ASE_CMD_RING_INFO2_LINK_ID		GENMASK(21, 19)
+#define HAL_ASE_CMD_RING_INFO2_GSE_CTRL		GENMASK(25, 22)
+#define HAL_ASE_CMD_RING_INFO2_SEARCH_INDEX_EN	BIT(26)
+#define HAL_ASE_CMD_RING_INFO2_CACHE_SET_NUM	GENMASK(31, 27)
+#define HAL_ASE_CMD_RING_CMD_METADATA_31_0	GENMASK(31, 0)
+#define HAL_ASE_CMD_RING_INFO3_SEARCH_INDEX	GENMASK(19, 0)
+
+struct hal_ase_cmd {
+	__le32 info0;
+	__le32 info1;
+	__le32 info2;
+	__le32 cmd_meta_data_31_0;
+	__le32 rsvd[3];
+	__le32 info3;
+} __packed;
+
+#define HAL_ASE_STATUS_RING_INFO0_GSE_CTRL		GENMASK(3, 0)
+#define HAL_ASE_STATUS_RING_INFO0_ASE_FSE_SEL		BIT(4)
+#define HAL_ASE_STATUS_RING_INFO0_CACHE_OP_RES		GENMASK(6, 5)
+#define HAL_ASE_STATUS_RING_INFO0_INDEX_SEARCH_EN	BIT(7)
+#define HAL_ASE_STATUS_RING_INFO0_MSDU_CNT_N		GENMASK(31, 8)
+
+#define HAL_ASE_STATUS_RING_INFO1_HASH_INDX_VAL		GENMASK(19, 0)
+#define HAL_ASE_STATUS_RING_INFO1_CACHE_SET_NUM		GENMASK(23, 20)
+#define HAL_ASE_STATUS_RING_INFO2_RING_ID		GENMASK(27, 20)
+#define HAL_ASE_STATUS_RING_INFO2_LOOPING_COUNT		GENMASK(31, 28)
+
+struct hal_ase_status {
+	__le32 info0;
+	__le32 msdu_byte_cnt_n;
+	__le32 msdu_timestmp_n;
+	__le32 cmd_meta_data_31_0;
+	__le32 cmd_meta_data_63_32;
+	__le32 info1;
+	__le32 reserved_7a;
 	__le32 info2;
 } __packed;
 

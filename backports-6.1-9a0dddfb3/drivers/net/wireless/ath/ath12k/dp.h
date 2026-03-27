@@ -277,6 +277,8 @@ enum ath12k_dp_eapol_key_type {
 #define DP_TCL_DATA_RING_SIZE		2048
 #endif
 #define DP_TX_IDR_SIZE			DP_TX_COMP_RING_SIZE
+#define DP_RX_ASE_CMD_RING_SIZE		32
+#define DP_RX_ASE_STATUS_RING_SIZE		256
 #define DP_TCL_CMD_RING_SIZE		32
 #define DP_TCL_STATUS_RING_SIZE		32
 #define DP_TQM_CMD_RING_SIZE		16384

@@ -499,7 +499,8 @@ int ath12k_pcic_ext_cfg_gic_msi_irq(struct ath12k_base *ab,
 	    ab->hw_params->ring_mask->tx_mon_buff[i] ||
 	    ab->hw_params->ring_mask->tx_exception[i] ||
 	    ab->hw_params->ring_mask->tqm_status[i] ||
-	    ab->hw_params->ring_mask->tcl_status[i]) {
+	    ab->hw_params->ring_mask->tcl_status[i] ||
+	    ab->hw_params->ring_mask->ase_status[i]) {
 		num_irq = 1;
 	}
 
@@ -1022,7 +1023,8 @@ int ath12k_pcic_ext_irq_config(struct ath12k_base *ab,
 		    ab->hw_params->ring_mask->tx_mon_buff[i] ||
 		    ab->hw_params->ring_mask->tx_exception[i] ||
 		    ab->hw_params->ring_mask->tqm_status[i] ||
-		    ab->hw_params->ring_mask->tcl_status[i]) {
+		    ab->hw_params->ring_mask->tcl_status[i] ||
+		    ab->hw_params->ring_mask->ase_status[i]) {
 			num_irq = 1;
 		}
 

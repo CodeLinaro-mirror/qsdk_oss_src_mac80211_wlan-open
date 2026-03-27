@@ -323,6 +323,7 @@ enum htt_srng_ring_id {
 	HTT_RXDMA_WBM_BUF0_RING,
 	HTT_RXDMA_WBM_BUF1_RING,
 	HTT_RXDMA_WBM_BUF2_RING,
+	HTT_RXOLE_ASE_STATUS_RING = 19,
 };
 
 /* host -> target  HTT_SRING_SETUP message

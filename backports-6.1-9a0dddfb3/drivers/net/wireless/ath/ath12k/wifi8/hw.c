@@ -169,6 +169,13 @@ static struct ath12k_hw_ring_mask ath12k_wifi8_hw_ring_mask_qcn9625 = {
 		0,
 		ATH12K_SAM_STATUS_RING_MASK_0,
 	},
+	/* Group 9 */
+	.ase_status = {
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		0,
+		ATH12K_ASE_STATUS_RING_MASK_0,
+	},
 	/* Group 10, 11 */
 	.rx_mon_dest = {
 		0, 0, 0, 0,

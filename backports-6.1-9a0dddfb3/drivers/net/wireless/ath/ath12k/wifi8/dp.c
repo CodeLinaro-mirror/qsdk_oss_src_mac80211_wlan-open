@@ -56,6 +56,14 @@ static int ath12k_wifi8_non_cumac_dp_service_srng(struct ath12k_dp *dp,
 		}
 	}
 
+	if (dp->hw_params->ring_mask->ase_status[grp_id]) {
+		work_done = ath12k_wifi8_dp_rx_ase_cmd_status_handler(dp, budget);
+		budget -= work_done;
+		tot_work_done += work_done;
+		if (budget <= 0)
+			goto done;
+	}
+
 	if (dp->hw_params->ring_mask->host2rxmon[grp_id])
 		ath12k_dp_mon_rx_process_low_thres(dp);
 
@@ -468,11 +476,20 @@ fail_link_desc_cleanup:
 
 static int ath12k_wifi8_dp_op_device_init(struct ath12k_dp *dp)
 {
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
 	int ret;
 
 	ret = ath12k_dp_mon_rx_alloc(dp);
 	if (ret) {
 		ath12k_warn(dp->ab, "failed to setup rxdma rings ret = %d\n", ret);
+		goto fail_dp_mon_rx_free;
+	}
+
+	ret = ath12k_dp_srng_setup(dp->ab, &dp_wifi8->rx_ase_status_ring,
+				   HAL_ASE_STATUS_RING, 0, 0,
+				   DP_RX_ASE_STATUS_RING_SIZE);
+	if (ret) {
+		ath12k_warn(dp->ab, "failed to setup ase status ring : %d\n", ret);
 		goto fail_dp_mon_rx_free;
 	}
 
