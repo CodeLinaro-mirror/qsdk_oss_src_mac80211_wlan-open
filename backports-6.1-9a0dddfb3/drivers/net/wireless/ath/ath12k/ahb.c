@@ -1287,6 +1287,9 @@ static void ath12k_ahb_queue_all_userpd_reset(struct ath12k_base *ab)
 	for (i = 0; i < ag->num_devices; i++) {
 		partner_ab = ag->ab[i];
 
+		if (!partner_ab)
+			continue;
+
 		if (partner_ab->is_bypassed ||
 		    partner_ab->hif.bus == ATH12K_BUS_PCI)
 			continue;
@@ -1308,6 +1311,9 @@ static int ath12k_ahb_release_all_userpd(struct ath12k_base *ab)
 
 	for (i = 0; i < ag->num_devices; i++) {
 		partner_ab = ag->ab[i];
+
+		if (!partner_ab)
+			continue;
 
 		if (partner_ab->is_bypassed ||
 		    !(partner_ab->hif.bus == ATH12K_BUS_AHB ||
