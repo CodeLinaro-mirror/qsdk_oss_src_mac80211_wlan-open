@@ -4638,8 +4638,14 @@ static int __ieee80211_csa_finalize(struct ieee80211_link_data *link_data)
 	if (err)
 		return err;
 
-	cfg80211_ch_switch_notify(sdata->dev, &link_data->csa.chanreq.oper,
-				  link_data->link_id);
+	/*
+	 * For scan radio, NL80211_CMD_CH_SWITCH_NOTIFY is sent from the
+	 * driver upon MVR response since channel change is async (non-blocking).
+	 * Skip the regular mac80211 CSA path notification here.
+	 */
+	if (!wdev_is_scan_radio(&sdata->wdev))
+		cfg80211_ch_switch_notify(sdata->dev, &link_data->csa.chanreq.oper,
+					  link_data->link_id);
 
 	return 0;
 }

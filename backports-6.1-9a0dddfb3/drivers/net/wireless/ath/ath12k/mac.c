@@ -17502,6 +17502,7 @@ void ath12k_mac_stop(struct ath12k *ar)
 	wiphy_work_cancel(ath12k_ar_to_hw(ar)->wiphy, &ar->scan.vdev_clean_wk);
 	cancel_work_sync(&ar->regd_update_work);
 	cancel_work_sync(&ar->reg_set_previous_country);
+	cancel_work_sync(&ar->mvr_ch_switch_notify_work);
 	cancel_work_sync(&ar->ab->rfkill_work);
 	cancel_work_sync(&ar->ab->update_11d_work);
 	ar->state_11d = ATH12K_11D_IDLE;
@@ -25351,6 +25352,7 @@ static void ath12k_mac_hw_unregister(struct ath12k_hw *ah)
 	for_each_ar(ah, ar, i) {
 		cancel_work_sync(&ar->regd_update_work);
 		cancel_work_sync(&ar->reg_set_previous_country);
+		cancel_work_sync(&ar->mvr_ch_switch_notify_work);
 		ath12k_debugfs_unregister(ar);
 		ath12k_sysfs_cleanup_extn(ar);
 	}
@@ -26010,6 +26012,9 @@ static int ath12k_mac_setup(struct ath12k *ar)
 
 	INIT_WORK(&ar->erp_handle_trigger_work, ath12k_erp_handle_trigger);
 	INIT_WORK(&ar->ssr_erp_exit, ath12k_erp_ssr_exit);
+	INIT_WORK(&ar->mvr_ch_switch_notify_work,
+		  ath12k_mvr_ch_switch_notify_work);
+
 
 	/* Initialize peer deletion tracker for this pdev */
 	ret = ath12k_peer_del_tracker_init(pdev);

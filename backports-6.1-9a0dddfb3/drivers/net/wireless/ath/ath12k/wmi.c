@@ -765,6 +765,55 @@ ath12k_pull_mac_phy_cap_svc_ready_ext(struct ath12k_wmi_pdev *wmi_handle,
 	return 0;
 }
 
+/*
+ * ath12k_mvr_ch_switch_notify_work - Deferred work to send CH_SWITCH_NOTIFY
+ * @work: work struct embedded in struct ath12k
+ *
+ * cfg80211_ch_switch_notify() acquires the wiphy mutex (a sleeping lock) and
+ * must not be called from BH/softirq context.  The WMI MVR event handler runs
+ * in softirq context (CE receive callback -> HTC -> WMI op_rx), so we defer
+ * the notification to this work item which runs in process context.
+ */
+void ath12k_mvr_ch_switch_notify_work(struct work_struct *work)
+{
+	struct ath12k *ar = container_of(work, struct ath12k,
+					 mvr_ch_switch_notify_work);
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_link_vif *arvif;
+	struct wireless_dev *wdev;
+	u32 vdev_bitmap, bit_pos;
+
+	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+	vdev_bitmap = ar->mvr_ch_switch_notify_vdev_bm;
+	for (bit_pos = 0; bit_pos < 32; bit_pos++) {
+		if (!(vdev_bitmap & BIT(bit_pos)))
+			continue;
+
+		rcu_read_lock();
+		arvif = ath12k_mac_get_arvif_by_vdev_id(ab, bit_pos);
+		if (!arvif || !arvif->ahvif || !arvif->ahvif->vif) {
+			rcu_read_unlock();
+			continue;
+		}
+		wdev = ieee80211_vif_to_wdev(arvif->ahvif->vif);
+		if (!wdev || !wdev->netdev) {
+			rcu_read_unlock();
+			continue;
+		}
+		/*
+		 * arvif and wdev remain valid after rcu_read_unlock() because
+		 * wiphy_lock is held — interface deletion requires wiphy_lock,
+		 * so no vdev can be removed while we hold it.
+		 */
+		rcu_read_unlock();
+
+		cfg80211_ch_switch_notify(wdev->netdev,
+					  &arvif->chanctx.def,
+					  arvif->link_id);
+	}
+	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+}
+
 static void ath12k_wmi_process_mvr_event(struct ath12k_base *ab, u32 *vdev_id_bm,
 					 u32 num_vdev_bm)
 {
@@ -848,6 +897,17 @@ static void ath12k_wmi_process_mvr_event(struct ath12k_base *ab, u32 *vdev_id_bm
 
 	spin_unlock_bh(&ar->data_lock);
 
+	/*
+	 * For scan radio, channel change is async (non-blocking MVR).
+	 * Send NL80211_CMD_CH_SWITCH_NOTIFY from the driver upon MVR
+	 * response, since the regular mac80211 CSA path is skipped.
+	 * cfg80211_ch_switch_notify() acquires wiphy mutex (sleeping lock)
+	 * so defer to a work item - we are in BH/softirq context here.
+	 */
+	if (ath12k_scan_radio_supported(ar->pdev)) {
+		ar->mvr_ch_switch_notify_vdev_bm = vdev_id_bm[0];
+		schedule_work(&ar->mvr_ch_switch_notify_work);
+	}
 }
 
 static int ath12k_wmi_tlv_mvr_event_parse(struct ath12k_base *ab,

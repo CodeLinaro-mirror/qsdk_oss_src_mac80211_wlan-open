@@ -1704,6 +1704,15 @@ struct ath12k {
 	/* To synchronize rhash tbl write operation */
 	spinlock_t rhash_tx_lock;
 	struct ath12k_chanctx_switch_stats chanctx_switch_stats;
+
+	/*
+	 * Deferred work to send NL80211_CMD_CH_SWITCH_NOTIFY for scan radio.
+	 * cfg80211_ch_switch_notify() acquires wiphy mutex and cannot be called
+	 * from BH/softirq context (WMI MVR event handler). Schedule work to
+	 * call it from process context instead.
+	 */
+	struct work_struct mvr_ch_switch_notify_work;
+	u32 mvr_ch_switch_notify_vdev_bm;
 };
 
 struct ath12k_6ghz_sp_reg_rule {
@@ -2914,5 +2923,6 @@ struct ath12k *ath12k_core_ar_from_hw_link_id(struct ath12k_base *ab, u8 hw_link
 int ath12k_core_crypto_param_len(struct ath12k_base *ab, enum hal_encrypt_type enctype);
 int ath12k_core_crypto_icv_len(struct ath12k_base *ab, enum hal_encrypt_type enctype);
 int ath12k_core_crypto_mic_len(struct ath12k_base *ab, enum hal_encrypt_type enctype);
+void ath12k_mvr_ch_switch_notify_work(struct work_struct *work);
 
 #endif /* _CORE_H_ */
