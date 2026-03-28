@@ -1098,6 +1098,7 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_PCIE] = NLA_POLICY_NESTED(nl80211_pcie_policy),
 	[NL80211_ATTR_DCVS] = { .type = NLA_U32 },
 	[NL80211_ATTR_DPS_ASSIST] = { .type = NLA_U8 },
+	[NL80211_ATTR_HE_MUEDCA_MODE] = { .type = NLA_U8 },
 };
 
 /* policy for the key attributes */
@@ -4246,6 +4247,9 @@ static int nl80211_set_wiphy_radio(struct genl_info *info,
 				   int radio_idx)
 {
 	u32 rts_threshold = 0, old_rts, changed = 0;
+#ifdef CPTCFG_QCN_EXTN
+	u8 muedca_mode = NL80211_MUEDCA_FIRMWARE_MODE, old_muedca_mode;
+#endif /* CPTCFG_QCN_EXTN */
 	int result;
 
 	if (!rdev->ops->set_wiphy_params)
@@ -4254,13 +4258,31 @@ static int nl80211_set_wiphy_radio(struct genl_info *info,
 	rts_threshold = nla_get_u32(info->attrs[NL80211_ATTR_WIPHY_RTS_THRESHOLD]);
 	changed |= WIPHY_PARAM_RTS_THRESHOLD;
 
+#ifdef CPTCFG_QCN_EXTN
+	if (info->attrs[NL80211_ATTR_HE_MUEDCA_MODE]) {
+		muedca_mode = nla_get_u8(info->attrs[NL80211_ATTR_HE_MUEDCA_MODE]);
+		if (muedca_mode > NL80211_MUEDCA_MAX)
+			return -EINVAL;
+
+		changed |= WIPHY_PARAM_MUEDCA_MODE;
+	}
+#endif /* CPTCFG_QCN_EXTN */
+
 	old_rts = rdev->wiphy.radio_cfg[radio_idx].rts_threshold;
+#ifdef CPTCFG_QCN_EXTN
+	old_muedca_mode = rdev->wiphy.radio_cfg[radio_idx].muedca_mode;
+	rdev->wiphy.radio_cfg[radio_idx].muedca_mode = muedca_mode;
+#endif /* CPTCFG_QCN_EXTN */
 
 	rdev->wiphy.radio_cfg[radio_idx].rts_threshold = rts_threshold;
 
 	result = rdev_set_wiphy_params(rdev, radio_idx, changed);
-	if (result)
+	if (result) {
 		rdev->wiphy.radio_cfg[radio_idx].rts_threshold = old_rts;
+#ifdef CPTCFG_QCN_EXTN
+		rdev->wiphy.radio_cfg[radio_idx].muedca_mode = old_muedca_mode;
+#endif /* CPTCFG_QCN_EXTN */
+	}
 
 	return 0;
 }
@@ -4276,6 +4298,9 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 	u8 retry_short = 0, retry_long = 0;
 	u32 frag_threshold = 0, rts_threshold = 0;
 	u8 coverage_class = 0;
+#ifdef CPTCFG_QCN_EXTN
+	u8 muedca_mode = NL80211_MUEDCA_FIRMWARE_MODE;
+#endif /* CPTCFG_QCN_EXTN */
 	u32 txq_limit = 0, txq_memory_limit = 0, txq_quantum = 0;
 	int radio_idx = -1;
 
@@ -4609,12 +4634,25 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 		changed |= WIPHY_PARAM_TXQ_QUANTUM;
 	}
 
+#ifdef CPTCFG_QCN_EXTN
+	if (info->attrs[NL80211_ATTR_HE_MUEDCA_MODE]) {
+		muedca_mode = nla_get_u8(info->attrs[NL80211_ATTR_HE_MUEDCA_MODE]);
+		if (muedca_mode > NL80211_MUEDCA_MAX)
+			return -EINVAL;
+
+		changed |= WIPHY_PARAM_MUEDCA_MODE;
+	}
+#endif /* CPTCFG_QCN_EXTN */
+
 	if (changed) {
 		u8 old_retry_short, old_retry_long;
 		u32 old_frag_threshold, old_rts_threshold;
 		u8 old_coverage_class, i;
 		u32 old_txq_limit, old_txq_memory_limit, old_txq_quantum;
 		u32 *old_radio_rts_threshold = NULL;
+#ifdef CPTCFG_QCN_EXTN
+		u8 *old_radio_muedca_mode = NULL;
+#endif /* CPTCFG_QCN_EXTN */
 
 		if (!rdev->ops->set_wiphy_params)
 			return -EOPNOTSUPP;
@@ -4625,6 +4663,16 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 							  GFP_KERNEL);
 			if (!old_radio_rts_threshold)
 				return -ENOMEM;
+
+#ifdef CPTCFG_QCN_EXTN
+			old_radio_muedca_mode = kcalloc(rdev->wiphy.n_radio,
+							sizeof(u8),
+							GFP_KERNEL);
+			if (!old_radio_muedca_mode) {
+				kfree(old_radio_rts_threshold);
+				return -ENOMEM;
+			}
+#endif /* CPTCFG_QCN_EXTN */
 		}
 
 		old_retry_short = rdev->wiphy.retry_short;
@@ -4640,6 +4688,13 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 		old_txq_limit = rdev->wiphy.txq_limit;
 		old_txq_memory_limit = rdev->wiphy.txq_memory_limit;
 		old_txq_quantum = rdev->wiphy.txq_quantum;
+#ifdef CPTCFG_QCN_EXTN
+		if (old_radio_muedca_mode) {
+			for (i = 0 ; i < rdev->wiphy.n_radio; i++)
+				old_radio_muedca_mode[i] =
+					rdev->wiphy.radio_cfg[i].muedca_mode;
+		}
+#endif /* CPTCFG_QCN_EXTN */
 
 		if (changed & WIPHY_PARAM_RETRY_SHORT)
 			rdev->wiphy.retry_short = retry_short;
@@ -4662,6 +4717,14 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 			rdev->wiphy.txq_memory_limit = txq_memory_limit;
 		if (changed & WIPHY_PARAM_TXQ_QUANTUM)
 			rdev->wiphy.txq_quantum = txq_quantum;
+#ifdef CPTCFG_QCN_EXTN
+		if (changed & WIPHY_PARAM_MUEDCA_MODE && old_radio_muedca_mode) {
+			rdev->wiphy.muedca_mode = muedca_mode;
+			for (i = 0 ; i < rdev->wiphy.n_radio; i++)
+				rdev->wiphy.radio_cfg[i].muedca_mode =
+					rdev->wiphy.muedca_mode;
+		}
+#endif /* CPTCFG_QCN_EXTN */
 
 		result = rdev_set_wiphy_params(rdev, radio_idx, changed);
 		if (result) {
@@ -4678,8 +4741,18 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 			rdev->wiphy.txq_limit = old_txq_limit;
 			rdev->wiphy.txq_memory_limit = old_txq_memory_limit;
 			rdev->wiphy.txq_quantum = old_txq_quantum;
+#ifdef CPTCFG_QCN_EXTN
+			if (old_radio_muedca_mode) {
+				for (i = 0 ; i < rdev->wiphy.n_radio; i++)
+					rdev->wiphy.radio_cfg[i].muedca_mode =
+						old_radio_muedca_mode[i];
+			}
+#endif /* CPTCFG_QCN_EXTN */
 		}
 
+#ifdef CPTCFG_QCN_EXTN
+		kfree(old_radio_muedca_mode);
+#endif /* CPTCFG_QCN_EXTN */
 		kfree(old_radio_rts_threshold);
 		return result;
 	}

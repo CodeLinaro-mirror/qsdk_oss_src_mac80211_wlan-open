@@ -3981,6 +3981,7 @@ enum cfg80211_connect_params_changed {
  * @WIPHY_PARAM_TXQ_LIMIT: TXQ packet limit has been changed
  * @WIPHY_PARAM_TXQ_MEMORY_LIMIT: TXQ memory limit has been changed
  * @WIPHY_PARAM_TXQ_QUANTUM: TXQ scheduler quantum
+ * @WIPHY_PARAM_MUEDCA_MODE: MUEDCA mode
  */
 enum wiphy_params_flags {
 	WIPHY_PARAM_RETRY_SHORT		= BIT(0),
@@ -3992,6 +3993,9 @@ enum wiphy_params_flags {
 	WIPHY_PARAM_TXQ_LIMIT		= BIT(6),
 	WIPHY_PARAM_TXQ_MEMORY_LIMIT	= BIT(7),
 	WIPHY_PARAM_TXQ_QUANTUM		= BIT(8),
+#ifdef CPTCFG_QCN_EXTN
+	WIPHY_PARAM_MUEDCA_MODE		= BIT(9),
+#endif /* CPTCFG_QCN_EXTN */
 };
 
 #define IEEE80211_DEFAULT_AIRTIME_WEIGHT	256
@@ -5631,6 +5635,7 @@ struct cfg80211_ap_power_save_params {
  * @get_6ghz_dev_deployment_type: Get the 6 GHz device deployment type
  *
  * @ap_power_save : Configure AP Power Save parameters
+ * @set_muedca_mode: Set the mode of setting MU EDCA parameters.
  */
 struct cfg80211_ops {
 	int	(*suspend)(struct wiphy *wiphy, struct cfg80211_wowlan *wow);
@@ -6510,6 +6515,9 @@ struct wiphy_iftype_akm_suites {
  */
 struct wiphy_radio_cfg {
 	u32 rts_threshold;
+#ifdef CPTCFG_QCN_EXTN
+	u8 muedca_mode;
+#endif /* CPTCFG_QCN_EXTN */
 };
 
 /**
@@ -6848,6 +6856,9 @@ struct wiphy {
 	u32 frag_threshold;
 	u32 rts_threshold;
 	u8 coverage_class;
+#ifdef CPTCFG_QCN_EXTN
+	u8 muedca_mode;
+#endif /* CPTCFG_QCN_EXTN */
 
 	char fw_version[ETHTOOL_FWVERS_LEN];
 	u32 hw_version;
