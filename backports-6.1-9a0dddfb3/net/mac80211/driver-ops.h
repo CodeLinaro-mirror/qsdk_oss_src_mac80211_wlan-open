@@ -1970,4 +1970,24 @@ static inline int drv_ap_power_save(struct ieee80211_local *local,
 	return ret;
 }
 
+#ifdef CPTCFG_QCN_EXTN
+static inline int
+drv_set_muedca_mode(struct ieee80211_local *local,
+		int radio_idx, u8 muedca_mode)
+{
+	int ret = 0;
+
+	might_sleep();
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	if (local->ops->set_muedca_mode) {
+		trace_drv_set_muedca_mode(local, radio_idx, muedca_mode);
+		ret = local->ops->set_muedca_mode(&local->hw, radio_idx,
+				muedca_mode);
+	}
+	trace_drv_return_int(local, ret);
+	return ret;
+}
+#endif /* CPTCFG_QCN_EXTN */
+
 #endif /* __MAC80211_DRIVER_OPS */

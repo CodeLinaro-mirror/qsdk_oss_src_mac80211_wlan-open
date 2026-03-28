@@ -3609,6 +3609,30 @@ static int ieee80211_set_wiphy_params(struct wiphy *wiphy, int radio_idx, u32 ch
 		       WIPHY_PARAM_TXQ_QUANTUM))
 		ieee80211_txq_set_params(local, radio_idx);
 
+#ifdef CPTCFG_QCN_EXTN
+	if (changed & WIPHY_PARAM_MUEDCA_MODE) {
+		u8 muedca_mode;
+
+		if (!local->ops->set_muedca_mode)
+			return -EOPNOTSUPP;
+
+		if (radio_idx == -1) {
+			muedca_mode = wiphy->muedca_mode;
+		} else if (radio_idx >= 0 && radio_idx < wiphy->n_radio) {
+			if (!wiphy->radio_cfg)
+				return -EINVAL;
+
+			muedca_mode = wiphy->radio_cfg[radio_idx].muedca_mode;
+		} else {
+			return -EINVAL;
+		}
+
+		err = drv_set_muedca_mode(local, radio_idx, muedca_mode);
+		if (err)
+			return err;
+	}
+#endif /* CPTCFG_QCN_EXTN */
+
 	return 0;
 }
 

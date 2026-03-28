@@ -3562,6 +3562,33 @@ TRACE_EVENT(drv_ap_power_save,
 	)
 );
 
+#ifdef CPTCFG_QCN_EXTN
+TRACE_EVENT(drv_set_muedca_mode,
+		TP_PROTO(struct ieee80211_local *local,
+			int radio_idx,
+			u8 muedca_mode),
+
+		TP_ARGS(local, radio_idx, muedca_mode),
+
+		TP_STRUCT__entry(
+			LOCAL_ENTRY
+			__field(int, radio_idx)
+			__field(u8, muedca_mode)
+		),
+
+		TP_fast_assign(
+			LOCAL_ASSIGN;
+			__entry->radio_idx = radio_idx;
+			__entry->muedca_mode = muedca_mode;
+		),
+
+		TP_printk(
+			LOCAL_PR_FMT " radio_id:%d muedca_mode:%d",
+			LOCAL_PR_ARG, __entry->radio_idx, __entry->muedca_mode
+		)
+);
+#endif /* CPTCFG_QCN_EXTN */
+
 #endif /* !__MAC80211_DRIVER_TRACE || TRACE_HEADER_MULTI_READ */
 
 #undef TRACE_INCLUDE_PATH
