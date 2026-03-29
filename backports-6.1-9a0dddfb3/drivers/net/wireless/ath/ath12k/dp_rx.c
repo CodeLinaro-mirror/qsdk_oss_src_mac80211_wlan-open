@@ -678,8 +678,11 @@ void ath12k_dp_rx_reo_cmd_list_cleanup(struct ath12k_base *ab)
 
 	spin_lock_bh(&dp->reo_cmd_lock);
 	list_for_each_entry_safe(cmd, tmp, &dp->reo_cmd_list, list) {
+		struct hal_reo_status drain_status = {};
+
 		list_del(&cmd->list);
-		cmd->handler(dp, &cmd->data, HAL_REO_CMD_DRAIN);
+		drain_status.uniform_hdr.cmd_status = HAL_REO_CMD_DRAIN;
+		cmd->handler(dp, &cmd->u.data, &drain_status);
 		kfree(cmd);
 	}
 
@@ -702,15 +705,15 @@ void ath12k_dp_rx_reo_cmd_list_cleanup(struct ath12k_base *ab)
 EXPORT_SYMBOL(ath12k_dp_rx_reo_cmd_list_cleanup);
 
 void ath12k_dp_reo_cmd_free(struct ath12k_dp *dp, void *ctx,
-			    enum hal_reo_cmd_status status)
+			    struct hal_reo_status *status)
 {
 	struct ath12k_dp_rx_tid *rx_tid = ctx;
 
-	if (status == HAL_REO_CMD_DRAIN)
+	if (!status || status->uniform_hdr.cmd_status == HAL_REO_CMD_DRAIN)
 		goto free_desc;
-	else if (status != HAL_REO_CMD_SUCCESS)
+	else if (status->uniform_hdr.cmd_status != HAL_REO_CMD_SUCCESS)
 		ath12k_warn(dp->ab, "failed to flush rx tid hw desc, tid %d status %d\n",
-			    rx_tid->tid, status);
+			    rx_tid->tid, status->uniform_hdr.cmd_status);
 
 free_desc:
 	ath12k_hal_reo_shared_qaddr_cache_clear(dp->ab);
@@ -999,7 +1002,7 @@ int ath12k_dp_rx_peer_pn_replay_config(struct ath12k_link_vif *arvif,
 
 		ath12k_dp_arch_setup_pn_check_reo_cmd(dp, &cmd, rx_tid, key->cipher,
 						      key_cmd);
-		ret = ath12k_dp_arch_reo_cmd_send(dp, rx_tid,
+		ret = ath12k_dp_arch_reo_cmd_send(dp, rx_tid, sizeof(*rx_tid),
 						  HAL_REO_CMD_UPDATE_RX_QUEUE,
 						  &cmd, NULL);
 		if (ret) {
@@ -1599,7 +1602,7 @@ void ath12k_dp_peer_tid_setup(struct ath12k_base *ab)
 
 void
 ath12k_dp_primary_peer_migrate_setup(struct ath12k_dp *dp, void *ctx,
-				     enum hal_reo_cmd_status status)
+				     struct hal_reo_status *status)
 {
 	struct ath12k_dp_rx_tid *rx_tid = ctx;
 	struct ath12k_dp_link_peer *peer;
@@ -1611,7 +1614,7 @@ ath12k_dp_primary_peer_migrate_setup(struct ath12k_dp *dp, void *ctx,
 	u8 chip_id = rx_tid->chip_id;
 	int ret, tid;
 
-	if (status != HAL_REO_CMD_SUCCESS)
+	if (!status || status->uniform_hdr.cmd_status != HAL_REO_CMD_SUCCESS)
 		goto migration_fail;
 
 	mig_ab = dp->ab->ag->ab[chip_id];

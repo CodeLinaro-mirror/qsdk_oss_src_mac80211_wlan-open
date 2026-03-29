@@ -137,10 +137,12 @@ struct dp_reo_update_rx_queue_elem {
 
 struct ath12k_dp_rx_reo_cmd {
 	struct list_head list;
-	struct ath12k_dp_rx_tid data;
+	union {
+		struct ath12k_dp_rx_tid data;
+	} u;
 	int cmd_num;
 	void (*handler)(struct ath12k_dp *dp, void *ctx,
-			enum hal_reo_cmd_status status);
+			struct hal_reo_status *status);
 };
 
 #define ATH12K_DP_RX_REO_DESC_FREE_THRES  64
@@ -256,7 +258,7 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 			       struct ieee80211_rx_status *status,
 			       u8 hw_link_id, bool is_mcbc, u16 peer_id, u16 tid);
 void ath12k_dp_reo_cmd_free(struct ath12k_dp *dp, void *ctx,
-			    enum hal_reo_cmd_status status);
+			    struct hal_reo_status *status);
 void ath12k_dp_rx_frags_cleanup(struct ath12k_dp_rx_tid *rx_tid,
 				bool rel_link_desc);
 int ath12k_dp_rx_crypto_mic_len(struct ath12k_dp *dp, enum hal_encrypt_type enctype);
@@ -298,7 +300,7 @@ ath12k_dp_rx_htt_rxdma_rxole_ppe_cfg_set(struct ath12k_base *ab,
 					 struct ath12k_dp_htt_rxdma_ppe_cfg_param *param);
 void
 ath12k_dp_primary_peer_migrate_setup(struct ath12k_dp *dp, void *ctx,
-				     enum hal_reo_cmd_status status);
+				     struct hal_reo_status *status);
 int
 ath12k_dp_peer_migrate(struct ath12k_sta *ahsta, u16 peer_id,
 		       u8 chip_id);
