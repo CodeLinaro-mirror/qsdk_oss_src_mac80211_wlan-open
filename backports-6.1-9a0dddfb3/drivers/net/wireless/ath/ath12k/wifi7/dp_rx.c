@@ -571,8 +571,8 @@ static bool ath12k_wifi7_dp_rx_check_fast_rx(struct ath12k_dp *dp,
 					     struct rx_tlv_info_1 *tlv_info,
 					     struct ath12k_dp_peer *peer)
 {
-	if (unlikely(!dp->stats_disable ||
-		     tlv_info->decap != DP_RX_DECAP_TYPE_ETHERNET2_DIX))
+	if (unlikely(!peer->mscs_session_exists && (!dp->stats_disable ||
+		     tlv_info->decap != DP_RX_DECAP_TYPE_ETHERNET2_DIX)))
 		return false;
 
 	/* mcbc packets go through mac80211 for PN validation */
