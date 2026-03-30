@@ -135,6 +135,11 @@ struct wiphy;
  * @IEEE80211_CHAN_ALLOW_20MHZ_ACTIVITY: Allow activity on a 20 MHz channel,
  *	even if otherwise set to NO_IR.
  * @IEEE80211_CHAN_NO_UHR: UHR operation is not permitted on this channel.
+ * @IEEE80211_CHAN_NOL_HISTORY: Radar was detected on this channel
+ *	in the past. This is different from the NOL flag.
+ *	The NOL flag for a channel is cleared after 30 minutes.
+ *	In contrast, once radar is detected, the NOL History flag is set
+ *	and persists permanently for that channel.
  */
 enum ieee80211_channel_flags {
 	IEEE80211_CHAN_DISABLED			= BIT(0),
@@ -165,6 +170,7 @@ enum ieee80211_channel_flags {
 	IEEE80211_CHAN_ALLOW_6GHZ_VLP_AP	= BIT(25),
 	IEEE80211_CHAN_ALLOW_20MHZ_ACTIVITY     = BIT(26),
 	IEEE80211_CHAN_NO_UHR			= BIT(27),
+	IEEE80211_CHAN_NOL_HISTORY		= BIT(28),
 };
 
 #define IEEE80211_CHAN_NO_HT40 \

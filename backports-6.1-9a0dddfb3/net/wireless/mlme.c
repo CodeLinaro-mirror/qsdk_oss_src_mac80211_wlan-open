@@ -1173,6 +1173,8 @@ bool cfg80211_radar_event_device(struct wiphy *wiphy, struct cfg80211_chan_def *
 			    chandef->radar_bitmap & BIT(i)) {
 				non_oper_event = true;
 				c->dfs_state = NL80211_DFS_UNAVAILABLE;
+				if (wiphy->sta_dfs_en)
+					c->flags |= IEEE80211_CHAN_NOL_HISTORY;
 				if (time_nop_entered)
 					c->dfs_state_entered = time_nop_entered;
 				else {
