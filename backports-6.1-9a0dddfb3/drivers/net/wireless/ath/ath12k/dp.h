@@ -596,6 +596,8 @@ struct ath12k_dp_arch_ops {
 	void (*umac_reset_handle_post_reset_start)(struct ath12k_base *ab);
 	void (*umac_reset_handle_post_reset_complete)(struct ath12k_base *ab);
 	ssize_t (*dump_srng_stats)(struct ath12k_dp *dp, char *buf, int size);
+	ssize_t (*dump_device_dp_stats)(struct ath12k_dp *dp, char *buf, int size);
+	void (*reset_device_dp_stats)(struct ath12k_dp *dp);
 };
 
 struct ath12k_bp_stats {

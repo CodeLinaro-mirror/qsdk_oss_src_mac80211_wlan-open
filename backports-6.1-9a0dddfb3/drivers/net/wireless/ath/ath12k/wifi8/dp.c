@@ -698,6 +698,65 @@ static void ath12k_wifi8_dp_link_vif_configure(struct ath12k_dp *dp,
 	ath12k_wifi8_dp_vif_configure(dp, ahvif, ATH12K_DP_OP_UPDATE);
 }
 
+void ath12k_wifi8_reset_device_dp_stats(struct ath12k_dp *dp)
+{
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+
+	memset(&dp_wifi8->stats, 0, sizeof(struct ath12k_wifi8_dp_stats));
+	ath12k_wifi8_global_ast_stats_reset(dp);
+}
+
+static ssize_t ath12k_wifi8_dump_device_dp_stats(struct ath12k_dp *dp,
+						 char *buf, int size)
+{
+	int len = 0;
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+	struct ath12k_wifi8_tx_exc_stats *stats = &dp_wifi8->stats.tx_exc_stats;
+
+	len += scnprintf(buf + len, size - len, "\nTx Exception stats:\n");
+	len += scnprintf(buf + len, size - len, "-------------------\n");
+	len += scnprintf(buf + len, size - len, "total_exceptions:%u\n",
+			 stats->tx_exceptions);
+	len += scnprintf(buf + len, size - len, "null_flowq_packets:%u\n",
+			 stats->null_flowq_pkts);
+	len += scnprintf(buf + len, size - len, "reinject_packets:%u\n",
+			 stats->reinject_pkts);
+	len += scnprintf(buf + len, size - len, "invalid_desc:%u\n",
+			 stats->invalid_desc);
+	len += scnprintf(buf + len, size - len, "\nFailure Reasons::\n");
+	len += scnprintf(buf + len, size - len, "vdev_id_check_fail:%u\n",
+			 stats->vdev_id_check_fail);
+	len += scnprintf(buf + len, size - len, "addrx_invalid:%u\n",
+			 stats->addrx_invalid);
+	len += scnprintf(buf + len, size - len, "addrx_timeout:%u\n",
+			 stats->addrx_timeout);
+	len += scnprintf(buf + len, size - len, "msdu_drop:%u\n",
+			 stats->msdu_drop);
+	len += scnprintf(buf + len, size - len, "illegal_packets:%u\n",
+			 stats->illegal_pkts);
+	len += scnprintf(buf + len, size - len, "illegal_packet_hdr:%u\n",
+			 stats->illegal_pkt_hdr);
+	len += scnprintf(buf + len, size - len, "peer_ptr_null:%u\n",
+			 stats->peer_ptr_null);
+	len += scnprintf(buf + len, size - len, "bank_not_configured:%u\n",
+			 stats->bank_not_configured);
+	len += scnprintf(buf + len, size - len, "msdu_len_err:%u\n",
+			 stats->msdu_len_err);
+	len += scnprintf(buf + len, size - len, "to_sw_pkts:%u\n",
+			 stats->to_sw_pkts);
+	len += scnprintf(buf + len, size - len, "parse_err:%u\n",
+			 stats->parse_err);
+	len += scnprintf(buf + len, size - len, "classify_info_sel_exceed:%u\n",
+			 stats->classify_info_sel_exceed);
+	len += scnprintf(buf + len, size - len, "bank_id_exceed:%u\n",
+			 stats->bank_id_exceed);
+	len += scnprintf(buf + len, size - len, "buf_len_err:%u\n",
+			 stats->buf_len_err);
+
+	len += ath12k_wifi8_global_ast_stats(dp, buf + len, size - len);
+	return len;
+}
+
 static ssize_t ath12k_wifi8_dump_srng_stats(struct ath12k_dp *dp,
 					    char *buf, int size)
 {
@@ -924,6 +983,8 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.umac_reset_handle_post_reset_complete =
 				ath12k_wifi8_umac_reset_handle_post_reset_complete,
 	.dump_srng_stats = ath12k_wifi8_dump_srng_stats,
+	.dump_device_dp_stats = ath12k_wifi8_dump_device_dp_stats,
+	.reset_device_dp_stats = ath12k_wifi8_reset_device_dp_stats,
 };
 
 struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab)
