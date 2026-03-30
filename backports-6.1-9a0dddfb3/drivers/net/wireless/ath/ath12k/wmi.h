@@ -2500,6 +2500,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_PEER_ASSOC_CIP_INFO = 0x527,
 	WMI_TAG_MLO_PEER_TID_TO_LINK_MAP_EVENT_FIXED_PARAM = 0x544,
 	WMI_TAG_SHARED_CU_MEM_CONFIG = 0x577,
+	WMI_TAG_SHARED_MEM_TBTT_OFFSET_INFO = 0x578,
 	WMI_TAG_PDEV_SET_CUMAC_CHIP = 0x57A,
 	WMI_TAG_PDEV_SET_CUMAC_COMPLETE = 0x57B,
 	WMI_TAG_MAX
@@ -3054,18 +3055,17 @@ struct ath12k_wmi_pdev_band_to_mac_params {
 	__le32 end_freq;
 } __packed;
 
-/* This shares the supported countdown as follows
- * csa
- * quite
- * max_chan_switch_time
- * eht_bpcc
- * ttlm_max_switch_time
- * ttlm_expected_duration
- * ml_reconfig
- * uhr_epbcc
- * uhr_params_update
- * reserved (23 bits)
- */
+/* TBTT countdown shared memory supported fields bitmap */
+#define WMI_TBTT_COUNT_DOWN_CFG_CSA			BIT(0)
+#define WMI_TBTT_COUNT_DOWN_CFG_QUIET			BIT(1)
+#define WMI_TBTT_COUNT_DOWN_CFG_MAX_CH_SW_TIME		BIT(2)
+#define WMI_TBTT_COUNT_DOWN_CFG_EHT_BPCC		BIT(3)
+#define WMI_TBTT_COUNT_DOWN_CFG_TTLM_MAX_CH_SW_TIME	BIT(4)
+#define WMI_TBTT_COUNT_DOWN_CFG_TTLM_EXP_DUR		BIT(5)
+#define WMI_TBTT_COUNT_DOWN_CFG_ML_RECONFIG		BIT(6)
+#define WMI_TBTT_COUNT_DOWN_CFG_UHR_EBPCC		BIT(7)
+#define WMI_TBTT_COUNT_DOWN_CFG_UHR_PARAM_UPD		BIT(8)
+
 struct ath12k_wmi_shared_cu_mem_config {
 	__le32 config;
 } __packed;
@@ -3532,6 +3532,47 @@ struct wmi_service_available_event {
 	__le32 wmi_service_segment_bitmap[WMI_SERVICE_SEGMENT_BM_SIZE32];
 } __packed;
 
+struct ath12k_cu_mem_layout_arg {
+	u32 cu_mem_addr_lsb;
+	u32 cu_mem_addr_msb;
+	u32 size;
+	union {
+		struct {
+			u16 csa;
+			u16 quiet;
+		};
+		u32 offset1;
+	};
+	union {
+		struct {
+			u16 eht_bpcc;
+			u16 reconfig;
+		};
+		u32 offset2;
+	};
+	union {
+		struct {
+			u16 ttlm_max_ch_sw_time;
+			u16 ttlm_expected_duration;
+		};
+		u32 offset3;
+	};
+	union {
+		struct {
+			u16 uhr_param_update;
+			u16 uhr_ebpcc;
+		};
+		u32 offset4;
+	};
+	union {
+		struct {
+			u16 max_chan_switch_time;
+			u16 reserved;
+		};
+		u32 offset5;
+	};
+};
+
 struct ath12k_wmi_vdev_create_arg {
 	u8 if_id;
 	u32 type;
@@ -3547,10 +3588,35 @@ struct ath12k_wmi_vdev_create_arg {
 	u8 mld_addr[ETH_ALEN];
 	bool is_cfp_enabled;
 	u32 create_flags;
+	struct ath12k_cu_mem_layout_arg cu_mem_info;
 };
 
 #define ATH12K_MAX_VDEV_STATS_ID	0x30
 #define ATH12K_INVAL_VDEV_STATS_ID	0xFF
+
+struct wmi_vdev_create_cu_mem_offset_info {
+	__le32 tlv_header;
+	__le32 cu_mem_addr_lsb;
+	__le32 cu_mem_addr_msb;
+	__le32 size;
+	/*
+	 * Offsets should always start from 1 as 0th offset shall be reserved for
+	 * flags. If any of the below offset infos contain zero, Firmware shall
+	 * assume they are invalid.
+	 * The following 32-bit fields pack two 16-bit offsets each:
+	 *  - offset_info_1: [15:0] csa, [31:16] quiet
+	 *  - offset_info_2: [15:0] eht_bpcc, [31:16] ml-reconfig
+	 *  - offset_info_3: [15:0] ttlm_max_chan_switch_time,
+	 *                   [31:16] ttlm_expected_duration
+	 *  - offset_info_4: [15:0] uhr_param_update, [31:16] uhr_ebpcc
+	 *  - offset_info_5: [15:0] max channel switch timer, [31:16] reserved
+	 */
+	__le32 offset_info_1;
+	__le32 offset_info_2;
+	__le32 offset_info_3;
+	__le32 offset_info_4;
+	__le32 offset_info_5;
+} __packed;
 
 struct wmi_vdev_create_cmd {
 	__le32 tlv_header;

@@ -18422,6 +18422,56 @@ int ath12k_mac_pdev_resume(struct ath12k *ar)
 	return 0;
 }
 
+static int ath12k_mac_cu_mem_setup(struct ath12k *ar,
+				   struct ath12k_link_vif *arvif,
+				   struct ath12k_wmi_vdev_create_arg *vdev_arg)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_vif *ahvif = arvif->ahvif;
+	int ret;
+
+	if (!test_bit(WMI_TLV_SERVICE_SHARED_CU_MEM_MODEL_COUNT_DOWN,
+		      ab->wmi_ab.svc_map))
+		return 0;
+
+	if (ahvif->vdev_type != WMI_VDEV_TYPE_AP)
+		return 0;
+
+	ret = ath12k_core_cu_mem_alloc(ar, arvif);
+	if (ret == -EOPNOTSUPP)
+		return 0;
+
+	if (ret) {
+		ath12k_warn(ab, "failed to allocate vdev %d cu mem: %d\n",
+			    arvif->vdev_id, ret);
+		return ret;
+	}
+
+	vdev_arg->cu_mem_info.cu_mem_addr_lsb = lower_32_bits(arvif->cu_mem_paddr);
+	vdev_arg->cu_mem_info.cu_mem_addr_msb = upper_32_bits(arvif->cu_mem_paddr);
+	vdev_arg->cu_mem_info.size = sizeof(struct ath12k_cu_mem);
+
+	/* Compute offsets from CU memory layout; entry 0 is cu_flags */
+
+#define CU_MEM_FIELD_OFFSET(_mask, _field)					\
+	do {									\
+		if (ab->cu_mem_cfg_mask & WMI_TBTT_COUNT_DOWN_CFG_##_mask)	\
+			vdev_arg->cu_mem_info._field =				\
+					offsetof(struct ath12k_cu_mem, _field)	\
+					/ sizeof(u32);				\
+	} while (0)
+
+	CU_MEM_FIELD_OFFSET(EHT_BPCC, eht_bpcc);
+	CU_MEM_FIELD_OFFSET(ML_RECONFIG, reconfig);
+	CU_MEM_FIELD_OFFSET(TTLM_MAX_CH_SW_TIME, ttlm_max_ch_sw_time);
+	CU_MEM_FIELD_OFFSET(TTLM_EXP_DUR, ttlm_expected_duration);
+	CU_MEM_FIELD_OFFSET(UHR_PARAM_UPD, uhr_param_update);
+	CU_MEM_FIELD_OFFSET(UHR_EBPCC, uhr_ebpcc);
+#undef CU_MEM_FIELD_OFFSET
+
+	return 0;
+}
+
 int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 			   bool is_bridge_vdev)
 {
@@ -18651,12 +18701,16 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		goto err;
 	}
 
+	ret = ath12k_mac_cu_mem_setup(ar, arvif, &vdev_arg);
+	if (ret)
+		goto err;
+
 	ret = ath12k_wmi_vdev_create(ar, vdev_arg.type == WMI_VDEV_TYPE_MONITOR ?
 				     mac_addr : arvif->bssid, &vdev_arg);
 	if (ret) {
 		ath12k_warn(ab, "failed to create WMI vdev %d: %d\n",
 			    arvif->vdev_id, ret);
-		goto err;
+		goto err_cu_mem;
 	}
 
 	if (is_bridge_vdev)
@@ -18928,6 +18982,8 @@ err_vdev_del:
 	if (!list_empty(&ar->arvifs))
 		list_del(&arvif->list);
 	spin_unlock_bh(&ar->data_lock);
+err_cu_mem:
+	ath12k_core_cu_mem_free(ar, arvif);
 err:
 	arvif->ar = NULL;
 	return ret;
@@ -19608,6 +19664,9 @@ err_vdev_del:
 	arvif->is_scan_vif = false;
 	arvif->ar = NULL;
 	arvif->peer_del_all_enable = false;
+
+	/* Free shared memory allocated for TBTT countdown offsets */
+	ath12k_core_cu_mem_free(ar, arvif);
 
 	wiphy_work_cancel(ath12k_ar_to_hw(ar)->wiphy,
 			  &arvif->update_bcn_tx_status_work);

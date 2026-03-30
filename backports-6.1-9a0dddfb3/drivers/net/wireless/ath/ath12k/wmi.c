@@ -1432,12 +1432,13 @@ int ath12k_wmi_offchan_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 int ath12k_wmi_vdev_create(struct ath12k *ar, u8 *macaddr,
 			   struct ath12k_wmi_vdev_create_arg *args)
 {
+	struct ath12k_wmi_vdev_txrx_streams_params *txrx_streams;
+	struct wmi_vdev_create_cu_mem_offset_info *offset_info;
+	bool is_ml_vdev = is_valid_ether_addr(args->mld_addr);
+	struct wmi_vdev_create_mlo_params *ml_params;
 	struct ath12k_wmi_pdev *wmi = ar->wmi;
 	struct wmi_vdev_create_cmd *cmd;
 	struct sk_buff *skb;
-	struct ath12k_wmi_vdev_txrx_streams_params *txrx_streams;
-	bool is_ml_vdev = is_valid_ether_addr(args->mld_addr);
-	struct wmi_vdev_create_mlo_params *ml_params;
 	struct wmi_tlv *tlv;
 	int ret, len;
 	void *ptr;
@@ -1447,8 +1448,11 @@ int ath12k_wmi_vdev_create(struct ath12k *ar, u8 *macaddr,
 	 * both the bands.
 	 */
 	len = sizeof(*cmd) + TLV_HDR_SIZE +
-		(WMI_NUM_SUPPORTED_BAND_MAX * sizeof(*txrx_streams)) +
-		(is_ml_vdev ? TLV_HDR_SIZE + sizeof(*ml_params) : 0);
+	      (WMI_NUM_SUPPORTED_BAND_MAX * sizeof(*txrx_streams)) +
+	      TLV_HDR_SIZE + (is_ml_vdev ? sizeof(*ml_params) : 0) +
+	      TLV_HDR_SIZE +
+	      TLV_HDR_SIZE +
+	      (args->cu_mem_info.size ? sizeof(*offset_info) : 0);
 
 	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
 	if (!skb)
@@ -1515,6 +1519,54 @@ int ath12k_wmi_vdev_create(struct ath12k *ar, u8 *macaddr,
 			ath12k_wmi_tlv_cmd_hdr(WMI_TAG_MLO_VDEV_CREATE_PARAMS,
 					       sizeof(*ml_params));
 		ether_addr_copy(ml_params->mld_macaddr.addr, args->mld_addr);
+		ptr += sizeof(*ml_params);
+	} else {
+		tlv = ptr;
+		tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
+		ptr += TLV_HDR_SIZE;
+	}
+
+	 /* wfdr2_mode placeholder TLV (empty, not used by host) */
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
+	ptr += TLV_HDR_SIZE;
+
+	/* Add TBTT countdown offset info TLV if caller requested and AP type */
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
+					 args->cu_mem_info.size ?
+					 sizeof(*offset_info) : 0);
+	ptr += TLV_HDR_SIZE;
+
+	if (args->cu_mem_info.size) {
+		offset_info = ptr;
+		offset_info->tlv_header =
+			ath12k_wmi_tlv_cmd_hdr(WMI_TAG_SHARED_MEM_TBTT_OFFSET_INFO,
+					       sizeof(*offset_info));
+		offset_info->cu_mem_addr_lsb =
+			cpu_to_le32(args->cu_mem_info.cu_mem_addr_lsb);
+		offset_info->cu_mem_addr_msb =
+			cpu_to_le32(args->cu_mem_info.cu_mem_addr_msb);
+		offset_info->size = cpu_to_le32(args->cu_mem_info.size);
+
+		offset_info->offset_info_1 = cpu_to_le32(args->cu_mem_info.offset1);
+		offset_info->offset_info_2 = cpu_to_le32(args->cu_mem_info.offset2);
+		offset_info->offset_info_3 = cpu_to_le32(args->cu_mem_info.offset3);
+		offset_info->offset_info_4 = cpu_to_le32(args->cu_mem_info.offset4);
+		offset_info->offset_info_5 = cpu_to_le32(args->cu_mem_info.offset5);
+
+		ptr += sizeof(*offset_info);
+		ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+			   "WMI vdev create cu_mem: vdev %d host_addr 0x%08x_%08x size %u off1 0x%08x off2 0x%08x off3 0x%08x off4 0x%08x off5 0x%08x\n",
+			   args->if_id,
+			   args->cu_mem_info.cu_mem_addr_msb,
+			   args->cu_mem_info.cu_mem_addr_lsb,
+			   args->cu_mem_info.size,
+			   args->cu_mem_info.offset1,
+			   args->cu_mem_info.offset2,
+			   args->cu_mem_info.offset3,
+			   args->cu_mem_info.offset4,
+			   args->cu_mem_info.offset5);
 	}
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
