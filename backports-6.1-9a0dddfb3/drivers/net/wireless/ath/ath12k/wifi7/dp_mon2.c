@@ -354,6 +354,14 @@ ath12k_dp_mon_parse_mpdu_start(struct ath12k_dp *dp, struct ath12k_mon_data *pmo
 
 	mpdu_meta = (struct ath12k_dp_mon_mpdu_meta *)skb->data;
 	mpdu_meta->decap_type =  ppdu_info->mpdu_info[user_id].decap_type;
+
+	if (mpdu_meta->decap_type != DP_RX_DECAP_TYPE_RAW && ppdu_info->fc_valid &&
+	    ieee80211_is_ctl(ppdu_info->frame_control) &&
+	    (ppdu_info->userstats[user_id].filter_category ==
+		DP_MPDU_FILTER_CATEGORY_MO))
+		ppdu_info->userstats[user_id].filter_category =
+						DP_MPDU_FILTER_CATEGORY_FP;
+
 	return 0;
 }
 
@@ -674,6 +682,30 @@ ath12k_wifi7_dp_ext_mon_rx_adjust_mpdu_len(struct ath12k_pdev_dp *dp_pdev,
 }
 
 static int
+ath12k_wifi7_dp_ext_mon_subtype_check(struct ath12k_ext_mon_pkt_config *config,
+				      u8 type, u8 sub_type,
+				      bool is_mcast)
+{
+	u32 filter = config->filter[type];
+
+	switch (type) {
+	case ATH12K_EXT_MON_FRAME_MGMT:
+	case ATH12K_EXT_MON_FRAME_CTRL:
+		if (filter && ((filter >> sub_type) & 0x1))
+			return 0;
+		break;
+
+	case ATH12K_EXT_MON_FRAME_DATA:
+		if ((is_mcast && (filter & FILTER_DATA_MCAST)) ||
+		    (!is_mcast && (filter & FILTER_DATA_UCAST)))
+			return 0;
+		break;
+	}
+
+	return -EINVAL; /* Failure - filter out the frame */
+}
+
+static int
 ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 					struct hal_rx_mon_ppdu_info *ppdu_info,
 					struct sk_buff *mpdu,
@@ -685,10 +717,11 @@ ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_ext_mon_pkt_config *pkt_config = NULL;
 	struct ath12k_dp_mon_mpdu_meta *mpdu_meta;
 	struct ieee80211_hdr *hdr;
-	u8 type, filter_category;
+	u8 type, sub_type, filter_category;
 	u16 type_len;
 	int ret;
 	enum ath12k_ext_mon_filter_level level;
+	bool is_mcast = false;
 
 	spin_lock(&dp_mon_pdev->rx_ext_mon_lock);
 	config = dp_mon_pdev->rx_ext_mon_config;
@@ -714,6 +747,9 @@ ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 
 	type = ((__le16_to_cpu(hdr->frame_control) & IEEE80211_FCTL_FTYPE) >>
 		ATH12K_FC0_TYPE_SHIFT);
+	sub_type = ((__le16_to_cpu(hdr->frame_control) & IEEE80211_FCTL_STYPE) >>
+		    ATH12K_FC0_SUBTYPE_SHIFT);
+	is_mcast = is_multicast_ether_addr(hdr->addr1);
 
 	if (unlikely(type >= ATH12K_EXT_MON_FRAME_MAX)) {
 		spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
@@ -724,16 +760,35 @@ ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 
 	switch (filter_category) {
 	case DP_MPDU_FILTER_CATEGORY_FP:
-		pkt_config = &config->fp;
+		if (config->fp_enabled) {
+			pkt_config = &config->fp;
+			/* When FP statistics are enabled and extended monitor filters
+			 * are ORed in, extra frame type/subtypes may be received;
+			 * explicitly filter out those unintended frames here.
+			 */
+			ret = ath12k_wifi7_dp_ext_mon_subtype_check(pkt_config,
+								    type,
+								    sub_type,
+								    is_mcast);
+			if (unlikely(ret)) {
+				spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
+				ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON,
+					   "Filtered subtype %x\n", sub_type);
+				return -EINVAL;
+			}
+		}
 		break;
 	case DP_MPDU_FILTER_CATEGORY_MD:
-		pkt_config = &config->md;
+		if (config->md_enabled)
+			pkt_config = &config->md;
 		break;
 	case DP_MPDU_FILTER_CATEGORY_MO:
-		pkt_config = &config->mo;
+		if (config->mo_enabled)
+			pkt_config = &config->mo;
 		break;
 	case DP_MPDU_FILTER_CATEGORY_FP_MO:
-		pkt_config = &config->fpmo;
+		if (config->fpmo_enabled)
+			pkt_config = &config->fpmo;
 		break;
 	default:
 		break;
