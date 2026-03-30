@@ -1609,6 +1609,8 @@ static void ath12k_core_hw_group_stop(struct ath12k_hw_group *ag)
 		mutex_unlock(&ab->core_lock);
 	}
 
+	ath12k_core_cu_mem_pool_deinit(ag);
+
 	wiphy_work_cancel(ah->hw->wiphy, &ag->stats_work.stats_nb_work);
 	ath12k_stats_event_work_free(&ag->stats_work);
 
@@ -2019,6 +2021,10 @@ static int ath12k_core_hw_group_start(struct ath12k_hw_group *ag)
 	set_bit(ATH12K_GROUP_FLAG_REGISTERED, &ag->flags);
 
 	spin_lock_init(&ag->qos.profile_lock);
+
+	ret = ath12k_core_cu_mem_pool_init(ag);
+	if (ret)
+		goto err_mlo_teardown;
 
 core_pdev_create:
 	for (i = 0; i < ag->num_devices; i++) {
@@ -2716,6 +2722,8 @@ void ath12k_core_halt(struct ath12k *ar)
 
 	rcu_assign_pointer(ab->pdevs_active[ar->pdev_idx], NULL);
 	synchronize_rcu();
+
+	ath12k_core_cu_mem_free_all(ar);
 
 	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE0)
 		INIT_LIST_HEAD(&ar->arvifs);
@@ -6054,6 +6062,58 @@ int ath12k_core_crypto_mic_len(struct ath12k_base *ab, enum hal_encrypt_type enc
 	return ath12k_dp_rx_crypto_mic_len(ab->dp, enctype);
 }
 EXPORT_SYMBOL(ath12k_core_crypto_mic_len);
+
+int ath12k_core_cu_mem_alloc(struct ath12k *ar, struct ath12k_link_vif *arvif)
+{
+	struct ath12k_base *ab = ar->ab;
+
+	if (!ab->hw_params->cp_arch_ops || !ab->hw_params->cp_arch_ops->cu_mem_alloc)
+		return -EOPNOTSUPP;
+
+	return ab->hw_params->cp_arch_ops->cu_mem_alloc(ar, arvif);
+}
+EXPORT_SYMBOL(ath12k_core_cu_mem_alloc);
+
+void ath12k_core_cu_mem_free(struct ath12k *ar, struct ath12k_link_vif *arvif)
+{
+	struct ath12k_base *ab = ar->ab;
+
+	if (!ab->hw_params->cp_arch_ops || !ab->hw_params->cp_arch_ops->cu_mem_free)
+		return;
+
+	ab->hw_params->cp_arch_ops->cu_mem_free(ar, arvif);
+}
+EXPORT_SYMBOL(ath12k_core_cu_mem_free);
+
+void ath12k_core_cu_mem_free_all(struct ath12k *ar)
+{
+	struct ath12k_link_vif *arvif_itr;
+
+	list_for_each_entry(arvif_itr, &ar->arvifs, list)
+		ath12k_core_cu_mem_free(arvif_itr->ar, arvif_itr);
+}
+
+int ath12k_core_cu_mem_pool_init(struct ath12k_hw_group *ag)
+{
+	struct ath12k_base *ab = ath12k_ag_to_ab(ag, 0);
+
+	if (!ab || !ab->hw_params->cp_arch_ops ||
+	    !ab->hw_params->cp_arch_ops->cu_mem_pool_init)
+		return 0;
+
+	return ab->hw_params->cp_arch_ops->cu_mem_pool_init(ag);
+}
+
+void ath12k_core_cu_mem_pool_deinit(struct ath12k_hw_group *ag)
+{
+	struct ath12k_base *ab = ath12k_ag_to_ab(ag, 0);
+
+	if (!ab || !ab->hw_params->cp_arch_ops ||
+	    !ab->hw_params->cp_arch_ops->cu_mem_pool_deinit)
+		return;
+
+	return ab->hw_params->cp_arch_ops->cu_mem_pool_deinit();
+}
 
 MODULE_DESCRIPTION("Driver support for Qualcomm Technologies WLAN devices");
 MODULE_LICENSE("Dual BSD/GPL");

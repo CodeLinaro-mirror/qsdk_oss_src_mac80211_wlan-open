@@ -72,4 +72,7 @@ static const int ath12k_wifi8_ext_irq_grp_affinity[] = {
 struct ath12k_base;
 int ath12k_wifi8_hw_init(struct ath12k_base *ab);
 
+struct ath12k_cp_arch_ops;
+extern const struct ath12k_cp_arch_ops ath12k_wifi8_cp_ops;
+
 #endif /* ATH12K_WIFI8_HW_H */

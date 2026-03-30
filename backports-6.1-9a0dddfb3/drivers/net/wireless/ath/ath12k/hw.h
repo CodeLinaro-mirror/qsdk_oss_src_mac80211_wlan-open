@@ -16,6 +16,9 @@
 struct ath12k_csi_cfr_header;
 struct ath12k_cfr_peer_tx_param;
 struct ath12k_mac_pri_link_migr_peer_node;
+struct ath12k_hw_group;
+struct ath12k_base;
+struct ath12k;
 struct ath12k_link_vif;
 
 /* Target configuration defines */
@@ -228,6 +231,13 @@ enum ath12k_m3_fw_loaders {
 	ath12k_m3_fw_loader_remoteproc,
 };
 
+struct ath12k_cp_arch_ops {
+	int (*cu_mem_pool_init)(struct ath12k_hw_group *ag);
+	void (*cu_mem_pool_deinit)(void);
+	int (*cu_mem_alloc)(struct ath12k *ar, struct ath12k_link_vif *arvif);
+	void (*cu_mem_free)(struct ath12k *ar, struct ath12k_link_vif *arvif);
+};
+
 struct ath12k_hw_params {
 	const char *name;
 	u16 hw_rev;
@@ -296,6 +306,7 @@ struct ath12k_hw_params {
 			 struct ath12k_wmi_resource_config_arg *config);
 
 	const struct hal_ops *hal_ops;
+	const struct ath12k_cp_arch_ops *cp_arch_ops;
 
 	u64 qmi_cnss_feature_bitmap;
 
