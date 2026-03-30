@@ -2279,14 +2279,8 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 		/* HW done cookie conversion */
 		desc_va = ((u64)le32_to_cpu(tx_status->buf_va_hi) << 32 |
 			   le32_to_cpu(tx_status->buf_va_lo));
-#ifndef CPTCFG_EXT_IPA_OFFLOAD
 		tx_desc = (struct ath12k_tx_desc_info *)((unsigned long)desc_va);
-#else
-		u32 cookie = le32_get_bits(desc->buf_addr_info.info1,
-					   BUFFER_ADDR_INFO1_SW_COOKIE);
 
-		tx_desc = ath12k_dp_get_tx_desc(dp, cookie);
-#endif
 		if (unlikely(!tx_desc)) {
 			DP_DEVICE_STATS_INC(dp, tx_err.tx_comp_err
 					    [DP_TX_COMP_ERR_INVALID_DESC][ring_id], 1);
