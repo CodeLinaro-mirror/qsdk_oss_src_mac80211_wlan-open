@@ -1535,9 +1535,7 @@ static int ath12k_core_start(struct ath12k_base *ab)
 		goto err_hif_stop;
 	}
 
-#ifndef CPTCFG_EXT_IPA_OFFLOAD
 	ath12k_hal_cc_config(ab);
-#endif
 
 	ret = ath12k_wmi_cmd_init(ab);
 	if (ret) {
