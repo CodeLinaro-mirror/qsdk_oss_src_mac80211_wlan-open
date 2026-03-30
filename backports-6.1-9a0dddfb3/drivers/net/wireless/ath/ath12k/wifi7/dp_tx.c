@@ -1680,7 +1680,7 @@ fail_unmap_dma:
 
 fail_remove_tx_buf:
 	if (tx_desc)
-		ath12k_dp_tx_release_txbuf(dp, tx_desc, ring_id);
+		ath12k_dp_tx_release_txbuf(dp, tx_desc, ti.ring_id);
 
 	spin_lock_bh(&arvif->link_stats_lock);
 	arvif->link_stats.tx_dropped++;
