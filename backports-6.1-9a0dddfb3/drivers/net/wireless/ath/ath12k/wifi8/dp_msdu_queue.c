@@ -8,6 +8,52 @@
 #include "dp.h"
 #include "dp_tx_tid.h"
 
+static
+u16 ath12k_wifi8_msduq_sam_id_alloc(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8)
+{
+	u16 msduq_sam_id = dp_hw_grp_wifi8->last_msduq_sam_id;
+	int i;
+
+	spin_lock_bh(&dp_hw_grp_wifi8->sam_id_lock);
+
+	for (i = 0;
+	     i < MAX_NUM_SAM_MSDU_QUEUES_SUPPORTED - MAX_NUM_SAM_RESERVED_MSDU_QUEUES;
+	     i++) {
+		msduq_sam_id = msduq_sam_id + 1;
+
+		/* Wrap around to the first non-reserved MSDUQ SAM ID if
+		 * the valid range is exceeded.
+		 */
+		if (msduq_sam_id >= MAX_NUM_SAM_MSDU_QUEUES_SUPPORTED)
+			msduq_sam_id = MAX_NUM_SAM_RESERVED_MSDU_QUEUES;
+
+		if (test_bit(msduq_sam_id, dp_hw_grp_wifi8->msduq_sam_id_alloc_map))
+			continue;
+
+		set_bit(msduq_sam_id, dp_hw_grp_wifi8->msduq_sam_id_alloc_map);
+		break;
+	}
+
+	dp_hw_grp_wifi8->last_msduq_sam_id = msduq_sam_id;
+	if (i >= MAX_NUM_SAM_MSDU_QUEUES_SUPPORTED - MAX_NUM_SAM_RESERVED_MSDU_QUEUES)
+		msduq_sam_id = HAL_SAM_INVALID_MSDUQ_ID;
+
+	spin_unlock_bh(&dp_hw_grp_wifi8->sam_id_lock);
+
+	return msduq_sam_id;
+}
+
+void ath12k_wifi8_clear_msduq_sam_id(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8,
+				     struct ath12k_dp_msdu_q_info *sw_msduq_ptr)
+{
+	if (sw_msduq_ptr->msduq_sam_id != HAL_SAM_INVALID_MSDUQ_ID) {
+		spin_lock_bh(&dp_hw_grp_wifi8->sam_id_lock);
+		clear_bit(sw_msduq_ptr->msduq_sam_id,
+			  dp_hw_grp_wifi8->msduq_sam_id_alloc_map);
+		spin_unlock_bh(&dp_hw_grp_wifi8->sam_id_lock);
+	}
+}
+
 struct ath12k_dp_msdu_q_info
 *ath12k_alloc_tx_msdu_flowq(struct ath12k_dp_hw_group *dp_hw_grp,
 			    struct ath12k_dp_peer *peer)
@@ -53,6 +99,7 @@ int ath12k_init_tx_msdu_flowq(struct ath12k_dp_hw_group *dp_hw_grp,
 	ti.queue_number = (sw_msduq_ptr->queue_number & 0xFFFFFF);
 	ti.peer_id = peer->peer_id;
 	ti.bitmap = sw_msduq_ptr->bitmap;
+	ti.msduq_sam_id = sw_msduq_ptr->msduq_sam_id;
 
 	if (tid_num == MLO_MGMT_TID) {
 		ti.is_mgmtq = true;
@@ -137,6 +184,13 @@ struct ath12k_dp_msdu_q_info
 	sw_msduq_ptr->flow_info.tid_num = tid_num;
 	sw_msduq_ptr->flow_info.flow_type = msduq_type;
 	sw_msduq_ptr->bitmap = ath12k_dp_get_chipid_bitmap(dp_hw_grp, peer);
+	/* Skip MSDU SAM ID allocation for mcast, mgmt and hol queues, mark as invalid.*/
+	if (msduq_type != HTT_TID_MSDUQ_NONUDP && msduq_type != HTT_TID_MSDUQ_UDP)
+		sw_msduq_ptr->msduq_sam_id = HAL_SAM_INVALID_MSDUQ_ID;
+	else
+		sw_msduq_ptr->msduq_sam_id =
+			ath12k_wifi8_msduq_sam_id_alloc(dp_hw_grp_wifi8);
+
 	pool_addr_from_id(dp_hw_grp_wifi8->msduq_ctxt, sw_msduq_ptr->msduq_idx,
 			  &sw_msduq_ptr->msdu_q_vaddr,
 			  &sw_msduq_ptr->msdu_q_paddr);
@@ -145,6 +199,7 @@ struct ath12k_dp_msdu_q_info
 	if (ret) {
 		ath12k_warn(ab, "HAL MSDUQ write failed\n");
 		sw_msduq_ptr->msduq_state = ATH12K_TX_Q_DELETED;
+		ath12k_wifi8_clear_msduq_sam_id(dp_hw_grp_wifi8, sw_msduq_ptr);
 		free_memory_pool(dp_hw_grp_wifi8->sw_msduq_ctxt, sw_msduq_ptr);
 		spin_unlock_bh(&dp_hw_grp_wifi8->tx_pool_lock);
 		return NULL;
@@ -172,6 +227,7 @@ void ath12k_free_tx_msdu_flowq(struct ath12k_dp_hw_group *dp_hw_grp,
 	msduq = pool_node_from_id(dp_hw_grp_wifi8->msduq_ctxt, sw_msduq_ptr->msduq_idx);
 	ath12k_wifi8_hal_msduq_set_invalid(dp_hw_grp, msduq, sw_msduq_ptr->msdu_q_paddr);
 	sw_msduq_ptr->msduq_state = ATH12K_TX_Q_DELETED;
+	ath12k_wifi8_clear_msduq_sam_id(dp_hw_grp_wifi8, sw_msduq_ptr);
 	free_memory_pool(dp_hw_grp_wifi8->sw_msduq_ctxt, sw_msduq_ptr);
 	spin_unlock_bh(&dp_hw_grp_wifi8->tx_pool_lock);
 }

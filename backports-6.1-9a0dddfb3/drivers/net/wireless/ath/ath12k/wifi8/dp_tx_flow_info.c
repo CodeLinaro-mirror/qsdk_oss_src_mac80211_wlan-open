@@ -169,6 +169,7 @@ int ath12k_wifi8_dp_tx_pool_create(struct ath12k_dp_hw_group *dp_hw_grp)
 	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8 =
 		ath12k_get_dp_hw_group_wifi8(dp_hw_grp);
 	u32 aligned_size;
+	int queue_id;
 
 	spin_lock_init(&dp_hw_grp_wifi8->tx_pool_lock);
 	dp_hw_grp_wifi8->msduq_ctxt = init_memory_pool(ab, MSDU_STRUCT_SZ,
@@ -208,6 +209,29 @@ int ath12k_wifi8_dp_tx_pool_create(struct ath12k_dp_hw_group *dp_hw_grp)
 							  true);
 	if (!dp_hw_grp_wifi8->sw_mpduq_ctxt)
 		goto error3;
+
+	bitmap_zero(dp_hw_grp_wifi8->msduq_sam_id_alloc_map,
+		    MAX_NUM_SAM_MSDU_QUEUES_SUPPORTED);
+	bitmap_zero(dp_hw_grp_wifi8->mpduq_sam_id_alloc_map,
+		    MAX_NUM_SAM_MPDU_QUEUES_SUPPORTED);
+
+	/*
+	 * Set the last 5 queue IDs in every 256-queue block as unsupported queues.
+	 * SAM MSDUQ IDs 251-255, 507-511, 763-767, 1019-1023 .... 3835-3839, 4091-4095
+	 * SAM MPDUQ IDs 251-255, 507-511, 763-767, 1019-1023
+	 * are invalid queue ids in allocated bitmap.
+	 */
+	for (queue_id = 251; queue_id < MAX_NUM_SAM_MSDU_QUEUES_SUPPORTED;
+	     queue_id += 256) {
+		bitmap_set(dp_hw_grp_wifi8->msduq_sam_id_alloc_map, queue_id, 5);
+
+		if (queue_id < MAX_NUM_SAM_MPDU_QUEUES_SUPPORTED)
+			bitmap_set(dp_hw_grp_wifi8->mpduq_sam_id_alloc_map, queue_id, 5);
+	}
+
+	dp_hw_grp_wifi8->last_msduq_sam_id = MAX_NUM_SAM_MSDU_QUEUES_SUPPORTED - 1;
+	dp_hw_grp_wifi8->last_mpduq_sam_id = MAX_NUM_SAM_MPDU_QUEUES_SUPPORTED - 1;
+	spin_lock_init(&dp_hw_grp_wifi8->sam_id_lock);
 
 	return 0;
 error3:

@@ -11,6 +11,7 @@
 #include "../dp_cmn.h"
 #include "hw.h"
 #include "dp_ast.h"
+#include "hal.h"
 
 #define DP_TX_EXCEPTION_RING_SIZE      512
 #define DP_WBM_REFILL_RING_MAX         4
@@ -110,6 +111,13 @@ struct ath12k_dp_hw_group_wifi8 {
 	u32 timer_entry_count;
 	struct list_head mec_entry_list_head;
 	u16 mec_timer_key;
+
+	DECLARE_BITMAP(msduq_sam_id_alloc_map, MAX_NUM_SAM_MSDU_QUEUES_SUPPORTED);
+	DECLARE_BITMAP(mpduq_sam_id_alloc_map, MAX_NUM_SAM_MPDU_QUEUES_SUPPORTED);
+	u16 last_msduq_sam_id;
+	u16 last_mpduq_sam_id;
+	/* lock for sam id alloc map*/
+	spinlock_t sam_id_lock;
 };
 
 struct dp_hw_grp_timer_entry {

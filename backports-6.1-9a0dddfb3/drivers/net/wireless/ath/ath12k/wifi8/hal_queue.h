@@ -220,6 +220,7 @@ struct hal_tx_msdu_flow_info {
 	dma_addr_t paddr;
 	u32 queue_number;
 	u16 peer_id;
+	u16 msduq_sam_id;
 	u8 bitmap;
 	u8 tid:4,
 	   mlo:1,
@@ -232,6 +233,7 @@ struct hal_tx_mpdu_queue_head_info {
 	u32 queue_number;
 	u32 header_len;
 	u16 peer_id;
+	u16 mpduq_sam_id;
 	u8 tid:4,
 	   encap_type:2,
 	   wapi:1,
