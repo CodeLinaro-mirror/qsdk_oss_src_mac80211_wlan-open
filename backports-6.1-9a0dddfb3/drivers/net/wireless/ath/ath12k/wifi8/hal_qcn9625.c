@@ -1524,6 +1524,7 @@ const struct hal_ops hal_qcn9625_ops = {
 			ath12k_wifi8_hal_rxdesc_get_mpdu_start_addr2_qcn9625,
 	.rx_h_is_decrypted = ath12k_wifi8_hal_rx_h_is_decrypted_qcn9625,
 	.get_hw_hptp = ath12k_wifi8_hal_get_hw_hptp,
+	.rx_h_peer_meta_data = ath12k_wifi8_hal_rx_h_peer_meta_data_qcn9625,
 	.rx_desc_get_fse_info = ath12k_wifi8_hal_rx_desc_get_fse_info_qcn9625,
 	.hal_tx_ppe2tcl_ring_halt_get = ath12k_wifi8_hal_tx_ppe2tcl_ring_halt_get,
 	.hal_tx_ppe2tcl_ring_halt_set = ath12k_wifi8_hal_tx_ppe2tcl_ring_halt_set,

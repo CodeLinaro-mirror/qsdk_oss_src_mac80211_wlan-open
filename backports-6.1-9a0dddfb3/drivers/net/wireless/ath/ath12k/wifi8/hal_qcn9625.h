@@ -187,6 +187,12 @@ void ath12k_wifi8_hal_rx_desc_end_tlv_copy_qcn9625(struct hal_rx_desc *fdesc,
 	fdesc->u.qcn9625_compact.msdu_end = ldesc->u.qcn9625_compact.msdu_end;
 }
 
+static inline
+u32 ath12k_wifi8_hal_rx_h_peer_meta_data_qcn9625(struct hal_rx_desc *desc)
+{
+	return __le32_to_cpu(desc->u.qcn9625_compact.mpdu_start.peer_meta_data);
+}
+
 static inline void
 ath12k_wifi8_hal_rxdesc_set_msdu_len_qcn9625(struct hal_rx_desc *desc, u16 len)
 {
@@ -311,4 +317,3 @@ void ath12k_wifi8_hal_rx_desc_get_fse_info_qcn9625(struct hal_rx_desc *desc,
 		le16_get_bits(desc->u.qcn9625_compact.msdu_end.fse_metadata,
 			      ATH12K_DP_RX_FSE_FLOW_METADATA_MASK);
 }
-
