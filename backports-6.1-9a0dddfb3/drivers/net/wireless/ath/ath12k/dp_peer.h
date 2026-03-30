@@ -307,19 +307,19 @@ ath12k_dp_link_peer_find_by_ml_peer_vdev_id(struct ath12k_dp *dp,
 static inline struct ieee80211_sta *
 ath12k_dp_peer_get_sta(const struct ath12k_dp_peer *peer)
 {
-	return peer->sta;
+	return peer ? peer->sta : NULL;
 }
 
 static inline struct ieee80211_sta *
 ath12k_dp_link_peer_get_sta(const struct ath12k_dp_link_peer *link_peer)
 {
-	return link_peer->dp_peer->sta;
+	return link_peer->dp_peer ? link_peer->dp_peer->sta : NULL;
 }
 
 static inline struct ieee80211_vif *
 ath12k_dp_peer_get_vif(struct ath12k_dp_peer *peer)
 {
-	return peer->vif;
+	return peer ? peer->vif : NULL;
 }
 
 static inline struct ieee80211_vif *
@@ -331,13 +331,17 @@ ath12k_dp_link_peer_get_vif(struct ath12k_dp_link_peer *link_peer)
 static inline
 enum nl80211_iftype ath12k_dp_peer_get_vif_type(struct ath12k_dp_peer *dp_peer)
 {
-	return ath12k_dp_peer_get_vif(dp_peer)->type;
+	struct ieee80211_vif *temp_vif = ath12k_dp_peer_get_vif(dp_peer);
+
+	return temp_vif ? temp_vif->type : NL80211_IFTYPE_UNSPECIFIED;
 }
 
 static inline enum nl80211_iftype
 ath12k_dp_link_peer_get_vif_type(struct ath12k_dp_link_peer *link_peer)
 {
-	return ath12k_dp_link_peer_get_vif(link_peer)->type;
+	struct ieee80211_vif *temp_vif = ath12k_dp_link_peer_get_vif(link_peer);
+
+	return temp_vif ? temp_vif->type : NL80211_IFTYPE_UNSPECIFIED;
 }
 
 struct ath12k_dp_vif *ath12k_dp_peer_get_dp_vif(struct ath12k_dp_peer *dp_peer);
