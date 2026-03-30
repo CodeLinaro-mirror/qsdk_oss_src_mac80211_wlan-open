@@ -879,7 +879,7 @@ ath12k_dp_ext_mon_setup_rx_filters(struct ath12k_pdev_dp *dp_pdev,
 	if (mgmt_full_pkt || ctrl_full_pkt || data_full_pkt) {
 		tlv_filter->enable_rx_tlv_offset = true;
 		tlv_filter->rx_tlv_offset = HTT_RX_RING_PKT_TLV_OFFSET;
-		tlv_filter->rx_filter |= HTT_RX_FILTER_TLV_FLAGS_MPDU_END |
+		tlv_filter->rx_filter |= HTT_RX_FILTER_TLV_FLAGS_MSDU_END |
 					 HTT_RX_FILTER_TLV_FLAGS_PER_MSDU_HEADER;
 
 		tlv_filter->conf_len_mgmt = mgmt_full_pkt ?

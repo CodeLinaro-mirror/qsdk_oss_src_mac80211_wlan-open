@@ -620,7 +620,8 @@ ath12k_wifi7_dp_ext_mon_get_hdr_len(enum ath12k_ext_mon_frame_len v)
 static int
 ath12k_wifi7_dp_ext_mon_rx_adjust_mpdu_len(struct ath12k_pdev_dp *dp_pdev,
 					   struct sk_buff *mpdu,
-					   u16 type_len)
+					   u16 type_len,
+					   enum ath12k_ext_mon_filter_level level)
 {
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct sk_buff *curr_mpdu = NULL;
@@ -635,6 +636,19 @@ ath12k_wifi7_dp_ext_mon_rx_adjust_mpdu_len(struct ath12k_pdev_dp *dp_pdev,
 
 	for (curr_mpdu = mpdu; curr_mpdu;) {
 		num_frags = skb_shinfo(curr_mpdu)->nr_frags;
+
+		if (unlikely(!num_frags)) {
+			ath12k_dbg(dp->ab, ATH12K_DBG_DP_MON,
+				   "invalid num_frags 0\n");
+			return -EINVAL;
+		}
+
+		if (num_frags > 1 &&
+		    level != ATH12K_EXT_MON_FILTER_LEVEL_MSDU) {
+			ath12k_dbg(dp->ab, ATH12K_DBG_DP_MON,
+				   "level mpdu/ppdu expects only single frag\n");
+			return -EINVAL;
+		}
 
 		for (frag_iter = 0; frag_iter < num_frags; ++frag_iter) {
 			frag_len = ath12k_dp_mon_get_frag_size_by_idx(dp, curr_mpdu,
@@ -663,7 +677,8 @@ static int
 ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 					struct hal_rx_mon_ppdu_info *ppdu_info,
 					struct sk_buff *mpdu,
-					struct ieee80211_rx_status *rxs)
+					struct ieee80211_rx_status *rxs,
+					u16 mpdu_id)
 {
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	struct ath12k_dp_rx_ext_mon *config;
@@ -673,6 +688,7 @@ ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	u8 type, filter_category;
 	u16 type_len;
 	int ret;
+	enum ath12k_ext_mon_filter_level level;
 
 	spin_lock(&dp_mon_pdev->rx_ext_mon_lock);
 	config = dp_mon_pdev->rx_ext_mon_config;
@@ -681,6 +697,13 @@ ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 		spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
 		ath12k_warn(dp_pdev->dp,
 			    "ext mon not enabled\n");
+		return -EINVAL;
+	}
+	if (config->level == ATH12K_EXT_MON_FILTER_LEVEL_PPDU &&
+	    mpdu_id != 0) {
+		spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON,
+			   "level is PPDU drop subsequent mpdu\n");
 		return -EINVAL;
 	}
 
@@ -725,6 +748,7 @@ ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 
 	mpdu_meta = (struct ath12k_dp_mon_mpdu_meta *)mpdu->data;
 	type_len = pkt_config->len[type];
+	level = config->level;
 	/* Unlock spinlock here; ext_mon_config must not be
 	 * accessed beyond this point
 	 */
@@ -738,7 +762,8 @@ ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 
 		ret = ath12k_wifi7_dp_ext_mon_rx_adjust_mpdu_len(dp_pdev,
 								 mpdu,
-								 type_len);
+								 type_len,
+								 level);
 
 		if (unlikely(ret)) {
 			ath12k_warn(dp_pdev->dp,
@@ -758,7 +783,8 @@ ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 int
 ath12k_wifi7_dp_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 				    struct hal_rx_mon_ppdu_info *ppdu_info,
-				    struct sk_buff *mpdu)
+				    struct sk_buff *mpdu,
+				    u16 mpdu_id)
 {
 	struct ieee80211_rx_status rxs = {0};
 	int freq_update = -1, ret = 0;
@@ -788,7 +814,8 @@ ath12k_wifi7_dp_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 		ath12k_dp_mon_rx_deliver_skb(dp_pdev, NULL, mpdu, &rxs, ppdu_info);
 	} else {
 		ret = ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(dp_pdev,
-							      ppdu_info, mpdu, &rxs);
+							      ppdu_info, mpdu,
+							      &rxs, mpdu_id);
 	}
 
 	return ret;
@@ -1241,6 +1268,7 @@ void ath12k_wifi7_dp_mon_rx_process_mpdu_queue(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_pdev_mon_dp_stats *mon_stats = &dp_pdev->dp_mon_pdev->mon_stats;
 	u32 buf_size = ATH12K_DP_MON_RX_BUF_SIZE, num_skb = 0, pkt_tlv = 0;
 	int ret, fcs_len_left, last_idx, last_frag_size, filter_cat;
+	u16 mpdu_id = 0;
 
 	while ((mpdu = skb_dequeue(&ppdu_info->mpdu_q[queue_idx]))) {
 		mpdu_meta = (struct ath12k_dp_mon_mpdu_meta *)mpdu->data;
@@ -1318,7 +1346,8 @@ void ath12k_wifi7_dp_mon_rx_process_mpdu_queue(struct ath12k_pdev_dp *dp_pdev,
 			}
 		}
 
-		ret = ath12k_wifi7_dp_mon_rx_deliver_mpdu(dp_pdev, ppdu_info, mpdu);
+		ret = ath12k_wifi7_dp_mon_rx_deliver_mpdu(dp_pdev, ppdu_info, mpdu,
+							  mpdu_id++);
 		if (unlikely(ret)) {
 			dev_kfree_skb_any(mpdu);
 			mon_stats->num_skb_free++;
