@@ -470,7 +470,7 @@ enum rdi_based_source_ring_selection {
 /* REO status address */
 #define HAL_REO_STATUS_RING_BASE_LSB(hal) \
 	((hal)->regs->hal_reo_status_ring_base)
-#define HAL_REO_STATUS_HP			0x312c
+#define HAL_REO_STATUS_HP			0x3128
 
 /* REO2PPE address */
 #define HAL_REO2PPE_RING_BASE_LSB(hal) \
