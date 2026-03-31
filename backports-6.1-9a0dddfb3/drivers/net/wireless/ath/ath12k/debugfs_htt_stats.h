@@ -3622,7 +3622,6 @@ struct ath12k_htt_tx_sounding_stats_tlv {
 	__le32 cbf_40[ATH12K_HTT_TXBF_MAX_NUM_OF_MODES];
 	__le32 cbf_80[ATH12K_HTT_TXBF_MAX_NUM_OF_MODES];
 	__le32 cbf_160[ATH12K_HTT_TXBF_MAX_NUM_OF_MODES];
-	__le32 sounding[ATH12K_HTT_TX_NUM_OF_SOUNDING_STATS_WORDS];
 	__le32 cv_nc_mismatch_err;
 	__le32 cv_fcs_err;
 	__le32 cv_frag_idx_mismatch;
@@ -3648,7 +3647,6 @@ struct ath12k_htt_tx_sounding_stats_tlv {
 	__le32 cv_in_use_cnt_exceeded;
 	__le32 cv_found;
 	__le32 cv_not_found;
-	__le32 sounding_320[ATH12K_HTT_TX_NUM_BE_MUMIMO_USER_STATS];
 	__le32 cbf_320[ATH12K_HTT_TXBF_MAX_NUM_OF_MODES];
 	__le32 cv_ntbr_sounding;
 	__le32 cv_found_upload_in_progress;
