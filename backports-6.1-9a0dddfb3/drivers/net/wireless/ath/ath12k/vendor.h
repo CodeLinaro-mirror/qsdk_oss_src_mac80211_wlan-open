@@ -43,6 +43,8 @@ struct ath12k;
 struct ath12k_hw;
 struct ath12k_afc_info;
 struct ath12k_afc_host_request;
+struct ath12k_base;
+struct ath12k_hw_group;
 
 
 struct ath12k_wifi_generic_params {
