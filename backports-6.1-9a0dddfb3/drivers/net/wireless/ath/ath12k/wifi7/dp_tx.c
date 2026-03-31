@@ -1903,17 +1903,17 @@ ath12k_wifi7_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 				    HTT_TX_WBM_COMP_INFO2_PPDU_ID);
 	ath12k_wifi7_dp_tx_get_hw_link_id_from_ppdu_id(ts, dp);
 
-	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, ts->peer_id);
-	if (peer)
-		link_id = ath12k_dp_peer_get_stats_link_id(dp->ab, peer,
-							   ts->hw_link_id);
-
 	if (le32_get_bits(status_desc->info3, HTT_TX_WBM_COMP_INFO3_VALID)) {
 		ts->peer_id = le32_get_bits(status_desc->info3,
 					    HTT_TX_WBM_COMP_INFO3_SW_PEER_ID);
 	} else {
 		ts->peer_id = HAL_INVALID_PEERID;
 	}
+
+	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, ts->peer_id);
+	if (peer)
+		link_id = ath12k_dp_peer_get_stats_link_id(dp->ab, peer,
+							   ts->hw_link_id);
 
 	switch (htt_status) {
 	case HAL_WBM_REL_HTT_TX_COMP_STATUS_OK:
