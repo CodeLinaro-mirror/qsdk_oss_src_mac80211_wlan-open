@@ -21,6 +21,7 @@
 #define DP_PPE2WBM_REFILL_RING_MAX     3
 #define DP_PPE2WBM_REFILL_RING_SIZE    512
 #define DP_PPE2WBM_IDLE_BUF_RING_SIZE  8192
+#define DP_REO_FLUSH_RING_SIZE		256
 
 #if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || \
 	defined(CPTCFG_ATH12K_MEM_PROFILE_512M)
@@ -64,8 +65,14 @@ struct ath12k_wifi8_tx_exc_stats {
 	u32 buf_len_err;
 };
 
+struct ath12k_wifi8_rx_stats {
+	u32 rx_flush_pkts;
+	u32 rx_mgmt_flush_pkts;
+};
+
 struct ath12k_wifi8_dp_stats {
 	struct ath12k_wifi8_tx_exc_stats tx_exc_stats;
+	struct ath12k_wifi8_rx_stats rx_stats;
 };
 
 struct ath12k_dp_wifi8 {
@@ -86,6 +93,7 @@ struct ath12k_dp_wifi8 {
 	struct dp_srng sam_status_ring;
 	struct dp_srng rx_ase_cmd_ring;
 	struct dp_srng rx_ase_status_ring;
+	struct dp_srng reo_flush_ring;
 	struct ath12k_wifi8_dp_stats stats;
 
 	/* SAM command ring staging in words */

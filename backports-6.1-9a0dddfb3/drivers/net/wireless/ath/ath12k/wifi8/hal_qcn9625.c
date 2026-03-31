@@ -17,12 +17,12 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 	/* TODO: max_rings can populated by querying HW capabilities */
 	/* REO2SW Rings */
 	[HAL_REO_EXCEPTION] = {
-		.start_ring_id = HAL_SRNG_RING_ID_REO2SW0,
+		.start_ring_id = HAL_SRNG_RING_ID_REO2SW6,
 		.max_rings = 1,
 		.entry_size = sizeof(struct hal_reo_dest_ring) >> 2,
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_DST,
-		.max_size = HAL_REO_REO2SW0_RING_BASE_MSB_RING_SIZE,
+		.max_size = HAL_REO_REO2SW6_RING_BASE_MSB_RING_SIZE,
 		.name = "Reo_exception",
 	},
 	[HAL_REO_DST] = {
@@ -413,6 +413,15 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.ring_dir = HAL_SRNG_DIR_DST,
 		.max_size = HAL_SAM_HOST_STATUS_RING_BASE_MSB_RING_SIZE,
 		.name = "SAM_status"
+	},
+	[HAL_REO_FLUSH] = {
+		.start_ring_id = HAL_SRNG_RING_ID_REO2SW0,
+		.max_rings = 1,
+		.entry_size = sizeof(struct hal_reo_dest_ring) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_DST,
+		.max_size = HAL_REO_REO2SW0_RING_BASE_MSB_RING_SIZE,
+		.name = "Reo_flush",
 	}
 };
 
@@ -533,6 +542,7 @@ const struct ath12k_hw_hal_params ath12k_wifi8_hw_hal_params_qcn9625 = {
 	.num_tids = HAL_WIFI8_NUM_TIDS,
 	.reoq_lut_size = HAL_WIFI8_REOQ_LUT_SIZE,
 	.dp_rx_err_rdi = HAL_WIFI8_DP_RX_ERR_RDI,
+	.rx_mgmt_buf_rbm = HAL_RX_BUF_RBM_SW4_BM,
 };
 
 const struct ath12k_hal_reset_rings qcn9625_reset_rings[HAL_RESET_RING_TYPE_MAX] = {
@@ -1179,9 +1189,10 @@ static int ath12k_wifi8_hal_srng_create_config_qcn9625(struct ath12k_hal *hal)
 	s->reg_size[0] = HAL_REO2_RING_BASE_LSB(hal) - HAL_REO1_RING_BASE_LSB(hal);
 	s->reg_size[1] = HAL_REO2_RING_HP - HAL_REO1_RING_HP;
 
+	/* REO2SW6 ring.*/
 	s = &hal->srng_config[HAL_REO_EXCEPTION];
-	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO_SW0_RING_BASE_LSB(hal);
-	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO_SW0_RING_HP;
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO2SW6_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO2SW6_RING_HP;
 
 	s = &hal->srng_config[HAL_REO_REINJECT];
 	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_SW2REO_RING_BASE_LSB(hal);
@@ -1368,6 +1379,11 @@ static int ath12k_wifi8_hal_srng_create_config_qcn9625(struct ath12k_hal *hal)
 	s = &hal->srng_config[HAL_PPE2WBM_IDLE_BUF];
 	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_WBM_REG + HAL_PPE2WBM_SW_IDLE_BUF_RING_LSB;
 	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_WBM_REG + HAL_PPE2WBM_SW_IDLE_BUF_RING_HP;
+
+	/* Reo flush ring (REO2SW0)*/
+	s = &hal->srng_config[HAL_REO_FLUSH];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO_SW0_RING_BASE_LSB(hal);
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO_SW0_RING_HP;
 
 	return 0;
 }

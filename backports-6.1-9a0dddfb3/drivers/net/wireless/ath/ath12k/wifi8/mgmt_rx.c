@@ -40,7 +40,7 @@ void ath12k_wifi8_mgmt_rx_replenish_buffs(struct ath12k_mgmt *mgmt,
 	dma_addr_t paddr;
 	struct ath12k_rx_desc_info *rx_desc, *tmp_rx_desc;
 	struct hal_srng *srng;
-	u8 manager = mgmt->hal->hal_params->rx_buf_rbm;
+	u8 manager = mgmt->hal->hal_params->rx_mgmt_buf_rbm;
 	int allocated_entries = 0;
 
 	if (reuse) {
