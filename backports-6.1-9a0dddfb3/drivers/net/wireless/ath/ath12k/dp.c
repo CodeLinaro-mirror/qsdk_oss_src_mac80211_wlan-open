@@ -757,7 +757,8 @@ void ath12k_dp_srng_common_cleanup(struct ath12k_base *ab)
 	ath12k_dp_srng_cleanup(ab, &dp->reo_reinject_ring);
 	ath12k_dp_srng_cleanup(ab, &dp->wbm_desc_rel_ring);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	dp->ppe.ppe_ops->ath12k_ppeds_srng_cleanup(ab);
+	if (ab->dp->ppe.ppe_ops && dp->ppe.ppe_ops->ath12k_ppeds_srng_cleanup)
+		dp->ppe.ppe_ops->ath12k_ppeds_srng_cleanup(ab);
 #endif
 }
 EXPORT_SYMBOL(ath12k_dp_srng_common_cleanup);
@@ -817,10 +818,12 @@ int ath12k_dp_srng_common_setup(struct ath12k_base *ab)
 
 skip_reo_setup:
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	ret = dp->ppe.ppe_ops->ath12k_ppeds_srng_setup(ab);
-	if (ret) {
-		ath12k_warn(ab, "failed to set up ppe-ds srngs :%d\n", ret);
-		goto err;
+	if (dp->ppe.ppe_ops && dp->ppe.ppe_ops->ath12k_ppeds_srng_setup) {
+		ret = dp->ppe.ppe_ops->ath12k_ppeds_srng_setup(ab);
+		if (ret) {
+			ath12k_warn(ab, "failed to set up ppe-ds srngs :%d\n", ret);
+			goto err;
+		}
 	}
 #endif
 

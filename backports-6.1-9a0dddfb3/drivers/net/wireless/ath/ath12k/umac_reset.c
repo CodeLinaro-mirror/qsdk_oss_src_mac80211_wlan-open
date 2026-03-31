@@ -1305,7 +1305,9 @@ static void ath12k_umac_reset_cleanup_from_state(struct ath12k_base *ab,
 		/* A dummy registration is needed to avoid breaking
 		 * the state machine at the DS module
 		 */
-		ab->dp->ppe.ppe_ops->ath12k_ppeds_register_soc(ab->dp, &idx);
+		if (ab->dp->ppe.ppe_ops &&
+			ab->dp->ppe.ppe_ops->ath12k_ppeds_register_soc)
+			ab->dp->ppe.ppe_ops->ath12k_ppeds_register_soc(ab->dp, &idx);
 		ath12k_umac_reset_restore_irqs(ab, state);
 		break;
 

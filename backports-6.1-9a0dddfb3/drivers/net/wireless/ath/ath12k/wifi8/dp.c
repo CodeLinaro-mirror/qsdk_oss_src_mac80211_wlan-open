@@ -214,7 +214,8 @@ static void ath12k_wifi8_dp_umac_deinit(struct ath12k_dp *dp)
 	ath12k_dp_link_desc_cleanup(ab, dp->link_desc_banks,
 				    HAL_WBM_IDLE_LINK, &dp->wbm_idle_ring);
 
-	dp->ppe.ppe_ops->ath12k_ppeds_detach(ab);
+	if (ab->dp->ppe.ppe_ops && dp->ppe.ppe_ops->ath12k_ppeds_detach)
+		dp->ppe.ppe_ops->ath12k_ppeds_detach(ab);
 	ath12k_dp_cc_cleanup(ab);
 	ath12k_wifi8_dp_reoq_lut_cleanup(ab);
 	ath12k_dp_deinit_bank_profiles(ab);
@@ -363,10 +364,12 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 	}
 #endif
 
-	ret = dp->ppe.ppe_ops->ath12k_ppeds_attach(ab);
-	if (ret) {
-		ath12k_warn(ab, "failed to attach PPE DS %d\n", ret);
-		goto fail_nss_plugin_unregister;
+	if (ab->dp->ppe.ppe_ops && dp->ppe.ppe_ops->ath12k_ppeds_attach) {
+		ret = dp->ppe.ppe_ops->ath12k_ppeds_attach(ab);
+		if (ret) {
+			ath12k_warn(ab, "failed to attach PPE DS %d\n", ret);
+			goto fail_nss_plugin_unregister;
+		}
 	}
 
 	ret = ath12k_dp_srng_common_setup(ab);
@@ -467,7 +470,8 @@ fail_cmn_srng_cleanup:
 	ath12k_dp_srng_common_cleanup(ab);
 
 fail_ppeds_detach:
-	dp->ppe.ppe_ops->ath12k_ppeds_detach(ab);
+	if (ab->dp->ppe.ppe_ops && dp->ppe.ppe_ops->ath12k_ppeds_detach)
+		dp->ppe.ppe_ops->ath12k_ppeds_detach(ab);
 
 fail_nss_plugin_unregister:
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
@@ -1001,7 +1005,6 @@ struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab)
 	dp_wifi8->dp = dp;
 
 	dp->arch_ops = &ath12k_wifi8_dp_arch_ops;
-
 	dp->ab = ab;
 	dp->dev = ab->dev;
 	dp->hw_params = ab->hw_params;
