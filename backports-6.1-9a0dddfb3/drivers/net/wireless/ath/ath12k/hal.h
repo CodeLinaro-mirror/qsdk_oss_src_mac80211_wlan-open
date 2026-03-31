@@ -1355,6 +1355,8 @@ struct ath12k_hal {
 
 	const struct ath12k_hal_tcl_to_cmp_rbm_map *tcl_to_cmp_rbm_map;
 	const struct ath12k_hal_rdi_mapping *rdi_mapping;
+
+	void *arch_data;
 };
 
 enum ath12k_eht_ru_size {
@@ -1497,6 +1499,7 @@ enum hal_tcl_desc_type {
 
 struct hal_ops {
 	int (*hal_init)(struct ath12k_hal *hal, u8 hw_version);
+	void (*hal_deinit)(struct ath12k_hal *hal);
 	int (*create_srng_config)(struct ath12k_hal *hal);
 	void (*rx_desc_copy_end_tlv)(struct hal_rx_desc *fdesc,
 				     struct hal_rx_desc *ldesc);

@@ -1093,6 +1093,8 @@ void ath12k_hal_srng_deinit(struct ath12k_base *ab)
 	ath12k_hal_free_cont_rdp(hal);
 	ath12k_hal_free_cont_wrp(hal);
 	ath12k_hal_srng_destroy_config(hal);
+	if (ab->hw_params->hal_ops->hal_deinit)
+		ab->hw_params->hal_ops->hal_deinit(hal);
 }
 
 void ath12k_hal_dump_srng_stats(struct ath12k_base *ab)

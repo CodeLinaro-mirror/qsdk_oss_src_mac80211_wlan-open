@@ -500,6 +500,477 @@ const struct ath12k_hw_hal_params ath12k_wifi8_hw_hal_params_qcn9625 = {
 	.dp_rx_err_rdi = HAL_WIFI8_DP_RX_ERR_RDI,
 };
 
+const struct ath12k_hal_reset_rings qcn9625_reset_rings[HAL_RESET_RING_TYPE_MAX] = {
+	[HAL_TCL_GSE_CMD_RING] = {
+		.consumer_prefetch_timer = 0x00F1490C,
+		.srng_misc_reg = 0x00F148DC,
+		.hp = 0x00F17030,
+	},
+	[HAL_TQM_LOWPRI_CMD_RING] = {
+		.consumer_prefetch_timer = 0x00F08164,
+		.srng_misc_reg = 0x00F08134,
+		.hp = 0x00F0B010,
+	},
+	[HAL_TQM_HIPRI_CMD_RING] = {
+		.consumer_prefetch_timer = 0x00F081DC,
+		.srng_misc_reg = 0x00F081AC,
+		.hp = 0x00F0B018,
+	},
+	[HAL_TQM_HIPRI1_CMD_RING] = {
+		.consumer_prefetch_timer = 0x00F08254,
+		.srng_misc_reg = 0x00F08224,
+		.hp = 0x00F0B020,
+	},
+	[HAL_FW2TQM_ENT_RING] = {
+		.consumer_prefetch_timer = 0x00F080EC,
+		.srng_misc_reg = 0x00F080BC,
+		.hp = 0x00F0B008,
+	},
+	[HAL_TCL2TQM_ENT_RING] = {
+		.consumer_prefetch_timer = 0x00F08074,
+		.srng_misc_reg = 0x00F08044,
+		.hp = 0x00F0B000,
+	},
+	[HAL_WBM2TQM_DESC_RING] = {
+		.consumer_prefetch_timer = 0x00F083BC,
+		.srng_misc_reg = 0x00F0838C,
+		.hp = 0x00F0B038,
+	},
+	[HAL_TQM2WBM_REL_RING] = {
+		.consumer_prefetch_timer = 0x00F0419C,
+		.srng_misc_reg = 0x00F0416C,
+		.hp = 0x00F07000,
+	},
+	[HAL_WBM2REO_DESC_RING] = {
+		.consumer_prefetch_timer = 0x00F22294,
+		.srng_misc_reg = 0x00F22264,
+		.hp = 0x00F25018,
+	},
+	[HAL_REO2WBM_REL_RING] = {
+		.consumer_prefetch_timer = 0x00F04214,
+		.srng_misc_reg = 0x00F041E4,
+		.hp = 0x00F07008,
+	},
+	[HAL_FW2WBM_REL_RING] = {
+		.consumer_prefetch_timer = 0x00F04304,
+		.srng_misc_reg = 0x00F042D4,
+		.hp = 0x00F07018,
+	},
+	[HAL_FW2TQM_REL_RING] = {
+		.consumer_prefetch_timer = 0x00F08E2C,
+		.srng_misc_reg = 0x00F08DFC,
+		.hp = 0x00F0B0E8,
+	},
+	[HAL_WBM_IDLE_DESC_RING] = {
+		.consumer_prefetch_timer = 0x00F0455C,
+		.srng_misc_reg = 0x00F0452C,
+		.hp = 0x00F07040,
+	},
+	[HAL_TCL_GSE_STATUS_RING] = {
+		.srng_misc_reg = 0x00F14C94,
+		.hp = 0x00F17068,
+	},
+	[HAL_TCL2FW_OUTPUT_RING] = {
+		.srng_misc_reg = 0x00F14D84,
+		.hp = 0x00F17078,
+	},
+	[HAL_TQM_HIPRI_STATUS_RING] = {
+		.srng_misc_reg = 0x00F084F4,
+		.hp = 0x00F0B050,
+	},
+	[HAL_TQM_HIPRI1_STATUS_RING] = {
+		.srng_misc_reg = 0x00F0856C,
+		.hp = 0x00F0B058,
+	},
+	[HAL_TQM_LOWPRI_STATUS_RING] = {
+		.srng_misc_reg = 0x00F0847C,
+		.hp = 0x00F0B048,
+	},
+	[HAL_TQM2FW_REL_BUF_RING] = {
+		.srng_misc_reg = 0x00F0865C,
+		.hp = 0x00F0B068,
+	},
+	[HAL_WBM_ERR_REL_RING] = {
+		.srng_misc_reg = 0x00F04580,
+		.hp = 0x00F07048,
+	},
+	[HAL_REO2FW_DEST_RING] = {
+		.srng_misc_reg = 0x00F22FB4,
+		.hp = 0x00F250F0,
+	},
+	[HAL_REO2FW_MGMT_RING] = {
+		.srng_misc_reg = 0x00F2302C,
+		.hp = 0x00F250F8,
+	},
+	[HAL_TQM_ERR_REL_RING] = {
+		.srng_misc_reg = 0x00F086D4,
+		.hp = 0x00F0B070,
+	},
+	[HAL_TQM2TQM_IN1_MLO_IPC_RING] = {
+		.consumer_prefetch_timer = 0x00F08FE4,
+		.srng_misc_reg = 0x00F08FB4,
+		.hp = 0x00F0B0F0,
+		.consumer_producer_mlo = 0x00F09018,
+		.mlo_doorbell_press = 0x00F0901C,
+	},
+	[HAL_TQM2TQM_IN2_MLO_IPC_RING] = {
+		.consumer_prefetch_timer = 0x00F09078,
+		.srng_misc_reg = 0x00F09048,
+		.hp = 0x00F0B0F8,
+		.consumer_producer_mlo = 0x00F090AC,
+		.mlo_doorbell_press = 0x00F090B0,
+	},
+	[HAL_TQM2TQM_IN3_MLO_IPC_RING] = {
+		.consumer_prefetch_timer = 0x00F093C0,
+		.srng_misc_reg = 0x00F09390,
+		.hp = 0x00F0B110,
+		.consumer_producer_mlo = 0x00F093F4,
+		.mlo_doorbell_press = 0x00F093F8,
+	},
+	[HAL_TQM2TQM_IN4_MLO_IPC_RING] = {
+		.consumer_prefetch_timer = 0x00F09454,
+		.srng_misc_reg = 0x00F09424,
+		.hp = 0x00F0B118,
+		.consumer_producer_mlo = 0x00F09488,
+		.mlo_doorbell_press = 0x00F0948C,
+	},
+	[HAL_REO2REO_OUT1_MLO_IPC_RING] = {
+		.srng_misc_reg = 0x00F2311C,
+		.hp = 0x00F25108,
+		.consumer_producer_mlo = 0x00F23180,
+		.mlo_doorbell_press = 0x00F23184,
+	},
+	[HAL_REO2REO_OUT2_MLO_IPC_RING] = {
+		.srng_misc_reg = 0x00F231B0,
+		.hp = 0x00F25110,
+		.consumer_producer_mlo = 0x00F23214,
+		.mlo_doorbell_press = 0x00F23218,
+	},
+	[HAL_REO2REO_OUT3_MLO_IPC_RING] = {
+		.srng_misc_reg = 0x00F23244,
+		.hp = 0x00F25118,
+		.consumer_producer_mlo = 0x00F232A8,
+		.mlo_doorbell_press = 0x00F232AC,
+	},
+	[HAL_REO2REO_OUT4_MLO_IPC_RING] = {
+		.srng_misc_reg = 0x00F232D8,
+		.hp = 0x00F25120,
+		.consumer_producer_mlo = 0x00F2333C,
+		.mlo_doorbell_press = 0x00F23340,
+	},
+	[HAL_TQM2TQM_OUT1_MLO_IPC_RING] = {
+		.srng_misc_reg = 0x00F090DC,
+		.hp = 0x00F0B100,
+		.consumer_producer_mlo = 0x00F09140,
+		.mlo_doorbell_press = 0x00F09144,
+	},
+	[HAL_TQM2TQM_OUT2_MLO_IPC_RING] = {
+		.srng_misc_reg = 0x00F09170,
+		.hp = 0x00F0B108,
+		.consumer_producer_mlo = 0x00F091D4,
+		.mlo_doorbell_press = 0x00F091D8,
+	},
+	[HAL_TQM2TQM_OUT3_MLO_IPC_RING] = {
+		.srng_misc_reg = 0x00F094B8,
+		.hp = 0x00F0B120,
+		.consumer_producer_mlo = 0x00F0951C,
+		.mlo_doorbell_press = 0x00F09520,
+	},
+	[HAL_TQM2TQM_OUT4_MLO_IPC_RING] = {
+		.srng_misc_reg = 0x00F0954C,
+		.hp = 0x00F0B128,
+		.consumer_producer_mlo = 0x00F095B0,
+		.mlo_doorbell_press = 0x00F095B4,
+	},
+	[HAL_TCL2TCL_MLO_OUT1_IPC_RING] = {
+		.srng_misc_reg = 0x00F14E74,
+		.hp = 0x00F17088,
+		.consumer_producer_mlo = 0x00F14ED8,
+		.mlo_doorbell_press = 0x00F14EDC,
+	},
+	[HAL_TCL2TCL_MLO_OUT2_IPC_RING] = {
+		.srng_misc_reg = 0x00F14F08,
+		.hp = 0x00F17090,
+		.consumer_producer_mlo = 0x00F14F6C,
+		.mlo_doorbell_press = 0x00F14F70,
+	},
+	[HAL_TCL2TCL_MLO_OUT3_IPC_RING] = {
+		.srng_misc_reg = 0x00F14F9C,
+		.hp = 0x00F17098,
+		.consumer_producer_mlo = 0x00F15000,
+		.mlo_doorbell_press = 0x00F15004,
+	},
+	[HAL_TCL2TCL_MLO_OUT4_IPC_RING] = {
+		.srng_misc_reg = 0x00F15030,
+		.hp = 0x00F170A0,
+		.consumer_producer_mlo = 0x00F15094,
+		.mlo_doorbell_press = 0x00F15098,
+	},
+	[HAL_RXDMA2REO_MLO0_IPC_RING] = {
+		.consumer_prefetch_timer = 0x00F220D8,
+		.srng_misc_reg = 0x00F220A8,
+		.hp = 0x00F25000,
+		.consumer_producer_mlo = 0x00F2210C,
+		.mlo_doorbell_press = 0x00F22110,
+	},
+	[HAL_RXDMA2REO_MLO1_IPC_RING] = {
+		.consumer_prefetch_timer = 0x00F2216C,
+		.srng_misc_reg = 0x00F2213C,
+		.hp = 0x00F25008,
+		.consumer_producer_mlo = 0x00F221A0,
+		.mlo_doorbell_press = 0x00F221A4,
+	},
+	[HAL_RXDMA2REO_MLO2_IPC_RING] = {
+		.consumer_prefetch_timer = 0x00F22200,
+		.srng_misc_reg = 0x00F221D0,
+		.hp = 0x00F25010,
+		.consumer_producer_mlo = 0x00F22234,
+		.mlo_doorbell_press = 0x00F22238,
+	},
+	[HAL_RXDMA2REO_MLO3_IPC_RING] = {
+		.consumer_prefetch_timer = 0x00F22654,
+		.srng_misc_reg = 0x00F22624,
+		.hp = 0x00F25058,
+		.consumer_producer_mlo = 0x00F22688,
+		.mlo_doorbell_press = 0x00F2268C,
+	},
+	[HAL_RXDMA2REO_MLO4_IPC_RING] = {
+		.consumer_prefetch_timer = 0x00F226E8,
+		.srng_misc_reg = 0x00F226B8,
+		.hp = 0x00F25060,
+		.consumer_producer_mlo = 0x00F2271C,
+		.mlo_doorbell_press = 0x00F22720,
+	},
+	[HAL_WBM2RXDMA_0_BUF_RING_IPC_RING] = {
+		.consumer_prefetch_timer = 0x00E4224C,
+		.srng_misc_reg = 0x00E4221C,
+		.hp = 0x00E44818,
+		.consumer_producer_mlo = 0x00E42280,
+		.mlo_doorbell_press = 0x00E42284,
+	},
+	[HAL_WBM2RXDMA_1_BUF_RING_IPC_RING] = {
+		.consumer_prefetch_timer = 0x00E42314,
+		.srng_misc_reg = 0x00E422E4,
+		.hp = 0x00E44820,
+		.consumer_producer_mlo = 0x00E42348,
+		.mlo_doorbell_press = 0x00E4234C,
+	},
+	[HAL_WBM2RXDMA_2_BUF_RING_IPC_RING] = {
+		.consumer_prefetch_timer = 0x00E423DC,
+		.srng_misc_reg = 0x00E423AC,
+		.hp = 0x00E44828,
+		.consumer_producer_mlo = 0x00E42410,
+		.mlo_doorbell_press = 0x00E42414,
+	},
+	[HAL_WBM2RXDMA_LINK_RING_IPC_RING] = {
+		.consumer_prefetch_timer = 0x00E425FC,
+		.srng_misc_reg = 0x00E425CC,
+		.hp = 0x00E44840,
+		.consumer_producer_mlo = 0x00E42630,
+		.mlo_doorbell_press = 0x00E42634,
+	},
+	[HAL_RXDMA2REO_MLO_IPC_RING] = {
+		.srng_misc_reg = 0x00E431F8,
+		.hp = 0x00E44A20,
+		.consumer_producer_mlo = 0x00E4325C,
+		.mlo_doorbell_press = 0x00E43260,
+	},
+	[HAL_WBM2RXDMA_LINK_MLO1_IPC_RING] = {
+		.srng_misc_reg = 0x00F047CC,
+		.hp = 0x00F07068,
+		.consumer_producer_mlo = 0x00F04830,
+		.mlo_doorbell_press = 0x00F04834,
+	},
+	[HAL_WBM2RXDMA_LINK_MLO2_IPC_RING] = {
+		.srng_misc_reg = 0x00F04860,
+		.hp = 0x00F07070,
+		.consumer_producer_mlo = 0x00F048C4,
+		.mlo_doorbell_press = 0x00F048C8,
+	},
+	[HAL_WBM2RXDMA_LINK_MLO3_IPC_RING] = {
+		.srng_misc_reg = 0x00F048F4,
+		.hp = 0x00F07078,
+		.consumer_producer_mlo = 0x00F04958,
+		.mlo_doorbell_press = 0x00F0495C,
+	},
+	[HAL_WBM2RXDMA_LINK_MLO4_IPC_RING] = {
+		.srng_misc_reg = 0x00F04988,
+		.hp = 0x00F07080,
+		.consumer_producer_mlo = 0x00F049EC,
+		.mlo_doorbell_press = 0x00F049F0,
+	},
+	[HAL_WBM2RXDMA_LINK_MLO5_IPC_RING] = {
+		.srng_misc_reg = 0x00F04A1C,
+		.hp = 0x00F07088,
+		.consumer_producer_mlo = 0x00F04A80,
+		.mlo_doorbell_press = 0x00F04A84,
+	},
+	[HAL_WBM2RXDMA_SW0_BUFF_MLO1_IPC_RING] = {
+		.srng_misc_reg = 0x00F05078,
+		.hp = 0x00F070E0,
+		.consumer_producer_mlo = 0x00F050DC,
+		.mlo_doorbell_press = 0x00F050E0,
+	},
+	[HAL_WBM2RXDMA_SW0_BUFF_MLO2_IPC_RING] = {
+		.srng_misc_reg = 0x00F0510C,
+		.hp = 0x00F070E8,
+		.consumer_producer_mlo = 0x00F05170,
+		.mlo_doorbell_press = 0x00F05174,
+	},
+	[HAL_WBM2RXDMA_SW0_BUFF_MLO3_IPC_RING] = {
+		.srng_misc_reg = 0x00F051A0,
+		.hp = 0x00F070F0,
+		.consumer_producer_mlo = 0x00F05204,
+		.mlo_doorbell_press = 0x00F05208,
+	},
+	[HAL_WBM2RXDMA_SW0_BUFF_MLO4_IPC_RING] = {
+		.srng_misc_reg = 0x00F05234,
+		.hp = 0x00F070F8,
+		.consumer_producer_mlo = 0x00F05298,
+		.mlo_doorbell_press = 0x00F0529C,
+	},
+	[HAL_WBM2RXDMA_SW0_BUFF_MLO5_IPC_RING] = {
+		.srng_misc_reg = 0x00F052C8,
+		.hp = 0x00F07100,
+		.consumer_producer_mlo = 0x00F0532C,
+		.mlo_doorbell_press = 0x00F05330,
+	},
+	[HAL_WBM2RXDMA_SW1_BUFF_MLO1_IPC_RING] = {
+		.srng_misc_reg = 0x00F05640,
+		.hp = 0x00F07130,
+		.consumer_producer_mlo = 0x00F056A4,
+		.mlo_doorbell_press = 0x00F056A8,
+	},
+	[HAL_WBM2RXDMA_SW1_BUFF_MLO2_IPC_RING] = {
+		.srng_misc_reg = 0x00F056D4,
+		.hp = 0x00F07138,
+		.consumer_producer_mlo = 0x00F05738,
+		.mlo_doorbell_press = 0x00F0573C,
+	},
+	[HAL_WBM2RXDMA_SW1_BUFF_MLO3_IPC_RING] = {
+		.srng_misc_reg = 0x00F05768,
+		.hp = 0x00F07140,
+		.consumer_producer_mlo = 0x00F057CC,
+		.mlo_doorbell_press = 0x00F057D0,
+	},
+	[HAL_WBM2RXDMA_SW1_BUFF_MLO4_IPC_RING] = {
+		.srng_misc_reg = 0x00F057FC,
+		.hp = 0x00F07148,
+		.consumer_producer_mlo = 0x00F05860,
+		.mlo_doorbell_press = 0x00F05864,
+	},
+	[HAL_WBM2RXDMA_SW1_BUFF_MLO5_IPC_RING] = {
+		.srng_misc_reg = 0x00F05890,
+		.hp = 0x00F07150,
+		.consumer_producer_mlo = 0x00F058F4,
+		.mlo_doorbell_press = 0x00F058F8,
+	},
+	[HAL_WBM2RXDMA_PPE_BUFF_MLO1_IPC_RING] = {
+		.srng_misc_reg = 0x00F0535C,
+		.hp = 0x00F07108,
+		.consumer_producer_mlo = 0x00F053C0,
+		.mlo_doorbell_press = 0x00F053C4,
+	},
+	[HAL_WBM2RXDMA_PPE_BUFF_MLO2_IPC_RING] = {
+		.srng_misc_reg = 0x00F053F0,
+		.hp = 0x00F07110,
+		.consumer_producer_mlo = 0x00F05454,
+		.mlo_doorbell_press = 0x00F05458,
+	},
+	[HAL_WBM2RXDMA_PPE_BUFF_MLO3_IPC_RING] = {
+		.srng_misc_reg = 0x00F05484,
+		.hp = 0x00F07118,
+		.consumer_producer_mlo = 0x00F054E8,
+		.mlo_doorbell_press = 0x00F054EC,
+	},
+	[HAL_WBM2RXDMA_PPE_BUFF_MLO4_IPC_RING] = {
+		.srng_misc_reg = 0x00F05518,
+		.hp = 0x00F07120,
+		.consumer_producer_mlo = 0x00F0557C,
+		.mlo_doorbell_press = 0x00F05580,
+	},
+	[HAL_WBM2RXDMA_PPE_BUFF_MLO5_IPC_RING] = {
+		.srng_misc_reg = 0x00F055AC,
+		.hp = 0x00F07128,
+		.consumer_producer_mlo = 0x00F05610,
+		.mlo_doorbell_press = 0x00F05614,
+	},
+	[HAL_WBM2RXOLE_ASE_CMD_MLO1_IPC_RING] = {
+		.srng_misc_reg = 0x00F04AB0,
+		.hp = 0x00F07090,
+		.consumer_producer_mlo = 0x00F04B14,
+		.mlo_doorbell_press = 0x00F04B18,
+	},
+	[HAL_WBM2RXOLE_ASE_CMD_MLO2_IPC_RING] = {
+		.srng_misc_reg = 0x00F04B44,
+		.hp = 0x00F07098,
+		.consumer_producer_mlo = 0x00F04BA8,
+		.mlo_doorbell_press = 0x00F04BAC,
+	},
+	[HAL_WBM2RXOLE_ASE_CMD_MLO3_IPC_RING] = {
+		.srng_misc_reg = 0x00F04BD8,
+		.hp = 0x00F070A0,
+		.consumer_producer_mlo = 0x00F04C3C,
+		.mlo_doorbell_press = 0x00F04C40,
+	},
+	[HAL_WBM2RXOLE_ASE_CMD_MLO4_IPC_RING] = {
+		.srng_misc_reg = 0x00F04C6C,
+		.hp = 0x00F070A8,
+		.consumer_producer_mlo = 0x00F04CD0,
+		.mlo_doorbell_press = 0x00F04CD4,
+	},
+	[HAL_WBM2RXOLE_ASE_CMD_MLO5_IPC_RING] = {
+		.srng_misc_reg = 0x00F04D00,
+		.hp = 0x00F070B0,
+		.consumer_producer_mlo = 0x00F04D64,
+		.mlo_doorbell_press = 0x00F04D68,
+	},
+	[HAL_WBM2RXOLE_FSE_CMD_MLO1_IPC_RING] = {
+		.srng_misc_reg = 0x00F04D94,
+		.hp = 0x00F070B8,
+		.consumer_producer_mlo = 0x00F04DF8,
+		.mlo_doorbell_press = 0x00F04DFC,
+	},
+	[HAL_WBM2RXOLE_FSE_CMD_MLO2_IPC_RING] = {
+		.srng_misc_reg = 0x00F04E28,
+		.hp = 0x00F070C0,
+		.consumer_producer_mlo = 0x00F04E8C,
+		.mlo_doorbell_press = 0x00F04E90,
+	},
+	[HAL_WBM2RXOLE_FSE_CMD_MLO3_IPC_RING] = {
+		.srng_misc_reg = 0x00F04EBC,
+		.hp = 0x00F070C8,
+		.consumer_producer_mlo = 0x00F04F20,
+		.mlo_doorbell_press = 0x00F04F24,
+	},
+	[HAL_WBM2RXOLE_FSE_CMD_MLO4_IPC_RING] = {
+		.srng_misc_reg = 0x00F04F50,
+		.hp = 0x00F070D0,
+		.consumer_producer_mlo = 0x00F04FB4,
+		.mlo_doorbell_press = 0x00F04FB8,
+	},
+	[HAL_WBM2RXOLE_FSE_CMD_MLO5_IPC_RING] = {
+		.srng_misc_reg = 0x00F04FE4,
+		.hp = 0x00F070D8,
+		.consumer_producer_mlo = 0x00F05048,
+		.mlo_doorbell_press = 0x00F0504C,
+	},
+	[HAL_WBM2RXOLE_ASE_CMD_RING_IPC_RING] = {
+		.consumer_prefetch_timer = 0x00E1E1B0,
+		.srng_misc_reg = 0x00E1E180,
+		.hp = 0x00E20000,
+		.consumer_producer_mlo = 0x00E1E1E4,
+		.mlo_doorbell_press = 0x00E1E1E8,
+	},
+	[HAL_WBM2RXOLE_FSE_CMD_RING_IPC_RING] = {
+		.consumer_prefetch_timer = 0x00E1E2C4,
+		.srng_misc_reg = 0x00E1E294,
+		.hp = 0x00E20010,
+		.consumer_producer_mlo = 0x00E1E2F8,
+		.mlo_doorbell_press = 0x00E1E2FC,
+	},
+};
+
 u32 ath12k_wifi8_hal_rx_h_mpdu_err_qcn9625(struct hal_rx_desc *desc)
 {
 	u32 info = __le32_to_cpu(desc->u.qcn9625_compact.msdu_end.info14);
@@ -897,18 +1368,33 @@ static const struct ath12k_hal_rdi_mapping ath12k_wifi8_hal_rdi_mapping_qcn9625[
 
 static int ath12k_wifi8_hal_init_qcn9625(struct ath12k_hal *hal, u8 hw_version)
 {
+	struct ath12k_hal_wifi8 *hal_wifi8;
+
 	hal->regs = ath12k_wifi8_hw_ver_map[hw_version].hw_regs;
 	hal->tcl_to_cmp_rbm_map = ath12k_wifi8_hal_tcl_to_cmp_rbm_map_qcn9625;
 	hal->rdi_mapping = ath12k_wifi8_hal_rdi_mapping_qcn9625;
 	hal->hal_ops = &hal_qcn9625_ops;
 	hal->hal_desc_sz = ath12k_wifi8_hal_get_rx_desc_size_qcn9625();
 	hal->hal_params = ath12k_wifi8_hw_ver_map[hw_version].hal_params;
+	hal_wifi8 = kzalloc(sizeof(*hal_wifi8), GFP_KERNEL);
+	if (!hal_wifi8)
+		return -ENOMEM;
+
+	hal_wifi8->reset_rings = qcn9625_reset_rings;
+	hal->arch_data = hal_wifi8;
 
 	return 0;
 }
 
+static void ath12k_wifi8_hal_deinit_qcn9625(struct ath12k_hal *hal)
+{
+	kfree(hal->arch_data);
+	hal->arch_data = NULL;
+}
+
 const struct hal_ops hal_qcn9625_ops = {
 	.hal_init = ath12k_wifi8_hal_init_qcn9625,
+	.hal_deinit = ath12k_wifi8_hal_deinit_qcn9625,
 	.create_srng_config = ath12k_wifi8_hal_srng_create_config_qcn9625,
 	.rx_desc_set_msdu_len = ath12k_wifi8_hal_rxdesc_set_msdu_len_qcn9625,
 	.rx_desc_get_dot11_hdr = ath12k_wifi8_hal_rx_desc_get_dot11_hdr_qcn9625,
