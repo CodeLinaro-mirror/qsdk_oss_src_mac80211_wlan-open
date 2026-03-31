@@ -477,9 +477,9 @@ int ath12k_ppeds_wifi7_srng_setup(struct ath12k_base *ab)
 	}
 
 	size = ath12k_hal_srng_get_entrysize(ab, HAL_WBM2SW_RELEASE) *
-					     DP_TX_COMP_RING_SIZE;
+					     DP_TX_COMP_PPEDS_RING_SIZE;
 	dp->ppe.ppeds_comp_ring.tx_status_head = 0;
-	dp->ppe.ppeds_comp_ring.tx_status_tail = DP_TX_COMP_RING_SIZE - 1;
+	dp->ppe.ppeds_comp_ring.tx_status_tail = DP_TX_COMP_PPEDS_RING_SIZE - 1;
 	dp->ppe.ppeds_comp_ring.tx_status = kmalloc(size, GFP_KERNEL);
 
 skip_ppeds_dp_srng_ring_alloc:

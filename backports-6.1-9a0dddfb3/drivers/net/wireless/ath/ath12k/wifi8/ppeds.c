@@ -1327,9 +1327,9 @@ int ath12k_wifi8_dp_srng_ppeds_setup(struct ath12k_base *ab)
 				&dp->ppe.ppe2tcl_ring[idx].paddr);
 	}
 
-	size = sizeof(struct hal_tqm2sw_completion_ring) * DP_TX_COMP_RING_SIZE;
+	size = sizeof(struct hal_tqm2sw_completion_ring) * DP_TX_COMP_PPEDS_RING_SIZE;
 	dp->ppe.ppeds_comp_ring.tx_status_head = 0;
-	dp->ppe.ppeds_comp_ring.tx_status_tail = DP_TX_COMP_RING_SIZE - 1;
+	dp->ppe.ppeds_comp_ring.tx_status_tail = DP_TX_COMP_PPEDS_RING_SIZE - 1;
 	dp->ppe.ppeds_comp_ring.tx_status = kmalloc(size, GFP_KERNEL);
 
 skip_ppeds_dp_srng_ring_alloc:
@@ -1404,7 +1404,7 @@ skip_ppeds_dp_srng_ring_alloc:
 	ret = ath12k_dp_srng_setup(ab, &dp->ppe.ppeds_comp_ring.ppeds_txcmpl_ring,
 				   HAL_TX_COMPLETION,
 				   PPEDS_TX_CMPLN_RING_NUM, 0,
-				   DP_TX_COMP_RING_SIZE);
+				   DP_TX_COMP_PPEDS_RING_SIZE);
 	if (ret) {
 		ath12k_err(ab,
 			    "failed to set up TQM2SW ppeds tx completion ring :%d\n",

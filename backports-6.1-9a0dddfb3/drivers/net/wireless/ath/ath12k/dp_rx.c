@@ -623,7 +623,7 @@ int ath12k_dp_rx_reo_setup(struct ath12k_base *ab)
 	for (i = 0; i < ATH12K_DP_RX_REGULAR_RING_MAX; i++) {
 		ret = ath12k_dp_srng_setup(ab, &dp->reo_dst_ring[i],
 					   HAL_REO_DST, i, 0,
-					   DP_REO_DST_RING_SIZE);
+					   ath12k_dp_reo_dst_ring_size[i]);
 		if (ret) {
 			ath12k_warn(ab, "failed to setup reo_dst_ring\n");
 			goto err_reo_cleanup;
