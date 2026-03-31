@@ -1370,7 +1370,7 @@ skip_ppeds_dp_srng_ring_alloc:
 	ret = ath12k_dp_srng_setup(ab, &dp->ppe.ppeds_comp_ring.ppeds_txcmpl_ring,
 				   HAL_TX_COMPLETION,
 				   PPEDS_TX_CMPLN_RING_NUM, 0,
-				   PPEDS_TQM2SW_RING_SIZE);
+				   DP_TX_COMP_RING_SIZE);
 	if (ret) {
 		ath12k_err(ab,
 			    "failed to set up TQM2SW ppeds tx completion ring :%d\n",
