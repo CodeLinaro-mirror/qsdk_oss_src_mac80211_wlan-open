@@ -638,7 +638,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.supports_tx_monitor = false,
 
 		.idle_ps = false,
-		.cold_boot_calib = true,
+		.cold_boot_calib = ATH12K_COLD_BOOT_CALIB,
 		.download_calib = true,
 		.supports_suspend = false,
 		.reoq_lut_support = true,
@@ -761,7 +761,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.supports_tx_monitor = false,
 
 		.idle_ps = true,
-		.cold_boot_calib = true,
+		.cold_boot_calib = ATH12K_COLD_BOOT_CALIB,
 		.download_calib = false,
 		.supports_suspend = true,
 		.reoq_lut_support = true,
@@ -887,7 +887,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 #endif
 
 		.idle_ps = false,
-		.cold_boot_calib = true,
+		.cold_boot_calib = ATH12K_COLD_BOOT_CALIB,
 		.download_calib = true,
 		.supports_suspend = false,
 		.reoq_lut_support = true,
@@ -1016,7 +1016,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 #endif
 
 		.idle_ps = false,
-		.cold_boot_calib = true,
+		.cold_boot_calib = ATH12K_COLD_BOOT_CALIB,
 		.download_calib = true,
 		.supports_suspend = false,
 		.reoq_lut_support = true,
@@ -1139,7 +1139,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 #endif
 
 		.idle_ps = false,
-		.cold_boot_calib = true,
+		.cold_boot_calib = ATH12K_COLD_BOOT_CALIB,
 		.download_calib = true,
 		.supports_suspend = false,
 		.reoq_lut_support = true,
@@ -1239,7 +1239,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 #endif
 
 		.idle_ps = false,
-		.cold_boot_calib = true,
+		.cold_boot_calib = ATH12K_COLD_BOOT_CALIB,
 		.download_calib = true,
 		.supports_suspend = false,
 		.reoq_lut_support = true,

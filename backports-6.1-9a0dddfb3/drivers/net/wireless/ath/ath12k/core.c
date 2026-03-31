@@ -2174,7 +2174,9 @@ err_mac_destroy:
 static int ath12k_core_start_firmware(struct ath12k_base *ab,
 				      enum ath12k_firmware_mode mode)
 {
+#ifdef CPTCFG_ATHDEBUG
 	int qdss_ret;
+#endif
 	int ret;
 
 	ath12k_ce_get_shadow_config(ab, &ab->qmi.ce_cfg.shadow_reg_v3,
@@ -5700,8 +5702,9 @@ err:
 
 void ath12k_core_deinit(struct ath12k_base *ab)
 {
+#ifdef CPTCFG_ATHDEBUG
 	struct ath12k_hw_group *ag = ab->ag;
-
+#endif
 	if (ath12k_telemetry_ab_agent_delete_handler(ab))
 		ath12k_err(ab, "failed to destroy soc agent\n");
 	ath12k_core_hw_group_cleanup(ab->ag);
