@@ -10,7 +10,6 @@
 #include "../ppe.h"
 #include "dp_rx.h"
 
-#define PPEDS_TQM2SW_RING_SIZE 8192
 #define PPEDS_TX_CMPLN_RING_NUM 6
 #define PPE_VP_WIFI8_ENTRIES_MAX 192
 #define PPE_VP_WIFI8_START_IDX 64
