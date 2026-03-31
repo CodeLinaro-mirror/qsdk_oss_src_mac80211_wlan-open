@@ -10,6 +10,7 @@
 #include "../dp_tx.h"
 #include "../hif.h"
 #include "../dp_cmn.h"
+#include "../hal.h"
 #include "dp_rx.h"
 #include "dp.h"
 #include "dp_tx.h"
@@ -21,6 +22,7 @@
 #include "dp_tx_flow_info.h"
 #include "dp_mon.h"
 #include "umac_reset.h"
+#include "mgmt_rx.h"
 
 extern struct ppe_ds_wlan_ops_v2 ppeds_wlanops_v2;
 struct ath12k_ppeds_arch_ops ath12k_wifi8_arch_ppeds_ops;
@@ -502,12 +504,18 @@ void ath12k_wifi8_srng_hw_ring_disable(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ab->dp;
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+	int i;
 
 	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->tx_exception);
 	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->tcl_status_ring);
 	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->tcl_cmd_ring);
 	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->tqm_status_ring);
 	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->tqm_cmd_ring);
+
+	for (i = 0 ; i < DP_WBM_REFILL_RING_MAX; i++)
+		ath12k_dp_srng_hw_disable(ab, &dp_wifi8->wbm_refill_ring[i]);
+
+	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->wbm_idle_buf_ring);
 }
 
 static int ath12k_wifi8_dp_op_device_init(struct ath12k_dp *dp)
@@ -955,6 +963,13 @@ bool ath12k_dp_hw_group_del_timer_entry(struct ath12k_dp_hw_group *dp_hw_grp,
 	return entry_found;
 }
 
+int ath12k_wifi8_dp_fetch_replenish_ring_id(struct ath12k_dp *dp)
+{
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+
+	return dp_wifi8->wbm_idle_buf_ring.ring_id;
+}
+
 static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.dp_op_device_init = ath12k_wifi8_dp_op_device_init,
 	.dp_op_device_deinit = ath12k_wifi8_dp_op_device_deinit,
@@ -997,6 +1012,7 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.dp_link_vif_configure = ath12k_wifi8_dp_link_vif_configure,
 	.rx_flow_fse_cache_operation = ath12k_wifi8_dp_rx_flow_fse_cache_operation,
 	.get_peer_init_status = ath12k_wifi8_dp_get_peer_init_status,
+	.fetch_rx_desc_replenish_ring_id = ath12k_wifi8_dp_fetch_replenish_ring_id,
 	/* UMAC reset operations */
 	.umac_reset_handle_pre_reset = ath12k_wifi8_umac_reset_handle_pre_reset,
 	.umac_reset_handle_post_reset_start =

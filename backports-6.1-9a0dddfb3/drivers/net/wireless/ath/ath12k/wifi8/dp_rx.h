@@ -20,6 +20,7 @@ struct dp_rx_fse {
 	bool is_valid;
 };
 
+int ath12k_wifi8_dp_rx_wbm_buf_ring_init(struct ath12k_base *ab);
 int ath12k_wifi8_dp_reo_cmd_send(struct ath12k_base *ab,
 				 void *data, size_t len,
 				 enum hal_reo_cmd_type type,

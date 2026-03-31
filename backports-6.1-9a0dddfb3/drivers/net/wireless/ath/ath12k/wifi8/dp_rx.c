@@ -4281,6 +4281,9 @@ int ath12k_wifi8_dp_rx_ring_setup(struct ath12k_base *ab)
 		return ret;
 	}
 
+	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
+		return 0;
+
 	ret = ath12k_wifi8_dp_rx_wbm_buf_ring_init(ab);
 	if (ret) {
 		ath12k_warn(ab, "failed to configure rx wbm idle buf ring\n");

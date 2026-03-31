@@ -586,6 +586,7 @@ struct ath12k_dp_arch_ops {
 	int (*get_peer_init_status)(struct ath12k_dp *dp,
 				    struct ath12k_dp_hw *dp_hw,
 				    u8 *addr);
+	int (*fetch_rx_desc_replenish_ring_id)(struct ath12k_dp *dp);
 	enum ath12k_dp_tx_enq_error (*dp_ext_tx)(struct ath12k_pdev_dp *dp_pdev,
 						 struct ath12k_dp_vif *dp_vif,
 						 struct ath12k_dp_link_vif *dp_link_vif,
@@ -1142,6 +1143,11 @@ ath12k_dp_arch_rx_flow_fse_cache_op(struct ath12k_dp *dp,
 				    struct hal_flow_tuple_info *tuple_info)
 {
 	return dp->arch_ops->rx_flow_fse_cache_operation(dp->ab, op_code, tuple_info);
+}
+
+static inline int ath12k_dp_arch_fetch_rx_desc_replenish_ring_id(struct ath12k_dp *dp)
+{
+	return dp->arch_ops->fetch_rx_desc_replenish_ring_id(dp);
 }
 
 static inline struct ath12k_dp_hw_group *
