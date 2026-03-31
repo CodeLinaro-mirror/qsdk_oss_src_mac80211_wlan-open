@@ -2164,7 +2164,7 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_link_vif *arvif;
 	struct ath12k_skb_cb *skb_cb;
 	struct ieee80211_vif *vif;
-	struct ath12k_vif *ahvif;
+	struct ath12k_vif *ahvif = NULL;
 	struct ath12k_dp_link_peer *link_peer;
 	struct ath12k_dp_pkt_info *tx_dropped;
 	struct sk_buff *skb_ext_desc = sw_metadata->skb_ext_desc;

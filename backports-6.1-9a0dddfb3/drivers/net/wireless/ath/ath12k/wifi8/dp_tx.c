@@ -2205,7 +2205,7 @@ static void ath12k_wifi8_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_link_vif *arvif;
 	struct ath12k_skb_cb *skb_cb;
 	struct ieee80211_vif *vif;
-	struct ath12k_vif *ahvif;
+	struct ath12k_vif *ahvif = NULL;
 	struct ath12k_dp_link_peer *link_peer;
 	struct sk_buff *skb_ext_desc = sw_metadata->skb_ext_desc;
 	struct ath12k *ar;
@@ -2345,7 +2345,7 @@ static void ath12k_wifi8_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 				   "tx frame is not acked status %d\n",
 				   ts->status);
 		}
-		if (ath12k_dp_stats_enabled(dp_pdev) &&
+		if (ahvif && ath12k_dp_stats_enabled(dp_pdev) &&
 		    ath12k_tid_stats_enabled(dp_pdev))
 			ath12k_tid_tx_drop_stats(ahvif, ts->tid, msdu->len, reason);
 	}
