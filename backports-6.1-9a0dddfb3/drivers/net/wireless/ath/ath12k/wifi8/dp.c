@@ -82,6 +82,10 @@ static int ath12k_wifi8_cumac_dp_service_srng(struct ath12k_dp *dp,
 	int tot_work_done = 0;
 	u8 rx_mask, tx_mask;
 
+	/* Return early if UMAC reset is in progress */
+	if (ath12k_dp_umac_reset_in_progress(dp->ab))
+		return 0;
+
 	rx_mask = dp->hw_params->ring_mask->rx[grp_id];
 	tx_mask = dp->hw_params->ring_mask->tx[grp_id];
 
@@ -987,6 +991,8 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 				ath12k_wifi8_umac_reset_handle_post_reset_start,
 	.umac_reset_handle_post_reset_complete =
 				ath12k_wifi8_umac_reset_handle_post_reset_complete,
+	.umac_reset_handle_init_recovery =
+				ath12k_wifi8_umac_reset_handle_init_recovery,
 	.dump_srng_stats = ath12k_wifi8_dump_srng_stats,
 	.dump_device_dp_stats = ath12k_wifi8_dump_device_dp_stats,
 	.reset_device_dp_stats = ath12k_wifi8_reset_device_dp_stats,

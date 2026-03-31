@@ -1465,7 +1465,8 @@ void ath12k_pcic_mgmt_irqs_disable(struct ath12k_base *ab)
 	for (i = 0; i < mgmt->num_irq_grp; i++)
 		ath12k_mgmt_irq_grp_disable(&mgmt->irq_grp[i]);
 
-	ath12k_pcic_sync_mgmt_irqs(ab);
+	if (!test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
+		ath12k_pcic_sync_mgmt_irqs(ab);
 
 	clear_bit(ATH12K_FLAG_MGMT_IRQ_ENABLED, &ab->dev_flags);
 }

@@ -931,6 +931,9 @@ void ath12k_wifi8_mgmt_service_srng(struct ath12k_base *ab,
 {
 	struct ath12k_mgmt_wifi8 *mgmt_wifi8 = ath12k_get_mgmt_wifi8(ab->mgmt);
 
+	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
+		return;
+
 	ath12k_wifi8_mgmt_rx_process(ab, irq_grp, &mgmt_wifi8->reo_dst_rx_ring);
 
 	ath12k_wifi8_mgmt_rx_process_err(ab, irq_grp, &mgmt_wifi8->reo_dst_rx_err_ring);

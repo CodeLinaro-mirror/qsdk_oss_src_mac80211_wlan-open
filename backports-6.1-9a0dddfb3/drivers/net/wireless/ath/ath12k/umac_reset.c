@@ -705,8 +705,12 @@ void ath12k_umac_reset_handle_post_reset_complete(struct ath12k_base *ab)
 static void ath12k_umac_reset_handle_init_recovery(struct ath12k_base *ab)
 {
 	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
 	int tx_event = ATH12K_UMAC_RESET_TX_CMD_TRIGGER_DONE;
+
+	if (dp && dp->arch_ops && dp->arch_ops->umac_reset_handle_init_recovery)
+		dp->arch_ops->umac_reset_handle_init_recovery(ab);
 
 	if (mlo_umac_reset->initiator_chip == ab->device_id)
 		ath12k_umac_reset_notify_target(ab, tx_event);
