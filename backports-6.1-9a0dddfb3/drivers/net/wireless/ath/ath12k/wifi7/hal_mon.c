@@ -2159,10 +2159,10 @@ ath12k_wifi7_hal_mon_tx_peer_entry_info_get(const void *tlv_data,
 					  status_info->addr2,
 					  false);
 
-	ppdu_info->rx_status.userstats[userid].sw_peer_id =
+	ppdu_info->rx_status.userstats[userid].enc_type =
 		u32_get_bits(info[3],
 			     HAL_TX_MON_PEER_ENTRY_INFO3_KEY_TYPE);
-	ppdu_info->rx_status.userstats[userid].enc_type =
+	ppdu_info->rx_status.userstats[userid].sw_peer_id =
 		u32_get_bits(info[4],
 			     HAL_TX_MON_PEER_ENTRY_INFO4_SW_PEER_ID);
 }
@@ -2201,10 +2201,10 @@ ath12k_wifi7_hal_mon_tx_peer_entry_info_get_compact(const void *tlv_data,
 					  status->addr2,
 					  false);
 
-	ppdu->rx_status.userstats[userid].sw_peer_id =
+	ppdu->rx_status.userstats[userid].enc_type =
 		u32_get_bits(info[3],
 			     HAL_TX_MON_PEER_ENTRY_INFO3_KEY_TYPE_CMPCT);
-	ppdu->rx_status.userstats[userid].enc_type =
+	ppdu->rx_status.userstats[userid].sw_peer_id =
 		u32_get_bits(info[4],
 			     HAL_TX_MON_PEER_ENTRY_INFO4_SW_PEER_ID_CMPCT);
 }

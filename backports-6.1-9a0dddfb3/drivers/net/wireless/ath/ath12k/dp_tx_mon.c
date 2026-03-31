@@ -2490,14 +2490,14 @@ ath12k_dp_tx_mon_generate_cts_rx_frm(struct ath12k_pdev_dp *dp_pdev,
  * @skb: SKB containing the frame
  * @ppdu_info: PPDU info structure
  * @user_idx: User index for encryption info
- * @contains_host_frames: Context flag indicating host-generated frames
  *
- * Removes Message Integrity Check (MIC) bytes from encrypted TX monitor
- * frames. This ensures that captured frames have the correct length for
- * analysis tools like Wireshark.
+ * This function processes all encrypted frames, including both
+ * hardware-generated and host-generated frames, trimming the
+ * appropriate MIC bytes based on encryption type.
  *
  * For encrypted frames (WEP bit set), the MIC length depends on encryption type:
- * - CCMP-128/256: 8 bytes
+ * - CCMP-128: 8 bytes
+ * - CCMP-256: 16 bytes
  * - GCMP-128/256: 16 bytes
  * - TKIP: 8 bytes
  * - Other types: No trimming
@@ -2505,21 +2505,22 @@ ath12k_dp_tx_mon_generate_cts_rx_frm(struct ath12k_pdev_dp *dp_pdev,
 static void
 ath12k_dp_tx_mon_frame_trim_mic(struct sk_buff *skb,
 				struct hal_tx_mon_ppdu_info *ppdu_info,
-				u8 user_idx,
-				bool contains_host_frames)
+				u8 user_idx)
 {
 	struct ieee80211_hdr *hdr;
 	struct hal_rx_user_status *user_status;
 	u32 trim_len = 0;
 	int frag_count;
 
-	if (contains_host_frames)
-		return;
-
 	if (skb->len < sizeof(struct ieee80211_hdr))
 		return;
 
-	hdr = (struct ieee80211_hdr *)skb->data;
+	frag_count = ath12k_dp_mon_get_num_frags_in_fraglist(skb);
+	if (frag_count)
+		hdr = (struct ieee80211_hdr *)ath12k_dp_mon_skb_get_frag_addr(skb, 0);
+	else
+		hdr = (struct ieee80211_hdr *)skb->data;
+
 	if (!ieee80211_has_protected(hdr->frame_control))
 		return;
 
@@ -2527,11 +2528,10 @@ ath12k_dp_tx_mon_frame_trim_mic(struct sk_buff *skb,
 
 	switch (user_status->enc_type) {
 	case HAL_ENCRYPT_TYPE_CCMP_128:
-	case HAL_ENCRYPT_TYPE_CCMP_256:
-	case HAL_ENCRYPT_TYPE_TKIP_NO_MIC:
 	case HAL_ENCRYPT_TYPE_TKIP_MIC:
 		trim_len = 8;
 		break;
+	case HAL_ENCRYPT_TYPE_CCMP_256:
 	case HAL_ENCRYPT_TYPE_GCMP_128:
 	case HAL_ENCRYPT_TYPE_AES_GCMP_256:
 		trim_len = 16;
@@ -2543,7 +2543,6 @@ ath12k_dp_tx_mon_frame_trim_mic(struct sk_buff *skb,
 	if (trim_len && skb->len < trim_len)
 		return;
 
-	frag_count = ath12k_dp_mon_get_num_frags_in_fraglist(skb);
 	if (frag_count > 0)
 		skb_coalesce_rx_frag(skb, frag_count - 1, -trim_len, 0);
 	else
@@ -2736,8 +2735,7 @@ ath12k_dp_mon_tx_deliver_frame(struct ath12k_pdev_dp *dp_pdev,
 	};
 
 	if (!is_response_frame)
-		ath12k_dp_tx_mon_frame_trim_mic(skb, ppdu_info,
-						user_idx, contains_host_frames);
+		ath12k_dp_tx_mon_frame_trim_mic(skb, ppdu_info, user_idx);
 
 	ath12k_dp_mon_tx_update_mon_info(dp_pdev, &status.mon_info,
 					 ppdu_info, status_info,
