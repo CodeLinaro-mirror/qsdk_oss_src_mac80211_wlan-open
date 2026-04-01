@@ -7401,6 +7401,21 @@ static int ath12k_vendor_wiphy_config_handler(struct wiphy *wiphy,
 				return -EINVAL;
 			}
 			break;
+		case QCA_NL80211_VENDOR_RADIO_SMART_ANT_CONFIG:
+			if (!wifi_params.data) {
+				ath12k_err(NULL,
+					   "Invalid SA param command received\n");
+				return -EINVAL;
+			}
+			ret = ath12k_vendor_set_wiphy_sa_configs(wiphy,
+								 &wifi_params);
+			if (ret) {
+				ath12k_err(NULL,
+					   "Failed to set SA config: %d\n", ret);
+				return -EINVAL;
+			}
+			break;
+
 #endif /* CPTCFG_QCN_EXTN */
 
 		default:
@@ -7607,6 +7622,18 @@ static int ath12k_vendor_get_wiphy_config_handler(struct wiphy *wiphy,
 				return -EINVAL;
 			}
 			break;
+#ifdef CPTCFG_QCN_EXTN
+		case QCA_NL80211_VENDOR_RADIO_SMART_ANT_CONFIG:
+			ret = ath12k_vendor_get_wiphy_sa_configs(wiphy,
+								 &wifi_params,
+								 &value);
+			if (ret) {
+				ath12k_err(NULL, "Failed to get SA configs:%d\n",
+					   ret);
+				return -EINVAL;
+			}
+			break;
+#endif
 		default:
 			ath12k_dbg(NULL, ATH12K_DBG_CFG,
 				   "Un-supported generic command\n");
@@ -7640,6 +7667,16 @@ static int ath12k_vendor_get_wiphy_config_handler(struct wiphy *wiphy,
 				goto err;
 			}
 			break;
+#ifdef CPTCFG_QCN_EXTN
+		case QCA_NL80211_VENDOR_RADIO_SMART_ANT_CONFIG:
+			if ((nla_put_u32(skb, data_attr, value)) ||
+			    (nla_put_u32(skb, length_attr, sizeof(u32))) ||
+			    (nla_put_u32(skb, flags_attr, 0))) {
+				ret = -EINVAL;
+				goto err;
+			}
+			break;
+#endif
 		}
 	}
 
