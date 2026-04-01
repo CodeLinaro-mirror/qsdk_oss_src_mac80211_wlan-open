@@ -33,6 +33,35 @@
 
 #define ATH12K_DP_RX_FRAGMENT_TIMEOUT_MS (2 * HZ)
 
+#ifndef CPTCFG_EXT_IPA_OFFLOAD
+
+
+#define VIRT_TO_PHYS(defrag_skb, buf_paddr) \
+({ \
+	(buf_paddr) = (dma_addr_t)virt_to_phys((defrag_skb)->data); \
+})
+
+#define ATH12K_CORE_DMAC_INV_RANGE(desc_info) \
+	ath12k_core_dmac_inv_range((desc_info)->vaddr, \
+				   (desc_info)->vaddr + DP_RX_BUFFER_SIZE)
+
+#define RETURN_IPA_CODE(...) ((void)0)
+
+#define ATH12K_DP_RXDMA_RING_CONFIG(ring_id, dp) \
+({ \
+	ring_id = dp->rx_refill_buf_ring.refill_buf_ring.ring_id; \
+})
+
+#define ATH12K_CORE_DMA_UNMAP_SINGLE(partner_dp, desc_info) \
+	ath12k_core_dma_unmap_single(partner_dp->dev, desc_info->paddr, \
+					     DP_RX_BUFFER_SIZE, DMA_FROM_DEVICE)
+
+#define IPA_SET_RX_BUF_SMMU_MAP(...) ((void)0)
+#define IPA_SET_RX_BUF_SMMU_UNMAP(...) ((void)0)
+#define ATH12K_IPA_DMA_MAP_SINGLE(...) ((void)0)
+
+#endif
+
 extern bool ath12k_debug_critical;
 
 static int ath12k_wifi7_peer_rx_tid_delete_handler(struct ath12k_base *ab,
@@ -1824,18 +1853,7 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 
 		spd_desc_l->vaddr = desc_info->vaddr;
 		msdu = desc_info->skb;
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
-		if (IPA_CTX(ab) &&
-		    IPA_CTX(ab)->ipa_ops &&
-		    IPA_CTX(ab)->ipa_ops->ipa_set_rx_buf_smmu_map_unmap)
-			IPA_CTX(ab)->ipa_ops->ipa_set_rx_buf_smmu_map_unmap(ab,
-					msdu, DP_RX_BUFFER_SIZE, 0,
-					IPA_CTX(ab)->hdl);
-
-		ath12k_core_dma_unmap_single(dp->dev, ATH12K_SKB_CB(msdu)->paddr,
-					     DP_RX_BUFFER_SIZE,
-					     DMA_FROM_DEVICE);
-#endif
+		IPA_SET_RX_BUF_SMMU_UNMAP(ab, msdu, true);
 
 		hw_link_id = le32_get_bits(desc->info0,
 					   HAL_REO_DEST_RING_INFO0_SRC_LINK_ID);
@@ -2151,18 +2169,10 @@ ath12k_wifi7_dp_rx_h_defrag_reo_reinject(struct ath12k_dp *dp,
 	end = defrag_skb->data + DP_RX_BUFFER_SIZE;
 	ath12k_core_dmac_clean_range(defrag_skb->data, end);
 
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
-	buf_paddr = dma_map_single(ab->dev, defrag_skb->data, DP_RX_BUFFER_SIZE,
-				   DMA_FROM_DEVICE);
-	ATH12K_SKB_CB(defrag_skb)->paddr = buf_paddr;
-	if (IPA_CTX(ab) && IPA_CTX(ab)->ipa_ops &&
-	    IPA_CTX(ab)->ipa_ops->ipa_set_rx_buf_smmu_map_unmap)
-		IPA_CTX(ab)->ipa_ops->ipa_set_rx_buf_smmu_map_unmap(ab,
-				defrag_skb, DP_RX_BUFFER_SIZE, 1,
-				IPA_CTX(ab)->hdl);
-#else
-	buf_paddr = virt_to_phys(defrag_skb->data);
-#endif
+	ATH12K_IPA_DMA_MAP_SINGLE(ab, defrag_skb, buf_paddr);
+	VIRT_TO_PHYS(defrag_skb, buf_paddr);
+	IPA_SET_RX_BUF_SMMU_MAP(ab, defrag_skb);
+
 	if (!buf_paddr)
 		return -ENOMEM;
 
@@ -2252,13 +2262,7 @@ err_free_desc:
 	list_add_tail(&desc_info->list, &dp->rx_desc_free_list);
 	spin_unlock_bh(&dp->rx_desc_lock);
 err_unmap_dma:
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
-	if (IPA_CTX(ab) && IPA_CTX(ab)->ipa_ops &&
-	    IPA_CTX(ab)->ipa_ops->ipa_set_rx_buf_smmu_map_unmap)
-		IPA_CTX(ab)->ipa_ops->ipa_set_rx_buf_smmu_map_unmap(ab,
-				defrag_skb, DP_RX_BUFFER_SIZE, 0,
-				IPA_CTX(ab)->hdl);
-#endif
+	IPA_SET_RX_BUF_SMMU_UNMAP(ab, defrag_skb, false);
 	ath12k_core_dma_unmap_single(ab->dev, buf_paddr, DP_RX_BUFFER_SIZE,
 				     DMA_TO_DEVICE);
 	return ret;
@@ -2463,22 +2467,10 @@ static int ath12k_wifi7_dp_rx_frag_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 		goto err_frags_cleanup;
 
 	if (ath12k_wifi7_dp_rx_h_defrag_reo_reinject(dp, dp_pdev, rx_tid, defrag_skb))
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
 	{
-		if (IPA_CTX(ab) &&
-		    IPA_CTX(ab)->ipa_ops &&
-		    IPA_CTX(ab)->ipa_ops->ipa_set_rx_buf_smmu_map_unmap)
-			IPA_CTX(ab)->ipa_ops->ipa_set_rx_buf_smmu_map_unmap(ab,
-					defrag_skb, DP_RX_BUFFER_SIZE, 0,
-					IPA_CTX(ab)->hdl);
-		ath12k_core_dma_unmap_single(ab->dev,
-					     ATH12K_SKB_CB(defrag_skb)->paddr,
-					     DP_RX_BUFFER_SIZE, DMA_FROM_DEVICE);
+		IPA_SET_RX_BUF_SMMU_UNMAP(ab, defrag_skb, true);
 		goto err_frags_cleanup;
 	}
-#else
-		goto err_frags_cleanup;
-#endif
 
 	ath12k_dp_rx_frags_cleanup(rx_tid, false);
 	goto out_unlock;
@@ -2538,19 +2530,9 @@ ath12k_wifi7_dp_process_rx_err_buf(struct ath12k_pdev_dp *dp_pdev,
 
 	list_add_tail(&desc_info->list, used_list);
 
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
-	if (IPA_CTX(ab) && IPA_CTX(ab)->ipa_ops &&
-	    IPA_CTX(ab)->ipa_ops->ipa_set_rx_buf_smmu_map_unmap)
-		IPA_CTX(ab)->ipa_ops->ipa_set_rx_buf_smmu_map_unmap(ab,
-				msdu, DP_RX_BUFFER_SIZE, 0,
-				IPA_CTX(ab)->hdl);
-	ath12k_core_dma_unmap_single(ab->dev,
-				     ATH12K_SKB_CB(msdu)->paddr,
-				     DP_RX_BUFFER_SIZE, DMA_FROM_DEVICE);
-#else
-	ath12k_core_dmac_inv_range(desc_info->vaddr,
-				   desc_info->vaddr + DP_RX_BUFFER_SIZE);
-#endif
+	IPA_SET_RX_BUF_SMMU_UNMAP(ab, msdu, true);
+	ATH12K_CORE_DMAC_INV_RANGE(desc_info);
+
 	if (drop) {
 		rcu_read_lock();
 		peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, rxcb->peer_id);
@@ -3509,16 +3491,8 @@ int ath12k_wifi7_dp_rx_process_wbm_err(struct ath12k_dp *dp,
 		msdu = desc_info->skb;
 		desc_info->skb = NULL;
 
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
-		if (IPA_CTX(ab) &&
-		    IPA_CTX(ab)->ipa_ops &&
-		    IPA_CTX(ab)->ipa_ops->ipa_set_rx_buf_smmu_map_unmap)
-			IPA_CTX(ab)->ipa_ops->ipa_set_rx_buf_smmu_map_unmap(ab,
-					msdu, DP_RX_BUFFER_SIZE, 0,
-					IPA_CTX(ab)->hdl);
-		ath12k_core_dma_unmap_single(dp->dev, ATH12K_SKB_CB(msdu)->paddr,
-					     DP_RX_BUFFER_SIZE, DMA_FROM_DEVICE);
-#endif
+		IPA_SET_RX_BUF_SMMU_UNMAP(dp->ab, msdu, true);
+
 		device_id = desc_info->device_id;
 		partner_dp = ath12k_dp_hw_grp_to_dp(dp_hw_grp, device_id);
 		if (unlikely(!partner_dp)) {
@@ -3534,10 +3508,7 @@ int ath12k_wifi7_dp_rx_process_wbm_err(struct ath12k_dp *dp,
 		list_add_tail(&desc_info->list, &rx_desc_used_list[device_id]);
 
 		rxcb = ATH12K_SKB_RXCB(msdu);
-#ifndef CPTCFG_EXT_IPA_OFFLOAD
-		ath12k_core_dma_unmap_single(partner_dp->dev, desc_info->paddr,
-					     DP_RX_BUFFER_SIZE, DMA_FROM_DEVICE);
-#endif
+		ATH12K_CORE_DMA_UNMAP_SINGLE(partner_dp, desc_info);
 
 		num_buffs_reaped[device_id]++;
 		total_num_buffs_reaped++;
@@ -3736,11 +3707,7 @@ int ath12k_wifi7_dp_rxdma_ring_sel_config_qcn9274(struct ath12k_base *ab)
 	int ret;
 	u32 hal_rx_desc_sz = ab->hal.hal_desc_sz;
 
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
-	ring_id = dp->rx_mac_buf_ring[0].ring_id;
-#else
-	ring_id = dp->rx_refill_buf_ring.refill_buf_ring.ring_id;
-#endif
+	ATH12K_DP_RXDMA_RING_CONFIG(ring_id, dp);
 
 	tlv_filter.rx_filter = HTT_RX_TLV_FLAGS_RXDMA_RING;
 	tlv_filter.rxmon_disable = true;
@@ -4571,13 +4538,12 @@ int ath12k_wifi7_dp_rx_ring_setup(struct ath12k_base *ab)
 		}
 	}
 
-#ifndef CPTCFG_EXT_IPA_OFFLOAD
+	RETURN_IPA_CODE(0);
 	ret = ath12k_dp_rxdma_buf_setup(ab);
 	if (ret) {
 		ath12k_warn(ab, "failed to setup rxdma ring\n");
 		return ret;
 	}
-#endif
 
 	return 0;
 }
