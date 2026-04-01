@@ -248,6 +248,7 @@ cleanup_ppdu_desc:
 	ath12k_dp_mon_tx_cleanup_ppdu_desc(dp_pdev);
 	return ret;
 }
+EXPORT_SYMBOL(ath12k_dp_mon_tx_wq_start);
 
 /**
  * ath12k_dp_mon_tx_wq_stop() - Stop TX monitor work queue and cleanup descriptors

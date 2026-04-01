@@ -1561,9 +1561,17 @@ int ath12k_dp_mon_tx_pdev_alloc(struct ath12k_pdev_dp *dp_pdev,
 
 	if (mon_ops->mon_tx_dst_ring_alloc_setup) {
 		ret = mon_ops->mon_tx_dst_ring_alloc_setup(dp_pdev, mac_id);
-		if (ret)
+		if (ret) {
 			ath12k_warn(dp, "Tx Mon: failed to alloc dst ring\n");
+			return ret;
+		}
 	}
+
+	ret = ath12k_dp_mon_tx_wq_start(dp_pdev, mac_id);
+	if (ret)
+		ath12k_warn(dp, "failed to start TX mon WQ for mac_id %d: %d\n",
+			    mac_id, ret);
+
 	return ret;
 }
 
