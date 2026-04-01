@@ -5634,7 +5634,7 @@ static int ath12k_qmi_wlanfw_mode_send(struct ath12k_base *ab,
 	req.hw_debug_valid = 1;
 	req.hw_debug = 0;
 
-	if ((mode == ATH12K_FIRMWARE_MODE_NORMAL || ATH12K_FIRMWARE_MODE_FTM)
+	if ((mode == ATH12K_FIRMWARE_MODE_NORMAL || mode == ATH12K_FIRMWARE_MODE_FTM)
 	   && ab->mm_cal_support &&
 	    ath12k_cold_boot_cal_needed(ab)) {
 		ath12k_info(ab,"cold boot calibration is requested in MISSION/FTM MODE\n");
