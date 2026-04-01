@@ -1182,7 +1182,7 @@ int ath12k_wmi_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 	struct wmi_mgmt_send_params *params;
 	bool tx_params_valid = false;
 	struct wmi_tlv *frame_tlv;
-	bool hw_link_id_needed;
+	bool hw_link_id_needed, mlo_params_valid;
 	struct sk_buff *skb;
 	bool rate_present;
 	u32 buf_len;
@@ -1202,13 +1202,15 @@ int ath12k_wmi_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 	    ATH12K_CUSTOM_TX_PARAM_CONFIGURED_EXTN(skb_cb->u.ar))
 		tx_params_valid = true;
 
-	if (tx_params_valid || link_agnostic) {
+	hw_link_id_needed = ath12k_wmi_hw_link_id_in_mgmt_send(ar);
+	mlo_params_valid = hw_link_id_needed || link_agnostic;
+
+	if (tx_params_valid || mlo_params_valid) {
 		len += sizeof(*params);
-		if (link_agnostic)
+		if (mlo_params_valid)
 			len += TLV_HDR_SIZE + sizeof(*ml_params);
 	}
 
-	hw_link_id_needed = ath12k_wmi_hw_link_id_in_mgmt_send(ar);
 	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
 	if (!skb)
 		return -ENOMEM;
@@ -1230,7 +1232,7 @@ int ath12k_wmi_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 
 	memcpy(frame_tlv->value, frame->data, buf_len);
 
-	if (!tx_params_valid && !link_agnostic && !hw_link_id_needed)
+	if (!tx_params_valid && !mlo_params_valid)
 		goto send;
 
 	ptr = skb->data + sizeof(*cmd) + sizeof(*frame_tlv) + roundup(buf_len, sizeof(u32));
@@ -1268,7 +1270,7 @@ int ath12k_wmi_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 
 	tlv = ptr;
 
-	if (link_agnostic || hw_link_id_needed) {
+	if (mlo_params_valid) {
 		tlv->header = FIELD_PREP(WMI_TLV_TAG, WMI_TAG_ARRAY_STRUCT) |
 			      FIELD_PREP(WMI_TLV_LEN, sizeof(*ml_params));
 		ptr += TLV_HDR_SIZE;
