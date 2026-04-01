@@ -480,6 +480,33 @@ int ath12k_reg_update_chan_list(struct ath12k *ar, bool wait)
 	return ath12k_wmi_update_scan_chan_list(ar, NULL);
 }
 
+void ath12k_reg_update_cached_country_regdomain(struct ath12k_base *ab,
+						 const struct ath12k_reg_info *reg_info,
+						 u32 domain_code_6g_super_id)
+{
+	struct ath12k *ar;
+	int pdev;
+	u32 regdomain;
+	bool has_6g_rules;
+
+	has_6g_rules = reg_info->num_6g_reg_rules_ap[WMI_REG_INDOOR_AP] ||
+		       reg_info->num_6g_reg_rules_ap[WMI_REG_STD_POWER_AP] ||
+		       reg_info->num_6g_reg_rules_ap[WMI_REG_VLP_AP];
+
+	regdomain = reg_info->reg_dmn_pair & 0xFFFF;
+	if (has_6g_rules)
+		regdomain |= ((domain_code_6g_super_id & 0xFFFF) << 16);
+
+	for (pdev = 0; pdev < ab->hw_params->max_radios; pdev++) {
+		ar = ab->pdevs[pdev].ar;
+		if (ar) {
+			ar->radio_cfg.regdomain = regdomain;
+			memcpy(ar->alpha2, reg_info->alpha2, REG_ALPHA2_LEN);
+			ar->country_id = reg_info->ctry_code;
+		}
+	}
+}
+
 static void ath12k_copy_regd(struct ieee80211_regdomain *regd_orig,
 			     struct ieee80211_regdomain *regd_copy)
 {

@@ -9276,19 +9276,6 @@ ath12k_invalid_5g_reg_ext_rules_from_wmi(u32 num_reg_rules,
         return num_invalid_5g_rules;
 }
 
-static void ath12k_reg_update_country_id_for_all_radios(struct ath12k_base *ab,
-							 u16 country_id)
-{
-	struct ath12k *ar;
-	int pdev;
-
-	for (pdev = 0; pdev < ab->hw_params->max_radios; pdev++) {
-		ar = ab->pdevs[pdev].ar;
-		if (ar)
-			ar->country_id = country_id;
-	}
-}
-
 static int ath12k_pull_reg_chan_list_ext_update_ev(struct ath12k_base *ab,
 						   struct sk_buff *skb,
 						   struct ath12k_reg_info *reg_info)
@@ -9484,7 +9471,8 @@ static int ath12k_pull_reg_chan_list_ext_update_ev(struct ath12k_base *ab,
 	reg_info->phy_id = le32_to_cpu(ev->phy_id);
 	reg_info->ctry_code = le32_to_cpu(ev->country_id);
 	reg_info->reg_dmn_pair = le32_to_cpu(ev->domain_code);
-	ath12k_reg_update_country_id_for_all_radios(ab, reg_info->ctry_code);
+	ath12k_reg_update_cached_country_regdomain(
+		ab, reg_info, le32_to_cpu(ev->domain_code_6g_super_id));
 
 	reg_info->is_ext_reg_event = true;
 

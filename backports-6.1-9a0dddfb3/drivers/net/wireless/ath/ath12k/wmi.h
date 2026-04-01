@@ -5487,7 +5487,7 @@ struct wmi_therm_throt_level_config_info {
 struct ath12k_wmi_init_country_arg {
 	union {
 		u16 country_code;
-		u16 regdom_id;
+		u32 regdom_id;
 		u8 alpha2[3];
 	} cc_info;
 	enum set_init_cc_flags flags;
