@@ -547,14 +547,14 @@ int ath12k_wifi8_hal_tqm_cmd_send(struct ath12k_base *ab, struct hal_srng *srng,
 		goto out;
 	}
 
-	tqm_desc = (struct hal_tlv_64_hdr *)ath12k_hal_srng_src_get_tqm_next_entry(
-								ab, srng, type);
+	tqm_desc = (struct hal_tlv_64_hdr *)
+			ath12k_hal_srng_src_get_next_entry_by_cmd_size(ab, srng, type);
 	if (!tqm_desc) {
 		ret = -ENOBUFS;
 		goto out;
 	}
 
-	cmd_size = ath12k_hal_srng_get_tqm_cmd_size(type);
+	cmd_size = ath12k_hal_srng_get_cmd_size(type);
 	if (!cmd_size || cmd_size >= srng->ring_size ||
 	    cmd_size > HAL_TQM_CMD_MAX_WORDS) {
 		ret = -EINVAL;
@@ -730,9 +730,11 @@ void ath12k_wifi8_hal_tqm_cmd_staging_free(struct ath12k_base *ab)
 	ab->tqm_cmd_staging = NULL;
 }
 
-int ath12k_wifi8_hal_tx_sam_mpduq_clear_cmd(struct hal_tlv_64_hdr *tlv)
+int ath12k_wifi8_hal_tx_sam_mpduq_clear_cmd(struct ath12k_dp_wifi8 *dp_wifi8,
+					    struct hal_tlv_64_hdr *tlv)
 {
 	struct hal_sam_mpdu_queue_clear_programming *desc;
+	u32 cmd_num;
 
 	tlv->tl = le64_encode_bits(HAL_SAM_MPDU_QUEUE_CLEAR_PROGRAMMING_BO,
 				   HAL_TLV_HDR_TAG) |
@@ -740,7 +742,14 @@ int ath12k_wifi8_hal_tx_sam_mpduq_clear_cmd(struct hal_tlv_64_hdr *tlv)
 
 	desc = (struct hal_sam_mpdu_queue_clear_programming *)tlv->value;
 
-	desc->cmd_hdr.info0 |= le32_encode_bits(1, HAL_SAM_CMD_STATUS_REQUIRED_TO_SW);
+	cmd_num = atomic_inc_return(&dp_wifi8->sam_cmd_num);
+	if (unlikely(cmd_num == 0))
+		cmd_num = atomic_inc_return(&dp_wifi8->sam_cmd_num);
+
+	/* TODO: In v2 hardware, the HAL_SAM_CMD_STATUS_REQUIRED_TO_SW bit
+	 * must be set in the command header to receive status.
+	 */
+	desc->cmd_hdr.info0 = le32_encode_bits(cmd_num, HAL_SAM_CMD_NUMBER);
 	desc->info0 = le32_encode_bits(0, HAL_SAM_MPDU_START_MPDU_QUEUE_SAM_ID) |
 		      le32_encode_bits(MAX_NUM_SAM_MPDU_QUEUES_SUPPORTED - 1,
 				       HAL_SAM_MPDU_END_MPDU_QUEUE_SAM_ID);
@@ -748,9 +757,11 @@ int ath12k_wifi8_hal_tx_sam_mpduq_clear_cmd(struct hal_tlv_64_hdr *tlv)
 	return le32_get_bits(desc->cmd_hdr.info0, HAL_SAM_CMD_NUMBER);
 }
 
-int ath12k_wifi8_hal_tx_sam_msduq_clear_cmd(struct hal_tlv_64_hdr *tlv)
+int ath12k_wifi8_hal_tx_sam_msduq_clear_cmd(struct ath12k_dp_wifi8 *dp_wifi8,
+					    struct hal_tlv_64_hdr *tlv)
 {
 	struct hal_sam_msdu_queue_clear_programming *desc;
+	u32 cmd_num;
 
 	tlv->tl = le64_encode_bits(HAL_SAM_MSDU_QUEUE_CLEAR_PROGRAMMING_BO,
 				   HAL_TLV_HDR_TAG) |
@@ -758,7 +769,14 @@ int ath12k_wifi8_hal_tx_sam_msduq_clear_cmd(struct hal_tlv_64_hdr *tlv)
 
 	desc = (struct hal_sam_msdu_queue_clear_programming *)tlv->value;
 
-	desc->cmd_hdr.info0 |= le32_encode_bits(1, HAL_SAM_CMD_STATUS_REQUIRED_TO_SW);
+	cmd_num = atomic_inc_return(&dp_wifi8->sam_cmd_num);
+	if (unlikely(cmd_num == 0))
+		cmd_num = atomic_inc_return(&dp_wifi8->sam_cmd_num);
+
+	/* TODO: In v2 hardware, the HAL_SAM_CMD_STATUS_REQUIRED_TO_SW bit
+	 * must be set in the command header to receive status.
+	 */
+	desc->cmd_hdr.info0 = le32_encode_bits(cmd_num, HAL_SAM_CMD_NUMBER);
 	desc->info0 = le32_encode_bits(0, HAL_SAM_MSDU_START_MSDU_QUEUE_SAM_ID) |
 		      le32_encode_bits(MAX_NUM_SAM_MSDU_QUEUES_SUPPORTED - 1,
 				       HAL_SAM_MSDU_END_MSDU_QUEUE_SAM_ID);
@@ -766,9 +784,11 @@ int ath12k_wifi8_hal_tx_sam_msduq_clear_cmd(struct hal_tlv_64_hdr *tlv)
 	return le32_get_bits(desc->cmd_hdr.info0, HAL_SAM_CMD_NUMBER);
 }
 
-int ath12k_wifi8_hal_tx_sam_peer_clear_cmd(struct hal_tlv_64_hdr *tlv, int src_link_id)
+int ath12k_wifi8_hal_tx_sam_peer_clear_cmd(struct ath12k_dp_wifi8 *dp_wifi8,
+					   struct hal_tlv_64_hdr *tlv, int src_link_id)
 {
 	struct hal_sam_peer_clear_programming *desc;
+	u32 cmd_num;
 
 	tlv->tl = le64_encode_bits(HAL_SAM_PEER_CLEAR_PROGRAMMING_BO,
 				   HAL_TLV_HDR_TAG) |
@@ -777,7 +797,14 @@ int ath12k_wifi8_hal_tx_sam_peer_clear_cmd(struct hal_tlv_64_hdr *tlv, int src_l
 
 	desc = (struct hal_sam_peer_clear_programming *)tlv->value;
 
-	desc->cmd_hdr.info0 |= le32_encode_bits(1, HAL_SAM_CMD_STATUS_REQUIRED_TO_SW);
+	cmd_num = atomic_inc_return(&dp_wifi8->sam_cmd_num);
+	if (unlikely(cmd_num == 0))
+		cmd_num = atomic_inc_return(&dp_wifi8->sam_cmd_num);
+
+	/* TODO: In v2 hardware, the HAL_SAM_CMD_STATUS_REQUIRED_TO_SW bit
+	 * must be set in the command header to receive status.
+	 */
+	desc->cmd_hdr.info0 = le32_encode_bits(cmd_num, HAL_SAM_CMD_NUMBER);
 	desc->info0 = le32_encode_bits(0, HAL_SAM_PEER_START_PEER_ID) |
 		      le32_encode_bits(ATH12K_MAX_STA_ID - 1, HAL_SAM_PEER_END_PEER_ID);
 
@@ -787,30 +814,56 @@ int ath12k_wifi8_hal_tx_sam_peer_clear_cmd(struct hal_tlv_64_hdr *tlv, int src_l
 int ath12k_wifi8_hal_tx_sam_cmd_send(struct ath12k_base *ab, struct hal_srng *srng,
 				     int src_link_id, enum hal_tlv_tag_be type)
 {
-	struct hal_tlv_64_hdr *sam_desc;
+	struct hal_tlv_64_hdr *sam_desc, *tlv_desc;
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(ab->dp);
+	u32 cmd_size;
 	int ret;
+
+	if (!dp_wifi8->sam_cmd_staging) {
+		ath12k_err(ab, "SAM staging buffer not allocated\n");
+		return -ENOMEM;
+	}
 
 	spin_lock_bh(&srng->lock);
 	ath12k_hal_srng_access_begin(ab, srng);
-	sam_desc = (struct hal_tlv_64_hdr *)ath12k_hal_srng_src_get_next_entry(ab, srng);
-	if (!sam_desc) {
-		ret = -ENOBUFS;
-		goto out;
-	}
+
+	tlv_desc = (struct hal_tlv_64_hdr *)dp_wifi8->sam_cmd_staging;
+	memset(tlv_desc, 0, sizeof(*tlv_desc));
+
 	switch (type) {
 	case HAL_SAM_MPDU_QUEUE_CLEAR_PROGRAMMING_BO:
-		ret = ath12k_wifi8_hal_tx_sam_mpduq_clear_cmd(sam_desc);
+		ret = ath12k_wifi8_hal_tx_sam_mpduq_clear_cmd(dp_wifi8, tlv_desc);
 		break;
 	case HAL_SAM_MSDU_QUEUE_CLEAR_PROGRAMMING_BO:
-		ret = ath12k_wifi8_hal_tx_sam_msduq_clear_cmd(sam_desc);
+		ret = ath12k_wifi8_hal_tx_sam_msduq_clear_cmd(dp_wifi8, tlv_desc);
 		break;
 	case HAL_SAM_PEER_CLEAR_PROGRAMMING_BO:
-		ret = ath12k_wifi8_hal_tx_sam_peer_clear_cmd(sam_desc, src_link_id);
+		ret = ath12k_wifi8_hal_tx_sam_peer_clear_cmd(dp_wifi8, tlv_desc,
+							     src_link_id);
 		break;
 	default:
 		ath12k_warn(ab, "Unknown sam command %d\n", type);
 		ret = -EINVAL;
+		goto out;
 	}
+
+	sam_desc = (struct hal_tlv_64_hdr *)
+			ath12k_hal_srng_src_get_next_entry_by_cmd_size(ab, srng, type);
+	if (!sam_desc) {
+		ret = -ENOBUFS;
+		goto out;
+	}
+
+	cmd_size = ath12k_hal_srng_get_cmd_size(type);
+	if (cmd_size > HAL_SAM_CMD_MAX_WORDS) {
+		ret = -EINVAL;
+		goto out;
+	}
+	ret = ath12k_wifi8_hal_srng_write_words(ab, srng, cmd_size,
+						(void *)sam_desc,
+						dp_wifi8->sam_cmd_staging);
+	if (ret)
+		ath12k_warn(ab, "Failed to write SAM cmd to ring: %d\n", ret);
 out:
 	ath12k_hal_srng_access_end(ab, srng);
 	spin_unlock_bh(&srng->lock);
@@ -851,34 +904,31 @@ void ath12k_wifi8_hal_tx_sam_program_clear(struct ath12k_base *ab)
 	}
 }
 
-void ath12k_wifi8_hal_tx_sam_init_cmd_ring(struct ath12k_base *ab, struct hal_srng *srng)
-{
-	struct hal_srng_params params;
-	struct hal_tlv_64_hdr *tlv;
-	struct hal_uniform_sam_cmd_hdr *desc;
-	int i, cmd_num = 1;
-	int entry_size;
-	u8 *entry;
-
-	memset(&params, 0, sizeof(params));
-
-	entry_size = ath12k_hal_srng_get_entrysize(ab, HAL_SAM_CMD);
-	ath12k_hal_srng_get_params(ab, srng, &params);
-	entry = (u8 *)params.ring_base_vaddr;
-
-	for (i = 0; i < params.num_entries; i++) {
-		tlv = (struct hal_tlv_64_hdr *)entry;
-		desc = (struct hal_uniform_sam_cmd_hdr *)tlv->value;
-		desc->info0 = le32_encode_bits(cmd_num++,
-					       HAL_SAM_CMD_NUMBER);
-		entry += entry_size;
-	}
-}
-
 void ath12k_wifi8_hal_tx_sam_status(struct ath12k_base *ab, struct hal_tlv_64_hdr *tlv)
 {
 	struct hal_sam_cmd_status *desc = (struct hal_sam_cmd_status *)tlv->value;
 	int cmd_num = le32_get_bits(desc->status_hdr.info0,
 				    HAL_SAM_STATUS_CMD_NUMBER);
 	ath12k_dbg(ab, ATH12K_DBG_HAL, "cmd_num %d\n", cmd_num);
+}
+
+int ath12k_wifi8_hal_sam_cmd_staging_alloc(struct ath12k_base *ab)
+{
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(ab->dp);
+
+	/* Allocate single staging buffer for the SAM command ring. */
+	dp_wifi8->sam_cmd_staging = kzalloc(HAL_SAM_CMD_MAX_BYTES, GFP_KERNEL);
+
+	if (!dp_wifi8->sam_cmd_staging)
+		return -ENOMEM;
+
+	return 0;
+}
+
+void ath12k_wifi8_hal_sam_cmd_staging_free(struct ath12k_base *ab)
+{
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(ab->dp);
+
+	kfree(dp_wifi8->sam_cmd_staging);
+	dp_wifi8->sam_cmd_staging = NULL;
 }

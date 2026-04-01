@@ -992,7 +992,7 @@ u32 ath12k_hal_srng_src_get_words_available(u32 hp, u32 tp,
 		return (tp - hp - 1);
 }
 
-u32 ath12k_hal_srng_get_tqm_cmd_size(enum hal_tlv_tag_be type)
+u32 ath12k_hal_srng_get_cmd_size(enum hal_tlv_tag_be type)
 {
 	if (type == HAL_TQM_REMOVE_MSDU_BO)
 		return ((sizeof(struct hal_tlv_64_hdr) +
@@ -1009,12 +1009,21 @@ u32 ath12k_hal_srng_get_tqm_cmd_size(enum hal_tlv_tag_be type)
 	else if (type == HAL_TQM_UPDATE_MPDUQ_BO)
 		return ((sizeof(struct hal_tlv_64_hdr) +
 			sizeof(struct hal_tqm_update_mpduq)) >> 2);
+	else if (type == HAL_SAM_MPDU_QUEUE_CLEAR_PROGRAMMING_BO)
+		return ((sizeof(struct hal_tlv_64_hdr) +
+			sizeof(struct hal_sam_mpdu_queue_clear_programming)) >> 2);
+	else if (type == HAL_SAM_MSDU_QUEUE_CLEAR_PROGRAMMING_BO)
+		return ((sizeof(struct hal_tlv_64_hdr) +
+			sizeof(struct hal_sam_msdu_queue_clear_programming)) >> 2);
+	else if (type == HAL_SAM_PEER_CLEAR_PROGRAMMING_BO)
+		return ((sizeof(struct hal_tlv_64_hdr) +
+			sizeof(struct hal_sam_peer_clear_programming)) >> 2);
 	return 0;
 }
 
-void *ath12k_hal_srng_src_get_tqm_next_entry(struct ath12k_base *ab,
-					     struct hal_srng *srng,
-					     enum hal_tlv_tag_be type)
+void *ath12k_hal_srng_src_get_next_entry_by_cmd_size(struct ath12k_base *ab,
+						     struct hal_srng *srng,
+						     enum hal_tlv_tag_be type)
 {
 	u32 entry_size, ring_size, hp, tp;
 	void *desc;
@@ -1022,7 +1031,7 @@ void *ath12k_hal_srng_src_get_tqm_next_entry(struct ath12k_base *ab,
 
 	lockdep_assert_held(&srng->lock);
 
-	entry_size = ath12k_hal_srng_get_tqm_cmd_size(type);
+	entry_size = ath12k_hal_srng_get_cmd_size(type);
 	ring_size = srng->ring_size;
 	hp = srng->u.src_ring.hp;
 	tp = READ_ONCE(srng->u.src_ring.cached_tp);

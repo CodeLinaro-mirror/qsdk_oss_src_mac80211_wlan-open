@@ -1363,10 +1363,10 @@ u32 ath12k_wifi8_hal_reo_qdesc_size(u32 ba_window_size, u8 tid);
 void ath12k_wifi8_hal_reo_qdesc_setup(struct hal_rx_reo_queue *qdesc,
 				      int tid, u32 ba_window_size,
 				      u32 start_seq, enum hal_pn_type type);
-u32 ath12k_hal_srng_get_tqm_cmd_size(enum hal_tlv_tag_be type);
-void *ath12k_hal_srng_src_get_tqm_next_entry(struct ath12k_base *ab,
-					     struct hal_srng *srng,
-					     enum hal_tlv_tag_be type);
+u32 ath12k_hal_srng_get_cmd_size(enum hal_tlv_tag_be type);
+void *ath12k_hal_srng_src_get_next_entry_by_cmd_size(struct ath12k_base *ab,
+						     struct hal_srng *srng,
+						     enum hal_tlv_tag_be type);
 void ath12k_wifi8_hal_ppeds_cfg_ast_override_map_reg(struct ath12k_base *ab, u8 idx,
 						     u32 ppeds_idx_map_val);
 void ath12k_wifi8_hal_srng_hw_disable(struct ath12k_base *ab,

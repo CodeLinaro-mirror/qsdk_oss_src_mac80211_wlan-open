@@ -324,6 +324,7 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 
 	dp->reo_cmd_cache_flush_count = 0;
 	atomic_set(&dp->tqm_cmd_num, 0);
+	atomic_set(&dp_wifi8->sam_cmd_num, 0);
 	dp->idle_link_rbm =
 			ath12k_hal_get_idle_link_rbm(&ab->hal, ab->device_id);
 

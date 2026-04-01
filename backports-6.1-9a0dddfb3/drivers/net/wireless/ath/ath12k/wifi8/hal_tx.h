@@ -19,6 +19,12 @@ struct hal_rx_mon_ppdu_info;
 #define HAL_TQM_CMD_MAX_BYTES (HAL_TLV64_HDR_BYTES + HAL_TQM_VALUE_MAX_BYTES)
 #define HAL_TQM_CMD_MAX_WORDS (HAL_TQM_CMD_MAX_BYTES >> 2)
 
+/* Maximum payload across current SAM command types (update if a larger one is added). */
+#define HAL_SAM_VALUE_MAX_BYTES (sizeof(struct hal_sam_peer_clear_programming))
+
+#define HAL_SAM_CMD_MAX_BYTES (HAL_TLV64_HDR_BYTES + HAL_SAM_VALUE_MAX_BYTES)
+#define HAL_SAM_CMD_MAX_WORDS (HAL_SAM_CMD_MAX_BYTES >> 2)
+
 /* TODO: check all these data can be managed with struct ath12k_tx_desc_info for perf */
 struct hal_tx_info {
 	u16 meta_data_flags; /* %HAL_TCL_DATA_CMD_INFO0_META_ */
@@ -121,6 +127,7 @@ void ath12k_wifi8_hal_tqm_update_mpduq_cmd_status(struct ath12k_base *ab,
 						  struct hal_tlv_64_hdr *tlv,
 						  struct hal_tqm_status *status);
 void ath12k_wifi8_hal_tx_sam_program_clear(struct ath12k_base *ab);
-void ath12k_wifi8_hal_tx_sam_init_cmd_ring(struct ath12k_base *ab, struct hal_srng *srng);
 void ath12k_wifi8_hal_tx_sam_status(struct ath12k_base *ab, struct hal_tlv_64_hdr *tlv);
+int ath12k_wifi8_hal_sam_cmd_staging_alloc(struct ath12k_base *ab);
+void ath12k_wifi8_hal_sam_cmd_staging_free(struct ath12k_base *ab);
 #endif
