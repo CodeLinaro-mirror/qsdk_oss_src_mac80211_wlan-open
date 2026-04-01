@@ -2341,7 +2341,23 @@ ath12k_dp_mon_tx_update_mon_info(struct ath12k_pdev_dp *dp_pdev,
 
 	ath12k_dp_mon_tx_update_lsig_info(mon_info, rx_status);
 
-	if (is_qos_data && rx_status->he_mu_flags) {
+	if (rx_status->he_flags) {
+		mon_info->he.data1 =
+			cpu_to_le16(rx_status->userstats[user_idx].he_data1);
+		mon_info->he.data2 =
+			cpu_to_le16(rx_status->userstats[user_idx].he_data2);
+		mon_info->he.data3 =
+			cpu_to_le16(rx_status->userstats[user_idx].he_data3);
+		mon_info->he.data4 =
+			cpu_to_le16(rx_status->userstats[user_idx].he_data4);
+		mon_info->he.data5 =
+			cpu_to_le16(rx_status->userstats[user_idx].he_data5);
+		mon_info->he.data6 =
+			cpu_to_le16(rx_status->userstats[user_idx].he_data6);
+		tx_mon_hw_set(mon_info, HE_INFO);
+	}
+
+	if (rx_status->he_mu_flags) {
 		mon_info->he_mu.flags1 =
 			cpu_to_le16(rx_status->he_flags1 |
 				    rx_status->userstats[user_idx].he_flags1);
@@ -2681,6 +2697,9 @@ ath12k_dp_mon_tx_fill_rate_status(struct ath12k_pdev_dp *dp_pdev,
 		case HAL_RX_PREAMBLE_11AX:
 			ri->flags |= RATE_INFO_FLAGS_HE_MCS;
 			ri->he_gi = ath12k_dp_tx_mon_he_gi_to_nl80211(rx_status->sgi);
+			ri->he_dcm = rx_status->dcm;
+			if (rx_status->bw == RATE_INFO_BW_HE_RU)
+				ri->he_ru_alloc = rx_status->ru_alloc;
 			break;
 
 		case HAL_RX_PREAMBLE_11BA:
