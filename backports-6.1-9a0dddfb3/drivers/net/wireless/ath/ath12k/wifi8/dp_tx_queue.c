@@ -82,7 +82,7 @@ void ath12k_set_txpt_flow_ptr(struct ath12k_dp_hw_group *dp_hw_grp,
 	struct hal_txpt_classify_data ti = {0};
 	dma_addr_t txpt_paddr;
 
-	for (tid = 0; tid < 8; tid++) {
+	for (tid = 0; tid < ATH12K_MAX_NUM_DATA_TIDS; tid++) {
 		tx_tid_ptr = ath12k_get_txpt_info_ptr(peer, 0, tid + 1);
 		txpt_paddr = ath12k_get_txpt_paddr(peer, 0, tid + 1);
 
@@ -224,7 +224,11 @@ int ath12k_peer_alloc_default_queues(struct ath12k_dp_hw_group *dp_hw_grp,
 
 	spin_lock_bh(&tx_flow_info->tx_q_lock);
 	if (is_qos) {
+		ath12k_set_txpt_flow_ptr(dp_hw_grp, peer);
 		for (tid_num = 0; tid_num < ATH12K_MAX_NUM_DATA_TIDS; tid_num++) {
+			/* only allocate default tid queues */
+			if (!(ATH12K_DEFAULT_TID_MAP & BIT(tid_num)))
+				continue;
 			tx_flow_info->tid_info[tid_num].mpduq =
 				ath12k_peer_alloc_tid(dp_hw_grp, peer,
 						      dp_vif->tx_encap_type,
