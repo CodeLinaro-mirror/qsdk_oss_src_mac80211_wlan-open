@@ -17949,6 +17949,13 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	if (vif->type == NL80211_IFTYPE_MONITOR && ar->monitor_vdev_created)
 		return -EINVAL;
 
+	/* Scan radio supports only one VAP at a time */
+	if (ath12k_scan_radio_supported(ar->pdev) && ar->num_created_vdevs >= 1) {
+		ath12k_err(ab, "scan radio pdev %d already has a vdev, cannot create more\n",
+			   ar->pdev->pdev_id);
+		return -EINVAL;
+	}
+
 	if (ar->pdev_suspend) {
 		ret = ath12k_mac_pdev_resume(ar);
 		if (ret) {
