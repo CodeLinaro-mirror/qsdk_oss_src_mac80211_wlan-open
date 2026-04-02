@@ -76,49 +76,161 @@ void ath12k_dp_aggr_per_pkt_rx_stats(struct ath12k_dp_peer_rx_stats *dst_rx_stat
 }
 
 /**
- * ath12k_dp_aggr_htt_tx_stats - Aggregate HTT TX statistics
+ * ath12k_dp_update_tx_ext_htt_aggr_stats - Aggregate HTT TX statistics
  * @dst: Destination HTT TX stats structure
  * @src: Source HTT TX stats structure to aggregate from
- *
- * Aggregates HTT TX statistics including rate information (legacy, HT, VHT,
- * HE, EHT), bandwidth, NSS, GI, transmit type, RU location, TX duration,
- * BA fails, ACK fails, and MU group information.
- */
-void ath12k_dp_aggr_htt_tx_stats(struct ath12k_htt_tx_stats *dst,
-				 const struct ath12k_htt_tx_stats *src)
+*/
+void
+ath12k_dp_update_tx_ext_htt_aggr_stats(struct ath12k *ar,
+				       struct ath12k_htt_tx_stats *dst_peer_stats,
+				       struct ath12k_htt_tx_stats *src_peer_stats)
 {
-	int i, j;
+	int i, j, k;
 
+	if (!dst_peer_stats || !src_peer_stats)
+		return;
+
+	/* htt stats */
 	for (i = 0; i < ATH12K_STATS_TYPE_MAX; i++) {
 		for (j = 0; j < ATH12K_COUNTER_TYPE_MAX; j++) {
-			for (int k = 0; k < ATH12K_LEGACY_NUM; k++)
-				dst->stats[i].legacy[j][k] += src->stats[i].legacy[j][k];
-			for (int k = 0; k < ATH12K_HT_MCS_NUM; k++)
-				dst->stats[i].ht[j][k] += src->stats[i].ht[j][k];
-			for (int k = 0; k < ATH12K_VHT_MCS_NUM; k++)
-				dst->stats[i].vht[j][k] += src->stats[i].vht[j][k];
-			for (int k = 0; k < ATH12K_HE_MCS_NUM; k++)
-				dst->stats[i].he[j][k] += src->stats[i].he[j][k];
-			for (int k = 0; k < ATH12K_EHT_MCS_NUM; k++)
-				dst->stats[i].eht[j][k] += src->stats[i].eht[j][k];
-			for (int k = 0; k < ATH12K_BW_NUM; k++)
-				dst->stats[i].bw[j][k] += src->stats[i].bw[j][k];
-			for (int k = 0; k < ATH12K_NSS_NUM; k++)
-				dst->stats[i].nss[j][k] += src->stats[i].nss[j][k];
-			for (int k = 0; k < ATH12K_GI_NUM; k++)
-				dst->stats[i].gi[j][k] += src->stats[i].gi[j][k];
-			for (int k = 0; k < HTT_PPDU_STATS_PPDU_TYPE_MAX; k++)
-				dst->stats[i].transmit_type[j][k] +=
-						src->stats[i].transmit_type[j][k];
-			for (int k = 0; k < HAL_RX_RU_ALLOC_TYPE_MAX; k++)
-				dst->stats[i].ru_loc[j][k] += src->stats[i].ru_loc[j][k];
+			for (k = 0; k < ATH12K_LEGACY_NUM; k++) {
+				dst_peer_stats->stats[i].legacy[j][k] +=
+					src_peer_stats->stats[i].legacy[j][k];
+			}
+
+			for (k = 0; k < ATH12K_HT_MCS_NUM; k++) {
+				dst_peer_stats->stats[i].ht[j][k] +=
+					src_peer_stats->stats[i].ht[j][k];
+			}
+
+			for (k = 0; k < ATH12K_VHT_MCS_NUM; k++) {
+				dst_peer_stats->stats[i].vht[j][k] +=
+					src_peer_stats->stats[i].vht[j][k];
+			}
+
+			for (k = 0; k < ATH12K_HE_MCS_NUM; k++) {
+				dst_peer_stats->stats[i].he[j][k] +=
+					src_peer_stats->stats[i].he[j][k];
+			}
+
+			for (k = 0; k < ATH12K_EHT_MCS_NUM; k++) {
+				dst_peer_stats->stats[i].eht[j][k] +=
+					src_peer_stats->stats[i].eht[j][k];
+			}
+
+			for (k = 0; k < ATH12K_BW_NUM; k++) {
+				dst_peer_stats->stats[i].bw[j][k] +=
+					src_peer_stats->stats[i].bw[j][k];
+			}
+
+			for (k = 0; k < ATH12K_NSS_NUM; k++) {
+				dst_peer_stats->stats[i].nss[j][k] +=
+					src_peer_stats->stats[i].nss[j][k];
+			}
+
+			for (k = 0; k < ATH12K_GI_NUM; k++) {
+				dst_peer_stats->stats[i].gi[j][k] +=
+					src_peer_stats->stats[i].gi[j][k];
+			}
+
+			for (k = 0; k < HTT_PPDU_STATS_PPDU_TYPE_MAX; k++) {
+				dst_peer_stats->stats[i].transmit_type[j][k] +=
+					src_peer_stats->stats[i].transmit_type[j][k];
+			}
+
+			for (k = 0; k < HAL_RX_RU_ALLOC_TYPE_MAX; k++) {
+				dst_peer_stats->stats[i].ru_loc[j][k] +=
+					src_peer_stats->stats[i].ru_loc[j][k];
+			}
 		}
 	}
-	dst->tx_duration += src->tx_duration;
-	dst->ba_fails += src->ba_fails;
-	dst->ack_fails += src->ack_fails;
-	for (i = 0; i < MAX_MU_GROUP_ID; i++)
-		dst->mu_group[i] += src->mu_group[i];
+
+	dst_peer_stats->ba_fails += src_peer_stats->ba_fails;
+	dst_peer_stats->ack_fails += src_peer_stats->ack_fails;
+
+	/* TX Unicast Success */
+	dst_peer_stats->tx_ucast_success.num += src_peer_stats->tx_ucast_success.num;
+	dst_peer_stats->tx_ucast_success.bytes += src_peer_stats->tx_ucast_success.bytes;
+
+	/* TX PPDUs */
+	dst_peer_stats->tx_ppdus += src_peer_stats->tx_ppdus;
+
+	/* MPDU BASIC */
+	dst_peer_stats->tx_mpdus_success += src_peer_stats->tx_mpdus_success;
+	dst_peer_stats->tx_mpdus_tried += src_peer_stats->tx_mpdus_tried;
+	dst_peer_stats->retries_mpdu += src_peer_stats->retries_mpdu;
+
+	if (!ath12k_dp_advance_stats_enabled(&ar->dp))
+		return;
+
+	/* DEBUG/ADV */
+	dst_peer_stats->stbc += src_peer_stats->stbc;
+	dst_peer_stats->ldpc += src_peer_stats->ldpc;
+
+	/* WME AC Type Array */
+	for (i = 0; i < WME_AC_MAX; i++)
+		dst_peer_stats->wme_ac_type[i] += src_peer_stats->wme_ac_type[i];
+
+	/* WME AC Type Bytes Array */
+	for (i = 0; i < WME_AC_MAX; i++)
+		dst_peer_stats->wme_ac_type_bytes[i] +=
+			src_peer_stats->wme_ac_type_bytes[i];
+
+	/* Excess Retries Per AC Array */
+	for (i = 0; i < WME_AC_MAX; i++)
+		dst_peer_stats->excess_retries_per_ac[i] +=
+			src_peer_stats->excess_retries_per_ac[i];
+
+	/* AMPDU/Non-AMPDU Counts */
+	dst_peer_stats->ampdu_cnt += src_peer_stats->ampdu_cnt;
+	dst_peer_stats->non_ampdu_cnt += src_peer_stats->non_ampdu_cnt;
+	dst_peer_stats->num_ppdu_cookie_valid += src_peer_stats->num_ppdu_cookie_valid;
+
+	dst_peer_stats->pream_punct_cnt += src_peer_stats->pream_punct_cnt;
+
+	/* RU Location Array */
+	for (i = 0; i < MAX_RU_LOCATIONS; i++) {
+		dst_peer_stats->ru_loc_mpdu_succ_tried[i].num_mpdu +=
+			src_peer_stats->ru_loc_mpdu_succ_tried[i].num_mpdu;
+		dst_peer_stats->ru_loc_mpdu_succ_tried[i].mpdu_tried +=
+			src_peer_stats->ru_loc_mpdu_succ_tried[i].mpdu_tried;
+	}
+
+	/* Transmit Type Array */
+	for (i = 0; i < MAX_TRANSMIT_TYPES; i++) {
+		dst_peer_stats->transmit_type_mpdu_succ_tried[i].num_mpdu +=
+			src_peer_stats->transmit_type_mpdu_succ_tried[i].num_mpdu;
+		dst_peer_stats->transmit_type_mpdu_succ_tried[i].mpdu_tried +=
+			src_peer_stats->transmit_type_mpdu_succ_tried[i].mpdu_tried;
+	}
+
+	/* SU BE PPDU Count */
+	for (i = 0; i < MAX_MCS; i++)
+		dst_peer_stats->su_be_ppdu_cnt.mcs_count[i] +=
+			src_peer_stats->su_be_ppdu_cnt.mcs_count[i];
+
+	/* MU BE PPDU Count Array */
+	for (i = 0; i < TXRX_TYPE_MU_MAX; i++) {
+		for (j = 0; j < MAX_MCS; j++)
+			dst_peer_stats->mu_be_ppdu_cnt[i].mcs_count[j] +=
+				src_peer_stats->mu_be_ppdu_cnt[i].mcs_count[j];
+	}
+
+	/* Punctured BW Array */
+	for (i = 0; i < MAX_PUNCTURED_MODE; i++)
+		dst_peer_stats->punc_bw[i] += src_peer_stats->punc_bw[i];
+
+	/* RTS/BAR/NDPA Counts */
+	dst_peer_stats->rts_success += src_peer_stats->rts_success;
+	dst_peer_stats->rts_failure += src_peer_stats->rts_failure;
+	dst_peer_stats->bar_cnt += src_peer_stats->bar_cnt;
+	dst_peer_stats->ndpa_cnt += src_peer_stats->ndpa_cnt;
+
+	/* TX MSDU Flush Reason Array */
+	for (i = 0; i < HTT_FLUSH_MAX; i++)
+		dst_peer_stats->tx_msdu_flush_rsn[i] +=
+			src_peer_stats->tx_msdu_flush_rsn[i];
+
 }
 
 /**
@@ -131,10 +243,14 @@ void ath12k_dp_aggr_htt_tx_stats(struct ath12k_htt_tx_stats *dst,
  * coding types, TID counts, preamble types, reception types, RX duration,
  * DCM, RU allocation, and detailed rate statistics (MCS, NSS, BW, GI, legacy).
  */
-void ath12k_dp_aggr_rx_peer_stats(struct ath12k_rx_peer_stats *dst,
+void ath12k_dp_aggr_rx_peer_stats(struct ath12k *ar,
+				  struct ath12k_rx_peer_stats *dst,
 				  const struct ath12k_rx_peer_stats *src)
 {
 	int i, j, k, l;
+
+	if (!dst || !src)
+		return;
 
 	dst->num_msdu += src->num_msdu;
 	dst->num_mpdu_fcs_ok += src->num_mpdu_fcs_ok;
@@ -209,6 +325,9 @@ void ath12k_dp_aggr_rx_peer_stats(struct ath12k_rx_peer_stats *dst,
 	dst->num_mpdus += src->num_mpdus;
 	dst->num_mpdu_retry_count += src->num_mpdu_retry_count;
 	dst->num_ppdus += src->num_ppdus;
+
+	if (!ar || !ath12k_dp_advance_stats_enabled(&ar->dp))
+		return;
 
 	dst->num_bar += src->num_bar;
 	dst->num_ndpa += src->num_ndpa;
@@ -320,7 +439,7 @@ void ath12k_dp_clear_per_pkt_rx_stats(struct ath12k_dp_peer_stats *rx_peer_stats
 }
 
 /**
- * ath12k_dp_aggr_deleted_stats() - Aggregate stats from a deleted entity
+ * ath12k_dp_aggr_del_stats() - Aggregate stats from a deleted entity
  * @dst_peer_stats: The destination peer stats structure.
  * @dst_link_peer_stats: Destination link peer stats structure
  * @src: The source structure containing stats from the deleted entity.
@@ -351,11 +470,11 @@ void ath12k_dp_clear_per_pkt_rx_stats(struct ath12k_dp_peer_stats *rx_peer_stats
  *    link VIF into 'link_vif_delete_stats' of MLD VIF.
  */
 
-void ath12k_dp_aggr_deleted_stats(struct ath12k *ar,
-				  struct ath12k_dp_peer_stats *dst_peer_stats,
-				  struct ath12k_dp_link_peer_stats *dst_link_peer_stats,
-				  struct ath12k_dp_preserved_stats *src,
-				  const char *stats_type)
+void ath12k_dp_aggr_del_stats(struct ath12k *ar,
+			      struct ath12k_dp_peer_stats *dst_peer_stats,
+			      struct ath12k_dp_link_peer_stats *dst_link_peer_stats,
+			      struct ath12k_dp_preserved_stats *src,
+			      const char *stats_type)
 {
 	u8 i;
 
@@ -381,10 +500,11 @@ void ath12k_dp_aggr_deleted_stats(struct ath12k *ar,
 	}
 
 	if (ath12k_extd_tx_stats_enabled(ar))
-		ath12k_dp_aggr_htt_tx_stats(dst_link_peer_stats->tx_stats,
-					    &src->tx_stats);
+		ath12k_dp_update_tx_ext_htt_aggr_stats(ar,
+						       dst_link_peer_stats->tx_stats,
+						       &src->tx_stats);
 	if (ath12k_extd_rx_stats_enabled(ar))
-		ath12k_dp_aggr_rx_peer_stats(dst_link_peer_stats->rx_stats,
+		ath12k_dp_aggr_rx_peer_stats(ar, dst_link_peer_stats->rx_stats,
 					     &src->rx_stats);
 }
 
@@ -438,4 +558,22 @@ s8 ath12k_dp_get_rssi_value(s8 snr,
 		rssi_val += rssi_offsets->xlna_bypass_offset;
 
 	return rssi_val;
+}
+
+/**
+ * ath12k_dp_clear_preserved_stats - Clear preserved statistics
+ * @stats: Preserved stats structure to clear
+ *
+ */
+void ath12k_dp_clear_preserved_stats(struct ath12k_dp_preserved_stats *stats)
+{
+	int i;
+
+	memset(&stats->tx_stats, 0, sizeof(stats->tx_stats));
+	memset(&stats->rx_stats, 0, sizeof(stats->rx_stats));
+	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++)
+		memset(&stats->per_pkt_tx[i], 0, sizeof(stats->per_pkt_tx[i]));
+	for (i = 0; i < DP_REO_DST_RING_MAX; i++)
+		memset(&stats->per_pkt_rx[i], 0, sizeof(stats->per_pkt_rx[i]));
+	memset(&stats->wbm_err, 0, sizeof(stats->wbm_err));
 }

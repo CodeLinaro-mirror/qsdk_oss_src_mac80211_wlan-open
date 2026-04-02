@@ -6479,16 +6479,17 @@ static void ath12k_dp_vif_reset_del_stats(struct ath12k_dp_vif *dp_vif,
 {
 	int link_id;
 	struct ath12k_dp_link_vif *dp_link_vif;
+	struct ath12k_dp_preserved_stats *link_peer_del_stats;
+	/* Clear VIF-level preserved stats */
+	ath12k_dp_clear_preserved_stats(&dp_vif->link_vif_delete_stats);
 
-	if (dp_vif->link_vif_delete_stats) {
-		memset(dp_vif->link_vif_delete_stats, 0,
-		       sizeof(*dp_vif->link_vif_delete_stats));
-	}
+	/* Clear link VIF-level preserved stats */
 	for_each_set_bit(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
 		dp_link_vif = &dp_vif->dp_link_vif[link_id];
-		if (dp_link_vif && dp_link_vif->link_peer_delete_stats)
-			memset(dp_link_vif->link_peer_delete_stats, 0,
-			       sizeof(*dp_link_vif->link_peer_delete_stats));
+		if (dp_link_vif) {
+			link_peer_del_stats = &dp_link_vif->link_peer_delete_stats;
+			ath12k_dp_clear_preserved_stats(link_peer_del_stats);
+		}
 	}
 }
 static ssize_t ath12k_write_reset_dp_stats(struct file *file,
@@ -6520,9 +6521,8 @@ static ssize_t ath12k_write_reset_dp_stats(struct file *file,
 	spin_lock_bh(&ah->dp_hw.peer_lock);
 	list_for_each_entry(dp_peer, &ah->dp_hw.peers, list) {
 		memset(&dp_peer->stats, 0, sizeof(dp_peer->stats));
-		if (dp_peer->link_peer_delete_stats)
-			memset(dp_peer->link_peer_delete_stats, 0,
-			       sizeof(*dp_peer->link_peer_delete_stats));
+		/* Clear peer-level preserved stats */
+		ath12k_dp_clear_preserved_stats(&dp_peer->link_peer_delete_stats);
 		ath12k_dp_peer_clear_qos_stats(dp_peer);
 
 		ar = &ah->radio[0];
