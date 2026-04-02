@@ -1144,7 +1144,7 @@ void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
 			ppdu_info->ctrl_frm_info[ppdu_info->userid].bar;
 	}
 
-	if (!ath12k_extd_rx_stats_enabled(pdev_dp->ar) || !rx_stats)
+	if (!ath12k_extd_rx_stats_enabled(pdev_dp) || !rx_stats)
 		return;
 
 	peer->peer_stats.rx_retries += ppdu_info->mpdu_retry;
@@ -1341,7 +1341,7 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 
 	peer->peer_stats.rx_retries = user_stats->mpdu_retry;
 
-	if (!ath12k_extd_rx_stats_enabled(pdev_dp->ar))
+	if (!ath12k_extd_rx_stats_enabled(pdev_dp))
 		return;
 
 	rx_stats = peer->peer_stats.rx_stats;
@@ -1456,7 +1456,7 @@ ath12k_dp_mon_rx_update_peer_mu_stats(struct ath12k_pdev_dp *pdev_dp,
 {
 	u32 num_users, i;
 
-	if (!ath12k_extd_rx_stats_enabled(pdev_dp->ar))
+	if (!ath12k_extd_rx_stats_enabled(pdev_dp))
 		return;
 
 	num_users = ppdu_info->num_users;
@@ -2049,7 +2049,7 @@ void ath12k_dp_mon_rx_stats_enable(struct ath12k_pdev_dp *dp_pdev,
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
-	if (ath12k_extd_rx_stats_enabled(ar))
+	if (ath12k_extd_rx_stats_enabled(dp_pdev))
 		mode = ATH12k_DP_MON_EXTD_STATS;
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ar->ab->dev_flags))

@@ -882,7 +882,6 @@ struct ath12k_dp_link_peer_stats {
 	struct ath12k_dp_mon_peer_stats dp_mon_stats;
 	struct ath12k_qos_stats *qos_stats;
 	struct ath12k_dp_link_peer_hw_stats *hw_link_stats;
-	struct ath12k_dp_pkt_info tx_dropped;
 	unsigned long last_ack;
 	unsigned long last_rx;
 	u32 rx_dropped;
@@ -915,6 +914,7 @@ struct ath12k_dp_peer_tx_stats {
 	struct ath12k_dp_pkt_info comp_pkt;
 	struct ath12k_dp_pkt_info tx_success;
 	u32 tx_failed;
+	struct ath12k_dp_pkt_info tx_dropped;
 
 	/* Debug and Advance */
 	u32 wbm_rel_reason[HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX];
@@ -1453,13 +1453,12 @@ void ath12k_dp_aggr_per_pkt_tx_stats(struct ath12k_dp_peer_tx_stats *dst,
 void ath12k_dp_aggr_per_pkt_rx_stats(struct ath12k_dp_peer_rx_stats *dst,
 				     struct ath12k_dp_peer_rx_stats *src);
 void
-ath12k_dp_update_tx_ext_htt_aggr_stats(struct ath12k *ar,
+ath12k_dp_update_tx_ext_htt_aggr_stats(struct ath12k_pdev_dp *dp_pdev,
 				       struct ath12k_htt_tx_stats *dst_peer_stats,
 				       struct ath12k_htt_tx_stats *src_peer_stats);
 void ath12k_dp_aggr_wbm_rx_stats(struct ath12k_wbm_rx_stats *dst,
 				 struct ath12k_wbm_rx_stats *src);
-void ath12k_dp_aggr_del_stats(struct ath12k *ar,
-			      struct ath12k_dp_peer_stats *dst_peer_stats,
+void ath12k_dp_aggr_del_stats(struct ath12k_dp_peer_stats *dst_peer_stats,
 			      struct ath12k_dp_link_peer_stats *dst_link_peer_stats,
 			      struct ath12k_dp_preserved_stats *src,
 			      const char *stats_type);

@@ -716,11 +716,7 @@ void ath12k_mac_ieee80211_free_txskb(struct ieee80211_hw *hw,
 				     u8 ring_id,
 				     bool dev_free)
 {
-	struct ath12k_dp_link_peer *peer;
-	struct ath12k_dp_pkt_info *tx_dropped;
 	struct ath12k_sta *ahsta;
-	struct ath12k_link_sta *arsta;
-	u8 *addr = NULL;
 
 	if (unlikely(ring_id >= DP_TCL_NUM_RING_MAX))
 		ring_id = 0;
@@ -731,21 +727,17 @@ void ath12k_mac_ieee80211_free_txskb(struct ieee80211_hw *hw,
 		DP_STATS_INC(dp_vif, tx_i.drop[drop_reason], 1, ring_id);
 
 	if (sta) {
-		ahsta = ath12k_sta_to_ahsta(sta);
-		arsta = &ahsta->deflink;
-		if (arsta)
-			addr = arsta->addr;
-	}
+		struct ath12k_dp_peer *dp_peer;
 
-	if (dp_pdev && addr) {
-		spin_lock_bh(&dp_pdev->dp->dp_lock);
-		peer = ath12k_dp_link_peer_find_by_addr(dp_pdev->dp, addr);
-		if (peer) {
-			tx_dropped = &peer->peer_stats.tx_dropped;
-			DP_STATS_INCR(tx_dropped, packets, 1);
-			DP_STATS_INCR(tx_dropped, bytes, skb->len);
+		ahsta = ath12k_sta_to_ahsta(sta);
+		rcu_read_lock();
+		dp_peer = ath12k_sta_get_dp_peer_rcu(ahsta);
+		if (dp_peer &&
+		    dp_peer->assoc_hw_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS) {
+			dp_peer->stats[dp_peer->assoc_hw_link_id].tx[ring_id].tx_dropped.packets++;
+			dp_peer->stats[dp_peer->assoc_hw_link_id].tx[ring_id].tx_dropped.bytes += skb->len;
 		}
-		spin_unlock_bh(&dp_pdev->dp->dp_lock);
+		rcu_read_unlock();
 	}
 
 	if (dev_free)
@@ -24594,14 +24586,13 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 	s8 signal, rssi_signal, rssi_offset;
 	struct ath12k_link_sta *arsta;
 	struct ath12k_base *ab;
-	struct ath12k_dp *dp;
-	struct ath12k_dp_peer *peer;
+	struct ath12k_dp_peer *dp_peer;
 	struct ath12k_dp_peer_stats *peer_stats = NULL;
 	struct ath12k *ar;
 	bool db2dbm, stats_valid = false;
 	struct ath12k_dp_link_peer *link_peer;
 	u32 pn_errors = 0, mic_errors = 0, decrypt_errors = 0;
-	int hw_link_id, stats_link_id, i;
+	int i;
 	bool is_ds_vif = false;
 
 	if (!link_sta->sta) {
@@ -24628,23 +24619,20 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 		return;
 	}
 
-	dp = ath12k_ab_to_dp(ab);
-	spin_lock_bh(&dp->dp_lock);
-	link_peer = ath12k_dp_link_peer_find_by_addr(dp, arsta->addr);
+	dp_peer = ath12k_sta_get_dp_peer_wiphy_locked(hw->wiphy, ahsta);
+	if (!dp_peer)
+		return;
+	rcu_read_lock();
+	link_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, ar->hw_link_id);
 	if (!link_peer) {
-		spin_unlock_bh(&dp->dp_lock);
+		rcu_read_unlock();
 		return;
 	}
 
 	ath12k_link_peer_get_sta_rate_info_stats(link_peer, &rate_info);
 
-	hw_link_id = ar->hw_link_id;
-	if (link_peer->hw_link_id == hw_link_id) {
-		peer = link_peer->dp_peer;
-		stats_link_id = hw_link_id;
-		if (peer && stats_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS)
-			peer_stats = &peer->stats[stats_link_id];
-	}
+	if (ar->hw_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS)
+		peer_stats = &dp_peer->stats[ar->hw_link_id];
 
 	if (peer_stats) {
 		for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
@@ -24652,8 +24640,14 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 			link_sinfo->tx_packets += peer_stats->tx[i].comp_pkt.packets;
 		}
 
-		link_sinfo->tx_bytes += link_peer->peer_stats.tx_dropped.bytes;
-		link_sinfo->tx_packets += link_peer->peer_stats.tx_dropped.packets;
+		if (ar->hw_link_id == dp_peer->assoc_hw_link_id) {
+			for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
+				link_sinfo->tx_bytes +=
+					dp_peer->stats[dp_peer->assoc_hw_link_id].tx[i].tx_dropped.bytes;
+				link_sinfo->tx_packets +=
+					dp_peer->stats[dp_peer->assoc_hw_link_id].tx[i].tx_dropped.packets;
+			}
+		}
 		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_PACKETS);
 		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_BYTES);
 
@@ -24664,7 +24658,7 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 			 * DP_REO_PPEDS_RING_IDX; skip lower ring indices to
 			 * avoid double-counting.
 			 */
-			if (peer->use_4addr && is_ds_vif && i < DP_REO_PPEDS_RING_IDX)
+			if (dp_peer->use_4addr && is_ds_vif && i < DP_REO_PPEDS_RING_IDX)
 				continue;
 			link_sinfo->rx_bytes +=
 				peer_stats->rx[i].sent_to_stack.bytes +
@@ -24722,7 +24716,7 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 	 * peer statistics (derived from firmware) when extended RX stats
 	 * are enabled.
 	 */
-	if (ath12k_extd_rx_stats_enabled(ar)) {
+	if (ath12k_extd_rx_stats_enabled(&ar->dp)) {
 		if (link_peer && link_peer->peer_stats.rx_stats) {
 			link_sinfo->rx_packets =
 				link_peer->peer_stats.rx_stats->num_msdu;
@@ -24732,7 +24726,7 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 					      BIT_ULL(NL80211_STA_INFO_RX_BYTES);
 		}
 	}
-	spin_unlock_bh(&dp->dp_lock);
+	rcu_read_unlock();
 
 	db2dbm = test_bit(WMI_TLV_SERVICE_HW_DB2DBM_CONVERSION_SUPPORT,
 			  ar->ab->wmi_ab.svc_map);
@@ -24804,20 +24798,18 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 	link_sinfo->pn_errors = 0;
 	link_sinfo->mic_errors = 0;
 	link_sinfo->decrypt_errors = 0;
-	spin_lock_bh(&dp->dp_lock);
-	link_peer = ath12k_dp_link_peer_find_by_addr(dp, link_sta->sta->addr);
-	if (link_peer && link_peer->dp_peer &&
-	    link_sta->link_id < IEEE80211_MLD_MAX_NUM_LINKS) {
-		pn_errors =
-			link_peer->dp_peer->stats[link_sta->link_id].wbm_err.reo_error[HAL_REO_DEST_RING_ERROR_CODE_PN_ERR_FLAG_SET];
-		mic_errors =
-			link_peer->dp_peer->stats[link_sta->link_id].wbm_err.rxdma_error[HAL_REO_ENTR_RING_RXDMA_ECODE_TKIP_MIC_ERR];
-		decrypt_errors =
-			link_peer->dp_peer->stats[link_sta->link_id].wbm_err.rxdma_error[HAL_REO_ENTR_RING_RXDMA_ECODE_DECRYPT_ERR];
-		stats_valid = true;
-	}
 
-	spin_unlock_bh(&dp->dp_lock);
+	if (dp_peer) {
+		if (ar->hw_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS) {
+			pn_errors =
+				dp_peer->stats[ar->hw_link_id].wbm_err.reo_error[HAL_REO_DEST_RING_ERROR_CODE_PN_ERR_FLAG_SET];
+			mic_errors =
+				dp_peer->stats[ar->hw_link_id].wbm_err.rxdma_error[HAL_REO_ENTR_RING_RXDMA_ECODE_TKIP_MIC_ERR];
+			decrypt_errors =
+				dp_peer->stats[ar->hw_link_id].wbm_err.rxdma_error[HAL_REO_ENTR_RING_RXDMA_ECODE_DECRYPT_ERR];
+			stats_valid = true;
+		}
+	}
 
 	if (stats_valid) {
 		link_sinfo->pn_errors = pn_errors;
@@ -24842,13 +24834,12 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 	struct ath12k_base *ab;
 	s8 signal, rssi_signal, rssi_offset;
 	bool db2dbm, stats_valid = false;
-	struct ath12k_dp *dp;
 	struct ath12k_dp_link_peer_rate_info rate_info = {0};
 	struct ath12k_dp_link_peer *link_peer;
 	u32 pn_errors = 0, mic_errors = 0, decrypt_errors = 0;
-	struct ath12k_dp_peer *peer;
+	struct ath12k_dp_peer *dp_peer;
 	struct ath12k_dp_peer_stats *peer_stats = NULL;
-	int hw_link_id, stats_link_id, i;
+	int i;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -24865,31 +24856,34 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 		return;
 	}
 
-	dp = ath12k_ab_to_dp(ab);
-	spin_lock_bh(&dp->dp_lock);
-	link_peer = ath12k_dp_link_peer_find_by_addr(dp, arsta->addr);
+	dp_peer = ath12k_sta_get_dp_peer_wiphy_locked(ar->ah->hw->wiphy, ahsta);
+	if (!dp_peer)
+		return;
+	rcu_read_lock();
+	link_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, ar->hw_link_id);
 	if (!link_peer) {
-		spin_unlock_bh(&dp->dp_lock);
+		rcu_read_unlock();
 		return;
 	}
 
 	ath12k_link_peer_get_sta_rate_info_stats(link_peer, &rate_info);
 
-	hw_link_id = ar->hw_link_id;
-	if (link_peer->hw_link_id == hw_link_id) {
-		peer = link_peer->dp_peer;
-		stats_link_id = hw_link_id;
-		if (peer && stats_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS)
-			peer_stats = &peer->stats[stats_link_id];
-	}
+	if (ar->hw_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS)
+		peer_stats = &dp_peer->stats[ar->hw_link_id];
 
 	if (peer_stats) {
 		for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
 			sinfo->tx_bytes += peer_stats->tx[i].comp_pkt.bytes;
 			sinfo->tx_packets += peer_stats->tx[i].comp_pkt.packets;
 		}
-		sinfo->tx_bytes += link_peer->peer_stats.tx_dropped.bytes;
-		sinfo->tx_packets += link_peer->peer_stats.tx_dropped.packets;
+		if (ar->hw_link_id == dp_peer->assoc_hw_link_id) {
+			for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
+				sinfo->tx_bytes +=
+					dp_peer->stats[dp_peer->assoc_hw_link_id].tx[i].tx_dropped.bytes;
+				sinfo->tx_packets +=
+					dp_peer->stats[dp_peer->assoc_hw_link_id].tx[i].tx_dropped.packets;
+			}
+		}
 		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_BYTES64);
 		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_PACKETS);
 
@@ -24941,7 +24935,7 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 		sinfo->rxrate.flags = link_peer->rxrate.flags;
 		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_BITRATE);
 	}
-	spin_unlock_bh(&dp->dp_lock);
+	rcu_read_unlock();
 
 	db2dbm = test_bit(WMI_TLV_SERVICE_HW_DB2DBM_CONVERSION_SUPPORT,
 			  ab->wmi_ab.svc_map);
@@ -24973,19 +24967,18 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 	sinfo->pn_errors = 0;
 	sinfo->mic_errors = 0;
 	sinfo->decrypt_errors = 0;
-	spin_lock_bh(&dp->dp_lock);
-	link_peer = ath12k_dp_link_peer_find_by_addr(dp, sta->addr);
-	if (link_peer && link_peer->dp_peer &&
-	    arsta->link_id < IEEE80211_MLD_MAX_NUM_LINKS) {
-		pn_errors =
-			link_peer->dp_peer->stats[arsta->link_id].wbm_err.reo_error[HAL_REO_DEST_RING_ERROR_CODE_PN_ERR_FLAG_SET];
-		mic_errors =
-			link_peer->dp_peer->stats[arsta->link_id].wbm_err.rxdma_error[HAL_REO_ENTR_RING_RXDMA_ECODE_TKIP_MIC_ERR];
-		decrypt_errors =
-			link_peer->dp_peer->stats[arsta->link_id].wbm_err.rxdma_error[HAL_REO_ENTR_RING_RXDMA_ECODE_DECRYPT_ERR];
-		stats_valid = true;
+
+	if (dp_peer) {
+		if (ar->hw_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS) {
+			pn_errors =
+				dp_peer->stats[ar->hw_link_id].wbm_err.reo_error[HAL_REO_DEST_RING_ERROR_CODE_PN_ERR_FLAG_SET];
+			mic_errors =
+				dp_peer->stats[ar->hw_link_id].wbm_err.rxdma_error[HAL_REO_ENTR_RING_RXDMA_ECODE_TKIP_MIC_ERR];
+			decrypt_errors =
+				dp_peer->stats[ar->hw_link_id].wbm_err.rxdma_error[HAL_REO_ENTR_RING_RXDMA_ECODE_DECRYPT_ERR];
+			stats_valid = true;
+		}
 	}
-	spin_unlock_bh(&dp->dp_lock);
 
 	if (stats_valid) {
 		sinfo->pn_errors = pn_errors;
@@ -29254,8 +29247,8 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 				stats->tx_packets += peer_stats->tx[i].comp_pkt.packets;
 				stats->tx_bytes   += peer_stats->tx[i].comp_pkt.bytes;
 			}
-			stats->tx_packets += link_peer->peer_stats.tx_dropped.packets;
-			stats->tx_bytes   += link_peer->peer_stats.tx_dropped.bytes;
+			stats->tx_packets += peer_stats->tx[i].tx_dropped.packets;
+			stats->tx_bytes   += peer_stats->tx[i].tx_dropped.bytes;
 		}
 		spin_unlock_bh(&dp->dp_lock);
 	}

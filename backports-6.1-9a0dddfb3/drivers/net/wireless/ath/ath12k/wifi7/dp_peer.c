@@ -141,6 +141,8 @@ int ath12k_wifi7_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 	/* Update hw_link_id for self bss peer */
 	if (dp_peer->is_vdev_peer)
 		dp_peer->hw_link_id = params->hw_link_id;
+	else
+		dp_peer->assoc_hw_link_id = params->hw_link_id;
 	dp_peer->sec_type = HAL_ENCRYPT_TYPE_OPEN;
 	dp_peer->sec_type_grp = HAL_ENCRYPT_TYPE_OPEN;
 	dp_peer->tx_encap_type = ahvif->dp_vif.tx_encap_type;

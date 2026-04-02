@@ -1777,9 +1777,17 @@ int ath12k_dp_ppe_rxole_rxdma_cfg(struct ath12k_base *ab);
 #endif
 void ath12k_dp_get_device_stats(struct ath12k_dp *dp,
 				struct ath12k_telemetry_dp_device *telemetry_device);
-int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
+int ath12k_dp_get_link_peer_stats(struct ath12k_pdev_dp *dp_pdev,
+				  struct ath12k_dp_peer *peer,
+				  int hw_link_id,
+				  struct ath12k_telemetry_dp_peer *telemetry_peer,
+				  bool is_ds_vif);
+int ath12k_dp_get_peer_stats(struct ath12k_pdev_dp *dp_pdev,
+			     struct ath12k_dp_peer *peer,
 			     struct ath12k_telemetry_dp_peer *telemetry_peer,
-			     u8 *addr, u8 link_id);
+			     u8 link_id, bool valid_link,
+			     unsigned long links_map, int stats_link_id,
+			     bool is_ds_vif);
 void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 			     struct ath12k_telemetry_dp_vif *telemetry_vif,
 			     u8 link_id);
