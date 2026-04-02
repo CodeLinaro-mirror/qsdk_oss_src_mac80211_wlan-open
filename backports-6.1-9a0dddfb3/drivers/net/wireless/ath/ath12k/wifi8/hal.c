@@ -717,6 +717,24 @@ void ath12k_wifi8_hal_write_ml_reoq_lut_addr(struct ath12k_base *ab,
 			   HAL_REO1_QDESC_LUT_BASE1(&ab->hal), paddr);
 }
 
+void ath12k_wifi8_hal_ppeds_reo2ppe_cc_config(struct ath12k_base *ab)
+{
+	u32 reo_base = HAL_SEQ_WCSS_UMAC_REO_REG;
+	u32 val = 0;
+
+	/*
+	 * PPEDS - HBM enabled case: Disable cookie conversion disable on REO2PPE
+	 */
+	if (ab->dp->ppe.hw_buff_mgmt) {
+		val = ath12k_hif_read32(ab, reo_base + HAL_REO1_COOKIE_CONV_EN_RING);
+		val &= ~HAL_REO2PPE_COOKIE_CONV_EN_RING;
+		val &= ~HAL_REO2PPE1_COOKIE_CONV_EN_RING;
+		val &= ~HAL_REO2PPE2_COOKIE_CONV_EN_RING;
+
+		ath12k_hif_write32(ab, reo_base + HAL_REO1_COOKIE_CONV_EN_RING, val);
+	}
+}
+
 void ath12k_wifi8_hal_cc_config(struct ath12k_base *ab)
 {
 	u32 cmem_base = ab->qmi.dev_mem[ATH12K_QMI_DEVMEM_CMEM_INDEX].start;
@@ -741,20 +759,6 @@ void ath12k_wifi8_hal_cc_config(struct ath12k_base *ab)
 		u32_encode_bits(1, HAL_REO1_SW_COOKIE_CFG_GLOBAL_ENABLE);
 
 	ath12k_hif_write32(ab, reo_base + HAL_REO1_SW_COOKIE_CFG1(hal), val);
-
-	/*
-	 * PPEDS - HBM enabled case: Disable cookie conversion disable on REO2PPE
-	 */
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	if (ab->dp->ppe.hw_buff_mgmt) {
-		val = ath12k_hif_read32(ab, reo_base + HAL_REO1_COOKIE_CONV_EN_RING);
-		val &= ~HAL_REO2PPE_COOKIE_CONV_EN_RING;
-		val &= ~HAL_REO2PPE1_COOKIE_CONV_EN_RING;
-		val &= ~HAL_REO2PPE2_COOKIE_CONV_EN_RING;
-
-		ath12k_hif_write32(ab, reo_base + HAL_REO1_COOKIE_CONV_EN_RING, val);
-	}
-#endif
 
 	/* Enable HW CC for TQM */
 	ath12k_hif_write32(ab, tqm_base + HAL_TQM_SW_COOKIE_CFG0, cmem_base);
