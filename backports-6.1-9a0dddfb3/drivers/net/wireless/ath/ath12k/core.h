@@ -827,6 +827,7 @@ struct ath12k_dp_link_vif {
 	u8 lmac_id;
 	int bank_id;
 	u8 map_id;
+	enum wmi_phy_mode phymode;
 	struct ath12k_dp_preserved_stats link_peer_delete_stats;
 };
 
@@ -1179,6 +1180,7 @@ struct ath12k_link_sta {
 	s8 min_rssi;
 	s8 max_rssi;
 
+	enum wmi_phy_mode phymode;
 };
 
 struct ath12k_sta_migration_data {

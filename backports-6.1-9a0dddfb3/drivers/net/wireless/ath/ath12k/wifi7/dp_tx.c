@@ -3624,6 +3624,7 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 	u32 tqm_rel_reason[MAX_TQM_RELEASE_REASON] = {0};
 	u32 fw_tx_status[MAX_FW_TX_STATUS] = {0};
 	u32 htt_status = 0, tx_completed = 0;
+	u32 tx_desc_free_cnt = 0, *tx_desc_used_cnt;
 	u8 hw_link_id = 0;
 
 	ath12k_hal_srng_access_dst_ring_begin_nolock(ab, status_ring);
@@ -3701,6 +3702,8 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 			list_add_tail(&tx_desc->list,
 				      &dp->dp_hw_grp->tx_spl_desc_free_list[ring_id]);
 
+		tx_desc_free_cnt++;
+
 		sw_metadata->skb = tx_desc->skb;
 		sw_metadata->paddr = tx_desc->paddr;
 		sw_metadata->len = tx_desc->len;
@@ -3742,6 +3745,9 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 	}
 
 	list_splice(&desc_free_list, &dp->dp_hw_grp->tx_desc_free_list[ring_id]);
+
+	tx_desc_used_cnt = this_cpu_ptr(dp_hw_grp->tx_desc_used_cnt);
+	(*tx_desc_used_cnt) -= tx_desc_free_cnt;
 
 	spin_unlock_bh(&dp->dp_hw_grp->tx_desc_lock[ring_id]);
 

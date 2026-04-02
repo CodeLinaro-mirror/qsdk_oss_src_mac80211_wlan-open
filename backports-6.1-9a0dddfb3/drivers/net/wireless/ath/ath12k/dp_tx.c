@@ -341,6 +341,10 @@ void ath12k_dp_tx_release_txbuf_nolock(struct ath12k_dp *dp,
 				       u8 pool_id)
 {
 	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
+	u32 *tx_desc_used_cnt;
+
+	if (WARN_ON(!tx_desc->in_use))
+		return;
 
 	tx_desc->skb = NULL;
 	tx_desc->skb_ext_desc = NULL;
@@ -351,10 +355,14 @@ void ath12k_dp_tx_release_txbuf_nolock(struct ath12k_dp *dp,
 	tx_desc->flags = 0;
 	tx_desc->to_fw = 0;
 	tx_desc->ext_kmem = 0;
+
 	if (likely(!tx_desc->spl_desc))
 		list_add_tail(&tx_desc->list, &dp_hw_grp->tx_desc_free_list[pool_id]);
 	else
 		list_add_tail(&tx_desc->list, &dp_hw_grp->tx_spl_desc_free_list[pool_id]);
+
+	tx_desc_used_cnt = this_cpu_ptr(dp_hw_grp->tx_desc_used_cnt);
+	(*tx_desc_used_cnt) ? (*tx_desc_used_cnt)-- : 0;
 }
 EXPORT_SYMBOL(ath12k_dp_tx_release_txbuf_nolock);
 
@@ -376,6 +384,7 @@ ath12k_tx_desc_info *ath12k_dp_tx_assign_buffer(struct ath12k_dp_hw_group *dp_hw
 						u8 pool_id)
 {
 	struct ath12k_tx_desc_info *desc, *next_desc;
+	u32 *tx_desc_used_cnt;
 
 	spin_lock_bh(&dp_hw_grp->tx_desc_lock[pool_id]);
 	desc = list_first_entry_or_null(&desc_free_list[pool_id],
@@ -392,6 +401,9 @@ ath12k_tx_desc_info *ath12k_dp_tx_assign_buffer(struct ath12k_dp_hw_group *dp_hw
 					     struct ath12k_tx_desc_info, list);
 	if (next_desc)
 		prefetch(next_desc);
+
+	tx_desc_used_cnt = this_cpu_ptr(dp_hw_grp->tx_desc_used_cnt);
+	(*tx_desc_used_cnt)++;
 
 	spin_unlock_bh(&dp_hw_grp->tx_desc_lock[pool_id]);
 

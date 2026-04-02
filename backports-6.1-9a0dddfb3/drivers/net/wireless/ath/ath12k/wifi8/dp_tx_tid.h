@@ -40,6 +40,15 @@ enum ath12k_tx_tid {
 	MAX_TID,
 };
 
+static inline u8 ath12k_dp_tx_get_tid(enum ath12k_tx_tid tid)
+{
+	/*
+	 *  NON_QOS_TID is enum 16 but MSDU HW struct has
+	 *   only 4 bits tid; hence setting to 15 (TQM_NON_DATA_TID)
+	 */
+	return ((tid < NON_QOS_TID) ? tid : TQM_NON_DATA_TID);
+}
+
 struct ath12k_dp_mpdu_q_info
 *ath12k_alloc_peer_tid_mpduq(struct ath12k_dp_hw_group *dp_hw_grp,
 			     struct ath12k_dp_peer *peer, u8 tidno,

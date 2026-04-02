@@ -8222,6 +8222,150 @@ static const struct file_operations fops_svc_sorted_ac_mask = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath12k_update_tx_msdu_flow(struct file *file,
+					  const char __user *user_buf,
+					  size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	u32 tid, service_category, flow_number, hard_drop_threshold;
+	char buf[64];
+	int num_args, ret;
+
+	if (count >= sizeof(buf))
+		return -EINVAL;
+
+	if (copy_from_user(buf, user_buf, count))
+		return -EFAULT;
+
+	buf[count] = '\0';
+
+	num_args = sscanf(buf, "0x%x %u %u %u\n",
+			  &flow_number, &tid, &service_category, &hard_drop_threshold);
+	if (num_args != 4)
+		return -EINVAL;
+
+	if (tid >= IEEE80211_MAX_NUM_TIDS)
+		return -EINVAL;
+
+	if (service_category > 3)
+		return -EINVAL;
+
+	ret = ath12k_dp_arch_update_tx_msdu_flow(ath12k_ab_to_dp(ab),
+						 flow_number, tid,
+						 service_category,
+						 hard_drop_threshold);
+	if (ret)
+		ath12k_warn(ab, "debugfs update tx msdu flow failed %d flow_number 0x%x tid %d service_category %d\n",
+			    ret, flow_number, tid, service_category);
+
+	return count;
+}
+
+static const struct file_operations fops_update_tx_msdu_flow = {
+	.open = simple_open,
+	.write = ath12k_update_tx_msdu_flow,
+};
+
+static ssize_t ath12k_dump_dp_congestion_ctrl_stats(struct file *file,
+						    char __user *user_buf,
+						    size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	char *buf;
+	const int size = 4096;
+	int len = 0, retval;
+
+	buf = kzalloc(size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	if (ab->dp->arch_ops->dump_congestion_ctrl_stats)
+		len += ab->dp->arch_ops->dump_congestion_ctrl_stats(ab->dp,
+								    buf + len,
+								    size - len);
+
+	retval = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	kfree(buf);
+
+	return retval;
+}
+
+static const struct file_operations fops_congestion_ctrl_stats = {
+	.open = simple_open,
+	.read = ath12k_dump_dp_congestion_ctrl_stats,
+	.llseek = default_llseek,
+};
+
+static ssize_t ath12k_write_congestion_ctrl_param(struct file *file,
+						  const char __user *user_buf,
+						  size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	u32 type, value;
+	char buf[64];
+	int num_args, ret;
+
+	if (count >= sizeof(buf))
+		return -EINVAL;
+
+	if (copy_from_user(buf, user_buf, count))
+		return -EFAULT;
+
+	buf[count] = '\0';
+
+	num_args = sscanf(buf, "%u %u", &type, &value);
+	if (!num_args || num_args > 2)
+		return -EINVAL;
+
+	ret = ath12k_dp_arch_set_congestion_ctrl_param(ath12k_ab_to_dp(ab),
+						       type, value);
+	if (ret) {
+		ath12k_warn(ab,
+			    "debugfs congestion ctrl set failed type=%u value=%u ret=%d\n",
+			    type, value, ret);
+		return ret;
+	}
+
+	return count;
+}
+
+static const struct file_operations fops_congestion_ctrl_set = {
+	.open = simple_open,
+	.write = ath12k_write_congestion_ctrl_param,
+	.owner = THIS_MODULE,
+};
+
+static ssize_t ath12k_dump_dp_congestion_recovery_history(struct file *file,
+							  char __user *user_buf,
+							  size_t count,
+							  loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	char *buf;
+	int size = PAGE_SIZE;
+	int len = 0, retval;
+
+	buf = kzalloc(size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	if (ab->dp->arch_ops->dump_congestion_recovery_hist)
+		len += ab->dp->arch_ops->dump_congestion_recovery_hist(ab->dp,
+								       buf + len,
+								       size - len);
+
+	retval = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	kfree(buf);
+
+	return retval;
+}
+
+static const struct file_operations fops_congestion_recovery_history = {
+	.open = simple_open,
+	.read = ath12k_dump_dp_congestion_recovery_history,
+	.llseek = default_llseek,
+};
+
 static void ath12k_debugfs_dp_svc_sorted_flow_init(struct ath12k_base *ab)
 {
 	struct dentry *svc_sorted_flow_dir;
@@ -8235,6 +8379,18 @@ static void ath12k_debugfs_dp_svc_sorted_flow_init(struct ath12k_base *ab)
 			    &fops_svc_sorted_ac_mask);
 
 	ab->dp->svc_sort_stats.ac_mask = (1 << (IEEE80211_AC_BK + 1)) - 1;
+
+	debugfs_create_file("update_tx_msdu_flow", 0200, svc_sorted_flow_dir, ab,
+			    &fops_update_tx_msdu_flow);
+
+	debugfs_create_file("congestion_ctrl_stats", 0400, svc_sorted_flow_dir, ab,
+			    &fops_congestion_ctrl_stats);
+
+	debugfs_create_file("congestion_ctrl_set", 0200, svc_sorted_flow_dir, ab,
+			    &fops_congestion_ctrl_set);
+
+	debugfs_create_file("congestion_recovery_history", 0400, svc_sorted_flow_dir,
+			    ab, &fops_congestion_recovery_history);
 }
 
 void ath12k_debugfs_pdev_create(struct ath12k_base *ab) {

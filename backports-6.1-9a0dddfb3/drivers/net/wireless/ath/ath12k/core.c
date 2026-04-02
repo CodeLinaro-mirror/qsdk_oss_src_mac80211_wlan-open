@@ -256,6 +256,16 @@ module_param_named(erp_cumac_config, ath12k_erp_cumac_config, uint, 0644);
 MODULE_PARM_DESC(erp_cumac_config,
 		 "ErP CUMAC configuration bitmap: BIT(0): pdev suspend, BIT(1): Q6 power down");
 
+bool ath12k_congestion_ctrl;
+module_param_named(congestion_ctrl, ath12k_congestion_ctrl, bool, 0644);
+MODULE_PARM_DESC(congestion_ctrl, "Congestion control 0-disable (default) 1-enable");
+EXPORT_SYMBOL(ath12k_congestion_ctrl);
+
+unsigned int ath12k_drop_algo;
+module_param_named(drop_algo, ath12k_drop_algo, uint, 0644);
+MODULE_PARM_DESC(drop_algo, "Congestion drop algorithm type: 0-composite (default) 1-flat");
+EXPORT_SYMBOL(ath12k_drop_algo);
+
 /* protected with ath12k_hw_group_mutex */
 static struct list_head ath12k_hw_group_list = LIST_HEAD_INIT(ath12k_hw_group_list);
 
@@ -4658,6 +4668,13 @@ static struct ath12k_hw_group *ath12k_core_hw_group_alloc(struct ath12k_base *ab
 		return NULL;
 	}
 
+	ag->dp_hw_grp->tx_desc_used_cnt = alloc_percpu(u32);
+	if (!ag->dp_hw_grp->tx_desc_used_cnt) {
+		kfree(ag->dp_hw_grp);
+		kfree(ag);
+		return NULL;
+	}
+
 	ag->id = count;
 #ifdef CPTCFG_ATH12K_POWER_OPTIMIZATION
 	ag->dbs_power_reduction = ATH12K_DEFAULT_POWER_REDUCTION;
@@ -4720,6 +4737,7 @@ static void ath12k_core_hw_group_free(struct ath12k_hw_group *ag)
 	ath12k_sta_hlist_destroy(ag);
 	ath12k_sta_hlist_head_destroy(ag);
 	spin_unlock_bh(&ag->ahsta_lock);
+	free_percpu(ag->dp_hw_grp->tx_desc_used_cnt);
 	kfree(ag->dp_hw_grp);
 	kfree(ag);
 

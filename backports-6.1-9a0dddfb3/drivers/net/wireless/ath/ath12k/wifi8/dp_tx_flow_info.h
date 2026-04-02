@@ -7,6 +7,7 @@
 #define ATH12K_DP_TX_CLASSIFY_H
 
 #include "dp_ast.h"
+#include "hal_desc.h"
 #include "../core.h"
 #include "../peer.h"
 
@@ -85,6 +86,11 @@ struct ath12k_dp_msdu_q_info  {
 	   qos:1,
 	   tqm_send:1,
 	   allocated:1;
+	enum hal_tqm_service_category svc;
+	unsigned long last_drop_jiffies;
+	u32 consecutive_drop_count;
+	bool in_threshold_list;
+	struct list_head threshold_node;
 };
 
 struct ath12k_dp_mpdu_q_info {

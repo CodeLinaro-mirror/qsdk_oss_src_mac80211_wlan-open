@@ -2679,6 +2679,8 @@ struct hal_tqm_update_tx_msdu_flow_params {
 	u32 tx_flow_number;
 	dma_addr_t msdu_q_paddr;
 	u8 tid;
+	u16 hard_drop_threshold;
+	bool update_hard_drop_threshold;
 };
 
 struct ath12k_hal_tqm_cmd {

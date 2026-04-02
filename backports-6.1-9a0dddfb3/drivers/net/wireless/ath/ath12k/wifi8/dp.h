@@ -12,6 +12,7 @@
 #include "hw.h"
 #include "dp_ast.h"
 #include "hal.h"
+#include "dp_tx.h"
 #ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/dp.h"
 #endif
@@ -109,6 +110,73 @@ struct ath12k_wifi8_dp_stats {
 	struct ath12k_wifi8_rx_stats rx_stats;
 };
 
+#define ATH12K_DP_TX_CONGSTN_HISTORY_DURATION_SEC	60
+
+/**
+ * struct ath12k_wifi8_congstn_history_entry - single congestion recovery event record
+ * @timestamp:         jiffies at the time of the handler invocation
+ * @used_cnt:          tx_desc_used_cnt at the time of the invocation
+ * @used_threshold:    congestion threshold configured
+ * @total_active_msdu: total active MSDUs across all service categories
+ * @target_drop:       number of MSDUs targeted for removal
+ * @num_drop_flows:    number of flows selected for drop
+ * @svc_num_flows:     per-service-category flow count
+ * @svc_total_msdu:    per-service-category total MSDU count
+ * @drop_flows:        per-flow drop details (flow number, svc, drop count)
+ */
+struct ath12k_wifi8_congstn_history_entry {
+	unsigned long timestamp;
+	u32 total_active_msdu;
+	u32 used_threshold;
+	u32 target_drop;
+	u32 used_cnt;
+	u8  num_drop_flows;
+	u8  svc_num_flows[HAL_TQM_SERVICE_CATEGORY_MAX];
+	u32 svc_total_msdu[HAL_TQM_SERVICE_CATEGORY_MAX];
+	struct ath12k_wifi8_flow_remove_entry drop_flows[HAL_TQM_MAX_SORTED_FLOW_ALL_SVC];
+};
+
+struct ath12k_wifi8_dp_congestion_control {
+	struct timer_list timer;
+	void (*calculate_drop)(struct ath12k_wifi8_dp_congestion_control *congstn,
+			       struct ath12k_wifi8_svc_sorted_flows *svc_datas,
+			       u32 target_drop,
+			       struct ath12k_wifi8_svc_remove_flows *drop);
+	bool init;
+	bool start;
+	u32 interval;
+	u32 used_threshold;
+	u32 max_used;
+	u8 flow_drop_grace_percent;
+	u32 weights[HAL_TQM_SERVICE_CATEGORY_MAX];
+	unsigned long last_jiffies;
+	unsigned long last_drop_jiffies;
+	u32 continuous_drop_threshold;
+	/* per-service-category threshold lists */
+	struct list_head threshold_list[HAL_TQM_SERVICE_CATEGORY_MAX];
+	/* single lock protecting all threshold_list entries */
+	spinlock_t threshold_list_lock;
+	u32 scaling_factor;
+	/* tick counter: incremented each timer invocation to track elapsed time */
+	u32 tick_counter;
+	/* per-invocation sorted-flow scratch buffer (allocated once at init) */
+	struct ath12k_wifi8_svc_sorted_flows *svc_data;
+	/* per-invocation drop scratch buffer (allocated once at init) */
+	struct ath12k_wifi8_svc_remove_flows *drop;
+	struct ath12k_wifi8_dp_tx_flow_cost *entries;
+	/* circular history buffer for congestion recovery log (dynamically allocated) */
+	struct ath12k_wifi8_congstn_history_entry *history;
+	u16 history_size;
+	/* next write index (wraps at ATH12K_DP_TX_CONGSTN_HISTORY_SIZE) */
+	u32 history_head;
+	/* total entries written */
+	u32 history_count;
+	/* lock to protect history */
+	spinlock_t history_lock;
+	/* enable/disable history logging (default: false) */
+	bool history_enable;
+};
+
 struct ath12k_dp_wifi8 {
 	struct ath12k_dp *dp;
 	bool cumac;
@@ -183,6 +251,9 @@ struct ath12k_dp_hw_group_wifi8 {
 	u16 last_mpduq_sam_id;
 	/* lock for sam id alloc map*/
 	spinlock_t sam_id_lock;
+
+	/* structure for congestion control.*/
+	struct ath12k_wifi8_dp_congestion_control congstn;
 };
 
 struct dp_hw_grp_timer_entry {

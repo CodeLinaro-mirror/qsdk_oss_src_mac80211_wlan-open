@@ -808,6 +808,14 @@ struct ath12k_dp_arch_ops {
 					  struct ath12k_tx_smd_ctx_per_tid *tx_tid_ctx);
 	ssize_t (*dump_svc_sorted_list)(struct ath12k_dp *dp, u8 ac_mask,
 					char *buf, int size);
+	int (*update_tx_msdu_flow)(struct ath12k_dp *dp, u32 flow_number,
+				   u8 tid, u8 service_category,
+				   u16 hard_drop_threshold);
+	ssize_t (*dump_congestion_ctrl_stats)(struct ath12k_dp *dp,
+					      char *buf, int size);
+	ssize_t (*dump_congestion_recovery_hist)(struct ath12k_dp *dp,
+						 char *buf, int size);
+	int (*set_congestion_ctrl_param)(struct ath12k_dp *dp, u32 type, u32 value);
 };
 
 struct ath12k_bp_stats {
@@ -1534,7 +1542,6 @@ ath12k_dp_arch_dp_peer_fetch_smd_ctx(struct ath12k_dp *dp,
 {
 	if (dp->arch_ops->dp_peer_fetch_smd_ctx)
 		return dp->arch_ops->dp_peer_fetch_smd_ctx(dp->ab, dp_hw, ctx, cb);
-
 	return 0;
 }
 
@@ -1563,6 +1570,30 @@ ath12k_dp_arch_peer_rx_tid_reo_update_for_smd(struct ath12k_dp *dp,
 		return dp->arch_ops->peer_rx_tid_reo_update_for_smd(dp->ab, dp_hw,
 								    peer_addr,
 								    rx_tid_ctx);
+	return 0;
+}
+
+static inline int ath12k_dp_arch_update_tx_msdu_flow(struct ath12k_dp *dp,
+						     u32 flow_number,
+						     u8 tid,
+						     u8 svc,
+						     u16 hard_drop_threshold)
+{
+	if (dp->arch_ops->update_tx_msdu_flow)
+		return dp->arch_ops->update_tx_msdu_flow(dp,
+							 flow_number,
+							 tid,
+							 svc,
+							 hard_drop_threshold);
+
+	return 0;
+}
+
+static inline int ath12k_dp_arch_set_congestion_ctrl_param(struct ath12k_dp *dp,
+							   u32 type, u32 value)
+{
+	if (dp->arch_ops->set_congestion_ctrl_param)
+		return dp->arch_ops->set_congestion_ctrl_param(dp, type, value);
 
 	return 0;
 }
