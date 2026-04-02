@@ -53,7 +53,7 @@ int ath12k_wifi8_dp_fse_cmd_send(struct ath12k_base *ab,
 				 struct hal_fse_cmd *fse_cmd);
 int ath12k_wifi8_dp_rx_process_err(struct ath12k_dp *dp, struct napi_struct *napi,
 				   int budget);
-int ath12k_wifi8_dp_rx_process(struct ath12k_dp *dp, int mac_id,
+int ath12k_wifi8_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 			       struct napi_struct *napi,
 			       int budget);
 void ath12k_wifi8_dp_rx_peer_tid_delete(struct ath12k *ar,

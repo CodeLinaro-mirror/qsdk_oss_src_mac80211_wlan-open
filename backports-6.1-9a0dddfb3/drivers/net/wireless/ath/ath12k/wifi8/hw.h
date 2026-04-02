@@ -77,6 +77,7 @@ static const int ath12k_wifi8_ext_irq_grp_affinity[] = {
 	0, /* grp10 -> cpu0 */
 	1, /* grp11 -> cpu1 */
 	2, /* grp12 -> cpu2 */
+	0, /* grp13 -> cpu0 (roaming RX ring) */
 };
 
 struct ath12k_base;

@@ -314,6 +314,7 @@ static int ath12k_dp_srng_calculate_msi_group(struct ath12k_base *ab,
 		grp_mask = &ring_mask->rx_err[0];
 		break;
 	case HAL_REO_DST:
+	case HAL_REO_DST_ROAMING:
 		grp_mask = &ring_mask->rx[0];
 		break;
 	case HAL_REO_STATUS:
@@ -484,6 +485,7 @@ int ath12k_dp_srng_setup(struct ath12k_base *ab, struct dp_srng *ring,
 		/* Allocate the reo dst and tx completion rings from cacheable memory */
 		switch (type) {
 		case HAL_REO_DST:
+		case HAL_REO_DST_ROAMING:
 		case HAL_WBM2SW_RELEASE:
 #ifndef CPTCFG_EXT_IPA_OFFLOAD
 			cached = true;
@@ -517,6 +519,7 @@ skip_dma_alloc:
 
 	switch (type) {
 	case HAL_REO_DST:
+	case HAL_REO_DST_ROAMING:
 	case HAL_REO2PPE:
 		params.intr_batch_cntr_thres_entries =
 					HAL_SRNG_INT_BATCH_THRESHOLD_RX;
@@ -2128,8 +2131,12 @@ void ath12k_dp_srng_hw_ring_disable(struct ath12k_base *ab)
         int i;
 
         dp = ath12k_ab_to_dp(ab);
-        for (i = 0; i < DP_REO_DST_RING_MAX; i++)
-                ath12k_dp_srng_hw_disable(ab, &dp->reo_dst_ring[i]);
+	for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
+		if (!dp->reo_dst_ring[i].vaddr_unaligned)
+			continue;
+
+		ath12k_dp_srng_hw_disable(ab, &dp->reo_dst_ring[i]);
+	}
         ath12k_dp_srng_hw_disable(ab, &dp->wbm_desc_rel_ring);
 
         for(i = 0; i < ab->hw_params->max_tx_ring; i++) {

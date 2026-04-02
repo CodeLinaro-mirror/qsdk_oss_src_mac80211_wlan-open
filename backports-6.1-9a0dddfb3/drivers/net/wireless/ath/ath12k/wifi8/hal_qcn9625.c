@@ -9,6 +9,7 @@
 #include "hal_qcn9625.h"
 #include "hw.h"
 #include "hal.h"
+#include "../dp_cmn.h"
 #include <linux/cacheflush.h>
 
 extern void ath12k_wifi8_hal_mon_ops_init(struct ath12k_hal *hal, u8 hw_version);
@@ -33,6 +34,16 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.ring_dir = HAL_SRNG_DIR_DST,
 		.max_size = HAL_REO_REO2SW1_RING_BASE_MSB_RING_SIZE,
 		.name = "Reo_dst",
+	},
+	[HAL_REO_DST_ROAMING] = {
+		.start_ring_id = HAL_SRNG_RING_ID_REO2SW_ROAMING1 -
+				 ATH12K_DP_RX_ROAMING_RING1,
+		.max_rings = ATH12K_DP_RX_ROAMING_RING1 + 1,
+		.entry_size = sizeof(struct hal_reo_dest_ring) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_DST,
+		.max_size = HAL_REO_REO2SW1_RING_BASE_MSB_RING_SIZE,
+		.name = "Reo_dst_roaming",
 	},
 	[HAL_REO_EXCEPTION_DS] = {
 		.start_ring_id = HAL_SRNG_RING_ID_REO2SW7,
@@ -1208,6 +1219,10 @@ static int ath12k_wifi8_hal_srng_create_config_qcn9625(struct ath12k_hal *hal)
 	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_SW2REO_RING_HP;
 	s->reg_size[0] = HAL_SW2REO1_RING_BASE_LSB(hal) - HAL_SW2REO_RING_BASE_LSB(hal);
 	s->reg_size[1] = HAL_SW2REO1_RING_HP - HAL_SW2REO_RING_HP;
+
+	s = &hal->srng_config[HAL_REO_DST_ROAMING];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO2SW_ROAMING1_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO2SW_ROAMING1_RING_HP;
 
 	s = &hal->srng_config[HAL_REO_CMD];
 	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO_CMD_RING_BASE_LSB(hal);
