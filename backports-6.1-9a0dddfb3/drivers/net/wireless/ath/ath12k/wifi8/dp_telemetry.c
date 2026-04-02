@@ -7,6 +7,7 @@
 #include "../debug.h"
 #include "../dp_cmn.h"
 #include "dp.h"
+#include "hal.h"
 #include "dp_telemetry.h"
 
 int ath12k_wifi8_dp_telemetry_ring_setup(struct ath12k_base *ab)
@@ -53,5 +54,42 @@ int ath12k_wifi8_dp_process_tx_peer_telemetry(struct ath12k_dp *dp)
 
 int ath12k_wifi8_dp_process_rx_peer_telemetry(struct ath12k_dp *dp)
 {
+	return 0;
+}
+
+int ath12k_wifi8_dp_telemetry_init(struct ath12k_dp *dp)
+{
+	ath12k_wifi8_hal_tasc_peer_clk_cycle_config(dp->ab);
+	ath12k_wifi8_hal_tasc_peer_tx_cfg(dp->ab, true);
+
+	ath12k_wifi8_hal_tasc_peer_tx_window(dp->ab,
+					     DP_TELEMETRY_PEER_2PEER_WINDOW);
+	ath12k_wifi8_hal_tasc_peer_tx_max_peer(
+					dp->ab,
+					DP_TELEMETRY_MAX_UCAST_PEERS,
+					DP_TELEMETRY_MAX_GCAST_DL_PEERS,
+					DP_TELEMETRY_MAX_GCAST_UL_PEERS);
+
+	ath12k_wifi8_hal_tasc_peer_tx_fail_drop_default(dp->ab);
+	ath12k_wifi8_hal_num_transmission_map_default(dp->ab);
+
+	ath12k_wifi8_hal_tasc_peer_rx_cfg(dp->ab, true);
+
+	ath12k_wifi8_hal_tasc_peer_rx_window(dp->ab,
+					     DP_TELEMETRY_PEER_2PEER_WINDOW);
+	ath12k_wifi8_hal_tasc_peer_rx_max_peer(
+					dp->ab,
+					DP_TELEMETRY_MAX_UCAST_PEERS,
+					DP_TELEMETRY_MAX_GCAST_DL_PEERS);
+
+	ath12k_wifi8_hal_tasc_peer_rx_fail_drop_default(dp->ab);
+
+	return 0;
+}
+
+int ath12k_wifi8_dp_telemetry_deinit(struct ath12k_dp *dp)
+{
+	ath12k_wifi8_hal_tasc_peer_tx_cfg(dp->ab, false);
+	ath12k_wifi8_hal_tasc_peer_rx_cfg(dp->ab, false);
 	return 0;
 }
