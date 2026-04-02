@@ -3260,12 +3260,6 @@ static int ath12k_mlo_core_recovery_reconfig_link_bss(struct ath12k *ar,
 	}
 
 	if (!is_bridge_vdev) {
-		if (!ctx->def.chan) {
-			ath12k_dbg(ab, ATH12K_DBG_MODE1_RECOVERY,
-				   "Skipping vdev start for MLD %pM as chanctx is not assigned\n",
-				   arvif->bssid);
-			goto exit;
-		}
 		ath12k_mac_vif_cache_flush(ar, arvif);
 
 		if (ar->supports_6ghz && ctx->def.chan->band == NL80211_BAND_6GHZ &&
@@ -3433,6 +3427,37 @@ static void ath12k_reset_group_key_slots(struct ath12k_link_vif *arvif,
  * will recover only the crashed radio
  * without affecting the other active radio
  */
+static void ath12k_check_for_valid_chanctx(struct ath12k *ar)
+{
+	struct ath12k_link_vif *arvif, *tmp;
+	struct cfg80211_chan_def *def = NULL;
+
+	list_for_each_entry_safe_reverse(arvif, tmp, &ar->arvifs, list) {
+		if (!arvif->ar)
+			continue;
+
+		if (!ath12k_mac_is_bridge_vdev(arvif) && !arvif->chanctx.def.chan) {
+			spin_lock_bh(&ar->data_lock);
+
+			if (!list_empty(&ar->arvifs))
+				list_del(&arvif->list);
+
+			spin_unlock_bh(&ar->data_lock);
+			arvif->ar = NULL;
+		} else if (arvif->chanctx.def.chan) {
+			def = &arvif->chanctx.def;
+		}
+	}
+
+	/* No valid channel context exist in any link so clear ar->rx_channel*/
+	if (!def || !def->chan) {
+		spin_lock_bh(&ar->data_lock);
+		ar->rx_channel = NULL;
+		spin_unlock_bh(&ar->data_lock);
+		ar->chan_tx_pwr = ATH12K_PDEV_TX_POWER_INVALID;
+	}
+}
+
 int ath12k_recovery_reconfig(struct ath12k_base *ab)
 {
 	struct ath12k *ar = NULL;
@@ -3446,7 +3471,6 @@ int ath12k_recovery_reconfig(struct ath12k_base *ab)
 	struct ath12k_dp_link_peer *peer;
 	struct ath12k_dp *dp;
 	struct ieee80211_key_conf *key;
-	struct cfg80211_chan_def def;
 	int i, j, key_idx;
 	int ret = -EINVAL;
 	bool is_bridge_vdev;
@@ -3460,6 +3484,16 @@ int ath12k_recovery_reconfig(struct ath12k_base *ab)
 			wiphy_unlock(ah->hw->wiphy);
 			return ret;
 		}
+	}
+
+	for (j = 0; j < ab->num_radios; j++) {
+		pdev = &ab->pdevs[j];
+		ar = pdev->ar;
+
+		if (!ar || ar->ab->is_bypassed)
+			continue;
+
+		ath12k_check_for_valid_chanctx(ar);
 	}
 
 	/* add chanctx/hw_config/filter part */
@@ -3479,36 +3513,6 @@ int ath12k_recovery_reconfig(struct ath12k_base *ab)
 				continue;
 
 			if (!is_bridge_vdev && !arvif->chanctx.def.chan)
-				continue;
-
-			arvif->is_started = false;
-			arvif->is_created = false;
-
-			if (is_bridge_vdev ||
-			    ath12k_mac_vif_link_chan(ahvif->vif, arvif->link_id, &def))
-				continue;
-
-			spin_lock_bh(&ar->data_lock);
-			ar->rx_channel = def.chan;
-			spin_unlock_bh(&ar->data_lock);
-
-                        /* configure filter - we can use the same flag*/
-		}
-	}
-
-	/* assign chanctx part */
-	for (j = 0; j < ab->num_radios; j++) {
-		pdev = &ab->pdevs[j];
-		ar = pdev->ar;
-
-		if (!ar || ar->ab->is_bypassed)
-			continue;
-
-		list_for_each_entry_safe_reverse(arvif, tmp, &ar->arvifs, list) {
-			ahvif = arvif->ahvif;
-			is_bridge_vdev = ath12k_mac_is_bridge_vdev(arvif);
-
-			if (!ahvif)
 				continue;
 
 			if (is_bridge_vdev) {
@@ -4063,14 +4067,6 @@ static void ath12k_core_reset(struct work_struct *work)
 	    !ath12k_check_erp_power_down(ag))
 		ath12k_core_trigger_partner_device_crash(ab);
 
-	/* prepare coredump */
-	if (ab->hif.bus == ATH12K_BUS_PCI) {
-		ath12k_coredump_download_rddm(ab);
-	} else if ((ab->hif.bus == ATH12K_BUS_AHB || ab->hif.bus == ATH12K_BUS_HYBRID) &&
-		   !ab->fw_recovery_support) {
-		ath12k_core_trigger_bug_on(ab);
-	}
-
 	atomic_set(&ab->recovery_count, 0);
 
 	ath12k_coredump_collect(ab);
@@ -4078,6 +4074,14 @@ static void ath12k_core_reset(struct work_struct *work)
 	ath12k_core_pre_reconfigure_recovery(ab);
 
 	ath12k_core_post_reconfigure_recovery(ab);
+
+	/* prepare coredump */
+	if (ab->hif.bus == ATH12K_BUS_PCI) {
+		ath12k_coredump_download_rddm(ab);
+	} else if ((ab->hif.bus == ATH12K_BUS_AHB || ab->hif.bus == ATH12K_BUS_HYBRID) &&
+		   !ab->fw_recovery_support) {
+		ath12k_core_trigger_bug_on(ab);
+	}
 
 	ath12k_dbg(ab, ATH12K_DBG_BOOT, "waiting recovery start...\n");
 
