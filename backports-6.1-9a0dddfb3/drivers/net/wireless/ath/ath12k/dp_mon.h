@@ -1080,17 +1080,19 @@ void ath12k_dp_ext_mon_reset(struct ath12k_pdev_dp *dp_pdev);
 int ath12k_dp_mon_tx_wq_start(struct ath12k_pdev_dp *dp_pdev, u32 mac_id);
 void ath12k_dp_mon_tx_wq_stop(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_reset_ppdu_desc(struct ath12k_dp_mon_ppdu_desc *ppdu_desc);
+#ifdef CPTCFG_ATH12K_TX_MONITOR
 int ath12k_dp_mon_tx_srng_alloc_setup(struct ath12k_dp *dp);
 void ath12k_dp_mon_tx_srng_cleanup(struct ath12k_dp *dp);
-int ath12k_dp_mon_tx_desc_pool_alloc(struct ath12k_dp *dp);
-void ath12k_dp_mon_tx_desc_pool_free(struct ath12k_dp *dp);
 int ath12k_dp_mon_tx_dst_ring_alloc_setup(struct ath12k_pdev_dp *dp_pdev, u32 mac_id);
 void ath12k_dp_mon_tx_dst_ring_cleanup(struct ath12k_pdev_dp *dp_pdev);
-int ath12k_dp_mon_tx_buff_alloc(struct ath12k_dp *dp);
 int ath12k_dp_mon_tx_htt_srng_setup(struct ath12k_dp *dp);
 void ath12k_dp_mon_tx_htt_srng_cleanup(struct ath12k_dp *dp);
-int ath12k_dp_mon_tx_htt_dst_ring_setup(struct ath12k_pdev_dp *dp_pdev, u32 mac_id);
 int ath12k_dp_mon_tx_config_filter(struct ath12k_pdev_dp *dp_pdev, bool enable);
+#endif
+int ath12k_dp_mon_tx_desc_pool_alloc(struct ath12k_dp *dp);
+void ath12k_dp_mon_tx_desc_pool_free(struct ath12k_dp *dp);
+int ath12k_dp_mon_tx_buff_alloc(struct ath12k_dp *dp);
+int ath12k_dp_mon_tx_htt_dst_ring_setup(struct ath12k_pdev_dp *dp_pdev, u32 mac_id);
 int ath12k_dp_mon_tx_monitor_start_stop(struct ath12k *ar, bool state);
 int ath12k_dp_mon_tx_set_monitor_flags(struct ath12k *ar, u32 new_flags, u32 *cur_flags);
 int ath12k_dp_mon_get_link_peer_rssi(struct ath12k *ar, const u8 *peer_mac,

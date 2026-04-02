@@ -6,6 +6,7 @@
 #include "dp_mon.h"
 #include "dp_tx_mon.h"
 
+#ifdef CONFIG_ATH12K_TX_MONITOR
 /**
  * ath12k_dp_mon_tx_setup_ppdu_desc() - Setup TX monitor PPDU descriptor pool
  * @dp_pdev: Pointer to DP PDEV context for device-specific operations
@@ -292,6 +293,18 @@ void ath12k_dp_mon_tx_wq_stop(struct ath12k_pdev_dp *dp_pdev)
 	}
 }
 EXPORT_SYMBOL(ath12k_dp_mon_tx_wq_stop);
+#else
+int ath12k_dp_mon_tx_wq_start(struct ath12k_pdev_dp *dp_pdev, u32 mac_id)
+{
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_wq_start);
+
+void ath12k_dp_mon_tx_wq_stop(struct ath12k_pdev_dp *dp_pdev)
+{
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_wq_stop);
+#endif
 
 /**
  * ath12k_dp_mon_tx_desc_free() - Free monitor descriptors

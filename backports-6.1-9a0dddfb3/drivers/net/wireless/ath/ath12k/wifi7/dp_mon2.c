@@ -54,7 +54,7 @@ const struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_dual_ring_ops = {
 	.ext_mon_validate_request = ath12k_wifi7_dp_ext_mon_validate_request,
 	.ext_mon_alloc = ath12k_dp_ext_mon_alloc,
 	.ext_mon_free = ath12k_dp_ext_mon_free,
-
+#ifdef CPTCFG_ATH12K_TX_MONITOR
 	/* Below are TxMonitor Ops */
 	/* At Device Init/Exit */
 	.mon_tx_srng_alloc_setup = ath12k_dp_mon_tx_srng_alloc_setup,
@@ -67,6 +67,7 @@ const struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_dual_ring_ops = {
 	/* At Pdev Init/Exit */
 	.mon_tx_dst_ring_alloc_setup = ath12k_dp_mon_tx_dst_ring_alloc_setup,
 	.mon_tx_dst_ring_cleanup = ath12k_dp_mon_tx_dst_ring_cleanup,
+#endif
 };
 
 static inline void

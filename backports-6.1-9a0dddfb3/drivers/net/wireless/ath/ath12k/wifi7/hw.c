@@ -874,7 +874,11 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 					BIT(NL80211_IFTYPE_MESH_POINT) |
 					BIT(NL80211_IFTYPE_AP_VLAN),
 		.supports_monitor = true,
+#ifdef CPTCFG_ATH12K_TX_MONITOR
 		.supports_tx_monitor = true,
+#else
+		.supports_tx_monitor = false,
+#endif
 #ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 		.max_clients_supported = 512,
 #endif
@@ -997,7 +1001,11 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 				   BIT(NL80211_IFTYPE_AP) |
 				   BIT(NL80211_IFTYPE_MESH_POINT),
 		.supports_monitor = true,
+#ifdef CPTCFG_ATH12K_TX_MONITOR
 		.supports_tx_monitor = true,
+#else
+		.supports_tx_monitor = false,
+#endif
 #ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 		.max_clients_supported = 256,
 #endif
@@ -1114,7 +1122,11 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 					BIT(NL80211_IFTYPE_AP) |
 					BIT(NL80211_IFTYPE_MESH_POINT),
 		.supports_monitor = true,
+#ifdef CPTCFG_ATH12K_TX_MONITOR
 		.supports_tx_monitor = true,
+#else
+		.supports_tx_monitor = false,
+#endif
 #ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 		.max_clients_supported = 256,
 #endif
@@ -1208,7 +1220,11 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 					BIT(NL80211_IFTYPE_AP) |
 					BIT(NL80211_IFTYPE_MESH_POINT),
 		.supports_monitor = true,
+#ifdef CPTCFG_ATH12K_TX_MONITOR
 		.supports_tx_monitor = true,
+#else
+		.supports_tx_monitor = false,
+#endif
 #ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 		.max_clients_supported = 512,
 #endif
