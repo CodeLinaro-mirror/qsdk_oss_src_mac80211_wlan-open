@@ -2969,7 +2969,8 @@ bool ieee80211_is_radar_required(struct ieee80211_local *local,
 enum hrtimer_restart ieee80211_dfs_cac_timeout(struct hrtimer *timer);
 void ieee80211_dfs_cac_timer_work(struct wiphy *wiphy, struct wiphy_work *work);
 
-void ieee80211_dfs_cac_cancel(struct ieee80211_local *local);
+void ieee80211_dfs_cac_cancel(struct ieee80211_local *local,
+			      struct cfg80211_chan_def *def);
 void ieee80211_dfs_radar_detected_work(struct wiphy *wiphy, struct wiphy_work *work);
 void ieee80211_awgn_detected_work(struct work_struct *work);
 int ieee80211_send_action_csa(struct ieee80211_sub_if_data *sdata,
