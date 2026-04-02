@@ -1207,6 +1207,7 @@ void ath12k_wifi8_hal_srng_idx_update_addr(struct ath12k_base *ab, struct hal_sr
 		dma_addr_t tp_paddr);
 void ath12k_wifi8_hal_srng_hw_enable(struct ath12k_base *ab,
 		struct hal_srng *srng);
+void ath12k_wifi8_hal_ppeds_reo2ppe_cc_config(struct ath12k_base *ab);
 
 static inline
 void *ath12k_hal_srng_src_begin_get_next_entry_nolock_fast(struct hal_srng *srng)
