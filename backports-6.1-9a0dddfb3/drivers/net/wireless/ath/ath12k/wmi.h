@@ -2479,6 +2479,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_ENERGY_MGMT_DPS_ASSISTING_ROLE_CMD_FIXED_PARAM = 0x525,
 	WMI_TAG_MAC_PHY_CAPABILITIES_EXT2 = 0x526,
 	WMI_TAG_MLO_PEER_TID_TO_LINK_MAP_EVENT_FIXED_PARAM = 0x544,
+	WMI_TAG_SHARED_CU_MEM_CONFIG = 0x577,
 	WMI_TAG_PEER_ASSOC_CIP_INFO,
 	WMI_TAG_MAX
 };
@@ -2751,6 +2752,8 @@ enum wmi_tlv_service {
 	WMI_TLV_SERVICE_11BN = 458,
 
 	WMI_SERVICE_EXT_TLV_SUPPORT = 465,
+
+	WMI_TLV_SERVICE_SHARED_CU_MEM_MODEL_COUNT_DOWN = 497,
 
 	WMI_MAX_EXT2_SERVICE,
 };
@@ -3028,6 +3031,23 @@ struct ath12k_wmi_pdev_band_to_mac_params {
 	__le32 start_freq;
 	__le32 end_freq;
 } __packed;
+
+/* This shares the supported countdown as follows
+ * csa
+ * quite
+ * max_chan_switch_time
+ * eht_bpcc
+ * ttlm_max_switch_time
+ * ttlm_expected_duration
+ * ml_reconfig
+ * uhr_epbcc
+ * uhr_params_update
+ * reserved (23 bits)
+ */
+struct ath12k_wmi_shared_cu_mem_config {
+	__le32 config;
+} __packed;
+
 
 /* This is both individual command WMI_PDEV_SET_HW_MODE_CMDID and also part
  * of WMI_TAG_INIT_CMD.

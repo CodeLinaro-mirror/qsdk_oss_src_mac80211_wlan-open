@@ -132,6 +132,7 @@ struct ath12k_wmi_svc_rdy_ext2_parse {
 	bool ltf_cap;
 	bool chain_cap;
 	bool mac_phy_caps_ext2_done;
+	bool cu_mem_cfg_done;
 };
 
 struct ath12k_wmi_rdy_parse {
@@ -8125,6 +8126,29 @@ static int ath12k_wmi_tlv_twt_caps_params(struct ath12k_base *ab, u16 tag,
 	return 0;
 }
 
+static int ath12k_wmi_tlv_shared_cu_mem_config(struct ath12k_base *ab, u16 tag,
+					       u16 len, const void *ptr,
+					       void *data)
+{
+	const struct ath12k_wmi_shared_cu_mem_config *cfg;
+
+	if (!test_bit(WMI_TLV_SERVICE_SHARED_CU_MEM_MODEL_COUNT_DOWN,
+		      ab->wmi_ab.svc_map))
+		return 0;
+
+	if (tag != WMI_TAG_SHARED_CU_MEM_CONFIG)
+		return -EPROTO;
+
+	cfg = ptr;
+
+	ab->cu_mem_cfg_mask = le32_to_cpu(cfg->config);
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "shared critical update memory config mask: 0x%x\n",
+		   ab->cu_mem_cfg_mask);
+
+	return 0;
+}
+
 static int ath12k_wmi_svc_rdy_ext2_parse(struct ath12k_base *ab,
 					 u16 tag, u16 len,
 					 const void *ptr, void *data)
@@ -8276,6 +8300,17 @@ static int ath12k_wmi_svc_rdy_ext2_parse(struct ath12k_base *ab,
 			}
 
 			parse->mac_phy_caps_ext2_done = true;
+		} else if (!parse->cu_mem_cfg_done) {
+			ret = ath12k_wmi_tlv_iter(ab, ptr, len,
+						  ath12k_wmi_tlv_shared_cu_mem_config,
+						  parse);
+			if (ret) {
+				ath12k_warn(ab, "failed to parse tlv shared cu mem config: %d\n",
+					    ret);
+				return ret;
+			}
+
+			parse->cu_mem_cfg_done = true;
 		}
 		break;
 	default:

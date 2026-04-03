@@ -2332,6 +2332,8 @@ struct ath12k_base {
 
 	bool is_cumac_chip;
 
+	u32 cu_mem_cfg_mask;
+
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
 };
