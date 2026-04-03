@@ -1606,6 +1606,7 @@ struct ath12k {
 	bool target_suspend_ack:1;
 	struct ath12k_pdev_ctrl_path_stats stats;
 	bool dfs_block_radar_events;
+	bool dfs_sub_channel_marking;
 	bool monitor_vdev_created:1;
 	bool monitor_started:1;
 	bool nlo_enabled:1;
