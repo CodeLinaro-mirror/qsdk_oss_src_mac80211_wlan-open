@@ -115,8 +115,11 @@ static int ath12k_dp_mon_tx_wq_init(struct ath12k_pdev_dp *dp_pdev)
 	INIT_LIST_HEAD(&dp_mon_pdev->tx_mon_desc_work_list);
 
 	dp_mon_pdev->txmon_wq =
-		alloc_workqueue("ath12k_txmon_wq",
-				WQ_UNBOUND, 1);
+		alloc_workqueue("txmon_%s-%s%d",
+				WQ_UNBOUND | WQ_SYSFS, 1,
+				ath12k_bus_str(dp_pdev->dp->ab->hif.bus),
+				dev_name(dp_pdev->dp->ab->dev), dp_pdev->mac_id);
+
 	if (!dp_mon_pdev->txmon_wq) {
 		ath12k_warn(dp_pdev->dp->ab,
 			    "TX monitor work queue allocation failed\n");
