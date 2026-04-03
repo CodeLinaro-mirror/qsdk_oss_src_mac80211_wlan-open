@@ -186,6 +186,10 @@ module_param_named(carrier_vow_optimization, ath12k_carrier_vow_optimization, bo
 MODULE_PARM_DESC(carrier_vow_optimization, "Enable/Disable VoW optimization for carier usecases");
 EXPORT_SYMBOL(ath12k_carrier_vow_optimization);
 
+bool ath12k_fw_q6_dump_collection;
+module_param_named(fw_q6_dump_collection, ath12k_fw_q6_dump_collection, bool, 0644);
+MODULE_PARM_DESC(fw_q6_dump_collection, "FW Q6 dump collection only: 0-disable (default), 1-enable");
+
 unsigned int ath12k_reorder_VI_timeout;
 module_param_named(reorder_VI_timeout, ath12k_reorder_VI_timeout, uint, 0644);
 MODULE_PARM_DESC(reorder_VI_timeout, "Reorder VI timeout (ms)");
@@ -4109,6 +4113,8 @@ static void ath12k_core_reset(struct work_struct *work)
 		 */
 		if (ab->hif.bus == ATH12K_BUS_PCI)
 			ath12k_coredump_download_rddm(ab);
+		else if (ath12k_fw_q6_dump_collection)
+			ath12k_core_upd_power_down(ab);
 		ath12k_warn(ab, "ignore reset dev flags 0x%lx\n", ab->dev_flags);
 		return;
 	}

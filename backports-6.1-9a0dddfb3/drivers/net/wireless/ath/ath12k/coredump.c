@@ -550,6 +550,7 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 	int dump_count;
 	struct ath12k_hw_group *ag = ab->ag;
 	bool state = false;
+	bool no_recovery, collect_dump;
 
 	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
@@ -664,8 +665,12 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 
 	num_seg = num_seg - skip_count;
 
-	if (!ab->fw_recovery_support || ab->in_panic ||
-	    test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ag->flags)) {
+	no_recovery = !ab->fw_recovery_support || ab->in_panic ||
+			test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ag->flags);
+	collect_dump = ath12k_fw_q6_dump_collection &&
+			!test_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE, &ab->dev_flags);
+
+	if (no_recovery && !collect_dump) {
 		if (ag->mlo_capable) {
 			dump_count = atomic_read(&ath12k_coredump_ram_info.num_chip);
 			if (dump_count >= ATH12K_MAX_SOCS) {
@@ -701,6 +706,7 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 		chip_seg->seg = segment;
 
 		ath12k_core_issue_bug_on(ab);
+		return;
 
 	} else if (!ab->in_panic) {
 		struct ath12k_pci_elf_coredump_state *st = NULL;
@@ -729,8 +735,8 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 		kfree(st->chunks[0].vaddr);
 		kfree(st->chunks);
 		kfree(st);
-		kfree(segment);
 	}
+	kfree(segment);
 }
 
 #ifdef CPTCFG_ATH12K_COREDUMP
