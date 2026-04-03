@@ -509,6 +509,8 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 int ath12k_mac_vdev_start(struct ath12k_link_vif *arvif,
 			  struct ieee80211_chanctx_conf *ctx);
+void ath12k_mac_set_tpc_power(struct ath12k *ar,
+			      struct ath12k_link_vif *arvif);
 void ath12k_mac_parse_tx_pwr_env(struct ath12k *ar,
 				 struct ath12k_link_vif *arvif);
 int ath12k_mac_start(struct ath12k *ar);

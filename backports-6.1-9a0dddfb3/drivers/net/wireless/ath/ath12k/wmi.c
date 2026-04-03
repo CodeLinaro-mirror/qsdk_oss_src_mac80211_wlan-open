@@ -815,6 +815,13 @@ void ath12k_mvr_ch_switch_notify_work(struct work_struct *work)
 		cfg80211_ch_switch_notify(wdev->netdev,
 					  &arvif->chanctx.def,
 					  arvif->link_id);
+
+		/*
+		 * For scan radio, SET_TPC WMI command is deferred until after
+		 * the channel change completion response (MVR event) is received
+		 * from FW. Send it here now that the channel change is complete.
+		 */
+		ath12k_mac_set_tpc_power(ar, arvif);
 	}
 	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
 }
