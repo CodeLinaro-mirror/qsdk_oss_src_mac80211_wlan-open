@@ -1036,6 +1036,7 @@ int ath12k_wifi8_fetch_smd_ctx(struct ath12k_base *ab, struct ath12k_dp_hw *dp_h
 	struct ath12k_hal_reo_cmd cmd = {0};
 	struct ath12k_dp_rx_tid *rx_tid;
 	struct ath12k_dp_smd_ctx smd_data = {};
+	enum hal_reo_cmd_type cmd_type;
 	int ret, tid;
 	bool sent = false;
 	bool clear_vld = ath12k_wifi8_clear_vld_after_smd_ctx_fetch &&
@@ -1068,28 +1069,44 @@ int ath12k_wifi8_fetch_smd_ctx(struct ath12k_base *ab, struct ath12k_dp_hw *dp_h
 		cmd.addr_hi = upper_32_bits(rx_tid->paddr);
 		cmd.flag = HAL_REO_CMD_FLG_NEED_STATUS;
 
-		ret = ath12k_wifi8_dp_reo_cmd_send_highprio(ab, &smd_data,
-						   sizeof(smd_data),
-						   HAL_REO_CMD_GET_QUEUE_STATS,
-						   &cmd, cb);
+		if (clear_vld) {
+			struct ath12k_reo_cmd_entry cmds[2];
+			struct ath12k_reo_dp_cmd_desc descs[2];
+
+			memset(cmds, 0, sizeof(cmds));
+			memset(descs, 0, sizeof(descs));
+
+			cmds[0].type = HAL_REO_CMD_GET_QUEUE_STATS;
+			cmds[0].cmd = cmd;
+			cmds[1].type = HAL_REO_CMD_UPDATE_RX_QUEUE;
+			ath12k_wifi8_peer_rx_tid_reo_clear_vld_cmd_init(rx_tid,
+									&cmds[1].cmd);
+
+			descs[0].data = &smd_data;
+			descs[0].len = sizeof(smd_data);
+			descs[0].cb = cb;
+			descs[1].data = rx_tid;
+			descs[1].len = sizeof(*rx_tid);
+
+			ret = ath12k_wifi8_dp_reo_cmd_send_highprio_n(ab, cmds,
+								      descs,
+								      ARRAY_SIZE(cmds));
+		} else {
+			cmd_type = HAL_REO_CMD_GET_QUEUE_STATS;
+			ret = ath12k_wifi8_dp_reo_cmd_send_highprio(ab, &smd_data,
+								    sizeof(smd_data),
+								    cmd_type, &cmd, cb);
+		}
+
 		if (ret) {
-			ath12k_warn(ab, "failed to send fetch smd ctx for rx tid queue, tid %d (%d)\n",
+			ath12k_warn(ab,
+				    "failed to send fetch smd ctx for rx tid queue, tid %d (%d)\n",
 				    rx_tid->tid, ret);
 			spin_unlock_bh(&dp_hw->peer_lock);
 			return ret;
 		}
 
 		sent = true;
-
-		if (clear_vld) {
-			ret = ath12k_wifi8_peer_rx_tid_reo_clear_vld(ab,
-						      dp_hw,
-						      ctx->peer_addr, tid);
-			if (ret) {
-				spin_unlock_bh(&dp_hw->peer_lock);
-				return ret;
-			}
-		}
 
 		ath12k_dbg(ab, ATH12K_DBG_DP_RX,
 			   "smd ctx fetch sent tid %d peer %pM ring REO_CMD1\n",

@@ -775,6 +775,12 @@ struct ath12k_hal_reo_cmd {
 	u8 pn_127_48_info;
 };
 
+struct ath12k_reo_cmd_entry {
+	enum hal_reo_cmd_type type;
+	struct ath12k_hal_reo_cmd cmd;
+	int cmd_num;
+};
+
 enum rx_msdu_start_pkt_type {
 	RX_MSDU_START_PKT_TYPE_11A,
 	RX_MSDU_START_PKT_TYPE_11B,

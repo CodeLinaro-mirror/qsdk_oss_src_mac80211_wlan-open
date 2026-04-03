@@ -278,6 +278,97 @@ static int ath12k_hal_reo_cmd_unblock_cache(struct hal_tlv_64_hdr *tlv,
 	return le32_get_bits(desc->cmd.info0, HAL_REO_CMD_HDR_INFO0_CMD_NUMBER);
 }
 
+static int ath12k_wifi8_hal_reo_cmd_fill(struct ath12k_base *ab,
+					 struct hal_tlv_64_hdr *reo_desc,
+					 enum hal_reo_cmd_type type,
+					 struct ath12k_hal_reo_cmd *cmd)
+{
+	switch (type) {
+	case HAL_REO_CMD_GET_QUEUE_STATS:
+		return ath12k_wifi8_hal_reo_cmd_queue_stats(reo_desc, cmd);
+	case HAL_REO_CMD_FLUSH_CACHE:
+		return ath12k_wifi8_hal_reo_cmd_flush_cache(&ab->hal, reo_desc,
+							  cmd);
+	case HAL_REO_CMD_UPDATE_RX_QUEUE:
+		return ath12k_wifi8_hal_reo_cmd_update_rx_queue(reo_desc, cmd);
+	case HAL_REO_CMD_FLUSH_QUEUE:
+		return ath12k_hal_reo_cmd_flush_queue(reo_desc, cmd);
+	case HAL_REO_CMD_UNBLOCK_CACHE:
+		return ath12k_hal_reo_cmd_unblock_cache(reo_desc, cmd);
+	case HAL_REO_CMD_FLUSH_TIMEOUT_LIST:
+		ath12k_warn(ab, "Unsupported reo command %d\n", type);
+		return -EOPNOTSUPP;
+	default:
+		ath12k_warn(ab, "Unknown reo command %d\n", type);
+		return -EINVAL;
+	}
+}
+
+int ath12k_wifi8_hal_reo_cmd_send_n(struct ath12k_base *ab,
+				    struct hal_srng *srng,
+				    struct ath12k_reo_cmd_entry *entries,
+				    int n)
+{
+	int ret;
+
+	if (WARN_ON(n <= 0))
+		return -EINVAL;
+
+	spin_lock_bh(&srng->lock);
+	ath12k_hal_srng_access_begin(ab, srng);
+
+	ret = ath12k_wifi8_hal_reo_cmd_send_n_locked(ab, srng, entries, n);
+
+	ath12k_hal_srng_access_end(ab, srng);
+	spin_unlock_bh(&srng->lock);
+
+	return ret;
+}
+
+int ath12k_wifi8_hal_reo_cmd_send_n_locked(struct ath12k_base *ab,
+					   struct hal_srng *srng,
+					   struct ath12k_reo_cmd_entry *entries,
+					   int n)
+{
+	struct hal_tlv_64_hdr *reo_desc;
+	u32 saved_hp;
+	int i, ret;
+
+	if (WARN_ON(n <= 0))
+		return -EINVAL;
+
+	lockdep_assert_held(&srng->lock);
+
+	saved_hp = srng->u.src_ring.hp;
+
+	for (i = 0; i < n; i++) {
+		reo_desc = ath12k_hal_srng_src_get_next_entry(ab, srng);
+		if (!reo_desc) {
+			ret = -ENOBUFS;
+			goto err_restore_hp;
+		}
+
+		ret = ath12k_wifi8_hal_reo_cmd_fill(ab, reo_desc,
+						    entries[i].type,
+						    &entries[i].cmd);
+		if (ret <= 0) {
+			if (!ret)
+				ret = -EINVAL;
+			goto err_restore_hp;
+		}
+
+		entries[i].cmd_num = ret;
+	}
+
+	return 0;
+
+err_restore_hp:
+	srng->u.src_ring.hp = saved_hp;
+	srng->u.src_ring.reap_hp = saved_hp;
+
+	return ret;
+}
+
 int ath12k_wifi8_hal_reo_cmd_send(struct ath12k_base *ab, struct hal_srng *srng,
 				  enum hal_reo_cmd_type type,
 				  struct ath12k_hal_reo_cmd *cmd)
@@ -294,32 +385,7 @@ int ath12k_wifi8_hal_reo_cmd_send(struct ath12k_base *ab, struct hal_srng *srng,
 		goto out;
 	}
 
-	switch (type) {
-	case HAL_REO_CMD_GET_QUEUE_STATS:
-		ret = ath12k_wifi8_hal_reo_cmd_queue_stats(reo_desc, cmd);
-		break;
-	case HAL_REO_CMD_FLUSH_CACHE:
-		ret = ath12k_wifi8_hal_reo_cmd_flush_cache(&ab->hal, reo_desc,
-							   cmd);
-		break;
-	case HAL_REO_CMD_UPDATE_RX_QUEUE:
-		ret = ath12k_wifi8_hal_reo_cmd_update_rx_queue(reo_desc, cmd);
-		break;
-	case HAL_REO_CMD_FLUSH_QUEUE:
-		ret = ath12k_hal_reo_cmd_flush_queue(reo_desc, cmd);
-		break;
-	case HAL_REO_CMD_UNBLOCK_CACHE:
-		ret = ath12k_hal_reo_cmd_unblock_cache(reo_desc, cmd);
-		break;
-	case HAL_REO_CMD_FLUSH_TIMEOUT_LIST:
-		ath12k_warn(ab, "Unsupported reo command %d\n", type);
-		ret = -EOPNOTSUPP;
-		break;
-	default:
-		ath12k_warn(ab, "Unknown reo command %d\n", type);
-		ret = -EINVAL;
-		break;
-	}
+	ret = ath12k_wifi8_hal_reo_cmd_fill(ab, reo_desc, type, cmd);
 
 out:
 	ath12k_hal_srng_access_end(ab, srng);
