@@ -13,6 +13,7 @@
 #include <linux/of.h>
 #include <linux/module.h>
 #include <net/if_inet6.h>
+#include "ieee80211_i.h"
 
 #include "mac.h"
 #include "core.h"
@@ -370,6 +371,14 @@ static bool ath12k_mac_is_bridge_required(u8 device_bitmap, u8 num_devices,
 					  u16 *bridge_bitmap);
 static bool ath12k_get_link_down(struct ath12k_sta *ahsta, int *link_going_down);
 static void ath12k_mac_nrp_delete(struct ath12k *ar);
+static u8 ath12k_mac_get_num_pwr_levels(struct cfg80211_chan_def *chan_def,
+					bool is_psd);
+static void
+ath12k_mac_get_sp_client_power_for_connecting_ap(
+					struct ath12k *ar,
+					struct ieee80211_chanctx_conf *ctx,
+					s8 *max_eirp_arr,
+					u8 num_pwr_levels);
 static const char *ath12k_mac_phymode_str(enum wmi_phy_mode mode)
 {
 	switch (mode) {
@@ -884,6 +893,29 @@ static u8 ath12k_parse_mpdudensity(u8 mpdudensity)
 		return 0;
 	}
 }
+
+static u16
+ath12k_mac_get_6g_start_frequency(struct cfg80211_chan_def *chan_def);
+static s8 ath12k_mac_get_afc_eirp_power(struct ath12k *ar, u32 freq,
+					u16 center_freq, u16 bw);
+static void ath12k_mac_get_eirp_power(struct ath12k *ar,
+				      u16 *start_freq,
+				      u16 *center_freq,
+				      u8 i,
+				      struct ieee80211_channel **temp_chan,
+				      struct cfg80211_chan_def *def,
+				      s8 *tx_power,
+				      u8 reg_6g_power_mode);
+static void
+ath12k_mac_fill_reg_tpc_info_with_psd_for_sp_pwr_mode(
+					struct ath12k *ar,
+					struct ath12k_link_vif *arvif,
+					struct ieee80211_chanctx_conf *ctx);
+static void
+ath12k_mac_fill_reg_tpc_info_with_psd_for_client_sp_pwr_mode(
+					struct ath12k *ar,
+					struct ath12k_link_vif *arvif,
+					struct ieee80211_chanctx_conf *ctx);
 
 bool ath12k_mac_is_bridge_vdev(struct ath12k_link_vif *arvif)
 {
@@ -8140,6 +8172,258 @@ ieee80211_bss_conf *ath12k_get_link_bss_conf(struct ath12k_link_vif *arvif)
 	return link_conf;
 }
 
+static s8
+ath12k_mac_get_reg_eirp_for_oper_bw(struct ath12k *ar,
+				    struct ath12k_link_vif *arvif,
+				    struct ieee80211_chanctx_conf *chanctx,
+				    u8 reg_6g_power_mode)
+{
+	struct ieee80211_channel *temp_chan;
+	s8 eirp_power = ATH12K_MIN_TX_POWER;
+	u16 start_freq;
+	u16 center_freq = 0;
+	u16 bw;
+	u8 num_pwr_levels;
+	u8 pwr_lvl_idx;
+	u32 pri_freq;
+
+	num_pwr_levels = ath12k_mac_get_num_pwr_levels(&chanctx->def, false);
+	if (!num_pwr_levels)
+		return ATH12K_MIN_TX_POWER;
+
+	pwr_lvl_idx = num_pwr_levels - 1;
+	bw = ATH12K_CHWIDTH_20 << pwr_lvl_idx;
+	start_freq = ath12k_mac_get_6g_start_frequency(&chanctx->def);
+
+	ath12k_mac_get_eirp_power(ar, &start_freq, &center_freq, pwr_lvl_idx,
+				  &temp_chan, &chanctx->def, &eirp_power,
+				  reg_6g_power_mode);
+
+	if (reg_6g_power_mode == IEEE80211_REG_SP_AP &&
+	    ar->afc.is_6ghz_afc_power_event_received) {
+		s8 afc_eirp;
+
+		afc_eirp = ath12k_mac_get_afc_eirp_power(ar, pri_freq,
+							 center_freq, bw);
+		if (afc_eirp != ATH12K_MAX_TX_POWER)
+			eirp_power = min(eirp_power, afc_eirp);
+	}
+
+	return eirp_power;
+}
+
+static s8
+ath12k_mac_get_reg_eirp_for_oper_bw_client_sp(
+					struct ath12k *ar,
+					struct ath12k_link_vif *arvif,
+					struct ieee80211_chanctx_conf *chanctx)
+{
+	s8 max_eirp_arr[ATH12K_MAX_EIRP_VALS];
+	s8 eirp_power = ATH12K_MIN_TX_POWER;
+	u8 num_pwr_levels;
+	u8 i;
+
+	for (i = 0; i < ATH12K_MAX_EIRP_VALS; i++)
+		max_eirp_arr[i] = ATH12K_MIN_TX_POWER;
+
+	num_pwr_levels = ath12k_mac_get_num_pwr_levels(&chanctx->def, false);
+	num_pwr_levels = min_t(u8, num_pwr_levels, ATH12K_MAX_EIRP_VALS);
+	if (!num_pwr_levels)
+		return ATH12K_MIN_TX_POWER;
+
+	ath12k_mac_get_sp_client_power_for_connecting_ap(ar, chanctx,
+							 max_eirp_arr,
+							 num_pwr_levels);
+	eirp_power = max_eirp_arr[num_pwr_levels - 1];
+
+	return eirp_power;
+}
+
+static bool
+ath12k_mac_regdomain_has_6g_psd_power(struct ath12k *ar,
+				      struct ieee80211_chanctx_conf *chanctx,
+				      u8 reg_6g_power_mode)
+{
+	struct wiphy *wiphy = ath12k_ar_to_hw(ar)->wiphy;
+	struct ieee80211_channel *c;
+	u16 start_freq;
+	int pwr_mode_idx;
+
+	start_freq = ath12k_mac_get_6g_start_frequency(&chanctx->def);
+
+	/* cfg80211 6 GHz power mode index: LPI(1)->0, SP(2)->1, VLP(3)->2 */
+	pwr_mode_idx = ieee80211_mac_to_cfg_power_type(reg_6g_power_mode);
+	if (pwr_mode_idx >= NL80211_REG_NUM_POWER_MODES)
+		return false;
+
+	c = ieee80211_get_6g_channel_khz(wiphy, MHZ_TO_KHZ(start_freq),
+					 pwr_mode_idx);
+	return c && (c->flags & IEEE80211_CHAN_PSD);
+}
+
+static void
+ath12k_mac_set_psd_only_tpc_common(struct ath12k_reg_tpc_power_info *tpc,
+				   enum wmi_reg_6g_ap_type power_type,
+				   s8 eirp_power)
+{
+	tpc->is_psd_power = true;
+	tpc->num_eirp_pwr_levels = 0;
+	tpc->eirp_power = eirp_power;
+	tpc->power_type_6g = power_type;
+}
+
+static void
+ath12k_mac_fill_reg_tpc_info_psd_only_sp_punctured(
+					struct ath12k *ar,
+					struct ath12k_link_vif *arvif,
+					struct ieee80211_chanctx_conf *chanctx)
+{
+	struct ath12k_reg_tpc_power_info *reg_tpc_info = &arvif->reg_tpc_info;
+	s8 eirp_power;
+	enum wmi_reg_6g_ap_type power_type;
+
+	eirp_power = ath12k_mac_get_reg_eirp_for_oper_bw(ar, arvif, chanctx,
+							 IEEE80211_REG_SP_AP);
+	power_type = ath12k_ieee80211_ap_pwr_type_convert(IEEE80211_REG_SP_AP);
+	ath12k_mac_set_psd_only_tpc_common(reg_tpc_info, power_type,
+					   eirp_power);
+	ath12k_mac_fill_reg_tpc_info_with_psd_for_sp_pwr_mode(ar, arvif,
+							      chanctx);
+	reg_tpc_info->num_pwr_levels = reg_tpc_info->num_psd_pwr_levels;
+}
+
+static void
+ath12k_mac_fill_reg_tpc_info_psd_only_client_sp_punctured(
+					struct ath12k *ar,
+					struct ath12k_link_vif *arvif,
+					struct ieee80211_chanctx_conf *chanctx)
+{
+	struct ath12k_reg_tpc_power_info *reg_tpc_info = &arvif->reg_tpc_info;
+	s8 eirp_power;
+
+	eirp_power = ath12k_mac_get_reg_eirp_for_oper_bw_client_sp(ar, arvif,
+								   chanctx);
+	ath12k_mac_set_psd_only_tpc_common(reg_tpc_info, REG_SP_CLIENT_TYPE,
+					   eirp_power);
+	ath12k_mac_fill_reg_tpc_info_with_psd_for_client_sp_pwr_mode(ar, arvif,
+								     chanctx);
+	reg_tpc_info->num_pwr_levels = reg_tpc_info->num_psd_pwr_levels;
+}
+
+static bool
+ath12k_mac_fill_reg_tpc_info_psd_only_non_sp_punctured(
+					struct ath12k *ar,
+					struct ath12k_link_vif *arvif,
+					struct ieee80211_chanctx_conf *chanctx,
+					u8 reg_6g_power_mode)
+{
+	struct ath12k_reg_tpc_power_info *reg_tpc_info = &arvif->reg_tpc_info;
+	struct wiphy *wiphy = ath12k_ar_to_hw(ar)->wiphy;
+	u16 max_bw;
+	u32 start_freq;
+	u8 n_subchans, num_psd_pwr_levels;
+	u8 i;
+	int pwr_mode_idx;
+
+	if (!chanctx->def.punctured)
+		return false;
+
+	if (reg_6g_power_mode == IEEE80211_REG_SP_AP)
+		return false;
+
+	max_bw = ath12k_mac_get_chan_width(chanctx->def.width);
+	start_freq = ath12k_mac_get_6g_start_frequency(&chanctx->def);
+	n_subchans = max_bw / ATH12K_CHWIDTH_20;
+	num_psd_pwr_levels = min_t(u8, n_subchans, ATH12K_NUM_PWR_LEVELS);
+
+	memset(reg_tpc_info, 0, sizeof(*reg_tpc_info));
+	reg_tpc_info->is_psd_power = true;
+	reg_tpc_info->eirp_power =
+		ath12k_mac_get_reg_eirp_for_oper_bw(ar, arvif, chanctx,
+						    reg_6g_power_mode);
+	reg_tpc_info->num_psd_pwr_levels = num_psd_pwr_levels;
+	reg_tpc_info->num_eirp_pwr_levels = 0;
+	reg_tpc_info->num_pwr_levels = num_psd_pwr_levels;
+	reg_tpc_info->power_type_6g =
+		ath12k_ieee80211_ap_pwr_type_convert(reg_6g_power_mode);
+
+	/* cfg80211 6 GHz power mode index: LPI(1)->0, SP(2)->1, VLP(3)->2 */
+	pwr_mode_idx = ieee80211_mac_to_cfg_power_type(reg_6g_power_mode);
+	if (pwr_mode_idx >= NL80211_REG_NUM_POWER_MODES)
+		pwr_mode_idx = 0;
+
+	for (i = 0; i < num_psd_pwr_levels; i++) {
+		u16 cfreq = start_freq + (i * ATH12K_CHWIDTH_20);
+		struct ieee80211_channel *c;
+		s8 psd = ATH12K_MIN_TX_POWER;
+
+		if (!(chanctx->def.punctured & BIT(i))) {
+			c = ieee80211_get_6g_channel_khz(wiphy,
+							 MHZ_TO_KHZ(cfreq),
+							 pwr_mode_idx);
+			if (c)
+				psd = c->psd;
+		}
+
+		reg_tpc_info->chan_power_info[i].chan_cfreq = cfreq;
+		reg_tpc_info->chan_power_info[i].tx_power = psd;
+	}
+
+	return true;
+}
+
+static bool
+ath12k_mac_fill_reg_tpc_eirp_pref_punctured(
+				struct ath12k *ar,
+				struct ath12k_link_vif *arvif,
+				struct ieee80211_chanctx_conf *chanctx,
+				u8 reg_6g_power_mode)
+{
+	struct ath12k_vif *ahvif = arvif->ahvif;
+
+	if (!chanctx->def.punctured)
+		return false;
+
+	/*
+	 * If regdomain doesn't provide PSD power, fall back to EIRP
+	 * encoding.
+	 */
+	if (!ath12k_mac_regdomain_has_6g_psd_power(ar, chanctx,
+						   reg_6g_power_mode))
+		return false;
+
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_AP &&
+	    reg_6g_power_mode == IEEE80211_REG_SP_AP) {
+		ath12k_mac_fill_reg_tpc_info_psd_only_sp_punctured(ar,
+								   arvif,
+								   chanctx);
+		return true;
+	}
+
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
+	    reg_6g_power_mode == IEEE80211_REG_SP_AP) {
+		if (ar->afc.is_6ghz_afc_power_event_received) {
+			ath12k_mac_fill_reg_tpc_info_psd_only_sp_punctured(
+								ar,
+								arvif,
+								chanctx);
+			return true;
+		}
+
+		ath12k_mac_fill_reg_tpc_info_psd_only_client_sp_punctured(
+								ar,
+								arvif,
+								chanctx);
+		return true;
+	}
+
+	return ath12k_mac_fill_reg_tpc_info_psd_only_non_sp_punctured(
+							ar,
+							arvif,
+							chanctx,
+							reg_6g_power_mode);
+}
+
 /**
  * ath12k_mac_fill_reg_tpc - Populate transmit power control (TPC) info
  *                           based on regulatory and firmware capabilities
@@ -8156,8 +8440,17 @@ ieee80211_bss_conf *ath12k_get_link_bss_conf(struct ath12k_link_vif *arvif)
  *   device is operating in Standard Power (SP) AP mode, it invokes
  *   ath12k_mac_fill_reg_tpc_info_with_psd_eirp_pwr_for_sp().
  *
- * - If the firmware prefers EIRP-based power configuration, it calls
- *   ath12k_mac_fill_reg_tpc_info_with_eirp_power().
+ * - Otherwise, if the firmware prefers EIRP-based power configuration
+ *   (WMI_TLV_SERVICE_EIRP_PREFERRED_SUPPORT), it behaves as follows:
+ *     - For punctured channels, it programs PSD-only:
+ *       - For SP AP mode, it uses
+ *         ath12k_mac_fill_reg_tpc_info_with_psd_for_sp_pwr_mode().
+ *       - For client SP mode, it uses
+ *         ath12k_mac_fill_reg_tpc_info_with_psd_for_client_sp_pwr_mode().
+ *       - For non-SP modes, it uses PSD-only helpers that populate only
+ *         the PSD array in the WMI TPC object.
+ *     - For non-punctured channels, it calls
+ *       ath12k_mac_fill_reg_tpc_info_with_eirp_power().
  *
  * - Otherwise, it falls back to ath12k_mac_fill_reg_tpc_info().
  *
@@ -8192,7 +8485,17 @@ static void ath12k_mac_fill_reg_tpc(struct ath12k *ar, struct wireless_dev *wdev
 										     chanctx);
 	} else if (test_bit(WMI_TLV_SERVICE_EIRP_PREFERRED_SUPPORT,
 			    ar->ab->wmi_ab.svc_map)) {
-		ath12k_mac_fill_reg_tpc_info_with_eirp_power(ar, arvif, chanctx);
+		/* In EIRP-preferred mode, use PSD-only encoding for punctured
+		 * channels where appropriate; otherwise fall back to pure EIRP.
+		 */
+		if (ath12k_mac_fill_reg_tpc_eirp_pref_punctured(
+							ar, arvif,
+							chanctx,
+							reg_6g_power_mode))
+			return;
+
+		ath12k_mac_fill_reg_tpc_info_with_eirp_power(ar, arvif,
+							     chanctx);
 	} else {
 		ath12k_mac_fill_reg_tpc_info(ar, arvif, chanctx);
 	}
@@ -11333,7 +11636,7 @@ static void ath12k_mac_get_eirp_arr_for_6g(struct ath12k *ar,
 	}
 }
 
-void
+static void
 ath12k_mac_get_sp_client_power_for_connecting_ap(struct ath12k *ar,
 						 struct ieee80211_chanctx_conf *ctx,
 						 s8 *max_eirp_arr,
