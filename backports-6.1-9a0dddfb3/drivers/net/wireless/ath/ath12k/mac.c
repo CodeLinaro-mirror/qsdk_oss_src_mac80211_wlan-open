@@ -5486,7 +5486,7 @@ void ath12k_peer_assoc_prepare(struct ath12k *ar,
 	ath12k_peer_assoc_h_flowq(arsta, arvif, arg);
 	ath12k_peer_assoc_h_holq(arsta, arvif, arg);
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
-	ath12k_peer_assoc_h_auth_extn(arvif, arsta, arg);
+	ath12k_peer_assoc_h_mesh_extn(arvif, arsta, link_sta, arg);
 #endif
 
 	arsta->peer_nss = arg->peer_nss;
