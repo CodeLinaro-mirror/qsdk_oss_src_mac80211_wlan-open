@@ -498,6 +498,7 @@ struct ath12k_mgmt_frame_stats {
 	u64 aggr_rx_mgmt;
 	u64 aggr_tx_mgmt_fail_cnt;
 	u64 aggr_tx_mgmt_success_cnt;
+	u64 rx_pn_err_cnt;
 };
 
 struct ath12k_tx_conf {
@@ -743,6 +744,7 @@ struct ath12k_link_vif {
 	DECLARE_BITMAP(free_groupidx_map, ATH12K_GROUP_KEYS_NUM_MAX);
 	bool bcast_rate_configured;
 	u32 bcast_rate;
+	u64 rx_pn_err_cnt;
 };
 
 struct ath12k_dp_link_vif {
