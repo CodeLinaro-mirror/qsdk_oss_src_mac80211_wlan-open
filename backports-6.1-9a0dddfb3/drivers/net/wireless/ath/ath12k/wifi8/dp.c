@@ -210,10 +210,16 @@ static void ath12k_wifi8_dp_umac_deinit(struct ath12k_dp *dp)
 {
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
-	struct ath12k_dp_hw_group_wifi8 *dp_hw_group_wifi8;
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_group_wifi8 =
+				ath12k_get_dp_hw_group_wifi8(dp->dp_hw_grp);
 
 	if (!dp_wifi8->cumac) {
 		ath12k_warn(ab, "Skipping ring deinit for non-cumac target");
+		return;
+	}
+
+	if (!dp_hw_group_wifi8->cumac_dp) {
+		ath12k_warn(ab, "CUMAC init is not complete. Skip deinit");
 		return;
 	}
 
@@ -238,7 +244,6 @@ static void ath12k_wifi8_dp_umac_deinit(struct ath12k_dp *dp)
 	ath12k_dp_pn_counter_page_free(dp->dp_hw_grp);
 	ath12k_wifi8_dp_tx_pool_destroy(dp->dp_hw_grp);
 
-	dp_hw_group_wifi8 = ath12k_get_dp_hw_group_wifi8(dp->dp_hw_grp);
 	atomic_set(&dp_hw_group_wifi8->retry_work_active, 0);
 	cancel_delayed_work_sync(&dp_hw_group_wifi8->dp_htt_retry_dwork);
 	del_timer_sync(&dp_hw_group_wifi8->hw_grp_timer);
@@ -302,7 +307,8 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 	int ret;
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
-	struct ath12k_dp_hw_group_wifi8 *dp_hw_group_wifi8;
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_group_wifi8 =
+			ath12k_get_dp_hw_group_wifi8(dp->dp_hw_grp);
 	struct ath12k_dp_hw_grp_timer_entry_param timer_param = {0};
 	struct hal_srng *srng = NULL;
 	u32 n_link_desc = 0;
@@ -312,11 +318,17 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 		dp_wifi8->cumac = true;
 	else
 		dp_wifi8->cumac = false;
+
 	ath12k_info(ab, "chip_id: %d, CUMAC: %d\n", ab->device_id, dp_wifi8->cumac);
 
 	if (!dp_wifi8->cumac) {
 		ath12k_warn(ab, "Skipping ring init for non-cumac target");
 		ath12k_wifi8_enable_hif_interrupts(dp, ath12k_wifi8_non_cumac_dp_service_srng);
+		return 0;
+	}
+
+	if (dp_hw_group_wifi8->cumac_dp) {
+		ath12k_warn(ab, "CUMAC init is already done. Skip re-init");
 		return 0;
 	}
 
@@ -406,7 +418,6 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 	}
 
 	/* Initialize cumac pointer in hw_group */
-	dp_hw_group_wifi8 = ath12k_get_dp_hw_group_wifi8(dp->dp_hw_grp);
 	dp_hw_group_wifi8->cumac_dp = dp;
 
 	INIT_LIST_HEAD(&dp_hw_group_wifi8->timer_list_head);
@@ -1053,12 +1064,6 @@ struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab)
 	}
 
 	ath12k_wifi8_dp_mon_ops_register(dp);
-
-	/* Temperorily set cumac to true here. This has to be changed later and
-	 * will come from CP
-	 */
-	dp_wifi8 = ath12k_get_dp_wifi8(dp);
-	dp_wifi8->cumac = true;
 
 	return dp;
 dp_err:
