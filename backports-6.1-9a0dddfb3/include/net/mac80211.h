@@ -4815,6 +4815,14 @@ struct ieee80211_ppe_vp_ds_params {
  *	just "paused" for scanning/ROC, which is indicated by the beacon being
  *	disabled/enabled via @bss_info_changed.
  * @stop_ap: Stop operation on the AP interface.
+ *
+ * @link_going_down: Notify driver that a specific link is going down.
+ *	This is called before sta_flush during operations like stop_ap.
+ *	Driver can use this to set flags for optimizing batch peer deletion.
+ *	The is_netdev_going_down parameter indicates if the entire netdev is
+ *	going down (true) or just a specific link (false).
+ *	The callback can sleep.
+ *
  * @set_monitor_flags: Enables or disables TX and RX monitor mode in userspace
  *      via NL commands.
  *
@@ -5028,6 +5036,10 @@ struct ieee80211_ops {
 			struct ieee80211_bss_conf *link_conf);
 	void (*stop_ap)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			struct ieee80211_bss_conf *link_conf);
+	void (*link_going_down)(struct ieee80211_hw *hw,
+				struct ieee80211_vif *vif,
+				struct ieee80211_bss_conf *link_conf,
+				bool is_netdev_going_down);
 	int (*set_monitor_flags)(struct ieee80211_hw *hw,
 				 struct ieee80211_vif *vif,
 				 u32 flags);

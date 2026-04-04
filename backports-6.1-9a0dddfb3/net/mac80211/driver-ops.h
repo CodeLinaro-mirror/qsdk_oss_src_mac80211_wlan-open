@@ -1149,6 +1149,22 @@ static inline void drv_stop_ap(struct ieee80211_local *local,
 	trace_drv_return_void(local);
 }
 
+static inline void drv_link_going_down(struct ieee80211_local *local,
+				       struct ieee80211_sub_if_data *sdata,
+				       struct ieee80211_bss_conf *link_conf,
+				       bool is_netdev_going_down)
+{
+	might_sleep();
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	if (!check_sdata_in_driver(sdata))
+		return;
+
+	if (local->ops->link_going_down)
+		local->ops->link_going_down(&local->hw, &sdata->vif, link_conf,
+					    is_netdev_going_down);
+}
+
 static inline void
 drv_reconfig_complete(struct ieee80211_local *local,
 		      enum ieee80211_reconfig_type reconfig_type)

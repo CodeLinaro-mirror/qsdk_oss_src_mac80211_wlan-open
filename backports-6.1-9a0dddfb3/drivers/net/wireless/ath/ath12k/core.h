@@ -745,6 +745,8 @@ struct ath12k_link_vif {
 	bool bcast_rate_configured;
 	u32 bcast_rate;
 	u64 rx_pn_err_cnt;
+	/* Flag to enable peer_del_all optimization when link is going down */
+	bool peer_del_all_enable;
 };
 
 struct ath12k_dp_link_vif {
