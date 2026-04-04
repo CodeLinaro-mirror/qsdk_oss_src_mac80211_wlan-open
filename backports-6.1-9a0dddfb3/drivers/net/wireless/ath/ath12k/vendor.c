@@ -11129,11 +11129,15 @@ ath12k_ext_mon_calculate_resp_len(void)
 }
 
 static int
-ath12k_ext_mon_handle_request(struct wiphy *wiphy, struct ath12k_ext_mon_config *req)
+ath12k_ext_mon_handle_request(struct wiphy *wiphy,
+			      struct ath12k_pdev_dp *dp_pdev,
+			      struct ath12k_ext_mon_config *req)
 {
 	struct sk_buff *skb;
 	int resp_len = 0;
 	struct ath12k_ext_mon_config resp = {0};
+
+	ath12k_dp_ext_mon_process_request(dp_pdev, req, &resp);
 
 	resp_len = ath12k_ext_mon_calculate_resp_len();
 	skb = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, resp_len);
@@ -11160,10 +11164,24 @@ ath12k_vendor_extended_monitor_handler(struct wiphy *wiphy,
 {
 	struct nlattr *tb[QCA_VENDOR_ATTR_EXT_MON_MAX + 1];
 	struct ath12k_ext_mon_config req = {0};
+	struct ath12k *ar = NULL;
+	struct ath12k_vif *ahvif = NULL;
 	int ret;
 
 	if (wdev->iftype != NL80211_IFTYPE_MONITOR) {
 		ath12k_err(NULL, "requested interface is not a monitor interface!\n");
+		return -EINVAL;
+	}
+
+	ahvif = ath12k_get_ahvif_from_wdev(wdev);
+	if (!ahvif) {
+		ath12k_err(NULL, "ahvif not present");
+		return -EINVAL;
+	}
+
+	ar = ahvif->deflink.ar;
+	if (!ar) {
+		ath12k_err(NULL, "ar not found for monitor interface\n");
 		return -EINVAL;
 	}
 
@@ -11180,7 +11198,7 @@ ath12k_vendor_extended_monitor_handler(struct wiphy *wiphy,
 		return ret;
 	}
 
-	ret = ath12k_ext_mon_handle_request(wiphy, &req);
+	ret = ath12k_ext_mon_handle_request(wiphy, &ar->dp, &req);
 	if (ret) {
 		ath12k_err(NULL, "error in handling ext mon request: %d\n", ret);
 		return ret;
