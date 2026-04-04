@@ -75,6 +75,15 @@
 #define ATH12K_DP_MON_STATUS_BUF   320
 #define ATH12K_DP_MON_NUM_PPDU_DESC 128
 
+#define ATH12K_EXT_MON_MAX_PEERS	16
+#define ATH12K_EXT_MON_FILTER_ALL	0xFFFFU
+
+#define ATH12K_EXT_MON_METADATA_RTAP_HDR	BIT(0)
+#define ATH12K_EXT_MON_METADATA_META_HDR	BIT(1)
+#define ATH12K_EXT_MON_METADATA_VALID_MASK \
+	(ATH12K_EXT_MON_METADATA_RTAP_HDR | \
+	 ATH12K_EXT_MON_METADATA_META_HDR)
+
 struct ath12k_mon_data;
 struct dp_mon_rx_filter;
 struct dp_mon_tx_filter;
@@ -816,6 +825,68 @@ struct ath12k_dp_mon_desc {
 	u16 buf_len;
 	u8 in_use;
 	u8 end_of_ppdu;
+};
+
+enum ath12k_ext_mon_filter_level {
+	ATH12K_EXT_MON_FILTER_LEVEL_MSDU = 1,
+	ATH12K_EXT_MON_FILTER_LEVEL_MPDU,
+	ATH12K_EXT_MON_FILTER_LEVEL_PPDU,
+};
+
+enum ath12k_ext_mon_status_code {
+	ATH12K_EXT_MON_SUCCESS = 0,
+	ATH12K_EXT_MON_VALIDATION_FAIL = 1,
+	ATH12K_EXT_MON_FILTER_SETUP_FAIL = 2,
+	ATH12K_EXT_MON_PEER_SETUP_FAIL = 3,
+};
+
+enum ath12k_ext_mon_frame_type {
+	ATH12K_EXT_MON_FRAME_MGMT = 0,
+	ATH12K_EXT_MON_FRAME_CTRL = 1,
+	ATH12K_EXT_MON_FRAME_DATA = 2,
+	ATH12K_EXT_MON_FRAME_MAX = 3,
+};
+
+struct ath12k_ext_mon_pkt_config {
+	u32 filter[ATH12K_EXT_MON_FRAME_MAX];
+	u8 len[ATH12K_EXT_MON_FRAME_MAX];
+};
+
+struct ath12k_ext_mon_filter_config {
+	enum ath12k_ext_mon_filter_level level;
+	bool disable;
+	struct ath12k_ext_mon_pkt_config all_peer;
+	struct ath12k_ext_mon_pkt_config all_neighbor;
+	struct ath12k_ext_mon_pkt_config target_peer;
+	struct ath12k_ext_mon_pkt_config target_neighbor;
+	u8 meta_data;
+};
+
+struct ath12k_ext_mon_snr_info {
+	s8 snr;
+	s8 avg_snr;
+	u64 timestamp;
+};
+
+struct ath12k_ext_mon_peer_info {
+	u8 mac_addr[ETH_ALEN];
+	bool ra_addr;
+	u8 bitmap;
+	struct ath12k_ext_mon_snr_info snr_info;
+};
+
+struct ath12k_ext_mon_peer_config {
+	u8 action;
+	u8 count;
+	struct ath12k_ext_mon_peer_info peer_info[ATH12K_EXT_MON_MAX_PEERS];
+};
+
+struct ath12k_ext_mon_config {
+	u8 cmd_type;
+	u8 direction;
+	enum ath12k_ext_mon_status_code status_code;
+	struct ath12k_ext_mon_filter_config filter;
+	struct ath12k_ext_mon_peer_config peer;
 };
 
 static inline enum dp_monitor_type
