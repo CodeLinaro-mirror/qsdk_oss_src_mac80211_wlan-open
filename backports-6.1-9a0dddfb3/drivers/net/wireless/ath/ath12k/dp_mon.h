@@ -201,6 +201,8 @@ struct ath12k_dp_arch_mon_ops {
 					struct htt_rx_ring_tlv_filter *tlv_filter);
 	int (*ext_mon_validate_request)(struct ath12k_pdev_dp *dp_pdev,
 					const struct ath12k_ext_mon_config *req);
+	int (*ext_mon_alloc)(struct ath12k_pdev_dp *dp_pdev);
+	void (*ext_mon_free)(struct ath12k_pdev_dp *dp_pdev);
 
 	/* Below are TxMonitor ops */
 	int (*mon_tx_srng_alloc_setup)(struct ath12k_dp *dp);
@@ -718,6 +720,8 @@ struct ath12k_mon_ring_desc_info {
  * successfully created and initialized. Used to prevent cleanup attempts on
  * uninitialized work queues and ensure proper shutdown sequencing
  * during error recovery.
+ * @rx_ext_mon_config: Current filter and peer configs for Rx extended monitor.
+ * @rx_ext_mon_lock: Spinlock protecting the Rx extended monitor struct.
  *
  * This structure represents the complete monitor mode data path context for a
  * single pdev (physical device). It manages both RX and TX monitor functionality,
@@ -812,6 +816,8 @@ struct ath12k_pdev_mon_dp {
 	struct list_head tx_mon_ppdu_desc_proc_list;
 	bool tx_mon_ppdu_desc_initialized:1;
 	bool tx_mon_wq_initialized:1;
+	struct ath12k_dp_rx_ext_mon *rx_ext_mon_config;
+	spinlock_t rx_ext_mon_lock;
 };
 
 enum ath12k_dp_mon_desc_in_use {
@@ -898,6 +904,23 @@ struct ath12k_ext_mon_config {
 	enum ath12k_ext_mon_status_code status_code;
 	struct ath12k_ext_mon_filter_config filter;
 	struct ath12k_ext_mon_peer_config peer;
+};
+
+struct ath12k_dp_ext_mon_peer {
+	struct ath12k_ext_mon_peer_info peer_info;
+	struct list_head list;
+};
+
+struct ath12k_dp_rx_ext_mon {
+	bool enable;
+	enum ath12k_ext_mon_filter_level level;
+	uint8_t metadata;
+	struct ath12k_ext_mon_pkt_config fp;
+	struct ath12k_ext_mon_pkt_config mo;
+	struct ath12k_ext_mon_pkt_config fpmo;
+	struct ath12k_ext_mon_pkt_config md;
+	uint8_t peer_count;
+	struct list_head peer_list;
 };
 
 static inline enum dp_monitor_type
@@ -1039,6 +1062,9 @@ void ath12k_dp_mon_fill_rx_rate(struct ath12k_pdev_dp *dp_pdev,
 void ath12k_dp_ext_mon_process_request(struct ath12k_pdev_dp *dp_pdev,
 				       const struct ath12k_ext_mon_config *req,
 				       struct ath12k_ext_mon_config *resp);
+int ath12k_dp_ext_mon_alloc(struct ath12k_pdev_dp *dp_pdev);
+void ath12k_dp_ext_mon_free(struct ath12k_pdev_dp *dp_pdev);
+void ath12k_dp_ext_mon_reset(struct ath12k_pdev_dp *dp_pdev);
 
 int ath12k_dp_mon_tx_wq_start(struct ath12k_pdev_dp *dp_pdev, u32 mac_id);
 void ath12k_dp_mon_tx_wq_stop(struct ath12k_pdev_dp *dp_pdev);
@@ -1201,7 +1227,20 @@ int ath12k_dp_mon_pdev_rx_alloc(struct ath12k_pdev_dp *dp_pdev,
 		}
 	}
 
+	if (mon_ops->ext_mon_alloc) {
+		ret = mon_ops->ext_mon_alloc(dp_pdev);
+		if (ret) {
+			ath12k_warn(dp, "failed to alloc ext mon for pdev_id: %d\n",
+				    mac_id);
+			goto free_rx_wq;
+		}
+	}
+
 	return 0;
+
+free_rx_wq:
+	if (mon_ops && mon_ops->mon_rx_wq_deinit)
+		mon_ops->mon_rx_wq_deinit(dp_pdev);
 
 cleanup:
 	if (mon_ops && mon_ops->cleanup_ppdu_desc)
@@ -1301,6 +1340,9 @@ void ath12k_dp_mon_pdev_rx_free(struct ath12k_pdev_dp *dp_pdev)
 	}
 	ath12k_dp_mon_pdev_rx_detach(dp_pdev);
 
+
+	if (mon_ops->ext_mon_free)
+		mon_ops->ext_mon_free(dp_pdev);
 
 	if (mon_ops->mon_rx_wq_deinit)
 		mon_ops->mon_rx_wq_deinit(dp_pdev);
