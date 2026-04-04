@@ -9,6 +9,9 @@
 #include "umac_reset.h"
 #include "hal_queue.h"
 #include "dp.h"
+#include "mgmt_rx.h"
+#include "dp_tx.h"
+#include "dp_rx.h"
 
 /* WiFi8-specific UMAC reset implementations - currently empty stubs for future use */
 
@@ -106,7 +109,6 @@ void ath12k_wifi8_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 				ath12k_dbg(cumac_ab, ATH12K_DBG_BOOT, "Successfully cleaned up TX queues for all peers\n");
 		}
 	}
-
 	ret = ath12k_wbm_idle_ring_setup(cumac_ab, &n_link_desc);
 	if (ret)
 		ath12k_warn(cumac_ab, "failed to setup wbm_idle_ring: %d\n", ret);
@@ -121,12 +123,39 @@ void ath12k_wifi8_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 	ath12k_dp_srng_common_setup(cumac_ab);
 	ath12k_wifi8_dp_tx_ring_setup(cumac_ab);
 	ath12k_wifi8_dp_rx_ring_setup(cumac_ab);
+	ath12k_wifi8_mgmt_rx_ring_setup(cumac_ab);
 
 	ath12k_dp_umac_tx_desc_cleanup(cumac_ab);
 	ath12k_dp_umac_rx_desc_cleanup(cumac_ab);
+	ath12k_mgmt_rx_desc_cleanup(cumac_ab);
 
 	ath12k_dp_rx_reo_cmd_list_cleanup(cumac_ab);
 	ath12k_wifi8_dp_tx_tqm_cmd_list_cleanup(cumac_ab);
+
+	ath12k_wifi8_dp_rx_wbm_buf_ring_init(cumac_ab);
+	ath12k_wifi8_mgmt_rx_refill_ring_init(cumac_ab);
+}
+
+/**
+ * ath12k_wifi8_post_reset_task - Free saved SKBs, replenish rx refill ring
+ * @ab: Pointer to ath12k_base structure
+ *
+ * This task frees all saved TX and RX SKBs for a specific AB.
+ * Multiple instances of this task run in parallel (one per AB in the group).
+ * And also replenishes rx refill ring
+ */
+static void ath12k_wifi8_post_reset_task(struct ath12k_base *ab)
+{
+	struct ath12k_dp_umac_reset *umac_reset = &ab->dp_umac_reset;
+	struct sk_buff *skb;
+
+	/* Free all saved TX SKBs */
+	while ((skb = skb_dequeue(&umac_reset->tx_skb_queue)) != NULL)
+		dev_kfree_skb_any(skb);
+
+	/* Free all saved RX SKBs */
+	while ((skb = skb_dequeue(&umac_reset->rx_skb_queue)) != NULL)
+		dev_kfree_skb_any(skb);
 }
 
 void ath12k_wifi8_umac_reset_handle_post_reset_complete(struct ath12k_base *ab)
@@ -136,6 +165,8 @@ void ath12k_wifi8_umac_reset_handle_post_reset_complete(struct ath12k_base *ab)
 
 	/* Resume TX during UMAC reset */
 	clear_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags);
+
+	ath12k_wifi8_post_reset_task(ab);
 }
 
 static int ath12k_check_txrx_idle(struct ath12k_base *ab, u32 address)

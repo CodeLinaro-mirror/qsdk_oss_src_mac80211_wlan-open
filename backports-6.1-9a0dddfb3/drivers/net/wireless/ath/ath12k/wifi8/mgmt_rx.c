@@ -8,14 +8,31 @@
 #include "../hif.h"
 #include "mgmt_rx.h"
 #include "hal.h"
+#include "dp.h"
 #include "hal_qcn9625.h"
 #include "../peer.h"
 
 static void ath12k_wifi8_mgmt_rx_ring_free(struct ath12k_base *ab);
 
-static void ath12k_wifi8_mgmt_rx_replenish_buffs(struct ath12k_mgmt *mgmt,
-						 struct mgmt_srng *rx_refill_ring,
-						 struct list_head *desc_used_list)
+static void ath12k_mgmt_srng_hw_disable(struct ath12k_base *ab, struct mgmt_srng *ring)
+{
+	struct hal_srng *srng = &ab->hal.srng_list[ring->ring_id];
+
+	ath12k_wifi8_hal_srng_hw_disable(ab, srng);
+}
+
+void ath12k_wifi8_srng_hw_mgmt_rings_disable(struct ath12k_base *ab)
+{
+	struct ath12k_mgmt_wifi8 *mgmt_wifi8 = ath12k_get_mgmt_wifi8(ab->mgmt);
+
+	ath12k_mgmt_srng_hw_disable(ab, &mgmt_wifi8->wbm_refill_ring);
+	ath12k_mgmt_srng_hw_disable(ab, &mgmt_wifi8->wbm_idle_buf_ring);
+}
+
+void ath12k_wifi8_mgmt_rx_replenish_buffs(struct ath12k_mgmt *mgmt,
+					  struct mgmt_srng *rx_refill_ring,
+					  struct list_head *desc_used_list,
+					  bool reuse)
 {
 	struct ath12k_base *ab = mgmt->ab;
 	struct ath12k_buffer_addr *desc;
@@ -26,34 +43,41 @@ static void ath12k_wifi8_mgmt_rx_replenish_buffs(struct ath12k_mgmt *mgmt,
 	u8 manager = mgmt->hal->hal_params->rx_buf_rbm;
 	int allocated_entries = 0;
 
-	list_for_each_entry_safe(rx_desc, tmp_rx_desc, desc_used_list, list) {
-		skb = dev_alloc_skb(MGMT_RX_BUFFER_SIZE +
-				    MGMT_RX_BUFFER_ALIGN_SIZE);
-		if (!skb)
-			break;
-
-		if (!IS_ALIGNED((unsigned long)skb->data,
-				MGMT_RX_BUFFER_ALIGN_SIZE))
-			skb_pull(skb,
-				 PTR_ALIGN(skb->data, MGMT_RX_BUFFER_ALIGN_SIZE) -
-				 skb->data);
-
-		paddr = ath12k_core_dma_map_single(mgmt->dev, skb->data,
-						   skb->len + skb_tailroom(skb),
-						   DMA_FROM_DEVICE);
-		if (unlikely(!paddr)) {
-			dev_kfree_skb_any(skb);
-			break;
+	if (reuse) {
+		/* Count entries for reuse */
+		list_for_each_entry_safe(rx_desc, tmp_rx_desc, desc_used_list, list) {
+			allocated_entries++;
 		}
+	} else {
+		list_for_each_entry_safe(rx_desc, tmp_rx_desc, desc_used_list, list) {
+			skb = dev_alloc_skb(MGMT_RX_BUFFER_SIZE +
+					    MGMT_RX_BUFFER_ALIGN_SIZE);
+			if (!skb)
+				break;
 
-		allocated_entries++;
+			if (!IS_ALIGNED((unsigned long)skb->data,
+					MGMT_RX_BUFFER_ALIGN_SIZE))
+				skb_pull(skb,
+					 PTR_ALIGN(skb->data, MGMT_RX_BUFFER_ALIGN_SIZE) -
+					 skb->data);
 
-		ATH12K_SKB_RXCB(skb)->paddr = paddr;
+			paddr = ath12k_core_dma_map_single(mgmt->dev, skb->data,
+							   skb->len + skb_tailroom(skb),
+							   DMA_FROM_DEVICE);
+			if (unlikely(!paddr)) {
+				dev_kfree_skb_any(skb);
+				break;
+			}
 
-		rx_desc->skb = skb;
-		rx_desc->paddr = paddr;
-		rx_desc->vaddr = skb->data;
-		rx_desc->is_frag = 0;
+			allocated_entries++;
+
+			ATH12K_SKB_RXCB(skb)->paddr = paddr;
+
+			rx_desc->skb = skb;
+			rx_desc->paddr = paddr;
+			rx_desc->vaddr = skb->data;
+			rx_desc->is_frag = 0;
+		}
 	}
 
 	srng = &ab->hal.srng_list[rx_refill_ring->ring_id];
@@ -93,7 +117,10 @@ out:
 			ath12k_core_dma_unmap_single(mgmt->dev, rx_desc->paddr,
 						     skb->len + skb_tailroom(skb),
 						     DMA_FROM_DEVICE);
-			dev_kfree_skb_any(skb);
+			if (reuse)
+				skb_queue_tail(&ab->dp_umac_reset.rx_skb_queue, skb);
+			else
+				dev_kfree_skb_any(skb);
 		}
 
 		spin_lock_bh(&mgmt->rx_desc_lock);
@@ -225,7 +252,7 @@ try_again:
 		goto exit;
 
 	ath12k_wifi8_mgmt_rx_replenish_buffs(mgmt, &mgmt_wifi8->wbm_refill_ring,
-					     &rx_desc_used_list);
+					     &rx_desc_used_list, false);
 
 exit:
 	return num_buffs_reaped;
@@ -903,7 +930,7 @@ ath12k_wifi8_mgmt_rx_reap_err_packets(struct ath12k_base *ab,
 		goto exit;
 
 	ath12k_wifi8_mgmt_rx_replenish_buffs(mgmt, &mgmt_wifi8->wbm_refill_ring,
-					     &rx_desc_used_list);
+					     &rx_desc_used_list, false);
 
 exit:
 	return num_buffs_reaped;
@@ -989,7 +1016,7 @@ static int ath12k_wifi8_mgmt_rx_refill_ring_setup(struct ath12k_base *ab)
 	return 0;
 }
 
-static void ath12k_wifi8_mgmt_rx_refill_ring_init(struct ath12k_base *ab)
+void ath12k_wifi8_mgmt_rx_refill_ring_init(struct ath12k_base *ab)
 {
 	LIST_HEAD(list);
 	size_t req_entries;
@@ -1000,10 +1027,10 @@ static void ath12k_wifi8_mgmt_rx_refill_ring_init(struct ath12k_base *ab)
 	req_entries = ath12k_mgmt_get_req_entries_from_refill_ring(ab, rx_refill_ring,
 								   &list);
 	if (req_entries)
-		ath12k_wifi8_mgmt_rx_replenish_buffs(mgmt, rx_refill_ring, &list);
+		ath12k_wifi8_mgmt_rx_replenish_buffs(mgmt, rx_refill_ring, &list, false);
 }
 
-static int ath12k_wifi8_mgmt_rx_ring_setup(struct ath12k_base *ab)
+int ath12k_wifi8_mgmt_rx_ring_setup(struct ath12k_base *ab)
 {
 	struct ath12k_mgmt *mgmt = ab->mgmt;
 	struct ath12k_mgmt_wifi8 *mgmt_wifi8 = ath12k_get_mgmt_wifi8(mgmt);
@@ -1035,7 +1062,8 @@ static int ath12k_wifi8_mgmt_rx_ring_setup(struct ath12k_base *ab)
 	}
 
 	/* Initialize WBM ring with descriptors and buffers */
-	ath12k_wifi8_mgmt_rx_refill_ring_init(ab);
+	if (!ath12k_dp_umac_reset_in_progress(ab))
+		ath12k_wifi8_mgmt_rx_refill_ring_init(ab);
 
 	return 0;
 
@@ -1237,11 +1265,22 @@ ath12k_wifi8_mgmt_dump_ring_stats(struct ath12k_mgmt *mgmt, char *buf, int size)
 	return len;
 }
 
+static void ath12k_wifi8_mgmt_rx_replenish_buffs_wrapper(struct ath12k_mgmt *mgmt,
+							 struct list_head *used_list,
+							 bool reuse)
+{
+	struct ath12k_mgmt_wifi8 *mgmt_wifi8 = ath12k_get_mgmt_wifi8(mgmt);
+
+	ath12k_wifi8_mgmt_rx_replenish_buffs(mgmt, &mgmt_wifi8->wbm_refill_ring,
+					     used_list, reuse);
+}
+
 static struct ath12k_mgmt_arch_ops ath12k_wifi8_mgmt_arch_ops = {
 	.mgmt_op_device_init = ath12k_wifi8_mgmt_op_device_init,
 	.mgmt_op_device_deinit = ath12k_wifi8_mgmt_op_device_deinit,
 	.mgmt_op_htt_setup = ath12k_wifi8_mgmt_op_htt_setup,
 	.mgmt_op_dump_ring_stats = ath12k_wifi8_mgmt_dump_ring_stats,
+	.mgmt_rx_replenish_buffs = ath12k_wifi8_mgmt_rx_replenish_buffs_wrapper,
 };
 
 struct ath12k_mgmt *ath12k_wifi8_mgmt_init(struct ath12k_base *ab)

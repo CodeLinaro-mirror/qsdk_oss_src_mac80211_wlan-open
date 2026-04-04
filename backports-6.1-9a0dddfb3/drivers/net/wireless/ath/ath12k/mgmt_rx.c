@@ -142,6 +142,8 @@ int ath12k_mgmt_srng_setup(struct ath12k_base *ab, struct mgmt_srng *ring,
 #else
 	cached = true;
 #endif
+	if (ath12k_dp_umac_reset_in_progress(ab))
+		goto skip_dma_alloc;
 
 	if (cached) {
 		ring->vaddr_unaligned = kzalloc(ring->size, GFP_KERNEL);
@@ -154,6 +156,7 @@ int ath12k_mgmt_srng_setup(struct ath12k_base *ab, struct mgmt_srng *ring,
 	if (!ring->vaddr_unaligned)
 		return -ENOMEM;
 
+skip_dma_alloc:
 	ring->vaddr = PTR_ALIGN(ring->vaddr_unaligned, HAL_RING_BASE_ALIGN);
 	ring->paddr = ring->paddr_unaligned + ((unsigned long)ring->vaddr -
 		      (unsigned long)ring->vaddr_unaligned);
@@ -277,8 +280,12 @@ void ath12k_mgmt_rx_desc_cleanup(struct ath12k_base *ab)
 {
 	struct ath12k_mgmt *mgmt = ab->mgmt;
 	struct ath12k_rx_desc_info *desc_info;
+	LIST_HEAD(used_list);
 	struct sk_buff *skb;
+	bool in_umac_reset;
 	int i, j;
+
+	in_umac_reset = test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags);
 
 	spin_lock_bh(&mgmt->rx_desc_lock);
 
@@ -288,14 +295,17 @@ void ath12k_mgmt_rx_desc_cleanup(struct ath12k_base *ab)
 			continue;
 
 		for (j = 0; j < MGMT_RX_DESC_BLOCK_SIZE; j++) {
-			if (!desc_info[j].in_use) {
-				list_del(&desc_info[j].list);
+			if (!desc_info[j].in_use)
 				continue;
-			}
 
 			skb = desc_info[j].skb;
 			if (!skb)
 				continue;
+
+			if (in_umac_reset) {
+				list_add_tail(&desc_info[j].list, &used_list);
+				continue;
+			}
 
 			ath12k_core_dma_unmap_single(ab->dev, ATH12K_SKB_RXCB(skb)->paddr,
 						     skb->len + skb_tailroom(skb),
@@ -303,11 +313,16 @@ void ath12k_mgmt_rx_desc_cleanup(struct ath12k_base *ab)
 			dev_kfree_skb_any(skb);
 		}
 
-		kfree(desc_info);
-		mgmt->rx_desc_baddr[i] = NULL;
+		if (!in_umac_reset) {
+			kfree(desc_info);
+			mgmt->rx_desc_baddr[i] = NULL;
+		}
 	}
 
 	spin_unlock_bh(&mgmt->rx_desc_lock);
+
+	if (!list_empty(&used_list))
+		ath12k_mgmt_rx_replenish_buffs(ab->mgmt, &used_list, true);
 }
 EXPORT_SYMBOL(ath12k_mgmt_rx_desc_cleanup);
 

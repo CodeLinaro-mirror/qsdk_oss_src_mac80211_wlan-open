@@ -70,6 +70,9 @@ struct ath12k_mgmt_arch_ops {
 	void (*mgmt_op_device_deinit)(struct ath12k_mgmt *mgmt);
 	int (*mgmt_op_htt_setup)(struct ath12k_mgmt *mgmt);
 	int (*mgmt_op_dump_ring_stats)(struct ath12k_mgmt *mgmt, char *buf, int size);
+	void (*mgmt_rx_replenish_buffs)(struct ath12k_mgmt *mgmt,
+					struct list_head *used_list,
+					bool in_use);
 };
 
 struct ath12k_mgmt_irq_grp {
@@ -183,4 +186,13 @@ static inline int ath12k_mgmt_arch_op_htt_setup(struct ath12k_mgmt *mgmt)
 
 	return mgmt->arch_ops->mgmt_op_htt_setup(mgmt);
 }
+
+static inline void ath12k_mgmt_rx_replenish_buffs(struct ath12k_mgmt *mgmt,
+						  struct list_head *used_list,
+						  bool reuse)
+{
+	if (mgmt->arch_ops->mgmt_rx_replenish_buffs)
+		mgmt->arch_ops->mgmt_rx_replenish_buffs(mgmt, used_list, reuse);
+}
+
 #endif

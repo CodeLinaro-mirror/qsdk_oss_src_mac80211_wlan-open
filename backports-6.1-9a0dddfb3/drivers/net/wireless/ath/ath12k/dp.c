@@ -17,6 +17,7 @@
 #include "debugfs.h"
 #include "dp_stats.h"
 #include "dp_peer.h"
+#include "hal.h"
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 #include "qcn_extns/ipa/dp_ipa.h"
 #endif
@@ -2134,12 +2135,10 @@ void ath12k_dp_umac_rx_desc_cleanup(struct ath12k_base *ab)
 	struct ath12k_rx_desc_info *desc_info;
 	struct ath12k_dp *dp;
 	struct sk_buff *skb;
-	struct dp_rxdma_ring *rx_ring;
 	LIST_HEAD(used_list);
 	int i, j;
 
 	dp = ath12k_ab_to_dp(ab);
-	rx_ring = &dp->rx_refill_buf_ring;
 
 	/* RX Descriptor cleanup */
 	spin_lock_bh(&dp->rx_desc_lock);
@@ -2165,8 +2164,9 @@ void ath12k_dp_umac_rx_desc_cleanup(struct ath12k_base *ab)
 	/* Feed descriptors to replenish */
 	if (!list_empty(&used_list)) {
 		struct hal_srng *refill_srng;
+		int ring_id = ath12k_dp_arch_fetch_rx_desc_replenish_ring_id(dp);
 
-		refill_srng = &ab->hal.srng_list[rx_ring->refill_buf_ring.ring_id];
+		refill_srng = &ab->hal.srng_list[ring_id];
 		ath12k_dp_rx_bufs_replenish(dp, refill_srng, &used_list, true);
 	}
 }
