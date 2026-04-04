@@ -715,7 +715,7 @@ int ath12k_wifi8_hal_tqm_cmd_staging_alloc(struct ath12k_base *ab)
 {
 	/* Allocate single staging buffer in ab for the TQM command ring. */
 	ab->tqm_cmd_staging = kzalloc(HAL_TQM_CMD_MAX_BYTES,
-				      GFP_KERNEL);
+				      GFP_ATOMIC);
 
 	if (!ab->tqm_cmd_staging) {
 		ath12k_err(ab, "failed to alloc TQM staging");
