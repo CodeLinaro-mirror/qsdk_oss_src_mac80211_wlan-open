@@ -927,6 +927,50 @@ enum htt_rx_data_pkt_filter_tlv_flasg3 {
 	HTT_RX_MO_DATA_PKT_FILTER_TLV_FLASG3_NULL_DATA	= BIT(26),
 };
 
+enum htt_rx_mgmt_pkt_filter_tlv_fpmo_flags0 {
+	HTT_RX_FPMO_MGMT_PKT_FILTER_TLV_FLAGS0_ASSOC_REQ		= BIT(0),
+	HTT_RX_FPMO_MGMT_PKT_FILTER_TLV_FLAGS0_ASSOC_RESP		= BIT(1),
+	HTT_RX_FPMO_MGMT_PKT_FILTER_TLV_FLAGS0_REASSOC_REQ		= BIT(2),
+	HTT_RX_FPMO_MGMT_PKT_FILTER_TLV_FLAGS0_REASSOC_RESP		= BIT(3),
+	HTT_RX_FPMO_MGMT_PKT_FILTER_TLV_FLAGS0_PROBE_REQ		= BIT(4),
+	HTT_RX_FPMO_MGMT_PKT_FILTER_TLV_FLAGS0_PROBE_RESP		= BIT(5),
+	HTT_RX_FPMO_MGMT_PKT_FILTER_TLV_FLAGS0_PROBE_TIMING_ADV		= BIT(6),
+	HTT_RX_FPMO_MGMT_PKT_FILTER_TLV_FLAGS0_RESERVED_7		= BIT(7),
+	HTT_RX_FPMO_MGMT_PKT_FILTER_TLV_FLAGS0_BEACON			= BIT(8),
+	HTT_RX_FPMO_MGMT_PKT_FILTER_TLV_FLAGS0_ATIM			= BIT(9),
+	HTT_RX_FPMO_MGMT_PKT_FILTER_TLV_FLAGS0_DISASSOC			= BIT(10),
+	HTT_RX_FPMO_MGMT_PKT_FILTER_TLV_FLAGS0_AUTH			= BIT(11),
+	HTT_RX_FPMO_MGMT_PKT_FILTER_TLV_FLAGS0_DEAUTH			= BIT(12),
+	HTT_RX_FPMO_MGMT_PKT_FILTER_TLV_FLAGS0_ACTION			= BIT(13),
+	HTT_RX_FPMO_MGMT_PKT_FILTER_TLV_FLAGS0_ACTION_NOACK		= BIT(14),
+	HTT_RX_FPMO_MGMT_PKT_FILTER_TLV_FLAGS0_RESERVED_15		= BIT(15),
+};
+
+enum htt_rx_ctrl_pkt_filter_tlv_fpmo_flags0 {
+	HTT_RX_FPMO_CTRL_PKT_FILTER_TLV_FLAGS0_CTRL_RESERVED_1		= BIT(16),
+	HTT_RX_FPMO_CTRL_PKT_FILTER_TLV_FLAGS0_CTRL_RESERVED_2		= BIT(17),
+	HTT_RX_FPMO_CTRL_PKT_FILTER_TLV_FLAGS0_CTRL_TRIGGER		= BIT(18),
+	HTT_RX_FPMO_CTRL_PKT_FILTER_TLV_FLAGS0_CTRL_RESERVED_4		= BIT(19),
+	HTT_RX_FPMO_CTRL_PKT_FILTER_TLV_FLAGS0_CTRL_BF_REP_POLL		= BIT(20),
+	HTT_RX_FPMO_CTRL_PKT_FILTER_TLV_FLAGS0_CTRL_VHT_NDP		= BIT(21),
+	HTT_RX_FPMO_CTRL_PKT_FILTER_TLV_FLAGS0_CTRL_FRAME_EXT		= BIT(22),
+	HTT_RX_FPMO_CTRL_PKT_FILTER_TLV_FLAGS0_CTRL_WRAPPER		= BIT(23),
+	HTT_RX_FPMO_CTRL_PKT_FILTER_TLV_FLAGS0_BAR			= BIT(24),
+	HTT_RX_FPMO_CTRL_PKT_FILTER_TLV_FLAGS0_BA			= BIT(25),
+	HTT_RX_FPMO_CTRL_PKT_FILTER_TLV_FLAGS0_PSPOLL			= BIT(26),
+	HTT_RX_FPMO_CTRL_PKT_FILTER_TLV_FLAGS0_RTS			= BIT(27),
+	HTT_RX_FPMO_CTRL_PKT_FILTER_TLV_FLAGS0_CTS			= BIT(28),
+	HTT_RX_FPMO_CTRL_PKT_FILTER_TLV_FLAGS0_ACK			= BIT(29),
+	HTT_RX_FPMO_CTRL_PKT_FILTER_TLV_FLAGS0_CFEND			= BIT(30),
+	HTT_RX_FPMO_CTRL_PKT_FILTER_TLV_FLAGS0_CFEND_ACK		= BIT(31),
+};
+
+enum htt_rx_data_pkt_filter_tlv_fpmo_flags1 {
+	HTT_RX_FPMO_DATA_PKT_FILTER_TLV_FLAGS1_MCAST			= BIT(0),
+	HTT_RX_FPMO_DATA_PKT_FILTER_TLV_FLAGS1_UCAST			= BIT(1),
+	HTT_RX_FPMO_DATA_PKT_FILTER_TLV_FLAGS1_NULL_DATA		= BIT(2),
+};
+
 enum htt_rx_hdr_len_type {
 	HTT_RX_HDR_LEN_64_BYTES = 1,
 	HTT_RX_HDR_LEN_128_BYTES,
@@ -1020,12 +1064,14 @@ struct htt_rx_ring_selection_cfg_cmd {
 	__le32 rx_mon_mpdu_start_end_mask;
 	__le32 rx_mon_msdu_end_word_mask;
 	__le32 rx_mon_ppdu_end_usr_stats_wmask;
-	__le32 reserved1[2];
+	__le32 pkt_type_en_fpmo_flags0;
+	__le32 pkt_type_en_fpmo_flags1;
 	__le32 pkt_type_en_data_flag0;
 	__le32 pkt_type_en_data_flag1;
 	__le32 pkt_type_en_data_flag2;
 	__le32 pkt_type_en_data_flag3;
-	__le32 reserved2[2];
+	__le32 pkt_type_en_data_fpmo_flags0;
+	__le32 pkt_type_en_data_fpmo_flags1;
 	__le32 rdi_based_source_cfg;
 	__le32 info4;
 } __packed;
@@ -1040,9 +1086,11 @@ struct htt_rx_ring_tlv_filter {
 	bool enable_fp;
 	bool enable_mo;
 	bool enable_md;
+	bool enable_fpmo;
 	bool enable_fp_packet;
 	bool enable_mo_packet;
 	bool enable_md_packet;
+	bool enable_fpmo_packet;
 	u16 fp_mgmt_filter;
 	u16 fp_ctrl_filter;
 	u16 fp_data_filter;
@@ -1052,6 +1100,9 @@ struct htt_rx_ring_tlv_filter {
 	u16 md_mgmt_filter;
 	u16 md_ctrl_filter;
 	u16 md_data_filter;
+	u16 fpmo_mgmt_filter;
+	u16 fpmo_ctrl_filter;
+	u16 fpmo_data_filter;
 	u16 fp_packet_mgmt_filter;
 	u16 fp_packet_ctrl_filter;
 	u16 fp_packet_data_filter;
@@ -1061,6 +1112,9 @@ struct htt_rx_ring_tlv_filter {
 	u16 md_packet_mgmt_filter;
 	u16 md_packet_ctrl_filter;
 	u16 md_packet_data_filter;
+	u16 fpmo_packet_mgmt_filter;
+	u16 fpmo_packet_ctrl_filter;
+	u16 fpmo_packet_data_filter;
 	u16 rx_packet_offset;
 	u16 rx_header_offset;
 	u16 rx_mpdu_end_offset;
