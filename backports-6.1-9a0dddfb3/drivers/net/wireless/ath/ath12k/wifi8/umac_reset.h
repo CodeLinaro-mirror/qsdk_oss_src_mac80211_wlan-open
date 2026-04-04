@@ -13,6 +13,7 @@
 void ath12k_wifi8_umac_reset_handle_pre_reset(struct ath12k_base *ab);
 void ath12k_wifi8_umac_reset_handle_post_reset_start(struct ath12k_base *ab);
 void ath12k_wifi8_umac_reset_handle_post_reset_complete(struct ath12k_base *ab);
+void ath12k_wifi8_umac_reset_handle_init_recovery(struct ath12k_base *ab);
 
 /* CUMAC HW Reset Step Enumerations */
 
