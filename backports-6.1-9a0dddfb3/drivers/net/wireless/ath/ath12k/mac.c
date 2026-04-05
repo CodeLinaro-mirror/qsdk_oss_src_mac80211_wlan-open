@@ -42,6 +42,7 @@
 #include "qcn_extns/ini.h"
 #endif
 #include "hal.h"
+#include "mgmt_rx.h"
 #include "qcn_extns/ath12k_cmn_extn.h"
 
 #define CHAN2G(_channel, _freq, _flags) { \
@@ -16839,6 +16840,7 @@ static int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arv
 	enum hal_encrypt_type enctype;
 	bool is_cfr = false;
 	unsigned int mic_len;
+	bool mlo_params_valid;
 	bool link_agnostic;
 	dma_addr_t paddr;
 	u8 frm_stype = FIELD_GET(IEEE80211_FCTL_STYPE, hdr->frame_control);
@@ -16887,6 +16889,7 @@ static int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arv
 	skb_cb->paddr = paddr;
 
 	link_agnostic = ATH12K_SKB_CB(skb)->flags & ATH12K_SKB_MGMT_LINK_AGNOSTIC;
+	mlo_params_valid = ATH12K_SKB_CB(skb)->flags & ATH12K_SKB_MGMT_MLO_PARAMS;
 
 #ifdef CPTCFG_ATH12K_CFR
 	if (ar->cfr.cfr_enabled && ieee80211_is_probe_resp(hdr->frame_control) &&
@@ -16905,7 +16908,7 @@ static int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arv
 		ret = ath12k_wmi_offchan_mgmt_send(ar, arvif->vdev_id, buf_id, skb);
 	else
 		ret = ath12k_wmi_mgmt_send(ar, arvif->vdev_id, buf_id, skb,
-					   link_agnostic, is_cfr);
+					   mlo_params_valid, link_agnostic, is_cfr);
 	if (ret) {
 		ath12k_warn(ar->ab, "failed to send mgmt frame: %d\n", ret);
 		goto err_unmap_buf;
@@ -16950,10 +16953,23 @@ static int ath12k_mac_mgmt_action_frame_fill_elem(struct ath12k_link_vif *arvif,
 	bool has_protected;
 	u8 category, *buf, iv_len;
 	u8 action_code, dialog_token;
+	bool can_override_mld_tx = ath12k_mgmt_override_mld_tx(ar->ab);
+
+#define MGMT_SET_LINK_AGNOSTIC(x, _skb_cb)					\
+	do {									\
+		if ((x))							\
+			(_skb_cb)->flags |= ATH12K_SKB_MGMT_LINK_AGNOSTIC;	\
+	} while (0)
+
+#define MGMT_RESET_LINK_AGNOSTIC(x, _skb_cb)					\
+	do {									\
+		if ((x))							\
+			(_skb_cb)->flags &= ~ATH12K_SKB_MGMT_LINK_AGNOSTIC;	\
+	} while (0)
 
 	/* make sure category field is present */
 	if (skb->len < IEEE80211_MIN_ACTION_SIZE) {
-		skb_cb->flags &= ~ATH12K_SKB_MGMT_LINK_AGNOSTIC;
+		MGMT_RESET_LINK_AGNOSTIC(can_override_mld_tx, skb_cb);
 		return -EINVAL;
 	}
 
@@ -16964,7 +16980,7 @@ static int ath12k_mac_mgmt_action_frame_fill_elem(struct ath12k_link_vif *arvif,
 	 */
 	if (test_bit(ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED, &ar->ab->ag->flags) &&
 	    has_protected) {
-	    	skb_cb->flags &= ~ATH12K_SKB_MGMT_LINK_AGNOSTIC;
+		MGMT_RESET_LINK_AGNOSTIC(can_override_mld_tx, skb_cb);
 		return -EOPNOTSUPP;
 	}
 
@@ -16995,7 +17011,7 @@ static int ath12k_mac_mgmt_action_frame_fill_elem(struct ath12k_link_vif *arvif,
 			iv_len = 0;
 			break;
 		default:
-			skb_cb->flags &= ~ATH12K_SKB_MGMT_LINK_AGNOSTIC;
+			MGMT_RESET_LINK_AGNOSTIC(can_override_mld_tx, skb_cb);
 			return -EINVAL;
 		}
 
@@ -17065,7 +17081,7 @@ check_rm_action_frame:
 			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
 					 "RRM: Link Measurement Req dialog_token=%u, cur_tx_power=%d, max_tx_power=%d\n",
 					 dialog_token, cur_tx_power, max_tx_power);
-			skb_cb->flags &= ~ATH12K_SKB_MGMT_LINK_AGNOSTIC;
+			MGMT_RESET_LINK_AGNOSTIC(can_override_mld_tx, skb_cb);
 			break;
 		case WLAN_ACTION_RADIO_MSR_LINK_MSR_REP:
 			/* Variable Len Format:
@@ -17081,7 +17097,7 @@ check_rm_action_frame:
 			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
 					 "RRM: Link Measurement Resp dialog_token=%u, cur_tx_power=%d\n",
 					 dialog_token, cur_tx_power);
-			skb_cb->flags &= ~ATH12K_SKB_MGMT_LINK_AGNOSTIC;
+			MGMT_RESET_LINK_AGNOSTIC(can_override_mld_tx, skb_cb);
 			break;
 		default:
 			return -EINVAL;
@@ -17091,7 +17107,7 @@ check_rm_action_frame:
 		/* Set the link agnostic bit for
 		 * protected eht action frames
 		 */
-		skb_cb->flags |= ATH12K_SKB_MGMT_LINK_AGNOSTIC;
+		MGMT_SET_LINK_AGNOSTIC(can_override_mld_tx, skb_cb);
 		break;
 	case WLAN_CATEGORY_WNM:
 		action_code = *buf++;
@@ -17110,7 +17126,7 @@ check_rm_action_frame:
 			 */
 			break;
 		default:
-			skb_cb->flags &= ~ATH12K_SKB_MGMT_LINK_AGNOSTIC;
+			MGMT_RESET_LINK_AGNOSTIC(can_override_mld_tx, skb_cb);
 		}
 		break;
 	case WLAN_CATEGORY_BACK:
@@ -17120,14 +17136,24 @@ check_rm_action_frame:
 		case WLAN_ACTION_ADDBA_RESP:
 			break;
 		default:
-			skb_cb->flags &= ~ATH12K_SKB_MGMT_LINK_AGNOSTIC;
+			MGMT_RESET_LINK_AGNOSTIC(can_override_mld_tx, skb_cb);
 		}
 		break;
 	default:
 		/* nothing to fill */
-		skb_cb->flags &= ~ATH12K_SKB_MGMT_LINK_AGNOSTIC;
+		MGMT_RESET_LINK_AGNOSTIC(can_override_mld_tx, skb_cb);
 		return 0;
 	}
+
+#undef MGMT_RESET_LINK_AGNOSTIC
+#undef MGMT_SET_LINK_AGNOSTIC
+
+	/* For devices which allow link-agnostic tx flag overrides here, MLO params TLV
+	 * is added only when they are link-agnostic.
+	 */
+	if (can_override_mld_tx &&
+	    (skb_cb->flags & ATH12K_SKB_MGMT_LINK_AGNOSTIC))
+		skb_cb->flags |= ATH12K_SKB_MGMT_MLO_PARAMS;
 
 	return 0;
 }

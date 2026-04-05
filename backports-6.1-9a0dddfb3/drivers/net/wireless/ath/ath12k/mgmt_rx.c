@@ -428,3 +428,13 @@ int ath12k_mgmt_htt_setup(struct ath12k_hw_group *ag)
 
 	return 0;
 }
+
+bool ath12k_mgmt_override_mld_tx(struct ath12k_base *ab)
+{
+	struct ath12k_mgmt *mgmt = ab->mgmt;
+
+	if (!mgmt)
+		return true;
+
+	return ath12k_mgmt_arch_op_override_mld_tx(mgmt);
+}

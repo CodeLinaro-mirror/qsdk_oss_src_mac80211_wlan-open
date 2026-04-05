@@ -47,4 +47,11 @@ void ath12k_wifi8_mgmt_rx_replenish_buffs(struct ath12k_mgmt *mgmt,
 					  struct list_head *desc_used_list,
 					  bool reuse);
 int ath12k_wifi8_mgmt_rx_ring_setup(struct ath12k_base *ab);
+
+static inline
+bool ath12k_wifi8_mgmt_op_override_mld_tx(struct ath12k_mgmt *mgmt)
+{
+	return false;
+}
+
 #endif

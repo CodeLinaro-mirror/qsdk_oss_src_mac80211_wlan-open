@@ -562,30 +562,43 @@ static bool ath12k_wifi8_mac_is_mgmt_action_link_agnostic(struct sk_buff *skb)
 	action_code = *buf++;
 
 	switch (category) {
-	case WLAN_CATEGORY_FAST_BBS_TRANSITION:
-	case WLAN_CATEGORY_SA_QUERY:
-		return true;
 	case WLAN_CATEGORY_PROTECTED_EHT:
 		switch (action_code) {
 		case WLAN_PROTECTED_EHT_ACTION_ML_OP_UPDATE_REQ:
 		case WLAN_PROTECTED_EHT_ACTION_ML_OP_UPDATE_RESP:
-		/* Exempt Link Reconfig Req/Resp frames from tx-ed as link agnostic since
-		 * both frames should be exchanged on the same link.
-		 *
-		 * IEEE P802.11be/D7.0, 35.3.6.4 - Link reconfiguration to the ML setup
-		 */
+			fallthrough;
 		case WLAN_PROTECTED_EHT_ACTION_LINK_RECONFIG_REQ:
 		case WLAN_PROTECTED_EHT_ACTION_LINK_RECONFIG_RESP:
+			/* Exempt Link Reconfig Req/Resp frames from tx-ed as
+			 * link-agnostic since both frames should be exchanged on
+			 * the same link.
+			 *
+			 * IEEE P802.11be/D7.0, 35.3.6.4 - Link reconfiguration to
+			 * the ML setup
+			 */
 			return false;
-		default:
-			return true;
 		}
+		break;
+	case WLAN_CATEGORY_RADIO_MEASUREMENT:
+		return false;
+	case WLAN_CATEGORY_WNM:
+		switch (action_code) {
+		case WLAN_WNM_ACTION_EVENT_REQ:
+		case WLAN_WNM_ACTION_EVENT_RESP:
+		case WLAN_WNM_ACTION_DIAGNOSTIC_REQ:
+		case WLAN_WNM_ACTION_DIAGNOSTIC_RESP:
+		case WLAN_WNM_ACTION_LOCATION_CFG_REQ:
+		case WLAN_WNM_ACTION_LOCATION_CFG_RESP:
+		case WLAN_WNM_ACTION_BSS_TM_QUERY:
+			return false;
+		}
+		break;
 	default:
 		/* Extend as per feature addition */
 		break;
 	}
 
-	return false;
+	return true;
 }
 
 /* This function should be called only for mgmt frames to a Multi-Link device,
@@ -595,57 +608,11 @@ static bool ath12k_wifi8_mac_is_mgmt_link_agnostic(struct sk_buff *skb)
 {
 	struct ieee80211_mgmt *mgmt = (struct ieee80211_mgmt *)skb->data;
 	u16 fc = le16_to_cpu(mgmt->frame_control);
-	const u8 *buf;
-	u8 iv_len;
 
 	switch (fc & IEEE80211_FCTL_STYPE) {
 	case IEEE80211_STYPE_DEAUTH:
 	case IEEE80211_STYPE_DISASSOC:
 		return true;
-	case IEEE80211_STYPE_AUTH:
-		buf = mgmt->u.auth.variable;
-		fallthrough;
-	case IEEE80211_STYPE_ASSOC_REQ:
-	case IEEE80211_STYPE_REASSOC_REQ:
-		buf = mgmt->u.assoc_req.variable;
-		fallthrough;
-	case IEEE80211_STYPE_ASSOC_RESP:
-	case IEEE80211_STYPE_REASSOC_RESP:
-	{
-		struct ieee80211_multi_link_elem *mle;
-		const u8 *iebuf;
-		u8 ctrl_type;
-
-		buf = mgmt->u.assoc_resp.variable;
-
-		/* Offset by iv_len if it is a protected frame */
-		if (ieee80211_has_protected(mgmt->frame_control)) {
-			switch (ATH12K_SKB_CB(skb)->cipher) {
-			/* Other cipher types than CCMP  will be sanitized in
-			 * ath12k_mac_mgmt_action_frame_fill_elem.
-			 */
-			case WLAN_CIPHER_SUITE_CCMP:
-				iv_len = IEEE80211_CCMP_HDR_LEN;
-				break;
-			default:
-				iv_len = 0;
-				break;
-			}
-
-			buf += iv_len;
-		}
-
-		iebuf = cfg80211_find_ext_ie(WLAN_EID_EXT_EHT_MULTI_LINK, buf,
-					     skb->len - (buf - (u8 *)mgmt) - iv_len);
-		if (!iebuf || !ieee80211_mle_size_ok(iebuf, iebuf[1] + 2))
-			break;
-
-		mle = (struct ieee80211_multi_link_elem *)iebuf;
-		ctrl_type = u16_get_bits(le16_to_cpu(mle->control),
-					 IEEE80211_ML_CONTROL_TYPE);
-
-		return ctrl_type == IEEE80211_ML_CONTROL_TYPE_BASIC;
-	}
 	case IEEE80211_STYPE_ACTION:
 		return ath12k_wifi8_mac_is_mgmt_action_link_agnostic(skb);
 	default:
@@ -747,11 +714,11 @@ ath12k_wifi8_mac_get_tx_link(struct ieee80211_sta *sta, struct ieee80211_vif *vi
 	}
 
 	/* Check if this mgmt frame can be queued at MLD level, in which case,
-	 * the frame will be transmitted on primary (master) link. An individually
-	 * addressed mgmt frame can be transmitted on primary link after peer assoc.
+	 * the frame will be transmitted on master (primary) link. An individually
+	 * addressed mgmt frame can be transmitted on master link after peer assoc.
 	 */
 	if (user_link != IEEE80211_LINK_UNSPECIFIED ||
-	    ahsta->state < IEEE80211_STA_ASSOC ||
+	    ahsta->state <= IEEE80211_STA_ASSOC ||
 	    !ath12k_wifi8_mac_is_mgmt_link_agnostic(skb))
 		goto skip_link_agnostic_tx;
 
@@ -974,6 +941,15 @@ static void ath12k_wifi8_mac_op_tx(struct ieee80211_hw *hw,
 		}
 	} else {
 		link_id = 0;
+	}
+
+	/* MLO params should always be added to class-3 frames queued
+	 * for peers on Wi-Fi 8.
+	 */
+	if (ieee80211_is_mgmt(hdr->frame_control) && sta) {
+		ahsta = ath12k_sta_to_ahsta(sta);
+		if (ahsta->state == IEEE80211_STA_AUTHORIZED)
+			ATH12K_SKB_CB(skb)->flags |= ATH12K_SKB_MGMT_MLO_PARAMS;
 	}
 
 	arvif = rcu_dereference(ahvif->link[link_id]);
