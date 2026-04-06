@@ -18816,11 +18816,12 @@ void ath12k_mac_vif_cache_flush(struct ath12k *ar, struct ath12k_link_vif *arvif
 	ath12k_ahvif_put_link_cache(ahvif, arvif->link_id);
 }
 
-static struct ath12k *ath12k_mac_assign_vif_to_vdev(struct ieee80211_hw *hw,
-						    struct ath12k_link_vif *arvif,
-						    struct ieee80211_chanctx_conf *ctx,
-						    bool is_bridge_vdev,
-						    u16 bridge_ar_link_idx)
+static struct ath12k_link_vif *
+ath12k_mac_assign_vif_to_vdev(struct ieee80211_hw *hw,
+			      struct ath12k_link_vif *arvif,
+			      struct ieee80211_chanctx_conf *ctx,
+			      bool is_bridge_vdev,
+			      u16 bridge_ar_link_idx)
 {
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(ahvif);
@@ -18830,7 +18831,7 @@ static struct ath12k *ath12k_mac_assign_vif_to_vdev(struct ieee80211_hw *hw,
 	struct ath12k_base *ab;
 	u8 link_id = arvif->link_id, scan_link;
 	unsigned long scan_link_map;
-	int ret;
+	int ret = 0;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -18875,7 +18876,7 @@ static struct ath12k *ath12k_mac_assign_vif_to_vdev(struct ieee80211_hw *hw,
 
 	if (arvif->ar) {
 		if (arvif->ar->ab->is_bypassed)
-			return arvif->ar;
+			return arvif;
 
 		if (!test_bit(ATH12K_FLAG_RECOVERY, &arvif->ar->ab->dev_flags)) {
 			/* This is not expected really */
@@ -18886,7 +18887,7 @@ static struct ath12k *ath12k_mac_assign_vif_to_vdev(struct ieee80211_hw *hw,
 			}
 
 			if (ah->num_radio == 1)
-				return arvif->ar;
+				return arvif;
 		}
 
 		/* This can happen as scan vdev gets created during multiple scans
@@ -18918,6 +18919,7 @@ static struct ath12k *ath12k_mac_assign_vif_to_vdev(struct ieee80211_hw *hw,
 	if (vif->type == NL80211_IFTYPE_AP &&
 	    ar->num_peers > (ar->max_num_peers - 1)) {
 		ath12k_warn(ab, "failed to create vdev due to insufficient peer entry resource in firmware\n");
+		ret = -ENOSPC;
 		goto unlock;
 	}
 
@@ -18945,7 +18947,7 @@ flush:
 
 	arvif->ahvif->device_bitmap |= BIT(ar->ab->wsi_info.index);
 unlock:
-	return arvif->ar;
+	return ret ? NULL : arvif;
 }
 
 int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
@@ -21307,15 +21309,16 @@ ath12k_mac_assign_vif_chanctx_handle(struct ieee80211_hw *hw,
 		return -ENOMEM;
 	}
 
-	ar = ath12k_mac_assign_vif_to_vdev(hw, arvif, ctx,
-					   is_bridge_vdev,
-					   bridge_ar_link_idx);
-	if (!ar) {
+	arvif = ath12k_mac_assign_vif_to_vdev(hw, arvif, ctx,
+					      is_bridge_vdev,
+					      bridge_ar_link_idx);
+	if (!arvif) {
 		ath12k_hw_warn(ah, "failed to assign chanctx for vif %pM link id %u link vif is already started",
 			       vif->addr, link_id);
 		return -EINVAL;
 	}
 
+	ar = arvif->ar;
 	ab = ar->ab;
 
 	if (ab->is_bypassed)
