@@ -8224,6 +8224,7 @@ static ssize_t ath12k_write_primary_link(struct file *file,
 	}
 
 	ahvif->primary_link_id = arvif->link_id;
+	ahvif->overide_primary_umac = true;
 	mutex_unlock(&ah->hw_mutex);
 	return count;
 }
