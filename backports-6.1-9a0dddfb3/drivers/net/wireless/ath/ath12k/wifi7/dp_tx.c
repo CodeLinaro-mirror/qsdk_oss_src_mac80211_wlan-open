@@ -971,6 +971,11 @@ ath12k_wifi7_dp_tx_fast(struct ath12k_pdev_dp *dp_pdev,
 	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags))
 		return DP_TX_ENQ_DROP_CRASH_FLUSH;
 
+	if (test_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags)) {
+		kfree_skb(skb);
+		return DP_TX_ENQ_SUCCESS;
+	}
+
 	pool_id = skb_get_queue_mapping(skb) & (ATH12K_HW_MAX_QUEUES - 1);
 
 	tx_desc = ath12k_dp_tx_assign_buffer(dp, ring_id);
@@ -1080,6 +1085,11 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 
 	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags))
 		return DP_TX_ENQ_DROP_CRASH_FLUSH;
+
+	if (test_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags)) {
+		kfree_skb(skb);
+		return err;
+	}
 
 	if (skb_cb->flags & ATH12K_SKB_HW_80211_ENCAP)
 		eth = (struct ethhdr *)skb->data;
@@ -1456,9 +1466,6 @@ skip_htt_metadata:
 
 	DP_STATS_INC_PKT(dp_vif, tx_i.enque_to_hw, 1, ti.data_len, ti.ring_id);
 
-	ath12k_dbg_dump(ab, ATH12K_DBG_DP_TX, NULL, "dp tx msdu: ",
-			skb->data, skb->len);
-
 	atomic_inc(&dp_pdev->num_tx_pending);
 
 	return DP_TX_ENQ_SUCCESS;
@@ -1633,14 +1640,12 @@ ath12k_wifi7_dp_tx_htt_tx_complete_buf(struct ath12k_dp *dp,
 		}
 	}
 
-	spin_lock_bh(&dp->dp_lock);
-	peer = ath12k_dp_link_peer_find_by_id(dp, peer_id);
+	peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev, peer_id);
 	if (!peer || !peer->sta)
 		ath12k_dbg(ab, ATH12K_DBG_DATA,
 			   "dp_tx: failed to find the peer with peer_id %d\n", peer_id);
 	else
 		status.sta = peer->sta;
-	spin_unlock_bh(&dp->dp_lock);
 
 	if ((unlikely(ath12k_dp_stats_enabled(dp_pdev))) &&
 	    (unlikely(ath12k_debugfs_is_qos_stats_enabled(dp_pdev->ar)))) {
@@ -2104,13 +2109,12 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 
        	ath12k_wifi7_dp_tx_update_txcompl(dp_pdev, ts);
 
-	spin_lock_bh(&dp->dp_lock);
-	link_peer = ath12k_dp_link_peer_find_by_id(dp, ts->peer_id);
+	link_peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev,
+							     ts->peer_id);
 	if (!link_peer || !link_peer->sta) {
 		ath12k_dbg(ab, ATH12K_DBG_DATA,
 			   "dp_tx: failed to find the peer with peer_id %d\n",
 			   ts->peer_id);
-		spin_unlock_bh(&dp->dp_lock);
 		ieee80211_free_txskb(ath12k_dp_pdev_to_hw(dp_pdev), msdu);
 		drop_reason = DP_TX_COMP_ERR_INVALID_LINK_PEER;
 		goto exit;
@@ -2126,7 +2130,6 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 
 	status.rates = &status_rate;
 	status.n_rates = 1;
-	spin_unlock_bh(&dp->dp_lock);
 
 	ieee80211_tx_status_ext(ath12k_dp_pdev_to_hw(dp_pdev), &status);
 	rcu_read_unlock();
@@ -2306,7 +2309,7 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 		sw_metadata->len = tx_desc->len;
 		sw_metadata->flags = tx_desc->flags;
 
-		if (unlikely(!sw_metadata->flags & DP_TX_DESC_FLAG_FAST)) {
+		if (unlikely(!(sw_metadata->flags & DP_TX_DESC_FLAG_FAST))) {
 			sw_metadata->skb_ext_desc = tx_desc->skb_ext_desc;
 			sw_metadata->paddr_ext_desc = tx_desc->paddr_ext_desc;
 			tx_desc->skb_ext_desc = NULL;

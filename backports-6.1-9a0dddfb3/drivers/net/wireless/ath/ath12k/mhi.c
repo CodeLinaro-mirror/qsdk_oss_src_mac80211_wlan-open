@@ -15,6 +15,7 @@
 #include "pci.h"
 #include "hif.h"
 #include "pcic.h"
+#include "athdbg_if.h"
 
 #define MHI_TIMEOUT_DEFAULT_MS	90000
 #define OTP_INVALID_BOARD_ID	0xFFFF
@@ -138,6 +139,57 @@ static char *ath12k_mhi_op_callback_to_str(enum mhi_callback reason)
 	}
 }
 
+
+static void ath12k_mhi_set_state_bit(struct ath12k_pci *ab_pci,
+				     enum ath12k_mhi_state mhi_state)
+{
+	struct ath12k_base *ab = ab_pci->ab;
+
+	switch (mhi_state) {
+	case ATH12K_MHI_INIT:
+		set_bit(ATH12K_MHI_INIT, &ab_pci->mhi_state);
+		break;
+	case ATH12K_MHI_DEINIT:
+		clear_bit(ATH12K_MHI_INIT, &ab_pci->mhi_state);
+		break;
+	case ATH12K_MHI_POWER_ON:
+		set_bit(ATH12K_MHI_POWER_ON, &ab_pci->mhi_state);
+		break;
+	case ATH12K_MHI_POWER_OFF:
+	case ATH12K_MHI_POWER_OFF_KEEP_DEV:
+	case ATH12K_MHI_FORCE_POWER_OFF:
+		clear_bit(ATH12K_MHI_POWER_ON, &ab_pci->mhi_state);
+		clear_bit(ATH12K_MHI_TRIGGER_RDDM, &ab_pci->mhi_state);
+		clear_bit(ATH12K_MHI_RDDM_DONE, &ab_pci->mhi_state);
+		clear_bit(ATH12K_MHI_MISSION_MODE, &ab_pci->mhi_state);
+		break;
+	case ATH12K_MHI_SUSPEND:
+		set_bit(ATH12K_MHI_SUSPEND, &ab_pci->mhi_state);
+		break;
+	case ATH12K_MHI_RESUME:
+		clear_bit(ATH12K_MHI_SUSPEND, &ab_pci->mhi_state);
+		break;
+	case ATH12K_MHI_TRIGGER_RDDM:
+		set_bit(ATH12K_MHI_TRIGGER_RDDM, &ab_pci->mhi_state);
+		break;
+	case ATH12K_MHI_RDDM_DONE:
+		set_bit(ATH12K_MHI_RDDM_DONE, &ab_pci->mhi_state);
+		break;
+	case ATH12K_MHI_RDDM:
+		set_bit(ATH12K_MHI_RDDM, &ab_pci->mhi_state);
+		break;
+	case ATH12K_MHI_SOC_RESET:
+		set_bit(ATH12K_MHI_SOC_RESET, &ab_pci->mhi_state);
+		break;
+	case ATH12K_MHI_MISSION_MODE:
+		set_bit(ATH12K_MHI_MISSION_MODE, &ab_pci->mhi_state);
+		break;
+
+	default:
+		ath12k_err(ab, "unhandled mhi state (%d)\n", mhi_state);
+	}
+}
+
 static void ath12k_mhi_op_status_cb(struct mhi_controller *mhi_cntrl,
 				    enum mhi_callback cb)
 {
@@ -152,7 +204,11 @@ static void ath12k_mhi_op_status_cb(struct mhi_controller *mhi_cntrl,
 	case MHI_CB_SYS_ERROR:
 		ath12k_warn(ab, "firmware crashed: MHI_CB_SYS_ERROR\n");
 		break;
+	case MHI_CB_EE_MISSION_MODE:
+		ath12k_mhi_set_state_bit(ab_pci, ATH12K_MHI_MISSION_MODE);
+		break;
 	case MHI_CB_EE_RDDM:
+		clear_bit(ATH12K_MHI_MISSION_MODE, &ab_pci->mhi_state);
 		if (ab_pci->mhi_pre_cb == MHI_CB_EE_RDDM) {
 			ath12k_dbg(ab, ATH12K_DBG_BOOT,
 				   "do not queue again for consecutive RDDM event\n");
@@ -166,6 +222,7 @@ static void ath12k_mhi_op_status_cb(struct mhi_controller *mhi_cntrl,
 			complete(&ab->rddm_reset_done);
 			return;
 		}
+		ath12k_mhi_set_state_bit(ab_pci, ATH12K_MHI_RDDM);
 		set_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags);
 
 		if (!test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ag->flags)) {
@@ -211,6 +268,8 @@ int ath12k_mhi_register(struct ath12k_pci *ab_pci)
 	if (!mhi_ctrl)
 		return -ENOMEM;
 
+	timer_setup(&ab_pci->mhi_q6_boot_debug_timer,
+			    ath12k_mhi_q6_boot_debug_timeout_hdlr, 0);
 	ab_pci->mhi_pre_cb = MHI_CB_INVALID;
 	ab_pci->mhi_ctrl = mhi_ctrl;
 	mhi_ctrl->cntrl_dev = ab->dev;
@@ -306,6 +365,7 @@ void ath12k_mhi_unregister(struct ath12k_pci *ab_pci)
 
 	mhi_unregister_controller(mhi_ctrl);
 	kfree(mhi_ctrl->irq);
+	del_timer_sync(&ab_pci->mhi_q6_boot_debug_timer);
 	mhi_free_controller(mhi_ctrl);
 	ab_pci->mhi_ctrl = NULL;
 }
@@ -343,51 +403,6 @@ static char *ath12k_mhi_state_to_str(enum ath12k_mhi_state mhi_state)
 		return "UNKNOWN";
 	}
 };
-
-static void ath12k_mhi_set_state_bit(struct ath12k_pci *ab_pci,
-				     enum ath12k_mhi_state mhi_state)
-{
-	struct ath12k_base *ab = ab_pci->ab;
-
-	switch (mhi_state) {
-	case ATH12K_MHI_INIT:
-		set_bit(ATH12K_MHI_INIT, &ab_pci->mhi_state);
-		break;
-	case ATH12K_MHI_DEINIT:
-		clear_bit(ATH12K_MHI_INIT, &ab_pci->mhi_state);
-		break;
-	case ATH12K_MHI_POWER_ON:
-		set_bit(ATH12K_MHI_POWER_ON, &ab_pci->mhi_state);
-		break;
-	case ATH12K_MHI_POWER_OFF:
-	case ATH12K_MHI_POWER_OFF_KEEP_DEV:
-	case ATH12K_MHI_FORCE_POWER_OFF:
-		clear_bit(ATH12K_MHI_POWER_ON, &ab_pci->mhi_state);
-		clear_bit(ATH12K_MHI_TRIGGER_RDDM, &ab_pci->mhi_state);
-		clear_bit(ATH12K_MHI_RDDM_DONE, &ab_pci->mhi_state);
-		break;
-	case ATH12K_MHI_SUSPEND:
-		set_bit(ATH12K_MHI_SUSPEND, &ab_pci->mhi_state);
-		break;
-	case ATH12K_MHI_RESUME:
-		clear_bit(ATH12K_MHI_SUSPEND, &ab_pci->mhi_state);
-		break;
-	case ATH12K_MHI_TRIGGER_RDDM:
-		set_bit(ATH12K_MHI_TRIGGER_RDDM, &ab_pci->mhi_state);
-		break;
-	case ATH12K_MHI_RDDM_DONE:
-		set_bit(ATH12K_MHI_RDDM_DONE, &ab_pci->mhi_state);
-		break;
-	case ATH12K_MHI_RDDM:
-		set_bit(ATH12K_MHI_RDDM, &ab_pci->mhi_state);
-		break;
-	case ATH12K_MHI_SOC_RESET:
-		set_bit(ATH12K_MHI_SOC_RESET, &ab_pci->mhi_state);
-                break;
-	default:
-		ath12k_err(ab, "unhandled mhi state (%d)\n", mhi_state);
-	}
-}
 
 static int ath12k_mhi_check_state_bit(struct ath12k_pci *ab_pci,
 				      enum ath12k_mhi_state mhi_state)
@@ -528,7 +543,7 @@ out:
 
 int ath12k_mhi_start(struct ath12k_pci *ab_pci)
 {
-	int ret;
+	int ret = 0;
 
 	ab_pci->mhi_ctrl->timeout_ms = MHI_TIMEOUT_DEFAULT_MS;
 
@@ -536,13 +551,28 @@ int ath12k_mhi_start(struct ath12k_pci *ab_pci)
 	if (ret)
 		goto out;
 
+	mod_timer(&ab_pci->mhi_q6_boot_debug_timer,
+			  jiffies + msecs_to_jiffies(MHI_POWER_ON_DEBUG_TIMEOUT_MS));
+
 	ret = ath12k_mhi_set_state(ab_pci, ATH12K_MHI_POWER_ON);
+	del_timer_sync(&ab_pci->mhi_q6_boot_debug_timer);
+
 	if (ret)
 		goto out;
 
 	return 0;
 
 out:
+	if (ret == -ETIMEDOUT) {
+		/* If MHI Start timedout but the target is already in mission
+		 * mode and is able to do RDDM, RDDM cookie would be set.
+		 * Dump SBL SRAM memory only if RDDM cookie is not set.
+		 */
+#ifdef CPTCFG_ATHDEBUG
+		if (!mhi_scan_rddm_cookie(ab_pci->mhi_ctrl, MHI_DEVICE_RDDM_COOKIE))
+			athdbg_if_get_service(ab_pci->ab, ATHDBG_SRV_MHI_Q6_DUMP_BL_SRAM);
+#endif
+	}
 	return ret;
 }
 
@@ -573,4 +603,23 @@ void ath12k_mhi_resume(struct ath12k_pci *ab_pci)
 void ath12k_mhi_coredump(struct mhi_controller *mhi_ctrl, bool in_panic)
 {
 	mhi_download_rddm_image(mhi_ctrl, in_panic);
+}
+
+void *ath12k_pci_get_priv(struct ath12k_base *ab)
+{
+	return ath12k_pci_priv(ab);
+}
+
+void ath12k_mhi_q6_boot_debug_timeout_hdlr(struct timer_list *timer)
+{
+	struct ath12k_pci *ab_pci = from_timer(ab_pci, timer,
+					       mhi_q6_boot_debug_timer);
+
+#ifdef CPTCFG_ATHDEBUG
+	athdbg_if_get_service(ab_pci->ab,
+			      ATHDBG_SRV_MHI_Q6_BOOT_DEBUG_TIMEOUT);
+	mod_timer(&ab_pci->mhi_q6_boot_debug_timer,
+			jiffies + msecs_to_jiffies(MHI_POWER_ON_DEBUG_TIMEOUT_MS));
+
+#endif
 }

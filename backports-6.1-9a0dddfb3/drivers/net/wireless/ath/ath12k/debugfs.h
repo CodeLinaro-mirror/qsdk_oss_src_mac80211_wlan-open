@@ -303,7 +303,6 @@ static inline void ath12k_debugfs_pdev_create(struct ath12k_base *ab)
 
 static inline void ath12k_debugfs_add_interface(struct ath12k_link_vif *arvif)
 {
-	return 0;
 }
 
 static inline void ath12k_debugfs_remove_interface(struct ath12k_link_vif *arvif)

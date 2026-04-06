@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ *  Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/module.h>
@@ -1068,7 +1068,7 @@ void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag)
 			ath12k_qmi_firmware_stop(ab);
 			ath12k_hif_power_down(ab, false);
 			ath12k_core_to_group_ref_put(ab);
-			ath12k_qmi_free_target_mem_chunk(ab);
+			ath12k_qmi_free_resource(ab);
 			ab->pm_suspend = true;
 			ath12k_info(ab, "Q6 power down\n");
 		}
@@ -3119,6 +3119,7 @@ static int ath12k_mlo_core_recovery_reconfig_link_bss(struct ath12k *ar,
 	int ret = -1;
 	u8 link_id;
 	bool is_bridge_vdev;
+	struct ath12k_dp_peer_create_params dp_params = {};
 
 	lockdep_assert_wiphy(ah->hw->wiphy);
 
@@ -3147,6 +3148,12 @@ static int ath12k_mlo_core_recovery_reconfig_link_bss(struct ath12k *ar,
 	}
 
 	if (!is_bridge_vdev) {
+		if (!ctx->def.chan) {
+			ath12k_dbg(ab, ATH12K_DBG_MODE1_RECOVERY,
+				   "Skipping vdev start for MLD %pM as chanctx is not assigned\n",
+				   arvif->bssid);
+			goto exit;
+		}
 		ath12k_mac_vif_cache_flush(ar, arvif);
 
 		if (ar->supports_6ghz && ctx->def.chan->band == NL80211_BAND_6GHZ &&
@@ -3183,6 +3190,16 @@ static int ath12k_mlo_core_recovery_reconfig_link_bss(struct ath12k *ar,
 	if (ab->hw_params->vdev_start_delay &&
 	    (ahvif->vdev_type == WMI_VDEV_TYPE_AP ||
 	    ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR)) {
+		dp_params.is_vdev_peer = true;
+		dp_params.hw_link_id = ar->hw_link_id;
+
+		ret = ath12k_dp_peer_create(&ah->dp_hw, arvif->bssid, &dp_params, vif);
+		if (ret) {
+			ath12k_warn(ab, "failed to create dp_peer for vdev AP %d: %d\n",
+				    arvif->vdev_id, ret);
+			goto exit;
+		}
+
 		param.vdev_id = arvif->vdev_id;
 		param.peer_type = WMI_PEER_TYPE_DEFAULT;
 		param.peer_addr = ar->mac_addr;
@@ -3194,13 +3211,6 @@ static int ath12k_mlo_core_recovery_reconfig_link_bss(struct ath12k *ar,
 			goto exit;
                 }
         }
-
-	if (!is_bridge_vdev && !ctx->def.chan) {
-		ath12k_dbg(ab, ATH12K_DBG_MODE1_RECOVERY,
-			   "Skipping vdev start for MLD %pM as chanctx is not assigned\n",
-			   arvif->bssid);
-		goto exit;
-	}
 
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
 		ret = ath12k_mac_monitor_start(ar);
@@ -5076,6 +5086,9 @@ int ath12k_core_init(struct ath12k_base *ab)
 	if (ret)
 		ath12k_warn(ab, "failed to register panic handler: %d\n", ret);
 
+#ifdef CPTCFG_ATHDEBUG
+	athdbg_ops_register(ab);
+#endif
 	mutex_lock(&ath12k_hw_group_mutex);
 
 	ag = ath12k_core_hw_group_assign(ab);

@@ -1684,6 +1684,7 @@ struct htt_ppdu_stats_info {
 	u16 htt_frame_type;
 	u8 usr_nss_sum;
 	struct list_head list;
+	u8 pdev_id;
 };
 
 /* @brief target -> host MLO offset indiciation message

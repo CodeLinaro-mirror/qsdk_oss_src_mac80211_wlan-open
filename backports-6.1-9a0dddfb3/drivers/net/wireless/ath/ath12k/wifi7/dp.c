@@ -21,12 +21,15 @@ static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 					int budget)
 {
 	struct napi_struct *napi = &irq_grp->napi;
+	struct ath12k_base *ab = dp->ab;
+	int cpu_id = smp_processor_id();
 	int grp_id = irq_grp->grp_id;
 	int work_done = 0;
 	int i = 0, j;
 	int tot_work_done = 0;
 	u8 ring_mask, rx_mask, tx_mask;
 
+	set_bit(cpu_id, &dp->service_rings_running);
 	rx_mask = dp->hw_params->ring_mask->rx[grp_id];
 	tx_mask = dp->hw_params->ring_mask->tx[grp_id];
 
@@ -145,6 +148,10 @@ static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 	/* TODO: Implement handler for other interrupts */
 
 done:
+	clear_bit(cpu_id, &dp->service_rings_running);
+	if (ab->dp_umac_reset.umac_pre_reset_in_prog)
+		ath12k_umac_reset_notify_pre_reset_done(ab);
+
 	return tot_work_done;
 }
 
@@ -177,6 +184,9 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 	}
 
 	srng = &ab->hal.srng_list[dp->wbm_idle_ring.ring_id];
+
+	/* memset wbm link desc pool to 0 before desc_setup */
+	ath12k_dp_clear_link_desc_pool(dp);
 
 	ret = ath12k_dp_link_desc_setup(ab, dp->link_desc_banks,
 					HAL_WBM_IDLE_LINK, srng, n_link_desc);

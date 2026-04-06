@@ -26,6 +26,7 @@
 struct ath12k_base;
 struct ath12k;
 struct ath12k_link_vif;
+struct ath12k_sta;
 struct ath12k_fw_stats;
 struct ath12k_reg_tpc_power_info;
 struct ath12k_qos_params;
@@ -2287,6 +2288,7 @@ enum wmi_tlv_tag {
 	WMI_CTRL_PATH_AFC_STATS = 0x42A,
 	WMI_TAG_BCN_TMPL_ML_INFO_CMD = 0x436,
 	WMI_TAG_MLO_MGMT_RX_CU_PARAMS = 0x439,
+	WMI_TAG_MLO_PARAMS_PEER_DELETE = 0x43E,
 	WMI_TAG_HALPHY_CTRL_PATH_CMD_FIXED_PARAM = 0x442,
 	WMI_TAG_HALPHY_CTRL_PATH_EVENT_FIXED_PARAM,
 	WMI_TAG_PRB_RESP_TMPL_ML_INFO_CMD = 0x460,
@@ -3748,6 +3750,12 @@ struct wmi_peer_delete_cmd {
 	__le32 tlv_header;
 	__le32 vdev_id;
 	struct ath12k_wmi_mac_addr_params peer_macaddr;
+} __packed;
+
+struct ath12k_wmi_peer_delete_mlo_params {
+	__le32 tlv_header;
+	/* Hardware link id of the link which has crashed or was not created */
+	__le32 mlo_hw_link_id_bitmap;
 } __packed;
 
 struct wmi_peer_reorder_queue_setup_cmd {
@@ -9050,10 +9058,12 @@ int ath12k_wmi_set_sta_ps_param(struct ath12k *ar, u32 vdev_id,
 				u32 param, u32 param_value);
 int ath12k_wmi_force_fw_hang_cmd(struct ath12k *ar, u32 type, u32 delay_time_ms, bool nowait);
 int ath12k_wmi_send_peer_delete_cmd(struct ath12k *ar,
-				    const u8 *peer_addr, u8 vdev_id);
+				    const u8 *peer_addr, u8 vdev_id,
+				    struct ath12k_sta *ahsta);
 int ath12k_wmi_vdev_delete(struct ath12k *ar, u8 vdev_id);
 void ath12k_wmi_start_scan_init(struct ath12k *ar,
-				struct ath12k_wmi_scan_req_arg *arg);
+				struct ath12k_wmi_scan_req_arg *arg,
+				enum nl80211_iftype vif_type);
 int ath12k_wmi_send_scan_start_cmd(struct ath12k *ar,
 				   struct ath12k_wmi_scan_req_arg *arg);
 int ath12k_wmi_update_scan_chan_list(struct ath12k *ar,

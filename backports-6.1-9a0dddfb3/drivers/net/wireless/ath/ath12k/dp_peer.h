@@ -126,7 +126,7 @@ struct ath12k_dp_link_peer {
 	struct rate_info last_txrate;
 	u64 rx_duration;
 	u64 tx_duration;
-	u8 rssi_comb;
+	s8 rssi_comb;
 	u16 tx_retry_failed;
 	u16 tx_retry_count;
 	struct ewma_avg_rssi avg_rssi;
@@ -144,6 +144,8 @@ struct ath12k_dp_link_peer {
 	u8 atf_ul_airtime;
 	u32 atf_actual_duration;
 	u32 atf_actual_ul_duration;
+
+	bool is_assigned;
 };
 
 struct ath12k_dp_peer {
