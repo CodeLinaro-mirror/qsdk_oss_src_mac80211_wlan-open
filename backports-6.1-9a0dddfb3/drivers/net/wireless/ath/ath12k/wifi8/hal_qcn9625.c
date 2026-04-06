@@ -1313,7 +1313,7 @@ static int ath12k_wifi8_hal_srng_create_config_qcn9625(struct ath12k_hal *hal)
 }
 
 static const struct ath12k_hal_tcl_to_cmp_rbm_map
-ath12k_wifi8_hal_tcl_to_cmp_rbm_map_qcn9625[DP_TCL_NUM_RING_MAX] = {
+ath12k_wifi8_hal_tcl_to_cmp_rbm_map_qcn9625[] = {
 	{
 		.cmp_ring_num = 0,
 		.rbm_id = HAL_RX_BUF_RBM_SW0_BM,
@@ -1329,6 +1329,10 @@ ath12k_wifi8_hal_tcl_to_cmp_rbm_map_qcn9625[DP_TCL_NUM_RING_MAX] = {
 	{
 		.cmp_ring_num = 3,
 		.rbm_id = HAL_RX_BUF_RBM_SW3_BM,
+	},
+	{
+		.cmp_ring_num = 4,
+		.rbm_id = HAL_RX_BUF_RBM_SW4_BM,
 	}
 };
 

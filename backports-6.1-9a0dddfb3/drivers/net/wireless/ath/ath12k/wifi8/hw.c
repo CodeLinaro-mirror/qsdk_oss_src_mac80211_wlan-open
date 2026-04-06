@@ -114,20 +114,25 @@ static const struct ath12k_hw_ops qcn9625_ops = {
  * Group 22: UMAC reset
  */
 static struct ath12k_hw_ring_mask ath12k_wifi8_hw_ring_mask_qcn9625 = {
-	/* Group 0-3 */
+	/* Group 0-3, 5th ring uses group 10 */
 	.tx  = {
 		ATH12K_TX_RING_MASK_0,
 		ATH12K_TX_RING_MASK_1,
 		ATH12K_TX_RING_MASK_2,
 		ATH12K_TX_RING_MASK_3,
+		0, 0, 0, 0,
+		0, 0,
+		ATH12K_TX_RING_MASK_4,
 	},
-	/* Group 4-7 */
+	/* Group 4-7, 5th ring uses group 11 */
 	.rx = {
 		0, 0, 0, 0,
 		ATH12K_RX_RING_MASK_0,
 		ATH12K_RX_RING_MASK_1,
 		ATH12K_RX_RING_MASK_2,
 		ATH12K_RX_RING_MASK_3,
+		0, 0, 0,
+		ATH12K_RX_RING_MASK_4,
 	},
 	/* Group 8 */
 	.tx_exception = {
@@ -281,7 +286,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.supports_shadow_regs = false,
 
 		.num_tcl_banks = 128,
-		.max_tx_ring = 4,
+		.max_tx_ring = MIN(NR_CPUS, 5),
 
 		.mhi_config = &ath12k_wifi8_mhi_config_qcn9625,
 

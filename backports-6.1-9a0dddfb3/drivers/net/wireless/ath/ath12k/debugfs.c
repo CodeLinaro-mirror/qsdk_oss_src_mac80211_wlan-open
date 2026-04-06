@@ -1063,12 +1063,10 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 
 	len += scnprintf(buf + len, size - len, "\nSOC TX STATS:\n");
 
-	len += scnprintf(buf + len, size - len,
-		         "tx_enqueued: 0:%u 1:%u 2:%u 3:%u\n",
-			 tx_enqueued[0],
-	                 tx_enqueued[1],
-		         tx_enqueued[2],
-			 tx_enqueued[3]);
+	len += scnprintf(buf + len, size - len, "tx_enqueued:");
+	for (j = 0; j < DP_TCL_NUM_RING_MAX; j++)
+		len += scnprintf(buf + len, size - len, " %d:%u", j, tx_enqueued[j]);
+	len += scnprintf(buf + len, size - len, "\n");
 
 	len += scnprintf(buf + len, size - len, "\ntx_wbm_rel_source:\n");
 	for (j=0; j < MAX_TX_COMP_RING; j++)
@@ -1080,26 +1078,23 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 				 device_stats->tx_comp_stats[j].tx_wbm_rel_source[3],
 				 device_stats->tx_comp_stats[j].tx_wbm_rel_source[4]);
 
-	len += scnprintf(buf + len, size - len,
-	                 "\ntx_multicast: 0:%u 1:%u 2:%u 3:%u\n",
-		         device_stats->tx_mcast[0],
-			 device_stats->tx_mcast[1],
-	                 device_stats->tx_mcast[2],
-		         device_stats->tx_mcast[3]);
+	len += scnprintf(buf + len, size - len, "\ntx_multicast:");
+	for (j = 0; j < MAX_TCL_RING; j++)
+		len += scnprintf(buf + len, size - len, " %d:%u",
+				 j, device_stats->tx_mcast[j]);
+	len += scnprintf(buf + len, size - len, "\n");
 
-	len += scnprintf(buf + len, size - len,
-		         "\ntx_unicast: 0:%u 1:%u 2:%u 3:%u\n",
-			 device_stats->tx_unicast[0],
-	                 device_stats->tx_unicast[1],
-		         device_stats->tx_unicast[2],
-			 device_stats->tx_unicast[3]);
+	len += scnprintf(buf + len, size - len, "\ntx_unicast:");
+	for (j = 0; j < MAX_TCL_RING; j++)
+		len += scnprintf(buf + len, size - len, " %d:%u",
+				 j, device_stats->tx_unicast[j]);
+	len += scnprintf(buf + len, size - len, "\n");
 
-	len += scnprintf(buf + len, size - len,
-		         "\ntx_eapol: 0:%u 1:%u 2:%u 3:%u\n",
-			 device_stats->tx_eapol[0],
-	                 device_stats->tx_eapol[1],
-		         device_stats->tx_eapol[2],
-			 device_stats->tx_eapol[3]);
+	len += scnprintf(buf + len, size - len, "\ntx_eapol:");
+	for (j = 0; j < MAX_TCL_RING; j++)
+		len += scnprintf(buf + len, size - len, " %d:%u",
+				 j, device_stats->tx_eapol[j]);
+	len += scnprintf(buf + len, size - len, "\n");
 
 	len += scnprintf(buf + len, size - len, "\ntx eapol M1\t");
 	for (j=0; j < DP_TCL_NUM_RING_MAX; j++)
@@ -1133,12 +1128,11 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 
 	len += scnprintf(buf + len, size - len, "\n");
 
-	len += scnprintf(buf + len, size - len,
-		         "\ntx_null_frame: 0:%u 1:%u 2:%u 3:%u\n",
-			 device_stats->tx_null_frame[0],
-	                 device_stats->tx_null_frame[1],
-		         device_stats->tx_null_frame[2],
-			 device_stats->tx_null_frame[3]);
+	len += scnprintf(buf + len, size - len, "\ntx_null_frame:");
+	for (j = 0; j < MAX_TCL_RING; j++)
+		len += scnprintf(buf + len, size - len, " %d:%u",
+				 j, device_stats->tx_null_frame[j]);
+	len += scnprintf(buf + len, size - len, "\n");
 
 	len += scnprintf(buf + len, size - len, "\ntqm_rel_reason:\n");
 	for (j = 0; j < MAX_TX_COMP_RING; j++) {
@@ -1162,12 +1156,11 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 			device_stats->tx_comp_stats[j].fw_tx_status[5],
 			device_stats->tx_comp_stats[j].fw_tx_status[6]);
 
-	len += scnprintf(buf + len, size - len,
-		"\ntx_completed: 0:%u 1:%u 2:%u 3:%u\n",
-		device_stats->tx_comp_stats[0].tx_completed,
-		device_stats->tx_comp_stats[1].tx_completed,
-		device_stats->tx_comp_stats[2].tx_completed,
-		device_stats->tx_comp_stats[3].tx_completed);
+	len += scnprintf(buf + len, size - len, "\ntx_completed:");
+	for (j = 0; j < MAX_TX_COMP_RING; j++)
+		len += scnprintf(buf + len, size - len, " %d:%u",
+				 j, device_stats->tx_comp_stats[j].tx_completed);
+	len += scnprintf(buf + len, size - len, "\n");
 
 	len += scnprintf(buf + len, size - len, "\nTCL Ring Full Failures:\n");
 
@@ -1216,13 +1209,9 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 				 wbm_rx_drop[i], device_stats->wbm_err.drop[i]);
 
 	len += scnprintf(buf + len, size - len, "\nHAL REO errors:\n");
-	len += scnprintf(buf + len, size - len,
-			 "ring0: %u\nring1: %u\nring2: %u\nring3: %u\n",
-			 device_stats->hal_reo_error[0],
-			 device_stats->hal_reo_error[1],
-			 device_stats->hal_reo_error[2],
-			 device_stats->hal_reo_error[3]);
-
+	for (j = 0; j < DP_REO_DST_RING_MAX; j++)
+		len += scnprintf(buf + len, size - len, "ring%d: %u\n",
+				 j, device_stats->hal_reo_error[j]);
 
 	len += scnprintf(buf + len, size - len, "\nREO Rx Received:");
 	for (i = 0; i < DP_REO_DST_RING_MAX; i++) {

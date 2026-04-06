@@ -67,7 +67,8 @@ struct ath12k_dp_link_vif;
 
 #define DP_MON_PURGE_TIMEOUT_MS     100
 #define DP_MON_SERVICE_BUDGET       128
-#define MAX_TCL_RING		    4
+#define MAX_TCL_RING		MIN(NR_CPUS, 5)
+#define MAX_TX_COMP_RING	MIN(NR_CPUS, 5)
 
 struct dp_rxdma_ring {
 	struct dp_srng refill_buf_ring;
@@ -386,8 +387,6 @@ enum ath12k_dp_eapol_key_type {
 
 #define MAX_TQM_RELEASE_REASON 29
 #define MAX_FW_TX_STATUS 7
-#define MAX_TCL_RING 4
-#define MAX_TX_COMP_RING 4
 
 struct ath12k_dp_tx_bank_profile {
 	u8 is_configured;
