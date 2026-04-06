@@ -1305,6 +1305,126 @@ struct ath12k_hal_ast_param {
 	u16 num_ast_entries;
 };
 
+#define HAL_TQM_FAIL_DROP_MAP(map, reason, category) \
+	do { \
+		u32 __shift = 2 * (reason % 10); \
+		(map) |= (((category) & 0x3) << __shift); \
+	} while (0)
+
+/**
+ * enum tqm_release_reason_map - 2-bit value for TQM release reasons
+ * @HAL_TQM_RELEASE_REASON_FAILED: Failed packets
+ * @HAL_TQM_RELEASE_REASON_DROP1: Dropped due to AQM (Active Queue Management)
+ * @HAL_TQM_RELEASE_REASON_DROP2: Dropped due to congestion
+ * @HAL_TQM_RELEASE_REASON_IGNORE: Ignored packets
+ */
+enum tqm_release_reason_category {
+	HAL_TQM_RELEASE_REASON_FAILED = 0,
+	HAL_TQM_RELEASE_REASON_DROP1  = 1,
+	HAL_TQM_RELEASE_REASON_DROP2  = 2,
+	HAL_TQM_RELEASE_REASON_IGNORE = 3
+};
+
+enum tasc_band_index {
+	HAL_TASC_BAND_0 = 0,
+	HAL_TASC_BAND_1 = 1,
+	HAL_TASC_BAND_2 = 2,
+	HAL_TASC_BAND_3 = 3,
+	HAL_TASC_BAND_4 = 4,
+};
+
+enum tqm_release_reason {
+	HAL_TQM_RR_FRAME_ACKED = 0,
+	HAL_TQM_RR_REM_CMD_REM,
+	HAL_TQM_RR_REM_CMD_TX,
+	HAL_TQM_RR_REM_CMD_NOTX,
+	HAL_TQM_RR_REM_CMD_AGED,
+	HAL_TQM_FW_REASON1,
+	HAL_TQM_FW_REASON2,
+	HAL_TQM_FW_REASON3,
+	HAL_TQM_RR_REM_CMD_DISABLE_QUEUE,
+	HAL_TQM_RR_REM_CMD_TILL_NONMATCHING,
+	HAL_TQM_RR_DROP_THRESHOLD,
+	HAL_TQM_RR_LINK_DESC_UNAVAILABLE,
+	HAL_TQM_RR_DROP_OR_INVALID_MSDU,
+	HAL_TQM_RR_MULTICAST_DROP,
+	HAL_TQM_RR_VDEV_MISMATCH_DROP,
+	HAL_TQM_RR_GEN_CMD_USED_TREE_EXT,
+	HAL_TQM_RR_TCL_DROP_FROM_PEER_CCE_OR_FLOW_TABLE,
+	HAL_TQM_RR_TCL_MULTICAST_REINJECT_FOR_VDEV,
+	HAL_TQM_RR_TCL_MEC_SEARCH_FAIL_FOR_VDEV,
+	HAL_TQM_RR_TCL_ASE_SEARCH_FAIL,
+	HAL_TQM_RR_TCL_SMD_ROAMING_DROP,
+	HAL_TQM_RR_TCL_STRIP_VLAN_TCI_MISMATCH_DROP,
+	HAL_TQM_RR_TCL_MEC_KEEP_ALIVE_FOR_VDEV,
+	HAL_TQM_RR_TCL_RESERVED_DROP_REASON1,
+	HAL_TQM_RR_TCL_RESERVED_DROP_REASON2,
+	HAL_TQM_RR_TQM_REM_MSDU_SMD_ROAMING,
+	HAL_TQM_RR_TQM_REM_MPDU_SMD_ROAMING,
+	HAL_TQM_RR_TQM_RESERVED_DROP_REASON3,
+	HAL_TQM_RR_TQM_RESERVED_DROP_REASON4
+};
+
+/* Register address to configure telemetry stats */
+#define HAL_TELEMETRY_PEER_CLK_CYCLE_ADDR		0xF10588
+#define HAL_TELEMETRY_PEER_CLK_CYCLE_DEFAULT_VAL	2097152
+
+#define HAL_TX_TELEMETRY_GLOBAL_CTRL_ADDR		0xF10584
+#define HAL_TX_TELEMETRY_GLOBAL_CTRL_PEER_STATS_ENABLE	BIT(0)
+
+#define HAL_TX_PEER_STATS_WINDOW_SIZE_CFG_ADDR		0xF10000
+#define HAL_TX_PEER_STATS_WINDOW_SIZE_CFG		GENMASK(11, 0)
+
+#define HAL_TX_NUM_OF_VALID_PEER_CFG_ADDR		0xF10004
+#define HAL_TX_NUM_OF_VALID_UNICAST_PEER		GENMASK(10, 0)
+#define HAL_TX_NUM_OF_VALID_DL_GCAST_PEER		GENMASK(17, 11)
+#define HAL_TX_NUM_OF_VALID_UL_GCAST_PEER		GENMASK(21, 18)
+
+#define HAL_TQM_RELEASE_REASON_MAP_1_ADDR		0xF10008
+#define HAL_TQM_RELEASE_REASON_MAP_1_FOR_0_9		GENMASK(29, 0)
+
+#define HAL_TQM_RELEASE_REASON_MAP_2_ADDR		0xF1000C
+#define HAL_TQM_RELEASE_REASON_MAP_2_FOR_10_19		GENMASK(29, 0)
+
+#define HAL_TX_PEER_STATS_CONFIG_CTRL_ADDR		0xF10014
+#define HAL_TX_PEER_TELEMETRY_STATS_ID			GENMASK(10, 0)
+#define HAL_TX_PEER_STATS_ENABLE_TELEMETRY_STATS_ID	BIT(11)
+#define HAL_TX_PEER_STATS_CLEAR_TELEMETRY_STATS_ID	BIT(12)
+
+#define HAL_TX_PEER_STATS_CFG0_ADDR			0xF10018
+#define HAL_TX_PEER_STATS_BAND_INDEX_0			GENMASK(10, 0)
+#define HAL_TX_PEER_STATS_BAND_INDEX_1			GENMASK(21, 11)
+
+#define HAL_TX_PEER_STATS_CFG1_ADDR			0xF1001C
+#define HAL_TX_PEER_STATS_BAND_INDEX_2			GENMASK(10, 0)
+#define HAL_TX_PEER_STATS_BAND_INDEX_3			GENMASK(21, 11)
+
+#define HAL_TX_PEER_STATS_CFG2_ADDR			0xF10020
+#define HAL_TX_PEER_STATS_BAND_INDEX_4			GENMASK(10, 0)
+
+#define HAL_TX_PEER_STATS_BAND_INDEX_MSB		BIT(31)
+
+#define HAL_INVALID_PEER_BAND_ID			1624
+
+#define HAL_TX_PEER_STATS_NUM_TRANSMISSIONS_CFG_ADDR	0xF10580
+
+#define HAL_TX_UL_GCAST_PEER_ID_REMAP0			0xF10460
+#define HAL_TX_UL_GCAST_PEER_ID_REMAP1			0xF10464
+#define HAL_TX_UL_GCAST_PEER_ID_REMAP2			0xF10468
+#define HAL_TX_UL_GCAST_PEER_ID_REMAP3			0xF1046C
+
+#define HAL_TX_UL_PEER_ID_REMAP1			GENMASK(10, 0)
+#define HAL_TX_UL_PEER_ID_REMAP2			GENMASK(21, 11)
+
+#define HAL_TX_UL_GCAST_PEER_ID_1616			1616
+#define HAL_TX_UL_GCAST_PEER_ID_1617			1617
+#define HAL_TX_UL_GCAST_PEER_ID_1618			1618
+#define HAL_TX_UL_GCAST_PEER_ID_1619			1619
+#define HAL_TX_UL_GCAST_PEER_ID_1620			1620
+#define HAL_TX_UL_GCAST_PEER_ID_1621			1621
+#define HAL_TX_UL_GCAST_PEER_ID_1622			1622
+#define HAL_TX_UL_GCAST_PEER_ID_1623			1623
+
 extern const struct hal_ops hal_qcn9625_ops;
 
 void ath12k_wifi8_hal_ce_dst_setup(struct ath12k_base *ab,
@@ -1396,6 +1516,27 @@ void ath12k_wifi8_hal_vdev_mcast_ctrl_set(struct ath12k_base *ab, u32 vdev_id,
 					  u8 mcast_ctrl_val);
 int ath12k_wifi8_hal_get_rdi_source_cfg(struct ath12k_base *ab, int source);
 void ath12k_wifi8_hal_txpt_classify_info_flush(struct ath12k_base *ab);
+
+void ath12k_wifi8_hal_tasc_peer_tx_cfg(struct ath12k_base *ab, bool enable);
+void ath12k_wifi8_hal_tasc_peer_clk_cycle_config(struct ath12k_base *ab);
+void ath12k_wifi8_hal_tasc_peer_tx_max_peer(struct ath12k_base *ab,
+					    u16 ucast, u8 gcast_dl,
+					    u8 gcast_ul);
+void ath12k_wifi8_hal_tasc_peer_tx_window(struct ath12k_base *ab,
+					  u16 time);
+void ath12k_wifi8_hal_tasc_peer_tx_fail_drop_default(struct ath12k_base *ab);
+void ath12k_wifi8_hal_tasc_peer_tx_fail_drop_map(struct ath12k_base *ab,
+						 u32 map1, u32 map2);
+void ath12k_wifi8_hal_num_transmission_map_default(struct ath12k_base *ab);
+void ath12k_wifi8_hal_num_transmission_map_(struct ath12k_base *ab, u32 map);
+void ath12k_wifi8_hal_tasc_peer_tx_gcast_id_map(struct ath12k_base *ab,
+						u16 mlo_peer_stats_id,
+						u16 gcast_peer_stats_id);
+void ath12k_wifi8_hal_tasc_peer_tx_set_id(struct ath12k_base *ab,
+					  u16 stats_id);
+void ath12k_wifi8_hal_tasc_peer_tx_band(struct ath12k_base *ab,
+					enum tasc_band_index band,
+					u16 band_idx, bool enable);
 
 static inline
 void *ath12k_hal_srng_src_begin_get_next_entry_nolock_fast(struct hal_srng *srng)
