@@ -20,6 +20,7 @@
 #include "dp.h"
 #include "fse.h"
 #include "ppe_public.h"
+#include "dp_stats.h"
 
 extern bool ath12k_fse_enable;
 atomic_t ath12k_num_ppeds_nodes;
@@ -876,10 +877,86 @@ int ath12k_change_core_mask_for_ppe_rfs(struct ath12k_base *ab,
 static bool ath12k_stats_update_ppe_vp(struct net_device *dev, ppe_vp_hw_stats_t *vp_stats)
 {
 	struct pcpu_sw_netstats *tstats = this_cpu_ptr(netdev_tstats(dev));
+	struct wireless_dev *wdev;
+	struct ieee80211_vif *vif;
+	struct ath12k_vif *ahvif;
+	struct ath12k_dp_vif *dp_vif;
+	struct ieee80211_sta *sta;
+	struct ath12k_dp_peer *dp_peer;
+	struct ath12k_hw *ah;
 
 	if (dev->reg_state != NETREG_REGISTERED)
 		return false;
+	/*
+	 * PPE VP RX stats are not accounted by the normal ath12k RX path.
+	 * Sync RX counters into ath12k datapath stats per interface type -
+	 * at peer-level for WDS STA/AP_VLAN, MLD VIF-level otherwise.
+	 */
+	wdev = ath12k_get_wdev_from_netdev(dev);
+	if (!wdev)
+		goto sync_stats;
 
+	rcu_read_lock();
+	/*
+	 * For WDS STA interfaces, get the actual VLAN VIF to lookup the peer
+	 * and attribute the RX stats to it.
+	 */
+	if (wdev->iftype == NL80211_IFTYPE_AP_VLAN) {
+		sta = wdev_to_ieee80211_vlan_sta(wdev);
+		if (!sta)
+			goto update_vif;
+
+		/* Fetch the VLAN VIF (not the parent AP VIF) for peer lookup */
+		vif = wdev_to_ieee80211_vif_vlan(wdev, true);
+		if (!vif)
+			goto update_vif;
+
+		ahvif = ath12k_vif_to_ahvif(vif);
+		if (!ahvif)
+			goto update_vif;
+
+		ah = ahvif->ah;
+		spin_lock_bh(&ah->dp_hw.peer_lock);
+		dp_peer = ath12k_dp_peer_find(&ah->dp_hw, sta->addr);
+		if (dp_peer) {
+			DP_PEER_STATS_PKT_LEN(dp_peer, rx, DP_REO_PPEDS_RING_IDX,
+					      sent_to_stack, 0, vp_stats->rx_pkt_cnt,
+					      vp_stats->rx_byte_cnt);
+			spin_unlock_bh(&ah->dp_hw.peer_lock);
+			goto sync_stats;
+		} else  {
+			spin_unlock_bh(&ah->dp_hw.peer_lock);
+			ath12k_dbg(NULL, ATH12K_DBG_PPE,
+				   "dp_peer not found for addr=%pM\n",
+				   sta->addr);
+		}
+	}
+update_vif:
+	/*
+	 * Attribute RX stats at MLD VIF level for non-WDS DS interfaces,
+	 * or as a fallback when peer lookup fails for a WDS STA.
+	 * Fetch the parent MLD VIF for VIF-level stats attribution.
+	 */
+	vif = wdev_to_ieee80211_vif_vlan(wdev, false);
+
+	if (!vif)
+		goto sync_stats;
+
+	ahvif = ath12k_vif_to_ahvif(vif);
+	if (!ahvif)
+		goto sync_stats;
+
+	dp_vif = &ahvif->dp_vif;
+	if (!dp_vif) {
+		ath12k_dbg(NULL, ATH12K_DBG_PPE, "MLD VIF also not found.\n");
+		goto sync_stats;
+	}
+	DP_RX_STATS_INC_PKT(dp_vif, ppeds_rx, vp_stats->rx_pkt_cnt,
+			 vp_stats->rx_byte_cnt, DP_REO_PPEDS_RING_IDX);
+
+sync_stats:
+	rcu_read_unlock();
+	/* Update the netdev statistics */
 	u64_stats_update_begin(&tstats->syncp);
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
