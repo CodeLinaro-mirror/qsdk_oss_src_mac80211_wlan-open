@@ -427,18 +427,17 @@ check_uhr:
 		if (dis_subch_bmap) {
 			npca_punct = get_unaligned_le16(dis_subch_bmap);
 			npca_chandef.punctured = npca_punct;
-		}
-
-		/*
-		 * must be a valid puncturing pattern for this channel as
-		 * well as puncturing all subchannels that are already in
-		 * the disabled subchannel bitmap on the primary channel
-		 */
-		if (!cfg80211_chandef_valid(&npca_chandef) ||
-		    ((punct & npca_punct) != punct)) {
-			sdata_info(sdata,
-				   "AP UHR NPCA disabled subchannel bitmap invalid, disabling UHR\n");
-			return IEEE80211_CONN_MODE_EHT;
+			/*
+			 * must be a valid puncturing pattern for this channel as
+			 * well as puncturing all subchannels that are already in
+			 * the disabled subchannel bitmap on the primary channel
+			 */
+			if (!cfg80211_chandef_valid(&npca_chandef) ||
+			    ((punct & npca_punct) != punct)) {
+				sdata_info(sdata,
+					   "AP UHR NPCA disabled subchannel bitmap invalid, disabling UHR\n");
+				return IEEE80211_CONN_MODE_EHT;
+			}
 		}
 	}
 
