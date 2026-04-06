@@ -1159,6 +1159,8 @@ struct ath12k_sta {
 	struct ath12k_sta_extn ahsta_extn;
 #endif
 	u16 free_logical_idx_map;
+
+	void *dp_peer;
 };
 
 #define ATH12K_INVALID_RSSI_FULL -1
@@ -1472,6 +1474,16 @@ struct ath12k_chanctx_switch_stats {
 	u64 mvr_timeout_count;
 };
 
+/* Lightweight structure to receive FW HTT map event */
+struct ath12k_peer_map_pending_event {
+	u16 peer_id;
+	u16 ast_hash;
+	u16 hw_peer_id;
+	bool received;
+	u8 pending_peer_addr[ETH_ALEN];
+	u8 pending_peer_vdev_id;
+};
+
 struct ath12k {
 	struct ath12k_base *ab;
 	u8 pdev_idx;
@@ -1728,6 +1740,7 @@ struct ath12k {
 	 */
 	struct work_struct mvr_ch_switch_notify_work;
 	u32 mvr_ch_switch_notify_vdev_bm;
+	struct ath12k_peer_map_pending_event peer_map_event;
 };
 
 struct ath12k_6ghz_sp_reg_rule {

@@ -152,6 +152,9 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 
 	rcu_assign_pointer(dp_hw->dp_peer_list[dp_peer->peer_id], dp_peer);
 
+	if (ahsta)
+		ahsta->dp_peer = dp_peer;
+
 	spin_unlock_bh(&dp_hw->peer_lock);
 
 	params->peer_id = dp_peer->peer_id;
@@ -180,13 +183,18 @@ void ath12k_wifi8_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 	struct ath12k_dp_peer *dp_peer;
 	struct ath12k_dp_hw *dp_hw = &ah->dp_hw;
 	u16 peerid_index;
+	struct ath12k_sta *ahsta;
 
 	spin_lock_bh(&dp_hw->peer_lock);
 
-	if (sta)
+	if (sta) {
+		ahsta = ath12k_sta_to_ahsta(sta);
+		ahsta->dp_peer = NULL;
+
 		dp_peer = ath12k_dp_peer_find_by_addr_and_sta(dp_hw, addr, sta);
-	else
+	} else {
 		dp_peer = ath12k_dp_vdev_peer_find(dp_hw, addr, hw_link_id);
+	}
 
 	if (!dp_peer) {
 		spin_unlock_bh(&dp_hw->peer_lock);
