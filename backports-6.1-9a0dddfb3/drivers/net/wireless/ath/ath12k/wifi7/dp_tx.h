@@ -8,6 +8,7 @@
 #define ATH12K_DP_TX_WIFI7_H
 
 #include "../dp.h"
+#include "../qcn_extns/mesh_util.h"
 
 #define DP_TX_SFE_BUFFER_SIZE           256
 
@@ -17,7 +18,7 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 		   struct ath12k_link_vif *arvif,
 		   struct sk_buff *skb, bool gsn_valid, int mcbc_gsn,
 		   bool is_mcast, struct ath12k_link_sta *arsta,
-		   u8 ring_id, u32 qos_nw_delay, int group_slot);
+		   u8 ring_id, u32 qos_nw_delay, int group_slot, bool htt_mesh);
 enum ath12k_dp_tx_enq_error
 ath12k_wifi7_dp_tx_fast(struct ath12k_pdev_dp *dp_pdev,
 			struct ath12k_link_vif *arvif,

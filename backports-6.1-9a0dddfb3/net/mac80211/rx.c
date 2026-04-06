@@ -2996,6 +2996,9 @@ static void ieee80211_deliver_skb_to_local_stack(struct sk_buff *skb,
 						 struct ieee80211_rx_data *rx)
 {
 	struct ieee80211_sub_if_data *sdata = rx->sdata;
+#ifdef CPTCFG_QCN_EXTNX_MESH_SUPPORT
+	struct ieee80211_rx_status *rx_status = IEEE80211_SKB_RXCB(skb);
+#endif
 	struct net_device *dev = sdata->dev;
 	struct sta_info *sta = rx->sta;
 
@@ -3031,6 +3034,12 @@ static void ieee80211_deliver_skb_to_local_stack(struct sk_buff *skb,
 		if (unlikely(skb->protocol == sdata->control_port_protocol &&
 			     !ether_addr_equal(ehdr->h_dest, sdata->vif.addr)))
 			ether_addr_copy(ehdr->h_dest, sdata->vif.addr);
+
+#ifdef CPTCFG_QCN_EXTNX_MESH_SUPPORT
+		/* Adjust the skb->data offset to point to the meta header*/
+		if (rx_status->rx_flags & IEEE80211_RX_MHDR)
+			skb_push(skb, sdata->vif.mhdr_len);
+#endif
 
 #ifdef CPTCFG_MAC80211_NSS_SUPPORT
 		netif_rx_nss(rx, skb);

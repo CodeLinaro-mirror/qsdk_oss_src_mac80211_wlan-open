@@ -20,6 +20,7 @@
 #include "dp_peer.h"
 #include "dp_stats.h"
 #include "dp_htt.h"
+#include "qcn_extns/mesh_util.h"
 
 void ath12k_tid_tx_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason)
 {
@@ -342,6 +343,9 @@ void ath12k_dp_tx_release_txbuf_nolock(struct ath12k_dp *dp,
 	tx_desc->skb = NULL;
 	tx_desc->skb_ext_desc = NULL;
 	tx_desc->in_use = false;
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	tx_desc->mmesh = 0;
+#endif
 	tx_desc->flags = 0;
 	tx_desc->to_fw = 0;
 	tx_desc->ext_kmem = 0;
@@ -669,3 +673,4 @@ int ath12k_dp_tx_htt_pri_link_migr_msg(struct ath12k_base *ab, u16 vdev_id,
 
 	return ret;
 }
+

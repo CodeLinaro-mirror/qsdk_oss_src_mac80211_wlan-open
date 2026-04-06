@@ -1569,6 +1569,10 @@ struct hal_ops {
         (*get_idle_link_rbm)(struct ath12k_hal *hal, u8 device_id);
 	void (*reo_shared_qaddr_cache_clear)(struct ath12k_base *ab);
 	u8 *(*rxdesc_get_mpdu_start_addr2)(struct hal_rx_desc *desc);
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	u8 *(*rxdesc_get_mpdu_start_addr1)(struct hal_rx_desc *desc);
+	u8 (*rxdesc_get_key_id_octet)(struct hal_rx_desc *desc);
+#endif
 	bool (*rx_h_is_decrypted)(struct hal_rx_desc *desc);
 	u32 (*rx_desc_get_mpdu_ppdu_id)(struct hal_rx_desc *rx_desc);
 	u32 (*rx_desc_get_mpdu_start_tag)(struct hal_rx_desc *desc);
@@ -1824,6 +1828,12 @@ ath12k_hal_get_idle_link_rbm(struct ath12k_hal *hal, u8 device_id);
 void ath12k_hal_reo_shared_qaddr_cache_clear(struct ath12k_base *ab);
 u8 *
 ath12k_hal_rxdesc_get_mpdu_start_addr2(struct ath12k_hal *hal, struct hal_rx_desc *desc);
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+u8 *
+ath12k_hal_rxdesc_get_mpdu_start_addr1(struct ath12k_hal *hal, struct hal_rx_desc *desc);
+u8 ath12k_hal_rxdesc_get_get_key_id_octet(struct ath12k_hal *hal,
+					  struct hal_rx_desc *desc);
+#endif
 void __ath12k_hal_srng_update_tp(struct hal_srng *srng, u32 new_tp);
 void ath12k_hal_srng_update_tp(struct hal_srng *srng, u32 new_tp);
 bool ath12k_hal_rx_h_is_decrypted(struct ath12k_hal *hal, struct hal_rx_desc *desc);

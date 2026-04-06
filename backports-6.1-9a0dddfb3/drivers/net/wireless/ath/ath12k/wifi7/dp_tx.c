@@ -31,7 +31,8 @@ struct ath12k_tx_sw_metadata {
 	    flags : 3;
 	u64 paddr_ext_desc : 40,
 	    ext_desc_len   : 16,
-	    rsvd2          : 8;
+	    mmesh	   : 1,
+	    rsvd2          : 7;
 } __packed __aligned(32);
 
 static_assert(sizeof(struct ath12k_tx_sw_metadata) == 32, "size of struct ath12k_tx_sw_metadata is not 64 bytes!");
@@ -789,6 +790,101 @@ out:
 }
 
 #define HTT_META_DATA_ALIGNMENT 0x8
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+static int
+ath12k_wifi7_dp_prepare_mesh_htt_metadata(struct ath12k_base *ab,
+					  struct ath12k_vif *ahvif,
+					  struct sk_buff *skb_ext_desc,
+					  struct sk_buff *skb,
+					  struct ath12k_dp_tx_msdu_info_s *msdu_info)
+{
+	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
+	struct hal_tx_msdu_metadata *desc_ext;
+	struct meta_hdr_s *mhdr;
+	u8 htt_desc_size;
+	/* Size rounded of multiple of 8 bytes */
+	u8 htt_desc_size_aligned;
+
+	if (!(skb_cb->flags & ATH12K_SKB_MESH_TX_INFO)) {
+		msdu_info->exception_fw = 0;
+		goto skip;
+	}
+
+	htt_desc_size = sizeof(struct hal_tx_msdu_metadata);
+	htt_desc_size_aligned = ALIGN(htt_desc_size, HTT_META_DATA_ALIGNMENT);
+
+	desc_ext = ath12k_dp_metadata_align_skb(skb_ext_desc, htt_desc_size_aligned);
+	if (!desc_ext)
+		return -ENOMEM;
+
+	msdu_info->exception_fw = 1;
+
+	desc_ext->info0 = le32_encode_bits(1,
+					   HAL_TX_MSDU_METADATA_INFO0_HOST_TX_DESC_POOL);
+	desc_ext->info1 = le32_encode_bits(1,
+					   HAL_TX_MSDU_METADATA_INFO1_UPDATE_PEER_CACHE);
+
+	mhdr = (struct meta_hdr_s *)(skb->data - ahvif->dp_vif.dp_extn.mhdr_len);
+
+	if (!(mhdr->flags & METAHDR_FLAG_NOENCRYPT))
+		desc_ext->info5 =
+			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO5_LEARNING_FRAME);
+
+	if (!(mhdr->flags & METAHDR_FLAG_AUTO_RATE)) {
+		desc_ext->info0 |=
+			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_MCS_MASK) |
+			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_PWR)        |
+			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_NSS_MASK)   |
+			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_PREAM_TYPE) |
+			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_BW_INFO)    |
+			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_KEY_FLAGS)  |
+			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_DYN_BW)     |
+			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_RETRIES)    |
+			le32_encode_bits(mhdr->rate_info[0].max_tries,
+					 HAL_TX_MSDU_METADATA_INFO0_RETRY_LIMIT);
+
+		desc_ext->info1 |=
+			le32_encode_bits(mhdr->power, HAL_TX_MSDU_METADATA_INFO1_POWER) |
+			le32_encode_bits(mhdr->rate_info[0].mcs,
+					 HAL_TX_MSDU_METADATA_INFO1_MCS_MASK) |
+			le32_encode_bits(mhdr->rate_info[0].nss,
+					 HAL_TX_MSDU_METADATA_INFO1_NSS_MASK) |
+			le32_encode_bits(mhdr->rate_info[0].preamble_type,
+					 HAL_TX_MSDU_METADATA_INFO1_PREAM_TYPE) |
+			le32_encode_bits(1,
+					 HAL_TX_MSDU_METADATA_INFO1_UPDATE_PEER_CACHE);
+
+		desc_ext->info2 |=
+			le32_encode_bits((mhdr->keyix & 0x3),
+					  HAL_TX_MSDU_METADATA_INFO2_KEY_FLAGS);
+	}
+
+	if (mhdr->flags & METAHDR_FLAG_NOENCRYPT) {
+		desc_ext->info0 |=
+			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_ENCRYPT_FLAG) |
+			le32_encode_bits(0, HAL_TX_MSDU_METADATA_INFO0_ENCRYPT_TYPE);
+	}
+
+	ath12k_dbg_level(ab, ATH12K_DBG_MMESH, ATH12K_DBG_L1,
+			 "skb %p pwr %d mcs 0x%x nss %d preamble %d",
+			skb, mhdr->power, mhdr->rate_info[0].mcs, mhdr->rate_info[0].nss,
+			mhdr->rate_info[0].preamble_type);
+
+	ath12k_dbg_level(ab, ATH12K_DBG_MMESH, ATH12K_DBG_L1,
+			 "retries %d auto %d encrypt %d\n",
+			 mhdr->rate_info[0].max_tries,
+			 !!(mhdr->flags & METAHDR_FLAG_AUTO_RATE),
+			 !!(mhdr->flags & METAHDR_FLAG_NOENCRYPT));
+
+	ath12k_dbg_level(ab, ATH12K_DBG_MMESH, ATH12K_DBG_L1,
+			 "Meta hdr %0X %0X %0X %0X %0X %0X  to_fw %u",
+			 desc_ext->info0, desc_ext->info1, desc_ext->info2,
+			 desc_ext->info3, desc_ext->info5, desc_ext->info5,
+			 msdu_info->exception_fw);
+skip:
+	return 0;
+}
+#endif
 
 /* Preparing HTT Metadata when utilized with ext MSDU */
 static int ath12k_wifi7_dp_prepare_htt_metadata(struct sk_buff *skb)
@@ -1203,7 +1299,8 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 		   struct ath12k_link_vif *arvif,
 		   struct sk_buff *skb, bool gsn_valid, int mcbc_gsn,
 		   bool is_mcast, struct ath12k_link_sta *arsta, u8 ring_id,
-		   u32 qos_nw_delay, int group_slot)
+		   u32 qos_nw_delay, int group_slot,
+		   bool htt_mesh)
 {
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_hal *hal = dp->hal;
@@ -1212,6 +1309,9 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_tx_desc_info *tx_desc = NULL;
 	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
 	struct hal_tcl_data_cmd *hal_tcl_desc;
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	struct ath12k_dp_tx_msdu_info_s msdu_info;
+#endif
 	struct hal_tx_msdu_ext_desc *msg;
 	struct sk_buff *skb_ext_desc = NULL;
 	struct ethhdr *eth = NULL;
@@ -1465,6 +1565,16 @@ skip_htt_metadata:
 
 	tx_desc->paddr_ext_desc = 0;
 
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	tx_desc->mmesh = (ahvif &&
+			  (ahvif->vap_submode == QCA_WLAN_VENDOR_VAP_SUBMODE_MESH));
+
+	/* mmesh uses msdu ext desc to program rates to
+	 * firmware
+	 */
+	msdu_ext_desc = htt_mesh;
+#endif
+
 	if (msdu_ext_desc) {
 		skb_ext_desc = dev_alloc_skb(sizeof(struct hal_tx_msdu_ext_desc));
 		if (!skb_ext_desc) {
@@ -1477,6 +1587,28 @@ skip_htt_metadata:
 
 		msg = (struct hal_tx_msdu_ext_desc *)skb_ext_desc->data;
 		ath12k_wifi7_hal_tx_cmd_ext_desc_setup(ab, msg, &ti);
+
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+		if (htt_mesh) {
+			ret = ath12k_wifi7_dp_prepare_mesh_htt_metadata(ab, ahvif,
+									skb_ext_desc,
+									skb,
+									&msdu_info);
+			if (ret < 0) {
+				ath12k_dbg(ab, ATH12K_DBG_DP_TX,
+					   "Failed to add HTT meta data, dropping packet\n");
+				err = DP_TX_ENQ_DROP_HTT_MDATA_ERR;
+				goto fail_free_ext_skb;
+			}
+
+			if (msdu_info.exception_fw) {
+				ti.meta_data_flags |= HTT_TCL_META_DATA_VALID_HTT;
+				ti.flags0 |=
+					u32_encode_bits(1, HAL_TCL_DATA_CMD_INFO2_TO_FW);
+				tx_desc->to_fw = 1;
+			}
+		}
+#endif
 
 		if (add_htt_metadata) {
 			ret = ath12k_wifi7_dp_prepare_htt_metadata(skb_ext_desc);
@@ -1644,7 +1776,10 @@ skip_htt_metadata:
 	if (unlikely(skb->mark & SDWF_VALID_MASK))
 		ath12k_dp_qos_update(dp, dp_pdev, skb->mark, hal_tcl_desc,
 				     0, NULL);
-
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	if (htt_mesh)
+		ath12k_wifi_qos_hlos_tid(hal_tcl_desc, skb->priority);
+#endif
 	if (unlikely(arsta)) {
 		qos_tag = ath12k_get_qos_tag(skb->mark);
 		if (qos_tag)
@@ -1870,6 +2005,37 @@ ath12k_wifi7_dp_tx_htt_tx_complete_buf(struct ath12k_dp *dp,
 	rcu_read_unlock();
 }
 
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+static void ath12k_dp_tx_update_mmesh_stats(struct ath12k_dp *dp,
+					    struct ath12k_pdev_dp *dp_pdev,
+					    struct sk_buff *skb,
+					    struct ath12k_dp_peer *peer,
+					    int reason)
+{
+	struct meta_hdr_s *mhdr;
+
+	if (!peer)
+		return;
+
+	if (reason == HAL_WBM_REL_SRC_MODULE_FW) {
+		DP_PEER_MISC_STATS_INC(peer, mmesh_stat, tofw, 0, 1);
+	} else {
+		DP_PEER_MISC_STATS_INC(peer, mmesh_stat, direct, 0, 1);
+		return;
+	}
+
+	mhdr = (struct meta_hdr_s *)(skb->data - MMESH_TX_META_HDR);
+	if (mhdr->flags & METAHDR_FLAG_NOQOS)
+		DP_PEER_MISC_STATS_INC(peer, mmesh_stat, no_qos, 0, 1);
+	if (mhdr->flags & METAHDR_FLAG_NOENCRYPT)
+		DP_PEER_MISC_STATS_INC(peer, mmesh_stat, no_enc, 0, 1);
+	if (mhdr->flags & METAHDR_FLAG_INFO_UPDATED)
+		DP_PEER_MISC_STATS_INC(peer, mmesh_stat, txinfo, 0, 1);
+	if (mhdr->flags & METAHDR_FLAG_AUTO_RATE)
+		DP_PEER_MISC_STATS_INC(peer, mmesh_stat, auto_rate, 0, 1);
+}
+#endif
+
 static void
 ath12k_wifi7_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 					   void *desc, struct sk_buff *msdu,
@@ -1982,6 +2148,13 @@ ath12k_wifi7_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 								    tx_desc_flags,
 								    link_id,
 								    msdu_len);
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+			if (peer->is_mmesh_peer)
+				ath12k_dp_tx_update_mmesh_stats(dp, dp_pdev,
+								sw_metadata->skb,
+								peer,
+								ts->buf_rel_source);
+#endif
 		}
 	} else {
 		DP_DEVICE_STATS_INC(dp, tx_err.tx_comp_err[DP_TX_COMP_ERR_INVALID_PEER][ring_id], 1);
@@ -2260,6 +2433,13 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 				ath12k_dp_tx_peer_update_proto_stats(peer, link_id, msdu,
 								     TX_COMP, ring);
 			}
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+			if (peer->is_mmesh_peer)
+				ath12k_dp_tx_update_mmesh_stats(dp, dp_pdev,
+								msdu,
+								peer,
+								ts->buf_rel_source);
+#endif
 		}
 	} else {
 		DP_DEVICE_STATS_INC(dp, tx_err.tx_comp_err[DP_TX_COMP_ERR_INVALID_PEER][ring], 1);
@@ -2372,7 +2552,6 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 			status.link_valid = 1;
 			status.link_id = link_id;
 		}
-
 		ieee80211_tx_status_ext(ath12k_dp_pdev_to_hw(dp_pdev), &status);
 	}
 	rcu_read_unlock();
@@ -2439,10 +2618,10 @@ ath12k_wifi7_dp_tx_status_parse(struct ath12k_base *ab,
 }
 
 static void ath12k_dp_tx_update_tid_stats(struct ath12k_dp *dp,
-					  struct ath12k_pdev_dp *dp_pdev,
-					  struct sk_buff *skb,
-					  u32 peer_id,
-					  int reason)
+		struct ath12k_pdev_dp *dp_pdev,
+		struct sk_buff *skb,
+		u32 peer_id,
+		int reason)
 {
 	struct ath12k_dp_peer *dp_peer;
 	struct ath12k_vif *ahvif;
@@ -2585,6 +2764,10 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 		sw_metadata->len = tx_desc->len;
 		sw_metadata->flags = tx_desc->flags;
 
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+		sw_metadata->mmesh = tx_desc->mmesh;
+#endif
+
 		if (unlikely(!(sw_metadata->flags & DP_TX_DESC_FLAG_FAST))) {
 			if (tx_desc->ext_kmem) {
 				ath12k_core_dma_unmap_single(dp->dev,
@@ -2610,6 +2793,7 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 
 		tx_desc->skb = NULL;
 		tx_desc->in_use = false;
+		tx_desc->mmesh = 0;
 		tx_desc->flags = 0;
 	}
 
@@ -2674,7 +2858,7 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 								   &ts, ring_id, htt_status);
 			sw_metadata->skb = NULL;
 			continue;
-                }
+		}
 
 		if (sw_metadata->flags & DP_TX_DESC_FLAG_FAST) {
 			__skb_queue_head(&free_list_head, sw_metadata->skb);
@@ -2716,7 +2900,6 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 
 			rcu_read_unlock();
 		}
-
 	}
 
         dp->device_stats.tx_comp_stats[ring_id].tx_completed += tx_completed;
@@ -2804,7 +2987,7 @@ int ath12k_wifi7_sdwf_reinject_handler(struct ath12k_pdev_dp *dp_pdev,
 	ring_id = ring_selector % dp_pdev->dp->hw_params->max_tx_ring;
 
 	return ath12k_wifi7_dp_tx(dp_pdev, arvif, skb, false, 0, false,
-				  arsta, ring_id, 0, -1);
+				  arsta, ring_id, 0, -1, false);
 }
 
 void ath12k_wifi7_dp_tx_ring_cleanup(struct ath12k_base *ab)

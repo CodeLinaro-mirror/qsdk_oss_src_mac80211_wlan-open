@@ -229,6 +229,7 @@ enum ieee80211_packet_rx_flags {
 	IEEE80211_RX_AMSDU			= BIT(3),
 	IEEE80211_RX_MALFORMED_ACTION_FRM	= BIT(4),
 	IEEE80211_RX_DEFERRED_RELEASE		= BIT(5),
+	IEEE80211_RX_MHDR			= BIT(6),
 };
 
 /**
@@ -3095,5 +3096,8 @@ int ieee80211_qos_mgmt_cfg(struct ieee80211_sub_if_data *sdata,
 int ieee80211_set_monitor_channel(struct wiphy *wiphy,
 				  struct net_device *dev,
 				  struct cfg80211_chan_def *chandef);
+extern struct ieee80211_key *
+ieee80211_lookup_key(struct ieee80211_sub_if_data *sdata, int link_id,
+		     u8 key_idx, bool pairwise, const u8 *mac_addr);
 
 #endif /* IEEE80211_I_H */

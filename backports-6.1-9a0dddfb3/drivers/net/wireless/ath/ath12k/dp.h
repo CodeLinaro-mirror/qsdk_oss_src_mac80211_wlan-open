@@ -425,7 +425,7 @@ struct ath12k_tx_desc_info {
 	u8 mac_id	: 5,
 	   in_use	: 1,
 	   ext_kmem	: 1,
-	   reserved	: 1;
+	   mmesh	: 1;
 	u8 flags	: 3,
 	   reserved1	: 4,
 	   to_fw	: 1;

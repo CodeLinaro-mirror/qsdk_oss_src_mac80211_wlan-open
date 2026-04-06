@@ -4916,6 +4916,7 @@ netdev_tx_t ieee80211_subif_start_xmit(struct sk_buff *skb,
 #ifdef CPTCFG_MAC80211_NSS_SUPPORT
 	ieee80211_xmit_nss_fixup(skb, dev);
 #endif
+
 	if (!tid_stats_disable) {
 		skb->priority = cfg80211_classify8021d(skb, NULL);
 		ieee80211_tid_classifier(skb, sdata, false, TX_NWIFI_PKT);
@@ -5328,6 +5329,10 @@ netdev_tx_t __ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 {
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	struct wireless_dev *wdev;
+	struct ieee80211_vif *vif;
+#endif
 	struct ethhdr *ehdr = (struct ethhdr *)skb->data;
 	struct ieee80211_key *key = NULL;
 	struct sta_info *sta;
@@ -5337,6 +5342,28 @@ netdev_tx_t __ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 #ifdef CPTCFG_MAC80211_NSS_SUPPORT
        ieee80211_xmit_nss_fixup(skb, dev);
 #endif
+
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	wdev = (struct wireless_dev *)dev->ieee80211_ptr;
+	if (!wdev) {
+		kfree_skb(skb);
+		return NETDEV_TX_OK;
+	}
+
+	vif = wdev_to_ieee80211_vif(wdev);
+	if (!vif) {
+		kfree_skb(skb);
+		return NETDEV_TX_OK;
+	}
+
+	/* Adjust the skb->data to point to the actual payload after the meta header*/
+	if (wdev->vap_submode == IEEE80211_EXTN_VAP_SUBMODE_MESH) {
+		if (!mmeshsim) {
+			skb_pull(skb, vif->mhdr_len);
+		}
+	}
+#endif
+
 	if (unlikely(!ieee80211_sdata_running(sdata) || skb->len < ETH_HLEN)) {
 		if (!tid_stats_disable)
 			ieee80211_tx_drop_stats(sdata, info->tid, TX_DROP_SDATA_STATE);

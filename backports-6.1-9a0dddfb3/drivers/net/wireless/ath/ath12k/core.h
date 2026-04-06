@@ -269,6 +269,8 @@ enum ath12k_skb_flags {
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 	ATH12K_SKB_IPA_MAP_UNMAP = BIT(6),
 #endif
+	ATH12K_SKB_MESH_TX_INFO = BIT(7),
+	ATH12K_SKB_MESH_RX_INFO = BIT(8),
 };
 
 struct ath12k_skb_cb {
@@ -280,9 +282,12 @@ struct ath12k_skb_cb {
 	struct ieee80211_vif *vif;
 	dma_addr_t paddr_ext_desc;
 	u32 cipher;
-	u8 flags;
+	u16 flags;
 	u8 link_id;
 };
+
+static_assert(sizeof(struct ath12k_skb_cb) <= 48,
+	      "size of struct ath12k_skb_cb greater than 48 bytes!");
 
 struct ath12k_skb_rxcb {
 	dma_addr_t paddr;
@@ -293,6 +298,7 @@ struct ath12k_skb_rxcb {
 	bool is_eapol;
 	bool is_intra_bss;
 	struct hal_rx_desc *rx_desc;
+	void *mhdr;
 	u8 err_rel_src;
 	u8 err_code;
 	u8 hw_link_id;
@@ -302,6 +308,9 @@ struct ath12k_skb_rxcb {
 	u16 peer_id;
 	bool is_end_of_ppdu;
 };
+
+static_assert(sizeof(struct ath12k_skb_rxcb) <= 48,
+	      "size of struct ath12k_skb_rxcb greater than 48 bytes!");
 
 enum ath12k_hw_rev {
 	ATH12K_HW_QCN9274_HW10 = 0,
@@ -792,6 +801,8 @@ struct ath12k_dp_vif {
 	bool mscs_hlos_tid_override;
 	u32 monitor_flags;
 	struct ath12k_dp_preserved_stats link_vif_delete_stats;
+
+	struct ath12k_dp_vif_extn dp_extn;
 };
 
 enum ath12k_tx_pkt_reasons {

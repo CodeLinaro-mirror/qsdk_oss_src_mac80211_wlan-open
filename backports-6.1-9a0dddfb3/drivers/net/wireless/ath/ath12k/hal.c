@@ -169,6 +169,20 @@ void ath12k_hal_reo_shared_qaddr_cache_clear(struct ath12k_base *ab)
 	ab->hal.hal_ops->reo_shared_qaddr_cache_clear(ab);
 }
 
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+u8 ath12k_hal_rxdesc_get_get_key_id_octet(struct ath12k_hal *hal,
+					  struct hal_rx_desc *desc)
+{
+	return hal->hal_ops->rxdesc_get_key_id_octet(desc);
+}
+
+u8 *
+ath12k_hal_rxdesc_get_mpdu_start_addr1(struct ath12k_hal *hal, struct hal_rx_desc *desc)
+{
+	return hal->hal_ops->rxdesc_get_mpdu_start_addr1(desc);
+}
+#endif
+
 u8 *
 ath12k_hal_rxdesc_get_mpdu_start_addr2(struct ath12k_hal *hal, struct hal_rx_desc *desc)
 {

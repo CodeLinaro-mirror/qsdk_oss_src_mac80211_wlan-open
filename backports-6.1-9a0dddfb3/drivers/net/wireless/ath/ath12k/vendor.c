@@ -3611,6 +3611,112 @@ ath12k_fill_peer_tx_ext_htt_stats_attr(struct ath12k *ar, struct sk_buff *vendor
 	return 0;
 }
 
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+static int
+ath12k_fill_peer_mmesh_tx_stats_wrapper(struct sk_buff *vendor_event,
+					struct ath12k_dp_peer_stats *peer_stats)
+{
+	struct	nlattr *attr;
+
+	attr = nla_nest_start(vendor_event,
+			      QCA_VENDOR_ATTR_WLAN_TELEMETRY_TX_MMESH_STATS_EVENT);
+	if (!attr) {
+		ath12k_err(NULL, "nla nest failure: Tx Ext Htt stats");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_PER_PKT_TXSTATS_MMESH_NOQOS,
+			peer_stats->mmesh_stat.no_qos)) {
+		ath12k_err(NULL, "nla put failed: mesh no qos");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_PER_PKT_TXSTATS_MMESH_NOENC,
+			peer_stats->mmesh_stat.no_enc)) {
+		ath12k_err(NULL, "nla put failed: mesh no enc");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_PER_PKT_TXSTATS_MMESH_TXINFO,
+			peer_stats->mmesh_stat.txinfo)) {
+		ath12k_err(NULL, "nla put failed: txinfo");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_PER_PKT_TXSTATS_MMESH_AUTORATE,
+			peer_stats->mmesh_stat.auto_rate)) {
+		ath12k_err(NULL, "nla put failed: auto_rate");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_PER_PKT_TXSTATS_MMESH_TOFW,
+			peer_stats->mmesh_stat.tofw)) {
+		ath12k_err(NULL, "nla put failed: mesh tofw");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_PER_PKT_TXSTATS_MMESH_DIRECT,
+			peer_stats->mmesh_stat.direct)) {
+		ath12k_err(NULL, "nla put failed: mesh direct");
+		return -EINVAL;
+	}
+	nla_nest_end(vendor_event, attr);
+
+	return 0;
+}
+
+static int
+ath12k_fill_peer_mmesh_rx_stats_wrapper(struct sk_buff *vendor_event,
+					struct ath12k_dp_peer_stats *peer_stats)
+{
+	struct	nlattr *attr;
+
+	attr = nla_nest_start(vendor_event,
+			      QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_MMESH_STATS_EVENT);
+	if (!attr) {
+		ath12k_err(NULL, "nla nest failure: Tx Ext Htt stats");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_PER_PKT_RXSTATS_MMESH_RXHDR_UPDT,
+			peer_stats->mmesh_stat.rxhdr_updt)) {
+		ath12k_err(NULL, "nla put failed: rxhdr updt");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_PER_PKT_RXSTATS_MMESH_RXFILTDROP,
+			peer_stats->mmesh_stat.filter_drop)) {
+		ath12k_err(NULL, "nla put failed: filter drop");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_PER_PKT_RXSTATS_MMESH_RXKEY_LOOKUP_FAIL,
+			peer_stats->mmesh_stat.rxkey_lookp_up_fail)) {
+		ath12k_err(NULL, "nla put failed: key lookup fail");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_PER_PKT_RXSTATS_MMESH_RXKEY_LOOKUP_SUCC,
+			peer_stats->mmesh_stat.rxkey_lookp_up_succ)) {
+		ath12k_err(NULL, "nla put failed: key lookup succ");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_PER_PKT_RXSTATS_MMESH_RXHDR_ALLOC_FAIL,
+			peer_stats->mmesh_stat.rxhdr_alloc_fail)) {
+		ath12k_err(NULL, "nla put failed: rxhdr alloc");
+		return -EINVAL;
+	}
+
+	nla_nest_end(vendor_event, attr);
+
+	return 0;
+}
+#endif
+
 static int
 ath12k_fill_peer_tx_ext_stats_wrapper(struct ath12k *ar, struct sk_buff *vendor_event,
 				      struct ath12k_dp_link_peer_stats *link_peer_stats,
@@ -4127,6 +4233,13 @@ static int ath12k_fill_peer_tx_stats(struct ath12k *ar,
 			return -EINVAL;
 		}
 	}
+
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	if (ath12k_fill_peer_mmesh_tx_stats_wrapper(vendor_event, peer_stats)) {
+		ath12k_err(NULL, "Error filling  mmesh stats\n");
+		return -EINVAL;
+	}
+#endif
 
 	return 0;
 }
@@ -5163,6 +5276,13 @@ static int ath12k_fill_peer_rx_stats(struct ath12k *ar,
 
 		nla_nest_end(vendor_event, attr);
 	}
+
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	if (ath12k_fill_peer_mmesh_rx_stats_wrapper(vendor_event, peer_stats)) {
+		ath12k_err(NULL, "Error filling  mmesh stats\n");
+		return -EINVAL;
+	}
+#endif
 
 	return 0;
 }
