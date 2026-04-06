@@ -917,7 +917,7 @@ int ath12k_wifi8_hal_sam_cmd_staging_alloc(struct ath12k_base *ab)
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(ab->dp);
 
 	/* Allocate single staging buffer for the SAM command ring. */
-	dp_wifi8->sam_cmd_staging = kzalloc(HAL_SAM_CMD_MAX_BYTES, GFP_KERNEL);
+	dp_wifi8->sam_cmd_staging = kzalloc(HAL_SAM_CMD_MAX_BYTES, GFP_ATOMIC);
 
 	if (!dp_wifi8->sam_cmd_staging)
 		return -ENOMEM;
