@@ -340,9 +340,19 @@ void ieee80211_scan_rx(struct ieee80211_local *local, struct sk_buff *skb)
 			return;
 	}
 
-	/* Do not update the BSS table in case of only monitor interfaces */
-	if (local->open_count == local->monitors)
-		return;
+	/* Do not update the BSS table in case of only monitor interfaces.
+	 * However, scan radio (AP interface used as monitor for scan) should
+	 * still update the BSS table for scan results.
+	 */
+	if (local->open_count == local->monitors) {
+		struct ieee80211_sub_if_data *scan_sdata;
+
+		scan_sdata = rcu_dereference(local->scan_sdata);
+
+		/* Check if the only "monitor" is actually a scan radio */
+		if (!(scan_sdata && wdev_is_scan_radio(&scan_sdata->wdev)))
+			return;
+	}
 
 	bss = ieee80211_bss_info_update(local, rx_status,
 					mgmt, skb->len,
