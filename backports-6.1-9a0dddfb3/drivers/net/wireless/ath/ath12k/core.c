@@ -1088,6 +1088,7 @@ void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag, bool standby_
 						skip_power_down = true;
 					else
 						ath12k_mac_stop(ar);
+					ar->cumac_cmd_sent = false;
 				}
 			}
 		}
@@ -1095,6 +1096,12 @@ void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag, bool standby_
 		if (!skip_power_down &&
 		    !test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags)) {
 			ab->qmi.num_radios = U8_MAX;
+			if (ab->is_cumac_chip) {
+				ab->is_cumac_chip = false;
+				ag->cumac_selected = false;
+				ag->cumac_chip_id = ATH12K_CUMAC_CHIP_ID_INVALID;
+			}
+			ab->cumac_configured = false;
 			ath12k_umac_reset_fallback_cleanup(ab);
 			ath12k_hif_mgmt_irq_disable(ab);
 			ath12k_hif_irq_disable(ab);
@@ -1752,6 +1759,203 @@ int ath12k_core_pdev_enable_telemetry_stats(struct ath12k_base *ab)
 	return 0;
 }
 
+static enum ath12k_cumac_band ath12k_get_cumac_band(struct ath12k_base *ab)
+{
+	u32 band;
+
+	if (!ab || ab->num_radios == 0)
+		return ATH12K_CUMAC_BAND_NONE;
+
+	if (!ab->pdevs[0].cap.supported_bands)
+		return ATH12K_CUMAC_BAND_NONE;
+
+	band = ab->pdevs[0].cap.supported_bands;
+
+	if (band & WMI_HOST_WLAN_5GHZ_CAP) {
+		if (ab->hal_reg_cap[0].low_5ghz_chan >= ATH12K_MIN_6GHZ_FREQ &&
+		    ab->hal_reg_cap[0].high_5ghz_chan <= ATH12K_MAX_6GHZ_FREQ) {
+			return ATH12K_CUMAC_BAND_6GHZ;
+		} else {
+			return ATH12K_CUMAC_BAND_5GHZ;
+		}
+	} else if (band & WMI_HOST_WLAN_2GHZ_CAP) {
+		return ATH12K_CUMAC_BAND_2GHZ;
+	}
+
+	ath12k_err(ab, "ab max bw supported is not mapped to 2GHz / 5GHz / 6GHz for CUMAC selection\n");
+	return ATH12K_CUMAC_BAND_NONE;
+}
+
+static int ath12k_core_send_cumac_chip(struct ath12k_hw_group *ag)
+{
+	int ret = -EINVAL;
+	int i, j;
+	struct ath12k *ar;
+	struct ath12k_base *ab = NULL;
+
+	if (!ag)
+		return ret;
+
+	for (i = 0; i < ag->num_devices; i++) {
+		ab = ag->ab[i];
+		if (!ab || ab->is_bypassed)
+			continue;
+
+		if (ab->cumac_configured)
+			continue;
+
+		for (j = 0; j < ab->num_radios; j++) {
+			ar = ab->pdevs[j].ar;
+			if (!ar)
+				continue;
+
+			reinit_completion(&ar->cumac_setup_done);
+			ret = ath12k_wmi_send_cumac_config(ar, ag->cumac_chip_id);
+			if (ret) {
+				ath12k_err(ar->ab, "failed to send cumac chip command for pdev %d: %d\n",
+					   ar->pdev_idx, ret);
+				return ret;
+			}
+
+			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
+					 "Send cumac chip wmi command for pdev %d: ret %d\n",
+					 ar->pdev_idx, ret);
+			ar->cumac_cmd_sent = 1;
+			break;
+		}
+	}
+
+	return ret;
+}
+
+static int ath12k_select_cumac_chip(struct ath12k_hw_group *ag)
+{
+	struct ath12k_base *partner_ab;
+	struct ath12k_base *cumac_ab = NULL;
+	int i, j;
+	enum ath12k_cumac_band preferred_cumac_band;
+	enum ath12k_cumac_band curr_band;
+	enum ath12k_cumac_band ath12k_cumac_prio_band[] = {ATH12K_CUMAC_BAND_2GHZ,
+							   ATH12K_CUMAC_BAND_5GHZ,
+							   ATH12K_CUMAC_BAND_6GHZ};
+	u32 max_prio_order =  ARRAY_SIZE(ath12k_cumac_prio_band);
+
+	if (!ag)
+		return -EINVAL;
+
+	if (ag->cumac_selected)
+		return 0;
+
+	for (j = 0; j < max_prio_order; j++) {
+		preferred_cumac_band = ath12k_cumac_prio_band[j];
+		for (i = 0; i < ag->num_devices; i++) {
+			partner_ab = ag->ab[i];
+			if (!partner_ab)
+				continue;
+
+			curr_band = ath12k_get_cumac_band(partner_ab);
+			if (preferred_cumac_band == curr_band) {
+				cumac_ab = partner_ab;
+				break;
+			}
+		}
+		if (cumac_ab)
+			break;
+	}
+
+	if (!cumac_ab)
+		return -EINVAL;
+
+	cumac_ab->is_cumac_chip = true;
+	ag->cumac_chip_id = cumac_ab->wsi_info.index;
+	ag->cumac_selected = true;
+	ath12k_info(cumac_ab,
+		    "Selected CUMAC chip: chip_id=%d band=%d\n",
+		    cumac_ab->wsi_info.index,
+		    curr_band);
+
+	return 0;
+}
+
+#define ATH12K_CUMAC_SETUP_TIMEOUT_HZ (3 * HZ)
+inline int ath12k_wait_for_cumac_completion(struct ath12k_hw_group *ag)
+{
+	int ret = 0;
+	int i, j;
+	struct ath12k_base *ab;
+	struct ath12k *ar = NULL;
+
+	if (!ag)
+		return -EINVAL;
+
+	for (i = 0; i < ag->num_devices; i++) {
+		ab = ag->ab[i];
+		if (!ab)
+			continue;
+
+		if (ab->cumac_configured)
+			continue;
+
+		for (j = 0; j < ab->num_radios; j++) {
+			ar = ab->pdevs[j].ar;
+			if (!ar)
+				continue;
+
+			if (!ar->cumac_cmd_sent)
+				continue;
+
+			if (!wait_for_completion_timeout(&ar->cumac_setup_done,
+							 ATH12K_CUMAC_SETUP_TIMEOUT_HZ))
+				ret = -ETIMEDOUT;
+			break;
+		}
+
+		if (ret) {
+			ath12k_err(ab, "Failed to received cumac chip completion\n");
+			return ret;
+		}
+
+		ab->cumac_configured = 1;
+	}
+
+	return ret;
+}
+
+static int ath12k_core_complete_cumac_config(struct ath12k_hw_group *ag)
+{
+	int ret;
+
+	if (!ag->cumac_enabled)
+		return 0;
+
+	ret = ath12k_select_cumac_chip(ag);
+	if (ret) {
+		ath12k_err(NULL, "CUMAC chip selection failed: %d\n", ret);
+		return ret;
+	}
+
+	if (!ag->cumac_selected) {
+		ath12k_err(NULL, "CUMAC selection failed for CUMAC enabled target\n");
+		return -EINVAL;
+	}
+
+	ret = ath12k_core_send_cumac_chip(ag);
+	if (ret) {
+		ath12k_err(NULL, "cumac configuration failed, soc bring up failed %d\n",
+			   ret);
+		return ret;
+	}
+
+	ret = ath12k_wait_for_cumac_completion(ag);
+	if (ret) {
+		ath12k_err(NULL, "cumac completion not received, bring up failed %d\n",
+			   ret);
+		return ret;
+	}
+
+	return 0;
+}
+
 static int ath12k_core_hw_group_start(struct ath12k_hw_group *ag)
 {
 	struct ath12k_base *ab = NULL;
@@ -1760,6 +1964,10 @@ static int ath12k_core_hw_group_start(struct ath12k_hw_group *ag)
 	lockdep_assert_held(&ag->mutex);
 
 	if (test_bit(ATH12K_GROUP_FLAG_REGISTERED, &ag->flags)) {
+		ret = ath12k_core_complete_cumac_config(ag);
+		if (WARN_ON(ret))
+			goto err_mac_destroy;
+
 		ret = ath12k_core_mlo_setup(ag);
 		if (WARN_ON(ret))
 			goto err_mac_destroy;
@@ -1793,6 +2001,10 @@ static int ath12k_core_hw_group_start(struct ath12k_hw_group *ag)
 		if (WARN_ON(ret))
 			return ret;
 	}
+
+	ret = ath12k_core_complete_cumac_config(ag);
+	if (WARN_ON(ret))
+		goto err_mac_destroy;
 
 	ret = ath12k_core_mlo_setup(ag);
 	if (WARN_ON(ret))
@@ -4251,6 +4463,9 @@ static struct ath12k_hw_group *ath12k_core_hw_group_alloc(struct ath12k_base *ab
 	ath12k_global_ps_ctx.ag = ag;
 #endif
 	init_completion(&ag->power_up);
+
+	ag->cumac_enabled = ab->hw_params->cumac_support;
+
 	return ag;
 }
 
@@ -4623,6 +4838,18 @@ invalid_group:
 	ath12k_dbg(ab, ATH12K_DBG_BOOT, "single device added to hardware group\n");
 
 exit:
+	/* All ABs in an HW group must have identical CUMAC support (all or none).
+	 * The first AB’s capability is propagated to the AG during hw_group_alloc().
+	 * Any subsequent AB must match this; otherwise it is rejected and brought down.
+	 *
+	 * When adding a second (or later) AB, on failure, returns NULL and the ab is
+	 * freed. the AG is freed as part of tearing down the remaining ABs.
+	 */
+	if (ab->hw_params->cumac_support != ag->cumac_enabled) {
+		ath12k_warn(ab, "HW group contains ABs with inconsistent CUMAC support\n");
+		return NULL;
+	}
+
 	if (ag->num_probed >= ag->num_devices) {
 		ath12k_warn(ab, "unable to add new device to group, max limit reached\n");
 		goto invalid_group;

@@ -237,6 +237,8 @@ enum ath12k_bdf_search {
 #define ATH12K_CSA_FW_RESTART_TIME_DELAY	50
 #define ATH12K_CSA_CALDB_UNDONE_TIME		500
 
+#define ATH12K_CUMAC_CHIP_ID_INVALID 0xFF
+
 enum ath12k_crypt_mode {
 	/* Only use hardware crypto engine */
 	ATH12K_CRYPT_MODE_HW,
@@ -1564,6 +1566,8 @@ struct ath12k {
 	int last_wmi_vdev_start_status;
 	struct completion vdev_setup_done;
 	struct completion vdev_delete_done;
+	bool cumac_cmd_sent;
+	struct completion cumac_setup_done;
 
 	int num_peers;
 	int num_ml_peers;
@@ -1953,6 +1957,13 @@ struct ath12k_mlo_wsi_load_info {
 	struct ath12k_mlo_wsi_device_load_stats load_stats[ATH12K_MAX_SOCS];
 };
 
+enum ath12k_cumac_band {
+	ATH12K_CUMAC_BAND_NONE = 0,
+	ATH12K_CUMAC_BAND_2GHZ,
+	ATH12K_CUMAC_BAND_5GHZ,
+	ATH12K_CUMAC_BAND_6GHZ,
+};
+
 /* Holds info on the group of devices that are registered as a single
  * wiphy, protected with struct ath12k_hw_group::mutex.
  */
@@ -2002,6 +2013,9 @@ struct ath12k_hw_group {
 	u64 wsi_peer_clean_timeout;
 	struct completion power_up;
 	bool mlo_teardown;
+	u8 cumac_chip_id;
+	bool cumac_selected;
+	bool cumac_enabled;
 };
 
 /* Holds WSI info specific to each device, excluding WSI group info */
@@ -2178,6 +2192,8 @@ struct ath12k_base {
 	struct ath12k_reg_freq reg_freq_2g;
 	struct ath12k_reg_freq reg_freq_5g;
 	struct ath12k_reg_freq reg_freq_6g;
+	bool is_cumac_chip;
+	bool cumac_configured;
 #ifdef CPTCFG_ATH12K_DEBUGFS
 	struct dentry *debugfs_soc;
 #endif
@@ -2344,7 +2360,6 @@ struct ath12k_base {
 
 	u32 twt_cap_bitmap;
 
-	bool is_cumac_chip;
 
 	u32 cu_mem_cfg_mask;
 

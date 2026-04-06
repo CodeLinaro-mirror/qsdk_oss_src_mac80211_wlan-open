@@ -324,6 +324,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.handle_beacon_miss = true,
 		.en_qdsslog = true,
 		.support_fse = true,
+		.cumac_support = false,
 		.alloc_cacheable_memory = true,
 		.spectral = {
 			.fft_sz = 7,
