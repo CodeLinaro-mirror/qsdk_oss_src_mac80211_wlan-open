@@ -140,6 +140,14 @@ int ath12k_dp_peer_setup(struct ath12k *ar, struct ath12k_link_vif *arvif, const
 	/* NOTE: reo_dest ring id starts from 1 unlike mac_id which starts from 0 */
 	reo_dest = ar->dp.mac_id + 1;
 
+	/* Override reo_dest if pdev_to_reo_dest has been configured via
+	 * PDEV_TO_REO_DEST (cfg80211 vendor cmd). This allows
+	 * the user to steer all RX traffic for this pdev to a specific
+	 * REO destination ring (ATH12K_REO2SW1_RING..ATH12K_REO2SW4_RING).
+	 */
+	if (ar->radio_cfg.pdev_to_reo_dest)
+		reo_dest = ar->radio_cfg.pdev_to_reo_dest;
+
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 	if (IPA_CTX(ab) && IPA_CTX(ab)->ipa_ops &&
 	    IPA_CTX(ab)->ipa_ops->ipa_set_default_routing)
