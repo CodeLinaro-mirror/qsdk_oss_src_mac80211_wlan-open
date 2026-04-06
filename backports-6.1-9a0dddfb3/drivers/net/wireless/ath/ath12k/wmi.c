@@ -4317,6 +4317,7 @@ int ath12k_wmi_send_scan_start_cmd(struct ath12k *ar,
 
 	ath12k_wmi_copy_scan_event_cntrl_flags(cmd, arg);
 
+	cmd->scan_priority = cpu_to_le32(arg->scan_priority);
 	cmd->dwell_time_active = cpu_to_le32(arg->dwell_time_active);
 	cmd->dwell_time_active_2g = cpu_to_le32(arg->dwell_time_active_2g);
 	cmd->dwell_time_passive = cpu_to_le32(arg->dwell_time_passive);
