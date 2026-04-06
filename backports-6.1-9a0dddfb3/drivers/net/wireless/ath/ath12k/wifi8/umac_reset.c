@@ -140,6 +140,8 @@ void ath12k_wifi8_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 	if (ret)
 		ath12k_warn(cumac_ab, "failed to setup link desc: %d\n", ret);
 
+	ath12k_wifi8_dp_rx_ase_htt_srng_setup(cumac_ab);
+
 	ath12k_dp_srng_common_setup(cumac_ab);
 	ath12k_wifi8_dp_tx_ring_setup(cumac_ab);
 	ath12k_wifi8_dp_rx_ring_setup(cumac_ab);
@@ -151,6 +153,7 @@ void ath12k_wifi8_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 
 	ath12k_dp_rx_reo_cmd_list_cleanup(cumac_ab);
 	ath12k_wifi8_dp_tx_tqm_cmd_list_cleanup(cumac_ab);
+	ath12k_wifi8_clean_pending_ast_entries(cumac_ab);
 
 	ath12k_wifi8_dp_rx_wbm_buf_ring_init(cumac_ab);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
