@@ -1047,6 +1047,8 @@ void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
 	rx_stats->udp_msdu_count += ppdu_info->udp_msdu_count;
 	rx_stats->other_msdu_count += ppdu_info->other_msdu_count;
 
+	ath12k_dp_mon_rx_update_basic_stats(peer, rx_stats, ppdu_info, num_msdu, 0);
+
 	if (ppdu_info->preamble_type == HAL_RX_PREAMBLE_11A ||
 	    ppdu_info->preamble_type == HAL_RX_PREAMBLE_11B) {
 		ppdu_info->nss = 1;
@@ -1134,7 +1136,6 @@ void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
 	ath12k_dp_mon_rx_update_peer_rate_table_stats(rx_stats, ppdu_info,
 						      NULL, num_msdu);
 
-	ath12k_dp_mon_rx_update_basic_stats(peer, rx_stats, ppdu_info, num_msdu, 0);
 	/* Update Advance stats */
 	if (ath12k_dp_stats_enabled(pdev_dp) &&
 	    ath12k_dp_advance_stats_enabled(pdev_dp)) {
