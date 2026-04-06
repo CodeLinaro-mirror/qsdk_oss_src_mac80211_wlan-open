@@ -478,6 +478,12 @@ enum rdi_based_source_ring_selection {
 /* FSE CMD Cache ring R2 address */
 #define HAL_FSE_CMD_HP				0x3180
 
+/* REO CMD R0 address - priority cmd ring for SMD*/
+#define HAL_REO_CMD1_RING_BASE_LSB		0x7d0
+
+/* REO CMD R2 address - priority cmd ring for SMD*/
+#define HAL_REO_CMD1_HP				0x3070
+
 /* SW2REO R0 address */
 #define	HAL_SW2REO_RING_BASE_LSB(hal) \
 	((hal)->regs->hal_sw2reo_ring_base)

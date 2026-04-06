@@ -27,6 +27,12 @@ int ath12k_wifi8_dp_reo_cmd_send(struct ath12k_base *ab,
 				 struct ath12k_hal_reo_cmd *cmd,
 				 void (*cb)(struct ath12k_dp *dp, void *ctx,
 					    struct hal_reo_status *status));
+int ath12k_wifi8_dp_reo_cmd_send_highprio(struct ath12k_base *ab,
+					  void *data, size_t len,
+					  enum hal_reo_cmd_type type,
+					  struct ath12k_hal_reo_cmd *cmd,
+					  void (*cb)(struct ath12k_dp *dp, void *ctx,
+						     struct hal_reo_status *status));
 int ath12k_wifi8_dp_fse_cmd_send(struct ath12k_base *ab,
 				 struct hal_fse_cmd *fse_cmd);
 int ath12k_wifi8_dp_rx_process_err(struct ath12k_dp *dp, struct napi_struct *napi,

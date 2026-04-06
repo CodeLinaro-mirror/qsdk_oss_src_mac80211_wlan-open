@@ -90,7 +90,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 	},
 	[HAL_REO_CMD] = {
 		.start_ring_id = HAL_SRNG_RING_ID_REO_CMD,
-		.max_rings = 1,
+		.max_rings = 2,
 		.entry_size = (sizeof(struct hal_tlv_64_hdr) +
 			sizeof(struct hal_reo_get_queue_stats)) >> 2,
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
@@ -1155,6 +1155,8 @@ static int ath12k_wifi8_hal_srng_create_config_qcn9625(struct ath12k_hal *hal)
 	s = &hal->srng_config[HAL_REO_CMD];
 	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO_CMD_RING_BASE_LSB(hal);
 	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO_CMD_HP;
+	s->reg_size[0]  = HAL_REO_CMD1_RING_BASE_LSB - HAL_REO_CMD_RING_BASE_LSB(hal);
+	s->reg_size[1]  = HAL_REO_CMD1_HP - HAL_REO_CMD_HP;
 
 	s = &hal->srng_config[HAL_REO_STATUS];
 	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO_STATUS_RING_BASE_LSB(hal);

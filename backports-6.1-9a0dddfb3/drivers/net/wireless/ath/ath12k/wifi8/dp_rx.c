@@ -22,6 +22,8 @@
 #include "dp.h"
 #include "hal_qcn9625.h"
 #include "../debugfs.h"
+
+#define ATH12K_WIFI8_REO_CMD_HIGHPRI_START_NUM	(DP_REO_CMD_RING_SIZE + 1)
 #ifdef CPTCFG_MAC80211_PPE_SUPPORT
 #include <ppe_vp_public.h>
 #include <ppe_vp_tx.h>
@@ -108,16 +110,16 @@ static void ath12k_wifi8_dp_clean_up_skb_list(struct sk_buff_head *skb_list)
 		dev_kfree_skb_any(skb);
 }
 
-int ath12k_wifi8_dp_reo_cmd_send(struct ath12k_base *ab,
-				 void *data, size_t len,
-				 enum hal_reo_cmd_type type,
-				 struct ath12k_hal_reo_cmd *cmd,
-				 void (*cb)(struct ath12k_dp *dp, void *ctx,
-					    struct hal_reo_status *status))
+static int ath12k_wifi8_dp_reo_cmd_send_ring(struct ath12k_base *ab,
+					     struct hal_srng *cmd_ring,
+					     void *data, size_t len,
+					     enum hal_reo_cmd_type type,
+					     struct ath12k_hal_reo_cmd *cmd,
+					     void (*cb)(struct ath12k_dp *dp, void *ctx,
+							struct hal_reo_status *status))
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_dp_rx_reo_cmd *dp_cmd;
-	struct hal_srng *cmd_ring;
 	int cmd_num;
 	struct ath12k_dp *central_dp = ath12k_get_central_dp(dp);
 	struct ath12k_base *central_ab = central_dp->ab;
@@ -126,26 +128,18 @@ int ath12k_wifi8_dp_reo_cmd_send(struct ath12k_base *ab,
 	    test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &central_ab->dev_flags))
 		return -ESHUTDOWN;
 
-	cmd_ring = &central_ab->hal.srng_list[central_dp->reo_cmd_ring.ring_id];
 	cmd_num = ath12k_wifi8_hal_reo_cmd_send(central_ab, cmd_ring, type, cmd);
 
-	/* cmd_num should start from 1, during failure return the error code */
 	if (cmd_num < 0)
 		return cmd_num;
 
-	/* reo cmd ring descriptors has cmd_num starting from 1 */
 	if (cmd_num == 0)
 		return -EINVAL;
 
 	if (!cb)
 		return 0;
 
-	/* Can this be optimized so that we keep the pending command list only
-	 * for tid delete command to free up the resource on the command status
-	 * indication?
-	 */
 	dp_cmd = kzalloc(sizeof(*dp_cmd), GFP_ATOMIC);
-
 	if (!dp_cmd)
 		return -ENOMEM;
 
@@ -160,6 +154,43 @@ int ath12k_wifi8_dp_reo_cmd_send(struct ath12k_base *ab,
 	spin_unlock_bh(&central_dp->reo_cmd_lock);
 
 	return 0;
+}
+
+int ath12k_wifi8_dp_reo_cmd_send(struct ath12k_base *ab,
+				 void *data, size_t len,
+				 enum hal_reo_cmd_type type,
+				 struct ath12k_hal_reo_cmd *cmd,
+				 void (*cb)(struct ath12k_dp *dp, void *ctx,
+					    struct hal_reo_status *status))
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp *central_dp = ath12k_get_central_dp(dp);
+	struct hal_srng *cmd_ring;
+
+	cmd_ring = &central_dp->ab->hal.srng_list[central_dp->reo_cmd_ring.ring_id];
+
+	return ath12k_wifi8_dp_reo_cmd_send_ring(ab, cmd_ring, data, len,
+						 type, cmd, cb);
+}
+
+int ath12k_wifi8_dp_reo_cmd_send_highprio(struct ath12k_base *ab,
+					  void *data, size_t len,
+					  enum hal_reo_cmd_type type,
+					  struct ath12k_hal_reo_cmd *cmd,
+					  void (*cb)(struct ath12k_dp *dp, void *ctx,
+						     struct hal_reo_status *status))
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp *central_dp = ath12k_get_central_dp(dp);
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(central_dp);
+	struct hal_srng *cmd_ring;
+	u32 ring_id;
+
+	ring_id = dp_wifi8->reo_high_prio_cmd_ring.ring_id;
+	cmd_ring = &central_dp->ab->hal.srng_list[ring_id];
+
+	return ath12k_wifi8_dp_reo_cmd_send_ring(ab, cmd_ring, data, len,
+						 type, cmd, cb);
 }
 
 int ath12k_wifi8_dp_reo_cache_flush(struct ath12k_base *ab,
@@ -4260,6 +4291,10 @@ void ath12k_wifi8_dp_rx_fse_cmd_srng_free(struct ath12k_base *ab)
 
 void ath12k_wifi8_dp_rx_ring_free(struct ath12k_base *ab)
 {
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+
+	ath12k_dp_srng_cleanup(ab, &dp_wifi8->reo_high_prio_cmd_ring);
 	ath12k_wifi8_dp_rx_wbm_srng_free(ab);
 	ath12k_dp_rx_reo_cleanup(ab);
 	ath12k_wifi8_dp_rx_fse_cmd_srng_free(ab);
@@ -4267,6 +4302,9 @@ void ath12k_wifi8_dp_rx_ring_free(struct ath12k_base *ab)
 
 int ath12k_wifi8_dp_rx_ring_setup(struct ath12k_base *ab)
 {
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+	struct hal_srng *srng;
 	int ret;
 
 	ret = ath12k_dp_rx_reo_setup(ab);
@@ -4295,6 +4333,17 @@ int ath12k_wifi8_dp_rx_ring_setup(struct ath12k_base *ab)
 		ath12k_warn(ab, "failed to set up fse_cmd ring :%d\n", ret);
 		return ret;
 	}
+
+	ret = ath12k_dp_srng_setup(ab, &dp_wifi8->reo_high_prio_cmd_ring,
+				   HAL_REO_CMD, 1, 0, DP_REO_CMD_RING_SIZE);
+	if (ret) {
+		ath12k_warn(ab, "failed to set up reo_high_prio_cmd ring :%d\n", ret);
+		return ret;
+	}
+
+	srng = &ab->hal.srng_list[dp_wifi8->reo_high_prio_cmd_ring.ring_id];
+	ath12k_wifi8_hal_reo_init_cmd_ring_offset(ab, srng,
+						  ATH12K_WIFI8_REO_CMD_HIGHPRI_START_NUM);
 
 	return 0;
 }
