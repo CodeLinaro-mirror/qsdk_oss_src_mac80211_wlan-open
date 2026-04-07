@@ -400,4 +400,4 @@ int ath12k_dp_me_tx(struct ath12k_dp_vif *dp_vif, struct sk_buff *skb)
 
 	return 0;
 }
-EXPORT_SYMBOL_GPL(ath12k_dp_me_tx);
+EXPORT_SYMBOL(ath12k_dp_me_tx);

@@ -157,4 +157,4 @@ int ath12k_me_db_init(struct ath12k_dp_vif *dp_vif)
 
 	return 0;
 }
-EXPORT_SYMBOL_GPL(ath12k_me_db_init);
+EXPORT_SYMBOL(ath12k_me_db_init);
