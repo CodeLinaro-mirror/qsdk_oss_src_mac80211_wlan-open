@@ -18950,6 +18950,29 @@ unlock:
 	return ret ? NULL : arvif;
 }
 
+static int ath12k_mac_ahvif_id_allocate(struct ath12k_vif *ahvif)
+{
+	struct ath12k_hw *ah = ahvif->ah;
+	int ahvif_id;
+
+	if (ahvif->dp_vif.ahvif_id) {
+		ath12k_dbg_level(NULL, ATH12K_DBG_MAC, ATH12K_DBG_L1,
+				 "Reusing ahvif_id:%d\n", ahvif->dp_vif.ahvif_id);
+		return 0;
+	}
+
+	ahvif_id = __ffs64(ah->free_ahvif_id_map);
+
+	if (!ahvif_id || ahvif_id > ATH12K_MAX_AHVIF_ID) {
+		ahvif->dp_vif.ahvif_id = ATH12K_INVALID_AHVIF_ID;
+		return -ENOMEM;
+	}
+
+	ah->free_ahvif_id_map &= ~(1ULL << ahvif_id);
+	ahvif->dp_vif.ahvif_id = ahvif_id;
+	return 0;
+}
+
 int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 				struct ieee80211_vif *vif)
 {
@@ -19045,6 +19068,20 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 	ahvif->ah = ah;
 	ahvif->vif = vif;
 	arvif = &ahvif->deflink;
+
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
+		ahvif->dp_vif.ahvif_id = ATH12K_INVALID_AHVIF_ID;
+	} else {
+		ret = ath12k_mac_ahvif_id_allocate(ahvif);
+		if (ret)
+			ath12k_info(NULL, "failed to allocate ahvif id %d", ret);
+	}
+
+	/*
+	 * Will be removed later. Added for debug purpose during development.
+	 */
+	ath12k_dbg_level(NULL, ATH12K_DBG_MAC, ATH12K_DBG_L1,
+			 "ahvif id allocated: %d\n", ahvif->dp_vif.ahvif_id);
 
 	/* Restore the VP information if VP is allocated
 	 * successfully at the time of iface init.
@@ -19470,6 +19507,11 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 
 		ath12k_mac_remove_link_interface(hw, arvif);
 		ath12k_mac_unassign_link_vif(arvif);
+	}
+
+	if (ahvif->dp_vif.ahvif_id != ATH12K_INVALID_AHVIF_ID) {
+		ah->free_ahvif_id_map |= 1ULL << ahvif->dp_vif.ahvif_id;
+		ahvif->dp_vif.ahvif_id = ATH12K_INVALID_AHVIF_ID;
 	}
 
 	ath12k_dp_arch_dp_vif_configure(ah->ag->dp_hw_grp, ahvif,
@@ -26656,6 +26698,7 @@ static struct ath12k_hw *ath12k_mac_hw_allocate(struct ath12k_hw_group *ag,
 	INIT_LIST_HEAD(&ah->dp_hw.peers);
 	ah->dp_hw.last_peer_id = 0;
 	ah->dp_hw.last_sta_id = 0;
+	ah->free_ahvif_id_map = ~1ULL; /* All bits set except bit 0 */
 
 	for (i = 0; i < num_pdev_map; i++) {
 		ab = pdev_map[i].ab;
