@@ -3952,10 +3952,11 @@ ieee80211_release_monitor_chandef(struct wiphy *wiphy,
 	}
 }
 
-/* Cancel CAC for the interfaces under the specified @local. If @ctx is
- * also provided, only the interfaces using that ctx will be canceled.
+/* Cancel CAC for the interfaces under the specified @local. If @def is
+ * also provided, only the interfaces using that def will be canceled.
  */
-void ieee80211_dfs_cac_cancel(struct ieee80211_local *local)
+void ieee80211_dfs_cac_cancel(struct ieee80211_local *local,
+			      struct cfg80211_chan_def *def)
 {
 	struct ieee80211_sub_if_data *sdata;
 	struct cfg80211_chan_def chandef;
@@ -3976,13 +3977,21 @@ void ieee80211_dfs_cac_cancel(struct ieee80211_local *local)
 			if (!link)
 				continue;
 
-			hrtimer_cancel(&link->dfs_cac_timer);
-			wiphy_work_cancel(wiphy, &link->dfs_cac_timer_work);
-
 			if (!sdata->wdev.links[link_id].cac_started)
 				continue;
 
 			chandef = link->conf->chanreq.oper;
+			if (def && def->chan &&
+			    def->chan != chandef.chan) {
+				sdata_info(sdata,
+					   "Do not cancel CAC for non matching freq %d\n",
+					   chandef.chan->center_freq);
+				continue;
+			}
+
+			hrtimer_cancel(&link->dfs_cac_timer);
+			wiphy_work_cancel(wiphy, &link->dfs_cac_timer_work);
+
 			conf = rcu_dereference_protected(link->conf->chanctx_conf,
 							 lockdep_is_held(&wiphy->mtx));
 			if (conf) {
@@ -4105,9 +4114,8 @@ ieee80211_dfs_radar_detected_processing(struct ieee80211_local *local,
 				return;
 
 			radar_chandef->radar_bitmap = radar_bitmap;
-
 			if (!radar_bitmap || (radar_bitmap & ~radar_chandef->punctured))
-				ieee80211_dfs_cac_cancel(local);
+				ieee80211_dfs_cac_cancel(local, radar_chandef);
 
 			cfg80211_radar_event(local->hw.wiphy, radar_chandef, GFP_KERNEL);
 		} else {
@@ -4118,7 +4126,7 @@ ieee80211_dfs_radar_detected_processing(struct ieee80211_local *local,
 		chandef.radar_bitmap = radar_bitmap;
 
 		if (!radar_bitmap || (radar_bitmap & ~chandef.punctured))
-			ieee80211_dfs_cac_cancel(local);
+			ieee80211_dfs_cac_cancel(local, &chandef);
 
 		cfg80211_radar_event(local->hw.wiphy, &chandef, GFP_KERNEL);
 	}
