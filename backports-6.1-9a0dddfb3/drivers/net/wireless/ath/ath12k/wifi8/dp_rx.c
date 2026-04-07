@@ -3516,6 +3516,55 @@ static int ath12k_wifi8_dp_rx_wbm_idle_buf_0_config_qcn9625(struct ath12k_base *
 	return ret;
 }
 
+static int ath12k_wifi8_dp_rx_ppe2wbm_idle_buf_config_qcn9625(struct ath12k_base *ab)
+{
+	/*
+	 * PPE idle buf 1 pool configuration
+	 */
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+	struct htt_rx_ring_tlv_filter tlv_filter = {0};
+	u32 ring_id;
+	int ret;
+	u32 hal_rx_desc_sz = ab->hal.hal_desc_sz;
+
+	ring_id = dp_wifi8->ppe2wbm_idle_buf_ring.ring_id;
+	tlv_filter.rx_filter = HTT_RX_TLV_FLAGS_RXDMA_RING;
+	tlv_filter.rxmon_disable = true;
+	tlv_filter.enable_fp = 1;
+	tlv_filter.fp_ctrl_filter = FILTER_CTRL_BA_REQ;
+	tlv_filter.fp_data_filter = FILTER_DATA_UCAST | FILTER_DATA_MCAST |
+		FILTER_DATA_NULL;
+	tlv_filter.offset_valid = true;
+	tlv_filter.rx_packet_offset = hal_rx_desc_sz;
+
+	tlv_filter.rx_mpdu_start_offset =
+		ath12k_wifi8_hal_rx_desc_get_mpdu_start_offset_qcn9625();
+	tlv_filter.rx_msdu_end_offset =
+		ath12k_wifi8_hal_rx_desc_get_msdu_end_offset_qcn9625();
+
+	tlv_filter.rx_mpdu_start_wmask =
+		ath12k_wifi8_hal_rx_mpdu_start_wmask_get_qcn9625();
+	tlv_filter.rx_msdu_end_wmask =
+		ath12k_wifi8_hal_rx_msdu_end_wmask_get_qcn9625();
+
+	/* Source ring configuration for PPEDS */
+	tlv_filter.rdi_based_source_cfg |=
+		ath12k_wifi8_hal_get_rdi_source_cfg(ab, SOURCE_RING_CTRL_PPE);
+
+	ath12k_dbg(ab, ATH12K_DBG_DATA,
+			"rx_mpdu_start_wmask:0x%x rx_msdu_end_wmask:0x%x\n",
+			tlv_filter.rx_mpdu_start_wmask,
+			tlv_filter.rx_msdu_end_wmask);
+
+	/* rx filter - PPEDS IDLE BUF ring */
+	ret = ath12k_dp_tx_htt_rx_filter_setup(ab, ring_id, 0,
+			HAL_PPE2WBM_IDLE_BUF,
+			DP_RX_BUFFER_SIZE,
+			&tlv_filter);
+	return ret;
+}
+
 int ath12k_wifi8_dp_rxdma_ring_sel_config_qcn9625(struct ath12k_base *ab)
 {
 	int ret;
@@ -3526,8 +3575,88 @@ int ath12k_wifi8_dp_rxdma_ring_sel_config_qcn9625(struct ath12k_base *ab)
 		return ret;
 	}
 
+	ret = ath12k_wifi8_dp_rx_ppe2wbm_idle_buf_config_qcn9625(ab);
+	if (ret) {
+		ath12k_err(ab, "PPE Idle buf pool 1 config failed\n");
+		return ret;
+	}
+
 	return 0;
 }
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+void ath12k_wifi8_dp_ppe2wbm_srng_free(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+	int i;
+
+	for (i = 0 ; i < DP_PPE2WBM_REFILL_RING_MAX; i++)
+		ath12k_dp_srng_cleanup(ab, &dp_wifi8->ppe2wbm_refill_ring[i]);
+
+	ath12k_dp_srng_cleanup(ab, &dp_wifi8->ppe2wbm_idle_buf_ring);
+}
+
+
+int ath12k_wifi8_dp_ppe2wbm_srng_setup(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+	int i, ret;
+
+	for (i = 0 ; i < DP_PPE2WBM_REFILL_RING_MAX; i++) {
+		ret = ath12k_dp_srng_setup(ab,
+				&dp_wifi8->ppe2wbm_refill_ring[i],
+				HAL_PPE2WBM_BUF, i, 0,
+				DP_PPE2WBM_REFILL_RING_SIZE);
+		if (ret) {
+			ath12k_warn(ab, "failed to setup WBM refill ring\n");
+			goto fail;
+		}
+	}
+
+	ret = ath12k_dp_srng_setup(ab,
+			&dp_wifi8->ppe2wbm_idle_buf_ring,
+			HAL_PPE2WBM_IDLE_BUF, 0, 0,
+			DP_PPE2WBM_IDLE_BUF_RING_SIZE);
+	if (ret) {
+		ath12k_warn(ab, "failed to setup wbm idle buf ring\n");
+		goto fail;
+	}
+
+	return 0;
+fail:
+	ath12k_wifi8_dp_ppe2wbm_srng_free(ab);
+	return ret;
+}
+
+int ath12k_wifi8_dp_ppe2wbm_buf_ring_init(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+	struct hal_srng *srng = NULL;
+	size_t req_entries;
+	u32 ring_id = dp_wifi8->ppe2wbm_refill_ring[PPE2WBM_SW_REFILL_RING].ring_id;
+	LIST_HEAD(used_list);
+
+	if (ring_id >= HAL_SRNG_RING_ID_MAX) {
+		ath12k_err(ab, "Invalid PPE2WBM ring_id: %u\n", ring_id);
+		return -EINVAL;
+	}
+
+	srng = &ab->hal.srng_list[ring_id];
+	if (!srng->initialized) {
+		ath12k_err(ab, "PPE2WBM ring not initialized\n");
+		return -EINVAL;
+	}
+
+	req_entries = ath12k_dp_get_req_entries_from_buf_ring(ab, srng, &used_list);
+	if (req_entries)
+		ath12k_dp_rx_bufs_replenish(ab->dp, srng, &used_list, false);
+
+	return 0;
+}
+#endif
 
 int ath12k_wifi8_dp_rx_process_reo_status(struct ath12k_dp *dp, int budget)
 {
@@ -4298,6 +4427,9 @@ void ath12k_wifi8_dp_rx_ring_free(struct ath12k_base *ab)
 	ath12k_wifi8_dp_rx_wbm_srng_free(ab);
 	ath12k_dp_rx_reo_cleanup(ab);
 	ath12k_wifi8_dp_rx_fse_cmd_srng_free(ab);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	ath12k_wifi8_dp_ppe2wbm_srng_free(ab);
+#endif
 }
 
 int ath12k_wifi8_dp_rx_ring_setup(struct ath12k_base *ab)
@@ -4322,6 +4454,14 @@ int ath12k_wifi8_dp_rx_ring_setup(struct ath12k_base *ab)
 	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
 		return 0;
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	ret = ath12k_wifi8_dp_ppe2wbm_srng_setup(ab);
+	if (ret) {
+		ath12k_warn(ab, "failed to setup ppe2wbm refill and idle buf rings\n");
+		return ret;
+	}
+#endif
+
 	ret = ath12k_wifi8_dp_rx_wbm_buf_ring_init(ab);
 	if (ret) {
 		ath12k_warn(ab, "failed to configure rx wbm idle buf ring\n");
@@ -4345,5 +4485,12 @@ int ath12k_wifi8_dp_rx_ring_setup(struct ath12k_base *ab)
 	ath12k_wifi8_hal_reo_init_cmd_ring_offset(ab, srng,
 						  ATH12K_WIFI8_REO_CMD_HIGHPRI_START_NUM);
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	ret = ath12k_wifi8_dp_ppe2wbm_buf_ring_init(ab);
+	if (ret) {
+		ath12k_warn(ab, "failed to configure wbm idle buf ring\n");
+		return ret;
+	}
+#endif
 	return 0;
 }

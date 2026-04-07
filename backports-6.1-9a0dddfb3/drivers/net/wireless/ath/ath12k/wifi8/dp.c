@@ -369,7 +369,6 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 		ath12k_warn(ab, "failed to register nss plugin %d\n", ret);
 		goto fail_dp_bank_profiles_cleanup;
 	}
-#endif
 
 	if (ab->dp->ppe.ppe_ops && dp->ppe.ppe_ops->ath12k_ppeds_attach) {
 		ret = dp->ppe.ppe_ops->ath12k_ppeds_attach(ab);
@@ -378,6 +377,7 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 			goto fail_nss_plugin_unregister;
 		}
 	}
+#endif
 
 	ret = ath12k_dp_srng_common_setup(ab);
 	if (ret)
@@ -480,8 +480,8 @@ fail_ppeds_detach:
 	if (ab->dp->ppe.ppe_ops && dp->ppe.ppe_ops->ath12k_ppeds_detach)
 		dp->ppe.ppe_ops->ath12k_ppeds_detach(ab);
 
-fail_nss_plugin_unregister:
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+fail_nss_plugin_unregister:
 	ath12k_nss_plugin_unregister_ops(ab);
 
 #ifndef PLATFORM_SDX85

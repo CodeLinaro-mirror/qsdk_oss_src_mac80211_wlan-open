@@ -2534,6 +2534,10 @@ ath12k_dp_tx_get_ring_id_type(struct ath12k_base *ab,
 		*htt_ring_type = HTT_SW_TO_HW_RING;
 		*htt_ring_id = HTT_RXDMA_WBM_BUF0_RING;
 		break;
+	case HAL_PPE2WBM_IDLE_BUF:
+		*htt_ring_type = HTT_SW_TO_HW_RING;
+		*htt_ring_id = HTT_RXDMA_WBM_BUF2_RING;
+		break;
 	case HAL_TX_MONITOR_BUF:
 		*htt_ring_id = HTT_TX_MON_HOST2MON_BUF_RING;
 		*htt_ring_type = HTT_SW_TO_HW_RING;
