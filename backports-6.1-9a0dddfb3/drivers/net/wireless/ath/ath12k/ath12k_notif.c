@@ -58,7 +58,7 @@ int ath12k_register_ppdu_notifier(struct notifier_block *nb, unsigned long event
 
 	return 0;
 }
-EXPORT_SYMBOL_GPL(ath12k_register_ppdu_notifier);
+EXPORT_SYMBOL(ath12k_register_ppdu_notifier);
 
 /**
  * ath12k_unregister_ppdu_notifier - Unregister PPDU event listener
@@ -87,7 +87,7 @@ int ath12k_unregister_ppdu_notifier(struct notifier_block *nb, unsigned long eve
 
 	return ret;
 }
-EXPORT_SYMBOL_GPL(ath12k_unregister_ppdu_notifier);
+EXPORT_SYMBOL(ath12k_unregister_ppdu_notifier);
 
 /**
  * ath12k_ppdu_notifier_has_listeners - Check for active listeners
@@ -110,7 +110,7 @@ bool ath12k_ppdu_notifier_has_listeners(enum ath12k_event_type event_type)
 		return false;
 	}
 }
-EXPORT_SYMBOL_GPL(ath12k_ppdu_notifier_has_listeners);
+EXPORT_SYMBOL(ath12k_ppdu_notifier_has_listeners);
 
 /**
  * ath12k_ppdu_notifier_call_chain - Dispatch PPDU event
@@ -129,4 +129,4 @@ int ath12k_ppdu_notifier_call_chain(unsigned long val, void *v)
 {
 	return atomic_notifier_call_chain(&ath12k_ppdu_notifier_chain, val, v);
 }
-EXPORT_SYMBOL_GPL(ath12k_ppdu_notifier_call_chain);
+EXPORT_SYMBOL(ath12k_ppdu_notifier_call_chain);
