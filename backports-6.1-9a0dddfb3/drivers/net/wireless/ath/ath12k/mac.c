@@ -23671,6 +23671,7 @@ ath12k_mac_reconfig_complete(struct ieee80211_hw *hw,
 			ab->is_reset = false;
 			atomic_set(&ab->fail_cont_count, 0);
 			clear_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags);
+			ab->soc_reset_reason = ATH12K_RESET_NONE;
 			spin_lock_bh(&ar->ab->base_lock);
 			ar->ab->stats.last_recovery_time =
 				jiffies_to_msecs(jiffies -

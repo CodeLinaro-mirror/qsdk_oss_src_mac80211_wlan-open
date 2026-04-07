@@ -19,6 +19,10 @@
 #define PCIE_SOC_GLOBAL_RESET			0x3008
 #define PCIE_SOC_GLOBAL_RESET_V			1
 
+#define PCIE_BHI_EXECENV			0x128
+#define PCIE_WIFI8_Q6_ONLY_RESET		0x1E381F0
+#define PCIE_WIFI8_Q6_ONLY_RESET_V		1
+
 #define WLAON_WARM_SW_ENTRY			0x1f80504
 #define WLAON_SOC_RESET_CAUSE_REG		0x01f8060c
 
@@ -123,6 +127,7 @@ struct ath12k_pci_device_family_ops {
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 	void (*ipa_init)(struct ath12k_base *ab);
 #endif
+	void (*get_reset_reason)(struct ath12k_base *ab);
 };
 
 struct ath12k_pci {
