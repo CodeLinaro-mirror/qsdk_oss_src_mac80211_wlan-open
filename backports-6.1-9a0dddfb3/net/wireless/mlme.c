@@ -21,6 +21,25 @@
 #include "rdev-ops.h"
 
 
+#ifdef CPTCFG_QCA_LAB_TEST_FEATURES
+static unsigned int cfg80211_dfs_nol_time;
+module_param_named(dfs_nol_timeout, cfg80211_dfs_nol_time, uint, 0644);
+MODULE_PARM_DESC(dfs_nol_timeout,
+		 "DFS NOL timeout in seconds (0 uses default 30 minutes)");
+
+static unsigned long cfg80211_get_nol_time(unsigned long default_time)
+{
+	u64 nol_time;
+
+	if (!cfg80211_dfs_nol_time)
+		return default_time;
+
+	nol_time = (u64)cfg80211_dfs_nol_time * MSEC_PER_SEC;
+
+	return (unsigned long)min_t(u64, nol_time, U32_MAX);
+}
+#endif
+
 void cfg80211_rx_assoc_resp(struct net_device *dev,
 			    const struct cfg80211_rx_assoc_resp_data *data)
 {
@@ -1037,6 +1056,9 @@ void cfg80211_dfs_channels_update_work(struct work_struct *work)
 
 			if (c->dfs_state == NL80211_DFS_UNAVAILABLE) {
 				time_dfs_update = IEEE80211_DFS_MIN_NOP_TIME_MS;
+#ifdef CPTCFG_QCA_LAB_TEST_FEATURES
+				time_dfs_update = cfg80211_get_nol_time(time_dfs_update);
+#endif
 				radar_event = NL80211_RADAR_NOP_FINISHED;
 			} else {
 				if (regulatory_pre_cac_allowed(wiphy) ||
