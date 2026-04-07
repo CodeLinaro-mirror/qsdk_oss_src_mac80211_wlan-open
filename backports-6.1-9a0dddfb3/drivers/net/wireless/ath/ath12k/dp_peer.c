@@ -164,6 +164,7 @@ static void __ath12k_link_peer_free(struct ath12k_dp_link_peer *peer)
 	kfree(peer->peer_stats.rx_stats);
 	kfree(peer->peer_stats.tx_stats);
 	kfree(peer->peer_stats.qos_stats);
+	ath12k_dp_peer_link_stats_free(peer);
 
 	kfree(peer);
 }
@@ -648,6 +649,8 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 	peer->tcl_metadata |= u32_encode_bits(0, HTT_TCL_META_DATA_TYPE) |
 			      u32_encode_bits(peer->peer_id, HTT_TCL_META_DATA_PEER_ID);
 	peer->tcl_metadata &= ~HTT_TCL_META_DATA_VALID_HTT;
+
+	ath12k_dp_peer_link_stats_alloc(peer, dp_pdev);
 
 	if (ath12k_extd_rx_stats_enabled(dp_pdev->ar) &&
 	    !peer->peer_stats.rx_stats) {
@@ -1767,3 +1770,29 @@ ath12k_dp_link_peer_find_by_mac_addr(const struct ath12k_dp_peer *dp_peer, const
 	return NULL;
 }
 EXPORT_SYMBOL(ath12k_dp_link_peer_find_by_mac_addr);
+
+int ath12k_dp_peer_stats_alloc(struct ath12k_dp_peer *dp_peer,
+			       struct ath12k_pdev_dp *dp_pdev)
+{
+	// Placeholder for feature specific mem allocs - MLD level
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_dp_peer_stats_alloc);
+
+void ath12k_dp_peer_stats_free(struct ath12k_dp_peer *dp_peer)
+{
+	// Placeholder for feature specific mem free - MLD level
+}
+EXPORT_SYMBOL(ath12k_dp_peer_stats_free);
+
+int ath12k_dp_peer_link_stats_alloc(struct ath12k_dp_link_peer *link_peer,
+				    struct ath12k_pdev_dp *dp_pdev)
+{
+	// Placeholder for feature specific mem allocs - Link level
+	return 0;
+}
+
+void ath12k_dp_peer_link_stats_free(struct ath12k_dp_link_peer *link_peer)
+{
+	// Placeholder for feature specific mem free - Link level
+}

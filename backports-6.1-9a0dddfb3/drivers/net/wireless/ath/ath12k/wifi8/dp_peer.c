@@ -84,6 +84,7 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 	struct ath12k_dp_hw *dp_hw = &ah->dp_hw;
 	struct wireless_dev *wdev;
 	struct ath12k_sta *ahsta = NULL;
+	struct ath12k_pdev_dp *dp_pdev;
 
 	if (params->sta)
 		ahsta = ath12k_sta_to_ahsta(params->sta);
@@ -106,6 +107,11 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 	dp_peer = kzalloc(sizeof(*dp_peer), GFP_KERNEL);
 	if (!dp_peer)
 		return -ENOMEM;
+
+	rcu_read_lock();
+	dp_pdev = ath12k_dp_hw_grp_to_dp_pdev(ah->ag->dp_hw_grp, params->hw_link_id);
+	ath12k_dp_peer_stats_alloc(dp_peer, dp_pdev);
+	rcu_read_unlock();
 
 	dp_peer->sta_id = ATH12K_STA_ID_INVALID;
 	ether_addr_copy(dp_peer->addr, addr);
@@ -177,6 +183,8 @@ void ath12k_wifi8_dp_peer_cleanup(struct ath12k_dp_hw *dp_hw,
 
 		kfree(dp_peer->qos);
 	}
+
+	ath12k_dp_peer_stats_free(dp_peer);
 	dp_peer->dp_peer_state = ATH12K_DP_PEER_DELETED;
 }
 

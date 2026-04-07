@@ -195,6 +195,7 @@ struct ath12k_dp_peer {
 	u8 vdev_type_4addr;
 	bool is_reset_mcbc;
 	struct ath12k_mld_qos_stats mld_qos_stats[QOS_TID_MAX][QOS_TID_MDSUQ_MAX];
+	struct ath12k_dp_mld_peer_stats mld_stats;
 	bool qos_stats_lvl;
 
 	u8 hw_links[ATH12K_GROUP_MAX_RADIO];
@@ -400,6 +401,13 @@ void ath12k_dp_iterate_vdev_link_peer(struct ath12k_dp *dp, int vdev_id,
 void ath12k_dp_iterate_pdev_link_peer(struct ath12k_dp *dp, int pdev_idx,
 				      void (*callback)(struct ath12k_dp *,
 						       struct ath12k_dp_link_peer *));
+
+int ath12k_dp_peer_stats_alloc(struct ath12k_dp_peer *dp_peer,
+			       struct ath12k_pdev_dp *dp_pdev);
+void ath12k_dp_peer_stats_free(struct ath12k_dp_peer *dp_peer);
+int ath12k_dp_peer_link_stats_alloc(struct ath12k_dp_link_peer *link_peer,
+				    struct ath12k_pdev_dp *dp_pdev);
+void ath12k_dp_peer_link_stats_free(struct ath12k_dp_link_peer *link_peer);
 
 static inline void ath12k_peer_event_set_and_queue(struct ath12k_dp_link_peer *peer,
 						   struct ath12k_event_queue *queue,
