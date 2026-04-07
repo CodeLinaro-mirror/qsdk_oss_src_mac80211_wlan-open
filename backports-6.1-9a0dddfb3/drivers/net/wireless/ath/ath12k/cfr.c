@@ -461,6 +461,7 @@ int ath12k_process_cfr_capture_event(struct ath12k_base *ab,
 	header->pltform_type = PLATFORM_TYPE_ARM;
 
 	ab->hw_params->hw_ops->fill_cfr_hdr_info(ar, header, params);
+	header->u.meta_enh.puncture_bitmap = arvif->chanctx.def.punctured;
 
 	status = ath12k_cfr_correlate_and_relay(ar, lut,
 						ATH12K_CORRELATE_TX_EVENT);

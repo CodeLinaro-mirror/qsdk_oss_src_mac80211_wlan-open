@@ -57,6 +57,7 @@ enum ath12k_cfr_meta_version {
 	ATH12K_CFR_META_VERSION_7,
 	ATH12K_CFR_META_VERSION_8,
 	ATH12K_CFR_META_VERSION_9,
+	ATH12K_CFR_META_VERSION_10,
 	ATH12K_CFR_META_VERSION_MAX = 0xFF,
 };
 
@@ -175,6 +176,7 @@ struct cfr_enh_metadata {
 	u16 gi_type;
 	struct cfr_su_sig_info sig_info;
 	u8 agc_gain_tbl_index[HOST_MAX_CHAINS];
+	u16 puncture_bitmap;
 } __packed;
 
 struct ath12k_csi_cfr_header {
