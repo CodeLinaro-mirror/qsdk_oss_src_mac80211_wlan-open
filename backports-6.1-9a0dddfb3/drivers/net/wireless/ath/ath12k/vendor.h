@@ -4012,6 +4012,7 @@ enum qca_vendor_radio_param {
 	 * 2 - Readd device
 	 */
 	QCA_WLAN_VENDOR_RADIO_PARAM_WSI_BYPASS = 80,
+	QCA_WLAN_VENDOR_RADIO_PARAM_BAND_INFO = 81,
 
 	/* Add new params above */
 	QCA_WLAN_VENDOR_RADIO_PARAM_LAST,
