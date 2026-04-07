@@ -2644,6 +2644,7 @@ static void ath12k_wmi_migration_cmd_work(struct work_struct *work)
 	struct ath12k_mac_pri_link_migr_peer_node *peer_node, *tmp_peer;
 	struct ath12k_dp_peer *ml_peer;
 	struct ath12k_sta *ahsta;
+	const struct ath12k_hw_ops *hw_ops = ar->ab->hw_params->hw_ops;
 
 	if (wait_for_completion_timeout(&arvif->wmi_migration_event_resp,
 					ATH12K_MIGRATION_TIMEOUT_HZ))
@@ -2659,10 +2660,18 @@ static void ath12k_wmi_migration_cmd_work(struct work_struct *work)
 		 */
 		ml_peer = rcu_dereference(ah->dp_hw.dp_peer_list[peer_node->ml_peer_id]);
 
-		if (ml_peer &&
-		    ml_peer->dp_peer_state < ATH12K_DP_PEER_LOGICALLY_DELETED) {
-			ahsta = ath12k_sta_to_ahsta(ath12k_dp_peer_get_sta(ml_peer));
-			ahsta->is_migration_in_progress = false;
+		/* Use wifi8-specific DP migration handler.
+		 * otherwise use default behavior (wifi7)
+		 */
+		if (hw_ops && hw_ops->dp_peer_migration) {
+			hw_ops->dp_peer_migration(arvif, peer_node);
+		} else {
+			/* Default behavior for wifi7 */
+			if (ml_peer &&
+			    ml_peer->dp_peer_state < ATH12K_DP_PEER_LOGICALLY_DELETED) {
+				ahsta = ath12k_sta_to_ahsta(ml_peer->sta);
+				ahsta->is_migration_in_progress = false;
+			}
 		}
 
 		rcu_read_unlock();
@@ -15321,6 +15330,11 @@ ath12k_mac_get_link_migr_peer_node(struct ath12k_dp_peer *ml_peer,
 	INIT_LIST_HEAD(&node->list);
 	node->ml_peer_id = ml_peer->peer_id & ~ATH12K_PEER_ML_ID_VALID;
 	node->hw_link_id = hw_link_id;
+	/* Update chosen primary link id to node info.
+	 * This will be used later for WiFi-8 master migration.
+	 */
+	node->pri_link_id = pri_link_id;
+	node->sta = ml_peer->sta;
 
 	return node;
 }
@@ -15390,7 +15404,8 @@ ath12k_mac_process_link_migrate_req(struct ath12k_vif *ahvif,
 		if (!arvif->ar)
 			return -ENOTCONN;
 
-		if (!ath12k_wmi_is_umac_migration_supported(arvif->ar->ab))
+		if (!ath12k_wmi_is_umac_migration_supported(arvif->ar->ab) &&
+		    !ath12k_wmi_is_master_migration_supported(arvif->ar->ab))
 			return -EOPNOTSUPP;
 	}
 

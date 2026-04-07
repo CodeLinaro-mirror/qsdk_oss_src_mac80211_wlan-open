@@ -16028,9 +16028,11 @@ static void ath12k_wmi_peer_migration_event(struct ath12k_base *ab,
 {
 	struct wmi_mlo_pri_link_peer_migr_compl_event parse = {0};
 	struct ath12k_mac_pri_link_migr_peer_node *peer_node, *tmp_peer;
+	const struct ath12k_hw_ops *hw_ops;
 	struct ath12k *ar;
 	struct ath12k_link_vif *arvif;
 	struct ath12k_dp_link_peer *peer;
+	struct ath12k_pdev_dp *dp_pdev;
 	struct ieee80211_sta *sta;
 	struct ath12k_sta *ahsta;
 	int vdev_id, num_peers, ret, i;
@@ -16058,6 +16060,7 @@ static void ath12k_wmi_peer_migration_event(struct ath12k_base *ab,
 	}
 
 	ar = arvif->ar;
+	hw_ops = ar->ab->hw_params->hw_ops;
 
 	ath12k_dbg(ab, ATH12K_DBG_WMI,
 		   "MLO Peer Migration event received for vdev %d, num_peers %d\n",
@@ -16074,6 +16077,9 @@ static void ath12k_wmi_peer_migration_event(struct ath12k_base *ab,
 		list_for_each_entry_safe(peer_node, tmp_peer, &arvif->peer_migrate_list,
 					 list) {
 			if (peer_node->ml_peer_id == ml_peer_id) {
+				/* WiFi-8 Trigger master migration from host */
+				if (hw_ops && hw_ops->dp_peer_migration)
+					hw_ops->dp_peer_migration(arvif, peer_node);
 				list_del(&peer_node->list);
 				kfree(peer_node);
 			}
@@ -16081,10 +16087,13 @@ static void ath12k_wmi_peer_migration_event(struct ath12k_base *ab,
 
 		ath12k_wmi_peer_migration_event_extn(arvif->ahvif);
 
-		ml_peer_id |= ATH12K_PEER_ML_ID_VALID;
-		peer = ath12k_dp_link_peer_find_by_ml_peer_vdev_id(ab->dp,
-								   ml_peer_id,
-								   vdev_id);
+		/* Global peer id in case of WiFi-8 */
+		if (!(hw_ops && hw_ops->dp_peer_migration))
+			ml_peer_id |= ATH12K_PEER_ML_ID_VALID;
+
+		dp_pdev = &ar->dp;
+		peer = ath12k_dp_link_peer_find_by_peerid_index(ab->dp, dp_pdev,
+								ml_peer_id);
 		if (!peer) {
 			ath12k_err(ab, "failed to find ML peer with id %d\n", ml_peer_id);
 			goto exit_pri_link_mig_event;
@@ -18670,6 +18679,13 @@ bool ath12k_wmi_is_umac_migration_supported(struct ath12k_base *ab)
 	struct ath12k_wmi_base *wmi_ab = &ab->wmi_ab;
 
 	return test_bit(WMI_SERVICE_UMAC_MIGRATION_SUPPORT, wmi_ab->svc_map);
+}
+
+bool ath12k_wmi_is_master_migration_supported(struct ath12k_base *ab)
+{
+	struct ath12k_wmi_base *wmi_ab = &ab->wmi_ab;
+
+	return test_bit(WMI_SERVICE_ML_PEER_MASTER_MIGRATION_SUPPORT, wmi_ab->svc_map);
 }
 
 int ath12k_wmi_mlo_send_ptqm_migrate_cmd(struct ath12k_link_vif *arvif,

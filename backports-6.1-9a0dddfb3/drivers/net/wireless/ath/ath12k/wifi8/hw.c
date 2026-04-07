@@ -89,6 +89,59 @@ ath12k_wifi8_rx_peer_tid_skip_pn_replay_qcn9625(struct ath12k_base *ab, u8 tid)
 	return (tid == HAL_MGMT_BCAST_TID || tid == HAL_MGMT_SENSING_TID);
 }
 
+/* Note: called under rcu_read_lock() */
+static void
+ath12k_dp_peer_migration_qcn9625(struct ath12k_link_vif *arvif,
+				 struct ath12k_mac_pri_link_migr_peer_node *peer_node)
+{
+	struct ath12k_link_sta *arsta, *old_arsta;
+	struct ath12k_dp_link_peer *old_peer, *new_peer;
+	struct ath12k_link_vif *old_arvif;
+	struct ath12k_hw *ah = arvif->ar->ah;
+	struct ath12k_dp_peer *ml_peer;
+	struct ath12k_sta *ahsta;
+	u8 old_link_id;
+
+	/* The primary_link_id needs to be updated here based on the link_id sent
+	 * in the migration command.
+	 */
+	ml_peer = rcu_dereference(ah->dp_hw.dp_peer_list[peer_node->ml_peer_id]);
+	if (ml_peer && ml_peer->dp_peer_state < ATH12K_DP_PEER_LOGICALLY_DELETED) {
+		ahsta = ath12k_sta_to_ahsta(ml_peer->sta);
+		old_link_id = ahsta->primary_link_id;
+
+		/* Clear old primary link flags */
+		if (old_link_id != peer_node->pri_link_id) {
+			old_arsta = rcu_dereference(ahsta->link[old_link_id]);
+			if (old_arsta && old_arsta->arvif) {
+				old_arvif = old_arsta->arvif;
+				old_arvif->primary_sta_link = false;
+			}
+
+			old_peer = rcu_dereference(ml_peer->link_peers[old_link_id]);
+			if (old_peer)
+				old_peer->primary_link = false;
+		}
+
+		/* Update to new primary link */
+		ahsta->primary_link_id = peer_node->pri_link_id;
+
+		/* Set new primary link flags */
+		arsta = rcu_dereference(ahsta->link[peer_node->pri_link_id]);
+		arsta->arvif->primary_sta_link = true;
+
+		new_peer = rcu_dereference(ml_peer->link_peers[peer_node->pri_link_id]);
+		if (new_peer)
+			new_peer->primary_link = true;
+
+		ahsta->is_migration_in_progress = false;
+
+		ath12k_dbg(arvif->ar->ab, ATH12K_DBG_WMI,
+			   "Updated primary_link_id from %u to %u for sta %pM\n",
+			   old_link_id, peer_node->pri_link_id, ml_peer->sta->addr);
+	}
+}
+
 static const struct ath12k_hw_ops qcn9625_ops = {
 	.get_hw_mac_from_pdev_id = ath12k_wifi8_hw_qcn9625_mac_from_pdev_id,
 	.mac_id_to_pdev_id = ath12k_wifi8_hw_mac_id_to_pdev_id_qcn9625,
@@ -101,6 +154,7 @@ static const struct ath12k_hw_ops qcn9625_ops = {
 	.mgmt_rxdma_ring_sel_config = ath12k_wifi8_mgmt_wbm_ring_sel_config_qcn9625,
 	.rx_peer_ba_config = ath12k_wifi8_hw_rx_peer_ba_config_qcn9625,
 	.rx_peer_tid_skip_pn_replay = ath12k_wifi8_rx_peer_tid_skip_pn_replay_qcn9625,
+	.dp_peer_migration = ath12k_dp_peer_migration_qcn9625,
 };
 
 /* Interrupt Grouping is as follows
