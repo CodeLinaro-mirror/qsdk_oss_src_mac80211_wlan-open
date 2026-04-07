@@ -134,13 +134,15 @@ struct athdbg_qmi {
 };
 
 #define QMI_WLFW_DDR_DUMP_REGION_IND_V01		0x0062
-#define WLANFW_DDR_DUMP_REGION_IND_MSG_V01_MAX_MSG_LEN	907
+#define WLANFW_DDR_DUMP_REGION_IND_MSG_V01_MAX_MSG_LEN	911
 struct wlanfw_ddr_dump_region_ind_msg_v01 {
 	u32 mem_seg_len;
 	struct qmi_wlanfw_mem_seg_resp_s_v01
 		mem_seg[ATH12K_QMI_WLANFW_MAX_NUM_MEM_SEG_V01];
 	u8 file_name_valid;
 	char file_name[QMI_WLANFW_MAX_STR_LEN_V01 + 1];
+	u8 indication_type_valid;
+	u8 indication_type;
 };
 
 extern struct qmi_elem_info qmi_wlanfw_ddr_dump_region_ind_msg_v01_ei[];
@@ -157,6 +159,23 @@ struct ath12k_qmi_event_ddr_dump_region {
 	u32 mem_seg_len;
 	struct ath12k_fw_mem mem_seg[ATH12K_QMI_WLANFW_MAX_NUM_MEM_SEG_V01];
 	char file_name[QMI_WLANFW_MAX_STR_LEN_V01 + 1];
+	u8 indication_type_valid;
+	u8 indication_type;
+};
+
+#define QMI_WLANFW_DDR_DUMP_UPLOAD_DONE_REQ_V01 0x0067
+#define WLANFW_DDR_DUMP_UPLOAD_DONE_REQ_MSG_V01_MAX_MSG_LEN 7
+struct qmi_wlanfw_ddr_dump_upload_done_req_msg_v01 {
+	u32 status;
+};
+
+struct qmi_wlanfw_ddr_dump_upload_done_resp_msg_v01 {
+	struct qmi_response_type_v01 resp;
+};
+
+enum ddr_dump_upload_status {
+	DUMP_UPLOAD_SUCCESS,
+	DUMP_UPLOAD_FAILED,
 };
 
 void athdbg_wlfw_qdss_trace_req_mem_ind_cb(struct qmi_handle *qmi_hdl,
