@@ -7,6 +7,7 @@
 #define _ATH12K_MHI_H
 
 #include "pci.h"
+#include <linux/mhi_misc.h>
 
 #define PCIE_TXVECDB				0x360
 #define PCIE_TXVECSTATUS			0x368

@@ -95,7 +95,7 @@ static void ath12k_wifi7_fill_mhi_q6_debug_reg_info_qcn9274(
 					struct ath12k_mhi_q6_dbg_reg_arg *arg)
 {
 	switch (arg->req) {
-	case ATH12K_MHI_Q6_DBG_FILL_BL_REGS:
+	case ATH12K_MHI_Q6_DBG_FILL_BL_REGS: {
 		struct ath12k_pci *ab_pci = ath12k_pci_priv(ab);
 		struct mhi_controller *mhi_ctrl = ab_pci->mhi_ctrl;
 		struct mhi_q6_sbl_reg_addr *sbl = arg->regs.bl.sbl;
@@ -117,7 +117,8 @@ static void ath12k_wifi7_fill_mhi_q6_debug_reg_info_qcn9274(
 		pbl->pbl_wlan_boot_cfg = QCN9224_PBL_WLAN_BOOT_CFG;
 		pbl->pbl_bootstrap_status = QCN9224_PBL_BOOTSTRAP_STATUS;
 		break;
-	case ATH12K_MHI_Q6_DBG_FILL_MISC_REGS:
+	        }
+	case ATH12K_MHI_Q6_DBG_FILL_MISC_REGS: {
 		struct mhi_q6_dump_pbl_sbl_data *out = arg->regs.misc.out;
 
 		out->remap_bar_ctrl =
@@ -129,6 +130,7 @@ static void ath12k_wifi7_fill_mhi_q6_debug_reg_info_qcn9274(
 		out->parf_ltssm = ath12k_pci_read32(ab, QCN9224_PCIE_PCIE_PARF_LTSSM);
 		out->gcc_ramss_cbcr = ath12k_pci_read32(ab, QCN9224_GCC_RAMSS_CBCR);
 		break;
+		}
 	case ATH12K_MHI_Q6_DBG_GET_NOC_TBL:
 		*arg->regs.noc.tbl = qcn9274_noc_err_regs;
 		*arg->regs.noc.len = ARRAY_SIZE(qcn9274_noc_err_regs);

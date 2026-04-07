@@ -12008,7 +12008,9 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 	struct ath12k_link_vif *arvif = NULL;
 	struct ath12k_link_sta *arsta = NULL;
 	struct wiphy *wiphy = hw->wiphy;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	struct wireless_dev *wdev;
+#endif
 	struct ath12k *ar = ah->radio;
 	struct ath12k_hw_group *ag = ar->ab->ag;
 	unsigned long links_map;
