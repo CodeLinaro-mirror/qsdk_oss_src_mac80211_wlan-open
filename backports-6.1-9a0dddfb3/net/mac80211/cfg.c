@@ -4655,10 +4655,10 @@ static int __ieee80211_csa_finalize(struct ieee80211_link_data *link_data)
 					  &link_conf->chanreq.oper,
 					  sdata->vif.type)) {
 		ieee80211_link_info_change_notify(sdata, link_data, changed);
-		ieee80211_vif_unblock_queues_csa(sdata);
 	} else {
 		link_conf->deferred_up = true;
 	}
+	ieee80211_vif_unblock_queues_csa(sdata);
 
 	err = drv_post_channel_switch(link_data);
 	if (err)

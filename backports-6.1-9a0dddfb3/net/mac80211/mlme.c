@@ -3506,6 +3506,45 @@ enum hrtimer_restart ieee80211_dfs_cac_timeout(struct hrtimer *timer)
         return HRTIMER_NORESTART;
 }
 
+static void
+ieee80211_dfs_cac_handle_deferred_up_links(struct ieee80211_link_data *link)
+{
+	struct ieee80211_sub_if_data *sdata = link->sdata;
+	struct ieee80211_local *local = sdata->local;
+	struct ieee80211_chanctx_conf *link_chanctx;
+	struct ieee80211_link_data *itr_link;
+
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	link_chanctx = wiphy_dereference(local->hw.wiphy, link->conf->chanctx_conf);
+	if (!link_chanctx) {
+		cfg80211_schedule_channels_check(&sdata->wdev);
+		return;
+	}
+
+	for_each_sdata_link(local, itr_link) {
+		struct ieee80211_chanctx_conf *itr_chanctx;
+
+		if (!itr_link->conf || !itr_link->conf->deferred_up)
+			continue;
+
+		if (!itr_link->sdata->wdev.links[itr_link->link_id].cac_started)
+			continue;
+
+		itr_chanctx = wiphy_dereference(local->hw.wiphy,
+						itr_link->conf->chanctx_conf);
+		if (!itr_chanctx ||
+		    !cfg80211_chandef_identical(&link_chanctx->def,
+					       &itr_chanctx->def))
+			continue;
+
+		ieee80211_link_info_change_notify(itr_link->sdata, itr_link,
+						  BSS_CHANGED_BEACON);
+		itr_link->conf->deferred_up = false;
+		cfg80211_schedule_channels_check(&itr_link->sdata->wdev);
+	}
+}
+
 void ieee80211_dfs_cac_timer_work(struct wiphy *wiphy, struct wiphy_work *work)
 {
 	struct ieee80211_link_data *link =
@@ -3526,11 +3565,7 @@ void ieee80211_dfs_cac_timer_work(struct wiphy *wiphy, struct wiphy_work *work)
 			cfg80211_cac_event(sdata->dev, &chandef,
 					   NL80211_RADAR_CAC_FINISHED,
 					   GFP_KERNEL, link->link_id);
-			ieee80211_link_info_change_notify(sdata, link,
-							  BSS_CHANGED_BEACON);
-			ieee80211_vif_unblock_queues_csa(sdata);
-			cfg80211_schedule_channels_check(&sdata->wdev);
-			link->conf->deferred_up = false;
+			ieee80211_dfs_cac_handle_deferred_up_links(link);
 		}
 	}
 }
