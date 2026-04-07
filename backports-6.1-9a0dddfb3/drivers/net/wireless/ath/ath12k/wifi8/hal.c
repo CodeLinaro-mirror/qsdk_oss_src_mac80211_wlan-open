@@ -1065,3 +1065,320 @@ void ath12k_wifi8_hal_txpt_classify_info_flush(struct ath12k_base *ab)
 	val |= le32_encode_bits(1, HAL_TCL_ASE_PEER_FETCH_CACHE_FLUSH);
 	ath12k_hif_write32(ab, HAL_TCL_ASE_PEER_FETCH_CACHE_CTRL, val);
 }
+
+void ath12k_wifi8_hal_tasc_peer_tx_cfg(struct ath12k_base *ab, bool enable)
+{
+	u32 val = 0;
+
+	val = u32_encode_bits(enable,
+			      HAL_TX_TELEMETRY_GLOBAL_CTRL_PEER_STATS_ENABLE);
+	ath12k_hif_write32(ab, HAL_TX_TELEMETRY_GLOBAL_CTRL_ADDR, val);
+}
+
+void ath12k_wifi8_hal_tasc_peer_clk_cycle_config(struct ath12k_base *ab)
+{
+	ath12k_hif_write32(ab, HAL_TELEMETRY_PEER_CLK_CYCLE_ADDR,
+			   HAL_TELEMETRY_PEER_CLK_CYCLE_DEFAULT_VAL);
+}
+
+void ath12k_wifi8_hal_tasc_peer_tx_max_peer(struct ath12k_base *ab,
+					    u16 ucast, u8 gcast_dl,
+					    u8 gcast_ul)
+{
+	u32 val = 0;
+
+	val = u32_encode_bits(ucast,
+			      HAL_TX_NUM_OF_VALID_UNICAST_PEER) |
+		u32_encode_bits(gcast_dl,
+				HAL_TX_NUM_OF_VALID_DL_GCAST_PEER) |
+		u32_encode_bits(gcast_ul,
+				HAL_TX_NUM_OF_VALID_UL_GCAST_PEER);
+
+	ath12k_hif_write32(ab, HAL_TX_NUM_OF_VALID_PEER_CFG_ADDR, val);
+}
+
+void ath12k_wifi8_hal_tasc_peer_tx_window(struct ath12k_base *ab,
+					  u16 time)
+{
+	u32 val = 0;
+
+	val = u32_encode_bits(time, HAL_TX_PEER_STATS_WINDOW_SIZE_CFG);
+	ath12k_hif_write32(ab, HAL_TX_PEER_STATS_WINDOW_SIZE_CFG_ADDR, val);
+}
+
+void ath12k_wifi8_hal_tasc_peer_tx_fail_drop_default(struct ath12k_base *ab)
+{
+	u32 map1 = 0, map2 = 0;
+
+	HAL_TQM_FAIL_DROP_MAP(map1, HAL_TQM_RR_REM_CMD_REM,
+			      HAL_TQM_RELEASE_REASON_DROP1);
+	HAL_TQM_FAIL_DROP_MAP(map1, HAL_TQM_RR_REM_CMD_TX,
+			      HAL_TQM_RELEASE_REASON_DROP1);
+	HAL_TQM_FAIL_DROP_MAP(map1, HAL_TQM_RR_REM_CMD_NOTX,
+			      HAL_TQM_RELEASE_REASON_DROP1);
+	HAL_TQM_FAIL_DROP_MAP(map1, HAL_TQM_RR_REM_CMD_AGED,
+			      HAL_TQM_RELEASE_REASON_DROP1);
+	HAL_TQM_FAIL_DROP_MAP(map1, HAL_TQM_FW_REASON1,
+			      HAL_TQM_RELEASE_REASON_DROP1);
+	HAL_TQM_FAIL_DROP_MAP(map1, HAL_TQM_FW_REASON2,
+			      HAL_TQM_RELEASE_REASON_DROP1);
+	HAL_TQM_FAIL_DROP_MAP(map1, HAL_TQM_FW_REASON3,
+			      HAL_TQM_RELEASE_REASON_DROP1);
+	HAL_TQM_FAIL_DROP_MAP(map1, HAL_TQM_RR_REM_CMD_DISABLE_QUEUE,
+			      HAL_TQM_RELEASE_REASON_DROP1);
+	HAL_TQM_FAIL_DROP_MAP(map1, HAL_TQM_RR_REM_CMD_TILL_NONMATCHING,
+			      HAL_TQM_RELEASE_REASON_DROP1);
+	HAL_TQM_FAIL_DROP_MAP(map1, HAL_TQM_RR_DROP_THRESHOLD,
+			      HAL_TQM_RELEASE_REASON_DROP1);
+	HAL_TQM_FAIL_DROP_MAP(map1, HAL_TQM_RR_LINK_DESC_UNAVAILABLE,
+			      HAL_TQM_RELEASE_REASON_FAILED);
+	HAL_TQM_FAIL_DROP_MAP(map1, HAL_TQM_RR_DROP_OR_INVALID_MSDU,
+			      HAL_TQM_RELEASE_REASON_FAILED);
+	HAL_TQM_FAIL_DROP_MAP(map1, HAL_TQM_RR_MULTICAST_DROP,
+			      HAL_TQM_RELEASE_REASON_FAILED);
+	HAL_TQM_FAIL_DROP_MAP(map1, HAL_TQM_RR_VDEV_MISMATCH_DROP,
+			      HAL_TQM_RELEASE_REASON_FAILED);
+
+	HAL_TQM_FAIL_DROP_MAP(map2, HAL_TQM_RR_GEN_CMD_USED_TREE_EXT,
+			      HAL_TQM_RELEASE_REASON_FAILED);
+	HAL_TQM_FAIL_DROP_MAP(map2, HAL_TQM_RR_TCL_DROP_FROM_PEER_CCE_OR_FLOW_TABLE,
+			      HAL_TQM_RELEASE_REASON_FAILED);
+	HAL_TQM_FAIL_DROP_MAP(map2, HAL_TQM_RR_TCL_MULTICAST_REINJECT_FOR_VDEV,
+			      HAL_TQM_RELEASE_REASON_FAILED);
+	HAL_TQM_FAIL_DROP_MAP(map2, HAL_TQM_RR_TCL_MEC_SEARCH_FAIL_FOR_VDEV,
+			      HAL_TQM_RELEASE_REASON_FAILED);
+	HAL_TQM_FAIL_DROP_MAP(map2, HAL_TQM_RR_TCL_ASE_SEARCH_FAIL,
+			      HAL_TQM_RELEASE_REASON_FAILED);
+	HAL_TQM_FAIL_DROP_MAP(map2, HAL_TQM_RR_TCL_SMD_ROAMING_DROP,
+			      HAL_TQM_RELEASE_REASON_FAILED);
+	HAL_TQM_FAIL_DROP_MAP(map2, HAL_TQM_RR_TCL_STRIP_VLAN_TCI_MISMATCH_DROP,
+			      HAL_TQM_RELEASE_REASON_FAILED);
+	HAL_TQM_FAIL_DROP_MAP(map2, HAL_TQM_RR_TCL_MEC_KEEP_ALIVE_FOR_VDEV,
+			      HAL_TQM_RELEASE_REASON_FAILED);
+	HAL_TQM_FAIL_DROP_MAP(map2, HAL_TQM_RR_TCL_RESERVED_DROP_REASON1,
+			      HAL_TQM_RELEASE_REASON_DROP2);
+	HAL_TQM_FAIL_DROP_MAP(map2, HAL_TQM_RR_TCL_RESERVED_DROP_REASON2,
+			      HAL_TQM_RELEASE_REASON_DROP2);
+	HAL_TQM_FAIL_DROP_MAP(map2, HAL_TQM_RR_TQM_REM_MSDU_SMD_ROAMING,
+			      HAL_TQM_RELEASE_REASON_DROP2);
+	HAL_TQM_FAIL_DROP_MAP(map2, HAL_TQM_RR_TQM_REM_MPDU_SMD_ROAMING,
+			      HAL_TQM_RELEASE_REASON_DROP2);
+	HAL_TQM_FAIL_DROP_MAP(map2, HAL_TQM_RR_TQM_RESERVED_DROP_REASON3,
+			      HAL_TQM_RELEASE_REASON_DROP2);
+	HAL_TQM_FAIL_DROP_MAP(map2, HAL_TQM_RR_TQM_RESERVED_DROP_REASON4,
+			      HAL_TQM_RELEASE_REASON_DROP2);
+
+	ath12k_hif_write32(ab, HAL_TQM_RELEASE_REASON_MAP_1_ADDR, map1);
+	ath12k_hif_write32(ab, HAL_TQM_RELEASE_REASON_MAP_2_ADDR, map2);
+}
+
+void ath12k_wifi8_hal_tasc_peer_tx_fail_drop_map(struct ath12k_base *ab,
+						 u32 map1, u32 map2)
+{
+	ath12k_hif_write32(ab, HAL_TQM_RELEASE_REASON_MAP_1_ADDR, map1);
+	ath12k_hif_write32(ab, HAL_TQM_RELEASE_REASON_MAP_2_ADDR, map2);
+}
+
+void ath12k_wifi8_hal_num_transmission_map_default(struct ath12k_base *ab)
+{
+	u32 map = 0;
+
+	map |= BIT(HAL_TQM_RR_REM_CMD_REM);
+	map |= BIT(HAL_TQM_RR_REM_CMD_TX);
+	map |= BIT(HAL_TQM_RR_REM_CMD_NOTX);
+	map |= BIT(HAL_TQM_RR_REM_CMD_AGED);
+	map |= BIT(HAL_TQM_FW_REASON1);
+	map |= BIT(HAL_TQM_FW_REASON2);
+	map |= BIT(HAL_TQM_FW_REASON3);
+	map |= BIT(HAL_TQM_RR_REM_CMD_DISABLE_QUEUE);
+	map |= BIT(HAL_TQM_RR_REM_CMD_TILL_NONMATCHING);
+	map |= BIT(HAL_TQM_RR_DROP_THRESHOLD);
+	map |= BIT(HAL_TQM_RR_LINK_DESC_UNAVAILABLE);
+	map |= BIT(HAL_TQM_RR_DROP_OR_INVALID_MSDU);
+	map |= BIT(HAL_TQM_RR_MULTICAST_DROP);
+	map |= BIT(HAL_TQM_RR_VDEV_MISMATCH_DROP);
+	map |= BIT(HAL_TQM_RR_GEN_CMD_USED_TREE_EXT);
+	map |= BIT(HAL_TQM_RR_TCL_DROP_FROM_PEER_CCE_OR_FLOW_TABLE);
+	map |= BIT(HAL_TQM_RR_TCL_MULTICAST_REINJECT_FOR_VDEV);
+	map |= BIT(HAL_TQM_RR_TCL_MEC_SEARCH_FAIL_FOR_VDEV);
+	map |= BIT(HAL_TQM_RR_TCL_ASE_SEARCH_FAIL);
+	map |= BIT(HAL_TQM_RR_TCL_SMD_ROAMING_DROP);
+	map |= BIT(HAL_TQM_RR_TCL_STRIP_VLAN_TCI_MISMATCH_DROP);
+	map |= BIT(HAL_TQM_RR_TCL_MEC_KEEP_ALIVE_FOR_VDEV);
+	map |= BIT(HAL_TQM_RR_TCL_RESERVED_DROP_REASON1);
+	map |= BIT(HAL_TQM_RR_TCL_RESERVED_DROP_REASON2);
+	map |= BIT(HAL_TQM_RR_TQM_REM_MSDU_SMD_ROAMING);
+	map |= BIT(HAL_TQM_RR_TQM_REM_MPDU_SMD_ROAMING);
+	map |= BIT(HAL_TQM_RR_TQM_RESERVED_DROP_REASON3);
+	map |= BIT(HAL_TQM_RR_TQM_RESERVED_DROP_REASON4);
+
+	ath12k_hif_write32(ab, HAL_TX_PEER_STATS_NUM_TRANSMISSIONS_CFG_ADDR, map);
+}
+
+void ath12k_wifi8_hal_num_transmission_map_(struct ath12k_base *ab, u32 map)
+{
+	ath12k_hif_write32(ab, HAL_TX_PEER_STATS_NUM_TRANSMISSIONS_CFG_ADDR, map);
+}
+
+void ath12k_wifi8_hal_tasc_peer_tx_gcast_id_map(struct ath12k_base *ab,
+						u16 mlo_peer_stats_id,
+						u16 gcast_peer_stats_id)
+{
+	switch (gcast_peer_stats_id) {
+	case HAL_TX_UL_GCAST_PEER_ID_1616:
+		ath12k_hif_write32(ab, HAL_TX_UL_GCAST_PEER_ID_REMAP0,
+				   u32_encode_bits(mlo_peer_stats_id,
+						   HAL_TX_UL_PEER_ID_REMAP1));
+		break;
+	case HAL_TX_UL_GCAST_PEER_ID_1617:
+		ath12k_hif_write32(ab, HAL_TX_UL_GCAST_PEER_ID_REMAP0,
+				   u32_encode_bits(mlo_peer_stats_id,
+						   HAL_TX_UL_PEER_ID_REMAP2));
+		break;
+	case HAL_TX_UL_GCAST_PEER_ID_1618:
+		ath12k_hif_write32(ab, HAL_TX_UL_GCAST_PEER_ID_REMAP1,
+				   u32_encode_bits(mlo_peer_stats_id,
+						   HAL_TX_UL_PEER_ID_REMAP1));
+		break;
+	case HAL_TX_UL_GCAST_PEER_ID_1619:
+		ath12k_hif_write32(ab, HAL_TX_UL_GCAST_PEER_ID_REMAP1,
+				   u32_encode_bits(mlo_peer_stats_id,
+						   HAL_TX_UL_PEER_ID_REMAP2));
+		break;
+	case HAL_TX_UL_GCAST_PEER_ID_1620:
+		ath12k_hif_write32(ab, HAL_TX_UL_GCAST_PEER_ID_REMAP2,
+				   u32_encode_bits(mlo_peer_stats_id,
+						   HAL_TX_UL_PEER_ID_REMAP1));
+		break;
+	case HAL_TX_UL_GCAST_PEER_ID_1621:
+		ath12k_hif_write32(ab, HAL_TX_UL_GCAST_PEER_ID_REMAP2,
+				   u32_encode_bits(mlo_peer_stats_id,
+						   HAL_TX_UL_PEER_ID_REMAP2));
+		break;
+	case HAL_TX_UL_GCAST_PEER_ID_1622:
+		ath12k_hif_write32(ab, HAL_TX_UL_GCAST_PEER_ID_REMAP3,
+				   u32_encode_bits(mlo_peer_stats_id,
+						   HAL_TX_UL_PEER_ID_REMAP1));
+		break;
+	case HAL_TX_UL_GCAST_PEER_ID_1623:
+		ath12k_hif_write32(ab, HAL_TX_UL_GCAST_PEER_ID_REMAP3,
+				   u32_encode_bits(mlo_peer_stats_id,
+						   HAL_TX_UL_PEER_ID_REMAP2));
+		break;
+	}
+}
+
+void ath12k_wifi8_hal_tasc_peer_tx_set_id(struct ath12k_base *ab,
+					  u16 stats_id)
+{
+	u32 val = 0;
+
+	val = u32_encode_bits(stats_id,
+			      HAL_TX_PEER_TELEMETRY_STATS_ID) |
+		u32_encode_bits(1,
+				HAL_TX_PEER_STATS_ENABLE_TELEMETRY_STATS_ID);
+
+	ath12k_hif_write32(ab, HAL_TX_PEER_STATS_CONFIG_CTRL_ADDR, val);
+}
+
+void ath12k_wifi8_hal_tasc_reset_peer_tx(struct ath12k_base *ab,
+					 u16 stats_id)
+{
+	u32 val = 0;
+
+	val = u32_encode_bits(stats_id,
+			      HAL_TX_PEER_TELEMETRY_STATS_ID) |
+		u32_encode_bits(1,
+				HAL_TX_PEER_STATS_CLEAR_TELEMETRY_STATS_ID);
+
+	ath12k_hif_write32(ab, HAL_TX_PEER_STATS_CONFIG_CTRL_ADDR, val);
+}
+
+void ath12k_wifi8_hal_tasc_peer_tx_band(struct ath12k_base *ab,
+					enum tasc_band_index band,
+					u16 band_idx, bool enable)
+{
+	u32 val = 0;
+
+	switch (band) {
+	case HAL_TASC_BAND_0:
+		val = ath12k_hif_read32(ab, HAL_TX_PEER_STATS_CFG0_ADDR);
+		if (val & HAL_TX_PEER_STATS_BAND_INDEX_MSB) {
+			val = (val & ~HAL_TX_PEER_STATS_BAND_INDEX_0) |
+				u32_encode_bits(band_idx,
+						HAL_TX_PEER_STATS_BAND_INDEX_0) |
+				u32_encode_bits(enable,
+						HAL_TX_PEER_STATS_BAND_INDEX_MSB);
+		} else {
+			val = u32_encode_bits(band_idx,
+					      HAL_TX_PEER_STATS_BAND_INDEX_0) |
+				u32_encode_bits(HAL_INVALID_PEER_BAND_ID,
+						HAL_TX_PEER_STATS_BAND_INDEX_1) |
+				u32_encode_bits(enable,
+						HAL_TX_PEER_STATS_BAND_INDEX_MSB);
+		}
+		ath12k_hif_write32(ab, HAL_TX_PEER_STATS_CFG0_ADDR, val);
+		break;
+	case HAL_TASC_BAND_1:
+		val = ath12k_hif_read32(ab, HAL_TX_PEER_STATS_CFG0_ADDR);
+		if (val & HAL_TX_PEER_STATS_BAND_INDEX_MSB) {
+			val = (val & ~HAL_TX_PEER_STATS_BAND_INDEX_1) |
+				u32_encode_bits(band_idx,
+						HAL_TX_PEER_STATS_BAND_INDEX_1) |
+				u32_encode_bits(enable,
+						HAL_TX_PEER_STATS_BAND_INDEX_MSB);
+		} else {
+			val = u32_encode_bits(HAL_INVALID_PEER_BAND_ID,
+					      HAL_TX_PEER_STATS_BAND_INDEX_0) |
+				u32_encode_bits(band_idx,
+						HAL_TX_PEER_STATS_BAND_INDEX_1) |
+				u32_encode_bits(enable,
+						HAL_TX_PEER_STATS_BAND_INDEX_MSB);
+		}
+		ath12k_hif_write32(ab, HAL_TX_PEER_STATS_CFG0_ADDR, val);
+		break;
+	case HAL_TASC_BAND_2:
+		val = ath12k_hif_read32(ab, HAL_TX_PEER_STATS_CFG1_ADDR);
+		if (val & HAL_TX_PEER_STATS_BAND_INDEX_MSB) {
+			val = (val & ~HAL_TX_PEER_STATS_BAND_INDEX_2) |
+				u32_encode_bits(band_idx,
+						HAL_TX_PEER_STATS_BAND_INDEX_2) |
+				u32_encode_bits(enable,
+						HAL_TX_PEER_STATS_BAND_INDEX_MSB);
+		} else {
+			val = u32_encode_bits(band_idx,
+					      HAL_TX_PEER_STATS_BAND_INDEX_2) |
+				u32_encode_bits(HAL_INVALID_PEER_BAND_ID,
+						HAL_TX_PEER_STATS_BAND_INDEX_3) |
+				u32_encode_bits(enable,
+						HAL_TX_PEER_STATS_BAND_INDEX_MSB);
+		}
+		ath12k_hif_write32(ab, HAL_TX_PEER_STATS_CFG1_ADDR, val);
+		break;
+	case HAL_TASC_BAND_3:
+		val = ath12k_hif_read32(ab, HAL_TX_PEER_STATS_CFG1_ADDR);
+		if (val & HAL_TX_PEER_STATS_BAND_INDEX_MSB) {
+			val = (val & ~HAL_TX_PEER_STATS_BAND_INDEX_3) |
+				u32_encode_bits(band_idx,
+						HAL_TX_PEER_STATS_BAND_INDEX_3) |
+				u32_encode_bits(enable,
+						HAL_TX_PEER_STATS_BAND_INDEX_MSB);
+		} else {
+			val = u32_encode_bits(HAL_INVALID_PEER_BAND_ID,
+					      HAL_TX_PEER_STATS_BAND_INDEX_2) |
+				u32_encode_bits(band_idx,
+						HAL_TX_PEER_STATS_BAND_INDEX_3) |
+				u32_encode_bits(enable,
+						HAL_TX_PEER_STATS_BAND_INDEX_MSB);
+		}
+		ath12k_hif_write32(ab, HAL_TX_PEER_STATS_CFG1_ADDR, val);
+		break;
+	case HAL_TASC_BAND_4:
+		val = u32_encode_bits(enable,
+				      HAL_TX_PEER_STATS_BAND_INDEX_MSB) |
+			u32_encode_bits(band_idx,
+					HAL_TX_PEER_STATS_BAND_INDEX_4);
+		ath12k_hif_write32(ab, HAL_TX_PEER_STATS_CFG2_ADDR, val);
+		break;
+	}
+}
