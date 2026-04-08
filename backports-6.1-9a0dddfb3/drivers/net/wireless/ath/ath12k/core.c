@@ -2185,11 +2185,6 @@ static int ath12k_core_start_firmware(struct ath12k_base *ab,
 		ath12k_err(ab, "failed to send firmware start: %d\n", ret);
 		return ret;
 	}
-#ifdef CONFIG_IO_COHERENCY
-	ret = ath12k_core_config_iocoherency(ab, true);
-	if (ret)
-		ath12k_err(ab, "failed to configure IOCoherency: %d\n", ret);
-#endif
 
 	/*
 	 * Configure QDSS tracing immediately after QMI-driven firmware start.
