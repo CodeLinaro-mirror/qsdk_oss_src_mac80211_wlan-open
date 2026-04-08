@@ -15,6 +15,7 @@
 #include "dp.h"
 #include "dp_tx.h"
 #include "dp_rx.h"
+#include "dp_telemetry.h"
 #include "hal.h"
 #include "dp_peer.h"
 #include "dp_ast.h"
@@ -225,6 +226,7 @@ static void ath12k_wifi8_dp_umac_deinit(struct ath12k_dp *dp)
 	ath12k_dp_cc_cleanup(ab);
 	ath12k_wifi8_dp_reoq_lut_cleanup(ab);
 	ath12k_dp_deinit_bank_profiles(ab);
+	ath12k_wifi8_dp_telemetry_ring_cleanup(ab);
 	ath12k_wifi8_dp_tx_ring_cleanup(ab);
 	ath12k_dp_srng_common_cleanup(ab);
 
@@ -387,10 +389,14 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 	if (ret)
 		goto fail_cmn_srng_cleanup;
 
+	ret = ath12k_wifi8_dp_telemetry_ring_setup(ab);
+	if (ret)
+		goto fail_tx_ring_cleanup;
+
 	ret = ath12k_wifi8_dp_reoq_lut_setup(ab);
 	if (ret) {
 		ath12k_warn(ab, "failed to setup reoq table %d\n", ret);
-		goto fail_tx_ring_cleanup;
+		goto fail_telemetry_ring_cleanup;
 	}
 
 	for (i = 0; i < ab->hw_params->max_tx_ring; i++)
@@ -469,6 +475,9 @@ fail_ast_table_cleanup:
 fail_dp_rx_free:
 	ath12k_wifi8_dp_rx_ring_free(ab);
 	ath12k_wifi8_dp_reoq_lut_cleanup(ab);
+
+fail_telemetry_ring_cleanup:
+	ath12k_wifi8_dp_telemetry_ring_cleanup(ab);
 
 fail_tx_ring_cleanup:
 	ath12k_wifi8_dp_tx_ring_cleanup(ab);
@@ -814,6 +823,15 @@ static ssize_t ath12k_wifi8_dump_srng_stats(struct ath12k_dp *dp,
 	len += ath12k_hal_dump_ring_stats(ab, HAL_TCL_STATUS,
 					  dp_wifi8->tcl_status_ring.ring_id,
 					  buf + len, size - len);
+
+	len += ath12k_hal_dump_ring_stats(ab, HAL_PEER_TX_TELEMETRY,
+					  dp_wifi8->tx_peer_telemetry_ring.ring_id,
+					  buf + len, size - len);
+
+	len += ath12k_hal_dump_ring_stats(ab, HAL_PEER_RX_TELEMETRY,
+					  dp_wifi8->rx_peer_telemetry_ring.ring_id,
+					  buf + len, size - len);
+
 	return len;
 }
 

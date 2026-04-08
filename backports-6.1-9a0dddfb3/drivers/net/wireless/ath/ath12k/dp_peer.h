@@ -207,6 +207,7 @@ struct ath12k_dp_peer {
 	u8 is_sta_bss_peer_4addr :1,
 	   is_11s_mesh_peer      :1,
 	   is_mmesh_peer         :1;
+	u16 stats_id;
 };
 
 #define QOS_MSDUQ_MAX ((QOS_TID_MDSUQ_MAX * QOS_TID_MAX) + MSDUQ_MAX_DEF)

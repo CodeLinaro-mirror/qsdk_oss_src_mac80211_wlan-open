@@ -26,4 +26,5 @@ ath12k_wifi8-y += core.o \
 		  dp_tx_tid.o \
 		  dp_tx_queue.o \
 		  dp_mon2.o \
-		  umac_reset.o
+		  umac_reset.o \
+		  dp_telemetry.o
