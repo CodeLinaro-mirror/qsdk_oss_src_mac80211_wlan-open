@@ -1306,6 +1306,9 @@ struct ieee80211_sub_if_data {
 
 	int chan_hw_idx;
 
+	/* per-TID RX AMSDU enable bitmap (bit N = TID N); 0xFF = all enabled */
+	u8 rx_amsdu_tid_bitmap;
+
 	/* must be last, dynamically sized area in this! */
 	struct ieee80211_vif vif;
 };
@@ -1833,6 +1836,20 @@ struct ieee80211_local {
 
 	bool wbrf_supported;
 };
+
+static inline bool
+ieee80211_get_rx_amsdu_for_tid(struct ieee80211_sub_if_data *sdata, u8 tid)
+{
+	if (!sdata)
+		return false;
+	if (tid >= IEEE80211_FIRST_TSPEC_TSID)
+		return true;
+	/* For AP_VLAN, the bitmap is managed on the parent AP sdata */
+	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN && sdata->bss)
+		sdata = container_of(sdata->bss,
+				     struct ieee80211_sub_if_data, u.ap);
+	return !!(sdata->rx_amsdu_tid_bitmap & BIT(tid));
+}
 
 struct ieee80211_queue_info {
 	struct ieee80211_hw *hw;
