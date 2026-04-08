@@ -7183,6 +7183,7 @@ struct wmi_ctrl_path_afc_stats {
 	__le32 cur_ttl_timer;
 	__le32 deployment_mode;
 	__le32 payload_clear_count;
+	__le32 payload_parser_mem_alloc_failure_count;
 } __packed;
 
 struct wmi_ctrl_path_stats_ev_parse_param {

@@ -410,6 +410,10 @@ static int print_afc_stats(char *buf, int size, void *stats_ptr)
 			 __le32_to_cpu(afc_stats->response_count));
 
 	len += scnprintf(buf + len, size - len,
+		"Total payload parser mem alloc failure count = %u\n",
+		__le32_to_cpu(afc_stats->payload_parser_mem_alloc_failure_count));
+
+	len += scnprintf(buf + len, size - len,
 			 "Total invalid payload count = %u\n",
 			 __le32_to_cpu(afc_stats->invalid_response_count));
 
