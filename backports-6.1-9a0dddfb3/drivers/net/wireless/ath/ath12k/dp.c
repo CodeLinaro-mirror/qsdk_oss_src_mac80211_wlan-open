@@ -1325,6 +1325,10 @@ void ath12k_dp_cc_cleanup(struct ath12k_base *ab)
 
 			end = desc_info[j].vaddr + DP_RX_BUFFER_SIZE;
 			ath12k_core_dmac_inv_range(desc_info[j].vaddr, end);
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+			ath12k_core_dma_unmap_single(dp->dev, ATH12K_SKB_CB(skb)->paddr,
+					 DP_RX_BUFFER_SIZE, DMA_FROM_DEVICE);
+#endif
 			dev_kfree_skb_any(skb);
 		}
 	}

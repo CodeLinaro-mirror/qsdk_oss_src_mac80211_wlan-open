@@ -454,7 +454,7 @@ static void ath12k_dp_rx_enqueue_free(struct ath12k_dp *dp,
 	    ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap)
 		ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap
 			(ab, skb, DP_RX_BUFFER_SIZE, 0,
-			 ab->ath12k_base_extn.ipa_ctx->hdl);
+			 rx_desc->ipa_hdl);
 	rx_desc->ipa_mapped = false;
 
 	ath12k_core_dma_unmap_single(dp->dev,
@@ -507,6 +507,14 @@ void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 		paddr = dma_map_single(dp->dev, skb->data, DP_RX_BUFFER_SIZE,
 				       DMA_FROM_DEVICE);
+
+		if (dma_mapping_error(dp->dev, paddr)) {
+			/* DMA mapping failed */
+			ath12k_dp_rx_skb_free(skb, dp, 0,
+					      DP_RX_ERR_DROP_REPLENISH);
+			break;
+		}
+
 		ATH12K_SKB_CB(skb)->paddr = paddr;
 #else
 		paddr = virt_to_phys(skb->data);
@@ -530,6 +538,8 @@ void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 				(ab, skb, DP_RX_BUFFER_SIZE, 1,
 				 ab->ath12k_base_extn.ipa_ctx->hdl);
 		rx_desc->ipa_mapped = true;
+		rx_desc->ipa_hdl = ab->ath12k_base_extn.ipa_ctx->hdl;
+		ATH12K_SKB_CB(skb)->ipa_hdl = ab->ath12k_base_extn.ipa_ctx->hdl;
 #endif
 	}
 
@@ -1812,7 +1822,7 @@ void ath12k_dp_rx_skb_free(struct sk_buff *skb, struct ath12k_dp *dp, int ring,
 	    ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap)
 		ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap
 			(ab, skb, DP_RX_BUFFER_SIZE, 0,
-			 ab->ath12k_base_extn.ipa_ctx->hdl);
+			 ATH12K_SKB_CB(skb)->ipa_hdl);
 	ath12k_core_dma_unmap_single(dp->dev,
 				     ATH12K_SKB_CB(skb)->paddr,
 				     DP_RX_BUFFER_SIZE,

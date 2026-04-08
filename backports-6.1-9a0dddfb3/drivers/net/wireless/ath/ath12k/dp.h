@@ -390,6 +390,7 @@ struct ath12k_rx_desc_info {
 	u64 rsvd0;
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 	bool ipa_mapped;
+	u8 ipa_hdl;
 #endif
 };
 
