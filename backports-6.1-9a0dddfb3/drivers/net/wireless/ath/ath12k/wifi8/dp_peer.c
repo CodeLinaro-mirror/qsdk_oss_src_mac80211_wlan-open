@@ -16,6 +16,8 @@
 #include "../dp_tx.h"
 
 #define ATH12K_DP_MAX_SEQ_NUM	0xFFF
+#define ATH12K_DP_MAX_POSSIBLE_BA_WIN	0x400
+#define ATH12K_DP_INVALID_MLSN_OFFSET	0xFFFF
 
 static u16 ath12k_wifi8_peer_id_alloc(struct ath12k_dp_hw *dp_hw)
 {
@@ -450,7 +452,8 @@ void ath12k_dp_peer_get_mpdu_queues_stats_status(struct ath12k_dp *dp,
 int ath12k_dp_tqm_get_mpdu_queue_stats(struct ath12k_base *ab,
 				       struct ath12k_dp_mpdu_q_info *sw_mpduq_ptr,
 				       struct ath12k_dp_peer *dp_peer,
-				       bool clear_stats)
+				       bool clear_stats,
+				       u16 cookie)
 {
 	struct ath12k_hal_tqm_cmd cmd = {0};
 	struct ath12k_dp_tx_queue data =  {0};
@@ -464,6 +467,7 @@ int ath12k_dp_tqm_get_mpdu_queue_stats(struct ath12k_base *ab,
 	cmd.get_mpduq_stats.clear_stats = clear_stats;
 
 	data.peer_id = dp_peer->peer_id;
+	data.cookie = cookie;
 	memcpy(&data.addr, dp_peer->addr, ETH_ALEN);
 
 	ret = ath12k_wifi8_dp_tqm_cmd_send(ab, HAL_TQM_GET_MPDUQ_STATS_BO, &cmd,
@@ -473,9 +477,15 @@ int ath12k_dp_tqm_get_mpdu_queue_stats(struct ath12k_base *ab,
 	return ret;
 }
 
+u16 ath12k_dp_peer_compute_max_lsn(u16 ba_size)
+{
+	return ba_size/2;
+}
+
 int ath12k_dp_peer_fetch_smd_tx_ctx(struct ath12k_base *ab,
 				    struct ath12k_dp_peer *dp_peer,
-				    u32 tx_tid_bitmap)
+				    u32 tx_tid_bitmap,
+				    u16 *tx_tid_ba_win_size)
 {	struct ath12k_dp_tx_flow_info *tx_flow_info;
 	struct ath12k_dp_mpdu_q_info *sw_mpduq_ptr = NULL;
 	int tid;
@@ -489,6 +499,9 @@ int ath12k_dp_peer_fetch_smd_tx_ctx(struct ath12k_base *ab,
 	spin_lock_bh(&tx_flow_info->tx_q_lock);
 	/* data tids */
 	for (tid = 0; tid < ATH12K_MAX_NUM_DATA_TIDS; tid++) {
+		u16 lsn_offset_tap = ATH12K_DP_INVALID_MLSN_OFFSET;
+		u16 lsn_offset_sap;
+
 		if (!(tx_tid_bitmap & BIT(tid)))
 			continue;
 
@@ -497,16 +510,25 @@ int ath12k_dp_peer_fetch_smd_tx_ctx(struct ath12k_base *ab,
 			continue;
 
 		/* update the max sequence number */
-		ret = ath12k_dp_tqm_update_mpduq_max_lsn(ab, sw_mpduq_ptr, dp_peer, 512);
-		if (ret) {
-			ath12k_err(ab, "UPDATE MPDUQ failed tid %d peer %pM id %d\n",
-				   tid, dp_peer->addr, dp_peer->peer_id);
-			spin_unlock_bh(&tx_flow_info->tx_q_lock);
-			return ret;
+		if (tx_tid_ba_win_size[tid] <= ATH12K_DP_MAX_POSSIBLE_BA_WIN) {
+			lsn_offset_sap =
+				ath12k_dp_peer_compute_max_lsn(tx_tid_ba_win_size[tid]);
+			ret = ath12k_dp_tqm_update_mpduq_max_lsn(ab, sw_mpduq_ptr,
+								 dp_peer,
+								 lsn_offset_sap);
+			if (ret) {
+				ath12k_err(ab,
+					   "UPDATE MPDUQ failed tid %d peer %pM id %d\n",
+					   tid, dp_peer->addr, dp_peer->peer_id);
+				spin_unlock_bh(&tx_flow_info->tx_q_lock);
+				return ret;
+			}
+			lsn_offset_tap = tx_tid_ba_win_size[tid] - lsn_offset_sap;
 		}
 		/* fetch SN and PN */
 		ret = ath12k_dp_tqm_get_mpdu_queue_stats(ab, sw_mpduq_ptr,
-							 dp_peer, false);
+							 dp_peer, false,
+							 lsn_offset_tap);
 		if (ret) {
 			ath12k_err(ab, "GET MPDUQ failed tid %d peer %pM id %d\n",
 				   tid, dp_peer->addr, dp_peer->peer_id);
@@ -519,7 +541,7 @@ int ath12k_dp_peer_fetch_smd_tx_ctx(struct ath12k_base *ab,
 	if (tx_tid_bitmap & ATH12K_SMD_MGMT_TID) {
 		sw_mpduq_ptr = tx_flow_info->mgmt_mpduq;
 		ret = ath12k_dp_tqm_get_mpdu_queue_stats(ab, sw_mpduq_ptr,
-							 dp_peer, false);
+							 dp_peer, false, 0);
 		if (ret) {
 			ath12k_err(ab, "GET MPDUQ failed tid %d peer %pM id %d\n",
 				   tid, dp_peer->addr, dp_peer->peer_id);
