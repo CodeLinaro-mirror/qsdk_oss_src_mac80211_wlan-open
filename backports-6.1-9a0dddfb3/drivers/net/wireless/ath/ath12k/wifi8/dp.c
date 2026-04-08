@@ -618,7 +618,6 @@ static void ath12k_wifi8_dp_vif_configure(struct ath12k_dp *dp,
 	struct ath12k_base *central_ab =
 		ath12k_dp_get_ab_from_dp_hw_group(dp->dp_hw_grp);
 	int bank_id;
-	bool mec_support;
 
 	if (!central_ab) {
 		ath12k_err(dp->ab, "Central umac not configured unable to dp_vif");
@@ -638,7 +637,7 @@ static void ath12k_wifi8_dp_vif_configure(struct ath12k_dp *dp,
 		 * to prevent stale entry on vdev_id reuse.
 		 */
 		ath12k_wifi8_hal_vdev_mcast_ctrl_set(central_ab, dp_vif->dp_vif_id,
-						HAL_TX_PACKET_CONTROL_CONFIG_DISABLE);
+						HAL_TX_PACKET_CONTROL_CONFIG_DEFAULT);
 		ath12k_mac_vif_unref(central_dp, ahvif->vif);
 		return;
 	} else if (optype == ATH12K_DP_OP_INIT) {
@@ -665,18 +664,9 @@ static void ath12k_wifi8_dp_vif_configure(struct ath12k_dp *dp,
 		bank_id = ath12k_dp_tx_get_bank_profile(central_dp, new_bank_config);
 		dp_vif->bank_id = bank_id;
 
-		mec_support = test_bit(WMI_SERVICE_MEC_AGING_TIMER_SUPPORT,
-				       ab->wmi_ab.svc_map);
-		if (ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
-		    ath12k_frame_mode == ATH12K_HW_TXRX_ETHERNET && mec_support)
-			ath12k_wifi8_hal_vdev_mcast_ctrl_set
-				(central_ab, dp_vif->dp_vif_id,
-				 HAL_TX_PACKET_CONTROL_CONFIG_DISABLE);
-		else
-			/*TODO change this to tqm once mcast tqm path is enabled in FW*/
-			ath12k_wifi8_hal_vdev_mcast_ctrl_set
-				(central_ab, dp_vif->dp_vif_id,
-				 HAL_TX_PACKET_CONTROL_CONFIG_TO_FW_EXCEPTION);
+		ath12k_wifi8_hal_vdev_mcast_ctrl_set
+			(central_ab, dp_vif->dp_vif_id,
+			 HAL_TX_PACKET_CONTROL_CONFIG_DEFAULT);
 
 		/* TODO: error path for bank id failure */
 		if (bank_id == DP_INVALID_BANK_ID) {
