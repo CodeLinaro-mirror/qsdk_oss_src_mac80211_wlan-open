@@ -1392,6 +1392,7 @@ void ath12k_wifi8_hal_reo_hw_setup(struct ath12k_base *ab)
 	val |= u32_encode_bits(10, HAL_REO1_ERROR_RING_CFG_FOR_DEST_REO2SW9_ERR);
 	val |= u32_encode_bits(8, HAL_REO1_ERROR_RING_CFG_FOR_DEST_REO2PPE_ERR);
 	val |= u32_encode_bits(8, HAL_REO1_ERROR_RING_CFG_FOR_DEST_REO2SW5_ERR);
+	val |= u32_encode_bits(8, HAL_REO1_ERROR_RING_CFG_FOR_DEST_REO2SW6_ERR);
 	ath12k_hif_write32(ab, reo_base + HAL_REO1_ERROR_RING_CFG_FOR_DEST_IX1, val);
 
 	val = ath12k_hif_read32(ab, reo_base + HAL_REO1_ERROR_RING_CFG_FOR_DEST_IX2);
