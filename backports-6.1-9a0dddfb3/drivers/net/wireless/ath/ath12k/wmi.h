@@ -2446,6 +2446,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_SPECTRAL_FFT_SIZE_CAPABILITIES,
 	WMI_TAG_PDEV_SSCAN_CHAN_INFO = 0x417,
 	WMI_TAG_PDEV_SSCAN_PER_DETECTOR_INFO,
+	WMI_TAG_REG_CHAN_PRIORITY = 0x426,
 	WMI_TAG_RSSI_DBM_CONVERSION_PARAMS_INFO_FIXED_PARAM = 0x427,
 	WMI_TAG_RSSI_DBM_CONVERSION_PARAMS_INFO,
 	WMI_TAG_RSSI_DBM_CONVERSION_TEMP_OFFSET_INFO,
@@ -5677,6 +5678,13 @@ struct wmi_reg_chan_list_cc_ext_event {
 	__le32 num_6g_reg_rules_cl_lpi[WMI_REG_CLIENT_MAX];
 	__le32 num_6g_reg_rules_cl_vlp[WMI_REG_CLIENT_MAX];
 } __packed;
+
+#ifdef CPTCFG_QCN_EXTN
+struct ath12k_wmi_reg_chan_priority {
+	__le32 tlv_header;
+	__le32 freq_info; /* bits[15:0]: VLP cutoff frequency in MHz */
+} __packed;
+#endif
 
 struct ath12k_wmi_reg_rule_ext_params {
 	__le32 tlv_header;
