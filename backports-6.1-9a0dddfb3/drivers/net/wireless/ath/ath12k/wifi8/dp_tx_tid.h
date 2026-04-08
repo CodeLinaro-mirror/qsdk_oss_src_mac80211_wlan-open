@@ -13,6 +13,10 @@
 
 #define MGMT_TID_MSDUQ_TYPE		31
 
+
+#define ATH12K_DEFAULT_TID_MAP \
+	(BIT(0) | BIT(6))
+
 enum ath12k_tx_tid {
 	DEFAULT_TID       = 0,
 	MAX_VALID_DATA_TID = 7,
