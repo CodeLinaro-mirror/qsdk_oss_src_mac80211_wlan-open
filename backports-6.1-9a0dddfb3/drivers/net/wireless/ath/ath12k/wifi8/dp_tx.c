@@ -3578,6 +3578,7 @@ int ath12k_wifi8_dp_tx_exception_handler(struct ath12k_dp *dp, int budget)
 	u8 hw_link_id = 0;
 	struct ath12k_pdev_dp *dp_pdev = NULL;
 	int ret;
+	bool tx_exception_error = false;
 
 	srng = &ab->hal.srng_list[dp_wifi8->tx_exception.ring_id];
 	spin_lock_bh(&srng->lock);
@@ -3597,6 +3598,9 @@ int ath12k_wifi8_dp_tx_exception_handler(struct ath12k_dp *dp, int budget)
 			continue;
 		}
 
+		tx_exception_error =
+			ath12k_wifi8_dp_validate_tx_exception_error(dp_wifi8,
+								    tx_exception_desc);
 		desc_id = le32_get_bits(tx_exception_desc->buf_addr_info.info1,
 					BUFFER_ADDR_INFO1_SW_COOKIE);
 		tx_desc = ath12k_dp_get_tx_desc(dp, desc_id);
@@ -3607,8 +3611,7 @@ int ath12k_wifi8_dp_tx_exception_handler(struct ath12k_dp *dp, int budget)
 			continue;
 		}
 
-		if (ath12k_wifi8_dp_validate_tx_exception_error(dp_wifi8,
-								tx_exception_desc))
+		if (tx_exception_error)
 			goto tx_buf_release;
 
 		if (le32_get_bits(tx_exception_desc->info11,
