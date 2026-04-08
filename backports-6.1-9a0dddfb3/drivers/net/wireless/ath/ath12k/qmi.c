@@ -3853,6 +3853,13 @@ void ath12k_qmi_free_mlo_iommu_mem_chunk(struct ath12k_base *ab)
 	size_t mapped_size = ag->mlo_mem.mlo_mem_size;
 
 	if (!ag->num_started && mlo_chunk->v.addr) {
+		if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags)) {
+			ath12k_dbg(ab, ATH12K_DBG_QMI,
+				   "MLO: skipping iommu_unmap during crash recovery (paddr=0x%llx)\n",
+				   (u64)mlo_chunk->paddr);
+			return;
+		}
+
 		if (dom && mlo_chunk->paddr) {
 			size_t unmapped_size = iommu_unmap(dom, mlo_chunk->paddr, mapped_size);
 			if (unmapped_size != mapped_size)
@@ -3861,7 +3868,7 @@ void ath12k_qmi_free_mlo_iommu_mem_chunk(struct ath12k_base *ab)
 		}
 
 		rmem = ath12k_core_get_reserved_mem_by_name(ab, "mlo-global-mem");
-		if (rmem || rmem->priv) {
+		if (rmem && rmem->priv) {
 			cma = (struct cma *)rmem->priv;
 			if (cma)
 				cma_release(cma, virt_to_page(mlo_chunk->v.addr),
@@ -3933,8 +3940,13 @@ void ath12k_qmi_free_target_mem_chunk(struct ath12k_base *ab)
 		ath12k_qmi_free_mlo_iommu_mem_chunk(ab);
 
 	if (!ag->num_started && ag->mlo_mem.init_done) {
-		ag->mlo_mem.init_done = false;
-		ag->mlo_mem.mlo_mem_size = 0;
+		/* Keeping init_done = true causes alloc_target_mem_chunk() to
+		 * skip the memset and reuse the existing paddr/v.addr.
+		 */
+		if (!test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags)) {
+			ag->mlo_mem.init_done = false;
+			ag->mlo_mem.mlo_mem_size = 0;
+		}
 	}
 }
 
