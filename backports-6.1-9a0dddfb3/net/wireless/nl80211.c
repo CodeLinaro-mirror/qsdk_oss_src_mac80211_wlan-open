@@ -14921,7 +14921,7 @@ static int nl80211_cancel_remain_on_channel(struct sk_buff *skb,
 static int nl80211_set_tx_bitrate_mask(struct sk_buff *skb,
 				       struct genl_info *info)
 {
-	struct cfg80211_bitrate_mask mask;
+	struct cfg80211_bitrate_mask *mask;
 	unsigned int link_id = nl80211_link_id(info->attrs);
 	struct cfg80211_registered_device *rdev = info->user_ptr[0];
 	struct net_device *dev = info->user_ptr[1];
@@ -14931,14 +14931,21 @@ static int nl80211_set_tx_bitrate_mask(struct sk_buff *skb,
 	if (!rdev->ops->set_bitrate_mask)
 		return -EOPNOTSUPP;
 
+	mask = kzalloc(sizeof(*mask), GFP_KERNEL);
+	if (!mask)
+		return -ENOMEM;
 	err = nl80211_parse_tx_bitrate_mask(info, info->attrs,
-					    NL80211_ATTR_TX_RATES, &mask,
+					    NL80211_ATTR_TX_RATES, mask,
 					    dev, true, link_id,
 					    wdev_chandef(wdev, link_id));
 	if (err)
-		return err;
+		goto out;
 
-	return rdev_set_bitrate_mask(rdev, dev, link_id, NULL, &mask);
+	err = rdev_set_bitrate_mask(rdev, dev, link_id, NULL, mask);
+
+out:
+	kfree(mask);
+	return err;
 }
 
 static int nl80211_register_mgmt(struct sk_buff *skb, struct genl_info *info)
@@ -15000,10 +15007,7 @@ static int nl80211_tx_mgmt(struct sk_buff *skb, struct genl_info *info)
 	void *hdr = NULL;
 	u64 cookie;
 	struct sk_buff *msg = NULL;
-	struct cfg80211_mgmt_tx_params params = {
-		.dont_wait_for_ack =
-			info->attrs[NL80211_ATTR_DONT_WAIT_FOR_ACK],
-	};
+	struct cfg80211_mgmt_tx_params *params;
 
 	if (!info->attrs[NL80211_ATTR_FRAME])
 		return -EINVAL;
@@ -15033,26 +15037,39 @@ static int nl80211_tx_mgmt(struct sk_buff *skb, struct genl_info *info)
 		return -EOPNOTSUPP;
 	}
 
+	params = kzalloc(sizeof(*params), GFP_KERNEL);
+	if (!params)
+		return -ENOMEM;
+
+	params->dont_wait_for_ack =
+			info->attrs[NL80211_ATTR_DONT_WAIT_FOR_ACK];
+
 	if (info->attrs[NL80211_ATTR_DURATION]) {
-		if (!(rdev->wiphy.flags & WIPHY_FLAG_OFFCHAN_TX))
-			return -EINVAL;
-		params.wait = nla_get_u32(info->attrs[NL80211_ATTR_DURATION]);
+		if (!(rdev->wiphy.flags & WIPHY_FLAG_OFFCHAN_TX)) {
+			err = -EINVAL;
+			goto out;
+		}
+		params->wait = nla_get_u32(info->attrs[NL80211_ATTR_DURATION]);
 
 		/*
 		 * We should wait on the channel for at least a minimum amount
 		 * of time (10ms) but no longer than the driver supports.
 		 */
-		if (params.wait < NL80211_MIN_REMAIN_ON_CHANNEL_TIME ||
-		    params.wait > rdev->wiphy.max_remain_on_channel_duration)
-			return -EINVAL;
+		if (params->wait < NL80211_MIN_REMAIN_ON_CHANNEL_TIME ||
+		    params->wait > rdev->wiphy.max_remain_on_channel_duration) {
+			err = -EINVAL;
+			goto out;
+		}
 	}
 
-	params.offchan = info->attrs[NL80211_ATTR_OFFCHANNEL_TX_OK];
+	params->offchan = info->attrs[NL80211_ATTR_OFFCHANNEL_TX_OK];
 
-	if (params.offchan && !(rdev->wiphy.flags & WIPHY_FLAG_OFFCHAN_TX))
-		return -EINVAL;
+	if (params->offchan && !(rdev->wiphy.flags & WIPHY_FLAG_OFFCHAN_TX)) {
+		err = -EINVAL;
+		goto out;
+	}
 
-	params.no_cck = nla_get_flag(info->attrs[NL80211_ATTR_TX_NO_CCK_RATE]);
+	params->no_cck = nla_get_flag(info->attrs[NL80211_ATTR_TX_NO_CCK_RATE]);
 
 	/* get the channel if any has been specified, otherwise pass NULL to
 	 * the driver. The latter will use the current one
@@ -15061,35 +15078,41 @@ static int nl80211_tx_mgmt(struct sk_buff *skb, struct genl_info *info)
 	if (info->attrs[NL80211_ATTR_WIPHY_FREQ]) {
 		err = nl80211_parse_chandef(rdev, info, &chandef, wdev);
 		if (err)
-			return err;
+			goto out;
 	}
 
-	if (!chandef.chan && params.offchan)
-		return -EINVAL;
+	if (!chandef.chan && params->offchan) {
+		err = -EINVAL;
+		goto out;
+	}
 
-	if (params.offchan &&
-	    !cfg80211_off_channel_oper_allowed(wdev, chandef.chan))
-		return -EBUSY;
+	if (params->offchan &&
+	    !cfg80211_off_channel_oper_allowed(wdev, chandef.chan)) {
+		err = -EBUSY;
+		goto out;
+	}
 
-	params.link_id = nl80211_link_id_or_invalid(info->attrs);
+	params->link_id = nl80211_link_id_or_invalid(info->attrs);
 	/*
 	 * This now races due to the unlock, but we cannot check
 	 * the valid links for the _station_ anyway, so that's up
 	 * to the driver.
 	 */
-	if (params.link_id >= 0 &&
-	    !(wdev->valid_links & BIT(params.link_id)))
-		return -EINVAL;
+	if (params->link_id >= 0 &&
+	    !(wdev->valid_links & BIT(params->link_id))) {
+		err = -EINVAL;
+		goto out;
+	}
 
 	if (info->attrs[NL80211_ATTR_TX_RATES]) {
 		err = nl80211_parse_tx_bitrate_mask(info, info->attrs,
 						    NL80211_ATTR_TX_RATES,
-						    &params.rate,
+						    &params->rate,
 						    wdev->netdev, false,
-						    params.link_id,
+						    params->link_id,
 						    &chandef);
 		if (err)
-			return err;
+			goto out;
 
 		/*
 		 * validate_beacon_tx_rate(), which is used to verify
@@ -15097,27 +15120,29 @@ static int nl80211_tx_mgmt(struct sk_buff *skb, struct genl_info *info)
 		 * valid tx rate is provided.
 		 */
 		err = validate_beacon_tx_rate(rdev, chandef.chan->band,
-					      &params.rate);
+					      &params->rate);
 		if (err)
-			return err;
+			goto out;
 
-		params.tx_rate_valid = true;
+		params->tx_rate_valid = true;
 	}
 
-	params.buf = nla_data(info->attrs[NL80211_ATTR_FRAME]);
-	params.len = nla_len(info->attrs[NL80211_ATTR_FRAME]);
+	params->buf = nla_data(info->attrs[NL80211_ATTR_FRAME]);
+	params->len = nla_len(info->attrs[NL80211_ATTR_FRAME]);
 
-	err = nl80211_parse_counter_offsets(rdev, NULL, params.len, -1,
+	err = nl80211_parse_counter_offsets(rdev, NULL, params->len, -1,
 					    info->attrs[NL80211_ATTR_CSA_C_OFFSETS_TX],
-					    &params.csa_offsets,
-					    &params.n_csa_offsets);
+					    &params->csa_offsets,
+					    &params->n_csa_offsets);
 	if (err)
-		return err;
+		goto out;
 
-	if (!params.dont_wait_for_ack) {
+	if (!params->dont_wait_for_ack) {
 		msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
-		if (!msg)
-			return -ENOMEM;
+		if (!msg) {
+			err = -ENOMEM;
+			goto out;
+		}
 
 		hdr = nl80211hdr_put(msg, info->snd_portid, info->snd_seq, 0,
 				     NL80211_CMD_FRAME);
@@ -15127,8 +15152,8 @@ static int nl80211_tx_mgmt(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
-	params.chandef = chandef;
-	err = cfg80211_mlme_mgmt_tx(rdev, wdev, &params, &cookie);
+	params->chandef = chandef;
+	err = cfg80211_mlme_mgmt_tx(rdev, wdev, params, &cookie);
 	if (err)
 		goto free_msg;
 
@@ -15138,15 +15163,19 @@ static int nl80211_tx_mgmt(struct sk_buff *skb, struct genl_info *info)
 			goto nla_put_failure;
 
 		genlmsg_end(msg, hdr);
-		return genlmsg_reply(msg, info);
+		err = genlmsg_reply(msg, info);
+		goto out;
 	}
 
-	return 0;
+	if (!err)
+		goto out;
 
  nla_put_failure:
 	err = -ENOBUFS;
  free_msg:
 	nlmsg_free(msg);
+out:
+	kfree(params);
 	return err;
 }
 
@@ -15533,72 +15562,82 @@ static int nl80211_join_mesh(struct sk_buff *skb, struct genl_info *info)
 	struct cfg80211_registered_device *rdev = info->user_ptr[0];
 	struct net_device *dev = info->user_ptr[1];
 	struct mesh_config cfg;
-	struct mesh_setup setup;
+	struct mesh_setup *setup;
 	int err;
+
+	setup = kzalloc(sizeof(*setup), GFP_KERNEL);
+	if (!setup)
+		return -ENOMEM;
 
 	/* start with default */
 	memcpy(&cfg, &default_mesh_config, sizeof(cfg));
-	memcpy(&setup, &default_mesh_setup, sizeof(setup));
+	memcpy(setup, &default_mesh_setup, sizeof(*setup));
 
 	if (info->attrs[NL80211_ATTR_MESH_CONFIG]) {
 		/* and parse parameters if given */
 		err = nl80211_parse_mesh_config(info, &cfg, NULL);
 		if (err)
-			return err;
+			goto out;
 	}
 
 	if (!info->attrs[NL80211_ATTR_MESH_ID] ||
-	    !nla_len(info->attrs[NL80211_ATTR_MESH_ID]))
-		return -EINVAL;
+	    !nla_len(info->attrs[NL80211_ATTR_MESH_ID])) {
+		err = -EINVAL;
+		goto out;
+	}
 
-	setup.mesh_id = nla_data(info->attrs[NL80211_ATTR_MESH_ID]);
-	setup.mesh_id_len = nla_len(info->attrs[NL80211_ATTR_MESH_ID]);
+	setup->mesh_id = nla_data(info->attrs[NL80211_ATTR_MESH_ID]);
+	setup->mesh_id_len = nla_len(info->attrs[NL80211_ATTR_MESH_ID]);
 
 	if (info->attrs[NL80211_ATTR_MCAST_RATE] &&
-	    !nl80211_parse_mcast_rate(rdev, setup.mcast_rate,
-			    nla_get_u32(info->attrs[NL80211_ATTR_MCAST_RATE])))
-			return -EINVAL;
+	    !nl80211_parse_mcast_rate(rdev, setup->mcast_rate,
+			    nla_get_u32(info->attrs[NL80211_ATTR_MCAST_RATE]))) {
+		err = -EINVAL;
+		goto out;
+	}
 
 	if (info->attrs[NL80211_ATTR_BEACON_INTERVAL]) {
-		setup.beacon_interval =
+		setup->beacon_interval =
 			nla_get_u32(info->attrs[NL80211_ATTR_BEACON_INTERVAL]);
 
 		err = cfg80211_validate_beacon_int(rdev,
 						   NL80211_IFTYPE_MESH_POINT,
-						   setup.beacon_interval);
+						   setup->beacon_interval);
 		if (err)
-			return err;
+			goto out;
 	}
 
 	if (info->attrs[NL80211_ATTR_DTIM_PERIOD]) {
-		setup.dtim_period =
+		setup->dtim_period =
 			nla_get_u32(info->attrs[NL80211_ATTR_DTIM_PERIOD]);
-		if (setup.dtim_period < 1 || setup.dtim_period > 100)
-			return -EINVAL;
+		if (setup->dtim_period < 1 || setup->dtim_period > 100) {
+			err = -EINVAL;
+			goto out;
+		}
 	}
 
 	if (info->attrs[NL80211_ATTR_BEACON_TX_MODE])
-		setup.beacon_tx_mode =
+		setup->beacon_tx_mode =
 			nla_get_u32(info->attrs[NL80211_ATTR_BEACON_TX_MODE]);
 
 	if (info->attrs[NL80211_ATTR_MESH_SETUP]) {
 		/* parse additional setup parameters if given */
-		err = nl80211_parse_mesh_setup(info, &setup);
+		err = nl80211_parse_mesh_setup(info, setup);
 		if (err)
-			return err;
+			goto out;
 	}
 
-	if (setup.user_mpm)
+	if (setup->user_mpm)
 		cfg.auto_open_plinks = false;
 
 	if (info->attrs[NL80211_ATTR_WIPHY_FREQ]) {
-		err = nl80211_parse_chandef(rdev, info, &setup.chandef,
+		err = nl80211_parse_chandef(rdev, info, &setup->chandef,
 					    dev->ieee80211_ptr);
 		if (err)
-			return err;
+			goto out;
 	} else {
 		/* __cfg80211_join_mesh() will sort it out */
-		setup.chandef.chan = NULL;
+		setup->chandef.chan = NULL;
 	}
 
 	if (info->attrs[NL80211_ATTR_BSS_BASIC_RATES]) {
@@ -15607,50 +15646,58 @@ static int nl80211_join_mesh(struct sk_buff *skb, struct genl_info *info)
 			nla_len(info->attrs[NL80211_ATTR_BSS_BASIC_RATES]);
 		struct ieee80211_supported_band *sband;
 
-		if (!setup.chandef.chan)
-			return -EINVAL;
+		if (!setup->chandef.chan) {
+			err = -EINVAL;
+			goto out;
+		}
 
-		sband = rdev->wiphy.bands[setup.chandef.chan->band];
+		sband = rdev->wiphy.bands[setup->chandef.chan->band];
 
 		err = ieee80211_get_ratemask(sband, rates, n_rates,
-					     &setup.basic_rates);
+					     &setup->basic_rates);
 		if (err)
-			return err;
+			goto out;
 	}
 
 	if (info->attrs[NL80211_ATTR_TX_RATES]) {
 		err = nl80211_parse_tx_bitrate_mask(info, info->attrs,
 						    NL80211_ATTR_TX_RATES,
-						    &setup.beacon_rate,
-						    dev, false, 0, &setup.chandef);
+						    &setup->beacon_rate,
+						    dev, false, 0, &setup->chandef);
 		if (err)
-			return err;
+			goto out;
 
-		if (!setup.chandef.chan)
-			return -EINVAL;
+		if (!setup->chandef.chan) {
+			err = -EINVAL;
+			goto out;
+		}
 
-		err = validate_beacon_tx_rate(rdev, setup.chandef.chan->band,
-					      &setup.beacon_rate);
+		err = validate_beacon_tx_rate(rdev, setup->chandef.chan->band,
+					      &setup->beacon_rate);
 		if (err)
-			return err;
+			goto out;
 	}
 
-	setup.userspace_handles_dfs =
+	setup->userspace_handles_dfs =
 		nla_get_flag(info->attrs[NL80211_ATTR_HANDLE_DFS]);
 
 	if (info->attrs[NL80211_ATTR_CONTROL_PORT_OVER_NL80211]) {
 		int r = validate_pae_over_nl80211(rdev, info);
 
-		if (r < 0)
-			return r;
+		if (r < 0) {
+			err = r;
+			goto out;
+		}
 
-		setup.control_port_over_nl80211 = true;
+		setup->control_port_over_nl80211 = true;
 	}
 
-	err = __cfg80211_join_mesh(rdev, dev, &setup, &cfg);
+	err = __cfg80211_join_mesh(rdev, dev, setup, &cfg);
 	if (!err && info->attrs[NL80211_ATTR_SOCKET_OWNER])
 		dev->ieee80211_ptr->conn_owner_nlportid = info->snd_portid;
 
+out:
+	kfree(setup);
 	return err;
 }
 

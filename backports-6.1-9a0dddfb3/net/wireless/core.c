@@ -1717,16 +1717,21 @@ static int cfg80211_netdev_notifier_call(struct notifier_block *nb,
 		case NL80211_IFTYPE_MESH_POINT:
 			{
 				/* backward compat code... */
-				struct mesh_setup setup;
-				memcpy(&setup, &default_mesh_setup,
-						sizeof(setup));
+				struct mesh_setup *setup;
+
+				setup = kzalloc(sizeof(*setup), GFP_KERNEL);
+				if (!setup)
+					return notifier_from_errno(-ENOMEM);
+				memcpy(setup, &default_mesh_setup,
+				       sizeof(*setup));
 				 /* back compat only needed for mesh_id */
-				setup.mesh_id = wdev->u.mesh.id;
-				setup.mesh_id_len = wdev->u.mesh.id_up_len;
+				setup->mesh_id = wdev->u.mesh.id;
+				setup->mesh_id_len = wdev->u.mesh.id_up_len;
 				if (wdev->u.mesh.id_up_len)
 					__cfg80211_join_mesh(rdev, dev,
-							&setup,
+							setup,
 							&default_mesh_config);
+				kfree(setup);
 				break;
 			}
 #endif
