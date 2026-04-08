@@ -242,6 +242,14 @@ enum rdi_based_source_ring_selection {
 #define HAL_SW2WBM_ASE_CMD_RING_BASE_LSB	0x1b48
 #define HAL_SW2WBM_ASE_CMD_RING_HP		0x3178
 
+/* TQM2SW_TELEMETRY1 RING*/
+#define HAL_PEER_TX_TELEMETRY_RING_BASE_LSB	0xd54
+#define HAL_PEER_TX_TELEMETRY_RING_HP		0x30e0
+
+/* REO2SW_TELEMETRY1 RING*/
+#define HAL_PEER_RX_TELEMETRY_RING_BASE_LSB	0x171c
+#define HAL_PEER_RX_TELEMETRY_RING_HP		0x3168
+
 /* PPE2TCL1 Ring address */
 #define HAL_TCL_PPE2TCL1_RING_BASE_LSB(hal) \
 	((hal)->regs->hal_tcl_ppe2tcl_ring_base_lsb)
@@ -745,6 +753,7 @@ enum rdi_based_source_ring_selection {
 #define HAL_SAM_HOST_CMD_RING_BASE_MSB_RING_SIZE	0x000fffff
 #define HAL_SAM_HOST_STATUS_RING_BASE_MSB_RING_SIZE	0x000fffff
 
+#define HAL_TELEMETRY_RING_MAX_SIZE			0x000fffff
 
 #define HAL_WBM2SW_REL_ERR_RING_NUM 5
 #define HAL_WBM2SW_PPEDS_TX_CMPLN_MAP_ID 11

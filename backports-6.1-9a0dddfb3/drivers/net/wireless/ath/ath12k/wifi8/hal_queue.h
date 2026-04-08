@@ -100,6 +100,7 @@ struct hal_uniform_descriptor_header {
 
 //info13
 #define HAL_TX_MSDU_FLOW_PROCESSED_BYTE_COUNT_48_32	GENMASK(15, 0)
+#define HAL_TX_MSDU_FLOW_TQM_STATS_ID		GENMASK(10, 0)
 struct hal_tx_msdu_flow {
 	struct hal_uniform_descriptor_header header;
 	__le32 info0;
@@ -181,6 +182,8 @@ struct ath12k_tx_rate_stats_info {
 
 #define HAL_TX_MPDU_QUEUE_HEAD_SAM_ID                           GENMASK(10, 0)
 
+#define HAL_TX_MPDU_QUEUE_HEAD_TQM_PER_MLO_STATS_ID		GENMASK(14, 4)
+
 struct hal_tx_mpdu_queue_head {
 	struct hal_uniform_descriptor_header header;
 	__le32 info0;
@@ -241,6 +244,7 @@ struct hal_tx_msdu_flow_info {
 	u8 tid:4,
 	   mlo:1,
 	   is_mgmtq:1;
+	u16 stats_id;
 };
 
 struct hal_tx_mpdu_queue_head_info {
@@ -258,6 +262,7 @@ struct hal_tx_mpdu_queue_head_info {
 	u8 assoc_link_id;
 	u8 link_id1;
 	u8 link_id2;
+	u16 stats_id;
 };
 
 struct hal_txpt_classify_data {
