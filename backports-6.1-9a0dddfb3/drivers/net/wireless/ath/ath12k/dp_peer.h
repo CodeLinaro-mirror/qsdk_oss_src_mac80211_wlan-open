@@ -196,7 +196,6 @@ struct ath12k_dp_peer {
 	u16 sec_type_grp;
 	u8 vdev_type_4addr;
 	bool is_reset_mcbc;
-	struct ath12k_mld_qos_stats mld_qos_stats[QOS_TID_MAX][QOS_TID_MDSUQ_MAX];
 	struct ath12k_dp_mld_peer_stats mld_stats;
 	bool qos_stats_lvl;
 
