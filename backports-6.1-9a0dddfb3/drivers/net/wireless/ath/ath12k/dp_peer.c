@@ -208,59 +208,32 @@ exit:
 void ath12k_peer_map_event(struct ath12k_base *ab, u8 vdev_id, u16 peer_id,
 			   u8 *mac_addr, u16 ast_hash, u16 hw_peer_id, bool is_wds)
 {
-	struct ath12k_dp_link_peer *peer;
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k *ar;
+	struct ath12k_peer_map_pending_event *resp;
 
 	if (is_wds)
 		return;
 
-	spin_lock_bh(&dp->dp_lock);
-	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, vdev_id, mac_addr);
-	if (!peer) {
-		peer = kzalloc(sizeof(*peer), GFP_ATOMIC);
-		if (!peer)
-			goto exit;
+	rcu_read_lock();
+	ar = ath12k_mac_get_ar_by_vdev_id(ab, vdev_id);
+	if (ar) {
+		if (ar->peer_map_event.pending_peer_vdev_id == vdev_id &&
+		    ether_addr_equal(ar->peer_map_event.pending_peer_addr, mac_addr)) {
+			/* Fill response structure - NO PEER ALLOCATION */
+			resp = &ar->peer_map_event;
+			resp->peer_id = peer_id;
+			resp->ast_hash = ast_hash;
+			resp->hw_peer_id = hw_peer_id;
+			resp->received = true;
 
-		peer->vdev_id = vdev_id;
-		peer->peer_id = peer_id;
-		peer->ast_hash = ast_hash;
-		peer->hw_peer_id = hw_peer_id;
-		ether_addr_copy(peer->addr, mac_addr);
-		list_add(&peer->list, &dp->peers);
-		wake_up(&ab->peer_mapping_wq);
-		ewma_avg_rssi_init(&peer->avg_rssi);
-		ewma_avg_ack_rssi_init(&peer->peer_stats.avg_ack_rssi);
-		ewma_avg_snr_init(&peer->signal_stats.avg_snr);
-		ewma_avg_snr_dp_init(&peer->signal_stats.avg_snr_dp);
-		ewma_avg_rssi_init(&peer->signal_stats.avg_rssi);
-		ewma_avg_rssi_dp_init(&peer->signal_stats.avg_rssi_dp);
-		peer->max_rssi = S8_MIN;
-		peer->min_rssi = S8_MAX;
-
-		/* Initialize generic event mechanism (FR_RSSI)
-		 * Note: llist_node does not need explicit initialization.
-		 * The llist_add() operation will handle node linkage automatically.
-		 */
-		peer->event.common.callback = ath12k_mac_peer_event_callback;
-		atomic_set(&peer->event.common.flags, 0);
-
-		/* Initialize peer event context */
-		peer->event.peer_id = peer_id;
-
-		/* Initialize RSSI monitoring structure */
-		peer->rssi_mon.last_rssi = 0;
-		peer->rssi_mon.low_rssi_count = 0;
-		peer->rssi_mon.first_low_jiffies = 0;
-		peer->rssi_mon.cfg = NULL;  /* Will be set during peer assignment */
+			wake_up(&ab->peer_mapping_wq);
+			rcu_read_unlock();
+			return;
+		}
 	}
 
-	ath12k_dbg_tag(ab, ATH12K_DBG_PEER, ATH12K_DBG_L0,
-		       peer ? peer->pdev_idx : 0, vdev_id,
-		       "htt peer map vdev %d peer %pM id %d\n",
-		       vdev_id, mac_addr, peer_id);
-
-exit:
-	spin_unlock_bh(&dp->dp_lock);
+	rcu_read_unlock();
+	ath12k_warn(ab, "unexpected peer map event for %pM\n", mac_addr);
 }
 
 static int ath12k_dp_link_peer_rhash_addr_tbl_init(struct ath12k_dp *dp)
@@ -599,7 +572,7 @@ u16 ath12k_dp_peer_get_sta_id(struct ath12k_dp_hw *dp_hw, u8 *addr)
 int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 			       struct ieee80211_sta *sta, u8 *addr, u8 link_id,
 			       u32 hw_link_id, struct ieee80211_vif *vif,
-			       u8 vp_type, int vp_num)
+			       u8 vp_type, int vp_num, bool mlo_bridge_peer)
 {
 	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
 	struct ath12k_dp *dp = dp_pdev->dp;
@@ -613,13 +586,43 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
 
+	peer = kzalloc(sizeof(*peer), GFP_KERNEL);
+	if (!peer)
+		return -ENOMEM;
+
 	spin_lock_bh(&dp->dp_lock);
 
-	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, vdev_id, addr);
-	if (!peer) {
-		ret = -ENOENT;
-		goto err_peer;
-	}
+	peer->pdev_idx = ar->pdev_idx;
+	peer->is_bridge_peer = mlo_bridge_peer;
+	peer->vdev_id = vdev_id;
+	peer->peer_id = ar->peer_map_event.peer_id;
+	peer->ast_hash = ar->peer_map_event.ast_hash;
+	peer->hw_peer_id = ar->peer_map_event.hw_peer_id;
+	ether_addr_copy(peer->addr, addr);
+	ewma_avg_rssi_init(&peer->avg_rssi);
+	ewma_avg_ack_rssi_init(&peer->peer_stats.avg_ack_rssi);
+	ewma_avg_snr_init(&peer->signal_stats.avg_snr);
+	ewma_avg_snr_dp_init(&peer->signal_stats.avg_snr_dp);
+	ewma_avg_rssi_init(&peer->signal_stats.avg_rssi);
+	ewma_avg_rssi_dp_init(&peer->signal_stats.avg_rssi_dp);
+	/* Initialize generic event mechanism (FR_RSSI)
+	 * Note: llist_node does not need explicit initialization.
+	 * The llist_add() operation will handle node linkage automatically.
+	 */
+	peer->event.common.callback = ath12k_mac_peer_event_callback;
+	atomic_set(&peer->event.common.flags, 0);
+
+	/* Initialize peer event context */
+	peer->event.peer_id = peer->peer_id;
+
+	/* Initialize RSSI monitoring structure */
+	peer->rssi_mon.last_rssi = 0;
+	peer->rssi_mon.low_rssi_count = 0;
+	peer->rssi_mon.first_low_jiffies = 0;
+	peer->rssi_mon.cfg = NULL;  /* Will be set during peer assignment */
+
+	peer->max_rssi = S8_MIN;
+	peer->min_rssi = S8_MAX;
 
 	if (!sta)
 		is_vdev_peer = true;
@@ -636,6 +639,7 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 		goto err_dp_peer;
 	}
 
+	peer->link_id = link_id;
 	peer->dp_peer = dp_peer;
 	peer->hw_link_id = hw_link_id;
 	peer->event.common.hw_link_id = hw_link_id;
@@ -700,6 +704,16 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 
 	rcu_assign_pointer(dp_peer->link_peers[peer->link_id], peer);
 
+	/* Fill ML info into created peer */
+	if (dp_peer->is_mlo) {
+		peer->ml_id = dp_peer->peer_id;
+		ether_addr_copy(peer->ml_addr, dp_peer->addr);
+		peer->mlo = true;
+	} else {
+		peer->ml_id = ATH12K_MLO_PEER_ID_INVALID;
+		peer->mlo = false;
+	}
+
 	spin_unlock_bh(&dp_hw->peer_lock);
 
 	/* Cache config pointer for fast data path access
@@ -734,16 +748,28 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 
 	ath12k_dp_link_peer_rhash_add(dp, peer);
 
+	list_add(&peer->list, &dp->peers);
+
 	peer->is_assigned = true;
+
+	if (!peer->is_bridge_peer) {
+		ret = ath12k_telemetry_peer_agent_create_handler(ar, vdev_id,
+								 addr);
+		if (ret && ret != -EOPNOTSUPP) {
+			ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
+				   "TA peer create failed vdev_id:%d addr %pM ret %d\n",
+				   vdev_id, addr, ret);
+		}
+	}
 
 	spin_unlock_bh(&dp->dp_lock);
 
 	return 0;
 
 err_dp_peer:
+	kfree(peer);
 	spin_unlock_bh(&dp_hw->peer_lock);
 
-err_peer:
 	spin_unlock_bh(&dp->dp_lock);
 
 	return ret;
@@ -1715,3 +1741,32 @@ ath12k_dp_link_peer_get_dp_vif(struct ath12k_dp_link_peer *link_peer)
 	return ath12k_dp_peer_get_dp_vif(link_peer->dp_peer);
 }
 EXPORT_SYMBOL(ath12k_dp_link_peer_get_dp_vif);
+
+struct ath12k_dp_link_peer *
+ath12k_dp_link_peer_find_by_link_id(struct ath12k_dp_peer *dp_peer, u8 link_id)
+{
+	RCU_LOCKDEP_WARN(!rcu_read_lock_held(),
+			 "ath12k dp link peer find by link id without rcu lock");
+
+	return rcu_dereference(dp_peer->link_peers[link_id]);
+}
+EXPORT_SYMBOL(ath12k_dp_link_peer_find_by_link_id);
+
+struct ath12k_dp_link_peer *
+ath12k_dp_link_peer_find_by_mac_addr(const struct ath12k_dp_peer *dp_peer, const u8 *addr)
+{
+	struct ath12k_dp_link_peer *peer;
+	u8 link_idx;
+
+	RCU_LOCKDEP_WARN(!rcu_read_lock_held(),
+			 "ath12k dp link peer find by mac addr without rcu lock");
+
+	for (link_idx = 0; link_idx < ATH12K_NUM_MAX_LINKS; link_idx++) {
+		peer = rcu_dereference(dp_peer->link_peers[link_idx]);
+		if (peer && !memcmp(addr, peer->addr, ETH_ALEN))
+			return peer;
+	}
+
+	return NULL;
+}
+EXPORT_SYMBOL(ath12k_dp_link_peer_find_by_mac_addr);
