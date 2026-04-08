@@ -389,6 +389,8 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 			goto fail_nss_plugin_unregister;
 		}
 	}
+
+	ath12k_wifi8_hal_ppeds_tx_configure_skip_hdr_fetch(ab);
 #endif
 
 	ret = ath12k_dp_srng_common_setup(ab);

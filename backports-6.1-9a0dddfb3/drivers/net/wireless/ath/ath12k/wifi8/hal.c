@@ -579,6 +579,19 @@ ath12k_wifi8_hal_setup_link_idle_list(struct ath12k_base *ab,
 			   val);
 }
 
+void ath12k_wifi8_hal_ppeds_tx_configure_skip_hdr_fetch(struct ath12k_base *ab)
+{
+	u32 val = 0;
+
+	/*
+	 * Disable skip header fetch.
+	 * TODO: This can be avoided with AST idx changes.
+	 */
+	val = ath12k_hif_read32(ab, HAL_TCL1_CMN_CONFIG1_PPE);
+	val |= HAL_TCL1_DISABLE_SKIP_HDR_FETCH;
+	ath12k_hif_write32(ab, HAL_TCL1_CMN_CONFIG1_PPE, val);
+}
+
 void ath12k_wifi8_hal_tx_configure_bank_register(struct ath12k_base *ab,
 						 u32 bank_config,
 						 u8 bank_id)
@@ -882,6 +895,14 @@ void ath12k_wifi8_hal_reo_config_reo2ppe_dest_info(struct ath12k_base *ab)
 	u32 val = HAL_REO1_REO2PPE_DST_VAL;
 
 	ath12k_hif_write32(ab, reo_base + HAL_REO1_REO2PPE_DST_INFO,
+			   val);
+	/*
+	 * Copying the INT_PRI and DEST_INFO from FSE entry.
+	 */
+	val = ath12k_hif_read32(ab, reo_base + HAL_REO_MISC_CFG_BN_2);
+	val |= HAL_REO_COPY_PPE_INFO_FROM_MSDU_VAL;
+	val |= HAL_REO_PPE_DEST_OVERRIDE_EN;
+	ath12k_hif_write32(ab, reo_base + HAL_REO_MISC_CFG_BN_2,
 			   val);
 }
 
