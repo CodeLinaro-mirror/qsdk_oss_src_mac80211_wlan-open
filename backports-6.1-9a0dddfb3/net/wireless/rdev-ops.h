@@ -1263,6 +1263,19 @@ rdev_end_cac(struct cfg80211_registered_device *rdev,
 }
 
 static inline int
+rdev_abort_cac(struct cfg80211_registered_device *rdev,
+	       struct wireless_dev *wdev, int link_id)
+{
+	int ret = -EOPNOTSUPP;
+
+	trace_rdev_abort_cac(&rdev->wiphy, wdev, link_id);
+	if (rdev->ops->abort_cac)
+		ret = rdev->ops->abort_cac(&rdev->wiphy, wdev, link_id);
+	trace_rdev_return_int(&rdev->wiphy, ret);
+	return ret;
+}
+
+static inline int
 rdev_set_mcast_rate(struct cfg80211_registered_device *rdev,
 		    struct net_device *dev,
 		    int mcast_rate[NUM_NL80211_BANDS])

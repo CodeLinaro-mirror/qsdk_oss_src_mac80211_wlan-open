@@ -5667,6 +5667,7 @@ struct cfg80211_ap_power_save_params {
  * @get_6ghz_dev_deployment_type: Get the 6 GHz device deployment type
  *
  * @ap_power_save : Configure AP Power Save parameters
+ * @abort_cac: Abort ongoing Channel Availability Check (CAC)
  * @set_muedca_mode: Set the mode of setting MU EDCA parameters.
  */
 struct cfg80211_ops {
@@ -6065,6 +6066,8 @@ struct cfg80211_ops {
 	int     (*ap_power_save)(struct wiphy *wiphy, struct wireless_dev *wdev,
 				 int link_id,
 				 struct cfg80211_ap_power_save_params *params);
+	int (*abort_cac)(struct wiphy *wiphy, struct wireless_dev *wdev,
+			 int link_id);
 };
 
 /*

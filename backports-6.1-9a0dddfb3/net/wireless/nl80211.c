@@ -12306,6 +12306,14 @@ static int nl80211_start_radar_detection(struct sk_buff *skb,
 
 	guard(wiphy)(wiphy);
 
+	if (info->attrs[NL80211_ATTR_RADAR_EVENT]) {
+		enum nl80211_radar_event event;
+
+		event = nla_get_u32(info->attrs[NL80211_ATTR_RADAR_EVENT]);
+		if (event == NL80211_RADAR_CAC_ABORTED)
+			return rdev_abort_cac(rdev, wdev, link_id);
+	}
+
 	dfs_region = reg_get_dfs_region(wiphy);
 	if (dfs_region == NL80211_DFS_UNSET)
 		return -EINVAL;
