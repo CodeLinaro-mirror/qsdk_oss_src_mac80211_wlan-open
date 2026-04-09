@@ -451,6 +451,7 @@ static const struct nla_policy nl80211_txattr_policy[NL80211_TXRATE_MAX + 1] = {
 						    NL80211_RATE_INFO_UHR_4XLTF),
 	[NL80211_TXRATE_UHR_UEQM_P] =
 		NLA_POLICY_EXACT_LEN(sizeof(struct nl80211_uhr_ueqm_pattern)),
+	[NL80211_TXRATE_UHR_ELR] = NLA_POLICY_MAX(NLA_U8, NL80211_UHR_ELR_ENABLE),
 };
 
 static const struct nla_policy
@@ -6481,6 +6482,30 @@ static bool uhr_set_ueqm_pattern(struct wireless_dev *wdev,
 	return true;
 }
 
+static int nl80211_validate_uhr_elr(enum nl80211_band band,
+				    const struct ieee80211_supported_band *sband,
+				    enum nl80211_iftype iftype)
+{
+	const struct ieee80211_sta_uhr_cap *uhr_cap;
+
+	uhr_cap = ieee80211_get_uhr_iftype_cap(sband, iftype);
+	if (!uhr_cap)
+		return -EINVAL;
+
+	/*
+	 * UHR ELR PPDU band applicability as defined in
+	 * P802.11bn D1.4, Section 38.3.8.
+	 *
+	 * Uplink transmissions are permitted across 2.4,
+	 * 5, and 6 GHz bands, while downlink operation is
+	 * limited to the 2.4 GHz band.
+	 */
+	if (iftype == NL80211_IFTYPE_AP && band != NL80211_BAND_2GHZ)
+		return -EINVAL;
+
+	return 0;
+}
+
 static int nl80211_parse_tx_bitrate_mask(struct genl_info *info,
 					 struct nlattr *attrs[],
 					 enum nl80211_attrs attr,
@@ -6559,6 +6584,7 @@ static int nl80211_parse_tx_bitrate_mask(struct genl_info *info,
 
 		mask->control[i].uhr_gi = 0xFF;
 		mask->control[i].uhr_ltf = 0xFF;
+		mask->control[i].uhr_elr = 0xFF;
 
 		mask->control[i].legacy_mcs_changed = false;
 		mask->control[i].ht_mcs_changed = false;
@@ -6697,6 +6723,14 @@ static int nl80211_parse_tx_bitrate_mask(struct genl_info *info,
 				mask->control[band].uhr_mcs,
 				&mask->control[band].ueqm_pattern))
 			return -EINVAL;
+
+		if (tb[NL80211_TXRATE_UHR_ELR]) {
+			mask->control[band].uhr_elr =
+					nla_get_u8(tb[NL80211_TXRATE_UHR_ELR]);
+
+			if (nl80211_validate_uhr_elr(band, sband, wdev->iftype))
+				return -EINVAL;
+		}
 
 		if (mask->control[band].legacy == 0) {
 			/* don't allow empty legacy rates if HT, VHT, HE, EHT
