@@ -37,6 +37,8 @@ struct ath12k_dp_hw_link {
 #define DP_TCL_NUM_RING_MAX  MIN(NR_CPUS, 5)
 #define DP_REO_DST_RING_MAX  MIN(NR_CPUS, 5)
 #define DP_TCL_DESC_TYPE_MAX 2
+#define ATH12K_MAX_AHVIF_ID	255
+#define ATH12K_INVALID_AHVIF_ID	0
 
 struct ath12k_dp_hw {
 	struct ath12k_dp_peer __rcu *dp_peer_list[MAX_DP_PEER_LIST_SIZE];

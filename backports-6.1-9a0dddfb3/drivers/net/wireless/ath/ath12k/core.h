@@ -807,6 +807,7 @@ struct ath12k_dp_vif {
 	struct ath12k_dp_preserved_stats link_vif_delete_stats;
 
 	struct ath12k_dp_vif_extn dp_extn;
+	u8 ahvif_id;
 };
 
 enum ath12k_tx_pkt_reasons {
@@ -1774,6 +1775,7 @@ struct ath12k_hw {
 	u8 num_radio;
 
 	DECLARE_BITMAP(free_ml_peer_id_map, ATH12K_MAX_MLO_PEERS);
+	unsigned long long free_ahvif_id_map;
 
 	struct ath12k_dp_hw dp_hw;
 	u32 max_ml_peers_supported;
