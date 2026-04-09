@@ -20,6 +20,7 @@
 
 static const struct pci_device_id ath12k_wifi8_pci_id_table[] = {
 	{ PCI_VDEVICE(QCOM, QCN9625_DEVICE_ID) },
+	{ PCI_VDEVICE(QCOM, QCN9589_DEVICE_ID) },
 	{0}
 };
 
@@ -43,6 +44,7 @@ static int ath12k_wifi8_pci_probe(struct pci_dev *pdev,
 
 	switch (pci_dev->device) {
 	case QCN9625_DEVICE_ID:
+	case QCN9589_DEVICE_ID:
 		if (!of_property_read_u32(ab->dev->of_node, "qcom,msi", &msi) &&
 		    msi == ATH12K_MSI_16) {
 			dev_info(&pdev->dev, "ath12k supported MSI %d\n", msi);
@@ -52,7 +54,8 @@ static int ath12k_wifi8_pci_probe(struct pci_dev *pdev,
 			ab->msi.config = &ath12k_wifi8_msi_config[0];
 		}
 		ab->static_window_map = true;
-		ab->hw_rev = ATH12K_HW_QCN9625_HW10;
+		ab->hw_rev = (pci_dev->device == QCN9625_DEVICE_ID) ?
+			      ATH12K_HW_QCN9625_HW10 : ATH12K_HW_QCN9589_HW10;
 		break;
 
 	default:

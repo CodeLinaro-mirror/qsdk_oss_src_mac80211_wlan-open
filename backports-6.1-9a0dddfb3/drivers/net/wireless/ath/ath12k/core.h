@@ -325,6 +325,7 @@ enum ath12k_hw_rev {
 #ifdef CPTCFG_QCN_EXTN
 	ATH12K_HW_QCN9074_HW10,
 #endif
+	ATH12K_HW_QCN9589_HW10,
 };
 
 #define ATH12K_DIAG_HW_ID_OFFSET	16
