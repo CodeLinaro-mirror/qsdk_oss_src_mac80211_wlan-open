@@ -400,44 +400,6 @@ bool ath12k_get_qos_params_delay_bound(struct ath12k_base *ab, u8 qos_id,
 
 #define ATH12K_HIST_AVG_DIV	2
 
-const u32 ath12k_hist_hw_tx_comp_bucket[] = {
-	250, 500, 750, 1000, 1500, 2000, 2500, 5000, 6000, 7000, 8000, 9000, U32_MAX
-};
-
-void ath12k_hist_fill_buckets(struct hist_bucket *hist, u32 value)
-{
-	int idx;
-
-	hist->hist_type = HIST_TYPE_HW_TX_COMP_DELAY;
-
-	for (idx = HIST_BUCKET_0;
-	     idx < ARRAY_SIZE(ath12k_hist_hw_tx_comp_bucket); idx++) {
-		if (value <= ath12k_hist_hw_tx_comp_bucket[idx]) {
-			hist->freq[idx]++;
-			return;
-		}
-	}
-}
-
-void ath12k_update_hist_stats(struct hist_stats *hist_stats, u32 value)
-{
-	if (!hist_stats)
-		return;
-
-	ath12k_hist_fill_buckets(&hist_stats->hist, value);
-
-	if (!hist_stats->min || value < hist_stats->min)
-		hist_stats->min = value;
-
-	if (value > hist_stats->max)
-		hist_stats->max = value;
-
-	if (unlikely(!hist_stats->avg))
-		hist_stats->avg = value;
-	else
-		hist_stats->avg = (hist_stats->avg + value) / ATH12K_HIST_AVG_DIV;
-}
-
 void ath12k_sdwf_compute_hw_delay(struct ath12k *ar, struct hal_tx_status *ts,
 				  u32 *hw_delay)
 {
@@ -707,7 +669,7 @@ void ath12k_qos_stats_update(struct ath12k *ar, struct sk_buff *skb,
 	}
 
 	mld_qos->hwdelay_win_total += hw_delay;
-	ath12k_update_hist_stats(&qos_delay->delay_hist, hw_delay);
+	ath12k_dp_update_hist_stats(&qos_delay->delay_hist, hw_delay);
 
 	nw_delay = u32_get_bits(skb->mark, QOS_NW_DELAY);
 	mld_qos->nwdelay_win_total += nw_delay;

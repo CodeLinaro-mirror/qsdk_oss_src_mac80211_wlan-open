@@ -8,6 +8,82 @@
 #include "dp_stats.h"
 #include "debug.h"
 
+/*
+ * ath12k_dp_hist_sw_enq_dbucket: Software enqueue delay bucket in us
+ * @index_0 = 0_250 us
+ * @index_1 = 250_500 us
+ * @index_2 = 500_750 us
+ * @index_3 = 750_1000 us
+ * @index_4 = 1000_1500 us
+ * @index_5 = 1500_2000 us
+ * @index_6 = 2000_2500 us
+ * @index_7 = 2500_5000 us
+ * @index_8 = 5000_6000 us
+ * @index_9 = 6000_7000 us
+ * @index_10 = 7000_8000 us
+ * @index_11 = 8000_9000 us
+ * @index_12 = 9000+ us
+ */
+static u16 ath12k_dp_hist_sw_enq_dbucket[HIST_BUCKET_MAX] = {
+	0, 250, 500, 750, 1000, 1500, 2000, 2500, 5000, 6000, 7000, 8000, 9000};
+
+/*
+ * ath12k_dp_hist_hw_enque_dbucket: HW enqueue to Completion Delay in us
+ * @index_0 = 0_250 us
+ * @index_1 = 250_500 us
+ * @index_2 = 500_750 us
+ * @index_3 = 750_1000 us
+ * @index_4 = 1000_1500 us
+ * @index_5 = 1500_2000 us
+ * @index_6 = 2000_2500 us
+ * @index_7 = 2500_5000 us
+ * @index_8 = 5000_6000 us
+ * @index_9 = 6000_7000 us
+ * @index_10 = 7000_8000 us
+ * @index_11 = 8000_9000 us
+ * @index_12 = 9000+ us
+ */
+static u16 ath12k_dp_hist_hw_enque_dbucket[HIST_BUCKET_MAX] = {
+	0, 250, 500, 750, 1000, 1500, 2000, 2500, 5000, 6000, 7000, 8000, 9000};
+
+/*
+ * ath12k_dp_hist_rx_reap2stack_dbucket: Reap to stack bucket
+ * @index_0 = 0_5 ms
+ * @index_1 = 5_10 ms
+ * @index_2 = 10_15 ms
+ * @index_3 = 15_20 ms
+ * @index_4 = 20_25 ms
+ * @index_5 = 25_30 ms
+ * @index_6 = 30_35 ms
+ * @index_7 = 35_40 ms
+ * @index_8 = 40_45 ms
+ * @index_9 = 46_50 ms
+ * @index_10 = 51_55 ms
+ * @index_11 = 56_60 ms
+ * @index_12 = 60+ ms
+ */
+static u16 ath12k_dp_hist_rx_reap2stack_dbucket[HIST_BUCKET_MAX] = {
+	0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60};
+
+/*
+ * ath12k_dp_hist_hw_tx_comp_dbucket: tx hw completion delay bucket in us
+ * @index_0 = 0_250 us
+ * @index_1 = 250_500 us
+ * @index_2 = 500_750 us
+ * @index_3 = 750_1000 us
+ * @index_4 = 1000_1500 us
+ * @index_5 = 1500_2000 us
+ * @index_6 = 2000_2500 us
+ * @index_7 = 2500_5000 us
+ * @index_8 = 5000_6000 us
+ * @index_9 = 6000_7000 us
+ * @index_10 = 7000_8000 us
+ * @index_11 = 8000_9000 us
+ * @index_12 = 9000+ us
+ */
+static u16 ath12k_dp_hist_hw_tx_comp_dbucket[HIST_BUCKET_MAX] = {
+	0, 250, 500, 750, 1000, 1500, 2000, 2500, 5000, 6000, 7000, 8000, 9000};
+
 /**
  * ath12k_dp_aggr_per_pkt_tx_stats - Aggregate per-packet TX statistics
  * @dst_tx_stats: Destination TX stats structure
@@ -461,3 +537,99 @@ int ath12k_dp_pdev_get_tid_stats(struct ath12k *ar,
 	return 0;
 }
 
+/*
+ * ath12k_dp_hist_find_bucket_idx() - Find the bucket index
+ * @bucket_array: Bucket array
+ * @value: Frequency value
+ *
+ * Return: The bucket index
+ */
+static int ath12k_dp_hist_find_bucket_idx(u16 *bucket_array, u32 value)
+{
+	u8 idx = HIST_BUCKET_0;
+
+	for (; idx < (HIST_BUCKET_MAX - 1); idx++) {
+		if (value <= bucket_array[idx + 1])
+			break;
+	}
+
+	return idx;
+}
+
+/**
+ * ath12k_dp_hist_fill_buckets() - Fill the histogram frequency buckets
+ * @hist_bucket: Histogram bukcets
+ * @value: Frequency value
+ *
+ * Return: void
+ */
+static void ath12k_dp_hist_fill_buckets(struct hist_bucket *hist_bucket, u32 value)
+{
+	enum hist_types hist_type;
+	u8 idx = HIST_BUCKET_MAX;
+
+	if (unlikely(!hist_bucket))
+		return;
+
+	hist_type = hist_bucket->hist_type;
+
+	switch (hist_type) {
+	case HIST_TYPE_SW_ENQEUE_DELAY:
+		idx =
+		    ath12k_dp_hist_find_bucket_idx(&ath12k_dp_hist_sw_enq_dbucket[0],
+						   value);
+		break;
+	case HIST_TYPE_HW_COMP_DELAY:
+		idx =
+		    ath12k_dp_hist_find_bucket_idx(&ath12k_dp_hist_hw_enque_dbucket[0],
+						   value);
+		break;
+	case HIST_TYPE_REAP_STACK:
+		idx =
+		    ath12k_dp_hist_find_bucket_idx(&ath12k_dp_hist_rx_reap2stack_dbucket[0],
+						   value);
+		break;
+	case HIST_TYPE_HW_TX_COMP_DELAY:
+		idx =
+		    ath12k_dp_hist_find_bucket_idx(&ath12k_dp_hist_hw_tx_comp_dbucket[0],
+						   value);
+		break;
+	default:
+		__ath12k_warn(NULL, "Unknown hist_type %d\n", hist_type);
+		break;
+	}
+
+	if (idx == HIST_BUCKET_MAX)
+		return;
+
+	hist_bucket->freq[idx]++;
+}
+
+void ath12k_dp_update_hist_stats(struct hist_stats *hist_stats, u32 value)
+{
+	if (unlikely(!hist_stats))
+		return;
+
+	ath12k_dp_hist_fill_buckets(&hist_stats->hist, value);
+
+	if (value != 0 && value < hist_stats->min)
+		hist_stats->min = value;
+
+	if (value > hist_stats->max)
+		hist_stats->max = value;
+
+	if (unlikely(!hist_stats->avg))
+		hist_stats->avg = value;
+	else
+		hist_stats->avg = (hist_stats->avg + value) / 2;
+}
+EXPORT_SYMBOL(ath12k_dp_update_hist_stats);
+
+void ath12k_dp_hist_init(struct hist_stats *hist_stats,
+			 enum hist_types hist_type)
+{
+	memset(hist_stats, 0, sizeof(struct hist_stats));
+	hist_stats->min =  U32_MAX;
+	hist_stats->hist.hist_type = hist_type;
+}
+EXPORT_SYMBOL(ath12k_dp_hist_init);

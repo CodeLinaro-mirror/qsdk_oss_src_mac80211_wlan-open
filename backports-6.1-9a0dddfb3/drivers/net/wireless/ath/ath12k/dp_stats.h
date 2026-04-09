@@ -585,9 +585,9 @@ struct hist_bucket {
 
 struct hist_stats {
 	struct hist_bucket hist;
-	int max;
-	int min;
-	int avg;
+	u32 max;
+	u32 min;
+	u32 avg;
 };
 
 struct delay_stats {
@@ -1532,4 +1532,22 @@ ath12k_vow_tid_validate(u8 tid)
 	return tid;
 }
 
+/**
+ * ath12k_dp_update_hist_stats() - Update histogram stats
+ * @hist_stats: Delay histogram
+ * @value: Delay value
+ *
+ * Return: void
+ */
+void ath12k_dp_update_hist_stats(struct hist_stats *hist_stats, u32 value);
+
+/**
+ * ath12k_dp_hist_init() - Initialize the histogram object
+ * @hist_stats: Hist stats object
+ * @hist_type: Histogram type
+ *
+ * Return: Void
+ */
+void ath12k_dp_hist_init(struct hist_stats *hist_stats,
+			 enum hist_types hist_type);
 #endif
