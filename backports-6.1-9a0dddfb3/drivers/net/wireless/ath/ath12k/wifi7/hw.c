@@ -714,6 +714,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
+		.peer_del_all_support = false,
 	},
 	{
 		.name = "wcn7850 hw2.0",
@@ -829,6 +830,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
+		.peer_del_all_support = false,
 	},
 	{
 		.name = "qcn9274 hw2.0",
@@ -956,6 +958,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
+		.peer_del_all_support = false,
 	},
 	{
 		.name = "ipq5332 hw1.0",
@@ -1072,6 +1075,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
+		.peer_del_all_support = false,
 	},
 	{
 		.name = "qcn6432 hw1.0",
@@ -1166,6 +1170,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
+		.peer_del_all_support = false,
 	},
 	{
 		.name = "ipq5424 hw1.0",
@@ -1286,6 +1291,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
+		.peer_del_all_support = false,
 	},
 };
 
@@ -1947,6 +1953,7 @@ static const struct ieee80211_ops ath12k_ops_wifi7 = {
 	.sta_set_4addr			= ath12k_wifi7_mac_op_sta_set_4addr,
 	.link_info_changed              = ath12k_mac_op_link_info_changed,
 	.start_ap                       = ath12k_mac_op_start_ap,
+	.link_going_down                = ath12k_mac_op_link_going_down,
 	.vif_cfg_changed		= ath12k_mac_op_vif_cfg_changed,
 	.change_vif_links               = ath12k_mac_op_change_vif_links,
 	.configure_filter		= ath12k_mac_op_configure_filter,

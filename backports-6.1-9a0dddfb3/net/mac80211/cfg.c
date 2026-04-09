@@ -2083,6 +2083,13 @@ static int ieee80211_stop_ap(struct wiphy *wiphy, struct net_device *dev,
 	link_conf->ema_ap = false;
 	link_conf->bssid_indicator = 0;
 
+	/*
+	 * Notify driver that this link is going down
+	 * Driver can set flags to optimize peer deletion
+	 * Pass wdev->is_netdev_going_down to indicate if entire netdev is going down
+	 */
+	drv_link_going_down(local, sdata, link_conf, wdev->is_netdev_going_down);
+
 	__sta_info_flush(sdata, true, link_id, NULL);
 
 	ieee80211_remove_link_keys(link, &keys);

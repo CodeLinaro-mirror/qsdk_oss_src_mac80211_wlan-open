@@ -349,6 +349,7 @@ struct ath12k_hw_params {
 	bool quad_ring_monitor_support;
 	const char *board_magic;
 	u32 num_rx_spt_pages;
+	bool peer_del_all_support;
 };
 
 struct ath12k_hw_ops {
