@@ -371,6 +371,12 @@ static int ath12k_dp_srng_calculate_msi_group(struct ath12k_base *ab,
 		}
 #endif
 		break;
+	case HAL_PEER_TX_TELEMETRY:
+		grp_mask = &ab->hw_params->ring_mask->tx_peer_telemetry[0];
+		break;
+	case HAL_PEER_RX_TELEMETRY:
+		grp_mask = &ab->hw_params->ring_mask->rx_peer_telemetry[0];
+		break;
 	case HAL_SAM_STATUS:
 		grp_mask = &ab->hw_params->ring_mask->sam_status[0];
 		break;
@@ -558,6 +564,8 @@ skip_dma_alloc:
 		}
 		/* follow through when ring_num != HAL_WBM2SW_REL_ERR_RING_NUM */
 		fallthrough;
+	case HAL_PEER_TX_TELEMETRY:
+	case HAL_PEER_RX_TELEMETRY:
 	case HAL_REO_EXCEPTION:
 	case HAL_REO_REINJECT:
 	case HAL_REO_CMD:

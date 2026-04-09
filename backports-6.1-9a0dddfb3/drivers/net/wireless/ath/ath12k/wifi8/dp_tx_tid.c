@@ -219,6 +219,7 @@ int ath12k_tx_send_mpduq_init(struct ath12k_dp_hw_group *dp_hw_grp,
 	ti.paddr = sw_mpduq_ptr->mpdu_q_paddr;
 	ti.queue_number = (sw_mpduq_ptr->queue_number & 0xFFFFFF);
 	ti.peer_id = peer->peer_id;
+	ti.stats_id = peer->stats_id;
 	if (tid_num ==  MLO_MGMT_TID) {
 		ti.is_mgmtq = true;
 		ti.tid = TQM_NON_DATA_TID;
