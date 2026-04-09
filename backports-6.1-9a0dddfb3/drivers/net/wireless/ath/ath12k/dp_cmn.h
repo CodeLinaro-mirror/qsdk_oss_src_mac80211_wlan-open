@@ -137,7 +137,7 @@ void ath12k_dp_cmn_update_hw_links(struct ath12k_dp *dp,
 int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 			       struct ieee80211_sta *sta, u8 *addr, u8 link_id,
 			       u32 hw_link_id, struct ieee80211_vif *vif,
-			       u8 vp_type, int vp_num, bool mlo_bridge_peer);
+			       u8 vp_type, int vp_num);
 void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr);
 int
 ath12k_dp_link_peer_batch_cleanup(struct ath12k *ar,

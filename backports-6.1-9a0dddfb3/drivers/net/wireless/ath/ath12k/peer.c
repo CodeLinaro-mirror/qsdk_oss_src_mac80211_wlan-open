@@ -418,15 +418,22 @@ int ath12k_peer_del_tracker_clear_pdev(struct ath12k_pdev *pdev)
 	return 0;
 }
 
-static int ath12k_wait_for_peer_common(struct ath12k *ar, int vdev_id,
+static int ath12k_wait_for_peer_common(struct ath12k_base *ab, int vdev_id,
 				       const u8 *addr, bool expect_mapped)
 {
 	int ret;
 
-	ret = wait_event_timeout(ar->ab->peer_mapping_wq,
-				 ar->peer_map_event.received  ||
-				 test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)
-				 , 3 * HZ);
+	ret = wait_event_timeout(ab->peer_mapping_wq, ({
+				bool mapped;
+
+				spin_lock_bh(&ab->dp->dp_lock);
+				mapped = !!ath12k_dp_link_peer_find_by_vdev_id_and_addr
+								(ab->dp, vdev_id, addr);
+				spin_unlock_bh(&ab->dp->dp_lock);
+
+				(mapped == expect_mapped ||
+				 test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags));
+				}), 3 * HZ);
 
 	if (ret <= 0)
 		return -ETIMEDOUT;
@@ -621,7 +628,7 @@ int ath12k_peer_delete(struct ath12k *ar, u32 vdev_id, u8 *addr,
 
 static int ath12k_wait_for_peer_created(struct ath12k *ar, int vdev_id, const u8 *addr)
 {
-	return ath12k_wait_for_peer_common(ar, vdev_id, addr, true);
+	return ath12k_wait_for_peer_common(ar->ab, vdev_id, addr, true);
 }
 
 static int ath12k_wait_for_peer_create_done(struct ath12k *ar, u32 vdev_id,
@@ -700,14 +707,15 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 {
 	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(arvif->ahvif);
 	struct ath12k_vif *ahvif = arvif->ahvif;
+	struct ath12k_link_sta *arsta;
 	u8 link_id = arvif->link_id;
 	struct ath12k_dp_link_peer *peer;
 	struct ath12k_sta *ahsta = NULL;
+	u16 ml_peer_id;
 	int ret;
 	struct ath12k_dp_link_vif *dp_link_vif = &ahvif->dp_vif.dp_link_vif[link_id];
 	u32 mlo_hw_link_id_bitmap = 0, peer_delete_send_mlo_hw_bitmap = 0;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ar->ab);
-	struct ath12k_peer_map_pending_event *map_event = &ar->peer_map_event;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -739,43 +747,30 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	}
 	spin_unlock_bh(&dp->dp_lock);
 
+	ret = ath12k_dp_arch_link_peer_create(dp, ar->ab,
+					      arg->vdev_id, arg->peer_addr);
+	if (ret) {
+		ath12k_warn(ar->ab, "Unable to create link peer %pM\n", arg->peer_addr);
+		return -EINVAL;
+	}
+
 	reinit_completion(&ar->peer_create_done);
-
-	memset(map_event, 0, sizeof(struct ath12k_peer_map_pending_event));
-
-	memcpy(map_event->pending_peer_addr, arg->peer_addr, ETH_ALEN);
-	map_event->pending_peer_vdev_id = arg->vdev_id;
-	map_event->received = false;
-	map_event->peer_id = ATH12K_PEER_ID_INVALID;
 
 	ret = ath12k_wmi_send_peer_create_cmd(ar, arg);
 	if (ret) {
-		memset(map_event, 0, sizeof(struct ath12k_peer_map_pending_event));
 		ath12k_warn(ar->ab,
 			    "failed to send peer create vdev_id %d ret %d\n",
 			    arg->vdev_id, ret);
+		ath12k_dp_arch_link_peer_delete(dp, ar->ab,
+						arg->vdev_id, arg->peer_addr);
 		return ret;
 	}
 
 	ret = ath12k_wait_for_peer_create_done(ar, arg->vdev_id,
 					       arg->peer_addr);
-
 	if (ret) {
-		memset(map_event, 0, sizeof(struct ath12k_peer_map_pending_event));
-		return ret;
-	}
-
-	ret = ath12k_dp_link_peer_assign(ar, arvif->vdev_id,
-					 sta, arg->peer_addr,
-					 link_id, ar->hw_link_id, vif,
-					 arvif->ahvif->dp_vif.ppe_vp_type,
-					 arvif->ahvif->dp_vif.ppe_vp_num,
-					 arg->mlo_bridge_peer);
-
-	memset(map_event, 0, sizeof(struct ath12k_peer_map_pending_event));
-
-	if (ret) {
-		ath12k_peer_delete(ar, arg->vdev_id, arg->peer_addr, false, 0, false);
+		ath12k_dp_arch_link_peer_delete(dp, ar->ab,
+						arg->vdev_id, arg->peer_addr);
 		return ret;
 	}
 
@@ -783,11 +778,59 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, arg->vdev_id,
 							    arg->peer_addr);
+	if (!peer) {
+		spin_unlock_bh(&dp->dp_lock);
+		ath12k_warn(ar->ab, "failed to find peer %pM on vdev %i after creation\n",
+			    arg->peer_addr, arg->vdev_id);
 
-	if (peer) {
-		if (vif->type == NL80211_IFTYPE_STATION) {
-			dp_link_vif->ast_hash = peer->ast_hash;
-			dp_link_vif->ast_idx = peer->hw_peer_id;
+		ret = __ath12k_peer_delete(ar, arg->vdev_id, arg->peer_addr,
+					   false, mlo_hw_link_id_bitmap,
+					   peer_delete_send_mlo_hw_bitmap);
+		if (ret)
+			ath12k_warn(ar->ab, "failed to delete peer vdev_id %d addr %pM\n",
+				    arg->vdev_id, arg->peer_addr);
+
+		return -ENOENT;
+	}
+
+	peer->pdev_idx = ar->pdev_idx;
+	peer->is_bridge_peer = arg->mlo_bridge_peer;
+
+	if (vif->type == NL80211_IFTYPE_STATION) {
+		dp_link_vif->ast_hash = peer->ast_hash;
+		dp_link_vif->ast_idx = peer->hw_peer_id;
+	}
+
+	if (sta) {
+		arsta = wiphy_dereference(ath12k_ar_to_hw(ar)->wiphy,
+					  ahsta->link[link_id]);
+
+		peer->link_id = arsta->link_id;
+
+		if (!peer->is_bridge_peer) {
+			ret = ath12k_telemetry_peer_agent_create_handler(ar,
+					arg->vdev_id,
+					arg->peer_addr);
+			if (ret && ret != -EOPNOTSUPP) {
+				ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
+						"failed to create peer reference in TA for vdev_id %d addr %pM ret %d\n",
+						arg->vdev_id, arg->peer_addr, ret);
+			}
+		}
+
+		/* Fill ML info into created peer */
+		if (sta->mlo) {
+			ml_peer_id = ahsta->ml_peer_id;
+			peer->ml_id = ml_peer_id | ATH12K_PEER_ML_ID_VALID;
+			ether_addr_copy(peer->ml_addr, sta->addr);
+
+			peer->mlo = true;
+			/* Count one ML peer per radio for real link peers */
+			if (!peer->is_bridge_peer)
+				ar->num_ml_peers++;
+		} else {
+			peer->ml_id = ATH12K_MLO_PEER_ID_INVALID;
+			peer->mlo = false;
 		}
 	}
 
@@ -795,13 +838,16 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 	ar->num_peers++;
 
-	if (sta && sta->mlo) {
-		/* Count one ML peer per radio for real link peers */
-		if (!arg->mlo_bridge_peer)
-			ar->num_ml_peers++;
-	}
-
 	spin_unlock_bh(&dp->dp_lock);
+
+	ret = ath12k_dp_link_peer_assign(ar, arvif->vdev_id,
+					 sta, arg->peer_addr,
+					 link_id, ar->hw_link_id, vif,
+					 arvif->ahvif->dp_vif.ppe_vp_type,
+					 arvif->ahvif->dp_vif.ppe_vp_num);
+
+	if (ret)
+		ath12k_peer_delete(ar, arg->vdev_id, arg->peer_addr, false, 0, false);
 
 	return ret;
 }
