@@ -455,6 +455,10 @@ int ath12k_wifi8_hal_reo_rel_parse_err(struct ath12k_dp *dp, void *desc,
 						 BUFFER_ADDR_INFO1_SW_COOKIE);
 
 		rel_info->rx_desc = NULL;
+		ath12k_warn(ab, "CC did not happened on rx error %u", rel_info->cookie);
+		print_hex_dump(KERN_ERR, "rx error desc: ", DUMP_PREFIX_ADDRESS,
+			       32, 4, reo_desc, sizeof (*reo_desc), false);
+		BUG_ON(1);
 	}
 
 	rel_info->err_rel_src = rel_src;

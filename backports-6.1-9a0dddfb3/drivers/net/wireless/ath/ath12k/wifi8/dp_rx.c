@@ -1689,6 +1689,7 @@ int ath12k_wifi8_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 	int incomplete_msdu_chain = 0;
 	struct ieee80211_vif *vif;
 	u16 peer_id;
+	u8 cc_done = 0;
 
 	INIT_LIST_HEAD(&rx_desc_used_list);
 
@@ -1710,6 +1711,15 @@ int ath12k_wifi8_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 	while ((desc = __ath12k_hal_srng_dst_get_next_cached_entry(srng, &last_tp))) {
 		struct rx_mpdu_desc_info *mpdu_info;
 		struct hal_rx_spd_data *spd_desc_l = &rx_status_desc[total_msdu_reaped];
+
+		/* check for CC is done or not */
+		cc_done =
+		le32_get_bits(desc->info0,
+			      HAL_REO_DESTINATION_RING_INFO0_COOKIE_CONVERSION_STATUS);
+		if (!cc_done) {
+			ath12k_warn(ab, "REO is unable to do the CC\n");
+			BUG_ON(1);
+		}
 
 		next_desc = __ath12k_hal_srng_dst_peek(srng);
 		if (next_desc) {
@@ -1739,22 +1749,6 @@ int ath12k_wifi8_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 		spd_desc_l->rx_mpdu_info.info1 =
 			le32_to_cpu(desc->rx_mpdu_ext_info.info0);
 
-		if (unlikely(!desc_info)) {
-			DP_DEVICE_STATS_INC(dp, rx.rx_err[DP_RX_ERR_GET_SW_DESC_FROM_CK][ring_id], 1);
-			/* retry manual desc retrieval */
-			u32 cookie = le32_get_bits(desc->buf_addr_info.info1,
-						   BUFFER_ADDR_INFO1_SW_COOKIE);
-
-			desc_info = ath12k_dp_get_rx_desc(dp, cookie);
-			if (!desc_info) {
-				DP_DEVICE_STATS_INC(dp, rx.rx_err[DP_RX_ERR_GET_SW_DESC][ring_id], 1);
-				ath12k_warn(ab,
-					    "Unable to retrieve rx_desc for va 0x%lx",
-					    (unsigned long)desc_va);
-				continue;
-			}
-		}
-
 		num_buffs_reaped++;
 
 		dp->device_stats.reo_rx[ring_id][dp->device_id]++;
@@ -1765,8 +1759,12 @@ int ath12k_wifi8_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 			ath12k_wifi8_dp_rx_get_peer_id(ab, dp->peer_metadata_ver,
 						       mpdu_info->peer_meta_data);
 
-		if (unlikely(desc_info->magic != ATH12K_DP_RX_DESC_MAGIC))
-			ath12k_warn(ab, "Check HW CC implementation");
+		if (unlikely(desc_info->magic != ATH12K_DP_RX_DESC_MAGIC)) {
+			ath12k_warn(ab,
+				    "RX Invalid rx desc magic cookie = %u desc = %p",
+				    desc_info->cookie, desc_info);
+			BUG_ON(1);
+		}
 
 		mpdu_info->fragment_flag = desc_info->is_frag;
 		desc_info->is_frag = 0;
@@ -3290,8 +3288,12 @@ int ath12k_wifi8_dp_rx_process_err(struct ath12k_dp *dp,
 			}
 		}
 
-		if (desc_info->magic != ATH12K_DP_RX_DESC_MAGIC)
-			ath12k_warn(ab, "WBM RX err, Check HW CC implementation");
+		if (desc_info->magic != ATH12K_DP_RX_DESC_MAGIC) {
+			ath12k_warn(ab,
+				    "WBM RX err invalid magic cookie = %u desc = %p",
+				    desc_info->cookie, desc_info);
+			BUG_ON(1);
+		}
 
 		msdu = desc_info->skb;
 		desc_info->skb = NULL;
