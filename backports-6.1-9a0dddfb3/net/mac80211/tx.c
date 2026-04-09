@@ -5193,7 +5193,6 @@ void ieee80211_8023_xmit_ap(struct ieee80211_sub_if_data *sdata,
 	unsigned long flags;
 	int q;
 	u16 q_map;
-	int tid;
 	struct ethhdr *ehdr = (struct ethhdr *)skb->data;
 	unsigned char *ra = ehdr->h_dest;
 	bool multicast = is_multicast_ether_addr(ra);
@@ -5236,9 +5235,20 @@ void ieee80211_8023_xmit_ap(struct ieee80211_sub_if_data *sdata,
 
 	if (sta) {
 		if (!sta->sta.valid_links) {
-			skb->priority = cfg80211_classify8021d(skb, NULL);
-			tid = skb->priority & IEEE80211_QOS_CTL_TAG1D_MASK;
-			ieee80211_update_tx_stats(sta, skb, q_map, tid);
+			/* TODO: Tid stats need to accounted
+			 * after ecm properly notifies its
+			 * skb->priority
+			 */
+			/* When driver TXRX stats offload enabled,
+			 * stop accounting it in here.
+			 */
+			if (!(sta->sdata->vif.offload_flags &
+			    IEEE80211_OFFLOAD_TXRX_STATS)) {
+				if (q_map < IEEE80211_NUM_ACS) {
+					sta->deflink.tx_stats.bytes[q_map] += skb->len;
+					sta->deflink.tx_stats.packets[q_map]++;
+				}
+			}
 		}
 		atomic_inc(&sta->tx_netif_pkts);
 	}
