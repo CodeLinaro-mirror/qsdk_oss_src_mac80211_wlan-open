@@ -6157,7 +6157,7 @@ ieee80211_advertised_ttlm_evt_notify(struct ieee80211_vif *vif,
 
 	rcu_read_unlock();
 }
-EXPORT_SYMBOL_GPL(ieee80211_advertised_ttlm_evt_notify);
+EXPORT_SYMBOL(ieee80211_advertised_ttlm_evt_notify);
 
 static int
 ieee80211_color_change(struct wiphy *wiphy, struct net_device *dev,
