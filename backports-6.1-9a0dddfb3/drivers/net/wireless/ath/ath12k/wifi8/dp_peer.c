@@ -247,6 +247,9 @@ int ath12k_wifi8_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 	int ret, i;
 	int vdev_peer_link_id;
 	struct ath12k_dp_link_vif *dp_link_vif;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	u32 ppeds_idx_map_val = 0;
+#endif
 
 	spin_lock_bh(&dp_hw->peer_lock);
 	dp_peer = ath12k_dp_peer_find(dp_hw, addr);
@@ -331,6 +334,19 @@ int ath12k_wifi8_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 	if (dp_peer->is_sta_bss_peer) {
 		dp_vif->ast_idx = ast_param.ast_index;
 		dp_vif->ast_hash = ast_param.ast_hash;
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+		ppeds_idx_map_val |=
+			u32_encode_bits(dp_vif->ast_idx, HAL_TX_PPEDS_CFG_SEARCH_IDX) |
+			u32_encode_bits(dp_vif->ast_hash, HAL_TX_PPEDS_CFG_CACHE_SET);
+		ath12k_wifi8_hal_ppeds_cfg_ast(dp->ab, dp_vif->ppe_vp_num,
+						ppeds_idx_map_val);
+
+		ath12k_dbg(NULL, ATH12K_DBG_PEER, "STA ast_idx:%d hash:%d ppe_vp:%d\n",
+				dp_vif->ast_idx,
+				dp_vif->ast_hash,
+				dp_vif->ppe_vp_num);
+#endif
 	} else if (dp_peer->is_vdev_peer) {
 		dp_link_vif = &dp_vif->dp_link_vif[vdev_peer_link_id];
 		dp_link_vif->ast_idx = ast_param.ast_index;

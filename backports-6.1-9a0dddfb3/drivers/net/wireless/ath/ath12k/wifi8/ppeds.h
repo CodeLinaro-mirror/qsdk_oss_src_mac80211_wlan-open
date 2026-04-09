@@ -9,10 +9,12 @@
 #include "hal.h"
 #include "../ppe.h"
 #include "dp_rx.h"
+#include "dp.h"
 
 #define PPEDS_TX_CMPLN_RING_NUM 6
 #define PPE_VP_WIFI8_ENTRIES_MAX 192
 #define PPE_VP_WIFI8_START_IDX 64
+#define PPE_VP_WIFI8_SEARCH_INDEX_REG_NUM_MASK 63
 #define PPEDS_CLASSIFY_READ_FULL_PKT 3
 #define PPEDS_TQM2PPE_TX_CMPLN_RING_NUM 0
 #define PPEDS_ARCH_MODE_WIFI8 8
@@ -94,7 +96,21 @@ void ath12k_wifi8_dp_ppeds_interrupt_stop(struct ath12k_base *ab);
 void ath12k_wifi8_dp_ppeds_stop(struct ath12k_base *ab);
 void ath12k_wifi8_dp_ppeds_interrupt_start(struct ath12k_base *ab);
 
+struct ath12k_dp_ppe_vp_profile *
+ath12k_wifi8_dp_ppeds_get_vp_profile(struct ath12k_base *ab,
+		int vp_num);
+static inline struct ath12k_base *
+		ath12k_wifi8_ppeds_get_central_ab(struct ath12k_base *ab)
+{
+	return ath12k_dp_get_ab_from_dp_hw_group(ab->dp->dp_hw_grp);
+}
 #else
+
+static inline struct ath12k_base *
+		ath12k_wifi8_ppeds_get_central_ab(struct ath12k_base *ab)
+{
+	return ab;
+}
 
 static inline int ath12k_wifi8_ppeds_attach_link_vif(struct ath12k_link_vif *arvif,
 					       int vp_num,

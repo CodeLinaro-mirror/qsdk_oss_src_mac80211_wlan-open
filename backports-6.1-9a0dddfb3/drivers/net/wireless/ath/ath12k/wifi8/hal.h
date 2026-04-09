@@ -299,7 +299,7 @@ enum rdi_based_source_ring_selection {
 #define HAL_SAM_INVALID_MSDUQ_ID		0x1FFF
 #define HAL_SAM_INVALID_MPDUQ_ID		0x7FF
 
-#define HAL_TCL_PPE_INDEX_MAPPING_OFFSET 0x214
+#define HAL_TCL_PPE_INDEX_MAPPING_OFFSET 0x670
 #define HAL_TCL_PPE_INDEX_MAPPING_SLOT_SIZE 0x4
 #define HAL_TCL_PPE_INDEX_MAPPING_TABLE_n_ADDR(base, n) ((base) + \
 			HAL_TCL_PPE_INDEX_MAPPING_OFFSET + \
@@ -1666,8 +1666,6 @@ u32 ath12k_hal_srng_get_cmd_size(enum hal_tlv_tag_be type);
 void *ath12k_hal_srng_src_get_next_entry_by_cmd_size(struct ath12k_base *ab,
 						     struct hal_srng *srng,
 						     enum hal_tlv_tag_be type);
-void ath12k_wifi8_hal_ppeds_cfg_ast_override_map_reg(struct ath12k_base *ab, u8 idx,
-						     u32 ppeds_idx_map_val);
 void ath12k_wifi8_hal_srng_hw_disable(struct ath12k_base *ab,
 				      struct hal_srng *srng);
 void ath12k_wifi8_hal_reset_rx_reo_tid_q(void *vaddr,
@@ -1683,8 +1681,6 @@ void ath12k_wifi8_hal_tx_set_ppe_vp_entry(struct ath12k_base *ab,
 					  struct ath12k_dp_ppe_vp_profile *ppe_vp_profile,
 					  u32 ppe_vp_idx, u32 vdev_id,
 					  u32 bank_id, u32 lmac_id);
-void ath12k_wifi8_hal_ppeds_cfg_ast_override_map_reg(struct ath12k_base *ab, u8 idx,
-						     u32 ppeds_idx_map_val);
 void ath12k_wifi8_hal_reo_config_reo2ppe_dest_info(struct ath12k_base *ab);
 void ath12k_wifi8_hal_tx_completion_process(struct hal_tqm2sw_completion_ring *desc,
 					    struct ath12k_dp_tx_comp_status *tx_comp_status);
@@ -1702,6 +1698,9 @@ void ath12k_wifi8_hal_srng_idx_update_addr(struct ath12k_base *ab, struct hal_sr
 void ath12k_wifi8_hal_srng_hw_enable(struct ath12k_base *ab,
 		struct hal_srng *srng);
 void ath12k_wifi8_hal_ppeds_reo2ppe_cc_config(struct ath12k_base *ab);
+bool ath12k_wifi8_hal_ppeds_cfg_ast(struct ath12k_base *ab,
+		u32 ppe_vp_num,
+		u32 ppeds_idx_map_val);
 
 void ath12k_wifi8_hal_tasc_peer_tx_cfg(struct ath12k_base *ab, bool enable);
 void ath12k_wifi8_hal_tasc_peer_clk_cycle_config(struct ath12k_base *ab);
@@ -1737,6 +1736,16 @@ void ath12k_wifi8_hal_tasc_peer_rx_band(struct ath12k_base *ab,
 					enum tasc_band_index band,
 					u16 band_idx, bool enable);
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+void ath12k_wifi8_hal_ppeds_cfg_ast_override_map_reg(struct ath12k_base *ab, u8 idx,
+						     u32 ppeds_idx_map_val);
+#else
+static inline
+void ath12k_wifi8_hal_ppeds_cfg_ast_override_map_reg(struct ath12k_base *ab, u8 idx,
+						     u32 ppeds_idx_map_val)
+{
+}
+#endif
 static inline
 void *ath12k_hal_srng_src_begin_get_next_entry_nolock_fast(struct hal_srng *srng)
 {

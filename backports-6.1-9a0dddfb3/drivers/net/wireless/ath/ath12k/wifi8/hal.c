@@ -950,6 +950,8 @@ void ath12k_wifi8_hal_tx_set_ppe_vp_entry(struct ath12k_base *ab,
 					  u32 bank_id, u32 lmac_id)
 {
 	u32 ppe_vp_config = 0;
+	struct ath12k_base *central_ab =
+		ath12k_wifi8_ppeds_get_central_ab(ab);
 
 	if (lmac_id == HAL_WILDCARD_LMAC_ID)
 		lmac_id = HAL_TX_PPE_VP_CFG_WILDCARD_LMAC_ID;
@@ -975,20 +977,48 @@ void ath12k_wifi8_hal_tx_set_ppe_vp_entry(struct ath12k_base *ab,
 		u32_encode_bits(vdev_id, HAL_TX_PPE_VP_CFG_VDEV_ID);
 
 reg_write:
-	ath12k_hif_write32(ab, HAL_TX_PPE_VP_CONFIG_TABLE_ADDR +
+	ath12k_hif_write32(central_ab, HAL_TX_PPE_VP_CONFIG_TABLE_ADDR +
 			   (HAL_TX_PPE_VP_CONFIG_TABLE_OFFSET * ppe_vp_idx),
 			   ppe_vp_config);
 }
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 void ath12k_wifi8_hal_ppeds_cfg_ast_override_map_reg(struct ath12k_base *ab, u8 idx,
 						     u32 ppeds_idx_map_val)
 {
 	u32 reg_addr;
+	struct ath12k_base *central_ab =
+		ath12k_wifi8_ppeds_get_central_ab(ab);
 
 	reg_addr = HAL_TCL_PPE_INDEX_MAPPING_TABLE_n_ADDR(HAL_SEQ_WCSS_UMAC_TCL_REG, idx);
 
-	ath12k_hif_write32(ab, reg_addr, ppeds_idx_map_val);
+	ath12k_hif_write32(central_ab, reg_addr, ppeds_idx_map_val);
 }
+
+bool ath12k_wifi8_hal_ppeds_cfg_ast(struct ath12k_base *ab,
+		u32 ppe_vp_num,
+		u32 ppeds_idx_map_val)
+{
+	struct ath12k_dp_ppe_vp_profile *ppe_vp_profile;
+	struct ath12k_base *central_ab =
+		ath12k_wifi8_ppeds_get_central_ab(ab);
+
+	ppe_vp_profile = ath12k_wifi8_dp_ppeds_get_vp_profile(ab, ppe_vp_num);
+	if (!ppe_vp_profile) {
+		ath12k_dbg(ab, ATH12K_DBG_HAL, "Invalid ppe profile :%d\n", ppe_vp_num);
+		return false;
+	}
+
+	ath12k_wifi8_hal_ppeds_cfg_ast_override_map_reg(central_ab,
+			ppe_vp_profile->search_idx_reg_num,
+			ppeds_idx_map_val);
+
+	ath12k_dbg(ab, ATH12K_DBG_HAL, "ast_idx map:%d reg_num:%d\n",
+			ppeds_idx_map_val,
+			ppe_vp_profile->search_idx_reg_num);
+	return true;
+}
+#endif
 
 void ath12k_wifi8_hal_reo_config_reo2ppe_dest_info(struct ath12k_base *ab)
 {
