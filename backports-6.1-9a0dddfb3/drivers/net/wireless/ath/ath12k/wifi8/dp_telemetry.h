@@ -8,9 +8,22 @@
 
 #include "../core.h"
 
+#define DP_TELEMETRY_MAX_UCAST_PEERS	1536
+#define DP_TELEMETRY_MAX_GCAST_DL_PEERS	80
+#define DP_TELEMETRY_MAX_GCAST_UL_PEERS	8
+
+#define DP_TELEMETRY_PEER_WINDOW	0xFFF
+#define DP_TELEMETRY_PEER_2PEER_WINDOW	\
+	(DP_TELEMETRY_PEER_WINDOW / \
+	 (DP_TELEMETRY_MAX_UCAST_PEERS + \
+	  DP_TELEMETRY_MAX_GCAST_DL_PEERS + \
+	  DP_TELEMETRY_MAX_GCAST_UL_PEERS))
+
 int ath12k_wifi8_dp_telemetry_ring_setup(struct ath12k_base *ab);
 int ath12k_wifi8_dp_telemetry_ring_cleanup(struct ath12k_base *ab);
 int ath12k_wifi8_dp_process_tx_peer_telemetry(struct ath12k_dp *dp);
 int ath12k_wifi8_dp_process_rx_peer_telemetry(struct ath12k_dp *dp);
+int ath12k_wifi8_dp_telemetry_init(struct ath12k_dp *dp);
+int ath12k_wifi8_dp_telemetry_deinit(struct ath12k_dp *dp);
 
 #endif
