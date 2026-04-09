@@ -78,7 +78,8 @@ ath12k-$(CPTCFG_QCN_EXTN_MESH_SUPPORT) += \
 
 ath12k-$(CPTCFG_EXT_IPA_OFFLOAD) += \
 	qcn_extns/ipa/dp_ipa.o \
-	qcn_extns/ipa/dp_ipa_perf.o
+	qcn_extns/ipa/dp_ipa_perf.o \
+	qcn_extns/ipa/dp_ipa_debugfs.o
 
 ifneq ($(CONFIG_BRIDGE_MCAST_OFFLOAD),)
 ath12k-$(CPTCFG_QCN_EXTN) += qcn_extns/me_snoop_extn.o
