@@ -411,10 +411,4 @@ static inline void ath12k_peer_event_set_and_queue(struct ath12k_dp_link_peer *p
 		ath12k_event_enqueue(queue, &peer->event.common);
 }
 
-struct ath12k_dp_link_peer *
-ath12k_dp_link_peer_find_by_link_id(struct ath12k_dp_peer *dp_peer, u8 link_id);
-
-struct ath12k_dp_link_peer *
-ath12k_dp_link_peer_find_by_mac_addr(const struct ath12k_dp_peer *dp_peer,
-				     const u8 *addr);
 #endif
