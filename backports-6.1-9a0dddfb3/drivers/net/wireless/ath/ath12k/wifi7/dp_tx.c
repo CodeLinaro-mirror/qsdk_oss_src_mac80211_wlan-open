@@ -1525,6 +1525,13 @@ ath12k_wifi7_dp_tx_process_features(struct ath12k_dp_vif *dp_vif,
 		msdu_info->ext_desc.encrypt_type = HAL_ENCRYPT_TYPE_OPEN;
 	}
 
+	/* Process Scatter-Gather Feature */
+	if (DP_SKB_FEATURE_ENABLED(skb_ctrl->features, DP_FEATURE_SG)) {
+		msdu_info->ext_kmem = true;
+		msdu_info->ext_desc.ext_feature |= DP_EXT_SG;
+		msdu_info->to_fw = 0;
+	}
+
 	return ret;
 }
 
@@ -1558,6 +1565,57 @@ void ath12k_wifi7_dp_tx_update_gsn_metadata(struct ath12k_dp_tx_msdu_info *msdu_
 
 #define HTT_META_DATA_ALIGNMENT 0x8
 
+static int
+ath12k_wifi7_dp_sg_ext_desc_populate(struct ath12k_dp *dp,
+				     struct ath12k_dp_ext_desc *ext_desc,
+				     struct sk_buff *skb)
+{
+	dma_addr_t paddr[DP_TX_MAX_NUM_FRAGS];
+	const skb_frag_t *frag;
+	size_t len;
+	u32 hlen, nr_frags, cur_frag, i;
+
+	nr_frags = skb_shinfo(skb)->nr_frags;
+	hlen = skb_headlen(skb);
+
+	paddr[0] = ath12k_core_dma_map_single(dp->dev, skb->data, hlen, DMA_TO_DEVICE);
+	if (!paddr[0]) {
+		ath12k_dbg(NULL, ATH12K_DBG_DP_TX, "%p:DMA mapping failed for skb head\n",
+			   dp);
+		goto fail_skb_head;
+	}
+
+	ath12k_dp_ext_desc_set_buf0(ext_desc, paddr[0], hlen);
+
+	for (cur_frag = 0; cur_frag < nr_frags; cur_frag++) {
+		frag = &skb_shinfo(skb)->frags[cur_frag];
+		len = skb_frag_size(frag);
+
+		paddr[cur_frag + 1] = ath12k_core_dma_map_frag(dp->dev, frag, len, 0,
+							       DMA_TO_DEVICE);
+		if (!paddr[cur_frag + 1]) {
+			ath12k_dbg(NULL, ATH12K_DBG_DP_TX, "%p:DMA mapping failed for frag\n",
+				   dp);
+			goto fail_skb_frag;
+		}
+		ath12k_dp_ext_desc_set_buf(ext_desc, paddr[cur_frag + 1], len,
+					   cur_frag + 1);
+	}
+
+	return 0;
+
+fail_skb_frag:
+	for (i = 0; i < cur_frag; i++) {
+		frag = &skb_shinfo(skb)->frags[i];
+		len = skb_frag_size(frag);
+		ath12k_core_dma_unmap_page(dp->dev, paddr[i + 1], len,
+					   DMA_TO_DEVICE);
+	}
+	ath12k_core_dma_unmap_single(dp->dev, paddr[0], hlen, DMA_TO_DEVICE);
+fail_skb_head:
+	return -ENOMEM;
+}
+
 /**
  * ath12k_wifi7_dp_ext_desc_populate() - Allocate and populate extended TX descriptor
  * @dp: DP structure for slab cache access and DMA mapping
@@ -1581,6 +1639,7 @@ void ath12k_wifi7_dp_tx_update_gsn_metadata(struct ath12k_dp_tx_msdu_info *msdu_
 static int
 ath12k_wifi7_dp_ext_desc_populate(struct ath12k_dp *dp,
 				  struct ath12k_dp_link_vif *dp_link_vif,
+				  struct sk_buff *skb,
 				  struct ath12k_dp_tx_msdu_info *msdu_info,
 				  struct ath12k_tx_desc_info *tx_desc,
 				  bool gsn_valid, int gsn,
@@ -1625,6 +1684,9 @@ ath12k_wifi7_dp_ext_desc_populate(struct ath12k_dp *dp,
 		break;
 	case DP_EXT_TSO:
 	case DP_EXT_SG:
+		if (ath12k_wifi7_dp_sg_ext_desc_populate(dp, ext_desc, skb))
+			goto fail_free_ext_desc;
+		tx_desc->is_from_sg = 1;
 		break;
 	default:
 		break;
@@ -1735,7 +1797,7 @@ ath12k_wifi7_dp_tx_desc_populate(struct ath12k_pdev_dp *dp_pdev,
 
 	if (msdu_info->ext_kmem)
 		ret = ath12k_wifi7_dp_ext_desc_populate(dp_pdev->dp, dp_link_vif,
-							msdu_info, tx_desc,
+							skb, msdu_info, tx_desc,
 							gsn_valid, gsn,
 							group_slot);
 
@@ -2311,11 +2373,10 @@ skip_assign_buffer:
 	return;
 
 fail:
-	if (tx_desc && tx_desc->ext_kmem) {
-		ath12k_core_dma_unmap_single(dp->dev,
-					     tx_desc->paddr_ext_desc,
-					     tx_desc->ext_desc_len,
-					     DMA_TO_DEVICE);
+	if (tx_desc && tx_desc->ext_desc) {
+		if (tx_desc->is_from_sg)
+			ath12k_dp_tx_sg_unmap_buf(dp, tx_desc->ext_desc, skb);
+		ath12k_dp_ext_desc_unmap(dp, tx_desc->paddr_ext_desc);
 		kmem_cache_free(dp->ext_cache, tx_desc->ext_desc);
 	}
 
@@ -2410,11 +2471,10 @@ ath12k_wifi7_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 	return DP_TX_ENQ_SUCCESS;
 
 fail:
-	if (tx_desc && tx_desc->ext_kmem) {
-		ath12k_core_dma_unmap_single(dp->dev,
-					     tx_desc->paddr_ext_desc,
-					     tx_desc->ext_desc_len,
-					     DMA_TO_DEVICE);
+	if (tx_desc && tx_desc->ext_desc) {
+		if (tx_desc->is_from_sg)
+			ath12k_dp_tx_sg_unmap_buf(dp, tx_desc->ext_desc, skb);
+		ath12k_dp_ext_desc_unmap(dp, tx_desc->paddr_ext_desc);
 		kmem_cache_free(dp->ext_cache, tx_desc->ext_desc);
 	}
 
@@ -3361,6 +3421,12 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 
 		if (unlikely(!(sw_metadata->flags & DP_TX_DESC_FLAG_FAST))) {
 			if (tx_desc->ext_kmem) {
+				/* Unmap SG buffers */
+				if (tx_desc->is_from_sg) {
+					ath12k_dp_tx_sg_unmap_buf(dp, tx_desc->ext_desc,
+								  tx_desc->skb);
+					tx_desc->is_from_sg = 0;
+				}
 				ath12k_core_dma_unmap_single(dp->dev,
 							     tx_desc->paddr_ext_desc,
 							     tx_desc->ext_desc_len,

@@ -701,6 +701,7 @@ bool ath12k_dp_tx_classify_packet(struct ieee80211_hw *hw,
 	struct ieee80211_hdr *hdr;
 	struct ethhdr *eth;
 	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
+	enum ath12k_dp_tx_enq_error enq_drop;
 	u32 info_flags = info->flags;
 	u8 ring_id = 0;
 
@@ -712,6 +713,18 @@ bool ath12k_dp_tx_classify_packet(struct ieee80211_hw *hw,
 	if (key) {
 		skb_cb->cipher = key->cipher;
 		skb_cb->flags |= ATH12K_SKB_CIPHER_SET;
+	}
+
+	/* Check if non-linear skb for SG */
+	if (skb_is_nonlinear(skb)) {
+		if ((skb_shinfo(skb)->nr_frags) > DP_TX_MAX_NUM_FRAGS - 1) {
+			if (skb_linearize(skb)) {
+				enq_drop = DP_TX_ENQ_DROP_SKB_NO_LINEAR;
+				goto drop;
+			}
+		} else {
+			skb_ctrl->features |= DP_FEATURE_SG;
+		}
 	}
 
 	/* Check if HW encapsulation */
@@ -738,8 +751,10 @@ bool ath12k_dp_tx_classify_packet(struct ieee80211_hw *hw,
 		*is_mcast = is_multicast_ether_addr(da);
 		return true;
 	}
+	enq_drop = DP_TX_ENQ_DROP_NON_DATA_FRAME;
 
-	DP_STATS_INC(dp_vif, tx_i.drop[DP_TX_ENQ_DROP_NON_DATA_FRAME], 1, ring_id);
+drop:
+	DP_STATS_INC(dp_vif, tx_i.drop[enq_drop], 1, ring_id);
 	ieee80211_free_txskb(hw, skb);
 	return false;
 }
@@ -768,3 +783,22 @@ bool ath12k_dp_tx_dma_map(struct ath12k_dp *dp,
 }
 EXPORT_SYMBOL(ath12k_dp_tx_dma_map);
 #endif
+
+void ath12k_dp_tx_sg_unmap_buf(struct ath12k_dp *dp,
+			       struct ath12k_dp_ext_desc *ext_desc,
+			       struct sk_buff *skb)
+{
+	dma_addr_t paddr;
+	u32 nr_frags, i;
+	u16 len;
+
+	ath12k_dp_ext_desc_get_buf0(ext_desc, &paddr, &len);
+	ath12k_core_dma_unmap_single(dp->dev, paddr, len, DMA_TO_DEVICE);
+
+	nr_frags = skb_shinfo(skb)->nr_frags;
+	for (i = 1; i <= nr_frags; i++) {
+		ath12k_dp_ext_desc_get_buf(ext_desc, &paddr, &len, i);
+		ath12k_core_dma_unmap_page(dp->dev, paddr, len, DMA_TO_DEVICE);
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_tx_sg_unmap_buf);

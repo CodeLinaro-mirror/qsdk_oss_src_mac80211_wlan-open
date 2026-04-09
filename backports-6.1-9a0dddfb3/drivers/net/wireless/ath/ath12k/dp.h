@@ -363,7 +363,8 @@ struct ath12k_tx_desc_info {
 	   mmesh	: 1;
 	u8 flags	: 4,
 	   spl_desc	: 1,
-	   reserved1	: 2,
+	   is_from_sg   : 1,
+	   reserved1	: 1,
 	   to_fw	: 1;
 	u8 pool_id;
 } __packed __aligned(64);

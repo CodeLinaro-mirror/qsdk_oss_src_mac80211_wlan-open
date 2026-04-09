@@ -2898,6 +2898,23 @@ static inline void ath12k_core_dma_unmap_single_attrs(struct device *dev,
 #endif
 }
 
+static inline dma_addr_t
+ath12k_core_dma_map_frag(struct device *dev, const skb_frag_t *frag,
+			 size_t size, int offset,
+			 enum dma_data_direction direction)
+{
+	dma_addr_t paddr;
+#ifndef CONFIG_IO_COHERENCY
+	paddr = skb_frag_dma_map(dev, frag, offset, size, direction);
+	if (dma_mapping_error(dev, paddr))
+		return 0;
+#else
+	paddr = page_to_phys(skb_frag_page(frag)) + skb_frag_off(frag) + offset;
+	if (!paddr)
+		return 0;
+#endif
+	return paddr;
+}
 
 static inline dma_addr_t
 ath12k_core_dma_map_page(struct device *dev, struct page *page,

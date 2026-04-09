@@ -26836,6 +26836,9 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 	    wiphy->bands[NL80211_BAND_6GHZ])
 		ieee80211_hw_set(hw, SINGLE_SCAN_ON_ALL_BANDS);
 
+	/* Enable SG offload */
+	hw->netdev_features |= NETIF_F_SG;
+
 	ieee80211_hw_set(hw, SIGNAL_DBM);
 	ieee80211_hw_set(hw, SUPPORTS_PS);
 	ieee80211_hw_set(hw, SUPPORTS_DYNAMIC_PS);
