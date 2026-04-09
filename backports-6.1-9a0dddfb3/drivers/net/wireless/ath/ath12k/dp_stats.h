@@ -10,6 +10,7 @@
 #include "dp_cmn.h"
 #include "cmn_defs.h"
 #include "dp.h"
+#include "ppe.h"
 #include <linux/ip.h>
 #include "qcn_extns/ath12k_cmn_extn.h"
 
@@ -892,6 +893,7 @@ struct ath12k_telemetry_dp_device {
 	u32 tx_comp_err[DP_TX_COMP_ERR_MAX][DP_TCL_NUM_RING_MAX];
 	u32 rx_wbm_sw_drop_reason[WBM_ERR_DROP_MAX];
 	u32 reo_sw_drop_reason[DP_RX_ERR_MAX][DP_REO_RING_MAX];
+	struct ath12k_ppeds_stats ppeds_stats;
 };
 
 struct ath12k_rx_peer_rate_stats {

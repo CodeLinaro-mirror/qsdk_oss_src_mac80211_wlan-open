@@ -3648,6 +3648,10 @@ void ath12k_dp_get_device_stats(struct ath12k_dp *dp,
 	memcpy(&telemetry_device->reo_sw_drop_reason,
 	       &dp->device_stats.rx.rx_err,
 	       sizeof(telemetry_device->reo_sw_drop_reason));
+
+	memcpy(&telemetry_device->ppeds_stats,
+	       &dp->ppe.ppeds_stats,
+	       sizeof(telemetry_device->ppeds_stats));
 }
 
 void ath12k_dp_clear_link_desc_pool(struct ath12k_dp *dp)

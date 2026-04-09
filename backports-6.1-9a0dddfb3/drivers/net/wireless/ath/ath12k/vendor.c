@@ -1778,6 +1778,142 @@ static int ath12k_fill_device_tx_stats(struct ath12k_base *ab,
 	return 0;
 }
 
+static int ath12k_fill_device_ppeds_stats(struct ath12k_base *ab,
+					  struct sk_buff *vendor_event,
+					  struct ath12k_telemetry_dp_device *dev_stats)
+{
+	int reason = 0;
+	struct nlattr *tqm_rel_rsn_attr;
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_WLAN_TELEMETRY_PPEDS_TCL_PROD_CNT,
+			dev_stats->ppeds_stats.tcl_prod_cnt)) {
+		ath12k_err(NULL, "nla put failure: tcl prod cnt");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_WLAN_TELEMETRY_PPEDS_TCL_CONS_CNT,
+			dev_stats->ppeds_stats.tcl_cons_cnt)) {
+		ath12k_err(NULL, "nla put failure: tcl cons cnt");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_WLAN_TELEMETRY_PPEDS_REO_PROD_CNT,
+			dev_stats->ppeds_stats.reo_prod_cnt)) {
+		ath12k_err(NULL, "nla put failure: reo prod cnt");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_WLAN_TELEMETRY_PPEDS_REO_CONS_CNT,
+			dev_stats->ppeds_stats.reo_cons_cnt)) {
+		ath12k_err(NULL, "nla put failure: reo cons cnt");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_WLAN_TELEMETRY_PPEDS_GET_TX_DESC_CNT,
+			dev_stats->ppeds_stats.get_tx_desc_cnt)) {
+		ath12k_err(NULL, "nla put failure: get tx desc cnt");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_WLAN_TELEMETRY_PPEDS_TX_DESC_ALLOCATED,
+			dev_stats->ppeds_stats.tx_desc_allocated)) {
+		ath12k_err(NULL, "nla put failure: tx desc allocated");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_WLAN_TELEMETRY_PPEDS_TX_DESC_ALLOC_FAILS,
+			dev_stats->ppeds_stats.tx_desc_alloc_fails)) {
+		ath12k_err(NULL, "nla put failure: tx desc alloc fails");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_WLAN_TELEMETRY_PPEDS_TX_DESC_FREED,
+			dev_stats->ppeds_stats.tx_desc_freed)) {
+		ath12k_err(NULL, "nla put failure: tx desc freed");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_WLAN_TELEMETRY_PPEDS_FW2WBM_PKT_DROPS,
+			dev_stats->ppeds_stats.fw2wbm_pkt_drops)) {
+		ath12k_err(NULL, "nla put failure: fw2wbm pkt drops");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_WLAN_TELEMETRY_PPEDS_ENABLE_INTR_CNT,
+			dev_stats->ppeds_stats.enable_intr_cnt)) {
+		ath12k_err(NULL, "nla put failure: enable intr cnt");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_WLAN_TELEMETRY_PPEDS_DISABLE_INTR_CNT,
+			dev_stats->ppeds_stats.disable_intr_cnt)) {
+		ath12k_err(NULL, "nla put failure: disable intr cnt");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_WLAN_TELEMETRY_PPEDS_RELEASE_TX_SINGLE_CNT,
+			dev_stats->ppeds_stats.release_tx_single_cnt)) {
+		ath12k_err(NULL, "nla put failure: release tx single cnt");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_WLAN_TELEMETRY_PPEDS_RELEASE_RX_DESC_CNT,
+			dev_stats->ppeds_stats.release_rx_desc_cnt)) {
+		ath12k_err(NULL, "nla put failure: release rx desc cnt");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_WLAN_TELEMETRY_PPEDS_NUM_RX_DESC_FREED,
+			dev_stats->ppeds_stats.num_rx_desc_freed)) {
+		ath12k_err(NULL, "nla put failure: num rx desc freed");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_WLAN_TELEMETRY_PPEDS_NUM_RX_DESC_REALLOC,
+				dev_stats->ppeds_stats.num_rx_desc_realloc)) {
+		ath12k_err(NULL, "nla put failure: num rx desc realloc");
+		return -EINVAL;
+	}
+
+	tqm_rel_rsn_attr = nla_nest_start(vendor_event,
+					  QCA_VENDOR_WLAN_TELEMETRY_PPEDS_TQM_REL_REASON);
+	if (!tqm_rel_rsn_attr) {
+		ath12k_err(NULL,
+			   "nla nest failure: device stats - tqm rel rsn");
+		return -EINVAL;
+	}
+
+	for (reason = 0; reason < QCA_VENDOR_ATTR_WBM_TQM_REL_REASON_MAX;
+	     reason++) {
+		if (nla_put_u32(vendor_event, reason + 1,
+				dev_stats->ppeds_stats.tqm_rel_reason[reason])) {
+			ath12k_err(NULL, "nla put failure: device stats-tqm rel rsn %d - %d",
+				   QCA_VENDOR_ATTR_PER_PKT_STATS_TX_WBM_REL_REASON,
+				   reason + 1);
+			nla_nest_end(vendor_event, tqm_rel_rsn_attr);
+			return -EINVAL;
+		}
+	}
+	nla_nest_end(vendor_event, tqm_rel_rsn_attr);
+
+	return 0;
+}
+
 static int ath12k_prepare_device_vendor_event(struct sk_buff *vendor_event,
 					      struct ath12k_dp *dp,
 					      struct ath12k_telemetry_command *cmd)
@@ -1830,7 +1966,20 @@ static int ath12k_prepare_device_vendor_event(struct sk_buff *vendor_event,
 			goto out;
 		}
 	}
-
+	attr = nla_nest_start(vendor_event,
+			      QCA_VENDOR_ATTR_WLAN_TELEMETRY_PPEDS_STATS_EVENT);
+	if (attr) {
+		if (ath12k_fill_device_ppeds_stats(dp->ab, vendor_event,
+						   telemetry_device)) {
+			ath12k_err(dp->ab,
+				   "Error filling device ppeds stats");
+			goto out;
+		}
+		nla_nest_end(vendor_event, attr);
+	} else {
+		ath12k_err(dp->ab, "nla nest failure: device ppeds stats");
+		goto out;
+	}
 	ret = 0;
 out:
 	vfree(telemetry_device);
@@ -1906,6 +2055,40 @@ static int ath12k_get_device_feat_tx_attr_size(void)
 	return total_size;
 }
 
+static int ath12k_get_device_ppeds_attr_size(void)
+{
+	struct ath12k_ppeds_stats stats;
+	int attr_size = 0;
+	int payload_size = 0;
+	int total_size = 0;
+
+	payload_size = nla_total_size(sizeof(stats.tcl_prod_cnt)) +
+		       nla_total_size(sizeof(stats.tcl_cons_cnt)) +
+		       nla_total_size(sizeof(stats.reo_prod_cnt)) +
+		       nla_total_size(sizeof(stats.reo_cons_cnt)) +
+		       nla_total_size(sizeof(stats.get_tx_desc_cnt)) +
+		       nla_total_size(sizeof(stats.tx_desc_allocated)) +
+		       nla_total_size(sizeof(stats.tx_desc_alloc_fails)) +
+		       nla_total_size(sizeof(stats.tx_desc_freed)) +
+		       nla_total_size(sizeof(stats.fw2wbm_pkt_drops)) +
+		       nla_total_size(sizeof(stats.enable_intr_cnt)) +
+		       nla_total_size(sizeof(stats.disable_intr_cnt)) +
+		       nla_total_size(sizeof(stats.release_tx_single_cnt)) +
+		       nla_total_size(sizeof(stats.release_rx_desc_cnt)) +
+		       nla_total_size(sizeof(stats.num_rx_desc_freed)) +
+		       nla_total_size(sizeof(stats.num_rx_desc_realloc));
+
+	attr_size = payload_size;
+	payload_size = nla_total_size(sizeof(u32)) *
+		       (HAL_WBM_TQM_REL_REASON_MAX);
+	attr_size += nla_total_size_nested(payload_size);
+
+	/* Parent device stats */
+	total_size = nla_total_size_nested(attr_size);
+
+	return total_size;
+}
+
 static int ath12k_get_device_attr_size(struct ath12k_telemetry_command *cmd)
 {
 	int total_size = 0;
@@ -1915,6 +2098,8 @@ static int ath12k_get_device_attr_size(struct ath12k_telemetry_command *cmd)
 
 	if (cmd->feat.feat_tx)
 		total_size += ath12k_get_device_feat_tx_attr_size();
+
+	total_size += ath12k_get_device_ppeds_attr_size();
 
 	return total_size;
 }
