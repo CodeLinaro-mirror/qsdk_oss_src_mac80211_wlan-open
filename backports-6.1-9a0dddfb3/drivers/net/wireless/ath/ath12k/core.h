@@ -773,6 +773,8 @@ struct ath12k_link_vif {
 	/* shared memory to firmware for critical update procedure */
 	struct ath12k_cu_mem *cu_mem;
 	dma_addr_t cu_mem_paddr;
+	u32 nav_status;
+	u32 nav_threshold;
 };
 
 struct ath12k_dp_link_vif {
