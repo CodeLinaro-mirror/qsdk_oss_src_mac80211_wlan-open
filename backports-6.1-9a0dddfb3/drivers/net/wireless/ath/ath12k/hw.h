@@ -15,6 +15,8 @@
 
 struct ath12k_csi_cfr_header;
 struct ath12k_cfr_peer_tx_param;
+struct ath12k_mac_pri_link_migr_peer_node;
+struct ath12k_link_vif;
 
 /* Target configuration defines */
 
@@ -367,6 +369,8 @@ struct ath12k_hw_ops {
 	void (*rx_peer_ba_config)(struct ath12k_base *ab, u8 tid, u32 *ba_win_size,
 				  u16 *ssn);
 	bool (*rx_peer_tid_skip_pn_replay)(struct ath12k_base *ab, u8 tid);
+	void (*dp_peer_migration)(struct ath12k_link_vif *arvif,
+				   struct ath12k_mac_pri_link_migr_peer_node *peer_node);
 };
 
 static inline

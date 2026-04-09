@@ -2775,6 +2775,7 @@ enum wmi_tlv_service {
 	WMI_SERVICE_EXT_TLV_SUPPORT = 465,
 
 	WMI_TLV_SERVICE_SHARED_CU_MEM_MODEL_COUNT_DOWN = 497,
+	WMI_SERVICE_ML_PEER_MASTER_MIGRATION_SUPPORT = 500,
 
 	WMI_MAX_EXT2_SERVICE,
 };
@@ -9998,6 +9999,7 @@ int ath12k_wmi_mlo_reconfig_link_removal(struct ath12k *ar, u32 vdev_id,
 					 const u8 *reconfig_ml_ie,
 					 size_t reconfig_ml_ie_len);
 bool ath12k_wmi_is_umac_migration_supported(struct ath12k_base *ab);
+bool ath12k_wmi_is_master_migration_supported(struct ath12k_base *ab);
 int ath12k_wmi_mlo_send_ptqm_migrate_cmd(struct ath12k_link_vif *arvif,
 				         struct list_head *peer_migr_list,
 				         u16 num_peers);

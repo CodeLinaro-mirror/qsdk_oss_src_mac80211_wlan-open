@@ -198,6 +198,9 @@ struct ath12k_mac_pri_link_migr_peer_node {
 	struct list_head list;
 	u16 ml_peer_id;
 	u8 hw_link_id;
+	/* contains new selected primary link id */
+	u8 pri_link_id;
+	struct ieee80211_sta *sta;
 };
 
 void ath12k_mac_11d_scan_start(struct ath12k *ar, u32 vdev_id);
