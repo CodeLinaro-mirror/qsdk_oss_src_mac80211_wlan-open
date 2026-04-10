@@ -991,7 +991,7 @@ ath12k_htt_update_tx_rate_stats(struct ath12k_dp_link_peer *peer,
 	else
 		DP_STATS_UPD(tx_stats, tx_ratecode,
 			     ATH12K_HW_RATE_CODE(peer_stats->mcs, peer_stats->nss,
-						 peer_stats->flags));
+						 peer_stats->flags, 0));
 
 	if (tx_stats->avg_tx_rate == INVALID_RATE)
 		tx_stats->avg_tx_rate = WEIGHTED_AVG_IN(tx_stats->tx_rate);
