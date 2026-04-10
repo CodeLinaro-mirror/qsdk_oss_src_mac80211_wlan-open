@@ -2232,7 +2232,6 @@ static int ath12k_mac_monitor_vdev_delete(struct ath12k *ar)
 		ar->num_created_vdevs--;
 		ar->monitor_vdev_id = -1;
 		ar->monitor_vdev_created = false;
-		ath12k_dp_ext_mon_reset(&ar->dp);
 	}
 
 	return ret;
@@ -19406,6 +19405,9 @@ static int ath12k_mac_vdev_delete(struct ath12k *ar, struct ath12k_link_vif *arv
 	if (unlikely(test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags)))
 		goto err_vdev_del;
 
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR)
+		ath12k_dp_ext_mon_reset(&ar->dp);
+
 	ret = ath12k_wmi_vdev_delete(ar, arvif->vdev_id);
 	if (ret) {
 		ath12k_warn(ab, "failed to delete WMI vdev %d: %d\n",
@@ -19441,7 +19443,6 @@ static int ath12k_mac_vdev_delete(struct ath12k *ar, struct ath12k_link_vif *arv
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
 		ar->monitor_vdev_id = -1;
 		ar->monitor_vdev_created = false;
-		ath12k_dp_ext_mon_reset(&ar->dp);
 	} else if (ahvif->vdev_type != WMI_VDEV_TYPE_STA) {
 		ar->dp.stats.telemetry_stats.sta_vap_exist--;
 		ath12k_dbg(ab, ATH12K_DBG_MAC, "vdev %pM deleted, vdev_id %d\n",
@@ -21662,6 +21663,7 @@ ath12k_mac_unassign_vif_chanctx_handle(struct ieee80211_hw *hw,
 		WARN_ON(!arvif->is_started);
 
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
+		ath12k_dp_ext_mon_reset(&ar->dp);
 		ret = ath12k_mac_monitor_stop(ar, ahvif);
 		if (ret)
 			return;
