@@ -1241,7 +1241,8 @@ ieee80211_replace_chanctx(struct ieee80211_local *local,
 	    !list_empty(&curr_ctx->reserved_links))
 		return ERR_PTR(-EBUSY);
 
-	new_ctx = ieee80211_alloc_chanctx(local, chanreq, mode, -1);
+	new_ctx = ieee80211_alloc_chanctx(local, chanreq, mode,
+					  curr_ctx->conf.radio_idx);
 	if (!new_ctx)
 		return ERR_PTR(-ENOMEM);
 
