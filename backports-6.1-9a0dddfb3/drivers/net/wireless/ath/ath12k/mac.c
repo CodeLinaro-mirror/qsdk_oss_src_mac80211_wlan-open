@@ -858,6 +858,32 @@ ath12k_mac_bitrate_mask_num_eht_rates(struct ath12k *ar,
        return num_rates;
 }
 
+static u32
+ath12k_mac_max_uhr_nss(const u32 uhr_mcs_mask[NL80211_UHR_NSS_MAX])
+{
+	int nss;
+
+	for (nss = NL80211_UHR_NSS_MAX - 1; nss >= 0; nss--)
+		if (uhr_mcs_mask[nss])
+			return nss + 1;
+
+	return 1;
+}
+
+static int
+ath12k_mac_bitrate_mask_num_uhr_rates(struct ath12k *ar,
+				      enum nl80211_band band,
+				      const struct cfg80211_bitrate_mask *mask)
+{
+	int num_rates = 0;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(mask->control[band].uhr_mcs); i++)
+		num_rates += hweight32(mask->control[band].uhr_mcs[i]);
+
+	return num_rates;
+}
+
 static u8 ath12k_parse_mpdudensity(u8 mpdudensity)
 {
 /*  From IEEE Std 802.11-2020 defined values for "Minimum MPDU Start Spacing":
@@ -22854,7 +22880,8 @@ static int ath12k_mac_set_rate_params(struct ath12k_link_vif *arvif,
 				      u8 he_gi, u8 he_ltf, bool he_fixed_rate,
 				      u8 eht_gi, u8 eht_ltf,
 				      bool eht_fixed_rate,
-				      int he_ul_rate, u8 he_ul_nss)
+				      int he_ul_rate, u8 he_ul_nss,
+				      bool uhr_fixed_rate)
 {
 	struct ieee80211_bss_conf *link_conf;
 	struct ath12k *ar = arvif->ar;
@@ -22884,7 +22911,10 @@ static int ath12k_mac_set_rate_params(struct ath12k_link_vif *arvif,
 			"eht_gi:0x%02x, eht_ltf:0x%02x, eht_fixed_rate:%d\n", eht_gi,
 			eht_ltf, eht_fixed_rate);
 
-	if (!he_support || !eht_support) {
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
+			 "uhr_fixed_rate:%d\n", uhr_fixed_rate);
+
+	if (!he_support || !eht_support || uhr_fixed_rate) {
 		vdev_param = WMI_VDEV_PARAM_FIXED_RATE;
 		ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
 						    vdev_param, rate);
@@ -23053,6 +23083,40 @@ ath12k_mac_eht_mcs_range_present(struct ath12k *ar,
 	return true;
 }
 
+static bool
+ath12k_mac_uhr_mcs_range_present(struct ath12k *ar,
+				 enum nl80211_band band,
+				 const struct cfg80211_bitrate_mask *mask)
+{
+	u32 uhr_mcs;
+	int i;
+
+	for (i = 0; i < NL80211_UHR_NSS_MAX; i++) {
+		uhr_mcs = mask->control[band].uhr_mcs[i];
+
+		switch (uhr_mcs) {
+		case 0:
+		case (BIT(8) - 1) | BIT(17) | BIT(19) | BIT(20):
+		case (BIT(10) - 1) | BIT(17) | BIT(19) |
+		      BIT(20) | BIT(23):
+		case (BIT(12) - 1) | BIT(17) | BIT(19) |
+		      BIT(20) | BIT(23):
+		case (BIT(14) - 1) | BIT(17) | BIT(19) |
+		      BIT(20) | BIT(23):
+			break;
+		case (BIT(15) - 1) | BIT(17) | BIT(19) |
+		      BIT(20) | BIT(23):
+			if (i != 0)
+				return false;
+			break;
+		default:
+			return false;
+		}
+	}
+
+	return true;
+}
+
 static void ath12k_mac_set_bitrate_mask_iter(void *data,
 					     struct ieee80211_sta *sta)
 {
@@ -23187,7 +23251,8 @@ int ath12k_is_mcs_rate_changed(enum nl80211_band band,
 	    user_mask->control[band].vht_mcs_changed ||
 	    user_mask->control[band].he_mcs_changed ||
 	    user_mask->control[band].he_ul_mcs_changed ||
-	    user_mask->control[band].eht_mcs_changed)
+	    user_mask->control[band].eht_mcs_changed ||
+	    user_mask->control[band].uhr_mcs_changed)
 		return 1;
 
 	return 0;
@@ -23208,10 +23273,12 @@ ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 	const u16 *he_mcs_mask;
 	const u16 *eht_mcs_mask;
 	const u16 *he_ul_mcs_mask;
+	const u32 *uhr_mcs_mask;
 	u8 he_ltf = 0;
 	u8 he_gi = 0;
 	u8 eht_ltf = 0;
 	u8 eht_gi = 0;
+	u8 uhr_ueqm_pattern;
 	u32 rate;
 	u8 nss, mac_nss, he_ul_nss = 0;
 	u8 sgi;
@@ -23222,6 +23289,7 @@ ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 	int he_ul_rate = -1;
 	bool he_fixed_rate = false;
 	bool eht_fixed_rate = false;
+	bool uhr_fixed_rate = false;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -23244,6 +23312,7 @@ ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 	eht_mcs_mask = mask->control[band].eht_mcs;
 	ldpc = !!(ar->ht_cap_info & WMI_HT_CAP_LDPC);
 	he_ul_mcs_mask = mask->control[band].he_ul_mcs;
+	uhr_mcs_mask = mask->control[band].uhr_mcs;
 
 	sgi = mask->control[band].gi;
 	he_gi = mask->control[band].he_gi;
@@ -23315,8 +23384,9 @@ ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 		mac_nss = max3(ath12k_mac_max_ht_nss(ht_mcs_mask),
 			       ath12k_mac_max_vht_nss(vht_mcs_mask),
 			       ath12k_mac_max_he_nss(he_mcs_mask));
-		mac_nss = max(mac_nss,
-			      ath12k_mac_max_eht_nss(eht_mcs_mask));
+		mac_nss = max3(mac_nss,
+			       ath12k_mac_max_eht_nss(eht_mcs_mask),
+			       ath12k_mac_max_uhr_nss(uhr_mcs_mask));
 		nss = min_t(u32, ar->num_tx_chains, mac_nss);
 
 		/* If multiple rates across different preambles are given
@@ -23377,6 +23447,18 @@ ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 			goto out;
 		}
 
+		num_rates = ath12k_mac_bitrate_mask_num_uhr_rates(ar, band, mask);
+		if (num_rates == 1)
+			uhr_fixed_rate = true;
+
+		if (!ath12k_mac_uhr_mcs_range_present(ar, band, mask) &&
+		    num_rates > 1) {
+			ath12k_warn(ar->ab,
+				    "Setting more than one UHR MCS Value in bitrate mask not supported\n");
+			ret = -EINVAL;
+			goto out;
+		}
+
 		if(!ath12k_is_mcs_rate_changed(band, mask))
 			goto skip_mcs_set;
 
@@ -23391,9 +23473,31 @@ ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 	}
 
 skip_mcs_set:
+
+	if (mask->control[band].uhr_mcs_changed && uhr_fixed_rate) {
+		for (u8 i = 0; i < ARRAY_SIZE(mask->control[band].uhr_mcs); i++) {
+			if (mask->control[band].uhr_mcs[i]) {
+				u8 rate_idx;
+
+				rate_idx = ffs(mask->control[band].uhr_mcs[i]) - 1;
+				uhr_ueqm_pattern = cfg80211_get_uhr_ueqm_map(
+						mask->control[band].ueqm_pattern.pattern,
+						ath12k_mac_max_uhr_nss(uhr_mcs_mask),
+						rate_idx);
+				if (!uhr_ueqm_pattern ||
+				    (hweight32(uhr_ueqm_pattern) == 1))
+					rate = ATH12K_HW_RATE_CODE(rate_idx, i,
+								   WMI_RATE_PREAMBLE_UHR,
+								   ffs(uhr_ueqm_pattern));
+				break;
+			}
+		}
+	}
+
 	ret = ath12k_mac_set_rate_params(arvif, rate, nss, sgi, ldpc, he_gi,
 					 he_ltf, he_fixed_rate, eht_gi, eht_ltf,
-					 eht_fixed_rate, he_ul_rate, he_ul_nss);
+					 eht_fixed_rate, he_ul_rate, he_ul_nss,
+					 uhr_fixed_rate);
 	if (ret) {
 		ath12k_warn(ar->ab, "failed to set fixed rate params on vdev %i: %d\n",
 			    arvif->vdev_id, ret);
