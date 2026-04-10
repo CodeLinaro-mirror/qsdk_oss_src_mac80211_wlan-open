@@ -723,6 +723,7 @@ ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	int ret;
 	enum ath12k_ext_mon_filter_level level;
 	bool is_mcast = false;
+	bool need_rtap = true;
 
 	spin_lock(&dp_mon_pdev->rx_ext_mon_lock);
 	config = dp_mon_pdev->rx_ext_mon_config;
@@ -805,6 +806,8 @@ ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	mpdu_meta = (struct ath12k_dp_mon_mpdu_meta *)mpdu->data;
 	type_len = pkt_config->len[type];
 	level = config->level;
+	need_rtap = config->metadata & ATH12K_EXT_MON_METADATA_RTAP_HDR;
+
 	/* Unlock spinlock here; ext_mon_config must not be
 	 * accessed beyond this point
 	 */
@@ -831,7 +834,46 @@ ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	skb_reserve(mpdu, ATH12K_DP_MON_MAX_RADIO_TAP_HDR);
 	ath12k_dp_mon_update_radiotap(dp_pdev, ppdu_info, mpdu, rxs);
 
-	ath12k_dp_mon_rx_deliver_skb(dp_pdev, NULL, mpdu, rxs, ppdu_info);
+	/*
+	 * If an ext_mon listener is registered, deliver the MPDU via the
+	 * ext_mon SRCU notifier chain. The listener takes ownership of the
+	 * SKB and is responsible for consuming or forwarding it.
+	 *
+	 * If no ext_mon listener is registered and a radiotap header is
+	 * requested, deliver the MPDU to mac80211.
+	 * If no ext_mon listener is registered and radiotap is not requested,
+	 * drop the MPDU.
+	 */
+	if (ath12k_ext_mon_rx_notifier_has_listeners()) {
+		struct ath12k_ext_mon_rx_event rx_event;
+		struct ieee80211_rx_status *rx_status;
+
+		rxs->link_valid = 0;
+		rxs->link_id = 0;
+		rx_status = IEEE80211_SKB_RXCB(mpdu);
+		*rx_status = *rxs;
+
+		rx_event.mpdu = mpdu;
+		rx_event.hw = ath12k_dp_pdev_to_hw(dp_pdev);
+
+		ath12k_ext_mon_rx_notifier_call_chain(ATH12K_EVENT_EXT_MON_RX,
+						      &rx_event);
+		/*
+		 * Driver always frees the original SKB after the chain returns.
+		 * Listeners that need to retain the frame must call skb_clone()
+		 * inside their callback and take ownership of the clone.
+		 */
+		dev_kfree_skb_any(mpdu);
+	} else {
+		if (need_rtap)
+			ath12k_dp_mon_rx_deliver_skb(dp_pdev, NULL, mpdu,
+						     rxs, ppdu_info);
+		else {
+			ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON,
+				   "pkt dropped! listener absent & rtap not needed\n");
+			return -EINVAL;
+		}
+	}
 
 	return 0;
 }
