@@ -3313,6 +3313,68 @@ int ath12k_dp_ext_mon_set_filter(struct ath12k_pdev_dp *dp_pdev,
 	return ret;
 }
 
+static int
+ath12k_dp_ext_mon_get_rx_filter(struct ath12k_pdev_dp *dp_pdev,
+				struct ath12k_ext_mon_config *resp)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_dp_rx_ext_mon *rx_ext_mon;
+
+	if (unlikely(!dp_mon_pdev)) {
+		ath12k_warn(dp_pdev->dp, "monitor pdev is null\n");
+		return -EINVAL;
+	}
+
+	spin_lock(&dp_mon_pdev->rx_ext_mon_lock);
+	rx_ext_mon = dp_mon_pdev->rx_ext_mon_config;
+	if (unlikely(!rx_ext_mon)) {
+		spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
+		ath12k_warn(dp_pdev->dp, "rx_ext_mon_config is null\n");
+		return -EINVAL;
+	}
+
+	resp->filter.disable = !rx_ext_mon->enable;
+	if (!rx_ext_mon->enable) {
+		spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
+		return 0;
+	}
+
+	resp->filter.level = rx_ext_mon->level;
+	resp->filter.all_peer = rx_ext_mon->fp;
+	resp->filter.all_neighbor = rx_ext_mon->mo;
+	resp->filter.target_peer = rx_ext_mon->fpmo;
+	resp->filter.target_neighbor = rx_ext_mon->md;
+	resp->filter.meta_data = rx_ext_mon->metadata;
+	spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
+
+	return 0;
+}
+
+static int
+ath12k_dp_ext_mon_get_filter(struct ath12k_pdev_dp *dp_pdev,
+			     const struct ath12k_ext_mon_config *req,
+			     struct ath12k_ext_mon_config *resp)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	int ret = 0;
+
+	if (unlikely(!dp_mon_pdev)) {
+		ath12k_warn(dp_pdev->dp, "monitor pdev is null\n");
+		return -EINVAL;
+	}
+
+	switch (req->direction) {
+	case QCA_VENDOR_EXT_MON_DIRECTION_RX:
+		ret = ath12k_dp_ext_mon_get_rx_filter(dp_pdev, resp);
+		break;
+	default:
+		ath12k_warn(dp_pdev->dp, "invalid direction\n");
+		ret = -EINVAL;
+	}
+
+	return ret;
+}
+
 void ath12k_dp_ext_mon_process_request(struct ath12k_pdev_dp *dp_pdev,
 				       const struct ath12k_ext_mon_config *req,
 				       struct ath12k_ext_mon_config *resp)
@@ -3335,6 +3397,13 @@ void ath12k_dp_ext_mon_process_request(struct ath12k_pdev_dp *dp_pdev,
 		ret = ath12k_dp_ext_mon_set_filter(dp_pdev, req);
 		if (ret) {
 			ath12k_warn(dp_pdev->dp, "set_filter failed: %d\n", ret);
+			resp->status_code = ATH12K_EXT_MON_FILTER_SETUP_FAIL;
+		}
+		break;
+	case QCA_VENDOR_EXT_MON_CMD_TYPE_GET_FILTER:
+		ret = ath12k_dp_ext_mon_get_filter(dp_pdev, req, resp);
+		if (ret) {
+			ath12k_warn(dp_pdev->dp, "get_filter failed: %d\n", ret);
 			resp->status_code = ATH12K_EXT_MON_FILTER_SETUP_FAIL;
 		}
 		break;

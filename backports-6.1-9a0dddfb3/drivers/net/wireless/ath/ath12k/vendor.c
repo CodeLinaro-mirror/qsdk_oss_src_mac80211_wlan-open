@@ -11242,15 +11242,244 @@ ath12k_ext_mon_parse_request(struct nlattr **tb,
 }
 
 static int
+ath12k_ext_mon_get_filter_attr_len(void)
+{
+	int len = 0;
+
+	len = nla_total_size(sizeof(u32));
+	len += nla_total_size(sizeof(u32));
+	len += nla_total_size(sizeof(u32));
+
+	return len;
+}
+
+static int
+ath12k_ext_mon_get_len_attr_len(void)
+{
+	int len = 0;
+
+	len = nla_total_size(sizeof(u8));
+	len += nla_total_size(sizeof(u8));
+	len += nla_total_size(sizeof(u8));
+
+	return len;
+}
+
+static int
+ath12k_ext_mon_get_pkt_attr_len(void)
+{
+	int len = 0;
+	int payload = 0;
+
+	payload = ath12k_ext_mon_get_filter_attr_len();
+	len += nla_total_size(payload);
+
+	payload = ath12k_ext_mon_get_len_attr_len();
+	len += nla_total_size(payload);
+
+	return len;
+}
+
+static int
+ath12k_ext_mon_get_filter_config_attr_len(void)
+{
+	int len = 0;
+	int payload = 0;
+
+	len = nla_total_size(sizeof(u8));
+	len += nla_total_size(0);
+
+	payload = ath12k_ext_mon_get_pkt_attr_len();
+	len += nla_total_size(payload);
+
+	payload = ath12k_ext_mon_get_pkt_attr_len();
+	len += nla_total_size(payload);
+
+	payload = ath12k_ext_mon_get_pkt_attr_len();
+	len += nla_total_size(payload);
+
+	payload = ath12k_ext_mon_get_pkt_attr_len();
+	len += nla_total_size(payload);
+
+	len += nla_total_size(sizeof(u8));
+
+	return len;
+}
+
+static int
 ath12k_ext_mon_calculate_resp_len(void)
 {
 	int total_len = 0;
+	int payload = 0;
 
 	total_len = nla_total_size(sizeof(u8));
 	total_len += nla_total_size(sizeof(u8));
 	total_len += nla_total_size(sizeof(u8));
 
+	switch (cmd->cmd_type) {
+	case QCA_VENDOR_EXT_MON_CMD_TYPE_GET_FILTER:
+		payload = ath12k_ext_mon_get_filter_config_attr_len();
+		total_len += nla_total_size(payload);
+		break;
+	default:
+		break;
+	}
+
 	return total_len;
+}
+
+static int
+ath12k_ext_mon_put_filter(struct sk_buff *skb,
+			  const struct ath12k_ext_mon_pkt_config *pkt)
+{
+	struct nlattr *attr;
+
+	attr = nla_nest_start(skb, QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER);
+	if (!attr)
+		return -EMSGSIZE;
+
+	if (nla_put_u32(skb, QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_MGMT,
+			pkt->filter[ATH12K_EXT_MON_FRAME_MGMT]) ||
+	    nla_put_u32(skb, QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_CTRL,
+			pkt->filter[ATH12K_EXT_MON_FRAME_CTRL]) ||
+	    nla_put_u32(skb, QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_DATA,
+			pkt->filter[ATH12K_EXT_MON_FRAME_DATA])) {
+		nla_nest_cancel(skb, attr);
+		return -EMSGSIZE;
+	}
+	nla_nest_end(skb, attr);
+
+	return 0;
+}
+
+static int
+ath12k_ext_mon_put_filter_len(struct sk_buff *skb,
+			      const struct ath12k_ext_mon_pkt_config *pkt)
+{
+	struct nlattr *attr;
+
+	attr = nla_nest_start(skb, QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN);
+	if (!attr)
+		return -EMSGSIZE;
+
+	if (nla_put_u8(skb, QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN_MGMT,
+		       pkt->len[ATH12K_EXT_MON_FRAME_MGMT]) ||
+	    nla_put_u8(skb, QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN_CTRL,
+		       pkt->len[ATH12K_EXT_MON_FRAME_CTRL]) ||
+	    nla_put_u8(skb, QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN_DATA,
+		       pkt->len[ATH12K_EXT_MON_FRAME_DATA])) {
+		nla_nest_cancel(skb, attr);
+		return -EMSGSIZE;
+	}
+	nla_nest_end(skb, attr);
+
+	return 0;
+}
+
+static int
+ath12k_ext_mon_put_pkt_config(struct sk_buff *skb, int attrtype,
+			      const struct ath12k_ext_mon_pkt_config *pkt)
+{
+	struct nlattr *attr;
+	int ret;
+
+	attr = nla_nest_start(skb, attrtype);
+	if (!attr)
+		return -EMSGSIZE;
+
+	ret = ath12k_ext_mon_put_filter(skb, pkt);
+	if (ret)
+		goto err;
+
+	ret = ath12k_ext_mon_put_filter_len(skb, pkt);
+	if (ret)
+		goto err;
+
+	nla_nest_end(skb, attr);
+	return 0;
+
+err:
+	nla_nest_cancel(skb, attr);
+	return ret;
+}
+
+static int
+ath12k_ext_mon_put_filter_config(struct sk_buff *skb,
+				 const struct ath12k_ext_mon_filter_config *filter)
+{
+	struct nlattr *attr;
+	int ret;
+
+	attr = nla_nest_start(skb, QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG);
+	if (!attr)
+		return -EMSGSIZE;
+
+	if (filter->disable) {
+		if (nla_put_flag(skb, QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_DISABLE))
+			goto err;
+		nla_nest_end(skb, attr);
+		return 0;
+	}
+
+	if (nla_put_u8(skb, QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_LEVEL,
+		       filter->level))
+		goto err;
+
+	ret = ath12k_ext_mon_put_pkt_config(
+		skb, QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_ALL_PEER,
+		&filter->all_peer);
+	if (ret)
+		goto err;
+
+	ret = ath12k_ext_mon_put_pkt_config(
+		skb, QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_ALL_NEIGHBOR,
+		&filter->all_neighbor);
+	if (ret)
+		goto err;
+
+	ret = ath12k_ext_mon_put_pkt_config(
+		skb, QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_TARGET_PEER,
+		&filter->target_peer);
+	if (ret)
+		goto err;
+
+	ret = ath12k_ext_mon_put_pkt_config(
+		skb, QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_TARGET_NEIGHBOR,
+		&filter->target_neighbor);
+	if (ret)
+		goto err;
+
+	if (nla_put_u8(skb, QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_META_DATA,
+		       filter->meta_data))
+		goto err;
+
+	nla_nest_end(skb, attr);
+	return 0;
+
+err:
+	nla_nest_cancel(skb, attr);
+	return -EMSGSIZE;
+}
+
+static int
+ath12k_ext_mon_put_response(struct sk_buff *skb,
+			    const struct ath12k_ext_mon_config *req,
+			    const struct ath12k_ext_mon_config *resp)
+{
+	if (nla_put_u8(skb, QCA_VENDOR_ATTR_EXT_MON_CMD_TYPE, req->cmd_type) ||
+	    nla_put_u8(skb, QCA_VENDOR_ATTR_EXT_MON_DIRECTION, req->direction) ||
+	    nla_put_u8(skb, QCA_VENDOR_ATTR_EXT_MON_STATUS_CODE, resp->status_code))
+		return -EMSGSIZE;
+
+	if (resp->status_code != ATH12K_EXT_MON_SUCCESS)
+		return 0;
+
+	switch (req->cmd_type) {
+	case QCA_VENDOR_EXT_MON_CMD_TYPE_GET_FILTER:
+		return ath12k_ext_mon_put_filter_config(skb, &resp->filter);
+	default:
+		return 0;
+	}
 }
 
 static int
@@ -11261,6 +11490,7 @@ ath12k_ext_mon_handle_request(struct wiphy *wiphy,
 	struct sk_buff *skb;
 	int resp_len = 0;
 	struct ath12k_ext_mon_config resp = {0};
+	int ret;
 
 	ath12k_dp_ext_mon_process_request(dp_pdev, req, &resp);
 
@@ -11269,9 +11499,8 @@ ath12k_ext_mon_handle_request(struct wiphy *wiphy,
 	if (!skb)
 		return -ENOMEM;
 
-	if (nla_put_u8(skb, QCA_VENDOR_ATTR_EXT_MON_CMD_TYPE, req->cmd_type) ||
-	    nla_put_u8(skb, QCA_VENDOR_ATTR_EXT_MON_DIRECTION, req->direction) ||
-	    nla_put_u8(skb, QCA_VENDOR_ATTR_EXT_MON_STATUS_CODE, resp.status_code))
+	ret = ath12k_ext_mon_put_response(skb, req, &resp);
+	if (ret)
 		goto nla_put_failure;
 
 	return cfg80211_vendor_cmd_reply(skb);
