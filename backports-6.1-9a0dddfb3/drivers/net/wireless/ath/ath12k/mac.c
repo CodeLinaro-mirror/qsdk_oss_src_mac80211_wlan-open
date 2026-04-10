@@ -8409,6 +8409,52 @@ ath12k_mac_fill_reg_tpc_info_psd_only_non_sp_punctured(
 }
 
 static bool
+ath12k_mac_has_colocated_sp_link_vif(struct ath12k *ar,
+				     struct ath12k_link_vif *cur_arvif,
+				     u32 vdev_type)
+{
+	struct ath12k_link_vif *arvif_itr;
+	struct ieee80211_bss_conf *bss_conf;
+
+	rcu_read_lock();
+	list_for_each_entry(arvif_itr, &ar->arvifs, list) {
+		if (arvif_itr == cur_arvif || !arvif_itr->is_up)
+			continue;
+
+		if (arvif_itr->ahvif->vdev_type != vdev_type)
+			continue;
+
+		bss_conf = ath12k_get_link_bss_conf(arvif_itr);
+		if (bss_conf &&
+		    bss_conf->power_type == IEEE80211_REG_SP_AP) {
+			rcu_read_unlock();
+			return true;
+		}
+	}
+	rcu_read_unlock();
+
+	return false;
+}
+
+static u8 ath12k_mac_get_reg_6ghz_power_mode(struct ath12k *ar,
+					     struct ath12k_link_vif *arvif,
+					     struct ieee80211_bss_conf *bss_conf)
+{
+	struct ath12k_vif *ahvif = arvif->ahvif;
+	u8 reg_6g_power_mode;
+
+	reg_6g_power_mode = bss_conf->power_type;
+	if (reg_6g_power_mode == IEEE80211_REG_UNSET_AP)
+		reg_6g_power_mode = IEEE80211_REG_LPI_AP;
+
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
+	    ar->afc.is_6ghz_afc_power_event_received)
+		reg_6g_power_mode = IEEE80211_REG_SP_AP;
+
+	return reg_6g_power_mode;
+}
+
+static bool
 ath12k_mac_fill_reg_tpc_eirp_pref_punctured(
 				struct ath12k *ar,
 				struct ath12k_link_vif *arvif,
@@ -8430,6 +8476,15 @@ ath12k_mac_fill_reg_tpc_eirp_pref_punctured(
 
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_AP &&
 	    reg_6g_power_mode == IEEE80211_REG_SP_AP) {
+		if (!ar->afc.is_6ghz_afc_power_event_received &&
+		    ath12k_mac_has_colocated_sp_link_vif(ar, arvif,
+							 WMI_VDEV_TYPE_STA)) {
+			ath12k_mac_fill_reg_tpc_info_psd_only_client_sp_punctured
+									(ar,
+									arvif,
+									chanctx);
+			return true;
+		}
 		ath12k_mac_fill_reg_tpc_info_psd_only_sp_punctured(ar,
 								   arvif,
 								   chanctx);
@@ -8458,6 +8513,21 @@ ath12k_mac_fill_reg_tpc_eirp_pref_punctured(
 							arvif,
 							chanctx,
 							reg_6g_power_mode);
+}
+
+static void ath12k_mac_fill_reg_tpc_client_sp(struct ath12k *ar,
+					      struct ath12k_link_vif *arvif,
+					      struct ieee80211_chanctx_conf *chanctx)
+{
+	ath12k_mac_fill_reg_tpc_info_with_psd_eirp_pwr_for_client_sp(ar, arvif,
+								     chanctx);
+}
+
+static void ath12k_mac_fill_reg_tpc_sp(struct ath12k *ar,
+				       struct ath12k_link_vif *arvif,
+				       struct ieee80211_chanctx_conf *chanctx)
+{
+	ath12k_mac_fill_reg_tpc_info_with_psd_eirp_pwr_for_sp(ar, arvif, chanctx);
 }
 
 /**
@@ -8497,6 +8567,7 @@ static void ath12k_mac_fill_reg_tpc(struct ath12k *ar, struct wireless_dev *wdev
 {
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	u8 reg_6g_power_mode;
+	bool ap_repeater_sp_client = false;
 	struct ieee80211_bss_conf *bss_conf = ath12k_get_link_bss_conf(arvif);
 
 	if (!bss_conf) {
@@ -8504,21 +8575,31 @@ static void ath12k_mac_fill_reg_tpc(struct ath12k *ar, struct wireless_dev *wdev
 		return;
 	}
 
-	reg_6g_power_mode = bss_conf->power_type;
-	if (reg_6g_power_mode == IEEE80211_REG_UNSET_AP)
-		reg_6g_power_mode = IEEE80211_REG_LPI_AP;
+	reg_6g_power_mode = ath12k_mac_get_reg_6ghz_power_mode(ar, arvif, bss_conf);
+
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_AP &&
+	    !ar->afc.is_6ghz_afc_power_event_received &&
+	    ath12k_mac_has_colocated_sp_link_vif(ar, arvif,
+						 WMI_VDEV_TYPE_STA)) {
+		ap_repeater_sp_client = true;
+		if (reg_6g_power_mode != IEEE80211_REG_SP_AP)
+			reg_6g_power_mode = IEEE80211_REG_SP_AP;
+	}
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_MAC, " reg_6g_power_mode %d\n", reg_6g_power_mode);
 
 	if (test_bit(WMI_TLV_SERVICE_BOTH_PSD_EIRP_FOR_AP_SP_CLIENT_SP_SUPPORT,
 		     ar->ab->wmi_ab.svc_map) &&
 		     (reg_6g_power_mode == IEEE80211_REG_SP_AP)) {
-		if (ahvif->vdev_type == WMI_VDEV_TYPE_AP)
-			ath12k_mac_fill_reg_tpc_info_with_psd_eirp_pwr_for_sp(ar, arvif, chanctx);
-		else if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
-			ath12k_mac_fill_reg_tpc_info_with_psd_eirp_pwr_for_client_sp(ar,
-										     arvif,
-										     chanctx);
+		if ((ahvif->vdev_type == WMI_VDEV_TYPE_AP && ap_repeater_sp_client) ||
+		    (ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
+		    !ar->afc.is_6ghz_afc_power_event_received)) {
+			ath12k_mac_fill_reg_tpc_client_sp(ar, arvif, chanctx);
+		} else if (ahvif->vdev_type == WMI_VDEV_TYPE_AP ||
+			   (ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
+			    ar->afc.is_6ghz_afc_power_event_received)) {
+			ath12k_mac_fill_reg_tpc_sp(ar, arvif, chanctx);
+		}
 	} else if (test_bit(WMI_TLV_SERVICE_EIRP_PREFERRED_SUPPORT,
 			    ar->ab->wmi_ab.svc_map)) {
 		/* In EIRP-preferred mode, use PSD-only encoding for punctured
@@ -8614,6 +8695,17 @@ void ath12k_mac_bss_info_changed(struct ath12k *ar,
 				    arvif->vdev_id, ret);
 		else
 			arvif->ftm_responder = info->ftm_responder;
+	}
+
+	/* Repeater case: if local repeater AFC is done and colocated AP is SP,
+	 * keep STA in SP regardless of root AP power-type updates.
+	 * Non-AFC repeater path remains unchanged.
+	 */
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
+	    ar->afc.is_6ghz_afc_power_event_received &&
+	    ath12k_mac_has_colocated_sp_link_vif(ar, arvif,
+						 WMI_VDEV_TYPE_AP)) {
+		changed &= ~(BSS_CHANGED_6GHZ_POWER_MODE | BSS_CHANGED_TPE);
 	}
 
 	if (changed & BSS_CHANGED_6GHZ_POWER_MODE ||
@@ -11389,7 +11481,8 @@ void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
 		return;
 	}
 
-	reg_6g_power_mode = bss_conf->power_type;
+	reg_6g_power_mode = ath12k_mac_get_reg_6ghz_power_mode(ar, arvif, bss_conf);
+
 	if (reg_6g_power_mode == IEEE80211_REG_SP_AP &&
 	    !ar->afc.is_6ghz_afc_power_event_received)
 		reg_6g_power_mode = NL80211_REG_REGULAR_CLIENT_SP + 1;
@@ -11733,10 +11826,8 @@ void ath12k_mac_fill_reg_tpc_info_with_eirp_power(struct ath12k *ar,
 		return;
 	}
 
-	reg_6g_power_mode = bss_conf->power_type;
-	if (reg_6g_power_mode == IEEE80211_REG_UNSET_AP)
-		reg_6g_power_mode = IEEE80211_REG_LPI_AP;
-	else if (reg_6g_power_mode == IEEE80211_REG_SP_AP &&
+	reg_6g_power_mode = ath12k_mac_get_reg_6ghz_power_mode(ar, arvif, bss_conf);
+	if (reg_6g_power_mode == IEEE80211_REG_SP_AP &&
 		 !ar->afc.is_6ghz_afc_power_event_received)
 		reg_6g_power_mode = NL80211_REG_REGULAR_CLIENT_SP + 1;
 
