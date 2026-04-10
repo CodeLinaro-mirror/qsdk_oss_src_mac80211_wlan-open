@@ -13,6 +13,7 @@
 #include "dp_tx_flow_info.h"
 #include "../telemetry_agent_if.h"
 #include "dp_tx.h"
+#include "../dp_tx.h"
 
 #define ATH12K_DP_MAX_SEQ_NUM	0xFFF
 
@@ -1154,5 +1155,79 @@ void ath12k_wifi8_dp_vif_update_4addr(struct ath12k_dp_hw *dp_hw,
 	dp_vif->is_wds_4addr = true;
 	dp_vif->ast_idx = dp_peer->peer_ext_ctx->ast_index;
 	dp_vif->ast_hash = dp_peer->peer_ext_ctx->ast_hash;
+	spin_unlock_bh(&dp_hw->peer_lock);
+}
+
+void ath12k_wifi8_dp_assoc_link_update(struct ath12k_dp *dp,
+				       struct ath12k_hw *ah,
+				       struct ieee80211_sta *sta)
+{
+	struct ath12k_dp_peer *dp_peer;
+	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
+	struct ath12k_dp_hw *dp_hw = &ah->dp_hw;
+	struct ath12k_dp_tx_flow_info *tx_flow_info;
+	struct ath12k_sta *ahsta;
+	u8 assoc_link_id;
+	struct hal_txpt_classify_data ti = {0};
+	struct ath12k_dp_msdu_q_info *msdu_flow_ptr = NULL;
+	struct hal_txpt_classify_info *tx_tid_ptr = NULL;
+	dma_addr_t txpt_paddr;
+	u64 msdu_flow_dma_ptr = 0;
+	u8 tid_num, q;
+
+	spin_lock_bh(&dp_hw->peer_lock);
+	dp_peer = ath12k_dp_peer_find(dp_hw, sta->addr);
+
+	if (!dp_peer || !dp_peer->sta) {
+		spin_unlock_bh(&dp_hw->peer_lock);
+		return;
+	}
+	tx_flow_info = ath12k_dp_get_tx_flow_info_from_peer(dp_peer);
+	spin_lock_bh(&tx_flow_info->tx_q_lock);
+
+	for (tid_num = 0; tid_num < ATH12K_MAX_NUM_DATA_TIDS; tid_num++) {
+		for (q = 0; q < ATH12K_MAX_DP_MSDUQ_PER_TID; q++) {
+			msdu_flow_ptr = tx_flow_info->tid_info[tid_num].msduq[q];
+			if (!msdu_flow_ptr)
+				continue;
+
+			tx_tid_ptr = ath12k_get_txpt_info_ptr(
+					dp_peer, (q / ATH12K_NUM_MSDU_Q_PER_TID),
+					(tid_num + 1));
+			txpt_paddr = ath12k_get_txpt_paddr(
+					dp_peer, (q / ATH12K_NUM_MSDU_Q_PER_TID),
+					(tid_num + 1));
+
+			if (!tx_tid_ptr || txpt_paddr == 0)
+				continue;
+
+			msdu_flow_dma_ptr = (u64)msdu_flow_ptr->msdu_q_paddr;
+			ti.msdu_paddr = (u32)((msdu_flow_dma_ptr >> 0x8) & 0xFFFFFFFF);
+			ti.paddr = txpt_paddr;
+			ti.flow_handler = HAL_WIFITXPT_TO_TQM;
+			ti.flow_loop_handler = HAL_WIFITXPT_LOOP_TO_TQM;
+			ti.msdu_drop = 0;
+			ti.metadata = dp_peer ? dp_peer->peer_id : HAL_INVALID_PEERID;
+
+			rcu_read_lock();
+			ahsta = ath12k_sta_to_ahsta(dp_peer->sta);
+			assoc_link_id = dp_peer->sta->mlo ?
+					ahsta->assoc_link_id :
+					ahsta->deflink.link_id;
+			ti.assoc_link_id = ath12k_dp_get_hw_link_id(dp_peer,
+								    assoc_link_id);
+			if (ti.assoc_link_id == ATH12K_INVALID_HW_LINKID) {
+				rcu_read_unlock();
+				goto end;
+			}
+			rcu_read_unlock();
+
+			ath12k_wifi8_hal_txpt_classify_info_setup(dp_hw_grp,
+								  tx_tid_ptr, &ti);
+		}
+	}
+
+end:
+	spin_unlock_bh(&tx_flow_info->tx_q_lock);
 	spin_unlock_bh(&dp_hw->peer_lock);
 }

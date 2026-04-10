@@ -24,6 +24,7 @@
 #include "dp_mon.h"
 #include "umac_reset.h"
 #include "mgmt_rx.h"
+#include "dp_peer.h"
 
 extern struct ppe_ds_wlan_ops_v2 ppeds_wlanops_v2;
 struct ath12k_ppeds_arch_ops ath12k_wifi8_arch_ppeds_ops;
@@ -1057,6 +1058,7 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.dump_srng_stats = ath12k_wifi8_dump_srng_stats,
 	.dump_device_dp_stats = ath12k_wifi8_dump_device_dp_stats,
 	.reset_device_dp_stats = ath12k_wifi8_reset_device_dp_stats,
+	.dp_assoc_link_update = ath12k_wifi8_dp_assoc_link_update,
 };
 
 struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab)
