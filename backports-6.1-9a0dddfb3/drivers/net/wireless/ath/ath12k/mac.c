@@ -2575,8 +2575,8 @@ static void ath12k_mac_set_arvif_ies(struct ath12k_link_vif *arvif, struct sk_bu
 		arvif->beacon_prot = true;
 
 	rsnxe = cfg80211_find_elem(WLAN_EID_RSNX, start, rem_len);
-	if ((rsnxe && rsnxe->datalen >= 1) &&
-	    (rsnxe->data[2] & WLAN_RSNXE_CAPA11_CONTROL_PROTECT))
+	if ((rsnxe && rsnxe->datalen >= 5) &&
+	    (rsnxe->data[4] & WLAN_RSNXE_CAPA11_CONTROL_PROTECT))
 		arvif->control_frame_prot = true;
 
 	if (cfg80211_find_ie(WLAN_EID_RSN, start, rem_len))
@@ -3533,6 +3533,7 @@ static void ath12k_peer_assoc_h_basic(struct ath12k *ar,
 	/* TODO: STA WAR in ath10k for listen interval required? */
 	arg->peer_listen_intval = hw->conf.listen_interval;
 	arg->peer_nss = 1;
+	arg->control_mic_pad = 0;
 
 	if (sta->control_mic_pad)
 		arg->control_mic_pad = sta->control_mic_pad;

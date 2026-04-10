@@ -3446,27 +3446,40 @@ static void *ath12k_wmi_peer_assoc_v2_cmd(struct ath12k *ar,
 		return ptr;
 
 	*cmd_id = WMI_PEER_ASSOC_V2_CMDID;
+	struct wmi_tlv *tlv;
+	struct wmi_peer_assoc_cip_info *cip_info;
 
 	/*
 	 * Fill the tlv here for WMI_PEER_ASSOC_V2_CMDID
 	 */
 
-	if (arg->control_mic_pad > 0) {
-		int len = 0;
-		struct wmi_tlv *tlv;
-		struct wmi_peer_assoc_cip_info *cip_info;
+	/*
+	 * Fill empty TLV's for npca_params
+	 */
 
-		len = sizeof(*cip_info);
-		tlv = ptr;
-		tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, len);
-		ptr += TLV_HDR_SIZE;
-		cip_info = ptr;
-		cip_info->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_PEER_ASSOC_CIP_INFO,
-							      sizeof(*cip_info));
-		cip_info->cfp_enable =  cpu_to_le32(arg->is_cfp_enabled);
-		cip_info->cfp_padding_bits = cpu_to_le32(arg->control_mic_pad);
-		ptr += sizeof(*cip_info);
-	}
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
+	ptr += TLV_HDR_SIZE;
+
+	/*
+	 * Fill empty TLV's for create_mlo_params
+	 */
+
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
+	ptr += TLV_HDR_SIZE;
+
+	/* Always emit the CIP TLV to preserve ordering */
+
+	cip_info = ptr;
+
+	cip_info->tlv_header =
+		ath12k_wmi_tlv_cmd_hdr(WMI_TAG_PEER_ASSOC_CIP_INFO,
+				       sizeof(*cip_info));
+	cip_info->cfp_enable = cpu_to_le32(arg->is_cfp_enabled);
+	cip_info->cfp_padding_bits = cpu_to_le32(arg->control_mic_pad);
+
+	ptr += sizeof(*cip_info);
 
 	return ptr;
 }
@@ -3486,7 +3499,6 @@ int ath12k_wmi_send_peer_assoc_cmd(struct ath12k *ar,
 	struct wmi_peer_assoc_msduq_params *msduq_params;
 	struct wmi_peer_assoc_mpduq_params *mpduq_params;
 	struct wmi_peer_assoc_hol_q_params *holq_params;
-	struct wmi_peer_assoc_cip_info *cip_info;
 	enum wmi_tlv_cmd_id cmd_id = WMI_PEER_ASSOC_CMDID;
 	struct sk_buff *skb;
 	struct wmi_tlv *tlv;
@@ -3535,8 +3547,11 @@ int ath12k_wmi_send_peer_assoc_cmd(struct ath12k *ar,
 	/* add length for the TLVs which needs to be sent for peer assoc
 	 * v2 command
 	 */
-		if (arg->control_mic_pad)
-			len += TLV_HDR_SIZE + sizeof(*cip_info);
+
+	/* Dummy TLV inclusion for create mlo params and npca */
+		len += (2 * TLV_HDR_SIZE);
+
+		len += sizeof(struct wmi_peer_assoc_cip_info);
 	}
 
 	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
