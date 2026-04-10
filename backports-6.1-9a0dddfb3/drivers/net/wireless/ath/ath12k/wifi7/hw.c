@@ -716,6 +716,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
 		.peer_del_all_support = false,
+		.tlv_logger_support = ATH12K_TLV_LOGGER_DISABLED,
 	},
 	{
 		.name = "wcn7850 hw2.0",
@@ -832,6 +833,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
 		.peer_del_all_support = false,
+		.tlv_logger_support = ATH12K_TLV_LOGGER_DISABLED,
 	},
 	{
 		.name = "qcn9274 hw2.0",
@@ -962,6 +964,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
 		.peer_del_all_support = false,
+		.tlv_logger_support = ATH12K_TLV_LOGGER_DISABLED,
 	},
 	{
 		.name = "ipq5332 hw1.0",
@@ -1081,6 +1084,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
 		.peer_del_all_support = false,
+		.tlv_logger_support = ATH12K_TLV_LOGGER_DISABLED,
 	},
 	{
 		.name = "qcn6432 hw1.0",
@@ -1178,6 +1182,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
 		.peer_del_all_support = false,
+		.tlv_logger_support = ATH12K_TLV_LOGGER_DISABLED,
 	},
 	{
 		.name = "ipq5424 hw1.0",
@@ -1301,6 +1306,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
 		.peer_del_all_support = false,
+		.tlv_logger_support = ATH12K_TLV_LOGGER_DISABLED,
 	},
 };
 

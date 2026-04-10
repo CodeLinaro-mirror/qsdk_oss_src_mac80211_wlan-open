@@ -390,6 +390,7 @@ struct ath12k_hw_params {
 	const char *board_magic;
 	u32 num_rx_spt_pages;
 	bool peer_del_all_support;
+	u8 tlv_logger_support;
 };
 
 struct ath12k_hw_ops {
@@ -467,6 +468,13 @@ enum ath12k_bd_ie_type {
 	ATH12K_BD_IE_REGDB = 1,
 	/* contains sub IEs of enum ath12k_bd_ie_rxgainlut_type */
 	ATH12K_BD_IE_RXGAINLUT = 2,
+};
+
+enum ath12k_dp_mon_tlv_logger_support {
+	ATH12K_TLV_LOGGER_DISABLED = 0,
+	ATH12K_TLV_LOGGER_RX_ENABLED = 1,
+	ATH12K_TLV_LOGGER_TX_ENABLED = 2,
+	ATH12K_TLV_LOGGER_RX_TX_ENABLED = 3,
 };
 
 static inline const char *ath12k_bd_ie_type_str(enum ath12k_bd_ie_type type)
