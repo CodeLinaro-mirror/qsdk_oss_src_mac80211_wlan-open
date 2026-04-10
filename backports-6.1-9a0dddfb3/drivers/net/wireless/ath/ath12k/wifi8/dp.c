@@ -309,8 +309,6 @@ ath12k_wifi8_enable_hif_interrupts(struct ath12k_dp *dp,
 		return ret;
 	}
 
-	ath12k_hif_irq_enable(dp->ab);
-
 	ath12k_wifi8_set_ext_irq_affinity(dp);
 
 	return 0;

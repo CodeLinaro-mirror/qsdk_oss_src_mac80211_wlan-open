@@ -2481,6 +2481,19 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 			}
 		}
 
+		for (i = 0; i < ag->num_devices; i++) {
+			partner_ab = ag->ab[i];
+
+			if (!partner_ab || partner_ab->is_bypassed)
+				continue;
+
+			if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE0 &&
+			    !partner_ab->recovery_start)
+				continue;
+
+			ath12k_hif_irq_enable(partner_ab);
+		}
+
 		ret = ath12k_mgmt_htt_setup(ag);
 		if (ret)
 			goto err_mlo_init;
