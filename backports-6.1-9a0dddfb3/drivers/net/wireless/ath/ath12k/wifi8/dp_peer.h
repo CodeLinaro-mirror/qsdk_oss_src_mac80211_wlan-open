@@ -12,7 +12,6 @@
 #include "dp_tx_flow_info.h"
 
 #define ATH12K_SMD_MGMT_TID	BIT(15)
-
 struct peer_assoc_flowq_params;
 struct ath12k_dp_peer_ext_ctx {
 	struct ath12k_dp_tx_flow_info tx_flow_info;

@@ -249,8 +249,8 @@ void ath12k_dp_peer_cleanup_tqm_sync(struct ath12k_dp *dp, void *ctx,
 	spin_lock_bh(&dp_hw->peer_lock);
 	dp_peer = rcu_dereference(dp_pdev->dp_hw->dp_peer_list[peer_id]);
 	if (!dp_peer) {
-		rcu_read_unlock();
 		spin_unlock_bh(&dp_hw->peer_lock);
+		rcu_read_unlock();
 		return;
 	}
 
