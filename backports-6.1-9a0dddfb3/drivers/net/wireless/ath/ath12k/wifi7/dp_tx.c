@@ -22,6 +22,22 @@
 #include "../telemetry_agent_if.h"
 #include "dp_peer.h"
 
+#ifndef CPTCFG_EXT_IPA_OFFLOAD
+#define ATH12K_DMA_UNMAP_WITH_FREE_SKB(...) ((void)0)
+#define IPA_TX_BUFFER_FREE(...) ((void)0)
+#define IPA_TX_BUFFER_ALLOC(...) ((void)0)
+#define ATH12K_SKB_COPY_PADDR(...) ((void)0)
+#define ATH12K_SET_IPA_TCL_RING(...) ((void)0)
+
+#define ATH12K_HAL_SRNG_ACCESS_BEGIN(ab, tcl_ring) do { \
+	(void)(ab); \
+	ath12k_hal_srng_access_begin_no_lock(tcl_ring); \
+	} while (0)
+
+#define ATH12K_HAL_SRNG_ACCESS_END(ab, tcl_ring) \
+	ath12k_hal_srng_access_end_no_lock(ab, tcl_ring)
+#endif
+
 struct ath12k_tx_sw_metadata {
 	struct sk_buff *skb;
 	struct sk_buff *skb_ext_desc;
@@ -1385,10 +1401,7 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	ring_selector = dp->hw_params->hw_ops->get_ring_selector(skb);
 
 	ti.ring_id = ring_selector % dp->hw_params->max_tx_ring;
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
-	if (ti.ring_id == ATH12K_IPA_TCL_RING)
-		ti.ring_id = ATH12K_IPA_TCL_SW_RING;
-#endif
+	ATH12K_SET_IPA_TCL_RING(ti);
 
 	ti.rbm_id = hal->tcl_to_cmp_rbm_map[ti.ring_id].rbm_id;
 
@@ -1519,9 +1532,7 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 map:
 #ifndef CONFIG_IO_COHERENCY
 	ti.paddr = dma_map_single(dp->dev, skb->data, skb->len, DMA_TO_DEVICE);
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
-	ATH12K_SKB_CB(skb)->paddr = ti.paddr;
-#endif
+	ATH12K_SKB_COPY_PADDR(skb, ti);
 	if (dma_mapping_error(dp->dev, ti.paddr)) {
 		atomic_inc(&dp->device_stats.tx_err.misc_fail);
 		ath12k_warn(ab, "failed to DMA map data Tx buffer\n");
@@ -1661,21 +1672,13 @@ skip_htt_metadata:
 	hal_ring_id = tx_ring->tcl_data_ring.ring_id;
 	tcl_ring = &hal->srng_list[hal_ring_id];
 
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
-	ath12k_hal_srng_access_begin(ab, tcl_ring);
-#else
-	ath12k_hal_srng_access_begin_no_lock(tcl_ring);
-#endif
+	ATH12K_HAL_SRNG_ACCESS_BEGIN(ab, tcl_ring);
 	hal_tcl_desc = ath12k_hal_srng_src_get_next_entry(ab, tcl_ring);
 	if (!hal_tcl_desc) {
 		/* NOTE: It is highly unlikely we'll be running out of tcl_ring
 		 * desc because the desc is directly enqueued onto hw queue.
 		 */
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
-		ath12k_hal_srng_access_end(ab, tcl_ring);
-#else
-		ath12k_hal_srng_access_end_no_lock(ab, tcl_ring);
-#endif
+		ATH12K_HAL_SRNG_ACCESS_END(ab, tcl_ring);
 		dp->device_stats.tx_err.desc_na[ti.ring_id]++;
 		if (ath12k_dp_stats_enabled(dp_pdev) &&
 		    ath12k_tid_stats_enabled(dp_pdev)) {
@@ -1788,11 +1791,7 @@ skip_htt_metadata:
 					     qos_tag, arsta->addr);
 	}
 
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
-		ath12k_hal_srng_access_end(ab, tcl_ring);
-#else
-	ath12k_hal_srng_access_end_no_lock(ab, tcl_ring);
-#endif
+	ATH12K_HAL_SRNG_ACCESS_END(ab, tcl_ring);
 
 	DP_STATS_INC_PKT(dp_vif, tx_i.enque_to_hw, 1, ti.data_len, ti.ring_id);
 
@@ -2119,21 +2118,11 @@ ath12k_wifi7_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 		/* This event is to be handled only when the driver decides to
 		 * use WDS offload functionality.
 		 */
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
-		ath12k_core_dma_unmap_single(dp->dev,
-					     ATH12K_SKB_CB(msdu)->paddr,
-					     msdu->len, DMA_TO_DEVICE);
-		dev_kfree_skb_any(msdu);
-#endif
+		ATH12K_DMA_UNMAP_WITH_FREE_SKB(dp->ab, msdu);
 		break;
 	default:
 		ath12k_warn(dp->ab, "Unknown htt tx status %d\n", htt_status);
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
-		ath12k_core_dma_unmap_single(dp->dev,
-					     ATH12K_SKB_CB(msdu)->paddr,
-					     msdu->len, DMA_TO_DEVICE);
-		dev_kfree_skb_any(msdu);
-#endif
+		ATH12K_DMA_UNMAP_WITH_FREE_SKB(dp->ab, msdu);
 		break;
 	}
 
@@ -2995,11 +2984,7 @@ void ath12k_wifi7_dp_tx_ring_cleanup(struct ath12k_base *ab)
 	struct ath12k_dp *dp = ab->dp;
 	int i;
 
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
-	if (IPA_CTX(ab) && IPA_CTX(ab)->ipa_ops &&
-	    IPA_CTX(ab)->ipa_ops->ipa_tx_buffer_free)
-		IPA_CTX(ab)->ipa_ops->ipa_tx_buffer_free(ab);
-#endif
+	IPA_TX_BUFFER_FREE(ab);
 	for (i = 0; i < ab->hw_params->max_tx_ring; i++) {
 		ath12k_dp_srng_cleanup(ab, &dp->tx_ring[i].tcl_comp_ring);
 		ath12k_dp_srng_cleanup(ab, &dp->tx_ring[i].tcl_data_ring);
@@ -3041,11 +3026,8 @@ int ath12k_wifi7_dp_tx_ring_setup(struct ath12k_base *ab)
 			goto err;
 		}
 	}
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
-	if (IPA_CTX(ab) && IPA_CTX(ab)->ipa_ops &&
-	    IPA_CTX(ab)->ipa_ops->ipa_tx_buffer_alloc)
-		IPA_CTX(ab)->ipa_ops->ipa_tx_buffer_alloc(ab);
-#endif
+
+	IPA_TX_BUFFER_ALLOC(ab);
 
 	return 0;
 
