@@ -19047,6 +19047,51 @@ nl80211_modify_link_station(struct sk_buff *skb, struct genl_info *info)
 	return nl80211_add_mod_link_station(skb, info, false);
 }
 
+void cfg80211_mod_link_station_notify(const struct net_device *dev,
+				      const u8 *mld_mac, u8 link_id)
+{
+	struct wireless_dev *wdev = dev->ieee80211_ptr;
+	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wdev->wiphy);
+	struct sk_buff *msg;
+	void *hdr;
+
+	lockdep_assert_wiphy(wdev->wiphy);
+
+	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
+	if (!msg)
+		return;
+
+	hdr = nl80211hdr_put(msg, 0, 0, 0, NL80211_CMD_MODIFY_LINK_STA);
+	if (!hdr)
+		goto nla_put_failure;
+
+	if (!mld_mac) {
+		wiphy_warn(wdev->wiphy,
+			   "missing MLD address, skip notify (ifindex=%d link_id=%u)\n",
+			   dev->ifindex, link_id);
+		goto nla_put_failure;
+	}
+
+	if (nla_put_u32(msg, NL80211_ATTR_WIPHY, rdev->wiphy_idx) ||
+	    nla_put_u32(msg, NL80211_ATTR_IFINDEX, dev->ifindex))
+		goto nla_put_failure;
+
+	if (nla_put(msg, NL80211_ATTR_MLD_ADDR, ETH_ALEN, mld_mac))
+		goto nla_put_failure;
+
+	if (nla_put_u8(msg, NL80211_ATTR_MLO_LINK_ID, link_id))
+		goto nla_put_failure;
+
+	genlmsg_end(msg, hdr);
+	genlmsg_multicast_netns(&nl80211_fam, wiphy_net(&rdev->wiphy), msg, 0,
+				NL80211_MCGRP_MLME, GFP_KERNEL);
+	return;
+
+nla_put_failure:
+	nlmsg_free(msg);
+}
+EXPORT_SYMBOL(cfg80211_mod_link_station_notify);
+
 static int
 nl80211_remove_link_station(struct sk_buff *skb, struct genl_info *info)
 {

@@ -7419,6 +7419,39 @@ static bool ieee80211_mgd_ssid_mismatch(struct ieee80211_sub_if_data *sdata,
 	return memcmp(elems->ssid, cfg->ssid, cfg->ssid_len);
 }
 
+
+static struct ieee802_11_elems *
+ieee80211_mld_get_assoc_link_ml_elems(struct ieee80211_sub_if_data *sdata,
+				      struct ieee80211_link_data *link,
+				      struct ieee80211_mgmt *mgmt,
+				      u8 *variable, size_t len, size_t baselen,
+				      struct ieee802_11_elems *elems)
+{
+	struct ieee802_11_elems *non_tx_elems = NULL;
+	struct ieee80211_elems_parse_params ml_parse_params = {
+		.mode = link->u.mgd.conn.mode,
+		.start = variable,
+		.len = len - baselen,
+		.link_id = -1,
+		.from_ap = true,
+		.type = le16_to_cpu(mgmt->frame_control) &
+			IEEE80211_FCTL_TYPE,
+	};
+
+	if (!ether_addr_equal(mgmt->bssid, link->u.mgd.bssid) &&
+	    !(link->conf && link->conf->nontransmitted &&
+	    ether_addr_equal(mgmt->bssid, link->conf->transmitter_bssid)))
+		return NULL;
+
+	if (!link->conf || !link->conf->nontransmitted)
+		return elems;
+
+	ml_parse_params.bss = link->conf->bss;
+	non_tx_elems = ieee802_11_parse_elems_full(&ml_parse_params);
+
+	return non_tx_elems ? non_tx_elems : elems;
+}
+
 static void ieee80211_rx_mgmt_beacon(struct ieee80211_link_data *link,
 				     struct ieee80211_hdr *hdr, size_t len,
 				     struct ieee80211_rx_status *rx_status)
@@ -7429,13 +7462,14 @@ static void ieee80211_rx_mgmt_beacon(struct ieee80211_link_data *link,
 	struct ieee80211_vif_cfg *vif_cfg = &sdata->vif.cfg;
 	struct ieee80211_mgmt *mgmt = (void *) hdr;
 	size_t baselen;
-	struct ieee802_11_elems *elems;
+	struct ieee802_11_elems *elems, *ml_elems, *free_elems = NULL;
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_chanctx_conf *chanctx_conf;
 	struct ieee80211_supported_band *sband;
 	struct ieee80211_channel *chan;
 	struct link_sta_info *link_sta;
 	struct sta_info *sta;
+	int prev_max_sim_links, curr_max_sim_links;
 	u64 changed = 0;
 	bool erp_valid;
 	u8 erp_value = 0;
@@ -7561,6 +7595,40 @@ static void ieee80211_rx_mgmt_beacon(struct ieee80211_link_data *link,
 	elems = ieee802_11_parse_elems_full(&parse_params);
 	if (!elems)
 		return;
+
+	/* If the received beacon belongs to one of the associated links and
+	 * the Basic ML element advertises a higher max simultaneous link value
+	 * than the previously known one, notify userspace so it can negotiate
+	 * additional links.
+	 */
+	if (ieee80211_vif_is_mld(&sdata->vif)) {
+		ml_elems = ieee80211_mld_get_assoc_link_ml_elems(sdata, link, mgmt,
+								 variable, len, baselen,
+								 elems);
+		if (ml_elems && ml_elems != elems)
+			free_elems = ml_elems;
+
+		if (ml_elems->ml_basic) {
+			__le16 mld_capa_ops =
+			ieee80211_mle_get_mld_capa_op((const void *)ml_elems->ml_basic);
+
+			prev_max_sim_links = sdata->vif.cfg.mld_capa_op &
+					IEEE80211_MLD_CAP_OP_MAX_SIMUL_LINKS;
+			curr_max_sim_links = le16_to_cpu(mld_capa_ops) &
+					IEEE80211_MLD_CAP_OP_MAX_SIMUL_LINKS;
+
+			if (curr_max_sim_links > prev_max_sim_links)
+				cfg80211_mod_link_station_notify(sdata->dev,
+								 sdata->vif.cfg.ap_addr,
+								 link->link_id);
+
+			sdata->vif.cfg.mld_capa_op &=
+						~IEEE80211_MLD_CAP_OP_MAX_SIMUL_LINKS;
+			sdata->vif.cfg.mld_capa_op |= curr_max_sim_links;
+		}
+
+		kfree(free_elems);
+	}
 
 	if (rx_status->flag & RX_FLAG_DECRYPTED &&
 	    ieee80211_mgd_ssid_mismatch(sdata, elems)) {
