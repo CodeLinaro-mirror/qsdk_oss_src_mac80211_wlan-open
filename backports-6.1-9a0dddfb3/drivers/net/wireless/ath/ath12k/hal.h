@@ -434,6 +434,7 @@ enum hal_ring_type {
 	HAL_ASE_STATUS_RING,
 	HAL_PEER_TX_TELEMETRY,
 	HAL_PEER_RX_TELEMETRY,
+	HAL_REO_FLUSH,
 	HAL_MAX_RING_TYPES,
 };
 
@@ -1225,6 +1226,7 @@ struct ath12k_hw_hal_params {
 	u8 num_tids;
 	u32 reoq_lut_size;
 	u32 dp_rx_err_rdi;
+	u8 rx_mgmt_buf_rbm;
 };
 
 struct ath12k_hw_regs {
