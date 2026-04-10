@@ -11,6 +11,9 @@
 #include "dp_htt.h"
 #include "hal_rx.h"
 
+struct ath12k_ast_entry *
+ath12k_dp_get_sw_ast_entry_by_index(struct ath12k_dp_hw_group *dp_hw_grp, u16 ast_index);
+
 /* Whenever we configure HW keys, we need to update the below cache.
  * This is prevent mismatches between HW and SW indexing.
  */
@@ -418,6 +421,8 @@ void ath12k_dp_ast_table_deinit(struct ath12k_dp_hw_group *dp_hw_grp)
 {
 	struct ath12k_dp_global_ast_table *ast_base = NULL;
 	struct device *dev = NULL;
+	u16 index;
+	struct ath12k_ast_entry *sw_ast_entry;
 
 	if (!dp_hw_grp) {
 		ath12k_err(NULL, "ASE deinit dp_hw_grp is NULL\n");
@@ -441,6 +446,19 @@ void ath12k_dp_ast_table_deinit(struct ath12k_dp_hw_group *dp_hw_grp)
 					     ast_base->hw_ast_table_size,
 					     DMA_BIDIRECTIONAL);
 	}
+
+	/* cleanup stale AST entries before destroying tables */
+	spin_lock_bh(&ast_base->ast_lock);
+	for (index = 0; index < ast_base->num_ast_entries; index++) {
+		sw_ast_entry = ath12k_dp_get_sw_ast_entry_by_index(dp_hw_grp, index);
+		if (!sw_ast_entry)
+			continue;
+
+		ast_base->ast_entries[index] = NULL;
+		(void)ath12k_ast_entry_rhash_delete(dp_hw_grp, sw_ast_entry);
+		kfree(sw_ast_entry);
+	}
+	spin_unlock_bh(&ast_base->ast_lock);
 
 	ath12k_dp_ast_entry_tbl_destroy(dp_hw_grp);
 	kfree(ast_base->ast_entries);
