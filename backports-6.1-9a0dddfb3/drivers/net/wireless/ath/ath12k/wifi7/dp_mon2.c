@@ -615,6 +615,24 @@ int ath12k_wifi7_dp_mon_update_band_and_get_freq(struct ath12k_base *ab, int pde
 	return freq;
 }
 
+static inline u8
+ath12k_wifi7_dp_get_avg_snr(u8 snr,
+			    u8 avg_snr)
+{
+	/* Calculating the moving average of SNR
+	 */
+	if (avg_snr != 0) {
+		avg_snr =
+			((avg_snr -
+			  (avg_snr >> 2)) +
+			  (snr >> 2));
+	} else {
+		/* First sample */
+		avg_snr = snr;
+	}
+
+	return avg_snr;
+}
 
 static inline u16
 ath12k_wifi7_dp_ext_mon_get_hdr_len(enum ath12k_ext_mon_frame_len v)
@@ -707,6 +725,33 @@ ath12k_wifi7_dp_ext_mon_subtype_check(struct ath12k_ext_mon_pkt_config *config,
 	return -EINVAL; /* Failure - filter out the frame */
 }
 
+static void
+ath12k_wifi7_dp_ext_mon_update_snr(struct hal_rx_mon_ppdu_info *ppdu_info,
+				   struct ath12k_dp_rx_ext_mon *config)
+{
+	struct ath12k_dp_ext_mon_peer *peer, *tmp;
+	u8 avg_snr;
+	u8 peer_avg_snr;
+
+	if (!list_empty(&config->peer_list)) {
+		list_for_each_entry_safe(peer, tmp,
+					 &config->peer_list, list) {
+			if (ether_addr_equal(peer->peer_info.mac_addr,
+					     ppdu_info->nrp_info.mac_addr2)) {
+				peer_avg_snr = peer->peer_info.snr_info.avg_snr;
+				avg_snr =
+					ath12k_wifi7_dp_get_avg_snr(ppdu_info->rssi_comb,
+								    peer_avg_snr);
+				peer->peer_info.snr_info.avg_snr = avg_snr;
+				peer->peer_info.snr_info.snr = ppdu_info->rssi_comb;
+				peer->peer_info.snr_info.timestamp =
+						ktime_to_ms(ktime_get_real());
+				break;
+			}
+		}
+	}
+}
+
 static int
 ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 					struct hal_rx_mon_ppdu_info *ppdu_info,
@@ -781,8 +826,13 @@ ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 		}
 		break;
 	case DP_MPDU_FILTER_CATEGORY_MD:
-		if (config->md_enabled)
+		if (config->md_enabled) {
 			pkt_config = &config->md;
+			if (config->peer_count && ppdu_info->nrp_info.fc_valid &&
+			    ppdu_info->nrp_info.to_ds_flag &&
+			    ppdu_info->nrp_info.mac_addr2_valid)
+				ath12k_wifi7_dp_ext_mon_update_snr(ppdu_info, config);
+		}
 		break;
 	case DP_MPDU_FILTER_CATEGORY_MO:
 		if (config->mo_enabled)
@@ -1757,23 +1807,6 @@ ath12k_dp_mon_rx_update_peer_stats_ds(struct ath12k_pdev_dp *pdev_dp,
 }
 #endif
 
-static inline void
-ath12k_wifi7_dp_get_avg_rssi(struct hal_rx_mon_ppdu_info *ppdu_info,
-			     struct ath12k_neighbor_peer *nrp)
-{
-	// Calculating the moving average of RSSI
-	if (nrp->avg_rssi != 0) {
-		nrp->avg_rssi =
-			((nrp->avg_rssi -
-			  (nrp->avg_rssi >> 2)) +
-			  (ppdu_info->rssi_comb >> 2));
-	} else {
-		// First sample
-		nrp->avg_rssi =
-			ppdu_info->rssi_comb;
-	}
-}
-
 static void
 ath12k_wifi7_dp_mon_rx_process_ppdu(struct work_struct *work)
 {
@@ -1839,14 +1872,18 @@ ath12k_wifi7_dp_mon_rx_process_ppdu(struct work_struct *work)
 			if (!list_empty(&dp->neighbor_peers)) {
 				list_for_each_entry_safe(nrp, tmp,
 							 &dp->neighbor_peers, list) {
+					u8 avg = nrp->avg_rssi;
+					u8 snr = ppdu_info->rssi_comb;
+
 					is_addr_equal =
 					ether_addr_equal(nrp->addr,
 							 ppdu_info->nrp_info.mac_addr2);
 					if (filter_category ==
 					    DP_MPDU_FILTER_CATEGORY_MD && is_addr_equal) {
-						ath12k_wifi7_dp_get_avg_rssi(ppdu_info,
-									     nrp);
+						avg = ath12k_wifi7_dp_get_avg_snr(snr,
+										  avg);
 						nrp->rssi = ppdu_info->rssi_comb;
+						nrp->avg_rssi = avg;
 						nrp->timestamp =
 							ktime_to_ms(ktime_get_real());
 						goto unlock;
