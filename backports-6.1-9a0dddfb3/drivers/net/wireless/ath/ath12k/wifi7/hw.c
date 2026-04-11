@@ -2056,6 +2056,7 @@ int ath12k_wifi7_hw_init(struct ath12k_base *ab)
 		ab->hw_params = hw_params;
 	}
 	ab->ath12k_ops = &ath12k_ops_wifi7;
+	ab->map_event_required = true;
 
 	ath12k_wifi7_hw_init_extn(ab);
 

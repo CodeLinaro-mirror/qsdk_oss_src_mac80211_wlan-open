@@ -83,7 +83,8 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 	struct wireless_dev *wdev;
 	struct ath12k_sta *ahsta = NULL;
 
-	ahsta = ath12k_sta_to_ahsta(params->sta);
+	if (params->sta)
+		ahsta = ath12k_sta_to_ahsta(params->sta);
 
 	spin_lock_bh(&dp_hw->peer_lock);
 	if (!params->is_vdev_peer)
@@ -134,10 +135,12 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 	dp_peer->sec_type_grp = HAL_ENCRYPT_TYPE_OPEN;
 
 	/* Update hw_link_id for self bss peer */
-	if (dp_peer->is_vdev_peer)
+	if (dp_peer->is_vdev_peer) {
 		dp_peer->hw_link_id = params->hw_link_id;
-	else
+	} else {
 		ahsta->dp_peer_id = dp_peer->peer_id;
+		ahsta->dp_peer = dp_peer;
+	}
 
 	/* cache net dev here and reuse it during process rx */
 	wdev = ieee80211_vif_to_wdev(vif);
@@ -181,13 +184,18 @@ void ath12k_wifi8_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 	struct ath12k_dp_peer *dp_peer;
 	struct ath12k_dp_hw *dp_hw = &ah->dp_hw;
 	u16 peerid_index;
+	struct ath12k_sta *ahsta;
 
 	spin_lock_bh(&dp_hw->peer_lock);
 
-	if (sta)
+	if (sta) {
+		ahsta = ath12k_sta_to_ahsta(sta);
+		ahsta->dp_peer = NULL;
+
 		dp_peer = ath12k_dp_peer_find_by_addr_and_sta(dp_hw, addr, sta);
-	else
+	} else {
 		dp_peer = ath12k_dp_vdev_peer_find(dp_hw, addr, hw_link_id);
+	}
 
 	if (!dp_peer) {
 		spin_unlock_bh(&dp_hw->peer_lock);
@@ -343,31 +351,6 @@ free_peer_ext_ctx:
 	dp_peer->peer_ext_ctx = NULL;
 	spin_unlock_bh(&dp_hw->peer_lock);
 	return ret;
-}
-
-int ath12k_wifi8_dp_link_peer_create(struct ath12k_base *ab, u32 vdev_id, u8 *addr)
-{
-	struct ath12k_dp_link_peer *peer;
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-
-	spin_lock_bh(&dp->dp_lock);
-	peer = kzalloc(sizeof(*peer), GFP_ATOMIC);
-	if (!peer) {
-		spin_unlock_bh(&dp->dp_lock);
-		return -ENOMEM;
-	}
-
-	peer->vdev_id = vdev_id;
-	peer->peer_id = ATH12K_MLO_PEER_ID_INVALID;
-	ether_addr_copy(peer->addr, addr);
-	list_add(&peer->list, &dp->peers);
-	ewma_avg_rssi_init(&peer->avg_rssi);
-	peer->max_rssi = S8_MIN;
-	peer->min_rssi = S8_MAX;
-
-	spin_unlock_bh(&dp->dp_lock);
-
-	return 0;
 }
 
 void ath12k_wifi8_dp_link_peer_delete(struct ath12k_base *ab, u32 vdev_id, u8 *addr)

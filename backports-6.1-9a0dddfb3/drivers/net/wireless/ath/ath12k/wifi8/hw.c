@@ -1361,6 +1361,7 @@ int ath12k_wifi8_hw_init(struct ath12k_base *ab)
 
 	ab->hw_params = hw_params;
 	ab->ath12k_ops = &ath12k_ops_wifi8;
+	ab->map_event_required = false;
 
 	ath12k_info(ab, "WiFi8 Hardware name: %s\n", ab->hw_params->name);
 

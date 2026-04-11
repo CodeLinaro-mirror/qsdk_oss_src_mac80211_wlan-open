@@ -566,7 +566,6 @@ struct ath12k_dp_arch_ops {
 			       struct ieee80211_sta *sta, u8 hw_link_id);
 	int (*dp_peer_assoc)(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 			     struct ath12k_dp_vif *dp_vif, u8 *addr);
-	int (*dp_link_peer_create)(struct ath12k_base *ab, u32 vdev_id, u8 *addr);
 	void (*dp_link_peer_delete)(struct ath12k_base *ab, u32 vdev_id, u8 *addr);
 	void (*peer_cleanup_indication)(struct ath12k_dp *dp, struct sk_buff *skb);
 	int (*dp_ppeds_tx_completion_handler)(struct ath12k_base *ab, int budget);
@@ -1205,15 +1204,6 @@ static inline int ath12k_dp_arch_peer_assoc(struct ath12k_dp *dp,
 {
 	if (dp->arch_ops->dp_peer_assoc)
 		return dp->arch_ops->dp_peer_assoc(dp, dp_hw, dp_vif, addr);
-	return -EOPNOTSUPP;
-}
-
-static inline int ath12k_dp_arch_link_peer_create(struct ath12k_dp *dp,
-						  struct ath12k_base *ab,
-						  u32 vdev_id, u8 *addr)
-{
-	if (dp->arch_ops->dp_link_peer_create)
-		return dp->arch_ops->dp_link_peer_create(ab, vdev_id, addr);
 	return -EOPNOTSUPP;
 }
 
