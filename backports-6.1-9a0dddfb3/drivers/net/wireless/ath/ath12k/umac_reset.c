@@ -517,6 +517,10 @@ int ath12k_umac_reset_notify_target(struct ath12k_base *ab, int tx_event)
 		    test_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags))
 			continue;
 
+		if (partner_ab->wsi_remap_state == ATH12K_WSI_BYPASS_ADD_DEVICE &&
+		    ag->wsi_remap_in_progress) {
+			continue;
+		}
 		/* Send HTT message to FW */
 		ret = ath12k_umac_reset_send_htt(partner_ab, tx_event);
 		if (ret) {
