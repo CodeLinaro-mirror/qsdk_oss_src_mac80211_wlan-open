@@ -161,6 +161,7 @@ struct hal_rx_mon_mpdu_info {
 	u32 err_bitmap;
 	bool mpdu_end_received;
 	bool full_pkt;
+	bool fcs_err;
 };
 
 struct hal_rx_nrp_info {
