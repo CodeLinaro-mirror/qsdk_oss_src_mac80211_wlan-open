@@ -1437,6 +1437,7 @@ ath12k_dp_mon_tx_setup_mon_mode_filter(struct ath12k_dp *dp,
 }
 EXPORT_SYMBOL(ath12k_dp_mon_tx_setup_mon_mode_filter);
 
+#ifdef CPTCFG_ATH12K_TX_MONITOR
 int ath12k_dp_mon_tx_config_filter(struct ath12k_pdev_dp *dp_pdev,
 				   bool enable)
 {
@@ -1467,6 +1468,7 @@ int ath12k_dp_mon_tx_config_filter(struct ath12k_pdev_dp *dp_pdev,
 	return 0;
 }
 EXPORT_SYMBOL(ath12k_dp_mon_tx_config_filter);
+#endif
 
 void ath12k_dp_mon_tx_prepare_filter(struct ath12k_dp *dp,
 				     struct ath12k_pdev_dp *dp_pdev,
@@ -1593,6 +1595,7 @@ ath12k_dp_mon_tx_htt_update_filters(struct ath12k_dp *dp,
 }
 EXPORT_SYMBOL(ath12k_dp_mon_tx_htt_update_filters);
 
+#ifdef CPTCFG_ATH12K_TX_MONITOR
 int ath12k_dp_mon_tx_update_ring_filter(struct ath12k_pdev_dp *dp_pdev)
 {
 	struct ath12k_dp *dp = dp_pdev->dp;
@@ -1619,3 +1622,4 @@ int ath12k_dp_mon_tx_update_ring_filter(struct ath12k_pdev_dp *dp_pdev)
 	return ret;
 }
 EXPORT_SYMBOL(ath12k_dp_mon_tx_update_ring_filter);
+#endif

@@ -1773,6 +1773,7 @@ int ath12k_dp_mon_pdev_rx_htt_srng_setup(struct ath12k_pdev_dp *dp_pdev,
 }
 EXPORT_SYMBOL(ath12k_dp_mon_pdev_rx_htt_srng_setup);
 
+#ifdef CPTCFG_ATH12K_TX_MONITOR
 int ath12k_dp_mon_tx_srng_alloc_setup(struct ath12k_dp *dp)
 {
 	struct ath12k_base *ab = dp->ab;
@@ -1847,6 +1848,7 @@ void ath12k_dp_mon_tx_dst_ring_cleanup(struct ath12k_pdev_dp *dp_pdev)
 	ath12k_dp_srng_cleanup(dp->ab, &dp_pdev->dp_mon_pdev->tx_mon_dst_ring);
 }
 EXPORT_SYMBOL(ath12k_dp_mon_tx_dst_ring_cleanup);
+#endif
 
 int ath12k_dp_mon_tx_desc_pool_alloc(struct ath12k_dp *dp)
 {
@@ -1974,6 +1976,7 @@ void ath12k_dp_mon_tx_buff_free(struct ath12k_dp *dp)
 }
 EXPORT_SYMBOL(ath12k_dp_mon_tx_buff_free);
 
+#ifdef CPTCFG_ATH12K_TX_MONITOR
 void ath12k_dp_mon_tx_htt_srng_cleanup(struct ath12k_dp *dp)
 {
 	ath12k_dp_mon_tx_buff_free(dp);
@@ -2003,6 +2006,7 @@ int ath12k_dp_mon_tx_htt_srng_setup(struct ath12k_dp *dp)
 	return ret;
 }
 EXPORT_SYMBOL(ath12k_dp_mon_tx_htt_srng_setup);
+#endif
 
 int ath12k_dp_mon_tx_htt_dst_ring_setup(struct ath12k_pdev_dp *dp_pdev, u32 mac_id)
 {
