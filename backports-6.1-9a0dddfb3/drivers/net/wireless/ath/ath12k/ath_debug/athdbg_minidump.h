@@ -16,6 +16,7 @@ enum athdbg_minidump_request {
 	ATHDBG_REQ_SHOW_DUMP_LIST = 0x03,
 	ATHDBG_REQ_ADD_DUMP_LIST = 0x04,
 	ATHDBG_REQ_DISABLE_MINIDUMP = 0x05,
+	ATHDBG_REQ_COLLECT_STRUCT = 0x06
 };
 
 enum athdbg_minidump_status {
@@ -56,7 +57,7 @@ void athdbg_create_minidump_debugfs(struct dentry *dbg_dir, struct ath12k_base *
 void athdbg_collect_minidump(struct athdbg_request *dbg_req,
 			     struct ath12k_base *ab);
 void athdbg_do_dump_minidump(struct ath12k_base *ab);
-void athdbg_collect_reference_segments(struct ath12k_base *ab);
+void athdbg_collect_reference_segments(struct ath12k_base *ab, bool collect);
 void athdbg_free_reference_segments(struct ath12k_base *ab);
 void athdbg_minidump_log(void *start_addr, size_t size, const char *struct_name,
 			 const char *module_name);
@@ -65,6 +66,7 @@ void athdbg_add_to_minidump_log(void *start_addr, size_t size,
 void athdbg_remove_minidump_segment(void *start_addr);
 void athdbg_iterate_minidump_list(void);
 void athdbg_clear_minidump_info(void);
+void athmem_collect_struct(const char *struct_name);
 #else
 static inline void athdbg_process_minidump_request(struct ath12k_base *ab,
 						   struct athdbg_request *dbg_req)
@@ -93,7 +95,7 @@ static inline void athdbg_do_dump_minidump(struct ath12k_base *ab)
 {
 }
 
-static inline void athdbg_collect_reference_segments(struct ath12k_base *ab)
+static inline void athdbg_collect_reference_segments(struct ath12k_base *ab, boot collect)
 {
 }
 
@@ -122,6 +124,10 @@ static inline void athdbg_iterate_minidump_list(void)
 }
 
 static inline void athdbg_clear_minidump_info(void)
+{
+}
+
+void athmem_collect_struct(const char *struct_name)
 {
 }
 #endif

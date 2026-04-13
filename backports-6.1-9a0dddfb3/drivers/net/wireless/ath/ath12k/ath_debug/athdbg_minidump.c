@@ -48,6 +48,7 @@ struct minidump_file_handler athdbg_debugfs_handlers[] = {
 	{ "add_to_dump_list", 0644, ATHDBG_REQ_ADD_DUMP_LIST },
 	{ "show_dump_list", 0644, ATHDBG_REQ_SHOW_DUMP_LIST },
 	{ "disable_minidump", 0644, ATHDBG_REQ_DISABLE_MINIDUMP },
+	{ "collect_struct", 0644, ATHDBG_REQ_COLLECT_STRUCT },
 	{  NULL, 0, 0 },
 };
 
@@ -160,7 +161,7 @@ void athdbg_minidump_log(void *start_addr, size_t size, const char *struct_name,
 	}
 }
 
-void athdbg_collect_reference_segments(struct ath12k_base *ab)
+void athdbg_collect_reference_segments(struct ath12k_base *ab, bool collect)
 {
 	int i = 0, j = 0;
 	struct ath12k_hw_group *ag;
@@ -171,6 +172,7 @@ void athdbg_collect_reference_segments(struct ath12k_base *ab)
 	struct ath12k_vif *ahvif = NULL;
 	struct ieee80211_vif *vif;
 	u32 vdev_bitmap, bit_pos;
+	const struct athdbg_to_ath12k_ops *ops;
 
 	if (!ab || !ab->ag)
 		return;
@@ -182,17 +184,28 @@ void athdbg_collect_reference_segments(struct ath12k_base *ab)
 		if (!ah)
 			continue;
 
-		athdbg_minidump_log(ah, sizeof(struct ath12k_hw),
-				    "ath12k_hw",
-				    "ath12k");
+		if (collect) {
+			athdbg_minidump_log(ah, sizeof(struct ath12k_hw),
+								"ath12k_hw",
+								"ath12k");
+		} else {
+			athmem_add_struct_info((void *) ah, sizeof(struct ath12k_hw),
+				    (const char *)"ath12k_hw");
+		}
+
 		for (j = 0; j < ah->num_radio; j++) {
 			ar = &ah->radio[j];
 			if (!ar)
 				continue;
 
-			athdbg_minidump_log(ar, sizeof(struct ath12k),
-					    "ath12k",
-					    "ath12k");
+			if (collect) {
+				athdbg_minidump_log(ar, sizeof(struct ath12k),
+									"ath12k",
+									"ath12k");
+			} else {
+				athmem_add_struct_info(ar, sizeof(struct ath12k),
+									"ath12k");
+			}
 
 			vdev_bitmap = ar->allocated_vdev_map;
 
@@ -203,42 +216,70 @@ void athdbg_collect_reference_segments(struct ath12k_base *ab)
 			for (bit_pos = 0; bit_pos < 32; bit_pos++) {
 				if (!(vdev_bitmap & BIT(bit_pos)))
 					continue;
-				if (athdbg_base && athdbg_base->dbg_to_ath_ops)
-					arvif = athdbg_base->dbg_to_ath_ops->get_link_vif_from_vdev_id(ab, bit_pos);
+
+				if (athdbg_base &&
+						athdbg_base->dbg_to_ath_ops) {
+					ops = athdbg_base->dbg_to_ath_ops;
+					arvif = ops->get_link_vif_from_vdev_id(
+						ab, bit_pos);
+				}
 
 				if (!arvif)
 					continue;
 
-				athdbg_minidump_log(arvif,
-						    sizeof(struct ath12k_link_vif),
-						    "ath12k_link_vif",
-						    "ath12k");
+				if (collect) {
+					athdbg_minidump_log(arvif,
+							sizeof(struct ath12k_link_vif),
+							"ath12k_link_vif",
+							"ath12k");
+				} else {
+					athmem_add_struct_info(arvif,
+							sizeof(struct ath12k_link_vif),
+							"ath12k_link_vif");
+				}
 
 				ahvif = arvif->ahvif;
 				if (!ahvif)
 					continue;
 
-				athdbg_minidump_log(ahvif,
-						    sizeof(struct ath12k_vif),
-						    "ath12k_vif",
-						    "ath12k");
+				if (collect) {
+					athdbg_minidump_log(ahvif,
+							sizeof(struct ath12k_vif),
+							"ath12k_vif",
+							"ath12k");
+				} else {
+					athmem_add_struct_info(ahvif,
+							sizeof(struct ath12k_vif),
+							"ath12k_vif");
+				}
 
 				vif = ahvif->vif;
 				if (!vif)
 					continue;
 
-				athdbg_minidump_log(vif,
-						    sizeof(struct ieee80211_vif),
-						    "ieee80211_vif",
-						    "ath12k");
+				if (collect) {
+					athdbg_minidump_log(vif,
+							sizeof(struct ieee80211_vif),
+							"ieee80211_vif",
+							"ath12k");
+				} else {
+					athmem_add_struct_info(vif,
+							sizeof(struct ieee80211_vif),
+							"ieee80211_vif");
+				}
 			}
 			hw = ah->hw;
 			if (!hw)
 				continue;
 
-			athdbg_minidump_log(hw, sizeof(struct ieee80211_hw),
-					    "ieee80211_hw",
-					    "ath12k");
+			if (collect) {
+				athdbg_minidump_log(hw, sizeof(struct ieee80211_hw),
+						"ieee80211_hw",
+						"ath12k");
+			} else {
+				athmem_add_struct_info(hw, sizeof(struct ieee80211_hw),
+						"ieee80211_hw");
+			}
 		}
 	}
 }
@@ -342,7 +383,7 @@ void athdbg_collect_minidump(struct athdbg_request *dbg_req,
 	if (kstrtou32(dbg_req->input_buf, 0, &val))
 		goto exit;
 	if (val) {
-		athdbg_collect_reference_segments(ab);
+		athdbg_collect_reference_segments(ab, TRUE);
 		athdbg_do_dump_minidump(ab);
 	}
 exit:
@@ -383,6 +424,25 @@ static void athdbg_add_struct_to_minidump(struct athdbg_request *dbg_req)
 exit:
 	kfree(dbg_req->input_buf);
 	return;
+}
+
+static void athdbg_minidump_collect_struct(struct athdbg_request *dbg_req,
+							struct ath12k_base *ab)
+{
+	if (!dbg_req)
+		goto exit;
+	if (minidump_state != ENABLE_MINIDUMP)
+		goto exit;
+
+	if (strlen(dbg_req->input_buf) > 0) {
+		athdbg_collect_reference_segments(ab, FALSE);
+		athmem_collect_struct((const char *)dbg_req->input_buf);
+		athmem_free_static_struct_list();
+	} else {
+		pr_err("Invalid input\n");
+	}
+exit:
+	kfree(dbg_req->input_buf);
 }
 
 static void athdbg_show_minidump_entries(struct athdbg_request *dbg_req)
@@ -490,6 +550,9 @@ void athdbg_process_minidump_request(struct ath12k_base *ab,
 		break;
 	case ATHDBG_REQ_DISABLE_MINIDUMP:
 		athdbg_disable_minidump(dbg_req);
+		break;
+	case ATHDBG_REQ_COLLECT_STRUCT:
+		athdbg_minidump_collect_struct(dbg_req, ab);
 		break;
 	case ATHDBG_REQ_INVALID:
 		pr_err("Unknown Request");
