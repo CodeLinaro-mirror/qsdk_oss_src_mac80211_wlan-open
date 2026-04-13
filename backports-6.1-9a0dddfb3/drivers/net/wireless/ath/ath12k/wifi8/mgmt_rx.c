@@ -1351,6 +1351,7 @@ static struct ath12k_mgmt_arch_ops ath12k_wifi8_mgmt_arch_ops = {
 	.mgmt_op_htt_setup = ath12k_wifi8_mgmt_op_htt_setup,
 	.mgmt_op_dump_ring_stats = ath12k_wifi8_mgmt_dump_ring_stats,
 	.mgmt_rx_replenish_buffs = ath12k_wifi8_mgmt_rx_replenish_buffs_wrapper,
+	.mgmt_op_override_mld_tx = ath12k_wifi8_mgmt_op_override_mld_tx,
 };
 
 struct ath12k_mgmt *ath12k_wifi8_mgmt_init(struct ath12k_base *ab)

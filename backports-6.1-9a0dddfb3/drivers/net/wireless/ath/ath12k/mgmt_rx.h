@@ -77,6 +77,7 @@ struct ath12k_mgmt_arch_ops {
 	void (*mgmt_rx_replenish_buffs)(struct ath12k_mgmt *mgmt,
 					struct list_head *used_list,
 					bool in_use);
+	bool (*mgmt_op_override_mld_tx)(struct ath12k_mgmt *mgmt);
 };
 
 struct ath12k_mgmt_irq_grp {
@@ -168,6 +169,8 @@ struct sk_buff *ath12k_mgmt_rx_get_mmpdu_last_buf(struct sk_buff_head *mmpdu_lis
 
 int ath12k_mgmt_htt_setup(struct ath12k_hw_group *ag);
 
+bool ath12k_mgmt_override_mld_tx(struct ath12k_base *ab);
+
 static inline int ath12k_mgmt_arch_op_device_init(struct ath12k_mgmt *mgmt)
 {
 	if (!mgmt->arch_ops->mgmt_op_device_init)
@@ -204,6 +207,14 @@ static inline void ath12k_mgmt_rx_replenish_buffs(struct ath12k_mgmt *mgmt,
 {
 	if (mgmt->arch_ops->mgmt_rx_replenish_buffs)
 		mgmt->arch_ops->mgmt_rx_replenish_buffs(mgmt, used_list, reuse);
+}
+
+static inline bool ath12k_mgmt_arch_op_override_mld_tx(struct ath12k_mgmt *mgmt)
+{
+	if (mgmt->arch_ops->mgmt_op_override_mld_tx)
+		return mgmt->arch_ops->mgmt_op_override_mld_tx(mgmt);
+
+	return true;
 }
 
 #endif

@@ -273,6 +273,7 @@ enum ath12k_skb_flags {
 #endif
 	ATH12K_SKB_MESH_TX_INFO = BIT(7),
 	ATH12K_SKB_MESH_RX_INFO = BIT(8),
+	ATH12K_SKB_MGMT_MLO_PARAMS = BIT(9),
 };
 
 struct ath12k_skb_cb {
