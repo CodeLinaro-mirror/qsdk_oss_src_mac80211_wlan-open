@@ -5541,6 +5541,7 @@ void ath12k_peer_assoc_prepare(struct ath12k *ar,
 	ath12k_peer_assoc_h_basic(ar, arvif, arsta, arg);
 	ath12k_peer_assoc_h_crypto(ar, arvif, arsta, arg);
 	ath12k_peer_assoc_h_rates(ar, arvif, arsta, arg, link_sta);
+	ath12k_peer_assoc_h_phymode(ar, arvif, arsta, arg, link_sta);
 	ath12k_peer_assoc_h_ht(ar, arvif, arsta, arg, link_sta);
 	ath12k_peer_assoc_h_vht(ar, arvif, arsta, arg, link_sta);
 	ath12k_peer_assoc_h_he(ar, arvif, arsta, arg, link_sta);
@@ -5548,7 +5549,6 @@ void ath12k_peer_assoc_prepare(struct ath12k *ar,
 	ath12k_peer_assoc_h_eht(ar, arvif, arsta, arg, link_sta);
 	ath12k_peer_assoc_h_uhr(ar, arvif, arsta, arg, link_sta);
 	ath12k_peer_assoc_h_qos(ar, arvif, arsta, arg);
-	ath12k_peer_assoc_h_phymode(ar, arvif, arsta, arg, link_sta);
 	ath12k_peer_assoc_h_smps(arsta, arg, link_sta);
 	ath12k_peer_assoc_h_mlo(arsta, arg);
 	ath12k_peer_assoc_h_ttlm(arsta, arg);
