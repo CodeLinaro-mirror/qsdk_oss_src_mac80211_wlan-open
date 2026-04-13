@@ -62,6 +62,11 @@ void ath12k_dp_tx_comp_update_peer_stats(struct ath12k_dp_peer *peer,
 					 u32 msdu_len);
 int ath12k_sdwf_reinject_handler(struct ath12k_base *ab, struct sk_buff *skb,
 				 struct htt_tx_completion *status_desc, u8 mac_id);
+enum ath12k_dp_tx_enq_error
+ath12k_dp_mmesh_tx(struct ieee80211_hw *hw, struct ath12k_base *ab,
+		   struct ath12k_link_vif *arvif, struct ath12k_pdev_dp *dp_pdev,
+		   struct sk_buff *skb, struct ath12k_link_sta *arsta, u8 ring_id,
+		   bool is_mcast, bool *htt_mesh, u32 qos_nw_delay, int group_slot);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 struct ath12k_ppeds_tx_desc_info *
 ath12k_dp_ppeds_tx_assign_desc_nolock(struct ath12k_dp *dp);

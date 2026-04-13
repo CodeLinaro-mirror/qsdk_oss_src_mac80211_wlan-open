@@ -671,6 +671,10 @@ const struct hal_ops hal_wcn7850_ops = {
 	.reo_shared_qaddr_cache_clear = ath12k_wifi7_hal_reo_shared_qaddr_cache_clear,
 	.rxdesc_get_mpdu_start_addr2 =
 			ath12k_wifi7_hal_rxdesc_get_mpdu_start_addr2_wcn7850,
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	.rxdesc_get_key_id_octet =
+			ath12k_wifi7_hal_rxdesc_get_key_id_octet_wcn7850,
+#endif
 	.rx_h_is_decrypted = ath12k_wifi7_hal_rx_h_is_decrypted_wcn7850,
 	.rx_desc_get_mpdu_ppdu_id = ath12k_wifi7_hal_rx_desc_get_mpdu_ppdu_id_wcn7850,
 	.rx_desc_get_mpdu_start_tag = ath12k_wifi7_hal_rx_desc_get_mpdu_start_tag_wcn7850,

@@ -661,10 +661,15 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 
 	dp_peer->hw_links[peer->hw_link_id] = link_id;
 
-	if (vif->type == NL80211_IFTYPE_AP)
+	if (vif->type == NL80211_IFTYPE_AP) {
 		dp_peer->is_reset_mcbc = true;
-	else if (vif->type == NL80211_IFTYPE_MESH_POINT)
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+		if (ahvif->vap_submode == QCA_WLAN_VENDOR_VAP_SUBMODE_MESH)
+			dp_peer->is_mmesh_peer = true;
+#endif
+	} else if (vif->type == NL80211_IFTYPE_MESH_POINT) {
 		dp_peer->is_11s_mesh_peer = true;
+	}
 
 	/* Do not deliver frames to PPE in fast rx incase of RFS
 	 * RFS is supported only in SFE Mode
@@ -759,31 +764,29 @@ err_peer:
  */
 
 static void
-ath12k_dp_capture_link_peer_stats(struct ath12k_dp_preserved_stats *aggr_stats,
+ath12k_dp_capture_link_peer_stats(struct ath12k *ar,
+				  struct ath12k_dp_preserved_stats *aggr_stats,
 				  struct ath12k_dp_link_peer *peer,
 				  struct ath12k_dp_peer *dp_peer,
 				  u8 stats_link_id)
 {
 	int i;
 
-	if (peer->peer_stats.tx_stats)
-		ath12k_dp_aggr_htt_tx_stats(&aggr_stats->tx_stats,
-					    peer->peer_stats.tx_stats);
-
 	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++)
 		ath12k_dp_aggr_per_pkt_tx_stats(&aggr_stats->per_pkt_tx[i],
 						&dp_peer->stats[stats_link_id].tx[i]);
-
-	if (peer->peer_stats.rx_stats)
-		ath12k_dp_aggr_rx_peer_stats(&aggr_stats->rx_stats,
-					     peer->peer_stats.rx_stats);
-
 	for (i = 0; i < DP_REO_DST_RING_MAX; i++)
 		ath12k_dp_aggr_per_pkt_rx_stats(&aggr_stats->per_pkt_rx[i],
 						&dp_peer->stats[stats_link_id].rx[i]);
-	/* Capture WBM RX error stats */
 	ath12k_dp_aggr_wbm_rx_stats(&aggr_stats->wbm_err,
 				    &dp_peer->stats[stats_link_id].wbm_err);
+	if (ar && ath12k_extd_tx_stats_enabled(ar))
+		ath12k_dp_update_tx_ext_htt_aggr_stats(ar,
+						       &aggr_stats->tx_stats,
+						       peer->peer_stats.tx_stats);
+	if (ar && ath12k_extd_rx_stats_enabled(ar))
+		ath12k_dp_aggr_rx_peer_stats(ar, &aggr_stats->rx_stats,
+					     peer->peer_stats.rx_stats);
 }
 
 /**
@@ -796,14 +799,15 @@ ath12k_dp_capture_link_peer_stats(struct ath12k_dp_preserved_stats *aggr_stats,
  * MLD peer before the link peer is deleted. Caller must hold the locks before
  * calling this.
  */
-static void ath12k_dp_aggr_link_peer_to_mld_peer(struct ath12k_dp_link_peer *peer,
+static void ath12k_dp_aggr_link_peer_to_mld_peer(struct ath12k *ar,
+						 struct ath12k_dp_link_peer *peer,
 						 struct ath12k_dp_peer *dp_peer,
 						 u8 stats_link_id)
 {
 	if (!peer || !dp_peer)
 		return;
 
-	ath12k_dp_capture_link_peer_stats(dp_peer->link_peer_delete_stats,
+	ath12k_dp_capture_link_peer_stats(ar, &dp_peer->link_peer_delete_stats,
 					  peer, dp_peer, stats_link_id);
 }
 
@@ -819,7 +823,8 @@ static void ath12k_dp_aggr_link_peer_to_mld_peer(struct ath12k_dp_link_peer *pee
  * lifecycle events. Returns early if any pointer is NULL.
  */
 
-void ath12k_dp_aggr_link_peer_to_link_vif(struct ath12k_dp_link_vif *dp_link_vif,
+void ath12k_dp_aggr_link_peer_to_link_vif(struct ath12k *ar,
+					  struct ath12k_dp_link_vif *dp_link_vif,
 					  struct ath12k_dp_link_peer *peer,
 					  struct ath12k_dp_peer *dp_peer,
 					  u8 stats_link_id)
@@ -827,7 +832,7 @@ void ath12k_dp_aggr_link_peer_to_link_vif(struct ath12k_dp_link_vif *dp_link_vif
 	if (!peer || !dp_peer || !dp_link_vif)
 		return;
 
-	ath12k_dp_capture_link_peer_stats(dp_link_vif->link_peer_delete_stats,
+	ath12k_dp_capture_link_peer_stats(ar, &dp_link_vif->link_peer_delete_stats,
 					  peer, dp_peer, stats_link_id);
 }
 
@@ -873,11 +878,11 @@ static void __ath12k_dp_link_peer_unassign(struct ath12k *ar,
 		dp_peer->peer_links_map &= ~BIT(peer->link_id);
 		if (stats_link_id < ATH12K_DP_MAX_MLO_LINKS) {
 			/* Preserve link peer stats to MLD peer before deletion */
-			ath12k_dp_aggr_link_peer_to_mld_peer(peer, dp_peer,
+			ath12k_dp_aggr_link_peer_to_mld_peer(ar, peer, dp_peer,
 							     stats_link_id);
 			/* Preserve link peer stats to link VIF before deletion */
 			if (link_vif)
-				ath12k_dp_aggr_link_peer_to_link_vif(link_vif, peer,
+				ath12k_dp_aggr_link_peer_to_link_vif(ar, link_vif, peer,
 								     dp_peer,
 								     stats_link_id);
 			/* Clear per-packet stats to prevent double-counting on reuse */

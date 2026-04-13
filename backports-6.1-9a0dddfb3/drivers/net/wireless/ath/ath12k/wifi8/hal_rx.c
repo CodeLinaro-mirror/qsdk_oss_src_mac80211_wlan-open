@@ -933,13 +933,14 @@ void ath12k_wifi8_hal_reo_qdesc_setup(struct hal_rx_reo_queue *qdesc,
 					  REO_QUEUE_DESC_MAGIC_DEBUG_PATTERN_5);
 }
 
-void ath12k_wifi8_hal_reo_init_cmd_ring(struct ath12k_base *ab,
-					struct hal_srng *srng)
+void ath12k_wifi8_hal_reo_init_cmd_ring_offset(struct ath12k_base *ab,
+					       struct hal_srng *srng,
+					       u16 cmd_num)
 {
 	struct hal_srng_params params;
 	struct hal_tlv_64_hdr *tlv;
 	struct hal_reo_get_queue_stats *desc;
-	int i, cmd_num = 1;
+	int i;
 	int entry_size;
 	u8 *entry;
 
@@ -956,6 +957,12 @@ void ath12k_wifi8_hal_reo_init_cmd_ring(struct ath12k_base *ab,
 						   HAL_REO_CMD_HDR_INFO0_CMD_NUMBER);
 		entry += entry_size;
 	}
+}
+
+void ath12k_wifi8_hal_reo_init_cmd_ring(struct ath12k_base *ab,
+					struct hal_srng *srng)
+{
+	ath12k_wifi8_hal_reo_init_cmd_ring_offset(ab, srng, 1);
 }
 
 static void ath12k_wifi8_reo_dest_ring_ctrl_setup(struct ath12k_base *ab,

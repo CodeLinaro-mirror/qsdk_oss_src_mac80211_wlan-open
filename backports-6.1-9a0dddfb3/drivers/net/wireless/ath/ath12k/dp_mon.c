@@ -2946,3 +2946,94 @@ int ath12k_dp_mon_get_link_peer_rssi(struct ath12k *ar, const u8 *peer_mac,
 	return 0;
 }
 EXPORT_SYMBOL(ath12k_dp_mon_get_link_peer_rssi);
+
+void ath12k_dp_ext_mon_process_request(struct ath12k_pdev_dp *dp_pdev,
+				       const struct ath12k_ext_mon_config *req,
+				       struct ath12k_ext_mon_config *resp)
+{
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	int ret = 0;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp_pdev->dp);
+	if (mon_ops && mon_ops->ext_mon_validate_request) {
+		ret = mon_ops->ext_mon_validate_request(dp_pdev, req);
+		if (ret) {
+			ath12k_warn(dp_pdev->dp, "extmon validation failed: %d\n", ret);
+			resp->status_code = ATH12K_EXT_MON_VALIDATION_FAIL;
+			return;
+		}
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_ext_mon_process_request);
+
+int ath12k_dp_ext_mon_alloc(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_dp_rx_ext_mon *rx_config = NULL;
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+
+	if (unlikely(!dp_mon_pdev)) {
+		ath12k_warn(dp_pdev->dp, "monitor pdev is null\n");
+		return -EINVAL;
+	}
+
+	rx_config = kzalloc(sizeof(*rx_config), GFP_KERNEL);
+	if (!rx_config)
+		return -ENOMEM;
+
+	INIT_LIST_HEAD(&rx_config->peer_list);
+	spin_lock_init(&dp_mon_pdev->rx_ext_mon_lock);
+
+	spin_lock(&dp_mon_pdev->rx_ext_mon_lock);
+	dp_mon_pdev->rx_ext_mon_config = rx_config;
+	spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_dp_ext_mon_alloc);
+
+void ath12k_dp_ext_mon_free(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_dp_rx_ext_mon *rx_config = NULL;
+
+	if (unlikely(!dp_mon_pdev)) {
+		ath12k_warn(dp_pdev->dp, "monitor pdev is null\n");
+		return;
+	}
+
+	spin_lock(&dp_mon_pdev->rx_ext_mon_lock);
+	rx_config = dp_mon_pdev->rx_ext_mon_config;
+	if (!rx_config) {
+		spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
+		return;
+	}
+
+	dp_mon_pdev->rx_ext_mon_config = NULL;
+	spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
+
+	kfree(rx_config);
+}
+EXPORT_SYMBOL(ath12k_dp_ext_mon_free);
+
+void ath12k_dp_ext_mon_reset(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_dp_rx_ext_mon *rx_config;
+
+	if (unlikely(!dp_mon_pdev)) {
+		ath12k_warn(dp_pdev->dp, "monitor pdev is null\n");
+		return;
+	}
+
+	spin_lock(&dp_mon_pdev->rx_ext_mon_lock);
+	rx_config = dp_mon_pdev->rx_ext_mon_config;
+	if (!rx_config) {
+		spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
+		return;
+	}
+
+	memset(rx_config, 0, sizeof(*rx_config));
+	INIT_LIST_HEAD(&rx_config->peer_list);
+	spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
+}
+EXPORT_SYMBOL(ath12k_dp_ext_mon_reset);

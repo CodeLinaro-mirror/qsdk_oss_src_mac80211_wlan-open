@@ -20,6 +20,9 @@ struct ath12k_mgmt_wifi8 {
 
 struct ath12k_mgmt *ath12k_wifi8_mgmt_init(struct ath12k_base *ab);
 void ath12k_wifi8_mgmt_deinit(struct ath12k_mgmt *mgmt);
+void ath12k_wifi8_mgmt_rx_refill_ring_init(struct ath12k_base *ab);
+int ath12k_wifi8_mgmt_rx_ring_setup(struct ath12k_base *ab);
+void ath12k_wifi8_srng_hw_mgmt_rings_disable(struct ath12k_base *ab);
 
 int ath12k_wifi8_mgmt_wbm_ring_sel_config_qcn9625(struct ath12k_base *ab);
 
@@ -39,4 +42,9 @@ void ath12k_wifi8_mgmt_extract_rx_desc_data(struct ath12k_mgmt *mgmt,
 	mgmt->hw_params->hal_ops->extract_rx_desc_data(rx_desc_data, rx_desc, ldesc);
 }
 
+void ath12k_wifi8_mgmt_rx_replenish_buffs(struct ath12k_mgmt *mgmt,
+					  struct mgmt_srng *rx_refill_ring,
+					  struct list_head *desc_used_list,
+					  bool reuse);
+int ath12k_wifi8_mgmt_rx_ring_setup(struct ath12k_base *ab);
 #endif

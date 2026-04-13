@@ -95,6 +95,9 @@ int ath12k_wifi8_dp_tqm_cmd_send(struct ath12k_base *ab,
 	struct hal_srng *cmd_ring;
 	int cmd_num;
 
+	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
+		return 0;
+
 	cmd_ring = &ab->hal.srng_list[dp_wifi8->tqm_cmd_ring.ring_id];
 	cmd_num = ath12k_wifi8_hal_tqm_cmd_send(ab, cmd_ring, type, cmd);
 
@@ -138,6 +141,9 @@ int ath12k_wifi8_dp_tx_process_tqm_status(struct ath12k_dp *dp, int budget)
 	bool found = false;
 	int quota = budget;
 	u16 tag;
+
+	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
+		return 0;
 
 	srng = &ab->hal.srng_list[dp_wifi8->tqm_status_ring.ring_id];
 
@@ -3572,6 +3578,7 @@ int ath12k_wifi8_dp_tx_exception_handler(struct ath12k_dp *dp, int budget)
 	u8 hw_link_id = 0;
 	struct ath12k_pdev_dp *dp_pdev = NULL;
 	int ret;
+	bool tx_exception_error = false;
 
 	srng = &ab->hal.srng_list[dp_wifi8->tx_exception.ring_id];
 	spin_lock_bh(&srng->lock);
@@ -3591,6 +3598,9 @@ int ath12k_wifi8_dp_tx_exception_handler(struct ath12k_dp *dp, int budget)
 			continue;
 		}
 
+		tx_exception_error =
+			ath12k_wifi8_dp_validate_tx_exception_error(dp_wifi8,
+								    tx_exception_desc);
 		desc_id = le32_get_bits(tx_exception_desc->buf_addr_info.info1,
 					BUFFER_ADDR_INFO1_SW_COOKIE);
 		tx_desc = ath12k_dp_get_tx_desc(dp, desc_id);
@@ -3601,8 +3611,7 @@ int ath12k_wifi8_dp_tx_exception_handler(struct ath12k_dp *dp, int budget)
 			continue;
 		}
 
-		if (ath12k_wifi8_dp_validate_tx_exception_error(dp_wifi8,
-								tx_exception_desc))
+		if (tx_exception_error)
 			goto tx_buf_release;
 
 		if (le32_get_bits(tx_exception_desc->info11,

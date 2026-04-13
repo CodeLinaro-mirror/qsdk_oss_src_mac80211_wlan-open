@@ -213,9 +213,10 @@ enum hal_srng_ring_id {
 	HAL_SRNG_RING_ID_SW2REO2,
 	HAL_SRNG_RING_ID_SW2REO3,
 	HAL_SRNG_RING_ID_REO_CMD,
+	HAL_SRNG_RING_ID_REO_HIGH_PRIO_CMD,
 	HAL_SRNG_RING_ID_REO_STATUS,
 
-	HAL_SRNG_RING_ID_SW2TCL1 = 24,
+	HAL_SRNG_RING_ID_SW2TCL1 = 25,
 	HAL_SRNG_RING_ID_SW2TCL2,
 	HAL_SRNG_RING_ID_SW2TCL3,
 	HAL_SRNG_RING_ID_SW2TCL4,
@@ -240,12 +241,20 @@ enum hal_srng_ring_id {
 	HAL_SRNG_RING_ID_WBM_BUF4,
 	HAL_SRNG_RING_ID_WBM_IDLE_BUF0,
 
+	HAL_SRNG_RING_ID_PPE2WBM_BUF1 = 47,
+	HAL_SRNG_RING_ID_PPE2WBM_BUF2,
+	HAL_SRNG_RING_ID_PPE2WBM_BUF3,
+	HAL_SRNG_RING_ID_PPE2WBM_IDLE_BUF0 = 50,
+
 	HAL_SRNG_RING_ID_WBM_BUF_MGMT = 52,
 	HAL_SRNG_RING_ID_WBM_IDLE_BUF_MGMT = 53,
 
 	HAL_SRNG_RING_ID_SAM_HOST_CMD,
 	HAL_SRNG_RING_ID_SAM_HOST_STATUS,
 	HAL_SRNG_RING_ID_ASE_CMD_RING = 56,
+
+	HAL_SRNG_RING_ID_PEER_TX_TELEMETRY = 57,
+	HAL_SRNG_RING_ID_PEER_RX_TELEMETRY,
 
 	HAL_SRNG_RING_ID_CE0_SRC = 64,
 	HAL_SRNG_RING_ID_CE1_SRC,
@@ -413,6 +422,8 @@ enum hal_ring_type {
 	HAL_REO_EXCEPTION_MGMT,
 	HAL_WBM_BUF,
 	HAL_WBM_IDLE_BUF,
+	HAL_PPE2WBM_BUF,
+	HAL_PPE2WBM_IDLE_BUF,
 	HAL_WBM_BUF_MGMT,
 	HAL_WBM_IDLE_BUF_MGMT,
 	HAL_TQM_CMD,
@@ -421,6 +432,8 @@ enum hal_ring_type {
 	HAL_SAM_STATUS,
 	HAL_ASE_CMD_RING,
 	HAL_ASE_STATUS_RING,
+	HAL_PEER_TX_TELEMETRY,
+	HAL_PEER_RX_TELEMETRY,
 	HAL_MAX_RING_TYPES,
 };
 
@@ -815,6 +828,7 @@ struct hal_rx_desc_data {
 	u16 msdu_len;
 	u16 peer_id;
 	u16 seq_no;
+	u8 snr;
 	u8 pkt_type;
 	u8 l3_pad_bytes;
 	u8 decap;
@@ -1569,6 +1583,10 @@ struct hal_ops {
         (*get_idle_link_rbm)(struct ath12k_hal *hal, u8 device_id);
 	void (*reo_shared_qaddr_cache_clear)(struct ath12k_base *ab);
 	u8 *(*rxdesc_get_mpdu_start_addr2)(struct hal_rx_desc *desc);
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	u8 *(*rxdesc_get_mpdu_start_addr1)(struct hal_rx_desc *desc);
+	u8 (*rxdesc_get_key_id_octet)(struct hal_rx_desc *desc);
+#endif
 	bool (*rx_h_is_decrypted)(struct hal_rx_desc *desc);
 	u32 (*rx_desc_get_mpdu_ppdu_id)(struct hal_rx_desc *rx_desc);
 	u32 (*rx_desc_get_mpdu_start_tag)(struct hal_rx_desc *desc);
@@ -1824,6 +1842,12 @@ ath12k_hal_get_idle_link_rbm(struct ath12k_hal *hal, u8 device_id);
 void ath12k_hal_reo_shared_qaddr_cache_clear(struct ath12k_base *ab);
 u8 *
 ath12k_hal_rxdesc_get_mpdu_start_addr2(struct ath12k_hal *hal, struct hal_rx_desc *desc);
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+u8 *
+ath12k_hal_rxdesc_get_mpdu_start_addr1(struct ath12k_hal *hal, struct hal_rx_desc *desc);
+u8 ath12k_hal_rxdesc_get_get_key_id_octet(struct ath12k_hal *hal,
+					  struct hal_rx_desc *desc);
+#endif
 void __ath12k_hal_srng_update_tp(struct hal_srng *srng, u32 new_tp);
 void ath12k_hal_srng_update_tp(struct hal_srng *srng, u32 new_tp);
 bool ath12k_hal_rx_h_is_decrypted(struct ath12k_hal *hal, struct hal_rx_desc *desc);

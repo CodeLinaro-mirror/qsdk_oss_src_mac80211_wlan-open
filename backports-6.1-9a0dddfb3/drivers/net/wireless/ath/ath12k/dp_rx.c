@@ -1069,6 +1069,11 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp_peer *peer = NULL;
 	struct ath12k_dp_link_peer *link_peer = NULL;
 	struct ath12k_vif *ahvif;
+	struct ieee80211_vif *vif;
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	struct ath12k_skb_rxcb *rxcb = NULL;
+	int mhdr_len = 0;
+#endif
 	u8 addr[ETH_ALEN] = {0};
 
 	rcu_read_lock();
@@ -1136,6 +1141,31 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 
 	ath12k_dbg_dump(ab, ATH12K_DBG_DP_RX, NULL, "dp rx msdu: ",
 			msdu->data, msdu->len);
+
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	/* Mark the msdu containing Meta header */
+	rxcb = ATH12K_SKB_RXCB(msdu);
+	if (rxcb->mhdr) {
+		link_peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev,
+								     peer_id);
+		if (link_peer) {
+			vif = ath12k_dp_link_peer_get_vif(link_peer);
+			ahvif = ath12k_vif_to_ahvif(vif);
+			mhdr_len = ahvif->dp_vif.dp_extn.mhdr_len;
+		}
+		if (unlikely(!mhdr_len))
+			goto out_free_mhdr;
+
+		if (skb_headroom(msdu) < ahvif->dp_vif.dp_extn.mhdr_len)
+			goto out_free_mhdr;
+
+		memcpy(msdu->data - mhdr_len, rxcb->mhdr, mhdr_len);
+		ieee80211_mark_mmesh_frame(status);
+out_free_mhdr:
+		kfree(rxcb->mhdr);
+		rxcb->mhdr = NULL;
+	}
+#endif
 
 	rx_status = IEEE80211_SKB_RXCB(msdu);
 	*rx_status = *status;
@@ -1662,6 +1692,12 @@ ath12k_dp_primary_peer_migrate_setup(struct ath12k_dp *dp, void *ctx,
 	arsta->arvif->primary_sta_link = true;
 	peer->primary_link = true;
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	ath12k_info(mig_ab, "primary_link migration complete. sending WLAN_CLIENT_CONNECT_EX ml_addr=%pM",
+		    peer->ml_addr);
+	ath12k_ipa_enqueue_evt(WLAN_CLIENT_CONNECT_EX, arsta->arvif, peer->ml_addr, true);
+#endif
+
 	spin_unlock_bh(&mig_dp->dp_lock);
 	ret = ath12k_vendor_put_umac_migration_notif(ath12k_dp_link_peer_get_vif(peer),
 						ath12k_dp_link_peer_get_sta(peer)->addr,
@@ -1722,6 +1758,12 @@ ath12k_dp_peer_migrate(struct ath12k_sta *ahsta, u16 peer_id,
 
 	peer->primary_link = false;
 	arsta->arvif->primary_sta_link = false;
+
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	ath12k_info(ab, "primary_link migration started. sending WLAN_CLIENT_DISCONNECT ml_addr=%pM",
+		    peer->ml_addr);
+	ath12k_ipa_enqueue_evt(WLAN_CLIENT_DISCONNECT, arsta->arvif, peer->ml_addr, true);
+#endif
 
 	ret = ath12k_dp_arch_peer_migrate_reo_cmd(dp, peer, peer_id,
 						  chip_id);

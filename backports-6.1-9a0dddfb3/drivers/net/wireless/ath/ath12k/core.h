@@ -237,6 +237,8 @@ enum ath12k_bdf_search {
 #define ATH12K_CSA_FW_RESTART_TIME_DELAY	50
 #define ATH12K_CSA_CALDB_UNDONE_TIME		500
 
+#define ATH12K_CUMAC_CHIP_ID_INVALID 0xFF
+
 enum ath12k_crypt_mode {
 	/* Only use hardware crypto engine */
 	ATH12K_CRYPT_MODE_HW,
@@ -269,6 +271,8 @@ enum ath12k_skb_flags {
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 	ATH12K_SKB_IPA_MAP_UNMAP = BIT(6),
 #endif
+	ATH12K_SKB_MESH_TX_INFO = BIT(7),
+	ATH12K_SKB_MESH_RX_INFO = BIT(8),
 };
 
 struct ath12k_skb_cb {
@@ -280,9 +284,12 @@ struct ath12k_skb_cb {
 	struct ieee80211_vif *vif;
 	dma_addr_t paddr_ext_desc;
 	u32 cipher;
-	u8 flags;
+	u16 flags;
 	u8 link_id;
 };
+
+static_assert(sizeof(struct ath12k_skb_cb) <= 48,
+	      "size of struct ath12k_skb_cb greater than 48 bytes!");
 
 struct ath12k_skb_rxcb {
 	dma_addr_t paddr;
@@ -293,6 +300,7 @@ struct ath12k_skb_rxcb {
 	bool is_eapol;
 	bool is_intra_bss;
 	struct hal_rx_desc *rx_desc;
+	void *mhdr;
 	u8 err_rel_src;
 	u8 err_code;
 	u8 hw_link_id;
@@ -302,6 +310,9 @@ struct ath12k_skb_rxcb {
 	u16 peer_id;
 	bool is_end_of_ppdu;
 };
+
+static_assert(sizeof(struct ath12k_skb_rxcb) <= 48,
+	      "size of struct ath12k_skb_rxcb greater than 48 bytes!");
 
 enum ath12k_hw_rev {
 	ATH12K_HW_QCN9274_HW10 = 0,
@@ -589,7 +600,7 @@ struct chan_power_info {
  */
 struct ath12k_reg_tpc_power_info {
 	bool is_psd_power;
-	u8 eirp_power;
+	s8 eirp_power;
 	enum wmi_reg_6g_ap_type power_type_6g;
 	u8 num_pwr_levels;
 	u8 num_psd_pwr_levels;
@@ -745,6 +756,8 @@ struct ath12k_link_vif {
 	bool bcast_rate_configured;
 	u32 bcast_rate;
 	u64 rx_pn_err_cnt;
+	/* Flag to enable peer_del_all optimization when link is going down */
+	bool peer_del_all_enable;
 };
 
 struct ath12k_dp_link_vif {
@@ -757,7 +770,7 @@ struct ath12k_dp_link_vif {
 	u8 lmac_id;
 	int bank_id;
 	u8 map_id;
-	struct ath12k_dp_preserved_stats *link_peer_delete_stats;
+	struct ath12k_dp_preserved_stats link_peer_delete_stats;
 };
 
 struct ath12k_vlan_iface {
@@ -791,7 +804,9 @@ struct ath12k_dp_vif {
 	u8 ppe_vp_type;
 	bool mscs_hlos_tid_override;
 	u32 monitor_flags;
-	struct ath12k_dp_preserved_stats *link_vif_delete_stats;
+	struct ath12k_dp_preserved_stats link_vif_delete_stats;
+
+	struct ath12k_dp_vif_extn dp_extn;
 };
 
 enum ath12k_tx_pkt_reasons {
@@ -949,6 +964,7 @@ struct ath12k_vif {
 	u8 primary_link_id;
 	u8 hw_link_id;
 	struct ath12k_wmm_stats wmm_stats;
+	bool overide_primary_umac;
 #ifdef CPTCFG_ATH12K_DEBUGFS
 	struct dentry *debugfs_primary_link;
 	struct dentry *debugfs_linkstats;
@@ -1552,6 +1568,8 @@ struct ath12k {
 	int last_wmi_vdev_start_status;
 	struct completion vdev_setup_done;
 	struct completion vdev_delete_done;
+	bool cumac_cmd_sent;
+	struct completion cumac_setup_done;
 
 	int num_peers;
 	int num_ml_peers;
@@ -1608,6 +1626,7 @@ struct ath12k {
 	bool target_suspend_ack:1;
 	struct ath12k_pdev_ctrl_path_stats stats;
 	bool dfs_block_radar_events;
+	bool dfs_sub_channel_marking;
 	bool monitor_vdev_created:1;
 	bool monitor_started:1;
 	bool nlo_enabled:1;
@@ -1940,6 +1959,13 @@ struct ath12k_mlo_wsi_load_info {
 	struct ath12k_mlo_wsi_device_load_stats load_stats[ATH12K_MAX_SOCS];
 };
 
+enum ath12k_cumac_band {
+	ATH12K_CUMAC_BAND_NONE = 0,
+	ATH12K_CUMAC_BAND_2GHZ,
+	ATH12K_CUMAC_BAND_5GHZ,
+	ATH12K_CUMAC_BAND_6GHZ,
+};
+
 /* Holds info on the group of devices that are registered as a single
  * wiphy, protected with struct ath12k_hw_group::mutex.
  */
@@ -1989,6 +2015,9 @@ struct ath12k_hw_group {
 	u64 wsi_peer_clean_timeout;
 	struct completion power_up;
 	bool mlo_teardown;
+	u8 cumac_chip_id;
+	bool cumac_selected;
+	bool cumac_enabled;
 };
 
 /* Holds WSI info specific to each device, excluding WSI group info */
@@ -2165,6 +2194,8 @@ struct ath12k_base {
 	struct ath12k_reg_freq reg_freq_2g;
 	struct ath12k_reg_freq reg_freq_5g;
 	struct ath12k_reg_freq reg_freq_6g;
+	bool is_cumac_chip;
+	bool cumac_configured;
 #ifdef CPTCFG_ATH12K_DEBUGFS
 	struct dentry *debugfs_soc;
 #endif
@@ -2331,7 +2362,8 @@ struct ath12k_base {
 
 	u32 twt_cap_bitmap;
 
-	bool is_cumac_chip;
+
+	u32 cu_mem_cfg_mask;
 
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));

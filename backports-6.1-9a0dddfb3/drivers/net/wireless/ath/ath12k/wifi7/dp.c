@@ -540,6 +540,13 @@ static ssize_t ath12k_wifi7_dump_srng_stats(struct ath12k_dp *dp,
 	return len;
 }
 
+int ath12k_wifi7_dp_fetch_replenish_ring_id(struct ath12k_dp *dp)
+{
+	struct dp_rxdma_ring *rx_ring = &dp->rx_refill_buf_ring;
+
+	return rx_ring->refill_buf_ring.ring_id;
+}
+
 static struct ath12k_dp_arch_ops ath12k_wifi7_dp_arch_ops = {
 	.dp_op_device_init = ath12k_wifi7_dp_op_device_init,
 	.dp_op_device_deinit = ath12k_wifi7_dp_op_device_deinit,
@@ -575,6 +582,8 @@ static struct ath12k_dp_arch_ops ath12k_wifi7_dp_arch_ops = {
 	.dp_link_vif_configure = ath12k_wifi7_dp_link_vif_configure,
 	.rx_flow_fse_cache_operation = ath12k_wifi7_dp_rx_flow_fse_cache_operation,
 	.dp_ext_tx = ath12k_wifi7_dp_ext_tx,
+	.fetch_rx_desc_replenish_ring_id = ath12k_wifi7_dp_fetch_replenish_ring_id,
+
 	/* UMAC reset operations */
 	.umac_reset_handle_pre_reset = ath12k_wifi7_umac_reset_handle_pre_reset_wrapper,
 	.umac_reset_handle_post_reset_start =

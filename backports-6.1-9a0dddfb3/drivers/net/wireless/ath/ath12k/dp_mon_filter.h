@@ -118,6 +118,9 @@ void ath12k_dp_tx_htt_rx_mgmt_flag1_md_filter_set(u32 *ptr, u16 filter);
 void ath12k_dp_tx_htt_rx_ctrl_flag2_md_filter_set(u32 *ptr, u16 filter);
 void ath12k_dp_tx_htt_rx_ctrl_flag3_md_filter_set(u32 *ptr, u16 filter);
 void ath12k_dp_tx_htt_rx_data_flag3_md_filter_set(u32 *ptr, u16 filter);
+void ath12k_dp_tx_htt_rx_mgmt_fpmo_flag0_filter_set(u32 *ptr, u16 filter);
+void ath12k_dp_tx_htt_rx_ctrl_fpmo_flag0_filter_set(u32 *ptr, u16 filter);
+void ath12k_dp_tx_htt_rx_data_fpmo_flag1_filter_set(u32 *ptr, u16 filter);
 void ath12k_dp_htt_rx_filter_rxmon_cfg(void *ptr,
 				       struct htt_rx_ring_tlv_filter *tlv_filter);
 int ath12k_dp_mon_tx_filter_alloc(struct ath12k_pdev_dp *dp_pdev);

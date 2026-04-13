@@ -60,6 +60,7 @@ obj-$(CPTCFG_ATH12K) += wifi8/
 obj-$(CPTCFG_ATHDEBUG) += ath_debug/
 
 ccflags-y += -I$(src)
+CFLAGS_mac.o += -I$(src)/../../../../../net/mac80211
 
 ath12k-$(CPTCFG_QCN_EXTN) += \
 	qcn_extns/core_extn.o \

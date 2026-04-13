@@ -13,6 +13,7 @@
 void ath12k_wifi8_umac_reset_handle_pre_reset(struct ath12k_base *ab);
 void ath12k_wifi8_umac_reset_handle_post_reset_start(struct ath12k_base *ab);
 void ath12k_wifi8_umac_reset_handle_post_reset_complete(struct ath12k_base *ab);
+void ath12k_wifi8_umac_reset_handle_init_recovery(struct ath12k_base *ab);
 
 /* CUMAC HW Reset Step Enumerations */
 
@@ -78,9 +79,9 @@ enum {
  * indexed by the corresponding step enum values.
  */
 struct ath12k_cumac_hw_reset_timestamps {
-	u64 cumac_hw_pre_reset_step_ts[CUMAC_HW_PRE_RESET_MAX];
-	u64 cumac_hw_reset_step_ts[CUMAC_HW_RESET_MAX];
-	u64 cumac_hw_post_reset_step_ts[CUMAC_HW_POST_RESET_MAX];
+	u64 cumac_hw_pre_reset_ts[CUMAC_HW_PRE_RESET_MAX];
+	u64 cumac_hw_reset_ts[CUMAC_HW_RESET_MAX];
+	u64 cumac_hw_post_reset_ts[CUMAC_HW_POST_RESET_MAX];
 };
 
 /**

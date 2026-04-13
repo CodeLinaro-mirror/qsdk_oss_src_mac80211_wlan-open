@@ -4916,6 +4916,7 @@ netdev_tx_t ieee80211_subif_start_xmit(struct sk_buff *skb,
 #ifdef CPTCFG_MAC80211_NSS_SUPPORT
 	ieee80211_xmit_nss_fixup(skb, dev);
 #endif
+
 	if (!tid_stats_disable) {
 		skb->priority = cfg80211_classify8021d(skb, NULL);
 		ieee80211_tid_classifier(skb, sdata, false, TX_NWIFI_PKT);
@@ -5192,7 +5193,6 @@ void ieee80211_8023_xmit_ap(struct ieee80211_sub_if_data *sdata,
 	unsigned long flags;
 	int q;
 	u16 q_map;
-	int tid;
 	struct ethhdr *ehdr = (struct ethhdr *)skb->data;
 	unsigned char *ra = ehdr->h_dest;
 	bool multicast = is_multicast_ether_addr(ra);
@@ -5235,9 +5235,20 @@ void ieee80211_8023_xmit_ap(struct ieee80211_sub_if_data *sdata,
 
 	if (sta) {
 		if (!sta->sta.valid_links) {
-			skb->priority = cfg80211_classify8021d(skb, NULL);
-			tid = skb->priority & IEEE80211_QOS_CTL_TAG1D_MASK;
-			ieee80211_update_tx_stats(sta, skb, q_map, tid);
+			/* TODO: Tid stats need to accounted
+			 * after ecm properly notifies its
+			 * skb->priority
+			 */
+			/* When driver TXRX stats offload enabled,
+			 * stop accounting it in here.
+			 */
+			if (!(sta->sdata->vif.offload_flags &
+			    IEEE80211_OFFLOAD_TXRX_STATS)) {
+				if (q_map < IEEE80211_NUM_ACS) {
+					sta->deflink.tx_stats.bytes[q_map] += skb->len;
+					sta->deflink.tx_stats.packets[q_map]++;
+				}
+			}
 		}
 		atomic_inc(&sta->tx_netif_pkts);
 	}
@@ -5328,6 +5339,10 @@ netdev_tx_t __ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 {
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	struct wireless_dev *wdev;
+	struct ieee80211_vif *vif;
+#endif
 	struct ethhdr *ehdr = (struct ethhdr *)skb->data;
 	struct ieee80211_key *key = NULL;
 	struct sta_info *sta;
@@ -5337,6 +5352,28 @@ netdev_tx_t __ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 #ifdef CPTCFG_MAC80211_NSS_SUPPORT
        ieee80211_xmit_nss_fixup(skb, dev);
 #endif
+
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	wdev = (struct wireless_dev *)dev->ieee80211_ptr;
+	if (!wdev) {
+		kfree_skb(skb);
+		return NETDEV_TX_OK;
+	}
+
+	vif = wdev_to_ieee80211_vif(wdev);
+	if (!vif) {
+		kfree_skb(skb);
+		return NETDEV_TX_OK;
+	}
+
+	/* Adjust the skb->data to point to the actual payload after the meta header*/
+	if (wdev->vap_submode == IEEE80211_EXTN_VAP_SUBMODE_MESH) {
+		if (!mmeshsim) {
+			skb_pull(skb, vif->mhdr_len);
+		}
+	}
+#endif
+
 	if (unlikely(!ieee80211_sdata_running(sdata) || skb->len < ETH_HLEN)) {
 		if (!tid_stats_disable)
 			ieee80211_tx_drop_stats(sdata, info->tid, TX_DROP_SDATA_STATE);

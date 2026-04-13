@@ -67,7 +67,8 @@ struct ath12k_dp_link_vif;
 
 #define DP_MON_PURGE_TIMEOUT_MS     100
 #define DP_MON_SERVICE_BUDGET       128
-#define MAX_TCL_RING		    4
+#define MAX_TCL_RING		MIN(NR_CPUS, 5)
+#define MAX_TX_COMP_RING	MIN(NR_CPUS, 5)
 
 struct dp_rxdma_ring {
 	struct dp_srng refill_buf_ring;
@@ -386,8 +387,6 @@ enum ath12k_dp_eapol_key_type {
 
 #define MAX_TQM_RELEASE_REASON 29
 #define MAX_FW_TX_STATUS 7
-#define MAX_TCL_RING 4
-#define MAX_TX_COMP_RING 4
 
 struct ath12k_dp_tx_bank_profile {
 	u8 is_configured;
@@ -425,7 +424,7 @@ struct ath12k_tx_desc_info {
 	u8 mac_id	: 5,
 	   in_use	: 1,
 	   ext_kmem	: 1,
-	   reserved	: 1;
+	   mmesh	: 1;
 	u8 flags	: 3,
 	   reserved1	: 4,
 	   to_fw	: 1;
@@ -586,6 +585,7 @@ struct ath12k_dp_arch_ops {
 	int (*get_peer_init_status)(struct ath12k_dp *dp,
 				    struct ath12k_dp_hw *dp_hw,
 				    u8 *addr);
+	int (*fetch_rx_desc_replenish_ring_id)(struct ath12k_dp *dp);
 	enum ath12k_dp_tx_enq_error (*dp_ext_tx)(struct ath12k_pdev_dp *dp_pdev,
 						 struct ath12k_dp_vif *dp_vif,
 						 struct ath12k_dp_link_vif *dp_link_vif,
@@ -595,6 +595,8 @@ struct ath12k_dp_arch_ops {
 	void (*umac_reset_handle_pre_reset)(struct ath12k_base *ab);
 	void (*umac_reset_handle_post_reset_start)(struct ath12k_base *ab);
 	void (*umac_reset_handle_post_reset_complete)(struct ath12k_base *ab);
+	void (*umac_reset_handle_init_recovery)(struct ath12k_base *ab);
+
 	ssize_t (*dump_srng_stats)(struct ath12k_dp *dp, char *buf, int size);
 	ssize_t (*dump_device_dp_stats)(struct ath12k_dp *dp, char *buf, int size);
 	void (*reset_device_dp_stats)(struct ath12k_dp *dp);
@@ -1142,6 +1144,11 @@ ath12k_dp_arch_rx_flow_fse_cache_op(struct ath12k_dp *dp,
 	return dp->arch_ops->rx_flow_fse_cache_operation(dp->ab, op_code, tuple_info);
 }
 
+static inline int ath12k_dp_arch_fetch_rx_desc_replenish_ring_id(struct ath12k_dp *dp)
+{
+	return dp->arch_ops->fetch_rx_desc_replenish_ring_id(dp);
+}
+
 static inline struct ath12k_dp_hw_group *
 ath12k_core_dp_hw_group_alloc(struct ath12k_dp *dp)
 {
@@ -1440,6 +1447,7 @@ void ath12k_dp_ppeds_tx_desc_cleanup(struct ath12k_base *ab);
 void ath12k_dp_srng_hw_ring_disable(struct ath12k_base *ab);
 void ath12k_dp_umac_tx_desc_cleanup(struct ath12k_base *ab);
 void ath12k_dp_umac_rx_desc_cleanup(struct ath12k_base *ab);
+void ath12k_dp_srng_hw_disable(struct ath12k_base *ab, struct dp_srng *ring);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 void ath12k_ppeds_reinject_handler(struct ath12k_base *ab,
 				   struct ath12k_ppeds_tx_desc_info *tx_desc,

@@ -15,6 +15,7 @@
 #include "../hw.h"
 #include "hw.h"
 #include "../qcn_extns/ath12k_cmn_extn.h"
+#include "../qcn_extns/ath12k_cmn_extn.h"
 #include "../mhi.h"
 #include "mhi.h"
 #include "../pci.h"
@@ -27,6 +28,7 @@
 #include "../debugfs.h"
 #include "../testmode.h"
 #include "../dp_peer.h"
+#include "../qcn_extns/mesh_util.h"
 #include "../dp_tx.h"
 #include "dp_tx.h"
 #include "dp.h"
@@ -712,6 +714,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
+		.peer_del_all_support = false,
 	},
 	{
 		.name = "wcn7850 hw2.0",
@@ -827,6 +830,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
+		.peer_del_all_support = false,
 	},
 	{
 		.name = "qcn9274 hw2.0",
@@ -954,6 +958,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
+		.peer_del_all_support = false,
 	},
 	{
 		.name = "ipq5332 hw1.0",
@@ -1070,6 +1075,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
+		.peer_del_all_support = false,
 	},
 	{
 		.name = "qcn6432 hw1.0",
@@ -1164,6 +1170,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
+		.peer_del_all_support = false,
 	},
 	{
 		.name = "ipq5424 hw1.0",
@@ -1284,6 +1291,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
+		.peer_del_all_support = false,
 	},
 };
 
@@ -1315,6 +1323,119 @@ static int ath12k_get_mcast_group_slot(struct ieee80211_vif *vif,
 
 	return group_slot;
 }
+
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+enum ath12k_dp_tx_enq_error
+ath12k_dp_mmesh_tx(struct ieee80211_hw *hw, struct ath12k_base *ab,
+		   struct ath12k_link_vif *arvif, struct ath12k_pdev_dp *dp_pdev,
+		   struct sk_buff *skb, struct ath12k_link_sta *arsta,
+		   u8 ring_id, bool is_mcast, bool *htt_mesh,
+		   u32 qos_nw_delay, int group_slot)
+{
+	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
+	struct ath12k_vif *ahvif = arvif->ahvif;
+	struct sk_buff *skb_cloned = NULL;
+	struct ath12k_skb_cb *skb_clone_cb  = NULL;
+	enum ath12k_dp_tx_enq_error err;
+	struct meta_hdr_s *mhdr = NULL;
+	u8 no_enc_frame = 0;
+	bool checkhdr = false;
+	u8 flags;
+	u16 len;
+	int ret;
+
+	if (ahvif->dp_vif.tx_encap_type == ATH12K_HW_TXRX_NATIVE_WIFI ||
+	    ahvif->dp_vif.tx_encap_type == ATH12K_HW_TXRX_RAW) {
+		pr_err("Native Wifi & Raw mode not supported\n");
+		return DP_TX_ENQ_DROP_MISC;
+	}
+
+	len = skb->len;
+
+	if (mmeshsim) {
+		/* Add meta header */
+		if (ahvif->dp_vif.dp_extn.mdbg & MESH_DBG_TX)
+			print_hex_dump(KERN_INFO, "PREBUF: ", DUMP_PREFIX_OFFSET, 16, 1,
+				       skb->data, 64, false);
+
+		ret = ath12k_dp_add_mesh_meta_hdr(skb, ahvif,
+						  !!ahvif->dp_vif.dp_extn.mdbg,
+						  &checkhdr);
+		if (ret) {
+			pr_err("Drop frames. Failure in adding mesh header in simulation\n");
+			return DP_TX_ENQ_DROP_MHDR_ERR;
+		}
+
+		if (ahvif->dp_vif.dp_extn.mdbg & MESH_DBG_TX)
+			print_hex_dump(KERN_INFO, "POSTBUF: ", DUMP_PREFIX_OFFSET, 16, 1,
+				       skb->data, 64, false);
+	}
+
+	/* Move the skb data ahead and point to the meta header */
+	if (!mmeshsim)
+		skb_push(skb, ahvif->dp_vif.dp_extn.mhdr_len);
+
+	mhdr = (struct meta_hdr_s *)skb->data;
+	if (mmeshsim && !checkhdr)
+		mhdr = NULL;
+
+	if (mhdr) {
+		flags = mhdr->flags;
+		skb_pull(skb, ahvif->dp_vif.dp_extn.mhdr_len);
+
+		if (arvif->key_cipher != INVALID_CIPHER &&
+		    (mhdr->flags & METAHDR_FLAG_NOENCRYPT))
+			no_enc_frame = 1;
+
+		if (mhdr->flags & METAHDR_FLAG_NOQOS)
+			skb->priority =  HTT_TX_EXT_TID_NON_QOS_MCAST_BCAST;
+
+		if ((mhdr->flags & METAHDR_FLAG_INFO_UPDATED) &&
+		    !no_enc_frame) {
+			skb_cloned = skb_clone(skb, GFP_ATOMIC);
+			if (!skb_cloned)
+				return DP_TX_ENQ_DROP_CLONE;
+
+			skb_clone_cb = ATH12K_SKB_CB(skb_cloned);
+			skb_clone_cb->flags |= ATH12K_SKB_MESH_TX_INFO;
+			*htt_mesh = true;
+		}
+
+		if (skb_cloned) {
+			/* Applicable only for mmesh mode.
+			 * Clone the SKB and send it to firmware
+			 * with the updated rate info.
+			 * Firmware uses this to update
+			 * the peer cached rate info.
+			 */
+			err = ath12k_wifi7_dp_tx(dp_pdev, arvif, skb_cloned, false, 0,
+						 is_mcast, arsta, ring_id, qos_nw_delay,
+						 group_slot, true);
+			/* skb is freed in the caller on err */
+			if (err)
+				return err;
+		}
+
+		if (no_enc_frame) {
+			skb_cb->flags  |= ATH12K_SKB_MESH_TX_INFO;
+			*htt_mesh = true;
+		} else {
+			skb_cb->flags  &= ~ATH12K_SKB_MESH_TX_INFO;
+			*htt_mesh = false;
+		}
+	}
+
+	ath12k_dbg_level(ab, ATH12K_DBG_MMESH, ATH12K_DBG_L1,
+			 "skb %p clone %p no_enc_frm %d skb->pri %d tx_info_flag %d",
+			 skb, skb_cloned,  no_enc_frame, skb->priority,
+			 !!(skb_cb->flags & ATH12K_SKB_MESH_TX_INFO));
+
+	ath12k_dbg_level(ab, ATH12K_DBG_MMESH, ATH12K_DBG_L1,
+			 " hdr len %d skb->len %d mhdr flags 0x%x mhdr %p htt_mesh %d\n",
+			 skb->len - len,	skb->len, flags, mhdr, *htt_mesh);
+	return DP_TX_ENQ_SUCCESS;
+}
+#endif
 
 /* Note: called under rcu_read_lock() */
 static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
@@ -1351,8 +1472,8 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	struct ethhdr *eth;
 	bool is_prb_rsp;
 	u32 qos_nw_delay = info->sawf.nw_delay;
-	u16 frm_type = 0;
-	u16 mcbc_gsn;
+	u16 mcbc_gsn, frm_type = 0;
+	bool htt_mesh = false;
 	u8 link_id;
 #ifdef CPTCFG_MAC80211_SFE_SUPPORT
 	u8 tid;
@@ -1627,8 +1748,32 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 								 key, arvif->link_id);
 		}
 
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+		if (ahvif->vap_submode == QCA_WLAN_VENDOR_VAP_SUBMODE_MESH) {
+			err = ath12k_dp_mmesh_tx(hw, ar->ab,  arvif, dp_pdev, skb,
+						 arsta, ring_id, is_mcast, &htt_mesh,
+						 qos_nw_delay, group_slot);
+			if (err) {
+				if (ath12k_mac_check_err_code_debug_logging(err))
+					ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC,
+							 ATH12K_DBG_L2,
+							 "failed to transmit frame %d\n",
+							 err);
+				else
+					ath12k_warn(ar->ab, "failed to transmit frm %d\n",
+						    err);
+
+				ath12k_mac_ieee80211_free_txskb(ar->ah->hw, skb,
+								dp_pdev, sta, dp_vif,
+								err, ring_id, true);
+				return;
+			}
+		}
+#endif
+
 		err = ath12k_wifi7_dp_tx(dp_pdev, arvif, skb, false, 0, is_mcast,
-					 arsta, ring_id, qos_nw_delay, group_slot);
+					 arsta, ring_id, qos_nw_delay, group_slot,
+					 htt_mesh);
 		if (unlikely(err)) {
 			if (ath12k_mac_check_err_code_debug_logging(err))
 				ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
@@ -1754,7 +1899,7 @@ skip_peer_find:
 			err = ath12k_wifi7_dp_tx(tmp_dp_pdev, tmp_arvif,
 						 msdu_copied, true, mcbc_gsn,
 						 is_mcast, arsta, ring_id,
-						 qos_nw_delay, group_slot);
+						 qos_nw_delay, group_slot, false);
 			if (unlikely(err)) {
 				if (ath12k_mac_check_err_code_debug_logging(err))
 					ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC,
@@ -1808,6 +1953,7 @@ static const struct ieee80211_ops ath12k_ops_wifi7 = {
 	.sta_set_4addr			= ath12k_wifi7_mac_op_sta_set_4addr,
 	.link_info_changed              = ath12k_mac_op_link_info_changed,
 	.start_ap                       = ath12k_mac_op_start_ap,
+	.link_going_down                = ath12k_mac_op_link_going_down,
 	.vif_cfg_changed		= ath12k_mac_op_vif_cfg_changed,
 	.change_vif_links               = ath12k_mac_op_change_vif_links,
 	.configure_filter		= ath12k_mac_op_configure_filter,

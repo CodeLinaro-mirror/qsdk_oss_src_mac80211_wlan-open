@@ -13,11 +13,13 @@
 #define ATH12K_TX_RING_MASK_1 0x2
 #define ATH12K_TX_RING_MASK_2 0x4
 #define ATH12K_TX_RING_MASK_3 0x8
+#define ATH12K_TX_RING_MASK_4 0x10
 
 #define ATH12K_RX_RING_MASK_0 0x1
 #define ATH12K_RX_RING_MASK_1 0x2
 #define ATH12K_RX_RING_MASK_2 0x4
 #define ATH12K_RX_RING_MASK_3 0x8
+#define ATH12K_RX_RING_MASK_4 0x10
 
 #define ATH12K_RX_ERR_RING_MASK_0 0x1
 
@@ -45,6 +47,9 @@
 #define ATH12K_PPE_WBM2SW_RELEASE_RING_MASK_0 0x1
 
 #define ATH12K_SAM_STATUS_RING_MASK_0   0x1
+
+#define ATH12K_TX_PEER_TELEMETRY_RING_MASK 0x1
+#define ATH12K_RX_PEER_TELEMETRY_RING_MASK 0x1
 
 static const int ath12k_wifi8_ext_irq_grp_affinity[] = {
 	0, /* grp0  -> cpu0 */

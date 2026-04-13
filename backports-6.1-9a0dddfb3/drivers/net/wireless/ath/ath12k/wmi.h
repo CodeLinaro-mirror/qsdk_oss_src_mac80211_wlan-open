@@ -584,6 +584,7 @@ enum wmi_tlv_cmd_id {
 	WMI_PDEV_MEC_AGING_TIMER_CONFIG_CMDID = 0x4049,
 	WMI_PDEV_SET_BIOS_INTERFACE_CMDID = 0x404A,
 	WMI_PDEV_WSI_STATS_INFO_CMDID = 0x4051,
+	WMI_PDEV_SET_CUMAC_CHIP_CMDID = 0x405D,
 	WMI_VDEV_CREATE_CMDID = WMI_TLV_CMD(WMI_GRP_VDEV),
 	WMI_VDEV_DELETE_CMDID,
 	WMI_VDEV_START_REQUEST_CMDID,
@@ -1053,6 +1054,7 @@ enum wmi_tlv_event_id {
 		WMI_PDEV_GET_HALPHY_CAL_STATUS_EVENTID + 4,
 	WMI_PDEV_RSSI_DBM_CONVERSION_PARAMS_INFO_EVENTID =
 					WMI_PDEV_GET_HALPHY_CAL_STATUS_EVENTID + 5,
+	WMI_PDEV_SET_CUMAC_CHIP_ID_CONFIRMATION_EVENTID = 0x4038,
 	WMI_VDEV_START_RESP_EVENTID = WMI_TLV_CMD(WMI_GRP_VDEV),
 	WMI_VDEV_STOPPED_EVENTID,
 	WMI_VDEV_INSTALL_KEY_COMPLETE_EVENTID,
@@ -2444,6 +2446,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_SPECTRAL_FFT_SIZE_CAPABILITIES,
 	WMI_TAG_PDEV_SSCAN_CHAN_INFO = 0x417,
 	WMI_TAG_PDEV_SSCAN_PER_DETECTOR_INFO,
+	WMI_TAG_REG_CHAN_PRIORITY = 0x426,
 	WMI_TAG_RSSI_DBM_CONVERSION_PARAMS_INFO_FIXED_PARAM = 0x427,
 	WMI_TAG_RSSI_DBM_CONVERSION_PARAMS_INFO,
 	WMI_TAG_RSSI_DBM_CONVERSION_TEMP_OFFSET_INFO,
@@ -2495,7 +2498,10 @@ enum wmi_tlv_tag {
 	WMI_TAG_ENERGY_MGMT_DPS_ASSISTING_ROLE_CMD_FIXED_PARAM = 0x525,
 	WMI_TAG_MAC_PHY_CAPABILITIES_EXT2 = 0x526,
 	WMI_TAG_MLO_PEER_TID_TO_LINK_MAP_EVENT_FIXED_PARAM = 0x544,
+	WMI_TAG_SHARED_CU_MEM_CONFIG = 0x577,
 	WMI_TAG_PEER_ASSOC_CIP_INFO,
+	WMI_TAG_PDEV_SET_CUMAC_CHIP = 0x57A,
+	WMI_TAG_PDEV_SET_CUMAC_COMPLETE = 0x57B,
 	WMI_TAG_MAX
 };
 
@@ -2767,6 +2773,8 @@ enum wmi_tlv_service {
 	WMI_TLV_SERVICE_11BN = 458,
 
 	WMI_SERVICE_EXT_TLV_SUPPORT = 465,
+
+	WMI_TLV_SERVICE_SHARED_CU_MEM_MODEL_COUNT_DOWN = 497,
 
 	WMI_MAX_EXT2_SERVICE,
 };
@@ -3044,6 +3052,23 @@ struct ath12k_wmi_pdev_band_to_mac_params {
 	__le32 start_freq;
 	__le32 end_freq;
 } __packed;
+
+/* This shares the supported countdown as follows
+ * csa
+ * quite
+ * max_chan_switch_time
+ * eht_bpcc
+ * ttlm_max_switch_time
+ * ttlm_expected_duration
+ * ml_reconfig
+ * uhr_epbcc
+ * uhr_params_update
+ * reserved (23 bits)
+ */
+struct ath12k_wmi_shared_cu_mem_config {
+	__le32 config;
+} __packed;
+
 
 /* This is both individual command WMI_PDEV_SET_HW_MODE_CMDID and also part
  * of WMI_TAG_INIT_CMD.
@@ -3598,6 +3623,17 @@ struct ath12k_wmi_vdev_up_params {
 	const u8 *tx_bssid;
 	u32 nontx_profile_idx;
 	u32 nontx_profile_cnt;
+};
+
+struct wmi_send_cumac_cmd {
+	__le32 tlv_header;
+	__le32 pdev_id;
+	__le32 cumac_chip_id;
+} __packed;
+
+struct ath12k_wmi_send_cumac_cmd {
+	u32 pdev_id;
+	u32 cumac_chip_id;
 };
 
 struct wmi_vdev_up_cmd {
@@ -5642,6 +5678,13 @@ struct wmi_reg_chan_list_cc_ext_event {
 	__le32 num_6g_reg_rules_cl_lpi[WMI_REG_CLIENT_MAX];
 	__le32 num_6g_reg_rules_cl_vlp[WMI_REG_CLIENT_MAX];
 } __packed;
+
+#ifdef CPTCFG_QCN_EXTN
+struct ath12k_wmi_reg_chan_priority {
+	__le32 tlv_header;
+	__le32 freq_info; /* bits[15:0]: VLP cutoff frequency in MHz */
+} __packed;
+#endif
 
 struct ath12k_wmi_reg_rule_ext_params {
 	__le32 tlv_header;
@@ -8080,6 +8123,16 @@ struct wmi_mlo_setup_complete_event {
 	__le32 max_ml_peer_ids;
 } __packed;
 
+enum wmi_pdev_set_cumac_chip_id_status_type {
+	WMI_PDEV_SET_CUMAC_CHIP_ID_SUCCESS,
+	WMI_PDEV_SET_CUMAC_CHIP_ID_FAILURE,
+};
+
+struct wmi_mlo_send_cumac_complete_event {
+	__le32 pdev_id;
+	__le32 status;
+} __packed;
+
 struct wmi_mlo_teardown_complete_event {
 	__le32 pdev_id;
 	__le32 status;
@@ -9660,6 +9713,8 @@ int ath12k_wmi_bcn_tmpl(struct ath12k_link_vif *arvif,
 			struct ath12k_wmi_bcn_tmpl_ema_arg *ema_args);
 int ath12k_wmi_send_peer_tx_pn_request_cmd(struct ath12k *ar,
 					   struct ath12k_wmi_peer_pn_arg *arg);
+int ath12k_wmi_send_cumac_config(struct ath12k *ar,
+				 u32 cumac_chip_id);
 int ath12k_wmi_vdev_down(struct ath12k *ar, u8 vdev_id);
 int ath12k_wmi_vdev_up(struct ath12k *ar, struct ath12k_wmi_vdev_up_params *params);
 int ath12k_wmi_vdev_stop(struct ath12k *ar, u8 vdev_id);

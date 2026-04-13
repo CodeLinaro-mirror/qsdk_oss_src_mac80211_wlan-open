@@ -935,6 +935,7 @@ struct ieee80211_bss_conf {
 	u8 ml_max_rec_links;
 	bool is_cfp_enabled;
 	bool dps_assist_support;
+	enum nl80211_auth_type auth_type;
 };
 
 /**
@@ -2345,6 +2346,11 @@ struct ieee80211_vif {
 #ifdef CPTCFG_MAC80211_PPE_SUPPORT
 	int ppe_vp_num;
 	u8 ppe_vp_type;
+#endif
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	u32 mhdr;
+	u32 mhdr_len;
+	u32 mdbg;
 #endif
 	bool is_roc;
 	/* must be last */
@@ -4815,6 +4821,14 @@ struct ieee80211_ppe_vp_ds_params {
  *	just "paused" for scanning/ROC, which is indicated by the beacon being
  *	disabled/enabled via @bss_info_changed.
  * @stop_ap: Stop operation on the AP interface.
+ *
+ * @link_going_down: Notify driver that a specific link is going down.
+ *	This is called before sta_flush during operations like stop_ap.
+ *	Driver can use this to set flags for optimizing batch peer deletion.
+ *	The is_netdev_going_down parameter indicates if the entire netdev is
+ *	going down (true) or just a specific link (false).
+ *	The callback can sleep.
+ *
  * @set_monitor_flags: Enables or disables TX and RX monitor mode in userspace
  *      via NL commands.
  *
@@ -5028,6 +5042,10 @@ struct ieee80211_ops {
 			struct ieee80211_bss_conf *link_conf);
 	void (*stop_ap)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			struct ieee80211_bss_conf *link_conf);
+	void (*link_going_down)(struct ieee80211_hw *hw,
+				struct ieee80211_vif *vif,
+				struct ieee80211_bss_conf *link_conf,
+				bool is_netdev_going_down);
 	int (*set_monitor_flags)(struct ieee80211_hw *hw,
 				 struct ieee80211_vif *vif,
 				 u32 flags);

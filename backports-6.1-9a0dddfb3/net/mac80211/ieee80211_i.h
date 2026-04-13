@@ -229,6 +229,7 @@ enum ieee80211_packet_rx_flags {
 	IEEE80211_RX_AMSDU			= BIT(3),
 	IEEE80211_RX_MALFORMED_ACTION_FRM	= BIT(4),
 	IEEE80211_RX_DEFERRED_RELEASE		= BIT(5),
+	IEEE80211_RX_MHDR			= BIT(6),
 };
 
 /**
@@ -2969,7 +2970,8 @@ bool ieee80211_is_radar_required(struct ieee80211_local *local,
 enum hrtimer_restart ieee80211_dfs_cac_timeout(struct hrtimer *timer);
 void ieee80211_dfs_cac_timer_work(struct wiphy *wiphy, struct wiphy_work *work);
 
-void ieee80211_dfs_cac_cancel(struct ieee80211_local *local);
+void ieee80211_dfs_cac_cancel(struct ieee80211_local *local,
+			      struct cfg80211_chan_def *def);
 void ieee80211_dfs_radar_detected_work(struct wiphy *wiphy, struct wiphy_work *work);
 void ieee80211_awgn_detected_work(struct work_struct *work);
 int ieee80211_send_action_csa(struct ieee80211_sub_if_data *sdata,
@@ -3095,5 +3097,8 @@ int ieee80211_qos_mgmt_cfg(struct ieee80211_sub_if_data *sdata,
 int ieee80211_set_monitor_channel(struct wiphy *wiphy,
 				  struct net_device *dev,
 				  struct cfg80211_chan_def *chandef);
+extern struct ieee80211_key *
+ieee80211_lookup_key(struct ieee80211_sub_if_data *sdata, int link_id,
+		     u8 key_idx, bool pairwise, const u8 *mac_addr);
 
 #endif /* IEEE80211_I_H */

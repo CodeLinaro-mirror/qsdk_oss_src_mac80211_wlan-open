@@ -26,6 +26,7 @@
 #include <ppe_vp_public.h>
 #include <ppe_vp_tx.h>
 #endif
+#include "../qcn_extns/mesh_util.h"
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 #include "../qcn_extns/ipa/dp_ipa.h"
 #endif
@@ -580,6 +581,10 @@ static bool ath12k_wifi7_dp_rx_check_fast_rx(struct ath12k_dp *dp,
 
 	if (unlikely(!peer->is_authorized))
 		return false;
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	if (unlikely(peer->is_mmesh_peer))
+		return false;
+#endif
 
 	/* check if the msdu needs to be bridged to our connected peer */
 	if (unlikely(rx_msdu_info->intra_bss))
@@ -842,12 +847,32 @@ static int ath12k_wifi7_dp_rx_h_undecap(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct hal_rx_desc_data rx_desc_data = {0};
 	struct ath12k_dp_peer *dp_peer;
+	struct ath12k_dp_link_peer *link_peer;
 	struct ath12k_vif *ahvif;
 	u32 pkt_reason;
 	u8 is_mcbc;
 	struct ieee80211_vif *vif;
 
 	ath12k_wifi7_dp_extract_rx_desc_data(dp, &rx_desc_data, desc, desc);
+
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	rcu_read_lock();
+	link_peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev,
+							     peer_id);
+	if (peer && peer->is_mmesh_peer) {
+		ahvif = ath12k_vif_to_ahvif(peer->vif);
+		if (ath12k_dp_mesh_rx_filter_mesh_packets(dp_pdev->dp->ab, ahvif,
+							  &rx_desc_data, desc)) {
+			DP_PEER_MISC_STATS_INC(peer, mmesh_stat, filter_drop, 0, 1);
+			rcu_read_unlock();
+			return -1;
+		}
+		ath12k_dp_rx_fill_mesh_metadata(dp_pdev, link_peer, msdu, ahvif,
+						&rx_desc_data, desc);
+	}
+	rcu_read_unlock();
+#endif
+
 	switch (tlv_info->decap) {
 	case DP_RX_DECAP_TYPE_NATIVE_WIFI:
 		pkt_reason = ATH_RX_NATIVE_WIFI_PKTS;
@@ -2533,6 +2558,9 @@ ath12k_wifi7_dp_process_rx_err_buf(struct ath12k_pdev_dp *dp_pdev,
 	msdu = desc_info->skb;
 	desc_info->skb = NULL;
 	rxcb = ATH12K_SKB_RXCB(msdu);
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	rxcb->mhdr = NULL;
+#endif
 	rxcb->peer_id = le32_get_bits(desc->rx_mpdu_info.peer_meta_data,
 				      RX_MPDU_DESC_META_DATA_V1_PEER_ID);
 
@@ -3380,6 +3408,10 @@ static void ath12k_wifi7_dp_rx_wbm_err(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
 	struct hal_rx_desc_data rx_desc_data = {0};
 	struct ieee80211_rx_status rxs = {0};
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	struct ath12k_vif *ahvif;
+	struct ath12k_dp_link_peer *link_peer;
+#endif
 	bool drop = true;
 	struct ieee80211_hdr *hdr;
 	struct ath12k_dp_rx_rfc1042_hdr *llc;
@@ -3404,6 +3436,30 @@ static void ath12k_wifi7_dp_rx_wbm_err(struct ath12k_pdev_dp *dp_pdev,
 		break;
 	}
 
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	rcu_read_lock();
+	link_peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev,
+							     rx_desc_data.peer_id);
+	if (link_peer && link_peer->dp_peer->is_mmesh_peer) {
+		ahvif = ath12k_vif_to_ahvif(ath12k_dp_link_peer_get_vif(link_peer));
+		if (ath12k_dp_mesh_rx_filter_mesh_packets(dp_pdev->dp->ab,
+							  ahvif,
+							  &rx_desc_data,
+							  rx_desc)) {
+			DP_PEER_MISC_STATS_INC(link_peer->dp_peer,
+					       mmesh_stat, filter_drop,
+					       0, 1);
+			rcu_read_unlock();
+			drop = true;
+			goto drop_skb;
+		}
+		ath12k_dp_rx_fill_mesh_metadata(dp_pdev, link_peer, msdu, ahvif,
+						&rx_desc_data, rx_desc);
+	}
+	rcu_read_unlock();
+
+drop_skb:
+#endif
 	if (drop) {
 		dev_kfree_skb_any(msdu);
 		return;
@@ -3438,7 +3494,7 @@ int ath12k_wifi7_dp_rx_process_wbm_err(struct ath12k_dp *dp,
 	struct ath12k *ar;
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
-	struct ath12k_pdev_dp *dp_pdev; //TODO: Check this
+	struct ath12k_pdev_dp *dp_pdev;
 	struct ath12k_dp *partner_dp;
 	struct dp_rxdma_ring *rx_ring;
 	struct hal_rx_wbm_rel_info err_info;

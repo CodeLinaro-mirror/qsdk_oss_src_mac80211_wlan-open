@@ -114,20 +114,25 @@ static const struct ath12k_hw_ops qcn9625_ops = {
  * Group 22: UMAC reset
  */
 static struct ath12k_hw_ring_mask ath12k_wifi8_hw_ring_mask_qcn9625 = {
-	/* Group 0-3 */
+	/* Group 0-3, 5th ring uses group 10 */
 	.tx  = {
 		ATH12K_TX_RING_MASK_0,
 		ATH12K_TX_RING_MASK_1,
 		ATH12K_TX_RING_MASK_2,
 		ATH12K_TX_RING_MASK_3,
+		0, 0, 0, 0,
+		0, 0,
+		ATH12K_TX_RING_MASK_4,
 	},
-	/* Group 4-7 */
+	/* Group 4-7, 5th ring uses group 11 */
 	.rx = {
 		0, 0, 0, 0,
 		ATH12K_RX_RING_MASK_0,
 		ATH12K_RX_RING_MASK_1,
 		ATH12K_RX_RING_MASK_2,
 		ATH12K_RX_RING_MASK_3,
+		0, 0, 0,
+		ATH12K_RX_RING_MASK_4,
 	},
 	/* Group 8 */
 	.tx_exception = {
@@ -191,6 +196,22 @@ static struct ath12k_hw_ring_mask ath12k_wifi8_hw_ring_mask_qcn9625 = {
 		0, 0, 0, 0,
 		ATH12K_HOST2RXMON_RING_MASK_0,
 	},
+	/* Group 13 */
+	.tx_peer_telemetry = {
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		0,
+		ATH12K_TX_PEER_TELEMETRY_RING_MASK
+	},
+	.rx_peer_telemetry = {
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		0,
+		ATH12K_RX_PEER_TELEMETRY_RING_MASK
+	},
+
 	/* Group 19-21 */
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	.ppe2tcl = {
@@ -281,7 +302,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.supports_shadow_regs = false,
 
 		.num_tcl_banks = 128,
-		.max_tx_ring = 4,
+		.max_tx_ring = MIN(NR_CPUS, 5),
 
 		.mhi_config = &ath12k_wifi8_mhi_config_qcn9625,
 
@@ -319,6 +340,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.handle_beacon_miss = true,
 		.en_qdsslog = true,
 		.support_fse = true,
+		.cumac_support = false,
 		.alloc_cacheable_memory = true,
 		.spectral = {
 			.fft_sz = 7,
@@ -343,6 +365,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
+		.peer_del_all_support = true,
 	},
 };
 
@@ -1081,6 +1104,7 @@ static const struct ieee80211_ops ath12k_ops_wifi8 = {
 	.sta_set_4addr			= ath12k_wifi8_mac_op_sta_set_4addr,
 	.link_info_changed              = ath12k_mac_op_link_info_changed,
 	.start_ap                       = ath12k_mac_op_start_ap,
+	.link_going_down                = ath12k_mac_op_link_going_down,
 	.vif_cfg_changed		= ath12k_mac_op_vif_cfg_changed,
 	.change_vif_links               = ath12k_mac_op_change_vif_links,
 	.configure_filter		= ath12k_mac_op_configure_filter,

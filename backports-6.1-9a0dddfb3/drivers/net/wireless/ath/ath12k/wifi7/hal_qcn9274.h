@@ -206,6 +206,29 @@ u32 ath12k_wifi7_hal_rx_desc_get_msdu_end_offset_qcn9274(void)
 	return offsetof(struct hal_rx_desc_qcn9274_compact, msdu_end);
 }
 
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+static inline
+bool ath12k_wifi7_hal_rxdesc_mac_addr1_valid_qcn9274(struct hal_rx_desc *desc)
+{
+	return __le32_to_cpu(desc->u.qcn9274_compact.mpdu_start.info4) &
+			     RX_MPDU_START_INFO4_MAC_ADDR1_VALID;
+}
+
+static inline u8 *
+ath12k_wifi7_hal_rxdesc_get_mpdu_start_addr1_qcn9274(struct hal_rx_desc *desc)
+{
+	return ath12k_wifi7_hal_rxdesc_mac_addr1_valid_qcn9274(desc) ?
+			desc->u.qcn9274_compact.mpdu_start.addr1 : NULL;
+}
+
+static inline
+u8 ath12k_wifi7_hal_rxdesc_get_key_id_octet_qcn9274(struct hal_rx_desc *desc)
+{
+	return le32_get_bits(desc->u.qcn9274_compact.mpdu_start.info5,
+			     RX_MPDU_START_INFO5_KEY_ID) & 0x3;
+}
+#endif
+
 static inline
 bool ath12k_wifi7_hal_rxdesc_mac_addr2_valid_qcn9274(struct hal_rx_desc *desc)
 {

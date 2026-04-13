@@ -127,16 +127,7 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 
 	dp_peer->is_vdev_peer = params->is_vdev_peer;
 	dp_peer->is_sta_bss_peer = params->is_sta_bss_peer;
-	dp_peer->link_peer_delete_stats = ath12k_dp_alloc_preserved_stats();
-	if (!dp_peer->link_peer_delete_stats) {
-		spin_lock_bh(&dp_hw->peer_lock);
-		clear_bit(dp_peer->peer_id, dp_hw->free_peer_id_map);
-		clear_bit(dp_peer->sta_id, dp_hw->free_sta_id_map);
-		spin_unlock_bh(&dp_hw->peer_lock);
-		ath12k_err(NULL, "Failed to allocate link peer delete stats");
-		kfree(dp_peer);
-		return -ENOMEM;
-	}
+
 
 	dp_peer->sec_type = HAL_ENCRYPT_TYPE_OPEN;
 	dp_peer->sec_type_grp = HAL_ENCRYPT_TYPE_OPEN;
@@ -180,7 +171,6 @@ void ath12k_wifi8_dp_peer_cleanup(struct ath12k_dp_hw *dp_hw,
 
 		kfree(dp_peer->qos);
 	}
-	ath12k_dp_free_preserved_stats(dp_peer->link_peer_delete_stats);
 	dp_peer->dp_peer_state = ATH12K_DP_PEER_DELETED;
 }
 

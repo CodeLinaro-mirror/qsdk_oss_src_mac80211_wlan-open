@@ -90,7 +90,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 	},
 	[HAL_REO_CMD] = {
 		.start_ring_id = HAL_SRNG_RING_ID_REO_CMD,
-		.max_rings = 1,
+		.max_rings = 2,
 		.entry_size = (sizeof(struct hal_tlv_64_hdr) +
 			sizeof(struct hal_reo_get_queue_stats)) >> 2,
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
@@ -193,6 +193,24 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.max_size = HAL_TX_EXCEPTION_RING_BASE_MSB_RING_SIZE,
 		.name = "Tx_exception",
 	},
+	[HAL_PEER_TX_TELEMETRY] = {
+		.start_ring_id = HAL_SRNG_RING_ID_PEER_TX_TELEMETRY,
+		.max_rings = 1,
+		.entry_size = sizeof(struct tx_peer_telemetry_desc) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_DST,
+		.max_size = HAL_TELEMETRY_RING_MAX_SIZE,
+		.name = "Peer Tx Telemetry",
+	},
+	[HAL_PEER_RX_TELEMETRY] = {
+		.start_ring_id = HAL_SRNG_RING_ID_PEER_RX_TELEMETRY,
+		.max_rings = 1,
+		.entry_size = sizeof(struct rx_peer_telemetry_desc) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_DST,
+		.max_size = HAL_TELEMETRY_RING_MAX_SIZE,
+		.name = "Peer Rx Telemetry",
+	},
 	[HAL_CE_SRC] = {
 		.start_ring_id = HAL_SRNG_RING_ID_CE0_SRC,
 		.max_rings = 24,
@@ -262,6 +280,24 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.ring_dir = HAL_SRNG_DIR_SRC,
 		.max_size = HAL_WBM_IDLE_BUF_RING_MAX_SIZE,
 		.name = "WBM_idle_buf",
+	},
+	[HAL_PPE2WBM_BUF] = {
+		.start_ring_id = HAL_SRNG_RING_ID_PPE2WBM_BUF1,
+		.max_rings = 3,
+		.entry_size = sizeof(struct hal_wbm_buffer_ring) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_SRC,
+		.max_size = HAL_WBM_BUF_RING_MAX_SIZE,
+		.name = "WBM_PPE_buf",
+	},
+	[HAL_PPE2WBM_IDLE_BUF] = {
+		.start_ring_id = HAL_SRNG_RING_ID_PPE2WBM_IDLE_BUF0,
+		.max_rings = 1,
+		.entry_size = sizeof(struct hal_wbm_buffer_ring) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_SRC,
+		.max_size = HAL_WBM_IDLE_BUF_RING_MAX_SIZE,
+		.name = "WBM_PPE_idle_buf",
 	},
 	[HAL_RXDMA_DST] = {
 		.start_ring_id = HAL_SRNG_RING_ID_WMAC1_RXDMA2SW0,
@@ -1075,6 +1111,7 @@ void ath12k_wifi8_hal_extract_rx_desc_data_qcn9625(struct hal_rx_desc_data *rx_d
 	rx_desc_data->is_last_msdu =
 		ath12k_wifi8_hal_rx_h_last_msdu_qcn9625(ldesc);
 	rx_desc_data->freq = ath12k_wifi8_hal_rx_h_freq_qcn9625(rx_desc);
+	rx_desc_data->snr = ath12k_wifi8_hal_rx_h_snr_qcn9625(rx_desc);
 	rx_desc_data->pkt_type = ath12k_wifi8_hal_rx_h_pkt_type_qcn9625(rx_desc);
 	rx_desc_data->bw = ath12k_wifi8_hal_rx_h_rx_bw_qcn9625(rx_desc);
 	rx_desc_data->rate_mcs = ath12k_wifi8_hal_rx_h_rate_mcs_qcn9625(rx_desc);
@@ -1155,6 +1192,8 @@ static int ath12k_wifi8_hal_srng_create_config_qcn9625(struct ath12k_hal *hal)
 	s = &hal->srng_config[HAL_REO_CMD];
 	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO_CMD_RING_BASE_LSB(hal);
 	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO_CMD_HP;
+	s->reg_size[0]  = HAL_REO_CMD1_RING_BASE_LSB - HAL_REO_CMD_RING_BASE_LSB(hal);
+	s->reg_size[1]  = HAL_REO_CMD1_HP - HAL_REO_CMD_HP;
 
 	s = &hal->srng_config[HAL_REO_STATUS];
 	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO_STATUS_RING_BASE_LSB(hal);
@@ -1242,6 +1281,14 @@ static int ath12k_wifi8_hal_srng_create_config_qcn9625(struct ath12k_hal *hal)
 	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_WBM_REG + HAL_SW2WBM_ASE_CMD_RING_BASE_LSB;
 	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_WBM_REG + HAL_SW2WBM_ASE_CMD_RING_HP;
 
+	s = &hal->srng_config[HAL_PEER_TX_TELEMETRY];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_PEER_TX_TELEMETRY_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_PEER_TX_TELEMETRY_RING_HP;
+
+	s = &hal->srng_config[HAL_PEER_RX_TELEMETRY];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_PEER_RX_TELEMETRY_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_PEER_RX_TELEMETRY_RING_HP;
+
 	/* Some LMAC rings are not accessed from the host:
 	 * RXDMA_BUG, RXDMA_DST, RXDMA_MONITOR_BUF, RXDMA_MONITOR_STATUS,
 	 * RXDMA_MONITOR_DST, RXDMA_MONITOR_DESC, RXDMA_DIR_BUF_SRC,
@@ -1307,11 +1354,26 @@ static int ath12k_wifi8_hal_srng_create_config_qcn9625(struct ath12k_hal *hal)
 	s->reg_start[0] =  HAL_SEQ_WCSS_UMAC_SAM_REG + HAL_SAM_HOST_STATUS_RING_BASE_LSB;
 	s->reg_start[1] =  HAL_SEQ_WCSS_UMAC_SAM_REG + HAL_SAM_HOST_STATUS_RING_HP;
 
+	/* MGMT WBM IDle Buf ring */
+	s = &hal->srng_config[HAL_PPE2WBM_BUF];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_WBM_REG +
+				HAL_WBM_PPE2WBM_BUFF_RELEASE1_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_WBM_REG +
+				HAL_WBM_PPE2WBM_BUFF_RELEASE1_RING_HP;
+	s->reg_size[0] = HAL_WBM_PPE2WBM_BUFF_RELEASE2_RING_BASE_LSB -
+				HAL_WBM_PPE2WBM_BUFF_RELEASE1_RING_BASE_LSB;
+	s->reg_size[1] = HAL_WBM_PPE2WBM_BUFF_RELEASE2_RING_HP -
+				HAL_WBM_PPE2WBM_BUFF_RELEASE1_RING_HP;
+
+	s = &hal->srng_config[HAL_PPE2WBM_IDLE_BUF];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_WBM_REG + HAL_PPE2WBM_SW_IDLE_BUF_RING_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_WBM_REG + HAL_PPE2WBM_SW_IDLE_BUF_RING_HP;
+
 	return 0;
 }
 
 static const struct ath12k_hal_tcl_to_cmp_rbm_map
-ath12k_wifi8_hal_tcl_to_cmp_rbm_map_qcn9625[DP_TCL_NUM_RING_MAX] = {
+ath12k_wifi8_hal_tcl_to_cmp_rbm_map_qcn9625[] = {
 	{
 		.cmp_ring_num = 0,
 		.rbm_id = HAL_RX_BUF_RBM_SW0_BM,
@@ -1327,6 +1389,10 @@ ath12k_wifi8_hal_tcl_to_cmp_rbm_map_qcn9625[DP_TCL_NUM_RING_MAX] = {
 	{
 		.cmp_ring_num = 3,
 		.rbm_id = HAL_RX_BUF_RBM_SW3_BM,
+	},
+	{
+		.cmp_ring_num = 4,
+		.rbm_id = HAL_RX_BUF_RBM_SW4_BM,
 	}
 };
 

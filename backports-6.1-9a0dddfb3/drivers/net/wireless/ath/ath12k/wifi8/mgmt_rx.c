@@ -8,14 +8,31 @@
 #include "../hif.h"
 #include "mgmt_rx.h"
 #include "hal.h"
+#include "dp.h"
 #include "hal_qcn9625.h"
 #include "../peer.h"
 
 static void ath12k_wifi8_mgmt_rx_ring_free(struct ath12k_base *ab);
 
-static void ath12k_wifi8_mgmt_rx_replenish_buffs(struct ath12k_mgmt *mgmt,
-						 struct mgmt_srng *rx_refill_ring,
-						 struct list_head *desc_used_list)
+static void ath12k_mgmt_srng_hw_disable(struct ath12k_base *ab, struct mgmt_srng *ring)
+{
+	struct hal_srng *srng = &ab->hal.srng_list[ring->ring_id];
+
+	ath12k_wifi8_hal_srng_hw_disable(ab, srng);
+}
+
+void ath12k_wifi8_srng_hw_mgmt_rings_disable(struct ath12k_base *ab)
+{
+	struct ath12k_mgmt_wifi8 *mgmt_wifi8 = ath12k_get_mgmt_wifi8(ab->mgmt);
+
+	ath12k_mgmt_srng_hw_disable(ab, &mgmt_wifi8->wbm_refill_ring);
+	ath12k_mgmt_srng_hw_disable(ab, &mgmt_wifi8->wbm_idle_buf_ring);
+}
+
+void ath12k_wifi8_mgmt_rx_replenish_buffs(struct ath12k_mgmt *mgmt,
+					  struct mgmt_srng *rx_refill_ring,
+					  struct list_head *desc_used_list,
+					  bool reuse)
 {
 	struct ath12k_base *ab = mgmt->ab;
 	struct ath12k_buffer_addr *desc;
@@ -26,34 +43,41 @@ static void ath12k_wifi8_mgmt_rx_replenish_buffs(struct ath12k_mgmt *mgmt,
 	u8 manager = mgmt->hal->hal_params->rx_buf_rbm;
 	int allocated_entries = 0;
 
-	list_for_each_entry_safe(rx_desc, tmp_rx_desc, desc_used_list, list) {
-		skb = dev_alloc_skb(MGMT_RX_BUFFER_SIZE +
-				    MGMT_RX_BUFFER_ALIGN_SIZE);
-		if (!skb)
-			break;
-
-		if (!IS_ALIGNED((unsigned long)skb->data,
-				MGMT_RX_BUFFER_ALIGN_SIZE))
-			skb_pull(skb,
-				 PTR_ALIGN(skb->data, MGMT_RX_BUFFER_ALIGN_SIZE) -
-				 skb->data);
-
-		paddr = ath12k_core_dma_map_single(mgmt->dev, skb->data,
-						   skb->len + skb_tailroom(skb),
-						   DMA_FROM_DEVICE);
-		if (unlikely(!paddr)) {
-			dev_kfree_skb_any(skb);
-			break;
+	if (reuse) {
+		/* Count entries for reuse */
+		list_for_each_entry_safe(rx_desc, tmp_rx_desc, desc_used_list, list) {
+			allocated_entries++;
 		}
+	} else {
+		list_for_each_entry_safe(rx_desc, tmp_rx_desc, desc_used_list, list) {
+			skb = dev_alloc_skb(MGMT_RX_BUFFER_SIZE +
+					    MGMT_RX_BUFFER_ALIGN_SIZE);
+			if (!skb)
+				break;
 
-		allocated_entries++;
+			if (!IS_ALIGNED((unsigned long)skb->data,
+					MGMT_RX_BUFFER_ALIGN_SIZE))
+				skb_pull(skb,
+					 PTR_ALIGN(skb->data, MGMT_RX_BUFFER_ALIGN_SIZE) -
+					 skb->data);
 
-		ATH12K_SKB_RXCB(skb)->paddr = paddr;
+			paddr = ath12k_core_dma_map_single(mgmt->dev, skb->data,
+							   skb->len + skb_tailroom(skb),
+							   DMA_FROM_DEVICE);
+			if (unlikely(!paddr)) {
+				dev_kfree_skb_any(skb);
+				break;
+			}
 
-		rx_desc->skb = skb;
-		rx_desc->paddr = paddr;
-		rx_desc->vaddr = skb->data;
-		rx_desc->is_frag = 0;
+			allocated_entries++;
+
+			ATH12K_SKB_RXCB(skb)->paddr = paddr;
+
+			rx_desc->skb = skb;
+			rx_desc->paddr = paddr;
+			rx_desc->vaddr = skb->data;
+			rx_desc->is_frag = 0;
+		}
 	}
 
 	srng = &ab->hal.srng_list[rx_refill_ring->ring_id];
@@ -93,7 +117,10 @@ out:
 			ath12k_core_dma_unmap_single(mgmt->dev, rx_desc->paddr,
 						     skb->len + skb_tailroom(skb),
 						     DMA_FROM_DEVICE);
-			dev_kfree_skb_any(skb);
+			if (reuse)
+				skb_queue_tail(&ab->dp_umac_reset.rx_skb_queue, skb);
+			else
+				dev_kfree_skb_any(skb);
 		}
 
 		spin_lock_bh(&mgmt->rx_desc_lock);
@@ -225,7 +252,7 @@ try_again:
 		goto exit;
 
 	ath12k_wifi8_mgmt_rx_replenish_buffs(mgmt, &mgmt_wifi8->wbm_refill_ring,
-					     &rx_desc_used_list);
+					     &rx_desc_used_list, false);
 
 exit:
 	return num_buffs_reaped;
@@ -327,16 +354,21 @@ ath12k_wifi8_mgmt_rx_mmpdu_coalesce(struct ath12k_mgmt *mgmt,
 }
 
 static void
-ath12k_wifi8_mgmt_rx_h_ppdu(struct ath12k *ar, struct ieee80211_rx_status *status,
+ath12k_wifi8_mgmt_rx_h_ppdu(struct ath12k *partner_ar, struct sk_buff *mmpdu,
+			    struct ieee80211_rx_status *status,
 			    struct hal_rx_desc_data *desc_data)
 {
+	struct ieee80211_hdr *hdr = (void *)mmpdu->data;
 	struct ieee80211_supported_band *sband;
 	struct ieee80211_channel *channel;
 	enum rx_msdu_start_pkt_type pkt_type;
+	struct ath12k_base *partner_ab;
 	u32 center_freq, meta_data;
 	u8 channel_num, bw, sgi, rate_mcs, nss;
+	struct ath12k_link_sta *arsta;
 	struct ieee80211_hw *hw;
 	bool is_cck;
+	s8 rssi;
 
 	status->freq = 0;
 	status->rate_idx = 0;
@@ -362,22 +394,22 @@ ath12k_wifi8_mgmt_rx_h_ppdu(struct ath12k *ar, struct ieee80211_rx_status *statu
 		status->band = NL80211_BAND_5GHZ;
 	}
 
-	hw = ar->ah->hw;
+	hw = partner_ar->ah->hw;
 	if (status->band == NUM_NL80211_BANDS || !hw->wiphy->bands[status->band]) {
-		ath12k_err(ar->ab,
+		ath12k_err(partner_ar->ab,
 			   "sband invalid for band:%u center_freq=%u channel=%u on pdev=%u",
-			   status->band, center_freq, channel_num, ar->pdev_idx);
-		spin_lock_bh(&ar->data_lock);
-		channel = ar->rx_channel;
+			   status->band, center_freq, channel_num, partner_ar->pdev_idx);
+		spin_lock_bh(&partner_ar->data_lock);
+		channel = partner_ar->rx_channel;
 		if (channel) {
 			status->band = channel->band;
 			channel_num =
 				ieee80211_frequency_to_channel(channel->center_freq);
 		} else {
-			ath12k_err(ar->ab, "Failed to derive channel info on pdev=%u",
-				   ar->pdev_idx);
+			ath12k_err(partner_ar->ab, "Failed to derive channel info on pdev=%u",
+				   partner_ar->pdev_idx);
 		}
-		spin_unlock_bh(&ar->data_lock);
+		spin_unlock_bh(&partner_ar->data_lock);
 		status->freq = ieee80211_channel_to_frequency(channel_num, status->band);
 	}
 
@@ -389,19 +421,22 @@ ath12k_wifi8_mgmt_rx_h_ppdu(struct ath12k *ar, struct ieee80211_rx_status *statu
 	sgi = desc_data->sgi;
 	rate_mcs = desc_data->rate_mcs;
 	nss = desc_data->nss;
+	rssi = desc_data->snr + partner_ar->rssi_offsets.rssi_offset;
+
+	status->signal = rssi;
 
 	switch (pkt_type) {
 	case RX_MSDU_START_PKT_TYPE_11A:
 	case RX_MSDU_START_PKT_TYPE_11B:
 		is_cck = (pkt_type == RX_MSDU_START_PKT_TYPE_11B);
-		sband = &ar->mac.sbands[status->band];
+		sband = &partner_ar->mac.sbands[status->band];
 		status->rate_idx = ath12k_mac_hw_rate_to_idx(sband, rate_mcs,
 							     is_cck);
 		break;
 	case RX_MSDU_START_PKT_TYPE_11N:
 		status->encoding = RX_ENC_HT;
 		if (rate_mcs > ATH12K_HT_MCS_MAX) {
-			ath12k_warn(ar->ab,
+			ath12k_warn(partner_ar->ab,
 				    "Received with invalid mcs in HT mode %d",
 				    rate_mcs);
 			break;
@@ -415,7 +450,7 @@ ath12k_wifi8_mgmt_rx_h_ppdu(struct ath12k *ar, struct ieee80211_rx_status *statu
 		status->encoding = RX_ENC_VHT;
 		status->rate_idx = rate_mcs;
 		if (rate_mcs > ATH12K_VHT_MCS_MAX) {
-			ath12k_warn(ar->ab,
+			ath12k_warn(partner_ar->ab,
 				    "Received with invalid mcs in VHT mode %d",
 				    rate_mcs);
 			break;
@@ -428,7 +463,7 @@ ath12k_wifi8_mgmt_rx_h_ppdu(struct ath12k *ar, struct ieee80211_rx_status *statu
 	case RX_MSDU_START_PKT_TYPE_11AX:
 		status->rate_idx = rate_mcs;
 		if (rate_mcs > ATH12K_HE_MCS_MAX) {
-			ath12k_warn(ar->ab,
+			ath12k_warn(partner_ar->ab,
 				    "Received with invalid mcs in HE mode %d",
 				    rate_mcs);
 			break;
@@ -441,7 +476,7 @@ ath12k_wifi8_mgmt_rx_h_ppdu(struct ath12k *ar, struct ieee80211_rx_status *statu
 	case RX_MSDU_START_PKT_TYPE_11BE:
 		status->rate_idx = rate_mcs;
 		if (rate_mcs > ATH12K_EHT_MCS_MAX) {
-			ath12k_warn(ar->ab,
+			ath12k_warn(partner_ar->ab,
 				    "Received with invalid mcs in EHT mode %d",
 				    rate_mcs);
 			break;
@@ -455,6 +490,21 @@ ath12k_wifi8_mgmt_rx_h_ppdu(struct ath12k *ar, struct ieee80211_rx_status *statu
 	default:
 		break;
 	}
+
+	partner_ab = partner_ar->ab;
+	spin_lock_bh(&partner_ab->base_lock);
+
+	/* Fetch arsta from A2 on AP and A1 on STA */
+	arsta = ath12k_link_sta_find_by_addr(partner_ab, hdr->addr2);
+	if (!arsta)
+		arsta = ath12k_link_sta_find_by_addr(partner_ab, hdr->addr1);
+
+	if (arsta) {
+		arsta->max_rssi = max(arsta->max_rssi, rssi);
+		arsta->min_rssi = min(arsta->min_rssi, rssi);
+	}
+
+	spin_unlock_bh(&partner_ab->base_lock);
 }
 
 static void
@@ -560,7 +610,8 @@ ath12k_wifi8_mgmt_rx_h_mpdu(struct ath12k_mgmt *mgmt, struct sk_buff *mmpdu,
 }
 
 static int ath12k_wifi8_mgmt_rx_process_mmpdu(struct ath12k_mgmt *mgmt,
-					      struct ath12k *ar, struct sk_buff *mmpdu,
+					      struct ath12k *partner_ar,
+					      struct sk_buff *mmpdu,
 					      struct sk_buff_head *mmpdu_list,
 					      struct ieee80211_rx_status *rx_status)
 {
@@ -617,7 +668,7 @@ static int ath12k_wifi8_mgmt_rx_process_mmpdu(struct ath12k_mgmt *mgmt,
 		}
 	}
 
-	ath12k_wifi8_mgmt_rx_h_ppdu(ar, rx_status, &rx_desc_data);
+	ath12k_wifi8_mgmt_rx_h_ppdu(partner_ar, mmpdu, rx_status, &rx_desc_data);
 	ath12k_wifi8_mgmt_rx_h_mpdu(mgmt, mmpdu, rx_status, &rx_desc_data);
 
 	rx_status->flag |= RX_FLAG_SKIP_MONITOR | RX_FLAG_DUP_VALIDATED;
@@ -626,12 +677,12 @@ static int ath12k_wifi8_mgmt_rx_process_mmpdu(struct ath12k_mgmt *mgmt,
 }
 
 static void
-ath12k_wifi8_mgmt_rx_deliver_mmpdu(struct ath12k_mgmt *mgmt, struct ath12k *ar,
+ath12k_wifi8_mgmt_rx_deliver_mmpdu(struct ath12k_mgmt *mgmt, struct ath12k *partner_ar,
 				   struct sk_buff *mmpdu,
 				   struct ieee80211_rx_status *status,
 				   enum ath12k_mgmt_srng_pkt_type pkt_type)
 {
-	struct ieee80211_hw *hw = ath12k_ar_to_hw(ar);
+	struct ieee80211_hw *hw = ath12k_ar_to_hw(partner_ar);
 	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
 	struct ieee80211_rx_status *rx_status;
 	struct ieee80211_hdr *hdr;
@@ -649,7 +700,7 @@ ath12k_wifi8_mgmt_rx_deliver_mmpdu(struct ath12k_mgmt *mgmt, struct ath12k *ar,
 	fc = le16_to_cpu(hdr->frame_control);
 	frm_stype = FIELD_GET(IEEE80211_FCTL_STYPE, fc);
 
-	partner_mgmt = ar->ab->mgmt ? ar->ab->mgmt : mgmt;
+	partner_mgmt = partner_ar->ab->mgmt ? partner_ar->ab->mgmt : mgmt;
 
 	mgmt_srng_stats = &partner_mgmt->srng_stats;
 	mgmt_srng_stats->rx_pkts[frm_stype]++;
@@ -688,7 +739,7 @@ ath12k_wifi8_mgmt_rx_process_packets(struct ath12k_mgmt *mgmt,
 	struct ieee80211_rx_status rx_status = {0};
 	struct sk_buff *mmpdu;
 	struct ath12k_skb_rxcb *rxcb;
-	struct ath12k *ar;
+	struct ath12k *partner_ar;
 	int ret;
 
 	if (skb_queue_empty(mmpdu_list))
@@ -699,8 +750,9 @@ ath12k_wifi8_mgmt_rx_process_packets(struct ath12k_mgmt *mgmt,
 	while ((mmpdu = __skb_dequeue(mmpdu_list))) {
 		rxcb = ATH12K_SKB_RXCB(mmpdu);
 
-		ar = ath12k_core_ar_from_hw_link_id(mgmt->ab, rxcb->hw_link_id);
-		if (!ar || test_bit(ATH12K_FLAG_CAC_RUNNING, &ar->dev_flags)) {
+		partner_ar = ath12k_core_ar_from_hw_link_id(mgmt->ab, rxcb->hw_link_id);
+		if (!partner_ar ||
+		    test_bit(ATH12K_FLAG_CAC_RUNNING, &partner_ar->dev_flags)) {
 			dev_kfree_skb_any(mmpdu);
 			continue;
 		}
@@ -710,14 +762,15 @@ ath12k_wifi8_mgmt_rx_process_packets(struct ath12k_mgmt *mgmt,
 			continue;
 		}
 
-		ret = ath12k_wifi8_mgmt_rx_process_mmpdu(mgmt, ar, mmpdu,
+		ret = ath12k_wifi8_mgmt_rx_process_mmpdu(mgmt, partner_ar, mmpdu,
 							 mmpdu_list, &rx_status);
 		if (ret) {
 			dev_kfree_skb_any(mmpdu);
 			continue;
 		}
 
-		ath12k_wifi8_mgmt_rx_deliver_mmpdu(mgmt, ar, mmpdu, &rx_status, pkt_type);
+		ath12k_wifi8_mgmt_rx_deliver_mmpdu(mgmt, partner_ar, mmpdu,
+						   &rx_status, pkt_type);
 	}
 
 	rcu_read_unlock();
@@ -903,7 +956,7 @@ ath12k_wifi8_mgmt_rx_reap_err_packets(struct ath12k_base *ab,
 		goto exit;
 
 	ath12k_wifi8_mgmt_rx_replenish_buffs(mgmt, &mgmt_wifi8->wbm_refill_ring,
-					     &rx_desc_used_list);
+					     &rx_desc_used_list, false);
 
 exit:
 	return num_buffs_reaped;
@@ -930,6 +983,9 @@ void ath12k_wifi8_mgmt_service_srng(struct ath12k_base *ab,
 				    struct ath12k_mgmt_irq_grp *irq_grp)
 {
 	struct ath12k_mgmt_wifi8 *mgmt_wifi8 = ath12k_get_mgmt_wifi8(ab->mgmt);
+
+	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
+		return;
 
 	ath12k_wifi8_mgmt_rx_process(ab, irq_grp, &mgmt_wifi8->reo_dst_rx_ring);
 
@@ -986,7 +1042,7 @@ static int ath12k_wifi8_mgmt_rx_refill_ring_setup(struct ath12k_base *ab)
 	return 0;
 }
 
-static void ath12k_wifi8_mgmt_rx_refill_ring_init(struct ath12k_base *ab)
+void ath12k_wifi8_mgmt_rx_refill_ring_init(struct ath12k_base *ab)
 {
 	LIST_HEAD(list);
 	size_t req_entries;
@@ -997,10 +1053,10 @@ static void ath12k_wifi8_mgmt_rx_refill_ring_init(struct ath12k_base *ab)
 	req_entries = ath12k_mgmt_get_req_entries_from_refill_ring(ab, rx_refill_ring,
 								   &list);
 	if (req_entries)
-		ath12k_wifi8_mgmt_rx_replenish_buffs(mgmt, rx_refill_ring, &list);
+		ath12k_wifi8_mgmt_rx_replenish_buffs(mgmt, rx_refill_ring, &list, false);
 }
 
-static int ath12k_wifi8_mgmt_rx_ring_setup(struct ath12k_base *ab)
+int ath12k_wifi8_mgmt_rx_ring_setup(struct ath12k_base *ab)
 {
 	struct ath12k_mgmt *mgmt = ab->mgmt;
 	struct ath12k_mgmt_wifi8 *mgmt_wifi8 = ath12k_get_mgmt_wifi8(mgmt);
@@ -1032,7 +1088,8 @@ static int ath12k_wifi8_mgmt_rx_ring_setup(struct ath12k_base *ab)
 	}
 
 	/* Initialize WBM ring with descriptors and buffers */
-	ath12k_wifi8_mgmt_rx_refill_ring_init(ab);
+	if (!ath12k_dp_umac_reset_in_progress(ab))
+		ath12k_wifi8_mgmt_rx_refill_ring_init(ab);
 
 	return 0;
 
@@ -1234,11 +1291,22 @@ ath12k_wifi8_mgmt_dump_ring_stats(struct ath12k_mgmt *mgmt, char *buf, int size)
 	return len;
 }
 
+static void ath12k_wifi8_mgmt_rx_replenish_buffs_wrapper(struct ath12k_mgmt *mgmt,
+							 struct list_head *used_list,
+							 bool reuse)
+{
+	struct ath12k_mgmt_wifi8 *mgmt_wifi8 = ath12k_get_mgmt_wifi8(mgmt);
+
+	ath12k_wifi8_mgmt_rx_replenish_buffs(mgmt, &mgmt_wifi8->wbm_refill_ring,
+					     used_list, reuse);
+}
+
 static struct ath12k_mgmt_arch_ops ath12k_wifi8_mgmt_arch_ops = {
 	.mgmt_op_device_init = ath12k_wifi8_mgmt_op_device_init,
 	.mgmt_op_device_deinit = ath12k_wifi8_mgmt_op_device_deinit,
 	.mgmt_op_htt_setup = ath12k_wifi8_mgmt_op_htt_setup,
 	.mgmt_op_dump_ring_stats = ath12k_wifi8_mgmt_dump_ring_stats,
+	.mgmt_rx_replenish_buffs = ath12k_wifi8_mgmt_rx_replenish_buffs_wrapper,
 };
 
 struct ath12k_mgmt *ath12k_wifi8_mgmt_init(struct ath12k_base *ab)

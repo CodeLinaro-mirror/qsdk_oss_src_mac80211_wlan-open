@@ -125,7 +125,7 @@ struct ath12k_cfr_peer_tx_param;
 					 TARGET_MIN_MBSSID_GROUP_SIZE)
 
 #define ATH12K_HW_DEFAULT_QUEUE		0
-#define ATH12K_HW_MAX_QUEUES		4
+#define ATH12K_HW_MAX_QUEUES		MIN(NR_CPUS, 5)
 #define ATH12K_QUEUE_LEN		4096
 
 #define ATH12K_HW_RATECODE_CCK_SHORT_PREAM_MASK  0x4
@@ -216,6 +216,8 @@ struct ath12k_hw_ring_mask {
 	u8 tqm_status[ATH12K_EXT_IRQ_NUM_MAX];
 	u8 sam_status[ATH12K_EXT_IRQ_NUM_MAX];
 	u8 ase_status[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 tx_peer_telemetry[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 rx_peer_telemetry[ATH12K_EXT_IRQ_NUM_MAX];
 };
 
 enum ath12k_m3_fw_loaders {
@@ -339,6 +341,7 @@ struct ath12k_hw_params {
 	bool umac_irq_line_reset;
 	bool is_plink_preferable;
 	bool cfr_support;
+	bool cumac_support;
 	u32 cfr_dma_hdr_size;
 	u32 cfr_num_stream_bufs;
 	u32 cfr_stream_buf_size;
@@ -346,6 +349,7 @@ struct ath12k_hw_params {
 	bool quad_ring_monitor_support;
 	const char *board_magic;
 	u32 num_rx_spt_pages;
+	bool peer_del_all_support;
 };
 
 struct ath12k_hw_ops {

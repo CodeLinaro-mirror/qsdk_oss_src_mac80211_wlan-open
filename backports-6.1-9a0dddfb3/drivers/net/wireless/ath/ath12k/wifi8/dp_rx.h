@@ -12,6 +12,11 @@
 #include "hal_desc.h"
 #include "hal.h"
 
+enum dp_rx_ppeds_wbm_refill_ring {
+	PPE2WBM_HW_REFILL_RING = 0,
+	PPE2WBM_SW_REFILL_RING = 1,
+};
+
 struct dp_rx_fse {
 	struct hal_rx_fse *hal_fse;
 	u32 flow_hash;
@@ -20,12 +25,19 @@ struct dp_rx_fse {
 	bool is_valid;
 };
 
+int ath12k_wifi8_dp_rx_wbm_buf_ring_init(struct ath12k_base *ab);
 int ath12k_wifi8_dp_reo_cmd_send(struct ath12k_base *ab,
 				 void *data, size_t len,
 				 enum hal_reo_cmd_type type,
 				 struct ath12k_hal_reo_cmd *cmd,
 				 void (*cb)(struct ath12k_dp *dp, void *ctx,
 					    struct hal_reo_status *status));
+int ath12k_wifi8_dp_reo_cmd_send_highprio(struct ath12k_base *ab,
+					  void *data, size_t len,
+					  enum hal_reo_cmd_type type,
+					  struct ath12k_hal_reo_cmd *cmd,
+					  void (*cb)(struct ath12k_dp *dp, void *ctx,
+						     struct hal_reo_status *status));
 int ath12k_wifi8_dp_fse_cmd_send(struct ath12k_base *ab,
 				 struct hal_fse_cmd *fse_cmd);
 int ath12k_wifi8_dp_rx_process_err(struct ath12k_dp *dp, struct napi_struct *napi,

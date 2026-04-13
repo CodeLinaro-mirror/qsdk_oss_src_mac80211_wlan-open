@@ -150,6 +150,8 @@ void ath12k_dp_mon_rx_display_filters(struct ath12k_dp *dp,
 		ath12k_dbg(ab, ATH12K_DBG_DATA, "enable fp: %d", tlv_filter->enable_fp);
 		ath12k_dbg(ab, ATH12K_DBG_DATA, "enable mo: %d", tlv_filter->enable_mo);
 		ath12k_dbg(ab, ATH12K_DBG_DATA, "enable md: %d", tlv_filter->enable_md);
+		ath12k_dbg(ab, ATH12K_DBG_DATA, "enable fpmo: %d",
+			   tlv_filter->enable_fpmo);
 		ath12k_dbg(ab, ATH12K_DBG_DATA, "enable log mgmt type: %d",
 			   tlv_filter->enable_log_mgmt_type);
 		ath12k_dbg(ab, ATH12K_DBG_DATA, "enable log ctrl type: %d",
@@ -184,6 +186,12 @@ void ath12k_dp_mon_rx_display_filters(struct ath12k_dp *dp,
 			   tlv_filter->md_ctrl_filter);
 		ath12k_dbg(ab, ATH12K_DBG_DATA, "md_data_filter: 0x%x",
 			   tlv_filter->md_data_filter);
+		ath12k_dbg(ab, ATH12K_DBG_DATA, "fpmo_mgmt_filter: 0x%x",
+			   tlv_filter->fpmo_mgmt_filter);
+		ath12k_dbg(ab, ATH12K_DBG_DATA, "fpmo_ctrl_filter: 0x%x",
+			   tlv_filter->fpmo_ctrl_filter);
+		ath12k_dbg(ab, ATH12K_DBG_DATA, "fpmo_data_filter: 0x%x",
+			   tlv_filter->fpmo_data_filter);
 		ath12k_dbg(ab, ATH12K_DBG_DATA, "mpdu start word mask: 0x%x",
 			   tlv_filter->rx_mon_mpdu_start_wmask);
 		ath12k_dbg(ab, ATH12K_DBG_DATA, "mpdu end word mask: 0x%x",
@@ -216,6 +224,14 @@ void ath12k_dp_mon_rx_display_filters(struct ath12k_dp *dp,
 			   tlv_filter->md_packet_ctrl_filter);
 		ath12k_dbg(ab, ATH12K_DBG_DATA, "md_packet_data_filter: 0x%x",
 			   tlv_filter->md_packet_data_filter);
+		ath12k_dbg(ab, ATH12K_DBG_DATA, "enable_fpmo_packet: %d",
+			   tlv_filter->enable_fpmo_packet);
+		ath12k_dbg(ab, ATH12K_DBG_DATA, "fpmo_packet_mgmt_filter: 0x%x",
+			   tlv_filter->fpmo_packet_mgmt_filter);
+		ath12k_dbg(ab, ATH12K_DBG_DATA, "fpmo_packet_ctrl_filter: 0x%x",
+			   tlv_filter->fpmo_packet_ctrl_filter);
+		ath12k_dbg(ab, ATH12K_DBG_DATA, "fpmo_packet_data_filter: 0x%x",
+			   tlv_filter->fpmo_packet_data_filter);
 	}
 }
 EXPORT_SYMBOL(ath12k_dp_mon_rx_display_filters);
@@ -333,6 +349,10 @@ void ath12k_dp_mon_rx_prepare_filter(struct ath12k_dp *dp,
 		dst_tlv_filter->md_mgmt_filter |= src_tlv_filter->md_mgmt_filter;
 		dst_tlv_filter->md_ctrl_filter |= src_tlv_filter->md_ctrl_filter;
 		dst_tlv_filter->md_data_filter |= src_tlv_filter->md_data_filter;
+		dst_tlv_filter->enable_fpmo |= src_tlv_filter->enable_fpmo;
+		dst_tlv_filter->fpmo_mgmt_filter |= src_tlv_filter->fpmo_mgmt_filter;
+		dst_tlv_filter->fpmo_ctrl_filter |= src_tlv_filter->fpmo_ctrl_filter;
+		dst_tlv_filter->fpmo_data_filter |= src_tlv_filter->fpmo_data_filter;
 
 		dst_tlv_filter->rx_mon_mpdu_start_wmask |=
 					src_tlv_filter->rx_mon_mpdu_start_wmask;
@@ -363,6 +383,13 @@ void ath12k_dp_mon_rx_prepare_filter(struct ath12k_dp *dp,
 					src_tlv_filter->md_packet_ctrl_filter;
 		dst_tlv_filter->md_packet_data_filter |=
 					src_tlv_filter->md_packet_data_filter;
+		dst_tlv_filter->enable_fpmo_packet |= src_tlv_filter->enable_fpmo_packet;
+		dst_tlv_filter->fpmo_packet_mgmt_filter |=
+					src_tlv_filter->fpmo_packet_mgmt_filter;
+		dst_tlv_filter->fpmo_packet_ctrl_filter |=
+					src_tlv_filter->fpmo_packet_ctrl_filter;
+		dst_tlv_filter->fpmo_packet_data_filter |=
+					src_tlv_filter->fpmo_packet_data_filter;
 
 		dst_tlv_filter->rx_mon_fpmo_data_hdrlen |=
 					src_tlv_filter->rx_mon_fpmo_data_hdrlen;
@@ -729,6 +756,9 @@ void ath12k_dp_mon_rx_enable_packet_filters(void *ptr,
 	u32 md_packet_mgmt_filter = tlv_filter->md_packet_mgmt_filter;
 	u32 md_packet_ctrl_filter = tlv_filter->md_packet_ctrl_filter;
 	u32 md_packet_data_filter = tlv_filter->md_packet_data_filter;
+	u32 fpmo_packet_mgmt_filter = tlv_filter->fpmo_packet_mgmt_filter;
+	u32 fpmo_packet_ctrl_filter = tlv_filter->fpmo_packet_ctrl_filter;
+	u32 fpmo_packet_data_filter = tlv_filter->fpmo_packet_data_filter;
 
 	if (tlv_filter->rxmon_disable)
 		return;
@@ -789,6 +819,21 @@ void ath12k_dp_mon_rx_enable_packet_filters(void *ptr,
 							     md_packet_data_filter);
 	}
 	cmd->pkt_type_en_data_flag3 = cpu_to_le32(word);
+
+	word = 0;
+	if (tlv_filter->enable_fpmo_packet) {
+		ath12k_dp_tx_htt_rx_mgmt_fpmo_flag0_filter_set(&word,
+							       fpmo_packet_mgmt_filter);
+		ath12k_dp_tx_htt_rx_ctrl_fpmo_flag0_filter_set(&word,
+							       fpmo_packet_ctrl_filter);
+	}
+	cmd->pkt_type_en_data_fpmo_flags0 = cpu_to_le32(word);
+
+	word = 0;
+	if (tlv_filter->enable_fpmo_packet)
+		ath12k_dp_tx_htt_rx_data_fpmo_flag1_filter_set(&word,
+							       fpmo_packet_data_filter);
+	cmd->pkt_type_en_data_fpmo_flags1 = cpu_to_le32(word);
 }
 EXPORT_SYMBOL(ath12k_dp_mon_rx_enable_packet_filters);
 

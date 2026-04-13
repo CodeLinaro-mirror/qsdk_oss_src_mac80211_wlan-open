@@ -403,13 +403,13 @@ ath12k_wifi8_dp_mon_free_pkt_buf(struct ath12k_pdev_dp *pdev_dp,
 
 	do {
 		tlv = (struct hal_tlv_64_hdr *)ptr;
-		tlv_tag = le64_get_bits(tlv->tl, HAL_TLV_64_HDR_TAG);
+		tlv_tag = le64_get_bits(tlv->tl, HAL_WIFI8_TLV_64_HDR_TAG);
 		ptr += sizeof(*tlv);
 
 		if (tlv_tag == HAL_RX_PPDU_END)
 			tlv_len = sizeof(struct hal_rx_rxpcu_classification_overview);
 		else
-			tlv_len = le64_get_bits(tlv->tl, HAL_TLV_64_HDR_LEN);
+			tlv_len = le64_get_bits(tlv->tl, HAL_WIFI8_TLV_64_HDR_LEN);
 
 		if (tlv_tag == HAL_MON_BUF_ADDR) {
 			packet_info = (struct dp_mon_packet_info *)ptr;
@@ -478,9 +478,9 @@ ath12k_wifi8_dp_mon_rx_parse_dest(struct ath12k_pdev_dp *dp_pdev,
 
 	do {
 		tlv = (struct hal_tlv_64_hdr *)ptr;
-		tlv_tag = le64_get_bits(tlv->tl, HAL_TLV_64_HDR_TAG);
-		tlv_len = le64_get_bits(tlv->tl, HAL_TLV_64_HDR_LEN);
-		tlv_userid = le64_get_bits(tlv->tl, HAL_TLV_USR_ID);
+		tlv_tag = le64_get_bits(tlv->tl, HAL_WIFI8_TLV_64_HDR_TAG);
+		tlv_len = le64_get_bits(tlv->tl, HAL_WIFI8_TLV_64_HDR_LEN);
+		tlv_userid = le64_get_bits(tlv->tl, HAL_WIFI8_TLV_64_USR_ID);
 		ptr += sizeof(*tlv);
 
 		/* The actual length of PPDU_END is the combined length of many PHY

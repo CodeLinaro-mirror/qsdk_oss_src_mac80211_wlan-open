@@ -38,6 +38,7 @@ ath12k_wifi_config_policy[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_MLO_LINK_ID] = {.type = NLA_U8 },
 	[QCA_WLAN_VENDOR_ATTR_IF_OFFLOAD_TYPE] = {.type = NLA_U8},
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX] = {.type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_6GHZ_VLP_PRIORITY_THRESH_FREQ] = {.type = NLA_U16 },
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_VAP_SUBMODE] = {.type = NLA_U8 },
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PARAMS] = { .type = NLA_NESTED },
 };
@@ -3611,6 +3612,112 @@ ath12k_fill_peer_tx_ext_htt_stats_attr(struct ath12k *ar, struct sk_buff *vendor
 	return 0;
 }
 
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+static int
+ath12k_fill_peer_mmesh_tx_stats_wrapper(struct sk_buff *vendor_event,
+					struct ath12k_dp_peer_stats *peer_stats)
+{
+	struct	nlattr *attr;
+
+	attr = nla_nest_start(vendor_event,
+			      QCA_VENDOR_ATTR_WLAN_TELEMETRY_TX_MMESH_STATS_EVENT);
+	if (!attr) {
+		ath12k_err(NULL, "nla nest failure: Tx Ext Htt stats");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_PER_PKT_TXSTATS_MMESH_NOQOS,
+			peer_stats->mmesh_stat.no_qos)) {
+		ath12k_err(NULL, "nla put failed: mesh no qos");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_PER_PKT_TXSTATS_MMESH_NOENC,
+			peer_stats->mmesh_stat.no_enc)) {
+		ath12k_err(NULL, "nla put failed: mesh no enc");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_PER_PKT_TXSTATS_MMESH_TXINFO,
+			peer_stats->mmesh_stat.txinfo)) {
+		ath12k_err(NULL, "nla put failed: txinfo");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_PER_PKT_TXSTATS_MMESH_AUTORATE,
+			peer_stats->mmesh_stat.auto_rate)) {
+		ath12k_err(NULL, "nla put failed: auto_rate");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_PER_PKT_TXSTATS_MMESH_TOFW,
+			peer_stats->mmesh_stat.tofw)) {
+		ath12k_err(NULL, "nla put failed: mesh tofw");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_PER_PKT_TXSTATS_MMESH_DIRECT,
+			peer_stats->mmesh_stat.direct)) {
+		ath12k_err(NULL, "nla put failed: mesh direct");
+		return -EINVAL;
+	}
+	nla_nest_end(vendor_event, attr);
+
+	return 0;
+}
+
+static int
+ath12k_fill_peer_mmesh_rx_stats_wrapper(struct sk_buff *vendor_event,
+					struct ath12k_dp_peer_stats *peer_stats)
+{
+	struct	nlattr *attr;
+
+	attr = nla_nest_start(vendor_event,
+			      QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_MMESH_STATS_EVENT);
+	if (!attr) {
+		ath12k_err(NULL, "nla nest failure: Tx Ext Htt stats");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_PER_PKT_RXSTATS_MMESH_RXHDR_UPDT,
+			peer_stats->mmesh_stat.rxhdr_updt)) {
+		ath12k_err(NULL, "nla put failed: rxhdr updt");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_PER_PKT_RXSTATS_MMESH_RXFILTDROP,
+			peer_stats->mmesh_stat.filter_drop)) {
+		ath12k_err(NULL, "nla put failed: filter drop");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_PER_PKT_RXSTATS_MMESH_RXKEY_LOOKUP_FAIL,
+			peer_stats->mmesh_stat.rxkey_lookp_up_fail)) {
+		ath12k_err(NULL, "nla put failed: key lookup fail");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_PER_PKT_RXSTATS_MMESH_RXKEY_LOOKUP_SUCC,
+			peer_stats->mmesh_stat.rxkey_lookp_up_succ)) {
+		ath12k_err(NULL, "nla put failed: key lookup succ");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_PER_PKT_RXSTATS_MMESH_RXHDR_ALLOC_FAIL,
+			peer_stats->mmesh_stat.rxhdr_alloc_fail)) {
+		ath12k_err(NULL, "nla put failed: rxhdr alloc");
+		return -EINVAL;
+	}
+
+	nla_nest_end(vendor_event, attr);
+
+	return 0;
+}
+#endif
+
 static int
 ath12k_fill_peer_tx_ext_stats_wrapper(struct ath12k *ar, struct sk_buff *vendor_event,
 				      struct ath12k_dp_link_peer_stats *link_peer_stats,
@@ -4127,6 +4234,13 @@ static int ath12k_fill_peer_tx_stats(struct ath12k *ar,
 			return -EINVAL;
 		}
 	}
+
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	if (ath12k_fill_peer_mmesh_tx_stats_wrapper(vendor_event, peer_stats)) {
+		ath12k_err(NULL, "Error filling  mmesh stats\n");
+		return -EINVAL;
+	}
+#endif
 
 	return 0;
 }
@@ -5163,6 +5277,13 @@ static int ath12k_fill_peer_rx_stats(struct ath12k *ar,
 
 		nla_nest_end(vendor_event, attr);
 	}
+
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	if (ath12k_fill_peer_mmesh_rx_stats_wrapper(vendor_event, peer_stats)) {
+		ath12k_err(NULL, "Error filling  mmesh stats\n");
+		return -EINVAL;
+	}
+#endif
 
 	return 0;
 }
@@ -7046,6 +7167,10 @@ static int ath12k_vendor_get_wiphy_config_handler(struct wiphy *wiphy,
 			goto err;
 		}
 	}
+
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_vendor_get_wiphy_config_handler_extn(wiphy, tb, skb);
+#endif
 
 	ret = cfg80211_vendor_cmd_reply(skb);
 	if (ret) {
@@ -10748,11 +10873,462 @@ static int ath12k_vendor_hmmc_deny_list_handler(struct wiphy *wiphy,
 	return ret;
 }
 
-static int ath12k_vendor_extended_monitor_handler(struct wiphy *wiphy,
-						  struct wireless_dev *wdev,
-						  const void *data,
-						  int data_len)
+static int
+ath12k_ext_mon_extract_filter(struct nlattr *filter_attr,
+			      struct ath12k_ext_mon_pkt_config *pkt)
 {
+	struct nlattr *tb[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_MAX + 1];
+	int ret;
+
+	ret = nla_parse_nested(tb, QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_MAX,
+			       filter_attr,
+			       ath12k_vendor_ext_mon_pkt_config_filter_policy,
+			       NULL);
+	if (ret) {
+		ath12k_err(NULL, "failed to parse ext mon filter: %d\n", ret);
+		return ret;
+	}
+
+	if (tb[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_MGMT]) {
+		u32 filter = nla_get_u32(
+				tb[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_MGMT]);
+		if (filter & ~ATH12K_EXT_MON_FILTER_ALL) {
+			ath12k_err(NULL, "invalid mgmt filter 0x%x\n", filter);
+			return -EINVAL;
+		}
+		pkt->filter[ATH12K_EXT_MON_FRAME_MGMT] = filter;
+	}
+
+	if (tb[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_CTRL]) {
+		u32 filter = nla_get_u32(
+				tb[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_CTRL]);
+		if (filter & ~ATH12K_EXT_MON_FILTER_ALL) {
+			ath12k_err(NULL, "invalid ctrl filter 0x%x\n", filter);
+			return -EINVAL;
+		}
+		pkt->filter[ATH12K_EXT_MON_FRAME_CTRL] = filter;
+	}
+
+	if (tb[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_DATA]) {
+		u32 filter = nla_get_u32(
+				tb[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER_DATA]);
+		if (filter & ~ATH12K_EXT_MON_FILTER_ALL) {
+			ath12k_err(NULL, "invalid data filter 0x%x\n", filter);
+			return -EINVAL;
+		}
+		pkt->filter[ATH12K_EXT_MON_FRAME_DATA] = filter;
+	}
+
+	return 0;
+}
+
+static int
+ath12k_ext_mon_extract_filter_len(struct nlattr *len_attr,
+				  struct ath12k_ext_mon_pkt_config *pkt)
+{
+	struct nlattr *tb[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN_MAX + 1];
+	int ret;
+
+	ret = nla_parse_nested(tb, QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN_MAX,
+			       len_attr, ath12k_vendor_ext_mon_pkt_config_len_policy,
+			       NULL);
+	if (ret) {
+		ath12k_err(NULL, "failed to parse ext mon len: %d\n", ret);
+		return ret;
+	}
+
+	if (tb[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN_MGMT]) {
+		u8 len = nla_get_u8(tb[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN_MGMT]);
+
+		if (len < QCA_VENDOR_EXT_MON_LEN_64B ||
+		    len > QCA_VENDOR_EXT_MON_LEN_FULL_PKT) {
+			ath12k_err(NULL, "invalid mgmt frame len %u\n", len);
+			return -EINVAL;
+		}
+		pkt->len[ATH12K_EXT_MON_FRAME_MGMT] = len;
+	}
+
+	if (tb[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN_CTRL]) {
+		u8 len = nla_get_u8(tb[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN_CTRL]);
+
+		if (len < QCA_VENDOR_EXT_MON_LEN_64B ||
+		    len > QCA_VENDOR_EXT_MON_LEN_FULL_PKT) {
+			ath12k_err(NULL, "invalid ctrl frame len %u\n", len);
+			return -EINVAL;
+		}
+		pkt->len[ATH12K_EXT_MON_FRAME_CTRL] = len;
+	}
+
+	if (tb[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN_DATA]) {
+		u8 len = nla_get_u8(tb[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN_DATA]);
+
+		if (len < QCA_VENDOR_EXT_MON_LEN_64B ||
+		    len > QCA_VENDOR_EXT_MON_LEN_FULL_PKT) {
+			ath12k_err(NULL, "invalid data frame len %u\n", len);
+			return -EINVAL;
+		}
+		pkt->len[ATH12K_EXT_MON_FRAME_DATA] = len;
+	}
+
+	return 0;
+}
+
+static int
+ath12k_ext_mon_extract_pkt_config(struct nlattr *pkt_attr,
+				  struct ath12k_ext_mon_pkt_config *pkt)
+{
+	struct nlattr *tb[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_MAX + 1];
+	int ret;
+
+	ret = nla_parse_nested(tb, QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_MAX,
+			       pkt_attr, ath12k_vendor_ext_mon_pkt_config_policy,
+			       NULL);
+	if (ret) {
+		ath12k_err(NULL, "failed to parse ext mon pkt config: %d\n", ret);
+		return ret;
+	}
+
+	if (tb[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER]) {
+		ret = ath12k_ext_mon_extract_filter(
+			tb[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_FILTER],
+			pkt);
+		if (ret)
+			return ret;
+	}
+
+	if (tb[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN]) {
+		ret = ath12k_ext_mon_extract_filter_len(
+			tb[QCA_VENDOR_ATTR_EXT_MON_PKT_CONFIG_LEN],
+			pkt);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
+static int
+ath12k_ext_mon_extract_filter_config(struct nlattr *filter_attr,
+				     struct ath12k_ext_mon_filter_config *filter)
+{
+	struct nlattr *tb[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_MAX + 1] = {0};
+	int ret = 0;
+
+	ret = nla_parse_nested(tb, QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_MAX,
+			       filter_attr, ath12k_vendor_ext_mon_filter_config_policy,
+			       NULL);
+
+	if (ret) {
+		ath12k_err(NULL, "failed to parse filter config attributes: %d\n", ret);
+		return ret;
+	}
+
+	if (tb[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_LEVEL]) {
+		u8 level = nla_get_u8(tb[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_LEVEL]);
+
+		if (level < QCA_VENDOR_EXT_MON_FILTER_LEVEL_MSDU ||
+		    level > QCA_VENDOR_EXT_MON_FILTER_LEVEL_PPDU) {
+			ath12k_err(NULL, "invalid filter level %u\n", level);
+			return -EINVAL;
+		}
+		filter->level = level;
+	}
+
+	if (tb[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_DISABLE])
+		filter->disable =
+			nla_get_flag(tb[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_DISABLE]);
+
+	if (filter->disable)
+		return 0;
+
+	if (tb[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_ALL_PEER]) {
+		ret = ath12k_ext_mon_extract_pkt_config(
+			tb[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_ALL_PEER],
+			&filter->all_peer);
+		if (ret)
+			return ret;
+	}
+
+	if (tb[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_ALL_NEIGHBOR]) {
+		ret = ath12k_ext_mon_extract_pkt_config(
+			tb[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_ALL_NEIGHBOR],
+			&filter->all_neighbor);
+		if (ret)
+			return ret;
+	}
+
+	if (tb[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_TARGET_PEER]) {
+		ret = ath12k_ext_mon_extract_pkt_config(
+			tb[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_TARGET_PEER],
+			&filter->target_peer);
+		if (ret)
+			return ret;
+	}
+
+	if (tb[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_TARGET_NEIGHBOR]) {
+		ret = ath12k_ext_mon_extract_pkt_config(
+			tb[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_TARGET_NEIGHBOR],
+			&filter->target_neighbor);
+		if (ret)
+			return ret;
+	}
+
+	if (tb[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_META_DATA]) {
+		u8 meta_data = nla_get_u8(
+				tb[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_META_DATA]);
+
+		if (meta_data & ~ATH12K_EXT_MON_METADATA_VALID_MASK) {
+			ath12k_err(NULL, "invalid metadata mask %u\n", meta_data);
+			return -EINVAL;
+		}
+		filter->meta_data = meta_data;
+	}
+
+	return 0;
+}
+
+static int
+ath12k_ext_mon_extract_peer_info(struct nlattr *peer_info_attr,
+				 struct ath12k_ext_mon_peer_config *peer)
+{
+	int ret, rem, i = 0;
+	struct nlattr *attr;
+
+	nla_for_each_nested(attr, peer_info_attr, rem) {
+		struct nlattr *tb[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_MAX + 1] = { 0 };
+
+		if (i >= peer->count)
+			break;
+
+		ret = nla_parse_nested(tb, QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_MAX,
+				       attr, ath12k_vendor_ext_mon_peer_info_policy,
+				       NULL);
+		if (ret)
+			return ret;
+
+		if (tb[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_MAC_ADDR] &&
+		    (nla_len(tb[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_MAC_ADDR]) == ETH_ALEN))
+			nla_memcpy(peer->peer_info[i].mac_addr,
+				   tb[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_MAC_ADDR],
+				   ETH_ALEN);
+		else {
+			ath12k_err(NULL, "invalid MAC address\n");
+			return -EINVAL;
+		}
+
+		if (tb[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_ADDR_IS_RA])
+			peer->peer_info[i].ra_addr = nla_get_flag(
+					tb[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_ADDR_IS_RA]);
+
+		if (tb[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_BITMAP])
+			peer->peer_info[i].bitmap =
+				nla_get_u8(tb[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO_BITMAP]);
+
+		i++;
+	}
+
+	return 0;
+}
+
+static int
+ath12k_ext_mon_extract_peer_config(struct nlattr *peer_attr,
+				   struct ath12k_ext_mon_peer_config *peer)
+{
+	struct nlattr *tb[QCA_VENDOR_ATTR_EXT_MON_PEER_MAX + 1] = {0};
+	int ret = 0;
+
+	ret = nla_parse_nested(tb, QCA_VENDOR_ATTR_EXT_MON_PEER_MAX,
+			       peer_attr, ath12k_vendor_ext_mon_peer_config_policy,
+			       NULL);
+
+	if (ret) {
+		ath12k_err(NULL, "failed to parse peer config attributes: %d\n", ret);
+		return ret;
+	}
+
+	if (tb[QCA_VENDOR_ATTR_EXT_MON_PEER_ACTION]) {
+		u8 action = nla_get_u8(tb[QCA_VENDOR_ATTR_EXT_MON_PEER_ACTION]);
+
+		if (action < QCA_VENDOR_EXT_MON_PEER_ACTION_ADD ||
+		    action > QCA_VENDOR_EXT_MON_PEER_ACTION_REMOVE) {
+			ath12k_err(NULL, "invalid peer action %u\n", action);
+			return -EINVAL;
+		}
+		peer->action = action;
+	}
+
+	if (tb[QCA_VENDOR_ATTR_EXT_MON_PEER_COUNT]) {
+		u8 count = nla_get_u8(tb[QCA_VENDOR_ATTR_EXT_MON_PEER_COUNT]);
+
+		if (count > ATH12K_EXT_MON_MAX_PEERS) {
+			ath12k_err(NULL, "invalid peer count %d\n", count);
+			return -EINVAL;
+		}
+		peer->count = count;
+
+		if (tb[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO]) {
+			ret = ath12k_ext_mon_extract_peer_info(
+					tb[QCA_VENDOR_ATTR_EXT_MON_PEER_INFO],
+					peer);
+			if (ret)
+				return ret;
+		} else
+			return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int
+ath12k_ext_mon_parse_request(struct nlattr **tb,
+			     struct ath12k_ext_mon_config *req)
+{
+	int ret = 0;
+	u8 cmd_type, direction;
+
+	if (!tb[QCA_VENDOR_ATTR_EXT_MON_CMD_TYPE]) {
+		ath12k_err(NULL, "missing mandatory cmd_type attribute\n");
+		return -EINVAL;
+	}
+
+	cmd_type = nla_get_u8(tb[QCA_VENDOR_ATTR_EXT_MON_CMD_TYPE]);
+	if (cmd_type < QCA_VENDOR_EXT_MON_CMD_TYPE_SET_FILTER ||
+	    cmd_type > QCA_VENDOR_EXT_MON_CMD_TYPE_GET_PEER) {
+		ath12k_err(NULL, "invalid cmd_type %u\n", cmd_type);
+		return -EINVAL;
+	}
+	req->cmd_type = cmd_type;
+
+	if (!tb[QCA_VENDOR_ATTR_EXT_MON_DIRECTION]) {
+		ath12k_err(NULL, "missing mandatory direction attribute\n");
+		return -EINVAL;
+	}
+
+	direction = nla_get_u8(tb[QCA_VENDOR_ATTR_EXT_MON_DIRECTION]);
+	if (direction < QCA_VENDOR_EXT_MON_DIRECTION_RX ||
+	    direction > QCA_VENDOR_EXT_MON_DIRECTION_TX) {
+		ath12k_err(NULL, "invalid direction %u\n", direction);
+		return -EINVAL;
+	}
+	req->direction = direction;
+
+	if (req->cmd_type == QCA_VENDOR_EXT_MON_CMD_TYPE_GET_FILTER ||
+	    req->cmd_type == QCA_VENDOR_EXT_MON_CMD_TYPE_GET_PEER)
+		return 0;
+
+	if (tb[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG]) {
+		ret = ath12k_ext_mon_extract_filter_config(
+			tb[QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG],
+			&req->filter);
+		if (ret) {
+			ath12k_err(NULL, "failed to parse filter config attributes: %d\n",
+				   ret);
+			return ret;
+		}
+	}
+
+	if (tb[QCA_VENDOR_ATTR_EXT_MON_PEER_CONFIG]) {
+		ret = ath12k_ext_mon_extract_peer_config(
+			tb[QCA_VENDOR_ATTR_EXT_MON_PEER_CONFIG],
+			&req->peer);
+		if (ret) {
+			ath12k_err(NULL, "failed to parse peer config attributes: %d\n",
+				   ret);
+			return ret;
+		}
+	}
+
+	return 0;
+}
+
+static int
+ath12k_ext_mon_calculate_resp_len(void)
+{
+	int total_len = 0;
+
+	total_len = nla_total_size(sizeof(u8));
+	total_len += nla_total_size(sizeof(u8));
+	total_len += nla_total_size(sizeof(u8));
+
+	return total_len;
+}
+
+static int
+ath12k_ext_mon_handle_request(struct wiphy *wiphy,
+			      struct ath12k_pdev_dp *dp_pdev,
+			      struct ath12k_ext_mon_config *req)
+{
+	struct sk_buff *skb;
+	int resp_len = 0;
+	struct ath12k_ext_mon_config resp = {0};
+
+	ath12k_dp_ext_mon_process_request(dp_pdev, req, &resp);
+
+	resp_len = ath12k_ext_mon_calculate_resp_len();
+	skb = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, resp_len);
+	if (!skb)
+		return -ENOMEM;
+
+	if (nla_put_u8(skb, QCA_VENDOR_ATTR_EXT_MON_CMD_TYPE, req->cmd_type) ||
+	    nla_put_u8(skb, QCA_VENDOR_ATTR_EXT_MON_DIRECTION, req->direction) ||
+	    nla_put_u8(skb, QCA_VENDOR_ATTR_EXT_MON_STATUS_CODE, resp.status_code))
+		goto nla_put_failure;
+
+	return cfg80211_vendor_cmd_reply(skb);
+
+nla_put_failure:
+	kfree_skb(skb);
+	return -EMSGSIZE;
+}
+
+static int
+ath12k_vendor_extended_monitor_handler(struct wiphy *wiphy,
+				       struct wireless_dev *wdev,
+				       const void *data,
+				       int data_len)
+{
+	struct nlattr *tb[QCA_VENDOR_ATTR_EXT_MON_MAX + 1];
+	struct ath12k_ext_mon_config req = {0};
+	struct ath12k *ar = NULL;
+	struct ath12k_vif *ahvif = NULL;
+	int ret;
+
+	if (wdev->iftype != NL80211_IFTYPE_MONITOR) {
+		ath12k_err(NULL, "requested interface is not a monitor interface!\n");
+		return -EINVAL;
+	}
+
+	ahvif = ath12k_get_ahvif_from_wdev(wdev);
+	if (!ahvif) {
+		ath12k_err(NULL, "ahvif not present");
+		return -EINVAL;
+	}
+
+	ar = ahvif->deflink.ar;
+	if (!ar) {
+		ath12k_err(NULL, "ar not found for monitor interface\n");
+		return -EINVAL;
+	}
+
+	ret = nla_parse(tb, QCA_VENDOR_ATTR_EXT_MON_MAX, data, data_len,
+			ath12k_vendor_ext_mon_policy, NULL);
+	if (ret) {
+		ath12k_err(NULL, "failed to parse ext mon attributes: %d\n", ret);
+		return ret;
+	}
+
+	ret = ath12k_ext_mon_parse_request(tb, &req);
+	if (ret) {
+		ath12k_err(NULL, "error parsing ext mon user input: %d\n", ret);
+		return ret;
+	}
+
+	ret = ath12k_ext_mon_handle_request(wiphy, &ar->dp, &req);
+	if (ret) {
+		ath12k_err(NULL, "error in handling ext mon request: %d\n", ret);
+		return ret;
+	}
+
 	return 0;
 }
 

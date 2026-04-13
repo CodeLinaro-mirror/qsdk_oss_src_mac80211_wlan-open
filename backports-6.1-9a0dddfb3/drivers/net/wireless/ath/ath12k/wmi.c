@@ -132,6 +132,7 @@ struct ath12k_wmi_svc_rdy_ext2_parse {
 	bool ltf_cap;
 	bool chain_cap;
 	bool mac_phy_caps_ext2_done;
+	bool cu_mem_cfg_done;
 };
 
 struct ath12k_wmi_rdy_parse {
@@ -220,6 +221,10 @@ static const struct ath12k_wmi_tlv_policy ath12k_wmi_tlv_policies[] = {
 		.min_len = sizeof(struct wmi_vdev_tpc_ie_power_event) },
 	[WMI_TAG_REG_CHAN_LIST_CC_EXT_EVENT] = {
 		.min_len = sizeof(struct wmi_reg_chan_list_cc_ext_event) },
+#ifdef CPTCFG_QCN_EXTN
+	[WMI_TAG_REG_CHAN_PRIORITY] = {
+		.min_len = sizeof(struct ath12k_wmi_reg_chan_priority) },
+#endif
 	[WMI_TAG_MGMT_RX_HDR] = {
 		.min_len = sizeof(struct ath12k_wmi_mgmt_rx_params) },
 	[WMI_TAG_MGMT_TX_COMPL_EVENT] = {
@@ -4314,6 +4319,7 @@ int ath12k_wmi_send_scan_start_cmd(struct ath12k *ar,
 
 	ath12k_wmi_copy_scan_event_cntrl_flags(cmd, arg);
 
+	cmd->scan_priority = cpu_to_le32(arg->scan_priority);
 	cmd->dwell_time_active = cpu_to_le32(arg->dwell_time_active);
 	cmd->dwell_time_active_2g = cpu_to_le32(arg->dwell_time_active_2g);
 	cmd->dwell_time_passive = cpu_to_le32(arg->dwell_time_passive);
@@ -8125,6 +8131,29 @@ static int ath12k_wmi_tlv_twt_caps_params(struct ath12k_base *ab, u16 tag,
 	return 0;
 }
 
+static int ath12k_wmi_tlv_shared_cu_mem_config(struct ath12k_base *ab, u16 tag,
+					       u16 len, const void *ptr,
+					       void *data)
+{
+	const struct ath12k_wmi_shared_cu_mem_config *cfg;
+
+	if (!test_bit(WMI_TLV_SERVICE_SHARED_CU_MEM_MODEL_COUNT_DOWN,
+		      ab->wmi_ab.svc_map))
+		return 0;
+
+	if (tag != WMI_TAG_SHARED_CU_MEM_CONFIG)
+		return -EPROTO;
+
+	cfg = ptr;
+
+	ab->cu_mem_cfg_mask = le32_to_cpu(cfg->config);
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "shared critical update memory config mask: 0x%x\n",
+		   ab->cu_mem_cfg_mask);
+
+	return 0;
+}
+
 static int ath12k_wmi_svc_rdy_ext2_parse(struct ath12k_base *ab,
 					 u16 tag, u16 len,
 					 const void *ptr, void *data)
@@ -8276,6 +8305,17 @@ static int ath12k_wmi_svc_rdy_ext2_parse(struct ath12k_base *ab,
 			}
 
 			parse->mac_phy_caps_ext2_done = true;
+		} else if (!parse->cu_mem_cfg_done) {
+			ret = ath12k_wmi_tlv_iter(ab, ptr, len,
+						  ath12k_wmi_tlv_shared_cu_mem_config,
+						  parse);
+			if (ret) {
+				ath12k_warn(ab, "failed to parse tlv shared cu mem config: %d\n",
+					    ret);
+				return ret;
+			}
+
+			parse->cu_mem_cfg_done = true;
 		}
 		break;
 	default:
@@ -9317,6 +9357,11 @@ static int ath12k_pull_reg_chan_list_ext_update_ev(struct ath12k_base *ab,
 	ath12k_dbg(ab, ATH12K_DBG_WMI, "6g client type %s 6g super domain %s",
                   ath12k_6g_client_type_to_str(reg_info->client_type),
                   ath12k_super_reg_6g_to_str(reg_info->domain_code_6g_super_id));
+
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_reg_chan_list_cc_ext_parse_extn(ab, ext_wmi_reg_rule,
+					       &reg_info->reg_info_extn);
+#endif
 
 	ath12k_dbg(ab, ATH12K_DBG_WMI, "processed regulatory ext channel list\n");
 
@@ -10567,6 +10612,11 @@ static int ath12k_reg_handle_chan_list(struct ath12k_base *ab,
 	ab->regd_freed = false;
 	ab->dfs_region = reg_info->dfs_region;
 	spin_unlock_bh(&ab->base_lock);
+
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_reg_handle_chan_list_extn(ab, pdev_idx,
+					 &reg_info->reg_info_extn);
+#endif
 
 	return 0;
 
@@ -13275,6 +13325,8 @@ ath12k_wmi_pdev_dfs_radar_detected_event(struct ath12k_base *ab, struct sk_buff 
 	ath12k_dbg(ar->ab, ATH12K_DBG_REG, "DFS Radar Detected in pdev %d\n",
 		   ev->pdev_id);
 
+	do_full_bw_nol |= !READ_ONCE(ar->dfs_sub_channel_marking);
+
 	if (ar->dfs_block_radar_events)
 		ath12k_info(ab, "DFS Radar detected, but ignored as requested\n");
 	else
@@ -14027,6 +14079,49 @@ static void ath12k_wmi_event_teardown_complete(struct ath12k_base *ab,
 		ag->trigger_umac_reset = false;
 		ag->mlo_teardown = false;
 	}
+}
+
+static void ath12k_wmi_event_send_cumac_complete(struct ath12k_base *ab,
+						 struct sk_buff *skb)
+{
+	const struct wmi_mlo_send_cumac_complete_event *ev;
+	struct ath12k *ar = NULL;
+	const void **tb;
+	int ret;
+
+	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
+	if (IS_ERR(tb)) {
+		ret = PTR_ERR(tb);
+		ath12k_warn(ab, "failed to parse cumac complete event tlv: %d\n", ret);
+		return;
+	}
+
+	ev = tb[WMI_TAG_PDEV_SET_CUMAC_COMPLETE];
+	if (!ev) {
+		ath12k_warn(ab, "failed to fetch cumac complete event\n");
+		kfree(tb);
+		return;
+	}
+
+	rcu_read_lock();
+	ar = ath12k_mac_get_ar_by_pdev_id(ab, le32_to_cpu(ev->pdev_id));
+	if (!ar) {
+		ath12k_warn(ab, "invalid pdev id in cumac completion event %d",
+			    ev->pdev_id);
+		goto out;
+	}
+
+	if (le32_to_cpu(ev->status) == WMI_PDEV_SET_CUMAC_CHIP_ID_SUCCESS) {
+		complete(&ar->cumac_setup_done);
+		ath12k_dbg(ab, ATH12K_DBG_BOOT, "Received cumac completion status: SUCCESS\n");
+	} else {
+		ath12k_err(ab, "pdev id %d received cumac completion with failure status\n",
+			   ev->pdev_id);
+	}
+
+out:
+	kfree(tb);
+	rcu_read_unlock();
 }
 
 #ifdef CPTCFG_ATH12K_DEBUGFS
@@ -16958,6 +17053,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 		break;
 	case WMI_MLO_TEARDOWN_COMPLETE_EVENTID:
 		ath12k_wmi_event_teardown_complete(ab, skb);
+		break;
+	case WMI_PDEV_SET_CUMAC_CHIP_ID_CONFIRMATION_EVENTID:
+		ath12k_wmi_event_send_cumac_complete(ab, skb);
 		break;
 	case WMI_HALPHY_STATS_CTRL_PATH_EVENTID:
 		ath12k_wmi_process_tpc_stats(ab, skb);
@@ -20136,6 +20234,44 @@ int ath12k_wmi_vdev_rate_mask(struct ath12k *ar, struct wmi_vdev_ratemask_arg *a
 		ath12k_warn(ar->ab,
 			    "failed to send vdev %d rate mask cmd: %d\n",
 			    arg->vdev_id, ret);
+		dev_kfree_skb(skb);
+		return ret;
+	}
+
+	return 0;
+}
+
+int ath12k_wmi_send_cumac_config(struct ath12k *ar,
+				 u32 cumac_chip_id)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct ath12k_base *ab = wmi->wmi_ab->ab;
+	struct wmi_send_cumac_cmd *cmd = NULL;
+	struct sk_buff *skb;
+	int ret, len;
+
+	len = sizeof(*cmd);
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_send_cumac_cmd *)skb->data;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_PDEV_SET_CUMAC_CHIP,
+						 sizeof(*cmd));
+
+	cmd->pdev_id = cpu_to_le32(ar->pdev->pdev_id);
+	cmd->cumac_chip_id = cpu_to_le32(cumac_chip_id);
+
+	ath12k_dbg(ab, ATH12K_DBG_BOOT, "wmi send cumac config cumac chip id:%d\n",
+		   cumac_chip_id);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb,
+				  WMI_PDEV_SET_CUMAC_CHIP_CMDID);
+
+	if (ret) {
+		ath12k_warn(ab,
+			    "Failed to send WMI_PDEV_SET_CUMAC_CHIP_CMDID");
 		dev_kfree_skb(skb);
 		return ret;
 	}

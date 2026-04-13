@@ -132,6 +132,14 @@ u32 ath12k_wifi8_hal_rx_h_freq_qcn9625(struct hal_rx_desc *desc)
 }
 
 static inline
+u8 ath12k_wifi8_hal_rx_h_snr_qcn9625(struct hal_rx_desc *desc)
+{
+	/* the field contains SNR value */
+	return le32_get_bits(desc->u.qcn9625_compact.msdu_end.info13,
+			     RX_MSDU_END_INFO13_USER_RSSI);
+}
+
+static inline
 u8 ath12k_wifi8_hal_rx_h_pkt_type_qcn9625(struct hal_rx_desc *desc)
 {
 	return le32_get_bits(desc->u.qcn9625_compact.msdu_end.info13,

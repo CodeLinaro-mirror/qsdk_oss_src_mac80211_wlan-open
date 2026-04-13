@@ -9,6 +9,10 @@
 #ifndef HAL_MON_H
 #define HAL_MON_H
 
+#define HAL_WIFI8_TLV_64_HDR_TAG              GENMASK(9, 0)
+#define HAL_WIFI8_TLV_64_HDR_LEN              GENMASK(21, 10)
+#define HAL_WIFI8_TLV_64_USR_ID               GENMASK(31, 26)
+
 #define HAL_MPDU_START_SW_FRAME_GRP_NULL_DATA	0x3
 
 #define RX_MON_MPDU_END_WMASK	0xff

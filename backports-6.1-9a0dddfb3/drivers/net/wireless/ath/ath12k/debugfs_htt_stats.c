@@ -3417,6 +3417,9 @@ ath12k_htt_print_tx_pdev_stats_cmn_tlv(const void *tag_buf, u16 tag_len,
 			"num_ppdu_tried_ota_per_ac",
 			htt_stats_buf->num_ppdu_tried_ota_per_ac,
 			ATH12K_HTT_NUM_AC_WMM, "\n");
+	len += print_array_to_buf(buf, len, "avg_channel_access_latency(us)",
+				  htt_stats_buf->avg_channel_access_latency_per_ac,
+				  ATH12K_HTT_NUM_AC_WMM, "\n");
 	len += scnprintf(buf + len, buf_len - len, "local_ctrl_mgmt_enqued = %u\n",
 			 le32_to_cpu(htt_stats_buf->local_ctrl_mgmt_enqued));
 	len += scnprintf(buf + len, buf_len - len, "local_ctrl_mgmt_freed = %u\n",
@@ -6610,7 +6613,6 @@ ath12k_htt_print_tx_sounding_stats_tlv(const void *tag_buf, u16 tag_len,
 	u32 len = stats_req->buf_len;
 	u8 *buf = stats_req->buf;
 	u32 tx_sounding_mode;
-	u8 i, u;
 
 	if (tag_len < sizeof(*htt_stats_buf))
 		return;
@@ -6658,17 +6660,6 @@ ath12k_htt_print_tx_sounding_stats_tlv(const void *tag_buf, u16 tag_len,
 				 le32_to_cpu(cbf_160[ATH12K_HTT_EXPL_MUSIFS_STEER_STATS]),
 				 le32_to_cpu(cbf_160[ATH12K_HTT_EXPL_MURBO_STEER_STATS]));
 
-		for (u = 0, i = 0; u < ATH12K_HTT_TX_NUM_AC_MUMIMO_USER_STATS; u++) {
-			len += scnprintf(buf + len, buf_len - len,
-					 "Sounding User_%u = 20MHz: %u, ", u,
-					 le32_to_cpu(htt_stats_buf->sounding[i++]));
-			len += scnprintf(buf + len, buf_len - len, "40MHz: %u, ",
-					 le32_to_cpu(htt_stats_buf->sounding[i++]));
-			len += scnprintf(buf + len, buf_len - len, "80MHz: %u, ",
-					 le32_to_cpu(htt_stats_buf->sounding[i++]));
-			len += scnprintf(buf + len, buf_len - len, "160MHz: %u\n",
-					 le32_to_cpu(htt_stats_buf->sounding[i++]));
-		}
 	} else if (tx_sounding_mode == ATH12K_HTT_TX_AX_SOUNDING_MODE) {
 		len += scnprintf(buf + len, buf_len - len,
 				 "\nHTT_TX_AX_SOUNDING_STATS_TLV:\n");
@@ -6705,17 +6696,6 @@ ath12k_htt_print_tx_sounding_stats_tlv(const void *tag_buf, u16 tag_len,
 				 le32_to_cpu(cbf_160[ATH12K_HTT_EXPL_MUSIFS_STEER_STATS]),
 				 le32_to_cpu(cbf_160[ATH12K_HTT_EXPL_MURBO_STEER_STATS]));
 
-		for (u = 0, i = 0; u < ATH12K_HTT_TX_NUM_AX_MUMIMO_USER_STATS; u++) {
-			len += scnprintf(buf + len, buf_len - len,
-					 "Sounding User_%u = 20MHz: %u, ", u,
-					 le32_to_cpu(htt_stats_buf->sounding[i++]));
-			len += scnprintf(buf + len, buf_len - len, "40MHz: %u, ",
-					 le32_to_cpu(htt_stats_buf->sounding[i++]));
-			len += scnprintf(buf + len, buf_len - len, "80MHz: %u, ",
-					 le32_to_cpu(htt_stats_buf->sounding[i++]));
-			len += scnprintf(buf + len, buf_len - len, "160MHz: %u\n",
-					 le32_to_cpu(htt_stats_buf->sounding[i++]));
-		}
 	} else if (tx_sounding_mode == ATH12K_HTT_TX_BE_SOUNDING_MODE) {
 		len += scnprintf(buf + len, buf_len - len,
 				 "\nHTT_TX_BE_SOUNDING_STATS_TLV:\n");
@@ -6759,19 +6739,6 @@ ath12k_htt_print_tx_sounding_stats_tlv(const void *tag_buf, u16 tag_len,
 		len += scnprintf(buf + len, buf_len - len, "MU_SIFS: %u, MU_RBO: %u\n",
 				 le32_to_cpu(cbf_320[ATH12K_HTT_EXPL_MUSIFS_STEER_STATS]),
 				 le32_to_cpu(cbf_320[ATH12K_HTT_EXPL_MURBO_STEER_STATS]));
-		for (u = 0, i = 0; u < ATH12K_HTT_TX_NUM_BE_MUMIMO_USER_STATS; u++) {
-			len += scnprintf(buf + len, buf_len - len,
-					 "Sounding User_%u = 20MHz: %u, ", u,
-					 le32_to_cpu(htt_stats_buf->sounding[i++]));
-			len += scnprintf(buf + len, buf_len - len, "40MHz: %u, ",
-					 le32_to_cpu(htt_stats_buf->sounding[i++]));
-			len += scnprintf(buf + len, buf_len - len, "80MHz: %u, ",
-					 le32_to_cpu(htt_stats_buf->sounding[i++]));
-			len += scnprintf(buf + len, buf_len - len,
-					 "160MHz: %u, 320MHz: %u\n",
-					 le32_to_cpu(htt_stats_buf->sounding[i++]),
-					 le32_to_cpu(htt_stats_buf->sounding_320[u]));
-		}
 	} else if (tx_sounding_mode == ATH12K_HTT_TX_CMN_SOUNDING_MODE) {
 		len += scnprintf(buf + len, buf_len - len,
 				 "\nCV UPLOAD HANDLER STATS:\n");

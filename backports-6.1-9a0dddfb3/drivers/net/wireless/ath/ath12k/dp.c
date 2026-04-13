@@ -17,6 +17,7 @@
 #include "debugfs.h"
 #include "dp_stats.h"
 #include "dp_peer.h"
+#include "hal.h"
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 #include "qcn_extns/ipa/dp_ipa.h"
 #endif
@@ -59,24 +60,7 @@ u8 ath12k_default_dscp_tid_map[DSCP_TID_MAP_TBL_ENTRY_SIZE] = {
 };
 EXPORT_SYMBOL(ath12k_default_dscp_tid_map);
 
-struct ath12k_dp_preserved_stats *ath12k_dp_alloc_preserved_stats(void)
-{
-	struct ath12k_dp_preserved_stats *stats;
 
-	stats = kzalloc(sizeof(*stats), GFP_ATOMIC);
-	if (!stats)
-		return NULL;
-	return stats;
-}
-EXPORT_SYMBOL(ath12k_dp_alloc_preserved_stats);
-
-void ath12k_dp_free_preserved_stats(struct ath12k_dp_preserved_stats *stats)
-{
-	if (!stats)
-		return;
-	kfree(stats);
-}
-EXPORT_SYMBOL(ath12k_dp_free_preserved_stats);
 
 enum ath12k_dp_desc_type {
 	ATH12K_DP_TX_DESC,
@@ -408,6 +392,8 @@ static int ath12k_dp_srng_calculate_msi_group(struct ath12k_base *ab,
 	case HAL_CE_DST_STATUS:
 	case HAL_WBM_BUF:
 	case HAL_WBM_IDLE_BUF:
+	case HAL_PPE2WBM_BUF:
+	case HAL_PPE2WBM_IDLE_BUF:
 	default:
 		return -ENOENT;
 	}
@@ -591,6 +577,8 @@ skip_dma_alloc:
 	case HAL_RXDMA_MONITOR_DESC:
 	case HAL_WBM_BUF:
 	case HAL_WBM_IDLE_BUF:
+	case HAL_PPE2WBM_BUF:
+	case HAL_PPE2WBM_IDLE_BUF:
 	case HAL_TX_MONITOR_DST:
 	case HAL_SAM_CMD:
 	case HAL_SAM_STATUS:
@@ -1178,12 +1166,6 @@ int ath12k_dp_pdev_pre_alloc(struct ath12k *ar)
 			goto mon_pdev_tx_free;
 		}
 
-		ret = ath12k_dp_mon_tx_wq_start(dp, dp->mac_id);
-		if (ret) {
-			ath12k_warn(ab, "failed to start TX mon WQ for mac_id %d: %d\n",
-				    dp->mac_id, ret);
-			goto mon_pdev_tx_free;
-		}
 		dp->dp_mon_pdev_configured = true;
 	}
 
@@ -2115,12 +2097,13 @@ int ath12k_dp_srng_alloc_aligned(struct ath12k_base *ab,
 	return 0;
 }
 
-static void ath12k_dp_srng_hw_disable(struct ath12k_base *ab, struct dp_srng *ring)
+void ath12k_dp_srng_hw_disable(struct ath12k_base *ab, struct dp_srng *ring)
 {
         struct hal_srng *srng = &ab->hal.srng_list[ring->ring_id];
 
 	ath12k_hal_srng_hw_disable(ab, srng);
 }
+EXPORT_SYMBOL(ath12k_dp_srng_hw_disable);
 
 void ath12k_dp_srng_hw_ring_disable(struct ath12k_base *ab)
 {
@@ -2150,12 +2133,10 @@ void ath12k_dp_umac_rx_desc_cleanup(struct ath12k_base *ab)
 	struct ath12k_rx_desc_info *desc_info;
 	struct ath12k_dp *dp;
 	struct sk_buff *skb;
-	struct dp_rxdma_ring *rx_ring;
 	LIST_HEAD(used_list);
 	int i, j;
 
 	dp = ath12k_ab_to_dp(ab);
-	rx_ring = &dp->rx_refill_buf_ring;
 
 	/* RX Descriptor cleanup */
 	spin_lock_bh(&dp->rx_desc_lock);
@@ -2181,8 +2162,9 @@ void ath12k_dp_umac_rx_desc_cleanup(struct ath12k_base *ab)
 	/* Feed descriptors to replenish */
 	if (!list_empty(&used_list)) {
 		struct hal_srng *refill_srng;
+		int ring_id = ath12k_dp_arch_fetch_rx_desc_replenish_ring_id(dp);
 
-		refill_srng = &ab->hal.srng_list[rx_ring->refill_buf_ring.ring_id];
+		refill_srng = &ab->hal.srng_list[ring_id];
 		ath12k_dp_rx_bufs_replenish(dp, refill_srng, &used_list, true);
 	}
 }
@@ -2527,161 +2509,43 @@ static void ath12k_dp_aggr_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 	for (i = 0; i < HAL_REO_DEST_RING_ERROR_CODE_MAX; i++)
 		dst_peer_stats->wbm_err.reo_error[i] +=
 			src_peer_stats->wbm_err.reo_error[i];
+
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	dst_peer_stats->mmesh_stat.no_qos +=
+		src_peer_stats->mmesh_stat.no_qos;
+
+	dst_peer_stats->mmesh_stat.no_enc +=
+		src_peer_stats->mmesh_stat.no_enc;
+
+	dst_peer_stats->mmesh_stat.txinfo +=
+		src_peer_stats->mmesh_stat.txinfo;
+
+	dst_peer_stats->mmesh_stat.auto_rate +=
+		src_peer_stats->mmesh_stat.auto_rate;
+
+	dst_peer_stats->mmesh_stat.filter_drop +=
+		src_peer_stats->mmesh_stat.filter_drop;
+
+	dst_peer_stats->mmesh_stat.direct +=
+		src_peer_stats->mmesh_stat.direct;
+
+	dst_peer_stats->mmesh_stat.tofw +=
+		src_peer_stats->mmesh_stat.tofw;
+
+	dst_peer_stats->mmesh_stat.rxhdr_updt +=
+		src_peer_stats->mmesh_stat.rxhdr_updt;
+
+	dst_peer_stats->mmesh_stat.rxkey_lookp_up_fail +=
+		src_peer_stats->mmesh_stat.rxkey_lookp_up_fail;
+
+	dst_peer_stats->mmesh_stat.rxkey_lookp_up_succ +=
+		src_peer_stats->mmesh_stat.rxkey_lookp_up_succ;
+
+	dst_peer_stats->mmesh_stat.rxhdr_alloc_fail +=
+		src_peer_stats->mmesh_stat.rxhdr_alloc_fail;
+#endif
 }
 
-static void
-ath12k_dp_update_tx_ext_htt_aggr_stats(struct ath12k *ar,
-				       struct ath12k_htt_tx_stats *dst_peer_stats,
-				       struct ath12k_htt_tx_stats *src_peer_stats)
-{
-	int i, j, k;
-
-	if (!dst_peer_stats || !src_peer_stats)
-		return;
-
-	/* htt stats */
-	for (i = 0; i < ATH12K_STATS_TYPE_MAX; i++) {
-		for (j = 0; j < ATH12K_COUNTER_TYPE_MAX; j++) {
-			for (k = 0; k < ATH12K_LEGACY_NUM; k++) {
-				dst_peer_stats->stats[i].legacy[j][k] +=
-					src_peer_stats->stats[i].legacy[j][k];
-			}
-
-			for (k = 0; k < ATH12K_HT_MCS_NUM; k++) {
-				dst_peer_stats->stats[i].ht[j][k] +=
-					src_peer_stats->stats[i].ht[j][k];
-			}
-
-			for (k = 0; k < ATH12K_VHT_MCS_NUM; k++) {
-				dst_peer_stats->stats[i].vht[j][k] +=
-					src_peer_stats->stats[i].vht[j][k];
-			}
-
-			for (k = 0; k < ATH12K_HE_MCS_NUM; k++) {
-				dst_peer_stats->stats[i].he[j][k] +=
-					src_peer_stats->stats[i].he[j][k];
-			}
-
-			for (k = 0; k < ATH12K_EHT_MCS_NUM; k++) {
-				dst_peer_stats->stats[i].eht[j][k] +=
-					src_peer_stats->stats[i].eht[j][k];
-			}
-
-			for (k = 0; k < ATH12K_BW_NUM; k++) {
-				dst_peer_stats->stats[i].bw[j][k] +=
-					src_peer_stats->stats[i].bw[j][k];
-			}
-
-			for (k = 0; k < ATH12K_NSS_NUM; k++) {
-				dst_peer_stats->stats[i].nss[j][k] +=
-					src_peer_stats->stats[i].nss[j][k];
-			}
-
-			for (k = 0; k < ATH12K_GI_NUM; k++) {
-				dst_peer_stats->stats[i].gi[j][k] +=
-					src_peer_stats->stats[i].gi[j][k];
-			}
-
-			for (k = 0; k < HTT_PPDU_STATS_PPDU_TYPE_MAX; k++) {
-				dst_peer_stats->stats[i].transmit_type[j][k] +=
-					src_peer_stats->stats[i].transmit_type[j][k];
-			}
-
-			for (k = 0; k < HAL_RX_RU_ALLOC_TYPE_MAX; k++) {
-				dst_peer_stats->stats[i].ru_loc[j][k] +=
-					src_peer_stats->stats[i].ru_loc[j][k];
-			}
-		}
-	}
-
-	dst_peer_stats->ba_fails += src_peer_stats->ba_fails;
-	dst_peer_stats->ack_fails += src_peer_stats->ack_fails;
-
-	/* TX Unicast Success */
-	dst_peer_stats->tx_ucast_success.num += src_peer_stats->tx_ucast_success.num;
-	dst_peer_stats->tx_ucast_success.bytes += src_peer_stats->tx_ucast_success.bytes;
-
-
-	/* TX PPDUs */
-	dst_peer_stats->tx_ppdus += src_peer_stats->tx_ppdus;
-
-	/* MPDU BASIC */
-	dst_peer_stats->tx_mpdus_success += src_peer_stats->tx_mpdus_success;
-	dst_peer_stats->tx_mpdus_tried += src_peer_stats->tx_mpdus_tried;
-	dst_peer_stats->retries_mpdu += src_peer_stats->retries_mpdu;
-
-	if (!ath12k_dp_advance_stats_enabled(&ar->dp))
-		return;
-
-	/* DEBUG/ADV */
-	dst_peer_stats->stbc += src_peer_stats->stbc;
-	dst_peer_stats->ldpc += src_peer_stats->ldpc;
-
-	/* WME AC Type Array */
-	for (i = 0; i < WME_AC_MAX; i++)
-		dst_peer_stats->wme_ac_type[i] += src_peer_stats->wme_ac_type[i];
-
-	/* WME AC Type Bytes Array */
-	for (i = 0; i < WME_AC_MAX; i++)
-		dst_peer_stats->wme_ac_type_bytes[i] +=
-			src_peer_stats->wme_ac_type_bytes[i];
-
-	/* Excess Retries Per AC Array */
-	for (i = 0; i < WME_AC_MAX; i++)
-		dst_peer_stats->excess_retries_per_ac[i] +=
-			src_peer_stats->excess_retries_per_ac[i];
-
-	/* AMPDU/Non-AMPDU Counts */
-	dst_peer_stats->ampdu_cnt += src_peer_stats->ampdu_cnt;
-	dst_peer_stats->non_ampdu_cnt += src_peer_stats->non_ampdu_cnt;
-	dst_peer_stats->num_ppdu_cookie_valid += src_peer_stats->num_ppdu_cookie_valid;
-
-	dst_peer_stats->pream_punct_cnt += src_peer_stats->pream_punct_cnt;
-
-	/* RU Location Array */
-	for (i = 0; i < MAX_RU_LOCATIONS; i++) {
-		dst_peer_stats->ru_loc_mpdu_succ_tried[i].num_mpdu +=
-			src_peer_stats->ru_loc_mpdu_succ_tried[i].num_mpdu;
-		dst_peer_stats->ru_loc_mpdu_succ_tried[i].mpdu_tried +=
-			src_peer_stats->ru_loc_mpdu_succ_tried[i].mpdu_tried;
-	}
-
-	/* Transmit Type Array */
-	for (i = 0; i < MAX_TRANSMIT_TYPES; i++) {
-		dst_peer_stats->transmit_type_mpdu_succ_tried[i].num_mpdu +=
-			src_peer_stats->transmit_type_mpdu_succ_tried[i].num_mpdu;
-		dst_peer_stats->transmit_type_mpdu_succ_tried[i].mpdu_tried +=
-			src_peer_stats->transmit_type_mpdu_succ_tried[i].mpdu_tried;
-	}
-
-	/* SU BE PPDU Count */
-	for (i = 0; i < MAX_MCS; i++)
-		dst_peer_stats->su_be_ppdu_cnt.mcs_count[i] +=
-			src_peer_stats->su_be_ppdu_cnt.mcs_count[i];
-
-	/* MU BE PPDU Count Array */
-	for (i = 0; i < TXRX_TYPE_MU_MAX; i++) {
-		for (j = 0; j < MAX_MCS; j++)
-			dst_peer_stats->mu_be_ppdu_cnt[i].mcs_count[j] +=
-				src_peer_stats->mu_be_ppdu_cnt[i].mcs_count[j];
-	}
-
-	/* Punctured BW Array */
-	for (i = 0; i < MAX_PUNCTURED_MODE; i++)
-		dst_peer_stats->punc_bw[i] += src_peer_stats->punc_bw[i];
-
-	/* RTS/BAR/NDPA Counts */
-	dst_peer_stats->rts_success += src_peer_stats->rts_success;
-	dst_peer_stats->rts_failure += src_peer_stats->rts_failure;
-	dst_peer_stats->bar_cnt += src_peer_stats->bar_cnt;
-	dst_peer_stats->ndpa_cnt += src_peer_stats->ndpa_cnt;
-
-	/* TX MSDU Flush Reason Array */
-	for (i = 0; i < HTT_FLUSH_MAX; i++)
-		dst_peer_stats->tx_msdu_flush_rsn[i] +=
-			src_peer_stats->tx_msdu_flush_rsn[i];
-
-}
 
 static void ath12k_dp_update_tx_ext_htt_stats(struct ath12k_htt_tx_stats *dst_peer_stats,
 					      struct ath12k_htt_tx_stats *src_peer_stats)
@@ -3006,11 +2870,11 @@ ath12k_dp_aggr_link_vif_del_stats(struct ath12k_link_vif *arvif,
 	struct ath12k_dp_link_vif *dp_link_vif = &ahvif->dp_vif.dp_link_vif[link_id];
 
 	/* Aggregate preserved stats from deleted link peers of this VIF */
-	ath12k_dp_aggr_deleted_stats(arvif->ar,
-				     &aggr_vif_stats->peer_stats,
-				     &aggr_vif_stats->link_peer_stats,
-				     dp_link_vif->link_peer_delete_stats,
-				     "link_peer_delete_stats");
+	ath12k_dp_aggr_del_stats(arvif->ar,
+				 &aggr_vif_stats->peer_stats,
+				 &aggr_vif_stats->link_peer_stats,
+				 &dp_link_vif->link_peer_delete_stats,
+				 "link_peer_delete_stats");
 }
 
 static void ath12k_vif_iterate_peer(struct ath12k_link_vif *arvif,
@@ -3210,10 +3074,10 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 				rcu_read_unlock();
 			}
 			/* Aggregate stats from deleted link VIFs into MLD VIF */
-			ath12k_dp_aggr_deleted_stats(ar, &aggr_vif_stats->peer_stats,
-						     &aggr_vif_stats->link_peer_stats,
-						     dp_vif->link_vif_delete_stats,
-						     "link_vif_delete_stats");
+			ath12k_dp_aggr_del_stats(ar, &aggr_vif_stats->peer_stats,
+						 &aggr_vif_stats->link_peer_stats,
+						 &dp_vif->link_vif_delete_stats,
+						 "link_vif_delete_stats");
 		}
 	}
 }
@@ -3541,9 +3405,9 @@ int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
 				/* Include preserved stats of deleted link peers
 				 * when reporting MLD peer stats
 				 */
-				ath12k_dp_aggr_deleted_stats(ar, peer_stats, link_stats,
-							     peer->link_peer_delete_stats,
-							     "link_peer_delete_stats");
+				ath12k_dp_aggr_del_stats(ar, peer_stats, link_stats,
+							 &peer->link_peer_delete_stats,
+							 "link_peer_delete_stats");
 				ath12k_dp_aggr_htt_stats(ar, peer, link_stats);
 				ath12k_dp_aggr_rx_mon_stats(ar, peer, link_stats);
 			}
