@@ -9741,7 +9741,7 @@ static int ath12k_vendor_get_channel_switch_time(struct wiphy *wiphy,
 
 	restart_time = tgt_restart_time + drv_restart_time;
 
-	if (!ab->qmi.cal_done)
+	if (!ab->qmi.cal_done && !ab->early_cal_support)
 		restart_time += ATH12K_CSA_CALDB_UNDONE_TIME;
 
 	dfs_required = cfg80211_chandef_dfs_required(hw->wiphy, &chandef,
