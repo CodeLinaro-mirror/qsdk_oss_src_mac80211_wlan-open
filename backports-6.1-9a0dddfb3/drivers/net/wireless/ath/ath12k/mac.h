@@ -194,6 +194,37 @@ struct ath12k_mac_link_migrate_usr_params {
 	u8 addr[ETH_ALEN];
 };
 
+/**
+ * struct ath12k_6ghz_pwr_mode_decision - Derived 6 GHz power-mode result
+ * @reg_6g_power_mode: Effective MAC regulatory power mode for TPC selection
+ * @ap_reg_6g_power_mode: Effective cfg80211 AP power mode to expose to userspace
+ * @ap_repeater_sp_client: AP behaves as a subordinate client of an SP root AP
+ *
+ * This structure carries the consolidated 6 GHz power-mode outcome after
+ * combining the local BSS configuration, colocated STA state and AFC state.
+ */
+struct ath12k_6ghz_pwr_mode_decision {
+	u8 reg_6g_power_mode;
+	enum nl80211_regulatory_power_modes ap_reg_6g_power_mode;
+	bool ap_repeater_sp_client;
+};
+
+/**
+ * enum ath12k_repeater_ap_sync_result - Repeater AP sync handling result
+ * @ATH12K_REPEATER_AP_SYNC_NOT_HANDLED: Return when the AP is not in the
+ *	repeater-AP sync path and the caller should continue with the normal AP
+ *	flow.
+ * @ATH12K_REPEATER_AP_SYNC_HANDLED: Return when the repeater-AP sync path has
+ *	consumed the request, including no-op cases where no state update is needed.
+ * @ATH12K_REPEATER_AP_SYNC_ERROR: Return when the repeater-AP sync path is
+ *	applicable but the derived state is invalid or the sync operation fails.
+ */
+enum ath12k_repeater_ap_sync_result {
+	ATH12K_REPEATER_AP_SYNC_NOT_HANDLED,
+	ATH12K_REPEATER_AP_SYNC_HANDLED,
+	ATH12K_REPEATER_AP_SYNC_ERROR,
+};
+
 struct ath12k_mac_pri_link_migr_peer_node {
 	struct list_head list;
 	u16 ml_peer_id;

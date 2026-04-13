@@ -8436,22 +8436,350 @@ ath12k_mac_has_colocated_sp_link_vif(struct ath12k *ar,
 	return false;
 }
 
-static u8 ath12k_mac_get_reg_6ghz_power_mode(struct ath12k *ar,
-					     struct ath12k_link_vif *arvif,
-					     struct ieee80211_bss_conf *bss_conf)
+static bool
+ath12k_mac_has_colocated_sta_link_vif(struct ath12k *ar,
+				      struct ath12k_link_vif *cur_arvif)
+{
+	struct ath12k_link_vif *arvif_itr;
+
+	rcu_read_lock();
+	list_for_each_entry(arvif_itr, &ar->arvifs, list) {
+		if (arvif_itr == cur_arvif || !arvif_itr->is_up)
+			continue;
+
+		if (arvif_itr->ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
+			rcu_read_unlock();
+			return true;
+		}
+	}
+	rcu_read_unlock();
+
+	return false;
+}
+
+/**
+ * ath12k_mac_get_colocated_sta_power_type - Get power type from colocated STA
+ * @ar: Radio instance to search on
+ * @cur_arvif: Current link vif requesting colocated state
+ * @power_type: Output power type learned from the colocated interface
+ *
+ * Iterate colocated link vifs on the same radio and return the configured
+ * 6 GHz AP power type for the first active STA interface.
+ *
+ * Return: true if a matching colocated interface was found, else false.
+ */
+static bool
+ath12k_mac_get_colocated_sta_power_type(struct ath12k *ar,
+					struct ath12k_link_vif *cur_arvif,
+					enum ieee80211_ap_reg_power *power_type)
+{
+	struct ath12k_link_vif *arvif_itr;
+	struct ieee80211_bss_conf *bss_conf;
+
+	rcu_read_lock();
+	list_for_each_entry(arvif_itr, &ar->arvifs, list) {
+		if (arvif_itr == cur_arvif || !arvif_itr->is_up)
+			continue;
+
+		if (arvif_itr->ahvif->vdev_type != WMI_VDEV_TYPE_STA)
+			continue;
+
+		bss_conf = ath12k_get_link_bss_conf(arvif_itr);
+		if (!bss_conf)
+			continue;
+
+		*power_type = bss_conf->power_type;
+		if (*power_type == IEEE80211_REG_UNSET_AP)
+			*power_type = IEEE80211_REG_LPI_AP;
+
+		rcu_read_unlock();
+		return true;
+	}
+	rcu_read_unlock();
+
+	return false;
+}
+
+/**
+ * ath12k_mac_is_reg_6ghz_power_mode_supported - Check if a 6 GHz mode is usable
+ * @ar: Radio instance
+ * @arvif: Link vif whose operating channel is validated
+ * @reg_6g_power_mode: Candidate MAC power mode to validate
+ *
+ * Validate whether the current operating chandef can legally support the
+ * requested 6 GHz regulatory power mode.
+ *
+ * Return: true if the requested mode is valid for the current chandef.
+ */
+static bool
+ath12k_mac_is_reg_6ghz_power_mode_supported(struct ath12k *ar,
+					    struct ath12k_link_vif *arvif,
+					    u8 reg_6g_power_mode)
+{
+	struct ieee80211_hw *hw = ath12k_ar_to_hw(ar);
+	enum nl80211_regulatory_power_modes pwr_mode;
+	unsigned int prohibited_flags;
+
+	if (!arvif->chanctx.def.chan)
+		return false;
+
+	pwr_mode = ieee80211_mac_to_cfg_power_type(reg_6g_power_mode);
+	if (pwr_mode >= NL80211_REG_NUM_POWER_MODES)
+		return false;
+
+	prohibited_flags = IEEE80211_CHAN_DISABLED | IEEE80211_CHAN_NO_IR;
+
+	return !cfg80211_validate_freq_width_for_pwr_mode(hw->wiphy,
+							  &arvif->chanctx.def,
+							  pwr_mode,
+							  prohibited_flags);
+}
+
+/**
+ * ath12k_mac_get_repeater_ap_power_mode_for_sp_root - Pick AP mode for SP root
+ * @ar: Radio instance
+ * @arvif: AP link vif being evaluated
+ * When the colocated root AP is standard power, the repeater AP cannot blindly
+ * mirror SP. This helper selects the most suitable non-SP AP power mode based
+ * on local deployment policy and per-channel regulatory support.
+ *
+ * Return: Effective AP MAC power mode to advertise for the repeater AP.
+ */
+static u8
+ath12k_mac_get_repeater_ap_power_mode_for_sp_root
+					(struct ath12k *ar,
+					 struct ath12k_link_vif *arvif)
+{
+	static const u8 indoor_modes[] = {
+		IEEE80211_REG_LPI_AP,
+		IEEE80211_REG_VLP_AP,
+	};
+	static const u8 outdoor_modes[] = {
+		IEEE80211_REG_VLP_AP,
+	};
+	static const u8 unknown_modes[] = {
+		IEEE80211_REG_LPI_AP,
+		IEEE80211_REG_VLP_AP,
+	};
+	const u8 *candidate_modes;
+	size_t num_candidate_modes;
+	size_t i;
+
+	switch (ar->ab->afc_dev_deployment) {
+	case ATH12K_AFC_DEPLOYMENT_INDOOR:
+		candidate_modes = indoor_modes;
+		num_candidate_modes = ARRAY_SIZE(indoor_modes);
+		break;
+	case ATH12K_AFC_DEPLOYMENT_OUTDOOR:
+		candidate_modes = outdoor_modes;
+		num_candidate_modes = ARRAY_SIZE(outdoor_modes);
+		break;
+	case ATH12K_AFC_DEPLOYMENT_UNKNOWN:
+	default:
+		candidate_modes = unknown_modes;
+		num_candidate_modes = ARRAY_SIZE(unknown_modes);
+		break;
+	}
+
+	for (i = 0; i < num_candidate_modes; i++) {
+		if (ath12k_mac_is_reg_6ghz_power_mode_supported
+						(ar, arvif,
+						 candidate_modes[i]))
+			return candidate_modes[i];
+	}
+
+	return candidate_modes[0];
+}
+
+/**
+ * ath12k_mac_get_6ghz_power_mode_decision - Derive effective 6 GHz mode result
+ * @ar: Radio instance
+ * @arvif: Link vif whose 6 GHz mode is being resolved
+ * @bss_conf: Current BSS configuration for the link vif
+ * @decision: Output structure filled with the derived result
+ *
+ * Resolve the effective 6 GHz power-mode state for STA or AP operation. The
+ * decision folds in local configuration, colocated STA-learned root AP mode
+ * and AFC state so both TPC programming and AP mode reporting stay aligned.
+ */
+static void
+ath12k_mac_get_6ghz_power_mode_decision(struct ath12k *ar,
+					struct ath12k_link_vif *arvif,
+					struct ieee80211_bss_conf *bss_conf,
+					struct ath12k_6ghz_pwr_mode_decision *decision)
 {
 	struct ath12k_vif *ahvif = arvif->ahvif;
+	enum ieee80211_ap_reg_power root_ap_power_type;
+	u8 repeater_ap_power_mode;
 	u8 reg_6g_power_mode;
+
+	memset(decision, 0, sizeof(*decision));
 
 	reg_6g_power_mode = bss_conf->power_type;
 	if (reg_6g_power_mode == IEEE80211_REG_UNSET_AP)
 		reg_6g_power_mode = IEEE80211_REG_LPI_AP;
 
-	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
-	    ar->afc.is_6ghz_afc_power_event_received)
-		reg_6g_power_mode = IEEE80211_REG_SP_AP;
+	decision->reg_6g_power_mode = reg_6g_power_mode;
+	decision->ap_reg_6g_power_mode =
+		ieee80211_mac_to_cfg_power_type(reg_6g_power_mode);
 
-	return reg_6g_power_mode;
+	/*
+	 * Standalone STA and repeater STA both learn the upstream/root AP
+	 * power type on the STA path. AFC keeps the STA-side TPC decision in
+	 * SP mode when the root link is operating with AFC-derived power.
+	 */
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
+		if (ar->afc.is_6ghz_afc_power_event_received)
+			decision->reg_6g_power_mode = IEEE80211_REG_SP_AP;
+		return;
+	}
+
+	if (ahvif->vdev_type != WMI_VDEV_TYPE_AP)
+		return;
+
+	/*
+	 * Local AFC has already put this AP in SP, so skip repeater STA-based
+	 * override.
+	 */
+	if (reg_6g_power_mode == IEEE80211_REG_SP_AP &&
+	    ar->afc.is_6ghz_afc_power_event_received)
+		return;
+
+	/* Root AP / standalone AP: no colocated STA means no repeater input. */
+	if (!ath12k_mac_get_colocated_sta_power_type(ar, arvif,
+						     &root_ap_power_type))
+		return;
+
+	/*
+	 * Repeater AP under an SP root AP: keep SP on the TPC side, but pick
+	 * a valid AP-visible subordinate mode instead of blindly exposing SP.
+	 */
+	if (root_ap_power_type == IEEE80211_REG_SP_AP) {
+		decision->reg_6g_power_mode = IEEE80211_REG_SP_AP;
+		decision->ap_repeater_sp_client =
+			!ar->afc.is_6ghz_afc_power_event_received;
+		repeater_ap_power_mode =
+			ath12k_mac_get_repeater_ap_power_mode_for_sp_root
+								(ar,
+								 arvif);
+		decision->ap_reg_6g_power_mode =
+			ieee80211_mac_to_cfg_power_type(repeater_ap_power_mode);
+		return;
+	}
+
+	/* Repeater AP mirrors the non-SP root AP mode learned by the STA. */
+	decision->reg_6g_power_mode = root_ap_power_type;
+	decision->ap_reg_6g_power_mode =
+		ieee80211_mac_to_cfg_power_type(root_ap_power_type);
+}
+
+static u8 ath12k_mac_get_reg_6ghz_power_mode(struct ath12k *ar,
+					     struct ath12k_link_vif *arvif,
+					     struct ieee80211_bss_conf *bss_conf)
+{
+	struct ath12k_6ghz_pwr_mode_decision decision;
+
+	ath12k_mac_get_6ghz_power_mode_decision(ar, arvif, bss_conf, &decision);
+
+	return decision.reg_6g_power_mode;
+}
+
+/**
+ * ath12k_mac_sync_repeater_ap_power_mode - Sync repeater AP mode from STA state
+ * @ar: Radio instance
+ * @wdev: Wireless device for the AP link
+ * @arvif: AP link vif to update
+ * @chandef: Current AP chandef used for validation
+ *
+ * After the colocated STA learns a new root AP 6 GHz power type, recompute the
+ * effective repeater AP mode, update the cached cfg80211 link state and notify
+ * userspace if the AP-visible power mode changed.
+ *
+ * The caller in ath12k_mac_bss_info_changed() uses the return value to decide
+ * whether it should fall back to the normal AP power-mode completion event
+ * path. Only %ATH12K_REPEATER_AP_SYNC_NOT_HANDLED allows that fallback.
+ * %ATH12K_REPEATER_AP_SYNC_HANDLED and %ATH12K_REPEATER_AP_SYNC_ERROR both
+ * suppress the fallback because the request belongs to the repeater-AP path.
+ * The caller in ath12k_mac_vdev_config_after_start() invokes this helper as a
+ * best-effort post-start synchronization and intentionally ignores the result.
+ *
+ * Return:
+ * * %ATH12K_REPEATER_AP_SYNC_NOT_HANDLED - The repeater-AP sync path does not
+ *   apply to this interface state and the caller should continue with the
+ *   normal AP flow.
+ * * %ATH12K_REPEATER_AP_SYNC_HANDLED - The repeater-AP sync path consumed the
+ *   request, including cases where the AP link state is not ready yet or the
+ *   AP-visible mode is already synchronized.
+ * * %ATH12K_REPEATER_AP_SYNC_ERROR - The repeater-AP sync path applies, but
+ *   the derived power-mode decision is invalid or cfg80211 rejects the update.
+ */
+static enum ath12k_repeater_ap_sync_result
+ath12k_mac_sync_repeater_ap_power_mode(struct ath12k *ar,
+				       struct wireless_dev *wdev,
+				       struct ath12k_link_vif *arvif,
+				       const struct cfg80211_chan_def *chandef)
+{
+	struct ath12k_6ghz_pwr_mode_decision decision;
+	struct ieee80211_bss_conf *bss_conf;
+	u8 link_id = arvif->link_id;
+	int ret;
+
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	if (!wdev || !chandef || !chandef->chan)
+		return ATH12K_REPEATER_AP_SYNC_NOT_HANDLED;
+
+	if (arvif->ahvif->vdev_type != WMI_VDEV_TYPE_AP ||
+	    link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
+		return ATH12K_REPEATER_AP_SYNC_NOT_HANDLED;
+
+	if (chandef->chan->band != NL80211_BAND_6GHZ)
+		return ATH12K_REPEATER_AP_SYNC_NOT_HANDLED;
+
+	/* Root AP / standalone AP: caller must keep the original AP path. */
+	if (!ath12k_mac_has_colocated_sta_link_vif(ar, arvif))
+		return ATH12K_REPEATER_AP_SYNC_NOT_HANDLED;
+
+	bss_conf = ath12k_mac_get_link_bss_conf(arvif);
+	/*
+	 * Repeater AP path is applicable, but the AP link state is not ready yet.
+	 * Suppress the normal AP fallback and retry on a later update.
+	 */
+	if (!bss_conf)
+		return ATH12K_REPEATER_AP_SYNC_HANDLED;
+
+	ath12k_mac_get_6ghz_power_mode_decision(ar, arvif, bss_conf, &decision);
+
+	/* Repeater sync applies, but the derived AP-visible mode is invalid. */
+	if (decision.ap_reg_6g_power_mode >= NL80211_REG_NUM_POWER_MODES) {
+		ath12k_warn(ar->ab,
+			    "invalid repeater AP cfg 6 GHz power mode vdev %u link %u mode %u\n",
+			    arvif->vdev_id, link_id,
+			    decision.ap_reg_6g_power_mode);
+		return ATH12K_REPEATER_AP_SYNC_ERROR;
+	}
+
+	/* AP-visible mode is already synchronized; no further action is needed. */
+	if (wdev->links[link_id].reg_6g_power_mode ==
+	    decision.ap_reg_6g_power_mode)
+		return ATH12K_REPEATER_AP_SYNC_HANDLED;
+
+	ret = cfg80211_update_chandef_6ghz_power_mode(wdev->netdev, link_id,
+						      decision.ap_reg_6g_power_mode);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed to sync repeater AP cfg 6 GHz power mode vdev %u link %u mode %u ret %d\n",
+			    arvif->vdev_id, link_id,
+			    decision.ap_reg_6g_power_mode, ret);
+		return ATH12K_REPEATER_AP_SYNC_ERROR;
+	}
+
+	bss_conf->power_type =
+		ieee80211_cfg_to_mac_power_type(decision.ap_reg_6g_power_mode);
+	ath12k_mac_send_pwr_mode_update(ar, wdev, link_id);
+
+	/* Repeater AP sync completed and userspace has been notified. */
+	return ATH12K_REPEATER_AP_SYNC_HANDLED;
 }
 
 static bool
@@ -8515,21 +8843,6 @@ ath12k_mac_fill_reg_tpc_eirp_pref_punctured(
 							reg_6g_power_mode);
 }
 
-static void ath12k_mac_fill_reg_tpc_client_sp(struct ath12k *ar,
-					      struct ath12k_link_vif *arvif,
-					      struct ieee80211_chanctx_conf *chanctx)
-{
-	ath12k_mac_fill_reg_tpc_info_with_psd_eirp_pwr_for_client_sp(ar, arvif,
-								     chanctx);
-}
-
-static void ath12k_mac_fill_reg_tpc_sp(struct ath12k *ar,
-				       struct ath12k_link_vif *arvif,
-				       struct ieee80211_chanctx_conf *chanctx)
-{
-	ath12k_mac_fill_reg_tpc_info_with_psd_eirp_pwr_for_sp(ar, arvif, chanctx);
-}
-
 /**
  * ath12k_mac_fill_reg_tpc - Populate transmit power control (TPC) info
  *                           based on regulatory and firmware capabilities
@@ -8566,8 +8879,8 @@ static void ath12k_mac_fill_reg_tpc(struct ath12k *ar, struct wireless_dev *wdev
 				    struct ieee80211_chanctx_conf *chanctx)
 {
 	struct ath12k_vif *ahvif = arvif->ahvif;
+	struct ath12k_6ghz_pwr_mode_decision decision;
 	u8 reg_6g_power_mode;
-	bool ap_repeater_sp_client = false;
 	struct ieee80211_bss_conf *bss_conf = ath12k_get_link_bss_conf(arvif);
 
 	if (!bss_conf) {
@@ -8575,30 +8888,28 @@ static void ath12k_mac_fill_reg_tpc(struct ath12k *ar, struct wireless_dev *wdev
 		return;
 	}
 
-	reg_6g_power_mode = ath12k_mac_get_reg_6ghz_power_mode(ar, arvif, bss_conf);
-
-	if (ahvif->vdev_type == WMI_VDEV_TYPE_AP &&
-	    !ar->afc.is_6ghz_afc_power_event_received &&
-	    ath12k_mac_has_colocated_sp_link_vif(ar, arvif,
-						 WMI_VDEV_TYPE_STA)) {
-		ap_repeater_sp_client = true;
-		if (reg_6g_power_mode != IEEE80211_REG_SP_AP)
-			reg_6g_power_mode = IEEE80211_REG_SP_AP;
-	}
+	ath12k_mac_get_6ghz_power_mode_decision(ar, arvif, bss_conf, &decision);
+	reg_6g_power_mode = decision.reg_6g_power_mode;
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_MAC, " reg_6g_power_mode %d\n", reg_6g_power_mode);
 
 	if (test_bit(WMI_TLV_SERVICE_BOTH_PSD_EIRP_FOR_AP_SP_CLIENT_SP_SUPPORT,
 		     ar->ab->wmi_ab.svc_map) &&
 		     (reg_6g_power_mode == IEEE80211_REG_SP_AP)) {
-		if ((ahvif->vdev_type == WMI_VDEV_TYPE_AP && ap_repeater_sp_client) ||
+		if ((ahvif->vdev_type == WMI_VDEV_TYPE_AP &&
+		     decision.ap_repeater_sp_client) ||
 		    (ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
 		    !ar->afc.is_6ghz_afc_power_event_received)) {
-			ath12k_mac_fill_reg_tpc_client_sp(ar, arvif, chanctx);
+			ath12k_mac_fill_reg_tpc_info_with_psd_eirp_pwr_for_client_sp
+								(ar,
+								 arvif,
+								 chanctx);
 		} else if (ahvif->vdev_type == WMI_VDEV_TYPE_AP ||
 			   (ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
 			    ar->afc.is_6ghz_afc_power_event_received)) {
-			ath12k_mac_fill_reg_tpc_sp(ar, arvif, chanctx);
+			ath12k_mac_fill_reg_tpc_info_with_psd_eirp_pwr_for_sp
+									(ar, arvif,
+									chanctx);
 		}
 	} else if (test_bit(WMI_TLV_SERVICE_EIRP_PREFERRED_SUPPORT,
 			    ar->ab->wmi_ab.svc_map)) {
@@ -8732,13 +9043,30 @@ void ath12k_mac_bss_info_changed(struct ath12k *ar,
 			ret = ath12k_wmi_send_vdev_set_tpc_power(ar,
 								 arvif->vdev_id,
 								 &arvif->reg_tpc_info);
-			if (changed & BSS_CHANGED_6GHZ_POWER_MODE &&
-			    ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
-				if (ret)
-					ath12k_warn(ar->ab, "Failed to set 6GHZ power mode\n");
-				else
+			if (!ret && ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
+				enum ath12k_repeater_ap_sync_result sync_result;
+
+				/*
+				 * Repeater AP: sync AP-visible mode from the
+				 * co-located STA. Root AP / standalone AP: keep
+				 * the original completion event path for
+				 * hostapd-triggered power-mode changes. Only
+				 * NOT_HANDLED falls back to the normal AP
+				 * notification path. HANDLED and ERROR both
+				 * stay within repeater-AP flow.
+				 */
+				sync_result = ath12k_mac_sync_repeater_ap_power_mode
+									(ar,
+									 wdev,
+									 arvif,
+									 &def);
+				if (sync_result == ATH12K_REPEATER_AP_SYNC_NOT_HANDLED &&
+				    changed & BSS_CHANGED_6GHZ_POWER_MODE)
 					ath12k_mac_send_pwr_mode_update(ar, wdev, link_id);
-			}
+			} else if (ret &&
+				   changed & BSS_CHANGED_6GHZ_POWER_MODE &&
+				   ahvif->vdev_type == WMI_VDEV_TYPE_AP)
+				ath12k_warn(ar->ab, "Failed to set 6GHZ power mode\n");
 		} else {
 			ath12k_warn(ar->ab, "Set 6GHZ power mode/TPC not applicable\n");
 		}
@@ -20219,7 +20547,12 @@ ath12k_mac_vdev_config_after_start(struct ath12k_link_vif *arvif,
 		}
 
 		ath12k_mac_fill_reg_tpc(ar, wdev, arvif, chanctx);
-		ath12k_wmi_send_vdev_set_tpc_power(ar, arvif->vdev_id, &arvif->reg_tpc_info);
+		ret = ath12k_wmi_send_vdev_set_tpc_power(ar, arvif->vdev_id,
+							 &arvif->reg_tpc_info);
+		if (!ret && ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
+			ath12k_mac_sync_repeater_ap_power_mode(ar, wdev, arvif,
+							       chandef);
+		}
 	}
 
 	/* Enable CAC Running Flag in the driver by checking all sub-channel's DFS
