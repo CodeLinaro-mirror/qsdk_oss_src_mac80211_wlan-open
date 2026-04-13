@@ -3656,6 +3656,21 @@ err:
 }
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+static inline void
+ath12k_dp_tx_ppeds_update_peer_basic_stats(struct ath12k_dp_peer *dp_peer,
+					   u32 status, int link_id)
+{
+	/* Ring ID and MSDU len are not available for PPEDS completions */
+	DP_PEER_STATS_INC(dp_peer, tx, ATH12K_DP_PPEDS_RING_ID, comp_pkt.packets,
+			  link_id, 1);
+	if (status == HAL_WBM_TQM_REL_REASON_FRAME_ACKED)
+		DP_PEER_STATS_INC(dp_peer, tx, ATH12K_DP_PPEDS_RING_ID,
+				  tx_success.packets, link_id, 1);
+	else
+		DP_PEER_STATS_INC(dp_peer, tx, ATH12K_DP_PPEDS_RING_ID,
+				  tx_failed, link_id, 1);
+}
+
 void ath12k_ppeds_tx_update_stats(struct ath12k *ar, int skb_len,
 				  struct hal_wbm_completion_ring_tx *tx_status)
 {
@@ -3668,7 +3683,7 @@ void ath12k_ppeds_tx_update_stats(struct ath12k *ar, int skb_len,
 	bool tx_drop = false;
 	bool tx_status_default = false;
 	struct ieee80211_tx_info info;
-	u8 reason, link_id;
+	u8 reason, link_id = 0;
 	int ring_id = 0;
 	int vow_tid = 0;
 
@@ -3719,11 +3734,14 @@ void ath12k_ppeds_tx_update_stats(struct ath12k *ar, int skb_len,
 	rcu_read_lock();
 
 	peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev, ts.peer_id);
-	if (unlikely(!peer || !ath12k_dp_link_peer_get_sta(peer) ||
+	if (unlikely(!peer || !peer->dp_peer || !ath12k_dp_link_peer_get_sta(peer) ||
 		     !ath12k_dp_link_peer_get_vif(peer))) {
 		rcu_read_unlock();
 		return;
 	}
+	link_id = ath12k_dp_peer_get_stats_link_id(ab, peer->dp_peer, ts.hw_link_id);
+	/* Update peer TX statistics for PPE DS offload path */
+	ath12k_dp_tx_ppeds_update_peer_basic_stats(peer->dp_peer, ts.status, link_id);
 
 	if (ath12k_dp_stats_enabled(dp_pdev)) {
 		if (ath12k_tid_stats_enabled(dp_pdev)) {
@@ -3758,8 +3776,6 @@ void ath12k_ppeds_tx_update_stats(struct ath12k *ar, int skb_len,
 		rcu_read_unlock();
 		return;
 	}
-
-	link_id = ath12k_dp_peer_get_stats_link_id(ab, peer->dp_peer, ts.hw_link_id);
 
 #ifdef CPTCFG_MAC80211_DS_SUPPORT
 	ieee80211_ppeds_tx_update_stats(ar->ah->hw, ath12k_dp_link_peer_get_sta(peer),

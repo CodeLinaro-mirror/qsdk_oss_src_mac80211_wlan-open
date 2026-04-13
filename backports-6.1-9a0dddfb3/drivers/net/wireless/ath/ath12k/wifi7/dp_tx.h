@@ -18,6 +18,10 @@ struct ath12k_dp_link_vif;
 
 int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id,
 					  int budget);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+/* Ring id to account stats for TX completions in PPE DS */
+#define ATH12K_DP_PPEDS_RING_ID DP_TCL_PPEDS_RING_IDX
+#endif
 u32 ath12k_wifi7_dp_tx_get_vdev_bank_config(struct ath12k_base *ab,
 					    struct ath12k_vif *ahvif,
 					    u8 link_id,
