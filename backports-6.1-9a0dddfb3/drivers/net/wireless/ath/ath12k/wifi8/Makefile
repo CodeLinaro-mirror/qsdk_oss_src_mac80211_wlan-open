@@ -28,3 +28,5 @@ ath12k_wifi8-y += core.o \
 		  dp_mon2.o \
 		  umac_reset.o \
 		  dp_telemetry.o
+
+ath12k_wifi8-$(CPTCFG_QCN_EXTN) += qcn_extns/mgmt_rx_extn.o
