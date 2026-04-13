@@ -17977,9 +17977,15 @@ int ath12k_wmi_simulate_radar(struct ath12k *ar, u32 radar_params)
 	u32 dfs_args[DFS_MAX_TEST_ARGS];
 	struct wmi_unit_test_cmd wmi_ut;
 	bool arvif_found = false;
+	bool sta_dfs_en = ath12k_ar_to_hw(ar)->wiphy->sta_dfs_en;
 
 	list_for_each_entry(arvif, &ar->arvifs, list) {
-		if (arvif->is_started && arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
+		if (!arvif->is_started)
+			continue;
+
+		if ((arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP) ||
+		    ((arvif->ahvif->vdev_type == WMI_VDEV_TYPE_STA) &&
+		     sta_dfs_en)) {
 			arvif_found = true;
 			break;
 		}
