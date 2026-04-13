@@ -192,6 +192,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.ring_dir = HAL_SRNG_DIR_DST,
 		.max_size = HAL_SW2WBM_ASE_STATUS_RING_BASE_MSB_RING_SIZE,
 		.name = "ASE_STATUS",
+		.reg_writer_en = true,
 	},
 
 	/* TCL2SW Exception Ring */
@@ -327,6 +328,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.ring_dir = HAL_SRNG_DIR_SRC,
 		.max_size = HAL_RXDMA_RING_MAX_SIZE_BE,
 		.name = "Rxdma_monitor_buf",
+		.reg_writer_en = true,
 	},
 	[HAL_RXDMA_MONITOR_STATUS] = { 0, },
 	[HAL_RXDMA_MONITOR_DESC] = { 0, },
@@ -370,6 +372,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.ring_dir = HAL_SRNG_DIR_DST,
 		.max_size = HAL_RXDMA_RING_MAX_SIZE_BE,
 		.name = "Rxdma_monitor_dst",
+		.reg_writer_en = true,
 	},
 	[HAL_TX_MONITOR_DST] = {
 		.start_ring_id = HAL_SRNG_RING_ID_WMAC1_TXMON2SW0_BUF0,
@@ -1521,6 +1524,59 @@ static void ath12k_wifi8_hal_deinit_qcn9625(struct ath12k_hal *hal)
 	hal->arch_data = NULL;
 }
 
+static void ath12k_wifi8_hal_set_reg_writer_hptp_addr(struct ath12k_base *ab,
+						      struct hal_srng *srng,
+						      int idx,
+						      enum hal_ring_type ring_type)
+{
+	u32 offset = 0, address;
+
+	switch (ring_type) {
+	case HAL_RXDMA_MONITOR_BUF:
+		offset = HAL_REG_WRITER_RXMON_SW2MON_BUF_RING;
+
+		break;
+
+	case HAL_RXDMA_MONITOR_DST:
+		offset = HAL_REG_WRITER_RXMON_M0_MON2SW_DEST_RING;
+		break;
+
+	case HAL_TX_MONITOR_BUF:
+		offset = HAL_REG_WRITER_TXMON_SW2MON_BUF_RING;
+		break;
+
+	case HAL_TX_MONITOR_DST:
+		offset = HAL_REG_WRITER_TXMON_M0_MON2SW_DEST_RING;
+		break;
+
+	case HAL_ASE_STATUS_RING:
+		offset = HAL_REG_WRITER_RXOLE2SW_ASE_DEST_RING;
+		break;
+
+	default:
+		ath12k_err(ab, "Invalid ring_typ :%d ", ring_type);
+			break;
+	};
+
+	address = HAL_REG_WRITER_VALUE_BASE_ADDR + offset + HAL_REG_WRITER_VALUE_OFFSET;
+
+	if (srng->ring_dir == HAL_SRNG_DIR_SRC) {
+		srng->u.src_ring.hp_addr = (u32 *)(uintptr_t)
+			(address);
+
+		ath12k_hif_write32(ab,
+				   address,
+				   0);
+	} else {
+		srng->u.dst_ring.tp_addr = (u32 *)(uintptr_t)
+			(address);
+
+		ath12k_hif_write32(ab,
+				   address,
+				   0);
+	}
+}
+
 const struct hal_ops hal_qcn9625_ops = {
 	.hal_init = ath12k_wifi8_hal_init_qcn9625,
 	.hal_deinit = ath12k_wifi8_hal_deinit_qcn9625,
@@ -1587,4 +1643,5 @@ const struct hal_ops hal_qcn9625_ops = {
 	.hal_mon_ops_init = ath12k_wifi8_hal_mon_ops_init,
 	.hal_srng_idx_update_addr = ath12k_wifi8_hal_srng_idx_update_addr,
 	.hal_ppeds_reo2ppe_cc_config = ath12k_wifi8_hal_ppeds_reo2ppe_cc_config,
+	.hal_set_reg_writer_hptp_addr = ath12k_wifi8_hal_set_reg_writer_hptp_addr,
 };

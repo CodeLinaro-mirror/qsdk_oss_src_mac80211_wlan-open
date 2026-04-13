@@ -2623,6 +2623,14 @@ int ath12k_dp_tx_htt_srng_setup(struct ath12k_base *ab, u32 ring_id,
 	hp_addr = ath12k_hal_srng_get_hp_addr(ab, srng);
 	tp_addr = ath12k_hal_srng_get_tp_addr(ab, srng);
 
+	if ((srng->flags & HAL_SRNG_FLAGS_REG_WRITE_EN)) {
+		if (srng->ring_dir == HAL_SRNG_DIR_SRC)
+			hp_addr = 0;
+
+		if (srng->ring_dir == HAL_SRNG_DIR_DST)
+			tp_addr = 0;
+	}
+
 	ret = ath12k_dp_tx_get_ring_id_type(ab, mac_id, ring_id,
 					    ring_type, &htt_ring_type,
 					    &htt_ring_id);
