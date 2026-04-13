@@ -104,6 +104,18 @@ ath12k_dp_advance_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
 	return (dp_pdev->dp_stats_mask & DP_ENABLE_ADVANCE_STATS);
 }
 
+static inline bool
+ath12k_dp_vow_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+{
+	return (dp_pdev->dp_stats_mask & DP_ENABLE_VOW_STATS);
+}
+
+static inline bool
+ath12k_dp_delay_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+{
+	return (dp_pdev->dp_stats_mask & DP_ENABLE_DELAY_STATS);
+}
+
 static inline u8 ath12k_debugfs_is_qos_stats_enabled(struct ath12k *ar)
 {
 	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
