@@ -3671,6 +3671,48 @@ ath12k_dp_tx_ppeds_update_peer_basic_stats(struct ath12k_dp_peer *dp_peer,
 				  tx_failed, link_id, 1);
 }
 
+static inline void
+ath12k_dp_tx_ppeds_update_peer_debug_stats(struct ath12k_dp_peer *dp_peer,
+					   struct hal_tx_status *ts,
+					   u8 link_id)
+{
+	/* Ring ID is ATH12K_DP_PPEDS_RING_ID for PPEDS completions */
+	if (ts->buf_rel_source != HAL_WBM_REL_SRC_MODULE_TQM) {
+		DP_PEER_STATS_INC(dp_peer, tx, ATH12K_DP_PPEDS_RING_ID,
+				  release_src_not_tqm, link_id, 1);
+		DP_PEER_STATS_INC(dp_peer, tx, ATH12K_DP_PPEDS_RING_ID,
+				  wbm_rel_reason[ts->status], link_id, 1);
+		return;
+	}
+
+	if (ts->status == HAL_WBM_TQM_REL_REASON_FRAME_ACKED) {
+		DP_PEER_STATS_COND_INC(dp_peer, tx, ATH12K_DP_PPEDS_RING_ID,
+				       retry_count, link_id,
+				       ts->transmit_cnt > 1, 1);
+		DP_PEER_STATS_COND_INC(dp_peer, tx, ATH12K_DP_PPEDS_RING_ID,
+				       total_msdu_retries, link_id,
+				       ts->transmit_cnt > 1,
+				       ts->transmit_cnt - 1);
+		DP_PEER_STATS_COND_INC(dp_peer, tx, ATH12K_DP_PPEDS_RING_ID,
+				       multiple_retry_count, link_id,
+				       ts->transmit_cnt > 2, 1);
+		DP_PEER_STATS_COND_INC(dp_peer, tx, ATH12K_DP_PPEDS_RING_ID,
+				       ofdma, link_id, ts->ofdma, 1);
+		DP_PEER_STATS_COND_INC(dp_peer, tx, ATH12K_DP_PPEDS_RING_ID,
+				       amsdu_cnt, link_id,
+				       ts->msdu_part_of_amsdu, 1);
+		DP_PEER_STATS_COND_INC(dp_peer, tx, ATH12K_DP_PPEDS_RING_ID,
+				       non_amsdu_cnt, link_id,
+				       !ts->msdu_part_of_amsdu, 1);
+	}
+
+	if (ts->status < HAL_WBM_TQM_REL_REASON_MAX) {
+		DP_PEER_STATS_INC(dp_peer, tx, ATH12K_DP_PPEDS_RING_ID,
+				  tqm_rel_reason[ts->status],
+				  link_id, 1);
+	}
+}
+
 void ath12k_ppeds_tx_update_stats(struct ath12k *ar, int skb_len,
 				  struct hal_wbm_completion_ring_tx *tx_status)
 {
@@ -3743,8 +3785,9 @@ void ath12k_ppeds_tx_update_stats(struct ath12k *ar, int skb_len,
 	/* Update peer TX statistics for PPE DS offload path */
 	ath12k_dp_tx_ppeds_update_peer_basic_stats(peer->dp_peer, ts.status, link_id);
 
-	if (ath12k_dp_stats_enabled(dp_pdev)) {
-		if (ath12k_tid_stats_enabled(dp_pdev)) {
+	if (unlikely(ath12k_dp_stats_enabled(dp_pdev))) {
+		ath12k_dp_tx_ppeds_update_peer_debug_stats(peer->dp_peer, &ts, link_id);
+		if (unlikely(ath12k_tid_stats_enabled(dp_pdev))) {
 			ahvif = ath12k_vif_to_ahvif(ath12k_dp_link_peer_get_vif(peer));
 			if (tx_drop) {
 				ath12k_tid_tx_drop_stats(ahvif, ts.tid, skb_len,
