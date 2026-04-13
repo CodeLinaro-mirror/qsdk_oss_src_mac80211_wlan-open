@@ -6399,6 +6399,18 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 			 "mac remove link interface (vdev %d link id %d)",
 			arvif->vdev_id, arvif->link_id);
 
+	/* Ensure the vdev is stopped before deleting peers/vdev to avoid
+	 * firmware asserts and inconsistent driver state.
+	 */
+	if (arvif->is_started) {
+		ret = ath12k_mac_vdev_stop(arvif);
+		if (ret)
+			ath12k_warn(ar->ab, "failed to stop vdev %d: %d\n",
+				    arvif->vdev_id, ret);
+		else
+			arvif->is_started = false;
+	}
+
 	if (test_bit(WMI_TLV_SERVICE_11D_OFFLOAD, ar->ab->wmi_ab.svc_map) &&
 	    ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
 	    arvif->vdev_subtype == WMI_VDEV_SUBTYPE_NONE)
