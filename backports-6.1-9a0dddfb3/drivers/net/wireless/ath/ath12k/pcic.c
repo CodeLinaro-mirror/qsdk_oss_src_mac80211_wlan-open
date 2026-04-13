@@ -1478,6 +1478,11 @@ static irqreturn_t ath12k_pcic_mgmt_interrupt_handler(int irq, void *arg)
 
 	ath12k_mgmt_irq_grp_disable(irq_grp);
 
+#ifdef CPTCFG_QCN_EXTN
+	if (!ath12k_pcic_mgmt_interrupt_handler_extn(irq_grp))
+		return IRQ_HANDLED;
+#endif /* CPTCFG_QCN_EXTN */
+
 	queue_work(system_bh_wq, &irq_grp->intr_wq);
 
 	return IRQ_HANDLED;
@@ -1488,6 +1493,11 @@ static irqreturn_t ath12k_pcic_mgmt_interrupt_handler(int irq, void *arg)
 	struct ath12k_mgmt_irq_grp *irq_grp = arg;
 
 	ath12k_mgmt_irq_grp_disable(irq_grp);
+
+#ifdef CPTCFG_QCN_EXTN
+	if (!ath12k_pcic_mgmt_interrupt_handler_extn(irq_grp))
+		return IRQ_HANDLED;
+#endif /* CPTCFG_QCN_EXTN */
 
 	tasklet_schedule(&irq_grp->intr_tq);
 

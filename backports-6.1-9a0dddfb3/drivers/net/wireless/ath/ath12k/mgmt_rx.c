@@ -85,6 +85,10 @@ static void ath12k_mgmt_srng_msi_setup(struct ath12k_base *ab,
 	case HAL_REO_EXCEPTION_MGMT:
 		break;
 	default:
+#ifdef CPTCFG_QCN_EXTN
+		if (!ath12k_mgmt_srng_type_valid_extn(ab, type))
+			break;
+#endif
 		ath12k_dbg(ab, ATH12K_DBG_PCI,
 			   "Ring (type=%u) not part of mgmt_group for msi setup", type);
 		return;
@@ -136,14 +140,16 @@ int ath12k_mgmt_srng_setup(struct ath12k_base *ab, struct mgmt_srng *ring,
 		/* Allocate the reo dst rings from cacheable memory */
 		if (type == HAL_REO_DST_MGMT)
 			cached = true;
-		else
-			cached = false;
 	}
 #else
 	cached = true;
 #endif
 	if (ath12k_dp_umac_reset_in_progress(ab))
 		goto skip_dma_alloc;
+
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_mgmt_srng_setup_extn(ab, type, &cached, &params);
+#endif
 
 	if (cached) {
 		ring->vaddr_unaligned = kzalloc(ring->size, GFP_KERNEL);
@@ -180,6 +186,10 @@ skip_dma_alloc:
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_OTHER;
 		break;
 	default:
+#ifdef CPTCFG_QCN_EXTN
+		if (!ath12k_mgmt_srng_type_valid_extn(ab, type))
+			break;
+#endif
 		ath12k_warn(ab, "Not a valid ring type for MGMT :%d", type);
 		return -EINVAL;
 	}

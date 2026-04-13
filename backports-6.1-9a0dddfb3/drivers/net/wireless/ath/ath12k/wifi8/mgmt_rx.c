@@ -131,9 +131,12 @@ out:
 	spin_unlock_bh(&srng->lock);
 }
 
-static int ath12k_wifi8_mgmt_rx_reap_packets(struct ath12k_base *ab,
-					     struct mgmt_srng *ring,
-					     struct sk_buff_head *mmpdu_list)
+#ifndef CPTCFG_QCN_EXTN
+static
+#endif /* !CPTCFG_QCN_EXTN */
+int ath12k_wifi8_mgmt_rx_reap_packets(struct ath12k_base *ab,
+				      struct mgmt_srng *ring,
+				      struct sk_buff_head *mmpdu_list)
 {
 	struct ath12k_mgmt *mgmt = ab->mgmt;
 	struct ath12k_mgmt_wifi8 *mgmt_wifi8 = ath12k_get_mgmt_wifi8(mgmt);
@@ -676,11 +679,22 @@ static int ath12k_wifi8_mgmt_rx_process_mmpdu(struct ath12k_mgmt *mgmt,
 	return 0;
 }
 
+#ifndef CPTCFG_QCN_EXTN
 static void
 ath12k_wifi8_mgmt_rx_deliver_mmpdu(struct ath12k_mgmt *mgmt, struct ath12k *partner_ar,
 				   struct sk_buff *mmpdu,
 				   struct ieee80211_rx_status *status,
 				   enum ath12k_mgmt_srng_pkt_type pkt_type)
+#else /* !CPTCFG_QCN_EXTN */
+/* Note: @pkt_type supports both &enum ath12k_mgmt_srng_pkt_type and
+ * &enum ath12k_mgmt_srng_pkt_type_extn.
+ */
+void ath12k_wifi8_mgmt_rx_deliver_mmpdu(struct ath12k_mgmt *mgmt,
+					struct ath12k *partner_ar,
+					struct sk_buff *mmpdu,
+					struct ieee80211_rx_status *status,
+					u32 pkt_type)
+#endif /* !CPTCFG_QCN_EXTN */
 {
 	struct ieee80211_hw *hw = ath12k_ar_to_hw(partner_ar);
 	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
@@ -703,7 +717,12 @@ ath12k_wifi8_mgmt_rx_deliver_mmpdu(struct ath12k_mgmt *mgmt, struct ath12k *part
 	partner_mgmt = partner_ar->ab->mgmt ? partner_ar->ab->mgmt : mgmt;
 
 	mgmt_srng_stats = &partner_mgmt->srng_stats;
-	mgmt_srng_stats->rx_pkts[frm_stype]++;
+
+#ifdef CPTCFG_QCN_EXTN
+	/* Stats extension */
+	if (ath12k_wifi8_mgmt_rx_deliver_mmpdu_extn(mgmt, partner_ar, mmpdu, pkt_type))
+#endif
+		mgmt_srng_stats->rx_pkts[frm_stype]++;
 
 	rx_status = IEEE80211_SKB_RXCB(mmpdu);
 	*rx_status = *status;
@@ -731,10 +750,19 @@ static void ath12k_wifi8_mgmt_rx_process_err_mmpdu(struct ath12k_mgmt *mgmt,
 	dev_kfree_skb_any(mmpdu);
 }
 
+#ifndef CPTCFG_QCN_EXTN
 static void
 ath12k_wifi8_mgmt_rx_process_packets(struct ath12k_mgmt *mgmt,
 				     struct sk_buff_head *mmpdu_list,
 				     enum ath12k_mgmt_srng_pkt_type pkt_type)
+#else /* !CPTCFG_QCN_EXTN */
+/* Note: @pkt_type supports both &enum ath12k_mgmt_srng_pkt_type and
+ * &enum ath12k_mgmt_srng_pkt_type_extn.
+ */
+void ath12k_wifi8_mgmt_rx_process_packets(struct ath12k_mgmt *mgmt,
+					  struct sk_buff_head *mmpdu_list,
+					  u32 pkt_type)
+#endif /* !CPTCFG_QCN_EXTN */
 {
 	struct ieee80211_rx_status rx_status = {0};
 	struct sk_buff *mmpdu;
@@ -1091,6 +1119,15 @@ int ath12k_wifi8_mgmt_rx_ring_setup(struct ath12k_base *ab)
 	if (!ath12k_dp_umac_reset_in_progress(ab))
 		ath12k_wifi8_mgmt_rx_refill_ring_init(ab);
 
+#ifdef CPTCFG_QCN_EXTN
+	/* Mgmt Rx High-priority ring */
+	ret = ath12k_wifi8_mgmt_rx_ring_setup_extn(ab);
+	if (ret) {
+		ath12k_err(ab, "Failed to set up additional mgmt rings: %d", ret);
+		return ret;
+	}
+#endif
+
 	return 0;
 
 err_srng_cleanup:
@@ -1103,6 +1140,9 @@ static void ath12k_wifi8_mgmt_rx_ring_free(struct ath12k_base *ab)
 	struct ath12k_mgmt *mgmt = ab->mgmt;
 	struct ath12k_mgmt_wifi8 *mgmt_wifi8 = ath12k_get_mgmt_wifi8(mgmt);
 
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_wifi8_mgmt_rx_ring_free_extn(ab);
+#endif
 	ath12k_mgmt_srng_cleanup(ab, &mgmt_wifi8->wbm_refill_ring);
 	ath12k_mgmt_srng_cleanup(ab, &mgmt_wifi8->wbm_idle_buf_ring);
 	ath12k_mgmt_srng_cleanup(ab, &mgmt_wifi8->reo_dst_rx_err_ring);
@@ -1288,6 +1328,10 @@ ath12k_wifi8_mgmt_dump_ring_stats(struct ath12k_mgmt *mgmt, char *buf, int size)
 						  mgmt_wifi8->wbm_idle_buf_ring.ring_id,
 						  buf + len, size - len);
 
+#ifdef CPTCFG_QCN_EXTN
+	len = ath12k_wifi8_mgmt_dump_ring_stats_extn(mgmt, buf, len, size);
+#endif
+
 	return len;
 }
 
@@ -1343,11 +1387,22 @@ struct ath12k_mgmt *ath12k_wifi8_mgmt_init(struct ath12k_base *ab)
 	mgmt->irq_grp = irq_grp;
 	mgmt->num_irq_grp = 1;
 
+#ifdef CPTCFG_QCN_EXTN
+	if (ath12k_wifi8_mgmt_init_extn(mgmt)) {
+		kfree(mgmt->irq_grp);
+		kfree(mgmt);
+		return NULL;
+	}
+#endif
+
 	return mgmt;
 }
 
 void ath12k_wifi8_mgmt_deinit(struct ath12k_mgmt *mgmt)
 {
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_wifi8_mgmt_deinit_extn(mgmt);
+#endif
 	kfree(mgmt->irq_grp);
 	kfree(mgmt);
 }

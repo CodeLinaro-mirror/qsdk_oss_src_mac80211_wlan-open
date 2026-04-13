@@ -7792,6 +7792,10 @@ static ssize_t ath12k_debugfs_dump_device_mgmt_srng_stats(struct file *file,
 		len += scnprintf(buf + len, size - len, "  %s: %u\n",
 				 frm_stype[i], device_stats->rx_pkts[i]);
 
+#ifdef CPTCFG_QCN_EXTN
+	len = ath12k_debugfs_dump_device_mgmt_srng_stats_extn(ab, buf, len, size);
+#endif
+
 	len += scnprintf(buf + len, size - len, "Invalid push reason packets: %u\n",
 			 device_stats->invalid_push_pkts);
 
