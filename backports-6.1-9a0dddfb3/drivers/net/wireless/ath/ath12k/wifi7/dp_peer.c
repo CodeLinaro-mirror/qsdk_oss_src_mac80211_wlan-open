@@ -124,6 +124,12 @@ int ath12k_wifi7_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 	dp_peer->sec_type = HAL_ENCRYPT_TYPE_OPEN;
 	dp_peer->sec_type_grp = HAL_ENCRYPT_TYPE_OPEN;
 
+	memset(dp_peer->l2h_link_map, ATH12K_DP_LOGICAL_LINK_ID_INVALID,
+	       sizeof(dp_peer->l2h_link_map));
+
+	memset(dp_peer->hw_links, ATH12K_DP_HW_LINK_ID_INVALID,
+	       sizeof(dp_peer->hw_links));
+
 	/* cache net dev here and reuse it during process rx */
 	wdev = ieee80211_vif_to_wdev(vif);
 	if (wdev)

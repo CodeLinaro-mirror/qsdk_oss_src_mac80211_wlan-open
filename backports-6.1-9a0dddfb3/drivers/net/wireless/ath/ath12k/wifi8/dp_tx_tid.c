@@ -147,8 +147,8 @@ u32 ath12k_wifi8_dp_tx_get_he_header_length(struct ath12k_dp_hw_group *dp_hw_grp
 		return 0;
 
 	rcu_read_lock();
-	for (i = 0; i < ATH12K_NUM_MAX_LINKS; i++) {
-		link_peer = rcu_dereference(peer->link_peers[i]);
+	for (i = 0; i < ATH12K_DP_PEER_MAX_MLO_LINKS; i++) {
+		link_peer = ath12k_dp_link_peer_find_by_hw_link_id(peer, i);
 		if (link_peer)
 			break;
 	}
@@ -241,13 +241,15 @@ int ath12k_tx_send_mpduq_init(struct ath12k_dp_hw_group *dp_hw_grp,
 		assoc_link_id = ath12k_dp_peer_get_sta(peer)->mlo ?
 				ahsta->assoc_link_id :
 				ahsta->deflink.link_id;
-		ti.assoc_link_id = ath12k_dp_get_hw_link_id(peer, assoc_link_id);
+		ti.assoc_link_id =
+			ath12k_dp_peer_convert_logical_to_hw_link_id(peer,
+								     assoc_link_id);
 		if (ti.assoc_link_id == ATH12K_INVALID_HW_LINKID) {
 			rcu_read_unlock();
 			return -EINVAL;
 		}
-		for (i = 0; i < ATH12K_NUM_MAX_LINKS; i++) {
-			link_peer = rcu_dereference(peer->link_peers[i]);
+		for (i = 0; i < ATH12K_DP_PEER_MAX_MLO_LINKS; i++) {
+			link_peer = ath12k_dp_link_peer_find_by_hw_link_id(peer, i);
 			if (!link_peer)
 				continue;
 

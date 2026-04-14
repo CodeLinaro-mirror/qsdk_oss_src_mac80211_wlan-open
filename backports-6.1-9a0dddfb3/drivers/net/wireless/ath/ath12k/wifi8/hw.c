@@ -134,7 +134,9 @@ ath12k_dp_peer_migration_qcn9625(struct ath12k_link_vif *arvif,
 				old_arvif->primary_sta_link = false;
 			}
 
-			old_peer = rcu_dereference(ml_peer->link_peers[old_link_id]);
+			old_peer =
+				ath12k_dp_link_peer_find_by_logical_link_id(ml_peer,
+									    old_link_id);
 			if (old_peer)
 				old_peer->primary_link = false;
 		}
@@ -146,7 +148,9 @@ ath12k_dp_peer_migration_qcn9625(struct ath12k_link_vif *arvif,
 		arsta = rcu_dereference(ahsta->link[peer_node->pri_link_id]);
 		arsta->arvif->primary_sta_link = true;
 
-		new_peer = rcu_dereference(ml_peer->link_peers[peer_node->pri_link_id]);
+		new_peer =
+		ath12k_dp_link_peer_find_by_logical_link_id(ml_peer,
+							    peer_node->pri_link_id);
 		if (new_peer)
 			new_peer->primary_link = true;
 

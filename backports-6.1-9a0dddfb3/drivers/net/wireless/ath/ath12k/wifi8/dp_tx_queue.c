@@ -196,7 +196,9 @@ int ath12k_tx_classify_info_alloc(struct ath12k_dp_hw_group *dp_hw_grp,
 			assoc_link_id = ath12k_dp_peer_get_sta(peer)->mlo ?
 					ahsta->assoc_link_id :
 					ahsta->deflink.link_id;
-			ti.assoc_link_id = ath12k_dp_get_hw_link_id(peer, assoc_link_id);
+			ti.assoc_link_id =
+			ath12k_dp_peer_convert_logical_to_hw_link_id(peer,
+								     assoc_link_id);
 			if (ti.assoc_link_id == ATH12K_INVALID_HW_LINKID) {
 				rcu_read_unlock();
 				return -EINVAL;

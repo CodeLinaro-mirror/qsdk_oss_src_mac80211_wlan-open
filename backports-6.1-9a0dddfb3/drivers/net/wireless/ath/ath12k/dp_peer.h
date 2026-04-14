@@ -10,6 +10,10 @@
 #include "event.h"
 #include "dp_rx.h"
 #include "dp_stats.h"
+
+#define ATH12K_DP_HW_LINK_ID_INVALID           0xFF
+#define ATH12K_DP_LOGICAL_LINK_ID_INVALID      0xFF
+
 #define ATH12K_DP_PEER_ID_INVALID              0xFFFF
 #define ATH12K_3LINK_MLO_MAX_STA_LINKS         3
 #define ATH12K_DATA_TID_MAX 8
@@ -170,7 +174,7 @@ struct ath12k_dp_peer {
 
 	/* Lock for protection of link_peers*/
 	spinlock_t link_peers_lock;
-	struct ath12k_dp_link_peer __rcu *link_peers[ATH12K_NUM_MAX_LINKS];
+	struct ath12k_dp_link_peer __rcu *link_peers[ATH12K_DP_PEER_MAX_MLO_LINKS];
 
 	u32 peer_links_map;
 	bool primary_link_frag_setup;
@@ -198,8 +202,9 @@ struct ath12k_dp_peer {
 	struct ath12k_dp_mld_peer_stats mld_stats;
 	bool qos_stats_lvl;
 
-	u8 hw_links[ATH12K_GROUP_MAX_RADIO];
-	struct ath12k_dp_peer_stats stats[ATH12K_DP_MAX_MLO_LINKS];
+	u8 l2h_link_map[ATH12K_NUM_MAX_LINKS];
+	u8 hw_links[ATH12K_DP_PEER_MAX_MLO_LINKS];
+	struct ath12k_dp_peer_stats stats[ATH12K_DP_PEER_MAX_MLO_LINKS];
 #if defined(CPTCFG_MAC80211_PPE_SUPPORT) || defined(CPTCFG_ATH12K_PPE_DS_SUPPORT)
 	int ppe_vp_num;
 #endif
@@ -426,10 +431,13 @@ static inline void ath12k_peer_event_set_and_queue(struct ath12k_dp_link_peer *p
 }
 
 struct ath12k_dp_link_peer *
-ath12k_dp_link_peer_find_by_link_id(struct ath12k_dp_peer *dp_peer, u8 link_id);
+ath12k_dp_link_peer_find_by_hw_link_id(struct ath12k_dp_peer *dp_peer, u8 hw_link_id);
 
 struct ath12k_dp_link_peer *
-ath12k_dp_link_peer_find_by_mac_addr(const struct ath12k_dp_peer *dp_peer,
+ath12k_dp_link_peer_find_by_logical_link_id(struct ath12k_dp_peer *dp_peer, u8 link_id);
+
+struct ath12k_dp_link_peer *
+ath12k_dp_link_peer_find_by_mac_addr(struct ath12k_dp_peer *dp_peer,
 				     const u8 *addr);
 #ifndef CPTCFG_EXT_IPA_OFFLOAD
 static inline
@@ -445,4 +453,23 @@ void ath12k_dp_ipa_peer_map_event_wds(struct ath12k_base *ab, u8 vdev_id,
 }
 #endif /* !CPTCFG_EXT_IPA_OFFLOAD */
 
+static inline
+u8 ath12k_dp_peer_convert_logical_to_hw_link_id(struct ath12k_dp_peer *dp_peer,
+						const u8 link_id)
+{
+	if (link_id >= ATH12K_NUM_MAX_LINKS)
+		return ATH12K_DP_HW_LINK_ID_INVALID;
+
+	return dp_peer->l2h_link_map[link_id];
+}
+
+static inline
+u8 ath12k_dp_peer_convert_hw_to_logical_link_id(struct ath12k_dp_peer *dp_peer,
+						const u8 hw_link_id)
+{
+	if (hw_link_id >= ATH12K_DP_PEER_MAX_MLO_LINKS)
+		return ATH12K_DP_LOGICAL_LINK_ID_INVALID;
+
+	return dp_peer->hw_links[hw_link_id];
+}
 #endif

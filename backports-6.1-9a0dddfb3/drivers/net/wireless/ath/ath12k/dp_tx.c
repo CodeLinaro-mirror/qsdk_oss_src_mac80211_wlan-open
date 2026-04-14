@@ -533,34 +533,6 @@ ath12k_dp_tx_htt_h2t_vdev_stats_ol_req(struct ath12k *ar, u64 reset_bitmask)
 	return 0;
 }
 
-u8 ath12k_dp_get_link_id(struct ath12k_pdev_dp *dp_pdev,
-			 u8 hw_link_id,
-			 struct ath12k_dp_peer *peer)
-{
-	if (hw_link_id >= ATH12K_DP_MAX_MLO_LINKS) {
-		/* For invalid Link_id update stats on primary link */
-		hw_link_id = dp_pdev->hw_link_id;
-	}
-
-	if (peer->hw_links[hw_link_id] > ATH12K_DP_MAX_MLO_LINKS)
-		return peer->hw_links[dp_pdev->hw_link_id];
-
-	return peer->hw_links[hw_link_id];
-}
-EXPORT_SYMBOL(ath12k_dp_get_link_id);
-
-u8 ath12k_dp_get_hw_link_id(struct ath12k_dp_peer *peer,
-			    u8 link_id)
-{
-	struct ath12k_dp_link_peer *link_peer;
-
-	link_peer = rcu_dereference(peer->link_peers[link_id]);
-	if (!link_peer)
-		return ATH12K_INVALID_HW_LINKID;
-	return link_peer->hw_link_id;
-}
-EXPORT_SYMBOL(ath12k_dp_get_hw_link_id);
-
 void ath12k_dp_tx_update_peer_basic_stats(struct ath12k_dp_peer *peer,
 					  u32 msdu_len, u8 tx_status,
 					  u8 link_id, int ring_id)

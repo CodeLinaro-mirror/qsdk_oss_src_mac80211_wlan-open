@@ -133,8 +133,8 @@ u8 ath12k_dp_get_chipid_bitmap(struct ath12k_dp_hw_group *dp_hw_grp,
 	u8 bitmap = 0;
 
 	rcu_read_lock();
-	for (i = 0; i < ATH12K_NUM_MAX_LINKS; i++) {
-		link_peer = rcu_dereference(dp_peer->link_peers[i]);
+	for (i = 0; i < ATH12K_DP_PEER_MAX_MLO_LINKS; i++) {
+		link_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, i);
 		if (!link_peer)
 			continue;
 

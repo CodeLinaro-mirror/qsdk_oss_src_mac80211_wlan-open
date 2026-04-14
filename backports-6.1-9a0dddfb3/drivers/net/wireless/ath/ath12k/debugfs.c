@@ -6471,7 +6471,7 @@ static void ath12k_dp_peer_reset_proto_stats(struct ath12k_dp_peer *dp_peer)
 		return;
 
 	rcu_read_lock();
-	for (index = 0; index < ATH12K_DP_MAX_MLO_LINKS; index++) {
+	for (index = 0; index < ATH12K_DP_PEER_MAX_MLO_LINKS; index++) {
 		if (dp_peer->stats[index].proto)
 			memset(dp_peer->stats[index].proto, 0,
 			       sizeof(struct ath12k_dp_proto_stats_peer));
@@ -6490,8 +6490,8 @@ static void ath12k_dp_peer_clear_qos_stats(struct ath12k_dp_peer *dp_peer)
 
 	rcu_read_lock();
 	/* Clear QOS stats for each link peer */
-	for (link_id = 0; link_id < ATH12K_NUM_MAX_LINKS; link_id++) {
-		link_peer = rcu_dereference(dp_peer->link_peers[link_id]);
+	for (link_id = 0; link_id < ATH12K_DP_PEER_MAX_MLO_LINKS; link_id++) {
+		link_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, link_id);
 		if (link_peer && link_peer->peer_stats.qos_stats)
 			memset(link_peer->peer_stats.qos_stats, 0,
 			       sizeof(*link_peer->peer_stats.qos_stats));
@@ -6557,17 +6557,12 @@ static ssize_t ath12k_write_reset_dp_stats(struct file *file,
 		ath12k_telemetry_reset_peer_stats(dp_peer->addr);
 
 		struct ath12k_dp_link_peer *tmp_peer = NULL;
-		unsigned long peer_links_map, scan_links_map;
 		u8 link_id;
 
-		peer_links_map = dp_peer->peer_links_map;
-		scan_links_map = ATH12K_SCAN_LINKS_MASK;
-
 		rcu_read_lock();
-		for_each_andnot_bit(link_id, &peer_links_map,
-				    &scan_links_map,
-				    ATH12K_NUM_MAX_LINKS) {
-			tmp_peer = rcu_dereference(dp_peer->link_peers[link_id]);
+		for (link_id = 0; link_id < ATH12K_DP_PEER_MAX_MLO_LINKS; link_id++) {
+			tmp_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer,
+									  link_id);
 			if (!tmp_peer)
 				continue;
 

@@ -10,7 +10,7 @@
 #include "hw.h"
 
 /* Max number of links for MLO connection */
-#define ATH12K_DP_MAX_MLO_LINKS 4
+#define ATH12K_DP_PEER_MAX_MLO_LINKS 5
 
 struct ath12k_hw_group;
 struct ath12k_sta;

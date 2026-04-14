@@ -448,8 +448,8 @@ static int ath12k_wifi8_cleanup_peer_mpdu_queues(struct ath12k_dp_hw_group *dp_h
 		ahsta = ath12k_sta_to_ahsta(peer->sta);
 		ti.assoc_link_id = ahsta->assoc_link_id;
 
-		for (j = 0; j < ATH12K_NUM_MAX_LINKS; j++) {
-			link_peer = rcu_dereference(peer->link_peers[j]);
+		for (j = 0; j < ATH12K_DP_PEER_MAX_MLO_LINKS; j++) {
+			link_peer = ath12k_dp_link_peer_find_by_hw_link_id(peer, j);
 			if (!link_peer)
 				continue;
 
@@ -587,7 +587,8 @@ int ath12k_wifi8_cleanup_all_peers_tx_queues(struct ath12k_dp_hw *dp_hw,
 		/* Cleanup MPDU queues for this peer using its associated VIF */
 		dp_vif = NULL;
 		rcu_read_lock();
-		link_peer = rcu_dereference(peer->link_peers[dp_pdev->hw_link_id]);
+		link_peer = ath12k_dp_link_peer_find_by_hw_link_id(peer,
+								   dp_pdev->hw_link_id);
 		if (link_peer && ath12k_dp_link_peer_get_vif(link_peer)) {
 			vif = ath12k_dp_link_peer_get_vif(link_peer);
 			ahvif = ath12k_vif_to_ahvif(vif);
