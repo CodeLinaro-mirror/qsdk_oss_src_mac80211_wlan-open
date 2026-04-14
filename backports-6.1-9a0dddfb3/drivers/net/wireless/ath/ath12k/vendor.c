@@ -12107,6 +12107,13 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.policy = ath12k_vendor_ext_mon_policy,
 		.maxattr = QCA_VENDOR_ATTR_EXT_MON_MAX,
 	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_TDMA_SCHEDULE_CONFIG,
+		.doit = ath12k_vendor_tdma_schedule_config,
+		.policy = ath12k_vendor_tdma_schedule_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_MAX,
+	},
 
 };
 

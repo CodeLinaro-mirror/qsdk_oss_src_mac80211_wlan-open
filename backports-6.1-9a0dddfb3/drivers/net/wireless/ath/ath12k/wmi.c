@@ -17239,6 +17239,53 @@ static void ath12k_vdev_tpc_ie_power_event(struct ath12k_base *ab,
 	kfree(tb);
 }
 
+int ath12k_wmi_send_tdma_schedule_request(struct ath12k *ar,
+					  const struct ath12k_tdma_sched_info *sched)
+{
+	struct wmi_tdma_schedule_request_cmd_fixed_param *cmd;
+	struct sk_buff *skb;
+	int ret, len, i;
+
+	len = sizeof(*cmd);
+	skb = ath12k_wmi_alloc_skb(ar->wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_tdma_schedule_request_cmd_fixed_param *)skb->data;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_TDMA_SCHEDULE_REQUEST_CMD,
+						  len);
+	cmd->pdev_id = cpu_to_le32(sched->pdev_id);
+	cmd->schedule_type = cpu_to_le32(sched->sched_type);
+	cmd->schedule_handle_id = cpu_to_le32(sched->sched_id);
+	ether_addr_copy(cmd->owner_bssid.addr, sched->bssid);
+	cmd->start_time_tsf_low = cpu_to_le32(sched->start_time_tsf_low);
+	cmd->start_time_tsf_high = cpu_to_le32(sched->start_time_tsf_high);
+	cmd->num_busy_slots = cpu_to_le32(sched->num_busy_slots);
+	cmd->busy_slot_dur_ms = cpu_to_le32(sched->busy_slot_dur_ms);
+	cmd->busy_slot_intvl_ms = cpu_to_le32(sched->busy_slot_intvl_ms);
+	cmd->edca_params_valid = cpu_to_le32(sched->edca_params_valid ? 1 : 0);
+
+	for (i = 0; i < WMI_AC_MAX; i++) {
+		cmd->aifsn[i] = cpu_to_le32(sched->aifsn[i]);
+		cmd->ecwmin[i] = cpu_to_le32(sched->cwmin[i]);
+		cmd->ecwmax[i] = cpu_to_le32(sched->cwmax[i]);
+	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "WMI TDMA schedule request pdev %u type %u id %u\n",
+		   sched->pdev_id, sched->sched_type, sched->sched_id);
+
+	ret = ath12k_wmi_cmd_send(ar->wmi, skb,
+				  WMI_TDMA_SCHEDULE_REQUEST_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "WMI failed to send TDMA schedule request command: %d\n",
+			    ret);
+		dev_kfree_skb(skb);
+	}
+	return ret;
+}
+
 static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);

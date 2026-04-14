@@ -155,6 +155,7 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_DCS_SIM = 517,
 	QCA_NL80211_VENDOR_SUBCMD_REG_PARAMS = 518,
 	QCA_NL80211_VENDOR_SUBCMD_TPC_EIRP_EVENT = 519,
+	QCA_NL80211_VENDOR_SUBCMD_TDMA_SCHEDULE_CONFIG = 520,
 };
 
 enum qca_nl80211_vendor_events {
@@ -5593,4 +5594,90 @@ void ath12k_vendor_rssi_rate_notify_breach(struct ieee80211_vif *vif, u8 *mac_ad
 int ath12k_vendor_register(struct ath12k_hw *ah);
 int ath12k_vendor_put_umac_migration_notif(struct ieee80211_vif *vif,
 					   u8 *mld_addr, u8 link_id);
+
+/**
+ * enum qca_wlan_vendor_attr_tdma_schedule - Attributes for
+ * %QCA_NL80211_VENDOR_SUBCMD_TDMA_SCHEDULE_CONFIG.
+ *
+ * These attributes correspond to the fields of struct tdma_sched_info.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_RADIO_INDEX: u32. Physical device (pdev)
+ * index identifying the radio to which this TDMA schedule applies.
+ * Corresponds to tdma_sched_info.pdev_id.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_TYPE: u8. Schedule type selector.
+ * Corresponds to tdma_sched_info.sched_type.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_ID: u8. Schedule instance identifier.
+ * Corresponds to tdma_sched_info.sched_id.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_BSSID: 6-byte MAC address. BSSID of the
+ * BSS to which this schedule is associated.
+ * Corresponds to tdma_sched_info.bssid[IEEE80211_ADDR_LEN].
+ *
+ * @QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_START_TIME_TSF_LOW: u32. Lower 32 bits
+ * of the TSF timestamp at which the schedule starts.
+ * Corresponds to tdma_sched_info.start_time_tsf_low.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_START_TIME_TSF_HIGH: u32. Upper 32 bits
+ * of the TSF timestamp at which the schedule starts.
+ * Corresponds to tdma_sched_info.start_time_tsf_high.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_NUM_BUSY_SLOTS: u16. Number of busy
+ * (transmission-restricted) slots in the TDMA schedule.
+ * Corresponds to tdma_sched_info.num_busy_slots.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_BUSY_SLOTS_DUR: u16. Duration of each
+ * busy slot in milliseconds.
+ * Corresponds to tdma_sched_info.busy_slot_dur_ms.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_BUSY_SLOTS_INTVL: u16. Interval between
+ * consecutive busy slots in milliseconds.
+ * Corresponds to tdma_sched_info.busy_slot_intvl_ms.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_EDCA_PARAMS_VALID: flag. When present,
+ * indicates that the EDCA parameters (AIFSN, CWmin, CWmax) carried in this
+ * command are valid and should be applied.
+ * Corresponds to tdma_sched_info.edca_params_valid.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_AIFSN: Array of u16 values (one per AC,
+ * WLAN_MAX_AC = 4 elements). Arbitration Inter-Frame Space Number per access
+ * category. Valid only when %QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_EDCA_PARAMS_VALID
+ * is present.
+ * Corresponds to tdma_sched_info.aifsn[WLAN_MAX_AC].
+ *
+ * @QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_CWMIN: Array of u16 values (one per AC,
+ * WLAN_MAX_AC = 4 elements). Minimum contention window per access category.
+ * Valid only when %QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_EDCA_PARAMS_VALID is
+ * present.
+ * Corresponds to tdma_sched_info.cwmin[WLAN_MAX_AC].
+ *
+ * @QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_CWMAX: Array of u16 values (one per AC,
+ * WLAN_MAX_AC = 4 elements). Maximum contention window per access category.
+ * Valid only when %QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_EDCA_PARAMS_VALID is
+ * present.
+ * Corresponds to tdma_sched_info.cwmax[WLAN_MAX_AC].
+ */
+enum qca_wlan_vendor_attr_tdma_schedule {
+	QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_RADIO_INDEX = 1,
+	QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_TYPE = 2,
+	QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_ID = 3,
+	QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_BSSID = 4,
+	QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_START_TIME_TSF_LOW = 5,
+	QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_START_TIME_TSF_HIGH = 6,
+	QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_NUM_BUSY_SLOTS = 7,
+	QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_BUSY_SLOTS_DUR = 8,
+	QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_BUSY_SLOTS_INTVL = 9,
+	QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_EDCA_PARAMS_VALID = 10,
+	QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_AIFSN = 11,
+	QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_CWMIN = 12,
+	QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_CWMAX = 13,
+
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_MAX =
+		QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_AFTER_LAST - 1,
+};
+
 #endif
