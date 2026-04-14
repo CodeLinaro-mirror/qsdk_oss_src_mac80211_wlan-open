@@ -841,6 +841,7 @@ struct ath12k_stats_feat {
 	bool feat_sdwftx;
 	bool feat_sdwfdelay;
 	bool feat_proto;
+	bool feat_tid;
 };
 
 struct ath12k_telemetry_command {
