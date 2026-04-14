@@ -7,6 +7,11 @@
 #include "dp_peer.h"
 #include "dp_stats.h"
 #include "debug.h"
+#include "debugfs.h"
+#include "qos.h"
+#include "sdwf.h"
+#include "telemetry.h"
+#include "telemetry_agent_if.h"
 
 /*
  * ath12k_dp_hist_sw_enq_dbucket: Software enqueue delay bucket in us
@@ -874,3 +879,381 @@ void ath12k_dp_tid_tx_stats_hist_init(struct ath12k_pdev_dp *dp_pdev)
 	}
 }
 EXPORT_SYMBOL(ath12k_dp_tid_tx_stats_hist_init);
+
+void ath12k_qos_tx_enqueue_peer_stats(struct ath12k_dp_peer *mld_peer,
+				      u8 hw_link_id, u16 msduq_id,
+				      unsigned int len)
+{
+	struct ath12k_dp_link_peer *link_peer;
+	struct ath12k_dp_qos_tx_stats *qos_tx;
+	struct ath12k_mld_qos_stats *mld_qos;
+	u8 tid, q_id;
+
+	if (!mld_peer || !mld_peer->qos)
+		return;
+
+	link_peer = ath12k_dp_link_peer_find_by_hw_link_id(mld_peer, hw_link_id);
+	if (!link_peer || !link_peer->peer_stats.link_qos_stats) {
+		ath12k_err(NULL, "Qos stats not initialized\n");
+		return;
+	}
+
+	if (unlikely(msduq_id >= QOS_MSDUQ_MAX || msduq_id < MSDUQ_MAX_DEF))
+		return;
+
+	msduq_id -= MSDUQ_MAX_DEF;
+
+	q_id = u16_get_bits(msduq_id, MSDUQ_MASK);
+	tid = u16_get_bits(msduq_id, MSDUQ_TID_MASK);
+
+	qos_tx = &link_peer->peer_stats.link_qos_stats->tx[tid][q_id];
+
+	spin_lock_bh(&mld_peer->qos->lock);
+	if (mld_peer->mld_stats.mld_qos_stats) {
+		mld_qos = &mld_peer->mld_stats.mld_qos_stats[
+				tid * QOS_TID_MDSUQ_MAX + q_id];
+		mld_qos->queue_depth++;
+	}
+
+	qos_tx->tx_ingress.num++;
+	qos_tx->tx_ingress.bytes += len;
+	spin_unlock_bh(&mld_peer->qos->lock);
+}
+EXPORT_SYMBOL(ath12k_qos_tx_enqueue_peer_stats);
+
+void ath12k_sdwf_update_peer_mcs_stats(struct ath12k_dp_qos_tx_stats *qos_tx,
+				       struct hal_tx_status *ts)
+{
+	u8 mcs = MAX_MCS, pkt_type;
+
+	mcs = ts->mcs;
+	pkt_type = ts->pkt_type;
+
+	if (pkt_type > HAL_TX_RATE_STATS_PKT_TYPE_11BE ||
+	    pkt_type == HAL_TX_RATE_STATS_PKT_TYPE_11BA)
+		return;
+
+	if (pkt_type == HAL_TX_RATE_STATS_PKT_TYPE_11BE)
+		pkt_type = DOT11_BE;
+
+	switch (pkt_type) {
+	case DOT11_A:
+		mcs = (mcs >= MAX_MCS_11A) ? (MAX_MCS - 1) : mcs;
+		break;
+	case DOT11_B:
+		mcs = (mcs >= MAX_MCS_11B) ? (MAX_MCS - 1) : mcs;
+		break;
+	case DOT11_N:
+		mcs = (mcs >= MAX_MCS_11N) ? (MAX_MCS - 1) : mcs;
+		break;
+	case DOT11_AC:
+		mcs = (mcs >= MAX_MCS_11AC) ? (MAX_MCS - 1) : mcs;
+		break;
+	case DOT11_AX:
+		mcs = (mcs >= MAX_MCS_11AX) ? (MAX_MCS - 1) : mcs;
+		break;
+	case DOT11_BE:
+		mcs = (mcs >= MAX_MCS_11BE) ? (MAX_MCS - 1) : mcs;
+		break;
+	case DOT11_BN:
+		mcs = (mcs >= MAX_MCS_11BN) ? (MAX_MCS - 1) : mcs;
+		break;
+	default:
+		break;
+	}
+
+	if (mcs != MAX_MCS)
+		qos_tx->pkt_type[pkt_type].mcs_count[mcs]++;
+}
+EXPORT_SYMBOL(ath12k_sdwf_update_peer_mcs_stats);
+
+#ifndef HW_TX_DELAY_MAX
+#define HW_TX_DELAY_MAX				0x1000000
+#endif
+#ifndef ATH12K_MOV_AVG_PKT_WIN
+#define ATH12K_MOV_AVG_PKT_WIN			10
+#endif
+#ifndef ATH12K_DP_SAWF_DELAY_BOUND_MS_MULTIPLER
+#define ATH12K_DP_SAWF_DELAY_BOUND_MS_MULTIPLER	1000
+#endif
+
+void ath12k_qos_stats_update(struct ath12k_dp_peer *mld_peer,
+			     u8 hw_link_id,
+			     struct ath12k *ar,
+			     struct sk_buff *skb,
+			     struct hal_tx_status *ts,
+			     struct ath12k_pdev_dp *dp_pdev,
+			     ktime_t timestamp,
+			     u32 hw_delay)
+{
+	struct ath12k_dp_link_peer *link_peer = NULL;
+	struct ath12k_mld_qos_stats *mld_qos;
+	struct ath12k_dp_qos_tx_stats *qos_tx;
+	struct ath12k_dp_qos_delay_stats *qos_delay;
+	void *telemetry_peer_ctx = NULL;
+	u64 enqueue_timestamp, total_delay_pkts, tmp_div;
+	u32 len, q_id, tid, nw_delay, sw_delay, delay_bound;
+	u32 pkt_win, num_pkts, dropped_age_out = 0;
+	u16 msduq_id;
+	u8 link_id, qos_id;
+
+	if (!mld_peer || !ts || !dp_pdev)
+		return;
+
+	if (!(skb->mark & QOS_VALID_TAG))
+		return;
+
+	msduq_id = u32_get_bits(skb->mark, SDWF_MSDUQ_ID);
+	if (msduq_id >= QOS_MSDUQ_MAX || msduq_id < MSDUQ_MAX_DEF)
+		return;
+
+	msduq_id -= MSDUQ_MAX_DEF;
+
+	q_id = u16_get_bits(msduq_id, MSDUQ_MASK);
+	tid = u16_get_bits(msduq_id, MSDUQ_TID_MASK);
+	len = skb->len;
+
+	if (!(ath12k_debugfs_is_qos_stats_enabled(ar) & ATH12K_QOS_STATS_BASIC))
+		return;
+
+	if (mld_peer->qos_stats_lvl == ATH12K_QOS_SINGLE_LINK_STATS)
+		link_id =
+			ath12k_dp_peer_convert_hw_to_logical_link_id(mld_peer,
+								     dp_pdev->hw_link_id);
+	else
+		link_id = ath12k_dp_peer_convert_hw_to_logical_link_id(mld_peer,
+								       hw_link_id);
+
+	if (link_id >= ATH12K_NUM_MAX_LINKS) {
+		ath12k_err(ar->ab, "link peer NA with link_id: %u\n", link_id);
+		return;
+	}
+
+	link_peer = ath12k_dp_link_peer_find_by_hw_link_id(mld_peer, hw_link_id);
+	if (!link_peer) {
+		ath12k_err(ar->ab, "link peer not present with link_id: %u\n",
+			   link_id);
+		return;
+	}
+
+	if (!mld_peer->qos)
+		return;
+
+	spin_lock_bh(&mld_peer->qos->lock);
+
+	if (!mld_peer->mld_stats.mld_qos_stats) {
+		spin_unlock_bh(&mld_peer->qos->lock);
+		return;
+	}
+
+	mld_qos = &mld_peer->mld_stats.mld_qos_stats[tid * QOS_TID_MDSUQ_MAX + q_id];
+
+	if (!link_peer->peer_stats.link_qos_stats) {
+		spin_unlock_bh(&mld_peer->qos->lock);
+		return;
+	}
+
+	qos_tx = &link_peer->peer_stats.link_qos_stats->tx[tid][q_id];
+
+	switch (ts->status) {
+	case HAL_WBM_TQM_REL_REASON_FRAME_ACKED:
+		mld_qos->tx_success_pkts++;
+		qos_tx->tx_success.num++;
+		qos_tx->tx_success.bytes += len;
+		if (ts->transmit_cnt > 1) {
+			qos_tx->total_retries_count += (ts->transmit_cnt - 1);
+			qos_tx->retry_count++;
+			if (ts->transmit_cnt > 2)
+				qos_tx->multiple_retry_count++;
+		}
+		ath12k_sdwf_update_peer_mcs_stats(qos_tx, ts);
+		break;
+	case HAL_WBM_TQM_REL_REASON_CMD_REMOVE_MPDU:
+		qos_tx->dropped.fw_rem.num++;
+		qos_tx->dropped.fw_rem.bytes += len;
+		break;
+	case HAL_WBM_TQM_REL_REASON_CMD_REMOVE_TX:
+		qos_tx->dropped.fw_rem_tx++;
+		break;
+	case HAL_WBM_TQM_REL_REASON_CMD_REMOVE_NOTX:
+		qos_tx->dropped.fw_rem_notx++;
+		break;
+	case HAL_WBM_TQM_REL_REASON_CMD_REMOVE_AGED_FRAMES:
+		qos_tx->dropped.age_out++;
+		break;
+	case HAL_WBM_TQM_REL_REASON_CMD_REMOVE_RESEAON1:
+		qos_tx->dropped.fw_reason1++;
+		break;
+	case HAL_WBM_TQM_REL_REASON_CMD_REMOVE_RESEAON2:
+		qos_tx->dropped.fw_reason2++;
+		break;
+	case HAL_WBM_TQM_REL_REASON_CMD_REMOVE_RESEAON3:
+		qos_tx->dropped.fw_reason3++;
+		break;
+	case HAL_WBM_TQM_REL_REASON_CMD_DISABLE_QUEUE:
+		qos_tx->dropped.fw_rem_queue_disable++;
+		break;
+	case HAL_WBM_TQM_REL_REASON_CMD_TILL_NONMATCHING:
+		qos_tx->dropped.fw_rem_no_match++;
+		break;
+	case HAL_WBM_TQM_REL_REASON_DROP_THRESHOLD:
+		qos_tx->dropped.drop_threshold++;
+		break;
+	case HAL_WBM_TQM_REL_REASON_DROP_LINK_DESC_UNAVAIL:
+		qos_tx->dropped.drop_link_desc_na++;
+		break;
+	case HAL_WBM_TQM_REL_REASON_DROP_OR_INVALID_MSDU:
+		qos_tx->dropped.invalid_drop++;
+		break;
+	case HAL_WBM_TQM_REL_REASON_MULTICAST_DROP:
+		qos_tx->dropped.mcast_vdev_drop++;
+		break;
+	default:
+		qos_tx->dropped.invalid_rr++;
+		break;
+	}
+
+	if (ts->status != HAL_WBM_TQM_REL_REASON_FRAME_ACKED) {
+		qos_tx->tx_failed.num++;
+		qos_tx->tx_failed.bytes += len;
+		mld_qos->tx_failed_pkts++;
+		if (ts->transmit_cnt > DP_RETRY_COUNT)
+			qos_tx->failed_retry_count++;
+	}
+
+	mld_qos->queue_depth--;
+
+	ath12k_telemetry_get_sla_num_pkts(&num_pkts);
+	if (mld_peer->qos)
+		telemetry_peer_ctx = mld_peer->qos->telemetry_peer_ctx;
+
+	tmp_div = mld_qos->tx_success_pkts + mld_qos->tx_failed_pkts;
+	if ((!(do_div(tmp_div, num_pkts))) && telemetry_peer_ctx) {
+		if (mld_peer->qos_stats_lvl == ATH12K_QOS_SINGLE_LINK_STATS) {
+			dropped_age_out = qos_tx->dropped.age_out;
+		} else {
+			struct ath12k_dp_link_peer *tmp_peer = NULL;
+			struct ath12k_dp_qos_tx_stats *tmp_qos_tx = NULL;
+			u8 index;
+
+			for (index = 0; index < ATH12K_DP_PEER_MAX_MLO_LINKS; index++) {
+				struct ath12k_dp_link_peer_qos_stats *qos_link_stats;
+
+				tmp_peer =
+				ath12k_dp_link_peer_find_by_hw_link_id(mld_peer, index);
+				if (!tmp_peer ||
+				    !tmp_peer->peer_stats.link_qos_stats)
+					continue;
+
+				qos_link_stats = tmp_peer->peer_stats.link_qos_stats;
+				tmp_qos_tx = &qos_link_stats->tx[tid][q_id];
+				dropped_age_out += tmp_qos_tx->dropped.age_out;
+				tmp_peer = NULL;
+			}
+		}
+		ath12k_telemetry_update_msdu_drop(telemetry_peer_ctx, tid, msduq_id,
+						  mld_qos->tx_success_pkts,
+						  mld_qos->tx_failed_pkts,
+						  dropped_age_out);
+	}
+
+	qos_delay = &link_peer->peer_stats.link_qos_stats->delay[tid][q_id];
+
+	if (hw_delay > HW_TX_DELAY_MAX) {
+		mld_qos->tx_invalid_delay_pkts++;
+		qos_delay->invalid_delay_pkts++;
+		goto out;
+	}
+
+	mld_qos->hwdelay_win_total += hw_delay;
+	ath12k_dp_update_hist_stats(&qos_delay->delay_hist, hw_delay);
+
+	nw_delay = u32_get_bits(skb->mark, QOS_NW_DELAY);
+	mld_qos->nwdelay_win_total += nw_delay;
+
+	enqueue_timestamp = ktime_to_us(timestamp);
+	sw_delay = enqueue_timestamp ? (u32)enqueue_timestamp : 0;
+	mld_qos->swdelay_win_total += sw_delay;
+
+	ath12k_telemetry_get_sla_mov_avg_num_pkt(&pkt_win);
+	if (!pkt_win)
+		pkt_win = ATH12K_MOV_AVG_PKT_WIN;
+
+	total_delay_pkts = mld_qos->tx_success_pkts +
+			   mld_qos->tx_failed_pkts -
+			   mld_qos->tx_invalid_delay_pkts;
+	tmp_div = total_delay_pkts;
+
+	if (telemetry_peer_ctx && !(do_div(tmp_div, pkt_win))) {
+		u32 nwdelay_avg, hwdelay_avg, swdelay_avg;
+
+		nwdelay_avg = div_u64(mld_qos->nwdelay_win_total, pkt_win);
+		swdelay_avg = div_u64(mld_qos->swdelay_win_total, pkt_win);
+		hwdelay_avg = div_u64(mld_qos->hwdelay_win_total, pkt_win);
+		mld_qos->nwdelay_win_total = 0;
+		mld_qos->swdelay_win_total = 0;
+		mld_qos->hwdelay_win_total = 0;
+
+		ath12k_telemetry_update_delay_mvng(telemetry_peer_ctx,
+						   tid, msduq_id,
+						   nwdelay_avg,
+						   swdelay_avg,
+						   hwdelay_avg);
+	}
+
+	if (!mld_peer->qos) {
+		ath12k_err(ar->ab, "link peer's qos not present\n");
+		goto out;
+	}
+
+	qos_id = mld_peer->qos->msduq_map[tid][q_id].qos_id;
+
+	if (ath12k_get_qos_params_delay_bound(ar->ab, qos_id,
+					      &delay_bound)) {
+		if (hw_delay > (delay_bound *
+				ATH12K_DP_SAWF_DELAY_BOUND_MS_MULTIPLER))
+			qos_delay->delay_failure++;
+		else
+			qos_delay->delay_success++;
+
+		tmp_div = total_delay_pkts;
+		if (!(do_div(tmp_div, num_pkts)) && telemetry_peer_ctx) {
+			u64 delay_success = 0, delay_failure = 0;
+
+			if (mld_peer->qos_stats_lvl ==
+			    ATH12K_QOS_SINGLE_LINK_STATS) {
+				delay_success = qos_delay->delay_success;
+				delay_failure = qos_delay->delay_failure;
+			} else {
+				struct ath12k_dp_link_peer *tmp_peer = NULL;
+				struct ath12k_dp_qos_delay_stats *tmp_qos_delay = NULL;
+				struct ath12k_dp_link_peer_qos_stats *qos_link_stats;
+				u8 idx;
+
+				for (idx = 0; idx < ATH12K_DP_PEER_MAX_MLO_LINKS; idx++) {
+					tmp_peer =
+					ath12k_dp_link_peer_find_by_hw_link_id(mld_peer,
+									       idx);
+					if (!tmp_peer ||
+					    !tmp_peer->peer_stats.link_qos_stats)
+						continue;
+
+					qos_link_stats =
+						tmp_peer->peer_stats.link_qos_stats;
+					tmp_qos_delay = &qos_link_stats->delay[tid][q_id];
+					delay_success += tmp_qos_delay->delay_success;
+					delay_failure += tmp_qos_delay->delay_failure;
+					tmp_peer = NULL;
+				}
+			}
+			ath12k_telemetry_update_delay(telemetry_peer_ctx,
+						      tid, msduq_id,
+						      delay_success,
+						      delay_failure);
+		}
+	}
+
+out:
+	spin_unlock_bh(&mld_peer->qos->lock);
+}
+EXPORT_SYMBOL(ath12k_qos_stats_update);

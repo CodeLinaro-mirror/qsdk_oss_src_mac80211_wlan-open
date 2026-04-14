@@ -762,7 +762,7 @@ int ath12k_telemetry_get_msduq_tx_stats(void *ptr, void *arg,
 	struct ath12k_dp_link_peer *tmp_peer = NULL;
 	struct msduq_tx_stats *tele_tx_stats = (struct msduq_tx_stats *)msduq_tx_stats;
 	struct ath12k_mld_qos_stats *mld_qos_stats;
-	struct tx_stats *qos_tx;
+	struct ath12k_dp_qos_tx_stats *qos_tx;
 	int ret = 0;
 	u8 tid, q_id, link_id, pkt_type, mcs;
 
@@ -784,7 +784,12 @@ int ath12k_telemetry_get_msduq_tx_stats(void *ptr, void *arg,
 		goto end;
 	}
 
-	mld_qos_stats = &mld_peer->mld_qos_stats[tid][q_id];
+	if (!mld_peer->mld_stats.mld_qos_stats) {
+		ret = -ENODATA;
+		goto end;
+	}
+	mld_qos_stats =
+		&mld_peer->mld_stats.mld_qos_stats[tid * QOS_TID_MDSUQ_MAX + q_id];
 	if (!mld_qos_stats) {
 		ret = -ENOENT;
 		goto end;
@@ -794,11 +799,11 @@ int ath12k_telemetry_get_msduq_tx_stats(void *ptr, void *arg,
 	for (link_id = 0; link_id < ATH12K_DP_PEER_MAX_MLO_LINKS; link_id++) {
 		tmp_peer = ath12k_dp_link_peer_find_by_hw_link_id(mld_peer, link_id);
 		if (!tmp_peer ||
-		    !tmp_peer->peer_stats.qos_stats) {
+		    !tmp_peer->peer_stats.link_qos_stats) {
 			continue;
 		}
 
-		qos_tx = &tmp_peer->peer_stats.qos_stats->qos_tx[tid][q_id];
+		qos_tx = &tmp_peer->peer_stats.link_qos_stats->tx[tid][q_id];
 		if (!mld_peer->qos_stats_lvl) {
 			if (tmp_peer->primary_link) {
 				tele_tx_stats->retry_count =
@@ -841,7 +846,7 @@ int ath12k_telemetry_get_sawf_tx_stats_drop(void *ptr, void *peer, u64 *pass,
 	struct ath12k_dp_peer *mld_peer = (struct ath12k_dp_peer *)peer;
 	struct ath12k_dp_link_peer *tmp_peer = NULL;
 	struct ath12k_mld_qos_stats *mld_qos_stats;
-	struct tx_stats *qos_tx;
+	struct ath12k_dp_qos_tx_stats *qos_tx;
 	int ret = 0;
 	u8 tid, q_id, link_id;
 
@@ -862,7 +867,12 @@ int ath12k_telemetry_get_sawf_tx_stats_drop(void *ptr, void *peer, u64 *pass,
 		goto end;
 	}
 
-	mld_qos_stats = &mld_peer->mld_qos_stats[tid][q_id];
+	if (!mld_peer->mld_stats.mld_qos_stats) {
+		ret = -ENODATA;
+		goto end;
+	}
+	mld_qos_stats =
+		&mld_peer->mld_stats.mld_qos_stats[tid * QOS_TID_MDSUQ_MAX + q_id];
 	if (!mld_qos_stats) {
 		ret = -ENOENT;
 		goto end;
@@ -874,11 +884,11 @@ int ath12k_telemetry_get_sawf_tx_stats_drop(void *ptr, void *peer, u64 *pass,
 	for (link_id = 0; link_id < ATH12K_DP_PEER_MAX_MLO_LINKS; link_id++) {
 		tmp_peer = ath12k_dp_link_peer_find_by_hw_link_id(mld_peer, link_id);
 		if (!tmp_peer ||
-		    !tmp_peer->peer_stats.qos_stats) {
+		    !tmp_peer->peer_stats.link_qos_stats) {
 			continue;
 		}
 
-		qos_tx = &tmp_peer->peer_stats.qos_stats->qos_tx[tid][q_id];
+		qos_tx = &tmp_peer->peer_stats.link_qos_stats->tx[tid][q_id];
 		if (!mld_peer->qos_stats_lvl) {
 			if (tmp_peer->primary_link) {
 				*drop_ttl = qos_tx->dropped.age_out;
@@ -922,7 +932,12 @@ int ath12k_telemetry_get_sawf_tx_stats_mpdu(void *ptr, void *peer, u64 *svc_int_
 		goto end;
 	}
 
-	mld_qos_stats = &mld_peer->mld_qos_stats[tid][q_id];
+	if (!mld_peer->mld_stats.mld_qos_stats) {
+		ret = -ENODATA;
+		goto end;
+	}
+	mld_qos_stats =
+		&mld_peer->mld_stats.mld_qos_stats[tid * QOS_TID_MDSUQ_MAX + q_id];
 	if (!mld_qos_stats) {
 		ret = -ENOENT;
 		goto end;
@@ -945,7 +960,7 @@ int ath12k_telemetry_get_sawf_tx_stats_tput(void *ptr, void *peer, u64 *in_bytes
 	struct ath12k_dp_hw *dp_hw = (struct ath12k_dp_hw *)ptr;
 	struct ath12k_dp_peer *mld_peer = (struct ath12k_dp_peer *)peer;
 	struct ath12k_dp_link_peer *tmp_peer = NULL;
-	struct tx_stats *qos_tx;
+	struct ath12k_dp_qos_tx_stats *qos_tx;
 	int ret = 0;
 	u8 tid, q_id, link_id;
 
@@ -969,11 +984,11 @@ int ath12k_telemetry_get_sawf_tx_stats_tput(void *ptr, void *peer, u64 *in_bytes
 	for (link_id = 0; link_id < ATH12K_DP_PEER_MAX_MLO_LINKS; link_id++) {
 		tmp_peer = ath12k_dp_link_peer_find_by_hw_link_id(mld_peer, link_id);
 		if (!tmp_peer ||
-		    !tmp_peer->peer_stats.qos_stats) {
+		    !tmp_peer->peer_stats.link_qos_stats) {
 			continue;
 		}
 
-		qos_tx = &tmp_peer->peer_stats.qos_stats->qos_tx[tid][q_id];
+		qos_tx = &tmp_peer->peer_stats.link_qos_stats->tx[tid][q_id];
 		if (!mld_peer->qos_stats_lvl) {
 			if (tmp_peer->primary_link) {
 				*in_bytes = qos_tx->tx_ingress.bytes;
@@ -1035,8 +1050,8 @@ static int ath12k_get_msduq_id(struct ath12k_base *ab, u8 svc_id,
 	return -EINVAL;
 }
 
-static void ath12k_copy_tx_stats(struct tx_stats *src,
-				 struct ath12k_tele_qos_tx *dst)
+static void ath12k_copy_tx_stats(struct ath12k_dp_qos_tx_stats *src,
+				 struct ath12k_dp_qos_tx_stats *dst)
 {
 	u8 pkt_type, mcs;
 
@@ -1065,7 +1080,6 @@ static void ath12k_copy_tx_stats(struct tx_stats *src,
 	dst->dropped.mcast_vdev_drop += src->dropped.mcast_vdev_drop;
 	dst->dropped.invalid_rr += src->dropped.invalid_rr;
 
-	dst->queue_depth += src->queue_depth;
 	dst->total_retries_count += src->total_retries_count;
 	dst->retry_count += src->retry_count;
 	dst->multiple_retry_count += src->multiple_retry_count;
@@ -1080,14 +1094,14 @@ static void ath12k_copy_tx_stats(struct tx_stats *src,
 	}
 }
 
-void ath12k_telemetry_update_tx_stats(struct ath12k_tele_qos_tx *tx, u8 link_id,
+void ath12k_telemetry_update_tx_stats(struct ath12k_dp_qos_tx_stats *tx, u8 link_id,
 				      struct ath12k_dp_link_peer *link_peer,
 				      struct ath12k_dp_peer *mld_peer,
 				      u8 tid, u8 q_idx)
 {
-	struct tx_stats *qos_tx;
+	struct ath12k_dp_qos_tx_stats *qos_tx;
 	struct ath12k_dp_peer_qos *qos = NULL;
-	struct ath12k_mld_qos_stats *mld_qos;
+	struct ath12k_mld_qos_stats *mld_qos = NULL;
 	u32 throughput = 0, ingress_rate = 0, msduq = 0, retries_pct = 0;
 	u32 min_tput = 0, max_tput = 0, avg_tput = 0, per = 0;
 
@@ -1101,16 +1115,16 @@ void ath12k_telemetry_update_tx_stats(struct ath12k_tele_qos_tx *tx, u8 link_id,
 			link_peer = ath12k_dp_link_peer_find_by_hw_link_id(mld_peer,
 									   link_id);
 			if (!link_peer ||
-			    !link_peer->peer_stats.qos_stats)
+			    !link_peer->peer_stats.link_qos_stats)
 				continue;
-			qos_tx = &link_peer->peer_stats.qos_stats->qos_tx[tid][q_idx];
+			qos_tx = &link_peer->peer_stats.link_qos_stats->tx[tid][q_idx];
 			ath12k_copy_tx_stats(qos_tx, tx);
 		}
 		goto tele_stats_fill;
 	}
 
-	if (link_peer->peer_stats.qos_stats) {
-		qos_tx = &link_peer->peer_stats.qos_stats->qos_tx[tid][q_idx];
+	if (link_peer->peer_stats.link_qos_stats) {
+		qos_tx = &link_peer->peer_stats.link_qos_stats->tx[tid][q_idx];
 		ath12k_copy_tx_stats(qos_tx, tx);
 	}
 
@@ -1134,7 +1148,11 @@ tele_stats_fill:
 		tx->retries_pct = retries_pct;
 	}
 
-	mld_qos = &mld_peer->mld_qos_stats[tid][q_idx];
+	if (!mld_peer->mld_stats.mld_qos_stats)
+		return;
+	mld_qos = &mld_peer->mld_stats.mld_qos_stats[tid * QOS_TID_MDSUQ_MAX + q_idx];
+	/* queue_depth is tracked at MLD level; copy to link-level output for reporting */
+	tx->queue_depth = mld_qos->queue_depth;
 	tx->svc_intval_stats.success_cnt =
 		mld_qos->svc_intval_stats.success_cnt;
 	tx->svc_intval_stats.failure_cnt =
@@ -1145,37 +1163,42 @@ tele_stats_fill:
 		mld_qos->burst_size_stats.failure_cnt;
 }
 
-static int ath12k_telemetry_get_qos_txstats(struct ath12k_base *ab,
-					    struct ath12k_tele_qos_tx_ctx *tx_ctx,
-					    u8 svc_id, u8 link_id,
-					    struct ath12k_dp_link_peer *link_peer)
+static int
+ath12k_telemetry_get_qos_txstats(struct ath12k_base *ab,
+				 struct ath12k_dp_link_peer_qos_stats *link_qos_stats,
+				 u8 svc_id, u8 link_id,
+				 struct ath12k_dp_link_peer *link_peer)
 {
 	struct ath12k_dp_peer *mld_peer;
-	struct ath12k_tele_qos_tx *tx;
+	struct ath12k_dp_qos_tx_stats *tx;
 	u8 tid, q_idx;
+
+	if (!link_qos_stats)
+		return -ENODATA;
 
 	mld_peer = link_peer->dp_peer;
 	if (svc_id == 0) {
 		for (tid = 0; tid < QOS_TID_MAX; tid++) {
 			for (q_idx = 0; q_idx < QOS_TID_MDSUQ_MAX; q_idx++) {
-				tx = &tx_ctx->tx[tid][q_idx];
+				tx = &link_qos_stats->tx[tid][q_idx];
 				ath12k_telemetry_update_tx_stats(tx, link_id, link_peer,
 								 mld_peer, tid, q_idx);
 			}
 		}
 	} else {
-		tx = &tx_ctx->tx[0][0];
+		tx = &link_qos_stats->tx[0][0];
 		if (ath12k_get_msduq_id(ab, svc_id, mld_peer, &tid,
 					&q_idx))
 			return -EINVAL;
 		ath12k_telemetry_update_tx_stats(tx, link_id, link_peer, mld_peer, tid, q_idx);
-		tx_ctx->tid = tid;
-		tx_ctx->msduq = q_idx;
+		link_qos_stats->tid = tid;
+		link_qos_stats->msduq = q_idx;
 	}
 	return 0;
 }
 
-static void ath12k_copy_delay_stats(struct delay_stats *src, struct ath12k_tele_qos_delay *dst)
+static void ath12k_copy_delay_stats(struct ath12k_dp_qos_delay_stats *src,
+				    struct ath12k_dp_qos_delay_stats *dst)
 {
 	struct hist_stats *dst_hist_stats = &dst->delay_hist;
 	struct hist_stats *src_hist_stats = &src->delay_hist;
@@ -1193,12 +1216,13 @@ static void ath12k_copy_delay_stats(struct delay_stats *src, struct ath12k_tele_
 	dst->delay_failure += src->delay_failure;
 }
 
-void ath12k_telemetry_update_delay_stats(struct ath12k_tele_qos_delay *delay, u8 link_id,
+void ath12k_telemetry_update_delay_stats(struct ath12k_dp_qos_delay_stats *delay,
+					 u8 link_id,
 					 struct ath12k_dp_link_peer *link_peer,
 					 struct ath12k_dp_peer *mld_peer,
 					 u8 tid, u8 q_idx)
 {
-	struct delay_stats *qos_delay;
+	struct ath12k_dp_qos_delay_stats *qos_delay;
 	struct ath12k_dp_peer_qos *qos = NULL;
 	u32 nwdelay_avg = 0, swdelay_avg = 0, hwdelay_avg = 0;
 
@@ -1212,16 +1236,17 @@ void ath12k_telemetry_update_delay_stats(struct ath12k_tele_qos_delay *delay, u8
 			link_peer = ath12k_dp_link_peer_find_by_hw_link_id(mld_peer,
 									   link_id);
 			if (!link_peer ||
-			    !link_peer->peer_stats.qos_stats)
+			    !link_peer->peer_stats.link_qos_stats)
 				continue;
-			qos_delay = &link_peer->peer_stats.qos_stats->qos_delay[tid][q_idx];
+			qos_delay =
+				&link_peer->peer_stats.link_qos_stats->delay[tid][q_idx];
 			ath12k_copy_delay_stats(qos_delay, delay);
 		}
 		goto tele_stats_fill;
 	}
 
-	if (link_peer->peer_stats.qos_stats) {
-		qos_delay = &link_peer->peer_stats.qos_stats->qos_delay[tid][q_idx];
+	if (link_peer->peer_stats.link_qos_stats) {
+		qos_delay = &link_peer->peer_stats.link_qos_stats->delay[tid][q_idx];
 		ath12k_copy_delay_stats(qos_delay, delay);
 	}
 
@@ -1239,20 +1264,24 @@ tele_stats_fill:
 	}
 }
 
-static int ath12k_telemetry_get_qos_delaystats(struct ath12k_base *ab,
-					       struct ath12k_tele_qos_delay_ctx *delay_ctx,
-					       u8 svc_id, u8 link_id,
-					       struct ath12k_dp_link_peer *link_peer)
+static int
+ath12k_telemetry_get_qos_delaystats(struct ath12k_base *ab,
+				    struct ath12k_dp_link_peer_qos_stats *link_qos_stats,
+				    u8 svc_id, u8 link_id,
+				    struct ath12k_dp_link_peer *link_peer)
 {
 	struct ath12k_dp_peer *mld_peer;
-	struct ath12k_tele_qos_delay *delay;
+	struct ath12k_dp_qos_delay_stats *delay;
 	u8 tid, q_idx;
+
+	if (!link_qos_stats)
+		return -ENODATA;
 
 	mld_peer = link_peer->dp_peer;
 	if (svc_id == 0) {
 		for (tid = 0; tid < QOS_TID_MAX; tid++) {
 			for (q_idx = 0; q_idx < QOS_TID_MDSUQ_MAX; q_idx++) {
-				delay = &delay_ctx->delay[tid][q_idx];
+				delay = &link_qos_stats->delay[tid][q_idx];
 				ath12k_telemetry_update_delay_stats(delay,
 								    link_id,
 								    link_peer,
@@ -1262,15 +1291,15 @@ static int ath12k_telemetry_get_qos_delaystats(struct ath12k_base *ab,
 			}
 		}
 	} else {
-		delay = &delay_ctx->delay[0][0];
+		delay = &link_qos_stats->delay[0][0];
 		if (ath12k_get_msduq_id(ab, svc_id, mld_peer, &tid,
 					&q_idx))
 			return -EINVAL;
 		ath12k_telemetry_update_delay_stats(delay, link_id,
 						    link_peer, mld_peer,
 						    tid, q_idx);
-		delay_ctx->tid = tid;
-		delay_ctx->msduq = q_idx;
+		link_qos_stats->tid = tid;
+		link_qos_stats->msduq = q_idx;
 	}
 	return 0;
 }
@@ -1390,10 +1419,11 @@ skip_link_mac_fill:
 	}
 
 	spin_lock_bh(&ab->dp->dp_lock);
-
+	struct ath12k_dp_link_peer_qos_stats *qos_stats =
+		telemetry_peer->link_peer_stats.link_qos_stats;
 	if (cmd->feat.feat_sdwfdelay) {
 		ret = ath12k_telemetry_get_qos_delaystats(ab,
-							  &telemetry_peer->peer_stats.delay_ctx,
+							  qos_stats,
 							  cmd->svc_id,
 							  cmd->link_id,
 							  peer);
@@ -1403,7 +1433,7 @@ skip_link_mac_fill:
 
 	if (cmd->feat.feat_sdwftx) {
 		ret = ath12k_telemetry_get_qos_txstats(ab,
-						       &telemetry_peer->peer_stats.tx_ctx,
+						       qos_stats,
 						       cmd->svc_id,
 						       cmd->link_id,
 						       peer);

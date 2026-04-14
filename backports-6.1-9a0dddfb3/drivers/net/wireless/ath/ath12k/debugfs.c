@@ -6792,16 +6792,18 @@ static void ath12k_dp_peer_clear_qos_stats(struct ath12k_dp_peer *dp_peer)
 	int link_id;
 
 	/* Clear MLD QOS stats */
-	memset(&dp_peer->mld_qos_stats, 0,
-	       sizeof(dp_peer->mld_qos_stats));
+	if (dp_peer->mld_stats.mld_qos_stats)
+		memset(dp_peer->mld_stats.mld_qos_stats, 0,
+		       sizeof(*dp_peer->mld_stats.mld_qos_stats) *
+		       QOS_TID_MAX * QOS_TID_MDSUQ_MAX);
 
 	rcu_read_lock();
 	/* Clear QOS stats for each link peer */
 	for (link_id = 0; link_id < ATH12K_DP_PEER_MAX_MLO_LINKS; link_id++) {
 		link_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, link_id);
-		if (link_peer && link_peer->peer_stats.qos_stats)
-			memset(link_peer->peer_stats.qos_stats, 0,
-			       sizeof(*link_peer->peer_stats.qos_stats));
+		if (link_peer && link_peer->peer_stats.link_qos_stats)
+			memset(link_peer->peer_stats.link_qos_stats, 0,
+			       sizeof(*link_peer->peer_stats.link_qos_stats));
 	}
 	rcu_read_unlock();
 }

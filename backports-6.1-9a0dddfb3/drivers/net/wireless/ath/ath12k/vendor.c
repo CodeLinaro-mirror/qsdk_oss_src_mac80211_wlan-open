@@ -2954,8 +2954,8 @@ static int get_feat_sdwftx_attr_size_per_msduq(void)
 {
 	int payload_size = 0, attr_size = 0;
 	int nested2_size = 0, nested3_size = 0;
-	struct ath12k_tele_qos_tx_ctx tx_ctx;
-	struct ath12k_tele_qos_tx tx;
+	struct ath12k_dp_link_peer_qos_stats link_qos_stats;
+	struct ath12k_dp_qos_tx_stats tx;
 
 	attr_size = nla_total_size(sizeof(tx.tx_success.num));
 	attr_size += nla_total_size(sizeof(tx.tx_success.bytes));
@@ -3010,8 +3010,8 @@ static int get_feat_sdwftx_attr_size_per_msduq(void)
 	attr_size += nla_total_size(sizeof(tx.multiple_retry_count));
 	attr_size += nla_total_size(sizeof(tx.failed_retry_count));
 	attr_size += nla_total_size(sizeof(tx.reinject_pkt));
-	attr_size += nla_total_size(sizeof(tx_ctx.tid));
-	attr_size += nla_total_size(sizeof(tx_ctx.msduq));
+	attr_size += nla_total_size(sizeof(link_qos_stats.tid));
+	attr_size += nla_total_size(sizeof(link_qos_stats.msduq));
 
 	payload_size = nested2_size + attr_size;
 
@@ -3052,14 +3052,14 @@ static int get_feat_sdwfdelay_attr_size_per_msduq(void)
 {
 	int payload_size = 0, attr_size = 0, attr1_size = 0;
 	int nested1_size = 0, nested2_size = 0, nested3_size = 0;
-	struct ath12k_tele_qos_delay_ctx delay_ctx;
-	struct ath12k_tele_qos_delay delay;
+	struct ath12k_dp_link_peer_qos_stats link_qos_stats;
+	struct ath12k_dp_qos_delay_stats delay;
 
 	attr_size = nla_total_size(sizeof(delay.nwdelay_avg));
 	attr_size += nla_total_size(sizeof(delay.swdelay_avg));
 	attr_size += nla_total_size(sizeof(delay.hwdelay_avg));
-	attr_size += nla_total_size(sizeof(delay_ctx.tid));
-	attr_size += nla_total_size(sizeof(delay_ctx.msduq));
+	attr_size += nla_total_size(sizeof(link_qos_stats.tid));
+	attr_size += nla_total_size(sizeof(link_qos_stats.msduq));
 
 	payload_size = attr_size;
 
@@ -6846,8 +6846,9 @@ static int ath12k_fill_peer_rx_stats(struct ath12k *ar,
 	return 0;
 }
 
-static int ath12k_tele_sdwftx_stats_update(struct sk_buff *skb, struct ath12k_tele_qos_tx *tx,
-					   u8 tid, u8 q_id)
+static int
+ath12k_tele_sdwftx_stats_update(struct sk_buff *skb, struct ath12k_dp_qos_tx_stats *tx,
+				u8 tid, u8 q_id)
 {
 	struct nlattr *attr1 = NULL, *attr2 = NULL;
 	int ret = -EINVAL, pkt_type, mcs;
@@ -7058,18 +7059,18 @@ end:
 }
 
 static int ath12k_fill_sdwftx_stats(struct sk_buff *skb,
-			     struct ath12k_tele_qos_tx_ctx *tx_ctx,
+			     struct ath12k_dp_link_peer_qos_stats *link_qos_stats,
 			     u8 svc_id)
 {
 	struct nlattr *attr = NULL;
-	struct ath12k_tele_qos_tx *tx = NULL;
+	struct ath12k_dp_qos_tx_stats *tx = NULL;
 	int ret = -EINVAL;
 	u8 msduq = 0, tid, q_idx;
 
 	if (svc_id == 0) {
 		for (tid = 0; tid < QOS_TID_MAX; tid++) {
 			for (q_idx = 0; q_idx < QOS_TID_MDSUQ_MAX; q_idx++) {
-				tx = &tx_ctx->tx[tid][q_idx];
+				tx = &link_qos_stats->tx[tid][q_idx];
 				attr = nla_nest_start(skb, msduq);
 				if (!attr) {
 					ath12k_err(NULL, "nla_nest_failure: SDWF TX for msduq %u\n", msduq);
@@ -7086,7 +7087,7 @@ static int ath12k_fill_sdwftx_stats(struct sk_buff *skb,
 			}
 		}
 	} else {
-		tx = &tx_ctx->tx[0][0];
+		tx = &link_qos_stats->tx[0][0];
 		if (!tx) {
 			ath12k_err(NULL, "nla_nest_failure: SDWF TX stats NA \n");
 			goto end;
@@ -7097,8 +7098,8 @@ static int ath12k_fill_sdwftx_stats(struct sk_buff *skb,
 			goto end;
 		}
 
-		ret = ath12k_tele_sdwftx_stats_update(skb, tx, tx_ctx->tid,
-					  tx_ctx->msduq);
+		ret = ath12k_tele_sdwftx_stats_update(skb, tx, link_qos_stats->tid,
+						      link_qos_stats->msduq);
 		if (ret) {
 			ath12k_err(NULL, "sdwf tx stats update failure for msduq : 0\n");
 			goto end;
@@ -7110,7 +7111,7 @@ end:
 }
 
 static int ath12k_tele_sdwfdelay_stats_update(struct sk_buff *skb,
-					      struct ath12k_tele_qos_delay *delay,
+					      struct ath12k_dp_qos_delay_stats *delay,
 					      u8 tid, u8 q_id)
 {
 	struct nlattr *attr1 = NULL, *attr2 = NULL, *attr3 = NULL;
@@ -7183,19 +7184,20 @@ end:
 	return ret;
 }
 
-static int ath12k_fill_sdwfdelay_stats(struct sk_buff *skb,
-				       struct ath12k_tele_qos_delay_ctx *delay_ctx,
-				       u8 svc_id)
+static int
+ath12k_fill_sdwfdelay_stats(struct sk_buff *skb,
+			    struct ath12k_dp_link_peer_qos_stats *link_qos_stats,
+			    u8 svc_id)
 {
 	struct nlattr *attr = NULL;
-	struct ath12k_tele_qos_delay *delay = NULL;
+	struct ath12k_dp_qos_delay_stats *delay = NULL;
 	int ret = -EINVAL;
 	u8 msduq = 0, tid, q_idx;
 
 	if (svc_id == 0) {
 		for (tid = 0; tid < QOS_TID_MAX; tid++) {
 			for (q_idx = 0; q_idx < QOS_TID_MDSUQ_MAX; q_idx++) {
-				delay = &delay_ctx->delay[tid][q_idx];
+				delay = &link_qos_stats->delay[tid][q_idx];
 				attr = nla_nest_start(skb, msduq);
 				if (!attr) {
 					ath12k_err(NULL, "nla_nest_failure: SDWF DELAY for msduq %u\n", msduq);
@@ -7211,7 +7213,7 @@ static int ath12k_fill_sdwfdelay_stats(struct sk_buff *skb,
 			}
 		}
 	} else {
-		delay = &delay_ctx->delay[0][0];
+		delay = &link_qos_stats->delay[0][0];
 		if (!delay) {
 			ath12k_err(NULL, "nla_nest_failure: SDWF DELAY stats NA \n");
 			goto end;
@@ -7222,7 +7224,9 @@ static int ath12k_fill_sdwfdelay_stats(struct sk_buff *skb,
 			goto end;
 		}
 
-		ret = ath12k_tele_sdwfdelay_stats_update(skb, delay, delay_ctx->tid, delay_ctx->msduq);
+		ret = ath12k_tele_sdwfdelay_stats_update(skb, delay,
+							 link_qos_stats->tid,
+							 link_qos_stats->msduq);
 		if (ret) {
 			ath12k_err(NULL, "sdwf stats update failure for msduq : 0\n");
 			goto end;
@@ -7407,6 +7411,22 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 
 	if (cmd->svc_id != INVALID_SVC_ID &&
 	    (cmd->feat.feat_sdwftx || cmd->feat.feat_sdwfdelay)) {
+		struct ath12k_dp_link_peer_qos_stats *qos_stats;
+
+		qos_stats = vzalloc(sizeof(*qos_stats));
+		if (!qos_stats) {
+			if (ath12k_dp_hw_peer_stats_enabled(&ar->dp)) {
+				vfree(hw_stats);
+				vfree(hw_link_stats);
+			}
+			vfree(proto);
+			vfree(htt_tx_stats);
+			vfree(rx_mon_stats);
+			vfree(telemetry_peer);
+			return -ENOMEM;
+		}
+		telemetry_peer->link_peer_stats.link_qos_stats = qos_stats;
+
 		ret = ath12k_telemetry_get_qos_stats(ahvif,
 						     telemetry_peer, cmd);
 		if (ret) {
@@ -7422,6 +7442,7 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 			goto out;
 		}
 
+		qos_stats = telemetry_peer->link_peer_stats.link_qos_stats;
 		if (cmd->feat.feat_sdwftx) {
 			attr = nla_nest_start(vendor_event,
 					      QCA_VENDOR_ATTR_WLAN_TELEMETRY_SDWFTX_STATS_EVENT);
@@ -7432,7 +7453,7 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 			}
 
 			if (ath12k_fill_sdwftx_stats(vendor_event,
-						     &telemetry_peer->peer_stats.tx_ctx,
+						     qos_stats,
 						     cmd->svc_id)) {
 				ath12k_err(NULL, "nla put failure: SDWF tx stats");
 				ret = -EINVAL;
@@ -7451,7 +7472,7 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 			}
 
 			if (ath12k_fill_sdwfdelay_stats(vendor_event,
-							&telemetry_peer->peer_stats.delay_ctx,
+							qos_stats,
 							cmd->svc_id)) {
 				ath12k_err(NULL, "nla put failure: SDWF delay stats");
 				ret = -EINVAL;
@@ -7521,6 +7542,7 @@ out:
 		vfree(hw_stats);
 		vfree(hw_link_stats);
 	}
+	vfree(telemetry_peer->link_peer_stats.link_qos_stats);
 	vfree(proto);
 	vfree(delay);
 	vfree(jitter);
