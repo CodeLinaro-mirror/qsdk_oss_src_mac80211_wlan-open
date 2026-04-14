@@ -1922,7 +1922,7 @@ void ath12k_mac_dp_peer_cleanup(struct ath12k *ar)
 			peerid_index = ath12k_dp_peer_get_peerid_index(dp, peer->peer_id);
 			if (!dp_peer->is_vdev_peer)
 				dp_peer->peer_links_map &= ~BIT(peer->link_id);
-			rcu_assign_pointer(dp_peer->link_peers[peer->link_id], NULL);
+			rcu_assign_pointer(dp_peer->link_peers[peer->hw_link_id], NULL);
 			rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], NULL);
 
 			/*vdev peer cleanup is taken care later*/
@@ -24108,7 +24108,7 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 	if (link_peer->hw_link_id == hw_link_id) {
 		peer = link_peer->dp_peer;
 		stats_link_id = peer->hw_links[hw_link_id];
-		if (peer && stats_link_id < ATH12K_DP_MAX_MLO_LINKS)
+		if (peer && stats_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS)
 			peer_stats = &peer->stats[stats_link_id];
 	}
 
@@ -24337,7 +24337,7 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 	if (link_peer->hw_link_id == hw_link_id) {
 		peer = link_peer->dp_peer;
 		stats_link_id = peer->hw_links[hw_link_id];
-		if (peer && stats_link_id < ATH12K_DP_MAX_MLO_LINKS)
+		if (peer && stats_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS)
 			peer_stats = &peer->stats[stats_link_id];
 	}
 
@@ -28662,7 +28662,7 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 				continue;
 
 			stats_link_id = peer->hw_links[ar->hw_link_id];
-			if (stats_link_id >= ATH12K_DP_MAX_MLO_LINKS)
+			if (stats_link_id >= ATH12K_DP_PEER_MAX_MLO_LINKS)
 				continue;
 			peer_stats = &peer->stats[stats_link_id];
 

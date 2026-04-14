@@ -3168,7 +3168,7 @@ static void ath12k_dp_aggr_peer_stats(struct ath12k_link_vif *arvif,
 	peer = link_peer->dp_peer;
 	stats_link_id = peer->hw_links[ar->hw_link_id];
 	link_peer_stats = &aggr_vif_stats->link_peer_stats;
-	if (stats_link_id < ATH12K_DP_MAX_MLO_LINKS) {
+	if (stats_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS) {
 		ath12k_dp_aggr_per_pkt_peer_stats(dp_pdev, &aggr_vif_stats->peer_stats,
 						  &peer->stats[stats_link_id],
 						  peer->is_vdev_peer);
@@ -3508,7 +3508,7 @@ ath12k_dp_get_link_peer_stats(struct ath12k_link_vif *arvif,
 			peer = link_peer->dp_peer;
 			stats_link_id = peer->hw_links[hw_link_id];
 			src_htt_stats = link_peer->peer_stats.tx_stats;
-			if (stats_link_id < ATH12K_DP_MAX_MLO_LINKS) {
+			if (stats_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS) {
 				ath12k_dp_update_per_pkt_peer_stats(dp_pdev, peer_stats,
 								    &peer->stats[stats_link_id],
 								    peer->is_vdev_peer);
@@ -3565,20 +3565,14 @@ static void ath12k_dp_aggr_htt_stats(struct ath12k *ar,
 				     struct ath12k_dp_link_peer_stats *link_peer_stats)
 {
 	struct ath12k_dp_link_peer *tmp_peer = NULL;
-	unsigned long peer_links_map, scan_links_map;
 	u8 tmp_link_id;
 
 	if (!ath12k_extd_tx_stats_enabled(ar))
 		return;
 
-	peer_links_map = peer->peer_links_map;
-	scan_links_map = ATH12K_SCAN_LINKS_MASK;
-
 	rcu_read_lock();
-	for_each_andnot_bit(tmp_link_id, &peer_links_map,
-			    &scan_links_map,
-			    ATH12K_NUM_MAX_LINKS) {
-		tmp_peer = rcu_dereference(peer->link_peers[tmp_link_id]);
+	for (tmp_link_id = 0; tmp_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS; tmp_link_id++) {
+		tmp_peer = ath12k_dp_link_peer_find_by_hw_link_id(peer, tmp_link_id);
 		if (!tmp_peer)
 			continue;
 		ath12k_dp_update_tx_ext_htt_aggr_stats(ar, link_peer_stats->tx_stats,
@@ -3592,21 +3586,15 @@ void ath12k_dp_aggr_rx_mon_stats(struct ath12k *ar,
 				 struct ath12k_dp_link_peer_stats *link_peer_stats)
 {
 	struct ath12k_dp_link_peer *tmp_peer = NULL;
-	unsigned long peer_links_map, scan_links_map;
 	u8 tmp_link_id;
 	struct ath12k_rx_peer_stats *rx_peer_stats = NULL;
 
 	if (!ath12k_extd_rx_stats_enabled(ar))
 		return;
 
-	peer_links_map = peer->peer_links_map;
-	scan_links_map = ATH12K_SCAN_LINKS_MASK;
-
 	rcu_read_lock();
-	for_each_andnot_bit(tmp_link_id, &peer_links_map,
-			    &scan_links_map,
-			    ATH12K_NUM_MAX_LINKS) {
-		tmp_peer = rcu_dereference(peer->link_peers[tmp_link_id]);
+	for (tmp_link_id = 0; tmp_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS; tmp_link_id++) {
+		tmp_peer = ath12k_dp_link_peer_find_by_hw_link_id(peer, tmp_link_id);
 		if (!tmp_peer)
 			continue;
 
@@ -3635,7 +3623,7 @@ ath12k_dp_update_legacy_peer_stats(struct ath12k *ar,
 	 */
 	for_each_andnot_bit(stats_link_id, &peer_links_map,
 			    &scan_links_map, ATH12K_NUM_MAX_LINKS) {
-		if (stats_link_id >= ATH12K_DP_MAX_MLO_LINKS)
+		if (stats_link_id >= ATH12K_DP_PEER_MAX_MLO_LINKS)
 			continue;
 		ath12k_dp_update_per_pkt_peer_stats(&ar->dp,
 						    peer_stats,
@@ -3692,7 +3680,7 @@ int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
 			if (arvif) {
 				telemetry_peer->peer_type = ATH12K_LINK_PEER;
 				stats_link_id = peer->hw_links[arvif->ar->hw_link_id];
-				if (stats_link_id < ATH12K_DP_MAX_MLO_LINKS) {
+				if (stats_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS) {
 					ath12k_dp_update_per_pkt_peer_stats(&ar->dp,
 									    peer_stats,
 									    &peer->stats[stats_link_id],
@@ -3721,7 +3709,7 @@ int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
 			} else {
 				telemetry_peer->peer_type = ATH12K_MLD_PEER;
 				/* Aggregated peer stats of all link in MLD peer*/
-				for (i = 0; i < ATH12K_DP_MAX_MLO_LINKS; i++)
+				for (i = 0; i < ATH12K_DP_PEER_MAX_MLO_LINKS; i++)
 					ath12k_dp_aggr_per_pkt_peer_stats(&ar->dp,
 									  peer_stats,
 									  &peer->stats[i],
@@ -3844,7 +3832,7 @@ int ath12k_dp_alloc_proto_stats_peer(struct ath12k_dp_peer *dp_peer)
 {
 	u8 index;
 
-	for (index = 0; index < ATH12K_DP_MAX_MLO_LINKS; index++) {
+	for (index = 0; index < ATH12K_DP_PEER_MAX_MLO_LINKS; index++) {
 		struct ath12k_dp_peer_stats *stats = &dp_peer->stats[index];
 
 		if (stats->proto)
@@ -3868,7 +3856,7 @@ void ath12k_dp_free_proto_stats_peer(struct ath12k_dp_peer *dp_peer)
 {
 	u8 index;
 
-	for (index = 0; index < ATH12K_DP_MAX_MLO_LINKS; index++) {
+	for (index = 0; index < ATH12K_DP_PEER_MAX_MLO_LINKS; index++) {
 		struct ath12k_dp_peer_stats *peer_stats = &dp_peer->stats[index];
 
 		kfree(peer_stats->proto);

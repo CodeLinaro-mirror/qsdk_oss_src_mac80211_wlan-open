@@ -303,8 +303,8 @@ init_tx_queues:
 
 	if (link_id >= ATH12K_GROUP_MAX_RADIO) {
 		/* send the message to all the required socs */
-		for (i = 0; i < ATH12K_NUM_MAX_LINKS; i++) {
-			link_peer = rcu_dereference(dp_peer->link_peers[i]);
+		for (i = 0; i < ATH12K_DP_PEER_MAX_MLO_LINKS; i++) {
+			link_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, i);
 			if (!link_peer)
 				continue;
 
@@ -345,8 +345,8 @@ init_tx_queues:
 		}
 	} else {
 		/* send the message to specific soc */
-		for (i = 0; i < ATH12K_NUM_MAX_LINKS; i++) {
-			link_peer = rcu_dereference(dp_peer->link_peers[i]);
+		for (i = 0; i < ATH12K_DP_PEER_MAX_MLO_LINKS; i++) {
+			link_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, i);
 			if (!link_peer)
 				continue;
 
