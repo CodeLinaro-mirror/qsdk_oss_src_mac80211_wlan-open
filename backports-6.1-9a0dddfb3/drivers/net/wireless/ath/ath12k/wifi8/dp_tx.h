@@ -79,4 +79,21 @@ void ath12k_dp_peer_cleanup_tqm_sync(struct ath12k_dp *dp, void *ctx,
 				     struct hal_tqm_status *tqm_status);
 void ath12k_wifi8_dp_tx_tqm_cmd_list_cleanup(struct ath12k_base *ab);
 int ath12k_wifi8_dp_tx_process_sam_status(struct ath12k_dp *dp, int budget);
+enum ath12k_dp_tx_enq_error
+ath12k_wifi8_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
+			      struct ath12k_vif *ahvif,
+			      struct ath12k_dp_link_vif *dp_link_vif,
+			      u8 ring_id, struct ath12k_dp_tx_msdu_info *msdu_info,
+			      bool gsn_valid, u16 gsn, int group_slot,
+			      struct sk_buff *skb, struct ath12k_link_sta *arsta,
+			      struct ath12k_dp_skb_ctrl *skb_ctrl, bool htt_mesh);
+void ath12k_wifi8_ucast_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
+				struct ath12k_link_sta *arsta, struct sk_buff *skb,
+				struct ath12k_dp_skb_ctrl *skb_ctrl, u32 qos_nw_delay,
+				struct ath12k_vif *vlan_ahvif);
+void ath12k_wifi8_mcbc_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
+			       struct ath12k_link_sta *arsta, struct sk_buff *skb,
+			       bool is_eth, bool gsn_valid, bool is_sta,
+			       struct ath12k_dp_skb_ctrl *skb_ctrl, u32 qos_nw_delay,
+			       bool htt_mesh, struct ath12k_vif *vlan_ahvif);
 #endif

@@ -1176,6 +1176,7 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.dump_device_dp_stats = ath12k_wifi8_dump_device_dp_stats,
 	.reset_device_dp_stats = ath12k_wifi8_reset_device_dp_stats,
 	.dp_assoc_link_update = ath12k_wifi8_dp_assoc_link_update,
+	.dp_tx_mcast_send = ath12k_wifi8_dp_tx_mcast_send,
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	.dp_ast_param_get = ath12k_wifi8_dp_peer_ast_param_get,
 #endif
