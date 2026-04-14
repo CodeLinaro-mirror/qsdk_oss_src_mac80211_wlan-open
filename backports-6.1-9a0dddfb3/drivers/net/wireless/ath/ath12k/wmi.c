@@ -6955,6 +6955,9 @@ ath12k_wmi_copy_resource_config(struct ath12k_base *ab,
 	wmi_cfg->flags2 |= (tg_cfg->qos) ?
 			   (WMI_RSRC_CFG_FLAGS2_SAWF_CONFIG_ENABLE_SET) : (0);
 	wmi_cfg->max_num_group_keys = cpu_to_le32(tg_cfg->max_num_group_keys);
+#ifdef CPTCFG_QCN_EXTN
+	wmi_cfg->smart_ant_cap = cpu_to_le32(tg_cfg->smart_ant_cap);
+#endif
 
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 	ath12k_wmi_copy_resource_config_ipa(ab, wmi_cfg, tg_cfg);
@@ -7214,6 +7217,11 @@ int ath12k_wmi_cmd_init(struct ath12k_base *ab)
 	if (test_bit(WMI_TLV_SERVICE_BANG_RADAR_320_SUPPORT,
 		     ab->wmi_ab.svc_map))
 		arg.res_cfg.is_simulate_radar_320_supported = true;
+
+#ifdef CPTCFG_QCN_EXTN
+	if (ath12k_smart_ant_enable(ab))
+		arg.res_cfg.smart_ant_cap = 1;
+#endif
 
 	ab->hw_params->wmi_init(ab, &arg.res_cfg);
 	ab->wow.wmi_conf_rx_decap_mode = arg.res_cfg.rx_decap_mode;
