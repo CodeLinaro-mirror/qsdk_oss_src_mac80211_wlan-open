@@ -347,11 +347,14 @@ struct ath12k *ath12k_sdwf_get_ar_from_vif(struct wireless_dev *wdev,
 	if (!ahsta)
 		return NULL;
 
-	dp_peer = ahsta->dp_peer;
-	if (!dp_peer)
-		return NULL;
-
 	rcu_read_lock();
+
+	dp_peer = ath12k_sta_get_dp_peer_rcu(ahsta);
+	if (!dp_peer) {
+		rcu_read_unlock();
+		return NULL;
+	}
+
 	if (sta->mlo)
 		link_id = ahsta->primary_link_id;
 	else if (sta->valid_links)

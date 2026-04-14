@@ -263,7 +263,146 @@ int ath12k_dp_mon_init(struct ath12k_dp *dp);
 void ath12k_dp_mon_deinit(struct ath12k_dp *dp);
 void ath12k_dp_cp_link_peer_unassign(struct ath12k *ar, struct ath12k_link_vif *arvif,
 				     struct ath12k_sta *ahsta, u8 link_id, u8 *addr);
-struct ath12k_dp_peer *ath12k_dp_peer_find(struct ath12k_dp_hw *dp_hw, u8 *addr);
+struct ath12k_dp_peer *ath12k_dp_peer_find(struct ath12k_dp_hw *dp_hw, const u8 *addr);
 u16 ath12k_dp_peer_get_peer_id(struct ath12k_dp_hw *dp_hw, u8 *addr);
 u16 ath12k_dp_peer_get_sta_id(struct ath12k_dp_hw *dp_hw, u8 *addr);
+
+enum ath12k_dp_peer_param {
+	ATH12K_DP_PEER_MAX_PARAM,
+};
+
+enum ath12k_dp_link_peer_param {
+	ATH12K_DP_LINK_PEER_MAX_PARAM,
+};
+
+/**
+ * union ath12k_config_param - Generic parameter value container for CP-DP APIs
+ *
+ * This union serves as a type-safe, extensible value carrier used by the
+ * Control Path to Data Path (CP-DP) interface APIs (ath12k_dp_peer_set/get_param
+ * and ath12k_dp_link_peer_set/get_param variants).
+ *
+ * The actual member to read or write is determined by the accompanying
+ * ath12k_dp_peer_param or ath12k_dp_link_peer_param enum value
+ * passed alongside this union. Using a union allows a single, uniform API
+ * signature to accommodate diverse parameter types (integers, flags, structs,
+ * etc.) as new param types are introduced.
+ *
+ */
+union ath12k_config_param {
+};
+
+/*
+ * Control path to Data path interface APIs for set and get params.
+ *
+ * Two lookup variants are provided for dp_peer-level operations:
+ *
+ *  - _by_dp_peer(): preferred when ath12k_sta is available in the control
+ *    path; caller obtains dp_peer via ath12k_sta_get_dp_peer_wiphy_locked()
+ *    and passes it directly, avoiding a peer table lookup.
+ *
+ *  - _by_mac_addr(): use when ath12k_sta is NOT available, e.g. for
+ *    non-associated peers (bcast/mcast, AP self-peer), or paths that
+ *    receive only a MAC address (debugfs, vendor commands, OEM callbacks).
+ *    Internally takes peer_lock and performs a hash lookup.
+ */
+int ath12k_dp_peer_set_param_by_dp_peer(void *ptr, enum ath12k_dp_peer_param param,
+					union ath12k_config_param *val);
+int ath12k_dp_peer_get_param_by_dp_peer(void *ptr, enum ath12k_dp_peer_param param,
+					union ath12k_config_param *val);
+
+int ath12k_dp_peer_set_param_by_mac_addr(struct ath12k_dp_hw *dp_hw,
+					 const u8 *addr,
+					 enum ath12k_dp_peer_param param,
+					 union ath12k_config_param *val);
+int ath12k_dp_peer_get_param_by_mac_addr(struct ath12k_dp_hw *dp_hw, const u8 *addr,
+					 enum ath12k_dp_peer_param param,
+					 union ath12k_config_param *val);
+/*
+ * Control path to Data path interface APIs for link peer set and get params.
+ *
+ * Four lookup variants are provided for dp_link_peer-level operations,
+ * differing in how the dp_peer and dp_link_peer are resolved:
+ *
+ *  - _by_dp_peer_and_link_mac(): preferred when ath12k_sta is available and
+ *    the target link is identified by its MAC address. Caller obtains dp_peer
+ *    via ath12k_sta_get_dp_peer_wiphy_locked() and passes it directly,
+ *    avoiding a peer table lookup; link_peer is resolved by link MAC.
+ *
+ *  - _by_dp_peer_and_link_id(): preferred when ath12k_sta and ath12k_link_sta
+ *    are both available. Caller obtains dp_peer via
+ *    ath12k_sta_get_dp_peer_wiphy_locked() and the logical link_id from
+ *    arsta; no peer table lookup needed.
+ *
+ *  - _by_mld_and_link_mac(): use when ath12k_sta is NOT available and only
+ *    the MLD MAC and link MAC addresses are known, e.g. for non-associated
+ *    peers, or paths driven by MAC addresses (debugfs, vendor commands, OEM
+ *    callbacks). Internally takes peer_lock and performs two hash lookups
+ *    (MLD MAC -> dp_peer, link MAC -> link_peer).
+ *
+ *  - _by_mld_mac_and_link_id(): use when ath12k_sta is NOT available and
+ *    only the MLD MAC and logical link_id are known. Same cost as
+ *    _by_mld_and_link_mac() but resolves the link_peer by link ID instead
+ *    of link MAC.
+ */
+int ath12k_dp_link_peer_set_param_by_dp_peer_and_link_mac(void *ptr, const u8 *link_mac,
+							  enum ath12k_dp_link_peer_param param,
+							  union ath12k_config_param *val);
+int ath12k_dp_link_peer_get_param_by_dp_peer_and_link_mac(void *ptr, const u8 *link_mac,
+							  enum ath12k_dp_link_peer_param param,
+							  union ath12k_config_param *val);
+
+int ath12k_dp_link_peer_set_param_by_dp_peer_and_link_id(void *ptr, u8 link_id,
+							 enum ath12k_dp_link_peer_param param,
+							 union ath12k_config_param *val);
+int ath12k_dp_link_peer_get_param_by_dp_peer_and_link_id(void *ptr, u8 link_id,
+							 enum ath12k_dp_link_peer_param param,
+							 union ath12k_config_param *val);
+
+int ath12k_dp_link_peer_set_param_by_mld_and_link_mac(struct ath12k_dp_hw *dp_hw,
+						      const u8 *mld_mac,
+						      const u8 *link_mac,
+						      enum ath12k_dp_link_peer_param param,
+						      union ath12k_config_param *val);
+
+int ath12k_dp_link_peer_get_param_by_mld_and_link_mac(struct ath12k_dp_hw *dp_hw,
+						      const u8 *mld_mac,
+						      const u8 *link_mac,
+						      enum ath12k_dp_link_peer_param param,
+						      union ath12k_config_param *val);
+
+int ath12k_dp_link_peer_set_param_by_mld_mac_and_link_id(struct ath12k_dp_hw *dp_hw,
+							 const u8 *mld_mac, u8 link_id,
+							 enum ath12k_dp_link_peer_param param,
+							 union ath12k_config_param *val);
+int ath12k_dp_link_peer_get_param_by_mld_mac_and_link_id(struct ath12k_dp_hw *dp_hw,
+							 const u8 *mld_mac, u8 link_id,
+							 enum ath12k_dp_link_peer_param param,
+							 union ath12k_config_param *val);
+
+/**
+ * ath12k_sta_get_dp_peer_wiphy_locked() - Get dp_peer with wiphy lock held
+ * @ahsta: pointer to ath12k_sta
+ *
+ * This function retrieves the dp_peer pointer in control path context
+ * where wiphy lock is already held. Uses wiphy_dereference() which
+ * provides proper RCU dereference with wiphy lock protection.
+ *
+ * Context: Must be called with wiphy lock held
+ * Return: pointer to ath12k_dp_peer or NULL
+ */
+void *ath12k_sta_get_dp_peer_wiphy_locked(struct wiphy *wiphy, struct ath12k_sta *ahsta);
+
+/**
+ * ath12k_sta_get_dp_peer_rcu() - Get dp_peer with RCU read lock held
+ * @ahsta: pointer to ath12k_sta
+ *
+ * This function retrieves the dp_peer pointer in datapath/interrupt
+ * context where RCU read lock must be held. This is typically used in
+ * interrupt handlers, NAPI contexts, or other data path operations.
+ *
+ * Context: Must be called with rcu_read_lock held
+ * Return: pointer to ath12k_dp_peer or NULL
+ */
+void *ath12k_sta_get_dp_peer_rcu(struct ath12k_sta *ahsta);
 #endif

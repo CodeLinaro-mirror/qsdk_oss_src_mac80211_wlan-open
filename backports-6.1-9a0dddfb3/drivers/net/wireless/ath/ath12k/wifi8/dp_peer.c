@@ -281,7 +281,7 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 		dp_peer->hw_link_id = params->hw_link_id;
 	} else {
 		ahsta->dp_peer_id = dp_peer->peer_id;
-		ahsta->dp_peer = dp_peer;
+		rcu_assign_pointer(ahsta->dp_peer, dp_peer);
 	}
 
 	/* cache net dev here and reuse it during process rx */
@@ -355,7 +355,7 @@ void ath12k_wifi8_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 
 	if (sta) {
 		ahsta = ath12k_sta_to_ahsta(sta);
-		ahsta->dp_peer = NULL;
+		rcu_assign_pointer(ahsta->dp_peer, NULL);
 
 		dp_peer = ath12k_dp_peer_find_by_addr_and_sta(dp_hw, addr, sta);
 	} else {
