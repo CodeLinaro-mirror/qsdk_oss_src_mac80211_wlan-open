@@ -1749,6 +1749,7 @@ struct ath12k {
 	u32 vendor_mac_used_bitmap;
 #endif
 	u8 smart_mon_filter;
+	unsigned int radar_detect_count;
 
 	struct rhashtable *rhash_tx_skb_tbl;
 	struct rhashtable_params rhash_tx_skb_param;
