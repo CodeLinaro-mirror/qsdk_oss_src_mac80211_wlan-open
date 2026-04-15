@@ -842,4 +842,9 @@ void ath12k_mac_peer_event_callback(struct ath12k_event_queue *queue,
 void ath12k_mac_vif_unref(struct ath12k_dp *dp, struct ieee80211_vif *vif);
 int ath12k_mac_read_cu_mem(struct ath12k_link_vif *arvif,
 			   u16 offset, u32 *val);
+void ath12k_mac_get_6ghz_power_mode_decision(
+	struct ath12k *ar, struct ath12k_link_vif *arvif,
+	struct ieee80211_bss_conf *bss_conf,
+	struct ath12k_6ghz_pwr_mode_decision *decision);
+
 #endif

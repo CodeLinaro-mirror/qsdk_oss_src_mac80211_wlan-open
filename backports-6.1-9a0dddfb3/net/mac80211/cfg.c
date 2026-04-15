@@ -1750,6 +1750,14 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	else
 		link_conf->power_type = IEEE80211_REG_UNSET_AP;
 
+#ifdef CPTCFG_QCN_EXTN
+	err = ieee80211_validate_6ghz_chandef_extn(sdata->local, &sdata->vif,
+						   link_id, &params->chandef,
+						   link_conf->power_type);
+	if (err)
+		return err;
+#endif
+
 	err = ieee80211_link_use_channel(link, &chanreq,
 					 IEEE80211_CHANCTX_SHARED);
 	if (!err)
@@ -3235,6 +3243,14 @@ static int ieee80211_join_mesh(struct wiphy *wiphy, struct net_device *dev,
 	/* can mesh use other SMPS modes? */
 	sdata->deflink.smps_mode = IEEE80211_SMPS_OFF;
 	sdata->deflink.needed_rx_chains = sdata->local->rx_chains;
+
+#ifdef CPTCFG_QCN_EXTN
+	err = ieee80211_validate_6ghz_chandef_extn(sdata->local, &sdata->vif,
+						   0, &chanreq.oper,
+						   sdata->vif.bss_conf.power_type);
+	if (err)
+		return err;
+#endif
 
 	err = ieee80211_link_use_channel(&sdata->deflink, &chanreq,
 					 IEEE80211_CHANCTX_SHARED);
@@ -4900,6 +4916,17 @@ __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 
 	link_conf = link_data->conf;
 
+#ifdef CPTCFG_QCN_EXTN
+	err = ieee80211_validate_6ghz_chandef_extn(sdata->local,
+						   &sdata->vif,
+						   link_id,
+						   &params->chandef,
+						   ieee80211_cfg_to_mac_power_type
+						   (params->he_6ghz_power_type));
+	if (err)
+		return err;
+#endif
+
 	if (chanreq.oper.punctured && !link_conf->eht_support)
 		return -EINVAL;
 
@@ -5426,6 +5453,14 @@ static int ieee80211_set_ap_chanwidth(struct wiphy *wiphy,
 
 	link = sdata_dereference(sdata->link[link_id], sdata);
 
+#ifdef CPTCFG_QCN_EXTN
+	ret = ieee80211_validate_6ghz_chandef_extn(sdata->local, &sdata->vif,
+						   link_id, chandef,
+						   link->conf->power_type);
+	if (ret)
+		return ret;
+#endif
+
 	ret = ieee80211_link_change_chanreq(link, &chanreq, &changed);
 	if (ret == 0)
 		ieee80211_link_info_change_notify(sdata, link, changed);
@@ -5829,6 +5864,16 @@ ieee80211_6ghz_power_mode_change(struct wiphy *wiphy, struct wireless_dev *wdev,
 	}
 
 	rcu_read_unlock();
+
+#ifdef CPTCFG_QCN_EXTN
+	if (ieee80211_validate_6ghz_chandef_extn(sdata->local,
+						 &sdata->vif,
+						 link_id,
+						 &link->conf->chanreq.oper,
+						 ieee80211_cfg_to_mac_power_type
+						 (ap_6ghz_pwr_mode)))
+		return -EINVAL;
+#endif /* CPTCFG_QCN_EXTN */
 
 	if (is_set_pwr_mode) {
 		if (cfg80211_update_chandef_6ghz_power_mode(wdev->netdev,

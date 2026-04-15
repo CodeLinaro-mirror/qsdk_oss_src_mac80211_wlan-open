@@ -1384,6 +1384,15 @@ static int ieee80211_config_bw(struct ieee80211_link_data *link,
 			enum ieee80211_ap_reg_power ap_power_type =
 				ieee80211_ap_power_type(he_6ghz_oper->control);
 			if (ap_power_type != link->conf->power_type) {
+#ifdef CPTCFG_QCN_EXTN
+				ret = ieee80211_validate_6ghz_chandef_extn(sdata->local,
+									   &sdata->vif,
+									   link->link_id,
+									   &chanreq.oper,
+									   ap_power_type);
+				if (ret)
+					return -EINVAL;
+#endif
 				link_info(link,
 					  "AP changed power type, old type: %d,  new type is %d\n",
 					  link->conf->power_type,
@@ -2971,6 +2980,16 @@ ieee80211_sta_process_chanswitch(struct ieee80211_link_data *link,
 			  csa_ie.chanreq.oper.center_freq2);
 		goto drop_connection;
 	}
+
+#ifdef CPTCFG_QCN_EXTN
+	res = ieee80211_validate_6ghz_chandef_extn(sdata->local,
+						   &sdata->vif,
+						   link->link_id,
+						   &csa_ie.chanreq.oper,
+						   IEEE80211_REG_UNSET_AP);
+	if (res)
+		goto drop_connection;
+#endif
 
 	if (cfg80211_chandef_identical(&csa_ie.chanreq.oper,
 				       &link->conf->chanreq.oper) &&
@@ -6197,6 +6216,16 @@ static int ieee80211_prep_channel(struct ieee80211_sub_if_data *sdata,
 
 	if (!link)
 		return 0;
+
+#ifdef CPTCFG_QCN_EXTN
+	ret = ieee80211_validate_6ghz_chandef_extn(sdata->local,
+						   &sdata->vif,
+						   link_id,
+						   &chanreq.oper,
+						   link->conf->power_type);
+	if (ret)
+		return ret;
+#endif
 
 	rcu_read_lock();
 	link->needed_rx_chains = min(ieee80211_max_rx_chains(link, cbss),
