@@ -87,6 +87,8 @@
 #define ATH12K_EXT_MON_MAX_PEERS		16
 #define ATH12K_EXT_MON_DEFAULT_PEER_BITMAP	0xFF
 
+#define ATH12K_FC0_TYPE_SHIFT	2
+
 struct ath12k_mon_data;
 struct dp_mon_rx_filter;
 struct dp_mon_tx_filter;
@@ -1354,10 +1356,6 @@ void ath12k_dp_mon_pdev_rx_free(struct ath12k_pdev_dp *dp_pdev)
 	}
 	ath12k_dp_mon_pdev_rx_detach(dp_pdev);
 
-
-	if (mon_ops->ext_mon_free)
-		mon_ops->ext_mon_free(dp_pdev);
-
 	if (mon_ops->mon_rx_wq_deinit)
 		mon_ops->mon_rx_wq_deinit(dp_pdev);
 
@@ -1369,6 +1367,15 @@ void ath12k_dp_mon_pdev_rx_free(struct ath12k_pdev_dp *dp_pdev)
 
 	if (mon_ops && mon_ops->mon_pdev_rx_srng_cleanup)
 		mon_ops->mon_pdev_rx_srng_cleanup(dp_pdev);
+
+	/*
+	 * ext_mon_free() must be invoked only after all monitor-related work
+	 * queues have been deinitialized and no pending work can reference
+	 * ext monitor resources. Calling this earlier may lead to use-after-free.
+	 */
+
+	if (mon_ops->ext_mon_free)
+		mon_ops->ext_mon_free(dp_pdev);
 }
 
 static inline

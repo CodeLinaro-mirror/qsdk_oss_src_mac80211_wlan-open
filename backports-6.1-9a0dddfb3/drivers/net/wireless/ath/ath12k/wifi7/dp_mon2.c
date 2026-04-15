@@ -606,13 +606,164 @@ int ath12k_wifi7_dp_mon_update_band_and_get_freq(struct ath12k_base *ab, int pde
 	return freq;
 }
 
+
+static inline u16
+ath12k_wifi7_dp_ext_mon_get_hdr_len(enum ath12k_ext_mon_frame_len v)
+{
+	switch (v) {
+	case ATH12K_EXT_MON_LEN_64B:	return 64;
+	case ATH12K_EXT_MON_LEN_128B:	return 128;
+	case ATH12K_EXT_MON_LEN_256B:	return 256;
+	default:	return 0;
+	}
+}
+
+static int
+ath12k_wifi7_dp_ext_mon_rx_adjust_mpdu_len(struct ath12k_pdev_dp *dp_pdev,
+					   struct sk_buff *mpdu,
+					   u16 type_len)
+{
+	struct ath12k_dp *dp = dp_pdev->dp;
+	struct sk_buff *curr_mpdu = NULL;
+	int size;
+	u32 frag_len;
+	u16 hdr_len;
+	u8 num_frags = 0;
+	u8 frag_iter = 0;
+	bool is_head_mpdu = true;
+
+	hdr_len = ath12k_wifi7_dp_ext_mon_get_hdr_len(type_len);
+
+	for (curr_mpdu = mpdu; curr_mpdu;) {
+		num_frags = skb_shinfo(curr_mpdu)->nr_frags;
+
+		for (frag_iter = 0; frag_iter < num_frags; ++frag_iter) {
+			frag_len = ath12k_dp_mon_get_frag_size_by_idx(dp, curr_mpdu,
+								      frag_iter);
+			if (frag_len > hdr_len) {
+				size = frag_len - hdr_len;
+				skb_coalesce_rx_frag(curr_mpdu,
+						     frag_iter,
+						     -(size),
+						     0);
+				if (!is_head_mpdu) {
+					mpdu->len -= size;
+					mpdu->data_len -= size;
+				}
+			}
+		}
+		curr_mpdu = is_head_mpdu ?
+			   skb_shinfo(curr_mpdu)->frag_list : curr_mpdu->next;
+		is_head_mpdu = false;
+	}
+
+	return 0;
+}
+
+static int
+ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
+					struct hal_rx_mon_ppdu_info *ppdu_info,
+					struct sk_buff *mpdu,
+					struct ieee80211_rx_status *rxs)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_dp_rx_ext_mon *config;
+	struct ath12k_ext_mon_pkt_config *pkt_config = NULL;
+	struct ath12k_dp_mon_mpdu_meta *mpdu_meta;
+	struct ieee80211_hdr *hdr;
+	u8 type, filter_category;
+	u16 type_len;
+	int ret;
+
+	spin_lock(&dp_mon_pdev->rx_ext_mon_lock);
+	config = dp_mon_pdev->rx_ext_mon_config;
+
+	if (!(config && config->enable)) {
+		spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
+		ath12k_warn(dp_pdev->dp,
+			    "ext mon not enabled\n");
+		return -EINVAL;
+	}
+
+	hdr = (struct ieee80211_hdr *)ath12k_dp_mon_skb_get_frag_addr(mpdu, 0);
+
+	filter_category =
+		ppdu_info->userstats[ppdu_info->user_id].filter_category;
+
+	type = ((__le16_to_cpu(hdr->frame_control) & IEEE80211_FCTL_FTYPE) >>
+		ATH12K_FC0_TYPE_SHIFT);
+
+	if (unlikely(type >= ATH12K_EXT_MON_FRAME_MAX)) {
+		spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
+		ath12k_warn(dp_pdev->dp,
+			    "Incorrect type received in fc: %x\n", hdr->frame_control);
+		return -EINVAL;
+	}
+
+	switch (filter_category) {
+	case DP_MPDU_FILTER_CATEGORY_FP:
+		pkt_config = &config->fp;
+		break;
+	case DP_MPDU_FILTER_CATEGORY_MD:
+		pkt_config = &config->md;
+		break;
+	case DP_MPDU_FILTER_CATEGORY_MO:
+		pkt_config = &config->mo;
+		break;
+	case DP_MPDU_FILTER_CATEGORY_FP_MO:
+		pkt_config = &config->fpmo;
+		break;
+	default:
+		break;
+	}
+
+	if (unlikely(!pkt_config)) {
+		spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
+		ath12k_warn(dp_pdev->dp,
+			    "Filter category not enabled: %x\n", filter_category);
+		return -EINVAL;
+	}
+
+	mpdu_meta = (struct ath12k_dp_mon_mpdu_meta *)mpdu->data;
+	type_len = pkt_config->len[type];
+	/* Unlock spinlock here; ext_mon_config must not be
+	 * accessed beyond this point
+	 */
+	spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
+	if (!mpdu_meta->full_pkt && (type_len < ATH12K_EXT_MON_LEN_FULL_PKT)) {
+		if (unlikely(!type_len)) {
+			ath12k_warn(dp_pdev->dp,
+				   "Invalid type(%d) len %d\n", type, type_len);
+			return -EINVAL;
+		}
+
+		ret = ath12k_wifi7_dp_ext_mon_rx_adjust_mpdu_len(dp_pdev,
+								 mpdu,
+								 type_len);
+
+		if (unlikely(ret)) {
+			ath12k_warn(dp_pdev->dp,
+				    "mpdu len adjustment failed\n");
+			return ret;
+		}
+	}
+
+	skb_reserve(mpdu, ATH12K_DP_MON_MAX_RADIO_TAP_HDR);
+	ath12k_dp_mon_update_radiotap(dp_pdev, ppdu_info, mpdu, rxs);
+
+	ath12k_dp_mon_rx_deliver_skb(dp_pdev, NULL, mpdu, rxs, ppdu_info);
+
+	return 0;
+}
+
 int
 ath12k_wifi7_dp_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 				    struct hal_rx_mon_ppdu_info *ppdu_info,
 				    struct sk_buff *mpdu)
 {
 	struct ieee80211_rx_status rxs = {0};
-	int freq_update = -1;
+	int freq_update = -1, ret = 0;
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 
 	ath12k_dp_mon_fill_rx_stats_info(ppdu_info, &rxs);
 
@@ -623,9 +774,6 @@ ath12k_wifi7_dp_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	if (freq_update != -1)
 		rxs.freq = freq_update;
 
-	skb_reserve(mpdu, ATH12K_DP_MON_MAX_RADIO_TAP_HDR);
-	ath12k_dp_mon_update_radiotap(dp_pdev, ppdu_info, mpdu, &rxs);
-
 	rxs.flag |= RX_FLAG_ONLY_MONITOR;
 	if (skb_shinfo(mpdu)->nr_frags)
 		rxs.flag |= RX_FLAG_AMSDU_MORE;
@@ -633,9 +781,18 @@ ath12k_wifi7_dp_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	if (ppdu_info->mpdu_info[ppdu_info->user_id].err_bitmap & HAL_RX_MPDU_ERR_FCS)
 		rxs.flag |= RX_FLAG_FAILED_FCS_CRC;
 
-	ath12k_dp_mon_rx_deliver_skb(dp_pdev, NULL, mpdu, &rxs, ppdu_info);
+	if (!(dp_mon_pdev->rx_ext_mon_config &&
+	      dp_mon_pdev->rx_ext_mon_config->enable)) {
+		skb_reserve(mpdu, ATH12K_DP_MON_MAX_RADIO_TAP_HDR);
+		ath12k_dp_mon_update_radiotap(dp_pdev, ppdu_info, mpdu, &rxs);
 
-	return 0;
+		ath12k_dp_mon_rx_deliver_skb(dp_pdev, NULL, mpdu, &rxs, ppdu_info);
+	} else {
+		ret = ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(dp_pdev,
+							      ppdu_info, mpdu, &rxs);
+	}
+
+	return ret;
 }
 
 static int
@@ -1162,7 +1319,14 @@ void ath12k_wifi7_dp_mon_rx_process_mpdu_queue(struct ath12k_pdev_dp *dp_pdev,
 			}
 		}
 
-		ath12k_wifi7_dp_mon_rx_deliver_mpdu(dp_pdev, ppdu_info, mpdu);
+		ret = ath12k_wifi7_dp_mon_rx_deliver_mpdu(dp_pdev, ppdu_info, mpdu);
+		if (unlikely(ret)) {
+			dev_kfree_skb_any(mpdu);
+			mon_stats->num_skb_free++;
+			num_skb = 0;
+			pkt_tlv = 0;
+			goto next_mpdu;
+		}
 
 next_mpdu:
 		mon_stats->num_skb_to_mac80211 += num_skb;
