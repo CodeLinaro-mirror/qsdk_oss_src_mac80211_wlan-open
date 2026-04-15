@@ -1473,8 +1473,6 @@ int ath12k_wmi_vdev_create(struct ath12k *ar, u8 *macaddr,
 
 	cmd->is_cfp_enabled = cpu_to_le32(args->is_cfp_enabled);
 
-	cmd->flags = cpu_to_le32(args->create_flags);
-
 	ether_addr_copy(cmd->vdev_macaddr.addr, macaddr);
 
 	if (args->if_stats_id != ATH12K_INVAL_VDEV_STATS_ID)
