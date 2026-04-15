@@ -5340,7 +5340,7 @@ static void ath12k_peer_assoc_h_mlo(struct ath12k_link_sta *arsta,
 	u8 link_id;
 	int i;
 
-	if (!sta->mlo || !ahsta->is_mlo)
+	if (!ath12k_is_mlo_sta(sta, ahsta))
 		return;
 
 	ml->enabled = true;

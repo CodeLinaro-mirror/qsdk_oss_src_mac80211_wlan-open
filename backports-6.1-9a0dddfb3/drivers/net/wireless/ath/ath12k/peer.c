@@ -44,6 +44,10 @@ static void ath12k_peer_del_timeout(struct timer_list *t)
 		rhashtable_remove_fast(&tracker->peer_del_hash,
 				       &entry->rhash_node,
 				       tracker->hash_params);
+		if (!is_zero_ether_addr(entry->mld_addr))
+			rhashtable_remove_fast(&tracker->mld_del_hash,
+					       &entry->mld_rhash_node,
+					       tracker->mld_hash_params);
 		removed = true;
 	}
 	spin_unlock_bh(&tracker->lock);
@@ -79,7 +83,7 @@ int ath12k_peer_del_tracker_init(struct ath12k_pdev *pdev)
 	spin_lock_init(&tracker->lock);
 	init_waitqueue_head(&tracker->hash_delete_queue);
 
-	/* Initialize hash table parameters */
+	/* Initialize link-addr hash table parameters */
 	tracker->hash_params.key_offset = offsetof(struct ath12k_peer_del_entry, addr);
 	tracker->hash_params.head_offset = offsetof(struct ath12k_peer_del_entry,
 						    rhash_node);
@@ -91,6 +95,24 @@ int ath12k_peer_del_tracker_init(struct ath12k_pdev *pdev)
 		ath12k_warn(ath12k_pdev_to_ab(pdev),
 			    "failed to init peer_del hash table for pdev %d: %d\n",
 			    pdev->pdev_id, ret);
+		kfree(tracker);
+		return ret;
+	}
+
+	/* Initialize MLD-addr hash table parameters */
+	tracker->mld_hash_params.key_offset = offsetof(struct ath12k_peer_del_entry,
+						       mld_addr);
+	tracker->mld_hash_params.head_offset = offsetof(struct ath12k_peer_del_entry,
+							mld_rhash_node);
+	tracker->mld_hash_params.key_len = ETH_ALEN;
+	tracker->mld_hash_params.automatic_shrinking = true;
+
+	ret = rhashtable_init(&tracker->mld_del_hash, &tracker->mld_hash_params);
+	if (ret) {
+		ath12k_warn(ath12k_pdev_to_ab(pdev),
+			    "failed to init mld_del hash table for pdev %d: %d\n",
+			    pdev->pdev_id, ret);
+		rhashtable_destroy(&tracker->peer_del_hash);
 		kfree(tracker);
 		return ret;
 	}
@@ -132,6 +154,10 @@ void ath12k_peer_del_tracker_destroy(struct ath12k_pdev *pdev)
 		rhashtable_remove_fast(&tracker->peer_del_hash,
 				       &entry->rhash_node,
 				       tracker->hash_params);
+		if (!is_zero_ether_addr(entry->mld_addr))
+			rhashtable_remove_fast(&tracker->mld_del_hash,
+					       &entry->mld_rhash_node,
+					       tracker->mld_hash_params);
 		kfree_rcu(entry, rcu_head);
 		atomic_dec_if_positive(&pdev->peer_del_tracker_entries);
 	}
@@ -140,6 +166,7 @@ void ath12k_peer_del_tracker_destroy(struct ath12k_pdev *pdev)
 	rhashtable_walk_exit(&iter);
 
 	rhashtable_destroy(&tracker->peer_del_hash);
+	rhashtable_destroy(&tracker->mld_del_hash);
 	kfree(tracker);
 	atomic_set(&pdev->peer_del_tracker_entries, 0);
 
@@ -148,7 +175,8 @@ void ath12k_peer_del_tracker_destroy(struct ath12k_pdev *pdev)
 }
 
 /* Add a peer to the deletion tracking hash */
-int ath12k_peer_del_tracker_add(struct ath12k_pdev *pdev, u32 vdev_id, const u8 *addr)
+int ath12k_peer_del_tracker_add(struct ath12k_pdev *pdev, u32 vdev_id,
+				const u8 *addr, const u8 *mld_addr)
 {
 	struct ath12k_peer_del_tracker *tracker = pdev->peer_del_tracker;
 	struct ath12k_peer_del_entry *entry;
@@ -163,6 +191,8 @@ int ath12k_peer_del_tracker_add(struct ath12k_pdev *pdev, u32 vdev_id, const u8 
 
 	entry->vdev_id = vdev_id;
 	ether_addr_copy(entry->addr, addr);
+	if (mld_addr && !is_zero_ether_addr(mld_addr))
+		ether_addr_copy(entry->mld_addr, mld_addr);
 	entry->pdev = pdev;
 
 	timer_setup(&entry->timer, ath12k_peer_del_timeout, 0);
@@ -171,15 +201,32 @@ int ath12k_peer_del_tracker_add(struct ath12k_pdev *pdev, u32 vdev_id, const u8 
 	ret = rhashtable_insert_fast(&tracker->peer_del_hash,
 				     &entry->rhash_node,
 				     tracker->hash_params);
-	spin_unlock_bh(&tracker->lock);
-
 	if (ret) {
+		spin_unlock_bh(&tracker->lock);
 		ath12k_warn(ath12k_pdev_to_ab(pdev),
 			    "failed to add peer %pM vdev %d to del tracker: %d\n",
 			    addr, vdev_id, ret);
 		kfree(entry);
 		return ret;
 	}
+
+	if (!is_zero_ether_addr(entry->mld_addr)) {
+		ret = rhashtable_insert_fast(&tracker->mld_del_hash,
+					     &entry->mld_rhash_node,
+					     tracker->mld_hash_params);
+		if (ret) {
+			rhashtable_remove_fast(&tracker->peer_del_hash,
+					       &entry->rhash_node,
+					       tracker->hash_params);
+			spin_unlock_bh(&tracker->lock);
+			ath12k_warn(ath12k_pdev_to_ab(pdev),
+				    "failed to add peer %pM mld %pM to mld del tracker: %d\n",
+				    addr, mld_addr, ret);
+			kfree(entry);
+			return ret;
+		}
+	}
+	spin_unlock_bh(&tracker->lock);
 
 	/* Start the 10 second timer */
 	mod_timer(&entry->timer,
@@ -188,8 +235,8 @@ int ath12k_peer_del_tracker_add(struct ath12k_pdev *pdev, u32 vdev_id, const u8 
 	atomic_inc(&pdev->peer_del_tracker_entries);
 
 	ath12k_dbg(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER,
-		   "added peer %pM vdev %d to deletion tracker with timer\n",
-		   addr, vdev_id);
+		   "added peer %pM mld %pM vdev %d to deletion tracker with timer\n",
+		   addr, entry->mld_addr, vdev_id);
 
 	return 0;
 }
@@ -210,13 +257,22 @@ void ath12k_peer_del_tracker_remove(struct ath12k_pdev *pdev, u32 vdev_id, const
 		rhashtable_remove_fast(&tracker->peer_del_hash,
 				       &entry->rhash_node,
 				       tracker->hash_params);
+		if (!is_zero_ether_addr(entry->mld_addr))
+			rhashtable_remove_fast(&tracker->mld_del_hash,
+					       &entry->mld_rhash_node,
+					       tracker->mld_hash_params);
 		spin_unlock_bh(&tracker->lock);
 
 		del_timer_sync(&entry->timer);
 
-		ath12k_dbg(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER,
-			   "removed peer %pM vdev %d from deletion tracker and cancelled timer\n",
-			   addr, vdev_id);
+		if (!is_zero_ether_addr(entry->mld_addr))
+			ath12k_dbg(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER,
+				   "removed peer %pM mld %pM vdev %d from deletion tracker and cancelled timer\n",
+				   addr, entry->mld_addr, vdev_id);
+		else
+			ath12k_dbg(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER,
+				   "removed peer %pM vdev %d from deletion tracker and cancelled timer\n",
+				   addr, vdev_id);
 
 		/* Wake up any waiters on hash_delete_queue */
 		wake_up_all(&tracker->hash_delete_queue);
@@ -236,28 +292,62 @@ void ath12k_peer_del_tracker_remove(struct ath12k_pdev *pdev, u32 vdev_id, const
 	}
 }
 
-/* Check if a peer is in the deletion tracking hash */
-bool ath12k_peer_del_tracker_check(struct ath12k_pdev *pdev, const u8 *addr)
+/* Check if a peer is in the deletion tracking hash.
+ * Returns -EEXIST if found, 0 if not found.
+ */
+int ath12k_peer_del_tracker_check(struct ath12k_pdev *pdev, const u8 *addr,
+				  const u8 *mld_addr)
 {
 	struct ath12k_peer_del_tracker *tracker = pdev->peer_del_tracker;
+	bool check_mld = mld_addr && !is_zero_ether_addr(mld_addr);
 
 	if (!tracker)
-		return false;
+		return 0;
 
 	spin_lock_bh(&tracker->lock);
+
+	/* Search for link addr duplication. */
 	if (rhashtable_lookup_fast(&tracker->peer_del_hash, addr,
 				   tracker->hash_params)) {
 		spin_unlock_bh(&tracker->lock);
-		return true;
+		return -EEXIST;
+	}
+
+	/* In case of MLO peer, the MLD MAC will be added in the AST */
+
+	/* Search for duplication of the in-progress delete, MLD MAC */
+	if (rhashtable_lookup_fast(&tracker->mld_del_hash, addr,
+				   tracker->mld_hash_params)) {
+		spin_unlock_bh(&tracker->lock);
+		return -EEXIST;
+	}
+
+	if (!check_mld) {
+		spin_unlock_bh(&tracker->lock);
+		return 0;
+	}
+
+	/* Search for duplication of the in-progress delete, link MAC */
+	if (rhashtable_lookup_fast(&tracker->peer_del_hash, mld_addr,
+				   tracker->hash_params)) {
+		spin_unlock_bh(&tracker->lock);
+		return -EEXIST;
+	}
+
+	/* Search for duplication of the in-progress delete, MLD MAC */
+	if (rhashtable_lookup_fast(&tracker->mld_del_hash, mld_addr,
+				   tracker->mld_hash_params)) {
+		spin_unlock_bh(&tracker->lock);
+		return -EEXIST;
 	}
 
 	spin_unlock_bh(&tracker->lock);
-	return false;
+	return 0;
 }
 
 /* Wait for a peer to be removed from deletion tracker */
 int ath12k_peer_del_tracker_wait(struct ath12k_pdev *pdev, const u8 *addr,
-				 unsigned long timeout_ms)
+				 unsigned long timeout_ms, const u8 *mld_addr)
 {
 	struct ath12k_peer_del_tracker *tracker = pdev->peer_del_tracker;
 	long ret;
@@ -270,7 +360,8 @@ int ath12k_peer_del_tracker_wait(struct ath12k_pdev *pdev, const u8 *addr,
 		   addr, timeout_ms);
 
 	ret = wait_event_timeout(tracker->hash_delete_queue,
-				 !ath12k_peer_del_tracker_check(pdev, addr),
+				 !ath12k_peer_del_tracker_check(pdev, addr,
+								mld_addr),
 				 msecs_to_jiffies(timeout_ms));
 
 	if (!ret) {
@@ -333,6 +424,10 @@ int ath12k_peer_del_tracker_clear_vdev(struct ath12k_pdev *pdev, u32 vdev_id)
 		rhashtable_remove_fast(&tracker->peer_del_hash,
 				       &entry->rhash_node,
 				       tracker->hash_params);
+		if (!is_zero_ether_addr(entry->mld_addr))
+			rhashtable_remove_fast(&tracker->mld_del_hash,
+					       &entry->mld_rhash_node,
+					       tracker->mld_hash_params);
 		spin_unlock_bh(&tracker->lock);
 
 		ath12k_dbg(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER,
@@ -399,6 +494,10 @@ int ath12k_peer_del_tracker_clear_pdev(struct ath12k_pdev *pdev)
 		spin_lock_bh(&tracker->lock);
 		rhashtable_remove_fast(&tracker->peer_del_hash, &entry->rhash_node,
 				       tracker->hash_params);
+		if (!is_zero_ether_addr(entry->mld_addr))
+			rhashtable_remove_fast(&tracker->mld_del_hash,
+					       &entry->mld_rhash_node,
+					       tracker->mld_hash_params);
 		spin_unlock_bh(&tracker->lock);
 
 		kfree_rcu(entry, rcu_head);
@@ -486,15 +585,24 @@ void ath12k_peer_cleanup(struct ath12k *ar, u32 vdev_id)
 }
 
 static int ath12k_peer_delete_send(struct ath12k *ar, u32 vdev_id, const u8 *addr,
-				   u32 mlo_hw_link_id_bitmap, struct ath12k_sta *ahsta,
-				   int link_id, bool peer_delete_send_mlo_hw_bitmap)
+				   u32 mlo_hw_link_id_bitmap,
+				   struct ath12k_sta *ahsta, int link_id,
+				   bool peer_delete_send_mlo_hw_bitmap)
 {
 	struct ath12k_base *ab = ar->ab;
+	struct ieee80211_sta *sta = NULL;
+	const u8 *mld_addr = NULL;
 	int ret;
 	u16 link_id_mask = 0;
 
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	if (ahsta)
+		sta = ath12k_ahsta_to_sta(ahsta);
+
+	if (ath12k_is_mlo_sta(sta, ahsta))
+		mld_addr = sta->addr;
 
 	if (ahsta && link_id != -1) {
 		ahsta->peer_delete_cmd_sent_bitmap |= BIT(link_id);
@@ -502,7 +610,7 @@ static int ath12k_peer_delete_send(struct ath12k *ar, u32 vdev_id, const u8 *add
 	}
 
 	if (ar->pdev->peer_del_tracker) {
-		ret = ath12k_peer_del_tracker_add(ar->pdev, vdev_id, addr);
+		ret = ath12k_peer_del_tracker_add(ar->pdev, vdev_id, addr, mld_addr);
 		if (ret)
 			ath12k_warn(ab, "failed to add peer %pM to deletion tracker: %d\n",
 				    addr, ret);
@@ -553,6 +661,7 @@ static int __ath12k_peer_delete(struct ath12k *ar, u32 vdev_id, u8 *addr,
 		ahsta = ath12k_sta_to_ahsta(ath12k_dp_link_peer_get_sta(peer));
 		link_id = peer->link_id;
 	}
+
 	if (peer && peer->mlo && !peer->is_bridge_peer)
 		was_mlo = true;
 
@@ -652,48 +761,34 @@ static int ath12k_wait_for_peer_create_done(struct ath12k *ar, u32 vdev_id,
 	return 0;
 }
 
-static int ath12k_track_peer_delete(struct ath12k_hw *ah, struct ath12k *ar,
+static int ath12k_track_peer_delete(struct ath12k *ar,
 				    struct ieee80211_sta *sta, const u8 *addr)
 {
-	u8 band;
-	int ret = 0;
+	struct ath12k_sta *ahsta = NULL;
+	const u8 *mld_addr = NULL;
+	int ret;
 
-	if (sta && (sta->mlo || sta->valid_links)) {
-		/* Same MLO STA reconnects quickly by interchanging the link MACs
-		 * across bands while a previous peer delete of the MACs are
-		 * in-progress. Check peer delete tracker on each radio before
-		 * peer create to avoid duplication, that triggers FW crash.
-		 */
-		if (!ah || ah->num_radio == 0) {
-			ath12k_err(ar->ab,
-				   "peer duplication cannot be checked for peer %pM\n",
-				   addr);
-			return -ENOENT;
-		}
+	if (sta)
+		ahsta = ath12k_sta_to_ahsta(sta);
 
-		for_each_ar(ah, ar, band) {
-			if (ath12k_peer_del_tracker_check(ar->pdev, addr))
-				goto wait_for_timeout;
-		}
-		return ret;
-	}
+	if (ath12k_is_mlo_sta(sta, ahsta))
+		mld_addr = sta->addr;
 
-	if (!ath12k_peer_del_tracker_check(ar->pdev, addr))
-		return ret;
+	ret = ath12k_peer_del_tracker_check(ar->pdev, addr, mld_addr);
+	if (!ret)
+		return 0;
 
-wait_for_timeout:
 	ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
 		   "peer %pM delete is pending, waiting for 3 seconds\n",
 		   addr);
 
 	ret = ath12k_peer_del_tracker_wait(ar->pdev, addr,
-					   ATH12K_PEER_DEL_TRACKER_TIMEOUT_MS);
-	if (ret) {
+					   ATH12K_PEER_DEL_TRACKER_TIMEOUT_MS,
+					   mld_addr);
+	if (ret)
 		ath12k_err(ar->ab,
 			   "peer %pM still in deletion tracker after 3s, cannot create\n",
 			   addr);
-		return ret;
-	}
 	return ret;
 }
 
@@ -722,7 +817,7 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 	/* Check if peer is in deletion tracker and wait if necessary */
 	if (ar->pdev->peer_del_tracker) {
-		ret = ath12k_track_peer_delete(ahvif->ah, ar, sta, arg->peer_addr);
+		ret = ath12k_track_peer_delete(ar, sta, arg->peer_addr);
 		if (ret)
 			return ret;
 	}

@@ -2628,6 +2628,12 @@ static inline struct ieee80211_sta *ath12k_ahsta_to_sta(struct ath12k_sta *ahsta
 	return container_of((void *)ahsta, struct ieee80211_sta, drv_priv);
 }
 
+static inline bool ath12k_is_mlo_sta(struct ieee80211_sta *sta,
+				     struct ath12k_sta *ahsta)
+{
+	return sta && ahsta && sta->mlo && ahsta->is_mlo;
+}
+
 static inline struct ieee80211_vif *ath12k_ahvif_to_vif(struct ath12k_vif *ahvif)
 {
 	return container_of((void *)ahvif, struct ieee80211_vif, drv_priv);

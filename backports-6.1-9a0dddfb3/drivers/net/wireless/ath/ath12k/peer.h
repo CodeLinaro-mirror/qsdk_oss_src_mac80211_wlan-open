@@ -31,7 +31,9 @@ struct ath12k_peer_del_key {
 struct ath12k_peer_del_entry {
 	u32 vdev_id;
 	u8 addr[ETH_ALEN];
+	u8 mld_addr[ETH_ALEN];
 	struct rhash_head rhash_node;
+	struct rhash_head mld_rhash_node;
 	struct rcu_head rcu_head;
 	struct timer_list timer;
 	struct ath12k_pdev *pdev;
@@ -40,9 +42,11 @@ struct ath12k_peer_del_entry {
 /* Structure to manage peer deletion tracking at pdev level */
 struct ath12k_peer_del_tracker {
 	struct rhashtable peer_del_hash;
-	/* Protects rhashtable ops on peer_del_hash and entry lifecycle */
+	struct rhashtable mld_del_hash;
+	/* Protects rhashtable ops on peer_del_hash, mld_del_hash and entry lifecycle */
 	spinlock_t lock;
 	struct rhashtable_params hash_params;
+	struct rhashtable_params mld_hash_params;
 	wait_queue_head_t hash_delete_queue;
 };
 
@@ -75,14 +79,16 @@ int ath12k_peer_dp_cp_link_peer_delete(struct ath12k_link_vif *arvif,
 /* Peer deletion tracking functions */
 int ath12k_peer_del_tracker_init(struct ath12k_pdev *pdev);
 void ath12k_peer_del_tracker_destroy(struct ath12k_pdev *pdev);
-int ath12k_peer_del_tracker_add(struct ath12k_pdev *pdev, u32 vdev_id, const u8 *addr);
+int ath12k_peer_del_tracker_add(struct ath12k_pdev *pdev, u32 vdev_id,
+				const u8 *addr, const u8 *mld_addr);
 void ath12k_peer_del_tracker_remove(struct ath12k_pdev *pdev, u32 vdev_id,
 				    const u8 *addr);
-bool ath12k_peer_del_tracker_check(struct ath12k_pdev *pdev, const u8 *addr);
+int ath12k_peer_del_tracker_check(struct ath12k_pdev *pdev, const u8 *addr,
+				  const u8 *mld_addr);
 int ath12k_peer_del_tracker_clear_vdev(struct ath12k_pdev *pdev, u32 vdev_id);
 int ath12k_peer_del_tracker_clear_pdev(struct ath12k_pdev *pdev);
 int ath12k_peer_del_tracker_wait(struct ath12k_pdev *pdev, const u8 *addr,
-				 unsigned long timeout_ms);
+				 unsigned long timeout_ms, const u8 *mld_addr);
 
 static inline
 struct ath12k_link_sta *ath12k_peer_get_link_sta(struct ath12k_base *ab,
