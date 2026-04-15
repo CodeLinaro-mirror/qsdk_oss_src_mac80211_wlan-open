@@ -663,6 +663,25 @@ struct ath12k_vap_cfg {
 	u32 tx_encap_type;
 	u32 rx_decap_type;
 	u32 protection_mode;
+	u32 bw_nss_rate;
+	u32 eht_ul_ldpc;
+	u32 eht_ul_ltf;
+	u32 eht_ul_nss;
+	u32 eht_ul_ppdu_bw;
+	u32 eht_ul_shortgi;
+	u32 eht_ul_stbc;
+	u32 enablertscts;
+	u32 he_dcm;
+	u32 he_extrange;
+	u32 he_ul_ldpc;
+	u32 he_ul_nss;
+	u32 he_ul_ppdu_bw;
+	u32 he_ul_shortgi;
+	u32 he_ul_stbc;
+	u32 rtscts_rate;
+	u32 vht_sgimask;
+	u32 vht80_rate;
+	u32 dis_lpi_ant_optimize;
 };
 
 struct ath12k_rssi_deauth_config {
