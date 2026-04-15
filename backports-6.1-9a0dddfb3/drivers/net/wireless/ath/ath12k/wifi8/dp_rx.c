@@ -3610,11 +3610,18 @@ int ath12k_wifi8_dp_ppe2wbm_srng_setup(struct ath12k_base *ab)
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
 	int i, ret;
 
+	if (!ath12k_ppeds_ppe2wbm_ring_size ||
+		ath12k_ppeds_ppe2wbm_ring_size > DP_PPE2WBM_REFILL_RING_SIZE) {
+		ath12k_warn(ab, "Invalid ppe2wbm refill ring size:%d\n",
+				ath12k_ppeds_ppe2wbm_ring_size);
+		return -EINVAL;
+	}
+
 	for (i = 0 ; i < DP_PPE2WBM_REFILL_RING_MAX; i++) {
 		ret = ath12k_dp_srng_setup(ab,
 				&dp_wifi8->ppe2wbm_refill_ring[i],
 				HAL_PPE2WBM_BUF, i, 0,
-				DP_PPE2WBM_REFILL_RING_SIZE);
+				ath12k_ppeds_ppe2wbm_ring_size);
 		if (ret) {
 			ath12k_warn(ab, "failed to setup WBM refill ring\n");
 			goto fail;
@@ -4250,14 +4257,6 @@ int ath12k_wifi8_dp_pdev_alloc(struct ath12k_base *ab)
 			}
 
 			dp_pdev->dp_mon_pdev_configured = true;
-		}
-	}
-
-	if (ab->dp->ppe.ppe_ops && ab->dp->ppe.ppe_ops->ath12k_ppeds_start) {
-		ret = ab->dp->ppe.ppe_ops->ath12k_ppeds_start(ab);
-		if (ret) {
-			ath12k_err(ab, "failed to start DP PPEDS\n");
-			goto err_cleanup_pdevs;
 		}
 	}
 

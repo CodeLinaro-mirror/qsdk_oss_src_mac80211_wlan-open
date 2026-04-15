@@ -4907,6 +4907,8 @@ static ssize_t ath12k_debugfs_dump_ppeds_stats(struct file *file,
 	int len = 0,  retval;
 	const int size = PAGE_SIZE;
 	char *buf;
+	u32 ppe2tcl_ring_id = dp->ppe.ppe2tcl_ring[0].ring_id;
+	u32 reo2ppe_ring_id = dp->ppe.reo2ppe_ring[0].ring_id;
 
 	memset(printed_if, 0, sizeof(printed_if));
 	buf = kzalloc(size, GFP_KERNEL);
@@ -4954,7 +4956,7 @@ static ssize_t ath12k_debugfs_dump_ppeds_stats(struct file *file,
 
 	len += scnprintf(buf + len, size - len, "SRNG Ring index Dump:\n");
 
-	srng = &ab->hal.srng_list[dp->ppe.ppe2tcl_ring.ring_id];
+	srng = &ab->hal.srng_list[ppe2tcl_ring_id];
 	if (srng) {
 		len += scnprintf(buf + len, size - len, "ppe2tcl hp 0x%x\n",
 				srng->u.src_ring.hp);
@@ -4962,7 +4964,7 @@ static ssize_t ath12k_debugfs_dump_ppeds_stats(struct file *file,
 				 *(volatile u32 *)(srng->u.src_ring.tp_addr));
 	}
 
-	srng = &ab->hal.srng_list[dp->ppe.reo2ppe_ring.ring_id];
+	srng = &ab->hal.srng_list[reo2ppe_ring_id];
 	if (srng) {
 		len += scnprintf(buf + len, size - len, "reo2ppe hp 0x%x\n",
 				 *(volatile u32 *)(srng->u.dst_ring.hp_addr));

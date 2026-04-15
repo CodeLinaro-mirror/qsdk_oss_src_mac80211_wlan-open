@@ -3141,7 +3141,6 @@ int ath12k_wifi8_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 	int valid_entries, count = 0;
 	int list_no_skb_count = 0;
 	struct htt_tx_completion *status_desc;
-	enum hal_wbm_rel_src_module buf_rel_source;
 	int htt_status;
 	struct list_head local_list;
 	struct list_head local_list_no_skb;
@@ -3149,7 +3148,6 @@ int ath12k_wifi8_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 	struct hal_tqm2sw_completion_ring *desc;
 	struct hal_tqm2sw_completion_ring *tx_status;
 	struct ath12k_dp_tx_comp_status tx_comp_status;
-	u64 desc_va;
 
 	if (WARN_ON_ONCE(budget > DP_PPEDS_SERVICE_BUDGET))
 		return count;
@@ -3161,14 +3159,12 @@ int ath12k_wifi8_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 		stat_size = sizeof(struct hal_tqm2sw_completion_ring);
 	INIT_LIST_HEAD(&local_list);
 	INIT_LIST_HEAD(&local_list_no_skb);
-	spin_lock_bh(&status_ring->lock);
 
-	ath12k_hal_srng_access_begin(ab, status_ring);
+	ath12k_hal_srng_access_dst_ring_begin_nolock(ab, status_ring);
 
-	valid_entries = ath12k_hal_srng_dst_num_free(ab, status_ring, false);
+	valid_entries = __ath12k_hal_srng_dst_num_free(status_ring, false);
 	if (!valid_entries) {
-		ath12k_hal_srng_access_end(ab, status_ring);
-		spin_unlock_bh(&status_ring->lock);
+		ath12k_hal_srng_access_dst_ring_end_nolock(status_ring);
 		return count;
 	}
 
@@ -3178,12 +3174,11 @@ int ath12k_wifi8_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 	ath12k_hal_srng_ppeds_dst_inv_entry(ab, status_ring, valid_entries);
 
 	while (likely(valid_entries--)) {
-		desc = (struct hal_tqm2sw_completion_ring *)
-			ath12k_hal_srng_dst_get_next_entry(ab, status_ring);
-		if (!desc ||
-			!ath12k_wifi8_hal_tx_completion_process(desc, &tx_comp_status))
+		desc = __ath12k_hal_srng_dst_get_next_cached_entry(status_ring, NULL);
+		if (!desc)
 			continue;
 
+		ath12k_wifi8_hal_tx_completion_process(desc, &tx_comp_status);
 		tx_status = (struct hal_tqm2sw_completion_ring *)desc;
 		if (likely(!ab->stats_disable))
 			memcpy(((void *)tx_ring->tx_status) +
@@ -3197,24 +3192,21 @@ int ath12k_wifi8_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 				tx_status->sw_peer_id, tx_status->info3,
 				tx_status->info4);
 
-		buf_rel_source =
-			FIELD_GET(HAL_TQM2SW_COMPLETION_RING_INFO0_RELEASE_SOURCE_MODULE,
-						tx_status->info0);
-
 		/* HW done cookie conversion */
-		desc_va = ((u64)le32_to_cpu(tx_status->buf_addr_info.info1) << 32 |
-				le32_to_cpu(tx_status->buf_addr_info.info0));
-		tx_desc = (struct ath12k_ppeds_tx_desc_info *)((unsigned long)desc_va);
-
-		pr_debug("PPEDS completion desc_va:%llu txdesc:%p\n",
-				desc_va, tx_desc);
+		tx_desc = (struct ath12k_ppeds_tx_desc_info *)
+				((unsigned long)tx_comp_status.tx_desc);
 		if (unlikely(!tx_desc)) {
 			ath12k_warn(ab, "unable to retrieve ppe ds tx_desc!");
 			continue;
 		}
+
+		ath12k_dbg(ab, ATH12K_DBG_PPE,
+				"PPEDS completion txdesc:%p\n", tx_desc);
+
 		tx_ring->macid[count] = tx_desc->mac_id;
 
-		if (unlikely(buf_rel_source == HAL_WBM_REL_SRC_MODULE_FW)) {
+		if (unlikely(tx_comp_status.buf_rel_source ==
+			HAL_WBM_REL_SRC_MODULE_FW)) {
 			status_desc = (void *)tx_status;
 			htt_status = le32_get_bits(status_desc->info0,
 					HAL_TX_COMP_TQM_RELEASE_REASON_MASK);
@@ -3229,7 +3221,7 @@ int ath12k_wifi8_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 				ab->dp->ppe.ppeds_stats.fw2wbm_pkt_drops++;
 				ath12k_dbg(ab, ATH12K_DBG_PPE,
 					"Frame rcvd from unexpected src %d status %d!\n",
-					buf_rel_source, htt_status);
+					tx_comp_status.buf_rel_source, htt_status);
 			}
 			tx_ring->macid[count] = 0xF;
 		}
@@ -3251,8 +3243,7 @@ int ath12k_wifi8_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 			list_no_skb_count++;
 		}
 	}
-	ath12k_hal_srng_access_end(ab, status_ring);
-	spin_unlock_bh(&status_ring->lock);
+	ath12k_hal_srng_access_dst_ring_end_nolock(status_ring);
 
 	ath12k_dp_ppeds_tx_release_desc_list_bulk(dp, &local_list, count,
 			&local_list_no_skb, list_no_skb_count);

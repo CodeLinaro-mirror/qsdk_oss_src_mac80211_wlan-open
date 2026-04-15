@@ -18,6 +18,9 @@
 
 #define HAL_TX_PPE_VP_WIFI7_ENTRIES_MAX 32
 
+#define PPE2TCL_RING_WIFI7 0
+#define REO2PPE_RING_WIFI7 0
+#define PPEDS_ARCH_MODE_WIFI7 7
 extern struct ppe_ds_wlan_ops_v2 ppeds_wlanops_v2;
 extern struct ath12k_ppeds_arch_ops ath12k_wifi7_arch_ppeds_ops;
 #endif

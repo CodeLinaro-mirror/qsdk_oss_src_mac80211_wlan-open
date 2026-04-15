@@ -19,6 +19,7 @@
 #include "dp_tx.h"
 #include "../pcic.h"
 #include "dp.h"
+#include "../umac_reset.h"
 
 extern bool ath12k_fse_enable;
 
@@ -202,77 +203,74 @@ irqreturn_t ath12k_wifi8_ds_reo2ppe_irq_handler(int irq, void *ctxt)
 	return IRQ_HANDLED;
 }
 
-void ath12k_ppeds_set_tcl_prod_idx_v2(int ds_node_id, u16 tcl_prod_idx)
+void ath12k_ppeds_wifi8_set_tcl_prod_idx(int ds_node_id, u16 tcl_prod_idx)
 {
 	struct ath12k_base *ab = ds_node_map[ds_node_id];
 	struct ath12k_dp *dp = ab->dp;
 	struct hal_srng *srng;
+	uint16_t tcl_ring_idx = 0;
 
-	srng = &ab->hal.srng_list[dp->ppe.ppe2tcl_ring.ring_id];
+	srng = &ab->hal.srng_list[dp->ppe.ppe2tcl_ring[tcl_ring_idx].ring_id];
 	if (!ab->stats_disable)
 		ab->dp->ppe.ppeds_stats.tcl_prod_cnt++;
 
 	srng->u.src_ring.hp = tcl_prod_idx * srng->entry_size;
 	ath12k_hal_srng_access_end(ab, srng);
 }
-EXPORT_SYMBOL(ath12k_ppeds_set_tcl_prod_idx_v2);
 
-u16 ath12k_ppeds_get_tcl_cons_idx_v2(int ds_node_id)
+u16 ath12k_ppeds_wifi8_get_tcl_cons_idx(int ds_node_id)
 {
 	struct ath12k_base *ab = ds_node_map[ds_node_id];
 	struct ath12k_dp *dp = ab->dp;
 	struct hal_srng *srng;
 	u32 tp;
+	uint16_t tcl_ring_idx = 0;
 
 	if (!ab->stats_disable)
 		ab->dp->ppe.ppeds_stats.tcl_cons_cnt++;
 
-	srng = &ab->hal.srng_list[dp->ppe.ppe2tcl_ring.ring_id];
+	srng = &ab->hal.srng_list[dp->ppe.ppe2tcl_ring[tcl_ring_idx].ring_id];
 	tp = readl(srng->u.src_ring.tp_addr);
 
 	return tp / srng->entry_size;
 }
-EXPORT_SYMBOL(ath12k_ppeds_get_tcl_cons_idx_v2);
 
-void ath12k_ppeds_set_reo_cons_idx_v2(int ds_node_id,
+void ath12k_ppeds_wifi8_set_reo_cons_idx(int ds_node_id,
 				      u16 reo_cons_idx)
 {
 	struct ath12k_base *ab = ds_node_map[ds_node_id];
 	struct ath12k_dp *dp = ab->dp;
 	struct hal_srng *srng;
+	uint16_t reo_ring_idx = 0;
 
-	srng = &ab->hal.srng_list[dp->ppe.reo2ppe_ring.ring_id];
+	srng = &ab->hal.srng_list[dp->ppe.reo2ppe_ring[reo_ring_idx].ring_id];
 	if (!ab->stats_disable)
 		ab->dp->ppe.ppeds_stats.reo_cons_cnt++;
 
 	srng->u.src_ring.hp = reo_cons_idx * srng->entry_size;
 	ath12k_hal_srng_access_end(ab, srng);
 }
-EXPORT_SYMBOL(ath12k_ppeds_set_reo_cons_idx_v2);
 
-
-
-u16 ath12k_ppeds_get_reo_prod_idx_v2(int ds_node_id)
+u16 ath12k_ppeds_wifi8_get_reo_prod_idx(int ds_node_id)
 {
 	struct ath12k_base *ab = ds_node_map[ds_node_id];
 	struct ath12k_dp *dp = ab->dp;
 	struct hal_srng *srng;
 	u32 hp;
+	uint16_t reo_ring_idx = 0;
 
-	srng = &ab->hal.srng_list[dp->ppe.reo2ppe_ring.ring_id];
+	srng = &ab->hal.srng_list[dp->ppe.reo2ppe_ring[reo_ring_idx].ring_id];
 	hp = readl(srng->u.dst_ring.hp_addr);
 	if (!ab->stats_disable)
 		ab->dp->ppe.ppeds_stats.reo_prod_cnt++;
 	return hp / srng->entry_size;
 }
-EXPORT_SYMBOL(ath12k_ppeds_get_reo_prod_idx_v2);
 
-
-void ath12k_ppeds_enable_srng_intr_v2(int ds_node_id, bool enable)
+void ath12k_ppeds_wifi8_enable_srng_intr(int ds_node_id, bool enable)
 {
 	struct ath12k_base *ab = ds_node_map[ds_node_id];
 
-	if (ab->dp->ppe.hw_auto_index_en) {
+	if (ab->dp->ppe.txrx_hw_auto_idx) {
 		ath12k_info(ab, "PPEDS: Data ring auto index en");
 		return;
 	}
@@ -289,9 +287,8 @@ void ath12k_ppeds_enable_srng_intr_v2(int ds_node_id, bool enable)
 		ath12k_hif_ppeds_irq_disable(ab, PPEDS_IRQ_PPE2TCL);
 	}
 }
-EXPORT_SYMBOL(ath12k_ppeds_enable_srng_intr_v2);
 
-bool ath12k_ppeds_free_rx_desc_v2(struct ppe_ds_wlan_rxdesc_elem *arr,
+bool ath12k_ppeds_wifi8_free_rx_desc_v2(struct ppe_ds_wlan_rxdesc_elem *arr,
 				  struct ath12k_base *ab, int index,
 				  u16 *idx_of_ab)
 {
@@ -331,24 +328,25 @@ bool ath12k_ppeds_free_rx_desc_v2(struct ppe_ds_wlan_rxdesc_elem *arr,
 	dev_kfree_skb_any(skb);
 	return true;
 }
-EXPORT_SYMBOL(ath12k_ppeds_free_rx_desc_v2);
+EXPORT_SYMBOL(ath12k_ppeds_wifi8_free_rx_desc_v2);
 
 int ath12k_wifi8_dp_rx_bufs_replenish_ppeds(struct ath12k_base *ab, int req_entries,
 				      u16 *idx, struct ppe_ds_wlan_rxdesc_elem *arr)
 {
-	struct dp_rxdma_ring *rx_ring = &ab->dp->rx_refill_buf_ring;
-	struct hal_srng *rxdma_srng;
+	struct hal_srng *ppe2wbm_refill_srng;
 	struct ath12k_buffer_addr *rxdma_desc;
 	u32 cookie;
 	dma_addr_t paddr;
 	struct ath12k_rx_desc_info *rx_desc;
 	int count = 0, num_remain, i;
 	u8 mgr =  ab->hal.hal_params->rx_buf_rbm;
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(ab->dp);
+	u32 ring_id = dp_wifi8->ppe2wbm_refill_ring[PPE2WBM_SW_REFILL_RING].ring_id;
 
-	rxdma_srng = &ab->hal.srng_list[rx_ring->refill_buf_ring.ring_id];
+	ppe2wbm_refill_srng = &ab->hal.srng_list[ring_id];
 
-	spin_lock_bh(&rxdma_srng->lock);
-	ath12k_hal_srng_access_begin(ab, rxdma_srng);
+	spin_lock_bh(&ppe2wbm_refill_srng->lock);
+	ath12k_hal_srng_access_begin(ab, ppe2wbm_refill_srng);
 
 	num_remain = req_entries;
 	for (i = 0 ; i < req_entries; i++) {
@@ -367,7 +365,7 @@ int ath12k_wifi8_dp_rx_bufs_replenish_ppeds(struct ath12k_base *ab, int req_entr
 		cookie = rx_desc->cookie;
 		paddr = rx_desc->paddr;
 
-		rxdma_desc = ath12k_hal_srng_src_get_next_entry(ab, rxdma_srng);
+		rxdma_desc = ath12k_hal_srng_src_get_next_entry(ab, ppe2wbm_refill_srng);
 		if (!rxdma_desc)
 			break;
 
@@ -375,12 +373,12 @@ int ath12k_wifi8_dp_rx_bufs_replenish_ppeds(struct ath12k_base *ab, int req_entr
 		num_remain--;
 	}
 
-	ath12k_hal_srng_access_end(ab, rxdma_srng);
-	spin_unlock_bh(&rxdma_srng->lock);
+	ath12k_hal_srng_access_end(ab, ppe2wbm_refill_srng);
+	spin_unlock_bh(&ppe2wbm_refill_srng->lock);
 
 	/* move any remaining descriptors to free list */
 	for (; i < req_entries; i++)
-		count += ath12k_ppeds_free_rx_desc_v2(arr, ab, i, idx);
+		count += ath12k_ppeds_wifi8_free_rx_desc_v2(arr, ab, i, idx);
 
 	if (!ab->stats_disable)
 		ab->dp->ppe.ppeds_stats.num_rx_desc_freed += count;
@@ -393,7 +391,7 @@ int ath12k_wifi8_dp_rx_bufs_replenish_ppeds(struct ath12k_base *ab, int req_entr
 #define PPE_DS_TXCMPL_DEF_BUDGET 256
 #endif
 
-void ath12k_ppeds_release_rx_desc_v2(int ds_node_id,
+void ath12k_ppeds_wifi8_release_rx_desc(int ds_node_id,
 				     struct ppe_ds_wlan_rxdesc_elem *arr, u16 count)
 {
 	struct ath12k_base *ab = ds_node_map[ds_node_id];
@@ -401,6 +399,7 @@ void ath12k_ppeds_release_rx_desc_v2(int ds_node_id,
 	struct ath12k_hw_group *ag = ab->ag;
 	u32 rx_bufs_reaped[ATH12K_MAX_SOCS] = {0};
 	struct ath12k_rx_desc_info *rx_desc;
+	struct ath12k_rx_desc_info *cookie_to_rxdesc;
 	int device_id;
 	u32 i = 0, new_size, num_free_desc;
 	u16 *tmp;
@@ -411,12 +410,11 @@ void ath12k_ppeds_release_rx_desc_v2(int ds_node_id,
 	if (unlikely(count > ab->dp->ppe.ppeds_rx_num_elem)) {
 		new_size = sizeof(u16) * count;
 		for (device_id = 0; device_id < ATH12K_MAX_SOCS; device_id++) {
-			tmp = krealloc(ab->dp->ppe.ppeds_rx_idx[device_id],
-					new_size, GFP_ATOMIC);
+			tmp = krealloc(ab->dp->ppe.ppeds_rx_idx[device_id], new_size,
+					GFP_ATOMIC);
 			if (!tmp) {
-				ath12k_err(ab,
-					"ppeds: rx desc realloc failed for size %u\n",
-					count);
+				ath12k_err(ab, "ppeds:Rx desc alloc failed for size:%u\n",
+					   count);
 				goto err_h_alloc_failure;
 			}
 
@@ -428,8 +426,8 @@ void ath12k_ppeds_release_rx_desc_v2(int ds_node_id,
 	}
 
 	for (i = 0; i < count; i++) {
-		if ((i + 1) < (count - 1))
-			prefetch((struct ath12k_rx_desc_info *)arr[i + 1].cookie);
+		cookie_to_rxdesc = ath12k_dp_get_rx_desc(ab->dp, arr[i].cookie);
+		arr[i].cookie = (unsigned long)cookie_to_rxdesc;
 
 		rx_desc = (struct ath12k_rx_desc_info *)arr[i].cookie;
 		if (!rx_desc) {
@@ -451,7 +449,8 @@ void ath12k_ppeds_release_rx_desc_v2(int ds_node_id,
 
 		src_ab = ag->ab[device_id];
 		ath12k_wifi8_dp_rx_bufs_replenish_ppeds(src_ab, rx_bufs_reaped[device_id],
-				&ab->dp->ppe.ppeds_rx_idx[device_id][0], arr);
+				&ab->dp->ppe.ppeds_rx_idx[device_id][0],
+				arr);
 	}
 
 	return;
@@ -462,15 +461,14 @@ err_h_alloc_failure:
 		num_free_desc = 0;
 		for (i = 0; i < count; i++)
 			num_free_desc +=
-				ath12k_ppeds_free_rx_desc_v2(arr, src_ab, i,
+				ath12k_ppeds_wifi8_free_rx_desc_v2(arr, src_ab, i,
 					&src_ab->dp->ppe.ppeds_rx_idx[device_id][0]);
 		if (!src_ab->stats_disable)
 			src_ab->dp->ppe.ppeds_stats.num_rx_desc_freed += num_free_desc;
 	}
 }
-EXPORT_SYMBOL(ath12k_ppeds_release_rx_desc_v2);
 
-void ath12k_ppeds_release_tx_desc_single_v2(int ds_node_id,
+void ath12k_ppeds_wifi8_release_tx_desc_single(int ds_node_id,
 					    u32 cookie)
 {
 	struct ath12k_base *ab = ds_node_map[ds_node_id];
@@ -478,9 +476,8 @@ void ath12k_ppeds_release_tx_desc_single_v2(int ds_node_id,
 	if (!ab->stats_disable)
 		ab->dp->ppe.ppeds_stats.release_tx_single_cnt++;
 }
-EXPORT_SYMBOL(ath12k_ppeds_release_tx_desc_single_v2);
 
-u32 ath12k_ppeds_get_batched_tx_desc_v2(int ds_node_id,
+u32 ath12k_ppeds_wifi8_get_batched_tx_desc(int ds_node_id,
 					struct ppe_ds_wlan_txdesc_elem *arr,
 					u32 num_buff_req,
 					u32 buff_size,
@@ -542,7 +539,7 @@ u32 ath12k_ppeds_get_batched_tx_desc_v2(int ds_node_id,
 			if (unlikely(!skb)) {
 				desc->in_use = false;
 				list_add_tail(&desc->list,
-					&dp->ppe.ppeds_tx_desc_free_list);
+						&dp->ppe.ppeds_tx_desc_free_list);
 				break;
 			}
 
@@ -587,36 +584,34 @@ update_stats_and_ret:
 
 	return allocated;
 }
-EXPORT_SYMBOL(ath12k_ppeds_get_batched_tx_desc_v2);
 
 static int ath12k_dp_ppeds_tx_comp_poll(struct napi_struct *napi, int budget)
 {
-	struct ath12k_dp *dp = container_of(napi,
-					struct ath12k_dp, ppe.ppeds_napi_ctxt.napi);
+	struct ath12k_dp *dp = container_of(napi, struct ath12k_dp,
+						ppe.ppeds_napi_ctxt.napi);
 	struct ath12k_base *ab = dp->ab;
 	int total_budget = (budget << 2) - 1;
 	int work_done;
 
-	set_bit(ATH12K_DP_PPEDS_TX_COMP_NAPI_BIT, &dp->service_rings_running);
+	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags)) {
+		napi_complete(napi);
+		ath12k_hif_ppeds_irq_enable(ab, PPEDS_IRQ_TX_COMPLETION);
+		return 0;
+	}
 	work_done = dp->arch_ops->dp_ppeds_tx_completion_handler(ab, total_budget);
+
 	if (!ab->stats_disable)
 		ab->dp->ppe.ppeds_stats.tx_desc_freed += work_done;
 
 	work_done = (work_done + 1) >> 2;
-	clear_bit(ATH12K_DP_PPEDS_TX_COMP_NAPI_BIT, &dp->service_rings_running);
 
 	if (budget > work_done) {
 		napi_complete(napi);
 		ath12k_hif_ppeds_irq_enable(ab, PPEDS_IRQ_TX_COMPLETION);
-		if (ab->dp_umac_reset.umac_pre_reset_in_prog)
-			ath12k_umac_reset_notify_pre_reset_done(ab);
-	} else if (ab->dp_umac_reset.umac_pre_reset_in_prog) {
-		 /* UMAC reset may fail in this case.
-		  */
-		WARN_ON_ONCE(1);
 	}
 
 	return (work_done > budget) ? budget : work_done;
+
 }
 
 /* PPE-DS release interrupt */
@@ -661,28 +656,31 @@ static void ath12k_dp_ppeds_del_napi_ctxt(struct ath12k_base *ab)
 	ath12k_dbg(ab, ATH12K_DBG_PPE, "%s success\n", __func__);
 }
 
-void ath12k_ppeds_notify_napi_done_v2(int ds_node_id)
+void ath12k_ppeds_wifi8_notify_napi_done(int ds_node_id)
 {
+	enum dp_umac_reset_tx_cmd tx_cmd = ATH12K_UMAC_RESET_TX_CMD_PRE_RESET_DONE;
 	struct ath12k_base *ab = ds_node_map[ds_node_id];
-	struct ath12k_dp *dp = ab->dp;
 
-	clear_bit(ATH12K_DP_PPEDS_NAPI_DONE_BIT, &dp->service_rings_running);
-
-	if (ab->dp_umac_reset.umac_pre_reset_in_prog)
-		ath12k_umac_reset_notify_pre_reset_done(ab);
+	ath12k_umac_reset_notify_target_sync_and_send(ab, tx_cmd,
+			ab->dp->ppe.task_id);
 }
-EXPORT_SYMBOL(ath12k_ppeds_notify_napi_done_v2);
+
+uint8_t ath12k_ppeds_wifi8_get_wlan_arch_mode(void)
+{
+	return PPEDS_ARCH_MODE_WIFI8;
+}
 
 struct ppe_ds_wlan_ops_v2 ppeds_wlan_ops_v2_wifi8 = {
-	.get_tx_desc_many = ath12k_ppeds_get_batched_tx_desc_v2,
-	.release_tx_desc_single = ath12k_ppeds_release_tx_desc_single_v2,
-	.enable_tx_consume_intr = ath12k_ppeds_enable_srng_intr_v2,
-	.set_tcl_prod_idx  = ath12k_ppeds_set_tcl_prod_idx_v2,
-	.set_reo_cons_idx = ath12k_ppeds_set_reo_cons_idx_v2,
-	.get_tcl_cons_idx = ath12k_ppeds_get_tcl_cons_idx_v2,
-	.get_reo_prod_idx = ath12k_ppeds_get_reo_prod_idx_v2,
-	.release_rx_desc = ath12k_ppeds_release_rx_desc_v2,
-	.notify_napi_done = ath12k_ppeds_notify_napi_done_v2,
+	.get_tx_desc_many = ath12k_ppeds_wifi8_get_batched_tx_desc,
+	.release_tx_desc_single = ath12k_ppeds_wifi8_release_tx_desc_single,
+	.enable_tx_consume_intr = ath12k_ppeds_wifi8_enable_srng_intr,
+	.set_tcl_prod_idx  = ath12k_ppeds_wifi8_set_tcl_prod_idx,
+	.set_reo_cons_idx = ath12k_ppeds_wifi8_set_reo_cons_idx,
+	.get_tcl_cons_idx = ath12k_ppeds_wifi8_get_tcl_cons_idx,
+	.get_reo_prod_idx = ath12k_ppeds_wifi8_get_reo_prod_idx,
+	.release_rx_desc = ath12k_ppeds_wifi8_release_rx_desc,
+	.notify_napi_done = ath12k_ppeds_wifi8_notify_napi_done,
+	.get_wlan_arch_mode = ath12k_ppeds_wifi8_get_wlan_arch_mode,
 };
 
 int ath12k_wifi8_ppeds_attach(struct ath12k_base *ab)
@@ -696,6 +694,19 @@ int ath12k_wifi8_ppeds_attach(struct ath12k_base *ab)
 		ath12k_err(ab, "nss_plugin_ops not registered for device_id %d\n",
 			   ab->device_id);
 		return -EOPNOTSUPP;
+	}
+
+	/*
+	 * Set the Auto index and hw buffer manager.
+	 */
+	if (ath12k_ppeds_txrx_hw_auto_idx &&
+		ab->dp->hw_params->ds_txrx_hw_auto_idx) {
+		ab->dp->ppe.txrx_hw_auto_idx = 1;
+	}
+
+	if (ath12k_ppeds_hw_buff_mgmt &&
+		ab->dp->hw_params->ds_hw_buff_mgmt) {
+		ab->dp->ppe.hw_buff_mgmt = 1;
 	}
 
 	ath12k_dp_ppeds_tx_cmem_init(ab, ab->dp);
@@ -716,7 +727,7 @@ int ath12k_wifi8_ppeds_attach(struct ath12k_base *ab)
 	ds_node_id = ab->dp->ppe.nss_plugin_ops->ds_inst_alloc(&ppeds_wlan_ops_v2_wifi8,
 							sizeof(struct ath12k_base *));
 
-	if (ds_node_id == PPE_VP_DS_INVALID_NODE_ID) {
+	if (ds_node_id < 0) {
 		ath12k_err(ab, "Failed to get DS node id for device_id %d\n",
 			   ab->device_id);
 		return -ENOSR;
@@ -736,19 +747,21 @@ int ath12k_wifi8_ppeds_attach(struct ath12k_base *ab)
 	if (ret)
 		return -ENOSR;
 
-	ath12k_info(ab, "PPEDS attach success\n");
+	ath12k_info(ab, "PPEDS instance alloc success - ds_node_id:%d\n", ds_node_id);
 
 	for (i = 0; i < ATH12K_MAX_SOCS; i++) {
 		ab->dp->ppe.ppeds_rx_idx[i] =
-				kzalloc((sizeof(u16) * PPE_DS_TXCMPL_DEF_BUDGET),
-					GFP_ATOMIC);
+					kzalloc((sizeof(u16) * PPE_DS_TXCMPL_DEF_BUDGET),
+						      GFP_ATOMIC);
 		if (!ab->dp->ppe.ppeds_rx_idx[i]) {
-			ath12k_err(ab, "OOM:Failed to alloc mem ppeds_rx_idx\n");
+			ath12k_err(ab, "Failed to alloc mem ppeds_rx_idx\n");
 			goto err_ppeds_attach;
 		}
 	}
 
 	ab->dp->ppe.ppeds_rx_num_elem = PPE_DS_TXCMPL_DEF_BUDGET;
+	ath12k_info(ab, "PPEDS attach success\n");
+
 	return 0;
 
 err_ppeds_attach:
@@ -831,8 +844,7 @@ int ath12k_wifi8_dp_ppeds_start(struct ath12k_base *ab)
 						      ab->dp->ppe.ds_node_id) != 0)
 		return -EINVAL;
 
-	ath12k_dbg(ab, ATH12K_DBG_PPE,
-			"PPEDS start success device_id %d ds_node_id %d ppeds_soc_idx %d",
+	ath12k_info(ab, "PPEDS start success device_id %d ds_node_id %d ppeds_soc_idx %d",
 			ab->device_id, ab->dp->ppe.ds_node_id, ab->dp->ppe.ppeds_soc_idx);
 	return 0;
 }
@@ -849,6 +861,7 @@ void ath12k_wifi8_dp_ppeds_stop(struct ath12k_base *ab)
 	if (!ab->dp->ppe.nss_plugin_ops) {
 		ath12k_err(ab, "nss_plugin_ops not registered for device_id %d\n",
 			   ab->device_id);
+		return;
 	}
 
 	umac_reset_in_progress = ath12k_dp_umac_reset_in_progress(ab);
@@ -874,8 +887,27 @@ void ath12k_wifi8_dp_ppeds_stop(struct ath12k_base *ab)
 int ath12k_wifi8_dp_ppeds_register_soc(struct ath12k_dp *dp, struct dp_ppe_ds_idxs *idx)
 {
 	struct ath12k_base *ab = dp->ab;
-	struct hal_srng *ppe2tcl_ring, *reo2ppe_ring;
-	struct ppe_ds_wlan_reg_info reg_info = {0};
+	struct hal_srng *ppe2tcl_ring, *reo2ppe_ring, *tqm2ppe_ring, *ppe2wbm_ring;
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+	struct ppe_ds_wlan_arch_reg_info reg_info = {0};
+	struct ppe_ds_wlan_reg_data_ring_cfg *ring_info =
+				&reg_info.wifi8_cfg.data_ring.ring_info;
+	struct ppe_ds_wlan_reg_data_ring_hptp_cfg *txrx_info =
+				&reg_info.wifi8_cfg.data_ring.txrx_info;
+	struct ppe_ds_wlan_reg_hbm_ring_cfg *hbm_ring_info =
+				&reg_info.wifi8_cfg.hw_buf_mgmt.ring_info;
+	struct ppe_ds_wlan_reg_hbm_ring_hptp_cfg *hbm_txrx_info =
+				&reg_info.wifi8_cfg.hw_buf_mgmt.txrx_info;
+	int ppe2tcl_irq_type, reo2ppe_irq_type;
+	u32 reg_base;
+	u32 reg_offset;
+	dma_addr_t reg_paddr;
+	uint32_t ring_idx;
+	u32 ring_id;
+	u32 ppe2tcl_rings_max;
+	u32 reo2ppe_rings_max;
+
+	reg_info.wifi_arch_mode = ath12k_ppeds_wifi8_get_wlan_arch_mode();
 
 	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
 		return 0;
@@ -886,25 +918,229 @@ int ath12k_wifi8_dp_ppeds_register_soc(struct ath12k_dp *dp, struct dp_ppe_ds_id
 		return -EOPNOTSUPP;
 	}
 
-	ppe2tcl_ring = &ab->hal.srng_list[dp->ppe.ppe2tcl_ring.ring_id];
-	reo2ppe_ring =  &ab->hal.srng_list[dp->ppe.reo2ppe_ring.ring_id];
+	if (!(ath12k_ppeds_reo2ppe_rings_max) ||
+		(ath12k_ppeds_reo2ppe_rings_max > ATH12K_REO2PPE_MAX_RINGS) ||
+		!(ath12k_ppeds_ppe2tcl_rings_max) ||
+		(ath12k_ppeds_ppe2tcl_rings_max > ATH12K_PPE2TCL_MAX_RINGS)) {
+		ath12k_warn(ab, "Invalid ring max ppe2tcl:%d reo2ppe:%d\n",
+				ath12k_ppeds_ppe2tcl_rings_max,
+				ath12k_ppeds_reo2ppe_rings_max);
+		return -EOPNOTSUPP;
+	}
 
-	reg_info.ppe2tcl_ba = dp->ppe.ppe2tcl_ring.paddr;
-	reg_info.reo2ppe_ba = dp->ppe.reo2ppe_ring.paddr;
-	reg_info.ppe2tcl_num_desc = DP_PPE2TCL_RING_SIZE;
-	reg_info.reo2ppe_num_desc = DP_REO2PPE_RING_SIZE;
+	if (!ath12k_ppeds_ppe2tcl_ring_size ||
+		!ath12k_ppeds_reo2ppe_ring_size ||
+		!ath12k_ppeds_tqm2ppe_ring_size ||
+		ath12k_ppeds_ppe2tcl_ring_size > DP_PPE2TCL_RING_SIZE ||
+		ath12k_ppeds_reo2ppe_ring_size > DP_REO2PPE_RING_SIZE ||
+		ath12k_ppeds_tqm2ppe_ring_size > DP_TQM2PPE_RING_SIZE) {
+		ath12k_err(ab, "Invalid ring size ppe2tcl:%d reo2ppe:%d tqm2ppe:%d\n",
+				ath12k_ppeds_ppe2tcl_ring_size,
+				ath12k_ppeds_reo2ppe_ring_size,
+				ath12k_ppeds_tqm2ppe_ring_size);
+		return -EOPNOTSUPP;
+	}
 
-	if (ab->dp->ppe.nss_plugin_ops->ds_inst_register(&reg_info,
-				ab->dp->ppe.ds_node_id) != true) {
-		ath12k_err(ab, "ppeds not attached");
+	for (ring_idx = 0; ring_idx < ath12k_ppeds_ppe2tcl_rings_max; ring_idx++) {
+
+		ppe2tcl_ring = &ab->hal.srng_list[dp->ppe.ppe2tcl_ring[ring_idx].ring_id];
+		ring_info->ppe2tcl_ba[ring_idx] = dp->ppe.ppe2tcl_ring[ring_idx].paddr;
+		ring_info->ppe2tcl_num_desc[ring_idx] = ath12k_ppeds_ppe2tcl_ring_size;
+		ring_info->num_ppe2tcl = ath12k_ppeds_ppe2tcl_rings_max;
+		ath12k_info(ab, "PPEDS reg - PPE2TCL ring_id:%d ppe2tcl_ring:%p\n",
+				dp->ppe.ppe2tcl_ring[ring_idx].ring_id,
+				ppe2tcl_ring);
+		ath12k_info(ab, "PPEDS PPE2TCL num_desc:%d num_rings:%d\n",
+				ring_info->ppe2tcl_num_desc[ring_idx],
+				ring_info->num_ppe2tcl);
+
+		if (dp->ppe.txrx_hw_auto_idx) {
+			reg_offset = ppe2tcl_ring->hwreg_base[HAL_SRNG_REG_GRP_R2];
+			reg_paddr = ath12k_hif_ppeds_get_pci_window_umac_reg_paddr(ab,
+							reg_offset);
+			if (!reg_paddr) {
+				ath12k_err(ab, "PPEDS PPE2TCL pci window addr invalid");
+				return -EINVAL;
+			}
+			txrx_info->wlan_ppe2tcl_hp_addr[ring_idx].paddr = reg_paddr;
+			txrx_info->wlan_ppe2tcl_hp_addr[ring_idx].vaddr =
+							ppe2tcl_ring->u.src_ring.hp_addr;
+			ath12k_info(ab, "PPEDS - Data ring auto index - reg_offset:%x\n",
+					reg_offset);
+			ath12k_info(ab, "PPEDS - ppe2tcl_paddr:%pad vaddr:%p\n",
+					&reg_paddr, ppe2tcl_ring->u.src_ring.hp_addr);
+			reg_info.wifi8_cfg.data_ring_auto_index_en = true;
+		} else {
+			ath12k_info(ab, "PPEDS - Data ring auto index disabled\n");
+		}
+
+	}
+
+	for (ring_idx = 0; ring_idx < ath12k_ppeds_reo2ppe_rings_max; ring_idx++) {
+		reo2ppe_ring = &ab->hal.srng_list[dp->ppe.reo2ppe_ring[ring_idx].ring_id];
+		ring_info->reo2ppe_ba[ring_idx] = dp->ppe.reo2ppe_ring[ring_idx].paddr;
+		ring_info->reo2ppe_num_desc[ring_idx] = ath12k_ppeds_reo2ppe_ring_size;
+		ring_info->num_reo2ppe = ath12k_ppeds_reo2ppe_rings_max;
+		ath12k_info(ab, "PPEDS reg - REO2PPE ring_id:%d reo2ppe_ring:%p\n",
+				dp->ppe.reo2ppe_ring[ring_idx].ring_id,
+				reo2ppe_ring);
+		ath12k_info(ab, "PPEDS REO2PPE ring_size:%d num_reo2ppe_ring:%d\n",
+				ring_info->reo2ppe_num_desc[ring_idx],
+				ring_info->num_reo2ppe);
+
+		if (dp->ppe.txrx_hw_auto_idx) {
+			reg_base = reo2ppe_ring->hwreg_base[HAL_SRNG_REG_GRP_R2];
+			reg_offset = reg_base + (HAL_REO1_RING_TP - HAL_REO1_RING_HP);
+			reg_paddr = ath12k_hif_ppeds_get_pci_window_umac_reg_paddr(ab,
+					reg_offset);
+			if (!reg_paddr) {
+				ath12k_err(ab, "PPEDS REO2PPE pci window addr invalid");
+				return -EINVAL;
+			}
+			txrx_info->wlan_reo2ppe_tp_addr[ring_idx].paddr = reg_paddr;
+			txrx_info->wlan_reo2ppe_tp_addr[ring_idx].vaddr =
+					reo2ppe_ring->u.dst_ring.tp_addr;
+			ath12k_info(ab, "PPEDS  - Data ring auto index - reg_offset:%x\n",
+					reg_offset);
+			ath12k_info(ab, "PPEDS - reo2ppe_paddr:%pad vaddr:%p\n",
+					&reg_paddr, reo2ppe_ring->u.dst_ring.tp_addr);
+			reg_info.wifi8_cfg.data_ring_auto_index_en = true;
+		} else {
+			ath12k_info(ab, "PPEDS - Data ring auto index disabled\n");
+		}
+
+	}
+
+	if (dp->ppe.hw_buff_mgmt) {
+		reg_info.wifi8_cfg.hw_buff_mgmt_en = true;
+		ring_id = dp_wifi8->ppe2wbm_refill_ring[PPE2WBM_HW_REFILL_RING].ring_id;
+		tqm2ppe_ring = &ab->hal.srng_list[dp->ppe.tqm2ppe_txcmp_ring.ring_id];
+		ppe2wbm_ring = &ab->hal.srng_list[ring_id];
+
+		ath12k_info(ab, "PPEDS:HBM - TQM2PPE ring_id:%d PPE2WBM ring_id:%d\n",
+				dp->ppe.tqm2ppe_txcmp_ring.ring_id,
+				dp_wifi8->ppe2wbm_refill_ring[0].ring_id);
+
+		/* HW buffer manager - TQM2PPE ring and PPE2WBM */
+		hbm_ring_info->tqm2ppe_ba = dp->ppe.tqm2ppe_txcmp_ring.paddr;
+		hbm_ring_info->tqm2ppe_num_desc = ath12k_ppeds_tqm2ppe_ring_size;
+		ath12k_info(ab, "PPEDS:HBM tqm2ppe_ba:%pad num_desc:%u\n",
+				&hbm_ring_info->tqm2ppe_ba,
+				hbm_ring_info->tqm2ppe_num_desc);
+
+		hbm_ring_info->ppe2wbm_ba = dp_wifi8->ppe2wbm_refill_ring[0].paddr;
+		hbm_ring_info->ppe2wbm_num_desc = ath12k_ppeds_ppe2wbm_ring_size;
+		ath12k_info(ab, "PPEDS:HBM pp2wbm_ba:%pad num_desc:%u\n",
+				&hbm_ring_info->ppe2wbm_ba,
+				hbm_ring_info->ppe2wbm_num_desc);
+
+		/* HW buffer manager - TQM2PPE ring  auto index set */
+		reg_base = tqm2ppe_ring->hwreg_base[HAL_SRNG_REG_GRP_R2];
+		reg_offset = reg_base + (HAL_REO1_RING_TP - HAL_REO1_RING_HP);
+		reg_paddr =
+			ath12k_hif_ppeds_get_pci_window_umac_reg_paddr(ab, reg_offset);
+		hbm_txrx_info->wlan_tqm2ppe_tp_addr.paddr = reg_paddr;
+		hbm_txrx_info->wlan_tqm2ppe_tp_addr.vaddr =
+							tqm2ppe_ring->u.dst_ring.tp_addr;
+
+		ath12k_info(ab, "PPEDS:HBM - TQM2PPE auto idx tqm2ppe_tp:%x paddr %pad\n",
+				reg_offset, &reg_paddr);
+
+		/* ======HW buffer manager - PPE2WBM ring  auto index set ======*/
+		reg_base = ppe2wbm_ring->hwreg_base[HAL_SRNG_REG_GRP_R2];
+		reg_offset = reg_base;
+		reg_paddr =
+			ath12k_hif_ppeds_get_pci_window_umac_reg_paddr(ab, reg_offset);
+		hbm_txrx_info->wlan_ppe2wbm_hp_addr.paddr = reg_paddr;
+		hbm_txrx_info->wlan_ppe2wbm_hp_addr.vaddr =
+							ppe2wbm_ring->u.src_ring.hp_addr;
+
+		ath12k_info(ab, "PPEDS:HBM - PPE2WBM auto idx ppe2wbm_hp:%x paddr %pad\n",
+				reg_offset, &reg_paddr);
+
+		reg_info.wifi8_cfg.hw_buff_mgmt_en = true;
+	}
+
+	if (ab->dp->ppe.nss_plugin_ops->ds_inst_register_wifi_arch_mode(&reg_info,
+						ab->dp->ppe.ds_node_id) != true) {
+		ath12k_err(ab, "ppeds inst register failed ");
 		return -EINVAL;
 	}
 
-	idx->ppe2tcl_start_idx = reg_info.ppe2tcl_start_idx;
-	idx->reo2ppe_start_idx = reg_info.reo2ppe_start_idx;
-	ab->dp->ppe.ppeds_int_mode_enabled = reg_info.ppe_ds_int_mode_enabled;
+	if (reg_info.wifi8_cfg.data_ring_auto_index_en) {
+		ppe2tcl_rings_max = ath12k_ppeds_ppe2tcl_rings_max;
+		for (ring_idx = 0; ring_idx < ppe2tcl_rings_max; ring_idx++) {
+			ppe2tcl_irq_type = (ring_idx * ATH12K_PPEDS_IRQ_NEXT_RING) +
+						PPEDS_IRQ_PPE2TCL;
 
-	ath12k_info(ab,
+			ring_id = dp->ppe.ppe2tcl_ring[ring_idx].ring_id;
+
+			/*
+			 * Disable interrupt.
+			 */
+			disable_irq(ab->dp->ppe.ppeds_irq[ppe2tcl_irq_type]);
+			ppe2tcl_ring = &ab->hal.srng_list[ring_id];
+
+			ath12k_info(ab, "PPEDS:HBM auto_idx ring_id:%d ppe2tcl_ring:%p\n",
+					dp->ppe.ppe2tcl_ring[ring_idx].ring_id,
+					ppe2tcl_ring);
+			ab->hal.hal_ops->hal_srng_idx_update_addr(ab,
+					ppe2tcl_ring, NULL, 0,
+					txrx_info->edma_rxdesc_cons_addr[ring_idx].vaddr,
+					txrx_info->edma_rxdesc_cons_addr[ring_idx].paddr);
+
+			ath12k_info(ab, "PPEDS:HBM PPE2TCL srng change idx ptr done\n");
+		}
+
+		reo2ppe_rings_max = ath12k_ppeds_reo2ppe_rings_max;
+		for (ring_idx = 0; ring_idx < reo2ppe_rings_max; ring_idx++) {
+			reo2ppe_irq_type =
+				(ring_idx * ATH12K_PPEDS_IRQ_NEXT_RING) +
+				PPEDS_IRQ_REO2PPE;
+
+			/*
+			 * Disable interrupt.
+			 */
+			disable_irq(ab->dp->ppe.ppeds_irq[reo2ppe_irq_type]);
+			ring_id = dp->ppe.reo2ppe_ring[ring_idx].ring_id;
+			reo2ppe_ring =  &ab->hal.srng_list[ring_id];
+
+			ath12k_info(ab, "PPEDS:HBM auto_idx ring_id:%d reo2ppe_ring:%p\n",
+					dp->ppe.reo2ppe_ring[ring_idx].ring_id,
+					reo2ppe_ring);
+			ab->hal.hal_ops->hal_srng_idx_update_addr(ab, reo2ppe_ring,
+					txrx_info->edma_txdesc_prod_addr[ring_idx].vaddr,
+					txrx_info->edma_txdesc_prod_addr[ring_idx].paddr,
+					NULL, 0);
+
+			ath12k_info(ab, "PPEDS:HBM REO2PPE srng change idx ptr done\n");
+		}
+
+		/*
+		 * Hw buffer manager auto index for TQM2PPE and PPE2WBM rings.
+		 */
+		if (dp->ppe.hw_buff_mgmt) {
+			ab->hal.hal_ops->hal_srng_idx_update_addr(ab, tqm2ppe_ring,
+				hbm_txrx_info->edma_rxfill_prod_addr.vaddr,
+				hbm_txrx_info->edma_rxfill_prod_addr.paddr,
+						NULL, 0);
+
+			ab->hal.hal_ops->hal_srng_idx_update_addr(ab,
+				ppe2wbm_ring, NULL, 0,
+				hbm_txrx_info->edma_txcmpl_cons_addr.vaddr,
+				hbm_txrx_info->edma_txcmpl_cons_addr.paddr);
+		}
+	} else {
+
+		idx->ppe2tcl_start_idx = reg_info.wifi7_cfg.ppe2tcl_start_idx;
+		idx->reo2ppe_start_idx = reg_info.wifi7_cfg.reo2ppe_start_idx;
+		ab->dp->ppe.ppeds_int_mode_enabled =
+					reg_info.wifi7_cfg.ppe_ds_int_mode_enabled;
+	}
+
+	ath12k_info(ab, "PPEDS register success\n");
+	ath12k_dbg(ab,
+		ATH12K_DBG_PPE,
 		"PPEDS register success device_id:%d ppe2tcl_idx:0x%x reo2ppe_idx:0x%x",
 		ab->device_id, idx->ppe2tcl_start_idx, idx->reo2ppe_start_idx);
 
@@ -1003,6 +1239,8 @@ int ath12k_wifi8_dp_srng_ppeds_setup(struct ath12k_base *ab)
 	struct ath12k_dp *dp = ab->dp;
 	struct dp_ppe_ds_idxs restore_idx = {0};
 	int ret, size;
+	uint8_t idx;
+	struct hal_srng *tqm2ppe_ring;
 
 	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
 		return 0;
@@ -1010,19 +1248,44 @@ int ath12k_wifi8_dp_srng_ppeds_setup(struct ath12k_base *ab)
 	if (ath12k_dp_umac_reset_in_progress(ab))
 		goto skip_ppeds_dp_srng_ring_alloc;
 
-
-	ret = ath12k_wifi8_ppeds_dp_srng_alloc(ab, &dp->ppe.reo2ppe_ring, HAL_REO2PPE,
-					 0, DP_REO2PPE_RING_SIZE);
-	if (ret) {
-		ath12k_warn(ab, "failed to set up reo2ppe ring :%d\n", ret);
+	if (!(ath12k_ppeds_reo2ppe_rings_max) ||
+		(ath12k_ppeds_reo2ppe_rings_max > ATH12K_REO2PPE_MAX_RINGS) ||
+		!(ath12k_ppeds_ppe2tcl_rings_max) ||
+		(ath12k_ppeds_ppe2tcl_rings_max > ATH12K_PPE2TCL_MAX_RINGS)) {
+		ath12k_warn(ab, "Invalid ring max ppe2tcl:%d reo2ppe:%d\n",
+				ath12k_ppeds_ppe2tcl_rings_max,
+				ath12k_ppeds_reo2ppe_rings_max);
 		goto err;
 	}
 
-	ret = ath12k_wifi8_ppeds_dp_srng_alloc(ab, &dp->ppe.ppe2tcl_ring, HAL_PPE2TCL,
-					 0, DP_PPE2TCL_RING_SIZE);
-	if (ret) {
-		ath12k_warn(ab, "failed to set up ppe2tcl ring :%d\n", ret);
-		goto err;
+	ath12k_info(ab, "PPEDS srng setup\n");
+	for (idx = 0; idx < ath12k_ppeds_reo2ppe_rings_max; idx++) {
+		ath12k_info(ab, "PPEDS: Before alloc reo2ppe[%d] ring_id=%d\n",
+		       idx, dp->ppe.reo2ppe_ring[idx].ring_id);
+		ret = ath12k_wifi8_ppeds_dp_srng_alloc(ab, &dp->ppe.reo2ppe_ring[idx],
+				HAL_REO2PPE,
+				0, ath12k_ppeds_reo2ppe_ring_size);
+		if (ret) {
+			ath12k_warn(ab, "failed to set up reo2ppe ring:%d ring_num:%d\n",
+					ret, idx);
+			goto err;
+		}
+		ath12k_info(ab, "PPEDS After alloc reo2ppe[%d] ring_id=%d paddr=%pad\n",
+				idx, dp->ppe.reo2ppe_ring[idx].ring_id,
+				&dp->ppe.reo2ppe_ring[idx].paddr);
+	}
+
+	for (idx = 0; idx < ath12k_ppeds_ppe2tcl_rings_max; idx++) {
+		ret = ath12k_wifi8_ppeds_dp_srng_alloc(ab, &dp->ppe.ppe2tcl_ring[idx],
+				HAL_PPE2TCL,
+				0, ath12k_ppeds_ppe2tcl_ring_size);
+		if (ret) {
+			ath12k_warn(ab, "failed to set up ppe2tcl ring :%d\n", ret);
+			goto err;
+		}
+		ath12k_info(ab, "PPEDS alloc ppe2tcl[%d] ring_id=%d paddr=%pad\n",
+				idx, dp->ppe.ppe2tcl_ring[idx].ring_id,
+				&dp->ppe.ppe2tcl_ring[idx].paddr);
 	}
 
 	size = sizeof(struct hal_tqm2sw_completion_ring) * DP_TX_COMP_RING_SIZE;
@@ -1032,12 +1295,12 @@ int ath12k_wifi8_dp_srng_ppeds_setup(struct ath12k_base *ab)
 
 skip_ppeds_dp_srng_ring_alloc:
 	if (!dp->ppe.ppeds_comp_ring.tx_status) {
-		ath12k_err(ab, "PPE tx status completion buffer alloc failed\n");
+		ath12k_err(ab, "PPEDS tx status completion buffer alloc failed\n");
 		ret = -ENOMEM;
 		goto err;
 	}
 
-	if (!dp->hw_params->ds_txrx_hw_auto_idx) {
+	if (!dp->ppe.txrx_hw_auto_idx) {
 		ret = ath12k_wifi8_dp_ppeds_register_soc(dp, &restore_idx);
 		if (ret) {
 			ath12k_err(ab, "ppeds registration failed\n");
@@ -1045,25 +1308,53 @@ skip_ppeds_dp_srng_ring_alloc:
 		}
 	}
 
-	ret = ath12k_wifi8_ppeds_dp_srng_init(ab, &dp->ppe.reo2ppe_ring, HAL_REO2PPE,
-					0, 0, DP_REO2PPE_RING_SIZE,
-					restore_idx.reo2ppe_start_idx);
-	if (ret) {
-		ath12k_warn(ab, "failed to set up reo2ppe ring :%d\n", ret);
-		goto err;
+	for (idx = 0; idx < ath12k_ppeds_reo2ppe_rings_max; idx++) {
+		ret = ath12k_wifi8_ppeds_dp_srng_init(ab, &dp->ppe.reo2ppe_ring[idx],
+				HAL_REO2PPE,
+				0, 0, ath12k_ppeds_reo2ppe_ring_size,
+				restore_idx.reo2ppe_start_idx);
+		if (ret) {
+			ath12k_warn(ab, "failed to set up reo2ppe ring :%d\n", ret);
+			goto err;
+		}
+		ath12k_info(ab, "PPEDS SRNG init reo2ppe[%d] ring_id=%d restore_idx=%d\n",
+				idx, dp->ppe.reo2ppe_ring[idx].ring_id,
+				restore_idx.reo2ppe_start_idx);
+	}
+
+	for (idx = 0; idx < ath12k_ppeds_ppe2tcl_rings_max; idx++) {
+		ret = ath12k_wifi8_ppeds_dp_srng_init(ab, &dp->ppe.ppe2tcl_ring[idx],
+				HAL_PPE2TCL,
+				0, 0, ath12k_ppeds_ppe2tcl_ring_size,
+				restore_idx.ppe2tcl_start_idx);
+		if (ret) {
+			ath12k_warn(ab, "failed to set up ppe2tcl ring :%d\n", ret);
+			goto err;
+		}
+
+		ath12k_info(ab, "Init ppe2tcl[%d] ring_id=%d restore_idx=%d\n",
+				idx,
+				dp->ppe.ppe2tcl_ring[idx].ring_id,
+				restore_idx.ppe2tcl_start_idx);
 	}
 
 	ath12k_hal_reo_config_reo2ppe_dest_info(ab);
 
-	ret = ath12k_wifi8_ppeds_dp_srng_init(ab, &dp->ppe.ppe2tcl_ring, HAL_PPE2TCL,
-					0, 0, DP_PPE2TCL_RING_SIZE,
-					restore_idx.ppe2tcl_start_idx);
+	ret = ath12k_dp_srng_setup(ab, &dp->ppe.tqm2ppe_txcmp_ring,
+					HAL_TQM2PPE,
+					PPEDS_TQM2PPE_TX_CMPLN_RING_NUM, 0,
+					ath12k_ppeds_tqm2ppe_ring_size);
 	if (ret) {
-		ath12k_warn(ab, "failed to set up ppe2tcl ring :%d\n", ret);
+		ath12k_err(ab,
+				"failed to set up wbm2sw ppeds tx completion ring :%d\n",
+				ret);
 		goto err;
 	}
 
-	if (dp->hw_params->ds_txrx_hw_auto_idx) {
+	/* HBM */
+	tqm2ppe_ring = &ab->hal.srng_list[dp->ppe.tqm2ppe_txcmp_ring.ring_id];
+
+	if (dp->ppe.txrx_hw_auto_idx) {
 		ret = ath12k_wifi8_dp_ppeds_register_soc(dp, &restore_idx);
 		if (ret) {
 			ath12k_err(ab, "ppeds registration failed\n");
@@ -1071,14 +1362,13 @@ skip_ppeds_dp_srng_ring_alloc:
 		}
 	}
 
-	/* TODO: Use ring idx fetched from ppe for avoiding edma hang during SSR */
 	ret = ath12k_dp_srng_setup(ab, &dp->ppe.ppeds_comp_ring.ppeds_txcmpl_ring,
 				   HAL_TX_COMPLETION,
 				   PPEDS_TX_CMPLN_RING_NUM, 0,
-				   PPEDS_TQM2SW_RING_SIZE);
+				   DP_TX_COMP_RING_SIZE);
 	if (ret) {
 		ath12k_err(ab,
-			    "failed to set up wbm2sw ppeds tx completion ring :%d\n",
+			    "failed to set up TQM2SW ppeds tx completion ring :%d\n",
 			    ret);
 		goto err;
 	}
@@ -1096,18 +1386,24 @@ err:
 void ath12k_wifi8_dp_srng_ppeds_cleanup(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ab->dp;
+	uint8_t ring_idx;
 
 	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
 		return;
 
-	ath12k_dp_srng_cleanup(ab, &dp->ppe.ppe2tcl_ring);
-	ath12k_dp_srng_cleanup(ab, &dp->ppe.reo2ppe_ring);
+	for (ring_idx = 0; ring_idx < ath12k_ppeds_ppe2tcl_rings_max; ring_idx++)
+		ath12k_dp_srng_cleanup(ab, &dp->ppe.ppe2tcl_ring[ring_idx]);
+
+	for (ring_idx = 0; ring_idx < ath12k_ppeds_reo2ppe_rings_max; ring_idx++)
+		ath12k_dp_srng_cleanup(ab, &dp->ppe.reo2ppe_ring[ring_idx]);
+
 	ath12k_dp_srng_cleanup(ab, &dp->ppe.ppeds_comp_ring.ppeds_txcmpl_ring);
+	ath12k_dp_srng_cleanup(ab, &dp->ppe.tqm2ppe_txcmp_ring);
 }
 
 void ath12k_wifi8_dp_ppeds_interrupt_stop(struct ath12k_base *ab)
 {
-	if (ab->powered_off)
+	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
 	ath12k_hif_ppeds_irq_disable(ab, PPEDS_IRQ_REO2PPE);
@@ -1149,8 +1445,7 @@ struct ath12k_ppeds_arch_ops ath12k_wifi8_arch_ppeds_ops  = {
 				ath12k_wifi8_dp_ppeds_alloc_ppe_vp_profile,
 	.ath12k_dp_ppeds_dealloc_ppe_vp_profile =
 				ath12k_wifi8_dp_ppeds_dealloc_ppe_vp_profile,
-	.ath12k_dp_ppeds_alloc_vp_tbl_entry =
-				ath12k_wifi8_dp_ppeds_alloc_vp_tbl_entry,
+	.ath12k_dp_ppeds_alloc_vp_tbl_entry = ath12k_wifi8_dp_ppeds_alloc_vp_tbl_entry,
 	.ath12k_dp_ppeds_alloc_vp_search_idx_tbl_entry =
 				ath12k_wifi8_dp_ppeds_alloc_vp_search_idx_tbl_entry,
 };

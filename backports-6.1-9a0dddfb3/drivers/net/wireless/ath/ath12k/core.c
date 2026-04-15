@@ -78,6 +78,46 @@ MODULE_PARM_DESC(ppeds_hotlist_len, "PPEDS hotlist length");
 unsigned int ath12k_ppe_ds_enabled = true;
 module_param_named(ppe_ds_enable, ath12k_ppe_ds_enabled, uint, 0644);
 MODULE_PARM_DESC(ppe_ds_enable, "ppe_ds_enable: 0-disable, 1-enable");
+
+unsigned int ath12k_ppeds_ppe2tcl_rings_max = 1;
+module_param_named(ppe2tcl_rings_max, ath12k_ppeds_ppe2tcl_rings_max, uint, 0644);
+MODULE_PARM_DESC(ppe2tcl_rings_max, "ppe2tcl_rings_max: 1-default");
+EXPORT_SYMBOL(ath12k_ppeds_ppe2tcl_rings_max);
+
+unsigned int ath12k_ppeds_reo2ppe_rings_max = 1;
+module_param_named(reo2ppe_rings_max, ath12k_ppeds_reo2ppe_rings_max, uint, 0644);
+MODULE_PARM_DESC(reo2ppe_rings_max, "reo2ppe_rings_max: 1-default");
+EXPORT_SYMBOL(ath12k_ppeds_reo2ppe_rings_max);
+
+unsigned int ath12k_ppeds_txrx_hw_auto_idx = 1;
+module_param_named(txrx_hw_auto_idx, ath12k_ppeds_txrx_hw_auto_idx, uint, 0644);
+MODULE_PARM_DESC(txrx_hw_auto_idx, "txrx_hw_auto_idx: 0-default");
+EXPORT_SYMBOL(ath12k_ppeds_txrx_hw_auto_idx);
+
+unsigned int ath12k_ppeds_hw_buff_mgmt = 1;
+module_param_named(hw_buff_mgmt, ath12k_ppeds_hw_buff_mgmt, uint, 0644);
+MODULE_PARM_DESC(hw_buff_mgmt, "hw_buff_mgmt: 0-default");
+EXPORT_SYMBOL(ath12k_ppeds_hw_buff_mgmt);
+
+unsigned int ath12k_ppeds_ppe2tcl_ring_size = 8192;
+module_param_named(ppe2tcl_ring_size, ath12k_ppeds_ppe2tcl_ring_size, uint, 0644);
+MODULE_PARM_DESC(ppe2tcl_ring_size, "PPE2TCL Ring size");
+EXPORT_SYMBOL(ath12k_ppeds_ppe2tcl_ring_size);
+
+unsigned int ath12k_ppeds_reo2ppe_ring_size = 4096;
+module_param_named(reo2ppe_ring_size, ath12k_ppeds_reo2ppe_ring_size, uint, 0644);
+MODULE_PARM_DESC(reo2ppe_ring_size, "REO2PPE Ring size");
+EXPORT_SYMBOL(ath12k_ppeds_reo2ppe_ring_size);
+
+unsigned int ath12k_ppeds_tqm2ppe_ring_size = 8192;
+module_param_named(tqm2ppe_ring_size, ath12k_ppeds_tqm2ppe_ring_size, uint, 0644);
+MODULE_PARM_DESC(tqm2ppe_ring_size, "TQM2PPE Ring size");
+EXPORT_SYMBOL(ath12k_ppeds_tqm2ppe_ring_size);
+
+unsigned int ath12k_ppeds_ppe2wbm_ring_size = 512;
+module_param_named(ppe2wbm_ring_size, ath12k_ppeds_ppe2wbm_ring_size, uint, 0644);
+MODULE_PARM_DESC(ppe2wbm_ring_size, "PPE2WBM Ring size");
+EXPORT_SYMBOL(ath12k_ppeds_ppe2wbm_ring_size);
 #endif
 
 #define ATH12K_PROBE_ORDER_MASK 0xF
@@ -2067,12 +2107,6 @@ core_pdev_create:
 		}
 
 		ath12k_debugfs_pdev_create(ab);
-
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-		if (ab->dp->ppe.ppe_ops &&
-			ab->dp->ppe.ppe_ops->ath12k_ppeds_interrupt_start)
-			ab->dp->ppe.ppe_ops->ath12k_ppeds_interrupt_start(ab);
-#endif
 
 		ath12k_hif_mgmt_irq_enable(ab);
 

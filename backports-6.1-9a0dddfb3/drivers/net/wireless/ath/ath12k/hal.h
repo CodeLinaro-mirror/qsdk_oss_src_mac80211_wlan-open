@@ -381,6 +381,7 @@ enum hal_srng_ring_id {
 	HAL_SRNG_RING_ID_RXDMA_DIR_BUF1,
 	HAL_SRNG_RING_ID_WMAC1_TXMON2SW0_BUF0,
 	HAL_SRNG_RING_ID_WMAC1_SW2TXMON_BUF0,
+	HAL_SRNG_RING_ID_TQM2PPE_RELEASE,
 
 	HAL_SRNG_RING_ID_PMAC1_ID_END,
 };
@@ -435,6 +436,7 @@ enum hal_ring_type {
 	HAL_PEER_TX_TELEMETRY,
 	HAL_PEER_RX_TELEMETRY,
 	HAL_REO_FLUSH,
+	HAL_TQM2PPE,
 	HAL_MAX_RING_TYPES,
 };
 
@@ -1625,6 +1627,9 @@ struct hal_ops {
 	void (*hal_reo_config_reo2ppe_dest_info)(struct ath12k_base *ab);
 	void (*hal_get_tlv_tag_params)(__le32 tl, uint16_t *tag, uint32_t *id,
 				       uint16_t *length);
+	void (*hal_srng_idx_update_addr)(struct ath12k_base *ab, struct hal_srng *srng,
+			void __iomem *hp_vaddr, dma_addr_t hp_paddr,
+			void __iomem *tp_vaddr, dma_addr_t tp_paddr);
 };
 
 static inline

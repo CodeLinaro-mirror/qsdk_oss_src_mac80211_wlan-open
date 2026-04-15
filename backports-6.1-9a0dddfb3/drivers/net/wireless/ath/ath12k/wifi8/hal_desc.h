@@ -961,6 +961,7 @@ struct hal_tcl_entrance_from_ppe_ring {
 	__le32 info1;
 	__le16 info2;
 	__le16 hash_value;
+	__le32 info3;
 };
 
 
