@@ -370,6 +370,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.wmi_init = ath12k_wifi8_wmi_init_qcn9625,
 
 		.hal_ops = &hal_qcn9625_ops,
+		.cp_arch_ops = &ath12k_wifi8_cp_ops,
 
 		.qmi_cnss_feature_bitmap = BIT(CNSS_QDSS_CFG_MISS_V01) |
 					   BIT(CNSS_AUX_UC_SUPPORT_V01),
@@ -484,6 +485,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.wmi_init = ath12k_wifi8_wmi_init_qcn9625,
 
 		.hal_ops = &hal_qcn9625_ops,
+		.cp_arch_ops = &ath12k_wifi8_cp_ops,
 
 		.qmi_cnss_feature_bitmap = BIT(CNSS_QDSS_CFG_MISS_V01) |
 					   BIT(CNSS_AUX_UC_SUPPORT_V01),

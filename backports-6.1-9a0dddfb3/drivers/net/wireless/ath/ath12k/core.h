@@ -760,6 +760,10 @@ struct ath12k_link_vif {
 	u64 rx_pn_err_cnt;
 	/* Flag to enable peer_del_all optimization when link is going down */
 	bool peer_del_all_enable;
+
+	/* shared memory to firmware for critical update procedure */
+	struct ath12k_cu_mem *cu_mem;
+	dma_addr_t cu_mem_paddr;
 };
 
 struct ath12k_dp_link_vif {
@@ -1490,6 +1494,17 @@ struct ath12k_peer_map_pending_event {
 	u8 pending_peer_addr[ETH_ALEN];
 	u8 pending_peer_vdev_id;
 };
+
+struct ath12k_cu_mem {
+	__le32 cu_flags;
+	__le32 eht_bpcc;
+	__le32 reconfig;
+	__le32 ttlm_max_ch_sw_time;
+	__le32 ttlm_expected_duration;
+	__le32 uhr_param_update;
+	__le32 uhr_ebpcc;
+	__le32 max_chan_switch_time;
+} __packed;
 
 struct ath12k {
 	struct ath12k_base *ab;
@@ -2983,5 +2998,11 @@ int ath12k_core_crypto_param_len(struct ath12k_base *ab, enum hal_encrypt_type e
 int ath12k_core_crypto_icv_len(struct ath12k_base *ab, enum hal_encrypt_type enctype);
 int ath12k_core_crypto_mic_len(struct ath12k_base *ab, enum hal_encrypt_type enctype);
 void ath12k_mvr_ch_switch_notify_work(struct work_struct *work);
+
+int ath12k_core_cu_mem_alloc(struct ath12k *ar, struct ath12k_link_vif *arvif);
+void ath12k_core_cu_mem_free(struct ath12k *ar, struct ath12k_link_vif *arvif);
+void ath12k_core_cu_mem_free_all(struct ath12k *ar);
+int ath12k_core_cu_mem_pool_init(struct ath12k_hw_group *ag);
+void ath12k_core_cu_mem_pool_deinit(struct ath12k_hw_group *ag);
 
 #endif /* _CORE_H_ */
