@@ -8941,7 +8941,22 @@ skip_pending_cs_up:
 				 "mac vdev_id %i txpower %d\n", arvif->vdev_id,
 				 info->txpower);
 		arvif->txpower = info->txpower;
-		ath12k_mac_txpower_recalc(ar);
+		ret = ath12k_mac_txpower_recalc(ar);
+		if (ret) {
+			ath12k_warn(ar->ab,
+				    "failed to recalc txpower for vdev %u: %d\n",
+				    arvif->vdev_id, ret);
+		} else if (vif->type == NL80211_IFTYPE_AP) {
+			/* Query TPC IE only when txpower recalc succeeded. */
+			ret = ath12k_wmi_send_vdev_get_tpc_ie_power(
+					ar, arvif->vdev_id,
+					ATH12K_TPC_MGMT_RATE_AUTO);
+			if (ret)
+				ath12k_warn(ar->ab,
+					    "failed to query tpc eirp for vdev %u: %d\n",
+					    arvif->vdev_id,
+					    ret);
+		}
 	}
 
 	if (changed & BSS_CHANGED_MCAST_RATE &&

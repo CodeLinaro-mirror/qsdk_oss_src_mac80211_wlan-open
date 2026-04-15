@@ -4747,6 +4747,35 @@ int ath12k_wmi_send_vdev_set_tpc_power(struct ath12k *ar,
         return ret;
 }
 
+int ath12k_wmi_send_vdev_get_tpc_ie_power(struct ath12k *ar, u32 vdev_id,
+					  u32 mgmt_rate)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct wmi_vdev_get_tpc_ie_power_cmd *cmd;
+	struct sk_buff *skb;
+	int ret;
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_vdev_get_tpc_ie_power_cmd *)skb->data;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_VDEV_GET_TPC_IE_POWER_CMD,
+						 sizeof(*cmd));
+	cmd->vdev_id = cpu_to_le32(vdev_id);
+	cmd->pdev_id = cpu_to_le32(DP_HW2SW_MACID(ar->pdev->pdev_id));
+	cmd->mgmt_rate = cpu_to_le32(mgmt_rate);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_VDEV_GET_TPC_IE_POWER_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed to send WMI_VDEV_GET_TPC_IE_POWER_CMDID\n");
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+
 int ath12k_wmi_send_scan_stop_cmd(struct ath12k *ar,
 				  struct ath12k_wmi_scan_cancel_arg *arg)
 {
@@ -16877,6 +16906,11 @@ static void ath12k_vdev_tpc_ie_power_event(struct ath12k_base *ab,
 		tpc_eirp_dbm = ATH12K_TPC_EIRP_DBM_MAX;
 	else if (tpc_eirp_dbm < ATH12K_TPC_EIRP_DBM_MIN)
 		tpc_eirp_dbm = ATH12K_TPC_EIRP_DBM_MIN;
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI,
+		   "wmi tpc ie power event vdev %u pdev %u qdbm %d dbm %d\n",
+		   vdev_id, le32_to_cpu(ev->pdev_id), tx_pwr_qdbm,
+		   tpc_eirp_dbm);
 
 	rcu_read_lock();
 	arvif = ath12k_mac_get_arvif_by_vdev_id(ab, vdev_id);
