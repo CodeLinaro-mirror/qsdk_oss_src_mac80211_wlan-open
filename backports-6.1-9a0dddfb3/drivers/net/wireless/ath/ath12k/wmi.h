@@ -2774,6 +2774,7 @@ enum wmi_tlv_service {
 	WMI_TLV_SERVICE_11BN = 458,
 
 	WMI_SERVICE_EXT_TLV_SUPPORT = 465,
+	WMI_SERVICE_RADAR_FLAGS_RSSI_DBM_SUPPORT = 484,
 
 	WMI_TLV_SERVICE_SHARED_CU_MEM_MODEL_COUNT_DOWN = 497,
 	WMI_SERVICE_ML_PEER_MASTER_MIGRATION_SUPPORT = 500,
@@ -5948,7 +5949,6 @@ struct ath12k_wmi_pdev_radar_event {
 struct wmi_pdev_radar_flags_param {
 	__le32 radar_flags;
 } __packed;
-#define WMI_PDEV_RADAR_FLAGS_FULL_BW_NOL_MARK_BIT 0
 
 #define WMI_DCS_CW_INTF         0x01
 #define WMI_DCS_WLAN_INTF       0x02
@@ -8126,6 +8126,73 @@ struct wmi_vdev_adfs_ocac_abort_cmd {
 
 #define WMI_DFS_RADAR_DETECTED_IN_SERVICE_CHAN	0
 #define WMI_DFS_RADAR_DETECTED_IN_OCAC_CHAN	1
+
+/* Values advertised in the radar_flags field during DFS radar detection events
+ * bit[0]      : Full bandwdith NOL support
+ * bits[12:1]  : Radar type
+ * bits[16:13] : Radar domain
+ * bits[24:17] : Radar RSSI in dBm
+ */
+#define WMI_PDEV_RADAR_FLAGS_DO_FULL_BW_NOL  GENMASK(0, 0)
+#define WMI_PDEV_RADAR_FLAGS_RADAR_TYPE      GENMASK(12, 1)
+#define WMI_PDEV_RADAR_FLAGS_RADAR_DOMAIN    GENMASK(16, 13)
+#define WMI_PDEV_RADAR_FLAGS_RADAR_RSSI      GENMASK(24, 17)
+
+/**
+ * enum wmi_radar_domain - DFS radar regulatory domain codes.
+ * @WMI_RADAR_DOMAIN_FCC: FCC domain (United States).
+ * @WMI_RADAR_DOMAIN_ETSI_301: ETSI EN 301 893 domain.
+ * @WMI_RADAR_DOMAIN_ETSI_302: ETSI EN 302 502 domain.
+ * @WMI_RADAR_DOMAIN_CHINA: China DFS domain.
+ * @WMI_RADAR_DOMAIN_KOREA: Korea DFS domain.
+ * @WMI_RADAR_DOMAIN_JAPAN_W53: Japan W53 DFS domain.
+ * @WMI_RADAR_DOMAIN_JAPAN_W56: Japan W56 DFS domain.
+ * @WMI_RADAR_DOMAIN_JAPAN_W564: Japan W56.4 DFS domain.
+ * @WMI_RADAR_DOMAIN_UNDEFINED: Undefined or unknown domain.
+ *
+ * Encodes the regulatory domain reported by firmware in event
+ * WMI_PDEV_DFS_RADAR_DETECTION_EVENTID in radar_flags bits[16:13].
+ */
+enum wmi_radar_domain {
+	WMI_RADAR_DOMAIN_FCC = 0x0,
+	WMI_RADAR_DOMAIN_ETSI_301 = 0x1,
+	WMI_RADAR_DOMAIN_ETSI_302 = 0x2,
+	WMI_RADAR_DOMAIN_CHINA = 0x3,
+	WMI_RADAR_DOMAIN_KOREA = 0x4,
+	WMI_RADAR_DOMAIN_JAPAN_W53 = 0x5,
+	WMI_RADAR_DOMAIN_JAPAN_W56 = 0x6,
+	WMI_RADAR_DOMAIN_JAPAN_W564 = 0x7,
+	WMI_RADAR_DOMAIN_UNDEFINED = 0xF,
+};
+
+/**
+ * struct radar_type_id_to_name - Maps radar type / filter id to its name.
+ * @rtype: Radar type /filter id from firmware (12 bits).
+ * @rname: String indicating the radar type name.
+ *
+ * Each entry in a per-domain type table pairs the bitmask value reported
+ * by firmware with a descriptive string.
+ */
+struct radar_type_id_to_name {
+	u16 rtype;
+	const char *rname;
+};
+
+/**
+ * struct radar_domain_to_type_arr - Per-domain radar type dispatch entry.
+ * @radar_id_to_name: Pointer to the domain's radar_type_id_to_name table;
+ *                    NULL for undefined domains.
+ * @n_rtypes: Number of radar types in a specific domain listed in.
+ * @d_name: Radar domain name.
+ *
+ * One entry per regulatory domain, collected in the radar_domain_to_type_arr_tab[]
+ * dispatch table indexed by enum wmi_radar_domain.
+ */
+struct radar_domain_to_type_arr {
+	const char *d_name;
+	const struct radar_type_id_to_name *radar_id_to_name;
+	u8 n_rtypes;
+};
 
 struct wmi_vdev_adfs_ocac_complete_event_fixed_param {
 	__le32 vdev_id;

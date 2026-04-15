@@ -312,6 +312,155 @@ static const int ath12k_hw_mode_pri_map[] = {
 	PRIMAP(WMI_HOST_HW_MODE_MAX),
 };
 
+/**
+ * ath12k_fcc_radar_types - Radar type table for the FCC (United States) domain.
+ *
+ * Maps each FCC radar waveform bitmask to its type name.
+ * Indexed via radar_domain_to_type_arr_tab[WMI_RADAR_DOMAIN_FCC].
+ */
+static const struct radar_type_id_to_name ath12k_fcc_radar_types[] = {
+	{ 0x001, "TYPE_0" },
+	{ 0x002, "TYPE_1" },
+	{ 0x004, "TYPE_2" },
+	{ 0x008, "TYPE_3" },
+	{ 0x010, "TYPE_4" },
+	{ 0x020, "TYPE_5" },
+	{ 0x040, "TYPE_6" },
+};
+
+/**
+ * ath12k_etsi301_radar_types - Radar type table for the ETSI EN 301 893 domain.
+ *
+ * Maps each ETSI EN 301 893 radar waveform bitmask to its type name.
+ * Indexed via radar_domain_to_type_arr_tab[WMI_RADAR_DOMAIN_ETSI_301].
+ */
+static const struct radar_type_id_to_name ath12k_etsi301_radar_types[] = {
+	{ 0x001, "TYPE_1" },
+	{ 0x002, "TYPE_2" },
+	{ 0x004, "TYPE_3" },
+	{ 0x008, "TYPE_4" },
+	{ 0x010, "TYPE_52" },
+	{ 0x020, "TYPE_62" },
+	{ 0x003, "TYPE_1_2" },
+	{ 0x023, "TYPE_1_2_6" },
+};
+
+/**
+ * ath12k_etsi302_radar_types - Radar type table for the ETSI EN 302 502 domain.
+ *
+ * Maps each ETSI EN 302 502 radar waveform bitmask to its type name.
+ * Indexed via radar_domain_to_type_arr_tab[WMI_RADAR_DOMAIN_ETSI_302].
+ */
+static const struct radar_type_id_to_name ath12k_etsi302_radar_types[] = {
+	{ 0x001, "TYPE_1" },
+	{ 0x002, "TYPE_2" },
+	{ 0x004, "TYPE_3" },
+	{ 0x008, "TYPE_4" },
+	{ 0x010, "TYPE_5" },
+	{ 0x020, "TYPE_6" },
+	{ 0x003, "TYPE_1_2" },
+};
+
+/**
+ * ath12k_china_radar_types - Radar type table for the China DFS domain.
+ *
+ * Maps each China radar waveform bitmask to its type name.
+ * Indexed via radar_domain_to_type_arr_tab[WMI_RADAR_DOMAIN_CHINA].
+ */
+static const struct radar_type_id_to_name ath12k_china_radar_types[] = {
+	{ 0x001, "TYPE_1" },
+	{ 0x002, "TYPE_2" },
+	{ 0x004, "TYPE_3" },
+	{ 0x008, "TYPE_4" },
+	{ 0x010, "TYPE_5" },
+	{ 0x020, "TYPE_6" },
+	{ 0x003, "TYPE_1_2" },
+	{ 0x023, "TYPE_1_2_6" },
+	{ 0x00C, "TYPE_3_4" },
+};
+
+/**
+ * ath12k_korea_types - Radar type table for the Korea DFS domain.
+ *
+ * Maps each Korea radar waveform bitmask to its type name.
+ * Indexed via radar_domain_to_type_arr_tab[WMI_RADAR_DOMAIN_KOREA].
+ */
+static const struct radar_type_id_to_name ath12k_korea_types[] = {
+	{ 0x001, "TYPE_1" },
+	{ 0x002, "TYPE_2" },
+	{ 0x004, "TYPE_3" },
+	{ 0x008, "TYPE_4" },
+};
+
+/**
+ * ath12k_japanW53_radar_types - Radar type table for the Japan W53 DFS domain.
+ *
+ * Maps each Japan W53 radar waveform bitmask to its type name.
+ * Indexed via radar_domain_to_type_arr_tab[WMI_RADAR_DOMAIN_JAPAN_W53].
+ */
+static const struct radar_type_id_to_name ath12k_japanW53_radar_types[] = {
+	{ 0x001, "FIXED_PULSE_1" },
+	{ 0x002, "FIXED_PULSE_2" },
+	{ 0x004, "VAR_PULSE_3" },
+	{ 0x008, "VAR_PULSE_4" },
+};
+
+/**
+ * ath12k_japan_W56_radar_types - Radar type table for the Japan W56 DFS domain.
+ *
+ * Maps each Japan W56 radar waveform bitmask to its type name.
+ * Indexed via radar_domain_to_type_arr_tab[WMI_RADAR_DOMAIN_JAPAN_W56].
+ */
+static const struct radar_type_id_to_name ath12k_japan_W56_radar_types[] = {
+	{ 0x001, "FIXED_PULSE_1" },
+	{ 0x002, "FIXED_PULSE_2" },
+	{ 0x004, "FIXED_PULSE_3" },
+	{ 0x008, "VAR_PULSE_4" },
+	{ 0x010, "VAR_PULSE_5" },
+	{ 0x020, "VAR_PULSE_6" },
+	{ 0x040, "CHIRP" },
+	{ 0x003, "FIXED_PULSE_1_2" },
+};
+
+/**
+ * ath12k_japan_W564_radar_types - Radar type table for the Japan W56.4 DFS domain.
+ *
+ * Maps each Japan W56.4 radar waveform bitmask to its type name.
+ * Indexed via radar_domain_to_type_arr_tab[WMI_RADAR_DOMAIN_JAPAN_W564].
+ */
+static const struct radar_type_id_to_name ath12k_japan_W564_radar_types[] = {
+	{ 0x001, "HOPPING" },
+};
+
+/**
+ * radar_domain_to_type_arr_tab - Maps each radar domain to its type table.
+ *
+ * Indexed by enum wmi_radar_domain.  Each entry points to the per-domain
+ * radar_type_id_to_name array and its length.
+ * WMI_RADAR_DOMAIN_UNDEFINED has a zero-initialised entry.
+ */
+static const struct radar_domain_to_type_arr radar_domain_to_type_arr_tab[] = {
+	[WMI_RADAR_DOMAIN_FCC]        = { "FCC", ath12k_fcc_radar_types,
+					   ARRAY_SIZE(ath12k_fcc_radar_types) },
+	[WMI_RADAR_DOMAIN_ETSI_301]   = { "ETSI_301", ath12k_etsi301_radar_types,
+					   ARRAY_SIZE(ath12k_etsi301_radar_types) },
+	[WMI_RADAR_DOMAIN_ETSI_302]   = { "ETSI_302", ath12k_etsi302_radar_types,
+					   ARRAY_SIZE(ath12k_etsi302_radar_types) },
+	[WMI_RADAR_DOMAIN_CHINA]      = { "CHINA", ath12k_china_radar_types,
+					   ARRAY_SIZE(ath12k_china_radar_types) },
+	[WMI_RADAR_DOMAIN_KOREA]      = { "KOREA", ath12k_korea_types,
+					   ARRAY_SIZE(ath12k_korea_types) },
+	[WMI_RADAR_DOMAIN_JAPAN_W53]  = { "JAPAN_W53", ath12k_japanW53_radar_types,
+					   ARRAY_SIZE(ath12k_japanW53_radar_types) },
+	[WMI_RADAR_DOMAIN_JAPAN_W56]  = { "JAPAN_W56", ath12k_japan_W56_radar_types,
+					   ARRAY_SIZE(ath12k_japan_W56_radar_types) },
+	[WMI_RADAR_DOMAIN_JAPAN_W564] = { "JAPAN_W564", ath12k_japan_W564_radar_types,
+					   ARRAY_SIZE(ath12k_japan_W564_radar_types) },
+};
+
+/* Default string used when radar domain or type is unrecognized. */
+static const char *const unknown_str = "UNKNOWN";
+
 enum ath12k_type_req_ctrl_path_stats_id {
        TYPE_REQ_CTRL_PATH_PDEV_TX_STAT = 0,
        TYPE_REQ_CTRL_PATH_VDEV_EXTD_STAT,
@@ -13327,6 +13476,86 @@ mark_radar:
 	}
 }
 
+/**
+ * ath12k_wmi_radar_type_to_str() - Find the radar domain and type strings.
+ * @radar_type: Radar type.
+ * @radar_domain: Radar domain.
+ * @d_name: Output pointer set to the domain name string.
+ * @rt_name: Output pointer set to the radar type name string.
+ *
+ * Selects the per-domain radar_type_id_to_name array for the given radar
+ * domain and finds the radar type name for the given radar type.
+ *
+ * Context: Any context.
+ */
+static void
+ath12k_wmi_radar_type_to_str(u16 radar_type, u8 radar_domain,
+			     const char **d_name, const char **rt_name)
+{
+	const struct radar_type_id_to_name *radar_id_to_name;
+	u8 n_rtypes, i;
+
+	*d_name = unknown_str;
+	*rt_name = unknown_str;
+	if (radar_domain >= ARRAY_SIZE(radar_domain_to_type_arr_tab))
+		return;
+
+	radar_id_to_name = radar_domain_to_type_arr_tab[radar_domain].radar_id_to_name;
+	if (!radar_id_to_name)
+		return;
+
+	n_rtypes = radar_domain_to_type_arr_tab[radar_domain].n_rtypes;
+	*d_name = radar_domain_to_type_arr_tab[radar_domain].d_name;
+	for (i = 0; i < n_rtypes; i++) {
+		if (radar_id_to_name[i].rtype == radar_type) {
+			*rt_name = radar_id_to_name[i].rname;
+			return;
+		}
+	}
+}
+
+/**
+ * ath12k_wmi_parse_dfs_radar_flags() - Parse radar flag TLV payload.
+ * @ab: ath12k base pointer.
+ * @rf_ev: Pointer to radar flag TLV payload.
+ * @do_full_bw_nol: Output flag indicating full-bandwidth NOL request.
+ *
+ * Parses radar flag fields, updates @do_full_bw_nol and prints the detailed
+ * radar-domain, radar-type and radar-rssi in dBm information in the logs.
+ *
+ * Context: Any context.
+ */
+static void
+ath12k_wmi_parse_dfs_radar_flags(struct ath12k_base *ab,
+				 const struct wmi_pdev_radar_flags_param *rf_ev,
+				 bool *do_full_bw_nol)
+{
+	const char *d_name, *rt_name;
+	bool is_rssi_flag;
+	u8 radar_domain;
+	u16 radar_type;
+	u32 val;
+
+	val = le32_to_cpu(rf_ev->radar_flags);
+	*do_full_bw_nol = u32_get_bits(val, WMI_PDEV_RADAR_FLAGS_DO_FULL_BW_NOL);
+	radar_type = u32_get_bits(val, WMI_PDEV_RADAR_FLAGS_RADAR_TYPE);
+	radar_domain = u32_get_bits(val, WMI_PDEV_RADAR_FLAGS_RADAR_DOMAIN);
+	ath12k_wmi_radar_type_to_str(radar_type, radar_domain, &d_name, &rt_name);
+	ath12k_info(ab,
+		    "pdev dfs radar event flag: is the full bw nol set: %d domain: %s radar type: %u (%s)\n",
+		    *do_full_bw_nol, d_name, radar_type, rt_name);
+	is_rssi_flag = test_bit(WMI_SERVICE_RADAR_FLAGS_RSSI_DBM_SUPPORT,
+				ab->wmi_ab.svc_map);
+	ath12k_info(ab,
+		    "pdev dfs radar rssi dbm flags host support %x\n", is_rssi_flag);
+	if (is_rssi_flag) {
+		s8 rssi = (s8)u32_get_bits(val, WMI_PDEV_RADAR_FLAGS_RADAR_RSSI);
+
+		ath12k_info(ab,
+			    "pdev dfs radar event flag: radar RSSI in dBm: %+d\n", rssi);
+	}
+}
+
 static void
 ath12k_wmi_pdev_dfs_radar_detected_event(struct ath12k_base *ab, struct sk_buff *skb)
 {
@@ -13334,7 +13563,7 @@ ath12k_wmi_pdev_dfs_radar_detected_event(struct ath12k_base *ab, struct sk_buff 
 	const struct ath12k_wmi_pdev_radar_event *ev;
 	struct ath12k *ar;
 	bool do_full_bw_nol = false;
-	bool is_full_bw_nol_feature_supported = false;
+	bool is_radar_flag;
 	const struct wmi_tlv *tlv;
 	u16 tlv_tag;
 	u32 len = 0;
@@ -13359,42 +13588,37 @@ ath12k_wmi_pdev_dfs_radar_detected_event(struct ath12k_base *ab, struct sk_buff 
 	ev = ptr;
 	ptr += sizeof(*ev);
 
-	is_full_bw_nol_feature_supported = test_bit(WMI_TLV_SERVICE_RADAR_FLAGS_SUPPORT,
-						    ab->wmi_ab.svc_map);
+	is_radar_flag = test_bit(WMI_TLV_SERVICE_RADAR_FLAGS_SUPPORT, ab->wmi_ab.svc_map);
 	ath12k_dbg(ab, ATH12K_DBG_WMI, "pdev dfs radar event found\n");
 	ath12k_dbg(ab, ATH12K_DBG_WMI, "pdev dfs radar flags host support %x\n",
-		   is_full_bw_nol_feature_supported);
-	if (is_full_bw_nol_feature_supported) {
+		   is_radar_flag);
+	if (is_radar_flag) {
 		/* Expect an array TLV containing a single radar flags param TLV */
 		len += sizeof(*tlv) + sizeof(*tlv) + sizeof(*rf_ev);
 		if (skb->len < len) {
-			ath12k_warn(ab, "pdev dfs radar flag event size invalid\n");
+			ath12k_warn(ab, "pdev dfs radar flag tlv size invalid\n");
 			return;
 		}
 
 		/* Skip Array TLV Tag */
 		ptr += sizeof(*tlv);
-
 		tlv = ptr;
 		tlv_tag = le32_get_bits(tlv->header, WMI_TLV_TAG);
 		ptr += sizeof(*tlv);
 		if (tlv_tag != WMI_TAG_PDEV_DFS_RADAR_FLAGS) {
-			ath12k_warn(ab, "pdev dfs radar flag event received with wrong tag\n");
+			ath12k_warn(ab, "pdev dfs radar flag tlv received with wrong tag\n");
 			return;
 		}
 
 		rf_ev = ptr;
-		do_full_bw_nol = le32_to_cpu(rf_ev->radar_flags) &
-				 (1 << WMI_PDEV_RADAR_FLAGS_FULL_BW_NOL_MARK_BIT);
-		ath12k_dbg(ab, ATH12K_DBG_WMI, "pdev dfs radar flag event found, radar_flag_bit %d\n",
-			   do_full_bw_nol);
+		ath12k_wmi_parse_dfs_radar_flags(ab, rf_ev, &do_full_bw_nol);
 	}
 
-	ath12k_dbg(ab, ATH12K_DBG_WMI,
-		   "pdev dfs radar detected on pdev %d, detection mode %d, chan freq %d, chan_width %d, detector id %d, seg id %d, timestamp %d, chirp %d, freq offset %d, sidx %d",
-		   ev->pdev_id, ev->detection_mode, ev->chan_freq, ev->chan_width,
-		   ev->detector_id, ev->segment_id, ev->timestamp, ev->is_chirp,
-		   ev->freq_offset, ev->sidx);
+	ath12k_info(ab,
+		    "pdev dfs radar detected on pdev %d, detection mode %d, chan freq %d, chan_width %d, detector id %d, seg id %d, timestamp %d, chirp %d, freq offset %d, sidx %d",
+		    ev->pdev_id, ev->detection_mode, ev->chan_freq,
+		    ev->chan_width, ev->detector_id, ev->segment_id,
+		    ev->timestamp, ev->is_chirp, ev->freq_offset, ev->sidx);
 
 	rcu_read_lock();
 
