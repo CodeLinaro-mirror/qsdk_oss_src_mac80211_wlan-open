@@ -355,6 +355,16 @@ free_peer_ext_ctx:
 	return ret;
 }
 
+void ath12k_wifi8_dp_link_peer_assign_id(struct ath12k_dp *dp, struct ath12k *ar,
+					 u32 vdev_id, u8 *addr)
+{
+}
+
+void ath12k_wifi8_dp_link_peer_unassign_id(struct ath12k_dp *dp, struct ath12k *ar,
+					   u32 vdev_id, u8 *addr)
+{
+}
+
 void ath12k_wifi8_dp_link_peer_delete(struct ath12k_base *ab, u32 vdev_id, u8 *addr)
 {
 	struct ath12k_dp_link_peer *peer;
