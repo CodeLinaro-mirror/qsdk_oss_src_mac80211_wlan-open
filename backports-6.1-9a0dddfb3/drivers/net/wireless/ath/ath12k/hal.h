@@ -735,8 +735,19 @@ struct hal_tx_status {
 	u16 tones;
 	u8 ofdma;
 	bool acked;
-	u32 buffer_timestamp;
-	u32 tsf;
+	union delay {
+		struct timestamp {
+			u32 buffer_timestamp;
+			u32 tsf;
+		} ts;
+		struct latency {
+			u32 nw_latency		: 12,
+			    nw_latency_valid	:  1,
+			    stream_id		:  8,
+			    stream_id_valid	:  1;
+			u32 wifi_sched_latency	: 12;
+		} hw;
+	} delay_stats;
 	u8 transmit_cnt;
 	u8 first_msdu;
 	u8 last_msdu;
