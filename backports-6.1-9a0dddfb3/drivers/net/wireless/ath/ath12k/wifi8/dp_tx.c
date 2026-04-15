@@ -3138,34 +3138,37 @@ int ath12k_wifi8_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 	int hal_ring_id = tx_ring->ppeds_txcmpl_ring.ring_id;
 	struct hal_srng *status_ring = &ab->hal.srng_list[hal_ring_id];
 	struct ath12k_ppeds_tx_desc_info *tx_desc = NULL;
-	struct ath12k_dp_tx_comp_status tx_status;
 	int valid_entries, count = 0;
 	int list_no_skb_count = 0;
 	struct htt_tx_completion *status_desc;
-	struct hal_tqm2sw_completion_ring *desc;
+	enum hal_wbm_rel_src_module buf_rel_source;
+	int htt_status;
 	struct list_head local_list;
 	struct list_head local_list_no_skb;
 	size_t stat_size;
-	int htt_status;
+	struct hal_tqm2sw_completion_ring *desc;
+	struct hal_tqm2sw_completion_ring *tx_status;
+	struct ath12k_dp_tx_comp_status tx_comp_status;
+	u64 desc_va;
 
-	if (WARN_ON_ONCE(unlikely(budget > DP_PPEDS_SERVICE_BUDGET))) {
-		ath12k_err(ab, "Invalid Budget");
-		return -EINVAL;
-	}
+	if (WARN_ON_ONCE(budget > DP_PPEDS_SERVICE_BUDGET))
+		return count;
 
 	if (likely(ab->stats_disable))
 		/* only need buf_addr_info and info0 */
 		stat_size = 3 * sizeof(u32);
 	else
-		stat_size = status_ring->entry_size;
+		stat_size = sizeof(struct hal_tqm2sw_completion_ring);
 	INIT_LIST_HEAD(&local_list);
 	INIT_LIST_HEAD(&local_list_no_skb);
+	spin_lock_bh(&status_ring->lock);
 
-	ath12k_hal_srng_access_dst_ring_begin_nolock(ab, status_ring);
+	ath12k_hal_srng_access_begin(ab, status_ring);
 
-	valid_entries = __ath12k_hal_srng_dst_num_free(status_ring, false);
+	valid_entries = ath12k_hal_srng_dst_num_free(ab, status_ring, false);
 	if (!valid_entries) {
-		ath12k_hal_srng_access_dst_ring_end_nolock(status_ring);
+		ath12k_hal_srng_access_end(ab, status_ring);
+		spin_unlock_bh(&status_ring->lock);
 		return count;
 	}
 
@@ -3175,39 +3178,58 @@ int ath12k_wifi8_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 	ath12k_hal_srng_ppeds_dst_inv_entry(ab, status_ring, valid_entries);
 
 	while (likely(valid_entries--)) {
-		desc = ath12k_hal_srng_dst_get_next_cached_entry(ab, status_ring, NULL);
-		if (!desc)
+		desc = (struct hal_tqm2sw_completion_ring *)
+			ath12k_hal_srng_dst_get_next_entry(ab, status_ring);
+		if (!desc ||
+			!ath12k_wifi8_hal_tx_completion_process(desc, &tx_comp_status))
 			continue;
 
-		ath12k_wifi8_hal_tx_completion_process(desc, &tx_status);
+		tx_status = (struct hal_tqm2sw_completion_ring *)desc;
 		if (likely(!ab->stats_disable))
 			memcpy(((void *)tx_ring->tx_status) +
 			       (count * status_ring->entry_size),
 			       desc, stat_size);
 
-		ath12k_dp_ppeds_tx_comp_get_desc(ab, &tx_status, &tx_desc);
+		ath12k_dbg(ab, ATH12K_DBG_PPE,
+				"PPEDS W0:%u W1:%u W2:%u rate:%u peer_id:%d W3:%u W4:%u",
+				tx_status->info0, tx_status->info1,
+				tx_status->info2, tx_status->rate_stats.info0,
+				tx_status->sw_peer_id, tx_status->info3,
+				tx_status->info4);
 
+		buf_rel_source =
+			FIELD_GET(HAL_TQM2SW_COMPLETION_RING_INFO0_RELEASE_SOURCE_MODULE,
+						tx_status->info0);
+
+		/* HW done cookie conversion */
+		desc_va = ((u64)le32_to_cpu(tx_status->buf_addr_info.info1) << 32 |
+				le32_to_cpu(tx_status->buf_addr_info.info0));
+		tx_desc = (struct ath12k_ppeds_tx_desc_info *)((unsigned long)desc_va);
+
+		pr_debug("PPEDS completion desc_va:%llu txdesc:%p\n",
+				desc_va, tx_desc);
 		if (unlikely(!tx_desc)) {
 			ath12k_warn(ab, "unable to retrieve ppe ds tx_desc!");
 			continue;
 		}
 		tx_ring->macid[count] = tx_desc->mac_id;
 
-		if (unlikely(tx_status.buf_rel_source == HAL_WBM_REL_SRC_MODULE_FW)) {
-			status_desc = (void *)desc;
-
-			htt_status = tx_status.u.htt_status;
+		if (unlikely(buf_rel_source == HAL_WBM_REL_SRC_MODULE_FW)) {
+			status_desc = (void *)tx_status;
+			htt_status = le32_get_bits(status_desc->info0,
+					HAL_TX_COMP_TQM_RELEASE_REASON_MASK);
 
 			if (htt_status == HAL_WBM_REL_HTT_TX_COMP_STATUS_REINJ)
-				ath12k_ppeds_reinject_handler(ab, tx_desc, status_desc);
+				ath12k_ppeds_reinject_handler(ab,
+						tx_desc,
+						(struct htt_tx_completion *)status_desc);
 
 			if (htt_status != HAL_WBM_REL_HTT_TX_COMP_STATUS_OK &&
-			    htt_status != HAL_WBM_REL_HTT_TX_COMP_STATUS_REINJ) {
+				htt_status != HAL_WBM_REL_HTT_TX_COMP_STATUS_REINJ) {
 				ab->dp->ppe.ppeds_stats.fw2wbm_pkt_drops++;
 				ath12k_dbg(ab, ATH12K_DBG_PPE,
-					   "ath12k: Frame received from unexpected source %d status %d!\n",
-					   tx_status.buf_rel_source,
-					   htt_status);
+					"Frame rcvd from unexpected src %d status %d!\n",
+					buf_rel_source, htt_status);
 			}
 			tx_ring->macid[count] = 0xF;
 		}
@@ -3220,8 +3242,8 @@ int ath12k_wifi8_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 				dp_pdev = &ar->dp;
 				if (ath12k_dp_stats_enabled(dp_pdev))
 					ath12k_ppeds_tx_update_stats(ar,
-								     tx_desc->skb->len,
-								     desc);
+							tx_desc->skb->len,
+							desc);
 			}
 			count++;
 		} else {
@@ -3229,12 +3251,14 @@ int ath12k_wifi8_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 			list_no_skb_count++;
 		}
 	}
-	ath12k_hal_srng_access_dst_ring_end_nolock(status_ring);
+	ath12k_hal_srng_access_end(ab, status_ring);
+	spin_unlock_bh(&status_ring->lock);
 
 	ath12k_dp_ppeds_tx_release_desc_list_bulk(dp, &local_list, count,
-						  &local_list_no_skb, list_no_skb_count);
+			&local_list_no_skb, list_no_skb_count);
 	return (count + list_no_skb_count);
 }
+
 #define INDEX_LOOKUP_OVERRIDE_ENABLED 1
 #define HLOS_TID_OVERWRITE_ENABLED 1
 #define FLOW_OVERRIDE_ENABLED 1

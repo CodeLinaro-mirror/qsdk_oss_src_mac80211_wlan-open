@@ -677,6 +677,20 @@ void ath12k_wifi8_hal_cc_config(struct ath12k_base *ab)
 
 	ath12k_hif_write32(ab, reo_base + HAL_REO1_SW_COOKIE_CFG1(hal), val);
 
+	/*
+	 * PPEDS - HBM enabled case: Disable cookie conversion disable on REO2PPE
+	 */
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	if (ab->hw_params->ds_hw_buff_mgmt) {
+		val = ath12k_hif_read32(ab, reo_base + HAL_REO1_COOKIE_CONV_EN_RING);
+		val &= ~HAL_REO2PPE_COOKIE_CONV_EN_RING;
+		val &= ~HAL_REO2PPE1_COOKIE_CONV_EN_RING;
+		val &= ~HAL_REO2PPE2_COOKIE_CONV_EN_RING;
+
+		ath12k_hif_write32(ab, reo_base + HAL_REO1_COOKIE_CONV_EN_RING, val);
+	}
+#endif
+
 	/* Enable HW CC for TQM */
 	ath12k_hif_write32(ab, tqm_base + HAL_TQM_SW_COOKIE_CFG0, cmem_base);
 
@@ -817,6 +831,7 @@ bool ath12k_wifi8_hal_tx_ppe2tcl_ring_halt_done(struct ath12k_base *ab)
 }
 
 #define HAL_TCL_RBM_MAPPING0_ADDR_OFFSET 0xd8
+#define HAL_TCL_RBM_MAPPING1_ADDR_OFFSET 0xdc
 #define HAL_TCL_RBM_MAPPING_SHFT 4
 #define HAL_TCL_RBM_MAPPING_BMSK 0xF
 #define HAL_TCL_RBM_MAPPING_PPE2TCL_OFFSET  7
@@ -827,13 +842,17 @@ void ath12k_wifi8_hal_tx_config_rbm_mapping(struct ath12k_base *ab, u8 ring_num,
 {
 	u32 curr_map, new_map;
 
-	if (ring_type == HAL_PPE2TCL)
-		ring_num = ring_num + HAL_TCL_RBM_MAPPING_PPE2TCL_OFFSET;
-	else if (ring_type == HAL_TCL_CMD)
+	if (ring_type == HAL_TCL_CMD)
 		ring_num = ring_num + HAL_TCL_RBM_MAPPING_TCL_CMD_CREDIT_OFFSET;
 
-	curr_map = ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_TCL_REG +
+	if (ring_type == HAL_PPE2TCL) {
+		curr_map = ath12k_hif_read32(ab,
+				HAL_SEQ_WCSS_UMAC_TCL_REG +
+				HAL_TCL_RBM_MAPPING1_ADDR_OFFSET);
+	} else {
+		curr_map = ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_TCL_REG +
 				     HAL_TCL_RBM_MAPPING0_ADDR_OFFSET);
+	}
 
 	/* Protect the other values and clear the specific fields to be updated */
 	curr_map &= (~(HAL_TCL_RBM_MAPPING_BMSK <<
@@ -841,18 +860,23 @@ void ath12k_wifi8_hal_tx_config_rbm_mapping(struct ath12k_base *ab, u8 ring_num,
 	new_map = curr_map | ((HAL_TCL_RBM_MAPPING_BMSK & rbm_id) <<
 			      (HAL_TCL_RBM_MAPPING_SHFT * ring_num));
 
-	ath12k_hif_write32(ab, HAL_SEQ_WCSS_UMAC_TCL_REG +
-			   HAL_TCL_RBM_MAPPING0_ADDR_OFFSET, new_map);
+	if (ring_type == HAL_PPE2TCL) {
+		ath12k_hif_write32(ab, HAL_SEQ_WCSS_UMAC_TCL_REG +
+				HAL_TCL_RBM_MAPPING1_ADDR_OFFSET, new_map);
+	} else {
+		ath12k_hif_write32(ab, HAL_SEQ_WCSS_UMAC_TCL_REG +
+				HAL_TCL_RBM_MAPPING0_ADDR_OFFSET, new_map);
+	}
 }
 
-#define HAL_TX_PPE_VP_CONFIG_TABLE_ADDR  0x00a44194
+#define HAL_TX_PPE_VP_CONFIG_TABLE_ADDR  0x00F1336C
 #define HAL_TX_PPE_VP_CONFIG_TABLE_OFFSET 4
 void ath12k_wifi8_hal_tx_set_ppe_vp_entry(struct ath12k_base *ab,
 					  struct ath12k_dp_ppe_vp_profile *ppe_vp_profile,
 					  u32 ppe_vp_idx, u32 vdev_id,
 					  u32 bank_id, u32 lmac_id)
 {
-	u32 ppe_vp_config;
+	u32 ppe_vp_config = 0;
 
 	if (lmac_id == HAL_WILDCARD_LMAC_ID)
 		lmac_id = HAL_TX_PPE_VP_CFG_WILDCARD_LMAC_ID;
@@ -863,8 +887,8 @@ void ath12k_wifi8_hal_tx_set_ppe_vp_entry(struct ath12k_base *ab,
 	}
 
 	ppe_vp_config |=
-		u32_encode_bits(ppe_vp_profile->vp_num,
-				HAL_TX_PPE_VP_CFG_VP_NUM) |
+		u32_encode_bits(ppe_vp_profile->entry_valid,
+				HAL_TX_PPE_VP_CFG_ENTRY_VALID) |
 		u32_encode_bits(ppe_vp_profile->search_idx_reg_num,
 				HAL_TX_PPE_VP_CFG_SRCH_IDX_REG_NUM) |
 		u32_encode_bits(ppe_vp_profile->use_ppe_int_pri,
@@ -874,12 +898,12 @@ void ath12k_wifi8_hal_tx_set_ppe_vp_entry(struct ath12k_base *ab,
 		u32_encode_bits(ppe_vp_profile->drop_prec_enable,
 				HAL_TX_PPE_VP_CFG_DROP_PREC_EN) |
 		u32_encode_bits(bank_id, HAL_TX_PPE_VP_CFG_BANK_ID) |
-		u32_encode_bits(lmac_id, HAL_TX_PPE_VP_CFG_PMAC_ID) |
+		u32_encode_bits(lmac_id, HAL_TX_PPE_VP_CFG_LMAC_ID) |
 		u32_encode_bits(vdev_id, HAL_TX_PPE_VP_CFG_VDEV_ID);
 
 reg_write:
 	ath12k_hif_write32(ab, HAL_TX_PPE_VP_CONFIG_TABLE_ADDR +
-			   HAL_TX_PPE_VP_CONFIG_TABLE_OFFSET * ppe_vp_idx,
+			   (HAL_TX_PPE_VP_CONFIG_TABLE_OFFSET * ppe_vp_idx),
 			   ppe_vp_config);
 }
 

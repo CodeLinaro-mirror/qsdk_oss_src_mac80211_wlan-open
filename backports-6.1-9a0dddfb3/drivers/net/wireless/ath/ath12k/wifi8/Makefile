@@ -30,3 +30,4 @@ ath12k_wifi8-y += core.o \
 		  dp_telemetry.o
 
 ath12k_wifi8-$(CPTCFG_QCN_EXTN) += qcn_extns/mgmt_rx_extn.o
+ath12k_wifi8-$(CPTCFG_ATH12K_PPE_DS_SUPPORT) += ppeds.o
