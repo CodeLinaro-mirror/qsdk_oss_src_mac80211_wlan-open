@@ -2286,6 +2286,12 @@ int ath12k_mac_monitor_start(struct ath12k *ar)
 		return ret;
 	}
 
+	ret = ath12k_dp_mon_rx_monitor_mode_buf_setup(ar);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to setup monitor buf ring %d\n", ret);
+		goto err_filter;
+	}
+
 	ath12k_dp_mon_rx_config_monitor_mode(ar, false);
 	ret = ath12k_dp_mon_rx_update_filter(ar);
 	if (ret) {

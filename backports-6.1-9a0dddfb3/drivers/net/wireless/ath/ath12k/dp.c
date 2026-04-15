@@ -667,7 +667,12 @@ skip_dma_alloc:
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_RX;
 		break;
 	case HAL_RXDMA_MONITOR_BUF:
-		params.low_threshold = num_entries >> 1;
+		if (num_entries > DP_RXDMA_MONITOR_DEFAULT_RING_FILL_LVL) {
+			params.low_threshold =
+					DP_RXDMA_MONITOR_DEFAULT_RING_FILL_LVL >> 1;
+		} else {
+			params.low_threshold = num_entries >> 1;
+		}
 		params.flags |= HAL_SRNG_FLAGS_LOW_THRESH_INTR_EN;
 		params.intr_batch_cntr_thres_entries = 0;
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_RX;

@@ -1543,3 +1543,8 @@ void ath12k_hal_srng_dst_invalidate_entries_no_dsb(struct ath12k_dp *dp,
 	}
 }
 EXPORT_SYMBOL(ath12k_hal_srng_dst_invalidate_entries_no_dsb);
+
+void ath12k_hal_set_low_threshold(struct hal_srng *srng, u32 low_threshold)
+{
+	srng->u.src_ring.low_threshold = low_threshold * srng->entry_size;
+}
