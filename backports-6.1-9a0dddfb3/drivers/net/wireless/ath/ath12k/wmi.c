@@ -1473,6 +1473,8 @@ int ath12k_wmi_vdev_create(struct ath12k *ar, u8 *macaddr,
 
 	cmd->is_cfp_enabled = cpu_to_le32(args->is_cfp_enabled);
 
+	cmd->global_vdev_id = cpu_to_le32(args->global_vdev_id);
+
 	ether_addr_copy(cmd->vdev_macaddr.addr, macaddr);
 
 	if (args->if_stats_id != ATH12K_INVAL_VDEV_STATS_ID)
@@ -1568,9 +1570,9 @@ int ath12k_wmi_vdev_create(struct ath12k *ar, u8 *macaddr,
 	}
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
-		   "WMI vdev create: id %d type %d subtype %d macaddr %pM pdevid %d vdev bitmap (allocate:0x%llx free:0x%llx)\n",
+		   "WMI vdev create: id %d type %d subtype %d macaddr %pM pdevid %d vdev bitmap (allocate:0x%llx free:0x%llx) global_vdev_id:%d\n",
 		   args->if_id, args->type, args->subtype, macaddr, args->pdev_id,
-		   ar->allocated_vdev_map, ar->ab->free_vdev_map);
+		   ar->allocated_vdev_map, ar->ab->free_vdev_map, cmd->global_vdev_id);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_VDEV_CREATE_CMDID);
 	if (ret) {
