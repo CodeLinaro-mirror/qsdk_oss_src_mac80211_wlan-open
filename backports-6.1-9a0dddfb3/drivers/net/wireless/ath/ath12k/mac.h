@@ -806,4 +806,6 @@ void ath12k_mac_peer_event_callback(struct ath12k_event_queue *queue,
 				    struct ath12k_event *event);
 
 void ath12k_mac_vif_unref(struct ath12k_dp *dp, struct ieee80211_vif *vif);
+int ath12k_mac_read_cu_mem(struct ath12k_link_vif *arvif,
+			   u16 offset, u32 *val);
 #endif

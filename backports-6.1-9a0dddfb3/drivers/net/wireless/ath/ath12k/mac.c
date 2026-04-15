@@ -1266,6 +1266,7 @@ struct ath12k_link_vif *ath12k_mac_get_arvif_by_vdev_id(struct ath12k_base *ab,
 
 	return NULL;
 }
+EXPORT_SYMBOL(ath12k_mac_get_arvif_by_vdev_id);
 
 struct ath12k *ath12k_mac_get_ar_by_vdev_id(struct ath12k_base *ab, u32 vdev_id)
 {
@@ -29210,3 +29211,16 @@ int ath12k_mac_op_ap_power_save(struct ieee80211_hw *hw, struct ieee80211_vif *v
 	return 0;
 }
 EXPORT_SYMBOL(ath12k_mac_op_ap_power_save);
+
+int ath12k_mac_read_cu_mem(struct ath12k_link_vif *arvif, u16 offset, u32 *val)
+{
+	if (!arvif || !arvif->cu_mem || !val)
+		return -EINVAL;
+
+	if (offset >= sizeof(struct ath12k_cu_mem) / sizeof(u32))
+		return -ERANGE;
+
+	*val = le32_to_cpu(READ_ONCE(((__le32 *)arvif->cu_mem)[offset]));
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_mac_read_cu_mem);

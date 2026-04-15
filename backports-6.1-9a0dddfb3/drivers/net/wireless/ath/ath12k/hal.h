@@ -1591,6 +1591,7 @@ struct hal_ops {
 #endif
 	bool (*rx_h_is_decrypted)(struct hal_rx_desc *desc);
 	u32 (*rx_desc_get_mpdu_ppdu_id)(struct hal_rx_desc *rx_desc);
+	u32 (*rx_h_peer_meta_data)(struct hal_rx_desc *desc);
 	u32 (*rx_desc_get_mpdu_start_tag)(struct hal_rx_desc *desc);
 	void (*rx_reo_ent_buf_paddr_get)(void *rx_desc,
 					 dma_addr_t *paddr,

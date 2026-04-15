@@ -2997,6 +2997,8 @@ struct ath12k *ath12k_core_ar_from_hw_link_id(struct ath12k_base *ab, u8 hw_link
 int ath12k_core_crypto_param_len(struct ath12k_base *ab, enum hal_encrypt_type enctype);
 int ath12k_core_crypto_icv_len(struct ath12k_base *ab, enum hal_encrypt_type enctype);
 int ath12k_core_crypto_mic_len(struct ath12k_base *ab, enum hal_encrypt_type enctype);
+enum ath12k_peer_metadata_version
+ath12k_core_get_peer_metadata_ver(struct ath12k_base *ab);
 void ath12k_mvr_ch_switch_notify_work(struct work_struct *work);
 
 int ath12k_core_cu_mem_alloc(struct ath12k *ar, struct ath12k_link_vif *arvif);

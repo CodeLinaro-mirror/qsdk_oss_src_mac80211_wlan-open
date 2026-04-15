@@ -6063,6 +6063,13 @@ int ath12k_core_crypto_mic_len(struct ath12k_base *ab, enum hal_encrypt_type enc
 }
 EXPORT_SYMBOL(ath12k_core_crypto_mic_len);
 
+enum ath12k_peer_metadata_version
+ath12k_core_get_peer_metadata_ver(struct ath12k_base *ab)
+{
+	return ab->dp->peer_metadata_ver;
+}
+EXPORT_SYMBOL(ath12k_core_get_peer_metadata_ver);
+
 int ath12k_core_cu_mem_alloc(struct ath12k *ar, struct ath12k_link_vif *arvif)
 {
 	struct ath12k_base *ab = ar->ab;

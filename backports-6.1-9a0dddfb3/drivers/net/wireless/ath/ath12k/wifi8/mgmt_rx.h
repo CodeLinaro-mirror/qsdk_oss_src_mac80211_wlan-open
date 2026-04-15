@@ -58,4 +58,11 @@ bool ath12k_wifi8_mgmt_op_override_mld_tx(struct ath12k_mgmt *mgmt)
 	return false;
 }
 
+static inline
+u32 ath12k_wifi8_mgmt_rx_h_peer_meta_data(struct ath12k_mgmt *mgmt,
+					  struct hal_rx_desc *desc)
+{
+	return mgmt->hw_params->hal_ops->rx_h_peer_meta_data(desc);
+}
+
 #endif
