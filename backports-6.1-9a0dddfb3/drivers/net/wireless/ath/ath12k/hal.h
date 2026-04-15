@@ -1630,6 +1630,7 @@ struct hal_ops {
 	void (*hal_srng_idx_update_addr)(struct ath12k_base *ab, struct hal_srng *srng,
 			void __iomem *hp_vaddr, dma_addr_t hp_paddr,
 			void __iomem *tp_vaddr, dma_addr_t tp_paddr);
+	void (*hal_ppeds_reo2ppe_cc_config)(struct ath12k_base *ab);
 };
 
 static inline

@@ -426,8 +426,10 @@ void ath12k_ppeds_wifi8_release_rx_desc(int ds_node_id,
 	}
 
 	for (i = 0; i < count; i++) {
-		cookie_to_rxdesc = ath12k_dp_get_rx_desc(ab->dp, arr[i].cookie);
-		arr[i].cookie = (unsigned long)cookie_to_rxdesc;
+		if (ab->dp->ppe.hw_buff_mgmt) {
+			cookie_to_rxdesc = ath12k_dp_get_rx_desc(ab->dp, arr[i].cookie);
+			arr[i].cookie = (unsigned long)cookie_to_rxdesc;
+		}
 
 		rx_desc = (struct ath12k_rx_desc_info *)arr[i].cookie;
 		if (!rx_desc) {
@@ -708,6 +710,11 @@ int ath12k_wifi8_ppeds_attach(struct ath12k_base *ab)
 		ab->dp->hw_params->ds_hw_buff_mgmt) {
 		ab->dp->ppe.hw_buff_mgmt = 1;
 	}
+
+	/*
+	 * REO2PPE cookie conversion configuration.
+	 */
+	ab->hal.hal_ops->hal_ppeds_reo2ppe_cc_config(ab);
 
 	ath12k_dp_ppeds_tx_cmem_init(ab, ab->dp);
 	ret = ath12k_dp_ppeds_cc_desc_init(ab);

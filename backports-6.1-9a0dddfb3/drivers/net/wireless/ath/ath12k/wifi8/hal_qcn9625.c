@@ -1551,4 +1551,5 @@ const struct hal_ops hal_qcn9625_ops = {
 	.hal_get_tlv_tag_params = ath12k_wifi8_get_tlv_tag_params,
 	.hal_mon_ops_init = ath12k_wifi8_hal_mon_ops_init,
 	.hal_srng_idx_update_addr = ath12k_wifi8_hal_srng_idx_update_addr,
+	.hal_ppeds_reo2ppe_cc_config = ath12k_wifi8_hal_ppeds_reo2ppe_cc_config,
 };

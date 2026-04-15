@@ -1701,6 +1701,7 @@ void ath12k_wifi8_hal_srng_idx_update_addr(struct ath12k_base *ab, struct hal_sr
 		dma_addr_t tp_paddr);
 void ath12k_wifi8_hal_srng_hw_enable(struct ath12k_base *ab,
 		struct hal_srng *srng);
+void ath12k_wifi8_hal_ppeds_reo2ppe_cc_config(struct ath12k_base *ab);
 
 void ath12k_wifi8_hal_tasc_peer_tx_cfg(struct ath12k_base *ab, bool enable);
 void ath12k_wifi8_hal_tasc_peer_clk_cycle_config(struct ath12k_base *ab);
