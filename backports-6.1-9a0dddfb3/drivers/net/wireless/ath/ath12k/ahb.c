@@ -761,7 +761,7 @@ ath12k_ahb_config_ext_irq(struct ath12k_base *ab,
 				irq_grp->irqs[num_irq++] =
 					txmon2host_monitor_destination_mac1;
 
-			if (ring_mask->tx_mon_buff[i] & BIT(j))
+			if (ring_mask->host2txmon[i] & BIT(j))
 				irq_grp->irqs[num_irq++] =
 					host2tx_monitor_ring1;
 

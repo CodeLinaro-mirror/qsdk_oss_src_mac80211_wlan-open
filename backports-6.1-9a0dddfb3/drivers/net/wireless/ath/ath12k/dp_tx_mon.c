@@ -3423,8 +3423,8 @@ int ath12k_dp_mon_tx_process_ring(struct ath12k_pdev_dp *dp_pdev,
 	tx_mon_dst_ring = &ab->hal.srng_list[ring_id];
 
 	if (unlikely(!tx_mon_dst_ring || !tx_mon_dst_ring->ring_base_vaddr)) {
-		ath12k_warn(ab,
-			    "TX Mon: Invalid srng for ring_id=%u\n", ring_id);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX,
+			   "TX Mon: Invalid srng for ring_id=%u\n", ring_id);
 		return 0;
 	}
 
@@ -3463,6 +3463,7 @@ int ath12k_dp_mon_tx_process_ring(struct ath12k_pdev_dp *dp_pdev,
 					   mac_id);
 				ath12k_dp_tx_mon_flush_desc_list(dp_pdev,
 								 mon_desc_head);
+				*budget -= 1;
 			} else {
 				ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX,
 					   "TX Mon: empty desc mac_id=%d\n",
@@ -3509,6 +3510,7 @@ int ath12k_dp_mon_tx_process_ring(struct ath12k_pdev_dp *dp_pdev,
 							 mon_desc_head);
 			ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX,
 				   "TX Mon: Flush Detected - Buffers Dropped\n");
+			*budget -= 1;
 			goto move_next;
 		}
 
@@ -4303,7 +4305,13 @@ int ath12k_dp_mon_tx_srng_alloc_setup(struct ath12k_dp *dp)
 	}
 
 	ret = ath12k_dp_mon_tx_desc_pool_alloc(dp);
+	if (ret)
+		goto err_srng_cleanup;
 
+	return 0;
+
+err_srng_cleanup:
+	ath12k_dp_srng_cleanup(ab, &dp_mon->tx_mon_buf_ring.refill_buf_ring);
 	return ret;
 }
 EXPORT_SYMBOL(ath12k_dp_mon_tx_srng_alloc_setup);

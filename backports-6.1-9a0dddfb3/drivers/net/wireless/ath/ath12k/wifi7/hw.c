@@ -355,7 +355,7 @@ static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274 = {
 		ATH12K_TX_MON_RING_MASK_1,
 		0, 0, 0, 0, 0
 	},
-	.tx_mon_buff = {
+	.host2txmon = {
 		0, 0, 0, 0,
 		0, 0, 0, 0,
 		0, 0,
@@ -427,7 +427,7 @@ static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_ipq5332 = {
 		0,
 		ATH12K_TX_MON_RING_MASK_0,
 	},
-	.tx_mon_buff = {
+	.host2txmon = {
 		0, 0, 0, 0,
 		0, 0, 0, 0,
 		0, 0,
@@ -486,7 +486,7 @@ static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_wcn7850 = {
 	},
 	.tx_mon_dest = {
 	},
-	.tx_mon_buff = {
+	.host2txmon = {
 	},
 };
 
@@ -545,7 +545,7 @@ static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn6432 = {
 		ATH12K_TX_MON_RING_MASK_0,
 		ATH12K_TX_MON_RING_MASK_1,
 	},
-	.tx_mon_buff = {
+	.host2txmon = {
 		0, 0, 0, 0,
 		0, 0, 0, 0,
 		0, 0,

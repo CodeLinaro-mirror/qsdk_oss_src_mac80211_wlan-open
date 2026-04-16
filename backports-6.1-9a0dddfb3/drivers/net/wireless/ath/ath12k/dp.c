@@ -465,7 +465,7 @@ static int ath12k_dp_srng_calculate_msi_group(struct ath12k_base *ab,
 		grp_mask = &ring_mask->tx_mon_dest[0];
 		break;
 	case HAL_TX_MONITOR_BUF:
-		grp_mask = &ring_mask->tx_mon_buff[0];
+		grp_mask = &ring_mask->host2txmon[0];
 		break;
 	case HAL_RXDMA_BUF:
 		grp_mask = &ring_mask->host2rxdma[0];

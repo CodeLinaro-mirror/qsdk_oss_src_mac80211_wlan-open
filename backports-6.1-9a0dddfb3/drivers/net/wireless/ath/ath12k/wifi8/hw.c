@@ -283,6 +283,21 @@ static struct ath12k_hw_ring_mask ath12k_wifi8_hw_ring_mask_qcn9625 = {
 		0, 0, 0, 0,
 		ATH12K_HOST2RXMON_RING_MASK_0,
 	},
+	/* Group 10, 11 */
+	.tx_mon_dest = {
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		0, 0,
+		ATH12K_TX_MON_RING_MASK_0,
+		ATH12K_TX_MON_RING_MASK_1,
+	},
+	/* Group 12 */
+	.host2txmon = {
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		ATH12K_HOST2TX_MON_RING_MASK_0,
+	},
 	/* Group 13 */
 	.tx_peer_telemetry = {
 		0, 0, 0, 0,
@@ -380,7 +395,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.max_clients_supported = 512,
 		.max_clients_dbs = 256,
 		.max_clients_dbs_sbs = 170,
-
+		.supports_tx_monitor = true,
 		.idle_ps = false,
 		.cold_boot_calib = ATH12K_COLD_BOOT_CALIB,
 		.download_calib = true,
@@ -497,7 +512,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.max_clients_supported = 512,
 		.max_clients_dbs = 256,
 		.max_clients_dbs_sbs = 170,
-
+		.supports_tx_monitor = true,
 		.idle_ps = false,
 		.cold_boot_calib = ATH12K_COLD_BOOT_CALIB,
 		.download_calib = true,
@@ -612,7 +627,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.max_clients_supported = 512,
 		.max_clients_dbs = 256,
 		.max_clients_dbs_sbs = 170,
-
+		.supports_tx_monitor = true,
 		.idle_ps = false,
 		.cold_boot_calib = true,
 		.download_calib = true,
@@ -1313,6 +1328,7 @@ static const struct ieee80211_ops ath12k_ops_wifi8 = {
 	.get_afc_eirp_pwr               = ath12k_mac_op_get_afc_eirp_pwr,
 	.get_6ghz_dev_deployment_type	= ath12k_mac_op_get_6ghz_dev_deployment_type,
 	.ap_power_save                  = ath12k_mac_op_ap_power_save,
+	.set_monitor_flags		= ath12k_mac_op_set_monitor_flags,
 };
 
 int ath12k_wifi8_hw_init(struct ath12k_base *ab)

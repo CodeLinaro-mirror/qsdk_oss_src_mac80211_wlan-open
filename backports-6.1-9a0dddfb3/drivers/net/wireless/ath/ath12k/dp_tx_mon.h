@@ -144,6 +144,27 @@ enum txmon_generated_response {
 	TXMON_GEN_RESP_SELFGEN_NDP_LMR
 };
 
+int ath12k_dp_mon_tx_process_ring(struct ath12k_pdev_dp *dp_pdev, int mac_id,
+				  struct napi_struct *napi, int *budget);
+
+static inline int
+ath12k_dp_tx_mon_process_ring(struct ath12k_dp *dp, int mac_id,
+			      struct napi_struct *napi, int budget)
+{
+	struct ath12k_pdev_dp *dp_pdev;
+	u8 pdev_id = ath12k_hw_mac_id_to_pdev_id(dp->hw_params, mac_id);
+	int num_buffs_reaped = 0;
+
+	dp_pdev = ath12k_dp_to_dp_pdev(dp, pdev_id);
+	if (unlikely(!dp_pdev || !dp_pdev->dp_mon_pdev))
+		return 0;
+
+	num_buffs_reaped =
+		ath12k_dp_mon_tx_process_ring(dp_pdev, mac_id, napi, &budget);
+
+	return num_buffs_reaped;
+}
+
 /* TX Monitor PPDU Processing */
 void ath12k_dp_tx_mon_process_ppdu(struct work_struct *work);
 
@@ -175,8 +196,6 @@ int ath12k_dp_mon_tx_pdev_alloc(struct ath12k_pdev_dp *dp_pdev,
 				u32 mac_id);
 int ath12k_dp_mon_tx_set_monitor_flags(struct ath12k *ar, u32 new_flags, u32 *cur_flags);
 void ath12k_dp_mon_tx_process_low_thres(struct ath12k_dp *dp);
-int ath12k_dp_mon_tx_process_ring(struct ath12k_pdev_dp *dp_pdev, int mac_id,
-				  struct napi_struct *napi, int *budget);
 void ath12k_dp_mon_tx_display_filters(struct ath12k_dp *dp,
 				      enum dp_mon_tx_filter_mode mode,
 				      struct dp_mon_tx_filter *filter);
