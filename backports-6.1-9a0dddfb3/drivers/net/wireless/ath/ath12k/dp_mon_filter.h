@@ -126,11 +126,6 @@ void ath12k_dp_tx_htt_rx_ctrl_fpmo_flag0_filter_set(u32 *ptr, u16 filter);
 void ath12k_dp_tx_htt_rx_data_fpmo_flag1_filter_set(u32 *ptr, u16 filter);
 void ath12k_dp_htt_rx_filter_rxmon_cfg(void *ptr,
 				       struct htt_rx_ring_tlv_filter *tlv_filter);
-int ath12k_dp_mon_tx_filter_alloc(struct ath12k_pdev_dp *dp_pdev);
-void ath12k_dp_mon_tx_filter_free(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_ext_mon_rx_config_filter(struct ath12k_pdev_dp *dp_pdev,
 					bool enable);
-#ifdef CPTCFG_ATH12K_TX_MONITOR
-int ath12k_dp_mon_tx_update_ring_filter(struct ath12k_pdev_dp *dp_pdev);
-#endif
 #endif
