@@ -119,7 +119,6 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_GET_STATUS = 161,
 	QCA_NL80211_VENDOR_SUBCMD_GET_RROP_INFO = 163,
 	QCA_NL80211_VENDOR_SUBCMD_GET_STA_INFO = 186,
-	QCA_NL80211_VENDOR_SUBCMD_WIFI_PARAMS = 200,
 	QCA_NL80211_VENDOR_SUBCMD_RM_GENERIC = 206,
 	QCA_NL80211_VENDOR_SUBCMD_SCS_RULE_CONFIG = 218,
 	QCA_NL80211_VENDOR_SUBCMD_AFC_EVENT = 222,
@@ -3519,8 +3518,14 @@ enum qca_vendor_radio_param {
 	QCA_WLAN_VENDOR_RADIO_PARAM_MAX = QCA_WLAN_VENDOR_RADIO_PARAM_LAST - 1,
 };
 
-enum qca_nl80211_vendor_radio_config {
+enum qca_nl80211_vendor_config_generic_command {
+	/*Although named SUBCMD_WIFI_PARAMS,
+	 *this is not a subcommand.
+	 *The name is retained unchanged for compatibility purposes.
+	 */
+	QCA_NL80211_VENDOR_SUBCMD_WIFI_PARAMS = 200,
 	QCA_NL80211_VENDOR_RADIO_CONFIG_HWADDR = 237,
+	QCA_NL80211_VENDOR_RADIO_SR_SELF_CONFIG = 310,
 };
 
 enum qca_wlan_vendor_attr_sdwf_dev {

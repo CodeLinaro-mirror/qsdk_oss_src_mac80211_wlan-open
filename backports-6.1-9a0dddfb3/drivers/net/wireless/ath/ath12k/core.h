@@ -1374,6 +1374,23 @@ struct ath12k_atf {
 	struct ath12k_atf_group_info group_info[ATH12K_ATF_MAX_GROUPS];
 };
 
+struct ath12k_radio_sr_cfg {
+	u32 obss_pd_thresh;
+	u32 enable_per_ac;
+	u8 hesiga_sr15_enable;
+	u8 psr_tx_enable;
+	u8 safety_margin_psr;
+	u32 obss_pd_thresh_ctrl_frame;
+	u8 enable_sr_truncate;
+	u32 min_obss_ppdu_dur_sr;
+	u32 srg_bss_color_bitmap[2];
+	u32 srg_partial_bssid_bitmap[2];
+	u32 srg_obss_color_enable_bitmap[2];
+	u32 srg_obss_bssid_enable_bitmap[2];
+	u32 non_srg_obss_color_enable_bitmap[2];
+	u32 non_srg_obss_bssid_enable_bitmap[2];
+};
+
 struct ath12k_radio_cfg {
 	u32 rts_cts_rate;
 	u8 ps_report;
@@ -1745,6 +1762,7 @@ struct ath12k {
 	struct completion tsf_report_done;
 	u8 mgmt_tx_retry_limit;
 	struct ath12k_radio_cfg radio_cfg;
+	struct ath12k_radio_sr_cfg sr_cfg;
 #ifdef CPTCFG_QCN_EXTN
 	u32 vendor_mac_used_bitmap;
 #endif

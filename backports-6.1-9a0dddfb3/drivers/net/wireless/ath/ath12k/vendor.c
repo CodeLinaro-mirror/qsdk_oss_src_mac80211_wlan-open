@@ -6976,6 +6976,20 @@ static int ath12k_vendor_wiphy_config_handler(struct wiphy *wiphy,
 				return -EINVAL;
 			}
 			break;
+		case QCA_NL80211_VENDOR_RADIO_SR_SELF_CONFIG:
+			if (!wifi_params.data) {
+				ath12k_err(NULL,
+					   "Invalid sr param command received\n");
+				return -EINVAL;
+			}
+			ret = ath12k_vendor_set_wiphy_sr_params_extn(wiphy,
+								     &wifi_params);
+			if (ret) {
+				ath12k_err(NULL,
+					   "Failed to set wiphy hwaddr\n");
+				return -EINVAL;
+			}
+			break;
 #endif /* CPTCFG_QCN_EXTN */
 
 		default:
@@ -7123,6 +7137,8 @@ static int ath12k_vendor_get_wiphy_config_handler(struct wiphy *wiphy,
 	struct ath12k_wifi_generic_params wifi_params;
 	struct sk_buff *skb;
 	int ret;
+#define SELF_SR_CONFIG_SIZE 64
+	char value_arr[SELF_SR_CONFIG_SIZE] = {0};
 	u32 value = 0;
 
 	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_CONFIG_MAX, data, data_len,
@@ -7144,7 +7160,17 @@ static int ath12k_vendor_get_wiphy_config_handler(struct wiphy *wiphy,
 							    &wifi_params, &value);
 			if (ret) {
 				ath12k_err(NULL,
-					   "Failed to set wifi params \n");
+					   "Failed to get wifi params\n");
+				return -EINVAL;
+			}
+			break;
+		case QCA_NL80211_VENDOR_RADIO_SR_SELF_CONFIG:
+			ret = ath12k_vendor_get_wiphy_sr_params_extn(wiphy,
+								     &wifi_params,
+								     value_arr,
+								     sizeof(value_arr));
+			if (ret) {
+				ath12k_err(NULL, "Failed to get SR wifi params\n");
 				return -EINVAL;
 			}
 			break;
@@ -7160,11 +7186,27 @@ static int ath12k_vendor_get_wiphy_config_handler(struct wiphy *wiphy,
 		return -ENOMEM;
 
 	if (tb[QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_COMMAND]) {
-		if ((nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_PARAM_DATA, value)) ||
-		    (nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_PARAM_LENGTH, sizeof(u32)))
-		    || (nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_PARAM_FLAGS, 0))){
-			ret = -EINVAL;
-			goto err;
+		int data_attr = QCA_WLAN_VENDOR_ATTR_PARAM_DATA;
+		int length_attr = QCA_WLAN_VENDOR_ATTR_PARAM_LENGTH;
+		int flags_attr = QCA_WLAN_VENDOR_ATTR_PARAM_FLAGS;
+
+		switch (wifi_params.command) {
+		case QCA_NL80211_VENDOR_SUBCMD_WIFI_PARAMS:
+			if ((nla_put_u32(skb, data_attr, value)) ||
+			    (nla_put_u32(skb, length_attr, sizeof(u32))) ||
+			    (nla_put_u32(skb, flags_attr, 0))) {
+				ret = -EINVAL;
+				goto err;
+			}
+			break;
+		case QCA_NL80211_VENDOR_RADIO_SR_SELF_CONFIG:
+			if ((nla_put(skb, data_attr, strlen(value_arr), value_arr)) ||
+			    (nla_put_u32(skb, length_attr, strlen(value_arr))) ||
+			    (nla_put_u32(skb, flags_attr, 0))) {
+				ret = -EINVAL;
+				goto err;
+			}
+			break;
 		}
 	}
 
