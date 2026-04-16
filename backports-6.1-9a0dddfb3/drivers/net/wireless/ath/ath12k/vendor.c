@@ -10808,7 +10808,8 @@ static int ath12k_vendor_hmmc_deny_list_handler(struct wiphy *wiphy,
 
 	ahvif = ath12k_get_ahvif_from_wdev(wdev);
 	if (!ahvif) {
-		ath12k_err(NULL, "Failed to retrieve ahvif\n");
+		ath12k_dbg(NULL, ATH12K_DBG_CFG,
+			   "Failed to retrieve ahvif\n");
 		return -EINVAL;
 	}
 
