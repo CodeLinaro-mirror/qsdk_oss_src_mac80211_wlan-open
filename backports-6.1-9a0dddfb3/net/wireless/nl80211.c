@@ -9156,7 +9156,7 @@ static void cfg80211_sta_set_mld_sinfo(struct station_info *sinfo)
 		    BIT_ULL(NL80211_STA_INFO_TX_DURATION) &&
 		    (!init ||
 		     link_inactive_time > link_sinfo->inactive_time)) {
-			sinfo->tx_duration += link_sinfo->tx_duration;
+			sinfo->tx_duration = link_sinfo->tx_duration;
 			sinfo->filled |=
 				BIT_ULL(NL80211_STA_INFO_TX_DURATION);
 		}
@@ -9164,7 +9164,7 @@ static void cfg80211_sta_set_mld_sinfo(struct station_info *sinfo)
 		    BIT_ULL(NL80211_STA_INFO_RX_DURATION) &&
 		    (!init ||
 		     link_inactive_time > link_sinfo->inactive_time)) {
-			sinfo->rx_duration += link_sinfo->rx_duration;
+			sinfo->rx_duration = link_sinfo->rx_duration;
 			sinfo->filled |=
 				BIT_ULL(NL80211_STA_INFO_RX_DURATION);
 		}
