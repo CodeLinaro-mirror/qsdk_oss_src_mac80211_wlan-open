@@ -26376,6 +26376,8 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 		    ath12k_scan_radio_supported(ar->pdev))
 			is_monitor_disable = true;
 
+		ath12k_dp_tx_mon_feature_eval(ar->dp.dp);
+
 		if (!ar->ab->hw_params->supports_tx_monitor)
 			hw_tx_mon_disabled = true;
 
