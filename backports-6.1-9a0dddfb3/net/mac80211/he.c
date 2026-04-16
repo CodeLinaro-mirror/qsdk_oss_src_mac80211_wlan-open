@@ -176,10 +176,6 @@ ieee80211_he_cap_ie_to_sta_he_cap(struct ieee80211_sub_if_data *sdata,
 
 	he_cap->has_he = true;
 
-	link_sta->cur_max_bandwidth = ieee80211_sta_cap_rx_bw(link_sta);
-	link_sta->pub->bandwidth = ieee80211_sta_cur_vht_bw(link_sta);
-	link_sta->pub->sta_max_bandwidth = link_sta->cur_max_bandwidth;
-
 	if (sband->band == NL80211_BAND_6GHZ && he_6ghz_capa)
 		ieee80211_update_from_he_6ghz_capa(he_6ghz_capa, link_sta);
 
@@ -194,10 +190,22 @@ ieee80211_he_cap_ie_to_sta_he_cap(struct ieee80211_sub_if_data *sdata,
 		   IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_160MHZ_IN_5G;
 
 	if (peer_160 && own_160) {
-		ieee80211_he_mcs_intersection(&own_he_cap.he_mcs_nss_supp.rx_mcs_160,
-					      &he_cap->he_mcs_nss_supp.rx_mcs_160,
-					      &own_he_cap.he_mcs_nss_supp.tx_mcs_160,
-					      &he_cap->he_mcs_nss_supp.tx_mcs_160);
+		if (he_cap->he_mcs_nss_supp.rx_mcs_160 == cpu_to_le16(0xFFFF) ||
+		    he_cap->he_mcs_nss_supp.tx_mcs_160 == cpu_to_le16(0xFFFF)) {
+			ieee80211_he_mcs_disable(&he_cap->he_mcs_nss_supp.rx_mcs_160);
+			ieee80211_he_mcs_disable(&he_cap->he_mcs_nss_supp.tx_mcs_160);
+			he_cap->he_cap_elem.phy_cap_info[0] &=
+				~IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_160MHZ_IN_5G;
+			sdata_info(sdata,
+				   "Sanitizing HE IE for %pM: invalid 160 MHz MCS map, disabling 160 MHz support\n",
+				   link_sta->pub->addr);
+		} else {
+			ieee80211_he_mcs_intersection(
+					&own_he_cap.he_mcs_nss_supp.rx_mcs_160,
+					&he_cap->he_mcs_nss_supp.rx_mcs_160,
+					&own_he_cap.he_mcs_nss_supp.tx_mcs_160,
+					&he_cap->he_mcs_nss_supp.tx_mcs_160);
+		}
 	} else if (peer_160 && !own_160) {
 		ieee80211_he_mcs_disable(&he_cap->he_mcs_nss_supp.rx_mcs_160);
 		ieee80211_he_mcs_disable(&he_cap->he_mcs_nss_supp.tx_mcs_160);
@@ -221,6 +229,10 @@ ieee80211_he_cap_ie_to_sta_he_cap(struct ieee80211_sub_if_data *sdata,
 		he_cap->he_cap_elem.phy_cap_info[0] &=
 			~IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_80PLUS80_MHZ_IN_5G;
 	}
+
+	link_sta->cur_max_bandwidth = ieee80211_sta_cap_rx_bw(link_sta);
+	link_sta->pub->bandwidth = ieee80211_sta_cur_vht_bw(link_sta);
+	link_sta->pub->sta_max_bandwidth = link_sta->cur_max_bandwidth;
 }
 
 void
