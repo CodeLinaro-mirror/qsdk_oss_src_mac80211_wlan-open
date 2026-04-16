@@ -50,6 +50,7 @@ struct hal_tx_info {
 	bool enable_mesh;
 	int bank_id;
 	bool lookup_override;
+	u8 tx_notify_frame;
 };
 
 extern u8 ath12k_default_dscp_tid_map[DSCP_TID_MAP_TBL_ENTRY_SIZE];

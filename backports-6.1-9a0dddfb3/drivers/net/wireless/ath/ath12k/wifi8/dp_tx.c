@@ -1415,18 +1415,19 @@ ath12k_wifi8_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 
 	ti.bank_id = dp_vif->bank_id;
 
-	if (gsn_valid && !(ti.lookup_override)) {
+	if (gsn_valid && !arsta) {
 		/* Reset and Initialize meta_data_flags with Global Sequence
 		 * Number (GSN) info.
 		 */
 		ti.meta_data_flags =
 			u32_encode_bits(HTT_TCL_META_DATA_TYPE_GLOBAL_SEQ_NUM,
-					HTT_TCL_META_DATA_TYPE) |
-			u32_encode_bits(mcbc_gsn, HTT_TCL_META_DATA_GLOBAL_SEQ_NUM);
+					GENMASK(15, 14)) |
+			u32_encode_bits(mcbc_gsn, GENMASK(11, 0));
 
+		ti.tx_notify_frame = 6;
 		if (arvif->nawds_support)
 			ti.meta_data_flags |=
-				u32_encode_bits(1, HTT_TCL_META_DATA_GSN_INSPECTED);
+				u32_encode_bits(1, BIT(12));
 	}
 
 	ti.encap_type = ath12k_dp_tx_get_encap_type(ab, skb);
