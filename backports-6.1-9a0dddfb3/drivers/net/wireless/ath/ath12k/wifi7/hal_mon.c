@@ -1027,7 +1027,7 @@ ath12k_wifi7_hal_mon_parse_eht_mumimo_user(const struct hal_eht_sig_mu_mimo *use
 					   struct hal_rx_mon_ppdu_info *ppdu_info)
 {
 	struct hal_rx_eht_info *eht_info = &ppdu_info->eht_info;
-	u32 user_idx;
+	u32 user_idx, known, data;
 
 	if (eht_info->num_user_info >= ARRAY_SIZE(eht_info->user_info))
 		return;
@@ -1054,6 +1054,17 @@ ath12k_wifi7_hal_mon_parse_eht_mumimo_user(const struct hal_eht_sig_mu_mimo *use
 
 	ppdu_info->mcs = le32_get_bits(user->info0,
 				       HAL_RX_EHT_SIG_MUMIMO_USER_INFO0_MCS);
+
+	data = __le32_to_cpu(eht_info->eht.data[7]);
+	data |= ATH12K_LE32_DEC_ENC(user->info0,
+				    HAL_RX_EHT_SIG_MUMIMO_USER_INFO0_CRC,
+				    IEEE80211_RADIOTAP_EHT_DATA7_USER_ENCODING_BLOCK_CRC);
+	eht_info->eht.data[7] = cpu_to_le32(data);
+
+	known = __le32_to_cpu(eht_info->eht.known);
+	known |= IEEE80211_RADIOTAP_EHT_KNOWN_ENCODING_BLOCK_CRC_M |
+		 IEEE80211_RADIOTAP_EHT_KNOWN_ENCODING_BLOCK_TAIL_M;
+	eht_info->eht.known = cpu_to_le32(known);
 }
 
 static __always_inline void
@@ -1061,7 +1072,7 @@ ath12k_wifi7_hal_mon_parse_eht_non_mumimo_user(const struct hal_eht_sig_non_mu_m
 					       struct hal_rx_mon_ppdu_info *ppdu_info)
 {
 	struct hal_rx_eht_info *eht_info = &ppdu_info->eht_info;
-	u32 user_idx;
+	u32 user_idx, known, data;
 
 	if (eht_info->num_user_info >= ARRAY_SIZE(eht_info->user_info))
 		return;
@@ -1095,6 +1106,17 @@ ath12k_wifi7_hal_mon_parse_eht_non_mumimo_user(const struct hal_eht_sig_non_mu_m
 
 	ppdu_info->nss = le32_get_bits(user->info0,
 				       HAL_RX_EHT_SIG_NON_MUMIMO_USER_INFO0_NSS) + 1;
+
+	data = __le32_to_cpu(eht_info->eht.data[7]);
+	data |= ATH12K_LE32_DEC_ENC(user->info0,
+				    HAL_RX_EHT_SIG_NON_MUMIMO_USER_INFO0_CRC,
+				    IEEE80211_RADIOTAP_EHT_DATA7_USER_ENCODING_BLOCK_CRC);
+	eht_info->eht.data[7] = cpu_to_le32(data);
+
+	known = __le32_to_cpu(eht_info->eht.known);
+	known |= IEEE80211_RADIOTAP_EHT_KNOWN_ENCODING_BLOCK_CRC_M |
+		 IEEE80211_RADIOTAP_EHT_KNOWN_ENCODING_BLOCK_TAIL_M;
+	eht_info->eht.known = cpu_to_le32(known);
 }
 
 static __always_inline bool
