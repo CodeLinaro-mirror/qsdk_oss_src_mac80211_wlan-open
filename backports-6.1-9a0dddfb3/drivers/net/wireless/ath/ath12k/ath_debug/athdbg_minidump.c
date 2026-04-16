@@ -37,7 +37,28 @@ const char *ath12k_dump_list[] = {
 	"ath12k_neighbor_peer",
 	"ath12k_set_neighbor_rx_params",
 	"ath12k_chan_eirp_obj",
-	"ath12k_dcs_wlan_interference"
+	"ath12k_dcs_wlan_interference",
+	"ath12k_pdev_dp",
+	"dp_srng",
+	"ath12k_vif",
+	"ath12k_dp_vif",
+	"ath12k_dp_hw",
+	"ath12k_dp_peer",
+	"ath12k_dp_link_peer",
+	"ath12k_dp_hw",
+	"ath12k_dp_pdev",
+	"ath12k_dp_peer",
+	"ath12k_dp_link_peer",
+	"htt_log_buf_t htt_command_log_buf_info;",
+	"htt_log_buf_t htt_event_log_buf_info;",
+	"htt_logger",
+	"ath12k_pdev_mon_dp",
+	"ath12k_dp_mon",
+	"ath12k_dp_mon_ppdu_desc",
+	"ath12k_dp_mon_desc",
+	"ath12k_rtap_vendor_ns",
+	"dp_mon_tx_filter",
+	"dp_mon_rx_filter"
 };
 
 struct list_head athdbg_minidump_list = LIST_HEAD_INIT(athdbg_minidump_list);
