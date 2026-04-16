@@ -87,7 +87,8 @@
 #define ATH12K_EXT_MON_MAX_PEERS		16
 #define ATH12K_EXT_MON_DEFAULT_PEER_BITMAP	0xFF
 
-#define ATH12K_FC0_TYPE_SHIFT	2
+#define ATH12K_FC0_TYPE_SHIFT		2
+#define ATH12K_FC0_SUBTYPE_SHIFT	4
 
 struct ath12k_mon_data;
 struct dp_mon_rx_filter;
