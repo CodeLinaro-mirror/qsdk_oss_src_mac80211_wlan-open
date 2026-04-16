@@ -2971,6 +2971,105 @@ ath12k_wifi7_dp_tx_update_txcompl(struct ath12k_pdev_dp *dp_pdev,
 	spin_unlock_bh(&dp->dp_lock);
 }
 
+static u32 ath12k_dp_tx_compute_hw_delay(struct ath12k_pdev_dp *dp_pdev,
+					 struct hal_tx_status *ts)
+{
+	struct ath12k_dp *dp = dp_pdev->dp;
+	struct ath12k *ar = dp_pdev->ar;
+	struct ath12k_hw_group *ag = ar->ab->ag;
+	struct ath12k_pdev_dp *tx_dp_pdev;
+	struct ath12k *tx_ar, *primary_ar;
+	u32 fw_delay_us = 0;
+	u32 tqm_enqueue_us, final_tqm_enqueue_us;
+	u32 compl_tsf_us, final_compl_tsf_us;
+	int delta_tqm, delta_tsf2;
+
+	if (unlikely(!ar || !ar->ab))
+		return 0;
+
+	/*
+	 * FW/HW delay: time from TQM enqueue to over-the-air TX completion.
+	 * Use HW buffer_timestamp (from TQM) instead of SW hw_tstamp.
+	 */
+	tqm_enqueue_us = TX_COMPL_BUFFER_TSTAMP_US(ts->buffer_timestamp);
+	compl_tsf_us   = ts->tsf;
+
+	if (unlikely(tqm_enqueue_us == 0 || compl_tsf_us == 0))
+		return 0;
+
+	if (unlikely(ag->mlo_tstamp_offset == 0))
+		return 0;
+
+	primary_ar = ar->ab->pdevs[0].ar;
+	if (primary_ar)
+		delta_tqm = (int)ag->mlo_tstamp_offset - (int)primary_ar->delta_tqm;
+	else
+		delta_tqm = (int)ag->mlo_tstamp_offset - (int)ar->delta_tqm;
+
+	tx_dp_pdev = ath12k_dp_hw_grp_to_dp_pdev(dp->dp_hw_grp, ts->hw_link_id);
+	tx_ar = (tx_dp_pdev && tx_dp_pdev->ar) ? tx_dp_pdev->ar : ar;
+
+	if (unlikely(!tx_ar))
+		return 0;
+
+	delta_tsf2 = (int)ag->mlo_tstamp_offset - (int)tx_ar->delta_tsf2;
+
+	final_tqm_enqueue_us = (tqm_enqueue_us + delta_tqm) & HW_TX_DELAY_MASK;
+	final_compl_tsf_us = (compl_tsf_us + delta_tsf2) & HW_TX_DELAY_MASK;
+
+	fw_delay_us = (final_compl_tsf_us - final_tqm_enqueue_us) & HW_TX_DELAY_MASK;
+
+	/* Discard values that exceed the plausible maximum (clock wrap-around
+	 * or uninitialized MLO offsets produce very large unsigned results).
+	 */
+	if (fw_delay_us > HW_TX_DELAY_MAX)
+		fw_delay_us = 0;
+
+	return fw_delay_us;
+}
+
+static void
+ath12k_dp_tx_compute_tid_delay(struct ath12k_pdev_dp *dp_pdev,
+			       struct ath12k_dp_peer *peer, u8 ring,
+			       struct hal_tx_status *ts)
+{
+	struct ath12k_dp_peer_delay_stats *delay_stats = NULL;
+	struct ath12k_dp_peer_delay_tx_stats *tx_delay;
+	u32 fwhw_transmit_delay = 0;
+	u8 tid;
+
+	delay_stats = peer->mld_stats.delay_stats;
+
+	if (!delay_stats)
+		return;
+
+	tid = ts->tid;
+	if (unlikely(tid >= DP_TID_MAX))
+		tid = DP_TID_MAX - 1;
+
+	tx_delay = &delay_stats->delay_tid_stats[tid][ring].tx_delay;
+
+	/* Placeholder: SW Enqueue Delay */
+
+	fwhw_transmit_delay = ath12k_dp_tx_compute_hw_delay(dp_pdev, ts);
+	ath12k_dp_update_hist_stats(&tx_delay->hwtx_delay, fwhw_transmit_delay);
+
+	/* Placeholder: Jitter stats computation */
+}
+
+static void ath12k_dp_tx_update_peer_latency_stats(struct ath12k_pdev_dp *dp_pdev,
+						   struct ath12k_dp_peer *peer,
+						   struct hal_tx_status *ts,
+						   u8 ring)
+{
+	if (!peer)
+		return;
+
+	ath12k_dp_tx_compute_tid_delay(dp_pdev, peer, ring, ts);
+
+	/* Placeholder: Sojourn stats computation */
+}
+
 static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 					     struct sk_buff *msdu,
 					     struct hal_tx_status *ts,
@@ -3059,6 +3158,9 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 								     TX_COMP,
 								     ring);
 			}
+			if (unlikely(ath12k_dp_delay_stats_enabled(dp_pdev)))
+				ath12k_dp_tx_update_peer_latency_stats(dp_pdev, peer,
+								       ts, ring);
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 			if (peer->is_mmesh_peer)
 				ath12k_dp_tx_update_mmesh_stats(dp, dp_pdev,
