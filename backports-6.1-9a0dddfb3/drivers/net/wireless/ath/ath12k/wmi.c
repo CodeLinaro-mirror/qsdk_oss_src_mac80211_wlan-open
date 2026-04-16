@@ -30,6 +30,10 @@
 #include "qcn_extns/ini.h"
 #endif
 #include "erp.h"
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#include "qcn_extns/ipa/dp_ipa.h"
+#endif
+
 struct ath12k_wmi_svc_ready_parse {
 	bool wmi_svc_bitmap_done;
 };
@@ -6904,6 +6908,10 @@ ath12k_wmi_copy_resource_config(struct ath12k_base *ab,
 	wmi_cfg->flags2 |= (tg_cfg->qos) ?
 			   (WMI_RSRC_CFG_FLAGS2_SAWF_CONFIG_ENABLE_SET) : (0);
 	wmi_cfg->max_num_group_keys = cpu_to_le32(tg_cfg->max_num_group_keys);
+
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	ath12k_wmi_copy_resource_config_ipa(ab, wmi_cfg, tg_cfg);
+#endif
 
 }
 
