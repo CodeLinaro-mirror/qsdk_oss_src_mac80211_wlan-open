@@ -3525,6 +3525,9 @@ bool ieee80211_chandef_he_6ghz_oper(struct ieee80211_sub_if_data *sdata,
 	} else if (iftype == NL80211_IFTYPE_MESH_POINT) {
 		struct cfg80211_chan_def *mesh_chandef = &sdata->wdev.u.mesh.chandef;
 
+		if (!mesh_chandef->chan)
+			return false;
+
 		mode = cfg80211_get_6ghz_power_mode_from_chan(sdata->local->hw.wiphy,
 							      mesh_chandef->chan);
 	} else {

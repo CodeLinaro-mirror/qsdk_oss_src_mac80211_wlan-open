@@ -1786,6 +1786,10 @@ void ieee80211_mesh_rx_queued_mgmt(struct ieee80211_sub_if_data *sdata,
 	if (!sdata->u.mesh.mesh_id_len)
 		return;
 
+	/* mesh join not yet complete or chandef not configured */
+	if (!sdata->wdev.u.mesh.chandef.chan)
+		return;
+
 	rx_status = IEEE80211_SKB_RXCB(skb);
 	mgmt = (struct ieee80211_mgmt *) skb->data;
 	stype = le16_to_cpu(mgmt->frame_control) & IEEE80211_FCTL_STYPE;
