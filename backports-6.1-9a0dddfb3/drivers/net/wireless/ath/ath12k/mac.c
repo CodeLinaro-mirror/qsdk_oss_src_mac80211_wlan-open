@@ -9820,6 +9820,12 @@ int ath12k_mac_op_link_reconfig_remove(struct ieee80211_hw *hw,
 	ret = ath12k_wmi_mlo_reconfig_link_removal(ar, arvif->vdev_id,
 						   params->reconfigure_elem,
 						   params->elem_len);
+	if (ret)
+		goto exit;
+
+	if (ahvif->vif->type == NL80211_IFTYPE_AP &&
+	    ar->ab->hw_params->peer_del_all_support)
+		arvif->peer_del_all_enable = true;
 
 exit:
 	return ret;
