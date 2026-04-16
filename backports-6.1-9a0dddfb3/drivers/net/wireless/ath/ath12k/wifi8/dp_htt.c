@@ -207,10 +207,19 @@ static int ath12k_dp_tx_htt_msduq_mpduq_setup(struct ath12k_base *ab,
 					 HTT_MPDUQ_AND_MSDUQ_INFO_CMD_INFO0_HW_LINK_ID);
 		txq_cmd->msduq.info1 =
 			le32_encode_bits(msduq->queue_number,
-					 HTT_MSDUQ_INFO_CMD_INFO1_MSDUQ_NUM);
+					 HTT_MSDUQ_INFO_CMD_INFO1_MSDUQ_NUM) |
+			le32_encode_bits(msduq->svc_id,
+					 HTT_MSDUQ_INFO_CMD_INFO1_SVC_CLASS_ID);
 		txq_cmd->msduq.info2 =
 			le32_encode_bits((msduq->msdu_q_paddr) >> 8,
 					 HTT_MSDUQ_INFO_CMD_INFO2_MSDUQ_ADDR);
+
+		txq_cmd->msduq.info3 =
+		le32_encode_bits(msduq->svc_id != INVALID_SVC_ID,
+				 HTT_MSDUQ_INFO_CMD_INFO3_SVC_INST_REQ_TYPE_VALID);
+		txq_cmd->msduq.info3 |=
+			le32_encode_bits(HTT_SDWF_SVC_INST_CREATE_REQ,
+					 HTT_MSDUQ_INFO_CMD_INFO3_SVC_INST_REQ_TYPE);
 
 		if (msduq->msduq_sam_id != HAL_SAM_INVALID_MSDUQ_ID) {
 			txq_cmd->msduq.info3 =

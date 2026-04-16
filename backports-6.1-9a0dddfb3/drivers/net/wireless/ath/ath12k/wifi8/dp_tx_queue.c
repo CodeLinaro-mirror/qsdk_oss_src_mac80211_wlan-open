@@ -504,13 +504,14 @@ int ath12k_peer_alloc_dynamic_queue(struct ath12k_dp_hw_group *dp_hw_grp,
 	struct ath12k_dp_tx_tid_info *tid;
 	struct ath12k_dp_msdu_q_info *msduq = NULL;
 	struct ath12k_dp_mpdu_q_info *mpduq = NULL;
+	u8 flow_type = tx_queue_params->flow_type;
 	int ret = 0;
 	int num_flows;
 
 	spin_lock_bh(&tx_flow_info->tx_q_lock);
 
 	tid = &tx_flow_info->tid_info[tx_queue_params->tidno];
-	msduq = tid->msduq[tx_queue_params->flow_type];
+	msduq = tid->msduq[flow_type];
 	mpduq = tid->mpduq;
 
 	if (msduq && mpduq) {
@@ -529,7 +530,7 @@ int ath12k_peer_alloc_dynamic_queue(struct ath12k_dp_hw_group *dp_hw_grp,
 		tid->mpduq = ath12k_peer_alloc_tid(dp_hw_grp, peer,
 						   tx_queue_params->encap_type,
 						   tx_queue_params->tidno, &tid,
-						   tx_queue_params->flow_type);
+						   flow_type);
 		mpduq = tid->mpduq;
 		if (!mpduq) {
 			ath12k_err(NULL, "mpduq is NULL");
@@ -542,8 +543,14 @@ int ath12k_peer_alloc_dynamic_queue(struct ath12k_dp_hw_group *dp_hw_grp,
 			ath12k_tx_classify_info_alloc(dp_hw_grp, peer,
 						      tx_queue_params->tidno,
 						      TXPT_DEFAULT_FLOWQ_ALLOC,
-						      (1 << tx_queue_params->flow_type));
-		msduq = tid->msduq[tx_queue_params->flow_type];
+						      (1 << flow_type));
+		msduq = tid->msduq[flow_type];
+
+		if (flow_type >= HTT_TID_MSDUQ_CUSTOM_0 &&
+		    flow_type <= HTT_TID_MSDUQ_CUSTOM_1)
+			msduq->svc_id = tx_queue_params->q_params.svc_id;
+		else
+			msduq->svc_id = ATH12K_INVALID_SVC_ID;
 
 		if (!num_flows || !msduq) {
 			ath12k_err(NULL, "num_flows or msduq is null");
