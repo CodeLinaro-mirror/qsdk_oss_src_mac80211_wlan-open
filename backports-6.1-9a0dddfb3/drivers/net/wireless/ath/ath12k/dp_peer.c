@@ -808,13 +808,6 @@ ath12k_dp_capture_link_peer_stats(struct ath12k *ar,
 						&dp_peer->stats[stats_link_id].rx[i]);
 	ath12k_dp_aggr_wbm_rx_stats(&aggr_stats->wbm_err,
 				    &dp_peer->stats[stats_link_id].wbm_err);
-	if (ar && ath12k_extd_tx_stats_enabled(ar))
-		ath12k_dp_update_tx_ext_htt_aggr_stats(ar,
-						       &aggr_stats->tx_stats,
-						       peer->peer_stats.tx_stats);
-	if (ar && ath12k_extd_rx_stats_enabled(ar))
-		ath12k_dp_aggr_rx_peer_stats(ar, &aggr_stats->rx_stats,
-					     peer->peer_stats.rx_stats);
 }
 
 /**

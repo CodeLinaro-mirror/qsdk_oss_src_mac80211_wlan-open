@@ -1078,8 +1078,6 @@ struct ath12k_rx_peer_stats {
  * aggregation, including contributions from deleted/unmapped peers.
  */
 struct ath12k_dp_preserved_stats {
-	struct ath12k_htt_tx_stats tx_stats;
-	struct ath12k_rx_peer_stats rx_stats;
 	struct ath12k_dp_peer_tx_stats per_pkt_tx[DP_TCL_NUM_RING_MAX];
 	struct ath12k_dp_peer_rx_stats per_pkt_rx[DP_REO_DST_RING_MAX];
 	struct ath12k_wbm_rx_stats wbm_err;
@@ -1094,8 +1092,6 @@ void
 ath12k_dp_update_tx_ext_htt_aggr_stats(struct ath12k *ar,
 				       struct ath12k_htt_tx_stats *dst_peer_stats,
 				       struct ath12k_htt_tx_stats *src_peer_stats);
-void ath12k_dp_aggr_rx_peer_stats(struct ath12k *ar, struct ath12k_rx_peer_stats *dst,
-				  const struct ath12k_rx_peer_stats *src);
 void ath12k_dp_aggr_wbm_rx_stats(struct ath12k_wbm_rx_stats *dst,
 				 struct ath12k_wbm_rx_stats *src);
 void ath12k_dp_aggr_del_stats(struct ath12k *ar,
