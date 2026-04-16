@@ -4894,6 +4894,7 @@ void ath12k_wifi7_hal_mon_ops_init(struct ath12k_hal *hal,
 	default:
 		break;
 	}
+	hal->tlv_hdr_tag_shift = HAL_TLV_64_HDR_TAG_SHIFT;
 }
 
 void
