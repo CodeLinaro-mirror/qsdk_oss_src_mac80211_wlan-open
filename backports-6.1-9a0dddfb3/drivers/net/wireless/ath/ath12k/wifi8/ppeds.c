@@ -181,7 +181,34 @@ static int ath12k_wifi8_dp_ppeds_alloc_vp_search_idx_tbl_entry(struct ath12k_bas
 
 	ab->dp->ppe.num_ppe_vp_search_idx_entries++;
 	ab->dp->ppe.ppe_vp_search_idx_tbl_set[ppe_vp_profile_idx] = 1;
-	return ppe_vp_profile_idx;
+	return (ppe_vp_profile_idx & PPE_VP_WIFI8_SEARCH_INDEX_REG_NUM_MASK);
+}
+
+struct ath12k_dp_ppe_vp_profile *
+ath12k_wifi8_dp_ppeds_get_vp_profile(struct ath12k_base *ab,
+		int vp_num)
+{
+	int ppe_vp_idx = vp_num - PPE_VP_WIFI8_START_IDX;
+
+	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
+		return NULL;
+
+	/* If a VP is already allocated with requested vp number, then return
+	 * the same VP instead of creating a new profile
+	 */
+	if (ppe_vp_idx < 0 ||
+			ppe_vp_idx >= PPE_VP_WIFI8_ENTRIES_MAX) {
+		ath12k_err(ab, "Invalid vp_num :%d\n", vp_num);
+		return NULL;
+	}
+
+	if (!ab->dp->ppe.ppe_vp_profile[ppe_vp_idx].is_configured ||
+			vp_num != ab->dp->ppe.ppe_vp_profile[ppe_vp_idx].vp_num) {
+		ath12k_dbg(ab, ATH12K_DBG_PPE, "Invalid vp_num :%d\n", vp_num);
+		return NULL;
+	}
+
+	return &ab->dp->ppe.ppe_vp_profile[ppe_vp_idx];
 }
 
 irqreturn_t ath12k_wifi8_ds_ppe2tcl_irq_handler(int irq, void *ctxt)
