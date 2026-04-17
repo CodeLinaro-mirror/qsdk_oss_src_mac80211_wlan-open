@@ -440,11 +440,14 @@ struct hal_rx_msdu_end {
 } __packed;
 
 #define HAL_RX_PPDU_END_DURATION	GENMASK(23, 0)
+#define HAL_RX_PPDU_END_DURATION_INFO2_RX_ANTENNA	GENMASK(23, 0)
+
 struct hal_rx_ppdu_end_duration {
 	__le32 info0;
 	__le32 info1;
-	__le32 rsvd0[7];
 	__le32 info2;
+	__le32 rsvd0[6];
+	__le32 info3;
 	__le32 rsvd1[24];
 } __packed;
 

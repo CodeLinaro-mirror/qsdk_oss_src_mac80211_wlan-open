@@ -305,6 +305,7 @@ struct hal_rx_mon_ppdu_info {
 	struct hal_mon_ppdu_info_extn ppdu_info_extn;
 	u8 ampdu_flag;
 	u8 band;
+	u32 rx_antenna;
 };
 
 /* in the bitmap 0 indicates no puncturing and 1 indicate that sub channel is punctured */
