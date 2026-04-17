@@ -1134,6 +1134,19 @@ ath12k_hal_mon_extract_tx_mon_ring_desc(struct ath12k_hal *hal,
 	return 0;
 }
 
+static __always_inline void
+ath12k_hal_mon_get_mac_addr(u32 addr_32, u16 addr_16, u8 *addr,
+			    bool use_l32_h16)
+{
+	if (use_l32_h16) {
+		memcpy(addr, &addr_32, 4);
+		memcpy(addr + 4, &addr_16, ETH_ALEN - 4);
+	} else {
+		memcpy(addr, &addr_16, 2);
+		memcpy(addr + 2, &addr_32, ETH_ALEN - 2);
+	}
+}
+
 static inline bool
 ath12k_hal_is_mon_buf_addr_tlv(struct ath12k_hal *hal, u32 tlv_tag)
 {
