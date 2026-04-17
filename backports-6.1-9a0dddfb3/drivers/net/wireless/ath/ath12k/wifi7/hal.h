@@ -666,6 +666,32 @@ struct rx_tlv_info_1 {
 	    bw			   	: 3;
 };
 
+struct reo_info {
+	u32 reo_dest_buffer_type                :  1,
+	    reo_push_reason                     :  2,
+	    reo_error_code                      :  5,
+	    captured_msdu_data_size             :  4,
+	    sw_exception                        :  1,
+	    src_link_id                         :  3,
+	    reo_destination_struct_signature    :  4,
+	    ring_id                             :  8,
+	    looping_count                       :  4;
+};
+
+struct wbm_info {
+	u32 release_source_module               : 3,
+	    bm_action                           : 3,
+	    buffer_or_desc_type                 : 4,
+	    reserved_2a                         : 2,
+	    cache_id                            : 1,
+	    cookie_conversion_status            : 1,
+	    rxdma_push_reason                   : 2,
+	    rxdma_error_code                    : 5,
+	    reo_push_reason                     : 2,
+	    reo_error_code                      : 5,
+	    wbm_internal_error                  : 1;
+};
+
 struct hal_rx_spd_data {
 	union {
 		u64 info4;
@@ -686,25 +712,27 @@ struct hal_rx_spd_data {
 		struct rx_msdu_desc_info rx_msdu_info;
 	};
 
-	struct rx_tlv_info_1 tlv_info;
-
 	union {
 		u32 info0;
-		struct {
-			u32 reo_dest_buffer_type                :  1,
-			    reo_push_reason                     :  2,
-			    reo_error_code                      :  5,
-			    captured_msdu_data_size             :  4,
-			    sw_exception                        :  1,
-			    src_link_id                         :  3,
-			    reo_destination_struct_signature    :  4,
-			    ring_id                             :  8,
-			    looping_count                       :  4;
-		};
+		struct reo_info reo;
+		struct wbm_info wbm;
 	};
-	u64 rsvd0;
-	u64 rsvd1;
-	u64 rsvd2;
+	struct rx_tlv_info_1 tlv_info;
+	union {
+		u16 flags;
+		u16 first_sg_frame                              : 1,
+		    last_sg_frame                               : 1,
+		    is_frag                                     : 1,
+		    rsvd0                                       : 13;
+	};
+	__le16 frame_ctl;
+	__le16 duration_id;
+	__le16 seq_ctl;
+	u8 ad1[ETH_ALEN];
+	u8 key_id_octate;
+	u8 rsvd1;
+	u8 ad2[ETH_ALEN];
+	u8 rsvd2[2];
 } __packed;
 
 static_assert(sizeof(struct hal_rx_spd_data) == 64,

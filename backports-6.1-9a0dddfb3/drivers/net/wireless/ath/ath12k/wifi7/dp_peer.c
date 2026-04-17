@@ -63,6 +63,7 @@ int ath12k_wifi7_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 				struct ath12k_dp_peer_create_params *params,
 				struct ieee80211_vif *vif)
 {
+	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
 	struct ath12k_dp_peer *dp_peer;
 	struct ieee80211_sta *sta = NULL;
 	struct ath12k_sta *ahsta = NULL;
@@ -123,6 +124,8 @@ int ath12k_wifi7_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 		dp_peer->hw_link_id = params->hw_link_id;
 	dp_peer->sec_type = HAL_ENCRYPT_TYPE_OPEN;
 	dp_peer->sec_type_grp = HAL_ENCRYPT_TYPE_OPEN;
+	dp_peer->tx_encap_type = ahvif->dp_vif.tx_encap_type;
+	dp_peer->rx_decap_type = ahvif->dp_vif.rx_decap_type;
 
 	/* cache net dev here and reuse it during process rx */
 	wdev = ieee80211_vif_to_wdev(vif);

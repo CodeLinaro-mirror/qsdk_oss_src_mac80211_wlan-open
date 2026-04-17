@@ -661,6 +661,8 @@ struct ath12k_dp_peer_rx_stats {
 	struct ath12k_dp_pkt_info recv_from_reo;
 	struct ath12k_dp_pkt_info sent_to_stack;
 	struct ath12k_dp_pkt_info sent_to_stack_fast;
+	struct ath12k_dp_pkt_info sent_to_stack_ucast_fast;
+	struct ath12k_dp_pkt_info sent_to_stack_mcast_fast;
 
 	/* Debug and Advance */
 	struct ath12k_dp_pkt_info mcast;
@@ -668,6 +670,7 @@ struct ath12k_dp_peer_rx_stats {
 	u32 non_amsdu;
 	u32 msdu_part_of_amsdu;
 	u32 mpdu_retry;
+	struct ath12k_dp_pkt_info sg;
 };
 
 struct ath12k_dp_peer_tx_stats {

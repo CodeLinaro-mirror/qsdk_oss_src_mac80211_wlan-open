@@ -18379,11 +18379,14 @@ void ath12k_mac_op_update_vif_offload(struct ieee80211_hw *hw,
 	 */
 	if (vif->offload_flags & IEEE80211_OFFLOAD_ENCAP_ENABLED) {
 		ahvif->dp_vif.tx_encap_type = ATH12K_HW_TXRX_ETHERNET;
+		ahvif->dp_vif.rx_decap_type = ATH12K_HW_TXRX_ETHERNET;
 	} else if (test_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ah->ag->flags)) {
 		ahvif->dp_vif.tx_encap_type = ATH12K_HW_TXRX_RAW;
+		ahvif->dp_vif.rx_decap_type = ATH12K_HW_TXRX_RAW;
 		ahvif->dp_vif.dp_features |= DP_FEATURE_RAW_MODE;
 	} else {
 		ahvif->dp_vif.tx_encap_type = ATH12K_HW_TXRX_NATIVE_WIFI;
+		ahvif->dp_vif.rx_decap_type = ATH12K_HW_TXRX_NATIVE_WIFI;
 		ahvif->dp_vif.dp_features |= DP_FEATURE_NATIVE_WIFI;
 	}
 
@@ -19482,12 +19485,15 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 
 	if (vif->offload_flags & IEEE80211_OFFLOAD_ENCAP_ENABLED) {
 		ahvif->dp_vif.tx_encap_type = ATH12K_HW_TXRX_ETHERNET;
+		ahvif->dp_vif.rx_decap_type = ATH12K_HW_TXRX_ETHERNET;
 	} else if (test_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ah->ag->flags)) {
 		ahvif->dp_vif.tx_encap_type = ATH12K_HW_TXRX_RAW;
+		ahvif->dp_vif.rx_decap_type = ATH12K_HW_TXRX_RAW;
 		ahvif->dp_vif.dp_features |= DP_FEATURE_RAW_MODE;
 		ahvif->disable_sg = true;
 	} else {
 		ahvif->dp_vif.tx_encap_type = ATH12K_HW_TXRX_NATIVE_WIFI;
+		ahvif->dp_vif.rx_decap_type = ATH12K_HW_TXRX_NATIVE_WIFI;
 		ahvif->dp_vif.dp_features |= DP_FEATURE_NATIVE_WIFI;
 		ahvif->disable_sg = true;
 	}
