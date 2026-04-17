@@ -43,6 +43,46 @@ static int nl80211_crypto_settings(struct cfg80211_registered_device *rdev,
 				   struct cfg80211_crypto_settings *settings,
 				   int cipher_limit);
 
+#ifdef CPTCFG_QCA_LAB_TEST_FEATURES
+static bool cfg80211_ignorecac;
+module_param_named(ignorecac, cfg80211_ignorecac, bool, 0600);
+MODULE_PARM_DESC(ignorecac,
+		 "Skip DFS CAC for lab testing during AP bring-up");
+
+static bool
+nl80211_ignore_cac_allowed(struct cfg80211_registered_device *rdev,
+			   const struct cfg80211_chan_def *chandef,
+			   enum nl80211_iftype iftype)
+{
+	int err;
+
+	if (!cfg80211_ignorecac)
+		return false;
+
+	err = cfg80211_chandef_dfs_required(&rdev->wiphy, chandef, iftype);
+
+	return err > 0;
+}
+
+static void
+nl80211_ignore_cac_update_dfs_state(struct cfg80211_registered_device *rdev,
+				    const struct cfg80211_chan_def *chandef,
+				    enum nl80211_iftype iftype)
+{
+	if (!nl80211_ignore_cac_allowed(rdev, chandef, iftype))
+		return;
+
+	if (!chandef->chan)
+		return;
+
+	pr_warn_once("cfg80211: ignorecac is set — skipping DFS CAC!\n");
+	cfg80211_set_dfs_state(&rdev->wiphy, chandef, NL80211_DFS_AVAILABLE);
+	memcpy(&rdev->cac_done_chandef, chandef, sizeof(*chandef));
+	queue_work(cfg80211_wq, &rdev->propagate_cac_done_wk);
+	cfg80211_sched_dfs_chan_update(rdev);
+}
+#endif /* CPTCFG_QCA_LAB_TEST_FEATURES */
+
 /* the netlink family */
 static struct genl_family nl80211_fam;
 
@@ -4179,6 +4219,11 @@ static int __nl80211_set_channel(struct cfg80211_registered_device *rdev,
 	switch (iftype) {
 	case NL80211_IFTYPE_AP:
 	case NL80211_IFTYPE_P2P_GO:
+#ifdef CPTCFG_QCA_LAB_TEST_FEATURES
+		if (wdev && !wdev->links[link_id].ap.beacon_interval)
+			nl80211_ignore_cac_update_dfs_state(rdev, &chandef,
+							    iftype);
+#endif /* CPTCFG_QCA_LAB_TEST_FEATURES */
 		if (!cfg80211_reg_can_beacon_relax(&rdev->wiphy, &chandef,
 						   iftype) &&
 		    !(nla_get_flag(info->attrs[NL80211_ATTR_SKIP_CAC])))
@@ -7771,6 +7816,11 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 		err = -EINVAL;
 		goto out;
 	}
+
+#ifdef CPTCFG_QCA_LAB_TEST_FEATURES
+	nl80211_ignore_cac_update_dfs_state(rdev, &params->chandef,
+					    wdev->iftype);
+#endif /* CPTCFG_QCA_LAB_TEST_FEATURES */
 
 	beacon_check.iftype = wdev->iftype;
 	beacon_check.relax = true;
