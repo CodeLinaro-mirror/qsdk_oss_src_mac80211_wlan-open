@@ -13,6 +13,7 @@
 #include "dp_htt.h"
 #include "dp_cmn.h"
 #include "ppe.h"
+#include <linux/errno.h>
 #include <linux/rhashtable.h>
 #include "dp_stats.h"
 #include "dp_htt_logger.h"
@@ -598,6 +599,8 @@ struct ath12k_dp_arch_ops {
 				     struct ath12k_dp_smd_ctx *ctx,
 				     void (*cb)(struct ath12k_dp *dp, void *ctx,
 						struct hal_reo_status *status));
+	int (*dp_qos_queue_setup)(struct ath12k_base *ab, struct ath12k_pdev_dp *dp_pdev,
+				  u16 msduq, u16 peer_id, u16 qos_id);
 };
 
 struct ath12k_bp_stats {
@@ -1413,6 +1416,17 @@ ath12k_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 						       ring_id, msdu_info, gsn_valid,
 						       gsn, group_slot, skb, arsta,
 						       skb_ctrl, false);
+}
+
+static inline int ath12k_dp_qos_queue_setup(struct ath12k_dp *dp,
+					    struct ath12k_base *ab,
+					    struct ath12k_pdev_dp *dp_pdev,
+					    u16 msduq, u16 peer_id, u16 qos_id)
+{
+	if (dp->arch_ops->dp_qos_queue_setup)
+		return dp->arch_ops->dp_qos_queue_setup(ab, dp_pdev, msduq,
+							peer_id, qos_id);
+	return -EOPNOTSUPP;
 }
 
 int ath12k_dp_htt_connect(struct ath12k_dp *dp);

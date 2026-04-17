@@ -553,6 +553,13 @@ int ath12k_wifi7_dp_fetch_replenish_ring_id(struct ath12k_dp *dp)
 	return rx_ring->refill_buf_ring.ring_id;
 }
 
+static int ath12k_wifi7_dp_qos_queue_setup(struct ath12k_base *ab,
+					   struct ath12k_pdev_dp *dp_pdev,
+					   u16 msduq, u16 peer_id, u16 qos_id)
+{
+	return 0;
+}
+
 static struct ath12k_dp_arch_ops ath12k_wifi7_dp_arch_ops = {
 	.dp_op_device_init = ath12k_wifi7_dp_op_device_init,
 	.dp_op_device_deinit = ath12k_wifi7_dp_op_device_deinit,
@@ -595,6 +602,7 @@ static struct ath12k_dp_arch_ops ath12k_wifi7_dp_arch_ops = {
 	.umac_reset_handle_post_reset_complete =
 			ath12k_wifi7_umac_reset_handle_post_reset_complete_wrapper,
 	.dump_srng_stats = ath12k_wifi7_dump_srng_stats,
+	.dp_qos_queue_setup = ath12k_wifi7_dp_qos_queue_setup,
 };
 
 /* TODO: remove export once this file is built with wifi7 ko */
