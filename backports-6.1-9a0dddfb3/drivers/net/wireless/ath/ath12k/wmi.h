@@ -1580,6 +1580,7 @@ enum wmi_tlv_vdev_param {
 	WMI_VDEV_PARAM_DISABLE_CABQ = 0x86,
 	WMI_VDEV_PARAM_MAX_MTU_SIZE = 0x91,
 	WMI_VDEV_PARAM_HWCTS2SELF_OFDMA = 0xC5,
+	WMI_VDEV_PARAM_UHR_ELR = 0xD1,
 };
 
 enum wmi_tlv_peer_flags {
