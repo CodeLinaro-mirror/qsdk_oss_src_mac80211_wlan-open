@@ -976,6 +976,16 @@ int ath11k_reg_handle_chan_list(struct ath11k_base *ab,
 	if (power_type == IEEE80211_REG_UNSET_AP) {
 		ath11k_reg_reset_info(&ab->reg_info_store[pdev_idx]);
 		ab->reg_info_store[pdev_idx] = *reg_info;
+		/* Pointer arrays are now owned by the store. Nullify in
+		 * reg_info to prevent double-free when the caller's cleanup
+		 * path calls ath11k_reg_reset_info(reg_info).
+		 */
+		reg_info->reg_rules_2ghz_ptr = NULL;
+		reg_info->reg_rules_5ghz_ptr = NULL;
+		memset(reg_info->reg_rules_6ghz_ap_ptr, 0,
+		       sizeof(reg_info->reg_rules_6ghz_ap_ptr));
+		memset(reg_info->reg_rules_6ghz_client_ptr, 0,
+		       sizeof(reg_info->reg_rules_6ghz_client_ptr));
 	}
 
 	spin_lock_bh(&ab->base_lock);
