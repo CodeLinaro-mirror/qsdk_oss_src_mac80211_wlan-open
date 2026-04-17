@@ -353,6 +353,8 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 #ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 		.supports_monitor = true,
 		.max_clients_supported = 512,
+		.max_clients_dbs = 256,
+		.max_clients_dbs_sbs = 170,
 #endif
 
 		.idle_ps = false,
@@ -468,6 +470,8 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 #ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 		.supports_monitor = true,
 		.max_clients_supported = 512,
+		.max_clients_dbs = 256,
+		.max_clients_dbs_sbs = 170,
 #endif
 
 		.idle_ps = false,

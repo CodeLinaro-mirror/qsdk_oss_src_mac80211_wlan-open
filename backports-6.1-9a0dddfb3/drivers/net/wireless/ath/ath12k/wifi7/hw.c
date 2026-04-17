@@ -881,6 +881,8 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 #endif
 #ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 		.max_clients_supported = 512,
+		.max_clients_dbs = 256,
+		.max_clients_dbs_sbs = 170,
 #endif
 
 		.idle_ps = false,
@@ -1008,6 +1010,8 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 #endif
 #ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 		.max_clients_supported = 256,
+		.max_clients_dbs = 176,
+		.max_clients_dbs_sbs = 85,
 #endif
 
 		.idle_ps = false,
@@ -1129,6 +1133,8 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 #endif
 #ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 		.max_clients_supported = 256,
+		.max_clients_dbs = 176,
+		.max_clients_dbs_sbs = 85,
 #endif
 
 		.idle_ps = false,
@@ -1227,6 +1233,8 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 #endif
 #ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 		.max_clients_supported = 512,
+		.max_clients_dbs = 256,
+		.max_clients_dbs_sbs = 170,
 #endif
 
 		.idle_ps = false,
