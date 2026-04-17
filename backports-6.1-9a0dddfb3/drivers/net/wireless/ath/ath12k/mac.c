@@ -20277,6 +20277,50 @@ void ath12k_mac_background_dfs_event(struct ath12k *ar,
 	}
 }
 
+/**
+ * ath12k_mac_set_tpc_power - Send SET_TPC WMI command for a vdev
+ * @ar: Pointer to ath12k device context
+ * @arvif: Pointer to ath12k virtual interface context
+ *
+ * Fills the regulatory TPC info and sends the SET_TPC WMI command for
+ * the given vdev. This is used for scan radio channel change completion,
+ * where SET_TPC must be deferred until after the MVR response is received
+ * (i.e., after FW has completed the channel change).
+ *
+ * Conditions for sending SET_TPC:
+ * - 6 GHz band only
+ * - STA or AP vdev type
+ * - WMI_TLV_SERVICE_EXT_TPC_REG_SUPPORT service bit set
+ * - Not a bridge vdev
+ */
+void ath12k_mac_set_tpc_power(struct ath12k *ar, struct ath12k_link_vif *arvif)
+{
+	struct ath12k_vif *ahvif = arvif->ahvif;
+	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(ahvif);
+	struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
+	struct ieee80211_chanctx_conf *chanctx = &arvif->chanctx;
+
+	if (ath12k_mac_is_bridge_vdev(arvif))
+		return;
+
+	if (!ar->supports_6ghz || !chanctx->def.chan ||
+	    chanctx->def.chan->band != NL80211_BAND_6GHZ)
+		return;
+
+	if (ahvif->vdev_type != WMI_VDEV_TYPE_STA &&
+	    ahvif->vdev_type != WMI_VDEV_TYPE_AP)
+		return;
+
+	if (!test_bit(WMI_TLV_SERVICE_EXT_TPC_REG_SUPPORT, ar->ab->wmi_ab.svc_map))
+		return;
+
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
+		ath12k_mac_parse_tx_pwr_env(ar, arvif);
+
+	ath12k_mac_fill_reg_tpc(ar, wdev, arvif, chanctx);
+	ath12k_wmi_send_vdev_set_tpc_power(ar, arvif->vdev_id, &arvif->reg_tpc_info);
+}
+
 static int
 ath12k_mac_vdev_config_after_start(struct ath12k_link_vif *arvif,
 				   const struct cfg80211_chan_def *chandef)
@@ -20295,7 +20339,14 @@ ath12k_mac_vdev_config_after_start(struct ath12k_link_vif *arvif,
 
 	if (ar->supports_6ghz && chandef->chan->band == NL80211_BAND_6GHZ &&
             (ahvif->vdev_type == WMI_VDEV_TYPE_STA || ahvif->vdev_type == WMI_VDEV_TYPE_AP) &&
-            test_bit(WMI_TLV_SERVICE_EXT_TPC_REG_SUPPORT, ar->ab->wmi_ab.svc_map)) {
+	     test_bit(WMI_TLV_SERVICE_EXT_TPC_REG_SUPPORT, ar->ab->wmi_ab.svc_map) &&
+	     !arvif->mvr_processing) {
+		/* Skip SET_TPC for scan radio channel change (MVR in progress).
+		 * For scan radio, channel change is non-blocking (MVR), so FW
+		 * has not yet completed the channel change at this point.
+		 * SET_TPC will be sent after MVR completion in
+		 * ath12k_mvr_ch_switch_notify_work().
+		 */
 		if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
 			ath12k_mac_parse_tx_pwr_env(ar, arvif);
 
@@ -21366,14 +21417,12 @@ ath12k_mac_update_vif_chan_mvr(struct ath12k *ar,
 							  vifs_bridge_link_id,
 							  n_vifs);
 		}
-	} else {
-		arvif->mvr_processing = false;
 	}
 
 	if (tx_arvif) {
 		vdev_idx = -1;
 
-		if (tx_arvif->mvr_processing) {
+		if (tx_arvif->mvr_processing && !ath12k_scan_radio_supported(ar->pdev)) {
 			/* failed to restart tx vif via mvr, fallback */
 			arvif->mvr_processing = false;
 			vdev_idx = trans_vdev_index;
@@ -21421,7 +21470,7 @@ ath12k_mac_update_vif_chan_mvr(struct ath12k *ar,
 		if (!is_bridge_vdev && vifs[i].link_conf->mbssid_tx_vif && arvif == tx_arvif)
 			continue;
 
-		if (arvif->mvr_processing) {
+		if (arvif->mvr_processing && !ath12k_scan_radio_supported(ar->pdev)) {
 			/* failed to restart vdev via mvr, fallback */
 			arvif->mvr_processing = false;
 			vdev_idx = i;
