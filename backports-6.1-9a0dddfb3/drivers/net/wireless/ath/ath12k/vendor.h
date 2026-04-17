@@ -3554,12 +3554,11 @@ enum qca_vendor_wlan_home_offchan_tx_rx_event_tx_pkt_status_attr {
  * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_NUM_FRAMES: u8 attribute.
  *	Specifies the number of frames to transmit in the operation.
  *
- * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_IS_MLD: u8 attribute
- *	(flag). Indicates if this is a Multi-Link Device (MLD)
- *	operation.
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_IS_MLD: flag attribute
+ *	Indicates if this is a Multi-Link Device (MLD) operation.
  *	Valid values:
- *	0 - Not an MLD operation
- *	1 - MLD operation
+ *	Attribute present   : MLD operation
+ *	Attribute absent    : Non-MLD operation
  *
  * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_LINK_ID: u8 attribute.
  *	Specifies the link ID for Multi-Link Device operations.
