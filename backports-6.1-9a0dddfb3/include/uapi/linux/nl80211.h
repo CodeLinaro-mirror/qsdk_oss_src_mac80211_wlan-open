@@ -4070,6 +4070,16 @@ enum nl80211_uhr_ueqm_p {
 };
 
 /**
+ * enum nl80211_uhr_elr_config - UHR ELR config
+ * @NL80211_UHR_ELR_DISABLE: 0 - Disable
+ * @NL80211_UHR_ELR_ENABLE:  1 - Enable
+ */
+enum nl80211_uhr_elr_config {
+	NL80211_UHR_ELR_DISABLE,
+	NL80211_UHR_ELR_ENABLE,
+};
+
+/**
  * enum nl80211_rate_info - bitrate information
  *
  * These attribute types are used with %NL80211_STA_INFO_TXRATE
@@ -5914,6 +5924,7 @@ enum nl80211_key_attributes {
  * @NL80211_TXRATE_UHR_GI: configure UHR GI, 0.8us, 1.6us and 3.2us.
  * @NL80211_TXRATE_UHR_LTF: configure UHR LTF, 1XLTF, 2XLTF and 4XLTF.
  * @NL80211_TXRATE_UHR_UEQM_P: configure UEQM Pattern.
+ * @NL80211_TXRATE_UHR_ELR: configure UHR ELR Mode, on or off.
  * @__NL80211_TXRATE_AFTER_LAST: internal
  * @NL80211_TXRATE_MAX: highest TX rate attribute
  */
@@ -5934,6 +5945,7 @@ enum nl80211_tx_rate_attributes {
 	NL80211_TXRATE_UHR_GI,
 	NL80211_TXRATE_UHR_LTF,
 	NL80211_TXRATE_UHR_UEQM_P,
+	NL80211_TXRATE_UHR_ELR,
 
 	/* keep last */
 	__NL80211_TXRATE_AFTER_LAST,

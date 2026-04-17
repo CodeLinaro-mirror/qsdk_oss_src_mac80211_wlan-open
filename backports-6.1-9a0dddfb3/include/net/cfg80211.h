@@ -949,6 +949,7 @@ struct cfg80211_bitrate_mask {
 		enum nl80211_uhr_gi uhr_gi;
 		enum nl80211_uhr_ltf uhr_ltf;
 		struct cfg80211_uhr_ueqm_pattern ueqm_pattern;
+		u8 uhr_elr;
 		bool legacy_mcs_changed;
 		bool uhr_mcs_changed;
 		bool eht_mcs_changed;
