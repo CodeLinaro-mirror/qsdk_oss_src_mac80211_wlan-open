@@ -1693,10 +1693,15 @@ void *ath12k_wifi8_hal_rx_flow_setup_fse(struct ath12k_base *ab,
 void ath12k_wifi8_hal_rx_flow_delete_entry(struct ath12k_base *ab,
 					   struct hal_rx_fse *hal_fse)
 {
-	if (!u32_get_bits(hal_fse->info2, HAL_RX_FSE_VALID))
+	if (!u32_get_bits(hal_fse->info2, HAL_RX_FSE_VALID)) {
 		ath12k_err(ab, "HAL FSE %pK is invalid", hal_fse);
-	else
+	} else {
 		hal_fse->info2 = u32_encode_bits(0, HAL_RX_FSE_VALID);
+		/*
+		 * Clear the metadata to avoid it being used incorrectly during FSE create
+		 */
+		hal_fse->metadata = 0;
+	}
 }
 
 void ath12k_wifi8_hal_reset_rx_reo_tid_q(void *vaddr,
