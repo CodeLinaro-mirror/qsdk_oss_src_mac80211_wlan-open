@@ -1589,8 +1589,8 @@ ath12k_ahb_get_device_family(const struct platform_device *pdev)
 	struct ath12k_ahb_driver *driver;
 	const struct of_device_id *of_id;
 
-	for (device_id = ATH12K_DEVICE_FAMILY_WIFI7;
-	     device_id < ATH12K_DEVICE_FAMILY_MAX; device_id++) {
+	for (device_id = ATH12K_DEVICE_FAMILY_START;
+	    device_id < ATH12K_DEVICE_FAMILY_MAX; device_id++) {
 		driver = ath12k_ahb_family_drivers[device_id];
 		if (driver) {
 			of_id = of_match_device(driver->id_table, &pdev->dev);
@@ -1656,6 +1656,7 @@ static int ath12k_ahb_probe(struct platform_device *pdev)
 			bus_type = ATH12K_BUS_AHB;
 			break;
 		case ATH12K_HW_QCN6432_HW10:
+		case ATH12K_HW_QCN9160_HW10:
 			bus_type = ATH12K_BUS_HYBRID;
 			hif_ops = &ath12k_ahb_hif_ops_qcn6432;
 			break;

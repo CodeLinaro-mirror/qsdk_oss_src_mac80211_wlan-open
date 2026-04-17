@@ -6270,7 +6270,8 @@ static int ath12k_qmi_request_device_info(struct ath12k_base *ab)
 	int ret = 0;
 
 	/*device info message only supported for internal-PCI devices */
-	if (ab->hw_rev != ATH12K_HW_QCN6432_HW10)
+	if (ab->hw_rev != ATH12K_HW_QCN6432_HW10 &&
+		ab->hw_rev != ATH12K_HW_QCN9160_HW10)
 		return 0;
 
 	memset(&req, 0, sizeof(req));
