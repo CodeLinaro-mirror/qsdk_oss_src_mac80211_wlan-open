@@ -608,6 +608,10 @@ struct ath12k_dp_arch_ops {
 	void (*reset_device_dp_stats)(struct ath12k_dp *dp);
 	void (*dp_assoc_link_update)(struct ath12k_dp *dp, struct ath12k_hw *ah,
 				     struct ieee80211_sta *sta);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	bool (*dp_ast_param_get)(struct ath12k_hw *ah, uint16_t *ast_info,
+				 u16 *hw_peer_id, u8 *addr);
+#endif
 };
 
 struct ath12k_bp_stats {
@@ -1172,6 +1176,19 @@ static inline void ath12k_dp_arch_pdev_free(struct ath12k_dp *dp)
 {
 	dp->arch_ops->dp_pdev_free(dp->ab);
 }
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+static inline bool
+ath12k_dp_arch_ast_param_get(struct ath12k_dp *dp,
+			     struct ath12k_hw *ah,
+			     u16 *ast_info, u16 *hw_peer_id,
+			     u8 *addr)
+{
+	if (dp->arch_ops->dp_ast_param_get)
+		return dp->arch_ops->dp_ast_param_get(ah, ast_info, hw_peer_id, addr);
+	return false;
+}
+#endif
 
 static inline int
 ath12k_dp_arch_peer_create(struct ath12k_dp *dp,

@@ -64,4 +64,8 @@ int ath12k_dp_peer_fetch_smd_tx_ctx(struct ath12k_base *ab,
 void ath12k_wifi8_dp_assoc_link_update(struct ath12k_dp *dp,
 				       struct ath12k_hw *ah,
 				       struct ieee80211_sta *sta);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+bool ath12k_wifi8_dp_peer_ast_param_get(struct ath12k_hw *ah, u16 *ast_info,
+					u16 *hw_peer_id, u8 *addr);
+#endif
 #endif

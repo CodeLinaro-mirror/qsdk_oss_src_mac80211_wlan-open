@@ -1262,3 +1262,44 @@ end:
 	spin_unlock_bh(&tx_flow_info->tx_q_lock);
 	spin_unlock_bh(&dp_hw->peer_lock);
 }
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+bool ath12k_wifi8_dp_peer_ast_param_get(struct ath12k_hw *ah,
+					u16 *ast_info,
+					u16 *hw_peer_id,
+					u8 *addr)
+{
+	struct ath12k_dp_peer *dp_peer;
+	struct ath12k_dp_hw *dp_hw = &ah->dp_hw;
+	struct ath12k_dp_peer_ext_ctx *peer_ext_ctx;
+
+	spin_lock_bh(&dp_hw->peer_lock);
+	dp_peer = ath12k_dp_peer_find(dp_hw, addr);
+	if (!dp_peer) {
+		spin_unlock_bh(&dp_hw->peer_lock);
+		ath12k_dbg(NULL, ATH12K_DBG_PEER, "Invalid peer - ast param get failed\n");
+		return false;
+	}
+
+	peer_ext_ctx = dp_peer->peer_ext_ctx;
+	if (!peer_ext_ctx) {
+		spin_unlock_bh(&dp_hw->peer_lock);
+		ath12k_dbg(NULL, ATH12K_DBG_PEER, "Invalid peer ext ctx for peer_id:%d\n",
+				dp_peer->peer_id);
+		return false;
+	}
+
+	/*
+	 * Populate AST information with index[15:4] and AST hash[3:0]
+	 */
+	*ast_info = (peer_ext_ctx->ast_index << ATH12K_AST_INDEX_SHIFT) |
+		(peer_ext_ctx->ast_hash & ATH12K_AST_HASH_MASK);
+	*hw_peer_id = dp_peer->peer_id;
+
+	spin_unlock_bh(&dp_hw->peer_lock);
+
+	ath12k_dbg(NULL, ATH12K_DBG_PEER, "Peer param pid:%u ast_idx:%u ast_hash:%u\n",
+		   dp_peer->peer_id, peer_ext_ctx->ast_index, peer_ext_ctx->ast_hash);
+	return true;
+}
+#endif

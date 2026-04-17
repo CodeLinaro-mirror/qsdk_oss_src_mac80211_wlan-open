@@ -26,17 +26,51 @@ u32 ath_encode_mlo_metadata(u8 link_id)
 }
 
 /**
+ * ath12k_mlo_info_get() - Get MLO information
+ * @node_id: DS node identifier
+ * @params: Pointer to MLO parameter structure
+ * Return: None
+ */
+void ath12k_mlo_info_get(u8 node_id, struct  mlo_param *params)
+{
+	/* Update node_id only in case of DS Mode and return metadata */
+	if (node_id != ATH12k_DS_NODE_ID_INVALID)
+		params->out_ppe_ds_node_id = node_id;
+}
+
+/**
+ * ath12k_ast_info_get() - Get AST information
+ * @ab: Pointer to ath12k base structure
+ * @ahvif: Pointer to ath12k virtual interface
+ * @addr: Peer MAC address
+ * @params: Pointer to AST parameter structure
+ * Return: None
+ */
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+void ath12k_ast_info_get(struct  ath12k_base *ab, struct ath12k_vif *ahvif,
+			 u8 *addr, struct ath_dp_ast_param *params)
+{
+	if (ath12k_dp_arch_ast_param_get(ab->dp, ahvif->ah,
+				&params->ast_info, &params->hw_peer_id,
+				addr))
+		params->valid = true;
+	else
+		params->valid = false;
+}
+#endif
+
+/**
  * ath12k_get_ingress_mlo_dev_info() - Retrieve node id
  * @ndev: pointer to corresponding net_device
  * @peer_mac: peer mac address
  * @link_id: Buffer to fill link id
- * @node_id: Buffer to fill the node id
+ * @md_param: param structure
  * Return: true - success, false - failure
  */
 void ath12k_get_ingress_mlo_dev_info(struct net_device *ndev,
 				     struct  wireless_dev *wdev,
-				     const u8 *peer_mac,
-				     u8 *node_id, u8 *link_id)
+				     const u8 *peer_mac, u8 *link_id,
+				     struct ath_dp_metadata_param *md_param)
 {
 	struct  ath12k_vif *ahvif;
 	struct  ieee80211_sta *sta = NULL;
@@ -44,6 +78,7 @@ void ath12k_get_ingress_mlo_dev_info(struct net_device *ndev,
 	struct  ath12k_link_vif *arvif = NULL;
 	struct  ath12k_base *ab;
 	struct  ieee80211_vif *vif;
+	u8 node_id = ATH12k_DS_NODE_ID_INVALID;
 
 	vif = wdev_to_ieee80211_vif_vlan(wdev, false);
 
@@ -78,6 +113,7 @@ void ath12k_get_ingress_mlo_dev_info(struct net_device *ndev,
 				return;
 		}
 	}
+
 	ahsta = ath12k_sta_to_ahsta(sta);
 
 	rcu_read_lock();
@@ -94,13 +130,18 @@ void ath12k_get_ingress_mlo_dev_info(struct net_device *ndev,
 	    !test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
 		goto unlock;
 
-	*node_id = ab->dp->ppe.ds_node_id;
+	ath12k_ast_info_get(ab, ahvif, sta->addr, &md_param->ast_param);
+	node_id = ab->dp->ppe.ds_node_id;
+#endif
+	ath12k_mlo_info_get(node_id, &md_param->mlo_param);
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 unlock:
 #endif
 	rcu_read_unlock();
 	ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
 			 "Wifi-classifer mark peer %pM link_id %x node_id %x\n",
-			 peer_mac, *link_id, *node_id);
+			 peer_mac, *link_id, node_id);
 }
 
 struct wireless_dev *ath12k_get_wdev_from_netdev(struct net_device *dev)
@@ -143,7 +184,6 @@ u32 ath12k_get_metadata_info(struct ath_dp_metadata_param *md_param)
 	u16 msduq_peer;
 	u8 *dest_mac = NULL;
 	u8 link_id = ATH12k_MLO_LINK_ID_INVALID;
-	u8 node_id = ATH12k_DS_NODE_ID_INVALID;
 
 	if (md_param->is_mlo_param_valid) {
 		dest_dev = md_param->mlo_param.in_dest_dev;
@@ -172,12 +212,7 @@ u32 ath12k_get_metadata_info(struct ath_dp_metadata_param *md_param)
 		return metadata;
 	}
 
-	ath12k_get_ingress_mlo_dev_info(dest_dev, wdev, dest_mac,
-					&node_id, &link_id);
-
-	/* Update node_id only in case of DS Mode and return metadata */
-	if (node_id != ATH12k_DS_NODE_ID_INVALID)
-		md_param->mlo_param.out_ppe_ds_node_id = node_id;
+	ath12k_get_ingress_mlo_dev_info(dest_dev, wdev, dest_mac, &link_id, md_param);
 
 	/* Encode MLO metadata only if link_id updated */
 	if (link_id != ATH12k_MLO_LINK_ID_INVALID)
@@ -185,11 +220,17 @@ u32 ath12k_get_metadata_info(struct ath_dp_metadata_param *md_param)
 
 	if (md_param->is_sawf_param_valid) {
 		msduq_peer = ath12k_sdwf_get_msduq_peer(wdev, dest_mac,
-							&md_param->sawf_param,
-							md_param->is_scs_mscs);
-		 /* Encode SDWF metadata only if msduq_id updated */
+				&md_param->sawf_param,
+				md_param->is_scs_mscs);
+		/* Encode SDWF metadata only if msduq_id updated */
 		if (msduq_peer != SDWF_PEER_MSDUQ_INVALID)
 			metadata |= ath_encode_sdwf_metadata(msduq_peer);
+	}
+
+	if (md_param->ast_param.valid) {
+		ath12k_dbg(NULL, ATH12K_DBG_PEER, "ast_info:%d hw_peer_id:%d\n",
+			   md_param->ast_param.ast_info,
+			   md_param->ast_param.hw_peer_id);
 	}
 
 	return metadata;
