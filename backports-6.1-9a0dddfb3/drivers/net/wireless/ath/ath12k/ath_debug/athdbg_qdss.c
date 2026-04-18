@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 /* Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.*/
+
+#include <linux/namei.h>
+
 #include "athdbg_qmi.h"
 #include "../athdbg_if.h"
 #include "athdbg_core.h"
+#include "../pci.h"
 #include "../qmi.h"
 #ifdef CONFIG_UPSTREAM_BUILD
 #include <linux/devcoredump.h>
@@ -155,16 +159,60 @@ void athdbg_qmi_event_qdss_trace_req_mem_hdlr(struct athdbg_qmi *dbg_qmi)
 	pr_info("QDSS configuration is completed and trace started\n");
 }
 
+static bool athdbg_qmi_fw_exists(const char *filename)
+{
+	char fw_path[ATH12K_QMI_MAX_QDSS_CONFIG_FILE_NAME_SIZE];
+	struct path path;
+	int ret;
+
+	snprintf(fw_path, sizeof(fw_path), "/lib/firmware/%s", filename);
+	ret = kern_path(fw_path, LOOKUP_FOLLOW, &path);
+	if (ret)
+		return false;
+
+	path_put(&path);
+	return true;
+}
+
 static int athdbg_qmi_send_qdss_config(struct ath12k_base *ab)
 {
-	struct device *dev = ab->dev;
-	const struct firmware *fw_entry;
 	char filename[ATH12K_QMI_MAX_QDSS_CONFIG_FILE_NAME_SIZE];
-	int ret = 0;
+	const struct firmware *fw_entry = NULL;
+	struct device *dev = ab->dev;
+	struct ath12k_pci *ab_pci;
+	const char *fw_dir = NULL;
+	char chip_name[32];
+	int ret = -ENOENT;
+	char *sep = NULL;
+	u32 pci_id;
 
-	snprintf(filename, sizeof(filename), "%s/%s/%s",
+	filename[0] = '\0';
+	if (ab->hif.bus == ATH12K_BUS_PCI) {
+		ab_pci = ath12k_pci_priv(ab);
+		fw_dir = ab->hw_params->fw.dir;
+
+		strscpy(chip_name, fw_dir, sizeof(chip_name));
+		sep = strchr(chip_name, '/');
+		if (sep)
+			*sep = '\0';
+
+		if (ab_pci && ab_pci->pdev && chip_name[0]) {
+			pci_id = pci_domain_nr(ab_pci->pdev->bus);
+			snprintf(filename, sizeof(filename),
+				 "%s/%s/qdss_trace_config_%s_PCI%u.bin",
+				 ATH12K_FW_DIR, ab->hw_params->fw.dir,
+				 chip_name, pci_id);
+		}
+		if (filename[0] == '\0' || !athdbg_qmi_fw_exists(filename)) {
+			snprintf(filename, sizeof(filename), "%s/%s/%s",
+				 ATH12K_FW_DIR, ab->hw_params->fw.dir,
+				 ATH12K_QMI_DEFAULT_QDSS_CONFIG_FILE_NAME);
+		}
+	} else {
+		snprintf(filename, sizeof(filename), "%s/%s/%s",
 			 ATH12K_FW_DIR, ab->hw_params->fw.dir,
 			 ATH12K_QMI_DEFAULT_QDSS_CONFIG_FILE_NAME);
+	}
 
 	ret = request_firmware(&fw_entry, filename, dev);
 	if (ret) {
@@ -176,18 +224,15 @@ static int athdbg_qmi_send_qdss_config(struct ath12k_base *ab)
 			pr_err("qmi failed to load QDSS config: %s\n", filename);
 			return ret;
 		}
-		pr_info("boot firmware request %s size %zu\n", filename,
-				fw_entry->size);
 	}
+
+	pr_info("boot firmware request %s size %zu\n", filename, fw_entry->size);
 	ret = athdbg_qmi_send_qdss_trace_config_download_req((void *)ab,
 								fw_entry->data,
 								fw_entry->size);
-	if (ret < 0) {
+	if (ret < 0)
 		pr_err("qmi failed to load QDSS config to FW: %d\n", ret);
-		goto out;
-	}
 
-out:
 	release_firmware(fw_entry);
 	return ret;
 }

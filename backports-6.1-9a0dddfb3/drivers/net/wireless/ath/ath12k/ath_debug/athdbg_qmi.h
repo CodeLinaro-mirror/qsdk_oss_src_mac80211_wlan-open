@@ -5,7 +5,7 @@
 
 #include "../qmi.h"
 
-#define ATH12K_QMI_MAX_QDSS_CONFIG_FILE_NAME_SIZE      64
+#define ATH12K_QMI_MAX_QDSS_CONFIG_FILE_NAME_SIZE      128
 #define ATH12K_QMI_DEFAULT_QDSS_CONFIG_FILE_NAME       "qdss_trace_config.bin"
 
 #define QDSS_ETR_MEM_REGION_TYPE                        0x6
