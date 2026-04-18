@@ -13820,7 +13820,8 @@ static int ath12k_mac_handle_link_sta_state(struct ieee80211_hw *hw,
 
 exit:
 	if (ret) {
-		if (test_bit(ATH12K_FLAG_RECOVERY, &arvif->ar->ab->dev_flags)) {
+		if (test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags) ||
+		    test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)) {
 			/* If FW recovery is ongoing, no need to move down sta states
 			 * as FW will wake up with a clean slate. Hence we set the
 			 * return value to 0, so that upper layers are not aware
@@ -14202,14 +14203,16 @@ ml_station_remove:
 		if (sta->mlo) {
 			ath12k_mac_ml_station_remove(ahvif, ahsta);
 			cancel_work_sync(&ahsta->migration_wk);
-		} else if (is_recovery) {
+		} else {
 			link_id = ffs(ahsta->links_map) - 1;
+			if (is_recovery && link_id >= 0) {
+				arvif = wiphy_dereference(wiphy, ahvif->link[link_id]);
+				arsta = wiphy_dereference(wiphy, ahsta->link[link_id]);
 
-			arvif = wiphy_dereference(wiphy, ahvif->link[link_id]);
-			arsta = wiphy_dereference(wiphy, ahsta->link[link_id]);
-
-			if (!WARN_ON(!arvif || !arsta))
-				ath12k_mac_station_remove(arvif->ar, arvif, arsta);
+				if (!WARN_ON(!arvif || !arsta))
+					ath12k_mac_station_remove(arvif->ar,
+								  arvif, arsta);
+			}
 		}
 		for_each_set_bit(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
 			arvif = wiphy_dereference(wiphy, ahvif->link[link_id]);
