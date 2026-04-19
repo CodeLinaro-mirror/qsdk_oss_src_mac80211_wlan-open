@@ -3776,3 +3776,37 @@ void ath12k_dp_ext_mon_reset(struct ath12k_pdev_dp *dp_pdev)
 	ath12k_dp_ext_mon_drain_peer_list(dp_pdev, &peers_to_drain, vdev_id);
 }
 EXPORT_SYMBOL(ath12k_dp_ext_mon_reset);
+
+void
+ath12k_dp_rx_pktlog_process(struct ath12k_pdev_dp *dp_pdev,
+			    struct ath12k_dp_mon_status_desc *status_desc)
+{
+	struct ath12k *ar = dp_pdev->ar;
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	u16 log_type = 0;
+
+	if (!ar->debug.is_pkt_logging ||
+	    !dp_mon_pdev ||
+	    !status_desc->mon_buf ||
+	    !status_desc->buf_len) {
+		return;
+	}
+
+	if (dp_mon_pdev->rx_pktlog_mode == ATH12K_PKTLOG_MODE_LITE)
+		log_type = ATH12K_PKTLOG_TYPE_LITE_RX;
+	else if ((dp_mon_pdev->rx_pktlog_mode == ATH12K_PKTLOG_MODE_FULL) &&
+		 (ar->debug.pktlog_filter & ATH12K_PKTLOG_RX))
+		log_type = ATH12K_PKTLOG_TYPE_RX_STATBUF;
+
+	if (!log_type) {
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DATA,
+			   "pktlog: skipping processing with no log type\n");
+		return;
+	}
+
+	trace_ath12k_htt_rxdesc(ar, status_desc->mon_buf,
+				log_type, status_desc->buf_len);
+	ath12k_dp_rx_stats_buf_pktlog_process(ar, status_desc->mon_buf,
+					      log_type, status_desc->buf_len);
+}
+EXPORT_SYMBOL(ath12k_dp_rx_pktlog_process);

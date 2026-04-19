@@ -3791,6 +3791,7 @@ int ath12k_wifi7_dp_rxdma_ring_sel_config_qcn9274(struct ath12k_base *ab)
 	ret = ath12k_dp_tx_htt_rx_filter_setup(ab, ring_id, 0,
 					       HAL_RXDMA_BUF,
 					       DP_RX_BUFFER_SIZE,
+					       ATH12K_PKTLOG_DISABLED,
 					       &tlv_filter);
 
 	return ret;
@@ -3833,6 +3834,7 @@ int ath12k_wifi7_dp_rxdma_ring_sel_config_wcn7850(struct ath12k_base *ab)
 		ret = ath12k_dp_tx_htt_rx_filter_setup(ab, ring_id, i,
 						       HAL_RXDMA_BUF,
 						       DP_RX_BUFFER_SIZE,
+						       ATH12K_PKTLOG_DISABLED,
 						       &tlv_filter);
 	}
 

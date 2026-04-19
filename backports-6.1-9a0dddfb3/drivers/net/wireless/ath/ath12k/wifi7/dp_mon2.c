@@ -1707,38 +1707,6 @@ static int ath12k_wifi7_dp_mon_rx_add_ppdu_desc(struct list_head *mon_desc_used_
 	return 0;
 }
 
-static void
-ath12k_dp_rx_pktlog_process(struct ath12k_pdev_dp *pdev_dp,
-			    struct ath12k_dp_mon_status_desc *status_desc)
-{
-	struct ath12k *ar = pdev_dp->ar;
-	struct ath12k_dp *dp = pdev_dp->dp;
-	u16 log_type = 0;
-
-	if (!ar->debug.is_pkt_logging ||
-	    !status_desc->mon_buf ||
-	    !status_desc->buf_len) {
-		return;
-	}
-
-	if (dp->rx_pktlog_mode == ATH12K_PKTLOG_MODE_LITE)
-		log_type = ATH12K_PKTLOG_TYPE_LITE_RX;
-	else if ((dp->rx_pktlog_mode == ATH12K_PKTLOG_MODE_FULL) &&
-		 (ar->debug.pktlog_filter & ATH12K_PKTLOG_RX))
-		log_type = ATH12K_PKTLOG_TYPE_RX_STATBUF;
-
-	if (!log_type) {
-		ath12k_dbg(dp->ab, ATH12K_DBG_DATA,
-			   "pktlog: skipping processing with no log type\n");
-		return;
-	}
-
-	trace_ath12k_htt_rxdesc(ar, status_desc->mon_buf,
-				log_type, status_desc->buf_len);
-	ath12k_dp_rx_stats_buf_pktlog_process(ar, status_desc->mon_buf,
-					      log_type, status_desc->buf_len);
-}
-
 static void ath12k_dp_rx_mon_ppdu_notify(struct hal_rx_mon_ppdu_info *ppdu_info)
 {
 	struct ath12k_ppdu_event event;

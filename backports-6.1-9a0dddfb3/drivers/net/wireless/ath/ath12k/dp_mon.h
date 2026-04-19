@@ -823,6 +823,8 @@ struct ath12k_pdev_mon_dp {
 	bool tx_mon_wq_initialized:1;
 	struct ath12k_dp_rx_ext_mon *rx_ext_mon_config;
 	spinlock_t rx_ext_mon_lock;
+	bool rx_pktlog_cbf;
+	u8 rx_pktlog_mode;
 };
 
 enum ath12k_dp_mon_desc_in_use {
@@ -1104,6 +1106,8 @@ int ath12k_dp_mon_tx_set_monitor_flags(struct ath12k *ar, u32 new_flags, u32 *cu
 int ath12k_dp_mon_get_link_peer_rssi(struct ath12k *ar, const u8 *peer_mac,
 				     s8 *min_rssi, s8 *max_rssi);
 bool ath12k_dp_tx_mon_feature_eval(struct ath12k_dp *dp);
+void ath12k_dp_rx_pktlog_process(struct ath12k_pdev_dp *dp_pdev,
+				 struct ath12k_dp_mon_status_desc *status_desc);
 
 static inline
 int ath12k_dp_mon_rx_alloc(struct ath12k_dp *dp)

@@ -3046,7 +3046,8 @@ ath12k_core_srng_htt_rx_filter_setup(struct ath12k_base *ab, u32 ring_id, int ma
 				     struct htt_rx_ring_tlv_filter *tlv_filter)
 {
 	return ath12k_dp_tx_htt_rx_filter_setup(ab, ring_id, mac_id, ring_type,
-						rx_buf_size, tlv_filter);
+						rx_buf_size, ATH12K_PKTLOG_DISABLED,
+						tlv_filter);
 }
 
 extern unsigned int ath12k_mlo_capable;
