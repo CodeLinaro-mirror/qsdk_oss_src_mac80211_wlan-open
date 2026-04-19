@@ -1531,7 +1531,7 @@ struct ath12k {
 	struct ath12k_wmi_pdev *wmi;
 	struct ath12k_pdev_dp dp;
 	u8 mac_addr[ETH_ALEN];
-	struct ath12k_chan_info chan_info;
+	struct ath12k_chan_info chan_info; /* protected by data_lock */
 	u32 ht_cap_info;
 	u32 vht_cap_info;
 	struct ath12k_he ar_he;

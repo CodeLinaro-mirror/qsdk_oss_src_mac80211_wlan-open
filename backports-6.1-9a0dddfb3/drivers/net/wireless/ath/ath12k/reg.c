@@ -314,6 +314,53 @@ static bool ath12k_regdom_changes(struct ieee80211_hw *hw, char *alpha2)
 	return memcmp(regd->alpha2, alpha2, 2) != 0;
 }
 
+static void ath12k_regd_update_freq_range(struct ath12k *ar)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_wmi_hal_reg_capabilities_ext_arg *reg_cap;
+	u32 phy_id, freq_low, freq_high, supported_bands;
+
+	supported_bands = ar->pdev->cap.supported_bands;
+	reg_cap = &ab->hal_reg_cap[ar->pdev_idx];
+
+	spin_lock_bh(&ar->data_lock);
+
+	ar->freq_range.start_freq = 0;
+	ar->freq_range.end_freq = 0;
+
+	if (supported_bands & WMI_HOST_WLAN_2GHZ_CAP) {
+		if (ab->hw_params->single_pdev_only) {
+			phy_id = ar->pdev->cap.band[WMI_HOST_WLAN_2GHZ_CAP].phy_id;
+			reg_cap = &ab->hal_reg_cap[phy_id];
+		}
+
+		freq_low = max(reg_cap->low_2ghz_chan, ab->reg_freq_2g.start_freq);
+		freq_high = min(reg_cap->high_2ghz_chan, ab->reg_freq_2g.end_freq);
+
+		ath12k_mac_update_freq_range(ar, freq_low, freq_high);
+	}
+
+	if (supported_bands & WMI_HOST_WLAN_5GHZ_CAP && !ar->supports_6ghz) {
+		if (ab->hw_params->single_pdev_only) {
+			phy_id = ar->pdev->cap.band[WMI_HOST_WLAN_5GHZ_CAP].phy_id;
+			reg_cap = &ab->hal_reg_cap[phy_id];
+		}
+
+		freq_low = max(reg_cap->low_5ghz_chan, ab->reg_freq_5g.start_freq);
+		freq_high = min(reg_cap->high_5ghz_chan, ab->reg_freq_5g.end_freq);
+
+		ath12k_mac_update_freq_range(ar, freq_low, freq_high);
+	}
+
+	if (supported_bands & WMI_HOST_WLAN_5GHZ_CAP && ar->supports_6ghz) {
+		freq_low = reg_cap->low_5ghz_chan;
+		freq_high = reg_cap->high_5ghz_chan;
+		ath12k_mac_update_freq_range(ar, freq_low, freq_high);
+	}
+
+	spin_unlock_bh(&ar->data_lock);
+}
+
 static void
 ath12k_reg_notifier(struct wiphy *wiphy, struct regulatory_request *request)
 {
@@ -469,51 +516,14 @@ int ath12k_regd_update(struct ath12k *ar, bool init)
 	struct ieee80211_regdomain *regd, *regd_copy = NULL;
 	int ret, regd_len, pdev_id;
 	struct ath12k_base *ab;
-	struct ath12k_wmi_hal_reg_capabilities_ext_arg *reg_cap;
-	u32 phy_id, freq_low, freq_high, supported_bands;
 
 	ab = ar->ab;
 
-	supported_bands = ar->pdev->cap.supported_bands;
-
-	reg_cap = &ab->hal_reg_cap[ar->pdev_idx];
-
-	/* Possible that due to reg change, current limits for supported
-	 * frequency changed. Update it. As a first step, reset the
-	 * previous values and then compute and set the new values.
+	/* Update freq range limits for this radio based on the new regulatory
+	 * domain. Must be done before regulatory_set_wiphy_regd() triggers
+	 * reg_notifier which calls ath12k_wmi_update_scan_chan_list().
 	 */
-	ar->freq_range.start_freq = 0;
-	ar->freq_range.end_freq = 0;
-
-	if (supported_bands & WMI_HOST_WLAN_2GHZ_CAP) {
-		if (ab->hw_params->single_pdev_only) {
-			phy_id = ar->pdev->cap.band[WMI_HOST_WLAN_2GHZ_CAP].phy_id;
-			reg_cap = &ab->hal_reg_cap[phy_id];
-		}
-
-		freq_low = max(reg_cap->low_2ghz_chan, ab->reg_freq_2g.start_freq);
-		freq_high = min(reg_cap->high_2ghz_chan, ab->reg_freq_2g.end_freq);
-
-		ath12k_mac_update_freq_range(ar, freq_low, freq_high);
-	}
-
-	if (supported_bands & WMI_HOST_WLAN_5GHZ_CAP && !ar->supports_6ghz) {
-		if (ab->hw_params->single_pdev_only) {
-			phy_id = ar->pdev->cap.band[WMI_HOST_WLAN_5GHZ_CAP].phy_id;
-			reg_cap = &ab->hal_reg_cap[phy_id];
-		}
-
-		freq_low = max(reg_cap->low_5ghz_chan, ab->reg_freq_5g.start_freq);
-		freq_high = min(reg_cap->high_5ghz_chan, ab->reg_freq_5g.end_freq);
-
-		ath12k_mac_update_freq_range(ar, freq_low, freq_high);
-	}
-
-	if (supported_bands & WMI_HOST_WLAN_5GHZ_CAP && ar->supports_6ghz) {
-		freq_low = reg_cap->low_5ghz_chan;
-		freq_high = reg_cap->high_5ghz_chan;
-		ath12k_mac_update_freq_range(ar, freq_low, freq_high);
-	}
+	ath12k_regd_update_freq_range(ar);
 
 	/* If one of the radios within ah has already updated the regd for
 	 * the wiphy, then avoid setting regd again
