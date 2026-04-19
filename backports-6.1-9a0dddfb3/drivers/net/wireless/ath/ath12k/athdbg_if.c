@@ -60,6 +60,8 @@ static int athdbg_if_create_debugfs(struct ath12k_base *ab)
 			goto out;
 
 		debugfs_create_file("dbgmask", 0644, athdbg_dir, partner_ab, &debugfs_mask_fops);
+		debugfs_create_file("snapshot", 0644, athdbg_dir,
+				    partner_ab, &debugfs_snapshot_fops);
 
 		athdbg_create_minidump_debugfs(athdbg_dir, partner_ab);
 

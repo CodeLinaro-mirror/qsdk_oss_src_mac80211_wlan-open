@@ -5,6 +5,7 @@
 #include "../core.h"
 #include <linux/workqueue.h>
 #include "../athdbg_if.h"
+#include "athdbg_uio.h"
 
 #define DEV_NAME_LEN 20
 #define BUS_NAME_LEN 4
@@ -67,6 +68,8 @@ struct ath_debug_base {
 	u8 wdbg_handlers_cnt;
 	char dev[DEV_NAME_LEN];
 	char bus[BUS_NAME_LEN];
+	struct mutex uio_lock; /* protects UIO data ring writes */
+	struct athdbg_uio_trace uio_trace;
 };
 
 u64 athdbg_conv_str_to_dbgmask(const char *dbgmask);
