@@ -6,7 +6,7 @@
 #include "dp_mon.h"
 #include "dp_tx_mon.h"
 
-#ifdef CONFIG_ATH12K_TX_MONITOR
+#ifdef CPTCFG_ATH12K_TX_MONITOR
 /**
  * ath12k_dp_mon_tx_setup_ppdu_desc() - Setup TX monitor PPDU descriptor pool
  * @dp_pdev: Pointer to DP PDEV context for device-specific operations
