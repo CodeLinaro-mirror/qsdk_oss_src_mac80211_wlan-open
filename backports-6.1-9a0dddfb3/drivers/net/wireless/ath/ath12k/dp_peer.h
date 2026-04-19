@@ -176,6 +176,8 @@ struct ath12k_dp_peer {
 	bool primary_link_frag_setup;
 
 	bool is_authorized;
+	bool mscs_session_exists;
+
 	enum hal_pn_type pn_type;
 
 	struct ieee80211_key_conf *keys[WMI_MAX_KEY_INDEX + 1];
@@ -201,7 +203,6 @@ struct ath12k_dp_peer {
 	int ppe_vp_num;
 #endif
 	struct ath12k_mscs_ctxt mscs_ctxt;
-	bool mscs_session_exists;
 	struct ath12k_dp_preserved_stats link_peer_delete_stats;
 	struct ath12k_dp_peer_ext_ctx *peer_ext_ctx;
 	u8 is_sta_bss_peer_4addr :1,
