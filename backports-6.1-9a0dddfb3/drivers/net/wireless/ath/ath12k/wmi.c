@@ -3984,6 +3984,18 @@ int ath12k_wmi_update_scan_chan_list(struct ath12k *ar,
 	int num_channels = 0;
 	int i, ret;
 	bool found = false;
+	u32 low_freq, high_freq;
+
+	/* Snapshot chan_info under data_lock to get a consistent view of the
+	 * freq range for both the count pass and the fill pass. Without this,
+	 * a concurrent ath12k_regd_update_freq_range() call from another
+	 * regulatory update could widen the range between the two passes,
+	 * causing the fill pass to write more entries than were allocated.
+	 */
+	spin_lock_bh(&ar->data_lock);
+	low_freq = ar->chan_info.low_freq;
+	high_freq = ar->chan_info.high_freq;
+	spin_unlock_bh(&ar->data_lock);
 
 	bands = hw->wiphy->bands;
 	for (band = 0; band < NUM_NL80211_BANDS; band++) {
@@ -3997,9 +4009,9 @@ int ath12k_wmi_update_scan_chan_list(struct ath12k *ar,
 
 			if (band == NL80211_BAND_5GHZ || band == NL80211_BAND_6GHZ)
 				if (bands[band]->channels[i].center_freq <
-				    ar->chan_info.low_freq ||
+				    low_freq ||
 				    bands[band]->channels[i].center_freq >
-				    ar->chan_info.high_freq)
+				    high_freq)
 					continue;
 
 			num_channels++;
@@ -4035,14 +4047,14 @@ int ath12k_wmi_update_scan_chan_list(struct ath12k *ar,
 
 			if (band == NL80211_BAND_5GHZ || band == NL80211_BAND_6GHZ) {
 				if (bands[band]->channels[i].center_freq <
-				    ar->chan_info.low_freq ||
+				    low_freq ||
 				    bands[band]->channels[i].center_freq >
-				    ar->chan_info.high_freq) {
+				    high_freq) {
 					ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
 						   "skip freq %d outside range %d-%d MHz\n",
 						   bands[band]->channels[i].center_freq,
-						   ar->chan_info.low_freq,
-						   ar->chan_info.high_freq);
+						   low_freq,
+						   high_freq);
 					continue;
 				}
 			}
