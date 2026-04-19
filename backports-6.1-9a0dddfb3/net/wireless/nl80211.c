@@ -1181,6 +1181,7 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_NPCA_PRIMARY_FREQ] = { .type = NLA_U32 },
 	[NL80211_ATTR_NPCA_PUNCT_BITMAP] =
 		NLA_POLICY_FULL_RANGE(NLA_U32, &nl80211_punct_bitmap_range),
+	[NL80211_ATTR_UHR_MODE_UPDATE_PARAMS] = { .type = NLA_NESTED },
 };
 
 /* policy for the key attributes */
@@ -1194,6 +1195,17 @@ static const struct nla_policy nl80211_key_policy[NL80211_KEY_MAX + 1] = {
 	[NL80211_KEY_TYPE] = NLA_POLICY_MAX(NLA_U32, NUM_NL80211_KEYTYPES - 1),
 	[NL80211_KEY_DEFAULT_TYPES] = { .type = NLA_NESTED },
 	[NL80211_KEY_MODE] = NLA_POLICY_RANGE(NLA_U8, 0, NL80211_KEY_SET_TX),
+};
+
+static const struct nla_policy
+nl80211_uhr_mode_update_policy[NL80211_UHR_MODE_UPDATE_ATTR_MAX + 1] = {
+	[NL80211_UHR_MODE_UPDATE_ATTR_LINK_ID] =
+		NLA_POLICY_RANGE(NLA_U8, 0, IEEE80211_MLD_MAX_NUM_LINKS - 1),
+	[NL80211_UHR_MODE_UPDATE_ATTR_NPCA_ENABLE] = { .type = NLA_FLAG },
+	[NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCH_DELAY] =
+		NLA_POLICY_RANGE(NLA_U8, 0, 63),
+	[NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCHBACK_DELAY] =
+		NLA_POLICY_RANGE(NLA_U8, 0, 63),
 };
 
 /* policy for the key default flags */
@@ -20495,6 +20507,75 @@ nla_ap_ps_fail:
 	return -ENOBUFS;
 }
 
+static int nl80211_uhr_mode_update(struct sk_buff *skb, struct genl_info *info)
+{
+	struct cfg80211_registered_device *rdev = info->user_ptr[0];
+	struct net_device *dev = info->user_ptr[1];
+	struct wireless_dev *wdev = dev->ieee80211_ptr;
+	struct cfg80211_uhr_mode_update_params params = {};
+	const struct ieee80211_sta_uhr_npca_info *npca_info;
+	struct nlattr *attr;
+	int rem;
+
+	if (!info->attrs[NL80211_ATTR_UHR_MODE_UPDATE_PARAMS])
+		return -EINVAL;
+
+	if (!wdev->valid_links)
+		return -EOPNOTSUPP;
+
+	npca_info = ieee80211_get_uhr_iftype_npca_info(
+		rdev->wiphy.bands[NL80211_BAND_6GHZ],
+		wdev->iftype);
+
+	if (!npca_info || npca_info->npca_enabled)
+		return -EOPNOTSUPP;
+
+	/*
+	 * NL80211_ATTR_UHR_MODE_UPDATE_PARAMS is a nested array where each
+	 * element contains per-link UHR mode parameters. Each element must
+	 * have NL80211_UHR_MODE_UPDATE_ATTR_LINK_ID plus optional NPCA
+	 * attributes.
+	 */
+	nla_for_each_nested(attr, info->attrs[NL80211_ATTR_UHR_MODE_UPDATE_PARAMS],
+			    rem) {
+		struct nlattr *tb[NL80211_UHR_MODE_UPDATE_ATTR_MAX + 1];
+		struct nlattr *sw_delay, *swbk_delay;
+		u8 link_id;
+		int err;
+
+		err = nla_parse_nested(tb, NL80211_UHR_MODE_UPDATE_ATTR_MAX,
+				       attr, nl80211_uhr_mode_update_policy,
+				       info->extack);
+		if (err)
+			return err;
+
+		if (!tb[NL80211_UHR_MODE_UPDATE_ATTR_LINK_ID])
+			return -EINVAL;
+
+		link_id = nla_get_u8(tb[NL80211_UHR_MODE_UPDATE_ATTR_LINK_ID]);
+		sw_delay = tb[NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCH_DELAY];
+		swbk_delay = tb[NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCHBACK_DELAY];
+
+		if (tb[NL80211_UHR_MODE_UPDATE_ATTR_NPCA_ENABLE] ||
+		    sw_delay || swbk_delay) {
+			params.npca_update[link_id] = true;
+
+			if (tb[NL80211_UHR_MODE_UPDATE_ATTR_NPCA_ENABLE])
+				params.npca[link_id].enable = true;
+
+			if (sw_delay)
+				params.npca[link_id].switch_delay =
+					nla_get_u8(sw_delay);
+
+			if (swbk_delay)
+				params.npca[link_id].switch_back_delay =
+					nla_get_u8(swbk_delay);
+		}
+	}
+
+	return rdev_uhr_mode_update(rdev, dev, &params);
+}
+
 static int nl80211_ap_power_save(struct sk_buff *skb, struct genl_info *info)
 {
 	struct cfg80211_registered_device *rdev = info->user_ptr[0];
@@ -21848,6 +21929,12 @@ static const struct genl_small_ops nl80211_small_ops[] = {
 		.flags = GENL_UNS_ADMIN_PERM,
 		.internal_flags = IFLAGS(NL80211_FLAG_NEED_NETDEV |
 					 NL80211_FLAG_MLO_VALID_LINK_ID),
+	},
+	{
+		.cmd = NL80211_CMD_UHR_MODE_UPDATE,
+		.doit = nl80211_uhr_mode_update,
+		.flags = GENL_UNS_ADMIN_PERM,
+		.internal_flags = IFLAGS(NL80211_FLAG_NEED_NETDEV_UP),
 	},
 };
 

@@ -6969,6 +6969,40 @@ int ieee80211_dfs_abort_cac(struct wiphy *wiphy,
 	return 0;
 }
 
+static int ieee80211_uhr_mode_update(struct wiphy *wiphy,
+				     struct net_device *dev,
+				     struct cfg80211_uhr_mode_update_params *params)
+{
+	struct ieee80211_local *local = wiphy_priv(wiphy);
+	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+	struct link_sta_info *link_sta;
+	struct sta_info *sta, *found_sta = NULL;
+	int link_id;
+	int ret;
+
+	lockdep_assert_wiphy(wiphy);
+
+	/* Store the per-link params into the associated link_sta entries first */
+	list_for_each_entry(sta, &local->sta_list, list) {
+		if (sta->sdata != sdata)
+			continue;
+		found_sta = sta;
+		for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS; link_id++) {
+			link_sta = rcu_dereference_protected(sta->link[link_id],
+					lockdep_is_held(&local->hw.wiphy->mtx));
+			if (!link_sta)
+				continue;
+			if (params->npca_update[link_id])
+				link_sta->pub->npca = params->npca[link_id];
+		}
+		break;
+	}
+
+	/* Call the driver once after link_sta params are updated */
+	ret = drv_uhr_mode_update(local, sdata, found_sta);
+	return ret;
+}
+
 const struct cfg80211_ops mac80211_config_ops = {
 	.add_virtual_intf = ieee80211_add_iface,
 	.del_virtual_intf = ieee80211_del_iface,
@@ -7098,4 +7132,5 @@ const struct cfg80211_ops mac80211_config_ops = {
 	.get_6ghz_dev_deployment_type = ieee80211_get_6ghz_dev_deployment_type,
 	.ap_power_save = ieee80211_ap_power_save,
 	.abort_cac = ieee80211_dfs_abort_cac,
+	.uhr_mode_update = ieee80211_uhr_mode_update,
 };

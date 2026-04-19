@@ -5400,6 +5400,32 @@ struct cfg80211_ap_power_save_params {
 };
 
 /**
+ * struct cfg80211_uhr_npca_params - NPCA (Non-Primary Channel Access) params
+ * @enable: enable (true) or disable (false) NPCA feature
+ * @switch_delay: delay in ms before switching to non-primary channel
+ * @switch_back_delay: delay in ms before switching back to primary channel
+ */
+struct cfg80211_uhr_npca_params {
+	bool enable;
+	u8 switch_delay;
+	u8 switch_back_delay;
+};
+
+/**
+ * struct cfg80211_uhr_mode_update_params - UHR mode update parameters
+ *
+ * Parameters for the %NL80211_CMD_UHR_MODE_UPDATE command, used to
+ * configure per-link UHR mode parameters for an MLD VAP.
+ *
+ * @npca_update: per-link flags indicating which links have NPCA params to update
+ * @npca: per-link NPCA parameters, indexed by link ID
+ */
+struct cfg80211_uhr_mode_update_params {
+	bool npca_update[IEEE80211_MLD_MAX_NUM_LINKS];
+	struct cfg80211_uhr_npca_params npca[IEEE80211_MLD_MAX_NUM_LINKS];
+};
+
+/**
  * struct cfg80211_ops - backend description for wireless configuration
  *
  * This struct is registered by fullmac card drivers and/or wireless stacks
@@ -5839,6 +5865,8 @@ struct cfg80211_ap_power_save_params {
  *
  * @ap_power_save : Configure AP Power Save parameters
  * @abort_cac: Abort ongoing Channel Availability Check (CAC)
+ * @uhr_mode_update: Update per-link UHR mode parameters (NPCA) for an MLD.
+ *	@params carries per-link update flags and NPCA settings.
  * @set_muedca_mode: Set the mode of setting MU EDCA parameters.
  */
 struct cfg80211_ops {
@@ -6245,6 +6273,8 @@ struct cfg80211_ops {
 				 struct cfg80211_ap_power_save_params *params);
 	int (*abort_cac)(struct wiphy *wiphy, struct wireless_dev *wdev,
 			 int link_id);
+	int (*uhr_mode_update)(struct wiphy *wiphy, struct net_device *dev,
+			       struct cfg80211_uhr_mode_update_params *params);
 };
 
 /*

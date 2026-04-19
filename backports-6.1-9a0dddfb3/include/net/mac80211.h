@@ -2802,6 +2802,7 @@ struct ieee80211_sta_aggregates {
  *	notifications and capabilities. The value is only valid after
  *	the station moves to associated state.
  * @txpwr: the station tx power configuration
+ * @npca: current NPCA (Non-Primary Channel Access) parameters for this link
  *
  */
 struct ieee80211_link_sta {
@@ -2829,6 +2830,8 @@ struct ieee80211_link_sta {
 	enum ieee80211_sta_rx_bandwidth bandwidth;
 	enum ieee80211_sta_rx_bandwidth sta_max_bandwidth;
 	struct ieee80211_sta_txpwr txpwr;
+
+	struct cfg80211_uhr_npca_params npca;
 };
 
 /**
@@ -5051,6 +5054,9 @@ struct ieee80211_ppe_vp_ds_params {
  * @get_6ghz_dev_deployment_type: Get the 6 GHz device deployment type.
  * @ap_power_save: Introduces infrastructure in mac80211 to support forwarding of
  *	AP Powersave configuration parameters from user space to driver.
+ * @uhr_mode_update: Update per-link UHR mode parameters (NPCA) for the
+ *	given station. Called after link_sta npca fields have been updated.
+ *	@sta may be NULL if no associated station was found.
  */
 struct ieee80211_ops {
 	void (*tx)(struct ieee80211_hw *hw,
@@ -5499,6 +5505,8 @@ struct ieee80211_ops {
 	int (*ap_power_save)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			     int link_id,
 			     struct cfg80211_ap_power_save_params *params);
+	int (*uhr_mode_update)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+			       struct ieee80211_sta *sta);
 #ifdef CPTCFG_QCN_EXTN
 	int (*set_muedca_mode)(struct ieee80211_hw *hw, int radio_idx,
 			       u8 muedca_mode);

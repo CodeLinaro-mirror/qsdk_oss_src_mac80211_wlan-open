@@ -1757,4 +1757,19 @@ static inline int rdev_ap_power_save(struct cfg80211_registered_device *rdev,
 	trace_rdev_return_int(&rdev->wiphy, ret);
 	return ret;
 }
+
+static inline int rdev_uhr_mode_update(struct cfg80211_registered_device *rdev,
+				       struct net_device *dev,
+				       struct cfg80211_uhr_mode_update_params *params)
+{
+	int ret;
+
+	if (!rdev->ops->uhr_mode_update)
+		return -EOPNOTSUPP;
+
+	trace_rdev_uhr_mode_update(&rdev->wiphy, dev, params);
+	ret = rdev->ops->uhr_mode_update(&rdev->wiphy, dev, params);
+	trace_rdev_return_int(&rdev->wiphy, ret);
+	return ret;
+}
 #endif /* __CFG80211_RDEV_OPS */
