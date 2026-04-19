@@ -4956,19 +4956,28 @@ ath12k_wifi7_hal_mon_tx_ppdu_info(struct ath12k_hal *hal,
 	case HAL_TX_FES_STATUS_PROT: {
 		if (!pmon->prot_ppdu_info.is_used)
 			pmon->prot_ppdu_info.is_used = true;
-
+		/* Mark end of protection window so subsequent TLVs
+		 * (L-SIG, PHY_DESC for the data frame) go to data_ppdu_info.
+		 */
+		pmon->prot_ppdu_info.tx_info.prot_tlv_status = tlv_tag;
 		return &pmon->prot_ppdu_info;
 	}
 	case HAL_TX_FES_STATUS_START_PROT: {
 		if (!pmon->prot_ppdu_info.is_used)
 			pmon->prot_ppdu_info.is_used = true;
-
+		/* Mark start of protection window so subsequent TLVs
+		 * (L-SIG A/B, PHY_DESC for the protection frame) are routed
+		 * to prot_ppdu_info and carry the correct rate/preamble info.
+		 */
+		pmon->prot_ppdu_info.tx_info.prot_tlv_status = tlv_tag;
 		return &pmon->prot_ppdu_info;
 	}
+	default:
+		if (pmon->prot_ppdu_info.tx_info.prot_tlv_status ==
+		    HAL_TX_FES_STATUS_START_PROT) {
+			return &pmon->prot_ppdu_info;
+		}
 	}
-
-	if (!pmon->data_ppdu_info.is_used)
-		pmon->data_ppdu_info.is_used = true;
 
 	return &pmon->data_ppdu_info;
 }
