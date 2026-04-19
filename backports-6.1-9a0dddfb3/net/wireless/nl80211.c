@@ -3733,6 +3733,9 @@ static int nl80211_send_wiphy(struct cfg80211_registered_device *rdev,
 		if (rdev->wiphy.flags & WIPHY_FLAG_SUPPORTS_MLO)
 			nla_put_flag(msg, NL80211_ATTR_MLO_SUPPORT);
 
+		if (rdev->wiphy.flags & WIPHY_FLAG_SUPPORTS_SMD)
+			nla_put_flag(msg, NL80211_ATTR_SMD_SUPPORT);
+
 		if (rdev->wiphy.hw_timestamp_max_peers &&
 		    nla_put_u16(msg, NL80211_ATTR_MAX_HW_TIMESTAMP_PEERS,
 				rdev->wiphy.hw_timestamp_max_peers))
@@ -9177,7 +9180,7 @@ int cfg80211_check_station_change(struct wiphy *wiphy,
 		return -EINVAL;
 
 	/* When you run into this, adjust the code below for the new flag */
-	BUILD_BUG_ON(NL80211_STA_FLAG_MAX != 10);
+	BUILD_BUG_ON(NL80211_STA_FLAG_MAX != 11);
 
 	switch (statype) {
 	case CFG80211_STA_MESH_PEER_KERNEL:
@@ -9885,7 +9888,7 @@ static int nl80211_new_station(struct sk_buff *skb, struct genl_info *info)
 		return -EINVAL;
 
 	/* When you run into this, adjust the code below for the new flag */
-	BUILD_BUG_ON(NL80211_STA_FLAG_MAX != 10);
+	BUILD_BUG_ON(NL80211_STA_FLAG_MAX != 11);
 
 	switch (dev->ieee80211_ptr->iftype) {
 	case NL80211_IFTYPE_AP:

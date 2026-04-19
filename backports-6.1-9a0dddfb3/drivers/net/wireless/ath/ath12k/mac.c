@@ -26884,6 +26884,19 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 				IEEE80211_MLD_CAP_OP_LINK_RECONF_SUPPORT;
 	}
 
+
+	if (test_bit(WMI_SERVICE_SMD_SUPPORT_ROAMING,
+		     ar->ab->wmi_ab.svc_map)) {
+		wiphy_ext_feature_set(wiphy,
+				NL80211_EXT_FEATURE_SMD_SUPPORT_AP);
+	}
+
+	if (test_bit(WMI_SERVICE_SMD_SUPPORT_DL_FORWARD,
+		     ar->ab->wmi_ab.svc_map)) {
+		wiphy_ext_feature_set(wiphy,
+			NL80211_EXT_FEATURE_SMD_SUPPORT_DL_PKT_FRWRD);
+	}
+
 	hw->queues = ATH12K_HW_MAX_QUEUES;
 	wiphy->tx_queue_len = ATH12K_QUEUE_LEN;
 	hw->offchannel_tx_hw_queue = ATH12K_HW_MAX_QUEUES - 1;
