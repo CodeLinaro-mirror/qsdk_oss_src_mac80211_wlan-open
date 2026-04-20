@@ -7,19 +7,29 @@
 #ifndef ATH12K_WIFI8_HW_H
 #define ATH12K_WIFI8_HW_H
 
+#include <linux/threads.h>
+
 #define ATH12K_EXT_IRQ_GRP_NUM_MAX 18
 
 #define ATH12K_TX_RING_MASK_0 0x1
 #define ATH12K_TX_RING_MASK_1 0x2
 #define ATH12K_TX_RING_MASK_2 0x4
 #define ATH12K_TX_RING_MASK_3 0x8
+#if NR_CPUS > 4
 #define ATH12K_TX_RING_MASK_4 0x10
+#else
+#define ATH12K_TX_RING_MASK_4 0
+#endif
 
 #define ATH12K_RX_RING_MASK_0 0x1
 #define ATH12K_RX_RING_MASK_1 0x2
 #define ATH12K_RX_RING_MASK_2 0x4
 #define ATH12K_RX_RING_MASK_3 0x8
+#if NR_CPUS > 4
 #define ATH12K_RX_RING_MASK_4 0x10
+#else
+#define ATH12K_RX_RING_MASK_4 0
+#endif
 
 #define ATH12K_RX_ERR_RING_MASK_0 0x1
 
