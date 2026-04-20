@@ -139,6 +139,7 @@ struct ath12k_dp_rx_reo_cmd {
 	struct list_head list;
 	union {
 		struct ath12k_dp_rx_tid data;
+		struct ath12k_dp_smd_ctx smd_data;
 	} u;
 	int cmd_num;
 	void (*handler)(struct ath12k_dp *dp, void *ctx,

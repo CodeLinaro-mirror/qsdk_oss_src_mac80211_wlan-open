@@ -450,6 +450,14 @@ ath12k_wifi8_hal_invalidate_rx_cache_cmd_send(struct ath12k_base *ab,
 void ath12k_wifi8_hal_reo_status_queue_stats(struct ath12k_base *ab,
 					     struct hal_tlv_64_hdr *tlv,
 					     struct hal_reo_status *status);
+void ath12k_wifi8_hal_reo_status_queue_1k_stats(struct ath12k_base *ab,
+						struct hal_tlv_64_hdr *tlv,
+						struct hal_reo_status *status);
+int
+ath12k_wifi8_hal_reo_highest_sn_from_bitmap(u16 ssn,
+					    const u32 *bitmap_words,
+					    int num_words,
+					    u16 *high_off);
 void ath12k_wifi8_hal_reo_flush_queue_status(struct ath12k_base *ab,
 					     struct hal_tlv_64_hdr *tlv,
 					     struct hal_reo_status *status);

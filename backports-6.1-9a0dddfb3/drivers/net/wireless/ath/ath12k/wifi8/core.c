@@ -104,6 +104,22 @@ const struct ath12k_cp_arch_ops ath12k_wifi8_cp_ops = {
 	.cu_mem_free = ath12k_wifi8_cu_mem_free,
 };
 
+/* SMD feature flags - controls behaviour of SMD-related operations.
+ * New per-feature knobs for the SMD topic should be added here so they
+ * are all discoverable in one place via modinfo / /sys/module/ath12k_wifi8/parameters/.
+ */
+bool ath12k_wifi8_clear_vld_after_smd_ctx_fetch = true;
+module_param_named(clear_vld_after_smd_ctx_fetch,
+		   ath12k_wifi8_clear_vld_after_smd_ctx_fetch, bool, 0644);
+MODULE_PARM_DESC(clear_vld_after_smd_ctx_fetch,
+		 "Clear REO VLD after fetching SMD ctx (default: 1 - enabled)");
+
+bool ath12k_wifi8_smd_skip_bitmap_update = true;
+module_param_named(smd_skip_bitmap_update,
+		   ath12k_wifi8_smd_skip_bitmap_update, bool, 0644);
+MODULE_PARM_DESC(smd_skip_bitmap_update,
+		 "On Target AP, updates SSN and PN but skips REO bitmap update (default: 1 - skips REO bitmap update)");
+
 static int ath12k_wifi8_init(void)
 {
 	ath12k_erp_init();

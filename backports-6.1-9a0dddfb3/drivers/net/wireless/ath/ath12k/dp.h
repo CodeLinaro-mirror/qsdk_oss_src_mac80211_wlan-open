@@ -500,6 +500,36 @@ struct rx_flow_info {
 	   drop		:1;
 };
 
+struct ath12k_rx_smd_ctx_per_tid {
+	u8 peer_addr[ETH_ALEN];
+	u8 tid;
+	u16 ssn;
+	u32 ba_win_sz;
+	u8 pn_len;
+	u32 pn_31_0;
+	u16 pn_47_32;
+	u8 pn_127_48_info;
+	bool to_follow_1k;
+	struct hal_rx_reo_bitmap_287_0 bitmap_287_0;
+	struct hal_rx_reo_bitmap_1023_288 bitmap_1023_288;
+};
+
+/* carries both input (tid bitmaps) and output (tid, status_1k, peer_addr)
+ * for fetching REO SMD ctx
+ */
+struct ath12k_dp_smd_ctx {
+	u8 peer_addr[ETH_ALEN];
+	union {
+		struct {
+			u32 rx_tid_bitmap;
+			u32 tx_tid_bitmap;
+		} in;
+		struct {
+			u8 tid;
+		} out;
+	};
+};
+
 /* DP arch ops to communicate from common module
  * to arch specific module
  */
@@ -612,6 +642,16 @@ struct ath12k_dp_arch_ops {
 	bool (*dp_ast_param_get)(struct ath12k_hw *ah, uint16_t *ast_info,
 				 u16 *hw_peer_id, u8 *addr);
 #endif
+	int (*peer_rx_tid_reo_update_for_smd)(struct ath12k_base *ab,
+					      struct ath12k_dp_hw *dp_hw,
+					      const u8 *peer_addr,
+					      struct ath12k_rx_smd_ctx_per_tid
+					      *rx_tid_ctx);
+	int (*dp_peer_fetch_smd_ctx)(struct ath12k_base *ab,
+				     struct ath12k_dp_hw *dp_hw,
+				     struct ath12k_dp_smd_ctx *ctx,
+				     void (*cb)(struct ath12k_dp *dp, void *ctx,
+						struct hal_reo_status *status));
 };
 
 struct ath12k_bp_stats {
@@ -1320,6 +1360,34 @@ static inline int ath12k_dp_arch_get_peer_init_status(struct ath12k_dp *dp,
 {
 	if (dp->arch_ops->get_peer_init_status)
 		return dp->arch_ops->get_peer_init_status(dp, dp_hw, addr);
+
+	return 0;
+}
+
+static inline int
+ath12k_dp_arch_dp_peer_fetch_smd_ctx(struct ath12k_dp *dp,
+				     struct ath12k_dp_hw *dp_hw,
+				     struct ath12k_dp_smd_ctx *ctx,
+				     void (*cb)(struct ath12k_dp *dp, void *ctx,
+						struct hal_reo_status *reo_status))
+{
+	if (dp->arch_ops->dp_peer_fetch_smd_ctx)
+		return dp->arch_ops->dp_peer_fetch_smd_ctx(dp->ab, dp_hw, ctx, cb);
+
+	return 0;
+}
+
+static inline int
+ath12k_dp_arch_peer_rx_tid_reo_update_for_smd(struct ath12k_dp *dp,
+					      struct ath12k_dp_hw *dp_hw,
+					      const u8 *peer_addr,
+					      struct ath12k_rx_smd_ctx_per_tid
+					      *rx_tid_ctx)
+{
+	if (dp->arch_ops->peer_rx_tid_reo_update_for_smd)
+		return dp->arch_ops->peer_rx_tid_reo_update_for_smd(dp->ab, dp_hw,
+								    peer_addr,
+								    rx_tid_ctx);
 
 	return 0;
 }

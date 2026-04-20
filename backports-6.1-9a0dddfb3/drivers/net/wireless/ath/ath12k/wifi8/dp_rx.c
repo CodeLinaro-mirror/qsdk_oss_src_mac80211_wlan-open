@@ -149,7 +149,7 @@ static int ath12k_wifi8_dp_reo_cmd_send_ring(struct ath12k_base *ab,
 
 	if (WARN_ON(len > sizeof(dp_cmd->u)))
 		return -EINVAL;
-	memcpy(&dp_cmd->u.data, data, len);
+	memcpy(&dp_cmd->u, data, len);
 	dp_cmd->cmd_num = cmd_num;
 	dp_cmd->handler = cb;
 
@@ -539,6 +539,310 @@ exit:
 	spin_unlock_bh(&srng->lock);
 
 	return ret;
+}
+
+static int
+ath12k_wifi8_hal_reo_qdesc_update_bitmaps_direct(struct ath12k_base *ab,
+						 struct ath12k_dp_rx_tid *rx_tid,
+						 struct ath12k_rx_smd_ctx_per_tid
+						 *smd_ctx)
+{
+	struct hal_rx_reo_queue *qdesc;
+
+	/* Get virtual address of queue descriptor */
+	qdesc = (struct hal_rx_reo_queue *)rx_tid->vaddr;
+	if (!qdesc) {
+		ath12k_err(ab, "NULL queue descriptor vaddr for tid %d\n", rx_tid->tid);
+		return -EINVAL;
+	}
+
+	/*
+	 * Update bitmap fields (0-287)
+	 * These are always present in the main descriptor
+	 */
+	qdesc->rx_bitmap_31_0 = cpu_to_le32(smd_ctx->bitmap_287_0.rx_bitmap_31_0);
+	qdesc->rx_bitmap_63_32 = cpu_to_le32(smd_ctx->bitmap_287_0.rx_bitmap_63_32);
+	qdesc->rx_bitmap_95_64 = cpu_to_le32(smd_ctx->bitmap_287_0.rx_bitmap_95_64);
+	qdesc->rx_bitmap_127_96 = cpu_to_le32(smd_ctx->bitmap_287_0.rx_bitmap_127_96);
+	qdesc->rx_bitmap_159_128 = cpu_to_le32(smd_ctx->bitmap_287_0.rx_bitmap_159_128);
+	qdesc->rx_bitmap_191_160 = cpu_to_le32(smd_ctx->bitmap_287_0.rx_bitmap_191_160);
+	qdesc->rx_bitmap_223_192 = cpu_to_le32(smd_ctx->bitmap_287_0.rx_bitmap_223_192);
+	qdesc->rx_bitmap_255_224 = cpu_to_le32(smd_ctx->bitmap_287_0.rx_bitmap_255_224);
+	qdesc->rx_bitmap_287_256 = cpu_to_le32(smd_ctx->bitmap_287_0.rx_bitmap_287_256);
+
+	/*
+	 * Always update extended bitmap fields (288-1023)
+	 * Update all fields unconditionally for simplicity and consistency
+	 */
+	qdesc->rx_bitmap_319_288 =
+		cpu_to_le32(smd_ctx->bitmap_1023_288.rx_bitmap_319_288);
+	qdesc->rx_bitmap_351_320 =
+		cpu_to_le32(smd_ctx->bitmap_1023_288.rx_bitmap_351_320);
+	qdesc->rx_bitmap_383_352 =
+		cpu_to_le32(smd_ctx->bitmap_1023_288.rx_bitmap_383_352);
+	qdesc->rx_bitmap_415_384 =
+		cpu_to_le32(smd_ctx->bitmap_1023_288.rx_bitmap_415_384);
+	qdesc->rx_bitmap_447_416 =
+		cpu_to_le32(smd_ctx->bitmap_1023_288.rx_bitmap_447_416);
+	qdesc->rx_bitmap_479_448 =
+		cpu_to_le32(smd_ctx->bitmap_1023_288.rx_bitmap_479_448);
+	qdesc->rx_bitmap_511_480 =
+		cpu_to_le32(smd_ctx->bitmap_1023_288.rx_bitmap_511_480);
+	qdesc->rx_bitmap_543_512 =
+		cpu_to_le32(smd_ctx->bitmap_1023_288.rx_bitmap_543_512);
+	qdesc->rx_bitmap_575_544 =
+		cpu_to_le32(smd_ctx->bitmap_1023_288.rx_bitmap_575_544);
+	qdesc->rx_bitmap_607_576 =
+		cpu_to_le32(smd_ctx->bitmap_1023_288.rx_bitmap_607_576);
+	qdesc->rx_bitmap_639_608 =
+		cpu_to_le32(smd_ctx->bitmap_1023_288.rx_bitmap_639_608);
+	qdesc->rx_bitmap_671_640 =
+		cpu_to_le32(smd_ctx->bitmap_1023_288.rx_bitmap_671_640);
+	qdesc->rx_bitmap_703_672 =
+		cpu_to_le32(smd_ctx->bitmap_1023_288.rx_bitmap_703_672);
+	qdesc->rx_bitmap_735_704 =
+		cpu_to_le32(smd_ctx->bitmap_1023_288.rx_bitmap_735_704);
+	qdesc->rx_bitmap_767_736 =
+		cpu_to_le32(smd_ctx->bitmap_1023_288.rx_bitmap_767_736);
+	qdesc->rx_bitmap_799_768 =
+		cpu_to_le32(smd_ctx->bitmap_1023_288.rx_bitmap_799_768);
+	qdesc->rx_bitmap_831_800 =
+		cpu_to_le32(smd_ctx->bitmap_1023_288.rx_bitmap_831_800);
+	qdesc->rx_bitmap_863_832 =
+		cpu_to_le32(smd_ctx->bitmap_1023_288.rx_bitmap_863_832);
+	qdesc->rx_bitmap_895_864 =
+		cpu_to_le32(smd_ctx->bitmap_1023_288.rx_bitmap_895_864);
+	qdesc->rx_bitmap_927_896 =
+		cpu_to_le32(smd_ctx->bitmap_1023_288.rx_bitmap_927_896);
+	qdesc->rx_bitmap_959_928 =
+		cpu_to_le32(smd_ctx->bitmap_1023_288.rx_bitmap_959_928);
+	qdesc->rx_bitmap_991_960 =
+		cpu_to_le32(smd_ctx->bitmap_1023_288.rx_bitmap_991_960);
+	qdesc->rx_bitmap_1023_992 =
+		cpu_to_le32(smd_ctx->bitmap_1023_288.rx_bitmap_1023_992);
+
+	/*
+	 * Flush CPU cache for coherency, then invalidate REO HW cache so
+	 * stale entries can't be written back over the updated bitmap.
+	 */
+	ath12k_core_dma_sync_single_for_device(ab->dev, rx_tid->paddr,
+					       rx_tid->size, DMA_TO_DEVICE);
+
+	return 0;
+}
+
+int ath12k_wifi8_peer_rx_tid_reo_update_for_smd(struct ath12k_base *ab,
+						struct ath12k_dp_hw *dp_hw,
+						const u8 *peer_addr,
+						struct ath12k_rx_smd_ctx_per_tid
+						*rx_tid_ctx)
+{
+	struct ath12k_dp_rx_tid *rx_tid;
+	struct ath12k_hal_reo_cmd cmd;
+	struct ath12k_dp_peer *dp_peer;
+	int ret;
+
+	if (!dp_hw || !peer_addr || !rx_tid_ctx) {
+		ath12k_err(ab, "invalid args for SMD REO update\n");
+		return -EINVAL;
+	}
+
+	if (rx_tid_ctx->ssn > 0xFFF) {
+		ath12k_warn(ab, "Invalid SSN 0x%x for tid %d\n",
+			    rx_tid_ctx->ssn, rx_tid_ctx->tid);
+		return -EINVAL;
+	}
+
+	if (rx_tid_ctx->tid >= ab->hal.hal_params->num_tids) {
+		ath12k_warn(ab, "invalid tid %d for SMD REO update\n",
+			    rx_tid_ctx->tid);
+		return -EINVAL;
+	}
+
+	spin_lock_bh(&dp_hw->peer_lock);
+
+	dp_peer = ath12k_dp_peer_find(dp_hw, (u8 *)peer_addr);
+	if (!dp_peer) {
+		spin_unlock_bh(&dp_hw->peer_lock);
+		ath12k_warn(ab, "failed to find peer %pM for SMD REO update\n",
+			    peer_addr);
+		return -ENOENT;
+	}
+
+	rx_tid = &dp_peer->rx_tid[rx_tid_ctx->tid];
+
+	if (!rx_tid->active) {
+		spin_unlock_bh(&dp_hw->peer_lock);
+		ath12k_warn(ab, "inactive rx tid %d for peer %pM\n",
+			    rx_tid_ctx->tid, peer_addr);
+		return -EINVAL;
+	}
+
+	if (!ath12k_wifi8_smd_skip_bitmap_update) {
+		memset(&cmd, 0, sizeof(cmd));
+		cmd.addr_lo = lower_32_bits(rx_tid->paddr);
+		cmd.addr_hi = upper_32_bits(rx_tid->paddr);
+		ret = ath12k_wifi8_dp_reo_cmd_send(ab, rx_tid, sizeof(*rx_tid),
+						   HAL_REO_CMD_FLUSH_CACHE,
+						   &cmd, NULL);
+		if (ret) {
+			spin_unlock_bh(&dp_hw->peer_lock);
+			ath12k_warn(ab, "Failed REO cache flush cmd for tid %d: %d\n",
+				    rx_tid_ctx->tid, ret);
+			return ret;
+		}
+	}
+
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.addr_lo = lower_32_bits(rx_tid->paddr);
+	cmd.addr_hi = upper_32_bits(rx_tid->paddr);
+	cmd.flag = HAL_REO_CMD_FLG_NEED_STATUS;
+	cmd.upd0 = HAL_REO_CMD_UPD0_SSN;
+	cmd.upd2 = u32_encode_bits(rx_tid_ctx->ssn, HAL_REO_CMD_UPD2_SSN);
+
+	if (rx_tid_ctx->ba_win_sz) {
+		cmd.upd0 |= HAL_REO_CMD_UPD0_BA_WINDOW_SIZE;
+		cmd.ba_window_size = min_t(u32, rx_tid_ctx->ba_win_sz,
+					   DP_BA_WIN_SZ_MAX);
+	}
+
+	if (rx_tid_ctx->pn_len > 0) {
+		if (rx_tid_ctx->pn_len > 6 &&
+		    rx_tid_ctx->pn_127_48_info == 0) {
+			/* Avoid pushing invalid 128-bit PN without MSBs. */
+			goto send_cmd;
+		}
+		cmd.upd0 |= HAL_REO_CMD_UPD0_PN | HAL_REO_CMD_UPD0_PN_VALID |
+			    HAL_REO_CMD_UPD0_PN_SIZE;
+		cmd.pn[0] = rx_tid_ctx->pn_31_0;
+		cmd.pn[1] = rx_tid_ctx->pn_47_32;
+		cmd.pn_127_48_info = rx_tid_ctx->pn_127_48_info;
+		cmd.pn_size = rx_tid_ctx->pn_len * 8;
+
+		if (rx_tid_ctx->pn_len > 6) {
+			cmd.pn[2] = 0;
+			cmd.pn[3] = 0;
+		}
+	}
+
+send_cmd:
+	ret = ath12k_wifi8_dp_reo_cmd_send_highprio(ab, rx_tid, sizeof(*rx_tid),
+						    HAL_REO_CMD_UPDATE_RX_QUEUE,
+						    &cmd, NULL);
+	if (ret) {
+		spin_unlock_bh(&dp_hw->peer_lock);
+		ath12k_warn(ab, "Failed REO update cmd for tid %d: %d\n",
+			    rx_tid_ctx->tid, ret);
+		return ret;
+	}
+
+	if (rx_tid_ctx->ba_win_sz)
+		rx_tid->ba_win_sz = cmd.ba_window_size;
+
+	if (ath12k_wifi8_smd_skip_bitmap_update)
+		goto done;
+
+	ret = ath12k_wifi8_hal_reo_qdesc_update_bitmaps_direct(ab, rx_tid,
+							       rx_tid_ctx);
+	if (ret) {
+		spin_unlock_bh(&dp_hw->peer_lock);
+		ath12k_warn(ab, "Failed bitmap update for tid %d: %d\n",
+			    rx_tid_ctx->tid, ret);
+		return ret;
+	}
+
+done:
+	spin_unlock_bh(&dp_hw->peer_lock);
+	ath12k_dbg(ab, ATH12K_DBG_DP_RX,
+		   "SMD REO update done for peer %pM tid %d: SSN=0x%x\n",
+		   peer_addr, rx_tid_ctx->tid, rx_tid_ctx->ssn);
+
+	return 0;
+}
+
+/*
+ * ath12k_wifi8_peer_rx_tid_reo_clear_vld - Clear the VLD bit in the REO queue
+ * descriptor for a given peer TID via REO_UPDATE_RX_QUEUE command.
+ *
+ * Setting update_vld=1 and vld=0 causes REO to stop accepting frames into the
+ * reorder queue and instead release them to the error path with error code
+ * reo_queue_desc_not_valid (enum 1).  Per HW spec, flush_from_cache MUST also
+ * be set whenever VLD is being cleared so that the stale descriptor is evicted
+ * from the REO cache immediately.
+ *
+ * @ab:        ath12k_base
+ * @dp_hw:     dp_hw context that owns the peer table
+ * @peer_addr: MAC address of the peer
+ * @tid:       TID whose REO queue VLD bit should be cleared
+ *
+ * Returns 0 on success, negative errno on failure.
+ */
+int ath12k_wifi8_peer_rx_tid_reo_clear_vld(struct ath12k_base *ab,
+					   struct ath12k_dp_hw *dp_hw,
+					   const u8 *peer_addr,
+					   u8 tid)
+{
+	struct ath12k_dp_rx_tid *rx_tid;
+	struct ath12k_hal_reo_cmd cmd;
+	struct ath12k_dp_peer *dp_peer;
+	int ret;
+
+	if (!dp_hw || !peer_addr) {
+		ath12k_err(ab, "invalid args for REO VLD clear\n");
+		return -EINVAL;
+	}
+
+	if (tid >= IEEE80211_NUM_TIDS) {
+		ath12k_warn(ab, "invalid tid %d for REO VLD clear\n", tid);
+		return -EINVAL;
+	}
+
+	lockdep_assert_held(&dp_hw->peer_lock);
+
+	dp_peer = ath12k_dp_peer_find(dp_hw, (u8 *)peer_addr);
+	if (!dp_peer) {
+		ath12k_warn(ab, "failed to find peer %pM for REO VLD clear\n",
+			    peer_addr);
+		return -ENOENT;
+	}
+
+	rx_tid = &dp_peer->rx_tid[tid];
+
+	if (!rx_tid->active) {
+		ath12k_warn(ab, "inactive rx tid %d for peer %pM, skip VLD clear\n",
+			    tid, peer_addr);
+		return -EINVAL;
+	}
+
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.addr_lo = lower_32_bits(rx_tid->paddr);
+	cmd.addr_hi = upper_32_bits(rx_tid->paddr);
+
+	/*
+	 * HAL spec requires status so SW can confirm the command was executed.
+	 * update_vld=1, vld=0: REO will reject incoming frames for this queue
+	 * and forward them to the error path (reo_queue_desc_not_valid).
+	 * flush_from_cache: mandatory when clearing VLD to evict the descriptor
+	 * from REO cache so subsequent frames see VLD=0 immediately.
+	 */
+	cmd.flag = HAL_REO_CMD_FLG_NEED_STATUS;
+	cmd.upd0 = HAL_REO_CMD_UPD0_VLD;
+	/* upd1: VLD value = 0 (bit not set => vld=0 written to descriptor) */
+	cmd.upd2 = HAL_REO_CMD_UPD2_FLUSH_FROM_CACHE;
+	ret = ath12k_wifi8_dp_reo_cmd_send_highprio(ab, rx_tid, sizeof(*rx_tid),
+						    HAL_REO_CMD_UPDATE_RX_QUEUE,
+						    &cmd, NULL);
+	if (ret) {
+		ath12k_warn(ab, "failed REO VLD clear cmd for peer %pM tid %d: %d\n",
+			    peer_addr, tid, ret);
+		return ret;
+	}
+
+	ath12k_info(ab,
+		    "REO VLD cleared for peer %pM tid %d, frames will be released to error path\n",
+		   peer_addr, tid);
+
+	return 0;
 }
 
 int ath12k_wifi8_peer_rx_tid_reo_update(struct ath12k *ar,
@@ -3679,12 +3983,11 @@ int ath12k_wifi8_dp_rx_process_reo_status(struct ath12k_dp *dp, int budget)
 	struct ath12k_dp_rx_reo_cmd *cmd, *tmp;
 	bool found = false;
 	int quota = budget;
+	bool done = false;
 	u16 tag;
 	struct hal_reo_status reo_status;
 
 	srng = &ab->hal.srng_list[dp->reo_status_ring.ring_id];
-
-	memset(&reo_status, 0, sizeof(reo_status));
 
 	spin_lock_bh(&srng->lock);
 
@@ -3693,10 +3996,17 @@ int ath12k_wifi8_dp_rx_process_reo_status(struct ath12k_dp *dp, int budget)
 	while (budget-- && (hdr = ath12k_hal_srng_dst_get_next_entry(ab, srng))) {
 		tag = le64_get_bits(hdr->tl, HAL_SRNG_TLV_HDR_TAG);
 
+		memset(&reo_status, 0, sizeof(reo_status));
+
+		reo_status.tag = tag;
 		switch (tag) {
 		case HAL_REO_GET_QUEUE_STATS_STATUS:
 			ath12k_wifi8_hal_reo_status_queue_stats(ab, hdr,
 								&reo_status);
+			break;
+		case HAL_REO_GET_QUEUE_1K_STATS_STATUS:
+			ath12k_wifi8_hal_reo_status_queue_1k_stats(ab, hdr,
+								   &reo_status);
 			break;
 		case HAL_REO_FLUSH_QUEUE_STATUS:
 			ath12k_wifi8_hal_reo_flush_queue_status(ab, hdr,
@@ -3727,22 +4037,31 @@ int ath12k_wifi8_dp_rx_process_reo_status(struct ath12k_dp *dp, int budget)
 			continue;
 		}
 
+		found = false;
+		done = true;
+
 		spin_lock_bh(&dp->reo_cmd_lock);
 		list_for_each_entry_safe(cmd, tmp, &dp->reo_cmd_list, list) {
 			if (reo_status.uniform_hdr.cmd_num == cmd->cmd_num) {
 				found = true;
-				list_del(&cmd->list);
+
+				if (tag == HAL_REO_GET_QUEUE_STATS_STATUS &&
+				    reo_status.u.queue_stats.to_follow_1k)
+					done = false;
+
+				if (done)
+					list_del(&cmd->list);
+
 				break;
 			}
 		}
 		spin_unlock_bh(&dp->reo_cmd_lock);
 
 		if (found) {
-			cmd->handler(dp, &cmd->u.data, &reo_status);
-			kfree(cmd);
+			cmd->handler(dp, (void *)&cmd->u.data, &reo_status);
+			if (done)
+				kfree(cmd);
 		}
-
-		found = false;
 	}
 
 	ath12k_hal_srng_access_end(ab, srng);

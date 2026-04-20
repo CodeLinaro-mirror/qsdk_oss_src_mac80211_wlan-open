@@ -772,6 +772,7 @@ struct ath12k_hal_reo_cmd {
 	u8 blocking_idx;
 	u16 ba_window_size;
 	u8 pn_size;
+	u8 pn_127_48_info;
 };
 
 enum rx_msdu_start_pkt_type {
@@ -1120,6 +1121,44 @@ enum hal_ce_desc {
 	HAL_CE_DESC_DST_STATUS,
 };
 
+struct hal_rx_reo_bitmap_287_0 {
+	u32 rx_bitmap_31_0;
+	u32 rx_bitmap_63_32;
+	u32 rx_bitmap_95_64;
+	u32 rx_bitmap_127_96;
+	u32 rx_bitmap_159_128;
+	u32 rx_bitmap_191_160;
+	u32 rx_bitmap_223_192;
+	u32 rx_bitmap_255_224;
+	u32 rx_bitmap_287_256;
+};
+
+struct hal_rx_reo_bitmap_1023_288 {
+	u32 rx_bitmap_319_288;
+	u32 rx_bitmap_351_320;
+	u32 rx_bitmap_383_352;
+	u32 rx_bitmap_415_384;
+	u32 rx_bitmap_447_416;
+	u32 rx_bitmap_479_448;
+	u32 rx_bitmap_511_480;
+	u32 rx_bitmap_543_512;
+	u32 rx_bitmap_575_544;
+	u32 rx_bitmap_607_576;
+	u32 rx_bitmap_639_608;
+	u32 rx_bitmap_671_640;
+	u32 rx_bitmap_703_672;
+	u32 rx_bitmap_735_704;
+	u32 rx_bitmap_767_736;
+	u32 rx_bitmap_799_768;
+	u32 rx_bitmap_831_800;
+	u32 rx_bitmap_863_832;
+	u32 rx_bitmap_895_864;
+	u32 rx_bitmap_927_896;
+	u32 rx_bitmap_959_928;
+	u32 rx_bitmap_991_960;
+	u32 rx_bitmap_1023_992;
+};
+
 struct hal_reo_status_header {
 	u16 cmd_num;
 	enum hal_reo_cmd_status cmd_status;
@@ -1129,11 +1168,15 @@ struct hal_reo_status_header {
 
 struct hal_reo_status_queue_stats {
 	u16 ssn;
+	u8 pn_len; /* in bytes */
+	u32 pn_31_0;
+	u16 pn_47_32;
+	u8 pn_127_48_info;
+	bool to_follow_1k;
+	struct hal_rx_reo_bitmap_287_0 bitmap;
 	u16 curr_idx;
-	u32 pn[4];
 	u32 last_rx_queue_ts;
 	u32 last_rx_dequeue_ts;
-	u32 rx_bitmap[8]; /* Bitmap from 0-255 */
 	u32 curr_mpdu_cnt;
 	u32 curr_msdu_cnt;
 	u16 fwd_due_to_bar_cnt;
@@ -1144,9 +1187,13 @@ struct hal_reo_status_queue_stats {
 	u32 total_num_processed_byte_cnt;
 	u32 late_rx_mpdu_cnt;
 	u32 reorder_hole_cnt;
-	u8 timeout_cnt;
-	u8 bar_rx_cnt;
-	u8 num_window_2k_jump_cnt;
+	u32 timeout_cnt;
+	u32 bar_rx_cnt;
+	u32 num_window_2k_jump_cnt;
+};
+
+struct hal_reo_status_queue_1k_stats {
+	struct hal_rx_reo_bitmap_1023_288 bitmap;
 };
 
 struct hal_reo_status_flush_queue {
@@ -1204,8 +1251,10 @@ struct hal_reo_status_desc_thresh_reached {
 struct hal_reo_status {
 	struct hal_reo_status_header uniform_hdr;
 	u8 loop_cnt;
+	u16 tag;
 	union {
 		struct hal_reo_status_queue_stats queue_stats;
+		struct hal_reo_status_queue_1k_stats queue_1k_stats;
 		struct hal_reo_status_flush_queue flush_queue;
 		struct hal_reo_status_flush_cache flush_cache;
 		struct hal_reo_status_unblock_cache unblock_cache;
