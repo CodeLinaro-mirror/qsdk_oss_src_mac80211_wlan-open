@@ -1401,7 +1401,7 @@ struct ath12k_radio_cfg {
 	bool is_ani_enable;
 	u32 ani_poll_period;
 	u32 ani_listen_period;
-	u32 ani_ofdm_level;
+	s8 ani_ofdm_level;
 	u32 ani_cck_level;
 	u32 cca_threshold;
 	u32 dtcs;
@@ -1428,8 +1428,8 @@ struct ath12k_radio_cfg {
 	bool enable_large_mru;
 	u32 pdev_reset;
 	u8 current_mode;
-	u32 txpowlimit2G;
-	u32 txpowlimit5G;
+	s32 txpowlimit2G;
+	s32 txpowlimit5G;
 	u32 antenna_gain_2g;
 	u32 antenna_gain_5g;
 	u32 ofdem_level;
