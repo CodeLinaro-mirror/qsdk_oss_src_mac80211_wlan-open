@@ -13927,7 +13927,7 @@ static void ath12k_wmi_process_tpc_stats(struct ath12k_base *ab,
 
 	fixed_param = (struct ath12k_wmi_pdev_tpc_stats_event_fixed_params *)ptr;
 	rcu_read_lock();
-	ar = ath12k_mac_get_ar_by_pdev_id(ab, le32_to_cpu(fixed_param->pdev_id) + 1);
+	ar = ath12k_mac_get_ar_by_pdev_id(ab, le32_to_cpu(fixed_param->pdev_id));
 	if (!ar) {
 		ath12k_warn(ab, "Failed to get ar for tpc stats\n");
 		rcu_read_unlock();
