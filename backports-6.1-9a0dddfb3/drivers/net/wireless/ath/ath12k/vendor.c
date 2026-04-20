@@ -235,8 +235,8 @@ ath12k_vendor_ext_mon_filter_config_policy[
 
 static const struct nla_policy
 ath12k_vendor_ext_mon_snr_info_policy[QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_MAX + 1] = {
-	[QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_SNR] = {.type = NLA_S8},
-	[QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_AVG_SNR] = {.type = NLA_S8},
+	[QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_SNR] = {.type = NLA_U8},
+	[QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_AVG_SNR] = {.type = NLA_U8},
 	[QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_TSTAMP] = {.type = NLA_U64},
 };
 
@@ -11354,8 +11354,8 @@ ath12k_ext_mon_get_snr_info_attr_len(void)
 {
 	int len = 0;
 
-	len = nla_total_size(sizeof(s8));
-	len += nla_total_size(sizeof(s8));
+	len = nla_total_size(sizeof(u8));
+	len += nla_total_size(sizeof(u8));
 	len += nla_total_size(sizeof(u64));
 
 	return len;
@@ -11564,9 +11564,9 @@ ath12k_ext_mon_put_snr_info(struct sk_buff *skb,
 	if (!attr)
 		return -EMSGSIZE;
 
-	if (nla_put_s8(skb, QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_SNR,
+	if (nla_put_u8(skb, QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_SNR,
 		       snr_info->snr) ||
-	    nla_put_s8(skb, QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_AVG_SNR,
+	    nla_put_u8(skb, QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_AVG_SNR,
 		       snr_info->avg_snr) ||
 	    nla_put_u64_64bit(skb, QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_TSTAMP,
 			      snr_info->timestamp, NL80211_ATTR_PAD)) {

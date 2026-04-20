@@ -891,8 +891,8 @@ struct ath12k_ext_mon_filter_config {
 };
 
 struct ath12k_ext_mon_snr_info {
-	s8 snr;
-	s8 avg_snr;
+	u8 snr;
+	u8 avg_snr;
 	u64 timestamp;
 };
 

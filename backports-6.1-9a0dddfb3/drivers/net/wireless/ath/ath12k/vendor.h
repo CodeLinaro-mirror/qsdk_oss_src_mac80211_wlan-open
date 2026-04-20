@@ -5061,10 +5061,10 @@ enum qca_vendor_extended_monitor_peer_action {
  * enum qca_vendor_attr_extended_monitor_snr_info - Nested attribute.
  * Consists of peer's snr related information
  *
- * @QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_SNR: s8 attribute
+ * @QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_SNR: u8 attribute
  *     Latest value of SNR for the peer.
  *
- * @QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_AVG_SNR: s8 attribute
+ * @QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_AVG_SNR: u8 attribute
  *     Average value of SNR for the peer so far
  *
  * @QCA_VENDOR_ATTR_EXT_MON_SNR_INFO_TSTAMP: u64 attribute
