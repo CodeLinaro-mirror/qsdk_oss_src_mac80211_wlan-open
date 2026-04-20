@@ -1619,8 +1619,7 @@ ath12k_dp_rx_pktlog_process(struct ath12k_pdev_dp *pdev_dp,
 					      log_type, status_desc->buf_len);
 }
 
-static void ath12k_dp_rx_mon_ppdu_notify(struct ath12k_pdev_dp *pdev_dp,
-					 struct hal_rx_mon_ppdu_info *ppdu_info)
+static void ath12k_dp_rx_mon_ppdu_notify(struct hal_rx_mon_ppdu_info *ppdu_info)
 {
 	struct ath12k_ppdu_event event;
 	struct sk_buff *skb;
@@ -1648,6 +1647,12 @@ static void ath12k_dp_rx_mon_ppdu_notify(struct ath12k_pdev_dp *pdev_dp,
 	event.skb = skb;
 
 	ath12k_ppdu_notifier_call_chain(ATH12K_EVENT_PPDU_RX_COMPLETE, &event);
+	/*
+	 * NOTE:
+	 * This skb is producer-owned.
+	 * Freeing or cloning it from listener context will cause leaks.
+	 * Only skb_copy() is permitted if a separate buffer is needed.
+	 */
 	if (refcount_read(&skb->users) > 1)
 		ath12k_dbg(NULL, ATH12K_DBG_TELEMETRY,
 			   "SKB ref cnt held by Rx PPDU listener = %d\n",
@@ -1873,11 +1878,11 @@ ath12k_wifi7_dp_mon_rx_process_ppdu(struct work_struct *work)
 								      ppdu_info);
 #endif
 			}
-			/* Send PPDU notification to registered listeners */
-			ath12k_dp_rx_mon_ppdu_notify(pdev_dp, ppdu_info);
 unlock:
 			spin_unlock_bh(&dp->dp_lock);
 			rcu_read_unlock_bh();
+			/* Send PPDU notification to registered listeners */
+			ath12k_dp_rx_mon_ppdu_notify(ppdu_info);
 free_buf:
 			page_frag_free(status_desc->mon_buf);
 			mon_stats->status_buf_free++;
