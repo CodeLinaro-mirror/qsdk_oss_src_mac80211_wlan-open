@@ -75,7 +75,7 @@ MODULE_PARM_DESC(num_ppeds_tx_desc, "Number of PPEDS descriptors");
 module_param_named(ppeds_hotlist_len, ath12k_ppeds_desc_params.ppeds_hotlist_len, uint, 0644);
 MODULE_PARM_DESC(ppeds_hotlist_len, "PPEDS hotlist length");
 
-unsigned int ath12k_ppe_ds_enabled;
+unsigned int ath12k_ppe_ds_enabled = true;
 module_param_named(ppe_ds_enable, ath12k_ppe_ds_enabled, uint, 0644);
 MODULE_PARM_DESC(ppe_ds_enable, "ppe_ds_enable: 0-disable, 1-enable");
 
@@ -89,12 +89,12 @@ module_param_named(reo2ppe_rings_max, ath12k_ppeds_reo2ppe_rings_max, uint, 0644
 MODULE_PARM_DESC(reo2ppe_rings_max, "reo2ppe_rings_max: 1-default");
 EXPORT_SYMBOL(ath12k_ppeds_reo2ppe_rings_max);
 
-unsigned int ath12k_ppeds_txrx_hw_auto_idx;
+unsigned int ath12k_ppeds_txrx_hw_auto_idx = 1;
 module_param_named(txrx_hw_auto_idx, ath12k_ppeds_txrx_hw_auto_idx, uint, 0644);
 MODULE_PARM_DESC(txrx_hw_auto_idx, "txrx_hw_auto_idx: 0-default");
 EXPORT_SYMBOL(ath12k_ppeds_txrx_hw_auto_idx);
 
-unsigned int ath12k_ppeds_hw_buff_mgmt;
+unsigned int ath12k_ppeds_hw_buff_mgmt = 1;
 module_param_named(hw_buff_mgmt, ath12k_ppeds_hw_buff_mgmt, uint, 0644);
 MODULE_PARM_DESC(hw_buff_mgmt, "hw_buff_mgmt: 0-default");
 EXPORT_SYMBOL(ath12k_ppeds_hw_buff_mgmt);
