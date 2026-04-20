@@ -246,6 +246,10 @@ struct ath12k_skb_cb {
 	u32 cipher;
 	u8 flags;
 	u8 link_id;
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	u8 ipa_hdl;
+#endif
+
 };
 
 struct ath12k_skb_rxcb {
