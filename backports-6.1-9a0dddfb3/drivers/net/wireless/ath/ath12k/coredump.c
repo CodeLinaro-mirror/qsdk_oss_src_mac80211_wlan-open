@@ -62,10 +62,28 @@ static ssize_t ath12k_coredump_pci_read(char *buffer, loff_t offset,
 			}
 			cur += st->chunks[i].len;
 		}
-		if (!seg)
+		if (!seg) {
+			ath12k_info(NULL, "No segment Found \n");
 			break;
+		}
+
+                if(offset < cur) {
+			ath12k_info(NULL, "Invalid offset \n");
+                        break;
+                }
 
 		data_left = offset - cur;
+
+                if(!seg->vaddr) {
+			ath12k_info(NULL, "seg addr is NULL \n");
+                        break;
+                }
+
+                if(data_left >= seg->len) {
+			ath12k_info(NULL, "Out of Bound\n");
+                        break;
+                }
+
 		seg_copy_sz = seg->len - data_left;
 		copy_size = min_t(size_t, bytes_left, seg_copy_sz);
 		addr = (u8 *)seg->vaddr + data_left;
