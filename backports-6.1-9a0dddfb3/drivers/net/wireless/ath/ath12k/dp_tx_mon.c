@@ -1976,6 +1976,7 @@ ath12k_dp_mon_tx_process_tlv(struct ath12k_pdev_dp *pdev_dp,
 	u8 *tx_tlv_start = status_desc->mon_buf;
 	u8 *mon_buf_iter = status_desc->mon_buf;
 	enum hal_tx_mon_status tlv_status;
+	bool is_prot_ppdu;
 	int ret;
 
 	do {
@@ -1987,11 +1988,14 @@ ath12k_dp_mon_tx_process_tlv(struct ath12k_pdev_dp *pdev_dp,
 
 		ppdu_info = ath12k_hal_mon_tx_ppdu_info(&pdev_dp->dp->ab->hal,
 							mon_data, tlv_tag);
+		is_prot_ppdu = (ppdu_info == &mon_data->prot_ppdu_info);
 
 		tlv_status =
 			ath12k_hal_mon_tx_parse_status(&pdev_dp->dp->ab->hal,
-						       mon_data,
 						       &ppdu_info->tx_info,
+						       &mon_data->data_status_info,
+						       &mon_data->prot_status_info,
+						       is_prot_ppdu,
 						       tlv_tag,
 						       mon_buf_iter + sizeof(*tlv_hdr),
 						       tlv_userid, tlv_len,
