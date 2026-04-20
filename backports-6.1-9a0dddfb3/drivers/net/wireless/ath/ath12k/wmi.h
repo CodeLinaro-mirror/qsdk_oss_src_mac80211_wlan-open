@@ -9127,9 +9127,10 @@ struct wmi_request_halphy_ctrl_path_stats_cmd_fixed_params {
 } __packed;
 
 struct ath12k_wmi_pdev_tpc_stats_event_fixed_params {
-	__le32 pdev_id;
+	__le32 request_id;
 	__le32 end_of_event;
 	__le32 event_count;
+	__le32 pdev_id;
 } __packed;
 
 struct wmi_tpc_config_params {
