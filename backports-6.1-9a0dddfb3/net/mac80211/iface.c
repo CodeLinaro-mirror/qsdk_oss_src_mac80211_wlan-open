@@ -923,6 +923,14 @@ static u16 ieee80211_netdev_select_queue(struct net_device *netdev,
 	return smp_processor_id();
 }
 
+static int ieee80211_set_features(struct net_device *dev,
+				  netdev_features_t features)
+{
+	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+
+	sdata->vif.netdev_features = features & MAC80211_SUPPORTED_FEATURES_TX;
+	return 0;
+}
 
 static const struct net_device_ops ieee80211_dataif_ops = {
 	.ndo_open		= ieee80211_open,
@@ -1001,6 +1009,7 @@ static const struct net_device_ops ieee80211_dataif_8023_ops = {
 	.ndo_select_queue       = ieee80211_netdev_select_queue,
 	.ndo_init               = ieee80211_init,
 	.ndo_get_stats64	= ieee80211_get_stats64,
+	.ndo_set_features       = ieee80211_set_features,
 };
 
 static bool ieee80211_iftype_supports_hdr_offload(enum nl80211_iftype iftype)
