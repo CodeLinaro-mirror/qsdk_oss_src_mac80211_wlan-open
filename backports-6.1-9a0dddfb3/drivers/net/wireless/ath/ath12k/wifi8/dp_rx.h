@@ -38,6 +38,17 @@ int ath12k_wifi8_dp_reo_cmd_send_highprio(struct ath12k_base *ab,
 					  struct ath12k_hal_reo_cmd *cmd,
 					  void (*cb)(struct ath12k_dp *dp, void *ctx,
 						     struct hal_reo_status *status));
+struct ath12k_reo_dp_cmd_desc {
+	void *data;
+	size_t len;
+	void (*cb)(struct ath12k_dp *dp, void *ctx,
+		   struct hal_reo_status *status);
+};
+
+int ath12k_wifi8_dp_reo_cmd_send_highprio_n(struct ath12k_base *ab,
+					    struct ath12k_reo_cmd_entry *entries,
+					    struct ath12k_reo_dp_cmd_desc *dp_descs,
+					    int n);
 int ath12k_wifi8_dp_fse_cmd_send(struct ath12k_base *ab,
 				 struct hal_fse_cmd *fse_cmd);
 int ath12k_wifi8_dp_rx_process_err(struct ath12k_dp *dp, struct napi_struct *napi,
@@ -122,6 +133,8 @@ ath12k_wifi8_peer_rx_tid_reo_update_for_smd(struct ath12k_base *ab,
 					    struct ath12k_dp_hw *dp_hw,
 					    const u8 *peer_addr,
 					    struct ath12k_rx_smd_ctx_per_tid *rx_tid_ctx);
+void ath12k_wifi8_peer_rx_tid_reo_clear_vld_cmd_init(struct ath12k_dp_rx_tid *rx_tid,
+						     struct ath12k_hal_reo_cmd *cmd);
 int ath12k_wifi8_peer_rx_tid_reo_clear_vld(struct ath12k_base *ab,
 					   struct ath12k_dp_hw *dp_hw,
 					   const u8 *peer_addr,

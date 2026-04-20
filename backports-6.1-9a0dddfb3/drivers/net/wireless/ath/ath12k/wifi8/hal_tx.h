@@ -93,6 +93,14 @@ void ath12k_wifi8_hal_tx_cmd_desc_setup(struct ath12k_base *ab,
 int ath12k_wifi8_hal_reo_cmd_send(struct ath12k_base *ab, struct hal_srng *srng,
 				  enum hal_reo_cmd_type type,
 				  struct ath12k_hal_reo_cmd *cmd);
+int ath12k_wifi8_hal_reo_cmd_send_n_locked(struct ath12k_base *ab,
+					   struct hal_srng *srng,
+					   struct ath12k_reo_cmd_entry *entries,
+					   int n);
+int ath12k_wifi8_hal_reo_cmd_send_n(struct ath12k_base *ab,
+				    struct hal_srng *srng,
+				    struct ath12k_reo_cmd_entry *entries,
+				    int n);
 void ath12k_wifi8_hal_tx_configure_bank_register(struct ath12k_base *ab,
 						 u32 bank_config,
 						 u8 bank_id);

@@ -114,6 +114,69 @@ static void ath12k_wifi8_dp_clean_up_skb_list(struct sk_buff_head *skb_list)
 		dev_kfree_skb_any(skb);
 }
 
+static inline bool ath12k_wifi8_dp_reo_cmd_shutdown(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp *central_dp = ath12k_get_central_dp(dp);
+	struct ath12k_base *central_ab = central_dp->ab;
+
+	return test_bit(ATH12K_FLAG_CRASH_FLUSH, &central_ab->dev_flags) ||
+	       test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS,
+			&central_ab->dev_flags);
+}
+
+static int ath12k_wifi8_dp_reo_cmd_prepare(struct ath12k_dp_rx_reo_cmd **dp_cmd,
+					   void *data, size_t len,
+					   void (*cb)(struct ath12k_dp *dp,
+						      void *ctx,
+						      struct hal_reo_status *status))
+{
+	if (!cb) {
+		*dp_cmd = NULL;
+		return 0;
+	}
+
+	*dp_cmd = kzalloc(sizeof(**dp_cmd), GFP_ATOMIC);
+	if (!*dp_cmd)
+		return -ENOMEM;
+
+	if (WARN_ON(len > sizeof((*dp_cmd)->u))) {
+		kfree(*dp_cmd);
+		*dp_cmd = NULL;
+		return -EINVAL;
+	}
+
+	memcpy(&(*dp_cmd)->u, data, len);
+	(*dp_cmd)->handler = cb;
+
+	return 0;
+}
+
+static void ath12k_wifi8_dp_reo_cmd_queue(struct ath12k_dp *dp,
+					  struct ath12k_dp_rx_reo_cmd *dp_cmd,
+					  int cmd_num)
+{
+	if (!dp_cmd)
+		return;
+
+	dp_cmd->cmd_num = cmd_num;
+	list_add_tail(&dp_cmd->list, &dp->reo_cmd_list);
+}
+
+static int validate_reo_batch(struct ath12k_reo_cmd_entry *cmds, int n)
+{
+	int i;
+
+	for (i = 0; i < n; i++) {
+		if (!(cmds[i].cmd.flag & HAL_REO_CMD_FLG_FLUSH_BLOCK_LATER))
+			continue;
+
+		return -EOPNOTSUPP;
+	}
+
+	return 0;
+}
+
 static int ath12k_wifi8_dp_reo_cmd_send_ring(struct ath12k_base *ab,
 					     struct hal_srng *cmd_ring,
 					     void *data, size_t len,
@@ -127,37 +190,100 @@ static int ath12k_wifi8_dp_reo_cmd_send_ring(struct ath12k_base *ab,
 	int cmd_num;
 	struct ath12k_dp *central_dp = ath12k_get_central_dp(dp);
 	struct ath12k_base *central_ab = central_dp->ab;
+	int ret;
 
-	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &central_ab->dev_flags) ||
-	    test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &central_ab->dev_flags))
+	if (ath12k_wifi8_dp_reo_cmd_shutdown(ab))
 		return -ESHUTDOWN;
+
+	ret = ath12k_wifi8_dp_reo_cmd_prepare(&dp_cmd, data, len, cb);
+	if (ret)
+		return ret;
 
 	cmd_num = ath12k_wifi8_hal_reo_cmd_send(central_ab, cmd_ring, type, cmd);
 
-	if (cmd_num < 0)
+	if (cmd_num < 0) {
+		kfree(dp_cmd);
 		return cmd_num;
+	}
 
-	if (cmd_num == 0)
+	if (cmd_num == 0) {
+		kfree(dp_cmd);
 		return -EINVAL;
+	}
 
-	if (!cb)
+	if (!dp_cmd)
 		return 0;
 
-	dp_cmd = kzalloc(sizeof(*dp_cmd), GFP_ATOMIC);
-	if (!dp_cmd)
-		return -ENOMEM;
-
-	if (WARN_ON(len > sizeof(dp_cmd->u)))
-		return -EINVAL;
-	memcpy(&dp_cmd->u, data, len);
-	dp_cmd->cmd_num = cmd_num;
-	dp_cmd->handler = cb;
-
 	spin_lock_bh(&central_dp->reo_cmd_lock);
-	list_add_tail(&dp_cmd->list, &central_dp->reo_cmd_list);
+	ath12k_wifi8_dp_reo_cmd_queue(central_dp, dp_cmd, cmd_num);
 	spin_unlock_bh(&central_dp->reo_cmd_lock);
 
 	return 0;
+}
+
+static int ath12k_wifi8_dp_reo_cmd_send_ring_n(struct ath12k_base *ab,
+					       struct hal_srng *cmd_ring,
+					       struct ath12k_reo_cmd_entry *entries,
+					       struct ath12k_reo_dp_cmd_desc *dp_descs,
+						       int n)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp *central_dp = ath12k_get_central_dp(dp);
+	struct ath12k_base *central_ab = central_dp->ab;
+	struct ath12k_reo_cmd_entry *cmds = entries;
+	struct ath12k_dp_rx_reo_cmd **dp_cmds;
+	int i, ret;
+
+	if (WARN_ON(n <= 0))
+		return -EINVAL;
+
+	if (ath12k_wifi8_dp_reo_cmd_shutdown(ab))
+		return -ESHUTDOWN;
+
+	ret = validate_reo_batch(cmds, n);
+	if (ret)
+		return ret;
+
+	dp_cmds = kcalloc(n, sizeof(*dp_cmds), GFP_ATOMIC);
+	if (!dp_cmds)
+		return -ENOMEM;
+
+	for (i = 0; i < n; i++) {
+		ret = ath12k_wifi8_dp_reo_cmd_prepare(&dp_cmds[i],
+						      dp_descs[i].data,
+						      dp_descs[i].len,
+						      dp_descs[i].cb);
+		if (ret)
+			goto err_free;
+	}
+
+	spin_lock_bh(&cmd_ring->lock);
+	ath12k_hal_srng_access_begin(central_ab, cmd_ring);
+
+	ret = ath12k_wifi8_hal_reo_cmd_send_n_locked(central_ab, cmd_ring, cmds, n);
+	if (!ret) {
+		spin_lock_bh(&central_dp->reo_cmd_lock);
+		for (i = 0; i < n; i++)
+			ath12k_wifi8_dp_reo_cmd_queue(central_dp, dp_cmds[i],
+						      cmds[i].cmd_num);
+		spin_unlock_bh(&central_dp->reo_cmd_lock);
+	}
+
+	ath12k_hal_srng_access_end(central_ab, cmd_ring);
+	spin_unlock_bh(&cmd_ring->lock);
+
+	if (ret)
+		goto err_free;
+
+	kfree(dp_cmds);
+	return 0;
+
+err_free:
+	for (i = 0; i < n; i++)
+		kfree(dp_cmds[i]);
+	kfree(dp_cmds);
+
+	return ret;
 }
 
 int ath12k_wifi8_dp_reo_cmd_send(struct ath12k_base *ab,
@@ -170,8 +296,9 @@ int ath12k_wifi8_dp_reo_cmd_send(struct ath12k_base *ab,
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_dp *central_dp = ath12k_get_central_dp(dp);
 	struct hal_srng *cmd_ring;
+	u32 ring_id = central_dp->reo_cmd_ring.ring_id;
 
-	cmd_ring = &central_dp->ab->hal.srng_list[central_dp->reo_cmd_ring.ring_id];
+	cmd_ring = &central_dp->ab->hal.srng_list[ring_id];
 
 	return ath12k_wifi8_dp_reo_cmd_send_ring(ab, cmd_ring, data, len,
 						 type, cmd, cb);
@@ -188,13 +315,29 @@ int ath12k_wifi8_dp_reo_cmd_send_highprio(struct ath12k_base *ab,
 	struct ath12k_dp *central_dp = ath12k_get_central_dp(dp);
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(central_dp);
 	struct hal_srng *cmd_ring;
-	u32 ring_id;
+	u32 ring_id = dp_wifi8->reo_high_prio_cmd_ring.ring_id;
 
-	ring_id = dp_wifi8->reo_high_prio_cmd_ring.ring_id;
 	cmd_ring = &central_dp->ab->hal.srng_list[ring_id];
 
 	return ath12k_wifi8_dp_reo_cmd_send_ring(ab, cmd_ring, data, len,
 						 type, cmd, cb);
+}
+
+int ath12k_wifi8_dp_reo_cmd_send_highprio_n(struct ath12k_base *ab,
+					    struct ath12k_reo_cmd_entry *entries,
+					    struct ath12k_reo_dp_cmd_desc *dp_descs,
+					    int n)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp *central_dp = ath12k_get_central_dp(dp);
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(central_dp);
+	struct hal_srng *cmd_ring;
+	u32 ring_id = dp_wifi8->reo_high_prio_cmd_ring.ring_id;
+
+	cmd_ring = &central_dp->ab->hal.srng_list[ring_id];
+
+	return ath12k_wifi8_dp_reo_cmd_send_ring_n(ab, cmd_ring, entries,
+						   dp_descs, n);
 }
 
 int ath12k_wifi8_dp_reo_cache_flush(struct ath12k_base *ab,
@@ -726,7 +869,8 @@ int ath12k_wifi8_peer_rx_tid_reo_update_for_smd(struct ath12k_base *ab,
 	}
 
 send_cmd:
-	ret = ath12k_wifi8_dp_reo_cmd_send_highprio(ab, rx_tid, sizeof(*rx_tid),
+	ret = ath12k_wifi8_dp_reo_cmd_send_highprio(ab, rx_tid,
+						    sizeof(*rx_tid),
 						    HAL_REO_CMD_UPDATE_RX_QUEUE,
 						    &cmd, NULL);
 	if (ret) {
@@ -758,6 +902,18 @@ done:
 		   peer_addr, rx_tid_ctx->tid, rx_tid_ctx->ssn);
 
 	return 0;
+}
+
+void ath12k_wifi8_peer_rx_tid_reo_clear_vld_cmd_init(struct ath12k_dp_rx_tid *rx_tid,
+						     struct ath12k_hal_reo_cmd *cmd)
+{
+	memset(cmd, 0, sizeof(*cmd));
+	cmd->addr_lo = lower_32_bits(rx_tid->paddr);
+	cmd->addr_hi = upper_32_bits(rx_tid->paddr);
+
+	cmd->flag = HAL_REO_CMD_FLG_NEED_STATUS;
+	cmd->upd0 = HAL_REO_CMD_UPD0_VLD;
+	cmd->upd2 = HAL_REO_CMD_UPD2_FLUSH_FROM_CACHE;
 }
 
 /*
@@ -825,11 +981,9 @@ int ath12k_wifi8_peer_rx_tid_reo_clear_vld(struct ath12k_base *ab,
 	 * flush_from_cache: mandatory when clearing VLD to evict the descriptor
 	 * from REO cache so subsequent frames see VLD=0 immediately.
 	 */
-	cmd.flag = HAL_REO_CMD_FLG_NEED_STATUS;
-	cmd.upd0 = HAL_REO_CMD_UPD0_VLD;
-	/* upd1: VLD value = 0 (bit not set => vld=0 written to descriptor) */
-	cmd.upd2 = HAL_REO_CMD_UPD2_FLUSH_FROM_CACHE;
-	ret = ath12k_wifi8_dp_reo_cmd_send_highprio(ab, rx_tid, sizeof(*rx_tid),
+	ath12k_wifi8_peer_rx_tid_reo_clear_vld_cmd_init(rx_tid, &cmd);
+	ret = ath12k_wifi8_dp_reo_cmd_send_highprio(ab, rx_tid,
+						    sizeof(*rx_tid),
 						    HAL_REO_CMD_UPDATE_RX_QUEUE,
 						    &cmd, NULL);
 	if (ret) {
