@@ -73,6 +73,20 @@ static int ath12k_wifi8_pci_probe(struct pci_dev *pdev,
 	return 0;
 }
 
+void ath12k_wifi8_pci_get_soc_reset_reason(struct ath12k_base *ab)
+{
+	u32 val = 0;
+
+	val = ath12k_pci_read32(ab, QCN9625_WLAON_SOC_RESET_CAUSE_SHADOW_REG);
+
+	if (val & QCN9625_RESET_CAUSE_Q6_BCR)
+		ab->soc_reset_reason = ATH12K_Q6_BCR_RESET;
+	else
+		ab->soc_reset_reason = ATH12K_GLOBAL_SOC_RESET;
+
+	ath12k_info(ab, "soc reset reason is : %d\n", ab->soc_reset_reason);
+}
+
 static const struct ath12k_reg_base ath12k_wifi8_pci_reg_base = {
 	.umac_base = HAL_SEQ_WCSS_UMAC_OFFSET,
 	.ce_reg_base = HAL_CE_WFSS_CE_REG_BASE,
@@ -93,6 +107,7 @@ static struct ath12k_pci_driver ath12k_wifi8_pci_driver = {
 	.ops.dp_deinit = ath12k_wifi8_dp_deinit,
 	.ops.mgmt_init = ath12k_wifi8_mgmt_init,
 	.ops.mgmt_deinit = ath12k_wifi8_mgmt_deinit,
+	.ops.get_reset_reason = ath12k_wifi8_pci_get_soc_reset_reason,
 };
 
 int ath12k_wifi8_pci_init(void)

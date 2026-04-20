@@ -206,6 +206,31 @@ static void ath12k_pci_force_wake(struct ath12k_base *ab)
 	mdelay(5);
 }
 
+static void ath12k_pci_q6_only_reset(struct ath12k_base *ab)
+{
+	enum mhi_ee_type mhi_ee;
+	int count = 10;
+
+	ath12k_pci_write32(ab, PCIE_WIFI8_Q6_ONLY_RESET, PCIE_WIFI8_Q6_ONLY_RESET_V);
+	while (count >= 0) {
+		mhi_ee = ath12k_pci_read32(ab, PCIE_BHI_EXECENV);
+		if (mhi_ee == MHI_EE_PBL) {
+			ath12k_dbg(ab, ATH12K_DBG_PCI,
+				   "Target switched to PBL, reset success\n");
+			break;
+		} else {
+			ath12k_dbg(ab, ATH12K_DBG_PCI, "mhi_ee %d", mhi_ee);
+		}
+		mdelay(10);
+		count--;
+	}
+
+	if (count < 0) {
+		ath12k_err(ab, "Failed to switch to PBL after BCR reset\n");
+		WARN_ON(1);
+	}
+}
+
 static void ath12k_pci_sw_reset(struct ath12k_base *ab, bool power_on)
 {
 	if (power_on) {
@@ -216,7 +241,14 @@ static void ath12k_pci_sw_reset(struct ath12k_base *ab, bool power_on)
 
 	ath12k_mhi_clear_vector(ab);
 	ath12k_pci_clear_dbg_registers(ab);
-	ath12k_pci_soc_global_reset(ab);
+
+	if (!power_on) {
+		if (ab->soc_reset_reason == ATH12K_Q6_BCR_RESET)
+			ath12k_pci_q6_only_reset(ab);
+		else
+			ath12k_pci_soc_global_reset(ab);
+	}
+
 	ath12k_mhi_set_mhictrl_reset(ab);
 }
 
@@ -1034,7 +1066,7 @@ int ath12k_pci_power_up(struct ath12k_base *ab)
 
 	ab_pci->register_window = 0;
 	clear_bit(ATH12K_PCI_FLAG_INIT_DONE, &ab_pci->flags);
-	ath12k_pci_sw_reset(ab_pci->ab, true);
+	ath12k_pci_sw_reset(ab, true);
 
 	/* Legacy behavior: disable ASPM for stability and restore later only in
 	 * certain conditions. If firmware/platform manage ASPM (supports_aspm),
@@ -1112,7 +1144,7 @@ void ath12k_pci_power_down(struct ath12k_base *ab, bool is_suspend)
 	ath12k_pci_msi_disable(ab_pci);
 	ath12k_mhi_stop(ab_pci, is_suspend);
 	clear_bit(ATH12K_PCI_FLAG_INIT_DONE, &ab_pci->flags);
-	ath12k_pci_sw_reset(ab_pci->ab, false);
+	ath12k_pci_sw_reset(ab, false);
 	set_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags);
 }
 

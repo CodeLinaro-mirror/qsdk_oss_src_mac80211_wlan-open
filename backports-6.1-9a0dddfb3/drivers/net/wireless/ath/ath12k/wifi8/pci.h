@@ -6,6 +6,9 @@
 #ifndef ATH12K_PCI_WIFI8_H
 #define ATH12K_PCI_WIFI8_H
 
+#define QCN9625_WLAON_SOC_RESET_CAUSE_SHADOW_REG 0x1F80718
+#define QCN9625_RESET_CAUSE_Q6_BCR BIT(18)
+
 static const struct ath12k_msi_config ath12k_wifi8_msi_config[] = {
 	{
 		/* MSI spec expects number of interrupts to be a power of 2 */
