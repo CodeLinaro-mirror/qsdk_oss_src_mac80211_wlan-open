@@ -7872,7 +7872,7 @@ static int ath12k_pull_peer_tx_pn_ev(struct ath12k_base *ab, struct sk_buff *skb
 	const struct wmi_peer_tx_pn_event *ev;
 	const void **tb;
 	int ret;
-	u64 *tsc;
+	u64 tsc = 0;
 
 	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
 	if (IS_ERR(tb)) {
@@ -7894,17 +7894,33 @@ static int ath12k_pull_peer_tx_pn_ev(struct ath12k_base *ab, struct sk_buff *skb
 	peer_tx_pn->key_idx = le32_to_cpu(ev->key_ix);
 	peer_tx_pn->key_cipher = le32_to_cpu(ev->key_cipher);
 	memcpy(peer_tx_pn->pn, ev->pn, sizeof(ev->pn));
-	/* PN is a 6byte value */
-	tsc = (u64 *)peer_tx_pn->pn;
 
-	/* Firmware always returns the PN of next frame.
+	/* The PN is provided in little endian order, with bits 7:0 of the PN
+	 * residing in pn[0]. The key_type indirectly specifies the packet
+	 * number length, and thus how many bytes within pn[] are filled with
+	 * valid data. CCMP/GCMP PN is a 6byte value with firmware always
+	 * returning the PN of next frame.
 	 * Decrement by 1 so IPN/BIPN added in M3 IGTK/BIGTK
 	 * KDE is that of the previous frame. This is to prevent
 	 * flagging of BIP replay counter errors on the station
 	 * side for the immediate next frame.
 	 */
-	if (*tsc > 0)
-		(*tsc)--;
+	tsc = ((u64)peer_tx_pn->pn[5] << 40) |
+		((u64)peer_tx_pn->pn[4] << 32) |
+		((u64)peer_tx_pn->pn[3] << 24) |
+		((u64)peer_tx_pn->pn[2] << 16) |
+		((u64)peer_tx_pn->pn[1] << 8)  |
+		(u64)peer_tx_pn->pn[0];
+
+	if (tsc > 0)
+		tsc--;
+
+	peer_tx_pn->pn[0] = tsc & 0xff;
+	peer_tx_pn->pn[1] = (tsc >> 8)  & 0xff;
+	peer_tx_pn->pn[2] = (tsc >> 16) & 0xff;
+	peer_tx_pn->pn[3] = (tsc >> 24) & 0xff;
+	peer_tx_pn->pn[4] = (tsc >> 32) & 0xff;
+	peer_tx_pn->pn[5] = (tsc >> 40) & 0xff;
 
 	kfree(tb);
 	return 0;
