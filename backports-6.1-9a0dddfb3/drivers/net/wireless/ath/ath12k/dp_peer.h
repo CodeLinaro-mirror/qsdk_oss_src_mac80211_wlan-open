@@ -259,7 +259,8 @@ struct ath12k_dp_peer_qos {
 	void *telemetry_peer_ctx;
 };
 
-void ath12k_peer_unmap_event(struct ath12k_base *ab, u16 peer_id, bool is_wds);
+void ath12k_peer_unmap_event(struct ath12k_base *ab, u8 vdev_id, u16 peer_id,
+			     u8 *mac_addr, bool is_wds);
 void ath12k_peer_map_event(struct ath12k_base *ab, u8 vdev_id, u16 peer_id,
 			   u8 *mac_addr, u16 ast_hash, u16 hw_peer_id, bool is_wds);
 struct ath12k_dp_peer *ath12k_dp_peer_find(struct ath12k_dp_hw *dp_hw,
@@ -418,4 +419,18 @@ ath12k_dp_link_peer_find_by_link_id(struct ath12k_dp_peer *dp_peer, u8 link_id);
 struct ath12k_dp_link_peer *
 ath12k_dp_link_peer_find_by_mac_addr(const struct ath12k_dp_peer *dp_peer,
 				     const u8 *addr);
+#ifndef CPTCFG_EXT_IPA_OFFLOAD
+static inline
+void ath12k_dp_ipa_peer_unmap_event_wds(struct ath12k_base *ab, u8 vdev_id,
+					u16 peer_id, u8 *mac_addr)
+{
+}
+
+static inline
+void ath12k_dp_ipa_peer_map_event_wds(struct ath12k_base *ab, u8 vdev_id,
+				      u16 peer_id, u8 *mac_addr)
+{
+}
+#endif /* !CPTCFG_EXT_IPA_OFFLOAD */
+
 #endif

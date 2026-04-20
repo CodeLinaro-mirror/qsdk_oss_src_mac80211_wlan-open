@@ -10,6 +10,9 @@
 #include "debugfs.h"
 #include "telemetry_agent_if.h"
 #include "mac.h"
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#include "qcn_extns/ipa/dp_ipa.h"
+#endif
 
 struct ath12k_dp_link_peer *
 ath12k_dp_link_peer_find_by_vdev_id_and_addr(struct ath12k_dp *dp,
@@ -179,13 +182,16 @@ void ath12k_link_peer_free(struct ath12k_dp_link_peer *peer)
 }
 EXPORT_SYMBOL(ath12k_link_peer_free);
 
-void ath12k_peer_unmap_event(struct ath12k_base *ab, u16 peer_id, bool is_wds)
+void ath12k_peer_unmap_event(struct ath12k_base *ab, u8 vdev_id, u16 peer_id,
+			     u8 *mac_addr, bool is_wds)
 {
 	struct ath12k_dp_link_peer *peer;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 
-	if (is_wds)
+	if (is_wds) {
+		ath12k_dp_ipa_peer_unmap_event_wds(ab, vdev_id, peer_id, mac_addr);
 		return;
+	}
 
 	spin_lock_bh(&dp->dp_lock);
 
@@ -211,8 +217,10 @@ void ath12k_peer_map_event(struct ath12k_base *ab, u8 vdev_id, u16 peer_id,
 	struct ath12k *ar;
 	struct ath12k_peer_map_pending_event *resp;
 
-	if (is_wds)
+	if (is_wds) {
+		ath12k_dp_ipa_peer_map_event_wds(ab, vdev_id, peer_id, mac_addr);
 		return;
+	}
 
 	rcu_read_lock();
 	ar = ath12k_mac_get_ar_by_vdev_id(ab, vdev_id);
