@@ -1487,6 +1487,24 @@ void ath12k_wifi8_hal_reo_hw_setup(struct ath12k_base *ab)
 	val |= u32_encode_bits(8, HAL_REO1_RXDMA_ERROR_DESTINATION_RING_OTHER);
 	ath12k_hif_write32(ab, reo_base + HAL_REO1_RXDMA_ERROR_DESTINATION_MAPPING_AP_IX3,
 			   val);
+
+	/* Route all RD rings to REO2SW_ROAMING1 (encoding 0) when roaming
+	 * commands are issued via REO_CMD1 ring.
+	 *
+	 * REO/frag/BAR/RXDMA error packets keep using the dedicated error-ring
+	 * mappings programmed above. ROAMING1 is only used for the standard
+	 * REO destination descriptors flushed by the roaming command path.
+	 */
+	val = ath12k_hif_read32(ab, reo_base + HAL_REO1_ROAMING_DEST_CFG);
+	val &= ~HAL_REO1_ROAMING_DEST_CFG_MASK;
+	ath12k_hif_write32(ab, reo_base + HAL_REO1_ROAMING_DEST_CFG, val);
+
+	/* Configure descriptor type for ROAMING1 ring:
+	 * REO_DESTINATION_RING descriptor (bit 0 = 0)
+	 */
+	val = ath12k_hif_read32(ab, reo_base + HAL_REO1_DESCRIPTOR_TYPE_ROAMING);
+	val &= ~HAL_REO1_DESC_TYPE_PPE_FOR_SW_ROAMING1;
+	ath12k_hif_write32(ab, reo_base + HAL_REO1_DESCRIPTOR_TYPE_ROAMING, val);
 }
 
 void ath12k_wifi8_hal_reo_shared_qaddr_cache_clear(struct ath12k_base *ab)

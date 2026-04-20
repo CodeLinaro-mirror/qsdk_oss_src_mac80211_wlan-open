@@ -173,7 +173,7 @@ static void ath12k_wifi7_umac_reset_handle_post_reset_start(struct ath12k_base *
 	if (ret)
 		ath12k_warn(ab, "failed to set up rx_rel ring :%d\n", ret);
 
-	for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
+	for (i = 0; i < ATH12K_DP_RX_REGULAR_RING_MAX; i++) {
 		ret = ath12k_dp_srng_setup(ab, &dp->reo_dst_ring[i],
 					   HAL_REO_DST, i, 0,
 					   DP_REO_DST_RING_SIZE);

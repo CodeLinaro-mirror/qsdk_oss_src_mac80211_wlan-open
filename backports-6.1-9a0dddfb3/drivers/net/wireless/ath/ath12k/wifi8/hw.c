@@ -30,6 +30,22 @@
 #include "mgmt_rx.h"
 #include "dp_peer.h"
 
+/*
+ * The roaming RX ring uses the slot immediately after the regular REO
+ * destination rings (`ATH12K_DP_RX_ROAMING_RING1`). On 4-CPU targets,
+ * that evaluates to ring index 4, which is the same bit position normally used
+ * by the 5th regular RX ring.
+ *
+ * Keep the regular RX interrupt masks bounded by
+ * `ATH12K_DP_RX_REGULAR_RING_MAX` so the roaming ring can exclusively own its
+ * dedicated interrupt group entry below. Without this gating, both group 11
+ * (5th regular RX ring) and group 13 (roaming RX ring) would advertise bit 4,
+ * and the generic MSI group lookup would pick the first match instead of the
+ * dedicated roaming group.
+ */
+#define ATH12K_WIFI8_REGULAR_RX_RING_MASK(_ring) \
+	((ATH12K_DP_RX_REGULAR_RING_MAX > (_ring)) ? BIT(_ring) : 0)
+
 static u8 ath12k_wifi8_hw_qcn9625_mac_from_pdev_id(int pdev_idx)
 {
 	return pdev_idx;
@@ -164,6 +180,7 @@ static const struct ath12k_hw_ops qcn9625_ops = {
  * Group 9: Rx error, Reo Status, TCL status, TQM status
  * Group 10,11 : Monitor destination(TX,RX)
  * Group 12: Monitor buffer(TX,RX)
+ * Group 13: Roaming RX ring
  * Group 19-21: PPE interrupts
  * Group 22: UMAC reset
  */
@@ -178,17 +195,22 @@ static struct ath12k_hw_ring_mask ath12k_wifi8_hw_ring_mask_qcn9625 = {
 		0, 0,
 		ATH12K_TX_RING_MASK_4,
 	},
-	/* Group 4-7, 5th ring uses group 11 */
+	/* Group 4-7, 5th regular RX ring uses group 11 (not roaming ring).
+	 * Regular RX rings are gated by ATH12K_DP_RX_REGULAR_RING_MAX to avoid
+	 * collisions with the roaming ring index.
+	 */
 	.rx = {
 		0, 0, 0, 0,
-		ATH12K_RX_RING_MASK_0,
-		ATH12K_RX_RING_MASK_1,
-		ATH12K_RX_RING_MASK_2,
-		ATH12K_RX_RING_MASK_3,
+		ATH12K_WIFI8_REGULAR_RX_RING_MASK(0),
+		ATH12K_WIFI8_REGULAR_RX_RING_MASK(1),
+		ATH12K_WIFI8_REGULAR_RX_RING_MASK(2),
+		ATH12K_WIFI8_REGULAR_RX_RING_MASK(3),
 		0, 0, 0,
-		ATH12K_RX_RING_MASK_4,
+		ATH12K_WIFI8_REGULAR_RX_RING_MASK(4),
+		0,
+		BIT(ATH12K_DP_RX_ROAMING_RING1),
 	},
-	/* Group 8 */
+	/* Group 8: Tx exception ring */
 	.tx_exception = {
 		0, 0, 0, 0,
 		0, 0, 0, 0,

@@ -607,7 +607,7 @@ void ath12k_dp_rx_reo_cleanup(struct ath12k_base *ab)
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	int i;
 
-	for (i = 0; i < DP_REO_DST_RING_MAX; i++)
+	for (i = 0; i < ATH12K_DP_RX_REGULAR_RING_MAX; i++)
 		ath12k_dp_srng_cleanup(ab, &dp->reo_dst_ring[i]);
 }
 EXPORT_SYMBOL(ath12k_dp_rx_reo_cleanup);
@@ -618,7 +618,7 @@ int ath12k_dp_rx_reo_setup(struct ath12k_base *ab)
 	int ret;
 	int i;
 
-	for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
+	for (i = 0; i < ATH12K_DP_RX_REGULAR_RING_MAX; i++) {
 		ret = ath12k_dp_srng_setup(ab, &dp->reo_dst_ring[i],
 					   HAL_REO_DST, i, 0,
 					   DP_REO_DST_RING_SIZE);

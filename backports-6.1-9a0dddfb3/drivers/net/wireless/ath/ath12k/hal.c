@@ -1339,10 +1339,16 @@ ssize_t ath12k_debugfs_hal_dump_srng_stats(struct ath12k_base *ab, char *buf, in
 			dp->wbm_desc_rel_ring.ring_id,
                         buf + len, size - len);
 
-	for (i = 0; i < DP_REO_DST_RING_MAX; i++)
+	for (i = 0; i < ATH12K_DP_RX_REGULAR_RING_MAX; i++)
 		len += ath12k_hal_dump_ring_stats(ab, HAL_REO_DST,
 				dp->reo_dst_ring[i].ring_id,
 				buf + len, size - len);
+
+	if (dp->reo_dst_ring[ATH12K_DP_RX_ROAMING_RING1].vaddr_unaligned) {
+		ring_id = dp->reo_dst_ring[ATH12K_DP_RX_ROAMING_RING1].ring_id;
+		len += ath12k_hal_dump_ring_stats(ab, HAL_REO_DST_ROAMING, ring_id,
+						  buf + len, size - len);
+	}
 
 	for (i = 0; i < ab->hw_params->max_tx_ring; i++)
 		len += ath12k_hal_dump_ring_stats(ab, HAL_TCL_DATA,

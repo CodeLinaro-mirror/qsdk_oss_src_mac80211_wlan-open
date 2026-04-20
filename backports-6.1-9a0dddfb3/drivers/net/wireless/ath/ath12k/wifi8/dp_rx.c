@@ -2045,6 +2045,7 @@ ath12k_wifi8_dp_rx_process_received_packets(struct ath12k_dp *dp,
 			continue;
 		}
 
+		partner_ab = dp_pdev->ar->ab;
 		if (ath12k_dp_stats_enabled(dp_pdev) &&
 		    ath12k_tid_stats_enabled(dp_pdev)) {
 			rcu_read_lock();
@@ -4874,6 +4875,7 @@ void ath12k_wifi8_dp_rx_ring_free(struct ath12k_base *ab)
 
 	ath12k_wifi8_dp_rx_reo_flush_srng_free(ab);
 	ath12k_dp_srng_cleanup(ab, &dp_wifi8->reo_high_prio_cmd_ring);
+	ath12k_dp_srng_cleanup(ab, &dp->reo_dst_ring[ATH12K_DP_RX_ROAMING_RING1]);
 	ath12k_wifi8_dp_rx_wbm_srng_free(ab);
 	ath12k_dp_rx_reo_cleanup(ab);
 	ath12k_wifi8_dp_rx_fse_cmd_srng_free(ab);
@@ -4898,6 +4900,17 @@ int ath12k_wifi8_dp_rx_ring_setup(struct ath12k_base *ab)
 	ret = ath12k_wifi8_dp_rx_wbm_srng_setup(ab);
 	if (ret) {
 		ath12k_warn(ab, "failed to setup rx wbm refill and idle buf rings\n");
+		return ret;
+	}
+
+	ret = ath12k_dp_srng_setup(ab,
+				   &dp->reo_dst_ring[ATH12K_DP_RX_ROAMING_RING1],
+				   HAL_REO_DST_ROAMING,
+				   ATH12K_DP_RX_ROAMING_RING1, 0,
+				   DP_REO_ROAMING_RING_SIZE);
+	if (ret) {
+		ath12k_warn(ab, "failed to set up reo_dst_ring[%d] for roaming :%d\n",
+			    ATH12K_DP_RX_ROAMING_RING1, ret);
 		return ret;
 	}
 
