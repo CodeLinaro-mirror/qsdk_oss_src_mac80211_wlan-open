@@ -1108,6 +1108,9 @@ int ath12k_dp_mon_get_link_peer_rssi(struct ath12k *ar, const u8 *peer_mac,
 bool ath12k_dp_tx_mon_feature_eval(struct ath12k_dp *dp);
 void ath12k_dp_rx_pktlog_process(struct ath12k_pdev_dp *dp_pdev,
 				 struct ath12k_dp_mon_status_desc *status_desc);
+void ath12k_dp_mon_rx_process_dest_pktlog(struct ath12k_pdev_dp *dp_pdev,
+					  struct sk_buff *skb,
+					  struct hal_rx_mon_ppdu_info *ppdu_info);
 
 static inline
 int ath12k_dp_mon_rx_alloc(struct ath12k_dp *dp)

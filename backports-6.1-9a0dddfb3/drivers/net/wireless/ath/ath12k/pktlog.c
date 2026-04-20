@@ -698,3 +698,49 @@ void ath12k_dp_rx_stats_buf_pktlog_process(struct ath12k *ar, u8 *data,
 	ath12k_pktlog_write_buf(ar, pl_info, &hdr_arg);
 }
 EXPORT_SYMBOL(ath12k_dp_rx_stats_buf_pktlog_process);
+
+void ath12k_cbf_pktlog_process(struct ath12k *ar, u8 *data, u32 len,
+			       struct htt_t2h_ppdu_stats_ind_hdr *htt_hdr,
+			       struct htt_ppdu_stats_rx_mgmtctrl_payload_tlv *cbf_tlv)
+{
+	struct ath12k_pktlog *pl_info;
+	struct ath12k_pktlog_hdr hdr;
+	struct ath12k_pktlog_hdr_arg hdr_arg;
+	u32 total_len;
+	char *log_data;
+
+	if (!ar)
+		return;
+
+	pl_info = &ar->debug.pktlog;
+
+	total_len = sizeof(*htt_hdr) + sizeof(*cbf_tlv) + len;
+
+	hdr.flags = (1 << PKTLOG_FLG_FRM_TYPE_REMOTE_S);
+	hdr.missed_cnt = 0;
+	hdr.log_type = ATH12K_PKTLOG_TYPE_PPDU_STATS;
+	hdr.timestamp = 0;
+	hdr.size = ALIGN(total_len, PKTLOG_ALIGN);
+
+	hdr_arg.log_type = hdr.log_type;
+	hdr_arg.payload_size = hdr.size;
+	hdr_arg.payload = data;
+	hdr_arg.pktlog_hdr = (u8 *)&hdr;
+
+	log_data = ath12k_pktlog_getbuf(pl_info, &hdr_arg);
+	if (!log_data) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_DATA,
+			   "Failed to get pktlog buffer for CBF frame\n");
+		return;
+	}
+
+	memcpy(log_data, htt_hdr, sizeof(struct htt_t2h_ppdu_stats_ind_hdr));
+	log_data += sizeof(struct htt_t2h_ppdu_stats_ind_hdr);
+
+	memcpy(log_data, cbf_tlv,
+	       sizeof(struct htt_ppdu_stats_rx_mgmtctrl_payload_tlv));
+	log_data += sizeof(struct htt_ppdu_stats_rx_mgmtctrl_payload_tlv);
+
+	memcpy(log_data, data, len);
+}
+EXPORT_SYMBOL(ath12k_cbf_pktlog_process);

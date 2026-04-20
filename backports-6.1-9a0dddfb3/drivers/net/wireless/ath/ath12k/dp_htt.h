@@ -1879,8 +1879,47 @@ enum htt_backpressure_lmac_ringid {
  *    Value: payload_size in bytes
  */
 
-#define HTT_T2H_PPDU_STATS_INFO_PDEV_ID GENMASK(11, 10)
-#define HTT_T2H_PPDU_STATS_INFO_PAYLOAD_SIZE GENMASK(31, 16)
+#define IEEE80211_STYPE_ACTION_NO_ACK 0xE0
+#define PKTLOG_ALIGN    4
+
+#define HTT_T2H_PPDU_STATS_INFO_MSG_TYPE        GENMASK(7, 0)
+#define HTT_T2H_PPDU_STATS_INFO_MAC_ID          GENMASK(9, 8)
+#define HTT_T2H_PPDU_STATS_INFO_PDEV_ID         GENMASK(11, 10)
+#define HTT_T2H_PPDU_STATS_INFO_PAYLOAD_SIZE    GENMASK(31, 16)
+
+struct htt_t2h_ppdu_stats_ind_hdr {
+	__le32 info;
+	__le32 ppdu_id;
+	__le32 timestamp_us;
+	__le32 rsvd;
+} __packed;
+
+/* HTT PPDU Stats RX Management/Control Payload TLV
+ * Tag value for CBF frame encapsulation
+ *
+ * The size of the actual mgmt payload (in bytes) can be obtained from
+ * the frame_length field.
+ * The size of entire payload including the padding for alignment
+ * (in bytes) can be derived from the length in tlv parameters,
+ * minus the 12 bytes of the above fields.
+ */
+#define HTT_PPDU_STATS_RX_MGMTCTRL_PAYLOAD_TLV 17
+
+#define HTT_PPDU_STATS_RX_MGMTCTRL_TLV_FRAME_LENGTH    GENMASK(15, 0)
+
+struct htt_ppdu_stats_rx_mgmtctrl_payload_tlv {
+	__le32 header;
+	union {
+		__le32 rsvd_frame_length;
+		struct {
+			__le16 frame_length;
+			__le16 rsvd1;
+		};
+	};
+	__le32 rsvd2;
+	__le32 rsvd3;
+	u8 payload[];
+} __packed;
 
 #define DP_HTT_PPDU_ID_MASK 0x00FFFFFF
 /* @brief target -> host packet log message
