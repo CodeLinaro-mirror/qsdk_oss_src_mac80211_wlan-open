@@ -716,6 +716,11 @@ int ath12k_wifi8_ppeds_attach(struct ath12k_base *ab)
 {
 	int i, ret, ds_node_id;
 
+	if (!ath12k_ppe_ds_wifi8_enabled) {
+		clear_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags);
+		return 0;
+	}
+
 	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
 		return 0;
 
