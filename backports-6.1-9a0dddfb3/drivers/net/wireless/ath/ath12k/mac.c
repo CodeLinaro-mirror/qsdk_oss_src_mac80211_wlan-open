@@ -5569,6 +5569,9 @@ void ath12k_peer_assoc_prepare(struct ath12k *ar,
 	ath12k_peer_assoc_h_ht(ar, arvif, arsta, arg, link_sta);
 	ath12k_peer_assoc_h_vht(ar, arvif, arsta, arg, link_sta);
 	ath12k_peer_assoc_h_he(ar, arvif, arsta, arg, link_sta);
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_peer_assoc_h_he_mcs_12_13_extn(ar, arg);
+#endif /* CPTCFG_QCN_EXTN */
 	ath12k_peer_assoc_h_he_6ghz(ar, arvif, arsta, arg, link_sta);
 	ath12k_peer_assoc_h_eht(ar, arvif, arsta, arg, link_sta);
 	ath12k_peer_assoc_h_uhr(ar, arvif, arsta, arg, link_sta);
