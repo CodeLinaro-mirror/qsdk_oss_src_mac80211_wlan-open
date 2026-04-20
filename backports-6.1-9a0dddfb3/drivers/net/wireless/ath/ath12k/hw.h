@@ -218,6 +218,7 @@ struct ath12k_hw_ring_mask {
 	u8 ase_status[ATH12K_EXT_IRQ_NUM_MAX];
 	u8 tx_peer_telemetry[ATH12K_EXT_IRQ_NUM_MAX];
 	u8 rx_peer_telemetry[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 reo_flush[ATH12K_EXT_IRQ_NUM_MAX];
 };
 
 enum ath12k_m3_fw_loaders {

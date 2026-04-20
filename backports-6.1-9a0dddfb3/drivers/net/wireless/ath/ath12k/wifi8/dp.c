@@ -159,6 +159,14 @@ static int ath12k_wifi8_cumac_dp_service_srng(struct ath12k_dp *dp,
 			goto done;
 	}
 
+	if (dp->hw_params->ring_mask->reo_flush[grp_id]) {
+		work_done = ath12k_wifi8_dp_rx_process_reo_flush_err(dp, budget);
+		budget -= work_done;
+		tot_work_done += work_done;
+		if (budget <= 0)
+			goto done;
+	}
+
 	tot_work_done += ath12k_wifi8_non_cumac_dp_service_srng(dp, irq_grp, budget);
 done:
 	return tot_work_done;
@@ -744,6 +752,7 @@ static ssize_t ath12k_wifi8_dump_device_dp_stats(struct ath12k_dp *dp,
 	int len = 0;
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
 	struct ath12k_wifi8_tx_exc_stats *stats = &dp_wifi8->stats.tx_exc_stats;
+	struct ath12k_wifi8_rx_stats *rx_stats = &dp_wifi8->stats.rx_stats;
 
 	len += scnprintf(buf + len, size - len, "\nTx Exception stats:\n");
 	len += scnprintf(buf + len, size - len, "-------------------\n");
@@ -784,6 +793,10 @@ static ssize_t ath12k_wifi8_dump_device_dp_stats(struct ath12k_dp *dp,
 			 stats->bank_id_exceed);
 	len += scnprintf(buf + len, size - len, "buf_len_err:%u\n",
 			 stats->buf_len_err);
+
+	len += scnprintf(buf + len, size - len,
+			 "\nRx flush count: %u\nRx mgmt flush count: %u\n",
+			 rx_stats->rx_flush_pkts, rx_stats->rx_mgmt_flush_pkts);
 
 	len += ath12k_wifi8_global_ast_stats(dp, buf + len, size - len);
 	return len;

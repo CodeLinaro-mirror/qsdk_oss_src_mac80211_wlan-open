@@ -31,6 +31,7 @@
 #include "../fse.h"
 #include "dp_ast.h"
 #include "dp.h"
+#include "mgmt_rx.h"
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #include "ppeds.h"
 #endif
@@ -4433,12 +4434,30 @@ void ath12k_wifi8_dp_rx_fse_cmd_srng_free(struct ath12k_base *ab)
 	ath12k_dp_srng_cleanup(ab, &dp_wifi8->fse_cmd_ring);
 }
 
+int ath12k_wifi8_dp_rx_reo_flush_srng_setup(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+
+	return ath12k_dp_srng_setup(ab, &dp_wifi8->reo_flush_ring,
+				    HAL_REO_FLUSH,
+				    0, 0, DP_REO_FLUSH_RING_SIZE);
+}
+
+void ath12k_wifi8_dp_rx_reo_flush_srng_free(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+
+	ath12k_dp_srng_cleanup(ab, &dp_wifi8->reo_flush_ring);
+}
 
 void ath12k_wifi8_dp_rx_ring_free(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
 
+	ath12k_wifi8_dp_rx_reo_flush_srng_free(ab);
 	ath12k_dp_srng_cleanup(ab, &dp_wifi8->reo_high_prio_cmd_ring);
 	ath12k_wifi8_dp_rx_wbm_srng_free(ab);
 	ath12k_dp_rx_reo_cleanup(ab);
@@ -4508,5 +4527,80 @@ int ath12k_wifi8_dp_rx_ring_setup(struct ath12k_base *ab)
 		return ret;
 	}
 #endif
+
+	ret = ath12k_wifi8_dp_rx_reo_flush_srng_setup(ab);
+	if (ret) {
+		ath12k_warn(ab, "failed to setup reo_flush_ring: %d\n", ret);
+		return ret;
+	}
+
 	return 0;
+}
+
+int ath12k_wifi8_dp_rx_process_reo_flush_err(struct ath12k_dp *dp, int budget)
+{
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+	struct ath12k_wifi8_rx_stats *stats = &dp_wifi8->stats.rx_stats;
+	struct ath12k_base *ab = dp->ab;
+	struct ath12k_mgmt *mgmt = ab->mgmt;
+	struct ath12k_mgmt_wifi8 *mgmt_wifi8 = ath12k_get_mgmt_wifi8(mgmt);
+	enum hal_wifi8_rx_buf_return_buf_manager rbm;
+	struct ath12k_rx_desc_info *desc_info;
+	int cpu_id = smp_processor_id();
+	struct hal_reo_dest_ring *rx_desc;
+	struct hal_srng *srng, *refill_srng;
+	struct list_head rx_desc_used_list;
+	struct list_head rx_mgmt_desc_used_list;
+	int quota = budget;
+	u32 cookie;
+
+	srng = &ab->hal.srng_list[dp_wifi8->reo_flush_ring.ring_id];
+
+	INIT_LIST_HEAD(&rx_desc_used_list);
+	INIT_LIST_HEAD(&rx_mgmt_desc_used_list);
+
+	spin_lock_bh(&srng->lock);
+	ath12k_hal_srng_access_begin(ab, srng);
+
+	while (budget) {
+		rx_desc = ath12k_hal_srng_dst_get_next_entry(ab, srng);
+		if (!rx_desc)
+			break;
+		--budget;
+
+		rbm = le32_get_bits(rx_desc->buf_addr_info.info1,
+				    BUFFER_ADDR_INFO1_RET_BUF_MGR);
+		cookie = le32_get_bits(rx_desc->buf_addr_info.info1,
+				       BUFFER_ADDR_INFO1_SW_COOKIE);
+		desc_info = ath12k_dp_get_rx_desc(dp, cookie);
+
+		if (!desc_info)
+			continue;
+
+		if (rbm == dp->hal->hal_params->rx_buf_rbm) {
+			list_add_tail(&desc_info->list, &rx_desc_used_list);
+			stats->rx_flush_pkts++;
+		} else if (rbm == dp->hal->hal_params->rx_mgmt_buf_rbm) {
+			list_add_tail(&desc_info->list, &rx_mgmt_desc_used_list);
+			stats->rx_mgmt_flush_pkts++;
+		} else {
+			ath12k_warn(ab, "invalid rbm received: %d\n", rbm);
+			WARN_ON_ONCE(1);
+		}
+	}
+
+	ath12k_hal_srng_access_end(ab, srng);
+	spin_unlock_bh(&srng->lock);
+
+	if (!list_empty(&rx_desc_used_list)) {
+		refill_srng = &ab->hal.srng_list[dp_wifi8->wbm_refill_ring[cpu_id %
+						DP_WBM_REFILL_RING_MAX].ring_id];
+		ath12k_dp_rx_bufs_replenish(dp, refill_srng, &rx_desc_used_list, false);
+	}
+
+	if (!list_empty(&rx_mgmt_desc_used_list))
+		ath12k_wifi8_mgmt_rx_replenish_buffs(mgmt, &mgmt_wifi8->wbm_refill_ring,
+						     &rx_mgmt_desc_used_list, false);
+
+	return quota - budget;
 }
