@@ -1266,6 +1266,104 @@ ath12k_dp_mon_rx_reset_pktlog_cbf(struct ath12k_pdev_dp *dp_pdev)
 	return 0;
 }
 
+/**
+ * ath12k_dp_mon_tx_setup_pktlog_hybrid() - Setup TX monitor for hybrid mode
+ * @dp_pdev: DP pdev handle
+ *
+ * Configure TX monitor destination ring filters for hybrid pktlog mode.
+ * In hybrid mode, upstream TLVs (MPDU/MSDU START/END) are captured from
+ * TX monitor ring while UMAC TLVs (FES_STATUS, PEER_ENTRY, etc.) come
+ * via HTT path from firmware.
+ *
+ * This split is necessary for wifi7 platforms where TX TLVs are no longer
+ * delivered entirely through HTT path due to hardware architecture changes.
+ */
+static void
+ath12k_dp_mon_tx_setup_pktlog_hybrid(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct dp_mon_tx_filter tx_filter = {0};
+	enum dp_mon_filter_mode mode = DP_MON_FILTER_PKTLOG_HYBRID_TX;
+	enum dp_mon_tx_filter_srng_type srng_type =
+		DP_MON_TX_FILTER_SRNG_TYPE_TXMON_DEST;
+	struct htt_tx_ring_tlv_filter *tx_tlv_filter;
+
+	if (!dp_mon_pdev || !dp_mon_pdev->tx_mon_filter)
+		return;
+
+	if (dp_mon_pdev->tx_pktlog_hybrid) {
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DATA,
+			   "PKTLOG: Hybrid mode already configured\n");
+		return;
+	}
+
+	tx_filter.valid = true;
+	tx_tlv_filter = &tx_filter.filter;
+
+	tx_tlv_filter->tx_mon_upstream_tlv_flags0 =
+		HTT_TX_MON_FILTER_UP_STRM_TLV_FLAG0;
+	tx_tlv_filter->tx_mon_upstream_tlv_flags1 =
+		HTT_TX_MON_FILTER_UP_STRM_TLV_FLAG1;
+
+	tx_tlv_filter->tx_mon_mgmt_filter = true;
+	tx_tlv_filter->tx_mon_data_filter = true;
+	tx_tlv_filter->tx_mon_ctrl_filter = true;
+
+	tx_tlv_filter->mgmt_mpdu_end = 1;
+	tx_tlv_filter->mgmt_msdu_end = 1;
+	tx_tlv_filter->mgmt_msdu_start = 1;
+	tx_tlv_filter->mgmt_mpdu_start = 1;
+	tx_tlv_filter->ctrl_mpdu_end = 1;
+	tx_tlv_filter->ctrl_msdu_end = 1;
+	tx_tlv_filter->ctrl_msdu_start = 1;
+	tx_tlv_filter->ctrl_mpdu_start = 1;
+	tx_tlv_filter->data_mpdu_end = 1;
+	tx_tlv_filter->data_msdu_end = 1;
+	tx_tlv_filter->data_msdu_start = 1;
+	tx_tlv_filter->data_mpdu_start = 1;
+
+	tx_tlv_filter->mgmt_mpdu_msdu_log_en = true;
+	tx_tlv_filter->ctrl_mpdu_msdu_log_en = true;
+	tx_tlv_filter->data_mpdu_msdu_log_en = true;
+
+	tx_tlv_filter->mgmt_log_typ = HTT_TX_MON_WMASK_IN2_MPDU_LOG;
+	tx_tlv_filter->ctrl_log_typ = HTT_TX_MON_WMASK_IN2_MPDU_LOG;
+	tx_tlv_filter->data_log_typ = HTT_TX_MON_WMASK_IN2_MPDU_LOG;
+	tx_tlv_filter->tx_mon_mgmt_pkt_dma_len = DP_TX_MON_MAX_DMA_LENGTH;
+	tx_tlv_filter->tx_mon_data_pkt_dma_len = DP_TX_MON_MAX_DMA_LENGTH;
+	tx_tlv_filter->tx_mon_ctrl_pkt_dma_len = DP_TX_MON_MAX_DMA_LENGTH;
+
+	dp_mon_pdev->tx_mon_filter[mode][srng_type] = tx_filter;
+
+	ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+		   "TX Monitor: Hybrid mode filter configured\n");
+}
+
+/**
+ * ath12k_dp_mon_tx_reset_pktlog_hybrid() - Reset hybrid mode filters
+ * @dp_pdev: DP pdev handle
+ *
+ * Reset TX monitor filters for hybrid pktlog mode. This is called when
+ * pktlog is stopped or when switching to a different pktlog mode.
+ */
+static void
+ath12k_dp_mon_tx_reset_pktlog_hybrid(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct dp_mon_tx_filter tx_filter = {0};
+	enum dp_mon_filter_mode mode = DP_MON_FILTER_PKTLOG_HYBRID_TX;
+	enum dp_mon_tx_filter_srng_type srng_type =
+		DP_MON_TX_FILTER_SRNG_TYPE_TXMON_DEST;
+
+	if (!dp_mon_pdev || !dp_mon_pdev->tx_mon_filter)
+		return;
+
+	dp_mon_pdev->tx_mon_filter[mode][srng_type] = tx_filter;
+
+	ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+		   "TX Monitor: Hybrid mode filter reset\n");
+}
+
 void ath12k_dp_mon_pktlog_config_filter(struct ath12k_pdev_dp *dp_pdev,
 					enum ath12k_pktlog_mode mode,
 					u32 filter, bool enable)
@@ -1294,6 +1392,11 @@ void ath12k_dp_mon_pktlog_config_filter(struct ath12k_pdev_dp *dp_pdev,
 					return;
 				}
 			}
+		}
+
+		if (filter & ATH12K_PKTLOG_HYBRID) {
+			ath12k_dp_mon_tx_setup_pktlog_hybrid(dp_pdev);
+			dp_mon_pdev->tx_pktlog_hybrid = true;
 		}
 
 		switch (mode) {
@@ -1330,6 +1433,11 @@ void ath12k_dp_mon_pktlog_config_filter(struct ath12k_pdev_dp *dp_pdev,
 				return;
 			}
 			ath12k_dbg(dp->ab, ATH12K_DBG_DATA, "CBF logging disabled\n");
+		}
+
+		if (filter & ATH12K_PKTLOG_HYBRID) {
+			ath12k_dp_mon_tx_reset_pktlog_hybrid(dp_pdev);
+			dp_mon_pdev->tx_pktlog_hybrid = false;
 		}
 
 		switch (mode) {
