@@ -332,6 +332,7 @@ struct hal_rx_mon_ppdu_info {
 	u8 ampdu_flag;
 	u8 band;
 	u32 rx_antenna;
+	u8 num_non_ofdma_users;
 };
 
 /* in the bitmap 0 indicates no puncturing and 1 indicate that sub channel is punctured */

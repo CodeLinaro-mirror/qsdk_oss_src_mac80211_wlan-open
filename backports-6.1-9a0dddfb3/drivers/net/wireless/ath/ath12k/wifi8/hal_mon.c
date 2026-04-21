@@ -1667,6 +1667,9 @@ ath12k_wifi8_hal_mon_parse_uhr_sig_non_ofdma_cmn(const void *tlv,
 				     HAL_RX_UHR_SIG_NON_OFDMA_INFO0_DISREGARD,
 				     IEEE80211_RADIOTAP_UHR_DATA7_DISREGARD_NO);
 
+	ppdu_info->num_non_ofdma_users =
+		le32_get_bits(eb->info0,
+			      HAL_RX_UHR_SIG_NON_OFDMA_INFO0_NUM_USERS);
 	put_unaligned_le32(data7, &uhr->data[7]);
 }
 
@@ -1917,7 +1920,7 @@ ath12k_wifi8_hal_mon_parse_uhr_sig_non_ofdma(const void *tlv,
 
 	ath12k_wifi8_hal_mon_parse_uhr_sig_non_ofdma_cmn(tlv, ppdu_info);
 
-	if (ath12k_wifi8_hal_mon_is_mu_mimo_user(&ppdu_info->u_sig_info))
+	if (ppdu_info->num_non_ofdma_users)
 		ath12k_wifi8_hal_mon_parse_uhr_mumimo_user(&eb->user_field.mu_mimo,
 							   ppdu_info);
 	else
