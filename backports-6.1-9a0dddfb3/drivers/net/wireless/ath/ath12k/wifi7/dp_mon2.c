@@ -764,12 +764,14 @@ ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_ext_mon_pkt_config *pkt_config = NULL;
 	struct ath12k_dp_mon_mpdu_meta *mpdu_meta;
 	struct ieee80211_hdr *hdr;
+	struct ath12k_dp_ext_mon_peer *peer;
 	u8 type, sub_type, filter_category;
 	u16 type_len;
 	int ret;
 	enum ath12k_ext_mon_filter_level level;
 	bool is_mcast = false;
 	bool need_rtap = true;
+	bool peer_found = false;
 
 	spin_lock(&dp_mon_pdev->rx_ext_mon_lock);
 	config = dp_mon_pdev->rx_ext_mon_config;
@@ -858,6 +860,31 @@ ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	type_len = pkt_config->len[type];
 	level = config->level;
 	need_rtap = config->metadata & ATH12K_EXT_MON_METADATA_RTAP_HDR;
+
+	if (config->ra_peer_count &&
+	    (filter_category == DP_MPDU_FILTER_CATEGORY_MO)) {
+		list_for_each_entry(peer, &config->peer_list, list) {
+			if (!peer->peer_info.ra_addr)
+				continue;
+			if (ether_addr_equal(hdr->addr1,
+					     peer->peer_info.mac_addr)) {
+				peer_found = true;
+				break;
+			}
+		}
+
+		/*
+		 * Non-zero ra_peer_count indicates that RA peers are configured.
+		 * Hence, dropping all other packets that doesn't match with any of
+		 * the configured peer's RA address.
+		 * ath12k_wifi7_dp_mon_rx_process_mpdu_queue frees this skb on
+		 * returing error.
+		 */
+		if (!peer_found) {
+			spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
+			return -EINVAL;
+		}
+	}
 
 	/* Unlock spinlock here; ext_mon_config must not be
 	 * accessed beyond this point
@@ -2262,11 +2289,9 @@ int ath12k_wifi7_dp_ext_mon_validate_request(struct ath12k_pdev_dp *dp_pdev,
 	if (req->peer.action == ATH12K_EXT_MON_PEER_ACTION_ADD) {
 		for (i = 0; i < req->peer.count; i++) {
 			peer = &req->peer.peer_info[i];
-			if (peer->ra_addr || peer->bitmap !=
-					ATH12K_EXT_MON_DEFAULT_PEER_BITMAP) {
-				ath12k_warn(dp_pdev->dp,
-					    "invalid ra_addr: %d or bitmap: %02x",
-					    peer->ra_addr, peer->bitmap);
+			if (peer->bitmap != ATH12K_EXT_MON_DEFAULT_PEER_BITMAP) {
+				ath12k_warn(dp_pdev->dp, "invalid bitmap: %02x",
+					    peer->bitmap);
 				return -EINVAL;
 			}
 		}
