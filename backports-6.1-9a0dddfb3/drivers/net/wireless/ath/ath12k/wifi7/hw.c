@@ -111,7 +111,7 @@ void ath12k_hw_qcn9274_fill_cfr_hdr_info(struct ath12k *ar,
 	header->cfr_data_version = ATH12K_CFR_DATA_VERSION_1;
 	header->host_real_ts = ktime_to_ns(ktime_get_real());
 
-	header->cfr_metadata_version = ATH12K_CFR_META_VERSION_9;
+	header->cfr_metadata_version = ATH12K_CFR_META_VERSION_10;
 	if(ar->ab->hw_rev == ATH12K_HW_QCN6432_HW10)
 		header->chip_type = ATH12K_CFR_RADIO_QCN6432;
 	else if (ar->ab->hw_rev == ATH12K_HW_IPQ5424_HW10)
@@ -162,7 +162,7 @@ void ath12k_hw_wcn7850_fill_cfr_hdr_info(struct ath12k *ar,
 	header->cfr_data_version = ATH12K_CFR_DATA_VERSION_1;
 	header->host_real_ts = ktime_to_ns(ktime_get_real());
 
-	header->cfr_metadata_version = ATH12K_CFR_META_VERSION_9;
+	header->cfr_metadata_version = ATH12K_CFR_META_VERSION_10;
 	header->chip_type = ATH12K_CFR_RADIO_WCN7850;
 
 	header->u.meta_enh.status = FIELD_GET(WMI_CFR_PEER_CAPTURE_STATUS,

@@ -16603,8 +16603,8 @@ static void ath12k_wmi_parse_cfr_capture_event(struct ath12k_base *ab,
 
 	ret = ath12k_process_cfr_capture_event(ab, &params);
 	if (ret)
-		ath12k_warn(ab, "failed to process cfr cpature ret = %d\n",
-			    ret);
+		ath12k_dbg(ab, ATH12K_DBG_CFR,
+			   "failed to process cfr cpature ret = %d\n", ret);
 }
 
 static void ath12k_process_ocac_complete_event(struct ath12k_base *ab,
