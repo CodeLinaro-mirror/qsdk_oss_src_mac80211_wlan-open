@@ -52,13 +52,12 @@ void ath12k_wifi8_hal_tx_cmd_desc_setup(struct ath12k_base *ab,
 		le32_encode_bits(0, HAL_TCL_DATA_CMD_INFO2_RX_TIMESTAMP) |
 		le32_encode_bits(0, HAL_TCL_DATA_CMD_INFO2_RX_TIMESTAMP_VALID);
 
-	tcl_cmd->info3 = cpu_to_le32(ti->flags1) |
-		le32_encode_bits(0, HAL_TCL_DATA_CMD_INFO3_TX_NOTIFY_FRAME) |
+	tcl_cmd->info3 =
+		cpu_to_le32(ti->flags1) |
+		le32_encode_bits(ti->tx_notify_frame,
+				 HAL_TCL_DATA_CMD_INFO3_TX_NOTIFY_FRAME) |
 		le32_encode_bits(0, HAL_TCL_DATA_CMD_INFO3_FLOW_SELECT) |
 		le32_encode_bits(ti->pkt_offset, HAL_TCL_DATA_CMD_INFO3_METADATA_LENGTH) |
-		/* TODO: Chaitanya : confirm if this link is on which pkt is getting
-		 * enqueued
-		 */
 		le32_encode_bits(ti->link_id, HAL_TCL_DATA_CMD_INFO3_LINK_ID);
 
 	tcl_cmd->tcl_cmd_number = cpu_to_le32(ti->meta_data_flags);
