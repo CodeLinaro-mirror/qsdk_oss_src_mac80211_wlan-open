@@ -522,6 +522,17 @@ struct ieee80211_mgd_assoc_data {
 
 	size_t ie_len;
 	u8 *ie_pos; /* used to fill ie[] with link[].elems */
+
+	bool smd_enabled;
+	u8 smd_ptk_mode;
+	u8 smd_identifier[ETH_ALEN];
+	u8 smd_capabilities;
+	u16 smd_timeout;
+	const u8 *smd_kdk;
+	size_t smd_kdk_len;
+	const u8 *dh_params;
+	size_t dh_params_len;
+
 	u8 ie[];
 };
 
@@ -587,6 +598,11 @@ struct ieee80211_if_managed {
 		IEEE80211_CFP_REQUIRED
 	} cfp; /* control frame protection */
 
+	enum {
+		IEEE80211_SMD_PTK_DISABLED,
+		IEEE80211_SMD_PTK_PER_SMD,
+		IEEE80211_SMD_PTK_PER_AP
+	} smd_ptk_mode; /* control frame protection */
 	/*
 	 * Bitmask of enabled u-apsd queues,
 	 * IEEE80211_WMM_IE_STA_QOSINFO_AC_BE & co. Needs a new association
@@ -1256,6 +1272,16 @@ struct pcpu_txrx_stats {
 
 struct txrx_stats {
 		struct txrx_tid_stats   tid_stats[IEEE80211_NUM_TIDS];
+};
+
+struct ieee80211_smd_config {
+	bool enabled;
+	const u8 *smd_identifier;
+	u16 smd_timeout;
+	bool dl_data_fwd;
+	u8 max_num_peer_ap;
+	u8 smd_type;
+	u8 ptk_mode;
 };
 
 struct ieee80211_sub_if_data {

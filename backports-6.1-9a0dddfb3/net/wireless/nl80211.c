@@ -560,6 +560,18 @@ nl80211_mbssid_config_policy[NL80211_MBSSID_CONFIG_ATTR_MAX + 1] = {
 	[NL80211_MBSSID_CONFIG_ATTR_MAX_BEACON_SIZE] = { .type = NLA_U16 },
 };
 
+/* Policy for SMD parameters attributes */
+static const struct nla_policy
+nl80211_smd_params_policy[NL80211_SMD_PARAMS_ATTR_MAX + 1] = {
+	[NL80211_SMD_PARAMS_ATTR_IDENTIFIER] =
+		NLA_POLICY_EXACT_LEN(ETH_ALEN),
+	[NL80211_SMD_PARAMS_ATTR_TIMEOUT] = { .type = NLA_U16 },
+	[NL80211_SMD_PARAMS_ATTR_DL_DATA_FWD] = { .type = NLA_FLAG },
+	[NL80211_SMD_PARAMS_ATTR_MAX_PEER_APMLDS] = NLA_POLICY_MAX(NLA_U8, 7),
+	[NL80211_SMD_PARAMS_ATTR_TYPE] = NLA_POLICY_MAX(NLA_U8, 1),
+	[NL80211_SMD_PARAMS_ATTR_PTK_MODE] = NLA_POLICY_MAX(NLA_U8, 1),
+};
+
 static const struct nla_policy
 nl80211_sta_wme_policy[NL80211_STA_WME_MAX + 1] = {
 	[NL80211_STA_WME_UAPSD_QUEUES] = { .type = NLA_U8 },
@@ -1155,6 +1167,14 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_LOW_POWER_20MHZ] = { .type = NLA_U8 },
 	[NL80211_ATTR_BEACON_TX_SYNC_SUPPORT] = { .type = NLA_FLAG },
 	[NL80211_ATTR_MAX_CH_SWITCH_TIME] = { .type = NLA_U32 },
+	[NL80211_ATTR_SMD_ENABLED] = { .type = NLA_FLAG },
+	[NL80211_ATTR_SMD_PTK_MODE] = NLA_POLICY_MAX(NLA_U8, 1),
+	[NL80211_ATTR_SMD_KDK] = { .type = NLA_BINARY, .len = 32 },
+	[NL80211_ATTR_DH_PARAMS] = { .type = NLA_BINARY, .len = 256 },
+	[NL80211_ATTR_SMD_IDENTIFIER] = NLA_POLICY_EXACT_LEN(6),
+	[NL80211_ATTR_SMD_SUPPORT] = { .type = NLA_FLAG },
+	[NL80211_ATTR_SMD_AP] = { .type = NLA_FLAG },
+	[NL80211_ATTR_SMD_PARAMS] = { .type = NLA_NESTED },
 };
 
 /* policy for the key attributes */
@@ -7645,6 +7665,60 @@ nl80211_parse_adv_ttlm_params(struct genl_info *info,
 	return 0;
 }
 
+static int nl80211_parse_smd_params(struct nlattr *smd_params_attr,
+				    struct cfg80211_smd_params *smd_params)
+{
+	struct nlattr *tb[NL80211_SMD_PARAMS_ATTR_MAX + 1];
+	int err;
+
+	if (!smd_params_attr || !smd_params)
+		return -EINVAL;
+
+	err = nla_parse_nested(tb, NL80211_SMD_PARAMS_ATTR_MAX,
+			       smd_params_attr, nl80211_smd_params_policy,
+			       NULL);
+	if (err)
+		return err;
+
+	/* SMD Identifier is required */
+	if (!tb[NL80211_SMD_PARAMS_ATTR_IDENTIFIER])
+		return -EINVAL;
+	memcpy(smd_params->smd_identifier,
+	       nla_data(tb[NL80211_SMD_PARAMS_ATTR_IDENTIFIER]),
+	       ETH_ALEN);
+
+	/* SMD Timeout is required */
+	if (!tb[NL80211_SMD_PARAMS_ATTR_TIMEOUT])
+		return -EINVAL;
+	smd_params->smd_timeout = nla_get_u16(tb[NL80211_SMD_PARAMS_ATTR_TIMEOUT]);
+
+	/* DL Data Forwarding (optional flag) */
+	smd_params->dl_data_fwd =
+		!!tb[NL80211_SMD_PARAMS_ATTR_DL_DATA_FWD];
+
+	/* Max Number of Peer AP MLDs is required */
+	if (!tb[NL80211_SMD_PARAMS_ATTR_MAX_PEER_APMLDS])
+		return -EINVAL;
+	smd_params->max_num_of_peer_apmlds =
+		nla_get_u8(tb[NL80211_SMD_PARAMS_ATTR_MAX_PEER_APMLDS]);
+	if (smd_params->max_num_of_peer_apmlds > 7)
+		return -EINVAL;
+
+	/* SMD Type is required */
+	if (!tb[NL80211_SMD_PARAMS_ATTR_TYPE])
+		return -EINVAL;
+	smd_params->smd_type =
+		!!nla_get_u8(tb[NL80211_SMD_PARAMS_ATTR_TYPE]);
+
+	/* PTK Mode is required */
+	if (!tb[NL80211_SMD_PARAMS_ATTR_PTK_MODE])
+		return -EINVAL;
+	smd_params->ptk_mode =
+		!!nla_get_u8(tb[NL80211_SMD_PARAMS_ATTR_PTK_MODE]);
+
+	return 0;
+}
+
 static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 {
 	struct cfg80211_registered_device *rdev = info->user_ptr[0];
@@ -13480,6 +13554,15 @@ static int nl80211_authenticate(struct sk_buff *skb, struct genl_info *info)
 			return -EINVAL;
 	}
 
+	/* Parse SMD parameters if present */
+	if (info->attrs[NL80211_ATTR_SMD_AP]) {
+		req.smd_params.smd_enabled = true;
+		err = nl80211_parse_smd_params(info->attrs[NL80211_ATTR_SMD_PARAMS],
+					       &req.smd_params);
+		if (err)
+			return err;
+	}
+
 	req.bss = cfg80211_get_bss(&rdev->wiphy, chan, bssid, ssid, ssid_len,
 				   IEEE80211_BSS_TYPE_ESS,
 				   IEEE80211_PRIVACY_ANY);
@@ -14037,6 +14120,15 @@ static int nl80211_associate(struct sk_buff *skb, struct genl_info *info)
 
 		if (info->attrs[NL80211_ATTR_ASSOC_MLD_EXT_CAPA_OPS])
 			return -EINVAL;
+	}
+
+	/* Parse SMD parameters if present */
+	if (info->attrs[NL80211_ATTR_SMD_AP]) {
+		req.smd_params.smd_enabled = true;
+		err = nl80211_parse_smd_params(info->attrs[NL80211_ATTR_SMD_PARAMS],
+					       &req.smd_params);
+		if (err)
+			return err;
 	}
 
 	err = nl80211_crypto_settings(rdev, info, &req.crypto, 1);

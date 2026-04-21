@@ -1630,6 +1630,41 @@ struct cfg80211_crypto_settings {
 };
 
 /**
+ * cfg80211_peer_smd_params - Peer settings for SMD
+ * @smd_enabled: Peer is SMD capable
+ * @smd_identifier: SMD ID associated to the peer
+ * @dl_data_fwd: Peer can handle MSDU forwarding
+ */
+struct cfg80211_peer_smd_params {
+	bool smd_enabled;
+	u8 smd_identifier[ETH_ALEN];
+	bool dl_data_fwd;
+};
+
+/**
+ * cfg80211_smd_params - AP settings for SMD
+ *
+ * @smd_enabled: Flag to determine if SMD is enabled
+ * @smd_flags: Bitmap indicating the SMD capabilities
+ * @smd_identifier: SMD ID
+ * @smd_timeout: Timeout in TU for ST preparation
+ * @dl_data_fwd: Flag to indicate if MSDU forwarding is supported
+ * @max_num_of_peer_apmlds: Maximum number of prepared AP MLDs supported
+ * @smd_type: SMD type
+ * @ptk_mode: PTK mode
+ */
+struct cfg80211_smd_params {
+	bool smd_enabled;
+	u8 smd_flags;
+	u8 smd_identifier[ETH_ALEN];
+	u8 smd_timeout;
+	bool dl_data_fwd;
+	u8 max_num_of_peer_apmlds;
+	u8 smd_type;
+	bool ptk_mode;
+};
+
+/**
  * struct cfg80211_mbssid_config - AP settings for multi bssid
  *
  * @tx_wdev: pointer to the transmitted interface in the MBSSID set
@@ -1949,6 +1984,7 @@ struct cfg80211_ttlm_params {
  * @ml_max_rec_links: ML Max recommended links
  * @ttlm_params: tid-to-link mapping parameters
  * @dps_assist_disable: indicates AP to disable DPS Assist Support.
+ * @smd_params: SMD params for a AP
  */
 struct cfg80211_ap_settings {
 	struct cfg80211_chan_def chandef;
@@ -1992,6 +2028,7 @@ struct cfg80211_ap_settings {
 	struct cfg80211_ttlm_params ttlm_params;
 	bool is_cfp_enabled;
 	bool dps_assist_disable;
+	struct cfg80211_smd_params smd_params;
 };
 
 
@@ -2028,6 +2065,8 @@ struct cfg80211_ap_update {
  * @link_id: defines the link on which channel switch is expected during
  *	MLO. 0 in case of non-MLO.
  * @unsol_bcast_probe_resp: Unsolicited broadcast probe response parameters
+ * @smd_enabled: SMD is enabled in CSA settings
+ * @smd_params: SMD params in CSA settings
  */
 struct cfg80211_csa_settings {
 	struct cfg80211_chan_def chandef;
@@ -2043,6 +2082,7 @@ struct cfg80211_csa_settings {
 	u8 link_id;
 	struct cfg80211_unsol_bcast_probe_resp unsol_bcast_probe_resp;
 	enum nl80211_regulatory_power_modes he_6ghz_power_type;
+	struct cfg80211_smd_params smd_params;
 };
 
 /**
@@ -3680,6 +3720,7 @@ static inline const u8 *ieee80211_bss_get_ie(struct cfg80211_bss *bss, u8 id)
  *	given an MLD address) by the driver
  * @ap_mld_addr: AP MLD address in case of authentication request with
  *	an AP MLD, valid iff @link_id >= 0
+ * @smd_params: AP SMD parameters
  */
 struct cfg80211_auth_request {
 	struct cfg80211_bss *bss;
@@ -3695,6 +3736,7 @@ struct cfg80211_auth_request {
 	size_t auth_data_len;
 	s8 link_id;
 	const u8 *ap_mld_addr;
+	struct cfg80211_smd_params smd_params;
 };
 
 /**
@@ -3816,6 +3858,7 @@ enum cfg80211_assoc_req_flags {
  *	valid iff @link_id >= 0
  * @ext_mld_capa_ops: extended MLD capabilities and operations set by
  *	userspace for the association
+ * @smd_params: SMD capabilities for the association
  */
 struct cfg80211_assoc_request {
 	struct cfg80211_bss *bss;
@@ -3838,6 +3881,7 @@ struct cfg80211_assoc_request {
 	const u8 *ap_mld_addr;
 	s8 link_id;
 	u16 ext_mld_capa_ops;
+	struct cfg80211_smd_params smd_params;
 };
 
 /**
