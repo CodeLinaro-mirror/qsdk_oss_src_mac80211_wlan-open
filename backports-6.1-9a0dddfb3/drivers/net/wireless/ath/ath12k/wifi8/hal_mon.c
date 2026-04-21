@@ -1824,6 +1824,92 @@ ath12k_wifi8_hal_mon_parse_uhr_non_mumimo_user(const struct hal_uhr_sig_non_mu_m
 }
 
 static __always_inline void
+ath12k_wifi8_hal_mon_parse_uhr_sig_mumimo_su(const void *tlv,
+					     struct hal_rx_mon_ppdu_info *ppdu_info)
+{
+	struct hal_uhr_sig_mumimo_su_eb *user = (struct hal_uhr_sig_mumimo_su_eb *)tlv;
+	struct hal_rx_uhr_info *uhr_info = &ppdu_info->uhr_info;
+	u32 user_idx, user_known = 0, user_data = 0;
+	u32 ueqm, ldpc, sta_id, mod_pat, beamformed, beamformed_mask, coding, coding_mask;
+	u32 ldpc_mask, mod_pat_mask, uemq_mask;
+	u64 hal_mod_pat_m, hal_beamformed_m;
+	u64 hal_coding_m, hal_ldpc_m;
+
+	hal_mod_pat_m = HAL_RX_UHR_SIG_MUMIMO_SU_USER_INFO0_MOD_PATTERN;
+	mod_pat_mask = IEEE80211_RADIOTAP_UHR_USER_INFO_UEMQ_PATTERN_O;
+	hal_beamformed_m = HAL_RX_UHR_SIG_MUMIMO_SU_USER_INFO0_BEAMFORMED;
+	beamformed_mask = IEEE80211_RADIOTAP_UHR_USER_INFO_BEAMFORMING_NO;
+	hal_ldpc_m = HAL_RX_UHR_SIG_MUMIMO_SU_USER_INFO0_LDPC;
+	ldpc_mask = IEEE80211_RADIOTAP_UHR_USER_INFO_2XLDPC_NO;
+	uemq_mask = IEEE80211_RADIOTAP_UHR_USER_INFO_UEMQ_O;
+	hal_coding_m = HAL_RX_UHR_SIG_MUMIMO_SU_USER_INFO0_CODING;
+	coding_mask = IEEE80211_RADIOTAP_UHR_USER_INFO_CODING_NO;
+
+	if (uhr_info->num_user_info >= UHR_MAX_USER_INFO)
+		return;
+
+	user_idx = uhr_info->num_user_info++;
+
+	user_known = __le32_to_cpu(uhr_info->user_known[user_idx]);
+
+	user_known |=
+		IEEE80211_RADIOTAP_UHR_USER_INFO_STA_ID_KNOWN |
+		IEEE80211_RADIOTAP_UHR_USER_INFO_MCS_KNOWN |
+		IEEE80211_RADIOTAP_UHR_USER_INFO_NSS_KNOWN_O |
+		IEEE80211_RADIOTAP_UHR_USER_INFO_USR_ENC_CRC_KNOWN |
+		IEEE80211_RADIOTAP_UHR_USER_INFO_USR_ENC_TAIL_KNOWN;
+
+	sta_id = le64_get_bits(user->info0,
+			       HAL_RX_UHR_SIG_MUMIMO_SU_USER_INFO0_STA_ID);
+	ppdu_info->mcs = le64_get_bits(user->info0,
+				       HAL_RX_UHR_SIG_MUMIMO_SU_USER_INFO0_MCS);
+	ppdu_info->nss = le64_get_bits(user->info0,
+				       HAL_RX_UHR_SIG_MUMIMO_SU_USER_INFO0_NSS) + 1;
+	ppdu_info->ldpc = le64_get_bits(user->info0,
+					HAL_RX_UHR_SIG_MUMIMO_SU_USER_INFO0_LDPC);
+	user_data |= u32_encode_bits(sta_id,
+				     IEEE80211_RADIOTAP_UHR_USER_INFO_STA_ID) |
+		u32_encode_bits(ppdu_info->mcs, IEEE80211_RADIOTAP_UHR_USER_INFO_MCS) |
+		u32_encode_bits(le64_get_bits(user->info0,
+					      HAL_RX_UHR_SIG_MUMIMO_SU_USER_INFO0_NSS)
+					      + 1,
+					      IEEE80211_RADIOTAP_UHR_USER_INFO_NSS_O);
+
+	ueqm = le64_get_bits(user->info0,
+			     HAL_RX_UHR_SIG_MUMIMO_SU_USER_INFO0_UNEQ_MOD);
+
+	if (ueqm) {
+		user_known |= IEEE80211_RADIOTAP_UHR_USER_INFO_UEMQ_KNOWN_O |
+			      IEEE80211_RADIOTAP_UHR_USER_INFO_UEMQ_PATTERN_KNOWN_O;
+		mod_pat = le64_get_bits(user->info0,
+					hal_mod_pat_m);
+		user_data |= u32_encode_bits(mod_pat, mod_pat_mask) |
+			     u32_encode_bits(ueqm, uemq_mask);
+	} else {
+		user_known |= IEEE80211_RADIOTAP_UHR_USER_INFO_BEAMFORMING_KNOWN_O |
+			IEEE80211_RADIOTAP_UHR_USER_INFO_CODING_KNOWN_O;
+
+			beamformed = le64_get_bits(user->info0,
+						   hal_beamformed_m);
+			coding = le64_get_bits(user->info0,
+					       hal_coding_m);
+			user_data |= u32_encode_bits(beamformed, beamformed_mask) |
+				     u32_encode_bits(coding, coding_mask);
+	}
+
+	ldpc = le64_get_bits(user->info0,
+			     HAL_RX_UHR_SIG_MUMIMO_SU_USER_INFO0_LDPC);
+
+	if (ldpc) {
+		user_known |= IEEE80211_RADIOTAP_UHR_USER_INFO_2XLDPC_KNOWN_O;
+		user_data |= u32_encode_bits(ldpc, ldpc_mask);
+	}
+
+	put_unaligned_le32(user_known, &uhr_info->user_known[user_idx]);
+	put_unaligned_le32(user_data, &uhr_info->user_info[user_idx]);
+}
+
+static __always_inline void
 ath12k_wifi8_hal_mon_parse_uhr_sig_non_ofdma(const void *tlv,
 					     struct hal_rx_mon_ppdu_info *ppdu_info)
 {
@@ -1835,8 +1921,8 @@ ath12k_wifi8_hal_mon_parse_uhr_sig_non_ofdma(const void *tlv,
 		ath12k_wifi8_hal_mon_parse_uhr_mumimo_user(&eb->user_field.mu_mimo,
 							   ppdu_info);
 	else
-		ath12k_wifi8_hal_mon_parse_uhr_non_mumimo_user(&eb->user_field.n_mu_mimo,
-							       ppdu_info);
+		ath12k_wifi8_hal_mon_parse_uhr_sig_mumimo_su(eb,
+							     ppdu_info);
 }
 
 static __always_inline void
