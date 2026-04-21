@@ -724,6 +724,7 @@ enum ath12k_dbg_htt_tlv_tag {
 /* MU MIMO distribution stats is a 2-dimensional array
  * with dimension one denoting stats for nr4[0] or nr8[1]
  */
+#define ATH12K_HTT_STATS_NUM_NR_BINS_ACTUAL 1
 #define ATH12K_HTT_STATS_NUM_NR_BINS			2
 #define ATH12K_HTT_STATS_MAX_NUM_MU_PPDU_PER_BURST	10
 #define ATH12K_HTT_TX_PDEV_MAX_SIFS_BURST_HIST_STATS	10
@@ -957,6 +958,7 @@ struct ath12k_htt_tx_pdev_mu_ppdu_dist_stats_tlv {
 	__le32 num_ppdu_cmpl_per_burst[ATH12K_HTT_STATS_MU_PPDU_PER_BURST_WORDS];
 	__le32 num_seq_posted[ATH12K_HTT_STATS_NUM_NR_BINS];
 	__le32 num_ppdu_posted_per_burst[ATH12K_HTT_STATS_MU_PPDU_PER_BURST_WORDS];
+	__le32 wifi_version;
 } __packed;
 
 /*
@@ -1127,6 +1129,7 @@ struct ath12k_htt_tx_pdev_rate_stats_be_tlv {
 	__le32 be_mu_mimo_tx_gi[ATH12K_HTT_TX_PDEV_STATS_NUM_GI_COUNTERS]
 			       [ATH12K_HTT_TX_PDEV_STATS_NUM_BE_MCS_COUNTERS];
 	__le32 be_mu_mimo_tx_ldpc;
+	__le32 wifi_version;
 } __packed;
 
 struct ath12k_htt_tx_pdev_rate_stats_sawf_tlv {
@@ -3280,6 +3283,15 @@ struct ath12k_htt_tx_selfgen_be_stats_tlv {
 	__le32 be_basic_trigger_errors_per_ac[ATH12K_HTT_NUM_AC_WMM];
 	__le32 be_mu_bar_trigger_per_ac[ATH12K_HTT_NUM_AC_WMM];
 	__le32 be_mu_bar_trigger_errors_per_ac[ATH12K_HTT_NUM_AC_WMM];
+	__le32 combined_be_ulofdma_trigger_tried[ATH12K_HTT_NUM_AC_WMM];
+	__le32 combined_be_ulofdma_trigger_err[ATH12K_HTT_NUM_AC_WMM];
+	__le32 standalone_be_ulofdma_trigger_tried[ATH12K_HTT_NUM_AC_WMM];
+	__le32 standalone_be_ulofdma_trigger_err[ATH12K_HTT_NUM_AC_WMM];
+	__le32 combined_be_ulmumimo_trigger_tried[ATH12K_HTT_NUM_AC_WMM];
+	__le32 combined_be_ulmumimo_trigger_err[ATH12K_HTT_NUM_AC_WMM];
+	__le32 standalone_be_ulmumimo_trigger_tried[ATH12K_HTT_NUM_AC_WMM];
+	__le32 standalone_be_ulmumimo_trigger_err[ATH12K_HTT_NUM_AC_WMM];
+	__le32 wifi_version;
 } __packed;
 
 struct ath12k_htt_tx_selfgen_bn_stats_tlv {
@@ -3363,6 +3375,7 @@ struct ath12k_htt_tx_selfgen_be_err_stats_tlv {
 	__le32 be_mu_bar_trigger_partial_resp;
 	__le32 be_mu_rts_trigger_blocked;
 	__le32 be_bsr_trigger_blocked;
+	__le32 wifi_version;
 } __packed;
 
 struct ath12k_htt_tx_selfgen_bn_err_stats_tlv {
@@ -3434,6 +3447,7 @@ struct ath12k_htt_tx_selfgen_be_sched_status_stats_tlv {
 	__le32 be_basic_trig_sch_flag_err[ATH12K_HTT_TX_SELFGEN_SCH_TSFLAG_ERR_STATS];
 	__le32 be_ulmumimo_trig_sch_status[ATH12K_HTT_TX_PDEV_STATS_NUM_TX_ERR_STATUS];
 	__le32 be_ulmumimo_trig_sch_flag_err[ATH12K_HTT_TX_SELFGEN_SCH_TSFLAG_ERR_STATS];
+	__le32 wifi_version;
 } __packed;
 
 struct ath12k_htt_tx_selfgen_bn_sched_status_stats_tlv {
@@ -3534,6 +3548,7 @@ struct ath12k_htt_tx_pdev_mu_mimo_sch_stats_tlv {
 	__le32 be_mu_mimo_sch_nusers[ATH12K_HTT_TX_NUM_BE_MUMIMO_USER_STATS];
 	__le32 be_mu_mimo_per_grp_sz[ATH12K_HTT_TX_NUM_BE_MUMIMO_USER_STATS];
 	__le32 ac_mu_mimo_grp_sz_ext[ATH12K_HTT_TX_NUM_AC_MUMIMO_USER_STATS];
+	__le32 wifi_version;
 } __packed;
 
 struct ath12k_htt_tx_pdev_mumimo_grp_stats_tlv {
@@ -3567,6 +3582,7 @@ struct ath12k_htt_tx_pdev_mpdu_stats_tlv {
 	__le32 ampdu_underrun_usr;
 	__le32 user_index;
 	__le32 tx_sched_mode;
+	__le32 wifi_version;
 } __packed;
 
 struct ath12k_htt_pdev_stats_cca_counters_tlv {
@@ -3596,6 +3612,8 @@ struct ath12k_htt_pdev_cca_stats_hist_v1_tlv {
 #define ATH12K_HTT_TX_NUM_MCS_CNTRS			12
 #define ATH12K_HTT_TX_NUM_EXTRA_MCS_CNTRS		2
 
+#define ATH12K_HTT_MAX_MUMIMO_USERS 4
+
 #define ATH12K_HTT_TX_NUM_OF_SOUNDING_STATS_WORDS \
 	(ATH12K_HTT_TX_PDEV_STATS_NUM_BW_COUNTERS * \
 	 ATH12K_HTT_TX_NUM_AX_MUMIMO_USER_STATS)
@@ -3623,6 +3641,7 @@ struct ath12k_htt_tx_sounding_stats_tlv {
 	__le32 cbf_40[ATH12K_HTT_TXBF_MAX_NUM_OF_MODES];
 	__le32 cbf_80[ATH12K_HTT_TXBF_MAX_NUM_OF_MODES];
 	__le32 cbf_160[ATH12K_HTT_TXBF_MAX_NUM_OF_MODES];
+	__le32 sounding[ATH12K_HTT_TX_NUM_OF_SOUNDING_STATS_WORDS];
 	__le32 cv_nc_mismatch_err;
 	__le32 cv_fcs_err;
 	__le32 cv_frag_idx_mismatch;
@@ -3648,6 +3667,7 @@ struct ath12k_htt_tx_sounding_stats_tlv {
 	__le32 cv_in_use_cnt_exceeded;
 	__le32 cv_found;
 	__le32 cv_not_found;
+	__le32 sounding_320[ATH12K_HTT_TX_NUM_BE_MUMIMO_USER_STATS];
 	__le32 cbf_320[ATH12K_HTT_TXBF_MAX_NUM_OF_MODES];
 	__le32 cv_ntbr_sounding;
 	__le32 cv_found_upload_in_progress;
