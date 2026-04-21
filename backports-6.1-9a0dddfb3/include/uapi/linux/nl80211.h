@@ -1393,8 +1393,8 @@
  *
  * @NL80211_CMD_AP_POWER_SAVE: Command to configure AP powersave parameters.
  *	Command needs %NL80211_ATTR_IFINDEX and NL80211_ATTR_MLO_LINK_ID;
- *	can be used to configure %NL80211_ATTR_PCIE, NL80211_ATTR_DCVS and
- *	NL80211_ATTR_DPS_ASSIST.
+ *	can be used to configure %NL80211_ATTR_PCIE, NL80211_ATTR_DCVS,
+ *	NL80211_ATTR_DPS_ASSIST and NL80211_ATTR_LOW_POWER_20MHZ.
  *
  * @NL80211_CMD_MAX: highest used command number
  * @__NL80211_CMD_AFTER_LAST: internal use
@@ -3100,6 +3100,8 @@ enum nl80211_commands {
  * @NL80211_ATTR_HE_MUEDCA_MODE: Attribute that denotes the mode of seeting MU
  *	EDCA parameters(See enum nl80211_muedca_mode).
  *
+ * @NL80211_ATTR_LOW_POWER_20MHZ: Enable/disable 20 MHz Low Power mode.
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
@@ -3722,6 +3724,7 @@ enum nl80211_attrs {
 
 	NL80211_ATTR_HE_MUEDCA_MODE,
 
+	NL80211_ATTR_LOW_POWER_20MHZ,
 	/* add attributes here, update the policy in nl80211.c */
 
 	__NL80211_ATTR_AFTER_LAST,

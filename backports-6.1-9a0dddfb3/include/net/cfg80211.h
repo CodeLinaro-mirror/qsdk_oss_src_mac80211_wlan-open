@@ -5201,8 +5201,18 @@ enum cfg80211_dcvs_cmds {
 	CFG80211_DCVS_CMD_NO_LIMIT,
 };
 
-#define CFG80211_DPS_ASSIST_CMD_DISABLE		0
-#define CFG80211_DPS_ASSIST_CMD_ENABLE		1
+/**
+ * enum cfg80211_ap_power_save_cmd - AP power save modes
+ *
+ * Defines modes for AP power save type
+ *
+ * @CFG80211_AP_PS_CMD_DISABLE: disable mode for AP power save type
+ * @CFG80211_AP_PS_CMD_ENABLE: enable mode for AP power save type
+ */
+enum cfg80211_ap_power_save_cmd {
+	CFG80211_AP_PS_CMD_DISABLE,
+	CFG80211_AP_PS_CMD_ENABLE,
+};
 
 /**
  * enum cfg80211_ap_power_save_type - AP Powersave types
@@ -5212,11 +5222,13 @@ enum cfg80211_dcvs_cmds {
  * @CFG80211_TYPE_PCIE: PCIe gen/lane and low power state transitions
  * @CFG80211_TYPE_DCVS: Dynamic Clock and Voltage Scaling
  * @CFG80211_TYPE_DPS_ASSIST: Dynamic Power Save AP Assisting Role
+ * @CFG80211_TYPE_20MHZ_LOW_POWER: 20 MHz Low Power mode
  */
 enum cfg80211_ap_power_save_type {
 	CFG80211_TYPE_PCIE		= BIT(0),
 	CFG80211_TYPE_DCVS		= BIT(1),
 	CFG80211_TYPE_DPS_ASSIST	= BIT(2),
+	CFG80211_TYPE_LOW_POWER_20MHZ	= BIT(3),
 };
 
 /**
@@ -5226,12 +5238,14 @@ enum cfg80211_ap_power_save_type {
  * @pcie: PCIe parameters from userspace
  * @dcvs_mode: DCVS mode being set from userspace
  * @dps_assist_enable: Enable/disable DPS AP Assist
+ * @low_power_20mhz_enable: Enable/disable 20 MHz Low Power mode
  */
 struct cfg80211_ap_power_save_params {
 	u32 types;
 	struct cfg80211_pcie_params pcie;
 	u32 dcvs_mode;
 	bool dps_assist_enable;
+	bool low_power_20mhz_enable;
 };
 
 /**
