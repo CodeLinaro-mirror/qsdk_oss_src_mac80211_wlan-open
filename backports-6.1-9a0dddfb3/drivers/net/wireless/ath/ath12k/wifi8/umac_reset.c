@@ -98,6 +98,7 @@ void ath12k_wifi8_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 
 	ath12k_dp_srng_hw_ring_disable(cumac_ab);
 	ath12k_wifi8_srng_hw_ring_disable(cumac_ab);
+	ath12k_wifi8_srng_hw_mgmt_rings_disable(cumac_ab);
 
 	end = jiffies + msecs_to_jiffies(2);
 
@@ -160,6 +161,8 @@ void ath12k_wifi8_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 	ath12k_wifi8_dp_rx_ppe2wbm_idle_buff_init(cumac_ab);
 #endif
 	ath12k_wifi8_mgmt_rx_refill_ring_init(cumac_ab);
+
+	ath12k_dp_tid_cleanup(cumac_ab);
 }
 
 /**

@@ -27,6 +27,7 @@ void ath12k_wifi8_mgmt_deinit(struct ath12k_mgmt *mgmt);
 void ath12k_wifi8_mgmt_rx_refill_ring_init(struct ath12k_base *ab);
 int ath12k_wifi8_mgmt_rx_ring_setup(struct ath12k_base *ab);
 void ath12k_wifi8_srng_hw_mgmt_rings_disable(struct ath12k_base *ab);
+void ath12k_mgmt_srng_hw_disable(struct ath12k_base *ab, struct mgmt_srng *ring);
 
 int ath12k_wifi8_mgmt_wbm_ring_sel_config_qcn9625(struct ath12k_base *ab);
 

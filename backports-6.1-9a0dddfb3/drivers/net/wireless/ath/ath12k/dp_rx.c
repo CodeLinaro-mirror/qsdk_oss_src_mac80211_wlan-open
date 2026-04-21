@@ -79,7 +79,6 @@ size_t ath12k_dp_list_cut_nodes(struct list_head *list,
 			break;
 
 		rx_desc = list_entry(cur, struct ath12k_rx_desc_info, list);
-		rx_desc->in_use = true;
 
 		count--;
 		nodes++;
@@ -532,6 +531,7 @@ void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 			rx_desc->paddr = paddr;
 			rx_desc->vaddr = skb->data;
 			rx_desc->is_frag = 0;
+			rx_desc->in_use = true;
 
 			IPA_SET_RX_BUF_SMMU_MAP(ab, skb);
 		}
