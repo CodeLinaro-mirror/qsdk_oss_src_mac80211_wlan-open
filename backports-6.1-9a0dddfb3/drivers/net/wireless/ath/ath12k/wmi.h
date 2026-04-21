@@ -1006,8 +1006,14 @@ enum wmi_tlv_cmd_id {
 	WMI_ENERGY_MGMT_PCIE_LPM_CMDID,
 	/** WMI cmd used to control Clock and Voltage config */
 	WMI_ENERGY_MGMT_DCVS_CONFIG_CMDID,
+	/** WMI cmd used to control AP Dynamic Power Save feature */
+	WMI_ENERGY_MGMT_EDPS_CONFIG_CMDID,
+	/** WMI cmd used to control periodic unavailability operation */
+	WMI_ENERGY_MGMT_PUO_CONFIG_CMDID,
+	/** WMI cmd used to control ECO mode config */
+	WMI_ENERGY_MGMT_ECO_MODE_CONFIG_CMDID,
 	/** Command to Handle Energy Management OEM's opaque data */
-	WMI_ENERGY_MGMT_OEM_DATA_CMDID = 0x4E007,
+	WMI_ENERGY_MGMT_OEM_DATA_CMDID,
 };
 
 enum wmi_tlv_event_id {
@@ -2512,6 +2518,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_ENERGY_MGMT_PCIE_CMD_FIXED_PARAM = 0x50E,
 	WMI_TAG_ENERGY_MGMT_PCIE_LPM__CMD_FIXED_PARAM = 0x50F,
 	WMI_TAG_ENERGY_MGMT_DCVS_CMD_FIXED_PARAM = 0x510,
+	WMI_TAG_ENERGY_MGMT_ECO_MODE_CMD_FIXED_PARAM = 0x513,
 	WMI_TAG_MGMT_MPDU_FLOWQ_PARAMS = 0x514,
 	WMI_TAG_MGMT_MSDU_FLOWQ_PARAMS = 0x515,
 	WMI_TAG_HOL_MSDU_FLOWQ_PARAMS = 0x516,
@@ -9974,6 +9981,17 @@ struct wmi_energy_mgmt_dps_assist_cmd {
 	__le32 config;
 } __packed;
 
+enum wmi_20mhz_low_power_config_type {
+	WMI_LOW_POWER_20MHZ_DISABLE,
+	WMI_LOW_POWER_20MHZ_ENABLE,
+};
+
+struct wmi_energy_mgmt_eco_mode_cmd {
+	__le32 tlv_header;
+	__le32 enable;
+	__le32 pdev_id;
+};
+
 struct wmi_energy_mgmt_oem_data_cmd {
 	__le32 tlv_header;
 	__le32 content_type;
@@ -10321,6 +10339,7 @@ int ath12k_wmi_send_dcvs_cmd(struct ath12k *ar, u32 config);
 int ath12k_wmi_send_dps_assist_cmd(struct ath12k *ar, u32 vdev_id, u32 config);
 int ath12k_wmi_send_tdma_schedule_request(struct ath12k *ar,
 					  const struct ath12k_tdma_sched_info *sched);
+int ath12k_wmi_send_low_power_20mhz(struct ath12k *ar, bool config);
 int ath12k_wmi_send_energy_mgmt_oem_data(struct ath12k *ar, u32 content_type,
 					 u32 num_bytes_valid, u8 *data);
 #endif

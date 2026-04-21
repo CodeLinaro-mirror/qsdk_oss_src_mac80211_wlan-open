@@ -29700,6 +29700,14 @@ static int ath12k_mac_op_dps_assist(struct ath12k *ar, u32 vdev_id,
 						      WMI_DPS_ASSIST_DISABLE);
 }
 
+static int ath12k_mac_op_low_power_20mhz(struct ath12k *ar, bool low_power_20mhz_enable)
+{
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	return ath12k_wmi_send_low_power_20mhz(ar, low_power_20mhz_enable);
+
+}
+
 int ath12k_mac_op_ap_power_save(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 				int link_id,
 				struct cfg80211_ap_power_save_params *params)
@@ -29732,6 +29740,13 @@ int ath12k_mac_op_ap_power_save(struct ieee80211_hw *hw, struct ieee80211_vif *v
 	if (params->types & CFG80211_TYPE_DPS_ASSIST) {
 		ret = ath12k_mac_op_dps_assist(arvif->ar, arvif->vdev_id,
 					       params->dps_assist_enable);
+		if (ret)
+			return ret;
+	}
+
+	if (params->types & CFG80211_TYPE_LOW_POWER_20MHZ) {
+		ret = ath12k_mac_op_low_power_20mhz(arvif->ar,
+						    params->low_power_20mhz_enable);
 		if (ret)
 			return ret;
 	}

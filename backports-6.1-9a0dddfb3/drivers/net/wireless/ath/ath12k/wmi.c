@@ -17197,6 +17197,43 @@ int ath12k_wmi_send_dps_assist_cmd(struct ath12k *ar, u32 vdev_id, u32 config)
 	return ret;
 }
 
+int ath12k_wmi_send_low_power_20mhz(struct ath12k *ar, bool config)
+{
+	struct wmi_energy_mgmt_eco_mode_cmd *cmd;
+	struct sk_buff *skb;
+	u32 wmi_config;
+	int ret, len;
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "WMI Set 20 MHz Low Power mode to %s\n",
+		   config ? "enable" : "disable");
+
+	len = sizeof(*cmd);
+	skb = ath12k_wmi_alloc_skb(ar->wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_energy_mgmt_eco_mode_cmd *)skb->data;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(
+					     WMI_TAG_ENERGY_MGMT_ECO_MODE_CMD_FIXED_PARAM,
+					     len);
+	cmd->pdev_id = cpu_to_le32(ath12k_mac_get_target_pdev_id(ar));
+
+	if (config)
+		wmi_config = WMI_LOW_POWER_20MHZ_ENABLE;
+	else
+		wmi_config = WMI_LOW_POWER_20MHZ_DISABLE;
+
+	cmd->enable = cpu_to_le32(wmi_config);
+
+	ret = ath12k_wmi_cmd_send(ar->wmi, skb, WMI_ENERGY_MGMT_ECO_MODE_CONFIG_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "WMI failed to send 20 MHz Low Power config command\n");
+		dev_kfree_skb(skb);
+	}
+	return ret;
+}
+
 static void ath12k_vdev_tpc_ie_power_event(struct ath12k_base *ab,
 					   struct sk_buff *skb)
 {
