@@ -23591,7 +23591,7 @@ ath12k_mac_set_mscs(struct ieee80211_hw *hw, struct ath12k_link_sta *arsta,
 		if (peer->mscs_session_exists)
 			goto send_fail_resp;
 		peer->mscs_session_exists = true;
-		dp_vif->mscs_hlos_tid_override = true;
+		dp_vif->mscs_hlos_tid_override++;
 		fallthrough;
 	case IEEE80211_QM_CHANGE_REQ:
 		peer->mscs_ctxt.user_priority_bitmap =
@@ -23602,20 +23602,35 @@ ath12k_mac_set_mscs(struct ieee80211_hw *hw, struct ath12k_link_sta *arsta,
 			qm_req_desc->tclas_mask;
 
 		ath12k_dbg(ar->ab, ATH12K_DBG_QOS,
-			   "MSCS: %s: peer %pM, bmap 0x%x, limit %u mask 0x%x",
+			   "MSCS: %s: peer %pM, bmap 0x%x, limit %u, mask 0x%x",
 			   (req_type == IEEE80211_QM_CHANGE_REQ) ? "CHANGE" :
 			   "ADD",
 			   peer->addr,
 			   peer->mscs_ctxt.user_priority_bitmap,
 			   peer->mscs_ctxt.user_priority_limit,
 			   peer->mscs_ctxt.tclas_mask);
+
+		ath12k_dbg(ar->ab, ATH12K_DBG_QOS,
+			   "mscs_session_exists %u, mscs_tid_override %u",
+			   peer->mscs_session_exists,
+			   dp_vif->mscs_hlos_tid_override);
 		break;
 	case IEEE80211_QM_REMOVE_REQ:
 		peer->mscs_session_exists = false;
-		dp_vif->mscs_hlos_tid_override = false;
+		if (dp_vif->mscs_hlos_tid_override > 0)
+			dp_vif->mscs_hlos_tid_override--;
+		else {
+			ath12k_warn(ar->ab,
+				    "MSCS: TID override counter underflow");
+			goto send_fail_resp;
+		}
+
 		ath12k_dbg(ar->ab, ATH12K_DBG_QOS,
 			   "MSCS: REMOVE peer %pM, mscs_session_exists %u",
 			   peer->addr, peer->mscs_session_exists);
+
+		ath12k_dbg(ar->ab, ATH12K_DBG_QOS, "mscs_tid_override %u",
+			   dp_vif->mscs_hlos_tid_override);
 		break;
 	default:
 		goto send_fail_resp;

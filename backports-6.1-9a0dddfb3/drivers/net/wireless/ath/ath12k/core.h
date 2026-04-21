@@ -802,7 +802,7 @@ struct ath12k_dp_vif {
 	int ppe_vp_num;
 	int ppe_core_mask;
 	u8 ppe_vp_type;
-	bool mscs_hlos_tid_override;
+	u8 mscs_hlos_tid_override;
 	u32 monitor_flags;
 	struct ath12k_dp_preserved_stats link_vif_delete_stats;
 
