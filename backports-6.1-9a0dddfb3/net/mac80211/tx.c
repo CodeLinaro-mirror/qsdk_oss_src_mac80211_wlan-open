@@ -5400,6 +5400,10 @@ netdev_tx_t __ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 		goto tx_offload;
 	} else if (unlikely((IS_ERR_OR_NULL(sta) && is_mcast_offload))) {
 		sta = NULL;
+		if (ieee80211_vif_get_num_mcast_if(sdata) == 0) {
+			kfree_skb(skb);
+			goto out;
+		}
 		goto tx_offload;
 	} else if (unlikely(IS_ERR_OR_NULL(sta) || !sta->uploaded ||
 	    (!test_sta_flag(sta, WLAN_STA_AUTHORIZED) && !is_eapol) ||
