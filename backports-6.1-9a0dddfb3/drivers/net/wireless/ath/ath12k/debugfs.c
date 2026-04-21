@@ -8195,6 +8195,7 @@ static ssize_t ath12k_write_primary_link(struct file *file,
 	 * ath12k_mac_ahsta_get_pri_link_id().
 	 */
 	mutex_lock(&ah->hw_mutex);
+	ahvif->overide_primary_umac = true;
 	if (ahvif->vif->type == NL80211_IFTYPE_STATION) {
 		ahvif->hw_link_id = primary_link;
 		mutex_unlock(&ah->hw_mutex);
@@ -8228,7 +8229,6 @@ static ssize_t ath12k_write_primary_link(struct file *file,
 	}
 
 	ahvif->primary_link_id = arvif->link_id;
-	ahvif->overide_primary_umac = true;
 	mutex_unlock(&ah->hw_mutex);
 	return count;
 }
