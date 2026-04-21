@@ -591,27 +591,47 @@ const struct ath12k_hal_reset_rings qcn9625_reset_rings[HAL_RESET_RING_TYPE_MAX]
 		.srng_misc_reg = 0x00F080BC,
 		.hp = 0x00F0B008,
 	},
-	[HAL_TCL2TQM_ENT_RING] = {
+	[HAL_TCL_TCL2TQM_ENT_RING] = {
+		.srng_misc_reg = 0x00F14C1C,
+		.hp = 0x00F17060,
+	},
+	[HAL_TQM_TCL2TQM_ENT_RING] = {
 		.consumer_prefetch_timer = 0x00F08074,
 		.srng_misc_reg = 0x00F08044,
 		.hp = 0x00F0B000,
 	},
-	[HAL_WBM2TQM_DESC_RING] = {
+	[HAL_WBM_WBM2TQM_DESC_RING] = {
+		.srng_misc_reg = 0x00F0434C,
+		.hp = 0x00F07020,
+	},
+	[HAL_TQM_WBM2TQM_DESC_RING] = {
 		.consumer_prefetch_timer = 0x00F083BC,
 		.srng_misc_reg = 0x00F0838C,
 		.hp = 0x00F0B038,
 	},
-	[HAL_TQM2WBM_REL_RING] = {
+	[HAL_TQM_TQM2WBM_REL_RING] = {
+		.srng_misc_reg = 0x00F08404,
+		.hp = 0x00F0B040,
+	},
+	[HAL_WBM_TQM2WBM_REL_RING] = {
 		.consumer_prefetch_timer = 0x00F0419C,
 		.srng_misc_reg = 0x00F0416C,
 		.hp = 0x00F07000,
 	},
-	[HAL_WBM2REO_DESC_RING] = {
+	[HAL_WBM_WBM2REO_DESC_RING] = {
+		.srng_misc_reg = 0x00F05AE0,
+		.hp = 0x00F07170,
+	},
+	[HAL_REO_WBM2REO_DESC_RING] = {
 		.consumer_prefetch_timer = 0x00F22294,
 		.srng_misc_reg = 0x00F22264,
 		.hp = 0x00F25018,
 	},
-	[HAL_REO2WBM_REL_RING] = {
+	[HAL_REO_REO2WBM_REL_RING] = {
+		.srng_misc_reg = 0x00F230A4,
+		.hp = 0x00F25100,
+	},
+	[HAL_WBM_REO2WBM_REL_RING] = {
 		.consumer_prefetch_timer = 0x00F04214,
 		.srng_misc_reg = 0x00F041E4,
 		.hp = 0x00F07008,
