@@ -225,11 +225,13 @@ static void ath12k_wifi8_dp_umac_deinit(struct ath12k_dp *dp)
 
 	if (!dp_wifi8->cumac) {
 		ath12k_warn(ab, "Skipping ring deinit for non-cumac target");
+		dp_wifi8->init_done = false;
 		return;
 	}
 
 	if (!dp_hw_group_wifi8->cumac_dp) {
 		ath12k_warn(ab, "CUMAC init is not complete. Skip deinit");
+		dp_wifi8->init_done = false;
 		return;
 	}
 
@@ -261,6 +263,7 @@ static void ath12k_wifi8_dp_umac_deinit(struct ath12k_dp *dp)
 	if (dp_hw_group_wifi8->mec_timer_key)
 		ath12k_dp_hw_group_del_timer_entry(dp->dp_hw_grp,
 						   dp_hw_group_wifi8->mec_timer_key);
+	dp_wifi8->init_done = false;
 	dp_hw_group_wifi8->cumac_dp = NULL;
 	ath12k_info(ab, "CUMAC de-init successful");
 }
@@ -332,14 +335,21 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 
 	ath12k_info(ab, "chip_id: %d, CUMAC: %d\n", ab->device_id, dp_wifi8->cumac);
 
+	if (dp_wifi8->init_done) {
+		ath12k_info(ab, "DP init is already done. Skip re-init");
+		return 0;
+	}
+
 	if (!dp_wifi8->cumac) {
-		ath12k_warn(ab, "Skipping ring init for non-cumac target");
 		ath12k_wifi8_enable_hif_interrupts(dp, ath12k_wifi8_non_cumac_dp_service_srng);
+		dp_wifi8->init_done = true;
+		ath12k_info(ab, "Skipping ring init for non-cumac target");
 		return 0;
 	}
 
 	if (dp_hw_group_wifi8->cumac_dp) {
-		ath12k_warn(ab, "CUMAC init is already done. Skip re-init");
+		ath12k_info(ab, "CUMAC init is already done. Skip re-init");
+		dp_wifi8->init_done = true;
 		return 0;
 	}
 
@@ -507,7 +517,7 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ab->dp->ppe.ppe_ops->ath12k_ppeds_interrupt_start(ab);
 #endif
-
+	dp_wifi8->init_done = true;
 	ath12k_info(ab, "CUMAC init successful");
 	return 0;
 fail_pn_counter_page_free:
