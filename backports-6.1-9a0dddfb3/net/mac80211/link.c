@@ -330,13 +330,41 @@ static int ieee80211_check_dup_link_addrs(struct ieee80211_sub_if_data *sdata)
 			if (is_zero_ether_addr(addr1))
 				continue;
 
+			/* Skip unassociated STA interfaces */
+			if (!is_same_sdata &&
+			    other_sdata->vif.type == NL80211_IFTYPE_STATION) {
+				struct ieee80211_if_managed *other_ifmgd =
+					&other_sdata->u.mgd;
+
+				if (!other_ifmgd->associated)
+					continue;
+			}
+
+			/*
+			 * Skip STA-vs-AP duplicate address checks for
+			 * unassociated STAs
+			 */
+			if (!is_same_sdata &&
+			    sdata->vif.type == NL80211_IFTYPE_STATION &&
+			    other_sdata->vif.type == NL80211_IFTYPE_AP) {
+				struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
+
+				if (!ifmgd->associated)
+					continue;
+			}
+
 			/* Compare link address against other_sdata's MLD address */
 			addr2 = other_sdata->vif.addr;
 			if (!is_same_sdata && !is_zero_ether_addr(addr2) &&
 			    ether_addr_equal(addr1, addr2) &&
 			    !identical_mac_addr_allowed(sdata->vif.type,
-							other_sdata->vif.type))
+							other_sdata->vif.type)) {
+				sdata_err(sdata, "DUP MAC link[%d] addr %pM -> %s, valid_links=0x%x vif types: %d/%d\n",
+					  link_id, addr2, other_sdata->name,
+					  other_sdata->vif.valid_links,
+					  sdata->vif.type, other_sdata->vif.type);
 				return -ENOTUNIQ;
+			}
 
 			for (o_link_id = 0;
 			     o_link_id < IEEE80211_MLD_MAX_NUM_LINKS;
@@ -361,8 +389,13 @@ static int ieee80211_check_dup_link_addrs(struct ieee80211_sub_if_data *sdata)
 				if (ether_addr_equal(addr1, addr2) &&
 				    (is_same_sdata ||
 				    !identical_mac_addr_allowed(sdata->vif.type,
-								other_sdata->vif.type)))
+								other_sdata->vif.type))) {
+					sdata_err(sdata, "DUP MAC link[%d] addr %pM -> %s:link[%d], vif types: %d/%d\n",
+						  link_id, addr2, other_sdata->name,
+						  o_link_id, sdata->vif.type,
+						  other_sdata->vif.type);
 					return -ENOTUNIQ;
+				}
 			}
 		}
 	}
