@@ -3774,6 +3774,46 @@ u64 ieee80211_calculate_rx_timestamp(struct ieee80211_local *local,
 
 	/* Fill cfg80211 rate info */
 	switch (status->encoding) {
+	case RX_ENC_UHR:
+		ri.flags |= RATE_INFO_FLAGS_UHR_MCS;
+		ri.mcs = status->rate_idx;
+		ri.nss = status->nss;
+		ri.eht_ru_alloc = status->uhr.ru;
+		ri.eht_gi = status->uhr.gi;
+		if (status->uhr.elr)
+			ri.flags |= RATE_INFO_FLAGS_UHR_ELR_MCS;
+		if (status->uhr.im)
+			ri.flags |= RATE_INFO_FLAGS_UHR_IM;
+		/*
+		 * See IEEE P802.11bn/D1.4, Clause 38.3.7 (UHR PPDU formats)
+		 * and Table 38-19 (Timing-related constants).
+		 *
+		 * Fixed preamble overhead before DATA (all UHR PPDU types):
+		 *   L-STF  (38.3.10.2):   8 us
+		 *   L-LTF  (38.3.10.3):   8 us
+		 *   L-SIG  (38.3.10.4):   4 us
+		 *   RL-SIG (38.3.10.5):   4 us
+		 *   U-SIG  (38.3.10.6):   8 us
+		 *   UHR-SIG(38.3.10.8):   8 us
+		 *   UHR-STF(38.3.15.10):  4 us
+		 *                        ------
+		 *                        44 us
+		 *
+		 * Variable portion (38.3.15.11, Table 38-40, Table 38-41):
+		 *   UHR-LTF(s): n_ltf x 4 us  (n_ltf signaled in UHR-SIG)
+		 */
+		if (mactime_plcp_start) {
+			mpdu_offset += 2;
+			ts += 44;
+
+			/*
+			 * TODO (38.3.15.11, Table 38-40):
+			 * Add UHR-LTF durations: n_ltf x 4 us.
+			 * n_ltf is signaled in UHR-SIG and must be provided
+			 * by the driver via a new ieee80211_rx_status field.
+			 */
+		}
+		break;
 	case RX_ENC_EHT:
 		ri.flags |= RATE_INFO_FLAGS_EHT_MCS;
 		ri.mcs = status->rate_idx;
