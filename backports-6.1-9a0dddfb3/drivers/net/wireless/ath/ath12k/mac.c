@@ -5459,10 +5459,6 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 	INIT_LIST_HEAD(&arvif->peer_migrate_list);
 
 	ath12k_mac_init_arvif_extn(ahvif);
-#ifdef CPTCFG_EXT_IPA_STATS
-	arvif->extn.stats
-		= kzalloc(sizeof(struct ath12k_dp_ipa_stats_vif_hw_stats), GFP_KERNEL);
-#endif
 	wiphy_work_init(&arvif->set_dscp_tid_work,
 			ath12k_set_dscp_tid_work);
 
@@ -5633,6 +5629,10 @@ ath12k_mac_assign_link_vif(struct ath12k_hw *ah, struct ieee80211_vif *vif,
 			return NULL;
 	}
 
+#ifdef CPTCFG_EXT_IPA_STATS
+	arvif->extn.stats
+		= kzalloc(sizeof(struct ath12k_dp_ipa_stats_vif_hw_stats), GFP_KERNEL);
+#endif
 	ath12k_mac_init_arvif(ahvif, arvif, link_id, is_bridge_vdev);
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
