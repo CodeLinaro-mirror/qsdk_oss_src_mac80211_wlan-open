@@ -483,6 +483,9 @@ enum packet_std {
 	DOT11_AX = 4,
 	DOT11_BA = 5,
 	DOT11_BE = 6,
+	DOT11_AZ = 7,
+	DOT11_N_GF = 8,
+	DOT11_BN = 9,	/* UHR */
 	DOT11_MAX,
 };
 
