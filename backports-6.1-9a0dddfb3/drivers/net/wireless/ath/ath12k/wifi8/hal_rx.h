@@ -165,13 +165,13 @@ struct hal_rx_msdu_list {
 #define HAL_RX_MPDU_ERR_MSDU_LEN		BIT(5)
 #define HAL_RX_MPDU_ERR_MPDU_LEN		BIT(6)
 
-enum hal_eht_bw {
-	HAL_EHT_BW_20,
-	HAL_EHT_BW_40,
-	HAL_EHT_BW_80,
-	HAL_EHT_BW_160,
-	HAL_EHT_BW_320_1,
-	HAL_EHT_BW_320_2,
+enum hal_bw {
+	HAL_BW_20,
+	HAL_BW_40,
+	HAL_BW_80,
+	HAL_BW_160,
+	HAL_BW_320_1,
+	HAL_BW_320_2,
 };
 
 enum hal_mon_reception_type {

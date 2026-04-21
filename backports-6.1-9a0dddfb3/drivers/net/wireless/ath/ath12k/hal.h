@@ -823,6 +823,11 @@ struct hal_rx_radiotap_eht {
 	__le32 data[9];
 };
 
+struct hal_rx_radiotap_uhr {
+	__le32 known;
+	__le32 data[9];
+};
+
 struct hal_rx_desc_data {
 	u32 freq;
 	u32 err_bitmap;

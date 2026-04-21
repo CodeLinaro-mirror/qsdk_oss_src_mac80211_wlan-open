@@ -666,8 +666,17 @@ ath12k_wifi8_hal_mon_parse_he_sig_su(const struct hal_rx_he_sig_a_su_info *he_si
 }
 
 static __always_inline void
-ath12k_wifi8_hal_mon_rx_parse_u_sig_cmn(const struct hal_mon_usig_cmn *cmn,
+ath12k_wifi8_hal_mon_rx_get_phy_version(const struct hal_mon_usig_cmn *cmn,
 					struct hal_rx_mon_ppdu_info *ppdu_info)
+{
+	ppdu_info->u_sig_info.phy_version =
+			le32_get_bits(cmn->info0,
+				      HAL_RX_USIG_CMN_INFO0_PHY_VERSION);
+}
+
+static __always_inline void
+ath12k_wifi8_hal_mon_rx_parse_u_sig_eht_cmn(const struct hal_mon_usig_cmn *cmn,
+					    struct hal_rx_mon_ppdu_info *ppdu_info)
 {
 	u32 common;
 
@@ -700,28 +709,91 @@ ath12k_wifi8_hal_mon_rx_parse_u_sig_cmn(const struct hal_mon_usig_cmn *cmn,
 	switch (ppdu_info->u_sig_info.bw) {
 	default:
 		fallthrough;
-	case HAL_EHT_BW_20:
+	case HAL_BW_20:
 		ppdu_info->bw = HAL_RX_BW_20MHZ;
 		break;
-	case HAL_EHT_BW_40:
+	case HAL_BW_40:
 		ppdu_info->bw = HAL_RX_BW_40MHZ;
 		break;
-	case HAL_EHT_BW_80:
+	case HAL_BW_80:
 		ppdu_info->bw = HAL_RX_BW_80MHZ;
 		break;
-	case HAL_EHT_BW_160:
+	case HAL_BW_160:
 		ppdu_info->bw = HAL_RX_BW_160MHZ;
 		break;
-	case HAL_EHT_BW_320_1:
-	case HAL_EHT_BW_320_2:
+	case HAL_BW_320_1:
+	case HAL_BW_320_2:
 		ppdu_info->bw = HAL_RX_BW_320MHZ;
 		break;
 	}
 }
 
 static __always_inline void
-ath12k_wifi8_hal_mon_rx_parse_u_sig_tb(const struct hal_mon_usig_tb *usig_tb,
-				       struct hal_rx_mon_ppdu_info *ppdu_info)
+ath12k_wifi8_hal_mon_rx_parse_u_sig_uhr_cmn(const struct hal_mon_usig_cmn *cmn,
+					    struct hal_rx_mon_ppdu_info *ppdu_info)
+{
+	u32 common;
+
+	ppdu_info->u_sig_info.phy_version =
+			le32_get_bits(cmn->info0,
+				      HAL_RX_USIG_CMN_INFO0_PHY_VERSION);
+	ppdu_info->u_sig_info.bw = le32_get_bits(cmn->info0,
+						 HAL_RX_USIG_CMN_INFO0_BW);
+	ppdu_info->u_sig_info.ul_dl = le32_get_bits(cmn->info0,
+						    HAL_RX_USIG_CMN_INFO0_UL_DL);
+
+	common = __le32_to_cpu(ppdu_info->u_sig_info.uhr_usig.common);
+
+	/* until UHR SIG radiotap header stabilizes, we will use EHT enums
+	 * for common non-impacted fields
+	 */
+	common |= IEEE80211_RADIOTAP_UHR_USIG_COMMON_PHY_VER_KNOWN |
+		  IEEE80211_RADIOTAP_UHR_USIG_COMMON_BW_KNOWN |
+		  IEEE80211_RADIOTAP_UHR_USIG_COMMON_UL_DL_KNOWN |
+		  IEEE80211_RADIOTAP_UHR_USIG_COMMON_BSS_COLOR_KNOWN |
+		  IEEE80211_RADIOTAP_UHR_USIG_COMMON_TXOP_KNOWN |
+		  ATH12K_LE32_DEC_ENC(cmn->info0,
+				      HAL_RX_USIG_CMN_INFO0_PHY_VERSION,
+				      IEEE80211_RADIOTAP_UHR_USIG_COMMON_PHY_VER) |
+		  ATH12K_LE32_DEC_ENC(cmn->info0,
+				      HAL_RX_USIG_CMN_INFO0_BW,
+				      IEEE80211_RADIOTAP_UHR_USIG_COMMON_BW) |
+		  u32_encode_bits(ppdu_info->u_sig_info.ul_dl,
+				  IEEE80211_RADIOTAP_UHR_USIG_COMMON_UL_DL) |
+		  ATH12K_LE32_DEC_ENC(cmn->info0,
+				      HAL_RX_USIG_CMN_INFO0_BSS_COLOR,
+				      IEEE80211_RADIOTAP_UHR_USIG_COMMON_BSS_COLOR) |
+		  ATH12K_LE32_DEC_ENC(cmn->info0,
+				      HAL_RX_USIG_CMN_INFO0_TXOP,
+				      IEEE80211_RADIOTAP_UHR_USIG_COMMON_TXOP);
+
+	ppdu_info->u_sig_info.uhr_usig.common = cpu_to_le32(common);
+
+	switch (ppdu_info->u_sig_info.bw) {
+	default:
+		fallthrough;
+	case HAL_BW_20:
+		ppdu_info->bw = HAL_RX_BW_20MHZ;
+		break;
+	case HAL_BW_40:
+		ppdu_info->bw = HAL_RX_BW_40MHZ;
+		break;
+	case HAL_BW_80:
+		ppdu_info->bw = HAL_RX_BW_80MHZ;
+		break;
+	case HAL_BW_160:
+		ppdu_info->bw = HAL_RX_BW_160MHZ;
+		break;
+	case HAL_BW_320_1:
+	case HAL_BW_320_2:
+		ppdu_info->bw = HAL_RX_BW_320MHZ;
+		break;
+	}
+}
+
+static __always_inline void
+ath12k_wifi8_hal_mon_rx_parse_u_sig_eht_tb(const struct hal_mon_usig_tb *usig_tb,
+					   struct hal_rx_mon_ppdu_info *ppdu_info)
 {
 	struct ieee80211_radiotap_eht_usig *usig = &ppdu_info->u_sig_info.usig;
 	enum ieee80211_radiotap_eht_usig_tb spatial_reuse1, spatial_reuse2;
@@ -767,6 +839,138 @@ ath12k_wifi8_hal_mon_rx_parse_u_sig_tb(const struct hal_mon_usig_tb *usig_tb,
 		IEEE80211_RADIOTAP_EHT_USIG2_TB_B11_B15_DISREGARD |
 		IEEE80211_RADIOTAP_EHT_USIG2_TB_B16_B19_CRC |
 		IEEE80211_RADIOTAP_EHT_USIG2_TB_B20_B25_TAIL;
+
+	usig->common = cpu_to_le32(common);
+	usig->value = cpu_to_le32(value);
+	usig->mask = cpu_to_le32(mask);
+}
+
+static __always_inline void
+ath12k_wifi8_hal_mon_rx_parse_u_sig_uhr_tb(const struct hal_mon_usig_tb *usig_tb,
+					   struct hal_rx_mon_ppdu_info *ppdu_info)
+{
+	struct ieee80211_radiotap_uhr_usig *usig = &ppdu_info->u_sig_info.uhr_usig;
+	enum ieee80211_radiotap_uhr_usig_tb spatial_reuse1, spatial_reuse2;
+	u32 common, value, mask;
+
+	spatial_reuse1 = IEEE80211_RADIOTAP_UHR_USIG2_TB_B3_B6_SPATIAL_REUSE_1;
+	spatial_reuse2 = IEEE80211_RADIOTAP_UHR_USIG2_TB_B7_B10_SPATIAL_REUSE_2;
+
+	common = __le32_to_cpu(usig->common);
+	value = __le32_to_cpu(usig->value);
+	mask = __le32_to_cpu(usig->mask);
+
+	ppdu_info->u_sig_info.ppdu_type_comp_mode =
+				le32_get_bits(usig_tb->info0,
+					      HAL_RX_USIG_TB_INFO0_PPDU_TYPE_COMP_MODE);
+
+	common |= ATH12K_LE32_DEC_ENC(usig_tb->info0,
+				      HAL_RX_USIG_TB_INFO0_RX_INTEG_CHECK_PASS,
+				      IEEE80211_RADIOTAP_UHR_USIG_COMMON_BAD_USIG_CRC);
+
+	value |= IEEE80211_RADIOTAP_UHR_USIG1_TB_B20_B25_DISREGARD |
+		 u32_encode_bits(ppdu_info->u_sig_info.ppdu_type_comp_mode,
+				 IEEE80211_RADIOTAP_UHR_USIG2_TB_B0_B1_PPDU_TYPE) |
+		 IEEE80211_RADIOTAP_UHR_USIG2_TB_B2_VALIDATE |
+		 ATH12K_LE32_DEC_ENC(usig_tb->info0,
+				     HAL_RX_USIG_TB_INFO0_SPATIAL_REUSE_1,
+				     spatial_reuse1) |
+		 ATH12K_LE32_DEC_ENC(usig_tb->info0,
+				     HAL_RX_USIG_TB_INFO0_SPATIAL_REUSE_2,
+				     spatial_reuse2) |
+		 IEEE80211_RADIOTAP_UHR_USIG2_TB_B11_B15_DISREGARD |
+		 ATH12K_LE32_DEC_ENC(usig_tb->info0,
+				     HAL_RX_USIG_TB_INFO0_CRC,
+				     IEEE80211_RADIOTAP_UHR_USIG2_TB_B16_B19_CRC) |
+		 ATH12K_LE32_DEC_ENC(usig_tb->info0,
+				     HAL_RX_USIG_TB_INFO0_TAIL,
+				     IEEE80211_RADIOTAP_UHR_USIG2_TB_B20_B25_TAIL);
+
+	mask |= IEEE80211_RADIOTAP_UHR_USIG1_TB_B20_B25_DISREGARD |
+		IEEE80211_RADIOTAP_UHR_USIG2_TB_B0_B1_PPDU_TYPE |
+		IEEE80211_RADIOTAP_UHR_USIG2_TB_B2_VALIDATE |
+		spatial_reuse1 | spatial_reuse2 |
+		IEEE80211_RADIOTAP_UHR_USIG2_TB_B11_B15_DISREGARD |
+		IEEE80211_RADIOTAP_UHR_USIG2_TB_B16_B19_CRC |
+		IEEE80211_RADIOTAP_UHR_USIG2_TB_B20_B25_TAIL;
+
+	usig->common = cpu_to_le32(common);
+	usig->value = cpu_to_le32(value);
+	usig->mask = cpu_to_le32(mask);
+}
+
+static __always_inline void
+ath12k_wifi8_hal_mon_rx_parse_u_sig_uhr_mu(const struct hal_mon_usig_mu *usig_mu,
+					   struct hal_rx_mon_ppdu_info *ppdu_info)
+{
+	struct ieee80211_radiotap_uhr_usig *usig = &ppdu_info->u_sig_info.uhr_usig;
+	enum ieee80211_radiotap_uhr_usig_mu sig_symb, punc;
+	u32 common, value, mask, bss_color2_mask;
+
+	common = __le32_to_cpu(usig->common);
+	value = __le32_to_cpu(usig->value);
+	mask = __le32_to_cpu(usig->mask);
+
+	ppdu_info->u_sig_info.cosr_cobf_disable =
+		le32_get_bits(usig_mu->info0,
+			      HAL_RX_USIG_MU_INFO0_VALIDATE_1_OR_COBF_COSR_DISABLE);
+
+	if (!ppdu_info->u_sig_info.cosr_cobf_disable) {
+		bss_color2_mask = IEEE80211_RADIOTAP_UHR_USIG1_MU_B20_B25_BSS_COLOR_2;
+		value |= ATH12K_LE32_DEC_ENC(usig_mu->info0,
+					     HAL_RX_USIG_UHR_CMN_INFO0_BSS_COLOR_2,
+					     bss_color2_mask);
+	} else {
+		value |= IEEE80211_RADIOTAP_UHR_USIG1_MU_B20_B24_DISREGARD |
+			IEEE80211_RADIOTAP_UHR_USIG1_MU_B25_VALIDATE;
+	}
+
+	sig_symb = IEEE80211_RADIOTAP_UHR_USIG2_MU_B11_B15_NUM_UHR_SYG_SYM;
+	punc = IEEE80211_RADIOTAP_UHR_USIG2_MU_B3_B7_PUNCTURED_INFO;
+
+	ppdu_info->u_sig_info.ppdu_type_comp_mode =
+				le32_get_bits(usig_mu->info0,
+					      HAL_RX_USIG_MU_INFO0_PPDU_TYPE_COMP_MODE);
+	ppdu_info->u_sig_info.eht_sig_mcs =
+				le32_get_bits(usig_mu->info0,
+					      HAL_RX_USIG_MU_INFO0_EHT_SIG_MCS);
+	ppdu_info->u_sig_info.num_eht_sig_sym =
+				le32_get_bits(usig_mu->info0,
+					      HAL_RX_USIG_MU_INFO0_NUM_EHT_SIG_SYM);
+
+	common |= ATH12K_LE32_DEC_ENC(usig_mu->info0,
+				      HAL_RX_USIG_MU_INFO0_RX_INTEG_CHECK_PASS,
+				      IEEE80211_RADIOTAP_UHR_USIG_COMMON_BAD_USIG_CRC);
+
+	value |= u32_encode_bits(ppdu_info->u_sig_info.ppdu_type_comp_mode,
+				 IEEE80211_RADIOTAP_UHR_USIG2_MU_B0_B1_PPDU_TYPE) |
+		 u32_encode_bits(ppdu_info->u_sig_info.cosr_cobf_disable,
+				 IEEE80211_RADIOTAP_UHR_USIG2_MU_B2_COBF_OR_COSR) |
+		 ATH12K_LE32_DEC_ENC(usig_mu->info0,
+				     HAL_RX_USIG_MU_INFO0_PUNC_CH_INFO,
+				     punc) |
+		 IEEE80211_RADIOTAP_UHR_USIG2_MU_B8_VALIDATE |
+		 u32_encode_bits(ppdu_info->u_sig_info.eht_sig_mcs,
+				 IEEE80211_RADIOTAP_UHR_USIG2_MU_B9_B10_SIG_MCS) |
+		 u32_encode_bits(ppdu_info->u_sig_info.num_eht_sig_sym,
+				 sig_symb) |
+		 ATH12K_LE32_DEC_ENC(usig_mu->info0,
+				     HAL_RX_USIG_MU_INFO0_CRC,
+				     IEEE80211_RADIOTAP_UHR_USIG2_MU_B16_B19_CRC) |
+		 ATH12K_LE32_DEC_ENC(usig_mu->info0,
+				     HAL_RX_USIG_MU_INFO0_TAIL,
+				     IEEE80211_RADIOTAP_UHR_USIG2_MU_B20_B25_TAIL);
+
+	mask |=  IEEE80211_RADIOTAP_UHR_USIG2_MU_B0_B1_PPDU_TYPE |
+		 IEEE80211_RADIOTAP_UHR_USIG2_MU_B2_COBF_OR_COSR |
+		 IEEE80211_RADIOTAP_UHR_USIG2_MU_B3_B7_PUNCTURED_INFO |
+		 IEEE80211_RADIOTAP_UHR_USIG2_MU_B8_VALIDATE |
+		 IEEE80211_RADIOTAP_UHR_USIG2_MU_B9_B10_SIG_MCS |
+		 IEEE80211_RADIOTAP_UHR_USIG2_MU_B11_B15_NUM_UHR_SYG_SYM |
+		 IEEE80211_RADIOTAP_UHR_USIG2_MU_B16_B19_CRC |
+		 IEEE80211_RADIOTAP_UHR_USIG2_MU_B20_B25_TAIL |
+		 IEEE80211_RADIOTAP_UHR_USIG1_MU_B20_B24_DISREGARD |
+		 IEEE80211_RADIOTAP_UHR_USIG1_MU_B25_VALIDATE;
 
 	usig->common = cpu_to_le32(common);
 	usig->value = cpu_to_le32(value);
@@ -839,22 +1043,109 @@ ath12k_wifi8_hal_mon_rx_parse_u_sig_mu(const struct hal_mon_usig_mu *usig_mu,
 }
 
 static __always_inline void
-ath12k_wifi8_hal_mon_rx_parse_u_sig_hdr(const struct hal_mon_usig_hdr *usig,
+ath12k_wifi8_hal_mon_rx_parse_u_sig_elr(const struct hal_mon_usig_elr *elr,
 					struct hal_rx_mon_ppdu_info *ppdu_info)
+{
+	struct ieee80211_radiotap_uhr_usig *usig = &ppdu_info->u_sig_info.uhr_usig;
+	u32 common, value, mask;
+	u32 elr_valdiate_mask, elr_crc_mask, elr_tail_mask;
+
+	common = __le32_to_cpu(usig->common);
+	value = __le32_to_cpu(usig->value);
+	mask = __le32_to_cpu(usig->mask);
+
+	elr_valdiate_mask = IEEE80211_RADIOTAP_UHR_USIG2_ELR_B13_B15_ELR_VALIDATE;
+	elr_crc_mask = IEEE80211_RADIOTAP_UHR_USIG2_ELR_B16_B19_CRC;
+	elr_tail_mask = IEEE80211_RADIOTAP_UHR_USIG2_ELR_B20_B25_TAIL;
+
+	ppdu_info->u_sig_info.sta_id =
+		le32_get_bits(elr->info0,
+			      HAL_RX_USIG_ELR_INFO0_STA_ID);
+
+	ppdu_info->u_sig_info.ppdu_type_comp_mode =
+		le32_get_bits(elr->info0,
+			      HAL_RX_USIG_ELR_INFO0_PPDU_TYPE_COMP_MODE);
+
+	value |= IEEE80211_RADIOTAP_UHR_USIG1_ELR_B20_B24_DISREGARD |
+		 IEEE80211_RADIOTAP_UHR_USIG1_ELR_B25_VALIDATE |
+		 u32_encode_bits(ppdu_info->u_sig_info.ppdu_type_comp_mode,
+				 IEEE80211_RADIOTAP_UHR_USIG2_ELR_B0_B1_PPDU_TYPE) |
+		 u32_encode_bits(ppdu_info->u_sig_info.sta_id,
+				 IEEE80211_RADIOTAP_UHR_USIG2_ELR_B2_B12_STA_ID) |
+		 ATH12K_LE32_DEC_ENC(elr->info0,
+				     HAL_RX_USIG_ELR_INFO0_VALIDATE_1,
+				     elr_valdiate_mask) |
+		 ATH12K_LE32_DEC_ENC(elr->info0,
+				     HAL_RX_USIG_ELR_INFO0_CRC,
+				     elr_crc_mask) |
+		 ATH12K_LE32_DEC_ENC(elr->info0,
+				     HAL_RX_USIG_ELR_INFO0_TAIL,
+				     elr_tail_mask);
+
+	mask |= IEEE80211_RADIOTAP_UHR_USIG1_ELR_B20_B24_DISREGARD |
+		IEEE80211_RADIOTAP_UHR_USIG1_ELR_B25_VALIDATE |
+		IEEE80211_RADIOTAP_UHR_USIG2_ELR_B0_B1_PPDU_TYPE |
+		IEEE80211_RADIOTAP_UHR_USIG2_ELR_B2_B12_STA_ID |
+		IEEE80211_RADIOTAP_UHR_USIG2_ELR_B13_B15_ELR_VALIDATE |
+		IEEE80211_RADIOTAP_UHR_USIG2_ELR_B16_B19_CRC |
+		IEEE80211_RADIOTAP_UHR_USIG2_ELR_B20_B25_TAIL;
+
+	usig->common = cpu_to_le32(common);
+	usig->value = cpu_to_le32(value);
+	usig->mask = cpu_to_le32(mask);
+}
+
+static __always_inline void
+ath12k_wifi8_hal_mon_rx_parse_u_sig_eht_hdr(const struct hal_mon_usig_hdr *usig,
+					    struct hal_rx_mon_ppdu_info *ppdu_info)
 {
 	u8 comp_mode;
 
 	ppdu_info->eht_usig = true;
 
-	ath12k_wifi8_hal_mon_rx_parse_u_sig_cmn(&usig->cmn, ppdu_info);
+	comp_mode = le32_get_bits(usig->non_cmn.mu.info0,
+				  HAL_RX_USIG_MU_INFO0_PPDU_TYPE_COMP_MODE);
+
+	if (comp_mode == 0 && ppdu_info->u_sig_info.ul_dl)
+		ath12k_wifi8_hal_mon_rx_parse_u_sig_eht_tb(&usig->non_cmn.tb, ppdu_info);
+	else
+		ath12k_wifi8_hal_mon_rx_parse_u_sig_mu(&usig->non_cmn.mu, ppdu_info);
+}
+
+static __always_inline void
+ath12k_wifi8_hal_mon_rx_parse_u_sig_uhr_hdr(const struct hal_mon_usig_hdr *usig,
+					    struct hal_rx_mon_ppdu_info *ppdu_info)
+{
+	u8 comp_mode;
 
 	comp_mode = le32_get_bits(usig->non_cmn.mu.info0,
 				  HAL_RX_USIG_MU_INFO0_PPDU_TYPE_COMP_MODE);
 
 	if (comp_mode == 0 && ppdu_info->u_sig_info.ul_dl)
-		ath12k_wifi8_hal_mon_rx_parse_u_sig_tb(&usig->non_cmn.tb, ppdu_info);
+		ath12k_wifi8_hal_mon_rx_parse_u_sig_uhr_tb(&usig->non_cmn.tb, ppdu_info);
+	else if (comp_mode == 3)
+		ath12k_wifi8_hal_mon_rx_parse_u_sig_elr(&usig->non_cmn.elr, ppdu_info);
 	else
-		ath12k_wifi8_hal_mon_rx_parse_u_sig_mu(&usig->non_cmn.mu, ppdu_info);
+		ath12k_wifi8_hal_mon_rx_parse_u_sig_uhr_mu(&usig->non_cmn.mu, ppdu_info);
+}
+
+static __always_inline void
+ath12k_wifi8_hal_mon_rx_parse_u_sig_hdr(const struct hal_mon_usig_hdr *usig,
+					struct hal_rx_mon_ppdu_info *ppdu_info)
+{
+	ath12k_wifi8_hal_mon_rx_get_phy_version(&usig->cmn, ppdu_info);
+
+	if (ppdu_info->u_sig_info.phy_version == HAL_EHT_PHY) {
+		ppdu_info->eht_usig = true;
+		/* phy version = 0 is for EHT */
+		ath12k_wifi8_hal_mon_rx_parse_u_sig_eht_cmn(&usig->cmn, ppdu_info);
+		ath12k_wifi8_hal_mon_rx_parse_u_sig_eht_hdr(usig, ppdu_info);
+	} else {
+		ppdu_info->uhr_usig = true;
+		/* phy version = 1 if for UHR */
+		ath12k_wifi8_hal_mon_rx_parse_u_sig_uhr_cmn(&usig->cmn, ppdu_info);
+		ath12k_wifi8_hal_mon_rx_parse_u_sig_uhr_hdr(usig, ppdu_info);
+	}
 }
 
 static __always_inline void
@@ -1137,8 +1428,8 @@ ath12k_wifi8_hal_mon_parse_ru_allocation(const struct hal_eht_sig_ofdma_cmn_eb *
 	ru_111 = IEEE80211_RADIOTAP_EHT_DATA1_RU_ALLOC_CC_1_1_1;
 
 	switch (ppdu_info->u_sig_info.bw) {
-	case HAL_EHT_BW_320_2:
-	case HAL_EHT_BW_320_1:
+	case HAL_BW_320_2:
+	case HAL_BW_320_1:
 		data = __le32_to_cpu(eht->data[4]);
 		/* CC1 2::3 */
 		data |=	IEEE80211_RADIOTAP_EHT_DATA4_RU_ALLOC_CC_1_2_3_KNOWN |
@@ -1170,7 +1461,7 @@ ath12k_wifi8_hal_mon_parse_ru_allocation(const struct hal_eht_sig_ofdma_cmn_eb *
 		eht->data[6] = cpu_to_le32(data);
 
 		fallthrough;
-	case HAL_EHT_BW_160:
+	case HAL_BW_160:
 		data = __le32_to_cpu(eht->data[3]);
 		/* CC1 2::1 */
 		data |=	IEEE80211_RADIOTAP_EHT_DATA3_RU_ALLOC_CC_1_2_1_KNOWN |
@@ -1185,7 +1476,7 @@ ath12k_wifi8_hal_mon_parse_ru_allocation(const struct hal_eht_sig_ofdma_cmn_eb *
 		eht->data[3] = cpu_to_le32(data);
 
 		fallthrough;
-	case HAL_EHT_BW_80:
+	case HAL_BW_80:
 		data = __le32_to_cpu(eht->data[2]);
 		/* CC1 1::2 */
 		data |=	IEEE80211_RADIOTAP_EHT_DATA2_RU_ALLOC_CC_1_1_2_KNOWN |
@@ -1195,9 +1486,9 @@ ath12k_wifi8_hal_mon_parse_ru_allocation(const struct hal_eht_sig_ofdma_cmn_eb *
 		eht->data[2] = cpu_to_le32(data);
 
 		fallthrough;
-	case HAL_EHT_BW_40:
+	case HAL_BW_40:
 		fallthrough;
-	case HAL_EHT_BW_20:
+	case HAL_BW_20:
 		data = __le32_to_cpu(eht->data[1]);
 		/* CC1 1::1 */
 		data |=	IEEE80211_RADIOTAP_EHT_DATA1_RU_ALLOC_CC_1_1_1_KNOWN |
@@ -1224,6 +1515,514 @@ ath12k_wifi8_hal_mon_parse_eht_sig_ofdma(const void *tlv,
 						       ppdu_info);
 }
 
+static __always_inline bool
+ath12k_wifi8_hal_mon_is_frame_type_elr(const struct hal_rx_u_sig_info *usig_info)
+{
+	if (usig_info->ppdu_type_comp_mode == 3)
+		return true;
+
+	return false;
+}
+
+static __always_inline void
+ath12k_wifi8_hal_mon_parse_uhr_sig_elr(const void *tlv,
+				       struct hal_rx_mon_ppdu_info *ppdu_info)
+{
+	const struct hal_uhr_elr_sig *elr = tlv;
+
+	struct hal_rx_uhr_elr_info *elr_info = &ppdu_info->elr_info;
+	u32 known, sig1, sig2;
+
+	ppdu_info->is_uhr_elr = true;
+
+	known = __le32_to_cpu(elr_info->known);
+	known |= IEEE80211_RADIOTAP_UHR_ELR_ELR_VERSION_KNOWN |
+		 IEEE80211_RADIOTAP_UHR_ELR_UL_DL_KNOWN |
+		 IEEE80211_RADIOTAP_UHR_ELR_MCS_KNOWN |
+		 IEEE80211_RADIOTAP_UHR_ELR_CODING_KNOWN |
+		 IEEE80211_RADIOTAP_UHR_ELR_LENGTH_KNOWN |
+		 IEEE80211_RADIOTAP_UHR_ELR_LDPC_EXTRA_SYM_KNOWN |
+		 IEEE80211_RADIOTAP_UHR_ELR_SIG1_CRC_KNOWN |
+		 IEEE80211_RADIOTAP_UHR_ELR_SIG1_TAIL_KNOWN |
+		 IEEE80211_RADIOTAP_UHR_ELR_STA_ID_KNOWN |
+		 IEEE80211_RADIOTAP_UHR_ELR_DISREGARD_KNOWN |
+		 IEEE80211_RADIOTAP_UHR_ELR_SIG2_CRC_KNOWN |
+		 IEEE80211_RADIOTAP_UHR_ELR_SIG2_TAIL_KNOWN |
+		 IEEE80211_RADIOTAP_UHR_ELR_SIG1_CRC_CHECKED |
+		 IEEE80211_RADIOTAP_UHR_ELR_SIG2_CRC_CHECKED;
+
+	elr_info->known = cpu_to_le32(known);
+
+	sig1 = __le32_to_cpu(elr_info->sig1);
+	sig1 |=	ATH12K_LE32_DEC_ENC(elr->sig1.info0,
+				    HAL_RX_UHR_ELR_SIG1_ELR_VERSION,
+				    IEEE80211_RADIOTAP_UHR_ELR_SIG1_ELR_VERSION) |
+		ATH12K_LE32_DEC_ENC(elr->sig1.info0,
+				    HAL_RX_UHR_ELR_SIG1_UL_DL,
+				    IEEE80211_RADIOTAP_UHR_ELR_SIG1_UL_DL) |
+		ATH12K_LE32_DEC_ENC(elr->sig1.info0,
+				    HAL_RX_UHR_ELR_SIG1_ELR_MCS,
+				    IEEE80211_RADIOTAP_UHR_ELR_SIG1_MCS) |
+		ATH12K_LE32_DEC_ENC(elr->sig1.info0,
+				    HAL_RX_UHR_ELR_SIG1_CODING,
+				    IEEE80211_RADIOTAP_UHR_ELR_SIG1_CODING) |
+		ATH12K_LE32_DEC_ENC(elr->sig1.info0,
+				    HAL_RX_UHR_ELR_SIG1_LENGTH,
+				    IEEE80211_RADIOTAP_UHR_ELR_SIG1_LENGTH) |
+		ATH12K_LE32_DEC_ENC(elr->sig1.info0,
+				    HAL_RX_UHR_ELR_SIG1_LDPC_EXTRA_SYM,
+				    IEEE80211_RADIOTAP_UHR_ELR_SIG1_LDPC_EXTRA_SYM) |
+		ATH12K_LE32_DEC_ENC(elr->sig1.info0,
+				    HAL_RX_UHR_ELR_SIG1_CRC,
+				    IEEE80211_RADIOTAP_UHR_ELR_SIG1_CRC) |
+		ATH12K_LE32_DEC_ENC(elr->sig1.info0,
+				    HAL_RX_UHR_ELR_SIG1_TAIL,
+				    IEEE80211_RADIOTAP_UHR_ELR_SIG1_TAIL);
+
+	elr_info->sig1 = cpu_to_le32(sig1);
+
+	sig2 = __le32_to_cpu(elr_info->sig2);
+	sig2 |=	ATH12K_LE32_DEC_ENC(elr->sig2.info0,
+				    HAL_RX_UHR_ELR_SIG2_STA_ID,
+				    IEEE80211_RADIOTAP_UHR_ELR_SIG2_STA_ID) |
+		ATH12K_LE32_DEC_ENC(elr->sig2.info0,
+				    HAL_RX_UHR_ELR_SIG2_DISREGARD,
+				    IEEE80211_RADIOTAP_UHR_ELR_SIG2_DISREGARD) |
+		ATH12K_LE32_DEC_ENC(elr->sig2.info0,
+				    HAL_RX_UHR_ELR_SIG2_CRC,
+				    IEEE80211_RADIOTAP_UHR_ELR_SIG2_CRC) |
+		ATH12K_LE32_DEC_ENC(elr->sig2.info0,
+				    HAL_RX_UHR_ELR_SIG2_TAIL,
+				    IEEE80211_RADIOTAP_UHR_ELR_SIG2_TAIL);
+
+	elr_info->sig2 = cpu_to_le32(sig2);
+}
+
+static __always_inline void
+ath12k_wifi8_hal_mon_parse_uhr_sig_non_ofdma_cmn(const void *tlv,
+						 struct hal_rx_mon_ppdu_info *ppdu_info)
+{
+	struct hal_uhr_sig_non_ofdma_cmn_eb *eb =
+			(struct hal_uhr_sig_non_ofdma_cmn_eb *)tlv;
+	struct hal_rx_uhr_info *uhr_info = &ppdu_info->uhr_info;
+	struct hal_rx_radiotap_uhr *uhr = &uhr_info->uhr;
+	u32 known, data, data7, non_ofdma_users_mask;
+
+	known = __le32_to_cpu(uhr->known);
+
+	known |= IEEE80211_RADIOTAP_UHR_KNOWN_SPATIAL_REUSE |
+		 IEEE80211_RADIOTAP_UHR_KNOWN_GI_LTF |
+		 IEEE80211_RADIOTAP_UHR_KNOWN_UHR_LTF |
+		 IEEE80211_RADIOTAP_UHR_KNOWN_LDPC_EXTRA_SYM |
+		 IEEE80211_RADIOTAP_UHR_KNOWN_PRE_PAD_FACTOR |
+		 IEEE80211_RADIOTAP_UHR_KNOWN_PE_DISAMBIGUITY |
+		 IEEE80211_RADIOTAP_UHR_KNOWN_CRC1 |
+		 IEEE80211_RADIOTAP_UHR_KNOWN_TAIL1 |
+		 IEEE80211_RADIOTAP_UHR_KNOWN_INTF_MITG_NO |
+		 IEEE80211_RADIOTAP_UHR_KNOWN_NR_NON_OFDMA_USERS_NO |
+		 IEEE80211_RADIOTAP_UHR_KNOWN_ENCODING_BLOCK_CRC_NO |
+		 IEEE80211_RADIOTAP_UHR_KNOWN_ENCODING_BLOCK_TAIL_NO;
+
+	data = __le32_to_cpu(uhr->data[0]);
+
+	data |=	ATH12K_LE32_DEC_ENC(eb->info0,
+				    HAL_RX_UHR_SIG_OVERFLOW_INFO0_SPATIAL_REUSE,
+				    IEEE80211_RADIOTAP_UHR_DATA0_SPATIAL_REUSE) |
+		ATH12K_LE32_DEC_ENC(eb->info0,
+				    HAL_RX_UHR_SIG_OVERFLOW_INFO0_GI_LTF,
+				    IEEE80211_RADIOTAP_UHR_DATA0_GI) |
+		ATH12K_LE32_DEC_ENC(eb->info0,
+				    HAL_RX_UHR_SIG_OVERFLOW_INFO0_NUM_LTF_SYM,
+				    IEEE80211_RADIOTAP_UHR_DATA0_UHR_LTF) |
+		ATH12K_LE32_DEC_ENC(eb->info0,
+				    HAL_RX_UHR_SIG_OVERFLOW_INFO0_LDPC_EXTA_SYM,
+				    IEEE80211_RADIOTAP_UHR_DATA0_LDPC_EXTRA_SYM_OM) |
+		ATH12K_LE32_DEC_ENC(eb->info0,
+				    HAL_RX_UHR_SIG_OVERFLOW_INFO0_PRE_FEC_PAD_FACTOR,
+				    IEEE80211_RADIOTAP_UHR_DATA0_PRE_PAD_FACTOR_OM) |
+		ATH12K_LE32_DEC_ENC(eb->info0,
+				    HAL_RX_UHR_SIG_OVERFLOW_INFO0_DISAMBIGUITY,
+				    IEEE80211_RADIOTAP_UHR_DATA0_PE_DISAMBIGUITY_OM);
+
+	put_unaligned_le32(data, &uhr->data[0]);
+
+	known |= (IEEE80211_RADIOTAP_UHR_KNOWN_DISREGARD_NO |
+		  IEEE80211_RADIOTAP_UHR_KNOWN_INTF_MITG_NO |
+		  IEEE80211_RADIOTAP_UHR_DATA7_USER_ENCODING_BLOCK_CRC |
+		  IEEE80211_RADIOTAP_UHR_DATA7_USER_ENCODING_BLOCK_TAIL);
+
+	put_unaligned_le32(known, &uhr->known);
+
+	non_ofdma_users_mask = IEEE80211_RADIOTAP_UHR_DATA7_NUM_OF_NON_OFDMA_USERS;
+
+	data7 = __le32_to_cpu(uhr->data[7]);
+
+	data7 |= ATH12K_LE32_DEC_ENC(eb->info0,
+				     HAL_RX_UHR_SIG_NON_OFDMA_INFO0_NUM_USERS,
+				     non_ofdma_users_mask) |
+		 ATH12K_LE32_DEC_ENC(eb->info0,
+				     HAL_RX_UHR_SIG_NON_OFDMA_INFO0_IM_INDICATION,
+				     IEEE80211_RADIOTAP_UHR_DATA7_INTF_MIT_NO) |
+		 ATH12K_LE32_DEC_ENC(eb->info0,
+				     HAL_RX_UHR_SIG_NON_OFDMA_INFO0_DISREGARD,
+				     IEEE80211_RADIOTAP_UHR_DATA7_DISREGARD_NO);
+
+	put_unaligned_le32(data7, &uhr->data[7]);
+}
+
+static __always_inline void
+ath12k_wifi8_hal_mon_parse_uhr_mumimo_user(const struct hal_uhr_sig_mu_mimo *user,
+					   struct hal_rx_mon_ppdu_info *ppdu_info)
+{
+	struct hal_rx_uhr_info *uhr_info = &ppdu_info->uhr_info;
+	u32 user_idx, user_known = 0, user_data = 0;
+
+	if (uhr_info->num_user_info >= UHR_MAX_USER_INFO)
+		return;
+
+	user_idx = uhr_info->num_user_info++;
+
+	user_known = __le32_to_cpu(uhr_info->user_known[user_idx]);
+
+	user_known |=
+		IEEE80211_RADIOTAP_UHR_USER_INFO_STA_ID_KNOWN |
+		IEEE80211_RADIOTAP_UHR_USER_INFO_MCS_KNOWN |
+		IEEE80211_RADIOTAP_UHR_USER_INFO_2XLDPC_KNOWN_O |
+		IEEE80211_RADIOTAP_UHR_USER_INFO_SPATIAL_CONFIG_KNOWN_NO |
+		IEEE80211_RADIOTAP_UHR_USER_INFO_DISREGARD_KNOWN_NO |
+		IEEE80211_RADIOTAP_UHR_USER_INFO_BSS_COLOR_IND_KNOWN_NO |
+		IEEE80211_RADIOTAP_UHR_USER_INFO_USR_ENC_CRC_KNOWN |
+		IEEE80211_RADIOTAP_UHR_USER_INFO_USR_ENC_TAIL_KNOWN;
+
+	put_unaligned_le32(user_known, &uhr_info->user_known[user_idx]);
+
+	user_data |=
+		ATH12K_LE32_DEC_ENC(user->info0,
+				    HAL_RX_UHR_SIG_MUMIMO_USER_INFO0_STA_ID,
+				    IEEE80211_RADIOTAP_UHR_USER_INFO_STA_ID) |
+		ATH12K_LE32_DEC_ENC(user->info0,
+				    HAL_RX_UHR_SIG_MUMIMO_USER_INFO0_MCS,
+				    IEEE80211_RADIOTAP_UHR_USER_INFO_MCS) |
+		ATH12K_LE32_DEC_ENC(user->info0,
+				    HAL_RX_UHR_SIG_MUMIMO_USER_INFO0_SPATIAL_CONFIG,
+				    IEEE80211_RADIOTAP_UHR_USER_INFO_SPATIAL_CONFIG_NO) |
+		ATH12K_LE32_DEC_ENC(user->info0,
+				    HAL_RX_UHR_SIG_MUMIMO_USER_INFO0_CODING,
+				    IEEE80211_RADIOTAP_UHR_USER_INFO_CODING_NO) |
+		ATH12K_LE32_DEC_ENC(user->info0,
+				    HAL_RX_UHR_SIG_MUMIMO_USER_INFO0_LDPC_MODE,
+				    IEEE80211_RADIOTAP_UHR_USER_INFO_2XLDPC_NO);
+
+	put_unaligned_le32(user_data, &uhr_info->user_info[user_idx]);
+
+	ppdu_info->mcs = le32_get_bits(user->info0,
+				       HAL_RX_UHR_SIG_MUMIMO_USER_INFO0_MCS);
+	ppdu_info->ldpc = le32_get_bits(user->info0,
+					HAL_RX_UHR_SIG_MUMIMO_USER_INFO0_LDPC_MODE);
+}
+
+static __always_inline void
+ath12k_wifi8_hal_mon_parse_uhr_non_mumimo_user(const struct hal_uhr_sig_non_mu_mimo *user,
+					       struct hal_rx_mon_ppdu_info *ppdu_info)
+{
+	struct hal_rx_uhr_info *uhr_info = &ppdu_info->uhr_info;
+	u32 user_idx, user_known = 0, user_data = 0;
+	u8 ueqm, ldpc;
+	u32 hal_mod_pat_m, mon_pat_mask, hal_uemq_m, uemq_mask;
+	u32 hal_beamform_m, beamform_mask;
+	u32 hal_coding_m, coding_mask;
+	u32 hal_2xldpc_m, ldpc_mask;
+
+	if (uhr_info->num_user_info >= UHR_MAX_USER_INFO)
+		return;
+
+	hal_mod_pat_m = HAL_RX_UHR_SIG_NON_MUMIMO_USER_INFO0_MOD_PATTERN;
+	mon_pat_mask = IEEE80211_RADIOTAP_UHR_USER_INFO_UEMQ_PATTERN_O;
+	hal_uemq_m = HAL_RX_UHR_SIG_NON_MUMIMO_USER_INFO0_UNEQ_MOD;
+	uemq_mask = IEEE80211_RADIOTAP_UHR_USER_INFO_UEMQ_O;
+	hal_beamform_m = HAL_RX_UHR_SIG_NON_MUMIMO_USER_INFO0_BEAMFORMED;
+	beamform_mask = IEEE80211_RADIOTAP_UHR_USER_INFO_BEAMFORMING_NO;
+	hal_coding_m = HAL_RX_UHR_SIG_NON_MUMIMO_USER_INFO0_CODING;
+	coding_mask = IEEE80211_RADIOTAP_UHR_USER_INFO_CODING_NO;
+	hal_2xldpc_m = HAL_RX_UHR_SIG_NON_MUMIMO_USER_INFO0_LDPC;
+	ldpc_mask = IEEE80211_RADIOTAP_UHR_USER_INFO_2XLDPC_NO;
+
+	user_idx = uhr_info->num_user_info++;
+
+	user_known = __le32_to_cpu(uhr_info->user_known[user_idx]);
+
+	user_known |=
+		IEEE80211_RADIOTAP_UHR_USER_INFO_STA_ID_KNOWN |
+		IEEE80211_RADIOTAP_UHR_USER_INFO_MCS_KNOWN |
+		IEEE80211_RADIOTAP_UHR_USER_INFO_NSS_KNOWN_O |
+		IEEE80211_RADIOTAP_UHR_USER_INFO_USR_ENC_CRC_KNOWN |
+		IEEE80211_RADIOTAP_UHR_USER_INFO_USR_ENC_TAIL_KNOWN |
+		ATH12K_LE32_DEC_ENC(user->info0,
+				    HAL_RX_UHR_SIG_NON_MUMIMO_USER_INFO0_CRC,
+				    IEEE80211_RADIOTAP_UHR_USER_INFO_USR_ENC_CRC);
+
+	user_data |=
+		ATH12K_LE32_DEC_ENC(user->info0,
+				    HAL_RX_UHR_SIG_NON_MUMIMO_USER_INFO0_STA_ID,
+				    IEEE80211_RADIOTAP_UHR_USER_INFO_STA_ID) |
+		ATH12K_LE32_DEC_ENC(user->info0,
+				    HAL_RX_UHR_SIG_NON_MUMIMO_USER_INFO0_MCS,
+				    IEEE80211_RADIOTAP_UHR_USER_INFO_MCS) |
+		u32_encode_bits(le32_get_bits(user->info0,
+					      HAL_RX_UHR_SIG_NON_MUMIMO_USER_INFO0_NSS)
+					      + 1,
+					      IEEE80211_RADIOTAP_UHR_USER_INFO_NSS_O);
+
+	ueqm = le32_get_bits(user->info0,
+			     HAL_RX_UHR_SIG_NON_MUMIMO_USER_INFO0_UNEQ_MOD);
+
+	if (ueqm) {
+		user_known |= IEEE80211_RADIOTAP_UHR_USER_INFO_UEMQ_KNOWN_O |
+			      IEEE80211_RADIOTAP_UHR_USER_INFO_UEMQ_PATTERN_KNOWN_O;
+		user_data |=
+			ATH12K_LE32_DEC_ENC(user->info0,
+					    hal_mod_pat_m,
+					    mon_pat_mask);
+		user_data |=
+			ATH12K_LE32_DEC_ENC(user->info0,
+					    hal_uemq_m,
+					    uemq_mask);
+	} else {
+		user_known |= IEEE80211_RADIOTAP_UHR_USER_INFO_BEAMFORMING_KNOWN_O |
+			      IEEE80211_RADIOTAP_UHR_USER_INFO_CODING_KNOWN_O;
+
+			user_data |=
+			ATH12K_LE32_DEC_ENC(user->info0,
+					    hal_beamform_m,
+					    beamform_mask);
+
+		user_data |=
+			ATH12K_LE32_DEC_ENC(user->info0,
+					    hal_coding_m,
+					    coding_mask);
+	}
+
+	ldpc = le32_get_bits(user->info0,
+			     HAL_RX_UHR_SIG_NON_MUMIMO_USER_INFO0_LDPC);
+
+	if (ldpc) {
+		user_known |= IEEE80211_RADIOTAP_UHR_USER_INFO_2XLDPC_KNOWN_O;
+		user_data |= ATH12K_LE32_DEC_ENC(user->info0,
+						 hal_2xldpc_m,
+						 ldpc_mask);
+	}
+
+	put_unaligned_le32(user_known, &uhr_info->user_known[user_idx]);
+	put_unaligned_le32(user_data, &uhr_info->user_info[user_idx]);
+
+	ppdu_info->mcs = le32_get_bits(user->info0,
+				       HAL_RX_UHR_SIG_NON_MUMIMO_USER_INFO0_MCS);
+	ppdu_info->nss = le32_get_bits(user->info0,
+				       HAL_RX_UHR_SIG_NON_MUMIMO_USER_INFO0_NSS) + 1;
+	ppdu_info->ldpc = le32_get_bits(user->info0,
+					HAL_RX_UHR_SIG_NON_MUMIMO_USER_INFO0_LDPC);
+}
+
+static __always_inline void
+ath12k_wifi8_hal_mon_parse_uhr_sig_non_ofdma(const void *tlv,
+					     struct hal_rx_mon_ppdu_info *ppdu_info)
+{
+	const struct hal_uhr_sig_non_ofdma_cmn_eb *eb = tlv;
+
+	ath12k_wifi8_hal_mon_parse_uhr_sig_non_ofdma_cmn(tlv, ppdu_info);
+
+	if (ath12k_wifi8_hal_mon_is_mu_mimo_user(&ppdu_info->u_sig_info))
+		ath12k_wifi8_hal_mon_parse_uhr_mumimo_user(&eb->user_field.mu_mimo,
+							   ppdu_info);
+	else
+		ath12k_wifi8_hal_mon_parse_uhr_non_mumimo_user(&eb->user_field.n_mu_mimo,
+							       ppdu_info);
+}
+
+static __always_inline void
+ath12k_wifi8_hal_mon_parse_uhr_sig_ofdma_cmn(const void *tlv,
+					     struct hal_rx_mon_ppdu_info *ppdu_info)
+{
+	const struct hal_uhr_sig_ofdma_cmn_eb *eb = tlv;
+	struct hal_rx_uhr_info *uhr_info = &ppdu_info->uhr_info;
+	struct hal_rx_radiotap_uhr *uhr = &uhr_info->uhr;
+	u32 known, data, data7;
+
+	known = __le32_to_cpu(uhr->known);
+
+	known |= IEEE80211_RADIOTAP_UHR_KNOWN_SPATIAL_REUSE |
+		 IEEE80211_RADIOTAP_UHR_KNOWN_GI_LTF |
+		 IEEE80211_RADIOTAP_UHR_KNOWN_UHR_LTF |
+		 IEEE80211_RADIOTAP_UHR_KNOWN_LDPC_EXTRA_SYM |
+		 IEEE80211_RADIOTAP_UHR_KNOWN_PRE_PAD_FACTOR |
+		 IEEE80211_RADIOTAP_UHR_KNOWN_PE_DISAMBIGUITY |
+		 IEEE80211_RADIOTAP_UHR_KNOWN_DISREGARD_O |
+		 IEEE80211_RADIOTAP_UHR_KNOWN_CRC1 |
+		 IEEE80211_RADIOTAP_UHR_KNOWN_TAIL1 |
+		 IEEE80211_RADIOTAP_UHR_KNOWN_CRC2_O |
+		 IEEE80211_RADIOTAP_UHR_KNOWN_TAIL2_O |
+		 IEEE80211_RADIOTAP_UHR_KNOWN_RU_MRU_SIZE |
+		 IEEE80211_RADIOTAP_UHR_KNOWN_RU_MRU_INDEX |
+		 IEEE80211_RADIOTAP_UHR_KNOWN_RU_ALLOC_TB_FMT_O |
+		 IEEE80211_RADIOTAP_UHR_KNOWN_PRIMARY_80;
+
+	data = __le32_to_cpu(uhr->data[0]);
+
+	data |=	ATH12K_LE32_DEC_ENC(eb->eb1.info0,
+				    HAL_RX_UHR_SIG_OVERFLOW_INFO0_SPATIAL_REUSE,
+				    IEEE80211_RADIOTAP_UHR_DATA0_SPATIAL_REUSE) |
+		ATH12K_LE32_DEC_ENC(eb->eb1.info0,
+				    HAL_RX_UHR_SIG_OVERFLOW_INFO0_GI_LTF,
+				    IEEE80211_RADIOTAP_UHR_DATA0_GI) |
+		ATH12K_LE32_DEC_ENC(eb->eb1.info0,
+				    HAL_RX_UHR_SIG_OVERFLOW_INFO0_NUM_LTF_SYM,
+				    IEEE80211_RADIOTAP_UHR_DATA0_UHR_LTF) |
+		ATH12K_LE32_DEC_ENC(eb->eb1.info0,
+				    HAL_RX_UHR_SIG_OVERFLOW_INFO0_LDPC_EXTA_SYM,
+				    IEEE80211_RADIOTAP_UHR_DATA0_LDPC_EXTRA_SYM_OM) |
+		ATH12K_LE32_DEC_ENC(eb->eb1.info0,
+				    HAL_RX_UHR_SIG_OVERFLOW_INFO0_PRE_FEC_PAD_FACTOR,
+				    IEEE80211_RADIOTAP_UHR_DATA0_PRE_PAD_FACTOR_OM) |
+		ATH12K_LE32_DEC_ENC(eb->eb1.info0,
+				    HAL_RX_UHR_SIG_OVERFLOW_INFO0_DISAMBIGUITY,
+				    IEEE80211_RADIOTAP_UHR_DATA0_PE_DISAMBIGUITY_OM);
+
+	put_unaligned_le32(data, &uhr->data[0]);
+
+	data7 = __le32_to_cpu(uhr->data[7]);
+
+	data7 |= ATH12K_LE32_DEC_ENC(eb->eb1.info0,
+				    HAL_RX_UHR_SIG_NON_OFDMA_INFO0_NUM_USERS,
+				    IEEE80211_RADIOTAP_UHR_DATA7_NUM_OF_NON_OFDMA_USERS) |
+		ATH12K_LE32_DEC_ENC(eb->eb1.info0,
+				    HAL_RX_UHR_SIG_NON_OFDMA_INFO0_IM_INDICATION,
+				    IEEE80211_RADIOTAP_UHR_DATA7_INTF_MIT_NO);
+
+	put_unaligned_le32(data7, &uhr->data[7]);
+}
+
+static __always_inline void
+ath12k_wifi8_hal_mon_parse_uhr_ru_allocation(const struct hal_uhr_sig_ofdma_cmn_eb *eb,
+					     struct hal_rx_mon_ppdu_info *ppdu_info)
+{
+	const struct hal_uhr_sig_ofdma_cmn_eb1 *ofdma_cmn_eb1 = &eb->eb1;
+	const struct hal_uhr_sig_ofdma_cmn_eb2 *ofdma_cmn_eb2 = &eb->eb2;
+	struct hal_rx_radiotap_uhr *uhr = &ppdu_info->uhr_info.uhr;
+	enum ieee80211_radiotap_uhr_data ru_123, ru_124, ru_125, ru_126;
+	enum ieee80211_radiotap_uhr_data ru_121, ru_122, ru_112, ru_111;
+	u32 data;
+
+	ru_123 = IEEE80211_RADIOTAP_UHR_DATA4_RU_ALLOC_CC_1_2_3;
+	ru_124 = IEEE80211_RADIOTAP_UHR_DATA5_RU_ALLOC_CC_1_2_4;
+	ru_125 = IEEE80211_RADIOTAP_UHR_DATA5_RU_ALLOC_CC_1_2_5;
+	ru_126 = IEEE80211_RADIOTAP_UHR_DATA6_RU_ALLOC_CC_1_2_6;
+	ru_121 = IEEE80211_RADIOTAP_UHR_DATA3_RU_ALLOC_CC_1_2_1;
+	ru_122 = IEEE80211_RADIOTAP_UHR_DATA3_RU_ALLOC_CC_1_2_2;
+	ru_112 = IEEE80211_RADIOTAP_UHR_DATA2_RU_ALLOC_CC_1_1_2;
+	ru_111 = IEEE80211_RADIOTAP_UHR_DATA1_RU_ALLOC_CC_1_1_1;
+
+	switch (ppdu_info->u_sig_info.bw) {
+	case HAL_BW_320_2:
+	case HAL_BW_320_1:
+		data = __le32_to_cpu(uhr->data[4]);
+		/* CC1 2::3 */
+		data |=	IEEE80211_RADIOTAP_UHR_DATA4_RU_ALLOC_CC_1_2_3_KNOWN |
+			ATH12K_LE64_DEC_ENC(ofdma_cmn_eb2->info0,
+					    HAL_RX_UHR_SIG_OFDMA_EB2_RU_ALLOC_2_3,
+					    ru_123);
+		uhr->data[4] = cpu_to_le32(data);
+
+		data = __le32_to_cpu(uhr->data[5]);
+		/* CC1 2::4 */
+		data |=	IEEE80211_RADIOTAP_UHR_DATA5_RU_ALLOC_CC_1_2_4_KNOWN |
+			ATH12K_LE64_DEC_ENC(ofdma_cmn_eb2->info0,
+					    HAL_RX_UHR_SIG_OFDMA_EB2_RU_ALLOC_2_4,
+					    ru_124);
+
+		/* CC1 2::5 */
+		data |=	IEEE80211_RADIOTAP_UHR_DATA5_RU_ALLOC_CC_1_2_5_KNOWN |
+			ATH12K_LE64_DEC_ENC(ofdma_cmn_eb2->info0,
+					    HAL_RX_UHR_SIG_OFDMA_EB2_RU_ALLOC_2_5,
+					    ru_125);
+		uhr->data[5] = cpu_to_le32(data);
+
+		data = __le32_to_cpu(uhr->data[6]);
+		/* CC1 2::6 */
+		data |=	IEEE80211_RADIOTAP_UHR_DATA6_RU_ALLOC_CC_1_2_6_KNOWN |
+			ATH12K_LE64_DEC_ENC(ofdma_cmn_eb2->info0,
+					    HAL_RX_UHR_SIG_OFDMA_EB2_RU_ALLOC_2_6,
+					    ru_126);
+		uhr->data[6] = cpu_to_le32(data);
+
+		fallthrough;
+	case HAL_BW_160:
+		data = __le32_to_cpu(uhr->data[3]);
+		/* CC1 2::1 */
+		data |=	IEEE80211_RADIOTAP_UHR_DATA3_RU_ALLOC_CC_1_2_1_KNOWN |
+			ATH12K_LE64_DEC_ENC(ofdma_cmn_eb2->info0,
+					    HAL_RX_UHR_SIG_OFDMA_EB2_RU_ALLOC_2_1,
+					    ru_121);
+		/* CC1 2::2 */
+		data |=	IEEE80211_RADIOTAP_UHR_DATA3_RU_ALLOC_CC_1_2_2_KNOWN |
+			ATH12K_LE64_DEC_ENC(ofdma_cmn_eb2->info0,
+					    HAL_RX_UHR_SIG_OFDMA_EB2_RU_ALLOC_2_2,
+					    ru_122);
+		uhr->data[3] = cpu_to_le32(data);
+
+		fallthrough;
+	case HAL_BW_80:
+		data = __le32_to_cpu(uhr->data[2]);
+		/* CC1 1::2 */
+		data |=	IEEE80211_RADIOTAP_UHR_DATA2_RU_ALLOC_CC_1_1_2_KNOWN |
+			ATH12K_LE64_DEC_ENC(ofdma_cmn_eb1->info0,
+					    HAL_RX_UHR_SIG_OFDMA_EB1_RU_ALLOC_1_2,
+					    ru_112);
+		uhr->data[2] = cpu_to_le32(data);
+
+		fallthrough;
+	case HAL_BW_40:
+		fallthrough;
+	case HAL_BW_20:
+		data = __le32_to_cpu(uhr->data[1]);
+		/* CC1 1::1 */
+		data |=	IEEE80211_RADIOTAP_UHR_DATA1_RU_ALLOC_CC_1_1_1_KNOWN |
+			ATH12K_LE64_DEC_ENC(ofdma_cmn_eb1->info0,
+					    HAL_RX_UHR_SIG_OFDMA_EB1_RU_ALLOC_1_1,
+					    ru_111);
+		uhr->data[1] = cpu_to_le32(data);
+		break;
+	default:
+		break;
+	}
+}
+
+static __always_inline void
+ath12k_wifi8_hal_mon_parse_uhr_sig_ofdma(const void *tlv,
+					 struct hal_rx_mon_ppdu_info *ppdu_info)
+{
+	const struct hal_uhr_sig_ofdma_cmn_eb *ofdma = tlv;
+
+	ath12k_wifi8_hal_mon_parse_uhr_sig_ofdma_cmn(tlv, ppdu_info);
+	ath12k_wifi8_hal_mon_parse_uhr_ru_allocation(ofdma, ppdu_info);
+
+	ath12k_wifi8_hal_mon_parse_uhr_non_mumimo_user(&ofdma->user_field.n_mu_mimo,
+						       ppdu_info);
+}
+
+static __always_inline void
+ath12k_wifi8_hal_mon_parse_uhr_sig_hdr(struct hal_rx_mon_ppdu_info *ppdu_info,
+				       const void *tlv_data)
+{
+	ppdu_info->is_uhr = true;
+
+	if (ath12k_wifi8_hal_mon_is_frame_type_elr(&ppdu_info->u_sig_info))
+		ath12k_wifi8_hal_mon_parse_uhr_sig_elr(tlv_data, ppdu_info);
+	else if (ath12k_wifi8_hal_mon_is_non_ofdma(&ppdu_info->u_sig_info))
+		ath12k_wifi8_hal_mon_parse_uhr_sig_non_ofdma(tlv_data, ppdu_info);
+	else
+		ath12k_wifi8_hal_mon_parse_uhr_sig_ofdma(tlv_data, ppdu_info);
+}
+
 static __always_inline void
 ath12k_wifi8_hal_mon_parse_eht_sig_hdr(struct hal_rx_mon_ppdu_info *ppdu_info,
 				       const void *tlv_data)
@@ -1236,6 +2035,16 @@ ath12k_wifi8_hal_mon_parse_eht_sig_hdr(struct hal_rx_mon_ppdu_info *ppdu_info,
 		ath12k_wifi8_hal_mon_parse_eht_sig_non_ofdma(tlv_data, ppdu_info);
 	else if (ath12k_wifi8_hal_mon_is_ofdma(&ppdu_info->u_sig_info))
 		ath12k_wifi8_hal_mon_parse_eht_sig_ofdma(tlv_data, ppdu_info);
+}
+
+static __always_inline void
+ath12k_wifi8_hal_mon_parse_eht_uhr_sig_hdr(struct hal_rx_mon_ppdu_info *ppdu_info,
+					   const void *tlv_data)
+{
+	if (ppdu_info->u_sig_info.phy_version == HAL_EHT_PHY)
+		ath12k_wifi8_hal_mon_parse_eht_sig_hdr(ppdu_info, tlv_data);
+	else
+		ath12k_wifi8_hal_mon_parse_uhr_sig_hdr(ppdu_info, tlv_data);
 }
 
 static __always_inline enum ath12k_eht_ru_size
@@ -1989,8 +2798,8 @@ ath12k_wifi8_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 		ppdu_info->user_id = userid;
 
 	if (ppdu_info->tlv_aggr.in_progress && ppdu_info->tlv_aggr.tlv_tag != tlv_tag) {
-		ath12k_wifi8_hal_mon_parse_eht_sig_hdr(ppdu_info,
-						       ppdu_info->tlv_aggr.buf);
+		ath12k_wifi8_hal_mon_parse_eht_uhr_sig_hdr(ppdu_info,
+							   ppdu_info->tlv_aggr.buf);
 
 		ppdu_info->tlv_aggr.in_progress = false;
 		ppdu_info->tlv_aggr.cur_len = 0;
@@ -2176,6 +2985,7 @@ ath12k_wifi8_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 		ppdu_info->is_drop_tlv = true;
 		return HAL_RX_MON_STATUS_DROP_TLV;
 	case HAL_RX_PPDU_END_STATUS_DONE:
+		return HAL_RX_MON_STATUS_PPDU_DONE;
 	case 0:
 		return HAL_RX_MON_STATUS_PPDU_DONE;
 	default:
