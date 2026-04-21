@@ -1102,6 +1102,7 @@ int ath12k_dp_mon_tx_monitor_start_stop(struct ath12k *ar, bool state);
 int ath12k_dp_mon_tx_set_monitor_flags(struct ath12k *ar, u32 new_flags, u32 *cur_flags);
 int ath12k_dp_mon_get_link_peer_rssi(struct ath12k *ar, const u8 *peer_mac,
 				     s8 *min_rssi, s8 *max_rssi);
+bool ath12k_dp_tx_mon_feature_eval(struct ath12k_dp *dp);
 
 static inline
 int ath12k_dp_mon_rx_alloc(struct ath12k_dp *dp)
@@ -1650,6 +1651,9 @@ int ath12k_dp_mon_tx_srng_alloc(struct ath12k_dp *dp)
 	const struct ath12k_dp_arch_mon_ops *mon_ops;
 	int ret = 0;
 
+	if (!ath12k_dp_tx_mon_feature_eval(dp))
+		return 0;
+
 	mon_ops = ath12k_dp_mon_ops_get(dp);
 
 	if (!mon_ops) {
@@ -1680,6 +1684,9 @@ void ath12k_dp_mon_tx_srng_free(struct ath12k_dp *dp)
 {
 	const struct ath12k_dp_arch_mon_ops *mon_ops;
 
+	if (!ath12k_dp_tx_mon_feature_eval(dp))
+		return;
+
 	mon_ops = ath12k_dp_mon_ops_get(dp);
 
 	ath12k_dp_mon_tx_htt_src_ring_cleanup(dp);
@@ -1702,6 +1709,9 @@ int ath12k_dp_mon_tx_pdev_alloc(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	dp = dp_pdev->dp;
+	if (!ath12k_dp_tx_mon_feature_eval(dp))
+		return 0;
+
 	mon_ops = ath12k_dp_mon_ops_get(dp);
 
 	if (!mon_ops) {
@@ -1737,6 +1747,9 @@ void ath12k_dp_mon_tx_pdev_free(struct ath12k_pdev_dp *dp_pdev)
 	}
 
 	dp = dp_pdev->dp;
+	if (!ath12k_dp_tx_mon_feature_eval(dp))
+		return;
+
 	mon_ops = ath12k_dp_mon_ops_get(dp);
 
 	if (!mon_ops)

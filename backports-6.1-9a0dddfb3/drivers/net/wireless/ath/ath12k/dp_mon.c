@@ -2985,6 +2985,9 @@ int ath12k_dp_mon_tx_set_monitor_flags(struct ath12k *ar, u32 new_flags, u32 *cu
 		return ret;
 	}
 
+	if (!ath12k_dp_tx_mon_feature_eval(ar->dp.dp))
+		return 0;
+
 	req_state = !(new_flags & MONITOR_FLAG_SKIP_TX);
 	ret = ath12k_dp_mon_tx_monitor_start_stop(ar, req_state);
 	if (ret) {
@@ -2999,6 +3002,30 @@ int ath12k_dp_mon_tx_set_monitor_flags(struct ath12k *ar, u32 new_flags, u32 *cu
 		   dp_mon_pdev->tx_monitor_started, ret);
 	return ret;
 }
+
+bool ath12k_dp_tx_mon_feature_eval(struct ath12k_dp *dp)
+{
+	struct ath12k_base *ab;
+
+	if (!dp)
+		return false;
+
+	ab = dp->ab;
+	if (!ab || !ab->cfg_ctx)
+		return false;
+
+	if (!ab->hw_params)
+		return false;
+
+	if (!DP_TX_MONITOR || !ab->hw_params->supports_tx_monitor) {
+		ab->hw_params->supports_tx_monitor = false;
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "TX Monitor disabled\n");
+		return false;
+	}
+
+	return true;
+}
+EXPORT_SYMBOL(ath12k_dp_tx_mon_feature_eval);
 
 int ath12k_dp_mon_get_link_peer_rssi(struct ath12k *ar, const u8 *peer_mac,
 				     s8 *min_rssi, s8 *max_rssi)
