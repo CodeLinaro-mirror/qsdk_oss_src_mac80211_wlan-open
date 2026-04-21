@@ -58,8 +58,8 @@ static void ath12k_pci_select_window(struct ath12k_pci *ab_pci, u32 offset)
 
 	if (window != ab_pci->register_window) {
 		iowrite32(WINDOW_ENABLE_BIT | window,
-			  ab->mem + ab_pci->reg_base->pcie_window_reg_address);
-		ioread32(ab->mem + ab_pci->reg_base->pcie_window_reg_address);
+			  ab->mem + ab_pci->window_reg_addr);
+		ioread32(ab->mem + ab_pci->window_reg_addr);
 		ab_pci->register_window = window;
 	}
 }
@@ -89,7 +89,7 @@ static void ath12k_pci_select_static_window(struct ath12k_base *ab)
 	spin_unlock_bh(&ab_pci->window_lock);
 
 	iowrite32(WINDOW_ENABLE_BIT | window,
-		  ab->mem + reg_base->pcie_window_reg_address);
+		  ab->mem + ab_pci->window_reg_addr);
 }
 
 static inline bool ath12k_pci_is_offset_within_mhi_region(u32 offset)

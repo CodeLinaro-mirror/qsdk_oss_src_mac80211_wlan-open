@@ -56,6 +56,7 @@ static int ath12k_wifi8_pci_probe(struct pci_dev *pdev,
 		ab->static_window_map = true;
 		ab->hw_rev = (pci_dev->device == QCN9625_DEVICE_ID) ?
 			      ATH12K_HW_QCN9625_HW10 : ATH12K_HW_QCN9589_HW10;
+		ab_pci->window_reg_addr = PCIE_WINDOW_REG_ADDRESS;
 		break;
 
 	default:
@@ -90,7 +91,6 @@ void ath12k_wifi8_pci_get_soc_reset_reason(struct ath12k_base *ab)
 static const struct ath12k_reg_base ath12k_wifi8_pci_reg_base = {
 	.umac_base = HAL_SEQ_WCSS_UMAC_OFFSET,
 	.ce_reg_base = HAL_CE_WFSS_CE_REG_BASE,
-	.pcie_window_reg_address = PCIE_WINDOW_REG_ADDRESS,
 	.window_value_mask = WINDOW_VALUE_MASK,
 	.window_static_mask = WINDOW_STATIC_MASK,
 	.window_dynamic_mask = WINDOW_DYNAMIC_MASK,

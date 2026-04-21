@@ -101,6 +101,11 @@ static int ath12k_wifi7_pci_probe(struct pci_dev *pdev,
 		}
 		ab->static_window_map = true;
 		ab_pci->pci_ops = &ath12k_wifi7_pci_ops_qcn9274;
+		/*
+		 * init window reg addr before reading hardware version
+		 * as it will be used there
+		 */
+		ab_pci->window_reg_addr = PCIE_WINDOW_REG_ADDRESS;
 		ath12k_wifi7_pci_read_hw_version(ab, &soc_hw_version_major,
 						 &soc_hw_version_minor);
 		switch (soc_hw_version_major) {
@@ -122,6 +127,11 @@ static int ath12k_wifi7_pci_probe(struct pci_dev *pdev,
 		ab_pci->msi_config = &ath12k_wifi7_msi_config[0];
 		ab->static_window_map = false;
 		ab_pci->pci_ops = &ath12k_wifi7_pci_ops_wcn7850;
+		/*
+		 * init window reg addr before reading hardware version
+		 * as it will be used there
+		 */
+		ab_pci->window_reg_addr = PCIE_WINDOW_REG_ADDRESS;
 		ath12k_wifi7_pci_read_hw_version(ab, &soc_hw_version_major,
 						 &soc_hw_version_minor);
 		switch (soc_hw_version_major) {
@@ -154,7 +164,6 @@ static int ath12k_wifi7_pci_probe(struct pci_dev *pdev,
 static const struct ath12k_reg_base ath12k_wifi7_pci_reg_base = {
 	.umac_base = HAL_SEQ_WCSS_UMAC_OFFSET,
 	.ce_reg_base = HAL_CE_WFSS_CE_REG_BASE,
-	.pcie_window_reg_address = PCIE_WINDOW_REG_ADDRESS,
 	.window_value_mask = WINDOW_VALUE_MASK,
 	.window_static_mask = WINDOW_STATIC_MASK,
 	.window_dynamic_mask = WINDOW_DYNAMIC_MASK,

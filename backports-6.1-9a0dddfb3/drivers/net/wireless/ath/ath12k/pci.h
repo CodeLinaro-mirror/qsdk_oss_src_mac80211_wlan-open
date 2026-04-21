@@ -158,6 +158,7 @@ struct ath12k_pci {
 	u16 def_link_speed;
 	u16 def_link_width;
 	u32 unified_fw_board_id;
+	u32 window_reg_addr;
 };
 
 struct ath12k_pci_driver {

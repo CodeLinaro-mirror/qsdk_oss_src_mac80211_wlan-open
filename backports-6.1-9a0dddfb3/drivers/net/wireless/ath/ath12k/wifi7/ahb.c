@@ -65,6 +65,7 @@ static int ath12k_wifi7_ahb_probe(struct platform_device *pdev)
 		return -EOPNOTSUPP;
 	}
 
+	ab_ahb->window_reg_addr = PCIE_WINDOW_REG_ADDRESS;
 	ret = ath12k_wifi7_hw_init(ab);
 	if (ret) {
 		ath12k_err(ab, "hw_init failed: %d\n", ret);
@@ -77,7 +78,6 @@ static int ath12k_wifi7_ahb_probe(struct platform_device *pdev)
 static const struct ath12k_reg_base ath12k_wifi7_pcic_reg_base = {
 	.umac_base = HAL_SEQ_WCSS_UMAC_OFFSET,
 	.ce_reg_base = HAL_CE_WFSS_CE_REG_BASE,
-	.pcie_window_reg_address = PCIE_WINDOW_REG_ADDRESS,
 	.window_value_mask = WINDOW_VALUE_MASK,
 	.window_static_mask = WINDOW_STATIC_MASK,
 	.window_dynamic_mask = WINDOW_DYNAMIC_MASK,
