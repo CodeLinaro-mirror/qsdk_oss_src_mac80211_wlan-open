@@ -20641,6 +20641,11 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 	if (ret) {
 		ath12k_warn(ab, "failed to synchronize setup for vdev %i %s: %d\n",
 			    arg.vdev_id, restart ? "restart" : "start", ret);
+#ifdef CPTCFG_QCN_EXTN
+		if (chandef && ar->last_wmi_vdev_start_status ==
+		    WMI_VDEV_START_RESPONSE_DFS_VIOLATION)
+			ath12k_mac_dfs_violation_recovery_extn(arvif, ctx);
+#endif /* CPTCFG_QCN_EXTN */
 		return ret;
 	}
 
