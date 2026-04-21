@@ -75,7 +75,7 @@ MODULE_PARM_DESC(num_ppeds_tx_desc, "Number of PPEDS descriptors");
 module_param_named(ppeds_hotlist_len, ath12k_ppeds_desc_params.ppeds_hotlist_len, uint, 0644);
 MODULE_PARM_DESC(ppeds_hotlist_len, "PPEDS hotlist length");
 
-unsigned int ath12k_ppe_ds_enabled = true;
+unsigned int ath12k_ppe_ds_enabled = 1;
 module_param_named(ppe_ds_enable, ath12k_ppe_ds_enabled, uint, 0644);
 MODULE_PARM_DESC(ppe_ds_enable, "ppe_ds_enable: 0-disable, 1-enable");
 
