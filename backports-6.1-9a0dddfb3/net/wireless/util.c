@@ -1836,7 +1836,7 @@ static u32 cfg80211_calculate_bitrate_eht(struct rate_info *rate)
 static u32 cfg80211_calculate_bitrate_uhr(struct rate_info *rate)
 {
 	if (rate->flags & RATE_INFO_FLAGS_UHR_ELR_MCS) {
-		WARN_ONCE(rate->eht_gi != NL80211_RATE_INFO_EHT_GI_1_6,
+		WARN_ONCE(rate->eht_gi != NL80211_RATE_INFO_UHR_GI_1_6,
 			  "bad UHR ELR guard interval %d\n",
 			  rate->eht_gi);
 		WARN_ONCE(rate->mcs > 1, "bad UHR ELR MCS %d\n", rate->mcs);
