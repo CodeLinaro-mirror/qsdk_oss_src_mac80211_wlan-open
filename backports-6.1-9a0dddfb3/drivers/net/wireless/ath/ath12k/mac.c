@@ -845,46 +845,6 @@ ath12k_mac_max_eht_mcs_nss(const u8 *eht_mcs, int eht_mcs_set_size)
 	return nss;
 }
 
-static int
-ath12k_mac_bitrate_mask_num_eht_rates(struct ath12k *ar,
-				      enum nl80211_band band,
-				      const struct cfg80211_bitrate_mask *mask)
-{
-       int num_rates = 0;
-       int i;
-
-       for (i = 0; i < ARRAY_SIZE(mask->control[band].eht_mcs); i++)
-               num_rates += hweight16(mask->control[band].eht_mcs[i]);
-
-       return num_rates;
-}
-
-static u32
-ath12k_mac_max_uhr_nss(const u32 uhr_mcs_mask[NL80211_UHR_NSS_MAX])
-{
-	int nss;
-
-	for (nss = NL80211_UHR_NSS_MAX - 1; nss >= 0; nss--)
-		if (uhr_mcs_mask[nss])
-			return nss + 1;
-
-	return 1;
-}
-
-static int
-ath12k_mac_bitrate_mask_num_uhr_rates(struct ath12k *ar,
-				      enum nl80211_band band,
-				      const struct cfg80211_bitrate_mask *mask)
-{
-	int num_rates = 0;
-	int i;
-
-	for (i = 0; i < ARRAY_SIZE(mask->control[band].uhr_mcs); i++)
-		num_rates += hweight32(mask->control[band].uhr_mcs[i]);
-
-	return num_rates;
-}
-
 static u8 ath12k_parse_mpdudensity(u8 mpdudensity)
 {
 /*  From IEEE Std 802.11-2020 defined values for "Minimum MPDU Start Spacing":
@@ -11260,48 +11220,6 @@ ath12k_mac_bitrate_mask_num_he_ul_rates(struct ath12k *ar,
 
 	for (i = 0; i < ARRAY_SIZE(mask->control[band].he_ul_mcs); i++)
 		num_rates += hweight16(mask->control[band].he_ul_mcs[i]);
-
-	return num_rates;
-}
-
-static int
-ath12k_mac_bitrate_mask_num_ht_rates(struct ath12k *ar,
-				    enum nl80211_band band,
-				    const struct cfg80211_bitrate_mask *mask)
-{
-	int num_rates = 0;
-	int i;
-
-	for (i = 0; i < ARRAY_SIZE(mask->control[band].ht_mcs); i++)
-		num_rates += hweight16(mask->control[band].ht_mcs[i]);
-
-	return num_rates;
-}
-
-static int
-ath12k_mac_bitrate_mask_num_vht_rates(struct ath12k *ar,
-				      enum nl80211_band band,
-				      const struct cfg80211_bitrate_mask *mask)
-{
-	int num_rates = 0;
-	int i;
-
-	for (i = 0; i < ARRAY_SIZE(mask->control[band].vht_mcs); i++)
-		num_rates += hweight16(mask->control[band].vht_mcs[i]);
-
-	return num_rates;
-}
-
-static int
-ath12k_mac_bitrate_mask_num_he_rates(struct ath12k *ar,
-				     enum nl80211_band band,
-				     const struct cfg80211_bitrate_mask *mask)
-{
-	int num_rates = 0;
-	int i;
-
-	for (i = 0; i < ARRAY_SIZE(mask->control[band].he_mcs); i++)
-		num_rates += hweight16(mask->control[band].he_mcs[i]);
 
 	return num_rates;
 }
@@ -22860,198 +22778,6 @@ void ath12k_mac_op_flush(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 }
 EXPORT_SYMBOL(ath12k_mac_op_flush);
 
-static bool
-ath12k_mac_has_single_legacy_rate(struct ath12k *ar,
-				  enum nl80211_band band,
-				  const struct cfg80211_bitrate_mask *mask)
-{
-	int num_rates = 0;
-
-	num_rates = hweight32(mask->control[band].legacy);
-
-	if (ath12k_mac_bitrate_mask_num_ht_rates(ar, band, mask))
-		return false;
-
-	if (ath12k_mac_bitrate_mask_num_vht_rates(ar, band, mask))
-		return false;
-
-	if (ath12k_mac_bitrate_mask_num_he_rates(ar, band, mask))
-		return false;
-
-	if (ath12k_mac_bitrate_mask_num_eht_rates(ar, band, mask))
-		return false;
-
-	return num_rates == 1;
-}
-
-static __le16
-ath12k_mac_get_tx_mcs_map(const struct ieee80211_sta_he_cap *he_cap)
-{
-	if (he_cap->he_cap_elem.phy_cap_info[0] &
-	    IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_160MHZ_IN_5G)
-		return he_cap->he_mcs_nss_supp.tx_mcs_160;
-
-	return he_cap->he_mcs_nss_supp.tx_mcs_80;
-}
-
-static bool
-ath12k_mac_bitrate_mask_get_single_nss(struct ath12k *ar,
-				       struct ieee80211_vif *vif,
-				       enum nl80211_band band,
-				       const struct cfg80211_bitrate_mask *mask,
-				       int *nss)
-{
-	struct ieee80211_supported_band *sband = &ar->mac.sbands[band];
-	u16 vht_mcs_map = le16_to_cpu(sband->vht_cap.vht_mcs.tx_mcs_map);
-	const struct ieee80211_sta_he_cap *he_cap;
-	u16 he_mcs_map = 0;
-	u16 eht_mcs_map = 0;
-	u8 ht_nss_mask = 0;
-	u8 vht_nss_mask = 0;
-	u8 he_nss_mask = 0;
-	u8 eht_nss_mask = 0;
-	u8 mcs_nss_len;
-	int i;
-
-	/* No need to consider legacy here. Basic rates are always present
-	 * in bitrate mask
-	 */
-
-	for (i = 0; i < ARRAY_SIZE(mask->control[band].ht_mcs); i++) {
-		if (mask->control[band].ht_mcs[i] == 0)
-			continue;
-		else if (mask->control[band].ht_mcs[i] ==
-			 sband->ht_cap.mcs.rx_mask[i])
-			ht_nss_mask |= BIT(i);
-		else
-			return false;
-	}
-
-	for (i = 0; i < ARRAY_SIZE(mask->control[band].vht_mcs); i++) {
-		if (mask->control[band].vht_mcs[i] == 0)
-			continue;
-		else if (mask->control[band].vht_mcs[i] ==
-			 ath12k_mac_get_max_vht_mcs_map(vht_mcs_map, i))
-			vht_nss_mask |= BIT(i);
-		else
-			return false;
-	}
-
-	he_cap = ieee80211_get_he_iftype_cap_vif(sband, vif);
-	if (!he_cap)
-		return false;
-
-	he_mcs_map = le16_to_cpu(ath12k_mac_get_tx_mcs_map(he_cap));
-
-	for (i = 0; i < ARRAY_SIZE(mask->control[band].he_mcs); i++) {
-		if (mask->control[band].he_mcs[i] == 0)
-			continue;
-
-		if (mask->control[band].he_mcs[i] ==
-		    ath12k_mac_get_max_he_mcs_map(he_mcs_map, i))
-			he_nss_mask |= BIT(i);
-		else
-			return false;
-	}
-
-	mcs_nss_len = ieee80211_eht_mcs_nss_size(&sband->iftype_data->he_cap.he_cap_elem,
-						 &sband->iftype_data->eht_cap.eht_cap_elem,
-						 false);
-	if (mcs_nss_len == 4) {
-		/* 20 MHz only STA case */
-		const struct ieee80211_eht_mcs_nss_supp_20mhz_only *eht_mcs_nss =
-			&sband->iftype_data->eht_cap.eht_mcs_nss_supp.only_20mhz;
-		if (eht_mcs_nss->rx_tx_mcs13_max_nss)
-			eht_mcs_map = 0x1fff;
-		else if (eht_mcs_nss->rx_tx_mcs11_max_nss)
-			eht_mcs_map = 0x07ff;
-		else if (eht_mcs_nss->rx_tx_mcs9_max_nss)
-			eht_mcs_map = 0x01ff;
-		else
-			eht_mcs_map = 0x007f;
-	} else {
-		const struct ieee80211_eht_mcs_nss_supp_bw *eht_mcs_nss;
-
-		switch (mcs_nss_len) {
-		case 9:
-			eht_mcs_nss = &sband->iftype_data->eht_cap.eht_mcs_nss_supp.bw._320;
-			break;
-		case 6:
-			eht_mcs_nss = &sband->iftype_data->eht_cap.eht_mcs_nss_supp.bw._160;
-			break;
-		case 3:
-			eht_mcs_nss = &sband->iftype_data->eht_cap.eht_mcs_nss_supp.bw._80;
-			break;
-		default:
-			return false;
-		}
-
-		if (eht_mcs_nss->rx_tx_mcs13_max_nss)
-			eht_mcs_map = 0x1fff;
-		else if (eht_mcs_nss->rx_tx_mcs11_max_nss)
-			eht_mcs_map = 0x7ff;
-		else
-			eht_mcs_map = 0x1ff;
-	}
-
-	for (i = 0; i < ARRAY_SIZE(mask->control[band].eht_mcs); i++) {
-		if (mask->control[band].eht_mcs[i] == 0)
-			continue;
-
-		if (mask->control[band].eht_mcs[i] < eht_mcs_map)
-			eht_nss_mask |= BIT(i);
-		else
-			return false;
-	}
-
-	if (ht_nss_mask != vht_nss_mask || ht_nss_mask != he_nss_mask ||
-	    ht_nss_mask != eht_nss_mask)
-		return false;
-
-	if (ht_nss_mask == 0)
-		return false;
-
-	if (BIT(fls(ht_nss_mask)) - 1 != ht_nss_mask)
-		return false;
-
-	*nss = fls(ht_nss_mask);
-
-	return true;
-}
-
-static int
-ath12k_mac_get_single_legacy_rate(struct ath12k *ar,
-				  enum nl80211_band band,
-				  const struct cfg80211_bitrate_mask *mask,
-				  u32 *rate, u8 *nss)
-{
-	int rate_idx;
-	u16 bitrate;
-	u8 preamble;
-	u8 hw_rate;
-
-	if (hweight32(mask->control[band].legacy) != 1)
-		return -EINVAL;
-
-	rate_idx = ffs(mask->control[band].legacy) - 1;
-
-	if (band == NL80211_BAND_5GHZ || band == NL80211_BAND_6GHZ)
-		rate_idx += ATH12K_MAC_FIRST_OFDM_RATE_IDX;
-
-	hw_rate = ath12k_legacy_rates[rate_idx].hw_value;
-	bitrate = ath12k_legacy_rates[rate_idx].bitrate;
-
-	if (ath12k_mac_bitrate_is_cck(bitrate))
-		preamble = WMI_RATE_PREAMBLE_CCK;
-	else
-		preamble = WMI_RATE_PREAMBLE_OFDM;
-
-	*nss = 1;
-	*rate = ATH12K_HW_RATE_CODE(hw_rate, 0, preamble, 0);
-
-	return 0;
-}
-
 static int
 ath12k_mac_set_fixed_rate_gi_ltf(struct ath12k_link_vif *arvif, u8 gi, u8 ltf)
 {
@@ -23310,31 +23036,6 @@ static int ath12k_mac_set_rate_params(struct ath12k_link_vif *arvif,
 }
 
 static bool
-ath12k_mac_vht_mcs_range_present(struct ath12k *ar,
-				 enum nl80211_band band,
-				 const struct cfg80211_bitrate_mask *mask)
-{
-	int i;
-	u16 vht_mcs;
-
-	for (i = 0; i < NL80211_VHT_NSS_MAX; i++) {
-		vht_mcs = mask->control[band].vht_mcs[i];
-
-		switch (vht_mcs) {
-		case 0:
-		case BIT(8) - 1:
-		case BIT(9) - 1:
-		case BIT(10) - 1:
-			break;
-		default:
-			return false;
-		}
-	}
-
-	return true;
-}
-
-static bool
 ath12k_mac_he_ul_mcs_present(struct ath12k *ar,
 				enum nl80211_band band,
 				const struct cfg80211_bitrate_mask *mask)
@@ -23347,177 +23048,6 @@ ath12k_mac_he_ul_mcs_present(struct ath12k *ar,
 	}
 
 	return false;
-}
-
-static bool
-ath12k_mac_he_mcs_range_present(struct ath12k *ar,
-				enum nl80211_band band,
-				const struct cfg80211_bitrate_mask *mask)
-{
-	int i;
-	u16 he_mcs;
-
-	for (i = 0; i < NL80211_HE_NSS_MAX; i++) {
-		he_mcs = mask->control[band].he_mcs[i];
-
-		switch (he_mcs) {
-		case 0:
-		case BIT(8) - 1:
-		case BIT(10) - 1:
-		case BIT(12) - 1:
-			break;
-		default:
-			return false;
-		}
-	}
-
-	return true;
-}
-
-static bool
-ath12k_mac_eht_mcs_range_present(struct ath12k *ar,
-				 enum nl80211_band band,
-				 const struct cfg80211_bitrate_mask *mask)
-{
-	int i;
-	u16 eht_mcs;
-
-	for (i = 0; i < NL80211_EHT_NSS_MAX; i++) {
-		eht_mcs = mask->control[band].eht_mcs[i];
-
-		switch (eht_mcs) {
-		case 0:
-		case BIT(8) - 1:
-		case BIT(10) - 1:
-		case BIT(12) - 1:
-		case BIT(14) - 1:
-			break;
-		case BIT(15) - 1:
-		case BIT(16) - BIT(14) - 1:
-			if (i != 0)
-				return false;
-			break;
-		default:
-			return false;
-		}
-	}
-
-	return true;
-}
-
-static bool
-ath12k_mac_uhr_mcs_range_present(struct ath12k *ar,
-				 enum nl80211_band band,
-				 const struct cfg80211_bitrate_mask *mask)
-{
-	u32 uhr_mcs;
-	int i;
-
-	for (i = 0; i < NL80211_UHR_NSS_MAX; i++) {
-		uhr_mcs = mask->control[band].uhr_mcs[i];
-
-		switch (uhr_mcs) {
-		case 0:
-		case (BIT(8) - 1) | BIT(17) | BIT(19) | BIT(20):
-		case (BIT(10) - 1) | BIT(17) | BIT(19) |
-		      BIT(20) | BIT(23):
-		case (BIT(12) - 1) | BIT(17) | BIT(19) |
-		      BIT(20) | BIT(23):
-		case (BIT(14) - 1) | BIT(17) | BIT(19) |
-		      BIT(20) | BIT(23):
-			break;
-		case (BIT(15) - 1) | BIT(17) | BIT(19) |
-		      BIT(20) | BIT(23):
-			if (i != 0)
-				return false;
-			break;
-		default:
-			return false;
-		}
-	}
-
-	return true;
-}
-
-static bool
-ath12k_mac_validate_fixed_rate_settings(struct ath12k *ar, enum nl80211_band band,
-					const struct cfg80211_bitrate_mask *mask,
-					unsigned int link_id)
-{
-	bool eht_fixed_rate = false, he_fixed_rate = false, vht_fixed_rate = false;
-	const u16 *vht_mcs_mask, *he_mcs_mask, *eht_mcs_mask, *he_ul_mcs_mask;
-	struct ieee80211_link_sta *link_sta;
-	struct ath12k_dp_link_peer *peer, *tmp;
-	bool he_ul_fixed_rate = false;
-	u8 vht_nss, he_nss, eht_nss, he_ul_nss;
-	int ret = true;
-	struct ieee80211_sta *sta;
-
-	vht_mcs_mask = mask->control[band].vht_mcs;
-	he_mcs_mask = mask->control[band].he_mcs;
-	eht_mcs_mask = mask->control[band].eht_mcs;
-	he_ul_mcs_mask = mask->control[band].he_ul_mcs;
-
-	if (ath12k_mac_bitrate_mask_num_vht_rates(ar, band, mask) == 1)
-		vht_fixed_rate = true;
-
-	if (ath12k_mac_bitrate_mask_num_he_rates(ar, band, mask) == 1)
-		he_fixed_rate = true;
-
-	if (ath12k_mac_bitrate_mask_num_eht_rates(ar, band, mask) == 1)
-		eht_fixed_rate = true;
-
-	if (ath12k_mac_bitrate_mask_num_he_ul_rates(ar, band, mask) == 1)
-		he_ul_fixed_rate = true;
-
-	if (!vht_fixed_rate && !he_fixed_rate && !eht_fixed_rate && !he_ul_fixed_rate)
-		return true;
-
-	vht_nss = ath12k_mac_max_vht_nss(vht_mcs_mask);
-	he_nss =  ath12k_mac_max_he_nss(he_mcs_mask);
-	eht_nss = ath12k_mac_max_eht_nss(eht_mcs_mask);
-	he_ul_nss =  ath12k_mac_max_he_nss(he_ul_mcs_mask);
-
-	rcu_read_lock();
-	spin_lock_bh(&ar->ab->dp->dp_lock);
-	list_for_each_entry_safe(peer, tmp, &ar->ab->dp->peers, list) {
-		if (ath12k_dp_link_peer_get_sta(peer)) {
-			sta = ath12k_dp_link_peer_get_sta(peer);
-			link_sta = rcu_dereference(sta->link[link_id]);
-			if (!link_sta) {
-				ret = false;
-				goto exit;
-			}
-
-			if (vht_fixed_rate && (!link_sta->vht_cap.vht_supported ||
-					       link_sta->rx_nss < vht_nss)) {
-				ret = false;
-				goto exit;
-			}
-			if (he_fixed_rate && (!link_sta->he_cap.has_he ||
-					      link_sta->rx_nss < he_nss)) {
-				ret = false;
-				goto exit;
-			}
-			if (eht_fixed_rate && (!link_sta->eht_cap.has_eht ||
-					       link_sta->rx_nss < eht_nss)) {
-				ret = false;
-				goto exit;
-			}
-			/* TODO:
-			*	check when UL is valid
-			*/
-			if (he_ul_fixed_rate && (!link_sta->he_cap.has_he ||
-					link_sta->rx_nss < he_ul_nss)) {
-				ret = false;
-				goto exit;
-			}
-		}
-	}
-exit:
-	spin_unlock_bh(&ar->ab->dp->dp_lock);
-	rcu_read_unlock();
-	return ret;
 }
 
 int ath12k_is_mcs_rate_changed(enum nl80211_band band,
@@ -23545,23 +23075,14 @@ ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 	struct cfg80211_chan_def def;
 	struct ath12k *ar;
 	enum nl80211_band band;
-	const u8 *ht_mcs_mask;
-	const u16 *vht_mcs_mask;
-	const u16 *he_mcs_mask;
-	const u16 *eht_mcs_mask;
-	const u16 *he_ul_mcs_mask;
-	const u32 *uhr_mcs_mask;
 	u8 he_ltf = 0;
 	u8 he_gi = 0;
 	u8 eht_ltf = 0;
 	u8 eht_gi = 0;
-	u8 uhr_ueqm_pattern;
-	u8 uhr_elr;
 	u32 rate;
-	u8 nss, mac_nss, he_ul_nss = 0;
+	u8 nss, he_ul_nss = 0;
 	u8 sgi;
 	u8 ldpc;
-	int single_nss;
 	int ret, i;
 	int num_rates;
 	int he_ul_rate = -1;
@@ -23572,26 +23093,15 @@ ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 	lockdep_assert_wiphy(hw->wiphy);
 
 	arvif = ath12k_get_arvif_from_link_id(ahvif, link_id);
-	if (!arvif) {
-		ret = -EINVAL;
-		goto out;
-	}
+	if (!arvif)
+		return -EINVAL;
 
 	ar = arvif->ar;
-	if (ath12k_mac_vif_link_chan(vif, arvif->link_id, &def)) {
-		ret = -EPERM;
-		goto out;
-	}
+	if (ath12k_mac_vif_link_chan(vif, arvif->link_id, &def))
+		return -EPERM;
 
 	band = def.chan->band;
-	ht_mcs_mask = mask->control[band].ht_mcs;
-	vht_mcs_mask = mask->control[band].vht_mcs;
-	he_mcs_mask = mask->control[band].he_mcs;
-	eht_mcs_mask = mask->control[band].eht_mcs;
 	ldpc = !!(ar->ht_cap_info & WMI_HT_CAP_LDPC);
-	he_ul_mcs_mask = mask->control[band].he_ul_mcs;
-	uhr_mcs_mask = mask->control[band].uhr_mcs;
-	uhr_elr = mask->control[band].uhr_elr;
 
 	sgi = mask->control[band].gi;
 	he_gi = mask->control[band].he_gi;
@@ -23617,155 +23127,6 @@ ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 		return -EINVAL;
 	}
 
-	/* mac80211 doesn't support sending a fixed HT/VHT MCS alone, rather it
-	 * requires passing at least one of used basic rates along with them.
-	 * Fixed rate setting across different preambles(legacy, HT, VHT) is
-	 * not supported by the FW. Hence use of FIXED_RATE vdev param is not
-	 * suitable for setting single HT/VHT rates.
-	 * But, there could be a single basic rate passed from userspace which
-	 * can be done through the FIXED_RATE param.
-	 */
-	if (ath12k_mac_has_single_legacy_rate(ar, band, mask)) {
-		ret = ath12k_mac_get_single_legacy_rate(ar, band, mask, &rate,
-							&nss);
-		if (ret) {
-			ath12k_warn(ar->ab, "failed to get single legacy rate for vdev %i: %d\n",
-				    arvif->vdev_id, ret);
-			goto out;
-		}
-
-		if(!ath12k_is_mcs_rate_changed(band, mask))
-			goto skip_mcs_set;
-	} else if (ath12k_mac_bitrate_mask_get_single_nss(ar, vif, band, mask,
-							  &single_nss)) {
-		rate = WMI_FIXED_RATE_NONE;
-		nss = single_nss;
-		arvif->bitrate_mask = *mask;
-
-		if(!ath12k_is_mcs_rate_changed(band, mask))
-			goto skip_mcs_set;
-	} else {
-		rate = WMI_FIXED_RATE_NONE;
-
-		if (!ath12k_mac_validate_fixed_rate_settings(ar, band,
-							     mask, arvif->link_id))
-			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
-					"failed to update fixed rate settings due to mcs/nss incompatibility\n");
-
-		mac_nss = max3(ath12k_mac_max_ht_nss(ht_mcs_mask),
-			       ath12k_mac_max_vht_nss(vht_mcs_mask),
-			       ath12k_mac_max_he_nss(he_mcs_mask));
-		mac_nss = max3(mac_nss,
-			       ath12k_mac_max_eht_nss(eht_mcs_mask),
-			       ath12k_mac_max_uhr_nss(uhr_mcs_mask));
-		nss = min_t(u32, ar->num_tx_chains, mac_nss);
-
-		/* If multiple rates across different preambles are given
-		 * we can reconfigure this info with all peers using PEER_ASSOC
-		 * command with the below exception cases.
-		 * - Single VHT Rate : peer_assoc command accommodates only MCS
-		 * range values i.e 0-7, 0-8, 0-9 for VHT. Though mac80211
-		 * mandates passing basic rates along with HT/VHT rates, FW
-		 * doesn't allow switching from VHT to Legacy. Hence instead of
-		 * setting legacy and VHT rates using RATEMASK_CMD vdev cmd,
-		 * we could set this VHT rate as peer fixed rate param, which
-		 * will override FIXED rate and FW rate control algorithm.
-		 * If single VHT rate is passed along with HT rates, we select
-		 * the VHT rate as fixed rate for vht peers.
-		 * - Multiple VHT Rates : When Multiple VHT rates are given,this
-		 * can be set using RATEMASK CMD which uses FW rate-ctl alg.
-		 * TODO: Setting multiple VHT MCS and replacing peer_assoc with
-		 * RATEMASK_CMDID can cover all use cases of setting rates
-		 * across multiple preambles and rates within same type.
-		 * But requires more validation of the command at this point.
-		 */
-
-		num_rates = ath12k_mac_bitrate_mask_num_vht_rates(ar, band,
-								  mask);
-
-		if (!ath12k_mac_vht_mcs_range_present(ar, band, mask) &&
-		    num_rates > 1) {
-			/* TODO: Handle multiple VHT MCS values setting using
-			 * RATEMASK CMD
-			 */
-			ath12k_warn(ar->ab,
-				    "Setting more than one MCS Value in bitrate mask not supported\n");
-			ret = -EINVAL;
-			goto out;
-		}
-
-		num_rates = ath12k_mac_bitrate_mask_num_he_rates(ar, band, mask);
-		if (num_rates == 1)
-			he_fixed_rate = true;
-
-		if (!ath12k_mac_he_mcs_range_present(ar, band, mask) &&
-		    num_rates > 1) {
-			ath12k_warn(ar->ab,
-				    "Setting more than one HE MCS Value in bitrate mask not supported\n");
-			ret = -EINVAL;
-			goto out;
-		}
-
-                num_rates = ath12k_mac_bitrate_mask_num_eht_rates(ar, band, mask);
-		if (num_rates == 1)
-			eht_fixed_rate = true;
-
-		if (!ath12k_mac_eht_mcs_range_present(ar, band, mask) &&
-		    num_rates > 1) {
-			ath12k_warn(ar->ab,
-				    "Setting more than one EHT MCS Value in bitrate mask not supported\n");
-			ret =-EINVAL;
-			goto out;
-		}
-
-		num_rates = ath12k_mac_bitrate_mask_num_uhr_rates(ar, band, mask);
-		if (num_rates == 1)
-			uhr_fixed_rate = true;
-
-		if (!ath12k_mac_uhr_mcs_range_present(ar, band, mask) &&
-		    num_rates > 1) {
-			ath12k_warn(ar->ab,
-				    "Setting more than one UHR MCS Value in bitrate mask not supported\n");
-			ret = -EINVAL;
-			goto out;
-		}
-
-		if(!ath12k_is_mcs_rate_changed(band, mask))
-			goto skip_mcs_set;
-
-		arvif->bitrate_mask = *mask;
-	}
-
-skip_mcs_set:
-
-	if (mask->control[band].uhr_mcs_changed && uhr_fixed_rate) {
-		for (u8 i = 0; i < ARRAY_SIZE(mask->control[band].uhr_mcs); i++) {
-			if (mask->control[band].uhr_mcs[i]) {
-				u8 rate_idx;
-
-				rate_idx = ffs(mask->control[band].uhr_mcs[i]) - 1;
-				uhr_ueqm_pattern = cfg80211_get_uhr_ueqm_map(
-						mask->control[band].ueqm_pattern.pattern,
-						ath12k_mac_max_uhr_nss(uhr_mcs_mask),
-						rate_idx);
-				if (!uhr_ueqm_pattern ||
-				    (hweight32(uhr_ueqm_pattern) == 1))
-					rate = ATH12K_HW_RATE_CODE(rate_idx, i,
-								   WMI_RATE_PREAMBLE_UHR,
-								   ffs(uhr_ueqm_pattern));
-				break;
-			}
-		}
-	}
-
-	if (uhr_elr != 0xff) {
-		ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
-						WMI_VDEV_PARAM_UHR_ELR, uhr_elr);
-		if (ret)
-			ath12k_warn(ar->ab, "Failed to set UHR ELR mode  on vdev %i: %d\n",
-				    arvif->vdev_id, ret);
-	}
-
 	ret = ath12k_mac_set_rate_params(arvif, rate, nss, sgi, ldpc, he_gi,
 					 he_ltf, he_fixed_rate, eht_gi, eht_ltf,
 					 eht_fixed_rate, he_ul_rate, he_ul_nss,
@@ -23775,7 +23136,6 @@ skip_mcs_set:
 			    arvif->vdev_id, ret);
 	}
 
-out:
 	return ret;
 }
 EXPORT_SYMBOL(ath12k_mac_op_set_bitrate_mask);
