@@ -662,6 +662,7 @@ struct ath12k_vap_cfg {
 	u32 ba_bufsize;
 	u32 tx_encap_type;
 	u32 rx_decap_type;
+	u32 protection_mode;
 };
 
 struct ath12k_rssi_deauth_config {
