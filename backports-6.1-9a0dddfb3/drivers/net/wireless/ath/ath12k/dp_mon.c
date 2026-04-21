@@ -132,6 +132,65 @@ ath12k_dp_mon_rx_update_radiotap_he_mu(struct hal_rx_mon_ppdu_info *rx_status,
 	rtap_buf[rtap_len] = rx_status->he_RU[3];
 }
 
+static void
+ath12k_dp_mon_update_radiotap_eht(struct hal_rx_mon_ppdu_info *ppduinfo,
+				  struct sk_buff *mon_skb,
+				  struct ieee80211_rx_status *rxs)
+{
+	struct ieee80211_radiotap_tlv *tlv;
+	struct ieee80211_radiotap_eht *eht;
+	struct ieee80211_radiotap_eht_usig *usig;
+	u16 len = 0, i, eht_len = 0, usig_len;
+	u8 user;
+
+	if (ppduinfo->is_eht) {
+		eht_len = struct_size(eht,
+				      user_info,
+				      ppduinfo->eht_info.num_user_info);
+		len += sizeof(*tlv) + eht_len;
+	}
+
+	if (ppduinfo->eht_usig) {
+		usig_len = sizeof(*usig);
+		len += sizeof(*tlv) + usig_len;
+	}
+
+	rxs->flag |= RX_FLAG_RADIOTAP_TLV_AT_END;
+	rxs->encoding = RX_ENC_EHT;
+
+	skb_reset_mac_header(mon_skb);
+
+	tlv = skb_push(mon_skb, len);
+
+	if (ppduinfo->is_eht) {
+		tlv->type = cpu_to_le16(IEEE80211_RADIOTAP_EHT);
+		tlv->len = cpu_to_le16(eht_len);
+
+		eht = (struct ieee80211_radiotap_eht *)tlv->data;
+		eht->known = ppduinfo->eht_info.eht.known;
+
+		for (i = 0;
+		     i < ARRAY_SIZE(eht->data) &&
+		     i < ARRAY_SIZE(ppduinfo->eht_info.eht.data);
+		     i++)
+			eht->data[i] = ppduinfo->eht_info.eht.data[i];
+
+		for (user = 0; user < ppduinfo->eht_info.num_user_info; user++)
+			put_unaligned_le32(ppduinfo->eht_info.user_info[user],
+					   &eht->user_info[user]);
+
+		tlv = (struct ieee80211_radiotap_tlv *)&tlv->data[eht_len];
+	}
+
+	if (ppduinfo->eht_usig) {
+		tlv->type = cpu_to_le16(IEEE80211_RADIOTAP_EHT_USIG);
+		tlv->len = cpu_to_le16(usig_len);
+
+		usig = (struct ieee80211_radiotap_eht_usig *)tlv->data;
+		*usig = ppduinfo->u_sig_info.usig;
+	}
+}
+
 void ath12k_dp_mon_update_radiotap(struct ath12k_pdev_dp *dp_pdev,
 				   struct hal_rx_mon_ppdu_info *ppduinfo,
 				   struct sk_buff *mon_skb,
@@ -152,58 +211,7 @@ void ath12k_dp_mon_update_radiotap(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	if (ppduinfo->is_eht || ppduinfo->eht_usig) {
-		struct ieee80211_radiotap_tlv *tlv;
-		struct ieee80211_radiotap_eht *eht;
-		struct ieee80211_radiotap_eht_usig *usig;
-		u16 len = 0, i, eht_len = 0, usig_len;
-		u8 user;
-
-		if (ppduinfo->is_eht) {
-			eht_len = struct_size(eht,
-					      user_info,
-					      ppduinfo->eht_info.num_user_info);
-			len += sizeof(*tlv) + eht_len;
-		}
-
-		if (ppduinfo->eht_usig) {
-			usig_len = sizeof(*usig);
-			len += sizeof(*tlv) + usig_len;
-		}
-
-		rxs->flag |= RX_FLAG_RADIOTAP_TLV_AT_END;
-		rxs->encoding = RX_ENC_EHT;
-
-		skb_reset_mac_header(mon_skb);
-
-		tlv = skb_push(mon_skb, len);
-
-		if (ppduinfo->is_eht) {
-			tlv->type = cpu_to_le16(IEEE80211_RADIOTAP_EHT);
-			tlv->len = cpu_to_le16(eht_len);
-
-			eht = (struct ieee80211_radiotap_eht *)tlv->data;
-			eht->known = ppduinfo->eht_info.eht.known;
-
-			for (i = 0;
-			     i < ARRAY_SIZE(eht->data) &&
-			     i < ARRAY_SIZE(ppduinfo->eht_info.eht.data);
-			     i++)
-				eht->data[i] = ppduinfo->eht_info.eht.data[i];
-
-			for (user = 0; user < ppduinfo->eht_info.num_user_info; user++)
-				put_unaligned_le32(ppduinfo->eht_info.user_info[user],
-						   &eht->user_info[user]);
-
-			tlv = (struct ieee80211_radiotap_tlv *)&tlv->data[eht_len];
-		}
-
-		if (ppduinfo->eht_usig) {
-			tlv->type = cpu_to_le16(IEEE80211_RADIOTAP_EHT_USIG);
-			tlv->len = cpu_to_le16(usig_len);
-
-			usig = (struct ieee80211_radiotap_eht_usig *)tlv->data;
-			*usig = ppduinfo->u_sig_info.usig;
-		}
+		ath12k_dp_mon_update_radiotap_eht(ppduinfo, mon_skb, rxs);
 	} else if (ppduinfo->he_mu_flags) {
 		rxs->flag |= RX_FLAG_RADIOTAP_HE_MU;
 		rxs->encoding = RX_ENC_HE;
