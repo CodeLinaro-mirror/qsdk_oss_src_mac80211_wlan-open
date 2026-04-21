@@ -589,6 +589,25 @@ void ath12k_reg_free(struct ath12k_base *ab);
 void ath12k_regd_update_work(struct work_struct *work);
 
 /**
+ * ath12k_change_6g_txpow_sta_mode - Update 6 GHz tx power mode for
+ * standalone STA
+ * @ar: ATH12K radio instance
+ *
+ * Set the 6 GHz transmit power after AFC completed when the radio is
+ * operating exclusively in STA-only mode.
+ *
+ * The function first determines whether the radio hosts exactly a standalone
+ * STA configuration (i.e., no AP vdevs present). If so, it triggers a power
+ * mode change via mac80211 to Standard Power (SP) for the corresponding
+ * 6 GHz STA link.
+ *
+ * If no usable vifs exist, or the radio is not operating in STA-only mode,
+ * the function returns without making any changes.
+ */
+
+void ath12k_change_6g_txpow_sta_mode_work(struct work_struct *work);
+
+/**
  * ath12k_set_previous_country_work - Reset to previous country code
  * @work: Pointer to work_struct
  *

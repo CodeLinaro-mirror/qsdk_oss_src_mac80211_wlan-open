@@ -18347,6 +18347,7 @@ void ath12k_mac_stop(struct ath12k *ar)
 	wiphy_work_cancel(ath12k_ar_to_hw(ar)->wiphy, &ar->scan.vdev_clean_wk);
 	cancel_work_sync(&ar->regd_update_work);
 	cancel_work_sync(&ar->reg_set_previous_country);
+	cancel_work_sync(&ar->change_6g_txpow_sta_mode_work);
 	cancel_work_sync(&ar->mvr_ch_switch_notify_work);
 	cancel_work_sync(&ar->ab->rfkill_work);
 	cancel_work_sync(&ar->ab->update_11d_work);
@@ -26560,6 +26561,7 @@ static void ath12k_mac_hw_unregister(struct ath12k_hw *ah)
 	for_each_ar(ah, ar, i) {
 		cancel_work_sync(&ar->regd_update_work);
 		cancel_work_sync(&ar->reg_set_previous_country);
+		cancel_work_sync(&ar->change_6g_txpow_sta_mode_work);
 		cancel_work_sync(&ar->mvr_ch_switch_notify_work);
 		ath12k_debugfs_unregister(ar);
 		ath12k_sysfs_cleanup_extn(ar);
@@ -27210,6 +27212,8 @@ static int ath12k_mac_setup(struct ath12k *ar)
 	INIT_DELAYED_WORK(&ar->scan.roc_done, ath12k_scan_roc_done);
 	wiphy_work_init(&ar->scan.vdev_clean_wk, ath12k_scan_vdev_clean_work);
 	INIT_WORK(&ar->regd_update_work, ath12k_regd_update_work);
+	INIT_WORK(&ar->change_6g_txpow_sta_mode_work,
+		  ath12k_change_6g_txpow_sta_mode_work);
 	INIT_WORK(&ar->reg_set_previous_country,
 		  ath12k_set_previous_country_work);
 	wiphy_work_init(&ar->agile_cac_abort_wq, ath12k_agile_cac_abort_work);

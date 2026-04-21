@@ -7916,8 +7916,8 @@ static int ath12k_vendor_6ghz_power_mode_change(struct wiphy *wiphy,
 	ath12k_dbg(ar->ab, ATH12K_DBG_REG,
 		   "6 GHz power mode change request for link id %d, pwr mode %d\n",
 		   link_id, ap_6ghz_pwr_mode);
-	err = ieee80211_6ghz_power_mode_change(wiphy, wdev,
-					       ap_6ghz_pwr_mode, link_id);
+	err = ieee80211_6ghz_power_mode_change(wiphy, wdev, ap_6ghz_pwr_mode,
+					       link_id, true);
 
 	return err;
 }

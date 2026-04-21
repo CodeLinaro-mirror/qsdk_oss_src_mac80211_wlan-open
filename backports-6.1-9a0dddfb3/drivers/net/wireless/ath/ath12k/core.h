@@ -1685,6 +1685,8 @@ struct ath12k {
 	struct work_struct regd_update_work;
 	/* Work struct for resetting to previous country code */
 	struct work_struct reg_set_previous_country;
+	/* Work struct to set tx power for standlone sta after AFC done */
+	struct work_struct change_6g_txpow_sta_mode_work;
 
 	struct wiphy_work wmi_mgmt_tx_work;
 	struct sk_buff_head wmi_mgmt_tx_queue;

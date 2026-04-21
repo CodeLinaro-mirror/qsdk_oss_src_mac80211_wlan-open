@@ -2609,6 +2609,133 @@ ath12_reg_check_afc_payload_validity(struct ath12k *ar,
 	return 1;
 }
 
+/**
+ * ath12k_radio_has_standalone_sta - Detect standalone STA on a radio
+ * @ar: ATH12K radio instance
+ * @total_vifs: Output parameter returning number of valid vifs on the radio
+ * @sta_link_id: Output parameter returning link ID of the STA
+ * @sta_wdev: Output parameter returning wireless_dev of the STA
+ *
+ * Iterate over all vifs associated with the given radio and determine whether
+ * the radio is operating in a standalone STA-only configuration.
+ *
+ * A radio is considered standalone STA if:
+ *   - At least one STA vdev is present, and
+ *   - No AP vdevs are present on the same radio.
+ *
+ * The function deterministically selects the first valid STA vdev found and
+ * returns its corresponding link ID and wireless_dev pointer.
+ *
+ * Return:
+ * * true  - Radio hosts a standalone STA-only configuration
+ * * false - Otherwise (mixed AP/STA, no STA, or invalid input)
+ */
+static bool ath12k_radio_has_standalone_sta(struct ath12k *ar,
+					    int *total_vifs,
+					    u8 *sta_link_id,
+					    struct wireless_dev **sta_wdev)
+{
+	struct ath12k_link_vif *arvif;
+	bool has_sta;
+	bool has_ap;
+
+	if (!total_vifs || !sta_link_id || !sta_wdev)
+		return false;
+
+	*total_vifs = 0;
+	*sta_link_id = 0;
+	*sta_wdev = NULL;
+
+	if (!ar)
+		return false;
+
+	has_sta = false;
+	has_ap = false;
+	spin_lock_bh(&ar->data_lock);
+	list_for_each_entry(arvif, &ar->arvifs, list) {
+		struct ath12k_vif *ahvif;
+		struct wireless_dev *wdev;
+
+		ahvif = arvif->ahvif;
+		if (!ahvif)
+			continue;
+
+		wdev = ieee80211_vif_to_wdev(ahvif->vif);
+		if (!wdev)
+			continue;
+
+		if (ahvif->vdev_type == WMI_VDEV_TYPE_UNSPEC)
+			continue;
+
+		(*total_vifs)++;
+
+		if (ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
+			has_ap = true;
+			break;
+		}
+
+		if (!has_sta && ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
+			u8 link_id;
+
+			link_id = ath12k_mac_find_link_id_by_ar(ahvif, ar);
+			if (link_id < ATH12K_NUM_MAX_LINKS) {
+				has_sta = true;
+				*sta_link_id = link_id;
+				*sta_wdev = wdev;
+			}
+		}
+	}
+	spin_unlock_bh(&ar->data_lock);
+
+	return (!has_ap && has_sta);
+}
+
+
+/**
+ * ath12k_change_6g_txpow_sta_mode - Update 6 GHz power mode for standalone STA
+ * @ar: ATH12K radio instance
+ *
+ * Return: If no usable vifs exist, or the radio is not operating in
+ * STA-only mode, the function returns without making any changes.
+ */
+static void ath12k_change_6g_txpow_sta_mode(struct ath12k *ar)
+{
+	int total_vifs;
+	u8 link_id;
+	bool is_standalone_sta;
+	struct wireless_dev *wdev;
+
+	if (!ar) {
+		pr_err("ath12k_afc: Invalid ar pointer\n");
+		return;
+	}
+
+	is_standalone_sta = ath12k_radio_has_standalone_sta(ar, &total_vifs,
+							    &link_id, &wdev);
+	if (!total_vifs) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_AFC, "No usable vifs found");
+		return;
+	}
+
+	if (!is_standalone_sta)
+		return;
+
+	if (!wdev)
+		return;
+
+	ieee80211_6ghz_power_mode_change(ar->ah->hw->wiphy,
+					 wdev, NL80211_REG_AP_SP,
+					 link_id, false);
+}
+
+void ath12k_change_6g_txpow_sta_mode_work(struct work_struct *work)
+{
+	struct ath12k *ar = container_of(work, struct ath12k,
+					 change_6g_txpow_sta_mode_work);
+
+	ath12k_change_6g_txpow_sta_mode(ar);
+}
+
 int ath12k_reg_process_afc_power_event(struct ath12k *ar,
 				       const struct ath12k_afc_info *afc)
 {
@@ -2678,6 +2805,7 @@ int ath12k_reg_process_afc_power_event(struct ath12k *ar,
 		   ar->pdev_idx);
 	ah->regd_updated = false;
 	queue_work(ab->workqueue, &ar->regd_update_work);
+	queue_work(ab->workqueue, &ar->change_6g_txpow_sta_mode_work);
 	return ret;
 end:
 	spin_unlock_bh(&ar->data_lock);
