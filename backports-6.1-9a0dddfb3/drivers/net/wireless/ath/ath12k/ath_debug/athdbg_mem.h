@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause-Clear*/
 /* Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.*/
-#ifndef __ATHMEMDEBUG_H
-#define __ATHMEMDEBUG_H
+#ifndef __ATHDBG_MEM_H
+#define __ATHDBG_MEM_H
 
 #define FUNC_OBJ_ARR_SIZE 500
 #define BUF_SIZE 10192
