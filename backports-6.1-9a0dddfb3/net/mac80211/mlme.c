@@ -1245,6 +1245,65 @@ ieee80211_ap_power_type(u8 control)
 	}
 }
 
+/**
+ * ieee80211_notify_colocated_ap_6ghz_update - Notify colocated AP links
+ * @sdata: STA interface that learned the updated 6 GHz information
+ * @sta_link: STA link that received the update
+ * @power_mode_changed: Root AP 6 GHz power type changed
+ *
+ * When a STA link learns a new 6 GHz power type from the upstream AP,
+ * propagate the relevant BSS change notification to colocated 6 GHz AP links so
+ * the driver can recompute repeater AP power handling.
+ */
+static void
+ieee80211_notify_colocated_ap_6ghz_update(struct ieee80211_sub_if_data *sdata,
+					  struct ieee80211_link_data *sta_link,
+					  bool power_mode_changed)
+{
+	struct ieee80211_link_data *ap_link;
+	struct ieee80211_chanctx_conf *sta_chanctx_conf;
+	u64 changed = 0;
+
+	if (sdata->vif.type != NL80211_IFTYPE_STATION)
+		return;
+
+	if (power_mode_changed)
+		changed |= BSS_CHANGED_6GHZ_POWER_MODE;
+
+	if (!changed)
+		return;
+
+	sta_chanctx_conf = rcu_access_pointer(sta_link->conf->chanctx_conf);
+	if (!sta_chanctx_conf)
+		return;
+
+	/*
+	 * This notification originates from the STA path. It matters for a
+	 * repeater STA with colocated 6 GHz AP links; standalone STA links do
+	 * not have colocated AP state to update.
+	 */
+	for_each_sdata_link(sdata->local, ap_link) {
+		if (ap_link->sdata == sdata ||
+		    ap_link->sdata->vif.type != NL80211_IFTYPE_AP)
+			continue;
+
+		if (rcu_access_pointer(ap_link->conf->chanctx_conf) != sta_chanctx_conf)
+			continue;
+
+		if (!rcu_access_pointer(ap_link->conf->chanctx_conf) ||
+		    !ap_link->conf->chanreq.oper.chan ||
+		    !cfg80211_chandef_valid(&ap_link->conf->chanreq.oper)) {
+			continue;
+		}
+
+		if (ap_link->conf->chanreq.oper.chan &&
+		    ap_link->conf->chanreq.oper.chan->band != NL80211_BAND_6GHZ)
+			continue;
+
+		ieee80211_link_info_change_notify(ap_link->sdata, ap_link, changed);
+	}
+}
+
 static int ieee80211_config_bw(struct ieee80211_link_data *link,
 			       struct ieee802_11_elems *elems,
 			       bool update, u64 *changed,
@@ -1312,6 +1371,7 @@ static int ieee80211_config_bw(struct ieee80211_link_data *link,
 	if (ap_chandef.chan->band == NL80211_BAND_6GHZ &&
 	    link->u.mgd.conn.mode >= IEEE80211_CONN_MODE_HE) {
 		const struct ieee80211_he_6ghz_oper *he_6ghz_oper;
+		bool power_mode_changed = false;
 
 		ieee80211_rearrange_tpe(&elems->tpe, &ap_chandef,
 					&chanreq.oper);
@@ -1330,9 +1390,13 @@ static int ieee80211_config_bw(struct ieee80211_link_data *link,
 					  ap_power_type);
 				link->conf->power_type = ap_power_type;
 				*changed |= BSS_CHANGED_6GHZ_POWER_MODE;
+				power_mode_changed = true;
 			}
 		}
-	}
+
+			ieee80211_notify_colocated_ap_6ghz_update(sdata, link,
+								  power_mode_changed);
+		}
 
 	if (ieee80211_chanreq_identical(&chanreq, &link->conf->chanreq))
 		return 0;
