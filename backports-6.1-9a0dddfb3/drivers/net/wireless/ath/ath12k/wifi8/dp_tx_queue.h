@@ -98,7 +98,7 @@ int ath12k_tx_alloc_hol_flow_ptr(struct ath12k_dp_hw_group *dp_hw_grp,
 				 struct ath12k_dp_peer *peer);
 int ath12k_peer_alloc_hol_queues(struct ath12k_dp_hw_group *dp_hw_grp,
 				 struct ath12k_dp_peer *peer,
-				 struct ath12k_dp_vif *dp_vif);
+				 struct ath12k_dp_vif *dp_vif, bool is_qos);
 struct hal_txpt_classify_info
 *ath12k_tx_alloc_mcast_flow_ptr(struct ath12k_dp_hw_group *dp_hw_grp,
 				struct ath12k_dp_peer *peer);

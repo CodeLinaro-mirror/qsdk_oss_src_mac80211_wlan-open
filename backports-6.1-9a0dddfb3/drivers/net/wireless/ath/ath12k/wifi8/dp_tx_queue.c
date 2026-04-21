@@ -431,32 +431,43 @@ int ath12k_tx_alloc_hol_flow_ptr(struct ath12k_dp_hw_group *dp_hw_grp,
 
 int ath12k_peer_alloc_hol_queues(struct ath12k_dp_hw_group *dp_hw_grp,
 				 struct ath12k_dp_peer *peer,
-				 struct ath12k_dp_vif *dp_vif)
+				 struct ath12k_dp_vif *dp_vif,
+				 bool is_qos)
 {
-	struct ath12k_dp_tx_tid_info *tid = NULL;
+	struct ath12k_dp_tx_tid_info *tid_info = NULL;
 	struct ath12k_dp_tx_flow_info *tx_flow_info =
 			ath12k_dp_get_tx_flow_info_from_peer(peer);
 	int ret = 0;
+	u8 tid_num, tid_idx;
+
+	if (is_qos) {
+		tid_num = ATH12K_HOL_TID;
+		tid_idx = ATH12K_HOL_TID;
+	} else {
+		tid_num = NON_QOS_TID;
+		tid_idx = DEFAULT_TID;
+	}
 
 	spin_lock_bh(&tx_flow_info->tx_q_lock);
-	if (!tx_flow_info->tid_info[ATH12K_HOL_TID].mpduq) {
-		tx_flow_info->tid_info[ATH12K_HOL_TID].mpduq =
+	tx_flow_info->holq_tid = tid_idx;
+	if (!tx_flow_info->tid_info[tid_idx].mpduq) {
+		tx_flow_info->tid_info[tid_idx].mpduq =
 			ath12k_peer_alloc_tid(dp_hw_grp, peer,
 					      dp_vif->tx_encap_type,
-					      ATH12K_HOL_TID,
-					      &tid, HTT_TID_MSDUQ_NONUDP);
+					      tid_num,
+					      &tid_info, HTT_TID_MSDUQ_NONUDP);
 	}
 	tx_flow_info->hol_msduq = ath12k_init_alloc_tx_msdu_flowq(dp_hw_grp,
 								  peer,
-								  ATH12K_HOL_TID,
+								  tid_num,
 								  HTT_TID_MSDUQ_HOL,
 								  MGMT_MSDUQ_TYPE_MAX);
 
-	if (!tx_flow_info->hol_msduq || !tx_flow_info->tid_info[ATH12K_HOL_TID].mpduq) {
+	if (!tx_flow_info->hol_msduq || !tx_flow_info->tid_info[tid_idx].mpduq) {
 		ret = -ENOMEM;
 		goto error;
 	}
-	tx_flow_info->tid_info[ATH12K_HOL_TID].num_of_active_msdu_queues++;
+	tx_flow_info->tid_info[tid_idx].num_of_active_msdu_queues++;
 	ret = ath12k_tx_alloc_hol_flow_ptr(dp_hw_grp, peer);
 error:
 	spin_unlock_bh(&tx_flow_info->tx_q_lock);
@@ -591,25 +602,27 @@ static inline void ath12k_peer_free_hol_queues(struct ath12k_dp_hw_group *dp_hw_
 	dma_addr_t txpt_paddr;
 	struct ath12k_dp_tx_flow_info *tx_flow_info =
 			ath12k_dp_get_tx_flow_info_from_peer(peer);
+	u8 holq_tid;
 
 	spin_lock_bh(&tx_flow_info->tx_q_lock);
 	tx_tid_ptr = ath12k_get_txpt_info_ptr(peer, 0, 0);
 	txpt_paddr = ath12k_get_txpt_paddr(peer, 0, 0);
 	ath12k_tx_classify_info_free(dp_hw_grp, &tx_tid_ptr, txpt_paddr);
+	holq_tid = tx_flow_info->holq_tid;
 
 	sw_msduq_ptr = tx_flow_info->hol_msduq;
 	if (sw_msduq_ptr) {
 		ath12k_free_tx_msdu_flowq(dp_hw_grp, sw_msduq_ptr);
-		tx_flow_info->tid_info[ATH12K_HOL_TID].num_of_active_msdu_queues--;
+		tx_flow_info->tid_info[holq_tid].num_of_active_msdu_queues--;
 		tx_flow_info->hol_msduq = NULL;
 	}
-	if (tx_flow_info->tid_info[ATH12K_HOL_TID].num_of_active_msdu_queues)
+	if (tx_flow_info->tid_info[holq_tid].num_of_active_msdu_queues)
 		goto end;
 
-	ptid = &tx_flow_info->tid_info[ATH12K_HOL_TID];
-	sw_mpduq_ptr = tx_flow_info->tid_info[ATH12K_HOL_TID].mpduq;
+	ptid = &tx_flow_info->tid_info[holq_tid];
+	sw_mpduq_ptr = tx_flow_info->tid_info[holq_tid].mpduq;
 	ath12k_peer_free_tid(dp_hw_grp, sw_mpduq_ptr, ptid);
-	tx_flow_info->tid_info[ATH12K_HOL_TID].mpduq = NULL;
+	tx_flow_info->tid_info[holq_tid].mpduq = NULL;
 end:
 	spin_unlock_bh(&tx_flow_info->tx_q_lock);
 }
@@ -683,6 +696,7 @@ static inline void ath12k_peer_free_data_queues(struct ath12k_dp_hw_group *dp_hw
 			ath12k_dp_get_tx_flow_info_from_peer(peer);
 	dma_addr_t txpt_paddr;
 	u8 tid_num, q;
+	u8 holq_tid;
 
 	spin_lock_bh(&tx_flow_info->tx_q_lock);
 
@@ -692,7 +706,8 @@ static inline void ath12k_peer_free_data_queues(struct ath12k_dp_hw_group *dp_hw
 	sw_msduq_ptr = tx_flow_info->hol_msduq;
 	if (sw_msduq_ptr) {
 		ath12k_free_tx_msdu_flowq(dp_hw_grp, sw_msduq_ptr);
-		tx_flow_info->tid_info[ATH12K_HOL_TID].num_of_active_msdu_queues--;
+		holq_tid = tx_flow_info->holq_tid;
+		tx_flow_info->tid_info[holq_tid].num_of_active_msdu_queues--;
 		tx_flow_info->hol_msduq = NULL;
 	}
 	for (tid_num = 0; tid_num < ATH12K_MAX_NUM_DATA_TIDS; tid_num++) {

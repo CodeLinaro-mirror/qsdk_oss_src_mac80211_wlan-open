@@ -123,6 +123,7 @@ struct ath12k_dp_tx_flow_info {
 	struct ath12k_dp_msdu_q_info *mgmt_msduq[MGMT_MSDUQ_TYPE_MAX];
 
 	struct ath12k_dp_msdu_q_info *hol_msduq;
+	u8 holq_tid;
 
 	void *hw_who_classify_info_vaddr;
 	dma_addr_t hw_who_classify_info_paddr;

@@ -313,7 +313,8 @@ int ath12k_wifi8_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 		if (ret)
 			goto free_queues_info;
 
-		ret = ath12k_peer_alloc_hol_queues(dp->dp_hw_grp, dp_peer, dp_vif);
+		ret = ath12k_peer_alloc_hol_queues(dp->dp_hw_grp, dp_peer,
+						   dp_vif, is_qos);
 		if (ret)
 			goto free_queues_info;
 
@@ -1107,6 +1108,7 @@ int ath12k_wifi8_get_holq(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 	struct ath12k_dp_peer *dp_peer;
 	u64 dma_addr = 0;
 	int ret = 0;
+	u8 holq_tid;
 
 	spin_lock_bh(&dp_hw->peer_lock);
 	dp_peer = ath12k_dp_peer_find(dp_hw, addr);
@@ -1118,7 +1120,8 @@ int ath12k_wifi8_get_holq(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 
 	tx_info = &dp_peer->peer_ext_ctx->tx_flow_info;
 	spin_lock_bh(&tx_info->tx_q_lock);
-	if (!tx_info->hol_msduq || !tx_info->tid_info[ATH12K_HOL_TID].mpduq) {
+	holq_tid = tx_info->holq_tid;
+	if (!tx_info->hol_msduq || !tx_info->tid_info[holq_tid].mpduq) {
 		spin_unlock_bh(&tx_info->tx_q_lock);
 		spin_unlock_bh(&dp_hw->peer_lock);
 		return -ENOENT;
@@ -1127,16 +1130,16 @@ int ath12k_wifi8_get_holq(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 	holq_params->peer_id = tx_info->hol_msduq->flow_info.peer_id;
 	holq_params->tid = tx_info->hol_msduq->flow_info.tid_num;
 	holq_params->mpdu_type =
-		tx_info->tid_info[ATH12K_HOL_TID].mpduq->flow_info.flow_type;
+		tx_info->tid_info[holq_tid].mpduq->flow_info.flow_type;
 	holq_params->msdu_type = tx_info->hol_msduq->flow_info.flow_type;
 
-	dma_addr = (u64)tx_info->tid_info[ATH12K_HOL_TID].mpduq->mpdu_q_paddr;
+	dma_addr = (u64)tx_info->tid_info[holq_tid].mpduq->mpdu_q_paddr;
 	holq_params->mpduq_address = (u32)((dma_addr >> 0x8) & 0xFFFFFFFF);
 
 	dma_addr = (u64)tx_info->hol_msduq->msdu_q_paddr;
 	holq_params->msduq_address = (u32)((dma_addr >> 0x8) & 0xFFFFFFFF);
 
-	dma_addr = (u64)tx_info->tid_info[ATH12K_HOL_TID].mpduq->pn_addr;
+	dma_addr = (u64)tx_info->tid_info[holq_tid].mpduq->pn_addr;
 	holq_params->pn_addr_31_0 = (u32)lower_32_bits(dma_addr);
 	holq_params->pn_addr_39_32 = (u8)(upper_32_bits(dma_addr) & 0x000000FF);
 	holq_params->enabled = 1;
