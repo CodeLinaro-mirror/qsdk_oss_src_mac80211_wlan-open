@@ -386,6 +386,7 @@ ath12k_wifi7_dp_mon_rx_parse_mpdu_end(struct ath12k_dp *dp, struct ath12k_mon_da
 	mpdu_meta = (struct ath12k_dp_mon_mpdu_meta *)skb->data;
 	mpdu_meta->truncated = ppdu_info->mpdu_info[user_id].truncated;
 	mpdu_meta->full_pkt = ppdu_info->mpdu_info[user_id].full_pkt;
+	mpdu_meta->fcs_err = ppdu_info->mpdu_info[user_id].fcs_err;
 
 reset_mpdu_info:
 	ppdu_info->mpdu_info[user_id].truncated = false;
@@ -859,7 +860,7 @@ ath12k_wifi7_dp_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	if (skb_shinfo(mpdu)->nr_frags)
 		rxs.flag |= RX_FLAG_AMSDU_MORE;
 
-	if (ppdu_info->mpdu_info[ppdu_info->user_id].err_bitmap & HAL_RX_MPDU_ERR_FCS)
+	if (ppdu_info->mpdu_info[ppdu_info->user_id].fcs_err)
 		rxs.flag |= RX_FLAG_FAILED_FCS_CRC;
 
 	if (!(dp_mon_pdev->rx_ext_mon_config &&
