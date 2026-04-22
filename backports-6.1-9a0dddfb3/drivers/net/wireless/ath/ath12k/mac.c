@@ -13989,8 +13989,8 @@ static void ath12k_tx_pn_request(struct ath12k *ar,
 
 	key = peer->dp_peer->keys[keyix];
 	if (!key) {
-		ath12k_warn(ar->ab, "failed to find key for index %d on link %d\n",
-			    keyix, arvif->link_id);
+		ath12k_dbg(ar->ab, ATH12K_DBG_PEER, "failed to find key for index %d on link %d\n",
+			   keyix, arvif->link_id);
 		spin_unlock_bh(&dp->dp_lock);
 		return;
 	}
