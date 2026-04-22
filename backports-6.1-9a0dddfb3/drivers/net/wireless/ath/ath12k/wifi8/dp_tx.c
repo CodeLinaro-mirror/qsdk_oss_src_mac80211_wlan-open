@@ -1217,7 +1217,9 @@ ath12k_wifi8_dp_tx_fast(struct ath12k_pdev_dp *dp_pdev,
 
 	pool_id = skb_get_queue_mapping(skb) & (ATH12K_HW_MAX_QUEUES - 1);
 
-	tx_desc = ath12k_dp_tx_assign_buffer(dp, ring_id);
+	tx_desc = ath12k_dp_tx_assign_buffer(dp->dp_hw_grp,
+					     dp->dp_hw_grp->tx_desc_free_list,
+					     ring_id);
 	if (unlikely(!tx_desc)) {
 		if (ath12k_dp_stats_enabled(dp_pdev) &&
 		    ath12k_tid_stats_enabled(dp_pdev)) {
@@ -1388,7 +1390,15 @@ ath12k_wifi8_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 
 	tx_ring = &dp->tx_ring[ti.ring_id];
 
-	tx_desc = ath12k_dp_tx_assign_buffer(dp, ti.ring_id);
+	if (unlikely(skb->protocol == cpu_to_be16(ETH_P_PAE)))
+		tx_desc = ath12k_dp_tx_assign_buffer(dp->dp_hw_grp,
+						     dp->dp_hw_grp->tx_spl_desc_free_list,
+						     ti.ring_id);
+	else
+		tx_desc = ath12k_dp_tx_assign_buffer(dp->dp_hw_grp,
+						     dp->dp_hw_grp->tx_desc_free_list,
+						     ti.ring_id);
+
 	if (!tx_desc) {
 		dp->device_stats.tx_err.txbuf_na[ti.ring_id]++;
 		if (ath12k_dp_stats_enabled(dp_pdev) &&
@@ -2664,7 +2674,11 @@ int ath12k_wifi8_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 			continue;
 		}
 
-		list_add_tail(&tx_desc->list, &desc_free_list);
+		if (likely(!tx_desc->spl_desc))
+			list_add_tail(&tx_desc->list, &desc_free_list);
+		else
+			list_add_tail(&tx_desc->list,
+				      &dp->dp_hw_grp->tx_spl_desc_free_list[ring_id]);
 
 		sw_metadata->skb = tx_desc->skb;
 		sw_metadata->paddr = tx_desc->paddr;

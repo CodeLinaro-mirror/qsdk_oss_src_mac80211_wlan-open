@@ -51,8 +51,10 @@ void ath12k_dp_tx_release_txbuf(struct ath12k_dp *dp,
 void ath12k_dp_tx_release_txbuf_nolock(struct ath12k_dp *dp,
 				       struct ath12k_tx_desc_info *tx_desc,
 				       u8 pool_id);
-struct ath12k_tx_desc_info *ath12k_dp_tx_assign_buffer(struct ath12k_dp *dp,
-						       u8 pool_id);
+struct
+ath12k_tx_desc_info *ath12k_dp_tx_assign_buffer(struct ath12k_dp_hw_group *dp_hw_grp,
+						struct list_head *free_list,
+						u8 pool_id);
 int ath12k_dp_tx_htt_h2t_vdev_stats_ol_req(struct ath12k *ar, u64 reset_bitmask);
 u8 ath12k_dp_get_link_id(struct ath12k_pdev_dp *dp_pdev,
 			 u8 hw_link_id, struct ath12k_dp_peer *peer);

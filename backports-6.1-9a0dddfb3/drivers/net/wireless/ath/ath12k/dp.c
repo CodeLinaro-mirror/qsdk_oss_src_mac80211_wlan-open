@@ -1748,8 +1748,10 @@ static int ath12k_dp_cc_tx_desc_init(struct ath12k_base *ab)
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
 	struct ath12k_tx_desc_info *tx_descs, **tx_desc_addr;
+	struct list_head *free_list;
 	u32 i, j, pool_id, tx_spt_page;
 	u32 ppt_idx;
+	bool spl_desc;
 
 	for (pool_id = 0; pool_id < ATH12K_HW_MAX_QUEUES; pool_id++) {
 		spin_lock_bh(&dp_hw_grp->tx_desc_lock[pool_id]);
@@ -1768,11 +1770,19 @@ static int ath12k_dp_cc_tx_desc_init(struct ath12k_base *ab)
 
 			dp_hw_grp->txbaddr[tx_spt_page] = &tx_descs[0];
 
+			if (i == ATH12K_TX_SPT_PAGES_PER_POOL - 1) {
+				free_list = &dp_hw_grp->tx_spl_desc_free_list[pool_id];
+				spl_desc = true;
+			} else {
+				free_list = &dp_hw_grp->tx_desc_free_list[pool_id];
+				spl_desc = false;
+			}
+
 			for (j = 0; j < ATH12K_MAX_SPT_ENTRIES; j++) {
 				tx_descs[j].desc_id = ath12k_dp_cc_cookie_gen(ppt_idx, j);
 				tx_descs[j].pool_id = pool_id;
-				list_add_tail(&tx_descs[j].list,
-					      &dp_hw_grp->tx_desc_free_list[pool_id]);
+				tx_descs[j].spl_desc = spl_desc;
+				list_add_tail(&tx_descs[j].list, free_list);
 
 				/* Update descriptor VA in SPT */
 				tx_desc_addr =
@@ -2061,6 +2071,7 @@ static int ath12k_dp_tx_spt_alloc_and_init(struct ath12k_base *ab)
 
 	for (i = 0; i < ATH12K_HW_MAX_QUEUES; i++) {
 		INIT_LIST_HEAD(&dp_hw_grp->tx_desc_free_list[i]);
+		INIT_LIST_HEAD(&dp_hw_grp->tx_spl_desc_free_list[i]);
 		spin_lock_init(&dp_hw_grp->tx_desc_lock[i]);
 	}
 
