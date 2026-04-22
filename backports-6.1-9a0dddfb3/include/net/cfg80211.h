@@ -5157,13 +5157,11 @@ enum cfg80211_pcie_gen_lane_config {
  *
  * Defines types of PCIe Low Power configuration.
  *
- * @CFG80211_PCIE_LOW_POWER_INVALID: invalid command
  * @CFG80211_PCIE_LOW_POWER_L0S: PCIe L0S power state
  * @CFG80211_PCIE_LOW_POWER_L1:  PCIe L1 power state
  * @CFG80211_PCIE_LOW_POWER_BOTH: Both PCIe L0S and L1 power states
  */
 enum cfg80211_pcie_low_power_config {
-	CFG80211_PCIE_LOW_POWER_INVALID,
 	CFG80211_PCIE_LOW_POWER_L0S,
 	CFG80211_PCIE_LOW_POWER_L1,
 	CFG80211_PCIE_LOW_POWER_BOTH,

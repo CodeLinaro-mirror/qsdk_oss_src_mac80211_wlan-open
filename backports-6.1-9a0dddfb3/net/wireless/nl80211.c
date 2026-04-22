@@ -20063,19 +20063,25 @@ static int nl80211_ap_power_save(struct sk_buff *skb, struct genl_info *info)
 			return err;
 
 		if (!attrs[NL80211_PCIE_ATTR_TYPE] ||
-		    !attrs[NL80211_PCIE_ATTR_ENABLE] ||
-		    !attrs[NL80211_PCIE_ATTR_CONFIG_TYPE])
+		    !attrs[NL80211_PCIE_ATTR_ENABLE])
 			return -EINVAL;
 
 		pcie->cmd = nla_get_u8(attrs[NL80211_PCIE_ATTR_TYPE]);
 		pcie->enable = nla_get_u8(attrs[NL80211_PCIE_ATTR_ENABLE]);
-		pcie->config_type = nla_get_u8(attrs[NL80211_PCIE_ATTR_CONFIG_TYPE]);
 
-		if (pcie->cmd == CFG80211_PCIE_CMD_GEN_LANE) {
-			if (pcie->config_type == CFG80211_PCIE_GEN_LANE_STATIC) {
+		if (pcie->enable) {
+			if (!attrs[NL80211_PCIE_ATTR_CONFIG_TYPE])
+				return -EINVAL;
+
+			pcie->config_type =
+					 nla_get_u8(attrs[NL80211_PCIE_ATTR_CONFIG_TYPE]);
+
+			if (pcie->cmd == CFG80211_PCIE_CMD_GEN_LANE &&
+			    pcie->config_type == CFG80211_PCIE_GEN_LANE_STATIC) {
 				if (!attrs[NL80211_PCIE_ATTR_GEN] ||
 				    !attrs[NL80211_PCIE_ATTR_LANE])
 					return -EINVAL;
+
 				pcie->pcie_gen = nla_get_u8(attrs[NL80211_PCIE_ATTR_GEN]);
 				pcie->pcie_lane =
 						nla_get_u8(attrs[NL80211_PCIE_ATTR_LANE]);
