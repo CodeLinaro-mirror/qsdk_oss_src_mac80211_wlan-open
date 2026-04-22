@@ -29187,7 +29187,9 @@ static int ath12k_mac_op_pcie(struct ath12k *ar,
 						     params->pcie_gen,
 						     params->pcie_lane);
 	case CFG80211_PCIE_CMD_LOW_POWER:
-		if (params->config_type == CFG80211_PCIE_LOW_POWER_L0S)
+		if (!params->enable)
+			wmi_config_type = WMI_PCIE_LPM_UNKNOWN;
+		else if (params->config_type == CFG80211_PCIE_LOW_POWER_L0S)
 			wmi_config_type = WMI_PCIE_LPM_L0S;
 		else if (params->config_type == CFG80211_PCIE_LOW_POWER_L1)
 			wmi_config_type = WMI_PCIE_LPM_L1;
