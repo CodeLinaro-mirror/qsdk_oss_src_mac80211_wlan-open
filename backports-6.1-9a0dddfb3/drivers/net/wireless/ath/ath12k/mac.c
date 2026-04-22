@@ -19622,6 +19622,37 @@ static int ath12k_mac_ahvif_id_allocate(struct ath12k_vif *ahvif)
 	return 0;
 }
 
+static void ath12k_mac_disable_sg_netdev_work(struct work_struct *work)
+{
+	struct ath12k_vif *ahvif = container_of(work, struct ath12k_vif,
+						disable_sg_netdev_work);
+	struct wireless_dev *wdev;
+	struct net_device *netdev;
+
+	if (!ahvif || !ahvif->vif)
+		return;
+
+	wdev = ieee80211_vif_to_wdev(ahvif->vif);
+	if (!wdev || !wdev->netdev)
+		return;
+
+	netdev = wdev->netdev;
+
+	rtnl_lock();
+	/* Disable SG by default for interface */
+	netdev->features &= ~NETIF_F_SG;
+	netdev->wanted_features &= ~NETIF_F_SG;
+	if (ahvif->disable_sg) {
+		/* Disable SG capability for mesh/nwifi interfaces */
+		netdev->hw_features &= ~NETIF_F_SG;
+	} else {
+		/* Enable SG capability */
+		netdev->hw_features |= NETIF_F_SG;
+	}
+	netdev_update_features(netdev);
+	rtnl_unlock();
+}
+
 int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 				struct ieee80211_vif *vif)
 {
@@ -19676,6 +19707,9 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 	arvif = &ahvif->deflink;
 
 	ath12k_event_queue_init(&ahvif->event_queue, hw->wiphy, ahvif);
+	INIT_WORK(&ahvif->disable_sg_netdev_work,
+		  ath12k_mac_disable_sg_netdev_work);
+	ahvif->disable_sg = false;
 
 	/* Restore the VP information if VP is allocated
 	 * successfully at the time of iface init.
@@ -19689,6 +19723,8 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 		ahvif->vdev_type = WMI_VDEV_TYPE_STA;
 		break;
 	case NL80211_IFTYPE_MESH_POINT:
+		ahvif->disable_sg = true;
+		fallthrough;
 	case NL80211_IFTYPE_AP:
 		ahvif->vdev_type = WMI_VDEV_TYPE_AP;
 		break;
@@ -19713,10 +19749,17 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 	} else if (test_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ah->ag->flags)) {
 		ahvif->dp_vif.tx_encap_type = ATH12K_HW_TXRX_RAW;
 		ahvif->dp_vif.dp_features |= DP_FEATURE_RAW_MODE;
+		ahvif->disable_sg = true;
 	} else {
 		ahvif->dp_vif.tx_encap_type = ATH12K_HW_TXRX_NATIVE_WIFI;
 		ahvif->dp_vif.dp_features |= DP_FEATURE_NATIVE_WIFI;
+		ahvif->disable_sg = true;
 	}
+
+	/* Enabling SG for AP_VLAN iftype in eth offload mode*/
+	if ((ath12k_frame_mode == ATH12K_HW_TXRX_ETHERNET) &&
+	    (vif->type == NL80211_IFTYPE_AP_VLAN))
+		ahvif->disable_sg = false;
 
 	ahvif->ah = ah;
 	ahvif->vif = vif;
@@ -19867,6 +19910,7 @@ ppe_vp_config:
 	 * will not know if this interface is an ML vif at this point.
 	 */
 exit:
+	schedule_work(&ahvif->disable_sg_netdev_work);
 	return 0;
 }
 EXPORT_SYMBOL(ath12k_mac_op_add_interface);
@@ -20094,6 +20138,8 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 
 	/* Cleanup event queue */
 	ath12k_event_queue_deinit(&ahvif->event_queue);
+
+	cancel_work_sync(&ahvif->disable_sg_netdev_work);
 
 	if (vif->type == NL80211_IFTYPE_AP_VLAN) {
 		if (!ahvif->vlan_iface) {

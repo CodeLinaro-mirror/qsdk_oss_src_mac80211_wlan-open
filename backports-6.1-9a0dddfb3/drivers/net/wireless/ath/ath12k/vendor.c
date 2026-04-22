@@ -10293,6 +10293,7 @@ static int ath12k_vendor_set_wifi_params_me(struct wiphy *wiphy,
 	struct ath12k_me_db *me_db;
 	struct ath12k_vif *ahvif;
 	u32 me_flags = 0;
+	bool disable_sg;
 
 	ahvif = ath12k_get_ahvif_from_wdev(wdev);
 	if (!ahvif) {
@@ -10323,12 +10324,18 @@ static int ath12k_vendor_set_wifi_params_me(struct wiphy *wiphy,
 		if (val == 5) {
 			me_flags = ATH12K_ME_FLAGS_BIT_ME5;
 			dp_vif->dp_features |= DP_FEATURE_ME;
+			disable_sg = true;  /* SG capabiltiy to be disabled */
 		} else if (val == 6) {
 			me_flags = ATH12K_ME_FLAGS_BIT_ME6;
 			dp_vif->dp_features |= DP_FEATURE_ME;
+			disable_sg = true;  /* SG capability to be disabled */
 		} else if (val == 0) {
 			me_flags = 0;
 			dp_vif->dp_features &= ~(DP_FEATURE_ME);
+			if (ahvif->dp_vif.tx_encap_type == ATH12K_HW_TXRX_ETHERNET) {
+				/* SG capability to be restored */
+				disable_sg = false;
+			}
 		} else {
 			ath12k_dbg(NULL, ATH12K_DBG_CFG,
 				   "Unsupported value for param: %d value: %d\n",
@@ -10380,6 +10387,14 @@ static int ath12k_vendor_set_wifi_params_me(struct wiphy *wiphy,
 
 	ath12k_print_me_configs(me_db);
 	ath12k_me_db_put(me_db);
+
+	/* Workqueue to enable/disable SG capability*/
+	if (ahvif->dp_vif.tx_encap_type == ATH12K_HW_TXRX_ETHERNET &&
+	    params->value == QCA_WLAN_VENDOR_VDEV_PARAM_ME) {
+		ahvif->disable_sg = disable_sg;
+		schedule_work(&ahvif->disable_sg_netdev_work);
+	}
+
 	return 0;
 
 fail:
