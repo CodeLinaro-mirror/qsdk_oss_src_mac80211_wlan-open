@@ -8439,6 +8439,9 @@ static int ath12k_wmi_svc_rdy_ext2_parse(struct ath12k_base *ab,
 		ab->max_tid_msduq = parse->arg.max_tid_msduq;
 		ab->def_tid_msduq = parse->arg.def_tid_msduq;
 		ab->afc_dev_deployment = parse->arg.afc_deployment_type;
+		ab->wmi_ab.dp_peer_meta_data_ver =
+			u32_get_bits(parse->arg.target_cap_flags,
+				     WMI_TARGET_CAP_FLAGS_RX_PEER_METADATA_VERSION);
 		break;
 
 	case WMI_TAG_ARRAY_STRUCT:
