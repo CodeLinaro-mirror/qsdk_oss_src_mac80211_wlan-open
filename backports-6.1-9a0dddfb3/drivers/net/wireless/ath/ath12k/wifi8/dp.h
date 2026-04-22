@@ -12,6 +12,9 @@
 #include "hw.h"
 #include "dp_ast.h"
 #include "hal.h"
+#ifdef CPTCFG_QCN_EXTN
+#include "qcn_extns/dp.h"
+#endif
 
 #define DP_TX_EXCEPTION_RING_SIZE      512
 #define DP_WBM_REFILL_RING_MAX         4
@@ -104,6 +107,9 @@ struct ath12k_dp_wifi8 {
 	struct dp_srng ppe2wbm_idle_buf_ring;
 	struct dp_srng rx_peer_telemetry_ring;
 	struct dp_srng tx_peer_telemetry_ring;
+#ifdef CPTCFG_QCN_EXTN
+	struct ath12k_dp_wifi8_extn extn;
+#endif /* CPTCFG_QCN_EXTN */
 };
 
 struct ath12k_dp_hw_group_wifi8 {
