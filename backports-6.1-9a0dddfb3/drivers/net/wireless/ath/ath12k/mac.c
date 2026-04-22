@@ -18509,6 +18509,8 @@ static int ath12k_mac_setup_vdev_create_arg(struct ath12k_link_vif *arvif,
 				 arg->mld_addr, arvif->vdev_id, arvif->bssid);
 	}
 
+	arg->global_vdev_id = ahvif->dp_vif.ahvif_id;
+
 	/* Vendor-specific scan radio configuration */
 	ret = ath12k_mac_setup_vdev_create_arg_scan_radio_extn(arvif, arg);
 	if (ret)
