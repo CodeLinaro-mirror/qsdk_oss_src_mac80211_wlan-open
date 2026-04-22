@@ -67,16 +67,5 @@ ath12k_wifi7_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 			      struct sk_buff *skb, struct ath12k_link_sta *arsta,
 			      struct ath12k_dp_skb_ctrl *skb_ctrl, bool htt_mesh);
 
-/* Statistics reasons */
-enum ath12k_dp_stats_reason {
-	RECV_STACK = 0,
-	TX_DESC_FAIL,
-	HAL_DESC_FAIL,
-	TX_ENQUEUE_SUCCESS,
-	TX_ENQUEUE_FAIL,
-	DMA_MAP_FAIL,
-	ENCAP_FAIL,
-	FEATURE_DROP,
-};
 
 #endif
