@@ -11125,7 +11125,7 @@ int ath12k_mac_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 					arsta->keys[key->keyidx] = NULL;
 			}
 
-			return 0;
+			return ret;
 		}
 
 		arsta = &ahsta->deflink;
