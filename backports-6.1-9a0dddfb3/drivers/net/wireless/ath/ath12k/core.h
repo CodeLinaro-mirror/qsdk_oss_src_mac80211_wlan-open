@@ -795,6 +795,9 @@ struct ath12k_link_vif {
 	dma_addr_t cu_mem_paddr;
 	u32 nav_status;
 	u32 nav_threshold;
+
+	/* Flag to track vdev fixed rate is set or not */
+	bool fixed_rate_set;
 };
 
 struct ath12k_dp_link_vif {
