@@ -4491,6 +4491,7 @@ static struct ath12k_hw_group *ath12k_core_hw_group_alloc(struct ath12k_base *ab
 	list_add(&ag->list, &ath12k_hw_group_list);
 	INIT_WORK(&ag->reset_group_work, ath12k_core_update_userpd_state);
 	mutex_init(&ag->mutex);
+	mutex_init(&ag->dp_hw_grp->tx_init_lock);
 	init_completion(&ag->umac_reset_complete);
 	init_completion(&ag->peer_cleanup_complete);
 	ag->mlo_capable = false;

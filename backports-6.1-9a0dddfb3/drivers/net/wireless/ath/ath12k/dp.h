@@ -283,7 +283,6 @@ enum ath12k_dp_eapol_key_type {
 #endif
 
 #define ATH12K_NUM_EAPOL_RESERVE       1024
-#define ATH12K_DP_PDEV_TX_LIMIT        ATH12K_NUM_POOL_TX_DESC
 
 #define DP_WBM_RELEASE_RING_SIZE	64
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
@@ -357,6 +356,8 @@ enum ath12k_dp_eapol_key_type {
 #define ATH12K_PPEDS_TX_SPT_PAGE_OFFSET 0
 #define ATH12K_TX_SPT_PAGE_OFFSET ATH12K_NUM_PPEDS_TX_SPT_PAGES
 #define ATH12K_RX_SPT_PAGE_OFFSET (ATH12K_NUM_PPEDS_TX_SPT_PAGES + ATH12K_NUM_TX_SPT_PAGES)
+#define ATH12K_TX_SPT_OFFSET ATH12K_NUM_PPEDS_TX_SPT_PAGES
+#define ATH12K_RX_SPT_OFFSET (ATH12K_TX_SPT_PAGES_PER_POOL * ATH12K_HW_MAX_QUEUES)
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #define ATH12K_NUM_PPEDS_TX_SPT_PAGES (ath12k_ppeds_desc_params.num_ppeds_desc / \
@@ -439,7 +440,7 @@ struct ath12k_tx_desc_info {
 	u32 desc_id; /* Cookie */
 	u16 len;
 	u16 ext_desc_len;
-	u8 mac_id	: 5,
+	u8 hw_link_id	: 5,
 	   in_use	: 1,
 	   ext_kmem	: 1,
 	   mmesh	: 1;
@@ -852,10 +853,6 @@ struct ath12k_dp {
 	struct list_head rx_desc_free_list;
 	/* protects the free desc list */
 	spinlock_t rx_desc_lock;
-
-	struct list_head tx_desc_free_list[ATH12K_HW_MAX_QUEUES];
-	/* protects the free and used desc lists */
-	spinlock_t tx_desc_lock[ATH12K_HW_MAX_QUEUES];
 
 	struct dp_rxdma_ring rx_refill_buf_ring;
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
