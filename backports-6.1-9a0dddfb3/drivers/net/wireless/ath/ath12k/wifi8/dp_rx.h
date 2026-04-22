@@ -26,6 +26,9 @@ struct dp_rx_fse {
 };
 
 int ath12k_wifi8_dp_rx_wbm_buf_ring_init(struct ath12k_base *ab);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+int ath12k_wifi8_dp_rx_ppe2wbm_idle_buff_init(struct ath12k_base *ab);
+#endif
 int ath12k_wifi8_dp_reo_cmd_send(struct ath12k_base *ab,
 				 void *data, size_t len,
 				 enum hal_reo_cmd_type type,

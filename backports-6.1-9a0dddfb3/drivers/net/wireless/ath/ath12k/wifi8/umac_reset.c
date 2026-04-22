@@ -133,6 +133,9 @@ void ath12k_wifi8_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 	ath12k_wifi8_dp_tx_tqm_cmd_list_cleanup(cumac_ab);
 
 	ath12k_wifi8_dp_rx_wbm_buf_ring_init(cumac_ab);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	ath12k_wifi8_dp_rx_ppe2wbm_idle_buff_init(cumac_ab);
+#endif
 	ath12k_wifi8_mgmt_rx_refill_ring_init(cumac_ab);
 }
 
