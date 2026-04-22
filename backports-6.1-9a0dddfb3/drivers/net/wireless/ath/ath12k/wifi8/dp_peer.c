@@ -622,6 +622,112 @@ int ath12k_dp_tqm_update_mpduq_max_lsn(struct ath12k_base *ab,
 	return ret;
 }
 
+int ath12k_wifi8_peer_tx_tid_update_for_smd(struct ath12k_base *ab,
+					    struct ath12k_dp_hw *dp_hw,
+					    const u8 *peer_addr,
+					    struct ath12k_tx_smd_ctx_per_tid *tx_tid_ctx)
+{
+	struct ath12k_dp_tx_flow_info *tx_flow_info;
+	struct ath12k_dp_mpdu_q_info *sw_mpduq_ptr = NULL;
+	struct ath12k_dp_peer *dp_peer;
+	int ret;
+
+	if (!dp_hw || !peer_addr || !tx_tid_ctx) {
+		ath12k_err(ab, "invalid args for SMD TX update\n");
+		return -EINVAL;
+	}
+
+	if (tx_tid_ctx->ssn > ATH12K_DP_MAX_SEQ_NUM) {
+		ath12k_warn(ab, "Invalid TX SSN 0x%x for tid %d\n",
+			    tx_tid_ctx->ssn, tx_tid_ctx->tid);
+		return -EINVAL;
+	}
+	if (tx_tid_ctx->tid > ATH12K_SMD_MGMT_TID) {
+		ath12k_warn(ab, "SMD update Invalid TX tid %d\n", tx_tid_ctx->tid);
+		return -EINVAL;
+	}
+
+	spin_lock_bh(&dp_hw->peer_lock);
+
+	dp_peer = ath12k_dp_peer_find(dp_hw, (u8 *)peer_addr);
+	if (!dp_peer) {
+		spin_unlock_bh(&dp_hw->peer_lock);
+		ath12k_warn(ab, "failed to find peer %pM for SMD TX update\n",
+			    peer_addr);
+		return -ENOENT;
+	}
+
+	tx_flow_info = ath12k_dp_get_tx_flow_info_from_peer(dp_peer);
+	if (!tx_flow_info) {
+		ath12k_err(ab, "SMD TX update invalid tx flow info peer %pM",
+			   dp_peer->addr);
+		spin_unlock_bh(&dp_hw->peer_lock);
+		return -EINVAL;
+	}
+
+	spin_lock_bh(&tx_flow_info->tx_q_lock);
+	if (tx_tid_ctx->tid < ATH12K_MAX_NUM_DATA_TIDS)
+		sw_mpduq_ptr = tx_flow_info->tid_info[tx_tid_ctx->tid].mpduq;
+	else if (tx_tid_ctx->tid == ATH12K_SMD_MGMT_TID)
+		sw_mpduq_ptr = tx_flow_info->mgmt_mpduq;
+
+	if (!sw_mpduq_ptr) {
+		spin_unlock_bh(&tx_flow_info->tx_q_lock);
+
+		/*
+		 * for data TIDs the mpduq is allocated only when a BA session is
+		 * established. If it is not yet set up on the new AP, skip the
+		 * datapath update — the SSN/PN context is already cached in
+		 * ahsta->smd_info and will be pushed to FW via WMI.
+		 */
+		if (tx_tid_ctx->tid != TQM_NON_DATA_TID) {
+			ath12k_dbg(ab, ATH12K_DBG_DP_TX,
+				   "SMD TX update: no mpduq for tid %d peer %pM, skipping\n",
+				   tx_tid_ctx->tid, dp_peer->addr);
+			spin_unlock_bh(&dp_hw->peer_lock);
+			return 0;
+		}
+		ath12k_err(ab, "SMD TX update invalid tx MPDUQ peer %pM",
+			   dp_peer->addr);
+		spin_unlock_bh(&dp_hw->peer_lock);
+		return -EINVAL;
+	}
+
+	ret = ath12k_dp_tqm_update_mpduq_sn_pn(ab, sw_mpduq_ptr, dp_peer,
+					       tx_tid_ctx->ssn,
+					       tx_tid_ctx->pn_number);
+	if (ret) {
+		spin_unlock_bh(&tx_flow_info->tx_q_lock);
+		spin_unlock_bh(&dp_hw->peer_lock);
+		ath12k_err(ab, "SMD UPDATE MPDUQ failed tid %d peer %pM id %d\n",
+			   tx_tid_ctx->tid, dp_peer->addr, dp_peer->peer_id);
+		return ret;
+	}
+
+	if (tx_tid_ctx->lsn_offset > 0 &&
+	    tx_tid_ctx->lsn_offset <=  ATH12K_DP_MAX_POSSIBLE_BA_WIN) {
+		ret = ath12k_dp_tqm_update_mpduq_max_lsn(ab, sw_mpduq_ptr,
+							 dp_peer,
+							 tx_tid_ctx->lsn_offset);
+		if (ret) {
+			ath12k_err(ab,
+				   "SMD UPDATE LSN failed tid %d peer %pM id %d\n",
+				   tx_tid_ctx->tid, dp_peer->addr, dp_peer->peer_id);
+			spin_unlock_bh(&tx_flow_info->tx_q_lock);
+			spin_unlock_bh(&dp_hw->peer_lock);
+			return ret;
+		}
+	}
+	spin_unlock_bh(&tx_flow_info->tx_q_lock);
+	spin_unlock_bh(&dp_hw->peer_lock);
+
+	ath12k_dbg(ab, ATH12K_DBG_DP_TX,
+		   "SMD TX update done for peer %pM tid %d: SSN=0x%x\n",
+		   peer_addr, tx_tid_ctx->tid, tx_tid_ctx->ssn);
+
+	return 0;
+}
+
 void ath12k_dp_peer_get_mpdu_queues_stats_status(struct ath12k_dp *dp,
 						 void *ctx,
 						 struct hal_tqm_status *tqm_status)
@@ -728,7 +834,7 @@ int ath12k_dp_peer_fetch_smd_tx_ctx(struct ath12k_base *ab,
 	}
 
 	/* mgmt tid */
-	if (tx_tid_bitmap & ATH12K_SMD_MGMT_TID) {
+	if (tx_tid_bitmap & BIT(ATH12K_SMD_MGMT_TID)) {
 		sw_mpduq_ptr = tx_flow_info->mgmt_mpduq;
 		ret = ath12k_dp_tqm_get_mpdu_queue_stats(ab, sw_mpduq_ptr,
 							 dp_peer, false, 0);

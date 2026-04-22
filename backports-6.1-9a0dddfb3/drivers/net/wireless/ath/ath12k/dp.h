@@ -607,11 +607,19 @@ struct ath12k_dp_smd_ctx {
 		struct {
 			u32 rx_tid_bitmap;
 			u32 tx_tid_bitmap;
+			u16 tx_tid_ba_size[8];
 		} in;
 		struct {
 			u8 tid;
 		} out;
 	};
+};
+
+struct ath12k_tx_smd_ctx_per_tid {
+	u8 tid;
+	u16 ssn;
+	u16 lsn_offset;
+	u8 pn_number[16];
 };
 
 /* DP arch ops to communicate from common module
@@ -746,6 +754,10 @@ struct ath12k_dp_arch_ops {
 						struct hal_reo_status *status));
 	int (*dp_qos_queue_setup)(struct ath12k_base *ab, struct ath12k_pdev_dp *dp_pdev,
 				  u16 msduq, u16 peer_id, u16 qos_id);
+	int (*peer_tx_tid_update_for_smd)(struct ath12k_base *ab,
+					  struct ath12k_dp_hw *dp_hw,
+					  const u8 *peer_addr,
+					  struct ath12k_tx_smd_ctx_per_tid *tx_tid_ctx);
 };
 
 struct ath12k_bp_stats {
@@ -1463,6 +1475,20 @@ ath12k_dp_arch_dp_peer_fetch_smd_ctx(struct ath12k_dp *dp,
 {
 	if (dp->arch_ops->dp_peer_fetch_smd_ctx)
 		return dp->arch_ops->dp_peer_fetch_smd_ctx(dp->ab, dp_hw, ctx, cb);
+
+	return 0;
+}
+
+static inline int
+ath12k_dp_arch_peer_tx_tid_update_for_smd(struct ath12k_dp *dp,
+					  struct ath12k_dp_hw *dp_hw,
+					  const u8 *peer_addr,
+					  struct ath12k_tx_smd_ctx_per_tid *tx_tid_ctx)
+{
+	if (dp->arch_ops->peer_tx_tid_update_for_smd)
+		return dp->arch_ops->peer_tx_tid_update_for_smd(dp->ab, dp_hw,
+								peer_addr,
+								tx_tid_ctx);
 
 	return 0;
 }

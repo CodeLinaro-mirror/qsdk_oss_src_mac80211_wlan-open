@@ -74,11 +74,18 @@ int ath12k_wifi8_dp_tqm_cmd_send(struct ath12k_base *ab,
 				 void (*callback_fn)(struct ath12k_dp *dp,
 				 void *ctx, struct hal_tqm_status *tqm_status))
 {
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+	struct ath12k_dp *dp = ath12k_get_central_dp(ab->dp);
+	struct ath12k_dp_wifi8 *dp_wifi8;
 	struct ath12k_dp_tqm_cmd *dp_cmd;
 	struct hal_srng *cmd_ring;
 	int cmd_num;
+
+	if (!dp)
+		return -ENODEV;
+
+	/* Switch to the central ab */
+	ab = dp->ab;
+	dp_wifi8 = ath12k_get_dp_wifi8(dp);
 
 	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
 		return 0;

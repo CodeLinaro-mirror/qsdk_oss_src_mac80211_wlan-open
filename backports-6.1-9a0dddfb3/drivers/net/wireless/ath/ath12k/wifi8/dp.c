@@ -1116,10 +1116,22 @@ int ath12k_wifi8_fetch_smd_ctx(struct ath12k_base *ab, struct ath12k_dp_hw *dp_h
 			   rx_tid->tid, smd_data.peer_addr);
 	}
 
-	spin_unlock_bh(&dp_hw->peer_lock);
 
-	if (!sent)
+	if (!sent) {
+		spin_unlock_bh(&dp_hw->peer_lock);
 		return -ENOENT;
+	}
+
+	ret = ath12k_dp_peer_fetch_smd_tx_ctx(ab, dp_peer,
+					      ctx->in.tx_tid_bitmap,
+					      ctx->in.tx_tid_ba_size);
+	if (ret) {
+		ath12k_warn(ab, "failed to fetch smd ctx tx queues, peer_id %d (%d)\n",
+			    dp_peer->peer_id, ret);
+		spin_unlock_bh(&dp_hw->peer_lock);
+		return ret;
+	}
+	spin_unlock_bh(&dp_hw->peer_lock);
 
 	return 0;
 }
@@ -1185,6 +1197,7 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.peer_rx_tid_reo_update_for_smd = ath12k_wifi8_peer_rx_tid_reo_update_for_smd,
 	.dp_peer_fetch_smd_ctx = ath12k_wifi8_fetch_smd_ctx,
 	.dp_qos_queue_setup = ath12k_wifi8_qos_queue_setup,
+	.peer_tx_tid_update_for_smd = ath12k_wifi8_peer_tx_tid_update_for_smd,
 };
 
 struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab)
