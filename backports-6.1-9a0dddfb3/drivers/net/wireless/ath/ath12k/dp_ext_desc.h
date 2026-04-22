@@ -11,6 +11,14 @@
 #define ATH12K_DP_EXT_DESC_RES_WORDS	14	/* Words reserved for HW */
 #define ATH12K_DP_EXT_DESC_TOT_WORDS	32	/* Total Words */
 
+#define ATH12K_DP_EXT_DESC_CTL_BYTES	(ATH12K_DP_EXT_DESC_CTL_WORDS * 4)
+#define ATH12K_DP_EXT_DESC_BUF_BYTES	(ATH12K_DP_EXT_DESC_BUF_WORDS * 4)
+#define ATH12K_DP_EXT_DESC_RES_BYTES	(ATH12K_DP_EXT_DESC_RES_WORDS * 4)
+#define ATH12K_DP_EXT_DESC_TOT_BYTES	(ATH12K_DP_EXT_DESC_TOT_WORDS * 4)
+
+#define ATH12K_TX_MSDU_EXT_SZ	(ATH12K_DP_EXT_DESC_CTL_BYTES + \
+				 ATH12K_DP_EXT_DESC_BUF_BYTES)
+
 #define ATH12K_DP_EXT_DESC_SZ			sizeof(struct ath12k_dp_ext_desc)
 #define ATH12K_DP_EXT_DESC_HW_SZ		sizeof(struct ath12k_dp_ext_desc_hw)
 #define ATH12K_DP_EXT_DESC_SPARE_SZ		64	/* Spare bytes to store context */
@@ -21,7 +29,12 @@
 #define ATH12K_DP_EXT_DESC_BUF_INFO_PTR_HI	GENMASK(7, 0)
 #define ATH12K_DP_EXT_DESC_BUF_INFO_LEN		GENMASK(31, 16)
 
+#define ATH12K_DP_EXT_DESC_BUF_EXTN_OVERRIDE    BIT(8)
+#define ATH12K_DP_EXT_DESCBUF_ENCAP_TYPE        GENMASK(10, 9)
+#define ATH12K_DP_EXT_DESCBUF_ENCRYPT_TYPE      GENMASK(14, 11)
+
 #include "core.h"
+#include "dp_tx.h"
 
 /*
  * Extension descriptor cache management structure
@@ -82,6 +95,29 @@ __set_ext_desc_buf(struct ath12k_dp_ext_desc_hw *desc, dma_addr_t paddr, u16 len
 	buf[0] = le32_encode_bits(paddr_lo, ATH12K_DP_EXT_DESC_BUF_INFO_PTR_LO);
 	buf[1] = le32_encode_bits(paddr_hi, ATH12K_DP_EXT_DESC_BUF_INFO_PTR_HI);
 	buf[1] |= le32_encode_bits(len, ATH12K_DP_EXT_DESC_BUF_INFO_LEN);
+}
+
+static inline void
+ath12k_dp_ext_desc_override_set(struct ath12k_dp_ext_desc_hw *desc,
+				struct ath12k_dp_ext_desc_msdu_info *ext_msdu_info)
+{
+	u8 idx = 0;
+	__le32 *buf = (__le32 *)&desc->buf_info[idx * ATH12K_DP_EXT_DESC_BUF_INFO_SZ];
+
+	buf[1] |= le32_encode_bits(0x1, ATH12K_DP_EXT_DESC_BUF_EXTN_OVERRIDE);
+	buf[1] |= le32_encode_bits(ext_msdu_info->encap_type,
+				   ATH12K_DP_EXT_DESCBUF_ENCAP_TYPE);
+	buf[1] |= le32_encode_bits(ext_msdu_info->encrypt_type,
+				   ATH12K_DP_EXT_DESCBUF_ENCRYPT_TYPE);
+}
+
+static inline __le32 *
+__ext_desc_get_rsvd(struct ath12k_dp_ext_desc_hw *desc, u8 widx)
+{
+	if (widx >= ATH12K_DP_EXT_DESC_RES_WORDS)
+		return NULL;
+
+	return &desc->reserved[widx];
 }
 
 /*
@@ -160,6 +196,12 @@ __set_ext_desc_buf(struct ath12k_dp_ext_desc_hw *desc, dma_addr_t paddr, u16 len
 	__set_ext_desc_buf(&(_d)->desc, (_addr), (_len), 4)
 #define ath12k_dp_ext_desc_set_buf5(_d, _addr, _len) \
 	__set_ext_desc_buf(&(_d)->desc, (_addr), (_len), 5)
+
+/*
+ * Convenience macros to get and update reserved word.
+ */
+#define ath12k_dp_ext_desc_get_rsvd0(_d) \
+	__ext_desc_get_rsvd(&(_d)->desc, 0)
 
 /*
  * ath12k_dp_ext_desc_set_ctl() - Set a control word in tx extension descriptor

@@ -674,3 +674,90 @@ int ath12k_dp_tx_htt_pri_link_migr_msg(struct ath12k_base *ab, u16 vdev_id,
 	return ret;
 }
 
+/**
+ * ath12k_wifi7_tx_classify_packet() - Classify packet type
+ * @info: TX info
+ * @skb: Socket buffer
+ * @is_mcast: Output multicast flag
+ * @is_mgmt: Output management flag
+ *
+ */
+bool ath12k_dp_tx_classify_packet(struct ieee80211_hw *hw,
+				  struct ath12k_dp_vif *dp_vif,
+				  struct ieee80211_tx_info *info,
+				  struct sk_buff *skb,
+				  bool *is_mcast, bool *is_eth,
+				  bool *data,
+				  struct ieee80211_key_conf *key,
+				  struct ath12k_dp_skb_ctrl *skb_ctrl)
+{
+	struct ieee80211_hdr *hdr;
+	struct ethhdr *eth;
+	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
+	u32 info_flags = info->flags;
+	u8 ring_id = 0;
+
+	*data = false;
+	*is_mcast = false;
+
+	skb_ctrl->flags |= DP_SKB_MAC_CTRL;
+
+	if (key) {
+		skb_cb->cipher = key->cipher;
+		skb_cb->flags |= ATH12K_SKB_CIPHER_SET;
+	}
+
+	/* Check if HW encapsulation */
+	if (info_flags & IEEE80211_TX_CTL_HW_80211_ENCAP) {
+		eth = (struct ethhdr *)skb->data;
+		skb_ctrl->features |= DP_ETH_OFFLOAD;
+		*is_eth = true;
+		*data = true;
+		skb_cb->flags |= ATH12K_SKB_HW_80211_ENCAP;
+		*is_mcast = is_multicast_ether_addr(eth->h_dest);
+		return true;
+	}
+
+	/* Native WiFi format */
+	hdr = (struct ieee80211_hdr *)skb->data;
+	if (dp_vif->tx_encap_type == ATH12K_HW_TXRX_ETHERNET)
+		skb_ctrl->features |= DP_FEATURE_ENCAP_MISMATCH_HANDLE;
+
+	if (ieee80211_is_mgmt(hdr->frame_control)) {
+		return true;
+	} else if (ieee80211_is_data(hdr->frame_control)) {
+		const u8 *da = ieee80211_get_DA(hdr);
+		*data = true;
+		*is_mcast = is_multicast_ether_addr(da);
+		return true;
+	}
+
+	DP_STATS_INC(dp_vif, tx_i.drop[DP_TX_ENQ_DROP_NON_DATA_FRAME], 1, ring_id);
+	ieee80211_free_txskb(hw, skb);
+	return false;
+}
+EXPORT_SYMBOL(ath12k_dp_tx_classify_packet);
+
+#ifndef CPTCFG_QCN_EXTN
+bool ath12k_dp_tx_dma_map(struct ath12k_dp *dp,
+			  struct sk_buff *skb, u32 len,
+			  struct ath12k_tx_desc_info *tx_desc,
+			  struct ath12k_dp_tx_msdu_info *msdu_info,
+			  struct ath12k_dp_skb_ctrl *skb_ctrl)
+{
+	dma_addr_t paddr;
+
+	paddr = dma_map_single(dp->dev, skb->data, skb->len, DMA_TO_DEVICE);
+	if (unlikely(dma_mapping_error(dp->dev, paddr))) {
+		atomic_inc(&dp->device_stats.tx_err.misc_fail);
+		return false;
+	}
+
+	msdu_info->paddr = paddr;
+	tx_desc->paddr = paddr;
+	tx_desc->flags = 0;
+
+	return true;
+}
+EXPORT_SYMBOL(ath12k_dp_tx_dma_map);
+#endif

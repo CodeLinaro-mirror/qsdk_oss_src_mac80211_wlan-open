@@ -2798,6 +2798,7 @@ static void ath12k_core_mlo_hw_queues_stop(struct ath12k_hw_group *ag)
 		}
 
                 ieee80211_stop_queues(ah->hw);
+		ah->queue_stop = true;
 		wiphy_unlock(ah->hw->wiphy);
 	}
 }
@@ -4325,6 +4326,7 @@ static void ath12k_core_reset(struct work_struct *work)
 					continue;
 
 				ieee80211_wake_queues(ah->hw);
+				ah->queue_stop = false;
 			}
 			ath12k_dbg(ab, ATH12K_DBG_MODE1_RECOVERY,
 					"Queues are started as umac reset is completed for partner chipset\n");
@@ -4846,6 +4848,9 @@ static struct ath12k_hw_group *ath12k_core_hw_group_assign(struct ath12k_base *a
 
 	lockdep_assert_held(&ath12k_hw_group_mutex);
 
+	if (!ab->hw_params || !ab->hw_params->board_magic)
+		goto invalid_group;
+
 	mlo_capable = !strncmp(ab->hw_params->board_magic,
 				   ATH12K_SCAN_RADIO,
 				   strlen(ATH12K_SCAN_RADIO));
@@ -5078,6 +5083,7 @@ int ath12k_core_dynamic_wsi_remap(struct ath12k_base *ab)
 				continue;
 
 			ieee80211_wake_queues(ah->hw);
+			ah->queue_stop = false;
 		}
 	}
 

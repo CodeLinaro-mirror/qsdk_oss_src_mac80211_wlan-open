@@ -6346,8 +6346,9 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 
 	/* Handle MLO related assignments */
 	if (link_id >= 0) {
-		rcu_assign_pointer(ahvif->link[arvif->link_id], arvif);
+		rcu_assign_pointer(ahvif->link[link_id], arvif);
 		ahvif->links_map |= BIT(_link_id);
+		ahvif->dp_vif.links_map |= BIT(_link_id);
 	}
 
 	ath12k_generic_dbg(ATH12K_DBG_MAC, ATH12K_DBG_L2,
@@ -6545,6 +6546,7 @@ static void ath12k_mac_unassign_link_vif(struct ath12k_link_vif *arvif)
 	lockdep_assert_wiphy(ah->hw->wiphy);
 
 	ahvif->links_map &= ~BIT(arvif->link_id);
+	ahvif->dp_vif.links_map &= ~BIT(arvif->link_id);
 	ahvif->repurposed_links &= ~BIT(arvif->link_id);
 
 	rcu_assign_pointer(ahvif->link[arvif->link_id], NULL);
@@ -13066,6 +13068,7 @@ static void ath12k_sta_set_4addr_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 	struct ath12k_vif *ahvif;
 	struct ath12k_link_sta *arsta;
 	struct ieee80211_sta *sta;
+	struct ath12k_dp_link_vif *dp_link_vif = NULL;
 	unsigned long links;
 	int ret = 0;
 	u8 link_id;
@@ -13081,9 +13084,14 @@ static void ath12k_sta_set_4addr_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 
 	for_each_set_bit(link_id, &links, ATH12K_NUM_MAX_LINKS) {
 		arsta = rcu_dereference(ahsta->link[link_id]);
+
+		if (!arsta)
+			continue;
+
 		arvif = arsta->arvif;
 		ahvif = arvif->ahvif;
 		ar = arvif->ar;
+		dp_link_vif = &ahvif->dp_vif.dp_link_vif[link_id];
 
 		ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
 			   "setting USE_4ADDR for peer %pM\n", arsta->addr);
@@ -13129,6 +13137,8 @@ static void ath12k_sta_set_4addr_wk(struct wiphy *wiphy, struct wiphy_work *wk)
                                                     WMI_VDEV_PARAM_AP_ENABLE_NAWDS,
                                                     1);
                 arvif->nawds_support = true;
+		if (dp_link_vif)
+			dp_link_vif->nawds_support = true;
 	}
 }
 
@@ -18594,12 +18604,15 @@ void ath12k_mac_op_update_vif_offload(struct ieee80211_hw *hw,
 	/* TODO do we need this code here ?
 	 * Can it be done only at init
 	 */
-	if (vif->offload_flags & IEEE80211_OFFLOAD_ENCAP_ENABLED)
+	if (vif->offload_flags & IEEE80211_OFFLOAD_ENCAP_ENABLED) {
 		ahvif->dp_vif.tx_encap_type = ATH12K_HW_TXRX_ETHERNET;
-	else if (test_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ah->ag->flags))
+	} else if (test_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ah->ag->flags)) {
 		ahvif->dp_vif.tx_encap_type = ATH12K_HW_TXRX_RAW;
-	else
+		ahvif->dp_vif.dp_features |= DP_FEATURE_RAW_MODE;
+	} else {
 		ahvif->dp_vif.tx_encap_type = ATH12K_HW_TXRX_NATIVE_WIFI;
+		ahvif->dp_vif.dp_features |= DP_FEATURE_NATIVE_WIFI;
+	}
 
 	if (vif->valid_links) {
 		links = vif->valid_links;
@@ -19594,6 +19607,7 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 		return -ENODEV;
 	}
 
+	ahvif->dp_vif.dp_features = 0;
 	/* Get the VP number from the nss-wifi plugin,
 	 * which is allocated during netdev initialization.
 	 * This also handles Subsystem Recovery scenarios.
@@ -19655,12 +19669,15 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 		vif->offload_flags &= ~(IEEE80211_OFFLOAD_ENCAP_ENABLED |
 					IEEE80211_OFFLOAD_DECAP_ENABLED);
 
-	if (vif->offload_flags & IEEE80211_OFFLOAD_ENCAP_ENABLED)
+	if (vif->offload_flags & IEEE80211_OFFLOAD_ENCAP_ENABLED) {
 		ahvif->dp_vif.tx_encap_type = ATH12K_HW_TXRX_ETHERNET;
-	else if (test_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ah->ag->flags))
+	} else if (test_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ah->ag->flags)) {
 		ahvif->dp_vif.tx_encap_type = ATH12K_HW_TXRX_RAW;
-	else
+		ahvif->dp_vif.dp_features |= DP_FEATURE_RAW_MODE;
+	} else {
 		ahvif->dp_vif.tx_encap_type = ATH12K_HW_TXRX_NATIVE_WIFI;
+		ahvif->dp_vif.dp_features |= DP_FEATURE_NATIVE_WIFI;
+	}
 
 	ahvif->ah = ah;
 	ahvif->vif = vif;
@@ -24119,8 +24136,10 @@ ath12k_mac_reconfig_complete(struct ieee80211_hw *hw,
 	 * waking up should be fine.
 	 */
 
-	if (ieee80211_queue_stopped(ah->hw, 0))
+	if (ieee80211_queue_stopped(ah->hw, 0)) {
 		ieee80211_wake_queues(hw);
+		ah->queue_stop = false;
+	}
 
 	for_each_ar(ah, ar, i) {
 		ab = ar->ab;
@@ -24274,7 +24293,8 @@ ath12k_mac_set_mscs(struct ieee80211_hw *hw, struct ath12k_link_sta *arsta,
 	if (!peer)
 		goto send_fail_resp;
 
-	dp_vif = &ahsta->ahvif->dp_vif;
+	if (ahsta->ahvif)
+		dp_vif = &ahsta->ahvif->dp_vif;
 
 	switch (req_type) {
 	case IEEE80211_QM_ADD_REQ:
@@ -24282,6 +24302,7 @@ ath12k_mac_set_mscs(struct ieee80211_hw *hw, struct ath12k_link_sta *arsta,
 			goto send_fail_resp;
 		peer->mscs_session_exists = true;
 		dp_vif->mscs_hlos_tid_override++;
+		dp_vif->dp_features |= DP_FEATURE_HLOS;
 		fallthrough;
 	case IEEE80211_QM_CHANGE_REQ:
 		peer->mscs_ctxt.user_priority_bitmap =
@@ -24307,6 +24328,7 @@ ath12k_mac_set_mscs(struct ieee80211_hw *hw, struct ath12k_link_sta *arsta,
 		break;
 	case IEEE80211_QM_REMOVE_REQ:
 		peer->mscs_session_exists = false;
+		dp_vif->dp_features &= ~DP_FEATURE_HLOS;
 		if (dp_vif->mscs_hlos_tid_override > 0)
 			dp_vif->mscs_hlos_tid_override--;
 		else {

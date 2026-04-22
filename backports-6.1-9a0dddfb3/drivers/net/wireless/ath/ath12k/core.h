@@ -777,6 +777,7 @@ struct ath12k_link_vif {
 
 struct ath12k_dp_link_vif {
 	u32 vdev_id;
+	bool nawds_support;
 	u8 link_id;
 	u8 pdev_idx;
 	u16 ast_idx;
@@ -798,12 +799,14 @@ struct ath12k_vlan_iface {
 };
 
 struct ath12k_dp_vif {
+	u32 dp_features;
 	u8 tx_encap_type;
 	u8 search_type;
 	u8 hal_addr_search_flags;
 	u8 vdev_id_check_en;
 	u16 dp_vif_id;
 	bool is_wds_4addr;
+	u32 links_map;
 	int bank_id;
 	u16 ast_idx;
 	u16 ast_hash;
@@ -1804,6 +1807,7 @@ struct ath12k_hw {
 	struct ieee80211_hw *hw;
 	struct device *dev;
 	struct ath12k_hw_group *ag;
+	bool queue_stop;
 
 	/* Protect the write operation of the hardware state ath12k_hw::state
 	 * between hardware start<=>reconfigure<=>stop transitions.

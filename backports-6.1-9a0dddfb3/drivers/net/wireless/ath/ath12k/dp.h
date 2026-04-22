@@ -398,6 +398,7 @@ enum ath12k_dp_eapol_key_type {
 #define DP_TX_DESC_FLAG_FAST	0x1
 #define DP_TX_DESC_FLAG_MCAST	0x2
 #define DP_TX_DESC_FLAG_BCAST	0x4
+#define DP_TX_DESC_FLAG_RECYCLE	0x8
 
 #define MAX_TQM_RELEASE_REASON 29
 #define MAX_FW_TX_STATUS 7
@@ -421,7 +422,10 @@ struct ath12k_rx_desc_info {
 	struct sk_buff *skb;
 	u32 magic;
 	u64 rsvd0;
-};
+} __packed __aligned(64);
+
+static_assert(sizeof(struct ath12k_rx_desc_info) == 64,
+	      "ath12k_rx_desc_info size != 64");
 
 struct ath12k_tx_desc_info {
 	struct list_head list;
@@ -439,11 +443,14 @@ struct ath12k_tx_desc_info {
 	   in_use	: 1,
 	   ext_kmem	: 1,
 	   mmesh	: 1;
-	u8 flags	: 3,
-	   reserved1	: 4,
+	u8 flags	: 4,
+	   reserved1	: 3,
 	   to_fw	: 1;
 	u8 pool_id;
-};
+} __packed __aligned(64);
+
+static_assert(sizeof(struct ath12k_tx_desc_info) == 64,
+	      "ath12k_tx_desc_info size != 64");
 
 struct ath12k_ppeds_tx_desc_info {
 	union {
@@ -638,6 +645,15 @@ struct ath12k_dp_arch_ops {
 						 struct ath12k_dp_link_vif *dp_link_vif,
 						 struct ath12k_tx_desc_info *tx_desc,
 						 struct ath12k_dp_ext_info *info);
+	enum ath12k_dp_tx_enq_error (*dp_tx_mcast_send)
+				(struct ath12k_pdev_dp *dp_pdev,
+				 struct ath12k_vif *ahvif,
+				 struct ath12k_dp_link_vif *dp_link_vif,
+				 u8 ring_id, struct ath12k_dp_tx_msdu_info *msdu_info,
+				 bool gsn_valid, u16 gsn, int group_slot,
+				 struct sk_buff *skb, struct ath12k_link_sta *arsta,
+				 struct ath12k_dp_skb_ctrl *skb_ctrl,
+				 bool htt_mesh);
 	/* UMAC reset operations */
 	void (*umac_reset_handle_pre_reset)(struct ath12k_base *ab);
 	void (*umac_reset_handle_post_reset_start)(struct ath12k_base *ab);
@@ -717,10 +733,10 @@ struct ath12k_tx_comp_stats {
 };
 
 struct ath12k_device_dp_stats {
+	u32 tx_fast_unicast[MAX_TCL_RING];
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	u32 ppe_vp_mode_update_fail;
 #endif
-	u32 tx_fast_unicast[MAX_TCL_RING];
 	struct ath12k_tx_comp_stats tx_comp_stats[MAX_TX_COMP_RING];
 	u32 err_ring_pkts;
 	u32 invalid_rbm;
@@ -803,7 +819,6 @@ struct ath12k_dp {
 	enum ath12k_peer_metadata_version peer_metadata_ver;
 	struct dp_srng reo_dst_ring[DP_REO_DST_RING_MAX];
 	struct dp_tx_ring tx_ring[DP_TCL_NUM_RING_MAX];
-	struct ath12k_device_dp_stats device_stats;
 	struct wbm_idle_scatter_list scatter_list[DP_IDLE_SCATTER_BUFS_MAX];
 	struct list_head reo_cmd_list;
 	struct list_head reo_cmd_cache_flush_list;
@@ -851,6 +866,7 @@ struct ath12k_dp {
 	struct ath12k_reo_q_addr_lut reoq_lut;
 	struct ath12k_reo_q_addr_lut ml_reoq_lut;
 	const struct ath12k_hw_params *hw_params;
+	struct ath12k_device_dp_stats device_stats;
 	struct device *dev;
 	struct ath12k_hal *hal;
 
@@ -1468,12 +1484,20 @@ ath12k_dp_arch_peer_migrate_reo_cmd(struct ath12k_dp *dp,
 						  chip_id);
 }
 
-static inline enum ath12k_dp_tx_enq_error
-ath12k_dp_ext_tx(struct ath12k_dp *dp, struct ath12k_pdev_dp *dp_pdev,
-		 struct ath12k_dp_vif *vif, struct ath12k_dp_link_vif *link_vif,
-		 struct ath12k_tx_desc_info *tx_desc, struct ath12k_dp_ext_info *info)
+static inline
+enum ath12k_dp_tx_enq_error
+ath12k_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
+			struct ath12k_vif *ahvif,
+			struct ath12k_dp_link_vif *dp_link_vif,
+			u8 ring_id, struct ath12k_dp_tx_msdu_info *msdu_info,
+			bool gsn_valid, u16 gsn, int group_slot,
+			struct sk_buff *skb, struct ath12k_link_sta *arsta,
+			struct ath12k_dp_skb_ctrl *skb_ctrl)
 {
-	return dp->arch_ops->dp_ext_tx(dp_pdev, vif, link_vif, tx_desc, info);
+	return dp_pdev->dp->arch_ops->dp_tx_mcast_send(dp_pdev, ahvif, dp_link_vif,
+						       ring_id, msdu_info, gsn_valid,
+						       gsn, group_slot, skb, arsta,
+						       skb_ctrl, false);
 }
 
 int ath12k_dp_htt_connect(struct ath12k_dp *dp);
