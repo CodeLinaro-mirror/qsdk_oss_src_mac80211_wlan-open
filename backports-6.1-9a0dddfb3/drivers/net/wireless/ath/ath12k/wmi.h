@@ -499,6 +499,7 @@ enum wmi_cmd_group {
 	WMI_GRP_LATENCY        = 0x47,
 	WMI_GRP_MLO            = 0x48,
 	WMI_GRP_SAWF           = 0x49,
+	WMI_GRP_TDMA           = 0x4c,
 	WMI_GRP_ENERGY_MGMT    = 0x4e,
 };
 
@@ -996,6 +997,8 @@ enum wmi_tlv_cmd_id {
 	WMI_MLO_LINK_TTLM_COMPLETE_CMDID,
 	WMI_SAWF_SERVICE_CLASS_CFG_CMDID = WMI_TLV_CMD(WMI_GRP_SAWF),
 	WMI_SAWF_SERVICE_CLASS_DISABLE_CMDID,
+	/** WMI commands specific to TDMA **/
+	WMI_TDMA_SCHEDULE_REQUEST_CMDID = WMI_TLV_CMD(WMI_GRP_TDMA),
 	/** WMI commands specific to Energy Management **/
 	/** WMI cmd used to control PCIe config */
 	WMI_ENERGY_MGMT_PCIE_CONFIG_CMDID = WMI_TLV_CMD(WMI_GRP_ENERGY_MGMT),
@@ -2469,6 +2472,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_MLO_LINK_REMOVAL_EVENT_FIXED_PARAM,
 	WMI_TAG_MLO_LINK_REMOVAL_CMD_FIXED_PARAM = 0x464,
 	WMI_CTRL_PATH_PMLO_STATS = 0x479,
+	WMI_TAG_TDMA_SCHEDULE_REQUEST_CMD = 0x47f,
 	WMI_TAG_SCAN_BLANKING_PARAMS_INFO = 0x486,
 	WMI_TAG_MLO_PRIMARY_LINK_PEER_MIGRATION_FIXED_PARAM = 0x4a3,
 	WMI_TAG_MLO_NEW_PRIMARY_LINK_PEER_INFO = 0x4a4,
@@ -7806,6 +7810,112 @@ struct ath12k_wmi_pdev {
 	bool wmi_recording_enabled;
 };
 
+/**
+ * struct ath12k_tdma_sched_info - TDMA schedule configuration parameters
+ * @pdev_id:             Physical device ID (resolved from radio index)
+ * @sched_type:          Schedule type identifier
+ * @sched_id:            Schedule instance identifier
+ * @bssid:               BSSID of the BSS to which the schedule applies
+ * @start_time_tsf_low:  Lower 32 bits of the TSF start time
+ * @start_time_tsf_high: Upper 32 bits of the TSF start time
+ * @num_busy_slots:      Number of busy (occupied) TDMA slots
+ * @busy_slot_dur_ms:    Duration of each busy slot in milliseconds
+ * @busy_slot_intvl_ms:  Interval between busy slots in milliseconds
+ * @edca_params_valid:   True when the EDCA arrays below carry valid values
+ * @aifsn:               AIFSN per AC
+ * @cwmin:               CWmin per AC
+ * @cwmax:               CWmax per AC
+ */
+struct ath12k_tdma_sched_info {
+	u32 pdev_id;
+	u8 sched_type;
+	u8 sched_id;
+	u8 bssid[ETH_ALEN];
+	u32 start_time_tsf_low;
+	u32 start_time_tsf_high;
+	u16 num_busy_slots;
+	u16 busy_slot_dur_ms;
+	u16 busy_slot_intvl_ms;
+	bool edca_params_valid;
+	u16 aifsn[4];
+	u16 cwmin[4];
+	u16 cwmax[4];
+};
+
+struct wmi_tdma_schedule_request_cmd_fixed_param {
+	/** TLV tag and len; tag equals WMITLV_TAG_STRUC_wmi_tdma_schedule_request
+	 *_cmd_fixed_param **/
+	__le32 tlv_header;
+	/** pdev_id
+	 * PDEV ID for identifying the MAC for which this schedule
+	 * is being requested.
+	 */
+	__le32 pdev_id;
+	/** schedule_type
+	 * 0 = Reserved
+	 * 1 = Restricted
+	 * UINT32_MAX = Cancel all TDMA schedules and ignore other parameters below.
+	 */
+	__le32 schedule_type;
+	/** schedule_handle_id
+	 * Unique ID to identify this TDMA schedule
+	 */
+	__le32 schedule_handle_id;
+	/** owner_bssid
+	 * The BSSID this TDMA schedule is reserved for
+	 */
+	struct ath12k_wmi_mac_addr_params owner_bssid;
+	/** start_time_tsf_low
+	 * Lower 32-bits of Synchronized Start time for the first busy slot
+	 * in this TDMA schedule.
+	 * It should be a PMM global FW TSF reference
+	 */
+	__le32 start_time_tsf_low;
+	/** start_time_tsf_high
+	 * Higher 32-bits of Synchronized Start time for the first busy slot
+	 * in this TDMA schedule.
+	 * It should be a PMM global FW TSF reference
+	 */
+	__le32 start_time_tsf_high;
+	/** num_busy_slots
+	 * Number of busy periods in this schedule
+	 */
+	__le32 num_busy_slots;
+	/** busy_slot_dur_ms
+	 * The fixed duration of each busy slot in milliseconds
+	 */
+	__le32 busy_slot_dur_ms;
+	/** busy_slot_intvl_ms
+	 * The fixed interval between the start of two consecutive busy slots
+	 * in milliseconds.
+	 */
+	__le32 busy_slot_intvl_ms;
+	/** edca_params_valid
+	 * Indicates whether the following EDCA fields aifsn, ecwmin, ecwmax
+	 * are valid or not
+	 * 1 = Valid. 0 = Not Valid.
+	 */
+	__le32 edca_params_valid;
+	/** aifsn
+	 * Arbitration inter frame spacing number for this schedule type.
+	 * Range: 2-15.
+	 * For voice, video, best-effort, background ACs
+	 */
+	__le32 aifsn[WMI_AC_MAX];
+	/** ecwmin
+	 * Exponent form of Contention Window minimum value for this schedule type.
+	 * Range: 2 - 1024.
+	 * For voice, video, best-effort, background ACs
+	 */
+	__le32 ecwmin[WMI_AC_MAX];
+	/** ecwmax
+	 * Exponent form of Contention Window maximum value for this schedule type.
+	 * Range: 2 - 1024.
+	 * For voice, video, best-effort, background ACs
+	 */
+	__le32 ecwmax[WMI_AC_MAX];
+} __packed;
+
 struct ath12k_wmi_base {
 	struct ath12k_base *ab;
 	struct ath12k_wmi_pdev wmi[MAX_RADIOS];
@@ -10175,4 +10285,6 @@ int ath12k_wmi_send_pcie_gen_lane(struct ath12k *ar, u32 enable, u32 config_type
 int ath12k_wmi_send_pcie_low_power(struct ath12k *ar, u32 enable, u32 config_type);
 int ath12k_wmi_send_dcvs_cmd(struct ath12k *ar, u32 config);
 int ath12k_wmi_send_dps_assist_cmd(struct ath12k *ar, u32 vdev_id, u32 config);
+int ath12k_wmi_send_tdma_schedule_request(struct ath12k *ar,
+					  const struct ath12k_tdma_sched_info *sched);
 #endif
