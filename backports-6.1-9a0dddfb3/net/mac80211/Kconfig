@@ -382,6 +382,16 @@ config QCN_EXTN
 		Select this option to enable QCN 802.11 extensions in mac80211
 		drivers that support it..
 
+config QCA_LAB_TEST_FEATURES
+	bool "Enable QCA lab test features"
+	depends on QCN_EXTN
+	default y
+	help
+		Enable lab-only debug hooks and regulatory-violation test paths
+		for QCA vendor extensions.
+		Use this only in controlled validation or bring-up environments.
+		Keep this disabled on production builds and customer devices.
+
 config QCN_EXTN_MESH_SUPPORT
 	bool "Enable QCN extensions mesh feature support"
 	depends on QCN_EXTN
