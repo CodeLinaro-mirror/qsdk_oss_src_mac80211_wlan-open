@@ -2245,6 +2245,7 @@ void ath12k_wifi7_ucast_handler(struct ath12k_dp_vif *dp_vif,
 	/* Fast path: no features enabled */
 	if (unlikely((DP_FEATURE_IS_ANY(dp_vif) || skb_ctrl->features))) {
 		/* Process features based on bitmap */
+		feat_bypass = false;
 		ret = ath12k_wifi7_dp_tx_process_features(dp_vif, dp_pdev, skb, &len,
 							  &msdu_info, skb_ctrl);
 
