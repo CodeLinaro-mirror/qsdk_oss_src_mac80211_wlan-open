@@ -308,6 +308,8 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 	for (i = 0; i < HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX; i++)
 		ath12k_hal_tx_set_dscp_tid_map(ab, ath12k_default_dscp_tid_map, i);
 
+	ath12k_hal_tx_set_pcp_tid_map(ab, ath12k_default_pcp_tid_map);
+
 	ret = ath12k_wifi7_dp_rx_ring_setup(ab);
 	if (ret) {
 		ath12k_warn(ab, "rx allod failed ret = %d\n", ret);
@@ -428,12 +430,16 @@ static void ath12k_wifi7_dp_op_device_deinit(struct ath12k_dp *dp)
 static struct ath12k_dp_hw_group *ath12k_wifi7_dp_hw_group_alloc(void)
 {
 	struct ath12k_dp_hw_group *dp_hw_grp;
+	u8 i;
 
 	dp_hw_grp = kzalloc(sizeof(*dp_hw_grp), GFP_KERNEL);
 	if (!dp_hw_grp) {
 		pr_err("failed to allocate dp_hw_group\n");
 		return NULL;
 	}
+
+	for (i = 0; i < ATH12K_DP_PCP_TID_MAP_SIZE; i++)
+		dp_hw_grp->pcp_tid_map[i] = i;
 
 	return dp_hw_grp;
 }

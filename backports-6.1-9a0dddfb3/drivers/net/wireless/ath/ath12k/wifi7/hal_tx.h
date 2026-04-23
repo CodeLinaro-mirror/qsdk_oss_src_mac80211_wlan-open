@@ -41,6 +41,7 @@ struct hal_tx_info {
 };
 
 extern u8 ath12k_default_dscp_tid_map[DSCP_TID_MAP_TBL_ENTRY_SIZE];
+extern const u8 ath12k_default_pcp_tid_map[PCP_TID_MAP_TBL_SIZE];
 
 #define TX_IP_CHECKSUM (HAL_TCL_DATA_CMD_INFO2_IP4_CKSUM_EN  | \
                         HAL_TCL_DATA_CMD_INFO2_UDP4_CKSUM_EN | \
@@ -74,6 +75,9 @@ extern u8 ath12k_default_dscp_tid_map[DSCP_TID_MAP_TBL_ENTRY_SIZE];
 #define HAL_TX_BANK_CONFIG_DSCP_TIP_MAP_ID	GENMASK(22, 17)
 
 void ath12k_wifi7_hal_tx_set_dscp_tid_map(struct ath12k_base *ab, u8 *map, int id);
+void ath12k_wifi7_hal_tx_set_pcp_tid_map(struct ath12k_base *ab, const u8 *map);
+void ath12k_wifi7_hal_tx_set_tid_map_precedence(struct ath12k_base *ab,
+						const u8 precedence);
 void ath12k_wifi7_hal_tx_update_dscp_tid_map(struct ath12k_base *ab, int id, u8 dscp, u8 tid);
 void ath12k_wifi7_hal_tx_cmd_desc_setup(struct ath12k_base *ab,
 					struct hal_tcl_data_cmd *tcl_cmd,

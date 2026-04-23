@@ -38,6 +38,9 @@
 #define ATH12K_IPV4_ADDR_LEN         4
 #define ATH12K_IPV6_ADDR_LEN         16
 
+#define ATH12K_MAX_PCP	7
+#define ATH12K_MAX_TID	7
+
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 extern unsigned int ath12k_ppe_ds_enabled;
 #endif
@@ -167,6 +170,10 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_TPC_EIRP_EVENT = 519,
 	QCA_NL80211_VENDOR_SUBCMD_TDMA_SCHEDULE_CONFIG = 520,
 	QCA_NL80211_VENDOR_SUBCMD_HE_MCS_12_13_SUPP = 521,
+	QCA_NL80211_VENDOR_SUBCMD_SET_PCP_TID_MAP = 522,
+	QCA_NL80211_VENDOR_SUBCMD_GET_PCP_TID_MAP = 523,
+	QCA_NL80211_VENDOR_SUBCMD_SET_TID_MAP_PRECEDENCE = 524,
+	QCA_NL80211_VENDOR_SUBCMD_GET_TID_MAP_PRECEDENCE = 525,
 };
 
 enum qca_nl80211_vendor_events {
@@ -5668,6 +5675,63 @@ enum qca_wlan_vendor_attr_oem_data_params {
 	QCA_WLAN_VENDOR_ATTR_OEM_DATA_PARAMS_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_OEM_DATA_PARAMS_MAX =
 		QCA_WLAN_VENDOR_ATTR_OEM_DATA_PARAMS_AFTER_LAST - 1,
+};
+
+/*
+ * enum qca_wlan_vendor_attr_pcp_tid_entry - Inner attributes for each
+ * PCP-TID mapping entry nested inside QCA_WLAN_VENDOR_ATTR_PCP_TID_MAP_TABLE.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_PCP_TID_ENTRY_PCP: NLA_U8. PCP value (0-7).
+ * @QCA_WLAN_VENDOR_ATTR_PCP_TID_ENTRY_TID: NLA_U8. TID value (0-7).
+ */
+enum qca_wlan_vendor_attr_pcp_tid_entry {
+	QCA_WLAN_VENDOR_ATTR_PCP_TID_ENTRY_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_PCP_TID_ENTRY_PCP,
+	QCA_WLAN_VENDOR_ATTR_PCP_TID_ENTRY_TID,
+	QCA_WLAN_VENDOR_ATTR_PCP_TID_ENTRY_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_PCP_TID_ENTRY_MAX =
+		QCA_WLAN_VENDOR_ATTR_PCP_TID_ENTRY_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_pcp_tid_map - Attributes for PCP-TID mapping
+ * vendor commands (QCA_NL80211_VENDOR_SUBCMD_SET/GET_PCP_TID_MAP).
+ *
+ * @QCA_WLAN_VENDOR_ATTR_PCP_TID_MAP_TABLE: NLA_NESTED.
+ *   Array of qca_wlan_vendor_attr_pcp_tid_entry nested attributes.
+ *   Each entry specifies one {PCP, TID} mapping.
+ *   Partial updates are supported: only the PCPs present in the message
+ *   are updated; the rest retain their current values.
+ *   1-8 entries per SET command.
+ */
+
+enum qca_wlan_vendor_attr_pcp_tid_map {
+	QCA_WLAN_VENDOR_ATTR_PCP_TID_MAP_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_PCP_TID_MAP_TABLE,
+	QCA_WLAN_VENDOR_ATTR_PCP_TID_MAP_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_PCP_TID_MAP_MAX =
+		QCA_WLAN_VENDOR_ATTR_PCP_TID_MAP_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_tid_map_precedence - Attributes for TID map
+ * precedence vendor commands
+ * (QCA_NL80211_VENDOR_SUBCMD_SET/GET_TID_MAP_PRECEDENCE).
+ *
+ * @QCA_WLAN_VENDOR_ATTR_TID_MAP_PRECEDENCE_VAL: NLA_U8.
+ *   Precedence order value (0-11); maps to UMAC_TCL_R0_TID_MAP_PRTY.VAL.
+ *   Values 12-15 are reserved by hardware and will be rejected.
+ * @QCA_WLAN_VENDOR_ATTR_TID_MAP_PRECEDENCE_TID_DEF: NLA_U8 (optional).
+ *   Default TID (0-7) for MSDUs with no valid TID; maps to register [7:5].
+ *   If omitted, the existing default TID is preserved.
+ */
+enum qca_wlan_vendor_attr_tid_map_precedence {
+	QCA_WLAN_VENDOR_ATTR_TID_MAP_PRECEDENCE_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_TID_MAP_PRECEDENCE_VAL,
+	QCA_WLAN_VENDOR_ATTR_TID_MAP_PRECEDENCE_TID_DEF,
+	QCA_WLAN_VENDOR_ATTR_TID_MAP_PRECEDENCE_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_TID_MAP_PRECEDENCE_MAX =
+		QCA_WLAN_VENDOR_ATTR_TID_MAP_PRECEDENCE_AFTER_LAST - 1,
 };
 
 #define ATH12K_VENDOR_PUT(vendor_event, type, attr, param)             \

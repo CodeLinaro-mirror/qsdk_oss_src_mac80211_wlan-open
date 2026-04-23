@@ -40,6 +40,7 @@ struct hal_tlv_64_hdr {
 } __packed;
 
 #define DSCP_TID_MAP_TBL_ENTRY_SIZE 64
+#define PCP_TID_MAP_TBL_SIZE	8
 #define HAL_CE_REMAP_REG_BASE  (ab->ce_remap_base_addr)
 #define HAL_PMM_REG_BASE(hal)	((hal)->regs->hal_pmm_reg_base)
 
@@ -1636,6 +1637,8 @@ struct hal_ops {
 				     u32 end_offset);
 	void (*tx_update_dscp_tid_map)(struct ath12k_base *ab, int id, u8 dscp, u8 tid);
 	void (*tx_set_dscp_tid_map)(struct ath12k_base *ab, u8 *map, int id);
+	void (*tx_set_pcp_tid_map)(struct ath12k_base *ab, const u8 *map);
+	void (*tx_set_tid_map_precedence)(struct ath12k_base *ab, const u8 precedence);
 	void (*tx_configure_bank_register)(struct ath12k_base *ab,
 					   u32 bank_config, u8 bank_id);
 	void (*write_ml_reoq_lut_addr)(struct ath12k_base *ab,
@@ -1897,6 +1900,8 @@ ath12k_hal_ce_dst_status_get_length(struct ath12k_hal *hal,
 				    struct hal_ce_srng_dst_status_desc *desc);
 void ath12k_hal_tx_update_dscp_tid_map(struct ath12k_base *ab, int id, u8 dscp, u8 tid);
 void ath12k_hal_tx_set_dscp_tid_map(struct ath12k_base *ab, u8 *map, int id);
+void ath12k_hal_tx_set_pcp_tid_map(struct ath12k_base *ab, const u8 *map);
+void ath12k_hal_tx_set_tid_map_precedence(struct ath12k_base *ab, const u8 precedence);
 void ath12k_hal_tx_configure_bank_register(struct ath12k_base *ab,
 					   u32 bank_config, u8 bank_id);
 void ath12k_hal_write_reoq_lut_addr(struct ath12k_base *ab, dma_addr_t paddr);
