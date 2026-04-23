@@ -1781,11 +1781,11 @@ static u16 ath12k_wifi7_mcbc_get_gsn(struct ath12k_dp_vif *dp_vif)
 static int ath12k_wifi7_get_mcast_group_slot(struct ieee80211_vif *vif,
 					     struct ieee80211_vif *vlan_vif,
 					     u8 link_id,
+					     struct ieee80211_tx_info *info,
 					     struct sk_buff *skb)
 {
 	struct ath12k_vif *vlan_ahvif;
 	struct ath12k_vlan_iface *vif_vlan;
-	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct ieee80211_key_conf *hw_key = info->control.hw_key;
 	int group_slot = -1;
 	u8 keyidx;
@@ -1902,10 +1902,10 @@ static int ath12k_wifi7_mcbc_setup_encryption(struct ath12k_dp_vif *dp_vif,
 					      struct sk_buff *skb,
 					      bool is_sta, bool is_eth,
 					      int *group_slot,
+					      struct ieee80211_tx_info *info,
 					      struct ieee80211_vif *vlan_vif)
 {
 	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
-	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct ath12k_vif *ahvif = container_of(dp_vif, struct ath12k_vif, dp_vif);
 	struct ath12k_link_vif *arvif = NULL;
 	struct ath12k_dp_link_peer *peer;
@@ -1951,7 +1951,7 @@ static int ath12k_wifi7_mcbc_setup_encryption(struct ath12k_dp_vif *dp_vif,
 		*group_slot = ath12k_wifi7_get_mcast_group_slot(ahvif->vif,
 								vlan_vif,
 								link_id,
-								skb);
+								info, skb);
 	spin_unlock_bh(&ar->ab->dp->dp_lock);
 
 	return 0;
@@ -1998,6 +1998,7 @@ void ath12k_wifi7_mcbc_handler(struct ath12k_dp_vif *dp_vif,
 			       bool is_sta,
 			       struct ieee80211_vif *vlan_vif,
 			       struct ath12k_dp_skb_ctrl *skb_ctrl,
+			       struct ieee80211_tx_info *info,
 			       u32 qos_nw_delay, bool htt_mesh)
 {
 	struct ath12k_dp *dp;
@@ -2023,10 +2024,8 @@ void ath12k_wifi7_mcbc_handler(struct ath12k_dp_vif *dp_vif,
 	} else {
 		set_bit(link_id, &links_map);
 		if (!is_sta)
-			group_slot = ath12k_wifi7_get_mcast_group_slot(ahvif->vif,
-								       vlan_vif,
-								       link_id,
-								       skb);
+			group_slot = ath12k_wifi7_get_mcast_group_slot
+					(ahvif->vif, vlan_vif, link_id, info, skb);
 	}
 
 	/* Update entry statistics */
@@ -2093,7 +2092,7 @@ void ath12k_wifi7_mcbc_handler(struct ath12k_dp_vif *dp_vif,
 							 link_id, skb_new,
 							 is_sta, is_eth,
 							 &group_slot,
-							 vlan_vif);
+							 info, vlan_vif);
 		if (ret) {
 			dev_kfree_skb_any(skb_new);
 			DP_STATS_INC(dp_vif,
@@ -3570,7 +3569,7 @@ int ath12k_wifi7_sdwf_reinject_handler(struct ath12k_pdev_dp *dp_pdev,
 	if (is_mcast)
 		ath12k_wifi7_mcbc_handler(dp_vif, arvif->link_id, arsta, skb,
 					  is_eth, false, false, NULL, &skb_ctrl,
-					  0, false);
+					  info, 0, false);
 	else
 		ath12k_wifi7_ucast_handler(dp_vif, arvif->link_id,
 					   arsta, skb, &skb_ctrl, 0, false);
