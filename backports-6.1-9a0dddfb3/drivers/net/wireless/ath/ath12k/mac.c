@@ -9038,6 +9038,7 @@ static int ath12k_start_scan(struct ath12k *ar,
 
 	ret = wait_for_completion_timeout(&ar->scan.started, 1 * HZ);
 	if (ret == 0) {
+		WARN_ON(1);
 		ret = ath12k_scan_stop(ar);
 		if (ret)
 			ath12k_warn(ar->ab, "failed to stop scan: %d\n", ret);
