@@ -17,6 +17,16 @@
 #include "dp_stats.h"
 #include "dp_htt_logger.h"
 #include "dp_ext_desc.h"
+#include "qcn_extns/ini.h"
+
+/* Macros parsing INI */
+#ifndef CPTCFG_QCN_EXTN
+#define DP_TX_MONITOR	false
+#else
+#define DP_TX_MONITOR \
+	ath12k_cfg_get(ab, ATH12K_CFG_DP_TX_MONITOR)
+#endif /* CPTCFG_QCN_EXTN*/
+
 
 #define HTT_TCL_META_DATA_PEER_ID_MISSION       GENMASK(15, 3)
 
