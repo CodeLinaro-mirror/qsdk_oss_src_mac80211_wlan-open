@@ -23386,6 +23386,48 @@ u32 ath12k_mac_single_rate_hw_rate_code(struct ath12k *ar,
 	return 0;
 }
 
+static int ath12k_mac_set_he_ul_fixed_rate(struct ath12k_link_vif *arvif,
+					   enum nl80211_band band,
+					   const struct cfg80211_bitrate_mask *mask)
+{
+	int he_ul_rate, i, num_rates, ret;
+	struct ath12k *ar = arvif->ar;
+	u32 rate_code, vdev_param;
+	u8 he_ul_nss;
+
+	if (!ath12k_mac_he_ul_mcs_present(ar, band, mask))
+		return 0;
+
+	num_rates = ath12k_mac_bitrate_mask_num_he_ul_rates(ar, band, mask);
+	if (num_rates != 1) {
+		ath12k_warn(ar->ab,
+			    "Setting HE UL MCS Fixed Rate range is not supported\n");
+		return -EINVAL;
+	}
+
+	for (i = 0; i < ARRAY_SIZE(mask->control[band].he_ul_mcs); i++) {
+		if (hweight16(mask->control[band].he_ul_mcs[i]) == 1) {
+			he_ul_nss = i;
+			he_ul_rate = ffs((int)mask->control[band].he_ul_mcs[i]) - 1;
+			break;
+		}
+	}
+
+	rate_code = ATH12K_HW_RATE_CODE(he_ul_rate, he_ul_nss,
+					WMI_RATE_PREAMBLE_HE, 0);
+
+	vdev_param = WMI_VDEV_PARAM_UL_FIXED_RATE;
+	ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
+					    vdev_param, rate_code);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to set HE UL Fixed Rate:%d, error:%d\n",
+			    he_ul_rate, ret);
+		return ret;
+	}
+
+	return 0;
+}
+
 int
 ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 			       struct ieee80211_vif *vif, unsigned int link_id,
@@ -23405,8 +23447,7 @@ ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 	u8 nss, he_ul_nss = 0;
 	u8 sgi;
 	u8 ldpc;
-	int ret, i;
-	int num_rates;
+	int ret;
 	int he_ul_rate = -1;
 	bool he_fixed_rate = false;
 	bool eht_fixed_rate = false;
@@ -23463,22 +23504,9 @@ ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 		}
 	}
 
-	for (i = 0; i < ARRAY_SIZE(mask->control[band].he_ul_mcs); i++) {
-		if (hweight16(mask->control[band].he_ul_mcs[i]) == 1) {
-			he_ul_nss = i + 1;
-			he_ul_rate = ffs((int)
-					mask->control[band].he_ul_mcs[i]) - 1;
-			break;
-		}
-	}
-	num_rates = ath12k_mac_bitrate_mask_num_he_ul_rates(ar, band,
-			mask);
-	if (ath12k_mac_he_ul_mcs_present(ar, band, mask) &&
-			num_rates != 1) {
-		ath12k_warn(ar->ab,
-				"Setting HE UL MCS Fixed Rate range is not supported\n");
-		return -EINVAL;
-	}
+	ret = ath12k_mac_set_he_ul_fixed_rate(arvif, band, mask);
+	if (ret)
+		return ret;
 
 	ret = ath12k_mac_set_rate_params(arvif, rate, nss, sgi, ldpc, he_gi,
 					 he_ltf, he_fixed_rate, eht_gi, eht_ltf,
