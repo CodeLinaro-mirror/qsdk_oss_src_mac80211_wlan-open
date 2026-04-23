@@ -22893,24 +22893,11 @@ ath12k_mac_get_single_legacy_rate(struct ath12k *ar,
 }
 
 static int
-ath12k_mac_set_fixed_rate_gi_ltf(struct ath12k_link_vif *arvif, u8 gi, u8 ltf)
+ath12k_mac_set_fixed_rate_gi_ltf(struct ath12k_link_vif *arvif, u8 gi, u8 ltf,
+				 u32 param)
 {
-	struct ieee80211_bss_conf *link_conf;
 	struct ath12k *ar = arvif->ar;
-	bool eht_support;
-	int ret, param;
-
-	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
-
-	rcu_read_lock();
-	link_conf = ath12k_mac_get_link_bss_conf(arvif);
-	if (!link_conf) {
-		rcu_read_unlock();
-		return -EINVAL;
-	}
-
-	eht_support = link_conf->eht_support;
-	rcu_read_unlock();
+	int ret;
 
 	/* 0.8 = 0, 1.6 = 2 and 3.2 = 3. */
 	if (gi && gi != 0xFF)
@@ -22919,18 +22906,20 @@ ath12k_mac_set_fixed_rate_gi_ltf(struct ath12k_link_vif *arvif, u8 gi, u8 ltf)
 	ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
 					    WMI_VDEV_PARAM_SGI, gi);
 	if (ret) {
-		ath12k_warn(ar->ab, "failed to set HE GI:%d, error:%d\n",
+		ath12k_warn(ar->ab, "failed to set GI:%d, error:%d\n",
 			    gi, ret);
 		return ret;
 	}
-	/* start from 1 */
-	if (ltf != 0xFF)
-		ltf += 1;
 
-        if (eht_support)
-                param = WMI_VDEV_PARAM_EHT_LTF;
-        else
-                param = WMI_VDEV_PARAM_HE_LTF;
+	if (param == WMI_VDEV_PARAM_HE_LTF) {
+		/* HE values start from 1 */
+		if (ltf != 0xFF)
+			ltf += 1;
+	} else {
+		/* EHT values start from 5 */
+		if (ltf != 0xFF)
+			ltf += 5;
+	}
 
 	ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
 					    param, ltf);
@@ -22983,6 +22972,14 @@ ath12k_mac_set_auto_rate_gi_ltf(struct ath12k_link_vif *arvif, u16 gi, u8 ltf)
 		}
 	}
 
+	if (gi == 0xff)
+		gi = WMI_AUTORATE_800NS_GI | WMI_AUTORATE_1600NS_GI |
+		     WMI_AUTORATE_3200NS_GI;
+
+	if (ltf == 0xff)
+		ltf = WMI_HE_AUTORATE_LTF_1X | WMI_HE_AUTORATE_LTF_2X |
+		      WMI_HE_AUTORATE_LTF_4X;
+
 	ar_gi_ltf = gi | ltf;
 
 	ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
@@ -22990,7 +22987,7 @@ ath12k_mac_set_auto_rate_gi_ltf(struct ath12k_link_vif *arvif, u16 gi, u8 ltf)
 					    ar_gi_ltf);
 	if (ret) {
 		ath12k_warn(ar->ab,
-			    "failed to set HE autorate GI:%u, LTF:%u params, error:%d\n",
+			    "failed to set autorate GI:%u, LTF:%u params, error:%d\n",
 			    gi, ltf, ret);
 		return ret;
 	}
@@ -23035,118 +23032,6 @@ static u32 ath12k_mac_nlgi_to_wmigi(enum nl80211_txrate_gi gi)
 	default:
 		return WMI_GI_400_NS;
 	}
-}
-
-static int ath12k_mac_set_rate_params(struct ath12k_link_vif *arvif,
-				      u32 rate, u8 nss, u8 sgi, u8 ldpc,
-				      u8 he_gi, u8 he_ltf, bool he_fixed_rate,
-				      u8 eht_gi, u8 eht_ltf,
-				      bool eht_fixed_rate,
-				      int he_ul_rate, u8 he_ul_nss,
-				      bool uhr_fixed_rate)
-{
-	struct ieee80211_bss_conf *link_conf;
-	struct ath12k *ar = arvif->ar;
-	u32 vdev_param;
-	u32 param_value, rate_code;
-	int ret;
-	bool he_support, eht_support;
-
-	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
-
-	link_conf = ath12k_mac_get_link_bss_conf(arvif);
-	if (!link_conf)
-		return -EINVAL;
-
-	he_support = link_conf->he_support;
-	eht_support = link_conf->eht_support;
-
-	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
-			 "mac set rate params vdev %i rate 0x%02x nss 0x%02x sgi 0x%02x ldpc 0x%02x\n",
-			 arvif->vdev_id, rate, nss, sgi, ldpc);
-
-	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
-			 "he_gi 0x%02x he_ltf 0x%02x he_fixed_rate %d\n", he_gi,
-			 he_ltf, he_fixed_rate);
-
-	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
-			"eht_gi:0x%02x, eht_ltf:0x%02x, eht_fixed_rate:%d\n", eht_gi,
-			eht_ltf, eht_fixed_rate);
-
-	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
-			 "uhr_fixed_rate:%d\n", uhr_fixed_rate);
-
-	if (!he_support || !eht_support || uhr_fixed_rate) {
-		vdev_param = WMI_VDEV_PARAM_FIXED_RATE;
-		ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
-						    vdev_param, rate);
-		if (ret) {
-			ath12k_warn(ar->ab, "failed to set fixed rate param 0x%02x: %d\n",
-				    rate, ret);
-			return ret;
-		}
-	}
-
-	vdev_param = WMI_VDEV_PARAM_NSS;
-
-	ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
-					    vdev_param, nss);
-	if (ret) {
-		ath12k_warn(ar->ab, "failed to set nss param %d: %d\n",
-			    nss, ret);
-		return ret;
-	}
-
-	ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
-					    WMI_VDEV_PARAM_LDPC, ldpc);
-	if (ret) {
-		ath12k_warn(ar->ab, "failed to set ldpc param %d: %d\n",
-			    ldpc, ret);
-		return ret;
-	}
-
-	if (eht_support) {
-		if (eht_fixed_rate)
-			ret = ath12k_mac_set_fixed_rate_gi_ltf(arvif, eht_gi, eht_ltf);
-		else
-			ret = ath12k_mac_set_auto_rate_gi_ltf(arvif, eht_gi, eht_ltf);
-		if (ret)
-			return ret;
-	} else if (he_support) {
-		if (he_fixed_rate)
-			ret = ath12k_mac_set_fixed_rate_gi_ltf(arvif, he_gi, he_ltf);
-		else
-			ret = ath12k_mac_set_auto_rate_gi_ltf(arvif, he_gi, he_ltf);
-		if (ret)
-			return ret;
-	} else {
-		vdev_param = WMI_VDEV_PARAM_SGI;
-		param_value = ath12k_mac_nlgi_to_wmigi(sgi);
-		ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
-						    vdev_param, param_value);
-		if (ret) {
-			ath12k_warn(ar->ab, "failed to set sgi param %d: %d\n",
-				    sgi, ret);
-			return ret;
-		}
-	}
-
-	if ((he_ul_rate < 0) || !he_ul_nss)
-		return 0;
-
-	rate_code = ATH12K_HW_RATE_CODE(he_ul_rate, he_ul_nss - 1,
-					WMI_RATE_PREAMBLE_HE, 0);
-
-	vdev_param = WMI_VDEV_PARAM_UL_FIXED_RATE;
-	ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
-					    vdev_param, rate_code);
-
-	if (ret) {
-		ath12k_warn(ar->ab, "failed to set HE UL Fixed Rate:%d, error:%d\n",
-			    he_ul_rate, ret);
-	}
-
-	return 0;
 }
 
 static bool
@@ -23434,24 +23319,21 @@ ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 			       const struct cfg80211_bitrate_mask *mask)
 {
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
+	int he_num_rates, eht_num_rates;
 	struct ath12k_link_vif *arvif;
 	struct cfg80211_chan_def def;
 	struct ath12k *ar;
 	enum nl80211_band band;
+	u32 param_value;
+	u32 vdev_param;
 	u8 he_ltf = 0;
 	u8 he_gi = 0;
 	u8 eht_ltf = 0;
 	u8 eht_gi = 0;
 	u8 uhr_elr;
 	u32 rate;
-	u8 nss, he_ul_nss = 0;
 	u8 sgi;
-	u8 ldpc;
 	int ret;
-	int he_ul_rate = -1;
-	bool he_fixed_rate = false;
-	bool eht_fixed_rate = false;
-	bool uhr_fixed_rate = false;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -23464,15 +23346,16 @@ ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 		return -EPERM;
 
 	band = def.chan->band;
-	ldpc = !!(ar->ht_cap_info & WMI_HT_CAP_LDPC);
 	uhr_elr = mask->control[band].uhr_elr;
 
 	sgi = mask->control[band].gi;
 	he_gi = mask->control[band].he_gi;
 	he_ltf = mask->control[band].he_ltf;
-
 	eht_gi = mask->control[band].eht_gi;
 	eht_ltf = mask->control[band].eht_ltf;
+
+	he_num_rates = ath12k_mac_bitrate_mask_num_he_rates(ar, band, mask);
+	eht_num_rates = ath12k_mac_bitrate_mask_num_eht_rates(ar, band, mask);
 
 	if (ath12k_mac_is_single_rate_bitrate_mask(ar, band, mask)) {
 		rate = ath12k_mac_single_rate_hw_rate_code(ar, band, mask);
@@ -23485,11 +23368,57 @@ ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 			return ret;
 		}
 		arvif->fixed_rate_set = true;
+
+		if (he_num_rates) {
+			ret = ath12k_mac_set_fixed_rate_gi_ltf(arvif, he_gi, he_ltf,
+							       WMI_VDEV_PARAM_HE_LTF);
+			if (ret) {
+				ath12k_warn(ar->ab, "failed to set HE fixed rate GI/LTF\n");
+				return ret;
+			}
+		}
+
+		if (eht_num_rates) {
+			ret = ath12k_mac_set_fixed_rate_gi_ltf(arvif, eht_gi, eht_ltf,
+							       WMI_VDEV_PARAM_EHT_LTF);
+			if (ret) {
+				ath12k_warn(ar->ab, "failed to set EHT fixed rate GI/LTF\n");
+				return ret;
+			}
+		}
 	} else {
 		ret = ath12k_mac_apply_vdev_ratemask(arvif, band, mask);
 		if (ret) {
 			ath12k_warn(ar->ab, "failed to set vdev rate mask %d\n",
 				    ret);
+			return ret;
+		}
+
+		if (he_num_rates) {
+			ret = ath12k_mac_set_auto_rate_gi_ltf(arvif, he_gi, he_ltf);
+			if (ret) {
+				ath12k_warn(ar->ab, "failed to set HE auto rate GI/LTF\n");
+				return ret;
+			}
+		}
+
+		if (eht_num_rates) {
+			ret = ath12k_mac_set_auto_rate_gi_ltf(arvif, eht_gi, eht_ltf);
+			if (ret) {
+				ath12k_warn(ar->ab, "failed to set EHT auto rate GI/LTF\n");
+				return ret;
+			}
+		}
+	}
+
+	if (!he_num_rates && !eht_num_rates) {
+		vdev_param = WMI_VDEV_PARAM_SGI;
+		param_value = ath12k_mac_nlgi_to_wmigi(sgi);
+		ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
+						    vdev_param, param_value);
+		if (ret) {
+			ath12k_warn(ar->ab, "failed to set sgi param %d: %d\n",
+				    sgi, ret);
 			return ret;
 		}
 	}
@@ -23505,17 +23434,6 @@ ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 	}
 
 	ret = ath12k_mac_set_he_ul_fixed_rate(arvif, band, mask);
-	if (ret)
-		return ret;
-
-	ret = ath12k_mac_set_rate_params(arvif, rate, nss, sgi, ldpc, he_gi,
-					 he_ltf, he_fixed_rate, eht_gi, eht_ltf,
-					 eht_fixed_rate, he_ul_rate, he_ul_nss,
-					 uhr_fixed_rate);
-	if (ret) {
-		ath12k_warn(ar->ab, "failed to set fixed rate params on vdev %i: %d\n",
-			    arvif->vdev_id, ret);
-	}
 
 	return ret;
 }
