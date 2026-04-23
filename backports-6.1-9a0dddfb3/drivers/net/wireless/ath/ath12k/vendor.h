@@ -2649,6 +2649,7 @@ enum qca_vendor_wlan_telemetry_feat_attr {
 	QCA_VENDOR_ATTR_WLAN_FEAT_SDWFDELAY,
 	QCA_VENDOR_ATTR_WLAN_FEAT_PROTO,
 	QCA_VENDOR_ATTR_WLAN_FEAT_TID,
+	QCA_VENDOR_ATTR_WLAN_FEAT_DELAY,
 
 	QCA_VENDOR_ATTR_WLAN_FEAT_AFTER_LAST,
 	QCA_VENDOR_ATTR_WLAN_FEAT_MAX =
@@ -2669,6 +2670,7 @@ enum qca_vendor_wlan_telemetry_event_attr {
 	QCA_VENDOR_ATTR_WLAN_TELEMETRY_TID_STATS_EVENT,
 	QCA_VENDOR_ATTR_WLAN_TELEMETRY_VAP_CP_STATS_EVENT,
 	QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_EVENT,
+	QCA_VENDOR_ATTR_WLAN_TELEMETRY_DELAY_EVENT,
 
 	QCA_VENDOR_ATTR_WLAN_TELEMETRY_EVENT_AFTER_LAST,
 	QCA_VENDOR_ATTR_WLAN_TELEMETRY_EVENT_MAX =
@@ -2883,6 +2885,33 @@ enum qca_vendor_wlan_telemetry_tid_rx_attr {
 	QCA_VENDOR_ATTR_TID_RX_AFTER_LAST,
 	QCA_VENDOR_ATTR_TID_RX_MAX =
 		QCA_VENDOR_ATTR_TID_RX_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_vendor_wlan_telemetry_delay_stats_attr - Per-TID delay statistics
+ *
+ * These attributes are nested inside each TID entry within the
+ * QCA_VENDOR_ATTR_WLAN_TELEMETRY_DELAY_EVENT vendor event.
+ * One TID entry is emitted per TID (0..DP_TID_MAX-1), each wrapped in a
+ * nested attribute indexed by (tid + 1).
+ *
+ * @QCA_VENDOR_ATTR_DELAY_STATS_TX_SWQ: Nested histogram (see
+ *     qca_vendor_wlan_telemetry_delay_hist_attr). TX software-queue
+ *     enqueue-to-dequeue delay histogram.
+ * @QCA_VENDOR_ATTR_DELAY_STATS_TX_HW: Nested histogram. TX hardware
+ *     (TCL enqueue to WBM completion) delay histogram.
+ * @QCA_VENDOR_ATTR_DELAY_STATS_RX_TO_STACK: Nested histogram. RX
+ *     REO-dequeue to network-stack delivery delay histogram.
+ */
+enum qca_vendor_wlan_telemetry_delay_stats_attr {
+	QCA_VENDOR_ATTR_DELAY_STATS_INVALID = 0,
+	QCA_VENDOR_ATTR_DELAY_STATS_TX_SWQ = 1,
+	QCA_VENDOR_ATTR_DELAY_STATS_TX_HW = 2,
+	QCA_VENDOR_ATTR_DELAY_STATS_RX_TO_STACK = 3,
+
+	QCA_VENDOR_ATTR_DELAY_STATS_AFTER_LAST,
+	QCA_VENDOR_ATTR_DELAY_STATS_MAX =
+		QCA_VENDOR_ATTR_DELAY_STATS_AFTER_LAST - 1,
 };
 
 enum qca_vendor_wlan_telemetry_rx_stats_attr {

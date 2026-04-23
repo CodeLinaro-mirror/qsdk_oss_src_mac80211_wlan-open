@@ -4031,6 +4031,122 @@ ath12k_dp_update_legacy_peer_stats(struct ath12k *ar,
 	}
 }
 
+/**
+ * ath12k_dp_accumulate_tx_delay_stats() - Aggregate TX delay stats from one ring
+ * @src_tx_delay: Source TX delay statistics from a specific ring
+ * @dst_tx_delay: Destination TX delay statistics (aggregated across rings)
+ *
+ * Aggregates TX delay statistics including software queue delay and hardware
+ * transmission delay histograms.
+ */
+static void
+ath12k_dp_accumulate_tx_delay_stats(struct ath12k_dp_peer_delay_tx_stats *src_tx_delay,
+				    struct ath12k_dp_peer_delay_tx_stats *dst_tx_delay)
+{
+	if (!src_tx_delay || !dst_tx_delay)
+		return;
+
+	/* Aggregate software queue delay histogram */
+	ath12k_dp_accumulate_hist_stats(&src_tx_delay->tx_swq_delay,
+					&dst_tx_delay->tx_swq_delay);
+
+	/* Aggregate hardware transmission delay histogram */
+	ath12k_dp_accumulate_hist_stats(&src_tx_delay->hwtx_delay,
+					&dst_tx_delay->hwtx_delay);
+}
+
+/**
+ * ath12k_dp_accumulate_rx_delay_stats() - Aggregate RX delay stats from one ring
+ * @src_rx_delay: Source RX delay statistics from a specific ring
+ * @dst_rx_delay: Destination RX delay statistics (aggregated across rings)
+ *
+ * Aggregates RX delay statistics including the delay from hardware to stack.
+ */
+static void
+ath12k_dp_accumulate_rx_delay_stats(struct ath12k_dp_peer_delay_rx_stats *src_rx_delay,
+				    struct ath12k_dp_peer_delay_rx_stats *dst_rx_delay)
+{
+	if (!src_rx_delay || !dst_rx_delay)
+		return;
+
+	/* Aggregate to-stack delay histogram */
+	ath12k_dp_accumulate_hist_stats(&src_rx_delay->to_stack_delay,
+					&dst_rx_delay->to_stack_delay);
+}
+
+/**
+ * ath12k_dp_accumulate_stats_per_tid() - Store delay stats per TID per ring
+ * @per_ring: Source statistics organized per-TID per-ring
+ * @all_rings: Destination statistics organized per-TID for all rings combined
+ *
+ * This function aggregates delay statistics from all rings into a single per-TID view.
+ * It iterates through all TIDs and all rings, accumulating the statistics.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int
+ath12k_dp_accumulate_stats_per_tid(struct ath12k_dp_peer_delay_stats *per_ring,
+				   struct ath12k_dp_peer_tid_agg_delay_stats *all_rings)
+{
+	int tid, ring;
+	struct ath12k_dp_peer_delay_tid_stats *src_tid_stats;
+	struct ath12k_dp_peer_delay_tid_stats *dst_tid_stats;
+
+	if (!per_ring || !all_rings) {
+		ath12k_err(NULL, "Invalid parameters: per_ring = %p, all_rings = %p\n",
+			   per_ring, all_rings);
+		return -EINVAL;
+	}
+
+	/* Initialize destination statistics to zero */
+	memset(all_rings, 0, sizeof(*all_rings));
+
+	/* Iterate through all TIDs */
+	for (tid = 0; tid < DP_TID_MAX; tid++) {
+		dst_tid_stats = &all_rings->tid_stats[tid];
+
+		/* Initialize histogram types for destination */
+		ath12k_dp_hist_init(&dst_tid_stats->tx_delay.tx_swq_delay,
+				    HIST_TYPE_SW_ENQEUE_DELAY);
+		ath12k_dp_hist_init(&dst_tid_stats->tx_delay.hwtx_delay,
+				    HIST_TYPE_HW_TX_COMP_DELAY);
+		ath12k_dp_hist_init(&dst_tid_stats->rx_delay.to_stack_delay,
+				    HIST_TYPE_REAP_STACK);
+
+		/* Aggregate statistics from all rings for this TID */
+		for (ring = 0; ring < DP_REO_DST_RING_MAX; ring++) {
+			src_tid_stats = &per_ring->delay_tid_stats[tid][ring];
+
+			/* Aggregate TX delay statistics */
+			ath12k_dp_accumulate_tx_delay_stats(&src_tid_stats->tx_delay,
+							    &dst_tid_stats->tx_delay);
+
+			/* Aggregate RX delay statistics */
+			ath12k_dp_accumulate_rx_delay_stats(&src_tid_stats->rx_delay,
+							    &dst_tid_stats->rx_delay);
+		}
+	}
+
+	return 0;
+}
+
+void ath12k_dp_get_delay_stats(struct ath12k *ar, struct ath12k_dp_peer *peer,
+			       struct ath12k_dp_peer_stats *peer_stats)
+{
+	struct ath12k_dp_mld_peer_stats *mld_stats;
+	struct ath12k_dp_peer_delay_stats *per_ring_stats;
+	struct ath12k_dp_peer_tid_agg_delay_stats *all_rings_stats;
+
+	if (!peer || !peer_stats)
+		return;
+
+	mld_stats = &peer->mld_stats;
+	per_ring_stats = mld_stats->delay_stats;
+	all_rings_stats = peer_stats->delay;
+
+	ath12k_dp_accumulate_stats_per_tid(per_ring_stats, all_rings_stats);
+}
+
 int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
 			     struct ath12k_telemetry_dp_peer *telemetry_peer,
 			     u8 *addr, u8 link_id)
@@ -4127,6 +4243,8 @@ int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
 				ath12k_dp_update_hw_peer_stats(ar, peer, mld_stats);
 				ath12k_dp_aggr_hw_link_stats(ar, peer, link_stats);
 
+				if (ath12k_dp_delay_stats_enabled(&ar->dp))
+					ath12k_dp_get_delay_stats(ar, peer, peer_stats);
 			}
 			spin_unlock_bh(&dp_hw->peer_lock);
 			return ret;

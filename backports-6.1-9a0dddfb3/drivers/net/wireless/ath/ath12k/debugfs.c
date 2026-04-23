@@ -6409,6 +6409,75 @@ static const struct file_operations fops_qos_stats = {
 	.open = simple_open
 };
 
+static void ath12k_dp_peer_reset_delay_stats(struct ath12k_dp_peer *dp_peer)
+{
+	struct ath12k_dp_peer_delay_stats *delay_stats;
+	struct ath12k_dp_peer_delay_tid_stats *delay_tid_stats;
+	struct ath12k_dp_peer_delay_tx_stats *tx_delay;
+	struct ath12k_dp_peer_delay_rx_stats *rx_delay;
+	u8 index;
+	u8 tid, ring_id;
+
+	if (!dp_peer || !dp_peer->mld_stats.delay_stats)
+		return;
+
+	delay_stats = dp_peer->mld_stats.delay_stats;
+
+	rcu_read_lock();
+	for (index = 0; index < ATH12K_DP_PEER_MAX_MLO_LINKS; index++) {
+		for (tid = 0; tid < DP_TID_MAX; tid++) {
+			for (ring_id = 0; ring_id < DP_REO_DST_RING_MAX; ring_id++) {
+				delay_tid_stats =
+					&delay_stats->delay_tid_stats[tid][ring_id];
+				tx_delay = &delay_tid_stats->tx_delay;
+				rx_delay = &delay_tid_stats->rx_delay;
+
+				ath12k_dp_hist_init(&tx_delay->tx_swq_delay,
+						    HIST_TYPE_SW_ENQEUE_DELAY);
+				ath12k_dp_hist_init(&tx_delay->hwtx_delay,
+						    HIST_TYPE_HW_COMP_DELAY);
+				ath12k_dp_hist_init(&rx_delay->to_stack_delay,
+						    HIST_TYPE_REAP_STACK);
+			}
+		}
+	}
+	rcu_read_unlock();
+}
+
+static ssize_t ath12k_write_reset_latency_stats(struct file *file,
+						const char __user *ubuf,
+						size_t count, loff_t *ppos)
+{
+	struct ath12k_hw *ah = file->private_data;
+	struct ath12k_dp_peer *dp_peer;
+	u32 reset;
+
+	if (kstrtou32_from_user(ubuf, count, 0, &reset))
+		return -EINVAL;
+
+	if (!reset)
+		return -EINVAL;
+
+	wiphy_lock(ah->hw->wiphy);
+
+	/* Reset protocol stats for all peers */
+	spin_lock_bh(&ah->dp_hw.peer_lock);
+	list_for_each_entry(dp_peer, &ah->dp_hw.peers, list) {
+		ath12k_dp_peer_reset_delay_stats(dp_peer);
+	}
+	spin_unlock_bh(&ah->dp_hw.peer_lock);
+
+	wiphy_unlock(ah->hw->wiphy);
+	return count;
+}
+
+static const struct file_operations fops_latency_stats = {
+	.write = ath12k_write_reset_latency_stats,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 static int ath12k_configure_ofdma_feature(struct ath12k *ar,
 					 bool *dl_enabled,
 					 bool *ul_enabled,
@@ -6774,6 +6843,10 @@ static ssize_t ath12k_write_reset_dp_stats(struct file *file,
 				memset(tmp_peer->peer_stats.hw_link_stats, 0,
 				       sizeof(*tmp_peer->peer_stats.hw_link_stats));
 		}
+
+		if (dp_pdev && ath12k_dp_delay_stats_enabled(dp_pdev))
+			ath12k_dp_peer_reset_delay_stats(dp_peer);
+
 		rcu_read_unlock();
 	}
 	spin_unlock_bh(&ah->dp_hw.peer_lock);
@@ -6877,6 +6950,9 @@ void ath12k_hw_debugfs_register(struct ath12k_hw *ah)
 
 	debugfs_create_file("qos_stats", 0644, hw->wiphy->debugfsdir, ah,
 			    &fops_qos_stats);
+
+	debugfs_create_file("reset_latency_stats", 0644, hw->wiphy->debugfsdir, ah,
+			    &fops_latency_stats);
 }
 
 void ath12k_debugfs_register(struct ath12k *ar)
