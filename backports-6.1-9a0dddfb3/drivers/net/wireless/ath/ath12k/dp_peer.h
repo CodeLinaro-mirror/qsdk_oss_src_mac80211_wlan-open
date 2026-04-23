@@ -363,6 +363,8 @@ int ath12k_dp_peer_scs_del(struct ath12k_base *ab,
 			   u8 scs_id);
 int ath12k_dp_peer_scs_data(struct ath12k_dp *dp,
 			    struct ath12k_dp_peer_qos *qos, u8 scs_id,
+			    struct ath12k_dp_link_peer *link_peer,
+			    struct ath12k *ar,
 			    u16 *msduq, u16 *qos_id);
 u16 ath12k_dp_peer_scs_get_qos_id(struct ath12k_base *ab,
 				  struct ath12k_dp_peer_qos *qos, u8 scs_id);

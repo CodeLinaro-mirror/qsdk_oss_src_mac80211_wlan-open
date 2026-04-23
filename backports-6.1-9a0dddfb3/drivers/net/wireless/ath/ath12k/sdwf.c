@@ -277,7 +277,7 @@ static u8 ath12k_sdwf_alloc_msduq(struct ath12k *ar, u32 svc_id,
 		if (qos_tag == QOS_SCS_TAG) {
 			scs_id = u32_get_bits(svc_id, SCS_SVC_ID_MASK);
 			ath12k_dp_peer_scs_data(ab->dp, qos, scs_id,
-						&msduq, &qos_id);
+						peer, ar, &msduq, &qos_id);
 			goto ret;
 		} else {
 			msduq = u32_get_bits(svc_id, SCS_SVC_ID_MASK);
@@ -314,14 +314,15 @@ struct ath12k *ath12k_sdwf_get_ar_from_vif(struct wireless_dev *wdev,
 					   u8 *peer_mac, u16 *peer_id)
 {
 	struct ath12k_base *ab = NULL;
+	struct ath12k_dp *dp;
 	struct ath12k *ar = NULL;
 	struct ath12k_vif *ahvif;
 	struct ath12k_link_vif *arvif;
 	struct ieee80211_sta *sta;
 	struct ath12k_sta *ahsta;
-	u8 mac_addr[ETH_ALEN] = { 0 };
+	struct ath12k_dp_peer *dp_peer;
+	struct ath12k_dp_link_peer *link_peer;
 	u8 link_id;
-	struct ath12k_dp_link_peer *peer;
 
 	if (!wdev)
 		return NULL;
@@ -346,17 +347,17 @@ struct ath12k *ath12k_sdwf_get_ar_from_vif(struct wireless_dev *wdev,
 	if (!ahsta)
 		return NULL;
 
+	dp_peer = ahsta->dp_peer;
+	if (!dp_peer)
+		return NULL;
+
 	rcu_read_lock();
-	if (sta->mlo) {
+	if (sta->mlo)
 		link_id = ahsta->primary_link_id;
-		memcpy(mac_addr, ahsta->link[link_id]->addr, ETH_ALEN);
-	} else if (sta->valid_links) {
+	else if (sta->valid_links)
 		link_id = ahsta->deflink.link_id;
-		memcpy(mac_addr, peer_mac, ETH_ALEN);
-	} else {
+	else
 		link_id = 0;
-		memcpy(mac_addr, peer_mac, ETH_ALEN);
-	}
 
 	arvif = rcu_dereference(ahvif->link[link_id]);
 
@@ -370,22 +371,21 @@ struct ath12k *ath12k_sdwf_get_ar_from_vif(struct wireless_dev *wdev,
 		rcu_read_unlock();
 		return NULL;
 	}
-	rcu_read_unlock();
 
 	ab = ar->ab;
+	dp = ab->dp;
 
-	spin_lock_bh(&ab->dp->dp_lock);
-	peer = ath12k_dp_link_peer_find_by_addr(ab->dp, mac_addr);
-	if (!peer) {
-		ath12k_dbg(ab, ATH12K_DBG_QOS,
-			   "Peer: %pM not present\n", mac_addr);
-		spin_unlock_bh(&ab->dp->dp_lock);
-		return NULL;
+	if (dp->global_peer_id_supported) {
+		*peer_id = dp_peer->peer_id;
+	} else {
+		link_peer = rcu_dereference(dp_peer->link_peers[link_id]);
+		*peer_id = link_peer->peer_id;
 	}
+	rcu_read_unlock();
 
-	*peer_id = peer->peer_id;
+	if (*peer_id == ATH12K_PEER_ID_INVALID)
+		return NULL;
 
-	spin_unlock_bh(&ab->dp->dp_lock);
 	return ar;
 }
 
