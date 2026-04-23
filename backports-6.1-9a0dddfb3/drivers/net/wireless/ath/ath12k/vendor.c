@@ -265,6 +265,14 @@ ath12k_vendor_ext_mon_policy[QCA_VENDOR_ATTR_EXT_MON_MAX + 1] = {
 	[QCA_VENDOR_ATTR_EXT_MON_PEER_CONFIG] = {.type = NLA_NESTED},
 };
 
+static const struct nla_policy
+ath12k_oem_data_policy[QCA_WLAN_VENDOR_ATTR_OEM_DATA_PARAMS_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_OEM_DATA_CMD_DATA] = { .type = NLA_BINARY,
+					    .len = QCA_VENDOR_WLAN_OEM_DATA_BUF_MAX_SIZE},
+	[QCA_WLAN_VENDOR_ATTR_OEM_DEVICE_INFO] = { .type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_OEM_DATA_RESPONSE_EXPECTED] = { .type = NLA_FLAG },
+};
+
 /**
  * ath12k_vendor_repurpose_link() - Mark an MLO link for repurposing
  * @wiphy: wiphy device pointer
@@ -11854,6 +11862,119 @@ unlock:
 	return -ENOBUFS;
 }
 
+int
+ath12k_vendor_send_es_oem_data(struct ieee80211_hw *hw, u8 radio_id, u32 content_type,
+			       u32 num_bytes_valid, const u8 *data)
+{
+	struct sk_buff *vendor_event = NULL;
+	struct oem_vendor_build *packaged = NULL;
+	int vendor_buffer_len, nla_vendor_len;
+	int ret = -EINVAL;
+
+	/* Length used to allocate temp buffer to pack content type +
+	 * num_bytes_valid + payload
+	 */
+	vendor_buffer_len = sizeof(struct oem_vendor_build) + num_bytes_valid;
+
+	/* Length used to allocate nl event */
+	nla_vendor_len = nla_total_size(vendor_buffer_len);
+
+	vendor_event = cfg80211_vendor_event_alloc(hw->wiphy, NULL, nla_vendor_len,
+						 QCA_NL80211_VENDOR_SUBCMD_OEM_DATA_INDEX,
+						   GFP_ATOMIC);
+	if (!vendor_event)
+		return -ENOMEM;
+
+	packaged = kmalloc(vendor_buffer_len, GFP_ATOMIC);
+	if (!packaged) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	packaged->l_radio_id = radio_id;
+	packaged->l_content_type = cpu_to_le32(content_type);
+	packaged->l_num_bytes_valid = cpu_to_le32(num_bytes_valid);
+	memcpy(packaged->l_data, data, num_bytes_valid);
+
+	if (nla_put(vendor_event, QCA_WLAN_VENDOR_ATTR_OEM_DATA_CMD_DATA,
+		    vendor_buffer_len, packaged)) {
+		ret = -EMSGSIZE;
+		goto out;
+	}
+
+	cfg80211_vendor_event(vendor_event, GFP_ATOMIC);
+
+	ret = 0;
+
+out:
+	kfree(packaged);
+	/* freeing skb is handled by callee (cfg80211_vendor_event)*/
+	if (!ret)
+		return ret;
+
+	if (vendor_event)
+		kfree_skb(vendor_event);
+	return ret;
+}
+
+static int ath12k_vendor_oem_data(struct wiphy *wiphy, struct wireless_dev *wdev,
+				  const void *data, int data_len)
+{
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_OEM_DATA_PARAMS_MAX + 1];
+	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
+	struct ath12k_hw *ah = hw->priv;
+	struct ath12k *ar;
+	const struct oem_vendor_build *packaged;
+	u32 content_type, num_bytes_valid;
+	u8 *data_ptr, radio_id;
+	int ret, payload_len;
+
+	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_OEM_DATA_PARAMS_MAX,
+			(struct nlattr *)data, data_len,
+			ath12k_oem_data_policy, NULL);
+	if (ret) {
+		ath12k_err(NULL, "Failed to parse OEM Data attributes: %d\n", ret);
+		return ret;
+	}
+
+	if (!tb[QCA_WLAN_VENDOR_ATTR_OEM_DATA_CMD_DATA]) {
+		ath12k_err(NULL, "Missing OEM Data buffer attribute\n");
+		return -EINVAL;
+	}
+
+	packaged = nla_data(tb[QCA_WLAN_VENDOR_ATTR_OEM_DATA_CMD_DATA]);
+	payload_len = nla_len(tb[QCA_WLAN_VENDOR_ATTR_OEM_DATA_CMD_DATA]);
+	if (payload_len < sizeof(*packaged)) {
+		ath12k_err(NULL, "Invalid OEM Data payload length %d\n", payload_len);
+		return -EINVAL;
+	}
+
+	radio_id = packaged->l_radio_id;
+	content_type = le32_to_cpu(packaged->l_content_type);
+	num_bytes_valid = le32_to_cpu(packaged->l_num_bytes_valid);
+	if (payload_len - sizeof(*packaged) < num_bytes_valid) {
+		ath12k_err(NULL, "OEM Data payload underrun: %u valid bytes, %d payload\n",
+			   num_bytes_valid, payload_len);
+		return -EINVAL;
+	}
+
+	data_ptr = (u8 *)packaged->l_data;
+
+	rcu_read_lock();
+	ar = ath12k_ah_to_ar(ah, radio_id);
+	rcu_read_unlock();
+
+	if (!ar) {
+		ath12k_warn(ar->ab, "invalid ar for Energy Service OEM data\n");
+		return -EINVAL;
+	}
+
+	ath12k_wmi_send_energy_mgmt_oem_data(ar, content_type, num_bytes_valid,
+					     data_ptr);
+
+	return 0;
+}
+
 static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
@@ -12120,7 +12241,13 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.policy = ath12k_vendor_tdma_schedule_policy,
 		.maxattr = QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_MAX,
 	},
-
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_OEM_DATA,
+		.doit = ath12k_vendor_oem_data,
+		.policy = ath12k_oem_data_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_OEM_DATA_PARAMS_MAX,
+	},
 };
 
 static const struct nl80211_vendor_cmd_info ath12k_vendor_events[] = {
@@ -12183,6 +12310,10 @@ static const struct nl80211_vendor_cmd_info ath12k_vendor_events[] = {
 	[QCA_NL80211_VENDOR_SUBCMD_TPC_EIRP_EVENT_INDEX] = {
 		.vendor_id = QCA_NL80211_VENDOR_ID,
 		.subcmd = QCA_NL80211_VENDOR_SUBCMD_TPC_EIRP_EVENT,
+	},
+	[QCA_NL80211_VENDOR_SUBCMD_OEM_DATA_INDEX] = {
+		.vendor_id = QCA_NL80211_VENDOR_ID,
+		.subcmd = QCA_NL80211_VENDOR_SUBCMD_OEM_DATA,
 	},
 };
 
