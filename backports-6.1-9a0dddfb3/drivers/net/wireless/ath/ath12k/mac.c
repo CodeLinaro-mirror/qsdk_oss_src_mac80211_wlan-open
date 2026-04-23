@@ -15205,10 +15205,12 @@ select_pri_link:
 	pri_link_id = ffs(links_map) - 1;
 
 exit_pri_link_selection:
-	if (!arvif || !arvif->ar || !arvif->ar->ab || !arvif->ar->ab->ag)
+	if (!ah->ag) {
+		ath12k_err(NULL, "Group information unavailable\n");
 		return pri_link_id;
+	}
 
-	ag = arvif->ar->ab->ag;
+	ag = ah->ag;
 	active_num_devices = ag->num_devices - ag->num_bypassed;
 
 	ath12k_mac_assign_middle_link_id(sta, ahsta, &pri_link_id,
