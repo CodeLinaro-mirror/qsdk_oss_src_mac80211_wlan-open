@@ -1129,10 +1129,12 @@ enum rdi_based_source_ring_selection {
 #define HAL_DMAC_DMCMN_ISR_S24_MASK			BIT(0)
 #define HAL_DMAC_DMCMN_ISR_S24_VALUE			1
 
+#define HAL_DMAC_DMCMN_ISR_WLAN_RX_OK			{0x3074, 0x6074}
 #define HAL_RING_PREFETCH_TIMER_ENABLE		3
 #define HAL_RING_PREFETCH_TIMER_DISABLE		0
 #define HAL_PMAC_RX_FLUSH_MIN_DURATION		200
 #define HAL_WSI_RESET_DELAY_USEC		100
+
 
 /* TQM miscelllaneous configuration 1 register address */
 #define HAL_TQM_MISC_CFG_1			0xeec
