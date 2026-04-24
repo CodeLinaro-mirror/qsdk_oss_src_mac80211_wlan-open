@@ -73,7 +73,8 @@ int ath12k_dp_mmesh_tx(struct ieee80211_hw *hw, struct ath12k_base *ab,
 		       struct ath12k_link_vif *arvif, struct ieee80211_vif *vlan_vif,
 		       struct sk_buff *skb, struct ath12k_sta *ahsta,
 		       struct ath12k_dp_skb_ctrl *skb_ctrl, bool is_eth,
-		       u8 link_id, bool is_mcast, bool *htt_mesh, u32 qos_nw_delay);
+		       u8 link_id, bool is_mcast, bool *htt_mesh,
+		       struct ieee80211_tx_info *info, u32 qos_nw_delay);
 
 /**
  * ath12k_wifi7_tx_classify_packet() - Classify packet type

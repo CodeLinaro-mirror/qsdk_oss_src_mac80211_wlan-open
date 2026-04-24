@@ -47,7 +47,9 @@ void ath12k_wifi7_mcbc_handler(struct ath12k_dp_vif *dp_vif,
 			       bool is_sta,
 			       struct ieee80211_vif *vlan_vif,
 			       struct ath12k_dp_skb_ctrl *skb_ctrl,
-			       u32 qos_nw_delay, bool htt_mesh);
+			       struct ieee80211_tx_info *info,
+			       u32 qos_nw_delay,
+			       bool htt_mesh);
 
 void ath12k_wifi7_ucast_handler(struct ath12k_dp_vif *dp_vif,
 				u8 link_id,

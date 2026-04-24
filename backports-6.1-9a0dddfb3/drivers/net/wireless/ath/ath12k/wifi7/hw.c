@@ -1314,11 +1314,11 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 
 static void ath12k_wifi7_mgmt_handler(struct ieee80211_hw *hw,
 				      struct ieee80211_tx_control *control,
+				      struct ieee80211_tx_info *info,
 				      struct sk_buff *skb)
 {
 	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
 	struct ath12k_pdev_dp *dp_pdev = NULL;
-	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct ieee80211_vif *vif = info->control.vif;
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
 	struct ath12k_link_vif *arvif = &ahvif->deflink;
@@ -1472,7 +1472,8 @@ int ath12k_dp_mmesh_tx(struct ieee80211_hw *hw, struct ath12k_base *ab,
 		       struct ath12k_link_vif *arvif, struct ieee80211_vif *vlan_vif,
 		       struct sk_buff *skb, struct ath12k_sta *ahsta,
 		       struct ath12k_dp_skb_ctrl *skb_ctrl, bool is_eth,
-		       u8 link_id, bool is_mcast, bool *htt_mesh, u32 qos_nw_delay)
+		       u8 link_id, bool is_mcast, bool *htt_mesh,
+		       struct ieee80211_tx_info *info, u32 qos_nw_delay)
 {
 	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
 	struct ath12k_vif *ahvif = arvif->ahvif;
@@ -1584,7 +1585,7 @@ int ath12k_dp_mmesh_tx(struct ieee80211_hw *hw, struct ath12k_base *ab,
 				ath12k_wifi7_mcbc_handler(dp_vif, link_id, arsta,
 							  skb_cloned, is_eth,
 							  false, is_sta, vlan_vif,
-							  skb_ctrl,
+							  skb_ctrl, info,
 							  qos_nw_delay, false);
 				ieee80211_free_txskb(hw, skb_cloned);
 			}
@@ -1645,6 +1646,7 @@ void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	struct ieee80211_sta *sta = control->sta;
 	u32 qos_nw_delay = info->sawf.nw_delay;
 	u32 info_flags = info->flags;
+	struct ieee80211_tx_info info_tx = {0};
 	struct ath12k_dp_skb_ctrl skb_ctrl = {0};
 	struct ath12k_sta *ahsta = NULL;
 	struct ath12k_link_sta *arsta = NULL;
@@ -1671,7 +1673,9 @@ void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 		return;
 #endif
 	hdr = (struct ieee80211_hdr *)skb->data;
+	memcpy(&info_tx, info, sizeof(*info));
 	skb_cb = ATH12K_SKB_CB(skb);
+	memset(skb_cb, 0, sizeof(*skb_cb));
 
 	/* Check monitor mode */
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
@@ -1682,7 +1686,7 @@ void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	}
 
 	/* Classify packet */
-	is_pkt_classified = ath12k_dp_tx_classify_packet(hw, dp_vif, info, skb,
+	is_pkt_classified = ath12k_dp_tx_classify_packet(hw, dp_vif, &info_tx, skb,
 							 &is_mcast, &is_eth,
 							 &is_data, key, &skb_ctrl);
 	if (unlikely(!is_pkt_classified))
@@ -1690,7 +1694,7 @@ void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 
 	/* Route to management handler */
 	if (!is_data) {
-		ath12k_wifi7_mgmt_handler(hw, control, skb);
+		ath12k_wifi7_mgmt_handler(hw, control, &info_tx, skb);
 		return;
 	}
 
@@ -1699,7 +1703,7 @@ void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	 */
 
 	/* Setup link for data frame */
-	ret = ath12k_wifi7_tx_setup_link(vif, sta, info, skb, &link_id);
+	ret = ath12k_wifi7_tx_setup_link(vif, sta, &info_tx, skb, &link_id);
 	if (ret) {
 		ath12k_mac_ieee80211_free_txskb(hw, skb, NULL, sta, dp_vif,
 						DP_TX_ENQ_DROP_INV_LINK,
@@ -1748,7 +1752,7 @@ void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	if (ahvif->vap_submode == QCA_WLAN_VENDOR_VAP_SUBMODE_MESH) {
 		ret = ath12k_dp_mmesh_tx(hw, ar->ab,  arvif, vlan_vif, skb, ahsta,
 					 &skb_ctrl, is_eth, link_id, is_mcast,
-					 &htt_mesh, qos_nw_delay);
+					 &htt_mesh, &info_tx, qos_nw_delay);
 
 		if (ret)
 			return;
@@ -1775,7 +1779,7 @@ void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 
 		ath12k_wifi7_mcbc_handler(dp_vif, link_id, arsta, skb, is_eth,
 					  gsn_valid, is_sta, vlan_vif, &skb_ctrl,
-					  qos_nw_delay, htt_mesh);
+					  &info_tx, qos_nw_delay, htt_mesh);
 		ieee80211_free_txskb(hw, skb);
 	}
 	local_bh_enable();
