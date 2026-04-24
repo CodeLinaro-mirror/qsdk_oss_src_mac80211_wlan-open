@@ -1009,6 +1009,10 @@ void ath12k_wifi7_dp_tx_stats_post_enqueue(struct ath12k_pdev_dp *dp_pdev,
 		}
 	}
 
+	/* SG packets & bytes ingress */
+	if (msdu_info->ext_desc.ext_feature & DP_EXT_SG)
+		DP_STATS_INC_PKT(dp_vif, tx_i.sg_pkt, 1, len, ring_id);
+
 	/* Update Tx Debug stats */
 	if (ath12k_dp_debug_stats_enabled(dp_pdev)) {
 		skb_cb = ATH12K_SKB_CB(skb);
@@ -1568,8 +1572,9 @@ void ath12k_wifi7_dp_tx_update_gsn_metadata(struct ath12k_dp_tx_msdu_info *msdu_
 
 static int
 ath12k_wifi7_dp_sg_ext_desc_populate(struct ath12k_dp *dp,
+				     struct ath12k_dp_vif *dp_vif,
 				     struct ath12k_dp_ext_desc *ext_desc,
-				     struct sk_buff *skb)
+				     struct sk_buff *skb, u8 ring_id)
 {
 	dma_addr_t paddr[DP_TX_MAX_NUM_FRAGS];
 	const skb_frag_t *frag;
@@ -1614,6 +1619,7 @@ fail_skb_frag:
 	}
 	ath12k_core_dma_unmap_single(dp->dev, paddr[0], hlen, DMA_TO_DEVICE);
 fail_skb_head:
+	DP_STATS_INC(dp_vif, tx_i.sg_dma_map_err, 1, ring_id);
 	return -ENOMEM;
 }
 
@@ -1639,12 +1645,13 @@ fail_skb_head:
  */
 static int
 ath12k_wifi7_dp_ext_desc_populate(struct ath12k_dp *dp,
+				  struct ath12k_dp_vif *dp_vif,
 				  struct ath12k_dp_link_vif *dp_link_vif,
 				  struct sk_buff *skb,
 				  struct ath12k_dp_tx_msdu_info *msdu_info,
 				  struct ath12k_tx_desc_info *tx_desc,
 				  bool gsn_valid, int gsn,
-				  int group_slot)
+				  int group_slot, u8 ring_id)
 {
 	struct ath12k_dp_ext_desc *ext_desc = NULL;
 	struct ath12k_dp_ext_desc_msdu_info *ext_msdu_info =
@@ -1685,7 +1692,8 @@ ath12k_wifi7_dp_ext_desc_populate(struct ath12k_dp *dp,
 		break;
 	case DP_EXT_TSO:
 	case DP_EXT_SG:
-		if (ath12k_wifi7_dp_sg_ext_desc_populate(dp, ext_desc, skb))
+		if (ath12k_wifi7_dp_sg_ext_desc_populate(dp, dp_vif, ext_desc,
+							 skb, ring_id))
 			goto fail_free_ext_desc;
 		tx_desc->is_from_sg = 1;
 		break;
@@ -1784,11 +1792,12 @@ fail_free_ext_desc:
 static enum ath12k_dp_feature_result
 ath12k_wifi7_dp_tx_desc_populate(struct ath12k_pdev_dp *dp_pdev,
 				 struct sk_buff *skb,
+				 struct ath12k_dp_vif *dp_vif,
 				 struct ath12k_dp_link_vif *dp_link_vif,
 				 struct ath12k_dp_tx_msdu_info *msdu_info,
 				 struct ath12k_tx_desc_info *tx_desc,
 				 bool gsn_valid, int gsn,
-				 int group_slot)
+				 int group_slot, u8 ring_id)
 {
 	int ret = 0;
 
@@ -1797,10 +1806,11 @@ ath12k_wifi7_dp_tx_desc_populate(struct ath12k_pdev_dp *dp_pdev,
 	tx_desc->hw_link_id = dp_pdev->hw_link_id;
 
 	if (msdu_info->ext_kmem)
-		ret = ath12k_wifi7_dp_ext_desc_populate(dp_pdev->dp, dp_link_vif,
+		ret = ath12k_wifi7_dp_ext_desc_populate(dp_pdev->dp, dp_vif,
+							dp_link_vif,
 							skb, msdu_info, tx_desc,
 							gsn_valid, gsn,
-							group_slot);
+							group_slot, ring_id);
 
 	if (msdu_info->to_fw) {
 		msdu_info->flags0 |= u32_encode_bits(1,
@@ -2346,8 +2356,9 @@ skip_assign_buffer:
 	msdu_info.mhdr_len = dp_vif->dp_extn.mhdr_len;
 #endif
 
-	ret = ath12k_wifi7_dp_tx_desc_populate(dp_pdev, skb, dp_link_vif, &msdu_info,
-					       tx_desc, false, 0, group_slot);
+	ret = ath12k_wifi7_dp_tx_desc_populate(dp_pdev, skb, dp_vif, dp_link_vif,
+					       &msdu_info, tx_desc, false, 0,
+					       group_slot, ring_id);
 	if (ret != DP_TX_FEATURE_SUCCESS) {
 		drop_reason = DP_TX_ENQ_DROP_TCL_DESC_NA;
 		goto fail;
@@ -2403,6 +2414,7 @@ ath12k_wifi7_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 			      struct ath12k_dp_skb_ctrl *skb_ctrl, bool htt_mesh)
 {
 	struct ath12k_dp *dp = dp_pdev->dp;
+	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
 	struct ath12k_tx_desc_info *tx_desc = NULL;
 	bool dma_map;
 	u32 len = msdu_info->data_len;
@@ -2438,9 +2450,9 @@ ath12k_wifi7_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 	msdu_info->mhdr_len = ahvif->dp_vif.dp_extn.mhdr_len;
 #endif
 
-	ret = ath12k_wifi7_dp_tx_desc_populate(dp_pdev, skb, dp_link_vif,
+	ret = ath12k_wifi7_dp_tx_desc_populate(dp_pdev, skb, dp_vif, dp_link_vif,
 					       msdu_info, tx_desc,
-					       gsn_valid, gsn, group_slot);
+					       gsn_valid, gsn, group_slot, ring_id);
 
 	if (ret < 0) {
 		drop_reason = DP_TX_ENQ_DROP_EXT_DESC_NA;
