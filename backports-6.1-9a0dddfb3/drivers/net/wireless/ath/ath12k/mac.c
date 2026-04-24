@@ -6613,11 +6613,17 @@ ath12k_mac_remove_and_unassign_bridge_vdevs(struct ieee80211_hw *hw,
 	if (ath12k_erp_get_sm_state() == ATH12K_ERP_ENTER_COMPLETE &&
 	    vif->type == NL80211_IFTYPE_AP) {
 		/* During ERP, allow bridge vdev removal when only 1 vdev is active */
-		if (hweight16(ahvif->links_map & ~BIT(IEEE80211_MLD_MAX_NUM_LINKS)) > 1)
+		if ((hweight16(ahvif->links_map &
+			       ~BIT(IEEE80211_MLD_MAX_NUM_LINKS)) -
+		     hweight16(ahvif->repurposed_links &
+			       ~BIT(IEEE80211_MLD_MAX_NUM_LINKS))) > 1)
 			return;
 	} else {
 		/* Keep bridge vdevs until all vdevs are removed */
-		if (hweight16(ahvif->links_map & ~BIT(IEEE80211_MLD_MAX_NUM_LINKS)) > 0)
+		if ((hweight16(ahvif->links_map &
+			       ~BIT(IEEE80211_MLD_MAX_NUM_LINKS)) -
+		     hweight16(ahvif->repurposed_links &
+			       ~BIT(IEEE80211_MLD_MAX_NUM_LINKS))) > 0)
 			return;
 	}
 
@@ -6704,9 +6710,13 @@ ath12k_mac_op_change_vif_links(struct ieee80211_hw *hw,
 	}
 
 	for_each_set_bit(link_id, &to_remove, IEEE80211_MLD_MAX_NUM_LINKS) {
+		bool is_link_repurposed;
+
 		arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
 		if (WARN_ON(!arvif))
 			return -EINVAL;
+
+		is_link_repurposed = ahvif->repurposed_links & BIT(link_id);
 
 		if (arvif->is_scan_vif && arvif->is_started) {
 			if (ath12k_mac_vdev_stop(arvif)) {
@@ -6738,7 +6748,8 @@ ath12k_mac_op_change_vif_links(struct ieee80211_hw *hw,
 
 		ath12k_mac_remove_link_interface(hw, arvif);
 		ath12k_mac_unassign_link_vif(arvif);
-		ath12k_mac_remove_and_unassign_bridge_vdevs(hw, vif);
+		if (!is_link_repurposed)
+			ath12k_mac_remove_and_unassign_bridge_vdevs(hw, vif);
 	}
 
 	return 0;
@@ -22726,6 +22737,10 @@ static int ath12k_mac_create_and_start_bridge(struct ieee80211_hw *hw,
 		if (ahvif->links_map & ATH12K_BRIDGE_LINKS_MASK)
 			goto exit;
 
+		/* if its a repurposed link, do not create bridge vap */
+		if (BIT(link_conf->link_id) & ahvif->repurposed_links)
+			goto exit;
+
 		curr_link_id = link_conf->link_id;
 		arvif = ahvif->link[curr_link_id];
 		if (!arvif) {
@@ -22742,6 +22757,8 @@ static int ath12k_mac_create_and_start_bridge(struct ieee80211_hw *hw,
 
 			arvif = ahvif->link[link_id];
 			if (!arvif->ar)
+				continue;
+			if (ahvif->repurposed_links & BIT(link_id))
 				continue;
 			wsi_info = ath12k_core_get_current_wsi_info(arvif->ar->ab);
 			if (BIT(device_idx) & wsi_info->diag_device_idx_bmap) {
