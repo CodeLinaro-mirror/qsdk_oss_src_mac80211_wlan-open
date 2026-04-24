@@ -1257,6 +1257,24 @@ struct ath12k_link_vif *ath12k_mac_get_arvif_by_vdev_id(struct ath12k_base *ab,
 }
 EXPORT_SYMBOL(ath12k_mac_get_arvif_by_vdev_id);
 
+struct ath12k_link_vif *ath12k_mac_get_arvif_by_global_vdev_id(struct ath12k *ar,
+							       u32 vdev_id)
+{
+	struct ath12k_link_vif *arvif;
+
+	lockdep_assert_held(&ar->data_lock);
+
+	list_for_each_entry(arvif, &ar->arvifs, list) {
+		if (!arvif->ahvif)
+			continue;
+		if (arvif->ahvif->dp_vif.ahvif_id == vdev_id)
+			return arvif;
+	}
+
+	return NULL;
+}
+EXPORT_SYMBOL(ath12k_mac_get_arvif_by_global_vdev_id);
+
 struct ath12k *ath12k_mac_get_ar_by_vdev_id(struct ath12k_base *ab, u32 vdev_id)
 {
 	int i;

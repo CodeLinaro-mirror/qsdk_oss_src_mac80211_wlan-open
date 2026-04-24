@@ -715,6 +715,28 @@ static u8 ath12k_wifi8_mgmt_rx_get_vdev_id(struct ath12k_base *ab,
 	}
 }
 
+static u8 ath12k_wifi8_mgmt_rx_get_hw_link_id(struct ath12k_base *ab,
+					       enum ath12k_peer_metadata_version ver,
+					       u32 peer_metadata)
+{
+	switch (ver) {
+	default:
+		ath12k_warn(ab, "Unknown peer metadata version: %d", ver);
+		fallthrough;
+	case ATH12K_PEER_METADATA_V0:
+	case ATH12K_PEER_METADATA_V1:
+		ath12k_warn(ab, "peer metadata version: %d does not support hw_link_id",
+			    ver);
+		return 0;
+	case ATH12K_PEER_METADATA_V1A:
+		return le32_get_bits(peer_metadata,
+				     RX_MPDU_DESC_META_DATA_V1A_LOGICAL_LINK_ID);
+	case ATH12K_PEER_METADATA_V1B:
+		return le32_get_bits(peer_metadata,
+				     RX_MPDU_DESC_META_DATA_V1B_HW_LINK_ID);
+	}
+}
+
 static void
 ath12k_wifi8_mgmt_rx_cu_mem_update(struct ath12k *ar, struct sk_buff *mmpdu,
 				   u32 peer_metadata)
@@ -722,6 +744,7 @@ ath12k_wifi8_mgmt_rx_cu_mem_update(struct ath12k *ar, struct sk_buff *mmpdu,
 	enum ath12k_peer_metadata_version ver;
 	struct ath12k_link_vif *arvif;
 	struct ieee80211_hdr *hdr;
+	struct ath12k *target_ar = ar;
 
 	hdr = (struct ieee80211_hdr *)mmpdu->data;
 
@@ -731,14 +754,27 @@ ath12k_wifi8_mgmt_rx_cu_mem_update(struct ath12k *ar, struct sk_buff *mmpdu,
 		u8 vdev_id = ath12k_wifi8_mgmt_rx_get_vdev_id(ar->ab,
 							       ver,
 							       peer_metadata);
-		arvif = ath12k_mac_get_arvif_by_vdev_id(ar->ab, vdev_id);
-		if (!arvif || !arvif->cu_mem || !arvif->is_up)
+		u8 hw_link_id = ath12k_wifi8_mgmt_rx_get_hw_link_id(ar->ab,
+								    ver,
+								    peer_metadata);
+		if (ar->hw_link_id != hw_link_id)
+			target_ar = ath12k_core_ar_from_hw_link_id(ar->ab, hw_link_id);
+
+		if (!target_ar)
 			return;
+
+		spin_lock_bh(&target_ar->data_lock);
+		arvif = ath12k_mac_get_arvif_by_global_vdev_id(target_ar, vdev_id);
+		if (!arvif || !arvif->cu_mem || !arvif->is_up)
+			goto unlock;
 
 		if (!arvif->ahvif->vif->valid_links)
-			return;
+			goto unlock;
 
-		ath12k_wifi8_cu_mem_update(ar->ab, arvif, false);
+		ath12k_wifi8_cu_mem_update(target_ar->ab, arvif, false);
+
+unlock:
+		spin_unlock_bh(&target_ar->data_lock);
 	}
 }
 
