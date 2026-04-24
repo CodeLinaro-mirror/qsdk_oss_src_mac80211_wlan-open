@@ -861,6 +861,10 @@ struct ath12k_rx_peer_user_stats {
 	struct pkt_type ppdu;
 };
 
+struct ath12k_dp_mld_peer_stats {
+	// Placeholder for MLD Peer stats
+};
+
 #define MCS_VALID 1
 #define MCS_INVALID 0
 #define ATH12K_MAX_MCS_STRING_LEN 34
