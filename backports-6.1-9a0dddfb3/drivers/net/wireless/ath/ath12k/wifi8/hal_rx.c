@@ -1146,10 +1146,6 @@ u32 ath12k_wifi8_hal_reo_qdesc_size(u32 ba_window_size, u8 tid)
 		num_ext_desc = 5;
 	}
 
-	/* TODO: Remove ext_desc from wifi8 */
-	if (ath12k_wifi8_hal_is_reo_nonqos_mgmt_tid(tid))
-		num_ext_desc = 0;
-
 	return sizeof(struct hal_rx_reo_queue) +
 		(num_ext_desc * sizeof(struct hal_rx_reo_queue_ext));
 }
