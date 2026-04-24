@@ -3634,6 +3634,10 @@ static void ath12k_peer_assoc_h_crypto(struct ath12k *ar,
 	if (sta->cfp)
 		arg->is_cfp_enabled = true;
 
+	if (vif->type == NL80211_IFTYPE_AP && arvif->ahvif->u.ap.dynamic_vlan)
+		ath12k_info(ar->ab,
+			    "dynamic VLAN enabled on vdev %u for peer assoc %pM\n",
+			    arvif->vdev_id, arsta->addr);
 	/* TODO: safe_mode_enabled (bypass 4-way handshake) flag req? */
 }
 

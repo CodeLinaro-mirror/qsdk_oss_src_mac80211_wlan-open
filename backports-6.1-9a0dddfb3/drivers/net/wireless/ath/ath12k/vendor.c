@@ -40,6 +40,7 @@ ath12k_wifi_config_policy[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX] = {.type = NLA_U8 },
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_6GHZ_VLP_PRIORITY_THRESH_FREQ] = {.type = NLA_U16 },
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_VAP_SUBMODE] = {.type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_DYNAMIC_VLAN] = {.type = NLA_U8 },
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PARAMS] = { .type = NLA_NESTED },
 };
 
@@ -7169,6 +7170,31 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 		ath12k_dbg(NULL, ATH12K_DBG_CFG,
 			   "%s-configured vap_submode: %d for(%s)\n", __func__,
 			   wdev->vap_submode, wdev->netdev->name);
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_CONFIG_DYNAMIC_VLAN]) {
+		u8 dynamic_vlan = nla_get_u8(
+			tb[QCA_WLAN_VENDOR_ATTR_CONFIG_DYNAMIC_VLAN]);
+
+		vif = wdev_to_ieee80211_vif(wdev);
+		if (!vif || vif->type != NL80211_IFTYPE_AP) {
+			ath12k_err(NULL, "%s-invalid vif for dynamic_vlan\n",
+				   __func__);
+			return -EINVAL;
+		}
+
+		ahvif = ath12k_vif_to_ahvif(vif);
+		if (!ahvif) {
+			ath12k_err(NULL, "%s-ahvif is NULL for dynamic_vlan\n",
+				   __func__);
+			return -EINVAL;
+		}
+
+		ahvif->u.ap.dynamic_vlan = !!dynamic_vlan;
+		ath12k_dbg(NULL, ATH12K_DBG_CFG,
+			   "%s-configured dynamic_vlan: %u for(%s)\n",
+			   __func__, ahvif->u.ap.dynamic_vlan,
+			   wdev->netdev->name);
 	}
 
 	if (ath12k_vendor_set_wifi_config_extn(wiphy, tb, wdev))
