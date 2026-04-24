@@ -416,3 +416,48 @@ void ath12k_dp_clear_preserved_stats(struct ath12k_dp_preserved_stats *stats)
 		memset(&stats->per_pkt_rx[i], 0, sizeof(stats->per_pkt_rx[i]));
 	memset(&stats->wbm_err, 0, sizeof(stats->wbm_err));
 }
+
+/**
+ * ath12k_dp_pdev_get_tid_stats - Aggregate per-TID statistics across rings
+ * @ar: ath12k radio instance
+ * @tid_stats: Pre-allocated structure for aggregated statistics
+ *
+ * Aggregates per-TID counters, delays, and errors from all hardware rings
+ * into per-TID totals.
+ *
+ * Return: 0 on success, -EINVAL if parameters are invalid
+ */
+int ath12k_dp_pdev_get_tid_stats(struct ath12k *ar,
+				 struct ath12k_dp_aggr_pdev_tid_stats *tid_stats)
+{
+	struct ath12k_tid_tx_stats *per_ring_tx;
+	u8 tid;
+	int ring_id, i;
+
+	if (!ar || !tid_stats)
+		return -EINVAL;
+
+	/* Clear output structure */
+	memset(tid_stats, 0, sizeof(*tid_stats));
+
+	/* Aggregate stats for each TID (0-8) */
+	for (tid = 0; tid < VOW_DATA_TID_MAX; tid++) {
+		/* Aggregate TX counters from all TCL rings directly to output */
+		for (ring_id = 0; ring_id < DP_TCL_NUM_RING_MAX; ring_id++) {
+			per_ring_tx = &ar->dp.tid_stats.tid_tx[ring_id][tid];
+
+			/* Aggregate TQM status counters */
+			for (i = 0; i < HAL_WBM_TQM_REL_REASON_MAX; i++)
+				tid_stats->tid_tx[tid].tqm_status_cnt[i] +=
+					per_ring_tx->tqm_status_cnt[i];
+
+			/* Aggregate HTT status counters */
+			for (i = 0; i < HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX; i++)
+				tid_stats->tid_tx[tid].htt_status_cnt[i] +=
+					per_ring_tx->htt_status_cnt[i];
+		}
+	}
+
+	return 0;
+}
+
