@@ -4161,6 +4161,7 @@ static void ath12k_core_reset(struct work_struct *work)
 
 	if (!(test_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE, &ab->dev_flags)) &&
 	    !ath12k_waltest_mode) {
+		mutex_lock(&ag->mutex);
 		/* The coredump may not be valid or complete since firmware
 		 * initialization is incomplete.
 		 */
@@ -4168,6 +4169,7 @@ static void ath12k_core_reset(struct work_struct *work)
 			ath12k_coredump_download_rddm(ab);
 		else if (ath12k_fw_q6_dump_collection)
 			ath12k_core_upd_power_down(ab);
+		mutex_unlock(&ag->mutex);
 		ath12k_warn(ab, "ignore reset dev flags 0x%lx\n", ab->dev_flags);
 		return;
 	}
