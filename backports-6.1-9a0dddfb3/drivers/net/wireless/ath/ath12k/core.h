@@ -162,6 +162,7 @@ extern unsigned int ath12k_max_clients;
 #endif
 extern bool ath12k_mlo_3_link_tx;
 extern bool ath12k_waltest_mode;
+extern bool ath12k_fw_q6_dump_collection;
 struct ath12k_dp;
 struct ath12k_hp_update_timer;
 struct ath12k_mgmt;
