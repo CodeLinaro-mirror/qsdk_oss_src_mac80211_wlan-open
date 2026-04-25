@@ -8,7 +8,6 @@
 
 #include "cmn_defs.h"
 #include "hw.h"
-#include "dp.h"
 
 /* Max number of links for MLO connection */
 #define ATH12K_DP_MAX_MLO_LINKS 4
@@ -31,6 +30,89 @@ struct ath12k_dp_hw_link {
 	u8 device_id;
 	u8 pdev_idx;
 };
+#if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined(CPTCFG_ATH12K_MEM_PROFILE_512M)
+#define DP_TX_COMP_RING_SIZE           16384
+#define ATH12K_NUM_POOL_TX_DESC        16384
+#define DP_REO2PPE_RING_SIZE	2048
+#define DP_PPE2TCL_RING_SIZE	2048
+#define DP_PPE_WBM2SW_RING_SIZE	8192
+#define DP_TQM2PPE_RING_SIZE 8192
+#define DP_RXDMA_BUF_RING_SIZE		8192
+/* TODO: revisit this count during testing */
+#define DP_RX_BUFFER_SIZE		1856
+#elif defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
+#define DP_TX_COMP_RING_SIZE           16384
+#define ATH12K_NUM_POOL_TX_DESC        16384
+#define DP_REO2PPE_RING_SIZE    2048
+#define DP_PPE2TCL_RING_SIZE    2048
+#define DP_PPE_WBM2SW_RING_SIZE 8192
+#define DP_TQM2PPE_RING_SIZE 8192
+#define DP_RXDMA_BUF_RING_SIZE      4096
+/* TODO: revisit this count during testing */
+#define DP_RX_BUFFER_SIZE       1856
+#else
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#define DP_TX_COMP_RING_SIZE           8192
+#else
+#define DP_TX_COMP_RING_SIZE           32768
+#endif
+#define ATH12K_NUM_POOL_TX_DESC                32768
+#define DP_REO2PPE_RING_SIZE	16384
+#define DP_PPE2TCL_RING_SIZE	8192
+#define DP_PPE_WBM2SW_RING_SIZE	32768
+#define DP_TQM2PPE_RING_SIZE 32768
+#define DP_RXDMA_BUF_RING_SIZE		8192
+/* TODO: revisit this count during testing */
+#define DP_RX_BUFFER_SIZE		2048
+#endif
+
+#define ATH12K_PAGE_SIZE	PAGE_SIZE
+
+/* Total 1024 entries in PPT, i.e 4K/4 considering 4K aligned
+ * SPT pages which makes lower 12bits 0
+ */
+#define ATH12K_MAX_PPT_ENTRIES	1024
+
+/* Total 512 entries in a SPT, i.e 4K Page/8 */
+#define ATH12K_MAX_SPT_ENTRIES	512
+
+#define ATH12K_TX_SPT_PAGES_PER_POOL \
+	(ATH12K_NUM_POOL_TX_DESC / ATH12K_MAX_SPT_ENTRIES)
+#define ATH12K_NUM_TX_SPT_PAGES	(ATH12K_TX_SPT_PAGES_PER_POOL * ATH12K_HW_MAX_QUEUES)
+
+#define ATH12K_PPEDS_TX_SPT_PAGE_OFFSET 0
+#define ATH12K_TX_SPT_PAGE_OFFSET ATH12K_NUM_PPEDS_TX_SPT_PAGES
+#define ATH12K_RX_SPT_PAGE_OFFSET  \
+	(ATH12K_NUM_PPEDS_TX_SPT_PAGES + ATH12K_NUM_TX_SPT_PAGES)
+#define ATH12K_TX_SPT_OFFSET ATH12K_NUM_PPEDS_TX_SPT_PAGES
+#define ATH12K_RX_SPT_OFFSET (ATH12K_TX_SPT_PAGES_PER_POOL * ATH12K_HW_MAX_QUEUES)
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+#define ATH12K_NUM_PPEDS_TX_SPT_PAGES \
+	(ath12k_ppeds_desc_params.num_ppeds_desc / ATH12K_MAX_SPT_ENTRIES)
+#else
+#define ATH12K_NUM_PPEDS_TX_SPT_PAGES 0
+#endif
+
+#define ATH12K_DP_RX_DESC_MAGIC	0xBABABABA
+
+/* 4K aligned address have last 12 bits set to 0, this check is done
+ * so that two spt pages address can be stored per 8bytes
+ * of CMEM (PPT)
+ */
+#define ATH12K_SPT_4K_ALIGN_CHECK 0xFFF
+#define ATH12K_SPT_4K_ALIGN_OFFSET 12
+#define ATH12K_PPT_ADDR_OFFSET(ppt_index) (4 * (ppt_index))
+
+/* To indicate HW of CMEM address, b0-31 are cmem base received via QMI */
+#define ATH12K_CMEM_ADDR_MSB 0x10
+
+/* Of 20 bits cookie, b0-b8 is to indicate SPT offset and b9-19 for PPT */
+#define ATH12K_CC_SPT_MSB 8
+#define ATH12K_CC_PPT_MSB 19
+#define ATH12K_CC_PPT_SHIFT 9
+#define ATH12K_DP_CC_COOKIE_SPT	GENMASK(8, 0)
+#define ATH12K_DP_CC_COOKIE_PPT	GENMASK(19, 9)
 
 #define MAX_DP_PEER_LIST_SIZE  16384
 #define ATH12K_MAX_PEER_ID	2048
@@ -63,7 +145,7 @@ struct ath12k_dp_hw_group {
 	u8 *rx_status_buf[DP_REO_DST_RING_MAX];
 	struct ath12k_spt_info *spt_info;
 	u32 num_spt_pages;
-	struct ath12k_tx_desc_info *txbaddr[256];
+	struct ath12k_tx_desc_info *txbaddr[ATH12K_NUM_TX_SPT_PAGES];
 	struct list_head tx_desc_free_list[ATH12K_HW_MAX_QUEUES];
 	struct list_head tx_spl_desc_free_list[ATH12K_HW_MAX_QUEUES];
 	/* protects the free and used desc lists */
