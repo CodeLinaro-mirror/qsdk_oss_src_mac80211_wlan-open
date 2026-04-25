@@ -79,6 +79,11 @@ unsigned int ath12k_ppe_ds_enabled = 1;
 module_param_named(ppe_ds_enable, ath12k_ppe_ds_enabled, uint, 0644);
 MODULE_PARM_DESC(ppe_ds_enable, "ppe_ds_enable: 0-disable, 1-enable");
 
+unsigned int ath12k_ppe_ds_wifi8_enabled;
+module_param_named(ppe_ds_wifi8_enable, ath12k_ppe_ds_wifi8_enabled, uint, 0644);
+MODULE_PARM_DESC(ppe_ds_wifi8_enable, "ppe_ds_wifi8_enable: 0-disable, 1-enable");
+EXPORT_SYMBOL(ath12k_ppe_ds_wifi8_enabled);
+
 unsigned int ath12k_ppeds_ppe2tcl_rings_max = 1;
 module_param_named(ppe2tcl_rings_max, ath12k_ppeds_ppe2tcl_rings_max, uint, 0644);
 MODULE_PARM_DESC(ppe2tcl_rings_max, "ppe2tcl_rings_max: 1-default");

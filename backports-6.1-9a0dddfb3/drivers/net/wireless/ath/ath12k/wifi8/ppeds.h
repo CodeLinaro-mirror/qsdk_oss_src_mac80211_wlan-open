@@ -39,6 +39,7 @@ extern unsigned int ath12k_ppeds_reo2ppe_ring_size;
 extern unsigned int ath12k_ppeds_tqm2ppe_ring_size;
 extern unsigned int ath12k_ppeds_ppe2wbm_ring_size;
 extern unsigned int ath12k_ppeds_pkt_pre_hdr_mode;
+extern unsigned int ath12k_ppe_ds_wifi8_enabled;
 
 enum ath12k_reo2ppe_rdi {
 	PPEDS_REO2PPE1_RDI = 11,
