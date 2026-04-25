@@ -443,9 +443,9 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.umac_irq_line_reset = false,
 		.umac_reset_ipc = 0,
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-		.ds_support = false,
-		.ds_txrx_hw_auto_idx = false,
-		.ds_hw_buff_mgmt = false,
+		.ds_support = true,
+		.ds_txrx_hw_auto_idx = true,
+		.ds_hw_buff_mgmt = true,
 #endif
 		.mlo_3_link_tx_support = true,
 		.board_magic = "QCA-ATH12K-BOARD",
