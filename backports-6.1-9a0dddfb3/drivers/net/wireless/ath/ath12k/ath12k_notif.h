@@ -16,10 +16,12 @@
  * enum ath12k_event_type - PPDU event types
  * @ATH12K_EVENT_PPDU_RX_COMPLETE: RX PPDU completion
  * @ATH12K_EVENT_PPDU_TX_COMPLETE: TX PPDU completion
+ * @ATH12K_EVENT_EXT_MON_RX: RX Extended monitor
  */
 enum ath12k_event_type {
 	ATH12K_EVENT_PPDU_RX_COMPLETE = 1,
 	ATH12K_EVENT_PPDU_TX_COMPLETE,
+	ATH12K_EVENT_EXT_MON_RX,
 };
 
 /**
@@ -55,9 +57,31 @@ struct ath12k_ppdu_event {
 	struct sk_buff *skb;      /* SKB containing PPDU info */
 };
 
+/**
+ * struct ath12k_ext_mon_rx_event - Extended monitor RX notifier event
+ * @mpdu: The MPDU SKB, with radiotap header prepended when requested.
+ *        The driver frees this SKB after srcu_notifier_call_chain()
+ *        returns.  Listeners that need to retain the frame MUST call
+ *        skb_clone() inside the callback and take ownership of the
+ *        clone; they must NOT free or hold a reference to @mpdu itself.
+ * @hw: the hardware this frame came in on
+ *
+ * Passed to every registered callback on the ext_mon RX SRCU notifier
+ * chain.  The chain fires from rxmon workqueue (process) context;
+ * callbacks may sleep.
+ */
+struct ath12k_ext_mon_rx_event {
+	struct sk_buff *mpdu;
+	struct ieee80211_hw *hw;
+};
+
 int ath12k_register_ppdu_notifier(struct notifier_block *nb, unsigned long event_mask);
 int ath12k_unregister_ppdu_notifier(struct notifier_block *nb, unsigned long event_mask);
 bool ath12k_ppdu_notifier_has_listeners(enum ath12k_event_type event_type);
 int ath12k_ppdu_notifier_call_chain(unsigned long val, void *v);
+int ath12k_register_ext_mon_rx_notifier(struct notifier_block *nb);
+int ath12k_unregister_ext_mon_rx_notifier(struct notifier_block *nb);
+bool ath12k_ext_mon_rx_notifier_has_listeners(void);
+int ath12k_ext_mon_rx_notifier_call_chain(unsigned long val, void *rx_event);
 
 #endif /* _ATH12K_NOTIF_H_ */
