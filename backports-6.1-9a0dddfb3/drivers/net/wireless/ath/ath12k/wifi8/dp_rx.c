@@ -417,7 +417,7 @@ void ath12k_wifi8_peer_rx_tid_qref_setup(struct ath12k_base *ab, u16 peer_id, u1
 	qref->info1 = u32_encode_bits(upper_32_bits(paddr),
 				      BUFFER_ADDR_INFO1_ADDR) |
 		      u32_encode_bits(tid, DP_REO_QREF_NUM);
-	ath12k_wifi8_hal_reo_shared_qaddr_cache_clear(ab);
+	ath12k_wifi8_hal_reo_shared_qaddr_cache_clear(central_dp->ab);
 }
 
 void ath12k_wifi8_dp_rx_tid_del_func(struct ath12k_dp *dp, void *ctx,
