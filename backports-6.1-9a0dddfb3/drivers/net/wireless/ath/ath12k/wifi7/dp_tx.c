@@ -2310,7 +2310,7 @@ skip_assign_buffer:
 	return;
 
 fail:
-	if (tx_desc->ext_kmem) {
+	if (tx_desc && tx_desc->ext_kmem) {
 		ath12k_core_dma_unmap_single(dp->dev,
 					     tx_desc->paddr_ext_desc,
 					     tx_desc->ext_desc_len,
@@ -2409,7 +2409,7 @@ ath12k_wifi7_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 	return DP_TX_ENQ_SUCCESS;
 
 fail:
-	if (tx_desc->ext_kmem) {
+	if (tx_desc && tx_desc->ext_kmem) {
 		ath12k_core_dma_unmap_single(dp->dev,
 					     tx_desc->paddr_ext_desc,
 					     tx_desc->ext_desc_len,
