@@ -4062,7 +4062,6 @@ void ath12k_wifi8_dp_ppe2wbm_srng_free(struct ath12k_base *ab)
 	ath12k_dp_srng_cleanup(ab, &dp_wifi8->ppe2wbm_idle_buf_ring);
 }
 
-
 int ath12k_wifi8_dp_ppe2wbm_srng_setup(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
@@ -4121,10 +4120,24 @@ int ath12k_wifi8_dp_ppe2wbm_buf_ring_init(struct ath12k_base *ab)
 		ath12k_err(ab, "PPE2WBM ring not initialized\n");
 		return -EINVAL;
 	}
-
 	req_entries = ath12k_dp_get_req_entries_from_buf_ring(ab, srng, &used_list);
 	if (req_entries)
 		ath12k_dp_rx_bufs_replenish(ab->dp, srng, &used_list, false);
+
+	return 0;
+}
+
+int ath12k_wifi8_dp_rx_ppe2wbm_idle_buff_init(struct ath12k_base *ab)
+{
+	LIST_HEAD(list);
+	size_t req_entries;
+	struct hal_srng *idle_buf_srng;
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(ab->dp);
+
+	idle_buf_srng = &ab->hal.srng_list[dp_wifi8->ppe2wbm_idle_buf_ring.ring_id];
+	req_entries = ath12k_dp_get_req_entries_from_buf_ring(ab, idle_buf_srng, &list);
+	if (req_entries)
+		ath12k_dp_rx_bufs_replenish(ab->dp, idle_buf_srng, &list, false);
 
 	return 0;
 }
@@ -4932,6 +4945,13 @@ int ath12k_wifi8_dp_rx_ring_setup(struct ath12k_base *ab)
 		return ret;
 	}
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	ret = ath12k_wifi8_dp_rx_ppe2wbm_idle_buff_init(ab);
+	if (ret) {
+		ath12k_warn(ab, "failed to configure rx ppe2wbm idle buf ring\n");
+		return ret;
+	}
+#endif
 	ret = ath12k_wifi8_dp_rx_fse_cmd_srng_setup(ab);
 	if (ret) {
 		ath12k_warn(ab, "failed to set up fse_cmd ring :%d\n", ret);
