@@ -9878,6 +9878,7 @@ enum wmi_vdev_ratemask_type {
 	VDEV_RATEMASK_TYPE_VHT,
 	VDEV_RATEMASK_TYPE_HE,
 	VDEV_RATEMASK_TYPE_EHT,
+	VDEV_RATEMASK_TYPE_UHR,
 };
 
 struct wmi_vdev_ratemask_arg {

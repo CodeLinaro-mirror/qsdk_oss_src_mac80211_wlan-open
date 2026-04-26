@@ -23083,15 +23083,18 @@ static int ath12k_mac_apply_vdev_ratemask(struct ath12k_link_vif *arvif,
 {
 	struct wmi_vdev_ratemask_arg arg = {};
 	const u16 *vht_m, *he_m, *eht_m;
+	const u32 *uhr_m;
 	int ret = 0, nss, offset;
 	u64 lower64, higher64;
-	u16 mcs, mcs_map;
+	u16 mcs_map;
+	u32 mcs;
 	const u8 *ht_m;
 
 	ht_m = mask->control[band].ht_mcs;
 	vht_m = mask->control[band].vht_mcs;
 	he_m = mask->control[band].he_mcs;
 	eht_m = mask->control[band].eht_mcs;
+	uhr_m = mask->control[band].uhr_mcs;
 
 	arg.vdev_id = arvif->vdev_id;
 
@@ -23173,6 +23176,70 @@ static int ath12k_mac_apply_vdev_ratemask(struct ath12k_link_vif *arvif,
 	}
 
 	arg.type = VDEV_RATEMASK_TYPE_EHT;
+	arg.mask_lower32 = lower_32_bits(lower64);
+	arg.mask_higher32 = upper_32_bits(lower64);
+	arg.mask_lower32_2 = lower_32_bits(higher64);
+	arg.mask_higher32_2 = upper_32_bits(higher64);
+	ret = ath12k_wmi_vdev_rate_mask(arvif->ar, &arg);
+	if (ret)
+		return ret;
+
+	/* Fill the vdev rate mask params for UHR from MCS mask */
+	lower64 = 0;
+	higher64 = 0;
+	/* UHR MCS mask per NSS
+	 * bit:  0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19
+	 * mcs:  x 15  0  1 17  2  3 19  4 20  5  6  7 23  8  9 10 11 12 13
+	 */
+	for (nss = 0; nss < NL80211_UHR_NSS_MAX; nss++) {
+		if (!uhr_m[nss])
+			continue;
+		mcs = 0;
+		/* mcs 15 */
+		if (nss == 0 && (uhr_m[0] & BIT(15)))
+			mcs |= BIT(1);
+
+		/* mcs 0,1 */
+		mcs |= (uhr_m[nss] & 0x3) << 2;
+		/* mcs 17 */
+		if (uhr_m[nss] & BIT(17))
+			mcs |= BIT(4);
+
+		/* mcs 2,3 */
+		mcs |= (uhr_m[nss] & 0xC) << 3;
+		/* mcs 19 */
+		if (uhr_m[nss] & BIT(19))
+			mcs |= BIT(7);
+
+		/* mcs 4 */
+		mcs |= (uhr_m[nss] & 0x10) << 4;
+		/* mcs 20 */
+		if (uhr_m[nss] & BIT(20))
+			mcs |= BIT(9);
+
+		/* mcs 5,6,7 */
+		mcs |= (uhr_m[nss] & 0xE0) << 5;
+		/* mcs 23 */
+		if (uhr_m[nss] & BIT(23))
+			mcs |= BIT(13);
+
+		/* mcs 8 to 13 */
+		mcs |= (uhr_m[nss] & 0x3F00) << 6;
+
+		offset = nss * 20;
+		if (offset < 60) {
+			lower64 |= (u64)mcs << offset;
+		} else if (offset == 60) {
+			lower64 |= (u64)(mcs & 0xF) << offset;
+			higher64 |= (u64)(mcs & 0xFFFF0) >> 4;
+		} else if (offset < 120) {
+			higher64 |= (u64)mcs << (offset - 64);
+		} else {
+			break;
+		}
+	}
+
+	arg.type = VDEV_RATEMASK_TYPE_UHR;
 	arg.mask_lower32 = lower_32_bits(lower64);
 	arg.mask_higher32 = upper_32_bits(lower64);
 	arg.mask_lower32_2 = lower_32_bits(higher64);
