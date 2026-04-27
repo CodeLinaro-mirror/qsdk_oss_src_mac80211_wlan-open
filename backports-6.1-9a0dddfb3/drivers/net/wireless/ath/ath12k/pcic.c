@@ -392,9 +392,10 @@ static irqreturn_t ath12k_pcic_ext_interrupt_handler(int irq, void *arg)
 	/* last interrupt received for this group */
 	irq_grp->timestamp = jiffies;
 
-	ath12k_pcic_ext_grp_disable(irq_grp);
-
-	napi_schedule(&irq_grp->napi);
+	if (napi_schedule_prep(&irq_grp->napi)) {
+		ath12k_pcic_ext_grp_disable(irq_grp);
+		__napi_schedule(&irq_grp->napi);
+	}
 
 	return IRQ_HANDLED;
 }
@@ -1008,11 +1009,6 @@ int ath12k_pcic_ext_irq_config(struct ath12k_base *ab,
 
 		netif_napi_add_weight(napi_ndev, &irq_grp->napi,
 				      ath12k_pcic_ext_grp_napi_poll, budget);
-
-		if (!irq_grp->napi_enabled) {
-			napi_enable(&irq_grp->napi);
-			irq_grp->napi_enabled = true;
-		}
 
 		if (ab->hw_params->ring_mask->tx[i] ||
 		    ab->hw_params->ring_mask->rx[i] ||
