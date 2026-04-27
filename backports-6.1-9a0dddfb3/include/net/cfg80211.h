@@ -11068,6 +11068,20 @@ static inline int cfg80211_color_change_notify(struct net_device *dev,
 void cfg80211_links_removed(struct net_device *dev, u16 link_mask);
 
 /**
+ * cfg80211_mod_link_station_notify - notify userspace about link STA update
+ * @dev: network device.
+ * @mld_mac: MLD address of the peer station.
+ * @link_id: link ID to be modified.
+ *
+ * Inform userspace that an associated STA MLD link needs to be
+ * updated. This is used to notify userspace to initiate link STA
+ * reconfiguration for the specified link.
+ * Also note that the wdev mutex must be held.
+ */
+void cfg80211_mod_link_station_notify(const struct net_device *dev,
+				      const u8 *mld_mac, u8 link_id);
+
+/**
  * struct cfg80211_mlo_reconf_done_data - MLO reconfiguration data
  * @buf: MLO Reconfiguration Response frame (header + body)
  * @len: length of the frame data
