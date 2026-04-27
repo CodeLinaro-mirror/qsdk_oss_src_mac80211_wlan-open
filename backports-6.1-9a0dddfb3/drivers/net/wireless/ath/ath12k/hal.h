@@ -1754,6 +1754,13 @@ struct hal_ops {
 					     enum hal_ring_type);
 	bool (*hal_rx_reo_status)(struct hal_reo_status *reo_status);
 	bool (*hal_rx_reo_1k_status)(struct hal_reo_status *reo_status);
+	u32 (*rx_get_fse_metadata)(struct hal_rx_desc *desc);
+	u16 (*rx_get_cce_metadata)(struct hal_rx_desc *desc);
+	bool (*rx_get_cce_match_bit)(struct hal_rx_desc *desc);
+	void (*rx_get_flow_params)(struct hal_rx_desc *desc,
+				   u32 *flow_idx,
+				   bool *flow_idx_invalid,
+				   bool *flow_idx_timeout);
 };
 
 static inline
