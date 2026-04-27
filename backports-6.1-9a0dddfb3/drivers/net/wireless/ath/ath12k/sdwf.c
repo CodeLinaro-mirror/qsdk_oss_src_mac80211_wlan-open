@@ -278,11 +278,10 @@ static u8 ath12k_sdwf_alloc_msduq(struct ath12k *ar, u32 svc_id,
 			scs_id = u32_get_bits(svc_id, SCS_SVC_ID_MASK);
 			ath12k_dp_peer_scs_data(ab->dp, qos, scs_id,
 						peer, ar, &msduq, &qos_id);
-			goto ret;
 		} else {
 			msduq = u32_get_bits(svc_id, SCS_SVC_ID_MASK);
-			goto ret;
 		}
+		goto ret;
 	}
 
 	qos_id = ath12k_sdwf_get_dl_qos_id(ab, svc_id);
