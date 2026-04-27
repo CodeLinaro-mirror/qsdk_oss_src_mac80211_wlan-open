@@ -41,9 +41,9 @@ struct ath12k_link_vif;
 #define TARGET_NUM_STATIONS_SINGLE     128
 
 /* Max num of stations for DBS */
-#define TARGET_NUM_STATIONS_DBS                128
+#define TARGET_NUM_STATIONS_DBS                64
 /* Max num of stations for DBS_SBS */
-#define TARGET_NUM_STATIONS_DBS_SBS	128
+#define TARGET_NUM_STATIONS_DBS_SBS	42
 #else
 // #ifdef CONFIG_ATH12K_MEM_PROFILE_DEFAULT TODO Enable default profile
 /* Num VDEVS per radio */
@@ -63,10 +63,16 @@ struct ath12k_link_vif;
 #define TARGET_NUM_STATIONS_SINGLE     ((ath12k_max_clients > ab->hw_params->max_clients_supported) ? ab->hw_params->max_clients_supported : ath12k_max_clients)
 
 /* Max num of stations for DBS */
-#define TARGET_NUM_STATIONS_DBS                ((ath12k_max_clients > ab->hw_params->max_clients_supported) ? ab->hw_params->max_clients_supported : ath12k_max_clients)
+#define TARGET_NUM_STATIONS_DBS		(((int)(ath12k_max_clients / 2) > \
+					ab->hw_params->max_clients_dbs) ? \
+					ab->hw_params->max_clients_dbs : \
+					(int)ath12k_max_clients / 2)
 
 /* Max num of stations for DBS_SBS */
-#define TARGET_NUM_STATIONS_DBS_SBS	((ath12k_max_clients > ab->hw_params->max_clients_supported) ? ab->hw_params->max_clients_supported : ath12k_max_clients)
+#define TARGET_NUM_STATIONS_DBS_SBS	(((int)(ath12k_max_clients / 3) >  \
+					ab->hw_params->max_clients_dbs_sbs) ? \
+					ab->hw_params->max_clients_dbs_sbs : \
+					(int)ath12k_max_clients / 3)
 
 #endif
 
@@ -253,6 +259,8 @@ struct ath12k_hw_params {
 
 #ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 	u16 max_clients_supported;
+	u16 max_clients_dbs;
+	u16 max_clients_dbs_sbs;
 #endif
 	u8 max_radios;
 	bool single_pdev_only:1;
