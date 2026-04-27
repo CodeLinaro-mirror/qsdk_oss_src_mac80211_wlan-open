@@ -2398,7 +2398,12 @@ struct ath12k_base {
 #endif /* CONFIG_ACPI */
 
 	struct notifier_block panic_nb;
-	struct notifier_block me_nb;
+
+	struct {
+		struct notifier_block nb;
+#define __NB_FLAGS_REGISTERED 1
+		unsigned long nb_flags;
+	} me;
 
 	struct ath12k_hw_group *ag;
 	struct ath12k_wsi_info wsi_info;

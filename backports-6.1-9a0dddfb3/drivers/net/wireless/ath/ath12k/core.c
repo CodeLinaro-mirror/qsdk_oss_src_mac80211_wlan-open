@@ -5652,10 +5652,6 @@ int ath12k_core_init(struct ath12k_base *ab)
 	if (ret)
 		ath12k_warn(ab, "failed to register panic handler: %d\n", ret);
 
-#if defined(CONFIG_BRIDGE_MCAST_OFFLOAD)
-	ath12k_core_me_notifier_register_extn(ab);
-#endif
-
 #ifdef CPTCFG_ATHDEBUG
 	athdbg_ops_register(ab);
 #endif
@@ -5706,6 +5702,11 @@ int ath12k_core_init(struct ath12k_base *ab)
 	if (ret)
 		ath12k_err(ab, "Unable to create telemetry psoc agent object: %d\n", ret);
 
+#if defined(CONFIG_BRIDGE_MCAST_OFFLOAD)
+	ath12k_core_me_notifier_register_extn(ab);
+	set_bit(__NB_FLAGS_REGISTERED, &ab->me.nb_flags);
+#endif
+
 #ifdef CPTCFG_ATHDEBUG
 	if (is_ready)
 		athdbg_if_register(ab);
@@ -5724,6 +5725,12 @@ void ath12k_core_deinit(struct ath12k_base *ab)
 #ifdef CPTCFG_ATHDEBUG
 	struct ath12k_hw_group *ag = ab->ag;
 #endif
+
+#if defined(CONFIG_BRIDGE_MCAST_OFFLOAD)
+	if (test_and_clear_bit(__NB_FLAGS_REGISTERED, &ab->me.nb_flags))
+		ath12k_core_me_notifier_unregister_extn(ab);
+#endif
+
 	if (ath12k_telemetry_ab_agent_delete_handler(ab))
 		ath12k_err(ab, "failed to destroy soc agent\n");
 	ath12k_core_hw_group_cleanup(ab->ag);
@@ -5735,10 +5742,6 @@ void ath12k_core_deinit(struct ath12k_base *ab)
 	 */
 	if (!ag->num_started)
 		athdbg_if_unregister(ab);
-#endif
-
-#if defined(CONFIG_BRIDGE_MCAST_OFFLOAD)
-	ath12k_core_me_notifier_unregister_extn(ab);
 #endif
 
 	ath12k_core_hw_group_unassign(ab);
