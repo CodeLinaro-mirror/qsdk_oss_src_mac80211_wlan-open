@@ -158,6 +158,8 @@ void ath12k_mac_op_get_key_seq(struct ieee80211_hw *hw,
 			       struct ieee80211_vif *vif,
 			       struct ieee80211_key_conf *key,
 			       struct ieee80211_key_seq *seq);
+void ath12k_mac_update_bss_chan_survey(struct ath12k *ar,
+				       struct ieee80211_channel *channel);
 /**
  * struct ath12k_mac_num_chanctxs_arg - Structure to hold channel context
  * @ar: Pointer to ath12k device context

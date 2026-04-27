@@ -751,6 +751,7 @@ struct debug_htt_stats_req {
 	bool done;
 	bool override_cfg_param;
 	u8 pdev_id;
+	struct ath12k *ar; /* back-pointer for NF extraction in telemetry */
 	enum ath12k_dbg_htt_ext_stats_type type;
 	u32 cfg_param[4];
 	u8 peer_addr[ETH_ALEN];

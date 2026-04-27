@@ -2719,6 +2719,16 @@ enum qca_vendor_wlan_telemetry_radio_cp_stats_attr {
 	QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_RX_MIC_ERR,
 	QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_RX_OVER_RUN,
 	QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_RX_CRC_ERR,
+	/* NLA_NESTED: static (characterized/BDF) NF per chain from HTT PHY stats
+	 * type 37 bdf_nf_chain[]. Each nested entry is an NLA_S32 indexed by
+	 * chain number (1-based). Only valid chains (value != 1) are included.
+	 */
+	QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_CHAN_NF_STATIC,
+	/* NLA_S32: dynamic (runtime) NF — first valid runtime_nf_chain[] value
+	 * from HTT PHY stats type 37, refreshed by triggering the survey NL
+	 * command (same path as iw dev <iface> survey dump) before reading.
+	 */
+	QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_CHAN_NF_DYNAMIC,
 	QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_AFTER_LAST,
 	QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_MAX =
 		QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_AFTER_LAST - 1,

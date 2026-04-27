@@ -18,6 +18,7 @@
 #include "mac.h"
 #include "ppe.h"
 #include "vendor.h"
+#include "debugfs_htt_stats.h"
 #include "telemetry.h"
 #include "telemetry_agent_if.h"
 #include "erp.h"
@@ -6452,6 +6453,62 @@ int ath12k_dp_get_radio_cp_stats(struct ath12k_telemetry_dp_radio *telemetry_rad
 	return 0;
 }
 
+/**
+ * ath12k_mac_get_chan_survey_noise() - Read the cached noise floor for a channel.
+ * @ar:      radio instance whose survey cache is queried
+ * @channel: channel whose noise floor is requested
+ *
+ * Uses the same freq-to-survey-index mapping as the WMI survey event handler
+ * (freq_to_idx() in wmi.c) so the correct ar->survey[] slot is always
+ * addressed.  Only bands that this radio actually supports are counted,
+ * matching the indexing used when ar->survey[] is populated.
+ *
+ * Caller must hold the wiphy lock (lockdep_assert_wiphy).
+ *
+ * Return: noise floor in dBm, or ATH12K_DEFAULT_NOISE_FLOOR if the survey
+ *         slot has not been populated yet or the channel is not found.
+ */
+static s8 ath12k_mac_get_chan_survey_noise(struct ath12k *ar,
+					   struct ieee80211_channel *channel)
+{
+	struct ieee80211_supported_band *sband;
+	struct ieee80211_hw *hw = ath12k_ar_to_hw(ar);
+	int band, ch, idx = 0;
+	s8 noise;
+
+	lockdep_assert_wiphy(hw->wiphy);
+
+	for (band = NL80211_BAND_2GHZ; band < NUM_NL80211_BANDS; band++) {
+		if (!ar->mac.sbands[band].channels)
+			continue;
+
+		sband = hw->wiphy->bands[band];
+		if (!sband)
+			continue;
+
+		for (ch = 0; ch < sband->n_channels; ch++, idx++) {
+			if (sband->channels[ch].center_freq == channel->center_freq)
+				goto found;
+		}
+	}
+
+	/* Channel not found in any band supported by this radio */
+	return ATH12K_DEFAULT_NOISE_FLOOR;
+
+found:
+	if (idx >= ATH12K_NUM_CHANS)
+		return ATH12K_DEFAULT_NOISE_FLOOR;
+
+	spin_lock_bh(&ar->data_lock);
+	if (ar->survey[idx].filled & SURVEY_INFO_NOISE_DBM)
+		noise = ar->survey[idx].noise;
+	else
+		noise = ATH12K_DEFAULT_NOISE_FLOOR;
+	spin_unlock_bh(&ar->data_lock);
+
+	return noise;
+}
+
 static int ath12k_fill_radio_cp_stats(struct ath12k_telemetry_dp_radio *telemetry_radio,
 				      struct ath12k_telemetry_command *cmd,
 				      struct sk_buff *vendor_event,
@@ -6459,13 +6516,38 @@ static int ath12k_fill_radio_cp_stats(struct ath12k_telemetry_dp_radio *telemetr
 				      u32 dp_tx_failed)
 {
 	struct ath12k_radio_cp_stats cp_stats = {};
+#ifdef CPTCFG_ATH12K_DEBUGFS
+	struct nlattr *nf_nest;
+#endif
 	struct nlattr *attr;
+	s8 dynamic_nf = 0;
 	int ret;
+	int i;
 
 	ret = ath12k_dp_get_radio_cp_stats(telemetry_radio, &cp_stats, ar,
 					   dp_tx_failed);
 	if (ret)
 		return ret;
+
+	/* Obtain dynamic (runtime) NF via the WMI BSS survey path - the same
+	 * mechanism used by "iw dev survey dump".  After triggering the survey
+	 * request, find the survey index for rx_channel and read its noise
+	 * field under data_lock.
+	 *
+	 * Static NF (bdf_nf_chains[]) is fetched separately via HTT PHY stats.
+	 */
+	if (ar->rx_channel) {
+		ath12k_mac_update_bss_chan_survey(ar, ar->rx_channel);
+		dynamic_nf = ath12k_mac_get_chan_survey_noise(ar, ar->rx_channel);
+	}
+
+#ifdef CPTCFG_ATH12K_DEBUGFS
+	/* Fetch static NF chains via HTT PHY stats (type 37) */
+	ret = ath12k_telemetry_get_phy_nf(ar);
+	if (ret)
+		ath12k_warn(ar->ab,
+			    "failed to fetch static NF via HTT PHY stats: %d\n", ret);
+#endif /* CPTCFG_ATH12K_DEBUGFS */
 
 	attr = nla_nest_start(vendor_event,
 			      QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_EVENT);
@@ -6500,12 +6582,51 @@ static int ath12k_fill_radio_cp_stats(struct ath12k_telemetry_dp_radio *telemetr
 			cp_stats.rx_over_run) ||
 	    nla_put_u32(vendor_event,
 			QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_RX_CRC_ERR,
-			cp_stats.rx_crc_err)) {
+			cp_stats.rx_crc_err) ||
+	    nla_put_s32(vendor_event,
+			QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_CHAN_NF_DYNAMIC,
+			dynamic_nf)) {
 		ath12k_err(ar->ab, "nla put failure: radio CP stats\n");
 		nla_nest_cancel(vendor_event, attr);
 		return -EINVAL;
 	}
 
+#ifdef CPTCFG_ATH12K_DEBUGFS
+	/* Send all valid static NF chains as a nested attribute.
+	 * Each entry is an NLA_S32 indexed by chain number (1-based).
+	 * Chains with value == 1 are invalid/unused and are skipped.
+	 * bdf_nf_chains[] is only populated when CPTCFG_ATH12K_DEBUGFS is
+	 * enabled (via ath12k_telemetry_get_phy_nf()); omit this attribute
+	 * entirely when built without debugfs to avoid sending stale/zero
+	 * values to userspace.
+	 */
+	nf_nest = nla_nest_start
+		(vendor_event,
+		QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_CHAN_NF_STATIC);
+	if (!nf_nest) {
+		ath12k_err(ar->ab, "nla nest start failure: static NF\n");
+		nla_nest_cancel(vendor_event, attr);
+		return -EINVAL;
+	}
+	for (i = 0; i < ATH12K_HTT_STATS_MAX_CHAINS; i++) {
+		/* Skip chains where the firmware reported the sentinel value 1.
+		 * The firmware uses 1 (positive 1 dBm) to indicate an unused or
+		 * inactive chain. This value is unambiguous: valid noise floor
+		 * readings are always negative in dBm (e.g. ATH12K_DEFAULT_NOISE_FLOOR
+		 * = -95), so +1 dBm can never occur as a real NF measurement.
+		 */
+		if (ar->bdf_nf_chains[i] != 1 &&
+		    nla_put_s32(vendor_event, i + 1,
+				ar->bdf_nf_chains[i])) {
+			ath12k_err(ar->ab,
+				   "nla put failure: static NF chain %d\n", i + 1);
+			nla_nest_cancel(vendor_event, nf_nest);
+			nla_nest_cancel(vendor_event, attr);
+			return -EINVAL;
+		}
+	}
+	nla_nest_end(vendor_event, nf_nest);
+#endif /* CPTCFG_ATH12K_DEBUGFS */
 	nla_nest_end(vendor_event, attr);
 
 	return 0;
