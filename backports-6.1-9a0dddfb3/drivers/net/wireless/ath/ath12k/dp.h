@@ -781,6 +781,7 @@ struct ath12k_dp {
 	struct ath12k_reo_q_addr_lut reoq_lut;
 	struct ath12k_reo_q_addr_lut ml_reoq_lut;
 	const struct ath12k_hw_params *hw_params;
+	bool hw_peer_stats_support;
 	struct ath12k_device_dp_stats device_stats;
 	struct device *dev;
 	struct ath12k_hal *hal;

@@ -1782,6 +1782,22 @@ ath12k_dp_link_peer_find_by_mac_addr(const struct ath12k_dp_peer *dp_peer, const
 }
 EXPORT_SYMBOL(ath12k_dp_link_peer_find_by_mac_addr);
 
+/**
+ * ath12k_dp_hw_peer_stats_enabled - Check if HW offload peer stats is enabled
+ * @dp_pdev: Pointer to the pdev DP structure
+ *
+ * Returns true if hardware offload peer statistics collection is supported
+ * and enabled for the hardware, false otherwise.
+ */
+bool ath12k_dp_hw_peer_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+{
+	if (!dp_pdev || !dp_pdev->dp)
+		return false;
+
+	return dp_pdev->dp->hw_peer_stats_support;
+}
+EXPORT_SYMBOL(ath12k_dp_hw_peer_stats_enabled);
+
 int ath12k_dp_peer_stats_alloc(struct ath12k_dp_peer *dp_peer,
 			       struct ath12k_pdev_dp *dp_pdev)
 {

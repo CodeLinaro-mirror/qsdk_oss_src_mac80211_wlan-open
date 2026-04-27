@@ -412,6 +412,8 @@ int ath12k_dp_peer_link_stats_alloc(struct ath12k_dp_link_peer *link_peer,
 				    struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_peer_link_stats_free(struct ath12k_dp_link_peer *link_peer);
 
+bool ath12k_dp_hw_peer_stats_enabled(struct ath12k_pdev_dp *dp_pdev);
+
 static inline void ath12k_peer_event_set_and_queue(struct ath12k_dp_link_peer *peer,
 						   struct ath12k_event_queue *queue,
 						   u32 event_flag)

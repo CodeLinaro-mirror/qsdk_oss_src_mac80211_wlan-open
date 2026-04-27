@@ -615,6 +615,7 @@ struct ath12k_dp *ath12k_wifi7_dp_init(struct ath12k_base *ab)
 	dp->ab = ab;
 	dp->dev = ab->dev;
 	dp->hw_params = ab->hw_params;
+	dp->hw_peer_stats_support = false;
 	dp->hal = &ab->hal;
 	dp->global_peer_id_supported = false;
 
