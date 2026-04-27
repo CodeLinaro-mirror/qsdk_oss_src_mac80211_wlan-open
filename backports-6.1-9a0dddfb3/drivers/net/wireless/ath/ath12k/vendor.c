@@ -6276,6 +6276,40 @@ static int ath12k_fill_tx_ingress_stats_attrs(struct sk_buff *vendor_event,
 	nla_nest_end(vendor_event, attr);
 
 	attr = nla_nest_start(vendor_event,
+			      QCA_VENDOR_ATTR_TX_INGRESS_STATS_PKTINFO_SG_PKT);
+	if (!attr) {
+		ath12k_err(NULL,
+			   "nla nest failure: vif ingress stats sg pkt");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_PKTS,
+			ingress_tx_stats->sg_pkt.packets)) {
+		ath12k_err(NULL, "nla put failure: Ingress stats attr %d packets",
+			   QCA_VENDOR_ATTR_TX_INGRESS_STATS_PKTINFO_SG_PKT);
+		nla_nest_end(vendor_event, attr);
+		return -EINVAL;
+	}
+
+	if (nla_put_u64_64bit(vendor_event,
+			      QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_BYTES,
+			      ingress_tx_stats->sg_pkt.bytes,
+			      NL80211_ATTR_PAD)) {
+		ath12k_err(NULL, "nla put failure: Ingress stats attr %d bytes",
+			   QCA_VENDOR_ATTR_TX_INGRESS_STATS_PKTINFO_SG_PKT);
+		nla_nest_end(vendor_event, attr);
+		return -EINVAL;
+	}
+	nla_nest_end(vendor_event, attr);
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_INGRESS_STATS_SG_DMA_MAP_ERR,
+			ingress_tx_stats->sg_dma_map_err)) {
+		ath12k_err(NULL, "nla put failure: Ingress stats attr %d",
+			   QCA_VENDOR_ATTR_TX_INGRESS_STATS_SG_DMA_MAP_ERR);
+		return -EINVAL;
+	}
+
+	attr = nla_nest_start(vendor_event,
 			      QCA_VENDOR_ATTR_TX_INGRESS_STATS_DROP_TYPE);
 	if (!attr) {
 		ath12k_err(NULL,

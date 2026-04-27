@@ -3128,7 +3128,13 @@ static void ath12k_dp_aggr_vif_ingress_stats(struct ath12k_pdev_dp *dp_pdev,
 			vif->stats[i].tx_i.enque_to_hw_fast.packets;
 		aggr_vif_stats->stats[i].tx_i.enque_to_hw_fast.bytes +=
 			vif->stats[i].tx_i.enque_to_hw_fast.bytes;
+		aggr_vif_stats->stats[i].tx_i.sg_pkt.packets +=
+			vif->stats[i].tx_i.sg_pkt.packets;
+		aggr_vif_stats->stats[i].tx_i.sg_pkt.bytes +=
+			vif->stats[i].tx_i.sg_pkt.bytes;
 
+		aggr_vif_stats->stats[i].tx_i.sg_dma_map_err +=
+			vif->stats[i].tx_i.sg_dma_map_err;
 
 		for (j = 0; j < DP_TX_ENQ_ERR_MAX; j++)
 			aggr_vif_stats->stats[i].tx_i.drop[j] +=
