@@ -2035,7 +2035,7 @@ void ath12k_wifi7_mcbc_handler(struct ath12k_dp_vif *dp_vif,
 	for_each_set_bit(link_id, &links_map, IEEE80211_MLD_MAX_NUM_LINKS) {
 		struct ath12k_link_vif *arvif =
 			rcu_dereference(ahvif->link[link_id]);
-		struct ath12k *ar = arvif->ar;
+		struct ath12k *ar = NULL;
 
 		if (!arvif || !arvif->is_up) {
 			DP_STATS_INC(dp_vif,
@@ -2044,8 +2044,8 @@ void ath12k_wifi7_mcbc_handler(struct ath12k_dp_vif *dp_vif,
 			continue;
 		}
 
+		ar = arvif->ar;
 		dp_link_vif = &dp_vif->dp_link_vif[link_id];
-
 		/* Check if link is up */
 		if (!dp_link_vif) {
 			DP_STATS_INC(dp_vif,
@@ -2174,7 +2174,7 @@ void ath12k_wifi7_ucast_handler(struct ath12k_dp_vif *dp_vif,
 	struct ath12k_link_vif *arvif = rcu_dereference(ahvif->link[link_id]);
 	struct ath12k_dp_link_vif *dp_link_vif = &dp_vif->dp_link_vif[link_id];
 	struct ath12k_dp *dp = NULL;
-	struct ath12k *ar = arvif->ar;
+	struct ath12k *ar = NULL;
 	struct ath12k_pdev_dp *dp_pdev = NULL;
 	struct ath12k_tx_desc_info *tx_desc = NULL;
 	struct ath12k_dp_tx_msdu_info msdu_info = {0};
@@ -2189,6 +2189,7 @@ void ath12k_wifi7_ucast_handler(struct ath12k_dp_vif *dp_vif,
 	if (unlikely(!arvif || !arvif->is_created))
 		goto fail;
 
+	ar = arvif->ar;
 	/* Get DP pdev */
 	dp_pdev = ath12k_dp_to_dp_pdev(ar->ab->dp, dp_link_vif->pdev_idx);
 	if (!dp_pdev) {
