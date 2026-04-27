@@ -6785,6 +6785,9 @@ void ath12k_debugfs_register(struct ath12k *ar)
 		debugfs_create_file("simulate_awgn", 0200,
 				    ar->debug.debugfs_pdev, ar,
 				    &fops_simulate_awgn);
+#ifdef CPTCFG_QCN_EXTN
+		ath12k_debugfs_register_hw_blocklist_extn(ar);
+#endif
 		debugfs_create_file("configure_afc_grace_timer", 0200,
 				    ar->debug.debugfs_pdev, ar,
 				    &fops_configure_afc_grace_timer);
