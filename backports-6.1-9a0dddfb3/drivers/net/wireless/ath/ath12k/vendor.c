@@ -3023,6 +3023,16 @@ static int ath12k_get_dp_vif_attr_len(struct ath12k_telemetry_command *cmd)
 	return total_size;
 }
 
+static int ath12k_get_vap_cp_attr_len(void)
+{
+	int payload_size;
+
+	payload_size = nla_total_size(sizeof(u32)) +
+		(nla_total_size(sizeof(u64)) * (QCA_VENDOR_ATTR_TELEMETRY_CP_MAX - 1));
+
+	return nla_total_size_nested(payload_size);
+}
+
 static int ath12k_get_dp_radio_attr_len(struct ath12k_telemetry_command *cmd)
 {
 	/* TID Stats Size */
@@ -3045,6 +3055,7 @@ int ath12k_get_dp_vendor_event_len(struct ath12k_telemetry_command *cmd)
 		break;
 	case STATS_OBJ_VIF:
 		total_size += ath12k_get_dp_vif_attr_len(cmd);
+		total_size += ath12k_get_vap_cp_attr_len();
 		break;
 	case STATS_OBJ_RADIO:
 		total_size += ath12k_get_dp_radio_attr_len(cmd);
@@ -6099,6 +6110,107 @@ out:
 	return ret;
 }
 
+static int ath12k_send_cp_event(struct ath12k_telemetry_command *cmd,
+				struct sk_buff *vendor_event,
+				struct ath12k_vif *ahvif)
+{
+	struct ath12k_mgmt_frame_stats *mgmt_stats = &ahvif->mgmt_stats;
+	u64 tx_success_count = 0, tx_failure_count = 0;
+	struct ath12k_fw_stats_req_params param = {0};
+	struct ath12k_fw_stats_bcn *bcn_stats;
+	struct ath12k_link_vif *arvif;
+	int ret = 0, vdev_id = 0;
+	struct nlattr *attr;
+	bool found = false;
+	struct ath12k *ar;
+
+	/* No specific link requested; fall back to the default link */
+	arvif = &ahvif->deflink;
+	if (cmd->link_id != INVALID_LINK_ID) {
+		/* Validate that the requested link_id is within range and
+		 * actually exists in the driver's active links bitmap.
+		 */
+		if (cmd->link_id >= ATH12K_NUM_MAX_LINKS ||
+		    !(ahvif->links_map & BIT(cmd->link_id))) {
+			ath12k_err(NULL, "Invalid link_id %d for control path stats\n",
+				   cmd->link_id);
+			return -EINVAL;
+		}
+		arvif = ath12k_get_arvif_from_link_id(ahvif, cmd->link_id);
+	}
+
+	if (!arvif || !arvif->ar) {
+		ath12k_err(NULL, "Failed to get arvif for link_id %d\n", cmd->link_id);
+		return -EINVAL;
+	}
+
+	ar = arvif->ar;
+
+	/* Get beacon stats from FW */
+	ath12k_fw_stats_reset(ar);
+	param.pdev_id = ath12k_mac_get_target_pdev_id(ar);
+	param.vdev_id = arvif->vdev_id;
+	param.stats_id = WMI_REQUEST_BCN_STAT;
+
+	ret = ath12k_mac_get_fw_stats_per_vif(ar, &param);
+	if (ret) {
+		ath12k_err(ar->ab, "failed to request fw stats: %d\n", ret);
+		return ret;
+	}
+
+	/* Extract tx_bcn_succ_cnt and tx_bcn_outage_cnt from ar->fw_stats.bcn list */
+	spin_lock_bh(&ar->data_lock);
+	list_for_each_entry(bcn_stats, &ar->fw_stats.bcn, list) {
+		if (bcn_stats->vdev_id == arvif->vdev_id) {
+			vdev_id = bcn_stats->vdev_id;
+			tx_success_count = bcn_stats->tx_bcn_succ_cnt;
+			tx_failure_count = bcn_stats->tx_bcn_outage_cnt;
+			found = true;
+			break;
+		}
+	}
+	spin_unlock_bh(&ar->data_lock);
+	ath12k_fw_stats_bcn_free(&ar->fw_stats.bcn); /* Free after use, outside lock */
+	if (!found) {
+		ath12k_err(ar->ab, "beacon stats not found for vdev_id %d\n",
+			   arvif->vdev_id);
+		return -ENOENT;
+	}
+
+	attr = nla_nest_start(vendor_event,
+			      QCA_VENDOR_ATTR_WLAN_TELEMETRY_VAP_CP_STATS_EVENT);
+	if (!attr) {
+		ath12k_err(ar->ab, "nla nest failure: CP stats\n");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TELEMETRY_CP_VDEV_ID, vdev_id) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_BEACON_COUNT,
+		tx_success_count,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_BEACON_OUTAGE_COUNT,
+		tx_failure_count,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_RX_BEACON_COUNT,
+		mgmt_stats->rx_cnt[QCA_VENDOR_MGMT_STATS_BEACON],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID)) {
+		ath12k_err(ar->ab, "nla put failure: cp stats\n");
+		nla_nest_cancel(vendor_event, attr);
+		return -EINVAL;
+	}
+
+	nla_nest_end(vendor_event, attr);
+
+	return 0;
+}
+
 static int ath12k_stats_device_setup(struct ath12k_telemetry_command *cmd)
 {
 	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(cmd->wiphy);
@@ -6181,6 +6293,12 @@ static int ath12k_stats_peer_setup(struct ath12k_telemetry_command *cmd)
 
 	if (!ahvif) {
 		ath12k_err(NULL, "ahvif not present");
+		return -EINVAL;
+	}
+
+	if (ahvif->deflink.ar && ahvif->deflink.ar->ab &&
+	    test_bit(ATH12K_FLAG_CRASH_FLUSH, &ahvif->deflink.ar->ab->dev_flags)) {
+		ath12k_err(NULL, "Peer stats return. Recovery in progress\n");
 		return -EINVAL;
 	}
 
@@ -6552,6 +6670,11 @@ static int ath12k_prepare_vif_vendor_event(struct sk_buff *vendor_event,
 	u8 index;
 	int ret = -EINVAL;
 
+	if (!cmd) {
+		ath12k_err(NULL, "cmd parameter is NULL");
+		return ret;
+	}
+
 	telemetry_vif = vmalloc(sizeof(*telemetry_vif));
 	if (!telemetry_vif) {
 		ath12k_err(NULL, "Allocation failed for vap stats");
@@ -6570,6 +6693,7 @@ static int ath12k_prepare_vif_vendor_event(struct sk_buff *vendor_event,
 	/* Allocate RX monitor stats for vif aggregation */
 	rx_mon_stats = vzalloc(sizeof(*rx_mon_stats));
 	if (!rx_mon_stats) {
+		vfree(htt_tx_stats);
 		vfree(telemetry_vif);
 		return -ENOMEM;
 	}
@@ -6580,7 +6704,7 @@ static int ath12k_prepare_vif_vendor_event(struct sk_buff *vendor_event,
 		vfree(rx_mon_stats);
 		vfree(htt_tx_stats);
 		vfree(telemetry_vif);
-			return -ENOMEM;
+		return -ENOMEM;
 	}
 	telemetry_vif->aggr_vif_stats.peer_stats.proto = peer_proto;
 
@@ -6595,6 +6719,9 @@ static int ath12k_prepare_vif_vendor_event(struct sk_buff *vendor_event,
 
 	for (index = 0; index < DP_TCL_NUM_RING_MAX; index++)
 		telemetry_vif->aggr_vif_stats.stats[index].proto = (vif_proto + index);
+
+	if (ath12k_send_cp_event(cmd, vendor_event, ahvif))
+		ath12k_err(NULL, "Failed to send cp event");
 
 	ath12k_dp_get_vif_stats(ahvif, telemetry_vif, cmd->link_id);
 
@@ -6670,6 +6797,12 @@ static int ath12k_stats_vif_setup(struct ath12k_telemetry_command *cmd)
 
 	if (!ahvif) {
 		ath12k_err(NULL, "ahvif not present");
+		return -EINVAL;
+	}
+
+	if (ahvif->deflink.ar && ahvif->deflink.ar->ab &&
+	    test_bit(ATH12K_FLAG_CRASH_FLUSH, &ahvif->deflink.ar->ab->dev_flags)) {
+		ath12k_err(NULL, "VAP stats return. Recovery in progress\n");
 		return -EINVAL;
 	}
 
