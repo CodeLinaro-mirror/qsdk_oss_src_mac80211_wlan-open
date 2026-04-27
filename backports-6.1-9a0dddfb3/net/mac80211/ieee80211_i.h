@@ -1046,6 +1046,7 @@ struct ieee80211_link_data_managed {
 		struct cfg80211_chan_def ap_chandef;
 		struct ieee80211_parsed_tpe tpe;
 		unsigned long time;
+		unsigned long cross_link_csa_allow_window;
 		bool waiting_bcn;
 		bool ignored_same_chan;
 		bool blocked_tx;
