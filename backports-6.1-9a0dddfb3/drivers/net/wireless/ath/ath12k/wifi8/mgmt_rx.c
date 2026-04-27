@@ -382,8 +382,8 @@ ath12k_wifi8_mgmt_rx_h_ppdu(struct ath12k *partner_ar, struct sk_buff *mmpdu,
 	status->band = NUM_NL80211_BANDS;
 
 	meta_data = desc_data->freq;
+	channel_num = meta_data;
 	center_freq = meta_data >> 16;
-	channel_num = ieee80211_frequency_to_channel(center_freq);
 
 	if (center_freq >= ATH12K_MIN_6GHZ_FREQ &&
 	    center_freq <= ATH12K_MAX_6GHZ_FREQ) {
