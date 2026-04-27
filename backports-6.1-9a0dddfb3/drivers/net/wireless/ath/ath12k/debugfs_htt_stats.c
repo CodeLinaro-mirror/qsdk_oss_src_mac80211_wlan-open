@@ -8983,6 +8983,7 @@ ath12k_htt_print_ast_entry_tlv(const void *tag_buf, u16 tag_len,
 	u32 mac_addr_l32;
 	u32 mac_addr_h16;
 	u32 ast_info;
+	u32 ast_info1;
 
 	if (tag_len < sizeof(*htt_stats_buf))
 		return;
@@ -8990,6 +8991,7 @@ ath12k_htt_print_ast_entry_tlv(const void *tag_buf, u16 tag_len,
 	mac_addr_l32 = le32_to_cpu(htt_stats_buf->mac_addr.mac_addr_l32);
 	mac_addr_h16 = le32_to_cpu(htt_stats_buf->mac_addr.mac_addr_h16);
 	ast_info = le32_to_cpu(htt_stats_buf->info);
+	ast_info1 = le32_to_cpu(htt_stats_buf->info1);
 
 	len += scnprintf(buf + len, buf_len - len, "HTT_AST_ENTRY_TLV:\n");
 	len += scnprintf(buf + len, buf_len - len, "ast_index = %u\n",
@@ -9019,8 +9021,11 @@ ath12k_htt_print_ast_entry_tlv(const void *tag_buf, u16 tag_len,
 			 u32_get_bits(ast_info, ATH12K_HTT_AST_MESH_STA_INFO));
 	len += scnprintf(buf + len, buf_len - len, "mec = %u\n",
 			 u32_get_bits(ast_info, ATH12K_HTT_AST_MEC_INFO));
-	len += scnprintf(buf + len, buf_len - len, "intra_bss = %u\n\n",
+	len += scnprintf(buf + len, buf_len - len, "intra_bss = %u\n",
 			 u32_get_bits(ast_info, ATH12K_HTT_AST_INTRA_BSS_INFO));
+	len += scnprintf(buf + len, buf_len - len, "rx_monitor_override_sta = %u\n\n",
+			 u32_get_bits(ast_info1,
+				      ATH12K_HTT_AST_INFO1_RX_MON_OVERRIDE_STA));
 
 	stats_req->buf_len = len;
 }
