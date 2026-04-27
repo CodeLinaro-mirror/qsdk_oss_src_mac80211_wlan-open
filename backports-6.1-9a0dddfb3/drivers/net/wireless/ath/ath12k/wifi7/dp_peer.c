@@ -69,6 +69,7 @@ int ath12k_wifi7_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 	struct ath12k_dp_hw *dp_hw = &ah->dp_hw;
 	struct wireless_dev *wdev;
 	struct ath12k_pdev_dp *dp_pdev;
+	int ret;
 
 	if (params->sta) {
 		sta = params->sta;
@@ -131,7 +132,14 @@ int ath12k_wifi7_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 
 	rcu_read_lock();
 	dp_pdev = ath12k_dp_hw_grp_to_dp_pdev(ah->ag->dp_hw_grp, params->hw_link_id);
-	ath12k_dp_peer_stats_alloc(dp_peer, dp_pdev);
+	ret = ath12k_dp_peer_stats_alloc(dp_peer, dp_pdev);
+	if (ret) {
+		rcu_read_unlock();
+		if (sta && sta->mlo)
+			ath12k_wifi7_peer_ml_id_free(ah, ahsta);
+		kfree(dp_peer);
+		return ret;
+	}
 
 	if (dp_pdev && ath12k_proto_stats_enabled(dp_pdev))
 		ath12k_dp_alloc_proto_stats_peer(dp_peer);
