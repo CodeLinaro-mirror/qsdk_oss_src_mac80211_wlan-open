@@ -1134,12 +1134,29 @@ void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
 		ath12k_dbg(pdev_dp->ar->ab, ATH12K_DBG_DATA,
 			   "failed to find the peer with monitor peer_id %d\n",
 			   ppdu_info->peer_id);
+		/* BAR frames often have peer_id=0 so peer lookup fails.
+		 * Still update the pdev-level BAR counter so CTRL stats
+		 * are always accounted for.
+		 */
+		if (ppdu_info->userid < ARRAY_SIZE(ppdu_info->ctrl_frm_info))
+			pdev_dp->stats.telemetry_stats.rx_bar_cnt +=
+				ppdu_info->ctrl_frm_info[ppdu_info->userid].bar;
 		return;
 	}
 
 	rx_stats = peer->peer_stats.rx_stats;
 	peer->rssi_comb = ppdu_info->rssi_comb;
 	ewma_avg_rssi_add(&peer->avg_rssi, ppdu_info->rssi_comb);
+
+	/* Update both pdev-level and per-peer BAR counts together after a
+	 * successful peer lookup.
+	 */
+	if (ppdu_info->userid < ARRAY_SIZE(ppdu_info->ctrl_frm_info)) {
+		pdev_dp->stats.telemetry_stats.rx_bar_cnt +=
+			ppdu_info->ctrl_frm_info[ppdu_info->userid].bar;
+		peer->peer_stats.num_bar +=
+			ppdu_info->ctrl_frm_info[ppdu_info->userid].bar;
+	}
 
 	if (!ath12k_extd_rx_stats_enabled(pdev_dp->ar) || !rx_stats)
 		return;

@@ -139,6 +139,34 @@ struct ath12k_wmm_stats {
        u64 total_wmm_rx_drop[WME_NUM_AC];
 };
 
+/**
+ * struct ath12k_pdev_telemetry_stats - Per-pdev control-path telemetry statistics
+ *
+ * Aggregates radio-level statistics exported via vendor telemetry events.
+ * Fields cover airtime utilisation per access category, TX/RX data throughput
+ * counters, association state, and RX error metrics.  The structure is
+ * populated incrementally in the RX and TX data paths and is periodically
+ * consumed by the telemetry agent for userspace reporting.
+ *
+ * @link_airtime:        Total link airtime consumed per AC (microseconds)
+ * @tx_link_airtime:     TX link airtime per AC (microseconds)
+ * @rx_link_airtime:     RX link airtime per AC (microseconds)
+ * @tx_data_msdu_cnt:    Number of TX data MSDUs successfully transmitted
+ * @total_tx_data_bytes: Total TX data payload bytes
+ * @rx_data_msdu_cnt:    Number of RX data MSDUs received
+ * @total_rx_data_bytes: Total RX data payload bytes
+ * @time_last_assoc:     Timestamp of the most recent station association
+ * @sta_vap_exist:       Non-zero if at least one STA VAP is active on this pdev
+ * @rx_bar_cnt:          BAR frames received; counted before peer lookup so
+ *                       frames with unknown peer_id are not missed
+ * @rx_probe_req_bc:     Broadcast probe requests received; incremented once per
+ *                       frame rather than once per VAP to avoid O(n) VAP
+ *                       iteration in high-density (16+ VAP) deployments
+ * @rx_decrypt_err:      RX decryption error count
+ * @rx_mic_err:          RX MIC (TKIP) error count
+ * @rx_over_run:         RX FIFO overrun error count
+ * @rx_crc_err:          RX FCS/CRC error count (from WMI MIB stats)
+ */
 struct ath12k_pdev_telemetry_stats {
        u32 link_airtime[WLAN_MAX_AC];
        u32 tx_link_airtime[WLAN_MAX_AC];
@@ -149,6 +177,19 @@ struct ath12k_pdev_telemetry_stats {
 	u64 total_rx_data_bytes;
 	u64 time_last_assoc;
 	u8 sta_vap_exist;
+	/* Pdev-level BAR frame counter (counted before peer lookup so
+	 * frames with peer_id=0/invalid are not missed).
+	 */
+	u32 rx_bar_cnt;
+	/* Pdev-level broadcast probe request counter - incremented once per
+	 * broadcast probe rather than once per VAP, avoiding O(n) VAP iteration
+	 * on every broadcast probe in high-density (16+ VAP) environments.
+	 */
+	u32 rx_probe_req_bc;
+	u32 rx_decrypt_err;
+	u32 rx_mic_err;
+	u32 rx_over_run;
+	u32 rx_crc_err;
 };
 
 struct ath12k_atf_pdev_airtime {

@@ -3069,6 +3069,14 @@ static inline void ath12k_wifi8_dp_rx_h_err_update_peer_stats(struct ath12k_pdev
 		case HAL_WBM_REL_SRC_MODULE_RXDMA:
 			DP_PEER_LINK_STATS_CNT(peer, wbm_err.rxdma_error[rxcb->err_code],
 					       1, link_id);
+			if (rxcb->err_code == HAL_REO_ENTR_RING_RXDMA_ECODE_DECRYPT_ERR)
+				dp_pdev->stats.telemetry_stats.rx_decrypt_err++;
+			else if (rxcb->err_code ==
+					HAL_REO_ENTR_RING_RXDMA_ECODE_TKIP_MIC_ERR)
+				dp_pdev->stats.telemetry_stats.rx_mic_err++;
+			else if (rxcb->err_code ==
+					HAL_REO_ENTR_RING_RXDMA_ECODE_OVERFLOW_ERR)
+				dp_pdev->stats.telemetry_stats.rx_over_run++;
 			break;
 		default:
 			break;

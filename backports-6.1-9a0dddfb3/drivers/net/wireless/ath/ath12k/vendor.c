@@ -3023,6 +3023,16 @@ static int ath12k_get_dp_vif_attr_len(struct ath12k_telemetry_command *cmd)
 	return total_size;
 }
 
+static int ath12k_get_radio_cp_attr_len(void)
+{
+	int payload_size;
+
+	payload_size = nla_total_size(sizeof(u32)) *
+		       QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_AFTER_LAST;
+
+	return nla_total_size_nested(payload_size);
+}
+
 static int ath12k_get_vap_cp_attr_len(void)
 {
 	int payload_size;
@@ -3059,6 +3069,7 @@ int ath12k_get_dp_vendor_event_len(struct ath12k_telemetry_command *cmd)
 		break;
 	case STATS_OBJ_RADIO:
 		total_size += ath12k_get_dp_radio_attr_len(cmd);
+		total_size += ath12k_get_radio_cp_attr_len();
 		break;
 	case STATS_OBJ_DEVICE:
 		total_size += ath12k_get_device_attr_size(cmd);
@@ -6195,11 +6206,136 @@ static int ath12k_send_cp_event(struct ath12k_telemetry_command *cmd,
 		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_BEACON_OUTAGE_COUNT,
 		tx_failure_count,
 		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_PROBE_REQUEST,
+		mgmt_stats->tx_succ_cnt[QCA_VENDOR_MGMT_STATS_PROBE_REQ],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_PROBE_RESPONSE,
+		mgmt_stats->tx_succ_cnt[QCA_VENDOR_MGMT_STATS_PROBE_RESP],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_ASSOC_REQUEST_SUCCESS,
+		mgmt_stats->tx_succ_cnt[QCA_VENDOR_MGMT_STATS_ASSOC_REQ],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_ASSOC_REQUEST_FAILURE,
+		mgmt_stats->tx_fail_cnt[QCA_VENDOR_MGMT_STATS_ASSOC_REQ],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_ASSOC_RESPONSE_SUCCESS,
+		mgmt_stats->tx_succ_cnt[QCA_VENDOR_MGMT_STATS_ASSOC_RESP],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_ASSOC_RESPONSE_FAILURE,
+		mgmt_stats->tx_fail_cnt[QCA_VENDOR_MGMT_STATS_ASSOC_RESP],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_ACTION_SENT_SUCCESS,
+		mgmt_stats->tx_succ_cnt[QCA_VENDOR_MGMT_STATS_ACTION],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_ACTION_NO_ACK_SENT_SUCCESS,
+		mgmt_stats->tx_succ_cnt[QCA_VENDOR_MGMT_STATS_ACTION_NO_ACK],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_ACTION_SENT_FAIL,
+		mgmt_stats->tx_fail_cnt[QCA_VENDOR_MGMT_STATS_ACTION],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_ACTION_NO_ACK_SENT_FAIL,
+		mgmt_stats->tx_fail_cnt[QCA_VENDOR_MGMT_STATS_ACTION_NO_ACK],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_ACTION_COMPLETION_SUCCESS,
+		mgmt_stats->tx_compl_succ[QCA_VENDOR_MGMT_STATS_ACTION],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_ACTION_NO_ACK_COMPLETION_SUCCESS,
+		mgmt_stats->tx_compl_succ[QCA_VENDOR_MGMT_STATS_ACTION_NO_ACK],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_ACTION_COMPLETION_FAIL,
+		mgmt_stats->tx_compl_fail[QCA_VENDOR_MGMT_STATS_ACTION],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_ACTION_NO_ACK_COMPLETION_FAIL,
+		mgmt_stats->tx_compl_fail[QCA_VENDOR_MGMT_STATS_ACTION_NO_ACK],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_MGMT_FRAMES,
+		mgmt_stats->aggr_tx_mgmt_cnt,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_MGMT_SUCCESS_COUNT,
+		mgmt_stats->aggr_tx_mgmt_success_cnt,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_MGMT_FAILURE_COUNT,
+		mgmt_stats->aggr_tx_mgmt_fail_cnt,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
 
 	    nla_put_u64_64bit
 		(vendor_event,
 		QCA_VENDOR_ATTR_TELEMETRY_CP_RX_BEACON_COUNT,
 		mgmt_stats->rx_cnt[QCA_VENDOR_MGMT_STATS_BEACON],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_RX_PROBE_REQUEST_UCAST,
+		mgmt_stats->rx_cnt[QCA_VENDOR_MGMT_STATS_PROBE_REQ],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_RX_PROBE_REQUEST_BCAST,
+		ar->dp.stats.telemetry_stats.rx_probe_req_bc,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_RX_ASSOC_WITH_NO_RATE_MATCH,
+		mgmt_stats->rx_assoc_no_rate_match,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_RX_ASSOC_WITH_BAD_WPAIE,
+		mgmt_stats->rx_assoc_bad_wpaie,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_RX_ASSOC_WITH_CAP_MISMATCH,
+		mgmt_stats->rx_assoc_cap_mismatch,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_RX_ACTION,
+		mgmt_stats->rx_cnt[QCA_VENDOR_MGMT_STATS_ACTION],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_RX_ACTION_NO_ACK,
+		mgmt_stats->rx_cnt[QCA_VENDOR_MGMT_STATS_ACTION_NO_ACK],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_RX_MGMT_FRAMES,
+		mgmt_stats->aggr_rx_mgmt,
 		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID)) {
 		ath12k_err(ar->ab, "nla put failure: cp stats\n");
 		nla_nest_cancel(vendor_event, attr);
@@ -6265,6 +6401,114 @@ out:
 	ath12k_err(ar->ab, "Error sending telemetry vendor event");
 	kfree_skb(vendor_event);
 	return ret;
+}
+
+/**
+ * ath12k_dp_get_radio_cp_stats() - Collect all Radio Control Path stats
+ * @ar: pointer to ath12k radio instance
+ * @telemetry_radio: pre-populated DP radio stats (RTS counters sourced here)
+ * @dp_tx_failed: aggregated TX failure count from DP layer
+ * @cp_stats: caller-allocated struct to be filled with all CP stat values
+ *
+ * Gathers every field needed by the Radio CP NL event into @cp_stats.
+ *
+ * Return: 0 on success; negative error code if FW stats request fails
+ *         (partial stats are still populated in that case).
+ */
+int ath12k_dp_get_radio_cp_stats(struct ath12k_telemetry_dp_radio *telemetry_radio,
+				 struct ath12k_radio_cp_stats *cp_stats,
+				 struct ath12k *ar,
+				 u32 dp_tx_failed)
+{
+	struct ath12k_dp_link_peer_stats *link_peer_stats;
+	struct ath12k_link_vif *arvif;
+
+	cp_stats->tx_failed = dp_tx_failed;
+
+	/* RTS counters: use the same aggregated pdev stats source as RADIO DP
+	 * so RADIO CP RTS matches RADIO DP RTS exactly.
+	 */
+	if (telemetry_radio &&
+	    telemetry_radio->aggr_pdev_stats.link_peer_stats.tx_stats) {
+		link_peer_stats = &telemetry_radio->aggr_pdev_stats.link_peer_stats;
+		cp_stats->tx_rts_success = link_peer_stats->tx_stats->rts_success;
+		cp_stats->tx_rts_fail    = link_peer_stats->tx_stats->rts_failure;
+	}
+
+	spin_lock_bh(&ar->data_lock);
+	list_for_each_entry(arvif, &ar->arvifs, list)
+		cp_stats->rx_mgmt += arvif->ahvif->mgmt_stats.aggr_rx_mgmt;
+
+	/* Read all telemetry stats under the same lock so they are
+	 * consistent with each other and with rx_mgmt above.
+	 */
+	cp_stats->rx_crc_err     = ar->dp.stats.telemetry_stats.rx_crc_err;
+	cp_stats->rx_decrypt_err = ar->dp.stats.telemetry_stats.rx_decrypt_err;
+	cp_stats->rx_mic_err     = ar->dp.stats.telemetry_stats.rx_mic_err;
+	cp_stats->rx_over_run    = ar->dp.stats.telemetry_stats.rx_over_run;
+	cp_stats->rx_ctrl        = ar->dp.stats.telemetry_stats.rx_bar_cnt;
+	spin_unlock_bh(&ar->data_lock);
+
+	return 0;
+}
+
+static int ath12k_fill_radio_cp_stats(struct ath12k_telemetry_dp_radio *telemetry_radio,
+				      struct ath12k_telemetry_command *cmd,
+				      struct sk_buff *vendor_event,
+				      struct ath12k *ar,
+				      u32 dp_tx_failed)
+{
+	struct ath12k_radio_cp_stats cp_stats = {};
+	struct nlattr *attr;
+	int ret;
+
+	ret = ath12k_dp_get_radio_cp_stats(telemetry_radio, &cp_stats, ar,
+					   dp_tx_failed);
+	if (ret)
+		return ret;
+
+	attr = nla_nest_start(vendor_event,
+			      QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_EVENT);
+	if (!attr) {
+		ath12k_err(ar->ab, "nla nest failure: radio CP stats\n");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_TX_FAILED,
+			cp_stats.tx_failed) ||
+	    nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_TX_RTS_SUCCESS,
+			cp_stats.tx_rts_success) ||
+	    nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_TX_RTS_FAIL,
+			cp_stats.tx_rts_fail) ||
+	    nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_RX_MGMT,
+			cp_stats.rx_mgmt) ||
+	    nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_RX_CTRL,
+			cp_stats.rx_ctrl) ||
+	    nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_RX_DECRYPT_ERR,
+			cp_stats.rx_decrypt_err) ||
+	    nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_RX_MIC_ERR,
+			cp_stats.rx_mic_err) ||
+	    nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_RX_OVER_RUN,
+			cp_stats.rx_over_run) ||
+	    nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_RX_CRC_ERR,
+			cp_stats.rx_crc_err)) {
+		ath12k_err(ar->ab, "nla put failure: radio CP stats\n");
+		nla_nest_cancel(vendor_event, attr);
+		return -EINVAL;
+	}
+
+	nla_nest_end(vendor_event, attr);
+
+	return 0;
 }
 
 static struct ath12k_vif *ath12k_get_ahvif_from_wdev(struct wireless_dev *wdev)
@@ -6661,12 +6905,12 @@ static int ath12k_prepare_vif_vendor_event(struct sk_buff *vendor_event,
 					   struct ath12k_telemetry_command *cmd)
 {
 	struct ath12k_telemetry_dp_vif *telemetry_vif;
-	struct ath12k *ar = &ahvif->ah->radio[0];
-	struct nlattr *attr;
-	struct ath12k_htt_tx_stats *htt_tx_stats;
-	struct ath12k_rx_peer_stats *rx_mon_stats;
 	struct ath12k_dp_proto_stats_peer *peer_proto;
 	struct ath12k_dp_proto_stats_vif *vif_proto;
+	struct ath12k_rx_peer_stats *rx_mon_stats;
+	struct ath12k_htt_tx_stats *htt_tx_stats;
+	struct ath12k *ar = &ahvif->ah->radio[0];
+	struct nlattr *attr;
 	u8 index;
 	int ret = -EINVAL;
 
@@ -6974,6 +7218,8 @@ static int ath12k_prepare_radio_vendor_event(struct sk_buff *vendor_event,
 	struct ath12k_dp_aggr_pdev_tid_stats *flat_tid_stats;
 	struct nlattr *attr;
 	int ret = -EINVAL;
+	u32 dp_tx_failed = 0;
+	int ring;
 
 	/* TID stats */
 	if (cmd->feat.feat_tid) {
@@ -7029,6 +7275,21 @@ static int ath12k_prepare_radio_vendor_event(struct sk_buff *vendor_event,
 	telemetry_radio->aggr_pdev_stats.link_peer_stats.rx_stats = rx_mon_stats;
 
 	ath12k_dp_get_pdev_stats(dp_pdev, telemetry_radio);
+
+	/* Compute total TX failures from aggregated pdev stats (includes
+	 * both live and deleted peer stats).
+	 */
+	for (ring = 0; ring < DP_TCL_NUM_RING_MAX; ring++)
+		dp_tx_failed +=
+			telemetry_radio->aggr_pdev_stats.peer_stats.tx[ring].tx_failed;
+
+	/* Fill radio CP stats (pdev-level control path stats) */
+	if ((cmd->feat.feat_tx || cmd->feat.feat_rx) &&
+	    ath12k_fill_radio_cp_stats(telemetry_radio, cmd, vendor_event, ar,
+				       dp_tx_failed)) {
+		ath12k_err(ab, "Error filling radio CP stats");
+		goto out;
+	}
 
 	if (cmd->feat.feat_rx) {
 		attr = nla_nest_start(vendor_event,

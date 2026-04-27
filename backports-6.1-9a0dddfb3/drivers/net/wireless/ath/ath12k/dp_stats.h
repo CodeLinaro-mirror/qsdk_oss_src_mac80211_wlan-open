@@ -654,6 +654,8 @@ struct ath12k_dp_link_peer_stats {
 	u32 rx_retries;
 	int last_ack_rssi;
 	struct ewma_avg_ack_rssi avg_ack_rssi;
+	/* BAR frame counter: always maintained, independent of extended RX stats mode */
+	u32 num_bar;
 };
 
 struct ath12k_dp_peer_rx_stats {
@@ -892,6 +894,19 @@ struct ath12k_telemetry_dp_vif {
 struct ath12k_telemetry_dp_radio {
 	bool is_extended;
 	struct ath12k_dp_aggr_pdev_stats aggr_pdev_stats;
+};
+
+/* Radio Control Path Stats - populated by ath12k_dp_get_radio_cp_stats() */
+struct ath12k_radio_cp_stats {
+	u32 tx_failed;
+	u32 tx_rts_success;
+	u32 tx_rts_fail;
+	u32 rx_mgmt;
+	u32 rx_ctrl;
+	u32 rx_decrypt_err;
+	u32 rx_mic_err;
+	u32 rx_over_run;
+	u32 rx_crc_err;
 };
 
 /* Telemetry Device Stats */

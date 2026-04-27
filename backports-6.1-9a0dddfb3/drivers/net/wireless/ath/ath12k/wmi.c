@@ -11278,6 +11278,75 @@ ath12k_update_bcast_ttlm_params(struct ath12k_base *ab,
 	}
 }
 
+static void ath12k_update_assoc_fail_stats(struct ath12k *ar,
+					   struct ieee80211_hdr *hdr,
+					   struct sk_buff *skb)
+{
+	struct ieee80211_mgmt *mgmt;
+	const u8 *ie_start, *rsnie, *wpaie, *rates_ie;
+	struct ath12k_mgmt_frame_stats *mgmt_stats;
+	struct ath12k_link_vif *arvif;
+	bool found = false;
+	u16 capab_info;
+	size_t ie_len;
+
+	/* Validate skb before any processing */
+	if (!skb || !skb->data ||
+	    skb->len < offsetof(struct ieee80211_mgmt, u.assoc_req.variable))
+		return;
+
+	mgmt = (struct ieee80211_mgmt *)skb->data;
+
+	/* Validate and compute the IE region from the skb */
+	ie_start = mgmt->u.assoc_req.variable;
+	if ((u8 *)ie_start >= skb->data + skb->len)
+		return;
+
+	ie_len = (skb->data + skb->len) - ie_start;
+	if (ie_len > skb->len || ie_len > IEEE80211_MAX_DATA_LEN)
+		return;
+
+	rsnie    = cfg80211_find_ie(WLAN_EID_RSN, ie_start, ie_len);
+	wpaie    = cfg80211_find_vendor_ie(WLAN_OUI_MICROSOFT,
+					   WLAN_OUI_TYPE_MICROSOFT_WPA,
+					   ie_start, ie_len);
+	rates_ie = cfg80211_find_ie(WLAN_EID_SUPP_RATES, ie_start, ie_len);
+	capab_info = le16_to_cpu(mgmt->u.assoc_req.capab_info);
+
+	spin_lock_bh(&ar->data_lock);
+
+	list_for_each_entry(arvif, &ar->arvifs, list) {
+		if (ether_addr_equal(arvif->bssid, hdr->addr3)) {
+			found = true;
+			break;
+		}
+	}
+
+	if (!found) {
+		spin_unlock_bh(&ar->data_lock);
+		return;
+	}
+
+	mgmt_stats = &arvif->ahvif->mgmt_stats;
+
+	/* Check for bad WPAIE: AP requires security but STA has no RSN/WPA IE */
+	if ((arvif->rsnie_present || arvif->wpaie_present) && !rsnie && !wpaie)
+		mgmt_stats->rx_assoc_bad_wpaie++;
+
+	/* Check for no rate match: STA has no Supported Rates IE */
+	if (!rates_ie)
+		mgmt_stats->rx_assoc_no_rate_match++;
+
+	/* Check for capability mismatch:
+	 * AP requires privacy but STA doesn't advertise it.
+	 */
+	if ((arvif->rsnie_present || arvif->wpaie_present) &&
+	    !(capab_info & WLAN_CAPABILITY_PRIVACY))
+		mgmt_stats->rx_assoc_cap_mismatch++;
+
+	spin_unlock_bh(&ar->data_lock);
+}
+
 static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	struct ath12k_wmi_mgmt_rx_arg rx_ev = {0};
@@ -11299,6 +11368,7 @@ static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 	struct ieee80211_sta *sta;
 	struct ath12k_sta *ahsta;
 	s8 rssi;
+	struct ath12k_link_vif *arvif_iter;
 
 	rx_ev.num_link_removal_info = 0;
 	if (ath12k_pull_mgmt_rx_params_tlv(ab, skb, &rx_ev) != 0) {
@@ -11372,6 +11442,10 @@ static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 		ath12k_dbg_level(ar->ab, ATH12K_DBG_MLME, ATH12K_DBG_L0,
 				 "Received %s frame from STA %pM\n",
 				 mgmt_frame_name[frm_stype], hdr->addr2);
+	/* Track assoc request failure stats (bad WPAIE, no rate match, cap mismatch) */
+	if (ieee80211_is_assoc_req(hdr->frame_control) &&
+	    skb->len >= offsetof(struct ieee80211_mgmt, u.assoc_req.variable))
+		ath12k_update_assoc_fail_stats(ar, hdr, skb);
 
 	dp = ath12k_ab_to_dp(ab);
 	spin_lock_bh(&dp->dp_lock);
@@ -11381,6 +11455,47 @@ static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 		peer = ath12k_dp_link_peer_find_by_addr(dp, hdr->addr3);
 	if (!peer) {
 		spin_unlock_bh(&dp->dp_lock);
+		/* 802.11 Probe Request address fields (ToDS=0, FromDS=0):
+		 * addr1 = DA (Destination Address) - ff:ff:ff:ff:ff:ff for broadcast
+		 * addr2 = SA/TA (Source/Transmitter - STA MAC address)
+		 * addr3 = BSSID - ff:ff:ff:ff:ff:ff for wildcard (broadcast probe),
+		 *                  specific AP MAC for directed (unicast) probe.
+		 * Use addr3 (BSSID) to classify BC vs UC, not addr1 (DA).
+		 */
+		if (ieee80211_is_probe_req(hdr->frame_control)) {
+			if (is_broadcast_ether_addr(hdr->addr3)) {
+				/* Count broadcast probe requests at radio level.
+				 * Avoids O(n) VAP iteration on every broadcast
+				 * probe in high-density (16+ VAP) environments.
+				 */
+				spin_lock_bh(&ar->data_lock);
+				ar->dp.stats.telemetry_stats.rx_probe_req_bc++;
+				spin_unlock_bh(&ar->data_lock);
+			} else {
+				/* Count directed (unicast) probe requests
+				 * from unassociated stations for the matching AP vif.
+				 * addr3 = BSSID in Probe Request.
+				 * ar->data_lock serialises all ar->arvifs list
+				 * modifications, so plain list_for_each_entry is
+				 * correct here; rcu_read_lock() is not needed.
+				 */
+				spin_lock_bh(&ar->data_lock);
+				list_for_each_entry(arvif_iter, &ar->arvifs, list) {
+					if (arvif_iter->ahvif->vdev_type !=
+					    WMI_VDEV_TYPE_AP)
+						continue;
+					if (!ether_addr_equal
+					    (arvif_iter->bssid, hdr->addr3))
+						continue;
+					mgmt_stats = &arvif_iter->ahvif->mgmt_stats;
+					mgmt_stats->rx_cnt
+						[QCA_VENDOR_MGMT_STATS_PROBE_REQ]++;
+					mgmt_stats->aggr_rx_mgmt++;
+					break;
+				}
+				spin_unlock_bh(&ar->data_lock);
+			}
+		}
 		goto skip_mgmt_stats;
 	}
 
@@ -14292,6 +14407,82 @@ static int ath12k_wmi_wow_wakeup_host_parse(struct ath12k_base *ab,
 	}
 
 	return 0;
+}
+
+/**
+ * ath12k_wmi_event_mib_stats() - Handle WMI_UPDATE_WHAL_MIB_STATS_EVENTID
+ * @ab: ath12k base structure
+ * @skb: received skb containing the MIB stats event
+ *
+ * Parses the WMI MIB stats event sent periodically by firmware and stores
+ * the fcs_bad counter into ar->dp.stats.telemetry_stats.rx_crc_err for
+ * each pdev.  The fcs_bad field counts FCS-errored frames at the radio
+ * (pdev) level and is used to populate the "CRC Error" telemetry stat.
+ */
+static void ath12k_wmi_event_mib_stats(struct ath12k_base *ab, struct sk_buff *skb)
+{
+	const struct ath12k_wmi_mib_stats_event *ev;
+	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
+	const void **tb;
+	struct ath12k *ar = NULL;
+	u32 fcs_bad;
+	int i;
+
+	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
+	if (IS_ERR(tb)) {
+		ath12k_warn(ab, "failed to parse MIB stats event TLV: %ld\n",
+			    PTR_ERR(tb));
+		return;
+	}
+
+	ev = tb[WMI_TAG_UPDATE_WHAL_MIB_STATS_EVENT];
+	if (!ev) {
+		ath12k_warn(ab, "MIB stats event TLV tag not found\n");
+		kfree(tb);
+		return;
+	}
+
+	/* Validate TLV payload length against the parsed structure size,
+	 * not the raw skb length which includes headers and other TLVs.
+	 */
+	if (le32_get_bits(ev->tlv_header, WMI_TLV_LEN) <
+	    (sizeof(*ev) - TLV_HDR_SIZE)) {
+		ath12k_warn(ab, "MIB stats event TLV too small: %u bytes\n",
+			    le32_get_bits(ev->tlv_header, WMI_TLV_LEN));
+		kfree(tb);
+		return;
+	}
+
+	/* The MIB stats event is per-pdev: identify the originating pdev
+	 * from the WMI endpoint ID carried in the skb control block.
+	 */
+	for (i = 0; i < ab->htc.wmi_ep_count; i++) {
+		if (ab->wmi_ab.wmi[i].eid == skb_cb->u.eid) {
+			ar = ab->pdevs[i].ar;
+			break;
+		}
+	}
+
+	if (!ar) {
+		ath12k_warn(ab, "MIB stats event: no ar found for eid %u\n",
+			    skb_cb->u.eid);
+		kfree(tb);
+		return;
+	}
+
+	fcs_bad = le32_to_cpu(ev->fcs_bad);
+
+	/* Check for potential overflow before adding */
+	if (ar->dp.stats.telemetry_stats.rx_crc_err > U32_MAX - fcs_bad) {
+		ath12k_warn(ab,
+			    "rx_crc_err counter overflow prevented for pdev %d\n", i);
+		/* Saturate at maximum value instead of wrapping */
+		ar->dp.stats.telemetry_stats.rx_crc_err = U32_MAX;
+	} else {
+		ar->dp.stats.telemetry_stats.rx_crc_err += fcs_bad;
+	}
+
+	kfree(tb);
 }
 
 static void ath12k_wmi_event_wow_wakeup_host(struct ath12k_base *ab, struct sk_buff *skb)
@@ -17631,6 +17822,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 		break;
 	case WMI_DIAG_EVENTID:
 		ath12k_wmi_diag_event(ab, skb);
+		break;
+	case WMI_UPDATE_WHAL_MIB_STATS_EVENTID:
+		ath12k_wmi_event_mib_stats(ab, skb);
 		break;
 	case WMI_WOW_WAKEUP_HOST_EVENTID:
 		ath12k_wmi_event_wow_wakeup_host(ab, skb);
