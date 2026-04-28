@@ -4251,11 +4251,14 @@ struct ath12k_htt_t2h_soc_txrx_stats_common_tlv {
 #define ATH12K_HTT_AST_MEC_INFO			BIT(14)
 #define ATH12K_HTT_AST_INTRA_BSS_INFO		BIT(15)
 
+#define ATH12K_HTT_AST_INFO1_RX_MON_OVERRIDE_STA	BIT(1)
+
 struct ath12k_htt_ast_entry_tlv {
 	__le32 sw_peer_id;
 	__le32 ast_index;
 	struct htt_mac_addr mac_addr;
 	__le32 info;
+	__le32 info1;
 } __packed;
 
 enum ath12k_htt_stats_direction {
