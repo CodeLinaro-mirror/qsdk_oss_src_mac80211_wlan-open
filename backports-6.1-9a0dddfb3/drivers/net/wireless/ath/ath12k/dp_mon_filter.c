@@ -316,6 +316,9 @@ void ath12k_dp_mon_rx_prepare_filter(struct ath12k_dp *dp,
 			continue;
 
 		rx_mon_filter->valid = true;
+		if (mode == DP_MON_FILTER_MONITOR_MODE)
+			dst_tlv_filter->is_monitor_mode = true;
+
 		dst_tlv_filter->offset_valid |= src_tlv_filter->offset_valid;
 		dst_tlv_filter->rx_filter |= src_tlv_filter->rx_filter;
 		dst_tlv_filter->drop_threshold_valid |=
@@ -1217,6 +1220,9 @@ void ath12k_dp_htt_rx_filter_rxmon_cfg(void *ptr,
 	cmd->info0 |=
 		le32_encode_bits(!tlv_filter->rxmon_disable,
 				 HTT_RX_RING_SELECTION_CFG_CMD_INFO0_PKT_TYPE_EN_DATA);
+	cmd->info0 |=
+		le32_encode_bits(tlv_filter->is_monitor_mode,
+				 HTT_RX_RING_SELECTION_CFG_CMD_INFO0_MON_MODE);
 }
 EXPORT_SYMBOL(ath12k_dp_htt_rx_filter_rxmon_cfg);
 
