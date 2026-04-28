@@ -947,7 +947,9 @@ void ath12k_wifi7_dp_tx_stats_post_enqueue(struct ath12k_pdev_dp *dp_pdev,
 					   struct ath12k_dp_vif *dp_vif,
 					   struct sk_buff *skb,
 					   struct ath12k_dp_tx_msdu_info *msdu_info,
-					   u8 ring_id, u32 len, bool is_mcast)
+					   u8 ring_id, u32 len,
+					   struct ath12k_tx_desc_info *tx_desc,
+					   bool is_mcast)
 {
 	struct ath12k_vif *ahvif = NULL;
 	enum hal_tcl_desc_type type;
@@ -1025,9 +1027,15 @@ void ath12k_wifi7_dp_tx_stats_post_enqueue(struct ath12k_pdev_dp *dp_pdev,
 			DP_STATS_INC(dp_vif, tx_i.desc_type[type], 1, ring_id);
 		}
 
-		if (is_mcast)
+		if (is_mcast) {
 			DP_STATS_INC_PKT(dp_vif, tx_i.mcast, 1, skb->len,
 					 ring_id);
+			eth = (struct ethhdr *)skb->data;
+			if (eth && is_broadcast_ether_addr(eth->h_dest))
+				tx_desc->flags |= DP_TX_DESC_FLAG_BCAST;
+			else
+				tx_desc->flags |= DP_TX_DESC_FLAG_MCAST;
+		}
 	}
 
 	/* Update Protocol stats */
@@ -1285,6 +1293,10 @@ void ath12k_wifi7_dp_tx_hal_tcl_desc_update(struct hal_tcl_data_cmd *hal_tcl_des
  * @arsta: Link station pointer (optional, for QoS tag updates)
  * @skb: Socket buffer to enqueue
  * @qos_nw_delay: QoS network delay value for SDWF ingress statistics
+ * @tx_desc: Tx Software Descriptor
+ * @dp_vif: DP mld virtual interface
+ * @feat_bypass: Feature Bypass flag for fast path statistics
+ * @is_mcast: Flag for Multicast packet to increment stats
  *
  * Acquires the TCL ring, writes the TCL data descriptor, applies QoS
  * descriptor updates for SDWF/SCS-tagged frames, and releases the ring.
@@ -1301,7 +1313,10 @@ int ath12k_wifi7_dp_tx_hw_enqueue(struct ath12k_dp_link_vif *dp_link_vif,
 				  u8 ring_id,
 				  struct ath12k_link_sta *arsta,
 				  struct sk_buff *skb,
-				  u32 qos_nw_delay)
+				  u32 qos_nw_delay,
+				  struct ath12k_tx_desc_info *tx_desc,
+				  struct ath12k_dp_vif *dp_vif,
+				  bool feat_bypass, bool is_mcast)
 {
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_hal *hal = dp->hal;
@@ -1309,6 +1324,7 @@ int ath12k_wifi7_dp_tx_hw_enqueue(struct ath12k_dp_link_vif *dp_link_vif,
 	u8 hal_ring_id = tx_ring->tcl_data_ring.ring_id;
 	struct hal_srng *tcl_ring = &hal->srng_list[hal_ring_id];
 	struct hal_tcl_data_cmd *hal_tcl_desc;
+	u32 len = skb->len;
 	u8 qos_tag;
 
 	msdu_info->rbm_id = hal->tcl_to_cmp_rbm_map[ring_id].rbm_id;
@@ -1344,6 +1360,17 @@ int ath12k_wifi7_dp_tx_hw_enqueue(struct ath12k_dp_link_vif *dp_link_vif,
 	}
 
 	ath12k_dmb();
+
+	/* Update success statistics */
+	if (likely(feat_bypass)) {
+		DP_STATS_INC_PKT(dp_vif, tx_i.enque_to_hw_fast, 1, len, ring_id);
+		dp_pdev->dp->device_stats.tx_fast_unicast[ring_id]++;
+	} else {
+		ath12k_wifi7_dp_tx_stats_post_enqueue(dp_pdev, dp_vif, skb,
+						      msdu_info, ring_id,
+						      len, tx_desc, is_mcast);
+	}
+
 	ath12k_hal_srng_access_umac_src_ring_end_nolock_fast(tcl_ring);
 	return 0;
 }
@@ -1355,7 +1382,10 @@ int ath12k_wifi7_dp_tx_hw_enqueue(struct ath12k_dp_link_vif *dp_link_vif,
 				  u8 ring_id,
 				  struct ath12k_link_sta *arsta,
 				  struct sk_buff *skb,
-				  u32 qos_nw_delay)
+				  u32 qos_nw_delay,
+				  struct ath12k_tx_desc_info *tx_desc,
+				  struct ath12k_dp_vif *dp_vif,
+				  bool feat_bypass, bool is_mcast)
 {
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_hal *hal = dp->hal;
@@ -1364,6 +1394,7 @@ int ath12k_wifi7_dp_tx_hw_enqueue(struct ath12k_dp_link_vif *dp_link_vif,
 	struct hal_srng *tcl_ring = &hal->srng_list[hal_ring_id];
 	struct hal_tcl_data_cmd *hal_tcl_desc;
 	struct hal_tcl_data_cmd tcl_desc = {0};
+	u32 len = skb->len;
 	u8 qos_tag;
 
 	msdu_info->rbm_id = hal->tcl_to_cmp_rbm_map[ring_id].rbm_id;
@@ -1400,6 +1431,16 @@ int ath12k_wifi7_dp_tx_hw_enqueue(struct ath12k_dp_link_vif *dp_link_vif,
 
 	memcpy(hal_tcl_desc, &tcl_desc, sizeof(tcl_desc));
 	ath12k_dmb();
+
+	/* Update success statistics */
+	if (likely(feat_bypass)) {
+		DP_STATS_INC_PKT(dp_vif, tx_i.enque_to_hw_fast, 1, len, ring_id);
+		dp_pdev->dp->device_stats.tx_fast_unicast[ring_id]++;
+	} else {
+		ath12k_wifi7_dp_tx_stats_post_enqueue(dp_pdev, dp_vif, skb,
+						      msdu_info, ring_id,
+						      len, tx_desc, is_mcast);
+	}
 	ath12k_hal_srng_access_umac_src_ring_end_nolock_fast(tcl_ring);
 	return 0;
 }
@@ -2355,20 +2396,11 @@ skip_assign_buffer:
 
 	/* Enqueue to hardware */
 	ret = ath12k_wifi7_dp_tx_hw_enqueue(dp_link_vif, dp_pdev, &msdu_info, ring_id,
-					    arsta, skb, qos_nw_delay);
+					    arsta, skb, qos_nw_delay,
+					    tx_desc, dp_vif, feat_bypass, false);
 	if (ret) {
 		drop_reason = DP_TX_ENQ_DROP_HW_ENQ_FAIL;
 		goto fail;
-	}
-
-	/* Update success statistics */
-	if (likely(feat_bypass)) {
-		DP_STATS_INC_PKT(dp_vif, tx_i.enque_to_hw_fast, 1, len, ring_id);
-		dp_pdev->dp->device_stats.tx_fast_unicast[ring_id]++;
-	} else {
-		ath12k_wifi7_dp_tx_stats_post_enqueue(dp_pdev, dp_vif, skb,
-						      &msdu_info, ring_id,
-						      len, false);
 	}
 	atomic_inc(&dp_pdev->num_tx_pending);
 	return;
@@ -2409,6 +2441,7 @@ ath12k_wifi7_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 	enum ath12k_dp_tx_enq_error drop_reason;
 	u32 qos_nw_delay = msdu_info->qos_nw_delay;
 	int ret;
+	bool is_mcast = true;
 
 	tx_desc = ath12k_dp_tx_assign_buffer(dp->dp_hw_grp,
 					     dp->dp_hw_grp->tx_desc_free_list,
@@ -2449,26 +2482,13 @@ ath12k_wifi7_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 
 	/* Enqueue to hardware */
 	ret = ath12k_wifi7_dp_tx_hw_enqueue(dp_link_vif, dp_pdev, msdu_info,
-					    ring_id, arsta, skb, qos_nw_delay);
+					    ring_id, arsta, skb, qos_nw_delay,
+					    tx_desc, &ahvif->dp_vif, false,
+					    is_mcast);
 	if (ret < 0) {
 		drop_reason = DP_TX_ENQ_DROP_TCL_DESC_NA;
 		goto fail;
 	}
-
-	if (ath12k_dp_debug_stats_enabled(dp_pdev)) {
-		struct ethhdr *eth = (struct ethhdr *)skb->data;
-
-		if (eth && is_broadcast_ether_addr(eth->h_dest))
-			tx_desc->flags |= DP_TX_DESC_FLAG_BCAST;
-		else
-			tx_desc->flags |= DP_TX_DESC_FLAG_MCAST;
-	}
-
-	/* Update Success Statistics */
-	ath12k_wifi7_dp_tx_stats_post_enqueue(dp_pdev, &ahvif->dp_vif, skb,
-					      msdu_info, ring_id, len,
-					      true);
-
 	return DP_TX_ENQ_SUCCESS;
 
 fail:
