@@ -215,6 +215,7 @@ struct ath12k_qmi {
 	u32 ext_fw_bin_download_bitmap;
 	u8 aux_support;
 	u8 mcss_support;
+	u8 dynamic_ddr_support;
 };
 
 struct ath12k_qmi_m3_dump_upload_req_data {
@@ -372,6 +373,8 @@ struct qmi_wlanfw_host_cap_req_msg_v01 {
 	u64 feature_list;
 	u8 fw_cfg_support_valid;
 	u8 fw_cfg_support;
+	u8 dynamic_mem_support_valid;
+	u8 dynamic_mem_support;
 };
 
 struct qmi_wlanfw_host_cap_resp_msg_v01 {
@@ -400,6 +403,8 @@ struct qmi_wlanfw_phy_cap_resp_msg_v01 {
 	u8 aux_support;
 	u8 mcss_support_valid;
 	u8 mcss_support;
+	u8 dynamic_ddr_support_valid;
+	u8 dynamic_ddr_support;
 };
 
 #define QMI_WLANFW_IND_REGISTER_REQ_MSG_V01_MAX_LEN		54
