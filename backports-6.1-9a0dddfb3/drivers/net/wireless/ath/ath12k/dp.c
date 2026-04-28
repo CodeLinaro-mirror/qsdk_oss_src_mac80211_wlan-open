@@ -2003,6 +2003,12 @@ void ath12k_dp_cmn_device_deinit(struct ath12k_dp *dp)
 	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &dp->ab->dev_flags))
 		return;
 
+	if (test_bit(ATH12K_FLAG_RECOVERY, &dp->ab->dev_flags) &&
+	    dp->ab->soc_reset_reason == ATH12K_Q6_BCR_RESET) {
+		ath12k_info(dp->ab, "Skip DP deinit during Q6 BCR RESET\n");
+		return;
+	}
+
 	ath12k_dp_arch_op_mlo_deinit(dp);
 	ath12k_dp_arch_op_device_deinit(dp);
 
@@ -2012,6 +2018,12 @@ void ath12k_dp_cmn_device_deinit(struct ath12k_dp *dp)
 int ath12k_dp_cmn_device_init(struct ath12k_dp *dp)
 {
 	int ret;
+
+	if (test_bit(ATH12K_FLAG_RECOVERY, &dp->ab->dev_flags) &&
+	    dp->ab->soc_reset_reason == ATH12K_Q6_BCR_RESET) {
+		ath12k_info(dp->ab, "Skip DP re-init during Q6 BCR RESET\n");
+		return 0;
+	}
 
 	ret = ath12k_dp_arch_op_device_init(dp);
 	if (ret)

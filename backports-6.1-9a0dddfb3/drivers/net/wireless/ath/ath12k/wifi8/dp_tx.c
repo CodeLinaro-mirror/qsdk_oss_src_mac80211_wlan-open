@@ -1207,7 +1207,8 @@ ath12k_wifi8_dp_tx_fast(struct ath12k_pdev_dp *dp_pdev,
 
 	DP_STATS_INC_PKT(dp_vif, tx_i.recv_from_stack, 1, skb->len, ring_id);
 
-	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags))
+	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags) &&
+	    ab->soc_reset_reason != ATH12K_Q6_BCR_RESET)
 		return DP_TX_ENQ_DROP_CRASH_FLUSH;
 
 	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags)) {
@@ -1327,7 +1328,8 @@ ath12k_wifi8_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 
 	DP_STATS_INC_PKT(dp_vif, tx_i.recv_from_stack, 1, skb->len, ring_id);
 
-	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags))
+	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags) &&
+	    ab->soc_reset_reason != ATH12K_Q6_BCR_RESET)
 		return DP_TX_ENQ_DROP_CRASH_FLUSH;
 
 	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags)) {
