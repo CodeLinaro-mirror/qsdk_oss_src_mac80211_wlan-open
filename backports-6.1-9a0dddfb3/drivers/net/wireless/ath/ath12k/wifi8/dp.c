@@ -629,12 +629,6 @@ static int ath12k_wifi8_dp_op_mlo_init(struct ath12k_dp *dp)
 		return ret;
 	}
 
-	ret = dp->ab->hw_params->hw_ops->rxdma_ring_sel_config(dp->ab);
-	if (ret) {
-		ath12k_warn(dp->ab, "failed to setup rxdma ring selection config\n");
-		return ret;
-	}
-
 	return 0;
 }
 

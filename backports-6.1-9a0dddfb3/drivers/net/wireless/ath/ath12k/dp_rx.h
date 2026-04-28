@@ -317,4 +317,5 @@ void ath12k_dp_rx_classify_mscs(struct ath12k_base *ab,
 void ath12k_dp_rx_peer_tid_ba_config(struct ath12k_dp *dp, u8 tid, u32 *ba_win_size,
 				     u16 *ssn);
 bool ath12k_dp_rx_peer_tid_skip_pn_replay(struct ath12k_dp *dp, u8 tid);
+int ath12k_dp_rxdma_ring_sel_config(struct ath12k_base *ab);
 #endif /* ATH12K_DP_RX_H */

@@ -4330,12 +4330,6 @@ int ath12k_wifi7_dp_rx_htt_setup(struct ath12k_base *ab)
 		return ret;
 	}
 
-	ret = ab->hw_params->hw_ops->rxdma_ring_sel_config(ab);
-	if (ret) {
-		ath12k_warn(ab, "failed to setup rxdma ring selection config\n");
-		return ret;
-	}
-
 	return 0;
 }
 
