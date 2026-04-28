@@ -304,7 +304,7 @@ void ath12k_wifi8_hal_rx_desc_get_fse_info_qcn9625(struct hal_rx_desc *desc,
 						   struct rx_mpdu_desc_info
 						   *rx_mpdu_info)
 {
-	__le32 flow_idx_info = desc->u.qcn9625_compact.msdu_end.info7;
+	__le32 flow_idx_info = desc->u.qcn9625_compact.msdu_end.info8;
 
 	rx_mpdu_info->flow_idx_timeout =
 		le32_get_bits(flow_idx_info,
