@@ -7910,8 +7910,6 @@ get_puncture_type_and_masks(u16 bw, u16 puncture_bitmap,
 	default:
 		punc_mask = 0;
 		num_valid_bits = 0;
-		ath12k_dbg_level(NULL, ATH12K_DBG_MAC, ATH12K_DBG_L2,
-				 "Bandwidth input invalid");
 		return ATH12K_PUNCTURE_TYPE_INVALID;
 	}
 
@@ -8191,7 +8189,7 @@ ath12_mac_reg_get_6g_min_psd(struct ath12k *ar, u16 freq, u16 cfreq,
 		}
 	}
 	*min_psd /= ATH12K_EIRP_PWR_SCALE;
-	ath12k_dbg(ar->ab, ATH12K_DBG_REG, "freq %u cfreq %u pp %u bw %u min_psd %u\n",
+	ath12k_dbg(ar->ab, ATH12K_DBG_REG, "freq %u cfreq %u pp %u bw %u min_psd %d\n",
 		   freq, cfreq, puncture_bitmap, bw, *min_psd);
 }
 
