@@ -761,3 +761,171 @@ bool ath12k_dp_tx_dma_map(struct ath12k_dp *dp,
 }
 EXPORT_SYMBOL(ath12k_dp_tx_dma_map);
 #endif
+
+enum hal_tcl_encap_type
+ath12k_dp_tx_get_encap_type(struct ath12k_base *ab, struct sk_buff *skb)
+{
+	struct ieee80211_tx_info *tx_info = IEEE80211_SKB_CB(skb);
+
+	if (test_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ab->ag->flags))
+		return HAL_TCL_ENCAP_TYPE_RAW;
+
+	if (tx_info->flags & IEEE80211_TX_CTL_HW_80211_ENCAP)
+		return HAL_TCL_ENCAP_TYPE_ETHERNET;
+
+	return HAL_TCL_ENCAP_TYPE_NATIVE_WIFI;
+}
+EXPORT_SYMBOL(ath12k_dp_tx_get_encap_type);
+
+void ath12k_dp_tx_drop_tid_stats(struct ath12k_dp_vif *dp_vif,
+				 enum ath12k_dp_tx_enq_error drop_reason,
+				 struct sk_buff *skb, u32 len)
+{
+	struct ath12k_vif *ahvif = container_of(dp_vif, struct ath12k_vif, dp_vif);
+	enum ath12k_tx_drop_reasons drop;
+	u8 tid;
+
+	if (!skb)
+		return;
+
+	tid = skb->priority & IEEE80211_QOS_CTL_TID_MASK;
+
+	switch (drop_reason) {
+	case DP_TX_ENQ_DROP_SW_DESC_NA:
+		drop = ATH_TX_BUF_ERR;
+		break;
+	case DP_TX_ENQ_DROP_TCL_DESC_NA:
+		drop = ATH_TX_DESC_NA_ERR;
+		break;
+	default:
+		drop = ATH_TX_MISC_FAIL;
+	}
+
+	ath12k_tid_tx_drop_stats(ahvif, tid, len, drop);
+}
+EXPORT_SYMBOL(ath12k_dp_tx_drop_tid_stats);
+
+void ath12k_dp_tx_stats_update_pre_enqueue(struct ath12k_pdev_dp *dp_pdev,
+					   struct ath12k_dp_vif *dp_vif,
+					   struct sk_buff *skb,
+					   u8 ring_id, u32 len)
+{
+	/* --- STAGE 1: FAST PATH(Basic Stats) --- */
+	DP_STATS_INC_PKT(dp_vif, tx_i.recv_from_stack, 1, len, ring_id);
+
+	/* --- STAGE 2: GATEKEEPER (Global Knob) --- */
+	if (likely(!ath12k_dp_feature_enabled(dp_vif, DP_FEATURE_STATS)))
+		return;
+
+	/* --- STAGE 3: SLOW PATH (Debug Stats) --- */
+	if (ath12k_proto_stats_enabled(dp_pdev)) {
+		ath12k_dp_update_proto_stats_vif(dp_vif, 0, skb,
+						 TX_RECV_FROM_STACK, ring_id);
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_tx_stats_update_pre_enqueue);
+
+void ath12k_dp_tx_stats_post_enqueue(struct ath12k_dp *dp,
+				     struct ath12k_pdev_dp *dp_pdev,
+				     struct ath12k_dp_vif *dp_vif,
+				     struct sk_buff *skb,
+				     struct ath12k_dp_tx_msdu_info *msdu_info,
+				     u8 ring_id, u32 len, bool is_mcast)
+{
+	struct ath12k_vif *ahvif = NULL;
+	enum hal_tcl_desc_type type;
+	enum hal_tcl_encap_type encap_type;
+	enum hal_encrypt_type encrypt_type;
+	struct ethhdr *eth;
+	struct ieee80211_hdr *hdr = NULL;
+	struct ath12k_skb_cb *skb_cb = NULL;
+	struct ath12k_base *ab = dp->ab;
+	size_t hdrlen;
+	u8 tid = 0, subtype = 0;
+
+	DP_STATS_INC_PKT(dp_vif, tx_i.enque_to_hw, 1, len, ring_id);
+
+	if (is_mcast && !msdu_info->me_convert)
+		dp->device_stats.tx_mcast[ring_id]++;
+	else
+		dp->device_stats.tx_unicast[ring_id]++;
+
+	/* --- STAGE 2: GATEKEEPER (Global Knob) */
+	if (!ath12k_dp_feature_enabled(dp_vif, DP_FEATURE_STATS))
+		return;
+
+	/* --- STAGE 3: SLOW PATH (Debug Stats) --- */
+
+	/* Update EAPOL stats */
+	encap_type = ath12k_dp_tx_get_encap_type(ab, skb);
+
+	if (skb->protocol == cpu_to_be16(ETH_P_PAE)) {
+		dp->device_stats.tx_eapol[ring_id]++;
+		if (encap_type == HAL_TCL_ENCAP_TYPE_NATIVE_WIFI) {
+			hdr = (struct ieee80211_hdr *)skb->data;
+			hdrlen = ieee80211_get_hdrlen_from_skb(skb);
+			subtype = ath12k_dp_get_eapol_subtype
+				(skb->data + hdrlen + LLC_SNAP_HDR_LEN);
+			if (subtype != DP_EAPOL_KEY_TYPE_MAX && subtype > 0) {
+				u8 idx = subtype - 1;
+
+				dp->device_stats.tx_eapol_type[idx][ring_id]++;
+				ath12k_dbg(ab, ATH12K_DBG_EAPOL,
+					   "Transmit %s%d EAPOL frame to STA %pM\n",
+					   subtype <= 4 ? "M" : "G",
+					   subtype <= 4 ? subtype : (subtype - 4),
+					   hdr->addr1);
+			}
+		} else {
+			eth = (struct ethhdr *)skb->data;
+			subtype = ath12k_dp_get_eapol_subtype(skb->data + ETH_HLEN);
+			if (subtype != DP_EAPOL_KEY_TYPE_MAX && subtype > 0) {
+				u8 idx = subtype - 1;
+
+				dp->device_stats.tx_eapol_type[idx][ring_id]++;
+				ath12k_dbg(ab, ATH12K_DBG_EAPOL,
+					   "Transmit %s%d EAPOL frame to STA %pM\n",
+					   subtype <= 4 ? "M" : "G",
+					   subtype <= 4 ? subtype : (subtype - 4),
+					   eth->h_dest);
+			}
+		}
+	}
+
+	/* Update Tx Debug stats */
+	if (ath12k_dp_debug_stats_enabled(dp_pdev)) {
+		skb_cb = ATH12K_SKB_CB(skb);
+		encrypt_type = ath12k_dp_tx_get_encrypt_type(skb_cb->cipher);
+
+		if (encap_type < HAL_TCL_ENCAP_TYPE_MAX)
+			DP_STATS_INC(dp_vif, tx_i.encap_type[encap_type], 1, ring_id);
+
+		if (encrypt_type < HAL_ENCRYPT_TYPE_MAX)
+			DP_STATS_INC(dp_vif, tx_i.encrypt_type[encrypt_type], 1, ring_id);
+
+		if (msdu_info && msdu_info->type < DP_TCL_DESC_TYPE_MAX) {
+			type = msdu_info->type;
+			DP_STATS_INC(dp_vif, tx_i.desc_type[type], 1, ring_id);
+		}
+
+		if (is_mcast)
+			DP_STATS_INC_PKT(dp_vif, tx_i.mcast, 1, skb->len,
+					 ring_id);
+	}
+
+	/* Update Protocol stats */
+	if (ath12k_proto_stats_enabled(dp_pdev)) {
+		ath12k_dp_update_proto_stats_vif(dp_vif, 0, skb,
+						 TX_ENQUEUE_HW,
+						 ring_id);
+	}
+
+	/* Update tid stats */
+	if (ath12k_tid_stats_enabled(dp_pdev)) {
+		ahvif = container_of(dp_vif, struct ath12k_vif, dp_vif);
+		tid = skb->priority & IEEE80211_QOS_CTL_TID_MASK;
+		ath12k_tid_tx_stats(ahvif, tid, skb->len,
+				    ATH_TX_UNICAST_PKTS);
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_tx_stats_post_enqueue);
