@@ -3108,6 +3108,10 @@ enum nl80211_commands {
  *
  * @NL80211_ATTR_LOW_POWER_20MHZ: Enable/disable 20 MHz Low Power mode.
  *
+ * @NL80211_ATTR_BEACON_TX_SYNC_SUPPORT: Flag attribute indicating that HW
+ *	will transmit beacons for all bands at the same time (burst mode) if
+ *	the beacon intervals are the same.
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
@@ -3731,6 +3735,9 @@ enum nl80211_attrs {
 	NL80211_ATTR_HE_MUEDCA_MODE,
 
 	NL80211_ATTR_LOW_POWER_20MHZ,
+
+	NL80211_ATTR_BEACON_TX_SYNC_SUPPORT,
+
 	/* add attributes here, update the policy in nl80211.c */
 
 	__NL80211_ATTR_AFTER_LAST,

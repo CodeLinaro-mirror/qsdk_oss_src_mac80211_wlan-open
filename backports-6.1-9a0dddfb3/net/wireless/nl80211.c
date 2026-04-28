@@ -1151,6 +1151,7 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_DPS_ASSIST] = { .type = NLA_U8 },
 	[NL80211_ATTR_HE_MUEDCA_MODE] = { .type = NLA_U8 },
 	[NL80211_ATTR_LOW_POWER_20MHZ] = { .type = NLA_U8 },
+	[NL80211_ATTR_BEACON_TX_SYNC_SUPPORT] = { .type = NLA_FLAG },
 };
 
 /* policy for the key attributes */
@@ -3740,6 +3741,10 @@ static int nl80211_send_wiphy(struct cfg80211_registered_device *rdev,
 	case 18:
 		if (nl80211_send_6ghz_dev_deployment_type(msg, rdev))
 			goto nla_put_failure;
+
+		if (rdev->wiphy.flags & WIPHY_FLAG_SUPPORTS_BEACON_TX_SYNC)
+			nla_put_flag(msg, NL80211_ATTR_BEACON_TX_SYNC_SUPPORT);
+
 		state->split_start = 0;
 		break;
 	}
