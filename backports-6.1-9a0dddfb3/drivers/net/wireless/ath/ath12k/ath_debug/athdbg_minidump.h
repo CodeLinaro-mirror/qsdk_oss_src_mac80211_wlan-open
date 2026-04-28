@@ -38,7 +38,6 @@ struct athdbg_minidump_info {
 	void *start_addr;
 	struct list_head dump_list;
 	struct list_head dup_list;
-
 };
 
 enum athdbg_minidump_request get_minidump_req(const char *filename);
@@ -95,7 +94,7 @@ static inline void athdbg_do_dump_minidump(struct ath12k_base *ab)
 {
 }
 
-static inline void athdbg_collect_reference_segments(struct ath12k_base *ab, boot collect)
+static inline void athdbg_collect_reference_segments(struct ath12k_base *ab, bool collect)
 {
 }
 
@@ -124,10 +123,6 @@ static inline void athdbg_iterate_minidump_list(void)
 }
 
 static inline void athdbg_clear_minidump_info(void)
-{
-}
-
-void athmem_collect_struct(const char *struct_name)
 {
 }
 #endif
