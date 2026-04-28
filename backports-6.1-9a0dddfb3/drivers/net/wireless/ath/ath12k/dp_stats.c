@@ -557,6 +557,16 @@ s8 ath12k_dp_get_rssi_value(s8 snr,
 	if (snr > rssi_offsets->xlna_bypass_threshold)
 		rssi_val += rssi_offsets->xlna_bypass_offset;
 
+	if (rssi_val > 0) {
+		ath12k_err(NULL, "snr = %d, rssi_comb = %d, ", snr, rssi_comb);
+		ath12k_err(NULL, "rssi_region_offset = %d, avg_nf_dbm = %d, rssi_temp_offset = %d, ",
+			   stats->rssi_region_offset,
+			   rssi_offsets->avg_nf_dbm,
+			   rssi_offsets->rssi_temp_offset);
+		ath12k_err(NULL, "bw_offset = %d, xlna_bypass_offset = %d", bw_offset,
+			   rssi_offsets->xlna_bypass_offset);
+		return 0;
+	}
 	return rssi_val;
 }
 
