@@ -1706,6 +1706,14 @@ void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 		return;
 	}
 
+	if (key) {
+		skb_cb->cipher = key->cipher;
+		skb_cb->flags |= ATH12K_SKB_CIPHER_SET;
+	}
+
+	if (is_eth)
+		skb_cb->flags |= ATH12K_SKB_HW_80211_ENCAP;
+
 	/* TODO once peer clean up changes are done we will optimize below code
 	 * and will avoid using the arvif
 	 */
