@@ -527,7 +527,6 @@ struct ath12k_dp_arch_ops {
 	int (*sdwf_reinject_handler)(struct ath12k_pdev_dp *dp_pdev,
 				     struct ath12k_link_vif *arvif,
 				     struct sk_buff *skb, struct ath12k_link_sta *arsta);
-	int (*dp_tx_ring_setup)(struct ath12k_base *ab);
 	int (*dp_msdu_htt_connect)(struct ath12k_dp *dp);
 	int (*dp_peer_create)(struct ath12k_hw *ah, u8 *addr,
 			      struct ath12k_dp_peer_create_params *params,
