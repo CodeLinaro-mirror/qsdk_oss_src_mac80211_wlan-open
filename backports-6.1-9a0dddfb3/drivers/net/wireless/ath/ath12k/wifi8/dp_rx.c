@@ -4567,8 +4567,10 @@ int ath12k_wifi8_dp_rx_flow_fse_cache_operation(struct ath12k_base *ab,
 						struct hal_flow_tuple_info *tuple_info)
 {
 	struct hal_fse_cmd fse_cmd = { 0 };
-	int ret;
-	u32 chips;
+	int ret, i;
+	u32 chips = 0;
+	u32 chip[] = HAL_FSE_CMD_HDR_INFO0_SEND_TO_CHIP_N;
+	struct ath12k_base *partner_ab;
 
 	if (op_code == DP_FST_CACHE_INVALIDATE_ENTRY) {
 
@@ -4605,11 +4607,12 @@ int ath12k_wifi8_dp_rx_flow_fse_cache_operation(struct ath12k_base *ab,
 		return 0;
 	}
 
-	chips = HAL_FSE_CMD_HDR_INFO0_SEND_TO_CHIP0 |
-		HAL_FSE_CMD_HDR_INFO0_SEND_TO_CHIP1 |
-		HAL_FSE_CMD_HDR_INFO0_SEND_TO_CHIP2 |
-		HAL_FSE_CMD_HDR_INFO0_SEND_TO_CHIP3 |
-		HAL_FSE_CMD_HDR_INFO0_SEND_TO_CHIP4;
+	for (i = 0; i < ab->ag->num_devices; i++) {
+		partner_ab = ab->ag->ab[i];
+		if (!partner_ab || partner_ab->is_bypassed)
+			continue;
+		chips |= chip[partner_ab->device_id];
+	}
 
 	fse_cmd.cmd.info0 = cpu_to_le32(chips);
 
