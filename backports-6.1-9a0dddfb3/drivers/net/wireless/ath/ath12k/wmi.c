@@ -228,6 +228,10 @@ static const struct ath12k_wmi_tlv_policy ath12k_wmi_tlv_policies[] = {
 #ifdef CPTCFG_QCN_EXTN
 	[WMI_TAG_REG_CHAN_PRIORITY] = {
 		.min_len = sizeof(struct ath12k_wmi_reg_chan_priority) },
+	[WMI_TAG_HW_BLACKLIST_CHAN_FIXED_PARAM] = {
+		.min_len = sizeof(struct wmi_hw_blacklist_chan_fixed_param) },
+	[WMI_TAG_HW_BLACKLIST_CHAN_DATA] = {
+		.min_len = sizeof(struct wmi_hw_blacklist_chan_data) },
 #endif
 	[WMI_TAG_MGMT_RX_HDR] = {
 		.min_len = sizeof(struct ath12k_wmi_mgmt_rx_params) },
@@ -6935,6 +6939,9 @@ ath12k_wmi_copy_resource_config(struct ath12k_base *ab,
 			cpu_to_le32(1 <<
 				    WMI_RSRC_CFG_HOST_SIMULATE_RADAR_320_SUPPORTED);
 
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_wmi_set_hw_blocklist_host_service_flag_extn(wmi_cfg, tg_cfg);
+#endif
 	wmi_cfg->ema_max_vap_cnt = cpu_to_le32(tg_cfg->ema_max_vap_cnt);
 	wmi_cfg->ema_max_profile_period = cpu_to_le32(tg_cfg->ema_max_profile_period);
 	wmi_cfg->flags2 |= cpu_to_le32(WMI_RSRC_CFG_FLAGS2_CALC_NEXT_DTIM_COUNT_SET);
@@ -7211,6 +7218,9 @@ int ath12k_wmi_cmd_init(struct ath12k_base *ab)
 	if (test_bit(WMI_TLV_SERVICE_AFC_SUPPORT, ab->wmi_ab.svc_map))
 		ath12k_set_afc_config(&arg.res_cfg, ab);
 
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_wmi_set_hw_blocklist_service_support_extn(ab, &arg.res_cfg);
+#endif
 	if (test_bit(WMI_TLV_SERVICE_BANG_RADAR_320_SUPPORT,
 		     ab->wmi_ab.svc_map))
 		arg.res_cfg.is_simulate_radar_320_supported = true;
@@ -8953,6 +8963,12 @@ static void ath12k_wmi_afc_event(struct ath12k_base *ab,
 		return;
 	}
 
+#ifdef CPTCFG_QCN_EXTN
+	if (afc_info->event_type == ATH12K_AFC_EVENT_POWER_INFO &&
+	    ath12k_wmi_handle_afc_power_info_hwbl_extn(ab, skb, afc_info))
+		return;
+#endif
+
 	pdev_id = afc_info->phy_id;
 	if (pdev_id >= ab->num_radios) {
 		ath12k_warn(ab, "Received AFC Event for Invalid phy id %d\n", pdev_id);
@@ -9276,6 +9292,15 @@ static int ath12k_pull_reg_chan_list_ext_update_ev(struct ath12k_base *ab,
 		return -EPROTO;
 	}
 
+#ifdef CPTCFG_QCN_EXTN
+	ret = ath12k_wmi_pull_reg_hw_blocklist_extn(ab, skb,
+						    &reg_info->reg_info_extn);
+	if (ret) {
+		kfree(tb);
+		return ret;
+	}
+#endif
+
 	reg_info->num_2g_reg_rules = le32_to_cpu(ev->num_2g_reg_rules);
 	reg_info->num_5g_reg_rules = le32_to_cpu(ev->num_5g_reg_rules);
 	reg_info->num_6g_reg_rules_ap[WMI_REG_INDOOR_AP] =
@@ -9394,6 +9419,13 @@ static int ath12k_pull_reg_chan_list_ext_update_ev(struct ath12k_base *ab,
 
 		ath12k_warn(ab, "No reg rules available, dfs %d, ctry %d domain %d\n",
 			    ev->dfs_region, ev->country_id, ev->domain_code);
+#ifdef CPTCFG_QCN_EXTN
+		if (ath12k_wmi_is_reg_hw_blocklist_fragment_only_extn(ab, reg_info)) {
+			kfree(tb);
+			return 0;
+		}
+#endif
+
 		if (phy_id >= ab->num_radios) {
 			ath12k_warn(ab, "Invalid phy_id %d\n", phy_id);
 			kfree(tb);
@@ -10924,6 +10956,13 @@ static int ath12k_reg_chan_list_event(struct ath12k_base *ab, struct sk_buff *sk
                goto mem_free;
        }
 
+#ifdef CPTCFG_QCN_EXTN
+	if (ath12k_wmi_handle_reg_chan_list_hwbl_extn(ab, &reg_info)) {
+		ret = 0;
+		goto mem_free;
+	}
+#endif
+
        ret = ath12k_reg_handle_chan_list(ab, reg_info, IEEE80211_REG_UNSET_AP);
        if (ret) {
                ath12k_warn(ab, "failed to process regulatory info from received event\n");
@@ -10940,6 +10979,9 @@ mem_free:
                                 	kfree(reg_info->reg_rules_6g_client_ptr[i][j]);
                        }
 		}
+#ifdef CPTCFG_QCN_EXTN
+		ath12k_wmi_free_reg_hw_blocklist_extn(&reg_info->reg_info_extn);
+#endif
 		kfree(reg_info);
 	}
 	return ret;

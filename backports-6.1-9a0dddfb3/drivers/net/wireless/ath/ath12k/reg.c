@@ -3934,6 +3934,10 @@ int ath12k_process_expiry_event(struct ath12k *ar)
 		ath12k_free_afc_power_event_info(afc);
 		spin_unlock_bh(&ar->data_lock);
 		spin_unlock_bh(&ar->ah->afc_lock);
+#ifdef CPTCFG_QCN_EXTN
+		ath12k_reg_hw_blocklist_free_for_mode_extn(ar->ab, ar->pdev_idx,
+							   WMI_REG_STD_POWER_AP);
+#endif
 		if (ret) {
 			ath12k_dbg(ar->ab, ATH12K_DBG_AFC, "Failed to process switch to LPI event\n");
 			return ret;
@@ -4166,4 +4170,8 @@ void ath12k_reg_free(struct ath12k_base *ab)
 			spin_unlock_bh(&ar->data_lock);
 		}
 	}
+
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_reg_hw_blocklist_free_extn(ab);
+#endif
 }
