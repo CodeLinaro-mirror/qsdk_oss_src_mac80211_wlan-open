@@ -148,5 +148,5 @@ int ath12k_wifi8_peer_rx_tid_reo_clear_vld(struct ath12k_base *ab,
  */
 extern bool ath12k_wifi8_clear_vld_after_smd_ctx_fetch;
 extern bool ath12k_wifi8_smd_skip_bitmap_update;
-
+int ath12k_wifi8_dp_rx_ase_htt_srng_setup(struct ath12k_base *ab);
 #endif

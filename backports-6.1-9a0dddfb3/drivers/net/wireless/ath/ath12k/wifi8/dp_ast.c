@@ -1358,3 +1358,19 @@ int ath12k_mec_entry_keep_alive_update(struct ath12k_dp_hw_group *dp_hw_grp,
 
 	return 0;
 }
+
+void ath12k_wifi8_clean_pending_ast_entries(struct ath12k_base *ab)
+{
+	int ast_index;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp_global_ast_table *ast_base =
+		ath12k_dp_get_global_ast_table(dp->dp_hw_grp);
+
+	for  (ast_index = 0; ast_index < ast_base->num_ast_entries; ast_index++) {
+		struct ath12k_ast_entry *sw_ast_entry =
+			ast_base->ast_entries[ast_index];
+
+		if (sw_ast_entry && sw_ast_entry->ast_delete_invalidate_status)
+			ath12k_dp_free_ast_entry(dp->dp_hw_grp, ast_index);
+	}
+}

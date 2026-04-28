@@ -35,6 +35,7 @@ struct ath12k_dp_hw_group;
 struct ath12k_dp;
 enum hal_wbm_tqm_rel_reason;
 struct ath12k_dp_hw_group_wifi8;
+struct ath12k_base;
 
 enum ATH12K_AST_ENTRY_FLAGS {
 	ATH12K_AST_ENTRY_EMPTY_FLAGS	= 0x0,
@@ -170,4 +171,6 @@ int ath12k_mec_entry_keep_alive_update(struct ath12k_dp_hw_group *dp_hw_grp,
 				       u8 *mac_addr);
 void ath12k_wifi8_global_ast_stats_reset(struct ath12k_dp *dp);
 ssize_t ath12k_wifi8_global_ast_stats(struct ath12k_dp *dp, char *buf, int size);
+void ath12k_wifi8_clean_pending_ast_entries(struct ath12k_base *ab);
+
 #endif
