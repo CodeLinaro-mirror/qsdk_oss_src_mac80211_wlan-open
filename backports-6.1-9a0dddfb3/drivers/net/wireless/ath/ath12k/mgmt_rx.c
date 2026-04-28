@@ -276,6 +276,8 @@ int ath12k_mgmt_rx_desc_init(struct ath12k_base *ab)
 			rx_descs[j].cookie = ath12k_mgmt_gen_rx_desc_cookie(i, j);
 			rx_descs[j].magic = ATH12K_MGMT_RX_DESC_MAGIC;
 			rx_descs[j].device_id = ab->device_id;
+			rx_descs[j].in_use = false;
+
 			list_add_tail(&rx_descs[j].list, &mgmt->rx_desc_free_list);
 		}
 	}

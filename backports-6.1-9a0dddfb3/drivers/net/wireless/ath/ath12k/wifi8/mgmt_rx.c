@@ -14,7 +14,7 @@
 
 static void ath12k_wifi8_mgmt_rx_ring_free(struct ath12k_base *ab);
 
-static void ath12k_mgmt_srng_hw_disable(struct ath12k_base *ab, struct mgmt_srng *ring)
+void ath12k_mgmt_srng_hw_disable(struct ath12k_base *ab, struct mgmt_srng *ring)
 {
 	struct hal_srng *srng = &ab->hal.srng_list[ring->ring_id];
 
@@ -27,6 +27,9 @@ void ath12k_wifi8_srng_hw_mgmt_rings_disable(struct ath12k_base *ab)
 
 	ath12k_mgmt_srng_hw_disable(ab, &mgmt_wifi8->wbm_refill_ring);
 	ath12k_mgmt_srng_hw_disable(ab, &mgmt_wifi8->wbm_idle_buf_ring);
+	ath12k_mgmt_srng_hw_disable(ab, &mgmt_wifi8->reo_dst_rx_ring);
+	ath12k_mgmt_srng_hw_disable(ab, &mgmt_wifi8->reo_dst_rx_err_ring);
+	ath12k_mgmt_srng_hw_disable_extn(ab);
 }
 
 void ath12k_wifi8_mgmt_rx_replenish_buffs(struct ath12k_mgmt *mgmt,
@@ -77,6 +80,7 @@ void ath12k_wifi8_mgmt_rx_replenish_buffs(struct ath12k_mgmt *mgmt,
 			rx_desc->paddr = paddr;
 			rx_desc->vaddr = skb->data;
 			rx_desc->is_frag = 0;
+			rx_desc->in_use = true;
 		}
 	}
 
@@ -114,6 +118,7 @@ out:
 			rx_desc->in_use = false;
 			rx_desc->is_frag = 0;
 			skb = rx_desc->skb;
+			rx_desc->skb = NULL;
 			ath12k_core_dma_unmap_single(mgmt->dev, rx_desc->paddr,
 						     skb->len + skb_tailroom(skb),
 						     DMA_FROM_DEVICE);
@@ -1148,9 +1153,6 @@ void ath12k_wifi8_mgmt_service_srng(struct ath12k_base *ab,
 {
 	struct ath12k_mgmt_wifi8 *mgmt_wifi8 = ath12k_get_mgmt_wifi8(ab->mgmt);
 
-	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
-		return;
-
 	ath12k_wifi8_mgmt_rx_process(ab, irq_grp, &mgmt_wifi8->reo_dst_rx_ring);
 
 	ath12k_wifi8_mgmt_rx_process_err(ab, irq_grp, &mgmt_wifi8->reo_dst_rx_err_ring);
@@ -1160,8 +1162,12 @@ void ath12k_wifi8_mgmt_service_srng(struct ath12k_base *ab,
 void ath12k_wifi8_mgmt_workqueue(struct work_struct *w)
 {
 	struct ath12k_mgmt_irq_grp *irq_grp = from_work(irq_grp, work, intr_wq);
+	struct ath12k_base *ab = irq_grp->ab;
 
-	ath12k_wifi8_mgmt_service_srng(irq_grp->ab, irq_grp);
+	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
+		return;
+
+	ath12k_wifi8_mgmt_service_srng(ab, irq_grp);
 
 	ath12k_mgmt_irq_grp_enable(irq_grp);
 }
@@ -1169,8 +1175,12 @@ void ath12k_wifi8_mgmt_workqueue(struct work_struct *w)
 void ath12k_wifi8_mgmt_tasklet(struct tasklet_struct *t)
 {
 	struct ath12k_mgmt_irq_grp *irq_grp = from_tasklet(irq_grp, t, intr_tq);
+	struct ath12k_base *ab = irq_grp->ab;
 
-	ath12k_wifi8_mgmt_service_srng(irq_grp->ab, irq_grp);
+	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
+		return;
+
+	ath12k_wifi8_mgmt_service_srng(ab, irq_grp);
 
 	ath12k_mgmt_irq_grp_enable(irq_grp);
 }
