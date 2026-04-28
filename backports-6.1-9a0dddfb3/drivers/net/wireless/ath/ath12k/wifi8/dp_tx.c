@@ -2162,8 +2162,13 @@ ath12k_wifi8_dp_tx_update_txcompl(struct ath12k_pdev_dp *dp_pdev,
 		}
 
 		txrate.mcs = ts->mcs;
-		/* TODO: This has to be changed to UHR mcs */
-		txrate.flags = RATE_INFO_FLAGS_EHT_MCS;
+		txrate.flags = RATE_INFO_FLAGS_UHR_MCS;
+
+		/*
+		 * We fill EHT params for UHR mode as well since
+		 * the APIs such as _cfg80211_calculate_bitrate_eht_uhr() etc.
+		 * remain common and use EHT params to calculate Tx Bit rate etc.
+		 */
 		txrate.eht_gi = ath12k_mac_eht_gi_to_nl80211_eht_gi(ts->sgi);
 		break;
 	default:

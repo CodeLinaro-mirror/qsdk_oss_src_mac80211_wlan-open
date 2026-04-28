@@ -852,6 +852,26 @@ static void ath12k_dp_rx_fill_rate_info(struct rate_info *rate,
 		}
 		break;
 
+	case HAL_RX_PREAMBLE_11BN:
+		if (mcs > HAL_RX_MAX_MCS_BN)
+			return;
+		rate->mcs = mcs;
+		rate->flags = RATE_INFO_FLAGS_UHR_MCS;
+
+		/*
+		 * We fill EHT params for UHR mode as well since
+		 * the APIs such as _cfg80211_calculate_bitrate_eht_uhr() etc.
+		 * remain common and use EHT params to calculate Rx Bit rate etc.
+		 */
+		rate->eht_gi = ath12k_eht_gi_to_nl80211_eht_gi(ppdu_info->sgi);
+		if (is_su) {
+			rate->bw = ath12k_dp_rx_rate_convert_bw(ppdu_info->bw);
+		} else {
+			rate->bw = RATE_INFO_BW_EHT_RU; /* Remains same as that of EHT */
+			rate->eht_ru_alloc = ppdu_info->ru_alloc;
+		}
+		break;
+
 	default:
 		return;
 	}
@@ -2915,6 +2935,25 @@ ath12k_dp_mon_fill_rx_rate(struct ath12k_pdev_dp *dp_pdev,
 		rx_status->bw = ath12k_mac_bw_to_mac80211_bw(bw);
 		rx_status->nss = nss;
 		rx_status->he_gi = ath12k_he_gi_to_nl80211_he_gi(sgi);
+		break;
+	case RX_MSDU_START_PKT_TYPE_11BN:
+		rx_status->rate_idx = rate_mcs;
+		if (rate_mcs > ATH12K_UHR_MCS_MAX) {
+			ath12k_warn(ar->ab,
+				    "Received with invalid mcs in UHR mode %d\n",
+				    rate_mcs);
+			break;
+		}
+		rx_status->encoding = RX_ENC_UHR;
+		rx_status->bw = ath12k_mac_bw_to_mac80211_bw(bw);
+		rx_status->nss = nss;
+
+		/*
+		 * We fill EHT params for UHR mode as well since
+		 * the APIs such as _cfg80211_calculate_bitrate_eht_uhr() etc.
+		 * remain common and use EHT params to calculate Rx Bit rate etc.
+		 */
+		rx_status->eht.gi = ath12k_eht_gi_to_nl80211_eht_gi(sgi);
 		break;
 	default:
 		ath12k_dbg(ar->ab, ATH12K_DBG_DATA,
