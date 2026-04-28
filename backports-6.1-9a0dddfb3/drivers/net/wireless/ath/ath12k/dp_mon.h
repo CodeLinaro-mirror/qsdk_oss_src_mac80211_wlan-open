@@ -926,7 +926,7 @@ struct ath12k_dp_ext_mon_peer {
 struct ath12k_dp_rx_ext_mon {
 	bool enable;
 	enum ath12k_ext_mon_filter_level level;
-	uint8_t metadata;
+	u8 metadata;
 	bool fp_enabled;
 	bool mo_enabled;
 	bool fpmo_enabled;
@@ -935,7 +935,8 @@ struct ath12k_dp_rx_ext_mon {
 	struct ath12k_ext_mon_pkt_config mo;
 	struct ath12k_ext_mon_pkt_config fpmo;
 	struct ath12k_ext_mon_pkt_config md;
-	uint8_t peer_count;
+	u8 peer_count;
+	u8 ra_peer_count;
 	struct list_head peer_list;
 };
 
