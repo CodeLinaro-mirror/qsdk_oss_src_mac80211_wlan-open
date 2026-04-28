@@ -30,6 +30,7 @@ void ath12k_wifi8_umac_reset_handle_pre_reset(struct ath12k_base *ab)
 	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset;
 	struct ath12k_base *cumac_ab;
 	int cpu;
+	int ret;
 
 	mlo_umac_reset = &ag->mlo_umac_reset;
 
@@ -38,6 +39,15 @@ void ath12k_wifi8_umac_reset_handle_pre_reset(struct ath12k_base *ab)
 		return;
 
 	cumac_ab = ath12k_dp_get_ab_from_dp_hw_group(ag->dp_hw_grp);
+
+	if (test_bit(ATH12K_FLAG_RECOVERY, &cumac_ab->dev_flags) &&
+	    cumac_ab->soc_reset_reason == ATH12K_Q6_BCR_RESET) {
+		ret = ath12k_cumac_hw_pre_reset(cumac_ab);
+		if (ret) {
+			ath12k_err(ab, "CUMAC HW pre reset failed");
+			return;
+		}
+	}
 
 	/* Schedule dummy tasks on all online CPUs to ensure
 	 * no ath12k_wifi8_dp_service_srng instances are running.
@@ -76,6 +86,16 @@ void ath12k_wifi8_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 		return;
 
 	cumac_ab = ath12k_dp_get_ab_from_dp_hw_group(ag->dp_hw_grp);
+
+	if (test_bit(ATH12K_FLAG_RECOVERY, &cumac_ab->dev_flags) &&
+	    cumac_ab->soc_reset_reason == ATH12K_Q6_BCR_RESET) {
+		ret = ath12k_cumac_hw_reset(cumac_ab);
+		if (ret) {
+			ath12k_err(ab, "CUMAC HW post reset failed");
+			return;
+		}
+	}
+
 	ath12k_dp_srng_hw_ring_disable(cumac_ab);
 	ath12k_wifi8_srng_hw_ring_disable(cumac_ab);
 
@@ -163,6 +183,23 @@ static void ath12k_wifi8_post_reset_task(struct ath12k_base *ab)
 
 void ath12k_wifi8_umac_reset_handle_post_reset_complete(struct ath12k_base *ab)
 {
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_base *cumac_ab = ath12k_dp_get_ab_from_dp_hw_group(ag->dp_hw_grp);
+	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
+	int ret;
+
+	/* Handle only once */
+	if (mlo_umac_reset->initiator_chip == ab->device_id &&
+	    test_bit(ATH12K_FLAG_RECOVERY, &cumac_ab->dev_flags) &&
+	    cumac_ab->soc_reset_reason == ATH12K_Q6_BCR_RESET) {
+		ret = ath12k_cumac_hw_post_reset(cumac_ab);
+		if (ret) {
+			ath12k_err(ab, "CUMAC HW post reset failed");
+			return;
+		}
+		ath12k_hif_irq_enable(cumac_ab);
+	}
+
 	ath12k_hif_irq_enable(ab);
 	ath12k_hif_mgmt_irq_enable(ab);
 
@@ -917,10 +954,12 @@ static int ath12k_pause_tqm(struct ath12k_base *ab, u32 pause)
 	return 0;
 }
 
-static void ath12k_enable_tqm(struct ath12k_base *ab, u32 enable)
+static int ath12k_enable_tqm(struct ath12k_base *ab, u32 enable)
 {
 	ath12k_hif_rmw32(ab, HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_TQM_R0_CONTROL,
 			 HAL_TQM_BLOCK_ENABLE_MASK, enable);
+
+	return 0;
 }
 
 static int ath12k_enable_wbm(struct ath12k_base *ab, u32 enable)
@@ -1111,13 +1150,17 @@ static int ath12k_umac_apply_soft_reset(struct ath12k_base *ab, u32 arg)
 	soft_reset_val |= HAL_UMAC_UMRCM_SOFTRESET_VALUE;
 	ath12k_hif_write32(ab, HAL_UMAC_UMRCM_SOFTRESET, soft_reset_val);
 
+	ret = ath12k_enable_tqm(ab, 0);
+	if (ret) {
+		ath12k_err(ab, "RESET: Enable TQM during soft reset failed\n");
+		return ret;
+	}
+
 	ret = ath12k_pause_tqm(ab, 0);
 	if (ret) {
 		ath12k_err(ab, "RESET: Unpause TQM during soft reset failed\n");
 		return ret;
 	}
-
-	ath12k_enable_tqm(ab, 0);
 
 	udelay(HAL_UMAC_UMRCM_SOFTRESET_DELAY);
 
@@ -1142,17 +1185,6 @@ static int ath12k_umac_post_ring_reset(struct ath12k_base *ab, u32 arg)
 		ath12k_err(ab, "umac ring enable failed");
 		return ret;
 	}
-
-	return 0;
-}
-
-static int ath12k_umac_reinit_tqm(struct ath12k_base *ab, u32 arg)
-{
-	ath12k_enable_tqm(ab, 1);
-	udelay(HAL_UMAC_TQM_ENABLE_DELAY);
-	ath12k_enable_tqm(ab, 0);
-	udelay(HAL_UMAC_TQM_ENABLE_DELAY);
-	ath12k_enable_tqm(ab, 1);
 
 	return 0;
 }
@@ -1293,16 +1325,6 @@ static const struct cumac_hw_reset_step reset_steps[] = {
 		0,
 		"CUMAC HW Post-ring reset"
 	},
-	[CUMAC_HW_RESET_REINITIALIZE_TQM] = {
-		ath12k_umac_reinit_tqm,
-		0,
-		"CUMAC HW Reinitialize TQM"
-	},
-	[CUMAC_HW_RESET_ENABLE_SAM] = {
-		ath12k_enable_sam,
-		1,
-		"CUMAC HW Enable SAM"
-	},
 	[CUMAC_HW_RESET_END] = {
 		ath12k_dummy_step,
 		0,
@@ -1350,6 +1372,16 @@ static const struct cumac_hw_reset_step post_reset_steps[] = {
 		ath12k_halt_tcl,
 		0,
 		"CUMAC HW Unhalt TCL"
+	},
+	[CUMAC_HW_POST_RESET_ENABLE_TQM] = {
+		ath12k_enable_tqm,
+		1,
+		"CUMAC HW Enable TQM"
+	},
+	[CUMAC_HW_POST_RESET_ENABLE_SAM] = {
+		ath12k_enable_sam,
+		1,
+		"CUMAC HW Enable SAM"
 	},
 	[CUMAC_HW_POST_RESET_END] = {
 		ath12k_dummy_step,

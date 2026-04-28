@@ -14,6 +14,9 @@ void ath12k_wifi8_umac_reset_handle_pre_reset(struct ath12k_base *ab);
 void ath12k_wifi8_umac_reset_handle_post_reset_start(struct ath12k_base *ab);
 void ath12k_wifi8_umac_reset_handle_post_reset_complete(struct ath12k_base *ab);
 void ath12k_wifi8_umac_reset_handle_init_recovery(struct ath12k_base *ab);
+int ath12k_cumac_hw_pre_reset(struct ath12k_base *ab);
+int ath12k_cumac_hw_post_reset(struct ath12k_base *ab);
+int ath12k_cumac_hw_reset(struct ath12k_base *ab);
 
 /* CUMAC HW Reset Step Enumerations */
 
@@ -48,8 +51,6 @@ enum {
 	CUMAC_HW_RESET_PRE_RING_RESET,
 	CUMAC_HW_RESET_APPLY_SOFT_RESET,
 	CUMAC_HW_RESET_POST_RING_RESET,
-	CUMAC_HW_RESET_REINITIALIZE_TQM,
-	CUMAC_HW_RESET_ENABLE_SAM,
 	CUMAC_HW_RESET_END,
 	CUMAC_HW_RESET_MAX,
 };
@@ -68,6 +69,8 @@ enum {
 	CUMAC_HW_POST_RESET_UNHALT_MLO_DOORBELLS,
 	CUMAC_HW_POST_RESET_ENABLE_RXDMA_PREFETCH,
 	CUMAC_HW_POST_RESET_UNHALT_TCL,
+	CUMAC_HW_POST_RESET_ENABLE_TQM,
+	CUMAC_HW_POST_RESET_ENABLE_SAM,
 	CUMAC_HW_POST_RESET_END,
 	CUMAC_HW_POST_RESET_MAX,
 };
