@@ -29136,6 +29136,26 @@ int ath12k_mac_op_qos_mgmt_cfg(struct ieee80211_hw *hw,
 }
 EXPORT_SYMBOL(ath12k_mac_op_qos_mgmt_cfg);
 
+static void ath12k_mac_add_preserved_stats(struct rtnl_link_stats64 *stats,
+					   struct ath12k_dp_preserved_stats *del_stats)
+{
+	int i;
+
+	if (!del_stats)
+		return;
+
+	for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
+		stats->rx_packets += del_stats->per_pkt_rx[i].sent_to_stack.packets +
+			del_stats->per_pkt_rx[i].sent_to_stack_fast.packets;
+		stats->rx_bytes   += del_stats->per_pkt_rx[i].sent_to_stack.bytes +
+			del_stats->per_pkt_rx[i].sent_to_stack_fast.bytes;
+	}
+	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
+		stats->tx_packets += del_stats->per_pkt_tx[i].comp_pkt.packets;
+		stats->tx_bytes   += del_stats->per_pkt_tx[i].comp_pkt.bytes;
+	}
+}
+
 void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 				struct ieee80211_vif *vif,
 				struct rtnl_link_stats64 *stats)
@@ -29150,14 +29170,49 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 	struct ath12k_dp_peer_stats *peer_stats;
 	unsigned long links_map = ahvif->links_map;
 	int link_id, i, stats_link_id;
+	struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
+	const u8 *peer_mac = NULL;
+	struct ieee80211_sta *sta;
+	bool is_ap_vlan = false;
+	struct ath12k_dp_preserved_stats *del_stats;
+	struct ath12k_dp_pkt_info vif_ppeds_rx;
+	struct ieee80211_vif *master_vif;
 
-	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
-		stats->tx_packets += dp_vif->stats[i].tx_i.recv_from_stack.packets;
-		stats->tx_bytes += dp_vif->stats[i].tx_i.recv_from_stack.bytes;
-	}
 
 	rcu_read_lock();
+	if (vif->type == NL80211_IFTYPE_AP_VLAN) {
+		/*
+		 * Fetch the parent VIF for AP VLAN interface
+		 * and the sta specific to WDS peer.
+		 */
+		master_vif = wdev_to_ieee80211_vif_vlan(wdev, false);
+		if (!master_vif)
+			goto out;
+
+		ahvif = ath12k_vif_to_ahvif(master_vif);
+		if (!ahvif)
+			goto out;
+
+		links_map = ahvif->links_map;
+		sta = wdev_to_ieee80211_vlan_sta(wdev);
+		if (!sta)
+			goto out;
+
+		peer_mac = sta->addr;
+		is_ap_vlan = true;
+	} else {
+		/*
+		 * Master VIF: Accumulate hardware PPE DS ring stats and
+		 * preserved stats from any torn-down link VIFs.
+		 */
+		vif_ppeds_rx = dp_vif->rx_stats[DP_REO_PPEDS_RING_IDX].ppeds_rx;
+		stats->rx_packets += vif_ppeds_rx.packets;
+		stats->rx_bytes += vif_ppeds_rx.bytes;
+		ath12k_mac_add_preserved_stats(stats, &dp_vif->link_vif_delete_stats);
+	}
 	for_each_set_bit(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
+		if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
+			continue;
 		arvif = rcu_dereference(ahvif->link[link_id]);
 		if (!arvif || !arvif->is_created)
 			continue;
@@ -29166,10 +29221,19 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 			continue;
 
 		dp = ath12k_ab_to_dp(ar->ab);
-
+		if (!is_ap_vlan) {
+			/* Master VIF: Accumulate stats from deleted link peers */
+			del_stats = &dp_vif->dp_link_vif[link_id].link_peer_delete_stats;
+			ath12k_mac_add_preserved_stats(stats, del_stats);
+		}
 		spin_lock_bh(&dp->dp_lock);
 		list_for_each_entry(link_peer, &dp->peers, list)  {
 			if (link_peer->vdev_id != arvif->vdev_id)
+				continue;
+			/* Isolate AP_VLAN stats to the specific WDS peer */
+			if (peer_mac &&
+			    !ether_addr_equal(link_peer->addr, peer_mac) &&
+			    !ether_addr_equal(link_peer->ml_addr, peer_mac))
 				continue;
 
 			peer = link_peer->dp_peer;
@@ -29189,9 +29253,16 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 					(peer_stats->rx[i].sent_to_stack.bytes +
 					 peer_stats->rx[i].sent_to_stack_fast.bytes);
 			}
+			for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
+				stats->tx_packets += peer_stats->tx[i].comp_pkt.packets;
+				stats->tx_bytes   += peer_stats->tx[i].comp_pkt.bytes;
+			}
+			stats->tx_packets += link_peer->peer_stats.tx_dropped.packets;
+			stats->tx_bytes   += link_peer->peer_stats.tx_dropped.bytes;
 		}
 		spin_unlock_bh(&dp->dp_lock);
 	}
+out:
 	rcu_read_unlock();
 }
 EXPORT_SYMBOL(ath12k_mac_op_get_netstats);

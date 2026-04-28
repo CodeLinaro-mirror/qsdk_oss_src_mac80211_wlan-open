@@ -879,13 +879,31 @@ static void ieee80211_uninit(struct net_device *dev)
 	ieee80211_teardown_sdata(sdata);
 }
 
+static bool ieee80211_sdata_has_txrx_stats_offload(struct ieee80211_sub_if_data *sdata)
+{
+	if (!sdata)
+		return false;
+
+	if (sdata->vif.offload_flags & IEEE80211_OFFLOAD_TXRX_STATS)
+		return true;
+
+	/* AP_VLAN has no vdev in firmware; check parent AP's offload flag */
+	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN && sdata->bss) {
+		struct ieee80211_sub_if_data *master =
+			container_of(sdata->bss, struct ieee80211_sub_if_data, u.ap);
+		return (master->vif.offload_flags & IEEE80211_OFFLOAD_TXRX_STATS);
+	}
+
+	return false;
+}
+
 static void
 ieee80211_get_stats64(struct net_device *dev, struct rtnl_link_stats64 *stats)
 {
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	struct ieee80211_local *local = sdata->local;
 
-	if (sdata->vif.offload_flags & IEEE80211_OFFLOAD_TXRX_STATS)
+	if (ieee80211_sdata_has_txrx_stats_offload(sdata))
 		drv_get_netstats(local, sdata, stats);
 	else
 		dev_fetch_sw_netstats(stats, dev->tstats);
