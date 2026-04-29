@@ -819,12 +819,8 @@ int ath12k_dp_srng_common_setup(struct ath12k_base *ab)
 		goto err;
 	}
 
-	if (ath12k_dp_umac_reset_in_progress(ab))
-		goto skip_reo_setup;
-
 	ath12k_hal_reo_hw_setup(ab);
 
-skip_reo_setup:
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (dp->ppe.ppe_ops && dp->ppe.ppe_ops->ath12k_ppeds_srng_cmn_setup) {
 		ret = dp->ppe.ppe_ops->ath12k_ppeds_srng_cmn_setup(ab);

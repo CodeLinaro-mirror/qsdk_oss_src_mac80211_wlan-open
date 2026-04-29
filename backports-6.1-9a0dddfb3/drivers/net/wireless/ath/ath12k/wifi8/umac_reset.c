@@ -170,6 +170,9 @@ void ath12k_wifi8_dp_rx_init(struct ath12k_base *ab)
 	ath12k_wifi8_dp_rx_ring_setup(ab);
 	ath12k_dp_umac_rx_desc_cleanup(ab);
 	ath12k_wifi8_mgmt_rx_refill_ring_init(ab);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	ath12k_wifi8_dp_rx_ppe2wbm_idle_buff_init(ab);
+#endif
 }
 
 void ath12k_wifi8_dp_rx_mgmt_init(struct ath12k_base *ab)
@@ -242,13 +245,12 @@ void ath12k_wifi8_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 
 	while (time_before(jiffies, end))
 		;
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	ath12k_q_post_reset_task(cumac_ab, ath12k_wifi8_dp_rx_ppe2wbm_idle_buff_init);
-#endif
+
+	ath12k_wifi8_dp_rx_init(cumac_ab);
+
 	ath12k_q_post_reset_task(cumac_ab, ath12k_dp_srng_common_setup_wrapper);
 	ath12k_q_post_reset_task(cumac_ab, ath12k_wifi8_dp_tx_ring_setup_wrapper);
 	ath12k_q_post_reset_task(cumac_ab, ath12k_wifi8_dp_wbm_idle_init);
-	ath12k_q_post_reset_task(cumac_ab, ath12k_wifi8_dp_rx_init);
 	ath12k_q_post_reset_task(cumac_ab, ath12k_wifi8_dp_rx_mgmt_init);
 	ath12k_q_post_reset_task(cumac_ab, ath12k_wifi8_clean_pending_ast_entries);
 	ath12k_q_post_reset_task(cumac_ab, ath12k_dp_tid_cleanup);

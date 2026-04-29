@@ -580,6 +580,7 @@ void ath12k_wifi8_srng_hw_ring_disable(struct ath12k_base *ab)
 	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->rx_ase_cmd_ring);
 	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->rx_ase_status_ring);
 	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->fse_cmd_ring);
+	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->reo_flush_ring);
 
 	for (i = 0 ; i < DP_WBM_REFILL_RING_MAX; i++)
 		ath12k_dp_srng_hw_disable(ab, &dp_wifi8->wbm_refill_ring[i]);

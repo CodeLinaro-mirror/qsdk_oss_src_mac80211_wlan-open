@@ -4927,9 +4927,6 @@ int ath12k_wifi8_dp_rx_ring_setup(struct ath12k_base *ab)
 		return ret;
 	}
 
-	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
-		return 0;
-
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ret = ath12k_wifi8_dp_ppe2wbm_srng_setup(ab);
 	if (ret) {
@@ -4938,15 +4935,6 @@ int ath12k_wifi8_dp_rx_ring_setup(struct ath12k_base *ab)
 	}
 #endif
 
-	ret = ath12k_wifi8_dp_rx_wbm_buf_ring_init(ab);
-	if (ret) {
-		ath12k_warn(ab, "failed to configure rx wbm idle buf ring\n");
-		return ret;
-	}
-
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	ath12k_wifi8_dp_rx_ppe2wbm_idle_buff_init(ab);
-#endif
 	ret = ath12k_wifi8_dp_rx_fse_cmd_srng_setup(ab);
 	if (ret) {
 		ath12k_warn(ab, "failed to set up fse_cmd ring :%d\n", ret);
@@ -4964,19 +4952,30 @@ int ath12k_wifi8_dp_rx_ring_setup(struct ath12k_base *ab)
 	ath12k_wifi8_hal_reo_init_cmd_ring_offset(ab, srng,
 						  ATH12K_WIFI8_REO_CMD_HIGHPRI_START_NUM);
 
+	ret = ath12k_wifi8_dp_rx_reo_flush_srng_setup(ab);
+	if (ret) {
+		ath12k_warn(ab, "failed to setup reo_flush_ring: %d\n", ret);
+		return ret;
+	}
+
+	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
+		return 0;
+
+	ret = ath12k_wifi8_dp_rx_wbm_buf_ring_init(ab);
+	if (ret) {
+		ath12k_warn(ab, "failed to configure rx wbm idle buf ring\n");
+		return ret;
+	}
+
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	ath12k_wifi8_dp_rx_ppe2wbm_idle_buff_init(ab);
+
 	ret = ath12k_wifi8_dp_ppe2wbm_buf_ring_init(ab);
 	if (ret) {
 		ath12k_warn(ab, "failed to configure wbm idle buf ring\n");
 		return ret;
 	}
 #endif
-
-	ret = ath12k_wifi8_dp_rx_reo_flush_srng_setup(ab);
-	if (ret) {
-		ath12k_warn(ab, "failed to setup reo_flush_ring: %d\n", ret);
-		return ret;
-	}
 
 	return 0;
 }
