@@ -3611,6 +3611,29 @@ void ath12k_dp_ext_mon_process_request(struct ath12k_pdev_dp *dp_pdev,
 {
 	const struct ath12k_dp_arch_mon_ops *mon_ops;
 	int ret = 0;
+	u8 smart_mon_profile;
+
+	smart_mon_profile = dp_pdev->dp_mon_pdev->smart_mon_filter &
+				DP_SMART_MON_PROFILE_MASK;
+
+	if (dp_pdev->dp_mon_pdev->smart_mon_filter & DP_SMART_MON_VALID ||
+	    dp_pdev->dp_mon_pdev->smart_mon_state != ATH12K_DP_SMART_MON_DISABLED) {
+		ath12k_warn(dp_pdev->dp, "Failed, smart mon enabled\n");
+		return;
+	}
+
+	if ((smart_mon_profile == DP_SMART_MON_PROFILE_512M ||
+	     smart_mon_profile == DP_SMART_MON_PROFILE_256M) &&
+	    !ath12k_dp_ext_mon_is_mode_enabled(&req->filter.target_neighbor)) {
+		ath12k_warn(dp_pdev->dp,
+			    "Only target neighbor filter allowed on low mem profile\n");
+		return;
+	}
+
+	if (dp_pdev->dp_mon_pdev->nrp_enabled) {
+		ath12k_warn(dp_pdev->dp, "nrp enabled\n");
+		return;
+	}
 
 	mon_ops = ath12k_dp_mon_ops_get(dp_pdev->dp);
 	if (mon_ops && mon_ops->ext_mon_validate_request) {
