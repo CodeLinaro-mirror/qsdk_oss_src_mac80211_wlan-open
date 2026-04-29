@@ -9846,60 +9846,71 @@ static bool ath12k_get_ar_next_vdev_pos(struct ath12k *ar, u32 *pos)
 	return false;
 }
 
-static void ath12k_update_cu_params(struct ath12k_base *ab,
+static void ath12k_update_cu_params(struct ath12k_base *org_ab,
 				    struct ath12k_mgmt_rx_cu_arg *cu_params)
 {
-	struct ath12k_hw_group *ag = ab->ag;
-	struct ath12k_link_vif *arvif, *tmp;
+	struct ath12k_hw_group *ag = org_ab->ag;
+	const u8 *bpcc_ptr, *bpcc_bufp;
+	struct ath12k_link_vif *arvif;
 	struct ieee80211_vif *vif;
-	u8 *bpcc_ptr, *bpcc_bufp;
-	struct ath12k_hw *ah;
+	struct ath12k_pdev *pdev;
+	u8 device_id, hw_link_id;
+	struct ath12k_base *ab;
 	u32 vdev_id, pos = 0;
 	bool critical_flag;
 	struct ath12k *ar;
-	int num_hw, i, j;
 	u16 vdev_map;
+	int i, j;
 
 	if (!cu_params->bpcc_bufp)
 		return;
 
 	/* Iterate over all the radios */
-	for (num_hw = 0; num_hw < ag->num_hw; num_hw++) {
-		ah = ag->ah[num_hw];
-		if (!ah)
-			continue;
-		for_each_ar(ah, ar, j) {
-			ar = &ah->radio[j];
+	for (device_id = 0; device_id < ag->num_devices; device_id++) {
+		ab = ath12k_ag_to_ab(ag, device_id);
+
+		for (i = 0; i < ab->num_radios; i++) {
+			pdev = rcu_dereference(ab->pdevs_active[i]);
+			if (!pdev || !pdev->ar)
+				continue;
+
+			ar = pdev->ar;
 
 			if (test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags))
 				continue;
 
 			pos = 0;
-			for (i = 0; i < ar->num_created_vdevs; i++) {
+			hw_link_id = ar->hw_link_id;
+			for (j = 0; j < ar->num_created_vdevs; j++) {
 				if (!ath12k_get_ar_next_vdev_pos(ar, &pos)) {
 					pos++;
 					continue;
 				}
 				vdev_id = pos;
 				pos++;
+
 				spin_lock_bh(&ar->data_lock);
-				list_for_each_entry_safe(arvif, tmp, &ar->arvifs, list) {
+				list_for_each_entry(arvif, &ar->arvifs, list) {
 					if (arvif->vdev_id != vdev_id ||
+					    !arvif->is_up ||
 					    ath12k_mac_is_bridge_vdev(arvif))
 						continue;
+
 					vif = arvif->ahvif->vif;
-					if (arvif->is_up && vif->valid_links) {
-						vdev_map = cu_params->cu_vdev_map[num_hw];
-						critical_flag = vdev_map & (1 << i);
-						bpcc_bufp = cu_params->bpcc_bufp;
-						bpcc_ptr = bpcc_bufp +
-						    ((num_hw * MAX_AP_MLDS_PER_LINK) + i);
-						ieee80211_critical_update(vif,
-									  arvif->link_id,
-									  critical_flag,
-									  *bpcc_ptr);
-						break;
-					}
+					if (!vif->valid_links)
+						continue;
+
+					vdev_map = cu_params->cu_vdev_map[hw_link_id];
+					critical_flag = vdev_map & (1 << vdev_id);
+					bpcc_bufp = cu_params->bpcc_bufp;
+					bpcc_ptr = bpcc_bufp + vdev_id +
+					    (hw_link_id * MAX_AP_MLDS_PER_LINK);
+
+					ieee80211_critical_update(vif,
+								  arvif->link_id,
+								  critical_flag,
+								  *bpcc_ptr);
+					break;
 				}
 				spin_unlock_bh(&ar->data_lock);
 			}
