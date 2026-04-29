@@ -25,8 +25,6 @@ void ath12k_wifi8_srng_hw_mgmt_rings_disable(struct ath12k_base *ab)
 {
 	struct ath12k_mgmt_wifi8 *mgmt_wifi8 = ath12k_get_mgmt_wifi8(ab->mgmt);
 
-	ath12k_mgmt_srng_hw_disable(ab, &mgmt_wifi8->wbm_refill_ring);
-	ath12k_mgmt_srng_hw_disable(ab, &mgmt_wifi8->wbm_idle_buf_ring);
 	ath12k_mgmt_srng_hw_disable(ab, &mgmt_wifi8->reo_dst_rx_ring);
 	ath12k_mgmt_srng_hw_disable(ab, &mgmt_wifi8->reo_dst_rx_err_ring);
 	ath12k_mgmt_srng_hw_disable_extn(ab);
@@ -1230,6 +1228,27 @@ void ath12k_wifi8_mgmt_rx_refill_ring_init(struct ath12k_base *ab)
 		ath12k_wifi8_mgmt_rx_replenish_buffs(mgmt, rx_refill_ring, &list, false);
 }
 
+void ath12k_wifi8_mgmt_refill_rings_reinit(struct ath12k_base *ab)
+{
+	struct ath12k_mgmt *mgmt = ab->mgmt;
+	struct ath12k_mgmt_wifi8 *mgmt_wifi8 = ath12k_get_mgmt_wifi8(mgmt);
+	unsigned long end;
+	int ret;
+
+	ath12k_mgmt_srng_hw_disable(ab, &mgmt_wifi8->wbm_refill_ring);
+	ath12k_mgmt_srng_hw_disable(ab, &mgmt_wifi8->wbm_idle_buf_ring);
+
+	end = jiffies + msecs_to_jiffies(2);
+
+	while (time_before(jiffies, end))
+		;
+
+	/* Mgmt Rx Refill rings */
+	ret = ath12k_wifi8_mgmt_rx_refill_ring_setup(ab);
+	if (ret)
+		ath12k_err(ab, "Failed to initialize mgmt refill rings: %d", ret);
+}
+
 int ath12k_wifi8_mgmt_rx_ring_setup(struct ath12k_base *ab)
 {
 	struct ath12k_mgmt *mgmt = ab->mgmt;
@@ -1254,17 +1273,6 @@ int ath12k_wifi8_mgmt_rx_ring_setup(struct ath12k_base *ab)
 		goto err_srng_cleanup;
 	}
 
-	/* Mgmt Rx Refill rings */
-	ret = ath12k_wifi8_mgmt_rx_refill_ring_setup(ab);
-	if (ret) {
-		ath12k_err(ab, "Failed to initialize mgmt refill rings: %d", ret);
-		goto err_srng_cleanup;
-	}
-
-	/* Initialize WBM ring with descriptors and buffers */
-	if (!ath12k_dp_umac_reset_in_progress(ab))
-		ath12k_wifi8_mgmt_rx_refill_ring_init(ab);
-
 #ifdef CPTCFG_QCN_EXTN
 	/* Mgmt Rx High-priority ring */
 	ret = ath12k_wifi8_mgmt_rx_ring_setup_extn(ab);
@@ -1273,6 +1281,19 @@ int ath12k_wifi8_mgmt_rx_ring_setup(struct ath12k_base *ab)
 		return ret;
 	}
 #endif
+
+	if (ath12k_dp_umac_reset_in_progress(ab))
+		return ret;
+
+	/* Mgmt Rx Refill rings */
+	ret = ath12k_wifi8_mgmt_rx_refill_ring_setup(ab);
+	if (ret) {
+		ath12k_err(ab, "Failed to initialize mgmt refill rings: %d", ret);
+		goto err_srng_cleanup;
+	}
+
+	/* Initialize WBM ring with descriptors and buffers */
+	ath12k_wifi8_mgmt_rx_refill_ring_init(ab);
 
 	return 0;
 

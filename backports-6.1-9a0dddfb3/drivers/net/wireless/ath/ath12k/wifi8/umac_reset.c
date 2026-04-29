@@ -106,6 +106,8 @@ static void ath12k_wifi8_post_pre_reset_send_cb(struct ath12k_base *ab)
 
 	spin_unlock_irqrestore(&mlo_umac_reset->task_queue_lock, flags);
 
+	ath12k_wifi8_mgmt_refill_rings_reinit(ab);
+
 	/* Enqueue unbound tasks - any CPU can process it */
 	ath12k_q_post_reset_task(ab, ath12k_wifi8_clear_link_desc_pool_task);
 	ath12k_q_post_reset_task(ab, ath12k_dp_umac_tx_desc_cleanup);
@@ -169,7 +171,7 @@ void ath12k_wifi8_dp_rx_init(struct ath12k_base *ab)
 	ath12k_wifi8_dp_rx_ase_htt_srng_setup(ab);
 	ath12k_wifi8_dp_rx_ring_setup(ab);
 	ath12k_dp_umac_rx_desc_cleanup(ab);
-	ath12k_wifi8_mgmt_rx_refill_ring_init(ab);
+	ath12k_wifi8_dp_rx_wbm_buf_ring_init(ab);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ath12k_wifi8_dp_rx_ppe2wbm_idle_buff_init(ab);
 #endif
@@ -179,7 +181,7 @@ void ath12k_wifi8_dp_rx_mgmt_init(struct ath12k_base *ab)
 {
 	ath12k_wifi8_mgmt_rx_ring_setup(ab);
 	ath12k_mgmt_rx_desc_cleanup(ab);
-	ath12k_wifi8_dp_rx_wbm_buf_ring_init(ab);
+	ath12k_wifi8_mgmt_rx_refill_ring_init(ab);
 }
 
 void ath12k_wifi8_dp_wbm_idle_init(struct ath12k_base *ab)
