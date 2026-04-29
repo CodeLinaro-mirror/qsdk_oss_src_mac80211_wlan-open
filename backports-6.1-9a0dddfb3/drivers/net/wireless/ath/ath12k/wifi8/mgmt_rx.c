@@ -493,6 +493,20 @@ ath12k_wifi8_mgmt_rx_h_ppdu(struct ath12k *partner_ar, struct sk_buff *mmpdu,
 		status->eht.gi = ath12k_mac_eht_gi_to_nl80211_eht_gi(sgi);
 		status->bw = ath12k_mac_bw_to_mac80211_bw(bw);
 		break;
+	case RX_MSDU_START_PKT_TYPE_11BN:
+		status->rate_idx = rate_mcs;
+		if (rate_mcs > ATH12K_UHR_MCS_MAX) {
+			ath12k_warn(partner_ar->ab,
+					"Received with invalid mcs in UHR mode %d",
+					rate_mcs);
+			break;
+		}
+
+		status->encoding = RX_ENC_UHR;
+		status->nss = nss;
+		status->eht.gi = ath12k_mac_uhr_gi_to_nl80211_uhr_gi(sgi);
+		status->bw = ath12k_mac_bw_to_mac80211_bw(bw);
+		break;
 	default:
 		break;
 	}

@@ -3066,6 +3066,8 @@ ath12k_dp_aggr_link_rx_rate_stats(struct ath12k_rx_peer_rate_stats *dst,
 		dst->he_mcs_count[i] += src->he_mcs_count[i];
 	for (i = 0; i < HAL_RX_MAX_MCS_BE + 1; i++)
 		dst->be_mcs_count[i] += src->be_mcs_count[i];
+	for (i = 0; i < HAL_RX_MAX_MCS_BN + 1; i++)
+		dst->bn_mcs_count[i] += src->bn_mcs_count[i];
 
 	/* Aggregate NSS, bandwidth, and GI counts */
 	for (i = 0; i < HAL_RX_MAX_NSS; i++)

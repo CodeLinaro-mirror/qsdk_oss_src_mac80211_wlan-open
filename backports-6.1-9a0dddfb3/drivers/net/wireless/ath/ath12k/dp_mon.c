@@ -638,13 +638,14 @@ ath12k_dp_mon_rx_update_peer_rate_table_stats(struct ath12k_rx_peer_stats *rx_st
 	u32 gi_idx = ppdu_info->gi;
 	u32 len;
 
-	if (mcs_idx > HAL_RX_MAX_MCS_BE || nss_idx >= HAL_RX_MAX_NSS ||
+	if (mcs_idx > HAL_RX_MAX_MCS_BN || nss_idx >= HAL_RX_MAX_NSS ||
 	    bw_idx >= HAL_RX_BW_MAX || gi_idx >= HAL_RX_GI_MAX) {
 		return;
 	}
 
 	if (ppdu_info->preamble_type == HAL_RX_PREAMBLE_11AX ||
-	    ppdu_info->preamble_type == HAL_RX_PREAMBLE_11BE)
+	    ppdu_info->preamble_type == HAL_RX_PREAMBLE_11BE ||
+	    ppdu_info->preamble_type == HAL_RX_PREAMBLE_11BN)
 		gi_idx = ath12k_he_gi_to_nl80211_he_gi(ppdu_info->gi);
 
 	rx_stats->pkt_stats.rx_rate[bw_idx][gi_idx][nss_idx][mcs_idx] += num_msdu;
@@ -858,12 +859,15 @@ static void ath12k_dp_rx_fill_rate_info(struct rate_info *rate,
 		rate->mcs = mcs;
 		rate->flags = RATE_INFO_FLAGS_UHR_MCS;
 
+		if (ppdu_info->is_uhr_elr)
+			rate->flags |= RATE_INFO_FLAGS_UHR_ELR_MCS;
+
 		/*
 		 * We fill EHT params for UHR mode as well since
 		 * the APIs such as _cfg80211_calculate_bitrate_eht_uhr() etc.
 		 * remain common and use EHT params to calculate Rx Bit rate etc.
 		 */
-		rate->eht_gi = ath12k_eht_gi_to_nl80211_eht_gi(ppdu_info->sgi);
+		rate->eht_gi = ath12k_uhr_gi_to_nl80211_uhr_gi(ppdu_info->sgi);
 		if (is_su) {
 			rate->bw = ath12k_dp_rx_rate_convert_bw(ppdu_info->bw);
 		} else {
@@ -1240,6 +1244,12 @@ void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
 		rx_stats->byte_stats.be_mcs_count[ppdu_info->mcs] += ppdu_info->mpdu_len;
 	}
 
+	if (ppdu_info->preamble_type == HAL_RX_PREAMBLE_11BN &&
+	    ppdu_info->mcs <= HAL_RX_MAX_MCS_BN) {
+		rx_stats->pkt_stats.bn_mcs_count[ppdu_info->mcs] += num_msdu;
+		rx_stats->byte_stats.bn_mcs_count[ppdu_info->mcs] += ppdu_info->mpdu_len;
+	}
+
 	if ((ppdu_info->preamble_type == HAL_RX_PREAMBLE_11A ||
 	     ppdu_info->preamble_type == HAL_RX_PREAMBLE_11B) &&
 	     ppdu_info->rate < HAL_RX_LEGACY_RATE_INVALID) {
@@ -1414,6 +1424,20 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 	    user_stats->mcs <= HAL_RX_MAX_MCS_HE) {
 		rx_stats->pkt_stats.he_mcs_count[user_stats->mcs] += num_msdu;
 		rx_stats->byte_stats.he_mcs_count[user_stats->mcs] +=
+						user_stats->mpdu_ok_byte_count;
+	}
+
+	if (user_stats->preamble_type == HAL_RX_PREAMBLE_11BE &&
+	    user_stats->mcs <= HAL_RX_MAX_MCS_BE) {
+		rx_stats->pkt_stats.be_mcs_count[user_stats->mcs] += num_msdu;
+		rx_stats->byte_stats.be_mcs_count[user_stats->mcs] +=
+						user_stats->mpdu_ok_byte_count;
+	}
+
+	if (user_stats->preamble_type == HAL_RX_PREAMBLE_11BN &&
+	    user_stats->mcs <= HAL_RX_MAX_MCS_BN) {
+		rx_stats->pkt_stats.bn_mcs_count[user_stats->mcs] += num_msdu;
+		rx_stats->byte_stats.bn_mcs_count[user_stats->mcs] +=
 						user_stats->mpdu_ok_byte_count;
 	}
 
@@ -2951,7 +2975,7 @@ ath12k_dp_mon_fill_rx_rate(struct ath12k_pdev_dp *dp_pdev,
 		rx_status->encoding = RX_ENC_EHT;
 		rx_status->bw = ath12k_mac_bw_to_mac80211_bw(bw);
 		rx_status->nss = nss;
-		rx_status->he_gi = ath12k_he_gi_to_nl80211_he_gi(sgi);
+		rx_status->eht.gi = ath12k_eht_gi_to_nl80211_eht_gi(sgi);
 		break;
 	case RX_MSDU_START_PKT_TYPE_11BN:
 		rx_status->rate_idx = rate_mcs;
@@ -2970,7 +2994,7 @@ ath12k_dp_mon_fill_rx_rate(struct ath12k_pdev_dp *dp_pdev,
 		 * the APIs such as _cfg80211_calculate_bitrate_eht_uhr() etc.
 		 * remain common and use EHT params to calculate Rx Bit rate etc.
 		 */
-		rx_status->eht.gi = ath12k_eht_gi_to_nl80211_eht_gi(sgi);
+		rx_status->eht.gi = ath12k_uhr_gi_to_nl80211_uhr_gi(sgi);
 		break;
 	default:
 		ath12k_dbg(ar->ab, ATH12K_DBG_DATA,
