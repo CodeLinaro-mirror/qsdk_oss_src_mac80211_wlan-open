@@ -254,6 +254,7 @@ static void ath12k_wifi8_dp_umac_deinit(struct ath12k_dp *dp)
 #endif
 	ath12k_wifi8_dp_rx_ring_free(ab);
 	ath12k_dp_ast_table_deinit(dp->dp_hw_grp);
+	ath12k_wifi8_dp_telemetry_deinit(dp);
 	ath12k_dp_pn_counter_page_free(dp->dp_hw_grp);
 	ath12k_wifi8_dp_tx_pool_destroy(dp->dp_hw_grp);
 
@@ -494,6 +495,8 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 		ath12k_warn(dp, "dp pool create for queues failed %d\n", ret);
 		goto fail_pn_counter_page_free;
 	}
+
+	ath12k_wifi8_dp_telemetry_init(dp);
 
 	spin_lock_init(&dp_hw_group_wifi8->htt_cmd_retry_lock);
 	INIT_DELAYED_WORK(&dp_hw_group_wifi8->dp_htt_retry_dwork,
