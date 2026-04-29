@@ -858,7 +858,7 @@ static void ath12k_wifi8_mac_op_tx(struct ieee80211_hw *hw,
 	link_id = u32_get_bits(info->control.flags, IEEE80211_TX_CTRL_MLO_LINK);
 	if (unlikely(!(skb->fast_xmit &&
 		       ((skb->mark & ATH12K_MLO_METADATA_MLO_ASSIST_TAG_MASK) ==
-		       ATH12K_MLO_METADATA_MLO_ASSIST_TAG)) || !hw->perf_mode)) {
+		       ATH12K_MLO_METADATA_MLO_ASSIST_TAG)))) {
 		memset(skb_cb, 0, sizeof(*skb_cb));
 		skb_cb->vif = vif;
 
