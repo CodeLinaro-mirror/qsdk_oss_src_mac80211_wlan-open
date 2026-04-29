@@ -609,6 +609,64 @@ void ath12k_wifi7_hal_reo_status_queue_stats(struct ath12k_base *ab,
 				le32_get_bits(desc->hdr.info0,
 					      HAL_REO_STATUS_HDR_INFO0_EXEC_STATUS);
 
+	status->u.queue_stats.ssn =
+		le32_get_bits(desc->info0,
+			      HAL_REO_GET_QUEUE_STATS_STATUS_INFO0_SSN);
+	status->u.queue_stats.curr_idx =
+		le32_get_bits(desc->info0,
+			      HAL_REO_GET_QUEUE_STATS_STATUS_INFO0_CUR_IDX);
+	status->u.queue_stats.pn_31_0 = le32_to_cpu(desc->pn[0]);
+	status->u.queue_stats.pn_47_32 = le32_to_cpu(desc->pn[1]) & GENMASK(15, 0);
+	status->u.queue_stats.last_rx_queue_ts =
+		le32_to_cpu(desc->last_rx_enqueue_timestamp);
+	status->u.queue_stats.last_rx_dequeue_ts =
+		le32_to_cpu(desc->last_rx_dequeue_timestamp);
+	status->u.queue_stats.bitmap.rx_bitmap_31_0 = le32_to_cpu(desc->rx_bitmap[0]);
+	status->u.queue_stats.bitmap.rx_bitmap_63_32 = le32_to_cpu(desc->rx_bitmap[1]);
+	status->u.queue_stats.bitmap.rx_bitmap_95_64 = le32_to_cpu(desc->rx_bitmap[2]);
+	status->u.queue_stats.bitmap.rx_bitmap_127_96 = le32_to_cpu(desc->rx_bitmap[3]);
+	status->u.queue_stats.bitmap.rx_bitmap_159_128 = le32_to_cpu(desc->rx_bitmap[4]);
+	status->u.queue_stats.bitmap.rx_bitmap_191_160 = le32_to_cpu(desc->rx_bitmap[5]);
+	status->u.queue_stats.bitmap.rx_bitmap_223_192 = le32_to_cpu(desc->rx_bitmap[6]);
+	status->u.queue_stats.bitmap.rx_bitmap_255_224 = le32_to_cpu(desc->rx_bitmap[7]);
+	status->u.queue_stats.bitmap.rx_bitmap_287_256 = le32_to_cpu(desc->rx_bitmap[8]);
+	status->u.queue_stats.curr_mpdu_cnt =
+		le32_get_bits(desc->info1,
+			      HAL_REO_GET_QUEUE_STATS_STATUS_INFO1_MPDU_COUNT);
+	status->u.queue_stats.curr_msdu_cnt =
+		le32_get_bits(desc->info1,
+			      HAL_REO_GET_QUEUE_STATS_STATUS_INFO1_MSDU_COUNT);
+	status->u.queue_stats.timeout_cnt =
+		le32_get_bits(desc->info2,
+			      HAL_REO_GET_QUEUE_STATS_STATUS_INFO2_TIMEOUT_COUNT);
+	status->u.queue_stats.fwd_due_to_bar_cnt =
+		le32_get_bits(desc->info2,
+			      HAL_REO_GET_QUEUE_STATS_STATUS_INFO2_FDTB_COUNT);
+	status->u.queue_stats.dup_cnt =
+		le32_get_bits(desc->info2,
+			      HAL_REO_GET_QUEUE_STATS_STATUS_INFO2_DUPLICATE_COUNT);
+	status->u.queue_stats.num_window_2k_jump_cnt =
+		le32_get_bits(desc->info2,
+			      HAL_REO_GET_QUEUE_STATS_STATUS_INFO2_WINDOW_JMP2K);
+	status->u.queue_stats.frames_in_order_cnt =
+		le32_get_bits(desc->info3,
+			      HAL_REO_GET_QUEUE_STATS_STATUS_INFO3_FIO_COUNT);
+	status->u.queue_stats.bar_rx_cnt =
+		le32_get_bits(desc->info3,
+			      HAL_REO_GET_QUEUE_STATS_STATUS_INFO3_BAR_RCVD_CNT);
+	status->u.queue_stats.num_mpdu_processed_cnt =
+		le32_to_cpu(desc->num_mpdu_frames);
+	status->u.queue_stats.num_msdu_processed_cnt =
+		le32_to_cpu(desc->num_msdu_frames);
+	status->u.queue_stats.total_num_processed_byte_cnt =
+		le32_to_cpu(desc->total_bytes);
+	status->u.queue_stats.late_rx_mpdu_cnt =
+		le32_get_bits(desc->info4,
+			      HAL_REO_GET_QUEUE_STATS_STATUS_INFO4_LATE_RX_MPDU);
+	status->u.queue_stats.reorder_hole_cnt =
+		le32_get_bits(desc->info4,
+			      HAL_REO_GET_QUEUE_STATS_STATUS_INFO4_HOLE_COUNT);
+
 	ath12k_dbg(ab, ATH12K_DBG_HAL, "Queue stats status:\n");
 	ath12k_dbg(ab, ATH12K_DBG_HAL, "header: cmd_num %d status %d\n",
 		   status->uniform_hdr.cmd_num,
