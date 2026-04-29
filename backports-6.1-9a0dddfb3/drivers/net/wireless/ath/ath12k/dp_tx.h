@@ -349,7 +349,6 @@ struct ath12k_dp_tx_msdu_info {
 	u8 vdev_id;
 	u8 rbm_id;
 	u8 pkt_offset;
-	u8 tx_notify_frame;
 
 	u8 lookup_override	: 1,
 	   is_null		: 1,

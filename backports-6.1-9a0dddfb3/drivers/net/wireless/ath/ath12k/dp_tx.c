@@ -700,6 +700,7 @@ bool ath12k_dp_tx_classify_packet(struct ieee80211_hw *hw,
 {
 	struct ieee80211_hdr *hdr;
 	struct ethhdr *eth;
+	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
 	u32 info_flags = info->flags;
 	u8 ring_id = 0;
 
@@ -708,12 +709,18 @@ bool ath12k_dp_tx_classify_packet(struct ieee80211_hw *hw,
 
 	skb_ctrl->flags |= DP_SKB_MAC_CTRL;
 
+	if (key) {
+		skb_cb->cipher = key->cipher;
+		skb_cb->flags |= ATH12K_SKB_CIPHER_SET;
+	}
+
 	/* Check if HW encapsulation */
 	if (info_flags & IEEE80211_TX_CTL_HW_80211_ENCAP) {
 		eth = (struct ethhdr *)skb->data;
 		skb_ctrl->features |= DP_ETH_OFFLOAD;
 		*is_eth = true;
 		*data = true;
+		skb_cb->flags |= ATH12K_SKB_HW_80211_ENCAP;
 		*is_mcast = is_multicast_ether_addr(eth->h_dest);
 		return true;
 	}
