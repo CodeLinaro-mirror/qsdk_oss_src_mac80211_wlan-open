@@ -9055,6 +9055,11 @@ static int ath12k_vendor_atf_stats_dumpit(struct wiphy *wiphy,
 	}
 
 	radio_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_INDEX]);
+	if (radio_id >= ah->num_radio) {
+		ath12k_err(NULL, "ATF: Invalid radio id %d\n", radio_id);
+		return -EINVAL;
+	}
+
 	ar = ath12k_ah_to_ar(ah, radio_id);
 	if (!ar)
 		return -ENODEV;
@@ -9181,6 +9186,10 @@ ath12k_vendor_atf_offload_config_handler(struct wiphy *wiphy,
 		return -EINVAL;
 	}
 	radio_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_INDEX]);
+	if (radio_id >= ah->num_radio) {
+		ath12k_err(NULL, "ATF: Invalid radio id %d\n", radio_id);
+		return -EINVAL;
+	}
 
 	ar = ath12k_ah_to_ar(ah, radio_id);
 
