@@ -2118,7 +2118,7 @@ struct link_station_parameters {
 	u8 eht_capa_len;
 	u16 eml_cap;
 	u16 mld_oper;
-	const struct ieee80211_uhr_cap *uhr_capa;
+	const struct ieee80211_uhr_cap_elem *uhr_capa;
 	u8 uhr_capa_len;
 };
 

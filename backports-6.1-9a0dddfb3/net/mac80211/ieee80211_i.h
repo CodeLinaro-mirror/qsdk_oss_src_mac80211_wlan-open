@@ -1985,7 +1985,7 @@ struct ieee802_11_elems {
 	const struct ieee80211_multi_link_elem *ml_epcs;
 	const struct ieee80211_bandwidth_indication *bandwidth_indication;
 	const struct ieee80211_ttlm_elem *ttlm[IEEE80211_TTLM_MAX_CNT];
-	const struct ieee80211_uhr_cap *uhr_cap;
+	const struct ieee80211_uhr_cap_elem *uhr_cap;
 	const struct ieee80211_uhr_operation *uhr_operation;
 
 	/* not the order in the psd values is per element, not per chandef */
@@ -3071,7 +3071,7 @@ void ieee80211_stop_mbssid(struct ieee80211_sub_if_data *sdata);
 void
 ieee80211_uhr_cap_ie_to_sta_uhr_cap(struct ieee80211_sub_if_data *sdata,
 				    struct ieee80211_supported_band *sband,
-				    const struct ieee80211_uhr_cap *uhr_cap,
+				    const struct ieee80211_uhr_cap_elem *uhr_cap,
 				    u8 uhr_cap_len,
 				    struct link_sta_info *link_sta);
 

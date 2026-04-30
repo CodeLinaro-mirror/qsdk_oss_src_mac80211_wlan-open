@@ -132,42 +132,81 @@ ieee80211_uhr_npca_dis_subch_bitmap(const struct ieee80211_uhr_operation *oper)
 #define IEEE80211_UHR_MAC_CAP_DBE_EHT_MCS_MAP_320_PRES	0x10
 
 struct ieee80211_uhr_cap_mac {
-	u8 mac_cap[5];
+	u8 mac_cap[6];
 } __packed;
 
-struct ieee80211_uhr_cap {
-	struct ieee80211_uhr_cap_mac mac;
-	/* DBE, PHY capabilities */
-	u8 variable[];
-} __packed;
+#define IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_SND_NDP_LE80		0x01
+#define IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_DL_MU_LE80		0x02
+#define IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_SND_NDP_160		0x04
+#define IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_DL_MU_160		0x08
+#define IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_SND_NDP_320		0x10
+#define IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_DL_MU_320		0x20
+#define IEEE80211_UHR_PHY_CAP0_ELR_TX_SUPP			0x40
+#define IEEE80211_UHR_PHY_CAP0_ELR_RX_SUPP			0x80
 
-#define IEEE80211_UHR_PHY_CAP_MAX_NSS_RX_SND_NDP_LE80	0x01
-#define IEEE80211_UHR_PHY_CAP_MAX_NSS_RX_DL_MU_LE80	0x02
-#define IEEE80211_UHR_PHY_CAP_MAX_NSS_RX_SND_NDP_160	0x04
-#define IEEE80211_UHR_PHY_CAP_MAX_NSS_RX_DL_MU_160	0x08
-#define IEEE80211_UHR_PHY_CAP_MAX_NSS_RX_SND_NDP_320	0x10
-#define IEEE80211_UHR_PHY_CAP_MAX_NSS_RX_DL_MU_320	0x20
-#define IEEE80211_UHR_PHY_CAP_ELR_RX			0x40
-#define IEEE80211_UHR_PHY_CAP_ELR_TX			0x80
+#define IEEE80211_UHR_PHY_CAP1_PARTIAL_BW_DL_MU_MIMO_SUPP	0x01
+#define IEEE80211_UHR_PHY_CAP1_PARTIAL_BW_UL_MU_MIMO_SUPP	0x02
+#define IEEE80211_UHR_PHY_CAP1_MCS15_SUPP			0x04
+#define IEEE80211_UHR_PHY_CAP1_2XLDPC_TX_SUPP			0x08
+#define IEEE80211_UHR_PHY_CAP1_2XLDPC_RX_SUPP			0x10
+#define IEEE80211_UHR_PHY_CAP1_UEQM_TX_SUPP_MAX_NSS_TX		0x60
+#define IEEE80211_UHR_PHY_CAP1_UEQM_RX_SUPP_MAX_NSS_RX_LOW	0x80
+
+#define IEEE80211_UHR_PHY_CAP2_UEQM_RX_SUPP_MAX_NSS_RX_HIGH	0x01
+#define IEEE80211_UHR_PHY_CAP2_CO_BF_JOINT_SND_SUPP		0x04
+#define IEEE80211_UHR_PHY_CAP2_IM_TX_SUPP			0x08
+#define IEEE80211_UHR_PHY_CAP2_IM_RX_SUPP			0x10
+#define IEEE80211_UHR_PHY_CAP2_CO_SR_MODE1_SUPP			0x20
+#define IEEE80211_UHR_PHY_CAP2_CO_SR_MODE2_SUPP			0x40
+#define IEEE80211_UHR_PHY_CAP2_DRU_DBW20_PBW20_SUPP		0x80
+
+#define IEEE80211_UHR_PHY_CAP3_DRU_DBW40_PBW40_SUPP		0x01
+#define IEEE80211_UHR_PHY_CAP3_DRU_DBW80_PBW80_SUPP		0x02
+#define IEEE80211_UHR_PHY_CAP3_DRU_DBW80_PBW160_SUPP		0x04
+#define IEEE80211_UHR_PHY_CAP3_DRU_DBW80_PBW320_SUPP		0x08
+#define IEEE80211_UHR_PHY_CAP3_DRU_DBW20_PBW_GE80_SUPP		0x10
+#define IEEE80211_UHR_PHY_CAP3_DRU_DBW40_PBW_GE80_SUPP		0x20
+#define IEEE80211_UHR_PHY_CAP3_DRU_DBW60_PBW_GE80_SUPP		0x40
+#define IEEE80211_UHR_PHY_CAP3_DRU_RRU_HYBRID_SUPP		0x80
 
 struct ieee80211_uhr_cap_phy {
-	u8 cap;
+	u8 cap[5];
+} __packed;
+
+/**
+ * struct ieee80211_uhr_cap_elem_fixed - UHR capabilities fixed fields
+ * @mac: MAC capabilities, see IEEE80211_UHR_MAC_CAP*
+ * @phy: PHY capabilities, see IEEE80211_UHR_PHY_CAP*
+ */
+struct ieee80211_uhr_cap_elem_fixed {
+	struct ieee80211_uhr_cap_mac mac;
+	struct ieee80211_uhr_cap_phy phy;
+} __packed;
+
+/**
+ * struct ieee80211_uhr_cap_elem - UHR capabilities element
+ * @fixed: fixed parts, see &ieee80211_uhr_cap_elem_fixed
+ * @variable: variable length DBE Capability Parameters (0, 1, 4 or 7 octets, AP only)
+ */
+struct ieee80211_uhr_cap_elem {
+	struct ieee80211_uhr_cap_elem_fixed fixed;
+	u8 variable[];
 } __packed;
 
 static inline bool ieee80211_uhr_capa_size_ok(const u8 *data, u8 len,
 					      bool from_ap)
 {
-	const struct ieee80211_uhr_cap *cap = (const void *)data;
-	size_t needed = sizeof(*cap) + sizeof(struct ieee80211_uhr_cap_phy);
+	const struct ieee80211_uhr_cap_elem *cap = (const void *)data;
+	size_t needed = sizeof(*cap);
 
 	if (len < needed)
 		return false;
 
 	/*
-	 * A non-AP STA does not include the DBE Capability Parameters field
+	 * A non-AP STA does not include the DBE Capability Parameters field.
 	 * in the UHR MAC Capabilities Information field.
 	 */
-	if (from_ap && cap->mac.mac_cap[1] & IEEE80211_UHR_MAC_CAP1_DBE_SUPP) {
+	if (from_ap && cap->fixed.mac.mac_cap[1] & IEEE80211_UHR_MAC_CAP1_DBE_SUPP) {
 		u8 dbe;
 
 		needed += 1;
@@ -186,25 +225,6 @@ static inline bool ieee80211_uhr_capa_size_ok(const u8 *data, u8 len,
 	return len >= needed;
 }
 
-static inline const struct ieee80211_uhr_cap_phy *
-ieee80211_uhr_phy_cap(const struct ieee80211_uhr_cap *cap, bool from_ap)
-{
-	u8 offs = 0;
-
-	if (from_ap && cap->mac.mac_cap[1] & IEEE80211_UHR_MAC_CAP1_DBE_SUPP) {
-		u8 dbe = cap->variable[0];
-
-		offs += 1;
-
-		if (dbe & IEEE80211_UHR_MAC_CAP_DBE_EHT_MCS_MAP_160_PRES)
-			offs += 3;
-
-		if (dbe & IEEE80211_UHR_MAC_CAP_DBE_EHT_MCS_MAP_320_PRES)
-			offs += 3;
-	}
-
-	return (const void *)&cap->variable[offs];
-}
 
 #define IEEE80211_SMD_INFO_CAPA_DL_DATA_FWD		0x01
 #define IEEE80211_SMD_INFO_CAPA_MAX_NUM_PREP		0x0E
