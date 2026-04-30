@@ -1512,6 +1512,7 @@ struct ath12k_radio_cfg {
 	s32 temperature;                    /* Last temperature reading in °C */
 	u8 temperature_query_pending;       /* Query sent, waiting for response */
 	u32 msdu_ttl;
+	bool chan144_enabled;
 };
 
 /**
