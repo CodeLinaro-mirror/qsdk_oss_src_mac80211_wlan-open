@@ -999,7 +999,7 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 	struct ath12k_device_dp_stats *device_stats = &ab->dp->device_stats;
 	int len = 0, i, j, retval;
 	const int size = 16384;
-	int tx_enqueued[DP_TCL_NUM_RING_MAX];
+	int tx_enqueued[MAX_TCL_RING];
 	int non_fast_rx[DP_REO_DST_RING_MAX][ATH12K_MAX_SOCS];
 	static const char *rxdma_err[HAL_REO_ENTR_RING_RXDMA_ECODE_MAX] = {
 			"Overflow", "MPDU_len", "FCS", "Decrypt", "TKIP_MIC",
@@ -1035,11 +1035,11 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 	if (!buf)
 		return -ENOMEM;
 
-	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++)
-	       tx_enqueued[i] = device_stats->tx_mcast[i] + device_stats->tx_unicast[i] +
-				device_stats->tx_eapol[i] +
-				device_stats->tx_null_frame[i] +
-				device_stats->tx_fast_unicast[i];
+	for (i = 0; i < MAX_TCL_RING; i++)
+		tx_enqueued[i] = device_stats->tx_mcast[i] + device_stats->tx_unicast[i] +
+				 device_stats->tx_eapol[i] +
+				 device_stats->tx_null_frame[i] +
+				 device_stats->tx_fast_unicast[i];
 
 	for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
 		for (j = 0; j < ab->ag->num_devices; j++)
@@ -1068,7 +1068,7 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 	len += scnprintf(buf + len, size - len, "\nSOC_TX_STATS:\n");
 
 	len += scnprintf(buf + len, size - len, "tx_enqueued=");
-	for (j = 0; j < DP_TCL_NUM_RING_MAX; j++)
+	for (j = 0; j < MAX_TCL_RING; j++)
 		len += scnprintf(buf + len, size - len, " %d:%u", j, tx_enqueued[j]);
 	len += scnprintf(buf + len, size - len, "\n");
 
@@ -1101,32 +1101,32 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 	len += scnprintf(buf + len, size - len, "\n");
 
 	len += scnprintf(buf + len, size - len, "\ntx_eapol_M1= ");
-	for (j=0; j < DP_TCL_NUM_RING_MAX; j++)
+	for (j = 0; j < MAX_TCL_RING; j++)
 		len += scnprintf(buf + len, size - len,
 				"%u ", device_stats->tx_eapol_type[0][j]);
 
 	len += scnprintf(buf + len, size - len, "\ntx_eapol_M2= ");
-	for (j=0; j < DP_TCL_NUM_RING_MAX; j++)
+	for (j = 0; j < MAX_TCL_RING; j++)
 		len += scnprintf(buf + len, size - len,
 				 "%u ", device_stats->tx_eapol_type[1][j]);
 
 	len += scnprintf(buf + len, size - len, "\ntx_eapol_M3= ");
-	for (j=0; j < DP_TCL_NUM_RING_MAX; j++)
+	for (j = 0; j < MAX_TCL_RING; j++)
 		len += scnprintf(buf + len, size - len,
 				 "%u ", device_stats->tx_eapol_type[2][j]);
 
 	len += scnprintf(buf + len, size - len, "\ntx_eapol_M4= ");
-	for (j=0; j < DP_TCL_NUM_RING_MAX; j++)
+	for (j = 0; j < MAX_TCL_RING; j++)
 		len += scnprintf(buf + len, size - len,
 				 "%u ", device_stats->tx_eapol_type[3][j]);
 
 	len += scnprintf(buf + len, size - len, "\ntx_eapol_G1= ");
-	for (j=0; j < DP_TCL_NUM_RING_MAX; j++)
+	for (j = 0; j < MAX_TCL_RING; j++)
 		len += scnprintf(buf + len, size - len,
 				"%u ", device_stats->tx_eapol_type[4][j]);
 
 	len += scnprintf(buf + len, size - len, "\ntx_eapol_G2= ");
-	for (j=0; j < DP_TCL_NUM_RING_MAX; j++)
+	for (j = 0; j < MAX_TCL_RING; j++)
 		len += scnprintf(buf + len, size - len,
 				"%u ", device_stats->tx_eapol_type[5][j]);
 
@@ -1187,7 +1187,7 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 			 atomic_read(&device_stats->tx_err.misc_fail));
 
 	len += scnprintf(buf + len, size - len, "\nFast_xmit_Tx_unicast_stats:\n");
-	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++)
+	for (i = 0; i < MAX_TCL_RING; i++)
 		len += scnprintf(buf + len, size - len, "ring%d= %u\n",
 				 i, device_stats->tx_fast_unicast[i]);
 
