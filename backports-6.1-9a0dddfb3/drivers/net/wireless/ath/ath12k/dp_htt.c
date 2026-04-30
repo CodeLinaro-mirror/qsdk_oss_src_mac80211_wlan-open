@@ -2716,7 +2716,8 @@ void ath12k_dp_get_htt_mgmt_filter(struct ath12k_base *ab, u16 *mgmt_filter)
 {
 	u16 filter = FILTER_MGMT_ALL;
 
-	filter &= ~(FILTER_MGMT_PROBE_RESP | FILTER_MGMT_BEACON);
+	filter &= ~(FILTER_MGMT_PROBE_REQ | FILTER_MGMT_PROBE_RESP |
+		    FILTER_MGMT_BEACON);
 	*mgmt_filter = filter;
 }
 EXPORT_SYMBOL(ath12k_dp_get_htt_mgmt_filter);
