@@ -5287,7 +5287,67 @@ struct htt_stats_optional_configs_stats_tlv {
 			u32 is_e_ani_enabled:1;          /* bit 6 */
 			u32 is_spur_mit_enabled:1;       /* bit 7 */
 			u32 is_multigain_rssi_enabled:1; /* bit 8 */
-			u32 reserved:23;                 /* bits 31:9 */
+			u32 is_olpc_clpc:1;              /* bit 9  */
+			u32 is_abi_en_dis:1;             /* bit 10 */
+			u32 is_str_sig_rec:1;            /* bit 11 */
+			u32 is_verbose_enabled:1;        /* bit 12 */
+			u32 is_dyn_ant_sel_supported:1;  /* bit 13 */
+			u32 is_dfs_punc_enabled:1;       /* bit 14 */
+			u32 dpd_pow_bo_status:1;         /* bit 15 */
+			u32 is_eeprom_compressed:1;      /* bit 16 */
+			u32 reserved:15;                 /* bits 31:17 */
+		};
+	};
+
+	/* RxSOP config word */
+	union {
+		u32 rxsop_config;
+		struct {
+			u32 is_rxsop_enabled:1;   /* bit 0 */
+			u32 rxsop_config_value:8; /* bits 8:1 */
+			u32 rxsop_reserved:23;    /* bits 31:9 */
+		};
+	};
+
+	u32 abi_max_rg_gain;          /* dB units */
+	u32 abi_max_lg_gain;          /* dB units */
+	u32 abi_max_vlg_gain;         /* dB units */
+
+	/* abi_hold_mode:
+	 * Controls how long gain table decisions are held:
+	 *   0: Cleared each packet
+	 *   1: Held for timer value
+	 *   2: Gain table choices are under CSR control
+	 */
+	u32 abi_hold_mode;
+	u32 abi_hold_count;
+
+	s32 rssi_temp_offset;         /* dB units */
+	s32 rssi_xlna_bypass_offset;  /* dB units */
+	s32 rssi_cbw_offset;          /* dB units */
+	s32 rssi_chan_freq_offset;    /* dB units */
+
+	u32 otp_version;
+
+	u32 cfr_clip_factor[4];
+
+	/* Heavy-clip premcs & pkt_type packed word */
+	union {
+		u32 hc__premcs__pkt_type__word32;
+		struct {
+			u32 hc_premcs:16;   /* bits 15:0  */
+			u32 hc_pkt_type:16; /* bits 31:16 */
+		};
+	};
+
+	/* Heavy-clip NSS threshold + rx-gain forced fields packed word */
+	union {
+		u32 hc_nss_thr__is_rx_gain_forced__rx_gain_forced_val__word32;
+		struct {
+			u32 hc_nss_thr:8;         /* bits 7:0   */
+			u32 is_rx_gain_forced:8;  /* bits 15:8  */
+			u32 rx_gain_forced_val:8; /* bits 23:16 */
+			u32 reserved2:8;          /* bits 31:24 */
 		};
 	};
 } __packed;
@@ -5301,6 +5361,26 @@ struct htt_stats_optional_configs_stats_tlv {
 #define HTT_STATS_OPT_CONF_EANI           BIT(6)	/*EANI Mask*/
 #define HTT_STATS_OPT_CONF_SPUR_MIT       BIT(7)	/*Spur Mitigation Mask*/
 #define HTT_STATS_OPT_CONF_MULTIGAIN_RSSI BIT(8)	/*Multigain RSSI Mask*/
+#define HTT_STATS_OPT_CONF_OLPC_CLPC           BIT(9)  /* OLPC / CLPC */
+#define HTT_STATS_OPT_CONF_ABI_EN_DIS          BIT(10) /* ABI enable/disable */
+#define HTT_STATS_OPT_CONF_STR_SIG_REC         BIT(11) /* Strong signal recovery */
+#define HTT_STATS_OPT_CONF_VERBOSE             BIT(12) /* Verbose mode */
+#define HTT_STATS_OPT_CONF_DYN_ANT_SEL         BIT(13) /* Dynamic antenna select */
+#define HTT_STATS_OPT_CONF_DFS_PUNC            BIT(14) /* DFS puncturing */
+#define HTT_STATS_OPT_CONF_DPD_POW_BO          BIT(15) /* DPD power backoff */
+#define HTT_STATS_OPT_CONF_EEPROM_COMPRESSED  BIT(16) /* EEPROM compressed */
+#define HTT_STATS_OPT_CONF_RXSOP_ENABLE_BIT        BIT(0)
+#define HTT_STATS_OPT_CONF_RXSOP_CONFIG_SHIFT     1
+#define HTT_STATS_OPT_CONF_RXSOP_CONFIG_MASK      GENMASK(8, 1)
+#define HTT_STATS_OPT_CONF_HC_PREMCS_MASK          GENMASK(15, 0)
+#define HTT_STATS_OPT_CONF_HC_PKT_TYPE_SHIFT       16
+#define HTT_STATS_OPT_CONF_HC_PKT_TYPE_MASK        GENMASK(31, 16)
+#define HTT_STATS_OPT_CONF_HC_NSS_THR_SHIFT        0
+#define HTT_STATS_OPT_CONF_HC_NSS_THR_MASK         GENMASK(7, 0)
+#define HTT_STATS_OPT_CONF_IS_RX_GAIN_FORCED_SHIFT 8
+#define HTT_STATS_OPT_CONF_IS_RX_GAIN_FORCED_MASK  GENMASK(15, 8)
+#define HTT_STATS_OPT_CONF_RX_GAIN_FORCED_VAL_SHIFT 16
+#define HTT_STATS_OPT_CONF_RX_GAIN_FORCED_VAL_MASK  GENMASK(23, 16)
 
 struct ath12k_htt_stats_txbf_ofdma_be_parbw_tlv {
 	__le32 be_ofdma_parbw_user_snd;
