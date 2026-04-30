@@ -84,6 +84,13 @@ enum htt_tx_tid {
 	HTT_MAX_TID_NUM		= 31,
 };
 
+enum htt_sdwf_svc_inst_req_type {
+	HTT_SDWF_SVC_INST_CREATE_REQ = 0,
+	HTT_SDWF_SVC_INST_DEACTIVATE_REQ,
+	HTT_SDWF_SVC_INST_REACTIVATE_REQ,
+	HTT_SDWF_SVC_INST_DELETE_REQ,
+};
+
 /**
  * @brief host -> target message to provide mpduq for a tid in a peer
  *

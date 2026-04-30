@@ -84,6 +84,7 @@ struct ath12k_dp_msdu_q_info
 	sw_msduq_ptr->mlo = peer->is_mlo;
 	sw_msduq_ptr->flow_info.peer_id = peer->peer_id;
 	sw_msduq_ptr->allocated = 1;
+	sw_msduq_ptr->svc_id = ATH12K_INVALID_SVC_ID;
 
 	return sw_msduq_ptr;
 }
