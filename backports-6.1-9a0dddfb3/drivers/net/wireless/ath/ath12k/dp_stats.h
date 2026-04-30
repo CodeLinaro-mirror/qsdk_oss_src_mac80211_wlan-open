@@ -275,6 +275,12 @@ enum ath12k_mu_packet_type {
 			_handle->stats[_ring]._field += _delta; \
 	} while (0)
 
+#define DP_RX_STATS_INC(_handle, _field, _delta, _ring) \
+	do { \
+		if (likely(_handle)) \
+			_handle->rx_stats[_ring]._field += _delta; \
+	} while (0)
+
 #define DP_STATS_INCC(handle, field, delta, cond) \
 	do { \
 		if ((cond) && likely(handle)) \
@@ -298,6 +304,13 @@ enum ath12k_mu_packet_type {
 		DP_STATS_INC(_handle, _field.packets, _count, _ring); \
 		DP_STATS_INC(_handle, _field.bytes, _bytes, _ring); \
 	} while (0)
+
+#define DP_RX_STATS_INC_PKT(_handle, _field, _count, _bytes, _ring) \
+	do { \
+		DP_RX_STATS_INC(_handle, _field.packets, _count, _ring); \
+		DP_RX_STATS_INC(_handle, _field.bytes, _bytes, _ring); \
+	} while (0)
+
 
 /* DEVICE STATS MACROS */
 #define DP_DEVICE_STATS_INC(_handle, _field, _delta) \
@@ -799,6 +812,10 @@ struct ath12k_dp_proto_stats_vif {
 struct ath12k_dp_tx_vif_stats {
 	struct ath12k_dp_tx_ingress_stats tx_i;
 	struct ath12k_dp_proto_stats_vif *proto;
+};
+
+struct ath12k_dp_rx_vif_stats {
+	struct ath12k_dp_pkt_info ppeds_rx;
 };
 
 struct ath12k_dp_aggr_vif_stats {

@@ -836,6 +836,7 @@ struct ath12k_dp_vif {
 	atomic_t mcbc_gsn;
 	struct ath12k_dp_link_vif dp_link_vif[ATH12K_NUM_MAX_LINKS];
 	struct ath12k_dp_tx_vif_stats stats[DP_TCL_NUM_RING_MAX];
+	struct ath12k_dp_rx_vif_stats rx_stats[DP_REO_DST_RING_MAX];
 	struct ath12k_me_db __rcu *me_db;
 
 	/* PPE mode independent variables */
@@ -3061,5 +3062,6 @@ void ath12k_core_cu_mem_free(struct ath12k *ar, struct ath12k_link_vif *arvif);
 void ath12k_core_cu_mem_free_all(struct ath12k *ar);
 int ath12k_core_cu_mem_pool_init(struct ath12k_hw_group *ag);
 void ath12k_core_cu_mem_pool_deinit(struct ath12k_hw_group *ag);
+struct wireless_dev *ath12k_get_wdev_from_netdev(struct net_device *dev);
 
 #endif /* _CORE_H_ */

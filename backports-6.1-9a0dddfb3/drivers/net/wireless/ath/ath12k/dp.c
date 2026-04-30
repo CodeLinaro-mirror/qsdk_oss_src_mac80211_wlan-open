@@ -3089,6 +3089,20 @@ static void ath12k_vif_iterate_peer(struct ath12k_link_vif *arvif,
 	spin_unlock_bh(&dp->dp_lock);
 }
 
+static void
+ath12k_dp_aggr_vif_ppeds_sync_stats(struct ath12k_dp_aggr_vif_stats *aggr_vif_stats,
+				    struct ath12k_dp_vif *vif)
+{
+	if (!vif->rx_stats[DP_REO_PPEDS_RING_IDX].ppeds_rx.packets)
+		return;
+
+	ath12k_dbg(NULL, ATH12K_DBG_TELEMETRY, "RX PPEDS stats aggregation on VIF");
+	aggr_vif_stats->peer_stats.rx[DP_REO_PPEDS_RING_IDX].sent_to_stack.packets +=
+			vif->rx_stats[DP_REO_PPEDS_RING_IDX].ppeds_rx.packets;
+	aggr_vif_stats->peer_stats.rx[DP_REO_PPEDS_RING_IDX].sent_to_stack.bytes +=
+			vif->rx_stats[DP_REO_PPEDS_RING_IDX].ppeds_rx.bytes;
+}
+
 static void ath12k_dp_aggr_vif_ingress_stats(struct ath12k_pdev_dp *dp_pdev,
 					     struct ath12k_dp_aggr_vif_stats *aggr_vif_stats,
                                              struct ath12k_dp_vif *vif)
@@ -3209,6 +3223,7 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 	} else {
 		/*MLD vif stats*/
 		ath12k_dp_aggr_vif_ingress_stats(&ar->dp, aggr_vif_stats, dp_vif);
+		ath12k_dp_aggr_vif_ppeds_sync_stats(aggr_vif_stats, dp_vif);
 
 		/*legacy vif stats handling*/
 		if (hweight16(links_map) == 0) {
