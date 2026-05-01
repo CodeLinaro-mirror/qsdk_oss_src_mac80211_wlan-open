@@ -17060,6 +17060,72 @@ static void ath12k_mgmt_over_wmi_tx_purge(struct ath12k *ar)
 		ath12k_mgmt_over_wmi_tx_drop(ar, skb);
 }
 
+static bool ath12k_mgmt_has_ml_link_info_ie(struct ath12k *ar,
+					    struct sk_buff *skb)
+{
+	struct ieee80211_hdr *hdr;
+	struct ieee80211_mgmt *mgmt;
+	struct ath12k_skb_cb *skb_cb;
+	const u8 *pos, *end;
+	u8 code, iv_len = 0;
+
+	if (!ar || !ar->ab || !skb || !skb->data)
+		return false;
+
+	hdr = (struct ieee80211_hdr *)skb->data;
+	if (!ieee80211_is_action(hdr->frame_control))
+		return false;
+
+	if (ieee80211_has_protected(hdr->frame_control)) {
+		skb_cb = ATH12K_SKB_CB(skb);
+
+		switch (skb_cb->cipher) {
+		case WLAN_CIPHER_SUITE_CCMP:
+			iv_len = IEEE80211_CCMP_HDR_LEN;
+			break;
+		case WLAN_CIPHER_SUITE_TKIP:
+		case WLAN_CIPHER_SUITE_CCMP_256:
+		case WLAN_CIPHER_SUITE_GCMP:
+		case WLAN_CIPHER_SUITE_GCMP_256:
+		case WLAN_CIPHER_SUITE_AES_CMAC:
+		case WLAN_CIPHER_SUITE_BIP_GMAC_128:
+		case WLAN_CIPHER_SUITE_BIP_GMAC_256:
+		case WLAN_CIPHER_SUITE_BIP_CMAC_256:
+			break;
+		default:
+			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
+					 "ml_info_ie: unsupported protected cipher 0x%x\n",
+					 skb_cb->cipher);
+			return false;
+		}
+	}
+
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
+			 "ml_info_ie: protected=%u iv_len=%u len=%u\n",
+			 ieee80211_has_protected(hdr->frame_control), iv_len,
+			 skb->len);
+
+	mgmt = (void *)skb->data;
+	pos = (const u8 *)&mgmt->u.action + iv_len;
+	end = skb->data + skb->len;
+
+	if (pos + 2 > end)
+		return false;
+
+	pos++;
+	code = *pos++;
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
+			 "ml_info_ie: action_code=%u\n", code);
+	if (code != WLAN_ACTION_SPCT_CHL_SWITCH)
+		return false;
+
+	if (cfg80211_find_ext_elem(WLAN_EID_EXT_MLO_LINK_INFO,
+				   pos, end - pos))
+		return true;
+
+	return false;
+}
+
 static int ath12k_mac_mgmt_action_frame_fill_elem(struct ath12k_link_vif *arvif,
 						  struct sk_buff *skb)
 {
@@ -17142,6 +17208,19 @@ static int ath12k_mac_mgmt_action_frame_fill_elem(struct ath12k_link_vif *arvif,
 	category = *buf++;
 
 	switch (category) {
+	case WLAN_CATEGORY_SPECTRUM_MGMT:
+		if (ath12k_mgmt_has_ml_link_info_ie(ar, skb)) {
+			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
+					 "spectrum_mgmt: set link-agnostic (can_override_mld_tx=%u)\n",
+					 can_override_mld_tx);
+			MGMT_SET_LINK_AGNOSTIC(can_override_mld_tx, skb_cb);
+		} else {
+			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
+					 "spectrum_mgmt: clear link-agnostic (can_override_mld_tx=%u)\n",
+					 can_override_mld_tx);
+			MGMT_RESET_LINK_AGNOSTIC(can_override_mld_tx, skb_cb);
+		}
+		break;
 	case WLAN_CATEGORY_RADIO_MEASUREMENT:
 		/* Packet Format:
 		 *      Action Code | Dialog Token | Variable Len (based on Action Code)
