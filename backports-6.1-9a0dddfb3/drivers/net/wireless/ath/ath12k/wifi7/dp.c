@@ -326,7 +326,6 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 		goto fail_dp_mon_tx_free;
 	}
 
-	ath12k_hif_irq_enable(dp->ab);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (ab->dp->ppe.ppe_ops &&
 		ab->dp->ppe.ppe_ops->ath12k_ppeds_interrupt_start)
