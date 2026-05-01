@@ -1007,6 +1007,8 @@ struct ath12k_vif {
 	u8 hw_link_id;
 	struct ath12k_wmm_stats wmm_stats;
 	bool overide_primary_umac;
+	struct work_struct disable_sg_netdev_work;
+	bool disable_sg;
 #ifdef CPTCFG_ATH12K_DEBUGFS
 	struct dentry *debugfs_primary_link;
 	struct dentry *debugfs_linkstats;
