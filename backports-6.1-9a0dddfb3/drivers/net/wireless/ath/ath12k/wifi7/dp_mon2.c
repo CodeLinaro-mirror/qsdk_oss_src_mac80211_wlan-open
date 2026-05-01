@@ -671,8 +671,8 @@ ath12k_wifi7_dp_ext_mon_rx_adjust_mpdu_len(struct ath12k_pdev_dp *dp_pdev,
 			return -EINVAL;
 		}
 
-		if (num_frags > 1 &&
-		    level != ATH12K_EXT_MON_FILTER_LEVEL_MSDU) {
+		if (unlikely(num_frags > 1 &&
+		    level != ATH12K_EXT_MON_FILTER_LEVEL_MSDU)) {
 			ath12k_dbg(dp->ab, ATH12K_DBG_DP_MON,
 				   "level mpdu/ppdu expects only single frag\n");
 			return -EINVAL;
@@ -776,7 +776,7 @@ ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	spin_lock(&dp_mon_pdev->rx_ext_mon_lock);
 	config = dp_mon_pdev->rx_ext_mon_config;
 
-	if (!(config && config->enable)) {
+	if (unlikely(!(config && config->enable))) {
 		spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
 		ath12k_warn(dp_pdev->dp,
 			    "ext mon not enabled\n");
@@ -803,8 +803,8 @@ ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 
 	if (unlikely(type >= ATH12K_EXT_MON_FRAME_MAX)) {
 		spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
-		ath12k_warn(dp_pdev->dp,
-			    "Incorrect type received in fc: %x\n", hdr->frame_control);
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON,
+			   "Incorrect type received in fc: %x\n", hdr->frame_control);
 		return -EINVAL;
 	}
 
@@ -851,8 +851,8 @@ ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 
 	if (unlikely(!pkt_config)) {
 		spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
-		ath12k_warn(dp_pdev->dp,
-			    "Filter category not enabled: %x\n", filter_category);
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON,
+			   "Filter category not enabled: %x\n", filter_category);
 		return -EINVAL;
 	}
 
@@ -903,8 +903,8 @@ ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 								 level);
 
 		if (unlikely(ret)) {
-			ath12k_warn(dp_pdev->dp,
-				    "mpdu len adjustment failed\n");
+			ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON,
+				   "mpdu len adjustment failed\n");
 			return ret;
 		}
 	}
@@ -914,13 +914,13 @@ ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 
 	/*
 	 * If an ext_mon listener is registered, deliver the MPDU via the
-	 * ext_mon SRCU notifier chain. The listener takes ownership of the
-	 * SKB and is responsible for consuming or forwarding it.
+	 * ext_mon SRCU notifier chain. See struct ath12k_ext_mon_rx_event
+	 * in ath12k_notif.h for SKB ownership, rx_status placement, and
+	 * ieee80211_hw pointer lifetime rules.
 	 *
-	 * If no ext_mon listener is registered and a radiotap header is
-	 * requested, deliver the MPDU to mac80211.
-	 * If no ext_mon listener is registered and radiotap is not requested,
-	 * drop the MPDU.
+	 * If no ext_mon listener is registered:
+	 *   - need_rtap set: deliver to mac80211 (mac80211 adds radiotap).
+	 *   - need_rtap not set: drop the MPDU.
 	 */
 	if (ath12k_ext_mon_rx_notifier_has_listeners()) {
 		struct ath12k_ext_mon_rx_event rx_event;

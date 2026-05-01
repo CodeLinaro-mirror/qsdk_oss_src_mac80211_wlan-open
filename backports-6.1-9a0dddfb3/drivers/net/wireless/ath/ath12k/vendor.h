@@ -5013,7 +5013,6 @@ enum qca_vendor_attr_extended_monitor_packet_config {
  *     Frame mask for data frames (extended monitor specific).
  *     The following are examples of supported masks:
  *       - 0xFFFF : ALL data frames
- *       - 0x0001 : Subtype Data
  *       - 0x0008 : Subtype Null
  *       - 0x4000 : Multicast frames
  *       - 0x8000 : Unicast frames

@@ -59,15 +59,33 @@ struct ath12k_ppdu_event {
 
 /**
  * struct ath12k_ext_mon_rx_event - Extended monitor RX notifier event
- * @mpdu: The MPDU SKB, with radiotap header prepended when requested.
+ * @mpdu: The raw MPDU SKB as captured by the driver.
+ *        No radiotap header is prepended by the driver. The rx_status
+ *        is stored in the SKB's control buffer (cb) and can be accessed
+ *        via IEEE80211_SKB_RXCB(mpdu). If the listener forwards the
+ *        frame to mac80211 via ieee80211_rx_ni(), mac80211 reads the
+ *        rx_status from the cb and prepends the radiotap header.
+ *
  *        The driver frees this SKB after srcu_notifier_call_chain()
- *        returns.  Listeners that need to retain the frame MUST call
+ *        returns. Listeners that need to retain the frame MUST call
  *        skb_clone() inside the callback and take ownership of the
  *        clone; they must NOT free or hold a reference to @mpdu itself.
- * @hw: the hardware this frame came in on
+ *
+ * @hw: Pointer to the ieee80211_hw instance this frame arrived on.
+ *      This pointer is valid ONLY for the duration of the notifier
+ *      callback. Listeners MUST NOT store this pointer in any global
+ *      or persistent context for use after the callback returns — doing
+ *      so results in undefined behaviour as the hardware may be torn
+ *      down at any time.
+ *
+ *      If a listener needs to reference the hardware beyond the
+ *      callback lifetime (e.g. from a deferred work item), it must
+ *      extract hw->wiphy->perm_addr during the callback and use that
+ *      MAC address to look up the corresponding wiphy/ieee80211_hw
+ *      safely at the point of use.
  *
  * Passed to every registered callback on the ext_mon RX SRCU notifier
- * chain.  The chain fires from rxmon workqueue (process) context;
+ * chain. The chain fires from rxmon workqueue (process) context;
  * callbacks may sleep.
  */
 struct ath12k_ext_mon_rx_event {
