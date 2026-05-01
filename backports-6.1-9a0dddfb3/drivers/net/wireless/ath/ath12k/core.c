@@ -2122,8 +2122,6 @@ core_pdev_create:
 
 		ath12k_debugfs_pdev_create(ab);
 
-		ath12k_hif_mgmt_irq_enable(ab);
-
 		ret = ath12k_core_rfkill_config(ab);
 		if (ret && ret != -EOPNOTSUPP) {
 			mutex_unlock(&ab->core_lock);
