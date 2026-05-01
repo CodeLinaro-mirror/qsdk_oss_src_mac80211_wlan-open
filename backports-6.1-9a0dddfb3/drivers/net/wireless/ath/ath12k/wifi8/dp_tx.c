@@ -390,7 +390,8 @@ ath12k_dp_qos_update(struct ath12k_dp *dp, struct ath12k_pdev_dp *dp_pdev,
 			return;
 		}
 		ret = ath12k_dp_peer_scs_data(dp, peer->dp_peer->qos,
-					      scs_id, &msduq, &qos_id);
+					      scs_id, peer, dp_pdev->ar,
+					      &msduq, &qos_id);
 		spin_unlock_bh(&dp->dp_lock);
 
 		if (ret != 0) {

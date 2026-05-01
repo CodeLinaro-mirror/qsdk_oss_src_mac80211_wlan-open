@@ -1292,6 +1292,8 @@ static u16 ath12k_get_tid_msduq(struct ath12k_base *ab,
 	}
 
 	if (msduq == QOS_INVALID_MSDUQ) {
+		if (link_peer)
+			mld_peer = link_peer->dp_peer;
 		/* Reserve a new one */
 		for (q = 0; q < QOS_TID_MDSUQ_MAX; ++q) {
 			if (!qos->msduq_map[tid][q].reserved) {
@@ -1306,7 +1308,6 @@ static u16 ath12k_get_tid_msduq(struct ath12k_base *ab,
 					   msduq, tid, q);
 				if (!qos->telemetry_peer_ctx &&
 				    link_peer && ar && ar->ah) {
-					mld_peer = link_peer->dp_peer;
 					telemetry_peer_ctx =
 						ath12k_telemetry_peer_ctx_alloc(&ar->ah->dp_hw,
 										mld_peer,
@@ -1321,6 +1322,12 @@ static u16 ath12k_get_tid_msduq(struct ath12k_base *ab,
 						   msduq - MSDUQ_MAX_DEF);
 					}
 				}
+				if (ath12k_dp_qos_queue_setup(ath12k_ab_to_dp(ar->ab),
+							      ab, &ar->dp,
+							      msduq,
+							      mld_peer->peer_id,
+							      qos_id))
+					msduq = QOS_INVALID_MSDUQ;
 				break;
 			}
 		}
@@ -1442,6 +1449,8 @@ u16 ath12k_dp_peer_scs_get_qos_id(struct ath12k_base *ab,
 
 int ath12k_dp_peer_scs_data(struct ath12k_dp *dp,
 			    struct ath12k_dp_peer_qos *qos, u8 scs_id,
+			    struct ath12k_dp_link_peer *link_peer,
+			    struct ath12k *ar,
 			    u16 *queue, u16 *id)
 {
 	u16 qos_data;
@@ -1469,8 +1478,8 @@ int ath12k_dp_peer_scs_data(struct ath12k_dp *dp,
 	if (qos_id > QOS_UL_ID_MAX && qos_id < QOS_ID_INVALID)
 		msduq = qos_id - QOS_LEGACY_DL_ID_MIN;
 	else
-		msduq = ath12k_dp_peer_qos_msduq(dp->ab, qos, NULL,
-						 NULL, qos_id, scs_id);
+		msduq = ath12k_dp_peer_qos_msduq(dp->ab, qos, link_peer,
+						 ar, qos_id, scs_id);
 
 	if (msduq == QOS_INVALID_MSDUQ)
 		goto ret;
