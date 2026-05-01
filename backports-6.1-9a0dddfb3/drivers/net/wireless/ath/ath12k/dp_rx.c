@@ -1835,3 +1835,11 @@ bool ath12k_dp_rx_peer_tid_skip_pn_replay(struct ath12k_dp *dp, u8 tid)
 
 	return false;
 }
+
+int ath12k_dp_rxdma_ring_sel_config(struct ath12k_base *ab)
+{
+	if (ab->hw_params->hw_ops->rxdma_ring_sel_config)
+		return ab->hw_params->hw_ops->rxdma_ring_sel_config(ab);
+
+	return 0;
+}
