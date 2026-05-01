@@ -8263,12 +8263,12 @@ bool nl80211_put_sta_rate(struct sk_buff *msg, struct rate_info *info, int attr)
 	} else if (info->flags & RATE_INFO_FLAGS_UHR_MCS) {
 		if (nla_put_u8(msg, NL80211_RATE_INFO_UHR_MCS, info->mcs))
 			return false;
-		if (nla_put_u8(msg, NL80211_RATE_INFO_EHT_NSS, info->nss))
+		if (nla_put_u8(msg, NL80211_RATE_INFO_UHR_NSS, info->nss))
 			return false;
-		if (nla_put_u8(msg, NL80211_RATE_INFO_EHT_GI, info->eht_gi))
+		if (nla_put_u8(msg, NL80211_RATE_INFO_UHR_GI, info->eht_gi))
 			return false;
 		if (info->bw == RATE_INFO_BW_EHT_RU &&
-		    nla_put_u8(msg, NL80211_RATE_INFO_EHT_RU_ALLOC,
+		    nla_put_u8(msg, NL80211_RATE_INFO_UHR_RU_ALLOC,
 			       info->eht_ru_alloc))
 			return false;
 		if (info->flags & RATE_INFO_FLAGS_UHR_ELR_MCS &&

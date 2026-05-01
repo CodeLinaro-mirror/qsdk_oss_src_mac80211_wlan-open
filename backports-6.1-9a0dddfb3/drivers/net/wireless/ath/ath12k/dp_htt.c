@@ -35,6 +35,9 @@ ath12k_dp_fill_txrate_gi(struct rate_info *txrate, u8 preamble, u8 gi)
 	case WMI_RATE_PREAMBLE_EHT:
 		txrate->eht_gi = ath12k_eht_gi_to_nl80211_eht_gi(gi);
 		break;
+	case WMI_RATE_PREAMBLE_UHR:
+		txrate->eht_gi = ath12k_eht_gi_to_nl80211_eht_gi(gi);
+		break;
 	default:
 		break;
 	}
@@ -1125,6 +1128,11 @@ ath12k_update_htt_stats_txrate(struct ath12k_pdev_dp *dp_pdev,
 		return;
 	}
 
+	if (flags == WMI_RATE_PREAMBLE_UHR && mcs > ATH12K_UHR_MCS_MAX) {
+		ath12k_warn(ab, "Invalid UHR mcs %d peer stats",  mcs);
+		return;
+	}
+
 	if (flags == WMI_RATE_PREAMBLE_VHT && mcs > ATH12K_VHT_MCS_MAX) {
 		ath12k_warn(ab, "Invalid VHT mcs %d peer stats",  mcs);
 		return;
@@ -1173,6 +1181,19 @@ ath12k_update_htt_stats_txrate(struct ath12k_pdev_dp *dp_pdev,
 		peer->txrate.mcs = mcs;
 		peer->txrate.flags = RATE_INFO_FLAGS_EHT_MCS;
 		peer->txrate.he_dcm = dcm;
+		peer->txrate.eht_ru_alloc = ru_tones;
+		peer_stats->ru_tones = peer->txrate.eht_ru_alloc;
+		break;
+	case WMI_RATE_PREAMBLE_UHR:
+		peer->txrate.mcs = mcs;
+		peer->txrate.flags = RATE_INFO_FLAGS_UHR_MCS;
+		peer->txrate.he_dcm = dcm;
+
+		/*
+		 * We fill EHT params for UHR mode as well since
+		 * the APIs such as _cfg80211_calculate_bitrate_eht_uhr() etc.
+		 * remain common and use EHT params to calculate Tx Bit rate etc.
+		 */
 		peer->txrate.eht_ru_alloc = ru_tones;
 		peer_stats->ru_tones = peer->txrate.eht_ru_alloc;
 		break;

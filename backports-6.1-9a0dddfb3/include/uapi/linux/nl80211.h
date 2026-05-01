@@ -4135,6 +4135,11 @@ enum nl80211_uhr_elr_config {
  * @NL80211_RATE_INFO_UHR_MCS: UHR MCS index (u8, 0-15, 17, 19, 20, 23)
  *	Note that the other EHT attributes (such as @NL80211_RATE_INFO_EHT_NSS)
  *	are used in conjunction with this where applicable
+ * @NL80211_RATE_INFO_UHR_NSS: UHR NSS value (u8, 1-8)
+ * @NL80211_RATE_INFO_UHR_GI: UHR guard interval identifier
+ *	(u8, Values remain same as that of EHT)
+ * @NL80211_RATE_INFO_UHR_RU_ALLOC: UHR RU allocation, if not present then
+ *	non-OFDMA was used (u8, Values remain same as that of EHT)
  * @NL80211_RATE_INFO_UHR_ELR: UHR ELR flag, which restricts NSS to 1,
  *	MCS to 0 or 1, and GI to %NL80211_RATE_INFO_EHT_GI_1_6.
  * @NL80211_RATE_INFO_UHR_IM: UHR Interference Mitigation flag
@@ -4172,6 +4177,9 @@ enum nl80211_rate_info {
 	NL80211_RATE_INFO_8_MHZ_WIDTH,
 	NL80211_RATE_INFO_16_MHZ_WIDTH,
 	NL80211_RATE_INFO_UHR_MCS,
+	NL80211_RATE_INFO_UHR_NSS,
+	NL80211_RATE_INFO_UHR_GI,
+	NL80211_RATE_INFO_UHR_RU_ALLOC,
 	NL80211_RATE_INFO_UHR_ELR,
 	NL80211_RATE_INFO_UHR_IM,
 
