@@ -98,6 +98,18 @@ __set_ext_desc_buf(struct ath12k_dp_ext_desc_hw *desc, dma_addr_t paddr, u16 len
 }
 
 static inline void
+__get_ext_desc_buf(struct ath12k_dp_ext_desc_hw *desc, dma_addr_t *paddr, u16 *len,
+		   u8 idx)
+{
+	__le32 *buf = (__le32 *)&desc->buf_info[idx * ATH12K_DP_EXT_DESC_BUF_INFO_SZ];
+	u32 paddr_lo = le32_get_bits(buf[0], ATH12K_DP_EXT_DESC_BUF_INFO_PTR_LO);
+	u32 paddr_hi = le32_get_bits(buf[1], ATH12K_DP_EXT_DESC_BUF_INFO_PTR_HI);
+
+	*paddr = ((u64)paddr_hi << 32) | paddr_lo;
+	*len = le32_get_bits(buf[1], ATH12K_DP_EXT_DESC_BUF_INFO_LEN);
+}
+
+static inline void
 ath12k_dp_ext_desc_override_set(struct ath12k_dp_ext_desc_hw *desc,
 				struct ath12k_dp_ext_desc_msdu_info *ext_msdu_info)
 {
@@ -198,6 +210,23 @@ __ext_desc_get_rsvd(struct ath12k_dp_ext_desc_hw *desc, u8 widx)
 	__set_ext_desc_buf(&(_d)->desc, (_addr), (_len), 5)
 
 /*
+ * Convenience macros to extract address of buffers in
+ * buffer pointer fields of tx extension descriptor.
+ */
+#define ath12k_dp_ext_desc_get_buf0(_d, _addr, _len) \
+	__get_ext_desc_buf(&(_d)->desc, (_addr), (_len), 0)
+#define ath12k_dp_ext_desc_get_buf1(_d, _addr, _len) \
+	__get_ext_desc_buf(&(_d)->desc, (_addr), (_len), 1)
+#define ath12k_dp_ext_desc_get_buf2(_d, _addr, _len) \
+	__get_ext_desc_buf(&(_d)->desc, (_addr), (_len), 2)
+#define ath12k_dp_ext_desc_get_buf3(_d, _addr, _len) \
+	__get_ext_desc_buf(&(_d)->desc, (_addr), (_len), 3)
+#define ath12k_dp_ext_desc_get_buf4(_d, _addr, _len) \
+	__get_ext_desc_buf(&(_d)->desc, (_addr), (_len), 4)
+#define ath12k_dp_ext_desc_get_buf5(_d, _addr, _len) \
+	__get_ext_desc_buf(&(_d)->desc, (_addr), (_len), 5)
+
+/*
  * Convenience macros to get and update reserved word.
  */
 #define ath12k_dp_ext_desc_get_rsvd0(_d) \
@@ -243,6 +272,17 @@ static inline void ath12k_dp_ext_desc_set_buf(struct ath12k_dp_ext_desc *ext,
 {
 	WARN_ON_ONCE(idx >= ATH12K_DP_EXT_DESC_BUF_INFO_CNT);
 	__set_ext_desc_buf(&ext->desc, paddr, len, idx);
+}
+
+/*
+ * ath12k_dp_ext_desc_set_buf() - Extract the address of the buffer in the
+ * buffer pointer fields of tx extension descriptors a buffer info ptr
+ */
+static inline void ath12k_dp_ext_desc_get_buf(struct ath12k_dp_ext_desc *ext,
+					      dma_addr_t *paddr, u16 *len, u8 idx)
+{
+	WARN_ON_ONCE(idx >= ATH12K_DP_EXT_DESC_BUF_INFO_CNT);
+	__get_ext_desc_buf(&ext->desc, paddr, len, idx);
 }
 
 /*

@@ -1274,6 +1274,12 @@ void ath12k_dp_tx_ext_desc_free(struct ath12k_dp *dp,
 	if (!tx_desc->paddr_ext_desc || !tx_desc->ext_desc)
 		return;
 
+	/* Unmap SG buffers */
+	if (tx_desc->is_from_sg) {
+		ath12k_dp_tx_sg_unmap_buf(dp, tx_desc->ext_desc,
+					  tx_desc->skb);
+		tx_desc->is_from_sg = 0;
+	}
 	ath12k_core_dma_unmap_single(dp->dev, tx_desc->paddr_ext_desc,
 				     tx_desc->ext_desc_len, DMA_TO_DEVICE);
 	kmem_cache_free(dp->ext_cache, tx_desc->ext_desc);

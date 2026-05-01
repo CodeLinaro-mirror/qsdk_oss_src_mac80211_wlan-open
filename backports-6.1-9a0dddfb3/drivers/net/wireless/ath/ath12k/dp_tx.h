@@ -19,6 +19,8 @@
 #define DP_SDWF_DEFAULT_Q_PTID_MAX 2
 #define DP_SDWF_TID_MAX 8
 
+#define DP_TX_MAX_NUM_FRAGS 6
+
 #define DP_SDWF_Q_MAX (DP_SDWF_DEFINED_Q_PTID_MAX * DP_SDWF_TID_MAX)
 #define DP_SDWF_DEFAULT_Q_MAX (DP_SDWF_DEFAULT_Q_PTID_MAX * DP_SDWF_TID_MAX)
 
@@ -27,6 +29,7 @@
 
 struct ath12k_tx_desc_info;
 struct ath12k_dp_skb_ctrl;
+struct ath12k_dp_ext_desc;
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 struct ath12k_ppeds_desc_params {
 	unsigned int num_ppeds_desc;
@@ -75,6 +78,9 @@ int ath12k_dp_mmesh_tx(struct ieee80211_hw *hw, struct ath12k_base *ab,
 		       struct ath12k_dp_skb_ctrl *skb_ctrl, bool is_eth,
 		       u8 link_id, bool is_mcast, bool *htt_mesh,
 		       struct ieee80211_tx_info *info, u32 qos_nw_delay);
+void ath12k_dp_tx_sg_unmap_buf(struct ath12k_dp *dp,
+			       struct ath12k_dp_ext_desc *ext_desc,
+			       struct sk_buff *skb);
 
 /**
  * ath12k_wifi7_tx_classify_packet() - Classify packet type
@@ -141,6 +147,7 @@ static inline void ath12k_dmb(void)
  * DP_ETH_OFFLOAD                  - Ethernet fast-path offload (SFE/recycler path).
  * DP_FEATURE_STATS                - Per-vif TX statistics collection.
  * DP_FEATURE_ME                   - Multicast Enhancement (ME) replication.
+ * DP_FEATURE_SG                   - Scatter-Gather for non-linear skbs
  */
 #define DP_FEATURE_NONE                  0x00000000
 #define DP_FEATURE_RAW_MODE              BIT(0)
@@ -152,6 +159,7 @@ static inline void ath12k_dmb(void)
 #define DP_ETH_OFFLOAD                   BIT(6)
 #define DP_FEATURE_STATS                 BIT(7)
 #define DP_FEATURE_ME                    BIT(8)
+#define DP_FEATURE_SG                    BIT(9)
 
 /*
  * DP_SKB_* flags stored in skb control block (cb)
@@ -377,7 +385,7 @@ struct ath12k_dp_tx_msdu_info {
  * SKB and to keep the hot path decisions in a compact form.
  */
 struct ath12k_dp_skb_ctrl {
-	u8 features;
+	u32 features;
 	u8 flags;
 } __packed;
 
