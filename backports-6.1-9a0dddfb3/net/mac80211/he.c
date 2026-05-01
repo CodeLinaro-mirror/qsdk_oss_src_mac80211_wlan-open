@@ -107,6 +107,25 @@ static void ieee80211_he_mcs_intersection(__le16 *he_own_rx, __le16 *he_peer_rx,
 	}
 }
 
+static bool he_mcs_nss_is_continuous(__le16 mcs_map)
+{
+	int i;
+	u8 nss_val;
+	bool gap_found = false;
+	u16 val = le16_to_cpu(mcs_map);
+
+	for (i = 0; i < 8; i++) {
+		nss_val = (val >> (i * 2)) & 0x3;
+		if (nss_val == IEEE80211_HE_MCS_NOT_SUPPORTED) {
+			gap_found = true;
+		} else if (gap_found) {
+			/* Supported NSS found after a gap — not continuous */
+			return false;
+		}
+	}
+	return true;
+}
+
 void
 ieee80211_he_cap_ie_to_sta_he_cap(struct ieee80211_sub_if_data *sdata,
 				  struct ieee80211_supported_band *sband,
@@ -176,6 +195,14 @@ ieee80211_he_cap_ie_to_sta_he_cap(struct ieee80211_sub_if_data *sdata,
 				      &own_he_cap.he_mcs_nss_supp.tx_mcs_80,
 				      &he_cap->he_mcs_nss_supp.tx_mcs_80);
 
+	if (!he_mcs_nss_is_continuous(he_cap->he_mcs_nss_supp.rx_mcs_80) ||
+	    !he_mcs_nss_is_continuous(he_cap->he_mcs_nss_supp.tx_mcs_80)) {
+		he_cap->has_he = false;
+		sdata_info(sdata, "Ignoring HE IE from %pM due to non continuous mcs map\n",
+			   link_sta->pub->addr);
+		return;
+	}
+
 	own_160 = own_he_cap.he_cap_elem.phy_cap_info[0] &
 		  IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_160MHZ_IN_5G;
 	peer_160 = he_cap->he_cap_elem.phy_cap_info[0] &
@@ -198,6 +225,16 @@ ieee80211_he_cap_ie_to_sta_he_cap(struct ieee80211_sub_if_data *sdata,
 					&own_he_cap.he_mcs_nss_supp.tx_mcs_160,
 					&he_cap->he_mcs_nss_supp.tx_mcs_160);
 		}
+		if (!he_mcs_nss_is_continuous(he_cap->he_mcs_nss_supp.rx_mcs_160) ||
+		    !he_mcs_nss_is_continuous(he_cap->he_mcs_nss_supp.tx_mcs_160)) {
+			sdata_info(sdata,
+				   "Disabling 160Mhz for %pM due to non continuous mcs map\n",
+				   link_sta->pub->addr);
+			ieee80211_he_mcs_disable(&he_cap->he_mcs_nss_supp.rx_mcs_160);
+			ieee80211_he_mcs_disable(&he_cap->he_mcs_nss_supp.tx_mcs_160);
+			he_cap->he_cap_elem.phy_cap_info[0] &=
+				~IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_160MHZ_IN_5G;
+		}
 	} else if (peer_160 && !own_160) {
 		ieee80211_he_mcs_disable(&he_cap->he_mcs_nss_supp.rx_mcs_160);
 		ieee80211_he_mcs_disable(&he_cap->he_mcs_nss_supp.tx_mcs_160);
@@ -215,6 +252,16 @@ ieee80211_he_cap_ie_to_sta_he_cap(struct ieee80211_sub_if_data *sdata,
 					      &he_cap->he_mcs_nss_supp.rx_mcs_80p80,
 					      &own_he_cap.he_mcs_nss_supp.tx_mcs_80p80,
 					      &he_cap->he_mcs_nss_supp.tx_mcs_80p80);
+		if (!he_mcs_nss_is_continuous(he_cap->he_mcs_nss_supp.rx_mcs_80p80) ||
+		    !he_mcs_nss_is_continuous(he_cap->he_mcs_nss_supp.tx_mcs_80p80)) {
+			sdata_info(sdata,
+				   "Disabling 80P80 for %pM due to non continuous mcs map\n",
+				   link_sta->pub->addr);
+			ieee80211_he_mcs_disable(&he_cap->he_mcs_nss_supp.rx_mcs_80p80);
+			ieee80211_he_mcs_disable(&he_cap->he_mcs_nss_supp.tx_mcs_80p80);
+			he_cap->he_cap_elem.phy_cap_info[0] &=
+			~IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_80PLUS80_MHZ_IN_5G;
+		}
 	} else if (peer_80p80 && !own_80p80) {
 		ieee80211_he_mcs_disable(&he_cap->he_mcs_nss_supp.rx_mcs_80p80);
 		ieee80211_he_mcs_disable(&he_cap->he_mcs_nss_supp.tx_mcs_80p80);
