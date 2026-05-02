@@ -2103,7 +2103,7 @@ struct ath12k_hw_group {
 	u8 num_userpd_started;
 	struct work_struct reset_group_work;
 	struct ath12k_mlo_wsi_load_info *wsi_load_info;
-	u32 recovery_mode;
+	enum ath12k_mlo_recovery_mode recovery_mode;
 	struct ath12k_mlo_dp_umac_reset mlo_umac_reset;
         struct completion umac_reset_complete;
         bool trigger_umac_reset;
@@ -2331,6 +2331,7 @@ struct ath12k_base {
 	enum ath12k_fw_recovery_option fw_recovery_support;
 	u32 recovery_start_time;
 	bool recovery_start;
+	bool post_reconfig_done;
 
 	u32 *crash_info_address;
 	u32 *recovery_mode_address;

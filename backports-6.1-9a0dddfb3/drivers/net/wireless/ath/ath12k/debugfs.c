@@ -7256,7 +7256,7 @@ static ssize_t ath12k_write_simulate_fw_crash(struct file *file,
 					      const char __user *user_buf,
 					      size_t count, loff_t *ppos)
 {
-	struct ath12k_base *tmp_ab, *ab = file->private_data;
+	struct ath12k_base *ab = file->private_data;
 	struct ath12k_hw_group *ag = ab->ag;
 	struct ath12k_pdev *pdev;
 	struct ath12k *ar = NULL;
@@ -7288,17 +7288,12 @@ static ssize_t ath12k_write_simulate_fw_crash(struct file *file,
 			break;
 	}
 
-	if (!ar)
+	if (!ar || ar->ah->state != ATH12K_HW_STATE_ON)
 		return -ENETDOWN;
 
-	for (i = 0; i < ag->num_devices; i++) {
-		tmp_ab = ag->ab[i];
-		if (!tmp_ab || tmp_ab->is_bypassed)
-			continue;
-		if (test_bit(ATH12K_FLAG_RECOVERY, &tmp_ab->dev_flags)) {
-			ath12k_err(tmp_ab, "Already in recovery\n");
-			return -EPERM;
-		}
+	if (ath12k_hw_group_recovery_in_progress(ag)) {
+		ath12k_err(ab, "Already in recovery\n");
+		return -EPERM;
 	}
 
 	if (ag->wsi_remap_in_progress) {

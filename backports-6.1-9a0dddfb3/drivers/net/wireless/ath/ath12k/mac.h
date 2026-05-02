@@ -315,9 +315,7 @@ ath12k_mac_fill_reg_tpc_info_with_psd_eirp_pwr_for_client_sp(struct ath12k *ar,
 							     struct ieee80211_chanctx_conf *ctx);
 
 void ath12k_mac_drain_tx(struct ath12k *ar);
-void ath12k_mac_peer_cleanup_all(struct ath12k *ar);
-void ath12k_mac_dp_peer_cleanup(struct ath12k_hw *ah,
-				enum ath12k_mlo_recovery_mode recovery_mode);
+void ath12k_mac_dp_peer_cleanup(struct ath12k *ar);
 int ath12k_mac_tx_mgmt_pending_free(int buf_id, void *skb, void *ctx);
 enum rate_info_bw ath12k_mac_bw_to_mac80211_bw(enum ath12k_supported_bw bw);
 enum ath12k_supported_bw ath12k_mac_mac80211_bw_to_ath12k_bw(enum rate_info_bw bw);
