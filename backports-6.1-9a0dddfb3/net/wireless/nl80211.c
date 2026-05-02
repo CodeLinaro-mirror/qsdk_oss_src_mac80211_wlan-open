@@ -13115,6 +13115,16 @@ static int nl80211_send_bss(struct sk_buff *msg, struct netlink_callback *cb,
 			      NL80211_BSS_PAD))
 		goto nla_put_failure;
 
+	if (res->has_smd) {
+		if (nla_put_flag(msg, NL80211_BSS_SMD_CAPABLE) ||
+		    nla_put(msg, NL80211_BSS_SMD_DOMAIN_ID,
+			    ETH_ALEN, res->smd_identifier) ||
+		    nla_put_u8(msg, NL80211_BSS_SMD_CAPABILITIES,
+			       res->smd_capabilities) ||
+		    nla_put_u16(msg, NL80211_BSS_SMD_TIMEOUT, res->smd_timeout))
+			goto nla_put_failure;
+	}
+
 	nla_nest_end(msg, bss);
 
 	genlmsg_end(msg, hdr);

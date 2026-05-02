@@ -164,6 +164,9 @@ struct ieee80211_bss {
 
 	/* Keep track of what bits of information we have valid info for. */
 	u8 valid_data;
+
+	bool has_smd;
+	struct ieee80211_smd_info_element smd_info;
 };
 
 /**
@@ -2125,6 +2128,10 @@ struct ieee802_11_elems {
 
 	/* whether/which parse error occurred while retrieving these elements */
 	u8 parse_error;
+
+	/* SMD Information Element */
+	const struct ieee80211_smd_info_element *smd_info;
+	size_t smd_info_len;
 };
 
 static inline struct ieee80211_local *hw_to_local(

@@ -208,6 +208,22 @@ ieee80211_parse_extension_element(u32 *crc,
 			elems->uhr_cap_len = len;
 		}
 		break;
+	case WLAN_EID_EXT_SMD:
+		if (params->mode < IEEE80211_CONN_MODE_UHR)
+			break;
+		calc_crc = true;
+		if (len >= sizeof(*elems->smd_info)) {
+			if (elems->smd_info) {
+				elems->parse_error |=
+					IEEE80211_PARSE_ERR_DUP_ELEM;
+				break;
+			}
+			elems->smd_info = data;
+			elems->smd_info_len = len;
+		} else {
+			elems->parse_error |= IEEE80211_PARSE_ERR_BAD_ELEM_SIZE;
+		}
+		break;
 	}
 
 	if (crc && calc_crc)

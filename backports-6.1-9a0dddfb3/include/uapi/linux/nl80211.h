@@ -1685,6 +1685,8 @@ enum nl80211_commands {
 
 	NL80211_CMD_AP_POWER_SAVE,
 
+	NL80211_CMD_TRIGGER_SMD_DISCOVERY,
+
 	/* add new commands above here */
 
 	/* used to define NL80211_CMD_MAX below */
@@ -3126,6 +3128,17 @@ enum nl80211_commands {
  *	Station DFS (Dynamic Frequency Selection) support. Only applicable
  *	in ETSI regulatory domains. 0 = disabled, 1 = enabled.
  *
+ * @NL80211_ATTR_SMD_ENABLED: Flag attribute indication SMD (Seamless Mobility
+ *	key parameters for SMD Per-AP MLD PTK mode key exhange. Use with
+ *	%NL80211_CMD_ASSOCIATE for SMD Mode 1 Association
+ *
+ * @NL80211_ATTR_SMD_IDENTIFIER, Binary attribute containing the 6-byte
+ *	SMD identifier for SMD domain association context. Used with SMD
+ *	association commands for identification and PMKSA management.
+ *
+ * @NL80211_ATTR_SMD_DISCOVERY_TARGETS: Nested attribute containing
+ *	the discovered SMD group members during discovery.
+ *
  * @NL80211_ATTR_SMD_SUPPORT: Flag attribute indicating that HW
  *	supports roaming within a seamless mobility domain (SMD).
  *
@@ -3133,9 +3146,21 @@ enum nl80211_commands {
  *	of moving a client between APs within a seamless mobility
  *	domain (SMD).
  *
+ * @NL80211_ATTR_SMD_PARAMS: Nested attribute containing SMD parameters
+ *	for a given STA.
+ *
+ * @NL80211_ATTR_SMD_STA: Flag attribute indicating if a STA supports
+ *	SMD roaming.
+ *
  * @NL80211_ATTR_SMD_STA_DL_DATA_FWD: Flag attribute indicating that
  *	HW is capable of forwarding MSDUs when roaming a client between
  *	APs within a seamless mobility domain (SMD).
+ *
+ * @NL80211_ATTR_SMD_CONFIG: Nested attribute indicating the
+ *	configurations of an SMD node (AP or STA).
+ *
+ * @NL80211_ATTR_SMD_TIMEOUT: u8 attribute indicating the timeout
+ *	for the SMD preparation state for a STA.
  *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
@@ -3767,15 +3792,36 @@ enum nl80211_attrs {
 
 	NL80211_ATTR_STA_DFS_EN,
 
+	NL80211_ATTR_SMD_ENABLED,
+	NL80211_ATTR_SMD_IDENTIFIER,
+	NL80211_ATTR_SMD_DISCOVERY_TARGETS,
 	NL80211_ATTR_SMD_SUPPORT,
 	NL80211_ATTR_SMD_AP,
+	NL80211_ATTR_SMD_PARAMS,
+	NL80211_ATTR_SMD_STA,
 	NL80211_ATTR_SMD_STA_DL_DATA_FWD,
+	NL80211_ATTR_SMD_CONFIG,
+	NL80211_ATTR_SMD_TIMEOUT,
 
 	/* add attributes here, update the policy in nl80211.c */
 
 	__NL80211_ATTR_AFTER_LAST,
 	NUM_NL80211_ATTR = __NL80211_ATTR_AFTER_LAST,
 	NL80211_ATTR_MAX = __NL80211_ATTR_AFTER_LAST - 1
+};
+
+enum nl80211_smd_params_attrs {
+	NL80211_SMD_PARAMS_ATTR_UNSPEC,
+	NL80211_SMD_PARAMS_ATTR_IDENTIFIER,
+	NL80211_SMD_PARAMS_ATTR_TIMEOUT,
+	NL80211_SMD_PARAMS_ATTR_DL_DATA_FWD,
+	NL80211_SMD_PARAMS_ATTR_MAX_PEER_APMLDS,
+	NL80211_SMD_PARAMS_ATTR_TYPE,
+	NL80211_SMD_PARAMS_ATTR_PTK_MODE,
+
+	/* keep last */
+	__NL80211_SMD_PARAMS_ATTR_LAST,
+	NL80211_SMD_PARAMS_ATTR_MAX = __NL80211_SMD_PARAMS_ATTR_LAST - 1
 };
 
 /* source-level API compatibility */
