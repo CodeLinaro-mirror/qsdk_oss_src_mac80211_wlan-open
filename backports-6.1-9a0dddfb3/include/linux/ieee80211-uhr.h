@@ -273,7 +273,6 @@ enum ieee80211_smd_discovery_method {
  * @timeout_value: 2-byte SMD Timeout values in TUs
  *
  * This structure represents the payload of the SMD Information Element.
- * (Extension Element ID 200) as defined in IEEE Std 802.11bn D1.2 §9.4.2.356
  */
 struct ieee80211_smd_info_element {
 	u8 smd_identifier[6];

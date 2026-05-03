@@ -1439,6 +1439,9 @@ static void _cfg80211_unregister_wdev(struct wireless_dev *wdev,
 
 	if (wdev->iftype == NL80211_IFTYPE_STATION ||
 	    wdev->iftype == NL80211_IFTYPE_P2P_CLIENT) {
+		/* Clean up any in-progress SMD preparation state */
+		cfg80211_smd_prep_state_free(wdev);
+
 		for (link_id = 0; link_id < ARRAY_SIZE(wdev->links); link_id++) {
 			struct cfg80211_internal_bss *curbss;
 

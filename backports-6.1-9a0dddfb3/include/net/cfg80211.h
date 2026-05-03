@@ -3824,6 +3824,107 @@ struct cfg80211_ml_reconf_req {
 };
 
 /**
+ * struct cfg80211_smd_link_req - SMD link preparation request
+ * @link_id: Link ID
+ * @sta_addr: STA MAC address for this link
+ * @profile_data: Per-STA profile data (capabilities, etc.)
+ * @profile_len: Length of profile data
+ */
+struct cfg80211_smd_link_req {
+	u8 link_id;
+	u8 sta_addr[ETH_ALEN];
+	const u8 *profile_data;
+	size_t profile_len;
+};
+
+/**
+ * struct cfg80211_smd_prepare_req - SMD BSS Transition preparation request
+ * @type: Frame type: 0 = ST Preparation, 1 = ST Execution
+ * @target_mld_addr: Target AP MLD MAC address
+ * @dh_public_key: STA DH public key for PTK derivation (ST Prep only)
+ * @dh_public_key_len: Length of @dh_public_key in bytes
+ * @snonce: STA nonce for PTK derivation (ST Prep only)
+ * @snonce_len: Length of @snonce in bytes
+ * @request_dl_sn_not_transferred: Request DL sequence number not transferred
+ * @request_ul_sn_not_transferred: Request UL sequence number not transferred
+ * @scs_list: SCS prioritization list (optional, ST Prep only)
+ * @scs_list_len: Number of entries in @scs_list
+ * @dialog_token_valid: Whether @dialog_token is provided by userspace
+ * @dialog_token: Dialog token for matching Prep Request/Response
+ * @exec_path: ST Execution path:
+ *     0 = via current AP (SAP), 1 = direct to target (TAP)
+ * @dl_tid_bitmap: DL TID bitmap for traffic draining (ST Exec only)
+ * @is_preferred_target: Preferred target; triggers driver resource allocation
+ *     at PREP time
+ * @smd_params: SMD domain parameters (identifier, capabilities, timeout)
+ * @ml_reconf: ML reconfiguration request specifying links to add/remove
+ * @tx_link_id: MLO link ID on which to transmit the frame (-1 = any)
+ */
+struct cfg80211_smd_prepare_req {
+	u8 type;
+	u8 target_mld_addr[ETH_ALEN];
+	const u8 *dh_public_key;
+	size_t dh_public_key_len;
+	const u8 *snonce;
+	size_t snonce_len;
+	bool request_dl_sn_not_transferred;
+	bool request_ul_sn_not_transferred;
+	u8 *scs_list;
+	size_t scs_list_len;
+	bool dialog_token_valid;
+	u8 dialog_token;
+	u8 exec_path;
+	u8 dl_tid_bitmap;
+	bool is_preferred_target;
+	struct cfg80211_smd_params smd_params;
+	struct cfg80211_ml_reconf_req ml_reconf;
+	s8 tx_link_id;
+};
+
+/**
+ * struct cfg80211_uhr_reconfig_done - SMD preparation completion
+ * @buf: Raw frame buffer (complete UHR Link Reconfig Response frame)
+ * @len: Length of raw frame buffer
+ * @target_mld_addr: Target AP MLD MAC address
+ * @status_code: 802.11 status code (0=SUCCESS, other=REJECTED)
+ * @aid: AID assigned by target (if success)
+ * @prepared_links: Bitmask of successfully prepared links
+ * @transitioning_links: Bitmask of successfully transitioned links
+ * @links: Per-link information for prepared links
+ * @num_links: Number of links
+ * @anonce: AP nonce (if success)
+ * @target_dh_public_key: Target's DH public key (if success)
+ * @timeout_value_tu: Execution timeout in TUs (if success)
+ * @ba_info: BA parameters (if success)
+ * @scs_status: SCS acceptance status (if success)
+ * @mscs_status: MSCS acceptance status (if success)
+ * @link_transition_state: current link distribution state; one of
+ *	&enum nl80211_smd_link_transition_state.  Set by mac80211 in
+ *	each PREP and EXEC done notification.
+ */
+struct cfg80211_uhr_reconfig_done {
+	const u8 *buf;
+	size_t len;
+	u8 type;
+	u8 target_mld_addr[ETH_ALEN];
+	u16 status_code;
+	u16 aid;
+	u16 prepared_links;
+	u16 transitioning_links;
+	u8 anonce[32];
+	u8 target_dh_public_key[64];
+	u32 timeout_value_tu;
+	/* Minimal link info following ML Reconf pattern */
+	struct {
+		u8 link_id;
+		struct cfg80211_bss *bss;  /* Contains all BSS info */
+		u8 *addr;                  /* Link address */
+	} links[IEEE80211_MLD_MAX_NUM_LINKS];
+	int num_links;
+	enum nl80211_smd_link_transition_state link_transition_state;
+};
+
+/**
  * enum cfg80211_assoc_req_flags - Over-ride default behaviour in association.
  *
  * @ASSOC_REQ_DISABLE_HT:  Disable HT (802.11n)
@@ -5872,6 +5973,7 @@ struct cfg80211_uhr_mode_update_params {
  * @uhr_mode_update: Update per-link UHR mode parameters (NPCA) for an MLD.
  *	@params carries per-link update flags and NPCA settings.
  * @set_muedca_mode: Set the mode of setting MU EDCA parameters.
+ * @uhr_link_reconf: Initiate SMD preparation with target AP MLD
  */
 struct cfg80211_ops {
 	int	(*suspend)(struct wiphy *wiphy, struct cfg80211_wowlan *wow);
@@ -6279,6 +6381,9 @@ struct cfg80211_ops {
 			 int link_id);
 	int (*uhr_mode_update)(struct wiphy *wiphy, struct net_device *dev,
 			       struct cfg80211_uhr_mode_update_params *params);
+	int (*uhr_link_reconf)(struct wiphy *wiphy,
+			       struct net_device *dev,
+			       struct cfg80211_smd_prepare_req *req);
 };
 
 /*
@@ -6379,6 +6484,10 @@ enum wiphy_flags {
 	WIPHY_FLAG_SUPPORTS_BEACON_TX_SYNC              = BIT(27),
 	WIPHY_FLAG_SUPPORTS_SMD				= BIT(28),
 };
+
+/* SMD Prepare Request flags */
+#define SMD_PREP_REQ_DL_SN_NOT_TRANSFERRED BIT(0)
+#define SMD_PREP_REQ_UL_SN_NOT_TRANSFERRED BIT(1)
 
 /**
  * struct ieee80211_iface_limit - limit on certain interface types
@@ -7431,6 +7540,7 @@ struct cfg80211_conn;
 struct cfg80211_internal_bss;
 struct cfg80211_cached_keys;
 struct cfg80211_cqm_config;
+struct cfg80211_smd_prep_state;
 
 /**
  * wiphy_lock - lock the wiphy
@@ -7845,6 +7955,8 @@ struct wireless_dev {
 		u8 reg_6g_power_mode;
 	} links[IEEE80211_MLD_MAX_NUM_LINKS];
 	u16 valid_links;
+
+	struct cfg80211_smd_prep_state *smd_prep;
 
 	u32 radio_mask;
 	bool critical_update;
@@ -10065,6 +10177,7 @@ void cfg80211_conn_failed(struct net_device *dev, const u8 *mac_addr,
  *	the rx info
  * @ttlm_expec_dur_update: Indicates whether expected duration update for TTLM
  *	element is present in the rx info
+ * @st_roaming_data: ST roaming data in skb extension
  */
 struct cfg80211_rx_info {
 	int freq;
@@ -10080,6 +10193,7 @@ struct cfg80211_rx_info {
 	bool link_removal_update;
 	bool ttlm_expec_dur_update;
 	u16 bitrate;
+	const struct ieee80211_smd_ctx *st_roaming_data;
 };
 
 /**
@@ -11402,6 +11516,116 @@ struct cfg80211_mlo_reconf_done_data {
 void cfg80211_mlo_reconf_add_done(struct net_device *dev,
 				  struct cfg80211_mlo_reconf_done_data *data);
 
+/**
+ * struct cfg80211_smd_prep_target - SMD preparation target state
+ * @valid: whether this target slot is in use
+ * @target_mld_addr: MAC address of target AP MLD
+ * @prepared_links: bitmask of links prepared for this target
+ * @transitioning_links: bitmask of links transitioning with this target
+ * @target_aid: AID assigned by target AP MLD
+ * @prepared_bss: BSS structures for prepared links
+ * @prep_timestamp: when preparation completed (jiffies)
+ * @context: per-target context (BA info, SCS/MSCS status, etc.)
+ */
+struct cfg80211_smd_prep_target {
+	bool valid;
+	u8 target_mld_addr[ETH_ALEN];
+	u16 prepared_links;
+	u16 transitioning_links;
+	u16 target_aid;
+	struct cfg80211_internal_bss *prepared_bss[IEEE80211_MLD_MAX_NUM_LINKS];
+	unsigned long prep_timestamp;
+
+	struct {
+		bool ba_info_present;
+		/* BA parameters, SCS/MSCS status, etc. can be added here */
+	} context;
+};
+
+/**
+ * struct cfg80211_smd_prep_state - SMD preparation state (dynamically allocated)
+ * @max_prep_targets: maximum number of targets from SMD IE
+ * @num_prep_targets: current number of prepared targets
+ * @in_smd_preparation: whether any target is prepared
+ * @all_prepared_links: union of all prepared links across targets
+ * @targets: variable-length array of preparation targets
+ */
+struct cfg80211_smd_prep_state {
+	u8 max_prep_targets;
+	u8 num_prep_targets;
+	bool in_smd_preparation;
+	u16 all_prepared_links;
+
+	/* Variable-length array based on max_prep_targets */
+	struct cfg80211_smd_prep_target targets[];
+};
+
+/**
+ * cfg80211_smd_prep_done - notify SMD ST Preparation completion
+ * @dev: network device
+ * @done: preparation completion data including raw frame buffer
+ *
+ * This function notifies cfg80211/userspace that SMD ST Preparation has
+ * completed. The raw frame buffer is passed to allow userspace to perform
+ * its own parsing and state management.
+ */
+void cfg80211_smd_prep_done(struct net_device *dev,
+			    struct cfg80211_uhr_reconfig_done *done);
+
+/**
+ * cfg80211_smd_execution_done - notify SMD execution completion
+ * @dev: network device
+ * @done: executiom completion data including raw frame buffer
+ *
+ * This function notifies cfg80211 that SMD execution has completed.
+ * On success, it updates the connection state and cleans up preparation state.
+ * On failure, it only cleans up preparation state.
+ */
+void cfg80211_smd_execution_done(struct net_device *dev,
+				 struct cfg80211_uhr_reconfig_done *done);
+
+/**
+ * cfg80211_uhr_reconfig_resp_done - Notify UHR Link Reconfig Response
+ * @dev: network device
+ * @done: UHR reconfig response data
+ *
+ * Handles both ST Prep and ST Exec responses. Distinguishes by data content:
+ * if @prepared_links is set with @links populated, handles as PREP (holds BSS).
+ * if @transitioning_links is set, handles as EXEC (transfers BSS to wdev).
+ * Notifies userspace with raw frame in both cases.
+ */
+void cfg80211_uhr_reconfig_resp_done(struct net_device *dev,
+				     struct cfg80211_uhr_reconfig_done *done);
+
+/**
+ * cfg80211_notify_smd_bss_transition - Notify SMD BSS transition event
+ * @dev: network device
+ * @target_mld_addr: Target AP MLD address
+ * @type: transition type (%NL80211_SMD_TRANSITION_COMPLETE or
+ *	  %NL80211_SMD_TRANSITION_ABORT)
+ * @status_code: Status code (0 for complete, abort reason for ABORT)
+ *
+ * COMPLETE: Called after DL drain, Updates wdev->links[].client.current_bss
+ *           for primary link, unholds BSS, cleans up prep state. Notifies
+ *           userspace
+ *
+ * ABORT: Releases all held BSS from PREP without updating wdev, Cleans up
+ *        prep state, notifies userspace
+ */
+void cfg80211_notify_smd_bss_transition(struct net_device *dev,
+					const u8 *target_mld_addr,
+					enum nl80211_smd_transition_type type,
+					u16 status_code);
+
+int cfg80211_smd_hold_prepared_bss(struct wireless_dev *wdev,
+				   const u8 *target_mld_addr,
+				   unsigned int link_id,
+				   struct cfg80211_bss *bss);
+int cfg80211_smd_transfer_bss(struct wireless_dev *wdev,
+			      const u8 *target_mld_addr,
+			      unsigned int link_id);
+void cfg80211_smd_cleanup_target(struct wireless_dev *wdev,
+				 const u8 *target_mld_addr);
 /**
  * cfg80211_schedule_channels_check - schedule regulatory check if needed
  * @wdev: the wireless device to check

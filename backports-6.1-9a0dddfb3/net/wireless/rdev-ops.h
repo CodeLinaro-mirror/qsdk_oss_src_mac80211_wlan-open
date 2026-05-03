@@ -1770,6 +1770,24 @@ static inline int rdev_uhr_mode_update(struct cfg80211_registered_device *rdev,
 	trace_rdev_uhr_mode_update(&rdev->wiphy, dev, params);
 	ret = rdev->ops->uhr_mode_update(&rdev->wiphy, dev, params);
 	trace_rdev_return_int(&rdev->wiphy, ret);
+
+	return ret;
+}
+
+static inline int rdev_uhr_link_reconf(struct cfg80211_registered_device *rdev,
+				       struct net_device *dev,
+				       struct cfg80211_smd_prepare_req *req)
+{
+	struct wiphy *wiphy = &rdev->wiphy;
+	int ret;
+
+	if (!rdev->ops->uhr_link_reconf)
+		return -EOPNOTSUPP;
+
+	trace_rdev_smd_prepare(wiphy, dev, req);
+	ret = rdev->ops->uhr_link_reconf(wiphy, dev, req);
+	trace_rdev_return_int(wiphy, ret);
+
 	return ret;
 }
 #endif /* __CFG80211_RDEV_OPS */

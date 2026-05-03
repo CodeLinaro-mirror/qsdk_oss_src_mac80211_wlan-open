@@ -1938,3 +1938,534 @@ int cfg80211_rx_send_mscs_tuple(struct net_device *dev, const u8 *addr,
 	return nl80211_send_mscs_flow_info(rdev, addr, flow_params, tid);
 }
 EXPORT_SYMBOL(cfg80211_rx_send_mscs_tuple);
+
+/* SMD BSS Transition - internal helpers */
+#define CFG80211_SMD_MAX_PREP_TARGETS 4
+
+/* SMD preparation state management helper functions - forward declarations */
+static int cfg80211_smd_prep_state_alloc(struct wireless_dev *wdev, u8 max_prep_targets);
+static int cfg80211_smd_find_target_slot(struct wireless_dev *wdev, const u8 *addr);
+static void cfg80211_smd_prep_cleanup_target(struct wireless_dev *wdev, const u8 *addr);
+static int cfg80211_smd_prep_add_target(struct wireless_dev *wdev,
+					struct cfg80211_uhr_reconfig_done *done);
+static void cfg80211_uhr_reconfig_handle_prep(struct wireless_dev *wdev,
+					      struct cfg80211_uhr_reconfig_done *done);
+static void cfg80211_uhr_reconfig_handle_exec(struct wireless_dev *wdev,
+					      struct cfg80211_uhr_reconfig_done *done);
+
+/* SMD preparation state management helper functions */
+static int cfg80211_smd_prep_state_alloc(struct wireless_dev *wdev, u8 max_prep_targets)
+{
+	struct cfg80211_smd_prep_state *prep_state;
+	size_t targets_size;
+
+	if (wdev->smd_prep)
+		return 0;
+	if (max_prep_targets == 0 || max_prep_targets > 16)
+		return -EINVAL;
+	targets_size = flex_array_size(prep_state, targets, max_prep_targets);
+	prep_state = kzalloc(sizeof(*prep_state) + targets_size, GFP_KERNEL);
+	if (!prep_state)
+		return -ENOMEM;
+	prep_state->max_prep_targets = max_prep_targets;
+	wdev->smd_prep = prep_state;
+	return 0;
+}
+
+static void cfg80211_smd_prep_cleanup_target(struct wireless_dev *wdev, const u8 *addr)
+{
+	struct cfg80211_smd_prep_target *target;
+	struct wiphy *wiphy = wdev->wiphy;
+	int slot = cfg80211_smd_find_target_slot(wdev, addr);
+	int link_id;
+
+	if (slot < 0)
+		return;
+
+	target = &wdev->smd_prep->targets[slot];
+
+	/* Release BSS references */
+	for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS; link_id++) {
+		if (target->prepared_bss[link_id]) {
+			cfg80211_unhold_bss(target->prepared_bss[link_id]);
+			cfg80211_put_bss(wiphy, &target->prepared_bss[link_id]->pub);
+			target->prepared_bss[link_id] = NULL;
+		}
+	}
+
+	/* Update global state */
+	wdev->smd_prep->all_prepared_links &= ~target->prepared_links;
+	if (wdev->smd_prep->num_prep_targets > 0)
+		wdev->smd_prep->num_prep_targets--;
+
+	if (wdev->smd_prep->num_prep_targets == 0) {
+		wdev->smd_prep->in_smd_preparation = false;
+		wdev->smd_prep->all_prepared_links = 0;
+	}
+	/* Clear target slot */
+	memset(target, 0, sizeof(*target));
+}
+
+void cfg80211_smd_prep_state_free(struct wireless_dev *wdev)
+{
+	int i;
+
+	if (!wdev->smd_prep)
+		return;
+
+	/* Cleanup all targets first */
+	for (i = 0; i < wdev->smd_prep->max_prep_targets; i++) {
+		if (wdev->smd_prep->targets[i].valid)
+			cfg80211_smd_prep_cleanup_target(
+				wdev,
+				wdev->smd_prep->targets[i].target_mld_addr);
+	}
+
+	kfree(wdev->smd_prep);
+	wdev->smd_prep = NULL;
+}
+
+static int cfg80211_smd_find_target_slot(struct wireless_dev *wdev, const u8 *addr)
+{
+	struct cfg80211_smd_prep_state *state = wdev->smd_prep;
+	int i;
+
+	if (!state)
+		return -ENOENT;
+
+	/* First look for existing target with this address */
+	for (i = 0; i < state->max_prep_targets; i++) {
+		if (state->targets[i].valid &&
+		    ether_addr_equal(state->targets[i].target_mld_addr, addr))
+			return i;
+	}
+
+	/* Then look for empty slot */
+	for (i = 0; i < state->max_prep_targets; i++) {
+		if (!state->targets[i].valid)
+			return i;
+	}
+
+	return -ENOSPC;
+}
+
+static int cfg80211_smd_prep_add_target(struct wireless_dev *wdev,
+					struct cfg80211_uhr_reconfig_done *done)
+{
+	struct cfg80211_smd_prep_target *target;
+	int slot, link_id;
+
+	slot = cfg80211_smd_find_target_slot(wdev, done->target_mld_addr);
+	if (slot < 0)
+		return slot;
+
+	target = &wdev->smd_prep->targets[slot];
+	ether_addr_copy(target->target_mld_addr, done->target_mld_addr);
+	target->prepared_links = done->prepared_links;
+	target->target_aid = done->aid;
+	target->prep_timestamp = jiffies;
+	/* valid=true required by cfg80211_smd_hold_prepared_bss; safe under wiphy lock */
+	target->valid = true;
+
+	wdev->smd_prep->num_prep_targets++;
+	wdev->smd_prep->in_smd_preparation = true;
+	wdev->smd_prep->all_prepared_links |= done->prepared_links;
+
+	wiphy_dbg(wdev->wiphy, "smd: prep_add_target %pM prepared=0x%x transitioning=0x%x\n",
+		  done->target_mld_addr, done->prepared_links, done->transitioning_links);
+
+	for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS; link_id++) {
+		struct cfg80211_bss *bss;
+		int ret;
+
+		if (!(done->prepared_links & BIT(link_id)))
+			continue;
+
+		bss = done->links[link_id].bss;
+		if (!bss)
+			continue;
+
+		ret = cfg80211_smd_hold_prepared_bss(wdev, done->target_mld_addr,
+						     link_id, bss);
+		if (ret) {
+			cfg80211_smd_prep_cleanup_target(wdev,
+							 done->target_mld_addr);
+			return ret;
+		}
+	}
+
+	return 0;
+}
+
+void cfg80211_smd_prep_done(struct net_device *dev,
+			    struct cfg80211_uhr_reconfig_done *done)
+{
+	struct wireless_dev *wdev = dev->ieee80211_ptr;
+
+	lockdep_assert_wiphy(wdev->wiphy);
+
+	cfg80211_uhr_reconfig_handle_prep(wdev, done);
+	nl80211_smd_prep_done(dev, done);
+}
+EXPORT_SYMBOL(cfg80211_smd_prep_done);
+
+void cfg80211_smd_execution_done(struct net_device *dev,
+				 struct cfg80211_uhr_reconfig_done *done)
+{
+	struct wireless_dev *wdev = dev->ieee80211_ptr;
+
+	lockdep_assert_wiphy(wdev->wiphy);
+
+	cfg80211_uhr_reconfig_handle_exec(wdev, done);
+	cfg80211_smd_prep_state_free(wdev);
+	nl80211_smd_exec_done(dev, done);
+}
+EXPORT_SYMBOL(cfg80211_smd_execution_done);
+
+static void cfg80211_uhr_reconfig_handle_prep(struct wireless_dev *wdev,
+					      struct cfg80211_uhr_reconfig_done *done)
+{
+	struct wiphy *wiphy = wdev->wiphy;
+	int ret;
+
+	trace_cfg80211_smd_prep_done(wdev->netdev, done->target_mld_addr,
+				     done->status_code);
+
+	wiphy_dbg(wiphy, "smd: handle_prep %pM status=%d prepared=0x%x\n",
+		  done->target_mld_addr, done->status_code, done->prepared_links);
+
+	if (WARN_ON(wdev->iftype != NL80211_IFTYPE_STATION &&
+		    wdev->iftype != NL80211_IFTYPE_P2P_CLIENT))
+		return;
+
+	if (done->status_code == WLAN_STATUS_SUCCESS) {
+		/* Allocate SMD preparation state on first successful preparation */
+		if (!wdev->smd_prep) {
+			/* Use a reasonable default if max_prep_targets not provided */
+			/* No max_prep_targets field; use default */
+			u8 max_prep_targets = CFG80211_SMD_MAX_PREP_TARGETS;
+
+			ret = cfg80211_smd_prep_state_alloc(wdev, max_prep_targets);
+			if (ret) {
+				wiphy_err(wiphy,
+					  "SMD prep state allocation failed: %d\n",
+					  ret);
+				done->status_code = WLAN_STATUS_UNSPECIFIED_FAILURE;
+				return;
+			}
+		}
+
+		/* Add target to preparation state - DON'T modify valid_links */
+		ret = cfg80211_smd_prep_add_target(wdev, done);
+		if (ret) {
+			wiphy_err(wiphy, "Failed to add SMD target: %d\n", ret);
+			done->status_code = WLAN_STATUS_UNSPECIFIED_FAILURE;
+			/* First target allocation just happened; free it */
+			if (wdev->smd_prep->num_prep_targets == 0)
+				cfg80211_smd_prep_state_free(wdev);
+		}
+	} else {
+		/* Clear any partial preparation state for this target */
+		if (wdev->smd_prep)
+			cfg80211_smd_prep_cleanup_target(wdev, done->target_mld_addr);
+	}
+}
+
+static void cfg80211_uhr_reconfig_handle_exec(struct wireless_dev *wdev,
+					      struct cfg80211_uhr_reconfig_done *done)
+{
+	struct cfg80211_smd_prep_target *target = NULL;
+	unsigned long tmp;
+	int i, link_id;
+
+	trace_cfg80211_smd_prep_done(wdev->netdev, done->target_mld_addr,
+				     done->status_code);
+
+	wiphy_dbg(wdev->wiphy, "smd: handle_exec %pM status=%d\n",
+		  done->target_mld_addr, done->status_code);
+
+	if (WARN_ON(wdev->iftype != NL80211_IFTYPE_STATION &&
+		    wdev->iftype != NL80211_IFTYPE_P2P_CLIENT))
+		return;
+
+	if (!wdev->smd_prep || !wdev->smd_prep->in_smd_preparation) {
+		wiphy_dbg(wdev->wiphy, "smd: handle_exec %pM no prep state, ignoring\n",
+			  done->target_mld_addr);
+		return;
+	}
+
+	/* Find the target by MLD Address */
+	for (i = 0; i < wdev->smd_prep->max_prep_targets; i++) {
+		if (wdev->smd_prep->targets[i].valid &&
+		    ether_addr_equal(wdev->smd_prep->targets[i].target_mld_addr,
+				     done->target_mld_addr)) {
+			target = &wdev->smd_prep->targets[i];
+			break;
+		}
+	}
+
+	if (!target)
+		return;
+
+	target->transitioning_links = done->transitioning_links;
+	tmp = done->transitioning_links;
+	for_each_set_bit(link_id, &tmp, IEEE80211_MLD_MAX_NUM_LINKS) {
+		if (!target->prepared_bss[link_id])
+			continue;
+		cfg80211_smd_transfer_bss(wdev, done->target_mld_addr, link_id);
+	}
+
+	/* Do not free prep state - COMPLETE or ABORT will do that */
+}
+
+void cfg80211_uhr_reconfig_resp_done(struct net_device *dev,
+				     struct cfg80211_uhr_reconfig_done *done)
+{
+	struct wireless_dev *wdev = dev->ieee80211_ptr;
+
+	lockdep_assert_wiphy(wdev->wiphy);
+
+	if (WARN_ON(!wdev->valid_links))
+		return;
+
+	if (WARN_ON(wdev->iftype != NL80211_IFTYPE_STATION &&
+		    wdev->iftype != NL80211_IFTYPE_P2P_CLIENT))
+		return;
+
+	if (done->prepared_links)
+		cfg80211_uhr_reconfig_handle_prep(wdev, done);
+	else if (done->transitioning_links)
+		cfg80211_uhr_reconfig_handle_exec(wdev, done);
+
+	nl80211_uhr_reconf_done(dev, done);
+}
+EXPORT_SYMBOL(cfg80211_uhr_reconfig_resp_done);
+
+void cfg80211_notify_smd_bss_transition(struct net_device *dev,
+					const u8 *target_mld_addr,
+					enum nl80211_smd_transition_type type,
+					u16 status_code)
+{
+	struct cfg80211_smd_prep_target *target = NULL;
+	struct wireless_dev *wdev = dev->ieee80211_ptr;
+	struct wiphy *wiphy = wdev->wiphy;
+	int i;
+
+	lockdep_assert_wiphy(wiphy);
+
+	wiphy_dbg(wiphy, "smd: notify_transition %pM type=%u status=%u\n",
+		  target_mld_addr, type, status_code);
+
+	if (WARN_ON(!wdev->valid_links))
+		return;
+	if (WARN_ON(wdev->iftype != NL80211_IFTYPE_STATION &&
+		    wdev->iftype != NL80211_IFTYPE_P2P_CLIENT))
+		return;
+	if (!wdev->smd_prep)
+		goto notify;
+	for (i = 0; i < wdev->smd_prep->max_prep_targets; i++) {
+		if (wdev->smd_prep->targets[i].valid &&
+		    ether_addr_equal(wdev->smd_prep->targets[i].target_mld_addr,
+				     target_mld_addr)) {
+			target = &wdev->smd_prep->targets[i];
+			break;
+		}
+	}
+	if (!target)
+		goto notify;
+	if (type == NL80211_SMD_TRANSITION_COMPLETE) {
+		u16 primary_links;
+		u16 removed_links;
+		u16 old_valid;
+		u16 all_tap_links;   /* prepared | transitioning = full TAP link set */
+		unsigned long tmp;
+		int link_id;
+
+		/* Primary link = prepared_links that were NOT transitioned
+		 *
+		 * This still have BSS held from PREP.
+		 */
+		primary_links = target->prepared_links &
+				~target->transitioning_links;
+
+		/*
+		 * Reconstruct the full TAP link set. By the time we reach here:
+		 *  - cfg80211_uhr_reconfig_handle_exec() has already called
+		 *    cfg80211_smd_transfer_bss() for each transitioning link, which
+		 *    does target->prepared_links &= ~BIT(link_id).
+		 *  - target->prepared_links therefore contains only the primary
+		 *    (non-transitioning) links.
+		 *  - target->transitioning_links was saved by the exec handler.
+		 * Reconstruct the full set by OR-ing both.
+		 */
+		all_tap_links = target->prepared_links | target->transitioning_links;
+
+		tmp = primary_links;
+		for_each_set_bit(link_id, &tmp, IEEE80211_MLD_MAX_NUM_LINKS) {
+			if (!target->prepared_bss[link_id])
+				continue;
+			wiphy_dbg(wiphy, "smd: transfer_bss link_id=%d target=%pM\n",
+				  link_id, target_mld_addr);
+			cfg80211_smd_transfer_bss(wdev, target_mld_addr, link_id);
+		}
+
+		/*
+		 * Unconditionally restore wdev->valid_links to the TAP link set,
+		 * mirroring how __cfg80211_roamed() assigns
+		 *   wdev->valid_links = info->valid_links
+		 * after updating the connection state.
+		 *
+		 * NL80211_CMD_DEL_STATION for the old SAP typically fires before
+		 * NL80211_CMD_SMD_TRANSITION_DONE is delivered to wpa_supplicant.
+		 * wpa_supplicant's DEL_STATION handler calls
+		 * __cfg80211_disconnected() which sets wdev->valid_links = 0.
+		 * Without restoring it here, per-link group key installs
+		 * (GTK/IGTK/BIGTK) after the transition fail with
+		 * "link ID not allowed for non-MLO group key" (nl80211.c:5596).
+		 *
+		 * Use all_tap_links (saved before the loop) since
+		 * cfg80211_smd_transfer_bss clears bits from
+		 * target->prepared_links as it transfers each link.
+		 */
+		old_valid = wdev->valid_links;
+		wdev->valid_links = all_tap_links;
+
+		wiphy_dbg(wiphy, "smd: transition_complete primary=0x%x tap=0x%x valid=0x%x\n",
+			  primary_links, all_tap_links, wdev->valid_links);
+		/* Clean up link addresses for SAP-only links absent from TAP */
+		removed_links = old_valid & ~all_tap_links;
+		if (removed_links) {
+			tmp = removed_links;
+			for_each_set_bit(link_id, &tmp, IEEE80211_MLD_MAX_NUM_LINKS)
+				eth_zero_addr(wdev->links[link_id].addr);
+		}
+	}
+
+	/* ABORT: clean releases held BSS without wdev update */
+	cfg80211_smd_prep_cleanup_target(wdev, target_mld_addr);
+
+	if (wdev->smd_prep->num_prep_targets == 0)
+		cfg80211_smd_prep_state_free(wdev);
+
+notify:
+	nl80211_notify_smd_bss_transition(dev, target_mld_addr,
+					  type, status_code);
+}
+EXPORT_SYMBOL(cfg80211_notify_smd_bss_transition);
+
+/* Public API functions for mac80211 SMD BSS management */
+
+/**
+ * cfg80211_smd_hold_prepared_bss - Ref and hold BSS for an SMD prepared target
+ * @wdev: wireless device
+ * @target_mld_addr: Target MLD address
+ * @link_id: Link ID
+ * @bss: BSS to hold
+ *
+ * Called by mac80211 after PREP RESPONSE to hold prepared BSS refs in cfg80211.
+ * Uses existing cfg80211_hold_bss() function.
+ */
+int cfg80211_smd_hold_prepared_bss(struct wireless_dev *wdev,
+				   const u8 *target_mld_addr,
+				   unsigned int link_id,
+				   struct cfg80211_bss *bss)
+{
+	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wdev->wiphy);
+	struct cfg80211_smd_prep_target *target;
+	int slot;
+
+	if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
+		return -EINVAL;
+
+	if (!wdev->smd_prep)
+		return -ENOENT;
+
+	slot = cfg80211_smd_find_target_slot(wdev, target_mld_addr);
+	if (slot < 0)
+		return slot;
+
+	target = &wdev->smd_prep->targets[slot];
+	if (!target->valid)
+		return -ENOENT;
+
+	cfg80211_ref_bss(&rdev->wiphy, bss);
+	cfg80211_hold_bss(bss_from_pub(bss));
+
+	target->prepared_bss[link_id] = bss_from_pub(bss);
+	target->prepared_links |= BIT(link_id);
+
+	return 0;
+}
+EXPORT_SYMBOL(cfg80211_smd_hold_prepared_bss);
+
+/**
+ * cfg80211_smd_transfer_bss - Transfer BSS ownership during EXEC RESPONSE
+ * @wdev: wireless device
+ * @target_mld_addr: Target MLD address
+ * @link_id: Link ID
+ *
+ * Transfers BSS from prepared state to active current_bss.
+ * Uses existing cfg80211_unhold_bss() function.
+ */
+int cfg80211_smd_transfer_bss(struct wireless_dev *wdev,
+			      const u8 *target_mld_addr,
+			      unsigned int link_id)
+{
+	struct cfg80211_smd_prep_target *target;
+	struct cfg80211_internal_bss *old_bss, *new_bss;
+	struct wiphy *wiphy = wdev->wiphy;
+	int slot;
+
+	if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
+		return -EINVAL;
+
+	if (!wdev->smd_prep)
+		return -ENOENT;
+
+	slot = cfg80211_smd_find_target_slot(wdev, target_mld_addr);
+	if (slot < 0)
+		return slot;
+
+	target = &wdev->smd_prep->targets[slot];
+	if (!target->valid)
+		return -ENOENT;
+
+	new_bss = target->prepared_bss[link_id];
+	if (!new_bss)
+		return -EINVAL;
+
+	/* Get old BSS */
+	old_bss = wdev->links[link_id].client.current_bss;
+
+	/* Unhold and put old BSS (using existing functions) */
+	if (old_bss) {
+		cfg80211_unhold_bss(old_bss);
+		cfg80211_put_bss(wiphy, &old_bss->pub);
+	}
+
+	/* Transfer new BSS (ownership transfer, BSS remains held) */
+	wdev->links[link_id].client.current_bss = new_bss;
+	target->prepared_bss[link_id] = NULL;
+	target->prepared_links &= ~BIT(link_id);
+	ether_addr_copy(wdev->u.client.connected_addr, target_mld_addr);
+	wiphy_dbg(wdev->wiphy, "smd: transfer_bss link_id=%u connected_addr=%pM\n",
+		  link_id, wdev->u.client.connected_addr);
+	return 0;
+}
+EXPORT_SYMBOL(cfg80211_smd_transfer_bss);
+
+/**
+ * cfg80211_smd_cleanup_target - Cleanup SMD target on ABORT/TIMEOUT
+ * @wdev: wireless device
+ * @target_mld_addr: Target MLD address
+ *
+ * Public wrapper for the existing static cleanup function.
+ * Releases all prepared BSS references using existing functions.
+ */
+void cfg80211_smd_cleanup_target(struct wireless_dev *wdev,
+				 const u8 *target_mld_addr)
+{
+	/* Use existing static function */
+	cfg80211_smd_prep_cleanup_target(wdev, target_mld_addr);
+}
+EXPORT_SYMBOL(cfg80211_smd_cleanup_target);
