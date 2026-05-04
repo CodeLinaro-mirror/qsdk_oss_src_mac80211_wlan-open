@@ -2404,8 +2404,8 @@ struct ath12k_htt_mlo_offset_msg {
 	__le32 info;
 	__le32 sync_timestamp_lo_us;
 	__le32 sync_timestamp_hi_us;
-	__le32 mlo_offset_hi;
 	__le32 mlo_offset_lo;
+	__le32 mlo_offset_hi;
 	__le32 mlo_offset_clks;
 	__le32 mlo_comp_clks;
 	__le32 mlo_comp_timer;
