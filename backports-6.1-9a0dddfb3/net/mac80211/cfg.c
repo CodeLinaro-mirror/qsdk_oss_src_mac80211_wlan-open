@@ -5804,7 +5804,8 @@ static int ieee80211_set_sar_specs(struct wiphy *wiphy,
 int
 ieee80211_6ghz_power_mode_change(struct wiphy *wiphy, struct wireless_dev *wdev,
 				 u8 ap_6ghz_pwr_mode,
-				 int link_id)
+				 int link_id,
+				 bool is_set_pwr_mode)
 {
 	struct ieee80211_sub_if_data *sdata =
 					IEEE80211_DEV_TO_SUB_IF(wdev->netdev);
@@ -5829,13 +5830,16 @@ ieee80211_6ghz_power_mode_change(struct wiphy *wiphy, struct wireless_dev *wdev,
 
 	rcu_read_unlock();
 
-	if (cfg80211_update_chandef_6ghz_power_mode(wdev->netdev,
-						    link_id,
-						    ap_6ghz_pwr_mode)) {
-		return -EINVAL;
+	if (is_set_pwr_mode) {
+		if (cfg80211_update_chandef_6ghz_power_mode(wdev->netdev,
+							    link_id,
+							    ap_6ghz_pwr_mode)) {
+			return -EINVAL;
+		}
+		link->conf->power_type =
+			ieee80211_cfg_to_mac_power_type(ap_6ghz_pwr_mode);
 	}
 
-	link->conf->power_type = ieee80211_cfg_to_mac_power_type(ap_6ghz_pwr_mode);
 	changed = BSS_CHANGED_6GHZ_POWER_MODE;
 
 	ieee80211_link_info_change_notify(sdata, link, changed);

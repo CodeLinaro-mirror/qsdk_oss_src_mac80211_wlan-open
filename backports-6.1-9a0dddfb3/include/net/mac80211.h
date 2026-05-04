@@ -8648,13 +8648,18 @@ enum ieee80211_gstrings_stats {
  * @wdev: Pointer to wdev
  * @ap_6ghz_pwr_mode: AP 6 GHz power mode
  * @link_id: Link ID
+ * @is_set_pwr_mode: Flag indicating whether the power mode
+ * should be applied. Update the power type if true else update only the
+ * tx power change to target. In case of standalone sta, need not set
+ * power type as root ap power type stored already, set tx power alone.
  *
  * Return 0 if 6 GHz power mode change is successful else return error.
  */
 int ieee80211_6ghz_power_mode_change(struct wiphy *wiphy,
 				     struct wireless_dev *wdev,
 				     u8 ap_6ghz_pwr_mode,
-				     int link_id);
+				     int link_id,
+				     bool is_set_pwr_mode);
 
 /** ieee80211_link_removal_count_update - Update link reconfig removal for each
  * link for which the link removal has been scheduled
