@@ -86,11 +86,8 @@ static void ath12k_wifi8_hw_rx_peer_ba_config_qcn9625(struct ath12k_base *ab, u8
 	u32 ba_win_size_val = 1;
 	u16 ssn_val = 0;
 
-	if (ath12k_wifi8_hal_is_reo_nonqos_mgmt_tid(tid)) {
+	if (ath12k_wifi8_hal_is_reo_nonqos_mgmt_tid(tid))
 		ba_win_size_val = ab->ag->num_devices;
-		/* SSN=0 is used for association request before queue setup */
-		ssn_val = 1;
-	}
 
 	if (ba_win_size)
 		*ba_win_size = ba_win_size_val;
