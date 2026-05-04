@@ -845,6 +845,18 @@ ath12k_mac_max_eht_mcs_nss(const u8 *eht_mcs, int eht_mcs_set_size)
 	return nss;
 }
 
+static u32
+ath12k_mac_max_uhr_nss(const u32 uhr_mcs_mask[NL80211_UHR_NSS_MAX])
+{
+	int nss;
+
+	for (nss = NL80211_UHR_NSS_MAX - 1; nss >= 0; nss--)
+		if (uhr_mcs_mask[nss])
+			return nss + 1;
+
+	return 1;
+}
+
 static u8 ath12k_parse_mpdudensity(u8 mpdudensity)
 {
 /*  From IEEE Std 802.11-2020 defined values for "Minimum MPDU Start Spacing":
@@ -11288,6 +11300,20 @@ ath12k_mac_bitrate_mask_num_he_ul_rates(struct ath12k *ar,
 
 	for (i = 0; i < ARRAY_SIZE(mask->control[band].he_ul_mcs); i++)
 		num_rates += hweight16(mask->control[band].he_ul_mcs[i]);
+
+	return num_rates;
+}
+
+static int
+ath12k_mac_bitrate_mask_num_uhr_rates(struct ath12k *ar,
+				      enum nl80211_band band,
+				      const struct cfg80211_bitrate_mask *mask)
+{
+	int num_rates = 0;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(mask->control[band].uhr_mcs); i++)
+		num_rates += hweight32(mask->control[band].uhr_mcs[i]);
 
 	return num_rates;
 }
@@ -23299,6 +23325,8 @@ bool ath12k_mac_is_single_rate_bitrate_mask(struct ath12k *ar,
 	if (cnt > 1)
 		return false;
 
+	cnt += ath12k_mac_bitrate_mask_num_uhr_rates(ar, band, mask);
+
 	return (cnt == 1);
 }
 
@@ -23306,7 +23334,7 @@ u32 ath12k_mac_single_rate_hw_rate_code(struct ath12k *ar,
 					enum nl80211_band band,
 					const struct cfg80211_bitrate_mask *mask)
 {
-	u8 rate_s, i;
+	u8 rate_s, i, ueqm_p;
 	u32 rate;
 
 	if (mask->control[band].legacy) {
@@ -23347,6 +23375,24 @@ u32 ath12k_mac_single_rate_hw_rate_code(struct ath12k *ar,
 			rate = ATH12K_HW_RATE_CODE(rate_s, i,
 						   WMI_RATE_PREAMBLE_EHT, 0);
 			return rate;
+		}
+	}
+
+	for (i = 0; i < ARRAY_SIZE(mask->control[band].uhr_mcs); i++) {
+		if (mask->control[band].uhr_mcs[i]) {
+			rate_s = ffs((int)mask->control[band].uhr_mcs[i]) - 1;
+			ueqm_p =
+				cfg80211_get_uhr_ueqm_map
+				(mask->control[band].ueqm_pattern.pattern,
+				 ath12k_mac_max_uhr_nss(mask->control[band].uhr_mcs),
+				 rate_s);
+
+			if (!ueqm_p || (hweight32(ueqm_p) == 1)) {
+				rate = ATH12K_HW_RATE_CODE(rate_s, i,
+							   WMI_RATE_PREAMBLE_UHR,
+							   ffs(ueqm_p));
+				return rate;
+			}
 		}
 	}
 
