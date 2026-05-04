@@ -2491,8 +2491,6 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 			    !partner_ab->recovery_start)
 				continue;
 
-			ath12k_hif_irq_enable(partner_ab);
-
 			ret = ath12k_dp_rxdma_ring_sel_config(partner_ab);
 			if (ret) {
 				ath12k_err(partner_ab, "failed to setup rxdma ring selection config\n: %d",
