@@ -3082,9 +3082,10 @@ static inline int ath12k_get_peer_count(struct ath12k_base *ab, bool get_max)
 }
 
 static inline void
-ath12k_core_srng_get_htt_mgmt_filter(struct ath12k_base *ab, u16 *mgmt_filter)
+ath12k_core_srng_get_htt_mgmt_filter(struct ath12k_base *ab,
+				     struct htt_rx_ring_tlv_filter *tlv_filter)
 {
-	ath12k_dp_get_htt_mgmt_filter(ab, mgmt_filter);
+	ath12k_dp_get_htt_mgmt_filter(ab, tlv_filter);
 }
 
 static inline int
