@@ -3592,9 +3592,6 @@ ieee80211_dfs_cac_handle_deferred_up_links(struct ieee80211_link_data *link)
 		if (!itr_link->conf || !itr_link->conf->deferred_up)
 			continue;
 
-		if (!itr_link->sdata->wdev.links[itr_link->link_id].cac_started)
-			continue;
-
 		itr_chanctx = wiphy_dereference(local->hw.wiphy,
 						itr_link->conf->chanctx_conf);
 		if (!itr_chanctx ||
