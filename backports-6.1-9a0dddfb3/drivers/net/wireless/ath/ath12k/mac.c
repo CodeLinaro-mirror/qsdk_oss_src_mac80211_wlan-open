@@ -11223,6 +11223,62 @@ int ath12k_mac_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 EXPORT_SYMBOL(ath12k_mac_op_set_key);
 
 static int
+ath12k_mac_bitrate_mask_num_ht_rates(struct ath12k *ar,
+				     enum nl80211_band band,
+				     const struct cfg80211_bitrate_mask *mask)
+{
+	int num_rates = 0;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(mask->control[band].ht_mcs); i++)
+		num_rates += hweight16(mask->control[band].ht_mcs[i]);
+
+	return num_rates;
+}
+
+static int
+ath12k_mac_bitrate_mask_num_vht_rates(struct ath12k *ar,
+				      enum nl80211_band band,
+				      const struct cfg80211_bitrate_mask *mask)
+{
+	int num_rates = 0;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(mask->control[band].vht_mcs); i++)
+		num_rates += hweight16(mask->control[band].vht_mcs[i]);
+
+	return num_rates;
+}
+
+static int
+ath12k_mac_bitrate_mask_num_he_rates(struct ath12k *ar,
+				     enum nl80211_band band,
+				     const struct cfg80211_bitrate_mask *mask)
+{
+	int num_rates = 0;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(mask->control[band].he_mcs); i++)
+		num_rates += hweight16(mask->control[band].he_mcs[i]);
+
+	return num_rates;
+}
+
+static int
+ath12k_mac_bitrate_mask_num_eht_rates(struct ath12k *ar,
+				      enum nl80211_band band,
+				      const struct cfg80211_bitrate_mask *mask)
+{
+	int num_rates = 0;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(mask->control[band].eht_mcs); i++)
+		num_rates += hweight16(mask->control[band].eht_mcs[i]);
+
+	return num_rates;
+}
+
+static int
 ath12k_mac_bitrate_mask_num_he_ul_rates(struct ath12k *ar,
 				    enum nl80211_band band,
 				    const struct cfg80211_bitrate_mask *mask)
@@ -22792,6 +22848,38 @@ void ath12k_mac_op_flush(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 EXPORT_SYMBOL(ath12k_mac_op_flush);
 
 static int
+ath12k_mac_get_single_legacy_rate(struct ath12k *ar,
+				  enum nl80211_band band,
+				  const struct cfg80211_bitrate_mask *mask,
+				  u32 *rate)
+{
+	int rate_idx;
+	u16 bitrate;
+	u8 preamble;
+	u8 hw_rate;
+
+	if (hweight32(mask->control[band].legacy) != 1)
+		return -EINVAL;
+
+	rate_idx = ffs(mask->control[band].legacy) - 1;
+
+	if (band == NL80211_BAND_5GHZ || band == NL80211_BAND_6GHZ)
+		rate_idx += ATH12K_MAC_FIRST_OFDM_RATE_IDX;
+
+	hw_rate = ath12k_legacy_rates[rate_idx].hw_value;
+	bitrate = ath12k_legacy_rates[rate_idx].bitrate;
+
+	if (ath12k_mac_bitrate_is_cck(bitrate))
+		preamble = WMI_RATE_PREAMBLE_CCK;
+	else
+		preamble = WMI_RATE_PREAMBLE_OFDM;
+
+	*rate = ATH12K_HW_RATE_CODE(hw_rate, 0, preamble, 0);
+
+	return 0;
+}
+
+static int
 ath12k_mac_set_fixed_rate_gi_ltf(struct ath12k_link_vif *arvif, u8 gi, u8 ltf)
 {
 	struct ieee80211_bss_conf *link_conf;
@@ -23078,6 +23166,193 @@ int ath12k_is_mcs_rate_changed(enum nl80211_band band,
 	return 0;
 }
 
+static int ath12k_mac_apply_vdev_ratemask(struct ath12k_link_vif *arvif,
+					  enum nl80211_band band,
+					  const struct cfg80211_bitrate_mask *mask)
+{
+	struct wmi_vdev_ratemask_arg arg = {};
+	const u16 *vht_m, *he_m, *eht_m;
+	int ret = 0, nss, offset;
+	u64 lower64, higher64;
+	u16 mcs, mcs_map;
+	const u8 *ht_m;
+
+	ht_m = mask->control[band].ht_mcs;
+	vht_m = mask->control[band].vht_mcs;
+	he_m = mask->control[band].he_mcs;
+	eht_m = mask->control[band].eht_mcs;
+
+	arg.vdev_id = arvif->vdev_id;
+
+	/* Clear any vdev fixed rate before programming vdev ratemask */
+	if (arvif->fixed_rate_set) {
+		ath12k_wmi_vdev_set_param_cmd(arvif->ar, arvif->vdev_id,
+					      WMI_VDEV_PARAM_FIXED_RATE,
+					      WMI_FIXED_RATE_NONE);
+		arvif->fixed_rate_set = false;
+	}
+
+	/* Fill the vdev rate mask params for HT from MCS mask */
+	arg.type = VDEV_RATEMASK_TYPE_HT;
+	arg.mask_lower32 = ht_m[0];
+	ret = ath12k_wmi_vdev_rate_mask(arvif->ar, &arg);
+	if (ret)
+		return ret;
+
+	/* Fill the vdev rate mask params for VHT from MCS mask */
+	lower64 = 0;
+	higher64 = 0;
+	for (nss = 0; nss < NL80211_VHT_NSS_MAX; nss++) {
+		mcs = vht_m[nss] & 0xFFF;
+		if (!mcs)
+			continue;
+		if (nss < 5) {
+			lower64 |= (u64)mcs << (nss * 12);
+		} else if (nss == 5) {
+			lower64 |= (u64)(mcs & 0xF) << 60;
+			higher64 |= (u64)(mcs >> 4);
+		} else {
+			higher64 |= (u64)mcs << (((nss - 6) * 12) + 8);
+		}
+	}
+
+	arg.type = VDEV_RATEMASK_TYPE_VHT;
+	arg.mask_lower32 = lower_32_bits(lower64);
+	arg.mask_higher32 = upper_32_bits(lower64);
+	arg.mask_lower32_2 = lower_32_bits(higher64);
+	arg.mask_higher32_2 = upper_32_bits(higher64);
+	ret = ath12k_wmi_vdev_rate_mask(arvif->ar, &arg);
+	if (ret)
+		return ret;
+
+	/* Fill the vdev rate mask params for HE from MCS mask */
+	arg.type = VDEV_RATEMASK_TYPE_HE;
+	arg.mask_lower32 = (u32)he_m[0] | ((u32)he_m[1] << 16);
+	arg.mask_higher32 = (u32)he_m[2] | ((u32)he_m[3] << 16);
+	arg.mask_lower32_2 = (u32)he_m[4] | ((u32)he_m[5] << 16);
+	arg.mask_higher32_2 = (u32)he_m[6] | ((u32)he_m[7] << 16);
+	ret = ath12k_wmi_vdev_rate_mask(arvif->ar, &arg);
+	if (ret)
+		return ret;
+
+	/* Fill the vdev rate mask params for EHT from MCS mask */
+	lower64 = 0;
+	higher64 = 0;
+	for (nss = 0; nss < NL80211_EHT_NSS_MAX; nss++) {
+		if (!eht_m[nss])
+			continue;
+		if (nss == 0) {
+			mcs_map = 0;
+			if (eht_m[0] & BIT(14))
+				mcs_map |= BIT(0);
+			if (eht_m[0] & BIT(15))
+				mcs_map |= BIT(1);
+			mcs_map |= (eht_m[0] & 0x3FFF) << 2;
+			mcs = mcs_map;
+		} else {
+			mcs = (eht_m[nss] & 0x3FFF) << 2;
+		}
+		offset = nss * 16;
+		if (offset < 64)
+			lower64 |= (u64)mcs << offset;
+		else if (offset < 128)
+			higher64 |= (u64)mcs << (offset - 64);
+		else
+			break;
+	}
+
+	arg.type = VDEV_RATEMASK_TYPE_EHT;
+	arg.mask_lower32 = lower_32_bits(lower64);
+	arg.mask_higher32 = upper_32_bits(lower64);
+	arg.mask_lower32_2 = lower_32_bits(higher64);
+	arg.mask_higher32_2 = upper_32_bits(higher64);
+	ret = ath12k_wmi_vdev_rate_mask(arvif->ar, &arg);
+	if (ret)
+		return ret;
+
+	return 0;
+}
+
+bool ath12k_mac_is_single_rate_bitrate_mask(struct ath12k *ar,
+					    enum nl80211_band band,
+					    const struct cfg80211_bitrate_mask *mask)
+{
+	int cnt;
+
+	cnt = hweight32(mask->control[band].legacy);
+	if (cnt > 1)
+		return false;
+
+	cnt += ath12k_mac_bitrate_mask_num_ht_rates(ar, band, mask);
+	if (cnt > 1)
+		return false;
+
+	cnt += ath12k_mac_bitrate_mask_num_vht_rates(ar, band, mask);
+	if (cnt > 1)
+		return false;
+
+	cnt += ath12k_mac_bitrate_mask_num_he_rates(ar, band, mask);
+	if (cnt > 1)
+		return false;
+
+	cnt += ath12k_mac_bitrate_mask_num_eht_rates(ar, band, mask);
+	if (cnt > 1)
+		return false;
+
+	return (cnt == 1);
+}
+
+u32 ath12k_mac_single_rate_hw_rate_code(struct ath12k *ar,
+					enum nl80211_band band,
+					const struct cfg80211_bitrate_mask *mask)
+{
+	u8 rate_s, i;
+	u32 rate;
+
+	if (mask->control[band].legacy) {
+		ath12k_mac_get_single_legacy_rate(ar, band, mask, &rate);
+		return rate;
+	}
+
+	for (i = 0; i < ARRAY_SIZE(mask->control[band].ht_mcs); i++) {
+		if (mask->control[band].ht_mcs[i]) {
+			rate_s = ffs((int)mask->control[band].ht_mcs[i]) - 1;
+			rate = ATH12K_HW_RATE_CODE(rate_s, i,
+						   WMI_RATE_PREAMBLE_HT, 0);
+			return rate;
+		}
+	}
+
+	for (i = 0; i < ARRAY_SIZE(mask->control[band].vht_mcs); i++) {
+		if (mask->control[band].vht_mcs[i]) {
+			rate_s = ffs((int)mask->control[band].vht_mcs[i]) - 1;
+			rate = ATH12K_HW_RATE_CODE(rate_s, i,
+						   WMI_RATE_PREAMBLE_VHT, 0);
+			return rate;
+		}
+	}
+
+	for (i = 0; i < ARRAY_SIZE(mask->control[band].he_mcs); i++) {
+		if (mask->control[band].he_mcs[i]) {
+			rate_s = ffs((int)mask->control[band].he_mcs[i]) - 1;
+			rate = ATH12K_HW_RATE_CODE(rate_s, i,
+						   WMI_RATE_PREAMBLE_HE, 0);
+			return rate;
+		}
+	}
+
+	for (i = 0; i < ARRAY_SIZE(mask->control[band].eht_mcs); i++) {
+		if (mask->control[band].eht_mcs[i]) {
+			rate_s = ffs((int)mask->control[band].eht_mcs[i]) - 1;
+			rate = ATH12K_HW_RATE_CODE(rate_s, i,
+						   WMI_RATE_PREAMBLE_EHT, 0);
+			return rate;
+		}
+	}
+
+	return 0;
+}
+
 int
 ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 			       struct ieee80211_vif *vif, unsigned int link_id,
@@ -23122,6 +23397,26 @@ ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 
 	eht_gi = mask->control[band].eht_gi;
 	eht_ltf = mask->control[band].eht_ltf;
+
+	if (ath12k_mac_is_single_rate_bitrate_mask(ar, band, mask)) {
+		rate = ath12k_mac_single_rate_hw_rate_code(ar, band, mask);
+		ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
+						    WMI_VDEV_PARAM_FIXED_RATE,
+						    rate);
+		if (ret) {
+			ath12k_warn(ar->ab, "failed to set fixed rate param 0x%02x: %d\n",
+				    rate, ret);
+			return ret;
+		}
+		arvif->fixed_rate_set = true;
+	} else {
+		ret = ath12k_mac_apply_vdev_ratemask(arvif, band, mask);
+		if (ret) {
+			ath12k_warn(ar->ab, "failed to set vdev rate mask %d\n",
+				    ret);
+			return ret;
+		}
+	}
 
 	for (i = 0; i < ARRAY_SIZE(mask->control[band].he_ul_mcs); i++) {
 		if (hweight16(mask->control[band].he_ul_mcs[i]) == 1) {
