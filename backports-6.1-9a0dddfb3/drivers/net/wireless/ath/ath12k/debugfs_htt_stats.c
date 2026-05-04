@@ -2694,7 +2694,7 @@ ath12k_htt_print_tx_pdev_dl_mu_ofdma_sch_stats_tlv(const void *tag_buf,
 			 "11ax DL MU_OFDMA SCH STATS:\n");
 	len += print_array_to_buf(buf, len, "ax_mu_ofdma_sch_nusers",
 			   htt_stats_buf->ax_mu_ofdma_sch_nusers,
-		   	   ATH12K_HTT_TX_NUM_OFDMA_USER_STATS, "\n");
+				ATH12K_HTT_TX_NUM_OFDMA_USER_STATS_TO_SHOW, "\n");
 
 	stats_req->buf_len = len;
 }
@@ -2711,16 +2711,16 @@ ath12k_htt_print_tx_pdev_ul_mu_ofdma_sch_stats_tlv(const void *tag_buf,
 	len += scnprintf(buf + len, buf_len - len, "11ax UL MU_OFDMA SCH STATS:\n");
 	len += print_array_to_buf(buf, len, "ax_ul_mu_ofdma_basic_sch_nusers",
 			   htt_stats_buf->ax_ul_mu_ofdma_basic_sch_nusers,
-			   ATH12K_HTT_TX_NUM_OFDMA_USER_STATS, "\n");
+			   ATH12K_HTT_TX_NUM_OFDMA_USER_STATS_TO_SHOW, "\n");
 	len += print_array_to_buf(buf, len, "ax_ul_mu_ofdma_bsr_sch_nusers",
 			   htt_stats_buf->ax_ul_mu_ofdma_bsr_sch_nusers,
-			   ATH12K_HTT_TX_NUM_OFDMA_USER_STATS, "\n");
+			   ATH12K_HTT_TX_NUM_OFDMA_USER_STATS_TO_SHOW, "\n");
 	len += print_array_to_buf(buf, len, "ax_ul_mu_ofdma_bar_sch_nusers",
 			   htt_stats_buf->ax_ul_mu_ofdma_bar_sch_nusers,
-			   ATH12K_HTT_TX_NUM_OFDMA_USER_STATS, "\n");
+			   ATH12K_HTT_TX_NUM_OFDMA_USER_STATS_TO_SHOW, "\n");
 	len += print_array_to_buf(buf, len, "ax_ul_mu_ofdma_brp_sch_nusers",
 			   htt_stats_buf->ax_ul_mu_ofdma_brp_sch_nusers,
-			   ATH12K_HTT_TX_NUM_OFDMA_USER_STATS, "\n");
+			   ATH12K_HTT_TX_NUM_OFDMA_USER_STATS_TO_SHOW, "\n");
 
 	stats_req->buf_len = len;
 }
@@ -6297,7 +6297,7 @@ ath12k_htt_print_tx_pdev_mu_mimo_sch_stats_tlv(const void *tag_buf, u16 tag_len,
 	}
 
 	len += scnprintf(buf + len, buf_len - len, "\n11ax OFDMA SCH STATS:\n");
-	for (i = 0; i < ATH12K_HTT_TX_NUM_OFDMA_USER_STATS; i++) {
+	for (i = 0; i < ATH12K_HTT_TX_NUM_OFDMA_USER_STATS_TO_SHOW; i++) {
 		len += scnprintf(buf + len, buf_len - len,
 				 "ax_ofdma_sch_nusers_%u = %u\n", i,
 				 le32_to_cpu(htt_stats_buf->ax_ofdma_sch_nusers[i]));
@@ -6529,7 +6529,7 @@ ath12k_htt_print_tx_pdev_mu_mimo_mpdu_stats_tlv(const void *tag_buf, u16 tag_len
 			len += scnprintf(buf + len, buf_len - len,
 					 "HTT_TX_PDEV_AX_MU_OFDMA_MPDU_STATS:\n");
 
-		if (user_index < ATH12K_HTT_TX_NUM_OFDMA_USER_STATS) {
+		if (user_index < ATH12K_HTT_TX_NUM_OFDMA_USER_STATS_TO_SHOW) {
 			len += scnprintf(buf + len, buf_len - len,
 					 "ax_mu_ofdma_mpdus_queued_usr_%u = %u\n",
 					 user_index,
@@ -6566,7 +6566,7 @@ ath12k_htt_print_tx_pdev_mu_mimo_mpdu_stats_tlv(const void *tag_buf, u16 tag_len
 			len += scnprintf(buf + len, buf_len - len,
 					"HTT_TX_PDEV_BE_MU_OFDMA_MPDU_STATS:\n\n");
 
-		if (user_index < ATH12K_HTT_TX_NUM_OFDMA_USER_STATS) {
+		if (user_index < ATH12K_HTT_TX_NUM_OFDMA_USER_STATS_TO_SHOW) {
 			len += scnprintf(buf + len, buf_len - len,
 					"be_mu_ofdma_mpdus_queued_usr_%u = %u\n",
 					user_index,
@@ -9402,7 +9402,9 @@ ath12k_htt_print_tx_pdev_rate_stats_be_bn_ofdma_tlv(const void *tag_buf, u16 tag
 	u32 len = stats_req->buf_len;
 	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
 	u32 mac_id_word;
-	u8 i;
+	u8 i, j;
+	u16 index;
+	char str_buf[HTT_MAX_STRING_LEN] = {0};
 
 	if (tag_len < sizeof(*htt_stats_buf))
 		return;
@@ -9415,9 +9417,21 @@ ath12k_htt_print_tx_pdev_rate_stats_be_bn_ofdma_tlv(const void *tag_buf, u16 tag
 			 u32_get_bits(mac_id_word, ATH12K_HTT_STATS_MAC_ID));
 	len += scnprintf(buf + len, buf_len - len, "be_ofdma_tx_ldpc = %u\n",
 			 le32_to_cpu(htt_stats_buf->be_ofdma_tx_ldpc));
-	len += print_array_to_buf(buf, len, "be_ofdma_tx_mcs",
-				  htt_stats_buf->be_ofdma_tx_mcs,
-				  ATH12K_HTT_TX_PDEV_NUM_BE_MCS_CNTRS, "\n");
+
+	index = 0;
+	memset(str_buf, 0x0, HTT_MAX_STRING_LEN);
+	index += snprintf(&str_buf[index], HTT_MAX_STRING_LEN - index, " -2:%u, -1:%u,",
+			  __le32_to_cpu(htt_stats_buf->be_ofdma_tx_mcs
+			  [ATH12K_HTT_TX_PDEV_NUM_BE_MCS_CNTRS - 2]),
+			  __le32_to_cpu(htt_stats_buf->be_ofdma_tx_mcs
+			  [ATH12K_HTT_TX_PDEV_NUM_BE_MCS_CNTRS - 1]));
+	for (i = 0; i < ATH12K_HTT_TX_PDEV_NUM_BE_MCS_CNTRS - 2; i++)
+		index += snprintf(&str_buf[index],
+			 HTT_MAX_STRING_LEN - index, " %u:%u,", i,
+			 __le32_to_cpu(htt_stats_buf->be_ofdma_tx_mcs[i]));
+	len += scnprintf(buf + len, buf_len - len,
+			 "be_ofdma_tx_mcs = %s\n", str_buf);
+
 	len += print_array_to_buf(buf, len, "be_ofdma_eht_sig_mcs",
 				  htt_stats_buf->be_ofdma_eht_sig_mcs,
 				  ATH12K_HTT_TX_PDEV_NUM_EHT_SIG_MCS_CNTRS, "\n");
@@ -9434,11 +9448,23 @@ ath12k_htt_print_tx_pdev_rate_stats_be_bn_ofdma_tlv(const void *tag_buf, u16 tag
 	len += print_array_to_buf(buf, len, "be_ofdma_tx_bw",
 				  htt_stats_buf->be_ofdma_tx_bw,
 				  ATH12K_HTT_TX_PDEV_NUM_BE_BW_CNTRS, "\n");
-	for (i = 0; i < ATH12K_HTT_TX_PDEV_NUM_GI_CNTRS; i++) {
+
+	for (j = 0; j < ATH12K_HTT_TX_PDEV_NUM_GI_CNTRS; j++) {
+		index = 0;
+		memset(&str_buf[index], 0x0, HTT_MAX_STRING_LEN);
+		index += snprintf(&str_buf[index], HTT_MAX_STRING_LEN - index,
+			 " -2:%u, -1:%u,",
+			 __le32_to_cpu(htt_stats_buf->gi[j]
+			 [ATH12K_HTT_TX_PDEV_NUM_BE_MCS_CNTRS - 2]),
+			 __le32_to_cpu(htt_stats_buf->gi[j]
+			 [ATH12K_HTT_TX_PDEV_NUM_BE_MCS_CNTRS - 1]));
+		for (i = 0; i < ATH12K_HTT_TX_PDEV_NUM_BE_MCS_CNTRS - 2; i++)
+			index += snprintf(&str_buf[index],
+				 ATH12K_HTT_MAX_STRING_LEN - index, " %u:%u,", i,
+				 __le32_to_cpu(htt_stats_buf->gi[j][i]));
+
 		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_tx_gi[%u]", i);
-		len += print_array_to_buf(buf, len, "", htt_stats_buf->gi[i],
-					  ATH12K_HTT_TX_PDEV_NUM_BE_MCS_CNTRS, "\n");
+				 "be_ofdma_tx_gi[%u] = %s\n", j, str_buf);
 	}
 
 	len += scnprintf(buf + len, buf_len - len, "be_ofdma_ba_ru_size = ");
@@ -9453,9 +9479,46 @@ ath12k_htt_print_tx_pdev_rate_stats_be_bn_ofdma_tlv(const void *tag_buf, u16 tag
 
 	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_tx_ldpc = %u\n",
 			 le32_to_cpu(htt_stats_buf->bn_ofdma_tx_ldpc));
-	len += print_array_to_buf(buf, len, "bn_ofdma_tx_mcs",
-				  htt_stats_buf->bn_ofdma_tx_mcs,
-				  ATH12K_HTT_TX_PDEV_NUM_BN_MCS_CNTRS, "\n");
+
+	index = 0;
+	memset(str_buf, 0x0, HTT_MAX_STRING_LEN);
+	index += snprintf(&str_buf[index], HTT_MAX_STRING_LEN - index, " -2:%u, -1:%u,",
+			  __le32_to_cpu(htt_stats_buf->bn_ofdma_tx_mcs[14]),
+			  __le32_to_cpu(htt_stats_buf->bn_ofdma_tx_mcs[15]));
+	for (i = 0; i < ATH12K_HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS_EXT; i++) {
+		index += snprintf(&str_buf[index],
+			 HTT_MAX_STRING_LEN - index, " %u:%u,", i,
+			 __le32_to_cpu(htt_stats_buf->bn_ofdma_tx_mcs[i]));
+
+		switch (i) {
+		case ATH12K_HTT_TX_RX_MCS_RATE_1:
+			index += snprintf(&str_buf[index],
+				HTT_MAX_STRING_LEN - index,
+				" 1.1:%u,", htt_stats_buf->bn_ofdma_tx_mcs[16]);
+			break;
+		case ATH12K_HTT_TX_RX_MCS_RATE_3:
+			index += snprintf(&str_buf[index],
+				HTT_MAX_STRING_LEN - index,
+				" 3.1:%u,", htt_stats_buf->bn_ofdma_tx_mcs[17]);
+			break;
+		case ATH12K_HTT_TX_RX_MCS_RATE_4:
+			index += snprintf(&str_buf[index],
+				HTT_MAX_STRING_LEN - index,
+				" 4.1:%u,", htt_stats_buf->bn_ofdma_tx_mcs[18]);
+			break;
+		case ATH12K_HTT_TX_RX_MCS_RATE_7:
+			index += snprintf(&str_buf[index],
+				HTT_MAX_STRING_LEN - index,
+				" 7.1:%u,", htt_stats_buf->bn_ofdma_tx_mcs[19]);
+			break;
+		default:
+			continue;
+		}
+	}
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "bn_ofdma_tx_mcs = %s\n", str_buf);
+
 	len += print_array_to_buf(buf, len, "bn_ofdma_uhr_sig_mcs",
 				  htt_stats_buf->bn_ofdma_uhr_sig_mcs,
 				  ATH12K_HTT_TX_PDEV_NUM_UHR_SIG_MCS_CNTRS, "\n");
@@ -9472,11 +9535,47 @@ ath12k_htt_print_tx_pdev_rate_stats_be_bn_ofdma_tlv(const void *tag_buf, u16 tag
 	len += print_array_to_buf(buf, len, "bn_ofdma_tx_bw",
 				  htt_stats_buf->bn_ofdma_tx_bw,
 				  ATH12K_HTT_TX_PDEV_NUM_BN_BW_CNTRS, "\n");
-	for (i = 0; i < ATH12K_HTT_TX_PDEV_NUM_GI_CNTRS; i++) {
+
+	for (j = 0; j < ATH12K_HTT_TX_PDEV_NUM_GI_CNTRS; j++) {
+		index = 0;
+		memset(&str_buf[index], 0x0, HTT_MAX_STRING_LEN);
+		index += snprintf(&str_buf[index], HTT_MAX_STRING_LEN - index,
+			 " -2:%u, -1:%u,",
+			 __le32_to_cpu(htt_stats_buf->gi_bn[j][14]),
+			 __le32_to_cpu(htt_stats_buf->gi_bn[j][15]));
+		for (i = 0; i < ATH12K_HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS_EXT; i++) {
+			index += snprintf(&str_buf[index],
+				 ATH12K_HTT_MAX_STRING_LEN - index, " %u:%u,", i,
+				 __le32_to_cpu(htt_stats_buf->gi_bn[j][i]));
+
+			switch (i) {
+			case ATH12K_HTT_TX_RX_MCS_RATE_1:
+				index += snprintf(&str_buf[index],
+					HTT_MAX_STRING_LEN - index,
+					" 1.1:%u,", htt_stats_buf->gi_bn[j][16]);
+				break;
+			case ATH12K_HTT_TX_RX_MCS_RATE_3:
+				index += snprintf(&str_buf[index],
+					HTT_MAX_STRING_LEN - index,
+					" 3.1:%u,", htt_stats_buf->gi_bn[j][17]);
+				break;
+			case ATH12K_HTT_TX_RX_MCS_RATE_4:
+				index += snprintf(&str_buf[index],
+					HTT_MAX_STRING_LEN - index,
+					" 4.1:%u,", htt_stats_buf->gi_bn[j][18]);
+				break;
+			case ATH12K_HTT_TX_RX_MCS_RATE_7:
+				index += snprintf(&str_buf[index],
+					HTT_MAX_STRING_LEN - index,
+					" 7.1:%u,", htt_stats_buf->gi_bn[j][19]);
+				break;
+			default:
+				continue;
+			}
+		}
+
 		len += scnprintf(buf + len, buf_len - len,
-				 "bn_ofdma_tx_gi[%u]", i);
-		len += print_array_to_buf(buf, len, "", htt_stats_buf->gi_bn[i],
-					  ATH12K_HTT_TX_PDEV_NUM_BN_MCS_CNTRS, "\n");
+				 "bn_ofdma_tx_gi[%u] = %s\n", j, str_buf);
 	}
 
 	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_ba_ru_size = ");
@@ -9992,7 +10091,9 @@ ath12k_htt_print_be_bn_ul_trigger_stats_tlv(const void *tag_buf, u16 tag_len,
 	u8 *buf = stats_req->buf;
 	u32 len = stats_req->buf_len;
 	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
-	u8 i;
+	u8 i, j;
+	u16 index;
+	char str_buf[HTT_MAX_STRING_LEN] = {0};
 
 	if (tag_len < sizeof(*stats_buf))
 		return;
@@ -10004,14 +10105,38 @@ ath12k_htt_print_be_bn_ul_trigger_stats_tlv(const void *tag_buf, u16 tag_len,
 					ATH12K_HTT_STATS_MAC_ID));
 	len += scnprintf(buf + len, buf_len - len, "rx_11be_ul_ofdma = %u\n",
 			 le32_to_cpu(stats_buf->rx_11be_ul_ofdma));
-	len += print_array_to_buf(buf, len, "be_ul_ofdma_rx_mcs",
-				  stats_buf->be_ul_ofdma_rx_mcs,
-				  ATH12K_HTT_RX_NUM_BE_MCS_COUNTERS, "\n");
 
-	for (i = 0; i < ATH12K_HTT_RX_NUM_GI_COUNTERS; i++) {
-		len += scnprintf(buf + len, buf_len - len, "rx_gi[%u] = ", i);
-		len += print_array_to_buf(buf, len, NULL, stats_buf->be_ul_ofdma_rx_gi[i],
-					  ATH12K_HTT_RX_NUM_BE_MCS_COUNTERS, "\n");
+	index = 0;
+	memset(str_buf, 0x0, HTT_MAX_STRING_LEN);
+	index += snprintf(&str_buf[index], HTT_MAX_STRING_LEN - index, " -2:%u, -1:%u,",
+			  __le32_to_cpu(stats_buf->be_ul_ofdma_rx_mcs
+			  [ATH12K_HTT_RX_NUM_BE_MCS_COUNTERS - 2]),
+			  __le32_to_cpu(stats_buf->be_ul_ofdma_rx_mcs
+			  [ATH12K_HTT_RX_NUM_BE_MCS_COUNTERS - 1]));
+	for (i = 0; i < ATH12K_HTT_RX_NUM_BE_MCS_COUNTERS - 2; i++)
+		index += snprintf(&str_buf[index],
+			 HTT_MAX_STRING_LEN - index, " %u:%u,", i,
+			 __le32_to_cpu(stats_buf->be_ul_ofdma_rx_mcs[i]));
+	len += scnprintf(buf + len, buf_len - len,
+			 "be_ul_ofdma_rx_mcs = %s\n", str_buf);
+
+	for (j = 0; j < ATH12K_HTT_RX_NUM_GI_COUNTERS; j++) {
+		index = 0;
+		memset(&str_buf[index], 0x0, HTT_MAX_STRING_LEN);
+		index += snprintf(&str_buf[index], HTT_MAX_STRING_LEN - index,
+			 " -2:%u, -1:%u,",
+			 __le32_to_cpu(stats_buf->be_ul_ofdma_rx_gi[j]
+			 [ATH12K_HTT_RX_NUM_BE_MCS_COUNTERS - 2]),
+			 __le32_to_cpu(stats_buf->be_ul_ofdma_rx_gi[j]
+			 [ATH12K_HTT_RX_NUM_BE_MCS_COUNTERS - 1]));
+		for (i = 0; i < ATH12K_HTT_RX_NUM_BE_MCS_COUNTERS - 2; i++)
+			index += snprintf(&str_buf[index],
+				 ATH12K_HTT_MAX_STRING_LEN - index, " %u:%u,", i,
+				 __le32_to_cpu(
+				 stats_buf->be_ul_ofdma_rx_gi[j][i]));
+
+		len += scnprintf(buf + len, buf_len - len,
+				 "be_ul_ofdma_rx_gi[%u] = %s\n", j, str_buf);
 	}
 
 	len += print_array_to_buf(buf, len, "be_ul_ofdma_rx_nss",
@@ -10068,14 +10193,85 @@ ath12k_htt_print_be_bn_ul_trigger_stats_tlv(const void *tag_buf, u16 tag_len,
 			 le32_to_cpu(stats_buf->ul_mlo_proc_discarded_qdepth_params_cnt));
 	len += scnprintf(buf + len, buf_len - len, "rx_11bn_ul_ofdma = %u\n",
 			 le32_to_cpu(stats_buf->rx_11bn_ul_ofdma));
-	len += print_array_to_buf(buf, len, "bn_ul_ofdma_rx_mcs",
-				  stats_buf->bn_ul_ofdma_rx_mcs,
-				  ATH12K_HTT_RX_NUM_BN_MCS_COUNTERS, "\n");
 
-	for (i = 0; i < ATH12K_HTT_RX_NUM_GI_COUNTERS; i++) {
-		len += scnprintf(buf + len, buf_len - len, "bn_ofdma_rx_gi[%u] = ", i);
-		len += print_array_to_buf(buf, len, NULL, stats_buf->bn_ul_ofdma_rx_gi[i],
-					  ATH12K_HTT_RX_NUM_BN_MCS_COUNTERS, "\n");
+	index = 0;
+	memset(str_buf, 0x0, HTT_MAX_STRING_LEN);
+	index += snprintf(&str_buf[index], HTT_MAX_STRING_LEN - index, " -2:%u, -1:%u,",
+			  __le32_to_cpu(stats_buf->bn_ul_ofdma_rx_mcs[14]),
+			  __le32_to_cpu(stats_buf->bn_ul_ofdma_rx_mcs[15]));
+	for (i = 0; i < ATH12K_HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS_EXT; i++) {
+		index += snprintf(&str_buf[index],
+			 HTT_MAX_STRING_LEN - index, " %u:%u,", i,
+			 __le32_to_cpu(stats_buf->bn_ul_ofdma_rx_mcs[i]));
+
+		switch (i) {
+		case ATH12K_HTT_TX_RX_MCS_RATE_1:
+			index += snprintf(&str_buf[index],
+				HTT_MAX_STRING_LEN - index,
+				" 1.1:%u,", stats_buf->bn_ul_ofdma_rx_mcs[16]);
+			break;
+		case ATH12K_HTT_TX_RX_MCS_RATE_3:
+			index += snprintf(&str_buf[index],
+				HTT_MAX_STRING_LEN - index,
+				" 3.1:%u,", stats_buf->bn_ul_ofdma_rx_mcs[17]);
+			break;
+		case ATH12K_HTT_TX_RX_MCS_RATE_4:
+			index += snprintf(&str_buf[index],
+				HTT_MAX_STRING_LEN - index,
+				" 4.1:%u,", stats_buf->bn_ul_ofdma_rx_mcs[18]);
+			break;
+		case ATH12K_HTT_TX_RX_MCS_RATE_7:
+			index += snprintf(&str_buf[index],
+				HTT_MAX_STRING_LEN - index,
+				" 7.1:%u,", stats_buf->bn_ul_ofdma_rx_mcs[19]);
+			break;
+		default:
+			continue;
+		}
+	}
+	len += scnprintf(buf + len, buf_len - len,
+			 "bn_ul_ofdma_rx_mcs = %s\n", str_buf);
+
+	for (j = 0; j < ATH12K_HTT_RX_NUM_GI_COUNTERS; j++) {
+		index = 0;
+		memset(&str_buf[index], 0x0, HTT_MAX_STRING_LEN);
+		index += snprintf(&str_buf[index], HTT_MAX_STRING_LEN - index,
+			 " -2:%u, -1:%u,",
+			 __le32_to_cpu(stats_buf->bn_ul_ofdma_rx_gi[j][14]),
+			 __le32_to_cpu(stats_buf->bn_ul_ofdma_rx_gi[j][15]));
+		for (i = 0; i < ATH12K_HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS_EXT; i++) {
+			index += snprintf(&str_buf[index],
+				 ATH12K_HTT_MAX_STRING_LEN - index, " %u:%u,", i,
+				 __le32_to_cpu(
+				 stats_buf->bn_ul_ofdma_rx_gi[j][i]));
+
+			switch (i) {
+			case ATH12K_HTT_TX_RX_MCS_RATE_1:
+				index += snprintf(&str_buf[index],
+					HTT_MAX_STRING_LEN - index,
+					" 1.1:%u,", stats_buf->bn_ul_ofdma_rx_gi[j][16]);
+				break;
+			case ATH12K_HTT_TX_RX_MCS_RATE_3:
+				index += snprintf(&str_buf[index],
+					HTT_MAX_STRING_LEN - index,
+					" 3.1:%u,", stats_buf->bn_ul_ofdma_rx_gi[j][17]);
+				break;
+			case ATH12K_HTT_TX_RX_MCS_RATE_4:
+				index += snprintf(&str_buf[index],
+					HTT_MAX_STRING_LEN - index,
+					" 4.1:%u,", stats_buf->bn_ul_ofdma_rx_gi[j][18]);
+				break;
+			case ATH12K_HTT_TX_RX_MCS_RATE_7:
+				index += snprintf(&str_buf[index],
+					HTT_MAX_STRING_LEN - index,
+					" 7.1:%u,", stats_buf->bn_ul_ofdma_rx_gi[j][19]);
+				break;
+			default:
+				continue;
+			}
+		}
+		len += scnprintf(buf + len, buf_len - len,
+				 "bn_ul_ofdma_rx_gi[%u] = %s\n", j, str_buf);
 	}
 
 	len += print_array_to_buf(buf, len, "bn_ul_ofdma_rx_nss",
@@ -11030,7 +11226,7 @@ ath12k_htt_print_tx_pdev_be_dl_mu_ofdma_sch_stats_tlv(const void *tag_buf, u16 t
 	len += scnprintf(buf + len, buf_len - len,
 			"11BE DL MU_OFDMA SCH STATS:\n");
 
-	for (i = 0; i < ATH12K_HTT_TX_NUM_OFDMA_USER_STATS; i++) {
+	for (i = 0; i < ATH12K_HTT_TX_NUM_OFDMA_USER_STATS_TO_SHOW; i++) {
 		len += scnprintf(buf + len, buf_len - len,
 				"be_mu_ofdma_sch_nusers_%u = %u\n", i,
 				le32_to_cpu(htt_stats_buf->be_mu_ofdma_sch_nusers[i]));
@@ -11055,7 +11251,7 @@ ath12k_htt_print_tx_pdev_be_ul_mu_ofdma_sch_stats_tlv(const void *tag_buf, u16 t
 
 	len += scnprintf(buf + len, buf_len - len, "\n11ax BE UL MU_OFDMA SCH STATS:\n");
 
-	for (i = 0; i < ATH12K_HTT_TX_NUM_OFDMA_USER_STATS; i++) {
+	for (i = 0; i < ATH12K_HTT_TX_NUM_OFDMA_USER_STATS_TO_SHOW; i++) {
 		len += scnprintf(buf + len, buf_len - len,
 				"be_ul_mu_ofdma_basic_sch_nusers_%u = %u\n", i,
 				le32_to_cpu(
