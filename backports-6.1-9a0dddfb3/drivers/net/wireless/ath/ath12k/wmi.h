@@ -165,6 +165,15 @@ struct wmi_vdev_set_tpc_power_cmd {
          */
 } __packed;
 
+#define ATH12K_TPC_MGMT_RATE_AUTO	0xFFFF
+
+struct wmi_vdev_get_tpc_ie_power_cmd {
+	__le32 tlv_header;
+	__le32 vdev_id;
+	__le32 pdev_id;
+	__le32 mgmt_rate; /* Ratecode. Use ATH12K_TPC_MGMT_RATE_AUTO for current rate. */
+} __packed;
+
 struct wmi_vdev_tpc_ie_power_event {
 	__le32 vdev_id;
 	__le32 pdev_id;
@@ -658,6 +667,8 @@ enum wmi_tlv_cmd_id {
 	/** Set LTF key seed which will be further used to derive LTF keys */
 	WMI_VDEV_SET_LTF_KEY_SEED_CMDID,
 	WMI_VDEV_PN_MGMT_RX_FILTER_CMDID,
+	/** Query current TPC IE EIRP power */
+	WMI_VDEV_GET_TPC_IE_POWER_CMDID = 0x503B,
 	/** WMI cmd used to control DPS Assisting AP role config */
 	WMI_VDEV_ENERGY_MGMT_DPS_ASSISTING_ROLE_CONFIG_CMDID = 0x503D,
 	WMI_PEER_CREATE_CMDID = WMI_TLV_CMD(WMI_GRP_PEER),
@@ -2515,6 +2526,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_MGMT_MPDU_FLOWQ_PARAMS = 0x514,
 	WMI_TAG_MGMT_MSDU_FLOWQ_PARAMS = 0x515,
 	WMI_TAG_HOL_MSDU_FLOWQ_PARAMS = 0x516,
+	WMI_TAG_VDEV_GET_TPC_IE_POWER_CMD = 0x521,
 	WMI_TAG_VDEV_TPC_IE_POWER_EVENT = 0x522,
 	WMI_TAG_ENERGY_MGMT_DPS_ASSISTING_ROLE_CMD_FIXED_PARAM = 0x525,
 	WMI_TAG_MAC_PHY_CAPABILITIES_EXT2 = 0x526,
@@ -10279,6 +10291,8 @@ int ath12k_wmi_pdev_enable_telemetry_stats(struct ath12k_base *ab,
 int ath12k_wmi_send_vdev_set_tpc_power(struct ath12k *ar,
 				       u32 vdev_id,
 				       struct ath12k_reg_tpc_power_info *param);
+int ath12k_wmi_send_vdev_get_tpc_ie_power(struct ath12k *ar, u32 vdev_id,
+					  u32 mgmt_rate);
 int ath12k_wmi_dl_qos_profile_create(struct ath12k_base *ab,
 				     struct ath12k_qos_params *param,
 				     u8 qos_profile_id);
