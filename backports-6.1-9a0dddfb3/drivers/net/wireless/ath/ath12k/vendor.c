@@ -7234,9 +7234,16 @@ static int ath12k_vendor_get_wifi_config_handler(struct wiphy *wiphy,
 				return -EINVAL;
 			}
 			break;
+		case QCA_NL80211_VENDOR_SUBCMD_HE_MCS_12_13_SUPP:
+			ret = ath12k_vendor_get_wifi_config_handler_extn(wiphy,
+									 tb, &value);
+			if (ret) {
+				ath12k_err(NULL, "Failed to get HE MCS 12/13 capability\n");
+				return ret;
+			}
+			break;
 		default:
-			ath12k_dbg(NULL, ATH12K_DBG_CFG,
-				   "Un-supported generic command\n");
+			ath12k_dbg(NULL, ATH12K_DBG_CFG, "Un-supported generic command\n");
 			return -EOPNOTSUPP;
 		}
 	}
@@ -7246,6 +7253,20 @@ static int ath12k_vendor_get_wifi_config_handler(struct wiphy *wiphy,
 		return -ENOMEM;
 
 	if (tb[QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_COMMAND]) {
+		switch (wifi_params.command) {
+		case QCA_NL80211_VENDOR_SUBCMD_HE_MCS_12_13_SUPP:
+			__le16 cap = cpu_to_le16((u16)value);
+
+			if (nla_put(skb, QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_DATA,
+				    sizeof(cap), &cap)) {
+				ret = -EINVAL;
+				goto err;
+			}
+			goto send_reply;
+		default:
+			break;
+		}
+
 		switch (wifi_params.value) {
 		case QCA_WLAN_VENDOR_VDEV_PARAM_VDEV_TSF:
 			if ((nla_put_u64_64bit(skb, QCA_WLAN_VENDOR_ATTR_PARAM_DATA,
@@ -7308,6 +7329,7 @@ static int ath12k_vendor_get_wifi_config_handler(struct wiphy *wiphy,
 			   wdev->vap_submode, wdev->netdev->name);
 	}
 
+send_reply:
 	ret = cfg80211_vendor_cmd_reply(skb);
 	if (ret) {
 		ath12k_err(NULL,
