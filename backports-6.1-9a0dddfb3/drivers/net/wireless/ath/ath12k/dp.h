@@ -443,6 +443,7 @@ struct ath12k_tx_desc_info {
 	u32 desc_id; /* Cookie */
 	u16 len;
 	u16 ext_desc_len;
+	u32 hw_enqueue_tstamp;
 	u8 hw_link_id	: 5,
 	   in_use	: 1,
 	   ext_kmem	: 1,

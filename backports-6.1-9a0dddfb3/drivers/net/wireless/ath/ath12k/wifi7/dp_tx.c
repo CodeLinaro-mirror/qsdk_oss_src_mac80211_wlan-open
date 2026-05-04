@@ -65,6 +65,7 @@ struct ath12k_tx_sw_metadata {
 	    rsvd1      : 2;
 	u8  flags      : 4,
 	    rsvd2      : 4;
+	u32 hw_enqueue_tstamp;
 } __packed __aligned(32);
 
 static_assert(sizeof(struct ath12k_tx_sw_metadata) == 32,
@@ -1137,7 +1138,6 @@ int ath12k_wifi7_dp_tx_hw_enqueue(struct ath12k_dp_link_vif *dp_link_vif,
 						      &skb->mark,
 						      qos_nw_delay,
 						      skb_headlen(skb));
-		skb->tstamp = net_timedelta(skb->tstamp);
 	}
 
 	if (unlikely(arsta)) {
@@ -1207,7 +1207,6 @@ int ath12k_wifi7_dp_tx_hw_enqueue(struct ath12k_dp_link_vif *dp_link_vif,
 						      &skb->mark,
 						      qos_nw_delay,
 						      skb_headlen(skb));
-		skb->tstamp = net_timedelta(skb->tstamp);
 	}
 
 	if (unlikely(arsta)) {
@@ -3307,6 +3306,7 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 		}
 
 		sw_metadata->hw_link_id = tx_desc->hw_link_id;
+		sw_metadata->hw_enqueue_tstamp = tx_desc->hw_enqueue_tstamp;
 		pdev_tx_comp_cnt[sw_metadata->hw_link_id]++;
 
 		tx_desc->skb = NULL;
