@@ -2209,6 +2209,9 @@ struct  htt_ppdu_stats_user_common {
 #define HTT_FC0_SUBTYPE_MASK  0xf0
 
 #define HTT_STATS_MAX_CHAINS	8
+/* Max Phy rate comes for 20, 40, 80 and 160 BW as part of max_rates */
+#define HTT_STATS_MAX_SA_BW	4
+
 #define HTT_USR_CMPLTN_IS_AMPDU(_val) \
 	    le32_get_bits(_val, HTT_PPDU_STATS_USR_CMPLTN_CMN_FLAGS_IS_AMPDU_M)
 #define HTT_USR_CMPLTN_LONG_RETRY(_val) \
@@ -2236,6 +2239,14 @@ struct htt_ppdu_stats_usr_cmpltn_cmn {
 	__le16 mpdu_success;
 	__le32 flags; /* %HTT_PPDU_STATS_USR_CMPLTN_CMN_FLAGS_LONG_RETRIES*/
 	__le32 rssi_chain[HTT_STATS_MAX_CHAINS];
+	__le32 tx_antenna_mask;
+	__le16 pending_training_pkts;
+	__le16 is_sa_training;
+	__le32 max_rates[HTT_STATS_MAX_SA_BW];
+	__le32 current_rate_per;
+	__le32 sw_rts_cts_bitmask;
+	/* Smart antenna max phy rate for BW 320 */
+	__le32 max_rates_ext;
 } __packed;
 
 #define HTT_PPDU_STATS_ACK_BA_INFO_NUM_MPDU_M	GENMASK(8, 0)
