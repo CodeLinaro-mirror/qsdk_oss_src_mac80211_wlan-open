@@ -380,7 +380,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 #endif
 
 		.idle_ps = false,
-		.cold_boot_calib = true,
+		.cold_boot_calib = ATH12K_COLD_BOOT_CALIB,
 		.download_calib = true,
 		.supports_suspend = false,
 		.reoq_lut_support = true,
@@ -499,7 +499,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 #endif
 
 		.idle_ps = false,
-		.cold_boot_calib = true,
+		.cold_boot_calib = ATH12K_COLD_BOOT_CALIB,
 		.download_calib = true,
 		.supports_suspend = false,
 		.reoq_lut_support = true,

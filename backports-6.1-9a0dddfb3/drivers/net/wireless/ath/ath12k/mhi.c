@@ -16,7 +16,9 @@
 #include "pci.h"
 #include "hif.h"
 #include "pcic.h"
+#ifdef CPTCFG_ATHDEBUG
 #include "athdbg_if.h"
+#endif
 
 #define MHI_TIMEOUT_DEFAULT_MS	90000
 #define OTP_INVALID_BOARD_ID	0xFFFF
@@ -288,7 +290,6 @@ int ath12k_mhi_register(struct ath12k_pci *ab_pci)
 	mhi_ctrl->reg_len = ab->mem_len;
 	mhi_ctrl->rddm_size = hw_params->rddm_size;
 	mhi_ctrl->standard_elf_image = hw_params->fw.std_elf_img;
-
 	if (hw_params->otp_board_id_register) {
 		if (!of_property_read_u32(ab->dev->of_node, "qcom,board_id", &board_id) &&
 		    board_id != ATH12K_BOARD_ID_DEFAULT) {
@@ -393,6 +394,11 @@ int ath12k_mhi_register(struct ath12k_pci *ab_pci)
 		ath12k_err(ab, "failed to register to mhi bus, err = %d\n", ret);
 		goto free_controller;
 	}
+
+#if defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
+	mhi_ctrl->rddm_prealloc = false;
+	mhi_ctrl->rddm_seg_len = SZ_4K;
+#endif
 
 	return 0;
 

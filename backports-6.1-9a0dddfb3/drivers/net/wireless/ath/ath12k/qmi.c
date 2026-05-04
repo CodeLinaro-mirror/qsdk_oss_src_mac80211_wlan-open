@@ -4747,7 +4747,8 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 			 * AFC_REGION_TYPE is supported for 6 GHz.
 			 */
 
-			if (ab->hif.bus == ATH12K_BUS_HYBRID) {
+			if (ab->hif.bus == ATH12K_BUS_HYBRID &&
+			    ab->qmi.target_mem_mode != ATH12K_QMI_TARGET_MEM_MODE_256M) {
 				ret = ath12k_qmi_alloc_afc_reserved_mem(ab, idx, i);
 				if (ret)
 					goto out;

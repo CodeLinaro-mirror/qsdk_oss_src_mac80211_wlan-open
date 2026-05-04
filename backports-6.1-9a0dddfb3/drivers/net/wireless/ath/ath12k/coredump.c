@@ -542,8 +542,10 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 	struct mhi_controller *mhi_ctrl = ar_pci->mhi_ctrl;
 	struct image_info *rddm_img, *fw_img;
 	struct ath12k_dump_segment *segment, *seg_info;
-	int i, rem_seg_cnt = 0, len, num_seg, seg_sz, qdss_seg_cnt = 1;
-
+	int i, rem_seg_cnt = 0, len, num_seg, seg_sz;
+#ifdef CPTCFG_ATHDEBUG
+	int qdss_seg_cnt = 1;
+#endif
 	int skip_count = 0;
 	enum ath12k_fw_crash_dump_type mem_type;
 	struct ath12k_coredump_segment_info *chip_seg;

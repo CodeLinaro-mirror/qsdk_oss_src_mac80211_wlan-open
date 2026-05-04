@@ -24,7 +24,10 @@ struct ath12k_link_vif;
 /* Target configuration defines */
 
 
-#if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined (CPTCFG_ATH12K_MEM_PROFILE_512M)
+#if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || \
+	defined(CPTCFG_ATH12K_MEM_PROFILE_512M) || \
+	defined(CONFIG_ATH12K_MEM_PROFILE_256M)  || \
+	defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
 /* Num VDEVS per radio */
 #define TARGET_NUM_VDEVS        (8 + 1)
 /* Maximum number of AP interfaces allowed per radio for MBSSID.
@@ -35,7 +38,12 @@ struct ath12k_link_vif;
 /* Num of Bridge vdevs per radio */
 #define TARGET_NUM_BRIDGE_VDEVS		0
 #define ATH12K_MAX_NUM_VDEVS_NLINK	TARGET_NUM_BRIDGE_VDEVS
+
+#if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined(CPTCFG_ATH12K_MEM_PROFILE_512M)
 #define ATH12K_QMI_TARGET_MEM_MODE      ATH12K_QMI_TARGET_MEM_MODE_512M
+#else
+#define ATH12K_QMI_TARGET_MEM_MODE      ATH12K_QMI_TARGET_MEM_MODE_256M
+#endif
 
 /* Max num of stations for Single Radio mode */
 #define TARGET_NUM_STATIONS_SINGLE     128
@@ -74,6 +82,12 @@ struct ath12k_link_vif;
 					ab->hw_params->max_clients_dbs_sbs : \
 					(int)ath12k_max_clients / 3)
 
+#endif
+
+#if defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
+#define ATH12K_COLD_BOOT_CALIB		false
+#else
+#define ATH12K_COLD_BOOT_CALIB		true
 #endif
 
 #define TARGET_NUM_PEERS_PDEV_SINGLE	(TARGET_NUM_STATIONS_SINGLE + \
