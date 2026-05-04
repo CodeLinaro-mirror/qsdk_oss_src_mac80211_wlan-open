@@ -369,7 +369,6 @@ ath12k_wifi8_mgmt_rx_h_ppdu(struct ath12k *partner_ar, struct sk_buff *mmpdu,
 	struct ieee80211_supported_band *sband;
 	struct ieee80211_channel *channel;
 	enum rx_msdu_start_pkt_type pkt_type;
-	struct ath12k_base *partner_ab;
 	u32 center_freq, meta_data;
 	u8 channel_num, bw, sgi, rate_mcs, nss;
 	struct ath12k_link_sta *arsta;
@@ -498,20 +497,19 @@ ath12k_wifi8_mgmt_rx_h_ppdu(struct ath12k *partner_ar, struct sk_buff *mmpdu,
 		break;
 	}
 
-	partner_ab = partner_ar->ab;
-	spin_lock_bh(&partner_ab->base_lock);
+	spin_lock_bh(&partner_ar->arsta_lock);
 
 	/* Fetch arsta from A2 on AP and A1 on STA */
-	arsta = ath12k_link_sta_find_by_addr(partner_ab, hdr->addr2);
+	arsta = ath12k_link_sta_find_by_addr(partner_ar, hdr->addr2);
 	if (!arsta)
-		arsta = ath12k_link_sta_find_by_addr(partner_ab, hdr->addr1);
+		arsta = ath12k_link_sta_find_by_addr(partner_ar, hdr->addr1);
 
 	if (arsta) {
 		arsta->max_rssi = max(arsta->max_rssi, rssi);
 		arsta->min_rssi = min(arsta->min_rssi, rssi);
 	}
 
-	spin_unlock_bh(&partner_ab->base_lock);
+	spin_unlock_bh(&partner_ar->arsta_lock);
 }
 
 static void
@@ -561,25 +559,22 @@ ath12k_wifi8_mgmt_rx_h_mpdu(struct ath12k_mgmt *mgmt, struct sk_buff *mmpdu,
 	enum hal_encrypt_type enctype = HAL_ENCRYPT_TYPE_OPEN;
 	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(mmpdu);
 	u32 err_bitmap = desc_data->err_bitmap;
-	struct ath12k_base *partner_ab;
 	struct ath12k_link_sta *arsta;
 	struct ath12k *partner_ar;
 	bool is_decrypted = false;
 
 	partner_ar = ath12k_core_ar_from_hw_link_id(mgmt->ab, rxcb->hw_link_id);
-	partner_ab = partner_ar->ab;
-
-	spin_lock_bh(&partner_ab->base_lock);
+	spin_lock_bh(&partner_ar->arsta_lock);
 
 	/* Fetch arsta from A2 on AP and A1 on STA */
-	arsta = ath12k_link_sta_find_by_addr(partner_ab, hdr->addr2);
+	arsta = ath12k_link_sta_find_by_addr(partner_ar, hdr->addr2);
 	if (!arsta)
-		arsta = ath12k_link_sta_find_by_addr(partner_ab, hdr->addr1);
+		arsta = ath12k_link_sta_find_by_addr(partner_ar, hdr->addr1);
 
 	if (arsta)
 		enctype = arsta->ahsta->enctype;
 
-	spin_unlock_bh(&partner_ab->base_lock);
+	spin_unlock_bh(&partner_ar->arsta_lock);
 
 	desc_data->enctype = enctype;
 

@@ -11447,22 +11447,25 @@ skip_mgmt_stats:
 	}
 
 	if (is_4addr_null_pkt) {
-		spin_lock_bh(&ab->base_lock);
-		arsta = ath12k_link_sta_find_by_addr(ab, hdr->addr2);
+		spin_lock_bh(&ar->arsta_lock);
+		arsta = ath12k_link_sta_find_by_addr(ar, hdr->addr2);
 		if (!arsta || arsta->is_bridge_peer) {
-			spin_unlock_bh(&ab->base_lock);
+			spin_unlock_bh(&ar->arsta_lock);
 			ath12k_warn(ab, "arsta not found %pM\n",
 				    hdr->addr2);
 			dev_kfree_skb(skb);
 			goto exit;
 		}
+		status->link_id = arsta->link_id;
+		spin_unlock_bh(&ar->arsta_lock);
+
 		pubsta = ieee80211_find_sta_by_ifaddr(ath12k_ar_to_hw(ar),
 						      hdr->addr2, NULL);
-		if (pubsta && pubsta->valid_links) {
+		if (pubsta && pubsta->valid_links)
 			status->link_valid = 1;
-			status->link_id = arsta->link_id;
-		}
-		spin_unlock_bh(&ab->base_lock);
+		else
+			status->link_id = 0;
+
 		ab->dp->device_stats.rx_pkt_null_frame_handled++;
 		ieee80211_rx_napi(ar->ah->hw, pubsta, skb, NULL);
 		goto exit;
@@ -11508,7 +11511,7 @@ skip_mgmt_stats:
 	}
 
 #ifdef CPTCFG_QCN_EXTN
-	ath12k_mgmt_rx_event_extn(ab, hdr, &rx_ev);
+	ath12k_mgmt_rx_event_extn(ar, hdr, &rx_ev);
 #endif
 
 	ath12k_dbg(ab, ATH12K_DBG_MGMT,
@@ -17770,14 +17773,37 @@ out:
 	dev_kfree_skb(skb);
 }
 
+static void ath12k_wmi_ps_state_chg_iter(struct ath12k *ar,
+					 struct ath12k_link_sta *arsta,
+					 void *data)
+{
+	const struct wmi_peer_sta_ps_state_chg_event *ev = data;
+	enum ath12k_wmi_peer_ps_state prev_state;
+
+	prev_state = arsta->peer_ps_state;
+	arsta->peer_ps_state = le32_to_cpu(ev->peer_ps_state);
+	arsta->peer_current_ps_valid = !!le32_to_cpu(ev->peer_ps_valid);
+
+	if ((ev->ps_supported_bitmap & WMI_PEER_PS_VALID) &&
+	    (ev->ps_supported_bitmap & WMI_PEER_PS_STATE_TIMESTAMP) &&
+	    ev->peer_ps_valid) {
+		if (arsta->peer_ps_state == WMI_PEER_PS_STATE_ON) {
+			arsta->ps_start_time = le32_to_cpu(ev->peer_ps_timestamp);
+			arsta->ps_start_jiffies = jiffies;
+		} else if (arsta->peer_ps_state == WMI_PEER_PS_STATE_OFF &&
+			   prev_state == WMI_PEER_PS_STATE_ON) {
+			arsta->ps_total_duration +=
+				(le32_to_cpu(ev->peer_ps_timestamp) -
+				 arsta->ps_start_time);
+		}
+	}
+}
+
 static void ath12k_wmi_event_peer_sta_ps_state_chg(struct ath12k_base *ab,
 						   struct sk_buff *skb)
 {
 	const struct wmi_peer_sta_ps_state_chg_event *ev;
 	const void **tb;
-	struct ath12k *ar;
-	struct ath12k_link_sta *arsta;
-	enum ath12k_wmi_peer_ps_state prev_state;
 	u8 mac[ETH_ALEN];
 
 	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
@@ -17801,38 +17827,10 @@ static void ath12k_wmi_event_peer_sta_ps_state_chg(struct ath12k_base *ab,
 		   le32_to_cpu(ev->peer_ps_valid),
 		   le32_to_cpu(ev->peer_ps_timestamp));
 
-	rcu_read_lock();
-
-	arsta = ath12k_link_sta_find_by_addr(ab, mac);
-	if (!arsta || !arsta->arvif || !arsta->arvif->ar) {
+	if (!ath12k_arsta_itr_on_ab_by_addr(ab, mac,
+					    ath12k_wmi_ps_state_chg_iter, (void *)ev))
 		ath12k_warn(ab, "failed to get valid link sta/arvif/ar for %pM\n",
 			    mac);
-		goto exit;
-	}
-	ar = arsta->arvif->ar;
-
-	spin_lock_bh(&ar->data_lock);
-	prev_state = arsta->peer_ps_state;
-	arsta->peer_ps_state = le32_to_cpu(ev->peer_ps_state);
-	arsta->peer_current_ps_valid = !!le32_to_cpu(ev->peer_ps_valid);
-
-	if ((ev->ps_supported_bitmap & WMI_PEER_PS_VALID) &&
-	    (ev->ps_supported_bitmap & WMI_PEER_PS_STATE_TIMESTAMP) &&
-	    ev->peer_ps_valid) {
-		if (arsta->peer_ps_state == WMI_PEER_PS_STATE_ON) {
-			arsta->ps_start_time = le32_to_cpu(ev->peer_ps_timestamp);
-			arsta->ps_start_jiffies = jiffies;
-		} else if (arsta->peer_ps_state == WMI_PEER_PS_STATE_OFF &&
-			   prev_state == WMI_PEER_PS_STATE_ON) {
-			arsta->ps_total_duration += (le32_to_cpu(ev->peer_ps_timestamp) -
-						     arsta->ps_start_time);
-		}
-	}
-
-	spin_unlock_bh(&ar->data_lock);
-
-exit:
-	rcu_read_unlock();
 	kfree(tb);
 }
 

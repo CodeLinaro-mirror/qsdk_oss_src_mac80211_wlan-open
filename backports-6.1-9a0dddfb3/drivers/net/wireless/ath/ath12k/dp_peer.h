@@ -383,7 +383,7 @@ u16 dp_peer_msduq_qos_id(struct ath12k_base *ab,
 void ath12k_peer_qos_queue_ind_handler(struct ath12k_base *ab,
 				       struct sk_buff *skb);
 void ath12k_link_peer_free(struct ath12k_dp_link_peer *peer);
-int ath12k_link_sta_rhash_delete(struct ath12k_base *ab, struct ath12k_link_sta *arsta);
+void ath12k_link_sta_hlist_delete(struct ath12k *ar, struct ath12k_link_sta *arsta);
 struct ath12k_dp_peer *ath12k_dp_vdev_peer_find(struct ath12k_dp_hw *dp_hw,
 						u8 *addr, u8 hw_link_id);
 struct ath12k_dp_peer *ath12k_dp_vdev_peer_check(struct ath12k_dp_hw *dp_hw,

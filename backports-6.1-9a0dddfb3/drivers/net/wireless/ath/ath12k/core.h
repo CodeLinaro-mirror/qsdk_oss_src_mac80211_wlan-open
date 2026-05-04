@@ -17,6 +17,7 @@
 #include <linux/of_reserved_mem.h>
 #include <linux/panic_notifier.h>
 #include <linux/average.h>
+#include <linux/hashtable.h>
 #include <linux/rhashtable.h>
 #include <linux/rcupdate.h>
 #include <linux/smp.h>
@@ -1138,9 +1139,8 @@ struct ath12k_link_sta {
 	 /* for firmware use only */
 	u8 link_idx;
 
-	/* peer addr based rhashtable list pointer */
-	struct rhash_head rhash_addr;
-	bool rhash_done;
+	/* peer addr based hash list node */
+	struct hlist_node hlist_addr;
 
 	u16 tcl_metadata;
 	u16 ast_hash;
@@ -1635,8 +1635,13 @@ struct ath12k {
 	 * channel context data, survey info, test mode data.
 	 */
 	spinlock_t data_lock;
+	/* protects arsta hash table access, including BH context paths */
+	spinlock_t arsta_lock;
 
 	struct list_head arvifs;
+	/* per-radio hash buckets for station address lookup */
+	struct hlist_head *arsta_list;
+	u8 arsta_hash_bits;
 	/* should never be NULL; needed for regular htt rx */
 	struct ieee80211_channel *rx_channel;
 
@@ -2440,12 +2445,6 @@ struct ath12k_base {
 	struct ath12k_base_extn ath12k_base_extn;
 
 	const struct ieee80211_ops_extn *ath12k_ops_extn;
-
-	/* To synchronize rhash tbl write operation */
-	struct mutex tbl_mtx_lock;
-
-	struct rhashtable *rhead_sta_addr;
-	struct rhashtable_params rhash_sta_addr_param;
 
 	bool in_coldboot_fwreset;
 	u32 chwidth_num_peer_caps;

@@ -1014,13 +1014,14 @@ void ath12k_dp_cp_link_peer_unassign(struct ath12k *ar,
 	rcu_assign_pointer(ahsta->link[link_id], NULL);
 
 	ath12k_cfr_decrement_peer_count(ar, arsta);
-	spin_lock_bh(&ar->ab->base_lock);
-	ath12k_link_sta_rhash_delete(ar->ab, arsta);
-	spin_unlock_bh(&ar->ab->base_lock);
 	synchronize_rcu();
 
 	/* Important: Link peer delete is done after synchronization */
 	__ath12k_link_peer_free(peer);
+
+	spin_lock_bh(&ar->arsta_lock);
+	ath12k_link_sta_hlist_delete(ar, arsta);
+	spin_unlock_bh(&ar->arsta_lock);
 
 	if (arsta == &ahsta->deflink) {
 		arsta->link_id = ATH12K_INVALID_LINK_ID;
