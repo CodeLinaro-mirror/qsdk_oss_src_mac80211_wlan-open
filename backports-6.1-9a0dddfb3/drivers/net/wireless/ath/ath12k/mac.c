@@ -27245,6 +27245,7 @@ static int ath12k_mac_setup(struct ath12k *ar)
 	ar->vdev_id_11d_scan = ATH12K_11D_INVALID_VDEV_ID;
 	ar->mgmt_tx_retry_limit = ATH12K_MGMT_TX_RETRY_LIMIT_DEFAULT;
 	ar->dfs_sub_channel_marking = true;
+	ar->radio_cfg.chan144_enabled = false;
 
 	spin_lock_init(&ar->data_lock);
 	INIT_LIST_HEAD(&ar->arvifs);
