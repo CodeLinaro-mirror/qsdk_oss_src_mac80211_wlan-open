@@ -30,6 +30,7 @@
 struct ath12k_tx_desc_info;
 struct ath12k_dp_skb_ctrl;
 struct ath12k_dp_ext_desc;
+struct ath12k_dp_tx_msdu_info;
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 struct ath12k_ppeds_desc_params {
 	unsigned int num_ppeds_desc;
@@ -81,6 +82,22 @@ int ath12k_dp_mmesh_tx(struct ieee80211_hw *hw, struct ath12k_base *ab,
 void ath12k_dp_tx_sg_unmap_buf(struct ath12k_dp *dp,
 			       struct ath12k_dp_ext_desc *ext_desc,
 			       struct sk_buff *skb);
+enum hal_tcl_encap_type
+ath12k_dp_tx_get_encap_type(struct ath12k_base *ab, struct sk_buff *skb);
+void ath12k_dp_tx_drop_tid_stats(struct ath12k_dp_vif *dp_vif,
+				 enum ath12k_dp_tx_enq_error drop_reason,
+				 struct sk_buff *skb, u32 len);
+void ath12k_dp_tx_stats_update_pre_enqueue(struct ath12k_pdev_dp *dp_pdev,
+					   struct ath12k_dp_vif *dp_vif,
+					   struct sk_buff *skb,
+					   u8 ring_id, u32 len);
+void ath12k_dp_tx_stats_post_enqueue(struct ath12k_dp *dp,
+				     struct ath12k_pdev_dp *dp_pdev,
+				     struct ath12k_dp_vif *dp_vif,
+				     struct sk_buff *skb,
+				     struct ath12k_dp_tx_msdu_info *msdu_info,
+				     u8 ring_id, u32 len, bool is_mcast,
+				     struct ath12k_tx_desc_info *tx_desc);
 
 /**
  * ath12k_wifi7_tx_classify_packet() - Classify packet type
