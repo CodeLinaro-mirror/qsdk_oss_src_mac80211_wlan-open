@@ -21,7 +21,7 @@ struct ath12k_dp_link_peer;
 #define DP_REO_RING_MAX			4
 
 #define ATH12K_EHT_MCS_NUM	16
-#define ATH12K_HE_MCS_NUM       12
+#define ATH12K_HE_MCS_NUM       14
 #define ATH12K_VHT_MCS_NUM      10
 #define ATH12K_BW_NUM           5
 #define ATH12K_NSS_NUM          4

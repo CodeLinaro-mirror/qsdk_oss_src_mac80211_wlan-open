@@ -117,7 +117,7 @@ struct hal_tlv_64_hdr {
 #define HAL_RX_MAX_MCS		12
 #define HAL_RX_MAX_MCS_HT	31
 #define HAL_RX_MAX_MCS_VHT	9
-#define HAL_RX_MAX_MCS_HE	11
+#define HAL_RX_MAX_MCS_HE	13
 #define HAL_RX_MAX_MCS_BE	15
 #define HAL_RX_MAX_MCS_BN       23
 #define HAL_RX_MAX_NSS		8

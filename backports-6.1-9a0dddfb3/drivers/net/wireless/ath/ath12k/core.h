@@ -199,7 +199,7 @@ enum ath12k_bdf_search {
 
 #define ATH12K_HT_MCS_MAX	7
 #define ATH12K_VHT_MCS_MAX	9
-#define ATH12K_HE_MCS_MAX	11
+#define ATH12K_HE_MCS_MAX	13
 #define ATH12K_EHT_MCS_MAX	15
 #define ATH12K_UHR_MCS_MAX	23
 
