@@ -23413,6 +23413,7 @@ ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 	u8 he_gi = 0;
 	u8 eht_ltf = 0;
 	u8 eht_gi = 0;
+	u8 uhr_elr;
 	u32 rate;
 	u8 nss, he_ul_nss = 0;
 	u8 sgi;
@@ -23436,6 +23437,7 @@ ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 
 	band = def.chan->band;
 	ldpc = !!(ar->ht_cap_info & WMI_HT_CAP_LDPC);
+	uhr_elr = mask->control[band].uhr_elr;
 
 	sgi = mask->control[band].gi;
 	he_gi = mask->control[band].he_gi;
@@ -23460,6 +23462,16 @@ ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 		if (ret) {
 			ath12k_warn(ar->ab, "failed to set vdev rate mask %d\n",
 				    ret);
+			return ret;
+		}
+	}
+
+	if (uhr_elr != 0xff) {
+		ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
+						    WMI_VDEV_PARAM_UHR_ELR, uhr_elr);
+		if (ret) {
+			ath12k_warn(ar->ab, "Failed to set UHR ELR mode on vdev %i: %d\n",
+				    arvif->vdev_id, ret);
 			return ret;
 		}
 	}
