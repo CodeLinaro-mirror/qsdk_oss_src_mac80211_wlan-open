@@ -3221,6 +3221,44 @@ static int ath12k_dp_tx_mon_prep_wq(struct list_head *mon_desc_used_list,
 }
 
 /**
+ * ath12k_dp_tx_mon_process_pktlog() - Process TX monitor data for hybrid pktlog
+ * @dp_pdev: DP pdev handle
+ * @status_frag: Fragment containing TX monitor TLV data
+ * @end_offset: End offset of valid data in the fragment
+ *
+ * This function processes TX monitor ring data when hybrid pktlog mode is enabled.
+ * In hybrid mode, upstream TLVs (hardware-generated FES status, response status, etc.)
+ * are captured from the TX monitor destination ring, while UMAC TLVs (firmware-generated
+ * metadata) are received via the HTT path.
+ *
+ * The function:
+ * 1. Checks if hybrid mode is enabled
+ * 2. Validates input parameters
+ * 3. Writes TLV data directly to pktlog buffer
+ * 4. end_offset represents the final tlv index, since the tlv starts with 0th index,
+ *    the data length should be passed as end_offset + 1
+ *
+ * Return: None
+ */
+static void
+ath12k_dp_tx_mon_process_pktlog(struct ath12k_pdev_dp *dp_pdev,
+				u8 *status_frag, u32 end_offset)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k *ar = dp_pdev->ar;
+
+	if (unlikely(!ar->debug.is_pkt_logging || !status_frag))
+		return;
+
+	if (unlikely(!dp_mon_pdev || !dp_mon_pdev->tx_pktlog_hybrid))
+		return;
+
+	ath12k_dp_txrx_stats_buf_pktlog_process(ar, status_frag,
+						ATH12K_PKTLOG_TYPE_TX_STAT,
+						end_offset + 1);
+}
+
+/**
  * ath12k_dp_mon_tx_process_ring() - Process TX monitor destination ring
  * @dp: DP context
  * @mac_id: MAC ID for the radio
@@ -3364,6 +3402,9 @@ int ath12k_dp_mon_tx_process_ring(struct ath12k_pdev_dp *dp_pdev,
 				   "TX Mon: Flush Detected - Buffers Dropped\n");
 			goto move_next;
 		}
+
+		ath12k_dp_tx_mon_process_pktlog(dp_pdev,
+						status_frag, end_offset);
 
 		if (end_reason == HAL_MON_END_OF_PPDU) {
 			*budget -= 1;
