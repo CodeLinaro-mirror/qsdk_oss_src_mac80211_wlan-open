@@ -9799,7 +9799,8 @@ static int ath12k_vendor_get_channel_switch_time(struct wiphy *wiphy,
 
 	dfs_required = cfg80211_chandef_dfs_required(hw->wiphy, &chandef,
 						     vif->type);
-	if (dfs_required > 0)
+	if (dfs_required > 0 &&
+	    !cfg80211_chandef_dfs_available(wiphy, &chandef))
 		dfs_time = chandef.chan->dfs_cac_ms;
 	else
 		dfs_time = 0;
