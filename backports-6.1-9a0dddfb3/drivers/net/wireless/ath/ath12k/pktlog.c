@@ -10,6 +10,8 @@
 #include "wmi.h"
 #include "debug.h"
 #include "dp_mon.h"
+#include <linux/inet.h>
+#include <net/sock.h>
 
 /* Convert a kernel virtual address to a kernel logical address */
 static void ath12k_pktlog_release(struct ath12k_pktlog *pktlog)
@@ -60,6 +62,92 @@ static int ath12k_alloc_pktlog_buf(struct ath12k *ar)
 		if (page)
 			set_bit(PG_reserved, &page->flags);
 	}
+
+	return 0;
+}
+
+/**
+ * ath12k_pktlog_remote_service_send - Send data over remote pktlog socket
+ * @service: Pointer to remote pktlog service structure
+ * @buf: Buffer containing data to send
+ * @len: Length of data to send
+ *
+ * Wrapper function for sock_sendmsg() to send pktlog data over TCP socket.
+ * The function validates the service state and socket availability before
+ * attempting to send data.
+ *
+ * Return: Number of bytes sent on success, negative error code on failure
+ */
+int ath12k_pktlog_remote_service_send(struct ath12k_pktlog_remote_service *service,
+				      char *buf, int len)
+{
+	struct msghdr msg = {0};
+	struct kvec iov = {0};
+	int size = 0;
+
+	if (!service || !buf)
+		return 0;
+
+	if (!service->connect_done)
+		return -ENOTCONN;
+
+	if (len <= 0 || len > ATH12K_MAX_SEND_SIZE)
+		return -EINVAL;
+
+	if (!service->send_socket) {
+		service->missed_records++;
+		return -ENOTCONN;
+	}
+
+	iov.iov_base = buf;
+	iov.iov_len = len;
+
+	iov_iter_kvec(&msg.msg_iter, ITER_SOURCE, &iov, 1, iov.iov_len);
+
+	size = sock_sendmsg(service->send_socket, &msg);
+	if (size < 0) {
+		service->missed_records++;
+		return size;
+	}
+
+	return size;
+}
+
+/**
+ * ath12k_pktlog_stop_service - Stop remote pktlog service
+ * @ar: ath12k radio pointer
+ *
+ * Stops the remote pktlog service and releases all allocated resources
+ * including sockets and work queues.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int ath12k_pktlog_stop_service(struct ath12k *ar)
+{
+	struct ath12k_pktlog *pl_info;
+	struct ath12k_pktlog_remote_service *service;
+
+	if (!ar)
+		return -EINVAL;
+
+	pl_info = &ar->debug.pktlog;
+	service = &pl_info->rpktlog_svc;
+
+	service->running = 0;
+	service->connect_done = 0;
+
+	if (service->send_socket) {
+		sock_release(service->send_socket);
+		service->send_socket = NULL;
+	}
+	if (service->listen_socket) {
+		sock_release(service->listen_socket);
+		service->listen_socket = NULL;
+	}
+
+	service->missed_records = 0;
+	service->fend_counts = 0;
+	service->port = 0;
 
 	return 0;
 }
