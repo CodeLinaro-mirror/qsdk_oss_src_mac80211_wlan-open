@@ -1506,6 +1506,11 @@ struct ath12k_radio_cfg {
 		bool configured;
 	} gpio_cfg[32];
 
+	/* Scale the CTL power. 100%,50%, 25% etc..
+	 * The acceptable scale-values are defined in "enum ath12k_tp_scale"
+	 */
+	u32 ctlpwrscale;
+
 	/* Temperature monitoring */
 	s32 temperature;                    /* Last temperature reading in °C */
 	u8 temperature_query_pending;       /* Query sent, waiting for response */
