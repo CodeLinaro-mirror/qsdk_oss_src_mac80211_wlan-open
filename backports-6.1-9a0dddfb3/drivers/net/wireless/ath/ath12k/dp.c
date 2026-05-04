@@ -2438,8 +2438,8 @@ void ath12k_dp_umac_tx_desc_cleanup(struct ath12k_base *ab)
 EXPORT_SYMBOL(ath12k_dp_umac_tx_desc_cleanup);
 
 size_t ath12k_dp_get_req_entries_from_buf_ring(struct ath12k_base *ab,
-					       struct hal_srng *srng,
-					       struct list_head *list)
+		struct hal_srng *srng,
+		struct list_head *list, uint8_t pool_type)
 {
         struct ath12k_dp *dp;
         size_t num_free, req_entries;
@@ -2456,8 +2456,8 @@ size_t ath12k_dp_get_req_entries_from_buf_ring(struct ath12k_base *ab,
 
         spin_lock_bh(&dp->rx_desc_lock);
         req_entries = ath12k_dp_list_cut_nodes(list,
-                                               &dp->rx_desc_free_list,
-                                               num_free);
+					&dp->rx_desc_free_list,
+					num_free, pool_type);
         spin_unlock_bh(&dp->rx_desc_lock);
 
         ath12k_hal_srng_access_end(ab, srng);
