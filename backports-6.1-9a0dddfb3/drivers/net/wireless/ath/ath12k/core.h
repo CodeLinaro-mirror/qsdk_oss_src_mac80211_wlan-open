@@ -1139,8 +1139,6 @@ struct ath12k_link_sta {
 	u16 ast_idx;
 
 	bool is_bridge_peer;
-	/* For check disable fixed rate check for peer */
-	bool disable_fixed_rate;
 	/* will be saved to use during recovery */
 	struct ieee80211_key_conf *keys[WMI_MAX_KEY_INDEX + 1];
 #ifdef CPTCFG_ATH12K_CFR
