@@ -1312,6 +1312,83 @@ ieee80211_copy_rnr_beacon(u8 *pos, struct cfg80211_rnr_elems *dst,
 	return offset;
 }
 
+static enum ieee80211_sta_rx_bandwidth
+ieee80211_repurposed_adv_bw_from_beacon(struct ieee80211_sub_if_data *sdata,
+					struct ieee80211_link_data *link,
+					const u8 *elems, size_t elems_len)
+{
+	struct cfg80211_chan_def parsed_chandef = link->conf->chanreq.oper;
+	enum ieee80211_sta_rx_bandwidth adv_bw =
+		ieee80211_chan_width_to_rx_bw(parsed_chandef.width);
+	const struct ieee80211_supported_band *sband;
+	const struct element *tmp;
+	struct ieee80211_he_operation *he_oper;
+	struct ieee80211_ht_operation *ht_oper;
+	struct ieee80211_vht_operation *vht_oper;
+	bool parsed_width = false;
+
+	sband = ieee80211_get_link_sband(link);
+	if (!sband)
+		return adv_bw;
+
+	if (!parsed_chandef.chan)
+		return adv_bw;
+
+	/* 6 GHz operation width is derived from HE/EHT operation IEs */
+	if (parsed_chandef.chan->band == NL80211_BAND_6GHZ) {
+		const struct ieee80211_he_6ghz_oper *he_6ghz_oper;
+
+		tmp = cfg80211_find_ext_elem(WLAN_EID_EXT_HE_OPERATION,
+					     elems, elems_len);
+		if (!tmp || tmp->datalen < sizeof(*he_oper) + 1 ||
+		    tmp->datalen < ieee80211_he_oper_size(tmp->data + 1))
+			return adv_bw;
+
+		he_oper = (void *)&tmp->data[1];
+		he_6ghz_oper = ieee80211_he_6ghz_oper(he_oper);
+		if (!he_6ghz_oper)
+			return adv_bw;
+
+		if (ieee80211_chandef_he_6ghz_oper(sdata, link->link_id,
+						   he_oper,
+						   NULL,
+						   &parsed_chandef))
+			parsed_width = true;
+		goto done;
+	}
+
+	tmp = (const struct element *)cfg80211_find_ie(WLAN_EID_HT_OPERATION,
+						       elems, elems_len);
+	if (!tmp || tmp->datalen < sizeof(struct ieee80211_ht_operation))
+		goto done;
+	ht_oper = (void *)tmp->data;
+
+	if (ht_oper &&
+	    ieee80211_chandef_ht_oper(ht_oper, &parsed_chandef))
+		parsed_width = true;
+
+	tmp = (const struct element *)cfg80211_find_ie(WLAN_EID_VHT_OPERATION,
+						       elems, elems_len);
+	if (!tmp || tmp->datalen < sizeof(struct ieee80211_vht_operation))
+		goto done;
+
+	vht_oper = (void *)tmp->data;
+
+	if (vht_oper && ht_oper &&
+	    ieee80211_chandef_vht_oper(&sdata->local->hw, sband->vht_cap.cap,
+				       vht_oper,
+				       ht_oper,
+				       &parsed_chandef))
+		parsed_width = true;
+
+done:
+	if (parsed_width)
+		adv_bw = min_t(enum ieee80211_sta_rx_bandwidth, adv_bw,
+			       ieee80211_chan_width_to_rx_bw(parsed_chandef.width));
+
+	return adv_bw;
+}
+
 static int
 ieee80211_assign_beacon(struct ieee80211_sub_if_data *sdata,
 			struct ieee80211_link_data *link,
@@ -1443,6 +1520,18 @@ ieee80211_assign_beacon(struct ieee80211_sub_if_data *sdata,
 
 	rcu_assign_pointer(link->u.ap.beacon, new);
 	sdata->u.ap.active = true;
+
+	if (ieee80211_vif_is_mld(&sdata->vif) &&
+	    (sdata->vif.repurposed_links & BIT(link->link_id)) &&
+	    params->tail && params->tail_len) {
+		link->u.ap.repurposed_adv_bw =
+			ieee80211_repurposed_adv_bw_from_beacon(sdata, link,
+								params->tail,
+								params->tail_len);
+		link->u.ap.repurposed_adv_bw_valid = true;
+	} else {
+		link->u.ap.repurposed_adv_bw_valid = false;
+	}
 
 	if (old)
 		kfree_rcu(old, rcu_head);

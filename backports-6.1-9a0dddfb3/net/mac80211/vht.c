@@ -507,7 +507,10 @@ _ieee80211_sta_cur_vht_bw(struct link_sta_info *link_sta,
 {
 	struct sta_info *sta = link_sta->sta;
 	enum nl80211_chan_width bss_width;
+	enum ieee80211_sta_rx_bandwidth repurposed_adv_bw =
+		IEEE80211_STA_RX_BW_MAX;
 	enum ieee80211_sta_rx_bandwidth bw;
+	struct ieee80211_link_data *link;
 
 	if (chandef) {
 		bss_width = chandef->width;
@@ -521,6 +524,17 @@ _ieee80211_sta_cur_vht_bw(struct link_sta_info *link_sta,
 			return IEEE80211_STA_RX_BW_20;
 		}
 		bss_width = link_conf->chanreq.oper.width;
+		rcu_read_unlock();
+	}
+
+	/* Repurposed AP-MLD links may advertise narrower BW than oper chandef. */
+	if (sta->sdata->vif.type == NL80211_IFTYPE_AP &&
+	    ieee80211_vif_is_mld(&sta->sdata->vif) &&
+	    (sta->sdata->vif.repurposed_links & BIT(link_sta->link_id))) {
+		rcu_read_lock();
+		link = rcu_dereference(sta->sdata->link[link_sta->link_id]);
+		if (link && link->u.ap.repurposed_adv_bw_valid)
+			repurposed_adv_bw = link->u.ap.repurposed_adv_bw;
 		rcu_read_unlock();
 	}
 
@@ -546,6 +560,9 @@ _ieee80211_sta_cur_vht_bw(struct link_sta_info *link_sta,
 		bw = min(bw, ieee80211_chan_width_to_rx_bw(sta->tdls_chandef.width));
 	else
 		bw = min(bw, ieee80211_chan_width_to_rx_bw(bss_width));
+
+	if (repurposed_adv_bw != IEEE80211_STA_RX_BW_MAX)
+		bw = min(bw, repurposed_adv_bw);
 
 	return bw;
 }
