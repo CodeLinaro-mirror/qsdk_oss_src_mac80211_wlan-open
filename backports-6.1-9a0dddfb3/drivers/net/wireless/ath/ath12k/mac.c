@@ -1527,13 +1527,7 @@ static void ath12k_pdev_caps_update(struct ath12k *ar)
 	struct ath12k_base *ab = ar->ab;
 
 	ar->max_tx_power = ab->target_caps.hw_max_tx_power;
-
-	/* FIXME: Set min_tx_power to ab->target_caps.hw_min_tx_power.
-	 * But since the received value in svcrdy is same as hw_max_tx_power,
-	 * we can set ar->min_tx_power to 0 currently until
-	 * this is fixed in firmware
-	 */
-	ar->min_tx_power = 0;
+	ar->min_tx_power = ab->target_caps.hw_min_tx_power;
 
 	ar->txpower_limit_2g = ar->max_tx_power;
 	ar->txpower_limit_5g = ar->max_tx_power;
