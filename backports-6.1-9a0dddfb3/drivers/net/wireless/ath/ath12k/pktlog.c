@@ -136,6 +136,9 @@ int ath12k_pktlog_stop_service(struct ath12k *ar)
 	service->running = 0;
 	service->connect_done = 0;
 
+	cancel_work_sync(&service->connection_service);
+	cancel_work_sync(&service->accept_service);
+
 	if (service->send_socket) {
 		sock_release(service->send_socket);
 		service->send_socket = NULL;
@@ -150,6 +153,149 @@ int ath12k_pktlog_stop_service(struct ath12k *ar)
 	service->port = 0;
 
 	return 0;
+}
+
+/**
+ * ath12k_pktlog_start_accept_service - Accept incoming connections (server mode)
+ * @work: Work structure
+ *
+ * Work queue function that accepts incoming connections on the listen socket
+ * and schedules the send service for data transmission.
+ */
+static void ath12k_pktlog_start_accept_service(struct work_struct *work)
+{
+	struct ath12k_pktlog_remote_service *service;
+	struct ath12k_pktlog *pl_info;
+	struct ath12k *ar;
+	struct socket *accept_socket = NULL;
+	int ret;
+
+	service = container_of(work, struct ath12k_pktlog_remote_service,
+			       accept_service);
+	pl_info = container_of(service, struct ath12k_pktlog, rpktlog_svc);
+
+	if (!service->running || !service->listen_socket)
+		return;
+
+	ar = pl_info->ar;
+	if (!ar || !ar->ab) {
+		ath12k_warn(ar->ab, "Remote pktlog: Invalid ar pointer");
+		return;
+	}
+
+	ret = kernel_accept(service->listen_socket, &accept_socket, 0);
+	if (ret < 0) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_DATA,
+			   "Remote pktlog: Accept failed: %d\n", ret);
+		if (service->running)
+			schedule_work(&service->accept_service);
+		return;
+	}
+
+	if (service->send_socket) {
+		ath12k_warn(ar->ab,
+			    "Remote pktlog: Closing previous connection\n");
+		sock_release(service->send_socket);
+		service->connect_done = 0;
+	}
+
+	service->send_socket = accept_socket;
+	service->connect_done = 1;
+
+	ath12k_info(ar->ab, "Remote pktlog: Connection accepted\n");
+	schedule_work(&service->send_service);
+
+	if (service->running)
+		schedule_work(&service->accept_service);
+}
+
+/**
+ * ath12k_pktlog_start_remote_service - Start remote pktlog server
+ * @work: Work structure
+ *
+ * Work queue function that creates a listen socket, binds to the configured
+ * port, and starts listening for incoming connections. Schedules the accept
+ * service to handle connections.
+ */
+static void ath12k_pktlog_start_remote_service(struct work_struct *work)
+{
+	struct ath12k_pktlog_remote_service *service;
+	struct ath12k_pktlog *pl_info;
+	struct ath12k *ar;
+	struct socket *sock = NULL;
+	struct sockaddr_in server_addr;
+	int ret;
+	int opt = 1;
+
+	service = container_of(work, struct ath12k_pktlog_remote_service,
+			       connection_service);
+	pl_info = container_of(service, struct ath12k_pktlog, rpktlog_svc);
+
+	if (!service->running)
+		return;
+
+	ar = pl_info->ar;
+	if (!ar || !ar->ab) {
+		ath12k_warn(ar->ab, "Remote pktlog: Invalid ar pointer");
+		return;
+	}
+
+	ret = sock_create(AF_INET, SOCK_STREAM, IPPROTO_TCP, &sock);
+	if (ret < 0) {
+		ath12k_err(ar->ab, "Remote pktlog: Failed to create socket: %d\n",
+			   ret);
+		return;
+	}
+
+	ret = sock_setsockopt(sock, SOL_SOCKET, SO_REUSEADDR,
+			      KERNEL_SOCKPTR(&opt), sizeof(opt));
+	if (ret < 0) {
+		ath12k_err(ar->ab, "Remote pktlog: Failed to set SO_REUSEADDR: %d\n",
+			   ret);
+		sock_release(sock);
+		return;
+	}
+
+	memset(&server_addr, 0, sizeof(server_addr));
+	server_addr.sin_family = AF_INET;
+	server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+	server_addr.sin_port = htons(service->port);
+
+	ret = kernel_bind(sock, (struct sockaddr *)&server_addr,
+			  sizeof(server_addr));
+	if (ret < 0) {
+		ath12k_err(ar->ab, "Remote pktlog: Failed to bind to port %u: %d\n",
+			   service->port, ret);
+		sock_release(sock);
+		return;
+	}
+
+	ret = kernel_listen(sock, ATH12K_MAX_LISTEN_CONNECTIONS);
+	if (ret < 0) {
+		ath12k_err(ar->ab, "Remote pktlog: Failed to listen: %d\n", ret);
+		sock_release(sock);
+		return;
+	}
+
+	service->listen_socket = sock;
+
+	ath12k_info(ar->ab, "Remote pktlog: Server started on port %u\n",
+		    service->port);
+	schedule_work(&service->accept_service);
+}
+
+void ath12k_pktlog_init_remote_service_work(struct ath12k *ar)
+{
+	struct ath12k_pktlog *pl_info = &ar->debug.pktlog;
+	struct ath12k_pktlog_remote_service *service = &pl_info->rpktlog_svc;
+
+	pl_info->ar = ar;
+
+	INIT_WORK(&service->connection_service,
+		  ath12k_pktlog_start_remote_service);
+
+	INIT_WORK(&service->accept_service,
+		  ath12k_pktlog_start_accept_service);
 }
 
 static void ath12k_init_pktlog_buf(struct ath12k *ar, struct ath12k_pktlog
