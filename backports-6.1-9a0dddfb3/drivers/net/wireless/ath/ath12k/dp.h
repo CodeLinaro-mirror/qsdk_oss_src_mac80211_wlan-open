@@ -336,7 +336,8 @@ struct ath12k_rx_desc_info {
 	u8 in_use	: 1,
 	   device_id	: 3,
 	   is_frag	: 1,
-	   reserved	: 3;
+	   is_ppe_desc	: 1,
+	   reserved	: 2;
 	struct sk_buff *skb;
 	u32 magic;
 	u64 rsvd0;
@@ -1450,7 +1451,8 @@ void ath12k_hal_tx_config_rbm_mapping(struct ath12k_base *ab, u8 ring_num,
 				      u8 rbm_id, int ring_type);
 size_t ath12k_dp_get_req_entries_from_buf_ring(struct ath12k_base *ab,
 					       struct hal_srng *srng,
-					       struct list_head *list);
+					       struct list_head *list,
+						uint8_t pool_type);
 void ath12k_dp_tx_ext_desc_free(struct ath12k_dp *dp,
 				struct ath12k_tx_desc_info *tx_desc);
 int ath12k_dp_init_bank_profiles(struct ath12k_base *ab);

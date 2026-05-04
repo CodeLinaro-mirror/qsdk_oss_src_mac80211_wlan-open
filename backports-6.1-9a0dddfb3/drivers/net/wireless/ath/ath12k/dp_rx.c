@@ -62,8 +62,9 @@ void ath12k_tid_drop_rx_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 rea
 EXPORT_SYMBOL(ath12k_tid_drop_rx_stats);
 
 size_t ath12k_dp_list_cut_nodes(struct list_head *list,
-				struct list_head *head,
-				size_t count)
+		struct list_head *head,
+		size_t count,
+		uint8_t pool_type)
 {
 	struct list_head *cur;
 	struct ath12k_rx_desc_info *rx_desc;
@@ -80,7 +81,7 @@ size_t ath12k_dp_list_cut_nodes(struct list_head *list,
 
 		rx_desc = list_entry(cur, struct ath12k_rx_desc_info, list);
 		rx_desc->in_use = true;
-
+		rx_desc->is_ppe_desc = pool_type;
 		count--;
 		nodes++;
 	}
@@ -579,7 +580,8 @@ static int ath12k_dp_rxdma_ring_buf_setup(struct ath12k_base *ab,
 			ath12k_hal_srng_get_entrysize(ab, HAL_RXDMA_BUF);
 
 	refill_srng = &ab->hal.srng_list[rx_ring->refill_buf_ring.ring_id];
-	req_entries = ath12k_dp_get_req_entries_from_buf_ring(ab, refill_srng, &list);
+	req_entries = ath12k_dp_get_req_entries_from_buf_ring(ab, refill_srng, &list,
+				DP_RX_DEFAULT_POOL);
 	if (req_entries)
 		ath12k_dp_rx_bufs_replenish(ab->dp, refill_srng, &list, false);
 
