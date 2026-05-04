@@ -7850,7 +7850,6 @@ struct ath12k_wmi_pdev {
  * @sched_id:            Schedule instance identifier
  * @bssid:               BSSID of the BSS to which the schedule applies
  * @start_time_tsf_low:  Lower 32 bits of the TSF start time
- * @start_time_tsf_high: Upper 32 bits of the TSF start time
  * @num_busy_slots:      Number of busy (occupied) TDMA slots
  * @busy_slot_dur_ms:    Duration of each busy slot in milliseconds
  * @busy_slot_intvl_ms:  Interval between busy slots in milliseconds
@@ -7865,7 +7864,6 @@ struct ath12k_tdma_sched_info {
 	u8 sched_id;
 	u8 bssid[ETH_ALEN];
 	u32 start_time_tsf_low;
-	u32 start_time_tsf_high;
 	u16 num_busy_slots;
 	u16 busy_slot_dur_ms;
 	u16 busy_slot_intvl_ms;

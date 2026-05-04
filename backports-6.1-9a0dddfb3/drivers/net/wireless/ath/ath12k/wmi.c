@@ -17307,7 +17307,7 @@ int ath12k_wmi_send_tdma_schedule_request(struct ath12k *ar,
 	cmd->schedule_handle_id = cpu_to_le32(sched->sched_id);
 	ether_addr_copy(cmd->owner_bssid.addr, sched->bssid);
 	cmd->start_time_tsf_low = cpu_to_le32(sched->start_time_tsf_low);
-	cmd->start_time_tsf_high = cpu_to_le32(sched->start_time_tsf_high);
+	cmd->start_time_tsf_high = cpu_to_le32(0);
 	cmd->num_busy_slots = cpu_to_le32(sched->num_busy_slots);
 	cmd->busy_slot_dur_ms = cpu_to_le32(sched->busy_slot_dur_ms);
 	cmd->busy_slot_intvl_ms = cpu_to_le32(sched->busy_slot_intvl_ms);
