@@ -767,6 +767,57 @@ void ath12k_dp_tx_drop_pdev_tid_stats(struct ath12k_pdev_dp *dp_pdev,
 }
 EXPORT_SYMBOL(ath12k_dp_tx_drop_pdev_tid_stats);
 
+/**
+ * ath12k_dp_tx_delay_pre_enqueue() - Capture delay timestamps before HW enqueue
+ * @dp_pdev: DP pdev handle
+ * @skb: Socket buffer being transmitted
+ * @ring_id: TX ring index
+ *
+ * Called just before writing the TCL descriptor to the HW ring.
+ * When VoW delay stats are enabled:
+ *   1. Reads skb->tstamp (set by __net_timestamp() in mac_op_tx) as the
+ *      MAC TX entry time (absolute wall-clock, in microseconds).
+ *   2. Computes and records the per-TID interframe delay histogram using
+ *      the difference between consecutive MAC TX entry timestamps for the
+ *      same TID and ring.
+ *
+ * Note: skb->tstamp is intentionally left as an absolute timestamp.
+ * The SW enqueue delay (swq_delay) is computed at completion time as
+ * hw_enqueue_tstamp - entry_tstamp, where hw_enqueue_tstamp is captured
+ * in ath12k_wifi7_dp_tx_hw_enqueue() and entry_tstamp is read back from
+ * skb->tstamp via skb_get_ktime().
+ *
+ * Return: void
+ */
+static inline void
+ath12k_dp_tx_delay_pre_enqueue(struct ath12k_pdev_dp *dp_pdev,
+			       struct sk_buff *skb, u8 ring_id)
+{
+	struct ath12k_tid_tx_stats *tid_tx;
+	u64 ingress_ts;
+	u32 intfrm_delay;
+	u8 tid;
+
+	if (!dp_pdev || !ath12k_dp_vow_stats_enabled(dp_pdev))
+		return;
+
+	if (!skb->tstamp || ring_id >= DP_TCL_NUM_RING_MAX)
+		return;
+
+	tid = ath12k_vow_tid_validate(skb->priority & IEEE80211_QOS_CTL_TID_MASK);
+	tid_tx = &dp_pdev->tid_stats.tid_tx[ring_id][tid];
+
+	ingress_ts = ktime_to_ms(skb->tstamp);
+
+	if (dp_pdev->prev_tx_enq_tstamp &&
+	    ingress_ts > dp_pdev->prev_tx_enq_tstamp) {
+		intfrm_delay = (u32)(ingress_ts - dp_pdev->prev_tx_enq_tstamp);
+		ath12k_dp_update_hist_stats(&tid_tx->intfrm_delay,
+					    intfrm_delay);
+	}
+	dp_pdev->prev_tx_enq_tstamp = ingress_ts;
+}
+
 void ath12k_dp_tx_stats_update_pre_enqueue(struct ath12k_pdev_dp *dp_pdev,
 					   struct ath12k_dp_vif *dp_vif,
 					   struct sk_buff *skb,
@@ -788,6 +839,11 @@ void ath12k_dp_tx_stats_update_pre_enqueue(struct ath12k_pdev_dp *dp_pdev,
 	if (ath12k_dp_delay_stats_enabled(dp_pdev) ||
 	    unlikely(skb->mark & SDWF_VALID_MASK))
 		__net_timestamp(skb);
+
+	/* VoW delay stats: compute intfrm_delay and prepare sw_delay delta */
+	if (unlikely(ath12k_dp_vow_stats_enabled(dp_pdev)))
+		ath12k_dp_tx_delay_pre_enqueue(dp_pdev, skb, ring_id);
+
 }
 EXPORT_SYMBOL(ath12k_dp_tx_stats_update_pre_enqueue);
 

@@ -575,6 +575,9 @@ enum hist_types {
 	HIST_TYPE_DELAY_PERCENTILE,
 	HIST_TYPE_HW_COMP_DELAY_TSF,
 	HIST_TYPE_HW_COMP_DELAY_JITTER_TSF,
+	HIST_TYPE_PDEV_SW_ENQEUE_DELAY,
+	HIST_TYPE_PDEV_HW_TX_COMP_DELAY,
+	HIST_TYPE_PDEV_SW_INTERFRAME_DELAY,
 	HIST_TYPE_MAX,
 };
 
@@ -613,11 +616,17 @@ enum ath12k_dp_tid_tx_sw_drop {
 
 /**
  * struct ath12k_tid_tx_stats - Per-TID TX statistics
+ * @swq_delay: Software Enqueue Delay counter
+ * @hxtx_delay: Hardware TX Completion Delay counter
+ * @intfrm_delay: Sofware Interframe Delay counter
  * @tqm_status_cnt: TQM release reason counters
  * @htt_status_cnt: HTT completion status counters
  * @swdrop_cnt: Software drop reason counters
  */
 struct ath12k_tid_tx_stats {
+	struct hist_stats swq_delay;
+	struct hist_stats hwtx_delay;
+	struct hist_stats intfrm_delay;
 	u32 tqm_status_cnt[HAL_WBM_TQM_REL_REASON_MAX];
 	u32 htt_status_cnt[HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX];
 	u32 swdrop_cnt[DP_TID_TX_SW_DROP_MAX];
@@ -1676,4 +1685,14 @@ void ath12k_dp_update_hist_stats(struct hist_stats *hist_stats, u32 value);
  */
 void ath12k_dp_hist_init(struct hist_stats *hist_stats,
 			 enum hist_types hist_type);
+
+/**
+ * ath12k_dp_tid_tx_stats_hist_init() - Initialize delay histograms for per-TID TX stats
+ * @dp_pdev: DP pdev handle
+ *
+ * Initializes swq_delay, hwtx_delay, and intfrm_delay histogram objects for
+ * every ring/TID slot in dp_pdev->tid_stats.  Must be called during pdev
+ * allocation before any delay stats are updated.
+ */
+void ath12k_dp_tid_tx_stats_hist_init(struct ath12k_pdev_dp *dp_pdev);
 #endif

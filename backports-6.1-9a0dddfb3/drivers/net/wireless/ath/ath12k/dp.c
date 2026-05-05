@@ -1291,6 +1291,9 @@ int ath12k_dp_pdev_pre_alloc(struct ath12k *ar)
 	atomic_set(&dp->num_tx_pending, 0);
 	init_waitqueue_head(&dp->tx_empty_waitq);
 
+	/* Initialize per-TID TX delay histograms */
+	ath12k_dp_tid_tx_stats_hist_init(dp);
+
 	if (!dp->dp_mon_pdev_configured) {
 		ret = ath12k_dp_mon_pdev_init(dp);
 		if (ret) {

@@ -404,6 +404,7 @@ struct ath12k_pdev_dp {
 	u8 qos_stats;
 	/*Neighbors Peer count per pdev*/
 	int num_nrps;
+	u32 prev_tx_enq_tstamp;
 };
 
 #define EAPOL_WPA_KEY_INFO_KEY_TYPE		BIT(3)
