@@ -6546,6 +6546,10 @@ static ssize_t ath12k_write_reset_dp_stats(struct file *file,
 	spin_lock_bh(&ah->dp_hw.peer_lock);
 	list_for_each_entry(dp_peer, &ah->dp_hw.peers, list) {
 		memset(&dp_peer->stats, 0, sizeof(dp_peer->stats));
+		/* Reset HW MLD stats */
+		if (dp_peer->mld_stats.hw_mld_stats)
+			memset(dp_peer->mld_stats.hw_mld_stats, 0,
+			       sizeof(*dp_peer->mld_stats.hw_mld_stats));
 		/* Clear peer-level preserved stats */
 		ath12k_dp_clear_preserved_stats(&dp_peer->link_peer_delete_stats);
 		ath12k_dp_peer_clear_qos_stats(dp_peer);
@@ -6578,6 +6582,11 @@ static ssize_t ath12k_write_reset_dp_stats(struct file *file,
 			if (tmp_peer->peer_stats.rx_stats)
 				memset(tmp_peer->peer_stats.rx_stats, 0,
 				       sizeof(struct ath12k_rx_peer_stats));
+
+			/* Reset HW link stats */
+			if (tmp_peer->peer_stats.hw_link_stats)
+				memset(tmp_peer->peer_stats.hw_link_stats, 0,
+				       sizeof(*tmp_peer->peer_stats.hw_link_stats));
 		}
 		rcu_read_unlock();
 	}
