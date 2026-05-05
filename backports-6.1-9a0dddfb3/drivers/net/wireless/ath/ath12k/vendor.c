@@ -2878,18 +2878,28 @@ static int ath12k_vendor_get_rx_mon_stats_size(void)
 static int ath12k_get_tid_tx_stats_attr_size(void)
 {
 	int size = 0;
+	int delay_hist_size;
+	int delay_stat_size;
 
-	/* tqm_status_cnt*/
+	/* tqm_status_cnt */
 	size += nla_total_size_nested(nla_total_size(sizeof(u32)) *
 				      QCA_VENDOR_ATTR_WBM_TQM_REL_REASON_MAX);
 
-	/* htt_status_cnt*/
+	/* htt_status_cnt */
 	size += nla_total_size_nested(nla_total_size(sizeof(u32)) *
 				      QCA_VENDOR_ATTR_WBM_REL_HTT_TX_COMP_STATUS_MAX);
 
 	/* swdrop_cnt */
 	size += nla_total_size_nested(nla_total_size(sizeof(u32)) *
 				      QCA_VENDOR_ATTR_TID_TX_SW_DROP_MAX);
+
+	delay_hist_size = nla_total_size_64bit(sizeof(u64)) *
+				QCA_WLAN_VENDOR_ATTR_TELE_DELAY_HIST_BUCKET_MAX;
+	delay_stat_size = nla_total_size(sizeof(u32)) * 3 +  /* max, min, avg */
+			  nla_total_size_nested(delay_hist_size);
+
+	/* swq_delay, hwtx_delay, intfrm_delay - 3 delay histogram nests */
+	size += nla_total_size_nested(delay_stat_size) * 3;
 
 	/* Outer per-TID nest */
 	return nla_total_size_nested(size);
@@ -5885,7 +5895,7 @@ static int ath12k_tele_sdwfdelay_stats_update(struct sk_buff *skb,
 	size = ARRAY_SIZE(delay->delay_hist.hist.freq);
 	for (buc_id = 0; buc_id < HIST_BUCKET_MAX && buc_id < size; buc_id++) {
 		if (nla_put_u64_64bit(skb,
-				QCA_WLAN_VENDOR_ATTR_TELE_SDWFDELAY_HIST_BUCKET_ID_0 + buc_id,
+				QCA_WLAN_VENDOR_ATTR_TELE_DELAY_HIST_BUCKET_ID_0 + buc_id,
 				delay->delay_hist.hist.freq[buc_id],
 				NL80211_ATTR_PAD)) {
 			ath12k_err(NULL, "nla_put_failure: SDWF DELAY HW_TX_COMP_DELAY TYPE attributes\n");
@@ -7125,6 +7135,69 @@ static int ath12k_fill_radio_tx_stats(struct ath12k *ar,
 	return ret;
 }
 
+/**
+ * ath12k_fill_tid_delay_stats() - Serialize a hist_stats delay structure
+ * @vendor_event: netlink skb
+ * @delay: pointer to the hist_stats to serialize
+ * @attr_id: the TID TX attribute ID to use as the outer nest
+ *           (QCA_VENDOR_ATTR_TID_TX_SWQ_DELAY, _HWTX_DELAY, or _INTFRM_DELAY)
+ *
+ * Emits:
+ *   <attr_id>
+ *     QCA_VENDOR_ATTR_TID_DELAY_MAX_VAL  (u32)
+ *     QCA_VENDOR_ATTR_TID_DELAY_MIN_VAL  (u32)
+ *     QCA_VENDOR_ATTR_TID_DELAY_AVG_VAL  (u32)
+ *     QCA_VENDOR_ATTR_TID_DELAY_HIST     (nested)
+ *       1 .. HIST_BUCKET_MAX  (u64 each)
+ *   </attr_id>
+ *
+ * Return: 0 on success, -EINVAL on failure.
+ */
+static int ath12k_fill_tid_delay_stats(struct sk_buff *vendor_event,
+					  const struct hist_stats *delay,
+					  int attr_id)
+{
+	struct nlattr *delay_attr;
+	struct nlattr *hist_attr;
+	int i;
+
+	delay_attr = nla_nest_start(vendor_event, attr_id);
+	if (!delay_attr)
+		return -EINVAL;
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TID_DELAY_MAX_VAL,
+			delay->max) ||
+	    nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TID_DELAY_MIN_VAL,
+			delay->min) ||
+	    nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TID_DELAY_AVG_VAL,
+			delay->avg)) {
+		nla_nest_cancel(vendor_event, delay_attr);
+		return -EINVAL;
+	}
+
+	hist_attr = nla_nest_start(vendor_event,
+				   QCA_VENDOR_ATTR_TID_DELAY_HIST);
+	if (!hist_attr) {
+		nla_nest_cancel(vendor_event, delay_attr);
+		return -EINVAL;
+	}
+
+	for (i = 0; i < QCA_WLAN_VENDOR_ATTR_TELE_DELAY_HIST_BUCKET_MAX &&
+	     i < ARRAY_SIZE(delay->hist.freq); i++) {
+		if (nla_put_u64_64bit(vendor_event, i + 1,
+				      delay->hist.freq[i],
+				      NL80211_ATTR_PAD)) {
+			nla_nest_cancel(vendor_event, hist_attr);
+			nla_nest_cancel(vendor_event, delay_attr);
+			return -EINVAL;
+		}
+	}
+	nla_nest_end(vendor_event, hist_attr);
+	nla_nest_end(vendor_event, delay_attr);
+
+	return 0;
+}
+
 static int ath12k_fill_tid_tx_stats(struct sk_buff *vendor_event,
 				    const struct ath12k_tid_tx_stats *tx,
 				    int tid_idx)
@@ -7190,6 +7263,27 @@ static int ath12k_fill_tid_tx_stats(struct sk_buff *vendor_event,
 		}
 	}
 	nla_nest_end(vendor_event, arr_attr);
+
+	/* Software queue delay histogram */
+	if (ath12k_fill_tid_delay_stats(vendor_event, &tx->swq_delay,
+					   QCA_VENDOR_ATTR_TID_TX_SWQ_DELAY)) {
+		nla_nest_cancel(vendor_event, tid_attr);
+		return -EINVAL;
+	}
+
+	/* HW TX completion delay histogram */
+	if (ath12k_fill_tid_delay_stats(vendor_event, &tx->hwtx_delay,
+					   QCA_VENDOR_ATTR_TID_TX_HWTX_DELAY)) {
+		nla_nest_cancel(vendor_event, tid_attr);
+		return -EINVAL;
+	}
+
+	/* Inter-frame delay histogram */
+	if (ath12k_fill_tid_delay_stats(vendor_event, &tx->intfrm_delay,
+					   QCA_VENDOR_ATTR_TID_TX_INTFRM_DELAY)) {
+		nla_nest_cancel(vendor_event, tid_attr);
+		return -EINVAL;
+	}
 
 	nla_nest_end(vendor_event, tid_attr);
 
