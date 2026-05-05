@@ -11272,7 +11272,7 @@ static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 	struct ath12k_mgmt_frame_stats *mgmt_stats;
 	u16 frm_stype;
 	struct ath12k_dp *dp;
-	struct ath12k_link_vif *arvif;
+	struct ath12k_link_vif *arvif = NULL;
 	struct ieee80211_sta *sta;
 	struct ath12k_sta *ahsta;
 	s8 rssi;
@@ -11476,10 +11476,13 @@ skip_mgmt_stats:
 		ath12k_update_link_removal_params(ab, rx_ev.link_removal_info,
 						  rx_ev.num_link_removal_info);
 
-	if (ieee80211_is_probe_req(hdr->frame_control) &&
-	    rx_ev.num_bcast_ttlm_info)
-		ath12k_update_bcast_ttlm_params(ab, rx_ev.bcast_ttlm_info,
-						rx_ev.num_bcast_ttlm_info);
+	if (ieee80211_is_probe_req(hdr->frame_control)) {
+		if (rx_ev.num_bcast_ttlm_info)
+			ath12k_update_bcast_ttlm_params(ab,
+							rx_ev.bcast_ttlm_info,
+							rx_ev.num_bcast_ttlm_info);
+		ath12k_core_cu_notify(ar, arvif);
+	}
 
 #ifdef CPTCFG_QCN_EXTN
 	ath12k_mgmt_rx_event_extn(ab, hdr, &rx_ev);

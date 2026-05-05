@@ -11,6 +11,7 @@
 #include "dp.h"
 #include "hal_qcn9625.h"
 #include "../peer.h"
+#include "wmi.h"
 
 static void ath12k_wifi8_mgmt_rx_ring_free(struct ath12k_base *ab);
 
@@ -615,9 +616,9 @@ ath12k_wifi8_mgmt_rx_h_mpdu(struct ath12k_mgmt *mgmt, struct sk_buff *mmpdu,
 	}
 }
 
-static void
-ath12k_wifi8_mgmt_rx_cu_update(struct ath12k_base *ab,
-			       struct ath12k_link_vif *arvif, bool is_probe_req)
+void
+ath12k_wifi8_cu_mem_update(struct ath12k_base *ab,
+			   struct ath12k_link_vif *arvif, bool is_probe_req)
 {
 	struct ieee80211_vif *vif = arvif->ahvif->vif;
 	u32 eht_bpcc, cu_flags, reconfig, expec_dur;
@@ -701,36 +702,10 @@ ath12k_wifi8_mgmt_rx_cu_mem_update(struct ath12k *ar, struct sk_buff *mmpdu,
 	enum ath12k_peer_metadata_version ver;
 	struct ath12k_link_vif *arvif;
 	struct ieee80211_hdr *hdr;
-	struct ieee80211_vif *vif;
-	bool probe_req;
 
 	hdr = (struct ieee80211_hdr *)mmpdu->data;
 
-	probe_req = ieee80211_is_probe_req(hdr->frame_control);
-
-	/* For Probe Req / Assoc Req / Reassoc Req, read TBTT shared CU memory
-	 * for the associated vdev and invoke mac80211 update callbacks.
-	 */
-	if (probe_req &&
-	    is_broadcast_ether_addr(hdr->addr1)) {
-		spin_lock_bh(&ar->data_lock);
-		list_for_each_entry(arvif, &ar->arvifs, list) {
-			if (!arvif->cu_mem || !arvif->is_up ||
-			    ath12k_mac_is_bridge_vdev(arvif))
-				continue;
-
-			vif = arvif->ahvif->vif;
-			if (!vif->valid_links)
-				continue;
-
-			ath12k_wifi8_mgmt_rx_cu_update(ar->ab, arvif, true);
-		}
-		spin_unlock_bh(&ar->data_lock);
-		return;
-	}
-
-	if (probe_req ||
-	    ieee80211_is_assoc_req(hdr->frame_control) ||
+	if (ieee80211_is_assoc_req(hdr->frame_control) ||
 	    ieee80211_is_reassoc_req(hdr->frame_control)) {
 		ver = ath12k_core_get_peer_metadata_ver(ar->ab);
 		u8 vdev_id = ath12k_wifi8_mgmt_rx_get_vdev_id(ar->ab,
@@ -743,7 +718,7 @@ ath12k_wifi8_mgmt_rx_cu_mem_update(struct ath12k *ar, struct sk_buff *mmpdu,
 		if (!arvif->ahvif->vif->valid_links)
 			return;
 
-		ath12k_wifi8_mgmt_rx_cu_update(ar->ab, arvif, probe_req);
+		ath12k_wifi8_cu_mem_update(ar->ab, arvif, false);
 	}
 }
 

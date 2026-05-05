@@ -6,6 +6,7 @@
 
 #include "../core.h"
 #include "wmi.h"
+#include "mgmt_rx.h"
 #ifdef CPTCFG_QCN_EXTN
 #include "../qcn_extns/ini.h"
 #endif
@@ -78,4 +79,34 @@ void ath12k_wifi8_wmi_init_qcn9625(struct ath12k_base *ab,
 	config->max_beacon_size = ath12k_cfg_get(ab, ATH12K_CFG_AP_MAX_MGMT_FRM_SZ);
 	config->max_num_group_keys = ATH12K_GROUP_KEYS_NUM_MAX;
 	config->rep_ul_resp = ath12k_cfg_get(ab, ATH12K_CFG_REP_UL_RESP);
+}
+
+void ath12k_wifi8_cu_notify(struct ath12k *ar,
+			    struct ath12k_link_vif *update_arvif)
+{
+	struct ath12k_link_vif *arvif;
+	struct ieee80211_vif *vif;
+
+	if (!test_bit(WMI_TLV_SERVICE_SHARED_CU_MEM_MODEL_COUNT_DOWN,
+		      ar->ab->wmi_ab.svc_map))
+		return;
+
+	if (update_arvif) {
+		ath12k_wifi8_cu_mem_update(ar->ab, update_arvif, true);
+		return;
+	}
+
+	spin_lock_bh(&ar->data_lock);
+	list_for_each_entry(arvif, &ar->arvifs, list) {
+		if (!arvif->cu_mem || !arvif->is_up ||
+		    ath12k_mac_is_bridge_vdev(arvif))
+			continue;
+
+		vif = arvif->ahvif->vif;
+		if (!vif->valid_links)
+			continue;
+
+		ath12k_wifi8_cu_mem_update(ar->ab, arvif, true);
+	}
+	spin_unlock_bh(&ar->data_lock);
 }

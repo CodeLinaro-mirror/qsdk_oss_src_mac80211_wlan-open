@@ -3083,6 +3083,7 @@ void ath12k_core_cu_mem_free(struct ath12k *ar, struct ath12k_link_vif *arvif);
 void ath12k_core_cu_mem_free_all(struct ath12k *ar);
 int ath12k_core_cu_mem_pool_init(struct ath12k_hw_group *ag);
 void ath12k_core_cu_mem_pool_deinit(struct ath12k_hw_group *ag);
+void ath12k_core_cu_notify(struct ath12k *ar, struct ath12k_link_vif *arvif);
 struct wireless_dev *ath12k_get_wdev_from_netdev(struct net_device *dev);
 
 #endif /* _CORE_H_ */

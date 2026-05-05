@@ -256,6 +256,7 @@ struct ath12k_cp_arch_ops {
 	void (*cu_mem_pool_deinit)(void);
 	int (*cu_mem_alloc)(struct ath12k *ar, struct ath12k_link_vif *arvif);
 	void (*cu_mem_free)(struct ath12k *ar, struct ath12k_link_vif *arvif);
+	void (*cu_notify)(struct ath12k *ar, struct ath12k_link_vif *arvif);
 };
 
 struct ath12k_hw_params {

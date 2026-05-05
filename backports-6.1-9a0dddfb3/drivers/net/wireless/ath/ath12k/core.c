@@ -6219,5 +6219,17 @@ void ath12k_core_cu_mem_pool_deinit(struct ath12k_hw_group *ag)
 	return ab->hw_params->cp_arch_ops->cu_mem_pool_deinit();
 }
 
+void ath12k_core_cu_notify(struct ath12k *ar, struct ath12k_link_vif *arvif)
+{
+	struct ath12k_base *ab = ar->ab;
+
+	if (!ab->hw_params->cp_arch_ops ||
+	    !ab->hw_params->cp_arch_ops->cu_notify)
+		return;
+
+	ab->hw_params->cp_arch_ops->cu_notify(ar, arvif);
+}
+EXPORT_SYMBOL(ath12k_core_cu_notify);
+
 MODULE_DESCRIPTION("Driver support for Qualcomm Technologies WLAN devices");
 MODULE_LICENSE("Dual BSD/GPL");
