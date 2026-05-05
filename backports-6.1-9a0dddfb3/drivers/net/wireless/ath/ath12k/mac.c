@@ -16652,12 +16652,12 @@ static void ath12k_mac_copy_uhr_cap(struct ath12k *ar,
 
 	switch (iftype) {
 	case NL80211_IFTYPE_AP:
-		uhr_cap->phy.cap &=
-			~IEEE80211_UHR_PHY_CAP_MAX_NSS_RX_DL_MU_LE80;
-		uhr_cap->phy.cap &=
-			~IEEE80211_UHR_PHY_CAP_MAX_NSS_RX_DL_MU_160;
-		uhr_cap->phy.cap &=
-			~IEEE80211_UHR_PHY_CAP_MAX_NSS_RX_DL_MU_320;
+		uhr_cap->phy.cap[0] &=
+			~IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_DL_MU_LE80;
+		uhr_cap->phy.cap[0] &=
+			~IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_DL_MU_160;
+		uhr_cap->phy.cap[0] &=
+			~IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_DL_MU_320;
 		break;
 	case NL80211_IFTYPE_STATION:
 		/* add if anything needs to be cleared for STA mode */
