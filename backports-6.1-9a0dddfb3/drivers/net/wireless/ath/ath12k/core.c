@@ -2421,34 +2421,6 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 		if (ath12k_ftm_mode)
 			ath12k_info(ab, "FTM mode interface is up\n");
 
-		if (ag->wsi_remap_in_progress) {
-			/* During bypass, device will restart from start.
-			 * But the ath12k reference will be already present.
-			 * Hence reset the flags here.
-			 */
-			for (i = 0; i < ab->num_radios; i++) {
-				ar = ab->pdevs[i].ar;
-				ar->pdev_suspend = false;
-			}
-
-			if (!ar)
-				ath12k_err(ab, "ar is NULL\n");
-
-			active_num_devices = ag->num_devices - ag->num_bypassed;
-			if (ab->wsi_remap_state == ATH12K_WSI_BYPASS_ADD_DEVICE &&
-			    active_num_devices == ATH12K_MIN_NUM_DEVICES_NLINK && ar) {
-				bridge_iter.ah = ar->ah;
-				bridge_iter.active_num_devices = active_num_devices;
-				ieee80211_iterate_interfaces(ar->ah->hw, IEEE80211_IFACE_ITER_NORMAL,
-							     ath12k_mac_add_bridge_vdevs_iter,
-							     &bridge_iter);
-			}
-			/* Reset the WSI flags */
-			ag->wsi_remap_in_progress = false;
-			ab->wsi_remap_state = 0;
-			ath12k_info(ab, "WSI remap: Device re-addition completed\n");
-		}
-
 		/* DP/MGMT MLO init has to be done post MLO ready event is received */
 		for (i = 0; i < ag->num_devices; i++) {
 			/* Assigning the current initialized soc which will be used
@@ -2483,15 +2455,29 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 			}
 		}
 
+		j = ag->num_devices;
 		for (i = 0; i < ag->num_devices; i++) {
 			partner_ab = ag->ab[i];
-
 			if (!partner_ab || partner_ab->is_bypassed)
+				continue;
+
+			/* Skip pdev creation if WSI remap in progress and chip is not
+			 * in bypass Add state, as the pdev for other chips will be
+			 * already present.
+			 */
+			if (ag->wsi_remap_in_progress &&
+			    partner_ab->wsi_remap_state != ATH12K_WSI_BYPASS_ADD_DEVICE)
+				continue;
+
+			if (ath12k_check_erp_power_down(ag) &&
+			    !partner_ab->powerup_triggered)
 				continue;
 
 			if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE0 &&
 			    !partner_ab->recovery_start)
 				continue;
+
+			ath12k_hif_irq_enable(partner_ab);
 
 			ret = ath12k_dp_rxdma_ring_sel_config(partner_ab);
 			if (ret) {
@@ -2499,6 +2485,40 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 					   ret);
 				goto err_mlo_init;
 			}
+		}
+
+		if (ag->wsi_remap_in_progress) {
+			/* During bypass, device will restart from start.
+			 * But the ath12k reference will be already present.
+			 * Hence reset the flags here.
+			 */
+			for (i = 0; i < ab->num_radios; i++) {
+				ar = ab->pdevs[i].ar;
+				ar->pdev_suspend = false;
+			}
+
+			if (!ar)
+				ath12k_err(ab, "ar is NULL\n");
+
+			active_num_devices = ag->num_devices - ag->num_bypassed;
+			if (ab->wsi_remap_state == ATH12K_WSI_BYPASS_ADD_DEVICE &&
+			    active_num_devices == ATH12K_MIN_NUM_DEVICES_NLINK && ar) {
+				void (*iterator)(void *data,
+						 u8 *mac,
+						 struct ieee80211_vif *vif);
+
+				iterator = ath12k_mac_add_bridge_vdevs_iter;
+				bridge_iter.ah = ar->ah;
+				bridge_iter.active_num_devices = active_num_devices;
+				ieee80211_iterate_interfaces(ar->ah->hw,
+							     IEEE80211_IFACE_ITER_NORMAL,
+							     iterator,
+							     &bridge_iter);
+			}
+			/* Reset the WSI flags */
+			ag->wsi_remap_in_progress = false;
+			ab->wsi_remap_state = 0;
+			ath12k_info(ab, "WSI remap: Device re-addition completed\n");
 		}
 
 		ret = ath12k_mgmt_htt_setup(ag);
