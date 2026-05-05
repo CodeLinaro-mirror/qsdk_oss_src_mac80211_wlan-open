@@ -400,6 +400,8 @@ struct ath12k_skb_rxcb {
 	u8 tid;
 	u16 peer_id;
 	bool is_end_of_ppdu;
+	u16 flow_tag;      /* fse_metadata[15:0] stamped by FSE HW on FST match */
+	u16 protocol_tag;  /* cce_metadata stamped by CCE HW (requires USE_CCE2) */
 };
 
 static_assert(sizeof(struct ath12k_skb_rxcb) <= 48,
