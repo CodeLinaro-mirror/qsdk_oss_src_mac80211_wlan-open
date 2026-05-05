@@ -858,6 +858,7 @@ struct ath12k_dp_umac_reset {
 	uint32_t magic_num;
 	int intr_offset;
 	struct tasklet_struct intr_tq;
+	struct ath12k_dp_umac_reset_extn umac_reset_extn;
 	int irq_num;
 	struct ath12k_umac_reset_ts ts;
 	bool umac_pre_reset_in_prog;

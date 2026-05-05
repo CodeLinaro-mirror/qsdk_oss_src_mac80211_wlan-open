@@ -548,8 +548,8 @@ void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 		 * ipa_is_ready() acquires a mutex internally and must not be
 		 * called from softirq/atomic context (NAPI poll).
 		 */
-		if (g_ipa_is_ready &&
-		    ab->ath12k_base_extn.ipa_ctx &&
+		if (ab->ath12k_base_extn.ipa_ctx &&
+		    ab->ath12k_base_extn.ipa_ctx->uc_loaded &&
 		    ab->ath12k_base_extn.ipa_ctx->ipa_ops &&
 		    ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap) {
 			int smmu_ret;

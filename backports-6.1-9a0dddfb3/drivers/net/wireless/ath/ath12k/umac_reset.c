@@ -19,6 +19,11 @@
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #include "ppe.h"
 #endif
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#include "qcn_extns/ipa/dp_ipa.h"
+/* Forward declaration: defined later in this file */
+static void ath12k_umac_reset_work_handler(struct work_struct *work);
+#endif
 
 int ath12k_htt_umac_reset_msg_send(struct ath12k_base *ab,
 				   struct ath12k_htt_umac_reset_setup_cmd_params *params)
@@ -168,10 +173,21 @@ int ath12k_dp_umac_reset_init(struct ath12k_base *ab)
 	umac_reset->intr_offset = ath12k_get_umac_reset_intr_offset(ab);
 	memset(&umac_reset->ts, 0, sizeof(struct ath12k_umac_reset_ts));
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	INIT_WORK(&umac_reset->umac_reset_extn.reset_work, ath12k_umac_reset_work_handler);
+	umac_reset->umac_reset_extn.reset_wq = alloc_workqueue("ath12k_umac_reset",
+					       WQ_UNBOUND | WQ_HIGHPRI, 1);
+	if (!umac_reset->umac_reset_extn.reset_wq) {
+		ath12k_warn(ab, "failed to allocate umac reset workqueue\n");
+		ret = -ENOMEM;
+		goto shmem_free;
+	}
+#endif
+
 	ret = ath12k_hif_dp_umac_reset_irq_config(ab);
 	if (ret) {
 		ath12k_warn(ab, "Failed to register interrupt for UMAC RECOVERY\n");
-		goto shmem_free;
+		goto free_wq;
 	}
 
 	ret = ath12k_htt_umac_reset_setup_cmd(ab);
@@ -185,6 +201,11 @@ int ath12k_dp_umac_reset_init(struct ath12k_base *ab)
 
 free_irq:
 	ath12k_hif_dp_umac_reset_free_irq(ab);
+free_wq:
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	destroy_workqueue(umac_reset->umac_reset_extn.reset_wq);
+	umac_reset->umac_reset_extn.reset_wq = NULL;
+#endif
 shmem_free:
 	dma_free_coherent(ab->dev,
 			  umac_reset->shmem_size,
@@ -335,12 +356,17 @@ void ath12k_umac_reset_notify_target_sync_and_send(struct ath12k_base *ab,
 {
 	struct ath12k_hw_group *ag = ab->ag;
 	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
+	int count = 0;
 
-	if (atomic_read(&mlo_umac_reset->response_chip) >= ab->ag->num_started) {
-		ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET, "response chip:%d num_started:%d sending notify\n",
-			   atomic_read(&mlo_umac_reset->response_chip), ab->ag->num_started);
-		ath12k_umac_reset_notify_target(ab, tx_event);
-		atomic_set(&mlo_umac_reset->response_chip, 0);
+	count = atomic_read(&mlo_umac_reset->response_chip);
+
+	if (count >= ag->num_started) {
+		if (atomic_cmpxchg(&mlo_umac_reset->response_chip,
+			count, 0) == count) {
+			ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET, "response chip:%d num_started:%d sending notify\n",
+				   atomic_read(&mlo_umac_reset->response_chip), ab->ag->num_started);
+			ath12k_umac_reset_notify_target(ab, tx_event);
+		}
 	} else {
 		ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET, "response_chip:%d num_started:%d not matching.. hold on notify\n",
 			   atomic_read(&mlo_umac_reset->response_chip), ab->ag->num_started);
@@ -373,6 +399,8 @@ void ath12k_umac_reset_handle_pre_reset(struct ath12k_base *ab)
 	ath12k_hif_irq_disable(ab);
 	atomic_inc(&mlo_umac_reset->response_chip);
 	ab->dp_umac_reset.umac_pre_reset_in_prog = true;
+
+	ath12k_dp_ipa_pre_reset(ab);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags)) {
 		ath12k_dp_ppeds_service_enable_disable(ab, true);
@@ -402,6 +430,8 @@ void ath12k_umac_reset_handle_post_reset_complete(struct ath12k_base *ab)
 	dp->service_rings_running = 0;
 	atomic_inc(&mlo_umac_reset->response_chip);
 	ath12k_hif_irq_enable(ab);
+	ath12k_dp_rx_ring_hp_resync(ab);
+
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags)) {
 		ath12k_dp_ppeds_start(ab);
@@ -523,12 +553,51 @@ void ath12k_dp_umac_reset_handle(struct ath12k_base *ab)
 	return;
 }
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+/**
+ * ath12k_umac_reset_work_handler() - Process-context UMAC reset handler.
+ *
+ * IPA pipe enable/disable involves wait calls inside the IPA driver and
+ * therefore cannot be called from a tasklet (softirq) context.  For targets
+ * that have IPA offload enabled, the interrupt handler schedules this work
+ * item instead of calling ath12k_dp_umac_reset_handle() directly, giving
+ * the reset logic a sleepable process context.
+ */
+static void ath12k_umac_reset_work_handler(struct work_struct *work)
+{
+	struct ath12k_dp_umac_reset_extn *umac_reset_extn = NULL;
+	struct ath12k_dp_umac_reset *umac_reset = NULL;
+	struct ath12k_base *ab = NULL;
+
+	if (!work) {
+		ath12k_err(NULL, "invalid work pointer received in reset handler\n");
+		return;
+	}
+
+	umac_reset_extn = container_of(work, struct ath12k_dp_umac_reset_extn, reset_work);
+	umac_reset = container_of(umac_reset_extn, struct ath12k_dp_umac_reset, umac_reset_extn);
+	ab = container_of(umac_reset, struct ath12k_base, dp_umac_reset);
+
+	ath12k_hif_dp_umac_intr_line_reset(ab);
+	ath12k_dp_umac_reset_handle(ab);
+	enable_irq(umac_reset->irq_num);
+}
+#endif /* CPTCFG_EXT_IPA_OFFLOAD */
+
 void ath12k_umac_reset_tasklet_handler(struct tasklet_struct *umac_cntxt)
 {
 	struct ath12k_dp_umac_reset *umac_reset = from_tasklet(umac_reset, umac_cntxt, intr_tq);
 	struct ath12k_base *ab = container_of(umac_reset, struct ath12k_base, dp_umac_reset);
-#ifdef PLATFORM_SDX85
-	BUG_ON(1);
+
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	/* IPA pipe operations require process context (the IPA driver uses
+	 * wait calls internally).  Schedule the reset work so it runs in a
+	 * sleepable context rather than in this tasklet.
+	 */
+	if (ab->ath12k_base_extn.ipa_ctx) {
+		queue_work(umac_reset->umac_reset_extn.reset_wq, &umac_reset->umac_reset_extn.reset_work);
+		return;
+	}
 #endif
 	ath12k_hif_dp_umac_intr_line_reset(ab);
 	ath12k_dp_umac_reset_handle(ab);
@@ -548,6 +617,12 @@ void ath12k_dp_umac_reset_deinit(struct ath12k_base *ab)
 		return;
 
 	ath12k_hif_dp_umac_reset_free_irq(ab);
+
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	cancel_work_sync(&umac_reset->umac_reset_extn.reset_work);
+	destroy_workqueue(umac_reset->umac_reset_extn.reset_wq);
+	umac_reset->umac_reset_extn.reset_wq = NULL;
+#endif
 
 	if (umac_reset->shmem_vaddr_unaligned) {
 		dma_free_coherent(ab->dev,
