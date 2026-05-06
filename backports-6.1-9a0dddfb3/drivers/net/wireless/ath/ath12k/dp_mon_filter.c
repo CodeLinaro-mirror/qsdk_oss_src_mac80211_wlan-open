@@ -470,6 +470,7 @@ ath12k_dp_mon_rx_config_filters(struct ath12k_dp *dp,
 		}
 		ret = ath12k_dp_tx_htt_rx_filter_setup(dp->ab, ring_id, mac_id,
 						       ring_type, ring_buf_size,
+						       dp_mon_pdev->rx_pktlog_mode,
 						       rx_tlv_filter);
 		if (ret) {
 			ath12k_err(dp->ab,
@@ -1133,24 +1134,173 @@ ath12k_dp_mon_rx_setup_pktlog_full(struct ath12k_pdev_dp *dp_pdev)
 	dp_mon_pdev->rx_filter[mode][srng_type] = rx_filter;
 }
 
+static void
+ath12k_dp_mon_rx_pktlog_cbf_status(struct htt_rx_ring_tlv_filter *tlv_filter)
+{
+	tlv_filter->enable_mo = true;
+	tlv_filter->enable_fp = true;
+	tlv_filter->offset_valid = false;
+	tlv_filter->fp_mgmt_filter = HTT_RX_FP_MGMT_PKT_FILTER_TLV_FLAGS1_ACTION_NOACK;
+	tlv_filter->mo_mgmt_filter = HTT_RX_MO_MGMT_PKT_FILTER_TLV_FLAGS1_ACTION_NOACK;
+}
+
+/**
+ * ath12k_dp_mon_rx_setup_pktlog_cbf() - Setup RX monitor filter for CBF
+ * @dp_pdev: DP pdev handle
+ *
+ * Configure RX monitor destination ring filters to capture Compressed
+ * Beamforming (CBF) frames. CBF frames are management action no-ack frames
+ * used for beamforming feedback in DL MU-MIMO and TxBF operations.
+ *
+ * This function:
+ * 1. Checks if monitor buffers are allocated (monitor mode active)
+ * 2. If not, allocates monitor buffers for pktlog use
+ * 3. Configures RX monitor filter for management action no-ack frames
+ * 4. Marks monitor as configured
+ *
+ * The filter enables:
+ * - MPDU/PPDU status TLVs for frame metadata
+ * - Management action no-ack frame capture (type=0, subtype=14)
+ * - Word masks for detailed frame information
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static int
+ath12k_dp_mon_rx_setup_pktlog_cbf(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_dp *dp = dp_pdev->dp;
+	struct dp_mon_rx_filter rx_filter = {0};
+	enum dp_mon_filter_mode mode = DP_MON_FILTER_PKTLOG_CBF_MODE;
+	enum dp_mon_filter_srng_type srng_type = DP_MON_FILTER_SRNG_TYPE_RXMON_DEST;
+	struct htt_rx_ring_tlv_filter *rx_tlv_filter;
+	int ret;
+
+	if (!dp || !dp->ab || !dp_mon_pdev || !dp_mon_pdev->rx_filter)
+		return -EINVAL;
+
+	if (dp_mon_pdev->rx_pktlog_cbf) {
+		ath12k_dbg(dp->ab, ATH12K_DBG_DATA,
+			   "RX pktlog CBF already configured\n");
+		return 0;
+	}
+
+	if (!dp_pdev->dp_mon_pdev_configured) {
+		ret = ath12k_dp_mon_rx_alloc(dp);
+		if (ret) {
+			ath12k_err(dp->ab,
+				   "Failed to allocate monitor buffers for CBF: %d\n",
+				   ret);
+			return ret;
+		}
+
+		ret = ath12k_dp_mon_rx_htt_setup(dp);
+		if (ret) {
+			ath12k_err(dp->ab, "Failed to setup HTT SRNG for CBF: %d\n",
+				   ret);
+			ath12k_dp_mon_rx_free(dp);
+			return ret;
+		}
+
+		dp_pdev->dp_mon_pdev_configured = true;
+		ath12k_dbg(dp->ab, ATH12K_DBG_DATA,
+			   "Allocated monitor buffers for pktlog CBF\n");
+	}
+
+	rx_tlv_filter = &rx_filter.rx_tlv_filter;
+	rx_filter.valid = true;
+
+	rx_tlv_filter->rx_filter = HTT_RX_FILTER_TLV_PKTLOG_FULL;
+
+	ath12k_dp_mon_rx_pktlog_cbf_status(rx_tlv_filter);
+
+	dp_mon_pdev->rx_filter[mode][srng_type] = rx_filter;
+	dp_mon_pdev->rx_pktlog_cbf = true;
+
+	ath12k_dbg(dp->ab, ATH12K_DBG_DATA,
+		   "mac %d: RX pktlog CBF mode enabled\n", dp_pdev->mac_id);
+	return 0;
+}
+
+/**
+ * ath12k_dp_mon_rx_reset_pktlog_cbf() - Reset RX monitor filter for CBF
+ * @dp_pdev: DP pdev handle
+ *
+ * Disable CBF capture by resetting destination ring filter.
+ * Also cleanup monitor buffers if monitor mode is not active.
+ * This function checks if monitor mode is still needed before freeing
+ * buffers to avoid disrupting other monitor users.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static int
+ath12k_dp_mon_rx_reset_pktlog_cbf(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_dp *dp = dp_pdev->dp;
+	struct dp_mon_rx_filter rx_filter = {0};
+	enum dp_mon_filter_mode mode = DP_MON_FILTER_PKTLOG_CBF_MODE;
+	enum dp_mon_filter_srng_type srng_type = DP_MON_FILTER_SRNG_TYPE_RXMON_DEST;
+
+	if (!dp_mon_pdev->rx_pktlog_cbf)
+		return 0;
+
+	dp_mon_pdev->rx_pktlog_cbf = false;
+
+	dp_mon_pdev->rx_filter[mode][srng_type] = rx_filter;
+	ath12k_dbg(dp->ab, ATH12K_DBG_DATA,
+		   "Reset CBF destination ring filter\n");
+
+	if (dp_pdev->dp_mon_pdev_configured &&
+	    !dp_pdev->ar->monitor_vdev_created &&
+	    dp_mon_pdev->rx_pktlog_mode == ATH12K_PKTLOG_DISABLED) {
+		ath12k_dp_mon_rx_free(dp);
+		dp_pdev->dp_mon_pdev_configured = false;
+		ath12k_dbg(dp->ab, ATH12K_DBG_DATA,
+			   "Freed monitor buffers for pktlog CBF\n");
+	}
+
+	ath12k_dbg(dp->ab, ATH12K_DBG_DATA,
+		   "RX pktlog CBF mode disabled\n");
+
+	return 0;
+}
+
 void ath12k_dp_mon_pktlog_config_filter(struct ath12k_pdev_dp *dp_pdev,
 					enum ath12k_pktlog_mode mode,
 					u32 filter, bool enable)
 {
 	struct ath12k_dp *dp = dp_pdev->dp;
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	int ret = 0;
 
 	if (enable) {
-		if (dp->rx_pktlog_mode == mode) {
+		if (dp_mon_pdev->rx_pktlog_mode == mode) {
 			ath12k_err(dp->ab, "This mode is already configured\n");
 			return;
 		}
 
+		if (filter & ATH12K_PKTLOG_CBF) {
+			if (dp_pdev->ar->monitor_vdev_created) {
+				dp_mon_pdev->rx_pktlog_cbf = true;
+				ath12k_dbg(dp->ab, ATH12K_DBG_DATA,
+					   "CBF logging enabled on monitor VAP\n");
+			} else {
+				ret = ath12k_dp_mon_rx_setup_pktlog_cbf(dp_pdev);
+				if (ret) {
+					ath12k_err(dp->ab,
+						   "Failed to setup CBF filter: %d\n",
+						   ret);
+					return;
+				}
+			}
+		}
+
 		switch (mode) {
 		case ATH12K_PKTLOG_MODE_LITE:
-			dp->rx_pktlog_mode = ATH12K_PKTLOG_MODE_LITE;
+			dp_mon_pdev->rx_pktlog_mode = ATH12K_PKTLOG_MODE_LITE;
 			ret = ath12k_dp_tx_htt_h2t_ppdu_stats_req(dp_pdev->ar,
-						HTT_PPDU_STATS_TAG_PKTLOG);
+							HTT_PPDU_STATS_TAG_PKTLOG);
 			if (ret)
 				ath12k_err(dp->ab,
 					   "failed to enable pktlog T2H: %d\n",
@@ -1162,7 +1312,7 @@ void ath12k_dp_mon_pktlog_config_filter(struct ath12k_pdev_dp *dp_pdev,
 			if (!(filter & ATH12K_PKTLOG_RX))
 				return;
 
-			dp->rx_pktlog_mode = ATH12K_PKTLOG_MODE_FULL;
+			dp_mon_pdev->rx_pktlog_mode = ATH12K_PKTLOG_MODE_FULL;
 
 			ath12k_dp_mon_rx_setup_pktlog_full(dp_pdev);
 			break;
@@ -1172,30 +1322,40 @@ void ath12k_dp_mon_pktlog_config_filter(struct ath12k_pdev_dp *dp_pdev,
 			break;
 		}
 	} else {
+		if (filter & ATH12K_PKTLOG_CBF) {
+			ret = ath12k_dp_mon_rx_reset_pktlog_cbf(dp_pdev);
+			if (ret) {
+				ath12k_err(dp->ab,
+					   "Failed to reset CBF filter: %d\n", ret);
+				return;
+			}
+			ath12k_dbg(dp->ab, ATH12K_DBG_DATA, "CBF logging disabled\n");
+		}
+
 		switch (mode) {
 		case ATH12K_PKTLOG_MODE_LITE:
 			ath12k_dp_mon_rx_pktlog_reset(dp_pdev,
-					      DP_MON_FILTER_PKTLOG_LITE_MODE);
+						      DP_MON_FILTER_PKTLOG_LITE_MODE);
 			break;
 		case ATH12K_PKTLOG_MODE_FULL:
 			ath12k_dp_mon_rx_pktlog_reset(dp_pdev,
-					      DP_MON_FILTER_PKTLOG_FULL_MODE);
+						      DP_MON_FILTER_PKTLOG_FULL_MODE);
 			break;
 		case ATH12K_PKTLOG_DISABLED:
-			if (dp->rx_pktlog_mode == ATH12K_PKTLOG_DISABLED)
+			if (dp_mon_pdev->rx_pktlog_mode == ATH12K_PKTLOG_DISABLED)
 				return;
 
 			ret = ath12k_dp_tx_htt_h2t_ppdu_stats_req(dp_pdev->ar,
-						HTT_PPDU_STATS_TAG_DEFAULT);
+							HTT_PPDU_STATS_TAG_DEFAULT);
 			if (ret)
 				ath12k_err(dp->ab,
-				   "failed to reset htt ppdu stats: %d\n",ret);
+					   "failed to reset htt ppdu stats: %d\n", ret);
 
 			ath12k_dp_mon_rx_pktlog_reset(dp_pdev,
-					      DP_MON_FILTER_PKTLOG_LITE_MODE);
+						      DP_MON_FILTER_PKTLOG_LITE_MODE);
 			ath12k_dp_mon_rx_pktlog_reset(dp_pdev,
-					      DP_MON_FILTER_PKTLOG_FULL_MODE);
-			dp->rx_pktlog_mode = ATH12K_PKTLOG_DISABLED;
+						      DP_MON_FILTER_PKTLOG_FULL_MODE);
+			dp_mon_pdev->rx_pktlog_mode = ATH12K_PKTLOG_DISABLED;
 			break;
 
 		default:

@@ -2889,7 +2889,7 @@ ath12k_dp_tx_htt_h2t_ext_stats_req(struct ath12k *ar, u8 type,
 void ath12k_dp_get_htt_mgmt_filter(struct ath12k_base *ab, u16 *mgmt_filter);
 int ath12k_dp_tx_htt_rx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 				     int mac_id, enum hal_ring_type ring_type,
-				     int rx_buf_size,
+				     int rx_buf_size, u8 rx_pktlog_mode,
 				     struct htt_rx_ring_tlv_filter *tlv_filter);
 int ath12k_dp_htt_mon_tx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 				      int mac_id, enum hal_ring_type ring_type,

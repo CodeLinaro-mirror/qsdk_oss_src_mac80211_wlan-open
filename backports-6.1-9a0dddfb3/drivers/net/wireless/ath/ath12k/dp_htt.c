@@ -1754,6 +1754,7 @@ static int ath12k_htt_pull_ppdu_stats(struct ath12k_base *ab,
 	struct ath12k_htt_ppdu_stats_msg *msg;
 	struct htt_ppdu_stats_info *ppdu_info;
 	struct ath12k_pdev_dp *dp_pdev;
+	struct ath12k_pdev_mon_dp *dp_mon_pdev;
 	struct ath12k *ar;
 	int ret = 0;
 	u8 pdev_id;
@@ -1788,17 +1789,18 @@ static int ath12k_htt_pull_ppdu_stats(struct ath12k_base *ab,
 		goto exit;
 	}
 
-	if (ar->debug.is_pkt_logging &&
-	    (dp->rx_pktlog_mode == ATH12K_PKTLOG_MODE_LITE)) {
-		trace_ath12k_htt_ppdu_stats(ar, skb->data, len);
-		ath12k_htt_ppdu_pktlog_process(ar, (u8 *)skb->data, skb->len);
-	}
-
 	dp_pdev = ath12k_dp_to_dp_pdev(dp, pdev_id - 1);
 	if (!dp_pdev) {
 		rcu_read_unlock();
 		ret = -EINVAL;
 		goto exit;
+	}
+	dp_mon_pdev = dp_pdev->dp_mon_pdev;
+
+	if (ar->debug.is_pkt_logging &&
+	    (dp_mon_pdev->rx_pktlog_mode == ATH12K_PKTLOG_MODE_LITE)) {
+		trace_ath12k_htt_ppdu_stats(ar, skb->data, len);
+		ath12k_htt_ppdu_pktlog_process(ar, (u8 *)skb->data, skb->len);
 	}
 	rcu_read_unlock();
 
@@ -3152,7 +3154,7 @@ ath12k_dp_tx_htt_rx_data_fpmo_flag1_filter_set(u32 *ptr, u16 filter)
 
 int ath12k_dp_tx_htt_rx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 				     int mac_id, enum hal_ring_type ring_type,
-				     int rx_buf_size,
+				     int rx_buf_size, u8 rx_pktlog_mode,
 				     struct htt_rx_ring_tlv_filter *tlv_filter)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
@@ -3302,7 +3304,7 @@ int ath12k_dp_tx_htt_rx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 					 HTT_RX_RING_SELECTION_CFG_RX_ATTENTION_OFFSET);
 	}
 
-	if (dp->rx_pktlog_mode == ATH12K_PKTLOG_DISABLED) {
+	if (rx_pktlog_mode == ATH12K_PKTLOG_DISABLED) {
 		if (tlv_filter->rx_mpdu_start_wmask > 0 &&
 		    tlv_filter->rx_msdu_end_wmask > 0) {
 			cmd->info2 |=

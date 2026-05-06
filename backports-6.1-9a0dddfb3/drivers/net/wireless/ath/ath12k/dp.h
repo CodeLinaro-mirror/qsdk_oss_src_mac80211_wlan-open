@@ -829,7 +829,6 @@ struct ath12k_dp {
 	/* HW link ID position in PPDU_ID */
 	u8 link_id_offset;
 	u8 link_id_bits;
-	u8 rx_pktlog_mode;
 
 	/* Keep Last */
 	u8 arch_data[] __aligned(sizeof(void *));

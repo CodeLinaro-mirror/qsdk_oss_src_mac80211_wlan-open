@@ -3976,6 +3976,7 @@ static int ath12k_wifi8_dp_rx_wbm_idle_buf_0_config_qcn9625(struct ath12k_base *
 	ret = ath12k_dp_tx_htt_rx_filter_setup(ab, ring_id, 0,
 					       HAL_WBM_IDLE_BUF,
 					       DP_RX_BUFFER_SIZE,
+					       ATH12K_PKTLOG_DISABLED,
 					       &tlv_filter);
 
 	return ret;
@@ -4026,6 +4027,7 @@ static int ath12k_wifi8_dp_rx_ppe2wbm_idle_buf_config_qcn9625(struct ath12k_base
 	ret = ath12k_dp_tx_htt_rx_filter_setup(ab, ring_id, 0,
 			HAL_PPE2WBM_IDLE_BUF,
 			DP_RX_BUFFER_SIZE,
+			ATH12K_PKTLOG_DISABLED,
 			&tlv_filter);
 	return ret;
 }
