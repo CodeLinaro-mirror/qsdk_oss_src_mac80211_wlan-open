@@ -88,6 +88,11 @@ enum data_filter {
 	FILTER_DATA_ALL                         = ~(0)
 };
 
+enum dp_rx_desc_pool {
+	DP_RX_DEFAULT_POOL = 0,
+	DP_RX_PPE_POOL = 1,
+};
+
 #define ATH12K_RX_PROTOCOL_TAG_START_OFFSET  128
 #define ATH12K_ROUTE_WBM_RELEASE(ab) \
 	((ab)->hw_params->route_wbm_release)
@@ -286,7 +291,7 @@ void ath12k_dp_fst_core_map_init(struct ath12k_base *ab);
 void ath12k_dp_rx_fst_init(struct ath12k_base *ab);
 ssize_t ath12k_dp_dump_fst_table(struct ath12k_base *ab, char *buf, int size);
 size_t ath12k_dp_list_cut_nodes(struct list_head *list,
-				struct list_head *head, size_t count);
+				struct list_head *head, size_t count, uint8_t pool_type);
 int ath12k_dp_rx_peer_tid_setup(struct ath12k *ar, const u8 *peer_mac, int vdev_id,
 				u8 tid, u32 ba_win_sz, u16 ssn,
 				enum hal_pn_type pn_type);

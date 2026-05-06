@@ -3701,6 +3701,10 @@ int ath12k_wifi8_dp_rx_process_err(struct ath12k_dp *dp,
 	u32 count;
 	struct ieee80211_vif *vif;
 	u16 peer_id;
+	int num_ppe2wbm_reaped = 0;
+	struct list_head ppe2wbm_used_list;
+
+	INIT_LIST_HEAD(&ppe2wbm_used_list);
 
 	__skb_queue_head_init(&msdu_list);
 	__skb_queue_head_init(&scatter_msdu_list);
@@ -3758,7 +3762,11 @@ int ath12k_wifi8_dp_rx_process_err(struct ath12k_dp *dp,
 		msdu = desc_info->skb;
 		desc_info->skb = NULL;
 
-		list_add_tail(&desc_info->list, &rx_desc_used_list);
+		if (desc_info->is_ppe_desc)
+			num_ppe2wbm_reaped++;
+
+		list_add_tail(&desc_info->list,
+			desc_info->is_ppe_desc ? &ppe2wbm_used_list : &rx_desc_used_list);
 
 		rxcb = ATH12K_SKB_RXCB(msdu);
 		ath12k_core_dma_unmap_single(dp->dev, desc_info->paddr,
@@ -3830,9 +3838,19 @@ int ath12k_wifi8_dp_rx_process_err(struct ath12k_dp *dp,
 	if (!num_buffs_reaped)
 		goto done;
 
-	refill_srng = &ab->hal.srng_list[dp_wifi8->wbm_refill_ring[cpu_id %
-					DP_WBM_REFILL_RING_MAX].ring_id];
-	ath12k_dp_rx_bufs_replenish(dp, refill_srng, &rx_desc_used_list, false);
+	if (num_ppe2wbm_reaped) {
+		refill_srng =
+			&ab->hal.srng_list[
+				dp_wifi8->ppe2wbm_refill_ring
+				[PPE2WBM_SW_REFILL_RING].ring_id];
+		ath12k_dp_rx_bufs_replenish(dp, refill_srng, &ppe2wbm_used_list, false);
+	}
+
+	if (num_buffs_reaped) {
+		refill_srng = &ab->hal.srng_list[dp_wifi8->wbm_refill_ring[cpu_id %
+			DP_WBM_REFILL_RING_MAX].ring_id];
+		ath12k_dp_rx_bufs_replenish(dp, refill_srng, &rx_desc_used_list, false);
+	}
 
 	rcu_read_lock();
 	while ((msdu = __skb_dequeue(&msdu_list))) {
@@ -4122,7 +4140,8 @@ int ath12k_wifi8_dp_ppe2wbm_buf_ring_init(struct ath12k_base *ab)
 		ath12k_err(ab, "PPE2WBM ring not initialized\n");
 		return -EINVAL;
 	}
-	req_entries = ath12k_dp_get_req_entries_from_buf_ring(ab, srng, &used_list);
+	req_entries = ath12k_dp_get_req_entries_from_buf_ring(ab, srng, &used_list,
+			DP_RX_PPE_POOL);
 	if (req_entries)
 		ath12k_dp_rx_bufs_replenish(ab->dp, srng, &used_list, false);
 
@@ -4137,7 +4156,8 @@ void ath12k_wifi8_dp_rx_ppe2wbm_idle_buff_init(struct ath12k_base *ab)
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(ab->dp);
 
 	idle_buf_srng = &ab->hal.srng_list[dp_wifi8->ppe2wbm_idle_buf_ring.ring_id];
-	req_entries = ath12k_dp_get_req_entries_from_buf_ring(ab, idle_buf_srng, &list);
+	req_entries = ath12k_dp_get_req_entries_from_buf_ring(ab, idle_buf_srng, &list,
+						DP_RX_PPE_POOL);
 	if (req_entries)
 		ath12k_dp_rx_bufs_replenish(ab->dp, idle_buf_srng, &list, false);
 
@@ -4843,7 +4863,8 @@ int ath12k_wifi8_dp_rx_wbm_buf_ring_init(struct ath12k_base *ab)
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(ab->dp);
 
 	idle_buf_srng = &ab->hal.srng_list[dp_wifi8->wbm_idle_buf_ring.ring_id];
-	req_entries = ath12k_dp_get_req_entries_from_buf_ring(ab, idle_buf_srng, &list);
+	req_entries = ath12k_dp_get_req_entries_from_buf_ring(ab, idle_buf_srng, &list,
+				DP_RX_PPE_POOL);
 	if (req_entries)
 		ath12k_dp_rx_bufs_replenish(ab->dp, idle_buf_srng, &list, false);
 
