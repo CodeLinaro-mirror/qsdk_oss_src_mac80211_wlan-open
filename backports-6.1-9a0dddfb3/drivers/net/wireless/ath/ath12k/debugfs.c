@@ -6082,6 +6082,15 @@ static ssize_t ath12k_write_pktlog_filter(struct file *file,
 		goto exit;
 	}
 
+	if (filter & ATH12K_PKTLOG_HYBRID) {
+		ret = ath12k_dp_mon_tx_update_filter(ar);
+		if (ret) {
+			ath12k_err(ab, "Failed to configure pktlog filters\n");
+			ath12k_dp_mon_pktlog_config(ar, false, mode, filter);
+			goto exit;
+		}
+	}
+
 	ar->debug.pktlog_filter = filter;
 	ar->debug.pktlog_mode = mode;
 

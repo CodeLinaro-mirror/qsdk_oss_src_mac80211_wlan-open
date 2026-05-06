@@ -825,6 +825,7 @@ struct ath12k_pdev_mon_dp {
 	spinlock_t rx_ext_mon_lock;
 	bool rx_pktlog_cbf;
 	u8 rx_pktlog_mode;
+	bool tx_pktlog_hybrid;
 };
 
 enum ath12k_dp_mon_desc_in_use {
