@@ -7436,7 +7436,7 @@ static void ath12k_mac_bridge_vdevs_down(struct ieee80211_hw *hw,
 					 struct ath12k_vif *ahvif, u8 cur_link_id)
 {
 	struct ath12k_link_vif *arvif;
-	unsigned long links, scan_links;
+	unsigned long links, skip_links;
 	int ret;
 	u8 link_id;
 	unsigned int num_vdev;
@@ -7446,10 +7446,11 @@ static void ath12k_mac_bridge_vdevs_down(struct ieee80211_hw *hw,
 		return;
 
 	links = ahvif->links_map;
-	scan_links = ATH12K_SCAN_LINKS_MASK;
-	num_vdev = hweight16(ahvif->links_map & ~BIT(IEEE80211_MLD_MAX_NUM_LINKS));
+	skip_links = ATH12K_SCAN_LINKS_MASK | ahvif->repurposed_links;
+	num_vdev = hweight16(ahvif->links_map & ~BIT(IEEE80211_MLD_MAX_NUM_LINKS)) -
+		   hweight16(ahvif->repurposed_links & ~BIT(IEEE80211_MLD_MAX_NUM_LINKS));
 
-	for_each_andnot_bit(link_id, &links, &scan_links, ATH12K_NUM_MAX_LINKS) {
+	for_each_andnot_bit(link_id, &links, &skip_links, ATH12K_NUM_MAX_LINKS) {
 		arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
 		if (!arvif) {
 			ath12k_err(NULL,
@@ -22053,7 +22054,7 @@ ath12k_mac_stop_bridge_vdevs(struct ieee80211_hw *hw,
 {
 	struct ath12k_vif *ahvif;
 	struct ath12k_link_vif *arvif;
-	unsigned long links, scan_links;
+	unsigned long links, skip_links;
 	int ret;
 	u8 link_id;
 	unsigned int num_vdev;
@@ -22073,10 +22074,11 @@ ath12k_mac_stop_bridge_vdevs(struct ieee80211_hw *hw,
 	ahvif = (void *)vif->drv_priv;
 
 	links = ahvif->links_map;
-	scan_links = ATH12K_SCAN_LINKS_MASK;
-	num_vdev = hweight16(ahvif->links_map & ~BIT(IEEE80211_MLD_MAX_NUM_LINKS));
+	skip_links = ATH12K_SCAN_LINKS_MASK | ahvif->repurposed_links;
+	num_vdev = hweight16(ahvif->links_map & ~BIT(IEEE80211_MLD_MAX_NUM_LINKS)) -
+		   hweight16(ahvif->repurposed_links & ~BIT(IEEE80211_MLD_MAX_NUM_LINKS));
 
-	for_each_andnot_bit(link_id, &links, &scan_links, ATH12K_NUM_MAX_LINKS) {
+	for_each_andnot_bit(link_id, &links, &skip_links, ATH12K_NUM_MAX_LINKS) {
 		arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
 		if (!arvif) {
 			ath12k_err(NULL,
@@ -22452,11 +22454,11 @@ static int ath12k_mac_create_and_start_bridge(struct ieee80211_hw *hw,
 		for_each_set_bit(link_id, &links_map, IEEE80211_MLD_MAX_NUM_LINKS) {
 			if (link_id == curr_link_id)
 				continue;
+			if (ahvif->repurposed_links & BIT(link_id))
+				continue;
 
 			arvif = ahvif->link[link_id];
 			if (!arvif->ar)
-				continue;
-			if (ahvif->repurposed_links & BIT(link_id))
 				continue;
 			wsi_info = ath12k_core_get_current_wsi_info(arvif->ar->ab);
 			if (BIT(device_idx) & wsi_info->diag_device_idx_bmap) {
