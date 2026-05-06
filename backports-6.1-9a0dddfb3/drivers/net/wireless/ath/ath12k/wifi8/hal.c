@@ -1464,92 +1464,29 @@ void ath12k_wifi8_hal_tasc_reset_peer_tx(struct ath12k_base *ab,
 }
 
 void ath12k_wifi8_hal_tasc_peer_tx_band(struct ath12k_base *ab,
-					enum tasc_band_index band,
-					u16 band_idx, bool enable)
+					u16 band_idx[HAL_TASC_BAND_MAX],
+					bool enable)
 {
-	u32 val = 0;
+	u32 val;
 
-	switch (band) {
-	case HAL_TASC_BAND_0:
-		val = ath12k_hif_read32(ab, HAL_TX_PEER_STATS_CFG0_ADDR);
-		if (val & HAL_TX_PEER_STATS_BAND_INDEX_MSB) {
-			val = (val & ~HAL_TX_PEER_STATS_BAND_INDEX_0) |
-				u32_encode_bits(band_idx,
-						HAL_TX_PEER_STATS_BAND_INDEX_0) |
-				u32_encode_bits(enable,
-						HAL_TX_PEER_STATS_BAND_INDEX_MSB);
-		} else {
-			val = u32_encode_bits(band_idx,
-					      HAL_TX_PEER_STATS_BAND_INDEX_0) |
-				u32_encode_bits(HAL_INVALID_PEER_BAND_ID,
-						HAL_TX_PEER_STATS_BAND_INDEX_1) |
-				u32_encode_bits(enable,
-						HAL_TX_PEER_STATS_BAND_INDEX_MSB);
-		}
-		ath12k_hif_write32(ab, HAL_TX_PEER_STATS_CFG0_ADDR, val);
-		break;
-	case HAL_TASC_BAND_1:
-		val = ath12k_hif_read32(ab, HAL_TX_PEER_STATS_CFG0_ADDR);
-		if (val & HAL_TX_PEER_STATS_BAND_INDEX_MSB) {
-			val = (val & ~HAL_TX_PEER_STATS_BAND_INDEX_1) |
-				u32_encode_bits(band_idx,
-						HAL_TX_PEER_STATS_BAND_INDEX_1) |
-				u32_encode_bits(enable,
-						HAL_TX_PEER_STATS_BAND_INDEX_MSB);
-		} else {
-			val = u32_encode_bits(HAL_INVALID_PEER_BAND_ID,
-					      HAL_TX_PEER_STATS_BAND_INDEX_0) |
-				u32_encode_bits(band_idx,
-						HAL_TX_PEER_STATS_BAND_INDEX_1) |
-				u32_encode_bits(enable,
-						HAL_TX_PEER_STATS_BAND_INDEX_MSB);
-		}
-		ath12k_hif_write32(ab, HAL_TX_PEER_STATS_CFG0_ADDR, val);
-		break;
-	case HAL_TASC_BAND_2:
-		val = ath12k_hif_read32(ab, HAL_TX_PEER_STATS_CFG1_ADDR);
-		if (val & HAL_TX_PEER_STATS_BAND_INDEX_MSB) {
-			val = (val & ~HAL_TX_PEER_STATS_BAND_INDEX_2) |
-				u32_encode_bits(band_idx,
-						HAL_TX_PEER_STATS_BAND_INDEX_2) |
-				u32_encode_bits(enable,
-						HAL_TX_PEER_STATS_BAND_INDEX_MSB);
-		} else {
-			val = u32_encode_bits(band_idx,
-					      HAL_TX_PEER_STATS_BAND_INDEX_2) |
-				u32_encode_bits(HAL_INVALID_PEER_BAND_ID,
-						HAL_TX_PEER_STATS_BAND_INDEX_3) |
-				u32_encode_bits(enable,
-						HAL_TX_PEER_STATS_BAND_INDEX_MSB);
-		}
-		ath12k_hif_write32(ab, HAL_TX_PEER_STATS_CFG1_ADDR, val);
-		break;
-	case HAL_TASC_BAND_3:
-		val = ath12k_hif_read32(ab, HAL_TX_PEER_STATS_CFG1_ADDR);
-		if (val & HAL_TX_PEER_STATS_BAND_INDEX_MSB) {
-			val = (val & ~HAL_TX_PEER_STATS_BAND_INDEX_3) |
-				u32_encode_bits(band_idx,
-						HAL_TX_PEER_STATS_BAND_INDEX_3) |
-				u32_encode_bits(enable,
-						HAL_TX_PEER_STATS_BAND_INDEX_MSB);
-		} else {
-			val = u32_encode_bits(HAL_INVALID_PEER_BAND_ID,
-					      HAL_TX_PEER_STATS_BAND_INDEX_2) |
-				u32_encode_bits(band_idx,
-						HAL_TX_PEER_STATS_BAND_INDEX_3) |
-				u32_encode_bits(enable,
-						HAL_TX_PEER_STATS_BAND_INDEX_MSB);
-		}
-		ath12k_hif_write32(ab, HAL_TX_PEER_STATS_CFG1_ADDR, val);
-		break;
-	case HAL_TASC_BAND_4:
-		val = u32_encode_bits(enable,
-				      HAL_TX_PEER_STATS_BAND_INDEX_MSB) |
-			u32_encode_bits(band_idx,
-					HAL_TX_PEER_STATS_BAND_INDEX_4);
-		ath12k_hif_write32(ab, HAL_TX_PEER_STATS_CFG2_ADDR, val);
-		break;
-	}
+	val = u32_encode_bits(band_idx[HAL_TASC_BAND_0],
+			      HAL_TX_PEER_STATS_BAND_INDEX_0) |
+		u32_encode_bits(band_idx[HAL_TASC_BAND_1],
+				HAL_TX_PEER_STATS_BAND_INDEX_1) |
+		u32_encode_bits(enable, HAL_TX_PEER_STATS_BAND_INDEX_MSB);
+	ath12k_hif_write32(ab, HAL_TX_PEER_STATS_CFG0_ADDR, val);
+
+	val = u32_encode_bits(band_idx[HAL_TASC_BAND_2],
+			      HAL_TX_PEER_STATS_BAND_INDEX_2) |
+		u32_encode_bits(band_idx[HAL_TASC_BAND_3],
+				HAL_TX_PEER_STATS_BAND_INDEX_3) |
+		u32_encode_bits(enable, HAL_TX_PEER_STATS_BAND_INDEX_MSB);
+	ath12k_hif_write32(ab, HAL_TX_PEER_STATS_CFG1_ADDR, val);
+
+	val = u32_encode_bits(band_idx[HAL_TASC_BAND_4],
+			      HAL_TX_PEER_STATS_BAND_INDEX_4) |
+		u32_encode_bits(enable, HAL_TX_PEER_STATS_BAND_INDEX_MSB);
+	ath12k_hif_write32(ab, HAL_TX_PEER_STATS_CFG2_ADDR, val);
 }
 
 void ath12k_wifi8_hal_tasc_peer_rx_cfg(struct ath12k_base *ab, bool enable)
@@ -1632,92 +1569,28 @@ void ath12k_wifi8_hal_tasc_reset_peer_rx(struct ath12k_base *ab,
 	ath12k_hif_write32(ab, HAL_RX_PEER_STATS_CONFIG_CTRL_ADDR, val);
 }
 
-
 void ath12k_wifi8_hal_tasc_peer_rx_band(struct ath12k_base *ab,
-					enum tasc_band_index band,
-					u16 band_idx, bool enable)
+					u16 band_idx[HAL_TASC_BAND_MAX],
+					bool enable)
 {
-	u32 val = 0;
+	u32 val;
 
-	switch (band) {
-	case HAL_TASC_BAND_0:
-		val = ath12k_hif_read32(ab, HAL_RX_PEER_STATS_CFG0_ADDR);
-		if (val & HAL_RX_PEER_STATS_BAND_INDEX_MSB) {
-			val = (val & ~HAL_RX_PEER_STATS_BAND_INDEX_0) |
-				u32_encode_bits(band_idx,
-						HAL_RX_PEER_STATS_BAND_INDEX_0) |
-				u32_encode_bits(enable,
-						HAL_RX_PEER_STATS_BAND_INDEX_MSB);
-		} else {
-			val = u32_encode_bits(band_idx,
-					      HAL_RX_PEER_STATS_BAND_INDEX_0) |
-				u32_encode_bits(HAL_INVALID_PEER_BAND_ID,
-						HAL_RX_PEER_STATS_BAND_INDEX_1) |
-				u32_encode_bits(enable,
-						HAL_RX_PEER_STATS_BAND_INDEX_MSB);
-		}
-		ath12k_hif_write32(ab, HAL_RX_PEER_STATS_CFG0_ADDR, val);
-		break;
-	case HAL_TASC_BAND_1:
-		val = ath12k_hif_read32(ab, HAL_RX_PEER_STATS_CFG0_ADDR);
-		if (val & HAL_RX_PEER_STATS_BAND_INDEX_MSB) {
-			val = (val & ~HAL_RX_PEER_STATS_BAND_INDEX_1) |
-				u32_encode_bits(band_idx,
-						HAL_RX_PEER_STATS_BAND_INDEX_1) |
-				u32_encode_bits(enable,
-						HAL_RX_PEER_STATS_BAND_INDEX_MSB);
-		} else {
-			val = u32_encode_bits(HAL_INVALID_PEER_BAND_ID,
-					      HAL_RX_PEER_STATS_BAND_INDEX_0) |
-				u32_encode_bits(band_idx,
-						HAL_RX_PEER_STATS_BAND_INDEX_1) |
-				u32_encode_bits(enable,
-						HAL_RX_PEER_STATS_BAND_INDEX_MSB);
-		}
-		ath12k_hif_write32(ab, HAL_RX_PEER_STATS_CFG0_ADDR, val);
-		break;
-	case HAL_TASC_BAND_2:
-		val = ath12k_hif_read32(ab, HAL_RX_PEER_STATS_CFG1_ADDR);
-		if (val & HAL_RX_PEER_STATS_BAND_INDEX_MSB) {
-			val = (val & ~HAL_RX_PEER_STATS_BAND_INDEX_2) |
-				u32_encode_bits(band_idx,
-						HAL_RX_PEER_STATS_BAND_INDEX_2) |
-				u32_encode_bits(enable,
-						HAL_RX_PEER_STATS_BAND_INDEX_MSB);
-		} else {
-			val = u32_encode_bits(band_idx,
-					      HAL_RX_PEER_STATS_BAND_INDEX_2) |
-				u32_encode_bits(HAL_INVALID_PEER_BAND_ID,
-						HAL_RX_PEER_STATS_BAND_INDEX_3) |
-				u32_encode_bits(enable,
-						HAL_RX_PEER_STATS_BAND_INDEX_MSB);
-		}
-		ath12k_hif_write32(ab, HAL_RX_PEER_STATS_CFG1_ADDR, val);
-		break;
-	case HAL_TASC_BAND_3:
-		val = ath12k_hif_read32(ab, HAL_RX_PEER_STATS_CFG1_ADDR);
-		if (val & HAL_RX_PEER_STATS_BAND_INDEX_MSB) {
-			val = (val & ~HAL_RX_PEER_STATS_BAND_INDEX_3) |
-				u32_encode_bits(band_idx,
-						HAL_RX_PEER_STATS_BAND_INDEX_3) |
-				u32_encode_bits(enable,
-						HAL_RX_PEER_STATS_BAND_INDEX_MSB);
-		} else {
-			val = u32_encode_bits(HAL_INVALID_PEER_BAND_ID,
-					      HAL_RX_PEER_STATS_BAND_INDEX_2) |
-				u32_encode_bits(band_idx,
-						HAL_RX_PEER_STATS_BAND_INDEX_3) |
-				u32_encode_bits(enable,
-						HAL_RX_PEER_STATS_BAND_INDEX_MSB);
-		}
-		ath12k_hif_write32(ab, HAL_RX_PEER_STATS_CFG1_ADDR, val);
-		break;
-	case HAL_TASC_BAND_4:
-		val = u32_encode_bits(enable,
-				      HAL_RX_PEER_STATS_BAND_INDEX_MSB) |
-			u32_encode_bits(band_idx,
-					HAL_RX_PEER_STATS_BAND_INDEX_4);
-		ath12k_hif_write32(ab, HAL_RX_PEER_STATS_CFG2_ADDR, val);
-		break;
-	}
+	val = u32_encode_bits(band_idx[HAL_TASC_BAND_0],
+			      HAL_RX_PEER_STATS_BAND_INDEX_0) |
+		u32_encode_bits(band_idx[HAL_TASC_BAND_1],
+				HAL_RX_PEER_STATS_BAND_INDEX_1) |
+		u32_encode_bits(enable, HAL_RX_PEER_STATS_BAND_INDEX_MSB);
+	ath12k_hif_write32(ab, HAL_RX_PEER_STATS_CFG0_ADDR, val);
+
+	val = u32_encode_bits(band_idx[HAL_TASC_BAND_2],
+			      HAL_RX_PEER_STATS_BAND_INDEX_2) |
+		u32_encode_bits(band_idx[HAL_TASC_BAND_3],
+				HAL_RX_PEER_STATS_BAND_INDEX_3) |
+		u32_encode_bits(enable, HAL_RX_PEER_STATS_BAND_INDEX_MSB);
+	ath12k_hif_write32(ab, HAL_RX_PEER_STATS_CFG1_ADDR, val);
+
+	val = u32_encode_bits(band_idx[HAL_TASC_BAND_4],
+			      HAL_RX_PEER_STATS_BAND_INDEX_4) |
+		u32_encode_bits(enable, HAL_RX_PEER_STATS_BAND_INDEX_MSB);
+	ath12k_hif_write32(ab, HAL_RX_PEER_STATS_CFG2_ADDR, val);
 }

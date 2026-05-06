@@ -1481,6 +1481,7 @@ enum tasc_band_index {
 	HAL_TASC_BAND_2 = 2,
 	HAL_TASC_BAND_3 = 3,
 	HAL_TASC_BAND_4 = 4,
+	HAL_TASC_BAND_MAX,
 };
 
 enum tqm_release_reason {
@@ -1576,8 +1577,6 @@ enum rx_drop_reason_category {
 #define HAL_TX_PEER_STATS_BAND_INDEX_4			GENMASK(10, 0)
 
 #define HAL_TX_PEER_STATS_BAND_INDEX_MSB		BIT(31)
-
-#define HAL_INVALID_PEER_BAND_ID			1624
 
 #define HAL_TX_PEER_STATS_NUM_TRANSMISSIONS_CFG_ADDR	0xF10580
 
@@ -1744,8 +1743,8 @@ void ath12k_wifi8_hal_tasc_peer_tx_gcast_id_map(struct ath12k_base *ab,
 void ath12k_wifi8_hal_tasc_peer_tx_set_id(struct ath12k_base *ab,
 					  u16 stats_id);
 void ath12k_wifi8_hal_tasc_peer_tx_band(struct ath12k_base *ab,
-					enum tasc_band_index band,
-					u16 band_idx, bool enable);
+					u16 band_idx[HAL_TASC_BAND_MAX],
+					bool enable);
 void ath12k_wifi8_hal_tasc_peer_rx_cfg(struct ath12k_base *ab, bool enable);
 void ath12k_wifi8_hal_tasc_peer_rx_max_peer(struct ath12k_base *ab,
 					    u16 ucast, u8 gcast);
@@ -1757,8 +1756,8 @@ void ath12k_wifi8_hal_tasc_peer_rx_fail_drop_map(struct ath12k_base *ab,
 void ath12k_wifi8_hal_tasc_peer_rx_set_id(struct ath12k_base *ab,
 					  u16 stats_id);
 void ath12k_wifi8_hal_tasc_peer_rx_band(struct ath12k_base *ab,
-					enum tasc_band_index band,
-					u16 band_idx, bool enable);
+					u16 band_idx[HAL_TASC_BAND_MAX],
+					bool enable);
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 void ath12k_wifi8_hal_ppeds_cfg_ast_override_map_reg(struct ath12k_base *ab, u8 idx,
