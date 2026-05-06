@@ -60,6 +60,16 @@ config ATH12K_TX_MONITOR
 	  TX monitor alloc and WQ paths are active.
 	  Say N to compile them out completely.
 
+config EXT_IPA_OFFLOAD
+	bool "Enable IPA offload"
+	depends on ATH12K
+	help
+	  Enable support for offloading data to IPA (Internet Packet Accelerator).
+	  When enabled, ath12k integrates with the IPA driver.
+
+	  Say Y only if your system provides IPA offload for ath12k. If unsure,
+	  say N.
+
 config ATH12K_DEBUGFS
 	bool "QTI ath12k debugfs support"
 	depends on ATH12K && MAC80211_DEBUGFS
