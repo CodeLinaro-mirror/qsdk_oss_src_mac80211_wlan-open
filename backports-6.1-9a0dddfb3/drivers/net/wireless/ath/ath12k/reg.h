@@ -280,6 +280,7 @@ struct ath12k_afc_host_request {
 
 /**
  * struct ath12k_afc_info - AFC-related information maintained per device
+ * @phy_id: PHY/radio index associated with this AFC event payload.
  * @request_id: Request ID associated with the current AFC request.
  *              This ID is typically received from the firmware during AFC expiry
  *              events and is used to track and correlate AFC requests.
@@ -301,6 +302,7 @@ struct ath12k_afc_host_request {
  */
 
 struct ath12k_afc_info {
+	u8 phy_id;
 	enum ath12k_afc_event_state event_type;
 	bool is_6ghz_afc_power_event_received;
 	struct ath12k_afc_sp_reg_info *afc_reg_info;

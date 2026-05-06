@@ -8859,7 +8859,21 @@ static int ath12k_wmi_afc_event_parser(struct ath12k_base *ab,
 
 	switch (tag) {
 	case WMI_TAG_AFC_EVENT_FIXED_PARAM:
-		/* Fixed param is already processed */
+		struct wmi_afc_event_fixed_param *fixed_param;
+
+		if (!ptr || !len || len < sizeof(*fixed_param)) {
+			ath12k_warn(ab,
+				    "Wrong data or length(%d) for AFC fixed param\n",
+				    len);
+			return -EINVAL;
+		}
+
+		fixed_param = (struct wmi_afc_event_fixed_param *)ptr;
+		afc->phy_id = le32_to_cpu(fixed_param->pdev_id);
+		afc->event_type = le32_to_cpu(fixed_param->event_type);
+		ath12k_dbg(ab, ATH12K_DBG_AFC,
+			   "Received AFC event of type %d for pdev: %d\n",
+			   afc->event_type, afc->phy_id);
 		break;
 	case WMI_TAG_AFC_EXPIRY_EVENT_PARAM:
 		if (len == 0) {
@@ -8921,45 +8935,6 @@ static int ath12k_wmi_afc_event_parser(struct ath12k_base *ab,
 	return ret;
 }
 
-static int
-ath12k_wmi_afc_process_fixed_param(struct ath12k_base *ab,
-				   void *ptr, size_t len, struct ath12k_afc_info *afc,
-				   u8 *pdev_id, struct ath12k **ar)
-{
-	struct wmi_afc_event_fixed_param *fixed_param;
-	const struct wmi_tlv *tlv;
-	u16 tlv_tag;
-
-	if (!ptr) {
-		ath12k_warn(ab, "No data present in afc event\n");
-		return -1;
-	}
-
-	if (len < (sizeof(*fixed_param) + TLV_HDR_SIZE)) {
-		ath12k_warn(ab, "afc event size invalid\n");
-		return -1;
-	}
-
-	tlv = (struct wmi_tlv *)ptr;
-	tlv_tag = u32_get_bits(tlv->header, WMI_TLV_TAG);
-	ptr += sizeof(*tlv);
-
-	if (tlv_tag == WMI_TAG_AFC_EVENT_FIXED_PARAM) {
-		fixed_param = (struct wmi_afc_event_fixed_param *)ptr;
-		*pdev_id = le32_to_cpu(fixed_param->pdev_id);
-		*ar = ab->pdevs[*pdev_id].ar;
-		if (!*ar)
-			ath12k_warn(ab, "Cannot get ar for afc fixed param\n");
-	} else {
-		ath12k_warn(ab, "Wrong tag %d in afc fixed param\n", tlv_tag);
-		return -1;
-	}
-
-	afc->event_type = le32_to_cpu(fixed_param->event_type);
-
-	return 0;
-}
-
 static void ath12k_wmi_afc_event(struct ath12k_base *ab,
 				 struct sk_buff *skb)
 {
@@ -8969,15 +8944,6 @@ static void ath12k_wmi_afc_event(struct ath12k_base *ab,
 	int ret;
 	u8 pdev_id;
 
-	ret = ath12k_wmi_afc_process_fixed_param(ab, skb->data, skb->len,
-						 afc_info, &pdev_id, &ar);
-	if (ret) {
-		ath12k_warn(ab, "Failed to process afc fixed param ret %d\n", ret);
-		return;
-	}
-
-	ath12k_dbg(ab, ATH12K_DBG_AFC, "Received AFC event of type %d for pdev: %d\n",
-		   afc_info->event_type, pdev_id);
 	ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
 				  ath12k_wmi_afc_event_parser, afc_info);
 	if (ret) {
@@ -8987,6 +8953,14 @@ static void ath12k_wmi_afc_event(struct ath12k_base *ab,
 		return;
 	}
 
+	pdev_id = afc_info->phy_id;
+	if (pdev_id >= ab->num_radios) {
+		ath12k_warn(ab, "Received AFC Event for Invalid phy id %d\n", pdev_id);
+		ath12k_free_afc_power_event_info(afc_info);
+		return;
+	}
+
+	ar = ab->pdevs[pdev_id].ar;
 	if (!ar && afc_info->event_type != ATH12K_AFC_EVENT_TIMER_EXPIRY) {
 		ath12k_warn(ab, "Failed to get ar for afc processing\n");
 		ath12k_free_afc_power_event_info(afc_info);
