@@ -8,6 +8,7 @@
 #include "core.h"
 #include "peer.h"
 #include "sdwf.h"
+#include "dp.h"
 #include <linux/module.h>
 #include <linux/if_vlan.h>
 
@@ -173,6 +174,117 @@ struct wireless_dev *ath12k_get_wdev_from_netdev(struct net_device *dev)
 	}
 
 	return wdev;
+}
+
+static inline
+int ath12k_get_msduq_tid(struct ath12k_base *ab,
+			 struct ath12k_link_vif *arvif,
+			 u8 dscp)
+{
+	struct ath12k_dp_link_vif *dp_link_vif;
+	struct ath12k_vif *ahvif = arvif->ahvif;
+	u8 map_id, tid, bank_id;
+	int max_entries;
+
+	map_id = arvif->map_id;
+	dp_link_vif = &ahvif->dp_vif.dp_link_vif[arvif->link_id];
+	bank_id = dp_link_vif->bank_id;
+	max_entries = ab->hal.hal_params->dscp_tid_map_tbl_max_entries;
+
+	if (map_id >= max_entries) {
+		ath12k_err(ab, "failed to find free map_id\n");
+		return -1;
+	}
+
+	if (bank_id == DP_INVALID_BANK_ID) {
+		ath12k_err(ab, "unable to find TX bank profile\n");
+		return -1;
+	}
+
+	tid = ath12k_hal_tx_get_tid_from_dscp(ab, map_id, dscp);
+
+	return tid;
+}
+
+void ath12k_alloc_non_default_tid_queues(struct wireless_dev *wdev,
+					 const u8 *peer_mac,
+					 struct ath_wifi_queue_param *wifi_queue)
+{
+	struct ieee80211_vif *vif;
+	struct ath12k_vif *ahvif;
+	struct ieee80211_sta *sta = NULL;
+	struct ath12k_sta *ahsta;
+	struct ath12k_link_vif *arvif = NULL;
+	struct ath12k_base *ab;
+	struct ath12k_dp_link_peer *peer;
+	u8 flow_type;
+	u8 tid;
+	int ret = 0;
+
+	if (!peer_mac)
+		return;
+
+	vif = wdev_to_ieee80211_vif(wdev);
+	if (!vif)
+		return;
+
+	ahvif = ath12k_vif_to_ahvif(vif);
+	if (!ahvif)
+		return;
+
+	if (ahvif->vdev_type != WMI_VDEV_TYPE_STA &&
+	    ahvif->vdev_type != WMI_VDEV_TYPE_AP)
+		return;
+
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
+		sta = ieee80211_find_sta(vif, vif->cfg.ap_addr);
+		if (!sta)
+			return;
+	} else if (ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
+		sta = ieee80211_find_sta(vif, peer_mac);
+		if (!sta) {
+			sta = wdev_to_ieee80211_vlan_sta(wdev);
+			if (!sta)
+				return;
+		}
+	}
+	ahsta = ath12k_sta_to_ahsta(sta);
+	if (!ahsta)
+		return;
+
+	rcu_read_lock();
+	arvif  = (!sta->mlo) ? rcu_dereference(ahvif->link[ahsta->deflink.link_id]) :
+			       rcu_dereference(ahvif->link[ahsta->primary_link_id]);
+	if (!arvif || !arvif->ar) {
+		rcu_read_unlock();
+		return;
+	}
+	ab = arvif->ar->ab;
+	if (!ab) {
+		rcu_read_unlock();
+		return;
+	}
+	rcu_read_unlock();
+	spin_lock_bh(&ab->dp->dp_lock);
+	peer = ath12k_dp_link_peer_find_by_addr(ab->dp, peer_mac);
+	if (!peer) {
+		ath12k_err(ab, "Peer: %pM not present\n", peer_mac);
+		spin_unlock_bh(&ab->dp->dp_lock);
+		return;
+	}
+	spin_unlock_bh(&ab->dp->dp_lock);
+
+	if (wifi_queue->protocol == ATH12K_UDP_PROTOCOL)
+		flow_type = ATH12K_MSDUQ_UDP_FLOW;
+	else
+		flow_type = ATH12K_MSDUQ_NONUDP_FLOW;
+	tid = ath12k_get_msduq_tid(ab, arvif, wifi_queue->dscp);
+	ret = ath12k_dp_arch_alloc_non_default_queue(ab->dp, peer->dp_peer,
+						     &ahvif->dp_vif,
+						     tid, flow_type);
+	if (ret)
+		ath12k_err(ab, "Queue not created for peer: %pM tid %d flow_type %d\n",
+			   peer_mac, tid, flow_type);
 }
 
 u32 ath12k_get_metadata_info(struct ath_dp_metadata_param *md_param)
@@ -532,6 +644,7 @@ static const struct ath_dp_accel_cfg_ops ath_dp_accel_cfg_ops_obj = {
 	.get_metadata_info = ath12k_get_metadata_info,
 	.sdwf_ul_config = ath12k_sdwf_ul_config,
 	.get_mscs_priority = ath12k_get_mscs_priority,
+	.alloc_non_deafult_tid_queue = ath12k_alloc_non_default_tid_queues,
 };
 
 /**

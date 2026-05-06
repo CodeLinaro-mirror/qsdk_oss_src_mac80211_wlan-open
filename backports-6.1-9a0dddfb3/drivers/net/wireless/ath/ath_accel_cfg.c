@@ -96,3 +96,34 @@ int ath_mscs_peer_lookup_n_get_priority(struct ath_mscs_get_priority_param *para
 }
 EXPORT_SYMBOL(ath_mscs_peer_lookup_n_get_priority);
 
+void ath_setup_peer_wifi_tid_queue(struct ath_wifi_queue_param *wifi_queue)
+{
+	struct net_device *dev = wifi_queue->dev;
+	struct  wireless_dev *wdev = NULL;
+
+	if (!wifi_queue) {
+		pr_err("Invalid wifi queue parameter\n");
+		return;
+	}
+
+	wdev = dev->ieee80211_ptr;
+	if (!wdev) {
+		pr_err("wdev is null\n");
+		return;
+	}
+	/*
+	 * This function will be called from ECM to setup wifi queues
+	 * based on the flow parameters (peer_mac, dscp, qos_tag, protocol)
+	 */
+	pr_info("WiFi queue setup: dev=%s peer_mac=%pM dscp=%u qos_tag=%u protocol=%u\n",
+		 wifi_queue->dev->name, wifi_queue->peer_mac, wifi_queue->dscp,
+		 wifi_queue->qos_tag, wifi_queue->protocol);
+	pr_info("SAWF fields: sawf_mark=%u sawf_service_class=%u sawf_rule_valid=%d\n",
+		 wifi_queue->sawf_mark, wifi_queue->sawf_service_class,
+		 wifi_queue->sawf_rule_valid);
+
+	ath_dp_accel_cfg_cb->alloc_non_deafult_tid_queue(wdev,
+							 wifi_queue->peer_mac,
+							 wifi_queue);
+}
+EXPORT_SYMBOL(ath_setup_peer_wifi_tid_queue);

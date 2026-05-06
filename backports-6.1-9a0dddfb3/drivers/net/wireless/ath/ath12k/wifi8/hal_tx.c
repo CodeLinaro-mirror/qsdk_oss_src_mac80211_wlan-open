@@ -85,6 +85,60 @@ void ath12k_update_dscp_register(struct ath12k_base *ab, u32 addr, u32 mask, u32
 	ath12k_hif_write32(ab, addr, reg_val);
 }
 
+u8 ath12k_wifi8_hal_tx_get_tid_from_dscp(struct ath12k_base *ab,
+					 int id, u8 dscp)
+{
+	u32 ctrl_reg_val;
+	u32 addr;
+	u32 start_index, end_index;
+	u32 reg_val;
+	u32 part0, part1;
+	u32 tid;
+	const u32 tid_mask = (1U << HAL_TX_BITS_PER_TID) - 1;
+
+	/* Enable read/write access to DSCP->TID table */
+	ctrl_reg_val = ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_TCL_REG +
+					 HAL_TCL1_RING_CMN_CTRL_REG);
+	ctrl_reg_val |= HAL_TCL1_RING_CMN_CTRL_DSCP_TID_MAP_PROG_EN;
+	ath12k_hif_write32(ab, HAL_SEQ_WCSS_UMAC_TCL_REG +
+			   HAL_TCL1_RING_CMN_CTRL_REG, ctrl_reg_val);
+
+	addr = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL1_RING_DSCP_TID_MAP +
+	       (4 * id * (HAL_DSCP_TID_TBL_SIZE / 4));
+
+	start_index = dscp * HAL_TX_BITS_PER_TID;
+	end_index = (start_index + (HAL_TX_BITS_PER_TID - 1)) %
+		    HAL_TX_NUM_DSCP_REG_SIZE;
+
+	addr += 4 * (start_index / HAL_TX_NUM_DSCP_REG_SIZE);
+	start_index %= HAL_TX_NUM_DSCP_REG_SIZE;
+
+	if (end_index < start_index) {
+		/* Value spans two 32-bit registers */
+		reg_val = ath12k_hif_read32(ab, addr);
+		part0 = (reg_val & GENMASK(HAL_TX_NUM_DSCP_REG_SIZE - 1, start_index))
+			>> start_index;
+
+		reg_val = ath12k_hif_read32(ab, addr + 4);
+		part1 = reg_val & GENMASK(end_index, 0);
+
+		tid = (part1 << (HAL_TX_NUM_DSCP_REG_SIZE - start_index)) | part0;
+	} else {
+		/* Value fits within one 32-bit register */
+		reg_val = ath12k_hif_read32(ab, addr);
+		tid = (reg_val & GENMASK(end_index, start_index)) >> start_index;
+	}
+
+	/* Disable access */
+	ctrl_reg_val = ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_TCL_REG +
+			HAL_TCL1_RING_CMN_CTRL_REG);
+	ctrl_reg_val &= ~HAL_TCL1_RING_CMN_CTRL_DSCP_TID_MAP_PROG_EN;
+	ath12k_hif_write32(ab, HAL_SEQ_WCSS_UMAC_TCL_REG +
+			HAL_TCL1_RING_CMN_CTRL_REG, ctrl_reg_val);
+
+	return (u8)(tid & tid_mask);
+}
+
 void ath12k_wifi8_hal_tx_update_dscp_tid_map(struct ath12k_base *ab,
 					     int id, u8 dscp, u8 tid)
 {
