@@ -3806,8 +3806,8 @@ ath12k_dp_rx_pktlog_process(struct ath12k_pdev_dp *dp_pdev,
 
 	trace_ath12k_htt_rxdesc(ar, status_desc->mon_buf,
 				log_type, status_desc->buf_len);
-	ath12k_dp_rx_stats_buf_pktlog_process(ar, status_desc->mon_buf,
-					      log_type, status_desc->buf_len);
+	ath12k_dp_txrx_stats_buf_pktlog_process(ar, status_desc->mon_buf,
+						log_type, status_desc->buf_len);
 }
 EXPORT_SYMBOL(ath12k_dp_rx_pktlog_process);
 
