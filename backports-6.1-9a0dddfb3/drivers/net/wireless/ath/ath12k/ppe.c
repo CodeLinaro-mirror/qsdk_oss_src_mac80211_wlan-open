@@ -21,6 +21,7 @@
 #include "fse.h"
 #include "ppe_public.h"
 #include "dp_stats.h"
+#include "ath12k_notif.h"
 
 extern bool ath12k_fse_enable;
 atomic_t ath12k_num_ppeds_nodes;
@@ -1071,6 +1072,7 @@ EXPORT_SYMBOL(ath12k_vif_set_mtu);
 static void
 ath12k_dp_rx_ppeds_fse_update_flow_info(struct ath12k_base *ab,
 					struct rx_flow_info *flow_info,
+					struct ath12k_fse_update_event *event,
 					struct ppe_drv_fse_rule_info *ppe_flow_info,
 					int operation)
 {
@@ -1116,12 +1118,39 @@ ath12k_dp_rx_ppeds_fse_update_flow_info(struct ath12k_base *ab,
 
 	if (ppe_flow_info->flags & PPE_DRV_FSE_DS)
 		flow_info->use_ppe = 1;
+
+	/* Populate event from flow_info (already in host order) */
+	if (event) {
+		event->src_port = tuple_info->src_port;
+		event->dest_port = tuple_info->dest_port;
+		event->protocol = tuple_info->l4_protocol;
+
+		if (flow_info->is_addr_ipv4) {
+			event->version = 4;
+			event->src_ip[0] = tuple_info->src_ip_31_0;
+			event->dest_ip[0] = tuple_info->dest_ip_31_0;
+			/* Clear unused array elements */
+			event->src_ip[1] = event->src_ip[2] = event->src_ip[3] = 0;
+			event->dest_ip[1] = event->dest_ip[2] = event->dest_ip[3] = 0;
+		} else {
+			event->version = 6;
+			event->src_ip[0] = tuple_info->src_ip_127_96;
+			event->src_ip[1] = tuple_info->src_ip_95_64;
+			event->src_ip[2] = tuple_info->src_ip_63_32;
+			event->src_ip[3] = tuple_info->src_ip_31_0;
+			event->dest_ip[0] = tuple_info->dest_ip_127_96;
+			event->dest_ip[1] = tuple_info->dest_ip_95_64;
+			event->dest_ip[2] = tuple_info->dest_ip_63_32;
+			event->dest_ip[3] = tuple_info->dest_ip_31_0;
+		}
+	}
 }
 
 bool
 ath12k_dp_rx_ppeds_fse_add_flow_entry(struct ppe_drv_fse_rule_info *ppe_flow_info)
 {
 	struct rx_flow_info flow_info = { 0 };
+	struct ath12k_fse_update_event ev = {};
 	struct wireless_dev *wdev;
 	struct ieee80211_vif *vif;
 	struct ath12k_base *ab = NULL;
@@ -1132,6 +1161,7 @@ ath12k_dp_rx_ppeds_fse_add_flow_entry(struct ppe_drv_fse_rule_info *ppe_flow_inf
 	struct net_device *dev = ppe_flow_info->dev;
 	unsigned long links;
 	u8 link_id;
+	int ret;
 
 	if (!ath12k_fse_enable)
 		return false;
@@ -1177,10 +1207,19 @@ ath12k_dp_rx_ppeds_fse_add_flow_entry(struct ppe_drv_fse_rule_info *ppe_flow_inf
 		return false;
 	}
 
-	ath12k_dp_rx_ppeds_fse_update_flow_info(ab, &flow_info, ppe_flow_info,
+	/* Populate both flow_info and event in one call (no redundant ntohl) */
+	ath12k_dp_rx_ppeds_fse_update_flow_info(ab, &flow_info, &ev, ppe_flow_info,
 						FSE_RULE_ADD);
 
-	return ath12k_dp_rx_flow_add_entry(ab, &flow_info);
+	ret = ath12k_dp_rx_flow_add_entry(ab, &flow_info);
+
+	/* Fire FSE_UPDATE notification for PPE flow addition */
+	if (!ret && ath12k_fse_update_notif_has_listeners()) {
+		ev.op = ATH12K_FSE_OP_ADD;
+		ath12k_fse_update_notif_call_chain(&ev);
+	}
+
+	return ret;
 }
 EXPORT_SYMBOL(ath12k_dp_rx_ppeds_fse_add_flow_entry);
 
@@ -1188,11 +1227,13 @@ bool
 ath12k_dp_rx_ppeds_fse_del_flow_entry(struct ppe_drv_fse_rule_info *ppe_flow_info)
 {
 	struct rx_flow_info flow_info = { 0 };
+	struct ath12k_fse_update_event ev = {};
 	struct wireless_dev *wdev;
 	struct ath12k_hw *ah;
 	struct ieee80211_hw *hw = NULL;
 	struct ath12k_base *ab = NULL;
 	struct net_device *dev = ppe_flow_info->dev;
+	int ret;
 
 	if (!ath12k_fse_enable)
 		return false;
@@ -1223,10 +1264,19 @@ ath12k_dp_rx_ppeds_fse_del_flow_entry(struct ppe_drv_fse_rule_info *ppe_flow_inf
 		return false;
 	}
 
-	ath12k_dp_rx_ppeds_fse_update_flow_info(ab, &flow_info, ppe_flow_info,
+	/* Populate both flow_info and event in one call (no redundant ntohl) */
+	ath12k_dp_rx_ppeds_fse_update_flow_info(ab, &flow_info, &ev, ppe_flow_info,
 						FSE_RULE_DELETE);
 
-	return ath12k_dp_rx_flow_delete_entry(ab, &flow_info);
+	ret = ath12k_dp_rx_flow_delete_entry(ab, &flow_info);
+
+	/* Fire FSE_UPDATE notification for PPE flow deletion */
+	if (!ret && ath12k_fse_update_notif_has_listeners()) {
+		ev.op = ATH12K_FSE_OP_DELETE;
+		ath12k_fse_update_notif_call_chain(&ev);
+	}
+
+	return ret;
 }
 EXPORT_SYMBOL(ath12k_dp_rx_ppeds_fse_del_flow_entry);
 

@@ -13,15 +13,17 @@
 #include "debug.h"
 
 /**
- * enum ath12k_event_type - PPDU event types
+ * enum ath12k_event_type - WDI event types
  * @ATH12K_EVENT_PPDU_RX_COMPLETE: RX PPDU completion
  * @ATH12K_EVENT_PPDU_TX_COMPLETE: TX PPDU completion
  * @ATH12K_EVENT_EXT_MON_RX: RX Extended monitor
+ * @ATH12K_EVENT_FSE_UPDATE: Flow/Search/Steering Engine update event
  */
 enum ath12k_event_type {
 	ATH12K_EVENT_PPDU_RX_COMPLETE = 1,
 	ATH12K_EVENT_PPDU_TX_COMPLETE,
 	ATH12K_EVENT_EXT_MON_RX,
+	ATH12K_EVENT_FSE_UPDATE,
 };
 
 /**
@@ -93,6 +95,45 @@ struct ath12k_ext_mon_rx_event {
 	struct ieee80211_hw *hw;
 };
 
+/**
+ * enum ath12k_fse_op - FSE update operation codes
+ * @ATH12K_FSE_OP_ADD: Add flow entry
+ * @ATH12K_FSE_OP_DELETE: Delete flow entry
+ */
+enum ath12k_fse_op {
+	ATH12K_FSE_OP_ADD = 0,
+	ATH12K_FSE_OP_DELETE = 1,
+};
+
+/**
+ * struct ath12k_fse_update_event - Payload for ATH12K_EVENT_FSE_UPDATE
+ * @src_ip:   Source IP address (4 x u32 in host order;
+ *            IPv4 uses [0] only, IPv6 uses all four words)
+ * @src_port: Source L4 port number (host order)
+ * @dest_ip:  Destination IP address (same layout as @src_ip, host order)
+ * @dest_port: Destination L4 port number (host order)
+ * @protocol: IP protocol number (e.g. 6 = TCP, 17 = UDP)
+ * @version:  IP version (4 or 6)
+ * @op:       Operation: %ATH12K_FSE_OP_ADD or %ATH12K_FSE_OP_DELETE
+ *
+ * Passed as the @v argument to ath12k_fse_update_notifier_call_chain().
+ * The struct is stack-allocated by the driver and is valid only during
+ * the callback. Listeners must not hold a reference to it beyond the
+ * callback context.
+ *
+ * Note: All IP addresses and port numbers are in host byte order, as
+ * ntohl() conversion is already applied by ath12k_dp_rx_ppeds_fse_update_flow_info().
+ */
+struct ath12k_fse_update_event {
+	u32 src_ip[4];
+	u32 src_port;
+	u32 dest_ip[4];
+	u32 dest_port;
+	u8  protocol;
+	u8  version;
+	u8  op;
+};
+
 int ath12k_register_ppdu_notifier(struct notifier_block *nb, unsigned long event_mask);
 int ath12k_unregister_ppdu_notifier(struct notifier_block *nb, unsigned long event_mask);
 bool ath12k_ppdu_notifier_has_listeners(enum ath12k_event_type event_type);
@@ -101,5 +142,13 @@ int ath12k_register_ext_mon_rx_notifier(struct notifier_block *nb);
 int ath12k_unregister_ext_mon_rx_notifier(struct notifier_block *nb);
 bool ath12k_ext_mon_rx_notifier_has_listeners(void);
 int ath12k_ext_mon_rx_notifier_call_chain(unsigned long val, void *rx_event);
+
+/* FSE_UPDATE notifier APIs */
+int ath12k_register_fse_update_notifier(struct notifier_block *nb,
+					 unsigned long event_mask);
+int ath12k_unregister_fse_update_notifier(struct notifier_block *nb,
+					   unsigned long event_mask);
+bool ath12k_fse_update_notif_has_listeners(void);
+int ath12k_fse_update_notif_call_chain(void *v);
 
 #endif /* _ATH12K_NOTIF_H_ */
