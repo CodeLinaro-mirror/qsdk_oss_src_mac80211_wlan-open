@@ -956,6 +956,12 @@ update_vif:
 
 sync_stats:
 	rcu_read_unlock();
+	/*
+	 * If TX/RX offload accounting is active, mac80211 pulls stats via
+	 * get_netstats(). Skip direct sw_netstats updates to avoid double counting.
+	 */
+	if (vif && vif->offload_flags & IEEE80211_OFFLOAD_TXRX_STATS)
+		return true;
 	/* Update the netdev statistics */
 	u64_stats_update_begin(&tstats->syncp);
 
