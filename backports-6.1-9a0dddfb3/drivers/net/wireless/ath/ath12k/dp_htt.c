@@ -2436,7 +2436,7 @@ int ath12k_dp_tx_htt_h2t_ver_req_msg(struct ath12k_base *ab)
 							     HTT_OPTION_TAG) |
 					    le32_encode_bits(HTT_TCL_METADATA_VER_SZ,
 							     HTT_OPTION_LEN) |
-					    le32_encode_bits(HTT_OPTION_TCL_METADATA_VER_V2,
+					    le32_encode_bits(dp->tcl_metadata_ver,
 							     HTT_OPTION_VALUE);
 	}
 

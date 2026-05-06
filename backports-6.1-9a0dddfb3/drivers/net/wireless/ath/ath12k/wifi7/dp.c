@@ -230,6 +230,7 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 	u32 n_link_desc = 0;
 	int i;
 
+	dp->tcl_metadata_ver = HTT_OPTION_TCL_METADATA_VER_V2;
 	INIT_LIST_HEAD(&dp->reo_cmd_list);
 	INIT_LIST_HEAD(&dp->reo_cmd_cache_flush_list);
 	INIT_LIST_HEAD(&dp->reo_cmd_update_rx_queue_list);

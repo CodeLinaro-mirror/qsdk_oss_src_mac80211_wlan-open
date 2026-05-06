@@ -16,6 +16,8 @@ struct ath12k_pdev_dp;
 #define HTT_TAG_TCL_METADATA_VERSION		5
 
 #define HTT_TCL_META_DATA_TYPE			GENMASK(1, 0)
+#define HTT_TCL_META_DATA_TYPE_V3		GENMASK(15, 14)
+#define HTT_TCL_META_DATA_VALID_HTT_V3		BIT(0)
 #define HTT_TCL_META_DATA_VALID_HTT		BIT(2)
 
 /* vdev meta data */
@@ -26,6 +28,7 @@ struct ath12k_pdev_dp;
 /* peer meta data */
 #define HTT_TCL_META_DATA_TYPE_PEER_BASED	0
 #define HTT_TCL_META_DATA_PEER_ID		GENMASK(15, 3)
+#define HTT_TCL_META_DATA_PEER_ID_V3		GENMASK(13, 1)
 
 /* Global sequence number */
 #define HTT_TCL_META_DATA_TYPE_GLOBAL_SEQ_NUM		3
@@ -287,6 +290,7 @@ struct htt_h2t_msg_type_rxdma_rxole_ppe_cfg {
 
 #define HTT_VER_REQ_INFO_MSG_ID		GENMASK(7, 0)
 #define HTT_OPTION_TCL_METADATA_VER_V2	2
+#define HTT_OPTION_TCL_METADATA_VER_V3	3
 #define HTT_OPTION_TAG			GENMASK(7, 0)
 #define HTT_OPTION_LEN			GENMASK(15, 8)
 #define HTT_OPTION_VALUE		GENMASK(31, 16)

@@ -93,9 +93,7 @@ static int ath12k_dp_tx_me6(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
 	/*
 	 * Prepare metadata with peer_id
 	 */
-	mdata |= u16_encode_bits(HTT_TCL_META_DATA_TYPE_PEER_BASED,
-				 HTT_TCL_META_DATA_TYPE);
-	mdata |= u16_encode_bits(peer_id, HTT_TCL_META_DATA_PEER_ID);
+	mdata |= ath12k_dp_get_peer_based_tcl_metadata(dp, peer_id, 0);
 
 	msdu_info->to_fw = 1;
 	msdu_info->ext_kmem = false;

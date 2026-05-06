@@ -593,6 +593,7 @@ static int ath12k_wifi8_dp_op_device_init(struct ath12k_dp *dp)
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
 	int ret;
 
+	dp->tcl_metadata_ver = HTT_OPTION_TCL_METADATA_VER_V3;
 	ret = ath12k_dp_mon_rx_alloc(dp);
 	if (ret) {
 		ath12k_warn(dp->ab, "failed to setup rxdma rings ret = %d\n", ret);
@@ -768,14 +769,15 @@ static void ath12k_wifi8_dp_link_vif_configure(struct ath12k_dp *dp,
 		 */
 		dp_vif->dp_vif_id = dp_link_vif->vdev_id;
 
-		dp_link_vif->tcl_metadata = u32_encode_bits(1, HTT_TCL_META_DATA_TYPE) |
+		dp_link_vif->tcl_metadata =
+			u32_encode_bits(1, HTT_TCL_META_DATA_TYPE_V3) |
 			u32_encode_bits(arvif->vdev_id,
-					HTT_TCL_META_DATA_VDEV_ID) |
+					HTT_TCL_META_DATA_VDEV_ID_V3) |
 			u32_encode_bits(dp_link_vif->pdev_idx,
-					HTT_TCL_META_DATA_PDEV_ID);
+					HTT_TCL_META_DATA_PDEV_ID_V3);
 
 		/* set HTT extension valid bit to 0 by default */
-		dp_link_vif->tcl_metadata &= ~HTT_TCL_META_DATA_VALID_HTT;
+		dp_link_vif->tcl_metadata &= ~HTT_TCL_META_DATA_VALID_HTT_V3;
 	}
 
 	ath12k_wifi8_dp_vif_configure(dp, ahvif, ATH12K_DP_OP_UPDATE);

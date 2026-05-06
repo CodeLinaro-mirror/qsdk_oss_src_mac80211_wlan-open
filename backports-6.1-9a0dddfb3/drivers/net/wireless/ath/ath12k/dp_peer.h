@@ -437,6 +437,8 @@ ath12k_dp_link_peer_find_by_logical_link_id(struct ath12k_dp_peer *dp_peer, u8 l
 struct ath12k_dp_link_peer *
 ath12k_dp_link_peer_find_by_mac_addr(struct ath12k_dp_peer *dp_peer,
 				     const u8 *addr);
+u16 ath12k_dp_get_peer_based_tcl_metadata(struct ath12k_dp *dp, u16 peer_id,
+					  u8 valid_htt_ext);
 #ifndef CPTCFG_EXT_IPA_OFFLOAD
 static inline
 void ath12k_dp_ipa_peer_unmap_event_wds(struct ath12k_base *ab, u8 vdev_id,
