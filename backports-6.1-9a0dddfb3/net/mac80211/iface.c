@@ -536,8 +536,10 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata, bool going_do
 	     sdata->vif.valid_links);
 
 	sdata->vif.bss_conf.csa_active = false;
-	if (sdata->vif.type == NL80211_IFTYPE_STATION)
+	if (sdata->vif.type == NL80211_IFTYPE_STATION) {
 		sdata->deflink.u.mgd.csa.waiting_bcn = false;
+		sdata->deflink.u.mgd.csa.bw_reconfig = false;
+	}
 	ieee80211_vif_unblock_queues_csa(sdata);
 
 	wiphy_work_cancel(local->hw.wiphy, &sdata->deflink.csa.finalize_work);
