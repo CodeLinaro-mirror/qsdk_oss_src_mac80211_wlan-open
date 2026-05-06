@@ -251,6 +251,11 @@ module_param_named(reorder_VI_timeout, ath12k_reorder_VI_timeout, uint, 0644);
 MODULE_PARM_DESC(reorder_VI_timeout, "Reorder VI timeout (ms)");
 EXPORT_SYMBOL(ath12k_reorder_VI_timeout);
 
+static unsigned int ath12k_erp_cumac_config = ATH12K_ERP_CUMAC_PDEV_SUSPEND;
+module_param_named(erp_cumac_config, ath12k_erp_cumac_config, uint, 0644);
+MODULE_PARM_DESC(erp_cumac_config,
+		 "ErP CUMAC configuration bitmap: BIT(0): pdev suspend, BIT(1): Q6 power down");
+
 /* protected with ath12k_hw_group_mutex */
 static struct list_head ath12k_hw_group_list = LIST_HEAD_INIT(ath12k_hw_group_list);
 
@@ -1140,6 +1145,15 @@ void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag, bool standby_
 		skip_power_down = false;
 
 		if (standby_mode) {
+			/* If CUMAC and skip pdev suspend */
+			if (ab->is_cumac_chip &&
+			    !(ath12k_erp_cumac_config & ATH12K_ERP_CUMAC_PDEV_SUSPEND))
+				continue;
+			/* If CUMAC and skip Q6 power down */
+			else if (ab->is_cumac_chip &&
+				!(ath12k_erp_cumac_config & ATH12K_ERP_CUMAC_Q6_PWR_DOWN))
+				skip_power_down = true;
+
 			for (j = 0; j < ab->num_radios; j++) {
 				ar = ab->pdevs[j].ar;
 

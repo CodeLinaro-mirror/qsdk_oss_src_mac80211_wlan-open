@@ -2638,6 +2638,11 @@ struct ath12k_skb_tx_info {
 	struct ieee80211_tx_rate rate;
 };
 
+enum ath12k_core_erp_cumac_config_bitmap {
+	ATH12K_ERP_CUMAC_PDEV_SUSPEND = BIT(0),
+	ATH12K_ERP_CUMAC_Q6_PWR_DOWN = BIT(1),
+};
+
 void ath12k_core_panic_notifier_unregister(struct ath12k_base *ab);
 int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready);
 int ath12k_core_init(struct ath12k_base *ath12k);
