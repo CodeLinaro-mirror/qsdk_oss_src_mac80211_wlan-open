@@ -704,6 +704,9 @@ enum ath12k_dbg_htt_tlv_tag {
 	HTT_STATS_TXQ_COMBINED_SEQ_STATE_TAG            = 257,
 	HTT_STATS_CTL_TAG                               = 258,
 	HTT_STATS_ENHANCED_CTL_TAG                      = 259,
+	HTT_STATS_NPCA_STATS_TAG			= 260,
+	HTT_STATS_SCHED_TXQ_TX_MODE_SIMPLIFIED_TAG	= 261,
+	HTT_STATS_SCHED_TXQ_TX_MODE_WINNER_TAG		= 262,
 	HTT_STATS_MAX_TAG,
 };
 
@@ -1294,7 +1297,7 @@ struct ath12k_htt_rx_pdev_rate_ext_stats_tlv {
 #define HTT_TX_PDEV_MAX_SIFS_BURST_STATS       9
 #define HTT_TX_PDEV_MAX_SIFS_BURST_HIST_STATS  10
 #define HTT_TX_PDEV_MAX_PHY_ERR_STATS          18
-#define HTT_TX_PDEV_SCHED_TX_MODE_MAX          4
+#define HTT_TX_PDEV_SCHED_TX_MODE_MAX          22
 #define HTT_TX_PDEV_NUM_SCHED_ORDER_LOG        20
 
 #define HTT_RX_STATS_REFILL_MAX_RING         4
@@ -1343,6 +1346,14 @@ struct ath12k_htt_tx_pdev_stats_sched_per_txq_tlv {
 	__le32 num_aborted_second_sched_command;
 	__le32 total_combined_sched_cmds_success;
 	__le32 total_combined_sched_cmds_failed;
+} __packed;
+
+struct ath12k_htt_sched_txq_tx_mode_winner_tlv {
+	DECLARE_FLEX_ARRAY(__le32, sched_tx_mode_winner);
+} __packed;
+
+struct ath12k_htt_sched_txq_tx_mode_simplified_tlv {
+	DECLARE_FLEX_ARRAY(__le32, sched_tx_mode_simplified);
 } __packed;
 
 struct ath12k_htt_sched_txq_cmd_posted_tlv {
@@ -4508,6 +4519,27 @@ struct ath12k_htt_tx_rate_stats {
 	__le32 ppdus_ack_failed;
 	__le32 mpdus_tried;
 	__le32 mpdus_failed;
+} __packed;
+
+struct ath12k_htt_stats_npca_stats_tlv {
+	__le32 mu_rts_tx_success;
+	__le32 mu_rts_tx_fail;
+	__le32 mu_rts_rx_success;
+	__le32 bsrp_ntb_tx_success;
+	__le32 bsrp_ntb_tx_fail;
+	__le32 bsrp_ntb_rx_success;
+	__le32 bsrp_tx_success;
+	__le32 bsrp_tx_fail;
+	__le32 bsrp_rx_success;
+	__le32 tx_bw[ATH12K_HTT_TX_PDEV_STATS_NUM_BN_BW_COUNTERS];
+	__le32 tx_punctured_mode[ATH12K_HTT_TX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS];
+	__le32 rx_bw[ATH12K_HTT_TX_PDEV_STATS_NUM_BN_BW_COUNTERS];
+	__le32 rx_punctured_mode[ATH12K_HTT_TX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS];
+	__le32 schd_cmd_result_npca[ATH12K_HTT_STATS_MAX_SCH_CMD_RESULT];
+	struct ath12k_htt_tx_rate_stats
+		npca_per_bw[ATH12K_HTT_TX_PDEV_STATS_NUM_BN_BW_COUNTERS];
+	struct ath12k_htt_tx_rate_stats npca_per_tx_su_punctured_mode
+			[ATH12K_HTT_TX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS];
 } __packed;
 
 #define ATH12K_HTT_TX_PER_RATE_STATS_NUM_QUEUE_DEPTH_COUNTERS 2

@@ -4181,6 +4181,48 @@ ath12k_htt_print_tx_pdev_stats_sched_per_txq_tlv(const void *tag_buf,
 			 "total_combined_sched_cmds_failed = %u\n\n",
 			 le32_to_cpu(htt_stats_buf->total_combined_sched_cmds_failed));
 
+	stats_req->buf_len = len;
+}
+
+static void
+ath12k_htt_print_sched_txq_tx_mode_winner_tlv(const void *tag_buf,
+					      u16 tag_len,
+					      struct debug_htt_stats_req *stats_req)
+{
+	const struct ath12k_htt_sched_txq_tx_mode_winner_tlv *htt_stats_buf = tag_buf;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE, len = stats_req->buf_len;
+	u16 num_elements = min_t(u16, tag_len >> 2, HTT_TX_PDEV_SCHED_TX_MODE_MAX);
+	u8 *buf = stats_req->buf;
+
+	if (tag_len < sizeof(__le32))
+		return;
+
+	len += scnprintf(buf + len, buf_len - len, "HTT_SCHED_TXQ_TX_MODE_WINNER_TLV:\n");
+	len += print_array_to_buf(buf, len, "sched_tx_mode_winner",
+				  htt_stats_buf->sched_tx_mode_winner,
+				  num_elements, "\n\n");
+
+	stats_req->buf_len = len;
+}
+
+static void
+ath12k_htt_print_sched_txq_tx_mode_simplified_tlv(const void *tag_buf,
+						  u16 tag_len,
+						  struct debug_htt_stats_req *stats_req)
+{
+	const struct ath12k_htt_sched_txq_tx_mode_simplified_tlv *htt_stats_buf = tag_buf;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE, len = stats_req->buf_len;
+	u16 num_elements = min_t(u16, tag_len >> 2, HTT_TX_PDEV_SCHED_TX_MODE_MAX);
+	u8 *buf = stats_req->buf;
+
+	if (tag_len < sizeof(__le32))
+		return;
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "HTT_SCHED_TXQ_TX_MODE_SIMPLIFIED_TLV:\n");
+	len += print_array_to_buf(buf, len, "sched_tx_mode_simplified",
+				  htt_stats_buf->sched_tx_mode_simplified,
+				  num_elements, "\n\n");
 
 	stats_req->buf_len = len;
 }
@@ -11431,6 +11473,130 @@ ath12k_htt_print_tx_pdev_bn_ul_mu_ofdma_sch_stats_tlv(const void *tag_buf, u16 t
 	stats_req->buf_len = len;
 }
 
+static void ath12k_htt_stats_print_npca_stats_tlv(const void *tag_buf,
+						  u16 tag_len,
+						  struct debug_htt_stats_req *stats_req)
+{
+	const struct ath12k_htt_stats_npca_stats_tlv *htt_stats_buf = tag_buf;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE, len = stats_req->buf_len;
+	u8 *buf = stats_req->buf, i;
+
+	if (tag_len < sizeof(*htt_stats_buf))
+		return;
+
+	len += scnprintf(buf + len, buf_len - len, "\nNPCA STATS:\n");
+
+	len += scnprintf(buf + len, buf_len - len, "MU rts tx success = %u\n",
+			 le32_to_cpu(htt_stats_buf->mu_rts_tx_success));
+	len += scnprintf(buf + len, buf_len - len, "MU rts tx failure = %u\n",
+			 le32_to_cpu(htt_stats_buf->mu_rts_tx_fail));
+	len += scnprintf(buf + len, buf_len - len, "MU rts rx success = %u\n",
+			 le32_to_cpu(htt_stats_buf->mu_rts_rx_success));
+	len += scnprintf(buf + len, buf_len - len, "bsrp ntb tx success = %u\n",
+			 le32_to_cpu(htt_stats_buf->bsrp_ntb_tx_success));
+	len += scnprintf(buf + len, buf_len - len, "bsrp ntb tx failure = %u\n",
+			 le32_to_cpu(htt_stats_buf->bsrp_ntb_tx_fail));
+	len += scnprintf(buf + len, buf_len - len, "bsrp ntb rx success = %u\n",
+			 le32_to_cpu(htt_stats_buf->bsrp_ntb_rx_success));
+	len += scnprintf(buf + len, buf_len - len, "bsrp tx success = %u\n",
+			 le32_to_cpu(htt_stats_buf->bsrp_tx_success));
+	len += scnprintf(buf + len, buf_len - len, "bsrp tx failure = %u\n",
+			 le32_to_cpu(htt_stats_buf->bsrp_tx_fail));
+	len += scnprintf(buf + len, buf_len - len, "bsrp rx success = %u\n",
+			 le32_to_cpu(htt_stats_buf->bsrp_rx_success));
+	len += print_array_to_buf(buf, len, "NPCA sched cmd result = ",
+				  htt_stats_buf->schd_cmd_result_npca,
+				  ATH12K_HTT_STATS_MAX_SCH_CMD_RESULT, "\n");
+	len += print_array_to_buf(buf, len, "NPCA tx bw = ",
+				  htt_stats_buf->tx_bw,
+				  ATH12K_HTT_TX_PDEV_STATS_NUM_BN_BW_COUNTERS, "\n");
+	len += print_array_to_buf(buf, len, "NPCA tx puncture bw = ",
+				  htt_stats_buf->tx_punctured_mode,
+				  ATH12K_HTT_TX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS,
+				  "\n");
+	len += print_array_to_buf(buf, len, "npca_rx_bw = ",
+				  htt_stats_buf->rx_bw,
+				  ATH12K_HTT_TX_PDEV_STATS_NUM_BN_BW_COUNTERS, "\n");
+	len += print_array_to_buf(buf, len, "npca_su_rx_punctured_mode = ",
+				  htt_stats_buf->rx_punctured_mode,
+				  ATH12K_HTT_TX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS,
+				  "\n");
+
+	len += scnprintf(buf + len, buf_len - len, "\nPER per NPCA BW:\n");
+	len += scnprintf(buf + len, buf_len - len, "ppdus_tried =");
+
+	for (i = 0; i < ATH12K_HTT_TX_PDEV_STATS_NUM_BN_BW_COUNTERS; i++)
+		len += scnprintf(buf + len, buf_len - len, " %u:%u ", i,
+				 le32_to_cpu(htt_stats_buf->npca_per_bw[i].ppdus_tried));
+
+	len += scnprintf(buf + len, buf_len - len, "\nppdus_ack_failed =");
+
+	for (i = 0; i < ATH12K_HTT_TX_PDEV_STATS_NUM_BN_BW_COUNTERS; i++) {
+		const struct ath12k_htt_tx_rate_stats *s = &htt_stats_buf->npca_per_bw[i];
+
+		len += scnprintf(buf + len, buf_len - len, " %u:%u ", i,
+				 le32_to_cpu(s->ppdus_ack_failed));
+	}
+
+	len += scnprintf(buf + len, buf_len - len, "\nmpdus_tried =");
+
+	for (i = 0; i < ATH12K_HTT_TX_PDEV_STATS_NUM_BN_BW_COUNTERS; i++)
+		len += scnprintf(buf + len, buf_len - len, " %u:%u ", i,
+				 le32_to_cpu(htt_stats_buf->npca_per_bw[i].mpdus_tried));
+
+	len += scnprintf(buf + len, buf_len - len, "\nmpdus_failed =");
+
+	for (i = 0; i < ATH12K_HTT_TX_PDEV_STATS_NUM_BN_BW_COUNTERS; i++)
+		len += scnprintf(buf + len, buf_len - len, " %u:%u ", i,
+				 le32_to_cpu(htt_stats_buf->npca_per_bw[i].mpdus_failed));
+
+	len += scnprintf(buf + len, buf_len - len, "\n\nPER per NPCA punctured_mode:\n");
+
+	len += scnprintf(buf + len, buf_len - len, "ppdus_tried =");
+
+	for (i = 0; i < ATH12K_HTT_TX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS; i++) {
+		const struct ath12k_htt_tx_rate_stats *s =
+			&htt_stats_buf->npca_per_tx_su_punctured_mode[i];
+
+		len += scnprintf(buf + len, buf_len - len, " %u:%u ", i,
+				 le32_to_cpu(s->ppdus_tried));
+	}
+
+	len += scnprintf(buf + len, buf_len - len, "\nppdus_failed =");
+
+	for (i = 0; i < ATH12K_HTT_TX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS; i++) {
+		const struct ath12k_htt_tx_rate_stats *s =
+			&htt_stats_buf->npca_per_tx_su_punctured_mode[i];
+
+		len += scnprintf(buf + len, buf_len - len, " %u:%u ", i,
+				 le32_to_cpu(s->ppdus_ack_failed));
+	}
+
+	len += scnprintf(buf + len, buf_len - len, "\nmpdus_tried =");
+
+	for (i = 0; i < ATH12K_HTT_TX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS; i++) {
+		const struct ath12k_htt_tx_rate_stats *s =
+			&htt_stats_buf->npca_per_tx_su_punctured_mode[i];
+
+		len += scnprintf(buf + len, buf_len - len, " %u:%u ", i,
+				 le32_to_cpu(s->mpdus_tried));
+	}
+
+	len += scnprintf(buf + len, buf_len - len, "\nmpdus_failed =");
+
+	for (i = 0; i < ATH12K_HTT_TX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS; i++) {
+		const struct ath12k_htt_tx_rate_stats *s =
+			&htt_stats_buf->npca_per_tx_su_punctured_mode[i];
+
+		len += scnprintf(buf + len, buf_len - len, " %u:%u ", i,
+				 le32_to_cpu(s->mpdus_failed));
+	}
+
+	len += scnprintf(buf + len, buf_len - len, "\n");
+
+	stats_req->buf_len = len;
+}
+
 static inline void
 ath12k_htt_print_rx_fw_ring_stats(const void *tag_buf, u16 tag_len,
 				  struct debug_htt_stats_req *stats_req)
@@ -14832,6 +14998,19 @@ static int ath12k_dbg_htt_ext_stats_parse(struct ath12k_base *ab,
 
 	case HTT_STATS_DPD_HW_CAL_RESULTS_TAG:
 		ath12k_htt_print_dpd_hw_cal_results_tlv(tag_buf, len, stats_req);
+		break;
+
+	case HTT_STATS_NPCA_STATS_TAG:
+		ath12k_htt_stats_print_npca_stats_tlv(tag_buf, len, stats_req);
+		break;
+
+	case HTT_STATS_SCHED_TXQ_TX_MODE_WINNER_TAG:
+		ath12k_htt_print_sched_txq_tx_mode_winner_tlv(tag_buf, len, stats_req);
+		break;
+
+	case HTT_STATS_SCHED_TXQ_TX_MODE_SIMPLIFIED_TAG:
+		ath12k_htt_print_sched_txq_tx_mode_simplified_tlv(tag_buf,
+								  len, stats_req);
 		break;
 
 	default:
