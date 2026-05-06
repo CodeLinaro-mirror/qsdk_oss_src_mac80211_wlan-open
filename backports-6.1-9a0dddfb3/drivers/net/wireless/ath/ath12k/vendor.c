@@ -273,6 +273,25 @@ ath12k_oem_data_policy[QCA_WLAN_VENDOR_ATTR_OEM_DATA_PARAMS_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_OEM_DATA_RESPONSE_EXPECTED] = { .type = NLA_FLAG },
 };
 
+/* Inner (level-2) policy: validates each {PCP, TID} entry nested inside TABLE */
+static const struct nla_policy
+ath12k_pcp_tid_entry_policy[QCA_WLAN_VENDOR_ATTR_PCP_TID_ENTRY_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_PCP_TID_ENTRY_PCP] = { .type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_PCP_TID_ENTRY_TID] = { .type = NLA_U8 },
+};
+
+/* Outer (level-1) policy: TABLE is a nested array of pcp_tid_entry attrs */
+static const struct nla_policy
+ath12k_pcp_tid_map_policy[QCA_WLAN_VENDOR_ATTR_PCP_TID_MAP_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_PCP_TID_MAP_TABLE] = { .type = NLA_NESTED },
+};
+
+static const struct nla_policy
+ath12k_tid_map_prty_policy[QCA_WLAN_VENDOR_ATTR_TID_MAP_PRECEDENCE_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_TID_MAP_PRECEDENCE_VAL]     = { .type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_TID_MAP_PRECEDENCE_TID_DEF] = { .type = NLA_U8 },
+};
+
 /**
  * ath12k_vendor_repurpose_link() - Mark an MLO link for repurposing
  * @wiphy: wiphy device pointer
@@ -11997,6 +12016,186 @@ ath12k_vendor_extended_monitor_handler(struct wiphy *wiphy,
 	return 0;
 }
 
+static int ath12k_vendor_set_pcp_tid_map(struct wiphy *wiphy,
+					 struct wireless_dev *wdev,
+					 const void *data, int data_len)
+{
+	struct ieee80211_hw	*hw = wiphy_to_ieee80211_hw(wiphy);
+	struct ath12k_hw	*ah = hw->priv;
+	struct ath12k_hw_group	*ag = ah->ag;
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_PCP_TID_MAP_MAX + 1];
+	struct ath12k_dp_hw_group *dp_hw_grp = ag->dp_hw_grp;
+	struct nlattr *entry;
+	int ret, rem;
+	u8 pcp, tid;
+
+	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_PCP_TID_MAP_MAX,
+			data, data_len, ath12k_pcp_tid_map_policy, NULL);
+	if (ret) {
+		ath12k_err(NULL, "pcp_tid_map: nla_parse failed: %d\n", ret);
+		return ret;
+	}
+
+	if (!tb[QCA_WLAN_VENDOR_ATTR_PCP_TID_MAP_TABLE]) {
+		ath12k_err(NULL, "pcp_tid_map: missing TABLE attribute\n");
+		return -EINVAL;
+	}
+
+	/* Iterate nested {PCP, TID} entries — partial update: only the PCPs
+	 * present in this message are modified; others retain current values.
+	 */
+	nla_for_each_nested(entry,
+			    tb[QCA_WLAN_VENDOR_ATTR_PCP_TID_MAP_TABLE], rem) {
+		struct nlattr *etb[QCA_WLAN_VENDOR_ATTR_PCP_TID_ENTRY_MAX + 1];
+
+		ret = nla_parse_nested(etb,
+				       QCA_WLAN_VENDOR_ATTR_PCP_TID_ENTRY_MAX,
+				       entry, ath12k_pcp_tid_entry_policy, NULL);
+		if (ret) {
+			ath12k_err(NULL,
+				   "pcp_tid_map: nested entry parse failed: %d\n",
+					ret);
+			return -EINVAL;
+		}
+
+		if (!etb[QCA_WLAN_VENDOR_ATTR_PCP_TID_ENTRY_PCP] ||
+		    !etb[QCA_WLAN_VENDOR_ATTR_PCP_TID_ENTRY_TID]) {
+			ath12k_err(NULL,
+				   "pcp_tid_map: entry missing PCP or TID attr\n");
+			return -EINVAL;
+		}
+
+		pcp = nla_get_u8(etb[QCA_WLAN_VENDOR_ATTR_PCP_TID_ENTRY_PCP]);
+		tid = nla_get_u8(etb[QCA_WLAN_VENDOR_ATTR_PCP_TID_ENTRY_TID]);
+
+		if (pcp > ATH12K_MAX_PCP || tid > ATH12K_MAX_TID) {
+			ath12k_err(NULL,
+				   "pcp_tid_map: PCP=%u TID=%u out of range (0-7)\n",
+					pcp, tid);
+			return -EINVAL;
+		}
+
+		/* Partial update: only this PCP slot is modified */
+		dp_hw_grp->pcp_tid_map[pcp] = tid;
+	}
+
+	/* Program all SOC TCL registers via the wrapper API (sanity checks
+	 * are performed inside ath12k_dp_pcp_tid_map before HAL call)
+	 */
+	return ath12k_dp_pcp_tid_map(dp_hw_grp);
+}
+
+static int ath12k_vendor_get_pcp_tid_map(struct wiphy *wiphy,
+					 struct wireless_dev *wdev,
+					 const void *data, int data_len)
+{
+	struct ieee80211_hw       *hw        = wiphy_to_ieee80211_hw(wiphy);
+	struct ath12k_hw          *ah        = hw->priv;
+	struct ath12k_hw_group    *ag       = ah->ag;
+	struct ath12k_dp_hw_group *dp_hw_grp = ag->dp_hw_grp;
+	struct sk_buff *skb;
+	int i;
+
+	skb = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, NLMSG_DEFAULT_SIZE);
+	if (!skb)
+		return -ENOMEM;
+
+	/* Build NLA_NESTED reply to match what the userspace
+	 * pcp_tid_map_get_cb() uses nla_for_each_nested(entry, TABLE)
+	 * then nla_parse_nested(etb, entry) to extract PCP and TID from
+	 * each entry — so each entry must itself be a nested attribute.
+	 */
+	struct nlattr *table_nest, *entry_nest;
+
+	table_nest = nla_nest_start(skb, QCA_WLAN_VENDOR_ATTR_PCP_TID_MAP_TABLE);
+	if (!table_nest)
+		goto fail;
+
+	for (i = 0; i < ATH12K_DP_PCP_TID_MAP_SIZE; i++) {
+		/* Each {PCP, TID} pair wrapped in its own nested attr */
+		entry_nest = nla_nest_start(skb, i);
+		if (!entry_nest)
+			goto fail;
+
+		if (nla_put_u8(skb, QCA_WLAN_VENDOR_ATTR_PCP_TID_ENTRY_PCP, (u8)i) ||
+		    nla_put_u8(skb, QCA_WLAN_VENDOR_ATTR_PCP_TID_ENTRY_TID,
+			       dp_hw_grp->pcp_tid_map[i]))
+			goto fail;
+
+		nla_nest_end(skb, entry_nest);
+	}
+	nla_nest_end(skb, table_nest);
+
+	return cfg80211_vendor_cmd_reply(skb);
+
+fail:
+	kfree_skb(skb);
+	return -EMSGSIZE;
+}
+
+static int ath12k_vendor_set_tid_map_precedence(struct wiphy *wiphy,
+						struct wireless_dev *wdev,
+						const void *data, int data_len)
+{
+	struct ieee80211_hw	*hw	= wiphy_to_ieee80211_hw(wiphy);
+	struct ath12k_hw	*ah	= hw->priv;
+	struct ath12k_hw_group	*ag	= ah->ag;
+	struct ath12k_dp_hw_group *dp_hw_grp	= ag->dp_hw_grp;
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_TID_MAP_PRECEDENCE_MAX + 1];
+	u8 prec_val;
+	int ret;
+
+	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_TID_MAP_PRECEDENCE_MAX,
+			data, data_len, ath12k_tid_map_prty_policy, NULL);
+	if (ret) {
+		ath12k_err(NULL, "tid_map_prty: nla_parse failed: %d\n", ret);
+		return ret;
+	}
+
+	if (!tb[QCA_WLAN_VENDOR_ATTR_TID_MAP_PRECEDENCE_VAL]) {
+		ath12k_err(NULL, "tid_map_prty: missing VAL attribute\n");
+		return -EINVAL;
+	}
+
+	prec_val = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_TID_MAP_PRECEDENCE_VAL]);
+	if (prec_val > 0xB) {
+		ath12k_err(NULL, "tid_map_prty: VAL=%u out of range (0-11)\n",
+			   prec_val);
+		return -EINVAL;
+	}
+
+	/* Store in dp_hw_grp (ath12k-private). Do NOT write to wiphy. */
+	dp_hw_grp->tid_map_precedence = prec_val;
+
+	/* Step 3: Program all SOC TCL registers (reads from dp_hw_grp) */
+	return ath12k_dp_tid_map_precedence(dp_hw_grp);
+}
+
+static int ath12k_vendor_get_tid_map_precedence(struct wiphy *wiphy,
+						struct wireless_dev *wdev,
+						const void *data, int data_len)
+{
+	struct ieee80211_hw       *hw        = wiphy_to_ieee80211_hw(wiphy);
+	struct ath12k_hw          *ah        = hw->priv;
+	struct ath12k_hw_group    *ahg       = ah->ag;
+	struct ath12k_dp_hw_group *dp_hw_grp = ahg->dp_hw_grp;
+	struct sk_buff *skb;
+
+	skb = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, NLMSG_DEFAULT_SIZE);
+	if (!skb)
+		return -ENOMEM;
+
+	if (nla_put_u8(skb, QCA_WLAN_VENDOR_ATTR_TID_MAP_PRECEDENCE_VAL,
+		       dp_hw_grp->tid_map_precedence))
+		goto fail;
+
+	return cfg80211_vendor_cmd_reply(skb);
+
+fail:
+	kfree_skb(skb);
+	return -EMSGSIZE;
+}
+
 static int ath12k_vendor_get_sta_info_dumpit(struct wiphy *wiphy,
 					     struct wireless_dev *wdev,
 					     struct sk_buff *skb,
@@ -12478,6 +12677,34 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.doit = ath12k_vendor_oem_data,
 		.policy = ath12k_oem_data_policy,
 		.maxattr = QCA_WLAN_VENDOR_ATTR_OEM_DATA_PARAMS_MAX,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_SET_PCP_TID_MAP,
+		.doit = ath12k_vendor_set_pcp_tid_map,
+		.policy = ath12k_pcp_tid_map_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_PCP_TID_MAP_MAX,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_GET_PCP_TID_MAP,
+		.doit = ath12k_vendor_get_pcp_tid_map,
+		.policy = ath12k_pcp_tid_map_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_PCP_TID_MAP_MAX,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_SET_TID_MAP_PRECEDENCE,
+		.doit = ath12k_vendor_set_tid_map_precedence,
+		.policy = ath12k_tid_map_prty_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_TID_MAP_PRECEDENCE_MAX,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_GET_TID_MAP_PRECEDENCE,
+		.doit = ath12k_vendor_get_tid_map_precedence,
+		.policy = ath12k_tid_map_prty_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_TID_MAP_PRECEDENCE_MAX,
 	},
 };
 

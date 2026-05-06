@@ -133,6 +133,9 @@ struct ath12k_dp_hw_link {
 #define ATH12K_MAX_AHVIF_ID	255
 #define ATH12K_INVALID_AHVIF_ID	0
 
+#define ATH12K_DP_PCP_TID_MAP_SIZE	8
+#define ATH12K_DP_MAX_TID_PRECEDENCE_VAL 11
+
 struct ath12k_dp_hw {
 	struct ath12k_dp_peer __rcu *dp_peer_list[MAX_DP_PEER_LIST_SIZE];
 	DECLARE_BITMAP(free_peer_id_map, ATH12K_MAX_PEER_ID);
@@ -162,6 +165,8 @@ struct ath12k_dp_hw_group {
 	/* protects shared TX SPT page and descriptor pool initialization across SOCs */
 	struct mutex tx_init_lock;
 	struct device *tx_spt_dev;
+	u8  pcp_tid_map[ATH12K_DP_PCP_TID_MAP_SIZE];
+	u8  tid_map_precedence;
 
 	/* Keep Last */
 	u8 arch_data[] __aligned(sizeof(void *));

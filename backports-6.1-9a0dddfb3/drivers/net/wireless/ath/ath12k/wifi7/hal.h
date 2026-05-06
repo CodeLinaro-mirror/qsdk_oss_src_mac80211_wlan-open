@@ -99,6 +99,31 @@ extern const struct ath12k_hw_version_map ath12k_wifi7_hw_ver_map[];
 #define HAL_TCL_VDEV_MCAST_PACKET_CTRL_MASK 0x3
 #define HAL_TCL_VDEV_MCAST_PACKET_CTRL_SHIFT 0x2
 
+/*
+ * TCL register offsets (relative to SOC base address).
+ * Programmed per-SOC via ath12k_hif_write32().
+ */
+#define HAL_TCL_R0_PCP_TID_MAP_OFFSET	0x6C0
+#define HAL_TCL_R0_TID_MAP_PRTY_OFFSET	0x6E8
+#define HAL_TCL_PCP_TID_MAP_MASK	GENMASK(23, 0)
+/* bits [3:0]: precedence VAL (0-11) */
+#define HAL_TCL_TID_MAP_PRTY_VAL_MASK	GENMASK(3, 0)
+/* bits [7:5]: default TID (0-7) */
+#define HAL_TCL_TID_MAP_PRTY_DEF_MASK	GENMASK(7, 5)
+#define HAL_TCL_R0_PCP_TID_MAP_ADDR	(HAL_SEQ_WCSS_UMAC_TCL_REG \
+					 + HAL_TCL_R0_PCP_TID_MAP_OFFSET)
+#define HAL_TCL_R0_PCP_TID_MAP_PRTY_OFFSET	(HAL_SEQ_WCSS_UMAC_TCL_REG \
+						 + HAL_TCL_R0_TID_MAP_PRTY_OFFSET)
+
+#define HAL_TCL_R0_PCP_TID_MAP_PCP_7        GENMASK(23, 21)	/* 0xe00000 */
+#define HAL_TCL_R0_PCP_TID_MAP_PCP_6        GENMASK(20, 18)	/* 0x1c0000 */
+#define HAL_TCL_R0_PCP_TID_MAP_PCP_5        GENMASK(17, 15)	/* 0x38000  */
+#define HAL_TCL_R0_PCP_TID_MAP_PCP_4        GENMASK(14, 12)	/* 0x7000   */
+#define HAL_TCL_R0_PCP_TID_MAP_PCP_3        GENMASK(11, 9)	/* 0xe00    */
+#define HAL_TCL_R0_PCP_TID_MAP_PCP_2        GENMASK(8, 6)	/* 0x1c0    */
+#define HAL_TCL_R0_PCP_TID_MAP_PCP_1        GENMASK(5, 3)	/* 0x38     */
+#define HAL_TCL_R0_PCP_TID_MAP_PCP_0        GENMASK(2, 0)	/* 0x7      */
+
 /* SW2TCL(x) R0 ring configuration address */
 #define HAL_TCL1_RING_CMN_CTRL_REG		0x00000020
 #define HAL_TCL1_RING_DSCP_TID_MAP		0x00000240

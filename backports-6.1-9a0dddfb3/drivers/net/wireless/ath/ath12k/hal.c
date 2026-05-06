@@ -83,6 +83,18 @@ void ath12k_hal_tx_set_dscp_tid_map(struct ath12k_base *ab, u8 *map, int id)
 }
 EXPORT_SYMBOL(ath12k_hal_tx_set_dscp_tid_map);
 
+void ath12k_hal_tx_set_pcp_tid_map(struct ath12k_base *ab, const u8 *map)
+{
+	ab->hal.hal_ops->tx_set_pcp_tid_map(ab, map);
+}
+EXPORT_SYMBOL(ath12k_hal_tx_set_pcp_tid_map);
+
+void ath12k_hal_tx_set_tid_map_precedence(struct ath12k_base *ab, const u8 precedence)
+{
+	ab->hal.hal_ops->tx_set_tid_map_precedence(ab, precedence);
+}
+EXPORT_SYMBOL(ath12k_hal_tx_set_tid_map_precedence);
+
 void ath12k_hal_tx_configure_bank_register(struct ath12k_base *ab,
 					   u32 bank_config, u8 bank_id)
 {

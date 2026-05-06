@@ -60,7 +60,121 @@ u8 ath12k_default_dscp_tid_map[DSCP_TID_MAP_TBL_ENTRY_SIZE] = {
 };
 EXPORT_SYMBOL(ath12k_default_dscp_tid_map);
 
+const u8 ath12k_default_pcp_tid_map[PCP_TID_MAP_TBL_SIZE] = {
+	0, 1, 2, 3, 4, 5, 6, 7,
+};
+EXPORT_SYMBOL(ath12k_default_pcp_tid_map);
 
+/**
+ * ath12k_dp_pcp_tid_map() - Validate and program PCP-TID map to all SOCs.
+ * @dp_hw_grp: Group-level DP structure; pcp_tid_map[] is read from here.
+ *
+ * This is the intelligent wrapper between vendor.c and the HAL.
+ * The HAL function (ath12k_hal_tx_set_pcp_tid_map) is a dumb register writer
+ * with no validation.  All sanity checks are performed here:
+ *
+ *   1. dp_hw_grp must not be NULL.
+ *   2. Each pcp_tid_map[i] must be in range 0-7 (valid TID).
+ *   3. At least one non-NULL SOC with a valid ab pointer must exist.
+ *   4. Each SOC's dp->ab must not be NULL before calling HAL.
+ *
+ * On success, calls ath12k_hal_tx_set_pcp_tid_map(dp->ab, pcp_tid_map)
+ * for every valid SOC in the group.
+ *
+ * Return: 0 on success, -EINVAL on bad arguments, -ENODEV if no SOC found.
+ */
+int ath12k_dp_pcp_tid_map(struct ath12k_dp_hw_group *dp_hw_grp)
+{
+	struct ath12k_dp *dp;
+	bool has_soc = false;
+	int i;
+
+	if (!dp_hw_grp) {
+		ath12k_err(NULL, "pcp_tid_map: dp_hw_grp is NULL\n");
+		return -EINVAL;
+	}
+
+	for (i = 0; i < ATH12K_DP_PCP_TID_MAP_SIZE; i++) {
+		if (dp_hw_grp->pcp_tid_map[i] > 7) {
+			ath12k_err(NULL,
+				   "pcp_tid_map: pcp_tid_map[%d]=%u out of range (0-7)\n",
+				    i, dp_hw_grp->pcp_tid_map[i]);
+			return -EINVAL;
+		}
+	}
+
+	/* Program PCP-TID map to all valid SOCs */
+	for (i = 0; i < ATH12K_MAX_SOCS; i++) {
+		dp = ath12k_dp_hw_grp_to_dp(dp_hw_grp, i);
+		if (dp && dp->ab) {
+			has_soc = true;
+			ath12k_hal_tx_set_pcp_tid_map(dp->ab, dp_hw_grp->pcp_tid_map);
+		}
+	}
+
+	if (!has_soc) {
+		ath12k_err(NULL, "pcp_tid_map: no valid SOC found in group\n");
+		return -ENODEV;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_dp_pcp_tid_map);
+
+/**
+ * ath12k_dp_tid_map_precedence() - Validate and program TID precedence to all SOCs.
+ * @dp_hw_grp: Group-level DP structure; tid_map_precedence is read from here.
+ *
+ * This is the intelligent wrapper between vendor.c and the HAL.
+ * The HAL function (ath12k_hal_tx_set_tid_map_precedence) is a dumb
+ * register writer with no validation.  All sanity checks are performed here:
+ *
+ *   1. dp_hw_grp must not be NULL.
+ *   2. tid_map_precedence must be in range 0-11 (values 12-15 are HW reserved).
+ *   3. At least one non-NULL SOC with a valid ab pointer must exist.
+ *   4. Each SOC's dp->ab must not be NULL before calling HAL.
+ *
+ * On success, calls ath12k_hal_tx_set_tid_map_precedence(dp->ab, precedence)
+ * for every valid SOC in the group.
+ *
+ * Return: 0 on success, -EINVAL on bad arguments, -ENODEV if no SOC found.
+ */
+int ath12k_dp_tid_map_precedence(struct ath12k_dp_hw_group *dp_hw_grp)
+{
+	struct ath12k_dp *dp;
+	bool has_soc = false;
+	u8 i, precedence;
+
+	if (!dp_hw_grp) {
+		ath12k_err(NULL, "tid_map_prty: dp_hw_grp is NULL\n");
+		return -EINVAL;
+	}
+
+	if (dp_hw_grp->tid_map_precedence > ATH12K_DP_MAX_TID_PRECEDENCE_VAL) {
+		ath12k_err(NULL,
+			   "tid_map_prty: precedence=%u out of range (0-11)\n",
+			   dp_hw_grp->tid_map_precedence);
+		return -EINVAL;
+	}
+
+	/* Program TID precedence for all valid SOCs */
+	for (i = 0; i < ATH12K_MAX_SOCS; i++) {
+		dp = ath12k_dp_hw_grp_to_dp(dp_hw_grp, i);
+		if (dp && dp->ab) {
+			has_soc = true;
+			precedence = dp_hw_grp->tid_map_precedence;
+			ath12k_hal_tx_set_tid_map_precedence(dp->ab, precedence);
+		}
+	}
+
+	if (!has_soc) {
+		ath12k_err(NULL, "tid_map_prty: no valid SOC found in group\n");
+		return -ENODEV;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_dp_tid_map_precedence);
 
 enum ath12k_dp_desc_type {
 	ATH12K_DP_TX_DESC,

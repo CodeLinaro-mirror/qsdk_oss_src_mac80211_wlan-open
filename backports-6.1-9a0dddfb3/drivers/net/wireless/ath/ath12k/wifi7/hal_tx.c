@@ -164,3 +164,87 @@ void ath12k_wifi7_hal_tx_set_dscp_tid_map(struct ath12k_base *ab, u8 *map, int i
 			   HAL_TCL1_RING_CMN_CTRL_REG,
 			   ctrl_reg_val);
 }
+
+/**
+ * ath12k_wifi7_hal_tx_set_pcp_tid_map() - Write PCP-TID map to all SOC TCL blocks.
+ * @dp_hw_grp: Group-level dp structure; pcp_tid_map[] is read from here.
+ *
+ * Reads the single group-level pcp_tid_map[] from dp_hw_grp (no per-SOC
+ * copies).  Computes the 24-bit register value using u32_encode_bits() with
+ * the per-PCP _BMSK masks (PCP0 at [2:0], PCP7 at [23:21]).  Iterates all
+ * dp_hw_grp->dp[] entries (up to ATH12K_MAX_SOCS) and writes the same
+ * register value to every non-NULL SOC via ath12k_hif_write32().
+ */
+void ath12k_wifi7_hal_tx_set_pcp_tid_map(struct ath12k_base *ab, const u8 *map)
+{
+	u32 reg_val;
+
+	/* Build the 24-bit register word.
+	 * u32_encode_bits(val, mask) handles the shift internally via
+	 * __ffs(mask) and WARNs on overflow — no manual _SHFT needed.
+	 */
+	reg_val = u32_encode_bits(map[0], HAL_TCL_R0_PCP_TID_MAP_PCP_0) |
+		u32_encode_bits(map[1], HAL_TCL_R0_PCP_TID_MAP_PCP_1) |
+		u32_encode_bits(map[2], HAL_TCL_R0_PCP_TID_MAP_PCP_2) |
+		u32_encode_bits(map[3], HAL_TCL_R0_PCP_TID_MAP_PCP_3) |
+		u32_encode_bits(map[4], HAL_TCL_R0_PCP_TID_MAP_PCP_4) |
+		u32_encode_bits(map[5], HAL_TCL_R0_PCP_TID_MAP_PCP_5) |
+		u32_encode_bits(map[6], HAL_TCL_R0_PCP_TID_MAP_PCP_6) |
+		u32_encode_bits(map[7], HAL_TCL_R0_PCP_TID_MAP_PCP_7);
+
+	ath12k_hif_write32(ab, HAL_TCL_R0_PCP_TID_MAP_ADDR, reg_val);
+}
+EXPORT_SYMBOL(ath12k_wifi7_hal_tx_set_pcp_tid_map);
+
+/**
+ * TID-map Precedence Table
+ *
+ * The precedence value controls which QoS marking takes priority
+ * when mapping traffic to a TID. Higher priority sources appear first.
+ *
+ * Val | Interpretation
+ * ----+----------------------------------------------------------
+ *   0 | DSCP > PCP (S-VLAN > C-VLAN) > HLOS
+ *   1 | DSCP > PCP (C-VLAN > S-VLAN) > HLOS
+ *   2 | DSCP > HLOS > PCP (S-VLAN > C-VLAN)
+ *   3 | DSCP > HLOS > PCP (C-VLAN > S-VLAN)
+ *   4 | PCP (S-VLAN > C-VLAN) > DSCP > HLOS
+ *   5 | PCP (C-VLAN > S-VLAN) > DSCP > HLOS
+ *   6 | PCP (S-VLAN > C-VLAN) > HLOS > DSCP
+ *   7 | PCP (C-VLAN > S-VLAN) > HLOS > DSCP
+ *   8 | HLOS > PCP (S-VLAN > C-VLAN) > DSCP
+ *   9 | HLOS > PCP (C-VLAN > S-VLAN) > DSCP
+ *  10 | HLOS > DSCP > PCP (S-VLAN > C-VLAN)
+ *  11 | HLOS > DSCP > PCP (C-VLAN > S-VLAN)
+ * ----+----------------------------------------------------------
+ * DSCP   = Differentiated Services Code Point
+ * PCP    = Priority Code Point (802.1Q VLAN tag)
+ * S-VLAN = Service VLAN (outer tag)
+ * C-VLAN = Customer VLAN (inner tag)
+ * HLOS   = High Level OS (software-assigned priority)
+ *
+ *
+ * ath12k_wifi7_hal_tx_set_tid_map_precedence() - Write TID precedence
+ * to all SOC TCL blocks.
+ *
+ * @dp_hw_grp: Group-level dp structure; tid_map_precedence is read from here.
+ * Reads the single group-level tid_map_precedence from dp_hw_grp.  Computes
+ * the register value using u32_encode_bits() with HAL_TCL_TID_MAP_PRTY_VAL_MASK
+ * (GENMASK(3,0)).  Iterates all dp_hw_grp->dp[] entries and writes to every
+ * non-NULL SOC via ath12k_hif_write32().
+ */
+void ath12k_wifi7_hal_tx_set_tid_map_precedence(struct ath12k_base *ab,
+						const u8 precedence)
+{
+	u32 reg_val;
+
+	/*
+	 * Encode the precedence value into bits [3:0].
+	 * u32_encode_bits() uses HAL_TCL_TID_MAP_PRTY_VAL_MASK = GENMASK(3,0)
+	 * and WARNs if tid_map_precedence overflows the 4-bit field.
+	 */
+	reg_val = u32_encode_bits(precedence, HAL_TCL_TID_MAP_PRTY_VAL_MASK);
+
+	ath12k_hif_write32(ab, HAL_TCL_R0_PCP_TID_MAP_PRTY_OFFSET, reg_val);
+}
+EXPORT_SYMBOL(ath12k_wifi7_hal_tx_set_tid_map_precedence);

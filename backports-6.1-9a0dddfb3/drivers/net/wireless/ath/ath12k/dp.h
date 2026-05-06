@@ -1406,6 +1406,16 @@ ath12k_dp_to_dp_pdev(struct ath12k_dp *dp, u8 pdev_id)
 	return rcu_dereference(dp->dp_pdevs[pdev_id]);
 }
 
+/**
+ * ath12k_dp_pcp_tid_map() - Validate and program PCP-TID map.
+ */
+int ath12k_dp_pcp_tid_map(struct ath12k_dp_hw_group *dp_hw_grp);
+
+/**
+ * ath12k_dp_tid_map_precedence() - Validate and program TID precedence.
+ */
+int ath12k_dp_tid_map_precedence(struct ath12k_dp_hw_group *dp_hw_grp);
+
 static inline int
 ath12k_dp_arch_peer_migrate_reo_cmd(struct ath12k_dp *dp,
 				    struct ath12k_dp_link_peer *peer,
