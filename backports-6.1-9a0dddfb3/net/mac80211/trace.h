@@ -3536,6 +3536,7 @@ TRACE_EVENT(drv_ap_power_save,
 		__field(u8, pcie_lane)
 		__field(u32, dcvs_mode)
 		__field(bool, dps_assist_enable)
+		__field(bool, low_power_20mhz_enable)
 	),
 
 	TP_fast_assign(
@@ -3549,16 +3550,19 @@ TRACE_EVENT(drv_ap_power_save,
 		__entry->pcie_lane = params->pcie.pcie_lane;
 		__entry->dcvs_mode = params->dcvs_mode;
 		__entry->dps_assist_enable = params->dps_assist_enable;
+		__entry->low_power_20mhz_enable =
+					params->low_power_20mhz_enable;
 	),
 
 	TP_printk(
 		LOCAL_PR_FMT ", link_id:%d, types %u, PCIe (cmd:%u, enable: %d, config_type: %u,"
-		" pcie_gen: %u, pcie_lane: %u) DCVS (dcvs_mode: %d) DPS Assist (dps_assist_enable %d)",
+		" pcie_gen: %u, pcie_lane: %u) DCVS (dcvs_mode: %d) DPS Assist (dps_assist_enable %d)"
+		" 20 MHz Low Power (low_power_20mhz_enable %d)",
 
 		LOCAL_PR_ARG, __entry->link_id, __entry->types,__entry->cmd,
 		__entry->enable, __entry->config_type, __entry->pcie_gen,
 		__entry->pcie_lane, __entry->dcvs_mode,
-		__entry->dps_assist_enable
+		__entry->dps_assist_enable, __entry->low_power_20mhz_enable
 	)
 );
 
