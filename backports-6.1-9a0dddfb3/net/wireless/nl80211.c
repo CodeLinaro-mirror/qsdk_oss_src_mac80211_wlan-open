@@ -1110,6 +1110,7 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_DCVS] = { .type = NLA_U32 },
 	[NL80211_ATTR_DPS_ASSIST] = { .type = NLA_U8 },
 	[NL80211_ATTR_HE_MUEDCA_MODE] = { .type = NLA_U8 },
+	[NL80211_ATTR_LOW_POWER_20MHZ] = { .type = NLA_U8 },
 };
 
 /* policy for the key attributes */
@@ -20154,10 +20155,18 @@ static int nl80211_ap_power_save(struct sk_buff *skb, struct genl_info *info)
 
 	if (info->attrs[NL80211_ATTR_DPS_ASSIST]) {
 		params.types |= CFG80211_TYPE_DPS_ASSIST;
-		params.dps_assist_enable = CFG80211_DPS_ASSIST_CMD_DISABLE;
+		params.dps_assist_enable = CFG80211_AP_PS_CMD_DISABLE;
 
 		if (nla_get_u8(info->attrs[NL80211_ATTR_DPS_ASSIST]))
-			params.dps_assist_enable = CFG80211_DPS_ASSIST_CMD_ENABLE;
+			params.dps_assist_enable = CFG80211_AP_PS_CMD_ENABLE;
+	}
+
+	if (info->attrs[NL80211_ATTR_LOW_POWER_20MHZ]) {
+		params.types |= CFG80211_TYPE_LOW_POWER_20MHZ;
+		params.low_power_20mhz_enable = CFG80211_AP_PS_CMD_DISABLE;
+
+		if (nla_get_u8(info->attrs[NL80211_ATTR_LOW_POWER_20MHZ]))
+			params.low_power_20mhz_enable = CFG80211_AP_PS_CMD_ENABLE;
 	}
 
 	err = rdev_ap_power_save(rdev, wdev,
