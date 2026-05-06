@@ -797,6 +797,10 @@ struct ath12k_dp_tx_ingress_stats {
 	struct ath12k_dp_pkt_info enque_to_hw;
 	struct ath12k_dp_pkt_info enque_to_hw_fast;
 
+	/* SG */
+	struct ath12k_dp_pkt_info sg_pkt;
+	u32 sg_dma_map_err;
+
 	/* Debug and Advance */
 	u32 encap_type[HAL_TCL_ENCAP_TYPE_MAX];
 	u32 encrypt_type[HAL_ENCRYPT_TYPE_MAX];
