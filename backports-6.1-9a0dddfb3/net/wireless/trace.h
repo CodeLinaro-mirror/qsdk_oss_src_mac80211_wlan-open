@@ -2820,6 +2820,21 @@ DEFINE_EVENT(wiphy_wdev_evt, rdev_abort_scan,
 	TP_ARGS(wiphy, wdev)
 );
 
+TRACE_EVENT(rdev_abort_cac,
+	    TP_PROTO(struct wiphy *wiphy, struct wireless_dev *wdev, int link_id),
+	    TP_ARGS(wiphy, wdev, link_id),
+	    TP_STRUCT__entry(WIPHY_ENTRY
+			     WDEV_ENTRY
+			     __field(int, link_id)
+		),
+	    TP_fast_assign(WIPHY_ASSIGN;
+			   WDEV_ASSIGN;
+			   __entry->link_id = link_id;
+		),
+	    TP_printk(WIPHY_PR_FMT ", " WDEV_PR_FMT ", link_id: %d",
+		      WIPHY_PR_ARG, WDEV_PR_ARG, __entry->link_id)
+	);
+
 TRACE_EVENT(rdev_set_multicast_to_unicast,
 	TP_PROTO(struct wiphy *wiphy, struct net_device *netdev,
 		 const bool enabled),

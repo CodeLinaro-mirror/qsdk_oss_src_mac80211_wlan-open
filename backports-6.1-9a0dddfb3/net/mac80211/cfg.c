@@ -6608,6 +6608,32 @@ static int ieee80211_ap_power_save(struct wiphy *wiphy,
 	return drv_ap_power_save(local, sdata, link_id, params);
 }
 
+int ieee80211_dfs_abort_cac(struct wiphy *wiphy,
+			    struct wireless_dev *wdev, int link_id)
+{
+	struct ieee80211_local *local = wiphy_priv(wiphy);
+	struct ieee80211_sub_if_data *sdata;
+	struct ieee80211_bss_conf *link_conf;
+	struct ieee80211_chanctx_conf *chanctx_conf;
+
+	lockdep_assert_wiphy(wiphy);
+
+	if (!wdev)
+		return -EINVAL;
+
+	sdata = IEEE80211_WDEV_TO_SUB_IF(wdev);
+
+	link_conf = wiphy_dereference(wiphy, sdata->vif.link_conf[link_id]);
+	if (!link_conf)
+		return -EINVAL;
+
+	chanctx_conf = wiphy_dereference(wiphy, link_conf->chanctx_conf);
+	if (chanctx_conf)
+		ieee80211_dfs_cac_cancel(local, &chanctx_conf->def);
+
+	return 0;
+}
+
 const struct cfg80211_ops mac80211_config_ops = {
 	.add_virtual_intf = ieee80211_add_iface,
 	.del_virtual_intf = ieee80211_del_iface,
@@ -6733,4 +6759,5 @@ const struct cfg80211_ops mac80211_config_ops = {
 	.get_afc_eirp_pwr = ieee80211_get_afc_eirp_pwr,
 	.get_6ghz_dev_deployment_type = ieee80211_get_6ghz_dev_deployment_type,
 	.ap_power_save = ieee80211_ap_power_save,
+	.abort_cac = ieee80211_dfs_abort_cac,
 };
