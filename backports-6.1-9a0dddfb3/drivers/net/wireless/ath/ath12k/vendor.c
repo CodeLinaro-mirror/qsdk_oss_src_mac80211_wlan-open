@@ -6992,17 +6992,6 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 	char *type = NULL;
 	int ret = 0;
 
-	vif = wdev_to_ieee80211_vif(wdev);
-	if (!vif) {
-		ath12k_err(NULL, "vif is NULL\n");
-		return -EINVAL;
-	}
-	ahvif = ath12k_vif_to_ahvif(vif);
-	if (!ahvif) {
-		ath12k_err(NULL, "ahvif is NULL\n");
-		return -EINVAL;
-	}
-
 	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_CONFIG_MAX, data, data_len,
 			ath12k_wifi_config_policy, NULL);
 
@@ -7087,9 +7076,19 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 	else
 		return ret;
 
+	vif = wdev_to_ieee80211_vif(wdev);
+	if (!vif) {
+		ath12k_err(NULL, "vif is NULL\n");
+		return -EINVAL;
+	}
 	if (vif->type == NL80211_IFTYPE_AP_VLAN) {
 		ath12k_dbg(NULL, ATH12K_DBG_PPE, "vif is AP_VLAN\n");
 		return ret;
+	}
+	ahvif = ath12k_vif_to_ahvif(vif);
+	if (!ahvif) {
+		ath12k_err(NULL, "ahvif is NULL\n");
+		return -EINVAL;
 	}
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
@@ -7125,7 +7124,14 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 			return 0;
 		}
 		wdev->vap_submode = vap_submode;
-		ahvif->dp_vif.dp_features |= DP_FEATURE_MESH;
+
+		vif = wdev_to_ieee80211_vif(wdev);
+		if (vif)
+			ahvif = ath12k_vif_to_ahvif(vif);
+
+		if (ahvif)
+			ahvif->dp_vif.dp_features |= DP_FEATURE_MESH;
+
 		ath12k_dbg(NULL, ATH12K_DBG_CFG,
 			   "%s-configured vap_submode: %d for(%s)\n", __func__,
 			   wdev->vap_submode, wdev->netdev->name);
