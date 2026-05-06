@@ -3810,3 +3810,95 @@ ath12k_dp_rx_pktlog_process(struct ath12k_pdev_dp *dp_pdev,
 					      log_type, status_desc->buf_len);
 }
 EXPORT_SYMBOL(ath12k_dp_rx_pktlog_process);
+
+/**
+ * ath12k_dp_rx_populate_cbf_hdr() - Wrap CBF frame with HTT headers
+ * @dp_pdev: ath12k dp pdev handle
+ * @skb: SKB containing CBF frame
+ * @ppdu_id: PPDU ID for correlation
+ *
+ * Wraps a CBF frame with HTT headers for pktlog:
+ * 1. HTT PPDU stats indication header
+ * 2. RX management/control payload TLV
+ * 3. Original CBF frame payload
+ *
+ * The wrapped frame is then written to the pktlog circular buffer.
+ *
+ */
+static inline void
+ath12k_dp_rx_populate_cbf_hdr(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *skb,
+			      struct hal_rx_mon_ppdu_info *ppdu_info)
+{
+	struct htt_ppdu_stats_rx_mgmtctrl_payload_tlv cbf_tlv;
+	struct htt_t2h_ppdu_stats_ind_hdr htt_hdr;
+	u32 frame_len, len_align;
+
+	frame_len = skb->len;
+	len_align = ALIGN(frame_len +
+			  sizeof(struct htt_ppdu_stats_rx_mgmtctrl_payload_tlv),
+			  PKTLOG_ALIGN);
+
+	htt_hdr.info = FIELD_PREP(HTT_T2H_PPDU_STATS_INFO_MSG_TYPE,
+				  HTT_T2H_MSG_TYPE_PPDU_STATS_IND) |
+		FIELD_PREP(HTT_T2H_PPDU_STATS_INFO_MAC_ID, dp_pdev->mac_id) |
+		FIELD_PREP(HTT_T2H_PPDU_STATS_INFO_PDEV_ID,
+			   dp_pdev->ar->pdev->pdev_id) |
+		FIELD_PREP(HTT_T2H_PPDU_STATS_INFO_PAYLOAD_SIZE, len_align);
+
+	htt_hdr.ppdu_id = cpu_to_le32(ppdu_info->ppdu_id);
+	htt_hdr.timestamp_us = cpu_to_le32(ppdu_info->tsft);
+	htt_hdr.rsvd = 0;
+
+	len_align = ALIGN(frame_len - sizeof(cbf_tlv.header) +
+			  sizeof(struct htt_ppdu_stats_rx_mgmtctrl_payload_tlv),
+			  PKTLOG_ALIGN);
+
+	cbf_tlv.header = FIELD_PREP(HTT_TLV_TAG,
+				    HTT_PPDU_STATS_RX_MGMTCTRL_PAYLOAD_TLV) |
+		FIELD_PREP(HTT_TLV_LEN, len_align);
+	cbf_tlv.frame_length = cpu_to_le16(frame_len);
+	cbf_tlv.rsvd1 = 0;
+	cbf_tlv.rsvd2 = 0;
+	cbf_tlv.rsvd3 = 0;
+
+	ath12k_cbf_pktlog_process(dp_pdev->ar, skb->data,
+				  skb->len, &htt_hdr, &cbf_tlv);
+}
+
+void
+ath12k_dp_mon_rx_process_dest_pktlog(struct ath12k_pdev_dp *dp_pdev,
+				     struct sk_buff *mpdu,
+				     struct hal_rx_mon_ppdu_info *ppdu_info)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev;
+	void *data;
+	struct ieee80211_hdr *wh;
+	u8 num_frags, type, subtype;
+
+	if (!dp_pdev || !mpdu || !ppdu_info)
+		return;
+
+	dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	if (!dp_mon_pdev || !dp_mon_pdev->rx_pktlog_cbf)
+		return;
+
+	num_frags = ath12k_dp_mon_get_num_frags_in_fraglist(mpdu);
+	if (num_frags)
+		data = ath12k_dp_mon_skb_get_frag_addr(mpdu, 0);
+	else
+		data = mpdu->data;
+
+	if (unlikely(!data))
+		return;
+
+	wh = (struct ieee80211_hdr *)data;
+	type = wh->frame_control & IEEE80211_FCTL_FTYPE;
+	subtype = wh->frame_control & IEEE80211_FCTL_STYPE;
+
+	if (type != IEEE80211_FTYPE_MGMT ||
+	    subtype != IEEE80211_STYPE_ACTION_NO_ACK)
+		return;
+
+	ath12k_dp_rx_populate_cbf_hdr(dp_pdev, mpdu, ppdu_info);
+}
+EXPORT_SYMBOL(ath12k_dp_mon_rx_process_dest_pktlog);

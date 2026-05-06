@@ -388,4 +388,7 @@ void ath12k_htt_pktlog_process(struct ath12k *ar, u8 *data);
 void ath12k_htt_ppdu_pktlog_process(struct ath12k *ar, u8 *data, u32 len);
 void ath12k_dp_rx_stats_buf_pktlog_process(struct ath12k *ar, u8 *data,
 					   u16 log_type, u32 len);
+void ath12k_cbf_pktlog_process(struct ath12k *ar, u8 *data, u32 len,
+			       struct htt_t2h_ppdu_stats_ind_hdr *htt_hdr,
+			       struct htt_ppdu_stats_rx_mgmtctrl_payload_tlv *cbf_tlv);
 #endif /* _ATH12K_DEBUGFS_H_ */

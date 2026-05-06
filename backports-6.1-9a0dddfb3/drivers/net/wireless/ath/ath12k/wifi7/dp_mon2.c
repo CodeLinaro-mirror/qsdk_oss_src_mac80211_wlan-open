@@ -982,6 +982,8 @@ ath12k_wifi7_dp_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	if (ppdu_info->mpdu_info[ppdu_info->user_id].fcs_err)
 		rxs.flag |= RX_FLAG_FAILED_FCS_CRC;
 
+	ath12k_dp_mon_rx_process_dest_pktlog(dp_pdev, mpdu, ppdu_info);
+
 	if (!(dp_mon_pdev->rx_ext_mon_config &&
 	      dp_mon_pdev->rx_ext_mon_config->enable)) {
 		skb_reserve(mpdu, ATH12K_DP_MON_MAX_RADIO_TAP_HDR);
