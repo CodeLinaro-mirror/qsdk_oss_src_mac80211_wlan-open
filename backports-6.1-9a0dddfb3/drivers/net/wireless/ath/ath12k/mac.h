@@ -813,8 +813,9 @@ void ath12k_mac_ieee80211_free_txskb(struct ieee80211_hw *hw,
 				     struct sk_buff *skb,
 				     struct ath12k_pdev_dp *dp_pdev,
 				     struct ieee80211_sta *sta,
-				     struct ath12k_dp_vif *dp_vif, u8 ring_id,
+				     struct ath12k_dp_vif *dp_vif,
 				     enum ath12k_dp_tx_enq_error drop_reason,
+				     u8 ring_id,
 				     bool dev_free);
 bool ath12k_mac_check_err_code_debug_logging(enum ath12k_dp_tx_enq_error err);
 enum nl80211_band ath12k_get_band_based_on_freq(u32 freq);

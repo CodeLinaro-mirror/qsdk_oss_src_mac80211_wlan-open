@@ -1623,7 +1623,7 @@ fail:
 	dp_pdev = ath12k_dp_to_dp_pdev(ar->ab->dp, ar->pdev_idx);
 	ath12k_mac_ieee80211_free_txskb(hw, skb, dp_pdev,
 					ahsta ? ath12k_ahsta_to_sta(ahsta) : NULL,
-					&ahvif->dp_vif, ring_id, err, true);
+					&ahvif->dp_vif, err, ring_id, true);
 	return -EINVAL;
 }
 #endif
