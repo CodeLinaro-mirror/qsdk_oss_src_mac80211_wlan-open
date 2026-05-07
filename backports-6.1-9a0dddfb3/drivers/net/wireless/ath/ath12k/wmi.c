@@ -4395,6 +4395,9 @@ void ath12k_wmi_start_scan_init(struct ath12k *ar,
 	 * ZEROs in probe request
 	 */
 	eth_broadcast_addr(arg->bssid_list[0].addr);
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_wmi_start_scan_init_extn(ar, arg);
+#endif
 }
 
 static void ath12k_wmi_copy_scan_event_cntrl_flags(struct wmi_start_scan_cmd *cmd,
@@ -4585,6 +4588,9 @@ int ath12k_wmi_send_scan_start_cmd(struct ath12k *ar,
 	cmd->num_ssids = cpu_to_le32(arg->num_ssids);
 	cmd->ie_len = cpu_to_le32(arg->extraie.len);
 	cmd->n_probes = cpu_to_le32(arg->n_probes);
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_wmi_send_scan_start_cmd_extn(ar, cmd, arg);
+#endif
 
 	ptr += sizeof(*cmd);
 

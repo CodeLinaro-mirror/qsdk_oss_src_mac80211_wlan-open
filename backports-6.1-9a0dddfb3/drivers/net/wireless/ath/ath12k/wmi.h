@@ -10,6 +10,9 @@
 #include <net/mac80211.h>
 #include "htc.h"
 #include "cmn_defs.h"
+#ifdef CPTCFG_QCN_EXTN
+#include "qcn_extns/ath12k_cmn_extn.h"
+#endif
 
 /* Naming conventions for structures:
  *
@@ -4567,6 +4570,9 @@ struct ath12k_wmi_scan_req_arg {
 	struct ath12k_wmi_hint_short_ssid_arg hint_s_ssid[WLAN_SCAN_MAX_HINT_S_SSID];
 	struct ath12k_wmi_hint_bssid_arg hint_bssid[WLAN_SCAN_MAX_HINT_BSSID];
 	struct ath12k_wmi_probe_req_whitelist ie_whitelist;
+#ifdef CPTCFG_QCN_EXTN
+	struct ath12k_wmi_scan_req_arg_extn extn;
+#endif
 };
 
 struct wmi_ssid_arg {
