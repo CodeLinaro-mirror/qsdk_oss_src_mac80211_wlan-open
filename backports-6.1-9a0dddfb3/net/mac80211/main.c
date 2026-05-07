@@ -1580,8 +1580,7 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
 
 	if (supp_uhr)
 		local->scan_ies_len +=
-			3 + sizeof(struct ieee80211_uhr_cap) +
-			sizeof(struct ieee80211_uhr_cap_phy);
+			3 + sizeof(struct ieee80211_uhr_cap_elem_fixed);
 
 	if (!local->ops->hw_scan) {
 		/* For hw_scan, driver needs to set these up. */
