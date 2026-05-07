@@ -190,7 +190,7 @@ ath12k_htt_print_optional_configs_stats_tlv(const void *tag_buf, u16 tag_len,
 					    struct debug_htt_stats_req *stats_req)
 {
 	const struct htt_stats_optional_configs_stats_tlv *htt_stats_buf;
-	u32 flags, len, buf_len;
+	u32 flags, len, buf_len, rxsop_config, hc_premcs_pkt_type, hc_nss_word;
 	u8 *buf;
 
 	htt_stats_buf = tag_buf;
@@ -202,6 +202,10 @@ ath12k_htt_print_optional_configs_stats_tlv(const void *tag_buf, u16 tag_len,
 		return;
 
 	flags = le32_to_cpu(htt_stats_buf->flags);
+	rxsop_config = htt_stats_buf->rxsop_config;
+	hc_premcs_pkt_type = htt_stats_buf->hc__premcs__pkt_type__word32;
+	hc_nss_word =
+		htt_stats_buf->hc_nss_thr__is_rx_gain_forced__rx_gain_forced_val__word32;
 
 	len += scnprintf(buf + len, buf_len - len,
 			 "\nOptional configurations:\n");
@@ -234,6 +238,95 @@ ath12k_htt_print_optional_configs_stats_tlv(const void *tag_buf, u16 tag_len,
 			 "Multigain RSSI status = %u\n",
 			 u32_get_bits(flags,
 				      HTT_STATS_OPT_CONF_MULTIGAIN_RSSI));
+	len += scnprintf(buf + len, buf_len - len,
+			 "TPC OLPC/CLPC status [1 - OLPC, 0 - CLPC] = %u\n",
+			 u32_get_bits(flags, HTT_STATS_OPT_CONF_OLPC_CLPC));
+	len += scnprintf(buf + len, buf_len - len,
+			 "ABI enable/disable = %u\n",
+			 u32_get_bits(flags, HTT_STATS_OPT_CONF_ABI_EN_DIS));
+	len += scnprintf(buf + len, buf_len - len,
+			 "Strong signal recovery = %u\n",
+			 u32_get_bits(flags, HTT_STATS_OPT_CONF_STR_SIG_REC));
+	len += scnprintf(buf + len, buf_len - len,
+			 "Verbose mode = %u\n",
+			 u32_get_bits(flags, HTT_STATS_OPT_CONF_VERBOSE));
+	len += scnprintf(buf + len, buf_len - len,
+			 "Dynamic antenna select = %u\n",
+			 u32_get_bits(flags, HTT_STATS_OPT_CONF_DYN_ANT_SEL));
+	len += scnprintf(buf + len, buf_len - len,
+			 "DFS puncturing [FTM] = %u\n",
+			 u32_get_bits(flags, HTT_STATS_OPT_CONF_DFS_PUNC));
+	len += scnprintf(buf + len, buf_len - len,
+			 "DPD power backoff status = %u\n",
+			 u32_get_bits(flags, HTT_STATS_OPT_CONF_DPD_POW_BO));
+	len += scnprintf(buf + len, buf_len - len,
+			 "EEPROM compressed = %u\n",
+			 u32_get_bits(flags,
+				      HTT_STATS_OPT_CONF_EEPROM_COMPRESSED));
+	len += scnprintf(buf + len, buf_len - len,
+			 "RxSOP enabled = %u\n",
+			 u32_get_bits(rxsop_config,
+				      HTT_STATS_OPT_CONF_RXSOP_ENABLE_BIT));
+	len += scnprintf(buf + len, buf_len - len,
+			 "RxSOP config value = %u\n",
+			 u32_get_bits(rxsop_config,
+				      HTT_STATS_OPT_CONF_RXSOP_CONFIG_MASK));
+	len += scnprintf(buf + len, buf_len - len,
+			 "ABI max RG gain = %u dB\n",
+			 htt_stats_buf->abi_max_rg_gain);
+	len += scnprintf(buf + len, buf_len - len,
+			 "ABI max LG gain = %u dB\n",
+			 htt_stats_buf->abi_max_lg_gain);
+	len += scnprintf(buf + len, buf_len - len,
+			 "ABI max VLG gain = %u dB\n",
+			 htt_stats_buf->abi_max_vlg_gain);
+	len += scnprintf(buf + len, buf_len - len,
+			 "ABI hold mode = %u\n",
+			 htt_stats_buf->abi_hold_mode);
+	len += scnprintf(buf + len, buf_len - len,
+			 "ABI hold count = %u\n",
+			 htt_stats_buf->abi_hold_count);
+	len += scnprintf(buf + len, buf_len - len,
+			 "RSSI temp offset = %d dB\n",
+			 htt_stats_buf->rssi_temp_offset);
+	len += scnprintf(buf + len, buf_len - len,
+			 "RSSI XLNA bypass offset = %d dB\n",
+			 htt_stats_buf->rssi_xlna_bypass_offset);
+	len += scnprintf(buf + len, buf_len - len,
+			 "RSSI CBW offset = %d dB\n",
+			 htt_stats_buf->rssi_cbw_offset);
+	len += scnprintf(buf + len, buf_len - len,
+			 "RSSI chan freq offset = %d dB\n",
+			 htt_stats_buf->rssi_chan_freq_offset);
+	len += scnprintf(buf + len, buf_len - len,
+			 "OTP version = %u\n",
+			 htt_stats_buf->otp_version);
+	len += scnprintf(buf + len, buf_len - len,
+			 "CFR clip factor = %u %u %u %u\n",
+			 htt_stats_buf->cfr_clip_factor[0],
+			 htt_stats_buf->cfr_clip_factor[1],
+			 htt_stats_buf->cfr_clip_factor[2],
+			 htt_stats_buf->cfr_clip_factor[3]);
+	len += scnprintf(buf + len, buf_len - len,
+			 "Heavy-clip pre-MCS = %u\n",
+			 u32_get_bits(hc_premcs_pkt_type,
+				      HTT_STATS_OPT_CONF_HC_PREMCS_MASK));
+	len += scnprintf(buf + len, buf_len - len,
+			 "Heavy-clip pkt type = %u\n",
+			 u32_get_bits(hc_premcs_pkt_type,
+				      HTT_STATS_OPT_CONF_HC_PKT_TYPE_MASK));
+	len += scnprintf(buf + len, buf_len - len,
+			 "Heavy-clip NSS threshold = %u\n",
+			 u32_get_bits(hc_nss_word,
+				      HTT_STATS_OPT_CONF_HC_NSS_THR_MASK));
+	len += scnprintf(buf + len, buf_len - len,
+			 "RX gain table forced mode = %u\n",
+			 u32_get_bits(hc_nss_word,
+				      HTT_STATS_OPT_CONF_IS_RX_GAIN_FORCED_MASK));
+	len += scnprintf(buf + len, buf_len - len,
+			 "RX gain table forced value = %u\n",
+			 u32_get_bits(hc_nss_word,
+				      HTT_STATS_OPT_CONF_RX_GAIN_FORCED_VAL_MASK));
 	len += scnprintf(buf + len, buf_len - len,
 			 "|========================|\n");
 
