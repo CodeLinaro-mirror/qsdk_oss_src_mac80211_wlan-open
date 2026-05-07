@@ -19480,6 +19480,9 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 		vif->offload_flags &= ~(IEEE80211_OFFLOAD_ENCAP_ENABLED |
 					IEEE80211_OFFLOAD_DECAP_ENABLED);
 
+	if (vif->type == NL80211_IFTYPE_AP_VLAN)
+		vif->offload_flags |= IEEE80211_OFFLOAD_TXRX_STATS;
+
 	if (vif->offload_flags & IEEE80211_OFFLOAD_ENCAP_ENABLED) {
 		ahvif->dp_vif.tx_encap_type = ATH12K_HW_TXRX_ETHERNET;
 	} else if (test_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ah->ag->flags)) {
