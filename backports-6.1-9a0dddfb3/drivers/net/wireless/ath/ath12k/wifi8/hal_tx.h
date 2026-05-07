@@ -25,6 +25,8 @@ struct hal_rx_mon_ppdu_info;
 #define HAL_SAM_CMD_MAX_BYTES (HAL_TLV64_HDR_BYTES + HAL_SAM_VALUE_MAX_BYTES)
 #define HAL_SAM_CMD_MAX_WORDS (HAL_SAM_CMD_MAX_BYTES >> 2)
 
+#define HAL_TX_NUM_MAX_LINKS	5
+
 /* TODO: check all these data can be managed with struct ath12k_tx_desc_info for perf */
 struct hal_tx_info {
 	u16 meta_data_flags; /* %HAL_TCL_DATA_CMD_INFO0_META_ */
@@ -152,4 +154,7 @@ int ath12k_wifi8_hal_tqm_get_svc_sorted_list(struct ath12k_hal *hal,
 					     u8 idx,
 					     u32 *flow_number,
 					     u32 *msdu_count);
+int ath12k_wifi8_hal_tx_sam_cmd_send(struct ath12k_base *ab, struct hal_srng *srng,
+				     int src_link_id, enum hal_tlv_tag_be type, int id,
+				     bool clear_all);
 #endif

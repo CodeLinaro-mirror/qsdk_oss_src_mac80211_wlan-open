@@ -297,6 +297,13 @@ enum rdi_based_source_ring_selection {
 #define HAL_SAM_INVALID_MSDUQ_ID		0x1FFF
 #define HAL_SAM_INVALID_MPDUQ_ID		0x7FF
 
+/* SAM supports queue IDs from a single slice range (slice size: 256)
+ * due to v1 hardware limitations.
+ * TODO: Extend support to the full queue range with v2 hardware.
+ */
+#define HAL_SAM_QUEUE_SLICE_START_IDX		256
+#define HAL_SAM_QUEUE_SLICE_END_IDX		511
+
 #define HAL_TCL_PPE_INDEX_MAPPING_OFFSET 0x670
 #define HAL_TCL_PPE_INDEX_MAPPING_SLOT_SIZE 0x4
 #define HAL_TCL_PPE_INDEX_MAPPING_TABLE_n_ADDR(base, n) ((base) + \

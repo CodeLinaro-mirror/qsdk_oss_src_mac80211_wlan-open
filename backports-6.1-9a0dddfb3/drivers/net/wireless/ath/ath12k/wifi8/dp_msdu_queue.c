@@ -27,6 +27,14 @@ u16 ath12k_wifi8_msduq_sam_id_alloc(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_w
 		if (msduq_sam_id >= MAX_NUM_SAM_MSDU_QUEUES_SUPPORTED)
 			msduq_sam_id = MAX_NUM_SAM_RESERVED_MSDU_QUEUES;
 
+		/* SAM supports queue IDs from a single slice range (slize size: 256)
+		 * due to v1 hardware limitations.
+		 * TODO: Remove after v2 hardware.
+		 */
+		if (msduq_sam_id < HAL_SAM_QUEUE_SLICE_START_IDX ||
+		    msduq_sam_id > HAL_SAM_QUEUE_SLICE_END_IDX)
+			continue;
+
 		if (test_bit(msduq_sam_id, dp_hw_grp_wifi8->msduq_sam_id_alloc_map))
 			continue;
 
@@ -46,11 +54,38 @@ u16 ath12k_wifi8_msduq_sam_id_alloc(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_w
 void ath12k_wifi8_clear_msduq_sam_id(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8,
 				     struct ath12k_dp_msdu_q_info *sw_msduq_ptr)
 {
+	struct ath12k_base *ab = NULL;
+	struct ath12k_dp_wifi8 *dp_wifi8 = NULL;
+	struct hal_srng *srng = NULL;
+	int ret;
+
+	if (!dp_hw_grp_wifi8)
+		return;
+
+	if (dp_hw_grp_wifi8->cumac_dp && dp_hw_grp_wifi8->cumac_dp->ab) {
+		ab = dp_hw_grp_wifi8->cumac_dp->ab;
+		dp_wifi8 = ath12k_get_dp_wifi8(dp_hw_grp_wifi8->cumac_dp);
+		srng = &ab->hal.srng_list[dp_wifi8->sam_cmd_ring.ring_id];
+	}
+
 	if (sw_msduq_ptr->msduq_sam_id != HAL_SAM_INVALID_MSDUQ_ID) {
 		spin_lock_bh(&dp_hw_grp_wifi8->sam_id_lock);
 		clear_bit(sw_msduq_ptr->msduq_sam_id,
 			  dp_hw_grp_wifi8->msduq_sam_id_alloc_map);
 		spin_unlock_bh(&dp_hw_grp_wifi8->sam_id_lock);
+
+		/* Send sam msduq clear command for `msduq_sam_id` to FW.*/
+		if (ab && srng) {
+			ret = ath12k_wifi8_hal_tx_sam_cmd_send
+						(ab, srng, -1,
+						 HAL_SAM_MSDU_QUEUE_CLEAR_PROGRAMMING_BO,
+						 sw_msduq_ptr->msduq_sam_id, false);
+
+			if (ret < 0)
+				ath12k_warn(ab,
+					    "failed to send SAM msdu clear command for %d: %d\n",
+					    sw_msduq_ptr->msduq_sam_id, ret);
+		}
 	}
 }
 
