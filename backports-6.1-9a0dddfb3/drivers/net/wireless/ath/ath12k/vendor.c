@@ -19,6 +19,7 @@
 #include "ppe.h"
 #include "vendor.h"
 #include "debugfs_htt_stats.h"
+#include "spectral.h"
 #include "telemetry.h"
 #include "telemetry_agent_if.h"
 #include "erp.h"
@@ -15083,6 +15084,457 @@ void ath12k_vendor_event_chain_mask_changed(struct ath12k *ar)
 	cfg80211_vendor_event(event, GFP_ATOMIC);
 }
 
+/* ---- Spectral scan vendor command handlers ---- */
+
+#ifdef CPTCFG_ATH12K_SPECTRAL
+
+#define SPECTRAL_SCALING_LOW_LEVEL_OFFSET	7
+#define SPECTRAL_SCALING_HIGH_LEVEL_OFFSET	5
+#define SPECTRAL_SCALING_RSSI_THRESH		5
+#define SPECTRAL_IPQ8074_DEFAULT_MAX_GAIN	62
+
+static const struct nla_policy
+ath12k_spectral_scan_policy[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_SCAN_COUNT] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_SCAN_PERIOD] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_PRIORITY] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FFT_SIZE] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_GC_ENA] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_RESTART_ENA] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_NOISE_FLOOR_REF] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_INIT_DELAY] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_NB_TONE_THR] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_STR_BIN_THR] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_WB_RPT_MODE] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_RSSI_RPT_MODE] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_RSSI_THR] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_PWR_FORMAT] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_RPT_MODE] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_BIN_SCALE] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_DBM_ADJ] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_CHN_MASK] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FFT_PERIOD] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_SHORT_REPORT] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FREQUENCY] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FREQUENCY_2] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_BANDWIDTH] = { .type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FFT_RECAPTURE] = { .type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_COMPLETION_TIMEOUT] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_MODE] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_REQUEST_TYPE] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_DEBUG_LEVEL] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_DMA_RING_DEBUG] = { .type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_DMA_BUFFER_DEBUG] = { .type = NLA_U8 },
+};
+
+/* Returns the ath12k radio for a spectral vendor command.
+ * Must be called with the wiphy lock held.
+ * Uses the first active link in links_map so it works for single-link
+ * (non-MLO) and multi-radio platforms without hardcoding link_id=0.
+ */
+static struct ath12k *ath12k_spectral_get_ar_from_wdev(struct wireless_dev *wdev)
+{
+	struct ieee80211_vif *vif;
+	struct ath12k_vif *ahvif;
+	struct ath12k *ar;
+	u8 link_id;
+
+	vif = wdev_to_ieee80211_vif(wdev);
+	if (!vif) {
+		pr_err("ath12k: no ieee80211_vif for %s\n",
+		       wdev->netdev ? wdev->netdev->name : "?");
+		return NULL;
+	}
+
+	ahvif = ath12k_vif_to_ahvif(vif);
+	if (!ahvif || !ahvif->links_map) {
+		pr_err("ath12k: ar lookup failed: ahvif=%p links_map=0x%x for %s\n",
+		       ahvif, ahvif ? ahvif->links_map : 0,
+		       wdev->netdev ? wdev->netdev->name : "?");
+		return NULL;
+	}
+
+	link_id = __ffs(ahvif->links_map);
+	ar = ath12k_get_ar_from_wdev(wdev, link_id);
+	return ar;
+}
+
+static int ath12k_vendor_spectral_scan_start(struct wiphy *wiphy,
+					     struct wireless_dev *wdev,
+					     const void *data, int data_len)
+{
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_MAX + 1];
+	/* Default: update params AND trigger a scan. */
+	enum qca_wlan_vendor_attr_spectral_scan_request_type req_type =
+		QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_REQUEST_TYPE_SCAN_AND_CONFIG;
+	struct ath12k *ar;
+	int ret;
+
+	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_MAX,
+			data, data_len, ath12k_spectral_scan_policy, NULL);
+	if (ret)
+		return ret;
+	if (tb[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_REQUEST_TYPE])
+		req_type = nla_get_u32(tb[
+				QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_REQUEST_TYPE]);
+
+	ar = ath12k_spectral_get_ar_from_wdev(wdev);
+	if (!ar)
+		return -EINVAL;
+
+	/* Step 1: update scan params in software if request includes CONFIG. */
+	if (req_type != QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_REQUEST_TYPE_SCAN) {
+		struct ath12k_spectral_params *p = &ar->spectral.params;
+#define ATTR_U32(id, fptr) do {				\
+	const int _a = (id);				\
+	if (tb[_a])					\
+		*(fptr) = nla_get_u32(tb[_a]);		\
+} while (0)
+#define ATTR_U8(id, fptr) do {				\
+	const int _a = (id);				\
+	if (tb[_a])					\
+		*(fptr) = nla_get_u8(tb[_a]);		\
+} while (0)
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_SCAN_COUNT,
+			 &p->scan_count);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_SCAN_PERIOD,
+			 &p->scan_period);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_PRIORITY,
+			 &p->scan_priority);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FFT_SIZE,
+			 &p->scan_fft_size);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_GC_ENA,
+			 &p->scan_gc_ena);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_RESTART_ENA,
+			 &p->scan_restart_ena);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_NOISE_FLOOR_REF,
+			 &p->scan_noise_floor_ref);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_INIT_DELAY,
+			 &p->scan_init_delay);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_NB_TONE_THR,
+			 &p->scan_nb_tone_thr);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_STR_BIN_THR,
+			 &p->scan_str_bin_thr);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_WB_RPT_MODE,
+			 &p->scan_wb_rpt_mode);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_RSSI_RPT_MODE,
+			 &p->scan_rssi_rpt_mode);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_RSSI_THR,
+			 &p->scan_rssi_thr);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_PWR_FORMAT,
+			 &p->scan_pwr_format);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_RPT_MODE,
+			 &p->scan_rpt_mode);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_BIN_SCALE,
+			 &p->scan_bin_scale);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_DBM_ADJ,
+			 &p->scan_dbm_adj);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_CHN_MASK,
+			 &p->scan_chn_mask);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FFT_PERIOD,
+			 &p->fft_period);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_SHORT_REPORT,
+			 &p->short_report);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FREQUENCY,
+			 &p->frequency);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FREQUENCY_2,
+			 &p->frequency2);
+		ATTR_U8(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_BANDWIDTH,
+			&p->bandwidth);
+		ATTR_U8(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FFT_RECAPTURE,
+			&p->fft_recapture);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_COMPLETION_TIMEOUT,
+			 &p->completion_timeout_us);
+#undef ATTR_U32
+#undef ATTR_U8
+		ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+			   "spectral config: count=%u period=%u fft_size=%u\n",
+			   p->scan_count, p->scan_period, p->scan_fft_size);
+		ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+			   "spectral config: priority=%u gc_ena=%u short_report=%u\n",
+			   p->scan_priority, p->scan_gc_ena, p->short_report);
+		ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+			   "spectral config: rpt_mode=%u bin_scale=%u chn_mask=%u\n",
+			   p->scan_rpt_mode, p->scan_bin_scale, p->scan_chn_mask);
+		ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+			   "spectral config: freq=%u freq2=%u bw=%u timeout_us=%u\n",
+			   p->frequency, p->frequency2, p->bandwidth,
+			   p->completion_timeout_us);
+	}
+
+	/* Step 2: configure firmware and trigger scan if request includes SCAN. */
+	if (req_type != QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_REQUEST_TYPE_CONFIG) {
+		/* Don't restart a running scan; collected samples would be lost. */
+		if (ar->spectral.scan_active) {
+			ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+				   "spectral scan_start: scan already active, ignoring\n");
+			return 0;
+		}
+
+		ar->spectral.samples_done = 0;
+		ret = ath12k_spectral_configure_scan_params(ar, ATH12K_SPECTRAL_MANUAL);
+		if (ret)
+			return ret;
+		ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+			   "spectral scan_start: configure_scan_params(MANUAL) OK\n");
+
+		ret = ath12k_spectral_start_scan(ar);
+		if (ret)
+			return ret;
+		ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+			   "spectral scan_start: start_scan OK\n");
+	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+		   "spectral scan_start: SUCCESS iface=%s req_type=%d\n",
+		   wdev->netdev ? wdev->netdev->name : "?", req_type);
+	return 0;
+}
+
+static int ath12k_vendor_spectral_scan_stop(struct wiphy *wiphy,
+					    struct wireless_dev *wdev,
+					    const void *data, int data_len)
+{
+	struct ath12k *ar;
+	int ret;
+
+	ar = ath12k_spectral_get_ar_from_wdev(wdev);
+	if (!ar)
+		return -EINVAL;
+
+	ret = ath12k_spectral_stop_scan(ar);
+	if (ret)
+		ath12k_warn(ar->ab,
+			    "spectral scan_stop: stop_scan failed ret=%d\n",
+			    ret);
+	else
+		ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+			   "spectral scan_stop: SUCCESS iface=%s\n",
+			   wdev->netdev ? wdev->netdev->name : "?");
+	return ret;
+}
+
+static int ath12k_vendor_spectral_get_config(struct wiphy *wiphy,
+					     struct wireless_dev *wdev,
+					     const void *data, int data_len)
+{
+	struct ath12k_spectral_params *p;
+	struct sk_buff *skb;
+	struct ath12k *ar;
+
+	ar = ath12k_spectral_get_ar_from_wdev(wdev);
+	if (!ar)
+		return -EINVAL;
+
+	skb = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, NLMSG_DEFAULT_SIZE);
+	if (!skb) {
+		ath12k_warn(ar->ab, "spectral get_config: skb alloc failed\n");
+		return -ENOMEM;
+	}
+
+	p = &ar->spectral.params;
+	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+		   "spectral get_config: count=%u period=%u fft_size=%u priority=%u\n",
+		   p->scan_count, p->scan_period, p->scan_fft_size, p->scan_priority);
+	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+		   "spectral get_config: gc_ena=%u restart_ena=%u nf_ref=%u\n",
+		   p->scan_gc_ena, p->scan_restart_ena, p->scan_noise_floor_ref);
+	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+		   "spectral get_config: init_delay=%u nb_tone_thr=%u str_bin_thr=%u\n",
+		   p->scan_init_delay, p->scan_nb_tone_thr, p->scan_str_bin_thr);
+	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+		   "spectral get_config: wb_rpt=%u rssi_rpt=%u rssi_thr=%u pwr_fmt=%u\n",
+		   p->scan_wb_rpt_mode, p->scan_rssi_rpt_mode,
+		   p->scan_rssi_thr, p->scan_pwr_format);
+	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+		   "spectral get_config: rpt_mode=%u bin_scale=%u dbm_adj=%u\n",
+		   p->scan_rpt_mode, p->scan_bin_scale, p->scan_dbm_adj);
+	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+		   "spectral get_config: chn_mask=%u fft_period=%u short_report=%u\n",
+		   p->scan_chn_mask, p->fft_period, p->short_report);
+	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+		   "spectral get_config: freq=%u freq2=%u bw=%u timeout_us=%u\n",
+		   p->frequency, p->frequency2, p->bandwidth, p->completion_timeout_us);
+
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_SCAN_COUNT,
+		    p->scan_count);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_SCAN_PERIOD,
+		    p->scan_period);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_PRIORITY,
+		    p->scan_priority);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FFT_SIZE,
+		    p->scan_fft_size);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_GC_ENA,
+		    p->scan_gc_ena);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_RESTART_ENA,
+		    p->scan_restart_ena);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_NOISE_FLOOR_REF,
+		    p->scan_noise_floor_ref);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_INIT_DELAY,
+		    p->scan_init_delay);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_NB_TONE_THR,
+		    p->scan_nb_tone_thr);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_STR_BIN_THR,
+		    p->scan_str_bin_thr);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_WB_RPT_MODE,
+		    p->scan_wb_rpt_mode);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_RSSI_RPT_MODE,
+		    p->scan_rssi_rpt_mode);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_RSSI_THR,
+		    p->scan_rssi_thr);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_PWR_FORMAT,
+		    p->scan_pwr_format);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_RPT_MODE,
+		    p->scan_rpt_mode);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_BIN_SCALE,
+		    p->scan_bin_scale);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_DBM_ADJ,
+		    p->scan_dbm_adj);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_CHN_MASK,
+		    p->scan_chn_mask);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FFT_PERIOD,
+		    p->fft_period);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_SHORT_REPORT,
+		    p->short_report);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FREQUENCY,
+		    p->frequency);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FREQUENCY_2,
+		    p->frequency2);
+	nla_put_u8(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_BANDWIDTH,
+		   p->bandwidth);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_COMPLETION_TIMEOUT,
+		    p->completion_timeout_us);
+
+	return cfg80211_vendor_cmd_reply(skb);
+}
+
+static int ath12k_vendor_spectral_get_diag(struct wiphy *wiphy,
+					   struct wireless_dev *wdev,
+					   const void *data, int data_len)
+{
+	struct ath12k_spectral_diag_stats *d;
+	struct sk_buff *skb;
+	struct ath12k *ar;
+
+	ar = ath12k_spectral_get_ar_from_wdev(wdev);
+	if (!ar)
+		return -EINVAL;
+
+	skb = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, 256);
+	if (!skb) {
+		ath12k_warn(ar->ab, "spectral get_diag: skb alloc failed\n");
+		return -ENOMEM;
+	}
+
+	d = &ar->spectral.diag;
+	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+		   "spectral get_diag: sig_mismatch=%llu sec80_insufflen=%llu\n",
+		   d->sig_mismatch, d->sec80_sfft_insufflen);
+	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+		   "spectral get_diag: no_sec80=%llu vhtseg1_mismatch=%llu\n",
+		   d->no_sec80_sfft, d->vhtseg1id_mismatch);
+	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+		   "spectral get_diag: vhtseg2_mismatch=%llu\n",
+		   d->vhtseg2id_mismatch);
+
+	nla_put_u64_64bit(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_DIAG_SIG_MISMATCH,
+			  d->sig_mismatch, NLA_U64);
+	nla_put_u64_64bit(skb,
+			  QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_DIAG_SEC80_SFFT_INSUFFLEN,
+			  d->sec80_sfft_insufflen, NLA_U64);
+	nla_put_u64_64bit(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_DIAG_NOSEC80_SFFT,
+			  d->no_sec80_sfft, NLA_U64);
+	nla_put_u64_64bit(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_DIAG_VHTSEG1ID_MISMATCH,
+			  d->vhtseg1id_mismatch, NLA_U64);
+	nla_put_u64_64bit(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_DIAG_VHTSEG2ID_MISMATCH,
+			  d->vhtseg2id_mismatch, NLA_U64);
+
+	return cfg80211_vendor_cmd_reply(skb);
+}
+
+static int ath12k_vendor_spectral_get_cap(struct wiphy *wiphy,
+					  struct wireless_dev *wdev,
+					  const void *data, int data_len)
+{
+	struct sk_buff *skb;
+	struct ath12k *ar;
+
+	ar = ath12k_spectral_get_ar_from_wdev(wdev);
+	if (!ar || !ar->spectral.enabled)
+		return -EPERM;
+
+	skb = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, 512);
+	if (!skb) {
+		ath12k_warn(ar->ab, "spectral get_cap: skb alloc failed\n");
+		return -ENOMEM;
+	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+		   "spectral get_cap: hw_gen=3 num_bw_caps=%u fft_size=%u\n",
+		   ar->spectral.spectral_cap.num_bw_caps_entry,
+		   ar->spectral.params.scan_fft_size);
+
+	nla_put_flag(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CAP_PHYDIAG);
+	nla_put_flag(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CAP_RADAR);
+	nla_put_flag(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CAP_SPECTRAL);
+	nla_put_flag(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CAP_ADVANCED_SPECTRAL);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CAP_HW_GEN,
+		    QCA_WLAN_VENDOR_SPECTRAL_SCAN_CAP_HW_GEN_3);
+	nla_put_u16(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CAP_FORMULA_ID, 0);
+	nla_put_u16(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CAP_LOW_LEVEL_OFFSET,
+		    SPECTRAL_SCALING_LOW_LEVEL_OFFSET);
+	nla_put_u16(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CAP_HIGH_LEVEL_OFFSET,
+		    SPECTRAL_SCALING_HIGH_LEVEL_OFFSET);
+	nla_put_u16(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CAP_RSSI_THR,
+		    SPECTRAL_SCALING_RSSI_THRESH);
+	nla_put_u8(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CAP_DEFAULT_AGC_MAX_GAIN,
+		   SPECTRAL_IPQ8074_DEFAULT_MAX_GAIN);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CAP_NUM_DETECTORS_20_MHZ,
+		    ar->spectral.spectral_cap.num_bw_caps_entry);
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+		   "spectral get_cap: SUCCESS iface=%s\n",
+		   wdev->netdev ? wdev->netdev->name : "?");
+	return cfg80211_vendor_cmd_reply(skb);
+}
+
+static int ath12k_vendor_spectral_get_status(struct wiphy *wiphy,
+					     struct wireless_dev *wdev,
+					     const void *data, int data_len)
+{
+	enum ath12k_spectral_mode mode;
+	struct sk_buff *skb;
+	struct ath12k *ar;
+
+	ar = ath12k_spectral_get_ar_from_wdev(wdev);
+	if (!ar)
+		return -EINVAL;
+
+	skb = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, 64);
+	if (!skb) {
+		ath12k_warn(ar->ab, "spectral get_status: skb alloc failed\n");
+		return -ENOMEM;
+	}
+
+	mode = ar->spectral.mode;
+	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+		   "spectral get_status: mode=%d(%s) enabled=%d active=%d\n",
+		   mode,
+		   mode == ATH12K_SPECTRAL_DISABLED   ? "DISABLED" :
+		   mode == ATH12K_SPECTRAL_BACKGROUND ? "BACKGROUND" : "MANUAL",
+		   mode != ATH12K_SPECTRAL_DISABLED,
+		   mode == ATH12K_SPECTRAL_BACKGROUND);
+
+	if (mode != ATH12K_SPECTRAL_DISABLED)
+		nla_put_flag(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_STATUS_IS_ENABLED);
+	if (mode == ATH12K_SPECTRAL_BACKGROUND)
+		nla_put_flag(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_STATUS_IS_ACTIVE);
+
+	return cfg80211_vendor_cmd_reply(skb);
+}
+
+#endif /* CPTCFG_ATH12K_SPECTRAL */
+
 static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
@@ -15399,6 +15851,58 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.policy = ath12k_tid_map_prty_policy,
 		.maxattr = QCA_WLAN_VENDOR_ATTR_TID_MAP_PRECEDENCE_MAX,
 	},
+
+#ifdef CPTCFG_ATH12K_SPECTRAL
+
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd    = QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_START,
+		.flags          = WIPHY_VENDOR_CMD_NEED_WDEV |
+				  WIPHY_VENDOR_CMD_NEED_RUNNING,
+		.doit           = ath12k_vendor_spectral_scan_start,
+		.policy         = ath12k_spectral_scan_policy,
+		.maxattr        = QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_MAX,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd    = QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_STOP,
+		.flags          = WIPHY_VENDOR_CMD_NEED_WDEV |
+				  WIPHY_VENDOR_CMD_NEED_RUNNING,
+		.doit           = ath12k_vendor_spectral_scan_stop,
+		.policy         = ath12k_spectral_scan_policy,
+		.maxattr        = QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_MAX,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.flags          = WIPHY_VENDOR_CMD_NEED_WDEV,
+		.doit           = ath12k_vendor_spectral_get_config,
+		.info.subcmd    = QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_GET_CONFIG,
+		.policy         = ath12k_spectral_scan_policy,
+		.maxattr        = QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_MAX,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd    = QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_GET_DIAG_STATS,
+		.flags          = WIPHY_VENDOR_CMD_NEED_WDEV,
+		.doit           = ath12k_vendor_spectral_get_diag,
+		.policy         = VENDOR_CMD_RAW_DATA,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd    = QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_GET_CAP_INFO,
+		.flags          = WIPHY_VENDOR_CMD_NEED_WDEV,
+		.doit           = ath12k_vendor_spectral_get_cap,
+		.policy         = VENDOR_CMD_RAW_DATA,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd    = QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_GET_STATUS,
+		.flags          = WIPHY_VENDOR_CMD_NEED_WDEV,
+		.doit           = ath12k_vendor_spectral_get_status,
+		.policy         = ath12k_spectral_scan_policy,
+		.maxattr        = QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_MAX,
+	},
+#endif /* CPTCFG_ATH12K_SPECTRAL */
 };
 
 static const struct nl80211_vendor_cmd_info ath12k_vendor_events[] = {
@@ -15493,6 +15997,10 @@ static const struct nl80211_vendor_cmd_info ath12k_vendor_events[] = {
 	[QCA_NL80211_VENDOR_SUBCMD_CHAIN_MASK_INDEX] = {
 		.vendor_id = QCA_NL80211_VENDOR_ID,
 		.subcmd = QCA_NL80211_VENDOR_SUBCMD_CHAIN_MASK_CHANGED,
+	},
+	[QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_COMPLETE_INDEX] = {
+		.vendor_id = QCA_NL80211_VENDOR_ID,
+		.subcmd = QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_COMPLETE,
 	},
 };
 

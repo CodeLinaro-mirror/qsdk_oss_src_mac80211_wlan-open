@@ -173,8 +173,90 @@ static struct ath12k_link_vif *ath12k_spectral_get_vdev(struct ath12k *ar)
 	return list_first_entry(&ar->arvifs, typeof(*arvif), list);
 }
 
-static int ath12k_spectral_scan_trigger(struct ath12k *ar)
+int ath12k_spectral_start_scan(struct ath12k *ar)
 {
+	struct ath12k_link_vif *arvif;
+	int ret;
+
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	/* No WMI config in firmware yet; trigger would be undefined. */
+	if (ar->spectral.mode == ATH12K_SPECTRAL_DISABLED)
+		return 0;
+
+	/* Scan already running; avoid restarting and losing in-flight samples. */
+	if (ar->spectral.scan_active) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+			   "spectral start_scan: scan already active, skipping\n");
+		return 0;
+	}
+
+	arvif = ath12k_spectral_get_vdev(ar);
+	if (!arvif)
+		return -ENODEV;
+
+	ar->spectral.is_primary = true;
+
+	/* Clear any stale trigger state in firmware. */
+	ret = ath12k_wmi_vdev_spectral_enable(ar, arvif->vdev_id,
+					      ATH12K_WMI_SPECTRAL_TRIGGER_CMD_CLEAR,
+					      ATH12K_WMI_SPECTRAL_ENABLE_CMD_ENABLE);
+	if (ret)
+		return ret;
+
+	/* Arm and start FFT capture. */
+	ret = ath12k_wmi_vdev_spectral_enable(ar, arvif->vdev_id,
+					      ATH12K_WMI_SPECTRAL_TRIGGER_CMD_TRIGGER,
+					      ATH12K_WMI_SPECTRAL_ENABLE_CMD_ENABLE);
+	if (ret)
+		return ret;
+
+	spin_lock_bh(&ar->spectral.lock);
+	ar->spectral.scan_active = true;
+	spin_unlock_bh(&ar->spectral.lock);
+
+	return 0;
+}
+
+int ath12k_spectral_stop_scan(struct ath12k *ar)
+{
+	struct ath12k_link_vif *arvif;
+	int ret;
+
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	/* Already disabled; skip redundant CLEAR+DISABLE to firmware. */
+	if (ar->spectral.mode == ATH12K_SPECTRAL_DISABLED) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+			   "spectral stop_scan: already disabled, skipping\n");
+		return 0;
+	}
+
+	arvif = ath12k_spectral_get_vdev(ar);
+	if (!arvif)
+		return -ENODEV;
+
+	arvif->spectral_enabled = false;
+	spin_lock_bh(&ar->spectral.lock);
+	ar->spectral.mode = ATH12K_SPECTRAL_DISABLED;
+	ar->spectral.scan_active = false;
+	spin_unlock_bh(&ar->spectral.lock);
+
+	ret = ath12k_wmi_vdev_spectral_enable(ar, arvif->vdev_id,
+					      ATH12K_WMI_SPECTRAL_TRIGGER_CMD_CLEAR,
+					      ATH12K_WMI_SPECTRAL_ENABLE_CMD_DISABLE);
+	if (ret)
+		ath12k_warn(ar->ab,
+			    "failed to disable spectral scan on vdev %d: %d\n",
+			    arvif->vdev_id, ret);
+	return ret;
+}
+
+int ath12k_spectral_configure_scan_params(struct ath12k *ar,
+					  enum ath12k_spectral_mode mode)
+{
+	struct ath12k_wmi_vdev_spectral_conf_arg param = { 0 };
+	struct ath12k_spectral_params *p = &ar->spectral.params;
 	struct ath12k_link_vif *arvif;
 	int ret;
 
@@ -184,79 +266,52 @@ static int ath12k_spectral_scan_trigger(struct ath12k *ar)
 	if (!arvif)
 		return -ENODEV;
 
-	if (ar->spectral.mode == ATH12K_SPECTRAL_DISABLED)
-		return 0;
-
-	ar->spectral.is_primary = true;
-
-	ret = ath12k_wmi_vdev_spectral_enable(ar, arvif->vdev_id,
-					      ATH12K_WMI_SPECTRAL_TRIGGER_CMD_CLEAR,
-					      ATH12K_WMI_SPECTRAL_ENABLE_CMD_ENABLE);
-	if (ret)
-		return ret;
-
-	ret = ath12k_wmi_vdev_spectral_enable(ar, arvif->vdev_id,
-					      ATH12K_WMI_SPECTRAL_TRIGGER_CMD_TRIGGER,
-					      ATH12K_WMI_SPECTRAL_ENABLE_CMD_ENABLE);
-	if (ret)
-		return ret;
-
-	return 0;
-}
-
-static int ath12k_spectral_scan_config(struct ath12k *ar,
-				       enum ath12k_spectral_mode mode)
-{
-	struct ath12k_wmi_vdev_spectral_conf_arg param = { 0 };
-	struct ath12k_link_vif *arvif;
-	int ret, count;
-
-	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
-
-	arvif = ath12k_spectral_get_vdev(ar);
-	if (!arvif)
-		return -ENODEV;
-
-	arvif->spectral_enabled = (mode != ATH12K_SPECTRAL_DISABLED);
+	arvif->spectral_enabled = true;
 	spin_lock_bh(&ar->spectral.lock);
 	ar->spectral.mode = mode;
+	/* configure always sends CLEAR+DISABLE to firmware, which terminates
+	 * any running scan. Clear scan_active so start_scan can re-trigger.
+	 */
+	ar->spectral.scan_active = false;
 	spin_unlock_bh(&ar->spectral.lock);
 
-	if (mode == ATH12K_SPECTRAL_DISABLED)
-		return 0;
+	ar->spectral.samples_done = 0;
 
+	/* Reset firmware trigger state before pushing a new configuration.
+	 * This is required even though we are not yet enabling the scan —
+	 * a prior scan may have left the vdev's trigger state active.
+	 */
 	ret = ath12k_wmi_vdev_spectral_enable(ar, arvif->vdev_id,
 					      ATH12K_WMI_SPECTRAL_TRIGGER_CMD_CLEAR,
 					      ATH12K_WMI_SPECTRAL_ENABLE_CMD_DISABLE);
 	if (ret) {
-		ath12k_warn(ar->ab, "failed to enable spectral scan: %d\n", ret);
+		ath12k_warn(ar->ab, "failed to configure spectral scan: %d\n", ret);
 		return ret;
 	}
 
-	if (mode == ATH12K_SPECTRAL_BACKGROUND)
-		count = ATH12K_WMI_SPECTRAL_COUNT_DEFAULT;
-	else
-		count = max_t(u16, 1, ar->spectral.count);
-
-	param.vdev_id = arvif->vdev_id;
-	param.scan_count = count;
-	param.scan_fft_size = ATH12K_WMI_SPECTRAL_FFT_SIZE_DEFAULT;
-	param.scan_period = ATH12K_WMI_SPECTRAL_PERIOD_DEFAULT;
-	param.scan_priority = ATH12K_WMI_SPECTRAL_PRIORITY_DEFAULT;
-	param.scan_gc_ena = ATH12K_WMI_SPECTRAL_GC_ENA_DEFAULT;
-	param.scan_restart_ena = ATH12K_WMI_SPECTRAL_RESTART_ENA_DEFAULT;
-	param.scan_noise_floor_ref = ATH12K_WMI_SPECTRAL_NOISE_FLOOR_REF_DEFAULT;
-	param.scan_init_delay = ATH12K_WMI_SPECTRAL_INIT_DELAY_DEFAULT;
-	param.scan_nb_tone_thr = ATH12K_WMI_SPECTRAL_NB_TONE_THR_DEFAULT;
-	param.scan_str_bin_thr = ATH12K_WMI_SPECTRAL_STR_BIN_THR_DEFAULT;
-	param.scan_wb_rpt_mode = ATH12K_WMI_SPECTRAL_WB_RPT_MODE_DEFAULT;
-	param.scan_rssi_rpt_mode = ATH12K_WMI_SPECTRAL_RSSI_RPT_MODE_DEFAULT;
-	param.scan_rssi_thr = ATH12K_WMI_SPECTRAL_RSSI_THR_DEFAULT;
-	param.scan_pwr_format = ATH12K_WMI_SPECTRAL_PWR_FORMAT_DEFAULT;
-	param.scan_rpt_mode = ATH12K_WMI_SPECTRAL_RPT_MODE_DEFAULT;
-	param.scan_bin_scale = ATH12K_WMI_SPECTRAL_BIN_SCALE_DEFAULT;
-	param.scan_dbm_adj = ATH12K_WMI_SPECTRAL_DBM_ADJ_DEFAULT;
-	param.scan_chn_mask = ATH12K_WMI_SPECTRAL_CHN_MASK_DEFAULT;
+	/* In background mode the hardware triggers continuously; scan_count
+	 * must be 0 (unlimited) regardless of the user-configured value.
+	 */
+	param.vdev_id              = arvif->vdev_id;
+	param.scan_count           = (mode == ATH12K_SPECTRAL_BACKGROUND) ?
+				      0 : max_t(u32, 1, p->scan_count);
+	param.scan_period          = p->scan_period;
+	param.scan_priority        = p->scan_priority;
+	param.scan_fft_size        = p->scan_fft_size;
+	param.scan_gc_ena          = p->scan_gc_ena;
+	param.scan_restart_ena     = p->scan_restart_ena;
+	param.scan_noise_floor_ref = p->scan_noise_floor_ref;
+	param.scan_init_delay      = p->scan_init_delay;
+	param.scan_nb_tone_thr     = p->scan_nb_tone_thr;
+	param.scan_str_bin_thr     = p->scan_str_bin_thr;
+	param.scan_wb_rpt_mode     = p->scan_wb_rpt_mode;
+	param.scan_rssi_rpt_mode   = p->scan_rssi_rpt_mode;
+	param.scan_rssi_thr        = p->scan_rssi_thr;
+	param.scan_pwr_format      = p->scan_pwr_format;
+	param.scan_rpt_mode        = p->scan_rpt_mode;
+	param.scan_bin_scale       = p->scan_bin_scale;
+	param.scan_dbm_adj         = p->scan_dbm_adj;
+	param.scan_chn_mask        = p->scan_chn_mask;
 
 	ret = ath12k_wmi_vdev_spectral_conf(ar, &param);
 	if (ret) {
@@ -319,14 +374,15 @@ static ssize_t ath12k_write_file_spec_scan_ctl(struct file *file,
 			/* reset the configuration to adopt possibly changed
 			 * debugfs parameters
 			 */
-			ret = ath12k_spectral_scan_config(ar, ar->spectral.mode);
+			ret = ath12k_spectral_configure_scan_params(ar,
+								    ar->spectral.mode);
 			if (ret) {
 				ath12k_warn(ar->ab, "failed to reconfigure spectral scan: %d\n",
 					    ret);
 				goto unlock;
 			}
 
-			ret = ath12k_spectral_scan_trigger(ar);
+			ret = ath12k_spectral_start_scan(ar);
 			if (ret) {
 				ath12k_warn(ar->ab, "failed to trigger spectral scan: %d\n",
 					    ret);
@@ -335,11 +391,12 @@ static ssize_t ath12k_write_file_spec_scan_ctl(struct file *file,
 			ret = -EINVAL;
 		}
 	} else if (strncmp("background", buf, 10) == 0) {
-		ret = ath12k_spectral_scan_config(ar, ATH12K_SPECTRAL_BACKGROUND);
+		ret = ath12k_spectral_configure_scan_params(ar,
+							    ATH12K_SPECTRAL_BACKGROUND);
 	} else if (strncmp("manual", buf, 6) == 0) {
-		ret = ath12k_spectral_scan_config(ar, ATH12K_SPECTRAL_MANUAL);
+		ret = ath12k_spectral_configure_scan_params(ar, ATH12K_SPECTRAL_MANUAL);
 	} else if (strncmp("disable", buf, 7) == 0) {
-		ret = ath12k_spectral_scan_config(ar, ATH12K_SPECTRAL_DISABLED);
+		ret = ath12k_spectral_stop_scan(ar);
 	} else {
 		ret = -EINVAL;
 	}
@@ -366,10 +423,10 @@ static ssize_t ath12k_read_file_spectral_count(struct file *file,
 	struct ath12k *ar = file->private_data;
 	char buf[32];
 	size_t len = 0;
-	u16 spectral_count;
+	u32 spectral_count;
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
-	spectral_count = ar->spectral.count;
+	spectral_count = ar->spectral.params.scan_count;
 	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
 
 	len = scnprintf(buf, sizeof(buf) - len, "%d\n", spectral_count);
@@ -397,7 +454,7 @@ static ssize_t ath12k_write_file_spectral_count(struct file *file,
 		return -EINVAL;
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
-	ar->spectral.count = val;
+	ar->spectral.params.scan_count = val;
 	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
 
 	return count;
@@ -422,7 +479,7 @@ static ssize_t ath12k_read_file_spectral_bins(struct file *file,
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
 
-	fft_size = ar->spectral.fft_size;
+	fft_size = ar->spectral.params.scan_fft_size;
 	bins = 1 << fft_size;
 
 	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
@@ -456,7 +513,7 @@ static ssize_t ath12k_write_file_spectral_bins(struct file *file,
 		return -EINVAL;
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
-	ar->spectral.fft_size = ilog2(val);
+	ar->spectral.params.scan_fft_size = ilog2(val);
 	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
 
 	return count;
@@ -622,7 +679,9 @@ int ath12k_spectral_process_fft(struct ath12k *ar,
 				supported_flags = spectral_cap.fft_size_caps->supported_flags;
 				supported_flags >>= 6;
 				if (!(supported_flags & 1)) {
-					ath12k_warn(ab, "Spectral fft size %d is not supported", ar->spectral.fft_size);
+					ath12k_warn(ab,
+						    "Spectral fft size %d not supported",
+						    ar->spectral.params.scan_fft_size);
 					return -EINVAL;
 				}
 				break;
@@ -637,11 +696,13 @@ int ath12k_spectral_process_fft(struct ath12k *ar,
 				supported_flags = spectral_cap.fft_size_caps->supported_flags;
 				supported_flags >>= 7;
 				if (!(supported_flags & 1)) {
-					ath12k_warn(ab, "Spectral fft size %d is not supported", ar->spectral.fft_size);
+					ath12k_warn(ab,
+						    "Spectral fft size %d not supported",
+						    ar->spectral.params.scan_fft_size);
 					return -EINVAL;
 				} else {
 					num_bins <<= 1;
-					ar->spectral.fft_size = 8;
+					ar->spectral.params.scan_fft_size = 8;
 				}
 				break;
 			}
@@ -655,11 +716,13 @@ int ath12k_spectral_process_fft(struct ath12k *ar,
 				supported_flags = spectral_cap.fft_size_caps->supported_flags;
 				supported_flags >>= 8;
 				if (!(supported_flags & 1)) {
-					ath12k_warn(ab, "Spectral fft size %d is not supported", ar->spectral.fft_size);
+					ath12k_warn(ab,
+						    "Spectral fft size %d not supported",
+						    ar->spectral.params.scan_fft_size);
 					return -EINVAL;
 				} else {
 					num_bins <<= 2;
-					ar->spectral.fft_size = 9;
+					ar->spectral.params.scan_fft_size = 9;
 				}
 				break;
 			}
@@ -673,10 +736,12 @@ int ath12k_spectral_process_fft(struct ath12k *ar,
 				supported_flags = spectral_cap.fft_size_caps->supported_flags;
 				supported_flags >>= 8;
 				if (!(supported_flags & 1)) {
-					ath12k_warn(ab, "Spectral fft size %d is not supported", ar->spectral.fft_size);
+					ath12k_warn(ab,
+						    "Spectral fft size %d not supported",
+						    ar->spectral.params.scan_fft_size);
 					return -EINVAL;
 				} else {
-					ar->spectral.fft_size = 9;
+					ar->spectral.params.scan_fft_size = 9;
 					num_bins <<= 2;
 				}
 				break;
@@ -693,10 +758,12 @@ int ath12k_spectral_process_fft(struct ath12k *ar,
 				supported_flags = spectral_cap.fft_size_caps->supported_flags;
 				supported_flags >>= 8;
 				if (!(supported_flags & 1)) {
-					ath12k_warn(ab, "Spectral fft size %d is not supported", ar->spectral.fft_size);
+					ath12k_warn(ab,
+						    "Spectral fft size %d not supported",
+						    ar->spectral.params.scan_fft_size);
 					return -EINVAL;
 				} else {
-					ar->spectral.fft_size = 9;
+					ar->spectral.params.scan_fft_size = 9;
 					num_bins <<= 2;
 				}
 				break;
@@ -756,7 +823,7 @@ int ath12k_spectral_process_fft(struct ath12k *ar,
 	}
 
 	ath12k_spectral_parse_fft(fft_sample->data, fft_report->bins, num_bins,
-				  ar->spectral.fft_size);
+				  ar->spectral.params.scan_fft_size);
 
 	if (ar->spectral.rfs_scan)
 		relay_write(ar->spectral.rfs_scan, fft_sample,
@@ -779,6 +846,7 @@ static int ath12k_spectral_process_data(struct ath12k *ar,
 	int tlv_len, sample_sz;
 	int ret;
 	bool quit = false;
+	bool send_complete = false;
 
 	spin_lock_bh(&ar->spectral.lock);
 
@@ -813,6 +881,7 @@ static int ath12k_spectral_process_data(struct ath12k *ar,
 			 *
 			ath12k_warn(ab, "Invalid sign 0x%x at bytes %d\n",
 				    sign, i);*/
+			ar->spectral.diag.sig_mismatch++;
 			ret = -EINVAL;
 			goto err;
 		}
@@ -875,6 +944,9 @@ static int ath12k_spectral_process_data(struct ath12k *ar,
 					    i);
 				goto err;
 			}
+			if (ar->spectral.params.scan_count > 0 &&
+			    ++ar->spectral.samples_done >= ar->spectral.params.scan_count)
+				send_complete = true;
 			quit = true;
 			break;
 		}
@@ -887,6 +959,11 @@ err:
 	kfree(fft_sample);
 unlock:
 	spin_unlock_bh(&ar->spectral.lock);
+	if (send_complete) {
+		enum qca_wlan_vendor_spectral_scan_complete_status s =
+				QCA_WLAN_VENDOR_SPECTRAL_SCAN_COMPLETE_STATUS_SUCCESSFUL;
+		ath12k_spectral_send_complete_event(ar, s);
+	}
 	return ret;
 }
 
@@ -955,12 +1032,39 @@ static inline void ath12k_spectral_debug_unregister(struct ath12k *ar)
 	}
 }
 
+int ath12k_spectral_send_complete_event(struct ath12k *ar, int status)
+{
+	struct sk_buff *skb;
+	struct ath12k_hw *ah = ar->ah;
+
+	spin_lock_bh(&ar->spectral.lock);
+	ar->spectral.scan_active = false;
+	spin_unlock_bh(&ar->spectral.lock);
+
+	int evid = QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_COMPLETE_INDEX;
+
+	skb = cfg80211_vendor_event_alloc(ah->hw->wiphy, NULL,
+					  NLMSG_DEFAULT_SIZE,
+					  evid, GFP_ATOMIC);
+	if (!skb)
+		return -ENOMEM;
+
+	if (nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_COMPLETE_STATUS,
+			status)) {
+		kfree_skb(skb);
+		return -ENOBUFS;
+	}
+
+	cfg80211_vendor_event(skb, GFP_ATOMIC);
+	return 0;
+}
+
 int ath12k_spectral_vif_stop(struct ath12k_link_vif *arvif)
 {
 	if (!arvif->spectral_enabled)
 		return 0;
 
-	return ath12k_spectral_scan_config(arvif->ar, ATH12K_SPECTRAL_DISABLED);
+	return ath12k_spectral_stop_scan(arvif->ar);
 }
 
 void ath12k_spectral_reset_buffer(struct ath12k *ar)
@@ -996,7 +1100,7 @@ void ath12k_spectral_deinit(struct ath12k_base *ab)
 
 		if (ar->spectral.mode != ATH12K_SPECTRAL_DISABLED) {
 			wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
-			ath12k_spectral_scan_config(ar, ATH12K_SPECTRAL_DISABLED);
+			ath12k_spectral_stop_scan(ar);
 			wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
 		}
 
@@ -1099,8 +1203,25 @@ int ath12k_spectral_init(struct ath12k_base *ab)
 		spin_lock_bh(&sp->lock);
 
 		sp->mode = ATH12K_SPECTRAL_DISABLED;
-		sp->count = ATH12K_WMI_SPECTRAL_COUNT_DEFAULT;
-		sp->fft_size = ATH12K_WMI_SPECTRAL_FFT_SIZE_DEFAULT;
+		sp->params.scan_count          = ATH12K_WMI_SPECTRAL_COUNT_DEFAULT;
+		sp->params.scan_period         = ATH12K_WMI_SPECTRAL_PERIOD_DEFAULT;
+		sp->params.scan_priority       = ATH12K_WMI_SPECTRAL_PRIORITY_DEFAULT;
+		sp->params.scan_fft_size       = ATH12K_WMI_SPECTRAL_FFT_SIZE_DEFAULT;
+		sp->params.scan_gc_ena         = ATH12K_WMI_SPECTRAL_GC_ENA_DEFAULT;
+		sp->params.scan_restart_ena    = ATH12K_WMI_SPECTRAL_RESTART_ENA_DEFAULT;
+		sp->params.scan_noise_floor_ref =
+			ATH12K_WMI_SPECTRAL_NOISE_FLOOR_REF_DEFAULT;
+		sp->params.scan_init_delay     = ATH12K_WMI_SPECTRAL_INIT_DELAY_DEFAULT;
+		sp->params.scan_nb_tone_thr    = ATH12K_WMI_SPECTRAL_NB_TONE_THR_DEFAULT;
+		sp->params.scan_str_bin_thr    = ATH12K_WMI_SPECTRAL_STR_BIN_THR_DEFAULT;
+		sp->params.scan_wb_rpt_mode    = ATH12K_WMI_SPECTRAL_WB_RPT_MODE_DEFAULT;
+		sp->params.scan_rssi_rpt_mode = ATH12K_WMI_SPECTRAL_RSSI_RPT_MODE_DEFAULT;
+		sp->params.scan_rssi_thr       = ATH12K_WMI_SPECTRAL_RSSI_THR_DEFAULT;
+		sp->params.scan_pwr_format     = ATH12K_WMI_SPECTRAL_PWR_FORMAT_DEFAULT;
+		sp->params.scan_rpt_mode       = ATH12K_WMI_SPECTRAL_RPT_MODE_DEFAULT;
+		sp->params.scan_bin_scale      = ATH12K_WMI_SPECTRAL_BIN_SCALE_DEFAULT;
+		sp->params.scan_dbm_adj        = ATH12K_WMI_SPECTRAL_DBM_ADJ_DEFAULT;
+		sp->params.scan_chn_mask       = ATH12K_WMI_SPECTRAL_CHN_MASK_DEFAULT;
 		sp->enabled = true;
 
 		spin_unlock_bh(&sp->lock);
