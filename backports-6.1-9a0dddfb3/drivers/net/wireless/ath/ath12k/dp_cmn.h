@@ -8,6 +8,9 @@
 
 #include "cmn_defs.h"
 #include "hw.h"
+#ifdef CPTCFG_QCN_EXTN
+#include "qcn_extns/ath12k_cmn_extn.h"
+#endif
 
 /* Max number of links for MLO connection */
 #define ATH12K_DP_MAX_MLO_LINKS 4
@@ -167,6 +170,9 @@ struct ath12k_dp_hw_group {
 	struct device *tx_spt_dev;
 	u8  pcp_tid_map[ATH12K_DP_PCP_TID_MAP_SIZE];
 	u8  tid_map_precedence;
+#ifdef CPTCFG_QCN_EXTN
+	struct ath12k_dp_hw_group_extn extn;
+#endif
 
 	/* Keep Last */
 	u8 arch_data[] __aligned(sizeof(void *));
