@@ -8,6 +8,7 @@
 
 #include <linux/slab.h>
 #include <asm/unaligned.h>
+#include <net/sock.h>
 #include "ieee80211_i.h"
 #include "mesh.h"
 #include "wme.h"
@@ -831,8 +832,13 @@ bool ieee80211_mesh_xmit_fast(struct ieee80211_sub_if_data *sdata,
 	if (ethertype < ETH_P_802_3_MIN)
 		return false;
 
+#if LINUX_VERSION_IS_LESS(6, 16, 0)
 	if (skb->sk && skb_shinfo(skb)->tx_flags & SKBTX_WIFI_STATUS)
 		return false;
+#else
+	if (sk_requests_wifi_status(skb->sk))
+		return false;
+#endif
 
 	if (skb->ip_summed == CHECKSUM_PARTIAL && IS_HW_CSUM_NOT_ENABLED(sdata->dev)) {
 		skb_set_transport_header(skb, skb_checksum_start_offset(skb));

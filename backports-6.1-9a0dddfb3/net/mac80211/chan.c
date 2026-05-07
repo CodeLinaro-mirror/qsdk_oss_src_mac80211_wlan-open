@@ -764,8 +764,13 @@ ieee80211_alloc_chanctx(struct ieee80211_local *local,
 	_ieee80211_recalc_chanctx_min_def(local, ctx, NULL, false);
 
 	ctx->local = local;
+#if LINUX_VERSION_IS_GEQ(6, 18, 0)
+	hrtimer_setup(&ctx->dfs_cac_timer, ieee80211_dfs_cac_timeout,
+		      CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+#else
 	hrtimer_init(&ctx->dfs_cac_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	ctx->dfs_cac_timer.function = ieee80211_dfs_cac_timeout;
+#endif
 	wiphy_work_init(&ctx->dfs_cac_timer_work, ieee80211_dfs_cac_timer_work);
 
 	return ctx;
