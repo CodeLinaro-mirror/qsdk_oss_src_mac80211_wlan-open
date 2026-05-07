@@ -10915,10 +10915,6 @@ int ath12k_mac_set_key(struct ath12k *ar, enum set_key_cmd cmd,
 	if (arsta)
 		sta = ath12k_ahsta_to_sta(arsta->ahsta);
 
-	if (sta && sta->mlo &&
-	    (test_bit(ATH12K_FLAG_UMAC_RECOVERY_START, &ar->ab->dev_flags)))
-	    	return 0;
-
 	if (test_bit(ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED, &ab->ag->flags))
 		return 1;
 
@@ -14004,14 +14000,20 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 		if (sta->mlo && ((!ahsta->links_map &&
 		    (hweight16(sta->valid_links) == 1)) ||
 		     test_bit(link_id, &links_map))) {
-
-			links_map = ahvif->links_map;
-		    	/*Add case to prevent MLO assoc from happening when UMAC recovery happens */
-			for_each_set_bit(t_link_id, &links_map, IEEE80211_MLD_MAX_NUM_LINKS){
+			/*
+			 * fetch the links that are valid in this sta entry and
+			 * figure out if any radio is in asserted state
+			 */
+			links_map = sta->valid_links;
+			for_each_set_bit(t_link_id, &links_map,
+					 IEEE80211_MLD_MAX_NUM_LINKS) {
 				arvif = wiphy_dereference(wiphy, ahvif->link[t_link_id]);
 				if (!arvif->ar ||
-				    (test_bit(ATH12K_FLAG_UMAC_RECOVERY_START,
-					      &arvif->ar->ab->dev_flags))){
+				     ath12k_dp_umac_reset_in_progress(arvif->ar->ab) ||
+				     test_bit(ATH12K_FLAG_RECOVERY,
+					      &arvif->ar->ab->dev_flags) ||
+				     test_bit(ATH12K_FLAG_CRASH_FLUSH,
+					      &arvif->ar->ab->dev_flags)) {
 					ret = -EINVAL;
 					goto exit;
 				}
@@ -19987,10 +19989,6 @@ static int ath12k_mac_ampdu_action(struct ieee80211_hw *hw,
 
 	if (unlikely(test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)))
 		return -ESHUTDOWN;
-
-	if (params->sta->mlo &&
-	    (test_bit(ATH12K_FLAG_UMAC_RECOVERY_START, &ar->ab->dev_flags)))
-		return 0;
 
 	switch (params->action) {
 	case IEEE80211_AMPDU_RX_START:
