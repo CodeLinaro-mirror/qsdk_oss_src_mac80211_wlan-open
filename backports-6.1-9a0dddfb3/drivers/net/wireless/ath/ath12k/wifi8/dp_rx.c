@@ -4936,12 +4936,6 @@ int ath12k_wifi8_dp_rx_ring_setup(struct ath12k_base *ab)
 		return ret;
 	}
 
-	ret = ath12k_wifi8_dp_rx_wbm_srng_setup(ab);
-	if (ret) {
-		ath12k_warn(ab, "failed to setup rx wbm refill and idle buf rings\n");
-		return ret;
-	}
-
 	ret = ath12k_dp_srng_setup(ab,
 				   &dp->reo_dst_ring[ATH12K_DP_RX_ROAMING_RING1],
 				   HAL_REO_DST_ROAMING,
@@ -4986,6 +4980,12 @@ int ath12k_wifi8_dp_rx_ring_setup(struct ath12k_base *ab)
 
 	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
 		return 0;
+
+	ret = ath12k_wifi8_dp_rx_wbm_srng_setup(ab);
+	if (ret) {
+		ath12k_warn(ab, "failed to setup rx wbm refill and idle buf rings\n");
+		return ret;
+	}
 
 	ret = ath12k_wifi8_dp_rx_wbm_buf_ring_init(ab);
 	if (ret) {

@@ -13,6 +13,8 @@
 #include "dp_tx.h"
 #include "dp_rx.h"
 
+int ath12k_wifi8_dp_rx_wbm_srng_setup(struct ath12k_base *ab);
+
 /**
  * ath12k_wifi8_clear_link_desc_pool_task - Task to clear link desc pool
  * @ab: Pointer to ath12k_base structure
@@ -78,6 +80,18 @@ void ath12k_wifi8_umac_reset_handle_init_recovery(struct ath12k_base *ab)
 	ath12k_hif_mgmt_irq_disable(ab);
 }
 
+static void ath12k_wifi8_umac_reset_refill_rings_deinit(struct ath12k_base *ab)
+{
+	int i;
+	struct ath12k_dp *dp = ab->dp;
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+
+	for (i = 0 ; i < DP_WBM_REFILL_RING_MAX; i++)
+		ath12k_dp_srng_hw_disable(ab, &dp_wifi8->wbm_refill_ring[i]);
+
+	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->wbm_idle_buf_ring);
+}
+
 /**
  * ath12k_wifi8_post_pre_reset_send_cb - Callback after pre_reset message sent
  * @ab: Pointer to ath12k_base structure
@@ -90,7 +104,7 @@ static void ath12k_wifi8_post_pre_reset_send_cb(struct ath12k_base *ab)
 {
 	struct ath12k_hw_group *ag = ab->ag;
 	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
-	unsigned long flags;
+	unsigned long flags, end;
 
 	/* Enqueue clear_link_desc_pool task for the current ab */
 	if (ab->is_bypassed || test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags))
@@ -106,7 +120,15 @@ static void ath12k_wifi8_post_pre_reset_send_cb(struct ath12k_base *ab)
 
 	spin_unlock_irqrestore(&mlo_umac_reset->task_queue_lock, flags);
 
-	ath12k_wifi8_mgmt_refill_rings_reinit(ab);
+	ath12k_wifi8_umac_reset_refill_rings_deinit(ab);
+	ath12k_wifi8_mgmt_refill_rings_deinit(ab);
+
+	end = jiffies + msecs_to_jiffies(2);
+	while (time_before(jiffies, end))
+		;
+
+	ath12k_wifi8_dp_rx_wbm_srng_setup(ab);
+	ath12k_wifi8_mgmt_rx_refill_ring_setup(ab);
 
 	/* Enqueue unbound tasks - any CPU can process it */
 	ath12k_q_post_reset_task(ab, ath12k_wifi8_clear_link_desc_pool_task);

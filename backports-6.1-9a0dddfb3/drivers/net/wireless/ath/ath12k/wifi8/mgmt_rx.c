@@ -1159,7 +1159,7 @@ void ath12k_wifi8_mgmt_tasklet(struct tasklet_struct *t)
 }
 #endif
 
-static int ath12k_wifi8_mgmt_rx_refill_ring_setup(struct ath12k_base *ab)
+int ath12k_wifi8_mgmt_rx_refill_ring_setup(struct ath12k_base *ab)
 {
 	struct ath12k_mgmt *mgmt = ab->mgmt;
 	struct ath12k_mgmt_wifi8 *mgmt_wifi8 = ath12k_get_mgmt_wifi8(mgmt);
@@ -1203,25 +1203,13 @@ void ath12k_wifi8_mgmt_rx_refill_ring_init(struct ath12k_base *ab)
 		ath12k_wifi8_mgmt_rx_replenish_buffs(mgmt, rx_refill_ring, &list, false);
 }
 
-void ath12k_wifi8_mgmt_refill_rings_reinit(struct ath12k_base *ab)
+void ath12k_wifi8_mgmt_refill_rings_deinit(struct ath12k_base *ab)
 {
 	struct ath12k_mgmt *mgmt = ab->mgmt;
 	struct ath12k_mgmt_wifi8 *mgmt_wifi8 = ath12k_get_mgmt_wifi8(mgmt);
-	unsigned long end;
-	int ret;
 
 	ath12k_mgmt_srng_hw_disable(ab, &mgmt_wifi8->wbm_refill_ring);
 	ath12k_mgmt_srng_hw_disable(ab, &mgmt_wifi8->wbm_idle_buf_ring);
-
-	end = jiffies + msecs_to_jiffies(2);
-
-	while (time_before(jiffies, end))
-		;
-
-	/* Mgmt Rx Refill rings */
-	ret = ath12k_wifi8_mgmt_rx_refill_ring_setup(ab);
-	if (ret)
-		ath12k_err(ab, "Failed to initialize mgmt refill rings: %d", ret);
 }
 
 int ath12k_wifi8_mgmt_rx_ring_setup(struct ath12k_base *ab)

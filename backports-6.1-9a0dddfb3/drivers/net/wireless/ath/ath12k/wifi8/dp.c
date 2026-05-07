@@ -568,7 +568,6 @@ void ath12k_wifi8_srng_hw_ring_disable(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ab->dp;
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
-	int i;
 
 	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->tx_exception);
 	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->tcl_status_ring);
@@ -579,11 +578,6 @@ void ath12k_wifi8_srng_hw_ring_disable(struct ath12k_base *ab)
 	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->rx_ase_status_ring);
 	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->fse_cmd_ring);
 	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->reo_flush_ring);
-
-	for (i = 0 ; i < DP_WBM_REFILL_RING_MAX; i++)
-		ath12k_dp_srng_hw_disable(ab, &dp_wifi8->wbm_refill_ring[i]);
-
-	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->wbm_idle_buf_ring);
 }
 
 static int ath12k_wifi8_dp_op_device_init(struct ath12k_dp *dp)
