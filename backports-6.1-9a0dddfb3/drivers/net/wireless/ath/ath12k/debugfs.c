@@ -2542,6 +2542,7 @@ void ath12k_debugfs_nrp_clean(struct ath12k *ar, const u8 *addr, int num_nrp)
 		debugfs_remove_recursive(ar->debug.debugfs_nrp);
 		ar->debug.debugfs_nrp = NULL;
 		if (!ath12k_dp_smart_mon_enabled(ar)) {
+			ath12k_dp_mon_set_nrp(ar, false);
 			ath12k_reset_nrp_filter(ar, true);
 		} else {
 			ath12k_reset_smart_mon_filter(ar, true);
@@ -2717,6 +2718,12 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 
 	param->action = action;
 
+	if (ath12k_dp_ext_mon_is_enabled(ar)) {
+		ath12k_err(ab, "ext mon enabled\n");
+		ret = -EINVAL;
+		goto exit;
+	}
+
 	switch (action) {
 	case WMI_FILTER_NRP_ACTION_ADD:
 		spin_lock_bh(&dp->dp_lock);
@@ -2823,6 +2830,7 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 				goto err_free;
 			}
 			if (!smart_mon_enabled) {
+				ath12k_dp_mon_set_nrp(ar, true);
 				ath12k_reset_nrp_filter(ar, false);
 			} else {
 				ath12k_reset_smart_mon_filter(ar, false);
@@ -2922,6 +2930,12 @@ static ssize_t ath12k_write_smart_mon_filter(struct file *file,
 	/* Validate filter value (4-bit field: 0x0 to 0xF) */
 	if (filter_value > 0xF) {
 		ath12k_err(ar->ab, "Invalid smart_mon_filter value: 0x%x (valid range: 0x0-0xF)\n",
+			   filter_value);
+		return -EINVAL;
+	}
+
+	if (filter_value && !(filter_value & DP_SMART_MON_VALID)) {
+		ath12k_err(ar->ab, "Invalid smart_mon_filter value: 0x%x Valid bit is not set\n",
 			   filter_value);
 		return -EINVAL;
 	}

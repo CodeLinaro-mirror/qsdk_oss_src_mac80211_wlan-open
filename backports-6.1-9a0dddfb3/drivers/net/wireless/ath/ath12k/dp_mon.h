@@ -40,15 +40,19 @@
 #if defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
 #define DP_RXDMA_MONITOR_BUF_RING_SIZE  256
 #define DP_RXDMA_MONITOR_DST_RING_SIZE  512
-#define ATH12K_DP_SMART_MON_FILTER_DEFAULT DP_SMART_MON_VALID
+#define ATH12K_DP_SMART_MON_FILTER_DEFAULT	(DP_SMART_MON_PROFILE_256M | \
+						 (DP_SMART_MON_FILTER_MASK & \
+						  ~DP_SMART_MON_VALID))
 #elif defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined(CPTCFG_ATH12K_MEM_PROFILE_512M)
 #define DP_RXDMA_MONITOR_BUF_RING_SIZE  256
 #define DP_RXDMA_MONITOR_DST_RING_SIZE  512
-#define ATH12K_DP_SMART_MON_FILTER_DEFAULT DP_SMART_MON_VALID
+#define ATH12K_DP_SMART_MON_FILTER_DEFAULT	(DP_SMART_MON_PROFILE_512M | \
+						 (DP_SMART_MON_FILTER_MASK & \
+						  ~DP_SMART_MON_VALID))
 #else
 #define DP_RXDMA_MONITOR_BUF_RING_SIZE 8192
 #define DP_RXDMA_MONITOR_DST_RING_SIZE 8192
-#define ATH12K_DP_SMART_MON_FILTER_DEFAULT 0
+#define ATH12K_DP_SMART_MON_FILTER_DEFAULT	DP_SMART_MON_PROFILE_1G
 #endif
 #define DP_TX_MONITOR_BUF_RING_SIZE	8192
 #define DP_TX_MONITOR_DEST_RING_SIZE	8192
@@ -71,7 +75,16 @@
 #define DP_MON_RXDMA_BUF_COOKIE_PDEV_ID 	GENMASK(19, 18)
 #define DP_MON_RX_HDR_LEN			128
 
+#define DP_SMART_MON_FILTER_MASK        0x0F  /* lower nibble: C/M/D/V */
+#define DP_SMART_MON_PROFILE_MASK       0xF0  /* upper nibble: profile */
+
+#define DP_SMART_MON_PROFILE_UNSPEC     0x00
+#define DP_SMART_MON_PROFILE_1G         0x10
+#define DP_SMART_MON_PROFILE_512M       0x20
+#define DP_SMART_MON_PROFILE_256M       0x30
+
 #define DP_SMART_MON_VALID       BIT(0)
+
 #define ATH12K_DP_MON_STATUS_BUF   320
 #define ATH12K_DP_MON_NUM_PPDU_DESC 128
 
@@ -826,6 +839,7 @@ struct ath12k_pdev_mon_dp {
 	bool rx_pktlog_cbf;
 	u8 rx_pktlog_mode;
 	bool tx_pktlog_hybrid;
+	bool nrp_enabled;
 };
 
 enum ath12k_dp_mon_desc_in_use {
@@ -1463,13 +1477,19 @@ void ath12k_dp_mon_rx_config_monitor_mode(struct ath12k *ar, bool reset)
 	mon_ops = ath12k_dp_mon_ops_get(dp);
 
 	if (!reset) {
-		if (!(dp_pdev->dp_mon_pdev->smart_mon_filter & DP_SMART_MON_VALID)) {
+		if (!(dp_pdev->dp_mon_pdev->smart_mon_filter &
+		      DP_SMART_MON_FILTER_MASK)) {
 			dp_pdev->dp_mon_pdev->smart_mon_state =
 					ATH12K_DP_SMART_MON_DISABLED;
 			if (mon_ops && mon_ops->rx_monitor_mode_set)
 				mon_ops->rx_monitor_mode_set(dp_pdev);
 		} else {
-			dp_pdev->dp_mon_pdev->smart_mon_state = ATH12K_DP_SMART_MON_IDLE;
+			if (dp_pdev->dp_mon_pdev->smart_mon_filter & DP_SMART_MON_VALID)
+				dp_pdev->dp_mon_pdev->smart_mon_state =
+							ATH12K_DP_SMART_MON_IDLE;
+			else
+				dp_pdev->dp_mon_pdev->smart_mon_state =
+							ATH12K_DP_SMART_MON_DISABLED;
 		}
 	} else {
 		if(mon_ops && mon_ops->rx_monitor_mode_reset)
@@ -1604,20 +1624,71 @@ ath12k_dp_mon_desc_reset(struct ath12k_dp_mon_desc *desc)
 	memset((u8 *)desc + sizeof(desc->list), 0, sizeof(*desc) - sizeof(desc->list));
 }
 
+static inline bool
+ath12k_dp_ext_mon_is_enabled(struct ath12k *ar)
+{
+	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
+	struct ath12k_pdev_mon_dp *mon_pdev = dp_pdev->dp_mon_pdev;
+	bool enabled = false;
+
+	if (!mon_pdev)
+		return false;
+
+	spin_lock(&mon_pdev->rx_ext_mon_lock);
+	if (mon_pdev->rx_ext_mon_config)
+		enabled = mon_pdev->rx_ext_mon_config->enable;
+	spin_unlock(&mon_pdev->rx_ext_mon_lock);
+
+	return enabled;
+}
+
 static inline void
-ath12k_dp_smart_mon_filter_type_set(struct ath12k *ar,
-				    u8 filter)
+ath12k_dp_mon_set_nrp(struct ath12k *ar,
+		      bool val)
 {
 	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
 
 	if (unlikely(!dp_pdev || !dp_pdev->dp_mon_pdev))
 		return;
 
-	if (dp_pdev->dp_mon_pdev->smart_mon_filter != filter) {
-		dp_pdev->dp_mon_pdev->smart_mon_filter = filter;
+	dp_pdev->dp_mon_pdev->nrp_enabled = val;
+}
+
+static inline void
+ath12k_dp_smart_mon_filter_type_set(struct ath12k *ar,
+				    u8 new_filter)
+{
+	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
+	u8 old_filter, smart_mon_profile;
+
+	if (unlikely(!dp_pdev || !dp_pdev->dp_mon_pdev))
+		return;
+
+	if (ath12k_dp_ext_mon_is_enabled(ar)) {
+		ath12k_warn(dp_pdev->dp, "ext mon enabled\n");
+		return;
+	}
+
+	smart_mon_profile = dp_pdev->dp_mon_pdev->smart_mon_filter &
+				DP_SMART_MON_PROFILE_MASK;
+	if (smart_mon_profile == DP_SMART_MON_PROFILE_512M ||
+	    smart_mon_profile == DP_SMART_MON_PROFILE_256M) {
+		ath12k_warn(dp_pdev->dp,
+			    "Low mem: smart mon 0x%x unsupported, disable to 0x%x\n",
+			    new_filter, (u8)ATH12K_DP_SMART_MON_FILTER_DEFAULT &
+			    DP_SMART_MON_FILTER_MASK);
+		new_filter = ATH12K_DP_SMART_MON_FILTER_DEFAULT &
+				DP_SMART_MON_FILTER_MASK;
+	}
+
+	old_filter = dp_pdev->dp_mon_pdev->smart_mon_filter &
+				DP_SMART_MON_FILTER_MASK;
+	new_filter &= DP_SMART_MON_FILTER_MASK;
+	if (old_filter != new_filter) {
+		dp_pdev->dp_mon_pdev->smart_mon_filter = smart_mon_profile | new_filter;
 		if (dp_pdev->dp_mon_pdev->smart_mon_state ==
 		    ATH12K_DP_SMART_MON_ACTIVE) {
-			if (filter & DP_SMART_MON_VALID) {
+			if (new_filter & DP_SMART_MON_VALID) {
 				ath12k_dp_mon_rx_smart_mon_config(ar, true);
 				ath12k_dp_mon_rx_update_filter(ar);
 				ath12k_dp_mon_rx_smart_mon_config(ar, false);
@@ -1636,7 +1707,8 @@ ath12k_dp_smart_mon_filter_type_get(struct ath12k *ar,
 	if (unlikely(!dp_pdev || !dp_pdev->dp_mon_pdev))
 		return;
 
-	*filter = dp_pdev->dp_mon_pdev->smart_mon_filter;
+	*filter = dp_pdev->dp_mon_pdev->smart_mon_filter &
+				DP_SMART_MON_FILTER_MASK;
 }
 
 static inline bool
