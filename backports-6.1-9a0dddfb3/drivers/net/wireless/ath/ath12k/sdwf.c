@@ -692,7 +692,6 @@ int ath12k_telemetry_get_msduq_tx_stats(void *ptr, void *arg,
 	struct msduq_tx_stats *tele_tx_stats = (struct msduq_tx_stats *)msduq_tx_stats;
 	struct ath12k_mld_qos_stats *mld_qos_stats;
 	struct tx_stats *qos_tx;
-	unsigned long peer_links_map, scan_links_map;
 	int ret = 0;
 	u8 tid, q_id, link_id, pkt_type, mcs;
 
@@ -721,13 +720,8 @@ int ath12k_telemetry_get_msduq_tx_stats(void *ptr, void *arg,
 	}
 	tele_tx_stats->tx_failed = mld_qos_stats->tx_failed_pkts;
 
-	peer_links_map = mld_peer->peer_links_map;
-	scan_links_map = ATH12K_SCAN_LINKS_MASK;
-
-	for_each_andnot_bit(link_id, &peer_links_map,
-			    &scan_links_map,
-			    ATH12K_NUM_MAX_LINKS) {
-		tmp_peer = rcu_dereference(mld_peer->link_peers[link_id]);
+	for (link_id = 0; link_id < ATH12K_DP_PEER_MAX_MLO_LINKS; link_id++) {
+		tmp_peer = ath12k_dp_link_peer_find_by_hw_link_id(mld_peer, link_id);
 		if (!tmp_peer ||
 		    !tmp_peer->peer_stats.qos_stats) {
 			continue;
@@ -777,7 +771,6 @@ int ath12k_telemetry_get_sawf_tx_stats_drop(void *ptr, void *peer, u64 *pass,
 	struct ath12k_dp_link_peer *tmp_peer = NULL;
 	struct ath12k_mld_qos_stats *mld_qos_stats;
 	struct tx_stats *qos_tx;
-	unsigned long peer_links_map, scan_links_map;
 	int ret = 0;
 	u8 tid, q_id, link_id;
 
@@ -807,13 +800,8 @@ int ath12k_telemetry_get_sawf_tx_stats_drop(void *ptr, void *peer, u64 *pass,
 	*pass = mld_qos_stats->tx_success_pkts;
 	*drop = mld_qos_stats->tx_failed_pkts;
 
-	peer_links_map = mld_peer->peer_links_map;
-	scan_links_map = ATH12K_SCAN_LINKS_MASK;
-
-	for_each_andnot_bit(link_id, &peer_links_map,
-			    &scan_links_map,
-			    ATH12K_NUM_MAX_LINKS) {
-		tmp_peer = rcu_dereference(mld_peer->link_peers[link_id]);
+	for (link_id = 0; link_id < ATH12K_DP_PEER_MAX_MLO_LINKS; link_id++) {
+		tmp_peer = ath12k_dp_link_peer_find_by_hw_link_id(mld_peer, link_id);
 		if (!tmp_peer ||
 		    !tmp_peer->peer_stats.qos_stats) {
 			continue;
@@ -887,7 +875,6 @@ int ath12k_telemetry_get_sawf_tx_stats_tput(void *ptr, void *peer, u64 *in_bytes
 	struct ath12k_dp_peer *mld_peer = (struct ath12k_dp_peer *)peer;
 	struct ath12k_dp_link_peer *tmp_peer = NULL;
 	struct tx_stats *qos_tx;
-	unsigned long peer_links_map, scan_links_map;
 	int ret = 0;
 	u8 tid, q_id, link_id;
 
@@ -908,13 +895,8 @@ int ath12k_telemetry_get_sawf_tx_stats_tput(void *ptr, void *peer, u64 *in_bytes
 		goto end;
 	}
 
-	peer_links_map = mld_peer->peer_links_map;
-	scan_links_map = ATH12K_SCAN_LINKS_MASK;
-
-	for_each_andnot_bit(link_id, &peer_links_map,
-			    &scan_links_map,
-			    ATH12K_NUM_MAX_LINKS) {
-		tmp_peer = rcu_dereference(mld_peer->link_peers[link_id]);
+	for (link_id = 0; link_id < ATH12K_DP_PEER_MAX_MLO_LINKS; link_id++) {
+		tmp_peer = ath12k_dp_link_peer_find_by_hw_link_id(mld_peer, link_id);
 		if (!tmp_peer ||
 		    !tmp_peer->peer_stats.qos_stats) {
 			continue;
@@ -1044,16 +1026,9 @@ void ath12k_telemetry_update_tx_stats(struct ath12k_tele_qos_tx *tx, u8 link_id,
 
 	if (link_id == INVALID_LINK_ID &&
 	    mld_peer->qos_stats_lvl == ATH12K_QOS_MULTI_LINK_STATS) {
-		unsigned long peer_links_map, scan_links_map;
-
-		link_id = 0;
-		peer_links_map = mld_peer->peer_links_map;
-		scan_links_map = ATH12K_SCAN_LINKS_MASK;
-
-		for_each_andnot_bit(link_id, &peer_links_map,
-				    &scan_links_map,
-				    ATH12K_NUM_MAX_LINKS) {
-			link_peer = rcu_dereference(mld_peer->link_peers[link_id]);
+		for (link_id = 0; link_id < ATH12K_DP_PEER_MAX_MLO_LINKS; link_id++) {
+			link_peer = ath12k_dp_link_peer_find_by_hw_link_id(mld_peer,
+									   link_id);
 			if (!link_peer ||
 			    !link_peer->peer_stats.qos_stats)
 				continue;
@@ -1162,16 +1137,9 @@ void ath12k_telemetry_update_delay_stats(struct ath12k_tele_qos_delay *delay, u8
 
 	if (link_id == INVALID_LINK_ID &&
 	    mld_peer->qos_stats_lvl == ATH12K_QOS_MULTI_LINK_STATS) {
-		unsigned long peer_links_map, scan_links_map;
-
-		link_id = 0;
-		peer_links_map = mld_peer->peer_links_map;
-		scan_links_map = ATH12K_SCAN_LINKS_MASK;
-
-		for_each_andnot_bit(link_id, &peer_links_map,
-				    &scan_links_map,
-				    ATH12K_NUM_MAX_LINKS) {
-			link_peer = rcu_dereference(mld_peer->link_peers[link_id]);
+		for (link_id = 0; link_id < ATH12K_DP_PEER_MAX_MLO_LINKS; link_id++) {
+			link_peer = ath12k_dp_link_peer_find_by_hw_link_id(mld_peer,
+									   link_id);
 			if (!link_peer ||
 			    !link_peer->peer_stats.qos_stats)
 				continue;

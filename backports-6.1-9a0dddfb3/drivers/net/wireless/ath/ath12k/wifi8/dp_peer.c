@@ -142,6 +142,12 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 	dp_peer->sec_type = HAL_ENCRYPT_TYPE_OPEN;
 	dp_peer->sec_type_grp = HAL_ENCRYPT_TYPE_OPEN;
 
+	memset(dp_peer->l2h_link_map, ATH12K_DP_LOGICAL_LINK_ID_INVALID,
+	       sizeof(dp_peer->l2h_link_map));
+
+	memset(dp_peer->hw_links, ATH12K_DP_HW_LINK_ID_INVALID,
+	       sizeof(dp_peer->hw_links));
+
 	/* Update hw_link_id for self bss peer */
 	if (dp_peer->is_vdev_peer) {
 		dp_peer->hw_link_id = params->hw_link_id;
@@ -278,8 +284,8 @@ int ath12k_wifi8_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 	dp_peer->peer_ext_ctx = peer_ext_ctx;
 	spin_lock_init(&peer_ext_ctx->tx_flow_info.tx_q_lock);
 	rcu_read_lock();
-	for (i = 0; i < ATH12K_NUM_MAX_LINKS; i++) {
-		link_peer = rcu_dereference(dp_peer->link_peers[i]);
+	for (i = 0; i < ATH12K_DP_PEER_MAX_MLO_LINKS; i++) {
+		link_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, i);
 		if (!link_peer)
 			continue;
 
@@ -1033,8 +1039,8 @@ int ath12k_wifi8_get_mgmt_flowq(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw
 	flowq_params->num_links = 0;
 	rcu_read_lock();
 	if (dp_peer->is_mlo) {
-		for (i = 0; i < ATH12K_NUM_MAX_LINKS; i++) {
-			link_peer = rcu_dereference(dp_peer->link_peers[i]);
+		for (i = 0; i < ATH12K_DP_PEER_MAX_MLO_LINKS; i++) {
+			link_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, i);
 			if (!link_peer)
 				continue;
 
@@ -1070,8 +1076,8 @@ int ath12k_wifi8_get_mgmt_flowq(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw
 			goto exit;
 		}
 
-		for (i = 0; i < ATH12K_NUM_MAX_LINKS; i++) {
-			link_peer = rcu_dereference(dp_peer->link_peers[i]);
+		for (i = 0; i < ATH12K_DP_PEER_MAX_MLO_LINKS; i++) {
+			link_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, i);
 			if (link_peer)
 				break;
 		}
@@ -1256,8 +1262,9 @@ void ath12k_wifi8_dp_assoc_link_update(struct ath12k_dp *dp,
 			assoc_link_id = dp_peer->sta->mlo ?
 					ahsta->assoc_link_id :
 					ahsta->deflink.link_id;
-			ti.assoc_link_id = ath12k_dp_get_hw_link_id(dp_peer,
-								    assoc_link_id);
+			ti.assoc_link_id =
+			ath12k_dp_peer_convert_logical_to_hw_link_id(dp_peer,
+								     assoc_link_id);
 			if (ti.assoc_link_id == ATH12K_INVALID_HW_LINKID) {
 				rcu_read_unlock();
 				goto end;
