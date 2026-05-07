@@ -1308,7 +1308,7 @@ void ath12k_wifi8_mgmt_service_srng(struct ath12k_base *ab,
 #if LINUX_VERSION_IS_GEQ(6, 13, 0)
 void ath12k_wifi8_mgmt_workqueue(struct work_struct *w)
 {
-	struct ath12k_mgmt_irq_grp *irq_grp = from_work(irq_grp, work, intr_wq);
+	struct ath12k_mgmt_irq_grp *irq_grp = from_work(irq_grp, w, intr_wq);
 	struct ath12k_base *ab = irq_grp->ab;
 
 	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags) ||

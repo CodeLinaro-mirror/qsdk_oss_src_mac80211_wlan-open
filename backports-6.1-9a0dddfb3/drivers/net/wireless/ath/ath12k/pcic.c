@@ -223,6 +223,7 @@ void ath12k_pcic_free_ext_irq(struct ath12k_base *ab)
 		netif_napi_del(&irq_grp->napi);
 #if LINUX_VERSION_IS_GEQ(6,10,0)
 		free_netdev(irq_grp->napi_ndev);
+		irq_grp->napi_ndev = NULL;
 #endif
 	}
 }
@@ -244,7 +245,11 @@ void ath12k_pcic_free_hybrid_irq(struct ath12k_base *ab)
 	struct platform_device *pdev = ab->pdev;
 
 	ath12k_pcic_free_irq(ab);
+#if LINUX_VERSION_IS_LESS(6,8,0)
 	platform_msi_domain_free_irqs(&pdev->dev);
+#else
+	platform_device_msi_free_irqs_all(&pdev->dev);
+#endif
 }
 
 static void ath12k_pcic_ce_irq_enable(struct ath12k_base *ab, u16 ce_id)
@@ -411,6 +416,7 @@ void ath12k_pcic_ce_irqs_enable(struct ath12k_base *ab)
 	}
 }
 
+#if LINUX_VERSION_IS_LESS(6,13,0)
 static void ath12k_pcic_ce_tasklet(struct tasklet_struct *t)
 {
         struct ath12k_ce_pipe *ce_pipe = from_tasklet(ce_pipe, t, intr_tq);
@@ -425,7 +431,7 @@ static void ath12k_pcic_ce_tasklet(struct tasklet_struct *t)
 
 	ath12k_pcic_ce_irq_enable(ce_pipe->ab, ce_pipe->pipe_num);
 }
-
+#endif
 static
 int ath12k_pcic_ext_cfg_gic_msi_irq(struct ath12k_base *ab,
 				    int (*irq_handler)(struct ath12k_dp *dp,
@@ -605,7 +611,7 @@ static void ath12k_pcic_cancel_workqueue(struct ath12k_base *ab)
 	}
 }
 #endif
-
+#if LINUX_VERSION_IS_LESS(6,13,0)
 static void ath12k_pcic_kill_tasklets(struct ath12k_base *ab)
 {
 	int i;
@@ -619,6 +625,7 @@ static void ath12k_pcic_kill_tasklets(struct ath12k_base *ab)
 		 tasklet_kill(&ce_pipe->intr_tq);
 	}
 }
+#endif
 
 static void ath12k_pcic_sync_ce_irqs(struct ath12k_base *ab)
 {
@@ -919,7 +926,7 @@ void ath12k_pcic_ext_irq_disable(struct ath12k_base *ab)
 void ath12k_pcic_stop(struct ath12k_base *ab)
 {
 	ath12k_pcic_ce_irq_disable_sync(ab);
-	timer_delete_sync(&ab->rx_replenish_retry);
+	del_timer_sync(&ab->rx_replenish_retry);
 }
 
 int ath12k_pcic_start(struct ath12k_base *ab)
@@ -1076,7 +1083,8 @@ fail_allocate:
 	for (n = 0; n < i; n++) {
 		irq_grp = &ab->ext_irq_grp[n];
 #if LINUX_VERSION_IS_GEQ(6,10,0)
-		free_netdev(&irq_grp->napi_ndev);
+		free_netdev(irq_grp->napi_ndev);
+		irq_grp->napi_ndev = NULL;
 #endif
 	}
 	return ret;
@@ -1191,13 +1199,21 @@ int ath12k_pcic_cfg_hybrid_ext_irq(struct ath12k_base *ab,
 		return -ENODEV;
 	}
 
+#if LINUX_VERSION_IS_LESS(6,8,0)
 	msi_lock_descs(&pdev->dev);
+#else
+	__msi_lock_descs(&pdev->dev);
+#endif
 
 	ret = ath12k_pcic_get_user_msi_assignment(ab, "DP", &num_vectors,
 						  &user_base_data, &base_vector);
 	if (ret < 0) {
 		ath12k_warn(ab, "failed to fetch msi data for DP");
+#if LINUX_VERSION_IS_LESS(6,8,0)
 		msi_unlock_descs(&pdev->dev);
+#else
+		__msi_unlock_descs(&pdev->dev);
+#endif
 		return -EINVAL;
 	}
 
@@ -1209,7 +1225,11 @@ int ath12k_pcic_cfg_hybrid_ext_irq(struct ath12k_base *ab,
 	ret = ath12k_pcic_msi_desc_assign_irq(ab, irq_handler, base_vector, num_vectors,
 					      pdev, dp, &k);
 
+#if LINUX_VERSION_IS_LESS(6,8,0)
 	msi_unlock_descs(&pdev->dev);
+#else
+	__msi_unlock_descs(&pdev->dev);
+#endif
 
 	return ret;
 }
@@ -1233,15 +1253,26 @@ int ath12k_pcic_config_hybrid_irq(struct ath12k_base *ab)
 
 	ab->msi.config = &ath12k_wifi7_msi_config[ATH12K_MSI_CONFIG_IPCI];
 
-	ret = platform_msi_domain_alloc_irqs(&pdev->dev, ab->msi.config->total_vectors,
+#if LINUX_VERSION_IS_LESS(6,8,0)
+	ret = platform_msi_domain_alloc_irqs(&pdev->dev,
+					     ab->msi.config->total_vectors,
 					     ath12k_msi_msg_handler);
+#else
+	ret = platform_device_msi_init_and_alloc_irqs(&pdev->dev,
+						      ab->msi.config->total_vectors,
+						      ath12k_msi_msg_handler);
+#endif
 
 	if (ret) {
 		ath12k_warn(ab, "failed to alloc irqs %d ab %pM\n", ret, ab);
 		return ret;
 	}
 
+#if LINUX_VERSION_IS_LESS(6,8,0)
 	msi_lock_descs(&pdev->dev);
+#else
+	__msi_lock_descs(&pdev->dev);
+#endif
 
 	ret = ath12k_pcic_get_user_msi_assignment(ab, "CE", &num_vectors,
 						  &user_base_data, &base_vector);
@@ -1280,10 +1311,18 @@ int ath12k_pcic_config_hybrid_irq(struct ath12k_base *ab)
 		i++;
 	}
 
+#if LINUX_VERSION_IS_LESS(6,8,0)
 	msi_unlock_descs(&pdev->dev);
+#else
+	__msi_unlock_descs(&pdev->dev);
+#endif
 	i = 0;
 
+#if LINUX_VERSION_IS_LESS(6,8,0)
 	msi_lock_descs(&pdev->dev);
+#else
+	__msi_lock_descs(&pdev->dev);
+#endif
 	msi_for_each_desc(msi_desc, &pdev->dev, MSI_DESC_ASSOCIATED) {
 		if (ce_done)
 			break;
@@ -1318,7 +1357,11 @@ int ath12k_pcic_config_hybrid_irq(struct ath12k_base *ab)
 		i++;
 	}
 
+#if LINUX_VERSION_IS_LESS(6,8,0)
 	msi_unlock_descs(&pdev->dev);
+#else
+	__msi_unlock_descs(&pdev->dev);
+#endif
 	ab->ipci.gic_enabled = 1;
 	wake_up(&ab->ipci.gic_msi_waitq);
 

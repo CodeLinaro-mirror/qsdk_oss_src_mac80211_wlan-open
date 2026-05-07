@@ -8,6 +8,8 @@
 #include <linux/devcoredump.h>
 #endif
 
+#include <linux/vmalloc.h>
+
 #ifdef CONFIG_UPSTREAM_BUILD
 #define NUM_GENERIC_QMI_HANDLER	3
 #else

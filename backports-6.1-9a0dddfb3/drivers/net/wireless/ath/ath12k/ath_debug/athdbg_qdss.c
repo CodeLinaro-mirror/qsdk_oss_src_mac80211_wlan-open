@@ -13,6 +13,8 @@
 #include <linux/vmalloc.h>
 #endif
 
+#include <linux/vmalloc.h>
+
 extern struct ath_debug_base *athdbg_base;
 
 struct athdbg_qdss_trace_mem_seg {

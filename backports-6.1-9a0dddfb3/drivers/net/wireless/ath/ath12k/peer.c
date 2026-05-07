@@ -1982,7 +1982,11 @@ int ath12k_get_peer_telemetry_stats(struct ath12k_vif *ahvif,
 	int stats_link_id = 0, ret = 0;
 	unsigned long links_map = ahvif->links_map;
 	bool valid_link = ahvif->links_map & BIT(link_id);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	bool is_ds_vif = (ahvif->dp_vif.ppe_vp_type == PPE_VP_USER_TYPE_DS);
+#else
+	bool is_ds_vif = false;
+#endif
 
 	if (ath12k_dp_stats_enabled(&ar->dp) &&
 	    ath12k_dp_debug_stats_enabled(&ar->dp))

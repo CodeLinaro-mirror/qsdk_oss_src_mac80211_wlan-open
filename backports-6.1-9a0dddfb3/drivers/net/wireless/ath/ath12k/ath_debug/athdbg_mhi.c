@@ -586,7 +586,11 @@ void athdbg_mhi_q6_dump_bl_sram_mem(struct ath12k_base *ab)
 		sbl_data.sbl_log_start_reg = QCN9224_PCIE_BHI_ERRDBG2_REG;
 		sbl_data.sbl_log_size_shift = 0;
 
+#if LINUX_VERSION_IS_LESS(6,8,0)
 		if (mhi_ctrl && mhi_ctrl->major_version == 2)
+#else
+		if (mhi_ctrl)
+#endif
 			pbl_data.pbl_log_sram_start = QCN9224_v2_PBL_LOG_SRAM_START;
 		else
 			pbl_data.pbl_log_sram_start = QCN9224_PBL_LOG_SRAM_START;

@@ -6,11 +6,13 @@
 #ifndef ATH12K_PPE_H
 #define ATH12K_PPE_H
 
+#ifndef PLATFORM_SDX
 #include <ppe_ds_wlan.h>
 #include <ppe_vp_public.h>
 #include <ppe_drv_sc.h>
 #include <ppe_drv.h>
 #include <nss_plugins.h>
+#endif
 #include "dp_cmn.h"
 #include "dp.h"
 #include "core.h"

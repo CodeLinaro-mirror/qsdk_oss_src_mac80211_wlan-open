@@ -30,6 +30,7 @@
 #include "dp_stats.h"
 #include "mgmt_rx.h"
 #include "telemetry_agent_if.h"
+#include <linux/vmalloc.h>
 
 #define SEGMENT_ID	GENMASK(1,0)
 #define CHRIP_ID	BIT(2)
