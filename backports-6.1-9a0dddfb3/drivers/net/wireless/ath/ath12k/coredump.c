@@ -896,7 +896,7 @@ static int ath12k_coredump_build_seg_info(struct ath12k_base *ab, void *segment,
         for (index = 0; index < ehdr->e_phnum; index++) {
                 phdr = &phdrs[index];
 
-#ifdef PLATFORM_SDX85
+#ifdef PLATFORM_SDX
 		if (phdr->p_type != PT_LOAD)
 			continue;
 

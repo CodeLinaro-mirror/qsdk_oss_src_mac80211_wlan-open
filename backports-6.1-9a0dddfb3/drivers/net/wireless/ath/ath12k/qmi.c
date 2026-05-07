@@ -4158,7 +4158,7 @@ static void ath12k_qmi_free_mlo_mem_chunk(struct ath12k_base *ab,
 	mlo_chunk = &ag->mlo_mem.chunk[idx];
 
 	if (fixed_mem && mlo_chunk->v.ioaddr) {
-#ifdef PLATFORM_SDX85
+#ifdef PLATFORM_SDX
 		dma_free_attrs(ab->dev,
 			       mlo_chunk->size,
 			       mlo_chunk->v.ioaddr,
@@ -4210,7 +4210,7 @@ void ath12k_qmi_free_target_mem_chunk(struct ath12k_base *ab)
 		} else {
 			if (test_bit(ATH12K_FLAG_FIXED_MEM_REGION, &ab->dev_flags) &&
 			    ab->qmi.target_mem[i].v.ioaddr) {
-#ifdef PLATFORM_SDX85
+#ifdef PLATFORM_SDX
 				if (ab->qmi.target_mem[i].type == AFC_REGION_TYPE &&
 				    ab->qmi.target_mem[i].v.addr) {
 					dma_free_coherent(ab->dev,
@@ -4603,7 +4603,7 @@ int ath12k_qmi_mlo_global_snapshot_mem_init(struct ath12k_base *ab)
 	return 0;
 }
 
-#ifndef PLATFORM_SDX85
+#ifndef PLATFORM_SDX
 static int ath12k_qmi_alloc_afc_reserved_mem(struct ath12k_base *ab, int dst_idx,
 					    int afc_seg_idx)
 {

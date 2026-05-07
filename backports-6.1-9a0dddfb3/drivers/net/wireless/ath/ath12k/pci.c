@@ -1361,7 +1361,7 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
 	struct ath12k_base *ab;
 	int ret;
 
-#ifdef PLATFORM_SDX85
+#ifdef PLATFORM_SDX
 	/* init memory-region idx 0 for the dev, so the further dma alloc will get
 	 * allocated from this region
 	 */
