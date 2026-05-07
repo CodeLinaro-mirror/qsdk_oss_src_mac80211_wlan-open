@@ -389,9 +389,7 @@ struct ath12k_dp_peer *ath12k_dp_vdev_peer_find(struct ath12k_dp_hw *dp_hw,
 						u8 *addr, u8 hw_link_id);
 struct ath12k_dp_peer *ath12k_dp_vdev_peer_check(struct ath12k_dp_hw *dp_hw,
 						 u8 *addr, u8 hw_link_id);
-u8 ath12k_dp_peer_get_stats_link_id(struct ath12k_base *ab,
-				    struct ath12k_dp_peer *peer,
-				    u8 hw_link_id);
+u8 ath12k_dp_validate_hw_link_id(u8 hw_link_id);
 
 /*
  * Peer Walk API - Walks across DP peers and performs the desired action.

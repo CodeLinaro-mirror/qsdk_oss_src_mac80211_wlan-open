@@ -1412,7 +1412,7 @@ static ssize_t ath12k_dbg_sta_dump_tx_stats(struct file *file,
 	static const char *str_name[ATH12K_STATS_TYPE_MAX] = {"success", "fail",
                                                              "retry", "ampdu"};
 	static const char *str[ATH12K_COUNTER_TYPE_MAX] = {"bytes", "packets"};
-	int len = 0, i, j, k, stats_link_id, retval = 0;
+	int len = 0, i, j, k, retval = 0;
 	const int size = 2 * 4096;
 	u32 wbm_rel_stats[HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX] = {0};
 	char mu_group_id[MAX_MU_GROUP_LENGTH] = {0};
@@ -1464,8 +1464,7 @@ static ssize_t ath12k_dbg_sta_dump_tx_stats(struct file *file,
 		return -ENOENT;
 	}
 	peer = link_peer->dp_peer;
-	stats_link_id = peer->hw_links[ar->hw_link_id];
-	peer_stats = &peer->stats[stats_link_id];
+	peer_stats = &peer->stats[ar->hw_link_id];
 
 	for (k = 0; k < ATH12K_STATS_TYPE_MAX; k++) {
                for (j = 0; j < ATH12K_COUNTER_TYPE_MAX; j++) {
@@ -1703,7 +1702,7 @@ ath12k_dbg_sta_dump_driver_rx_pkts_flow(struct file *file,
 	struct ath12k_dp *dp;
 	struct ath12k_dp_peer_stats *peer_stats;
 	u8 link_id = link_sta->link_id;
-	int len = 0, i, ret = 0, stats_link_id;
+	int len = 0, i, ret = 0;
 	u32 recv_from_reo = 0, sent_to_stack = 0;
 
 	wiphy_lock(ah->hw->wiphy);
@@ -1739,8 +1738,7 @@ ath12k_dbg_sta_dump_driver_rx_pkts_flow(struct file *file,
 	}
 
 	peer = link_peer->dp_peer;
-	stats_link_id = peer->hw_links[ar->hw_link_id];
-	peer_stats = &peer->stats[stats_link_id];
+	peer_stats = &peer->stats[ar->hw_link_id];
 
 	for (i = 0; i < DP_REO_DST_RING_MAX; i++)
 		recv_from_reo += peer_stats->rx[i].recv_from_reo.packets;
