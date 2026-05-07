@@ -34,7 +34,6 @@ enum ath12k_dbg_aggr_mode {
 };
 
 void ath12k_wmi_crl_path_stats_list_free(struct ath12k *ar, struct list_head *head);
-int ath12k_wsi_bypass_precheck(struct ath12k_base *ab, unsigned int value);
 
 u32 ath12k_dbg_dump_qos_profile(struct ath12k_base *ab,
 				char *buf, u8 qos_id, u32 size);

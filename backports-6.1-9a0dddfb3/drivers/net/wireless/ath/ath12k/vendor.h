@@ -336,6 +336,14 @@ enum qca_nl80211_vendor_events {
 	QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_COMPLETE_INDEX = 16,
 	QCA_NL80211_VENDOR_SUBCMD_OEM_DATA_INDEX = 17,
 	QCA_NL80211_VENDOR_SUBCMD_HW_BLOCKED_CHANS_EVENT_INDEX = 18,
+	/**
+	 * @QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_INDEX:
+	 * Vendor event index used for notifications associated with
+	 * %QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION.
+	 *
+	 * @ATTR - qca_wlan_vendor_attr_set_wifi
+	 */
+	QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_INDEX = 19,
 };
 
 /**
@@ -3781,6 +3789,31 @@ enum qca_wlan_vendor_attr_iface_reload {
 	QCA_WLAN_VENDOR_ATTR_IFACE_RELOAD_AFTER_LAST - 1,
 };
 
+/**
+ * enum qca_wlan_vendor_attr_set_wifi - Attributes used with radio parameter
+ *	set operation events.
+ *
+ * These attributes can be used in event notification
+ * contexts for vendor operations that set a radio parameter.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_SET_RADIO_PARAM: u32 attribute specifying the exact
+ *	radio parameter/command being configured.
+ * @QCA_WLAN_VENDOR_ATTR_SET_RADIO_VALUE: u32 attribute providing the value
+ *	updated for %QCA_WLAN_VENDOR_ATTR_SET_RADIO_PARAM.
+ * @QCA_WLAN_VENDOR_ATTR_SET_RADIO_STATUS: u32 attribute providing the status
+ *	of the operation (e.g. success/failure) in the response/event.
+ */
+enum qca_wlan_vendor_attr_set_wifi {
+	QCA_WLAN_VENDOR_ATTR_SET_RADIO_PARAM = 0,
+	QCA_WLAN_VENDOR_ATTR_SET_RADIO_VALUE = 1,
+	QCA_WLAN_VENDOR_ATTR_SET_RADIO_STATUS = 2,
+
+	/* Keep last */
+	QCA_WLAN_VENDOR_ATTR_SET_RADIO_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_SET_RADIO_MAX =
+	QCA_WLAN_VENDOR_ATTR_SET_RADIO_AFTER_LAST - 1,
+};
+
 enum qca_vendor_vdev_param {
 	QCA_WLAN_VENDOR_VDEV_PARAM_TEST = 0,
 	QCA_WLAN_VENDOR_VDEV_PARAM_TEST_RELOAD = QCA_WLAN_VENDOR_VDEV_PARAM_TEST,
@@ -3937,6 +3970,11 @@ enum qca_vendor_radio_param {
 	QCA_WLAN_VENDOR_RADIO_PARAM_EN_CHAN_144 = 77,
 	QCA_WLAN_VENDOR_RADIO_PARAM_PDEV_TO_REO_DEST = 78,
 	QCA_WLAN_VENDOR_RADIO_PARAM_NOL_CHAN_LIST = 79,
+	/* Configure to put device in WSI bypass state.
+	 * 1 - Bypass device
+	 * 2 - Readd device
+	 */
+	QCA_WLAN_VENDOR_RADIO_PARAM_WSI_BYPASS = 80,
 
 	/* Add new params above */
 	QCA_WLAN_VENDOR_RADIO_PARAM_LAST,
