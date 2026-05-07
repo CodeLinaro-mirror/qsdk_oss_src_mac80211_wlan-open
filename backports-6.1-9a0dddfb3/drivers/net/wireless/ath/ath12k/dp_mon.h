@@ -653,9 +653,9 @@ struct ath12k_pdev_tx_mon_stats {
 struct ath12k_dp_mon_status_desc {
 	dma_addr_t paddr;
 	u8 *mon_buf;
-	u32 buf_len;
-	bool end_of_ppdu;
-};
+	u16 buf_len:12,
+	    end_of_ppdu:1;
+} __packed;
 
 /**
  * struct ath12k_dp_mon_ppdu_desc - TX Monitor PPDU Descriptor
@@ -861,10 +861,10 @@ struct ath12k_dp_mon_desc {
 	u8 *mon_buf;
 	dma_addr_t paddr;
 	u32 magic;
-	u16 buf_len;
-	u8 in_use;
-	u8 end_of_ppdu;
-};
+	u16 buf_len:12,
+	    in_use:3,
+	    end_of_ppdu:1;
+} __packed;
 
 enum ath12k_ext_mon_frame_len {
 	ATH12K_EXT_MON_LEN_64B = 1,
