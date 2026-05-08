@@ -122,6 +122,7 @@ struct ath12k_mgmt {
 	const struct ath12k_hw_params *hw_params;
 	struct ath12k_mgmt_irq_grp *irq_grp;
 	u8 num_irq_grp;
+	bool init_done;
 
 	/* Rx buffer descriptors for mgmt */
 	struct ath12k_rx_desc_info *rx_desc_baddr[NUM_MGMT_RX_DESC_BLOCKS];
