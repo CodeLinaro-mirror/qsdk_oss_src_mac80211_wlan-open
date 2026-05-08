@@ -8465,6 +8465,27 @@ ath12k_mac_has_colocated_sta_link_vif(struct ath12k *ar,
 }
 
 /**
+ * ath12k_mac_queue_repeater_sta_sp_update - Queue repeater STA SP update
+ * @ar: Radio instance
+ * @arvif: AP link vif that is operating in SP
+ *
+ * Queue the AFC-triggered STA power update only after the colocated repeater AP
+ * is in SP. This keeps repeater STA SP programming tied to the AP-side
+ * power-mode transition instead of local AFC completion alone.
+ */
+static void
+ath12k_mac_queue_repeater_sta_sp_update(struct ath12k *ar,
+					struct ath12k_link_vif *arvif)
+{
+	if (!queue_work(ar->ab->workqueue, &ar->change_6g_txpow_sta_mode_work))
+		return;
+
+	ath12k_info(ar->ab,
+		    "queue repeater STA 6 GHz AFC SP update vdev %u link %u\n",
+		    arvif->vdev_id, arvif->link_id);
+}
+
+/**
  * ath12k_mac_get_colocated_sta_power_type - Get power type from colocated STA
  * @ar: Radio instance to search on
  * @cur_arvif: Current link vif requesting colocated state
@@ -8766,10 +8787,12 @@ ath12k_mac_sync_repeater_ap_power_mode(struct ath12k *ar,
 		return ATH12K_REPEATER_AP_SYNC_ERROR;
 	}
 
-	/* AP-visible mode is already synchronized; no further action is needed. */
 	if (wdev->links[link_id].reg_6g_power_mode ==
-	    decision.ap_reg_6g_power_mode)
+	    decision.ap_reg_6g_power_mode) {
+		if (decision.ap_reg_6g_power_mode == NL80211_REG_AP_SP)
+			ath12k_mac_queue_repeater_sta_sp_update(ar, arvif);
 		return ATH12K_REPEATER_AP_SYNC_HANDLED;
+	}
 
 	ret = cfg80211_update_chandef_6ghz_power_mode(wdev->netdev, link_id,
 						      decision.ap_reg_6g_power_mode);
@@ -8784,6 +8807,8 @@ ath12k_mac_sync_repeater_ap_power_mode(struct ath12k *ar,
 	bss_conf->power_type =
 		ieee80211_cfg_to_mac_power_type(decision.ap_reg_6g_power_mode);
 	ath12k_mac_send_pwr_mode_update(ar, wdev, link_id);
+	if (decision.ap_reg_6g_power_mode == NL80211_REG_AP_SP)
+		ath12k_mac_queue_repeater_sta_sp_update(ar, arvif);
 
 	/* Repeater AP sync completed and userspace has been notified. */
 	return ATH12K_REPEATER_AP_SYNC_HANDLED;
