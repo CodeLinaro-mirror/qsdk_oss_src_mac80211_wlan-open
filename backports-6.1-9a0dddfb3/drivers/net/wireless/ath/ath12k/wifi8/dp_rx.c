@@ -4864,7 +4864,7 @@ int ath12k_wifi8_dp_rx_wbm_buf_ring_init(struct ath12k_base *ab)
 
 	idle_buf_srng = &ab->hal.srng_list[dp_wifi8->wbm_idle_buf_ring.ring_id];
 	req_entries = ath12k_dp_get_req_entries_from_buf_ring(ab, idle_buf_srng, &list,
-				DP_RX_PPE_POOL);
+				DP_RX_DEFAULT_POOL);
 	if (req_entries)
 		ath12k_dp_rx_bufs_replenish(ab->dp, idle_buf_srng, &list, false);
 
