@@ -27,6 +27,7 @@
 #include "vendor_services.h"
 #include "dp_peer.h"
 #include "dp_mon.h"
+#include "dp_rx.h"
 #include "me.h"
 #include "peer.h"
 #include <linux/vmalloc.h>
@@ -665,6 +666,18 @@ static int ath12k_vendor_set_multi_bss_param(struct wiphy *wiphy,
 
 	return ret;
 }
+
+static const struct nla_policy
+ath12k_rx_pkt_protocol_tag_policy[QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_OP_CODE]    = {.type = NLA_U8},
+	[QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_PDEV_ID]    = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_PROTO_TYPE] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_TAG_VALUE]  = {.type = NLA_U16},
+};
+
+static int ath12k_dp_rx_update_pdev_protocol_tag(struct wiphy *wiphy,
+						 struct wireless_dev *wdev,
+						 const void *data, int data_len);
 
 /**
  * ath12k_vendor_repurpose_link() - Mark an MLO link for repurposing
@@ -17278,7 +17291,117 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.maxattr = QCA_WLAN_VENDOR_ATTR_GREEN_AP_MAX,
 		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV | WIPHY_VENDOR_CMD_NEED_WDEV,
 	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_RX_PKT_PROTOCOL_TAG,
+		.doit = ath12k_dp_rx_update_pdev_protocol_tag,
+		.policy = ath12k_rx_pkt_protocol_tag_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
+	},
 };
+
+/**
+ * ath12k_dp_rx_update_pdev_protocol_tag() - CCE per-protocol tag vendor cmd handler
+ *
+ * Programs firmware via WMI_PDEV_UPDATE_PKT_ROUTING_CMDID with USE_CCE2 (= 3)
+ * so that every matched MSDU gets cce_metadata stamped in the rx_msdu_end TLV.
+ * Also stores the mapping in pdev_dp->protocol_tag_map[] for stats lookup.
+ */
+static int
+ath12k_dp_rx_update_pdev_protocol_tag(struct wiphy *wiphy,
+				      struct wireless_dev *wdev,
+				      const void *data, int data_len)
+{
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_MAX + 1];
+	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
+	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
+	struct ath12k_wmi_pkt_route_param param = {};
+	struct ath12k_pdev_dp *dp_pdev;
+	struct ath12k *ar;
+	u32 pdev_id, proto_type;
+	u16 tag_value = 0;
+	u8 op_code;
+	int ret;
+
+	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_MAX,
+			data, data_len,
+			ath12k_rx_pkt_protocol_tag_policy, NULL);
+	if (ret) {
+		ath12k_err(NULL, "rx_protocol_tag: failed to parse NL attrs\n");
+		return ret;
+	}
+
+	if (!tb[QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_PDEV_ID] ||
+	    !tb[QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_PROTO_TYPE]) {
+		ath12k_err(NULL, "rx_protocol_tag: missing required attrs\n");
+		return -EINVAL;
+	}
+
+	/* OP_CODE is optional; old userspace omits it and always means ADD */
+	op_code = tb[QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_OP_CODE]
+		  ? nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_OP_CODE])
+		  : ATH12K_WMI_PKTROUTE_ADD;
+	pdev_id    = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_PDEV_ID]);
+	proto_type = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_PROTO_TYPE]);
+
+	if (op_code == ATH12K_WMI_PKTROUTE_ADD) {
+		if (!tb[QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_TAG_VALUE]) {
+			ath12k_err(NULL, "rx_protocol_tag: TAG_VALUE required for ADD\n");
+			return -EINVAL;
+		}
+		tag_value = nla_get_u16(
+			    tb[QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_TAG_VALUE]);
+	} else if (op_code != ATH12K_WMI_PKTROUTE_DEL) {
+		ath12k_err(NULL, "rx_protocol_tag: invalid op_code %u (0=ADD 1=DEL)\n",
+			   op_code);
+		return -EINVAL;
+	}
+
+	if (proto_type >= ATH12K_PKT_TYPE_MAX) {
+		ath12k_err(NULL, "rx_protocol_tag: proto_type %u out of range (max %u)\n",
+			   proto_type, ATH12K_PKT_TYPE_MAX - 1);
+		return -EINVAL;
+	}
+
+	if (pdev_id >= ah->num_radio) {
+		ath12k_err(NULL, "rx_protocol_tag: pdev_id %u out of range (max %u)\n",
+			   pdev_id, ah->num_radio - 1);
+		return -EINVAL;
+	}
+
+	ar = ath12k_ah_to_ar(ah, pdev_id);
+	if (!ar) {
+		ath12k_err(NULL, "rx_protocol_tag: no ar for pdev_id %u\n", pdev_id);
+		return -EINVAL;
+	}
+
+	dp_pdev = &ar->dp;
+
+	param.opcode           = op_code;
+	param.route_type_bmap  = BIT(proto_type);
+	param.dst_ring_handler = ATH12K_WMI_PKTROUTE_USE_FSE;
+	param.dst_ring         = 1;
+	param.meta_data        = tag_value;
+
+	ret = ath12k_wmi_send_pdev_pkt_route(ar, &param);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "rx_protocol_tag: WMI failed op=%u proto=%u tag=0x%04x ret=%d\n",
+			    op_code, proto_type, tag_value, ret);
+		return ret;
+	}
+
+	if (op_code == ATH12K_WMI_PKTROUTE_ADD) {
+		dp_pdev->protocol_tag_map[proto_type].tag     = tag_value;
+		dp_pdev->protocol_tag_map[proto_type].enabled = true;
+	} else {
+		dp_pdev->protocol_tag_map[proto_type].tag     = 0;
+		dp_pdev->protocol_tag_map[proto_type].enabled = false;
+	}
+
+	return ret;
+}
 
 static const struct nl80211_vendor_cmd_info ath12k_vendor_events[] = {
 	[QCA_NL80211_VENDOR_SUBCMD_AFC_EVENT_INDEX] = {

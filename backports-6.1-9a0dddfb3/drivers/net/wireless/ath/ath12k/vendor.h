@@ -371,6 +371,32 @@ enum scan_status {
 	VENDOR_SCAN_STATUS_MAX,
 };
 
+/**
+ * enum qca_wlan_vendor_attr_rx_pkt_protocol_tag - attributes for
+ * QCA_NL80211_VENDOR_SUBCMD_RX_PKT_PROTOCOL_TAG
+ *
+ * @QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_PDEV_ID: u32 — pdev index (0-based)
+ * @QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_PROTO_TYPE: u32 — protocol type
+ *   (value from enum ath12k_routing_pkt_type, 0..ATH12K_PKT_TYPE_MAX-1)
+ * @QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_TAG_VALUE: u16 — tag to stamp;
+ *   0xDEAD (CCE_DROP) instructs the driver to discard matched MSDUs.
+ *   Not required when OP_CODE == DEL.
+ * @QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_OP_CODE: u8 — 0=ADD, 1=DEL.
+ *   If absent, ADD is assumed for backwards compatibility.
+ */
+enum qca_wlan_vendor_attr_rx_pkt_protocol_tag {
+	QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_INVALID    = 0,
+	QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_PDEV_ID    = 1,
+	QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_PROTO_TYPE = 2,
+	QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_TAG_VALUE  = 3,
+	QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_OP_CODE    = 4,
+
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_MAX =
+		QCA_WLAN_VENDOR_ATTR_RX_PKT_PROTOCOL_TAG_AFTER_LAST - 1,
+};
+
 enum qca_nl80211_vendor_events {
 	QCA_NL80211_VENDOR_SUBCMD_AFC_EVENT_INDEX = 0,
 	QCA_NL80211_VENDOR_SUBCMD_6GHZ_PWR_MODE_EVT_IDX = 1,
