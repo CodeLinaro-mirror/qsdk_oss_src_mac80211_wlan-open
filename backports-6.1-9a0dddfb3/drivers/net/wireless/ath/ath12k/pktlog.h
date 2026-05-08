@@ -205,6 +205,7 @@ struct ath12k_pktlog {
 	int is_wrap;
 	char ipaddr[ATH12K_IP_ADDR_STR_MAX];
 	u8 pktlog_remote_client;
+	struct ath12k *ar;
 	struct ath12k_pktlog_remote_service rpktlog_svc;
 };
 
