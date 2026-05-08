@@ -4498,7 +4498,8 @@ int ath12k_wifi8_dp_rx_flow_add_entry(struct ath12k_dp *dp,
 		flow.dest_info_valid = 1;
 		flow.int_priority = 0;
 		flow.int_priority_valid = 1;
-		ath12k_info(ab, "read_hint:%u rdi:%u dest_info:%u",
+		ath12k_dbg(ab, ATH12K_DBG_DP_FST,
+				"read_hint:%u rdi:%u dest_info:%u\n",
 				flow.ppe_classify_read_hint,
 				flow.reo_indication, flow.dest_info);
 #endif
