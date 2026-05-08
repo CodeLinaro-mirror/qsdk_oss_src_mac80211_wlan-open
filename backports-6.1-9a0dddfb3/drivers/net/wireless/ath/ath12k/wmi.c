@@ -1027,6 +1027,8 @@ static void ath12k_wmi_process_mvr_event(struct ath12k_base *ab, u32 *vdev_id_bm
 
 	if (ar)
 		complete(&ar->mvr_complete);
+	else
+		return; /* Skip channel change stats */
 
 	/* Last channel switch time */
 	switch_time_us = mvr_resp_time_us -
