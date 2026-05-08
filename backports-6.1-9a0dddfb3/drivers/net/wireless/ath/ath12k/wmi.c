@@ -6940,7 +6940,7 @@ ath12k_wmi_copy_resource_config(struct ath12k_base *ab,
 				    WMI_RSRC_CFG_HOST_SIMULATE_RADAR_320_SUPPORTED);
 
 #ifdef CPTCFG_QCN_EXTN
-	ath12k_wmi_set_hw_blocklist_host_service_flag_extn(wmi_cfg, tg_cfg);
+	ath12k_wmi_set_hw_blocklist_host_service_flag_extn(ab, wmi_cfg, tg_cfg);
 #endif
 	wmi_cfg->ema_max_vap_cnt = cpu_to_le32(tg_cfg->ema_max_vap_cnt);
 	wmi_cfg->ema_max_profile_period = cpu_to_le32(tg_cfg->ema_max_profile_period);
