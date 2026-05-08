@@ -2723,6 +2723,11 @@ static void ath12k_change_6g_txpow_sta_mode(struct ath12k *ar)
 	if (!wdev)
 		return;
 
+#ifdef CPTCFG_QCN_EXTN
+	if (ath12k_change_6g_txpow_sta_mode_validate_extn(ar, wdev, link_id))
+		return;
+#endif
+
 	ieee80211_6ghz_power_mode_change(ar->ah->hw->wiphy,
 					 wdev, NL80211_REG_AP_SP,
 					 link_id, false);

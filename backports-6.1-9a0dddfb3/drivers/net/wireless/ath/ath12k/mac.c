@@ -8608,7 +8608,7 @@ ath12k_mac_get_repeater_ap_power_mode_for_sp_root
  * decision folds in local configuration, colocated STA-learned root AP mode
  * and AFC state so both TPC programming and AP mode reporting stay aligned.
  */
-static void
+void
 ath12k_mac_get_6ghz_power_mode_decision(struct ath12k *ar,
 					struct ath12k_link_vif *arvif,
 					struct ieee80211_bss_conf *bss_conf,
