@@ -13045,6 +13045,10 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 	if (sta->mlo)
 		return ret;
 
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_smart_ant_api_peer_disconnect(arsta);
+#endif
+
 	ath12k_dp_peer_cleanup(ar, arvif->vdev_id, arsta->addr);
 
 	/*
@@ -19925,6 +19929,11 @@ static int ath12k_mac_vdev_delete(struct ath12k *ar, struct ath12k_link_vif *arv
 		ar->num_created_bridge_vdevs--;
 	}
 
+#ifdef CPTCFG_QCN_EXTN
+	if (!ar->num_created_vdevs &&
+	    (ath12k_smart_ant_api_stop(ar, SA_NEW_CONFIG) == 0))
+		ath12k_info(ar->ab, "Smart Antenna Stopped\n");
+#endif
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
 		ar->monitor_vdev_id = -1;
 		ar->monitor_vdev_created = false;
@@ -22153,6 +22162,11 @@ ath12k_mac_assign_vif_chanctx_handle(struct ieee80211_hw *hw,
 	}
 
 	arvif->is_started = true;
+
+#ifdef CPTCFG_QCN_EXTN
+	if (ath12k_smart_ant_api_start(ar, arvif, SA_NEW_CONFIG) == 0)
+		ath12k_info(ar->ab, "Smart Antenna Started\n");
+#endif
 
 	/* TODO: Setup ps and cts/rts protection */
 	if (is_bridge_vdev && ahvif->vdev_type == WMI_VDEV_TYPE_STA)
