@@ -36,6 +36,7 @@
 struct stats_to_peer_id_map {
 	u16 dp_peer_id;
 	u8 tid;
+	u8 hw_link_id;
 };
 
 #if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || \

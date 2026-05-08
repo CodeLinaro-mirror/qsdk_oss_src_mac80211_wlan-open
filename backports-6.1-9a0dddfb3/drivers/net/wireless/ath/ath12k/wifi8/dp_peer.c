@@ -78,7 +78,7 @@ static u16 ath12k_wifi8_sta_id_alloc(struct ath12k_dp_hw *dp_hw)
 
 static u16
 ath12k_wifi8_ucast_stats_id_alloc(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8,
-				  u16 dp_peer_id, u8 tid)
+				  u16 dp_peer_id, u8 tid, u8 hw_link_id)
 {
 	u16 stats_id;
 	int i;
@@ -97,6 +97,7 @@ ath12k_wifi8_ucast_stats_id_alloc(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wif
 		dp_hw_grp_wifi8->last_ucast_stats_id = stats_id;
 		dp_hw_grp_wifi8->stats_id_map[stats_id].dp_peer_id = dp_peer_id;
 		dp_hw_grp_wifi8->stats_id_map[stats_id].tid = tid;
+		dp_hw_grp_wifi8->stats_id_map[stats_id].hw_link_id = hw_link_id;
 
 		ath12k_dbg(NULL, ATH12K_DBG_PEER, "allocated stats_id:%d",
 			   stats_id);
@@ -107,7 +108,7 @@ ath12k_wifi8_ucast_stats_id_alloc(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wif
 
 static u16
 ath12k_wifi8_downlink_gcast_stats_id(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8,
-				     u16 dp_peer_id, u8 tid)
+				     u16 dp_peer_id, u8 tid, u8 hw_link_id)
 {
 	u16 stats_id;
 	int i;
@@ -132,11 +133,44 @@ ath12k_wifi8_downlink_gcast_stats_id(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_
 		dp_hw_grp_wifi8->last_gcast_stats_id = stats_id;
 		dp_hw_grp_wifi8->stats_id_map[stats_id].dp_peer_id = dp_peer_id;
 		dp_hw_grp_wifi8->stats_id_map[stats_id].tid = tid;
+		dp_hw_grp_wifi8->stats_id_map[stats_id].hw_link_id = hw_link_id;
 
 		ath12k_dbg(NULL, ATH12K_DBG_PEER, "allocated stats_id:%d", stats_id);
 		return stats_id;
 	}
 	return ATH12K_MAX_STATS_ID;
+}
+
+static void
+ath12k_wifi8_stats_id_map_update_hw_link(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8,
+						 struct ath12k_dp_peer *dp_peer,
+						 struct ath12k_dp_link_peer *removed_peer)
+{
+	struct stats_to_peer_id_map *stats_map;
+	struct ath12k_dp_link_peer *link_peer;
+	u8 hw_link_id = ATH12K_INVALID_LINK_ID;
+	int i;
+
+	if (!dp_peer || dp_peer->stats_id >= ATH12K_MAX_STATS_ID)
+		return;
+
+	stats_map = &dp_hw_grp_wifi8->stats_id_map[dp_peer->stats_id];
+	if (stats_map->dp_peer_id != dp_peer->peer_id ||
+	    stats_map->hw_link_id != removed_peer->hw_link_id)
+		return;
+
+	rcu_read_lock();
+	for (i = 0; i < ATH12K_DP_PEER_MAX_MLO_LINKS; i++) {
+		link_peer = rcu_dereference(dp_peer->link_peers[i]);
+		if (!link_peer || link_peer == removed_peer)
+			continue;
+
+		hw_link_id = link_peer->hw_link_id;
+		break;
+	}
+	rcu_read_unlock();
+
+	stats_map->hw_link_id = hw_link_id;
 }
 
 static u16
@@ -252,12 +286,14 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 		dp_peer->stats_id =
 			ath12k_wifi8_downlink_gcast_stats_id(dp_hw_grp_wifi8,
 							     dp_peer->peer_id,
-							     ATH12K_INVALID_TID);
+							     ATH12K_INVALID_TID,
+							     params->hw_link_id);
 	} else {
 		dp_peer->stats_id =
 			ath12k_wifi8_ucast_stats_id_alloc(dp_hw_grp_wifi8,
 							  dp_peer->peer_id,
-							  ATH12K_INVALID_TID);
+							  ATH12K_INVALID_TID,
+							  params->hw_link_id);
 	}
 
 	list_add(&dp_peer->list, &dp_hw->peers);
@@ -321,6 +357,8 @@ void ath12k_wifi8_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 	dp_hw_grp_wifi8->stats_id_map[dp_peer->stats_id].dp_peer_id =
 		ATH12K_MLO_PEER_ID_INVALID;
 	dp_hw_grp_wifi8->stats_id_map[dp_peer->stats_id].tid = ATH12K_INVALID_TID;
+	dp_hw_grp_wifi8->stats_id_map[dp_peer->stats_id].hw_link_id =
+		ATH12K_INVALID_LINK_ID;
 	clear_bit(dp_peer->stats_id, dp_hw_grp_wifi8->free_stats_id);
 
 	clear_bit(dp_peer->sta_id, dp_hw->free_sta_id_map);
@@ -505,6 +543,8 @@ void ath12k_wifi8_dp_link_peer_unassign_id(struct ath12k_dp *dp, struct ath12k *
 	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8;
 
 	dp_hw_grp_wifi8 = ath12k_get_dp_hw_group_wifi8(dp->dp_hw_grp);
+	ath12k_wifi8_stats_id_map_update_hw_link(dp_hw_grp_wifi8, peer->dp_peer,
+						       peer);
 	clear_bit(peer->link_band_id, dp_hw_grp_wifi8->free_link_band_id);
 }
 
