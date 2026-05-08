@@ -40,11 +40,15 @@ struct ath12k_ppdu_rx_info {
 /**
  * struct ath12k_ppdu_tx_info - TX PPDU event payload
  * @ppdu_info: HTT TX PPDU statistics
+ * @device_id: Hardware device index (chip ID) in a multi-device (MLO) system.
+ *             Used by listeners to resolve the correct ath12k_base when
+ *             looking up peers across multiple chips.
  *
  * Embedded in SKB data buffer passed to notifier callbacks.
  */
 struct ath12k_ppdu_tx_info {
 	struct htt_ppdu_stats_info ppdu_info;
+	u8 device_id;
 } __packed;
 
 /**

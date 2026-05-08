@@ -1649,7 +1649,8 @@ bool ath12k_dp_htt_is_ppdu_completed(struct htt_ppdu_stats_info *ppdu_info)
 	return false;
 }
 
-static void ath12k_dp_htt_ppdu_notify(struct htt_ppdu_stats_info *ppdu_info)
+static void ath12k_dp_htt_ppdu_notify(struct ath12k_pdev_dp *dp_pdev,
+				      struct htt_ppdu_stats_info *ppdu_info)
 {
 	struct ath12k_ppdu_event event;
 	struct sk_buff *skb;
@@ -1668,6 +1669,8 @@ static void ath12k_dp_htt_ppdu_notify(struct htt_ppdu_stats_info *ppdu_info)
 
 	ppdu_evt_data = skb_put_zero(skb, len);
 	memcpy(&ppdu_evt_data->ppdu_info, ppdu_info, sizeof(*ppdu_info));
+	if (dp_pdev->dp)
+		ppdu_evt_data->device_id = ath12k_get_ab_device_id(dp_pdev->dp->ab);
 
 	memset(&event, 0, sizeof(event));
 	event.skb = skb;
@@ -1687,7 +1690,7 @@ void ath12k_dp_htt_deliver_ppdu(struct ath12k_pdev_dp *dp_pdev,
 	/* Update tx completion stats */
 	ath12k_dp_htt_ppdu_stats_update_tx_comp_stats(dp_pdev, ppdu_info);
 	/* Send PPDU notification to registered listeners */
-	ath12k_dp_htt_ppdu_notify(ppdu_info);
+	ath12k_dp_htt_ppdu_notify(dp_pdev, ppdu_info);
 }
 
 struct htt_ppdu_stats_info *
