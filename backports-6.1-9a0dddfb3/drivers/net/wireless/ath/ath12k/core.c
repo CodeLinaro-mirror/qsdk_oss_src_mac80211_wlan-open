@@ -78,6 +78,7 @@ MODULE_PARM_DESC(ppeds_hotlist_len, "PPEDS hotlist length");
 unsigned int ath12k_ppe_ds_enabled = 1;
 module_param_named(ppe_ds_enable, ath12k_ppe_ds_enabled, uint, 0644);
 MODULE_PARM_DESC(ppe_ds_enable, "ppe_ds_enable: 0-disable, 1-enable");
+EXPORT_SYMBOL(ath12k_ppe_ds_enabled);
 
 unsigned int ath12k_ppe_ds_wifi8_enabled = 1;
 module_param_named(ppe_ds_wifi8_enable, ath12k_ppe_ds_wifi8_enabled, uint, 0644);
