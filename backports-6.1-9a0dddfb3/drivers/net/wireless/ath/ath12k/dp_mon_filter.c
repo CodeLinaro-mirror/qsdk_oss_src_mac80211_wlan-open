@@ -1283,7 +1283,7 @@ ath12k_dp_mon_tx_setup_pktlog_hybrid(struct ath12k_pdev_dp *dp_pdev)
 {
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	struct dp_mon_tx_filter tx_filter = {0};
-	enum dp_mon_filter_mode mode = DP_MON_FILTER_PKTLOG_HYBRID_TX;
+	enum dp_mon_tx_filter_mode mode = DP_MON_TX_FILTER_PKTLOG_HYBRID;
 	enum dp_mon_tx_filter_srng_type srng_type =
 		DP_MON_TX_FILTER_SRNG_TYPE_TXMON_DEST;
 	struct htt_tx_ring_tlv_filter *tx_tlv_filter;
@@ -1301,7 +1301,8 @@ ath12k_dp_mon_tx_setup_pktlog_hybrid(struct ath12k_pdev_dp *dp_pdev)
 	tx_tlv_filter = &tx_filter.filter;
 
 	tx_tlv_filter->tx_mon_upstream_tlv_flags0 =
-		HTT_TX_MON_FILTER_UP_STRM_TLV_FLAG0;
+		HTT_TX_MON_FILTER_UP_STRM_TLV_FLAG0 |
+		HTT_TX_FILTER_TLV_FLAGS0_TX_FES_STATUS_USER_RESPONSE;
 	tx_tlv_filter->tx_mon_upstream_tlv_flags1 =
 		HTT_TX_MON_FILTER_UP_STRM_TLV_FLAG1;
 
@@ -1351,7 +1352,7 @@ ath12k_dp_mon_tx_reset_pktlog_hybrid(struct ath12k_pdev_dp *dp_pdev)
 {
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	struct dp_mon_tx_filter tx_filter = {0};
-	enum dp_mon_filter_mode mode = DP_MON_FILTER_PKTLOG_HYBRID_TX;
+	enum dp_mon_tx_filter_mode mode = DP_MON_TX_FILTER_PKTLOG_HYBRID;
 	enum dp_mon_tx_filter_srng_type srng_type =
 		DP_MON_TX_FILTER_SRNG_TYPE_TXMON_DEST;
 
@@ -1396,6 +1397,18 @@ void ath12k_dp_mon_pktlog_config_filter(struct ath12k_pdev_dp *dp_pdev,
 
 		if (filter & ATH12K_PKTLOG_HYBRID) {
 			ath12k_dp_mon_tx_setup_pktlog_hybrid(dp_pdev);
+
+			if (!dp_mon_pdev->tx_monitor_started) {
+				ret = ath12k_dp_mon_tx_htt_src_ring_setup(dp);
+				if (ret) {
+					ath12k_warn(dp->ab,
+						    "Failed to setup HTT src ring: %d\n",
+						    ret);
+					ath12k_dp_mon_tx_reset_pktlog_hybrid(dp_pdev);
+					dp_mon_pdev->tx_pktlog_hybrid = false;
+					return;
+				}
+			}
 			dp_mon_pdev->tx_pktlog_hybrid = true;
 		}
 
@@ -1438,6 +1451,9 @@ void ath12k_dp_mon_pktlog_config_filter(struct ath12k_pdev_dp *dp_pdev,
 		if (filter & ATH12K_PKTLOG_HYBRID) {
 			ath12k_dp_mon_tx_reset_pktlog_hybrid(dp_pdev);
 			dp_mon_pdev->tx_pktlog_hybrid = false;
+
+			if (!dp_mon_pdev->tx_monitor_started)
+				ath12k_dp_mon_tx_htt_src_ring_cleanup(dp);
 		}
 
 		switch (mode) {
@@ -1750,6 +1766,12 @@ void ath12k_dp_mon_tx_prepare_filter(struct ath12k_dp *dp,
 	struct dp_mon_tx_filter *src_tx_mon_filter;
 	struct hal_tx_mon_wmask_config *src_wmask;
 	struct hal_tx_mon_wmask_config *dest_wmask = &tx_mon_filter->filter.wmask;
+
+	if (!dp_mon_pdev || !dp_mon_pdev->tx_mon_filter) {
+		ath12k_dbg(dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "TX Mon: prepare filter skipped - not initialized\n");
+		return;
+	}
 
 	/*
 	 * loop through all the modes

@@ -1257,7 +1257,18 @@ void ath12k_cbf_pktlog_process(struct ath12k *ar, u8 *data, u32 len,
 
 	pl_info = &ar->debug.pktlog;
 
+	if (!pl_info || !pl_info->buf || pl_info->buf_size <= 0) {
+		ath12k_warn(ar->ab, "Invalid pl_info or buffer for CBF\n");
+		return;
+	}
+
 	total_len = sizeof(*htt_hdr) + sizeof(*cbf_tlv) + len;
+
+	if (total_len > pl_info->buf_size) {
+		ath12k_warn(ar->ab, "CBF frame too large: %u > %u\n",
+			    total_len, pl_info->buf_size);
+		return;
+	}
 
 	hdr.flags = (1 << PKTLOG_FLG_FRM_TYPE_REMOTE_S);
 	hdr.missed_cnt = 0;
@@ -1277,13 +1288,30 @@ void ath12k_cbf_pktlog_process(struct ath12k *ar, u8 *data, u32 len,
 		return;
 	}
 
+	if (log_data < pl_info->buf->log_data ||
+	    (log_data + sizeof(*htt_hdr)) >
+	    (pl_info->buf->log_data + pl_info->buf_size)) {
+		ath12k_warn(ar->ab, "CBF htt_hdr memcpy out of bounds\n");
+		return;
+	}
 	memcpy(log_data, htt_hdr, sizeof(struct htt_t2h_ppdu_stats_ind_hdr));
 	log_data += sizeof(struct htt_t2h_ppdu_stats_ind_hdr);
 
+	if (log_data < pl_info->buf->log_data ||
+	    (log_data + sizeof(*cbf_tlv)) >
+	    (pl_info->buf->log_data + pl_info->buf_size)) {
+		ath12k_warn(ar->ab, "CBF cbf_tlv memcpy out of bounds\n");
+		return;
+	}
 	memcpy(log_data, cbf_tlv,
 	       sizeof(struct htt_ppdu_stats_rx_mgmtctrl_payload_tlv));
 	log_data += sizeof(struct htt_ppdu_stats_rx_mgmtctrl_payload_tlv);
 
+	if (log_data < pl_info->buf->log_data ||
+	    (log_data + len) > (pl_info->buf->log_data + pl_info->buf_size)) {
+		ath12k_warn(ar->ab, "CBF data memcpy out of bounds\n");
+		return;
+	}
 	memcpy(log_data, data, len);
 }
 EXPORT_SYMBOL(ath12k_cbf_pktlog_process);

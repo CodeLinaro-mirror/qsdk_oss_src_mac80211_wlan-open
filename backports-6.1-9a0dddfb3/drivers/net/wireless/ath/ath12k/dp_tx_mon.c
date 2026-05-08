@@ -3235,8 +3235,6 @@ static int ath12k_dp_tx_mon_prep_wq(struct list_head *mon_desc_used_list,
  * 1. Checks if hybrid mode is enabled
  * 2. Validates input parameters
  * 3. Writes TLV data directly to pktlog buffer
- * 4. end_offset represents the final tlv index, since the tlv starts with 0th index,
- *    the data length should be passed as end_offset + 1
  *
  * Return: None
  */
@@ -3255,7 +3253,7 @@ ath12k_dp_tx_mon_process_pktlog(struct ath12k_pdev_dp *dp_pdev,
 
 	ath12k_dp_txrx_stats_buf_pktlog_process(ar, status_frag,
 						ATH12K_PKTLOG_TYPE_TX_STAT,
-						end_offset + 1);
+						end_offset);
 }
 
 /**
