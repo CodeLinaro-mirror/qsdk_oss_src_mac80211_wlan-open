@@ -539,9 +539,9 @@ struct ath12k_dp_arch_ops {
 	int (*dp_peer_assoc)(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 			     struct ath12k_dp_vif *dp_vif, u8 *addr);
 	void (*dp_link_peer_assign_id)(struct ath12k_dp *dp, struct ath12k *ar,
-				       u32 vdev_id, u8 *addr);
+				       struct ath12k_dp_link_peer *peer);
 	void (*dp_link_peer_unassign_id)(struct ath12k_dp *dp,  struct ath12k *ar,
-					 u32 vdev_id, u8 *addr);
+					 struct ath12k_dp_link_peer *peer);
 	void (*dp_link_peer_delete)(struct ath12k_base *ab, u32 vdev_id, u8 *addr);
 	void (*peer_cleanup_indication)(struct ath12k_dp *dp, struct sk_buff *skb);
 	int (*dp_ppeds_tx_completion_handler)(struct ath12k_base *ab, int budget);
@@ -1222,18 +1222,18 @@ static inline int ath12k_dp_arch_peer_assoc(struct ath12k_dp *dp,
 
 static inline void ath12k_dp_arch_link_peer_assign_id(struct ath12k_dp *dp,
 						      struct ath12k *ar,
-						      u32 vdev_id, u8 *addr)
+						      struct ath12k_dp_link_peer *peer)
 {
 	if (dp->arch_ops->dp_link_peer_assign_id)
-		dp->arch_ops->dp_link_peer_assign_id(dp, ar, vdev_id, addr);
+		dp->arch_ops->dp_link_peer_assign_id(dp, ar, peer);
 }
 
 static inline void ath12k_dp_arch_link_peer_unassign_id(struct ath12k_dp *dp,
 							struct ath12k *ar,
-							u32 vdev_id, u8 *addr)
+							struct ath12k_dp_link_peer *peer)
 {
 	if (dp->arch_ops->dp_link_peer_unassign_id)
-		dp->arch_ops->dp_link_peer_unassign_id(dp, ar, vdev_id, addr);
+		dp->arch_ops->dp_link_peer_unassign_id(dp, ar, peer);
 }
 
 static inline void ath12k_dp_arch_link_peer_delete(struct ath12k_dp *dp,
