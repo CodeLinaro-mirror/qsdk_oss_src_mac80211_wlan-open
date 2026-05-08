@@ -1764,6 +1764,7 @@ ath12k_wifi8_dp_ext_desc_populate(struct ath12k_dp *dp,
 	struct ath12k_dp_ext_desc_msdu_info *ext_msdu_info =
 		&msdu_info->ext_desc;
 	struct hal_tx_msdu_metadata *htt_desc_ext = NULL;
+	u16 ext_data_len = 0;
 	u8 htt_desc_size;
 
 	/* Allocate extended descriptor */
@@ -1775,12 +1776,31 @@ ath12k_wifi8_dp_ext_desc_populate(struct ath12k_dp *dp,
 	memset(ext_desc, 0, ATH12K_DP_EXT_DESC_SZ);
 
 	switch (msdu_info->ext_desc.ext_feature) {
+	case DP_EXT_ME5:
+		dma_addr_t mac_paddr, buf_paddr;
+		u8 *mac_addr;
+		u16 buf_len;
+
+		/* First segment */
+		mac_addr = ath12k_dp_ext_desc_get_spare(ext_desc, ETH_ALEN);
+		mac_paddr = virt_to_phys(mac_addr);
+		ether_addr_copy(mac_addr, msdu_info->ext_desc.peer_mac_addr);
+		ath12k_dp_ext_desc_set_buf0(ext_desc, mac_paddr, ETH_ALEN);
+
+		/* Second segment */
+		buf_paddr = msdu_info->paddr + ETH_ALEN;
+		buf_len =  msdu_info->data_len - ETH_ALEN;
+		ath12k_dp_ext_desc_set_buf1(ext_desc, buf_paddr, buf_len);
+		ext_data_len = ATH12K_DP_EXT_DESC_SZ;
+
+		break;
 	case DP_EXT_ENCAP_OVERRIDE:
 		ath12k_dp_ext_desc_set_buf0(ext_desc, msdu_info->paddr,
 					    msdu_info->data_len);
 		ath12k_dp_ext_desc_override_set(&ext_desc->desc,
 						ext_msdu_info);
-		msdu_info->data_len = ATH12K_TX_MSDU_EXT_SZ;
+		ext_data_len = ATH12K_TX_MSDU_EXT_SZ;
+
 		break;
 	case DP_EXT_TSO:
 	case DP_EXT_SG:
@@ -1803,10 +1823,11 @@ ath12k_wifi8_dp_ext_desc_populate(struct ath12k_dp *dp,
 			le32_encode_bits(0, HAL_TX_MSDU_METADATA_INFO0_ENCRYPT_TYPE) |
 			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_HOST_TX_DESC_POOL);
 
-		msdu_info->data_len = ATH12K_TX_MSDU_EXT_SZ + htt_desc_size;
+		ext_data_len = ATH12K_TX_MSDU_EXT_SZ + htt_desc_size;
 	}
 
 	msdu_info->type = HAL_TCL_DESC_TYPE_EXT_DESC;
+	msdu_info->data_len = ext_data_len;
 	msdu_info->paddr = ath12k_dp_ext_desc_map(dp, ext_desc);
 
 	tx_desc->ext_kmem = msdu_info->ext_kmem;
@@ -1907,6 +1928,15 @@ ath12k_wifi8_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	msdu_info->desc_id = tx_desc->desc_id;
+	tx_desc->hw_link_id = dp_pdev->hw_link_id;
+
+	if (msdu_info->me_convert) {
+		gsn_valid = false;
+		msdu_info->tx_notify_frame = 0;
+		msdu_info->lookup_override = false;
+		msdu_info->vdev_id = ahvif->dp_vif.dp_vif_id;
+	}
+
 	ret = ath12k_wifi8_dp_tx_desc_populate(central_dp, skb, dp_link_vif,
 					       msdu_info, tx_desc,
 					       gsn_valid, gsn);
