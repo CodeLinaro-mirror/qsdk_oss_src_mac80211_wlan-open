@@ -1523,6 +1523,7 @@ ath12k_wifi7_dp_mon_rx_process_ppdu(struct work_struct *work)
 			if (filter_category == DP_MPDU_FILTER_CATEGORY_MO)
 				goto free_buf;
 
+			rcu_read_lock_bh();
 			spin_lock_bh(&dp->dp_lock);
 
 			if (!list_empty(&dp->neighbor_peers)) {
@@ -1578,6 +1579,7 @@ ath12k_wifi7_dp_mon_rx_process_ppdu(struct work_struct *work)
 
 unlock:
 			spin_unlock_bh(&dp->dp_lock);
+			rcu_read_unlock_bh();
 free_buf:
 			page_frag_free(status_desc->mon_buf);
 			mon_stats->status_buf_free++;
