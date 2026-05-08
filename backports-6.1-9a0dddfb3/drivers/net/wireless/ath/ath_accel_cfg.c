@@ -95,9 +95,3 @@ int ath_mscs_peer_lookup_n_get_priority(struct ath_mscs_get_priority_param *para
 
 }
 EXPORT_SYMBOL(ath_mscs_peer_lookup_n_get_priority);
-
-void ath_setup_peer_wifi_tid_queue(struct ath_wifi_queue_param *wifi_queue)
-{
-	// no-op API
-}
-EXPORT_SYMBOL(ath_setup_peer_wifi_tid_queue);

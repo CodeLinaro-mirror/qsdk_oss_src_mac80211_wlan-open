@@ -212,22 +212,6 @@ int ath12k_tx_classify_info_alloc(struct ath12k_dp_hw_group *dp_hw_grp,
 	return success_count == requested ? 0 : -EFAULT;
 }
 
-int ath12k_wifi8_alloc_non_default_queue(struct ath12k_dp *dp,
-					 struct ath12k_dp_peer *peer,
-					 struct ath12k_dp_vif *dp_vif,
-					 u8 tid_no, u8 flow_type)
-{
-	struct ath12k_dp_tx_queue_metadata tx_q_params = {0};
-	int ret;
-
-	tx_q_params.encap_type = dp_vif->tx_encap_type;
-	tx_q_params.tidno = tid_no;
-	tx_q_params.flow_type = flow_type;
-	ret = ath12k_peer_alloc_dynamic_queue(dp->dp_hw_grp, peer,
-					      &tx_q_params);
-	return ret;
-}
-
 int ath12k_peer_alloc_default_queues(struct ath12k_dp_hw_group *dp_hw_grp,
 				     struct ath12k_dp_peer *peer,
 				     struct ath12k_dp_vif *dp_vif, bool is_qos)
@@ -524,7 +508,7 @@ int ath12k_peer_alloc_dynamic_queue(struct ath12k_dp_hw_group *dp_hw_grp,
 	struct ath12k_dp_mpdu_q_info *mpduq = NULL;
 	u8 flow_type = tx_queue_params->flow_type;
 	int ret = 0;
-	int status;
+	int num_flows;
 
 	spin_lock_bh(&tx_flow_info->tx_q_lock);
 
@@ -557,7 +541,7 @@ int ath12k_peer_alloc_dynamic_queue(struct ath12k_dp_hw_group *dp_hw_grp,
 		}
 	}
 	if (!msduq) {
-		status =
+		num_flows =
 			ath12k_tx_classify_info_alloc(dp_hw_grp, peer,
 						      tx_queue_params->tidno,
 						      TXPT_DEFAULT_FLOWQ_ALLOC,
@@ -570,8 +554,8 @@ int ath12k_peer_alloc_dynamic_queue(struct ath12k_dp_hw_group *dp_hw_grp,
 		else
 			msduq->svc_id = ATH12K_INVALID_SVC_ID;
 
-		if (status || !msduq) {
-			ath12k_err(NULL, "status %d or msduq is null", status);
+		if (!num_flows || !msduq) {
+			ath12k_err(NULL, "num_flows or msduq is null");
 			if (tid->num_of_active_msdu_queues == 0 && mpduq) {
 				ath12k_peer_free_tid(dp_hw_grp, mpduq, tid);
 				tid->mpduq = NULL;
