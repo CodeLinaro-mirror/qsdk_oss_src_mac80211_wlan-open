@@ -64,6 +64,7 @@ CFLAGS_mac.o += -I$(src)/../../../../../net/mac80211
 
 ath12k-$(CPTCFG_QCN_EXTN) += \
 	qcn_extns/core_extn.o \
+	qcn_extns/reg_extn.o \
 	qcn_extns/vendor_extn.o \
 	qcn_extns/esp_extn.o \
 	qcn_extns/txrx_extn.o \

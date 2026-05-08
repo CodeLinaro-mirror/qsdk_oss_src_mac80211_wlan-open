@@ -1247,6 +1247,7 @@ enum wmi_tlv_event_id {
 	WMI_11D_NEW_COUNTRY_EVENTID,
 	WMI_REG_CHAN_LIST_CC_EXT_EVENTID,
 	WMI_AFC_EVENTID,
+	WMI_HW_BLACKLIST_CHAN_EVENTID = 0x3A007,
 	WMI_NDI_CAP_RSP_EVENTID = WMI_TLV_CMD(WMI_GRP_PROTOTYPE),
 	WMI_NDP_INITIATOR_RSP_EVENTID,
 	WMI_NDP_RESPONDER_RSP_EVENTID,
@@ -2525,6 +2526,8 @@ enum wmi_tlv_tag {
 	WMI_TAG_MLO_PEER_LINK_CONTROL_PARAM = 0x48F,
 	WMI_TAG_TWT_VDEV_CONFIG_CMD = 0x4DE,
 	WMI_TAG_MLO_TLT_SELECTION_FOR_TID_SPRAY_EVENT_FIXED_PARAM = 0x4e0,
+	WMI_TAG_HW_BLACKLIST_CHAN_FIXED_PARAM = 0x507,
+	WMI_TAG_HW_BLACKLIST_CHAN_DATA = 0x508,
 	WMI_PDEV_SUSPEND_EVENT_FIXED_PARAM = 0x509,
 	WMI_TAG_ENERGY_MGMT_PCIE_CMD_FIXED_PARAM = 0x50E,
 	WMI_TAG_ENERGY_MGMT_PCIE_LPM__CMD_FIXED_PARAM = 0x50F,
@@ -2808,6 +2811,7 @@ enum wmi_tlv_service {
 	WMI_SERVICE_THERM_THROT_5_LEVELS = 429,
 
 	WMI_SERVICE_UMAC_MIGRATION_SUPPORT = 436,
+	WMI_SERVICE_HW_BLACKLIST_CHAN_SUPPORT = 445,
 	WMI_SERVICE_STA_MLO_RCFG_SUPPORT = 448,
 	WMI_SERVICE_PDEV_SUSPEND_EVENT_SUPPORT = 449,
 	WMI_SERVICE_CFP_SUPPORT = 469,
@@ -3085,6 +3089,9 @@ struct ath12k_wmi_resource_config_arg {
 	bool afc_outdoor_support;
 	u32 carrier_config;
 	u32 rep_ul_resp;
+#ifdef CPTCFG_QCN_EXTN
+	u32 hw_blocklist_chans_support;
+#endif
 };
 
 struct ath12k_wmi_init_cmd_arg {
@@ -3208,6 +3215,9 @@ struct wmi_ctrl_path_pmlo_telemetry_stats {
 #define WMI_RSRC_CFG_HOST_AFC_OUTDOOR_SUPPORT                   11
 #define WMI_RSRC_CFG_HOST_SIMULATE_RADAR_320_SUPPORTED          13
 #define WMI_RSRC_CFG_HOST_SVC_FLAG_DEF_FLOW_OVERRIDE_SET_BIT    19
+#ifdef CPTCFG_QCN_EXTN
+#define WMI_RSRC_CFG_HOST_SVC_FLAG_SUPP_HW_BLACKLIST_CHANS      21
+#endif
 #define WMI_RSRC_CFG_HOST_AFC_TRIGGER_ON_DEFAULT_CC_EVENT_BIT   22
 
 struct ath12k_wmi_resource_config_params {
@@ -5811,6 +5821,32 @@ struct ath12k_wmi_reg_rule_ext_params {
 	__le32 flag_info;
 	__le32 psd_power_info;
 } __packed;
+
+#ifdef CPTCFG_QCN_EXTN
+/**
+ * struct wmi_hw_blacklist_chan_fixed_param - HW blocked-channel TLV header.
+ * @phy_id: Target PHY/radio index.
+ * @blacklist_msg_info: Encoded command/sequence/fragment metadata.
+ * @num_hw_blocklist_channels: Number of channel entries carried by event.
+ */
+struct wmi_hw_blacklist_chan_fixed_param {
+	__le32 phy_id;
+	__le32 blacklist_msg_info;
+	__le32 num_hw_blocklist_channels;
+} __packed;
+
+/**
+ * struct wmi_hw_blacklist_chan_data - HW blocked-channel entry TLV.
+ * @freq_info: Encoded bandwidth and center-frequency information.
+ * @chan_list_meta_data: Encoded primary-20 bitmap and power-mode metadata.
+ * @puncture_pattern_bitmap_info: Encoded puncture-pattern bitmap.
+ */
+struct wmi_hw_blacklist_chan_data {
+	__le32 freq_info;
+	__le32 chan_list_meta_data;
+	__le32 puncture_pattern_bitmap_info;
+} __packed;
+#endif
 
 struct wmi_vdev_delete_resp_event {
 	__le32 vdev_id;
