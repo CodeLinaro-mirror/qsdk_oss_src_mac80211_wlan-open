@@ -2455,7 +2455,7 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 			j = i;
 			partner_ab = ag->ab[i];
 
-			if (!partner_ab || partner_ab->is_bypassed)
+			if (ath12k_ftm_mode || !partner_ab || partner_ab->is_bypassed)
 				continue;
 
 			if (partner_ab->dp) {
@@ -2481,9 +2481,11 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 			}
 		}
 
-		ret = ath12k_mgmt_htt_setup(ag);
-		if (ret)
-			goto err_mlo_init;
+		if (!ath12k_ftm_mode) {
+			ret = ath12k_mgmt_htt_setup(ag);
+			if (ret)
+				goto err_mlo_init;
+		}
 
 		if (ath12k_check_erp_power_down(ag)) {
 			complete(&ag->power_up);
