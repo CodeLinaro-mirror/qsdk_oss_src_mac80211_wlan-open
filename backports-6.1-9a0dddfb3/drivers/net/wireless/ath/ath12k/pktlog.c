@@ -284,6 +284,88 @@ static void ath12k_pktlog_start_remote_service(struct work_struct *work)
 	schedule_work(&service->accept_service);
 }
 
+/**
+ * ath12k_pktlog_start_remote_service_client - Start remote pktlog client
+ * @work: Work structure
+ *
+ * Work queue function that creates a client socket and connects to the
+ * configured remote server IP address. Schedules the send service for
+ * data transmission after successful connection.
+ */
+static void ath12k_pktlog_start_remote_service_client(struct work_struct *work)
+{
+	struct ath12k_pktlog_remote_service *service;
+	struct ath12k_pktlog *pl_info;
+	struct ath12k *ar;
+	struct socket *sock = NULL;
+	struct sockaddr_in server_addr;
+	int ret;
+	u8 ip[4];
+
+	service = container_of(work, struct ath12k_pktlog_remote_service,
+			       client_service);
+	pl_info = container_of(service, struct ath12k_pktlog, rpktlog_svc);
+
+	ar = pl_info->ar;
+	if (!ar || !ar->ab) {
+		ath12k_warn(ar->ab, "Remote pktlog client: Invalid ar pointer");
+		return;
+	}
+
+	if (!service->running)
+		return;
+
+	if (!pl_info->pktlog_remote_client || !pl_info->ipaddr[0]) {
+		ath12k_warn(ar->ab, "No remote IP address configured\n");
+		return;
+	}
+
+	ret = sscanf(pl_info->ipaddr, "%hhu.%hhu.%hhu.%hhu",
+		     &ip[0], &ip[1], &ip[2], &ip[3]);
+	if (ret != 4) {
+		ath12k_err(ar->ab, "Remote pktlog: Invalid IP format: %s\n",
+			   pl_info->ipaddr);
+		return;
+	}
+
+	ret = sock_create(AF_INET, SOCK_STREAM, IPPROTO_TCP, &sock);
+	if (ret < 0) {
+		ath12k_err(ar->ab,
+			   "Remote pktlog: Failed to create socket: %d\n", ret);
+		return;
+	}
+
+	memset(&server_addr, 0, sizeof(server_addr));
+	server_addr.sin_family = AF_INET;
+	server_addr.sin_addr.s_addr = htonl((ip[0] << 24) | (ip[1] << 16) |
+					    (ip[2] << 8) | ip[3]);
+	server_addr.sin_port = htons(service->port);
+
+	ret = kernel_connect(sock, (struct sockaddr *)&server_addr,
+			     sizeof(server_addr), 0);
+	if (ret < 0) {
+		ath12k_err(ar->ab, "Remote pktlog: Failed to connect to %s:%u: %d\n",
+			   pl_info->ipaddr, service->port, ret);
+		sock_release(sock);
+		return;
+	}
+
+	if (service->send_socket) {
+		ath12k_warn(ar->ab, "Remote pktlog: Closing previous connection\n");
+		sock_release(service->send_socket);
+		service->connect_done = 0;
+	}
+
+	service->send_socket = sock;
+	service->connect_done = 1;
+
+	ath12k_info(ar->ab, "Remote pktlog: Connected to %s:%u\n",
+		    pl_info->ipaddr, service->port);
+
+	/* Schedule send service */
+	schedule_work(&service->send_service);
+}
+
 void ath12k_pktlog_init_remote_service_work(struct ath12k *ar)
 {
 	struct ath12k_pktlog *pl_info = &ar->debug.pktlog;
@@ -296,6 +378,9 @@ void ath12k_pktlog_init_remote_service_work(struct ath12k *ar)
 
 	INIT_WORK(&service->accept_service,
 		  ath12k_pktlog_start_accept_service);
+
+	INIT_WORK(&service->client_service,
+		  ath12k_pktlog_start_remote_service_client);
 }
 
 static void ath12k_init_pktlog_buf(struct ath12k *ar, struct ath12k_pktlog
