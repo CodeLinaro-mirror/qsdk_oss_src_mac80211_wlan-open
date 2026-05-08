@@ -524,18 +524,21 @@ ath12k_dp_link_peer_find_by_peerid_index(struct ath12k_dp *dp,
 					 struct ath12k_pdev_dp *dp_pdev, u16 peer_id)
 {
 	struct ath12k_dp_peer *dp_peer = NULL;
+	u8 link_id;
 
 	RCU_LOCKDEP_WARN(!rcu_read_lock_held(),
 			 "ath12k dp link peer find by peerid index called without rcu lock");
 
-	if (dp_pdev->hw_link_id >= ATH12K_DP_PEER_MAX_MLO_LINKS)
+	if (dp_pdev->hw_link_id >= ATH12K_GROUP_MAX_RADIO)
 		return NULL;
 
 	dp_peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, peer_id);
 	if (!dp_peer)
 		return NULL;
 
-	return rcu_dereference(dp_peer->link_peers[dp_pdev->hw_link_id]);
+	link_id = dp_peer->hw_links[dp_pdev->hw_link_id];
+
+	return rcu_dereference(dp_peer->link_peers[link_id]);
 }
 EXPORT_SYMBOL(ath12k_dp_link_peer_find_by_peerid_index);
 
@@ -673,11 +676,7 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 	dp_peer->qos_stats_lvl = (ar->dp.qos_stats &
 				  ATH12K_QOS_STATS_COLLECTION_MASK) >> 2;
 
-	/* Store logical link_id to hw_link_id mapping */
-	dp_peer->l2h_link_map[peer->link_id] = peer->hw_link_id;
-
-	/* Store hw_link_id to logical link id mapping */
-	dp_peer->hw_links[peer->hw_link_id] = peer->link_id;
+	dp_peer->hw_links[peer->hw_link_id] = link_id;
 
 	if (vif->type == NL80211_IFTYPE_AP) {
 		dp_peer->is_reset_mcbc = true;
@@ -716,7 +715,7 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 	if (ath12k_proto_stats_enabled(dp_pdev) && dp_peer->peer_links_map)
 		ath12k_dp_alloc_proto_stats_vif(&ahvif->dp_vif);
 
-	rcu_assign_pointer(dp_peer->link_peers[peer->hw_link_id], peer);
+	rcu_assign_pointer(dp_peer->link_peers[peer->link_id], peer);
 
 	/* Fill ML info into created peer */
 	if (dp_peer->is_mlo) {
@@ -905,16 +904,13 @@ static void __ath12k_dp_link_peer_unassign(struct ath12k *ar,
 
 	dp_peer = peer->dp_peer;
 	stats_link_id = peer->link_id;
-
-	dp_peer->l2h_link_map[peer->link_id] = ATH12K_DP_HW_LINK_ID_INVALID;
-
-	dp_peer->hw_links[peer->hw_link_id] = ATH12K_DP_LOGICAL_LINK_ID_INVALID;
+	dp_peer->hw_links[peer->hw_link_id] = 0;
 
 	ath12k_dp_arch_link_peer_unassign_id(dp, ar, peer->vdev_id, addr);
 
 	if (!dp_peer->is_vdev_peer) {
 		dp_peer->peer_links_map &= ~BIT(peer->link_id);
-		if (stats_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS) {
+		if (stats_link_id < ATH12K_DP_MAX_MLO_LINKS) {
 			/* Preserve link peer stats to MLD peer before deletion */
 			ath12k_dp_aggr_link_peer_to_mld_peer(ar, peer, dp_peer,
 							     stats_link_id);
@@ -928,7 +924,7 @@ static void __ath12k_dp_link_peer_unassign(struct ath12k *ar,
 		}
 	}
 
-	rcu_assign_pointer(dp_peer->link_peers[peer->hw_link_id], NULL);
+	rcu_assign_pointer(dp_peer->link_peers[peer->link_id], NULL);
 
 	if (peer->peer_id != ATH12K_MLO_PEER_ID_INVALID) {
 		peerid_index = ath12k_dp_peer_get_peerid_index(dp, peer->peer_id);
@@ -1606,14 +1602,14 @@ u8 ath12k_dp_peer_get_stats_link_id(struct ath12k_base *ab,
 				    u8 hw_link_id)
 {
 	/* Sanity check: ensure the HW link id is within bounds */
-	if (unlikely(hw_link_id >= ATH12K_DP_PEER_MAX_MLO_LINKS)) {
+	if (unlikely(hw_link_id >= ATH12K_GROUP_MAX_RADIO)) {
 		ath12k_dbg(ab, ATH12K_DBG_TELEMETRY, "Invalid HW link id %u\n",
 			   hw_link_id);
 		return 0;
 	}
 
 	/* Sanity check: ensure stats link id is within bounds */
-	if (unlikely(peer->hw_links[hw_link_id] > ATH12K_DP_PEER_MAX_MLO_LINKS)) {
+	if (unlikely(peer->hw_links[hw_link_id] > ATH12K_DP_MAX_MLO_LINKS)) {
 		ath12k_dbg(ab, ATH12K_DBG_TELEMETRY, "Invalid stats link %u\n",
 			   peer->hw_links[hw_link_id]);
 		return 0;
@@ -1767,29 +1763,17 @@ ath12k_dp_link_peer_get_dp_vif(struct ath12k_dp_link_peer *link_peer)
 EXPORT_SYMBOL(ath12k_dp_link_peer_get_dp_vif);
 
 struct ath12k_dp_link_peer *
-ath12k_dp_link_peer_find_by_hw_link_id(struct ath12k_dp_peer *dp_peer, u8 hw_link_id)
+ath12k_dp_link_peer_find_by_link_id(struct ath12k_dp_peer *dp_peer, u8 link_id)
 {
 	RCU_LOCKDEP_WARN(!rcu_read_lock_held(),
 			 "ath12k dp link peer find by link id without rcu lock");
 
-	if (hw_link_id >= ATH12K_DP_PEER_MAX_MLO_LINKS)
-		return NULL;
-
-	return rcu_dereference(dp_peer->link_peers[hw_link_id]);
+	return rcu_dereference(dp_peer->link_peers[link_id]);
 }
-EXPORT_SYMBOL(ath12k_dp_link_peer_find_by_hw_link_id);
+EXPORT_SYMBOL(ath12k_dp_link_peer_find_by_link_id);
 
 struct ath12k_dp_link_peer *
-ath12k_dp_link_peer_find_by_logical_link_id(struct ath12k_dp_peer *dp_peer, u8 link_id)
-{
-	u8 hw_link_id = ath12k_dp_peer_convert_logical_to_hw_link_id(dp_peer, link_id);
-
-	return ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, hw_link_id);
-}
-EXPORT_SYMBOL(ath12k_dp_link_peer_find_by_logical_link_id);
-
-struct ath12k_dp_link_peer *
-ath12k_dp_link_peer_find_by_mac_addr(struct ath12k_dp_peer *dp_peer, const u8 *addr)
+ath12k_dp_link_peer_find_by_mac_addr(const struct ath12k_dp_peer *dp_peer, const u8 *addr)
 {
 	struct ath12k_dp_link_peer *peer;
 	u8 link_idx;
@@ -1797,8 +1781,8 @@ ath12k_dp_link_peer_find_by_mac_addr(struct ath12k_dp_peer *dp_peer, const u8 *a
 	RCU_LOCKDEP_WARN(!rcu_read_lock_held(),
 			 "ath12k dp link peer find by mac addr without rcu lock");
 
-	for (link_idx = 0; link_idx < ATH12K_DP_PEER_MAX_MLO_LINKS; link_idx++) {
-		peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, link_idx);
+	for (link_idx = 0; link_idx < ATH12K_NUM_MAX_LINKS; link_idx++) {
+		peer = rcu_dereference(dp_peer->link_peers[link_idx]);
 		if (peer && !memcmp(addr, peer->addr, ETH_ALEN))
 			return peer;
 	}
