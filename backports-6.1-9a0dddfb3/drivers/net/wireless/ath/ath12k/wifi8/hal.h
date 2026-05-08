@@ -1758,7 +1758,8 @@ void ath12k_wifi8_hal_tasc_peer_rx_set_id(struct ath12k_base *ab,
 void ath12k_wifi8_hal_tasc_peer_rx_band(struct ath12k_base *ab,
 					u16 band_idx[HAL_TASC_BAND_MAX],
 					bool enable);
-
+void ath12k_wifi8_hal_tasc_reset_peer_tx(struct ath12k_base *ab, u16 stats_id);
+void ath12k_wifi8_hal_tasc_reset_peer_rx(struct ath12k_base *ab, u16 stats_id);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 void ath12k_wifi8_hal_ppeds_cfg_ast_override_map_reg(struct ath12k_base *ab, u8 idx,
 						     u32 ppeds_idx_map_val);
