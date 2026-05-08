@@ -7,6 +7,7 @@
 #define _PKTLOG_H_
 
 #include "core.h"
+#include <net/sock.h>
 
 #define PKTLOG_EXTRA_PAGES      2
 #define CUR_PKTLOG_VER          10010  /* Packet log version */
@@ -33,6 +34,13 @@
 #define ATH12K_PKTLOG_HDR_TIMESTAMP_OFFSET 2
 #define ATH12K_PKTLOG_HDR_TYPE_SPECIFIC_DATA_OFFSET 3
 
+/* Remote pktlog constants */
+#define ATH12K_DEFAULT_REMOTE_PKTLOG_PORT 2335
+#define ATH12K_MAX_SEND_SIZE 1024
+#define ATH12K_MAX_LISTEN_CONNECTIONS 5
+#define ATH12K_PKTLOG_HEADER_SIZE 92
+#define ATH12K_IP_ADDR_STR_MAX 20
+
 enum ath12k_pktlog_flag {
         PKTLOG_FLG_FRM_TYPE_LOCAL_S = 0,
         PKTLOG_FLG_FRM_TYPE_REMOTE_S,
@@ -58,6 +66,7 @@ enum ath12k_pktlog_filter {
         ATH12K_PKTLOG_PHY_LOGGING       = BIT(7),
         ATH12K_PKTLOG_CBF               = BIT(8),
         ATH12K_PKTLOG_HYBRID            = BIT(9),
+	ATH12K_PKTLOG_REMOTE_ENABLE     = BIT(10),
 };
 
 enum ath12k_pktlog_enum {
@@ -107,15 +116,96 @@ struct ath12k_pktlog_buf {
 	char log_data[];
 };
 
+/**
+ * struct ath12k_pktlog_remote_service - Remote pktlog service
+ * @connection_service: Work queue for server mode connection setup
+ * @accept_service: Work queue for accepting incoming connections
+ * @send_service: Work queue for data transmission
+ * @client_service: Work queue for client mode connection
+ * @listen_socket: Listen socket for server mode
+ * @send_socket: Socket for data transmission (both modes)
+ * @port: Port number for remote pktlog (default: 2335)
+ * @running: Flag indicating service is running
+ * @connect_done: Flag indicating connection established
+ * @missed_records: Counter for dropped records
+ * @fend_counts: File end marker counter
+ */
+struct ath12k_pktlog_remote_service {
+	struct work_struct connection_service;
+	struct work_struct accept_service;
+	struct work_struct send_service;
+	struct work_struct client_service;
+	struct socket *listen_socket;
+	struct socket *send_socket;
+	u16 port;
+	int running;
+	int connect_done;
+	u32 missed_records;
+	u32 fend_counts;
+};
+
+/**
+ * struct ath12k_pktlog - Packet log context
+ * @buf: Pointer to the circular buffer for storing packet log data
+ * @filter: Bitmask of enabled packet log filters (ATH12K_PKTLOG_RX,
+ *          ATH12K_PKTLOG_TX, ATH12K_PKTLOG_CBF, ATH12K_PKTLOG_HYBRID, etc.)
+ * @buf_size: Size of the packet log buffer in bytes
+ * @lock: Spinlock to protect concurrent access to packet log buffer and indices
+ * @hdr_size: Size of packet log header structure (struct ath12k_pktlog_hdr)
+ * @hdr_size_field_offset: Offset of the size field within packet log header
+ * @fw_version_record: Flag indicating firmware version record support
+ * @invalid_decode_info: Flag indicating invalid decode information received
+ *                       from firmware (set when firmware doesn't support
+ *                       WMI_TLV_SERVICE_PKTLOG_DECODE_INFO_SUPPORT)
+ * @rlog_write_index: Write index for remote packet log circular buffer.
+ *                    Points to the next position where data will be written.
+ *                    Protected by @lock.
+ * @rlog_read_index: Read index for remote packet log circular buffer.
+ *                   Points to the next position to be read and sent to remote.
+ *                   Protected by @lock.
+ * @rlog_max_size: Maximum size of remote packet log buffer in bytes.
+ *                 Typically same as @buf_size but can be configured separately.
+ * @is_wrap: Flag indicating if write index has wrapped around the buffer.
+ *           Set to 1 when @rlog_write_index wraps to 0, cleared when
+ *           @rlog_read_index catches up. Used to detect buffer overrun.
+ * @ipaddr: IP address string for remote packet log server in client mode.
+ *          Format: "xxx.xxx.xxx.xxx" (IPv4). Maximum length defined by
+ *          ATH12K_IP_ADDR_STR_MAX. Empty string in server mode.
+ * @pktlog_remote_client: Flag indicating remote packet log mode.
+ *                        0 = server mode (listen for connections)
+ *                        1 = client mode (connect to @ipaddr)
+ * @rpktlog_svc: Remote packet log service context containing work queues,
+ *               socket handles, connection state, and buffer management for
+ *               streaming packet log data over TCP to a remote machine.
+ *
+ * This structure maintains the state for packet logging functionality including
+ * local circular buffer management and optional remote streaming capability.
+ * The remote pktlog feature allows streaming captured packet log data to a
+ * backbone machine over TCP socket connection for long-duration captures that
+ * exceed local buffer capacity.
+ *
+ * Buffer Management:
+ * - Local buffer (@buf) uses @buf->rd_offset and @buf->wr_offset
+ * - Remote buffer uses @rlog_read_index and @rlog_write_index
+ * - @is_wrap flag prevents read/write index collision detection issues
+ *
+ */
 struct ath12k_pktlog {
-        struct ath12k_pktlog_buf *buf;
-        u32 filter;
-        u32 buf_size;           /* Size of buffer in bytes */
-        spinlock_t lock;
-        u8 hdr_size;
-        u8 hdr_size_field_offset;
-        u32 fw_version_record;
-        u32 invalid_decode_info;
+	struct ath12k_pktlog_buf *buf;
+	u32 filter;
+	u32 buf_size;
+	spinlock_t lock;
+	u8 hdr_size;
+	u8 hdr_size_field_offset;
+	u32 fw_version_record;
+	u32 invalid_decode_info;
+	u32 rlog_write_index;
+	u32 rlog_read_index;
+	u32 rlog_max_size;
+	int is_wrap;
+	char ipaddr[ATH12K_IP_ADDR_STR_MAX];
+	u8 pktlog_remote_client;
+	struct ath12k_pktlog_remote_service rpktlog_svc;
 };
 
 struct ath12k_pktlog_decode_info {
