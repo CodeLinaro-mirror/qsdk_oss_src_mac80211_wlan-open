@@ -1004,6 +1004,76 @@ static const struct file_operations fops_pktlog_size = {
 	.open = simple_open
 };
 
+/**
+ * ath12k_pktlog_remote_enable - Enable/disable remote pktlog
+ * @ar: ath12k radio pointer
+ * @enable: 1 to enable, 0 to disable
+ *
+ * Enables or disables remote pktlog service. When enabling:
+ * - Server mode: If no IP configured, creates listen socket
+ * - Client mode: If IP configured, connects to remote server
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int ath12k_pktlog_remote_enable(struct ath12k *ar, u32 enable)
+{
+	struct ath12k_pktlog *pl_info;
+	struct ath12k_pktlog_remote_service *service;
+
+	if (!ar)
+		return -EINVAL;
+
+	pl_info = &ar->debug.pktlog;
+	service = &pl_info->rpktlog_svc;
+
+	if (enable) {
+		if (pl_info->filter & ATH12K_PKTLOG_REMOTE_ENABLE) {
+			if (service->running) {
+				ath12k_warn(ar->ab,
+					    "Remote pktlog already enabled\n");
+				return 0;
+			}
+		}
+
+		if (!pl_info->buf) {
+			ath12k_warn(ar->ab, "Pktlog buffer not allocated\n");
+			return -ENOMEM;
+		}
+
+		service->running = 1;
+		service->connect_done = 0;
+		service->missed_records = 0;
+		service->fend_counts = 0;
+
+		if (!service->port)
+			service->port = ATH12K_DEFAULT_REMOTE_PKTLOG_PORT;
+
+		pl_info->rlog_write_index = 0;
+		pl_info->rlog_read_index = 0;
+		pl_info->rlog_max_size = pl_info->buf_size;
+		pl_info->is_wrap = 0;
+
+		if (pl_info->pktlog_remote_client && pl_info->ipaddr[0]) {
+			ath12k_dbg(ar->ab, ATH12K_DBG_DATA,
+				   "Starting remote pktlog client mode\n");
+			if (!schedule_work(&service->client_service))
+				ath12k_warn(ar->ab, "Client service already scheduled\n");
+		} else {
+			ath12k_dbg(ar->ab, ATH12K_DBG_DATA,
+				   "Starting remote pktlog server mode\n");
+			if (!schedule_work(&service->connection_service))
+				ath12k_warn(ar->ab, "Connection service already scheduled\n");
+		}
+
+		pl_info->filter |= ATH12K_PKTLOG_REMOTE_ENABLE;
+	} else {
+		pl_info->filter &= ~ATH12K_PKTLOG_REMOTE_ENABLE;
+		ath12k_pktlog_stop_service(ar);
+	}
+
+	return 0;
+}
+
 static void ath12k_pktlog_init(struct ath12k *ar)
 {
 	struct ath12k_pktlog *pktlog = &ar->debug.pktlog;

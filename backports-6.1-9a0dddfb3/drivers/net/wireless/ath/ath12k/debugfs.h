@@ -391,4 +391,5 @@ void ath12k_dp_txrx_stats_buf_pktlog_process(struct ath12k *ar, u8 *data,
 void ath12k_cbf_pktlog_process(struct ath12k *ar, u8 *data, u32 len,
 			       struct htt_t2h_ppdu_stats_ind_hdr *htt_hdr,
 			       struct htt_ppdu_stats_rx_mgmtctrl_payload_tlv *cbf_tlv);
+int ath12k_pktlog_remote_enable(struct ath12k *ar, u32 enable);
 #endif /* _ATH12K_DEBUGFS_H_ */

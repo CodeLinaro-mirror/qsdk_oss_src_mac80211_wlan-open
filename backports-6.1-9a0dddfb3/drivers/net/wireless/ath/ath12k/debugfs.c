@@ -5997,6 +5997,143 @@ static const struct file_operations fops_configure_afc_grace_timer = {
 	.open = simple_open
 };
 
+static ssize_t
+ath12k_write_pktlog_remote_enable(struct file *file,
+				  const char __user *ubuf,
+				  size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	u32 enable;
+	int ret;
+
+	if (kstrtouint_from_user(ubuf, count, 0, &enable))
+		return -EINVAL;
+
+	mutex_lock(&ar->ab->core_lock);
+
+	if (ar->ah->state != ATH12K_HW_STATE_ON) {
+		ret = -ENETDOWN;
+		goto out;
+	}
+
+	ret = ath12k_pktlog_remote_enable(ar, enable);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to %s remote pktlog: %d\n",
+			    enable ? "enable" : "disable", ret);
+		goto out;
+	}
+
+	ret = count;
+
+out:
+	mutex_unlock(&ar->ab->core_lock);
+	return ret;
+}
+
+static ssize_t
+ath12k_read_pktlog_remote_enable(struct file *file,
+				 char __user *ubuf,
+				 size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	struct ath12k_pktlog *pl_info = &ar->debug.pktlog;
+	char buf[32];
+	int len;
+
+	len = scnprintf(buf, sizeof(buf), "%d\n",
+			!!(pl_info->filter & ATH12K_PKTLOG_REMOTE_ENABLE));
+
+	return simple_read_from_buffer(ubuf, count, ppos, buf, len);
+}
+
+static const struct file_operations fops_pktlog_remote_enable = {
+	.read = ath12k_read_pktlog_remote_enable,
+	.write = ath12k_write_pktlog_remote_enable,
+	.open = simple_open
+};
+
+static ssize_t
+ath12k_write_pktlog_remote_ip(struct file *file,
+			      const char __user *ubuf,
+			      size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	struct ath12k_pktlog *pl_info = &ar->debug.pktlog;
+	char buf[ATH12K_IP_ADDR_STR_MAX];
+	ssize_t ret;
+
+	if (count >= ATH12K_IP_ADDR_STR_MAX)
+		return -EINVAL;
+
+	ret = simple_write_to_buffer(buf, sizeof(buf) - 1, ppos, ubuf, count);
+	if (ret < 0)
+		return ret;
+
+	buf[ret] = '\0';
+	if (ret > 0 && buf[ret - 1] == '\n')
+		buf[ret - 1] = '\0';
+
+	if (buf[0] != '\0') {
+		u8 ip[4];
+		int parsed = sscanf(buf, "%hhu.%hhu.%hhu.%hhu",
+				    &ip[0], &ip[1], &ip[2], &ip[3]);
+		if (parsed != 4) {
+			ath12k_warn(ar->ab, "Invalid IP address format: %s\n", buf);
+			return -EINVAL;
+		}
+	}
+
+	mutex_lock(&ar->ab->core_lock);
+	spin_lock_bh(&pl_info->lock);
+	memcpy(pl_info->ipaddr, buf, ATH12K_IP_ADDR_STR_MAX);
+	pl_info->pktlog_remote_client = (buf[0] != '\0');
+	spin_unlock_bh(&pl_info->lock);
+	mutex_unlock(&ar->ab->core_lock);
+
+	return count;
+}
+
+static ssize_t
+ath12k_read_pktlog_remote_ip(struct file *file,
+			     char __user *ubuf,
+			     size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	struct ath12k_pktlog *pl_info = &ar->debug.pktlog;
+	char buf[ATH12K_IP_ADDR_STR_MAX + 2];
+	int len;
+
+	len = scnprintf(buf, sizeof(buf), "%s\n", pl_info->ipaddr);
+
+	return simple_read_from_buffer(ubuf, count, ppos, buf, len);
+}
+
+static const struct file_operations fops_pktlog_remote_ip = {
+	.read = ath12k_read_pktlog_remote_ip,
+	.write = ath12k_write_pktlog_remote_ip,
+	.open = simple_open
+};
+
+static ssize_t
+ath12k_read_pktlog_remote_port(struct file *file,
+			       char __user *ubuf,
+			       size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	struct ath12k_pktlog *pl_info = &ar->debug.pktlog;
+	char buf[32];
+	int len;
+
+	len = scnprintf(buf, sizeof(buf), "%u\n", pl_info->rpktlog_svc.port);
+
+	return simple_read_from_buffer(ubuf, count, ppos, buf, len);
+}
+
+static const struct file_operations fops_pktlog_remote_port = {
+	.read = ath12k_read_pktlog_remote_port,
+	.open = simple_open
+};
+
 /**
  * ath12k_write_pktlog_filter() - This function is responsible for setting
  * the pktlog mode and htt tlv filter for different pktlog flavors.
@@ -6820,6 +6957,12 @@ void ath12k_debugfs_register(struct ath12k *ar)
 			    ar->debug.debugfs_pdev, ar,
 			    &ofdma_txbf);
 
+	debugfs_create_file("remote_enable", 0644, ar->debug.debugfs_pdev, ar,
+			    &fops_pktlog_remote_enable);
+	debugfs_create_file("remote_ip", 0644, ar->debug.debugfs_pdev, ar,
+			    &fops_pktlog_remote_ip);
+	debugfs_create_file("remote_port", 0444, ar->debug.debugfs_pdev, ar,
+			    &fops_pktlog_remote_port);
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 	ath12k_debugfs_register_ipa_extn(ar);
 #endif
