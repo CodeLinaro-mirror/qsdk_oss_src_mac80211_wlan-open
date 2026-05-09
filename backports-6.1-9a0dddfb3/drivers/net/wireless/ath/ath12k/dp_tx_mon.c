@@ -2397,10 +2397,80 @@ ath12k_dp_mon_tx_update_mon_info(struct ath12k_pdev_dp *dp_pdev,
 }
 
 /**
+ * ath12k_dp_ext_mon_filter_rx_ctrl() - ext_mon ctrl frame filter for TX monitor
+ * @dp_pdev: DP pdev handle
+ * @tx_ppdu_info: Pointer to struct hal_tx_mon_ppdu_info
+ * @subtype_filter: control frame subtype bitmask (e.g. FILTER_CTRL_ACK,
+ *                  FILTER_CTRL_CTS)
+ * @wh: pointer to 802.11 frame header of the original frame
+ *
+ * Checks whether the given control frame subtype passes the ext_mon Rx filter,
+ * and only then generate the required frame.
+ *
+ * Return: true if the frame passes the filter, else false
+ */
+static bool
+ath12k_dp_ext_mon_filter_rx_ctrl(struct ath12k_pdev_dp *dp_pdev,
+				 struct hal_tx_mon_ppdu_info *tx_ppdu_info,
+				 u32 subtype_filter,
+				 struct ieee80211_hdr *wh)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_dp *dp = dp_pdev->dp;
+	struct ath12k_dp_link_peer *link_peer;
+	struct ath12k_dp_ext_mon_peer *peer;
+	struct ath12k_dp_rx_ext_mon *rx_ext_mon = NULL;
+
+	rx_ext_mon = dp_mon_pdev->rx_ext_mon_config;
+	if (!rx_ext_mon || !rx_ext_mon->enable)
+		return false;
+
+	if (rx_ext_mon->mo_enabled &&
+	    (rx_ext_mon->mo.filter[ATH12K_EXT_MON_FRAME_CTRL] & subtype_filter))
+		return false;
+
+	if (tx_ppdu_info->ack_recvd) {
+		spin_lock_bh(&dp->dp_lock);
+		link_peer = ath12k_dp_link_peer_find_by_addr(dp, wh->addr2);
+		/* Excluding ACK for non-connected clients */
+		if (!link_peer || link_peer->peer_id ==
+		    tx_ppdu_info->rx_status.userstats[0].sw_peer_id) {
+			spin_unlock_bh(&dp->dp_lock);
+			return false;
+		}
+		spin_unlock_bh(&dp->dp_lock);
+	}
+
+	spin_lock(&dp_mon_pdev->rx_ext_mon_lock);
+	if (rx_ext_mon->peer_count) {
+		list_for_each_entry(peer, &rx_ext_mon->peer_list, list) {
+			if (!peer->peer_info.ra_addr &&
+			    ether_addr_equal(peer->peer_info.mac_addr, wh->addr1)) {
+				spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
+				if (rx_ext_mon->fpmo_enabled &&
+				    (rx_ext_mon->fpmo.filter[ATH12K_EXT_MON_FRAME_CTRL] &
+				     subtype_filter))
+					return true;
+
+				return false;
+			}
+		}
+	}
+	spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
+
+	if (rx_ext_mon->fp_enabled &&
+	    (rx_ext_mon->fp.filter[ATH12K_EXT_MON_FRAME_CTRL] & subtype_filter))
+		return true;
+
+	return false;
+}
+
+/**
  * ath12k_dp_tx_mon_generate_ack_rx_frm() - Generate ACK response frame
  * @dp_pdev: DP pdev handle
  * @mpdu_q: MPDU queue containing original frames
  * @tx_ppdu_info: TX PPDU info structure
+ * @rx_ppdu_info: RX PPDU info structure
  *
  * Generate ACK response frame for TX monitor. Creates just the frame SKB
  * with proper headroom reserved for radiotap. The radiotap header will be
@@ -2411,26 +2481,28 @@ ath12k_dp_mon_tx_update_mon_info(struct ath12k_pdev_dp *dp_pdev,
 struct sk_buff *
 ath12k_dp_tx_mon_generate_ack_rx_frm(struct ath12k_pdev_dp *dp_pdev,
 				     struct sk_buff_head *mpdu_q,
-				     struct hal_tx_mon_ppdu_info *tx_ppdu_info)
+				     struct hal_tx_mon_ppdu_info *tx_ppdu_info,
+				     struct hal_tx_mon_ppdu_info *rx_ppdu_info)
 {
 	struct sk_buff *frame_skb = NULL;
 	struct ieee80211_hdr *orig_hdr = NULL;
-	struct sk_buff *valid_frag = NULL;
+	struct sk_buff *first_mpdu = NULL;
 	struct ieee80211_frame_min *ack_hdr = NULL;
 	u16 frm_ctl;
 
-	skb_queue_walk(mpdu_q, valid_frag) {
-		if (valid_frag->len >= sizeof(struct ieee80211_hdr)) {
-			orig_hdr = (struct ieee80211_hdr *)valid_frag->data;
-			break;
-		}
-	}
-
-	if (!orig_hdr) {
+	first_mpdu = skb_peek(mpdu_q);
+	if (!first_mpdu || first_mpdu->len < sizeof(struct ieee80211_hdr) ||
+	    !skb_shinfo(first_mpdu)->nr_frags) {
 		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
 			   "TX Mon: No valid header found for ACK generation\n");
 		return NULL;
 	}
+
+	orig_hdr = (struct ieee80211_hdr *)
+			skb_frag_address(&skb_shinfo(first_mpdu)->frags[0]);
+	if (!ath12k_dp_ext_mon_filter_rx_ctrl(dp_pdev, tx_ppdu_info,
+					      FILTER_CTRL_ACK, orig_hdr))
+		return NULL;
 
 	frame_skb = dev_alloc_skb(ATH12K_DP_MON_TX_MAX_RADIO_TAP_HDR +
 				  sizeof(struct ieee80211_frame_min));
@@ -2447,8 +2519,25 @@ ath12k_dp_tx_mon_generate_ack_rx_frm(struct ath12k_pdev_dp *dp_pdev,
 	memcpy(ack_hdr->ra, orig_hdr->addr2, ETH_ALEN);
 	ack_hdr->duration = cpu_to_le16(0x0000);
 
-	tx_ppdu_info->rx_status.frame_control = frm_ctl;
-	tx_ppdu_info->rx_status.frame_control_info_valid = 1;
+	rx_ppdu_info->rx_status.frame_control = frm_ctl;
+	rx_ppdu_info->rx_status.frame_control_info_valid = 1;
+	rx_ppdu_info->rx_status.tsft = tx_ppdu_info->rx_status.tsft;
+	rx_ppdu_info->rx_status.freq = tx_ppdu_info->rx_status.freq;
+	rx_ppdu_info->rx_status.rssi_comb = tx_ppdu_info->ack_rssi;
+	rx_ppdu_info->rx_status.sgi = 1;
+	rx_ppdu_info->rx_status.bw = 0;
+	rx_ppdu_info->rx_status.mcs = tx_ppdu_info->rx_status.mcs;
+	if (tx_ppdu_info->rx_status.preamble_type == HAL_RX_PREAMBLE_11B) {
+		rx_ppdu_info->rx_status.preamble_type = HAL_RX_PREAMBLE_11B;
+		rx_ppdu_info->rx_status.ofdm_flag = 0;
+		rx_ppdu_info->rx_status.cck_flag = 1;
+	} else {
+		rx_ppdu_info->rx_status.preamble_type = HAL_RX_PREAMBLE_11A;
+		rx_ppdu_info->rx_status.ofdm_flag = 1;
+		rx_ppdu_info->rx_status.cck_flag = 0;
+	}
+	rx_ppdu_info->ppdu_id = 0xDEAD;
+	rx_ppdu_info->ack_recvd = 1;
 
 	return frame_skb;
 }
@@ -2458,6 +2547,7 @@ ath12k_dp_tx_mon_generate_ack_rx_frm(struct ath12k_pdev_dp *dp_pdev,
  * @dp_pdev: DP pdev handle
  * @mpdu_q: MPDU queue containing original frames
  * @tx_ppdu_info: TX PPDU info structure
+ * @rx_ppdu_info: RX PPDU info structure
  *
  * Generate CTS response frame for TX monitor. Creates just the frame SKB
  * with proper headroom reserved for radiotap. The radiotap header will be
@@ -2468,28 +2558,28 @@ ath12k_dp_tx_mon_generate_ack_rx_frm(struct ath12k_pdev_dp *dp_pdev,
 struct sk_buff *
 ath12k_dp_tx_mon_generate_cts_rx_frm(struct ath12k_pdev_dp *dp_pdev,
 				     struct sk_buff_head *mpdu_q,
-				     struct hal_tx_mon_ppdu_info *tx_ppdu_info)
+				     struct hal_tx_mon_ppdu_info *tx_ppdu_info,
+				     struct hal_tx_mon_ppdu_info *rx_ppdu_info)
 {
 	struct sk_buff *frame_skb = NULL;
-	struct sk_buff *valid_frag = NULL;
+	struct sk_buff *first_mpdu = NULL;
 	struct ieee80211_cts *cts_hdr = NULL;
 	struct ieee80211_hdr *orig_hdr = NULL;
 	u8 sifs;
 	u16 duration = 0;
 	u16 frm_ctl;
 
-	skb_queue_walk(mpdu_q, valid_frag) {
-		if (valid_frag->len >= sizeof(struct ieee80211_hdr)) {
-			orig_hdr = (struct ieee80211_hdr *)valid_frag->data;
-			break;
-		}
-	}
-
-	if (!orig_hdr) {
+	first_mpdu = skb_peek(mpdu_q);
+	if (!first_mpdu || first_mpdu->len < sizeof(struct ieee80211_rts)) {
 		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
 			   "TX Mon: No valid header found for CTS generation\n");
 		return NULL;
 	}
+
+	orig_hdr = (struct ieee80211_hdr *)first_mpdu->data;
+	if (!ath12k_dp_ext_mon_filter_rx_ctrl(dp_pdev, tx_ppdu_info,
+					      FILTER_CTRL_CTS, orig_hdr))
+		return NULL;
 
 	duration = le16_to_cpu(orig_hdr->duration_id);
 	sifs = ath12k_dp_tx_mon_get_sifs_time(tx_ppdu_info->rx_status.freq);
@@ -2514,8 +2604,24 @@ ath12k_dp_tx_mon_generate_cts_rx_frm(struct ath12k_pdev_dp *dp_pdev,
 	memcpy(cts_hdr->ra, orig_hdr->addr2, ETH_ALEN);
 	cts_hdr->duration = cpu_to_le16(duration);
 
-	tx_ppdu_info->rx_status.frame_control = frm_ctl;
-	tx_ppdu_info->rx_status.frame_control_info_valid = 1;
+	rx_ppdu_info->rx_status.frame_control = frm_ctl;
+	rx_ppdu_info->rx_status.frame_control_info_valid = 1;
+	rx_ppdu_info->rx_status.tsft = tx_ppdu_info->rx_status.tsft;
+	rx_ppdu_info->rx_status.freq = tx_ppdu_info->rx_status.freq;
+	rx_ppdu_info->rx_status.sgi = tx_ppdu_info->rx_status.sgi;
+	rx_ppdu_info->rx_status.bw = tx_ppdu_info->rx_status.bw;
+	rx_ppdu_info->rx_status.mcs = tx_ppdu_info->rx_status.mcs;
+	if (tx_ppdu_info->rx_status.preamble_type == HAL_RX_PREAMBLE_11B) {
+		rx_ppdu_info->rx_status.preamble_type = HAL_RX_PREAMBLE_11B;
+		rx_ppdu_info->rx_status.ofdm_flag = 0;
+		rx_ppdu_info->rx_status.cck_flag = 1;
+	} else {
+		rx_ppdu_info->rx_status.preamble_type = HAL_RX_PREAMBLE_11A;
+		rx_ppdu_info->rx_status.ofdm_flag = 1;
+		rx_ppdu_info->rx_status.cck_flag = 0;
+	}
+	rx_ppdu_info->ppdu_id = 0xDEAD;
+	rx_ppdu_info->cts_recvd = 1;
 
 	return frame_skb;
 }
@@ -2883,6 +2989,7 @@ ath12k_dp_mon_tx_deliver_single_ppdu(struct ath12k_pdev_dp *dp_pdev,
 	struct ieee80211_hw *hw;
 	struct sk_buff *mpdu;
 	struct sk_buff *resp_skb = NULL;
+	struct hal_tx_mon_ppdu_info *rx_ppdu_info;
 	int delivered = 0;
 	bool contains_host_frames;
 
@@ -2902,22 +3009,33 @@ ath12k_dp_mon_tx_deliver_single_ppdu(struct ath12k_pdev_dp *dp_pdev,
 	if (!hw)
 		return;
 
-	if (user_idx == 0 &&
-	    !ppdu_context->contains_host_frames &&
-	    (ppdu_info->ack_recvd || ppdu_info->cts_recvd)) {
-		if (ppdu_info->ack_recvd && !status_info->explicit_ack_type) {
+	if (user_idx == 0) {
+		if (!ppdu_context->contains_host_frames &&
+		    ppdu_info->ack_recvd && !status_info->explicit_ack_type) {
+			rx_ppdu_info = kzalloc(sizeof(*rx_ppdu_info), GFP_KERNEL);
+			if (!rx_ppdu_info)
+				return;
+
 			resp_skb = ath12k_dp_tx_mon_generate_ack_rx_frm(dp_pdev,
 									mpdu_q,
-									ppdu_info);
+									ppdu_info,
+									rx_ppdu_info);
 			if (resp_skb)
 				ppdu_context->contains_host_frames = true;
 		} else if (ppdu_info->cts_recvd) {
+			rx_ppdu_info = kzalloc(sizeof(*rx_ppdu_info), GFP_KERNEL);
+			if (!rx_ppdu_info)
+				return;
 			resp_skb = ath12k_dp_tx_mon_generate_cts_rx_frm(dp_pdev,
 									mpdu_q,
-									ppdu_info);
+									ppdu_info,
+									rx_ppdu_info);
 			if (resp_skb)
 				ppdu_context->contains_host_frames = true;
 		}
+
+		if (rx_ppdu_info && !resp_skb)
+			kfree(rx_ppdu_info);
 	}
 
 	contains_host_frames = ppdu_context->contains_host_frames;
@@ -2932,10 +3050,12 @@ ath12k_dp_mon_tx_deliver_single_ppdu(struct ath12k_pdev_dp *dp_pdev,
 
 	if ((user_idx == 0) && resp_skb) {
 		ath12k_dp_mon_tx_deliver_frame(dp_pdev, hw, resp_skb,
-					       ppdu_info, status_info,
+					       rx_ppdu_info, status_info,
 					       contains_host_frames,
 					       true, user_idx);
 		delivered++;
+
+		kfree(rx_ppdu_info);
 	}
 
 	if (delivered > 0) {

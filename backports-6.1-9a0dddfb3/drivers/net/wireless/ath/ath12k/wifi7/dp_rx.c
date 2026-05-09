@@ -4388,8 +4388,8 @@ void ath12k_wifi7_dp_pdev_free(struct ath12k_base *ab)
 		ath12k_fw_stats_free(&ar->fw_stats);
 
 		if (ar->dp.dp_mon_pdev_configured) {
-			ath12k_dp_mon_pdev_rx_free(&ar->dp);
 			ath12k_dp_mon_tx_pdev_free(&ar->dp);
+			ath12k_dp_mon_pdev_rx_free(&ar->dp);
 			ath12k_dp_mon_pdev_deinit(&ar->dp);
 			ar->dp.dp_mon_pdev_configured = false;
 		}
@@ -4509,6 +4509,7 @@ err_cleanup_pdevs:
 	for (j = 0; j < i; j++) {
 		ar = ab->pdevs[j].ar;
 		if (ar->dp.dp_mon_pdev_configured) {
+			ath12k_dp_mon_tx_pdev_free(&ar->dp);
 			ath12k_dp_mon_pdev_rx_free(&ar->dp);
 			ath12k_dp_mon_pdev_deinit(&ar->dp);
 			ar->dp.dp_mon_pdev_configured = false;
