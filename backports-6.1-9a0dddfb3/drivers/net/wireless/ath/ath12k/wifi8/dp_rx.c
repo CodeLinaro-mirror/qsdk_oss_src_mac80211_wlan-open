@@ -3957,12 +3957,23 @@ int ath12k_wifi8_dp_alloc_reo_qdesc(struct ath12k_base *ab,
 static int ath12k_wifi8_dp_rx_wbm_idle_buf_0_config_qcn9625(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	struct ath12k_dp_wifi8 *central_dp_wifi8 =
-		ath12k_get_dp_wifi8(ath12k_get_central_dp(dp));
+	struct ath12k_dp *central_dp = ath12k_get_central_dp(dp);
+	struct ath12k_dp_wifi8 *central_dp_wifi8;
 	struct htt_rx_ring_tlv_filter tlv_filter = {0};
 	u32 ring_id;
 	int ret;
 	u32 hal_rx_desc_sz = ab->hal.hal_desc_sz;
+
+	if (!central_dp) {
+		ath12k_err(ab, "central dp is NULL, skip WBM idle buf ring sel config\n");
+		return -EINVAL;
+	}
+
+	central_dp_wifi8 = ath12k_get_dp_wifi8(central_dp);
+	if (!central_dp_wifi8) {
+		ath12k_err(ab, "central dp wifi8 context is NULL, skip WBM idle buf ring sel config\n");
+		return -EINVAL;
+	}
 
 	ring_id = central_dp_wifi8->wbm_idle_buf_ring.ring_id;
 	tlv_filter.rx_filter = HTT_RX_TLV_FLAGS_RXDMA_RING;
@@ -4051,6 +4062,15 @@ static int ath12k_wifi8_dp_rx_ppe2wbm_idle_buf_config_qcn9625(struct ath12k_base
 int ath12k_wifi8_dp_rxdma_ring_sel_config_qcn9625(struct ath12k_base *ab)
 {
 	int ret;
+
+	/*
+	 * FTM does not complete DP MLO init on purpose to save memory.
+	 * Skip RXDMA ring selection programming which depends on central dp.
+	 */
+	if (ath12k_ftm_mode) {
+		ath12k_info(ab, "Skipping RXDMA ring sel config in FTM mode\n");
+		return 0;
+	}
 
 	ret = ath12k_wifi8_dp_rx_wbm_idle_buf_0_config_qcn9625(ab);
 	if (ret) {
