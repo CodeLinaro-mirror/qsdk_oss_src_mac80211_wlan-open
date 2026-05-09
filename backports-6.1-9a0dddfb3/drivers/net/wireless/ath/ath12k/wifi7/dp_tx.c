@@ -3548,7 +3548,7 @@ int ath12k_wifi7_dp_tx_ring_setup(struct ath12k_base *ab)
 
 		ret = ath12k_dp_srng_setup(ab, &dp->tx_ring[i].tcl_data_ring,
 					   HAL_TCL_DATA, i, 0,
-					   DP_TCL_DATA_RING_SIZE);
+					   ath12k_dp_tcl_data_ring_size[i]);
 		if (ret) {
 			ath12k_warn(ab, "failed to set up tcl_data ring (%d) :%d\n",
 				    i, ret);
@@ -3561,7 +3561,7 @@ int ath12k_wifi7_dp_tx_ring_setup(struct ath12k_base *ab)
 
 		ret = ath12k_dp_srng_setup(ab, &dp->tx_ring[i].tcl_comp_ring,
 					   HAL_WBM2SW_RELEASE, tx_comp_ring_num, 0,
-					   DP_TX_COMP_RING_SIZE);
+					   ath12k_dp_tx_comp_ring_size[i]);
 		if (ret) {
 			ath12k_warn(ab, "failed to set up tcl_comp ring (%d) :%d\n",
 				    tx_comp_ring_num, ret);
