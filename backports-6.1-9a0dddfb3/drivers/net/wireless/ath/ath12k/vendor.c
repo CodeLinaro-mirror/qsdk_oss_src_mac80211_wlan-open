@@ -7715,6 +7715,14 @@ ath12k_afc_fetch_power_info_policy[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX] = {.type = NLA_U8 },
 };
 
+#ifdef CPTCFG_QCN_EXTN
+static const struct nla_policy
+ath12k_hw_blocked_chans_query_policy
+	[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_REQ_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_REQ_RADIO_INDEX] = {.type = NLA_S32 },
+};
+#endif
+
 /**
  * ath12k_validate_afc_fetch_input - Validate input parameters for AFC power
  * info fetch
@@ -7760,32 +7768,40 @@ static int ath12k_parse_afc_fetch_attrs(const void *data, int data_len,
 }
 
 /**
- * ath12k_get_radio_by_index - Get ath12k instance by radio index
+ * ath12k_get_radio_by_id - Get ath12k instance by radio index
  * @wiphy: Pointer to wiphy
- * @tb: Array of parsed attributes
+ * @radio_id: HW radio index
  *
  * This function retrieves the ath12k instance corresponding to the
- * specified radio index from the parsed attributes. It checks if the
- * radio index attribute is present and valid.
+ * specified radio index.
  * Returns a pointer to the ath12k instance or NULL if not found or invalid.
  */
-static struct ath12k *ath12k_get_radio_by_index(struct wiphy *wiphy,
-						struct nlattr *tb[])
+#ifndef CPTCFG_QCN_EXTN
+static
+#endif
+struct ath12k *ath12k_get_radio_by_id(struct wiphy *wiphy, u8 radio_id)
 {
 	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
 	struct ath12k_hw *ah = hw->priv;
-	u8 radio_id;
-
-	if (!tb[QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX])
-		return NULL;
-
-	radio_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX]);
 	if (radio_id >= ah->num_radio) {
 		ath12k_err(NULL, "Invalid radio id %d", radio_id);
 		return NULL;
 	}
 
 	return &ah->radio[radio_id];
+}
+
+static struct ath12k *ath12k_get_radio_by_index(struct wiphy *wiphy,
+						struct nlattr *tb[])
+{
+	u8 radio_idx;
+
+	if (!tb[QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX])
+		return NULL;
+
+	radio_idx = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX]);
+
+	return ath12k_get_radio_by_id(wiphy, radio_idx);
 }
 
 /**
@@ -12679,6 +12695,13 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.maxattr = QCA_WLAN_VENDOR_ATTR_REG_PARAMS_MAX,
 		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
 	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_HW_BLOCKED_CHANS,
+		.doit = ath12k_vendor_get_hw_blocked_chans_extn,
+		.policy = ath12k_hw_blocked_chans_query_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_HW_BLOCKED_CHANS_REQ_MAX,
+	},
 #endif
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
@@ -12813,6 +12836,10 @@ static const struct nl80211_vendor_cmd_info ath12k_vendor_events[] = {
 	[QCA_NL80211_VENDOR_SUBCMD_OEM_DATA_INDEX] = {
 		.vendor_id = QCA_NL80211_VENDOR_ID,
 		.subcmd = QCA_NL80211_VENDOR_SUBCMD_OEM_DATA,
+	},
+	[QCA_NL80211_VENDOR_SUBCMD_HW_BLOCKED_CHANS_EVENT_INDEX] = {
+		.vendor_id = QCA_NL80211_VENDOR_ID,
+		.subcmd = QCA_NL80211_VENDOR_SUBCMD_HW_BLOCKED_CHANS,
 	},
 };
 
