@@ -12,6 +12,7 @@
 #include "../debug.h"
 #include "../erp.h"
 #include "pci.h"
+#include "wmi.h"
 #ifdef CPTCFG_QCN_EXTN
 #include "../qcn_extns/ini.h"
 #endif
@@ -102,6 +103,7 @@ const struct ath12k_cp_arch_ops ath12k_wifi8_cp_ops = {
 	.cu_mem_pool_deinit = ath12k_wifi8_cu_mem_pool_deinit,
 	.cu_mem_alloc = ath12k_wifi8_cu_mem_alloc,
 	.cu_mem_free = ath12k_wifi8_cu_mem_free,
+	.cu_notify = ath12k_wifi8_cu_notify,
 };
 
 /* SMD feature flags - controls behaviour of SMD-related operations.

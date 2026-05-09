@@ -10,4 +10,6 @@
 void ath12k_wifi8_wmi_init_qcn9625(struct ath12k_base *ab,
 				   struct ath12k_wmi_resource_config_arg *config);
 
+void ath12k_wifi8_cu_notify(struct ath12k *ar, struct ath12k_link_vif *arvif);
+
 #endif

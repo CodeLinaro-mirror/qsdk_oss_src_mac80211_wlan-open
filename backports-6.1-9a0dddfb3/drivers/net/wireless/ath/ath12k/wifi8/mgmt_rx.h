@@ -34,6 +34,10 @@ int ath12k_wifi8_mgmt_wbm_ring_sel_config_qcn9625(struct ath12k_base *ab);
 
 struct ath12k_mgmt *ath12k_wifi8_get_cumac_mgmt(struct ath12k_mgmt *mgmt);
 
+void ath12k_wifi8_cu_mem_update(struct ath12k_base *ab,
+				struct ath12k_link_vif *arvif,
+				bool is_probe_req);
+
 static inline struct ath12k_mgmt_wifi8 *ath12k_get_mgmt_wifi8(struct ath12k_mgmt *mgmt)
 {
 	return (struct ath12k_mgmt_wifi8 *)mgmt->arch_priv;
