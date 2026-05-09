@@ -1830,9 +1830,6 @@ static void ath12k_dp_rx_update_peer_msdu_stats(struct ath12k_dp_peer *peer,
 	if (rx_msdu_info->da_is_mcbc)
 		DP_PEER_STATS_PKT_LEN(peer, rx, ring_id, mcast, link_id, 1,
 				      rx_msdu_info->msdu_length);
-	else
-		DP_PEER_STATS_PKT_LEN(peer, rx, ring_id, ucast, link_id, 1,
-				      rx_msdu_info->msdu_length);
 
 	DP_PEER_STATS_COND_INC(peer, rx, ring_id, mpdu_retry, link_id,
 			       rx_mpdu_info->mpdu_retry_bit, 1);
@@ -1879,8 +1876,6 @@ ath12k_wifi8_dp_rx_process_msdu(struct ath12k_pdev_dp *dp_pdev,
 	if (peer) {
 		link_id = ath12k_dp_validate_hw_link_id(
 					spd_desc_l->rx_mpdu_info.src_link_id);
-		DP_PEER_STATS_PKT_LEN(peer, rx, ring_id, recv_from_reo, link_id,
-				      1, msdu_len);
 
 		if (unlikely(ath12k_dp_stats_enabled(dp_pdev))) {
 			if (ath12k_dp_debug_stats_enabled(dp_pdev)) {

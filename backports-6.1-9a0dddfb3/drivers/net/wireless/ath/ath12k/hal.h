@@ -1102,9 +1102,14 @@ struct hal_srng {
 /* Interrupt mitigation - Batch threshold in terms of number of frames */
 #define HAL_SRNG_INT_BATCH_THRESHOLD_PPE_WBM2SW_REL 256
 #define HAL_SRNG_INT_BATCH_THRESHOLD_TX_EXCEPTION 8
+/* Interrupt coalescing for peer TX/RX telemetry rings */
+#define HAL_SRNG_INT_BATCH_THRESHOLD_TX_TELEMETRY 10
+#define HAL_SRNG_INT_BATCH_THRESHOLD_RX_TELEMETRY 10
 
 /* Interrupt mitigation - timer threshold in us */
 #define HAL_SRNG_INT_TIMER_THRESHOLD_TX_EXCEPTION 128
+#define HAL_SRNG_INT_TIMER_THRESHOLD_TX_TELEMETRY  512000   /* 512 ms */
+#define HAL_SRNG_INT_TIMER_THRESHOLD_RX_TELEMETRY  512000   /* 512 ms */
 
 enum hal_srng_mac_type {
 	ATH12K_HAL_SRNG_UMAC,
