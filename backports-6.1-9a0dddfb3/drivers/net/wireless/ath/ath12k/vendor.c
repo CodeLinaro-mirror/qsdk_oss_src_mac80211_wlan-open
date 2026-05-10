@@ -2331,6 +2331,20 @@ static int ath12k_get_htt_tx_stats_adv_attr_size(void)
 	attr_size = nla_total_size_nested(payload_size);
 	total_size += attr_size;
 
+	/* SU BN PPDU Count (struct pkt_type) */
+	/* pkt_type has: mcs_count[MAX_MCS = 25] */
+	payload_size = nla_total_size(sizeof(u32) * MAX_MCS);
+	attr_size = nla_total_size_nested(payload_size);
+	total_size += attr_size;
+
+	/* MU BN PPDU Count Array [TXRX_TYPE_MU_MAX = 2] */
+	/* Each pkt_type has: mcs_count[MAX_MCS = 25] */
+	payload_size = 0;
+	mu_payload = nla_total_size(sizeof(u32)) * MAX_MCS;
+	payload_size += nla_total_size_nested(mu_payload * TXRX_TYPE_MU_MAX);
+	attr_size = nla_total_size_nested(payload_size);
+	total_size += attr_size;
+
 	/* Punctured BW Array [MAX_PUNCTURED_MODE = 5] */
 	payload_size = nla_total_size(sizeof(u32) * MAX_PUNCTURED_MODE);
 	attr_size = nla_total_size_nested(payload_size);
@@ -2381,6 +2395,9 @@ static int ath12k_get_tx_ext_htt_stats_attr_size(void)
 	htt_payload_size += nla_total_size_nested(htt_attr_size);
 
 	htt_attr_size = nla_total_size(sizeof(u64) * ATH12K_EHT_MCS_NUM);
+	htt_payload_size += nla_total_size_nested(htt_attr_size);
+
+	htt_attr_size = nla_total_size(sizeof(u64) * ATH12K_UHR_MCS_NUM);
 	htt_payload_size += nla_total_size_nested(htt_attr_size);
 
 	htt_attr_size = nla_total_size(sizeof(u64) * ATH12K_BW_NUM);
@@ -3190,6 +3207,24 @@ ath12k_fill_peer_tx_htt_stats_data(struct sk_buff *vendor_event,
 	nla_nest_end(vendor_event, attr);
 
 	attr = nla_nest_start(vendor_event,
+			      QCA_VENDOR_WLAN_TELEMETRY_TX_EXT_HTT_DATA_UHR_INFO);
+	if (!attr) {
+		ath12k_err(NULL, "nla_nest failure: tx htt stats BN parse");
+		return -EINVAL;
+	}
+	for (i = 0; i < QCA_VENDOR_WLAN_TELEMETRY_UHR_MCS_MAX; i++) {
+		if (nla_put_u64_64bit(vendor_event, (i + 1),
+				      htt_tx_data->uhr[htt_pkt_info][i],
+				      NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put error: type %d subtype = %d",
+				   QCA_VENDOR_WLAN_TELEMETRY_TX_EXT_HTT_DATA_UHR_INFO,
+				   i);
+			return -EINVAL;
+		}
+	}
+	nla_nest_end(vendor_event, attr);
+
+	attr = nla_nest_start(vendor_event,
 			      QCA_VENDOR_WLAN_TELEMETRY_TX_EXT_HTT_DATA_BW_INFO);
 	if (!attr) {
 		ath12k_err(NULL, "nla_nest failure: tx htt stats BW parse");
@@ -3441,6 +3476,77 @@ ath12k_fill_mu_be_ppdu_cnt(struct sk_buff *vendor_event,
 					tx_stats->mu_be_ppdu_cnt[i].mcs_count[j])) {
 				ath12k_err(NULL,
 					   "nla put failure: mu be ppdu mcs %d:%d",
+					   i, j);
+				return -EINVAL;
+			}
+		}
+
+		nla_nest_end(vendor_event, mu_attr);
+	}
+	nla_nest_end(vendor_event, attr);
+
+	return 0;
+}
+
+static int
+ath12k_fill_su_bn_ppdu_cnt(struct sk_buff *vendor_event,
+			   struct ath12k_dp_link_peer_stats
+			   *link_peer_stats)
+{
+	struct nlattr *attr;
+	int i;
+
+	attr = nla_nest_start(vendor_event,
+			      QCA_VENDOR_WLAN_TELEMETRY_TX_EXT_HTT_STATS_SU_BN_PPDU_CNT);
+	if (!attr) {
+		ath12k_err(NULL, "nla nest failure: su bn ppdu cnt");
+		return -EINVAL;
+	}
+
+	for (i = 0; i < QCA_VENDOR_WLAN_TELEMETRY_MCS_MAX; i++) {
+		if (nla_put_u32(vendor_event, (i + 1),
+				link_peer_stats->tx_stats->su_bn_ppdu_cnt.mcs_count[i])) {
+			ath12k_err(NULL,
+				   "nla put failure: su bn ppdu mcs %d", i);
+			return -EINVAL;
+		}
+	}
+	nla_nest_end(vendor_event, attr);
+
+	return 0;
+}
+
+static int
+ath12k_fill_mu_bn_ppdu_cnt(struct sk_buff *vendor_event,
+			   struct ath12k_dp_link_peer_stats
+			   *link_peer_stats)
+{
+	struct nlattr *attr, *mu_attr;
+	struct ath12k_htt_tx_stats *tx_stats = NULL;
+	int i, j;
+
+	attr = nla_nest_start(vendor_event,
+			      QCA_VENDOR_WLAN_TELEMETRY_TX_EXT_HTT_STATS_MU_BN_PPDU_CNT);
+	if (!attr) {
+		ath12k_err(NULL, "nla nest failure: mu bn ppdu cnt");
+		return -EINVAL;
+	}
+
+	tx_stats = link_peer_stats->tx_stats;
+	for (i = 0; i < QCA_VENDOR_WLAN_TELEMETRY_TX_EXT_HTT_TXRX_MU_MAX;
+	     i++) {
+		mu_attr = nla_nest_start(vendor_event, (i + 1));
+		if (!mu_attr) {
+			ath12k_err(NULL,
+				   "nla nest failure: mu bn ppdu %d", i);
+			return -EINVAL;
+		}
+
+		for (j = 0; j < QCA_VENDOR_WLAN_TELEMETRY_MCS_MAX; j++) {
+			if (nla_put_u32(vendor_event, (j + 1),
+					tx_stats->mu_bn_ppdu_cnt[i].mcs_count[j])) {
+				ath12k_err(NULL,
+					   "nla put failure: mu bn ppdu mcs %d:%d",
 					   i, j);
 				return -EINVAL;
 			}
@@ -3823,6 +3929,14 @@ ath12k_fill_peer_tx_ext_htt_stats_attr(struct ath12k *ar, struct sk_buff *vendor
 
 	/* MU BE PPDU Count */
 	if (ath12k_fill_mu_be_ppdu_cnt(vendor_event, link_peer_stats))
+		return -EINVAL;
+
+	/* SU BN PPDU Count */
+	if (ath12k_fill_su_bn_ppdu_cnt(vendor_event, link_peer_stats))
+		return -EINVAL;
+
+	/* MU BN PPDU Count */
+	if (ath12k_fill_mu_bn_ppdu_cnt(vendor_event, link_peer_stats))
 		return -EINVAL;
 
 	/* Punctured BW */

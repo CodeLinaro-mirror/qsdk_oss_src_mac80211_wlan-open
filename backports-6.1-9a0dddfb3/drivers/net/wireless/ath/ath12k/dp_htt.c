@@ -971,6 +971,23 @@ ath12k_update_extd_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 		DP_STATS_INCR(tx_stats, punc_bw[punc_mode], peer_stats->succ_pkts);
 	}
 
+	if (peer_stats->flags == WMI_RATE_PREAMBLE_UHR) {
+		res_mcs = (peer_stats->mcs < MAX_MCS_11BN) ?
+			peer_stats->mcs : (MAX_MCS - 1);
+
+		DP_STATS_INCC(tx_stats, su_bn_ppdu_cnt.mcs_count[res_mcs],
+				1, tx_stats->ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_SU);
+		DP_STATS_INCC(tx_stats,
+				mu_bn_ppdu_cnt[TXRX_TYPE_MU_OFDMA].mcs_count[res_mcs],
+				1, tx_stats->ppdu_type ==
+				HTT_PPDU_STATS_PPDU_TYPE_MU_OFDMA);
+		DP_STATS_INCC(tx_stats,
+				mu_bn_ppdu_cnt[TXRX_TYPE_MU_MIMO].mcs_count[res_mcs],
+				1, tx_stats->ppdu_type ==
+				HTT_PPDU_STATS_PPDU_TYPE_MU_MIMO);
+		DP_STATS_INCR(tx_stats, punc_bw[punc_mode], peer_stats->succ_pkts);
+	}
+
 	tx_pwr = HTT_PPDU_GET_PER_CHAIN_TX_PWR(usr_stats->common.tx_pwr, 0);
 	DP_STATS_UPD(tx_stats, tx_pwr, tx_pwr / usr_stats->common.tx_pwr_multiplier);
 
@@ -1102,6 +1119,8 @@ ath12k_update_htt_stats_txrate(struct ath12k_pdev_dp *dp_pdev,
 			ru_tones = ath12k_dp_he_ru_alloc_from_ru_size(ru_start);
 		else if (flags == WMI_RATE_PREAMBLE_EHT)
 			ru_tones = ath12k_dp_eht_ru_alloc_from_ru_size(ru_start);
+		else if (flags == WMI_RATE_PREAMBLE_UHR)
+			ru_tones = ath12k_dp_eht_ru_alloc_from_ru_size(ru_start);
 	}
 	else if (!ru_format)
 		ru_tones = le16_to_cpu(ru_end) - le16_to_cpu(ru_start) + 1;
@@ -1223,6 +1242,8 @@ ath12k_update_htt_stats_txrate(struct ath12k_pdev_dp *dp_pdev,
 		if (flags == WMI_RATE_PREAMBLE_HE)
 			peer->txrate.bw = RATE_INFO_BW_HE_RU;
 		else if (flags == WMI_RATE_PREAMBLE_EHT)
+			peer->txrate.bw = RATE_INFO_BW_EHT_RU;
+		else if (flags == WMI_RATE_PREAMBLE_UHR)
 			peer->txrate.bw = RATE_INFO_BW_EHT_RU;
 	}
 

@@ -2901,6 +2901,12 @@ ath12k_dp_mon_tx_fill_rate_status(struct ath12k_pdev_dp *dp_pdev,
 		ri->eht_gi = ath12k_dp_tx_mon_gi_to_nl80211(rx_status->sgi);
 		break;
 
+	case HAL_RX_PREAMBLE_11BN:
+		ri->flags = RATE_INFO_FLAGS_UHR_MCS;
+		ri->mcs = rx_status->mcs;
+		ri->eht_gi = ath12k_dp_tx_mon_gi_to_nl80211(rx_status->sgi);
+		break;
+
 	default:
 		ri->legacy = (rx_status->freq >= ATH12K_FREQ_2GHZ_MIN &&
 			      rx_status->freq <= ATH12K_FREQ_2GHZ_MAX) ?
