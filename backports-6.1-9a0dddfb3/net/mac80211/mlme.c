@@ -2794,6 +2794,155 @@ enum ieee80211_csa_source {
 	IEEE80211_CSA_SOURCE_UNPROT_ACTION,
 };
 
+/**
+ * ieee80211_cross_link_csa_window_ms - validate cross-link CSA window duration
+ * @local: local hardware context used for regulatory lookups
+ * @chandef: target channel definition advertised by the CSA
+ * @max_switch_time: maximum switch time from the CSA, in TUs
+ *
+ * Convert the advertised maximum switch time into milliseconds and verify that
+ * it fits within the DFS CAC time, allowing a small margin. A zero return value
+ * means the advertised window must not be used.
+ *
+ * Return: valid cross-link CSA allow window duration in milliseconds, or 0.
+ */
+static unsigned long
+ieee80211_cross_link_csa_window_ms(struct ieee80211_local *local,
+				   const struct cfg80211_chan_def *chandef,
+				   u32 max_switch_time)
+{
+	u64 window_us;
+	u64 window_ms;
+	unsigned int dfs_cac_ms;
+	u64 max_valid_ms;
+	u64 margin_ms;
+
+	window_us = (u64)max_switch_time * 1024;
+	window_ms = div_u64(window_us, 1000);
+	if (!window_ms)
+		return 0;
+
+	dfs_cac_ms = cfg80211_chandef_dfs_cac_time(local->hw.wiphy,
+						   chandef, false, false);
+	if (!dfs_cac_ms)
+		return 0;
+
+	margin_ms = dfs_cac_ms / 100;
+	max_valid_ms = dfs_cac_ms + margin_ms;
+	if (window_ms > max_valid_ms)
+		return 0;
+
+	if (window_ms != (unsigned long)window_ms)
+		return 0;
+
+	return window_ms;
+}
+
+static bool
+ieee80211_cross_link_csa_window_active(struct ieee80211_link_data *link)
+{
+	unsigned long until = link->u.mgd.csa.cross_link_csa_allow_window;
+
+	return until && time_is_after_jiffies(until);
+}
+
+/**
+ * ieee80211_cross_link_csa_window_update - update cross-link CSA allow window
+ * @link: link whose allow window is updated
+ * @chandef: target channel definition advertised by the CSA
+ * @max_switch_time: maximum switch time from the CSA, in TUs
+ * @extend: keep an existing longer allow window when true
+ *
+ * For DFS channels, validate the advertised maximum switch time and record the
+ * jiffies deadline until which 5 GHz cross-link CSA processing is allowed. The
+ * allow window is cleared when the target channel does not require DFS.
+ */
+static void
+ieee80211_cross_link_csa_window_update(struct ieee80211_link_data *link,
+				       const struct cfg80211_chan_def *chandef,
+				       u32 max_switch_time,
+				       bool extend)
+{
+	struct ieee80211_local *local = link->sdata->local;
+	unsigned long window_ms;
+	unsigned long window_timeout;
+
+	if (!chandef->chan || !max_switch_time)
+		return;
+
+	if (!cfg80211_chandef_dfs_required(local->hw.wiphy, chandef,
+					   NL80211_IFTYPE_AP)) {
+		link->u.mgd.csa.cross_link_csa_allow_window = 0;
+		return;
+	}
+
+	window_ms = ieee80211_cross_link_csa_window_ms(local, chandef,
+						       max_switch_time);
+	if (!window_ms)
+		return;
+
+	window_timeout = jiffies + msecs_to_jiffies(window_ms);
+	if (extend &&
+	    !time_after(window_timeout, link->u.mgd.csa.cross_link_csa_allow_window))
+		return;
+
+	link->u.mgd.csa.cross_link_csa_allow_window = window_timeout;
+}
+
+/**
+ * ieee80211_process_5ghz_cross_link_csa - process 5 GHz cross-link CSA
+ * @link: target link for the cross-link CSA
+ * @csa_elems: parsed elements containing the reported CSA information
+ * @csa_ie: parsed CSA channel switch information
+ *
+ * Accept a 5 GHz cross-link CSA only while the DFS-derived allow window is
+ * active and the advertised target differs from the current, or pending, CSA
+ * channel definition. When accepted, update the allow window for the next
+ * target channel.
+ *
+ * Return: true when the cross-link CSA was accepted, false otherwise.
+ */
+static bool
+ieee80211_process_5ghz_cross_link_csa(struct ieee80211_link_data *link,
+				      struct ieee802_11_elems *csa_elems,
+				      const struct ieee80211_csa_ie *csa_ie)
+{
+	const struct cfg80211_chan_def *curr_chandef = &link->conf->chanreq.oper;
+	struct ieee80211_sub_if_data *sdata = link->sdata;
+	bool window_active = ieee80211_cross_link_csa_window_active(link);
+
+	if (!csa_elems ||
+	    (!csa_elems->ch_switch_ie && !csa_elems->ext_chansw_ie))
+		return false;
+
+	if (!sdata->u.mgd.associated)
+		return false;
+
+	if (link->conf->chanreq.oper.chan->band != NL80211_BAND_5GHZ)
+		return false;
+
+	if (!window_active)
+		return false;
+
+	if (link->conf->csa_active && link->csa.chanreq.oper.chan)
+		curr_chandef = &link->csa.chanreq.oper;
+
+	/*
+	 * STA may receive duplicate cross-link CSA beacons until TBTT;
+	 * avoid updating the cross-link CSA window for the same chandef.
+	 */
+	if (csa_ie->chanreq.oper.chan &&
+	    cfg80211_chandef_identical(&csa_ie->chanreq.oper, curr_chandef))
+		return false;
+
+	ieee80211_cross_link_csa_window_update(link, &csa_ie->chanreq.oper,
+					       csa_ie->max_switch_time,
+					       false);
+
+	return true;
+}
+
+
 static void
 ieee80211_sta_process_chanswitch(struct ieee80211_link_data *link,
 				 u64 timestamp, u32 device_timestamp,
@@ -2896,9 +3045,13 @@ ieee80211_sta_process_chanswitch(struct ieee80211_link_data *link,
 			}
 			break;
 		case IEEE80211_CSA_SOURCE_OTHER_LINK:
-			/* active link: we want to see the beacon to continue */
-			if (ieee80211_vif_link_active(&sdata->vif,
-						      link->link_id))
+			/*
+			 * For an active link, wait for its beacon to continue,
+			 * unless this is an accepted 5 GHz cross-link CSA.
+			 */
+			if (!ieee80211_process_5ghz_cross_link_csa(link, csa_elems,
+								   &csa_ie) &&
+			    ieee80211_vif_link_active(&sdata->vif, link->link_id))
 				return;
 
 			/* switch work ran, so just complete the process */
@@ -3062,6 +3215,11 @@ ieee80211_sta_process_chanswitch(struct ieee80211_link_data *link,
 	cfg80211_ch_switch_started_notify(sdata->dev, &csa_ie.chanreq.oper,
 					  link->link_id, csa_ie.count,
 					  csa_ie.mode);
+
+	if (source == IEEE80211_CSA_SOURCE_BEACON && sdata->u.mgd.associated)
+		ieee80211_cross_link_csa_window_update(link, &csa_ie.chanreq.oper,
+						       csa_ie.max_switch_time,
+						       true);
 
 	/* we may have to handle timeout for deactivated link in software */
 	now = jiffies;
