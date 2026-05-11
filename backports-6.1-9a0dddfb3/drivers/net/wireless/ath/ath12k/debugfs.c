@@ -6220,14 +6220,6 @@ static ssize_t ath12k_write_pktlog_filter(struct file *file,
 			filter |= ATH12K_PKTLOG_PHY_LOGGING;
 		if (strstr(buf, "cbf"))
 			filter |= ATH12K_PKTLOG_CBF;
-
-		if ((filter & ATH12K_PKTLOG_RX) &&
-		    (filter & ATH12K_PKTLOG_HYBRID)) {
-			ret = -EINVAL;
-			ath12k_err(ab, "Invalid config. Hybrid mode is allowed"
-				   " only when tx or lite pktlog is used");
-			goto exit;
-		}
 	}
 
 	ath12k_dp_mon_pktlog_config(ar, enable, mode, filter);
