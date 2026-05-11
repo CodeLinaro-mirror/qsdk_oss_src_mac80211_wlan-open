@@ -26620,6 +26620,23 @@ static int ath12k_mac_setup_register(struct ath12k *ar,
 					ar->tt_level_configs[level].pout_reduction_db =
 						tt_level_configs[ATH12K_IPA_IPQ5424_THERMAL_LEVEL][level].pout_reduction_db;
 			}
+		} else if (ar->ab->hw_params->hw_rev == ATH12K_HW_QCN9625_HW10) {
+			for (level = 0; level < ENHANCED_THERMAL_LEVELS; level++) {
+				ar->tt_level_configs[level].tmplwm =
+					tt_level_configs[ATH12K_IPA_QCN9625_THERMAL_LEVEL][level].tmplwm;
+				ar->tt_level_configs[level].tmphwm =
+					tt_level_configs[ATH12K_IPA_QCN9625_THERMAL_LEVEL][level].tmphwm;
+				ar->tt_level_configs[level].dcoffpercent =
+					tt_level_configs[ATH12K_IPA_QCN9625_THERMAL_LEVEL][level].dcoffpercent;
+				ar->tt_level_configs[level].priority = 0;
+				ar->tt_level_configs[level].duty_cycle =
+					ATH12K_THERMAL_DEFAULT_DUTY_CYCLE;
+
+				if (test_bit(WMI_TLV_SERVICE_THERM_THROT_POUT_REDUCTION,
+					     ar->ab->wmi_ab.svc_map))
+					ar->tt_level_configs[level].pout_reduction_db =
+						tt_level_configs[ATH12K_IPA_QCN9625_THERMAL_LEVEL][level].pout_reduction_db;
+			}
 		} else {
 			for (level = 0; level < ENHANCED_THERMAL_LEVELS; level++) {
 				ar->tt_level_configs[level].tmplwm =
@@ -26655,6 +26672,23 @@ static int ath12k_mac_setup_register(struct ath12k *ar,
 					     ar->ab->wmi_ab.svc_map))
 					ar->tt_level_configs[level].pout_reduction_db =
 						tt_level_configs[ATH12K_XFRM_IPQ5424_THERMAL_LEVEL][level].pout_reduction_db;
+			}
+		} else if (ar->ab->hw_params->hw_rev == ATH12K_HW_QCN9625_HW10) {
+			for (level = 0; level < ENHANCED_THERMAL_LEVELS; level++) {
+				ar->tt_level_configs[level].tmplwm =
+					tt_level_configs[ATH12K_XFRM_QCN9625_THERMAL_LEVEL][level].tmplwm;
+				ar->tt_level_configs[level].tmphwm =
+					tt_level_configs[ATH12K_XFRM_QCN9625_THERMAL_LEVEL][level].tmphwm;
+				ar->tt_level_configs[level].dcoffpercent =
+					tt_level_configs[ATH12K_XFRM_QCN9625_THERMAL_LEVEL][level].dcoffpercent;
+				ar->tt_level_configs[level].priority = 0;
+				ar->tt_level_configs[level].duty_cycle =
+					ATH12K_THERMAL_DEFAULT_DUTY_CYCLE;
+
+				if (test_bit(WMI_TLV_SERVICE_THERM_THROT_POUT_REDUCTION,
+					     ar->ab->wmi_ab.svc_map))
+					ar->tt_level_configs[level].pout_reduction_db =
+						tt_level_configs[ATH12K_XFRM_QCN9625_THERMAL_LEVEL][level].pout_reduction_db;
 			}
 		} else {
 			for (level = 0; level < ENHANCED_THERMAL_LEVELS; level++) {

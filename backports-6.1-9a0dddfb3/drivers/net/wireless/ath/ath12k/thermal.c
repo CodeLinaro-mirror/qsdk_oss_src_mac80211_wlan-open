@@ -371,7 +371,71 @@ struct tt_level_config tt_level_configs[ATH12K_THERMAL_LEVELS][ENHANCED_THERMAL_
 			ATH12K_THERMAL_LVL4_DUTY_CYCLE, 0,
 			THERMAL_CONFIG_POUT0
 		}
-	}
+	},
+	{
+		{ /* Level 0 */
+			ATH12K_THERMAL_XFRM_LVL0_TEMP_LOW_MARK_QCN9625,
+			ATH12K_THERMAL_XFRM_LVL0_TEMP_HIGH_MARK_QCN9625,
+			ATH12K_THERMAL_LVL0_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT0
+		},
+		{ /* Level 1 */
+			ATH12K_THERMAL_XFRM_LVL1_TEMP_LOW_MARK_QCN9625,
+			ATH12K_THERMAL_XFRM_LVL1_TEMP_HIGH_MARK_QCN9625,
+			ATH12K_THERMAL_LVL1_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT1
+		},
+		{ /* Level 2 */
+			ATH12K_THERMAL_XFRM_LVL2_TEMP_LOW_MARK_QCN9625,
+			ATH12K_THERMAL_XFRM_LVL2_TEMP_HIGH_MARK_QCN9625,
+			ATH12K_THERMAL_LVL2_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT2
+		},
+		{ /* Level 3 */
+			ATH12K_THERMAL_XFRM_LVL3_TEMP_LOW_MARK_QCN9625,
+			ATH12K_THERMAL_XFRM_LVL3_TEMP_HIGH_MARK_QCN9625,
+			ATH12K_THERMAL_LVL3_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT3
+		},
+		{ /* Level 4 */
+			ATH12K_THERMAL_XFRM_LVL4_TEMP_LOW_MARK_QCN9625,
+			ATH12K_THERMAL_XFRM_LVL4_TEMP_HIGH_MARK_QCN9625,
+			ATH12K_THERMAL_LVL4_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT4
+		}
+	},
+	{
+		{ /* Level 0 */
+			ATH12K_THERMAL_IPA_LVL0_TEMP_LOW_MARK_QCN9625,
+			ATH12K_THERMAL_IPA_LVL0_TEMP_HIGH_MARK_QCN9625,
+			ATH12K_THERMAL_LVL0_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT0
+		},
+		{ /* Level 1 */
+			ATH12K_THERMAL_IPA_LVL1_TEMP_LOW_MARK_QCN9625,
+			ATH12K_THERMAL_IPA_LVL1_TEMP_HIGH_MARK_QCN9625,
+			ATH12K_THERMAL_LVL1_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT1
+		},
+		{ /* Level 2 */
+			ATH12K_THERMAL_IPA_LVL2_TEMP_LOW_MARK_QCN9625,
+			ATH12K_THERMAL_IPA_LVL2_TEMP_HIGH_MARK_QCN9625,
+			ATH12K_THERMAL_LVL2_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT2
+		},
+		{ /* Level 3 */
+			ATH12K_THERMAL_IPA_LVL3_TEMP_LOW_MARK_QCN9625,
+			ATH12K_THERMAL_IPA_LVL3_TEMP_HIGH_MARK_QCN9625,
+			ATH12K_THERMAL_LVL3_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT3
+		},
+		{ /* Level 4 */
+			ATH12K_THERMAL_IPA_LVL4_TEMP_LOW_MARK_QCN9625,
+			ATH12K_THERMAL_IPA_LVL4_TEMP_HIGH_MARK_QCN9625,
+			ATH12K_THERMAL_LVL4_DUTY_CYCLE, 0,
+			THERMAL_CONFIG_POUT4
+		}
+	},
 };
 
 void ath12k_update_tt_configs(struct ath12k *ar, int level, int tmplwm, int tmphwm,
@@ -503,6 +567,9 @@ void ath12k_thermal_event_throt_level(struct ath12k *ar, int curr_level)
 		if (ar->ab->hw_params->hw_rev == ATH12K_HW_IPQ5424_HW10)
 			ar->thermal.throttle_state =
 				tt_level_configs[ATH12K_XFRM_IPQ5424_THERMAL_LEVEL][curr_level].dcoffpercent;
+		else if (ar->ab->hw_params->hw_rev == ATH12K_HW_QCN9625_HW10)
+			ar->thermal.throttle_state =
+				tt_level_configs[ATH12K_XFRM_QCN9625_THERMAL_LEVEL][curr_level].dcoffpercent;
 		else
 			ar->thermal.throttle_state =
 				tt_level_configs[ATH12K_XFRM_THERMAL_LEVEL][curr_level].dcoffpercent;
@@ -544,6 +611,9 @@ int ath12k_thermal_set_throttling(struct ath12k *ar, u32 throttle_state)
 	} else {
 		if (ar->ab->hw_params->hw_rev == ATH12K_HW_IPQ5424_HW10)
 			tt_level_configs[ATH12K_XFRM_IPQ5424_THERMAL_LEVEL][0].dcoffpercent =
+				throttle_state;
+		else if (ar->ab->hw_params->hw_rev == ATH12K_HW_QCN9625_HW10)
+			tt_level_configs[ATH12K_XFRM_QCN9625_THERMAL_LEVEL][0].dcoffpercent =
 				throttle_state;
 		else
 			tt_level_configs[ATH12K_XFRM_THERMAL_LEVEL][0].dcoffpercent =
