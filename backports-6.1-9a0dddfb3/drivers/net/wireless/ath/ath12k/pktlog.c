@@ -131,7 +131,10 @@ int ath12k_pktlog_stop_service(struct ath12k *ar)
 		return -EINVAL;
 
 	pl_info = &ar->debug.pktlog;
-	service = &pl_info->rpktlog_svc;
+	if (!pl_info->rpktlog_svc)
+		return -EINVAL;
+
+	service = pl_info->rpktlog_svc;
 
 	service->running = 0;
 	service->connect_done = 0;
@@ -165,23 +168,20 @@ int ath12k_pktlog_stop_service(struct ath12k *ar)
 static void ath12k_pktlog_start_accept_service(struct work_struct *work)
 {
 	struct ath12k_pktlog_remote_service *service;
-	struct ath12k_pktlog *pl_info;
 	struct ath12k *ar;
 	struct socket *accept_socket = NULL;
 	int ret;
 
 	service = container_of(work, struct ath12k_pktlog_remote_service,
 			       accept_service);
-	pl_info = container_of(service, struct ath12k_pktlog, rpktlog_svc);
-
-	if (!service->running || !service->listen_socket)
-		return;
-
-	ar = pl_info->ar;
+	ar = service->ar;
 	if (!ar || !ar->ab) {
 		ath12k_warn(ar->ab, "Remote pktlog: Invalid ar pointer");
 		return;
 	}
+
+	if (!service->running || !service->listen_socket)
+		return;
 
 	ret = kernel_accept(service->listen_socket, &accept_socket, 0);
 	if (ret < 0) {
@@ -220,7 +220,6 @@ static void ath12k_pktlog_start_accept_service(struct work_struct *work)
 static void ath12k_pktlog_start_remote_service(struct work_struct *work)
 {
 	struct ath12k_pktlog_remote_service *service;
-	struct ath12k_pktlog *pl_info;
 	struct ath12k *ar;
 	struct socket *sock = NULL;
 	struct sockaddr_in server_addr;
@@ -229,12 +228,11 @@ static void ath12k_pktlog_start_remote_service(struct work_struct *work)
 
 	service = container_of(work, struct ath12k_pktlog_remote_service,
 			       connection_service);
-	pl_info = container_of(service, struct ath12k_pktlog, rpktlog_svc);
 
-	if (!service->running)
+	if (!service || !service->running)
 		return;
 
-	ar = pl_info->ar;
+	ar = service->ar;
 	if (!ar || !ar->ab) {
 		ath12k_warn(ar->ab, "Remote pktlog: Invalid ar pointer");
 		return;
@@ -304,17 +302,16 @@ static void ath12k_pktlog_start_remote_service_client(struct work_struct *work)
 
 	service = container_of(work, struct ath12k_pktlog_remote_service,
 			       client_service);
-	pl_info = container_of(service, struct ath12k_pktlog, rpktlog_svc);
+	if (!service || !service->running)
+		return;
 
-	ar = pl_info->ar;
+	ar = service->ar;
 	if (!ar || !ar->ab) {
 		ath12k_warn(ar->ab, "Remote pktlog client: Invalid ar pointer");
 		return;
 	}
 
-	if (!service->running)
-		return;
-
+	pl_info = &ar->debug.pktlog;
 	if (!pl_info->pktlog_remote_client || !pl_info->ipaddr[0]) {
 		ath12k_warn(ar->ab, "No remote IP address configured\n");
 		return;
@@ -389,9 +386,10 @@ static void ath12k_pktlog_run_send_service(struct work_struct *work)
 
 	service = container_of(work, struct ath12k_pktlog_remote_service,
 			       send_service);
-	pl_info = container_of(service, struct ath12k_pktlog, rpktlog_svc);
-	ar = pl_info->ar;
+	if (!service)
+		return;
 
+	ar = service->ar;
 	if (!ar || !ar->ab)
 		return;
 
@@ -401,6 +399,7 @@ static void ath12k_pktlog_run_send_service(struct work_struct *work)
 		return;
 	}
 
+	pl_info = &ar->debug.pktlog;
 	log_buf = pl_info->buf;
 	if (!log_buf) {
 		ath12k_warn(ar->ab, "Pktlog buffer not allocated\n");
@@ -520,9 +519,18 @@ reconnect:
 void ath12k_pktlog_init_remote_service_work(struct ath12k *ar)
 {
 	struct ath12k_pktlog *pl_info = &ar->debug.pktlog;
-	struct ath12k_pktlog_remote_service *service = &pl_info->rpktlog_svc;
+	struct ath12k_pktlog_remote_service *service;
 
-	pl_info->ar = ar;
+	if (!pl_info->rpktlog_svc) {
+		pl_info->rpktlog_svc = kzalloc(sizeof(*pl_info->rpktlog_svc),
+					       GFP_KERNEL);
+		if (!pl_info->rpktlog_svc)
+			return;
+	}
+
+	service = pl_info->rpktlog_svc;
+	service->port = ATH12K_DEFAULT_REMOTE_PKTLOG_PORT;
+	service->ar = ar;
 
 	INIT_WORK(&service->connection_service,
 		  ath12k_pktlog_start_remote_service);
@@ -1024,7 +1032,10 @@ int ath12k_pktlog_remote_enable(struct ath12k *ar, u32 enable)
 		return -EINVAL;
 
 	pl_info = &ar->debug.pktlog;
-	service = &pl_info->rpktlog_svc;
+	if (!pl_info->rpktlog_svc)
+		return -EINVAL;
+
+	service = pl_info->rpktlog_svc;
 
 	if (enable) {
 		if (pl_info->filter & ATH12K_PKTLOG_REMOTE_ENABLE) {
@@ -1084,7 +1095,16 @@ static void ath12k_pktlog_init(struct ath12k *ar)
 
 	pktlog->hdr_size = sizeof(struct ath12k_pktlog_hdr);
 	pktlog->hdr_size_field_offset =
-		   offsetof(struct ath12k_pktlog_hdr, size);
+		offsetof(struct ath12k_pktlog_hdr, size);
+
+	pktlog->rlog_write_index = 0;
+	pktlog->rlog_read_index = 0;
+	pktlog->rlog_max_size = 0;
+	pktlog->is_wrap = 0;
+	memset(pktlog->ipaddr, 0, sizeof(pktlog->ipaddr));
+	pktlog->pktlog_remote_client = 0;
+
+	ath12k_pktlog_init_remote_service_work(ar);
 }
 
 void ath12k_init_pktlog(struct ath12k *ar)
@@ -1104,6 +1124,21 @@ void ath12k_init_pktlog(struct ath12k *ar)
 void ath12k_deinit_pktlog(struct ath12k *ar)
 {
 	struct ath12k_pktlog *pktlog = &ar->debug.pktlog;
+
+	if (pktlog->rpktlog_svc) {
+		struct ath12k_pktlog_remote_service *service = pktlog->rpktlog_svc;
+
+		if (pktlog->filter & ATH12K_PKTLOG_REMOTE_ENABLE)
+			ath12k_pktlog_stop_service(ar);
+
+		cancel_work_sync(&service->connection_service);
+		cancel_work_sync(&service->accept_service);
+		cancel_work_sync(&service->client_service);
+		cancel_work_sync(&service->send_service);
+
+		kfree(pktlog->rpktlog_svc);
+		pktlog->rpktlog_svc = NULL;
+	}
 
 	if (pktlog->buf)
 		ath12k_pktlog_release(pktlog);
