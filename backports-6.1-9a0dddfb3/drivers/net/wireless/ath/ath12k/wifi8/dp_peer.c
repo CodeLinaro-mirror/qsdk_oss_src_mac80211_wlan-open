@@ -1221,10 +1221,16 @@ void ath12k_wifi8_dp_assoc_link_update(struct ath12k_dp *dp,
 	dp_peer = ath12k_dp_peer_find(dp_hw, sta->addr);
 
 	if (!dp_peer || !dp_peer->sta) {
+		ath12k_err(dp->ab, "peer or peer sta is null");
 		spin_unlock_bh(&dp_hw->peer_lock);
 		return;
 	}
 	tx_flow_info = ath12k_dp_get_tx_flow_info_from_peer(dp_peer);
+	if (!tx_flow_info) {
+		ath12k_err(dp->ab, "tx_flow_info is null for %pM", dp_peer->addr);
+		spin_unlock_bh(&dp_hw->peer_lock);
+		return;
+	}
 	spin_lock_bh(&tx_flow_info->tx_q_lock);
 
 	for (tid_num = 0; tid_num < ATH12K_MAX_NUM_DATA_TIDS; tid_num++) {
