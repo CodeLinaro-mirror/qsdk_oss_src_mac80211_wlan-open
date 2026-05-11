@@ -1587,12 +1587,18 @@ static inline struct ath12k_pdev_dp *
 ath12k_dp_hw_grp_to_dp_pdev(struct ath12k_dp_hw_group *dp_hw_grp, u8 hw_link_id)
 {
 	struct ath12k_dp_hw_link *hw_links = dp_hw_grp->hw_links;
-	u8 device_id = hw_links[hw_link_id].device_id;
-	struct ath12k_dp *dp = dp_hw_grp->dp[device_id];
+	u8 device_id;
+	struct ath12k_dp *dp;
 	u8 pdev_id;
+
+	if (hw_link_id >= ATH12K_GROUP_MAX_RADIO)
+		return NULL;
 
 	RCU_LOCKDEP_WARN(!rcu_read_lock_held(),
 			 "ath12k dp to dp pdev called without rcu lock");
+
+	device_id = hw_links[hw_link_id].device_id;
+	dp = dp_hw_grp->dp[device_id];
 	if (!dp)
 		return NULL;
 

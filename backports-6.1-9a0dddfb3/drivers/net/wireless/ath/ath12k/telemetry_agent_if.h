@@ -19,7 +19,7 @@ int unregister_telemetry_agent_ops(struct telemetry_agent_ops *agent_ops);
 int ath12k_get_pdev_stats(void *obj, struct agent_link_iface_stats_obj *stats);
 int ath12k_get_peer_info(void *obj, struct agent_peer_iface_init_obj *stats);
 int ath12k_get_pdev_info(void *obj, struct agent_pdev_iface_init_obj *stats);
-int ath12k_get_peer_stats(int obj_id, void *parent,
+int ath12k_get_peer_stats(int obj_id, void *parent, u8 hw_link_id,
 			  struct agent_peer_iface_stats_obj *stats);
 int ath12k_get_psoc_info(void *obj, struct agent_psoc_iface_init_obj *statis);
 
