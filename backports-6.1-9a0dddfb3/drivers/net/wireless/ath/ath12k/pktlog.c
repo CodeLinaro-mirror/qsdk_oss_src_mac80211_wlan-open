@@ -139,9 +139,6 @@ int ath12k_pktlog_stop_service(struct ath12k *ar)
 	service->running = 0;
 	service->connect_done = 0;
 
-	cancel_work_sync(&service->connection_service);
-	cancel_work_sync(&service->accept_service);
-
 	if (service->send_socket) {
 		sock_release(service->send_socket);
 		service->send_socket = NULL;
@@ -180,15 +177,25 @@ static void ath12k_pktlog_start_accept_service(struct work_struct *work)
 		return;
 	}
 
-	if (!service->running || !service->listen_socket)
-		return;
+	while (service->running && service->listen_socket) {
+		ret = kernel_accept(service->listen_socket, &accept_socket,
+				    O_NONBLOCK);
+		if (ret == 0)
+			break;
 
-	ret = kernel_accept(service->listen_socket, &accept_socket, 0);
-	if (ret < 0) {
+		if (ret == -EAGAIN || ret == -EWOULDBLOCK) {
+			msleep(100);
+			continue;
+		}
+
 		ath12k_dbg(ar->ab, ATH12K_DBG_DATA,
-			   "Remote pktlog: Accept failed: %d\n", ret);
-		if (service->running)
-			schedule_work(&service->accept_service);
+			   "Remote pktlog: accept failed: %d\n", ret);
+		return;
+	}
+
+	if (!service->running || !service->listen_socket) {
+		if (accept_socket)
+			sock_release(accept_socket);
 		return;
 	}
 
@@ -297,6 +304,7 @@ static void ath12k_pktlog_start_remote_service_client(struct work_struct *work)
 	struct ath12k *ar;
 	struct socket *sock = NULL;
 	struct sockaddr_in server_addr;
+	struct __kernel_sock_timeval tv = {.tv_sec = 5, .tv_usec = 0};
 	int ret;
 	u8 ip[4];
 
@@ -337,6 +345,9 @@ static void ath12k_pktlog_start_remote_service_client(struct work_struct *work)
 	server_addr.sin_addr.s_addr = htonl((ip[0] << 24) | (ip[1] << 16) |
 					    (ip[2] << 8) | ip[3]);
 	server_addr.sin_port = htons(service->port);
+
+	sock_setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO_NEW,
+			KERNEL_SOCKPTR(&tv), sizeof(tv));
 
 	ret = kernel_connect(sock, (struct sockaddr *)&server_addr,
 			     sizeof(server_addr), 0);
