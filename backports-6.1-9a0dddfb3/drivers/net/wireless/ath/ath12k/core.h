@@ -150,6 +150,7 @@
 #define ATH12K_MAX_CORE_MASK	(0xFFFF & ((1 << NR_CPUS) - 1))
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 extern unsigned int ath12k_ppe_ds_enabled;
+extern unsigned int ath12k_ppe_ds_wifi8_enabled;
 #endif
 extern unsigned int ath12k_rfs_core_mask[4];
 extern unsigned int ath12k_frame_mode;
