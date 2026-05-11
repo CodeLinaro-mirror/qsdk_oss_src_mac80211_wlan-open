@@ -3014,9 +3014,6 @@ static void ath12k_wifi8_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 				   "tx frame is not acked status %d\n",
 				   ts->status);
 		}
-		if (ahvif && ath12k_dp_stats_enabled(dp_pdev) &&
-		    ath12k_tid_stats_enabled(dp_pdev))
-			ath12k_tid_tx_drop_stats(ahvif, ts->tid, msdu->len, reason);
 	}
 
 	/* NOTE: Tx rate status reporting. Tx completion status does not have
@@ -3083,6 +3080,11 @@ static void ath12k_wifi8_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 
 exit:
 	DP_DEVICE_STATS_INC(dp, tx_err.tx_comp_err[drop_reason][ring], 1);
+
+	if (ahvif && ath12k_dp_stats_enabled(dp_pdev) &&
+			ath12k_tid_stats_enabled(dp_pdev))
+		ath12k_tid_tx_drop_stats(ahvif, ts->tid, msdu_len, reason);
+
 	if (sw_metadata->flags & DP_TX_DESC_FLAG_FAST)
 		dev_kfree_skb_any(msdu);
 	else
