@@ -1660,6 +1660,7 @@ struct ath12k_ppeds_tx_desc_info *ath12k_dp_get_ppeds_tx_desc(struct ath12k_base
 	desc_addr_ptr = ath12k_dp_cc_find_desc(ab, desc_id, false);
 	return *(struct ath12k_ppeds_tx_desc_info **)desc_addr_ptr;
 }
+EXPORT_SYMBOL(ath12k_dp_get_ppeds_tx_desc);
 #endif
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
