@@ -1216,6 +1216,15 @@ int ath12k_wifi8_hw_init(struct ath12k_base *ab)
 	ab->ath12k_ops = &ath12k_ops_wifi8;
 	ab->map_event_required = false;
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	if (ath12k_ftm_mode && (ath12k_ppe_ds_enabled || ath12k_ppe_ds_wifi8_enabled)) {
+		ath12k_info(ab,
+			    "WiFi8 FTM mode enabled, disabling ppe_ds_enable\n");
+		ath12k_ppe_ds_enabled = 0;
+		ath12k_ppe_ds_wifi8_enabled = 0;
+	}
+#endif
+
 	ath12k_info(ab, "WiFi8 Hardware name: %s\n", ab->hw_params->name);
 
 	return 0;
