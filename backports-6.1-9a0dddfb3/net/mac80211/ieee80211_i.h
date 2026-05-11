@@ -1050,6 +1050,7 @@ struct ieee80211_link_data_managed {
 		bool waiting_bcn;
 		bool ignored_same_chan;
 		bool blocked_tx;
+		bool bw_reconfig;
 	} csa;
 
 	struct wiphy_work request_smps_work;

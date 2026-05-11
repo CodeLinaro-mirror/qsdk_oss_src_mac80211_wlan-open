@@ -3267,6 +3267,12 @@ struct ieee80211_txq {
  * @IEEE80211_HW_SUPPORTS_TX_MONITOR_OFFLOAD: Hardware/driver supports Tx Monitor
  *	frame generation
  *
+ * @IEEE80211_HW_SKIP_CHANDEF_IDENTICAL_CHECK: The driver (e.g. mac80211_hwsim
+ *	for HW SIM test suite) wants mac80211 to skip the
+ *	cfg80211_chandef_identical() check in ieee80211_config_bw() so that
+ *	bandwidth reconfigurations are always processed even when the new
+ *	chandef appears identical to the current one.
+ *
  * @NUM_IEEE80211_HW_FLAGS: number of hardware flags, used for sizing arrays
  */
 enum ieee80211_hw_flags {
@@ -3341,6 +3347,7 @@ enum ieee80211_hw_flags {
 	IEEE80211_HW_SUPPORTS_SINGLE_CHANNEL,
 	IEEE80211_HW_VLAN_GROUP_KEY_HW_OFFLOAD,
 	IEEE80211_HW_SUPPORTS_TX_MONITOR_OFFLOAD,
+	IEEE80211_HW_SKIP_CHANDEF_IDENTICAL_CHECK,
 
 	/* keep last, obviously */
 	NUM_IEEE80211_HW_FLAGS

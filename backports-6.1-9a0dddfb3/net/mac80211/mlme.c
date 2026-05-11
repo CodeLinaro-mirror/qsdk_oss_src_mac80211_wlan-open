@@ -1304,12 +1304,153 @@ ieee80211_notify_colocated_ap_6ghz_update(struct ieee80211_sub_if_data *sdata,
 	}
 }
 
+/**
+ * ieee80211_sta_bw_reconfig_start_csa - start CSA for STA bandwidth reconfig
+ * @link: STA link that detected the bandwidth reconfiguration
+ * @new_oper: new operating channel definition to switch to
+ * @new_ap: new AP channel definition used to derive the channel request
+ *
+ * Prepare and start a channel switch announcement when the STA receives a
+ * beacon from its associated AP that indicates a bandwidth change. The helper
+ * validates channel context support, reserves the target channel context when needed,
+ * updates managed CSA state, notifies cfg80211, and schedules or delegates the
+ * channel switch to the driver.
+ *
+ * Return: 0 on successful CSA start or when no switch is needed, -EINVAL when
+ * the switch cannot be started and the connection drop worker is queued.
+ */
+static int
+ieee80211_sta_bw_reconfig_start_csa(struct ieee80211_link_data *link,
+				    const struct cfg80211_chan_def *new_oper,
+				    const struct cfg80211_chan_def *new_ap)
+{
+	struct ieee80211_sub_if_data *sdata = link->sdata;
+	struct ieee80211_local *local = sdata->local;
+	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
+	struct ieee80211_chanctx *chanctx = NULL;
+	struct ieee80211_chanctx_conf *conf;
+	struct ieee80211_channel_switch ch_switch = {
+		.link_id = link->link_id,
+	};
+	unsigned long now;
+	int res;
+	struct ieee80211_csa_ie csa_ie = {
+		.mode = 1,
+		.count = 10,
+	};
+
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	if (WARN_ON(!new_oper->chan || !new_ap->chan))
+		return -EINVAL;
+
+	if (cfg80211_chandef_identical(new_oper, &link->conf->chanreq.oper)) {
+		link_info(link,
+			  "bw reconfig: skip CSA start because chandef is already identical\n");
+		return 0;
+	}
+
+	ieee80211_teardown_tdls_peers(link);
+
+	conf = rcu_dereference_protected(link->conf->chanctx_conf,
+					 lockdep_is_held(&local->hw.wiphy->mtx));
+	if (ieee80211_vif_link_active(&sdata->vif, link->link_id) && !conf) {
+		link_info(link,
+			  "bw reconfig: no channel context assigned to vif, disconnecting\n");
+		goto drop_connection;
+	}
+
+	if (conf)
+		chanctx = container_of(conf, struct ieee80211_chanctx, conf);
+
+	if (!ieee80211_hw_check(&local->hw, CHANCTX_STA_CSA)) {
+		link_info(link,
+			  "bw reconfig: driver doesn't support chan-switch with channel contexts\n");
+		goto drop_connection;
+	}
+
+	csa_ie.chanreq.oper = *new_oper;
+	csa_ie.chanreq.ap = *new_ap;
+	ch_switch.chandef = csa_ie.chanreq.oper;
+
+	if (drv_pre_channel_switch(sdata, &ch_switch)) {
+		link_info(link,
+			  "bw reconfig: preparing for channel switch failed, disconnecting\n");
+		goto drop_connection;
+	}
+
+	link->u.mgd.csa.ap_chandef = csa_ie.chanreq.ap;
+	link->csa.chanreq.oper = csa_ie.chanreq.oper;
+	ieee80211_set_chanreq_ap(sdata, &link->csa.chanreq, &link->u.mgd.conn,
+				 &csa_ie.chanreq.ap);
+
+	if (chanctx) {
+		res = ieee80211_link_reserve_chanctx(link, &link->csa.chanreq,
+						     chanctx->mode, false);
+		if (res) {
+			link_info(link,
+				  "bw reconfig: failed to reserve channel context (err=%d), disconnecting\n",
+				  res);
+			goto drop_connection;
+		}
+	}
+
+	link->conf->csa_active = true;
+	link->u.mgd.csa.ignored_same_chan = false;
+	link->u.mgd.beacon_crc_valid = false;
+	link->u.mgd.csa.blocked_tx = csa_ie.mode;
+	link->u.mgd.csa.bw_reconfig = true;
+	if (csa_ie.mode)
+		ieee80211_vif_block_queues_csa(sdata);
+
+	link_info(link,
+		  "Starting channel switch - bw reconfig csa_freq=%d width=%d\n",
+		  csa_ie.chanreq.oper.chan->center_freq,
+		  csa_ie.chanreq.oper.width);
+
+	cfg80211_ch_switch_started_notify(sdata->dev, &csa_ie.chanreq.oper,
+					  link->link_id, csa_ie.count,
+					  csa_ie.mode);
+
+	now = jiffies;
+	link->u.mgd.csa.time = now +
+			       TU_TO_JIFFIES((max_t(int, csa_ie.count, 1) - 1) *
+					     link->conf->beacon_int);
+
+	if (ieee80211_vif_link_active(&sdata->vif, link->link_id) &&
+	    local->ops->channel_switch) {
+		drv_channel_switch(local, sdata, &ch_switch);
+		return 0;
+	}
+
+	wiphy_delayed_work_queue(local->hw.wiphy,
+				 &link->u.mgd.csa.switch_work,
+				 link->u.mgd.csa.time - now);
+	return 0;
+
+drop_connection:
+	/*
+	 * This is just so that the disconnect flow will know that
+	 * we were trying to switch channel and failed. In case the
+	 * mode is 1 (we are not allowed to Tx), we will know not to
+	 * send a deauthentication frame. Those two fields will be
+	 * reset when the disconnection worker runs.
+	 */
+	link->conf->csa_active = true;
+	link->u.mgd.csa.blocked_tx = csa_ie.mode;
+	link->u.mgd.csa.bw_reconfig = true;
+	wiphy_work_queue(sdata->local->hw.wiphy,
+			 &ifmgd->csa_connection_drop_work);
+	return -EINVAL;
+}
+
 static int ieee80211_config_bw(struct ieee80211_link_data *link,
 			       struct ieee802_11_elems *elems,
 			       bool update, u64 *changed,
 			       const char *frame)
 {
 	struct ieee80211_channel *channel = link->conf->chanreq.oper.chan;
+	struct cfg80211_chan_def old_oper = link->conf->chanreq.oper;
 	struct ieee80211_sub_if_data *sdata = link->sdata;
 	struct ieee80211_chan_req chanreq = {};
 	struct cfg80211_chan_def ap_chandef;
@@ -1410,6 +1551,15 @@ static int ieee80211_config_bw(struct ieee80211_link_data *link,
 	if (ieee80211_chanreq_identical(&chanreq, &link->conf->chanreq))
 		return 0;
 
+	if (link->conf->csa_active && link->u.mgd.csa.bw_reconfig &&
+	    ieee80211_chanreq_identical(&chanreq, &link->csa.chanreq)) {
+		link_info(link,
+			  "bw reconfig already pending in %s freq=%d width=%d\n",
+			  frame, chanreq.oper.chan->center_freq,
+			  chanreq.oper.width);
+		return 0;
+	}
+
 	link_info(link,
 		  "AP %pM changed bandwidth in %s, new used config is %d.%03d MHz, width %d (%d.%03d/%d MHz)\n",
 		  link->u.mgd.bssid, frame, chanreq.oper.chan->center_freq,
@@ -1452,6 +1602,13 @@ static int ieee80211_config_bw(struct ieee80211_link_data *link,
 			   "AP %pM changed bandwidth in %s to incompatible one - disconnect\n",
 			   link->u.mgd.bssid, frame);
 		return ret;
+	}
+
+	if (!ieee80211_hw_check(&sdata->local->hw, SKIP_CHANDEF_IDENTICAL_CHECK) &&
+	    !cfg80211_chandef_identical(&old_oper, &link->conf->chanreq.oper)) {
+		link->conf->chanreq.oper = old_oper;
+		return ieee80211_sta_bw_reconfig_start_csa(link, &chanreq.oper,
+							   &ap_chandef);
 	}
 
 	cfg80211_schedule_channels_check(&sdata->wdev);
@@ -2616,6 +2773,7 @@ static void ieee80211_chswitch_post_beacon(struct ieee80211_link_data *link)
 	link->conf->csa_active = false;
 	link->u.mgd.csa.blocked_tx = false;
 	link->u.mgd.csa.waiting_bcn = false;
+	link->u.mgd.csa.bw_reconfig = false;
 
 	ret = drv_post_channel_switch(link);
 	if (ret) {
@@ -2679,6 +2837,7 @@ ieee80211_sta_abort_chanswitch(struct ieee80211_link_data *link)
 
 	link->conf->csa_active = false;
 	link->u.mgd.csa.blocked_tx = false;
+	link->u.mgd.csa.bw_reconfig = false;
 
 	drv_abort_channel_switch(link);
 }
@@ -3036,6 +3195,12 @@ ieee80211_sta_process_chanswitch(struct ieee80211_link_data *link,
 				 * to self). This happens by not returning here
 				 * so we'll get to the check below.
 				 */
+			} else if (res && link->u.mgd.csa.bw_reconfig) {
+				/*
+				 * Do not abort an ongoing BW reconfig induced CSA when
+				 * a subsequent non CSA beacon is received.
+				 */
+				return;
 			} else if (res) {
 				ieee80211_sta_abort_chanswitch(link);
 				return;
@@ -3208,6 +3373,7 @@ ieee80211_sta_process_chanswitch(struct ieee80211_link_data *link,
 	link->u.mgd.csa.ignored_same_chan = false;
 	link->u.mgd.beacon_crc_valid = false;
 	link->u.mgd.csa.blocked_tx = csa_ie.mode;
+	link->u.mgd.csa.bw_reconfig = false;
 
 	if (csa_ie.mode)
 		ieee80211_vif_block_queues_csa(sdata);
@@ -4496,6 +4662,7 @@ static void ieee80211_set_disassoc(struct ieee80211_sub_if_data *sdata,
 						  IEEE80211_QUEUE_STOP_REASON_CSA);
 			link->csa_block_tx = false;
 		}
+		link->u.mgd.csa.bw_reconfig = false;
 
 		ieee80211_link_release_channel(link);
 	}
@@ -4504,6 +4671,7 @@ static void ieee80211_set_disassoc(struct ieee80211_sub_if_data *sdata,
 	sdata->deflink.u.mgd.csa.blocked_tx = false;
 	sdata->deflink.u.mgd.csa.waiting_bcn = false;
 	sdata->deflink.u.mgd.csa.ignored_same_chan = false;
+	sdata->deflink.u.mgd.csa.bw_reconfig = false;
 	ieee80211_vif_unblock_queues_csa(sdata);
 
 	/* existing TX TSPEC sessions no longer exist */
@@ -4878,6 +5046,7 @@ static void __ieee80211_disconnect(struct ieee80211_sub_if_data *sdata)
 	sdata->vif.bss_conf.csa_active = false;
 	sdata->deflink.u.mgd.csa.waiting_bcn = false;
 	sdata->deflink.u.mgd.csa.blocked_tx = false;
+	sdata->deflink.u.mgd.csa.bw_reconfig = false;
 	ieee80211_vif_unblock_queues_csa(sdata);
 
 	ieee80211_report_disconnect(sdata, frame_buf, sizeof(frame_buf), tx,
@@ -7130,6 +7299,7 @@ static void ieee80211_ml_reconf_work(struct wiphy *wiphy,
 
 		link_conf->csa_active = false;
 		link_conf->color_change_active = false;
+		link->u.mgd.csa.bw_reconfig = false;
 		if (link->csa_block_tx) {
 			ieee80211_vif_unblock_queues_csa(sdata);
 			link->csa_block_tx = false;
