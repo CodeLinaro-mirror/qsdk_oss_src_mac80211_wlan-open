@@ -28,6 +28,16 @@
 #define DP_TELEMETRY_RX_RING_SIZE	256
 #define DP_REO_FLUSH_RING_SIZE		256
 
+#define ATH12K_MAX_UCAST_STATS_ID	1536
+#define ATH12K_MAX_STATS_ID		1624
+#define ATH12K_MIN_DGCAST_STATS_ID	1536
+#define ATH12K_MAX_DGCAST_STATS_ID	1616
+
+struct stats_to_peer_id_map {
+	u16 dp_peer_id;
+	u8 tid;
+};
+
 #if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || \
 	defined(CPTCFG_ATH12K_MEM_PROFILE_512M)
 #define ATH12K_RX_DESC_COUNT	8192
@@ -142,6 +152,11 @@ struct ath12k_dp_hw_group_wifi8 {
 	u32 timer_entry_count;
 	struct list_head mec_entry_list_head;
 	u16 mec_timer_key;
+	DECLARE_BITMAP(free_stats_id, ATH12K_MAX_STATS_ID);
+	DECLARE_BITMAP(free_link_band_id, ATH12K_MAX_STATS_ID);
+	u16 last_ucast_stats_id;
+	u16 last_gcast_stats_id;
+	struct stats_to_peer_id_map stats_id_map[ATH12K_MAX_STATS_ID];
 
 	DECLARE_BITMAP(msduq_sam_id_alloc_map, MAX_NUM_SAM_MSDU_QUEUES_SUPPORTED);
 	DECLARE_BITMAP(mpduq_sam_id_alloc_map, MAX_NUM_SAM_MPDU_QUEUES_SUPPORTED);

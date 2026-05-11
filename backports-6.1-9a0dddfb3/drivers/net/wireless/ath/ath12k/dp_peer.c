@@ -636,7 +636,7 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 	if (!sta)
 		is_vdev_peer = true;
 
-	ath12k_dp_arch_link_peer_assign_id(dp, ar, vdev_id, addr);
+	ath12k_dp_arch_link_peer_assign_id(dp, ar, peer);
 
 	spin_lock_bh(&dp_hw->peer_lock);
 
@@ -906,7 +906,7 @@ static void __ath12k_dp_link_peer_unassign(struct ath12k *ar,
 	stats_link_id = peer->link_id;
 	dp_peer->hw_links[peer->hw_link_id] = 0;
 
-	ath12k_dp_arch_link_peer_unassign_id(dp, ar, peer->vdev_id, addr);
+	ath12k_dp_arch_link_peer_unassign_id(dp, ar, peer);
 
 	if (!dp_peer->is_vdev_peer) {
 		dp_peer->peer_links_map &= ~BIT(peer->link_id);

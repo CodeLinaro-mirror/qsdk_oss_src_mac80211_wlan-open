@@ -143,6 +143,9 @@ struct ath12k_dp_link_peer {
 	} rssi_mon;
 	s8 min_rssi;
 	s8 max_rssi;
+
+	u16 link_band_id;
+	u16 tid_band_id[ATH12K_DATA_TID_MAX];
 };
 
 #define ATH12K_PEER_EVENT_RSSI_LOW      BIT(0)
@@ -210,6 +213,7 @@ struct ath12k_dp_peer {
 	   is_11s_mesh_peer      :1,
 	   is_mmesh_peer         :1;
 	u16 stats_id;
+	u16 tid_stats_id[ATH12K_MAX_TIDS];
 };
 
 #define QOS_MSDUQ_MAX ((QOS_TID_MDSUQ_MAX * QOS_TID_MAX) + MSDUQ_MAX_DEF)
