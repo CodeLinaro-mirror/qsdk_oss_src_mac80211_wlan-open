@@ -1967,6 +1967,7 @@ void ath12k_wifi8_ucast_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 	bool dma_map;
 	u8 ring_id = 0;
 	u32 len = skb->len;
+	u8 tid = skb->priority & IEEE80211_QOS_CTL_TID_MASK;
 
 	if (unlikely(!arvif || !arvif->is_created))
 		goto fail;
@@ -2083,7 +2084,7 @@ fail:
 
 	if (dp_pdev && ath12k_dp_stats_enabled(dp_pdev) &&
 	    ath12k_tid_stats_enabled(dp_pdev))
-		ath12k_dp_tx_drop_tid_stats(dp_vif, drop_reason, skb, len);
+		ath12k_dp_tx_drop_tid_stats(dp_vif, drop_reason, tid, len);
 
 	ath12k_mac_ieee80211_free_txskb(dp_pdev->ar->ah->hw, skb, dp_pdev,
 					arsta ? ath12k_ahsta_to_sta(arsta->ahsta) : NULL,

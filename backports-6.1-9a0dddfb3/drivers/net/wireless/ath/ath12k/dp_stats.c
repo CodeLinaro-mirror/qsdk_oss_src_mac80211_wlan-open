@@ -531,6 +531,11 @@ int ath12k_dp_pdev_get_tid_stats(struct ath12k *ar,
 			for (i = 0; i < HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX; i++)
 				tid_stats->tid_tx[tid].htt_status_cnt[i] +=
 					per_ring_tx->htt_status_cnt[i];
+
+			/* Aggregate SW drop counters */
+			for (i = 0; i < DP_TID_TX_SW_DROP_MAX; i++)
+				tid_stats->tid_tx[tid].swdrop_cnt[i] +=
+					per_ring_tx->swdrop_cnt[i];
 		}
 	}
 
