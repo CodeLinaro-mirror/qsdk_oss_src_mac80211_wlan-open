@@ -5611,6 +5611,9 @@ ath12k_htt_print_tx_selfgen_bn_stats_tlv(const void *tag_buf, u16 tag_len,
 	len += print_array_to_buf(buf, len, "bn_basic_trig_ru_alloc_mode",
 			htt_stats_buf->bn_basic_trig_ru_alloc_mode,
 				ATH12K_HTT_BN_UL_OFDMA_NUM_RU_ALLOC_MODES, "\n");
+	len += print_array_to_buf(buf, len, "bn_basic_trig_ru_alloc_mode_err",
+			htt_stats_buf->bn_basic_trig_ru_alloc_mode_err,
+				ATH12K_HTT_BN_UL_OFDMA_NUM_RU_ALLOC_MODES, "\n");
 	len += print_array_to_buf(buf, len, "combined_bn_bsr_trigger_tried",
 			htt_stats_buf->combined_bn_bsr_trigger_tried,
 				ATH12K_HTT_NUM_AC_WMM, "\n");
