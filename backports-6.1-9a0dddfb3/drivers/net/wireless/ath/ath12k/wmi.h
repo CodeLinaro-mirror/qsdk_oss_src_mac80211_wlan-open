@@ -5419,7 +5419,7 @@ enum set_init_cc_flags {
 
 #define THERMAL_LEVELS  4
 #define ENHANCED_THERMAL_LEVELS  5
-#define ATH12K_THERMAL_LEVELS 4
+#define ATH12K_THERMAL_LEVELS 6
 #define ATH12K_TT_CHAINMASK 3
 
 struct tt_level_config {
