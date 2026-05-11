@@ -2749,15 +2749,40 @@ enum qca_vendor_wlan_telemetry_tid_stats_attr {
  * enum qca_vendor_wlan_telemetry_tid_tx_attr - Per-TID TX statistics
  * @QCA_VENDOR_ATTR_TID_TX_TQM_STATUS_CNT: TQM release reason counters (nested u32 array)
  * @QCA_VENDOR_ATTR_TID_TX_HTT_STATUS_CNT: HTT completion counters (nested u32 array)
+ * @QCA_VENDOR_ATTR_TID_TX_SW_DROP_CNT: Software drop reason counters (nested u32 array)
  */
 enum qca_vendor_wlan_telemetry_tid_tx_attr {
 	QCA_VENDOR_ATTR_TID_TX_INVALID = 0,
 	QCA_VENDOR_ATTR_TID_TX_TQM_STATUS_CNT,
 	QCA_VENDOR_ATTR_TID_TX_HTT_STATUS_CNT,
+	QCA_VENDOR_ATTR_TID_TX_SW_DROP_CNT,
 
 	QCA_VENDOR_ATTR_TID_TX_AFTER_LAST,
 	QCA_VENDOR_ATTR_TID_TX_MAX =
 		QCA_VENDOR_ATTR_TID_TX_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_vendor_wlan_telemetry_tid_tx_sw_drop_attr - SW drop reason counters
+ * for per-TID TX statistics. Used as nested attributes under
+ * %QCA_VENDOR_ATTR_TID_TX_SW_DROP_CNT.
+ *
+ * @QCA_VENDOR_ATTR_TID_TX_SW_DROP_DESC_ERR: TX descriptor allocation error
+ *     drop count. Corresponds to %DP_TID_TX_DESC_ERR.
+ * @QCA_VENDOR_ATTR_TID_TX_SW_DROP_DMA_MAP_ERR: DMA mapping error drop count.
+ *     Corresponds to %DP_TID_TX_DMA_MAP_ERR.
+ * @QCA_VENDOR_ATTR_TID_TX_SW_DROP_HW_ENQUEUE: HW enqueue failure drop count.
+ *     Corresponds to %DP_TID_TX_HW_ENQUEUE.
+ */
+enum qca_vendor_wlan_telemetry_tid_tx_sw_drop_attr {
+	QCA_VENDOR_ATTR_TID_TX_SW_DROP_INVALID = 0,
+	QCA_VENDOR_ATTR_TID_TX_SW_DROP_DESC_ERR,
+	QCA_VENDOR_ATTR_TID_TX_SW_DROP_DMA_MAP_ERR,
+	QCA_VENDOR_ATTR_TID_TX_SW_DROP_HW_ENQUEUE,
+
+	QCA_VENDOR_ATTR_TID_TX_SW_DROP_AFTER_LAST,
+	QCA_VENDOR_ATTR_TID_TX_SW_DROP_MAX =
+		QCA_VENDOR_ATTR_TID_TX_SW_DROP_AFTER_LAST - 1,
 };
 
 enum qca_vendor_wlan_telemetry_rx_stats_attr {

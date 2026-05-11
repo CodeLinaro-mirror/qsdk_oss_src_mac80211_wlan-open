@@ -2887,6 +2887,10 @@ static int ath12k_get_tid_tx_stats_attr_size(void)
 	size += nla_total_size_nested(nla_total_size(sizeof(u32)) *
 				      QCA_VENDOR_ATTR_WBM_REL_HTT_TX_COMP_STATUS_MAX);
 
+	/* swdrop_cnt */
+	size += nla_total_size_nested(nla_total_size(sizeof(u32)) *
+				      QCA_VENDOR_ATTR_TID_TX_SW_DROP_MAX);
+
 	/* Outer per-TID nest */
 	return nla_total_size_nested(size);
 }
@@ -7162,6 +7166,24 @@ static int ath12k_fill_tid_tx_stats(struct sk_buff *vendor_event,
 		    i < ARRAY_SIZE(tx->htt_status_cnt); i++) {
 		if (nla_put_u32(vendor_event, i + 1,
 				tx->htt_status_cnt[i])) {
+			nla_nest_cancel(vendor_event, arr_attr);
+			nla_nest_cancel(vendor_event, tid_attr);
+			return -EINVAL;
+		}
+	}
+	nla_nest_end(vendor_event, arr_attr);
+
+	/* SW drop counts */
+	arr_attr = nla_nest_start(vendor_event,
+				  QCA_VENDOR_ATTR_TID_TX_SW_DROP_CNT);
+	if (!arr_attr) {
+		nla_nest_cancel(vendor_event, tid_attr);
+		return -EINVAL;
+	}
+	for (i = 0; i < QCA_VENDOR_ATTR_TID_TX_SW_DROP_MAX &&
+		    i < ARRAY_SIZE(tx->swdrop_cnt); i++) {
+		if (nla_put_u32(vendor_event, i + 1,
+				tx->swdrop_cnt[i])) {
 			nla_nest_cancel(vendor_event, arr_attr);
 			nla_nest_cancel(vendor_event, tid_attr);
 			return -EINVAL;
