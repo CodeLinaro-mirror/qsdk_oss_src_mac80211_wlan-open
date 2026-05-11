@@ -147,6 +147,27 @@ struct ath12k_pktlog_remote_service {
 };
 
 /**
+ * struct ath12k_pktlog_remote_id_hdr - Remote pktlog identification header
+ *
+ * Sent at the start of each remote pktlog connection to identify the source.
+ * Total size is 72 bytes to match ODD_HEADER_SIZE in pktlog_remote_ud.py,
+ * allowing the script to skip this header and find the magic number at offset 72.
+ *
+ * @mac_addr:   Device MAC address (6 bytes) - from ar->ab->mac_addr
+ * @ip_addr:    Device local IP address in network byte order (4 bytes)
+ *              Obtained from kernel_getsockname() after connection
+ * @reserved:   Zero-padded reserved bytes (54 bytes)
+ * @radio_name: Radio PHY name, e.g., "phy00" (8 bytes, null-padded)
+ *              Obtained from ar->pdev->phy_name
+ */
+struct ath12k_pktlog_remote_id_hdr {
+	u8   mac_addr[ETH_ALEN];
+	u8   ip_addr[4];
+	u8   reserved[54];
+	char radio_name[8];
+} __packed;
+
+/**
  * struct ath12k_pktlog - Packet log context
  * @buf: Pointer to the circular buffer for storing packet log data
  * @filter: Bitmask of enabled packet log filters (ATH12K_PKTLOG_RX,
