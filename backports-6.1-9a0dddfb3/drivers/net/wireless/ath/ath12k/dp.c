@@ -4130,6 +4130,121 @@ ath12k_dp_accumulate_stats_per_tid(struct ath12k_dp_peer_delay_stats *per_ring,
 	return 0;
 }
 
+int
+ath12k_dp_accumulate_sojourn_stats(struct ath12k_dp_peer_sojourn_stats *per_ring,
+				   struct ath12k_dp_peer_tid_agg_sojourn_stats *all_rings)
+{
+	int tid, ring_id;
+	struct ath12k_dp_peer_tid_sojourn_stats *src_tid_stats;
+	struct ath12k_dp_peer_tid_sojourn_stats *dst_tid_stats;
+	struct ewma_avg_sojourn *avg_sojourn_msdu;
+
+	if (!per_ring || !all_rings)
+		return -EINVAL;
+
+	memset(all_rings, 0, sizeof(*all_rings));
+
+	for (tid = 0; tid < DP_TID_MAX; tid++) {
+		dst_tid_stats = &all_rings->tid_stats[tid];
+		for (ring_id = 0; ring_id < DP_REO_DST_RING_MAX; ring_id++) {
+			src_tid_stats = &per_ring->tid_stats[tid][ring_id];
+			avg_sojourn_msdu = &src_tid_stats->avg_sojourn_msdu;
+			dst_tid_stats->sum_sojourn_msdu +=
+				src_tid_stats->sum_sojourn_msdu;
+			dst_tid_stats->num_msdus += src_tid_stats->num_msdus;
+			ewma_avg_sojourn_add(&dst_tid_stats->avg_sojourn_msdu,
+					     ewma_avg_sojourn_read(avg_sojourn_msdu));
+		}
+	}
+
+	return 0;
+}
+
+int
+ath12k_dp_accumulate_jitter_stats(struct ath12k_dp_peer_jitter_stats *per_ring,
+				  struct ath12k_dp_peer_tid_agg_jitter_stats *all_rings)
+{
+	int tid, ring_id;
+	struct ath12k_dp_peer_tid_jitter_stats *src_tid_stats;
+	struct ath12k_dp_peer_tid_jitter_stats *dst_tid_stats;
+
+	if (!per_ring || !all_rings)
+		return -EINVAL;
+
+	memset(all_rings, 0, sizeof(*all_rings));
+
+	for (tid = 0; tid < DP_TID_MAX; tid++) {
+		dst_tid_stats = &all_rings->tid_stats[tid];
+		for (ring_id = 0; ring_id < DP_REO_DST_RING_MAX; ring_id++) {
+			src_tid_stats = &per_ring->tid_stats[tid][ring_id];
+
+			if (!src_tid_stats->tx_avg_jitter)
+				goto skip_jitter;
+			if (!dst_tid_stats->tx_avg_jitter)
+				dst_tid_stats->tx_avg_jitter =
+					src_tid_stats->tx_avg_jitter;
+			else
+				dst_tid_stats->tx_avg_jitter =
+					(src_tid_stats->tx_avg_jitter +
+					 dst_tid_stats->tx_avg_jitter) >> 1;
+skip_jitter:
+			if (!src_tid_stats->tx_avg_delay)
+				goto skip_delay;
+			if (!dst_tid_stats->tx_avg_delay)
+				dst_tid_stats->tx_avg_delay =
+					src_tid_stats->tx_avg_delay;
+			else
+				dst_tid_stats->tx_avg_delay =
+					(src_tid_stats->tx_avg_delay +
+					 dst_tid_stats->tx_avg_delay) >> 1;
+skip_delay:
+			dst_tid_stats->tx_avg_err += src_tid_stats->tx_avg_err;
+
+			dst_tid_stats->tx_total_success +=
+				src_tid_stats->tx_total_success;
+			dst_tid_stats->tx_drop += src_tid_stats->tx_drop;
+		}
+	}
+
+	return 0;
+}
+
+void ath12k_dp_get_sojourn_stats(struct ath12k *ar, struct ath12k_dp_peer *peer,
+				 struct ath12k_dp_peer_stats *peer_stats)
+{
+	struct ath12k_dp_mld_peer_stats *mld_stats;
+	struct ath12k_dp_peer_sojourn_stats *sojourn;
+	struct ath12k_dp_peer_tid_agg_sojourn_stats *tid_sojourn;
+
+	if (!peer || !peer_stats)
+		return;
+
+	mld_stats = &peer->mld_stats;
+
+	sojourn = mld_stats->sojourn_stats;
+	tid_sojourn = peer_stats->sojourn;
+
+	ath12k_dp_accumulate_sojourn_stats(sojourn, tid_sojourn);
+}
+
+void ath12k_dp_get_jitter_stats(struct ath12k *ar, struct ath12k_dp_peer *peer,
+				struct ath12k_dp_peer_stats *peer_stats)
+{
+	struct ath12k_dp_mld_peer_stats *mld_stats;
+	struct ath12k_dp_peer_jitter_stats *jitter;
+	struct ath12k_dp_peer_tid_agg_jitter_stats *tid_jitter;
+
+	if (!peer || !peer_stats)
+		return;
+
+	mld_stats = &peer->mld_stats;
+
+	jitter = mld_stats->jitter_stats;
+	tid_jitter = peer_stats->jitter;
+
+	ath12k_dp_accumulate_jitter_stats(jitter, tid_jitter);
+}
+
 void ath12k_dp_get_delay_stats(struct ath12k *ar, struct ath12k_dp_peer *peer,
 			       struct ath12k_dp_peer_stats *peer_stats)
 {
@@ -4243,8 +4358,11 @@ int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
 				ath12k_dp_update_hw_peer_stats(ar, peer, mld_stats);
 				ath12k_dp_aggr_hw_link_stats(ar, peer, link_stats);
 
-				if (ath12k_dp_delay_stats_enabled(&ar->dp))
+				if (ath12k_dp_delay_stats_enabled(&ar->dp)) {
 					ath12k_dp_get_delay_stats(ar, peer, peer_stats);
+					ath12k_dp_get_jitter_stats(ar, peer, peer_stats);
+					ath12k_dp_get_sojourn_stats(ar, peer, peer_stats);
+				}
 			}
 			spin_unlock_bh(&dp_hw->peer_lock);
 			return ret;

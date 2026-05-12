@@ -1024,6 +1024,8 @@ struct ath12k_dp_peer_stats {
 	struct ath12k_tele_qos_delay_ctx delay_ctx;
 	struct ath12k_dp_proto_stats_peer *proto;
 	struct ath12k_dp_peer_tid_agg_delay_stats *delay;
+	struct ath12k_dp_peer_tid_agg_jitter_stats *jitter;
+	struct ath12k_dp_peer_tid_agg_sojourn_stats *sojourn;
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 	struct ath12k_dp_peer_mmesh_stats mmesh_stat;
 #endif
@@ -1083,6 +1085,8 @@ struct ath12k_stats_feat {
 	bool feat_proto;
 	bool feat_tid;
 	bool feat_delay;
+	bool feat_jitter;
+	bool feat_sojourn;
 };
 
 struct ath12k_telemetry_command {
@@ -1186,6 +1190,28 @@ struct ath12k_rx_peer_user_stats {
  */
 struct ath12k_dp_peer_tid_agg_delay_stats {
 	struct ath12k_dp_peer_delay_tid_stats tid_stats[DP_TID_MAX];
+};
+
+/**
+ * struct ath12k_dp_peer_tid_agg_sojourn_stats - Container for all-rings sojourn stats
+ * @tid_stats: Array of per-TID statistics aggregated across all rings
+ *
+ * This structure holds sojourn statistics for all TIDs, where each TID's statistics
+ * represent the aggregation of data from all rings.
+ */
+struct ath12k_dp_peer_tid_agg_sojourn_stats {
+	struct ath12k_dp_peer_tid_sojourn_stats tid_stats[DP_TID_MAX];
+};
+
+/**
+ * struct ath12k_dp_peer_tid_agg_jitter_stats - Container for all-rings jitter stats
+ * @tid_stats: Array of per-TID statistics aggregated across all rings
+ *
+ * This structure holds jitter statistics for all TIDs, where each TID's statistics
+ * represent the aggregation of data from all rings.
+ */
+struct ath12k_dp_peer_tid_agg_jitter_stats {
+	struct ath12k_dp_peer_tid_jitter_stats tid_stats[DP_TID_MAX];
 };
 
 #define MCS_VALID 1
