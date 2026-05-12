@@ -845,7 +845,7 @@ int ath12k_mac_read_cu_mem(struct ath12k_link_vif *arvif,
 			   u16 offset, u32 *val);
 void ath12k_mac_get_6ghz_power_mode_decision(
 	struct ath12k *ar, struct ath12k_link_vif *arvif,
-	struct ieee80211_bss_conf *bss_conf,
+	enum ieee80211_ap_reg_power power_type,
 	struct ath12k_6ghz_pwr_mode_decision *decision);
 
 #endif

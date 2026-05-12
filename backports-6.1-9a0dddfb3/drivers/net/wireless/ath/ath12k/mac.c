@@ -8612,7 +8612,7 @@ ath12k_mac_get_repeater_ap_power_mode_for_sp_root
 void
 ath12k_mac_get_6ghz_power_mode_decision(struct ath12k *ar,
 					struct ath12k_link_vif *arvif,
-					struct ieee80211_bss_conf *bss_conf,
+					enum ieee80211_ap_reg_power power_type,
 					struct ath12k_6ghz_pwr_mode_decision *decision)
 {
 	struct ath12k_vif *ahvif = arvif->ahvif;
@@ -8622,7 +8622,7 @@ ath12k_mac_get_6ghz_power_mode_decision(struct ath12k *ar,
 
 	memset(decision, 0, sizeof(*decision));
 
-	reg_6g_power_mode = bss_conf->power_type;
+	reg_6g_power_mode = power_type;
 	if (reg_6g_power_mode == IEEE80211_REG_UNSET_AP)
 		reg_6g_power_mode = IEEE80211_REG_LPI_AP;
 
@@ -8686,7 +8686,8 @@ static u8 ath12k_mac_get_reg_6ghz_power_mode(struct ath12k *ar,
 {
 	struct ath12k_6ghz_pwr_mode_decision decision;
 
-	ath12k_mac_get_6ghz_power_mode_decision(ar, arvif, bss_conf, &decision);
+	ath12k_mac_get_6ghz_power_mode_decision(ar, arvif, bss_conf->power_type,
+						&decision);
 
 	return decision.reg_6g_power_mode;
 }
@@ -8755,7 +8756,8 @@ ath12k_mac_sync_repeater_ap_power_mode(struct ath12k *ar,
 	if (!bss_conf)
 		return ATH12K_REPEATER_AP_SYNC_HANDLED;
 
-	ath12k_mac_get_6ghz_power_mode_decision(ar, arvif, bss_conf, &decision);
+	ath12k_mac_get_6ghz_power_mode_decision(ar, arvif, bss_conf->power_type,
+						&decision);
 
 	/* Repeater sync applies, but the derived AP-visible mode is invalid. */
 	if (decision.ap_reg_6g_power_mode >= NL80211_REG_NUM_POWER_MODES) {
@@ -8895,7 +8897,8 @@ static void ath12k_mac_fill_reg_tpc(struct ath12k *ar, struct wireless_dev *wdev
 		return;
 	}
 
-	ath12k_mac_get_6ghz_power_mode_decision(ar, arvif, bss_conf, &decision);
+	ath12k_mac_get_6ghz_power_mode_decision(ar, arvif, bss_conf->power_type,
+						&decision);
 	reg_6g_power_mode = decision.reg_6g_power_mode;
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_MAC, " reg_6g_power_mode %d\n", reg_6g_power_mode);
