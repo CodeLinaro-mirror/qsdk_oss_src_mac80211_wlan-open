@@ -2080,7 +2080,7 @@ void ath12k_wifi7_ucast_handler(struct ath12k_dp_vif *dp_vif,
 	struct ath12k_dp_tx_msdu_info msdu_info = {0};
 	enum ath12k_dp_feature_result ret;
 	bool feat_bypass = true;
-	bool dma_map;
+	bool dma_map = false;
 	u8 ring_id = 0;
 	int group_slot = -1;
 	u32 len = skb->len;
@@ -2203,6 +2203,10 @@ skip_assign_buffer:
 	return;
 
 fail:
+	if (dma_map && tx_desc)
+		ath12k_dp_tx_buffer_unmap(dp->dev, tx_desc->paddr, len,
+					  DMA_TO_DEVICE);
+
 	if (tx_desc && tx_desc->ext_desc) {
 		if (tx_desc->is_from_sg)
 			ath12k_dp_tx_sg_unmap_buf(dp, tx_desc->ext_desc, skb);
@@ -2234,7 +2238,7 @@ ath12k_wifi7_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
 	struct ath12k_tx_desc_info *tx_desc = NULL;
-	bool dma_map;
+	bool dma_map = false;
 	u32 len = msdu_info->data_len;
 	enum ath12k_dp_tx_enq_error drop_reason;
 	u32 qos_nw_delay = msdu_info->qos_nw_delay;
@@ -2290,6 +2294,10 @@ ath12k_wifi7_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 	return DP_TX_ENQ_SUCCESS;
 
 fail:
+	if (dma_map && tx_desc)
+		ath12k_dp_tx_buffer_unmap(dp->dev, tx_desc->paddr, len,
+					  DMA_TO_DEVICE);
+
 	if (tx_desc && tx_desc->ext_desc) {
 		if (tx_desc->is_from_sg)
 			ath12k_dp_tx_sg_unmap_buf(dp, tx_desc->ext_desc, skb);
