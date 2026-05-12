@@ -881,7 +881,7 @@ static void ieee80211_uninit(struct net_device *dev)
 	ieee80211_teardown_sdata(sdata);
 }
 
-static bool ieee80211_sdata_has_txrx_stats_offload(struct ieee80211_sub_if_data *sdata)
+bool ieee80211_sdata_has_txrx_stats_offload(struct ieee80211_sub_if_data *sdata)
 {
 	if (!sdata)
 		return false;
