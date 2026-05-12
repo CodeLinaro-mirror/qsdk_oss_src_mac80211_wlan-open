@@ -1144,9 +1144,32 @@ static int ath12k_ring_idle_check(struct ath12k_base *ab, int i,
 	return 0;
 }
 
+/* TRSLONE-601: WAR
+ * Update the TP of the TQM status ring to ring_size + 32 so that TQM would
+ * not backpressure due to FW not reaping the TQM status ring. In Trestles V2,
+ * the TQM status would be routed only to the chips indicated by status required
+ * bits. And hence this WAR is not required for Trestles V2.
+ */
+static void ath12k_update_tqm_status_ring_tp(struct ath12k_base *ab)
+{
+	struct ath12k_hal_wifi8 *hal_wifi8 = ath12k_get_hal_wifi8(&ab->hal);
+	const struct ath12k_hal_reset_rings *reset_ring;
+	u32 ring_base_msb;
+	u32 ring_size;
+
+	reset_ring = &hal_wifi8->reset_rings[HAL_TQM_LOWPRI_STATUS_RING];
+
+	ring_base_msb = ath12k_hif_read32(ab, reset_ring->srng_misc_reg - 12);
+	ring_size = u32_get_bits(ring_base_msb, HAL_TCL1_RING_BASE_MSB_RING_SIZE);
+
+	ath12k_hif_write32(ab, reset_ring->hp + 4, ring_size + 32);
+}
+
 static int ath12k_clear_pending_interrupts(struct ath12k_base *ab, u32 arg)
 {
-	/* TODO: implement interrupt clearing */
+	/* TRSLONE-601: WAR */
+	ath12k_update_tqm_status_ring_tp(ab);
+
 	return 0;
 }
 
