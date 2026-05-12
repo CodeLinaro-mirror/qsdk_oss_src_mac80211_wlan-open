@@ -11449,7 +11449,7 @@ skip_mgmt_stats:
 	if (is_4addr_null_pkt) {
 		spin_lock_bh(&ar->arsta_lock);
 		arsta = ath12k_link_sta_find_by_addr(ar, hdr->addr2);
-		if (!arsta || arsta->is_bridge_peer) {
+		if (!arsta || arsta->is_bridge_peer || arsta->is_self_peer) {
 			spin_unlock_bh(&ar->arsta_lock);
 			ath12k_warn(ab, "arsta not found %pM\n",
 				    hdr->addr2);

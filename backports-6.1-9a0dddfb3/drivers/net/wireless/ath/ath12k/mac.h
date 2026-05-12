@@ -539,7 +539,9 @@ int ath12k_mac_set_key(struct ath12k *ar, enum set_key_cmd cmd,
 		       struct ath12k_vif *vlan_ahvif);
 int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 			   bool is_bridge_vdev);
-
+int ath12k_mac_self_peer_arsta_create(struct ath12k *ar,
+				      struct ath12k_link_vif *arvif,
+				      enum wmi_vdev_type vdev_type);
 int ath12k_mac_vdev_start(struct ath12k_link_vif *arvif,
 			  struct ieee80211_chanctx_conf *ctx);
 void ath12k_mac_set_tpc_power(struct ath12k *ar,
