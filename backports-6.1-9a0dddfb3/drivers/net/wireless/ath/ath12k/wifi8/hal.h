@@ -1684,7 +1684,8 @@ ath12k_wifi8_hal_rx_msdu_link_info_get(struct hal_rx_msdu_link *link,
 u32 ath12k_wifi8_hal_reo_qdesc_size(u32 ba_window_size, u8 tid);
 void ath12k_wifi8_hal_reo_qdesc_setup(struct hal_rx_reo_queue *qdesc,
 				      int tid, u32 ba_window_size,
-				      u32 start_seq, enum hal_pn_type type);
+				      u32 start_seq, enum hal_pn_type type,
+				      u16 stats_id);
 u32 ath12k_hal_srng_get_cmd_size(enum hal_tlv_tag_be type);
 void *ath12k_hal_srng_src_get_next_entry_by_cmd_size(struct ath12k_base *ab,
 						     struct hal_srng *srng,

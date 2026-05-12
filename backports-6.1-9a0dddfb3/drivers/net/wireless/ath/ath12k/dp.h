@@ -590,7 +590,8 @@ struct ath12k_dp_arch_ops {
 	int (*alloc_reo_qdesc)(struct ath12k_base *ab,
 			       struct ath12k_dp_rx_tid *rx_tid, u16 ssn,
 			       enum hal_pn_type pn_type,
-			       struct hal_rx_reo_queue **addr_aligned);
+			       struct hal_rx_reo_queue **addr_aligned,
+			       u16 stats_id);
 	void (*peer_rx_tid_qref_setup)(struct ath12k_base *ab, u16 peer_id, u16 tid,
 				       dma_addr_t paddr);
 	int (*dp_pdev_alloc)(struct ath12k_base *ab);
@@ -1160,9 +1161,11 @@ static inline int ath12k_dp_arch_peer_rx_tid_reo_update(struct ath12k_dp *dp,
 static inline int ath12k_dp_arch_alloc_reo_qdesc(struct ath12k_dp *dp,
 						 struct ath12k_dp_rx_tid *rx_tid, u16 ssn,
 						 enum hal_pn_type pn_type,
-						 struct hal_rx_reo_queue **addr_aligned)
+						 struct hal_rx_reo_queue **addr_aligned,
+						 u16 stats_id)
 {
-	return dp->arch_ops->alloc_reo_qdesc(dp->ab, rx_tid, ssn, pn_type, addr_aligned);
+	return dp->arch_ops->alloc_reo_qdesc(dp->ab, rx_tid, ssn, pn_type, addr_aligned,
+					     stats_id);
 }
 
 static inline void ath12k_dp_arch_peer_rx_tid_qref_setup(struct ath12k_dp *dp,

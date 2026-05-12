@@ -1648,7 +1648,8 @@ struct hal_ops {
 	void (*reoq_lut_set_max_peerid)(struct ath12k_base *ab);
 	void (*reo_qdesc_setup)(struct hal_rx_reo_queue *qdesc,
 				int tid, u32 ba_window_size,
-				u32 start_seq, enum hal_pn_type type);
+				u32 start_seq, enum hal_pn_type type,
+				u16 stats_id);
 	void (*reo_init_cmd_ring)(struct ath12k_base *ab,
 				  struct hal_srng *srng);
 	void (*reo_hw_setup)(struct ath12k_base *ab);

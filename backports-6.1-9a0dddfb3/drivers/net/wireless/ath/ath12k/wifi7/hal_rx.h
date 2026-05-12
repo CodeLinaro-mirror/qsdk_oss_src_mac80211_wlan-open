@@ -569,7 +569,8 @@ void ath12k_wifi7_hal_reo_init_cmd_ring(struct ath12k_base *ab,
 void ath12k_wifi7_hal_reo_hw_setup(struct ath12k_base *ab);
 void ath12k_wifi7_hal_reo_qdesc_setup(struct hal_rx_reo_queue *qdesc,
 				      int tid, u32 ba_window_size,
-				      u32 start_seq, enum hal_pn_type type);
+				      u32 start_seq, enum hal_pn_type type,
+				      u16 stats_id);
 u32 ath12k_wifi7_hal_rx_get_trunc_hash(struct hal_rx_fst *fst, u32 hash);
 u32 ath12k_wifi7_hal_flow_toeplitz_hash(struct ath12k_base *ab,
 					struct hal_rx_fst *fst,

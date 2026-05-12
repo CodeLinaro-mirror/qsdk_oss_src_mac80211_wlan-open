@@ -59,7 +59,8 @@ void ath12k_wifi7_dp_setup_pn_check_reo_cmd(struct ath12k_hal_reo_cmd *cmd,
 int ath12k_wifi7_dp_alloc_reo_qdesc(struct ath12k_base *ab,
 				    struct ath12k_dp_rx_tid *rx_tid, u16 ssn,
 				    enum hal_pn_type pn_type,
-				    struct hal_rx_reo_queue **addr_aligned);
+				    struct hal_rx_reo_queue **addr_aligned,
+				    u16 stats_id);
 int ath12k_wifi7_dp_rxdma_ring_sel_config_qcn9274(struct ath12k_base *ab);
 int ath12k_wifi7_dp_rxdma_ring_sel_config_wcn7850(struct ath12k_base *ab);
 int ath12k_wifi7_dp_rx_fst_attach(struct ath12k_dp *dp, struct dp_rx_fst *fst);
