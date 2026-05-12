@@ -461,6 +461,43 @@ static void ath12k_pktlog_run_send_service(struct work_struct *work)
 			continue;
 		}
 
+		if (!service->running && available > 0 &&
+		    available <= ATH12K_MAX_SEND_SIZE) {
+			buf_ptr = (char *)log_buf->log_data;
+
+			if (pl_info->rlog_read_index + available <=
+			    pl_info->rlog_max_size) {
+				ret = ath12k_pktlog_remote_service_send(service,
+						buf_ptr + pl_info->rlog_read_index,
+						available);
+				if (ret > 0) {
+					spin_lock_bh(&pl_info->lock);
+					pl_info->rlog_read_index += available;
+					spin_unlock_bh(&pl_info->lock);
+				}
+			} else {
+				part1 = pl_info->rlog_max_size - pl_info->rlog_read_index;
+				ret = ath12k_pktlog_remote_service_send(service,
+					buf_ptr + pl_info->rlog_read_index, part1);
+				if (ret > 0) {
+					ret = ath12k_pktlog_remote_service_send(service,
+							buf_ptr, available - part1);
+					if (ret > 0) {
+						spin_lock_bh(&pl_info->lock);
+						pl_info->rlog_read_index =
+							available - part1;
+						spin_unlock_bh(&pl_info->lock);
+					}
+				}
+			}
+
+			if (ret > 0)
+				ath12k_dbg(ar->ab, ATH12K_DBG_DATA,
+					   "Remote pktlog: sent last %u bytes\n",
+					   available);
+			break;
+		}
+
 		send_size = min(available, (u32)ATH12K_MAX_SEND_SIZE);
 		buf_ptr = (char *)log_buf->log_data;
 
@@ -524,7 +561,13 @@ static void ath12k_pktlog_run_send_service(struct work_struct *work)
 
 reconnect:
 	ath12k_warn(ar->ab, "Remote pktlog: connection lost, stopping service\n");
-	ath12k_pktlog_stop_service(ar);
+	service->running = 0;
+	service->connect_done = 0;
+	if (service->send_socket) {
+		sock_release(service->send_socket);
+		service->send_socket = NULL;
+	}
+	pl_info->filter &= ~ATH12K_PKTLOG_REMOTE_ENABLE;
 }
 
 void ath12k_pktlog_init_remote_service_work(struct ath12k *ar)
@@ -602,6 +645,7 @@ static char *ath12k_pktlog_getbuf(struct ath12k_pktlog *pl_info,
 {
 	struct ath12k_pktlog_buf *log_buf;
 	int32_t cur_wr_offset, buf_size;
+	u32 prev_wr;
 	char *log_ptr;
 
 	spin_lock_bh(&pl_info->lock);
@@ -641,6 +685,14 @@ static char *ath12k_pktlog_getbuf(struct ath12k_pktlog *pl_info,
 	log_buf->wr_offset =
 		((buf_size - cur_wr_offset) >=
 		 pl_info->hdr_size) ? cur_wr_offset : 0;
+
+	if (pl_info->filter & ATH12K_PKTLOG_REMOTE_ENABLE) {
+		prev_wr = pl_info->rlog_write_index;
+
+		pl_info->rlog_write_index = log_buf->wr_offset;
+		if (log_buf->wr_offset < prev_wr)
+			pl_info->is_wrap = 1;
+	}
 	spin_unlock_bh(&pl_info->lock);
 
 	return log_ptr;
