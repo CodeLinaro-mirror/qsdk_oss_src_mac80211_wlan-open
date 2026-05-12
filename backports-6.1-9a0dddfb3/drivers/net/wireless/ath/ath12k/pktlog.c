@@ -135,7 +135,6 @@ int ath12k_pktlog_stop_service(struct ath12k *ar)
 		return -EINVAL;
 
 	service = pl_info->rpktlog_svc;
-
 	service->running = 0;
 	service->connect_done = 0;
 
@@ -394,6 +393,7 @@ static void ath12k_pktlog_run_send_service(struct work_struct *work)
 	int ret;
 	u32 read_idx;
 	bool handshake_done = false;
+	u64 total_bytes_sent = 0;
 
 	service = container_of(work, struct ath12k_pktlog_remote_service,
 			       send_service);
@@ -418,10 +418,39 @@ static void ath12k_pktlog_run_send_service(struct work_struct *work)
 	}
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_DATA,
-		   "Remote pktlog: send service started\n");
+		   "Remote pktlog: send_service start, write=%u read=%u max=%u wrap=%d\n",
+		   pl_info->rlog_write_index, pl_info->rlog_read_index,
+		   pl_info->rlog_max_size, pl_info->is_wrap);
 
 	while (service->running && service->connect_done) {
 		if (!handshake_done) {
+			struct ath12k_pktlog_remote_id_hdr id_hdr;
+			struct sockaddr_in local_addr;
+
+			memset(&id_hdr, 0, sizeof(id_hdr));
+			memcpy(id_hdr.mac_addr, ar->ab->mac_addr, ETH_ALEN);
+
+			if (kernel_getsockname(service->send_socket,
+					       (struct sockaddr *)&local_addr) == 0)
+				memcpy(id_hdr.ip_addr, &local_addr.sin_addr.s_addr, 4);
+			else
+				ath12k_dbg(ar->ab, ATH12K_DBG_DATA,
+					   "Remote pktlog: could not get local IP\n");
+
+			if (ar->pdev && ar->pdev->phy_name)
+				strscpy(id_hdr.radio_name, ar->pdev->phy_name,
+					sizeof(id_hdr.radio_name));
+
+			ret = ath12k_pktlog_remote_service_send(service,
+								(char *)&id_hdr,
+								sizeof(id_hdr));
+			if (ret < 0) {
+				ath12k_warn(ar->ab,
+					    "Failed to send ID header: %d\n",
+					    ret);
+				goto reconnect;
+			}
+
 			ret = ath12k_pktlog_remote_service_send(service,
 							(char *)&log_buf->bufhdr,
 							ATH12K_PKTLOG_HEADER_SIZE);
@@ -434,7 +463,14 @@ static void ath12k_pktlog_run_send_service(struct work_struct *work)
 
 			handshake_done = true;
 			ath12k_dbg(ar->ab, ATH12K_DBG_DATA,
-				   "Remote pktlog: handshake completed\n");
+				   "Remote pktlog: Handshake done: MAC=%pM, radio=%s\n",
+				   ar->ab->mac_addr,
+				   ar->pdev ? ar->pdev->phy_name : "unknown");
+			ath12k_dbg(ar->ab, ATH12K_DBG_DATA,
+				   "(buf_size=%u, write_idx=%u, read_idx=%u)\n",
+				   pl_info->buf_size,
+				   pl_info->rlog_write_index,
+				   pl_info->rlog_read_index);
 		}
 
 		spin_lock_bh(&pl_info->lock);
@@ -475,6 +511,7 @@ static void ath12k_pktlog_run_send_service(struct work_struct *work)
 					pl_info->rlog_read_index += available;
 					spin_unlock_bh(&pl_info->lock);
 				}
+				total_bytes_sent += ret;
 			} else {
 				part1 = pl_info->rlog_max_size - pl_info->rlog_read_index;
 				ret = ath12k_pktlog_remote_service_send(service,
@@ -489,6 +526,7 @@ static void ath12k_pktlog_run_send_service(struct work_struct *work)
 						spin_unlock_bh(&pl_info->lock);
 					}
 				}
+				total_bytes_sent += ret;
 			}
 
 			if (ret > 0)
@@ -517,6 +555,7 @@ static void ath12k_pktlog_run_send_service(struct work_struct *work)
 					    "Failed to send part1: %d\n", ret);
 				goto reconnect;
 			}
+			total_bytes_sent += ret;
 
 			ret = ath12k_pktlog_remote_service_send(service,
 								buf_ptr, part2);
@@ -525,6 +564,7 @@ static void ath12k_pktlog_run_send_service(struct work_struct *work)
 					    "Failed to send part2: %d\n", ret);
 				goto reconnect;
 			}
+			total_bytes_sent += ret;
 
 			spin_lock_bh(&pl_info->lock);
 			pl_info->rlog_read_index = part2;
@@ -540,6 +580,7 @@ static void ath12k_pktlog_run_send_service(struct work_struct *work)
 					    "Failed to send data: %d\n", ret);
 				goto reconnect;
 			}
+			total_bytes_sent += ret;
 
 			spin_lock_bh(&pl_info->lock);
 			pl_info->rlog_read_index += send_size;
@@ -560,7 +601,9 @@ static void ath12k_pktlog_run_send_service(struct work_struct *work)
 	return;
 
 reconnect:
-	ath12k_warn(ar->ab, "Remote pktlog: connection lost, stopping service\n");
+	ath12k_warn(ar->ab,
+		    "Remote pktlog: connection lost (err=%d, sent=%llu, missed=%u)\n",
+		    ret, total_bytes_sent, service->missed_records);
 	service->running = 0;
 	service->connect_done = 0;
 	if (service->send_socket) {
@@ -1141,6 +1184,11 @@ int ath12k_pktlog_remote_enable(struct ath12k *ar, u32 enable)
 
 		pl_info->filter |= ATH12K_PKTLOG_REMOTE_ENABLE;
 	} else {
+		ath12k_dbg(ar->ab, ATH12K_DBG_DATA,
+			   "(missed=%u, fends=%u, write_idx=%u, read_idx=%u)\n",
+			   service->missed_records, service->fend_counts,
+			   pl_info->rlog_write_index,
+			   pl_info->rlog_read_index);
 		pl_info->filter &= ~ATH12K_PKTLOG_REMOTE_ENABLE;
 		ath12k_pktlog_stop_service(ar);
 	}
