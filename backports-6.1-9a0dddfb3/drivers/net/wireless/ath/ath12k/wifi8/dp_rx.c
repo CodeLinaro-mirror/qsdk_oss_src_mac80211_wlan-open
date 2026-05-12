@@ -4023,6 +4023,9 @@ static int ath12k_wifi8_dp_rx_ppe2wbm_idle_buf_config_qcn9625(struct ath12k_base
 	int ret;
 	u32 hal_rx_desc_sz = ab->hal.hal_desc_sz;
 
+	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
+		return 0;
+
 	ring_id = dp_wifi8->ppe2wbm_idle_buf_ring.ring_id;
 	tlv_filter.rx_filter = HTT_RX_TLV_FLAGS_RXDMA_RING;
 	tlv_filter.rxmon_disable = true;
@@ -4094,6 +4097,9 @@ void ath12k_wifi8_dp_ppe2wbm_srng_free(struct ath12k_base *ab)
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
 	int i;
 
+	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
+		return;
+
 	for (i = 0 ; i < DP_PPE2WBM_REFILL_RING_MAX; i++)
 		ath12k_dp_srng_cleanup(ab, &dp_wifi8->ppe2wbm_refill_ring[i]);
 
@@ -4105,6 +4111,9 @@ int ath12k_wifi8_dp_ppe2wbm_srng_setup(struct ath12k_base *ab)
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
 	int i, ret;
+
+	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
+		return 0;
 
 	if (!ath12k_ppeds_ppe2wbm_ring_size ||
 		ath12k_ppeds_ppe2wbm_ring_size > DP_PPE2WBM_REFILL_RING_SIZE) {
@@ -4148,6 +4157,9 @@ int ath12k_wifi8_dp_ppe2wbm_buf_ring_init(struct ath12k_base *ab)
 	u32 ring_id = dp_wifi8->ppe2wbm_refill_ring[PPE2WBM_SW_REFILL_RING].ring_id;
 	LIST_HEAD(used_list);
 
+	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
+		return 0;
+
 	if (ring_id >= HAL_SRNG_RING_ID_MAX) {
 		ath12k_err(ab, "Invalid PPE2WBM ring_id: %u\n", ring_id);
 		return -EINVAL;
@@ -4172,6 +4184,9 @@ void ath12k_wifi8_dp_rx_ppe2wbm_idle_buff_init(struct ath12k_base *ab)
 	size_t req_entries;
 	struct hal_srng *idle_buf_srng;
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(ab->dp);
+
+	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
+		return;
 
 	idle_buf_srng = &ab->hal.srng_list[dp_wifi8->ppe2wbm_idle_buf_ring.ring_id];
 	req_entries = ath12k_dp_get_req_entries_from_buf_ring(ab, idle_buf_srng, &list,
