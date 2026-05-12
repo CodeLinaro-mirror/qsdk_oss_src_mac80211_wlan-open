@@ -1701,7 +1701,7 @@ int ath12k_dp_mon_rx_srng_setup(struct ath12k_dp *dp)
 	ret = ath12k_dp_srng_setup(ab,
 				   &dp_mon->rxdma_mon_buf_ring.refill_buf_ring,
 				   HAL_RXDMA_MONITOR_BUF, 0, 0,
-				   DP_RXDMA_MONITOR_BUF_RING_SIZE);
+				   dp_mon->mon_buf_ring_size);
 	if (ret) {
 		ath12k_warn(dp, "failed to setup HAL_RXDMA_MONITOR_BUF %d\n",
 			    ret);
@@ -1737,7 +1737,7 @@ int ath12k_dp_mon_rx_buf_setup(struct ath12k_dp *dp)
 	spin_lock_init(&dp_mon->mon_desc_lock);
 
 	spin_lock_bh(&dp_mon->mon_desc_lock);
-	dp_mon->mon_desc_pool = kcalloc(DP_RXDMA_MONITOR_BUF_RING_SIZE,
+	dp_mon->mon_desc_pool = kcalloc(dp_mon->mon_buf_ring_size,
 					sizeof(*dp_mon->mon_desc_pool),
 					GFP_ATOMIC);
 	if (!dp_mon->mon_desc_pool) {
@@ -1747,7 +1747,7 @@ int ath12k_dp_mon_rx_buf_setup(struct ath12k_dp *dp)
 		return ret;
 	}
 
-	for (i = 0; i < DP_RXDMA_MONITOR_BUF_RING_SIZE; i++) {
+	for (i = 0; i < dp_mon->mon_buf_ring_size; i++) {
 		dp_mon->mon_desc_pool[i].magic = ATH12K_MON_MAGIC_VALUE;
 		INIT_LIST_HEAD(&dp_mon->mon_desc_pool[i].list);
 		list_add_tail(&dp_mon->mon_desc_pool[i].list,
@@ -1785,7 +1785,7 @@ void ath12k_dp_mon_rx_buf_free(struct ath12k_dp *dp)
 		return;
 	}
 
-	for (i = 0; i < DP_RXDMA_MONITOR_BUF_RING_SIZE; i++) {
+	for (i = 0; i < dp_mon->mon_buf_ring_size; i++) {
 		if (dp_mon->mon_desc_pool[i].in_use != DP_MON_DESC_TO_HW)
 			continue;
 
@@ -1833,6 +1833,7 @@ int ath12k_dp_mon_pdev_rx_srng_setup(struct ath12k_pdev_dp *dp_pdev,
 				     u32 mac_id)
 {
 	struct ath12k_dp *dp = dp_pdev->dp;
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
 	int i;
 	int ret;
 
@@ -1841,7 +1842,7 @@ int ath12k_dp_mon_pdev_rx_srng_setup(struct ath12k_pdev_dp *dp_pdev,
 					   &dp_pdev->dp_mon_pdev->rxdma_mon_dst_ring[i],
 					   HAL_RXDMA_MONITOR_DST,
 					   0, mac_id + i,
-					   DP_RXDMA_MONITOR_DST_RING_SIZE);
+					   dp_mon->mon_dst_ring_size);
 		if (ret) {
 			ath12k_warn(dp->ab,
 				    "failed to setup HAL_RXDMA_MONITOR_DST\n");
@@ -2146,6 +2147,19 @@ void ath12k_dp_mon_pdev_rx_srng_cleanup(struct ath12k_pdev_dp *dp_pdev)
 				       &dp_pdev->dp_mon_pdev->rxdma_mon_dst_ring[i]);
 }
 EXPORT_SYMBOL(ath12k_dp_mon_pdev_rx_srng_cleanup);
+
+void ath12k_dp_mon_cfg_init(struct ath12k_dp *dp)
+{
+	struct ath12k_base *ab = dp->ab;
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
+
+	dp_mon->mon_status_ring_size = DP_RXDMA_MON_STATUS_RING_SIZE(ab);
+	dp_mon->mon_desc_ring_size = DP_RXDMA_MONITOR_DESC_RING_SIZE(ab);
+	dp_mon->mon_buf_ring_size = DP_RXDMA_MONITOR_BUF_RING_SIZE(ab);
+	dp_mon->mon_dst_ring_size = DP_RXDMA_MONITOR_DST_RING_SIZE(ab);
+	dp_mon->mon_num_ppdu_desc = DP_MON_NUM_PPDU_DESC(ab);
+}
+EXPORT_SYMBOL(ath12k_dp_mon_cfg_init);
 
 int ath12k_dp_mon_init(struct ath12k_dp *dp)
 {

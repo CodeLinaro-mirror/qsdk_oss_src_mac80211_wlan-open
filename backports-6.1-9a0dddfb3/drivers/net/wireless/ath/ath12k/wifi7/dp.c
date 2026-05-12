@@ -318,6 +318,8 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 		goto fail_dp_rx_free;
 	}
 
+	ath12k_dp_mon_cfg_init(dp);
+
 	ret = ath12k_dp_mon_rx_alloc(dp);
 	if (ret) {
 		ath12k_warn(ab, "failed to setup rxdma rings ret = %d\n", ret);

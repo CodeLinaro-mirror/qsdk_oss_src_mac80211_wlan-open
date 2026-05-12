@@ -32,8 +32,11 @@ static int
 ath12k_dp_mon_tx_setup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev)
 {
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_dp *dp = dp_pdev->dp;
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
 	size_t alloc_size = sizeof(struct ath12k_dp_mon_ppdu_desc);
 	int i;
+	u32 mon_num_ppdu_desc = dp_mon->mon_num_ppdu_desc;
 
 	if (dp_mon_pdev->tx_mon_ppdu_desc_pool) {
 		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
@@ -42,7 +45,7 @@ ath12k_dp_mon_tx_setup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev)
 		return 0;
 	}
 
-	dp_mon_pdev->tx_mon_ppdu_desc_pool = kcalloc(ATH12K_DP_MON_NUM_PPDU_DESC,
+	dp_mon_pdev->tx_mon_ppdu_desc_pool = kcalloc(mon_num_ppdu_desc,
 						     alloc_size, GFP_KERNEL);
 	if (unlikely(!dp_mon_pdev->tx_mon_ppdu_desc_pool)) {
 		ath12k_warn(dp_pdev->dp->ab,
@@ -53,7 +56,7 @@ ath12k_dp_mon_tx_setup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev)
 	ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
 		   "TX MON SETUP: Allocated PPDU desc pool at %p, size=%zu\n",
 		   dp_mon_pdev->tx_mon_ppdu_desc_pool,
-		   alloc_size * ATH12K_DP_MON_NUM_PPDU_DESC);
+		   alloc_size * mon_num_ppdu_desc);
 
 	spin_lock_init(&dp_mon_pdev->tx_mon_ppdu_desc_lock);
 	INIT_LIST_HEAD(&dp_mon_pdev->tx_mon_ppdu_desc_free_list);
@@ -61,7 +64,7 @@ ath12k_dp_mon_tx_setup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev)
 	INIT_LIST_HEAD(&dp_mon_pdev->tx_mon_ppdu_desc_proc_list);
 
 	spin_lock_bh(&dp_mon_pdev->tx_mon_ppdu_desc_lock);
-	for (i = 0; i < ATH12K_DP_MON_NUM_PPDU_DESC; i++) {
+	for (i = 0; i < mon_num_ppdu_desc; i++) {
 		INIT_LIST_HEAD(&dp_mon_pdev->tx_mon_ppdu_desc_pool[i].list);
 		list_add_tail(&dp_mon_pdev->tx_mon_ppdu_desc_pool[i].list,
 			      &dp_mon_pdev->tx_mon_ppdu_desc_free_list);

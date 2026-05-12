@@ -586,6 +586,9 @@ static int ath12k_wifi8_dp_op_device_init(struct ath12k_dp *dp)
 	int ret;
 
 	dp->tcl_metadata_ver = HTT_OPTION_TCL_METADATA_VER_V3;
+
+	ath12k_dp_mon_cfg_init(dp);
+
 	ret = ath12k_dp_mon_rx_alloc(dp);
 	if (ret) {
 		ath12k_warn(dp->ab, "failed to setup rxdma rings ret = %d\n", ret);

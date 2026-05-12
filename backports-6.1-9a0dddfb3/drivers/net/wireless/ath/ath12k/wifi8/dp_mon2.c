@@ -1660,9 +1660,11 @@ int ath12k_wifi8_dp_mon_rx_dual_ring_setup_ppdu_desc(struct ath12k_pdev_dp *dp_p
 {
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	struct ath12k_dp_mon_ppdu_desc *ppdu_desc_pool = dp_mon_pdev->ppdu_desc_pool;
+	struct ath12k_dp *dp = dp_pdev->dp;
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
 	int i;
 
-	dp_mon_pdev->ppdu_desc_pool = kcalloc(ATH12K_DP_MON_NUM_PPDU_DESC,
+	dp_mon_pdev->ppdu_desc_pool = kcalloc(dp_mon->mon_num_ppdu_desc,
 					      sizeof(*ppdu_desc_pool), GFP_ATOMIC);
 	if (unlikely(!dp_mon_pdev->ppdu_desc_pool)) {
 		ath12k_warn(dp_pdev->dp, "Failed to allocate monitor PPDU desc pool\n");
@@ -1675,7 +1677,7 @@ int ath12k_wifi8_dp_mon_rx_dual_ring_setup_ppdu_desc(struct ath12k_pdev_dp *dp_p
 	INIT_LIST_HEAD(&dp_mon_pdev->ppdu_desc_proc_list);
 
 	spin_lock_bh(&dp_mon_pdev->ppdu_desc_lock);
-	for (i = 0; i < ATH12K_DP_MON_NUM_PPDU_DESC; i++) {
+	for (i = 0; i < dp_mon->mon_num_ppdu_desc; i++) {
 		INIT_LIST_HEAD(&dp_mon_pdev->ppdu_desc_pool[i].list);
 		list_add_tail(&dp_mon_pdev->ppdu_desc_pool[i].list,
 			      &dp_mon_pdev->ppdu_desc_free_list);
