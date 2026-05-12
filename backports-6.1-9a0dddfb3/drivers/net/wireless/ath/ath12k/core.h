@@ -1186,6 +1186,10 @@ struct ath12k_sta {
 	struct ath12k_vif *ahvif;
 	enum hal_pn_type pn_type;
 	enum hal_encrypt_type enctype;
+	/* MLD address (or link address for non-MLO); key for ag->ahsta_list */
+	u8 addr[ETH_ALEN];
+	/* node for ag->ahsta_list hash table */
+	struct hlist_node hlist_addr;
 	struct ath12k_link_sta deflink;
 	struct ath12k_link_sta __rcu *link[ATH12K_NUM_MAX_LINKS];
 	/* indicates bitmap of link sta created in FW */
@@ -2092,6 +2096,11 @@ enum ath12k_cumac_band {
 struct ath12k_hw_group {
 	struct ath12k_dp_hw_group *dp_hw_grp;
 	struct list_head list;
+	/* per-group station (ahsta) address hash table */
+	struct hlist_head *ahsta_list;
+	u8 ahsta_hash_bits;
+	/* protects ahsta_list; may be taken from BH context */
+	spinlock_t ahsta_lock;
 #ifdef CPTCFG_ATH12K_POWER_OPTIMIZATION
 	u8 dbs_power_reduction;
 	u8 eth_power_reduction;

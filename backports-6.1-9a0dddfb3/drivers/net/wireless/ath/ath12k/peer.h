@@ -149,4 +149,12 @@ bool ath12k_arsta_itr_on_ab_by_addr(struct ath12k_base *ab, const u8 *addr,
 				    ath12k_arsta_iter_cb cb, void *data);
 int ath12k_arsta_itr_on_ar_by_vdev_id(struct ath12k *ar, u32 vdev_id,
 				      ath12k_arsta_vdev_iter_cb cb, void *data);
+/* ahsta (ath12k_sta) group-level hashtable */
+int ath12k_sta_hlist_init(struct ath12k_hw_group *ag);
+void ath12k_sta_hlist_head_destroy(struct ath12k_hw_group *ag);
+void ath12k_sta_hlist_destroy(struct ath12k_hw_group *ag);
+int ath12k_sta_hlist_add(struct ath12k_hw_group *ag, struct ath12k_sta *ahsta);
+int ath12k_sta_hlist_delete(struct ath12k_hw_group *ag, struct ath12k_sta *ahsta);
+struct ath12k_sta *ath12k_sta_find_by_addr(struct ath12k_hw_group *ag,
+					   const u8 *addr);
 #endif /* _PEER_H_ */

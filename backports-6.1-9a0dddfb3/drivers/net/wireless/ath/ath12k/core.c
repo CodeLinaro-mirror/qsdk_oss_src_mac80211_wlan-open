@@ -4587,6 +4587,7 @@ static struct ath12k_hw_group *ath12k_core_hw_group_alloc(struct ath12k_base *ab
 	mutex_init(&ag->dp_hw_grp->tx_init_lock);
 	init_completion(&ag->umac_reset_complete);
 	init_completion(&ag->peer_cleanup_complete);
+	spin_lock_init(&ag->ahsta_lock);
 	ag->mlo_capable = false;
 	ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
 	ag->wsi_load_info = NULL;
@@ -4633,6 +4634,10 @@ static void ath12k_core_hw_group_free(struct ath12k_hw_group *ag)
 
 	ath12k_core_free_wsi_info(ag);
 	list_del(&ag->list);
+	spin_lock_bh(&ag->ahsta_lock);
+	ath12k_sta_hlist_destroy(ag);
+	ath12k_sta_hlist_head_destroy(ag);
+	spin_unlock_bh(&ag->ahsta_lock);
 	kfree(ag->dp_hw_grp);
 	kfree(ag);
 
