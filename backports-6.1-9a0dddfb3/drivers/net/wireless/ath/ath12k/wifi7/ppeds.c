@@ -1062,6 +1062,43 @@ uint8_t  ath12k_ppeds_get_wlan_arch_mode(void)
 	return PPEDS_ARCH_MODE_WIFI7;
 }
 
+struct ath12k_dp_ppe_vp_profile *
+ath12k_wifi7_dp_ppeds_get_vp_profile_from_idx(struct ath12k_base *g_ab,
+		uint32_t ppe_vp_idx)
+{
+	if (ppe_vp_idx >= HAL_TX_PPE_VP_WIFI7_ENTRIES_MAX) {
+		ath12k_err(g_ab, "Invalid vp_idx:%u\n", ppe_vp_idx);
+		return NULL;
+	}
+
+	if (!g_ab->dp->ppe.ppe_vp_profile[ppe_vp_idx].is_configured) {
+		ath12k_err(g_ab, "vp_idx:%u not configured\n", ppe_vp_idx);
+		return NULL;
+	}
+
+	return &g_ab->dp->ppe.ppe_vp_profile[ppe_vp_idx];
+}
+
+int ath12k_wifi7_dp_ppeds_get_bank_lmac_id(struct ath12k_base *ab,
+		struct ath12k *ar,
+		struct ath12k_link_vif *arvif,
+		struct ath12k_dp_ppe_vp_profile *vp_profile,
+		u8 *bank_id, u8 *lmac_id)
+{
+	u8 link_id = arvif->link_id;
+	struct ath12k_dp_link_vif *dp_link_vif =
+					&arvif->ahvif->dp_vif.dp_link_vif[link_id];
+
+	if (vp_profile->ref_count == 1) {
+		*lmac_id = ar->lmac_id;
+		*bank_id = dp_link_vif->bank_id;
+	} else {
+		*lmac_id = HAL_WILDCARD_LMAC_ID;
+		*bank_id = arvif->splitphy_ds_bank_id;
+	}
+	return 0;
+}
+
 struct ppe_ds_wlan_ops_v2 ppeds_wlanops_v2 = {
 	.get_tx_desc_many = ath12k_ppeds_get_batched_tx_desc_v2,
 	.release_tx_desc_single = ath12k_ppeds_release_tx_desc_single_v2,
@@ -1094,4 +1131,8 @@ struct ath12k_ppeds_arch_ops ath12k_wifi7_arch_ppeds_ops  = {
 	.ath12k_dp_ppeds_alloc_vp_tbl_entry = ath12k_ppeds_wifi7_alloc_vp_tbl_entry,
 	.ath12k_dp_ppeds_alloc_vp_search_idx_tbl_entry =
 					ath12k_ppeds_wifi7_alloc_vp_search_idx_tbl_entry,
+	.ath12k_dp_ppeds_get_vp_profile_from_idx =
+				ath12k_wifi7_dp_ppeds_get_vp_profile_from_idx,
+	.ath12k_dp_ppeds_get_bank_lmac_id =
+				ath12k_wifi7_dp_ppeds_get_bank_lmac_id,
 };

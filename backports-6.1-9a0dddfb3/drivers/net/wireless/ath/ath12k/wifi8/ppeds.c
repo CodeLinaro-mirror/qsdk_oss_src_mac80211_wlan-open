@@ -28,43 +28,48 @@ static int ath12k_wifi8_dp_ppeds_alloc_ppe_vp_profile(struct ath12k_base *ab,
 			int vp_num)
 {
 	int ppe_vp_idx = vp_num - PPE_VP_WIFI8_START_IDX;
+	struct ath12k_base *central_ab =
+		ath12k_dp_get_ab_from_dp_hw_group(ab->dp->dp_hw_grp);
 
 	/* If a VP is already allocated with requested vp number, then return
 	 * the same VP instead of creating a new profile
 	 */
 	if (ppe_vp_idx < 0 ||
 			ppe_vp_idx >= PPE_VP_WIFI8_ENTRIES_MAX) {
-		ath12k_err(ab, "Invalid vp_num :%d\n", vp_num);
+		ath12k_err(central_ab, "Invalid vp_num :%d\n", vp_num);
 		return -ENOSR;
 	}
 
-	if (ab->dp->ppe.ppe_vp_profile[ppe_vp_idx].is_configured &&
-			vp_num == ab->dp->ppe.ppe_vp_profile[ppe_vp_idx].vp_num) {
-		ath12k_dbg(ab, ATH12K_DBG_PPE,
+	if (central_ab->dp->ppe.ppe_vp_profile[ppe_vp_idx].is_configured &&
+			vp_num == central_ab->dp->ppe.ppe_vp_profile[ppe_vp_idx].vp_num) {
+		ath12k_dbg(central_ab, ATH12K_DBG_PPE,
 				"vp profile with num %d will be reused\n", vp_num);
 		goto end;
 	}
 
-	if (ab->dp->ppe.num_ppe_vp_profiles == PPE_VP_WIFI8_ENTRIES_MAX) {
-		ath12k_err(ab, "Maximum ppe_vp count reached for soc\n");
+	if (central_ab->dp->ppe.num_ppe_vp_profiles == PPE_VP_WIFI8_ENTRIES_MAX) {
+		ath12k_err(central_ab, "Maximum ppe_vp count reached for soc\n");
 		return -ENOSR;
 	}
 
-	if (!ab->dp->ppe.ppe_vp_profile[ppe_vp_idx].is_configured) {
-		ab->dp->ppe.num_ppe_vp_profiles++;
-		ab->dp->ppe.ppe_vp_profile[ppe_vp_idx].is_configured = true;
+	if (!central_ab->dp->ppe.ppe_vp_profile[ppe_vp_idx].is_configured) {
+		central_ab->dp->ppe.num_ppe_vp_profiles++;
+		central_ab->dp->ppe.ppe_vp_profile[ppe_vp_idx].is_configured = true;
 	}
 
 end:
-	ab->dp->ppe.ppe_vp_profile[ppe_vp_idx].ref_count++;
-	*vp_profile = &ab->dp->ppe.ppe_vp_profile[ppe_vp_idx];
+	central_ab->dp->ppe.ppe_vp_profile[ppe_vp_idx].ref_count++;
+	*vp_profile = &central_ab->dp->ppe.ppe_vp_profile[ppe_vp_idx];
 	return ppe_vp_idx;
 }
 
 static void
-ath12k_dp_ppeds_dealloc_vp_search_idx_tbl_entry(struct ath12k_base *ab,
+ath12k_dp_ppeds_dealloc_vp_search_idx_tbl_entry(struct ath12k_base *g_ab,
 						int ppe_vp_search_idx)
 {
+	struct ath12k_base *ab =
+		ath12k_dp_get_ab_from_dp_hw_group(g_ab->dp->dp_hw_grp);
+
 	if (ppe_vp_search_idx < 0 || ppe_vp_search_idx >= PPE_VP_WIFI8_ENTRIES_MAX) {
 		ath12k_err(ab, "Invalid PPE VP search table free index");
 		return;
@@ -83,9 +88,12 @@ ath12k_dp_ppeds_dealloc_vp_search_idx_tbl_entry(struct ath12k_base *ab,
 	ab->dp->ppe.num_ppe_vp_search_idx_entries--;
 }
 
-static void ath12k_dp_ppeds_dealloc_vp_tbl_entry(struct ath12k_base *ab,
+static void ath12k_dp_ppeds_dealloc_vp_tbl_entry(struct ath12k_base *g_ab,
 						 int ppe_vp_num_idx)
 {
+	struct ath12k_base *ab =
+		ath12k_dp_get_ab_from_dp_hw_group(g_ab->dp->dp_hw_grp);
+
 	if (ppe_vp_num_idx < 0 || ppe_vp_num_idx >= PPE_VP_WIFI8_ENTRIES_MAX) {
 		ath12k_err(ab, "Invalid PPE VP free index");
 		return;
@@ -106,12 +114,14 @@ static void ath12k_dp_ppeds_dealloc_vp_tbl_entry(struct ath12k_base *ab,
 }
 
 static void
-ath12k_wifi8_dp_ppeds_dealloc_ppe_vp_profile(struct ath12k_base *ab,
+ath12k_wifi8_dp_ppeds_dealloc_ppe_vp_profile(struct ath12k_base *g_ab,
 					int ppe_vp_profile_idx,
 					enum nl80211_iftype type)
 {
 	bool dealloced = false;
 	struct ath12k_dp_ppe_vp_profile *vp_profile;
+	struct ath12k_base *ab =
+		ath12k_dp_get_ab_from_dp_hw_group(g_ab->dp->dp_hw_grp);
 
 	if (ppe_vp_profile_idx < 0 || ppe_vp_profile_idx >= PPE_VP_WIFI8_ENTRIES_MAX) {
 		ath12k_err(ab, "Invalid PPE VP profile free index");
@@ -145,9 +155,12 @@ ath12k_wifi8_dp_ppeds_dealloc_ppe_vp_profile(struct ath12k_base *ab,
 		ath12k_dbg(ab, ATH12K_DBG_PPE, "%s success\n", __func__);
 }
 
-static int ath12k_wifi8_dp_ppeds_alloc_vp_tbl_entry(struct ath12k_base *ab,
+static int ath12k_wifi8_dp_ppeds_alloc_vp_tbl_entry(struct ath12k_base *g_ab,
 						int ppe_vp_profile_idx)
 {
+	struct ath12k_base *ab =
+		ath12k_dp_get_ab_from_dp_hw_group(g_ab->dp->dp_hw_grp);
+
 	if (ab->dp->ppe.num_ppe_vp_profiles == PPE_VP_WIFI8_ENTRIES_MAX) {
 		ath12k_err(ab, "Maximum ppe_vp count reached for soc\n");
 		return -ENOSR;
@@ -164,9 +177,11 @@ static int ath12k_wifi8_dp_ppeds_alloc_vp_tbl_entry(struct ath12k_base *ab,
 	return ppe_vp_profile_idx;
 }
 
-static int ath12k_wifi8_dp_ppeds_alloc_vp_search_idx_tbl_entry(struct ath12k_base *ab,
+static int ath12k_wifi8_dp_ppeds_alloc_vp_search_idx_tbl_entry(struct ath12k_base *g_ab,
 					int ppe_vp_profile_idx)
 {
+	struct ath12k_base *ab =
+		ath12k_dp_get_ab_from_dp_hw_group(g_ab->dp->dp_hw_grp);
 
 	if (ab->dp->ppe.num_ppe_vp_entries == PPE_VP_WIFI8_ENTRIES_MAX) {
 		ath12k_err(ab, "Maximum ppe_vp count reached for soc\n");
@@ -185,10 +200,12 @@ static int ath12k_wifi8_dp_ppeds_alloc_vp_search_idx_tbl_entry(struct ath12k_bas
 }
 
 struct ath12k_dp_ppe_vp_profile *
-ath12k_wifi8_dp_ppeds_get_vp_profile(struct ath12k_base *ab,
+ath12k_wifi8_dp_ppeds_get_vp_profile(struct ath12k_base *g_ab,
 		int vp_num)
 {
 	int ppe_vp_idx = vp_num - PPE_VP_WIFI8_START_IDX;
+	struct ath12k_base *ab =
+		ath12k_dp_get_ab_from_dp_hw_group(g_ab->dp->dp_hw_grp);
 
 	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
 		return NULL;
@@ -1467,6 +1484,44 @@ void ath12k_wifi8_ppeds_free_pci_interrupts(struct ath12k_base *ab)
 	free_irq(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_TX_COMPLETION], ab);
 }
 
+struct ath12k_dp_ppe_vp_profile *
+ath12k_wifi8_dp_ppeds_get_vp_profile_from_idx(struct ath12k_base *g_ab,
+		uint32_t ppe_vp_idx)
+{
+	struct ath12k_base *ab =
+		ath12k_dp_get_ab_from_dp_hw_group(g_ab->dp->dp_hw_grp);
+
+	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
+		return NULL;
+
+	/* If a VP is already allocated with requested vp number, then return
+	 * the same VP instead of creating a new profile
+	 */
+	if (ppe_vp_idx < 0 ||
+			ppe_vp_idx >= PPE_VP_WIFI8_ENTRIES_MAX) {
+		ath12k_err(ab, "Invalid vp_idx:%d\n", ppe_vp_idx);
+		return NULL;
+	}
+
+	if (!ab->dp->ppe.ppe_vp_profile[ppe_vp_idx].is_configured) {
+		ath12k_dbg(ab, ATH12K_DBG_PPE, "vp_idx:%d not configured\n", ppe_vp_idx);
+		return NULL;
+	}
+
+	return &ab->dp->ppe.ppe_vp_profile[ppe_vp_idx];
+}
+
+int ath12k_wifi8_dp_ppeds_get_bank_lmac_id(struct ath12k_base *ab,
+		struct ath12k *ar,
+		struct ath12k_link_vif *arvif,
+		struct ath12k_dp_ppe_vp_profile *vp_profile,
+		u8 *bank_id, u8 *lmac_id)
+{
+	*lmac_id = HAL_TX_WILD_CARD_LINK_ID;
+	*bank_id = arvif->ahvif->dp_vif.bank_id;
+	return 0;
+}
+
 struct ath12k_ppeds_arch_ops ath12k_wifi8_arch_ppeds_ops  = {
 	.ath12k_ppeds_ppe2tcl_irq_handler = ath12k_wifi8_ds_ppe2tcl_irq_handler,
 	.ath12k_ppeds_reo2ppe_irq_handler = ath12k_wifi8_ds_reo2ppe_irq_handler,
@@ -1487,4 +1542,8 @@ struct ath12k_ppeds_arch_ops ath12k_wifi8_arch_ppeds_ops  = {
 	.ath12k_dp_ppeds_alloc_vp_tbl_entry = ath12k_wifi8_dp_ppeds_alloc_vp_tbl_entry,
 	.ath12k_dp_ppeds_alloc_vp_search_idx_tbl_entry =
 				ath12k_wifi8_dp_ppeds_alloc_vp_search_idx_tbl_entry,
+	.ath12k_dp_ppeds_get_vp_profile_from_idx =
+				ath12k_wifi8_dp_ppeds_get_vp_profile_from_idx,
+	.ath12k_dp_ppeds_get_bank_lmac_id =
+				ath12k_wifi8_dp_ppeds_get_bank_lmac_id,
 };

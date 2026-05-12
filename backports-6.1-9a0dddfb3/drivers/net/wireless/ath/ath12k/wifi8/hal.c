@@ -976,6 +976,13 @@ void ath12k_wifi8_hal_tx_set_ppe_vp_entry(struct ath12k_base *ab,
 		u32_encode_bits(lmac_id, HAL_TX_PPE_VP_CFG_LMAC_ID) |
 		u32_encode_bits(vdev_id, HAL_TX_PPE_VP_CFG_VDEV_ID);
 
+	ath12k_dbg(ab, ATH12K_DBG_HAL,
+			"PPE_VP valid:%d srch_idx:%u bank_id:%u lmac_id:%u vdev_id:%u\n",
+			ppe_vp_profile->entry_valid,
+			ppe_vp_profile->search_idx_reg_num,
+			bank_id,
+			lmac_id,
+			vdev_id);
 reg_write:
 	ath12k_hif_write32(central_ab, HAL_TX_PPE_VP_CONFIG_TABLE_ADDR +
 			   (HAL_TX_PPE_VP_CONFIG_TABLE_OFFSET * ppe_vp_idx),
