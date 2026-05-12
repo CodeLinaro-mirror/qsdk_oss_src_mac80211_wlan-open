@@ -21146,6 +21146,8 @@ ath12k_mac_reconfig_complete(struct ieee80211_hw *hw,
 	ath12k_reconfig_qos_profiles(ab);
 	clear_bit(ATH12K_GROUP_FLAG_RECOVERY, &ar->ab->ag->flags);
 
+	atomic_set(&ar->ab->ag->mac80211_restart_pending, 0);
+
 	/* Send WMI_FW_HANG_CMD to FW after target has started. This is to
 	 * update the target's SSR recovery mode after it has recovered.
 	 */
@@ -23116,6 +23118,7 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 	wiphy->max_remain_on_channel_duration = 5000;
 
 	wiphy->flags |= WIPHY_FLAG_AP_UAPSD;
+
 	wiphy->features |= NL80211_FEATURE_AP_MODE_CHAN_WIDTH_CHANGE |
 				   NL80211_FEATURE_AP_SCAN;
 	wiphy->features |= NL80211_FEATURE_TX_POWER_INSERTION;

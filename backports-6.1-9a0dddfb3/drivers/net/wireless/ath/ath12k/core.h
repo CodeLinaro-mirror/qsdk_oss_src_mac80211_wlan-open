@@ -1711,6 +1711,7 @@ struct ath12k_hw_group {
 	bool wsi_remap_in_progress;
 	struct completion peer_cleanup_complete;
 	u64 wsi_peer_clean_timeout;
+	atomic_t mac80211_restart_pending;
 };
 
 /* Holds WSI info specific to each device, excluding WSI group info */
