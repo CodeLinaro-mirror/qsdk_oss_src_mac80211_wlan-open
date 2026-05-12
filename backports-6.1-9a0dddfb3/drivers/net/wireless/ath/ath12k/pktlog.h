@@ -143,6 +143,7 @@ struct ath12k_pktlog_remote_service {
 	int connect_done;
 	u32 missed_records;
 	u32 fend_counts;
+	struct ath12k *ar;
 };
 
 /**
@@ -206,8 +207,7 @@ struct ath12k_pktlog {
 	int is_wrap;
 	char ipaddr[ATH12K_IP_ADDR_STR_MAX];
 	u8 pktlog_remote_client;
-	struct ath12k *ar;
-	struct ath12k_pktlog_remote_service rpktlog_svc;
+	struct ath12k_pktlog_remote_service *rpktlog_svc;
 };
 
 struct ath12k_pktlog_decode_info {
@@ -222,4 +222,11 @@ struct ath12k_pl_fw_info {
         u8 chip_info[40];
         u32 pktlog_defs_json_version;
 } __packed;
+
+/* Remote pktlog definitions */
+int ath12k_pktlog_remote_service_send(struct ath12k_pktlog_remote_service *service,
+				      char *buf, int len);
+int ath12k_pktlog_stop_service(struct ath12k *ar);
+void ath12k_pktlog_init_remote_service_work(struct ath12k *ar);
+int ath12k_pktlog_remote_enable(struct ath12k *ar, u32 enable);
 #endif /* _PKTLOG_H_ */

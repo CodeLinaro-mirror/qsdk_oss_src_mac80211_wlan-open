@@ -6124,7 +6124,12 @@ ath12k_read_pktlog_remote_port(struct file *file,
 	char buf[32];
 	int len;
 
-	len = scnprintf(buf, sizeof(buf), "%u\n", pl_info->rpktlog_svc.port);
+	if (!pl_info->rpktlog_svc) {
+		ath12k_err(ar->ab, "Remote pktlog service not initialized\n");
+		return -ENOMEM;
+	}
+
+	len = scnprintf(buf, sizeof(buf), "%u\n", pl_info->rpktlog_svc->port);
 
 	return simple_read_from_buffer(ubuf, count, ppos, buf, len);
 }
