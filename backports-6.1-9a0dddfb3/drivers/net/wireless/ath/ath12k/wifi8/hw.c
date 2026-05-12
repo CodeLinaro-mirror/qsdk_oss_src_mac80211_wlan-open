@@ -1161,6 +1161,7 @@ static const struct ieee80211_ops ath12k_ops_wifi8 = {
 	.set_bitrate_mask		= ath12k_mac_op_set_bitrate_mask,
 	.get_survey			= ath12k_mac_op_get_survey,
 	.flush				= ath12k_mac_op_flush,
+	.set_preserved_link_stats	= ath12k_mac_op_preserved_link_stats,
 	.sta_statistics			= ath12k_mac_op_sta_statistics,
 	.link_sta_statistics		= ath12k_mac_op_link_sta_statistics,
 	.remain_on_channel              = ath12k_mac_op_remain_on_channel,

@@ -24197,6 +24197,58 @@ out:
 	return ret;
 }
 
+void ath12k_mac_op_preserved_link_stats(struct ieee80211_hw *hw,
+					struct ieee80211_vif *vif,
+					struct ieee80211_sta *sta,
+					struct station_info *sinfo)
+{
+	struct ath12k_vif *ahvif;
+	struct ath12k_hw *ah;
+	struct ath12k_dp_preserved_stats *del_stats = NULL;
+	struct ath12k_dp_peer *dp_peer;
+	int i;
+	u64 tx_bytes = 0, rx_bytes = 0;
+	u32 tx_packets = 0, rx_packets = 0;
+
+	if (!vif || !sta || !sinfo)
+		return;
+
+	ahvif =  ath12k_vif_to_ahvif(vif);
+	ah = ahvif->ah;
+	spin_lock_bh(&ah->dp_hw.peer_lock);
+	dp_peer = ath12k_dp_peer_find(&ah->dp_hw, sta->addr);
+	if (!dp_peer)
+		goto out;
+
+	del_stats = &dp_peer->link_peer_delete_stats;
+
+	if (!del_stats)
+		goto out;
+
+	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
+		tx_bytes += del_stats->per_pkt_tx[i].comp_pkt.bytes;
+		tx_packets += del_stats->per_pkt_tx[i].comp_pkt.packets;
+	}
+/* TODO - Fetch the tx failed and retries from htt stats */
+
+	for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
+		rx_bytes += del_stats->per_pkt_rx[i].sent_to_stack.bytes +
+			del_stats->per_pkt_rx[i].sent_to_stack_fast.bytes;
+		rx_packets += del_stats->per_pkt_rx[i].sent_to_stack.packets +
+			del_stats->per_pkt_rx[i].sent_to_stack_fast.packets;
+	}
+
+	/* Deleted link totals only; MLD aggregation adds active per-link stats on top */
+	sinfo->tx_bytes   = tx_bytes;
+	sinfo->tx_packets = tx_packets;
+	sinfo->rx_bytes   = rx_bytes;
+	sinfo->rx_packets = rx_packets;
+
+out:
+	spin_unlock_bh(&ah->dp_hw.peer_lock);
+}
+EXPORT_SYMBOL(ath12k_mac_op_preserved_link_stats);
+
 void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 				       struct ieee80211_vif *vif,
 				       struct ieee80211_link_sta *link_sta,

@@ -471,6 +471,10 @@ int ath12k_mac_op_get_survey(struct ieee80211_hw *hw, int idx,
 			     struct survey_info *survey);
 void ath12k_mac_op_flush(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			 u32 queues, bool drop);
+void ath12k_mac_op_preserved_link_stats(struct ieee80211_hw *hw,
+					struct ieee80211_vif *vif,
+					struct ieee80211_sta *sta,
+					struct station_info *sinfo);
 void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 				       struct ieee80211_vif *vif,
 				       struct ieee80211_link_sta *link_sta,
