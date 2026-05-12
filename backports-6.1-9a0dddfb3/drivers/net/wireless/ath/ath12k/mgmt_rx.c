@@ -356,7 +356,6 @@ size_t ath12k_mgmt_rx_desc_list_cut_nodes(struct list_head *used_list,
 			break;
 
 		rx_desc = list_entry(curr, struct ath12k_rx_desc_info, list);
-		rx_desc->in_use = true;
 
 		count--;
 		nodes++;
