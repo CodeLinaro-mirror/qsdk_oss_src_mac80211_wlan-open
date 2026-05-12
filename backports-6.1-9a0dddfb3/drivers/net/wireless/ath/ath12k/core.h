@@ -1203,6 +1203,10 @@ struct ath12k_sta {
 	/* indicates bitmap of devices where peers are created */
 	u8 device_bitmap;
 	u32 mlo_hw_link_id_bitmap;
+	/* bitmap of ar->radio_idx values where link peers exist;
+	 * Protected by wiphy->mtx.
+	 */
+	u8 ar_bitmap;
 	/* indicates bitmap of links where peer delete cmd is sent to FW */
 	u32 peer_delete_cmd_sent_bitmap;
 	bool peer_delete_send_mlo_hw_bitmap;

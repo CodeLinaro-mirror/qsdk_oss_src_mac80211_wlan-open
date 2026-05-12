@@ -1682,6 +1682,7 @@ void ath12k_mac_link_sta_hlist_cleanup(void *data,
 		spin_lock_bh(&ar->arsta_lock);
 		ath12k_link_sta_hlist_delete(ar, arsta);
 		spin_unlock_bh(&ar->arsta_lock);
+		ahsta->ar_bitmap &= ~BIT(ar->radio_idx);
 	}
 }
 
@@ -13050,6 +13051,7 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 	spin_lock_bh(&ar->arsta_lock);
 	ath12k_link_sta_hlist_delete(ar, arsta);
 	spin_unlock_bh(&ar->arsta_lock);
+	ahsta->ar_bitmap &= ~BIT(ar->radio_idx);
 
 	if (ahsta->links_map)
 		ath12k_mac_free_unassign_link_sta(ahvif->ah,
@@ -13071,6 +13073,14 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 	bool skip_num_sta_dec = false;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	ret = ath12k_cp_peer_sanity_check(ar, arvif, arsta, arsta->ahsta);
+	if (ret) {
+		ath12k_warn(ab,
+			    "cp_sanity: duplicate peer %pM detected on vdev %d, rejecting create\n",
+			    arsta->addr, arvif->vdev_id);
+		goto exit;
+	}
 
 	ret = ath12k_mac_inc_num_stations(arvif, arsta);
 	if (ret) {
@@ -13110,8 +13120,10 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 	if (ret) {
 		ath12k_warn(ab, "Failed to add peer: %pM for VDEV: %d\n",
 			    arsta->addr, arvif->vdev_id);
-		goto rhash_delete;
+		goto hash_delete;
 	}
+
+	arsta->ahsta->ar_bitmap |= BIT(ar->radio_idx);
 
 	arvif->num_peers++;
 	ath12k_dbg(ab, ATH12K_DBG_PEER, "Added peer: %pM for VDEV: %d num_stations: %d num_peers %d\n",
@@ -13150,10 +13162,11 @@ free_peer:
 		skip_num_sta_dec = true;
 	}
 
-rhash_delete:
+hash_delete:
 	spin_lock_bh(&ar->arsta_lock);
 	ath12k_link_sta_hlist_delete(ar, arsta);
 	spin_unlock_bh(&ar->arsta_lock);
+	arsta->ahsta->ar_bitmap &= ~BIT(ar->radio_idx);
 dec_num_station:
 	if (!skip_num_sta_dec)
 		ath12k_mac_dec_num_stations(arvif, arsta->ahsta);
@@ -18645,6 +18658,15 @@ int ath12k_mac_self_peer_arsta_create(struct ath12k *ar,
 	arsta->link_id = arvif->link_id;
 	arsta->is_self_peer = true;
 	ether_addr_copy(arsta->addr, arvif->bssid);
+
+	ret = ath12k_cp_peer_sanity_check(ar, arvif, arsta, NULL);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "cp_sanity: duplicate self-peer %pM detected on vdev %d, rejecting\n",
+			    arvif->bssid, arvif->vdev_id);
+		kfree(arsta);
+		return ret;
+	}
 
 	spin_lock_bh(&ar->arsta_lock);
 	ret = ath12k_link_sta_hlist_add(ar, arsta);
