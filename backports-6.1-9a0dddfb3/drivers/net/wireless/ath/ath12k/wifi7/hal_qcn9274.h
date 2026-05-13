@@ -328,3 +328,8 @@ void ath12k_wifi7_hal_rx_desc_get_fse_info_qcn9274(struct hal_rx_desc *desc,
 #endif
 }
 
+static inline
+u16 ath12k_wifi7_hal_rx_desc_get_cce_metadata_qcn9274(struct hal_rx_desc *desc)
+{
+	return desc->u.qcn9274_compact.msdu_end.cce_metadata;
+}
