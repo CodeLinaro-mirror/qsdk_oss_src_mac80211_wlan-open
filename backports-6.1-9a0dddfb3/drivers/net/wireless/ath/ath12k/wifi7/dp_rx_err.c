@@ -411,6 +411,32 @@ static bool ath12k_wifi7_dp_unauth_wds_err(struct ath12k_pdev_dp *dp_pdev,
 	return false;
 }
 
+static inline void
+ath12k_dp_tid_wbm_err_stats(struct ath12k_pdev_dp *dp_pdev,
+					int ring_id,
+					u8 tid,
+					bool is_reo,
+					u32 error_code)
+{
+	tid = ath12k_vow_tid_validate(tid);
+
+	if (is_reo) {
+		if (error_code < HAL_REO_DEST_RING_ERROR_CODE_MAX)
+			DP_PDEV_TID_RX_REASON_INC(dp_pdev, ring_id, tid,
+						  reo_err.reo_code, error_code);
+		else
+			DP_PDEV_TID_RX_INC(dp_pdev, ring_id, tid,
+					   reo_err.reo_code_inv);
+	} else {
+		if (error_code < HAL_REO_ENTR_RING_RXDMA_ECODE_MAX)
+			DP_PDEV_TID_RX_REASON_INC(dp_pdev, ring_id, tid,
+						  rxdma_err.rxdma_code, error_code);
+		else
+			DP_PDEV_TID_RX_INC(dp_pdev, ring_id, tid,
+					   rxdma_err.rxdma_code_inv);
+	}
+}
+
 static void
 ath12k_wifi7_dp_process_wbm_rx_packets(struct ath12k_dp *dp,
 				       struct napi_struct *napi,
@@ -431,6 +457,7 @@ ath12k_wifi7_dp_process_wbm_rx_packets(struct ath12k_dp *dp,
 	int msdu_idx = 0;
 	u32 drop_reason, error_code;
 	bool drop, stats_needed = false;
+	bool vow_stats_needed = false;
 	struct ath12k_hal *hal = dp->hal;
 	u32 hal_rx_desc_sz = hal->hal_desc_sz;
 	u16 msdu_len;
@@ -525,9 +552,13 @@ ath12k_wifi7_dp_process_wbm_rx_packets(struct ath12k_dp *dp,
 		}
 
 
-		if (ahvif && ath12k_dp_stats_enabled(dp_pdev) &&
-		    ath12k_tid_stats_enabled(dp_pdev))
-			stats_needed = true;
+		if (ath12k_dp_stats_enabled(dp_pdev)) {
+			if (ath12k_tid_stats_enabled(dp_pdev))
+				stats_needed = true;
+
+			if (ath12k_dp_vow_stats_enabled(dp_pdev))
+				vow_stats_needed = true;
+		}
 
 		if (stats_needed) {
 			int pkt_rsn = ath12k_wifi7_get_rx_frame_type(peer->rx_decap_type);
@@ -575,6 +606,11 @@ ath12k_wifi7_dp_process_wbm_rx_packets(struct ath12k_dp *dp,
 				DP_PEER_LINK_STATS_CNT(peer,
 						       wbm_err.reo_error[error_code], 1,
 						       hw_link_id);
+
+				if (vow_stats_needed)
+					ath12k_dp_tid_wbm_err_stats(dp_pdev, ring_id,
+								    tid, true,
+								    error_code);
 			} else {
 				reason = WBM_ERR_DROP_INVALID_PUSH_REASON;
 				ath12k_wifi7_dp_rx_wbm_err_dev_free_skb(dp, msdu, reason);
@@ -667,6 +703,11 @@ ath12k_wifi7_dp_process_wbm_rx_packets(struct ath12k_dp *dp,
 				drop_reason = ATH_RX_RXDMA_ERR;
 				break;
 			}
+
+			if (vow_stats_needed)
+				ath12k_dp_tid_wbm_err_stats(dp_pdev, ring_id,
+							    tid, false,
+							    error_code);
 
 			if (drop && msdu)
 				dev_kfree_skb_any(msdu);

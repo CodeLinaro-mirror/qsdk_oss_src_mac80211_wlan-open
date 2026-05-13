@@ -2038,7 +2038,7 @@ ath12k_wifi8_dp_rx_process_received_packets(struct ath12k_dp *dp,
 		dp_pdev = ath12k_dp_hw_grp_to_dp_pdev(dp_hw_grp, hw_link_id);
 		if (unlikely(!dp_pdev)) {
 			ath12k_dp_rx_skb_free(msdu, dp, ring_id,
-					      DP_RX_ERR_DROP_PDEV_NA);
+					      DP_RX_ERR_DROP_PDEV_NA, NULL, 0);
 			spd_desc_l->msdu = NULL;
 			continue;
 		}
@@ -2066,7 +2066,8 @@ ath12k_wifi8_dp_rx_process_received_packets(struct ath12k_dp *dp,
 		if (unlikely(ret)) {
 			ath12k_dbg(partner_ab, ATH12K_DBG_DATA,
 				   "Unable to process msdu %d", ret);
-			ath12k_dp_rx_skb_free(msdu, dp, ring_id, ret);
+			ath12k_dp_rx_skb_free(msdu, dp, ring_id, ret, dp_pdev,
+					      spd_desc_l->rx_mpdu_info.tid);
 			spd_desc_l->msdu = NULL;
 			continue;
 		}

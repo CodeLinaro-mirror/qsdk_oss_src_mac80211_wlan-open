@@ -940,6 +940,37 @@ void ath12k_wifi7_dp_adjust_skb(struct ath12k_pdev_dp *dp_pdev,
 	}
 }
 
+static inline void
+ath12k_dp_rx_update_vow_stats(struct ath12k_pdev_dp *dp_pdev,
+				    struct link_peer_rx_tid_stats *stats,
+				    struct sk_buff *msdu,
+				    struct rx_msdu_desc_info *rx_msdu_info)
+{
+	u32 current_ts;
+	const u8 *da = NULL;
+
+	current_ts = (u32)ktime_to_ms(ktime_get_real());
+
+	stats->reap_to_stack_delay_sum += (current_ts - msdu->tstamp);
+	stats->delay_pkt_count++;
+
+	if (dp_pdev->prev_rx_timestamp) {
+		stats->intfrm_delay_sum +=
+			(current_ts - dp_pdev->prev_rx_timestamp);
+		stats->intfrm_pkt_count++;
+	}
+	dp_pdev->prev_rx_timestamp = current_ts;
+
+	if (rx_msdu_info->da_is_mcbc) {
+		stats->mcast_cnt++;
+		da = ((struct ethhdr *)msdu->data)->h_dest;
+		if (da) {
+			if (is_broadcast_ether_addr(da))
+				stats->bcast_cnt++;
+		}
+	}
+}
+
 static void
 ath12k_wifi7_dp_process_reo_rx_packets(struct ath12k_dp *dp,
 				       struct napi_struct *napi,
@@ -1040,7 +1071,8 @@ ath12k_wifi7_dp_process_reo_rx_packets(struct ath12k_dp *dp,
 			dp_pdev = ath12k_dp_to_dp_pdev(partner_dp, pdev_id);
 			if (unlikely(!dp_pdev)) {
 				ath12k_dp_rx_skb_free(msdu, dp, ring_id,
-						      DP_RX_ERR_DROP_PDEV_NA);
+						      DP_RX_ERR_DROP_PDEV_NA,
+						      NULL, tid);
 				spd_desc_l->msdu = NULL;
 				prev_hw_link_id = 0xff;
 				continue;
@@ -1051,7 +1083,8 @@ ath12k_wifi7_dp_process_reo_rx_packets(struct ath12k_dp *dp,
 
 			if (unlikely(!rcu_dereference(pdev_active))) {
 				ath12k_dp_rx_skb_free(msdu, dp, ring_id,
-						      DP_RX_ERR_DROP_PDEV_NA);
+						      DP_RX_ERR_DROP_PDEV_NA,
+						      NULL, tid);
 				spd_desc_l->msdu = NULL;
 				prev_hw_link_id = 0xff;
 				continue;
@@ -1077,7 +1110,8 @@ ath12k_wifi7_dp_process_reo_rx_packets(struct ath12k_dp *dp,
 								   peer_id);
 			if (unlikely(!peer)) {
 				ath12k_dp_rx_skb_free(msdu, dp, ring_id,
-						      DP_RX_ERR_DROP_INV_PEER);
+						      DP_RX_ERR_DROP_INV_PEER,
+						      dp_pdev, tid);
 				spd_desc_l->msdu = NULL;
 				old_peer_id = 0xffff;
 				continue;
@@ -1120,13 +1154,16 @@ ath12k_wifi7_dp_process_reo_rx_packets(struct ath12k_dp *dp,
 		if (likely(peer->rx_decap_type ==
 			   DP_RX_DECAP_TYPE_ETHERNET2_DIX)) {
 			if (unlikely(ath12k_dp_stats_enabled(dp_pdev))) {
-				if (ath12k_proto_stats_enabled(dp_pdev)) {
+				if (ath12k_proto_stats_enabled(dp_pdev))
 					ath12k_dp_rx_update_protocol_stats(peer,
-									   hw_link_id,
-									   msdu,
-									   RX_SENT_TO_STACK,
-									   ring_id);
-				}
+						hw_link_id, msdu,
+						RX_SENT_TO_STACK, ring_id);
+
+				if (ath12k_dp_vow_stats_enabled(dp_pdev))
+					ath12k_dp_rx_update_vow_stats(dp_pdev,
+									    stats,
+									    msdu,
+									    rx_msdu_info);
 			}
 
 			ath12k_wifi7_deliver_ethernet_frame(dp_pdev, spd_desc_l,
@@ -1300,6 +1337,7 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 
 		ath12k_dp_rx_buffer_unmap(dp, sw_rx_desc);
 		rx_spd->msdu = sw_rx_desc->skb;
+
 		rx_spd->vaddr = sw_rx_desc->vaddr;
 		rx_spd->reo.ring_id = ring_id;
 

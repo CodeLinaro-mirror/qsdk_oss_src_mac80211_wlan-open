@@ -367,6 +367,12 @@ enum ath12k_mu_packet_type {
 #define DP_PDEV_TID_TX_REASON_INC(dp_pdev, ring, tid, array, reason) \
 	((dp_pdev)->tid_stats.tid_tx[ring][tid].array[reason]++)
 
+#define DP_PDEV_TID_RX_REASON_INC(dp_pdev, ring, tid, array, reason) \
+	((dp_pdev)->tid_stats.tid_rx[ring][tid].array[reason]++)
+
+#define DP_PDEV_TID_RX_INC(dp_pdev, ring, tid, counter) \
+	(((dp_pdev)->tid_stats.tid_rx[ring][tid].counter)++)
+
 struct ath12k_wbm_tx_stats {
 	u64 wbm_tx_comp_stats[HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX];
 };
@@ -614,6 +620,56 @@ enum ath12k_dp_tid_tx_sw_drop {
 	DP_TID_TX_SW_DROP_MAX,
 };
 
+/** enum ath12k_dp_tid_rx_sw_drop
+ * @DP_TID_RX_INVALID_PEER_VDEV
+ * @DP_TID_RX_SW_DROP_MAX
+ */
+enum ath12k_dp_tid_rx_sw_drop {
+	DP_TID_RX_INVALID_PEER_VDEV,
+	DP_TID_RX_SW_DROP_MAX,
+};
+
+/**
+ * struct ath12k_reo_error_stats
+ * @reo_code_inv: Count of unknown REO error codes
+ * @reo_code: counters for each REO error code
+ */
+struct ath12k_reo_error_stats {
+	u32 reo_code_inv;
+	u32 reo_code[HAL_REO_DEST_RING_ERROR_CODE_MAX];
+};
+
+/**
+ * struct ath12k_rxdma_error_stats
+ * @rxdma_code_inv: Count of unknown RXDMA error codes
+ * @rxdma_code: counters for each RXDMA error code
+ */
+struct ath12k_rxdma_error_stats {
+	u32 rxdma_code_inv;
+	u32 rxdma_code[HAL_REO_ENTR_RING_RXDMA_ECODE_MAX];
+};
+
+/**
+ * struct ath12k_tid_rx_stats - Per-TID RX statistics
+ * @msdu_cnt: Num of msdu received from HW
+ * @mcast_msdu_cnt: Num Mcast Msdus received from HW
+ * @bcast_msdu_cnt: Num Bcast Msdus received from HW
+ * @delivered_to_stack: packets delivered to stack
+ * @reo_err: REO error statistics
+ * @rxdma_err: RXDMA error statistics
+ */
+struct ath12k_tid_rx_stats {
+	struct hist_stats to_stack_delay;
+	struct hist_stats intfrm_delay;
+	u32 msdu_cnt;
+	u32 mcast_msdu_cnt;
+	u32 bcast_msdu_cnt;
+	u32 delivered_to_stack;
+	u32 fail_cnt[DP_TID_RX_SW_DROP_MAX];
+	struct ath12k_reo_error_stats reo_err;
+	struct ath12k_rxdma_error_stats rxdma_err;
+};
+
 /**
  * struct ath12k_tid_tx_stats - Per-TID TX statistics
  * @swq_delay: Software Enqueue Delay counter
@@ -635,18 +691,22 @@ struct ath12k_tid_tx_stats {
 /**
  * struct ath12k_dp_pdev_tid_stats - VoW TID statistics
  * @tid_tx: Per-ring, per-TID TX statistics [ring][tid]
+ * @tid_rx: Per-ring, per-TID RX statistics [ring][tid]
  */
 struct ath12k_dp_pdev_tid_stats {
 	struct ath12k_tid_tx_stats tid_tx[DP_TCL_NUM_RING_MAX][VOW_DATA_TID_MAX];
+	struct ath12k_tid_rx_stats tid_rx[DP_REO_DST_RING_MAX][VOW_DATA_TID_MAX];
 };
 
 /**
  * struct ath12k_dp_aggr_pdev_tid_stats
  * @tid_tx: per-TID TX statistics [tid]
+ * @tid_rx: per-TID RX statistics [tid]
  * Per-TID stats aggregated across rings
  */
 struct ath12k_dp_aggr_pdev_tid_stats {
 	struct ath12k_tid_tx_stats tid_tx[VOW_DATA_TID_MAX];
+	struct ath12k_tid_rx_stats tid_rx[VOW_DATA_TID_MAX];
 };
 
 struct ath12k_qos_stats {
@@ -1685,6 +1745,15 @@ void ath12k_dp_update_hist_stats(struct hist_stats *hist_stats, u32 value);
  */
 void ath12k_dp_hist_init(struct hist_stats *hist_stats,
 			 enum hist_types hist_type);
+
+/**
+ * ath12k_dp_tid_rx_stats_hist_init - Initialize delay histograms for per-TID RX stats
+ * @dp_pdev: DP pdev handle
+ *
+ * Initializes delay histograms (reap-to-stack and interframe) for all
+ * per ring, per tid during pdev allocation.
+ */
+void ath12k_dp_tid_rx_stats_hist_init(struct ath12k_pdev_dp *dp_pdev);
 
 /**
  * ath12k_dp_tid_tx_stats_hist_init() - Initialize delay histograms for per-TID TX stats
