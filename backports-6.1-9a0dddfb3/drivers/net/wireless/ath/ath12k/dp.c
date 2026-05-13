@@ -180,6 +180,9 @@ EXPORT_SYMBOL(ath12k_dp_tid_map_precedence);
 u32 ath12k_dp_reo_dst_ring_size[DP_REO_DST_RING_MAX];
 EXPORT_SYMBOL(ath12k_dp_reo_dst_ring_size);
 
+u32 ath12k_dp_tcl_data_ring_size[DP_TCL_NUM_RING_MAX];
+EXPORT_SYMBOL(ath12k_dp_tcl_data_ring_size);
+
 enum ath12k_dp_desc_type {
 	ATH12K_DP_TX_DESC,
 	ATH12K_DP_RX_DESC,
@@ -2157,6 +2160,12 @@ int ath12k_dp_cmn_device_init(struct ath12k_dp *dp)
 	ath12k_dp_reo_dst_ring_size[2] = DP_REO_DST_RING2_SIZE;
 	ath12k_dp_reo_dst_ring_size[3] = DP_REO_DST_RING3_SIZE;
 	ath12k_dp_reo_dst_ring_size[4] = DP_REO_DST_RING4_SIZE;
+
+	ath12k_dp_tcl_data_ring_size[0] = DP_TCL_DATA_RING0_SIZE;
+	ath12k_dp_tcl_data_ring_size[1] = DP_TCL_DATA_RING1_SIZE;
+	ath12k_dp_tcl_data_ring_size[2] = DP_TCL_DATA_RING2_SIZE;
+	ath12k_dp_tcl_data_ring_size[3] = DP_TCL_DATA_RING3_SIZE;
+	ath12k_dp_tcl_data_ring_size[4] = DP_TCL_DATA_RING4_SIZE;
 
 	if (test_bit(ATH12K_FLAG_RECOVERY, &dp->ab->dev_flags) &&
 	    dp->ab->soc_reset_reason == ATH12K_Q6_BCR_RESET) {
