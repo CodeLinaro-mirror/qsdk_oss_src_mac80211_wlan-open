@@ -2665,6 +2665,7 @@ static void ath12k_wmi_migration_cmd_work(struct work_struct *work)
 	struct ath12k_dp_peer *ml_peer;
 	struct ath12k_sta *ahsta;
 	const struct ath12k_hw_ops *hw_ops = ar->ab->hw_params->hw_ops;
+	u16 ml_peer_id;
 
 	if (wait_for_completion_timeout(&arvif->wmi_migration_event_resp,
 					ATH12K_MIGRATION_TIMEOUT_HZ))
@@ -2676,10 +2677,6 @@ static void ath12k_wmi_migration_cmd_work(struct work_struct *work)
 
 	list_for_each_entry_safe(peer_node, tmp_peer, &arvif->peer_migrate_list, list) {
 		rcu_read_lock();
-		/* TODO: Need to check if we ml_peer_id validation
-		 */
-		ml_peer = rcu_dereference(ah->dp_hw.dp_peer_list[peer_node->ml_peer_id]);
-
 		/* Use wifi8-specific DP migration handler.
 		 * otherwise use default behavior (wifi7)
 		 */
@@ -2687,6 +2684,8 @@ static void ath12k_wmi_migration_cmd_work(struct work_struct *work)
 			hw_ops->dp_peer_migration(arvif, peer_node);
 		} else {
 			/* Default behavior for wifi7 */
+			ml_peer_id = peer_node->ml_peer_id | ATH12K_PEER_ML_ID_VALID;
+			ml_peer = rcu_dereference(ah->dp_hw.dp_peer_list[ml_peer_id]);
 			if (ml_peer &&
 			    ml_peer->dp_peer_state < ATH12K_DP_PEER_LOGICALLY_DELETED) {
 				ahsta = ath12k_sta_to_ahsta(ml_peer->sta);
@@ -6398,6 +6397,17 @@ void ath12k_mac_ap_ps_recalc(struct ath12k *ar)
 				 ar->pdev->pdev_id, state);
 }
 
+static void ath12k_free_peer_migrate_list(struct ath12k_link_vif *arvif)
+{
+	struct ath12k_mac_pri_link_migr_peer_node *peer_node, *tmp_peer;
+
+	list_for_each_entry_safe(peer_node, tmp_peer, &arvif->peer_migrate_list,
+				 list) {
+		list_del(&peer_node->list);
+		kfree(peer_node);
+	}
+}
+
 static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 					     struct ath12k_link_vif *arvif)
 {
@@ -6429,6 +6439,8 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 			  &arvif->peer_ch_width_switch_work);
 	wiphy_work_cancel(ah->hw->wiphy, &arvif->set_dscp_tid_work);
 	cancel_work_sync(&arvif->wmi_migration_cmd_work);
+	if (!list_empty(&arvif->peer_migrate_list))
+		ath12k_free_peer_migrate_list(arvif);
 
 	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
 			 "mac remove link interface (vdev %d link id %d)",
