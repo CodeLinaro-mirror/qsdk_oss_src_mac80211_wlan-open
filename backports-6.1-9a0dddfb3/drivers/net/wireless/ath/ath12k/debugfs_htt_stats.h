@@ -3131,6 +3131,7 @@ struct htt_print_sta_ul_ofdma_stats_tlv {
 #define ATH12K_HTT_NUM_AC_WMM				0x4
 #define ATH12K_HTT_MAX_NUM_SBT_INTR			4
 #define ATH12K_HTT_TX_NUM_BE_MUMIMO_USER_STATS		8
+#define ATH12K_HTT_TX_NUM_BN_MUMIMO_USER_STATS		8
 #define ATH12K_HTT_TX_PDEV_STATS_NUM_TX_ERR_STATUS	7
 #define ATH12K_HTT_STATS_NUM_MAX_MUMIMO_SZ		8
 #define ATH12K_HTT_STATS_MUMIMO_TPUT_NUM_BINS		10
@@ -3311,6 +3312,21 @@ struct ath12k_htt_tx_selfgen_bn_stats_tlv {
 	__le32 manual_bn_mu_ulofdma_basic_trigger[ATH12K_HTT_NUM_AC_WMM];
 	__le32 manual_bn_mu_ulofdma_basic_trigger_err[ATH12K_HTT_NUM_AC_WMM];
 	__le32 bn_basic_trig_ru_alloc_mode[ATH12K_HTT_BN_UL_OFDMA_NUM_RU_ALLOC_MODES];
+
+	__le32 bn_ulmumimo_trigger;
+	__le32 bn_ul_mumimo_trigger[ATH12K_HTT_TX_NUM_BN_MUMIMO_USER_STATS];
+	__le32 combined_bn_ulmumimo_trigger_tried[ATH12K_HTT_NUM_AC_WMM];
+	__le32 combined_bn_ulmumimo_trigger_err[ATH12K_HTT_NUM_AC_WMM];
+	__le32 standalone_bn_ulmumimo_trigger_tried[ATH12K_HTT_NUM_AC_WMM];
+	__le32 standalone_bn_ulmumimo_trigger_err[ATH12K_HTT_NUM_AC_WMM];
+
+	__le32 sta_dps_bn_bsr_trigger[ATH12K_HTT_NUM_AC_WMM];
+	__le32 sta_dps_bn_mu_rts_trigger[ATH12K_HTT_NUM_AC_WMM];
+	__le32 sta_dps_bn_bsr_trigger_err[ATH12K_HTT_NUM_AC_WMM];
+	__le32 sta_dps_bn_mu_rts_trigger_err[ATH12K_HTT_NUM_AC_WMM];
+
+	__le32 bn_basic_trig_ru_alloc_mode_err[ATH12K_HTT_BN_UL_OFDMA_NUM_RU_ALLOC_MODES];
+
 } __packed;
 
 struct ath12k_htt_tx_selfgen_ac_err_stats_tlv {
