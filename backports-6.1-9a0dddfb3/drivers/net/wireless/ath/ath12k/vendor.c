@@ -7036,7 +7036,7 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 	}
 
 	if (tb[QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_COMMAND]) {
-		ath12k_err(NULL,
+		ath12k_dbg(NULL, ATH12K_DBG_CFG,
 			   "wiphy:%p wdev: %p Extract wifi params\n",
 			   wiphy, wdev);
 		memset(&wifi_params, 0, sizeof(struct ath12k_wifi_generic_params));
