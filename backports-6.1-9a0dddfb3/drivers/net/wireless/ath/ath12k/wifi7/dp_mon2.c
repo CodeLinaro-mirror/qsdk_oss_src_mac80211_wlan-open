@@ -1959,6 +1959,7 @@ unlock:
 			spin_unlock_bh(&dp->dp_lock);
 			rcu_read_unlock_bh();
 			/* Send PPDU notification to registered listeners */
+			ppdu_info->device_id = ath12k_get_ab_device_id(dp->ab);
 			ath12k_dp_rx_mon_ppdu_notify(ppdu_info);
 free_buf:
 			page_frag_free(status_desc->mon_buf);
