@@ -323,4 +323,7 @@ void ath12k_dp_rx_peer_tid_ba_config(struct ath12k_dp *dp, u8 tid, u32 *ba_win_s
 				     u16 *ssn);
 bool ath12k_dp_rx_peer_tid_skip_pn_replay(struct ath12k_dp *dp, u8 tid);
 int ath12k_dp_rxdma_ring_sel_config(struct ath12k_base *ab);
+u16 ath12k_wifi7_dp_rx_get_peer_id(struct ath12k_base *ab,
+				   enum ath12k_peer_metadata_version ver,
+				   __le32 peer_metadata);
 #endif /* ATH12K_DP_RX_H */
