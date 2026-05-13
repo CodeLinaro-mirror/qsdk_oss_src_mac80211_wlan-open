@@ -11822,6 +11822,9 @@ static void ath12k_scan_event(struct ath12k_base *ab, struct sk_buff *skb)
 		break;
 	case WMI_SCAN_EVENT_COMPLETED:
 		ath12k_wmi_event_scan_completed(ar);
+#ifdef CPTCFG_QCN_EXTN
+		ath12k_cbs_resume_post_mac80211_scan(ar);
+#endif
 		break;
 	case WMI_SCAN_EVENT_BSS_CHANNEL:
 		ath12k_wmi_event_scan_bss_chan(ar, le32_to_cpu(scan_ev.scan_id),
