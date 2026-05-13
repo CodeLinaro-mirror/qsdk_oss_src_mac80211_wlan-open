@@ -433,6 +433,7 @@ ath12k_dp_mon_rx_config_filters(struct ath12k_dp *dp,
 	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	int i, ret;
+	struct ath12k_base *ab = dp->ab;
 
 	for (i = 0; i < dp->hw_params->num_rxdma_per_pdev; i++) {
 		int ring_buf_size, mac_id, ring_id;
@@ -1859,6 +1860,7 @@ ath12k_dp_mon_tx_htt_update_filters(struct ath12k_dp *dp,
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	int ret = -EINVAL;
 	enum hal_ring_type ring_type = HAL_TX_MONITOR_DST;
+	struct ath12k_base *ab = dp->ab;
 
 	int ring_buf_size, mac_id, ring_id;
 

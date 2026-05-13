@@ -177,6 +177,9 @@ int ath12k_dp_tid_map_precedence(struct ath12k_dp_hw_group *dp_hw_grp)
 }
 EXPORT_SYMBOL(ath12k_dp_tid_map_precedence);
 
+u32 ath12k_dp_reo_dst_ring_size[DP_REO_DST_RING_MAX];
+EXPORT_SYMBOL(ath12k_dp_reo_dst_ring_size);
+
 enum ath12k_dp_desc_type {
 	ATH12K_DP_TX_DESC,
 	ATH12K_DP_RX_DESC,
@@ -2147,6 +2150,13 @@ void ath12k_dp_cmn_device_deinit(struct ath12k_dp *dp)
 int ath12k_dp_cmn_device_init(struct ath12k_dp *dp)
 {
 	int ret;
+	struct ath12k_base *ab = dp->ab;
+
+	ath12k_dp_reo_dst_ring_size[0] = DP_REO_DST_RING0_SIZE;
+	ath12k_dp_reo_dst_ring_size[1] = DP_REO_DST_RING1_SIZE;
+	ath12k_dp_reo_dst_ring_size[2] = DP_REO_DST_RING2_SIZE;
+	ath12k_dp_reo_dst_ring_size[3] = DP_REO_DST_RING3_SIZE;
+	ath12k_dp_reo_dst_ring_size[4] = DP_REO_DST_RING4_SIZE;
 
 	if (test_bit(ATH12K_FLAG_RECOVERY, &dp->ab->dev_flags) &&
 	    dp->ab->soc_reset_reason == ATH12K_Q6_BCR_RESET) {
