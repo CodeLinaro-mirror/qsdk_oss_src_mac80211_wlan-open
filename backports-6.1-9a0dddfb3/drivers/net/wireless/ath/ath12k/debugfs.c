@@ -6716,6 +6716,7 @@ static ssize_t ath12k_write_reset_dp_stats(struct file *file,
 	struct ath12k_dp_peer *dp_peer;
 	struct ath12k_link_vif *arvif;
 	struct ath12k_dp_vif *dp_vif;
+	struct ath12k_pdev_dp *dp_pdev;
 	u32 reset;
 	int i = 0;
 
@@ -6779,6 +6780,12 @@ static ssize_t ath12k_write_reset_dp_stats(struct file *file,
 
 	for (i = 0; i < ah->num_radio; i++) {
 		ar = &ah->radio[i];
+		dp_pdev = &ar->dp;
+		if (dp_pdev && ath12k_dp_vow_stats_enabled(dp_pdev)) {
+			memset(&dp_pdev->tid_stats, 0, sizeof(dp_pdev->tid_stats));
+			dp_pdev->prev_tx_enq_tstamp = 0;
+			dp_pdev->prev_rx_timestamp = 0;
+		}
 		list_for_each_entry(arvif, &ar->arvifs, list) {
 			dp_vif = &arvif->ahvif->dp_vif;
 			memset(&dp_vif->stats, 0, sizeof(dp_vif->stats));
