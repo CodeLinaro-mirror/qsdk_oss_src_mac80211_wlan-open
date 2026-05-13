@@ -1620,10 +1620,16 @@ struct hal_wbm_completion_ring_rx {
 	__le32 addr_lo;
 	__le32 addr_hi;
 	__le32 info0;
-	struct rx_mpdu_desc rx_mpdu_info;
-	struct rx_msdu_desc rx_msdu_info;
+	union {
+		struct rx_mpdu_desc rx_mpdu_info;
+		__le64 info1;
+	};
+	union {
+		struct rx_msdu_desc rx_msdu_info;
+		__le32 info2;
+	};
 	__le32 phy_addr_lo;
-	__le32 info1;
+	__le32 info3;
 } __packed;
 
 #define HAL_WBM_COMPL_TX_INFO0_REL_SRC_MODULE		GENMASK(2, 0)

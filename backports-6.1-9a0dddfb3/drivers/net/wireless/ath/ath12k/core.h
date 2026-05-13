@@ -828,6 +828,7 @@ struct ath12k_vlan_iface {
 struct ath12k_dp_vif {
 	u32 dp_features;
 	u8 tx_encap_type;
+	u8 rx_decap_type;
 	u8 search_type;
 	u8 hal_addr_search_flags;
 	u8 vdev_id_check_en;

@@ -492,7 +492,6 @@ void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 	struct ath12k_rx_desc_info *rx_desc, *tmp_rx_desc;
 	u8 mgr = dp->hal->hal_params->rx_buf_rbm;
 	int allocated_entries = 0;
-	bool is_dma_inv_done = false;
 
 	/* Check if descriptors are already initialized (reuse mode) */
 	if (reuse) {
@@ -503,41 +502,28 @@ void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 	} else {
 		/* Normal mode: allocate and initialize new descriptors */
 		list_for_each_entry_safe(rx_desc, tmp_rx_desc, used_list, list) {
-#ifdef CPTCFG_MAC80211_SFE_SUPPORT
-			skb = netdev_alloc_skb_fast(NULL, DP_RX_BUFFER_SIZE);
-#else
-			skb = dev_alloc_skb(DP_RX_BUFFER_SIZE);
-#endif
+			skb = ath12k_dp_alloc_skb(DP_RX_BUFFER_SIZE);
 			if (unlikely(!skb))
 				break;
 
-#ifndef CONFIG_IO_COHERENCY
-			if (unlikely(!skb->fast_recycled)) {
-#ifndef PLATFORM_SDX85
-				dmac_inv_range_no_dsb(skb->data,
-						      skb->data + DP_RX_BUFFER_SIZE);
-#endif
-				is_dma_inv_done = true;
-			}
-#endif
-			ATH12K_IPA_DMA_MAP_SINGLE(ab, skb, paddr);
-			VIRT_TO_PHYS(skb, paddr);
-			if (unlikely(!paddr)) {
-				ath12k_dp_rx_skb_free(skb, dp, 0,
-						      DP_RX_ERR_DROP_REPLENISH);
-				break;
-			}
-			allocated_entries++;
 			rx_desc->skb = skb;
-			rx_desc->paddr = paddr;
 			rx_desc->vaddr = skb->data;
 			rx_desc->is_frag = 0;
-			rx_desc->in_use = true;
 
-			IPA_SET_RX_BUF_SMMU_MAP(ab, skb);
+			paddr = ath12k_dp_rx_buffer_map(dp, rx_desc);
+
+			if (unlikely(paddr == DMA_MAPPING_ERROR)) {
+				ath12k_dp_rx_skb_free(skb, dp, 0,
+						      DP_RX_ERR_DROP_REPLENISH);
+				rx_desc->skb = NULL;
+				rx_desc->vaddr = NULL;
+				break;
+			}
+
+			rx_desc->paddr = paddr;
+			allocated_entries++;
 		}
-		if (unlikely(is_dma_inv_done))
-			dsb(st);
+		ath12k_dsb();
 	}
 
 	spin_lock_bh(&srng->lock);
@@ -555,6 +541,7 @@ void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 
 		allocated_entries--;
 
+		rx_desc->in_use = 1;
 		ath12k_hal_rx_buf_addr_info_set(desc, rx_desc->paddr, rx_desc->cookie, mgr);
 	}
 
@@ -1056,11 +1043,6 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp_peer *peer = NULL;
 	struct ath12k_dp_link_peer *link_peer = NULL;
 	struct ath12k_vif *ahvif;
-	struct ieee80211_vif *vif;
-#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
-	struct ath12k_skb_rxcb *rxcb = NULL;
-	int mhdr_len = 0;
-#endif
 	u8 addr[ETH_ALEN] = {0};
 
 	rcu_read_lock();
@@ -1128,31 +1110,6 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 
 	ath12k_dbg_dump(ab, ATH12K_DBG_DP_RX, NULL, "dp rx msdu: ",
 			msdu->data, msdu->len);
-
-#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
-	/* Mark the msdu containing Meta header */
-	rxcb = ATH12K_SKB_RXCB(msdu);
-	if (rxcb->mhdr) {
-		link_peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev,
-								     peer_id);
-		if (link_peer) {
-			vif = ath12k_dp_link_peer_get_vif(link_peer);
-			ahvif = ath12k_vif_to_ahvif(vif);
-			mhdr_len = ahvif->dp_vif.dp_extn.mhdr_len;
-		}
-		if (unlikely(!mhdr_len))
-			goto out_free_mhdr;
-
-		if (skb_headroom(msdu) < ahvif->dp_vif.dp_extn.mhdr_len)
-			goto out_free_mhdr;
-
-		memcpy(msdu->data - mhdr_len, rxcb->mhdr, mhdr_len);
-		ieee80211_mark_mmesh_frame(status);
-out_free_mhdr:
-		kfree(rxcb->mhdr);
-		rxcb->mhdr = NULL;
-	}
-#endif
 
 	rx_status = IEEE80211_SKB_RXCB(msdu);
 	*rx_status = *status;

@@ -154,7 +154,6 @@ struct ath12k_dp_peer {
 	struct list_head list;
 	struct ieee80211_sta *sta;
 	struct ieee80211_vif *vif;
-	struct net_device *dev;
 	struct rcu_head rcu_head;
 	enum ath12k_dp_peer_state dp_peer_state;
 	u16 tcl_metadata;
@@ -178,15 +177,10 @@ struct ath12k_dp_peer {
 	u32 peer_links_map;
 	bool primary_link_frag_setup;
 
-	bool is_authorized;
-	bool mscs_session_exists;
-
 	enum hal_pn_type pn_type;
 
 	struct ieee80211_key_conf *keys[WMI_MAX_KEY_INDEX + 1];
 	struct ath12k_dp_rx_tid rx_tid[ATH12K_MAX_TIDS];
-
-	bool use_4addr;
 
 	struct ath12k_dp_peer_qos *qos;
 	/* Info used in MMIC verification of * RX fragments */
@@ -203,17 +197,23 @@ struct ath12k_dp_peer {
 
 	u8 hw_links[ATH12K_GROUP_MAX_RADIO];
 	struct ath12k_dp_peer_stats stats[ATH12K_DP_MAX_MLO_LINKS];
-#if defined(CPTCFG_MAC80211_PPE_SUPPORT) || defined(CPTCFG_ATH12K_PPE_DS_SUPPORT)
-	int ppe_vp_num;
-#endif
 	struct ath12k_mscs_ctxt mscs_ctxt;
 	struct ath12k_dp_preserved_stats link_peer_delete_stats;
 	struct ath12k_dp_peer_ext_ctx *peer_ext_ctx;
 	u8 is_sta_bss_peer_4addr :1,
 	   is_11s_mesh_peer      :1,
-	   is_mmesh_peer         :1;
+	   is_mmesh_peer         :1,
+	   is_authorized         :1,
+	   mscs_session_exists	 :1,
+	   use_4addr		 :1;
+#if defined(CPTCFG_MAC80211_PPE_SUPPORT) || defined(CPTCFG_ATH12K_PPE_DS_SUPPORT)
+	int ppe_vp_num;
+#endif
+	struct net_device *dev;
 	u16 stats_id;
 	u16 tid_stats_id[ATH12K_MAX_TIDS];
+	u8 tx_encap_type;
+	u8 rx_decap_type;
 };
 
 #define QOS_MSDUQ_MAX ((QOS_TID_MDSUQ_MAX * QOS_TID_MAX) + MSDUQ_MAX_DEF)

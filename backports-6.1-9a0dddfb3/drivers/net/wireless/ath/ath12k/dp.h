@@ -1632,4 +1632,115 @@ int ath12k_dp_ppe_rxole_rxdma_cfg(struct ath12k_base *ab);
 void ath12k_dp_increment_bank_num_users(struct ath12k_dp *dp,
 					int bank_id);
 #endif
+
+#ifdef CPTCFG_QCN_EXTN
+void ath12k_dp_srng_dst_invalidate_entries(struct ath12k_dp *dp,
+					   struct hal_srng *srng,
+					   int entries);
+
+dma_addr_t ath12k_dp_rx_buffer_map(struct ath12k_dp *dp,
+				   struct ath12k_rx_desc_info *rx_sw_desc);
+
+void ath12k_dp_rx_buffer_unmap(struct ath12k_dp *dp,
+			       struct ath12k_rx_desc_info *rx_sw_desc);
+
+struct sk_buff *ath12k_dp_alloc_skb(int size);
+
+void ath12k_dsb(void);
+#else
+static inline
+void ath12k_dp_srng_dst_invalidate_entries(struct ath12k_dp *dp,
+					   struct hal_srng *srng,
+					   int entries)
+{
+	u32 tp, hp;
+	dma_addr_t desc_paddr;
+
+	if (!(srng->flags & HAL_SRNG_FLAGS_CACHED))
+		return;
+
+	tp = srng->u.dst_ring.tp;
+	hp = srng->u.dst_ring.cached_hp;
+
+	desc_paddr = srng->ring_base_paddr + (tp * sizeof(u32));
+	if (hp > tp) {
+		dma_sync_single_for_cpu(dp->dev, desc_paddr,
+					entries * sizeof(u32),
+					DMA_FROM_DEVICE);
+	} else {
+		entries = srng->ring_size - tp;
+		dma_sync_single_for_cpu(dp->dev, desc_paddr,
+					entries * sizeof(u32),
+					DMA_FROM_DEVICE);
+		entries = hp;
+		dma_sync_single_for_cpu(dp->dev,
+					srng->ring_base_paddr,
+					entries * sizeof(u32),
+					DMA_FROM_DEVICE);
+	}
+}
+
+static inline
+dma_addr_t ath12k_dp_rx_buffer_map(struct ath12k_dp *dp,
+				   struct ath12k_rx_desc_info *rx_sw_desc)
+{
+	dma_addr_t dma_addr;
+
+	dma_addr = dma_map_single(dp->dev, (void *)rx_sw_desc->vaddr,
+				  DP_RX_BUFFER_SIZE, DMA_FROM_DEVICE);
+
+	if (dma_mapping_error(dp->dev, dma_addr)) {
+		/* increment error stats */
+		return DMA_MAPPING_ERROR;
+	}
+
+	return dma_addr;
+}
+
+static inline
+void ath12k_dp_rx_buffer_unmap(struct ath12k_dp *dp,
+			       struct ath12k_rx_desc_info *rx_sw_desc)
+{
+	dma_unmap_single(dp->dev, rx_sw_desc->paddr,
+			 DP_RX_BUFFER_SIZE, DMA_FROM_DEVICE);
+}
+
+static inline
+dma_addr_t ath12k_dp_tx_buffer_map(struct ath12k_dp *dp,
+				   struct ath12k_tx_desc_info *tx_sw_desc)
+{
+	dma_addr_t dma_addr;
+
+	dma_addr = dma_map_single(dp->dev, (void *)tx_sw_desc->skb->data,
+				  tx_sw_desc->len, DMA_TO_DEVICE);
+
+	if (dma_mapping_error(dp->dev, dma_addr)) {
+		/* increment error stats */
+		return DMA_MAPPING_ERROR;
+	}
+
+	return dma_addr;
+}
+
+static inline
+void ath12k_dp_tx_buffer_unmap(struct ath12k_dp *dp,
+			       struct ath12k_tx_desc_info *tx_sw_desc)
+{
+	dma_unmap_single(dp->dev, tx_sw_desc->paddr,
+			 tx_sw_desc->length, DMA_TO_DEVICE);
+}
+
+static inline void ath12k_dsb(void)
+{
+	/* this is empty function as data sync barrier is not needed
+	 * as we use map and unmap APIs
+	 */
+}
+
+struct sk_buff *ath12k_dp_alloc_skb(int size)
+{
+	return dev_alloc_skb(size);
+}
+
+#endif
 #endif

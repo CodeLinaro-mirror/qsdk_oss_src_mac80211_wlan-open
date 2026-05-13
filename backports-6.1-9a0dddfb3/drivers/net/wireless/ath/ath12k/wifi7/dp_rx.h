@@ -11,6 +11,10 @@
 #include "../dp_rx.h"
 #include "hal_desc.h"
 #include "hal.h"
+#include "../fse.h"
+#include "../debug.h"
+
+#define MAX_TP_TIDS	8
 
 struct dp_rx_fse {
 	struct hal_rx_fse *hal_fse;
@@ -19,6 +23,24 @@ struct dp_rx_fse {
 	u8 reo_indication;
 	bool is_valid;
 };
+
+struct link_peer_rx_tid_stats {
+	u32 received_frm_reo_cnt		: 8,
+	    received_frm_reo_bytes		: 24;
+	u32 sent_to_stack_ucast			: 8,
+	    sent_to_stack_ucast_bytes		: 24;
+	u32 sent_to_stack_ucast_fast		: 8,
+	    sent_to_stack_ucast_fast_bytes	: 24;
+	u32 sent_to_stack_mcast			: 8,
+	    sent_to_stack_mcast_bytes		: 24;
+	u32 sent_to_stack_mcast_fast		: 8,
+	    sent_to_stack_mcast_fast_bytes	: 24;
+	u32 sg_cnt				: 8,
+	    sg_bytes				: 24;
+	u8 non_amsdu;
+	u8 amsdu;
+	u8 mpdu_retry;
+} __aligned(64);
 
 int ath12k_wifi7_dp_reo_cmd_send(struct ath12k_base *ab,
 				 void *data, size_t len,
@@ -100,4 +122,761 @@ int ath12k_wifi7_dp_rx_ring_setup(struct ath12k_base *ab);
 int ath12k_wifi7_dp_rx_flow_fse_cache_operation(struct ath12k_base *ab,
 						enum dp_flow_fst_operation op_code,
 						struct hal_flow_tuple_info *tuple_info);
+
+static inline
+void ath12k_wifi7_dp_rx_h_csum_offload(struct sk_buff *msdu,
+				       struct rx_msdu_desc_info *rx_msdu_info)
+{
+	msdu->ip_summed = (rx_msdu_info->tcp_udp_chksum_fail ||
+			   rx_msdu_info->ip_chksum_fail) ?
+		CHECKSUM_NONE : CHECKSUM_UNNECESSARY;
+}
+
+static inline
+void ath12k_wifi7_dp_rx_desc_get_crypto_header(struct ath12k_base *ab,
+					       struct hal_rx_desc *desc,
+					       u8 *crypto_hdr,
+					       enum hal_encrypt_type enctype)
+{
+	ab->hw_params->hal_ops->rx_desc_get_crypto_header(desc, crypto_hdr,
+			enctype);
+}
+
+static inline void
+ath12k_wifi7_dp_rx_update_peer_stats(struct ath12k_pdev_dp *pdev,
+				     struct ath12k_dp_peer *peer,
+				     struct link_peer_rx_tid_stats *stats,
+				     int ring_id, u8 hw_link_id,
+				     u8 active_tid_mask)
+{
+	int i;
+	u8 link_id = ath12k_dp_peer_get_stats_link_id(pdev->dp->ab, peer,
+						      hw_link_id);
+	struct ath12k_dp_peer_stats *pstats = &peer->stats[link_id];
+	struct ath12k_dp_peer_rx_stats *rx = &pstats->rx[ring_id];
+
+	for (i = 0; i < MAX_TP_TIDS; i++) {
+		if (!(active_tid_mask & (1 << i))) {
+			stats++;
+			continue;
+		}
+
+		rx->recv_from_reo.packets += stats->received_frm_reo_cnt;
+		rx->recv_from_reo.bytes += stats->received_frm_reo_bytes;
+
+		/* ideally we should have both ucast and mcast pkts sent to stack
+		 * stats rather than just one sent_to_stack_fast stats
+		 */
+		rx->sent_to_stack_fast.packets += stats->sent_to_stack_ucast_fast +
+						stats->sent_to_stack_mcast_fast;
+
+		rx->sent_to_stack_fast.bytes += stats->sent_to_stack_ucast_fast_bytes +
+						stats->sent_to_stack_mcast_fast_bytes;
+
+		rx->sent_to_stack_ucast_fast.packets += stats->sent_to_stack_ucast_fast;
+		rx->sent_to_stack_ucast_fast.bytes += stats->sent_to_stack_ucast_fast_bytes;
+		rx->sent_to_stack_mcast_fast.packets += stats->sent_to_stack_mcast_fast;
+		rx->sent_to_stack_mcast_fast.bytes += stats->sent_to_stack_mcast_fast_bytes;
+
+		rx->msdu_part_of_amsdu += stats->amsdu;
+		rx->non_amsdu += stats->non_amsdu;
+		rx->mpdu_retry += stats->mpdu_retry;
+
+		if (stats->sent_to_stack_ucast) {
+			rx->ucast.packets += stats->sent_to_stack_ucast;
+			rx->ucast.bytes += stats->sent_to_stack_ucast_bytes;
+
+			/* ideally we should have both ucast and mcast pkts sent to stack
+			 * stats rather than just one sent_to_stack stats.
+			 */
+			rx->sent_to_stack.packets += stats->sent_to_stack_ucast;
+			rx->sent_to_stack.bytes +=  stats->sent_to_stack_ucast_bytes;
+		}
+
+		if (stats->sent_to_stack_mcast) {
+			rx->mcast.packets += stats->sent_to_stack_mcast;
+			rx->mcast.bytes += stats->sent_to_stack_mcast_bytes;
+
+			/* ideally we should have both ucast and mcast pkts sent to stack
+			 * stats rather than just one sent_to_stack stats.
+			 */
+			rx->sent_to_stack.packets += stats->sent_to_stack_mcast;
+			rx->sent_to_stack.bytes +=  stats->sent_to_stack_mcast_bytes;
+		}
+
+		if (stats->sg_cnt) {
+			rx->sg.packets += stats->sg_cnt;
+			rx->sg.bytes += stats->sg_bytes;
+		}
+		stats++;
+	}
+}
+
+static inline void
+ath12k_wifi7_dp_rx_update_vif_stats(struct ath12k_pdev_dp *pdev,
+				    struct ath12k_dp_peer *peer,
+				    struct link_peer_rx_tid_stats *stats,
+				    int ring_id, u8 hw_link_id,
+				    u8 active_tid_mask)
+{
+	int i;
+	struct pcpu_netdev_tid_stats *tstats;
+	struct ieee80211_vif *vif;
+	struct ath12k_vif *ahvif;
+
+	if (ath12k_dp_stats_enabled(pdev) && ath12k_tid_stats_enabled(pdev)) {
+		vif = ath12k_dp_peer_get_vif(peer);
+		ahvif = ath12k_vif_to_ahvif(vif);
+
+		tstats = this_cpu_ptr(ahvif->tstats);
+		u64_stats_update_begin(&tstats->syncp);
+		for (i = 0; i < MAX_TP_TIDS; i++) {
+			if (!(active_tid_mask & (1 << i))) {
+				stats++;
+				continue;
+			}
+
+			tstats->tid_stats[i].rx_pkt_stats[ATH_RX_REO_PKTS] +=
+						stats->received_frm_reo_cnt;
+			tstats->tid_stats[i].rx_pkt_bytes[ATH_RX_REO_PKTS] +=
+						stats->received_frm_reo_bytes;
+
+			if (peer->rx_decap_type == DP_RX_DECAP_TYPE_ETHERNET2_DIX) {
+				tstats->tid_stats[i].rx_pkt_stats[ATH_RX_ETH_PKTS] +=
+					stats->sent_to_stack_ucast_fast +
+					stats->sent_to_stack_mcast_fast +
+					stats->sent_to_stack_ucast +
+					stats->sent_to_stack_mcast;
+				tstats->tid_stats[i].rx_pkt_bytes[ATH_RX_ETH_PKTS] +=
+					stats->sent_to_stack_ucast_fast_bytes +
+					stats->sent_to_stack_mcast_fast_bytes +
+					stats->sent_to_stack_ucast_bytes +
+					stats->sent_to_stack_mcast_bytes;
+			} else if (peer->rx_decap_type == DP_RX_DECAP_TYPE_NATIVE_WIFI) {
+				tstats->tid_stats[i].rx_pkt_stats[ATH_RX_NATIVE_WIFI_PKTS] +=
+					stats->sent_to_stack_ucast +
+					stats->sent_to_stack_mcast;
+				tstats->tid_stats[i].rx_pkt_bytes[ATH_RX_NATIVE_WIFI_PKTS] +=
+					stats->sent_to_stack_ucast_bytes +
+					stats->sent_to_stack_mcast_bytes;
+			} else {
+				tstats->tid_stats[i].rx_pkt_stats[ATH_RX_RAW_PKTS] +=
+					stats->sent_to_stack_ucast +
+					stats->sent_to_stack_mcast;
+				tstats->tid_stats[i].rx_pkt_bytes[ATH_RX_RAW_PKTS] +=
+					stats->sent_to_stack_ucast_bytes +
+					stats->sent_to_stack_mcast_bytes;
+			}
+			tstats->tid_stats[i].rx_pkt_stats[ATH_RX_TOTAL_OUT_PKTS] +=
+						stats->sent_to_stack_ucast +
+						stats->sent_to_stack_mcast;
+			tstats->tid_stats[i].rx_pkt_bytes[ATH_RX_TOTAL_OUT_PKTS] +=
+						stats->sent_to_stack_ucast_bytes +
+						stats->sent_to_stack_mcast_bytes;
+
+			stats++;
+		}
+		u64_stats_update_end(&tstats->syncp);
+	}
+}
+
+static inline void
+ath12k_wifi7_dp_rx_update_wmm_stats(struct ath12k_pdev_dp *pdev,
+				    struct ath12k_dp_peer *peer,
+				    struct link_peer_rx_tid_stats *stats,
+				    int ring_id, u8 hw_link_id,
+				    u8 active_tid_mask)
+{
+	int i;
+	struct ieee80211_vif *vif;
+	struct ath12k_vif *ahvif;
+	enum wme_ac ac;
+
+	vif = ath12k_dp_peer_get_vif(peer);
+	ahvif = ath12k_vif_to_ahvif(vif);
+
+	/* update of wmm stats happens at both dp_pdev and athvif level */
+	for (i = 0; i < MAX_TP_TIDS; i++) {
+		if (!(active_tid_mask & (1 << i))) {
+			stats++;
+			continue;
+		}
+
+		ac = ath12k_tid_to_ac(i > ATH12K_DSCP_PRIORITY ? 0 : i);
+
+		pdev->wmm_stats.total_wmm_rx_pkts[ac]++;
+		ahvif->wmm_stats.total_wmm_rx_pkts[ac]++;
+
+		stats++;
+	}
+}
+
+static inline void
+ath12k_wifi7_dp_rx_update_stats(struct ath12k_pdev_dp *pdev,
+				struct ath12k_dp_peer *peer,
+				struct link_peer_rx_tid_stats *stats,
+				int ring_id, u8 hw_link_id,
+				u8 active_tid_mask)
+{
+	ath12k_wifi7_dp_rx_update_peer_stats(pdev, peer, stats, ring_id, hw_link_id,
+					     active_tid_mask);
+
+	ath12k_wifi7_dp_rx_update_vif_stats(pdev, peer, stats, ring_id, hw_link_id,
+					    active_tid_mask);
+
+	ath12k_wifi7_dp_rx_update_wmm_stats(pdev, peer, stats, ring_id, hw_link_id,
+					    active_tid_mask);
+}
+
+static void ath12k_wifi7_dp_rx_h_undecap_nwifi(struct ath12k_pdev_dp *dp_pdev,
+					       struct sk_buff *msdu,
+					       enum hal_encrypt_type enctype,
+					       struct ieee80211_rx_status *status,
+					       struct hal_rx_desc *desc,
+					       bool mesh_ctrl_present, u16 qos_ctl)
+{
+	struct ath12k_dp *dp = dp_pdev->dp;
+	struct ath12k_base *ab = dp->ab;
+	u8 decap_hdr[DP_MAX_NWIFI_HDR_LEN];
+	struct ieee80211_hdr *hdr;
+	size_t hdr_len;
+	u8 *crypto_hdr;
+	int len;
+
+	/* pull decapped header */
+	hdr = (struct ieee80211_hdr *)msdu->data;
+	hdr_len = ieee80211_hdrlen(hdr->frame_control);
+	skb_pull(msdu, hdr_len);
+
+	/*  Rebuild qos header */
+	hdr->frame_control |= __cpu_to_le16(IEEE80211_STYPE_QOS_DATA);
+
+	/* Reset the order bit as the HT_Control header is stripped */
+	hdr->frame_control &= ~(__cpu_to_le16(IEEE80211_FCTL_ORDER));
+
+	if (mesh_ctrl_present)
+		qos_ctl |= IEEE80211_QOS_CTL_MESH_CONTROL_PRESENT;
+
+	/* TODO: Add other QoS ctl fields when required */
+
+	/* copy decap header before overwriting for reuse below */
+	memcpy(decap_hdr, hdr, hdr_len);
+
+	/* Rebuild crypto header for mac80211 use */
+	if (!(status->flag & RX_FLAG_IV_STRIPPED)) {
+		len = ath12k_dp_rx_crypto_param_len(dp, enctype);
+		crypto_hdr = skb_push(msdu, len);
+
+		ath12k_wifi7_dp_rx_desc_get_crypto_header(ab, desc,
+							  crypto_hdr, enctype);
+	}
+
+	memcpy(skb_push(msdu,
+			IEEE80211_QOS_CTL_LEN), &qos_ctl,
+			IEEE80211_QOS_CTL_LEN);
+	memcpy(skb_push(msdu, hdr_len), decap_hdr, hdr_len);
+}
+
+static inline u8
+ath12k_wifi7_rx_create_fraglist(struct ath12k_pdev_dp *dp_pdev,
+				struct hal_rx_spd_data **spd_desc,
+				u32 rx_tlv_sz,
+				struct ieee80211_rx_status *status)
+{
+	struct sk_buff *parent = NULL;
+	struct sk_buff *frag_list = NULL;
+	struct sk_buff *tmp = NULL;
+	struct rx_msdu_desc_info *rx_msdu_info;
+	u16 msdu_len;
+	u8 l3_pad_bytes;
+	u8 idx = 0;
+	u16 frag_list_len = 0;
+	u16 buf_size = DP_RX_BUFFER_SIZE;
+
+	rx_msdu_info = &((*spd_desc)->rx_msdu_info);
+
+	msdu_len = rx_msdu_info->msdu_length;
+	l3_pad_bytes = rx_msdu_info->l3_header_padding_msb ? 2 : 0;
+
+	parent = (*spd_desc)->msdu;
+
+	skb_put(parent, buf_size);
+	skb_pull(parent, rx_tlv_sz + l3_pad_bytes);
+
+	/* set checksum pass or fail only in parent skb */
+	ath12k_wifi7_dp_rx_h_csum_offload(parent, rx_msdu_info);
+
+	(*spd_desc)->first_sg_frame = 0;
+	do {
+		(*spd_desc)++;
+
+		if (!frag_list) {
+			frag_list = (*spd_desc)->msdu;
+			tmp = frag_list;
+		} else {
+			tmp->next = (*spd_desc)->msdu;
+			tmp = tmp->next;
+		}
+
+		if (msdu_len + rx_tlv_sz > buf_size) {
+			skb_put(tmp, buf_size);
+			msdu_len -= (buf_size - rx_tlv_sz);
+		} else {
+			skb_put(tmp, msdu_len + rx_tlv_sz);
+			msdu_len = 0;
+		}
+		skb_pull(tmp, rx_tlv_sz);
+		frag_list_len += tmp->len;
+		idx++;
+	} while (!(*spd_desc)->last_sg_frame);
+	(*spd_desc)->last_sg_frame = 0;
+
+	skb_shinfo(parent)->frag_list = frag_list;
+	parent->data_len += frag_list_len;
+	parent->len += frag_list_len;
+
+	/* save the parent skb in the last scratch_pad desc
+	 * the last spad->vaddr (TLV_HDR) of the SG frame
+	 * holds proper radio params and these parameters
+	 * are needed to fill ieee80211_rx_status based on
+	 * DECAP type.
+	 */
+	(*spd_desc)->msdu = parent;
+	return idx;
+}
+
+static inline
+bool ath12k_wifi7_compare_tlv_info(struct rx_tlv_info_1 *prev_tlv_info,
+				   struct rx_tlv_info_1 *tlv_info)
+{
+	if (prev_tlv_info->freq != tlv_info->freq ||
+	    prev_tlv_info->rate_mcs != tlv_info->rate_mcs ||
+	    prev_tlv_info->nss != tlv_info->nss ||
+	    prev_tlv_info->sgi != tlv_info->sgi ||
+	    prev_tlv_info->pkt_type != tlv_info->pkt_type ||
+	    prev_tlv_info->bw != tlv_info->bw)
+		return false;
+	else
+		return true;
+}
+
+static inline
+void ath12k_wifi7_copy_tlv_info(struct rx_tlv_info_1 *prev_tlv_info,
+				struct rx_tlv_info_1 *tlv_info)
+{
+	prev_tlv_info->freq = tlv_info->freq;
+	prev_tlv_info->rate_mcs = tlv_info->rate_mcs;
+	prev_tlv_info->nss = tlv_info->nss;
+	prev_tlv_info->sgi = tlv_info->sgi;
+	prev_tlv_info->pkt_type = tlv_info->pkt_type;
+	prev_tlv_info->bw = tlv_info->bw;
+}
+
+static inline bool
+is_ieee80211_frame_mcast(struct sk_buff *msdu)
+{
+	struct ieee80211_hdr *hdr;
+	u16 fc;
+	u8 *da;
+
+	hdr = (struct ieee80211_hdr *)msdu->data;
+
+	fc = le16_to_cpu(hdr->frame_control);
+
+	if (ieee80211_has_tods(fc) && ieee80211_has_fromds(fc)) {
+		/* WDS: DA = Address 3 */
+		da = hdr->addr3;
+	} else if (ieee80211_has_tods(fc)) {
+		/* STA -> DS: DA = Address 3 */
+		da = hdr->addr3;
+	} else {
+		/* DS -> STA or IBSS: DA = Address 1 */
+		da = hdr->addr1;
+	}
+
+	return(is_multicast_ether_addr(da) ? 1 : 0);
+}
+
+static inline
+int ath12k_wifi7_deliver_raw_frame(struct ath12k_pdev_dp *dp_pdev,
+				   struct hal_rx_spd_data *rx_spd,
+				   struct ath12k_dp_peer *peer,
+				   struct ieee80211_rx_status *status,
+				   struct napi_struct *napi,
+				   struct link_peer_rx_tid_stats *stats,
+				   struct rx_tlv_info_1 *prev_tlv_info)
+{
+	struct rx_msdu_desc_info *rx_msdu_info;
+	struct rx_mpdu_desc_info *rx_mpdu_info;
+	struct rx_tlv_info_1 *tlv_info;
+	struct ieee80211_rx_status *rx_status;
+	struct sk_buff *msdu = rx_spd->msdu;
+	struct ieee80211_sta *pubsta = NULL;
+	struct ath12k_hal *hal;
+	u8 *rx_tlv_hdr;
+	bool is_mcbc = false;
+
+	is_mcbc = is_ieee80211_frame_mcast(msdu);
+
+	hal = dp_pdev->dp->hal;
+
+	rx_msdu_info = &rx_spd->rx_msdu_info;
+	rx_mpdu_info = &rx_spd->rx_mpdu_info;
+
+	rx_tlv_hdr = rx_spd->vaddr;
+
+	status->flag &= ~(RX_FLAG_FAILED_FCS_CRC |
+			  RX_FLAG_MMIC_ERROR |
+			  RX_FLAG_DECRYPTED |
+			  RX_FLAG_IV_STRIPPED |
+			  RX_FLAG_MMIC_STRIPPED);
+
+	pubsta = peer->sta;
+	if (pubsta && pubsta->valid_links) {
+		status->link_valid = 1;
+		status->link_id = peer->hw_links[rx_spd->reo.src_link_id];
+	}
+
+	msdu->priority = rx_mpdu_info->tid;
+
+	ath12k_wifi7_dp_extract_rx_spd_data(hal,
+					    rx_spd,
+					    (struct hal_rx_desc *)rx_tlv_hdr, 1);
+
+	if (ath12k_hal_rx_h_is_decrypted(hal,
+					 (struct hal_rx_desc *)rx_tlv_hdr))
+		status->flag |= RX_FLAG_DECRYPTED | RX_FLAG_MMIC_STRIPPED;
+
+	/* copy from scratch_pad to ieee80211_rx_status */
+	tlv_info = &rx_spd->tlv_info;
+	ath12k_wifi7_dp_rx_h_ppdu(dp_pdev, status, tlv_info,
+				  HAL_WBM_REL_SRC_MODULE_REO);
+
+	ath12k_dp_rx_h_undecap_raw(dp_pdev, msdu,
+				   (struct hal_rx_desc *)rx_tlv_hdr,
+				   peer->sec_type,
+				   status, 1, peer->peer_id,
+				   rx_msdu_info->first_msdu,
+				   rx_msdu_info->last_msdu);
+
+	rx_status = IEEE80211_SKB_RXCB(msdu);
+	*rx_status = *status;
+
+	if (!is_mcbc) {
+		stats->sent_to_stack_ucast++;
+		stats->sent_to_stack_ucast_bytes += msdu->len;
+	} else {
+		stats->sent_to_stack_mcast++;
+		stats->sent_to_stack_mcast_bytes += msdu->len;
+	}
+
+	ieee80211_rx_napi(ath12k_dp_pdev_to_hw(dp_pdev), pubsta, msdu, napi);
+	return 1;
+}
+
+static inline
+int ath12k_wifi7_deliver_nwifi_frame(struct ath12k_pdev_dp *dp_pdev,
+				     struct hal_rx_spd_data *rx_spd,
+				     struct ath12k_dp_peer *peer,
+				     struct ieee80211_rx_status *status,
+				     struct napi_struct *napi,
+				     struct link_peer_rx_tid_stats *stats,
+				     struct rx_tlv_info_1 *prev_tlv_info)
+{
+	struct rx_msdu_desc_info *rx_msdu_info;
+	struct rx_mpdu_desc_info *rx_mpdu_info;
+	struct rx_tlv_info_1 *tlv_info;
+	struct ieee80211_rx_status *rx_status;
+	struct sk_buff *msdu = rx_spd->msdu;
+	struct ieee80211_sta *pubsta = NULL;
+	struct ath12k_hal *hal;
+	u8 *rx_tlv_hdr;
+	struct ieee80211_hdr *hdr;
+	u32 hdr_len;
+
+	/* ideally driver should not be doing this check.
+	 * instead HW should flag this with error_code
+	 * "rxdma_msdu_len_err" and release it via WBM
+	 * release ring, based on this error code driver
+	 * should drop the frame.
+	 */
+	hdr = (struct ieee80211_hdr *)msdu->data;
+	hdr_len = ieee80211_hdrlen(hdr->frame_control);
+	if ((likely(hdr_len > DP_MAX_NWIFI_HDR_LEN)))
+		WARN_ON(1);
+
+	hal = dp_pdev->dp->hal;
+
+	rx_msdu_info = &rx_spd->rx_msdu_info;
+	rx_mpdu_info = &rx_spd->rx_mpdu_info;
+
+	rx_tlv_hdr = rx_spd->vaddr;
+
+	status->flag |= RX_FLAG_DECRYPTED |
+			RX_FLAG_MMIC_STRIPPED |
+			RX_FLAG_IV_STRIPPED |
+			RX_FLAG_PN_VALIDATED |
+			RX_FLAG_SKIP_MONITOR |
+			RX_FLAG_DUP_VALIDATED;
+
+	pubsta = peer->sta;
+	if (pubsta && pubsta->valid_links) {
+		status->link_valid = 1;
+		status->link_id = peer->hw_links[rx_spd->reo.src_link_id];
+	}
+
+	msdu->priority = rx_mpdu_info->tid;
+
+	ath12k_wifi7_dp_rx_h_csum_offload(msdu, rx_msdu_info);
+
+	ath12k_wifi7_dp_extract_rx_spd_data(hal,
+					    rx_spd,
+					    (struct hal_rx_desc *)rx_tlv_hdr, 1);
+
+	/* copy from scratch_pad to ieee80211_rx_status */
+	tlv_info = &rx_spd->tlv_info;
+	ath12k_wifi7_dp_rx_h_ppdu(dp_pdev, status, tlv_info,
+				  HAL_WBM_REL_SRC_MODULE_REO);
+
+	ath12k_wifi7_dp_rx_h_undecap_nwifi(dp_pdev, msdu, peer->sec_type,
+					   status,
+					   (struct hal_rx_desc *)rx_tlv_hdr,
+					   rx_spd->tlv_info.mesh_ctrl_present,
+					   rx_mpdu_info->tid);
+
+	rx_status = IEEE80211_SKB_RXCB(msdu);
+	*rx_status = *status;
+
+	if (!rx_msdu_info->da_is_mcbc) {
+		stats->sent_to_stack_ucast++;
+		stats->sent_to_stack_ucast_bytes += msdu->len;
+	} else {
+		stats->sent_to_stack_mcast++;
+		stats->sent_to_stack_mcast_bytes += msdu->len;
+	}
+
+	ieee80211_rx_napi(ath12k_dp_pdev_to_hw(dp_pdev), pubsta, msdu, napi);
+	return 1;
+}
+
+#ifdef CPTCFG_QCN_EXTN
+int ath12k_wifi7_deliver_ethernet_frame(struct ath12k_pdev_dp *dp_pdev,
+					struct hal_rx_spd_data *rx_spd,
+					struct ath12k_dp_peer *peer,
+					struct ieee80211_rx_status *status,
+					struct napi_struct *napi,
+					struct link_peer_rx_tid_stats *stats,
+					struct rx_tlv_info_1 *prev_tlv_info);
+#else
+static inline
+int ath12k_wifi7_deliver_ethernet_frame(struct ath12k_pdev_dp *dp_pdev,
+					struct hal_rx_spd_data *rx_spd,
+					struct ath12k_dp_peer *peer,
+					struct ieee80211_rx_status *status,
+					struct napi_struct *napi,
+					struct link_peer_rx_tid_stats *stats,
+					struct rx_tlv_info_1 *prev_tlv_info)
+{
+	struct rx_msdu_desc_info *rx_msdu_info;
+	struct rx_mpdu_desc_info *rx_mpdu_info;
+	struct rx_tlv_info_1 *tlv_info;
+	struct ieee80211_rx_status *rx_status;
+	struct sk_buff *msdu = rx_spd->msdu;
+	struct ath12k_dp *dp = dp_pdev->dp;
+	u8 *rx_tlv_hdr;
+	u8 tid;
+	struct ieee80211_sta *pubsta = NULL;
+	struct ath12k_hal *hal = dp_pdev->dp->hal;
+
+	rx_tlv_hdr = rx_spd->vaddr;
+	rx_msdu_info = &rx_spd->rx_msdu_info;
+	rx_mpdu_info = &rx_spd->rx_mpdu_info;
+	tid = rx_mpdu_info->tid;
+
+	/* set checksum pass or fail only in parent skb */
+	ath12k_wifi7_dp_rx_h_csum_offload(msdu, rx_msdu_info);
+
+	msdu->dev = peer->dev;
+
+	/* ieee80211_rx_status object is reset when ever there is a
+	 * peer change or radio change, if so extract radio params from
+	 * the current MSDUs TLV headers and set the status info
+	 * accordingly.
+	 * Note: Radio params (ie: band, nss, sgi etc...) remain same
+	 */
+	ath12k_wifi7_dp_extract_rx_spd_data(hal, rx_spd,
+					    (struct hal_rx_desc *)rx_tlv_hdr,
+					    1);
+
+	tlv_info = &rx_spd->tlv_info;
+
+	if (unlikely(!ath12k_wifi7_compare_tlv_info(prev_tlv_info,
+						    tlv_info))) {
+		ath12k_wifi7_dp_rx_h_ppdu(dp_pdev,
+					  status,
+					  tlv_info,
+					  HAL_WBM_REL_SRC_MODULE_REO);
+
+		status->flag |= RX_FLAG_8023 |
+			RX_FLAG_DECRYPTED |
+			RX_FLAG_MMIC_STRIPPED |
+			RX_FLAG_IV_STRIPPED |
+			RX_FLAG_PN_VALIDATED |
+			RX_FLAG_SKIP_MONITOR |
+			RX_FLAG_DUP_VALIDATED;
+		ath12k_wifi7_copy_tlv_info(prev_tlv_info, tlv_info);
+	}
+	pubsta = peer->sta;
+	if (pubsta && pubsta->valid_links) {
+		status->link_valid = 1;
+		status->link_id = peer->hw_links[rx_spd->reo.src_link_id];
+	}
+
+	msdu->priority = rx_mpdu_info->tid;
+
+	/* convert 802.3 frame to 802.11 frame so MAC80211 can create APVLAN
+	 * interface
+	 */
+	if (!peer->use_4addr &&
+	    (rx_spd->rx_msdu_info.fr_ds && rx_spd->rx_msdu_info.to_ds)) {
+		ath12k_wifi7_convert_eth_2_80211_frame(rx_spd);
+		status->flag &= ~RX_FLAG_8023;
+	}
+
+	rx_status = IEEE80211_SKB_RXCB(msdu);
+	*rx_status = *status;
+
+	if (rx_msdu_info->da_is_mcbc) {
+		stats->sent_to_stack_mcast++;
+		stats->sent_to_stack_mcast_bytes += msdu->len;
+	} else {
+		stats->sent_to_stack_ucast++;
+		stats->sent_to_stack_ucast_bytes += msdu->len;
+	}
+
+	dp->device_stats.non_fast_unicast_rx[rx_spd->reo.ring_id][dp->device_id]++;
+	prefetch(skb_shinfo(msdu));
+
+	ieee80211_rx_napi(ath12k_dp_pdev_to_hw(dp_pdev), pubsta, msdu, napi);
+
+	return 1;
+}
+#endif
+
+static inline
+struct ath12k_rx_desc_info *
+ath12k_wifi7_get_sw_desc_from_hw_wbm_desc(struct hal_wbm_completion_ring_rx *hw_rx_desc)
+{
+	u64 desc_va = 0;
+
+	desc_va = ((u64)le32_to_cpu(hw_rx_desc->addr_hi) << 32 |
+		   le32_to_cpu(hw_rx_desc->addr_lo));
+	return (struct ath12k_rx_desc_info *)((unsigned long)desc_va);
+}
+
+static inline
+struct ath12k_rx_desc_info *
+ath12k_wifi7_get_sw_desc_from_hw_desc(struct hal_reo_dest_ring *hw_rx_desc)
+{
+	u64 desc_va = 0;
+
+	desc_va = ((u64)le32_to_cpu(hw_rx_desc->buf_va_hi) << 32 |
+		   le32_to_cpu(hw_rx_desc->buf_va_lo));
+
+	return (struct ath12k_rx_desc_info *)((unsigned long)desc_va);
+}
+
+static inline
+void ath12k_wifi7_rx_sw_desc_sanity_check(struct ath12k_rx_desc_info *sw_desc)
+{
+	if (!sw_desc) {
+		pr_err("looks like HW cookie conversion table is corrupted");
+		WARN_ON(1);
+	}
+
+	if (unlikely(sw_desc->magic != ATH12K_DP_RX_DESC_MAGIC)) {
+		pr_err("Check HW CC implementation");
+			WARN_ON(1);
+	}
+
+	if (unlikely(!sw_desc->in_use)) {
+		pr_err("The SW descriptor is in free pool (!in_use), yet HW released it to host");
+		WARN_ON(1);
+	}
+}
+
+static inline
+void ath12k_wifi7_cpy_hw_wbm_rx_desc_to_spad_desc(struct hal_wbm_completion_ring_rx *hw_desc,
+						  struct hal_rx_spd_data *rx_spd)
+{
+	rx_spd->info1 = le64_to_cpu(hw_desc->info1);
+	rx_spd->info2 = le32_to_cpu(hw_desc->info2);
+	rx_spd->info0 = le32_to_cpu(hw_desc->info0);
+}
+
+static inline
+void ath12k_wifi7_cpy_hw_rx_desc_to_spad_desc(struct hal_reo_dest_ring *hw_desc,
+					      struct hal_rx_spd_data *rx_spd)
+{
+	rx_spd->info1 = le64_to_cpu(hw_desc->info1);
+	rx_spd->info2 = le32_to_cpu(hw_desc->info2);
+	rx_spd->info0 = le32_to_cpu(hw_desc->info0);
+}
+
+static inline
+void ath12k_wifi7_pretech_next_sw_desc(struct hal_reo_dest_ring *hw_rx_desc)
+{
+	u64 desc_va = 0;
+	struct ath12k_rx_desc_info *sw_desc = NULL;
+
+	desc_va = ((u64)le32_to_cpu(hw_rx_desc->buf_va_hi) << 32 |
+		   le32_to_cpu(hw_rx_desc->buf_va_lo));
+	sw_desc = (struct ath12k_rx_desc_info *)((unsigned long)desc_va);
+
+	if (sw_desc)
+		prefetch(sw_desc);
+}
+
+static inline
+void ath12k_wifi7_convert_eth_2_80211_frame(struct hal_rx_spd_data *rx_spd)
+{
+	struct ieee80211_hdr hdr;
+	struct sk_buff *msdu = rx_spd->msdu;
+	struct ethhdr *eth;
+	u8 da[ETH_ALEN];
+	u8 sa[ETH_ALEN];
+	u8 hdr_len;
+	u16 tid = rx_spd->rx_mpdu_info.tid;
+	struct ath12k_dp_rx_rfc1042_hdr rfc = {0xaa, 0xaa, 0x03, {0x00, 0x00, 0x00}};
+
+	eth = (struct ethhdr *)msdu->data;
+	ether_addr_copy(da, eth->h_dest);
+	ether_addr_copy(sa, eth->h_source);
+	rfc.snap_type = eth->h_proto;
+
+	hdr.frame_control = rx_spd->frame_ctl;
+	hdr.duration_id = rx_spd->duration_id;
+	hdr.seq_ctrl = rx_spd->seq_ctl;
+
+	ether_addr_copy(hdr.addr1, rx_spd->ad1);
+	ether_addr_copy(hdr.addr2, rx_spd->ad2);
+
+	ether_addr_copy(hdr.addr3, da);
+	ether_addr_copy(hdr.addr4, sa);
+
+	hdr_len = ieee80211_hdrlen(hdr.frame_control);
+
+	skb_pull(msdu, sizeof(*eth));
+	memcpy(skb_push(msdu, sizeof(rfc)), &rfc, sizeof(rfc));
+
+	skb_push(msdu, hdr_len);
+	memcpy(msdu->data, &hdr, min(hdr_len, sizeof(hdr)));
+
+	if (ieee80211_is_data_qos(hdr.frame_control)) {
+		struct ieee80211_hdr *qhdr = (struct ieee80211_hdr *)msdu->data;
+
+		memcpy(ieee80211_get_qos_ctl(qhdr), &tid, IEEE80211_QOS_CTL_LEN);
+	}
+}
+
 #endif

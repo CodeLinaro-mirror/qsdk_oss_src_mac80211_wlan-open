@@ -990,6 +990,9 @@ struct hal_srng {
 	/* Virtual base address of the ring */
 	u32 *ring_base_vaddr;
 
+	/* Virtual end address of the ring */
+	u32 *ring_vaddr_end;
+
 	/* Number of entries in ring */
 	u32 num_entries;
 
@@ -1971,4 +1974,9 @@ ath12k_hal_get_tlv_params(struct ath12k_hal *hal,
 			  u16 *tlv_tag,
 			  u32 *tlv_userid,
 			  u16 *tlv_len);
+void *__ath12k_hal_get_dst_srng_desc(struct hal_srng *srng,
+				     u32 *curr_tp,
+				     void **next_desc);
+int __ath12k_hal_srng_dst_num_available_to_reap(struct hal_srng *srng,
+						bool sync_hw_ptr);
 #endif
