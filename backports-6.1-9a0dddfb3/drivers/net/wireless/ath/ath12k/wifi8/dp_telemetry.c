@@ -93,3 +93,24 @@ int ath12k_wifi8_dp_telemetry_deinit(struct ath12k_dp *dp)
 	ath12k_wifi8_hal_tasc_peer_rx_cfg(dp->ab, false);
 	return 0;
 }
+
+int ath12k_wifi8_dp_telemetry_peer_config(struct ath12k_dp *dp, u16 stats_id,
+					  u16 link_band_id[HAL_TASC_BAND_MAX])
+{
+	ath12k_wifi8_hal_tasc_peer_tx_set_id(dp->ab, stats_id);
+	ath12k_wifi8_hal_tasc_peer_tx_band(dp->ab, link_band_id, 1);
+
+	ath12k_wifi8_hal_tasc_peer_rx_set_id(dp->ab, stats_id);
+	ath12k_wifi8_hal_tasc_peer_rx_band(dp->ab, link_band_id, 1);
+	return 0;
+}
+
+int ath12k_wifi8_dp_telemetry_peer_delete(struct ath12k_dp *dp, u16 stats_id,
+					  u16 link_band_id[HAL_TASC_BAND_MAX])
+{
+	ath12k_wifi8_hal_tasc_reset_peer_tx(dp->ab, stats_id);
+	ath12k_wifi8_hal_tasc_peer_tx_band(dp->ab, link_band_id, 0);
+	ath12k_wifi8_hal_tasc_reset_peer_rx(dp->ab, stats_id);
+	ath12k_wifi8_hal_tasc_peer_rx_band(dp->ab, link_band_id, 0);
+	return 0;
+}

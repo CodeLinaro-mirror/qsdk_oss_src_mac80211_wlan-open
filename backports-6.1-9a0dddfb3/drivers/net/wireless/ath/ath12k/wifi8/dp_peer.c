@@ -14,6 +14,7 @@
 #include "../telemetry_agent_if.h"
 #include "dp_tx.h"
 #include "../dp_tx.h"
+#include "dp_telemetry.h"
 
 #define ATH12K_DP_MAX_SEQ_NUM	0xFFF
 #define ATH12K_DP_MAX_POSSIBLE_BA_WIN	0x400
@@ -295,8 +296,10 @@ void ath12k_wifi8_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 	struct ath12k_dp_peer *dp_peer;
 	struct ath12k_dp_hw *dp_hw = &ah->dp_hw;
 	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8;
+	u16 link_band_id[HAL_TASC_BAND_MAX];
 	u16 peerid_index;
 	struct ath12k_sta *ahsta;
+	int i;
 
 	dp_hw_grp_wifi8 = ath12k_get_dp_hw_group_wifi8(dp->dp_hw_grp);
 
@@ -317,6 +320,12 @@ void ath12k_wifi8_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 	}
 
 	list_del(&dp_peer->list);
+
+	/* reset the telemetry peer stats based configs */
+	for (i = 0; i < HAL_TASC_BAND_MAX; i++)
+		link_band_id[i] = DP_TELEMETRY_INVALID_LINK_BAND_ID;
+
+	ath12k_wifi8_dp_telemetry_peer_delete(dp, dp_peer->stats_id, link_band_id);
 
 	dp_hw_grp_wifi8->stats_id_map[dp_peer->stats_id].dp_peer_id =
 		ATH12K_MLO_PEER_ID_INVALID;
@@ -357,11 +366,14 @@ int ath12k_wifi8_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 			       struct ath12k_dp_vif *dp_vif, u8 *addr)
 {
 	struct ath12k_ast_entry_config_params ast_param = {0};
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_group_wifi8;
 	struct ath12k_dp_peer_ext_ctx *peer_ext_ctx = NULL;
 	struct ath12k_dp_link_peer *link_peer = NULL;
+	u16 link_band_id[HAL_TASC_BAND_MAX];
 	dma_addr_t pn_counter_paddr = 0;
 	struct ath12k_dp_peer *dp_peer;
 	dma_addr_t tx_classify_paddr;
+	struct ath12k_dp *umac_dp;
 	void *tx_classify_vaddr;
 	bool is_qos = true;
 	int ret, i;
@@ -385,6 +397,12 @@ int ath12k_wifi8_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 		return -ENOMEM;
 	}
 
+	for (i = 0; i < HAL_TASC_BAND_MAX; i++)
+		link_band_id[i] = DP_TELEMETRY_INVALID_LINK_BAND_ID;
+
+	dp_hw_group_wifi8 = ath12k_get_dp_hw_group_wifi8(dp->dp_hw_grp);
+	umac_dp = dp_hw_group_wifi8->cumac_dp;
+
 	dp_peer->peer_ext_ctx = peer_ext_ctx;
 	spin_lock_init(&peer_ext_ctx->tx_flow_info.tx_q_lock);
 	rcu_read_lock();
@@ -396,12 +414,19 @@ int ath12k_wifi8_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 		set_bit(link_peer->hw_link_id,
 			&peer_ext_ctx->tx_flow_info.assoc_hw_links_bitmap);
 
+		link_band_id[link_peer->hw_link_id] = link_peer->link_band_id;
+
 		if (dp_peer->is_vdev_peer) {
 			vdev_peer_link_id = dp_peer->hw_links[link_peer->hw_link_id];
 			break;
 		}
 	}
+
 	rcu_read_unlock();
+
+	/* Configure peer registers for telemetry stats */
+	ath12k_wifi8_dp_telemetry_peer_config(umac_dp, dp_peer->stats_id, link_band_id);
+
 	ret = ath12k_dp_tx_classify_info_alloc(dp->dp_hw_grp,
 					       &tx_classify_paddr,
 					       &tx_classify_vaddr);

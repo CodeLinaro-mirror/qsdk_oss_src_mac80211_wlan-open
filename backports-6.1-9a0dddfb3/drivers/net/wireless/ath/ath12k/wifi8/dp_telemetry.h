@@ -19,11 +19,16 @@
 	  DP_TELEMETRY_MAX_GCAST_DL_PEERS + \
 	  DP_TELEMETRY_MAX_GCAST_UL_PEERS))
 
+#define DP_TELEMETRY_INVALID_LINK_BAND_ID	2046
+
 int ath12k_wifi8_dp_telemetry_ring_setup(struct ath12k_base *ab);
 int ath12k_wifi8_dp_telemetry_ring_cleanup(struct ath12k_base *ab);
 int ath12k_wifi8_dp_process_tx_peer_telemetry(struct ath12k_dp *dp);
 int ath12k_wifi8_dp_process_rx_peer_telemetry(struct ath12k_dp *dp);
 int ath12k_wifi8_dp_telemetry_init(struct ath12k_dp *dp);
 int ath12k_wifi8_dp_telemetry_deinit(struct ath12k_dp *dp);
-
+int ath12k_wifi8_dp_telemetry_peer_config(struct ath12k_dp *dp, u16 stats_id,
+					  u16 link_band_id[HAL_TASC_BAND_MAX]);
+int ath12k_wifi8_dp_telemetry_peer_delete(struct ath12k_dp *dp, u16 stats_id,
+					  u16 link_band_id[HAL_TASC_BAND_MAX]);
 #endif
