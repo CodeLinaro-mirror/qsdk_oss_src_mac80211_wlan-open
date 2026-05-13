@@ -1878,26 +1878,31 @@ free_tables:
 	return ret;
 }
 
-void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
+void ath12k_mac_dp_peer_cleanup(struct ath12k *ar)
 {
-	struct list_head peers;
-	struct ath12k_dp_link_peer *peer, *tmp;
+	struct list_head peers, dp_peer_list;
+	struct ath12k_dp_link_peer *peer, *tmp_link_peer;
 	struct ath12k_base *ab = ar->ab;
-	struct ath12k_dp_peer *dp_peer;
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_dp_peer *dp_peer, *tmp_dp_peer;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_link_vif *arvif, *tmp_vif;
-	struct ath12k_dp_hw *dp_hw = &ar->ah->dp_hw;
+	struct ieee80211_sta *sta;
+	struct ath12k_sta *ahsta;
+	struct ath12k_hw *ah = ar->ah;
+	struct ath12k_dp_hw *dp_hw = &ah->dp_hw;
 	struct ath12k_dp_rx_tid *rx_tid;
 	int i, num_tids;
 	u16 peerid_index;
 
 	INIT_LIST_HEAD(&peers);
+	INIT_LIST_HEAD(&dp_peer_list);
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
 	num_tids = ab->hal.hal_params->num_tids;
 	spin_lock_bh(&dp->dp_lock);
-	list_for_each_entry_safe(peer, tmp, &dp->peers, list) {
+	list_for_each_entry_safe(peer, tmp_link_peer, &dp->peers, list) {
 		ath12k_dp_ipa_peer_notify(ar, peer, NULL, peer->vdev_id, false);
 		/*Skip this for non primary_links and vdev peers*/
 		if (ath12k_dp_link_peer_get_sta(peer) && peer->dp_peer &&
@@ -1919,6 +1924,27 @@ void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 				dp_peer->peer_links_map &= ~BIT(peer->link_id);
 			rcu_assign_pointer(dp_peer->link_peers[peer->link_id], NULL);
 			rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], NULL);
+
+			/*vdev peer cleanup is taken care later*/
+			if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE2 &&
+			    !dp_peer->is_vdev_peer && dp_peer->peer_links_map == 0) {
+				ath12k_dbg(ab, ATH12K_DBG_MAC | ATH12K_DBG_PEER,
+					   "dp_peer %pM dosent have active link_peers\n",
+					   dp_peer->addr);
+				if (dp_peer->is_mlo &&
+				    dp_peer->peer_id != ATH12K_MLO_PEER_ID_INVALID) {
+					sta = ath12k_dp_peer_get_sta(dp_peer);
+					ahsta = ath12k_sta_to_ahsta(sta);
+					clear_bit(dp_peer->peer_id,
+						  dp_hw->free_peer_id_map);
+					clear_bit(ahsta->ml_peer_id,
+						  ah->free_ml_peer_id_map);
+					ahsta->ml_peer_id = ATH12K_MLO_PEER_ID_INVALID;
+					ah->num_ml_peers--;
+				}
+				list_del(&dp_peer->list);
+				list_add(&dp_peer->list, &dp_peer_list);
+			}
 		}
 		spin_unlock_bh(&dp_hw->peer_lock);
 
@@ -1930,7 +1956,8 @@ void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 
 	synchronize_rcu();
 
-	list_for_each_entry_safe(peer, tmp, &peers, list) {
+	/*Link peer cleanup part*/
+	list_for_each_entry_safe(peer, tmp_link_peer, &peers, list) {
 		if (ath12k_dp_link_peer_get_sta(peer) && peer->dp_peer &&
 		    peer->primary_link) {
 			for (i = 0; i < num_tids; i++) {
@@ -1963,66 +1990,20 @@ void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 		ath12k_link_sta_rhash_tbl_destroy(ab);
 		ath12k_link_sta_rhash_tbl_init(ab);
 	}
+
 	/* Delete all the self dp_peers on asserted radio
 	 */
 	list_for_each_entry_safe_reverse(arvif, tmp_vif, &ar->arvifs, list) {
 		if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
-			ath12k_dp_arch_peer_delete(dp, ar->ah, arvif->bssid,
+			ath12k_dp_arch_peer_delete(dp, ah, arvif->bssid,
 						   NULL, ar->hw_link_id);
 			arvif->num_stations = 0;
 			arvif->num_peers = 0;
 		}
 	}
 
-	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
-			 "ath12k mac peer cleanup done\n");
-}
-
-void ath12k_mac_dp_peer_cleanup(struct ath12k_hw *ah,
-				enum ath12k_mlo_recovery_mode recovery_mode)
-{
-	struct ath12k_dp_hw *dp_hw = &ah->dp_hw;
-	struct ath12k_dp_peer *dp_peer, *tmp;
-	struct ath12k_sta *ahsta = NULL;
-	u16 peerid_index;
-	struct list_head peers;
-
-	INIT_LIST_HEAD(&peers);
-
-	spin_lock_bh(&dp_hw->peer_lock);
-	list_for_each_entry_safe(dp_peer, tmp, &dp_hw->peers, list) {
-
-		if (!ath12k_dp_peer_get_sta(dp_peer) || dp_peer->is_vdev_peer) {
-			ath12k_generic_dbg(ATH12K_DBG_MAC, ATH12K_DBG_L1,
-				   	   "Skipping vdev self dp_peer delete on addr %pM\n",
-				   	   dp_peer->addr);
-			continue;
-		}
-
-		/* In case of Mode-1 recovery No need free NoN-ML sta dp_peer
-		 */
-
-		if(recovery_mode == ATH12K_MLO_RECOVERY_MODE1 && !dp_peer->is_mlo)
-			continue;
-
-		if (dp_peer->is_mlo && dp_peer->peer_id != ATH12K_MLO_PEER_ID_INVALID) {
-			ahsta = ath12k_sta_to_ahsta(ath12k_dp_peer_get_sta(dp_peer));
-			peerid_index = dp_peer->peer_id;
-			rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], NULL);
-			clear_bit(dp_peer->peer_id, dp_hw->free_peer_id_map);
-			clear_bit(ahsta->ml_peer_id, ah->free_ml_peer_id_map);
-			ahsta->ml_peer_id = ATH12K_MLO_PEER_ID_INVALID;
-			ah->num_ml_peers--;
-		}
-		list_del(&dp_peer->list);
-		list_add(&dp_peer->list, &peers);
-	}
-
-	spin_unlock_bh(&dp_hw->peer_lock);
-
-	synchronize_rcu();
-
-	list_for_each_entry_safe(dp_peer, tmp, &peers, list) {
+	/*Dp peer cleanup part*/
+	list_for_each_entry_safe(dp_peer, tmp_dp_peer, &dp_peer_list, list) {
 		list_del(&dp_peer->list);
 
 		if (dp_peer->qos && dp_peer->qos->telemetry_peer_ctx)
@@ -2033,10 +2014,10 @@ void ath12k_mac_dp_peer_cleanup(struct ath12k_hw *ah,
 		if (!dp_peer->peer_links_map) {
 			kfree(dp_peer->qos);
 			kfree(dp_peer);
-		} else
-			ath12k_err(NULL, "Skipping dp_peer (%pM) due to links_map (%u)",
-				   dp_peer->addr, dp_peer->peer_links_map);
+		}
 	}
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
+			 "ath12k mac peer cleanup done\n");
 }
 
 static int ath12k_mac_vdev_setup_sync(struct ath12k *ar)
@@ -17942,6 +17923,10 @@ int ath12k_mac_op_start(struct ieee80211_hw *hw)
 
 	guard(mutex)(&ah->hw_mutex);
 
+	if (ath12k_hw_group_recovery_in_progress(ag) &&
+	    ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE0)
+		goto skip_state_check;
+
 	switch (ah->state) {
 	case ATH12K_HW_STATE_OFF:
 		ah->state = ATH12K_HW_STATE_ON;
@@ -17959,16 +17944,13 @@ int ath12k_mac_op_start(struct ieee80211_hw *hw)
 		return -EINVAL;
 	}
 
+skip_state_check:
 	for_each_ar(ah, ar, i) {
-		/* If the recovery mode is already advertised as Mode-1 this means mac op start
-		 * is already done and do mac_start for only asserted ab in case of Mode-1
-		 * can be allowed
-		 */
 
 		if (ar->ab->is_bypassed)
 			continue;
 
-		if (ar->ab->ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE0 || ar->ab->is_reset) {
+		if (!ath12k_hw_group_recovery_in_progress(ah->ag) || ar->ab->is_reset) {
 			ret = ath12k_mac_start(ar);
 			if (ret) {
 				ah->state = ATH12K_HW_STATE_OFF;
@@ -23638,6 +23620,7 @@ ath12k_mac_reconfig_complete(struct ieee80211_hw *hw,
 			     enum ieee80211_reconfig_type reconfig_type)
 {
         struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
+	struct ath12k_hw_group *ag = ah->ag;
 	struct ath12k *ar = NULL;
 	struct ath12k_base *ab = NULL;
         struct ath12k_vif *ahvif;
@@ -23651,10 +23634,14 @@ ath12k_mac_reconfig_complete(struct ieee80211_hw *hw,
 
 	guard(mutex)(&ah->hw_mutex);
 
-	if (ah->state != ATH12K_HW_STATE_RESTARTED)
-		return;
+	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE0) {
+		if (ah->state != ATH12K_HW_STATE_RESTARTED)
+			return;
 
-	ah->state = ATH12K_HW_STATE_ON;
+		ah->state = ATH12K_HW_STATE_ON;
+	} else {
+		WARN_ON(ah->state != ATH12K_HW_STATE_ON);
+	}
 
 	/* stop_queues() & wake_queues() will take care to stop/wake
 	 * all the queues. So checking on queue 0's status before
@@ -23700,6 +23687,7 @@ ath12k_mac_reconfig_complete(struct ieee80211_hw *hw,
 		if (recovery_count == ab->num_radios) {
 			atomic_dec(&ab->reset_count);
 			complete(&ab->reset_complete);
+			ab->post_reconfig_done = false;
 			ab->is_reset = false;
 			atomic_set(&ab->fail_cont_count, 0);
 			clear_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags);
