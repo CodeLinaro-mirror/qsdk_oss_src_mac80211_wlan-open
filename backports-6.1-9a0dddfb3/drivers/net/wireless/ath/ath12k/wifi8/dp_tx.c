@@ -1900,7 +1900,7 @@ ath12k_wifi8_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 	if (msdu_info->me_convert) {
 		gsn_valid = false;
 		msdu_info->tx_notify_frame = 0;
-		msdu_info->lookup_override = false;
+		msdu_info->lookup_override = true;
 		msdu_info->vdev_id = ahvif->dp_vif.dp_vif_id;
 	}
 
@@ -1936,6 +1936,19 @@ fail:
 	if (tx_desc)
 		ath12k_dp_tx_release_txbuf(central_dp, tx_desc, ring_id);
 	return drop_reason;
+}
+
+/**
+ * ath12k_wifi8_dp_tx_set_ast() - Fill ast hash & index
+ * @dp: DP structure
+ * @dp_peer: Peer structure
+ * @msdu_info: MSDU information
+ */
+void ath12k_wifi8_dp_tx_set_ast(struct ath12k_dp_peer *dp_peer,
+				struct ath12k_dp_tx_msdu_info *msdu_info)
+{
+	msdu_info->bss_ast_hash = dp_peer->peer_ext_ctx->ast_hash;
+	msdu_info->bss_ast_idx = dp_peer->peer_ext_ctx->ast_index;
 }
 
 /**
