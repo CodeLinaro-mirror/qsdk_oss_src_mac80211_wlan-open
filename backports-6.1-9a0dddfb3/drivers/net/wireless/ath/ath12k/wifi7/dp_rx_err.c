@@ -443,7 +443,7 @@ ath12k_wifi7_dp_process_wbm_rx_packets(struct ath12k_dp *dp,
 	struct hal_rx_desc *rx_desc;
 	int reason, device_id, pdev_idx;
 
-	__skb_queue_head_init(&msdu_list);
+	skb_queue_head_init(&msdu_list);
 
 	rcu_read_lock();
 
