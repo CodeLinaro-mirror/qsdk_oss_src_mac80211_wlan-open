@@ -103,7 +103,7 @@ int ath12k_dp_htt_connect(struct ath12k_dp *dp)
 			return status;
 	}
 
-	htt_logging_enable = ath12k_cfg_get(ab, ATH12K_CFG_HTT_LOGGING_ENABLE);
+	htt_logging_enable = DP_HTT_LOGGING_ENABLE;
 
 	if (htt_logging_enable) {
 		ath12k_dbg(ab, ATH12K_DBG_DP_HTT, "HTT logging enabled via INI\n");
