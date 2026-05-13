@@ -518,6 +518,9 @@ void ath12k_sdwf_update_peer_mcs_stats(struct tx_stats *qos_tx,
 	case DOT11_BE:
 		mcs = (mcs >= MAX_MCS_11BE) ? (MAX_MCS - 1) : mcs;
 		break;
+	case DOT11_BN:
+		mcs = (mcs >= MAX_MCS_11BN) ? (MAX_MCS - 1) : mcs;
+		break;
 	default:
 		break;
 	}
