@@ -12829,6 +12829,14 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 	},
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_TRIGGER_SCAN,
+		.doit = ath12k_vendor_parse_cbs_scan_params,
+		.policy = ath12k_vendor_scan_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_SCAN_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
 		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_GET_CHANNEL_SWITCH_TIME,
 		.doit = ath12k_vendor_get_channel_switch_time,
 		.policy = ath12k_vendor_channel_switch_time_policy,
