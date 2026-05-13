@@ -5301,16 +5301,13 @@ netdev_tx_t ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 	if (!tid_stats_disable)
 		skb->priority = cfg80211_classify8021d(skb, NULL);
 
-	if (likely(skb->fast_xmit &&
+	if (likely(ieee80211_sdata_running(sdata) && skb->fast_xmit &&
 		   (skb->pkt_type != PACKET_MULTICAST &&
 		    skb->pkt_type != PACKET_BROADCAST))) {
-		if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN) {
-			if (unlikely(!sdata->bss))
-				goto skip_fast_xmit;
 
+		if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN)
 			sdata = container_of(sdata->bss,
 					     struct ieee80211_sub_if_data, u.ap);
-		}
 
 		if (!tid_stats_disable)
 			ieee80211_tid_classifier(skb, sdata, true, TX_ETH_PKT);
@@ -5326,7 +5323,6 @@ netdev_tx_t ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 
 		return NETDEV_TX_OK;
 	}
-skip_fast_xmit:
 	skb->fast_xmit = false;
 	info->control.vif = &sdata->vif;
 #else
