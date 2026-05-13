@@ -379,6 +379,10 @@ struct ath12k *ath12k_sdwf_get_ar_from_vif(struct wireless_dev *wdev,
 		*peer_id = dp_peer->peer_id;
 	} else {
 		link_peer = rcu_dereference(dp_peer->link_peers[link_id]);
+		if (!link_peer) {
+			rcu_read_unlock();
+			return NULL;
+		}
 		*peer_id = link_peer->peer_id;
 	}
 	rcu_read_unlock();
