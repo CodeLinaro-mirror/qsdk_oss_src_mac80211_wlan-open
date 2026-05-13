@@ -839,9 +839,38 @@ struct ath12k_dp_peer_delay_stats {
 							     [DP_REO_DST_RING_MAX];
 };
 
+struct ath12k_dp_peer_tid_jitter_stats {
+	u32 tx_prev_delay;
+	u32 tx_avg_jitter;
+	u32 tx_avg_delay;
+	u64 tx_avg_err;
+	u64 tx_total_success;
+	u64 tx_drop;
+};
+
+DECLARE_EWMA(avg_sojourn, 10, 8)
+
+struct ath12k_dp_peer_tid_sojourn_stats {
+	struct ewma_avg_sojourn avg_sojourn_msdu;
+	u32 sum_sojourn_msdu;
+	u32 num_msdus;
+};
+
+struct ath12k_dp_peer_sojourn_stats {
+	struct ath12k_dp_peer_tid_sojourn_stats tid_stats[DP_TID_MAX]
+							 [DP_REO_DST_RING_MAX];
+};
+
+struct ath12k_dp_peer_jitter_stats {
+	struct ath12k_dp_peer_tid_jitter_stats tid_stats[DP_TID_MAX]
+							[DP_REO_DST_RING_MAX];
+};
+
 struct ath12k_dp_mld_peer_stats {
 	struct ath12k_dp_peer_hw_stats *hw_stats;
 	struct ath12k_dp_peer_delay_stats *delay_stats;
+	struct ath12k_dp_peer_jitter_stats *jitter_stats;
+	struct ath12k_dp_peer_sojourn_stats *sojourn_stats;
 };
 
 struct ath12k_dp_link_peer_stats {

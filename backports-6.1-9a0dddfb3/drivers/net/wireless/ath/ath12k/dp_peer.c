@@ -1878,6 +1878,60 @@ int ath12k_dp_alloc_delay_stats_peer(struct ath12k_dp_peer *dp_peer)
 	return 0;
 }
 
+int ath12k_dp_alloc_sojourn_stats_peer(struct ath12k_dp_peer *dp_peer)
+{
+	struct ath12k_dp_mld_peer_stats *mld_stats;
+	struct ath12k_dp_peer_sojourn_stats *sojourn_stats;
+	struct ath12k_dp_peer_tid_sojourn_stats *tid_stats;
+	int tid, ring;
+
+	if (!dp_peer)
+		return -EINVAL;
+
+	mld_stats = &dp_peer->mld_stats;
+
+	if (mld_stats->sojourn_stats)
+		return 0;
+
+	mld_stats->sojourn_stats =
+		kzalloc(sizeof(*mld_stats->sojourn_stats), GFP_ATOMIC);
+
+	if (!mld_stats->sojourn_stats)
+		return -ENOMEM;
+
+	sojourn_stats = mld_stats->sojourn_stats;
+
+	for (tid = 0; tid < DP_TID_MAX; tid++) {
+		for (ring = 0; ring < DP_REO_DST_RING_MAX; ring++) {
+			tid_stats = &sojourn_stats->tid_stats[tid][ring];
+			ewma_avg_sojourn_init(&tid_stats->avg_sojourn_msdu);
+		}
+	}
+
+	return 0;
+}
+
+int ath12k_dp_alloc_jitter_stats_peer(struct ath12k_dp_peer *dp_peer)
+{
+	struct ath12k_dp_mld_peer_stats *mld_stats;
+
+	if (!dp_peer)
+		return -EINVAL;
+
+	mld_stats = &dp_peer->mld_stats;
+
+	if (mld_stats->jitter_stats)
+		return 0;
+
+	mld_stats->jitter_stats =
+		kzalloc(sizeof(*mld_stats->jitter_stats), GFP_ATOMIC);
+
+	if (!mld_stats->jitter_stats)
+		return -ENOMEM;
+
+	return 0;
+}
+
 int ath12k_dp_peer_stats_alloc(struct ath12k_dp_peer *dp_peer,
 			       struct ath12k_pdev_dp *dp_pdev)
 {
@@ -1905,10 +1959,31 @@ int ath12k_dp_peer_stats_alloc(struct ath12k_dp_peer *dp_peer,
 
 	if (ath12k_dp_delay_stats_enabled(dp_pdev)) {
 		ret = ath12k_dp_alloc_delay_stats_peer(dp_peer);
-		if (ret)
+		if (ret) {
 			ath12k_warn(dp_pdev->ar->ab,
-				    "Failed to allocate delay stats for peer: %d\n", ret);
-		return ret;
+				    "Failed to allocate delay stats\n");
+			return ret;
+		}
+
+		ret = ath12k_dp_alloc_jitter_stats_peer(dp_peer);
+		if (ret) {
+			ath12k_warn(dp_pdev->ar->ab,
+				    "Failed to allocate jitter stats\n");
+			kfree(dp_peer->mld_stats.delay_stats);
+			dp_peer->mld_stats.delay_stats = NULL;
+			return ret;
+		}
+
+		ret = ath12k_dp_alloc_sojourn_stats_peer(dp_peer);
+		if (ret) {
+			ath12k_warn(dp_pdev->ar->ab,
+				    "Failed to allocate sojourn stats\n");
+			kfree(dp_peer->mld_stats.delay_stats);
+			dp_peer->mld_stats.delay_stats = NULL;
+			kfree(dp_peer->mld_stats.jitter_stats);
+			dp_peer->mld_stats.jitter_stats = NULL;
+			return ret;
+		}
 	}
 
 	return ret;
@@ -1925,6 +2000,12 @@ void ath12k_dp_peer_stats_free(struct ath12k_dp_peer *dp_peer)
 
 	kfree(dp_peer->mld_stats.delay_stats);
 	dp_peer->mld_stats.delay_stats = NULL;
+
+	kfree(dp_peer->mld_stats.jitter_stats);
+	dp_peer->mld_stats.jitter_stats = NULL;
+
+	kfree(dp_peer->mld_stats.sojourn_stats);
+	dp_peer->mld_stats.sojourn_stats = NULL;
 }
 EXPORT_SYMBOL(ath12k_dp_peer_stats_free);
 
