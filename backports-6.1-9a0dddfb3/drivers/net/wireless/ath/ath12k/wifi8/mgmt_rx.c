@@ -1312,6 +1312,13 @@ int ath12k_wifi8_mgmt_op_device_init(struct ath12k_mgmt *mgmt)
 	if (!ab->is_cumac_chip) {
 		ath12k_dbg(ab, ATH12K_DBG_MGMT,
 			   "Skip mgmt op init for non C-UMAC device %d", ab->device_id);
+		mgmt->init_done = true;
+		return 0;
+	}
+
+	if (mgmt->init_done) {
+		ath12k_dbg(ab, ATH12K_DBG_MGMT,
+			   "mgmt op init already completed for device %d", ab->device_id);
 		return 0;
 	}
 
@@ -1338,6 +1345,7 @@ int ath12k_wifi8_mgmt_op_device_init(struct ath12k_mgmt *mgmt)
 	ath12k_hif_mgmt_irq_enable(ab);
 
 	ath12k_info(ab, "C-UMAC init is success for mgmt on device %d", ab->device_id);
+	mgmt->init_done = true;
 	return 0;
 
 fail_srng_free:
@@ -1353,9 +1361,13 @@ void ath12k_wifi8_mgmt_op_device_deinit(struct ath12k_mgmt *mgmt)
 {
 	struct ath12k_base *ab = mgmt->ab;
 
+	if (!mgmt->init_done)
+		return;
+
 	if (!ab->is_cumac_chip) {
 		ath12k_dbg(ab, ATH12K_DBG_MGMT,
 			   "Skip mgmt op deinit for non C-UMAC device %d", ab->device_id);
+		mgmt->init_done = false;
 		return;
 	}
 
@@ -1364,6 +1376,7 @@ void ath12k_wifi8_mgmt_op_device_deinit(struct ath12k_mgmt *mgmt)
 	ath12k_mgmt_irq_grp_cleanup(mgmt);
 	ath12k_hif_mgmt_irq_cleanup(ab);
 	ath12k_wifi8_mgmt_rx_ring_free(ab);
+	mgmt->init_done = false;
 }
 
 int ath12k_wifi8_mgmt_wbm_ring_sel_config_qcn9625(struct ath12k_base *ab)
