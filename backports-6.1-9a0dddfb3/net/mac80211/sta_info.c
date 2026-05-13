@@ -2516,15 +2516,20 @@ sta_get_last_rx_stats(struct sta_info *sta, bool is_rx_bitrate, int link_id)
 
 	for_each_possible_cpu(cpu) {
 		struct ieee80211_sta_rx_stats *cpustats;
-		u16 rate;
+		u16 rate, prev_rate;
+		unsigned long last_rx, prev_last_rx;
 
 		cpustats = per_cpu_ptr(link_sta_info->pcpu_rx_stats, cpu);
 		rate = READ_ONCE(cpustats->last_rate);
+		last_rx = READ_ONCE(cpustats->last_rx);
 
 		if(!cpustats->last_rx || (is_rx_bitrate && (rate == STA_STATS_RATE_INVALID)))
 			continue;
 
-		if (time_after(cpustats->last_rx, stats->last_rx))
+		prev_rate = READ_ONCE(stats->last_rate);
+		prev_last_rx = READ_ONCE(stats->last_rx);
+		if (time_after(last_rx, prev_last_rx) ||
+		    (is_rx_bitrate && prev_rate == STA_STATS_RATE_INVALID))
 			stats = cpustats;
 	}
 
