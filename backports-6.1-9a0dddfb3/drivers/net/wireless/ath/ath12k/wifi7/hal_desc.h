@@ -1717,10 +1717,10 @@ struct hal_wbm_release_ring_tx {
 struct hal_wbm_release_ring_rx {
 	struct ath12k_buffer_addr buf_addr_info;
 	__le32 info0;
-	struct rx_mpdu_desc rx_mpdu_info;
-	struct rx_msdu_desc rx_msdu_info;
 	__le32 info1;
 	__le32 info2;
+	__le32 info3;
+	__le32 info4;
 } __packed;
 
 #define HAL_WBM_RELEASE_RX_CC_INFO0_RBM			GENMASK(12, 9)
@@ -1754,11 +1754,10 @@ struct hal_wbm_release_ring_cc_rx {
 struct hal_wbm_release_ring {
 	struct ath12k_buffer_addr buf_addr_info;
 	__le32 info0;
-	__le32 info1;
+	__le64 info1;
 	__le32 info2;
 	__le32 info3;
 	__le32 info4;
-	__le32 info5;
 } __packed;
 
 /* hal_wbm_release_ring

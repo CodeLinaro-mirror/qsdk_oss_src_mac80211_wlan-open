@@ -911,7 +911,7 @@ enum ath12k_rx_pkt_reasons {
 };
 
 enum ath12k_rx_drop_reasons {
-	ATH_RX_FREE_ALLOC,
+	ATH_RX_DESC_ADDR_ZERO,
 	ATH_RX_MSDU_BIT_MISS,
 	ATH_RX_INVALID_RBM,
 	ATH_RX_NULL_Q_DESC,
@@ -934,6 +934,8 @@ enum ath12k_rx_drop_reasons {
 	ATH_RX_EQUALS_SSN,
 	ATH_RX_ERR_FLAG_SET,
 	ATH_RX_DESC_BLOCKED,
+	ATH_RX_PN_FAIL,
+	ATH_RX_ERR_UNKNOWN,
 	ATH_RX_DROP_REASON_MAX
 };
 

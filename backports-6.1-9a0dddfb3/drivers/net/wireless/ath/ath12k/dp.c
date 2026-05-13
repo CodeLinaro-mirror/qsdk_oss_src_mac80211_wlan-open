@@ -2272,7 +2272,7 @@ void ath12k_dp_cmn_hw_group_unassign(struct ath12k_dp *dp,
 
 	lockdep_assert_held(&ag->mutex);
 
-	for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
+	for (i = 0; i < DP_TOTAL_REO_DST_RINGS; i++) {
 		if (!dp_hw_grp->rx_status_buf[i])
 			continue;
 		kfree(dp_hw_grp->rx_status_buf[i]);
@@ -2325,7 +2325,7 @@ void ath12k_dp_cmn_hw_group_assign(struct ath12k_dp *dp,
 		dp_hw_grp->tx_status_buf[i] = kzalloc(TX_STATUS_BUFFER_SIZE, GFP_KERNEL);
 	}
 
-	for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
+	for (i = 0; i < DP_TOTAL_REO_DST_RINGS; i++) {
 		if (dp_hw_grp->rx_status_buf[i])
 			continue;
 

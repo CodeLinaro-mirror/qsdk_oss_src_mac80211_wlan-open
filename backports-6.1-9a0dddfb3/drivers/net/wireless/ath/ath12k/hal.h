@@ -1560,6 +1560,11 @@ enum hal_reo_dest_ring_push_reason {
 	HAL_REO_DEST_RING_PUSH_REASON_RXDMA_FLUSH,
 };
 
+enum hal_rxdma_push_reason {
+	HAL_RXDMA_PUSH_REASON_ERR_DETECTED,
+	HAL_RXDMA_PUSH_REASON_ROUTING_INSTRUCTION,
+};
+
 /* Peer Metadata classification */
 
 /* Version 0 */
@@ -1711,6 +1716,8 @@ struct hal_ops {
 			void __iomem *hp_vaddr, dma_addr_t hp_paddr,
 			void __iomem *tp_vaddr, dma_addr_t tp_paddr);
 	void (*hal_ppeds_reo2ppe_cc_config)(struct ath12k_base *ab);
+
+	u32 (*hal_rx_h_mpdu_err)(struct hal_rx_desc *desc);
 };
 
 static inline
