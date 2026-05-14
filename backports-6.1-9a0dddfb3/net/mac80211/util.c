@@ -4127,6 +4127,330 @@ void ieee80211_awgn_detected_work(struct work_struct *work)
 	}
 }
 
+/*
+ * Puncture/unpuncture per-20MHz CAC helpers
+ * ==========================================
+ * For 11BE devices, a radar hit on a punctured 20 MHz sub-channel does not
+ * require a full channel change.  Instead we track up to 2 such sub-channels
+ * per chanctx through the NOL -> CAC -> available lifecycle using lightweight
+ * ieee80211_punct_obj objects.
+ */
+
+void ieee80211_punct_obj_init(struct ieee80211_local *local,
+			      struct ieee80211_chanctx *ctx,
+			      struct ieee80211_punct_obj *obj,
+			      u32 center_freq,
+			      unsigned long radar_hit_ts)
+{
+	wiphy_dbg(local->hw.wiphy,
+		  "DFS puncture: obj create freq=%u ctx=%p\n",
+		  center_freq, ctx);
+
+	INIT_LIST_HEAD(&obj->list);
+	obj->center_freq = center_freq;
+	obj->radar_ts = radar_hit_ts;
+	obj->ctx = ctx;
+	obj->local = local;
+	hrtimer_init(&obj->cac_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	obj->cac_timer.function = ieee80211_punct_cac_timeout;
+	wiphy_work_init(&obj->cac_work, ieee80211_punct_cac_work);
+}
+
+void ieee80211_punct_obj_free(struct ieee80211_local *local,
+			      struct ieee80211_chanctx *ctx,
+			      struct ieee80211_punct_obj *obj)
+{
+	list_del(&obj->list);
+	ctx->punct_obj_count--;
+	hrtimer_cancel(&obj->cac_timer);
+	wiphy_work_cancel(local->hw.wiphy, &obj->cac_work);
+	kfree(obj);
+}
+
+void ieee80211_punct_obj_list_free(struct ieee80211_local *local,
+				   struct ieee80211_chanctx *ctx)
+{
+	struct ieee80211_punct_obj *obj, *tmp;
+
+	list_for_each_entry_safe(obj, tmp, &ctx->punct_obj_list, list)
+		ieee80211_punct_obj_free(local, ctx, obj);
+}
+
+/**
+ * ieee80211_punct_obj_find_in_ctx - find puncture object by frequency
+ * @ctx: channel context that owns the puncture object list
+ * @center_freq: 20 MHz sub-channel center frequency in MHz
+ *
+ * Return: puncture object when found, otherwise NULL.
+ */
+static struct ieee80211_punct_obj *
+ieee80211_punct_obj_find_in_ctx(struct ieee80211_chanctx *ctx, u32 center_freq)
+{
+	struct ieee80211_punct_obj *obj;
+
+	list_for_each_entry(obj, &ctx->punct_obj_list, list) {
+		if (obj->center_freq == center_freq)
+			return obj;
+	}
+
+	return NULL;
+}
+
+/**
+ * ieee80211_find_active_chanctx - find an active channel context
+ * @local: mac80211 local state
+ * @chan: channel to match, or NULL to return the first active chanctx
+ *
+ * Return: matching active channel context when found, otherwise NULL.
+ */
+static struct ieee80211_chanctx *
+ieee80211_find_active_chanctx(struct ieee80211_local *local,
+			      struct ieee80211_channel *chan)
+{
+	struct ieee80211_chanctx *ctx;
+
+	list_for_each_entry(ctx, &local->chanctx_list, list) {
+		if (ctx->replace_state == IEEE80211_CHANCTX_REPLACES_OTHER)
+			continue;
+
+		if (!chan)
+			return ctx;
+
+		if (ctx->conf.def.chan == chan)
+			return ctx;
+	}
+
+	return NULL;
+}
+
+enum hrtimer_restart ieee80211_punct_cac_timeout(struct hrtimer *timer)
+{
+	struct ieee80211_punct_obj *obj =
+		container_of(timer, struct ieee80211_punct_obj, cac_timer);
+
+	wiphy_work_queue(obj->local->hw.wiphy, &obj->cac_work);
+	return HRTIMER_NORESTART;
+}
+
+/**
+ * ieee80211_is_punct_obj_found - check if a puncture object is still listed
+ * @obj: puncture object to check
+ *
+ * Return: true when @obj is still present in its owning chanctx list.
+ */
+static bool ieee80211_is_punct_obj_found(struct ieee80211_punct_obj *obj)
+{
+	struct ieee80211_punct_obj *iter;
+
+	list_for_each_entry(iter, &obj->ctx->punct_obj_list, list) {
+		if (iter == obj)
+			return true;
+	}
+
+	return false;
+}
+
+/**
+ * ieee80211_punct_bitmap_add - add an object's 20 MHz position to radar bitmap
+ * @ctx: channel context that owns the object
+ * @obj: puncture object whose position should be added
+ * @radar_bitmap: bitmap to update
+ */
+static void ieee80211_punct_bitmap_add(struct ieee80211_chanctx *ctx,
+				       struct ieee80211_punct_obj *obj,
+				       u16 *radar_bitmap)
+{
+	u32 start_freq;
+	int pos;
+
+	start_freq = ctx->conf.def.chan ? ctx->conf.def.chan->center_freq : 0;
+	pos = (obj->center_freq - start_freq) / 20;
+
+	if (pos >= 0 && pos < IEEE80211_MAX_20MHZ_SUBCHANS)
+		*radar_bitmap |= BIT(pos);
+}
+
+/**
+ * ieee80211_punct_find_40mhz_peer - find paired 20 MHz puncture object
+ * @ctx: channel context that owns the puncture objects
+ * @obj: puncture object whose peer should be found
+ *
+ * Return: matching adjacent object from the same radar hit, otherwise NULL.
+ */
+static struct ieee80211_punct_obj *
+ieee80211_punct_find_40mhz_peer(struct ieee80211_chanctx *ctx,
+				struct ieee80211_punct_obj *obj)
+{
+	struct ieee80211_punct_obj *other_obj;
+
+	if (ctx->punct_obj_count != IEEE80211_MAX_PUNCT_OBJS)
+		return NULL;
+
+	list_for_each_entry(other_obj, &ctx->punct_obj_list, list) {
+		if (other_obj == obj)
+			continue;
+
+		if (other_obj->radar_ts == obj->radar_ts &&
+		    abs((int)other_obj->center_freq - (int)obj->center_freq) == 20)
+			return other_obj;
+	}
+
+	return NULL;
+}
+
+/**
+ * ieee80211_punct_send_cac_finished - send punctured CAC finished event
+ * @link: link used as the netdev/event source
+ * @radar_bitmap: completed puncture bitmap to report
+ */
+static void ieee80211_punct_send_cac_finished(struct ieee80211_link_data *link,
+					      u16 radar_bitmap)
+{
+	struct cfg80211_chan_def punct_chandef;
+
+	punct_chandef = link->conf->chanreq.oper;
+	if (!punct_chandef.chan)
+		return;
+
+	punct_chandef.radar_bitmap = radar_bitmap;
+
+	wiphy_dbg(link->sdata->local->hw.wiphy,
+		  "DFS puncture: CAC finished notify chan=%u radar_bitmap=0x%x\n",
+		  punct_chandef.chan->center_freq, punct_chandef.radar_bitmap);
+
+	cfg80211_punct_cac_finished(link->sdata->dev, &punct_chandef, GFP_KERNEL);
+}
+
+void ieee80211_punct_cac_work(struct wiphy *wiphy, struct wiphy_work *work)
+{
+	struct ieee80211_punct_obj *obj =
+		container_of(work, struct ieee80211_punct_obj, cac_work);
+	struct ieee80211_chanctx *ctx = obj->ctx;
+	struct ieee80211_local *local = wiphy_priv(wiphy);
+	struct ieee80211_punct_obj *other_obj;
+	struct ieee80211_link_data *link;
+	u16 radar_bitmap = 0;
+	bool is_40_punc;
+
+	lockdep_assert_wiphy(wiphy);
+
+	if (!ieee80211_is_punct_obj_found(obj))
+		return;
+
+	other_obj = ieee80211_punct_find_40mhz_peer(ctx, obj);
+	is_40_punc = other_obj;
+
+	ieee80211_punct_bitmap_add(ctx, obj, &radar_bitmap);
+	if (is_40_punc)
+		ieee80211_punct_bitmap_add(ctx, other_obj, &radar_bitmap);
+
+	link = list_first_entry_or_null(&ctx->assigned_links,
+					struct ieee80211_link_data,
+					assigned_chanctx_list);
+	if (link)
+		ieee80211_punct_send_cac_finished(link, radar_bitmap);
+	wiphy_dbg(wiphy,
+		  "DFS puncture: CAC complete freq=%u radar_bitmap=0x%x paired_40mhz=%d link=%p\n",
+		  obj->center_freq, radar_bitmap, is_40_punc, link);
+
+	ieee80211_punct_obj_free(local, ctx, obj);
+	if (is_40_punc)
+		ieee80211_punct_obj_free(local, ctx, other_obj);
+}
+
+void ieee80211_punct_radar_update(struct ieee80211_local *local,
+				  struct cfg80211_chan_def *chandef,
+				  struct ieee80211_chanctx *ctx,
+				  u16 radar_bitmap)
+{
+	unsigned long radar_hit_ts;
+	u32 start_freq, freq;
+	int bit;
+
+	if (!radar_bitmap)
+		return;
+
+	wiphy_dbg(local->hw.wiphy,
+		  "DFS puncture: radar update ctx=%p radar_bitmap=0x%x\n",
+		  ctx, radar_bitmap);
+
+	radar_hit_ts = jiffies;
+	start_freq = chandef->chan->center_freq;
+	for (bit = 0; bit < IEEE80211_MAX_20MHZ_SUBCHANS; bit++) {
+		struct ieee80211_punct_obj *new_obj, *existing_obj;
+
+		if (!(radar_bitmap & BIT(bit)))
+			continue;
+
+		freq = start_freq + bit * 20;
+		existing_obj = ieee80211_punct_obj_find_in_ctx(ctx, freq);
+		if (existing_obj) {
+			existing_obj->radar_ts = radar_hit_ts;
+			if (existing_obj->cac_started) {
+				existing_obj->cac_started = false;
+				hrtimer_cancel(&existing_obj->cac_timer);
+			}
+			continue;
+		}
+
+		if (ctx->punct_obj_count >= IEEE80211_MAX_PUNCT_OBJS)
+			continue;
+
+		new_obj = kzalloc(sizeof(*new_obj), GFP_KERNEL);
+		if (!new_obj)
+			continue;
+
+		ieee80211_punct_obj_init(local, ctx, new_obj, freq, radar_hit_ts);
+		list_add_tail(&new_obj->list, &ctx->punct_obj_list);
+		ctx->punct_obj_count++;
+	}
+}
+
+void ieee80211_start_punctured_cac(struct wiphy *wiphy,
+				   struct cfg80211_chan_def *chandef)
+{
+	struct ieee80211_local *local = wiphy_priv(wiphy);
+	struct ieee80211_chanctx *ctx;
+	unsigned long cac_time;
+
+	lockdep_assert_wiphy(wiphy);
+
+	if (!chandef || !chandef->chan)
+		return;
+
+	cac_time = chandef->chan->dfs_cac_ms * IEEE80211_OFFCHAN_CAC_MULTIPLIER;
+	if (!cac_time)
+		cac_time = IEEE80211_DFS_MIN_CAC_TIME_MS;
+
+	list_for_each_entry(ctx, &local->chanctx_list, list) {
+		struct ieee80211_punct_obj *obj;
+
+		if (ctx->replace_state == IEEE80211_CHANCTX_REPLACES_OTHER)
+			continue;
+
+		list_for_each_entry(obj, &ctx->punct_obj_list, list) {
+			if (obj->cac_started ||
+			    obj->center_freq != chandef->chan->center_freq)
+				continue;
+
+			wiphy_dbg(wiphy,
+				  "DFS puncture: CAC started freq=%u cac_time=%lu ctx=%p\n",
+				  obj->center_freq, cac_time, ctx);
+
+			obj->cac_started = true;
+			hrtimer_start(&obj->cac_timer,
+				      ms_to_ktime(cac_time),
+				      HRTIMER_MODE_REL);
+		}
+	}
+}
+
+/**
+ * ieee80211_dfs_radar_detected_processing - process a queued radar event
+ * @local: mac80211 local state
+ * @radar_bitmap: bitmap of 20 MHz sub-channels hit by radar
+ * @radar_channel: channel where radar was detected, or NULL for default flow
+ */
 static void
 ieee80211_dfs_radar_detected_processing(struct ieee80211_local *local,
 					u16 radar_bitmap,
@@ -4134,6 +4458,7 @@ ieee80211_dfs_radar_detected_processing(struct ieee80211_local *local,
 {
 	struct cfg80211_chan_def chandef = local->hw.conf.chandef;
 	struct cfg80211_chan_def *radar_chandef = NULL;
+	struct ieee80211_chanctx *radar_ctx = NULL;
 	struct ieee80211_chanctx *ctx;
 	int num_chanctx = 0;
 
@@ -4146,9 +4471,10 @@ ieee80211_dfs_radar_detected_processing(struct ieee80211_local *local,
 		num_chanctx++;
 		chandef = ctx->conf.def;
 
-		if (radar_channel &&
-	    	    (chandef.chan == radar_channel))
-		    radar_chandef = &ctx->conf.def;
+		if (radar_channel && chandef.chan == radar_channel) {
+			radar_chandef = &ctx->conf.def;
+			radar_ctx = ctx;
+		}
 	}
 
 	if (num_chanctx > 1) {
@@ -4160,6 +4486,9 @@ ieee80211_dfs_radar_detected_processing(struct ieee80211_local *local,
 			if (!radar_bitmap || (radar_bitmap & ~radar_chandef->punctured))
 				ieee80211_dfs_cac_cancel(local, radar_chandef);
 
+			if (radar_bitmap)
+				ieee80211_punct_radar_update(local, radar_chandef,
+							     radar_ctx, radar_bitmap);
 			cfg80211_radar_event(local->hw.wiphy, radar_chandef, GFP_KERNEL);
 		} else {
 			/* XXX: multi-channel is not supported yet */
@@ -4171,11 +4500,19 @@ ieee80211_dfs_radar_detected_processing(struct ieee80211_local *local,
 		if (!radar_bitmap || (radar_bitmap & ~chandef.punctured))
 			ieee80211_dfs_cac_cancel(local, &chandef);
 
+		ctx = ieee80211_find_active_chanctx(local, NULL);
+		if (radar_bitmap && ctx)
+			ieee80211_punct_radar_update(local, &chandef, ctx, radar_bitmap);
 		cfg80211_radar_event(local->hw.wiphy, &chandef, GFP_KERNEL);
 	}
 }
 
-
+/**
+ * ieee80211_radar_mark_chan_ctx_iterator - mark channel context radar detected
+ * @hw: hardware instance
+ * @chanctx_conf: channel context configuration being iterated
+ * @data: optional channel context configuration to match
+ */
 static void
 ieee80211_radar_mark_chan_ctx_iterator(struct ieee80211_hw *hw,
 				       struct ieee80211_chanctx_conf *chanctx_conf,

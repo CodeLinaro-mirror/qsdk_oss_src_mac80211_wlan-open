@@ -172,6 +172,9 @@ enum ieee80211_channel_flags {
 
 #define IEEE80211_DFS_MIN_CAC_TIME_MS		60000
 #define IEEE80211_DFS_MIN_NOP_TIME_MS		(30 * 60 * 1000)
+#define IEEE80211_MAX_PUNCT_OBJS 2
+#define IEEE80211_MAX_20MHZ_SUBCHANS 16
+#define IEEE80211_OFFCHAN_CAC_MULTIPLIER 6
 
 /**
  * struct ieee80211_channel - channel definition
@@ -5534,6 +5537,9 @@ struct cfg80211_ap_power_save_params {
  *
  * @start_radar_detection: Start radar detection in the driver.
  *
+ * @start_punctured_cac: Start CAC for a punctured 20 MHz sub-channel after
+ *	the cfg80211 NOL tracker reports NOP finished for that sub-channel.
+ *
  * @end_cac: End running CAC, probably because a related CAC
  *	was finished on another phy.
  *
@@ -5947,6 +5953,8 @@ struct cfg80211_ops {
 					 struct net_device *dev,
 					 struct cfg80211_chan_def *chandef,
 					 u32 cac_time_ms, int link_id);
+	void	(*start_punctured_cac)(struct wiphy *wiphy,
+				       struct cfg80211_chan_def *chandef);
 	void	(*end_cac)(struct wiphy *wiphy,
 			   struct net_device *dev, unsigned int link_id);
 	int	(*update_ft_ies)(struct wiphy *wiphy, struct net_device *dev,
@@ -10156,6 +10164,16 @@ void cfg80211_cac_event(struct net_device *netdev,
 			const struct cfg80211_chan_def *chandef,
 			enum nl80211_radar_event event, gfp_t gfp,
 			unsigned int link_id);
+
+/**
+ * cfg80211_punct_cac_finished - punctured channel CAC finished event
+ * @netdev: network device
+ * @chandef: chandef for the current channel
+ * @gfp: context flags
+ */
+void cfg80211_punct_cac_finished(struct net_device *netdev,
+				 const struct cfg80211_chan_def *chandef,
+				 gfp_t gfp);
 
 /**
  * cfg80211_background_cac_abort - Channel Availability Check offchan abort event

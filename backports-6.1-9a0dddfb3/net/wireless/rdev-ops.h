@@ -1253,6 +1253,14 @@ rdev_start_radar_detection(struct cfg80211_registered_device *rdev,
 }
 
 static inline void
+rdev_start_punctured_cac(struct cfg80211_registered_device *rdev,
+			 struct cfg80211_chan_def *chandef)
+{
+	if (rdev->ops->start_punctured_cac)
+		rdev->ops->start_punctured_cac(&rdev->wiphy, chandef);
+}
+
+static inline void
 rdev_end_cac(struct cfg80211_registered_device *rdev,
 	     struct net_device *dev, unsigned int link_id)
 {

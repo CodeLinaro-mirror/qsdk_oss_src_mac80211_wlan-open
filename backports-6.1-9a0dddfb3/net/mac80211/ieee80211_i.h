@@ -939,6 +939,32 @@ enum ieee80211_chanctx_replace_state {
 	IEEE80211_CHANCTX_REPLACES_OTHER,
 };
 
+/**
+ * struct ieee80211_punct_obj - per-20MHz puncture/unpuncture tracking object
+ *
+ * Tracks a single 20 MHz sub-channel that was hit by radar and is being
+ * managed through the NOL -> CAC -> available lifecycle for punctured
+ * operation (11BE).  At most 2 such objects exist per chanctx.
+ *
+ * @list:        linkage into ieee80211_chanctx.punct_obj_list
+ * @center_freq: center frequency (MHz) of the 20 MHz sub-channel
+ * @radar_ts:    jiffies timestamp when the radar was first detected on this
+ *               sub-channel (updated on repeated hits before NOL expires)
+ * @cac_timer:   per-object hrtimer that fires after CAC completes
+ * @cac_work:    wiphy_work queued by @cac_timer to run in wiphy context
+ * @ctx:         back-pointer to the owning chanctx
+ */
+struct ieee80211_punct_obj {
+	struct list_head list;
+	u32 center_freq;
+	unsigned long radar_ts;
+	struct hrtimer cac_timer;
+	struct wiphy_work cac_work;
+	struct ieee80211_chanctx *ctx;
+	struct ieee80211_local *local;
+	bool cac_started;
+};
+
 struct ieee80211_chanctx {
 	struct list_head list;
 	struct rcu_head rcu_head;
@@ -956,6 +982,14 @@ struct ieee80211_chanctx {
 	struct ieee80211_chan_req req;
 
 	bool radar_detected;
+
+	/*
+	 * Puncture/unpuncture objects for per-20MHz radar tracking (11BE).
+	 * Up to IEEE80211_MAX_PUNCT_OBJS objects are tracked per chanctx.
+	 */
+	struct list_head punct_obj_list;
+	/* Number of current unpuncture objects in punct_obj_list. */
+	int punct_obj_count;
 
 	/* MUST be last - ends in a flexible-array member. */
 	struct ieee80211_chanctx_conf conf;
@@ -2973,6 +3007,71 @@ void ieee80211_dfs_cac_timer_work(struct wiphy *wiphy, struct wiphy_work *work);
 void ieee80211_dfs_cac_cancel(struct ieee80211_local *local,
 			      struct cfg80211_chan_def *def);
 void ieee80211_dfs_radar_detected_work(struct wiphy *wiphy, struct wiphy_work *work);
+
+/**
+ * ieee80211_punct_obj_init - initialise a puncture CAC tracking object
+ * @local: mac80211 local state
+ * @ctx: owning channel context
+ * @obj: pre-allocated object to initialise
+ * @center_freq: 20 MHz sub-channel center frequency in MHz
+ * @radar_hit_ts: timestamp when radar was detected
+ */
+void ieee80211_punct_obj_init(struct ieee80211_local *local,
+			      struct ieee80211_chanctx *ctx,
+			      struct ieee80211_punct_obj *obj,
+			      u32 center_freq,
+			      unsigned long radar_hit_ts);
+
+/**
+ * ieee80211_punct_obj_free - cancel timers and free a puncture object
+ * @local: mac80211 local state
+ * @ctx: owning channel context
+ * @obj: object to destroy
+ */
+void ieee80211_punct_obj_free(struct ieee80211_local *local,
+			      struct ieee80211_chanctx *ctx,
+			      struct ieee80211_punct_obj *obj);
+
+/**
+ * ieee80211_punct_obj_list_free - free all puncture objects on a chanctx
+ * @local: mac80211 local state
+ * @ctx: channel context being torn down
+ */
+void ieee80211_punct_obj_list_free(struct ieee80211_local *local,
+				   struct ieee80211_chanctx *ctx);
+
+/**
+ * ieee80211_punct_cac_work - puncture CAC finished work handler
+ * @wiphy: wiphy on which CAC completed
+ * @work: work item embedded in the puncture object
+ */
+void ieee80211_punct_cac_work(struct wiphy *wiphy, struct wiphy_work *work);
+
+/**
+ * ieee80211_punct_cac_timeout - puncture CAC expiry timer callback
+ * @timer: timer embedded in the puncture object
+ */
+enum hrtimer_restart ieee80211_punct_cac_timeout(struct hrtimer *timer);
+
+/**
+ * ieee80211_punct_radar_update - update puncture objects after radar detection
+ * @local: mac80211 local state
+ * @chandef: channel definition where radar was detected
+ * @ctx: channel context that owns the puncture objects
+ * @radar_bitmap: bitmap of 20 MHz sub-channels hit by radar
+ */
+void ieee80211_punct_radar_update(struct ieee80211_local *local,
+				  struct cfg80211_chan_def *chandef,
+				  struct ieee80211_chanctx *ctx,
+				  u16 radar_bitmap);
+
+/**
+ * ieee80211_start_punctured_cac - start CAC after punctured-channel NOP expiry
+ * @wiphy: wiphy whose cfg80211 NOL worker reported NOP completion
+ * @chandef: 20 MHz chandef for the channel that left NOL
+ */
+void ieee80211_start_punctured_cac(struct wiphy *wiphy,
+				   struct cfg80211_chan_def *chandef);
 void ieee80211_awgn_detected_work(struct work_struct *work);
 int ieee80211_send_action_csa(struct ieee80211_sub_if_data *sdata,
 			      struct cfg80211_csa_settings *csa_settings);
