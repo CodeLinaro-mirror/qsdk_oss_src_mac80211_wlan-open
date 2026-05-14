@@ -5560,10 +5560,15 @@ static int mac80211_hwsim_new_radio(struct genl_info *info,
 	wiphy_ext_feature_set(hw->wiphy, NL80211_EXT_FEATURE_PUNCT);
 
 	for (i = 0; i < ARRAY_SIZE(data->link_data); i++) {
+#if LINUX_VERSION_IS_LESS(6, 7, 0)
 		hrtimer_init(&data->link_data[i].beacon_timer, CLOCK_MONOTONIC,
 			     HRTIMER_MODE_ABS_SOFT);
 		data->link_data[i].beacon_timer.function =
 			mac80211_hwsim_beacon;
+#else
+		hrtimer_setup(&data->link_data[i].beacon_timer, &mac80211_hwsim_beacon,
+			      CLOCK_MONOTONIC, HRTIMER_MODE_ABS_SOFT);
+#endif
 		data->link_data[i].link_id = i;
 	}
 
@@ -6678,6 +6683,7 @@ static void hwsim_virtio_rx_done(struct virtqueue *vq)
 	schedule_work(&hwsim_virtio_rx);
 }
 
+#if LINUX_VERSION_IS_LESS(6, 8, 0)
 static int init_vqs(struct virtio_device *vdev)
 {
 	static vq_callback_t *callbacks[HWSIM_NUM_VQS] = {
@@ -6693,6 +6699,24 @@ static int init_vqs(struct virtio_device *vdev)
 	return virtio_find_vqs(vdev, HWSIM_NUM_VQS,
 			       hwsim_vqs, callbacks, names, NULL);
 }
+#else
+static int init_vqs(struct virtio_device *vdev)
+{
+	static struct virtqueue_info vqs_info[HWSIM_NUM_VQS] = {
+		{
+			.name = "tx",
+			.callback = hwsim_virtio_tx_done,
+		},
+		{
+			.name = "rx",
+			.callback = hwsim_virtio_rx_done,
+		}
+	};
+
+	return virtio_find_vqs(vdev, HWSIM_NUM_VQS,
+			       hwsim_vqs, vqs_info, NULL);
+}
+#endif
 
 static int fill_vq(struct virtqueue *vq)
 {
