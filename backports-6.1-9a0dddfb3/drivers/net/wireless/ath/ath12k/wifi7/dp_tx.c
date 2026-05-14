@@ -1194,10 +1194,10 @@ int ath12k_wifi7_dp_tx_hw_enqueue(struct ath12k_dp_link_vif *dp_link_vif,
 	ath12k_wifi7_dp_tx_hal_tcl_desc_update(&tcl_desc, msdu_info, skb);
 
 	if (unlikely(msdu_info->tid_override))
-		ath12k_wifi_qos_hlos_tid(hal_tcl_desc, msdu_info->tid);
+		ath12k_wifi_qos_hlos_tid(&tcl_desc, msdu_info->tid);
 
 	if (unlikely(skb->mark & SDWF_VALID_MASK)) {
-		ath12k_dp_qos_update(dp, dp_pdev, skb->mark, hal_tcl_desc,
+		ath12k_dp_qos_update(dp, dp_pdev, skb->mark, &tcl_desc,
 				     0, NULL);
 		ath12k_dp_sdwftx_ingress_stats_update(dp_pdev->ar,
 						      &skb->mark,
