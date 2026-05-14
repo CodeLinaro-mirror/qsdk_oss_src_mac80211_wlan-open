@@ -1702,6 +1702,9 @@ ath12k_dp_tx_get_ring_id_type(struct ath12k_base *ab,
 			} else if (ring_id == HAL_SRNG_SW2RXDMA_BUF2) {
 				*htt_ring_id = HTT_HOST2_TO_FW_RXBUF_RING;
 				*htt_ring_type = HTT_SW_TO_SW_RING;
+			} else if (ring_id == HAL_SRNG_SW2RXDMA_BUF3) {
+				*htt_ring_id = HTT_HOST3_TO_FW_RXBUF_RING;
+				*htt_ring_type = HTT_SW_TO_SW_RING;
 #endif
 			} else {
 				*htt_ring_id = HTT_RXDMA_HOST_BUF_RING;

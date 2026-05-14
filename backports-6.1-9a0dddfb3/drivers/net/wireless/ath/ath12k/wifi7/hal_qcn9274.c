@@ -153,7 +153,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 	[HAL_RXDMA_BUF] = {
 		.start_ring_id = HAL_SRNG_SW2RXDMA_BUF0,
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
-		.max_rings = 3,
+		.max_rings = 4,
 #else
 		.max_rings = 1,
 #endif

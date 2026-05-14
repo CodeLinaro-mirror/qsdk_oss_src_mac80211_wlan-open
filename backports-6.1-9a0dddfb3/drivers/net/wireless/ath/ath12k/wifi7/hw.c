@@ -344,11 +344,9 @@ static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274_msi8 = {
                 ATH12K_RX_RING_MASK_0,
                 ATH12K_RX_RING_MASK_1,
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
-		ATH12K_RX_RING_MASK_2,
-#else
                 ATH12K_RX_RING_MASK_2 | ATH12K_RX_RING_MASK_3,
 #endif
-		0, 0
+		0, 0, 0,
         },
 	.rx_err = {
                 0, 0,
@@ -434,11 +432,11 @@ static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274 = {
 		0, 0, 0, 0,
 		ATH12K_RX_RING_MASK_0,
 		ATH12K_RX_RING_MASK_1,
-		ATH12K_RX_RING_MASK_2,
 #ifndef CPTCFG_EXT_IPA_OFFLOAD
+		ATH12K_RX_RING_MASK_2,
 		ATH12K_RX_RING_MASK_3,
 #else
-		0,
+		0, 0,
 #endif
 		0, 0, 0, 0, 0,
 	},
