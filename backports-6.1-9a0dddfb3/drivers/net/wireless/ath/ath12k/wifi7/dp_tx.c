@@ -2499,6 +2499,74 @@ static void ath12k_dp_tx_update_mmesh_stats(struct ath12k_dp *dp,
 }
 #endif
 
+static void ath12k_wifi7_dp_tx_update_peer_basic_stats(struct ath12k_dp_peer *peer,
+						       u32 msdu_len, u8 tx_status,
+						       u8 link_id, int ring_id)
+{
+	DP_PEER_STATS_PKT_LEN(peer, tx, ring_id, comp_pkt, link_id, 1, msdu_len);
+
+	if (tx_status == HAL_WBM_TQM_REL_REASON_FRAME_ACKED) {
+		DP_PEER_STATS_PKT_LEN(peer, tx, ring_id, tx_success, link_id,
+				      1, msdu_len);
+	} else {
+		DP_PEER_STATS_INC(peer, tx, ring_id, tx_failed, link_id, 1);
+	}
+}
+
+static void ath12k_wifi7_dp_tx_comp_update_peer_stats(struct ath12k_dp_peer *peer,
+						      struct hal_tx_status *ts,
+						      int ring_id, u16 tx_desc_flags,
+						      u8 link_id, u32 msdu_len)
+{
+	if (peer->is_vdev_peer) {
+		if (ts->status != HAL_WBM_TQM_REL_REASON_CMD_REMOVE_MPDU) {
+			if (tx_desc_flags & DP_TX_DESC_FLAG_BCAST)
+				DP_PEER_STATS_PKT_LEN(peer, tx, ring_id, bcast,
+						      link_id, 1, msdu_len);
+			if (tx_desc_flags & DP_TX_DESC_FLAG_MCAST)
+				DP_PEER_STATS_PKT_LEN(peer, tx, ring_id, mcast,
+						      link_id, 1, msdu_len);
+		}
+	}  else {
+		DP_PEER_STATS_PKT_LEN(peer, tx, ring_id, ucast, link_id, 1,
+				      msdu_len);
+	}
+
+	if (ts->buf_rel_source != HAL_WBM_REL_SRC_MODULE_TQM) {
+		DP_PEER_STATS_INC(peer, tx, ring_id, release_src_not_tqm,
+				  link_id, 1);
+		DP_PEER_STATS_INC(peer, tx, ring_id, wbm_rel_reason[ts->status],
+				  link_id, 1);
+		return;
+	}
+
+	if (ts->status == HAL_WBM_TQM_REL_REASON_FRAME_ACKED) {
+		DP_PEER_STATS_COND_INC(peer, tx, ring_id, retry_count, link_id,
+				       ts->transmit_cnt > 1, 1);
+
+		DP_PEER_STATS_COND_INC(peer, tx, ring_id, total_msdu_retries,
+				       link_id, ts->transmit_cnt > 1,
+				       ts->transmit_cnt - 1);
+
+		DP_PEER_STATS_COND_INC(peer, tx, ring_id, multiple_retry_count,
+				       link_id, ts->transmit_cnt > 2, 1);
+
+		DP_PEER_STATS_COND_INC(peer, tx, ring_id, ofdma, link_id,
+				       ts->ofdma, 1);
+
+		DP_PEER_STATS_COND_INC(peer, tx, ring_id, amsdu_cnt, link_id,
+				       ts->msdu_part_of_amsdu, 1);
+
+		DP_PEER_STATS_COND_INC(peer, tx, ring_id, non_amsdu_cnt, link_id,
+				       !ts->msdu_part_of_amsdu, 1);
+	}
+
+	if (ts->status < HAL_WBM_TQM_REL_REASON_MAX) {
+		DP_PEER_STATS_INC(peer, tx, ring_id, tqm_rel_reason[ts->status],
+				  link_id, 1);
+	}
+}
+
 static void
 ath12k_wifi7_dp_tx_htt_update_peer_stats(struct ath12k_dp *dp,
 					 struct ath12k_pdev_dp *dp_pdev,
@@ -2512,16 +2580,17 @@ ath12k_wifi7_dp_tx_htt_update_peer_stats(struct ath12k_dp *dp,
 	u8 vow_tid;
 
 	if (peer) {
-		ath12k_dp_tx_update_peer_basic_stats(peer, msdu_len,
-						     htt_status,
-						     link_id, ring_id);
+		ath12k_wifi7_dp_tx_update_peer_basic_stats(peer, msdu_len,
+							   htt_status, link_id,
+							   ring_id);
 		if (unlikely(ath12k_dp_stats_enabled(dp_pdev))) {
 			if (ath12k_dp_debug_stats_enabled(dp_pdev))
-				ath12k_dp_tx_comp_update_peer_stats(peer, ts,
-								    ring_id,
-								    tx_desc_flags,
-								    link_id,
-								    msdu_len);
+				ath12k_wifi7_dp_tx_comp_update_peer_stats(peer,
+									  ts,
+									  ring_id,
+									  tx_desc_flags,
+									  link_id,
+									  msdu_len);
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 			if (peer->is_mmesh_peer)
 				ath12k_dp_tx_update_mmesh_stats(dp, dp_pdev,
@@ -2890,16 +2959,17 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 
 	if (peer) {
 		hw_link_id = ath12k_dp_validate_hw_link_id(ts->hw_link_id);
-		ath12k_dp_tx_update_peer_basic_stats(peer, msdu_len, ts->status,
-						     hw_link_id, ring);
-
+		ath12k_wifi7_dp_tx_update_peer_basic_stats(peer, msdu_len,
+							   ts->status,
+							   hw_link_id, ring);
 		if (unlikely(ath12k_dp_stats_enabled(dp_pdev))) {
 			if (ath12k_dp_debug_stats_enabled(dp_pdev))
-				ath12k_dp_tx_comp_update_peer_stats(peer, ts,
-								    ring,
-								    tx_desc_flags,
-								    hw_link_id,
-								    msdu_len);
+				ath12k_wifi7_dp_tx_comp_update_peer_stats(peer,
+									  ts,
+									  ring,
+									  tx_desc_flags,
+									  hw_link_id,
+									  msdu_len);
 			if (unlikely(ath12k_debugfs_is_qos_stats_enabled(ar)))
 				ath12k_qos_stats_update(ar, msdu, ts,
 							dp_pdev,
