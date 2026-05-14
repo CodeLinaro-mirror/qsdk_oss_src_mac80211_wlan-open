@@ -2686,6 +2686,12 @@ static void ath12k_core_restart(struct work_struct *work)
 			goto exit_restart;
 		}
 
+		if (atomic_cmpxchg(&ag->mac80211_restart_pending, 0, 1)) {
+			ath12k_warn(ab, "mac80211 restart already pending, skip\n");
+			mutex_unlock(&ag->mutex);
+			goto exit_restart;
+		}
+
 		for (i = 0; i < ag->num_hw; i++) {
 			ah = ath12k_ag_to_ah(ag, i);
 			ieee80211_restart_hw(ah->hw);
@@ -4074,6 +4080,7 @@ static struct ath12k_hw_group *ath12k_core_hw_group_alloc(struct ath12k_base *ab
 	mutex_init(&ag->mutex);
 	init_completion(&ag->umac_reset_complete);
 	init_completion(&ag->peer_cleanup_complete);
+	atomic_set(&ag->mac80211_restart_pending, 0);
 	ag->mlo_capable = false;
 	ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
 	ag->wsi_load_info = NULL;
