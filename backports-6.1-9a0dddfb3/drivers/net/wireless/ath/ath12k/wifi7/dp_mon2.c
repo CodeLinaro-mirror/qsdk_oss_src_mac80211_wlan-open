@@ -16,6 +16,7 @@
 #include "dp_mon2.h"
 #include "../trace.h"
 #include "../ath12k_notif.h"
+#include "../../net/mac80211/qcn_extns/cmn_extn.h"
 
 const struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_dual_ring_ops = {
 	.rx_srng_setup = ath12k_dp_mon_rx_srng_setup,
@@ -909,44 +910,45 @@ ath12k_wifi7_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 		}
 	}
 
-	skb_reserve(mpdu, ATH12K_DP_MON_MAX_RADIO_TAP_HDR);
-	ath12k_dp_mon_update_radiotap(dp_pdev, ppdu_info, mpdu, rxs);
+	if (need_rtap) {
+		skb_reserve(mpdu, ATH12K_DP_MON_MAX_RADIO_TAP_HDR);
+		ath12k_dp_mon_update_radiotap(dp_pdev, ppdu_info, mpdu, rxs);
 
-	/*
-	 * If an ext_mon listener is registered, deliver the MPDU via the
-	 * ext_mon SRCU notifier chain. See struct ath12k_ext_mon_rx_event
-	 * in ath12k_notif.h for SKB ownership, rx_status placement, and
-	 * ieee80211_hw pointer lifetime rules.
-	 *
-	 * If no ext_mon listener is registered:
-	 *   - need_rtap set: deliver to mac80211 (mac80211 adds radiotap).
-	 *   - need_rtap not set: drop the MPDU.
-	 */
-	if (ath12k_ext_mon_rx_notifier_has_listeners()) {
-		struct ath12k_ext_mon_rx_event rx_event;
-		struct ieee80211_rx_status *rx_status;
-
-		rxs->link_valid = 0;
-		rxs->link_id = 0;
-		rx_status = IEEE80211_SKB_RXCB(mpdu);
-		*rx_status = *rxs;
-
-		rx_event.mpdu = mpdu;
-		rx_event.hw = ath12k_dp_pdev_to_hw(dp_pdev);
-
-		ath12k_ext_mon_rx_notifier_call_chain(ATH12K_EVENT_EXT_MON_RX,
-						      &rx_event);
-		/*
-		 * Driver always frees the original SKB after the chain returns.
-		 * Listeners that need to retain the frame must call skb_clone()
-		 * inside their callback and take ownership of the clone.
-		 */
-		dev_kfree_skb_any(mpdu);
+		ath12k_dp_mon_rx_deliver_skb(dp_pdev, NULL, mpdu,
+					     rxs, ppdu_info);
 	} else {
-		if (need_rtap)
-			ath12k_dp_mon_rx_deliver_skb(dp_pdev, NULL, mpdu,
-						     rxs, ppdu_info);
-		else {
+		/*
+		 * If an ext_mon listener is registered, deliver the MPDU via the
+		 * ext_mon SRCU notifier chain. See struct ieee80211_ext_mon_rx_event_extn
+		 * for SKB ownership, rx_status placement.
+		 *
+		 * If no ext_mon listener is registered:
+		 *   - need_rtap set: deliver to mac80211 (mac80211 adds radiotap).
+		 *   - need_rtap not set: drop the MPDU.
+		 */
+		if (ieee80211_ext_mon_rx_notifier_has_listeners_extn()) {
+			struct ieee80211_rx_status *rx_status;
+			struct ieee80211_ext_mon_rx_event_extn rx_event;
+			enum ieee80211_ext_mon_event_type_extn ext_mon_event =
+						IEEE80211_EXT_MON_PRE_RTAP;
+
+			rxs->link_valid = 0;
+			rxs->link_id = 0;
+			rx_status = IEEE80211_SKB_RXCB(mpdu);
+			*rx_status = *rxs;
+
+			rx_event.mpdu = mpdu;
+			rx_event.hw = ath12k_dp_pdev_to_hw(dp_pdev);
+			ieee80211_ext_mon_rx_notifier_call_extn(ext_mon_event,
+								&rx_event);
+
+			/*
+			 * Driver always frees the original SKB after the chain returns.
+			 * Listeners that need to retain the frame must call skb_clone()
+			 * inside their callback and take ownership of the clone.
+			 */
+			dev_kfree_skb_any(mpdu);
+		} else {
 			ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON,
 				   "pkt dropped! listener absent & rtap not needed\n");
 			return -EINVAL;
