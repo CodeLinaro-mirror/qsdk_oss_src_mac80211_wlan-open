@@ -734,6 +734,7 @@ enum htt_stats_frametype {
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO0_DROP_THRES_VAL	BIT(27)
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO0_EN_RXMON		BIT(28)
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO0_PKT_TYPE_EN_DATA	BIT(29)
+#define HTT_RX_RING_SELECTION_CFG_CMD_INFO0_MON_MODE		BIT(30)
 
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO1_BUF_SIZE		GENMASK(15, 0)
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO1_CONF_LEN_MGMT	GENMASK(18, 16)
@@ -1154,6 +1155,7 @@ struct htt_rx_ring_tlv_filter {
 	u16 rx_tlv_offset;
 	bool drop_threshold_valid;
 	bool rxmon_disable;
+	bool is_monitor_mode;
 	u8 rx_hdr_len;
 	u8 rx_mon_fpmo_data_hdrlen;
 	u8 rx_mon_fpmo_ctrl_hdrlen;
