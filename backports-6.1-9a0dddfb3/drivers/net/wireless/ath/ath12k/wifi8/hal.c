@@ -845,6 +845,13 @@ void ath12k_wifi8_hal_get_hw_hptp(struct ath12k_base *ab, enum hal_ring_type typ
 
 		*hp = ath12k_hif_read32(ab, reg_base);
 		*tp = ath12k_hif_read32(ab, reg_base + HAL_TCL1_RING_TP_OFFSET);
+	} else if (srng_config->reg_writer_en) {
+		if (srng_config->ring_dir == HAL_SRNG_DIR_SRC)
+			*hp = ath12k_hif_read32(ab,
+						(unsigned long)srng->u.src_ring.hp_addr);
+		else
+			*tp = ath12k_hif_read32(ab,
+						(unsigned long)srng->u.dst_ring.tp_addr);
 	}
 }
 

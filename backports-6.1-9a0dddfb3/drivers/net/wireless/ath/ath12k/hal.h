@@ -971,7 +971,7 @@ struct wbm_idle_scatter_list {
 #define HAL_SRNG_FLAGS_HIGH_THRESH_INTR_EN	0x00080000
 #define HAL_SRNG_FLAGS_CACHED                   0x20000000
 #define HAL_SRNG_FLAGS_LMAC_RING		0x80000000
-#define HAL_SRNG_FLAGS_CACHED                   0x20000000
+#define HAL_SRNG_FLAGS_REG_WRITE_EN		0x40000000
 
 /* Common SRNG ring structure for source and destination rings */
 struct hal_srng {
@@ -1123,6 +1123,7 @@ struct hal_srng_config {
 	enum hal_srng_dir ring_dir;
 	u32 max_size;
 	const char name[20];
+	bool reg_writer_en;
 };
 
 enum hal_pn_type {
@@ -1708,8 +1709,11 @@ struct hal_ops {
 			void __iomem *hp_vaddr, dma_addr_t hp_paddr,
 			void __iomem *tp_vaddr, dma_addr_t tp_paddr);
 	void (*hal_ppeds_reo2ppe_cc_config)(struct ath12k_base *ab);
-
 	u32 (*hal_rx_h_mpdu_err)(struct hal_rx_desc *desc);
+	void (*hal_set_reg_writer_hptp_addr)(struct ath12k_base *ab,
+					     struct hal_srng *srng,
+					     int idx,
+					     enum hal_ring_type);
 };
 
 static inline
