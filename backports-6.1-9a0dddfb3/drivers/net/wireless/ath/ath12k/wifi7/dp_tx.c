@@ -2345,14 +2345,14 @@ ath12k_wifi7_dp_tx_htt_tx_complete_buf(struct ath12k_dp *dp,
 				       struct dp_tx_ring *tx_ring,
 				       struct hal_tx_status *ts,
 				       struct ath12k_tx_sw_metadata *sw_metadata,
-				       u16 peer_id, int link_id)
+				       u16 peer_id, int link_id,
+				       struct ath12k_dp_peer *dp_peer)
 {
 	struct ieee80211_tx_status status = { 0 };
 	struct ieee80211_tx_info *info;
-	struct ath12k_link_vif *arvif;
 	struct ath12k_skb_cb *skb_cb;
-	struct ieee80211_vif *vif;
-	struct ath12k_vif *ahvif;
+	struct ieee80211_vif *vif = NULL;
+	struct ath12k_vif *ahvif = NULL;
 	struct ath12k_dp_link_peer *peer;
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_pdev_dp *dp_pdev;
@@ -2380,20 +2380,13 @@ ath12k_wifi7_dp_tx_htt_tx_complete_buf(struct ath12k_dp *dp,
 	skb_cb = ATH12K_SKB_CB(msdu);
 	info = IEEE80211_SKB_CB(msdu);
 
-	vif = skb_cb->vif;
+	vif = ath12k_dp_peer_get_vif(dp_peer);
 	if (vif) {
 		ahvif = ath12k_vif_to_ahvif(vif);
 		if (dp_pdev->wmm_stats.tx_type) {
 			ahvif->wmm_stats.tx_type = dp_pdev->wmm_stats.tx_type;
 			if (ts->status != HAL_WBM_TQM_REL_REASON_FRAME_ACKED)
 				ahvif->wmm_stats.total_wmm_tx_drop[ahvif->wmm_stats.tx_type]++;
-		}
-
-		arvif = rcu_dereference(ahvif->link[skb_cb->link_id]);
-		if (arvif) {
-			spin_lock_bh(&arvif->link_stats_lock);
-			arvif->link_stats.tx_completed++;
-			spin_unlock_bh(&arvif->link_stats_lock);
 		}
 	}
 
@@ -2636,7 +2629,7 @@ ath12k_wifi7_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 		ts->status = HAL_WBM_TQM_REL_REASON_FRAME_ACKED;
 		ath12k_wifi7_dp_tx_htt_tx_complete_buf(dp, msdu, tx_ring, ts,
 						       sw_metadata, ts->peer_id,
-						       link_id);
+						       link_id, peer);
 		break;
 	case HAL_WBM_REL_HTT_TX_COMP_STATUS_DROP:
 	case HAL_WBM_REL_HTT_TX_COMP_STATUS_TTL:
@@ -2845,9 +2838,8 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_base *ab = dp->ab;
 	struct ieee80211_tx_info *info;
-	struct ath12k_link_vif *arvif;
 	struct ath12k_skb_cb *skb_cb;
-	struct ieee80211_vif *vif;
+	struct ieee80211_vif *vif = NULL;
 	struct ath12k_vif *ahvif = NULL;
 	struct ath12k_dp_link_peer *link_peer;
 	struct ath12k_dp_pkt_info *tx_dropped;
@@ -2886,32 +2878,15 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 		goto exit;
 	}
 
-	if (!skb_cb->vif) {
+	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, ts->peer_id);
+	vif = ath12k_dp_peer_get_vif(peer);
+	if (!vif) {
 		drop_reason = DP_TX_COMP_ERR_INVALID_VIF;
 		goto exit;
 	}
 
-	vif = skb_cb->vif;
-	if (vif) {
-		ahvif = ath12k_vif_to_ahvif(vif);
-		if (ath12k_dp_stats_enabled(dp_pdev) &&
-		    ath12k_tid_stats_enabled(dp_pdev)) {
-			tid = msdu->priority & IEEE80211_QOS_CTL_TID_MASK;
-			ath12k_tid_tx_stats(ahvif, tid, msdu->len,
-					    ATH_TX_COMPLETED_PKTS);
-		}
-		arvif = rcu_dereference(ahvif->link[skb_cb->link_id]);
-		if (arvif) {
-			spin_lock_bh(&arvif->link_stats_lock);
-			arvif->link_stats.tx_completed++;
-			spin_unlock_bh(&arvif->link_stats_lock);
-		}
-	}
-
 	info = IEEE80211_SKB_CB(msdu);
 	ar = dp_pdev->ar;
-
-	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, ts->peer_id);
 
 	if (peer) {
 		hw_link_id = ath12k_dp_validate_hw_link_id(ts->hw_link_id);
@@ -2953,6 +2928,13 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 								      vow_tid,
 								      tqm_status_cnt,
 								      ts->status);
+			}
+
+			if (ath12k_tid_stats_enabled(dp_pdev)) {
+				ahvif = ath12k_vif_to_ahvif(vif);
+				tid = msdu->priority & IEEE80211_QOS_CTL_TID_MASK;
+				ath12k_tid_tx_stats(ahvif, tid, msdu->len,
+						    ATH_TX_COMPLETED_PKTS);
 			}
 		}
 	} else {
