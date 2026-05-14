@@ -1045,7 +1045,7 @@ ieee802_11_parse_elems_full(struct ieee80211_elems_parse_params *params)
 	const struct element *non_inherit = NULL;
 	u8 *nontransmitted_profile;
 	int nontransmitted_profile_len = 0;
-	size_t scratch_len = params->scratch_len ?: 2 * params->len;
+	size_t scratch_len = 3 * params->len;
 	bool check_inherit = false;
 
 	BUILD_BUG_ON(offsetof(typeof(*elems_parse), elems) != 0);
