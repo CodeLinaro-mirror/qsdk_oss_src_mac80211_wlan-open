@@ -2989,7 +2989,7 @@ ath12k_dp_mon_tx_deliver_single_ppdu(struct ath12k_pdev_dp *dp_pdev,
 	struct ieee80211_hw *hw;
 	struct sk_buff *mpdu;
 	struct sk_buff *resp_skb = NULL;
-	struct hal_tx_mon_ppdu_info *rx_ppdu_info;
+	struct hal_tx_mon_ppdu_info *rx_ppdu_info = NULL;
 	int delivered = 0;
 	bool contains_host_frames;
 
