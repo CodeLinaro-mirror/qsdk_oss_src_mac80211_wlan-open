@@ -996,7 +996,7 @@ ath12k_wifi7_dp_process_reo_rx_packets(struct ath12k_dp *dp,
 			prefetchw(&next_msdu->data);
 		}
 
-		hw_link_id = spd_desc_l->reo.src_link_id;
+		hw_link_id = ath12k_dp_validate_hw_link_id(spd_desc_l->reo.src_link_id);
 		tid = rx_mpdu_info->tid;
 
 		active_tid_mask |= 1 << tid;

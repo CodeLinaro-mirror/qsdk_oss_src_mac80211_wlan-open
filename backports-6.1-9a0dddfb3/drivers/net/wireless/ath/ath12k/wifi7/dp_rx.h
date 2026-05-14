@@ -251,10 +251,12 @@ ath12k_wifi7_dp_rx_update_peer_stats(struct ath12k_pdev_dp *pdev,
 				     u8 active_tid_mask)
 {
 	int i;
-	u8 link_id = ath12k_dp_peer_get_stats_link_id(pdev->dp->ab, peer,
-						      hw_link_id);
-	struct ath12k_dp_peer_stats *pstats = &peer->stats[link_id];
-	struct ath12k_dp_peer_rx_stats *rx = &pstats->rx[ring_id];
+	struct ath12k_dp_peer_stats *pstats = NULL;
+	struct ath12k_dp_peer_rx_stats *rx = NULL;
+
+	hw_link_id = ath12k_dp_validate_hw_link_id(hw_link_id);
+	pstats = &peer->stats[hw_link_id];
+	rx = &pstats->rx[ring_id];
 
 	for (i = 0; i < MAX_TP_TIDS; i++) {
 		if (!(active_tid_mask & (1 << i))) {
@@ -635,7 +637,9 @@ int ath12k_wifi7_deliver_raw_frame(struct ath12k_pdev_dp *dp_pdev,
 	pubsta = peer->sta;
 	if (pubsta && pubsta->valid_links) {
 		status->link_valid = 1;
-		status->link_id = peer->hw_links[rx_spd->reo.src_link_id];
+		status->link_id = ath12k_dp_peer_convert_hw_to_logical_link_id(
+							peer,
+							rx_spd->reo.src_link_id);
 	}
 
 	msdu->priority = rx_mpdu_info->tid;
@@ -723,7 +727,9 @@ int ath12k_wifi7_deliver_nwifi_frame(struct ath12k_pdev_dp *dp_pdev,
 	pubsta = peer->sta;
 	if (pubsta && pubsta->valid_links) {
 		status->link_valid = 1;
-		status->link_id = peer->hw_links[rx_spd->reo.src_link_id];
+		status->link_id = ath12k_dp_peer_convert_hw_to_logical_link_id(
+							peer,
+							rx_spd->reo.src_link_id);
 	}
 
 	msdu->priority = rx_mpdu_info->tid;
@@ -830,7 +836,9 @@ int ath12k_wifi7_deliver_ethernet_frame(struct ath12k_pdev_dp *dp_pdev,
 	pubsta = peer->sta;
 	if (pubsta && pubsta->valid_links) {
 		status->link_valid = 1;
-		status->link_id = peer->hw_links[rx_spd->reo.src_link_id];
+		status->link_id = ath12k_dp_peer_convert_hw_to_logical_link_id(
+							peer,
+							rx_spd->reo.src_link_id);
 	}
 
 	msdu->priority = rx_mpdu_info->tid;
