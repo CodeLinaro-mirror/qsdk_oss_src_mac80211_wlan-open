@@ -459,7 +459,7 @@ enum ath12k_dp_eapol_key_type {
 #define MAX_TQM_RELEASE_REASON 29
 #define MAX_FW_TX_STATUS 7
 
-extern u32 ath12k_dp_tx_comp_ring_size[MAX_TX_COMP_RING];
+extern u32 ath12k_dp_tx_comp_ring_size[DP_TCL_NUM_RING_MAX];
 
 extern u32 ath12k_dp_tcl_data_ring_size[DP_TCL_NUM_RING_MAX];
 
