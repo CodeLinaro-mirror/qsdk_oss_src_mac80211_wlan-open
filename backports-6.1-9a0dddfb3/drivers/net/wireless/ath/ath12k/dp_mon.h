@@ -593,37 +593,41 @@ struct ath12k_pdev_mon_dp_stats {
 	u32 status_buf_reaped;
 	u32 status_buf_processed;
 	u32 status_buf_free;
-
+	u32 status_buf_error_free;
 	u32 ring_desc_empty;
 	u32 ring_desc_flush;
 	u32 ring_desc_trunc;
-
 	u32 pkt_tlv_processed;
 	u32 pkt_tlv_free;
+	u32 pkt_tlv_error_free;
 	u32 pkt_tlv_to_mac80211;
 	u32 pkt_tlv_truncated;
-
+	u32 pkt_tlv_reaped;
 	u32 num_skb_alloc;
 	u32 num_skb_free;
 	u32 num_skb_to_mac80211;
-
 	u32 num_ppdu_reaped;
 	u32 num_ppdu_processed;
-
 	u32 num_skb_raw;
 	u32 num_frag_raw;
-
 	u32 num_skb_eth;
 	u32 num_frag_eth;
-
 	u32 drop_tlv;
-
 	u32 ppdu_desc_used;
 	u32 ppdu_desc_proc;
 	u32 ppdu_desc_free;
-
 	u32 ppdu_desc_free_list_empty_cnt;
 	u32 restitch_insuff_frags_cnt;
+	u32 invalid_status_magic_num;
+	u32 invalid_pkt_magic_num;
+	u32 null_mpdu_q;
+	u32 skb_alloc_fail;
+	u32 rx_hdr_not_rcvd;
+	u32 min_frags_unavailable;
+	u32 invalid_mpdu_hdr_len;
+	u32 invalid_in_use;
+	u32 invalid_end_offset;
+	u32 status_frag_add_to_skb;
 };
 
 /**

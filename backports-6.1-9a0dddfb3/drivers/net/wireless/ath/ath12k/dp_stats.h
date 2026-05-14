@@ -1090,6 +1090,7 @@ struct ath12k_stats_feat {
 	bool feat_delay;
 	bool feat_jitter;
 	bool feat_sojourn;
+	bool feat_mon_stats;
 };
 
 struct ath12k_telemetry_command {
