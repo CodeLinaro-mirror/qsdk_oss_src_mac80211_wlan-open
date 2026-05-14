@@ -3456,7 +3456,7 @@ int ath12k_dp_mon_tx_process_ring(struct ath12k_pdev_dp *dp_pdev,
 							      ring_entry,
 							      &desc_info);
 		if (ret) {
-			ath12k_err(ab,
+			ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX,
 				   "Failed to extract TX mon ring desc: %d\n",
 				   ret);
 			goto move_next;
