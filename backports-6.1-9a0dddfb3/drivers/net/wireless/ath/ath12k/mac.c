@@ -18781,6 +18781,26 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 	lockdep_assert_wiphy(hw->wiphy);
 
+	if (!arvif->is_scan_vif && vif->type == NL80211_IFTYPE_STATION &&
+	    wdev && wdev->netdev) {
+		struct ath12k_hw *ah_tmp = ar->ah;
+		int i;
+
+		mutex_lock(&ah_tmp->hw_mutex);
+		for (i = 0; i < ATH12K_GROUP_MAX_RADIO; i++) {
+			if (ah_tmp->pending_primary_link[i].valid &&
+			    strncmp(ah_tmp->pending_primary_link[i].ifname,
+				    wdev->netdev->name, IFNAMSIZ) == 0) {
+				ahvif->hw_link_id =
+					ah_tmp->pending_primary_link[i].hw_link_id;
+				ahvif->overide_primary_umac = true;
+				ah_tmp->pending_primary_link[i].valid = false;
+				break;
+			}
+		}
+		mutex_unlock(&ah_tmp->hw_mutex);
+	}
+
 	link_conf = ath12k_mac_get_link_bss_conf(arvif);
 
 	if (link_conf && link_conf->is_cfp_enabled)
