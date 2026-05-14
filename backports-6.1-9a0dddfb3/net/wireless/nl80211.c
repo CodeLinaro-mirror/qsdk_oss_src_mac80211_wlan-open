@@ -4959,10 +4959,9 @@ static int nl80211_send_iface(struct sk_buff *msg, u32 portid, u32 seq, int flag
 				goto nla_put_failure;
 			/*
 			 * Repurposed links can have different SSID from its
-			 * MLD, update all link(s) SSID if the MLD has at least
-			 * one repurposed link.
+			 * MLD, update repurposed link(s) SSID.
 			 */
-			if (wdev->repurposed_links)
+			if (wdev->repurposed_links & BIT(link_id))
 				if (wdev->links[link_id].ap.ssid_len &&
 				    nla_put(msg, NL80211_ATTR_SSID,
 					    wdev->links[link_id].ap.ssid_len,
