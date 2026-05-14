@@ -353,14 +353,17 @@ int ath12k_qos_disable(struct ath12k_base *ab, struct ath12k *ar,
 	if (ret != 0 || qos_ctx->profiles[id].ref_count != 0)
 		return ret;
 
-	if (qos_dir == QOS_PROFILE_DL) {
-		ret = ath12k_core_del_dl_qos(ab, id);
-	} else if (qos_dir == QOS_PROFILE_UL) {
-		if (ar && mac_addr) {
-			ret =  ath12k_core_config_ul_qos(ar, &params, id,
-							 mac_addr, false);
+	if (!test_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ab->ag->flags)) {
+		if (qos_dir == QOS_PROFILE_DL) {
+			ret = ath12k_core_del_dl_qos(ab, id);
+		} else if (qos_dir == QOS_PROFILE_UL) {
+			if (ar && mac_addr) {
+				ret =  ath12k_core_config_ul_qos(ar, &params, id,
+								 mac_addr, false);
+			}
 		}
 	}
+
 	return ret;
 }
 

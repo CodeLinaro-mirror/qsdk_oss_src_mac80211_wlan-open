@@ -809,7 +809,7 @@ int ath12k_erp_enter(struct ieee80211_hw *hw, struct ieee80211_vif *vif, int lin
 
 	if (!ath12k_check_erp_power_down(ag) &&
 	    ath12k_mac_validate_active_radio_count(ah))
-		ath12k_core_cleanup_power_down_q6(ag);
+		ath12k_core_cleanup_power_down_q6(ag, true);
 
 	return 0;
 

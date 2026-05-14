@@ -77,7 +77,11 @@ void ieee80211_inform_bss(struct wiphy *wiphy,
 	if (!update_data)
 		return;
 
-	elems = ieee802_11_parse_elems(ies->data, ies->len, false, NULL);
+	elems = ieee802_11_parse_elems(ies->data, ies->len,
+				       update_data->beacon ?
+					IEEE80211_FTYPE_MGMT | IEEE80211_STYPE_BEACON :
+					IEEE80211_FTYPE_MGMT | IEEE80211_STYPE_PROBE_RESP,
+				       NULL);
 	if (!elems)
 		return;
 
@@ -336,9 +340,19 @@ void ieee80211_scan_rx(struct ieee80211_local *local, struct sk_buff *skb)
 			return;
 	}
 
-	/* Do not update the BSS table in case of only monitor interfaces */
-	if (local->open_count == local->monitors)
-		return;
+	/* Do not update the BSS table in case of only monitor interfaces.
+	 * However, scan radio (AP interface used as monitor for scan) should
+	 * still update the BSS table for scan results.
+	 */
+	if (local->open_count == local->monitors) {
+		struct ieee80211_sub_if_data *scan_sdata;
+
+		scan_sdata = rcu_dereference(local->scan_sdata);
+
+		/* Check if the only "monitor" is actually a scan radio */
+		if (!(scan_sdata && wdev_is_scan_radio(&scan_sdata->wdev)))
+			return;
+	}
 
 	bss = ieee80211_bss_info_update(local, rx_status,
 					mgmt, skb->len,
@@ -491,7 +505,6 @@ static void __ieee80211_scan_completed(struct ieee80211_hw *hw, bool aborted)
 	}
 
 	if (scan_req != local->int_scan_req && scan_req &&
-		(scan_req->wdev == &scan_sdata->wdev) &&
 		(scan_req->wiphy == local->hw.wiphy)) {
 		local->scan_info.aborted = aborted;
 		cfg80211_scan_done(scan_req, &local->scan_info);
@@ -597,8 +610,10 @@ static bool __ieee80211_can_leave_ch(struct ieee80211_sub_if_data *sdata,
 	if (!ieee80211_is_radar_required(local, req))
 		return true;
 
-	if (!regulatory_pre_cac_allowed(local->hw.wiphy))
-		return false;
+	if (sdata->vif.type != NL80211_IFTYPE_STATION) {
+		if (!regulatory_pre_cac_allowed(local->hw.wiphy))
+			return false;
+	}
 
 	list_for_each_entry(sdata_iter, &local->interfaces, list) {
 		for_each_valid_link(&sdata_iter->wdev, link_id)

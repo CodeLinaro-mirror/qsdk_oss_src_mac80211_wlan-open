@@ -11,7 +11,7 @@
 #define QDSS_ETR_MEM_REGION_TYPE                        0x6
 
 #define QMI_WLFW_QDSS_TRACE_REQ_MEM_IND_V01     0x003F
-#define QMI_Q6_QDSS_ETR_SIZE_QCN9274            0x100000
+#define QMI_Q6_QDSS_ETR_SIZE			0x100000
 #define QMI_WLFW_QDSS_TRACE_SAVE_IND_V01        0x0041
 #define QMI_WLFW_QDSS_TRACE_DATA_REQ_V01 0x0042
 #define QMI_WLFW_QDSS_TRACE_DATA_RESP_V01 0x0042
@@ -112,6 +112,7 @@ enum athdbg_qmi_event_type {
 	ATHDBG_QMI_EVENT_QDSS_TRACE_REQ_MEM = 15,
 	ATHDBG_QMI_EVENT_QDSS_TRACE_SAVE,
 	ATHDBG_QMI_EVENT_QDSS_TRACE_REQ_DATA,
+	ATHDBG_QMI_EVENT_DDR_DUMP_REGION_REQ,
 	ATHDBG_QMI_EVENT_MAX,
 };
 
@@ -123,7 +124,6 @@ struct athdbg_qmi_driver_event {
 
 
 struct athdbg_qmi {
-	void *ab;
 	struct work_struct event_work;
 	struct workqueue_struct *event_wq;
 	struct list_head event_list;
@@ -131,6 +131,32 @@ struct athdbg_qmi {
 	struct target_mem_chunk qdss_mem[ATH12K_QMI_WLANFW_MAX_NUM_MEM_SEG_V01];
 	u32 qdss_mem_seg_len;
 	struct m3_mem_region m3_mem;
+};
+
+#define QMI_WLFW_DDR_DUMP_REGION_IND_V01		0x0062
+#define WLANFW_DDR_DUMP_REGION_IND_MSG_V01_MAX_MSG_LEN	907
+struct wlanfw_ddr_dump_region_ind_msg_v01 {
+	u32 mem_seg_len;
+	struct qmi_wlanfw_mem_seg_resp_s_v01
+		mem_seg[ATH12K_QMI_WLANFW_MAX_NUM_MEM_SEG_V01];
+	u8 file_name_valid;
+	char file_name[QMI_WLANFW_MAX_STR_LEN_V01 + 1];
+};
+
+extern struct qmi_elem_info qmi_wlanfw_ddr_dump_region_ind_msg_v01_ei[];
+struct ath12k_fw_mem {
+	size_t size;
+	void *va;
+	phys_addr_t pa;
+	u8 valid;
+	u32 type;
+};
+
+struct ath12k_qmi_event_ddr_dump_region {
+	u32 total_size;
+	u32 mem_seg_len;
+	struct ath12k_fw_mem mem_seg[ATH12K_QMI_WLANFW_MAX_NUM_MEM_SEG_V01];
+	char file_name[QMI_WLANFW_MAX_STR_LEN_V01 + 1];
 };
 
 void athdbg_wlfw_qdss_trace_req_mem_ind_cb(struct qmi_handle *qmi_hdl,
@@ -148,7 +174,7 @@ int athdbg_qmi_driver_event_post(struct ath12k_qmi *qmi,
 			void *data);
 
 int athdbg_qmi_qdss_trace_mem_info_send_sync(void *qmi_ab);
-void athdbg_qmi_qdss_mem_free(struct athdbg_qmi *dbg_qmi);
+void athdbg_qmi_qdss_mem_free(struct ath12k_base *ab);
 int athdbg_send_qdss_trace_mode_req(void *qmi_ab,
 		enum qmi_wlanfw_qdss_trace_mode_enum_v01 mode, u64 value);
 int athdbg_qmi_send_qdss_trace_config_download_req(void *qmi_ab,
@@ -160,4 +186,8 @@ void athdbg_qmi_event_qdss_trace_save_hdlr(struct athdbg_qmi *dbg_qmi,
 int athdbg_qmi_handle_init(struct qmi_handle *qmi, size_t recv_buf_size,
 		const struct qmi_ops *ops,
 		const struct qmi_msg_handler *handlers);
+void athdbg_qmi_wlanfw_ddr_dump_region_ind_cb(struct qmi_handle *qmi_hdl,
+					      struct sockaddr_qrtr *sq,
+					      struct qmi_txn *txn,
+					      const void *data);
 #endif

@@ -26,6 +26,7 @@
 #include "driver-ops.h"
 #include "wme.h"
 #include "rate.h"
+#include "qcn_extns/cmn_extn.h"
 
 #ifdef CPTCFG_MAC80211_NSS_SUPPORT
 bool nss_redirect = false;
@@ -324,18 +325,6 @@ static int ieee80211_change_mac(struct net_device *dev, void *addr)
 	return _ieee80211_change_mac(sdata, addr);
 }
 
-static inline int identical_mac_addr_allowed(int type1, int type2)
-{
-	return type1 == NL80211_IFTYPE_MONITOR ||
-		type2 == NL80211_IFTYPE_MONITOR ||
-		type1 == NL80211_IFTYPE_P2P_DEVICE ||
-		type2 == NL80211_IFTYPE_P2P_DEVICE ||
-		(type1 == NL80211_IFTYPE_AP && type2 == NL80211_IFTYPE_AP_VLAN) ||
-		(type1 == NL80211_IFTYPE_AP_VLAN &&
-			(type2 == NL80211_IFTYPE_AP ||
-			 type2 == NL80211_IFTYPE_AP_VLAN));
-}
-
 static int ieee80211_check_concurrent_iface(struct ieee80211_sub_if_data *sdata,
 					    enum nl80211_iftype iftype)
 {
@@ -547,8 +536,10 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata, bool going_do
 	     sdata->vif.valid_links);
 
 	sdata->vif.bss_conf.csa_active = false;
-	if (sdata->vif.type == NL80211_IFTYPE_STATION)
+	if (sdata->vif.type == NL80211_IFTYPE_STATION) {
 		sdata->deflink.u.mgd.csa.waiting_bcn = false;
+		sdata->deflink.u.mgd.csa.bw_reconfig = false;
+	}
 	ieee80211_vif_unblock_queues_csa(sdata);
 
 	wiphy_work_cancel(local->hw.wiphy, &sdata->deflink.csa.finalize_work);
@@ -578,7 +569,7 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata, bool going_do
 			if (skb->dev == sdata->dev) {
 				__skb_unlink(skb, &ps->bc_buf);
 				local->total_ps_buffered--;
-				ieee80211_free_txskb(&local->hw, skb);
+				__ieee80211_free_txskb(&local->hw, skb);
 			}
 		}
 		spin_unlock_irqrestore(&ps->bc_buf.lock, flags);
@@ -608,6 +599,7 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata, bool going_do
 		}
 
 		ieee80211_adjust_monitor_flags(sdata, -1);
+		drv_set_monitor(local, &sdata->vif, 0);
 		break;
 	case NL80211_IFTYPE_NAN:
 		/* clean all the functions */
@@ -644,7 +636,7 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata, bool going_do
 	}
 
 	/*
-	 * Since ieee80211_free_txskb() may issue __dev_queue_xmit()
+	 * Since __ieee80211_free_txskb() may issue __dev_queue_xmit()
 	 * which should be called with interrupts enabled, reclamation
 	 * is done in two phases:
 	 */
@@ -653,7 +645,7 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata, bool going_do
 	/* ... and perform actual reclamation with interrupts enabled. */
 	skb_queue_walk_safe(&freeq, skb, tmp) {
 		__skb_unlink(skb, &freeq);
-		ieee80211_free_txskb(&local->hw, skb);
+		__ieee80211_free_txskb(&local->hw, skb);
 	}
 
 	/* Since there are percpu SW queues, unlink all
@@ -689,7 +681,8 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata, bool going_do
 	switch (sdata->vif.type) {
 	case NL80211_IFTYPE_AP_VLAN:
 		if ((ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD) ||
-		     ieee80211_hw_check(&local->hw, SUPPORTS_VLAN_DATA_OFFLOAD)) &&
+		     ieee80211_hw_check(&local->hw, SUPPORTS_VLAN_DATA_OFFLOAD) ||
+		     ieee80211_hw_check(&local->hw, VLAN_GROUP_KEY_HW_OFFLOAD)) &&
 		    going_down)
 			drv_remove_interface(local, sdata);
 		break;
@@ -709,6 +702,8 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata, bool going_do
 	default:
 		if (!going_down)
 			break;
+
+		ieee80211_scan_radio_do_stop_extn(sdata, &hw_reconf_flags);
 		drv_remove_interface(local, sdata);
 
 		/* Clear private driver data to prevent reuse */
@@ -735,21 +730,14 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata, bool going_do
 		ieee80211_add_virtual_monitor(local);
 }
 
-void ieee80211_stop_mbssid(struct ieee80211_sub_if_data *sdata, int _link_id)
+void ieee80211_stop_mbssid(struct ieee80211_sub_if_data *sdata)
 {
 	struct ieee80211_sub_if_data *tx_sdata;
 	struct ieee80211_bss_conf *link_conf, *tx_bss_conf;
 	struct ieee80211_link_data *tx_link, *link;
-	unsigned long iter_valid_links;
-	unsigned int link_id;
+	unsigned int link_id, tx_link_id;
 
 	lockdep_assert_wiphy(sdata->local->hw.wiphy);
-
-	if (_link_id == -1)
-		/* Check link 0 by default for non MLO. */
-		iter_valid_links = sdata->vif.valid_links | BIT(0);
-	else
-		iter_valid_links = BIT(_link_id);
 
 	/* Check if any of the links of current sdata is an MBSSID. */
 	for_each_vif_active_link(&sdata->vif, link_conf, link_id) {
@@ -758,6 +746,7 @@ void ieee80211_stop_mbssid(struct ieee80211_sub_if_data *sdata, int _link_id)
 			continue;
 
 		tx_sdata = vif_to_sdata(tx_bss_conf->vif);
+		tx_link_id = tx_bss_conf->link_id;
 		RCU_INIT_POINTER(link_conf->tx_bss_conf, NULL);
 
 		/* If we are not tx sdata reset tx sdata's tx_bss_conf to avoid recusrion
@@ -788,13 +777,13 @@ void ieee80211_stop_mbssid(struct ieee80211_sub_if_data *sdata, int _link_id)
 			 * removal can be supported.
 			 */
 			cfg80211_stop_iface(link_sdata->wdev.wiphy, &link_sdata->wdev,
-					    GFP_KERNEL, link_id);
+					    GFP_KERNEL, link->link_id);
 		}
 
 		/* If we are not tx sdata, remove links of tx sdata and proceed */
 		if (sdata != tx_sdata && ieee80211_sdata_running(tx_sdata))
 			cfg80211_stop_iface(tx_sdata->wdev.wiphy,
-					    &tx_sdata->wdev, GFP_KERNEL, link_id);
+					    &tx_sdata->wdev, GFP_KERNEL, tx_link_id);
 	}
 }
 
@@ -826,7 +815,7 @@ static int ieee80211_stop(struct net_device *dev)
 	 * terminating its partner links too in case of MLD.
 	 */
 	if (sdata->vif.type == NL80211_IFTYPE_AP)
-		ieee80211_stop_mbssid(sdata, -1);
+		ieee80211_stop_mbssid(sdata);
 
 	ieee80211_do_stop(sdata, true);
 
@@ -892,10 +881,34 @@ static void ieee80211_uninit(struct net_device *dev)
 	ieee80211_teardown_sdata(sdata);
 }
 
+static bool ieee80211_sdata_has_txrx_stats_offload(struct ieee80211_sub_if_data *sdata)
+{
+	if (!sdata)
+		return false;
+
+	if (sdata->vif.offload_flags & IEEE80211_OFFLOAD_TXRX_STATS)
+		return true;
+
+	/* AP_VLAN has no vdev in firmware; check parent AP's offload flag */
+	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN && sdata->bss) {
+		struct ieee80211_sub_if_data *master =
+			container_of(sdata->bss, struct ieee80211_sub_if_data, u.ap);
+		return (master->vif.offload_flags & IEEE80211_OFFLOAD_TXRX_STATS);
+	}
+
+	return false;
+}
+
 static void
 ieee80211_get_stats64(struct net_device *dev, struct rtnl_link_stats64 *stats)
 {
-	dev_fetch_sw_netstats(stats, dev->tstats);
+	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+	struct ieee80211_local *local = sdata->local;
+
+	if (ieee80211_sdata_has_txrx_stats_offload(sdata))
+		drv_get_netstats(local, sdata, stats);
+	else
+		dev_fetch_sw_netstats(stats, dev->tstats);
 }
 
 static int ieee80211_change_mtu(struct net_device *dev, int mtu)
@@ -930,6 +943,14 @@ static u16 ieee80211_netdev_select_queue(struct net_device *netdev,
 	return smp_processor_id();
 }
 
+static int ieee80211_set_features(struct net_device *dev,
+				  netdev_features_t features)
+{
+	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+
+	sdata->vif.netdev_features = features & MAC80211_SUPPORTED_FEATURES_TX;
+	return 0;
+}
 
 static const struct net_device_ops ieee80211_dataif_ops = {
 	.ndo_open		= ieee80211_open,
@@ -1008,6 +1029,7 @@ static const struct net_device_ops ieee80211_dataif_8023_ops = {
 	.ndo_select_queue       = ieee80211_netdev_select_queue,
 	.ndo_init               = ieee80211_init,
 	.ndo_get_stats64	= ieee80211_get_stats64,
+	.ndo_set_features       = ieee80211_set_features,
 };
 
 static bool ieee80211_iftype_supports_hdr_offload(enum nl80211_iftype iftype)
@@ -1148,7 +1170,6 @@ void ieee80211_adjust_monitor_flags(struct ieee80211_sub_if_data *sdata,
 	ADJUST(OTHER_BSS, other_bss);
 	if (!(flags & MONITOR_FLAG_SKIP_TX))
 		local->tx_mntrs += offset;
-
 #undef ADJUST
 }
 
@@ -1428,7 +1449,8 @@ int ieee80211_do_open(struct wireless_dev *wdev, bool coming_up)
 				netif_carrier_on(dev);
 
 			if (ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD) ||
-			     ieee80211_hw_check(&local->hw, SUPPORTS_VLAN_DATA_OFFLOAD)) {
+			    ieee80211_hw_check(&local->hw, SUPPORTS_VLAN_DATA_OFFLOAD) ||
+			    ieee80211_hw_check(&local->hw, VLAN_GROUP_KEY_HW_OFFLOAD)) {
 				ieee80211_set_sdata_offload_flags(sdata);
 				res = drv_add_interface(local, sdata);
 				if (res)
@@ -1467,6 +1489,7 @@ int ieee80211_do_open(struct wireless_dev *wdev, bool coming_up)
 
 		ieee80211_adjust_monitor_flags(sdata, 1);
 		ieee80211_configure_filter(local);
+		drv_set_monitor(local, &sdata->vif, sdata->u.mntr.flags);
 		ieee80211_recalc_offload(local);
 		ieee80211_recalc_idle(local);
 
@@ -1550,6 +1573,10 @@ int ieee80211_do_open(struct wireless_dev *wdev, bool coming_up)
 		if (sdata->u.mntr.flags & MONITOR_FLAG_COOK_FRAMES)
 			break;
 		list_add_tail_rcu(&sdata->u.mntr.list, &local->mon_list);
+		break;
+	case NL80211_IFTYPE_AP:
+		/* Handle scan radio as monitor for Rx */
+		ieee80211_scan_radio_do_open_extn(sdata, wdev, dev, &hw_reconf_flags);
 		break;
 	default:
 		break;
@@ -1881,6 +1908,11 @@ static void ieee80211_setup_sdata(struct ieee80211_sub_if_data *sdata,
 #ifdef CPTCFG_MAC80211_PPE_SUPPORT
 	sdata->vif.ppe_vp_num = -1;
 #endif
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	if (!mmeshsim)
+		sdata->vif.mhdr_len =  MMESH_TX_META_HDR;
+#endif
+
 	sdata->wdev.iftype = type;
 
 	sdata->control_port_protocol = cpu_to_be16(ETH_P_PAE);
@@ -1891,6 +1923,9 @@ static void ieee80211_setup_sdata(struct ieee80211_sub_if_data *sdata,
 	sdata->vif.bss_conf.txpower = INT_MIN; /* unset */
 
 	sdata->noack_map = 0;
+
+	sdata->chan_hw_idx = -1;
+	sdata->flags &= ~IEEE80211_SDATA_OFFCHAN_PACKETS;
 
 	/* only monitor/p2p-device differ */
 	if (sdata->dev) {
@@ -2252,9 +2287,9 @@ int ieee80211_if_add(struct ieee80211_local *local, const char *name,
 			txq_size += sizeof(struct txq_info) +
 				    local->hw.txq_data_size;
 
-		ndev = alloc_netdev_mqs(size + txq_size,
-					name, name_assign_type,
-					ieee80211_if_setup, 4, 4);
+		ndev = alloc_netdev_mqs(size + txq_size, name,
+					name_assign_type, ieee80211_if_setup,
+					local->hw.queues, local->hw.queues);
 		if (!ndev)
 			return -ENOMEM;
 
@@ -2549,3 +2584,27 @@ void ieee80211_vif_unblock_queues_csa(struct ieee80211_sub_if_data *sdata)
 	ieee80211_wake_vif_queues_norefcount(local, sdata,
 					     IEEE80211_QUEUE_STOP_REASON_CSA);
 }
+
+void ieee80211_enable_offchan_packet_capture(struct ieee80211_vif *vif,
+					     bool enable)
+{
+	struct ieee80211_sub_if_data *sdata = vif_to_sdata(vif);
+	struct ieee80211_local *local = sdata->local;
+	struct cfg80211_chan_def *chandef = &sdata->vif.bss_conf.chanreq.oper;
+	u32 ctr_freq = MHZ_TO_KHZ(chandef->chan->center_freq);
+
+	if (enable) {
+		if (!chandef->chan) {
+			pr_warn("%s: Cannot enable off-channel capture without valid channel\n",
+				sdata->name);
+			return;
+		}
+		sdata->flags |= IEEE80211_SDATA_OFFCHAN_PACKETS;
+		sdata->chan_hw_idx = cfg80211_get_hw_idx_by_freq(local->hw.wiphy,
+								 ctr_freq);
+	} else {
+		sdata->flags &= ~IEEE80211_SDATA_OFFCHAN_PACKETS;
+		sdata->chan_hw_idx = -1;
+	}
+}
+EXPORT_SYMBOL(ieee80211_enable_offchan_packet_capture);

@@ -7,7 +7,6 @@
 #include "core.h"
 #include "telemetry.h"
 #include "telemetry_agent_if.h"
-#include "telemetry_agent.h"
 #include "debug.h"
 #include "dp_peer.h"
 #include "dp_mon.h"
@@ -130,10 +129,11 @@ int ath12k_telemetry_ab_peer_agent_create(struct ath12k_base *ab)
 
 	spin_lock_bh(&ab->dp->dp_lock);
 	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
-		if (!peer->vif || !peer->sta || !peer->assoc_success)
+		if (!ath12k_dp_link_peer_get_vif(peer) ||
+		    !ath12k_dp_link_peer_get_sta(peer) || !peer->assoc_success)
 			continue;
 
-		if (ath12k_peer_get_peer_type(peer) != NL80211_IFTYPE_AP) {
+		if (ath12k_dp_link_peer_get_vif_type(peer) != NL80211_IFTYPE_AP) {
 			ath12k_dbg(NULL, ATH12K_DBG_RM,
 				   "Peer reference for non sta type is not supported\n");
 			continue;
@@ -276,10 +276,11 @@ int ath12k_telemetry_ab_peer_agent_destroy(struct ath12k_base *ab)
 
 	spin_lock_bh(&ab->dp->dp_lock);
 	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
-		if (!peer->vif || !peer->sta)
+		if (!ath12k_dp_link_peer_get_vif(peer) ||
+		    !ath12k_dp_link_peer_get_sta(peer))
 			continue;
 
-		if (ath12k_peer_get_peer_type(peer) != NL80211_IFTYPE_AP)
+		if (ath12k_dp_link_peer_get_vif_type(peer) != NL80211_IFTYPE_AP)
 			continue;
 
 		pdev = &ab->pdevs[peer->pdev_idx];
@@ -484,7 +485,7 @@ static int ath12k_calculate_link_rssi(struct ath12k_dp_link_peer *peer)
 	u8 bw_offset;
 
 	WARN_ON(!rcu_read_lock_held());
-	sta = peer->sta;
+	sta = ath12k_dp_link_peer_get_sta(peer);
 	link_sta = rcu_dereference(sta->link[peer->link_id]);
 	bw = link_sta->bandwidth;
 
@@ -494,34 +495,31 @@ static int ath12k_calculate_link_rssi(struct ath12k_dp_link_peer *peer)
 	 * path loss approximation. Not needed for energy service
 	 */
 
-	avg_snr = SNR_OUT(peer->peer_stats.dp_mon_stats.avg_snr) + bw_offset;
+	avg_snr = WEIGHTED_AVG_OUT(peer->peer_stats.dp_mon_stats.avg_snr) + bw_offset;
 
 	return avg_snr;
 }
 
-int ath12k_get_peer_stats(void *obj, struct agent_peer_iface_stats_obj *stats)
+int ath12k_get_peer_stats(int obj_id, void *parent,
+			  struct agent_peer_iface_stats_obj *stats)
 {
-	struct agent_peer_db *peer_db = (struct agent_peer_db *)obj;
-	struct ath12k_dp_link_peer *peer = peer_db->peer_obj_ptr;
-	struct ath12k_pdev *pdev = peer_db->pdev_obj_ptr;
-	struct ath12k_base *ab = peer_db->psoc_obj_ptr;
+	int peer_id = obj_id;
+	struct ath12k_base *ab = (struct ath12k_base *)parent;
 	struct ath12k_peer_telemetry_stats dp_stats;
+	struct ath12k_dp_link_peer *peer;
 	u8 ac;
 
 	/* Telemetry agent is expected to hold lock while fetching this stats
 	 */
-	if (!pdev || !ab) {
+	if (!ab) {
 		ath12k_err(NULL, "Invalid peer object received from telemetry agent object\n");
 		return -EINVAL;
 	}
 
-	if (!pdev->ar)
-		return -EINVAL;
-
 	spin_lock_bh(&ab->dp->dp_lock);
-	peer = ath12k_dp_link_peer_find_by_id(ab->dp, peer_db->peer_id);
+	peer = ath12k_dp_link_peer_find_by_id(ab->dp, peer_id);
 	if (!peer || peer->is_bridge_peer || !peer->assoc_success ||
-	    !peer->sta) {
+	    !ath12k_dp_link_peer_get_sta(peer)) {
 		spin_unlock_bh(&ab->dp->dp_lock);
 		return -EINVAL;
 	}
@@ -547,8 +545,8 @@ int ath12k_get_peer_stats(void *obj, struct agent_peer_iface_stats_obj *stats)
 			dp_stats.tx_airtime_consumption[ac];
 
 		ath12k_dbg(NULL, ATH12K_DBG_RM,
-			   "peer stats peer: %pM soc: %d pdev: %d link: %d ac: %d airtime_consumption: %d tx: %d rx: %d\n",
-			   peer->addr, ab->device_id, pdev->pdev_id, peer->link_id,
+			   "peer stats peer: %pM soc: %d link: %d ac: %d airtime_consumption: %d tx: %d rx: %d\n",
+			   peer->addr, ab->device_id, peer->link_id,
 			   ac, stats->airtime_consumption[ac],
 			   dp_stats.tx_airtime_consumption[ac],
 			   dp_stats.rx_airtime_consumption[ac]);
@@ -661,7 +659,7 @@ int ath12k_telemetry_peer_agent_create_handler(struct ath12k *ar,
 		return -EINVAL;
 
 	/* Create only for STA type */
-	if (ath12k_peer_get_peer_type(peer) != NL80211_IFTYPE_AP)
+	if (ath12k_dp_link_peer_get_vif_type(peer) != NL80211_IFTYPE_AP)
 		return -EOPNOTSUPP;
 
 	ath12k_telemetry_peer_agent_update(ab, pdev, peer, true);
@@ -693,7 +691,7 @@ int ath12k_telemetry_peer_agent_delete_handler(struct ath12k *ar,
 	}
 
 	/* Create only for STA type */
-	if (ath12k_peer_get_peer_type(peer) != NL80211_IFTYPE_AP) {
+	if (ath12k_dp_link_peer_get_vif_type(peer) != NL80211_IFTYPE_AP) {
 		ath12k_dbg(NULL, ATH12K_DBG_RM,
 			   "Peer reference for non sta type is not supported\n");
 		return -EOPNOTSUPP;
@@ -731,8 +729,7 @@ int ath12k_telemetry_dynamic_app_init_deinit_notify(u8 init, u8 id, u64 service_
 }
 
 void ath12k_telemetry_notify_rm(enum agent_notification_event event,
-				enum rm_services id,
-				uint8_t category)
+				int id, uint8_t category)
 {
 	ath12k_err(NULL,
 		   "Handshake received from telemetry for Event:%d id:%d category:%d\n",
@@ -758,6 +755,8 @@ int register_telemetry_agent_ops(struct telemetry_agent_ops *agent_ops)
 	g_agent_ops->sawf_get_drop_stats = ath12k_sawf_get_drop_stats;
 	g_agent_ops->sawf_get_msduq_tx_stats = ath12k_sawf_get_msduq_tx_stats;
 	g_agent_ops->sawf_notify_breach = ath12k_sawf_notify_breach;
+
+	g_agent_ops->agent_notify_rssi_rate_breach = ath12k_rssi_rate_notify_breach;
 
 	g_agent_ops->agent_notify_host_event = ath12k_telemetry_notify_rm;
 
@@ -864,6 +863,65 @@ int ath12k_telemetry_set_sla_detect_cfg(struct ath12k_sla_detect_cfg param)
 	return -ENOENT;
 }
 
+int ath12k_telemetry_set_threshold(u8 type, u32 value)
+{
+	if (g_agent_ops && g_agent_ops->agent_set_rssi_rate_threshold)
+		return g_agent_ops->agent_set_rssi_rate_threshold(type, value);
+
+	return -ENOTCONN;
+}
+
+int ath12k_telemetry_print_thresholds(void)
+{
+	if (g_agent_ops && g_agent_ops->agent_print_rssi_rate_thresholds)
+		return g_agent_ops->agent_print_rssi_rate_thresholds();
+
+	return -ENOTCONN;
+}
+
+int ath12k_telemetry_set_breach_mask(u8 mask)
+{
+	if (g_agent_ops && g_agent_ops->agent_set_rssi_rate_breach_mask)
+		return g_agent_ops->agent_set_rssi_rate_breach_mask(mask);
+
+	return -ENOTCONN;
+}
+
+int ath12k_get_rssi_rate_threshold(u8 type)
+{
+	if (g_agent_ops && g_agent_ops->agent_get_rssi_rate_threshold)
+		return g_agent_ops->agent_get_rssi_rate_threshold(type);
+
+	return -ENOTCONN;
+}
+
+int ath12k_get_rssi_rate_breach_mask(void)
+{
+	if (g_agent_ops && g_agent_ops->agent_get_rssi_rate_breach_mask)
+		return g_agent_ops->agent_get_rssi_rate_breach_mask();
+
+	return -ENOTCONN;
+}
+
+int ath12k_telemetry_set_hysteresis(u8 type, u32 value)
+{
+	if (g_agent_ops && g_agent_ops->agent_set_hysteresis)
+		return g_agent_ops->agent_set_hysteresis(type, value);
+
+	return -ENOTCONN;
+}
+
+int ath12k_telemetry_get_hysteresis(u8 type, u64 *hyst_value)
+{
+	if (!hyst_value)
+		return -EINVAL;
+
+	if (g_agent_ops && g_agent_ops->agent_get_hysteresis)
+		return g_agent_ops->agent_get_hysteresis(type, hyst_value);
+
+	return -ENOTCONN;
+}
+
 void *ath12k_telemetry_peer_ctx_alloc(void *peer, void *sawf_stats,
 				      u8 *mac_addr,
 				      u8 svc_id, u8 hostq_id)
@@ -881,6 +939,7 @@ void ath12k_telemetry_peer_ctx_free(void *telemetry_peer_ctx)
 	if (g_agent_ops)
 		g_agent_ops->sawf_free_peer(telemetry_peer_ctx);
 }
+EXPORT_SYMBOL(ath12k_telemetry_peer_ctx_free);
 
 int ath12k_telemetry_update_tid_msduq(void *telemetry_peer_ctx,
 				      u8 hostq_id, u8 tid, u8 msduq_idx)
@@ -1007,6 +1066,30 @@ void ath12k_sawf_notify_breach(u8 *mac_addr,
 			       u8 tid, u8 queue)
 {
 	ath12k_telemetry_breach_indication(mac_addr, svc_id, param, set_clear, tid);
+}
+
+int ath12k_telemetry_update_rssi_rate_breach(u8 soc_id, u16 peer_id, u8 *peer_mac,
+					     u8 path_type,
+					     s32 rssi_value, u32 rate_value)
+{
+	if (g_agent_ops && g_agent_ops->agent_update_rssi_rate_breach)
+		return g_agent_ops->agent_update_rssi_rate_breach(soc_id,
+								  peer_id,
+								  peer_mac,
+								  path_type,
+								  rssi_value,
+								  rate_value);
+
+	return -ENOENT;
+}
+EXPORT_SYMBOL(ath12k_telemetry_update_rssi_rate_breach);
+
+void ath12k_rssi_rate_notify_breach(u8 *peer_mac, u8 breach_type,
+				    u32 threshold_value, u32 detected_value,
+				    bool set_clear)
+{
+	ath12k_rssi_rate_breach_indication(peer_mac, breach_type, threshold_value,
+					   detected_value, set_clear);
 }
 
 int ath12k_telemetry_get_rate(void *telemetry_ctx, u8 tid,

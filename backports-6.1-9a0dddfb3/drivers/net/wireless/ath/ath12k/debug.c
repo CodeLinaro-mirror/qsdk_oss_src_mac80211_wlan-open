@@ -7,6 +7,7 @@
 #include <linux/vmalloc.h>
 #include "core.h"
 #include "debug.h"
+#include "ath_debug/athdbg_uio.h"
 
 void ath12k_info(struct ath12k_base *ab, const char *fmt, ...)
 {
@@ -17,11 +18,16 @@ void ath12k_info(struct ath12k_base *ab, const char *fmt, ...)
 
 	va_start(args, fmt);
 	vaf.va = &args;
+
+#ifdef CPTCFG_ATHDEBUG_UIO_LOGGING
+	athdbg_uio_log_info(ab, fmt, args);
+#else
 	if (likely(ab))
 		dev_info(ab->dev, "%pV", &vaf);
 	else
 		pr_info("ath12k: %pV", &vaf);
-	/* TODO: Trace the log */
+#endif
+
 	va_end(args);
 }
 EXPORT_SYMBOL(ath12k_info);
@@ -35,11 +41,16 @@ void ath12k_err(struct ath12k_base *ab, const char *fmt, ...)
 
 	va_start(args, fmt);
 	vaf.va = &args;
+
+#ifdef CPTCFG_ATHDEBUG_UIO_LOGGING
+	athdbg_uio_log_err(ab, fmt, args);
+#else
 	if (likely(ab))
 		dev_err(ab->dev, "%pV", &vaf);
 	else
 		pr_err("ath12k: %pV", &vaf);
-	/* TODO: Trace the log */
+#endif
+
 	va_end(args);
 }
 EXPORT_SYMBOL(ath12k_err);
@@ -53,40 +64,45 @@ void __ath12k_warn(struct device *dev, const char *fmt, ...)
 
 	va_start(args, fmt);
 	vaf.va = &args;
+
+#ifdef CPTCFG_ATHDEBUG_UIO_LOGGING
+	athdbg_uio_log_warn(dev ? dev_get_drvdata(dev) : NULL, fmt, args);
+#else
 	dev_warn_ratelimited(dev, "%pV", &vaf);
-	/* TODO: Trace the log */
+#endif
+
 	va_end(args);
 }
 EXPORT_SYMBOL(__ath12k_warn);
 
 #ifdef CPTCFG_ATH12K_DEBUG
 
-void __ath12k_dbg(struct ath12k_base *ab, enum ath12k_debug_mask mask,
+void __ath12k_dbg(struct ath12k_base *ab, u64 mask,
 		  const char *fmt, ...)
 {
-        struct va_format vaf;
-        va_list args;
+	struct va_format vaf;
+	va_list args;
 
-        va_start(args, fmt);
+	va_start(args, fmt);
+	vaf.fmt = fmt;
+	vaf.va = &args;
 
-        vaf.fmt = fmt;
-        vaf.va = &args;
-
+#ifdef CPTCFG_ATHDEBUG_UIO_LOGGING
+	athdbg_uio_log_debug(ab, mask, fmt, args);
+#else
 	if (mask & ath12k_debug_mask) {
 		if (ab)
 			dev_dbg(ab->dev, "%pV", &vaf);
 		else
 			pr_info("ath12k: %pV", &vaf);
 	}
-
-	/* TODO: trace log */
-
+#endif
 	va_end(args);
 }
 EXPORT_SYMBOL(__ath12k_dbg);
 
 void ath12k_dbg_dump(struct ath12k_base *ab,
-		     enum ath12k_debug_mask mask,
+		     u64 mask,
 		     const char *msg, const char *prefix,
 		     const void *buf, size_t len)
 {
@@ -115,3 +131,4 @@ void ath12k_dbg_dump(struct ath12k_base *ab,
 EXPORT_SYMBOL(ath12k_dbg_dump);
 
 #endif /* CPTCFG_ATH12K_DEBUG */
+

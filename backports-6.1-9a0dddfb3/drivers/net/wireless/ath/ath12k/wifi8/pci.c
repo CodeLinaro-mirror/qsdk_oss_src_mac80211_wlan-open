@@ -12,20 +12,102 @@
 #include "../core.h"
 #include "../hif.h"
 #include "../mhi.h"
-
-#define QCN9625_DEVICE_ID		0x1113
+#include "hw.h"
+#include "mhi.h"
+#include "dp.h"
+#include "hal.h"
+#include "mgmt_rx.h"
 
 static const struct pci_device_id ath12k_wifi8_pci_id_table[] = {
 	{ PCI_VDEVICE(QCOM, QCN9625_DEVICE_ID) },
+	{ PCI_VDEVICE(QCOM, QCN9589_DEVICE_ID) },
 	{0}
 };
 
 MODULE_DEVICE_TABLE(pci, ath12k_wifi8_pci_id_table);
 
+static int ath12k_wifi8_pci_probe(struct pci_dev *pdev,
+				  const struct pci_device_id *pci_dev)
+{
+	struct ath12k_base *ab = pci_get_drvdata(pdev);
+	struct ath12k_pci *ab_pci;
+	u32 msi;
+	int ret;
+
+	ab = pci_get_drvdata(pdev);
+	if (!ab)
+		return -EINVAL;
+
+	ab_pci = ath12k_pci_priv(ab);
+	if (!ab_pci)
+		return -EINVAL;
+
+	switch (pci_dev->device) {
+	case QCN9625_DEVICE_ID:
+	case QCN9589_DEVICE_ID:
+		if (!of_property_read_u32(ab->dev->of_node, "qcom,msi", &msi) &&
+		    msi == ATH12K_MSI_16) {
+			dev_info(&pdev->dev, "ath12k supported MSI %d\n", msi);
+			ab->msi.config =
+				&ath12k_wifi7_msi_config[ATH12K_MSI_CONFIG_PCI_16];
+		} else {
+			ab->msi.config = &ath12k_wifi8_msi_config[0];
+		}
+		ab->static_window_map = true;
+		ab->hw_rev = (pci_dev->device == QCN9625_DEVICE_ID) ?
+			      ATH12K_HW_QCN9625_HW10 : ATH12K_HW_QCN9589_HW10;
+		ab_pci->window_reg_addr = PCIE_WINDOW_REG_ADDRESS;
+		break;
+
+	default:
+		dev_err(&pdev->dev, "Unknown WiFi-8 PCI device found: 0x%x\n",
+			pci_dev->device);
+		return -EOPNOTSUPP;
+	}
+
+	ret = ath12k_wifi8_hw_init(ab);
+	if (ret) {
+		dev_err(&pdev->dev, "WiFi-8 hw_init failed: %d\n", ret);
+		return ret;
+	}
+
+	return 0;
+}
+
+void ath12k_wifi8_pci_get_soc_reset_reason(struct ath12k_base *ab)
+{
+	u32 val = 0;
+
+	val = ath12k_pci_read32(ab, QCN9625_WLAON_SOC_RESET_CAUSE_SHADOW_REG);
+
+	if (val & QCN9625_RESET_CAUSE_Q6_BCR)
+		ab->soc_reset_reason = ATH12K_Q6_BCR_RESET;
+	else
+		ab->soc_reset_reason = ATH12K_GLOBAL_SOC_RESET;
+
+	ath12k_info(ab, "soc reset reason is : %d\n", ab->soc_reset_reason);
+}
+
+static const struct ath12k_reg_base ath12k_wifi8_pci_reg_base = {
+	.umac_base = HAL_SEQ_WCSS_UMAC_OFFSET,
+	.ce_reg_base = HAL_CE_WFSS_CE_REG_BASE,
+	.window_value_mask = WINDOW_VALUE_MASK,
+	.window_static_mask = WINDOW_STATIC_MASK,
+	.window_dynamic_mask = WINDOW_DYNAMIC_MASK,
+	.ce_window_shift = CE_WINDOW_SHIFT,
+	.umac_window_shift = UMAC_WINDOW_SHIFT,
+};
 
 static struct ath12k_pci_driver ath12k_wifi8_pci_driver = {
 	.name = "ath12k_wifi8_pci",
 	.id_table = ath12k_wifi8_pci_id_table,
+	.ops.probe = ath12k_wifi8_pci_probe,
+	.reg_base = &ath12k_wifi8_pci_reg_base,
+	.ops.dp_init = ath12k_wifi8_dp_init,
+	.ops.dp_deinit = ath12k_wifi8_dp_deinit,
+	.ops.mgmt_init = ath12k_wifi8_mgmt_init,
+	.ops.mgmt_deinit = ath12k_wifi8_mgmt_deinit,
+	.ops.get_reset_reason = ath12k_wifi8_pci_get_soc_reset_reason,
 };
 
 int ath12k_wifi8_pci_init(void)

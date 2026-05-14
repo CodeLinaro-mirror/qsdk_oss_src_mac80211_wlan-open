@@ -13,15 +13,24 @@
 
 #include "../../net/mac80211/qcn_extns/cmn_extn.h"
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 extern unsigned int ath12k_ppe_ds_enabled;
+#endif
 struct ath12k;
 struct ath12k_base;
 struct ath12k_hw;
 struct ath12k_hw_group;
 struct ath12k_pdev_map;
+struct ath12k_pdev_dp;
 struct ath12k_vif;
 struct ath12k_link_sta;
+struct ath12k_dp_vif;
+struct ath12k_pdev_dp;
 enum ath12k_mlo_recovery_mode;
+enum ath12k_dp_tx_enq_error;
+struct ath12k_event;
+struct ath12k_event_queue;
+struct ath12k_dp;
 
 struct ath12k_generic_iter {
 	struct ath12k *ar;
@@ -103,6 +112,10 @@ struct ath12k_generic_iter {
 #define ATH12K_MIN_TX_POWER		-127
 #define ATH12K_PDEV_SUSPEND_TIMEOUT	(2 * HZ)
 #define ATH12K_PDEV_RESUME_TIMEOUT	(2 * HZ)
+#define ATH12K_ERP_BRIDGE_VDEV_REMOVAL_THRESHOLD	2
+
+/* Default management Tx retry limit in firmware */
+#define ATH12K_MGMT_TX_RETRY_LIMIT_DEFAULT 4
 
 enum ath12k_supported_bw {
 	ATH12K_BW_20    = 0,
@@ -141,6 +154,10 @@ enum ath12k_supported_bw {
 
 #define ATH12K_NUM_20_MHZ_CHAN_IN_320_MHZ_CHAN	16
 
+void ath12k_mac_op_get_key_seq(struct ieee80211_hw *hw,
+			       struct ieee80211_vif *vif,
+			       struct ieee80211_key_conf *key,
+			       struct ieee80211_key_seq *seq);
 /**
  * struct ath12k_mac_num_chanctxs_arg - Structure to hold channel context
  * @ar: Pointer to ath12k device context
@@ -177,28 +194,65 @@ struct ath12k_mac_link_migrate_usr_params {
 	u8 addr[ETH_ALEN];
 };
 
+/**
+ * struct ath12k_6ghz_pwr_mode_decision - Derived 6 GHz power-mode result
+ * @reg_6g_power_mode: Effective MAC regulatory power mode for TPC selection
+ * @ap_reg_6g_power_mode: Effective cfg80211 AP power mode to expose to userspace
+ * @ap_repeater_sp_client: AP behaves as a subordinate client of an SP root AP
+ *
+ * This structure carries the consolidated 6 GHz power-mode outcome after
+ * combining the local BSS configuration, colocated STA state and AFC state.
+ */
+struct ath12k_6ghz_pwr_mode_decision {
+	u8 reg_6g_power_mode;
+	enum nl80211_regulatory_power_modes ap_reg_6g_power_mode;
+	bool ap_repeater_sp_client;
+};
+
+/**
+ * enum ath12k_repeater_ap_sync_result - Repeater AP sync handling result
+ * @ATH12K_REPEATER_AP_SYNC_NOT_HANDLED: Return when the AP is not in the
+ *	repeater-AP sync path and the caller should continue with the normal AP
+ *	flow.
+ * @ATH12K_REPEATER_AP_SYNC_HANDLED: Return when the repeater-AP sync path has
+ *	consumed the request, including no-op cases where no state update is needed.
+ * @ATH12K_REPEATER_AP_SYNC_ERROR: Return when the repeater-AP sync path is
+ *	applicable but the derived state is invalid or the sync operation fails.
+ */
+enum ath12k_repeater_ap_sync_result {
+	ATH12K_REPEATER_AP_SYNC_NOT_HANDLED,
+	ATH12K_REPEATER_AP_SYNC_HANDLED,
+	ATH12K_REPEATER_AP_SYNC_ERROR,
+};
+
 struct ath12k_mac_pri_link_migr_peer_node {
 	struct list_head list;
 	u16 ml_peer_id;
 	u8 hw_link_id;
+	/* contains new selected primary link id */
+	u8 pri_link_id;
+	struct ieee80211_sta *sta;
 };
 
 void ath12k_mac_11d_scan_start(struct ath12k *ar, u32 vdev_id);
 void ath12k_mac_11d_scan_stop(struct ath12k *ar);
 void ath12k_mac_11d_scan_stop_all(struct ath12k_base *ab);
 
-void ath12k_mac_set_cw_intf_detect(struct ath12k *ar, u8 intf_bitmap);
-void ath12k_mac_set_vendor_intf_detect(struct ath12k *ar, u8 intf_detect_bitmap);
 void ath12k_mac_destroy(struct ath12k_hw_group *ag);
 void ath12k_mac_unregister(struct ath12k_hw_group *ag);
 int ath12k_mac_register(struct ath12k_hw_group *ag);
 int ath12k_mac_allocate(struct ath12k_hw_group *ag);
+int ath12k_tx_rate_info(struct ath12k_link_vif *arvif,
+			struct ieee80211_tx_rate *rate,
+			u16 *mcs, u8 *preamble);
 int ath12k_mac_hw_ratecode_to_legacy_rate(u8 hw_rc, u8 preamble, u8 *rateidx,
 					  u16 *rate);
 u8 ath12k_mac_bitrate_to_idx(const struct ieee80211_supported_band *sband,
 			     u32 bitrate);
 u8 ath12k_mac_hw_rate_to_idx(const struct ieee80211_supported_band *sband,
 			     u8 hw_rate, bool cck);
+
+u32 ath12k_mac_get_rate_hw_value(int bitrate);
 
 void __ath12k_mac_scan_finish(struct ath12k *ar);
 void ath12k_mac_scan_finish(struct ath12k *ar);
@@ -210,6 +264,7 @@ int ath12k_mac_btcoex_config(struct ath12k *ar, struct ath12k_link_vif *arvif,
 			   int coex, u32 wlan_prio_mask, u8 wlan_weight);
 struct ath12k *ath12k_mac_get_ar_by_vdev_id(struct ath12k_base *ab, u32 vdev_id);
 struct ath12k *ath12k_mac_get_ar_by_pdev_id(struct ath12k_base *ab, u32 pdev_id);
+struct ath12k *ath12k_mac_get_any_ar(struct ath12k_base *ab);
 
 void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
 				  struct ath12k_link_vif *arvif,
@@ -217,6 +272,10 @@ void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
 void ath12k_mac_fill_reg_tpc_info_with_eirp_power(struct ath12k *ar,
 						  struct ath12k_link_vif *arvif,
 						  struct ieee80211_chanctx_conf *ctx);
+#ifdef CPTCFG_QCN_EXTN
+void ath12k_mgmt_over_wmi_tx_work(struct wiphy *wiphy,
+				  struct wiphy_work *work);
+#endif
 
 /**
  * ath12k_mac_fill_reg_tpc_info_with_psd_eirp_pwr_for_sp - Populate both PSD and
@@ -259,7 +318,6 @@ void ath12k_mac_drain_tx(struct ath12k *ar);
 void ath12k_mac_peer_cleanup_all(struct ath12k *ar);
 void ath12k_mac_dp_peer_cleanup(struct ath12k_hw *ah,
 				enum ath12k_mlo_recovery_mode recovery_mode);
-void ath12k_dcs_wlan_intf_cleanup(struct ath12k *ar);
 int ath12k_mac_tx_mgmt_pending_free(int buf_id, void *skb, void *ctx);
 enum rate_info_bw ath12k_mac_bw_to_mac80211_bw(enum ath12k_supported_bw bw);
 enum ath12k_supported_bw ath12k_mac_mac80211_bw_to_ath12k_bw(enum rate_info_bw bw);
@@ -284,6 +342,7 @@ void ath12k_mac_get_any_chanctx_conf_iter(struct ieee80211_hw *hw,
 int ath12k_mac_mlo_teardown_with_umac_reset(struct ath12k_base *ab,
 					    enum wmi_mlo_tear_down_reason_code_type reason_code);
 int ath12k_mac_partner_peer_cleanup(struct ath12k_base *ab);
+enum nl80211_he_gi ath12k_mac_he_gi_to_nl80211_he_gi(u8 sgi);
 u16 ath12k_mac_he_convert_tones_to_ru_tones(u16 tones);
 enum nl80211_eht_ru_alloc ath12k_mac_eht_ru_tones_to_nl80211_eht_ru_alloc(u16 ru_tones);
 enum nl80211_eht_gi ath12k_mac_eht_gi_to_nl80211_eht_gi(u8 sgi);
@@ -291,6 +350,14 @@ struct ieee80211_bss_conf *ath12k_mac_get_link_bss_conf(struct ath12k_link_vif *
 struct ath12k *ath12k_get_ar_by_vif(struct ieee80211_hw *hw,
 				    struct ieee80211_vif *vif,
 				    u8 link_id);
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+void ath12k_peer_assoc_prepare(struct ath12k *ar,
+			       struct ath12k_link_vif *arvif,
+			       struct ath12k_link_sta *arsta,
+			       struct ath12k_wmi_peer_assoc_arg *arg,
+			       bool reassoc,
+			       struct ieee80211_link_sta *link_sta);
+#endif
 int ath12k_mac_get_fw_stats(struct ath12k *ar, struct ath12k_fw_stats_req_params *param);
 int ath12k_mac_get_fw_stats_per_vif(struct ath12k *ar,
 				    struct ath12k_fw_stats_req_params *param);
@@ -309,13 +376,13 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 void ath12k_mac_op_update_vif_offload(struct ieee80211_hw *hw,
 				      struct ieee80211_vif *vif);
 int ath12k_mac_op_config(struct ieee80211_hw *hw, int radio_idx, u32 changed);
-void ath12k_mac_op_sta_set_4addr(struct ieee80211_hw *hw,
-				 struct ieee80211_vif *vif,
-				 struct ieee80211_sta *sta, bool enabled);
 void ath12k_mac_op_link_info_changed(struct ieee80211_hw *hw,
 				     struct ieee80211_vif *vif,
 				     struct ieee80211_bss_conf *info,
 				     u64 changed);
+int ath12k_mac_op_start_ap(struct ieee80211_hw *hw,
+			   struct ieee80211_vif *vif,
+			   struct ieee80211_bss_conf *bss_conf);
 void ath12k_mac_op_vif_cfg_changed(struct ieee80211_hw *hw,
 				   struct ieee80211_vif *vif,
 				   u64 changed);
@@ -339,6 +406,10 @@ int ath12k_mac_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 void ath12k_mac_op_set_rekey_data(struct ieee80211_hw *hw,
 				  struct ieee80211_vif *vif,
 				  struct cfg80211_gtk_rekey_data *data);
+#ifdef CPTCFG_QCN_EXTN
+int ath12k_mac_set_muedca_mode(struct ieee80211_hw *hw, int radio_idx,
+			       u8 muedca_mode);
+#endif /* CPTCFG_QCN_EXTN */
 int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 			    struct ieee80211_vif *vif,
 			    struct ieee80211_sta *sta,
@@ -347,6 +418,10 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 int ath12k_mac_op_sta_set_txpwr(struct ieee80211_hw *hw,
 				struct ieee80211_vif *vif,
 				struct ieee80211_sta *sta);
+void ath12k_mac_op_link_going_down(struct ieee80211_hw *hw,
+				   struct ieee80211_vif *vif,
+				   struct ieee80211_bss_conf *link_conf,
+				   bool is_netdev_going_down);
 void ath12k_mac_op_link_sta_rc_update(struct ieee80211_hw *hw,
 				      struct ieee80211_vif *vif,
 				      struct ieee80211_link_sta *link_sta,
@@ -460,14 +535,17 @@ int ath12k_mac_conf_tx(struct ath12k_link_vif *arvif, u16 ac,
 		       const struct ieee80211_tx_queue_params *params);
 
 int ath12k_mac_set_key(struct ath12k *ar, enum set_key_cmd cmd,
-                              struct ath12k_link_vif *arvif,
-                              struct ath12k_link_sta *arsta,
-                              struct ieee80211_key_conf *key);
+		       struct ath12k_link_vif *arvif,
+		       struct ath12k_link_sta *arsta,
+		       struct ieee80211_key_conf *key,
+		       struct ath12k_vif *vlan_ahvif);
 int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 			   bool is_bridge_vdev);
 
 int ath12k_mac_vdev_start(struct ath12k_link_vif *arvif,
 			  struct ieee80211_chanctx_conf *ctx);
+void ath12k_mac_set_tpc_power(struct ath12k *ar,
+			      struct ath12k_link_vif *arvif);
 void ath12k_mac_parse_tx_pwr_env(struct ath12k *ar,
 				 struct ath12k_link_vif *arvif);
 int ath12k_mac_start(struct ath12k *ar);
@@ -482,14 +560,18 @@ void ath12k_mac_op_set_dscp_tid(struct ieee80211_hw *hw,
 				struct ieee80211_vif *vif,
 				struct cfg80211_qos_map *qos_map,
 				unsigned int link_id);
-int ath12k_mac_mlo_standby_teardown(struct ath12k_hw *ah);
+int ath12k_mac_mlo_standby_teardown(struct ath12k_hw *ah, bool standby_teardown);
 void ath12k_mac_stop(struct ath12k *ar);
 bool ath12k_mac_validate_active_radio_count(struct ath12k_hw *ah);
 int ath12k_mac_pdev_suspend(struct ath12k *ar);
 int ath12k_mac_set_eht_txbf_conf(struct ath12k_link_vif *arvif);
 int ath12k_mac_set_he_txbf_conf(struct ath12k_link_vif *arvif);
 int ath12k_mac_pdev_resume(struct ath12k *ar);
-
+int ath12k_mac_op_set_monitor_flags(struct ieee80211_hw *hw,
+				    struct ieee80211_vif *vif, u32 flags);
+int ath12k_mac_op_ap_power_save(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+				int link_id,
+				struct cfg80211_ap_power_save_params *params);
 /* In the bitmap 0 indicates no puncturing and 1 indicated that sub channel is
  * punctured
  */
@@ -651,6 +733,9 @@ int ath12k_mac_op_qos_mgmt_cfg(struct ieee80211_hw *hw,
 			       struct cfg80211_qm_req_data *qm_req,
 			       struct cfg80211_qm_resp_data *qm_resp);
 
+void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
+				struct ieee80211_vif *vif,
+				struct rtnl_link_stats64 *stats);
 /**
  * struct channel_power - Regulatory power information for a 6 GHz channel
  * @center_freq: Center frequency (in MHz) of the channel
@@ -707,9 +792,12 @@ int ath12k_mac_op_get_afc_eirp_pwr(struct ieee80211_hw *hw, u32 freq,
 enum nl80211_6ghz_dev_deployment_type
 ath12k_mac_op_get_6ghz_dev_deployment_type(struct ieee80211_hw *hw);
 
+int ath12k_mac_get_chan_width(enum nl80211_chan_width ch_width);
 struct ieee80211_chanctx_conf *
 	ath12k_mac_get_first_active_arvif_chanctx(struct ath12k *ar);
 struct ieee80211_link_sta *ath12k_mac_get_link_sta(struct ath12k_link_sta *arsta);
+struct ieee80211_link_sta *ath12k_mac_inherit_radio_cap(struct ath12k *ar,
+							struct ath12k_link_sta *arsta);
 
 int ath12k_mac_set_tx_antenna(struct ath12k *ar, u32 tx_ant);
 int ath12k_mac_set_rx_antenna(struct ath12k *ar, u32 rx_ant);
@@ -721,4 +809,43 @@ int ath12k_mac_vendor_send_disassoc_event(struct ath12k_link_sta *arsta,
 					  struct ieee80211_link_sta *link_sta);
 void ath12k_mac_update_freq_range(struct ath12k *ar,
 				  u32 freq_low, u32 freq_high);
+void ath12k_mac_ieee80211_free_txskb(struct ieee80211_hw *hw,
+				     struct sk_buff *skb,
+				     struct ath12k_pdev_dp *dp_pdev,
+				     struct ieee80211_sta *sta,
+				     struct ath12k_dp_vif *dp_vif,
+				     enum ath12k_dp_tx_enq_error drop_reason,
+				     u8 ring_id,
+				     bool dev_free);
+bool ath12k_mac_check_err_code_debug_logging(enum ath12k_dp_tx_enq_error err);
+enum nl80211_band ath12k_get_band_based_on_freq(u32 freq);
+u32 ath12k_mac_get_rate_hw_value(int bitrate);
+struct ath12k*
+ath12k_mac_select_scan_device(struct ieee80211_hw *hw,
+			      struct ieee80211_vif *vif,
+			      u32 center_freq);
+u8 ath12k_mac_find_link_id_by_ar(struct ath12k_vif *ahvif, struct ath12k *ar);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+int ath12k_mac_op_create_datapath_offload_if(struct ieee80211_hw *hw,
+					     struct ieee80211_vif *vif,
+					     struct net_device *dev);
+int ath12k_mac_op_destroy_datapath_offload_if(struct ieee80211_hw *hw,
+					      struct ieee80211_vif *vif,
+					      struct net_device *dev);
+int ath12k_mac_op_set_mtu(struct ieee80211_hw *hw, struct ieee80211_vif *vif, int mtu);
+#endif
+void ath12k_mac_cache_smart_mon_filter(struct ath12k_pdev_dp *pdev, u8 smart_mon_filter);
+u8 ath12k_mac_get_cached_smart_mon_filter(struct ath12k_pdev_dp *pdev);
+/* Event handling */
+void ath12k_mac_peer_event_callback(struct ath12k_event_queue *queue,
+				    struct ath12k_event *event);
+
+void ath12k_mac_vif_unref(struct ath12k_dp *dp, struct ieee80211_vif *vif);
+int ath12k_mac_read_cu_mem(struct ath12k_link_vif *arvif,
+			   u16 offset, u32 *val);
+void ath12k_mac_get_6ghz_power_mode_decision(
+	struct ath12k *ar, struct ath12k_link_vif *arvif,
+	struct ieee80211_bss_conf *bss_conf,
+	struct ath12k_6ghz_pwr_mode_decision *decision);
+
 #endif

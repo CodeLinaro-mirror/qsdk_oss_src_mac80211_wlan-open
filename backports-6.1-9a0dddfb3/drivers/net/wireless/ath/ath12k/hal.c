@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #include <linux/dma-mapping.h>
 #include "debug.h"
@@ -75,6 +75,18 @@ void ath12k_hal_tx_set_dscp_tid_map(struct ath12k_base *ab, u8 *map, int id)
 }
 EXPORT_SYMBOL(ath12k_hal_tx_set_dscp_tid_map);
 
+void ath12k_hal_tx_set_pcp_tid_map(struct ath12k_base *ab, const u8 *map)
+{
+	ab->hal.hal_ops->tx_set_pcp_tid_map(ab, map);
+}
+EXPORT_SYMBOL(ath12k_hal_tx_set_pcp_tid_map);
+
+void ath12k_hal_tx_set_tid_map_precedence(struct ath12k_base *ab, const u8 precedence)
+{
+	ab->hal.hal_ops->tx_set_tid_map_precedence(ab, precedence);
+}
+EXPORT_SYMBOL(ath12k_hal_tx_set_tid_map_precedence);
+
 void ath12k_hal_tx_configure_bank_register(struct ath12k_base *ab,
 					   u32 bank_config, u8 bank_id)
 {
@@ -85,26 +97,37 @@ void ath12k_hal_reoq_lut_addr_read_enable(struct ath12k_base *ab)
 {
 	ab->hal.hal_ops->reoq_lut_addr_read_enable(ab);
 }
+EXPORT_SYMBOL(ath12k_hal_reoq_lut_addr_read_enable);
 
 void ath12k_hal_reoq_lut_set_max_peerid(struct ath12k_base *ab)
 {
 	ab->hal.hal_ops->reoq_lut_set_max_peerid(ab);
 }
+EXPORT_SYMBOL(ath12k_hal_reoq_lut_set_max_peerid);
 
 void ath12k_hal_write_ml_reoq_lut_addr(struct ath12k_base *ab, dma_addr_t paddr)
 {
 	ab->hal.hal_ops->write_ml_reoq_lut_addr(ab, paddr);
 }
+EXPORT_SYMBOL(ath12k_hal_write_ml_reoq_lut_addr);
 
 void ath12k_hal_write_reoq_lut_addr(struct ath12k_base *ab, dma_addr_t paddr)
 {
 	ab->hal.hal_ops->write_reoq_lut_addr(ab, paddr);
 }
+EXPORT_SYMBOL(ath12k_hal_write_reoq_lut_addr);
 
 void ath12k_hal_reo_hw_setup(struct ath12k_base *ab)
 {
 	ab->hal.hal_ops->reo_hw_setup(ab);
 }
+
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+void ath12k_hal_reo_hw_setup_ipa(struct ath12k_base *ab)
+{
+	ab->hal.hal_ops->reo_hw_setup_ipa(ab);
+}
+#endif
 
 void ath12k_hal_reo_init_cmd_ring(struct ath12k_base *ab, struct hal_srng *srng)
 {
@@ -146,7 +169,7 @@ void ath12k_hal_cc_config(struct ath12k_base *ab)
         ab->hal.hal_ops->cc_config(ab);
 }
 
-enum hal_rx_buf_return_buf_manager
+u8
 ath12k_hal_get_idle_link_rbm(struct ath12k_hal *hal, u8 device_id)
 {
 	return hal->hal_ops->get_idle_link_rbm(hal, device_id);
@@ -157,6 +180,20 @@ void ath12k_hal_reo_shared_qaddr_cache_clear(struct ath12k_base *ab)
 {
 	ab->hal.hal_ops->reo_shared_qaddr_cache_clear(ab);
 }
+
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+u8 ath12k_hal_rxdesc_get_get_key_id_octet(struct ath12k_hal *hal,
+					  struct hal_rx_desc *desc)
+{
+	return hal->hal_ops->rxdesc_get_key_id_octet(desc);
+}
+
+u8 *
+ath12k_hal_rxdesc_get_mpdu_start_addr1(struct ath12k_hal *hal, struct hal_rx_desc *desc)
+{
+	return hal->hal_ops->rxdesc_get_mpdu_start_addr1(desc);
+}
+#endif
 
 u8 *
 ath12k_hal_rxdesc_get_mpdu_start_addr2(struct ath12k_hal *hal, struct hal_rx_desc *desc)
@@ -307,6 +344,7 @@ int ath12k_hal_srng_get_max_entries(struct ath12k_base *ab, u32 ring_type)
 
 	return (srng_config->max_size / srng_config->entry_size);
 }
+EXPORT_SYMBOL(ath12k_hal_srng_get_max_entries);
 
 void ath12k_hal_srng_get_params(struct ath12k_base *ab, struct hal_srng *srng,
 				struct hal_srng_params *params)
@@ -408,7 +446,6 @@ void *ath12k_hal_srng_dst_get_next_entry(struct ath12k_base *ab,
 
 	if (srng->u.dst_ring.tp == srng->u.dst_ring.cached_hp)
 		return NULL;
-
 	desc = srng->ring_base_vaddr + srng->u.dst_ring.tp;
 
 	srng->u.dst_ring.tp = (srng->u.dst_ring.tp + srng->entry_size);
@@ -426,6 +463,28 @@ void *ath12k_hal_srng_dst_get_next_entry(struct ath12k_base *ab,
 	return desc;
 }
 EXPORT_SYMBOL(ath12k_hal_srng_dst_get_next_entry);
+
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+void *ath12k_hal_srng_dst_get_next_hp_entry(struct ath12k_base *ab,
+					    struct hal_srng *srng)
+{
+	void *desc;
+	u32 next_hp;
+
+	lockdep_assert_held(&srng->lock);
+
+	next_hp = (srng->u.dst_ring.cached_hp + srng->entry_size) % srng->ring_size;
+
+	if (next_hp != srng->u.dst_ring.tp) {
+		desc = srng->ring_base_vaddr + srng->u.dst_ring.cached_hp;
+		srng->u.dst_ring.cached_hp = next_hp;
+		return desc;
+	}
+	/* ring is full */
+	return NULL;
+}
+EXPORT_SYMBOL(ath12k_hal_srng_dst_get_next_hp_entry);
+#endif
 
 void *__ath12k_hal_srng_dst_get_next_cached_entry(struct hal_srng *srng,
 						  u32 *old_tp)
@@ -755,56 +814,22 @@ void ath12k_hal_setup_link_idle_list(struct ath12k_base *ab,
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 static bool hal_tx_ppe2tcl_ring_halt_get(struct ath12k_base *ab)
 {
-	u32 cmn_reg_addr;
-	u32 regval;
-
-	cmn_reg_addr = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL1_RING_CMN_CTRL_REG;
-	regval = ath12k_hif_read32(ab, cmn_reg_addr);
-
-	return (regval &
-			1 << HWIO_TCL_R0_CONS_RING_CMN_CTRL_REG_PPE2TCL1_RNG_HALT_SHFT);
+	return ab->hal.hal_ops->hal_tx_ppe2tcl_ring_halt_get(ab);
 }
 
 static void hal_tx_ppe2tcl_ring_halt_set(struct ath12k_base *ab)
 {
-	u32 cmn_reg_addr;
-	u32 regval;
-
-	cmn_reg_addr = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL1_RING_CMN_CTRL_REG;
-	regval = ath12k_hif_read32(ab, cmn_reg_addr);
-
-	regval |= (1 << HWIO_TCL_R0_CONS_RING_CMN_CTRL_REG_PPE2TCL1_RNG_HALT_SHFT);
-
-	/* Enable ring halt for the ppe2tcl ring */
-	ath12k_hif_write32(ab, cmn_reg_addr, regval);
+	ab->hal.hal_ops->hal_tx_ppe2tcl_ring_halt_set(ab);
 }
 
 static void hal_tx_ppe2tcl_ring_halt_reset(struct ath12k_base *ab)
 {
-	u32 cmn_reg_addr;
-	u32 regval;
-
-	cmn_reg_addr = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL1_RING_CMN_CTRL_REG;
-	regval = ath12k_hif_read32(ab, cmn_reg_addr);
-
-	regval &= ~(1 << HWIO_TCL_R0_CONS_RING_CMN_CTRL_REG_PPE2TCL1_RNG_HALT_SHFT);
-
-	/* Disable ring halt for the ppe2tcl ring */
-	ath12k_hif_write32(ab, cmn_reg_addr, regval);
+	ab->hal.hal_ops->hal_tx_ppe2tcl_ring_halt_reset(ab);
 }
 
 static bool hal_tx_ppe2tcl_ring_halt_done(struct ath12k_base *ab)
 {
-	u32 cmn_reg_addr;
-	u32 regval;
-
-	cmn_reg_addr = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL1_RING_CMN_CTRL_REG;
-
-	regval = ath12k_hif_read32(ab, cmn_reg_addr);
-
-	regval &= (1 << HWIO_TCL_R0_CONS_RING_CMN_CTRL_REG_PPE2TCL1_RNG_HALT_STAT_SHFT);
-
-	return !!regval;
+	return ab->hal.hal_ops->hal_tx_ppe2tcl_ring_halt_done(ab);
 }
 #endif
 
@@ -986,11 +1011,19 @@ void ath12k_hal_srng_shadow_config(struct ath12k_base *ab)
 
 void ath12k_hal_reo_config_reo2ppe_dest_info(struct ath12k_base *ab)
 {
-	u32 reo_base = HAL_SEQ_WCSS_UMAC_REO_REG;
-	u32 val = HAL_REO1_REO2PPE_DST_VAL;
+	ab->hal.hal_ops->hal_reo_config_reo2ppe_dest_info(ab);
+}
+EXPORT_SYMBOL(ath12k_hal_reo_config_reo2ppe_dest_info);
 
-	ath12k_hif_write32(ab, reo_base + HAL_REO1_REO2PPE_DST_INFO,
-			   val);
+void
+ath12k_hal_get_tlv_params(struct ath12k_hal *hal,
+			  __le64 tlv_header,
+			  u16 *tlv_tag,
+			  u32 *tlv_userid,
+			  u16 *tlv_len)
+{
+	hal->hal_ops->hal_get_tlv_tag_params(tlv_header, tlv_tag,
+					     tlv_userid, tlv_len);
 }
 
 void ath12k_hal_srng_get_shadow_config(struct ath12k_base *ab,
@@ -1042,6 +1075,12 @@ int ath12k_hal_srng_init(struct ath12k_base *ab)
 	struct ath12k_hal *hal = &ab->hal;
 	int ret;
 
+	if (test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags) &&
+		     ab->soc_reset_reason == ATH12K_Q6_BCR_RESET) {
+		ath12k_info(ab, "Skip HAL re-init during Q6 BCR RESET\n");
+		return 0;
+	}
+
 	memset(hal, 0, sizeof(*hal));
 
 	ret = ab->hw_params->hal_ops->hal_init(hal, ab->hw_params->hw_rev);
@@ -1079,10 +1118,21 @@ void ath12k_hal_srng_deinit(struct ath12k_base *ab)
 {
 	struct ath12k_hal *hal = &ab->hal;
 
+	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
+		return;
+
+	if (test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags) &&
+		     ab->soc_reset_reason == ATH12K_Q6_BCR_RESET) {
+		ath12k_info(ab, "Skip HAL deinit during Q6 BCR RESET\n");
+		return;
+	}
+
 	ath12k_hal_unregister_srng_lock_keys(hal);
 	ath12k_hal_free_cont_rdp(hal);
 	ath12k_hal_free_cont_wrp(hal);
 	ath12k_hal_srng_destroy_config(hal);
+	if (ab->hw_params->hal_ops->hal_deinit)
+		ab->hw_params->hal_ops->hal_deinit(hal);
 }
 
 void ath12k_hal_dump_srng_stats(struct ath12k_base *ab)
@@ -1108,7 +1158,7 @@ void ath12k_hal_dump_srng_stats(struct ath12k_base *ab)
 	}
 
 	ath12k_err(ab, "\nLast interrupt received for each group:\n");
-	for (i = 0; i < ATH12K_EXT_IRQ_GRP_NUM_MAX; i++) {
+	for (i = 0; i < ab->hw_params->ext_irq_grp_num_max; i++) {
 		irq_grp = &ab->ext_irq_grp[i];
 		ath12k_err(ab, "group_id %d %ums before\n",
 			   irq_grp->grp_id,
@@ -1140,28 +1190,6 @@ void ath12k_hal_dump_srng_stats(struct ath12k_base *ab)
 	}
 }
 
-void ath12k_hal_vdev_mcast_ctrl_set(struct ath12k_base *ab, u32 vdev_id,
-				    u8 mcast_ctrl_val)
-{
-	u32 reg_addr, val, reg_val;
-	u8 reg_idx, index_in_reg;
-
-	reg_idx = HAL_TCL_VDEV_MCAST_PACKET_CTRL_REG_ID(vdev_id);
-	index_in_reg = HAL_TCL_VDEV_MCAST_PACKET_CTRL_INDEX_IN_REG(vdev_id);
-
-	reg_addr = HAL_TCL_R0_VDEV_MCAST_PACKET_CTRL_MAP_n_ADDR(reg_idx);
-	val = ath12k_hif_read32(ab, reg_addr);
-
-	val &= (~(HAL_TCL_VDEV_MCAST_PACKET_CTRL_MASK <<
-		  (HAL_TCL_VDEV_MCAST_PACKET_CTRL_SHIFT * index_in_reg)));
-
-	reg_val = val |
-		  ((HAL_TCL_VDEV_MCAST_PACKET_CTRL_MASK & mcast_ctrl_val) <<
-		   (HAL_TCL_VDEV_MCAST_PACKET_CTRL_SHIFT * index_in_reg));
-
-	ath12k_hif_write32(ab, reg_addr, reg_val);
-}
-
 void ath12k_hal_srng_hw_disable(struct ath12k_base *ab,
 				struct hal_srng *srng)
 {
@@ -1178,11 +1206,7 @@ void ath12k_hal_reset_rx_reo_tid_q(struct ath12k_hal *hal,
 void ath12k_hal_ppeds_cfg_ast_override_map_reg(struct ath12k_base *ab, u8 idx,
 					       u32 ppeds_idx_map_val)
 {
-	u32 reg_addr;
-
-	reg_addr = HAL_TCL_PPE_INDEX_MAPPING_TABLE_n_ADDR(HAL_SEQ_WCSS_UMAC_TCL_REG, idx);
-
-	ath12k_hif_write32(ab, reg_addr, ppeds_idx_map_val);
+	ab->hal.hal_ops->hal_ppeds_cfg_ast_override_map_reg(ab, idx, ppeds_idx_map_val);
 }
 
 static
@@ -1271,15 +1295,17 @@ ssize_t ath12k_hal_dump_ring_stats(struct ath12k_base *ab, enum hal_ring_type ty
 	spin_unlock_bh(&srng->lock);
 	return len;
 }
+EXPORT_SYMBOL(ath12k_hal_dump_ring_stats);
 
 ssize_t ath12k_debugfs_hal_dump_srng_stats(struct ath12k_base *ab, char *buf, int size)
 {
 	struct ath12k_dp *dp = ab->dp;
 	struct ath12k_pdev_dp *dp_pdev;
 	struct ath12k_pdev_mon_dp *dp_mon_pdev;
+	struct ath12k_mgmt *mgmt = ab->mgmt;
 	struct ath12k_ext_irq_grp *irq_grp;
 	struct ath12k_ce_pipe *ce_pipe;
-	int len =0 ;
+	int len = 0, ring_id;
 	u32 i, pdev;
 
 	len += scnprintf(buf + len, size - len, "Last interrupt received for each CE:\n");
@@ -1301,7 +1327,7 @@ ssize_t ath12k_debugfs_hal_dump_srng_stats(struct ath12k_base *ab, char *buf, in
 
 	len += scnprintf(buf + len, size - len, "\nLast interrupt received for each group:\n");
 	len += scnprintf(buf + len, size - len, "%5s %20s\n", "group_id", "delay in ms");
-	for (i = 0; i < ATH12K_EXT_IRQ_GRP_NUM_MAX; i++) {
+	for (i = 0; i < ab->hw_params->ext_irq_grp_num_max; i++) {
 		irq_grp = &ab->ext_irq_grp[i];
 		len += scnprintf(buf + len, size - len, "%-20d  %-20u\n",
 				 irq_grp->grp_id,
@@ -1333,35 +1359,33 @@ ssize_t ath12k_debugfs_hal_dump_srng_stats(struct ath12k_base *ab, char *buf, in
 			dp->reo_status_ring.ring_id,
                         buf + len, size - len);
 
-	len += ath12k_hal_dump_ring_stats(ab, HAL_WBM2SW_RELEASE,
-			dp->rx_rel_ring.ring_id,
-			buf + len, size - len);
-
 	len += ath12k_hal_dump_ring_stats(ab, HAL_SW2WBM_RELEASE,
 			dp->wbm_desc_rel_ring.ring_id,
                         buf + len, size - len);
 
-	for (i = 0; i < DP_REO_DST_RING_MAX; i++)
+	for (i = 0; i < ATH12K_DP_RX_REGULAR_RING_MAX; i++)
 		len += ath12k_hal_dump_ring_stats(ab, HAL_REO_DST,
 				dp->reo_dst_ring[i].ring_id,
 				buf + len, size - len);
+
+	if (dp->reo_dst_ring[ATH12K_DP_RX_ROAMING_RING1].vaddr_unaligned) {
+		ring_id = dp->reo_dst_ring[ATH12K_DP_RX_ROAMING_RING1].ring_id;
+		len += ath12k_hal_dump_ring_stats(ab, HAL_REO_DST_ROAMING, ring_id,
+						  buf + len, size - len);
+	}
 
 	for (i = 0; i < ab->hw_params->max_tx_ring; i++)
 		len += ath12k_hal_dump_ring_stats(ab, HAL_TCL_DATA,
 				dp->tx_ring[i].tcl_data_ring.ring_id,
 				buf + len, size - len);
 
-	for (i = 0; i < ab->hw_params->max_tx_ring; i++)
-		len += ath12k_hal_dump_ring_stats(ab, HAL_WBM2SW_RELEASE,
-                               dp->tx_ring[i].tcl_comp_ring.ring_id,
-			       buf + len, size - len);
+	if (likely(dp->dp_mon)) {
+		ring_id = dp->dp_mon->rxdma_mon_buf_ring.refill_buf_ring.ring_id;
+		len += ath12k_hal_dump_ring_stats(ab, HAL_RXDMA_MONITOR_BUF, ring_id,
+						  buf + len, size - len);
+	}
 
-	/*lmac rings*/
-	len += ath12k_hal_dump_ring_stats(ab, HAL_RXDMA_BUF,
-			dp->rx_refill_buf_ring.refill_buf_ring.ring_id,
-                        buf + len, size - len);
-
-	for (pdev = 0; pdev < MAX_RADIOS; pdev++) {
+	for (pdev = 0; pdev < ab->hw_params->max_radios; pdev++) {
 		rcu_read_lock();
 		dp_pdev = ath12k_dp_to_dp_pdev(dp, pdev);
 		if (!dp_pdev) {
@@ -1369,7 +1393,7 @@ ssize_t ath12k_debugfs_hal_dump_srng_stats(struct ath12k_base *ab, char *buf, in
 			continue;
 		}
 		dp_mon_pdev = dp_pdev->dp_mon_pdev;
-		for (i = 0; i < MAX_RXDMA_PER_PDEV; i++) {
+		for (i = 0; i < ab->hw_params->num_rxdma_per_pdev; i++) {
 			len += ath12k_hal_dump_ring_stats(ab, HAL_RXDMA_MONITOR_DST,
 				dp_mon_pdev->rxdma_mon_dst_ring[i].ring_id,
 				buf + len, size - len);
@@ -1381,6 +1405,13 @@ ssize_t ath12k_debugfs_hal_dump_srng_stats(struct ath12k_base *ab, char *buf, in
 		len += ath12k_hal_dump_ring_stats(ab, HAL_RXDMA_DST,
 			dp->rxdma_err_dst_ring[i].ring_id,
                         buf + len, size - len);
+
+	if (dp->arch_ops->dump_srng_stats)
+		len += dp->arch_ops->dump_srng_stats(dp, buf + len, size - len);
+
+	if (mgmt && mgmt->arch_ops->mgmt_op_dump_ring_stats)
+		len += mgmt->arch_ops->mgmt_op_dump_ring_stats(mgmt, buf + len,
+							       size - len);
 
 	return len;
 }

@@ -1,23 +1,65 @@
 /* SPDX-License-Identifier: BSD-3-Clause-Clear */
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef ATH12K_PEER_H
 #define ATH12K_PEER_H
 
+#include "debug.h"
 #include "dp_peer.h"
 
+#define ATH12K_PEER_DELETE_TIMEOUT_MS 10000
+/* Timeout for waiting on peer deletion tracker during peer create (in ms) */
+#define ATH12K_PEER_DEL_TRACKER_TIMEOUT_MS 3000
+/*
+ * Max entries processed per vdev clear in deletion tracker.
+ * Use the maximum supported clients per pdev to ensure we can
+ * collect all pending deletions in one pass. Keep this aligned
+ * with the highest supported client count in hw params/module
+ * param (e.g., ath12k_max_clients default: 512).
+ */
+#define ATH12K_PEER_DEL_TRACKER_MAX_ENTRIES 512
+
+/* Hash key structure for peer deletion tracking */
+struct ath12k_peer_del_key {
+	u8 addr[ETH_ALEN];
+};
+
+/* Structure to track peers pending deletion */
+struct ath12k_peer_del_entry {
+	u32 vdev_id;
+	u8 addr[ETH_ALEN];
+	u8 mld_addr[ETH_ALEN];
+	struct rhash_head rhash_node;
+	struct rhash_head mld_rhash_node;
+	struct rcu_head rcu_head;
+	struct timer_list timer;
+	struct ath12k_pdev *pdev;
+};
+
+/* Structure to manage peer deletion tracking at pdev level */
+struct ath12k_peer_del_tracker {
+	struct rhashtable peer_del_hash;
+	struct rhashtable mld_del_hash;
+	/* Protects rhashtable ops on peer_del_hash, mld_del_hash and entry lifecycle */
+	spinlock_t lock;
+	struct rhashtable_params hash_params;
+	struct rhashtable_params mld_hash_params;
+	wait_queue_head_t hash_delete_queue;
+};
+
 void ath12k_peer_cleanup(struct ath12k *ar, u32 vdev_id);
-int ath12k_peer_delete(struct ath12k *ar, u32 vdev_id, u8 *addr, bool skip_peer_del);
+int ath12k_peer_delete(struct ath12k *ar, u32 vdev_id, u8 *addr,
+		       bool skip_peer_del, u32 mlo_hw_link_id_bitmap,
+		       bool peer_delete_send_mlo_hw_bitmap);
 int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		       struct ieee80211_sta *sta,
 		       struct ath12k_wmi_peer_create_arg *arg);
 int ath12k_wait_for_peer_delete_done(struct ath12k *ar, u32 vdev_id,
 				     const u8 *addr);
-int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif, struct ath12k_sta *ahsta,
-				      bool skip_peer_del, int link);
+int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif, struct ath12k_sta *ahsta);
 int ath12k_peer_send_assoc_vendor_response(const struct ath12k_dp_link_peer *peer,
 					   const bool is_assoc);
 
@@ -26,15 +68,28 @@ void ath12k_link_sta_rhash_tbl_destroy(struct ath12k_base *ab);
 int ath12k_link_sta_rhash_delete(struct ath12k_base *ab, struct ath12k_link_sta *arsta);
 int ath12k_link_sta_rhash_add(struct ath12k_base *ab, struct ath12k_link_sta *arsta);
 struct ath12k_link_sta *ath12k_link_sta_find_by_addr(struct ath12k_base *ab, const u8 *addr);
-u16 ath12k_peer_ml_alloc(struct ath12k_hw *ah);
-void ath12k_peer_ml_free(struct ath12k_hw *ah, struct ath12k_sta *ahsta);
 void ath12k_mac_peer_disassoc(struct ath12k_base *ab, struct ieee80211_sta *sta,
 			      struct ath12k_sta *ahsta,
 			      enum ath12k_debug_mask debug_mask);
-int ath12k_peer_mlo_link_peer_delete(struct ath12k_link_vif *arvif,
-				     struct ath12k_link_sta *arsta,
-				     bool skip_peer_del,
-				     int link);
+int ath12k_peer_dp_cp_link_peer_delete(struct ath12k_link_vif *arvif,
+				       struct ath12k_sta *ahsta, u8 link_id,
+				       u8 *addr, u32 mlo_hw_link_id_bitmap,
+				       bool peer_delete_send_mlo_hw_bitmap);
+
+/* Peer deletion tracking functions */
+int ath12k_peer_del_tracker_init(struct ath12k_pdev *pdev);
+void ath12k_peer_del_tracker_destroy(struct ath12k_pdev *pdev);
+int ath12k_peer_del_tracker_add(struct ath12k_pdev *pdev, u32 vdev_id,
+				const u8 *addr, const u8 *mld_addr);
+void ath12k_peer_del_tracker_remove(struct ath12k_pdev *pdev, u32 vdev_id,
+				    const u8 *addr);
+int ath12k_peer_del_tracker_check(struct ath12k_pdev *pdev, const u8 *addr,
+				  const u8 *mld_addr);
+int ath12k_peer_del_tracker_clear_vdev(struct ath12k_pdev *pdev, u32 vdev_id);
+int ath12k_peer_del_tracker_clear_pdev(struct ath12k_pdev *pdev);
+int ath12k_peer_del_tracker_wait(struct ath12k_pdev *pdev, const u8 *addr,
+				 unsigned long timeout_ms, const u8 *mld_addr);
+
 static inline
 struct ath12k_link_sta *ath12k_peer_get_link_sta(struct ath12k_base *ab,
 						 struct ath12k_dp_link_peer *peer)
@@ -42,14 +97,16 @@ struct ath12k_link_sta *ath12k_peer_get_link_sta(struct ath12k_base *ab,
 	struct ath12k_sta *ahsta;
 	struct ath12k_link_sta *arsta;
 
-	if (!peer->sta)
+	if (!ath12k_dp_link_peer_get_sta(peer))
 		return NULL;
 
-	ahsta = ath12k_sta_to_ahsta(peer->sta);
+	ahsta = ath12k_sta_to_ahsta(ath12k_dp_link_peer_get_sta(peer));
 	if (peer->ml_id & ATH12K_PEER_ML_ID_VALID) {
 		if (!(ahsta->links_map & BIT(peer->link_id))) {
-			ath12k_warn(ab, "peer %pM id %d link_id %d can't found in STA link_map 0x%x\n",
-				    peer->addr, peer->peer_id, peer->link_id, ahsta->links_map);
+			ath12k_dbg(ab, ATH12K_DBG_PEER,
+				   "peer %pM id %d link_id %d can't found in STA link_map 0x%x\n",
+				   peer->addr, peer->peer_id, peer->link_id,
+				   ahsta->links_map);
 			return NULL;
 		}
 		arsta = rcu_dereference(ahsta->link[peer->link_id]);

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 /*
  * Copyright (c) 2019-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/pci.h>
@@ -15,8 +15,10 @@
 #include "hw.h"
 #include "dp.h"
 #include "hal.h"
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#include "qcn_extns/ipa/dp_ipa.h"
+#endif
 
-#define QCN9274_DEVICE_ID		0x1109
 #define WCN7850_DEVICE_ID		0x1107
 
 #define ATH12K_PCI_W7_SOC_HW_VERSION_1	1
@@ -99,6 +101,11 @@ static int ath12k_wifi7_pci_probe(struct pci_dev *pdev,
 		}
 		ab->static_window_map = true;
 		ab_pci->pci_ops = &ath12k_wifi7_pci_ops_qcn9274;
+		/*
+		 * init window reg addr before reading hardware version
+		 * as it will be used there
+		 */
+		ab_pci->window_reg_addr = PCIE_WINDOW_REG_ADDRESS;
 		ath12k_wifi7_pci_read_hw_version(ab, &soc_hw_version_major,
 						 &soc_hw_version_minor);
 		switch (soc_hw_version_major) {
@@ -120,6 +127,11 @@ static int ath12k_wifi7_pci_probe(struct pci_dev *pdev,
 		ab_pci->msi_config = &ath12k_wifi7_msi_config[0];
 		ab->static_window_map = false;
 		ab_pci->pci_ops = &ath12k_wifi7_pci_ops_wcn7850;
+		/*
+		 * init window reg addr before reading hardware version
+		 * as it will be used there
+		 */
+		ab_pci->window_reg_addr = PCIE_WINDOW_REG_ADDRESS;
 		ath12k_wifi7_pci_read_hw_version(ab, &soc_hw_version_major,
 						 &soc_hw_version_minor);
 		switch (soc_hw_version_major) {
@@ -149,9 +161,14 @@ static int ath12k_wifi7_pci_probe(struct pci_dev *pdev,
 	return 0;
 }
 
-static const struct ath12k_reg_base ath12k_wifi7_reg_base = {
+static const struct ath12k_reg_base ath12k_wifi7_pci_reg_base = {
 	.umac_base = HAL_SEQ_WCSS_UMAC_OFFSET,
 	.ce_reg_base = HAL_CE_WFSS_CE_REG_BASE,
+	.window_value_mask = WINDOW_VALUE_MASK,
+	.window_static_mask = WINDOW_STATIC_MASK,
+	.window_dynamic_mask = WINDOW_DYNAMIC_MASK,
+	.ce_window_shift = CE_WINDOW_SHIFT,
+	.umac_window_shift = UMAC_WINDOW_SHIFT,
 };
 
 static struct ath12k_pci_driver ath12k_wifi7_pci_driver = {
@@ -160,7 +177,10 @@ static struct ath12k_pci_driver ath12k_wifi7_pci_driver = {
 	.ops.probe = ath12k_wifi7_pci_probe,
 	.ops.dp_init = ath12k_wifi7_dp_init,
 	.ops.dp_deinit = ath12k_wifi7_dp_deinit,
-	.reg_base = &ath12k_wifi7_reg_base,
+	.reg_base = &ath12k_wifi7_pci_reg_base,
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	.ops.ipa_init = ath12k_wifi7_dp_ipa_init,
+#endif
 };
 
 int ath12k_wifi7_pci_init(void)

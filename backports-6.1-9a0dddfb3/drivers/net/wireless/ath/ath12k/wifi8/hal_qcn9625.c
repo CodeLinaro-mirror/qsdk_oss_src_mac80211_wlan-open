@@ -9,34 +9,90 @@
 #include "hal_qcn9625.h"
 #include "hw.h"
 #include "hal.h"
+#include "../dp_cmn.h"
 #include <linux/cacheflush.h>
+
+extern void ath12k_wifi8_hal_mon_ops_init(struct ath12k_hal *hal, u8 hw_version);
 
 static const struct hal_srng_config hw_srng_config_template[] = {
 	/* TODO: max_rings can populated by querying HW capabilities */
+	/* REO2SW Rings */
+	[HAL_REO_EXCEPTION] = {
+		.start_ring_id = HAL_SRNG_RING_ID_REO2SW6,
+		.max_rings = 1,
+		.entry_size = sizeof(struct hal_reo_dest_ring) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_DST,
+		.max_size = HAL_REO_REO2SW6_RING_BASE_MSB_RING_SIZE,
+		.name = "Reo_exception",
+	},
 	[HAL_REO_DST] = {
 		.start_ring_id = HAL_SRNG_RING_ID_REO2SW1,
-		.max_rings = 8,
+		.max_rings = 6,
 		.entry_size = sizeof(struct hal_reo_dest_ring) >> 2,
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_DST,
 		.max_size = HAL_REO_REO2SW1_RING_BASE_MSB_RING_SIZE,
 		.name = "Reo_dst",
 	},
-	[HAL_REO_EXCEPTION] = {
-		/* Designating REO2SW0 ring as exception ring.
-		 * Any of theREO2SW rings can be used as exception ring.
-		 */
-		.start_ring_id = HAL_SRNG_RING_ID_REO2SW0,
+	[HAL_REO_DST_ROAMING] = {
+		.start_ring_id = HAL_SRNG_RING_ID_REO2SW_ROAMING1 -
+				 ATH12K_DP_RX_ROAMING_RING1,
+		.max_rings = ATH12K_DP_RX_ROAMING_RING1 + 1,
+		.entry_size = sizeof(struct hal_reo_dest_ring) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_DST,
+		.max_size = HAL_REO_REO2SW1_RING_BASE_MSB_RING_SIZE,
+		.name = "Reo_dst_roaming",
+	},
+	[HAL_REO_EXCEPTION_DS] = {
+		.start_ring_id = HAL_SRNG_RING_ID_REO2SW7,
 		.max_rings = 1,
 		.entry_size = sizeof(struct hal_reo_dest_ring) >> 2,
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_DST,
 		.max_size = HAL_REO_REO2SW0_RING_BASE_MSB_RING_SIZE,
-		.name = "Reo_exception",
+		.name = "Reo_exception_ds",
+	},
+	[HAL_REO_EXCEPTION_MGMT] = {
+		.start_ring_id = HAL_SRNG_RING_ID_REO2SW8,
+		.max_rings = 1,
+		.entry_size = sizeof(struct hal_reo_dest_ring) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_DST,
+		.max_size = HAL_REO_REO2SW0_RING_BASE_MSB_RING_SIZE,
+		.name = "Reo_exception_mgmt",
+	},
+	[HAL_REO_DST_MGMT] = {
+		.start_ring_id = HAL_SRNG_RING_ID_REO2SW9,
+		.max_rings = 1,
+		.entry_size = sizeof(struct hal_reo_dest_ring) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_DST,
+		.max_size = HAL_REO_REO2SW1_RING_BASE_MSB_RING_SIZE,
+		.name = "Reo_dst_mgmt",
+	},
+	[HAL_REO_DST_CTDMA] = {
+		.start_ring_id = HAL_SRNG_RING_ID_REO2SW10,
+		.max_rings = 1,
+		.entry_size = sizeof(struct hal_reo_dest_ring) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_DST,
+		.max_size = HAL_REO_REO2SW0_RING_BASE_MSB_RING_SIZE,
+		.name = "Reo_dst_ctdma",
+	},
+	[HAL_REO_DST_HIGH_PRIO] = {
+		.start_ring_id = HAL_SRNG_RING_ID_REO2SW11,
+		.max_rings = 1,
+		.entry_size = sizeof(struct hal_reo_dest_ring) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_DST,
+		.max_size = HAL_REO_REO2SW0_RING_BASE_MSB_RING_SIZE,
+		.name = "Reo_dst_high_prio",
 	},
 	[HAL_REO_REINJECT] = {
 		.start_ring_id = HAL_SRNG_RING_ID_SW2REO,
-		.max_rings = 4,
+		.max_rings = 2,
 		.entry_size = sizeof(struct hal_reo_entrance_ring) >> 2,
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_SRC,
@@ -45,7 +101,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 	},
 	[HAL_REO_CMD] = {
 		.start_ring_id = HAL_SRNG_RING_ID_REO_CMD,
-		.max_rings = 1,
+		.max_rings = 2,
 		.entry_size = (sizeof(struct hal_tlv_64_hdr) +
 			sizeof(struct hal_reo_get_queue_stats)) >> 2,
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
@@ -86,20 +142,89 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.entry_size = sizeof(struct hal_tcl_gse_cmd) >> 2,
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_SRC,
-		.max_size = HAL_SW2TCL1_CMD_RING_BASE_MSB_RING_SIZE,
+		.max_size = HAL_SW2TCL1_RING_BASE_MSB_RING_SIZE,
+		.name = "Tcl_cmd",
 	},
 	[HAL_TCL_STATUS] = {
 		.start_ring_id = HAL_SRNG_RING_ID_TCL_STATUS,
 		.max_rings = 1,
-		.entry_size = (sizeof(struct hal_tlv_hdr) +
-			     sizeof(struct hal_tcl_status_ring)) >> 2,
+		.entry_size = sizeof(struct hal_tcl_status_ring) >> 2,
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_DST,
 		.max_size = HAL_TCL_STATUS_RING_BASE_MSB_RING_SIZE,
+		.name = "Tcl_status",
+	},
+	/* entry_size is set to minimum value here */
+	/* Get valid entry_size from ath12k_hal_srng_get_cmd_size */
+	[HAL_TQM_CMD] = {
+		.start_ring_id = HAL_SRNG_RING_ID_TQM_HOST_CMD,
+		.max_rings = 1,
+		.entry_size = 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_SRC,
+		.max_size = HAL_TQM_HOST_CMD_RING_BASE_MSB_RING_SIZE,
+		.name = "Tqm_cmd",
+	},
+	[HAL_TQM_STATUS] = {
+		.start_ring_id = HAL_SRNG_RING_ID_TQM_HOST_STATUS,
+		.max_rings = 1,
+		.entry_size = (sizeof(struct hal_tlv_64_hdr) +
+			sizeof(struct hal_tqm_sync_cmd_status)) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_DST,
+		.max_size = HAL_TQM_HOST_STATUS_RING_BASE_MSB_RING_SIZE,
+		.name = "Tqm_status",
+	},
+	[HAL_ASE_CMD_RING] = {
+		.start_ring_id = HAL_SRNG_RING_ID_ASE_CMD_RING,
+		.max_rings = 1,
+		.entry_size = sizeof(struct hal_ase_cmd) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_SRC,
+		.max_size = HAL_SW2WBM_ASE_CMD_RING_BASE_MSB_RING_SIZE,
+		.name = "ASE_CMD",
+	},
+	[HAL_ASE_STATUS_RING] = {
+		.start_ring_id = HAL_SRNG_RING_ID_ASE_STATUS_RING,
+		.max_rings = 1,
+		.entry_size = sizeof(struct hal_ase_status) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_DMAC,
+		.ring_dir = HAL_SRNG_DIR_DST,
+		.max_size = HAL_SW2WBM_ASE_STATUS_RING_BASE_MSB_RING_SIZE,
+		.name = "ASE_STATUS",
+	},
+
+	/* TCL2SW Exception Ring */
+	[HAL_TX_EXCEPTION] = {
+		.start_ring_id = HAL_SRNG_RING_ID_TX_EXCEPTION,
+		.max_rings = 1,
+		.entry_size = sizeof(struct hal_tcl_regular_exit_ring) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_DST,
+		.max_size = HAL_TX_EXCEPTION_RING_BASE_MSB_RING_SIZE,
+		.name = "Tx_exception",
+	},
+	[HAL_PEER_TX_TELEMETRY] = {
+		.start_ring_id = HAL_SRNG_RING_ID_PEER_TX_TELEMETRY,
+		.max_rings = 1,
+		.entry_size = sizeof(struct tx_peer_telemetry_desc) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_DST,
+		.max_size = HAL_TELEMETRY_RING_MAX_SIZE,
+		.name = "Peer Tx Telemetry",
+	},
+	[HAL_PEER_RX_TELEMETRY] = {
+		.start_ring_id = HAL_SRNG_RING_ID_PEER_RX_TELEMETRY,
+		.max_rings = 1,
+		.entry_size = sizeof(struct rx_peer_telemetry_desc) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_DST,
+		.max_size = HAL_TELEMETRY_RING_MAX_SIZE,
+		.name = "Peer Rx Telemetry",
 	},
 	[HAL_CE_SRC] = {
 		.start_ring_id = HAL_SRNG_RING_ID_CE0_SRC,
-		.max_rings = 16,
+		.max_rings = 24,
 		.entry_size = sizeof(struct hal_ce_srng_src_desc) >> 2,
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_SRC,
@@ -107,7 +232,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 	},
 	[HAL_CE_DST] = {
 		.start_ring_id = HAL_SRNG_RING_ID_CE0_DST,
-		.max_rings = 16,
+		.max_rings = 24,
 		.entry_size = sizeof(struct hal_ce_srng_dest_desc) >> 2,
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_SRC,
@@ -115,7 +240,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 	},
 	[HAL_CE_DST_STATUS] = {
 		.start_ring_id = HAL_SRNG_RING_ID_CE0_DST_STATUS,
-		.max_rings = 16,
+		.max_rings = 24,
 		.entry_size = sizeof(struct hal_ce_srng_dst_status_desc) >> 2,
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_DST,
@@ -139,23 +264,51 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.max_size = HAL_SW2WBM_RELEASE_RING_BASE_MSB_RING_SIZE,
 		.name = "sw2wbm_release",
 	},
-	[HAL_WBM2SW_RELEASE] = {
-		.start_ring_id = HAL_SRNG_RING_ID_WBM2SW0_RELEASE,
-		.max_rings = 8,
-		.entry_size = sizeof(struct hal_wbm_release_ring) >> 2,
+	/* TX completions */
+	[HAL_TX_COMPLETION] = {
+		.start_ring_id = HAL_SRNG_RING_ID_TQM2SW0_RELEASE,
+		.max_rings = 9,
+		.entry_size = sizeof(struct hal_tqm2sw_completion_ring) >> 2,
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_DST,
-		.max_size = HAL_WBM2SW_RELEASE_RING_BASE_MSB_RING_SIZE,
-		.name = "wbm2sw_release",
+		.max_size = HAL_TQM2SW_RELEASE_RING_BASE_MSB_RING_SIZE,
+		.name = "tx_completion",
 	},
-	[HAL_RXDMA_BUF] = {
-		.start_ring_id = HAL_SRNG_SW2RXDMA_BUF0,
+	[HAL_WBM_BUF] = {
+		.start_ring_id = HAL_SRNG_RING_ID_WBM_BUF1,
+		.max_rings = 4,
+		.entry_size = sizeof(struct hal_wbm_buffer_ring) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_SRC,
+		.max_size = HAL_WBM_BUF_RING_MAX_SIZE,
+		.name = "WBM_buf",
+	},
+	[HAL_WBM_IDLE_BUF] = {
+		.start_ring_id = HAL_SRNG_RING_ID_WBM_IDLE_BUF0,
 		.max_rings = 1,
 		.entry_size = sizeof(struct hal_wbm_buffer_ring) >> 2,
-		.mac_type = ATH12K_HAL_SRNG_DMAC,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_SRC,
-		.max_size = HAL_RXDMA_RING_MAX_SIZE_BE,
-		.name = "Rxdma_buf",
+		.max_size = HAL_WBM_IDLE_BUF_RING_MAX_SIZE,
+		.name = "WBM_idle_buf",
+	},
+	[HAL_PPE2WBM_BUF] = {
+		.start_ring_id = HAL_SRNG_RING_ID_PPE2WBM_BUF1,
+		.max_rings = 3,
+		.entry_size = sizeof(struct hal_wbm_buffer_ring) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_SRC,
+		.max_size = HAL_WBM_BUF_RING_MAX_SIZE,
+		.name = "WBM_PPE_buf",
+	},
+	[HAL_PPE2WBM_IDLE_BUF] = {
+		.start_ring_id = HAL_SRNG_RING_ID_PPE2WBM_IDLE_BUF0,
+		.max_rings = 1,
+		.entry_size = sizeof(struct hal_wbm_buffer_ring) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_SRC,
+		.max_size = HAL_WBM_IDLE_BUF_RING_MAX_SIZE,
+		.name = "WBM_PPE_idle_buf",
 	},
 	[HAL_RXDMA_DST] = {
 		.start_ring_id = HAL_SRNG_RING_ID_WMAC1_RXDMA2SW0,
@@ -187,7 +340,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 	},
 	[HAL_PPE2TCL] = {
 		.start_ring_id = HAL_SRNG_RING_ID_PPE2TCL1,
-		.max_rings = 1,
+		.max_rings = 3,
 		.entry_size = sizeof(struct hal_tcl_entrance_from_ppe_ring) >> 2,
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_SRC,
@@ -225,145 +378,708 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.mac_type = ATH12K_HAL_SRNG_PMAC,
 		.ring_dir = HAL_SRNG_DIR_DST,
 		.max_size = HAL_RXDMA_RING_MAX_SIZE_BE,
-	}
+	},
+	[HAL_WBM_BUF_MGMT] = {
+		.start_ring_id = HAL_SRNG_RING_ID_WBM_BUF_MGMT,
+		.max_rings = 1,
+		.entry_size = sizeof(struct hal_wbm_buffer_ring) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_SRC,
+		.max_size = HAL_WBM_BUF_RING_MAX_SIZE,
+		.name = "WBM_buf_mgmt",
+	},
+	[HAL_WBM_IDLE_BUF_MGMT] = {
+		.start_ring_id = HAL_SRNG_RING_ID_WBM_IDLE_BUF_MGMT,
+		.max_rings = 1,
+		.entry_size = sizeof(struct hal_wbm_buffer_ring) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_SRC,
+		.max_size = HAL_WBM_IDLE_BUF_RING_MAX_SIZE,
+		.name = "WBM_idle_buf_mgmt",
+	},
+	[HAL_RXOLE_FSE_CMD] = {
+		.start_ring_id = HAL_SRNG_RING_ID_FSE_CMD,
+		.max_rings = 1,
+		.entry_size = sizeof(struct hal_fse_cmd) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_SRC,
+		.max_size = HAL_FSE_CMD_RING_BASE_MSB_RING_SIZE,
+		.name = "Fse_cmd",
+	},
+	[HAL_SAM_CMD] = {
+		.start_ring_id = HAL_SRNG_RING_ID_SAM_HOST_CMD,
+		.max_rings = 1,
+		.entry_size = 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_SRC,
+		.max_size = HAL_SAM_HOST_CMD_RING_BASE_MSB_RING_SIZE,
+		.name = "SAM_cmd"
+	},
+	[HAL_SAM_STATUS] = {
+		.start_ring_id = HAL_SRNG_RING_ID_SAM_HOST_STATUS,
+		.max_rings = 1,
+		.entry_size = (sizeof(struct hal_tlv_64_hdr) +
+			       sizeof(struct hal_sam_cmd_status)) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_DST,
+		.max_size = HAL_SAM_HOST_STATUS_RING_BASE_MSB_RING_SIZE,
+		.name = "SAM_status"
+	},
+	[HAL_REO_FLUSH] = {
+		.start_ring_id = HAL_SRNG_RING_ID_REO2SW0,
+		.max_rings = 1,
+		.entry_size = sizeof(struct hal_reo_dest_ring) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_DST,
+		.max_size = HAL_REO_REO2SW0_RING_BASE_MSB_RING_SIZE,
+		.name = "Reo_flush",
+	},
+	[HAL_TQM2PPE] = {
+		.start_ring_id = HAL_SRNG_RING_ID_TQM2PPE_RELEASE,
+		.max_rings = 1,
+		.entry_size = sizeof(struct ath12k_buffer_addr) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_DST,
+		.max_size = HAL_TQM2PPE_RELEASE_RING_BASE_MSB_RING_SIZE,
+		.name = "hbm_tx_completion",
+	},
 };
 
 const struct ath12k_hw_regs qcn9625_regs = {
 	/* SW2TCL(x) R0 ring configuration address */
-	.hal_tcl1_ring_id = 0x00000908,
-	.hal_tcl1_ring_misc = 0x00000910,
-	.hal_tcl1_ring_tp_addr_lsb = 0x0000091c,
-	.hal_tcl1_ring_tp_addr_msb = 0x00000920,
-	.hal_tcl1_ring_consumer_int_setup_ix0 = 0x00000930,
-	.hal_tcl1_ring_consumer_int_setup_ix1 = 0x00000934,
-	.hal_tcl1_ring_msi1_base_lsb = 0x00000948,
-	.hal_tcl1_ring_msi1_base_msb = 0x0000094c,
-	.hal_tcl1_ring_msi1_data = 0x00000950,
-	.hal_tcl_ring_base_lsb = 0x00000b58,
-	.hal_tcl1_ring_base_lsb = 0x00000900,
-	.hal_tcl1_ring_base_msb = 0x00000904,
-	.hal_tcl2_ring_base_lsb = 0x00000978,
+	.hal_tcl1_ring_id = 0x1604,
+	.hal_tcl1_ring_misc = 0x160c,
+	.hal_tcl1_ring_tp_addr_lsb = 0x1618,
+	.hal_tcl1_ring_tp_addr_msb = 0x161c,
+	.hal_tcl1_ring_consumer_int_setup_ix0 = 0x162c,
+	.hal_tcl1_ring_consumer_int_setup_ix1 = 0x1630,
+	.hal_tcl1_ring_msi1_base_lsb = 0x1644,
+	.hal_tcl1_ring_msi1_base_msb = 0x1648,
+	.hal_tcl1_ring_msi1_data = 0x164c,
+	.hal_tcl1_ring_base_lsb = 0x15fc,
+	.hal_tcl1_ring_base_msb = 0x1600,
+	.hal_tcl2_ring_base_lsb = 0x1674,
 
 	/* TCL STATUS ring address */
-	.hal_tcl_status_ring_base_lsb = 0x00000d38,
+	.hal_tcl_status_ring_base_lsb = 0x1cfc,
 
-	.hal_wbm_idle_ring_base_lsb = 0x00000d0c,
-	.hal_wbm_idle_ring_misc_addr = 0x00000d1c,
-	.hal_wbm_r0_idle_list_cntl_addr = 0x00000210,
-	.hal_wbm_r0_idle_list_size_addr = 0x00000214,
-	.hal_wbm_scattered_ring_base_lsb = 0x00000220,
-	.hal_wbm_scattered_ring_base_msb = 0x00000224,
-	.hal_wbm_scattered_desc_head_info_ix0 = 0x00000230,
-	.hal_wbm_scattered_desc_head_info_ix1 = 0x00000234,
-	.hal_wbm_scattered_desc_tail_info_ix0 = 0x00000240,
-	.hal_wbm_scattered_desc_tail_info_ix1 = 0x00000244,
-	.hal_wbm_scattered_desc_ptr_hp_addr = 0x0000024c,
+	/* WBM idle link ring address */
+	.hal_wbm_idle_ring_base_lsb = 0x51c,
+	.hal_wbm_idle_ring_misc_addr = 0x52c,
+	.hal_wbm_r0_idle_list_cntl_addr = 0x130,
+	.hal_wbm_r0_idle_list_size_addr = 0x134,
+	.hal_wbm_scattered_ring_base_lsb = 0x138,
+	.hal_wbm_scattered_ring_base_msb = 0x13c,
+	.hal_wbm_scattered_desc_head_info_ix0 = 0x140,
+	.hal_wbm_scattered_desc_head_info_ix1 = 0x144,
+	.hal_wbm_scattered_desc_tail_info_ix0 = 0x148,
+	.hal_wbm_scattered_desc_tail_info_ix1 = 0x14c,
+	.hal_wbm_scattered_desc_ptr_hp_addr = 0x150,
 
-	.hal_wbm_sw_release_ring_base_lsb = 0x0000034c,
-	.hal_wbm_sw1_release_ring_base_lsb = 0x000003c4,
-	.hal_wbm0_release_ring_base_lsb = 0x00000dd8,
-	.hal_wbm1_release_ring_base_lsb = 0x00000e50,
+	/* SW2WBM release ring address */
+	.hal_wbm_sw_release_ring_base_lsb = 0x24c,
+	.hal_wbm_sw1_release_ring_base_lsb = 0x2c8,
 
 	/* PCIe base address */
-	.pcie_qserdes_sysclk_en_sel = 0x01e0c0a8,
-	.pcie_pcs_osc_dtct_config_base = 0x01e0d45c,
+	.pcie_qserdes_sysclk_en_sel = 0x01E0C094,
+	.pcie_pcs_osc_dtct_config_base = 0x01E0CE58,
 
 	/*PCIe qrtr node id reg*/
-	.pcie_pcie_local_qrtr_ins_reg = 0x1E03164,
+	.pcie_pcie_local_qrtr_ins_reg = 0x1E03300,
+	.pcie_pcie_local_unified_fw_board_id_reg = 0x1E03304,
 
 	/*PCIe hot reset reg*/
-	.pcie_gcc_gcc_pcie_hot_rst = 0x1e38338,
-
-	/* PPE release ring address */
-	.hal_ppe_rel_ring_base = 0x0000043c,
+	.pcie_gcc_gcc_pcie_hot_rst = 0x1E38438,
 
 	/* REO DEST ring address */
-	.hal_reo2_ring_base = 0x0000055c,
-	.hal_reo1_misc_ctrl_addr = 0x00000b7c,
-	.hal_reo1_sw_cookie_cfg0 = 0x00000050,
-	.hal_reo1_sw_cookie_cfg1 = 0x00000054,
-	.hal_reo1_qdesc_lut_base0 = 0x00000058,
-	.hal_reo1_qdesc_lut_base1 = 0x0000005c,
-	.hal_reo1_qdesc_addr = 0x0000007c,
-	.hal_reo1_qdesc_max_peerid = 0x00000088,
-	.hal_reo1_ring_base_lsb = 0x000004e4,
-	.hal_reo1_ring_base_msb = 0x000004e8,
-	.hal_reo1_ring_id = 0x000004ec,
-	.hal_reo1_ring_misc = 0x000004f4,
-	.hal_reo1_ring_hp_addr_lsb = 0x000004f8,
-	.hal_reo1_ring_hp_addr_msb = 0x000004fc,
-	.hal_reo1_ring_producer_int_setup = 0x00000508,
-	.hal_reo1_ring_msi1_base_lsb = 0x0000052C,
-	.hal_reo1_ring_msi1_base_msb = 0x00000530,
-	.hal_reo1_ring_msi1_data = 0x00000534,
-	.hal_reo1_aging_thres_ix0 = 0x00000b08,
-	.hal_reo1_aging_thres_ix1 = 0x00000b0c,
-	.hal_reo1_aging_thres_ix2 = 0x00000b10,
-	.hal_reo1_aging_thres_ix3 = 0x00000b14,
+	.hal_reo2_ring_base = 0x8c0,
+	.hal_reo1_misc_ctrl_addr = 0x198c,
+	.hal_reo1_sw_cookie_cfg0 = 0x6c,
+	.hal_reo1_sw_cookie_cfg1 = 0x70,
+	.hal_reo1_qdesc_lut_base0 = 0x74,
+	.hal_reo1_qdesc_lut_base1 = 0x78,
+	.hal_reo1_qdesc_addr = 0x7c,
+	.hal_reo1_qdesc_max_peerid = 0x88,
+	.hal_reo1_ring_base_lsb = 0x848,
+	.hal_reo1_ring_base_msb = 0x84c,
+	.hal_reo1_ring_id = 0x850,
+	.hal_reo1_ring_misc = 0x858,
+	.hal_reo1_ring_hp_addr_lsb = 0x85c,
+	.hal_reo1_ring_hp_addr_msb = 0x860,
+	.hal_reo1_ring_producer_int_setup =
+					0x86c,
+	.hal_reo1_ring_msi1_base_lsb = 0x890,
+	.hal_reo1_ring_msi1_base_msb = 0x894,
+	.hal_reo1_ring_msi1_data = 0x898,
+	.hal_reo1_aging_thres_ix0 = 0x1918,
+	.hal_reo1_aging_thres_ix1 = 0x191c,
+	.hal_reo1_aging_thres_ix2 = 0x1920,
+	.hal_reo1_aging_thres_ix3 = 0x1924,
 
 	/* REO Exception ring address */
-	.hal_reo2_sw0_ring_base = 0x000008a4,
+	.hal_reo2_sw0_ring_base = 0xd70,
 
 	/* REO Reinject ring address */
-	.hal_sw2reo_ring_base = 0x00000304,
-	.hal_sw2reo1_ring_base = 0x0000037c,
+	.hal_sw2reo_ring_base = 0x344,
+	.hal_sw2reo1_ring_base = 0x3bc,
 
 	/* REO cmd ring address */
-	.hal_reo_cmd_ring_base = 0x0000028c,
+	.hal_reo_cmd_ring_base = 0x2cc,
 
 	/* REO status ring address */
-	.hal_reo_status_ring_base = 0x00000a84,
+	.hal_reo_status_ring_base = 0x135c,
 
 	/* CE base address */
-	.hal_umac_ce0_src_reg_base = 0x01b80000,
-	.hal_umac_ce0_dest_reg_base = 0x01b81000,
-	.hal_umac_ce1_src_reg_base = 0x01b82000,
-	.hal_umac_ce1_dest_reg_base = 0x01b83000,
-	.hal_ppe_rel_ring_base = 0x0000043c,
-	.hal_reo2ppe_ring_base = 0x00000938,
-	.hal_tcl_ppe2tcl_ring_base_lsb = 0x00000c48,
+	.hal_umac_ce0_src_reg_base = 0x1B80000,
+	.hal_umac_ce0_dest_reg_base = 0x1B81000,
+	.hal_umac_ce1_src_reg_base = 0x1B82000,
+	.hal_umac_ce1_dest_reg_base = 0x1B83000,
+	.hal_ppe_rel_ring_base = 0xb74,
+	.hal_reo2ppe_ring_base = 0xde8,
+	.hal_tcl_ppe2tcl_ring_base_lsb = 0x19bc,
+	/* PMM register base address */
+	.hal_pmm_reg_base = 0x010D40FC,
 };
 
 const struct ath12k_hw_hal_params ath12k_wifi8_hw_hal_params_qcn9625 = {
 	.rx_buf_rbm = HAL_RX_BUF_RBM_SW5_BM,
-	.wbm2sw_cc_enable = HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW0_EN |
-			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW1_EN |
-			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW2_EN |
-			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW3_EN |
-			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW4_EN |
-			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW5_EN |
-			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW6_EN,
+	.tqm2sw_cc_enable1 = HAL_TQM_SW_COOKIE_CONV_CFG_TQM2SW0_EN |
+			     HAL_TQM_SW_COOKIE_CONV_CFG_TQM2SW1_EN |
+			     HAL_TQM_SW_COOKIE_CONV_CFG_TQM2SW2_EN |
+			     HAL_TQM_SW_COOKIE_CONV_CFG_TQM2SW3_EN |
+			     HAL_TQM_SW_COOKIE_CONV_CFG_TQM2SW4_EN |
+			     HAL_TQM_SW_COOKIE_CONV_CFG_TQM2SW5_EN |
+			     HAL_TQM_SW_COOKIE_CONV_CFG_TQM2SW6_EN,
+	.tqm2sw_cc_enable2 = HAL_TQM_SW_COOKIE_CONV_CFG2_TQM2SW7_EN |
+			     HAL_TQM_SW_COOKIE_CONV_CFG2_TQM2SW8_EN |
+			     HAL_TQM_SW_COOKIE_CONV_CFG2_TQM2PPE_EN,
 	.link_desc_size = HAL_LINK_DESC_SIZE,
 	.num_mpdus_per_link_desc = HAL_NUM_MPDUS_PER_LINK_DESC,
 	.num_tx_msdus_per_link_desc = HAL_NUM_TX_MSDUS_PER_LINK_DESC,
 	.num_rx_msdus_per_link_desc = HAL_NUM_RX_MSDUS_PER_LINK_DESC,
 	.num_mpdu_links_per_queue_desc = HAL_NUM_MPDU_LINKS_PER_QUEUE_DESC,
+	.dscp_tid_map_tbl_max_entries = HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX,
+	.num_tids = HAL_WIFI8_NUM_TIDS,
+	.reoq_lut_size = HAL_WIFI8_REOQ_LUT_SIZE,
+	.dp_rx_err_rdi = HAL_WIFI8_DP_RX_ERR_RDI,
+	.rx_mgmt_buf_rbm = HAL_RX_BUF_RBM_SW4_BM,
+};
+
+const struct ath12k_hal_reset_rings qcn9625_reset_rings[HAL_RESET_RING_TYPE_MAX] = {
+	[HAL_TCL_GSE_CMD_RING] = {
+		.consumer_prefetch_timer = 0x00F1490C,
+		.srng_misc_reg = 0x00F148DC,
+		.hp = 0x00F17030,
+	},
+	[HAL_TQM_LOWPRI_CMD_RING] = {
+		.consumer_prefetch_timer = 0x00F08164,
+		.srng_misc_reg = 0x00F08134,
+		.hp = 0x00F0B010,
+	},
+	[HAL_TQM_HIPRI_CMD_RING] = {
+		.consumer_prefetch_timer = 0x00F081DC,
+		.srng_misc_reg = 0x00F081AC,
+		.hp = 0x00F0B018,
+	},
+	[HAL_TQM_HIPRI1_CMD_RING] = {
+		.consumer_prefetch_timer = 0x00F08254,
+		.srng_misc_reg = 0x00F08224,
+		.hp = 0x00F0B020,
+	},
+	[HAL_FW2TQM_ENT_RING] = {
+		.consumer_prefetch_timer = 0x00F080EC,
+		.srng_misc_reg = 0x00F080BC,
+		.hp = 0x00F0B008,
+	},
+	[HAL_TCL_TCL2TQM_ENT_RING] = {
+		.srng_misc_reg = 0x00F14C1C,
+		.hp = 0x00F17060,
+	},
+	[HAL_TQM_TCL2TQM_ENT_RING] = {
+		.consumer_prefetch_timer = 0x00F08074,
+		.srng_misc_reg = 0x00F08044,
+		.hp = 0x00F0B000,
+	},
+	[HAL_WBM_WBM2TQM_DESC_RING] = {
+		.srng_misc_reg = 0x00F0434C,
+		.hp = 0x00F07020,
+	},
+	[HAL_TQM_WBM2TQM_DESC_RING] = {
+		.consumer_prefetch_timer = 0x00F083BC,
+		.srng_misc_reg = 0x00F0838C,
+		.hp = 0x00F0B038,
+	},
+	[HAL_TQM_TQM2WBM_REL_RING] = {
+		.srng_misc_reg = 0x00F08404,
+		.hp = 0x00F0B040,
+	},
+	[HAL_WBM_TQM2WBM_REL_RING] = {
+		.consumer_prefetch_timer = 0x00F0419C,
+		.srng_misc_reg = 0x00F0416C,
+		.hp = 0x00F07000,
+	},
+	[HAL_WBM_WBM2REO_DESC_RING] = {
+		.srng_misc_reg = 0x00F05AE0,
+		.hp = 0x00F07170,
+	},
+	[HAL_REO_WBM2REO_DESC_RING] = {
+		.consumer_prefetch_timer = 0x00F22294,
+		.srng_misc_reg = 0x00F22264,
+		.hp = 0x00F25018,
+	},
+	[HAL_REO_REO2WBM_REL_RING] = {
+		.srng_misc_reg = 0x00F230A4,
+		.hp = 0x00F25100,
+	},
+	[HAL_WBM_REO2WBM_REL_RING] = {
+		.consumer_prefetch_timer = 0x00F04214,
+		.srng_misc_reg = 0x00F041E4,
+		.hp = 0x00F07008,
+	},
+	[HAL_FW2WBM_REL_RING] = {
+		.consumer_prefetch_timer = 0x00F04304,
+		.srng_misc_reg = 0x00F042D4,
+		.hp = 0x00F07018,
+	},
+	[HAL_FW2TQM_REL_RING] = {
+		.consumer_prefetch_timer = 0x00F08E2C,
+		.srng_misc_reg = 0x00F08DFC,
+		.hp = 0x00F0B0E8,
+	},
+	[HAL_WBM_IDLE_DESC_RING] = {
+		.consumer_prefetch_timer = 0x00F0455C,
+		.srng_misc_reg = 0x00F0452C,
+		.hp = 0x00F07040,
+	},
+	[HAL_TCL_GSE_STATUS_RING] = {
+		.srng_misc_reg = 0x00F14C94,
+		.hp = 0x00F17068,
+	},
+	[HAL_TCL2FW_OUTPUT_RING] = {
+		.srng_misc_reg = 0x00F14D84,
+		.hp = 0x00F17078,
+	},
+	[HAL_TQM_HIPRI_STATUS_RING] = {
+		.srng_misc_reg = 0x00F084F4,
+		.hp = 0x00F0B050,
+	},
+	[HAL_TQM_HIPRI1_STATUS_RING] = {
+		.srng_misc_reg = 0x00F0856C,
+		.hp = 0x00F0B058,
+	},
+	[HAL_TQM_LOWPRI_STATUS_RING] = {
+		.srng_misc_reg = 0x00F0847C,
+		.hp = 0x00F0B048,
+	},
+	[HAL_TQM2FW_REL_BUF_RING] = {
+		.srng_misc_reg = 0x00F0865C,
+		.hp = 0x00F0B068,
+	},
+	[HAL_WBM_ERR_REL_RING] = {
+		.srng_misc_reg = 0x00F04580,
+		.hp = 0x00F07048,
+	},
+	[HAL_REO2FW_DEST_RING] = {
+		.srng_misc_reg = 0x00F22FB4,
+		.hp = 0x00F250F0,
+	},
+	[HAL_REO2FW_MGMT_RING] = {
+		.srng_misc_reg = 0x00F2302C,
+		.hp = 0x00F250F8,
+	},
+	[HAL_TQM_ERR_REL_RING] = {
+		.srng_misc_reg = 0x00F086D4,
+		.hp = 0x00F0B070,
+	},
+	[HAL_TQM2TQM_IN1_MLO_IPC_RING] = {
+		.consumer_prefetch_timer = 0x00F08FE4,
+		.srng_misc_reg = 0x00F08FB4,
+		.hp = 0x00F0B0F0,
+		.consumer_producer_mlo = 0x00F09018,
+		.mlo_doorbell_press = 0x00F0901C,
+	},
+	[HAL_TQM2TQM_IN2_MLO_IPC_RING] = {
+		.consumer_prefetch_timer = 0x00F09078,
+		.srng_misc_reg = 0x00F09048,
+		.hp = 0x00F0B0F8,
+		.consumer_producer_mlo = 0x00F090AC,
+		.mlo_doorbell_press = 0x00F090B0,
+	},
+	[HAL_TQM2TQM_IN3_MLO_IPC_RING] = {
+		.consumer_prefetch_timer = 0x00F093C0,
+		.srng_misc_reg = 0x00F09390,
+		.hp = 0x00F0B110,
+		.consumer_producer_mlo = 0x00F093F4,
+		.mlo_doorbell_press = 0x00F093F8,
+	},
+	[HAL_TQM2TQM_IN4_MLO_IPC_RING] = {
+		.consumer_prefetch_timer = 0x00F09454,
+		.srng_misc_reg = 0x00F09424,
+		.hp = 0x00F0B118,
+		.consumer_producer_mlo = 0x00F09488,
+		.mlo_doorbell_press = 0x00F0948C,
+	},
+	[HAL_REO2REO_OUT1_MLO_IPC_RING] = {
+		.srng_misc_reg = 0x00F2311C,
+		.hp = 0x00F25108,
+		.consumer_producer_mlo = 0x00F23180,
+		.mlo_doorbell_press = 0x00F23184,
+	},
+	[HAL_REO2REO_OUT2_MLO_IPC_RING] = {
+		.srng_misc_reg = 0x00F231B0,
+		.hp = 0x00F25110,
+		.consumer_producer_mlo = 0x00F23214,
+		.mlo_doorbell_press = 0x00F23218,
+	},
+	[HAL_REO2REO_OUT3_MLO_IPC_RING] = {
+		.srng_misc_reg = 0x00F23244,
+		.hp = 0x00F25118,
+		.consumer_producer_mlo = 0x00F232A8,
+		.mlo_doorbell_press = 0x00F232AC,
+	},
+	[HAL_REO2REO_OUT4_MLO_IPC_RING] = {
+		.srng_misc_reg = 0x00F232D8,
+		.hp = 0x00F25120,
+		.consumer_producer_mlo = 0x00F2333C,
+		.mlo_doorbell_press = 0x00F23340,
+	},
+	[HAL_TQM2TQM_OUT1_MLO_IPC_RING] = {
+		.srng_misc_reg = 0x00F090DC,
+		.hp = 0x00F0B100,
+		.consumer_producer_mlo = 0x00F09140,
+		.mlo_doorbell_press = 0x00F09144,
+	},
+	[HAL_TQM2TQM_OUT2_MLO_IPC_RING] = {
+		.srng_misc_reg = 0x00F09170,
+		.hp = 0x00F0B108,
+		.consumer_producer_mlo = 0x00F091D4,
+		.mlo_doorbell_press = 0x00F091D8,
+	},
+	[HAL_TQM2TQM_OUT3_MLO_IPC_RING] = {
+		.srng_misc_reg = 0x00F094B8,
+		.hp = 0x00F0B120,
+		.consumer_producer_mlo = 0x00F0951C,
+		.mlo_doorbell_press = 0x00F09520,
+	},
+	[HAL_TQM2TQM_OUT4_MLO_IPC_RING] = {
+		.srng_misc_reg = 0x00F0954C,
+		.hp = 0x00F0B128,
+		.consumer_producer_mlo = 0x00F095B0,
+		.mlo_doorbell_press = 0x00F095B4,
+	},
+	[HAL_TCL2TCL_MLO_OUT1_IPC_RING] = {
+		.srng_misc_reg = 0x00F14E74,
+		.hp = 0x00F17088,
+		.consumer_producer_mlo = 0x00F14ED8,
+		.mlo_doorbell_press = 0x00F14EDC,
+	},
+	[HAL_TCL2TCL_MLO_OUT2_IPC_RING] = {
+		.srng_misc_reg = 0x00F14F08,
+		.hp = 0x00F17090,
+		.consumer_producer_mlo = 0x00F14F6C,
+		.mlo_doorbell_press = 0x00F14F70,
+	},
+	[HAL_TCL2TCL_MLO_OUT3_IPC_RING] = {
+		.srng_misc_reg = 0x00F14F9C,
+		.hp = 0x00F17098,
+		.consumer_producer_mlo = 0x00F15000,
+		.mlo_doorbell_press = 0x00F15004,
+	},
+	[HAL_TCL2TCL_MLO_OUT4_IPC_RING] = {
+		.srng_misc_reg = 0x00F15030,
+		.hp = 0x00F170A0,
+		.consumer_producer_mlo = 0x00F15094,
+		.mlo_doorbell_press = 0x00F15098,
+	},
+	[HAL_RXDMA2REO_MLO0_IPC_RING] = {
+		.consumer_prefetch_timer = 0x00F220D8,
+		.srng_misc_reg = 0x00F220A8,
+		.hp = 0x00F25000,
+		.consumer_producer_mlo = 0x00F2210C,
+		.mlo_doorbell_press = 0x00F22110,
+	},
+	[HAL_RXDMA2REO_MLO1_IPC_RING] = {
+		.consumer_prefetch_timer = 0x00F2216C,
+		.srng_misc_reg = 0x00F2213C,
+		.hp = 0x00F25008,
+		.consumer_producer_mlo = 0x00F221A0,
+		.mlo_doorbell_press = 0x00F221A4,
+	},
+	[HAL_RXDMA2REO_MLO2_IPC_RING] = {
+		.consumer_prefetch_timer = 0x00F22200,
+		.srng_misc_reg = 0x00F221D0,
+		.hp = 0x00F25010,
+		.consumer_producer_mlo = 0x00F22234,
+		.mlo_doorbell_press = 0x00F22238,
+	},
+	[HAL_RXDMA2REO_MLO3_IPC_RING] = {
+		.consumer_prefetch_timer = 0x00F22654,
+		.srng_misc_reg = 0x00F22624,
+		.hp = 0x00F25058,
+		.consumer_producer_mlo = 0x00F22688,
+		.mlo_doorbell_press = 0x00F2268C,
+	},
+	[HAL_RXDMA2REO_MLO4_IPC_RING] = {
+		.consumer_prefetch_timer = 0x00F226E8,
+		.srng_misc_reg = 0x00F226B8,
+		.hp = 0x00F25060,
+		.consumer_producer_mlo = 0x00F2271C,
+		.mlo_doorbell_press = 0x00F22720,
+	},
+	[HAL_WBM2RXDMA_0_BUF_RING_IPC_RING] = {
+		.consumer_prefetch_timer = 0x00E4224C,
+		.srng_misc_reg = 0x00E4221C,
+		.hp = 0x00E44818,
+		.consumer_producer_mlo = 0x00E42280,
+		.mlo_doorbell_press = 0x00E42284,
+	},
+	[HAL_WBM2RXDMA_1_BUF_RING_IPC_RING] = {
+		.consumer_prefetch_timer = 0x00E42314,
+		.srng_misc_reg = 0x00E422E4,
+		.hp = 0x00E44820,
+		.consumer_producer_mlo = 0x00E42348,
+		.mlo_doorbell_press = 0x00E4234C,
+	},
+	[HAL_WBM2RXDMA_2_BUF_RING_IPC_RING] = {
+		.consumer_prefetch_timer = 0x00E423DC,
+		.srng_misc_reg = 0x00E423AC,
+		.hp = 0x00E44828,
+		.consumer_producer_mlo = 0x00E42410,
+		.mlo_doorbell_press = 0x00E42414,
+	},
+	[HAL_WBM2RXDMA_LINK_RING_IPC_RING] = {
+		.consumer_prefetch_timer = 0x00E425FC,
+		.srng_misc_reg = 0x00E425CC,
+		.hp = 0x00E44840,
+		.consumer_producer_mlo = 0x00E42630,
+		.mlo_doorbell_press = 0x00E42634,
+	},
+	[HAL_RXDMA2REO_MLO_IPC_RING] = {
+		.srng_misc_reg = 0x00E431F8,
+		.hp = 0x00E44A20,
+		.consumer_producer_mlo = 0x00E4325C,
+		.mlo_doorbell_press = 0x00E43260,
+	},
+	[HAL_WBM2RXDMA_LINK_MLO1_IPC_RING] = {
+		.srng_misc_reg = 0x00F047CC,
+		.hp = 0x00F07068,
+		.consumer_producer_mlo = 0x00F04830,
+		.mlo_doorbell_press = 0x00F04834,
+	},
+	[HAL_WBM2RXDMA_LINK_MLO2_IPC_RING] = {
+		.srng_misc_reg = 0x00F04860,
+		.hp = 0x00F07070,
+		.consumer_producer_mlo = 0x00F048C4,
+		.mlo_doorbell_press = 0x00F048C8,
+	},
+	[HAL_WBM2RXDMA_LINK_MLO3_IPC_RING] = {
+		.srng_misc_reg = 0x00F048F4,
+		.hp = 0x00F07078,
+		.consumer_producer_mlo = 0x00F04958,
+		.mlo_doorbell_press = 0x00F0495C,
+	},
+	[HAL_WBM2RXDMA_LINK_MLO4_IPC_RING] = {
+		.srng_misc_reg = 0x00F04988,
+		.hp = 0x00F07080,
+		.consumer_producer_mlo = 0x00F049EC,
+		.mlo_doorbell_press = 0x00F049F0,
+	},
+	[HAL_WBM2RXDMA_LINK_MLO5_IPC_RING] = {
+		.srng_misc_reg = 0x00F04A1C,
+		.hp = 0x00F07088,
+		.consumer_producer_mlo = 0x00F04A80,
+		.mlo_doorbell_press = 0x00F04A84,
+	},
+	[HAL_WBM2RXDMA_SW0_BUFF_MLO1_IPC_RING] = {
+		.srng_misc_reg = 0x00F05078,
+		.hp = 0x00F070E0,
+		.consumer_producer_mlo = 0x00F050DC,
+		.mlo_doorbell_press = 0x00F050E0,
+	},
+	[HAL_WBM2RXDMA_SW0_BUFF_MLO2_IPC_RING] = {
+		.srng_misc_reg = 0x00F0510C,
+		.hp = 0x00F070E8,
+		.consumer_producer_mlo = 0x00F05170,
+		.mlo_doorbell_press = 0x00F05174,
+	},
+	[HAL_WBM2RXDMA_SW0_BUFF_MLO3_IPC_RING] = {
+		.srng_misc_reg = 0x00F051A0,
+		.hp = 0x00F070F0,
+		.consumer_producer_mlo = 0x00F05204,
+		.mlo_doorbell_press = 0x00F05208,
+	},
+	[HAL_WBM2RXDMA_SW0_BUFF_MLO4_IPC_RING] = {
+		.srng_misc_reg = 0x00F05234,
+		.hp = 0x00F070F8,
+		.consumer_producer_mlo = 0x00F05298,
+		.mlo_doorbell_press = 0x00F0529C,
+	},
+	[HAL_WBM2RXDMA_SW0_BUFF_MLO5_IPC_RING] = {
+		.srng_misc_reg = 0x00F052C8,
+		.hp = 0x00F07100,
+		.consumer_producer_mlo = 0x00F0532C,
+		.mlo_doorbell_press = 0x00F05330,
+	},
+	[HAL_WBM2RXDMA_SW1_BUFF_MLO1_IPC_RING] = {
+		.srng_misc_reg = 0x00F05640,
+		.hp = 0x00F07130,
+		.consumer_producer_mlo = 0x00F056A4,
+		.mlo_doorbell_press = 0x00F056A8,
+	},
+	[HAL_WBM2RXDMA_SW1_BUFF_MLO2_IPC_RING] = {
+		.srng_misc_reg = 0x00F056D4,
+		.hp = 0x00F07138,
+		.consumer_producer_mlo = 0x00F05738,
+		.mlo_doorbell_press = 0x00F0573C,
+	},
+	[HAL_WBM2RXDMA_SW1_BUFF_MLO3_IPC_RING] = {
+		.srng_misc_reg = 0x00F05768,
+		.hp = 0x00F07140,
+		.consumer_producer_mlo = 0x00F057CC,
+		.mlo_doorbell_press = 0x00F057D0,
+	},
+	[HAL_WBM2RXDMA_SW1_BUFF_MLO4_IPC_RING] = {
+		.srng_misc_reg = 0x00F057FC,
+		.hp = 0x00F07148,
+		.consumer_producer_mlo = 0x00F05860,
+		.mlo_doorbell_press = 0x00F05864,
+	},
+	[HAL_WBM2RXDMA_SW1_BUFF_MLO5_IPC_RING] = {
+		.srng_misc_reg = 0x00F05890,
+		.hp = 0x00F07150,
+		.consumer_producer_mlo = 0x00F058F4,
+		.mlo_doorbell_press = 0x00F058F8,
+	},
+	[HAL_WBM2RXDMA_PPE_BUFF_MLO1_IPC_RING] = {
+		.srng_misc_reg = 0x00F0535C,
+		.hp = 0x00F07108,
+		.consumer_producer_mlo = 0x00F053C0,
+		.mlo_doorbell_press = 0x00F053C4,
+	},
+	[HAL_WBM2RXDMA_PPE_BUFF_MLO2_IPC_RING] = {
+		.srng_misc_reg = 0x00F053F0,
+		.hp = 0x00F07110,
+		.consumer_producer_mlo = 0x00F05454,
+		.mlo_doorbell_press = 0x00F05458,
+	},
+	[HAL_WBM2RXDMA_PPE_BUFF_MLO3_IPC_RING] = {
+		.srng_misc_reg = 0x00F05484,
+		.hp = 0x00F07118,
+		.consumer_producer_mlo = 0x00F054E8,
+		.mlo_doorbell_press = 0x00F054EC,
+	},
+	[HAL_WBM2RXDMA_PPE_BUFF_MLO4_IPC_RING] = {
+		.srng_misc_reg = 0x00F05518,
+		.hp = 0x00F07120,
+		.consumer_producer_mlo = 0x00F0557C,
+		.mlo_doorbell_press = 0x00F05580,
+	},
+	[HAL_WBM2RXDMA_PPE_BUFF_MLO5_IPC_RING] = {
+		.srng_misc_reg = 0x00F055AC,
+		.hp = 0x00F07128,
+		.consumer_producer_mlo = 0x00F05610,
+		.mlo_doorbell_press = 0x00F05614,
+	},
+	[HAL_WBM2RXOLE_ASE_CMD_MLO1_IPC_RING] = {
+		.srng_misc_reg = 0x00F04AB0,
+		.hp = 0x00F07090,
+		.consumer_producer_mlo = 0x00F04B14,
+		.mlo_doorbell_press = 0x00F04B18,
+	},
+	[HAL_WBM2RXOLE_ASE_CMD_MLO2_IPC_RING] = {
+		.srng_misc_reg = 0x00F04B44,
+		.hp = 0x00F07098,
+		.consumer_producer_mlo = 0x00F04BA8,
+		.mlo_doorbell_press = 0x00F04BAC,
+	},
+	[HAL_WBM2RXOLE_ASE_CMD_MLO3_IPC_RING] = {
+		.srng_misc_reg = 0x00F04BD8,
+		.hp = 0x00F070A0,
+		.consumer_producer_mlo = 0x00F04C3C,
+		.mlo_doorbell_press = 0x00F04C40,
+	},
+	[HAL_WBM2RXOLE_ASE_CMD_MLO4_IPC_RING] = {
+		.srng_misc_reg = 0x00F04C6C,
+		.hp = 0x00F070A8,
+		.consumer_producer_mlo = 0x00F04CD0,
+		.mlo_doorbell_press = 0x00F04CD4,
+	},
+	[HAL_WBM2RXOLE_ASE_CMD_MLO5_IPC_RING] = {
+		.srng_misc_reg = 0x00F04D00,
+		.hp = 0x00F070B0,
+		.consumer_producer_mlo = 0x00F04D64,
+		.mlo_doorbell_press = 0x00F04D68,
+	},
+	[HAL_WBM2RXOLE_FSE_CMD_MLO1_IPC_RING] = {
+		.srng_misc_reg = 0x00F04D94,
+		.hp = 0x00F070B8,
+		.consumer_producer_mlo = 0x00F04DF8,
+		.mlo_doorbell_press = 0x00F04DFC,
+	},
+	[HAL_WBM2RXOLE_FSE_CMD_MLO2_IPC_RING] = {
+		.srng_misc_reg = 0x00F04E28,
+		.hp = 0x00F070C0,
+		.consumer_producer_mlo = 0x00F04E8C,
+		.mlo_doorbell_press = 0x00F04E90,
+	},
+	[HAL_WBM2RXOLE_FSE_CMD_MLO3_IPC_RING] = {
+		.srng_misc_reg = 0x00F04EBC,
+		.hp = 0x00F070C8,
+		.consumer_producer_mlo = 0x00F04F20,
+		.mlo_doorbell_press = 0x00F04F24,
+	},
+	[HAL_WBM2RXOLE_FSE_CMD_MLO4_IPC_RING] = {
+		.srng_misc_reg = 0x00F04F50,
+		.hp = 0x00F070D0,
+		.consumer_producer_mlo = 0x00F04FB4,
+		.mlo_doorbell_press = 0x00F04FB8,
+	},
+	[HAL_WBM2RXOLE_FSE_CMD_MLO5_IPC_RING] = {
+		.srng_misc_reg = 0x00F04FE4,
+		.hp = 0x00F070D8,
+		.consumer_producer_mlo = 0x00F05048,
+		.mlo_doorbell_press = 0x00F0504C,
+	},
+	[HAL_WBM2RXOLE_ASE_CMD_RING_IPC_RING] = {
+		.consumer_prefetch_timer = 0x00E1E1B0,
+		.srng_misc_reg = 0x00E1E180,
+		.hp = 0x00E20000,
+		.consumer_producer_mlo = 0x00E1E1E4,
+		.mlo_doorbell_press = 0x00E1E1E8,
+	},
+	[HAL_WBM2RXOLE_FSE_CMD_RING_IPC_RING] = {
+		.consumer_prefetch_timer = 0x00E1E2C4,
+		.srng_misc_reg = 0x00E1E294,
+		.hp = 0x00E20010,
+		.consumer_producer_mlo = 0x00E1E2F8,
+		.mlo_doorbell_press = 0x00E1E2FC,
+	},
 };
 
 u32 ath12k_wifi8_hal_rx_h_mpdu_err_qcn9625(struct hal_rx_desc *desc)
 {
-	u32 info = __le32_to_cpu(desc->u.qcn9625_compact.msdu_end.info13);
+	u32 info = __le32_to_cpu(desc->u.qcn9625_compact.msdu_end.info14);
 	u32 errmap = 0;
 
-	if (info & RX_MSDU_END_INFO13_FCS_ERR)
+	if (info & RX_MSDU_END_INFO14_FCS_ERR)
 		errmap |= HAL_RX_MPDU_ERR_FCS;
 
-	if (info & RX_MSDU_END_INFO13_DECRYPT_ERR)
+	if (info & RX_MSDU_END_INFO14_DECRYPT_ERR)
 		errmap |= HAL_RX_MPDU_ERR_DECRYPT;
 
-	if (info & RX_MSDU_END_INFO13_TKIP_MIC_ERR)
+	if (info & RX_MSDU_END_INFO14_TKIP_MIC_ERR)
 		errmap |= HAL_RX_MPDU_ERR_TKIP_MIC;
 
-	if (info & RX_MSDU_END_INFO13_A_MSDU_ERROR)
+	if (info & RX_MSDU_END_INFO14_A_MSDU_ERROR)
 		errmap |= HAL_RX_MPDU_ERR_AMSDU_ERR;
 
-	if (info & RX_MSDU_END_INFO13_OVERFLOW_ERR)
+	if (info & RX_MSDU_END_INFO14_OVERFLOW_ERR)
 		errmap |= HAL_RX_MPDU_ERR_OVERFLOW;
 
-	if (info & RX_MSDU_END_INFO13_MSDU_LEN_ERR)
+	if (info & RX_MSDU_END_INFO14_MSDU_LENGTH_ERR)
 		errmap |= HAL_RX_MPDU_ERR_MSDU_LEN;
 
-	if (info & RX_MSDU_END_INFO13_MPDU_LEN_ERR)
+	if (info & RX_MSDU_END_INFO14_MPDU_LENGTH_ERR)
 		errmap |= HAL_RX_MPDU_ERR_MPDU_LEN;
 
 	return errmap;
@@ -404,8 +1120,8 @@ ath12k_wifi8_hal_rx_desc_get_crypto_header_qcn9625(struct hal_rx_desc *desc,
 	case HAL_ENCRYPT_TYPE_WAPI:
 		return;
 	}
-	key_id = le32_get_bits(desc->u.qcn9625_compact.mpdu_start.info5,
-			       RX_MPDU_START_INFO5_KEY_ID);
+	key_id = le32_get_bits(desc->u.qcn9625_compact.mpdu_start.info4,
+			       RX_MPDU_INFO_INFO4_KEY_ID_OCTET);
 	crypto_hdr[3] = 0x20 | (key_id << 6);
 	crypto_hdr[4] =
 		HAL_RX_MPDU_INFO_PN_GET_BYTE3(desc->u.qcn9625_compact.mpdu_start.pn[0]);
@@ -426,8 +1142,8 @@ ath12k_wifi8_hal_rx_desc_get_dot11_hdr_qcn9625(struct hal_rx_desc *desc,
 	ether_addr_copy(hdr->addr1, desc->u.qcn9625_compact.mpdu_start.addr1);
 	ether_addr_copy(hdr->addr2, desc->u.qcn9625_compact.mpdu_start.addr2);
 	ether_addr_copy(hdr->addr3, desc->u.qcn9625_compact.mpdu_start.addr3);
-	if (__le32_to_cpu(desc->u.qcn9625_compact.mpdu_start.info4) &
-			RX_MPDU_START_INFO4_MAC_ADDR4_VALID) {
+	if (__le32_to_cpu(desc->u.qcn9625_compact.mpdu_start.info2) &
+	    RX_MPDU_INFO_INFO2_MAC_ADDR_AD4_VALID) {
 		ether_addr_copy(hdr->addr4, desc->u.qcn9625_compact.mpdu_start.addr4);
 	}
 	hdr->seq_ctrl = desc->u.qcn9625_compact.mpdu_start.seq_ctrl;
@@ -445,6 +1161,7 @@ void ath12k_wifi8_hal_extract_rx_desc_data_qcn9625(struct hal_rx_desc_data *rx_d
 	rx_desc_data->is_last_msdu =
 		ath12k_wifi8_hal_rx_h_last_msdu_qcn9625(ldesc);
 	rx_desc_data->freq = ath12k_wifi8_hal_rx_h_freq_qcn9625(rx_desc);
+	rx_desc_data->snr = ath12k_wifi8_hal_rx_h_snr_qcn9625(rx_desc);
 	rx_desc_data->pkt_type = ath12k_wifi8_hal_rx_h_pkt_type_qcn9625(rx_desc);
 	rx_desc_data->bw = ath12k_wifi8_hal_rx_h_rx_bw_qcn9625(rx_desc);
 	rx_desc_data->rate_mcs = ath12k_wifi8_hal_rx_h_rate_mcs_qcn9625(rx_desc);
@@ -512,9 +1229,10 @@ static int ath12k_wifi8_hal_srng_create_config_qcn9625(struct ath12k_hal *hal)
 	s->reg_size[0] = HAL_REO2_RING_BASE_LSB(hal) - HAL_REO1_RING_BASE_LSB(hal);
 	s->reg_size[1] = HAL_REO2_RING_HP - HAL_REO1_RING_HP;
 
+	/* REO2SW6 ring.*/
 	s = &hal->srng_config[HAL_REO_EXCEPTION];
-	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO_SW0_RING_BASE_LSB(hal);
-	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO_SW0_RING_HP;
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO2SW6_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO2SW6_RING_HP;
 
 	s = &hal->srng_config[HAL_REO_REINJECT];
 	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_SW2REO_RING_BASE_LSB(hal);
@@ -522,13 +1240,31 @@ static int ath12k_wifi8_hal_srng_create_config_qcn9625(struct ath12k_hal *hal)
 	s->reg_size[0] = HAL_SW2REO1_RING_BASE_LSB(hal) - HAL_SW2REO_RING_BASE_LSB(hal);
 	s->reg_size[1] = HAL_SW2REO1_RING_HP - HAL_SW2REO_RING_HP;
 
+	s = &hal->srng_config[HAL_REO_DST_ROAMING];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO2SW_ROAMING1_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO2SW_ROAMING1_RING_HP;
+
 	s = &hal->srng_config[HAL_REO_CMD];
 	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO_CMD_RING_BASE_LSB(hal);
 	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO_CMD_HP;
+	s->reg_size[0]  = HAL_REO_CMD1_RING_BASE_LSB - HAL_REO_CMD_RING_BASE_LSB(hal);
+	s->reg_size[1]  = HAL_REO_CMD1_HP - HAL_REO_CMD_HP;
 
 	s = &hal->srng_config[HAL_REO_STATUS];
 	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO_STATUS_RING_BASE_LSB(hal);
 	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO_STATUS_HP;
+
+	s = &hal->srng_config[HAL_TQM_CMD];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_TQM_HOST_CMD_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_TQM_HOST_CMD_RING_HP;
+
+	s = &hal->srng_config[HAL_TQM_STATUS];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_TQM_HOST_STATUS_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_TQM_HOST_STATUS_RING_HP;
+
+	s = &hal->srng_config[HAL_RXOLE_FSE_CMD];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_WBM_REG + HAL_FSE_CMD_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_WBM_REG + HAL_FSE_CMD_HP;
 
 	s = &hal->srng_config[HAL_REO2PPE];
 	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO2PPE_RING_BASE_LSB(hal);
@@ -542,38 +1278,24 @@ static int ath12k_wifi8_hal_srng_create_config_qcn9625(struct ath12k_hal *hal)
 	s->reg_size[0] = HAL_TCL2_RING_BASE_LSB(hal) - HAL_TCL1_RING_BASE_LSB(hal);
 	s->reg_size[1] = HAL_TCL2_RING_HP - HAL_TCL1_RING_HP;
 
-	s = &hal->srng_config[HAL_TCL_CMD];
-	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL_RING_BASE_LSB(hal);
-	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL_RING_HP;
-
-	s = &hal->srng_config[HAL_TCL_STATUS];
-	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL_STATUS_RING_BASE_LSB(hal);
-	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL_STATUS_RING_HP;
-
 	s = &hal->srng_config[HAL_CE_SRC];
-	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_CE0_SRC_REG(hal) + HAL_CE_DST_RING_BASE_LSB;
-	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_CE0_SRC_REG(hal) + HAL_CE_DST_RING_HP;
-	s->reg_size[0] = HAL_SEQ_WCSS_UMAC_CE1_SRC_REG(hal) -
-			 HAL_SEQ_WCSS_UMAC_CE0_SRC_REG(hal);
-	s->reg_size[1] = HAL_SEQ_WCSS_UMAC_CE1_SRC_REG(hal) -
-			 HAL_SEQ_WCSS_UMAC_CE0_SRC_REG(hal);
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_CE0_SRC_REG + HAL_CE_DST_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_CE0_SRC_REG + HAL_CE_DST_RING_HP;
+	s->reg_size[0] = HAL_SEQ_WCSS_UMAC_CE1_SRC_REG - HAL_SEQ_WCSS_UMAC_CE0_SRC_REG;
+	s->reg_size[1] = HAL_SEQ_WCSS_UMAC_CE1_SRC_REG - HAL_SEQ_WCSS_UMAC_CE0_SRC_REG;
 
 	s = &hal->srng_config[HAL_CE_DST];
-	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_CE0_DST_REG(hal) + HAL_CE_DST_RING_BASE_LSB;
-	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_CE0_DST_REG(hal) + HAL_CE_DST_RING_HP;
-	s->reg_size[0] = HAL_SEQ_WCSS_UMAC_CE1_DST_REG(hal) -
-			 HAL_SEQ_WCSS_UMAC_CE0_DST_REG(hal);
-	s->reg_size[1] = HAL_SEQ_WCSS_UMAC_CE1_DST_REG(hal) -
-			 HAL_SEQ_WCSS_UMAC_CE0_DST_REG(hal);
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_CE0_DST_REG + HAL_CE_DST_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_CE0_DST_REG + HAL_CE_DST_RING_HP;
+	s->reg_size[0] = HAL_SEQ_WCSS_UMAC_CE1_DST_REG - HAL_SEQ_WCSS_UMAC_CE0_DST_REG;
+	s->reg_size[1] = HAL_SEQ_WCSS_UMAC_CE1_DST_REG - HAL_SEQ_WCSS_UMAC_CE0_DST_REG;
 
 	s = &hal->srng_config[HAL_CE_DST_STATUS];
-	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_CE0_DST_REG(hal) +
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_CE0_DST_REG +
 		HAL_CE_DST_STATUS_RING_BASE_LSB;
-	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_CE0_DST_REG(hal) + HAL_CE_DST_STATUS_RING_HP;
-	s->reg_size[0] = HAL_SEQ_WCSS_UMAC_CE1_DST_REG(hal) -
-			 HAL_SEQ_WCSS_UMAC_CE0_DST_REG(hal);
-	s->reg_size[1] = HAL_SEQ_WCSS_UMAC_CE1_DST_REG(hal) -
-			 HAL_SEQ_WCSS_UMAC_CE0_DST_REG(hal);
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_CE0_DST_REG + HAL_CE_DST_STATUS_RING_HP;
+	s->reg_size[0] = HAL_SEQ_WCSS_UMAC_CE1_DST_REG - HAL_SEQ_WCSS_UMAC_CE0_DST_REG;
+	s->reg_size[1] = HAL_SEQ_WCSS_UMAC_CE1_DST_REG - HAL_SEQ_WCSS_UMAC_CE0_DST_REG;
 
 	s = &hal->srng_config[HAL_WBM_IDLE_LINK];
 	s->reg_start[0] =
@@ -582,18 +1304,45 @@ static int ath12k_wifi8_hal_srng_create_config_qcn9625(struct ath12k_hal *hal)
 
 	s = &hal->srng_config[HAL_SW2WBM_RELEASE];
 	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_WBM_REG +
-		HAL_WBM_SW_RELEASE_RING_BASE_LSB(hal);
+		HAL_WBM_SW_RELEASE_RING_BASE_LSB;
 	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_WBM_REG + HAL_WBM_SW_RELEASE_RING_HP;
-	s->reg_size[0] = HAL_WBM_SW1_RELEASE_RING_BASE_LSB(hal) -
-			 HAL_WBM_SW_RELEASE_RING_BASE_LSB(hal);
-	s->reg_size[1] = HAL_WBM_SW1_RELEASE_RING_HP - HAL_WBM_SW_RELEASE_RING_HP;
+	s->reg_size[0] = HAL_WBM_FW_RELEASE_RING_BASE_LSB -
+			 HAL_WBM_SW_RELEASE_RING_BASE_LSB;
+	s->reg_size[1] = HAL_WBM_FW_RELEASE_RING_HP - HAL_WBM_SW_RELEASE_RING_HP;
 
-	s = &hal->srng_config[HAL_WBM2SW_RELEASE];
-	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_WBM_REG + HAL_WBM0_RELEASE_RING_BASE_LSB(hal);
-	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_WBM_REG + HAL_WBM0_RELEASE_RING_HP;
-	s->reg_size[0] = HAL_WBM1_RELEASE_RING_BASE_LSB(hal) -
-		HAL_WBM0_RELEASE_RING_BASE_LSB(hal);
-	s->reg_size[1] = HAL_WBM1_RELEASE_RING_HP - HAL_WBM0_RELEASE_RING_HP;
+	s = &hal->srng_config[HAL_TX_COMPLETION];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_TQM2SW0_RELEASE_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_TQM2SW0_RELEASE_RING_HP;
+	s->reg_size[0] = HAL_TQM2SW1_RELEASE_RING_BASE_LSB -
+			 HAL_TQM2SW0_RELEASE_RING_BASE_LSB;
+	s->reg_size[1] = HAL_TQM2SW1_RELEASE_RING_HP - HAL_TQM2SW0_RELEASE_RING_HP;
+
+	s = &hal->srng_config[HAL_TCL_STATUS];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL_STATUS_RING_BASE_LSB(hal);
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL_STATUS_RING_HP;
+
+	/* SW2TCL CMD */
+	s = &hal->srng_config[HAL_TCL_CMD];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL_CMD_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL_CMD_RING_HP;
+
+	/* TCL2SW1_EXCEPTION */
+	s = &hal->srng_config[HAL_TX_EXCEPTION];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TX_EXCEPTION_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TX_EXCEPTION_RING_HP;
+
+	/* SW2WBM_ASE_CMD_RING */
+	s = &hal->srng_config[HAL_ASE_CMD_RING];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_WBM_REG + HAL_SW2WBM_ASE_CMD_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_WBM_REG + HAL_SW2WBM_ASE_CMD_RING_HP;
+
+	s = &hal->srng_config[HAL_PEER_TX_TELEMETRY];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_PEER_TX_TELEMETRY_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_PEER_TX_TELEMETRY_RING_HP;
+
+	s = &hal->srng_config[HAL_PEER_RX_TELEMETRY];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_PEER_RX_TELEMETRY_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_PEER_RX_TELEMETRY_RING_HP;
 
 	/* Some LMAC rings are not accessed from the host:
 	 * RXDMA_BUG, RXDMA_DST, RXDMA_MONITOR_BUF, RXDMA_MONITOR_STATUS,
@@ -604,11 +1353,91 @@ static int ath12k_wifi8_hal_srng_create_config_qcn9625(struct ath12k_hal *hal)
 	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL_PPE2TCL1_RING_BASE_LSB(hal);
 	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL_PPE2TCL1_RING_HP;
 
+	s = &hal->srng_config[HAL_PPE_RELEASE];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_TQM_REG +
+				HAL_TQM_PPE_RELEASE_RING_BASE_LSB(hal);
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_TQM_PPE_RELEASE_RING_HP;
+
+	s = &hal->srng_config[HAL_WBM_BUF];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_WBM_REG +
+				HAL_WBM_SW2WBM_BUFF_RELEASE1_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_WBM_REG +
+				HAL_WBM_SW2WBM_BUFF_RELEASE1_RING_HP;
+	s->reg_size[0] = HAL_WBM_SW2WBM_BUFF_RELEASE2_RING_BASE_LSB -
+				HAL_WBM_SW2WBM_BUFF_RELEASE1_RING_BASE_LSB;
+	s->reg_size[1] = HAL_WBM_SW2WBM_BUFF_RELEASE2_RING_HP -
+				HAL_WBM_SW2WBM_BUFF_RELEASE1_RING_HP;
+
+	s = &hal->srng_config[HAL_WBM_IDLE_BUF];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_WBM_REG + HAL_WBM_SW_IDLE_BUF_RING_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_WBM_REG + HAL_WBM_SW_IDLE_BUF_RING_HP;
+
+	/* REO2SW8 MGMT Exception ring */
+	s = &hal->srng_config[HAL_REO_EXCEPTION_MGMT];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO2SW8_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO2SW8_RING_HP;
+
+	/* REO2SW9 MGMT Destination ring */
+	s = &hal->srng_config[HAL_REO_DST_MGMT];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO2SW9_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO2SW9_RING_HP;
+
+	/* REO2SW11 MGMT High-priority ring */
+	s = &hal->srng_config[HAL_REO_DST_HIGH_PRIO];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO2SW11_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO2SW11_RING_HP;
+
+	/* MGMT WBM Buf ring */
+	s = &hal->srng_config[HAL_WBM_BUF_MGMT];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_WBM_REG +
+				HAL_WBM_SW2WBM_MGMT_BUFF_RELEASE1_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_WBM_REG +
+				HAL_WBM_SW2WBM_MGMT_BUFF_RELEASE1_RING_HP;
+
+	/* MGMT WBM IDle Buf ring */
+	s = &hal->srng_config[HAL_WBM_IDLE_BUF_MGMT];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_WBM_REG + HAL_WBM_SW_IDLE_MGMT_BUF_RING_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_WBM_REG + HAL_WBM_SW_IDLE_MGMT_BUF_RING_HP;
+
+	/* SAM cmd ring*/
+	s = &hal->srng_config[HAL_SAM_CMD];
+	s->reg_start[0] =  HAL_SEQ_WCSS_UMAC_SAM_REG + HAL_SAM_HOST_CMD_RING_BASE_LSB;
+	s->reg_start[1] =  HAL_SEQ_WCSS_UMAC_SAM_REG + HAL_SAM_HOST_CMD_RING_HP;
+
+	/* SAM status ring*/
+	s = &hal->srng_config[HAL_SAM_STATUS];
+	s->reg_start[0] =  HAL_SEQ_WCSS_UMAC_SAM_REG + HAL_SAM_HOST_STATUS_RING_BASE_LSB;
+	s->reg_start[1] =  HAL_SEQ_WCSS_UMAC_SAM_REG + HAL_SAM_HOST_STATUS_RING_HP;
+
+	/* PPE2WBM IDle Buf ring */
+	s = &hal->srng_config[HAL_PPE2WBM_BUF];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_WBM_REG +
+				HAL_WBM_PPE2WBM_BUFF_RELEASE1_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_WBM_REG +
+				HAL_WBM_PPE2WBM_BUFF_RELEASE1_RING_HP;
+	s->reg_size[0] = HAL_WBM_PPE2WBM_BUFF_RELEASE2_RING_BASE_LSB -
+				HAL_WBM_PPE2WBM_BUFF_RELEASE1_RING_BASE_LSB;
+	s->reg_size[1] = HAL_WBM_PPE2WBM_BUFF_RELEASE2_RING_HP -
+				HAL_WBM_PPE2WBM_BUFF_RELEASE1_RING_HP;
+
+	s = &hal->srng_config[HAL_PPE2WBM_IDLE_BUF];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_WBM_REG + HAL_PPE2WBM_SW_IDLE_BUF_RING_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_WBM_REG + HAL_PPE2WBM_SW_IDLE_BUF_RING_HP;
+
+	/* Reo flush ring (REO2SW0)*/
+	s = &hal->srng_config[HAL_REO_FLUSH];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO_SW0_RING_BASE_LSB(hal);
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO_SW0_RING_HP;
+
+	s = &hal->srng_config[HAL_TQM2PPE];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_TQM2PPE_RELEASE_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_TQM2PPE_RELEASE_RING_HP;
+
 	return 0;
 }
 
 static const struct ath12k_hal_tcl_to_cmp_rbm_map
-ath12k_wifi8_hal_tcl_to_cmp_rbm_map_qcn9625[DP_TCL_NUM_RING_MAX] = {
+ath12k_wifi8_hal_tcl_to_cmp_rbm_map_qcn9625[] = {
 	{
 		.cmp_ring_num = 0,
 		.rbm_id = HAL_RX_BUF_RBM_SW0_BM,
@@ -624,22 +1453,77 @@ ath12k_wifi8_hal_tcl_to_cmp_rbm_map_qcn9625[DP_TCL_NUM_RING_MAX] = {
 	{
 		.cmp_ring_num = 3,
 		.rbm_id = HAL_RX_BUF_RBM_SW3_BM,
+	},
+	{
+		.cmp_ring_num = 4,
+		.rbm_id = HAL_RX_BUF_RBM_SW4_BM,
 	}
+};
+
+static const struct ath12k_hal_rdi_mapping ath12k_wifi8_hal_rdi_mapping_qcn9625[] = {
+	{ DESTINATION_RING_CTRL_SW0, SOURCE_RING_CTRL_SFE }, /* 0 - DP ERR */
+	{ DESTINATION_RING_CTRL_SW1, SOURCE_RING_CTRL_SFE }, /* 1 - DP REO1 */
+	{ DESTINATION_RING_CTRL_SW2, SOURCE_RING_CTRL_SFE }, /* 2 - DP REO2 */
+	{ DESTINATION_RING_CTRL_SW3, SOURCE_RING_CTRL_SFE }, /* 3 - DP REO3 */
+	{ DESTINATION_RING_CTRL_SW4, SOURCE_RING_CTRL_SFE }, /* 4 - DP REO4 */
+	{ DESTINATION_RING_CTRL_SW5, SOURCE_RING_CTRL_SFE }, /* 5 - DP REO5 */
+	{ DESTINATION_RING_CTRL_SW6, SOURCE_RING_CTRL_SFE }, /* 6 - DP REO6 */
+	{ DESTINATION_RING_CTRL_SW7, SOURCE_RING_CTRL_SFE }, /* 7 - DP HP */
+	{ DESTINATION_RING_CTRL_SW8, SOURCE_RING_CTRL_MGMT }, /* 8 - MGMT ERR */
+	{ DESTINATION_RING_CTRL_SW9, SOURCE_RING_CTRL_MGMT}, /* 9 - MGMT RX */
+	{ DESTINATION_RING_CTRL_SW11, SOURCE_RING_CTRL_MGMT}, /* 10 - MGMT HP */
+	{ DESTINATION_RING_CTRL_PPE, SOURCE_RING_CTRL_PPE}, /* 11 - reo2ppe */
+	{ DESTINATION_RING_CTRL_PPE1, SOURCE_RING_CTRL_PPE}, /* 12 - reo2ppe */
+	{ DESTINATION_RING_CTRL_PPE2, SOURCE_RING_CTRL_PPE}, /* 13 - reo2ppe */
+	{ 0, 0}, /* 14 - Reserved */
+	{ 0, 0}, /* 15 - Reserved */
+	{ DESTINATION_RING_CTRL_SW1, SOURCE_RING_CTRL_SFE }, /* 16 */
+	{ DESTINATION_RING_CTRL_SW2, SOURCE_RING_CTRL_SFE }, /* 17 */
+	{ DESTINATION_RING_CTRL_SW3, SOURCE_RING_CTRL_SFE }, /* 18 */
+	{ DESTINATION_RING_CTRL_SW1, SOURCE_RING_CTRL_SFE }, /* 19 */
+	{ DESTINATION_RING_CTRL_SW2, SOURCE_RING_CTRL_SFE }, /* 20 */
+	{ DESTINATION_RING_CTRL_SW3, SOURCE_RING_CTRL_SFE }, /* 21 */
+	{ DESTINATION_RING_CTRL_SW1, SOURCE_RING_CTRL_SFE }, /* 22 */
+	{ DESTINATION_RING_CTRL_SW2, SOURCE_RING_CTRL_SFE }, /* 23 */
+	{ DESTINATION_RING_CTRL_SW3, SOURCE_RING_CTRL_SFE }, /* 24 */
+	{ DESTINATION_RING_CTRL_SW1, SOURCE_RING_CTRL_SFE }, /* 25 */
+	{ DESTINATION_RING_CTRL_SW2, SOURCE_RING_CTRL_SFE }, /* 26 */
+	{ DESTINATION_RING_CTRL_SW3, SOURCE_RING_CTRL_SFE }, /* 27 */
+	{ DESTINATION_RING_CTRL_SW1, SOURCE_RING_CTRL_SFE }, /* 28 */
+	{ DESTINATION_RING_CTRL_SW2, SOURCE_RING_CTRL_SFE }, /* 29 */
+	{ DESTINATION_RING_CTRL_SW3, SOURCE_RING_CTRL_SFE }, /* 30 */
+	{ DESTINATION_RING_CTRL_SW1, SOURCE_RING_CTRL_SFE }, /* 31 */
 };
 
 static int ath12k_wifi8_hal_init_qcn9625(struct ath12k_hal *hal, u8 hw_version)
 {
+	struct ath12k_hal_wifi8 *hal_wifi8;
+
 	hal->regs = ath12k_wifi8_hw_ver_map[hw_version].hw_regs;
 	hal->tcl_to_cmp_rbm_map = ath12k_wifi8_hal_tcl_to_cmp_rbm_map_qcn9625;
+	hal->rdi_mapping = ath12k_wifi8_hal_rdi_mapping_qcn9625;
 	hal->hal_ops = &hal_qcn9625_ops;
 	hal->hal_desc_sz = ath12k_wifi8_hal_get_rx_desc_size_qcn9625();
 	hal->hal_params = ath12k_wifi8_hw_ver_map[hw_version].hal_params;
+	hal_wifi8 = kzalloc(sizeof(*hal_wifi8), GFP_KERNEL);
+	if (!hal_wifi8)
+		return -ENOMEM;
+
+	hal_wifi8->reset_rings = qcn9625_reset_rings;
+	hal->arch_data = hal_wifi8;
 
 	return 0;
 }
 
+static void ath12k_wifi8_hal_deinit_qcn9625(struct ath12k_hal *hal)
+{
+	kfree(hal->arch_data);
+	hal->arch_data = NULL;
+}
+
 const struct hal_ops hal_qcn9625_ops = {
 	.hal_init = ath12k_wifi8_hal_init_qcn9625,
+	.hal_deinit = ath12k_wifi8_hal_deinit_qcn9625,
 	.create_srng_config = ath12k_wifi8_hal_srng_create_config_qcn9625,
 	.rx_desc_set_msdu_len = ath12k_wifi8_hal_rxdesc_set_msdu_len_qcn9625,
 	.rx_desc_get_dot11_hdr = ath12k_wifi8_hal_rx_desc_get_dot11_hdr_qcn9625,
@@ -688,6 +1572,7 @@ const struct hal_ops hal_qcn9625_ops = {
 			ath12k_wifi8_hal_rxdesc_get_mpdu_start_addr2_qcn9625,
 	.rx_h_is_decrypted = ath12k_wifi8_hal_rx_h_is_decrypted_qcn9625,
 	.get_hw_hptp = ath12k_wifi8_hal_get_hw_hptp,
+	.rx_h_peer_meta_data = ath12k_wifi8_hal_rx_h_peer_meta_data_qcn9625,
 	.rx_desc_get_fse_info = ath12k_wifi8_hal_rx_desc_get_fse_info_qcn9625,
 	.hal_tx_ppe2tcl_ring_halt_get = ath12k_wifi8_hal_tx_ppe2tcl_ring_halt_get,
 	.hal_tx_ppe2tcl_ring_halt_set = ath12k_wifi8_hal_tx_ppe2tcl_ring_halt_set,
@@ -698,5 +1583,8 @@ const struct hal_ops hal_qcn9625_ops = {
 			ath12k_wifi8_hal_ppeds_cfg_ast_override_map_reg,
 	.hal_reo_config_reo2ppe_dest_info = ath12k_wifi8_hal_reo_config_reo2ppe_dest_info,
 	.hal_tx_set_ppe_vp_entry = ath12k_wifi8_hal_tx_set_ppe_vp_entry,
-	.hal_tx_completion_process = ath12k_wifi8_hal_tx_completion_process,
+	.hal_get_tlv_tag_params = ath12k_wifi8_get_tlv_tag_params,
+	.hal_mon_ops_init = ath12k_wifi8_hal_mon_ops_init,
+	.hal_srng_idx_update_addr = ath12k_wifi8_hal_srng_idx_update_addr,
+	.hal_ppeds_reo2ppe_cc_config = ath12k_wifi8_hal_ppeds_reo2ppe_cc_config,
 };

@@ -996,6 +996,9 @@
  *	while operating on this channel.
  *	%NL80211_ATTR_RADAR_EVENT is used to inform about the type of the
  *	event.
+ *	Can also be sent from userspace to request a CAC abort by setting
+ *	%NL80211_ATTR_RADAR_EVENT to %NL80211_RADAR_CAC_ABORTED. The kernel will
+ *	then send this same event back to confirm the abort.
  *
  * @NL80211_CMD_GET_PROTOCOL_FEATURES: Get global nl80211 protocol features,
  *	i.e. features for the nl80211 protocol rather than device features.
@@ -1371,7 +1374,7 @@
  *	%NL80211_ATTR_AWGN_INTERFERENCE_BITMAP
  * @NL80211_ATTR_AWGN_INTERFERENCE_BITMAP: u32 attribute specifying the
  *	interference bitmap of operating bandwidth for %NL80211_CMD_AWGN_DETECT
- * @NL80211_CMD_INTERFERENCE_DETECT: Once any interference is detected on the
+ * * @NL80211_CMD_INTERFERENCE_DETECT: Once any interference is detected on the
  *	operating channel, userspace would be notified of it
  *	using %NL80211_ATTR_INTERFERENCE_TYPE.
  *
@@ -1390,6 +1393,11 @@
  *	userspace to send control path QoS information of QoS Management
  *	features and also to notify userspace about the status response with
  *	attributes defined in %NL80211_ATTR_QOS_MGMT.
+ *
+ * @NL80211_CMD_AP_POWER_SAVE: Command to configure AP powersave parameters.
+ *	Command needs %NL80211_ATTR_IFINDEX and NL80211_ATTR_MLO_LINK_ID;
+ *	can be used to configure %NL80211_ATTR_PCIE, NL80211_ATTR_DCVS,
+ *	NL80211_ATTR_DPS_ASSIST and NL80211_ATTR_LOW_POWER_20MHZ.
  *
  * @NL80211_CMD_MAX: highest used command number
  * @__NL80211_CMD_AFTER_LAST: internal use
@@ -1671,6 +1679,8 @@ enum nl80211_commands {
 
 	NL80211_CMD_QOS_MGMT,
 
+	NL80211_CMD_AP_POWER_SAVE,
+
 	/* add new commands above here */
 
 	/* used to define NL80211_CMD_MAX below */
@@ -1697,6 +1707,7 @@ enum nl80211_commands {
 #define NL80211_CMD_GET_MESH_PARAMS NL80211_CMD_GET_MESH_CONFIG
 #define NL80211_CMD_SET_MESH_PARAMS NL80211_CMD_SET_MESH_CONFIG
 #define NL80211_MESH_SETUP_VENDOR_PATH_SEL_IE NL80211_MESH_SETUP_IE
+
 
 /**
  * enum nl80211_attrs - nl80211 netlink attributes
@@ -2320,6 +2331,9 @@ enum nl80211_commands {
  *
  * @NL80211_ATTR_RADAR_EVENT: Type of radar event for notification to userspace,
  *	contains a value of enum nl80211_radar_event (u32).
+ *	Can also be sent from userspace with value %NL80211_RADAR_CAC_ABORTED to
+ *	request a CAC abort when a channel switch is triggered during an ongoing
+ *	CAC.
  *
  * @NL80211_ATTR_EXT_CAPA: 802.11 extended capabilities that the kernel driver
  *	has and handles. The format is the same as the IE contents. See
@@ -3061,6 +3075,39 @@ enum nl80211_commands {
  * @NL80211_ATTR_6GHZ_DEVICE_DEPLOYMENT_TYPE: Attribute denoting the 6 GHz
  *	device deployment type.
  *
+ * @NL80211_ATTR_CONTROL_MIC_PAD: Mic padding for control frame protection.
+ *
+ * @NL80211_ATTR_USE_CFP: Indicate the use of control frame protection by station.
+ *
+ * @NL80211_ATTR_CFP: Indicate whether the particular vdev supports control
+ *	frame protection
+ *
+ * @NL80211_ATTR_EXT_MLD_CAPA_AND_OPS: Extended MLD Capabilities and Operations
+ *	(u16)
+ *
+ * @NL80211_ATTR_BITRATE: This attribute is used with %NL80211_CMD_FRAME to
+ *     send legacy bitrate information of management packets to userspace.
+ *
+ * * @NL80211_ATTR_UHR_CAPABILITY: UHR Capability information element (from
+ *	association request when used with NL80211_CMD_NEW_STATION). Can be set
+ *	only if HE/EHT are also available.
+ * @NL80211_ATTR_DISABLE_UHR: Force UHR capable interfaces to disable
+ *	this feature during association. This is a flag attribute.
+ *	Currently only supported in mac80211 drivers.
+ *
+ * @NL80211_ATTR_PCIE: Nested attributes associated with PCIe low power and
+ *	gen/lane mode transitions. See &enum nl80211_pcie_attrs
+ *
+ * @NL80211_ATTR_DCVS: (u32) Dynamic Clock and Voltage Scaling (DCVS) modes.
+ *	See @enum nl80211_dcvs_attrs.
+ *
+ * @NL80211_ATTR_DPS_ASSIST: Enable/disable DPS assisting role.
+ *
+ * @NL80211_ATTR_HE_MUEDCA_MODE: Attribute that denotes the mode of seeting MU
+ *	EDCA parameters(See enum nl80211_muedca_mode).
+ *
+ * @NL80211_ATTR_LOW_POWER_20MHZ: Enable/disable 20 MHz Low Power mode.
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
@@ -3616,6 +3663,8 @@ enum nl80211_attrs {
 	NL80211_ATTR_MLO_RECONF_REM_LINKS,
 	NL80211_ATTR_EPCS,
 
+	NL80211_ATTR_ASSOC_MLD_EXT_CAPA_OPS,
+
 	NL80211_ATTR_WIPHY_RADIO_INDEX,
 
 	NL80211_ATTR_WIPHY_ANTENNA_GAIN,
@@ -3656,11 +3705,32 @@ enum nl80211_attrs {
 	NL80211_ATTR_ADVERTISED_TTLM_EXPEC_DUR_UPDATE,
 
 	NL80211_ATTR_QOS_MGMT,
-
-	NL80211_ATTR_ASSOC_MLD_EXT_CAPA_OPS,
+	NL80211_ATTR_SKIP_CAC,
 
 	NL80211_ATTR_6GHZ_DEVICE_DEPLOYMENT_TYPE,
 
+	NL80211_ATTR_CONTROL_MIC_PAD,
+
+	NL80211_ATTR_USE_CFP,
+
+	NL80211_ATTR_CFP,
+
+	NL80211_ATTR_CIGTK,
+
+	NL80211_ATTR_EXT_MLD_CAPA_AND_OPS,
+
+	NL80211_ATTR_BITRATE,
+
+	NL80211_ATTR_UHR_CAPABILITY,
+	NL80211_ATTR_DISABLE_UHR,
+
+	NL80211_ATTR_PCIE,
+	NL80211_ATTR_DCVS,
+	NL80211_ATTR_DPS_ASSIST,
+
+	NL80211_ATTR_HE_MUEDCA_MODE,
+
+	NL80211_ATTR_LOW_POWER_20MHZ,
 	/* add attributes here, update the policy in nl80211.c */
 
 	__NL80211_ATTR_AFTER_LAST,
@@ -3810,6 +3880,7 @@ enum nl80211_iftype {
  *	previously added station into associated state
  * @NL80211_STA_FLAG_SPP_AMSDU: station supports SPP A-MSDUs
  * @NL80211_STA_FLAG_FT_AUTH: station uses FT authentication
+ * @NL80211_STA_FLAG_CFP: station uses control frame protection
  * @NL80211_STA_FLAG_MAX: highest station flag number currently defined
  * @__NL80211_STA_FLAG_AFTER_LAST: internal use
  */
@@ -3824,6 +3895,7 @@ enum nl80211_sta_flags {
 	NL80211_STA_FLAG_ASSOCIATED,
 	NL80211_STA_FLAG_SPP_AMSDU,
 	NL80211_STA_FLAG_FT_AUTH,
+	NL80211_STA_FLAG_CFP,
 
 	/* keep last */
 	__NL80211_STA_FLAG_AFTER_LAST,
@@ -3965,6 +4037,58 @@ enum nl80211_eht_ru_alloc {
 };
 
 /**
+ * enum nl80211_uhr_gi - UHR guard interval
+ * @NL80211_RATE_INFO_UHR_GI_0_8: 0.8 usec
+ * @NL80211_RATE_INFO_UHR_GI_1_6: 1.6 usec
+ * @NL80211_RATE_INFO_UHR_GI_3_2: 3.2 usec
+ */
+enum nl80211_uhr_gi {
+	NL80211_RATE_INFO_UHR_GI_0_8,
+	NL80211_RATE_INFO_UHR_GI_1_6,
+	NL80211_RATE_INFO_UHR_GI_3_2,
+};
+
+/**
+ * enum nl80211_uhr_ltf - UHR long training field
+ * @NL80211_RATE_INFO_UHR_1xLTF: 3.2 usec
+ * @NL80211_RATE_INFO_UHR_2xLTF: 6.4 usec
+ * @NL80211_RATE_INFO_UHR_4xLTF: 12.8 usec
+ */
+enum nl80211_uhr_ltf {
+	NL80211_RATE_INFO_UHR_1XLTF,
+	NL80211_RATE_INFO_UHR_2XLTF,
+	NL80211_RATE_INFO_UHR_4XLTF,
+};
+
+/**
+ * enum nl80211_uhr_ueqm_p - UHR UEQM Pattern
+ * (as per Draft P802.11bn_D1.3 Table 38-33)
+ * @NL80211_RATE_INFO_UHR_UEQM_P_0: pattern 0
+ * @NL80211_RATE_INFO_UHR_UEQM_P_1: pattern 1
+ * @NL80211_RATE_INFO_UHR_UEQM_P_2: pattern 2
+ * @NL80211_RATE_INFO_UHR_UEQM_P_3: pattern 3
+ * @NL80211_RATE_INFO_UHR_UEQM_P_COUNT: number of patterns
+ */
+enum nl80211_uhr_ueqm_p {
+	NL80211_RATE_INFO_UHR_UEQM_P_0,
+	NL80211_RATE_INFO_UHR_UEQM_P_1,
+	NL80211_RATE_INFO_UHR_UEQM_P_2,
+	NL80211_RATE_INFO_UHR_UEQM_P_3,
+
+	NL80211_RATE_INFO_UHR_UEQM_P_COUNT,
+};
+
+/**
+ * enum nl80211_uhr_elr_config - UHR ELR config
+ * @NL80211_UHR_ELR_DISABLE: 0 - Disable
+ * @NL80211_UHR_ELR_ENABLE:  1 - Enable
+ */
+enum nl80211_uhr_elr_config {
+	NL80211_UHR_ELR_DISABLE,
+	NL80211_UHR_ELR_ENABLE,
+};
+
+/**
  * enum nl80211_rate_info - bitrate information
  *
  * These attribute types are used with %NL80211_STA_INFO_TXRATE
@@ -4017,6 +4141,17 @@ enum nl80211_eht_ru_alloc {
  * @NL80211_RATE_INFO_4_MHZ_WIDTH: 4 MHz S1G rate
  * @NL80211_RATE_INFO_8_MHZ_WIDTH: 8 MHz S1G rate
  * @NL80211_RATE_INFO_16_MHZ_WIDTH: 16 MHz S1G rate
+ * @NL80211_RATE_INFO_UHR_MCS: UHR MCS index (u8, 0-15, 17, 19, 20, 23)
+ *	Note that the other EHT attributes (such as @NL80211_RATE_INFO_EHT_NSS)
+ *	are used in conjunction with this where applicable
+ * @NL80211_RATE_INFO_UHR_NSS: UHR NSS value (u8, 1-8)
+ * @NL80211_RATE_INFO_UHR_GI: UHR guard interval identifier
+ *	(u8, Values remain same as that of EHT)
+ * @NL80211_RATE_INFO_UHR_RU_ALLOC: UHR RU allocation, if not present then
+ *	non-OFDMA was used (u8, Values remain same as that of EHT)
+ * @NL80211_RATE_INFO_UHR_ELR: UHR ELR flag, which restricts NSS to 1,
+ *	MCS to 0 or 1, and GI to %NL80211_RATE_INFO_EHT_GI_1_6.
+ * @NL80211_RATE_INFO_UHR_IM: UHR Interference Mitigation flag
  * @__NL80211_RATE_INFO_AFTER_LAST: internal use
  */
 enum nl80211_rate_info {
@@ -4050,6 +4185,12 @@ enum nl80211_rate_info {
 	NL80211_RATE_INFO_4_MHZ_WIDTH,
 	NL80211_RATE_INFO_8_MHZ_WIDTH,
 	NL80211_RATE_INFO_16_MHZ_WIDTH,
+	NL80211_RATE_INFO_UHR_MCS,
+	NL80211_RATE_INFO_UHR_NSS,
+	NL80211_RATE_INFO_UHR_GI,
+	NL80211_RATE_INFO_UHR_RU_ALLOC,
+	NL80211_RATE_INFO_UHR_ELR,
+	NL80211_RATE_INFO_UHR_IM,
 
 	/* keep last */
 	__NL80211_RATE_INFO_AFTER_LAST,
@@ -4168,6 +4309,14 @@ enum nl80211_sta_bss_param {
  *	authentication server (u8, 0 or 1)
  * @NL80211_STA_INFO_RX_RETRIES: number of rx packets(MPDUs) from this station
  *	with retry bit set (u32)
+ * @NL80211_STA_INFO_PN_ERRORS: number of packet number (PN) errors
+ *	detected (u32)
+ * @NL80211_STA_INFO_MIC_ERRORS: number of message integrity check
+ *	(MIC) errors detected (u32)
+ * @NL80211_STA_INFO_DECRYPT_ERRORS: number of decryption errors
+ *	detected (u32)
+ * @NL80211_STA_INFO_MGMT_SIGNAL: signal strength of the last received
+ *	management frame (u8, dBm
  * @__NL80211_STA_INFO_AFTER_LAST: internal
  * @NL80211_STA_INFO_MAX: highest possible station info attribute
  */
@@ -4217,6 +4366,15 @@ enum nl80211_sta_info {
 	NL80211_STA_INFO_ASSOC_AT_BOOTTIME,
 	NL80211_STA_INFO_CONNECTED_TO_AS,
 	NL80211_STA_INFO_RX_RETRIES,
+
+	/**
+	 * Fix me: This section should be removed once the
+	 * corresponding changes are merged upstream.
+	 */
+	NL80211_STA_INFO_PN_ERRORS = 58,
+	NL80211_STA_INFO_MIC_ERRORS = 59,
+	NL80211_STA_INFO_DECRYPT_ERRORS = 60,
+	NL80211_STA_INFO_MGMT_SIGNAL = 61,
 
 	/* keep last */
 	__NL80211_STA_INFO_AFTER_LAST,
@@ -4375,6 +4533,10 @@ enum nl80211_mpath_info {
  *	capabilities element
  * @NL80211_BAND_IFTYPE_ATTR_EHT_CAP_PPE: EHT PPE thresholds information as
  *	defined in EHT capabilities element
+ * @NL80211_BAND_IFTYPE_ATTR_UHR_CAP_MAC: UHR MAC capabilities as in UHR
+ *	capabilities element
+ * @NL80211_BAND_IFTYPE_ATTR_UHR_CAP_PHY: UHR PHY capabilities as in UHR
+ *	capabilities element
  * @__NL80211_BAND_IFTYPE_ATTR_AFTER_LAST: internal use
  * @NL80211_BAND_IFTYPE_ATTR_MAX: highest band attribute currently defined
  */
@@ -4392,6 +4554,8 @@ enum nl80211_band_iftype_attr {
 	NL80211_BAND_IFTYPE_ATTR_EHT_CAP_PHY,
 	NL80211_BAND_IFTYPE_ATTR_EHT_CAP_MCS_SET,
 	NL80211_BAND_IFTYPE_ATTR_EHT_CAP_PPE,
+	NL80211_BAND_IFTYPE_ATTR_UHR_CAP_MAC,
+	NL80211_BAND_IFTYPE_ATTR_UHR_CAP_PHY,
 
 	/* keep last */
 	__NL80211_BAND_IFTYPE_ATTR_AFTER_LAST,
@@ -4624,6 +4788,8 @@ enum nl80211_wmm_rule {
  * @NL80211_FREQUENCY_ATTR_6GHZ_SUPP_PWR_MODES: 6 Ghz power modes supported by
  *	this channel
  * @NL80211_FREQUENCY_ATTR_6GHZ_TXPOWERS: Tx powers in each supported power mode
+ * @NL80211_FREQUENCY_ATTR_NO_UHR: UHR operation is not allowed on this channel
+ *	in current regulatory domain.
  * @NL80211_FREQUENCY_ATTR_MAX: highest frequency attribute number
  *	currently defined
  * @__NL80211_FREQUENCY_ATTR_AFTER_LAST: internal use
@@ -4671,6 +4837,7 @@ enum nl80211_frequency_attr {
 	NL80211_FREQUENCY_ATTR_ALLOW_20MHZ_ACTIVITY,
 	NL80211_FREQUENCY_ATTR_6GHZ_SUPP_PWR_MODES,
 	NL80211_FREQUENCY_ATTR_6GHZ_TXPOWERS,
+	NL80211_FREQUENCY_ATTR_NO_UHR,
 
 	/* keep last */
 	__NL80211_FREQUENCY_ATTR_AFTER_LAST,
@@ -4887,6 +5054,7 @@ enum nl80211_sched_scan_match_attr {
  *	despite NO_IR configuration.
  * @NL80211_RRF_ALLOW_20MHZ_ACTIVITY: Allow activity in 20 MHz bandwidth,
  *	despite NO_IR configuration.
+ * @NL80211_RRF_NO_UHR: UHR operation not allowed
  */
 enum nl80211_reg_rule_flags {
 	NL80211_RRF_NO_OFDM                 = 1 << 0,
@@ -4913,6 +5081,7 @@ enum nl80211_reg_rule_flags {
 	NL80211_RRF_NO_6GHZ_AFC_CLIENT      = 1 << 23,
 	NL80211_RRF_ALLOW_6GHZ_VLP_AP       = 1 << 24,
 	NL80211_RRF_ALLOW_20MHZ_ACTIVITY    = 1 << 25,
+	NL80211_RRF_NO_UHR		    = 1 << 26,
 };
 
 #define NL80211_RRF_PASSIVE_SCAN	NL80211_RRF_NO_IR
@@ -5038,6 +5207,7 @@ enum nl80211_survey_info {
  * @NL80211_MNTR_FLAG_ACTIVE: use the configured MAC address
  *	and ACK incoming unicast packets.
  * @NL80211_MNTR_FLAG_SKIP_TX: do not pass local tx packets
+ * @NL80211_MNTR_FLAG_SKIP_RX: do not pass local rx packets
  *
  * @__NL80211_MNTR_FLAG_AFTER_LAST: internal use
  * @NL80211_MNTR_FLAG_MAX: highest possible monitor flag
@@ -5051,6 +5221,7 @@ enum nl80211_mntr_flags {
 	NL80211_MNTR_FLAG_COOK_FRAMES,
 	NL80211_MNTR_FLAG_ACTIVE,
 	NL80211_MNTR_FLAG_SKIP_TX,
+	NL80211_MNTR_FLAG_SKIP_RX,
 
 	/* keep last */
 	__NL80211_MNTR_FLAG_AFTER_LAST,
@@ -5338,6 +5509,8 @@ enum nl80211_txq_attr {
 	NL80211_TXQ_ATTR_CWMIN,
 	NL80211_TXQ_ATTR_CWMAX,
 	NL80211_TXQ_ATTR_AIFS,
+	NL80211_TXQ_ATTR_ACM,
+	NL80211_TXQ_ATTR_NOACK,
 
 	/* keep last */
 	__NL80211_TXQ_ATTR_AFTER_LAST,
@@ -5661,6 +5834,18 @@ enum nl80211_mfp {
 	NL80211_MFP_OPTIONAL,
 };
 
+/**
+ * enum nl80211_cfp - Control frame protection state
+ * @NL80211_CFP_NO: Control frame protection not used
+ * @NL80211_CFP_REQUIRED: Control frame protection required
+ *
+ */
+enum nl80211_cfp {
+	NL80211_CFP_NO,
+	NL80211_CFP_REQUIRED,
+};
+
+
 enum nl80211_wpa_versions {
 	NL80211_WPA_VERSION_1 = 1 << 0,
 	NL80211_WPA_VERSION_2 = 1 << 1,
@@ -5706,6 +5891,7 @@ enum nl80211_key_default_types {
  * @NL80211_KEY_MODE: the mode from enum nl80211_key_mode.
  *	Defaults to @NL80211_KEY_RX_TX.
  * @NL80211_KEY_DEFAULT_BEACON: flag indicating default Beacon frame key
+ * @NL80211_KEY_DEFAULT_CONTROL: flag indicating whether default Control frame key
  *
  * @__NL80211_KEY_AFTER_LAST: internal
  * @NL80211_KEY_MAX: highest key attribute
@@ -5722,6 +5908,7 @@ enum nl80211_key_attributes {
 	NL80211_KEY_DEFAULT_TYPES,
 	NL80211_KEY_MODE,
 	NL80211_KEY_DEFAULT_BEACON,
+	NL80211_KEY_DEFAULT_CONTROL,
 
 	/* keep last */
 	__NL80211_KEY_AFTER_LAST,
@@ -5749,6 +5936,12 @@ enum nl80211_key_attributes {
  * 	see &struct nl80211_txrate_eht
  * @NL80211_TXRATE_EHT_GI: configure EHT GI, 0.8us, 1.6us and 3.2us.
  * @NL80211_TXRATE_EHT_LTF: configure EHT LTF, 1XLTF, 2XLTF and 4XLTF.
+ * @NL80211_TXRATE_UHR: UHR rates allowed for TX rate selection,
+ *	see &struct nl80211_txrate_uhr
+ * @NL80211_TXRATE_UHR_GI: configure UHR GI, 0.8us, 1.6us and 3.2us.
+ * @NL80211_TXRATE_UHR_LTF: configure UHR LTF, 1XLTF, 2XLTF and 4XLTF.
+ * @NL80211_TXRATE_UHR_UEQM_P: configure UEQM Pattern.
+ * @NL80211_TXRATE_UHR_ELR: configure UHR ELR Mode, on or off.
  * @__NL80211_TXRATE_AFTER_LAST: internal
  * @NL80211_TXRATE_MAX: highest TX rate attribute
  */
@@ -5765,6 +5958,11 @@ enum nl80211_tx_rate_attributes {
 	NL80211_TXRATE_EHT,
 	NL80211_TXRATE_EHT_GI,
 	NL80211_TXRATE_EHT_LTF,
+	NL80211_TXRATE_UHR,
+	NL80211_TXRATE_UHR_GI,
+	NL80211_TXRATE_UHR_LTF,
+	NL80211_TXRATE_UHR_UEQM_P,
+	NL80211_TXRATE_UHR_ELR,
 
 	/* keep last */
 	__NL80211_TXRATE_AFTER_LAST,
@@ -5784,6 +5982,8 @@ struct nl80211_txrate_vht {
 
 #define NL80211_HE_NSS_MAX		8
 #define NL80211_EHT_NSS_MAX             16
+#define NL80211_UHR_NSS_MAX             16
+
 /**
  * struct nl80211_txrate_he - HE MCS/NSS txrate bitmap
  * @mcs: MCS bitmap table for each NSS (array index 0 for 1 stream, etc.)
@@ -5804,6 +6004,29 @@ enum nl80211_txrate_gi {
  */
 struct nl80211_txrate_eht {
 	__u16 mcs[NL80211_EHT_NSS_MAX];
+};
+
+/**
+ * struct nl80211_txrate_uhr - UHR MCS/NSS txrate bitmap
+ * @mcs: MCS bitmap table for each NSS (array index 0 for 1 stream, etc.)
+ */
+struct nl80211_txrate_uhr {
+	__u32 mcs[NL80211_UHR_NSS_MAX];
+};
+
+#define NL80211_UHR_UEQM_NSS_MIN        2
+#define NL80211_UHR_UEQM_NSS_MAX        4
+
+#define NL80211_UHR_UEQM_NSS_COUNT      3
+#define NL80211_UHR_UEQM_MCS_COL_COUNT  12
+
+/**
+ * struct nl80211_uhr_ueqm_pattern - UHR UEQM pattern bitmap
+ * @pattern: UEQM pattern indexed by NSS and MCS
+ */
+struct nl80211_uhr_ueqm_pattern {
+	__u8 pattern[NL80211_UHR_UEQM_NSS_COUNT]
+		    [NL80211_UHR_UEQM_MCS_COL_COUNT];
 };
 
 /**
@@ -7009,6 +7232,16 @@ enum nl80211_feature_flags {
  * @NL80211_EXT_FEATURE_BEACON_ADVERTISED_TTLM_OFFLOAD: Driver supports offload
  *	of advertisement of TTLM in beacon
  *
+ * @NL80211_EXT_FEATURE_CONTROL_FRAME_PROTECTION: The driver supports control
+ *	protection and can receive key configuration for CIGTK using
+ *	key indexes 0 and 1.
+ *
+ * @NL80211_EXT_FEATURE_CIP_PADDING_SUPPORT: The driver supports cip padding
+ *	capabalities.
+ *
+ * @NL80211_EXT_FEATURE_CIP_PADDING_SUPPORT: The driver supports inclusion of CIP padding
+ * delay support.
+ *
  * @NUM_NL80211_EXT_FEATURES: number of extended features.
  * @MAX_NL80211_EXT_FEATURES: highest extended feature index.
  */
@@ -7093,6 +7326,8 @@ enum nl80211_ext_feature_index {
 	NL80211_EXT_FEATURE_TARGET_AND_HOST_AFC_SUPPORT,
 	NL80211_EXT_FEATURE_RETAIL_AFC_SUPPORT,
 	NL80211_EXT_FEATURE_BEACON_ADVERTISED_TTLM_OFFLOAD,
+	NL80211_EXT_FEATURE_CONTROL_FRAME_PROTECTION,
+	NL80211_EXT_FEATURE_CIP_PADDING_SUPPORT,
 
 	/* add new features before the definition below */
 	NUM_NL80211_EXT_FEATURES,
@@ -7290,6 +7525,9 @@ enum nl80211_smps_mode {
  *	the channel is now available.
  * @NL80211_RADAR_CAC_ABORTED: Channel Availability Check has been aborted, no
  *	change to the channel status.
+ *	When sent by userspace via %NL80211_CMD_RADAR_DETECT, requests an abort
+ *	of the ongoing CAC. The kernel aborts the CAC and notifies userspace
+ *	with this event upon completion.
  * @NL80211_RADAR_NOP_FINISHED: The Non-Occupancy Period for this channel is
  *	over, channel becomes usable.
  * @NL80211_RADAR_PRE_CAC_EXPIRED: Channel Availability Check done on this
@@ -8735,21 +8973,6 @@ enum nl80211_set_cu_attrs {
 };
 
 /**
- * enum nl80211_interference_type -
- *
- * @NL80211_CW_INTERFERENCE_DETECTED : Continous Wave Interference Detected.
- * @NL80211_AWGN_INTERFERENCE_DETECTED : AWGN Interference Detected.
-*/
-enum nl80211_interference_type {
-	NL80211_INTERFERENCE_TYPE_INVALID,
-	NL80211_INTERFERENCE_TYPE_CW,
-	NL80211_INTERFERENCE_TYPE_AWGN,
-
-	NL80211_INTERFERENCE_TYPE_LAST,
-	NL80211_INTERFERENCE_TYPE_MAX = NL80211_INTERFERENCE_TYPE_LAST - 1,
-};
-
-/**
  * enum nl80211_erp_attrs - set ErP attributes during entry/exit
  *
  * @NL80211_ERP_ATTR_ENTER: (flag) enter into ErP mode.
@@ -8971,6 +9194,75 @@ enum nl80211_6ghz_dev_deployment_type {
 	NL80211_6GHZ_DEV_DEPLOYMENT_TYPE_UNKNOWN,
 	NL80211_6GHZ_DEV_DEPLOYMENT_TYPE_INDOOR,
 	NL80211_6GHZ_DEV_DEPLOYMENT_TYPE_OUTDOOR,
+};
+
+/**
+ * enum nl80211_pcie_attrs - set PCIe attributes
+ *
+ * @NL80211_PCIE_ATTR_TYPE: (u8) PCIe transition type
+ * @NL80211_PCIE_ATTR_ENABLE: (flag) enable/disable PCIe transition
+ *	type
+ * @NL80211_PCIE_ATTR_CONFIG_TYPE: (u8) configuration of PCIe transition type
+ * @NL80211_PCIE_ATTR_GEN: (u8)
+ * @NL80211_PCIE_ATTR_LANE: (u8)
+ *
+ * @__NL80211_PCIE_ATTR_LAST : internal use
+ * @NL80211_PCIE_ATTR_MAX : maximum PCIe attributes
+ *
+ */
+enum nl80211_pcie_attrs {
+	__NL80211_PCIE_ATTR_INVALID,
+
+	NL80211_PCIE_ATTR_TYPE,
+	NL80211_PCIE_ATTR_ENABLE,
+	NL80211_PCIE_ATTR_CONFIG_TYPE,
+	NL80211_PCIE_ATTR_GEN,
+	NL80211_PCIE_ATTR_LANE,
+
+	/* keep last */
+	__NL80211_PCIE_ATTR_LAST,
+	NL80211_PCIE_ATTR_MAX = __NL80211_PCIE_ATTR_LAST - 1
+};
+
+/**
+ * enum nl80211_dcvs_attrs - set DCVS attributes
+ *
+ * @NL80211_DCVS_ATTR_ON: (flag) turn on radio DCVS in driver.
+ * @NL80211_DCVS_ATTR_OFF: (flag) turn off radio DCVS in driver.
+ * @NL80211_DCVS_ATTR_NO_LIMIT: (flag) operate with no limitation.
+ *
+ * @__NL80211_DCVS_ATTR_LAST : internal use
+ * @NL80211_DCVS_ATTR_MAX : maximum DCVS attributes
+ *
+ */
+enum nl80211_dcvs_attrs {
+	__NL80211_DCVS_ATTR_INVALID,
+
+	NL80211_DCVS_ATTR_ON,
+	NL80211_DCVS_ATTR_OFF,
+	NL80211_DCVS_ATTR_NO_LIMIT,
+
+	/* keep last */
+	__NL80211_DCVS_ATTR_LAST,
+	NL80211_DCVS_ATTR_MAX = __NL80211_DCVS_ATTR_LAST - 1
+};
+
+/**enum nl80211_muedca_mode - MUEDCA mode
+ *
+ * @NL80211_MUEDCA_USER_MODE: User mode
+ * @NL80211_MUEDCA_HOST_MODE: Host mode
+ * @NL80211_MUEDCA_FIRMWARE_MODE: Firmware mode (default mode)
+ * NL80211_MUEDCA_MAX: Maximum MUEDCA mode number defined
+ *
+ */
+enum nl80211_muedca_mode {
+	NL80211_MUEDCA_USER_MODE,
+	NL80211_MUEDCA_HOST_MODE,
+	NL80211_MUEDCA_FIRMWARE_MODE,
+
+	/* keep last */
+	__NL80211_MUEDCA_AFTER_LAST,
+	NL80211_MUEDCA_MAX = __NL80211_MUEDCA_AFTER_LAST - 1
 };
 
 #endif /* __LINUX_NL80211_H */

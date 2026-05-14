@@ -160,6 +160,21 @@ rdev_set_default_beacon_key(struct cfg80211_registered_device *rdev,
 	return ret;
 }
 
+static inline int
+rdev_set_default_control_key(struct cfg80211_registered_device *rdev,
+			     struct net_device *netdev, int link_id,
+			     u8 key_index)
+{
+	int ret;
+
+	trace_rdev_set_default_control_key(&rdev->wiphy, netdev, link_id,
+					   key_index);
+	ret = rdev->ops->set_default_control_key(&rdev->wiphy, netdev, link_id,
+						 key_index);
+	trace_rdev_return_int(&rdev->wiphy, ret);
+	return ret;
+}
+
 static inline int rdev_start_ap(struct cfg80211_registered_device *rdev,
 				struct net_device *dev,
 				struct cfg80211_ap_settings *settings)
@@ -810,13 +825,14 @@ static inline int rdev_set_power_mgmt(struct cfg80211_registered_device *rdev,
 
 static inline int
 rdev_set_cqm_rssi_config(struct cfg80211_registered_device *rdev,
-			 struct net_device *dev, s32 rssi_thold, u32 rssi_hyst)
+			 struct net_device *dev, s32 rssi_thold, u32 rssi_hyst,
+			 int link_id)
 {
 	int ret;
 	trace_rdev_set_cqm_rssi_config(&rdev->wiphy, dev, rssi_thold,
-				       rssi_hyst);
+				       rssi_hyst, link_id);
 	ret = rdev->ops->set_cqm_rssi_config(&rdev->wiphy, dev, rssi_thold,
-				       rssi_hyst);
+				       rssi_hyst, link_id);
 	trace_rdev_return_int(&rdev->wiphy, ret);
 	return ret;
 }
@@ -1244,6 +1260,19 @@ rdev_end_cac(struct cfg80211_registered_device *rdev,
 	if (rdev->ops->end_cac)
 		rdev->ops->end_cac(&rdev->wiphy, dev, link_id);
 	trace_rdev_return_void(&rdev->wiphy);
+}
+
+static inline int
+rdev_abort_cac(struct cfg80211_registered_device *rdev,
+	       struct wireless_dev *wdev, int link_id)
+{
+	int ret = -EOPNOTSUPP;
+
+	trace_rdev_abort_cac(&rdev->wiphy, wdev, link_id);
+	if (rdev->ops->abort_cac)
+		ret = rdev->ops->abort_cac(&rdev->wiphy, wdev, link_id);
+	trace_rdev_return_int(&rdev->wiphy, ret);
+	return ret;
 }
 
 static inline int
@@ -1676,5 +1705,20 @@ rdev_get_6ghz_dev_deployment_type(struct cfg80211_registered_device *rdev)
 	dep_type = rdev->ops->get_6ghz_dev_deployment_type(&rdev->wiphy);
 	trace_rdev_return_int(&rdev->wiphy, (int)dep_type);
 	return dep_type;
+}
+
+static inline int rdev_ap_power_save(struct cfg80211_registered_device *rdev,
+				     struct wireless_dev *wdev, int link_id,
+				     struct cfg80211_ap_power_save_params *params)
+{
+	int ret;
+
+	if (!rdev->ops->ap_power_save)
+		return -EOPNOTSUPP;
+
+	trace_rdev_ap_power_save(&rdev->wiphy, wdev, link_id, params);
+	ret = rdev->ops->ap_power_save(&rdev->wiphy, wdev, link_id, params);
+	trace_rdev_return_int(&rdev->wiphy, ret);
+	return ret;
 }
 #endif /* __CFG80211_RDEV_OPS */

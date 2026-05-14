@@ -12,6 +12,11 @@
 #include "hal_desc.h"
 #include "hal.h"
 
+enum dp_rx_ppeds_wbm_refill_ring {
+	PPE2WBM_HW_REFILL_RING = 0,
+	PPE2WBM_SW_REFILL_RING = 1,
+};
+
 struct dp_rx_fse {
 	struct hal_rx_fse *hal_fse;
 	u32 flow_hash;
@@ -20,16 +25,38 @@ struct dp_rx_fse {
 	bool is_valid;
 };
 
-int ath12k_wifi8_dp_reo_cmd_send(struct ath12k_base *ab, struct ath12k_dp_rx_tid *rx_tid,
+int ath12k_wifi8_dp_rx_wbm_buf_ring_init(struct ath12k_base *ab);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+void ath12k_wifi8_dp_rx_ppe2wbm_idle_buff_init(struct ath12k_base *ab);
+#endif
+int ath12k_wifi8_dp_reo_cmd_send(struct ath12k_base *ab,
+				 void *data, size_t len,
 				 enum hal_reo_cmd_type type,
 				 struct ath12k_hal_reo_cmd *cmd,
 				 void (*cb)(struct ath12k_dp *dp, void *ctx,
-					    enum hal_reo_cmd_status status));
-int ath12k_wifi8_dp_rx_process_wbm_err(struct ath12k_dp *dp,
-				       struct napi_struct *napi, int budget);
+					    struct hal_reo_status *status));
+int ath12k_wifi8_dp_reo_cmd_send_highprio(struct ath12k_base *ab,
+					  void *data, size_t len,
+					  enum hal_reo_cmd_type type,
+					  struct ath12k_hal_reo_cmd *cmd,
+					  void (*cb)(struct ath12k_dp *dp, void *ctx,
+						     struct hal_reo_status *status));
+struct ath12k_reo_dp_cmd_desc {
+	void *data;
+	size_t len;
+	void (*cb)(struct ath12k_dp *dp, void *ctx,
+		   struct hal_reo_status *status);
+};
+
+int ath12k_wifi8_dp_reo_cmd_send_highprio_n(struct ath12k_base *ab,
+					    struct ath12k_reo_cmd_entry *entries,
+					    struct ath12k_reo_dp_cmd_desc *dp_descs,
+					    int n);
+int ath12k_wifi8_dp_fse_cmd_send(struct ath12k_base *ab,
+				 struct hal_fse_cmd *fse_cmd);
 int ath12k_wifi8_dp_rx_process_err(struct ath12k_dp *dp, struct napi_struct *napi,
 				   int budget);
-int ath12k_wifi8_dp_rx_process(struct ath12k_dp *dp, int mac_id,
+int ath12k_wifi8_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 			       struct napi_struct *napi,
 			       int budget);
 void ath12k_wifi8_dp_rx_peer_tid_delete(struct ath12k *ar,
@@ -50,7 +77,7 @@ void ath12k_wifi8_peer_rx_tid_qref_setup(struct ath12k_base *ab, u16 peer_id,
 int ath12k_wifi8_dp_rx_link_desc_return(struct ath12k_dp *dp,
 					struct ath12k_buffer_addr *buf_addr_info,
 					enum hal_wbm_rel_bm_act action);
-void ath12k_wifi8_dp_rx_process_reo_status(struct ath12k_dp *dp);
+int ath12k_wifi8_dp_rx_process_reo_status(struct ath12k_dp *dp, int budget);
 
 int ath12k_wifi8_dp_rx_peer_tid_setup(struct ath12k *ar, const u8 *peer_mac, int vdev_id,
 				      u8 tid, u32 ba_win_sz, u16 ssn,
@@ -95,7 +122,31 @@ int ath12k_wifi8_dp_peer_migrate_reo_cmd(struct ath12k_dp *dp,
 					 struct ath12k_dp_link_peer *peer,
 					 u16 peer_id, u8 chip_id);
 void ath12k_dp_rx_tid_del_func(struct ath12k_dp *dp, void *ctx,
-			       enum hal_reo_cmd_status status);
+			       struct hal_reo_status *status);
 void ath12k_wifi8_dp_rx_ring_free(struct ath12k_base *ab);
 int ath12k_wifi8_dp_rx_ring_setup(struct ath12k_base *ab);
+int ath12k_wifi8_dp_pdev_alloc(struct ath12k_base *ab);
+void ath12k_wifi8_dp_pdev_free(struct ath12k_base *ab);
+int ath12k_wifi8_dp_rx_flow_fse_cache_operation(struct ath12k_base *ab,
+						enum dp_flow_fst_operation op_code,
+						struct hal_flow_tuple_info *tuple_info);
+int ath12k_wifi8_dp_rx_process_reo_flush_err(struct ath12k_dp *dp, int budget);
+int
+ath12k_wifi8_peer_rx_tid_reo_update_for_smd(struct ath12k_base *ab,
+					    struct ath12k_dp_hw *dp_hw,
+					    const u8 *peer_addr,
+					    struct ath12k_rx_smd_ctx_per_tid *rx_tid_ctx);
+void ath12k_wifi8_peer_rx_tid_reo_clear_vld_cmd_init(struct ath12k_dp_rx_tid *rx_tid,
+						     struct ath12k_hal_reo_cmd *cmd);
+int ath12k_wifi8_peer_rx_tid_reo_clear_vld(struct ath12k_base *ab,
+					   struct ath12k_dp_hw *dp_hw,
+					   const u8 *peer_addr,
+					   u8 tid);
+/* Module parameter: controls whether REO VLD is cleared after fetching SMD ctx.
+ * Declared in wifi8/core.c; extern here so dp.c and any future SMD callers
+ * can gate their behaviour without adding new function arguments.
+ */
+extern bool ath12k_wifi8_clear_vld_after_smd_ctx_fetch;
+extern bool ath12k_wifi8_smd_skip_bitmap_update;
+int ath12k_wifi8_dp_rx_ase_htt_srng_setup(struct ath12k_base *ab);
 #endif

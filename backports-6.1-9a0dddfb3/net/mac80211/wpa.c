@@ -25,6 +25,9 @@
 #include "aes_gmac.h"
 #include "aes_gcm.h"
 #include "wpa.h"
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+#include "qcn_extns/cmn_extn.h"
+#endif
 
 ieee80211_tx_result
 ieee80211_tx_h_michael_mic_add(struct ieee80211_tx_data *tx)
@@ -958,10 +961,16 @@ ieee80211_crypto_aes_cmac_decrypt(struct ieee80211_rx_data *rx)
 
 	bip_ipn_swap(ipn, mmie->sequence_number);
 
-	if (memcmp(ipn, key->u.aes_cmac.rx_pn, 6) <= 0) {
-		key->u.aes_cmac.replays++;
-		return RX_DROP_U_REPLAY;
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	if (!ieee80211_skip_pn_check(rx)) {
+#endif
+		if (memcmp(ipn, key->u.aes_cmac.rx_pn, 6) <= 0) {
+			key->u.aes_cmac.replays++;
+			return RX_DROP_U_REPLAY;
+		}
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 	}
+#endif
 
 	if (!(status->flag & RX_FLAG_DECRYPTED)) {
 		/* hardware didn't decrypt/verify MIC */

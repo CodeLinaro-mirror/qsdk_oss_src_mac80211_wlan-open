@@ -34,6 +34,14 @@ static inline void drv_tx(struct ieee80211_local *local,
 			  struct ieee80211_tx_control *control,
 			  struct sk_buff *skb)
 {
+	struct ieee80211_sub_if_data *orig_sdata;
+
+	if (ieee80211_hw_check(&local->hw, VLAN_GROUP_KEY_HW_OFFLOAD) &&
+			       skb->dev) {
+		orig_sdata = IEEE80211_DEV_TO_SUB_IF(skb->dev);
+		if (orig_sdata->vif.type == NL80211_IFTYPE_AP_VLAN)
+			control->vlan_vif = &orig_sdata->vif;
+	}
 	local->ops->tx(&local->hw, control, skb);
 }
 
@@ -395,12 +403,14 @@ static inline int drv_get_stats(struct ieee80211_local *local,
 	return ret;
 }
 
-static inline void drv_get_key_seq(struct ieee80211_local *local,
+static inline void drv_get_key_seq(struct ieee80211_sub_if_data *sdata,
 				   struct ieee80211_key *key,
 				   struct ieee80211_key_seq *seq)
 {
+	struct ieee80211_local *local = sdata->local;
+
 	if (local->ops->get_key_seq)
-		local->ops->get_key_seq(&local->hw, &key->conf, seq);
+		local->ops->get_key_seq(&local->hw, &sdata->vif, &key->conf, seq);
 	trace_drv_get_key_seq(local, &key->conf);
 }
 
@@ -676,6 +686,17 @@ static inline void drv_link_sta_statistics(struct ieee80211_local *local,
 		local->ops->link_sta_statistics(&local->hw, &sdata->vif,
 						link_sta, link_sinfo);
 	trace_drv_return_void(local);
+}
+
+static inline void
+drv_get_netstats(struct ieee80211_local *local,
+		 struct ieee80211_sub_if_data *sdata,
+		 struct rtnl_link_stats64 *stats)
+{
+	if (local->ops->get_netstats) {
+		local->ops->get_netstats(&local->hw, &sdata->vif,
+					 stats);
+	}
 }
 
 int drv_conf_tx(struct ieee80211_local *local,
@@ -1126,6 +1147,22 @@ static inline void drv_stop_ap(struct ieee80211_local *local,
 	if (local->ops->stop_ap)
 		local->ops->stop_ap(&local->hw, &sdata->vif, link_conf);
 	trace_drv_return_void(local);
+}
+
+static inline void drv_link_going_down(struct ieee80211_local *local,
+				       struct ieee80211_sub_if_data *sdata,
+				       struct ieee80211_bss_conf *link_conf,
+				       bool is_netdev_going_down)
+{
+	might_sleep();
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	if (!check_sdata_in_driver(sdata))
+		return;
+
+	if (local->ops->link_going_down)
+		local->ops->link_going_down(&local->hw, &sdata->vif, link_conf,
+					    is_netdev_going_down);
 }
 
 static inline void
@@ -1623,7 +1660,8 @@ static inline void drv_sta_set_4addr(struct ieee80211_local *local,
 				     struct ieee80211_sta *sta, bool enabled)
 {
 	if (!ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD) &&
-	    !ieee80211_hw_check(&local->hw, SUPPORTS_VLAN_DATA_OFFLOAD))
+	    !ieee80211_hw_check(&local->hw, SUPPORTS_VLAN_DATA_OFFLOAD) &&
+	    !ieee80211_hw_check(&local->hw, VLAN_GROUP_KEY_HW_OFFLOAD))
 		sdata = get_bss_sdata(sdata);
 
 	might_sleep();
@@ -1880,6 +1918,16 @@ static inline int drv_erp(struct ieee80211_local *local,
 	return ret;
 }
 
+static inline void drv_set_monitor(struct ieee80211_local *local,
+				   struct ieee80211_vif *vif,
+				   u32 flags)
+{
+	if (!vif || !local->ops->set_monitor_flags)
+		return;
+
+	local->ops->set_monitor_flags(&local->hw, vif, flags);
+}
+
 static inline int
 drv_qos_mgmt_cfg(struct ieee80211_sub_if_data *sdata,
 		 struct ieee80211_local *local, struct ieee80211_sta *sta,
@@ -1901,5 +1949,45 @@ drv_qos_mgmt_cfg(struct ieee80211_sub_if_data *sdata,
 
 	return ret;
 }
+
+static inline int drv_ap_power_save(struct ieee80211_local *local,
+				    struct ieee80211_sub_if_data *sdata,
+				    int link_id,
+				    struct cfg80211_ap_power_save_params *params)
+{
+	int ret = -EOPNOTSUPP;
+
+	might_sleep();
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	if (local->ops->ap_power_save) {
+		trace_drv_ap_power_save(local, sdata, link_id, params);
+		ret = local->ops->ap_power_save(&local->hw, sdata ? &sdata->vif : NULL,
+						link_id, params);
+	}
+
+	trace_drv_return_int(local, ret);
+	return ret;
+}
+
+#ifdef CPTCFG_QCN_EXTN
+static inline int
+drv_set_muedca_mode(struct ieee80211_local *local,
+		int radio_idx, u8 muedca_mode)
+{
+	int ret = 0;
+
+	might_sleep();
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	if (local->ops->set_muedca_mode) {
+		trace_drv_set_muedca_mode(local, radio_idx, muedca_mode);
+		ret = local->ops->set_muedca_mode(&local->hw, radio_idx,
+				muedca_mode);
+	}
+	trace_drv_return_int(local, ret);
+	return ret;
+}
+#endif /* CPTCFG_QCN_EXTN */
 
 #endif /* __MAC80211_DRIVER_OPS */

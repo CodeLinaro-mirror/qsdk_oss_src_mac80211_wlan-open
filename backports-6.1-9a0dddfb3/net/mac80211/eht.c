@@ -78,6 +78,23 @@ ieee80211_eht_cap_ie_to_sta_eht_cap(struct ieee80211_sub_if_data *sdata,
 
 	eht_cap->has_eht = true;
 
+	/* Check if HE 160MHz was disabled due to non-continuous NSS.
+	 * If so, we need to clear the EHT 160MHz MCS fields as well,
+	 * since the EHT MCS NSS size was calculated based on the original
+	 * HE capability IE (before modification).
+	 */
+	if (link_sta->pub->he_cap.has_he &&
+	    !(link_sta->pub->he_cap.he_cap_elem.phy_cap_info[0] &
+	      IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_160MHZ_IN_5G)) {
+		/* Clear 160MHz MCS fields in EHT capability */
+		memset(&eht_cap->eht_mcs_nss_supp.bw._160, 0,
+		       sizeof(eht_cap->eht_mcs_nss_supp.bw._160));
+		eht_cap->eht_cap_elem.phy_cap_info[0] &=
+			~IEEE80211_EHT_PHY_CAP0_320MHZ_IN_6GHZ;
+		sdata_info(sdata, "Cleared EHT 160MHz MCS fields due to HE 160MHz disabled %pM\n",
+			   link_sta->pub->addr);
+	}
+
 	link_sta->cur_max_bandwidth = ieee80211_sta_cap_rx_bw(link_sta);
 	link_sta->pub->bandwidth = ieee80211_sta_cur_vht_bw(link_sta);
 	link_sta->pub->sta_max_bandwidth = link_sta->cur_max_bandwidth;

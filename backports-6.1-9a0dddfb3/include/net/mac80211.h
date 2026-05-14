@@ -7,7 +7,7 @@
  * Copyright 2007-2010	Johannes Berg <johannes@sipsolutions.net>
  * Copyright 2013-2014  Intel Mobile Communications GmbH
  * Copyright (C) 2015 - 2017 Intel Deutschland GmbH
- * Copyright (C) 2018 - 2024 Intel Corporation
+ * Copyright (C) 2018 - 2026 Intel Corporation
  */
 
 #ifndef MAC80211_H
@@ -23,6 +23,7 @@
 #include <net/codel.h>
 #include <net/ieee80211_radiotap.h>
 #include <asm/unaligned.h>
+#include "../../net/mac80211/qcn_extns/cmn_extn.h"
 
 /**
  * DOC: Introduction
@@ -197,6 +198,7 @@ struct ieee80211_tx_queue_params {
 	u16 cw_max;
 	u8 aifs;
 	bool acm;
+	u8 noack;
 	bool uapsd;
 	bool mu_edca;
 	struct ieee80211_he_mu_edca_param_ac_rec mu_edca_param_rec;
@@ -420,6 +422,7 @@ enum ieee80211_bss_change {
 	BSS_CHANGED_ML_MAX_REC_LINKS	= BIT_ULL(39),
 	BSS_CHANGED_MLD_ADV_TTLM	= BIT_ULL(40),
 	BSS_CHANGED_LINK_ADV_TTLM	= BIT_ULL(41),
+	BSS_CHANGED_AP_DPS_ASSIST	= BIT_ULL(42),
 	/* when adding here, make sure to change ieee80211_reconfig */
 };
 
@@ -639,6 +642,8 @@ struct ieee80211_parsed_tpe {
  *	responses.
  * @addr: (link) address used locally
  * @link_id: link ID, or 0 for non-MLO
+ * @ssid: The SSID of the current link when this link of the MLD is repurposed
+ * @ssid_len: Length of SSID given in @ssid.
  * @htc_trig_based_pkt_ext: default PE in 4us units, if BSS supports HE
  * @uora_exists: is the UORA element advertised by AP
  * @uora_ocw_range: UORA element's OCW Range field
@@ -752,7 +757,10 @@ struct ieee80211_parsed_tpe {
  * @pwr_reduction: power constraint of BSS.
  * @eht_support: does this BSS support EHT
  * @epcs_support: does this BSS support EPCS
+ * @uhr_support: does this BSS support UHR
  * @csa_active: marks whether a channel switch is going on.
+ * @deferred_up: On CSA to target DFS channel, mark the flag for deferred
+ *	vap up post CAC, and skip vap down
  * @mu_mimo_owner: indicates interface owns MU-MIMO capability
  * @chanctx_conf: The channel context this interface is assigned to, or %NULL
  *	when it is not assigned. This pointer is RCU-protected due to the TX
@@ -798,6 +806,7 @@ struct ieee80211_parsed_tpe {
  * 	see &enum ieee80211_critical_updates
  * @beacon_tx_mode: Beacon Tx Mode setting.
  * @ml_max_rec_links: ML Max recommended links
+ * @dps_assist_support: does this BSS support DPS Assist Support.
  */
 struct ieee80211_bss_conf {
 	struct ieee80211_vif *vif;
@@ -806,6 +815,8 @@ struct ieee80211_bss_conf {
 	const u8 *bssid;
 	unsigned int link_id;
 	u8 addr[ETH_ALEN] __aligned(2);
+	u8 ssid[IEEE80211_MAX_SSID_LEN];
+	size_t ssid_len;
 	u8 htc_trig_based_pkt_ext;
 	bool uora_exists;
 	u8 uora_ocw_range;
@@ -880,11 +891,18 @@ struct ieee80211_bss_conf {
 	u8 pwr_reduction;
 	bool eht_support;
 	bool epcs_support;
+	bool uhr_support;
+
 	bool csa_active;
+	bool deferred_up;
 	bool enable_mcs15;
 
 	bool mu_mimo_owner;
 	struct ieee80211_chanctx_conf __rcu *chanctx_conf;
+
+#ifdef CPTCFG_QCN_EXTN
+	struct ieee80211_bss_conf_extn *bss_conf_extn;
+#endif /* CPTCFG_QCN_EXTN */
 
 	bool color_change_active;
 	u8 color_change_color;
@@ -913,9 +931,11 @@ struct ieee80211_bss_conf {
 	bool elemid_added;
 	bool elemid_modified;
 	u32 rts_threshold;
-	u8 intf_detect_bitmap;
 	enum nl80211_beacon_tx_mode beacon_tx_mode;
 	u8 ml_max_rec_links;
+	bool is_cfp_enabled;
+	bool dps_assist_support;
+	enum nl80211_auth_type auth_type;
 };
 
 /**
@@ -1100,6 +1120,7 @@ enum mac80211_tx_control_flags {
 	IEEE80211_TX_CTRL_DONT_REORDER		= BIT(8),
 	IEEE80211_TX_CTRL_MCAST_MLO_FIRST_TX	= BIT(9),
 	IEEE80211_TX_CTRL_DONT_USE_RATE_MASK	= BIT(10),
+	IEEE80211_TX_CTRL_MGMT_RATE_EXIST	= BIT(11),
 	IEEE80211_TX_CTRL_MLO_LINK		= 0xf0000000,
 };
 
@@ -1414,6 +1435,87 @@ struct ieee80211_rate_status {
 };
 
 /**
+ * enum mac80211_tx_mon_flags - tx monitor info flags
+ *
+ * These are used with @flag member of &struct ieee80211_tx_mon_info
+ * @TX_MON_FLAG_FLAGS_INFO: info for IEEE80211_RADIOTAP_FLAGS
+ * @TX_MON_FLAG_CHAN_INFO: info for IEEE80211_RADIOTAP_CHANNEL
+ * @TX_MON_FLAG_AMPDU_STATUS_INFO: info for IEEE80211_RADIOTAP_AMPDU_STATUS
+ * @TX_MON_FLAG_LSIG_INFO: info for IEEE80211_RADIOTAP_LSIG (L-SIG field)
+ * @TX_MON_FLAG_HE_INFO: info for IEEE80211_RADIOTAP_HE (HE fields)
+ * @TX_MON_FLAG_HE_MU_INFO: info for IEEE80211_RADIOTAP_HE_MU (HE MU fields)
+ * @TX_MON_FLAG_EHT_USIG_INFO: info for IEEE80211_RADIOTAP_EHT_USIG (EHT U-SIG)
+ * @TX_MON_FLAG_EHT_INFO: info for IEEE80211_RADIOTAP_EHT (EHT header)
+ * @TX_MON_FLAG_END: Last member
+ */
+
+enum mac80211_tx_mon_flags {
+	TX_MON_FLAG_FLAGS_INFO,
+	TX_MON_FLAG_CHAN_INFO,
+	TX_MON_FLAG_AMPDU_STATUS_INFO,
+	TX_MON_FLAG_LSIG_INFO,
+	TX_MON_FLAG_HE_INFO,
+	TX_MON_FLAG_HE_MU_INFO,
+	TX_MON_FLAG_EHT_USIG_INFO,
+	TX_MON_FLAG_EHT_INFO,
+	TX_MON_FLAG_VENDOR_TLV,
+	TX_MON_FLAG_TLV_AT_END,
+	TX_MON_FLAG_END,
+};
+
+/**
+ * struct ieee80211_tx_mon_info - tx monitor related information
+ *
+ * @flags: flags pointing to enum mac80211_tx_mon_flags
+ * @tsft: tsft value for IEEE80211_RADIOTAP_TSFT
+ * @rtap_flags: flags for IEEE80211_RADIOTAP_FLAGS
+ * @chan_freq: channel frequency bitmask for IEEE80211_RADIOTAP_CHANNEL
+ * @chan_flags: channel frequency flags for IEEE80211_RADIOTAP_CHANNEL
+ * @ampdu_ref_num:  A-MPDU reference num for IEEE80211_RADIOTAP_AMPDU_STATUS
+ * @ampdu_flags:  ampdu_flags for IEEE80211_RADIOTAP_AMPDU_STATUS
+ * @ampdu_reserved_flags: ampdu_reserved_flags for IEEE80211_RADIOTAP_AMPDU_STATUS
+ * @lsig: L-SIG fields for IEEE80211_RADIOTAP_LSIG
+ * @he_mu: HE-MU fields for IEEE80211_RADIOTAP_HE_MU
+ * @eht_usig: EHT USIG fields for IEEE80211_RADIOTAP_EHT_USIG
+ * @eht_num_users: Number of user info entries in EHT radiotap header
+ * @eht: EHT fields for IEEE80211_RADIOTAP_EHT
+ * @v_tlv: Pointer Vendor TLV fields - contains variable length array, alway do deep copy
+ */
+struct ieee80211_tx_mon_info {
+	unsigned long flags[BITS_TO_LONGS(TX_MON_FLAG_END)];
+	u64 tsft;
+	u8 rtap_flags;
+	u16 chan_freq;
+	u16 chan_flags;
+	u32 ampdu_ref_num;
+	u16 ampdu_flags;
+	u16 ampdu_reserved_flags;
+	struct ieee80211_radiotap_lsig lsig;
+	struct ieee80211_radiotap_he he;
+	struct ieee80211_radiotap_he_mu he_mu;
+	struct ieee80211_radiotap_eht_usig eht_usig;
+	u32 eht_num_users;
+	struct ieee80211_radiotap_eht eht;
+	struct ieee80211_radiotap_vendor_ns *v_tlv;
+};
+
+static inline bool _tx_mon_hw_check(struct ieee80211_tx_mon_info *info,
+				    enum mac80211_tx_mon_flags flg)
+{
+	return test_bit(flg, info->flags);
+}
+
+#define tx_mon_hw_check(info, flg)	_tx_mon_hw_check(info, TX_MON_FLAG_##flg)
+
+static inline void _tx_mon_hw_set(struct ieee80211_tx_mon_info *info,
+				  enum mac80211_tx_mon_flags flg)
+{
+	__set_bit(flg, info->flags);
+}
+
+#define tx_mon_hw_set(info, flg)	_tx_mon_hw_set(info, TX_MON_FLAG_##flg)
+
+/**
  * struct ieee80211_tx_status - extended tx status info for rate control
  *
  * @sta: Station that the packet was transmitted for
@@ -1427,6 +1529,7 @@ struct ieee80211_rate_status {
  *	frames. Only reported by devices that have timestamping enabled.
  * @mpdu_succ: Number of mpdus successfully transmitted
  * @mpdu_fail: Number of mpdus failed
+ * @mon_info: information for 'tx monitor' processing in case of hardware offload support
  */
 struct ieee80211_tx_status {
 	struct ieee80211_sta *sta;
@@ -1434,6 +1537,8 @@ struct ieee80211_tx_status {
 	struct sk_buff *skb;
 	struct ieee80211_rate_status *rates;
 	ktime_t ack_hwtstamp;
+	u8 link_valid;
+	int link_id;
 	u8 n_rates;
 
 #if LINUX_VERSION_IS_GEQ(4,19,0)
@@ -1444,6 +1549,7 @@ struct ieee80211_tx_status {
 	u32 mpdu_succ;
 	u32 mpdu_fail;
 	bool skip_per_packet_metric_update;
+	struct ieee80211_tx_mon_info mon_info;
 };
 
 /**
@@ -1604,7 +1710,7 @@ ieee80211_tx_info_clear_status(struct ieee80211_tx_info *info)
  * @RX_FLAG_AMPDU_EOF_BIT_KNOWN: The EOF value is known
  * @RX_FLAG_RADIOTAP_HE: HE radiotap data is present
  *	(&struct ieee80211_radiotap_he, mac80211 will fill in
- *	
+ *
  *	 - DATA3_DATA_MCS
  *	 - DATA3_DATA_DCM
  *	 - DATA3_CODING
@@ -1612,7 +1718,7 @@ ieee80211_tx_info_clear_status(struct ieee80211_tx_info *info)
  *	 - DATA5_DATA_BW_RU_ALLOC
  *	 - DATA6_NSTS
  *	 - DATA3_STBC
- *	
+ *
  *	from the RX info data, so leave those zeroed when building this data)
  * @RX_FLAG_RADIOTAP_HE_MU: HE MU radiotap data is present
  *	(&struct ieee80211_radiotap_he_mu)
@@ -1623,9 +1729,6 @@ ieee80211_tx_info_clear_status(struct ieee80211_tx_info *info)
  *	known the frame shouldn't be reported.
  * @RX_FLAG_8023: the frame has an 802.3 header (decap offload performed by
  *	hardware or driver)
- *	@RX_FLAG_USIG_HEADER: Universal field carries information necessary to
- *	interpret EHT PPDUs
- *	RX_FLAG_EHT_HEADER: EHT radiotap data is present
  */
 enum mac80211_rx_flags {
 	RX_FLAG_MMIC_ERROR		= BIT(0),
@@ -1644,7 +1747,6 @@ enum mac80211_rx_flags {
 	RX_FLAG_AMPDU_IS_LAST		= BIT(13),
 	RX_FLAG_AMPDU_DELIM_CRC_ERROR	= BIT(14),
 	/* one free bit at 15 */
-	RX_FLAG_USIG_HEADER		= BIT(15),
 	RX_FLAG_MACTIME			= BIT(16) | BIT(17),
 	RX_FLAG_MACTIME_PLCP_START	= 1 << 16,
 	RX_FLAG_MACTIME_START		= 2 << 16,
@@ -1662,7 +1764,6 @@ enum mac80211_rx_flags {
 	RX_FLAG_RADIOTAP_LSIG		= BIT(28),
 	RX_FLAG_NO_PSDU			= BIT(29),
 	RX_FLAG_8023			= BIT(30),
-	RX_FLAG_EHT_HEADER      = BIT(31),
 };
 
 /**
@@ -1696,6 +1797,7 @@ enum mac80211_rx_encoding {
 	RX_ENC_HE,
 	RX_ENC_S1G,
 	RX_ENC_EHT,
+	RX_ENC_UHR,
 };
 
 /**
@@ -1729,9 +1831,8 @@ enum mac80211_rx_encoding {
  * @antenna: antenna used
  * @rate_idx: index of data rate into band's supported rates or MCS index if
  *	HT or VHT is used (%RX_FLAG_HT/%RX_FLAG_VHT)
- * @nss: number of streams (VHT, HE and EHT only)
+ * @nss: number of streams (VHT, HE, EHT and UHR only)
  * @flag: %RX_FLAG_\*
- * @ext_flag: %RX_FLAG_\*
  * @encoding: &enum mac80211_rx_encoding
  * @bw: &enum rate_info_bw
  * @enc_flags: uses bits from &enum mac80211_rx_encoding_flags
@@ -1741,6 +1842,11 @@ enum mac80211_rx_encoding {
  * @eht: EHT specific rate information
  * @eht.ru: EHT RU, from &enum nl80211_eht_ru_alloc
  * @eht.gi: EHT GI, from &enum nl80211_eht_gi
+ * @uhr: UHR specific rate information
+ * @uhr.ru: UHR RU, from &enum nl80211_eht_ru_alloc
+ * @uhr.gi: UHR GI, from &enum nl80211_eht_gi
+ * @uhr.elr: UHR ELR MCS was used
+ * @uhr.im: UHR interference mitigation was used
  * @rx_flags: internal RX flags for mac80211
  * @ampdu_reference: A-MPDU reference number, must be a different value for
  *	each A-MPDU but the same for each subframe within one A-MPDU
@@ -1772,18 +1878,23 @@ struct ieee80211_rx_status {
 			u8 ru:4;
 			u8 gi:2;
 		} eht;
+		struct {
+			u8 ru:4;
+			u8 gi:2;
+			u8 elr:1;
+			u8 im:1;
+		} uhr;
 	};
 	u8 rate_idx;
 	u8 nss;
 	u8 rx_flags;
-	u8 band;
 	u8 antenna;
 	s8 signal;
+	s8 noise;
 	u8 chains;
 	s8 chain_signal[IEEE80211_MAX_CHAINS];
-	u8 zero_length_psdu_type;
+	u8 zero_length_psdu_type: 4, band: 4;
 	u8 link_valid:1, link_id:4;
-	u8 eht_num_user;
 	u8 tid;
 };
 
@@ -2001,6 +2112,7 @@ enum ieee80211_vif_flags {
  *	mac80211.
  * @IEEE80211_OFFLOAD_ENCAP_MCAST: support multicast packet encapsulation
  *	offload.
+ * @IEEE80211_OFFLOAD_TXRX_STATS: support for tx and rx stats offload to driver
  */
 
 enum ieee80211_offload_flags {
@@ -2008,6 +2120,7 @@ enum ieee80211_offload_flags {
 	IEEE80211_OFFLOAD_ENCAP_4ADDR		= BIT(1),
 	IEEE80211_OFFLOAD_DECAP_ENABLED		= BIT(2),
 	IEEE80211_OFFLOAD_ENCAP_MCAST		= BIT(3),
+	IEEE80211_OFFLOAD_TXRX_STATS            = BIT(4),
 };
 
 /**
@@ -2159,6 +2272,7 @@ struct ieee80211_advertised_ttlm_info {
  *	suspended due to negotiated TTLM, and could be activated in the
  *	future by tearing down the TTLM negotiation.
  *	0 for non-MLO.
+ * @repurposed_links: Bitmap of links of the MLD, which are in non-11be mode.
  * @neg_ttlm: negotiated TID to link mapping info.
  *	see &struct ieee80211_neg_ttlm.
  * @adv_ttlm: Config of advertised TTLM when triggered on AP interface.
@@ -2203,6 +2317,7 @@ struct ieee80211_vif {
 	struct ieee80211_bss_conf bss_conf;
 	struct ieee80211_bss_conf __rcu *link_conf[IEEE80211_MLD_MAX_NUM_LINKS];
 	u16 valid_links, active_links, dormant_links, suspended_links;
+	u16 repurposed_links;
 	struct ieee80211_neg_ttlm neg_ttlm;
 	struct ieee80211_advertised_ttlm_info adv_ttlm;
 	u8 addr[ETH_ALEN] __aligned(2);
@@ -2231,6 +2346,11 @@ struct ieee80211_vif {
 #ifdef CPTCFG_MAC80211_PPE_SUPPORT
 	int ppe_vp_num;
 	u8 ppe_vp_type;
+#endif
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	u32 mhdr;
+	u32 mhdr_len;
+	u32 mdbg;
 #endif
 	bool is_roc;
 	/* must be last */
@@ -2642,6 +2762,7 @@ struct ieee80211_sta_aggregates {
  * @he_cap: HE capabilities of this STA
  * @he_6ghz_capa: on 6 GHz, holds the HE 6 GHz band capabilities
  * @eht_cap: EHT capabilities of this STA
+ * @uhr_cap: UHR capabilities of this STA
  * @punctured: RU Puncturing bitmap of this STA
  * @agg: per-link data for multi-link aggregation
  * @bandwidth: current bandwidth the station can receive with
@@ -2665,6 +2786,7 @@ struct ieee80211_link_sta {
 	struct ieee80211_sta_he_cap he_cap;
 	struct ieee80211_he_6ghz_capa he_6ghz_capa;
 	struct ieee80211_sta_eht_cap eht_cap;
+	struct ieee80211_sta_uhr_cap uhr_cap;
 	u32 punctured;
 
 	struct ieee80211_sta_aggregates agg;
@@ -2705,6 +2827,7 @@ struct ieee80211_link_sta {
  * @tdls_initiator: indicates the STA is an initiator of the TDLS link. Only
  *	valid if the STA is a TDLS peer in the first place.
  * @mfp: indicates whether the STA uses management frame protection or not.
+ * @cfp: indicated whether the STA used control frame protection or not.
  * @mlo: indicates whether the STA is MLO station.
  * @ft_auth: indicates whether the STA uses FT Authentication.
  * @max_amsdu_subframes: indicates the maximal number of MSDUs in a single
@@ -2735,6 +2858,7 @@ struct ieee80211_link_sta {
  * @neg_ttlm: TTLM negotiation parameters of the station
  * @reconf: bitmap of links added and removed during multi-link
  *	reconfiguration.
+ * @control_mic_pad: Padding info for control frames
  */
 struct ieee80211_sta {
 	u8 addr[ETH_ALEN] __aligned(2);
@@ -2747,6 +2871,7 @@ struct ieee80211_sta {
 	bool tdls;
 	bool tdls_initiator;
 	bool mfp;
+	bool cfp;
 	bool mlo;
 	bool spp_amsdu;
 	bool ft_auth;
@@ -2756,6 +2881,10 @@ struct ieee80211_sta {
 
 	bool support_p2p_ps;
 	enum nl80211_mgmt_rts_cts_conf mgmt_rts_cts;
+
+#ifdef CPTCFG_QCN_EXTN
+	struct ieee80211_sta_extn sta_extn;
+#endif /* CPTCFG_QCN_EXTN */
 
 	struct ieee80211_txq *txq[IEEE80211_NUM_TIDS + 1];
 
@@ -2773,6 +2902,7 @@ struct ieee80211_sta {
 	u16 mld_cap_op;
 	struct net_device *dev;
 	struct ieee80211_neg_ttlm neg_ttlm;
+	u8 control_mic_pad;
 
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
@@ -2819,9 +2949,15 @@ enum sta_notify_cmd {
  *
  * @sta: station table entry, this sta pointer may be NULL and
  * 	it is not allowed to copy the pointer, due to RCU.
+ * @vlan_vif: AP_VLAN interface for this frame, if different from the
+ *	primary AP interface. This is only set when the hardware advertises
+ *	%IEEE80211_HW_VLAN_GROUP_KEY_HW_OFFLOAD and allows the driver
+ *	to select VLAN-specific group keys (GTKs) in hardware. For drivers
+ *	that do not implement VLAN group key offload this field will be %NULL.
  */
 struct ieee80211_tx_control {
 	struct ieee80211_sta *sta;
+	struct ieee80211_vif *vlan_vif;
 };
 
 /**
@@ -3122,6 +3258,21 @@ struct ieee80211_txq {
  * @IEEE80211_HW_SUPPORTS_SINGLE_CHANNEL: Hardware only supports single
  *	channel operation.
  *
+ * @IEEE80211_HW_VLAN_GROUP_KEY_HW_OFFLOAD: Hardware/driver supports
+ *	hardware encryption for per-VLAN group keys on AP_VLAN interfaces.
+ *	When this flag is set mac80211 will install GTKs for AP_VLAN interfaces
+ *	in the driver and will also pass the originating AP_VLAN vif to the driver
+ *	in @ieee80211_tx_control.
+ *
+ * @IEEE80211_HW_SUPPORTS_TX_MONITOR_OFFLOAD: Hardware/driver supports Tx Monitor
+ *	frame generation
+ *
+ * @IEEE80211_HW_SKIP_CHANDEF_IDENTICAL_CHECK: The driver (e.g. mac80211_hwsim
+ *	for HW SIM test suite) wants mac80211 to skip the
+ *	cfg80211_chandef_identical() check in ieee80211_config_bw() so that
+ *	bandwidth reconfigurations are always processed even when the new
+ *	chandef appears identical to the current one.
+ *
  * @NUM_IEEE80211_HW_FLAGS: number of hardware flags, used for sizing arrays
  */
 enum ieee80211_hw_flags {
@@ -3194,6 +3345,9 @@ enum ieee80211_hw_flags {
 	IEEE80211_HW_SUPPORTS_EXT_REMAIN_ON_CHAN,
 	IEEE80211_HW_SUPPORTS_DSCP_TID_MAP,
 	IEEE80211_HW_SUPPORTS_SINGLE_CHANNEL,
+	IEEE80211_HW_VLAN_GROUP_KEY_HW_OFFLOAD,
+	IEEE80211_HW_SUPPORTS_TX_MONITOR_OFFLOAD,
+	IEEE80211_HW_SKIP_CHANDEF_IDENTICAL_CHECK,
 
 	/* keep last, obviously */
 	NUM_IEEE80211_HW_FLAGS
@@ -3491,12 +3645,26 @@ ieee80211_get_alt_retry_rate(const struct ieee80211_hw *hw,
 }
 
 /**
+ * __ieee80211_free_txskb - free TX skb
+ * @hw: the hardware
+ * @skbs: the skbs
+ *
+ * Free a transmit skb. Use this function when some failure
+ * to transmit happened and thus status cannot be reported.
+ */
+void __ieee80211_free_txskb(struct ieee80211_hw *hw, struct sk_buff *skb);
+
+/**
  * ieee80211_free_txskb - free TX skb
  * @hw: the hardware
  * @skb: the skb
  *
  * Free a transmit skb. Use this function when some failure
  * to transmit happened and thus status cannot be reported.
+ *
+ * This function also looks up the station associated with the
+ * frame and updates the per-station transmit statistics (packets
+ * and bytes)
  */
 void ieee80211_free_txskb(struct ieee80211_hw *hw, struct sk_buff *skb);
 
@@ -3726,6 +3894,28 @@ void ieee80211_purge_tx_queue(struct ieee80211_hw *hw,
  * hardware support flags, and handle the SMPS flag to the config()
  * operation. It will then with this mechanism be instructed to
  * enter the requested SMPS mode while associated to an HT AP.
+ */
+
+/**
+ * DOC: Monitor mode control
+ * mac80211 provides fine-grained control over monitor mode
+ * behavior through the set_monitor_flags() callback.
+ *
+ * The flags parameter contains monitor flags from enum nl80211_mntr_flags,
+ * which control various aspects of frame capture. Two key flags are:
+ *
+ * - NL80211_MNTR_FLAG_SKIP_TX: When set, local TX packets are not
+ *   passed to the monitor interface. This allows selective monitoring
+ *   of received frames only.
+ *
+ * - NL80211_MNTR_FLAG_SKIP_RX: When set, local RX packets are not
+ *   passed to the monitor interface. This allows selective monitoring
+ *   of transmitted frames only.
+ *
+ * The driver configures its hardware/firmware to honor these
+ * flags when operating in monitor mode. This callback is invoked when
+ * userspace modifies monitor flags via nl80211, allowing the driver
+ * to enable or disable full monitor mode for TX and RX independently.
  */
 
 /**
@@ -4639,6 +4829,16 @@ struct ieee80211_ppe_vp_ds_params {
  *	disabled/enabled via @bss_info_changed.
  * @stop_ap: Stop operation on the AP interface.
  *
+ * @link_going_down: Notify driver that a specific link is going down.
+ *	This is called before sta_flush during operations like stop_ap.
+ *	Driver can use this to set flags for optimizing batch peer deletion.
+ *	The is_netdev_going_down parameter indicates if the entire netdev is
+ *	going down (true) or just a specific link (false).
+ *	The callback can sleep.
+ *
+ * @set_monitor_flags: Enables or disables TX and RX monitor mode in userspace
+ *      via NL commands.
+ *
  * @reconfig_complete: Called after a call to ieee80211_restart_hw() and
  *	during resume, when the reconfiguration has completed.
  *	This can help the driver implement the reconfiguration step (and
@@ -4810,7 +5010,10 @@ struct ieee80211_ppe_vp_ds_params {
  * nl80211. Enable drivers to parse and apply QM request descriptors and
  * populate response data accordingly.
  * @get_afc_eirp_pwr: Get EIRP value for a given freq from the AFC payload.
+ * @get_netstats: Get net stats for a netdevice
  * @get_6ghz_dev_deployment_type: Get the 6 GHz device deployment type.
+ * @ap_power_save: Introduces infrastructure in mac80211 to support forwarding of
+ *	AP Powersave configuration parameters from user space to driver.
  */
 struct ieee80211_ops {
 	void (*tx)(struct ieee80211_hw *hw,
@@ -4846,7 +5049,13 @@ struct ieee80211_ops {
 			struct ieee80211_bss_conf *link_conf);
 	void (*stop_ap)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			struct ieee80211_bss_conf *link_conf);
-
+	void (*link_going_down)(struct ieee80211_hw *hw,
+				struct ieee80211_vif *vif,
+				struct ieee80211_bss_conf *link_conf,
+				bool is_netdev_going_down);
+	int (*set_monitor_flags)(struct ieee80211_hw *hw,
+				 struct ieee80211_vif *vif,
+				 u32 flags);
 	u64 (*prepare_multicast)(struct ieee80211_hw *hw,
 				 struct netdev_hw_addr_list *mc_list);
 	void (*configure_filter)(struct ieee80211_hw *hw,
@@ -4889,7 +5098,7 @@ struct ieee80211_ops {
 				 struct ieee80211_vif *vif);
 	int (*get_stats)(struct ieee80211_hw *hw,
 			 struct ieee80211_low_level_stats *stats);
-	void (*get_key_seq)(struct ieee80211_hw *hw,
+	void (*get_key_seq)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			    struct ieee80211_key_conf *key,
 			    struct ieee80211_key_seq *seq);
 	int (*set_frag_threshold)(struct ieee80211_hw *hw, int radio_idx,
@@ -5238,10 +5447,19 @@ struct ieee80211_ops {
 			    struct ieee80211_sta *sta,
 			    struct cfg80211_qm_req_data *qm_req,
 			    struct cfg80211_qm_resp_data *qm_resp);
+	void (*get_netstats)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+			     struct rtnl_link_stats64 *stats);
 	int (*get_afc_eirp_pwr)(struct ieee80211_hw *hw,
 				u32 freq, u32 *eirp);
 	enum nl80211_6ghz_dev_deployment_type
 		(*get_6ghz_dev_deployment_type)(struct ieee80211_hw *hw);
+	int (*ap_power_save)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+			     int link_id,
+			     struct cfg80211_ap_power_save_params *params);
+#ifdef CPTCFG_QCN_EXTN
+	int (*set_muedca_mode)(struct ieee80211_hw *hw, int radio_idx,
+			       u8 muedca_mode);
+#endif /* CPTCFG_QCN_EXTN */
 };
 
 /**
@@ -5788,6 +6006,13 @@ void ieee80211_tx_rate_update(struct ieee80211_hw *hw,
  */
 void ieee80211_tx_status_skb(struct ieee80211_hw *hw,
 			     struct sk_buff *skb);
+
+/**
+ * ieee80211_tx_status_offload - transmit status callback
+ * when offload enabled
+ */
+void ieee80211_tx_status_offload(struct ieee80211_hw *hw,
+				 struct ieee80211_tx_status *status);
 
 /**
  * ieee80211_tx_status_ext - extended transmit status callback
@@ -7264,14 +7489,6 @@ void ieee80211_channel_switch_disconnect(struct ieee80211_vif *vif);
 void ieee80211_awgn_detected(struct ieee80211_hw *hw, u32 chan_bw_interference_bitmap,
 			     struct ieee80211_channel *awgn_channel);
 
-/**
- * ieee80211_cw_detected - inform that cw interference is detected
- *
- * @hw: pointer as obtained from ieee80211_alloc_hw()
- * @cw_channel: Channel pointer on which Continous Wave Interference is detected. Mandatory to pass
- *	for MLO drivers. For non-MLO %NULL can be passed
- */
-void ieee80211_cw_detected(struct ieee80211_hw *hw, struct ieee80211_channel *cw_channel);
 
 /**
  * ieee80211_request_smps - request SM PS transition
@@ -7654,6 +7871,20 @@ ieee80211_get_eht_iftype_cap_vif(const struct ieee80211_supported_band *sband,
 				 struct ieee80211_vif *vif)
 {
 	return ieee80211_get_eht_iftype_cap(sband, ieee80211_vif_type_p2p(vif));
+}
+
+/**
+ * ieee80211_get_uhr_iftype_cap_vif - return UHR capabilities for sband/vif
+ * @sband: the sband to search for the iftype on
+ * @vif: the vif to get the iftype from
+ *
+ * Return: pointer to the struct ieee80211_sta_uhr_cap, or %NULL is none found
+ */
+static inline const struct ieee80211_sta_uhr_cap *
+ieee80211_get_uhr_iftype_cap_vif(const struct ieee80211_supported_band *sband,
+				 struct ieee80211_vif *vif)
+{
+	return ieee80211_get_uhr_iftype_cap(sband, ieee80211_vif_type_p2p(vif));
 }
 
 /**
@@ -8052,20 +8283,6 @@ u32 ieee80211_calc_rx_airtime(struct ieee80211_hw *hw,
 			      int len);
 
 /**
- * ieee80211_update_muedca_params - update MU-EDCA parameters.
- *
- * This function is used to pass dynamically updated MU-EDCA parameters from
- * driver to user space in order for parameters to be updated in beacon.
- *
- * @hw: pointer as obtained from ieee80211_alloc_hw()
- * @params: updated MU-EDCA paramters
- * @gfp: allocation flags
- */
-void ieee80211_update_muedca_params(struct ieee80211_hw *hw,
-				    struct ieee80211_mu_edca_param_set
-				    *params, gfp_t gfp);
-
-/**
  * ieee80211_calc_tx_airtime - calculate estimated transmission airtime for TX.
  *
  * This function calculates the estimated airtime usage of a frame based on the
@@ -8438,13 +8655,18 @@ enum ieee80211_gstrings_stats {
  * @wdev: Pointer to wdev
  * @ap_6ghz_pwr_mode: AP 6 GHz power mode
  * @link_id: Link ID
+ * @is_set_pwr_mode: Flag indicating whether the power mode
+ * should be applied. Update the power type if true else update only the
+ * tx power change to target. In case of standalone sta, need not set
+ * power type as root ap power type stored already, set tx power alone.
  *
  * Return 0 if 6 GHz power mode change is successful else return error.
  */
 int ieee80211_6ghz_power_mode_change(struct wiphy *wiphy,
 				     struct wireless_dev *wdev,
 				     u8 ap_6ghz_pwr_mode,
-				     int link_id);
+				     int link_id,
+				     bool is_set_pwr_mode);
 
 /** ieee80211_link_removal_count_update - Update link reconfig removal for each
  * link for which the link removal has been scheduled
@@ -8492,11 +8714,46 @@ ieee80211_rx_send_mscs_tuple(struct ieee80211_sta *pubsta,
 			     struct cfg80211_qm_tclas4_params flow_params,
 			     u8 tid);
 
-/** ieee80211_get_radio_idx_by_freq - Get the radio index using the frequency
- * @wiphy: Pointer to wiphy
- * @freq: Frequency for which the radio index is needed
- */
-int ieee80211_get_radio_idx_by_freq(struct wiphy *wiphy, u32 freq);
-
 int ieee80211_get_link_assoc_status(struct ieee80211_vif *vif, u8 link_id);
+
+/**
+ * ieee80211_tx_monitor_offload - h/w offloaded tx monitor callback
+ *
+ * This function can be used by driver to deliver packet to upper layer
+ * when they support hardware offload support for tx monitor.
+ *
+ * @hw: the hardware the frame was transmitted by
+ * @status: tx status information
+ */
+void ieee80211_tx_monitor_offload(struct ieee80211_hw *hw,
+				  struct ieee80211_tx_status *status);
+
+/**
+ * ieee80211_set_repurpose_link - Mark a link for repurposing
+ * @vif: virtual interface
+ * @link_id: link identifier
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int ieee80211_set_repurpose_link(struct ieee80211_vif *vif, u8 link_id);
+
+/**
+ * ieee80211_clear_repurpose_link - Clear repurpose mark for a link
+ * @vif: virtual interface
+ * @link_id: link identifier
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int ieee80211_clear_repurpose_link(struct ieee80211_vif *vif, u8 link_id);
+
+/**
+ * ieee80211_enable_offchan_packet_capture - Enable offchan packet capture
+ *
+ * This function enables offchan packet capyure through monitor interface
+ *
+ * @vif:  vif for which offchan packet capture
+ * @enable: enable/disable offchan packet capture
+ */
+void ieee80211_enable_offchan_packet_capture(struct ieee80211_vif *vif,
+					     bool enable);
 #endif /* MAC80211_H */

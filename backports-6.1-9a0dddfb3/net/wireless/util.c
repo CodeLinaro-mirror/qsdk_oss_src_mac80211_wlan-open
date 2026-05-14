@@ -5,7 +5,7 @@
  * Copyright 2007-2009	Johannes Berg <johannes@sipsolutions.net>
  * Copyright 2013-2014  Intel Mobile Communications GmbH
  * Copyright 2017	Intel Deutschland GmbH
- * Copyright (C) 2018-2023 Intel Corporation
+ * Copyright (C) 2018-2023, 2025-2026 Intel Corporation
  */
 #include <linux/export.h>
 #include <linux/bitops.h>
@@ -415,6 +415,8 @@ int cfg80211_validate_key_settings(struct cfg80211_registered_device *rdev,
 				   struct key_params *params, int key_idx,
 				   bool pairwise, const u8 *mac_addr)
 {
+	bool cigtk_install = false;
+
 	if (!cfg80211_valid_key_idx(rdev, key_idx, pairwise))
 		return -EINVAL;
 
@@ -423,6 +425,10 @@ int cfg80211_validate_key_settings(struct cfg80211_registered_device *rdev,
 
 	if (pairwise && !mac_addr)
 		return -EINVAL;
+
+	if (params->cipher == WLAN_CIPHER_SUITE_BIP_GMAC_256 &&
+	    (key_idx == 0 || key_idx == 1))
+		cigtk_install = true;
 
 	switch (params->cipher) {
 	case WLAN_CIPHER_SUITE_TKIP:
@@ -460,7 +466,7 @@ int cfg80211_validate_key_settings(struct cfg80211_registered_device *rdev,
 		/* Disallow BIP (group-only) cipher as pairwise cipher */
 		if (pairwise)
 			return -EINVAL;
-		if (key_idx < 4)
+		if (key_idx < 4 && !cigtk_install)
 			return -EINVAL;
 		break;
 	case WLAN_CIPHER_SUITE_WEP40:
@@ -1672,26 +1678,30 @@ static u32 cfg80211_calculate_bitrate_he(struct rate_info *rate)
 	return result / 10000;
 }
 
-static u32 cfg80211_calculate_bitrate_eht(struct rate_info *rate)
+static u32 _cfg80211_calculate_bitrate_eht_uhr(struct rate_info *rate)
 {
 #define SCALE 6144
-	static const u32 mcs_divisors[16] = {
-		102399, /* 16.666666... */
-		 51201, /*  8.333333... */
-		 34134, /*  5.555555... */
-		 25599, /*  4.166666... */
-		 17067, /*  2.777777... */
-		 12801, /*  2.083333... */
-		 11377, /*  1.851725... */
-		 10239, /*  1.666666... */
-		  8532, /*  1.388888... */
-		  7680, /*  1.250000... */
-		  6828, /*  1.111111... */
-		  6144, /*  1.000000... */
-		  5690, /*  0.926106... */
-		  5120, /*  0.833333... */
-		409600, /* 66.666666... */
-		204800, /* 33.333333... */
+	static const u32 mcs_divisors[] = {
+		[ 0] = 102399, /* 16.666666... */
+		[ 1] =  51201, /*  8.333333... */
+		[ 2] =  34134, /*  5.555555... */
+		[ 3] =  25599, /*  4.166666... */
+		[ 4] =  17067, /*  2.777777... */
+		[ 5] =  12801, /*  2.083333... */
+		[ 6] =  11377, /*  1.851725... */
+		[ 7] =  10239, /*  1.666666... */
+		[ 8] =   8532, /*  1.388888... */
+		[ 9] =   7680, /*  1.250000... */
+		[10] =   6828, /*  1.111111... */
+		[11] =   6144, /*  1.000000... */
+		[12] =   5690, /*  0.926106... */
+		[13] =   5120, /*  0.833333... */
+		[14] = 409600, /* 66.666666... */
+		[15] = 204800, /* 33.333333... */
+		[17] =  38400, /*  6.250180... */
+		[19] =  19200, /*  3.125090... */
+		[20] =  15360, /*  2.500000... */
+		[23] =   9600, /*  1.562545... */
 	};
 	static const u32 rates_996[3] =  { 480388888, 453700000, 408333333 };
 	static const u32 rates_484[3] =  { 229411111, 216666666, 195000000 };
@@ -1702,8 +1712,6 @@ static u32 cfg80211_calculate_bitrate_eht(struct rate_info *rate)
 	u64 tmp;
 	u32 result;
 
-	if (WARN_ON_ONCE(rate->mcs > 15))
-		return 0;
 	if (WARN_ON_ONCE(rate->eht_gi > NL80211_RATE_INFO_EHT_GI_3_2))
 		return 0;
 	if (WARN_ON_ONCE(rate->eht_ru_alloc >
@@ -1784,7 +1792,7 @@ static u32 cfg80211_calculate_bitrate_eht(struct rate_info *rate)
 		 rate->eht_ru_alloc == NL80211_RATE_INFO_EHT_RU_ALLOC_26)
 		result = rates_26[rate->eht_gi];
 	else {
-		WARN(1, "invalid EHT MCS: bw:%d, ru:%d\n",
+		WARN(1, "invalid EHT or UHR MCS: bw:%d, ru:%d\n",
 		     rate->bw, rate->eht_ru_alloc);
 		return 0;
 	}
@@ -1798,9 +1806,62 @@ static u32 cfg80211_calculate_bitrate_eht(struct rate_info *rate)
 	tmp *= rate->nss;
 	do_div(tmp, 8);
 
+	/* and handle interference mitigation - 0.9x */
+	if (rate->flags & RATE_INFO_FLAGS_UHR_IM) {
+		if (WARN(rate->nss != 1 || rate->mcs == 15,
+			 "invalid NSS or MCS for UHR IM\n"))
+			return 0;
+		tmp *= 9000;
+		do_div(tmp, 10000);
+	}
+
 	result = tmp;
 
 	return result / 10000;
+}
+
+static u32 cfg80211_calculate_bitrate_eht(struct rate_info *rate)
+{
+	if (WARN_ONCE(rate->mcs > 15, "bad EHT MCS %d\n", rate->mcs))
+		return 0;
+
+	if (WARN_ONCE(rate->flags & (RATE_INFO_FLAGS_UHR_ELR_MCS |
+				     RATE_INFO_FLAGS_UHR_IM),
+		      "bad EHT MCS flags 0x%x\n", rate->flags))
+		return 0;
+
+	return _cfg80211_calculate_bitrate_eht_uhr(rate);
+}
+
+static u32 cfg80211_calculate_bitrate_uhr(struct rate_info *rate)
+{
+	if (rate->flags & RATE_INFO_FLAGS_UHR_ELR_MCS) {
+		WARN_ONCE(rate->eht_gi != NL80211_RATE_INFO_UHR_GI_1_6,
+			  "bad UHR ELR guard interval %d\n",
+			  rate->eht_gi);
+		WARN_ONCE(rate->mcs > 1, "bad UHR ELR MCS %d\n", rate->mcs);
+		WARN_ONCE(rate->nss != 1, "bad UHR ELR NSS %d\n", rate->nss);
+		WARN_ONCE(rate->bw != RATE_INFO_BW_20,
+			  "bad UHR ELR bandwidth %d\n",
+			  rate->bw);
+		WARN_ONCE(rate->flags & RATE_INFO_FLAGS_UHR_IM,
+			  "bad UHR MCS flags 0x%x\n", rate->flags);
+		if (rate->mcs == 0)
+			return 17;
+		return 33;
+	}
+
+	switch (rate->mcs) {
+	case 0 ... 15:
+	case 17:
+	case 19:
+	case 20:
+	case 23:
+		return _cfg80211_calculate_bitrate_eht_uhr(rate);
+	}
+
+	WARN_ONCE(1, "bad UHR MCS %d\n", rate->mcs);
+	return 0;
 }
 
 static u32 cfg80211_calculate_bitrate_s1g(struct rate_info *rate)
@@ -1927,6 +1988,8 @@ u32 cfg80211_calculate_bitrate(struct rate_info *rate)
 		return cfg80211_calculate_bitrate_he(rate);
 	if (rate->flags & RATE_INFO_FLAGS_EHT_MCS)
 		return cfg80211_calculate_bitrate_eht(rate);
+	if (rate->flags & RATE_INFO_FLAGS_UHR_MCS)
+		return cfg80211_calculate_bitrate_uhr(rate);
 	if (rate->flags & RATE_INFO_FLAGS_S1G_MCS)
 		return cfg80211_calculate_bitrate_s1g(rate);
 
@@ -2473,238 +2536,25 @@ int cfg80211_validate_beacon_int(struct cfg80211_registered_device *rdev,
 	return 0;
 }
 
-static const struct ieee80211_iface_per_hw *
-cfg80211_get_hw_iface_comb_by_idx(struct wiphy *wiphy,
-				  const struct ieee80211_iface_combination *c,
-				  int idx)
+int cfg80211_get_hw_idx_by_chan(struct wiphy *wiphy,
+				const struct ieee80211_channel *chan)
 {
- 	int i;
-
-  	for (i = 0; i < c->n_hw_list; i++)
-   		if (c->iface_hw_list[i].hw_chans_idx == idx)
-    			break;
-
-     	if (i == c->n_hw_list)
-      		return NULL;
-
-       	return &c->iface_hw_list[i];
-}
-
-static int
-cfg80211_validate_per_hw_iface_comb_limits(struct wiphy *wiphy,
-					   struct iface_combination_params *params,
-					   const struct ieee80211_iface_combination *c,
-					   int *num_per_hw_ifaces, u32 *all_iftypes)
-{
- 	struct ieee80211_iface_limit **limits;
-  	const struct ieee80211_iface_per_hw *per_hw_comb;
-   	int iftype_num[NUM_NL80211_IFTYPES] = { 0 };
-    	int *n_limits;
-     	int ret = 0;
-      	int i, j, iftype;
-
-       	limits = kzalloc(sizeof(*limits) * wiphy->num_hw, GFP_KERNEL);
-	if (!limits)
-	  	return -ENOMEM;
-
- 	n_limits = kzalloc(sizeof(*n_limits) * wiphy->num_hw, GFP_KERNEL);
-  	if (!n_limits) {
-   		kfree(limits);
-    		return -ENOMEM;
-     	}
-
-      	for (i = 0; i < wiphy->num_hw; i++) {
-       		per_hw_comb = cfg80211_get_hw_iface_comb_by_idx(wiphy, c, i);
-		if (!per_hw_comb) {
-	 		ret = -EINVAL;
-	  		goto out_free;
-	   	}
-
-	    	limits[i] = kmemdup(per_hw_comb->limits,
-	 			    per_hw_comb->n_limits *
-      				    sizeof(limits[i][0]), GFP_KERNEL);
-       		if (!limits[i]) {
-			ret = -ENOMEM;
-	 		goto out_free;
-	  	}
-
-	   	n_limits[i] = per_hw_comb->n_limits;
-	}
-
-	for (i = 0; i < wiphy->num_hw; i++) {
-	 	per_hw_comb = cfg80211_get_hw_iface_comb_by_idx(wiphy, c, i);
-	  	if (!per_hw_comb) {
-	   		ret = -EINVAL;
-	    		goto out_free;
-	     	}
-
-	      	if (num_per_hw_ifaces[i] > per_hw_comb->max_interfaces) {
-	       		ret = -EINVAL;
-			goto out_free;
-		}
-
- 		if (params->per_hw[i].num_different_channels >
-	      			per_hw_comb->num_different_channels) {
-	       		ret = -EINVAL;
-			goto out_free;
-		}
-
- 		for (iftype = 0; iftype < NUM_NL80211_IFTYPES; iftype++) {
-  			if (cfg80211_iftype_allowed(wiphy, iftype, 0, 1))
-   				continue;
-
-			for (j = 0; j < n_limits[i]; j++) {
-     				*all_iftypes |= limits[i][j].types;
-      				if (!(limits[i][j].types & BIT(iftype)))
-       					continue;
-				if (limits[i][j].max <
-		     				params->per_hw[i].iftype_num[iftype]) {
-		      			ret = -EINVAL;
-		       			goto out_free;
-				}
-
-			 	limits[i][j].max -=
-			  		params->per_hw[i].iftype_num[iftype];
-			}
-		}
-	}
-
-	memcpy(iftype_num, params->iftype_num, NUM_NL80211_IFTYPES);
-
- 	for (i = 0; i < wiphy->num_hw; i++) {
-
-  		u16 rem_iface;
-		per_hw_comb = cfg80211_get_hw_iface_comb_by_idx(wiphy, c, i);
-    		if (!per_hw_comb) {
-     			ret = -EINVAL;
-      			goto out_free;
-       		}
-
-		/*
-	 	 * we'll not be here in the first place if the numbre of per-hw
-	  	 * interfaces are more than the advertised ones. So it is safe
-	   	 * to ignore that error case here.
-      	   	 */
-       		rem_iface = per_hw_comb->max_interfaces - num_per_hw_ifaces[i];
-		if (!rem_iface)
-	 		continue;
-
-	  	/*
-	   	 * check if the interfaces which are not yet assigned the
-	    	 * operating channel can be accommodated with all the available
-	     	 * per-hw interface combination advertisements.
-	     	 */
-	   	for (iftype = 0; iftype < NUM_NL80211_IFTYPES; iftype++) {
-	    		if (cfg80211_iftype_allowed(wiphy, iftype, 0, 1))
-	     			continue;
-	      		if (!rem_iface)
-	       			break;
-			for (j = 0; j < n_limits[i]; j++) {
-		 		u16 num_avail;
-		  		if (!(limits[i][j].types & BIT(iftype)))
-		   			continue;
-		    		if (!rem_iface)
-		     			break;
-		      		num_avail = min(rem_iface, limits[i][j].max);
-		       		if (num_avail < iftype_num[iftype]) {
-					iftype_num[iftype] -= num_avail;
-			 		rem_iface -= num_avail;
-			  	} else {
-			   		rem_iface -= iftype_num[iftype];
-			    		iftype_num[iftype] = 0;
-			     	}
-			}
-		}
-	}
-
- 	for (iftype = 0; iftype < NUM_NL80211_IFTYPES; iftype++) {
-  		if (iftype_num[iftype]) {
-   			ret = -EINVAL;
-    			goto out_free;
-		}
-      	}
-
-out_free:
-  	for (i = 0; i < wiphy->num_hw; i++)
-		kfree(limits[i]);
-
-	kfree(n_limits);
-	kfree(limits);
-
-	return ret;
-}
-
-static int
-cfg80211_validate_iface_comb_limits(struct wiphy *wiphy,
-				    struct iface_combination_params *params,
-				    const struct ieee80211_iface_combination *c,
-				    int num_interfaces, u32 *all_iftypes)
-{
- 	struct ieee80211_iface_limit *limits;
-  	int j, iftype;
-   	int ret = 0;
-
-    	if (num_interfaces > c->max_interfaces)
-     		return -EINVAL;
-      	if (params->num_different_channels > c->num_different_channels)
-       		return -EINVAL;
-
-	limits = kmemdup(c->limits, sizeof(limits[0]) * c->n_limits,
-	 		GFP_KERNEL);
-	if (!limits)
-	 	return -ENOMEM;
-
- 	for (iftype = 0; iftype < NUM_NL80211_IFTYPES; iftype++) {
-  		if (cfg80211_iftype_allowed(wiphy, iftype, 0, 1))
-   			continue;
-    		for (j = 0; j < c->n_limits; j++) {
-     			*all_iftypes |= limits[j].types;
-      			if (!(limits[j].types & BIT(iftype)))
-       				continue;
-			if (limits[j].max < params->iftype_num[iftype]) {
-	 			ret = -EINVAL;
-	  			goto out_free;
-	   		}
-	    		limits[j].max -= params->iftype_num[iftype];
-	     	}
-	}
-out_free:
- 	kfree(limits);
-  	return ret;
-}
-
-bool cfg80211_per_hw_iface_comb_advertised(struct wiphy *wiphy)
-{
- 	int i;
-
-  	for (i = 0; i < wiphy->n_iface_combinations; i++) {
-   		const struct ieee80211_iface_combination *c;
-    		c = &wiphy->iface_combinations[i];
-     		if (c->n_hw_list)
-      			return true;
-       	}
-	return false;
-}
-EXPORT_SYMBOL(cfg80211_per_hw_iface_comb_advertised);
-
-int
-cfg80211_get_hw_idx_by_chan(struct wiphy *wiphy,
-			    const struct ieee80211_channel *chan)
-{
+	int i, j;
 	const struct wiphy_radio_freq_range *freq_range;
- 	int i, j;
+	const struct wiphy_radio *radio;
 
-  	if (!chan)
-   		return -1;
+	if (!chan)
+		return -1;
 
 	for (i = 0; i < wiphy->n_radio; i++) {
-		freq_range = wiphy->radio[i].freq_range;
-		if (freq_range) {
-			for (j = 0; j < wiphy->radio[i].n_freq_range; j++) {
-				if (MHZ_TO_KHZ(chan->center_freq) >= freq_range[j].start_freq &&
-				    MHZ_TO_KHZ(chan->center_freq) <= freq_range[j].end_freq)
-					return i;
-			}
+		radio = &wiphy->radio[i];
+
+		for (j = 0; j < radio->n_freq_range; j++) {
+			freq_range = &radio->freq_range[j];
+
+			if (chan->center_freq >= KHZ_TO_MHZ(freq_range->start_freq) &&
+			    chan->center_freq <= KHZ_TO_MHZ(freq_range->end_freq))
+				return i;
 		}
 	}
 
@@ -2712,25 +2562,47 @@ cfg80211_get_hw_idx_by_chan(struct wiphy *wiphy,
 }
 EXPORT_SYMBOL(cfg80211_get_hw_idx_by_chan);
 
+int
+cfg80211_get_hw_idx_by_freq(struct wiphy *wiphy, int freq)
+{
+	int i, j;
+	const struct wiphy_radio_freq_range *freq_range;
+	const struct wiphy_radio *radio;
+
+	if (freq <= 0)
+		return -1;
+
+	for (i = 0; i < wiphy->n_radio; i++) {
+		radio = &wiphy->radio[i];
+
+		for (j = 0; j < radio->n_freq_range; j++) {
+			freq_range = &radio->freq_range[j];
+
+			if (freq >= freq_range->start_freq &&
+			    freq <= freq_range->end_freq)
+				return i;
+		}
+	}
+
+	return -1;
+}
+EXPORT_SYMBOL(cfg80211_get_hw_idx_by_freq);
+
 int cfg80211_iter_combinations(struct wiphy *wiphy,
-			       struct iface_combination_params *params,
-			       void (*iter)(const struct ieee80211_iface_combination *c,
-					    void *data, int hw_chan_idx),
+		struct iface_combination_params *params,
+		void (*iter)(const struct ieee80211_iface_combination *c,
+					    void *data),
 			       void *data)
 {
 	const struct wiphy_radio *radio = NULL;
 	const struct ieee80211_iface_combination *c, *cs;
 	const struct ieee80211_regdomain *regdom;
 	enum nl80211_dfs_regions region = 0;
-	int i, n, iftype;
+	int i, j, n, iftype;
 	int num_interfaces = 0;
-	int *num_per_hw_ifaces = NULL;
 	u32 used_iftypes = 0;
 	u32 beacon_int_gcd;
 	bool beacon_int_different;
-	bool per_hw_iface_comb_used;
-	int hw_chan_idx = -1;
-	int ret = 0;
 
 	if (params->radio_idx >= 0)
 		radio = &wiphy->radio[params->radio_idx];
@@ -2757,37 +2629,11 @@ int cfg80211_iter_combinations(struct wiphy *wiphy,
 		rcu_read_unlock();
 	}
 
- 	per_hw_iface_comb_used = cfg80211_per_hw_iface_comb_advertised(wiphy);
-  	if (per_hw_iface_comb_used) {
-   		num_per_hw_ifaces = kzalloc(sizeof(*num_per_hw_ifaces) *
-					    wiphy->num_hw, GFP_KERNEL);
- 		if (!num_per_hw_ifaces)
-  			return -ENOMEM;
-
-		if (cfg80211_chandef_valid(params->chandef))
-			hw_chan_idx = cfg80211_get_hw_idx_by_chan(wiphy,
-								  params->chandef->chan);
- 	}
-
 	for (iftype = 0; iftype < NUM_NL80211_IFTYPES; iftype++) {
 		num_interfaces += params->iftype_num[iftype];
 		if (params->iftype_num[iftype] > 0 &&
 		    !cfg80211_iftype_allowed(wiphy, iftype, 0, 1))
 			used_iftypes |= BIT(iftype);
-
-		if (!per_hw_iface_comb_used)
-		 	continue;
-
-		/* account per_hw interfaces, if advertised */
-		for (i = 0; i < wiphy->num_hw; i++) {
-			struct iface_comb_per_hw_params *per_hw;
-			per_hw  = &params->per_hw[i];
- 			num_per_hw_ifaces[i] += per_hw->iftype_num[iftype];
-
- 			if (per_hw->iftype_num[iftype] > 0 &&
-			    !cfg80211_iftype_allowed(wiphy, iftype, 0, 1))
-				used_iftypes |= BIT(iftype);
-		}
 	}
 
 	if (radio) {
@@ -2798,32 +2644,44 @@ int cfg80211_iter_combinations(struct wiphy *wiphy,
 		n = wiphy->n_iface_combinations;
 	}
 	for (i = 0; i < n; i++) {
+		struct ieee80211_iface_limit *limits;
 		u32 all_iftypes = 0;
 
 		c = &cs[i];
- 		if (per_hw_iface_comb_used)
- 			ret = cfg80211_validate_per_hw_iface_comb_limits(wiphy,
-									 params, c,
-									 num_per_hw_ifaces,
-									 &all_iftypes);
- 		else
-			ret = cfg80211_validate_iface_comb_limits(wiphy, params,
-								  c,
-								  num_interfaces,
-								  &all_iftypes);
-		if (ret == -ENOMEM)
-			goto out_free;
-
-		if (ret)
+		if (num_interfaces > c->max_interfaces)
 			continue;
+		if (params->num_different_channels > c->num_different_channels)
+			continue;
+#if LINUX_VERSION_IS_GEQ(6, 9, 0)
+		limits = kmemdup_array(c->limits, c->n_limits, sizeof(*limits),
+				       GFP_KERNEL);
+#else
+		limits = kmemdup(c->limits, c->n_limits * sizeof(*limits),
+				 GFP_KERNEL);
+#endif
+		if (!limits)
+			return -ENOMEM;
+
+		for (iftype = 0; iftype < NUM_NL80211_IFTYPES; iftype++) {
+			if (cfg80211_iftype_allowed(wiphy, iftype, 0, 1))
+				continue;
+			for (j = 0; j < c->n_limits; j++) {
+				all_iftypes |= limits[j].types;
+				if (!(limits[j].types & BIT(iftype)))
+					continue;
+				if (limits[j].max < params->iftype_num[iftype])
+					goto cont;
+				limits[j].max -= params->iftype_num[iftype];
+			}
+		}
 
 		if (params->radar_detect !=
-		    (c->radar_detect_widths & params->radar_detect))
-			continue;
+			(c->radar_detect_widths & params->radar_detect))
+			goto cont;
 
 		if (params->radar_detect && c->radar_detect_regions &&
 		    !(c->radar_detect_regions & BIT(region)))
-			continue;
+			goto cont;
 
 		/* Finally check that all iftypes that we're currently
 		 * using are actually part of this combination. If they
@@ -2831,50 +2689,32 @@ int cfg80211_iter_combinations(struct wiphy *wiphy,
 		 * to continue to the next.
 		 */
 		if ((all_iftypes & used_iftypes) != used_iftypes)
-			continue;
+			goto cont;
 
 		if (beacon_int_gcd) {
 			if (c->beacon_int_min_gcd &&
 			    beacon_int_gcd < c->beacon_int_min_gcd)
-				continue;
+				goto cont;
 			if (!c->beacon_int_min_gcd && beacon_int_different)
-				continue;
+				goto cont;
 		}
 
 		/* This combination covered all interface types and
 		 * supported the requested numbers, so we're good.
 		 */
 
-		(*iter)(c, data, hw_chan_idx);
+		(*iter)(c, data);
+ cont:
+		kfree(limits);
 	}
 
-out_free:
-	kfree(num_per_hw_ifaces);
-	return ret;
+	return 0;
 }
 EXPORT_SYMBOL(cfg80211_iter_combinations);
 
-bool
-cfg80211_hw_chans_includes_dfs(const struct ieee80211_chans_per_hw *chans)
-{
- 	int i;
-
-  	for (i = 0; i < chans->n_chans; i++) {
-   		if (chans->chans[i].band == NL80211_BAND_5GHZ &&
-		   ((chans->chans[i].center_freq >= 5250 &&
-	      	     chans->chans[i].center_freq <= 5340) ||
-		    (chans->chans[i].center_freq >= 5480 &&
-	    	     chans->chans[i].center_freq <= 5720)))
- 			return true;
-  	}
-
-	return false;
-}
-EXPORT_SYMBOL(cfg80211_hw_chans_includes_dfs);
-
 static void
 cfg80211_iter_sum_ifcombs(const struct ieee80211_iface_combination *c,
-			  void *data, int hw_chan_idx)
+			  void *data)
 {
 	int *num = data;
 	(*num)++;
@@ -3258,7 +3098,7 @@ void cfg80211_remove_link(struct wireless_dev *wdev, unsigned int link_id)
 	}
 
 	rdev_del_intf_link(rdev, wdev, link_id);
-
+	cfg80211_clear_repurpose_link(wdev, link_id);
 	wdev->valid_links &= ~BIT(link_id);
 	eth_zero_addr(wdev->links[link_id].addr);
 }

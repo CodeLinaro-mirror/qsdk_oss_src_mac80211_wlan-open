@@ -4,6 +4,10 @@
 #include "../athdbg_if.h"
 #include "athdbg_core.h"
 #include "../qmi.h"
+#ifdef CONFIG_UPSTREAM_BUILD
+#include <linux/devcoredump.h>
+#include <linux/vmalloc.h>
+#endif
 
 extern struct ath_debug_base *athdbg_base;
 
@@ -18,18 +22,21 @@ struct athdbg_qmi_event_qdss_trace_save_data {
 	struct athdbg_qdss_trace_mem_seg mem_seg[QDSS_TRACE_SEG_LEN_MAX];
 };
 
-int athdbg_qmi_pci_alloc_qdss_mem(struct athdbg_qmi *dbg_qmi)
+int athdbg_qmi_alloc_qdss_mem(struct athdbg_qmi *dbg_qmi)
 {
-	struct ath12k_base *ab = dbg_qmi->ab;
+	struct ath12k_base *ab = container_of(dbg_qmi, struct ath12k_base, dbg_qmi);
 	struct reserved_mem *ddr_rmem = NULL;
+	const struct athdbg_to_ath12k_ops *dbg_to_ath_ops = athdbg_base->dbg_to_ath_ops;
+#ifdef CONFIG_UPSTREAM_BUILD
+	struct target_mem_chunk *chunk;
+#endif
 
-	if (athdbg_base->dbg_to_ath_ops) {
-		ddr_rmem =
-	       athdbg_base->dbg_to_ath_ops->get_reserved_mem_by_name(ab, "host-ddr-mem");
-		if (!ddr_rmem) {
-			pr_err("host-ddr-mem not available in dts\n");
-			return -ENODEV;
-		}
+	if (dbg_to_ath_ops && dbg_to_ath_ops->get_reserved_mem_by_name)
+		ddr_rmem = dbg_to_ath_ops->get_reserved_mem_by_name(ab, "host-ddr-mem");
+
+	if (!ddr_rmem) {
+		pr_err("host-ddr-mem not available in dts\n");
+		return -ENODEV;
 	}
 
 	if (ab->dbg_qmi.qdss_mem_seg_len > 1) {
@@ -40,7 +47,8 @@ int athdbg_qmi_pci_alloc_qdss_mem(struct athdbg_qmi *dbg_qmi)
 
 	switch (ab->dbg_qmi.qdss_mem[0].type) {
 	case QDSS_ETR_MEM_REGION_TYPE:
-		if (ab->dbg_qmi.qdss_mem[0].size > QMI_Q6_QDSS_ETR_SIZE_QCN9274 ||
+#ifndef CONFIG_UPSTREAM_BUILD
+		if (ab->dbg_qmi.qdss_mem[0].size > QMI_Q6_QDSS_ETR_SIZE ||
 		    ab->dbg_qmi.qdss_mem[0].size >
 		    ddr_rmem->size - ab->host_ddr_fixed_mem_off) {
 			pr_err("%s: FW requests more memory 0x%x\n",
@@ -48,24 +56,40 @@ int athdbg_qmi_pci_alloc_qdss_mem(struct athdbg_qmi *dbg_qmi)
 			return -ENOMEM;
 		}
 
+#ifdef PLATFORM_SDX85
+		ab->dbg_qmi.qdss_mem[0].v.ioaddr =
+			dma_alloc_attrs(ab->dev,
+					ab->dbg_qmi.qdss_mem[0].size,
+					&ab->dbg_qmi.qdss_mem[0].paddr,
+					GFP_KERNEL,
+					DMA_ATTR_FORCE_CONTIGUOUS);
+		if (!ab->dbg_qmi.qdss_mem[0].v.ioaddr) {
+			pr_err("WARNING: DMA allocation failed for QDSS ETR\n");
+			return -ENOMEM;
+		}
+#else
 		ab->dbg_qmi.qdss_mem[0].paddr =
 			ddr_rmem->base + ab->host_ddr_fixed_mem_off;
 
-#ifdef PLATFORM_SDX85
-		dma_alloc_attrs(ab->dev,
-				ab->dbg_qmi.qdss_mem[0].size,
-				&ab->dbg_qmi.qdss_mem[0].paddr,
-				GFP_KERNEL,
-				DMA_ATTR_FORCE_CONTIGUOUS);
-#else
 		ab->dbg_qmi.qdss_mem[0].v.ioaddr =
 			ioremap(ab->dbg_qmi.qdss_mem[0].paddr,
 				ab->dbg_qmi.qdss_mem[0].size);
-#endif
 		if (!ab->dbg_qmi.qdss_mem[0].v.ioaddr) {
 			pr_err("WARNING etr-addr remap failed\n");
 			return -ENOMEM;
 		}
+#endif
+#else
+		chunk = &ab->dbg_qmi.qdss_mem[0];
+		chunk->v.ioaddr = dma_alloc_coherent(ab->dev,
+						     chunk->size,
+						     &chunk->paddr,
+						     GFP_KERNEL | __GFP_NOWARN);
+		if (!chunk->v.ioaddr) {
+			pr_err("Unable to allocate QDSS memory\n");
+			return -ENOMEM;
+		}
+#endif
 		break;
 	default:
 		pr_err("qmi ignore invalid qdss mem req type %d\n",
@@ -78,61 +102,30 @@ int athdbg_qmi_pci_alloc_qdss_mem(struct athdbg_qmi *dbg_qmi)
 
 int athdbg_qmi_qdss_mem_alloc(struct athdbg_qmi *dbg_qmi)
 {
-	int i, ret = 0;
-	struct ath12k_base *ab = dbg_qmi->ab;
-	struct reserved_mem *rmem = NULL;
+	struct ath12k_base *ab = container_of(dbg_qmi, struct ath12k_base, dbg_qmi);
+	int ret = 0;
 
 	switch (ab->hif.bus) {
 	case ATH12K_BUS_AHB:
+#ifndef CONFIG_UPSTREAM_BUILD
 	case ATH12K_BUS_HYBRID:
-		if (athdbg_base->dbg_to_ath_ops) {
-			rmem =
-		athdbg_base->dbg_to_ath_ops->get_reserved_mem_by_name(ab, "q6-etr-dump");
-			if (!rmem) {
-				pr_err("No q6_etr_dump available in dts\n");
-				return -ENOMEM;
-			}
-		}
-		for (i = 0; i < ab->dbg_qmi.qdss_mem_seg_len; i++) {
-			ab->dbg_qmi.qdss_mem[i].paddr = rmem->base;
-			ab->dbg_qmi.qdss_mem[i].size = rmem->size;
-			ab->dbg_qmi.qdss_mem[i].type = QDSS_ETR_MEM_REGION_TYPE;
-#ifdef PLATFORM_SDX85
-			dma_alloc_attrs(ab->dev,
-					ab->dbg_qmi.qdss_mem[0].size,
-					&ab->dbg_qmi.qdss_mem[0].paddr,
-					GFP_KERNEL,
-					DMA_ATTR_FORCE_CONTIGUOUS);
-#else
-			ab->dbg_qmi.qdss_mem[i].v.ioaddr =
-				ioremap(ab->dbg_qmi.qdss_mem[i].paddr,
-					ab->dbg_qmi.qdss_mem[i].size);
 #endif
-			if (!ab->dbg_qmi.qdss_mem[i].v.ioaddr) {
-				pr_err("Error: etr-addr remap failed\n");
-				return -ENOMEM;
-			}
-			pr_info("QDSS mem addr pa 0x%x va 0x%p, size 0x%x",
-					(unsigned int)ab->dbg_qmi.qdss_mem[i].paddr,
-					ab->dbg_qmi.qdss_mem[i].v.ioaddr,
-					(unsigned int)ab->dbg_qmi.qdss_mem[i].size);
-		}
-		break;
 	case ATH12K_BUS_PCI:
-		ret = athdbg_qmi_pci_alloc_qdss_mem(dbg_qmi);
+		ret = athdbg_qmi_alloc_qdss_mem(dbg_qmi);
 		break;
 	default:
 		pr_err("invalid bus type: %d", ab->hif.bus);
 		ret = -EINVAL;
 		break;
 	}
+
 	return ret;
 }
 
 void athdbg_qmi_event_qdss_trace_req_mem_hdlr(struct athdbg_qmi *dbg_qmi)
 {
 	int ret;
-	struct ath12k_base *ab = dbg_qmi->ab;
+	struct ath12k_base *ab = container_of(dbg_qmi, struct ath12k_base, dbg_qmi);
 
 	ret = athdbg_qmi_qdss_mem_alloc(dbg_qmi);
 	if (ret < 0) {
@@ -140,10 +133,10 @@ void athdbg_qmi_event_qdss_trace_req_mem_hdlr(struct athdbg_qmi *dbg_qmi)
 		return;
 	}
 
-	ret = athdbg_qmi_qdss_trace_mem_info_send_sync(dbg_qmi->ab);
+	ret = athdbg_qmi_qdss_trace_mem_info_send_sync(ab);
 	if (ret < 0) {
 		pr_err("qdss trace mem info send sync failed:%d\n", ret);
-		athdbg_qmi_qdss_mem_free(dbg_qmi);
+		athdbg_qmi_qdss_mem_free(ab);
 		return;
 	}
 	/* After qdss_trace_mem_info(QMI_WLFW_QDSS_TRACE_MEM_INFO_REQ_V01),
@@ -152,11 +145,10 @@ void athdbg_qmi_event_qdss_trace_req_mem_hdlr(struct athdbg_qmi *dbg_qmi)
 	 * before that.
 	 */
 	msleep(1000);
-	ret = athdbg_send_qdss_trace_mode_req(dbg_qmi->ab,
-			QMI_WLANFW_QDSS_TRACE_ON_V01, 0);
+	ret = athdbg_send_qdss_trace_mode_req(ab, QMI_WLANFW_QDSS_TRACE_ON_V01, 0);
 	if (ret < 0) {
 		pr_err("Failed to enable QDSS trace: %d\n", ret);
-		athdbg_qmi_qdss_mem_free(dbg_qmi);
+		athdbg_qmi_qdss_mem_free(ab);
 		return;
 	}
 	ab->is_qdss_tracing = true;
@@ -320,7 +312,6 @@ void athdbg_coredump_qdss_dump(struct ath12k_base *ab,
 		segment->len = event_data->mem_seg[0].size;
 		segment->vaddr = ab->dbg_qmi.qdss_mem[0].v.ioaddr;
 		pr_err("seg vaddr is 0x%p len is 0x%x\n", segment->vaddr, segment->len);
-		segment->type = FW_CRASH_DUMP_QDSS_DATA;
 	} else if (num_seg == 2) {
 		/*FW sends 2 segments with segment 0 and segment 1 */
 		if (event_data->mem_seg[1].addr != ab->dbg_qmi.qdss_mem[0].paddr) {
@@ -352,9 +343,19 @@ void athdbg_coredump_qdss_dump(struct ath12k_base *ab,
 		segment->vaddr = dump;
 		pr_err("seg vaddr is 0x%p and len is 0x%x\n", segment->vaddr,
 				segment->len);
-		segment->type = FW_CRASH_DUMP_QDSS_DATA;
 	}
+
+#ifndef CONFIG_UPSTREAM_BUILD
+	segment->type = FW_CRASH_DUMP_QDSS_DATA;
 	athdbg_base->dbg_to_ath_ops->coredump_dump_segment(ab, segment, segment->len);
+#else
+	/* dev_coredumpv() takes ownership of the buffer */
+	dev_coredumpv(ab->dev, segment->vaddr, segment->len, GFP_KERNEL);
+	/* Only free segment structure, NOT the dump buffer */
+	vfree(segment);
+	return;
+#endif
+
 out:
 	vfree(segment);
 	vfree(dump);

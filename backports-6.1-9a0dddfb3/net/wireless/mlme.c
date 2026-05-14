@@ -21,6 +21,25 @@
 #include "rdev-ops.h"
 
 
+#ifdef CPTCFG_QCA_LAB_TEST_FEATURES
+static unsigned int cfg80211_dfs_nol_time;
+module_param_named(dfs_nol_timeout, cfg80211_dfs_nol_time, uint, 0644);
+MODULE_PARM_DESC(dfs_nol_timeout,
+		 "DFS NOL timeout in seconds (0 uses default 30 minutes)");
+
+static unsigned long cfg80211_get_nol_time(unsigned long default_time)
+{
+	u64 nol_time;
+
+	if (!cfg80211_dfs_nol_time)
+		return default_time;
+
+	nol_time = (u64)cfg80211_dfs_nol_time * MSEC_PER_SEC;
+
+	return (unsigned long)min_t(u64, nol_time, U32_MAX);
+}
+#endif
+
 void cfg80211_rx_assoc_resp(struct net_device *dev,
 			    const struct cfg80211_rx_assoc_resp_data *data)
 {
@@ -995,6 +1014,18 @@ bool cfg80211_rx_mgmt_ext(struct wireless_dev *wdev,
 }
 EXPORT_SYMBOL(cfg80211_rx_mgmt_ext);
 
+/**
+ * cfg80211_schedule_dfs_chan_update() - Schedule DFS channel state updates
+ * @wiphy: Wiphy whose DFS channels should be refreshed
+ *
+ * Return: None.
+ */
+void cfg80211_schedule_dfs_chan_update(struct wiphy *wiphy)
+{
+	cfg80211_sched_dfs_chan_update(wiphy_to_rdev(wiphy));
+}
+EXPORT_SYMBOL(cfg80211_schedule_dfs_chan_update);
+
 void cfg80211_sched_dfs_chan_update(struct cfg80211_registered_device *rdev)
 {
 	cancel_delayed_work(&rdev->dfs_update_channels_wk);
@@ -1037,6 +1068,9 @@ void cfg80211_dfs_channels_update_work(struct work_struct *work)
 
 			if (c->dfs_state == NL80211_DFS_UNAVAILABLE) {
 				time_dfs_update = IEEE80211_DFS_MIN_NOP_TIME_MS;
+#ifdef CPTCFG_QCA_LAB_TEST_FEATURES
+				time_dfs_update = cfg80211_get_nol_time(time_dfs_update);
+#endif
 				radar_event = NL80211_RADAR_NOP_FINISHED;
 			} else {
 				if (regulatory_pre_cac_allowed(wiphy) ||
@@ -1197,14 +1231,6 @@ void cfg80211_awgn_event(struct wiphy *wiphy, struct cfg80211_chan_def *chandef,
 	nl80211_awgn_notify(rdev, chandef, NULL, gfp, chan_bw_interference_bitmap);
 }
 EXPORT_SYMBOL(cfg80211_awgn_event);
-
-void cfg80211_cw_event(struct wiphy *wiphy, struct cfg80211_chan_def *chandef, gfp_t gfp)
-{
-	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wiphy);
-
-	nl80211_cw_notify(rdev, chandef, NULL, gfp);
-}
-EXPORT_SYMBOL(cfg80211_cw_event);
 
 void cfg80211_cac_event(struct net_device *netdev,
 			const struct cfg80211_chan_def *chandef,

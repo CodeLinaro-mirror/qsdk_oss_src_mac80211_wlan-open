@@ -61,6 +61,12 @@ struct  sawf_param {
 		valid_flag;
 };
 
+struct ath_dp_ast_param {
+	u16 ast_info;
+	u16 hw_peer_id;
+	bool valid;
+};
+
 /**
  * struct ath_dp_metadata_param - wifi classifier metadata
  * @mlo_param: mlo metadata info
@@ -74,6 +80,7 @@ struct	ath_dp_metadata_param {
 		reserved:5;
 	struct	mlo_param	mlo_param;
 	struct	sawf_param	sawf_param;
+	struct	ath_dp_ast_param ast_param;
 };
 
 struct ath_ul_params {

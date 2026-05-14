@@ -38,6 +38,34 @@ module_param_named(cold_boot_cal, ath12k_cold_boot_cal, bool, 0644);
 MODULE_PARM_DESC(cold_boot_cal,
 		 "Decrease the channel switch time but increase the driver load time (Default: true)");
 
+static struct qmi_elem_info wlfw_host_ddr_range_s_v01_ei[] = {
+	{
+		.data_type      = QMI_UNSIGNED_8_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u64),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x00,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_host_ddr_range,
+					   start),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_8_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u64),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x00,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_host_ddr_range,
+					   size),
+	},
+	{
+		.data_type      = QMI_EOTI,
+		.array_type     = NO_ARRAY,
+		.tlv_type       = QMI_COMMON_TLV_TYPE,
+	},
+};
+
 static const struct qmi_elem_info wlfw_host_mlo_chip_info_s_v01_ei[] = {
 	{
 		.data_type      = QMI_UNSIGNED_1_BYTE,
@@ -423,6 +451,7 @@ static const struct qmi_elem_info qmi_wlanfw_host_cap_req_msg_v01_ei[] = {
 		.tlv_type	= 0x1F,
 		.offset		= offsetof(struct qmi_wlanfw_host_cap_req_msg_v01,
 					   ddr_range),
+		.ei_array      = wlfw_host_ddr_range_s_v01_ei,
 	},
 	{
 		.data_type	= QMI_OPT_FLAG,
@@ -605,6 +634,24 @@ static const struct qmi_elem_info qmi_wlanfw_host_cap_req_msg_v01_ei[] = {
 		.offset         = offsetof(struct qmi_wlanfw_host_cap_req_msg_v01,
 							mlo_chip_info_v2),
 		.ei_array      = wlfw_host_mlo_chip_info_s_v02_ei,
+	},
+	{
+		.data_type	= QMI_OPT_FLAG,
+		.elem_len	= 1,
+		.elem_size	= sizeof(u8),
+		.array_type	= NO_ARRAY,
+		.tlv_type	= 0x33,
+		.offset		= offsetof(struct qmi_wlanfw_host_cap_req_msg_v01,
+					   dynamic_mem_support_valid),
+	},
+	{
+		.data_type	= QMI_UNSIGNED_1_BYTE,
+		.elem_len	= 1,
+		.elem_size	= sizeof(u8),
+		.array_type	= NO_ARRAY,
+		.tlv_type	= 0x33,
+		.offset		= offsetof(struct qmi_wlanfw_host_cap_req_msg_v01,
+					   dynamic_mem_support),
 	},
 	{
 		.data_type	= QMI_EOTI,
@@ -886,6 +933,60 @@ static const struct qmi_elem_info qmi_wlanfw_phy_cap_resp_msg_v01_ei[] = {
 					mm_coldboot_cal),
 	},
 	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x15,
+		.offset         = offsetof(struct qmi_wlanfw_phy_cap_resp_msg_v01,
+					   aux_support_valid),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_1_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x15,
+		.offset         = offsetof(struct qmi_wlanfw_phy_cap_resp_msg_v01,
+					   aux_support),
+	},
+	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x16,
+		.offset         = offsetof(struct qmi_wlanfw_phy_cap_resp_msg_v01,
+					   mcss_support_valid),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_1_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x16,
+		.offset         = offsetof(struct qmi_wlanfw_phy_cap_resp_msg_v01,
+					   mcss_support),
+	},
+	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x17,
+		.offset         = offsetof(struct qmi_wlanfw_phy_cap_resp_msg_v01,
+					   dynamic_ddr_support_valid),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_1_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x17,
+		.offset         = offsetof(struct qmi_wlanfw_phy_cap_resp_msg_v01,
+					   dynamic_ddr_support),
+	},
+	{
 		.data_type	= QMI_EOTI,
 		.array_type	= NO_ARRAY,
 		.tlv_type	= QMI_COMMON_TLV_TYPE,
@@ -1163,6 +1264,24 @@ static const struct qmi_elem_info qmi_wlanfw_ind_register_req_msg_v01_ei[] = {
 		.tlv_type       = 0x20,
 		.offset         = offsetof(struct qmi_wlanfw_ind_register_req_msg_v01,
 					   m3_dump_upload_req_enable),
+	},
+	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x26,
+		.offset         = offsetof(struct qmi_wlanfw_ind_register_req_msg_v01,
+					   ddr_dump_region_enable_valid),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_1_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x26,
+		.offset         = offsetof(struct qmi_wlanfw_ind_register_req_msg_v01,
+					   ddr_dump_region_enable),
 	},
 	{
 		.data_type	= QMI_EOTI,
@@ -1800,6 +1919,42 @@ static const struct qmi_elem_info qmi_wlanfw_cap_resp_msg_v01_ei[] = {
 					   rxgainlut_support),
 	},
 	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x2B,
+		.offset         = offsetof(struct qmi_wlanfw_cap_resp_msg_v01,
+					   ext_fw_bin_download_support_valid),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_1_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x2B,
+		.offset         = offsetof(struct qmi_wlanfw_cap_resp_msg_v01,
+					   ext_fw_bin_download_support),
+	},
+	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x2C,
+		.offset         = offsetof(struct qmi_wlanfw_cap_resp_msg_v01,
+					   ext_fw_bin_download_bitmap_valid),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_4_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u32),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x2C,
+		.offset         = offsetof(struct qmi_wlanfw_cap_resp_msg_v01,
+					   ext_fw_bin_download_bitmap),
+	},
+	{
 		.data_type	= QMI_EOTI,
 		.array_type	= NO_ARRAY,
 		.tlv_type	= QMI_COMMON_TLV_TYPE,
@@ -2332,6 +2487,62 @@ static const struct qmi_elem_info qmi_wlanfw_wlan_cfg_req_msg_v01_ei[] = {
 		.ei_array	= qmi_wlanfw_shadow_reg_v3_cfg_s_v01_ei,
 	},
 	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x1A,
+		.offset         = offsetof(struct qmi_wlanfw_wlan_cfg_req_msg_v01,
+					   ext_tgt_cfg_valid),
+	},
+	{
+		.data_type      = QMI_DATA_LEN,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x1A,
+		.offset         = offsetof(struct qmi_wlanfw_wlan_cfg_req_msg_v01,
+					   ext_tgt_cfg_len),
+	},
+	{
+		.data_type      = QMI_STRUCT,
+		.elem_len       = QMI_WLANFW_MAX_EXT_NUM_CE_V01,
+		.elem_size      = sizeof(struct qmi_wlanfw_ce_tgt_pipe_cfg_s_v01),
+		.array_type       = VAR_LEN_ARRAY,
+		.tlv_type       = 0x1A,
+		.offset         = offsetof(struct qmi_wlanfw_wlan_cfg_req_msg_v01,
+					   ext_tgt_cfg),
+		.ei_array      = qmi_wlanfw_ce_tgt_pipe_cfg_s_v01_ei,
+	},
+	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x1B,
+		.offset         = offsetof(struct qmi_wlanfw_wlan_cfg_req_msg_v01,
+					   ext_svc_cfg_valid),
+	},
+	{
+		.data_type      = QMI_DATA_LEN,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x1B,
+		.offset         = offsetof(struct qmi_wlanfw_wlan_cfg_req_msg_v01,
+					   ext_svc_cfg_len),
+	},
+	{
+		.data_type      = QMI_STRUCT,
+		.elem_len       = QMI_WLANFW_MAX_EXT_NUM_SVC_V01,
+		.elem_size      = sizeof(struct qmi_wlanfw_ce_svc_pipe_cfg_s_v01),
+		.array_type       = VAR_LEN_ARRAY,
+		.tlv_type       = 0x1B,
+		.offset         = offsetof(struct qmi_wlanfw_wlan_cfg_req_msg_v01,
+					   ext_svc_cfg),
+		.ei_array      = qmi_wlanfw_ce_svc_pipe_cfg_s_v01_ei,
+	},
+	{
 		.data_type	= QMI_EOTI,
 		.array_type	= NO_ARRAY,
 		.tlv_type	= QMI_COMMON_TLV_TYPE,
@@ -2689,6 +2900,112 @@ struct qmi_elem_info qmi_wlanfw_mem_write_resp_msg_v01_ei[] = {
 	},
 };
 
+static struct qmi_elem_info qmi_wlanfw_ext_fw_bin_mem_info_s_v01_ei[] = {
+	{
+		.data_type      = QMI_SIGNED_4_BYTE_ENUM,
+		.elem_len       = 1,
+		.elem_size      = sizeof(enum qmi_wlanfw_ext_fw_bin_type_enum_v01),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_ext_fw_bin_mem_info_s_v01,
+					   type),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_8_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u64),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_ext_fw_bin_mem_info_s_v01,
+					   addr),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_4_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u32),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_ext_fw_bin_mem_info_s_v01,
+					   size),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_4_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u32),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_ext_fw_bin_mem_info_s_v01,
+					   reserved1),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_4_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u32),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_ext_fw_bin_mem_info_s_v01,
+					   reserved2),
+	},
+	{
+		.data_type      = QMI_EOTI,
+		.array_type       = NO_ARRAY,
+		.tlv_type       = QMI_COMMON_TLV_TYPE,
+	},
+};
+
+struct qmi_elem_info qmi_wlanfw_ext_fw_bin_download_req_msg_v01_ei[] = {
+	{
+		.data_type      = QMI_DATA_LEN,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x01,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_ext_fw_bin_download_req_msg_v01,
+					   ext_bin_mem_info_len),
+	},
+	{
+		.data_type      = QMI_STRUCT,
+		.elem_len       = QMI_WLANFW_MAX_NUM_EXT_FW_BIN_DOWNLOAD_V01,
+		.elem_size      = sizeof(struct qmi_wlanfw_ext_fw_bin_mem_info_s_v01),
+		.array_type       = VAR_LEN_ARRAY,
+		.tlv_type       = 0x01,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_ext_fw_bin_download_req_msg_v01,
+					   ext_bin_mem_info),
+		.ei_array      = qmi_wlanfw_ext_fw_bin_mem_info_s_v01_ei,
+	},
+	{
+		.data_type      = QMI_EOTI,
+		.array_type       = NO_ARRAY,
+		.tlv_type       = QMI_COMMON_TLV_TYPE,
+	},
+};
+
+struct qmi_elem_info qmi_wlanfw_ext_fw_bin_download_resp_msg_v01_ei[] = {
+	{
+		.data_type      = QMI_STRUCT,
+		.elem_len       = 1,
+		.elem_size      = sizeof(struct qmi_response_type_v01),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x02,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_ext_fw_bin_download_resp_msg_v01,
+					   resp),
+		.ei_array      = qmi_response_type_v01_ei,
+	},
+	{
+		.data_type      = QMI_EOTI,
+		.array_type       = NO_ARRAY,
+		.tlv_type       = QMI_COMMON_TLV_TYPE,
+	},
+};
+
 struct qmi_elem_info qmi_wlanfw_chip_state_info_req_msg_v01_ei[] = {
 	{
 		.data_type      = QMI_OPT_FLAG,
@@ -2910,7 +3227,9 @@ out:
 
 static inline bool ath12k_cold_boot_cal_needed(struct ath12k_base *ab)
 {
-	return (!ab->early_cal_support && ab->hw_params->cold_boot_calib && ath12k_cold_boot_cal && ab->qmi.cal_done == 0);
+	return (!ath12k_waltest_mode && !ab->early_cal_support &&
+		ab->hw_params->cold_boot_calib && ath12k_cold_boot_cal &&
+		ab->qmi.cal_done == 0);
 }
 
 struct qmi_elem_info qmi_wlanfw_mlo_reconfig_info_req_msg_v01_ei[] = {
@@ -3142,14 +3461,14 @@ static int ath12k_qmi_fill_adj_info(struct ath12k_base *ab,
 		adj_info->chip_id = adjacent_ab->device_id;
 		adj_info->num_local_links = adjacent_ab->qmi.num_radios;
 
-		ath12k_dbg(ab, ATH12K_DBG_QMI, "MLO adj chip id %d num_link %d\n",
+		ath12k_dbg(ab, ATH12K_DBG_QMI | ATH12K_DBG_MLO, "MLO adj chip id %d num_link %d\n",
 			   adjacent_ab->device_id, adj_info->num_local_links);
 
 		for (adj_index = 0; adj_index < adj_info->num_local_links; adj_index++) {
 			adj_info->hw_link_id[adj_index] = adj_wsi_info->hw_link_id_base + adj_index;
 			adj_info->valid_mlo_link_id[adj_index] = true;
 
-			ath12k_dbg(ab, ATH12K_DBG_QMI, "MLO adj chip link id %d\n",
+			ath12k_dbg(ab, ATH12K_DBG_QMI | ATH12K_DBG_MLO, "MLO adj chip link id %d\n",
 				   adj_info->hw_link_id[adj_index]);
 
 		}
@@ -3169,7 +3488,7 @@ static int ath12k_host_cap_parse_mlo(struct ath12k_base *ab,
 	int i, j, ret;
 
 	if (!ag->mlo_capable) {
-		ath12k_dbg(ab, ATH12K_DBG_QMI,
+		ath12k_dbg(ab, ATH12K_DBG_QMI | ATH12K_DBG_MLO,
 			   "MLO is disabled hence skip QMI MLO cap");
 		return 0;
 	}
@@ -3177,14 +3496,15 @@ static int ath12k_host_cap_parse_mlo(struct ath12k_base *ab,
 	wsi_info = ath12k_core_get_current_wsi_info(ab);
 	if (ath12k_cold_boot_cal_needed(ab) && !ab->mm_cal_support &&
             ab->qmi.cal_timeout == 0) {
-                ath12k_dbg(ab, ATH12K_DBG_QMI, "Skip MLO cap send for device id %d since it's in cold_boot\n",
-                                ab->device_id);
+		ath12k_dbg(ab, ATH12K_DBG_QMI | ATH12K_DBG_MLO,
+			   "Skip MLO cap send for device id %d since it's in cold_boot\n",
+			   ab->device_id);
                 return 0;
         }
 
 	if (!ab->qmi.num_radios || ab->qmi.num_radios == U8_MAX) {
 		ag->mlo_capable = false;
-		ath12k_dbg(ab, ATH12K_DBG_QMI,
+		ath12k_dbg(ab, ATH12K_DBG_QMI | ATH12K_DBG_MLO,
 			   "skip QMI MLO cap due to invalid num_radio %d\n",
 			   ab->qmi.num_radios);
 		return 0;
@@ -3209,7 +3529,8 @@ static int ath12k_host_cap_parse_mlo(struct ath12k_base *ab,
 	req->mlo_num_chips_valid = 1;
 	req->mlo_num_chips = ag->num_devices;
 
-	ath12k_dbg(ab, ATH12K_DBG_QMI, "mlo capability advertisement device_id %d group_id %d num_devices %d",
+	ath12k_dbg(ab, ATH12K_DBG_QMI | ATH12K_DBG_MLO,
+		   "mlo capability advertisement device_id %d group_id %d num_devices %d",
 		   req->mlo_chip_id, req->mlo_group_id, req->mlo_num_chips);
 
 	mutex_lock(&ag->mutex);
@@ -3233,7 +3554,7 @@ static int ath12k_host_cap_parse_mlo(struct ath12k_base *ab,
 		info->mlo_chip_info.num_local_links = partner_ab->qmi.num_radios;
 		info->num_adj_chips = wsi_info->num_adj_chips;
 
-		ath12k_dbg(ab, ATH12K_DBG_QMI, "mlo device id %d num_link %d\n",
+		ath12k_dbg(ab, ATH12K_DBG_QMI | ATH12K_DBG_MLO, "mlo device id %d num_link %d\n",
 			   info->mlo_chip_info.chip_id,
 			   info->mlo_chip_info.num_local_links);
 
@@ -3241,7 +3562,7 @@ static int ath12k_host_cap_parse_mlo(struct ath12k_base *ab,
 			info->mlo_chip_info.hw_link_id[j] = adj_wsi_info->hw_link_id_base + j;
 			info->mlo_chip_info.valid_mlo_link_id[j] = 1; //true
 
-			ath12k_dbg(ab, ATH12K_DBG_QMI, "mlo hw_link_id %d\n",
+			ath12k_dbg(ab, ATH12K_DBG_QMI | ATH12K_DBG_MLO, "mlo hw_link_id %d\n",
 				   info->mlo_chip_info.hw_link_id[j]);
 
 			hw_link_id++;
@@ -3300,6 +3621,7 @@ int ath12k_qmi_host_cap_send(struct ath12k_base *ab)
 	int ret = 0;
 	struct device_node *root;
 	const char *model = NULL;
+	u64 iova_start = 0, iova_size = 0;
 
 	req.num_clients_valid = 1;
 	req.num_clients = 1;
@@ -3331,6 +3653,14 @@ int ath12k_qmi_host_cap_send(struct ath12k_base *ab)
                         of_node_put(root);
                 }
         }
+
+	if (!ath12k_hif_get_iova(ab, &iova_start, &iova_size)) {
+		req.ddr_range_valid = 1;
+		req.ddr_range[0].start = iova_start;
+		req.ddr_range[0].size = iova_size;
+		ath12k_info(ab, "Sending iova starting 0x%llx with size 0x%llx\n",
+			    req.ddr_range[0].start, req.ddr_range[0].size);
+	}
 
 	if (ab->hw_params->qmi_cnss_feature_bitmap) {
 		req.feature_list_valid = 1;
@@ -3367,6 +3697,11 @@ int ath12k_qmi_host_cap_send(struct ath12k_base *ab)
 	ret = ath12k_host_cap_parse_mlo(ab, &req);
 	if (ret < 0)
 		goto out;
+
+	if (ab->qmi.dynamic_ddr_support) {
+		req.dynamic_mem_support_valid = 1;
+		req.dynamic_mem_support = 1;
+	}
 
 	ret = qmi_txn_init(&ab->qmi.handle, &txn,
 			   qmi_wlanfw_host_cap_resp_msg_v01_ei, &resp);
@@ -3410,7 +3745,7 @@ static int ath12k_qmi_mlo_reconfig_send(struct ath12k_base *ab)
 	int i, j, k = 0, ret;
 
 	if (!ag->mlo_capable) {
-		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS,
+		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS | ATH12K_DBG_MLO,
 			   "MLO is disabled hence skip QMI MLO Reconfig");
 		return 0;
 	}
@@ -3418,14 +3753,15 @@ static int ath12k_qmi_mlo_reconfig_send(struct ath12k_base *ab)
 	wsi_info = ath12k_core_get_current_wsi_info(ab);
 	if (ath12k_cold_boot_cal_needed(ab) && !ab->mm_cal_support &&
 	    ab->qmi.cal_timeout == 0) {
-		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS, "Skip MLO Reconfig send for device id %d since it's in cold_boot\n",
+		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS | ATH12K_DBG_MLO,
+			   "Skip MLO Reconfig send for device id %d since it's in cold_boot\n",
 			   ab->device_id);
 		return 0;
 	}
 
 	if (!ab->qmi.num_radios || ab->qmi.num_radios == U8_MAX) {
 		ag->mlo_capable = false;
-		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS,
+		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS | ATH12K_DBG_MLO,
 			   "skip QMI MLO Reconfi due to invalid num_radio %d\n",
 			   ab->qmi.num_radios);
 		return 0;
@@ -3452,7 +3788,8 @@ static int ath12k_qmi_mlo_reconfig_send(struct ath12k_base *ab)
 	req.mlo_num_chips = ag->num_devices - ag->num_bypassed;
 	req.mlo_chip_info_valid = 0;
 
-	ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS, "mlo reconfig device_id %d group_id %d num_devices %d",
+	ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS | ATH12K_DBG_MLO,
+		   "mlo reconfig device_id %d group_id %d num_devices %d",
 		   req.mlo_chip_id, req.mlo_group_id, req.mlo_num_chips);
 
 	if (!ag->hw_link_id_init_done)
@@ -3474,7 +3811,7 @@ static int ath12k_qmi_mlo_reconfig_send(struct ath12k_base *ab)
 		info->mlo_chip_info.num_local_links = partner_ab->qmi.num_radios;
 		info->num_adj_chips = wsi_info->num_adj_chips;
 
-		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS, "mlo device id %d num_link %d\n",
+		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS | ATH12K_DBG_MLO, "mlo device id %d num_link %d\n",
 			   info->mlo_chip_info.chip_id,
 			   info->mlo_chip_info.num_local_links);
 
@@ -3482,7 +3819,7 @@ static int ath12k_qmi_mlo_reconfig_send(struct ath12k_base *ab)
 			info->mlo_chip_info.hw_link_id[j] = adj_wsi_info->hw_link_id_base + j;
 			info->mlo_chip_info.valid_mlo_link_id[j] = 1;
 
-			ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS, "mlo hw_link_id %d\n",
+			ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS | ATH12K_DBG_MLO, "mlo hw_link_id %d\n",
 				   info->mlo_chip_info.hw_link_id[j]);
 		}
 
@@ -3577,11 +3914,20 @@ static void ath12k_qmi_phy_cap_send(struct ath12k_base *ab)
 	}
 
 	ab->qmi.num_radios = resp.num_phy;
+	if (resp.aux_support_valid)
+		ab->qmi.aux_support = !!resp.aux_support;
+	if (resp.mcss_support_valid)
+		ab->qmi.mcss_support = !!resp.mcss_support;
+
+	if (resp.dynamic_ddr_support_valid)
+		ab->qmi.dynamic_ddr_support = resp.dynamic_ddr_support;
 
 	ath12k_dbg(ab, ATH12K_DBG_QMI,
-		   "phy capability resp valid %d num_phy %d valid %d board_id %d\n",
+		   "phy capability resp valid %d num_phy %d valid %d board_id %d, valid %u aux support %u valid %u mcss support %u dynamic ddr support %d\n",
 		   resp.num_phy_valid, resp.num_phy,
-		   resp.board_id_valid, resp.board_id);
+		   resp.board_id_valid, resp.board_id, resp.aux_support_valid,
+		   resp.aux_support, resp.mcss_support_valid, resp.mcss_support,
+		   resp.dynamic_ddr_support);
 
 	return;
 
@@ -3631,6 +3977,8 @@ static int ath12k_qmi_fw_ind_register_send(struct ath12k_base *ab)
 	req->qdss_trace_free_enable_valid = 1;
 	req->m3_dump_upload_req_enable_valid = 1;
 	req->m3_dump_upload_req_enable = 1;
+	req->ddr_dump_region_enable_valid = 1;
+	req->ddr_dump_region_enable = 1;
 
 	req->pin_connect_result_enable_valid = 0;
 	req->pin_connect_result_enable = 0;
@@ -3850,12 +4198,7 @@ void ath12k_qmi_free_target_mem_chunk(struct ath12k_base *ab)
 	struct ath12k_hw_group *ag = ab->ag;
 	int i, mlo_idx;
 
-	if (ath12k_check_erp_power_down(ag) &&
-	    ab->pm_suspend)
-		return;
-
 	for (i = 0, mlo_idx = 0; i < ab->qmi.mem_seg_count; i++) {
-
 		if (ab->qmi.target_mem[i].type == MLO_GLOBAL_MEM_REGION_TYPE) {
 			if (ab->is_bypassed)
 				continue;
@@ -3966,11 +4309,24 @@ static int ath12k_qmi_alloc_target_mem_chunk(struct ath12k_base *ab)
 		case AFC_REGION_TYPE:
 		case PAGEABLE_MEM_REGION_TYPE:
 		case CALDB_MEM_REGION_TYPE:
+			if ((chunk->type == CALDB_MEM_REGION_TYPE &&
+			     !ab->hw_params->cold_boot_calib) ||
+			     !chunk->size) {
+				chunk->paddr = 0;
+				chunk->v.addr = NULL;
+				break;
+			}
 			ret = ath12k_qmi_alloc_chunk(ab, chunk);
 			if (ret)
 				goto err;
 			break;
 		case MLO_GLOBAL_MEM_REGION_TYPE:
+			if (!chunk->size) {
+				chunk->paddr = 0;
+				chunk->v.addr = NULL;
+				mlo_idx++;
+				break;
+			}
 			mlo_size += chunk->size;
 			if (ag->mlo_mem.mlo_mem_size &&
 			    mlo_size > ag->mlo_mem.mlo_mem_size) {
@@ -4225,17 +4581,57 @@ int ath12k_qmi_mlo_global_snapshot_mem_init(struct ath12k_base *ab)
 	return 0;
 }
 
-#define MAX_TGT_MEM_MODES 5
 #ifndef PLATFORM_SDX85
+static int ath12k_qmi_alloc_afc_reserved_mem(struct ath12k_base *ab, int dst_idx,
+					    int afc_seg_idx)
+{
+	dma_addr_t m3_paddr = 0;
+	u32 m3_size = 0;
+	int j;
+
+	for (j = 0; j < ab->qmi.mem_seg_count; j++) {
+		if (ab->qmi.target_mem[j].type == M3_DUMP_REGION_TYPE) {
+			m3_paddr = ab->qmi.target_mem[j].paddr;
+			m3_size = ab->qmi.target_mem[j].size;
+			break;
+		}
+	}
+
+	if (!m3_paddr || !m3_size) {
+		ath12k_err(ab, "AFC alloc: M3 region not found\n");
+		return -EINVAL;
+	}
+
+	if (ab->qmi.target_mem[afc_seg_idx].size >
+	    (m3_size - ATH12K_HOST_AFC_QCN6432_MEM_OFFSET)) {
+		ath12k_dbg(ab, ATH12K_DBG_QMI,
+			   "failed to assign mem type %d req size %d avail size %u\n",
+			   ab->qmi.target_mem[afc_seg_idx].type,
+			   ab->qmi.target_mem[afc_seg_idx].size,
+			   m3_size - ATH12K_HOST_AFC_QCN6432_MEM_OFFSET);
+		return -EINVAL;
+	}
+
+	ab->qmi.target_mem[dst_idx].paddr =
+		m3_paddr + ATH12K_HOST_AFC_QCN6432_MEM_OFFSET;
+	ab->qmi.target_mem[dst_idx].v.ioaddr =
+		ioremap(ab->qmi.target_mem[dst_idx].paddr,
+			ab->qmi.target_mem[afc_seg_idx].size);
+	if (!ab->qmi.target_mem[dst_idx].v.ioaddr) {
+		ath12k_err(ab, "AFC ioremap failed\n");
+		ab->qmi.target_mem[dst_idx].paddr = 0;
+		return -EIO;
+	}
+
+	return 0;
+}
+
 static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 {
 	struct reserved_mem *ddr_rmem = NULL, *rmem = NULL;
-	unsigned int bdf_location[MAX_TGT_MEM_MODES], caldb_location[MAX_TGT_MEM_MODES];
-	int caldb_size[1];
 	struct ath12k_hw_group *ag = ab->ag;
 	int sz = 0, avail_sz;
 	int i, idx, ret;
-	int tgt_mem_mode = ATH12K_QMI_TARGET_MEM_MODE;
 
 	mutex_lock(&ag->mutex);
 	if (!ag->mlo_mem.init_done) {
@@ -4254,7 +4650,21 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 		struct target_mem_chunk *mlo_chunk;
 
 		switch (ab->qmi.target_mem[i].type) {
+		case CALDB_MEM_REGION_TYPE:
 		case HOST_DDR_REGION_TYPE:
+		case BDF_MEM_REGION_TYPE:
+		case M3_DUMP_REGION_TYPE:
+		case PAGEABLE_MEM_REGION_TYPE:
+			if ((ab->qmi.target_mem[i].type == CALDB_MEM_REGION_TYPE &&
+			     !ab->hw_params->cold_boot_calib) ||
+			     !ab->qmi.target_mem[i].size) {
+				ab->qmi.target_mem[idx].paddr = 0;
+				ab->qmi.target_mem[idx].v.ioaddr = NULL;
+				ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
+				ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
+				idx++;
+				break;
+			}
 			if (ddr_rmem->size - sz < ab->qmi.target_mem[i].size) {
 				avail_sz = ddr_rmem->size - sz;
 				goto print_err;
@@ -4274,114 +4684,15 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 			ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
 			idx++;
 			break;
-		case BDF_MEM_REGION_TYPE:
-			if (of_property_read_u32_array(ab->dev->of_node,
-						       "qcom,bdf-addr", bdf_location,
-						       ARRAY_SIZE(bdf_location))) {
-				ath12k_err(ab, "BDF_MEM_REGION Not defined in device_tree\n");
-				ret = -EINVAL;
-				goto out;
-			}
-
-			ab->qmi.target_mem[idx].paddr =
-				bdf_location[ATH12K_QMI_TARGET_MEM_MODE];
-			ab->qmi.target_mem[idx].v.ioaddr =
-				ioremap(ab->qmi.target_mem[idx].paddr,
-					ab->qmi.target_mem[i].size);
-			if (!ab->qmi.target_mem[idx].v.ioaddr) {
-				ret = -EIO;
-				goto out;
-			}
-			ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
-			ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
-			idx++;
-			break;
-		case CALDB_MEM_REGION_TYPE:
-			if (ath12k_cold_boot_cal && ab->hw_params->cold_boot_calib) {
-				if (ab->hif.bus == ATH12K_BUS_AHB ||
-				    ab->hif.bus == ATH12K_BUS_HYBRID) {
-					if (of_property_read_u32_array(ab->dev->of_node,
-								       "qcom,caldb-addr",
-								       caldb_location,
-							ARRAY_SIZE(caldb_location))) {
-						ath12k_err(ab, "CALDB_MEM_REGION Not defined in device_tree\n");
-						ret = -EINVAL;
-						goto out;
-					}
-
-					if (of_property_read_u32_array(ab->dev->of_node,
-								       "qcom,caldb-size",
-								       caldb_size,
-							ARRAY_SIZE(caldb_size))) {
-						ath12k_err(ab, "CALDB_SIZE Not defined in device_tree\n");
-						ret = -EINVAL;
-						goto out;
-					}
-
-					ab->qmi.target_mem[idx].paddr =
-						caldb_location[tgt_mem_mode];
-					ab->qmi.target_mem[i].size = caldb_size[0];
-					ab->qmi.target_mem[idx].v.ioaddr =
-						ioremap(ab->qmi.target_mem[idx].paddr,
-							ab->qmi.target_mem[i].size);
-
-				} else {
-					if (ddr_rmem->size - sz <
-							ab->qmi.target_mem[i].size) {
-						avail_sz = ddr_rmem->size - sz;
-						goto print_err;
-					}
-
-					ab->qmi.target_mem[idx].paddr =
-						ddr_rmem->base + sz;
-					ab->qmi.target_mem[idx].v.ioaddr =
-						ioremap(ab->qmi.target_mem[idx].paddr,
-							ab->qmi.target_mem[i].size);
-					sz += ab->qmi.target_mem[i].size;
-				}
-			} else {
+		case MLO_GLOBAL_MEM_REGION_TYPE:
+			if (!ab->qmi.target_mem[i].size) {
 				ab->qmi.target_mem[idx].paddr = 0;
 				ab->qmi.target_mem[idx].v.ioaddr = NULL;
+				ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
+				ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
+				idx++;
+				break;
 			}
-
-			ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
-			ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
-			idx++;
-			break;
-		case M3_DUMP_REGION_TYPE:
-			if (ab->hif.bus == ATH12K_BUS_PCI) {
-				if (ddr_rmem->size - sz < ab->qmi.target_mem[i].size) {
-					avail_sz = ddr_rmem->size - sz;
-					goto print_err;
-				}
-				ab->qmi.target_mem[idx].paddr = ddr_rmem->base + sz;
-				sz += ab->qmi.target_mem[i].size;
-			} else {
-				rmem = ath12k_core_get_reserved_mem_by_name(ab,
-									    "m3-dump");
-				if (!rmem) {
-					ret = -EINVAL;
-					goto out;
-				}
-
-				if (rmem->size < ab->qmi.target_mem[i].size) {
-					avail_sz = rmem->size;
-					goto print_err;
-				}
-				ab->qmi.target_mem[idx].paddr = rmem->base;
-			}
-			ab->qmi.target_mem[idx].v.ioaddr =
-				ioremap(ab->qmi.target_mem[idx].paddr,
-					ab->qmi.target_mem[i].size);
-			if (!ab->qmi.target_mem[idx].v.ioaddr) {
-				ret = -EIO;
-				goto out;
-			}
-			ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
-			ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
-			idx++;
-			break;
-		case MLO_GLOBAL_MEM_REGION_TYPE:
 			rmem = ath12k_core_get_reserved_mem_by_name(ab, "mlo-global-mem");
 			if (!rmem) {
 				ret = -EINVAL;
@@ -4425,72 +4736,43 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 			if (ab->qmi.target_mem[i].size > AFC_MEM_SIZE) {
 				ath12k_warn(ab, "AFC mem request size %d is larger than allowed value\n",
 					    ab->qmi.target_mem[i].size);
+				mutex_unlock(&ag->mutex);
 				return -EINVAL;
 			}
 
 			/* For multi-pd platforms, AFC_REGION_TYPE needs
-			 * to be allocated from within the M3_DUMP_REGION.
+			 * to be allocated from within M3_DUMP_REGION.
 			 * This is because multi-pd platforms cannot access memory
 			 * regions allocated outside FW reserved memory.
 			 * AFC_REGION_TYPE is supported for 6 GHz.
 			 */
-			if (ab->hif.bus == ATH12K_BUS_HYBRID) {
-				rmem = ath12k_core_get_reserved_mem_by_name(ab,
-									    "m3-dump");
-				if (!rmem) {
-					ret = -EINVAL;
-					goto out;
-				}
 
-				if (ab->qmi.target_mem[i].size >
-						(rmem->size -
-						 ATH12K_HOST_AFC_QCN6432_MEM_OFFSET)) {
-					ath12k_err(ab, "AFC mem request size %d is larger than M3_MEM_REGION size %u\n",
-						   ab->qmi.target_mem[i].size,
-						   (u32)rmem->size);
-					ret = -EINVAL;
+			if (ab->hif.bus == ATH12K_BUS_HYBRID &&
+			    ab->qmi.target_mem_mode != ATH12K_QMI_TARGET_MEM_MODE_256M) {
+				ret = ath12k_qmi_alloc_afc_reserved_mem(ab, idx, i);
+				if (ret)
 					goto out;
-				}
-
-				ab->qmi.target_mem[idx].paddr =
-					rmem->base + ATH12K_HOST_AFC_QCN6432_MEM_OFFSET;
-				ab->qmi.target_mem[idx].v.ioaddr =
-					ioremap(ab->qmi.target_mem[idx].paddr,
-						ab->qmi.target_mem[idx].size);
 			} else {
 				ab->qmi.target_mem[idx].v.addr =
-				dma_alloc_coherent(ab->dev, ab->qmi.target_mem[i].size,
-						   &ab->qmi.target_mem[idx].paddr,
-						   GFP_KERNEL);
+					dma_alloc_coherent(ab->dev,
+						ab->qmi.target_mem[i].size,
+						&ab->qmi.target_mem[idx].paddr,
+						GFP_KERNEL);
 
 				if (!ab->qmi.target_mem[idx].v.addr) {
 					ath12k_err(ab, "AFC mem allocation failed\n");
 					ab->qmi.target_mem[idx].paddr = 0;
+					mutex_unlock(&ag->mutex);
 					return -ENOMEM;
 				}
+
 			}
+
 
 			ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
 			ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
 			idx++;
 			break;
-		case PAGEABLE_MEM_REGION_TYPE:
-			if (ab->hif.bus == ATH12K_BUS_PCI) {
-				ab->qmi.target_mem[idx].paddr = ddr_rmem->base + sz;
-				sz += ab->qmi.target_mem[i].size;
-				ab->qmi.target_mem[idx].v.ioaddr =
-					ioremap(ab->qmi.target_mem[idx].paddr,
-						ab->qmi.target_mem[i].size);
-				if (!ab->qmi.target_mem[idx].v.ioaddr) {
-					ret = -EIO;
-					goto out;
-				}
-				ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
-				ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
-				idx++;
-				break;
-			}
-			fallthrough;
 		default:
 			ath12k_warn(ab, "qmi ignore invalid mem req type %d\n",
 				    ab->qmi.target_mem[i].type);
@@ -4526,8 +4808,6 @@ out:
 static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 {
 	struct reserved_mem *ddr_rmem = NULL, *rmem = NULL;
-	unsigned int bdf_location[MAX_TGT_MEM_MODES], caldb_location[MAX_TGT_MEM_MODES];
-	unsigned int caldb_size[1];
 	struct ath12k_hw_group *ag = ab->ag;
 	int sz = 0, avail_sz;
 	int i, idx, ret;
@@ -4549,7 +4829,21 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 		struct target_mem_chunk *mlo_chunk;
 
 		switch (ab->qmi.target_mem[i].type) {
+		case CALDB_MEM_REGION_TYPE:
 		case HOST_DDR_REGION_TYPE:
+		case BDF_MEM_REGION_TYPE:
+		case M3_DUMP_REGION_TYPE:
+		case PAGEABLE_MEM_REGION_TYPE:
+			if ((ab->qmi.target_mem[i].type == CALDB_MEM_REGION_TYPE &&
+			     !ab->hw_params->cold_boot_calib) ||
+			     !ab->qmi.target_mem[i].size) {
+				ab->qmi.target_mem[idx].paddr = 0;
+				ab->qmi.target_mem[idx].v.ioaddr = NULL;
+				ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
+				ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
+				idx++;
+				break;
+			}
 			if (ddr_rmem->size - sz < ab->qmi.target_mem[i].size) {
 				avail_sz = ddr_rmem->size - sz;
 				goto print_err;
@@ -4572,119 +4866,15 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 			ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
 			idx++;
 			break;
-		case BDF_MEM_REGION_TYPE:
-			if (of_property_read_u32_array(ab->dev->of_node,
-						       "qcom,bdf-addr", bdf_location,
-						       ARRAY_SIZE(bdf_location))) {
-				ath12k_err(ab, "BDF_MEM_REGION Not defined in device_tree\n");
-				ret = -EINVAL;
-				goto out;
-			}
-
-			ab->qmi.target_mem[idx].paddr =
-				bdf_location[ATH12K_QMI_TARGET_MEM_MODE];
-			ab->qmi.target_mem[idx].v.ioaddr =
-					dma_alloc_attrs(ab->dev,
-							ab->qmi.target_mem[i].size,
-						&ab->qmi.target_mem[idx].paddr,
-						GFP_KERNEL,
-						DMA_ATTR_FORCE_CONTIGUOUS);
-			if (!ab->qmi.target_mem[idx].v.ioaddr) {
-				ret = -EIO;
-				goto out;
-			}
-			ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
-			ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
-			idx++;
-			break;
-		case CALDB_MEM_REGION_TYPE:
-			if (ath12k_cold_boot_cal && ab->hw_params->cold_boot_calib) {
-                                if (ab->hif.bus == ATH12K_BUS_AHB ||
-                                    ab->hif.bus == ATH12K_BUS_HYBRID) {
-                                        if (of_property_read_u32_array(ab->dev->of_node,
-                                                                       "qcom,caldb-addr", caldb_location,
-                                                                       ARRAY_SIZE(caldb_location))) {
-                                                ath12k_err(ab, "CALDB_MEM_REGION Not defined in device_tree\n");
-                                                ret = -EINVAL;
-                                                goto out;
-                                        }
-
-                                        if (of_property_read_u32_array(ab->dev->of_node,
-                                                                       "qcom,caldb-size", caldb_size,
-                                                                       ARRAY_SIZE(caldb_size))) {
-                                                ath12k_err(ab, "CALDB_SIZE Not defined in device_tree\n");
-                                                ret = -EINVAL;
-                                                goto out;
-                                        }
-
-                                        ab->qmi.target_mem[idx].paddr = caldb_location[ATH12K_QMI_TARGET_MEM_MODE];
-                                        ab->qmi.target_mem[i].size = caldb_size[0];
-                                        ab->qmi.target_mem[idx].v.ioaddr =
-					dma_alloc_attrs(ab->dev,
-							ab->qmi.target_mem[i].size,
-							&ab->qmi.target_mem[idx].paddr,
-							GFP_KERNEL,
-							DMA_ATTR_FORCE_CONTIGUOUS);
-                                } else {
-					if (ddr_rmem->size - sz < ab->qmi.target_mem[i].size) {
-						avail_sz = ddr_rmem->size - sz;
-						goto print_err;
-					}
-
-					ab->qmi.target_mem[idx].paddr = ddr_rmem->base + sz;
-                                        ab->qmi.target_mem[idx].v.ioaddr =
-					dma_alloc_attrs(ab->dev,
-							ab->qmi.target_mem[i].size,
-							&ab->qmi.target_mem[idx].paddr,
-							GFP_KERNEL,
-							DMA_ATTR_FORCE_CONTIGUOUS);
-                                        sz += ab->qmi.target_mem[i].size;
-				}
-                        } else {
-                                ab->qmi.target_mem[idx].paddr = 0;
-                                ab->qmi.target_mem[idx].v.ioaddr = NULL;
-                        }
-
-			ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
-			ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
-			idx++;
-			break;
-		case M3_DUMP_REGION_TYPE:
-			if (ab->hif.bus == ATH12K_BUS_PCI) {
-				if (ddr_rmem->size - sz < ab->qmi.target_mem[i].size) {
-					avail_sz = ddr_rmem->size - sz;
-					goto print_err;
-				}
-				ab->qmi.target_mem[idx].paddr = ddr_rmem->base + sz;
-				sz += ab->qmi.target_mem[i].size;
-			} else {
-				rmem = ath12k_core_get_reserved_mem_by_name(ab, "m3-dump");
-				if (!rmem) {
-					ret = -EINVAL;
-					goto out;
-				}
-
-				if (rmem->size < ab->qmi.target_mem[i].size) {
-					avail_sz = rmem->size;
-					goto print_err;
-				}
-				ab->qmi.target_mem[idx].paddr = rmem->base;
-			}
-			ab->qmi.target_mem[idx].v.ioaddr =
-			dma_alloc_attrs(ab->dev,
-					ab->qmi.target_mem[i].size,
-					&ab->qmi.target_mem[idx].paddr,
-					GFP_KERNEL,
-					DMA_ATTR_FORCE_CONTIGUOUS);
-			if (!ab->qmi.target_mem[idx].v.ioaddr) {
-				ret = -EIO;
-				goto out;
-			}
-			ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
-			ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
-			idx++;
-			break;
 		case MLO_GLOBAL_MEM_REGION_TYPE:
+			if (!ab->qmi.target_mem[i].size) {
+				ab->qmi.target_mem[idx].paddr = 0;
+				ab->qmi.target_mem[idx].v.ioaddr = NULL;
+				ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
+				ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
+				idx++;
+				break;
+			}
 			rmem = ath12k_core_get_reserved_mem_by_name(ab, "mlo-global-mem");
 			if (!rmem) {
 				ret = -EINVAL;
@@ -4711,13 +4901,13 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 			}
 
 			ab->qmi.target_mem[idx].paddr = mlo_chunk->paddr;
-                        ab->qmi.target_mem[idx].v.ioaddr = mlo_chunk->v.ioaddr;
+			ab->qmi.target_mem[idx].v.ioaddr = mlo_chunk->v.ioaddr;
 			ab->qmi.target_mem[idx].size = mlo_chunk->size;
 			ab->qmi.target_mem[idx].type = mlo_chunk->type;
 
 			if (!ag->mlo_mem.mlo_mem_size) {
 				ag->mlo_mem.mlo_mem_size = mlo_chunk->size;
-			} else if(ag->mlo_mem.mlo_mem_size != mlo_chunk->size){
+			} else if (ag->mlo_mem.mlo_mem_size != mlo_chunk->size) {
 				ath12k_err(ab, "QMI MLO memory size error, expected size is %d"
 					   "but requested size is %d", ag->mlo_mem.mlo_mem_size,
 					   mlo_chunk->size);
@@ -4735,72 +4925,21 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 				return -EINVAL;
 			}
 
-			/* For multi-pd platforms, AFC_REGION_TYPE needs
-			 * to be allocated from within the M3_DUMP_REGION.
-			 * This is because multi-pd platforms cannot access memory
-			 * regions allocated outside FW reserved memory.
-			 * AFC_REGION_TYPE is supported for 6 GHz.
-			 */
-			if (ab->hif.bus == ATH12K_BUS_HYBRID) {
-				rmem = ath12k_core_get_reserved_mem_by_name(ab, "m3-dump");
-				if (!rmem) {
-					ret = -EINVAL;
-					goto out;
-				}
-
-				if (ab->qmi.target_mem[i].size > (rmem->size - ATH12K_HOST_AFC_QCN6432_MEM_OFFSET)) {
-					ath12k_err(ab, "AFC mem request size %d is larger than M3_MEM_REGION size %u\n",
-					   ab->qmi.target_mem[i].size,
-						  (u32)rmem->size);
-					ret = -EINVAL;
-					goto out;
-				}
-
-				ab->qmi.target_mem[idx].paddr = rmem->base + ATH12K_HOST_AFC_QCN6432_MEM_OFFSET;
-				ab->qmi.target_mem[idx].v.ioaddr =
-				dma_alloc_attrs(ab->dev,
-						ab->qmi.target_mem[i].size,
-						&ab->qmi.target_mem[idx].paddr,
-						GFP_KERNEL,
-						DMA_ATTR_FORCE_CONTIGUOUS);
-			} else {
-				ab->qmi.target_mem[idx].v.addr =
+			ab->qmi.target_mem[idx].v.addr =
 				dma_alloc_coherent(ab->dev, ab->qmi.target_mem[i].size,
-						   &ab->qmi.target_mem[idx].paddr,
-						   GFP_KERNEL);
+						&ab->qmi.target_mem[idx].paddr,
+						GFP_KERNEL);
 
-				if (!ab->qmi.target_mem[idx].v.addr) {
-					ath12k_err(ab, "AFC mem allocation failed\n");
-					ab->qmi.target_mem[idx].paddr = 0;
-					return -ENOMEM;
-				}
+			if (!ab->qmi.target_mem[idx].v.addr) {
+				ath12k_err(ab, "AFC mem allocation failed\n");
+				ab->qmi.target_mem[idx].paddr = 0;
+				return -ENOMEM;
 			}
 
 			ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
 			ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
 			idx++;
 			break;
-	case PAGEABLE_MEM_REGION_TYPE:
-			if (ab->hif.bus == ATH12K_BUS_PCI) {
-				ab->qmi.target_mem[idx].paddr = ddr_rmem->base + sz;
-				sz += ab->qmi.target_mem[i].size;
-				ab->qmi.target_mem[idx].v.ioaddr =
-				dma_alloc_attrs(ab->dev,
-						ab->qmi.target_mem[i].size,
-						&ab->qmi.target_mem[idx].paddr,
-						GFP_KERNEL,
-						DMA_ATTR_FORCE_CONTIGUOUS);
-				if (!ab->qmi.target_mem[idx].v.ioaddr) {
-					ret = -EIO;
-					goto out;
-				}
-				ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
-				ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
-				idx++;
-				break;
-			}
-			else
-				fallthrough;
 		default:
 			ath12k_warn(ab, "qmi ignore invalid mem req type %d\n",
 				    ab->qmi.target_mem[i].type);
@@ -4881,11 +5020,11 @@ int ath12k_qmi_request_target_cap(struct ath12k_base *ab)
 		ab->qmi.target.chip_family = resp.chip_info.chip_family;
 	}
 
-	if (!of_property_read_u32(dev->of_node, "qcom,board_id", &board_id) &&
-	    board_id != 0xFF)
-		ab->qmi.target.board_id = board_id;
-	else if (resp.board_info_valid)
+	if (resp.board_info_valid && resp.board_info.board_id != ATH12K_BOARD_ID_INVALID)
 		ab->qmi.target.board_id = resp.board_info.board_id;
+	else if (!of_property_read_u32(dev->of_node, "qcom,board_id", &board_id) &&
+		 board_id != ATH12K_BOARD_ID_DEFAULT)
+		ab->qmi.target.board_id = board_id;
 	else
 		ab->qmi.target.board_id = ATH12K_BOARD_ID_DEFAULT;
 
@@ -4918,8 +5057,14 @@ int ath12k_qmi_request_target_cap(struct ath12k_base *ab)
 
 	if (resp.rxgainlut_support_valid)
 		ab->rxgainlut_support = !!resp.rxgainlut_support;
+	if (resp.ext_fw_bin_download_support_valid)
+		ab->qmi.ext_fw_bin_download_support = !!resp.ext_fw_bin_download_support;
+	if (resp.ext_fw_bin_download_bitmap_valid)
+		ab->qmi.ext_fw_bin_download_bitmap = resp.ext_fw_bin_download_bitmap;
 
-	ath12k_info(ab, "rxgainlut_support %u\n", ab->rxgainlut_support);
+	ath12k_info(ab, "RxGain support %u Extended ucode download support %u Extended ucode download bitmap 0x%x\n",
+		    ab->rxgainlut_support, ab->qmi.ext_fw_bin_download_support,
+		    ab->qmi.ext_fw_bin_download_bitmap);
 
 	if (resp.eeprom_caldata_read_timeout_valid) {
 		ab->qmi.target.eeprom_caldata = resp.eeprom_caldata_read_timeout;
@@ -5178,9 +5323,10 @@ static void ath12k_qmi_m3_free(struct ath12k_base *ab)
 	if (!m3_mem->vaddr)
 		return;
 
-	dma_free_coherent(ab->dev, m3_mem->size,
+	dma_free_coherent(ab->dev, m3_mem->total_size,
 			  m3_mem->vaddr, m3_mem->paddr);
 	m3_mem->vaddr = NULL;
+	m3_mem->total_size = 0;
 	m3_mem->size = 0;
 }
 
@@ -5216,7 +5362,7 @@ static int ath12k_qmi_m3_load(struct ath12k_base *ab)
 
 	/* In recovery/resume cases, M3 buffer is not freed, try to reuse that */
 	if (m3_mem->vaddr) {
-		if (m3_mem->size >= m3_len)
+		if (m3_mem->total_size >= m3_len)
 			goto skip_m3_alloc;
 
 		/* Old buffer is too small, free and reallocate */
@@ -5233,6 +5379,8 @@ static int ath12k_qmi_m3_load(struct ath12k_base *ab)
 		goto out;
 	}
 
+	m3_mem->total_size = m3_len;
+
 skip_m3_alloc:
 	memcpy(m3_mem->vaddr, m3_data, m3_len);
 	m3_mem->size = m3_len;
@@ -5241,6 +5389,232 @@ skip_m3_alloc:
 
 out:
 	release_firmware(fw);
+
+	return ret;
+}
+
+static void ath12k_qmi_ext_fw_bin_free(struct ath12k_base *ab,
+				       enum qmi_wlanfw_ext_fw_bin_type_enum_v01 type)
+{
+	struct ext_fw_bin_mem_region *ext_fw_bin_mem = &ab->qmi.ext_fw_bin_mem[type];
+
+	if (!ext_fw_bin_mem->vaddr)
+		return;
+
+	dma_free_coherent(ab->dev, ext_fw_bin_mem->size,
+			  ext_fw_bin_mem->vaddr, ext_fw_bin_mem->paddr);
+	ext_fw_bin_mem->vaddr = NULL;
+	ext_fw_bin_mem->size = 0;
+}
+
+static void ath12k_qmi_ext_fw_bin_clear(struct ath12k_base *ab)
+{
+	int type;
+
+	for (type = 0; type < QMI_WLANFW_EXT_FW_MAX_BIN_TYPE; type++) {
+		if (ab->qmi.ext_fw_bin_mem[type].vaddr)
+			ath12k_qmi_ext_fw_bin_free(ab, type);
+	}
+}
+
+static int ath12k_qmi_ext_fw_bin_load(struct ath12k_base *ab,
+				      enum qmi_wlanfw_ext_fw_bin_type_enum_v01 type)
+{
+	struct ext_fw_bin_mem_region *ext_fw_bin_mem = NULL;
+	const struct firmware *fw = NULL;
+	const void *data = NULL;
+	size_t len = 0;
+	char path[100];
+	int ret = 0;
+
+	switch (type) {
+	case QMI_WLANFW_EXT_FW_BIN_TYPE_M3_V01:
+		/* firmware-N.bin had a m3 firmware file so use that */
+		if (ab->fw.m3_data && ab->fw.m3_len > 0) {
+			data = ab->fw.m3_data;
+			len = ab->fw.m3_len;
+		} else {
+			fw = ath12k_core_firmware_request(ab, "m3.bin");
+			if (IS_ERR(fw)) {
+				ret = PTR_ERR(fw);
+				ath12k_core_create_firmware_path(ab, "m3.bin",
+								 path, sizeof(path));
+				ath12k_err(ab, "failed to load %s/m3.bin: %d\n",
+					   path, ret);
+				return ret;
+			}
+		}
+		break;
+	case QMI_WLANFW_EXT_FW_BIN_TYPE_AUX_V01:
+		/* firmware-N.bin had a aux firmware file so use that */
+		if (ab->fw.aux_data && ab->fw.aux_len > 0) {
+			data = ab->fw.aux_data;
+			len = ab->fw.aux_len;
+		} else {
+			fw = ath12k_core_firmware_request(ab, "aux.bin");
+			if (IS_ERR(fw)) {
+				ret = PTR_ERR(fw);
+				ath12k_core_create_firmware_path(ab, "aux.bin",
+								 path, sizeof(path));
+				ath12k_err(ab, "failed to load %s/aux.bin: %d\n",
+					   path, ret);
+				return ret;
+			}
+		}
+		break;
+	case QMI_WLANFW_EXT_FW_BIN_TYPE_MCSS_V01:
+		/* firmware-N.bin had a mcss firmware file so use that */
+		if (ab->fw.mcss_data && ab->fw.mcss_len > 0) {
+			data = ab->fw.mcss_data;
+			len = ab->fw.mcss_len;
+		} else {
+			fw = ath12k_core_firmware_request(ab, "mcss.bin");
+			if (IS_ERR(fw)) {
+				ret = PTR_ERR(fw);
+				ath12k_core_create_firmware_path(ab, "mcss.bin",
+								 path, sizeof(path));
+				ath12k_err(ab, "failed to load %s/mcss.bin: %d\n",
+					   path, ret);
+				return ret;
+			}
+		}
+		break;
+	default:
+		ath12k_err(ab, "FW bin type %d not supported\n", type);
+		return -EINVAL;
+	}
+
+	/*
+	 * Fallback to the firmware blob returned by
+	 * ath12k_core_firmware_request() when no in-memory data was
+	 * provided via firmware-N.bin (i.e. data/len are unset). This
+	 * ensures we still have a valid buffer to load into the DMA
+	 * region for the requested ext FW bin type.
+	 */
+	if ((!data || !len) && fw) {
+		data = fw->data;
+		len = fw->size;
+	}
+
+	/* In recovery/resume cases, file buffer is not freed, try to reuse that */
+	ext_fw_bin_mem = &ab->qmi.ext_fw_bin_mem[type];
+	if (ext_fw_bin_mem->vaddr && ext_fw_bin_mem->size >= len)
+		goto skip_alloc;
+
+	/* Old buffer is too small, free and reallocate */
+	if (ext_fw_bin_mem->vaddr)
+		ath12k_qmi_ext_fw_bin_free(ab, type);
+
+	ext_fw_bin_mem->vaddr = dma_alloc_coherent(ab->dev, len, &ext_fw_bin_mem->paddr,
+						   GFP_KERNEL);
+	if (!ext_fw_bin_mem->vaddr) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+skip_alloc:
+	memcpy(ext_fw_bin_mem->vaddr, data, len);
+	ext_fw_bin_mem->size = len;
+out:
+	if (fw)
+		release_firmware(fw);
+
+	return ret;
+}
+
+/* clang stack usage explodes if this is inlined */
+static noinline_for_stack
+int ath12k_qmi_wlanfw_ext_fw_bin_mem_info_send(struct ath12k_base *ab)
+{
+	struct qmi_wlanfw_ext_fw_bin_download_resp_msg_v01 *resp = NULL;
+	struct qmi_wlanfw_ext_fw_bin_download_req_msg_v01 *req = NULL;
+	struct ext_fw_bin_mem_region *ext_fw_bin_mem = NULL;
+	int num_ext_fw_bin = 0;
+	struct qmi_txn txn;
+	int type = 0;
+	int ret = 0;
+
+	if (ab->qmi.ext_fw_bin_download_bitmap &
+			~((1 << QMI_WLANFW_EXT_FW_MAX_BIN_TYPE) - 1)) {
+		ath12k_warn(ab, "Invalid ext_fw_bin_download_bitmap 0x%x, unsupported bits set\n",
+			    ab->qmi.ext_fw_bin_download_bitmap);
+		return -EINVAL;
+	}
+
+	req = kzalloc(sizeof(*req), GFP_KERNEL);
+	if (!req)
+		return -ENOMEM;
+
+	for (type = 0; type < QMI_WLANFW_EXT_FW_MAX_BIN_TYPE; type++) {
+		if (!(ab->qmi.ext_fw_bin_download_bitmap & (1 << type)))
+			continue;
+
+		/* Check if we've reached the maximum number of firmware binaries */
+		if (num_ext_fw_bin >= QMI_WLANFW_MAX_NUM_EXT_FW_BIN_DOWNLOAD_V01) {
+			ath12k_warn(ab, "Too many firmware binaries to download, skipping type %d\n",
+				    type);
+			continue;
+		}
+
+		ret = ath12k_qmi_ext_fw_bin_load(ab, type);
+		if (ret) {
+			ath12k_err(ab, "failed to load EXT FW bin type %d ret %d\n",
+				   type, ret);
+			continue;
+		}
+
+		ext_fw_bin_mem = &ab->qmi.ext_fw_bin_mem[type];
+		req->ext_bin_mem_info[num_ext_fw_bin].addr = ext_fw_bin_mem->paddr;
+		req->ext_bin_mem_info[num_ext_fw_bin].size = ext_fw_bin_mem->size;
+		req->ext_bin_mem_info[num_ext_fw_bin].type = type;
+		num_ext_fw_bin++;
+	}
+
+	req->ext_bin_mem_info_len = num_ext_fw_bin;
+	if (!req->ext_bin_mem_info_len) {
+		ath12k_err(ab, "No EXT FW bins are found %x\n",
+			   ab->qmi.ext_fw_bin_download_bitmap);
+		ret = -EINVAL;
+		goto out;
+	}
+
+	resp = kzalloc(sizeof(*resp), GFP_KERNEL);
+	if (!resp) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	ret = qmi_txn_init(&ab->qmi.handle, &txn,
+			   qmi_wlanfw_ext_fw_bin_download_resp_msg_v01_ei, resp);
+	if (ret < 0)
+		goto out;
+
+	ret = qmi_send_request(&ab->qmi.handle, NULL, &txn,
+			       QMI_WLANFW_EXT_FW_BIN_DOWNLOAD_REQ_V01,
+			       QMI_WLANFW_EXT_FW_BIN_DOWNLOAD_REQ_MSG_V01_MAX_MSG_LEN,
+			       qmi_wlanfw_ext_fw_bin_download_req_msg_v01_ei, req);
+	if (ret < 0) {
+		qmi_txn_cancel(&txn);
+		ath12k_warn(ab, "qmi failed to download EXT FW bin request, err = %d\n",
+			    ret);
+		goto out;
+	}
+
+	ret = qmi_txn_wait(&txn, msecs_to_jiffies(ATH12K_QMI_WLANFW_TIMEOUT_MS));
+	if (ret < 0) {
+		ath12k_warn(ab, "qmi wait failed to download EXT FW bin %d\n", ret);
+		goto out;
+	}
+
+	if (resp->resp.result != QMI_RESULT_SUCCESS_V01) {
+		ath12k_warn(ab, "qmi EXT FW bin info request failed, result: %d, err: %d\n",
+			    resp->resp.result, resp->resp.error);
+		ret = -EINVAL;
+		goto out;
+	}
+out:
+	kfree(req);
+	kfree(resp);
 
 	return ret;
 }
@@ -5309,7 +5683,7 @@ static int ath12k_qmi_wlanfw_mode_send(struct ath12k_base *ab,
 	req.hw_debug_valid = 1;
 	req.hw_debug = 0;
 
-	if ((mode == ATH12K_FIRMWARE_MODE_NORMAL || ATH12K_FIRMWARE_MODE_FTM)
+	if ((mode == ATH12K_FIRMWARE_MODE_NORMAL || mode == ATH12K_FIRMWARE_MODE_FTM)
 	   && ab->mm_cal_support &&
 	    ath12k_cold_boot_cal_needed(ab)) {
 		ath12k_info(ab,"cold boot calibration is requested in MISSION/FTM MODE\n");
@@ -5358,10 +5732,10 @@ static int ath12k_qmi_wlanfw_wlan_cfg_send(struct ath12k_base *ab)
 {
 	struct qmi_wlanfw_wlan_cfg_req_msg_v01 *req;
 	struct qmi_wlanfw_wlan_cfg_resp_msg_v01 resp = {};
+	int ret = 0, pipe_num, ext_pipe_num;
 	struct ce_pipe_config *ce_cfg;
 	struct service_to_pipe *svc_cfg;
 	struct qmi_txn txn;
-	int ret = 0, pipe_num;
 
 	ce_cfg	= (struct ce_pipe_config *)ab->qmi.ce_cfg.tgt_ce;
 	svc_cfg	= (struct service_to_pipe *)ab->qmi.ce_cfg.svc_to_ce_map;
@@ -5377,7 +5751,14 @@ static int ath12k_qmi_wlanfw_wlan_cfg_send(struct ath12k_base *ab)
 	req->tgt_cfg_valid = 1;
 	/* This is number of CE configs */
 	req->tgt_cfg_len = ab->qmi.ce_cfg.tgt_ce_len;
-	for (pipe_num = 0; pipe_num < req->tgt_cfg_len ; pipe_num++) {
+	if (ab->qmi.ce_cfg.tgt_ce_len > QMI_WLANFW_MAX_NUM_CE_V01) {
+		req->tgt_cfg_len = QMI_WLANFW_MAX_NUM_CE_V01;
+		req->ext_tgt_cfg_valid = 1;
+		req->ext_tgt_cfg_len = ab->qmi.ce_cfg.tgt_ce_len -
+						QMI_WLANFW_MAX_NUM_CE_V01;
+	}
+
+	for (pipe_num = 0; pipe_num < req->tgt_cfg_len; pipe_num++) {
 		req->tgt_cfg[pipe_num].pipe_num = ce_cfg[pipe_num].pipenum;
 		req->tgt_cfg[pipe_num].pipe_dir = ce_cfg[pipe_num].pipedir;
 		req->tgt_cfg[pipe_num].nentries = ce_cfg[pipe_num].nentries;
@@ -5385,13 +5766,38 @@ static int ath12k_qmi_wlanfw_wlan_cfg_send(struct ath12k_base *ab)
 		req->tgt_cfg[pipe_num].flags = ce_cfg[pipe_num].flags;
 	}
 
+	pipe_num = QMI_WLANFW_MAX_NUM_CE_V01;
+	for (ext_pipe_num = 0; ext_pipe_num < req->ext_tgt_cfg_len; ext_pipe_num++) {
+		req->ext_tgt_cfg[ext_pipe_num].pipe_num = ce_cfg[pipe_num].pipenum;
+		req->ext_tgt_cfg[ext_pipe_num].pipe_dir = ce_cfg[pipe_num].pipedir;
+		req->ext_tgt_cfg[ext_pipe_num].nentries = ce_cfg[pipe_num].nentries;
+		req->ext_tgt_cfg[ext_pipe_num].nbytes_max = ce_cfg[pipe_num].nbytes_max;
+		req->ext_tgt_cfg[ext_pipe_num].flags = ce_cfg[pipe_num].flags;
+		pipe_num++;
+	}
+
 	req->svc_cfg_valid = 1;
 	/* This is number of Service/CE configs */
 	req->svc_cfg_len = ab->qmi.ce_cfg.svc_to_ce_map_len;
+	if (ab->qmi.ce_cfg.svc_to_ce_map_len > QMI_WLANFW_MAX_NUM_SVC_V01) {
+		req->svc_cfg_len = QMI_WLANFW_MAX_NUM_SVC_V01;
+		req->ext_svc_cfg_valid = 1;
+		req->ext_svc_cfg_len = ab->qmi.ce_cfg.svc_to_ce_map_len -
+						QMI_WLANFW_MAX_NUM_SVC_V01;
+	}
+
 	for (pipe_num = 0; pipe_num < req->svc_cfg_len; pipe_num++) {
 		req->svc_cfg[pipe_num].service_id = svc_cfg[pipe_num].service_id;
 		req->svc_cfg[pipe_num].pipe_dir = svc_cfg[pipe_num].pipedir;
 		req->svc_cfg[pipe_num].pipe_num = svc_cfg[pipe_num].pipenum;
+	}
+
+	pipe_num = QMI_WLANFW_MAX_NUM_SVC_V01;
+	for (ext_pipe_num = 0; ext_pipe_num < req->ext_svc_cfg_len; ext_pipe_num++) {
+		req->ext_svc_cfg[ext_pipe_num].service_id = svc_cfg[pipe_num].service_id;
+		req->ext_svc_cfg[ext_pipe_num].pipe_dir = svc_cfg[pipe_num].pipedir;
+		req->ext_svc_cfg[ext_pipe_num].pipe_num = svc_cfg[pipe_num].pipenum;
+		pipe_num++;
 	}
 
 	/* set shadow v3 configuration */
@@ -5487,7 +5893,7 @@ void ath12k_qmi_firmware_stop(struct ath12k_base *ab)
 {
 	int ret;
 
-	if (ath12k_check_erp_power_down(ab->ag) && ab->pm_suspend)
+	if (!test_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE, &ab->dev_flags))
 		return;
 
 	clear_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE, &ab->dev_flags);
@@ -5531,7 +5937,7 @@ int ath12k_qmi_firmware_start(struct ath12k_base *ab,
 			ab->qmi.cal_timeout = 1;
 			return -ETIMEDOUT;
 		}
-		ath12k_dbg(ab, ATH12K_DBG_QMI, "Coldboot calibration completed , calibration took %d ms\n",
+		ath12k_info(ab, "Coldboot calibration completed , calibration took %d ms\n",
 			   jiffies_to_msecs(jiffies - calibration_time));
 		ab->in_coldboot_fwreset = false;
 	}
@@ -5634,16 +6040,14 @@ int ath12k_qmi_process_coldboot_calibration(struct ath12k_base *ab)
 	if (timeout <= 0) {
 		ath12k_warn(ab, "Coldboot Calibration failed - wait ended\n");
 	} else {
-		ath12k_dbg(ab, ATH12K_DBG_QMI, "Coldboot calibration completed, calibration took %d ms\n",
+		ath12k_info(ab, "Coldboot calibration completed, calibration took %d ms\n",
               jiffies_to_msecs(jiffies - calibration_time));
 	}
 
 	ath12k_info(ab, "power down to restart firmware in mission mode\n");
 	ath12k_qmi_firmware_stop(ab);
 
-	if (!ab->pm_suspend)
-		ath12k_hif_power_down(ab, false);
-
+	ath12k_hif_power_down(ab, false);
 	ath12k_qmi_free_target_mem_chunk(ab);
 	ath12k_info(ab, "power up to restart firmware in mission mode\n");
 	/* reset host fixed mem off to zero */
@@ -6024,12 +6428,19 @@ int ath12k_qmi_event_load_bdf(struct ath12k_qmi *qmi)
 			ath12k_warn(ab, "qmi failed to load calibrated data :%d\n", ret);
 	}
 
-	ret = ath12k_qmi_wlanfw_m3_info_send(ab);
-	if (ret < 0) {
-		ath12k_warn(ab, "qmi failed to send m3 info req:%d\n", ret);
-		return ret;
+	if (ab->qmi.ext_fw_bin_download_support) {
+		ret = ath12k_qmi_wlanfw_ext_fw_bin_mem_info_send(ab);
+		if (ret < 0) {
+			ath12k_warn(ab, "qmi failed to send FW bin info req:%d\n", ret);
+			return ret;
+		}
+	} else {
+		ret = ath12k_qmi_wlanfw_m3_info_send(ab);
+		if (ret < 0) {
+			ath12k_warn(ab, "qmi failed to send m3 info req:%d\n", ret);
+			return ret;
+		}
 	}
-
 	return ret;
 }
 
@@ -6372,14 +6783,14 @@ static void ath12k_qmi_driver_event_work(struct work_struct *work)
 		case ATH12K_QMI_EVENT_FW_READY:
 			clear_bit(ATH12K_FLAG_QMI_FAIL, &ab->dev_flags);
 			if (test_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE, &ab->dev_flags) ||
-			    ath12k_check_erp_power_down(ab->ag)) {
+			    (ath12k_check_erp_power_down(ab->ag) &&
+			    ath12k_hw_group_recovery_in_progress(ab->ag))) {
 				if (ab->is_reset)
 					ath12k_hal_dump_srng_stats(ab);
 
 				queue_work(ab->workqueue, &ab->restart_work);
 				break;
 			}
-
 			ret = ath12k_wait_for_gic_msi(ab);
 			if (ret) {
 				ath12k_warn(ab, "failed to get qgic handler for dev %d ret: %d\n",
@@ -6391,7 +6802,13 @@ static void ath12k_qmi_driver_event_work(struct work_struct *work)
 			} else {
 				clear_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags);
 				clear_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags);
-				ret = ath12k_core_qmi_firmware_ready(ab);
+				if (ath12k_check_erp_power_down(ab->ag)) {
+					ret = ath12k_hal_srng_init(ab);
+					if (ret)
+						break;
+				}
+
+				ret = ath12k_core_qmi_firmware_ready(ab, NULL);
 				if (!ret)
 					set_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE,
 						&ab->dev_flags);
@@ -6422,12 +6839,16 @@ skip:
 int ath12k_qmi_init_service(struct ath12k_base *ab)
 {
 	int ret;
+	int tgt_mem_mode;
 
 	memset(&ab->qmi.target, 0, sizeof(struct target_info));
 	memset(&ab->qmi.target_mem, 0, sizeof(struct target_mem_chunk));
 	ab->qmi.ab = ab;
 
-	ab->qmi.target_mem_mode = ATH12K_QMI_TARGET_MEM_MODE;
+	if (!of_property_read_u32(ab->dev->of_node, "qcom,tgt_mem_mode", &tgt_mem_mode))
+		ab->qmi.target_mem_mode = tgt_mem_mode;
+	else
+		ab->qmi.target_mem_mode = ATH12K_QMI_TARGET_MEM_MODE;
 
 	ret = ath12k_hif_set_qrtr_endpoint_id(ab);
 	if (ret) {
@@ -6461,6 +6882,10 @@ int ath12k_qmi_init_service(struct ath12k_base *ab)
 		return ret;
 	}
 
+#ifdef CPTCFG_ATHDEBUG
+	ret = athdbg_if_get_service(ab, ATHDBG_SRV_QMI_INIT);
+#endif
+
 	return ret;
 }
 
@@ -6469,19 +6894,22 @@ void ath12k_qmi_deinit_service(struct ath12k_base *ab)
 	if (!ab->qmi.ab)
 		return;
 
+#ifdef CPTCFG_ATHDEBUG
+	athdbg_if_get_service(ab, ATHDBG_SRV_QMI_DEINIT);
+#endif
 	qmi_handle_release(&ab->qmi.handle);
 	cancel_work_sync(&ab->qmi.event_work);
 	destroy_workqueue(ab->qmi.event_wq);
 	ath12k_qmi_m3_free(ab);
-	ath12k_qmi_free_target_mem_chunk(ab);
-#ifdef CPTCFG_ATHDEBUG
-	athdbg_if_get_service(ab, ATHDBG_SRV_QMI_DEINIT);
-#endif
+	ath12k_qmi_ext_fw_bin_clear(ab);
+	ath12k_qmi_free_resource(ab);
 	ab->qmi.ab = NULL;
 }
 
 void ath12k_qmi_free_resource(struct ath12k_base *ab)
 {
 	ath12k_qmi_free_target_mem_chunk(ab);
-	ath12k_qmi_m3_free(ab);
+#ifdef CPTCFG_ATHDEBUG
+	athdbg_if_get_service(ab, ATHDBG_SRV_QDSS_MEM_FREE);
+#endif
 }

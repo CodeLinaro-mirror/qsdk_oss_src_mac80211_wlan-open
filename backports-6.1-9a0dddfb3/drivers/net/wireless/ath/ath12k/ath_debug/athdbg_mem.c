@@ -7,13 +7,8 @@
 #include <linux/module.h>
 #include <linux/skbuff.h>
 #include <net/netlink.h>
-
 #include "athdbg_minidump.h"
 #include "athdbg_mem.h"
-
-#define FUNC_OBJ_ARR_SIZE 500
-#define BUF_SIZE 10192
-#define MAX_NAME_LEN 64
 
 #if !defined(CONFIG_DEBUG_MEM_USAGE)
 #undef kzalloc
@@ -46,7 +41,98 @@ struct athmem_node {
 	struct list_head dup_list;
 };
 
+static struct rb_root athmem_static_struct_root = RB_ROOT;
+
 struct list_head athmem_visited_list = LIST_HEAD_INIT(athmem_visited_list);
+
+static struct athmem_static_struct_node *athmem_find_static_name_node
+						(const char *struct_name)
+{
+	struct rb_node *node = athmem_static_struct_root.rb_node;
+	struct athmem_static_struct_node *data;
+
+	while (node) {
+		data = rb_entry(node, struct athmem_static_struct_node, rb);
+		int ret = strcmp(struct_name, data->name);
+
+		if (ret < 0)
+			node = node->rb_left;
+		else if (ret > 0)
+			node = node->rb_right;
+		else
+			return data;
+	}
+	return NULL;
+}
+
+static int athmem_insert_static_struct(struct athmem_static_struct_node *newnode)
+{
+	struct rb_node **link = &athmem_static_struct_root.rb_node;
+	struct rb_node *parent = NULL;
+	struct athmem_static_struct_node *cur;
+	int ret;
+
+	while (*link) {
+		cur = rb_entry(*link, struct athmem_static_struct_node, rb);
+		ret = strcmp(newnode->name, cur->name);
+
+		parent = *link;
+		if (ret < 0)
+			link = &(*link)->rb_left;
+		else if (ret > 0)
+			link = &(*link)->rb_right;
+		else
+			return -EEXIST; /* name already exists */
+	}
+
+	rb_link_node(&newnode->rb, parent, link);
+	rb_insert_color(&newnode->rb, &athmem_static_struct_root);
+	return 0;
+}
+
+int athmem_add_struct_info(void *addr, uint64_t size, const char *name)
+{
+	struct athmem_static_struct_node *nnode;
+	struct athmem_addr_info *ainfo;
+	int ret;
+
+	ainfo = kmalloc(sizeof(*ainfo), GFP_KERNEL);
+	if (!ainfo)
+		return -ENOMEM;
+
+	nnode = athmem_find_static_name_node(name);
+	if (!nnode) {
+		nnode = kmalloc(sizeof(*nnode), GFP_KERNEL);
+		if (!nnode) {
+			kfree(ainfo);
+			return -ENOMEM;
+		}
+
+		strscpy(nnode->name, name, MAX_NAME_LEN);
+		INIT_LIST_HEAD(&nnode->addr_list);
+
+		ret = athmem_insert_static_struct(nnode);
+		if (ret) {
+			kfree(ainfo);
+			kfree(nnode);
+			return ret;
+		}
+	}
+
+	ainfo->vaddr = addr;
+	ainfo->size = size;
+	list_add(&ainfo->list, &nnode->addr_list);
+
+	return 0;
+}
+
+struct list_head *athmem_get_addr_list(const char *name)
+{
+	struct athmem_static_struct_node *nnode;
+
+	nnode = athmem_find_static_name_node(name);
+	return nnode ? &nnode->addr_list : NULL;
+}
 
 static struct athmem_debug_object *lookup_object(unsigned long ptr)
 {
@@ -200,7 +286,6 @@ static void athmem_create_minidump_list(void)
 		athmem_find_duplicate((char *)obj->struct_name, obj);
 		count++;
 	}
-
 	spin_unlock_irqrestore(&athmem_spinlock, flags);
 }
 
@@ -218,6 +303,114 @@ void athmem_find_and_add_entry_in_minidump(const char *struct_name)
 	}
 	athmem_free_minidump_list();
 }
+
+void athmem_dump_data_local(uint64_t *vaddr, uint64_t size, const char *name)
+{
+	struct file *filp;
+	char filename[256];
+	loff_t pos_write = 0;
+	ssize_t written;
+
+	if (!vaddr || !size || name == NULL) {
+		pr_err("Invalid vaddr[%p]/size[%llu]/name[%s]", vaddr, size, name);
+		return;
+	}
+
+	snprintf(filename, sizeof(filename), "/tmp/%s.BIN", name);
+
+	filp = filp_open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	if (IS_ERR(filp)) {
+		pr_err("Single TLV Dump: Failed to create file %s, err=%ld\n",
+					filename, PTR_ERR(filp));
+	} else {
+		written = kernel_write(filp, vaddr, size, &pos_write);
+		if (written < 0) {
+			pr_err("Single TLV Dump: Failed to write to file %s, err=%zd\n",
+					filename, written);
+		}
+
+		filp_close(filp, NULL);
+	}
+}
+
+void athmem_free_static_struct_list(void)
+{
+	struct rb_node *node;
+	struct athmem_static_struct_node *nnode;
+	struct athmem_addr_info *ainfo, *tmp;
+
+	for (node = rb_first(&athmem_static_struct_root);
+		node;) {
+		nnode = rb_entry(node, struct athmem_static_struct_node, rb);
+		node = rb_next(node);
+
+		list_for_each_entry_safe(ainfo, tmp, &nnode->addr_list, list) {
+			list_del(&ainfo->list);
+			kfree(ainfo);
+		}
+
+		rb_erase(&nnode->rb, &athmem_static_struct_root);
+		kfree(nnode);
+	}
+}
+
+void athmem_collect_struct(const char *struct_name)
+{
+	struct athmem_node *struct_node, *dup_node;
+	struct list_head *list_info;
+	struct athmem_addr_info *tmp_info;
+	char tmp_structname[MAX_NAME_LEN];
+	int ins_cnt = 0;
+
+	athmem_create_minidump_list();
+	struct_node = athmem_find_dump_node(struct_name);
+
+	if (struct_node) {
+		if (struct_node->count > 1) {
+			snprintf(tmp_structname, MAX_NAME_LEN, "%s%d",
+					struct_node->struct_name,
+					ins_cnt);
+			ins_cnt++;
+			athmem_dump_data_local((uint64_t *)struct_node->start_addr,
+						struct_node->size,
+						struct_node->struct_name);
+			list_for_each_entry(dup_node, &struct_node->dup_list, dup_list) {
+				snprintf(tmp_structname, MAX_NAME_LEN, "%s%d",
+					dup_node->struct_name,
+					ins_cnt);
+				ins_cnt++;
+				athmem_dump_data_local((uint64_t *)dup_node->start_addr,
+							dup_node->size,
+							tmp_structname);
+			}
+		} else {
+			athmem_dump_data_local((uint64_t *)struct_node->start_addr,
+						struct_node->size,
+						struct_node->struct_name);
+		}
+	} else {
+		list_info = athmem_get_addr_list(struct_name);
+
+		if (!list_info) {
+			pr_info("\nstruct %s not present in minidump", struct_name);
+			goto out;
+		}
+
+		list_for_each_entry(tmp_info, list_info, list) {
+			snprintf(tmp_structname, MAX_NAME_LEN, "%s%d",
+					struct_name,
+					ins_cnt);
+			athmem_dump_data_local((uint64_t *)tmp_info->vaddr,
+						tmp_info->size,
+						struct_name);
+			ins_cnt++;
+		}
+	}
+
+out:
+	athmem_free_minidump_list();
+}
+
 
 void athmem_print_all_allocated_list(void)
 {

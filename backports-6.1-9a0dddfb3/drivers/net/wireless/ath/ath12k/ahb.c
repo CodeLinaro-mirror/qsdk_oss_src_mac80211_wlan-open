@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 /*
  * Copyright (c) 2018-2019 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/dma-mapping.h>
@@ -18,7 +18,6 @@
 #include "hif.h"
 #include "fw.h"
 #include "pcic.h"
-#include "wifi7/hal.h"
 #include "ppe.h"
 #include "erp.h"
 
@@ -91,7 +90,11 @@ static const char *irq_name[ATH12K_IRQ_NUM_MAX] = {
 	"umac_reset",
 	"reo2ppe",
 	"ppe_wbm_rel",
-	"ppe2tcl"
+	"ppe2tcl",
+	"txmon2host-monitor-destination-mac3",
+	"txmon2host-monitor-destination-mac2",
+	"txmon2host-monitor-destination-mac1",
+	"host2tx-monitor-ring1"
 };
 
 enum ext_irq_num {
@@ -135,7 +138,11 @@ enum ext_irq_num {
 	umac_reset,
 	reo2ppe,
 	ppe_wbm_rel,
-	ppe2tcl
+	ppe2tcl,
+	txmon2host_monitor_destination_mac3,
+	txmon2host_monitor_destination_mac2,
+	txmon2host_monitor_destination_mac1,
+	host2tx_monitor_ring1
 };
 
 static u32 ath12k_ahb_read32(struct ath12k_base *ab, u32 offset)
@@ -187,12 +194,12 @@ static void __ath12k_ahb_ext_irq_disable(struct ath12k_base *ab)
 {
 	int i;
 
-	for (i = 0; i < ATH12K_EXT_IRQ_GRP_NUM_MAX; i++) {
+	for (i = 0; i < ab->hw_params->ext_irq_grp_num_max; i++) {
 		struct ath12k_ext_irq_grp *irq_grp = &ab->ext_irq_grp[i];
 
 		ath12k_ahb_ext_grp_disable(irq_grp);
 
-		if (test_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags))
+		if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
 			continue;
 
 		if (irq_grp->napi_enabled) {
@@ -288,7 +295,7 @@ static void ath12k_ahb_sync_ext_irqs(struct ath12k_base *ab)
 	int i, j;
 	int irq_idx;
 
-	for (i = 0; i < ATH12K_EXT_IRQ_GRP_NUM_MAX; i++) {
+	for (i = 0; i < ab->hw_params->ext_irq_grp_num_max; i++) {
 		struct ath12k_ext_irq_grp *irq_grp = &ab->ext_irq_grp[i];
 
 		for (j = 0; j < irq_grp->num_irq; j++) {
@@ -313,7 +320,7 @@ static void ath12k_ahb_ce_irqs_disable(struct ath12k_base *ab)
 {
 	int i;
 
-	if (ab->pm_suspend)
+	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
 	for (i = 0; i < ab->hw_params->ce_count; i++) {
@@ -336,7 +343,7 @@ static void ath12k_ahb_ext_irq_enable(struct ath12k_base *ab)
 	struct ath12k_ext_irq_grp *irq_grp;
 	int i;
 
-	for (i = 0; i < ATH12K_EXT_IRQ_GRP_NUM_MAX; i++) {
+	for (i = 0; i < ab->hw_params->ext_irq_grp_num_max; i++) {
 		irq_grp = &ab->ext_irq_grp[i];
 		if (!irq_grp->napi_enabled) {
 			napi_enable(&irq_grp->napi);
@@ -348,12 +355,12 @@ static void ath12k_ahb_ext_irq_enable(struct ath12k_base *ab)
 
 static void ath12k_ahb_ext_irq_disable(struct ath12k_base *ab)
 {
-	if (ab->pm_suspend)
+	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
 	__ath12k_ahb_ext_irq_disable(ab);
 
-	if (!test_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags))
+	if (!test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
 		ath12k_ahb_sync_ext_irqs(ab);
 }
 
@@ -406,17 +413,20 @@ static int ath12k_ahb_power_up(struct ath12k_base *ab)
 		}
 	}
 
-	rmem = ath12k_core_get_reserved_mem_by_name(ab, "q6-region");
-	if (!rmem)
-		return -ENODEV;
-
-	ab_ahb->mem_phys = rmem->base;
-	ab_ahb->mem_size = rmem->size;
-	ab_ahb->mem_region = (void *)devm_ioremap_wc(dev, ab_ahb->mem_phys, ab_ahb->mem_size);
 	if (!ab_ahb->mem_region) {
-		ath12k_err(ab, "unable to map memory region: %pa+%pa\n",
-			   &rmem->base, &rmem->size);
+		rmem = ath12k_core_get_reserved_mem_by_name(ab, "q6-region");
+		if (!rmem)
+			return -ENODEV;
+
+		ab_ahb->mem_phys = rmem->base;
+		ab_ahb->mem_size = rmem->size;
+		ab_ahb->mem_region = (void *)devm_ioremap_wc(dev, ab_ahb->mem_phys,
+							     ab_ahb->mem_size);
+		if (!ab_ahb->mem_region) {
+			ath12k_err(ab, "unable to map memory region: %pa+%pa\n",
+					&rmem->base, &rmem->size);
 		return -ENOMEM;
+		}
 	}
 
 	snprintf(fw_name, sizeof(fw_name), "%s/%s/%s%d%s", ATH12K_FW_DIR,
@@ -676,7 +686,7 @@ ath12k_ahb_config_ext_irq(struct ath12k_base *ab,
 
 	ring_mask = ab->hw_params->ring_mask;
 	hal_ops = ab->hw_params->hal_ops;
-	for (i = 0; i < ATH12K_EXT_IRQ_GRP_NUM_MAX; i++) {
+	for (i = 0; i < ab->hw_params->ext_irq_grp_num_max; i++) {
 		irq_grp = &ab->ext_irq_grp[i];
 		num_irq = 0;
 
@@ -725,6 +735,18 @@ ath12k_ahb_config_ext_irq(struct ath12k_base *ab,
 			if (ring_mask->rx_mon_dest[i] & BIT(j))
 				irq_grp->irqs[num_irq++] =
 					rxdma2host_monitor_destination_mac1;
+
+			if (ring_mask->tx_mon_dest[i] & BIT(j))
+				irq_grp->irqs[num_irq++] =
+					txmon2host_monitor_destination_mac1;
+
+			if (ring_mask->tx_mon_buff[i] & BIT(j))
+				irq_grp->irqs[num_irq++] =
+					host2tx_monitor_ring1;
+
+			if (ring_mask->host2rxmon[i] & BIT(j))
+				irq_grp->irqs[num_irq++] =
+					host2rxdma_monitor_ring1;
 		}
 
 		irq_grp->num_irq = num_irq;
@@ -838,7 +860,10 @@ static void ath12k_ahb_free_ext_irq(struct ath12k_base *ab)
 {
 	int i, j;
 
-	for (i = 0; i < ATH12K_EXT_IRQ_GRP_NUM_MAX; i++) {
+	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
+		return;
+
+	for (i = 0; i < ab->hw_params->ext_irq_grp_num_max; i++) {
 		struct ath12k_ext_irq_grp *irq_grp = &ab->ext_irq_grp[i];
 
 		for (j = 0; j < irq_grp->num_irq; j++)
@@ -855,12 +880,17 @@ int ath12k_ahb_ppeds_register_interrupts(struct ath12k_base *ab, int type, int v
 	int ret = -EINVAL, irq;
 	struct platform_device *pdev = ab->pdev;
 	int irq_idx;
+	struct ath12k_dp *dp = ab->dp;
 
-	if (ab->dp->ppe.ppeds_soc_idx == ATH12K_PPEDS_INVALID_SOC_IDX) {
+	if (dp->ppe.ppeds_soc_idx == ATH12K_PPEDS_INVALID_SOC_IDX) {
 		ath12k_err(ab, "invalid soc idx in ppeds IRQ registration\n");
 		goto irq_fail;
 	}
-	if (type == HAL_WBM2SW_RELEASE && ring_num == HAL_WBM2SW_PPEDS_TX_CMPLN_RING_NUM) {
+	if ((type == HAL_WBM2SW_RELEASE &&
+		ring_num == HAL_WBM2SW_PPEDS_TX_CMPLN_RING_NUM) ||
+		(type == HAL_TX_COMPLETION &&
+		ring_num == HAL_TQM2SW_PPEDS_TX_CMPLN_RING_NUM)) {
+
 		irq_idx = ATH12K_IRQ_PPE_OFFSET + 1;
 		irq = platform_get_irq_byname(ab->pdev,
 					      irq_name[irq_idx]);
@@ -872,20 +902,21 @@ int ath12k_ahb_ppeds_register_interrupts(struct ath12k_base *ab, int type, int v
 		ab->irq_num[irq_idx] = irq;
 		irq_set_status_flags(irq, IRQ_DISABLE_UNLAZY);
 
-		snprintf(&ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE_WBM2SW_REL][0],
-			 sizeof(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE_WBM2SW_REL]),
-			 "ppe_wbm_rel_%d", ab->dp->ppe.ds_node_id);
+		snprintf(&dp->ppe.ppeds_irq_name[PPEDS_IRQ_TX_COMPLETION][0],
+			 sizeof(dp->ppe.ppeds_irq_name[PPEDS_IRQ_TX_COMPLETION]),
+			 "ppe_wbm_rel_%d", dp->ppe.ds_node_id);
 
-		ret = devm_request_irq(&pdev->dev, irq,  ath12k_dp_ppeds_handle_tx_comp,
+		ret = devm_request_irq(&pdev->dev, irq,
+				       dp->ppe.ppe_ops->ath12k_ppeds_ppe2tcl_tx_compln,
 				       IRQF_NO_AUTOEN | IRQF_NO_SUSPEND,
-				       ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE_WBM2SW_REL],
+				       dp->ppe.ppeds_irq_name[PPEDS_IRQ_TX_COMPLETION],
 				       (void *)ab);
 
 		if (ret) {
 			ath12k_err(ab, "ppeds RegIRQ: req_irq fail:%d\n", ret);
 			goto irq_fail;
 		}
-		ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE_WBM2SW_REL] = irq;
+		dp->ppe.ppeds_irq[PPEDS_IRQ_TX_COMPLETION] = irq;
 
 	} else if (type == HAL_PPE2TCL) {
 		irq_idx = ATH12K_IRQ_PPE_OFFSET + 2;
@@ -899,19 +930,20 @@ int ath12k_ahb_ppeds_register_interrupts(struct ath12k_base *ab, int type, int v
 		ab->irq_num[irq_idx] = irq;
 		irq_set_status_flags(irq, IRQ_DISABLE_UNLAZY);
 
-		snprintf(&ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL][0],
-			 sizeof(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL]),
-			 "ppe2tcl_%d",  ab->dp->ppe.ds_node_id);
+		snprintf(&dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL][0],
+			 sizeof(dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL]),
+			 "ppe2tcl_%d",  dp->ppe.ds_node_id);
 
-		ret = devm_request_irq(&pdev->dev, irq,  ath12k_ds_ppe2tcl_irq_handler,
+		ret = devm_request_irq(&pdev->dev, irq,
+				       dp->ppe.ppe_ops->ath12k_ppeds_ppe2tcl_irq_handler,
 				       IRQF_NO_AUTOEN | IRQF_NO_SUSPEND,
-				       ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL],
+				       dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL],
 				       (void *)ab);
 		if (ret) {
 			ath12k_err(ab, "ppeds RegIRQ: req_irq fail:%d\n", ret);
 			goto irq_fail;
 		}
-		ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE2TCL] = irq;
+		dp->ppe.ppeds_irq[PPEDS_IRQ_PPE2TCL] = irq;
 
 	} else if (type == HAL_REO2PPE) {
 		irq_idx = ATH12K_IRQ_PPE_OFFSET;
@@ -925,19 +957,20 @@ int ath12k_ahb_ppeds_register_interrupts(struct ath12k_base *ab, int type, int v
 		ab->irq_num[irq_idx] = irq;
 		irq_set_status_flags(irq, IRQ_DISABLE_UNLAZY);
 
-		snprintf(&ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE][0],
-			 sizeof(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE]),
-			 "reo2ppe_%d", ab->dp->ppe.ds_node_id);
+		snprintf(&dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE][0],
+			 sizeof(dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE]),
+			 "reo2ppe_%d", dp->ppe.ds_node_id);
 
-		ret = devm_request_irq(&pdev->dev, irq,  ath12k_ds_reo2ppe_irq_handler,
+		ret = devm_request_irq(&pdev->dev, irq,
+				       dp->ppe.ppe_ops->ath12k_ppeds_reo2ppe_irq_handler,
 				       IRQF_SHARED | IRQF_NO_SUSPEND,
-				       ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE],
+				       dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE],
 				       (void *)ab);
 		if (ret) {
 			ath12k_err(ab, "ppeds RegIRQ: req_irq fail:%d\n", ret);
 			goto irq_fail;
 		}
-		ab->dp->ppe.ppeds_irq[PPEDS_IRQ_REO2PPE] = irq;
+		dp->ppe.ppeds_irq[PPEDS_IRQ_REO2PPE] = irq;
 		disable_irq_nosync(irq);
 	}
 
@@ -965,8 +998,8 @@ void ath12k_ahb_ppeds_free_interrupts(struct ath12k_base *ab)
 	disable_irq_nosync(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_REO2PPE]);
 	devm_free_irq(ab->dev, ab->dp->ppe.ppeds_irq[PPEDS_IRQ_REO2PPE], ab);
 
-	disable_irq_nosync(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE_WBM2SW_REL]);
-	devm_free_irq(ab->dev, ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE_WBM2SW_REL], ab);
+	disable_irq_nosync(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_TX_COMPLETION]);
+	devm_free_irq(ab->dev, ab->dp->ppe.ppeds_irq[PPEDS_IRQ_TX_COMPLETION], ab);
 }
 #endif
 
@@ -1024,16 +1057,19 @@ static void ath12k_ahb_dp_umac_reset_enable_irq(struct ath12k_base *ab)
 
 static void ath12k_ahb_dp_umac_reset_free_irq(struct ath12k_base *ab)
 {
-        struct ath12k_dp_umac_reset *umac_reset = &ab->dp_umac_reset;
-        struct ath12k_ahb *ab_ahb = ath12k_ab_to_ahb(ab);
+	struct ath12k_dp_umac_reset *umac_reset = &ab->dp_umac_reset;
+	struct ath12k_ahb *ab_ahb = ath12k_ab_to_ahb(ab);
 
-        if (ab->hw_params->umac_irq_line_reset) {
-                iounmap(ab_ahb->interrupt_reset_base_addr);
-                ab_ahb->interrupt_reset_base_addr = NULL;
-        }
+	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
+		return;
 
-        disable_irq_nosync(umac_reset->irq_num);
-        free_irq(umac_reset->irq_num, ab);
+	if (ab->hw_params->umac_irq_line_reset) {
+		iounmap(ab_ahb->interrupt_reset_base_addr);
+		ab_ahb->interrupt_reset_base_addr = NULL;
+	}
+
+	disable_irq_nosync(umac_reset->irq_num);
+	free_irq(umac_reset->irq_num, ab);
 }
 
 void ath12k_ahb_umac_intr_line_reset(struct ath12k_base *ab)
@@ -1251,6 +1287,9 @@ static void ath12k_ahb_queue_all_userpd_reset(struct ath12k_base *ab)
 	for (i = 0; i < ag->num_devices; i++) {
 		partner_ab = ag->ab[i];
 
+		if (!partner_ab)
+			continue;
+
 		if (partner_ab->is_bypassed ||
 		    partner_ab->hif.bus == ATH12K_BUS_PCI)
 			continue;
@@ -1272,6 +1311,9 @@ static int ath12k_ahb_release_all_userpd(struct ath12k_base *ab)
 
 	for (i = 0; i < ag->num_devices; i++) {
 		partner_ab = ag->ab[i];
+
+		if (!partner_ab)
+			continue;
 
 		if (partner_ab->is_bypassed ||
 		    !(partner_ab->hif.bus == ATH12K_BUS_AHB ||
@@ -1554,7 +1596,7 @@ ath12k_ahb_get_device_family(const struct platform_device *pdev)
 			of_id = of_match_device(driver->id_table, &pdev->dev);
 			if (of_id) {
 				/* Found the driver */
-				return 0;
+				return device_id;
 			}
 		}
 	}
@@ -1643,6 +1685,7 @@ static int ath12k_ahb_probe(struct platform_device *pdev)
 	ath12k_dbg(ab, ATH12K_DBG_AHB, "AHB device family id: %d\n", device_id);
 
 	ab_ahb->device_ops = &ath12k_ahb_family_drivers[device_id]->ops;
+	ab_ahb->reg_base = ath12k_ahb_family_drivers[device_id]->reg_base;
 
 	/* Call device specific probe. This is the callback that can
 	 * be used to override any ops in future
@@ -1654,7 +1697,7 @@ static int ath12k_ahb_probe(struct platform_device *pdev)
 			goto err_core_free;
 		}
 	}
- 
+
 	ath12k_fw_map(ab);
 
 	ret = ath12k_ahb_resource_init(ab);

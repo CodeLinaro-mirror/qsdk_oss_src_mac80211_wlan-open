@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause-Clear */
 /*
  * Copyright (c) 2020-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #ifndef _ATH12K_MHI_H
 #define _ATH12K_MHI_H
@@ -17,6 +17,8 @@
 #define MHICTRL					0x38
 #define MHICTRL_RESET_MASK			0x2
 #define ATH12K_PCI_FW_RDDM_SZ			0x600000
+#define PCI_INVALID_READ(val)			((val) == U32_MAX)
+#define MHI_DEVICE_RDDM_COOKIE  0xCAFECACE
 
 enum ath12k_mhi_state {
 	ATH12K_MHI_INIT,
@@ -31,6 +33,7 @@ enum ath12k_mhi_state {
 	ATH12K_MHI_RDDM,
 	ATH12K_MHI_RDDM_DONE,
 	ATH12K_MHI_SOC_RESET,
+	ATH12K_MHI_MISSION_MODE,
 };
 
 int ath12k_mhi_start(struct ath12k_pci *ar_pci);
@@ -39,10 +42,11 @@ int ath12k_mhi_register(struct ath12k_pci *ar_pci);
 void ath12k_mhi_unregister(struct ath12k_pci *ar_pci);
 void ath12k_mhi_set_mhictrl_reset(struct ath12k_base *ab);
 void ath12k_mhi_clear_vector(struct ath12k_base *ab);
-
 void ath12k_mhi_suspend(struct ath12k_pci *ar_pci);
 void ath12k_mhi_resume(struct ath12k_pci *ar_pci);
 void ath12k_mhi_coredump(struct mhi_controller *mhi_ctrl, bool in_panic);
 int ath12k_mhi_set_state(struct ath12k_pci *ab_pci,
-                                enum ath12k_mhi_state mhi_state);
+			 enum ath12k_mhi_state mhi_state);
+void *ath12k_pci_get_priv(struct ath12k_base *ab);
+void ath12k_mhi_q6_boot_debug_timeout_hdlr(struct timer_list *t);
 #endif

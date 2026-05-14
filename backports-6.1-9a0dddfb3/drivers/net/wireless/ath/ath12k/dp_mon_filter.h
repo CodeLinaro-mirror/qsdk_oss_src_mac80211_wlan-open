@@ -8,6 +8,16 @@
 
 #include "debug.h"
 #include "pktlog.h"
+
+#define DP_SMART_MON_DATA_FILTER        BIT(1)
+#define DP_SMART_MON_MGMT_FILTER        BIT(2)
+#define DP_SMART_MON_CTRL_FILTER        BIT(3)
+
+/* Each bit set represent 64, 128, 256.
+ * If all 3 bits are set config length is > 256.
+ */
+#define DP_TX_MON_MAX_DMA_LENGTH        GENMASK(2, 0)
+
 /**
  * struct dp_mon_rx_filter - Monitor RX TLV filter
  * @tlv_filter: Rx ring TLV filter
@@ -18,12 +28,35 @@ struct dp_mon_rx_filter {
 	bool valid;
 };
 
+/**
+ * struct dp_mon_tx_filter - Monitor Tx TLV filter
+ * @filter: Tx ring TLV filter
+ * @valid: enable/disable TLV filter
+ */
+struct dp_mon_tx_filter {
+	struct htt_tx_ring_tlv_filter filter;
+	bool valid;
+};
+
+enum dp_mon_tx_filter_mode {
+	DP_MON_TX_FULL_MONITOR,
+	DP_MON_TX_FILTER_PKTLOG_HYBRID,
+	DP_MON_TX_FILTER_MAX
+};
+
+enum dp_mon_tx_filter_srng_type {
+	DP_MON_TX_FILTER_SRNG_TYPE_TXMON_DEST,
+	DP_MON_TX_FILTER_SRNG_TYPE_MAX
+};
+
 enum dp_mon_filter_mode {
 	DP_MON_FILTER_STATS_MODE,
 	DP_MON_FILTER_MONITOR_MODE,
 	DP_MON_FILTER_NRP_MODE,
 	DP_MON_FILTER_PKTLOG_FULL_MODE,
 	DP_MON_FILTER_PKTLOG_LITE_MODE,
+	DP_MON_FILTER_PKTLOG_CBF_MODE,
+	DP_MON_FILTER_EXT_MON_MODE,
 	DP_MON_FILTER_MAX_MODE
 };
 
@@ -67,6 +100,8 @@ void ath12k_dp_mon_rx_display_filters(struct ath12k_dp *dp,
 				      struct dp_mon_rx_filter *rx_filter);
 void ath12k_dp_mon_rx_nrp_config_filter(struct ath12k_pdev_dp *dp_pdev,
 					bool enable);
+void ath12k_dp_mon_rx_smart_mon_config_filter(struct ath12k_pdev_dp *dp_pdev,
+					      bool enable);
 void ath12k_dp_mon_rx_wmask_subscribe(void *ptr,
 				      struct htt_rx_ring_tlv_filter *tlv_filter);
 void ath12k_dp_tx_htt_rx_mgmt_flag0_fp_filter_set(u32 *ptr, u16 filter);
@@ -86,4 +121,16 @@ void ath12k_dp_tx_htt_rx_mgmt_flag1_md_filter_set(u32 *ptr, u16 filter);
 void ath12k_dp_tx_htt_rx_ctrl_flag2_md_filter_set(u32 *ptr, u16 filter);
 void ath12k_dp_tx_htt_rx_ctrl_flag3_md_filter_set(u32 *ptr, u16 filter);
 void ath12k_dp_tx_htt_rx_data_flag3_md_filter_set(u32 *ptr, u16 filter);
+void ath12k_dp_tx_htt_rx_mgmt_fpmo_flag0_filter_set(u32 *ptr, u16 filter);
+void ath12k_dp_tx_htt_rx_ctrl_fpmo_flag0_filter_set(u32 *ptr, u16 filter);
+void ath12k_dp_tx_htt_rx_data_fpmo_flag1_filter_set(u32 *ptr, u16 filter);
+void ath12k_dp_htt_rx_filter_rxmon_cfg(void *ptr,
+				       struct htt_rx_ring_tlv_filter *tlv_filter);
+int ath12k_dp_mon_tx_filter_alloc(struct ath12k_pdev_dp *dp_pdev);
+void ath12k_dp_mon_tx_filter_free(struct ath12k_pdev_dp *dp_pdev);
+void ath12k_dp_ext_mon_rx_config_filter(struct ath12k_pdev_dp *dp_pdev,
+					bool enable);
+#ifdef CPTCFG_ATH12K_TX_MONITOR
+int ath12k_dp_mon_tx_update_ring_filter(struct ath12k_pdev_dp *dp_pdev);
+#endif
 #endif

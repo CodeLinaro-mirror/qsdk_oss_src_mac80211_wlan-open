@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include "hal_desc.h"
@@ -261,6 +261,12 @@ const struct ath12k_hw_regs wcn7850_regs = {
 	/* PCIe base address */
 	.pcie_qserdes_sysclk_en_sel = 0x01e0e0a8,
 	.pcie_pcs_osc_dtct_config_base = 0x01e0f45c,
+
+	/*PCIe qrtr node id reg*/
+	.pcie_pcie_local_qrtr_ins_reg = 0x1E03164,
+
+	/*PCIe hot reset reg*/
+	.pcie_gcc_gcc_pcie_hot_rst = 0x1e38338,
 
 	/* PPE release ring address */
 	.hal_ppe_rel_ring_base = 0x0000043c,
@@ -603,6 +609,10 @@ const struct ath12k_hw_hal_params ath12k_wifi7_hw_hal_params_wcn7850 = {
 	.num_tx_msdus_per_link_desc = HAL_NUM_TX_MSDUS_PER_LINK_DESC,
 	.num_rx_msdus_per_link_desc = HAL_NUM_RX_MSDUS_PER_LINK_DESC,
 	.num_mpdu_links_per_queue_desc = HAL_NUM_MPDU_LINKS_PER_QUEUE_DESC,
+	.dscp_tid_map_tbl_max_entries = HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX,
+	.num_tids = HAL_WIFI7_NUM_TIDS,
+	.reoq_lut_size = HAL_WIFI7_REOQ_LUT_SIZE,
+	.dp_rx_err_rdi = HAL_WIFI7_DP_RX_ERR_RDI,
 };
 
 static
@@ -661,6 +671,10 @@ const struct hal_ops hal_wcn7850_ops = {
 	.reo_shared_qaddr_cache_clear = ath12k_wifi7_hal_reo_shared_qaddr_cache_clear,
 	.rxdesc_get_mpdu_start_addr2 =
 			ath12k_wifi7_hal_rxdesc_get_mpdu_start_addr2_wcn7850,
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	.rxdesc_get_key_id_octet =
+			ath12k_wifi7_hal_rxdesc_get_key_id_octet_wcn7850,
+#endif
 	.rx_h_is_decrypted = ath12k_wifi7_hal_rx_h_is_decrypted_wcn7850,
 	.rx_desc_get_mpdu_ppdu_id = ath12k_wifi7_hal_rx_desc_get_mpdu_ppdu_id_wcn7850,
 	.rx_desc_get_mpdu_start_tag = ath12k_wifi7_hal_rx_desc_get_mpdu_start_tag_wcn7850,
@@ -669,4 +683,5 @@ const struct hal_ops hal_wcn7850_ops = {
 	.rx_h_l3pad_get = ath12k_wifi7_hal_rx_h_l3pad_wcn7850,
 	.hal_mon_ops_init = ath12k_wifi7_hal_mon_ops_init,
 	.get_hw_hptp = ath12k_wifi7_hal_get_hw_hptp,
+	.hal_get_tlv_tag_params = ath12k_wifi7_get_tlv_tag_params,
 };

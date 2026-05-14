@@ -1,17 +1,27 @@
 /* SPDX-License-Identifier: BSD-3-Clause-Clear */
 /*
  * Copyright (c) 2019-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #ifndef ATH12K_PCI_H
 #define ATH12K_PCI_H
 
 #include <linux/mhi.h>
+#include <linux/timer.h>
 
 #include "core.h"
 
+#define QCN9274_DEVICE_ID       0x1109
+#define QCN9625_DEVICE_ID       0x1113
+#define QCN9589_DEVICE_ID       0x1114
+
+#define MHI_POWER_ON_DEBUG_TIMEOUT_MS 7000
 #define PCIE_SOC_GLOBAL_RESET			0x3008
 #define PCIE_SOC_GLOBAL_RESET_V			1
+
+#define PCIE_BHI_EXECENV			0x128
+#define PCIE_WIFI8_Q6_ONLY_RESET		0x1E381F0
+#define PCIE_WIFI8_Q6_ONLY_RESET_V		1
 
 #define WLAON_WARM_SW_ENTRY			0x1f80504
 #define WLAON_SOC_RESET_CAUSE_REG		0x01f8060c
@@ -28,6 +38,13 @@
 #define PCIE_PCIE_PARF_LTSSM			0x1e081b0
 #define PARM_LTSSM_VALUE			0x111
 
+#define PCIE_PCIE_PARF_PM_STTS              0x1E08024
+
+#define PCIE_PCI_MSI_CAP_ID_NEXT_CTRL_REG   0x50
+#define PCIE_MSI_CAP_OFF_04H_REG        0x54
+#define PCIE_MSI_CAP_OFF_08H_REG        0x58
+#define PCIE_MSI_CAP_OFF_0CH_REG        0x5C
+
 #define GCC_GCC_PCIE_HOT_RST			0x1e38338
 #define GCC_GCC_PCIE_HOT_RST_VAL		0x10
 
@@ -35,6 +52,12 @@
 #define PCIE_SMLH_REQ_RST_LINK_DOWN		0x2
 #define PCIE_INT_CLEAR_ALL			0xffffffff
 
+#define PCIE_GCC_GCC_PCIE_HOT_RST(hal) \
+	((hal)->regs->pcie_gcc_gcc_pcie_hot_rst)
+#define PCIE_PCIE_LOCAL_REG_PCIE_LOCAL_RSV0(hal) \
+	((hal)->regs->pcie_pcie_local_qrtr_ins_reg)
+#define PCIE_PCIE_LOCAL_REG_PCIE_LOCAL_RSV1(hal) \
+	((hal)->regs->pcie_pcie_local_unified_fw_board_id_reg)
 #define PCIE_QSERDES_COM_SYSCLK_EN_SEL_REG(ab) \
 	((hal)->regs->pcie_qserdes_sysclk_en_sel)
 #define PCIE_QSERDES_COM_SYSCLK_EN_SEL_VAL	0x10
@@ -99,11 +122,12 @@ struct ath12k_pci_device_family_ops {
 	int (*probe)(struct pci_dev *pdev, const struct pci_device_id *pci_dev);
 	struct ath12k_dp *(*dp_init)(struct ath12k_base *ab);
 	void (*dp_deinit)(struct ath12k_dp *dp);
-};
-
-struct ath12k_reg_base {
-	u32 umac_base;
-	u32 ce_reg_base;
+	struct ath12k_mgmt *(*mgmt_init)(struct ath12k_base *ab);
+	void (*mgmt_deinit)(struct ath12k_mgmt *mgmt);
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	void (*ipa_init)(struct ath12k_base *ab);
+#endif
+	void (*get_reset_reason)(struct ath12k_base *ab);
 };
 
 struct ath12k_pci {
@@ -115,9 +139,11 @@ struct ath12k_pci {
 	struct mhi_controller *mhi_ctrl;
 	const struct ath12k_msi_config *msi_config;
 	unsigned long mhi_state;
-	enum mhi_callback mhi_pre_cb;
 	u32 register_window;
-
+	struct timer_list mhi_q6_boot_debug_timer;
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	struct ath12k_pci_extn ath12k_pci_extn;
+#endif
 	/* protects register_window above */
 	spinlock_t window_lock;
 
@@ -131,6 +157,8 @@ struct ath12k_pci {
 	const struct ath12k_reg_base *reg_base;
 	u16 def_link_speed;
 	u16 def_link_width;
+	u32 unified_fw_board_id;
+	u32 window_reg_addr;
 };
 
 struct ath12k_pci_driver {
@@ -149,6 +177,7 @@ int ath12k_pci_get_user_msi_assignment(struct ath12k_base *ab, char *user_name,
 				       int *num_vectors, u32 *user_base_data,
 				       u32 *base_vector);
 int ath12k_pci_get_msi_irq(struct ath12k_base *ab, unsigned int vector);
+int ath12k_pci_get_iova(struct ath12k_base *ab, u64 *addr, u64 *size);
 void ath12k_pci_write32(struct ath12k_base *ab, u32 offset, u32 value);
 u32 ath12k_pci_read32(struct ath12k_base *ab, u32 offset);
 int ath12k_pci_map_service_to_pipe(struct ath12k_base *ab, u16 service_id,
@@ -175,4 +204,7 @@ void ath12k_pci_ppeds_irq_enable(struct ath12k_base *ab, enum ppeds_irq_type typ
 void ath12k_pci_ppeds_irq_disable(struct ath12k_base *ab, enum ppeds_irq_type type);
 struct pci_dev *ath12k_pci_get_dev_by_ab(struct ath12k_base *ab);
 int ath12k_pci_get_link_status(struct pci_dev *pdev, u16 *speed, u16 *width);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+dma_addr_t ath12k_pci_ppeds_get_umac_reg_paddr(struct ath12k_base *ab, u32 offset);
+#endif
 #endif /* ATH12K_PCI_H */

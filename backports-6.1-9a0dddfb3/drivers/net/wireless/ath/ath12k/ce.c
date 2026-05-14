@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022, 2024-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
-#include "dp_rx.h"
 #include "debug.h"
 #include "hif.h"
 #include "hal.h"
@@ -607,6 +606,9 @@ void ath12k_ce_cleanup_pipes(struct ath12k_base *ab)
 {
 	struct ath12k_ce_pipe *pipe;
 	int pipe_num;
+
+	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
+		return;
 
 	for (pipe_num = 0; pipe_num < ab->hw_params->ce_count; pipe_num++) {
 		pipe = &ab->ce.ce_pipe[pipe_num];

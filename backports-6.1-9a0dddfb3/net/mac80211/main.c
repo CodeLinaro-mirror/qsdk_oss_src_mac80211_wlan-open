@@ -5,7 +5,7 @@
  * Copyright 2006-2007	Jiri Benc <jbenc@suse.cz>
  * Copyright 2013-2014  Intel Mobile Communications GmbH
  * Copyright (C) 2017     Intel Deutschland GmbH
- * Copyright (C) 2018-2024 Intel Corporation
+ * Copyright (C) 2018-2026 Intel Corporation
  */
 
 #include <net/mac80211.h>
@@ -39,6 +39,9 @@
 #define PHY_5GHZ_LOW "phy01"
 #define PHY_5GHZ_HIGH "phy02"
 #define PHY_6GHZ "phy03"
+#define PHY_6GHZ_LOW "phy03"
+#define PHY_6GHZ_HIGH "phy04"
+#define PHY_SCAN_RADIO "phy-scan-00"
 
 void ieee80211_configure_filter(struct ieee80211_local *local)
 {
@@ -500,7 +503,6 @@ static void ieee80211_restart_work(struct work_struct *work)
 	wiphy_lock(local->hw.wiphy);
 	wiphy_work_flush(local->hw.wiphy, NULL);
         flush_work(&local->awgn_detected_work);
-	flush_work(&local->cw_detected_work);
 
 	wiphy_work_cancel(local->hw.wiphy, &local->sched_scan_stopped_work);
 	wiphy_work_cancel(local->hw.wiphy, &local->radar_detected_work);
@@ -938,8 +940,11 @@ struct ieee80211_hw *ieee80211_alloc_hw_nm(size_t priv_data_len,
 			local->wlan_name = "wlan1";
 		else if (!strcmp(requested_name, PHY_5GHZ_HIGH))
 			local->wlan_name = "wlan2";
-		else if (!strcmp(requested_name, PHY_6GHZ))
+		else if (!strcmp(requested_name, PHY_6GHZ) ||
+			 !strcmp(requested_name, PHY_6GHZ_LOW))
 			local->wlan_name = "wlan3";
+		else if (!strcmp(requested_name, PHY_6GHZ_HIGH))
+			local->wlan_name = "wlan4";
 		else
 			local->wlan_name = "wlan%d";
 	} else
@@ -1024,8 +1029,6 @@ struct ieee80211_hw *ieee80211_alloc_hw_nm(size_t priv_data_len,
 			ieee80211_dfs_radar_detected_work);
 	INIT_WORK(&local->awgn_detected_work,
 		  ieee80211_awgn_detected_work);
-	INIT_WORK(&local->cw_detected_work,
-		  ieee80211_cw_detected_work);
 	INIT_LIST_HEAD(&local->awgn_info_list);
 	INIT_LIST_HEAD(&local->cw_info_list);
 
@@ -1242,52 +1245,13 @@ ieee80211_ifcomb_check(const struct ieee80211_iface_combination *c, int n_comb)
 	return true;
 }
 
-static int
-ieee80211_check_per_hw_iface_comb(struct ieee80211_local *local,
-				  const struct ieee80211_iface_combination *c)
-{
-	int h, l;
-	u32 hw_idx_bm = 0;
-
-	if (!local->emulate_chanctx)
-		return -EINVAL;
-
-	for (h = 0; h < c->n_hw_list; h++) {
-		const struct ieee80211_iface_per_hw *hl;
-		const struct ieee80211_chans_per_hw *chans;
-
-		hl = &c->iface_hw_list[h];
-
-		if (hl->hw_chans_idx >= local->hw.wiphy->num_hw)
-			return -EINVAL;
-
-		chans = local->hw.wiphy->hw_chans[hl->hw_chans_idx];
-		if (c->radar_detect_widths &&
-		    cfg80211_hw_chans_includes_dfs(chans) &&
-		    hl->num_different_channels > 1)
-			return -EINVAL;
-
-		for (l = 0; l < hl->n_limits; l++)
-			if ((hl->limits[l].types & BIT(NL80211_IFTYPE_ADHOC)) &&
-			    hl->limits[l].max > 1)
-				return -EINVAL;
-
-		if (hw_idx_bm & BIT(h))
-			return -EINVAL;
-
-		hw_idx_bm |= BIT(h);
-	}
-
-	return 0;
-}
-
 int ieee80211_register_hw(struct ieee80211_hw *hw)
 {
 	struct ieee80211_local *local = hw_to_local(hw);
 	int result, i;
 	enum nl80211_band band;
 	int channels, max_bitrates;
-	bool supp_ht, supp_vht, supp_he, supp_eht;
+	bool supp_ht, supp_vht, supp_he, supp_eht, supp_uhr;
 	struct cfg80211_chan_def dflt_chandef = {};
 
 	if (ieee80211_hw_check(hw, QUEUE_CONTROL) &&
@@ -1399,25 +1363,6 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
 			return -EINVAL;
 	}
 
-	for (i = 0; i < local->hw.wiphy->n_iface_combinations; i++) {
-		const struct ieee80211_iface_combination *comb;
-
-		comb = &local->hw.wiphy->iface_combinations[i];
-
-		if (comb->n_hw_list && !local->hw.wiphy->num_hw)
-			return -EINVAL;
-
-		if (!comb->n_hw_list)
-			continue;
-
-		/*
-		 * Run through similar validations on the per-hardware
-		 * interface combinations, if advertised.
-		 */
-		if (ieee80211_check_per_hw_iface_comb(local, comb))
-			return -EINVAL;
-	}
-
 	/* Only HW csum features are currently compatible with mac80211 */
 	if (WARN_ON(hw->netdev_features & ~MAC80211_SUPPORTED_FEATURES))
 		return -EINVAL;
@@ -1438,6 +1383,7 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
 	supp_vht = false;
 	supp_he = false;
 	supp_eht = false;
+	supp_uhr = false;
 	for (band = 0; band < NUM_NL80211_BANDS; band++) {
 		const struct ieee80211_sband_iftype_data *iftd;
 		struct ieee80211_supported_band *sband;
@@ -1491,6 +1437,7 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
 
 			supp_he = supp_he || iftd->he_cap.has_he;
 			supp_eht = supp_eht || iftd->eht_cap.has_eht;
+			supp_uhr = supp_uhr || iftd->uhr_cap.has_uhr;
 
 			if (band == NL80211_BAND_2GHZ)
 				he_40_mhz_cap =
@@ -1521,6 +1468,10 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
 
 		/* EHT requires HE support */
 		if (WARN_ON(supp_eht && !supp_he))
+			return -EINVAL;
+
+		/* UHR requires EHT support */
+		if (WARN_ON(supp_uhr && !supp_eht))
 			return -EINVAL;
 
 		if (!sband->ht_cap.ht_supported)
@@ -1626,6 +1577,10 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
 				sizeof(struct ieee80211_eht_mcs_nss_supp) +
 				IEEE80211_EHT_PPE_THRES_MAX_LEN;
 	}
+
+	if (supp_uhr)
+		local->scan_ies_len +=
+			3 + sizeof(struct ieee80211_uhr_cap_elem_fixed);
 
 	if (!local->ops->hw_scan) {
 		/* For hw_scan, driver needs to set these up. */
@@ -1889,7 +1844,6 @@ void ieee80211_unregister_hw(struct ieee80211_hw *hw)
 	rtnl_unlock();
 
 	flush_work(&local->awgn_detected_work);
-	flush_work(&local->cw_detected_work);
 	cancel_work_sync(&local->restart_work);
 
 	on_each_cpu((void (*)(void *))ieee80211_clear_tx_pending, local, 1);

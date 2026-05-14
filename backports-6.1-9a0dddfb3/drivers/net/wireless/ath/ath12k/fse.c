@@ -7,6 +7,7 @@
 #include "fse.h"
 #include "dp_rx.h"
 #include "peer.h"
+#include "ath12k_notif.h"
 #include <linux/module.h>
 
 bool ath12k_fse_enable = true;
@@ -90,7 +91,7 @@ ath12k_sfe_update_flow_info(struct rx_flow_info *flow_info,
 {
 	struct hal_flow_tuple_info *tuple_info = &flow_info->flow_tuple_info;
 
-	ath12k_generic_dbg(ATH12K_DBG_DP_FST,
+	ath12k_generic_dbg(ATH12K_DBG_DP_FST, ATH12K_DBG_L0,
 			   "%s S_IP:%x:%x:%x:%x,sPort:%u,D_IP:%x:%x:%x:%x,dPort:%u,Proto:%d,Ver:%d\n",
 			   fse_state_to_string(operation),
 			   src_ip[0], src_ip[1], src_ip[2], src_ip[3], src_port,
@@ -127,6 +128,7 @@ int ath12k_sfe_add_flow_entry(void *ptr,
 {
 	struct rx_flow_info flow_info = {0};
 	struct ath12k_base *ab = (struct ath12k_base *)ptr;
+	int ret;
 
 	if (!ath12k_fse_enable)
 		return -EINVAL;
@@ -134,7 +136,27 @@ int ath12k_sfe_add_flow_entry(void *ptr,
 	ath12k_sfe_update_flow_info(&flow_info, src_ip, src_port, dest_ip,
 				    dest_port, protocol, version, FSE_RULE_ADD);
 
-	return ath12k_dp_rx_flow_add_entry(ab, &flow_info);
+	ret = ath12k_dp_rx_flow_add_entry(ab, &flow_info);
+
+	/* Notify external listeners that a new flow has been programmed into
+	 * the FSE.  The hot-path guard ensures we only build the payload when
+	 * at least one listener is registered, keeping the fast path cheap.
+	 */
+	if (!ret &&
+	    ath12k_fse_update_notif_has_listeners()) {
+		struct ath12k_fse_update_event ev = {};
+
+		memcpy(ev.src_ip,  src_ip,  sizeof(ev.src_ip));
+		ev.src_port  = src_port;
+		memcpy(ev.dest_ip, dest_ip, sizeof(ev.dest_ip));
+		ev.dest_port = dest_port;
+		ev.protocol  = protocol;
+		ev.version   = version;
+		ev.op        = ATH12K_FSE_OP_ADD;
+		ath12k_fse_update_notif_call_chain(&ev);
+	}
+
+	return ret;
 }
 
 int ath12k_sfe_delete_flow_entry(void *ptr,
@@ -146,6 +168,7 @@ int ath12k_sfe_delete_flow_entry(void *ptr,
 	struct ath12k_hw *ah = NULL;
 	struct ath12k *ar;
 	struct ieee80211_hw *hw = (struct ieee80211_hw *)ptr;
+	int ret;
 
 	if (!ath12k_fse_enable)
 		return -EINVAL;
@@ -162,5 +185,22 @@ int ath12k_sfe_delete_flow_entry(void *ptr,
 	ath12k_sfe_update_flow_info(&flow_info, src_ip, src_port, dest_ip,
 				    dest_port, protocol, version, FSE_RULE_DELETE);
 
-	return ath12k_dp_rx_flow_delete_entry(ar->ab, &flow_info);
+	ret = ath12k_dp_rx_flow_delete_entry(ar->ab, &flow_info);
+
+	/* Notify external listeners that a flow has been removed from the FSE. */
+	if (!ret &&
+	    ath12k_fse_update_notif_has_listeners()) {
+		struct ath12k_fse_update_event ev = {};
+
+		memcpy(ev.src_ip,  src_ip,  sizeof(ev.src_ip));
+		ev.src_port  = src_port;
+		memcpy(ev.dest_ip, dest_ip, sizeof(ev.dest_ip));
+		ev.dest_port = dest_port;
+		ev.protocol  = protocol;
+		ev.version   = version;
+		ev.op        = ATH12K_FSE_OP_DELETE;
+		ath12k_fse_update_notif_call_chain(&ev);
+	}
+
+	return ret;
 }

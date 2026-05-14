@@ -13,181 +13,412 @@
 #include "debugfs.h"
 #include "dp_cmn.h"
 
+static enum htt_ppdu_stats_gi
+ath12k_debugfs_sta_get_gi_idx(const struct rate_info *txrate)
+{
+	if (txrate->flags & RATE_INFO_FLAGS_EHT_MCS) {
+		switch (txrate->eht_gi) {
+		case NL80211_RATE_INFO_EHT_GI_0_8:
+			return HTT_PPDU_STATS_SGI_0_8_US;
+		case NL80211_RATE_INFO_EHT_GI_1_6:
+			return HTT_PPDU_STATS_SGI_1_6_US;
+		case NL80211_RATE_INFO_EHT_GI_3_2:
+			return HTT_PPDU_STATS_SGI_3_2_US;
+		default:
+			return HTT_PPDU_STATS_SGI_0_8_US;
+		}
+	}
 
-void ath12k_debugfs_sta_add_tx_stats( struct ath12k_dp_link_peer *peer,
-				     struct ath12k_per_peer_tx_stats *peer_stats,
-				     u8 legacy_rate_idx)
+	if (txrate->flags & RATE_INFO_FLAGS_HE_MCS) {
+		switch (txrate->he_gi) {
+		case NL80211_RATE_INFO_HE_GI_0_8:
+			return HTT_PPDU_STATS_SGI_0_8_US;
+		case NL80211_RATE_INFO_HE_GI_1_6:
+			return HTT_PPDU_STATS_SGI_1_6_US;
+		case NL80211_RATE_INFO_HE_GI_3_2:
+			return HTT_PPDU_STATS_SGI_3_2_US;
+		default:
+			return HTT_PPDU_STATS_SGI_0_8_US;
+		}
+	}
+
+	if (txrate->flags & (RATE_INFO_FLAGS_VHT_MCS | RATE_INFO_FLAGS_MCS))
+		return (txrate->flags & RATE_INFO_FLAGS_SHORT_GI) ?
+			HTT_PPDU_STATS_SGI_0_4_US : HTT_PPDU_STATS_SGI_0_8_US;
+
+	return HTT_PPDU_STATS_SGI_0_8_US;
+}
+
+static int ath12k_he_ru_alloc_to_ru_loc_idx(u16 nl_ru)
+{
+	switch (nl_ru) {
+	case NL80211_RATE_INFO_HE_RU_ALLOC_26:
+		return ATH12K_EHT_RU_26;
+	case NL80211_RATE_INFO_HE_RU_ALLOC_52:
+		return ATH12K_EHT_RU_52;
+	case NL80211_RATE_INFO_HE_RU_ALLOC_106:
+		return ATH12K_EHT_RU_106;
+	case NL80211_RATE_INFO_HE_RU_ALLOC_242:
+		return ATH12K_EHT_RU_242;
+	case NL80211_RATE_INFO_HE_RU_ALLOC_484:
+		return ATH12K_EHT_RU_484;
+	case NL80211_RATE_INFO_HE_RU_ALLOC_996:
+		return ATH12K_EHT_RU_996;
+	default:
+		return -1;
+	}
+}
+
+static int ath12k_eht_ru_alloc_to_ru_loc_idx(u16 nl_ru)
+{
+	switch (nl_ru) {
+	case NL80211_RATE_INFO_EHT_RU_ALLOC_26:
+		return ATH12K_EHT_RU_26;
+	case NL80211_RATE_INFO_EHT_RU_ALLOC_52:
+		return ATH12K_EHT_RU_52;
+	case NL80211_RATE_INFO_EHT_RU_ALLOC_52P26:
+		return ATH12K_EHT_RU_52_26;
+	case NL80211_RATE_INFO_EHT_RU_ALLOC_106:
+		return ATH12K_EHT_RU_106;
+	case NL80211_RATE_INFO_EHT_RU_ALLOC_106P26:
+		return ATH12K_EHT_RU_106_26;
+	case NL80211_RATE_INFO_EHT_RU_ALLOC_242:
+		return ATH12K_EHT_RU_242;
+	case NL80211_RATE_INFO_EHT_RU_ALLOC_484:
+		return ATH12K_EHT_RU_484;
+	case NL80211_RATE_INFO_EHT_RU_ALLOC_484P242:
+		return ATH12K_EHT_RU_484_242;
+	case NL80211_RATE_INFO_EHT_RU_ALLOC_996:
+		return ATH12K_EHT_RU_996;
+	case NL80211_RATE_INFO_EHT_RU_ALLOC_996P484:
+		return ATH12K_EHT_RU_996_484;
+	case NL80211_RATE_INFO_EHT_RU_ALLOC_996P484P242:
+		return ATH12K_EHT_RU_996_484_242;
+	case NL80211_RATE_INFO_EHT_RU_ALLOC_2x996:
+		return ATH12K_EHT_RU_996x2;
+	case NL80211_RATE_INFO_EHT_RU_ALLOC_2x996P484:
+		return ATH12K_EHT_RU_996x2_484;
+	case NL80211_RATE_INFO_EHT_RU_ALLOC_3x996:
+		return ATH12K_EHT_RU_996x3;
+	case NL80211_RATE_INFO_EHT_RU_ALLOC_3x996P484:
+		return ATH12K_EHT_RU_996x3_484;
+	case NL80211_RATE_INFO_EHT_RU_ALLOC_4x996:
+		return ATH12K_EHT_RU_996x4;
+	default:
+		return -1;
+	}
+}
+
+void
+ath12k_debugfs_sta_update_success(struct ath12k_dp_link_peer *peer,
+				  struct ath12k_per_peer_tx_stats *peer_stats)
 {
 	struct rate_info *txrate = &peer->txrate;
 	struct ath12k_htt_tx_stats *tx_stats = peer->peer_stats.tx_stats;
-	int gi, mcs, bw, nss, ru_type, ppdu_type;
+	int gi, mcs, bw, nss, ppdu_type;
+	u16 ru_type;
+	u32 succ_bytes, succ_pkts, retry_bytes;
+	u64 ampdu_pkts, ampdu_bytes;
 
 	if (!tx_stats)
 		return;
 
-	gi = FIELD_GET(RATE_INFO_FLAGS_SHORT_GI, txrate->flags);
+	gi = ath12k_debugfs_sta_get_gi_idx(txrate);
 	mcs = txrate->mcs;
 	bw = ath12k_mac_mac80211_bw_to_ath12k_bw(txrate->bw);
 	nss = txrate->nss - 1;
+	succ_bytes = peer_stats->succ_bytes;
+	retry_bytes = peer_stats->retry_bytes;
+	succ_pkts = peer_stats->succ_pkts;
+	ru_type = peer_stats->ru_tones;
+	ppdu_type = tx_stats->ppdu_type;
 
-#define STATS_OP_FMT(name) tx_stats->stats[ATH12K_STATS_TYPE_##name]
+	ampdu_pkts = peer_stats->mpdu_tried; /* mpdu success + mpdu retry */
+	ampdu_bytes = succ_bytes + retry_bytes;
 
 	if (txrate->flags & RATE_INFO_FLAGS_EHT_MCS) {
-		STATS_OP_FMT(SUCC).eht[0][mcs] += peer_stats->succ_bytes;
-		STATS_OP_FMT(SUCC).eht[1][mcs] += peer_stats->succ_pkts;
-		STATS_OP_FMT(FAIL).eht[0][mcs] += peer_stats->failed_bytes;
-		STATS_OP_FMT(FAIL).eht[1][mcs] += peer_stats->failed_pkts;
-		STATS_OP_FMT(RETRY).eht[0][mcs] += peer_stats->retry_bytes;
-		STATS_OP_FMT(RETRY).eht[1][mcs] += peer_stats->retry_pkts;
+		STATS_OP_FMT(SUCC).eht[0][mcs] += succ_bytes;
+		STATS_OP_FMT(SUCC).eht[1][mcs] += succ_pkts;
 	} else if (txrate->flags & RATE_INFO_FLAGS_HE_MCS) {
-		STATS_OP_FMT(SUCC).he[0][mcs] += peer_stats->succ_bytes;
-		STATS_OP_FMT(SUCC).he[1][mcs] += peer_stats->succ_pkts;
-		STATS_OP_FMT(FAIL).he[0][mcs] += peer_stats->failed_bytes;
-		STATS_OP_FMT(FAIL).he[1][mcs] += peer_stats->failed_pkts;
-		STATS_OP_FMT(RETRY).he[0][mcs] += peer_stats->retry_bytes;
-		STATS_OP_FMT(RETRY).he[1][mcs] += peer_stats->retry_pkts;
+		STATS_OP_FMT(SUCC).he[0][mcs] += succ_bytes;
+		STATS_OP_FMT(SUCC).he[1][mcs] += succ_pkts;
 	} else if (txrate->flags & RATE_INFO_FLAGS_VHT_MCS) {
-		STATS_OP_FMT(SUCC).vht[0][mcs] += peer_stats->succ_bytes;
-		STATS_OP_FMT(SUCC).vht[1][mcs] += peer_stats->succ_pkts;
-		STATS_OP_FMT(FAIL).vht[0][mcs] += peer_stats->failed_bytes;
-		STATS_OP_FMT(FAIL).vht[1][mcs] += peer_stats->failed_pkts;
-		STATS_OP_FMT(RETRY).vht[0][mcs] += peer_stats->retry_bytes;
-		STATS_OP_FMT(RETRY).vht[1][mcs] += peer_stats->retry_pkts;
+		STATS_OP_FMT(SUCC).vht[0][mcs] += succ_bytes;
+		STATS_OP_FMT(SUCC).vht[1][mcs] += succ_pkts;
 	} else if (txrate->flags & RATE_INFO_FLAGS_MCS) {
-		STATS_OP_FMT(SUCC).ht[0][mcs] += peer_stats->succ_bytes;
-		STATS_OP_FMT(SUCC).ht[1][mcs] += peer_stats->succ_pkts;
-		STATS_OP_FMT(FAIL).ht[0][mcs] += peer_stats->failed_bytes;
-		STATS_OP_FMT(FAIL).ht[1][mcs] += peer_stats->failed_pkts;
-		STATS_OP_FMT(RETRY).ht[0][mcs] += peer_stats->retry_bytes;
-		STATS_OP_FMT(RETRY).ht[1][mcs] += peer_stats->retry_pkts;
+		STATS_OP_FMT(SUCC).ht[0][mcs] += succ_bytes;
+		STATS_OP_FMT(SUCC).ht[1][mcs] += succ_pkts;
 	} else {
-		mcs = legacy_rate_idx;
-
-		STATS_OP_FMT(SUCC).legacy[0][mcs] += peer_stats->succ_bytes;
-		STATS_OP_FMT(SUCC).legacy[1][mcs] += peer_stats->succ_pkts;
-		STATS_OP_FMT(FAIL).legacy[0][mcs] += peer_stats->failed_bytes;
-		STATS_OP_FMT(FAIL).legacy[1][mcs] += peer_stats->failed_pkts;
-		STATS_OP_FMT(RETRY).legacy[0][mcs] += peer_stats->retry_bytes;
-		STATS_OP_FMT(RETRY).legacy[1][mcs] += peer_stats->retry_pkts;
+		mcs = tx_stats->rate_idx;
+		STATS_OP_FMT(SUCC).legacy[0][mcs] += succ_bytes;
+		STATS_OP_FMT(SUCC).legacy[1][mcs] += succ_pkts;
 	}
 
-	ppdu_type = peer_stats->ppdu_type;
-	if ((ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_OFDMA ||
-	     ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_MIMO_OFDMA) &&
-	     (txrate->flags & RATE_INFO_FLAGS_HE_MCS ||
-	      txrate->flags & RATE_INFO_FLAGS_EHT_MCS)) {
-		ru_type = peer_stats->ru_tones;
+	STATS_OP_FMT(SUCC).bw[0][bw] += succ_bytes;
+	STATS_OP_FMT(SUCC).nss[0][nss] += succ_bytes;
+	STATS_OP_FMT(SUCC).gi[0][gi] += succ_bytes;
 
-		if (ru_type <= NL80211_RATE_INFO_HE_RU_ALLOC_996) {
-			STATS_OP_FMT(SUCC).ru_loc[0][ru_type] += peer_stats->succ_bytes;
-			STATS_OP_FMT(SUCC).ru_loc[1][ru_type] += peer_stats->succ_pkts;
-			STATS_OP_FMT(FAIL).ru_loc[0][ru_type] += peer_stats->failed_bytes;
-			STATS_OP_FMT(FAIL).ru_loc[1][ru_type] += peer_stats->failed_pkts;
-			STATS_OP_FMT(RETRY).ru_loc[0][ru_type] += peer_stats->retry_bytes;
-			STATS_OP_FMT(RETRY).ru_loc[1][ru_type] += peer_stats->retry_pkts;
+	STATS_OP_FMT(SUCC).bw[1][bw] += succ_pkts;
+	STATS_OP_FMT(SUCC).nss[1][nss] += succ_pkts;
+	STATS_OP_FMT(SUCC).gi[1][gi] += succ_pkts;
+
+	/* RU location and transmit type success updates */
+	if ((ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_OFDMA ||
+	    ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_MIMO_OFDMA) &&
+	    (txrate->flags & RATE_INFO_FLAGS_HE_MCS ||
+	    txrate->flags & RATE_INFO_FLAGS_EHT_MCS)) {
+		int ru_loc_idx;
+
+		if (txrate->flags & RATE_INFO_FLAGS_HE_MCS)
+			ru_loc_idx = ath12k_he_ru_alloc_to_ru_loc_idx(ru_type);
+		else
+			ru_loc_idx = ath12k_eht_ru_alloc_to_ru_loc_idx(ru_type);
+
+		if (ru_loc_idx >= 0) {
+			STATS_OP_FMT(SUCC).ru_loc[0][ru_loc_idx] += succ_bytes;
+			STATS_OP_FMT(SUCC).ru_loc[1][ru_loc_idx] += succ_pkts;
+
 			if (peer_stats->is_ampdu) {
-				STATS_OP_FMT(AMPDU).ru_loc[0][ru_type] +=
-					peer_stats->succ_bytes + peer_stats->retry_bytes;
-				STATS_OP_FMT(AMPDU).ru_loc[1][ru_type] +=
-					peer_stats->succ_pkts + peer_stats->retry_pkts;
+				STATS_OP_FMT(AMPDU).ru_loc[0][ru_loc_idx] += ampdu_bytes;
+				STATS_OP_FMT(AMPDU).ru_loc[1][ru_loc_idx] += ampdu_pkts;
 			}
+			if (ru_loc_idx < MAX_RU_LOCATIONS)
+				tx_stats->ru_loc_mpdu_succ_tried[ru_loc_idx].num_mpdu +=
+					peer_stats->succ_mpdu_pkts;
 		}
 	}
 
 	if (ppdu_type < HTT_PPDU_STATS_PPDU_TYPE_MAX) {
-		STATS_OP_FMT(SUCC).transmit_type[0][ppdu_type] += peer_stats->succ_bytes;
-		STATS_OP_FMT(SUCC).transmit_type[1][ppdu_type] += peer_stats->succ_pkts;
-		STATS_OP_FMT(FAIL).transmit_type[0][ppdu_type] +=
-							peer_stats->failed_bytes;
-		STATS_OP_FMT(FAIL).transmit_type[1][ppdu_type] += peer_stats->failed_pkts;
-		STATS_OP_FMT(RETRY).transmit_type[0][ppdu_type] +=
-							peer_stats->retry_bytes;
-		STATS_OP_FMT(RETRY).transmit_type[1][ppdu_type] += peer_stats->retry_pkts;
+		STATS_OP_FMT(SUCC).transmit_type[0][ppdu_type] += succ_bytes;
+		STATS_OP_FMT(SUCC).transmit_type[1][ppdu_type] += succ_pkts;
 		if (peer_stats->is_ampdu) {
-			STATS_OP_FMT(AMPDU).transmit_type[0][ppdu_type] +=
-				peer_stats->succ_bytes + peer_stats->retry_bytes;
-			STATS_OP_FMT(AMPDU).transmit_type[1][ppdu_type] +=
-				peer_stats->succ_pkts + peer_stats->retry_pkts;
+			STATS_OP_FMT(AMPDU).transmit_type[0][ppdu_type] += ampdu_bytes;
+			STATS_OP_FMT(AMPDU).transmit_type[1][ppdu_type] += ampdu_pkts;
 		}
+
+		tx_stats->transmit_type_mpdu_succ_tried[ppdu_type].num_mpdu +=
+				peer_stats->succ_mpdu_pkts;
 	}
 
+	/* AMPDU and ACK/BA failure accounting */
 	if (peer_stats->is_ampdu) {
 		tx_stats->ba_fails += peer_stats->ba_fails;
-
 		if (txrate->flags & RATE_INFO_FLAGS_EHT_MCS) {
-			STATS_OP_FMT(AMPDU).eht[0][mcs] +=
-			peer_stats->succ_bytes + peer_stats->retry_bytes;
-			STATS_OP_FMT(AMPDU).eht[1][mcs] +=
-			peer_stats->succ_pkts + peer_stats->retry_pkts;
+			STATS_OP_FMT(AMPDU).eht[0][mcs] += ampdu_bytes;
+			STATS_OP_FMT(AMPDU).eht[1][mcs] += ampdu_pkts;
 		} else if (txrate->flags & RATE_INFO_FLAGS_HE_MCS) {
-			STATS_OP_FMT(AMPDU).he[0][mcs] +=
-			peer_stats->succ_bytes + peer_stats->retry_bytes;
-			STATS_OP_FMT(AMPDU).he[1][mcs] +=
-			peer_stats->succ_pkts + peer_stats->retry_pkts;
+			STATS_OP_FMT(AMPDU).he[0][mcs] += ampdu_bytes;
+			STATS_OP_FMT(AMPDU).he[1][mcs] += ampdu_pkts;
 		} else if (txrate->flags & RATE_INFO_FLAGS_MCS) {
-			STATS_OP_FMT(AMPDU).ht[0][mcs] +=
-			peer_stats->succ_bytes + peer_stats->retry_bytes;
-			STATS_OP_FMT(AMPDU).ht[1][mcs] +=
-			peer_stats->succ_pkts + peer_stats->retry_pkts;
+			STATS_OP_FMT(AMPDU).ht[0][mcs] += ampdu_bytes;
+			STATS_OP_FMT(AMPDU).ht[1][mcs] += ampdu_pkts;
 		} else {
-			STATS_OP_FMT(AMPDU).vht[0][mcs] +=
-			peer_stats->succ_bytes + peer_stats->retry_bytes;
-			STATS_OP_FMT(AMPDU).vht[1][mcs] +=
-			peer_stats->succ_pkts + peer_stats->retry_pkts;
+			STATS_OP_FMT(AMPDU).vht[0][mcs] += ampdu_bytes;
+			STATS_OP_FMT(AMPDU).vht[1][mcs] += ampdu_pkts;
 		}
-		STATS_OP_FMT(AMPDU).bw[0][bw] +=
-			peer_stats->succ_bytes + peer_stats->retry_bytes;
-		STATS_OP_FMT(AMPDU).nss[0][nss] +=
-			peer_stats->succ_bytes + peer_stats->retry_bytes;
-		STATS_OP_FMT(AMPDU).gi[0][gi] +=
-			peer_stats->succ_bytes + peer_stats->retry_bytes;
-		STATS_OP_FMT(AMPDU).bw[1][bw] +=
-			peer_stats->succ_pkts + peer_stats->retry_pkts;
-		STATS_OP_FMT(AMPDU).nss[1][nss] +=
-			peer_stats->succ_pkts + peer_stats->retry_pkts;
-		STATS_OP_FMT(AMPDU).gi[1][gi] +=
-			peer_stats->succ_pkts + peer_stats->retry_pkts;
+		STATS_OP_FMT(AMPDU).bw[0][bw] += ampdu_bytes;
+		STATS_OP_FMT(AMPDU).nss[0][nss] += ampdu_bytes;
+		STATS_OP_FMT(AMPDU).gi[0][gi] += ampdu_bytes;
+		STATS_OP_FMT(AMPDU).bw[1][bw] += ampdu_pkts;
+		STATS_OP_FMT(AMPDU).nss[1][nss] += ampdu_pkts;
+		STATS_OP_FMT(AMPDU).gi[1][gi] += ampdu_pkts;
 	} else {
 		tx_stats->ack_fails += peer_stats->ba_fails;
 	}
+}
 
-	STATS_OP_FMT(SUCC).bw[0][bw] += peer_stats->succ_bytes;
-	STATS_OP_FMT(SUCC).nss[0][nss] += peer_stats->succ_bytes;
-	STATS_OP_FMT(SUCC).gi[0][gi] += peer_stats->succ_bytes;
+void
+ath12k_debugfs_sta_update_retry(struct ath12k_dp_link_peer *peer,
+				struct ath12k_per_peer_tx_stats *peer_stats)
+{
 
-	STATS_OP_FMT(SUCC).bw[1][bw] += peer_stats->succ_pkts;
-	STATS_OP_FMT(SUCC).nss[1][nss] += peer_stats->succ_pkts;
-	STATS_OP_FMT(SUCC).gi[1][gi] += peer_stats->succ_pkts;
+	struct rate_info *txrate = &peer->txrate;
+	struct ath12k_htt_tx_stats *tx_stats = peer->peer_stats.tx_stats;
+	int gi, mcs, bw, nss, ru_type, ppdu_type;
+	u32 retry_bytes, mpdu_retry_pkts;
 
-	STATS_OP_FMT(FAIL).bw[0][bw] += peer_stats->failed_bytes;
-	STATS_OP_FMT(FAIL).nss[0][nss] += peer_stats->failed_bytes;
-	STATS_OP_FMT(FAIL).gi[0][gi] += peer_stats->failed_bytes;
+	if (!tx_stats)
+		return;
 
-	STATS_OP_FMT(FAIL).bw[1][bw] += peer_stats->failed_pkts;
-	STATS_OP_FMT(FAIL).nss[1][nss] += peer_stats->failed_pkts;
-	STATS_OP_FMT(FAIL).gi[1][gi] += peer_stats->failed_pkts;
+	gi = ath12k_debugfs_sta_get_gi_idx(txrate);
+	mcs = txrate->mcs;
+	bw = ath12k_mac_mac80211_bw_to_ath12k_bw(txrate->bw);
+	nss = txrate->nss - 1;
 
-	STATS_OP_FMT(RETRY).bw[0][bw] += peer_stats->retry_bytes;
-	STATS_OP_FMT(RETRY).nss[0][nss] += peer_stats->retry_bytes;
-	STATS_OP_FMT(RETRY).gi[0][gi] += peer_stats->retry_bytes;
+	if (peer_stats->mpdu_tried < peer_stats->succ_mpdu_pkts)
+		return;
+	mpdu_retry_pkts = peer_stats->mpdu_tried - peer_stats->succ_mpdu_pkts;
+	retry_bytes = peer_stats->retry_bytes;
+	ru_type = peer_stats->ru_tones;
+	ppdu_type = tx_stats->ppdu_type;
 
-	STATS_OP_FMT(RETRY).bw[1][bw] += peer_stats->retry_pkts;
-	STATS_OP_FMT(RETRY).nss[1][nss] += peer_stats->retry_pkts;
-	STATS_OP_FMT(RETRY).gi[1][gi] += peer_stats->retry_pkts;
+	if (txrate->flags & RATE_INFO_FLAGS_EHT_MCS) {
+		STATS_OP_FMT(RETRY).eht[0][mcs] += retry_bytes;
+		STATS_OP_FMT(RETRY).eht[1][mcs] += mpdu_retry_pkts;
+	} else if (txrate->flags & RATE_INFO_FLAGS_HE_MCS) {
+		STATS_OP_FMT(RETRY).he[0][mcs] += retry_bytes;
+		STATS_OP_FMT(RETRY).he[1][mcs] += mpdu_retry_pkts;
+	} else if (txrate->flags & RATE_INFO_FLAGS_VHT_MCS) {
+		STATS_OP_FMT(RETRY).vht[0][mcs] += retry_bytes;
+		STATS_OP_FMT(RETRY).vht[1][mcs] += mpdu_retry_pkts;
+	} else if (txrate->flags & RATE_INFO_FLAGS_MCS) {
+		STATS_OP_FMT(RETRY).ht[0][mcs] += retry_bytes;
+		STATS_OP_FMT(RETRY).ht[1][mcs] += mpdu_retry_pkts;
+	} else {
+		mcs = tx_stats->rate_idx;
+		STATS_OP_FMT(RETRY).legacy[0][mcs] += retry_bytes;
+		STATS_OP_FMT(RETRY).legacy[1][mcs] += mpdu_retry_pkts;
+	}
+
+	STATS_OP_FMT(RETRY).bw[0][bw] += retry_bytes;
+	STATS_OP_FMT(RETRY).nss[0][nss] += retry_bytes;
+	STATS_OP_FMT(RETRY).gi[0][gi] += retry_bytes;
+
+	STATS_OP_FMT(RETRY).bw[1][bw] += mpdu_retry_pkts;
+	STATS_OP_FMT(RETRY).nss[1][nss] += mpdu_retry_pkts;
+	STATS_OP_FMT(RETRY).gi[1][gi] += mpdu_retry_pkts;
+
+	/* RU location and transmit type retry updates */
+	if ((ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_OFDMA ||
+	    ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_MIMO_OFDMA) &&
+	    (txrate->flags & RATE_INFO_FLAGS_HE_MCS ||
+	    txrate->flags & RATE_INFO_FLAGS_EHT_MCS)) {
+		int ru_loc_idx;
+
+		if (txrate->flags & RATE_INFO_FLAGS_HE_MCS)
+			ru_loc_idx = ath12k_he_ru_alloc_to_ru_loc_idx(ru_type);
+		else
+			ru_loc_idx = ath12k_eht_ru_alloc_to_ru_loc_idx(ru_type);
+
+		if (ru_loc_idx >= 0) {
+			STATS_OP_FMT(RETRY).ru_loc[0][ru_loc_idx] += retry_bytes;
+			STATS_OP_FMT(RETRY).ru_loc[1][ru_loc_idx] +=
+							mpdu_retry_pkts;
+		}
+	}
+
+	if (ppdu_type < HTT_PPDU_STATS_PPDU_TYPE_MAX) {
+		STATS_OP_FMT(RETRY).transmit_type[0][ppdu_type] += retry_bytes;
+		STATS_OP_FMT(RETRY).transmit_type[1][ppdu_type] +=
+							mpdu_retry_pkts;
+	}
+}
+
+void
+ath12k_debugfs_sta_update_failure(struct ath12k_dp_link_peer *peer,
+				  u16 failed_msdu)
+{
+	struct rate_info *txrate = &peer->txrate;
+	struct ath12k_htt_tx_stats *tx_stats = peer->peer_stats.tx_stats;
+	int gi, mcs, bw, nss, ru_type;
+	u32 failed_bytes = 0, failed_pkts;
+	u8 ppdu_type;
+
+	if (!tx_stats)
+		return;
+
+	gi = ath12k_debugfs_sta_get_gi_idx(txrate);
+	mcs = txrate->mcs;
+	bw = ath12k_mac_mac80211_bw_to_ath12k_bw(txrate->bw);
+	nss = txrate->nss - 1;
+	failed_pkts = failed_msdu;
+	ru_type = tx_stats->ru_tones;
+	ppdu_type = tx_stats->ppdu_type;
+
+	if (txrate->flags & RATE_INFO_FLAGS_EHT_MCS) {
+		STATS_OP_FMT(FAIL).eht[0][mcs] += failed_bytes;
+		STATS_OP_FMT(FAIL).eht[1][mcs] += failed_pkts;
+	} else if (txrate->flags & RATE_INFO_FLAGS_HE_MCS) {
+		STATS_OP_FMT(FAIL).he[0][mcs] += failed_bytes;
+		STATS_OP_FMT(FAIL).he[1][mcs] += failed_pkts;
+	} else if (txrate->flags & RATE_INFO_FLAGS_VHT_MCS) {
+		STATS_OP_FMT(FAIL).vht[0][mcs] += failed_bytes;
+		STATS_OP_FMT(FAIL).vht[1][mcs] += failed_pkts;
+	} else if (txrate->flags & RATE_INFO_FLAGS_MCS) {
+		STATS_OP_FMT(FAIL).ht[0][mcs] += failed_bytes;
+		STATS_OP_FMT(FAIL).ht[1][mcs] += failed_pkts;
+	} else {
+		mcs = tx_stats->rate_idx;
+		STATS_OP_FMT(FAIL).legacy[0][mcs] += failed_bytes;
+		STATS_OP_FMT(FAIL).legacy[1][mcs] += failed_pkts;
+	}
+
+	STATS_OP_FMT(FAIL).bw[0][bw] += failed_bytes;
+	STATS_OP_FMT(FAIL).nss[0][nss] += failed_bytes;
+	STATS_OP_FMT(FAIL).gi[0][gi] += failed_bytes;
+
+	STATS_OP_FMT(FAIL).bw[1][bw] += failed_pkts;
+	STATS_OP_FMT(FAIL).nss[1][nss] += failed_pkts;
+	STATS_OP_FMT(FAIL).gi[1][gi] += failed_pkts;
+
+	/* RU location and transmit type failure updates */
+	if ((ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_OFDMA ||
+	    ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_MIMO_OFDMA) &&
+	    (txrate->flags & RATE_INFO_FLAGS_HE_MCS ||
+	    txrate->flags & RATE_INFO_FLAGS_EHT_MCS)) {
+		int ru_loc_idx;
+
+		if (txrate->flags & RATE_INFO_FLAGS_HE_MCS)
+			ru_loc_idx = ath12k_he_ru_alloc_to_ru_loc_idx(ru_type);
+		else
+			ru_loc_idx = ath12k_eht_ru_alloc_to_ru_loc_idx(ru_type);
+
+		if (ru_loc_idx >= 0) {
+			STATS_OP_FMT(FAIL).ru_loc[0][ru_loc_idx] += failed_bytes;
+			STATS_OP_FMT(FAIL).ru_loc[1][ru_loc_idx] += failed_pkts;
+		}
+	}
+	if (ppdu_type < HTT_PPDU_STATS_PPDU_TYPE_MAX) {
+		STATS_OP_FMT(FAIL).transmit_type[0][ppdu_type] += failed_bytes;
+		STATS_OP_FMT(FAIL).transmit_type[1][ppdu_type] += failed_pkts;
+	}
+}
+
+void
+ath12k_debugfs_sta_update_misc(struct ath12k_dp_link_peer *peer,
+			       struct ath12k_per_peer_tx_stats *peer_stats)
+{
+	struct ath12k_htt_tx_stats *tx_stats = peer->peer_stats.tx_stats;
+	struct rate_info *txrate = &peer->txrate;
+	int ppdu_type;
+	u16 ru_type;
+
+	ru_type = peer_stats->ru_tones;
+	ppdu_type = tx_stats->ppdu_type;
 
 	tx_stats->tx_duration += peer_stats->duration;
-
 	tx_stats->ru_start = peer_stats->ru_start;
 	tx_stats->ru_tones = peer_stats->ru_tones;
 
-	if (peer_stats->mu_grpid < MAX_MU_GROUP_ID &&
-	    peer_stats->ppdu_type != HTT_PPDU_STATS_PPDU_TYPE_SU) {
-		if (peer_stats->mu_grpid & (MAX_MU_GROUP_ID - 1))
-			tx_stats->mu_group[peer_stats->mu_grpid] =
-						(peer_stats->mu_pos + 1);
+	if ((ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_OFDMA ||
+	    ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_MIMO_OFDMA) &&
+	    (txrate->flags & RATE_INFO_FLAGS_HE_MCS ||
+	    txrate->flags & RATE_INFO_FLAGS_EHT_MCS)) {
+		int ru_loc_idx;
+
+		if (txrate->flags & RATE_INFO_FLAGS_HE_MCS)
+			ru_loc_idx = ath12k_he_ru_alloc_to_ru_loc_idx(ru_type);
+		else
+			ru_loc_idx = ath12k_eht_ru_alloc_to_ru_loc_idx(ru_type);
+
+		if (ru_loc_idx >= 0 && ru_loc_idx < MAX_RU_LOCATIONS) {
+			tx_stats->ru_loc_mpdu_succ_tried[ru_loc_idx].mpdu_tried +=
+						peer_stats->mpdu_tried;
+		}
 	}
 
+	if (ppdu_type < HTT_PPDU_STATS_PPDU_TYPE_MAX)
+		tx_stats->transmit_type_mpdu_succ_tried[ppdu_type].mpdu_tried +=
+						peer_stats->mpdu_tried;
+
+	if (peer_stats->mu_grpid < MAX_MU_GROUP_ID &&
+	    tx_stats->ppdu_type != HTT_PPDU_STATS_PPDU_TYPE_SU) {
+		if (peer_stats->mu_grpid & (MAX_MU_GROUP_ID - 1))
+			tx_stats->mu_group[peer_stats->mu_grpid] =
+				(peer_stats->mu_pos + 1);
+	}
 }
+
 static int
 ath12k_dbg_sta_open_htt_peer_stats(struct inode *inode, struct file *file)
 {
@@ -625,7 +856,7 @@ static ssize_t ath12k_dbg_sta_write_delba(struct file *file,
 		return -EINVAL;
 
 	/* Valid TID values are 0 through 15 */
-	if (tid > HAL_DESC_REO_NON_QOS_TID - 1)
+	if (tid > HAL_NON_QOS_TID - 1)
 		return -EINVAL;
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
@@ -677,7 +908,7 @@ static ssize_t ath12k_dbg_sta_write_addba_resp(struct file *file,
 		return -EINVAL;
 
 	/* Valid TID values are 0 through 15 */
-	if (tid > HAL_DESC_REO_NON_QOS_TID - 1)
+	if (tid > HAL_NON_QOS_TID - 1)
 		return -EINVAL;
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
@@ -728,7 +959,7 @@ static ssize_t ath12k_dbg_sta_write_addba(struct file *file,
 		return -EINVAL;
 
 	/* Valid TID values are 0 through 15 */
-	if (tid > HAL_DESC_REO_NON_QOS_TID - 1)
+	if (tid > HAL_NON_QOS_TID - 1)
 		return -EINVAL;
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
@@ -1232,11 +1463,9 @@ static ssize_t ath12k_dbg_sta_dump_tx_stats(struct file *file,
 		wiphy_unlock(ah->hw->wiphy);
 		return -ENOENT;
 	}
-
 	peer = link_peer->dp_peer;
 	stats_link_id = peer->hw_links[ar->hw_link_id];
 	peer_stats = &peer->stats[stats_link_id];
-
 
 	for (k = 0; k < ATH12K_STATS_TYPE_MAX; k++) {
                for (j = 0; j < ATH12K_COUNTER_TYPE_MAX; j++) {

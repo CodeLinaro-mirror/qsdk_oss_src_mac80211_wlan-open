@@ -54,6 +54,63 @@ module_param(cfg80211_disable_40mhz_24ghz, bool, 0644);
 MODULE_PARM_DESC(cfg80211_disable_40mhz_24ghz,
 		 "Disable 40MHz support in the 2.4GHz band");
 
+/**
+ * cfg80211_set_repurpose_link() - Mark a link for repurposing in cfg80211
+ * @wdev: wireless device pointer
+ * @link_id: link identifier to mark for repurposing
+ *
+ * This function sets the repurpose bit for the specified link in the
+ * wireless_dev structure.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int cfg80211_set_repurpose_link(struct wireless_dev *wdev, u8 link_id)
+{
+	if (!wdev)
+		return -EINVAL;
+
+	lockdep_assert_wiphy(wdev->wiphy);
+
+	if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
+		return -EINVAL;
+
+	if (!(wdev->valid_links & BIT(link_id)))
+		return -EINVAL;
+
+	wdev->repurposed_links |= BIT(link_id);
+
+	return 0;
+}
+EXPORT_SYMBOL(cfg80211_set_repurpose_link);
+
+/**
+ * cfg80211_clear_repurpose_link() - Clear repurpose mark for a link
+ * @wdev: wireless device pointer
+ * @link_id: link identifier to clear
+ *
+ * This function clears the repurpose bit for the specified link.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int cfg80211_clear_repurpose_link(struct wireless_dev *wdev, u8 link_id)
+{
+	if (!wdev)
+		return -EINVAL;
+
+	lockdep_assert_wiphy(wdev->wiphy);
+
+	if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
+		return -EINVAL;
+
+	if (!(wdev->valid_links & BIT(link_id)))
+		return -EINVAL;
+
+	wdev->repurposed_links &= ~BIT(link_id);
+
+	return 0;
+}
+EXPORT_SYMBOL(cfg80211_clear_repurpose_link);
+
 struct cfg80211_registered_device *cfg80211_rdev_by_wiphy_idx(int wiphy_idx)
 {
 	struct cfg80211_registered_device *result = NULL, *rdev;
@@ -617,119 +674,6 @@ use_default_name:
 }
 EXPORT_SYMBOL(wiphy_new_nm);
 
-static int
-wiphy_verify_comb_limit(struct wiphy *wiphy,
-			const struct ieee80211_iface_limit *limits,
-			u8 n_limits, u32 bcn_int_min_gcd, u32 *iface_cnt,
-			u16 *all_iftypes)
-{
-	int l;
-
-	for (l = 0; l < n_limits; l++) {
-	       u16 types = limits[l].types;
-	       /*
-		* Don't advertise an unsupported type
-		* in a combination.
-		*/
-	       if (WARN_ON((wiphy->interface_modes & types) != types))
-		       return -EINVAL;
-
-	       /* interface types shouldn't overlap */
-	       if (WARN_ON(types & *all_iftypes))
-		       return -EINVAL;
-
-	       *all_iftypes |= types;
-
-	       /* Shouldn't list software iftypes in combinations! */
-	       if (WARN_ON(wiphy->software_iftypes & types))
-		       return -EINVAL;
-
-	       /* Only a single P2P_DEVICE can be allowed */
-	       if (WARN_ON(types & BIT(NL80211_IFTYPE_P2P_DEVICE) &&
-	    			       limits[l].max > 1))
-	     	       return -EINVAL;
-
-	       /* Only a single NAN can be allowed */
-	       if (WARN_ON(types & BIT(NL80211_IFTYPE_NAN) &&
-			 	       limits[l].max > 1))
-		       return -EINVAL;
-
- 	       /*
- 		* This isn't well-defined right now. If you have an
- 		* IBSS interface, then its beacon interval may change
- 		* by joining other networks, and nothing prevents it
- 		* from doing that.
- 		* So technically we probably shouldn't even allow AP
- 		* and IBSS in the same interface, but it seems that
- 		* some drivers support that, possibly only with fixed
- 		* beacon intervals for IBSS.
- 		*/
-	       if (WARN_ON(types & BIT(NL80211_IFTYPE_ADHOC) &&
-			    	       bcn_int_min_gcd))
-		       return -EINVAL;
-
-	       *iface_cnt += limits[l].max;
-       }
-
-       return 0;
-}
-
-static int
-wiphy_verify_comb_per_hw(struct wiphy *wiphy,
-			 const struct ieee80211_iface_combination *comb)
-{
- 	int h;
-  	u32 hw_idx_bitmap = 0;
-   	int ret;
-
-    	for (h = 0; h < comb->n_hw_list; h++) {
-     		const struct ieee80211_iface_per_hw *hl;
-      		const struct ieee80211_chans_per_hw *chans;
-       		u32 iface_cnt = 0;
-		u16 all_iftypes = 0;
-
-	 	hl = &comb->iface_hw_list[h];
-
-	  	if (hl->hw_chans_idx >= wiphy->num_hw)
-	   		return -EINVAL;
-
-	    	if (hw_idx_bitmap & BIT(hl->hw_chans_idx))
-	     		return -EINVAL;
-
-	      	hw_idx_bitmap |= BIT(hl->hw_chans_idx);
-	       	chans = wiphy->hw_chans[hl->hw_chans_idx];
-
-		if (WARN_ON(hl->max_interfaces < 2 && (!comb->radar_detect_widths ||
-			    !(cfg80211_hw_chans_includes_dfs(chans)))))
- 			return -EINVAL;
-
-  		if (WARN_ON(!hl->num_different_channels))
-   			return -EINVAL;
-
-    		if (WARN_ON(comb->radar_detect_widths &&
-			    cfg80211_hw_chans_includes_dfs(chans) &&
-			    hl->num_different_channels > 1))
-		      	return -EINVAL;
-
- 		if (WARN_ON(!hl->n_limits))
-  			return -EINVAL;
-
-   		ret = wiphy_verify_comb_limit(wiphy, hl->limits, hl->n_limits,
-					      comb->beacon_int_min_gcd,
-					      &iface_cnt, &all_iftypes);
- 		if (ret)
-  			return ret;
-
-   		if (WARN_ON(all_iftypes & BIT(NL80211_IFTYPE_WDS)))
-    			return -EINVAL;
-
-     		if (WARN_ON(iface_cnt < comb->max_interfaces))
-      			return -EINVAL;
-       	}
-
-	return 0;
-}
-
 static
 int wiphy_verify_iface_combinations(struct wiphy *wiphy,
 				    const struct ieee80211_iface_combination *iface_comb,
@@ -737,7 +681,7 @@ int wiphy_verify_iface_combinations(struct wiphy *wiphy,
 				    bool combined_radio)
 {
 	const struct ieee80211_iface_combination *c;
-	int i, ret;
+	int i, j;
 
 	for (i = 0; i < n_iface_comb; i++) {
 		u32 cnt = 0;
@@ -768,11 +712,62 @@ int wiphy_verify_iface_combinations(struct wiphy *wiphy,
 		if (WARN_ON(!c->n_limits))
 			return -EINVAL;
 
-		ret = wiphy_verify_comb_limit(wiphy, c->limits, c->n_limits,
-					      c->beacon_int_min_gcd,
-					      &cnt, &all_iftypes);
-		if (ret)
-			return ret;
+		for (j = 0; j < c->n_limits; j++) {
+			u16 types = c->limits[j].types;
+
+			/* interface types shouldn't overlap */
+			if (WARN_ON(types & all_iftypes))
+				return -EINVAL;
+			all_iftypes |= types;
+
+			if (WARN_ON(!c->limits[j].max))
+				return -EINVAL;
+
+			/* Shouldn't list software iftypes in combinations! */
+			if (WARN_ON(wiphy->software_iftypes & types))
+				return -EINVAL;
+
+			/* Only a single P2P_DEVICE can be allowed, avoid this
+			 * check for multi-radio global combination, since it
+			 * hold the capabilities of all radio combinations.
+			 */
+			if (!combined_radio &&
+			    WARN_ON(types & BIT(NL80211_IFTYPE_P2P_DEVICE) &&
+				    c->limits[j].max > 1))
+				return -EINVAL;
+
+			/* Only a single NAN can be allowed, avoid this
+			 * check for multi-radio global combination, since it
+			 * hold the capabilities of all radio combinations.
+			 */
+			if (!combined_radio &&
+			    WARN_ON(types & BIT(NL80211_IFTYPE_NAN) &&
+				    c->limits[j].max > 1))
+				return -EINVAL;
+
+			/*
+			 * This isn't well-defined right now. If you have an
+			 * IBSS interface, then its beacon interval may change
+			 * by joining other networks, and nothing prevents it
+			 * from doing that.
+			 * So technically we probably shouldn't even allow AP
+			 * and IBSS in the same interface, but it seems that
+			 * some drivers support that, possibly only with fixed
+			 * beacon intervals for IBSS.
+			 */
+			if (WARN_ON(types & BIT(NL80211_IFTYPE_ADHOC) &&
+				    c->beacon_int_min_gcd)) {
+				return -EINVAL;
+			}
+
+			cnt += c->limits[j].max;
+			/*
+			 * Don't advertise an unsupported type
+			 * in a combination.
+			 */
+			if (WARN_ON((wiphy->interface_modes & types) != types))
+				return -EINVAL;
+		}
 
 		if (WARN_ON(all_iftypes & BIT(NL80211_IFTYPE_WDS)))
 			return -EINVAL;
@@ -780,72 +775,9 @@ int wiphy_verify_iface_combinations(struct wiphy *wiphy,
 		/* You can't even choose that many! */
 		if (WARN_ON(cnt < c->max_interfaces))
 			return -EINVAL;
-
-		/*
-		 * Do similar validations on the freq range specific interface
-		 * combinations when advertised.
-		 */
-		if (WARN_ON(c->n_hw_list &&
-			    wiphy_verify_comb_per_hw(wiphy, c)))
-			return -EINVAL;
 	}
 
 	return 0;
-}
-
-static int cfg80211_check_hw_chans(const struct ieee80211_chans_per_hw *chans1,
-				   const struct ieee80211_chans_per_hw *chans2)
-{
-	int i, j;
-
-	if (!chans1 || !chans2)
-		return -EINVAL;
-
-	if (!chans1->n_chans || !chans2->n_chans)
-		return -EINVAL;
-
-	/* for now same channel is not allowed in more than one sub-hw */
-	for (i = 0; i < chans1->n_chans; i++)
-		for (j = 0; j < chans2->n_chans; j++)
-			if (chans1->chans[i].center_freq ==
-			    chans2->chans[j].center_freq)
-	    			return -EINVAL;
-	return 0;
-}
-
-static bool
-cfg80211_hw_chans_in_supported_list(struct wiphy *wiphy,
-				    const struct ieee80211_chans_per_hw *chans)
-{
-	enum nl80211_band band;
-	struct ieee80211_supported_band *sband;
-	bool found;
-	int i, j;
-
-	for (i = 0; i < chans->n_chans; i++) {
-		found = false;
-		for (band = 0; band < NUM_NL80211_BANDS; band++) {
-			sband = wiphy->bands[band];
-			if (!sband)
-				continue;
-
-			for (j = 0; j < sband->n_channels; j++) {
-				if (chans->chans[i].center_freq ==
-	    					sband->channels[j].center_freq) {
-	    				found = true;
-	    				break;
-	    			}
-	    		}
-
-			if (found)
-				break;
-		}
-
-		if (!found)
-			return false;
-	}
-
-	return true;
 }
 
 static int wiphy_verify_combinations(struct wiphy *wiphy)
@@ -874,54 +806,6 @@ static int wiphy_verify_combinations(struct wiphy *wiphy)
 					      combined_radio);
 
 	return ret;
-}
-
-static int cfg80211_validate_per_hw_chans(struct wiphy *wiphy)
-{
-	int i, j;
-	int ret;
-
-	if (!wiphy->num_hw)
-		return 0;
-
-	if (!wiphy->hw_chans)
-		return -EINVAL;
-
-	/*
-	 * to advertise channel list for one hw, sband alone should
-	 * be sufficient
-	 */
-
-	if (wiphy->num_hw < 1)
-		return -EINVAL;
-
-	for (i = 0; i < wiphy->num_hw; i++) {
-		for (j = 0; j < wiphy->num_hw; j++) {
-			const struct ieee80211_chans_per_hw *hw_chans1;
-			const struct ieee80211_chans_per_hw *hw_chans2;
-
-			if (i == j)
-				continue;
-
-			hw_chans1 = wiphy->hw_chans[i];
-			hw_chans2 = wiphy->hw_chans[j];
-			ret = cfg80211_check_hw_chans(hw_chans1, hw_chans2);
-			if (ret)
-				return ret;
-		}
-	}
-
-	for (i = 0; i < wiphy->num_hw; i++) {
-		const struct ieee80211_chans_per_hw *hw_chans;
-
-		hw_chans = wiphy->hw_chans[i];
-		if (!cfg80211_hw_chans_in_supported_list(wiphy, hw_chans)) {
-			WARN_ON(1);
-			return -EINVAL;
-		}
-	}
-
-	return 0;
 }
 
 int wiphy_register(struct wiphy *wiphy)
@@ -1181,11 +1065,6 @@ int wiphy_register(struct wiphy *wiphy)
 		return -EINVAL;
 	}
 
-	if (cfg80211_validate_per_hw_chans(&rdev->wiphy)) {
-		WARN_ON(1);
-		return -EINVAL;
-	}
-
 	for (i = 0; i < rdev->wiphy.n_vendor_commands; i++) {
 		/*
 		 * Validate we have a policy (can be explicitly set to
@@ -1428,6 +1307,13 @@ void cfg80211_dev_free(struct cfg80211_registered_device *rdev)
 {
 	struct cfg80211_internal_bss *scan, *tmp;
 	struct cfg80211_beacon_registration *reg, *treg;
+	unsigned long flags;
+
+	spin_lock_irqsave(&rdev->wiphy_work_lock, flags);
+	WARN_ON(!list_empty(&rdev->wiphy_work_list));
+	spin_unlock_irqrestore(&rdev->wiphy_work_lock, flags);
+	cancel_work_sync(&rdev->wiphy_work);
+
 	rfkill_destroy(rdev->wiphy.rfkill);
 	list_for_each_entry_safe(reg, treg, &rdev->beacon_registrations, list) {
 		list_del(&reg->list);
@@ -1563,7 +1449,12 @@ void cfg80211_leave(struct cfg80211_registered_device *rdev,
 	struct cfg80211_sched_scan_request *pos, *tmp;
 
 	lockdep_assert_held(&rdev->wiphy.mtx);
-	wdev->is_netdev_going_down = true;
+	/*
+	 * If link_id is set, only that link is going down, no need to set
+	 * netdev going down during that case.
+	 */
+	if (link_id == -1)
+		wdev->is_netdev_going_down = true;
 	cfg80211_pmsr_wdev_down(wdev);
 
 	cfg80211_stop_background_radar_detection(wdev);
@@ -1812,6 +1703,7 @@ static int cfg80211_netdev_notifier_call(struct notifier_block *nb,
 	case NETDEV_UP:
 		wiphy_lock(&rdev->wiphy);
 		cfg80211_update_iface_num(rdev, wdev->iftype, 1);
+		wdev->is_netdev_going_down = false;
 		switch (wdev->iftype) {
 #ifdef CPTCFG_CFG80211_WEXT
 		case NL80211_IFTYPE_ADHOC:
@@ -1825,16 +1717,21 @@ static int cfg80211_netdev_notifier_call(struct notifier_block *nb,
 		case NL80211_IFTYPE_MESH_POINT:
 			{
 				/* backward compat code... */
-				struct mesh_setup setup;
-				memcpy(&setup, &default_mesh_setup,
-						sizeof(setup));
+				struct mesh_setup *setup;
+
+				setup = kzalloc(sizeof(*setup), GFP_KERNEL);
+				if (!setup)
+					return notifier_from_errno(-ENOMEM);
+				memcpy(setup, &default_mesh_setup,
+				       sizeof(*setup));
 				 /* back compat only needed for mesh_id */
-				setup.mesh_id = wdev->u.mesh.id;
-				setup.mesh_id_len = wdev->u.mesh.id_up_len;
+				setup->mesh_id = wdev->u.mesh.id;
+				setup->mesh_id_len = wdev->u.mesh.id_up_len;
 				if (wdev->u.mesh.id_up_len)
 					__cfg80211_join_mesh(rdev, dev,
-							&setup,
+							setup,
 							&default_mesh_config);
+				kfree(setup);
 				break;
 			}
 #endif

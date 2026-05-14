@@ -203,6 +203,15 @@ int ath12k_dbring_set_cfg(struct ath12k *ar, struct ath12k_dbring *ring,
 	return 0;
 }
 
+void ath12k_dbring_remove_buf_id(struct ath12k_dbring *ring, int buf_id)
+{
+	if (buf_id >= 0) {
+		spin_lock_bh(&ring->idr_lock);
+		idr_remove(&ring->bufs_idr, buf_id);
+		spin_unlock_bh(&ring->idr_lock);
+	}
+}
+
 int ath12k_dbring_buf_setup(struct ath12k *ar,
 			    struct ath12k_dbring *ring,
 			    struct ath12k_dbring_cap *db_cap)
@@ -356,7 +365,6 @@ int ath12k_dbring_buffer_release_event(struct ath12k_base *ab,
 			spin_unlock_bh(&ring->idr_lock);
 			continue;
 		}
-		idr_remove(&ring->bufs_idr, buf_id);
 		spin_unlock_bh(&ring->idr_lock);
 
 		ath12k_core_dma_unmap_single(ab->dev, buff->paddr, ring->buf_sz,
@@ -374,6 +382,10 @@ int ath12k_dbring_buffer_release_event(struct ath12k_base *ab,
 			if (status == ATH12K_CORRELATE_STATUS_HOLD)
 				continue;
 		}
+
+		spin_lock_bh(&ring->idr_lock);
+		idr_remove(&ring->bufs_idr, buf_id);
+		spin_unlock_bh(&ring->idr_lock);
 
 		memset(buff, 0, size);
 		ath12k_dbring_bufs_replenish(ar, ring, buff, module_id, GFP_ATOMIC);

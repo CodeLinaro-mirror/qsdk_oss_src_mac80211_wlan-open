@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause-Clear */
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef ATH12K_HW_H
@@ -15,29 +15,52 @@
 
 struct ath12k_csi_cfr_header;
 struct ath12k_cfr_peer_tx_param;
+struct ath12k_mac_pri_link_migr_peer_node;
+struct ath12k_hw_group;
+struct ath12k_base;
+struct ath12k;
+struct ath12k_link_vif;
 
 /* Target configuration defines */
 
 
-#if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined (CPTCFG_ATH12K_MEM_PROFILE_512M)
+#if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || \
+	defined(CPTCFG_ATH12K_MEM_PROFILE_512M) || \
+	defined(CONFIG_ATH12K_MEM_PROFILE_256M)  || \
+	defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
 /* Num VDEVS per radio */
 #define TARGET_NUM_VDEVS        (8 + 1)
+/* Maximum number of AP interfaces allowed per radio for MBSSID.
+ * This excludes the monitor vdev included in TARGET_NUM_VDEVS.
+ */
+#define ATH12K_MBSSID_MAX_INTERFACES	(TARGET_NUM_VDEVS - 1)
+
 /* Num of Bridge vdevs per radio */
 #define TARGET_NUM_BRIDGE_VDEVS		0
 #define ATH12K_MAX_NUM_VDEVS_NLINK	TARGET_NUM_BRIDGE_VDEVS
+
+#if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined(CPTCFG_ATH12K_MEM_PROFILE_512M)
 #define ATH12K_QMI_TARGET_MEM_MODE      ATH12K_QMI_TARGET_MEM_MODE_512M
+#else
+#define ATH12K_QMI_TARGET_MEM_MODE      ATH12K_QMI_TARGET_MEM_MODE_256M
+#endif
 
 /* Max num of stations for Single Radio mode */
 #define TARGET_NUM_STATIONS_SINGLE     128
 
 /* Max num of stations for DBS */
-#define TARGET_NUM_STATIONS_DBS                128
+#define TARGET_NUM_STATIONS_DBS                64
 /* Max num of stations for DBS_SBS */
-#define TARGET_NUM_STATIONS_DBS_SBS	128
+#define TARGET_NUM_STATIONS_DBS_SBS	42
 #else
 // #ifdef CONFIG_ATH12K_MEM_PROFILE_DEFAULT TODO Enable default profile
 /* Num VDEVS per radio */
 #define TARGET_NUM_VDEVS	(16 + 1)
+/* Maximum number of AP interfaces allowed per radio for MBSSID.
+ * This excludes the monitor vdev included in TARGET_NUM_VDEVS.
+ */
+#define ATH12K_MBSSID_MAX_INTERFACES	(TARGET_NUM_VDEVS - 1)
+
 /* Num of Bridge vdevs per radio */
 #define TARGET_NUM_BRIDGE_VDEVS		8
 #define ATH12K_MAX_NUM_VDEVS_NLINK	TARGET_NUM_VDEVS + \
@@ -48,11 +71,23 @@ struct ath12k_cfr_peer_tx_param;
 #define TARGET_NUM_STATIONS_SINGLE     ((ath12k_max_clients > ab->hw_params->max_clients_supported) ? ab->hw_params->max_clients_supported : ath12k_max_clients)
 
 /* Max num of stations for DBS */
-#define TARGET_NUM_STATIONS_DBS                ((ath12k_max_clients > ab->hw_params->max_clients_supported) ? ab->hw_params->max_clients_supported : ath12k_max_clients)
+#define TARGET_NUM_STATIONS_DBS		(((int)(ath12k_max_clients / 2) > \
+					ab->hw_params->max_clients_dbs) ? \
+					ab->hw_params->max_clients_dbs : \
+					(int)ath12k_max_clients / 2)
 
 /* Max num of stations for DBS_SBS */
-#define TARGET_NUM_STATIONS_DBS_SBS	((ath12k_max_clients > ab->hw_params->max_clients_supported) ? ab->hw_params->max_clients_supported : ath12k_max_clients)
+#define TARGET_NUM_STATIONS_DBS_SBS	(((int)(ath12k_max_clients / 3) >  \
+					ab->hw_params->max_clients_dbs_sbs) ? \
+					ab->hw_params->max_clients_dbs_sbs : \
+					(int)ath12k_max_clients / 3)
 
+#endif
+
+#if defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
+#define ATH12K_COLD_BOOT_CALIB		false
+#else
+#define ATH12K_COLD_BOOT_CALIB		true
 #endif
 
 #define TARGET_NUM_PEERS_PDEV_SINGLE	(TARGET_NUM_STATIONS_SINGLE + \
@@ -113,10 +148,9 @@ struct ath12k_cfr_peer_tx_param;
 #define TARGET_MIN_MBSSID_GROUP_SIZE	2
 #define TARGET_MAX_MBSSID_GROUPS	(TARGET_MAX_BCN_OFFLD / \
 					 TARGET_MIN_MBSSID_GROUP_SIZE)
-#define TARGET_MAX_BEACON_SIZE		1500
 
 #define ATH12K_HW_DEFAULT_QUEUE		0
-#define ATH12K_HW_MAX_QUEUES		4
+#define ATH12K_HW_MAX_QUEUES		MIN(NR_CPUS, 5)
 #define ATH12K_QUEUE_LEN		4096
 
 #define ATH12K_HW_RATECODE_CCK_SHORT_PREAM_MASK  0x4
@@ -124,6 +158,7 @@ struct ath12k_cfr_peer_tx_param;
 #define ATH12K_FW_DIR			"ath12k"
 
 #define ATH12K_BOARD_MAGIC		"QCA-ATH12K-BOARD"
+#define ATH12K_SCAN_RADIO		"QCA-ATH11K-BOARD"
 #define ATH12K_BOARD_API2_FILE		"board-2.bin"
 #define ATH12K_DEFAULT_BOARD_FILE	"board.bin"
 #define ATH12K_DEFAULT_CAL_FILE		"caldata.bin"
@@ -176,10 +211,7 @@ enum ath12k_bus {
 	ATH12K_BUS_HYBRID,
 };
 
-/* Regular 12 Host DP interrupts + 3 PPEDS interrupts + 1 DP UMAC RESET interrupt*/
-#define ATH12K_EXT_IRQ_DP_NUM_VECTORS 16
-#define ATH12K_EXT_IRQ_GRP_NUM_MAX 12
-
+#define ATH12K_EXT_IRQ_NUM_MAX	22
 
 struct hal_rx_desc;
 struct hal_tcl_data_cmd;
@@ -187,27 +219,44 @@ struct htt_rx_ring_tlv_filter;
 enum hal_encrypt_type;
 
 struct ath12k_hw_ring_mask {
-	u8 tx[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
-	u8 rx_mon_dest[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
-	u8 rx_mon_status[ATH12K_EXT_IRQ_GRP_NUM_MAX];
-	u8 rx[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
-	u8 rx_err[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
-	u8 rx_wbm_rel[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
-	u8 reo_status[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
-	u8 host2rxdma[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
-	u8 tx_mon_dest[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
-	u8 host2rxmon[ATH12K_EXT_IRQ_GRP_NUM_MAX];
-	u8 ppe2tcl[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
-	u8 reo2ppe[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
+	u8 tx[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 rx_mon_dest[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 rx_mon_status[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 rx[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 rx_err[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 rx_wbm_rel[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 reo_status[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 host2rxdma[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 tx_mon_dest[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 tx_mon_buff[ATH12K_EXT_IRQ_NUM_MAX]; /*host2txmon buff ring*/
+	u8 host2rxmon[ATH12K_EXT_IRQ_NUM_MAX];
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	u8 wbm2sw6_ppeds_tx_cmpln[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
+	u8 ppe2tcl[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 reo2ppe[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 ppeds_tx_cmpln[ATH12K_EXT_IRQ_NUM_MAX];
 #endif
-	u8 umac_dp_reset[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
+	u8 umac_dp_reset[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 tx_exception[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 tcl_status[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 tqm_status[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 sam_status[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 ase_status[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 tx_peer_telemetry[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 rx_peer_telemetry[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 reo_flush[ATH12K_EXT_IRQ_NUM_MAX];
 };
 
 enum ath12k_m3_fw_loaders {
 	ath12k_m3_fw_loader_driver,
 	ath12k_m3_fw_loader_remoteproc,
+};
+
+struct ath12k_cp_arch_ops {
+	int (*cu_mem_pool_init)(struct ath12k_hw_group *ag);
+	void (*cu_mem_pool_deinit)(void);
+	int (*cu_mem_alloc)(struct ath12k *ar, struct ath12k_link_vif *arvif);
+	void (*cu_mem_free)(struct ath12k *ar, struct ath12k_link_vif *arvif);
+	void (*cu_notify)(struct ath12k *ar, struct ath12k_link_vif *arvif);
 };
 
 struct ath12k_hw_params {
@@ -219,10 +268,14 @@ struct ath12k_hw_params {
 		size_t board_size;
 		size_t cal_offset;
 		enum ath12k_m3_fw_loaders m3_loader;
+		bool std_elf_img:1;
+		bool unified_fw_image:1;
 	} fw;
 
 #ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 	u16 max_clients_supported;
+	u16 max_clients_dbs;
+	u16 max_clients_dbs_sbs;
 #endif
 	u8 max_radios;
 	bool single_pdev_only:1;
@@ -265,6 +318,7 @@ struct ath12k_hw_params {
 	bool supports_shadow_regs:1;
 	bool supports_aspm:1;
 	bool current_cc_support:1;
+	bool supports_tx_monitor:1;
 
 	u32 num_tcl_banks;
 	u32 max_tx_ring;
@@ -275,6 +329,7 @@ struct ath12k_hw_params {
 			 struct ath12k_wmi_resource_config_arg *config);
 
 	const struct hal_ops *hal_ops;
+	const struct ath12k_cp_arch_ops *cp_arch_ops;
 
 	u64 qmi_cnss_feature_bitmap;
 
@@ -304,7 +359,13 @@ struct ath12k_hw_params {
 	bool handle_beacon_miss;
 	bool en_qdsslog;
 	bool support_fse;
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	bool ds_support;
+	bool ds_txrx_hw_auto_idx; /* HW index movement of TxRx rings */
+	bool ds_hw_buff_mgmt;	/* HW buffer management of Rxfill/Tx completion rings */
+#endif
+
 	u8 ext_irq_grp_num_max;
 	u8 route_wbm_release;
 	bool supports_ap_ps;
@@ -317,10 +378,15 @@ struct ath12k_hw_params {
 	bool umac_irq_line_reset;
 	bool is_plink_preferable;
 	bool cfr_support;
+	bool cumac_support;
 	u32 cfr_dma_hdr_size;
 	u32 cfr_num_stream_bufs;
 	u32 cfr_stream_buf_size;
 	bool mlo_3_link_tx_support;
+	bool quad_ring_monitor_support;
+	const char *board_magic;
+	u32 num_rx_spt_pages;
+	bool peer_del_all_support;
 };
 
 struct ath12k_hw_ops {
@@ -333,13 +399,20 @@ struct ath12k_hw_ops {
 	void (*fill_cfr_hdr_info)(struct ath12k *ar,
 				  struct ath12k_csi_cfr_header *header,
 				  struct ath12k_cfr_peer_tx_param *params);
+	bool (*hw_link_id_required_in_mgmt_send)(struct ath12k_base *ab);
+	int (*mgmt_rxdma_ring_sel_config)(struct ath12k_base *ab);
+	void (*rx_peer_ba_config)(struct ath12k_base *ab, u8 tid, u32 *ba_win_size,
+				  u16 *ssn);
+	bool (*rx_peer_tid_skip_pn_replay)(struct ath12k_base *ab, u8 tid);
+	void (*dp_peer_migration)(struct ath12k_link_vif *arvif,
+				   struct ath12k_mac_pri_link_migr_peer_node *peer_node);
 };
 
 static inline
 int ath12k_hw_get_mac_from_pdev_id(const struct ath12k_hw_params *hw,
 				   int pdev_idx)
 {
-	if (hw->hw_ops->get_hw_mac_from_pdev_id)
+	if (hw->hw_ops && hw->hw_ops->get_hw_mac_from_pdev_id)
 		return hw->hw_ops->get_hw_mac_from_pdev_id(pdev_idx);
 
 	return 0;
@@ -399,7 +472,7 @@ static inline const char *ath12k_bd_ie_type_str(enum ath12k_bd_ie_type type)
 	case ATH12K_BD_IE_BOARD:
 		return "board data";
 	case ATH12K_BD_IE_REGDB:
-		return "regdb data";	
+		return "regdb data";
 	case ATH12K_BD_IE_RXGAINLUT:
 		return "rxgainlut data";
 	}

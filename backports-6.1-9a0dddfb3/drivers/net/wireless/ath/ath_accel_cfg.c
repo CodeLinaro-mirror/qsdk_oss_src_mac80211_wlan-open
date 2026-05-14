@@ -95,4 +95,3 @@ int ath_mscs_peer_lookup_n_get_priority(struct ath_mscs_get_priority_param *para
 
 }
 EXPORT_SYMBOL(ath_mscs_peer_lookup_n_get_priority);
-

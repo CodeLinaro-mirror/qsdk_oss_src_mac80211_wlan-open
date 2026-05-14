@@ -53,6 +53,8 @@ struct ath12k_pci_elf_coredump_state {
 	struct ath12k_base *ab;
 	void *elf_hdr;
 	u32   elf_hdr_sz;
+	u32   total_sz;
+	u32   bytes_read;
 	struct ath12k_dump_segment *chunks;
 	u32   num_chunks;
 	struct completion dump_done;

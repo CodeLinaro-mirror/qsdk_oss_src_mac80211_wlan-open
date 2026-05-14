@@ -1925,7 +1925,8 @@ cfg80211_update_known_bss(struct cfg80211_registered_device *rdev,
 			 */
 
 			f = rcu_access_pointer(new->pub.beacon_ies);
-			kfree_rcu((struct cfg80211_bss_ies *)f, rcu_head);
+			if (!new->pub.hidden_beacon_bss)
+				kfree_rcu((struct cfg80211_bss_ies *)f, rcu_head);
 			return false;
 		}
 
@@ -2087,6 +2088,36 @@ cfg80211_bss_update(struct cfg80211_registered_device *rdev,
 	return res;
 }
 
+static bool cfg80211_is_6ghz_dup_beacon(struct ieee80211_channel *chan,
+					const u8 *ie, size_t ielen)
+{
+	const struct element *tmp;
+	struct ieee80211_he_operation *he_oper;
+	const struct ieee80211_he_6ghz_oper *he_6ghz_oper;
+
+	if (!chan || chan->band != NL80211_BAND_6GHZ)
+		return false;
+
+	tmp = cfg80211_find_ext_elem(WLAN_EID_EXT_HE_OPERATION, ie, ielen);
+	if (!tmp)
+		return false;
+
+	if (tmp->datalen < sizeof(*he_oper) ||
+	    tmp->datalen < ieee80211_he_oper_size(&tmp->data[1]))
+		return false;
+
+	he_oper = (void *)&tmp->data[1];
+	he_6ghz_oper = ieee80211_he_6ghz_oper(he_oper);
+
+	if (!he_6ghz_oper)
+		return false;
+
+	if (he_6ghz_oper->control & IEEE80211_HE_6GHZ_OPER_CTRL_DUP_BEACON)
+		return true;
+
+	return false;
+}
+
 int cfg80211_get_ies_channel_number(const u8 *ie, size_t ielen,
 				    enum nl80211_band band)
 {
@@ -2164,10 +2195,12 @@ cfg80211_get_bss_channel(struct wiphy *wiphy, const u8 *ie, size_t ielen,
 	 * Frame info (beacon/prob res) is the same as received channel,
 	 * no need for further processing.
 	 */
-	if (channel->band == NL80211_BAND_6GHZ &&
-	   (KHZ_TO_MHZ(freq) == channel->center_freq ||
-	    abs(KHZ_TO_MHZ(freq) - channel->center_freq) > 320))
-		return channel;
+	if (channel->band == NL80211_BAND_6GHZ) {
+		if (KHZ_TO_MHZ(freq) == channel->center_freq)
+			return channel;
+		else if (abs(KHZ_TO_MHZ(freq) - channel->center_freq) > 320)
+			return NULL;
+	}
 
 	alt_channel = ieee80211_get_channel_khz(wiphy, freq);
 	if (!alt_channel) {
@@ -2291,7 +2324,8 @@ cfg80211_inform_single_bss_data(struct wiphy *wiphy,
 		return NULL;
 
 	channel = data->channel;
-	if (!channel)
+	if (!channel ||
+	    cfg80211_is_6ghz_dup_beacon(channel, data->ie, data->ielen))
 		channel = cfg80211_get_bss_channel(wiphy, data->ie, data->ielen,
 						   drv_data->chan);
 	if (!channel)
@@ -2703,7 +2737,7 @@ cfg80211_defrag_mle(const struct element *mle, const u8 *ie, size_t ielen,
 	/* Required length for first defragmentation */
 	buf_len = mle->datalen - 1;
 	for_each_element(elem, mle->data + mle->datalen,
-			 ielen - sizeof(*mle) + mle->datalen) {
+			 ie + ielen - mle->data - mle->datalen) {
 		if (elem->id != WLAN_EID_FRAGMENT)
 			break;
 

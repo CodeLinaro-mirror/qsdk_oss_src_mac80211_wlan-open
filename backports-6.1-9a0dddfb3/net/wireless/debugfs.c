@@ -104,7 +104,7 @@ void cfg80211_debugfs_rdev_add(struct cfg80211_registered_device *rdev)
 {
 	struct dentry *phyd = rdev->wiphy.debugfsdir;
 
-	if (!rdev->wiphy.num_hw)
+	if (!rdev->wiphy.n_radio)
 		DEBUGFS_ADD(rts_threshold);
 
 	DEBUGFS_ADD(fragmentation_threshold);

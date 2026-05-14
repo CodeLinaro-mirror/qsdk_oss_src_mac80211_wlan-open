@@ -5,7 +5,7 @@
  * Copyright 2006-2007	Jiri Benc <jbenc@suse.cz>
  * Copyright 2007-2010	Johannes Berg <johannes@sipsolutions.net>
  * Copyright 2013-2015  Intel Mobile Communications GmbH
- * Copyright (C) 2018-2025 Intel Corporation
+ * Copyright (C) 2018-2026 Intel Corporation
  */
 
 #ifndef IEEE80211_I_H
@@ -114,6 +114,18 @@ enum ieee80211_status_data {
 	IEEE80211_STATUS_SUBDATA_MASK	= 0x1ff0,
 };
 
+static inline int identical_mac_addr_allowed(int type1, int type2)
+{
+	return type1 == NL80211_IFTYPE_MONITOR ||
+	       type2 == NL80211_IFTYPE_MONITOR ||
+	       type1 == NL80211_IFTYPE_P2P_DEVICE ||
+	       type2 == NL80211_IFTYPE_P2P_DEVICE ||
+	       (type1 == NL80211_IFTYPE_AP && type2 == NL80211_IFTYPE_AP_VLAN) ||
+	       (type1 == NL80211_IFTYPE_AP_VLAN &&
+	       (type2 == NL80211_IFTYPE_AP ||
+	       type2 == NL80211_IFTYPE_AP_VLAN));
+}
+
 static inline bool
 ieee80211_sta_keep_active(struct sta_info *sta, u8 ac)
 {
@@ -217,6 +229,7 @@ enum ieee80211_packet_rx_flags {
 	IEEE80211_RX_AMSDU			= BIT(3),
 	IEEE80211_RX_MALFORMED_ACTION_FRM	= BIT(4),
 	IEEE80211_RX_DEFERRED_RELEASE		= BIT(5),
+	IEEE80211_RX_MHDR			= BIT(6),
 };
 
 /**
@@ -344,6 +357,10 @@ struct ieee80211_if_ap {
 	struct ps_data ps;
 	atomic_t num_mcast_sta; /* number of stations receiving multicast */
 
+#ifdef CPTCFG_QCN_EXTN
+	struct ieee80211_if_ap_extn if_ap_extn;
+#endif
+
 	bool multicast_to_unicast;
 	bool active;
 };
@@ -398,6 +415,7 @@ enum ieee80211_sta_flags {
 	IEEE80211_STA_UAPSD_ENABLED	= BIT(7),
 	IEEE80211_STA_NULLFUNC_ACKED	= BIT(8),
 	IEEE80211_STA_ENABLE_RRM	= BIT(15),
+	IEEE80211_STA_CFP_ENABLED       = BIT(16),
 };
 
 enum ieee80211_conn_mode {
@@ -407,9 +425,10 @@ enum ieee80211_conn_mode {
 	IEEE80211_CONN_MODE_VHT,
 	IEEE80211_CONN_MODE_HE,
 	IEEE80211_CONN_MODE_EHT,
+	IEEE80211_CONN_MODE_UHR,
 };
 
-#define IEEE80211_CONN_MODE_HIGHEST	IEEE80211_CONN_MODE_EHT
+#define IEEE80211_CONN_MODE_HIGHEST	IEEE80211_CONN_MODE_UHR
 
 enum ieee80211_conn_bw_limit {
 	IEEE80211_CONN_BW_LIMIT_20,
@@ -559,6 +578,11 @@ struct ieee80211_if_managed {
 		IEEE80211_MFP_OPTIONAL,
 		IEEE80211_MFP_REQUIRED
 	} mfp; /* management frame protection */
+
+	enum {
+		IEEE80211_CFP_DISABLED,
+		IEEE80211_CFP_REQUIRED
+	} cfp; /* control frame protection */
 
 	/*
 	 * Bitmask of enabled u-apsd queues,
@@ -856,6 +880,7 @@ struct ieee80211_if_mesh {
  * @IEEE80211_SDATA_IN_DRIVER: indicates interface was added to driver
  * @IEEE80211_SDATA_DISCONNECT_HW_RESTART: Disconnect after hardware restart
  *  recovery
+ * @IEEE80211_SDATA_OFFCHAN_PACKETS: interface expects offchan monitor packets
  */
 enum ieee80211_sub_if_data_flags {
 	IEEE80211_SDATA_ALLMULTI		= BIT(0),
@@ -863,6 +888,7 @@ enum ieee80211_sub_if_data_flags {
 	IEEE80211_SDATA_DISCONNECT_RESUME	= BIT(4),
 	IEEE80211_SDATA_IN_DRIVER		= BIT(5),
 	IEEE80211_SDATA_DISCONNECT_HW_RESTART	= BIT(6),
+	IEEE80211_SDATA_OFFCHAN_PACKETS		= BIT(7),
 };
 
 /**
@@ -1020,9 +1046,11 @@ struct ieee80211_link_data_managed {
 		struct cfg80211_chan_def ap_chandef;
 		struct ieee80211_parsed_tpe tpe;
 		unsigned long time;
+		unsigned long cross_link_csa_allow_window;
 		bool waiting_bcn;
 		bool ignored_same_chan;
 		bool blocked_tx;
+		bool bw_reconfig;
 	} csa;
 
 	struct wiphy_work request_smps_work;
@@ -1076,10 +1104,12 @@ struct ieee80211_link_data {
 	/* multicast keys only */
 	struct ieee80211_key __rcu *gtk[NUM_DEFAULT_KEYS +
 					NUM_DEFAULT_MGMT_KEYS +
-					NUM_DEFAULT_BEACON_KEYS];
+					NUM_DEFAULT_BEACON_KEYS +
+					NUM_DEFAULT_CONTROL_KEYS];
 	struct ieee80211_key __rcu *default_multicast_key;
 	struct ieee80211_key __rcu *default_mgmt_key;
 	struct ieee80211_key __rcu *default_beacon_key;
+	struct ieee80211_key __rcu *default_control_key;
 
 
 	bool operating_11g_mode;
@@ -1262,6 +1292,7 @@ struct ieee80211_sub_if_data {
 		struct dentry *default_multicast_key;
 		struct dentry *default_mgmt_key;
 		struct dentry *default_beacon_key;
+		struct dentry *default_control_key;
 	} debugfs;
 #endif
 #ifdef CPTCFG_MAC80211_NSS_SUPPORT
@@ -1273,6 +1304,8 @@ struct ieee80211_sub_if_data {
 	struct pcpu_txrx_stats __percpu *txrx_stats;
 	u32 tx_dropped;
 	u32 rx_dropped;
+
+	int chan_hw_idx;
 
 	/* must be last, dynamically sized area in this! */
 	struct ieee80211_vif vif;
@@ -1489,11 +1522,6 @@ struct channel_awgn_info {
 	struct list_head list;
 	struct ieee80211_channel *awgn_channel;
 	u32 chan_bw_interference_bitmap;
-};
-
-struct channel_cw_info {
-	struct list_head list;
-	struct ieee80211_channel *cw_channel;
 };
 
 struct ieee80211_tasklet_data {
@@ -1793,7 +1821,6 @@ struct ieee80211_local {
 
 	struct mac80211_memory_stats memory_stats;
 	struct work_struct awgn_detected_work;
-	struct work_struct cw_detected_work;
 
 	bool enable_tx_latency_stats;
 
@@ -1960,6 +1987,8 @@ struct ieee802_11_elems {
 	const struct ieee80211_multi_link_elem *ml_epcs;
 	const struct ieee80211_bandwidth_indication *bandwidth_indication;
 	const struct ieee80211_ttlm_elem *ttlm[IEEE80211_TTLM_MAX_CNT];
+	const struct ieee80211_uhr_cap_elem *uhr_cap;
+	const struct ieee80211_uhr_operation *uhr_operation;
 
 	/* not the order in the psd values is per element, not per chandef */
 	struct ieee80211_parsed_tpe tpe;
@@ -1984,6 +2013,8 @@ struct ieee802_11_elems {
 	u8 country_elem_len;
 	u8 bssid_index_len;
 	u8 eht_cap_len;
+	u8 uhr_cap_len;
+	u8 uhr_operation_len;
 
 	/* mult-link element can be de-fragmented and thus u8 is not sufficient */
 	size_t ml_basic_len;
@@ -2567,7 +2598,8 @@ static inline void ieee80211_tx_skb(struct ieee80211_sub_if_data *sdata,
  * @mode: connection mode for parsing
  * @start: pointer to the elements
  * @len: length of the elements
- * @action: %true if the elements came from an action frame
+ * @type: type of the frame the elements came from
+ *	(action, probe response, beacon, etc.)
  * @filter: bitmap of element IDs to filter out while calculating
  *	the element CRC
  * @crc: CRC starting value
@@ -2585,7 +2617,7 @@ struct ieee80211_elems_parse_params {
 	enum ieee80211_conn_mode mode;
 	const u8 *start;
 	size_t len;
-	bool action;
+	u8 type;
 	u64 filter;
 	u32 crc;
 	struct cfg80211_bss *bss;
@@ -2598,29 +2630,19 @@ struct ieee802_11_elems *
 ieee802_11_parse_elems_full(struct ieee80211_elems_parse_params *params);
 
 static inline struct ieee802_11_elems *
-ieee802_11_parse_elems_crc(const u8 *start, size_t len, bool action,
-			   u64 filter, u32 crc,
-			   struct cfg80211_bss *bss)
+ieee802_11_parse_elems(const u8 *start, size_t len, u8 type,
+		       struct cfg80211_bss *bss)
 {
 	struct ieee80211_elems_parse_params params = {
 		.mode = IEEE80211_CONN_MODE_HIGHEST,
 		.start = start,
 		.len = len,
-		.action = action,
-		.filter = filter,
-		.crc = crc,
+		.type = type,
 		.bss = bss,
 		.link_id = -1,
 	};
 
 	return ieee802_11_parse_elems_full(&params);
-}
-
-static inline struct ieee802_11_elems *
-ieee802_11_parse_elems(const u8 *start, size_t len, bool action,
-		       struct cfg80211_bss *bss)
-{
-	return ieee802_11_parse_elems_crc(start, len, action, 0, 0, bss);
 }
 
 extern const int ieee802_1d_to_ac[8];
@@ -2856,6 +2878,9 @@ int ieee80211_put_eht_cap(struct sk_buff *skb,
 			  struct ieee80211_sub_if_data *sdata,
 			  const struct ieee80211_supported_band *sband,
 			  const struct ieee80211_conn_settings *conn);
+int ieee80211_put_uhr_cap(struct sk_buff *skb,
+			  struct ieee80211_sub_if_data *sdata,
+			  const struct ieee80211_supported_band *sband);
 
 /* channel management */
 bool ieee80211_chandef_ht_oper(const struct ieee80211_ht_operation *ht_oper,
@@ -2925,14 +2950,15 @@ ieee80211_link_change_chanreq(struct ieee80211_link_data *link,
 			      u64 *changed);
 void __ieee80211_link_release_channel(struct ieee80211_link_data *link,
 				      bool skip_idle_recalc);
+void ieee80211_link_chanctx_reservation_complete(struct ieee80211_link_data *link);
+int ieee80211_chanctx_num_reserved(struct ieee80211_local *local,
+				   struct ieee80211_chanctx *ctx);
 void ieee80211_link_release_channel(struct ieee80211_link_data *link);
 void ieee80211_link_vlan_copy_chanctx(struct ieee80211_link_data *link);
 void ieee80211_link_copy_chanctx_to_vlans(struct ieee80211_link_data *link,
 					  bool clear);
 int ieee80211_chanctx_refcount(struct ieee80211_local *local,
 			       struct ieee80211_chanctx *ctx);
-struct ieee80211_chanctx *
-ieee80211_link_get_chanctx(struct ieee80211_link_data *link);
 
 void ieee80211_recalc_smps_chanctx(struct ieee80211_local *local,
 				   struct ieee80211_chanctx *chanctx);
@@ -2946,10 +2972,10 @@ bool ieee80211_is_radar_required(struct ieee80211_local *local,
 enum hrtimer_restart ieee80211_dfs_cac_timeout(struct hrtimer *timer);
 void ieee80211_dfs_cac_timer_work(struct wiphy *wiphy, struct wiphy_work *work);
 
-void ieee80211_dfs_cac_cancel(struct ieee80211_local *local);
+void ieee80211_dfs_cac_cancel(struct ieee80211_local *local,
+			      struct cfg80211_chan_def *def);
 void ieee80211_dfs_radar_detected_work(struct wiphy *wiphy, struct wiphy_work *work);
 void ieee80211_awgn_detected_work(struct work_struct *work);
-void ieee80211_cw_detected_work(struct work_struct *work);
 int ieee80211_send_action_csa(struct ieee80211_sub_if_data *sdata,
 			      struct cfg80211_csa_settings *csa_settings);
 
@@ -2959,8 +2985,7 @@ int ieee80211_check_combinations(struct ieee80211_sub_if_data *sdata,
 				 const struct cfg80211_chan_def *chandef,
 				 enum ieee80211_chanctx_mode chanmode,
 				 u8 radar_detect, int radio_idx);
-int ieee80211_max_num_channels(struct ieee80211_local *local,
-			       const struct cfg80211_chan_def *chandef);
+int ieee80211_max_num_channels(struct ieee80211_local *local, int radio_idx);
 u32 ieee80211_get_radio_mask(struct wiphy *wiphy, struct net_device *dev);
 void ieee80211_recalc_chanctx_chantype(struct ieee80211_local *local,
 				       struct ieee80211_chanctx *ctx);
@@ -3043,7 +3068,14 @@ int ieee80211_mgd_assoc_ml_reconf(struct ieee80211_sub_if_data *sdata,
 
 void ieee80211_process_ml_reconf_resp(struct ieee80211_sub_if_data *sdata,
 				      struct ieee80211_mgmt *mgmt, size_t len);
-void ieee80211_stop_mbssid(struct ieee80211_sub_if_data *sdata, int _link_id);
+void ieee80211_stop_mbssid(struct ieee80211_sub_if_data *sdata);
+
+void
+ieee80211_uhr_cap_ie_to_sta_uhr_cap(struct ieee80211_sub_if_data *sdata,
+				    struct ieee80211_supported_band *sband,
+				    const struct ieee80211_uhr_cap_elem *uhr_cap,
+				    u8 uhr_cap_len,
+				    struct link_sta_info *link_sta);
 
 #if IS_ENABLED(CPTCFG_MAC80211_KUNIT_TEST)
 #define EXPORT_SYMBOL_IF_MAC80211_KUNIT(sym) EXPORT_SYMBOL_IF_KUNIT(sym)
@@ -3067,5 +3099,8 @@ int ieee80211_qos_mgmt_cfg(struct ieee80211_sub_if_data *sdata,
 int ieee80211_set_monitor_channel(struct wiphy *wiphy,
 				  struct net_device *dev,
 				  struct cfg80211_chan_def *chandef);
+extern struct ieee80211_key *
+ieee80211_lookup_key(struct ieee80211_sub_if_data *sdata, int link_id,
+		     u8 key_idx, bool pairwise, const u8 *mac_addr);
 
 #endif /* IEEE80211_I_H */

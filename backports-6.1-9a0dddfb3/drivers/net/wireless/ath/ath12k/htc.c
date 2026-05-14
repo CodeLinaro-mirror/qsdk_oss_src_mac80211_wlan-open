@@ -25,10 +25,15 @@ struct sk_buff *ath12k_htc_alloc_skb(struct ath12k_base *ab, int size)
 
 	return skb;
 }
+EXPORT_SYMBOL(ath12k_htc_alloc_skb);
 
 static void ath12k_htc_control_tx_complete(struct ath12k_base *ab,
 					   struct sk_buff *skb)
 {
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	dma_unmap_single(ab->dev, ATH12K_SKB_CB(skb)->paddr, skb->len,
+			 DMA_TO_DEVICE);
+#endif
 	kfree_skb(skb);
 }
 
@@ -151,6 +156,7 @@ err_pull:
 	skb_pull(skb, sizeof(struct ath12k_htc_hdr));
 	return ret;
 }
+EXPORT_SYMBOL(ath12k_htc_send);
 
 static void
 ath12k_htc_process_credit_report(struct ath12k_htc *htc,
@@ -280,6 +286,10 @@ void ath12k_htc_tx_completion_handler(struct ath12k_base *ab,
 	ep_tx_complete = ep->ep_ops.ep_tx_complete;
 	spin_unlock_bh(&htc->tx_lock);
 	if (!ep_tx_complete) {
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+		dma_unmap_single(ab->dev, ATH12K_SKB_CB(skb)->paddr, skb->len,
+				 DMA_TO_DEVICE);
+#endif
 		dev_kfree_skb_any(skb);
 		return;
 	}
@@ -455,6 +465,10 @@ static const char *htc_service_name(enum ath12k_htc_svc_id id)
 	case ATH12K_HTC_SVC_ID_NMI_DATA:
 		return "NMI Data";
 	case ATH12K_HTC_SVC_ID_HTT_DATA_MSG:
+	case ATH12K_HTC_SVC_ID_HTT_DATA2_MSG:
+	case ATH12K_HTC_SVC_ID_HTT_DATA3_MSG:
+	case ATH12K_HTC_SVC_ID_HTT_DATA4_MSG:
+	case ATH12K_HTC_SVC_ID_HTT_DATA5_MSG:
 		return "HTT Data";
 	case ATH12K_HTC_SVC_ID_TEST_RAW_STREAMS:
 		return "RAW";
@@ -764,6 +778,7 @@ setup:
 
 	return status;
 }
+EXPORT_SYMBOL(ath12k_htc_connect_service);
 
 int ath12k_htc_start(struct ath12k_htc *htc)
 {

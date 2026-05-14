@@ -10,6 +10,8 @@
 #include "wmi.h"
 #include "debug.h"
 #include "dp_mon.h"
+#include <linux/inet.h>
+#include <net/sock.h>
 
 /* Convert a kernel virtual address to a kernel logical address */
 static void ath12k_pktlog_release(struct ath12k_pktlog *pktlog)
@@ -62,6 +64,477 @@ static int ath12k_alloc_pktlog_buf(struct ath12k *ar)
 	}
 
 	return 0;
+}
+
+/**
+ * ath12k_pktlog_remote_service_send - Send data over remote pktlog socket
+ * @service: Pointer to remote pktlog service structure
+ * @buf: Buffer containing data to send
+ * @len: Length of data to send
+ *
+ * Wrapper function for sock_sendmsg() to send pktlog data over TCP socket.
+ * The function validates the service state and socket availability before
+ * attempting to send data.
+ *
+ * Return: Number of bytes sent on success, negative error code on failure
+ */
+int ath12k_pktlog_remote_service_send(struct ath12k_pktlog_remote_service *service,
+				      char *buf, int len)
+{
+	struct msghdr msg = {0};
+	struct kvec iov = {0};
+	int size = 0;
+
+	if (!service || !buf)
+		return 0;
+
+	if (!service->connect_done)
+		return -ENOTCONN;
+
+	if (len <= 0 || len > ATH12K_MAX_SEND_SIZE)
+		return -EINVAL;
+
+	if (!service->send_socket) {
+		service->missed_records++;
+		return -ENOTCONN;
+	}
+
+	iov.iov_base = buf;
+	iov.iov_len = len;
+
+	iov_iter_kvec(&msg.msg_iter, ITER_SOURCE, &iov, 1, iov.iov_len);
+
+	size = sock_sendmsg(service->send_socket, &msg);
+	if (size < 0) {
+		service->missed_records++;
+		return size;
+	}
+
+	return size;
+}
+
+/**
+ * ath12k_pktlog_stop_service - Stop remote pktlog service
+ * @ar: ath12k radio pointer
+ *
+ * Stops the remote pktlog service and releases all allocated resources
+ * including sockets and work queues.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int ath12k_pktlog_stop_service(struct ath12k *ar)
+{
+	struct ath12k_pktlog *pl_info;
+	struct ath12k_pktlog_remote_service *service;
+
+	if (!ar)
+		return -EINVAL;
+
+	pl_info = &ar->debug.pktlog;
+	service = &pl_info->rpktlog_svc;
+
+	service->running = 0;
+	service->connect_done = 0;
+
+	cancel_work_sync(&service->connection_service);
+	cancel_work_sync(&service->accept_service);
+
+	if (service->send_socket) {
+		sock_release(service->send_socket);
+		service->send_socket = NULL;
+	}
+	if (service->listen_socket) {
+		sock_release(service->listen_socket);
+		service->listen_socket = NULL;
+	}
+
+	service->missed_records = 0;
+	service->fend_counts = 0;
+	service->port = 0;
+
+	return 0;
+}
+
+/**
+ * ath12k_pktlog_start_accept_service - Accept incoming connections (server mode)
+ * @work: Work structure
+ *
+ * Work queue function that accepts incoming connections on the listen socket
+ * and schedules the send service for data transmission.
+ */
+static void ath12k_pktlog_start_accept_service(struct work_struct *work)
+{
+	struct ath12k_pktlog_remote_service *service;
+	struct ath12k_pktlog *pl_info;
+	struct ath12k *ar;
+	struct socket *accept_socket = NULL;
+	int ret;
+
+	service = container_of(work, struct ath12k_pktlog_remote_service,
+			       accept_service);
+	pl_info = container_of(service, struct ath12k_pktlog, rpktlog_svc);
+
+	if (!service->running || !service->listen_socket)
+		return;
+
+	ar = pl_info->ar;
+	if (!ar || !ar->ab) {
+		ath12k_warn(ar->ab, "Remote pktlog: Invalid ar pointer");
+		return;
+	}
+
+	ret = kernel_accept(service->listen_socket, &accept_socket, 0);
+	if (ret < 0) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_DATA,
+			   "Remote pktlog: Accept failed: %d\n", ret);
+		if (service->running)
+			schedule_work(&service->accept_service);
+		return;
+	}
+
+	if (service->send_socket) {
+		ath12k_warn(ar->ab,
+			    "Remote pktlog: Closing previous connection\n");
+		sock_release(service->send_socket);
+		service->connect_done = 0;
+	}
+
+	service->send_socket = accept_socket;
+	service->connect_done = 1;
+
+	ath12k_info(ar->ab, "Remote pktlog: Connection accepted\n");
+	schedule_work(&service->send_service);
+
+	if (service->running)
+		schedule_work(&service->accept_service);
+}
+
+/**
+ * ath12k_pktlog_start_remote_service - Start remote pktlog server
+ * @work: Work structure
+ *
+ * Work queue function that creates a listen socket, binds to the configured
+ * port, and starts listening for incoming connections. Schedules the accept
+ * service to handle connections.
+ */
+static void ath12k_pktlog_start_remote_service(struct work_struct *work)
+{
+	struct ath12k_pktlog_remote_service *service;
+	struct ath12k_pktlog *pl_info;
+	struct ath12k *ar;
+	struct socket *sock = NULL;
+	struct sockaddr_in server_addr;
+	int ret;
+	int opt = 1;
+
+	service = container_of(work, struct ath12k_pktlog_remote_service,
+			       connection_service);
+	pl_info = container_of(service, struct ath12k_pktlog, rpktlog_svc);
+
+	if (!service->running)
+		return;
+
+	ar = pl_info->ar;
+	if (!ar || !ar->ab) {
+		ath12k_warn(ar->ab, "Remote pktlog: Invalid ar pointer");
+		return;
+	}
+
+	ret = sock_create(AF_INET, SOCK_STREAM, IPPROTO_TCP, &sock);
+	if (ret < 0) {
+		ath12k_err(ar->ab, "Remote pktlog: Failed to create socket: %d\n",
+			   ret);
+		return;
+	}
+
+	ret = sock_setsockopt(sock, SOL_SOCKET, SO_REUSEADDR,
+			      KERNEL_SOCKPTR(&opt), sizeof(opt));
+	if (ret < 0) {
+		ath12k_err(ar->ab, "Remote pktlog: Failed to set SO_REUSEADDR: %d\n",
+			   ret);
+		sock_release(sock);
+		return;
+	}
+
+	memset(&server_addr, 0, sizeof(server_addr));
+	server_addr.sin_family = AF_INET;
+	server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+	server_addr.sin_port = htons(service->port);
+
+	ret = kernel_bind(sock, (struct sockaddr *)&server_addr,
+			  sizeof(server_addr));
+	if (ret < 0) {
+		ath12k_err(ar->ab, "Remote pktlog: Failed to bind to port %u: %d\n",
+			   service->port, ret);
+		sock_release(sock);
+		return;
+	}
+
+	ret = kernel_listen(sock, ATH12K_MAX_LISTEN_CONNECTIONS);
+	if (ret < 0) {
+		ath12k_err(ar->ab, "Remote pktlog: Failed to listen: %d\n", ret);
+		sock_release(sock);
+		return;
+	}
+
+	service->listen_socket = sock;
+
+	ath12k_info(ar->ab, "Remote pktlog: Server started on port %u\n",
+		    service->port);
+	schedule_work(&service->accept_service);
+}
+
+/**
+ * ath12k_pktlog_start_remote_service_client - Start remote pktlog client
+ * @work: Work structure
+ *
+ * Work queue function that creates a client socket and connects to the
+ * configured remote server IP address. Schedules the send service for
+ * data transmission after successful connection.
+ */
+static void ath12k_pktlog_start_remote_service_client(struct work_struct *work)
+{
+	struct ath12k_pktlog_remote_service *service;
+	struct ath12k_pktlog *pl_info;
+	struct ath12k *ar;
+	struct socket *sock = NULL;
+	struct sockaddr_in server_addr;
+	int ret;
+	u8 ip[4];
+
+	service = container_of(work, struct ath12k_pktlog_remote_service,
+			       client_service);
+	pl_info = container_of(service, struct ath12k_pktlog, rpktlog_svc);
+
+	ar = pl_info->ar;
+	if (!ar || !ar->ab) {
+		ath12k_warn(ar->ab, "Remote pktlog client: Invalid ar pointer");
+		return;
+	}
+
+	if (!service->running)
+		return;
+
+	if (!pl_info->pktlog_remote_client || !pl_info->ipaddr[0]) {
+		ath12k_warn(ar->ab, "No remote IP address configured\n");
+		return;
+	}
+
+	ret = sscanf(pl_info->ipaddr, "%hhu.%hhu.%hhu.%hhu",
+		     &ip[0], &ip[1], &ip[2], &ip[3]);
+	if (ret != 4) {
+		ath12k_err(ar->ab, "Remote pktlog: Invalid IP format: %s\n",
+			   pl_info->ipaddr);
+		return;
+	}
+
+	ret = sock_create(AF_INET, SOCK_STREAM, IPPROTO_TCP, &sock);
+	if (ret < 0) {
+		ath12k_err(ar->ab,
+			   "Remote pktlog: Failed to create socket: %d\n", ret);
+		return;
+	}
+
+	memset(&server_addr, 0, sizeof(server_addr));
+	server_addr.sin_family = AF_INET;
+	server_addr.sin_addr.s_addr = htonl((ip[0] << 24) | (ip[1] << 16) |
+					    (ip[2] << 8) | ip[3]);
+	server_addr.sin_port = htons(service->port);
+
+	ret = kernel_connect(sock, (struct sockaddr *)&server_addr,
+			     sizeof(server_addr), 0);
+	if (ret < 0) {
+		ath12k_err(ar->ab, "Remote pktlog: Failed to connect to %s:%u: %d\n",
+			   pl_info->ipaddr, service->port, ret);
+		sock_release(sock);
+		return;
+	}
+
+	if (service->send_socket) {
+		ath12k_warn(ar->ab, "Remote pktlog: Closing previous connection\n");
+		sock_release(service->send_socket);
+		service->connect_done = 0;
+	}
+
+	service->send_socket = sock;
+	service->connect_done = 1;
+
+	ath12k_info(ar->ab, "Remote pktlog: Connected to %s:%u\n",
+		    pl_info->ipaddr, service->port);
+
+	/* Schedule send service */
+	schedule_work(&service->send_service);
+}
+
+/**
+ * ath12k_pktlog_run_send_service - Main data transmission service
+ * @work: Work structure
+ *
+ * Work queue function that handles the main pktlog data transmission.
+ * Performs initial handshake (device_id, radio_name, header) and then
+ * continuously streams pktlog data from the circular buffer in chunks.
+ * Handles buffer wrap-around with two-part sends.
+ */
+static void ath12k_pktlog_run_send_service(struct work_struct *work)
+{
+	struct ath12k_pktlog_remote_service *service;
+	struct ath12k_pktlog *pl_info;
+	struct ath12k *ar;
+	struct ath12k_pktlog_buf *log_buf;
+	char *buf_ptr;
+	u32 available, send_size, part1, part2;
+	int ret;
+	u32 read_idx;
+	bool handshake_done = false;
+
+	service = container_of(work, struct ath12k_pktlog_remote_service,
+			       send_service);
+	pl_info = container_of(service, struct ath12k_pktlog, rpktlog_svc);
+	ar = pl_info->ar;
+
+	if (!ar || !ar->ab)
+		return;
+
+	if (!service->running || !service->connect_done) {
+		ath12k_warn(ar->ab,
+			    "Send service: not running or not connected\n");
+		return;
+	}
+
+	log_buf = pl_info->buf;
+	if (!log_buf) {
+		ath12k_warn(ar->ab, "Pktlog buffer not allocated\n");
+		return;
+	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_DATA,
+		   "Remote pktlog: send service started\n");
+
+	while (service->running && service->connect_done) {
+		if (!handshake_done) {
+			ret = ath12k_pktlog_remote_service_send(service,
+							(char *)&log_buf->bufhdr,
+							ATH12K_PKTLOG_HEADER_SIZE);
+			if (ret < 0) {
+				ath12k_warn(ar->ab,
+					    "Failed to send buffer header: %d\n",
+					    ret);
+				goto reconnect;
+			}
+
+			handshake_done = true;
+			ath12k_dbg(ar->ab, ATH12K_DBG_DATA,
+				   "Remote pktlog: handshake completed\n");
+		}
+
+		spin_lock_bh(&pl_info->lock);
+
+		if (pl_info->rlog_read_index >= pl_info->rlog_max_size) {
+			ath12k_warn(ar->ab, "Invalid read index, resetting\n");
+			pl_info->rlog_read_index = 0;
+		}
+
+		if (pl_info->is_wrap) {
+			available = (pl_info->rlog_max_size - pl_info->rlog_read_index) +
+				pl_info->rlog_write_index;
+		} else {
+			if (pl_info->rlog_write_index >= pl_info->rlog_read_index)
+				available = pl_info->rlog_write_index -
+					pl_info->rlog_read_index;
+			else
+				available = 0;
+		}
+		spin_unlock_bh(&pl_info->lock);
+
+		if (available == 0) {
+			msleep(ATH12K_PKTLOG_SEND_SLEEP_MS);
+			continue;
+		}
+
+		send_size = min(available, (u32)ATH12K_MAX_SEND_SIZE);
+		buf_ptr = (char *)log_buf->log_data;
+
+		spin_lock_bh(&pl_info->lock);
+		if (pl_info->rlog_read_index + send_size > pl_info->rlog_max_size) {
+			part1 = pl_info->rlog_max_size - pl_info->rlog_read_index;
+			part2 = send_size - part1;
+			read_idx = pl_info->rlog_read_index;
+
+			spin_unlock_bh(&pl_info->lock);
+
+			ret = ath12k_pktlog_remote_service_send(service,
+								buf_ptr + read_idx,
+								part1);
+			if (ret < 0) {
+				ath12k_warn(ar->ab,
+					    "Failed to send part1: %d\n", ret);
+				goto reconnect;
+			}
+
+			ret = ath12k_pktlog_remote_service_send(service,
+								buf_ptr, part2);
+			if (ret < 0) {
+				ath12k_warn(ar->ab,
+					    "Failed to send part2: %d\n", ret);
+				goto reconnect;
+			}
+
+			spin_lock_bh(&pl_info->lock);
+			pl_info->rlog_read_index = part2;
+		} else {
+			read_idx = pl_info->rlog_read_index;
+			spin_unlock_bh(&pl_info->lock);
+
+			ret = ath12k_pktlog_remote_service_send(service,
+								buf_ptr + read_idx,
+								send_size);
+			if (ret < 0) {
+				ath12k_warn(ar->ab,
+					    "Failed to send data: %d\n", ret);
+				goto reconnect;
+			}
+
+			spin_lock_bh(&pl_info->lock);
+			pl_info->rlog_read_index += send_size;
+		}
+
+		if (pl_info->rlog_read_index >= pl_info->rlog_max_size)
+			pl_info->rlog_read_index = 0;
+
+		if (pl_info->is_wrap &&
+		    pl_info->rlog_read_index == pl_info->rlog_write_index)
+			pl_info->is_wrap = 0;
+
+		spin_unlock_bh(&pl_info->lock);
+
+		cond_resched();
+	}
+
+	return;
+
+reconnect:
+	ath12k_warn(ar->ab, "Remote pktlog: connection lost, stopping service\n");
+	ath12k_pktlog_stop_service(ar);
+}
+
+void ath12k_pktlog_init_remote_service_work(struct ath12k *ar)
+{
+	struct ath12k_pktlog *pl_info = &ar->debug.pktlog;
+	struct ath12k_pktlog_remote_service *service = &pl_info->rpktlog_svc;
+
+	pl_info->ar = ar;
+
+	INIT_WORK(&service->connection_service,
+		  ath12k_pktlog_start_remote_service);
+
+	INIT_WORK(&service->accept_service,
+		  ath12k_pktlog_start_accept_service);
+
+	INIT_WORK(&service->client_service,
+		  ath12k_pktlog_start_remote_service_client);
+
+	INIT_WORK(&service->send_service,
+		  ath12k_pktlog_run_send_service);
 }
 
 static void ath12k_init_pktlog_buf(struct ath12k *ar, struct ath12k_pktlog
@@ -531,6 +1004,76 @@ static const struct file_operations fops_pktlog_size = {
 	.open = simple_open
 };
 
+/**
+ * ath12k_pktlog_remote_enable - Enable/disable remote pktlog
+ * @ar: ath12k radio pointer
+ * @enable: 1 to enable, 0 to disable
+ *
+ * Enables or disables remote pktlog service. When enabling:
+ * - Server mode: If no IP configured, creates listen socket
+ * - Client mode: If IP configured, connects to remote server
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int ath12k_pktlog_remote_enable(struct ath12k *ar, u32 enable)
+{
+	struct ath12k_pktlog *pl_info;
+	struct ath12k_pktlog_remote_service *service;
+
+	if (!ar)
+		return -EINVAL;
+
+	pl_info = &ar->debug.pktlog;
+	service = &pl_info->rpktlog_svc;
+
+	if (enable) {
+		if (pl_info->filter & ATH12K_PKTLOG_REMOTE_ENABLE) {
+			if (service->running) {
+				ath12k_warn(ar->ab,
+					    "Remote pktlog already enabled\n");
+				return 0;
+			}
+		}
+
+		if (!pl_info->buf) {
+			ath12k_warn(ar->ab, "Pktlog buffer not allocated\n");
+			return -ENOMEM;
+		}
+
+		service->running = 1;
+		service->connect_done = 0;
+		service->missed_records = 0;
+		service->fend_counts = 0;
+
+		if (!service->port)
+			service->port = ATH12K_DEFAULT_REMOTE_PKTLOG_PORT;
+
+		pl_info->rlog_write_index = 0;
+		pl_info->rlog_read_index = 0;
+		pl_info->rlog_max_size = pl_info->buf_size;
+		pl_info->is_wrap = 0;
+
+		if (pl_info->pktlog_remote_client && pl_info->ipaddr[0]) {
+			ath12k_dbg(ar->ab, ATH12K_DBG_DATA,
+				   "Starting remote pktlog client mode\n");
+			if (!schedule_work(&service->client_service))
+				ath12k_warn(ar->ab, "Client service already scheduled\n");
+		} else {
+			ath12k_dbg(ar->ab, ATH12K_DBG_DATA,
+				   "Starting remote pktlog server mode\n");
+			if (!schedule_work(&service->connection_service))
+				ath12k_warn(ar->ab, "Connection service already scheduled\n");
+		}
+
+		pl_info->filter |= ATH12K_PKTLOG_REMOTE_ENABLE;
+	} else {
+		pl_info->filter &= ~ATH12K_PKTLOG_REMOTE_ENABLE;
+		ath12k_pktlog_stop_service(ar);
+	}
+
+	return 0;
+}
+
 static void ath12k_pktlog_init(struct ath12k *ar)
 {
 	struct ath12k_pktlog *pktlog = &ar->debug.pktlog;
@@ -671,8 +1214,8 @@ void ath12k_htt_ppdu_pktlog_process(struct ath12k *ar, u8 *data,
 	ath12k_pktlog_write_buf(ar, pl_info, &hdr_arg);
 }
 
-void ath12k_dp_rx_stats_buf_pktlog_process(struct ath12k *ar, u8 *data,
-                                          u16 log_type, u32 len)
+void ath12k_dp_txrx_stats_buf_pktlog_process(struct ath12k *ar, u8 *data,
+					     u16 log_type, u32 len)
 {
 	struct ath12k_pktlog *pl_info;
 	struct ath12k_pktlog_hdr hdr;
@@ -697,4 +1240,78 @@ void ath12k_dp_rx_stats_buf_pktlog_process(struct ath12k *ar, u8 *data,
 
 	ath12k_pktlog_write_buf(ar, pl_info, &hdr_arg);
 }
-EXPORT_SYMBOL(ath12k_dp_rx_stats_buf_pktlog_process);
+EXPORT_SYMBOL(ath12k_dp_txrx_stats_buf_pktlog_process);
+
+void ath12k_cbf_pktlog_process(struct ath12k *ar, u8 *data, u32 len,
+			       struct htt_t2h_ppdu_stats_ind_hdr *htt_hdr,
+			       struct htt_ppdu_stats_rx_mgmtctrl_payload_tlv *cbf_tlv)
+{
+	struct ath12k_pktlog *pl_info;
+	struct ath12k_pktlog_hdr hdr;
+	struct ath12k_pktlog_hdr_arg hdr_arg;
+	u32 total_len;
+	char *log_data;
+
+	if (!ar)
+		return;
+
+	pl_info = &ar->debug.pktlog;
+
+	if (!pl_info || !pl_info->buf || pl_info->buf_size <= 0) {
+		ath12k_warn(ar->ab, "Invalid pl_info or buffer for CBF\n");
+		return;
+	}
+
+	total_len = sizeof(*htt_hdr) + sizeof(*cbf_tlv) + len;
+
+	if (total_len > pl_info->buf_size) {
+		ath12k_warn(ar->ab, "CBF frame too large: %u > %u\n",
+			    total_len, pl_info->buf_size);
+		return;
+	}
+
+	hdr.flags = (1 << PKTLOG_FLG_FRM_TYPE_REMOTE_S);
+	hdr.missed_cnt = 0;
+	hdr.log_type = ATH12K_PKTLOG_TYPE_PPDU_STATS;
+	hdr.timestamp = 0;
+	hdr.size = ALIGN(total_len, PKTLOG_ALIGN);
+
+	hdr_arg.log_type = hdr.log_type;
+	hdr_arg.payload_size = hdr.size;
+	hdr_arg.payload = data;
+	hdr_arg.pktlog_hdr = (u8 *)&hdr;
+
+	log_data = ath12k_pktlog_getbuf(pl_info, &hdr_arg);
+	if (!log_data) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_DATA,
+			   "Failed to get pktlog buffer for CBF frame\n");
+		return;
+	}
+
+	if (log_data < pl_info->buf->log_data ||
+	    (log_data + sizeof(*htt_hdr)) >
+	    (pl_info->buf->log_data + pl_info->buf_size)) {
+		ath12k_warn(ar->ab, "CBF htt_hdr memcpy out of bounds\n");
+		return;
+	}
+	memcpy(log_data, htt_hdr, sizeof(struct htt_t2h_ppdu_stats_ind_hdr));
+	log_data += sizeof(struct htt_t2h_ppdu_stats_ind_hdr);
+
+	if (log_data < pl_info->buf->log_data ||
+	    (log_data + sizeof(*cbf_tlv)) >
+	    (pl_info->buf->log_data + pl_info->buf_size)) {
+		ath12k_warn(ar->ab, "CBF cbf_tlv memcpy out of bounds\n");
+		return;
+	}
+	memcpy(log_data, cbf_tlv,
+	       sizeof(struct htt_ppdu_stats_rx_mgmtctrl_payload_tlv));
+	log_data += sizeof(struct htt_ppdu_stats_rx_mgmtctrl_payload_tlv);
+
+	if (log_data < pl_info->buf->log_data ||
+	    (log_data + len) > (pl_info->buf->log_data + pl_info->buf_size)) {
+		ath12k_warn(ar->ab, "CBF data memcpy out of bounds\n");
+		return;
+	}
+	memcpy(log_data, data, len);
+}
+EXPORT_SYMBOL(ath12k_cbf_pktlog_process);

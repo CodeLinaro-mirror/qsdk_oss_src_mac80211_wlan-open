@@ -245,6 +245,7 @@ static u8 ath12k_sdwf_alloc_msduq(struct ath12k *ar, u32 svc_id,
 	u16 qos_id;
 	u8 scs_id; u8 qos_tag;
 	u16 msduq = QOS_INVALID_MSDUQ;
+	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
 
 	qos_ctx = ath12k_get_qos(ab);
 	if (!qos_ctx) {
@@ -252,8 +253,9 @@ static u8 ath12k_sdwf_alloc_msduq(struct ath12k *ar, u32 svc_id,
 		return msduq;
 	}
 
+	rcu_read_lock();
 	spin_lock_bh(&ab->dp->dp_lock);
-	peer = ath12k_dp_link_peer_find_by_id(ab->dp, peer_id);
+	peer = ath12k_dp_link_peer_find_by_peerid_index(ab->dp, dp_pdev, peer_id);
 	if (!peer) {
 		ath12k_err(ab, "Unable to find peer");
 		goto ret;
@@ -275,7 +277,7 @@ static u8 ath12k_sdwf_alloc_msduq(struct ath12k *ar, u32 svc_id,
 		if (qos_tag == QOS_SCS_TAG) {
 			scs_id = u32_get_bits(svc_id, SCS_SVC_ID_MASK);
 			ath12k_dp_peer_scs_data(ab->dp, qos, scs_id,
-						&msduq, &qos_id);
+						peer, ar, &msduq, &qos_id);
 			goto ret;
 		} else {
 			msduq = u32_get_bits(svc_id, SCS_SVC_ID_MASK);
@@ -290,6 +292,7 @@ static u8 ath12k_sdwf_alloc_msduq(struct ath12k *ar, u32 svc_id,
 	msduq = ath12k_dp_peer_qos_msduq(ab, qos, peer, ar, qos_id, svc_id);
 ret:
 	spin_unlock_bh(&ab->dp->dp_lock);
+	rcu_read_unlock();
 	return msduq;
 }
 
@@ -311,14 +314,15 @@ struct ath12k *ath12k_sdwf_get_ar_from_vif(struct wireless_dev *wdev,
 					   u8 *peer_mac, u16 *peer_id)
 {
 	struct ath12k_base *ab = NULL;
+	struct ath12k_dp *dp;
 	struct ath12k *ar = NULL;
 	struct ath12k_vif *ahvif;
 	struct ath12k_link_vif *arvif;
 	struct ieee80211_sta *sta;
 	struct ath12k_sta *ahsta;
-	u8 mac_addr[ETH_ALEN] = { 0 };
+	struct ath12k_dp_peer *dp_peer;
+	struct ath12k_dp_link_peer *link_peer;
 	u8 link_id;
-	struct ath12k_dp_link_peer *peer;
 
 	if (!wdev)
 		return NULL;
@@ -343,17 +347,17 @@ struct ath12k *ath12k_sdwf_get_ar_from_vif(struct wireless_dev *wdev,
 	if (!ahsta)
 		return NULL;
 
+	dp_peer = ahsta->dp_peer;
+	if (!dp_peer)
+		return NULL;
+
 	rcu_read_lock();
-	if (sta->mlo) {
+	if (sta->mlo)
 		link_id = ahsta->primary_link_id;
-		memcpy(mac_addr, ahsta->link[link_id]->addr, ETH_ALEN);
-	} else if (sta->valid_links) {
+	else if (sta->valid_links)
 		link_id = ahsta->deflink.link_id;
-		memcpy(mac_addr, peer_mac, ETH_ALEN);
-	} else {
+	else
 		link_id = 0;
-		memcpy(mac_addr, peer_mac, ETH_ALEN);
-	}
 
 	arvif = rcu_dereference(ahvif->link[link_id]);
 
@@ -367,22 +371,21 @@ struct ath12k *ath12k_sdwf_get_ar_from_vif(struct wireless_dev *wdev,
 		rcu_read_unlock();
 		return NULL;
 	}
-	rcu_read_unlock();
 
 	ab = ar->ab;
+	dp = ab->dp;
 
-	spin_lock_bh(&ab->dp->dp_lock);
-	peer = ath12k_dp_link_peer_find_by_addr(ab->dp, mac_addr);
-	if (!peer) {
-		ath12k_dbg(ab, ATH12K_DBG_QOS,
-			   "Peer: %pM not present\n", mac_addr);
-		spin_unlock_bh(&ab->dp->dp_lock);
-		return NULL;
+	if (dp->global_peer_id_supported) {
+		*peer_id = dp_peer->peer_id;
+	} else {
+		link_peer = rcu_dereference(dp_peer->link_peers[link_id]);
+		*peer_id = link_peer->peer_id;
 	}
+	rcu_read_unlock();
 
-	*peer_id = peer->peer_id;
+	if (*peer_id == ATH12K_PEER_ID_INVALID)
+		return NULL;
 
-	spin_unlock_bh(&ab->dp->dp_lock);
 	return ar;
 }
 
@@ -463,33 +466,36 @@ static u8 ath12k_sdwf_get_3_link_queue_id(struct ath12k_dp *dp,
         return queue_id;
 }
 
-u8 ath12k_sdwf_get_peer_msduq(struct ath12k_base *ab,
+u8 ath12k_sdwf_get_peer_msduq(struct ath12k *ar,
                               u16 peer_id,
                               u32 dscp_pcp, bool pcp)
 {
        struct ath12k_dp_link_peer *peer;
        u8 queue_id = QOS_INVALID_MSDUQ;
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
 
        if (!ath12k_mlo_3_link_tx)
                return QOS_INVALID_MSDUQ;
 
+	rcu_read_lock();
        spin_lock_bh(&ab->dp->dp_lock);
-       peer = ath12k_dp_link_peer_find_by_id(ab->dp, peer_id);
+	peer = ath12k_dp_link_peer_find_by_peerid_index(ab->dp, dp_pdev, peer_id);
        if (!peer) {
                ath12k_err(ab, "Unable to find peer for peer_id : %d\n",
                           peer_id);
                goto err_unlock;
        }
 
-       if (!peer->sta)
-               goto err_unlock;
+	if (!ath12k_dp_link_peer_get_sta(peer))
+		goto err_unlock;
 
-       if (!peer->sta->valid_links)
-	       goto err_unlock;
+	if (!ath12k_dp_link_peer_get_sta(peer)->valid_links)
+		goto err_unlock;
 
-       if (hweight16(peer->sta->valid_links) !=
-           ATH12K_3LINK_MLO_MAX_STA_LINKS)
-               goto err_unlock;
+	if (hweight16(ath12k_dp_link_peer_get_sta(peer)->valid_links) !=
+	    ATH12K_3LINK_MLO_MAX_STA_LINKS)
+		goto err_unlock;
 
        if (peer->primary_link &&
            ab->hw_params->mlo_3_link_tx_support) {
@@ -504,6 +510,7 @@ u8 ath12k_sdwf_get_peer_msduq(struct ath12k_base *ab,
 
 err_unlock:
        spin_unlock_bh(&ab->dp->dp_lock);
+	rcu_read_unlock();
        return queue_id;
 }
 
@@ -535,7 +542,7 @@ u16 ath12k_sdwf_get_msduq(struct wireless_dev *wdev,
 
 	if (!scs && !ath12k_sdwf_service_configured(ar->ab, svc_id)) {
 		/* For 3-Link MLO Clients TX link management get msduq */
-		msduq = ath12k_sdwf_get_peer_msduq(ar->ab, peer_id,
+		msduq = ath12k_sdwf_get_peer_msduq(ar, peer_id,
 						   dscp_pcp, pcp);
 
 		if (msduq != QOS_INVALID_MSDUQ)
@@ -584,6 +591,7 @@ ath12k_sdwf_3_link_peer_dl_flow_count(struct wireless_dev *wdev,
 	struct ath12k_dp *dp;
 	struct ath12k_dp_link_peer *peer;
 	u16 peer_id, queue_id;
+	struct ath12k_pdev_dp *dp_pdev = NULL;
 
 	if (!ath12k_mlo_3_link_tx || !mac_addr)
 		return;
@@ -591,6 +599,8 @@ ath12k_sdwf_3_link_peer_dl_flow_count(struct wireless_dev *wdev,
 	ar = ath12k_sdwf_get_ar_from_vif(wdev, vif, mac_addr, &peer_id);
 	if (!ar)
 		return;
+
+	dp_pdev = &ar->dp;
 
 	if (peer_id == ATH12K_PEER_ID_INVALID) {
 		ath12k_err(NULL, "Invalid Peer");
@@ -601,13 +611,14 @@ ath12k_sdwf_3_link_peer_dl_flow_count(struct wireless_dev *wdev,
 		return;
 
 	dp = ath12k_ab_to_dp(ar->ab);
+	rcu_read_lock();
 	spin_lock_bh(&dp->dp_lock);
-	peer = ath12k_dp_link_peer_find_by_id(dp, peer_id);
-	if (!peer || !peer->sta)
+	peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev, peer_id);
+	if (!peer || !ath12k_dp_link_peer_get_sta(peer))
 		goto err_unlock;
 
-	if (!peer->sta->valid_links ||
-	    (hweight16(peer->sta->valid_links) !=
+	if (!ath12k_dp_link_peer_get_sta(peer)->valid_links ||
+	    (hweight16(ath12k_dp_link_peer_get_sta(peer)->valid_links) !=
 	     ATH12K_3LINK_MLO_MAX_STA_LINKS))
 		goto err_unlock;
 
@@ -620,6 +631,7 @@ ath12k_sdwf_3_link_peer_dl_flow_count(struct wireless_dev *wdev,
 
 err_unlock:
 	spin_unlock_bh(&dp->dp_lock);
+	rcu_read_unlock();
 	return;
 }
 
@@ -1279,7 +1291,7 @@ int ath12k_telemetry_get_qos_stats(struct ath12k_vif *ahvif,
 			goto out;
 		}
 
-		qos_stats_lvl = (arsta->arvif->ar->debug.qos_stats &
+		qos_stats_lvl = (arsta->arvif->ar->dp.qos_stats &
 					  ATH12K_QOS_STATS_COLLECTION_MASK) >> 2;
 		if (qos_stats_lvl == ATH12K_QOS_SINGLE_LINK_STATS) {
 			if (link_id != ahsta->primary_link_id) {

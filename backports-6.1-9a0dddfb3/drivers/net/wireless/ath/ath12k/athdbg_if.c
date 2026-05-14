@@ -3,17 +3,30 @@
 #include "athdbg_if.h"
 #include "ath_debug/athdbg_core.h"
 #include "ath_debug/athdbg_minidump.h"
+#include "ath_debug/athdbg_mhi.h"
+#include "ath_debug/athdbg_wmi_recording.h"
+#include "debug.h"
+#include "ath_debug/athdbg_uio.h"
+#include "mhi.h"
+#include "pci.h"
+
 
 extern struct ath_debug_base *athdbg_base;
 
 #define MAX_SOC_DIR_NAME_SIZE 64
 
+
 const struct athdbg_to_ath12k_ops dbg_to_ath_ops = {
+#ifndef CONFIG_UPSTREAM_BUILD
 	.get_reserved_mem_by_name = ath12k_core_get_reserved_mem_by_name,
 	.coredump_dump_segment = ath12k_coredump_dump_segment,
+	.pci_get_priv = ath12k_pci_get_priv,
+#endif
 	.dev_running_status = athdbg_if_check_dev_running,
 	.set_dbg_mask = athdbg_if_setmask,
+	.get_dbg_mask = athdbg_if_getmask,
 	.get_link_vif_from_vdev_id = ath12k_mac_get_arvif_by_vdev_id,
+	.pci_read32 = ath12k_pci_read32,
 };
 
 static int athdbg_if_create_debugfs(struct ath12k_base *ab)
@@ -59,6 +72,8 @@ static int athdbg_if_create_debugfs(struct ath12k_base *ab)
 							&debugfs_qdss_enable_fops);
 		debugfs_create_file("collect", 0644, qdss_dir, partner_ab,
 							&debugfs_qdss_collect_fops);
+
+		athdbg_create_wmi_debugfs(athdbg_dir, partner_ab);
 	}
 
 	return 0;
@@ -66,23 +81,37 @@ out:
 	return -ENOMEM;
 }
 
+void athdbg_ops_register(struct ath12k_base *ab)
+{
+	if (!athdbg_base->dbg_to_ath_ops)
+		athdbg_base->dbg_to_ath_ops = &dbg_to_ath_ops;
+}
+
 void athdbg_if_register(struct ath12k_base *ab)
 {
 	int ret;
+
+	#ifdef CPTCFG_ATHDEBUG_UIO_LOGGING
+	ret = athdbg_uio_register(ab);
+	if (ret)
+		pr_err("athdbg_if: ath_debug UIO register failed: %d\n", ret);
+	#endif
 
 	ret = athdbg_if_create_debugfs(ab);
 	if (ret) {
 		pr_err("athdbg_if: debugfs entry create failure %d", ret);
 		return;
 	}
-
-	athdbg_base->dbg_to_ath_ops = &dbg_to_ath_ops;
-
 }
 
 void athdbg_if_unregister(struct ath12k_base *ab)
 {
+	#ifdef CPTCFG_ATHDEBUG_UIO_LOGGING
+	athdbg_uio_unregister(ab);
+	#endif
+
 	athdbg_clear_minidump_info();
+	athdbg_base->dbg_to_ath_ops = NULL;
 }
 
 /* Interface provided to perform any action that need to be done in the
@@ -100,10 +129,22 @@ int athdbg_if_get_service(struct ath12k_base *ab, enum athdbg_service srv)
 		athdbg_do_dump_minidump(ab);
 		break;
 	case ATHDBG_SRV_COLLECT_MINIDUMP_REFERENCES:
-		athdbg_collect_reference_segments(ab);
+		athdbg_collect_reference_segments(ab, TRUE);
 		break;
 	case ATHDBG_SRV_QMI_DEINIT:
 		athdbg_qmi_deinit(ab);
+		break;
+	case ATHDBG_SRV_QDSS_MEM_FREE:
+		athdbg_qmi_qdss_mem_free(ab);
+		break;
+	case ATHDBG_SRV_MHI_Q6_DUMP_BL_SRAM:
+		athdbg_mhi_q6_dump_bl_sram_mem(ab);
+		break;
+	case ATHDBG_SRV_MHI_Q6_BOOT_DEBUG_TIMEOUT:
+		athdbg_mhi_q6_boot_debug_timeout_hdlr_internal(ab);
+		break;
+	case ATHDBG_SRV_QMI_INIT:
+		ret = athdbg_qmi_worker_init(ab);
 		break;
 	}
 
@@ -120,7 +161,12 @@ bool athdbg_if_check_dev_running(struct ath12k_base *ab)
 	return ret;
 }
 
-void athdbg_if_setmask(unsigned int debug_mask)
+void athdbg_if_setmask(u64 debug_mask)
 {
 	ath12k_debug_mask = debug_mask;
+}
+
+u64 athdbg_if_getmask(void)
+{
+	return ath12k_debug_mask;
 }

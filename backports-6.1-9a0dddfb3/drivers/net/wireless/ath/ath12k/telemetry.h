@@ -92,6 +92,26 @@ struct ath12k_sla_detect_cfg {
 };
 
 /**
+ * struct ath12k_rssi_rate_breach_params - RSSI/Rate breach parameters
+ * @list: List entry for breach queue
+ * @mac_addr: Peer MAC address
+ * @breach_type: Type of breach (RSSI_MIN, RSSI_MAX, ACK_RSSI_MIN, etc.)
+ * @threshold_value: Configured threshold value
+ * @detected_value: Actual value that caused breach
+ * @set_clear: true = breach detected, false = breach cleared
+ *
+ * This structure holds parameters for RSSI/Rate threshold breaches.
+ */
+struct ath12k_rssi_rate_breach_params {
+	struct list_head list;
+	u8 mac_addr[ETH_ALEN];
+	u8 breach_type;
+	u32 threshold_value;
+	u32 detected_value;
+	bool set_clear;
+};
+
+/**
  * struct ath12k_telemetry_ctx- Telemetry context
  */
 struct ath12k_telemetry_ctx {
@@ -101,6 +121,12 @@ struct ath12k_telemetry_ctx {
 	struct workqueue_struct *workqueue;
 	struct work_struct indicate_breach;
 	struct list_head list;
+
+	/* RSSI/Rate breach handling */
+	/* Used to protect the rssi_rate_breach_list */
+	spinlock_t rssi_rate_breach_lock;
+	struct work_struct indicate_rssi_rate_breach;
+	struct list_head rssi_rate_breach_list;
 };
 
 void ath12k_telemetry_init(struct ath12k_base *ab);
@@ -112,4 +138,8 @@ bool ath12k_telemetry_get_sla_num_pkts(u32 *pkt_num);
 bool ath12k_telemetry_get_sla_mov_avg_num_pkt(u32 *mov_avg);
 void ath12k_send_breach_indication(struct work_struct *work);
 void ath12k_telemetry_breach_indication(u8 *mac_addr, u8 svc_id, u8 param, bool set_clear, u8 tid);
+void ath12k_send_rssi_rate_breach_indication(struct work_struct *work);
+void ath12k_rssi_rate_breach_indication(u8 *mac_addr, u8 breach_type,
+					u32 threshold_value, u32 detected_value,
+					bool set_clear);
 #endif /* ATH12K_TELEMETRY_H */

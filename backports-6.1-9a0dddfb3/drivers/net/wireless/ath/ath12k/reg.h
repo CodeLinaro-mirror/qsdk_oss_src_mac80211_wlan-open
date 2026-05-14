@@ -9,6 +9,9 @@
 
 #include <linux/kernel.h>
 #include <net/regulatory.h>
+#ifdef CPTCFG_QCN_EXTN
+#include "qcn_extns/ath12k_cmn_extn.h"
+#endif
 
 struct ath12k_base;
 struct ath12k;
@@ -67,6 +70,7 @@ enum ath12k_afc_event_state {
  * @REG_AFC_EXPIRY_EVENT_START: Start expiry event
  * @REG_AFC_EXPIRY_EVENT_RENEW: Renew expiry event
  * @REG_AFC_EXPIRY_EVENT_SWITCH_TO_LPI: Switch to LPI expiry event
+ * @REG_AFC_EXPIRY_EVENT_STOP_TX: Stop Transmission event
  *
  * Enumeration of different AFC expiry event subtypes.
  */
@@ -74,6 +78,7 @@ enum ath12k_afc_expiry_event_subtype {
 	REG_AFC_EXPIRY_EVENT_START = 1,
 	REG_AFC_EXPIRY_EVENT_RENEW = 2,
 	REG_AFC_EXPIRY_EVENT_SWITCH_TO_LPI = 3,
+	REG_AFC_EXPIRY_EVENT_STOP_TX = 4,
 };
 
 enum ath12k_afc_power_event_status_code {
@@ -275,6 +280,7 @@ struct ath12k_afc_host_request {
 
 /**
  * struct ath12k_afc_info - AFC-related information maintained per device
+ * @phy_id: PHY/radio index associated with this AFC event payload.
  * @request_id: Request ID associated with the current AFC request.
  *              This ID is typically received from the firmware during AFC expiry
  *              events and is used to track and correlate AFC requests.
@@ -296,6 +302,7 @@ struct ath12k_afc_host_request {
  */
 
 struct ath12k_afc_info {
+	u8 phy_id;
 	enum ath12k_afc_event_state event_type;
 	bool is_6ghz_afc_power_event_received;
 	struct ath12k_afc_sp_reg_info *afc_reg_info;
@@ -551,6 +558,10 @@ struct ath12k_reg_info {
 	enum wmi_reg_6g_client_type client_type;
 	bool rnr_tpe_usable;
 	bool unspecified_ap_usable;
+#ifdef CPTCFG_QCN_EXTN
+	/*  To store ath12k_reg_info extn members */
+	struct ath12k_reg_info_extn reg_info_extn;
+#endif
 	/* TODO: All 6G related info can be stored only for required
 	 * combination instead of all types, to optimize memory usage.
 	 */
@@ -572,11 +583,40 @@ struct ath12k_reg_info {
 enum ath12k_reg_phy_bitmap {
 	ATH12K_REG_PHY_BITMAP_NO11AX	= BIT(5),
 	ATH12K_REG_PHY_BITMAP_NO11BE	= BIT(6),
+	ATH12K_REG_PHY_BITMAP_NO11BN	= BIT(7),
 };
 
 void ath12k_reg_init(struct ieee80211_hw *hw);
 void ath12k_reg_free(struct ath12k_base *ab);
 void ath12k_regd_update_work(struct work_struct *work);
+
+/**
+ * ath12k_change_6g_txpow_sta_mode - Update 6 GHz tx power mode for
+ * standalone STA
+ * @ar: ATH12K radio instance
+ *
+ * Set the 6 GHz transmit power after AFC completed when the radio is
+ * operating exclusively in STA-only mode.
+ *
+ * The function first determines whether the radio hosts exactly a standalone
+ * STA configuration (i.e., no AP vdevs present). If so, it triggers a power
+ * mode change via mac80211 to Standard Power (SP) for the corresponding
+ * 6 GHz STA link.
+ *
+ * If no usable vifs exist, or the radio is not operating in STA-only mode,
+ * the function returns without making any changes.
+ */
+
+void ath12k_change_6g_txpow_sta_mode_work(struct work_struct *work);
+
+/**
+ * ath12k_set_previous_country_work - Reset to previous country code
+ * @work: Pointer to work_struct
+ *
+ * This function is queued when the firmware returns zero regulatory rules.
+ * It resets the regulatory domain to the previous country code.
+ */
+void ath12k_set_previous_country_work(struct work_struct *work);
 struct ieee80211_regdomain *ath12k_reg_build_regd(struct ath12k_base *ab,
 						  struct ath12k_reg_info *reg_info);
 enum wmi_reg_6g_ap_type
@@ -670,4 +710,32 @@ void ath12k_reg_get_afc_eirp_power_for_bw(struct ath12k *ar, u16 *start_freq,
  * Return: None
  */
 void ath12k_free_afc_power_event_info(struct ath12k_afc_info *afc);
+
+/**
+ * ath12k_get_opclasses_and_channels - Get operating classes and channels
+ * @p_frange_lst: Pointer to frequency range list
+ * @num_opclasses: Pointer to store number of operating classes
+ * @opclass_lst: Pointer to store operating class list (caller must free)
+ * @chansize_lst: Pointer to store channel size list (caller must free)
+ * @channel_lists: Pointer to store channel lists array (caller must free)
+ * @band: 2G/5G/6G band info.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int ath12k_get_opclasses_and_channels(struct ath12k_afc_frange_list *p_frange_lst,
+				      u8 *num_opclasses,
+				      u8 **opclass_lst,
+				      u8 **chansize_lst,
+				      u8 ***channel_lists,
+				      enum nl80211_band band);
+
+/**
+ * ath12k_free_opclasses_and_channels - Free operating classes and channels
+ * @num_opclasses: Number of operating classes
+ * @opclass_lst: Pointer to operating class list
+ * @chansize_lst: Pointer to channel size list
+ * @channel_lists: Pointer to channel lists
+ */
+void ath12k_free_opclasses_and_channels(u8 num_opclasses, u8 *opclass_lst,
+					u8 *chansize_lst, u8 *channel_lists[]);
 #endif

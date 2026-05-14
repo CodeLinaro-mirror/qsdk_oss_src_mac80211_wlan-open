@@ -195,6 +195,7 @@ static int cfg80211_conn_do_work(struct wireless_dev *wdev,
 		req.ie = params->ie;
 		req.ie_len = params->ie_len;
 		req.use_mfp = params->mfp != NL80211_MFP_NO;
+		req.use_cfp = params->cfp != NL80211_CFP_NO;
 		req.crypto = params->crypto;
 		req.flags = params->flags;
 		req.ht_capa = params->ht_capa;

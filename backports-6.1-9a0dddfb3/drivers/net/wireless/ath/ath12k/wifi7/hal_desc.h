@@ -1,12 +1,16 @@
 /* SPDX-License-Identifier: BSD-3-Clause-Clear */
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022, 2024-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #include "../core.h"
 
 #ifndef ATH12K_HAL_DESC_H
 #define ATH12K_HAL_DESC_H
+
+#define HAL_TLV_HDR_TAG		GENMASK(9, 1)
+#define HAL_TLV_HDR_LEN		GENMASK(25, 10)
+#define HAL_TLV_USR_ID		GENMASK(31, 26)
 
 enum hal_tlv_tag {
 	HAL_MACTX_CBF_START					= 0 /* 0x0 */,
@@ -220,7 +224,7 @@ enum hal_tlv_tag {
 	HAL_MACTX_COEX_PHY_CTRL					= 224 /* 0xe0 */,
 	HAL_COEX_STATUS_BROADCAST				= 225 /* 0xe1 */,
 	HAL_RESPONSE_START_STATUS				= 226 /* 0xe2 */,
-	HAL_RESPONSEND_STATUS					= 227 /* 0xe3 */,
+	HAL_RESPONSEND_END_STATUS				= 227 /* 0xe3 */,
 	HAL_CRYPTO_STATUS					= 228 /* 0xe4 */,
 	HAL_RECEIVED_TRIGGER_INFO				= 229 /* 0xe5 */,
 	HAL_COEX_TX_STOP_CTRL					= 230 /* 0xe6 */,
@@ -388,8 +392,8 @@ enum hal_tlv_tag {
 	HAL_SCHEDULER_STATUS_WRAPPER				= 395 /* 0x18b */,
 	HAL_MPDU_INFO_6X					= 396 /* 0x18c */,
 	HAL_MACTX_11AZ_USER_DESC_PER_USER			= 397 /* 0x18d */,
-	HAL_MACTX_U_SIGHT_SU_MU					= 398 /* 0x18e */,
-	HAL_MACTX_U_SIGHT_TB					= 399 /* 0x18f */,
+	HAL_MACTX_U_SIG_EHT_SU_MU				= 398 /* 0x18e */,
+	HAL_MACTX_U_SIG_EHT_TB					= 399 /* 0x18f */,
 	HAL_PHYRX_U_SIGHT_SU_MU					= 403 /* 0x193 */,
 	HAL_PHYRX_U_SIGHT_TB					= 404 /* 0x194 */,
 	HAL_MACRX_LMR_READ_REQUEST				= 408 /* 0x198 */,
@@ -427,7 +431,7 @@ enum hal_tlv_tag {
 	HAL_MPDU_INFO_1K_BITMAP					= 441 /* 0x1b9 */,
 	HAL_MON_BUF_ADDR					= 442 /* 0x1ba */,
 	HAL_TX_FRAG_STATE					= 443 /* 0x1bb */,
-	HAL_MACTXHT_SIG_USR_OFDMA				= 446 /* 0x1be */,
+	HAL_MACTX_EHT_SIG_USR_OFDMA				= 446 /* 0x1be */,
 	HAL_PHYRXHT_SIG_CMN_PUNC				= 448 /* 0x1c0 */,
 	HAL_PHYRXHT_SIG_CMN_OFDMA				= 450 /* 0x1c2 */,
 	HAL_PHYRXHT_SIG_USR_OFDMA				= 454 /* 0x1c6 */,
@@ -438,8 +442,8 @@ enum hal_tlv_tag {
 	HAL_PHYRX_11AZ_INTEGRITY_DATA				= 461 /* 0x1cd */,
 	HAL_PHYTX_LOCATION					= 462 /* 0x1ce */,
 	HAL_PHYTX_11AZ_INTEGRITY_DATA				= 463 /* 0x1cf */,
-	HAL_MACTXHT_SIG_USR_SU					= 466 /* 0x1d2 */,
-	HAL_MACTXHT_SIG_USR_MU_MIMO				= 467 /* 0x1d3 */,
+	HAL_MACTX_EHT_SIG_USR_SU				= 466 /* 0x1d2 */,
+	HAL_MACTX_EHT_SIG_USR_MU_MIMO				= 467 /* 0x1d3 */,
 	HAL_PHYRXHT_SIG_USR_SU					= 468 /* 0x1d4 */,
 	HAL_PHYRXHT_SIG_USR_MU_MIMO				= 469 /* 0x1d5 */,
 	HAL_PHYRX_GENERIC_U_SIG					= 470 /* 0x1d6 */,
@@ -487,26 +491,6 @@ enum hal_tlv_tag {
 	HAL_TLV_BASE						= 511 /* 0x1ff */,
 };
 
-#define HAL_TLV_HDR_TAG		GENMASK(9, 1)
-#define HAL_TLV_HDR_LEN		GENMASK(25, 10)
-#define HAL_TLV_USR_ID          GENMASK(31, 26)
-
-#define HAL_TLV_ALIGN	4
-
-struct hal_tlv_hdr {
-	__le32 tl;
-	u8 value[];
-} __packed;
-
-#define HAL_TLV_64_HDR_TAG		GENMASK(9, 1)
-#define HAL_TLV_64_HDR_LEN		GENMASK(21, 10)
-#define HAL_TLV_64_USR_ID		GENMASK(31, 26)
-#define HAL_TLV_64_ALIGN		8
-
-struct hal_tlv_64_hdr {
-	__le64 tl;
-	u8 value[];
-} __packed;
 
 #define RX_MPDU_DESC_INFO0_MSDU_COUNT		GENMASK(7, 0)
 #define RX_MPDU_DESC_INFO0_FRAG_FLAG		BIT(8)
@@ -519,31 +503,6 @@ struct hal_tlv_64_hdr {
 #define RX_MPDU_DESC_INFO0_SRC_INFO		GENMASK(26, 15)
 #define RX_MPDU_DESC_INFO0_MPDU_QOS_CTRL_VALID	BIT(27)
 #define RX_MPDU_DESC_INFO0_TID			GENMASK(31, 28)
-
-/* Peer Metadata classification */
-
-/* Version 0 */
-#define RX_MPDU_DESC_META_DATA_V0_PEER_ID	GENMASK(15, 0)
-#define RX_MPDU_DESC_META_DATA_V0_VDEV_ID	GENMASK(23, 16)
-
-/* Version 1 */
-#define RX_MPDU_DESC_META_DATA_V1_PEER_ID		GENMASK(13, 0)
-#define RX_MPDU_DESC_META_DATA_V1_LOGICAL_LINK_ID	GENMASK(15, 14)
-#define RX_MPDU_DESC_META_DATA_V1_VDEV_ID		GENMASK(23, 16)
-#define RX_MPDU_DESC_META_DATA_V1_LMAC_ID		GENMASK(25, 24)
-#define RX_MPDU_DESC_META_DATA_V1_DEVICE_ID		GENMASK(28, 26)
-
-/* Version 1A */
-#define RX_MPDU_DESC_META_DATA_V1A_PEER_ID		GENMASK(13, 0)
-#define RX_MPDU_DESC_META_DATA_V1A_VDEV_ID		GENMASK(21, 14)
-#define RX_MPDU_DESC_META_DATA_V1A_LOGICAL_LINK_ID	GENMASK(25, 22)
-#define RX_MPDU_DESC_META_DATA_V1A_DEVICE_ID		GENMASK(28, 26)
-
-/* Version 1B */
-#define RX_MPDU_DESC_META_DATA_V1B_PEER_ID	GENMASK(13, 0)
-#define RX_MPDU_DESC_META_DATA_V1B_VDEV_ID	GENMASK(21, 14)
-#define RX_MPDU_DESC_META_DATA_V1B_HW_LINK_ID	GENMASK(25, 22)
-#define RX_MPDU_DESC_META_DATA_V1B_DEVICE_ID	GENMASK(28, 26)
 
 struct rx_mpdu_desc {
 	__le32 info0; /* %RX_MPDU_DESC_INFO */
@@ -740,16 +699,6 @@ struct rx_msdu_ext_desc {
  * src_link_id
  *		Set to the link ID of the PMAC that received the frame
  */
-
-enum hal_reo_dest_ring_buffer_type {
-	HAL_REO_DEST_RING_BUFFER_TYPE_MSDU,
-	HAL_REO_DEST_RING_BUFFER_TYPE_LINK_DESC,
-};
-
-enum hal_reo_dest_ring_push_reason {
-	HAL_REO_DEST_RING_PUSH_REASON_ERR_DETECTED,
-	HAL_REO_DEST_RING_PUSH_REASON_ROUTING_INSTRUCTION,
-};
 
 #define HAL_REO_DEST_RING_INFO0_BUFFER_TYPE		BIT(0)
 #define HAL_REO_DEST_RING_INFO0_PUSH_REASON		GENMASK(2, 1)
@@ -1153,12 +1102,6 @@ struct hal_reo_flush_cache {
 
 #define HAL_TCL_DATA_CMD_INFO5_RING_ID			GENMASK(27, 20)
 #define HAL_TCL_DATA_CMD_INFO5_LOOPING_COUNT		GENMASK(31, 28)
-
-enum hal_tcl_desc_type {
-	HAL_TCL_DESC_TYPE_BUFFER,
-	HAL_TCL_DESC_TYPE_EXT_DESC,
-	HAL_TCL_DESC_TYPE_MAX,
-};
 
 struct hal_tcl_data_cmd {
 	struct ath12k_buffer_addr buf_addr_info;
@@ -1863,13 +1806,6 @@ struct hal_wbm_buffer_ring {
 	struct ath12k_buffer_addr buf_addr_info;
 };
 
-enum hal_mon_end_reason {
-	HAL_MON_STATUS_BUFFER_FULL,
-	HAL_MON_FLUSH_DETECTED,
-	HAL_MON_END_OF_PPDU,
-	HAL_MON_PPDU_TRUNCATED,
-};
-
 #define HAL_SW_MONITOR_RING_INFO0_RXDMA_PUSH_REASON	GENMASK(1, 0)
 #define HAL_SW_MONITOR_RING_INFO0_RXDMA_ERROR_CODE	GENMASK(6, 2)
 #define HAL_SW_MONITOR_RING_INFO0_MPDU_FRAGMENT_NUMBER	GENMASK(10, 7)
@@ -2076,7 +2012,6 @@ enum hal_desc_buf_type {
 #define HAL_DESC_REO_OWNED		4
 #define HAL_DESC_REO_QUEUE_DESC		8
 #define HAL_DESC_REO_QUEUE_EXT_DESC	9
-#define HAL_DESC_REO_NON_QOS_TID	16
 
 #define HAL_DESC_HDR_INFO0_OWNER	GENMASK(3, 0)
 #define HAL_DESC_HDR_INFO0_BUF_TYPE	GENMASK(7, 4)
@@ -2767,13 +2702,38 @@ struct hal_mon_dest_desc {
  *	updated by SRNG.
  */
 
+#define HAL_TX_MSDU_METADATA_INFO0_VALID_PWR		BIT(0)
+#define HAL_TX_MSDU_METADATA_INFO0_VALID_MCS_MASK	BIT(1)
+#define HAL_TX_MSDU_METADATA_INFO0_VALID_NSS_MASK	BIT(2)
+#define HAL_TX_MSDU_METADATA_INFO0_VALID_PREAM_TYPE	BIT(3)
+#define HAL_TX_MSDU_METADATA_INFO0_VALID_RETRIES	BIT(4)
+#define HAL_TX_MSDU_METADATA_INFO0_VALID_BW_INFO	BIT(5)
 #define HAL_TX_MSDU_METADATA_INFO0_ENCRYPT_FLAG		BIT(8)
+#define HAL_TX_MSDU_METADATA_INFO0_VALID_KEY_FLAGS	BIT(9)
 #define HAL_TX_MSDU_METADATA_INFO0_ENCRYPT_TYPE		GENMASK(16, 15)
+#define HAL_TX_MSDU_METADATA_INFO0_RETRY_LIMIT		GENMASK(20, 17)
+#define HAL_TX_MSDU_METADATA_INFO0_VALID_DYN_BW		BIT(24)
+#define HAL_TX_MSDU_METADATA_INFO0_BW_MASK		GENMASK(30, 25)
 #define HAL_TX_MSDU_METADATA_INFO0_HOST_TX_DESC_POOL	BIT(31)
+
+#define HAL_TX_MSDU_METADATA_INFO1_POWER		GENMASK(0, 0)
+#define HAL_TX_MSDU_METADATA_INFO1_MCS_MASK		GENMASK(19, 8)
+#define HAL_TX_MSDU_METADATA_INFO1_NSS_MASK		GENMASK(27, 20)
+#define HAL_TX_MSDU_METADATA_INFO1_PREAM_TYPE		GENMASK(30, 28)
+#define HAL_TX_MSDU_METADATA_INFO1_UPDATE_PEER_CACHE	BIT(31)
+
+#define HAL_TX_MSDU_METADATA_INFO2_KEY_FLAGS		GENMASK(15, 8)
+
+#define HAL_TX_MSDU_METADATA_INFO5_LEARNING_FRAME	BIT(0)
 
 struct hal_tx_msdu_metadata {
 	__le32 info0;
-	__le32 rsvd0[6];
+	__le32 info1;
+	__le32 info2;
+	__le32 info3;
+	__le32 info4;
+	__le32 info5;
+	__le32 rsvd0[1];
 } __packed;
 
 /* hal_tx_msdu_metadata

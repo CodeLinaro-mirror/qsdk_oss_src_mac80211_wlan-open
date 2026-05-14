@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause-Clear */
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef ATH12K_QMI_H
@@ -20,7 +20,9 @@
 #define ATH12K_QMI_WLFW_SERVICE_INS_ID_V01	0x02
 #define ATH12K_QMI_WLFW_SERVICE_INS_ID_V01_WCN7850 0x1
 
+#define ATH12K_QMI_WLFW_SERVICE_INS_ID_V01_QCN9625	0x07
 #define ATH12K_QMI_WLFW_SERVICE_INS_ID_V01_QCN9274	0x07
+#define ATH12K_QMI_WLFW_SERVICE_INS_ID_V01_QCN9074	0x07
 #define ATH12K_QMI_WLFW_SERVICE_INS_ID_V01_IPQ5332	0x2
 #define ATH12K_QMI_WLFW_SERVICE_INS_ID_V01_QCN6432	0x60
 #define ATH12K_QMI_WLANFW_MAX_TIMESTAMP_LEN_V01	32
@@ -44,6 +46,7 @@
 #define ATH12K_FIRMWARE_MODE_OFF		4
 #define ATH12K_COLD_BOOT_FW_RESET_DELAY		(60 * HZ)
 
+#define ATH12K_BOARD_ID_INVALID	0xFFFFFFFF
 #define ATH12K_BOARD_ID_DEFAULT	0xFF
 
 #define QCN6432_DEVICE_BAR_SIZE                0x200000
@@ -59,6 +62,7 @@ struct ath12k_hw_group;
 enum ath12k_target_mem_mode {
 	ATH12K_QMI_TARGET_MEM_MODE_DEFAULT = 0,
 	ATH12K_QMI_TARGET_MEM_MODE_512M,
+	ATH12K_QMI_TARGET_MEM_MODE_256M,
 };
 
 enum ath12k_qmi_file_type {
@@ -93,6 +97,20 @@ enum ath12k_qmi_event_type {
 	ATH12K_QMI_EVENT_HOST_CAP,
 	ATH12K_QMI_EVENT_M3_DUMP_UPLOAD_REQ,
 	ATH12K_QMI_EVENT_MAX,
+};
+
+#define QMI_WLANFW_MAX_NUM_EXT_FW_BIN_DOWNLOAD_V01 32
+enum qmi_wlanfw_ext_fw_bin_type_enum_v01 {
+	QMI_WLANFW_EXT_FW_BIN_TYPE_START,
+	QMI_WLANFW_EXT_FW_BIN_TYPE_BDF_REGDB_V01 = QMI_WLANFW_EXT_FW_BIN_TYPE_START,
+	QMI_WLANFW_EXT_FW_BIN_TYPE_BDF_GOLDEN_V01 = 1,
+	QMI_WLANFW_EXT_FW_BIN_TYPE_BDF_RXGAIN_V01 = 2,
+	QMI_WLANFW_EXT_FW_BIN_TYPE_BDF_CALDATA_V01 = 3,
+	QMI_WLANFW_EXT_FW_BIN_TYPE_M3_V01 = 4,
+	QMI_WLANFW_EXT_FW_BIN_TYPE_AUX_V01 = 5,
+	QMI_WLANFW_EXT_FW_BIN_TYPE_MCSS_V01 = 6,
+	QMI_WLANFW_EXT_FW_BIN_TYPE_QDSS_CFG_V01 = 7,
+	QMI_WLANFW_EXT_FW_MAX_BIN_TYPE,
 };
 
 struct ath12k_qmi_driver_event {
@@ -148,7 +166,16 @@ struct target_info {
 	char bdf_ext[ATH12K_QMI_BDF_EXT_STR_LENGTH];
 };
 
+struct ext_fw_bin_mem_region {
+	u32 size;
+	dma_addr_t paddr;
+	void *vaddr;
+};
+
 struct m3_mem_region {
+	/* total memory allocated */
+	u32 total_size;
+	/* actual memory being used */
 	u32 size;
 	dma_addr_t paddr;
 	void *vaddr;
@@ -180,9 +207,15 @@ struct ath12k_qmi {
 	u8 num_radios;
 	struct target_info target;
 	struct m3_mem_region m3_mem;
+	struct ext_fw_bin_mem_region ext_fw_bin_mem[QMI_WLANFW_EXT_FW_MAX_BIN_TYPE];
 	unsigned int service_ins_id;
 	wait_queue_head_t cold_boot_waitq;
 	struct dev_mem_info dev_mem[ATH12K_QMI_WLFW_MAX_DEV_MEM_NUM_V01];
+	u8 ext_fw_bin_download_support;
+	u32 ext_fw_bin_download_bitmap;
+	u8 aux_support;
+	u8 mcss_support;
+	u8 dynamic_ddr_support;
 };
 
 struct ath12k_qmi_m3_dump_upload_req_data {
@@ -281,6 +314,7 @@ enum ath12k_qmi_cnss_feature {
 	CNSS_FEATURE_MIN_ENUM_VAL_V01 = INT_MIN,
 	CNSS_QDSS_CFG_MISS_V01 = 3,
 	CNSS_PCIE_PERST_NO_PULL_V01 = 4,
+	CNSS_AUX_UC_SUPPORT_V01 = 6,
 	CNSS_MAX_FEATURE_V01 = 64,
 	CNSS_FEATURE_MAX_ENUM_VAL_V01 = INT_MAX,
 };
@@ -339,6 +373,8 @@ struct qmi_wlanfw_host_cap_req_msg_v01 {
 	u64 feature_list;
 	u8 fw_cfg_support_valid;
 	u8 fw_cfg_support;
+	u8 dynamic_mem_support_valid;
+	u8 dynamic_mem_support;
 };
 
 struct qmi_wlanfw_host_cap_resp_msg_v01 {
@@ -347,7 +383,7 @@ struct qmi_wlanfw_host_cap_resp_msg_v01 {
 
 #define QMI_WLANFW_PHY_CAP_REQ_MSG_V01_MAX_LEN		0
 #define QMI_WLANFW_PHY_CAP_REQ_V01			0x0057
-#define QMI_WLANFW_PHY_CAP_RESP_MSG_V01_MAX_LEN		18
+#define QMI_WLANFW_PHY_CAP_RESP_MSG_V01_MAX_LEN		26
 #define QMI_WLANFW_PHY_CAP_RESP_V01			0x0057
 
 struct qmi_wlanfw_phy_cap_req_msg_v01 {
@@ -363,6 +399,12 @@ struct qmi_wlanfw_phy_cap_resp_msg_v01 {
 	u8 single_chip_mlo_support;
 	u8 mm_coldboot_cal_valid;
 	u8 mm_coldboot_cal;
+	u8 aux_support_valid;
+	u8 aux_support;
+	u8 mcss_support_valid;
+	u8 mcss_support;
+	u8 dynamic_ddr_support_valid;
+	u8 dynamic_ddr_support;
 };
 
 #define QMI_WLANFW_IND_REGISTER_REQ_MSG_V01_MAX_LEN		54
@@ -404,7 +446,8 @@ struct qmi_wlanfw_ind_register_req_msg_v01 {
 	u8 qdss_trace_free_enable;
 	u8 m3_dump_upload_req_enable_valid;
 	u8 m3_dump_upload_req_enable;
-
+	u8 ddr_dump_region_enable_valid;
+	u8 ddr_dump_region_enable;
 };
 
 struct qmi_wlanfw_ind_register_resp_msg_v01 {
@@ -436,6 +479,13 @@ enum qmi_wlanfw_mem_type_enum_v01 {
 	QMI_WLANFW_MEM_M3_V01 = 3,
 	QMI_WLANFW_MEM_CAL_V01 = 4,
 	QMI_WLANFW_MEM_DPD_V01 = 5,
+	QMI_WLANFW_MEM_QDSS_V01 = 6,
+	QMI_WLANFW_MEM_HANG_DATA_V01 = 7,
+	QMI_WLANFW_MLO_GLOBAL_MEM_V01 = 8,
+	QMI_WLANFW_PAGEABLE_MEM_V01 = 9,
+	QMI_WLANFW_AFC_MEM_V01 = 10,
+	QMI_WLANFW_MEM_LPASS_SHARED_V01 = 11,
+	QMI_WLANFW_MEM_CALDB_SEG_V01 = 12,
 	WLANFW_MEM_TYPE_ENUM_MAX_VAL_V01 = INT_MAX,
 };
 
@@ -480,7 +530,7 @@ struct qmi_wlanfw_fw_cold_cal_done_ind_msg_v01 {
 };
 
 #define QMI_WLANFW_CAP_REQ_MSG_V01_MAX_LEN	0
-#define QMI_WLANFW_CAP_RESP_MSG_V01_MAX_LEN	207
+#define QMI_WLANFW_CAP_RESP_MSG_V01_MAX_LEN	218
 #define QMI_WLANFW_CAP_REQ_V01			0x0024
 #define QMI_WLANFW_CAP_RESP_V01			0x0024
 #define QMI_WLANFW_DEVICE_INFO_REQ_V01		0x004C
@@ -592,6 +642,10 @@ struct qmi_wlanfw_cap_resp_msg_v01 {
 	struct qmi_wlanfw_dev_mem_info_s_v01 dev_mem[ATH12K_QMI_WLFW_MAX_DEV_MEM_NUM_V01];
 	u8 rxgainlut_support_valid;
 	u8 rxgainlut_support;
+	u8 ext_fw_bin_download_support_valid;
+	u8 ext_fw_bin_download_support;
+	u8 ext_fw_bin_download_bitmap_valid;
+	u32 ext_fw_bin_download_bitmap;
 };
 
 struct qmi_wlanfw_cap_req_msg_v01 {
@@ -657,7 +711,7 @@ struct qmi_wlanfw_m3_info_resp_msg_v01 {
 
 #define QMI_WLANFW_WLAN_MODE_REQ_MSG_V01_MAX_LEN	15
 #define QMI_WLANFW_WLAN_MODE_RESP_MSG_V01_MAX_LEN	7
-#define QMI_WLANFW_WLAN_CFG_REQ_MSG_V01_MAX_LEN		803
+#define QMI_WLANFW_WLAN_CFG_REQ_MSG_V01_MAX_LEN		1835
 #define QMI_WLANFW_WLAN_CFG_RESP_MSG_V01_MAX_LEN	7
 #define QMI_WLANFW_WLAN_MODE_REQ_V01			0x0022
 #define QMI_WLANFW_WLAN_MODE_RESP_V01			0x0022
@@ -668,6 +722,8 @@ struct qmi_wlanfw_m3_info_resp_msg_v01 {
 #define QMI_WLANFW_MAX_NUM_SVC_V01			24
 #define QMI_WLANFW_MAX_NUM_SHADOW_REG_V01		24
 #define QMI_WLANFW_MAX_NUM_SHADOW_REG_V3_V01		60
+#define QMI_WLANFW_MAX_EXT_NUM_CE_V01			32
+#define QMI_WLANFW_MAX_EXT_NUM_SVC_V01			32
 
 struct qmi_wlanfw_wlan_mode_req_msg_v01 {
 	u32 mode;
@@ -700,6 +756,14 @@ struct qmi_wlanfw_wlan_cfg_req_msg_v01 {
 	u32 shadow_reg_v3_len;
 	struct qmi_wlanfw_shadow_reg_v3_cfg_s_v01
 		shadow_reg_v3[QMI_WLANFW_MAX_NUM_SHADOW_REG_V3_V01];
+	u8 ext_tgt_cfg_valid;
+	u32 ext_tgt_cfg_len;
+	struct qmi_wlanfw_ce_tgt_pipe_cfg_s_v01
+			ext_tgt_cfg[QMI_WLANFW_MAX_EXT_NUM_CE_V01];
+	u8 ext_svc_cfg_valid;
+	u32 ext_svc_cfg_len;
+	struct qmi_wlanfw_ce_svc_pipe_cfg_s_v01
+			ext_svc_cfg[QMI_WLANFW_MAX_EXT_NUM_SVC_V01];
 };
 
 struct qmi_wlanfw_wlan_cfg_resp_msg_v01 {
@@ -919,6 +983,29 @@ struct ath12k_host_mlo_mem_arena {
 
 struct ath12k_qmi_shmem_tlv_policy {
 	size_t min_len;
+};
+
+#define QMI_WLANFW_EXT_FW_BIN_DOWNLOAD_REQ_MSG_V01_MAX_MSG_LEN 772
+#define QMI_WLANFW_EXT_FW_BIN_DOWNLOAD_RESP_MSG_V01_MAX_MSG_LEN 7
+#define QMI_WLANFW_EXT_FW_BIN_DOWNLOAD_REQ_V01 0x0065
+#define QMI_WLANFW_EXT_FW_BIN_DOWNLOAD_RESP_V01 0x0065
+
+struct qmi_wlanfw_ext_fw_bin_mem_info_s_v01 {
+	enum qmi_wlanfw_ext_fw_bin_type_enum_v01 type;
+	u64 addr;
+	u32 size;
+	u32 reserved1;
+	u32 reserved2;
+};
+
+struct qmi_wlanfw_ext_fw_bin_download_req_msg_v01 {
+	u32 ext_bin_mem_info_len;
+	struct qmi_wlanfw_ext_fw_bin_mem_info_s_v01
+		ext_bin_mem_info[QMI_WLANFW_MAX_NUM_EXT_FW_BIN_DOWNLOAD_V01];
+};
+
+struct qmi_wlanfw_ext_fw_bin_download_resp_msg_v01 {
+	struct qmi_response_type_v01 resp;
 };
 
 int ath12k_qmi_firmware_start(struct ath12k_base *ab,

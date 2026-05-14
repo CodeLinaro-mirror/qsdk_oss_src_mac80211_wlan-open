@@ -13,12 +13,11 @@
 #include "hif.h"
 #include <linux/msi.h>
 #include "pci.h"
+#include "mgmt_rx.h"
 
 #define ATH12K_PCI_IRQ_CE0_OFFSET		3
 
 #define WINDOW_ENABLE_BIT		0x40000000
-#define WINDOW_REG_ADDRESS		0x310c
-#define WINDOW_VALUE_MASK		GENMASK(24, 19)
 #define WINDOW_START			0x80000
 #define WINDOW_RANGE_MASK		GENMASK(18, 0)
 
@@ -59,6 +58,16 @@ static const struct ath12k_msi_config ath12k_wifi7_msi_config[] = {
 		},
 	},
 };
+
+static inline u32 ath12k_get_mask_bits(u32 val, u32 mask)
+{
+	int lsb = ffs(mask);
+
+	if (!lsb)
+		return 0;
+
+	return (val & mask) >> (lsb - 1);
+}
 
 int ath12k_pcic_start(struct ath12k_base *ab);
 void ath12k_pcic_stop(struct ath12k_base *ab);
@@ -103,4 +112,8 @@ int ath12k_pcic_ppeds_register_interrupts(struct ath12k_base *ab, int type, int 
 void ath12k_pcic_ppeds_irq_disable(struct ath12k_base *ab, enum ppeds_irq_type type);
 void ath12k_pcic_ppeds_irq_enable(struct ath12k_base *ab, enum ppeds_irq_type type);
 void ath12k_pcic_ppeds_free_interrupts(struct ath12k_base *ab);
+int ath12k_pcic_mgmt_irq_config(struct ath12k_base *ab, struct ath12k_mgmt *mgmt);
+void ath12k_pcic_mgmt_irq_free(struct ath12k_base *ab);
+void ath12k_pcic_mgmt_irqs_enable(struct ath12k_base *ab);
+void ath12k_pcic_mgmt_irqs_disable(struct ath12k_base *ab);
 #endif

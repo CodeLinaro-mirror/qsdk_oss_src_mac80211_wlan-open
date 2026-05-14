@@ -646,6 +646,9 @@ static const char *hw_flag_names[] = {
 	FLAG(SUPPORTS_EXT_REMAIN_ON_CHAN),
 	FLAG(SUPPORTS_DSCP_TID_MAP),
 	FLAG(SUPPORTS_SINGLE_CHANNEL),
+	FLAG(VLAN_GROUP_KEY_HW_OFFLOAD),
+	FLAG(SUPPORTS_TX_MONITOR_OFFLOAD),
+	FLAG(SKIP_CHANDEF_IDENTICAL_CHECK),
 #undef FLAG
 };
 
@@ -856,6 +859,7 @@ static ssize_t stats_ ##name## _read(struct file *file,                 \
 }                                                                       \
                                                                         \
 static const struct file_operations stats_ ##name## _ops = {                 \
+	.open = simple_open,                                            \
         .read = stats_ ##name## _read,                                  \
         .llseek = generic_file_llseek,                                  \
 };

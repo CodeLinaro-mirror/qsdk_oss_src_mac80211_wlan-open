@@ -8,6 +8,7 @@
 #define ATH12K_HIF_H
 
 #include "core.h"
+#include <linux/delay.h>
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #include "pci.h"
 #endif
@@ -53,11 +54,18 @@ struct ath12k_hif_ops {
 	void (*ppeds_free_interrupts)(struct ath12k_base *ab);
 	void (*ppeds_irq_enable)(struct ath12k_base *ab, enum ppeds_irq_type type);
 	void (*ppeds_irq_disable)(struct ath12k_base *ab, enum ppeds_irq_type type);
+	dma_addr_t (*ppeds_get_pci_window_umac_reg_paddr)(struct ath12k_base *ab,
+							u32 offset);
 #endif
 	void (*dp_umac_intr_line_reset)(struct ath12k_base *ab);
 	int (*dp_umac_reset_irq_config)(struct ath12k_base *ab);
 	void (*dp_umac_reset_enable_irq)(struct ath12k_base *ab);
 	void (*dp_umac_reset_free_irq)(struct ath12k_base *ab);
+	int (*get_iova)(struct ath12k_base *ab, u64 *addr, u64 *size);
+	int (*mgmt_irq_setup)(struct ath12k_base *ab, struct ath12k_mgmt *mgmt);
+	void (*mgmt_irq_cleanup)(struct ath12k_base *ab);
+	void (*mgmt_irq_enable)(struct ath12k_base *ab);
+	void (*mgmt_irq_disable)(struct ath12k_base *ab);
 };
 
 static inline int ath12k_hif_map_service_to_pipe(struct ath12k_base *ab, u16 service_id,
@@ -175,6 +183,97 @@ static inline void ath12k_hif_write32(struct ath12k_base *ab, u32 address,
 	ab->hif.ops->write32(ab, address, data);
 }
 
+/**
+ * ath12k_hif_rmw32 - Read-modify-write 32-bit register field
+ * @ab: ath12k base context
+ * @address: register address to update
+ * @mask: contiguous bitmask of the field to update
+ * @value: raw (lsb-aligned) field value to write
+ *
+ * Performs a read-modify-write where only bits covered by @mask are
+ * updated from @value. @value is a raw field value (not pre-shifted).
+ * This helper automatically aligns it to @mask before updating. If the
+ * computed new value matches the current register value, the write is
+ * skipped. If @mask is zero, the function returns without making changes.
+ */
+static inline void ath12k_hif_rmw32(struct ath12k_base *ab, u32 address,
+				    u32 mask, u32 value)
+{
+	u32 orig, newv, shift;
+
+	if (!mask)
+		return;
+
+	shift = ffs(mask) - 1;
+
+	orig = ath12k_hif_read32(ab, address);
+	newv = (orig & ~mask) | ((value << shift) & mask);
+	if (newv != orig)
+		ath12k_hif_write32(ab, address, newv);
+}
+
+/**
+ * ath12k_hif_poll32 - Poll register until masked field matches
+ * @ab: ath12k base context
+ * @address: register address to read
+ * @expected: raw (lsb-aligned) field value expected
+ * @mask: contiguous bitmask of bits to compare
+ * @delay: microseconds to delay between reads
+ * @timeout: total timeout (same units as @delay)
+ *
+ * Repeatedly reads @address until the masked field matches @expected,
+ * comparing ((read & @mask) >> lsb(@mask)) against @expected. For a full
+ * 32-bit comparison, pass @mask = 0xFFFFFFFF and @expected as the full
+ * value. Returns 0 on success, -EINVAL if @mask is zero or if the timeout
+ * expires before a match.
+ */
+static inline int ath12k_hif_poll32(struct ath12k_base *ab, u32 address,
+				     u32 expected, u32 mask,
+				     u32 delay, u32 timeout)
+{
+	u32 wait, val, shift;
+
+	if (!mask || !delay)
+		return -EINVAL;
+
+	shift = ffs(mask) - 1;
+
+	for (wait = timeout/delay; wait != 0; wait--) {
+		val = ath12k_hif_read32(ab, address);
+		if (((val & mask) >> shift) == expected)
+			return 0;
+
+		udelay(delay);
+	}
+
+	return -EINVAL;
+}
+
+/**
+ * ath12k_hif_read32_masked - Read a masked 32-bit register field
+ * @ab: ath12k base context
+ * @address: register address to read
+ * @mask: contiguous bitmask of the field to extract
+ *
+ * Reads @address and returns the field covered by @mask as a raw
+ * (lsb-aligned) value, i.e. right-shifted to remove leading zeros.
+ * If @mask is zero, returns 0. Assumes @mask is a valid contiguous
+ * genmask.
+ */
+static inline u32 ath12k_hif_read32_masked(struct ath12k_base *ab, u32 address,
+					   u32 mask)
+{
+	u32 val, shift;
+
+	if (!mask)
+		return 0;
+
+	shift = ffs(mask) - 1;
+
+	val = ath12k_hif_read32(ab, address);
+	return (val & mask) >> shift;
+}
+
 static inline int ath12k_hif_power_up(struct ath12k_base *ab)
 {
 	if (!ab->hif.ops->power_up)
@@ -227,6 +326,14 @@ static inline int ath12k_hif_get_msi_irq(struct ath12k_base *ab, unsigned int ve
 		return -EOPNOTSUPP;
 
 	return ab->hif.ops->get_msi_irq(ab, vector);
+}
+
+static inline int ath12k_hif_get_iova(struct ath12k_base *ab, u64 *addr, u64 *size)
+{
+	if (!ab->hif.ops->get_iova)
+		return -EOPNOTSUPP;
+
+	return ab->hif.ops->get_iova(ab, addr, size);
 }
 
 static inline
@@ -319,6 +426,16 @@ static inline void ath12k_hif_ppeds_irq_disable(struct ath12k_base *ab, enum ppe
 	if (ab->hif.ops->ppeds_irq_disable)
 		ab->hif.ops->ppeds_irq_disable(ab, type);
 }
+
+
+static inline dma_addr_t ath12k_hif_ppeds_get_pci_window_umac_reg_paddr(
+				struct ath12k_base *ab, u32 offset)
+{
+	if (ab->hif.ops->ppeds_get_pci_window_umac_reg_paddr)
+		return ab->hif.ops->ppeds_get_pci_window_umac_reg_paddr(ab, offset);
+
+	return 0;
+}
 #else
 static inline int ath12k_hif_ppeds_register_interrupts(struct ath12k_base *ab, int type, int vector,
 						       int ring_num)
@@ -337,5 +454,44 @@ static inline void ath12k_hif_ppeds_irq_enable(struct ath12k_base *ab, enum pped
 static inline void ath12k_hif_ppeds_irq_disable(struct ath12k_base *ab, enum ppeds_irq_type type)
 {
 }
+static inline dma_addr_t ath12k_hif_ppeds_get_pci_window_umac_reg_paddr(
+				struct ath12k_base *ab, u32 offset)
+{
+	return 0;
+}
 #endif
+
+static inline
+int ath12k_hif_mgmt_irq_setup(struct ath12k_base *ab, struct ath12k_mgmt *mgmt)
+{
+	if (!ab->hif.ops->mgmt_irq_setup)
+		return -EOPNOTSUPP;
+
+	return ab->hif.ops->mgmt_irq_setup(ab, mgmt);
+}
+
+static inline void ath12k_hif_mgmt_irq_cleanup(struct ath12k_base *ab)
+{
+	if (!ab->hif.ops->mgmt_irq_cleanup)
+		return;
+
+	ab->hif.ops->mgmt_irq_cleanup(ab);
+}
+
+static inline void ath12k_hif_mgmt_irq_enable(struct ath12k_base *ab)
+{
+	if (!ab->hif.ops->mgmt_irq_enable)
+		return;
+
+	ab->hif.ops->mgmt_irq_enable(ab);
+}
+
+static inline void ath12k_hif_mgmt_irq_disable(struct ath12k_base *ab)
+{
+	if (!ab->hif.ops->mgmt_irq_disable)
+		return;
+
+	ab->hif.ops->mgmt_irq_disable(ab);
+}
+
 #endif /* ATH12K_HIF_H */

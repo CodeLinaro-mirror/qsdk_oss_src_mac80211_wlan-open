@@ -1,14 +1,16 @@
 /* SPDX-License-Identifier: BSD-3-Clause-Clear */
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #ifndef ATH12K_DP_RX_H
 #define ATH12K_DP_RX_H
 
 #include "core.h"
-#include "debug.h"
 #include <crypto/hash.h>
+#include "hal.h"
+
+struct ath12k_sta;
 
 #define DP_MAX_NWIFI_HDR_LEN	30
 
@@ -86,6 +88,11 @@ enum data_filter {
 	FILTER_DATA_ALL                         = ~(0)
 };
 
+enum dp_rx_desc_pool {
+	DP_RX_DEFAULT_POOL = 0,
+	DP_RX_PPE_POOL = 1,
+};
+
 #define ATH12K_RX_PROTOCOL_TAG_START_OFFSET  128
 #define ATH12K_ROUTE_WBM_RELEASE(ab) \
 	((ab)->hw_params->route_wbm_release)
@@ -135,10 +142,13 @@ struct dp_reo_update_rx_queue_elem {
 
 struct ath12k_dp_rx_reo_cmd {
 	struct list_head list;
-	struct ath12k_dp_rx_tid data;
+	union {
+		struct ath12k_dp_rx_tid data;
+		struct ath12k_dp_smd_ctx smd_data;
+	} u;
 	int cmd_num;
 	void (*handler)(struct ath12k_dp *dp, void *ctx,
-			enum hal_reo_cmd_status status);
+			struct hal_reo_status *status);
 };
 
 #define ATH12K_DP_RX_REO_DESC_FREE_THRES  64
@@ -224,21 +234,24 @@ int ath12k_dp_rx_peer_pn_replay_config(struct ath12k_link_vif *arvif,
 				       const u8 *peer_addr,
 				       enum set_key_cmd key_cmd,
 				       struct ieee80211_key_conf *key);
-void ath12k_dp_rx_peer_tid_cleanup(struct ath12k *ar, struct ath12k_dp_link_peer *peer);
+void ath12k_dp_rx_peer_tid_cleanup(struct ath12k *ar,
+				   struct ath12k_dp_link_peer *peer);
 int ath12k_dp_rx_reo_setup(struct ath12k_base *ab);
 void ath12k_dp_rx_reo_cleanup(struct ath12k_base *ab);
 int ath12k_dp_rx_alloc(struct ath12k_base *ab);
 void ath12k_dp_rx_free(struct ath12k_base *ab);
 void ath12k_dp_rx_reo_cmd_list_cleanup(struct ath12k_base *ab);
 void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
-				struct dp_rxdma_ring *rx_ring,
-				struct list_head *used_list);
+				 struct hal_srng *srng,
+				 struct list_head *used_list,
+				 bool reuse);
 int ath12k_dp_rx_peer_frag_setup(struct ath12k *ar,
 				 struct ath12k_dp_link_peer *peer,
 				 struct crypto_shash *tfm);
 
 struct ath12k_dp_link_peer *
-ath12k_dp_rx_h_find_peer(struct ath12k_dp *dp, struct hal_rx_desc *rx_desc, u16 peer_id);
+ath12k_dp_rx_h_find_peer(struct ath12k_pdev_dp *dp_pdev,
+			 struct hal_rx_desc *rx_desc, u16 peer_id);
 u8 ath12k_dp_rx_h_decap_type(struct ath12k_base *ab,
 			     struct hal_rx_desc *desc);
 u32 ath12k_dp_rx_h_mpdu_err(struct ath12k_base *ab,
@@ -251,15 +264,12 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 			       struct ieee80211_rx_status *status,
 			       u8 hw_link_id, bool is_mcbc, u16 peer_id, u16 tid);
 void ath12k_dp_reo_cmd_free(struct ath12k_dp *dp, void *ctx,
-			    enum hal_reo_cmd_status status);
+			    struct hal_reo_status *status);
 void ath12k_dp_rx_frags_cleanup(struct ath12k_dp_rx_tid *rx_tid,
 				bool rel_link_desc);
-int ath12k_dp_rx_crypto_mic_len(struct ath12k_pdev_dp *dp_pdev,
-				enum hal_encrypt_type enctype);
-int ath12k_dp_rx_crypto_param_len(struct ath12k_pdev_dp *dp_pdev,
-				  enum hal_encrypt_type enctype);
-int ath12k_dp_rx_crypto_icv_len(struct ath12k_pdev_dp *dp_pdev,
-				enum hal_encrypt_type enctype);
+int ath12k_dp_rx_crypto_mic_len(struct ath12k_dp *dp, enum hal_encrypt_type enctype);
+int ath12k_dp_rx_crypto_param_len(struct ath12k_dp *dp, enum hal_encrypt_type enctype);
+int ath12k_dp_rx_crypto_icv_len(struct ath12k_dp *dp, enum hal_encrypt_type enctype);
 void ath12k_dp_rx_h_undecap_frag(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *msdu,
 				 enum hal_encrypt_type enctype, u32 flags);
 int ath12k_dp_rx_h_michael_mic(struct crypto_shash *tfm, u8 *key,
@@ -270,9 +280,6 @@ void ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *
 				enum hal_encrypt_type enctype,
 				struct ieee80211_rx_status *status, bool decrypted,
 				u16 peer_id, bool is_first_msdu, bool is_last_msdu);
-int ath12k_hw_grp_dp_rx_invalidate_entry(struct ath12k_hw_group *ag,
-					 enum dp_htt_flow_fst_operation operation,
-					 struct hal_flow_tuple_info *tuple_info);
 int ath12k_dp_rx_flow_add_entry(struct ath12k_base *ab,
 				struct rx_flow_info *flow_info);
 int ath12k_dp_rx_flow_delete_entry(struct ath12k_base *ab,
@@ -284,7 +291,10 @@ void ath12k_dp_fst_core_map_init(struct ath12k_base *ab);
 void ath12k_dp_rx_fst_init(struct ath12k_base *ab);
 ssize_t ath12k_dp_dump_fst_table(struct ath12k_base *ab, char *buf, int size);
 size_t ath12k_dp_list_cut_nodes(struct list_head *list,
-				struct list_head *head, size_t count);
+				struct list_head *head, size_t count, uint8_t pool_type);
+int ath12k_dp_rx_peer_tid_setup(struct ath12k *ar, const u8 *peer_mac, int vdev_id,
+				u8 tid, u32 ba_win_sz, u16 ssn,
+				enum hal_pn_type pn_type);
 void ath12k_dp_tid_cleanup(struct ath12k_base *ab);
 void ath12k_dp_peer_tid_setup(struct ath12k_base *ab);
 void ath12k_dp_peer_reo_tid_setup(struct ath12k *ar, int vdev_id,
@@ -296,7 +306,7 @@ ath12k_dp_rx_htt_rxdma_rxole_ppe_cfg_set(struct ath12k_base *ab,
 					 struct ath12k_dp_htt_rxdma_ppe_cfg_param *param);
 void
 ath12k_dp_primary_peer_migrate_setup(struct ath12k_dp *dp, void *ctx,
-				     enum hal_reo_cmd_status status);
+				     struct hal_reo_status *status);
 int
 ath12k_dp_peer_migrate(struct ath12k_sta *ahsta, u16 peer_id,
 		       u8 chip_id);
@@ -304,13 +314,13 @@ int ath12k_dp_rx_pkt_type_filter(struct ath12k *ar,
 				 enum ath12k_routing_pkt_type pkt_type,
 				 u32 meta_data);
 int ath12k_dp_rxdma_buf_setup(struct ath12k_base *ab);
-void ath12k_dp_rx_update_peer_msdu_stats(struct ath12k_dp_peer *peer,
-					 struct rx_msdu_desc_info *rx_msdu_info,
-					 struct rx_mpdu_desc_info *rx_mpdu_info,
-					 u8 link_id, int ring_id);
 void ath12k_dp_rx_skb_free(struct sk_buff *skb, struct ath12k_dp *dp, int ring,
 			   enum ath12k_dp_rx_error drop_reason);
 void ath12k_dp_rx_classify_mscs(struct ath12k_base *ab,
 				struct ath12k_dp_peer *peer,
 				struct sk_buff *msdu, u8 tid);
+void ath12k_dp_rx_peer_tid_ba_config(struct ath12k_dp *dp, u8 tid, u32 *ba_win_size,
+				     u16 *ssn);
+bool ath12k_dp_rx_peer_tid_skip_pn_replay(struct ath12k_dp *dp, u8 tid);
+int ath12k_dp_rxdma_ring_sel_config(struct ath12k_base *ab);
 #endif /* ATH12K_DP_RX_H */

@@ -68,6 +68,103 @@ MODULE_PARM_DESC(afc_reg_no_action, "Do not trigger channel change on AFC respon
 #define CREATE_CFIS_LST(_gopcls) \
 	CFISLST_TYPE CFISLST(_gopcls) = {NELEMS(CFISARR(_gopcls)), CFISARR(_gopcls)}
 
+/* CFIs for global opclass 81: (start Freq=2407 BW=20MHz) */
+static const u8 opcls_81_cfis_arr[] = {
+	  1,   2,   3,   4,   5,   6,   7,   8,   9,
+	 10,  11,  12,  13,
+};
+
+/* CFIs for global opclass 82: (start Freq=2414 BW=20MHz) */
+static const u8 opcls_82_cfis_arr[] = {
+	 14,
+};
+
+/* CFIs for global opclass 83: (start Freq=2407 BW=40MHz) */
+static const u8 opcls_83_cfis_arr[] = {
+	  3,   4,   5,   6,   7,
+};
+
+/* CFIs for global opclass 84: (start Freq=2407 BW=40MHz) */
+static const u8 opcls_84_cfis_arr[] = {
+	  7,   8,   9,  10,  11,
+};
+
+/* CFIs for global opclass 115: (start Freq=5000 BW=20MHz) */
+static const u8 opcls_115_cfis_arr[] = {
+	 36,  40,  44,  48,
+};
+
+/* CFIs for global opclass 116: (start Freq=5000 BW=40MHz) */
+static const u8 opcls_116_cfis_arr[] = {
+	 38,  46,
+};
+
+/* CFIs for global opclass 117: (start Freq=5000 BW=40MHz) */
+static const u8 opcls_117_cfis_arr[] = {
+	 42,  50,
+};
+
+/* CFIs for global opclass 118: (start Freq=5000 BW=20MHz) */
+static const u8 opcls_118_cfis_arr[] = {
+	 52,  56,  60,  64,
+};
+
+/* CFIs for global opclass 119: (start Freq=5000 BW=40MHz) */
+static const u8 opcls_119_cfis_arr[] = {
+	 54,  62,
+};
+
+/* CFIs for global opclass 120: (start Freq=5000 BW=40MHz) */
+static const u8 opcls_120_cfis_arr[] = {
+	 58,  66,
+};
+
+/* CFIs for global opclass 121: (start Freq=5000 BW=20MHz) */
+static const u8 opcls_121_cfis_arr[] = {
+	100, 104, 108, 112, 116, 120, 124, 128, 132,
+	136, 140, 144,
+};
+
+/* CFIs for global opclass 122: (start Freq=5000 BW=40MHz) */
+static const u8 opcls_122_cfis_arr[] = {
+	102, 110, 118, 126, 134, 142,
+};
+
+/* CFIs for global opclass 123: (start Freq=5000 BW=40MHz) */
+static const u8 opcls_123_cfis_arr[] = {
+	106, 114, 122, 130, 138, 146,
+};
+
+/* CFIs for global opclass 125: (start Freq=5000 BW=20MHz) */
+static const u8 opcls_125_cfis_arr[] = {
+	149, 153, 157, 161, 165, 169, 173, 177,
+};
+
+/* CFIs for global opclass 126: (start Freq=5000 BW=40MHz) */
+static const u8 opcls_126_cfis_arr[] = {
+	151, 159, 167, 175,
+};
+
+/* CFIs for global opclass 127: (start Freq=5000 BW=40MHz) */
+static const u8 opcls_127_cfis_arr[] = {
+	155, 163, 171, 175,
+};
+
+/* CFIs for global opclass 128: (start Freq=5000 BW=80MHz) */
+static const u8 opcls_128_cfis_arr[] = {
+	 50, 122, 163,
+};
+
+/* CFIs for global opclass 129: (start Freq=5000 BW=160MHz) */
+static const u8 opcls_129_cfis_arr[] = {
+	 50, 122, 163,
+};
+
+/* CFIs for global opclass 130: (start Freq=5000 BW=80+80MHz) */
+static const u8 opcls_130_cfis_arr[] = {
+	 50, 122, 163,
+};
+
 /* CFIs for global opclass 131: (start Freq=5925 BW=20MHz) */
 static const u8 opcls_131_cfis_arr[] = {
 	  1,   5,   9,  13,  17,  21,  25,  29,  33,
@@ -115,6 +212,25 @@ static const u8 opcls_137_cfis_arr[] = {
 };
 
 /* Create the CFIS static constant lists */
+CREATE_CFIS_LST(81);
+CREATE_CFIS_LST(82);
+CREATE_CFIS_LST(83);
+CREATE_CFIS_LST(84);
+CREATE_CFIS_LST(115);
+CREATE_CFIS_LST(116);
+CREATE_CFIS_LST(117);
+CREATE_CFIS_LST(118);
+CREATE_CFIS_LST(119);
+CREATE_CFIS_LST(120);
+CREATE_CFIS_LST(121);
+CREATE_CFIS_LST(122);
+CREATE_CFIS_LST(123);
+CREATE_CFIS_LST(125);
+CREATE_CFIS_LST(126);
+CREATE_CFIS_LST(127);
+CREATE_CFIS_LST(128);
+CREATE_CFIS_LST(129);
+CREATE_CFIS_LST(130);
 CREATE_CFIS_LST(131);
 CREATE_CFIS_LST(132);
 CREATE_CFIS_LST(133);
@@ -196,6 +312,53 @@ static bool ath12k_regdom_changes(struct ieee80211_hw *hw, char *alpha2)
 		return true;
 
 	return memcmp(regd->alpha2, alpha2, 2) != 0;
+}
+
+static void ath12k_regd_update_freq_range(struct ath12k *ar)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_wmi_hal_reg_capabilities_ext_arg *reg_cap;
+	u32 phy_id, freq_low, freq_high, supported_bands;
+
+	supported_bands = ar->pdev->cap.supported_bands;
+	reg_cap = &ab->hal_reg_cap[ar->pdev_idx];
+
+	spin_lock_bh(&ar->data_lock);
+
+	ar->freq_range.start_freq = 0;
+	ar->freq_range.end_freq = 0;
+
+	if (supported_bands & WMI_HOST_WLAN_2GHZ_CAP) {
+		if (ab->hw_params->single_pdev_only) {
+			phy_id = ar->pdev->cap.band[WMI_HOST_WLAN_2GHZ_CAP].phy_id;
+			reg_cap = &ab->hal_reg_cap[phy_id];
+		}
+
+		freq_low = max(reg_cap->low_2ghz_chan, ab->reg_freq_2g.start_freq);
+		freq_high = min(reg_cap->high_2ghz_chan, ab->reg_freq_2g.end_freq);
+
+		ath12k_mac_update_freq_range(ar, freq_low, freq_high);
+	}
+
+	if (supported_bands & WMI_HOST_WLAN_5GHZ_CAP && !ar->supports_6ghz) {
+		if (ab->hw_params->single_pdev_only) {
+			phy_id = ar->pdev->cap.band[WMI_HOST_WLAN_5GHZ_CAP].phy_id;
+			reg_cap = &ab->hal_reg_cap[phy_id];
+		}
+
+		freq_low = max(reg_cap->low_5ghz_chan, ab->reg_freq_5g.start_freq);
+		freq_high = min(reg_cap->high_5ghz_chan, ab->reg_freq_5g.end_freq);
+
+		ath12k_mac_update_freq_range(ar, freq_low, freq_high);
+	}
+
+	if (supported_bands & WMI_HOST_WLAN_5GHZ_CAP && ar->supports_6ghz) {
+		freq_low = reg_cap->low_5ghz_chan;
+		freq_high = reg_cap->high_5ghz_chan;
+		ath12k_mac_update_freq_range(ar, freq_low, freq_high);
+	}
+
+	spin_unlock_bh(&ar->data_lock);
 }
 
 static void
@@ -353,51 +516,14 @@ int ath12k_regd_update(struct ath12k *ar, bool init)
 	struct ieee80211_regdomain *regd, *regd_copy = NULL;
 	int ret, regd_len, pdev_id;
 	struct ath12k_base *ab;
-	struct ath12k_wmi_hal_reg_capabilities_ext_arg *reg_cap;
-	u32 phy_id, freq_low, freq_high, supported_bands;
 
 	ab = ar->ab;
 
-	supported_bands = ar->pdev->cap.supported_bands;
-
-	reg_cap = &ab->hal_reg_cap[ar->pdev_idx];
-
-	/* Possible that due to reg change, current limits for supported
-	 * frequency changed. Update it. As a first step, reset the
-	 * previous values and then compute and set the new values.
+	/* Update freq range limits for this radio based on the new regulatory
+	 * domain. Must be done before regulatory_set_wiphy_regd() triggers
+	 * reg_notifier which calls ath12k_wmi_update_scan_chan_list().
 	 */
-	ar->freq_range.start_freq = 0;
-	ar->freq_range.end_freq = 0;
-
-	if (supported_bands & WMI_HOST_WLAN_2GHZ_CAP) {
-		if (ab->hw_params->single_pdev_only) {
-			phy_id = ar->pdev->cap.band[WMI_HOST_WLAN_2GHZ_CAP].phy_id;
-			reg_cap = &ab->hal_reg_cap[phy_id];
-		}
-
-		freq_low = max(reg_cap->low_2ghz_chan, ab->reg_freq_2g.start_freq);
-		freq_high = min(reg_cap->high_2ghz_chan, ab->reg_freq_2g.end_freq);
-
-		ath12k_mac_update_freq_range(ar, freq_low, freq_high);
-	}
-
-	if (supported_bands & WMI_HOST_WLAN_5GHZ_CAP && !ar->supports_6ghz) {
-		if (ab->hw_params->single_pdev_only) {
-			phy_id = ar->pdev->cap.band[WMI_HOST_WLAN_5GHZ_CAP].phy_id;
-			reg_cap = &ab->hal_reg_cap[phy_id];
-		}
-
-		freq_low = max(reg_cap->low_5ghz_chan, ab->reg_freq_5g.start_freq);
-		freq_high = min(reg_cap->high_5ghz_chan, ab->reg_freq_5g.end_freq);
-
-		ath12k_mac_update_freq_range(ar, freq_low, freq_high);
-	}
-
-	if (supported_bands & WMI_HOST_WLAN_5GHZ_CAP && ar->supports_6ghz) {
-		freq_low = max(reg_cap->low_5ghz_chan, ab->reg_freq_6g.start_freq);
-		freq_high = min(reg_cap->high_5ghz_chan, ab->reg_freq_6g.end_freq);
-		ath12k_mac_update_freq_range(ar, freq_low, freq_high);
-	}
+	ath12k_regd_update_freq_range(ar);
 
 	/* If one of the radios within ah has already updated the regd for
 	 * the wiphy, then avoid setting regd again
@@ -568,6 +694,9 @@ static u32 ath12k_map_fw_phy_flags(u32 phy_flags)
 
 	if (phy_flags & ATH12K_REG_PHY_BITMAP_NO11BE)
 		flags |= NL80211_RRF_NO_EHT;
+
+	if (phy_flags & ATH12K_REG_PHY_BITMAP_NO11BN)
+		flags |= NL80211_RRF_NO_UHR;
 
 	return flags;
 }
@@ -808,67 +937,67 @@ static const struct ath12k_op_class_map_t global_op_class[] = {
 	{81, 25, BW20, BIT(BEHAV_NONE), 2407,
 	  { 1,  2,  3,  4,  5,  6,  7,  8,  9,
 	   10, 11, 12, 13},
-	  NULL_CFIS_LST },
+	  &CFISLST(81)},
 	{82, 25, BW20, BIT(BEHAV_NONE), 2414,
 	  {14},
-	  NULL_CFIS_LST },
+	  &CFISLST(82)},
 	{83, 40, BW40_LOW_PRIMARY, BIT(BEHAV_BW40_LOW_PRIMARY), 2407,
 	  { 1,  2,  3,  4,  5,  6,  7,  8,  9},
-	  NULL_CFIS_LST },
+	  &CFISLST(83)},
 	{84, 40, BW40_HIGH_PRIMARY, BIT(BEHAV_BW40_HIGH_PRIMARY), 2407,
 	  { 5,  6,  7,  8,  9, 10, 11, 12, 13},
-	  NULL_CFIS_LST },
+	  &CFISLST(84)},
 	{115, 20, BW20, BIT(BEHAV_NONE), 5000,
 	  {36, 40, 44, 48},
-	  NULL_CFIS_LST },
+	  &CFISLST(115)},
 	{116, 40, BW40_LOW_PRIMARY, BIT(BEHAV_BW40_LOW_PRIMARY), 5000,
 	  {36, 44},
-	  NULL_CFIS_LST },
+	  &CFISLST(116)},
 	{117, 40, BW40_HIGH_PRIMARY, BIT(BEHAV_BW40_HIGH_PRIMARY), 5000,
 	  {40, 48},
-	  NULL_CFIS_LST },
+	  &CFISLST(117)},
 	{118, 20, BW20, BIT(BEHAV_NONE), 5000,
 	  {52, 56, 60, 64},
-	  NULL_CFIS_LST },
+	  &CFISLST(118)},
 	{119, 40, BW40_LOW_PRIMARY, BIT(BEHAV_BW40_LOW_PRIMARY), 5000,
 	  {52, 60},
-	  NULL_CFIS_LST },
+	  &CFISLST(119)},
 	{120, 40, BW40_HIGH_PRIMARY, BIT(BEHAV_BW40_HIGH_PRIMARY), 5000,
 	  {56, 64},
-	  NULL_CFIS_LST },
+	  &CFISLST(120)},
 	{121, 20, BW20, BIT(BEHAV_NONE), 5000,
 	  {100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140, 144},
-	  NULL_CFIS_LST },
+	  &CFISLST(121)},
 	{122, 40, BW40_LOW_PRIMARY, BIT(BEHAV_BW40_LOW_PRIMARY), 5000,
 	  {100, 108, 116, 124, 132, 140},
-	  NULL_CFIS_LST },
+	  &CFISLST(122)},
 	{123, 40, BW40_HIGH_PRIMARY, BIT(BEHAV_BW40_HIGH_PRIMARY), 5000,
 	  {104, 112, 120, 128, 136, 144},
-	  NULL_CFIS_LST },
+	  &CFISLST(123)},
 	{125, 20, BW20, BIT(BEHAV_NONE), 5000,
 	  {149, 153, 157, 161, 165, 169, 173, 177},
-	  NULL_CFIS_LST },
+	  &CFISLST(125)},
 	{126, 40, BW40_LOW_PRIMARY, BIT(BEHAV_BW40_LOW_PRIMARY), 5000,
 	  {149, 157, 165, 173},
-	  NULL_CFIS_LST },
+	  &CFISLST(126)},
 	{127, 40, BW40_HIGH_PRIMARY, BIT(BEHAV_BW40_HIGH_PRIMARY), 5000,
 	  {153, 161, 169, 177},
-	  NULL_CFIS_LST },
+	  &CFISLST(127)},
 	{128, 80, BW80, BIT(BEHAV_NONE), 5000,
 	  { 36,  40,  44,  48,  52,  56,  60,  64, 100,
 	   104, 108, 112, 116, 120, 124, 128, 149, 153,
 	   157, 161, 165, 169, 173, 177},
-	  NULL_CFIS_LST },
+	  &CFISLST(128)},
 	{129, 160, BW80, BIT(BEHAV_NONE), 5000,
 	  { 36,  40,  44,  48,  52,  56,  60,  64, 100,
 	   104, 108, 112, 116, 120, 124, 128, 149, 153,
 	   157, 161, 165, 169, 173, 177},
-	  NULL_CFIS_LST },
+	  &CFISLST(129)},
 	{130, 80, BW80, BIT(BEHAV_BW80_PLUS), 5000,
 	  { 36,  40,  44,  48,  52,  56,  60,  64, 100,
 	   104, 108, 112, 116, 120, 124, 128, 149, 153,
 	   157, 161, 165, 169, 173, 177},
-	  NULL_CFIS_LST },
+	  &CFISLST(130)},
 
 	{131, 20, BW20, BIT(BEHAV_NONE), 5950,
 	  {  1,   5,   9,  13,  17,  21,  25,  29,  33,
@@ -933,7 +1062,7 @@ static const struct ath12k_op_class_map_t global_op_class[] = {
 	   217, 221, 225, 229, 233},
 	  &CFISLST(137)},
 	{0, 0, 0, 0, 0, {0},
-	  NULL_CFIS_LST },
+	  NULL_CFIS_LST},
 };
 
 static void ath12k_reg_update_freq_range(struct ath12k_reg_freq *reg_freq,
@@ -2480,6 +2609,138 @@ ath12_reg_check_afc_payload_validity(struct ath12k *ar,
 	return 1;
 }
 
+/**
+ * ath12k_radio_has_standalone_sta - Detect standalone STA on a radio
+ * @ar: ATH12K radio instance
+ * @total_vifs: Output parameter returning number of valid vifs on the radio
+ * @sta_link_id: Output parameter returning link ID of the STA
+ * @sta_wdev: Output parameter returning wireless_dev of the STA
+ *
+ * Iterate over all vifs associated with the given radio and determine whether
+ * the radio is operating in a standalone STA-only configuration.
+ *
+ * A radio is considered standalone STA if:
+ *   - At least one STA vdev is present, and
+ *   - No AP vdevs are present on the same radio.
+ *
+ * The function deterministically selects the first valid STA vdev found and
+ * returns its corresponding link ID and wireless_dev pointer.
+ *
+ * Return:
+ * * true  - Radio hosts a standalone STA-only configuration
+ * * false - Otherwise (mixed AP/STA, no STA, or invalid input)
+ */
+static bool ath12k_radio_has_standalone_sta(struct ath12k *ar,
+					    int *total_vifs,
+					    u8 *sta_link_id,
+					    struct wireless_dev **sta_wdev)
+{
+	struct ath12k_link_vif *arvif;
+	bool has_sta;
+	bool has_ap;
+
+	if (!total_vifs || !sta_link_id || !sta_wdev)
+		return false;
+
+	*total_vifs = 0;
+	*sta_link_id = 0;
+	*sta_wdev = NULL;
+
+	if (!ar)
+		return false;
+
+	has_sta = false;
+	has_ap = false;
+	spin_lock_bh(&ar->data_lock);
+	list_for_each_entry(arvif, &ar->arvifs, list) {
+		struct ath12k_vif *ahvif;
+		struct wireless_dev *wdev;
+
+		ahvif = arvif->ahvif;
+		if (!ahvif)
+			continue;
+
+		wdev = ieee80211_vif_to_wdev(ahvif->vif);
+		if (!wdev)
+			continue;
+
+		if (ahvif->vdev_type == WMI_VDEV_TYPE_UNSPEC)
+			continue;
+
+		(*total_vifs)++;
+
+		if (ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
+			has_ap = true;
+			break;
+		}
+
+		if (!has_sta && ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
+			u8 link_id;
+
+			link_id = ath12k_mac_find_link_id_by_ar(ahvif, ar);
+			if (link_id < ATH12K_NUM_MAX_LINKS) {
+				has_sta = true;
+				*sta_link_id = link_id;
+				*sta_wdev = wdev;
+			}
+		}
+	}
+	spin_unlock_bh(&ar->data_lock);
+
+	return (!has_ap && has_sta);
+}
+
+
+/**
+ * ath12k_change_6g_txpow_sta_mode - Update 6 GHz power mode for standalone STA
+ * @ar: ATH12K radio instance
+ *
+ * Return: If no usable vifs exist, or the radio is not operating in
+ * STA-only mode, the function returns without making any changes.
+ */
+static void ath12k_change_6g_txpow_sta_mode(struct ath12k *ar)
+{
+	int total_vifs;
+	u8 link_id;
+	bool is_standalone_sta;
+	struct wireless_dev *wdev;
+
+	if (!ar) {
+		pr_err("ath12k_afc: Invalid ar pointer\n");
+		return;
+	}
+
+	is_standalone_sta = ath12k_radio_has_standalone_sta(ar, &total_vifs,
+							    &link_id, &wdev);
+	if (!total_vifs) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_AFC, "No usable vifs found");
+		return;
+	}
+
+	if (!is_standalone_sta)
+		return;
+
+	if (!wdev)
+		return;
+
+#ifdef CPTCFG_QCN_EXTN
+	if (ath12k_change_6g_txpow_sta_mode_validate_extn(ar, wdev, link_id))
+		return;
+#endif
+
+	ieee80211_6ghz_power_mode_change(ar->ah->hw->wiphy,
+					 wdev, NL80211_REG_AP_SP,
+					 link_id, false);
+}
+
+void ath12k_change_6g_txpow_sta_mode_work(struct work_struct *work)
+{
+	struct ath12k *ar = container_of(work, struct ath12k,
+					 change_6g_txpow_sta_mode_work);
+
+	ath12k_change_6g_txpow_sta_mode(ar);
+}
+
 int ath12k_reg_process_afc_power_event(struct ath12k *ar,
 				       const struct ath12k_afc_info *afc)
 {
@@ -2549,6 +2810,7 @@ int ath12k_reg_process_afc_power_event(struct ath12k *ar,
 		   ar->pdev_idx);
 	ah->regd_updated = false;
 	queue_work(ab->workqueue, &ar->regd_update_work);
+	queue_work(ab->workqueue, &ar->change_6g_txpow_sta_mode_work);
 	return ret;
 end:
 	spin_unlock_bh(&ar->data_lock);
@@ -2599,18 +2861,23 @@ int ath12k_copy_afc_response(struct ath12k *ar, char *afc_resp, u32 len)
 	return 0;
 }
 
-/**
- * ath12k_is_6ghz_op_class - Check if operating class is 6GHz
- * @op_class: Operating class
- *
- * Return: true if 6GHz, false otherwise
- */
-static bool ath12k_is_6ghz_op_class(u8 op_class)
+static bool ath12k_is_band_op_class(u8 op_class, enum nl80211_band band)
 {
-	return ((op_class >= ATH12K_MIN_6GHZ_OPER_CLASS) &&
-		(op_class <= ATH12K_MAX_6GHZ_OPER_CLASS));
-}
+	switch (band) {
+	case NL80211_BAND_2GHZ:
+		return (op_class >= 81 && op_class <= 84);
+	case NL80211_BAND_5GHZ:
+		return ((op_class >= 115 && op_class <= 130) &&
+			op_class != 124);
+	case NL80211_BAND_6GHZ:
+		return ((op_class >= ATH12K_MIN_6GHZ_OPER_CLASS) &&
+			(op_class <= ATH12K_MAX_6GHZ_OPER_CLASS));
+	default:
+		ath12k_err(NULL, "Invalid band");
+	}
 
+	return false;
+}
 /**
  * ath12k_is_range_valid - Check if frequency range is valid
  * @range: Pointer to frequency range
@@ -2722,21 +2989,26 @@ static u8 ath12k_fill_cfis(const struct ath12k_op_class_map_t *op_class_tbl,
 		cfi = p_lst->p_cfis_arr[j];
 		cfi_freq = start_freq + ATH12K_FREQ_TO_CHAN_SCALE * cfi;
 
-		if (ath12k_is_cfi_freq_in_ranges(cfi_freq, bw, p_frange_lst))
+		if (p_frange_lst &&
+		    ath12k_is_cfi_freq_in_ranges(cfi_freq, bw, p_frange_lst))
+			dst[cfi_idx++] = cfi;
+		if (!p_frange_lst)
 			dst[cfi_idx++] = cfi;
 	}
 	return cfi_idx;
 }
 
 /**
- * ath12k_fill_6g_opcls_chan_lists - Fill 6GHz operating class channel lists
+ * ath12k_fill_opcls_chan_lists - Fill operating class channel lists
  * @p_frange_lst: Pointer to frequency range list
  * @chansize_lst: Channel size list
  * @channel_lists: Channel lists
+ * @band: 2G/5G/6G band.
  *
  */
-static void ath12k_fill_6g_opcls_chan_lists(struct ath12k_afc_frange_list *p_frange_lst,
-					    u8 chansize_lst[], u8 *channel_lists[])
+static void ath12k_fill_opcls_chan_lists(struct ath12k_afc_frange_list *p_frange_lst,
+					 u8 chansize_lst[], u8 *channel_lists[],
+					 enum nl80211_band band)
 {
 	const struct ath12k_op_class_map_t *op_class_tbl;
 	u8 i = 0;
@@ -2746,7 +3018,7 @@ static void ath12k_fill_6g_opcls_chan_lists(struct ath12k_afc_frange_list *p_fra
 		const struct ath12k_c_freq_lst *p_lst;
 
 		p_lst = op_class_tbl->p_cfi_lst_obj;
-		if (p_lst && ath12k_is_6ghz_op_class(op_class_tbl->op_class)) {
+		if (p_lst && ath12k_is_band_op_class(op_class_tbl->op_class, band)) {
 			u8 *dst;
 			u8 num_valid_cfi = 0;
 
@@ -2764,11 +3036,12 @@ static void ath12k_fill_6g_opcls_chan_lists(struct ath12k_afc_frange_list *p_fra
 }
 
 /**
- * ath12k_get_num_6g_opclasses - Get number of 6GHz operating classes
+ * ath12k_get_num_opclasses - Get number of operating classes
+ * @band: 2G/5G/6G band.
  *
- * Return: Number of 6GHz operating classes
+ * Return: Number of operating classes of provided band
  */
-static u8 ath12k_get_num_6g_opclasses(void)
+static u8 ath12k_get_num_opclasses(enum nl80211_band band)
 {
 	const struct ath12k_op_class_map_t *op_class_tbl;
 	u8 count;
@@ -2779,7 +3052,7 @@ static u8 ath12k_get_num_6g_opclasses(void)
 		const struct ath12k_c_freq_lst *p_lst;
 
 		p_lst = op_class_tbl->p_cfi_lst_obj;
-		if (p_lst && ath12k_is_6ghz_op_class(op_class_tbl->op_class))
+		if (p_lst && ath12k_is_band_op_class(op_class_tbl->op_class, band))
 			count++;
 
 		op_class_tbl++;
@@ -2789,20 +3062,22 @@ static u8 ath12k_get_num_6g_opclasses(void)
 }
 
 /**
- * ath12k_get_6g_opclasses_and_channels - Get 6GHz operating classes and channels
+ * ath12k_get_opclasses_and_channels - Get operating classes and channels
  * @p_frange_lst: Pointer to frequency range list
  * @num_opclasses: Pointer to number of operating classes
  * @opclass_lst: Pointer to operating class list
  * @chansize_lst: Pointer to channel size list
  * @channel_lists: Pointer to channel lists
+ * @band: 2G/5G/6G band.
  *
  * Return: 0 on success, negative error code on failure
  */
-static int ath12k_get_6g_opclasses_and_channels(struct ath12k_afc_frange_list *p_frange_lst,
-						u8 *num_opclasses,
-						u8 **opclass_lst,
-						u8 **chansize_lst,
-						u8 **channel_lists[])
+int ath12k_get_opclasses_and_channels(struct ath12k_afc_frange_list *p_frange_lst,
+				      u8 *num_opclasses,
+				      u8 **opclass_lst,
+				      u8 **chansize_lst,
+				      u8 **channel_lists[],
+				      enum nl80211_band band)
 {
 	u16 total_alloc_size, opcls_lst_size, chansize_lst_size, arr_chan_lists_size;
 	u8 **arr_chan_lists, *p_total_alloc2, *p_temp_alloc = NULL;
@@ -2816,7 +3091,7 @@ static int ath12k_get_6g_opclasses_and_channels(struct ath12k_afc_frange_list *p
 	*num_opclasses = 0;
 
 	op_class_tbl = global_op_class;
-	n_tot_opclss = ath12k_get_num_6g_opclasses();
+	n_tot_opclss = ath12k_get_num_opclasses(band);
 	opcls_lst_size = n_tot_opclss * sizeof(u8);
 	chansize_lst_size = n_tot_opclss * sizeof(u8);
 	arr_chan_lists_size = n_tot_opclss * sizeof(u8 *);
@@ -2850,7 +3125,7 @@ static int ath12k_get_6g_opclasses_and_channels(struct ath12k_afc_frange_list *p
 		const struct ath12k_c_freq_lst *p_lst;
 
 		p_lst = op_class_tbl->p_cfi_lst_obj;
-		if (p_lst && ath12k_is_6ghz_op_class(op_class_tbl->op_class)) {
+		if (p_lst && ath12k_is_band_op_class(op_class_tbl->op_class, band)) {
 			u8 n_supp_cfis = 0;
 			u8 j;
 
@@ -2863,10 +3138,13 @@ static int ath12k_get_6g_opclasses_and_channels(struct ath12k_afc_frange_list *p
 				cfi = p_lst->p_cfis_arr[j];
 				cfi_freq = start_freq +
 					ATH12K_FREQ_TO_CHAN_SCALE * cfi;
-				if (ath12k_is_cfi_freq_in_ranges(cfi_freq, bw,
+				if (p_frange_lst &&
+				    ath12k_is_cfi_freq_in_ranges(cfi_freq, bw,
 								 p_frange_lst)) {
 					n_supp_cfis++;
 				}
+				if (!p_frange_lst)
+					n_supp_cfis++;
 			}
 			/* Fill opclass number, num cfis and increment
 			 * num_opclasses only if the cfi of the opclass
@@ -2909,7 +3187,7 @@ static int ath12k_get_6g_opclasses_and_channels(struct ath12k_afc_frange_list *p
 	}
 
 	/* Fill the array with channel lists */
-	ath12k_fill_6g_opcls_chan_lists(p_frange_lst, l_chansize_lst, arr_chan_lists);
+	ath12k_fill_opcls_chan_lists(p_frange_lst, l_chansize_lst, arr_chan_lists, band);
 
 	*opclass_lst = l_opcls_lst;
 	*chansize_lst = l_chansize_lst;
@@ -2919,14 +3197,14 @@ static int ath12k_get_6g_opclasses_and_channels(struct ath12k_afc_frange_list *p
 }
 
 /**
- * ath12k_free_6g_opclasses_and_channels - Free 6GHz operating classes and channels
+ * ath12k_free_opclasses_and_channels - Free operating classes and channels
  * @num_opclasses: Number of operating classes
  * @opclass_lst: Pointer to operating class list
  * @chansize_lst: Pointer to channel size list
  * @channel_lists: Pointer to channel lists
  */
-void ath12k_free_6g_opclasses_and_channels(u8 num_opclasses, u8 *opclass_lst,
-					   u8 *chansize_lst, u8 *channel_lists[])
+void ath12k_free_opclasses_and_channels(u8 num_opclasses, u8 *opclass_lst,
+					u8 *chansize_lst, u8 *channel_lists[])
 {
 	/* All the elements of channel_lists were allocated as a single
 	 * allocation with 'channel_lists[0]' holding the first location of the
@@ -3057,7 +3335,7 @@ ath12k_fill_afc_opclasses_arr(u8 num_opclasses, u8 *opclass_lst,
  * ath12k_reg_fill_afc_opclass_obj_lst - Fill AFC operating class object list
  * @p_afc_req: Pointer to AFC host request
  *
- * The function first calls `ath12k_get_6g_opclasses_and_channels` to
+ * The function first calls `ath12k_get_opclasses_and_channels` to
  * retrieve the number of 6GHz operating classes, their list, channel sizes,
  * and channel lists. It then allocates memory for the
  * `ath12k_afc_opclass_obj_list` structure and the array of
@@ -3081,18 +3359,19 @@ ath12k_reg_fill_afc_opclass_obj_lst(struct ath12k_afc_host_request *p_afc_req)
 	struct ath12k_afc_opclass_obj *l_opclass_objs;
 	int ret;
 
-	ret = ath12k_get_6g_opclasses_and_channels(p_afc_req->freq_lst,
-						   &num_opclasses, &opclass_lst,
-						   &chansize_lst,
-						   &channel_lists);
+	ret = ath12k_get_opclasses_and_channels(p_afc_req->freq_lst,
+						&num_opclasses, &opclass_lst,
+						&chansize_lst,
+						&channel_lists,
+						NL80211_BAND_6GHZ);
 	if (ret)
 		return NULL;
 
 	opclass_obj_lst =  kzalloc(sizeof(*opclass_obj_lst), GFP_ATOMIC);
 	if (!opclass_obj_lst) {
-		ath12k_free_6g_opclasses_and_channels(num_opclasses,
-						      opclass_lst, chansize_lst,
-						      channel_lists);
+		ath12k_free_opclasses_and_channels(num_opclasses,
+						   opclass_lst, chansize_lst,
+						   channel_lists);
 		return NULL;
 	}
 
@@ -3100,9 +3379,9 @@ ath12k_reg_fill_afc_opclass_obj_lst(struct ath12k_afc_host_request *p_afc_req)
 	l_opclass_objs = kcalloc(num_opclasses, sizeof(struct ath12k_afc_opclass_obj),
 				 GFP_ATOMIC);
 	if (!l_opclass_objs) {
-		ath12k_free_6g_opclasses_and_channels(num_opclasses,
-						      opclass_lst, chansize_lst,
-						      channel_lists);
+		ath12k_free_opclasses_and_channels(num_opclasses,
+						   opclass_lst, chansize_lst,
+						   channel_lists);
 		ath12k_free_afc_opclass_list(opclass_obj_lst);
 		return NULL;
 	}
@@ -3111,16 +3390,16 @@ ath12k_reg_fill_afc_opclass_obj_lst(struct ath12k_afc_host_request *p_afc_req)
 					    chansize_lst, channel_lists,
 					    l_opclass_objs);
 	if (ret) {
-		ath12k_free_6g_opclasses_and_channels(num_opclasses,
-						      opclass_lst, chansize_lst,
-						      channel_lists);
+		ath12k_free_opclasses_and_channels(num_opclasses,
+						   opclass_lst, chansize_lst,
+						   channel_lists);
 		ath12k_free_afc_opclass_list(opclass_obj_lst);
 		return NULL;
 	}
 
 	opclass_obj_lst->opclass_objs = l_opclass_objs;
-	ath12k_free_6g_opclasses_and_channels(num_opclasses, opclass_lst,
-					      chansize_lst, channel_lists);
+	ath12k_free_opclasses_and_channels(num_opclasses, opclass_lst,
+					   chansize_lst, channel_lists);
 
 	return opclass_obj_lst;
 }
@@ -3653,12 +3932,17 @@ int ath12k_process_expiry_event(struct ath12k *ar)
 		}
 		break;
 	case REG_AFC_EXPIRY_EVENT_SWITCH_TO_LPI:
+	case REG_AFC_EXPIRY_EVENT_STOP_TX:
 		spin_lock_bh(&ar->ah->afc_lock);
 		ret = ath12k_handle_invalid_afc_payload(ar);
 		spin_lock_bh(&ar->data_lock);
 		ath12k_free_afc_power_event_info(afc);
 		spin_unlock_bh(&ar->data_lock);
 		spin_unlock_bh(&ar->ah->afc_lock);
+#ifdef CPTCFG_QCN_EXTN
+		ath12k_reg_hw_blocklist_free_for_mode_extn(ar->ab, ar->pdev_idx,
+							   WMI_REG_STD_POWER_AP);
+#endif
 		if (ret) {
 			ath12k_dbg(ar->ab, ATH12K_DBG_AFC, "Failed to process switch to LPI event\n");
 			return ret;
@@ -3804,6 +4088,43 @@ void ath12k_reg_get_regulatory_pwrs(struct ath12k *ar,
 	}
 }
 
+void ath12k_set_previous_country_work(struct work_struct *work)
+{
+	struct ath12k *ar = container_of(work, struct ath12k,
+					 reg_set_previous_country);
+	struct wmi_set_current_country_arg current_arg = {};
+	struct ath12k_wmi_init_country_arg arg;
+	struct ieee80211_regdomain *regd;
+	struct ath12k_base *ab = ar->ab;
+	int ret;
+
+	regd = ath12k_get_current_regd(ar);
+	if (!regd) {
+		ath12k_warn(ab, "Regulatory domain data not present\n");
+		return;
+	}
+
+	ar->ah->regd_updated = false;
+	ath12k_warn(ab, "Resetting to previous country %s\n", regd->alpha2);
+	if (ar->ab->hw_params->current_cc_support) {
+		memcpy(&current_arg.alpha2, regd->alpha2, 2);
+		memcpy(&ar->alpha2, &current_arg.alpha2, 2);
+		ret = ath12k_wmi_send_set_current_country_cmd(ar, &current_arg);
+		if (ret)
+			ath12k_warn(ab, "failed set current country code: %d\n",
+				    ret);
+	} else {
+		arg.flags = ALPHA_IS_SET;
+		memcpy(&arg.cc_info.alpha2, regd->alpha2, 2);
+		arg.cc_info.alpha2[2] = 0;
+
+		ret = ath12k_wmi_send_init_country_cmd(ar, &arg);
+		if (ret)
+			ath12k_warn(ab, "failed set INIT Country code: %d\n",
+				    ret);
+	}
+}
+
 void ath12k_regd_update_work(struct work_struct *work)
 {
 	struct ath12k *ar = container_of(work, struct ath12k,
@@ -3854,4 +4175,8 @@ void ath12k_reg_free(struct ath12k_base *ab)
 			spin_unlock_bh(&ar->data_lock);
 		}
 	}
+
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_reg_hw_blocklist_free_extn(ab);
+#endif
 }

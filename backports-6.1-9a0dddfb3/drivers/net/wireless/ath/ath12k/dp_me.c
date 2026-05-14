@@ -1,0 +1,322 @@
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+/*
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ */
+
+#include <linux/slab.h>
+#include <linux/netdevice.h>
+#include <linux/etherdevice.h>
+#include <net/ipv6.h>
+#include <linux/ip.h>
+#include <linux/if_ether.h>
+#include <linux/kernel.h>
+#include <linux/if_vlan.h>
+#include <linux/skbuff.h>
+#include <linux/errno.h>
+
+#include "dp_peer.h"
+#include "dp_ext_desc.h"
+#include "me.h"
+#include "debug.h"
+#include "dp_tx.h"
+#include "dp_ext_desc.h"
+#include "qcn_extns/me_snoop_extn.h"
+
+static int ath12k_dp_tx_me5(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
+			    struct ath12k_dp_link_vif *link_vif,
+			    struct ath12k_dp_peer *dp_peer,
+			    struct ath12k_me_ctx *me_ctx,
+			    struct ath12k_dp_tx_msdu_info *msdu_info)
+{
+	struct sk_buff *skb = me_ctx->skb;
+	struct ath12k_vif *ahvif = container_of(dp_vif, struct ath12k_vif, dp_vif);
+	int group_slot = -1;
+	u8 ring_id = smp_processor_id();
+	struct ath12k_pdev_dp *dp_pdev = NULL;
+	enum ath12k_dp_tx_enq_error err;
+
+	dp_pdev = ath12k_dp_to_dp_pdev(dp, link_vif->pdev_idx);
+	if (!dp_pdev)
+		goto fail;
+
+	ether_addr_copy(msdu_info->ext_desc.peer_mac_addr, dp_peer->addr);
+	msdu_info->ext_kmem = true;
+	msdu_info->ext_desc.ext_feature |= DP_EXT_ME5;
+	msdu_info->to_fw = 0;
+	msdu_info->meta_data_flags = link_vif->tcl_metadata;
+	msdu_info->data_len = skb->len;
+	msdu_info->me_convert = true;
+
+	err = ath12k_dp_tx_mcast_send(dp_pdev, ahvif, link_vif, ring_id,
+				      msdu_info, false, 0, group_slot,
+				      skb_get(skb), NULL, NULL);
+
+	if (unlikely(err != DP_TX_ENQ_SUCCESS))
+		goto fail;
+
+	atomic_inc(&dp_pdev->num_tx_pending);
+	return 0;
+fail:
+	DP_STATS_INC(dp_vif, tx_i.drop[err], 1, ring_id);
+	return -ENOMEM;
+}
+
+static int ath12k_dp_tx_me6(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
+			    struct ath12k_dp_link_vif *link_vif,
+			    struct ath12k_dp_peer *dp_peer,
+			    struct ath12k_me_ctx *me_ctx,
+			    struct ath12k_dp_tx_msdu_info *msdu_info)
+{
+	struct ath12k_dp_link_peer *link_peer;
+	struct ath12k_vif *ahvif = container_of(dp_vif, struct ath12k_vif, dp_vif);
+	u16 peer_id;
+	struct sk_buff *skb = me_ctx->skb;
+	int group_slot = -1;
+	u8 ring_id = smp_processor_id();
+	struct ath12k_pdev_dp *dp_pdev = NULL;
+	enum ath12k_dp_tx_enq_error err;
+	u16 mdata = 0;
+
+	link_peer = ath12k_dp_link_peer_find_by_id(dp, dp_peer->peer_id);
+	if (!link_peer) {
+		ath12k_dbg(NULL, ATH12K_DBG_DP_TX, "%p:Link Peer NOT FOUND IN ME6", dp);
+		goto fail;
+	}
+
+	dp_pdev = ath12k_dp_to_dp_pdev(dp, link_vif->pdev_idx);
+	if (!dp_pdev)
+		goto fail;
+
+	/* Assign peer_id of link peer*/
+	peer_id = link_peer->peer_id;
+
+	/*
+	 * Prepare metadata with peer_id
+	 */
+	mdata |= u16_encode_bits(HTT_TCL_META_DATA_TYPE_PEER_BASED,
+				 HTT_TCL_META_DATA_TYPE);
+	mdata |= u16_encode_bits(peer_id, HTT_TCL_META_DATA_PEER_ID);
+
+	msdu_info->to_fw = 1;
+	msdu_info->ext_kmem = false;
+	msdu_info->meta_data_flags = mdata;
+	msdu_info->data_len = skb->len;
+	msdu_info->me_convert = true;
+
+	err = ath12k_dp_tx_mcast_send(dp_pdev, ahvif, link_vif, ring_id,
+				      msdu_info, false, 0, group_slot,
+				      skb_get(skb), NULL, NULL);
+
+	if (unlikely(err != DP_TX_ENQ_SUCCESS))
+		goto fail;
+
+	atomic_inc(&dp_pdev->num_tx_pending);
+	/* TODO: Update MCUC statistics and return*/
+	return 0;
+
+fail:
+	DP_STATS_INC(dp_vif, tx_i.drop[err], 1, ring_id);
+	return -ENOMEM;
+}
+
+static int ath12k_dp_me_check(struct ath12k_dp_vif *dp_vif, struct ath12k_me_ctx *ctx)
+{
+	struct sk_buff *skb = ctx->skb;
+	u32 flags = ctx->me_flags;
+	u16 proto = ntohs(skb->protocol);
+	u8 l3_proto;
+
+	/*
+	 * Only go for M2U conversion when the flags are enabled
+	 */
+	if (!(flags & ATH12K_ME_OFFLOAD_MASK))
+		goto fail;
+
+	if (skb_is_nonlinear(skb)) {
+		ath12k_dbg(NULL, ATH12K_DBG_DP_TX, "No support for ME with SG pkts");
+		goto fail;
+	}
+
+	switch (proto) {
+	case ETH_P_IP:
+		l3_proto = ip_hdr(skb)->protocol;
+		break;
+
+	case ETH_P_IPV6:
+		l3_proto = ipv6_hdr(skb)->nexthdr;
+		break;
+	default:
+		l3_proto = 0;
+		break;
+	}
+
+	if (!is_multicast_ether_addr(eth_hdr(skb)->h_dest))
+		goto fail;
+
+	if ((l3_proto == IPPROTO_IGMP) && !(flags & ATH12K_ME_FLAGS_BIT_IGMP_EN))
+		goto fail;
+
+	return 0;
+
+fail:
+	ath12k_dbg(NULL, ATH12K_DBG_DP_TX, "ME offload check failed");
+	return -EINVAL;
+}
+
+/**
+ * ath12k_dp_me_tx_ucast_peer(): Decide and perform the desired MCUC
+ * @dp: Data Path ptr
+ * @dp_vif: Data Path Virtual Interface
+ * @dp_link_vif : Data path Link specific obj
+ * @dp_peer: DP Peer Object
+ * @app_data: Desired App_data sent
+ *
+ * Return: Status for MCUC Success/Failure.
+ */
+int ath12k_dp_me_tx_ucast_peer(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
+			       struct ath12k_dp_link_vif *dp_link_vif,
+			       struct ath12k_dp_peer *dp_peer,
+			       void *app_data, struct ath12k_dp_tx_msdu_info *msdu_info)
+{
+	struct ath12k_me_ctx *ctx = app_data;
+	int ret = 0;
+	u32 flags;
+
+	flags = ctx->me_flags & ATH12K_ME_OFFLOAD_MASK;
+	if (dp_peer->dms_disable)
+		flags = ATH12K_ME_FLAGS_BIT_ME5;
+
+	switch (flags) {
+	case ATH12K_ME_FLAGS_BIT_ME5:
+		ret = ath12k_dp_tx_me5(dp, dp_vif, dp_link_vif, dp_peer, ctx, msdu_info);
+		if (ret < 0)
+			ath12k_dbg(NULL, ATH12K_DBG_DP_TX, "Failed to convert ME5\n");
+		break;
+	case ATH12K_ME_FLAGS_BIT_ME6:
+		ret = ath12k_dp_tx_me6(dp, dp_vif, dp_link_vif, dp_peer, ctx, msdu_info);
+		if (ret < 0)
+			ath12k_dbg(NULL, ATH12K_DBG_DP_TX, "Failed to convert ME6\n");
+		break;
+	default:
+		ath12k_dbg(NULL, ATH12K_DBG_DP_TX, "Invalid ME flags(0%x) for TX\n",
+			   ctx->me_flags);
+		ret = -EINVAL;
+		break;
+	}
+
+	return ret;
+}
+
+/**
+ * ath12k_dp_me_tx(): Transmit function for Multicast packets
+ * @dp_vif - Pointer to Data path virtual interface structure
+ * @skb: Pointer to socket buffer
+ *
+ * Return: Success or Failure.
+ */
+int ath12k_dp_me_tx(struct ath12k_dp_vif *dp_vif, struct sk_buff *skb,
+		    struct ath12k_dp_tx_msdu_info *msdu_info)
+{
+	int (*action_fn)(struct ath12k_dp *dp,
+			 struct ath12k_dp_vif *dp_vif,
+			 struct ath12k_dp_link_vif *dp_link_vif,
+			 struct ath12k_dp_peer *dp_peer, void *app_data,
+			 struct ath12k_dp_tx_msdu_info *msdu_info);
+	struct ath12k_me_ctx ctx = {0};
+	struct ath12k_me_db *me_db;
+	union nf_inet_addr addr = {0};
+	struct ath12k_vif *ahvif = container_of(dp_vif, struct ath12k_vif, dp_vif);
+	int ret = 0;
+	int action;
+	bool is_v6;
+
+	me_db = ath12k_me_db_get(dp_vif);
+	if (!me_db)
+		return -ENOENT;
+
+	ctx.me_flags = me_db->me_flags;
+	ctx.skb = skb;
+
+	if (ahvif->vif->type != NL80211_IFTYPE_AP)
+		return -EINVAL;
+
+	if (ath12k_dp_me_check(dp_vif, &ctx) < 0) {
+		ath12k_me_db_put(me_db);
+		return -EINVAL;
+	}
+
+	is_v6 = __skb_get_inet_daddr(skb, &addr);
+
+	action = ath12k_me_hmmc_lookup(me_db, (__be32 *)&addr, is_v6);
+	ath12k_me_db_put(me_db);
+
+	switch (action) {
+	case ATH12K_ME_HMMC_ACTION:
+		action_fn = ath12k_dp_me_tx_ucast_peer;
+		break;
+
+	case ATH12K_ME_DENYLIST_ACTION:
+		return -EINVAL;
+
+	default:
+		break;
+	}
+
+#if defined(CONFIG_BRIDGE_MCAST_OFFLOAD)
+	if (action != ATH12K_ME_HMMC_ACTION) {
+		ctx.grp = ath12k_me_snoop_grp_find(dp_vif, skb);
+		if (!ctx.grp)
+			return -EINVAL;
+
+		bitmap_zero(ctx.tx_bmap, ATH12K_ME_MAX_SNOOP_PEERS);
+		action_fn = ath12k_dp_me_tx_ucast_grp_extn;
+	}
+#endif
+
+	/*
+	 * Iterate across all the dp link vifs.
+	 */
+	rcu_read_lock_bh();
+	for (u8 link_id = 0; link_id < ATH12K_NUM_MAX_LINKS; link_id++) {
+		struct ath12k_dp_link_vif *dp_link_vif;
+		struct ath12k_link_vif *arvif;
+		struct ath12k_dp *dp;
+		struct ath12k *ar;
+
+		dp_link_vif = &dp_vif->dp_link_vif[link_id];
+
+		arvif = rcu_dereference(ahvif->link[link_id]);
+		if (!arvif)
+			continue;
+
+		ar = arvif->ar;
+		if (!ar || !ar->ab)
+			continue;
+
+		dp = ar->ab->dp;
+		if (!dp)
+			continue;
+
+		/*
+		 * Perform MCUC across all the relevant peers.
+		 */
+		ret = ath12k_dp_peer_walk_action(dp, dp_vif, dp_link_vif,
+						 action_fn, &ctx, msdu_info);
+		if (ret) {
+			/* TODO:
+			 * Can Increment the peer specific stats here.
+			 */
+		}
+	}
+	rcu_read_unlock_bh();
+
+	/*
+	 * Unconditionally, free the original SKB since the UCAST FN have already
+	 * taken the references. This will ensure that intermediate send failures
+	 * doesn't leak the SKB.
+	 */
+	dev_kfree_skb_any(skb);
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_dp_me_tx);

@@ -124,10 +124,6 @@ void nl80211_awgn_notify(struct cfg80211_registered_device *rdev,
                         struct net_device *netdev,
                         gfp_t gfp, u32 chan_bw_interference_bitmap);
 
-void nl80211_cw_notify(struct cfg80211_registered_device *rdev,
-                        struct cfg80211_chan_def *chandef,
-                        struct net_device *netdev,
-                        gfp_t gfp);
 void nl80211_send_ap_stopped(struct wireless_dev *wdev, unsigned int link_id);
 
 void cfg80211_free_coalesce(struct cfg80211_coalesce *coalesce);

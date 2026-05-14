@@ -67,11 +67,6 @@ void cfg80211_chandef_create(struct cfg80211_chan_def *chandef,
 }
 EXPORT_SYMBOL(cfg80211_chandef_create);
 
-static int cfg80211_chandef_get_width(const struct cfg80211_chan_def *c)
-{
-	return nl80211_chan_width_to_mhz(c->width);
-}
-
 u32 cfg80211_get_start_freq(const struct cfg80211_chan_def *chandef, u32 cf)
 {
 	u32 start_freq, center_freq, bandwidth;
@@ -1132,6 +1127,35 @@ bool cfg80211_valid_240mhz_freq(const struct cfg80211_chan_def *chandef)
 		return true;
 	}
 	return false;
+}
+
+bool cfg80211_chandef_dfs_nol_clear(struct wiphy *wiphy,
+				    const struct cfg80211_chan_def *chandef)
+{
+	struct ieee80211_channel *c;
+	int width;
+
+	if (WARN_ON(!cfg80211_chandef_valid(chandef)))
+		return false;
+
+	width = cfg80211_chandef_get_width(chandef);
+	if (width < 0)
+		return false;
+
+	for_each_subchan(chandef, freq, cf) {
+		c = ieee80211_get_channel_khz(wiphy, freq);
+		if (!c)
+			return false;
+
+		if (c->flags & IEEE80211_CHAN_RADAR) {
+			if (c->dfs_state == NL80211_DFS_UNAVAILABLE &&
+			    !enable_dfs_test_mode) {
+				return false;
+			}
+		}
+	}
+
+	return true;
 }
 
 bool cfg80211_chandef_dfs_usable(struct wiphy *wiphy,

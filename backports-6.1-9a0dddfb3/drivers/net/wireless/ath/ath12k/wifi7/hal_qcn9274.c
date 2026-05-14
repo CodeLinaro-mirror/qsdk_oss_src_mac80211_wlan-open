@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #include "hal_desc.h"
 #include "hal_rx_desc.h"
@@ -152,7 +152,12 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 	},
 	[HAL_RXDMA_BUF] = {
 		.start_ring_id = HAL_SRNG_SW2RXDMA_BUF0,
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+		.max_rings = 3,
+#else
 		.max_rings = 1,
+#endif
+
 		.entry_size = sizeof(struct hal_wbm_buffer_ring) >> 2,
 		.mac_type = ATH12K_HAL_SRNG_DMAC,
 		.ring_dir = HAL_SRNG_DIR_SRC,
@@ -270,6 +275,12 @@ const struct ath12k_hw_regs qcn9274_v1_regs = {
 	.pcie_qserdes_sysclk_en_sel = 0x01e0c0a8,
 	.pcie_pcs_osc_dtct_config_base = 0x01e0d45c,
 
+	/*PCIe qrtr node id reg*/
+	.pcie_pcie_local_qrtr_ins_reg = 0x1E03164,
+
+	/*PCIe hot reset reg*/
+	.pcie_gcc_gcc_pcie_hot_rst = 0x1e38338,
+
 	/* PPE release ring address */
 	.hal_ppe_rel_ring_base = 0x0000043c,
 
@@ -318,6 +329,9 @@ const struct ath12k_hw_regs qcn9274_v1_regs = {
 	.hal_ppe_rel_ring_base = 0x0000043c,
 	.hal_reo2ppe_ring_base = 0x00000938,
 	.hal_tcl_ppe2tcl_ring_base_lsb = 0x00000c48,
+
+	/* PMM register base address */
+	.hal_pmm_reg_base = 0x00B500FC,
 };
 
 const struct ath12k_hw_regs qcn9274_v2_regs = {
@@ -363,6 +377,12 @@ const struct ath12k_hw_regs qcn9274_v2_regs = {
 	/* PCIe base address */
 	.pcie_qserdes_sysclk_en_sel = 0x01e0c0a8,
 	.pcie_pcs_osc_dtct_config_base = 0x01e0d45c,
+
+	/*PCIe qrtr node id reg*/
+	.pcie_pcie_local_qrtr_ins_reg = 0x1E03164,
+
+	/*PCIe hot reset reg*/
+	.pcie_gcc_gcc_pcie_hot_rst = 0x1e38338,
 
 	/* REO DEST ring address */
 	.hal_reo2_ring_base = 0x00000578,
@@ -410,6 +430,9 @@ const struct ath12k_hw_regs qcn9274_v2_regs = {
 	.hal_ppe_rel_ring_base = 0x0000043c,
 	.hal_reo2ppe_ring_base = 0x00000938,
 	.hal_tcl_ppe2tcl_ring_base_lsb = 0x00000c48,
+
+	/* PMM register base address */
+	.hal_pmm_reg_base = 0x00B500FC,
 };
 
 const struct ath12k_hw_regs ipq5332_regs = {
@@ -675,6 +698,12 @@ const struct ath12k_hw_regs qcn6432_regs = {
 	.pcie_qserdes_sysclk_en_sel = 0x01e0c0a8,
 	.pcie_pcs_osc_dtct_config_base = 0x01e0d45c,
 
+	/*PCIe qrtr node id reg*/
+	.pcie_pcie_local_qrtr_ins_reg = 0x1E03164,
+
+	/*PCIe hot reset reg*/
+	.pcie_gcc_gcc_pcie_hot_rst = 0x1e38338,
+
 	/* CE base address */
 	.hal_umac_ce0_src_reg_base = 0x01B80000,
 	.hal_umac_ce0_dest_reg_base = 0x01B81000,
@@ -682,7 +711,10 @@ const struct ath12k_hw_regs qcn6432_regs = {
 	.hal_umac_ce1_dest_reg_base =  0x01B83000,
 
 	.hal_ppe_rel_ring_base = 0x0000046c,
-	.hal_tcl_ppe2tcl_ring_base_lsb = 0x00000c58
+	.hal_tcl_ppe2tcl_ring_base_lsb = 0x00000c58,
+
+	/* PMM register base address */
+	.hal_pmm_reg_base = 0x00B500FC,
 };
 
 const struct ath12k_hw_hal_params ath12k_wifi7_hw_hal_params_ipq5332 = {
@@ -692,12 +724,17 @@ const struct ath12k_hw_hal_params ath12k_wifi7_hw_hal_params_ipq5332 = {
 			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW2_EN |
 			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW3_EN |
 			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW4_EN |
-			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW5_EN,
+			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW5_EN |
+			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW6_EN,
 	.link_desc_size = HAL_LINK_DESC_SIZE,
 	.num_mpdus_per_link_desc = HAL_NUM_MPDUS_PER_LINK_DESC,
 	.num_tx_msdus_per_link_desc = HAL_NUM_TX_MSDUS_PER_LINK_DESC,
 	.num_rx_msdus_per_link_desc = HAL_NUM_RX_MSDUS_PER_LINK_DESC,
 	.num_mpdu_links_per_queue_desc = HAL_NUM_MPDU_LINKS_PER_QUEUE_DESC,
+	.dscp_tid_map_tbl_max_entries = HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX_5332,
+	.num_tids = HAL_WIFI7_NUM_TIDS,
+	.reoq_lut_size = HAL_WIFI7_REOQ_LUT_SIZE,
+	.dp_rx_err_rdi = HAL_WIFI7_DP_RX_ERR_RDI,
 };
 
 const struct ath12k_hw_hal_params ath12k_wifi7_hw_hal_params_qcn9274 = {
@@ -714,6 +751,10 @@ const struct ath12k_hw_hal_params ath12k_wifi7_hw_hal_params_qcn9274 = {
 	.num_tx_msdus_per_link_desc = HAL_NUM_TX_MSDUS_PER_LINK_DESC,
 	.num_rx_msdus_per_link_desc = HAL_NUM_RX_MSDUS_PER_LINK_DESC,
 	.num_mpdu_links_per_queue_desc = HAL_NUM_MPDU_LINKS_PER_QUEUE_DESC,
+	.dscp_tid_map_tbl_max_entries = HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX_9274,
+	.num_tids = HAL_WIFI7_NUM_TIDS,
+	.reoq_lut_size = HAL_WIFI7_REOQ_LUT_SIZE,
+	.dp_rx_err_rdi = HAL_WIFI7_DP_RX_ERR_RDI,
 };
 
 u32 ath12k_wifi7_hal_rx_h_mpdu_err_qcn9274(struct hal_rx_desc *desc)
@@ -1039,6 +1080,8 @@ const struct hal_ops hal_qcn9274_ops = {
 	.ce_dst_status_get_length = ath12k_wifi7_hal_ce_dst_status_get_length,
 	.set_link_desc_addr = ath12k_wifi7_hal_set_link_desc_addr,
 	.tx_set_dscp_tid_map = ath12k_wifi7_hal_tx_set_dscp_tid_map,
+	.tx_set_pcp_tid_map = ath12k_wifi7_hal_tx_set_pcp_tid_map,
+	.tx_set_tid_map_precedence = ath12k_wifi7_hal_tx_set_tid_map_precedence,
 	.tx_update_dscp_tid_map = ath12k_wifi7_hal_tx_update_dscp_tid_map,
 	.tx_configure_bank_register =
 				ath12k_wifi7_hal_tx_configure_bank_register,
@@ -1059,8 +1102,27 @@ const struct hal_ops hal_qcn9274_ops = {
 	.hal_get_tqm_scratch_reg = ath12k_hal_qcn9274_get_tqm_scratch_reg,
 	.rxdesc_get_mpdu_start_addr2 =
 			ath12k_wifi7_hal_rxdesc_get_mpdu_start_addr2_qcn9274,
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	.rxdesc_get_mpdu_start_addr1 =
+			ath12k_wifi7_hal_rxdesc_get_mpdu_start_addr1_qcn9274,
+	.rxdesc_get_key_id_octet =
+			ath12k_wifi7_hal_rxdesc_get_key_id_octet_qcn9274,
+#endif
 	.rx_h_is_decrypted = ath12k_wifi7_hal_rx_h_is_decrypted_qcn9274,
 	.hal_mon_ops_init = ath12k_wifi7_hal_mon_ops_init,
 	.get_hw_hptp = ath12k_wifi7_hal_get_hw_hptp,
 	.rx_desc_get_fse_info = ath12k_wifi7_hal_rx_desc_get_fse_info_qcn9274,
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	.reo_hw_setup_ipa = ath12k_hal_reo_ring_ipa_ctrl_hash_ix0_setup,
+#endif
+	.hal_tx_ppe2tcl_ring_halt_get = ath12k_wifi7_hal_tx_ppe2tcl_ring_halt_get,
+	.hal_tx_ppe2tcl_ring_halt_set = ath12k_wifi7_hal_tx_ppe2tcl_ring_halt_set,
+	.hal_tx_ppe2tcl_ring_halt_reset = ath12k_wifi7_hal_tx_ppe2tcl_ring_halt_reset,
+	.hal_tx_ppe2tcl_ring_halt_done = ath12k_wifi7_hal_tx_ppe2tcl_ring_halt_done,
+	.hal_tx_config_rbm_mapping = ath12k_wifi7_hal_tx_config_rbm_mapping,
+	.hal_ppeds_cfg_ast_override_map_reg =
+			ath12k_wifi7_hal_ppeds_cfg_ast_override_map_reg,
+	.hal_reo_config_reo2ppe_dest_info = ath12k_wifi7_hal_reo_config_reo2ppe_dest_info,
+	.hal_tx_set_ppe_vp_entry = ath12k_wifi7_hal_tx_set_ppe_vp_entry,
+	.hal_get_tlv_tag_params = ath12k_wifi7_get_tlv_tag_params,
 };

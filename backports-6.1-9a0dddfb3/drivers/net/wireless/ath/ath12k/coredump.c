@@ -43,13 +43,14 @@ static ssize_t ath12k_coredump_pci_read(char *buffer, loff_t offset,
 	loff_t cur;
 
 	/* Copy ELF header first */
-	if (offset < header_size) {
-		hdr_copy = min_t(size_t, bytes_left, header_size - offset);
+	if (offset < st->elf_hdr_sz) {
+		hdr_copy = min_t(size_t, bytes_left, st->elf_hdr_sz - offset);
 		memcpy(buffer, (u8 *)st->elf_hdr + offset, hdr_copy);
+		st->bytes_read += hdr_copy;
 		return hdr_copy;
 	}
 
-	offset -= header_size;
+	offset -= st->elf_hdr_sz;
 
 	while (bytes_left) {
 		cur = 0;
@@ -81,6 +82,7 @@ static ssize_t ath12k_coredump_pci_read(char *buffer, loff_t offset,
 		buffer     += copy_size;
 		bytes_left -= copy_size;
 		copied     += copy_size;
+		st->bytes_read += copy_size;
 	}
 
 	return copied;
@@ -90,6 +92,8 @@ static void ath12k_coredump_pci_free(void *data)
 {
 	struct ath12k_pci_elf_coredump_state *st = data;
 
+	ath12k_info(st->ab, "coredump: %u bytes transferred (expected %u)\n",
+		    st->bytes_read, st->total_sz);
 	complete(&st->dump_done);
 }
 
@@ -241,6 +245,8 @@ static int ath12k_coredump_build_elf32(struct ath12k_base *ab,
 	st->ab         = ab;
 	st->elf_hdr    = elf_hdr;
 	st->elf_hdr_sz = elf_hdr_sz;
+	st->total_sz   = cur_off;
+	st->bytes_read = 0;
 	st->chunks     = chunks;
 	st->num_chunks = phnum;
 
@@ -326,16 +332,15 @@ static void ath12k_coredump_free_q6dump(void *data)
 static ssize_t ath12k_coredump_read(char *buffer, loff_t offset, size_t count,
                        void *data, size_t datalen)
 {
-    struct ath12k_dump_segment *segments = data;
+	struct ath12k_dump_segment *segments = data;
 
-    int ret = 0;
+	int ret = 0;
 
-    ret = memory_read_from_buffer(buffer, count, &offset,
-                      segments->vaddr, datalen);
-    if (!ret)
-        ath12k_info(NULL, "Ramdump complete, %lld  bytes read\n", offset);
+	ret = memory_read_from_buffer(buffer, count, &offset, segments->vaddr, datalen);
+	if (!ret)
+		ath12k_info(NULL, "Ramdump complete, %lld  bytes read\n", offset);
 
-    return ret;
+	return ret;
 }
 
 static void ath12k_coredump_free(void *data)
@@ -348,15 +353,15 @@ static void ath12k_coredump_free(void *data)
 void ath12k_coredump_dump_segment(struct ath12k_base *ab,
                   struct ath12k_dump_segment *segments, size_t seg_len)
 {
-    struct device *dev;
+	struct device *dev;
 
-    dev = ab->dev;
-    init_completion(&segments->dump_done);
+	dev = ab->dev;
+	init_completion(&segments->dump_done);
 
-    dev_coredumpm(dev, THIS_MODULE,segments, seg_len, GFP_KERNEL,
-              ath12k_coredump_read, ath12k_coredump_free);
+	dev_coredumpm(dev, THIS_MODULE, segments, seg_len, GFP_KERNEL,
+		      ath12k_coredump_read, ath12k_coredump_free);
 
-    wait_for_completion(&segments->dump_done);
+	wait_for_completion(&segments->dump_done);
 }
 
 void ath12k_coredump_build_inline(struct ath12k_base *ab,
@@ -467,152 +472,167 @@ void ath12k_coredump_upload(struct work_struct *work)
 
 static void ath12k_coredump_q6crash_reason(struct ath12k_base *ab)
 {
-        int i = 0;
-        uint64_t coredump_offset = 0;
-        struct ath12k_pci *ar_pci = (struct ath12k_pci *)ab->drv_priv;
-        struct mhi_controller *mhi_ctrl = ar_pci->mhi_ctrl;
-        struct mhi_buf *mhi_buf;
-        struct image_info *rddm_image;
-        struct ath12k_coredump_q6ramdump_header *ramdump_header;
-        struct ath12k_coredump_q6ramdump_entry *ramdump_table;
-        char *msg = NULL;
-        struct pci_dev *pci_dev = ar_pci->pdev;
+	int i = 0;
+	u64 coredump_offset = 0;
+	struct ath12k_pci *ar_pci = (struct ath12k_pci *)ab->drv_priv;
+	struct mhi_controller *mhi_ctrl = ar_pci->mhi_ctrl;
+	struct mhi_buf *mhi_buf;
+	struct image_info *rddm_image;
+	struct ath12k_coredump_q6ramdump_header *ramdump_header;
+	struct ath12k_coredump_q6ramdump_entry *ramdump_table;
+	char *msg = NULL;
+	struct pci_dev *pci_dev = ar_pci->pdev;
 
-        rddm_image = mhi_ctrl->rddm_image;
-        mhi_buf = rddm_image->mhi_buf;
+	rddm_image = mhi_ctrl->rddm_image;
+	if (!rddm_image) {
+		ath12k_warn(ab, "RDDM image not available for crash signature\n");
+		return;
+	}
 
-        ath12k_info(ab, "CRASHED - [DID:DOMAIN:BUS:SLOT] - %x:%04u:%02u:%02u\n",
-                    pci_dev->device, pci_dev->bus->domain_nr,
-                    pci_dev->bus->number, PCI_SLOT(pci_dev->devfn));
+	mhi_buf = rddm_image->mhi_buf;
+	if (!mhi_buf) {
+		ath12k_warn(ab, "RDDM buffer not available for crash signature\n");
+		return;
+	}
 
-        /* Get RDDM header size */
-        ramdump_header = (struct ath12k_coredump_q6ramdump_header *)mhi_buf[0].buf;
-        ramdump_table = ramdump_header->ramdump_table;
-        coredump_offset = le32_to_cpu(ramdump_header->header_size);
+	ath12k_info(ab, "CRASHED - [DID:DOMAIN:BUS:SLOT] - %x:%04u:%02u:%02u\n",
+		    pci_dev->device, pci_dev->bus->domain_nr,
+		    pci_dev->bus->number, PCI_SLOT(pci_dev->devfn));
 
-        /* Traverse ramdump table to get coredump offset */
-        while (i < MAX_RAMDUMP_TABLE_SIZE) {
-                if (!strncmp(ramdump_table->description, COREDUMP_DESC,
-                             sizeof(COREDUMP_DESC)) ||
-                    !strncmp(ramdump_table->description, Q6_SFR_DESC,
-                             sizeof(Q6_SFR_DESC))) {
-                        break;
-                }
-                coredump_offset += le64_to_cpu(ramdump_table->size);
-                ramdump_table++;
-                i++;
-        }
+	/* Get RDDM header size */
+	ramdump_header = (struct ath12k_coredump_q6ramdump_header *)mhi_buf[0].buf;
+	ramdump_table = ramdump_header->ramdump_table;
+	coredump_offset = le32_to_cpu(ramdump_header->header_size);
 
-        if (i == MAX_RAMDUMP_TABLE_SIZE) {
-                ath12k_warn(ab, "Cannot find '%s' entry in ramdump\n",
-                            COREDUMP_DESC);
-                return;
-        }
+	/* Traverse ramdump table to get coredump offset */
+	while (i < MAX_RAMDUMP_TABLE_SIZE) {
+		if (!strncmp(ramdump_table->description, COREDUMP_DESC,
+			     sizeof(COREDUMP_DESC)) ||
+				    !strncmp(ramdump_table->description, Q6_SFR_DESC,
+					     sizeof(Q6_SFR_DESC))) {
+			break;
+		}
+		coredump_offset += le64_to_cpu(ramdump_table->size);
+		ramdump_table++;
+		i++;
+	}
 
-        /* Locate coredump data from the ramdump segments */
-        for (i = 0; i < rddm_image->entries; i++) {
-                if (coredump_offset < mhi_buf[i].len) {
-                        msg = mhi_buf[i].buf + coredump_offset;
-                        break;
-                }
+	if (i == MAX_RAMDUMP_TABLE_SIZE) {
+		ath12k_warn(ab, "Cannot find '%s' entry in ramdump\n", COREDUMP_DESC);
+		return;
+	}
 
-                coredump_offset -= mhi_buf[i].len;
-        }
+	/* Locate coredump data from the ramdump segments */
+	for (i = 0; i < rddm_image->entries; i++) {
+		if (coredump_offset < mhi_buf[i].len) {
+			msg = mhi_buf[i].buf + coredump_offset;
+			break;
+		}
 
-        if (msg && msg[0])
-                ath12k_err(ab, "Fatal error received from wcss!\n%s\n",
-                            msg);
+		coredump_offset -= mhi_buf[i].len;
+	}
+
+	if (msg && msg[0])
+		ath12k_err(ab, "Fatal error received from wcss!\n%s\n", msg);
 }
 
 void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 {
-       struct ath12k_pci *ar_pci = (struct ath12k_pci *)ab->drv_priv;
-       struct mhi_controller *mhi_ctrl = ar_pci->mhi_ctrl;
-       struct image_info *rddm_img, *fw_img;
-       struct ath12k_dump_segment *segment, *seg_info;
-       int i, rem_seg_cnt = 0, len, num_seg, seg_sz, qdss_seg_cnt = 1;
-
+	struct ath12k_pci *ar_pci = (struct ath12k_pci *)ab->drv_priv;
+	struct mhi_controller *mhi_ctrl = ar_pci->mhi_ctrl;
+	struct image_info *rddm_img, *fw_img;
+	struct ath12k_dump_segment *segment, *seg_info;
+	int i, rem_seg_cnt = 0, len, num_seg, seg_sz;
+#ifdef CPTCFG_ATHDEBUG
+	int qdss_seg_cnt = 1;
+#endif
 	int skip_count = 0;
 	enum ath12k_fw_crash_dump_type mem_type;
 	struct ath12k_coredump_segment_info *chip_seg;
 	int dump_count;
 	struct ath12k_hw_group *ag = ab->ag;
 	bool state = false;
+	bool no_recovery, collect_dump;
 
-	if (ath12k_check_erp_power_down(ag) && ab->pm_suspend)
+	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
 	if (ab->in_panic)
 		state = true;
 
 
-       ath12k_mhi_coredump(mhi_ctrl, state);
-        ath12k_coredump_q6crash_reason(ab);
+	ath12k_mhi_coredump(mhi_ctrl, state);
+	ath12k_coredump_q6crash_reason(ab);
 
-       rddm_img = mhi_ctrl->rddm_image;
-       fw_img = mhi_ctrl->fbc_image;
+	rddm_img = mhi_ctrl->rddm_image;
+	fw_img = mhi_ctrl->fbc_image;
 
-       for (i = 0; i < ab->qmi.mem_seg_count; i++) {
-               if (ab->qmi.target_mem[i].type == HOST_DDR_REGION_TYPE ||
-                   (ab->qmi.target_mem[i].type == CALDB_MEM_REGION_TYPE &&
-		   ath12k_cold_boot_cal && ab->hw_params->cold_boot_calib) ||
-                   ab->qmi.target_mem[i].type == M3_DUMP_REGION_TYPE ||
-			ab->qmi.target_mem[i].type == PAGEABLE_MEM_REGION_TYPE ||
-			ab->qmi.target_mem[i].type == MLO_GLOBAL_MEM_REGION_TYPE ||
-			ab->qmi.target_mem[i].type == AFC_REGION_TYPE)
+	if (!rddm_img || !fw_img) {
+		ath12k_warn(ab, "MHI images not ready for coredump collection\n");
+		return;
+	}
 
-                       rem_seg_cnt++;
-       }
+	for (i = 0; i < ab->qmi.mem_seg_count; i++) {
+		if (ab->qmi.target_mem[i].type == HOST_DDR_REGION_TYPE ||
+		    (ab->qmi.target_mem[i].type == CALDB_MEM_REGION_TYPE &&
+		    ath12k_cold_boot_cal && ab->hw_params->cold_boot_calib) ||
+		    ab->qmi.target_mem[i].type == M3_DUMP_REGION_TYPE ||
+		    ab->qmi.target_mem[i].type == PAGEABLE_MEM_REGION_TYPE ||
+		    ab->qmi.target_mem[i].type == MLO_GLOBAL_MEM_REGION_TYPE ||
+		    ab->qmi.target_mem[i].type == AFC_REGION_TYPE)
+			rem_seg_cnt++;
+	}
 
-       num_seg = fw_img->entries + rddm_img->entries + rem_seg_cnt;
+	num_seg = fw_img->entries + rddm_img->entries + rem_seg_cnt;
 
 #ifdef CPTCFG_ATHDEBUG
 	if (ab->is_qdss_tracing)
 		num_seg += qdss_seg_cnt;
 #endif
 
-       len = num_seg * sizeof(*segment);
+	len = num_seg * sizeof(*segment);
 
-       segment = kzalloc(len, GFP_NOWAIT);
-       if (!segment) {
+	segment = kzalloc(len, GFP_NOWAIT);
+	if (!segment) {
 		ath12k_err(ab, " Failed to allocate memory for segment for rddm download\n");
-               return;
+		return;
 	}
 
-       seg_info = segment;
-       for (i = 0; i < fw_img->entries ; i++) {
+	seg_info = segment;
+	for (i = 0; i < fw_img->entries ; i++) {
 
 		if (!fw_img->mhi_buf[i].buf) {
 			skip_count++;
 			continue;
 		}
-               seg_sz = fw_img->mhi_buf[i].len;
-               seg_info->len = PAGE_ALIGN(seg_sz);
-               seg_info->addr = fw_img->mhi_buf[i].dma_addr;
-               seg_info->vaddr = fw_img->mhi_buf[i].buf;
-               seg_info->type = FW_CRASH_DUMP_PAGING_DATA;
-               seg_info++;
-       }
+		seg_sz = fw_img->mhi_buf[i].len;
+		seg_info->len = PAGE_ALIGN(seg_sz);
+		seg_info->addr = fw_img->mhi_buf[i].dma_addr;
+		seg_info->vaddr = fw_img->mhi_buf[i].buf;
+		seg_info->type = FW_CRASH_DUMP_PAGING_DATA;
+		seg_info++;
+	}
 
-       for (i = 0; i < rddm_img->entries; i++) {
+	for (i = 0; i < rddm_img->entries; i++) {
 
 		if (!rddm_img->mhi_buf[i].buf) {
 			skip_count++;
 			continue;
 		}
 
-               seg_sz = rddm_img->mhi_buf[i].len;
-               seg_info->len = PAGE_ALIGN(seg_sz);
-               seg_info->addr = rddm_img->mhi_buf[i].dma_addr;
-               seg_info->vaddr = rddm_img->mhi_buf[i].buf;
-               seg_info->type = FW_CRASH_DUMP_RDDM_DATA;
-               seg_info++;
-       }
+		seg_sz = rddm_img->mhi_buf[i].len;
+		seg_info->len = PAGE_ALIGN(seg_sz);
+		seg_info->addr = rddm_img->mhi_buf[i].dma_addr;
+		seg_info->vaddr = rddm_img->mhi_buf[i].buf;
+		seg_info->type = FW_CRASH_DUMP_RDDM_DATA;
+		seg_info++;
+	}
 
-       for (i = 0; i < ab->qmi.mem_seg_count; i++) {
+	for (i = 0; i < ab->qmi.mem_seg_count; i++) {
 		mem_type = ath12k_coredump_get_dump_type(ab->qmi.target_mem[i].type);
-		if(mem_type == FW_CRASH_DUMP_TYPE_MAX) {
-			ath12k_info(ab, "target mem region type %d not supported", ab->qmi.target_mem[i].type);
+		if (mem_type == FW_CRASH_DUMP_TYPE_MAX) {
+			ath12k_info(ab, "target mem region type %d not supported",
+				    ab->qmi.target_mem[i].type);
 			continue;
 		}
 
@@ -622,21 +642,18 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 
 		if (!ab->qmi.target_mem[i].paddr) {
 			skip_count++;
-			ath12k_info(ab, "Skipping mem region type %d", ab->qmi.target_mem[i].type);
+			ath12k_info(ab, "Skipping mem region type %d",
+				    ab->qmi.target_mem[i].type);
 			continue;
 		}
 		seg_info->len = ab->qmi.target_mem[i].size;
 		seg_info->addr = ab->qmi.target_mem[i].paddr;
 		seg_info->vaddr = ab->qmi.target_mem[i].v.ioaddr;
 		seg_info->type = mem_type;
-		ath12k_info(ab,
-			    "seg vaddr is %px len is 0x%x type %d\n",
-			    seg_info->vaddr,
-			    seg_info->len,
-			    seg_info->type);
+		ath12k_info(ab, "seg vaddr is %p len is 0x%x type %d\n",
+			    seg_info->vaddr, seg_info->len, seg_info->type);
 		seg_info++;
-
-       }
+	}
 
 #ifdef CPTCFG_ATHDEBUG
 	if (ab->is_qdss_tracing) {
@@ -650,16 +667,20 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 
 	num_seg = num_seg - skip_count;
 
-	if (!ab->fw_recovery_support || ab->in_panic ||
-	    test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ag->flags)) {
+	no_recovery = !ab->fw_recovery_support || ab->in_panic ||
+			test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ag->flags);
+	collect_dump = ath12k_fw_q6_dump_collection &&
+			!test_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE, &ab->dev_flags);
+
+	if (no_recovery && !collect_dump) {
 		if (ag->mlo_capable) {
 			dump_count = atomic_read(&ath12k_coredump_ram_info.num_chip);
 			if (dump_count >= ATH12K_MAX_SOCS) {
-				ath12k_err(ab, "invalid chip number %d\n",
-					   dump_count);
+				ath12k_err(ab, "invalid chip number %d\n", dump_count);
 				return;
 			} else {
-				chip_seg = &ath12k_coredump_ram_info.chip_seg_info[dump_count];
+				chip_seg =
+				&ath12k_coredump_ram_info.chip_seg_info[dump_count];
 				chip_seg->chip_id = ar_pci->dev_id;
 				chip_seg->qrtr_id = ar_pci->ab->qmi.service_ins_id;
 				chip_seg->bus_id = pci_domain_nr(ar_pci->pdev->bus);
@@ -687,6 +708,7 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 		chip_seg->seg = segment;
 
 		ath12k_core_issue_bug_on(ab);
+		return;
 
 	} else if (!ab->in_panic) {
 		struct ath12k_pci_elf_coredump_state *st = NULL;
@@ -701,15 +723,22 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 			kfree(segment);
 			return;
 		}
-		dev_coredumpm(ab->dev, THIS_MODULE, st, st->elf_hdr_sz, GFP_KERNEL,
+		/* Send vendor event to notify userspace about coredump is ready*/
+		ath12k_vendor_send_event(ab,
+				QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_DUMP_READY);
+		dev_coredumpm(ab->dev, THIS_MODULE, st, st->total_sz, GFP_KERNEL,
 				ath12k_coredump_pci_read, ath12k_coredump_pci_free);
 		wait_for_completion(&st->dump_done);
+		/* Send vendor event to notify userspace about coredump has completed */
+		ath12k_vendor_send_event(ab,
+				QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_DUMP_COMPLETED);
+
 		vfree(st->elf_hdr);
 		kfree(st->chunks[0].vaddr);
 		kfree(st->chunks);
 		kfree(st);
-		kfree(segment);
 	}
+	kfree(segment);
 }
 
 #ifdef CPTCFG_ATH12K_COREDUMP
@@ -981,10 +1010,16 @@ void ath12k_coredump_ahb_collect(struct ath12k_base *ab)
         elf_dump_state.segments = segment;
         init_completion(&elf_dump_state.dump_done);
 
+	/* Send vendor event to notify userspace about coredump is ready*/
+	ath12k_vendor_send_event(ab,
+				 QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_DUMP_READY);
         dev_coredumpm(ab->dev, THIS_MODULE, &elf_dump_state, data_size, GFP_KERNEL,
                       ath12k_userpd_coredump_read, ath12k_userpd_coredump_free);
 
         wait_for_completion(&elf_dump_state.dump_done);
+	/* Send vendor event to notify userspace about coredump has completed */
+	ath12k_vendor_send_event(ab,
+				 QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_DUMP_COMPLETED);
         vfree(elf_dump_state.header);
 end:
         ath12k_coredump_free_seg_info(ab, segment, phnum);

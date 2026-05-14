@@ -17,7 +17,7 @@ static int ___cfg80211_stop_ap(struct cfg80211_registered_device *rdev,
 {
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
 	unsigned int temp_link_id;
-	bool all_links_stopped = true;
+	bool all_ml_links_stopped = true;
 	int err;
 
 	lockdep_assert_wiphy(wdev->wiphy);
@@ -32,6 +32,7 @@ static int ___cfg80211_stop_ap(struct cfg80211_registered_device *rdev,
 		return -EOPNOTSUPP;
 
 	if (!wdev->links[link_id].ap.beacon_interval) {
+		wdev->links[link_id].ap.ssid_len = 0;
 		if (hweight16(wdev->valid_links) <= 1) {
 			wdev->conn_owner_nlportid = 0;
 			wdev->u.ap.ssid_len = 0;
@@ -42,6 +43,7 @@ static int ___cfg80211_stop_ap(struct cfg80211_registered_device *rdev,
 	err = rdev_stop_ap(rdev, dev, link_id);
 	if (!err) {
 		wdev->links[link_id].ap.beacon_interval = 0;
+		wdev->links[link_id].ap.ssid_len = 0;
 		memset(&wdev->links[link_id].ap.chandef, 0,
 		       sizeof(wdev->links[link_id].ap.chandef));
 
@@ -53,13 +55,15 @@ static int ___cfg80211_stop_ap(struct cfg80211_registered_device *rdev,
 		}
 
 		for_each_valid_link(wdev, temp_link_id) {
-			if (wdev->links[temp_link_id].ap.beacon_interval) {
-				all_links_stopped = false;
+			if (wdev->links[temp_link_id].ap.beacon_interval &&
+			    !(wdev->repurposed_links & BIT(temp_link_id))) {
+				all_ml_links_stopped = false;
 				break;
 			}
 		}
 
-		if (all_links_stopped)
+		/* Reset wdev ssid if all ML links are stopped */
+		if (all_ml_links_stopped)
 			wdev->u.ap.ssid_len = 0;
 
 		rdev_set_qos_map(rdev, dev, NULL, link_id);

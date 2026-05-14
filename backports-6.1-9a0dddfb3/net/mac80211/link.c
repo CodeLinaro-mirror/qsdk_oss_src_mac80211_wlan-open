@@ -99,8 +99,6 @@ void ieee80211_link_init(struct ieee80211_sub_if_data *sdata,
 	if (link_id < 0)
 		link_id = 0;
 
-	rcu_assign_pointer(sdata->vif.link_conf[link_id], link_conf);
-	rcu_assign_pointer(sdata->link[link_id], link);
 
 	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN) {
 		struct ieee80211_sub_if_data *ap_bss;
@@ -164,6 +162,9 @@ void ieee80211_link_init(struct ieee80211_sub_if_data *sdata,
 
 		ieee80211_link_debugfs_add(link);
 	}
+
+	rcu_assign_pointer(sdata->vif.link_conf[link_id], link_conf);
+	rcu_assign_pointer(sdata->link[link_id], link);
 }
 
 void ieee80211_link_stop(struct ieee80211_link_data *link)
@@ -256,24 +257,62 @@ static void ieee80211_free_links(struct ieee80211_sub_if_data *sdata,
 
 static int ieee80211_check_dup_link_addrs(struct ieee80211_sub_if_data *sdata)
 {
-	unsigned int i, j;
+	struct ieee80211_link_data *link, *other_link;
+	struct ieee80211_local *local = sdata->local;
+	struct ieee80211_sub_if_data *other_sdata;
+	const u8 *addr1, *addr2;
+	int link_id, o_link_id;
 
-	for (i = 0; i < IEEE80211_MLD_MAX_NUM_LINKS; i++) {
-		struct ieee80211_link_data *link1;
+	list_for_each_entry(other_sdata, &local->interfaces, list) {
+		bool is_same_sdata = (other_sdata == sdata);
 
-		link1 = sdata_dereference(sdata->link[i], sdata);
-		if (!link1)
+		if (!is_same_sdata && !ieee80211_sdata_running(other_sdata))
 			continue;
-		for (j = i + 1; j < IEEE80211_MLD_MAX_NUM_LINKS; j++) {
-			struct ieee80211_link_data *link2;
 
-			link2 = sdata_dereference(sdata->link[j], sdata);
-			if (!link2)
+		for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS; link_id++) {
+			link = sdata_dereference(sdata->link[link_id], sdata);
+			if (!link)
 				continue;
 
-			if (ether_addr_equal(link1->conf->addr,
-					     link2->conf->addr))
-				return -EALREADY;
+			addr1 = link->conf->addr;
+			/* skip unset address */
+			if (is_zero_ether_addr(addr1))
+				continue;
+
+			/* Compare link address against other_sdata's MLD address */
+			addr2 = other_sdata->vif.addr;
+			if (!is_same_sdata && !is_zero_ether_addr(addr2) &&
+			    ether_addr_equal(addr1, addr2) &&
+			    !identical_mac_addr_allowed(sdata->vif.type,
+							other_sdata->vif.type))
+				return -ENOTUNIQ;
+
+			for (o_link_id = 0;
+			     o_link_id < IEEE80211_MLD_MAX_NUM_LINKS;
+			     o_link_id++) {
+				/* Skip self and previously compared links
+				 * within same MLD
+				 */
+				if (is_same_sdata && o_link_id <= link_id)
+					continue;
+
+				other_link =
+					sdata_dereference(other_sdata->link[o_link_id],
+							  other_sdata);
+				if (!other_link)
+					continue;
+
+				addr2 = other_link->conf->addr;
+				/* skip unset address */
+				if (is_zero_ether_addr(addr2))
+					continue;
+
+				if (ether_addr_equal(addr1, addr2) &&
+				    (is_same_sdata ||
+				    !identical_mac_addr_allowed(sdata->vif.type,
+								other_sdata->vif.type)))
+					return -ENOTUNIQ;
+			}
 		}
 	}
 
@@ -314,6 +353,7 @@ static int ieee80211_vif_update_links(struct ieee80211_sub_if_data *sdata,
 {
 	u16 old_links = sdata->vif.valid_links;
 	u16 old_active = sdata->vif.active_links;
+	unsigned long repurposed_links = sdata->vif.repurposed_links;
 	unsigned long add = new_links & ~old_links;
 	unsigned long rem = old_links & ~new_links;
 	unsigned int link_id;
@@ -393,6 +433,11 @@ static int ieee80211_vif_update_links(struct ieee80211_sub_if_data *sdata,
 		/* for keys we will not be able to undo this */
 		ieee80211_tear_down_links(sdata, to_free, rem);
 
+		/* clear repurpose link bitmap of removed links */
+		if (rem)
+			for_each_set_bit(link_id, &rem, IEEE80211_MLD_MAX_NUM_LINKS)
+				ieee80211_clear_repurpose_link(&sdata->vif,
+							       link_id);
 		ieee80211_set_vif_links_bitmaps(sdata, new_links, dormant_links);
 
 		ieee80211_debugfs_add_link(sdata, add);
@@ -414,6 +459,9 @@ static int ieee80211_vif_update_links(struct ieee80211_sub_if_data *sdata,
 		memcpy(sdata->link, old_data, sizeof(old_data));
 		memcpy(sdata->vif.link_conf, old, sizeof(old));
 		ieee80211_set_vif_links_bitmaps(sdata, old_links, dormant_links);
+		for_each_set_bit(link_id, &repurposed_links,
+				 IEEE80211_MLD_MAX_NUM_LINKS)
+			ieee80211_set_repurpose_link(&sdata->vif, link_id);
 		/* and free (only) the newly allocated links */
 		memset(to_free, 0, sizeof(links));
 		goto free;

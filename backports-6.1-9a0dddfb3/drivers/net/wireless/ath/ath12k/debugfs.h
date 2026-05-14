@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause-Clear */
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef _ATH12K_DEBUGFS_H_
@@ -9,6 +9,7 @@
 
 #include "core.h"
 
+struct ath12k;
 #define ATH12K_UDP_TCP_START_PORT		0
 #define ATH12K_UDP_TCP_END_PORT			65535
 #define ATH12K_RX_FSE_FLOW_MATCH_DEBUGFS	0xBBBB
@@ -20,6 +21,11 @@
 #define ATH12K_HTT_STATS_BUF_SIZE (1024 * 512)
 
 #define ATH12K_QOS_MAP_LEN_MIN 16
+
+#define SMART_MON_FILTER_V	BIT(0)
+#define SMART_MON_FILTER_D	BIT(1)
+#define SMART_MON_FILTER_M	BIT(2)
+#define SMART_MON_FILTER_C	BIT(3)
 
 enum ath12k_dbg_aggr_mode {
 	ATH12K_DBG_AGGR_MODE_AUTO,
@@ -33,7 +39,7 @@ int ath12k_wsi_bypass_precheck(struct ath12k_base *ab, unsigned int value);
 u32 ath12k_dbg_dump_qos_profile(struct ath12k_base *ab,
 				char *buf, u8 qos_id, u32 size);
 
-#define ATH12K_MAX_NRPS 7
+#define ATH12K_MAX_NRPS 8
 #define MAC_UNIT_LEN 3
 
 struct ath12k_neighbor_peer {
@@ -41,7 +47,9 @@ struct ath12k_neighbor_peer {
 	int vdev_id;
 	u8 addr[ETH_ALEN];
 	u8 rssi;
+	u8 avg_rssi;
 	s64 timestamp;
+	int pdev_id;
 };
 
 #ifdef CPTCFG_ATH12K_DEBUGFS
@@ -90,9 +98,31 @@ ath12k_dp_debug_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
 	return (dp_pdev->dp_stats_mask & DP_ENABLE_DEBUG_STATS);
 }
 
+static inline bool
+ath12k_dp_advance_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+{
+	return (dp_pdev->dp_stats_mask & DP_ENABLE_ADVANCE_STATS);
+}
+
+static inline bool
+ath12k_dp_vow_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+{
+	return (dp_pdev->dp_stats_mask & DP_ENABLE_VOW_STATS);
+}
+
+static inline bool
+ath12k_dp_delay_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+{
+	return (dp_pdev->dp_stats_mask & DP_ENABLE_DELAY_STATS);
+}
+
 static inline u8 ath12k_debugfs_is_qos_stats_enabled(struct ath12k *ar)
 {
-	return (ar->debug.qos_stats & ATH12K_QOS_STATS_CATEG_MASK);
+	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
+
+	if ((dp_pdev->dp_stats_mask & (DP_ENABLE_QOS_STATS)))
+		return (dp_pdev->qos_stats & ATH12K_QOS_STATS_CATEG_MASK);
+	return 0;
 }
 
 static inline bool ath12k_tid_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
@@ -100,11 +130,16 @@ static inline bool ath12k_tid_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
 	return (dp_pdev->dp_stats_mask & DP_ENABLE_TID_STATS);
 }
 
+static inline bool ath12k_proto_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+{
+	return (dp_pdev->dp_stats_mask & DP_ENABLE_PROTO_STATS);
+}
+
 void ath12k_tid_tx_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason);
 void ath12k_tid_tx_drop_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason);
 void ath12k_tid_rx_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason);
 void ath12k_tid_drop_rx_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason);
-void ath12k_debugfs_nrp_clean(struct ath12k *ar, const u8 *addr);
+void ath12k_debugfs_nrp_clean(struct ath12k *ar, const u8 *addr, int num_nrp);
 void ath12k_debugfs_nrp_cleanup_all(struct ath12k *ar);
 
 void ath12k_debugfs_op_vif_add(struct ieee80211_hw *hw,
@@ -302,7 +337,6 @@ static inline void ath12k_debugfs_pdev_create(struct ath12k_base *ab)
 
 static inline void ath12k_debugfs_add_interface(struct ath12k_link_vif *arvif)
 {
-	return 0;
 }
 
 static inline void ath12k_debugfs_remove_interface(struct ath12k_link_vif *arvif)
@@ -332,7 +366,8 @@ static inline u8 ath12k_debugfs_is_qos_stats_enabled(struct ath12k *ar)
 	return 0;
 }
 
-static inline void ath12k_debugfs_nrp_clean(struct ath12k *ar, const u8 *addr)
+static inline
+void ath12k_debugfs_nrp_clean(struct ath12k *ar, const u8 *addr, int num_nrp)
 {
 }
 
@@ -351,6 +386,10 @@ void ath12k_init_pktlog(struct ath12k *ar);
 void ath12k_deinit_pktlog(struct ath12k *ar);
 void ath12k_htt_pktlog_process(struct ath12k *ar, u8 *data);
 void ath12k_htt_ppdu_pktlog_process(struct ath12k *ar, u8 *data, u32 len);
-void ath12k_dp_rx_stats_buf_pktlog_process(struct ath12k *ar, u8 *data,
-					   u16 log_type, u32 len);
+void ath12k_dp_txrx_stats_buf_pktlog_process(struct ath12k *ar, u8 *data,
+					     u16 log_type, u32 len);
+void ath12k_cbf_pktlog_process(struct ath12k *ar, u8 *data, u32 len,
+			       struct htt_t2h_ppdu_stats_ind_hdr *htt_hdr,
+			       struct htt_ppdu_stats_rx_mgmtctrl_payload_tlv *cbf_tlv);
+int ath12k_pktlog_remote_enable(struct ath12k *ar, u32 enable);
 #endif /* _ATH12K_DEBUGFS_H_ */

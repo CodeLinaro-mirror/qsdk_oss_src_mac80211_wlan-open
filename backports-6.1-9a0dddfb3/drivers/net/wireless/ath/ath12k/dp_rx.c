@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/ieee80211.h>
@@ -15,6 +15,7 @@
 #include "core.h"
 #include "debug.h"
 #include "hw.h"
+#include "dp.h"
 #include "dp_rx.h"
 #include "dp_tx.h"
 #include "peer.h"
@@ -22,7 +23,21 @@
 #include "debugfs_htt_stats.h"
 #include "erp.h"
 #include "fse.h"
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#include "qcn_extns/ipa/dp_ipa.h"
+#endif
 #include "vendor.h"
+
+#ifndef CPTCFG_EXT_IPA_OFFLOAD
+#define VIRT_TO_PHYS(defrag_skb, buf_paddr) \
+({ \
+	(buf_paddr) = (dma_addr_t)virt_to_phys((defrag_skb)->data); \
+})
+
+#define IPA_SET_RX_BUF_SMMU_MAP(...) ((void)0)
+#define IPA_SET_RX_BUF_SMMU_UNMAP(...) ((void)0)
+#define ATH12K_IPA_DMA_MAP_SINGLE(...) ((void)0)
+#endif
 
 void ath12k_tid_rx_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason)
 {
@@ -47,8 +62,9 @@ void ath12k_tid_drop_rx_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 rea
 EXPORT_SYMBOL(ath12k_tid_drop_rx_stats);
 
 size_t ath12k_dp_list_cut_nodes(struct list_head *list,
-				struct list_head *head,
-				size_t count)
+		struct list_head *head,
+		size_t count,
+		uint8_t pool_type)
 {
 	struct list_head *cur;
 	struct ath12k_rx_desc_info *rx_desc;
@@ -64,8 +80,7 @@ size_t ath12k_dp_list_cut_nodes(struct list_head *list,
 			break;
 
 		rx_desc = list_entry(cur, struct ath12k_rx_desc_info, list);
-		rx_desc->in_use = true;
-
+		rx_desc->is_ppe_desc = pool_type;
 		count--;
 		nodes++;
 	}
@@ -75,8 +90,7 @@ out:
 	return nodes;
 }
 
-int ath12k_dp_rx_crypto_mic_len(struct ath12k_pdev_dp *dp_pdev,
-				enum hal_encrypt_type enctype)
+int ath12k_dp_rx_crypto_mic_len(struct ath12k_dp *dp, enum hal_encrypt_type enctype)
 {
 	switch (enctype) {
 	case HAL_ENCRYPT_TYPE_OPEN:
@@ -98,12 +112,11 @@ int ath12k_dp_rx_crypto_mic_len(struct ath12k_pdev_dp *dp_pdev,
 		break;
 	}
 
-	ath12k_warn(dp_pdev->dp->ab, "unsupported encryption type %d for mic len\n", enctype);
+	ath12k_warn(dp->ab, "unsupported encryption type %d for mic len\n", enctype);
 	return 0;
 }
 
-int ath12k_dp_rx_crypto_param_len(struct ath12k_pdev_dp *dp_pdev,
-				  enum hal_encrypt_type enctype)
+int ath12k_dp_rx_crypto_param_len(struct ath12k_dp *dp, enum hal_encrypt_type enctype)
 {
 	switch (enctype) {
 	case HAL_ENCRYPT_TYPE_OPEN:
@@ -126,13 +139,12 @@ int ath12k_dp_rx_crypto_param_len(struct ath12k_pdev_dp *dp_pdev,
 		break;
 	}
 
-	ath12k_warn(dp_pdev->dp->ab, "unsupported encryption type %d\n", enctype);
+	ath12k_warn(dp->ab, "unsupported encryption type %d\n", enctype);
 	return 0;
 }
 EXPORT_SYMBOL(ath12k_dp_rx_crypto_param_len);
 
-int ath12k_dp_rx_crypto_icv_len(struct ath12k_pdev_dp *dp_pdev,
-				enum hal_encrypt_type enctype)
+int ath12k_dp_rx_crypto_icv_len(struct ath12k_dp *dp, enum hal_encrypt_type enctype)
 {
 	switch (enctype) {
 	case HAL_ENCRYPT_TYPE_OPEN:
@@ -152,7 +164,7 @@ int ath12k_dp_rx_crypto_icv_len(struct ath12k_pdev_dp *dp_pdev,
 		break;
 	}
 
-	ath12k_warn(dp_pdev->dp->ab, "unsupported encryption type %d\n", enctype);
+	ath12k_warn(dp->ab, "unsupported encryption type %d\n", enctype);
 	return 0;
 }
 
@@ -260,7 +272,8 @@ void ath12k_dp_rx_classify_mscs(struct ath12k_base *ab,
 		return;
 
 	rcu_read_lock();
-	if (ieee80211_rx_send_mscs_tuple(peer->sta, flow_params, tid)) {
+	if (ieee80211_rx_send_mscs_tuple(ath12k_dp_peer_get_sta(peer), flow_params,
+					 tid)) {
 		rcu_read_unlock();
 		return;
 	}
@@ -289,15 +302,15 @@ void ath12k_dp_rx_h_undecap_frag(struct ath12k_pdev_dp *dp_pdev, struct sk_buff 
 
 	if (flags & RX_FLAG_MIC_STRIPPED)
 		skb_trim(msdu, msdu->len -
-			 ath12k_dp_rx_crypto_mic_len(dp_pdev, enctype));
+			 ath12k_dp_rx_crypto_mic_len(dp, enctype));
 
 	if (flags & RX_FLAG_ICV_STRIPPED)
 		skb_trim(msdu, msdu->len -
-			 ath12k_dp_rx_crypto_icv_len(dp_pdev, enctype));
+			 ath12k_dp_rx_crypto_icv_len(dp, enctype));
 
 	if (flags & RX_FLAG_IV_STRIPPED) {
 		hdr_len = ieee80211_hdrlen(hdr->frame_control);
-		crypto_len = ath12k_dp_rx_crypto_param_len(dp_pdev, enctype);
+		crypto_len = ath12k_dp_rx_crypto_param_len(dp, enctype);
 
 		memmove(msdu->data + hal_rx_desc_sz + crypto_len,
 			msdu->data + hal_rx_desc_sz, hdr_len);
@@ -356,7 +369,7 @@ static void ath12k_dp_rx_mld_addr_conv(struct ath12k_pdev_dp *dp_pdev,
 	struct ieee80211_hdr *hdr = (void *)msdu->data;
 
 	spin_lock_bh(&dp_pdev->dp->dp_lock);
-	peer = ath12k_dp_rx_h_find_peer(dp_pdev->dp, rx_desc, peer_id);
+	peer = ath12k_dp_rx_h_find_peer(dp_pdev, rx_desc, peer_id);
 	if (!peer || !peer->mlo) {
 		spin_unlock_bh(&dp_pdev->dp->dp_lock);
 		return;
@@ -371,13 +384,14 @@ void ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *
 				struct ieee80211_rx_status *status, bool decrypted,
 				u16 peer_id, bool is_first_msdu, bool is_last_msdu)
 {
+	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ieee80211_hdr *hdr;
 	size_t hdr_len;
 	size_t crypto_len;
 
 	if (!is_first_msdu || !(is_first_msdu && is_last_msdu)) {
 		/* TODO: Change below stats increment back to WARN_ON_ONCE(1) */
-		dp_pdev->dp->device_stats.first_and_last_msdu_bit_miss++;
+		dp->device_stats.first_and_last_msdu_bit_miss++;
 		return;
 	}
 
@@ -393,20 +407,20 @@ void ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *
 	/* Tail */
 	if (status->flag & RX_FLAG_IV_STRIPPED) {
 		skb_trim(msdu, msdu->len -
-			 ath12k_dp_rx_crypto_mic_len(dp_pdev, enctype));
+			 ath12k_dp_rx_crypto_mic_len(dp, enctype));
 
 		skb_trim(msdu, msdu->len -
-			 ath12k_dp_rx_crypto_icv_len(dp_pdev, enctype));
+			 ath12k_dp_rx_crypto_icv_len(dp, enctype));
 	} else {
 		/* MIC */
 		if (status->flag & RX_FLAG_MIC_STRIPPED)
 			skb_trim(msdu, msdu->len -
-				 ath12k_dp_rx_crypto_mic_len(dp_pdev, enctype));
+				 ath12k_dp_rx_crypto_mic_len(dp, enctype));
 
 		/* ICV */
 		if (status->flag & RX_FLAG_ICV_STRIPPED)
 			skb_trim(msdu, msdu->len -
-				 ath12k_dp_rx_crypto_icv_len(dp_pdev, enctype));
+				 ath12k_dp_rx_crypto_icv_len(dp, enctype));
 	}
 
 	/* MMIC */
@@ -418,7 +432,7 @@ void ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *
 	/* Head */
 	if (status->flag & RX_FLAG_IV_STRIPPED) {
 		hdr_len = ieee80211_hdrlen(hdr->frame_control);
-		crypto_len = ath12k_dp_rx_crypto_param_len(dp_pdev, enctype);
+		crypto_len = ath12k_dp_rx_crypto_param_len(dp, enctype);
 
 		memmove(msdu->data + crypto_len, msdu->data, hdr_len);
 		skb_pull(msdu, crypto_len);
@@ -427,9 +441,11 @@ void ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *
 EXPORT_SYMBOL(ath12k_dp_rx_h_undecap_raw);
 
 static void ath12k_dp_rx_enqueue_free(struct ath12k_dp *dp,
-				      struct list_head *used_list)
+				      struct list_head *used_list,
+				      bool reuse)
 {
 	struct ath12k_rx_desc_info *rx_desc, *tmp_rx_desc;
+	struct ath12k_base *ab;
 	struct sk_buff *skb;
 	const void *end;
 
@@ -443,10 +459,21 @@ static void ath12k_dp_rx_enqueue_free(struct ath12k_dp *dp,
 
 			end = rx_desc->vaddr + DP_RX_BUFFER_SIZE;
 			ath12k_core_dmac_inv_range(rx_desc->vaddr, end);
+			IPA_SET_RX_BUF_SMMU_UNMAP(dp->ab, skb, true);
 
-			dev_kfree_skb_any(skb);
+			/* Save SKB to queue instead of freeing */
+			if (reuse) {
+				ab = dp->ab;
+				skb_queue_tail(&ab->dp_umac_reset.rx_skb_queue, skb);
+			} else {
+				dev_kfree_skb_any(skb);
+			}
 		}
 		dp->device_stats.free_excess_alloc_skb++;
+
+		rx_desc->skb = NULL;
+		rx_desc->vaddr = NULL;
+		rx_desc->paddr = 0;
 	}
 	spin_lock_bh(&dp->rx_desc_lock);
 	list_splice_tail(used_list, &dp->rx_desc_free_list);
@@ -455,54 +482,64 @@ static void ath12k_dp_rx_enqueue_free(struct ath12k_dp *dp,
 
 /* Returns number of Rx buffers replenished */
 void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
-				struct dp_rxdma_ring *rx_ring,
-				struct list_head *used_list)
+				 struct hal_srng *srng,
+				 struct list_head *used_list, bool reuse)
 {
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_buffer_addr *desc;
-	struct hal_srng *srng = NULL;
 	struct sk_buff *skb;
 	dma_addr_t paddr;
 	struct ath12k_rx_desc_info *rx_desc, *tmp_rx_desc;
-	enum hal_rx_buf_return_buf_manager mgr = dp->hal->hal_params->rx_buf_rbm;
+	u8 mgr = dp->hal->hal_params->rx_buf_rbm;
 	int allocated_entries = 0;
 	bool is_dma_inv_done = false;
 
-	list_for_each_entry_safe(rx_desc, tmp_rx_desc, used_list, list) {
+	/* Check if descriptors are already initialized (reuse mode) */
+	if (reuse) {
+		/* Count entries for reuse */
+		list_for_each_entry_safe(rx_desc, tmp_rx_desc, used_list, list) {
+			allocated_entries++;
+		}
+	} else {
+		/* Normal mode: allocate and initialize new descriptors */
+		list_for_each_entry_safe(rx_desc, tmp_rx_desc, used_list, list) {
 #ifdef CPTCFG_MAC80211_SFE_SUPPORT
-		skb = netdev_alloc_skb_fast(NULL, DP_RX_BUFFER_SIZE);
+			skb = netdev_alloc_skb_fast(NULL, DP_RX_BUFFER_SIZE);
 #else
-		skb = dev_alloc_skb(DP_RX_BUFFER_SIZE);
+			skb = dev_alloc_skb(DP_RX_BUFFER_SIZE);
 #endif
-		if (unlikely(!skb))
-			break;
+			if (unlikely(!skb))
+				break;
 
 #ifndef CONFIG_IO_COHERENCY
-		if (unlikely(!skb->fast_recycled)) {
+			if (unlikely(!skb->fast_recycled)) {
 #ifndef PLATFORM_SDX85
-			dmac_inv_range_no_dsb(skb->data, skb->data + DP_RX_BUFFER_SIZE);
+				dmac_inv_range_no_dsb(skb->data,
+						      skb->data + DP_RX_BUFFER_SIZE);
 #endif
-			is_dma_inv_done = true;
-		}
+				is_dma_inv_done = true;
+			}
 #endif
-		paddr = virt_to_phys(skb->data);
-		if(unlikely(!paddr)) {
-			ath12k_dp_rx_skb_free(skb, dp, 0,
-					      DP_RX_ERR_DROP_REPLENISH);
-			break;
-		}
+			ATH12K_IPA_DMA_MAP_SINGLE(ab, skb, paddr);
+			VIRT_TO_PHYS(skb, paddr);
+			if (unlikely(!paddr)) {
+				ath12k_dp_rx_skb_free(skb, dp, 0,
+						      DP_RX_ERR_DROP_REPLENISH);
+				break;
+			}
+			allocated_entries++;
+			rx_desc->skb = skb;
+			rx_desc->paddr = paddr;
+			rx_desc->vaddr = skb->data;
+			rx_desc->is_frag = 0;
+			rx_desc->in_use = true;
 
-		allocated_entries++;
-		rx_desc->skb = skb;
-		rx_desc->paddr = paddr;
-		rx_desc->vaddr = skb->data;
-		rx_desc->is_frag = 0;
+			IPA_SET_RX_BUF_SMMU_MAP(ab, skb);
+		}
+		if (unlikely(is_dma_inv_done))
+			dsb(st);
 	}
 
-	if (unlikely(is_dma_inv_done))
-		dsb(st);
-
-	srng = &ab->hal.srng_list[rx_ring->refill_buf_ring.ring_id];
 	spin_lock_bh(&srng->lock);
 	ath12k_hal_srng_access_begin(ab, srng);
 	while (allocated_entries > 0) {
@@ -527,7 +564,7 @@ out:
 	spin_unlock_bh(&srng->lock);
 
 	if (unlikely(!list_empty(used_list)))
-		ath12k_dp_rx_enqueue_free(dp, used_list);
+		ath12k_dp_rx_enqueue_free(dp, used_list, reuse);
 
 }
 EXPORT_SYMBOL(ath12k_dp_rx_bufs_replenish);
@@ -537,13 +574,16 @@ static int ath12k_dp_rxdma_ring_buf_setup(struct ath12k_base *ab,
 {
 	LIST_HEAD(list);
 	size_t req_entries;
+	struct hal_srng *refill_srng;
 
 	rx_ring->bufs_max = rx_ring->refill_buf_ring.size /
 			ath12k_hal_srng_get_entrysize(ab, HAL_RXDMA_BUF);
 
-	req_entries = ath12k_dp_get_req_entries_from_buf_ring(ab, rx_ring, &list);
+	refill_srng = &ab->hal.srng_list[rx_ring->refill_buf_ring.ring_id];
+	req_entries = ath12k_dp_get_req_entries_from_buf_ring(ab, refill_srng, &list,
+				DP_RX_DEFAULT_POOL);
 	if (req_entries)
-		ath12k_dp_rx_bufs_replenish(ab->dp, rx_ring, &list);
+		ath12k_dp_rx_bufs_replenish(ab->dp, refill_srng, &list, false);
 
 	return 0;
 }
@@ -569,7 +609,7 @@ void ath12k_dp_rx_reo_cleanup(struct ath12k_base *ab)
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	int i;
 
-	for (i = 0; i < DP_REO_DST_RING_MAX; i++)
+	for (i = 0; i < ATH12K_DP_RX_REGULAR_RING_MAX; i++)
 		ath12k_dp_srng_cleanup(ab, &dp->reo_dst_ring[i]);
 }
 EXPORT_SYMBOL(ath12k_dp_rx_reo_cleanup);
@@ -580,10 +620,10 @@ int ath12k_dp_rx_reo_setup(struct ath12k_base *ab)
 	int ret;
 	int i;
 
-	for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
+	for (i = 0; i < ATH12K_DP_RX_REGULAR_RING_MAX; i++) {
 		ret = ath12k_dp_srng_setup(ab, &dp->reo_dst_ring[i],
 					   HAL_REO_DST, i, 0,
-					   DP_REO_DST_RING_SIZE);
+					   ath12k_dp_reo_dst_ring_size[i]);
 		if (ret) {
 			ath12k_warn(ab, "failed to setup reo_dst_ring\n");
 			goto err_reo_cleanup;
@@ -625,15 +665,11 @@ void ath12k_dp_rx_reo_cmd_list_cleanup(struct ath12k_base *ab)
 
 	spin_lock_bh(&dp->reo_cmd_lock);
 	list_for_each_entry_safe(cmd, tmp, &dp->reo_cmd_list, list) {
+		struct hal_reo_status drain_status = {};
+
 		list_del(&cmd->list);
-		rx_tid = &cmd->data;
-		if (rx_tid->vaddr) {
-			rx_tid->active = false;
-			ath12k_core_dma_unmap_single(ab->dev, rx_tid->paddr,
-						     rx_tid->size, DMA_BIDIRECTIONAL);
-			kfree(rx_tid->vaddr);
-			rx_tid->vaddr = NULL;
-		}
+		drain_status.uniform_hdr.cmd_status = HAL_REO_CMD_DRAIN;
+		cmd->handler(dp, &cmd->u.data, &drain_status);
 		kfree(cmd);
 	}
 
@@ -656,13 +692,17 @@ void ath12k_dp_rx_reo_cmd_list_cleanup(struct ath12k_base *ab)
 EXPORT_SYMBOL(ath12k_dp_rx_reo_cmd_list_cleanup);
 
 void ath12k_dp_reo_cmd_free(struct ath12k_dp *dp, void *ctx,
-			    enum hal_reo_cmd_status status)
+			    struct hal_reo_status *status)
 {
 	struct ath12k_dp_rx_tid *rx_tid = ctx;
 
-	if (status != HAL_REO_CMD_SUCCESS)
+	if (!status || status->uniform_hdr.cmd_status == HAL_REO_CMD_DRAIN)
+		goto free_desc;
+	else if (status->uniform_hdr.cmd_status != HAL_REO_CMD_SUCCESS)
 		ath12k_warn(dp->ab, "failed to flush rx tid hw desc, tid %d status %d\n",
-			    rx_tid->tid, status);
+			    rx_tid->tid, status->uniform_hdr.cmd_status);
+
+free_desc:
 	ath12k_hal_reo_shared_qaddr_cache_clear(dp->ab);
 
 	if (rx_tid->vaddr) {
@@ -687,7 +727,8 @@ void ath12k_dp_rx_frags_cleanup(struct ath12k_dp_rx_tid *rx_tid,
 	if (rx_tid->dst_ring_desc) {
 		if (rel_link_desc) {
 			bm_act = HAL_WBM_REL_BM_ACT_PUT_IN_IDLE;
-			buf_addr_info = &rx_tid->dst_ring_desc->buf_addr_info;
+			buf_addr_info =
+				(struct ath12k_buffer_addr *)rx_tid->dst_ring_desc;
 			ath12k_dp_arch_rx_link_desc_return(dp, buf_addr_info,
 							   bm_act);
 		}
@@ -703,7 +744,8 @@ void ath12k_dp_rx_frags_cleanup(struct ath12k_dp_rx_tid *rx_tid,
 }
 EXPORT_SYMBOL(ath12k_dp_rx_frags_cleanup);
 
-void ath12k_dp_rx_peer_tid_cleanup(struct ath12k *ar, struct ath12k_dp_link_peer *peer)
+void ath12k_dp_rx_peer_tid_cleanup(struct ath12k *ar,
+				   struct ath12k_dp_link_peer *peer)
 {
 	struct ath12k_dp_rx_tid *rx_tid;
 	int i;
@@ -715,21 +757,20 @@ void ath12k_dp_rx_peer_tid_cleanup(struct ath12k *ar, struct ath12k_dp_link_peer
 	if (!peer->primary_link)
 		return;
 
-	for (i = 0; i <= IEEE80211_NUM_TIDS; i++) {
+	for (i = 0; i < ab->hal.hal_params->num_tids; i++) {
 		rx_tid = &peer->dp_peer->rx_tid[i];
 
 		ath12k_dp_arch_rx_peer_tid_delete(dp, ar, peer, i);
 		ath12k_dp_rx_frags_cleanup(rx_tid, true);
-
 		spin_unlock_bh(&dp->dp_lock);
 		del_timer_sync(&rx_tid->frag_timer);
 		spin_lock_bh(&dp->dp_lock);
 	}
 }
 
-int ath12k_wifi7_dp_rx_peer_tid_setup(struct ath12k *ar, const u8 *peer_mac, int vdev_id,
-				      u8 tid, u32 ba_win_sz, u16 ssn,
-				      enum hal_pn_type pn_type)
+int ath12k_dp_rx_peer_tid_setup(struct ath12k *ar, const u8 *peer_mac, int vdev_id,
+				u8 tid, u32 ba_win_sz, u16 ssn,
+				enum hal_pn_type pn_type)
 {
 	struct hal_rx_reo_queue *addr_aligned;
 	struct ath12k_base *ab = ar->ab;
@@ -753,16 +794,8 @@ int ath12k_wifi7_dp_rx_peer_tid_setup(struct ath12k *ar, const u8 *peer_mac, int
 		return 0;
 	}
 
-	if (ab->hw_params->reoq_lut_support &&
-	    (!dp->reoq_lut.vaddr || !dp->ml_reoq_lut.vaddr)) {
-		spin_unlock_bh(&dp->dp_lock);
-		ath12k_warn(ab, "reo qref table is not setup\n");
-		return -EINVAL;
-	}
-
-	if (peer->peer_id > DP_MAX_PEER_ID || tid > IEEE80211_NUM_TIDS) {
-		ath12k_warn(ab, "peer id of peer %d or tid %d doesn't allow reoq setup\n",
-			    peer->peer_id, tid);
+	if (tid >= ab->hal.hal_params->num_tids) {
+		ath12k_warn(ab, "tid %d doesn't allow reoq setup\n", tid);
 		spin_unlock_bh(&dp->dp_lock);
 		return -EINVAL;
 	}
@@ -811,14 +844,9 @@ int ath12k_wifi7_dp_rx_peer_tid_setup(struct ath12k *ar, const u8 *peer_mac, int
 		/* Update the REO queue LUT at the corresponding peer id
 		 * and tid with qaddr.
 		 */
-		if (peer->mlo)
-			ath12k_dp_arch_peer_rx_tid_qref_setup(dp, peer->ml_id,
-							      rx_tid->tid,
-							      rx_tid->paddr);
-		else
-			ath12k_dp_arch_peer_rx_tid_qref_setup(dp, peer->peer_id,
-							      rx_tid->tid,
-							      rx_tid->paddr);
+		ath12k_dp_arch_peer_rx_tid_qref_setup(dp, peer->dp_peer->peer_id,
+						      rx_tid->tid,
+						      rx_tid->paddr);
 
 		spin_unlock_bh(&dp->dp_lock);
 	} else {
@@ -852,9 +880,9 @@ int ath12k_dp_rx_ampdu_start(struct ath12k *ar,
 
 	vdev_id = arsta->arvif->vdev_id;
 
-	ret = ath12k_wifi7_dp_rx_peer_tid_setup(ar, arsta->addr, vdev_id,
-						params->tid, params->buf_size,
-						params->ssn, arsta->ahsta->pn_type);
+	ret = ath12k_dp_rx_peer_tid_setup(ar, arsta->addr, vdev_id,
+					  params->tid, params->buf_size,
+					  params->ssn, arsta->ahsta->pn_type);
 	if (ret)
 		ath12k_warn(ab, "failed to setup rx tid %d\n", ret);
 
@@ -888,7 +916,8 @@ int ath12k_dp_rx_ampdu_stop(struct ath12k *ar,
 	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, vdev_id, arsta->addr);
 	if (!peer || !peer->dp_peer) {
 		spin_unlock_bh(&dp->dp_lock);
-		ath12k_warn(ab, "failed to find the peer to stop rx aggregation\n");
+		ath12k_dbg(ab, ATH12K_DBG_PEER,
+			   "failed to find the peer to stop rx aggregation\n");
 		return -ENOENT;
 	}
 
@@ -953,14 +982,14 @@ int ath12k_dp_rx_peer_pn_replay_config(struct ath12k_link_vif *arvif,
 		return 0;
 	}
 
-	for (tid = 0; tid <= IEEE80211_NUM_TIDS; tid++) {
+	for (tid = 0; tid < ab->hal.hal_params->num_tids; tid++) {
 		rx_tid = &peer->dp_peer->rx_tid[tid];
-		if (!rx_tid->active)
+		if (!rx_tid->active || ath12k_dp_rx_peer_tid_skip_pn_replay(dp, tid))
 			continue;
 
 		ath12k_dp_arch_setup_pn_check_reo_cmd(dp, &cmd, rx_tid, key->cipher,
 						      key_cmd);
-		ret = ath12k_dp_arch_reo_cmd_send(dp, rx_tid,
+		ret = ath12k_dp_arch_reo_cmd_send(dp, rx_tid, sizeof(*rx_tid),
 						  HAL_REO_CMD_UPDATE_RX_QUEUE,
 						  &cmd, NULL);
 		if (ret) {
@@ -994,13 +1023,16 @@ struct sk_buff *ath12k_dp_rx_get_msdu_last_buf(struct sk_buff_head *msdu_list,
 }
 
 struct ath12k_dp_link_peer *
-ath12k_dp_rx_h_find_peer(struct ath12k_dp *dp, struct hal_rx_desc *rx_desc, u16 peer_id)
+ath12k_dp_rx_h_find_peer(struct ath12k_pdev_dp *dp_pdev,
+			 struct hal_rx_desc *rx_desc,
+			 u16 peer_id)
 {
 	struct ath12k_dp_link_peer *peer = NULL;
+	struct ath12k_dp *dp = dp_pdev->dp;
 	void *peer_mac;
 
 
-	peer = ath12k_dp_link_peer_find_by_id(dp, peer_id);
+	peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev, peer_id);
 	if (peer)
 		return peer;
 
@@ -1022,9 +1054,13 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 	struct ieee80211_rx_status *rx_status;
 	struct ieee80211_sta *pubsta = NULL;
 	struct ath12k_dp_peer *peer = NULL;
-	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
 	struct ath12k_dp_link_peer *link_peer = NULL;
 	struct ath12k_vif *ahvif;
+	struct ieee80211_vif *vif;
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	struct ath12k_skb_rxcb *rxcb = NULL;
+	int mhdr_len = 0;
+#endif
 	u8 addr[ETH_ALEN] = {0};
 
 	rcu_read_lock();
@@ -1032,7 +1068,7 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, peer_id);
 
 	if (peer) {
-		pubsta = peer->sta;
+		pubsta = ath12k_dp_peer_get_sta(peer);
 		memcpy(addr, peer->addr, ETH_ALEN);
 	}
 
@@ -1050,21 +1086,20 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 			rcu_read_unlock();
 			return;
 		}
+
+		if (link_peer)
+			WRITE_ONCE(link_peer->peer_stats.last_rx, jiffies);
 	}
 
 	if (ath12k_dp_stats_enabled(dp_pdev) &&
 	    ath12k_tid_stats_enabled(dp_pdev)) {
-		link_peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev,
-								     peer_id);
-		if (link_peer) {
-			ahvif = ath12k_vif_to_ahvif(link_peer->vif);
-			ath12k_tid_rx_stats(ahvif, rxcb->tid, msdu->len,
+		if (peer) {
+			ahvif = ath12k_vif_to_ahvif(ath12k_dp_peer_get_vif(peer));
+			ath12k_tid_rx_stats(ahvif, tid, msdu->len,
 					    ATH_RX_TOTAL_OUT_PKTS);
 		}
-		msdu->priority = rxcb->tid;
+		msdu->priority = tid;
 	}
-
-	rcu_read_unlock();
 
 	ath12k_dbg(ab, ATH12K_DBG_DATA,
 		   "rx skb %p len %u peer %pM %d %s %s%s%s%s%s%s%s%s%s%s rate_idx %u vht_nss %u freq %u band %u flag 0x%x fcs-err %i mic-err %i amsdu-more %i\n",
@@ -1094,12 +1129,38 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 	ath12k_dbg_dump(ab, ATH12K_DBG_DP_RX, NULL, "dp rx msdu: ",
 			msdu->data, msdu->len);
 
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	/* Mark the msdu containing Meta header */
+	rxcb = ATH12K_SKB_RXCB(msdu);
+	if (rxcb->mhdr) {
+		link_peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev,
+								     peer_id);
+		if (link_peer) {
+			vif = ath12k_dp_link_peer_get_vif(link_peer);
+			ahvif = ath12k_vif_to_ahvif(vif);
+			mhdr_len = ahvif->dp_vif.dp_extn.mhdr_len;
+		}
+		if (unlikely(!mhdr_len))
+			goto out_free_mhdr;
+
+		if (skb_headroom(msdu) < ahvif->dp_vif.dp_extn.mhdr_len)
+			goto out_free_mhdr;
+
+		memcpy(msdu->data - mhdr_len, rxcb->mhdr, mhdr_len);
+		ieee80211_mark_mmesh_frame(status);
+out_free_mhdr:
+		kfree(rxcb->mhdr);
+		rxcb->mhdr = NULL;
+	}
+#endif
+
 	rx_status = IEEE80211_SKB_RXCB(msdu);
 	*rx_status = *status;
 
 	/* TODO: trace rx packet */
 
 	ieee80211_rx_napi(ath12k_dp_pdev_to_hw(dp_pdev), pubsta, msdu, napi);
+	rcu_read_unlock();
 }
 EXPORT_SYMBOL(ath12k_dp_rx_deliver_msdu);
 
@@ -1128,7 +1189,7 @@ int ath12k_dp_rx_peer_frag_setup(struct ath12k *ar,
 
 	lockdep_assert(&dp->dp_lock);
 
-	for (i = 0; i <= IEEE80211_NUM_TIDS; i++) {
+	for (i = 0; i < ab->hal.hal_params->num_tids; i++) {
 		rx_tid = &peer->dp_peer->rx_tid[i];
 		rx_tid->dp = dp;
 		timer_setup(&rx_tid->frag_timer, ath12k_dp_rx_frag_timer, 0);
@@ -1251,35 +1312,6 @@ void ath12k_dp_rx_fst_detach(struct ath12k_base *ab, struct dp_rx_fst *fst)
 	kfree(fst);
 }
 
-int ath12k_hw_grp_dp_rx_invalidate_entry(struct ath12k_hw_group *ag,
-					 enum dp_htt_flow_fst_operation operation,
-					 struct hal_flow_tuple_info *tuple_info)
-{
-	int i;
-	int ret = 0;
-
-	for (i = 0; i < ag->num_devices; i++) {
-		struct ath12k_base *partner_ab = ag->ab[i];
-
-		if (!partner_ab || partner_ab->is_bypassed)
-			continue;
-
-		/* Skip sending HTT command when recovery in progress */
-		if (test_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags))
-			continue;
-
-		/* Flush entries in the HW cache */
-		ret = ath12k_dp_htt_rx_flow_fse_operation(partner_ab, operation,
-							  tuple_info);
-		if (ret) {
-			ath12k_err(partner_ab, "Unable to invalidate cache entry ret %d",
-				   ret);
-			return ret;
-		}
-	}
-	return ret;
-}
-
 static void ath12k_dp_rx_flow_dump_entry(struct ath12k_dp *dp,
 					 struct rx_flow_info *flow_info)
 {
@@ -1297,7 +1329,6 @@ int ath12k_dp_rx_flow_add_entry(struct ath12k_base *ab,
 		ath12k_warn(ab, "FST table is NULL\n");
 		return -ENODEV;
 	}
-
 	/* lock the FST table to prevent concurrent access */
 	spin_lock_bh(&fst->fst_lock);
 
@@ -1309,8 +1340,9 @@ int ath12k_dp_rx_flow_add_entry(struct ath12k_base *ab,
 		goto out;
 	}
 
-	ret = ath12k_hw_grp_dp_rx_invalidate_entry(ab->ag, DP_HTT_FST_CACHE_INVALIDATE_ENTRY,
-						   &flow_info->flow_tuple_info);
+	ret = ath12k_dp_arch_rx_flow_fse_cache_op(ab->dp,
+						  DP_FST_CACHE_INVALIDATE_ENTRY,
+						  &flow_info->flow_tuple_info);
 	if (ret) {
 		ath12k_err(ab, "Unable to invalidate cache entry ret %d", ret);
 		ath12k_dp_rx_flow_dump_entry(dp, flow_info);
@@ -1354,8 +1386,9 @@ int ath12k_dp_rx_flow_delete_entry(struct ath12k_base *ab,
 		goto out;
 	}
 
-	ret = ath12k_hw_grp_dp_rx_invalidate_entry(ab->ag, DP_HTT_FST_CACHE_INVALIDATE_ENTRY,
-						   &flow_info->flow_tuple_info);
+	ret = ath12k_dp_arch_rx_flow_fse_cache_op(ab->dp,
+						  DP_FST_CACHE_INVALIDATE_ENTRY,
+						  &flow_info->flow_tuple_info);
 	if (ret) {
 		ath12k_err(ab, "Rx flow delete fail due to invalidate ret %d", ret);
 		ath12k_dp_rx_flow_dump_entry(dp, flow_info);
@@ -1390,9 +1423,9 @@ int ath12k_dp_rx_flow_delete_all_entries(struct ath12k_base *ab)
 		goto out;
 	}
 
-	ret = ath12k_hw_grp_dp_rx_invalidate_entry(ab->ag,
-						   DP_HTT_FST_CACHE_INVALIDATE_FULL,
-						   NULL);
+	ret = ath12k_dp_arch_rx_flow_fse_cache_op(dp,
+						  DP_FST_CACHE_INVALIDATE_FULL,
+						  NULL);
 	if (ret) {
 		ath12k_err(ab, "Rx flow delete all fail due to invalidate ret %d", ret);
 		spin_unlock_bh(&fst->fst_lock);
@@ -1458,13 +1491,6 @@ void ath12k_dp_rx_fst_init(struct ath12k_base *ab)
 
 	ath12k_dp_fst_core_map_init(ab);
 	ath12k_dp_rx_flow_send_fst_setup(ab, fst);
-	/* After fst setup, make sure that the DDR table and HW cache is in sync
-	 * by sending INVALIDATE FULL command. This is needed to avoid DDR
-	 * and HW cache going out of sync when one soc goes for a recovery.
-	 */
-	ath12k_dp_htt_rx_flow_fse_operation(ab,
-					    DP_HTT_FST_CACHE_INVALIDATE_FULL,
-					    NULL);
 
 	if (!ath12k_fse_3_tuple_enabled)
 		return;
@@ -1498,7 +1524,7 @@ void ath12k_dp_tid_cleanup(struct ath12k_base *ab)
         spin_lock_bh(&ab->dp->dp_lock);
         list_for_each_entry(peer, &ab->dp->peers, list) {
 		if (peer->dp_peer) {
-			for (tid = 0; tid <= IEEE80211_NUM_TIDS; tid++) {
+			for (tid = 0; tid < ab->hal.hal_params->num_tids; tid++) {
 				rx_tid = &peer->dp_peer->rx_tid[tid];
 				if (rx_tid->active) {
 					vaddr = rx_tid->vaddr;
@@ -1514,6 +1540,7 @@ void ath12k_dp_tid_cleanup(struct ath12k_base *ab)
         }
         spin_unlock_bh(&ab->dp->dp_lock);
 }
+EXPORT_SYMBOL(ath12k_dp_tid_cleanup);
 
 void ath12k_dp_peer_reo_tid_setup(struct ath12k *ar, int vdev_id,
                                  const u8 *peer_mac)
@@ -1533,21 +1560,20 @@ void ath12k_dp_peer_reo_tid_setup(struct ath12k *ar, int vdev_id,
 		return;
 	}
 
-       for (tid = 0; tid <= IEEE80211_NUM_TIDS; tid++) {
-               rx_tid = &peer->dp_peer->rx_tid[tid];
-               if (!rx_tid->active)
-                       continue;
+	for (tid = 0; tid < ar->ab->hal.hal_params->num_tids; tid++) {
+		rx_tid = &peer->dp_peer->rx_tid[tid];
+		if (!rx_tid->active)
+			continue;
 
-               ret = ath12k_dp_arch_peer_rx_tid_reo_update(dp, ar,
-                                                           peer, rx_tid,
-                                                           rx_tid->ba_win_sz,
-                                                           0, false);
-               if (ret) {
-                       ath12k_warn(ar->ab, "failed to update reo for peer %pM rx tid %d\n",
-                                   peer_mac, tid);
-               }
-       }
-       spin_unlock_bh(&dp->dp_lock);
+		ret = ath12k_dp_arch_peer_rx_tid_reo_update(dp, ar, peer, rx_tid,
+							    rx_tid->ba_win_sz,
+							    0, false);
+		if (ret) {
+			ath12k_warn(ar->ab, "failed to update reo for peer %pM rx tid %d\n",
+				    peer_mac, tid);
+		}
+	}
+	spin_unlock_bh(&dp->dp_lock);
 }
 
 void ath12k_dp_tid_setup(void *data, struct ieee80211_sta *sta)
@@ -1593,7 +1619,7 @@ void ath12k_dp_peer_tid_setup(struct ath12k_base *ab)
 
 void
 ath12k_dp_primary_peer_migrate_setup(struct ath12k_dp *dp, void *ctx,
-				     enum hal_reo_cmd_status status)
+				     struct hal_reo_status *status)
 {
 	struct ath12k_dp_rx_tid *rx_tid = ctx;
 	struct ath12k_dp_link_peer *peer;
@@ -1605,7 +1631,7 @@ ath12k_dp_primary_peer_migrate_setup(struct ath12k_dp *dp, void *ctx,
 	u8 chip_id = rx_tid->chip_id;
 	int ret, tid;
 
-	if (status != HAL_REO_CMD_SUCCESS)
+	if (!status || status->uniform_hdr.cmd_status != HAL_REO_CMD_SUCCESS)
 		goto migration_fail;
 
 	mig_ab = dp->ab->ag->ab[chip_id];
@@ -1624,7 +1650,7 @@ ath12k_dp_primary_peer_migrate_setup(struct ath12k_dp *dp, void *ctx,
 	ath12k_info(mig_ab, "htt new primary peer to %pM peer_id 0x%x ml_peer_id 0x%x link_id 0x%x chip_id 0x%x\n",
 		    peer->addr, peer->peer_id, peer->ml_id, peer->link_id, chip_id);
 
-	ahsta = ath12k_sta_to_ahsta(peer->sta);
+	ahsta = ath12k_sta_to_ahsta(ath12k_dp_link_peer_get_sta(peer));
 	arsta = ahsta->link[peer->link_id];
 	if (!arsta || !arsta->arvif) {
 		spin_unlock_bh(&mig_dp->dp_lock);
@@ -1642,9 +1668,9 @@ ath12k_dp_primary_peer_migrate_setup(struct ath12k_dp *dp, void *ctx,
 		/* Update the REO queue LUT at the corresponding peer id
 		 * and tid with qaddr.
 		 */
-		for (tid = 0; tid <= IEEE80211_NUM_TIDS; tid++) {
+		for (tid = 0; tid < mig_ab->hal.hal_params->num_tids; tid++) {
 			ath12k_dp_arch_peer_rx_tid_qref_setup(mig_dp,
-							      peer->mlo ? peer->ml_id : peer->peer_id,
+							      peer->dp_peer->peer_id,
 							      rx_tid->tid,
 							      rx_tid->paddr);
 		}
@@ -1653,8 +1679,16 @@ ath12k_dp_primary_peer_migrate_setup(struct ath12k_dp *dp, void *ctx,
 	arsta->arvif->primary_sta_link = true;
 	peer->primary_link = true;
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	ath12k_info(mig_ab, "primary_link migration complete. sending WLAN_CLIENT_CONNECT_EX ml_addr=%pM",
+		    peer->ml_addr);
+	ath12k_ipa_enqueue_evt(WLAN_CLIENT_CONNECT_EX, arsta->arvif, peer->ml_addr, true);
+#endif
+
 	spin_unlock_bh(&mig_dp->dp_lock);
-	ret = ath12k_vendor_put_umac_migration_notif(peer->vif, peer->sta->addr, peer->link_id);
+	ret = ath12k_vendor_put_umac_migration_notif(ath12k_dp_link_peer_get_vif(peer),
+						ath12k_dp_link_peer_get_sta(peer)->addr,
+						peer->link_id);
 	if (ret)
 		ath12k_warn(mig_ab, "failed to send notify UMAC migration event\n");
 	complete(&ahsta->dp_migration_event);
@@ -1712,6 +1746,12 @@ ath12k_dp_peer_migrate(struct ath12k_sta *ahsta, u16 peer_id,
 	peer->primary_link = false;
 	arsta->arvif->primary_sta_link = false;
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	ath12k_info(ab, "primary_link migration started. sending WLAN_CLIENT_DISCONNECT ml_addr=%pM",
+		    peer->ml_addr);
+	ath12k_ipa_enqueue_evt(WLAN_CLIENT_DISCONNECT, arsta->arvif, peer->ml_addr, true);
+#endif
+
 	ret = ath12k_dp_arch_peer_migrate_reo_cmd(dp, peer, peer_id,
 						  chip_id);
 	if (ret) {
@@ -1731,6 +1771,7 @@ int ath12k_dp_rx_pkt_type_filter(struct ath12k *ar,
 				 u32 meta_data)
 {
 	struct ath12k_wmi_pkt_route_param param;
+	struct ath12k_base *ab = ar->ab;
 	int ret;
 
 	/* Routing Eapol/ARP packets to CCE is only allowed now */
@@ -1740,9 +1781,17 @@ int ath12k_dp_rx_pkt_type_filter(struct ath12k *ar,
 
 	param.opcode = ATH12K_WMI_PKTROUTE_ADD;
 	param.meta_data = meta_data;
-	param.dst_ring = ATH12K_REO_RELEASE_RING;
+	param.dst_ring = ab->hal.hal_params->dp_rx_err_rdi;
 	param.dst_ring_handler = ATH12K_WMI_PKTROUTE_USE_CCE;
 	param.route_type_bmap = 1 << pkt_type;
+
+	/* Do not program EAP CCE rule for hardwares that use other than REO_RELEASE_RING
+	 * as destination. This is a temporary fix for wifi8.
+	 */
+	if (param.dst_ring != ATH12K_REO_RELEASE_RING) {
+		ath12k_info(ar->ab, "EAP CCE dst=%u, not configuring", param.dst_ring);
+		return 0;
+	}
 
 	ret = ath12k_wmi_send_pdev_pkt_route(ar, &param);
 	if (ret)
@@ -1754,38 +1803,45 @@ int ath12k_dp_rx_pkt_type_filter(struct ath12k *ar,
 void ath12k_dp_rx_skb_free(struct sk_buff *skb, struct ath12k_dp *dp, int ring,
 			   enum ath12k_dp_rx_error drop_reason)
 {
+	if (ring >= DP_REO_DST_RING_MAX) {
+		ath12k_dbg(dp->ab, ATH12K_DBG_TELEMETRY, "Invalid Rx Ring %u\n",
+			   ring);
+		ring = 0;
+	}
+
 	if (unlikely(drop_reason > DP_RX_ERR_MAX))
 		DP_DEVICE_STATS_INC(dp, rx.rx_err[DP_RX_ERR_DROP_MISC][ring], 1);
 	else
 		DP_DEVICE_STATS_INC(dp, rx.rx_err[drop_reason][ring], 1);
 
+	IPA_SET_RX_BUF_SMMU_UNMAP(dp->ab, skb, true);
 	dev_kfree_skb_any(skb);
 }
 EXPORT_SYMBOL(ath12k_dp_rx_skb_free);
 
-void ath12k_dp_rx_update_peer_msdu_stats(struct ath12k_dp_peer *peer,
-					 struct rx_msdu_desc_info *rx_msdu_info,
-					 struct rx_mpdu_desc_info *rx_mpdu_info,
-					 u8 link_id, int ring_id)
+void ath12k_dp_rx_peer_tid_ba_config(struct ath12k_dp *dp, u8 tid, u32 *ba_win_size,
+				     u16 *ssn)
 {
-	bool is_not_msdu;
+	*ba_win_size = 1;
+	*ssn = 0;
 
-	if (!peer)
-		return;
-
-	is_not_msdu = rx_msdu_info->first_msdu & rx_msdu_info->last_msdu;
-
-	if (is_not_msdu)
-		DP_PEER_STATS_INC(peer, rx, ring_id, non_amsdu, link_id, 1);
-	else
-		DP_PEER_STATS_INC(peer, rx, ring_id, msdu_part_of_amsdu, link_id, 1);
-
-	if (rx_msdu_info->da_is_mcbc)
-		DP_PEER_STATS_INC(peer, rx, ring_id, mcast, link_id, 1);
-	else
-		DP_PEER_STATS_INC(peer, rx, ring_id, ucast, link_id, 1);
-
-	DP_PEER_STATS_COND_INC(peer, rx, ring_id, mpdu_retry, link_id,
-			       rx_mpdu_info->mpdu_retry_bit, 1);
+	if (dp->ab->hw_params->hw_ops->rx_peer_ba_config)
+		dp->ab->hw_params->hw_ops->rx_peer_ba_config(dp->ab, tid, ba_win_size,
+							    ssn);
 }
-EXPORT_SYMBOL(ath12k_dp_rx_update_peer_msdu_stats);
+
+bool ath12k_dp_rx_peer_tid_skip_pn_replay(struct ath12k_dp *dp, u8 tid)
+{
+	if  (dp->ab->hw_params->hw_ops->rx_peer_tid_skip_pn_replay)
+		return dp->ab->hw_params->hw_ops->rx_peer_tid_skip_pn_replay(dp->ab, tid);
+
+	return false;
+}
+
+int ath12k_dp_rxdma_ring_sel_config(struct ath12k_base *ab)
+{
+	if (ab->hw_params->hw_ops->rxdma_ring_sel_config)
+		return ab->hw_params->hw_ops->rxdma_ring_sel_config(ab);
+
+	return 0;
+}

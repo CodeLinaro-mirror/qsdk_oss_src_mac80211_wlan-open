@@ -4,7 +4,7 @@
  * Copyright 2006-2007	Jiri Benc <jbenc@suse.cz>
  * Copyright 2013-2014  Intel Mobile Communications GmbH
  * Copyright (C) 2015 - 2017 Intel Deutschland GmbH
- * Copyright (C) 2018-2023 Intel Corporation
+ * Copyright (C) 2018-2026 Intel Corporation
  */
 
 #include <linux/module.h>
@@ -27,6 +27,9 @@
 #include "debugfs_sta.h"
 #include "mesh.h"
 #include "wme.h"
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+#include "qcn_extns/cmn_extn.h"
+#endif
 
 /**
  * DOC: STA information lifetime rules
@@ -642,6 +645,9 @@ __sta_info_alloc(struct ieee80211_sub_if_data *sdata,
 	spin_lock_init(&sta->ps_lock);
 	INIT_WORK(&sta->drv_deliver_wk, sta_deliver_ps_frames);
 	wiphy_work_init(&sta->ampdu_mlme.work, ieee80211_ba_session_work);
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	ieee80211_mesh_init_peer_work(sdata, sta);
+#endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */
 #ifdef CPTCFG_MAC80211_MESH
 	if (ieee80211_vif_is_mesh(&sdata->vif)) {
 		sta->mesh = kzalloc(sizeof(*sta->mesh), gfp);
@@ -1229,7 +1235,7 @@ static bool sta_info_cleanup_expire_buffered_ac(struct ieee80211_local *local,
 		 */
 		if (!skb)
 			break;
-		ieee80211_free_txskb(&local->hw, skb);
+		__ieee80211_free_txskb(&local->hw, skb);
 	}
 
 	/*
@@ -1258,7 +1264,7 @@ static bool sta_info_cleanup_expire_buffered_ac(struct ieee80211_local *local,
 		local->total_ps_buffered--;
 		ps_dbg(sta->sdata, "Buffered frame expired (STA %pM)\n",
 		       sta->sta.addr);
-		ieee80211_free_txskb(&local->hw, skb);
+		__ieee80211_free_txskb(&local->hw, skb);
 	}
 
 	/*
@@ -1535,6 +1541,9 @@ static void __sta_info_destroy_part2(struct sta_info *sta, bool recalc)
 
 	local->num_sta--;
 	local->sta_generation++;
+#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
+	ieee80211_mesh_peer_cleanup(local->hw.wiphy, sdata, sta);
+#endif
 
 	while (sta->sta_state > IEEE80211_STA_NONE) {
 		ret = _sta_info_move_state(sta, sta->sta_state - 1, recalc);
@@ -2504,6 +2513,7 @@ sta_get_last_rx_stats(struct sta_info *sta, bool is_rx_bitrate, int link_id)
 	if (!link_sta_info->pcpu_rx_stats)
 		return stats;
 
+
 	for_each_possible_cpu(cpu) {
 		struct ieee80211_sta_rx_stats *cpustats;
 		u16 rate;
@@ -2577,6 +2587,17 @@ static void sta_stats_decode_rate(struct ieee80211_local *local, u32 rate,
 		rinfo->eht_gi = STA_STATS_GET(EHT_GI, rate);
 		rinfo->eht_ru_alloc = STA_STATS_GET(EHT_RU, rate);
 		rinfo->he_dcm = STA_STATS_GET(HE_DCM, rate);
+		break;
+	case STA_STATS_RATE_TYPE_UHR:
+		rinfo->flags = RATE_INFO_FLAGS_UHR_MCS;
+		rinfo->mcs = STA_STATS_GET(UHR_MCS, rate);
+		rinfo->nss = STA_STATS_GET(UHR_NSS, rate);
+		rinfo->eht_gi = STA_STATS_GET(UHR_GI, rate);
+		rinfo->eht_ru_alloc = STA_STATS_GET(UHR_RU, rate);
+		if (STA_STATS_GET(UHR_ELR, rate))
+			rinfo->flags |= RATE_INFO_FLAGS_UHR_ELR_MCS;
+		if (STA_STATS_GET(UHR_IM, rate))
+			rinfo->flags |= RATE_INFO_FLAGS_UHR_IM;
 		break;
 	}
 }
@@ -2741,9 +2762,7 @@ static void sta_set_link_sinfo(struct sta_info *sta,
 				link_sta_info->pub,
 				link_sinfo);
 
-	link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_INACTIVE_TIME) |
-			 BIT_ULL(NL80211_STA_INFO_BSS_PARAM) |
-			 BIT_ULL(NL80211_STA_INFO_RX_DROP_MISC);
+	link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_BSS_PARAM);
 
 	if (sdata->vif.type == NL80211_IFTYPE_STATION) {
 		link_sinfo->beacon_loss_count =
@@ -2751,9 +2770,12 @@ static void sta_set_link_sinfo(struct sta_info *sta,
 		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_BEACON_LOSS);
 	}
 
-	link_sinfo->inactive_time =
-		jiffies_to_msecs(jiffies -
-		ieee80211_sta_last_active(sta, link_id));
+	if (!(link_sinfo->filled & BIT_ULL(NL80211_STA_INFO_INACTIVE_TIME))) {
+		link_sinfo->inactive_time =
+			jiffies_to_msecs(jiffies -
+			ieee80211_sta_last_active(sta, link_id));
+		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_INACTIVE_TIME);
+	}
 
 	if (!(link_sinfo->filled & (BIT_ULL(NL80211_STA_INFO_TX_BYTES64) |
 				    BIT_ULL(NL80211_STA_INFO_TX_BYTES)))) {
@@ -2834,7 +2856,7 @@ static void sta_set_link_sinfo(struct sta_info *sta,
 		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_AIRTIME_WEIGHT);
 	}
 
-	link_sinfo->rx_dropped_misc = link_sta_info->rx_stats.dropped;
+	link_sinfo->rx_dropped_misc += link_sta_info->rx_stats.dropped;
 	if (link_sta_info->pcpu_rx_stats) {
 		for_each_possible_cpu(cpu) {
 			struct ieee80211_sta_rx_stats *cpurxs;
@@ -2844,6 +2866,7 @@ static void sta_set_link_sinfo(struct sta_info *sta,
 			link_sinfo->rx_dropped_misc += cpurxs->dropped;
 		}
 	}
+	link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_DROP_MISC);
 
 	if (sdata->vif.type == NL80211_IFTYPE_STATION &&
 	    !(sdata->vif.driver_flags & IEEE80211_VIF_BEACON_FILTER)) {
@@ -2858,6 +2881,11 @@ static void sta_set_link_sinfo(struct sta_info *sta,
 		if (!(link_sinfo->filled & BIT_ULL(NL80211_STA_INFO_SIGNAL))) {
 			link_sinfo->signal = (s8)last_rxstats->last_signal;
 			link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_SIGNAL);
+		}
+
+		if (link_sta_info->mgmt_signal) {
+			link_sinfo->mgmt_signal = (s8)link_sta_info->mgmt_signal;
+			link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_MGMT_SIGNAL);
 		}
 
 		if (!link_sta_info->pcpu_rx_stats &&
@@ -2992,12 +3020,10 @@ void sta_set_sinfo(struct sta_info *sta, struct station_info *sinfo,
 		sinfo->rx_beacon = sdata->deflink.u.mgd.count_beacon_signal;
 
 	drv_sta_statistics(local, sdata, &sta->sta, sinfo);
-	sinfo->filled |= BIT_ULL(NL80211_STA_INFO_INACTIVE_TIME) |
-			 BIT_ULL(NL80211_STA_INFO_STA_FLAGS) |
+	sinfo->filled |= BIT_ULL(NL80211_STA_INFO_STA_FLAGS) |
 			 BIT_ULL(NL80211_STA_INFO_BSS_PARAM) |
 			 BIT_ULL(NL80211_STA_INFO_CONNECTED_TIME) |
-			 BIT_ULL(NL80211_STA_INFO_ASSOC_AT_BOOTTIME) |
-			 BIT_ULL(NL80211_STA_INFO_RX_DROP_MISC);
+			 BIT_ULL(NL80211_STA_INFO_ASSOC_AT_BOOTTIME);
 
 	if (sdata->vif.type == NL80211_IFTYPE_STATION) {
 		sinfo->beacon_loss_count =
@@ -3007,8 +3033,13 @@ void sta_set_sinfo(struct sta_info *sta, struct station_info *sinfo,
 
 	sinfo->connected_time = ktime_get_seconds() - sta->last_connected;
 	sinfo->assoc_at = sta->assoc_at;
-	sinfo->inactive_time =
-		jiffies_to_msecs(jiffies - ieee80211_sta_last_active(sta, -1));
+
+	if (!(sinfo->filled & BIT_ULL(NL80211_STA_INFO_INACTIVE_TIME))) {
+		sinfo->inactive_time =
+			jiffies_to_msecs(jiffies -
+			ieee80211_sta_last_active(sta, -1));
+		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_INACTIVE_TIME);
+	}
 
 	if (!(sinfo->filled & (BIT_ULL(NL80211_STA_INFO_TX_BYTES64) |
 			       BIT_ULL(NL80211_STA_INFO_TX_BYTES)))) {
@@ -3066,7 +3097,7 @@ void sta_set_sinfo(struct sta_info *sta, struct station_info *sinfo,
 		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_FAILED);
 	}
 
-	sinfo->rx_dropped_misc = sta->deflink.rx_stats.dropped;
+	sinfo->rx_dropped_misc += sta->deflink.rx_stats.dropped;
 	if (sta->deflink.pcpu_rx_stats) {
 		for_each_possible_cpu(cpu) {
 			struct ieee80211_sta_rx_stats *cpurxs;
@@ -3075,6 +3106,7 @@ void sta_set_sinfo(struct sta_info *sta, struct station_info *sinfo,
 			sinfo->rx_dropped_misc += cpurxs->dropped;
 		}
 	}
+	sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_DROP_MISC);
 
 	if (!(sinfo->filled & BIT_ULL(NL80211_STA_INFO_RX_DURATION))) {
 		for (ac = 0; ac < IEEE80211_NUM_ACS; ac++)
@@ -3106,6 +3138,11 @@ void sta_set_sinfo(struct sta_info *sta, struct station_info *sinfo,
 		if (!(sinfo->filled & BIT_ULL(NL80211_STA_INFO_SIGNAL))) {
 			sinfo->signal = (s8)last_rxstats->last_signal;
 			sinfo->filled |= BIT_ULL(NL80211_STA_INFO_SIGNAL);
+		}
+
+		if (sta->deflink.mgmt_signal) {
+			sinfo->mgmt_signal = (s8)sta->deflink.mgmt_signal;
+			sinfo->filled |= BIT_ULL(NL80211_STA_INFO_MGMT_SIGNAL);
 		}
 
 		if (!sta->deflink.pcpu_rx_stats &&
@@ -3197,7 +3234,8 @@ void sta_set_sinfo(struct sta_info *sta, struct station_info *sinfo,
 				BIT(NL80211_STA_FLAG_MFP) |
 				BIT(NL80211_STA_FLAG_AUTHENTICATED) |
 				BIT(NL80211_STA_FLAG_ASSOCIATED) |
-				BIT(NL80211_STA_FLAG_TDLS_PEER);
+				BIT(NL80211_STA_FLAG_TDLS_PEER) |
+				BIT(NL80211_STA_FLAG_CFP);
 	if (test_sta_flag(sta, WLAN_STA_AUTHORIZED))
 		sinfo->sta_flags.set |= BIT(NL80211_STA_FLAG_AUTHORIZED);
 	if (test_sta_flag(sta, WLAN_STA_SHORT_PREAMBLE))
@@ -3212,6 +3250,8 @@ void sta_set_sinfo(struct sta_info *sta, struct station_info *sinfo,
 		sinfo->sta_flags.set |= BIT(NL80211_STA_FLAG_ASSOCIATED);
 	if (test_sta_flag(sta, WLAN_STA_TDLS_PEER))
 		sinfo->sta_flags.set |= BIT(NL80211_STA_FLAG_TDLS_PEER);
+	if (test_sta_flag(sta, WLAN_STA_CFP))
+		sinfo->sta_flags.set |= BIT(NL80211_STA_FLAG_CFP);
 
 	thr = sta_get_expected_throughput(sta);
 
@@ -3400,8 +3440,10 @@ int ieee80211_sta_activate_link(struct sta_info *sta, unsigned int link_id)
 	 */
 
 	if (exists) {
-		if (!sta->sta.reconf.matched_rem_links)
+		if (!sta->sta.reconf.matched_rem_links) {
+			rcu_read_unlock();
 			return -EALREADY;
+		}
 
 		for_each_set_bit(rem_link_id,
 				 &rem_links,
@@ -3483,12 +3525,36 @@ void ieee80211_sta_remove_link(struct sta_info *sta, unsigned int link_id,
 		link_sta = rcu_access_pointer(sta->sta.link[n_link_id]);
 
 		if (sta_info && link_sta) {
+			struct ieee80211_sta_rx_stats __percpu *old_pcpu =
+				sta->deflink.pcpu_rx_stats;
+			struct ieee80211_sta_rx_stats __percpu *src_pcpu =
+				sta_info->pcpu_rx_stats;
+
 			sta->deflink.link_id = n_link_id;
 			sta->sta.deflink.link_id = n_link_id;
 
 			memcpy(&sta->deflink, sta_info, sizeof(*sta_info));
 			memcpy(&sta->sta.deflink, link_sta, sizeof(*link_sta));
 			sta->deflink.pub = &sta->sta.deflink;
+			/* Be explicit about the per-CPU stats pointer we adopt. */
+			sta->deflink.pcpu_rx_stats = src_pcpu;
+			ht_dbg_ratelimited(sta->sdata,
+					   "deflink move: from link_id=%d to deflink, src_pcpu=%p old_def_pcpu=%p",
+					   n_link_id, src_pcpu, old_pcpu);
+
+			/*
+			 * Transfer ownership of per-CPU RX stats to the new deflink.
+			 * After memcpy() above, deflink->pcpu_rx_stats now points to
+			 * the per-CPU area that belonged to the link we are about to free.
+			 * Avoid freeing that memory via sta_remove_link() by clearing the
+			 * pointer in the soon-to-be-freed link structure.
+			 */
+			sta_info->pcpu_rx_stats = NULL;
+			/* Free the old deflink per-CPU stats to avoid leaks. */
+			if (old_pcpu && old_pcpu != src_pcpu)
+				free_percpu(old_pcpu);
+			ht_dbg_ratelimited(sta->sdata,
+					   "deflink move: cleared old link pcpu pointer to avoid free");
 
 			/* Free the moved link memory */
 			sta_remove_link(sta, n_link_id, true);

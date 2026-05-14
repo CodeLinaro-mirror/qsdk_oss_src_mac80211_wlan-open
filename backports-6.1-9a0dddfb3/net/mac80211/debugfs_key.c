@@ -448,3 +448,13 @@ ieee80211_debugfs_key_remove_beacon_default(struct ieee80211_sub_if_data *sdata)
 	debugfs_remove(sdata->debugfs.default_beacon_key);
 	sdata->debugfs.default_beacon_key = NULL;
 }
+
+void
+ieee80211_debugfs_key_remove_control_default(struct ieee80211_sub_if_data *sdata)
+{
+	if (!sdata)
+		return;
+
+	debugfs_remove(sdata->debugfs.default_control_key);
+	sdata->debugfs.default_control_key = NULL;
+}

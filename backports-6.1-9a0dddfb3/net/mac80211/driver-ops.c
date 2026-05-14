@@ -529,7 +529,9 @@ int drv_set_key(struct ieee80211_local *local,
 	might_sleep();
 	lockdep_assert_wiphy(local->hw.wiphy);
 
-	sdata = get_bss_sdata(sdata);
+	if (!ieee80211_hw_check(&local->hw, VLAN_GROUP_KEY_HW_OFFLOAD))
+		sdata = get_bss_sdata(sdata);
+
 	if (!check_sdata_in_driver(sdata))
 		return -EIO;
 
