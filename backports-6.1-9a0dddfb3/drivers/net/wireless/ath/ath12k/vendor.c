@@ -5691,7 +5691,7 @@ static int ath12k_tele_sdwftx_stats_update(struct sk_buff *skb, struct ath12k_te
 		goto end;
 	}
 
-	for (pkt_type = 0; pkt_type < DOT11_MAX; pkt_type++) {
+	for (pkt_type = 0; pkt_type < QCA_WLAN_VENDOR_ATTR_TELE_SDWFTX_PKT_TYPE_MAX; pkt_type++) {
 		attr2 = nla_nest_start(skb, QCA_WLAN_VENDOR_ATTR_TELE_SDWFTX_PKT_TYPE_80211_A + pkt_type);
 		if (!attr2) {
 			ath12k_err(NULL, "nla_nest_failure: SDWFTX PKT_TYPE_80211\n");
