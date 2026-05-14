@@ -865,7 +865,7 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 	ret = ath12k_dp_link_peer_assign(ar, arvif->vdev_id,
 					 sta, arg->peer_addr,
-					 link_id, ar->hw_link_id, vif,
+					 link_id, vif,
 					 arvif->ahvif->dp_vif.ppe_vp_type,
 					 arvif->ahvif->dp_vif.ppe_vp_num,
 					 arg->mlo_bridge_peer);

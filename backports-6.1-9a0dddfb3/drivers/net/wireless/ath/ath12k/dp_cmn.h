@@ -13,7 +13,7 @@
 #endif
 
 /* Max number of links for MLO connection */
-#define ATH12K_DP_MAX_MLO_LINKS 4
+#define ATH12K_DP_PEER_MAX_MLO_LINKS 5
 
 struct ath12k_hw_group;
 struct ath12k_sta;
@@ -245,8 +245,8 @@ void ath12k_dp_cmn_update_hw_links(struct ath12k_dp *dp,
 				   struct ath12k *ar);
 int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 			       struct ieee80211_sta *sta, u8 *addr, u8 link_id,
-			       u32 hw_link_id, struct ieee80211_vif *vif,
-			       u8 vp_type, int vp_num, bool mlo_bridge_peer);
+			       struct ieee80211_vif *vif, u8 vp_type, int vp_num,
+			       bool mlo_bridge_peer);
 void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr);
 int
 ath12k_dp_link_peer_batch_cleanup(struct ath12k *ar,
