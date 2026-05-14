@@ -183,7 +183,7 @@ EXPORT_SYMBOL(ath12k_dp_reo_dst_ring_size);
 u32 ath12k_dp_tcl_data_ring_size[DP_TCL_NUM_RING_MAX];
 EXPORT_SYMBOL(ath12k_dp_tcl_data_ring_size);
 
-u32 ath12k_dp_tx_comp_ring_size[MAX_TX_COMP_RING];
+u32 ath12k_dp_tx_comp_ring_size[DP_TCL_NUM_RING_MAX];
 EXPORT_SYMBOL(ath12k_dp_tx_comp_ring_size);
 
 enum ath12k_dp_desc_type {
