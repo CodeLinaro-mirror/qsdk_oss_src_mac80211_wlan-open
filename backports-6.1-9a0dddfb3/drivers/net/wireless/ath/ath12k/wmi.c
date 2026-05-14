@@ -160,6 +160,8 @@ struct wmi_pdev_sscan_fw_param_parse {
 	struct ath12k_wmi_pdev_sscan_per_detector_info *det_info;
 	bool bin_entry_done;
 	bool det_info_entry_done;
+	u32 num_fft_bin_index;
+	u32 num_det_info;
 
 };
 
@@ -7309,10 +7311,23 @@ int ath12k_wmi_vdev_spectral_conf(struct ath12k *ar,
 	cmd->scan_bin_scale = cpu_to_le32(arg->scan_bin_scale);
 	cmd->scan_dbm_adj = cpu_to_le32(arg->scan_dbm_adj);
 	cmd->scan_chn_mask = cpu_to_le32(arg->scan_chn_mask);
+	cmd->scan_mode = cpu_to_le32(arg->scan_mode);
+	cmd->scan_center_freq1 = cpu_to_le32(arg->scan_center_freq1);
+	cmd->scan_chan_width = cpu_to_le32(arg->scan_chan_width);
+	cmd->scan_chan_freq = cpu_to_le32(arg->scan_chan_freq);
+	cmd->scan_center_freq2 = cpu_to_le32(arg->scan_center_freq2);
+	cmd->recapture = cpu_to_le32(arg->recapture);
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
-		   "WMI spectral scan config cmd vdev_id 0x%x\n",
-		   arg->vdev_id);
+	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+		   "WMI spectral conf: vdev=%u count=%u period=%u fft_size=%u priority=%u gc_ena=%u restart=%u nf_ref=%u init_delay=%u nb_tone=%u str_bin=%u wb_rpt=%u rssi_rpt=%u rssi_thr=%u pwr_fmt=%u rpt_mode=%u bin_scale=%u dbm_adj=%u chn_mask=%u mode=%u cf1=%u cf2=%u chan_width=%u chan_freq=%u recapture=%u\n",
+		   arg->vdev_id, arg->scan_count, arg->scan_period, arg->scan_fft_size,
+		   arg->scan_priority, arg->scan_gc_ena, arg->scan_restart_ena,
+		   arg->scan_noise_floor_ref, arg->scan_init_delay, arg->scan_nb_tone_thr,
+		   arg->scan_str_bin_thr, arg->scan_wb_rpt_mode, arg->scan_rssi_rpt_mode,
+		   arg->scan_rssi_thr, arg->scan_pwr_format, arg->scan_rpt_mode,
+		   arg->scan_bin_scale, arg->scan_dbm_adj, arg->scan_chn_mask,
+		   arg->scan_mode, arg->scan_center_freq1, arg->scan_center_freq2,
+		   arg->scan_chan_width, arg->scan_chan_freq, arg->recapture);
 
 	ret = ath12k_wmi_cmd_send(ar->wmi, skb,
 				  WMI_VDEV_SPECTRAL_SCAN_CONFIGURE_CMDID);
@@ -7348,8 +7363,8 @@ int ath12k_wmi_vdev_spectral_enable(struct ath12k *ar, u32 vdev_id,
 	cmd->enable_cmd = cpu_to_le32(enable);
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
-		   "WMI spectral enable cmd vdev id 0x%x\n",
-		   vdev_id);
+		   "WMI spectral enable cmd vdev id 0x%x trigger_cmd %u enable_cmd %u\n",
+		   vdev_id, trigger, enable);
 
 	ret = ath12k_wmi_cmd_send(ar->wmi, skb,
 				  WMI_VDEV_SPECTRAL_SCAN_ENABLE_CMDID);
@@ -7518,6 +7533,13 @@ static void ath12k_wmi_pdev_dma_ring_buf_release_event(struct ath12k_base *ab,
 	param.num_buf_entry = arg.num_buf_entry;
 	param.meta_data = arg.meta_data;
 	param.num_meta = arg.num_meta;
+
+	ath12k_dbg(ab, ATH12K_DBG_SPECTRAL,
+		   "dma ring buf release: pdev_id=%u module_id=%u num_buf=%u num_meta=%u\n",
+		   le32_to_cpu(param.fixed.pdev_id),
+		   le32_to_cpu(param.fixed.module_id),
+		   param.num_buf_entry,
+		   param.num_meta);
 
 	ret = ath12k_dbring_buffer_release_event(ab, &param);
 	if (ret) {
@@ -15824,8 +15846,12 @@ static int ath12k_wmi_pdev_sscan_fft_bin_index_parse(struct ath12k_base *soc,
 						     u16 tag, u16 len,
 						     const void *ptr, void *data)
 {
+	struct wmi_pdev_sscan_fw_param_parse *parse = data;
+
 	if (tag != WMI_TAG_PDEV_SSCAN_FFT_BIN_INDEX)
 		return -EPROTO;
+	parse->bin = (struct ath12k_wmi_pdev_sscan_fft_bin_index *)ptr;
+	parse->num_fft_bin_index++;
 	return 0;
 }
 
@@ -15833,9 +15859,12 @@ static int ath12k_wmi_pdev_sscan_per_detector_info_parse(struct ath12k_base *soc
 							 u16 tag, u16 len,
 							 const void *ptr, void *data)
 {
+	struct wmi_pdev_sscan_fw_param_parse *parse = data;
+
 	if (tag != WMI_TAG_PDEV_SSCAN_PER_DETECTOR_INFO)
 		return -EPROTO;
-
+	parse->det_info = (struct ath12k_wmi_pdev_sscan_per_detector_info *)ptr;
+	parse->num_det_info++;
 	return 0;
 }
 
@@ -15855,8 +15884,6 @@ static int ath12k_wmi_tlv_sscan_fw_parse(struct ath12k_base *ab,
 		break;
 	case WMI_TAG_ARRAY_STRUCT:
 	       if (!parse->bin_entry_done) {
-		       parse->bin = (struct ath12k_wmi_pdev_sscan_fft_bin_index *)ptr;
-
 		       ret = ath12k_wmi_tlv_iter(ab, ptr, len,
 						 ath12k_wmi_pdev_sscan_fft_bin_index_parse,
 						 parse);
@@ -15869,8 +15896,6 @@ static int ath12k_wmi_tlv_sscan_fw_parse(struct ath12k_base *ab,
 
 		       parse->bin_entry_done = true;
 	       } else if (!parse->det_info_entry_done) {
-		       parse->det_info = (struct ath12k_wmi_pdev_sscan_per_detector_info *)ptr;
-
 		       ret = ath12k_wmi_tlv_iter(ab, ptr, len,
 						 ath12k_wmi_pdev_sscan_per_detector_info_parse,
 						 parse);
@@ -15905,6 +15930,11 @@ ath12k_wmi_pdev_sscan_fw_param_event(struct ath12k_base *ab,
 	int ret;
 	u8 pdev_idx;
 
+	ath12k_dbg(ab, ATH12K_DBG_SPECTRAL, "sscan fw param skb: len=%u\n", skb->len);
+	if (ath12k_debug_mask & ATH12K_DBG_SPECTRAL)
+		print_hex_dump(KERN_DEBUG, "skb->data: ", DUMP_PREFIX_OFFSET, 16, 1,
+			       skb->data, skb->len, false);
+
 	ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
 				  ath12k_wmi_tlv_sscan_fw_parse,
 				  &parse);
@@ -15923,7 +15953,44 @@ ath12k_wmi_pdev_sscan_fw_param_event(struct ath12k_base *ab,
 	ar = ab->pdevs[pdev_idx].ar;
 
 #ifdef CPTCFG_ATH12K_SPECTRAL
-	ar->spectral.ch_width = param.ch_info.operating_bw;
+	ar->spectral.ch_width     = param.ch_info.operating_bw;
+	ar->spectral.pri20_freq   = param.ch_info.operating_pri20_freq;
+	ar->spectral.sscan_cfreq1 = param.ch_info.sscan_cfreq1;
+	ar->spectral.sscan_cfreq2 = param.ch_info.sscan_cfreq2;
+	ar->spectral.sscan_bw     = param.ch_info.sscan_bw;
+	if (param.det_info) {
+		ar->spectral.start_freq = param.det_info->start_freq;
+		ar->spectral.end_freq   = param.det_info->end_freq;
+	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+		   "sscan fw param: pdev_id=%u smode=%u bin=%s ch_width=%u pri20_freq=%u cfreq1=%u cfreq2=%u sscan_bw=%u start_freq=%u end_freq=%u num_fft_bin_index=%u num_det_info=%u\n",
+		   param.fixed.pdev_id,
+		   param.fixed.spectral_scan_mode,
+		   param.bin ? "present" : "absent",
+		   ar->spectral.ch_width,
+		   ar->spectral.pri20_freq,
+		   ar->spectral.sscan_cfreq1,
+		   ar->spectral.sscan_cfreq2,
+		   ar->spectral.sscan_bw,
+		   ar->spectral.start_freq,
+		   ar->spectral.end_freq,
+		   parse.num_fft_bin_index,
+		   parse.num_det_info);
+	if (param.bin) {
+		u32 start_pri80 = FIELD_GET(GENMASK(15, 0), param.bin->pri80_bins);
+		u32 end_pri80   = FIELD_GET(GENMASK(31, 16), param.bin->pri80_bins);
+		u32 start_sec80 = FIELD_GET(GENMASK(15, 0), param.bin->sec80_bins);
+		u32 end_sec80   = FIELD_GET(GENMASK(31, 16), param.bin->sec80_bins);
+		u32 start_5mhz  = FIELD_GET(GENMASK(15, 0), param.bin->mid_5mhz_bins);
+		u32 end_5mhz    = FIELD_GET(GENMASK(31, 16), param.bin->mid_5mhz_bins);
+
+		ath12k_dbg(ab, ATH12K_DBG_SPECTRAL,
+			   "sscan fft_bin_index: start_pri80=%u num_pri80=%u start_sec80=%u num_sec80=%u start_5mhz=%u num_5mhz=%u\n",
+			   start_pri80, end_pri80 - start_pri80 + 1,
+			   start_sec80, end_sec80 - start_sec80 + 1,
+			   start_5mhz,  end_5mhz  - start_5mhz  + 1);
+	}
 #endif
 
 }

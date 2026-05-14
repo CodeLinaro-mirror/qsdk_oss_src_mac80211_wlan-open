@@ -111,9 +111,18 @@ struct ath12k_spectral {
 	u32 samples_done;
 	u32 sub_buf_size;
 	u32 num_sub_bufs;
+	u32 pri20_freq;
+	u32 sscan_cfreq1;
+	u32 sscan_cfreq2;
+	u32 sscan_bw;
+	u32 start_freq;
+	u32 end_freq;
 };
 
 #ifdef CPTCFG_ATH12K_SPECTRAL
+
+struct ath12k_link_vif *ath12k_spectral_get_vdev(struct ath12k *ar);
+u32 ath12k_spectral_nl_bw_to_wmi(u8 nl_bw);
 
 int ath12k_spectral_init(struct ath12k_base *ab);
 void ath12k_spectral_deinit(struct ath12k_base *ab);
@@ -125,7 +134,9 @@ int ath12k_spectral_configure_scan_params(struct ath12k *ar,
 					  enum ath12k_spectral_mode mode);
 int ath12k_spectral_stop_scan(struct ath12k *ar);
 int ath12k_spectral_start_scan(struct ath12k *ar);
-int ath12k_spectral_send_complete_event(struct ath12k *ar, int status);
+int ath12k_spectral_send_complete_event(struct ath12k *ar,
+					int status,
+					u32 received_samples);
 
 #else
 

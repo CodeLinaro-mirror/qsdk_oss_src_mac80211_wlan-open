@@ -303,6 +303,7 @@ struct ath12k_hw_params {
 
 	struct {
 		u8 fft_sz;
+		u8 fft_bin_sz;
 		u8 fft_pad_sz;
 		u8 summary_pad_sz;
 		u8 fft_hdr_len;
