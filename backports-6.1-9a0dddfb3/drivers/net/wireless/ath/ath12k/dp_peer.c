@@ -658,7 +658,9 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 			      u32_encode_bits(peer->peer_id, HTT_TCL_META_DATA_PEER_ID);
 	peer->tcl_metadata &= ~HTT_TCL_META_DATA_VALID_HTT;
 
-	ath12k_dp_peer_link_stats_alloc(peer, dp_pdev);
+	ret = ath12k_dp_peer_link_stats_alloc(peer, dp_pdev);
+	if (ret)
+		goto err_dp_peer;
 
 	if (ath12k_extd_rx_stats_enabled(dp_pdev->ar) &&
 	    !peer->peer_stats.rx_stats) {
@@ -1810,25 +1812,71 @@ EXPORT_SYMBOL(ath12k_dp_hw_peer_stats_enabled);
 int ath12k_dp_peer_stats_alloc(struct ath12k_dp_peer *dp_peer,
 			       struct ath12k_pdev_dp *dp_pdev)
 {
-	// Placeholder for feature specific mem allocs - MLD level
+	if (!dp_peer || !dp_pdev) {
+		ath12k_err(NULL,
+			   "Stats alloc NULL arg: dp_peer=%p dp_pdev=%p\n",
+			   dp_peer, dp_pdev);
+		return -EINVAL;
+	}
+
+	if (ath12k_dp_hw_peer_stats_enabled(dp_pdev) &&
+	    !dp_peer->mld_stats.hw_mld_stats) {
+		dp_peer->mld_stats.hw_mld_stats =
+			kzalloc(sizeof(*dp_peer->mld_stats.hw_mld_stats),
+				GFP_ATOMIC);
+		if (!dp_peer->mld_stats.hw_mld_stats) {
+			ath12k_err(NULL,
+				   "failed to alloc hw_mld_stats for peer %pM\n",
+				   dp_peer->addr);
+			return -ENOMEM;
+		}
+	}
+
 	return 0;
 }
 EXPORT_SYMBOL(ath12k_dp_peer_stats_alloc);
 
 void ath12k_dp_peer_stats_free(struct ath12k_dp_peer *dp_peer)
 {
-	// Placeholder for feature specific mem free - MLD level
+	if (!dp_peer)
+		return;
+
+	kfree(dp_peer->mld_stats.hw_mld_stats);
+	dp_peer->mld_stats.hw_mld_stats = NULL;
 }
 EXPORT_SYMBOL(ath12k_dp_peer_stats_free);
 
 int ath12k_dp_peer_link_stats_alloc(struct ath12k_dp_link_peer *link_peer,
 				    struct ath12k_pdev_dp *dp_pdev)
 {
-	// Placeholder for feature specific mem allocs - Link level
+	if (!link_peer || !dp_pdev) {
+		ath12k_err(NULL,
+			   "Link stats alloc NULL arg: link_peer=%p dp_pdev=%p\n",
+			   link_peer, dp_pdev);
+		return -EINVAL;
+	}
+
+	if (ath12k_dp_hw_peer_stats_enabled(dp_pdev) &&
+	    !link_peer->peer_stats.hw_link_stats) {
+		link_peer->peer_stats.hw_link_stats =
+			kzalloc(sizeof(*link_peer->peer_stats.hw_link_stats),
+				GFP_ATOMIC);
+		if (!link_peer->peer_stats.hw_link_stats) {
+			ath12k_err(NULL,
+				   "failed to alloc hw_stats for link peer %pM\n",
+				   link_peer->addr);
+			return -ENOMEM;
+		}
+	}
+
 	return 0;
 }
 
 void ath12k_dp_peer_link_stats_free(struct ath12k_dp_link_peer *link_peer)
 {
-	// Placeholder for feature specific mem free - Link level
+	if (!link_peer)
+		return;
+
+	kfree(link_peer->peer_stats.hw_link_stats);
+	link_peer->peer_stats.hw_link_stats = NULL;
 }

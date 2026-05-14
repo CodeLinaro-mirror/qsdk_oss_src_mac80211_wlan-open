@@ -642,11 +642,102 @@ struct ath12k_mld_qos_stats {
 
 DECLARE_EWMA(avg_ack_rssi, 10, 8)
 
+/**
+ * struct ath12k_dp_mld_peer_hw_tx_stats - MLD-level aggregated HW TX statistics
+ *					   accounted across all links
+ * @failed_bytes: Total bytes in failed TX frames
+ * @drop_bytes:   Total bytes dropped during TX
+ * @drop1_pkts:   Packets dropped due to AQM (Tx, No Tx, Aged, FW reason)
+ * @drop2_pkts:   Feature specific packets drops (SMD/Reserved drops)
+ */
+struct ath12k_dp_mld_peer_hw_tx_stats {
+	u64 failed_bytes;
+	u64 drop_bytes;
+	u32 drop1_pkts;
+	u32 drop2_pkts;
+};
+
+/**
+ * struct ath12k_dp_mld_peer_hw_rx_stats - MLD-level aggregated HW RX statistics
+ *					   accounted across all links
+ * @drop_ucast_bytes:  Total unicast bytes dropped
+ * @drop_gcast_bytes:  Total multicast/broadcast bytes dropped
+ * @drop2_pkts:        Packets dropped (SDWF - Backpressure/MSDU drop)
+ * @drop_gcast_pkts:   Multicast/broadcast packets dropped
+ */
+struct ath12k_dp_mld_peer_hw_rx_stats {
+	u64 drop_ucast_bytes;
+	u64 drop_gcast_bytes;
+	u32 drop2_pkts;
+	u32 drop_gcast_pkts;
+};
+
+/**
+ * struct ath12k_dp_mld_peer_hw_stats - MLD-level aggregated HW TX/RX statistics
+ * @hw_mld_tx: MLD-level aggregated HW TX statistics
+ * @hw_mld_rx: MLD-level aggregated HW RX statistics
+ */
+struct ath12k_dp_mld_peer_hw_stats {
+	struct ath12k_dp_mld_peer_hw_tx_stats hw_mld_tx;
+	struct ath12k_dp_mld_peer_hw_rx_stats hw_mld_rx;
+};
+
+struct ath12k_dp_mld_peer_stats {
+	struct ath12k_dp_mld_peer_hw_stats *hw_mld_stats;
+};
+
+/**
+ * struct ath12k_dp_link_peer_hw_tx_stats - Per-link HW TX statistics
+ * @sum_ack_rssi:       Signed sum of ACK RSSI values (dBm) across PPDUs
+ * @sum_phy_rate:       Sum of PHY rates (in Kbps) across PPDUs
+ * @acked_ppdu_count:   Number of PPDUs acknowledged by the peer
+ */
+struct ath12k_dp_link_peer_hw_tx_stats {
+	s64 sum_ack_rssi;
+	u64 sum_phy_rate;
+	u32 acked_ppdu_count;
+};
+
+/**
+ * struct ath12k_dp_link_peer_hw_rx_stats - Per-link HW RX statistics
+ * @success_ucast_bytes:  Total unicast bytes successfully received
+ * @success_gcast_bytes:  Total multicast/broadcast bytes successfully received
+ * @failed_mpdu_bytes:    Total bytes in failed MPDUs
+ * @sum_rssi:             Signed sum of RSSI values (dBm) across PPDUs
+ * @sum_phy_rate:         Sum of PHY rates (in Kbps) across PPDUs
+ * @drop1_ucast_pkts:     Unicast packets dropped (Backpressure/MSDU drop)
+ * @success_gcast_pkts:   Multicast/broadcast packets successfully received
+ * @failed_mpdu:          Number of failed MPDUs
+ * @success_ppdu_count:   Number of PPDUs successfully received
+ */
+struct ath12k_dp_link_peer_hw_rx_stats {
+	u64 success_ucast_bytes;
+	u64 success_gcast_bytes;
+	u64 failed_mpdu_bytes;
+	s64 sum_rssi;
+	u64 sum_phy_rate;
+	u32 drop1_ucast_pkts;
+	u32 success_gcast_pkts;
+	u32 failed_mpdu;
+	u32 success_ppdu_count;
+};
+
+/**
+ * struct ath12k_dp_link_peer_hw_stats - Per-link HW TX/RX statistics container
+ * @hw_tx: Per-link HW TX statistics
+ * @hw_rx: Per-link HW RX statistics
+ */
+struct ath12k_dp_link_peer_hw_stats {
+	struct ath12k_dp_link_peer_hw_tx_stats hw_link_tx;
+	struct ath12k_dp_link_peer_hw_rx_stats hw_link_rx;
+};
+
 struct ath12k_dp_link_peer_stats {
 	struct ath12k_htt_tx_stats *tx_stats;
 	struct ath12k_rx_peer_stats *rx_stats;
 	struct ath12k_dp_mon_peer_stats dp_mon_stats;
 	struct ath12k_qos_stats *qos_stats;
+	struct ath12k_dp_link_peer_hw_stats *hw_link_stats;
 	struct ath12k_dp_pkt_info tx_dropped;
 	unsigned long last_ack;
 	unsigned long last_rx;
@@ -922,10 +1013,6 @@ struct ath12k_rx_peer_user_stats {
 	u32 mpdu_cnt_fcs_ok;
 	u32 mpdu_cnt_fcs_err;
 	struct pkt_type ppdu;
-};
-
-struct ath12k_dp_mld_peer_stats {
-	// Placeholder for MLD Peer stats
 };
 
 #define MCS_VALID 1

@@ -171,6 +171,7 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 	struct wireless_dev *wdev;
 	struct ath12k_sta *ahsta = NULL;
 	struct ath12k_pdev_dp *dp_pdev;
+	int ret;
 
 	dp_hw_grp_wifi8 = ath12k_get_dp_hw_group_wifi8(ah->ag->dp_hw_grp);
 
@@ -198,7 +199,12 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 
 	rcu_read_lock();
 	dp_pdev = ath12k_dp_hw_grp_to_dp_pdev(ah->ag->dp_hw_grp, params->hw_link_id);
-	ath12k_dp_peer_stats_alloc(dp_peer, dp_pdev);
+	ret = ath12k_dp_peer_stats_alloc(dp_peer, dp_pdev);
+	if (ret) {
+		rcu_read_unlock();
+		kfree(dp_peer);
+		return ret;
+	}
 	rcu_read_unlock();
 
 	dp_peer->sta_id = ATH12K_STA_ID_INVALID;
@@ -208,6 +214,7 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 	dp_peer->is_mlo = params->is_mlo;
 	dp_peer->peer_id = ath12k_wifi8_peer_id_alloc(dp_hw);
 	if (dp_peer->peer_id == ATH12K_MLO_PEER_ID_INVALID) {
+		ath12k_dp_peer_stats_free(dp_peer);
 		kfree(dp_peer);
 		return -ENOMEM;
 	}
@@ -218,6 +225,7 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 			spin_lock_bh(&dp_hw->peer_lock);
 			clear_bit(dp_peer->peer_id, dp_hw->free_peer_id_map);
 			spin_unlock_bh(&dp_hw->peer_lock);
+			ath12k_dp_peer_stats_free(dp_peer);
 			kfree(dp_peer);
 			return -ENOMEM;
 		}
