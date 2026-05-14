@@ -38,6 +38,8 @@
 #define OFFSET_SIGN	BIT(13)
 #define FHSS		BIT(14)
 
+bool ath12k_compress_dump;
+
 static ssize_t ath12k_read_sensitivity_level(struct file *file,
 					     char __user *user_buf,
 					     size_t count, loff_t *ppos)
@@ -3806,11 +3808,46 @@ void ath12k_debugfs_pdev_destroy(struct ath12k_base *ab)
 {
 }
 
+static ssize_t ath12k_write_compress_fw_dump(struct file *file,
+					     const char __user *user_buf,
+					     size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	bool value;
+
+	if (kstrtobool_from_user(user_buf, count, &value)) {
+		ath12k_info(ab, "Enter 1 to enable, 0 to disable dump compression\n");
+		return -EINVAL;
+	}
+
+	ath12k_compress_dump = value;
+	return count;
+}
+
+static ssize_t ath12k_read_compress_fw_dump(struct file *file,
+					    char __user *user_buf,
+					    size_t count, loff_t *ppos)
+{
+	char buf[32];
+	size_t len;
+
+	len = scnprintf(buf, sizeof(buf), "%u\n", ath12k_compress_dump);
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static const struct file_operations fops_compress_fw_dump = {
+	.open = simple_open,
+	.read = ath12k_read_compress_fw_dump,
+	.write = ath12k_write_compress_fw_dump,
+	.llseek = default_llseek,
+};
+
 void ath12k_debugfs_soc_create(struct ath12k_base *ab)
 {
 	bool dput_needed;
 	char soc_name[64] = { 0 };
 	struct dentry *debugfs_ath12k;
+	struct dentry *debugfs_ath12k_compress_dump;
 
 	debugfs_ath12k = debugfs_lookup("ath12k", NULL);
 	if (debugfs_ath12k) {
@@ -3821,6 +3858,19 @@ void ath12k_debugfs_soc_create(struct ath12k_base *ab)
 		if (IS_ERR_OR_NULL(debugfs_ath12k))
 			return;
 		dput_needed = false;
+	}
+
+	debugfs_ath12k_compress_dump = debugfs_lookup("compress_fw_dump", debugfs_ath12k);
+	if (!debugfs_ath12k_compress_dump) {
+		debugfs_ath12k_compress_dump =
+					debugfs_create_file("compress_fw_dump",
+							    0600, debugfs_ath12k,
+							    ab,
+							    &fops_compress_fw_dump);
+		if (IS_ERR_OR_NULL(debugfs_ath12k_compress_dump))
+			ath12k_err(ab, "failed to create compress_dump entry\n");
+	} else {
+		dput(debugfs_ath12k_compress_dump);
 	}
 
 	scnprintf(soc_name, sizeof(soc_name), "%s-%s", ath12k_bus_str(ab->hif.bus),
@@ -4294,11 +4344,24 @@ static const struct file_operations ath12k_fops_reset_dp_tid_stats = {
 
 void ath12k_debugfs_soc_destroy(struct ath12k_base *ab)
 {
+	struct dentry *debugfs_ath12k;
+	struct dentry *debugfs_ath12k_compress_dump;
+
 	if(!ab->debugfs_soc)
 		return;
 
 	debugfs_remove_recursive(ab->debugfs_soc);
 	ab->debugfs_soc = NULL;
+
+	/* Clean up compress_fw_dump file if it exists */
+	debugfs_ath12k = debugfs_lookup("ath12k", NULL);
+	if (debugfs_ath12k) {
+		debugfs_ath12k_compress_dump = debugfs_lookup("compress_fw_dump",
+							      debugfs_ath12k);
+		debugfs_remove(debugfs_ath12k_compress_dump);
+		dput(debugfs_ath12k);
+	}
+
 	/* We are not removing ath12k directory on purpose, even if it
 	 * would be empty. This simplifies the directory handling and it's
 	 * a minor cosmetic issue to leave an empty ath12k directory to
