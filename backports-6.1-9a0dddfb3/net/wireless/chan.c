@@ -1157,6 +1157,7 @@ bool cfg80211_chandef_dfs_nol_clear(struct wiphy *wiphy,
 
 	return true;
 }
+EXPORT_SYMBOL(cfg80211_chandef_dfs_nol_clear);
 
 bool cfg80211_chandef_dfs_usable(struct wiphy *wiphy,
 				 const struct cfg80211_chan_def *chandef)

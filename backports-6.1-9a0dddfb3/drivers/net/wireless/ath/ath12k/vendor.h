@@ -116,6 +116,11 @@ struct oem_vendor_build {
 	u8 l_data[];
 } __packed;
 
+struct ath12k_vendor_ch_switch_attrs {
+	u32 freq;
+	u32 width;
+};
+
 /**
  * @QCA_NL80211_VENDOR_SUBCMD_WLAN_CTL_TABLE: This vendor subcommand is used to
  *     configure the CTL (Conformance Test Limit) table for a specific band.

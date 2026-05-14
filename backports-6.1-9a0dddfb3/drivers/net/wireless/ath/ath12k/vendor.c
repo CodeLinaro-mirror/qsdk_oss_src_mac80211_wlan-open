@@ -14083,6 +14083,194 @@ static int ath12k_vendor_oem_data(struct wiphy *wiphy, struct wireless_dev *wdev
 	return 0;
 }
 
+static int
+ath12k_vendor_ch_switch_put_chan_base(struct sk_buff *skb,
+				      const struct cfg80211_chan_def *chandef,
+				      const struct ath12k_vendor_ch_switch_attrs *attrs)
+{
+	u32 freq;
+	u8 width;
+	int ret;
+
+	if (!chandef)
+		return -EINVAL;
+
+	freq = chandef->chan ? chandef->chan->center_freq : 0;
+	width = ath12k_nl_chan_bw_to_qca_vendor_chan_bw(chandef->width);
+
+	if (freq) {
+		ret = nla_put_u32(skb, attrs->freq, freq);
+		if (ret)
+			goto nla_fail;
+	}
+
+	if (width) {
+		ret = nla_put_u8(skb, attrs->width, width);
+		if (ret)
+			goto nla_fail;
+	}
+
+	return 0;
+
+nla_fail:
+	return -EMSGSIZE;
+}
+
+static int
+ath12k_vendor_ch_switch_put_cur_chan(struct sk_buff *skb,
+				     const struct cfg80211_chan_def *chandef)
+{
+	static const struct ath12k_vendor_ch_switch_attrs attrs = {
+		.freq = QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_CUR_FREQ,
+		.width = QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_CUR_WIDTH,
+	};
+	int ret;
+
+	if (!chandef)
+		return -EINVAL;
+
+	ret = ath12k_vendor_ch_switch_put_chan_base(skb, chandef, &attrs);
+	if (ret)
+		return ret;
+
+	if (chandef->center_freq1) {
+		ret = nla_put_u32(skb,
+				  QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_CUR_CENTER_FREQ1,
+				  chandef->center_freq1);
+		if (ret)
+			goto nla_fail;
+	}
+
+	if (chandef->center_freq2) {
+		ret = nla_put_u32(skb,
+				  QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_CUR_CENTER_FREQ2,
+				  chandef->center_freq2);
+		if (ret)
+			goto nla_fail;
+	}
+
+	if (chandef->punctured) {
+		ret = nla_put_u16(skb,
+				  QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_CUR_PUNCTURED,
+				  chandef->punctured);
+		if (ret)
+			goto nla_fail;
+	}
+
+	if (chandef->radar_bitmap) {
+		ret = nla_put_u16(skb,
+				  QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_CUR_RADAR_BITMAP,
+				  chandef->radar_bitmap);
+		if (ret)
+			goto nla_fail;
+	}
+
+	return 0;
+
+nla_fail:
+	return -EMSGSIZE;
+}
+
+static int
+ath12k_vendor_ch_switch_put_new_chan(struct sk_buff *skb,
+				     const struct cfg80211_chan_def *chandef)
+{
+	static const struct ath12k_vendor_ch_switch_attrs attrs = {
+		.freq = QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_NEW_FREQ,
+		.width = QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_NEW_WIDTH,
+	};
+
+	return ath12k_vendor_ch_switch_put_chan_base(skb, chandef, &attrs);
+}
+
+/**
+ * ath12k_vendor_ch_switch_reason_notify() - Send channel switch reason event
+ * @ar: ath12k device pointer
+ * @reason: Reason for the channel switch, enum qca_wlan_vendor_ch_switch_reason
+ * @old: Current/old channel definition (may be NULL); all cfg80211_chan_def
+ *       fields are sent to userspace when non-NULL
+ * @new: New channel definition (may be NULL)
+ *
+ * Sends a vendor event to userspace with the reason for an upcoming channel
+ * switch together with the complete cfg80211_chan_def of the current/old
+ * channel (primary freq, width, center_freq1, center_freq2, punctured bitmap)
+ * and the new channel's primary frequency and width.
+ *
+ * This is called before the actual channel change is applied so that userspace
+ * can track the reason and fully reconstruct the old channel configuration.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int ath12k_vendor_ch_switch_reason_notify(struct ath12k *ar,
+					  enum qca_wlan_vendor_ch_switch_reason reason,
+					  const struct cfg80211_chan_def *old_chandef,
+					  const struct cfg80211_chan_def *new_chandef)
+{
+	struct wireless_dev *wdev;
+	struct wiphy *wiphy;
+	struct sk_buff *skb;
+	struct ath12k_link_vif *arvif;
+	u32 old_freq = 0, new_freq = 0;
+	int event_idx;
+	int ret;
+
+	if (!ar || !ar->ab || !ar->ah || !ar->ah->hw)
+		return -EINVAL;
+
+	wiphy = ath12k_ar_to_hw(ar)->wiphy;
+	arvif = ath12k_vendor_get_non_scan_arvif(ar);
+	if (!arvif || !arvif->ahvif || !arvif->ahvif->vif)
+		return -ENODEV;
+
+	wdev = ieee80211_vif_to_wdev(arvif->ahvif->vif);
+	if (!wdev)
+		return -ENODEV;
+
+	event_idx = QCA_NL80211_VENDOR_SUBCMD_CH_SWITCH_REASON_INDEX;
+	skb = cfg80211_vendor_event_alloc(wiphy, wdev, NLMSG_DEFAULT_SIZE,
+					  event_idx, GFP_ATOMIC);
+	if (!skb)
+		return -ENOMEM;
+
+	ret = nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_CODE, reason);
+	if (ret)
+		goto nla_fail;
+
+	ret = ath12k_vendor_ch_switch_put_cur_chan(skb, old_chandef);
+	if (ret)
+		goto nla_fail;
+
+	ret = ath12k_vendor_ch_switch_put_new_chan(skb, new_chandef);
+	if (ret)
+		goto nla_fail;
+
+	if (old_chandef && old_chandef->chan)
+		old_freq = old_chandef->chan->center_freq;
+
+	if (new_chandef && new_chandef->chan)
+		new_freq = new_chandef->chan->center_freq;
+
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
+			 "vendor ch switch event reason %d old %u/%d center %u/%u punct 0x%x radar 0x%x new %u/%d\n",
+			 reason, old_freq, old_chandef ? old_chandef->width : 0,
+			 old_chandef ? old_chandef->center_freq1 : 0,
+			 old_chandef ? old_chandef->center_freq2 : 0,
+			 old_chandef ? old_chandef->punctured : 0,
+			 old_chandef ? old_chandef->radar_bitmap : 0,
+			 new_freq,
+			 new_chandef ? new_chandef->width : 0);
+
+	cfg80211_vendor_event(skb, GFP_ATOMIC);
+	return 0;
+
+nla_fail:
+	ath12k_warn(ar->ab,
+		    "failed to build channel switch reason vendor event reason %d ret %d\n",
+		    reason, ret);
+	kfree_skb(skb);
+	return ret;
+}
+
 static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
@@ -14477,6 +14665,10 @@ static const struct nl80211_vendor_cmd_info ath12k_vendor_events[] = {
 	[QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_INDEX] = {
 		.vendor_id = QCA_NL80211_VENDOR_ID,
 		.subcmd = QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION,
+	},
+	[QCA_NL80211_VENDOR_SUBCMD_CH_SWITCH_REASON_INDEX] = {
+		.vendor_id = QCA_NL80211_VENDOR_ID,
+		.subcmd = QCA_NL80211_VENDOR_SUBCMD_CH_SWITCH_REASON,
 	},
 };
 
