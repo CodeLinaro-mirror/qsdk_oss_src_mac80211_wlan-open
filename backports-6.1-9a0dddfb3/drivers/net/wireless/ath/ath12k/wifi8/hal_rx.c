@@ -1152,7 +1152,8 @@ u32 ath12k_wifi8_hal_reo_qdesc_size(u32 ba_window_size, u8 tid)
 
 void ath12k_wifi8_hal_reo_qdesc_setup(struct hal_rx_reo_queue *qdesc,
 				      int tid, u32 ba_window_size,
-				      u32 start_seq, enum hal_pn_type type)
+				      u32 start_seq, enum hal_pn_type type,
+				      u16 stats_id)
 {
 	struct hal_rx_reo_queue_ext *ext_desc;
 
@@ -1204,6 +1205,8 @@ void ath12k_wifi8_hal_reo_qdesc_setup(struct hal_rx_reo_queue *qdesc,
 	if (start_seq <= 0xfff)
 		qdesc->info2 = le32_encode_bits(start_seq,
 						HAL_RX_REO_QUEUE_INFO2_SSN);
+
+	qdesc->info6 = le32_encode_bits(stats_id, HAL_RX_REO_QUEUE_INFO6_STATS_ID);
 
 	if (ath12k_wifi8_hal_is_reo_nonqos_mgmt_tid(tid))
 		return;

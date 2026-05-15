@@ -1491,6 +1491,8 @@ enum hal_rx_reo_queue_pn_size {
 #define HAL_RX_REO_QUEUE_INFO2_SVLD					BIT(0)
 #define HAL_RX_REO_QUEUE_INFO2_SSN					GENMASK(12, 1)
 
+#define HAL_RX_REO_QUEUE_INFO6_STATS_ID					GENMASK(26, 16)
+
 struct hal_rx_reo_queue {
 	struct hal_desc_header desc_hdr;
 	__le16 receive_queue_number;

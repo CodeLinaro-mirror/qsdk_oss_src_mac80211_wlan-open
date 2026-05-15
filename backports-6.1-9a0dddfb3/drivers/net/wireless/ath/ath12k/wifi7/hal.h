@@ -798,7 +798,8 @@ ath12k_wifi7_hal_rx_msdu_link_info_get(struct hal_rx_msdu_link *link,
 u32 ath12k_wifi7_hal_reo_qdesc_size(u32 ba_window_size, u8 tid);
 void ath12k_wifi7_hal_reo_qdesc_setup(struct hal_rx_reo_queue *qdesc,
 				      int tid, u32 ba_window_size,
-				      u32 start_seq, enum hal_pn_type type);
+				      u32 start_seq, enum hal_pn_type type,
+				      u16 stats_id);
 
 void ath12k_wifi7_hal_srng_hw_disable(struct ath12k_base *ab,
 				      struct hal_srng *srng);

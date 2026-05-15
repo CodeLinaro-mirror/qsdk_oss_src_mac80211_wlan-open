@@ -2186,7 +2186,8 @@ exit:
 int ath12k_wifi7_dp_alloc_reo_qdesc(struct ath12k_base *ab,
 				    struct ath12k_dp_rx_tid *rx_tid, u16 ssn,
 				    enum hal_pn_type pn_type,
-				    struct hal_rx_reo_queue **addr_aligned)
+				    struct hal_rx_reo_queue **addr_aligned,
+				    u16 stats_id)
 {
 	u8 tid = rx_tid->tid;
 	u32 ba_win_sz = rx_tid->ba_win_sz;
@@ -2208,7 +2209,8 @@ int ath12k_wifi7_dp_alloc_reo_qdesc(struct ath12k_base *ab,
 		return -ENOMEM;
 
 	*addr_aligned = PTR_ALIGN(vaddr, HAL_LINK_DESC_ALIGN);
-	ath12k_wifi7_hal_reo_qdesc_setup(*addr_aligned, tid, ba_win_sz, ssn, pn_type);
+	ath12k_wifi7_hal_reo_qdesc_setup(*addr_aligned, tid, ba_win_sz, ssn, pn_type,
+					 stats_id);
 #ifndef CONFIG_IO_COHERENCY
 	paddr = dma_map_single(ab->dev, *addr_aligned, hw_desc_sz,
 			       DMA_BIDIRECTIONAL);
