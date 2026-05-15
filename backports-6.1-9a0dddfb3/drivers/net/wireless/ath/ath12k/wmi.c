@@ -9029,6 +9029,11 @@ static void ath12k_wmi_afc_event(struct ath12k_base *ab,
 		}
 		break;
 	default:
+#ifdef CPTCFG_QCN_EXTN
+		/* event_type=0 for AFC HWBL continuation events */
+		if (ath12k_wmi_handle_afc_continuation_hwbl_extn(ab, skb, afc_info))
+			return;
+#endif
 		ath12k_warn(ab, "AFC reg rule update failed ret : %d\n", ret);
 		break;
 	};
