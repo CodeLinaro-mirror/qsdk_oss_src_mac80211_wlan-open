@@ -1029,6 +1029,7 @@ void ath12k_dp_cp_link_peer_unassign(struct ath12k *ar,
 	spin_lock_bh(&ar->arsta_lock);
 	ath12k_link_sta_hlist_delete(ar, arsta);
 	spin_unlock_bh(&ar->arsta_lock);
+	ahsta->ar_bitmap &= ~BIT(ar->radio_idx);
 
 	if (arsta == &ahsta->deflink) {
 		arsta->link_id = ATH12K_INVALID_LINK_ID;

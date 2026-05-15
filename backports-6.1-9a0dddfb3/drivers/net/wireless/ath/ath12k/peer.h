@@ -157,4 +157,9 @@ int ath12k_sta_hlist_add(struct ath12k_hw_group *ag, struct ath12k_sta *ahsta);
 int ath12k_sta_hlist_delete(struct ath12k_hw_group *ag, struct ath12k_sta *ahsta);
 struct ath12k_sta *ath12k_sta_find_by_addr(struct ath12k_hw_group *ag,
 					   const u8 *addr);
+/* CP-level pre-emptive duplicate peer sanity check */
+int ath12k_cp_peer_sanity_check(struct ath12k *ar,
+				struct ath12k_link_vif *arvif,
+				struct ath12k_link_sta *arsta,
+				struct ath12k_sta *ahsta);
 #endif /* _PEER_H_ */

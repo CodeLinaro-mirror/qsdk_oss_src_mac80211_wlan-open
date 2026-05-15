@@ -1420,6 +1420,102 @@ struct ath12k_sta *ath12k_sta_find_by_addr(struct ath12k_hw_group *ag,
 }
 EXPORT_SYMBOL(ath12k_sta_find_by_addr);
 
+static bool ath12k_sta_find_duplicate(struct ath12k_hw_group *ag,
+				      const u8 *addr, u8 radio_idx,
+				      const struct ath12k_sta *exclude)
+{
+	struct ath12k_sta *ahsta;
+	struct hlist_head *bucket;
+
+	lockdep_assert_held(&ag->ahsta_lock);
+
+	if (!ag->ahsta_list)
+		return false;
+
+	bucket = &ag->ahsta_list[ath12k_sta_hash_idx(ag, addr)];
+	hlist_for_each_entry(ahsta, bucket, hlist_addr) {
+		if (ether_addr_equal(ahsta->addr, addr)) {
+			if (ahsta == exclude)
+				continue;
+			/* Actually ath12k_is_mlo_sta needs to be called instead of
+			 * this mlo check. However this check is sufficient
+			 */
+			if (!ahsta->is_mlo)
+				continue;
+			if (ahsta->ar_bitmap & BIT(radio_idx))
+				return true;
+		}
+	}
+	return false;
+}
+
+int ath12k_cp_peer_sanity_check(struct ath12k *ar,
+				struct ath12k_link_vif *arvif,
+				struct ath12k_link_sta *arsta,
+				struct ath12k_sta *ahsta)
+{
+	struct ath12k_hw_group *ag = ar->ab->ag;
+	struct ath12k_link_sta *found_arsta;
+	const u8 *new_link_mac = arsta->addr;
+	bool is_mlo = ahsta && ahsta->is_mlo;
+
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	spin_lock_bh(&ar->arsta_lock);
+	/* New legacy/MLO-link/self peer MAC vs existing link MAC of self/remote peer */
+	found_arsta = ath12k_link_sta_find_by_addr(ar, new_link_mac);
+	if (found_arsta) {
+		ath12k_warn(ar->ab,
+			    "cp_sanity: peer %pM already in arsta hash on radio %d vdev %d (self=%d)\n",
+			    new_link_mac, ar->radio_idx,
+			    found_arsta->arvif->vdev_id,
+			    found_arsta->is_self_peer);
+		spin_unlock_bh(&ar->arsta_lock);
+		return -EEXIST;
+	}
+
+	/* New MLO peer's MLD MAC vs existing Link MAC of self/remote link peer */
+	if (is_mlo && !(ether_addr_equal(ahsta->addr, new_link_mac))) {
+		found_arsta = ath12k_link_sta_find_by_addr(ar, ahsta->addr);
+		if (found_arsta) {
+			ath12k_warn(ar->ab,
+				    "cp_sanity: MLD MAC %pM already in arsta hash on radio %d vdev %d (self=%d)\n",
+				    ahsta->addr, ar->radio_idx,
+				    found_arsta->arvif->vdev_id,
+				    found_arsta->is_self_peer);
+			spin_unlock_bh(&ar->arsta_lock);
+			return -EEXIST;
+		}
+	}
+	spin_unlock_bh(&ar->arsta_lock);
+
+	spin_lock_bh(&ag->ahsta_lock);
+	/* New legacy/MLO-link/self peer MAC vs existing MLO peer MLD MAC
+	 * in this radio.
+	 * ahsta should be sent NULL for self peer.
+	 */
+	if (ath12k_sta_find_duplicate(ag, new_link_mac, ar->radio_idx, ahsta)) {
+		spin_unlock_bh(&ag->ahsta_lock);
+		ath12k_warn(ar->ab,
+			    "cp_sanity: peer link MAC %pM conflicts with existing MLO MLD MAC on radio %d\n",
+			    new_link_mac, ar->radio_idx);
+		return -EEXIST;
+	}
+
+	/* New MLO peer's MLD MAC vs existing MLO peer MLD MAC in this radio */
+	if (is_mlo && ath12k_sta_find_duplicate(ag, ahsta->addr, ar->radio_idx, ahsta)) {
+		spin_unlock_bh(&ag->ahsta_lock);
+		ath12k_warn(ar->ab,
+			    "cp_sanity: MLO peer MLD MAC %pM conflicts with existing MLO ahsta on radio %d\n",
+			    ahsta->addr, ar->radio_idx);
+		return -EEXIST;
+	}
+	spin_unlock_bh(&ag->ahsta_lock);
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_cp_peer_sanity_check);
+
 int ath12k_peer_send_assoc_vendor_response(const struct ath12k_dp_link_peer *peer,
 					   bool is_assoc)
 {
