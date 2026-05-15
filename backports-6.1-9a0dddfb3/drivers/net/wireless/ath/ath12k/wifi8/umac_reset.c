@@ -73,8 +73,17 @@ static void ath12k_umac_reset_cleanup_tx_queues(struct ath12k_base *ab)
 
 void ath12k_wifi8_umac_reset_handle_init_recovery(struct ath12k_base *ab)
 {
+	struct ath12k_base *cumac_ab =
+		ath12k_dp_get_ab_from_dp_hw_group(ab->ag->dp_hw_grp);
+
 	/* Pause TX during UMAC reset */
 	set_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags);
+
+	/* Set umac in recovery flag for soc under Q6 only reset */
+	if (test_bit(ATH12K_FLAG_RECOVERY, &cumac_ab->dev_flags) &&
+	    cumac_ab->soc_reset_reason == ATH12K_Q6_BCR_RESET) {
+		set_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &cumac_ab->dev_flags);
+	}
 
 	ath12k_hif_irq_disable(ab);
 	ath12k_hif_mgmt_irq_disable(ab);
@@ -107,7 +116,8 @@ static void ath12k_wifi8_post_pre_reset_send_cb(struct ath12k_base *ab)
 	unsigned long flags, end;
 
 	/* Enqueue clear_link_desc_pool task for the current ab */
-	if (ab->is_bypassed || test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags))
+	if (ab->is_bypassed || (test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags) &&
+	    ab->soc_reset_reason != ATH12K_Q6_BCR_RESET))
 		return;
 
 	spin_lock_irqsave(&mlo_umac_reset->task_queue_lock, flags);
@@ -319,6 +329,8 @@ void ath12k_wifi8_umac_reset_handle_post_reset_complete(struct ath12k_base *ab)
 			return;
 		}
 		ath12k_hif_irq_enable(cumac_ab);
+		ath12k_hif_mgmt_irq_enable(cumac_ab);
+		clear_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &cumac_ab->dev_flags);
 	}
 
 	ath12k_hif_irq_enable(ab);
