@@ -13009,6 +13009,10 @@ static const struct nl80211_vendor_cmd_info ath12k_vendor_events[] = {
 		.vendor_id = QCA_NL80211_VENDOR_ID,
 		.subcmd = QCA_NL80211_VENDOR_SUBCMD_HW_BLOCKED_CHANS,
 	},
+	[QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_INDEX] = {
+		.vendor_id = QCA_NL80211_VENDOR_ID,
+		.subcmd = QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION,
+	},
 };
 
 int ath12k_vendor_register(struct ath12k_hw *ah)

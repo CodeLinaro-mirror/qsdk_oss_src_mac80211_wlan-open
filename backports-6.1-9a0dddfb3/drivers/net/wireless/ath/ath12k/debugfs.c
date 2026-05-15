@@ -107,54 +107,6 @@ static const struct file_operations fops_sensitivity_level = {
 	.llseek = default_llseek,
 };
 
-int ath12k_wsi_bypass_precheck(struct ath12k_base *ab, unsigned int value)
-{
-	struct ath12k_hw_group *ag = ab->ag;
-	struct ath12k *ar;
-	int i;
-
-	if (!test_bit(WMI_TLV_SERVICE_DYNAMIC_WSI_REMAP_SUPPORT, ab->wmi_ab.svc_map)) {
-		ath12k_err(ab, "Firmware doesn't support dynamic WSI remap\n");
-		return -EINVAL;
-	}
-
-	if (ab->ag->wsi_remap_in_progress) {
-		ath12k_err(ab, "WSI remap already in progress..\n");
-		return -EINVAL;
-	}
-
-	if (ath12k_hw_group_recovery_in_progress(ag)) {
-		ath12k_err(ab, "SSR is in progress, cannot allow remap\n");
-		return -EINVAL;
-	}
-
-	if (((ag->num_devices - ag->num_bypassed) == ATH12K_MIN_ACTIVE_CHIP_FOR_BYPASS) &&
-	    value == ATH12K_WSI_BYPASS_REMOVE_DEVICE) {
-		ath12k_err(ab, "Min 2 Chip has to be active.\n");
-		return -EINVAL;
-	}
-
-	if ((!ab->is_bypassed && value == ATH12K_WSI_BYPASS_ADD_DEVICE) ||
-	    (ab->is_bypassed && value == ATH12K_WSI_BYPASS_REMOVE_DEVICE)) {
-		ath12k_err(ab, "Invalid operation\n");
-		return -EINVAL;
-	}
-
-	for (i = 0; i < ab->num_radios; i++) {
-		ar = ab->pdevs[i].ar;
-		if (!ar) {
-			ath12k_err(ab, "Invalid Radio\n");
-			return -EINVAL;
-		}
-		if (ar->num_created_vdevs > 0) {
-			ath12k_err(ab, "Vaps are active, cannot do bypass\n");
-			return -EINVAL;
-		}
-	}
-
-	return 0;
-}
-
 static ssize_t
 ath12k_debug_write_wsi_bypass_device(struct file *file,
 				     const char __user *user_buf,
