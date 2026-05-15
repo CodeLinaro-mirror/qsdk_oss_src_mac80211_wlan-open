@@ -1039,183 +1039,252 @@ void ath12k_mac_peer_disassoc(struct ath12k_base *ab, struct ieee80211_sta *sta,
 	}
 }
 
-static inline int ath12k_link_sta_rhash_insert(struct ath12k_base *ab,
-					       struct rhashtable *rtbl,
-					       struct rhash_head *rhead,
-					       struct rhashtable_params *params)
+static u64 ath12k_link_sta_hash_key(const u8 *addr)
 {
-	struct ath12k_link_sta *tmp;
-
-	lockdep_assert_held(&ab->base_lock);
-
-	tmp = rhashtable_lookup_get_insert_fast(rtbl, rhead, *params);
-
-	if (!tmp)
-		return 0;
-	else if (IS_ERR(tmp))
-		return PTR_ERR(tmp);
-	else
-		return -EEXIST;
+	return ether_addr_to_u64(addr);
 }
 
-static inline int ath12k_link_sta_rhash_remove(struct ath12k_base *ab,
-					       struct rhashtable *rtbl,
-					       struct rhash_head *rhead,
-					       struct rhashtable_params *params)
+static u32 ath12k_link_sta_hash_idx(struct ath12k *ar, const u8 *addr)
 {
-	int ret;
+	u64 key = ath12k_link_sta_hash_key(addr);
 
-	lockdep_assert_held(&ab->base_lock);
-
-	ret = rhashtable_remove_fast(rtbl, rhead, *params);
-	if (ret && ret != -ENOENT)
-		return ret;
-
-	return 0;
+	return hash_min(key, ar->arsta_hash_bits);
 }
 
-int ath12k_link_sta_rhash_add(struct ath12k_base *ab,
+int ath12k_link_sta_hlist_add(struct ath12k *ar,
 			      struct ath12k_link_sta *arsta)
 {
-	int ret;
+	struct ath12k_link_sta *tmp;
+	struct hlist_head *bucket;
 
-	lockdep_assert_held(&ab->base_lock);
+	lockdep_assert_held(&ar->arsta_lock);
 
-	if (!ab->rhead_sta_addr)
-		return -EPERM;
+	if (!ar->arsta_list)
+		return -EINVAL;
 
-	if (arsta->rhash_done)
-		return 0;
-
-	ret = ath12k_link_sta_rhash_insert(ab, ab->rhead_sta_addr,
-					   &arsta->rhash_addr,
-					   &ab->rhash_sta_addr_param);
-
-	if (ret) {
-		ath12k_warn(ab, "failed to add arsta %pM in rhash_addr ret %d\n",
-			    arsta->addr, ret);
-		arsta->rhash_done = false;
-	} else {
-		arsta->rhash_done = true;
+	bucket = &ar->arsta_list[ath12k_link_sta_hash_idx(ar, arsta->addr)];
+	hlist_for_each_entry(tmp, bucket, hlist_addr) {
+		if (ether_addr_equal(tmp->addr, arsta->addr))
+			return -EEXIST;
 	}
 
-	return ret;
-}
-
-int ath12k_link_sta_rhash_delete(struct ath12k_base *ab,
-				 struct ath12k_link_sta *arsta)
-{
-	int ret;
-
-	lockdep_assert_held(&ab->base_lock);
-
-	if (!ab->rhead_sta_addr)
-		return -EPERM;
-
-	if (!arsta->rhash_done)
-		return 0;
-
-	ret = ath12k_link_sta_rhash_remove(ab, ab->rhead_sta_addr,
-					   &arsta->rhash_addr,
-					   &ab->rhash_sta_addr_param);
-
-	if (ret) {
-		ath12k_warn(ab,
-			    "failed to remove arsta %pM in rhash_addr ret %d\n",
-			    arsta->addr, ret);
-		return ret;
+	if (!hlist_unhashed(&arsta->hlist_addr)) {
+		ath12k_warn(ar->ab, "arsta %pM already in hash list\n", arsta->addr);
+		return -EEXIST;
 	}
 
-	arsta->rhash_done = false;
-
-	return ret;
+	hlist_add_head(&arsta->hlist_addr, bucket);
+	return 0;
 }
 
-static int ath12k_link_sta_rhash_addr_tbl_init(struct ath12k_base *ab)
+void ath12k_link_sta_hlist_delete(struct ath12k *ar,
+				  struct ath12k_link_sta *arsta)
 {
-	struct rhashtable_params *param;
-	struct rhashtable *rhash_addr_tbl;
-	int ret;
-	size_t size;
+	lockdep_assert_held(&ar->arsta_lock);
 
-	lockdep_assert_held(&ab->tbl_mtx_lock);
+	if (!hlist_unhashed(&arsta->hlist_addr))
+		hlist_del_init(&arsta->hlist_addr);
 
-	if (ab->rhead_sta_addr)
+	return;
+}
+
+int ath12k_link_sta_hlist_init(struct ath12k *ar)
+{
+	u32 sta_max, buckets;
+
+	lockdep_assert_held(&ar->arsta_lock);
+
+	if (ar->arsta_list) {
+		__hash_init(ar->arsta_list, BIT(ar->arsta_hash_bits));
 		return 0;
+	}
 
-	size = sizeof(*ab->rhead_sta_addr);
-	rhash_addr_tbl = kzalloc(size, GFP_KERNEL);
-	if (!rhash_addr_tbl)
+	sta_max = ath12k_core_get_max_station_per_radio(ar->ab);
+
+	ar->arsta_hash_bits = order_base_2(sta_max);
+
+	buckets = BIT(ar->arsta_hash_bits);
+	ar->arsta_list = kcalloc(buckets, sizeof(*ar->arsta_list), GFP_ATOMIC);
+	if (!ar->arsta_list)
 		return -ENOMEM;
 
-	param = &ab->rhash_sta_addr_param;
-
-	param->key_offset = offsetof(struct ath12k_link_sta, addr);
-	param->head_offset = offsetof(struct ath12k_link_sta, rhash_addr);
-	param->key_len = sizeof_field(struct ath12k_link_sta, addr);
-	param->automatic_shrinking = true;
-	param->nelem_hint = ab->num_radios * ath12k_core_get_max_peers_per_radio(ab);
-
-	ret = rhashtable_init(rhash_addr_tbl, param);
-	if (ret) {
-		ath12k_warn(ab, "failed to init peer addr rhash table %d\n",
-			    ret);
-		goto err_free;
-	}
-
-	if (!ab->rhead_sta_addr)
-		ab->rhead_sta_addr = rhash_addr_tbl;
-	else
-		goto cleanup_tbl;
+	__hash_init(ar->arsta_list, buckets);
 
 	return 0;
-
-cleanup_tbl:
-	rhashtable_destroy(rhash_addr_tbl);
-err_free:
-	kfree(rhash_addr_tbl);
-
-	return ret;
 }
 
-int ath12k_link_sta_rhash_tbl_init(struct ath12k_base *ab)
+void ath12k_link_sta_hlist_head_destroy(struct ath12k *ar)
 {
-	int ret;
+	lockdep_assert_held(&ar->arsta_lock);
 
-	mutex_lock(&ab->tbl_mtx_lock);
-	ret = ath12k_link_sta_rhash_addr_tbl_init(ab);
-	mutex_unlock(&ab->tbl_mtx_lock);
-
-	return ret;
+	kfree(ar->arsta_list);
+	ar->arsta_list = NULL;
+	ar->arsta_hash_bits = 0;
 }
 
-void ath12k_link_sta_rhash_tbl_destroy(struct ath12k_base *ab)
+void ath12k_link_sta_hlist_destroy(struct ath12k *ar)
 {
-	mutex_lock(&ab->tbl_mtx_lock);
+	struct ath12k_link_sta *arsta;
+	struct hlist_node *tmp;
+	u32 bkt;
 
-	if (!ab->rhead_sta_addr)
-		goto unlock;
+	lockdep_assert_held(&ar->arsta_lock);
 
-	rhashtable_destroy(ab->rhead_sta_addr);
-	kfree(ab->rhead_sta_addr);
-	ab->rhead_sta_addr = NULL;
+	if (!ar->arsta_list)
+		return;
 
-unlock:
-	mutex_unlock(&ab->tbl_mtx_lock);
+	for (bkt = 0; bkt < BIT(ar->arsta_hash_bits); bkt++) {
+		hlist_for_each_entry_safe(arsta, tmp, &ar->arsta_list[bkt], hlist_addr)
+			hash_del(&arsta->hlist_addr);
+	}
 }
 
-struct ath12k_link_sta *ath12k_link_sta_find_by_addr(struct ath12k_base *ab,
+bool ath12k_link_sta_hlist_empty(struct ath12k *ar)
+{
+	lockdep_assert_held(&ar->arsta_lock);
+
+	return !ar->arsta_list ||
+	       __hash_empty(ar->arsta_list, BIT(ar->arsta_hash_bits));
+}
+
+struct ath12k_link_sta *ath12k_link_sta_find_by_addr(struct ath12k *ar,
 						     const u8 *addr)
 {
-	lockdep_assert_held(&ab->base_lock);
+	struct ath12k_link_sta *arsta;
+	struct hlist_head *bucket;
 
-	if (!ab->rhead_sta_addr)
+	lockdep_assert_held(&ar->arsta_lock);
+
+	if (!ar->arsta_list)
 		return NULL;
 
-	return rhashtable_lookup_fast(ab->rhead_sta_addr, addr,
-				      ab->rhash_sta_addr_param);
+	bucket = &ar->arsta_list[ath12k_link_sta_hash_idx(ar, addr)];
+	hlist_for_each_entry(arsta, bucket, hlist_addr) {
+		if (ether_addr_equal(arsta->addr, addr))
+			return arsta;
+	}
+
+	return NULL;
 }
 EXPORT_SYMBOL(ath12k_link_sta_find_by_addr);
+
+struct ath12k_link_sta *ath12k_link_sta_find_by_addr_vdev_id(struct ath12k *ar,
+							     const u8 *addr,
+							     u32 vdev_id)
+{
+	struct ath12k_link_sta *arsta;
+	struct hlist_head *bucket;
+
+	lockdep_assert_held(&ar->arsta_lock);
+
+	if (!ar->arsta_list)
+		return NULL;
+
+	bucket = &ar->arsta_list[ath12k_link_sta_hash_idx(ar, addr)];
+	hlist_for_each_entry(arsta, bucket, hlist_addr) {
+		if (ether_addr_equal(arsta->addr, addr) &&
+		    arsta->arvif->vdev_id == vdev_id)
+			return arsta;
+	}
+
+	return NULL;
+}
+EXPORT_SYMBOL(ath12k_link_sta_find_by_addr_vdev_id);
+
+/**
+ * ath12k_arsta_itr_on_ar_by_vdev_id - iterate over all arsta entries on a
+ *                                     radio matching @vdev_id and invoke @cb
+ * @ar:     radio whose arsta hash table is searched
+ * @vdev_id: vdev identifier to match against arsta->arvif->vdev_id
+ * @cb:     callback invoked for every matching arsta;
+ *          called with ar->arsta_lock held (BH-disabled). Return 0 to
+ *          continue iterating, negative errno to stop and propagate.
+ * @data:   opaque context forwarded verbatim to @cb
+ *
+ * The caller must hold ar->arsta_lock.  The caller must not sleep inside @cb.
+ *
+ * Returns 0 if all matching arsta entries were visited successfully,
+ * -ENODEV if the hash table is not initialised, or the first negative
+ * errno returned by @cb.
+ */
+int ath12k_arsta_itr_on_ar_by_vdev_id(struct ath12k *ar, u32 vdev_id,
+				      ath12k_arsta_vdev_iter_cb cb, void *data)
+{
+	struct ath12k_link_sta *arsta;
+	struct hlist_node *tmp;
+	u32 bkt;
+	int ret;
+
+	lockdep_assert_held(&ar->arsta_lock);
+
+	if (!ar->arsta_list)
+		return -ENODEV;
+
+	for (bkt = 0; bkt < BIT(ar->arsta_hash_bits); bkt++) {
+		hlist_for_each_entry_safe(arsta, tmp, &ar->arsta_list[bkt],
+					  hlist_addr) {
+			if (!arsta->arvif ||
+			    arsta->arvif->vdev_id != vdev_id)
+				continue;
+
+			ret = cb(ar, arsta, data);
+			if (ret)
+				return ret;
+		}
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_arsta_itr_on_ar_by_vdev_id);
+
+/**
+ * ath12k_arsta_itr_on_ab_by_addr - iterate over all radios to find and act on
+ *                                  a link STA matching @addr
+ * @ab:   base device whose radios are searched
+ * @addr: link MAC address to look up
+ * @cb:   callback invoked for the first matching arsta on each radio;
+ *        called with ar->arsta_lock held (BH-disabled).
+ * @data: opaque context forwarded verbatim to @cb
+ *
+ * Acquires rcu_read_lock() for the duration of the walk.  The caller must
+ * not sleep inside @cb.
+ *
+ * Returns %true if a matching arsta was found and @cb was invoked,
+ * %false otherwise.
+ */
+bool ath12k_arsta_itr_on_ab_by_addr(struct ath12k_base *ab, const u8 *addr,
+				    ath12k_arsta_iter_cb cb, void *data)
+{
+	struct ath12k_pdev *pdev;
+	struct ath12k *ar;
+	struct ath12k_link_sta *arsta;
+	int i;
+
+	rcu_read_lock();
+	for (i = 0; i < ab->num_radios; i++) {
+		pdev = rcu_dereference(ab->pdevs_active[i]);
+		if (!pdev || !pdev->ar)
+			continue;
+
+		ar = pdev->ar;
+
+		spin_lock_bh(&ar->arsta_lock);
+		arsta = ath12k_link_sta_find_by_addr(ar, addr);
+		if (!arsta) {
+			spin_unlock_bh(&ar->arsta_lock);
+			continue;
+		}
+
+		cb(ar, arsta, data);
+		spin_unlock_bh(&ar->arsta_lock);
+		rcu_read_unlock();
+		return true;
+	}
+	rcu_read_unlock();
+
+	return false;
+}
+EXPORT_SYMBOL(ath12k_arsta_itr_on_ab_by_addr);
 
 int ath12k_peer_send_assoc_vendor_response(const struct ath12k_dp_link_peer *peer,
 					   bool is_assoc)

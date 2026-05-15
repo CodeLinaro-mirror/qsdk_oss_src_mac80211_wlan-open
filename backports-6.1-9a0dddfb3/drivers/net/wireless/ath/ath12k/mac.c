@@ -1661,12 +1661,11 @@ static int ath12k_mac_set_kickout(struct ath12k_link_vif *arvif)
 	return 0;
 }
 
-void ath12k_mac_link_sta_rhash_cleanup(void *data,
+void ath12k_mac_link_sta_hlist_cleanup(void *data,
 				       struct ieee80211_sta *sta)
 {
 	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
 	struct ath12k *ar = data;
-	struct ath12k_base *ab = ar->ab;
 	struct ath12k_link_sta *arsta;
 	struct ath12k_link_vif *arvif;
 	u8 link_id;
@@ -1680,9 +1679,9 @@ void ath12k_mac_link_sta_rhash_cleanup(void *data,
 		if (!(arvif->ar == ar))
 			continue;
 
-		spin_lock_bh(&ab->base_lock);
-		ath12k_link_sta_rhash_delete(ab, arsta);
-		spin_unlock_bh(&ab->base_lock);
+		spin_lock_bh(&ar->arsta_lock);
+		ath12k_link_sta_hlist_delete(ar, arsta);
+		spin_unlock_bh(&ar->arsta_lock);
 	}
 }
 
@@ -1861,9 +1860,9 @@ int ath12k_mac_partner_peer_cleanup(struct ath12k_base *ab)
 								       ahsta,
 								       arsta->link_id);
 
-				spin_lock_bh(&partner_ab->base_lock);
-				ath12k_link_sta_rhash_delete(partner_ab, arsta);
-				spin_unlock_bh(&partner_ab->base_lock);
+				spin_lock_bh(&ar->arsta_lock);
+				ath12k_link_sta_hlist_delete(ar, arsta);
+				spin_unlock_bh(&ar->arsta_lock);
 
 				arvif->num_stations--;
 				wiphy_work_cancel(wiphy, &arsta->update_wk);
@@ -1975,21 +1974,27 @@ void ath12k_mac_dp_peer_cleanup(struct ath12k *ar)
 	ar->num_peers = 0;
 	ar->num_stations = 0;
 
-	/* Cleanup rhash table maintained for arsta by iterating over sta
+	/* Cleanup address hash maintained for arsta by iterating over sta
 	 */
 	ieee80211_iterate_stations_atomic(ar->ah->hw,
-					  ath12k_mac_link_sta_rhash_cleanup,
+					  ath12k_mac_link_sta_hlist_cleanup,
 					  ar);
 
-	/* The rhash table should be empty after cleanup
-	 */
-	if (atomic_read(&ab->rhead_sta_addr->nelems)) {
-		ath12k_warn(ab,
-			    "Destroying rhash table and has stale entries %d\n",
-			    atomic_read(&ab->rhead_sta_addr->nelems));
-		ath12k_link_sta_rhash_tbl_destroy(ab);
-		ath12k_link_sta_rhash_tbl_init(ab);
+	/* The hash table should be empty after cleanup. */
+	spin_lock_bh(&ar->arsta_lock);
+	if (ar->arsta_list) {
+		if (!ath12k_link_sta_hlist_empty(ar)) {
+			ath12k_warn(ar->ab,
+				    "Destroying hash table and has stale entries\n");
+			ath12k_link_sta_hlist_destroy(ar);
+		}
 	}
+
+	if (ath12k_link_sta_hlist_init(ar)) {
+		WARN_ON(1);
+		ath12k_warn(ar->ab, "failed to reinit arsta hash table\n");
+	}
+	spin_unlock_bh(&ar->arsta_lock);
 
 	/* Delete all the self dp_peers on asserted radio
 	 */
@@ -12999,7 +13004,6 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 	struct ieee80211_vif *vif = ahvif->vif;
 	bool skip_peer_del = false;
 	int ret = 0;
-	struct ath12k_link_sta *temp_arsta = NULL;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -13052,14 +13056,9 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 
 	ath12k_cfr_decrement_peer_count(ar, arsta);
 
-	spin_lock_bh(&ar->ab->base_lock);
-
-	/* To handle roaming and split phy scenario */
-	temp_arsta = ath12k_link_sta_find_by_addr(ar->ab, arsta->addr);
-	if (temp_arsta && temp_arsta->arvif->ar == ar)
-		ath12k_link_sta_rhash_delete(ar->ab, arsta);
-
-	spin_unlock_bh(&ar->ab->base_lock);
+	spin_lock_bh(&ar->arsta_lock);
+	ath12k_link_sta_hlist_delete(ar, arsta);
+	spin_unlock_bh(&ar->arsta_lock);
 
 	if (ahsta->links_map)
 		ath12k_mac_free_unassign_link_sta(ahvif->ah,
@@ -13078,7 +13077,6 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(arsta->ahsta);
 	struct ath12k_wmi_peer_create_arg peer_param = {0};
 	int ret;
-	struct ath12k_link_sta *temp_arsta = NULL;
 	bool skip_num_sta_dec = false;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
@@ -13090,20 +13088,9 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 		goto exit;
 	}
 
-	spin_lock_bh(&ab->base_lock);
-
-	/* In case of Split PHY and roaming scenario, pdev idx
-	 * might differ but both the pdev will share same rhash
-	 * table. In that case update the rhash table if link_sta is
-	 * already present
-	 */
-	temp_arsta = ath12k_link_sta_find_by_addr(ab, arsta->addr);
-	if (temp_arsta && temp_arsta->arvif->ar != ar)
-		ath12k_link_sta_rhash_delete(ab, temp_arsta);
-
-	ret = ath12k_link_sta_rhash_add(ab, arsta);
-
-	spin_unlock_bh(&ab->base_lock);
+	spin_lock_bh(&ar->arsta_lock);
+	ret = ath12k_link_sta_hlist_add(ar, arsta);
+	spin_unlock_bh(&ar->arsta_lock);
 	if (ret) {
 		ath12k_warn(ab, "Failed to add peer: %pM to hash table", arsta->addr);
 		goto dec_num_station;
@@ -13173,9 +13160,9 @@ free_peer:
 	}
 
 rhash_delete:
-	spin_lock_bh(&ab->base_lock);
-	ath12k_link_sta_rhash_delete(ab, arsta);
-	spin_unlock_bh(&ab->base_lock);
+	spin_lock_bh(&ar->arsta_lock);
+	ath12k_link_sta_hlist_delete(ar, arsta);
+	spin_unlock_bh(&ar->arsta_lock);
 dec_num_station:
 	if (!skip_num_sta_dec)
 		ath12k_mac_dec_num_stations(arvif, arsta->ahsta);
@@ -13212,6 +13199,7 @@ static int ath12k_mac_assign_link_sta(struct ath12k_hw *ah,
 		return -EINVAL;
 
 	memset(arsta, 0, sizeof(*arsta));
+	INIT_HLIST_NODE(&arsta->hlist_addr);
 	arsta->max_rssi = S8_MIN;
 	arsta->min_rssi = S8_MAX;
 
@@ -15123,13 +15111,12 @@ skip_pri_link_selection:
 				/* Free the moved link memory after removing
 				 * entry from rhash table.
 				 */
-				spin_lock_bh(&tmp_ar->ab->base_lock);
-				ath12k_link_sta_rhash_delete(tmp_ar->ab, tmp_arsta);
-				spin_unlock_bh(&tmp_ar->ab->base_lock);
+				spin_lock_bh(&tmp_ar->arsta_lock);
+				ath12k_link_sta_hlist_delete(tmp_ar, tmp_arsta);
+				spin_unlock_bh(&tmp_ar->arsta_lock);
 				kfree(tmp_arsta);
 
 				def_arsta = &ahsta->deflink;
-				def_arsta->rhash_done = false;
 				wiphy_work_init(&def_arsta->update_wk, ath12k_sta_rc_update_wk);
 				ahsta->assoc_link_id = tmp_link_id;
 				rcu_assign_pointer(ahsta->link[tmp_link_id], def_arsta);
@@ -15137,9 +15124,9 @@ skip_pri_link_selection:
 
 				/* Re-add the deflink addr to hash table
 				 */
-				spin_lock_bh(&tmp_ar->ab->base_lock);
-				ath12k_link_sta_rhash_add(tmp_ar->ab, def_arsta);
-				spin_unlock_bh(&tmp_ar->ab->base_lock);
+				spin_lock_bh(&tmp_ar->arsta_lock);
+				ath12k_link_sta_hlist_add(tmp_ar, def_arsta);
+				spin_unlock_bh(&tmp_ar->arsta_lock);
 				ath12k_dp_arch_assoc_link_update(tmp_ar->ab->dp, ah, sta);
 			}
 		}
@@ -26678,7 +26665,15 @@ static int ath12k_mac_setup(struct ath12k *ar)
 	ar->radio_cfg.chan144_enabled = false;
 
 	spin_lock_init(&ar->data_lock);
+	spin_lock_init(&ar->arsta_lock);
 	INIT_LIST_HEAD(&ar->arvifs);
+	spin_lock_bh(&ar->arsta_lock);
+	ret = ath12k_link_sta_hlist_init(ar);
+	spin_unlock_bh(&ar->arsta_lock);
+	if (ret) {
+		ath12k_err(ab, "failed to init arsta hash table: %d\n", ret);
+		return ret;
+	}
 	INIT_LIST_HEAD(&ar->dp.ppdu_stats_info);
 
 	init_completion(&ar->vdev_setup_done);
@@ -27095,10 +27090,12 @@ void ath12k_mac_destroy(struct ath12k_hw_group *ag)
 			if (pdev->peer_del_tracker)
 				ath12k_peer_del_tracker_destroy(pdev);
 
+			spin_lock_bh(&pdev->ar->arsta_lock);
+			ath12k_link_sta_hlist_destroy(pdev->ar);
+			ath12k_link_sta_hlist_head_destroy(pdev->ar);
+			spin_unlock_bh(&pdev->ar->arsta_lock);
 			pdev->ar = NULL;
 		}
-
-		ath12k_link_sta_rhash_tbl_destroy(ab);
 	}
 
 	for (i = 0; i < ag->num_hw; i++) {
@@ -27153,9 +27150,7 @@ int ath12k_mac_allocate(struct ath12k_hw_group *ag)
 
 			}
 		}
-		ath12k_link_sta_rhash_tbl_init(ab);
 	}
-
 	if (!total_radio)
 		return -EINVAL;
 

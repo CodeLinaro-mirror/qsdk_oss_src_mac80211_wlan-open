@@ -63,11 +63,13 @@ int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif, struct ath12k_st
 int ath12k_peer_send_assoc_vendor_response(const struct ath12k_dp_link_peer *peer,
 					   const bool is_assoc);
 
-int ath12k_link_sta_rhash_tbl_init(struct ath12k_base *ab);
-void ath12k_link_sta_rhash_tbl_destroy(struct ath12k_base *ab);
-int ath12k_link_sta_rhash_delete(struct ath12k_base *ab, struct ath12k_link_sta *arsta);
-int ath12k_link_sta_rhash_add(struct ath12k_base *ab, struct ath12k_link_sta *arsta);
-struct ath12k_link_sta *ath12k_link_sta_find_by_addr(struct ath12k_base *ab, const u8 *addr);
+int ath12k_link_sta_hlist_init(struct ath12k *ar);
+void ath12k_link_sta_hlist_head_destroy(struct ath12k *ar);
+void ath12k_link_sta_hlist_destroy(struct ath12k *ar);
+bool ath12k_link_sta_hlist_empty(struct ath12k *ar);
+void ath12k_link_sta_hlist_delete(struct ath12k *ar, struct ath12k_link_sta *arsta);
+int ath12k_link_sta_hlist_add(struct ath12k *ar, struct ath12k_link_sta *arsta);
+struct ath12k_link_sta *ath12k_link_sta_find_by_addr(struct ath12k *ar, const u8 *addr);
 void ath12k_mac_peer_disassoc(struct ath12k_base *ab, struct ieee80211_sta *sta,
 			      struct ath12k_sta *ahsta,
 			      enum ath12k_debug_mask debug_mask);
@@ -117,4 +119,34 @@ struct ath12k_link_sta *ath12k_peer_get_link_sta(struct ath12k_base *ab,
 		}
 	return arsta;
 }
+
+/**
+ * typedef ath12k_arsta_iter_cb - callback for ath12k_arsta_itr_on_ab_by_addr()
+ * @ar:    radio on which @arsta was found
+ * @arsta: the matching link STA (found under @ar->arsta_lock)
+ * @data:  caller-supplied opaque context
+ *
+ * Called with @ar->arsta_lock held (BH-disabled).
+ */
+typedef void (*ath12k_arsta_iter_cb)(struct ath12k *ar,
+				     struct ath12k_link_sta *arsta,
+				     void *data);
+
+/**
+ * typedef ath12k_arsta_vdev_iter_cb - callback for ath12k_arsta_itr_on_ar_by_vdev_id()
+ * @ar:    radio on which @arsta was found
+ * @arsta: the matching link STA (found under @ar->arsta_lock)
+ * @data:  caller-supplied opaque context
+ *
+ * Called with @ar->arsta_lock held (BH-disabled). Return 0 to continue
+ * iterating, negative errno to stop and propagate the error.
+ */
+typedef int (*ath12k_arsta_vdev_iter_cb)(struct ath12k *ar,
+					 struct ath12k_link_sta *arsta,
+					 void *data);
+
+bool ath12k_arsta_itr_on_ab_by_addr(struct ath12k_base *ab, const u8 *addr,
+				    ath12k_arsta_iter_cb cb, void *data);
+int ath12k_arsta_itr_on_ar_by_vdev_id(struct ath12k *ar, u32 vdev_id,
+				      ath12k_arsta_vdev_iter_cb cb, void *data);
 #endif /* _PEER_H_ */

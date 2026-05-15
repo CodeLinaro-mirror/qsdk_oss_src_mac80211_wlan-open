@@ -12465,11 +12465,11 @@ static int ath12k_vendor_get_sta_info_dumpit(struct wiphy *wiphy,
 	if (!arvif || !arvif->ar || !arvif->ar->ab)
 		return -ENOLINK;
 
-	spin_lock_bh(&arvif->ar->ab->base_lock);
+	spin_lock_bh(&arvif->ar->arsta_lock);
 
-	arsta = ath12k_link_sta_find_by_addr(arvif->ar->ab, peer_mac);
+	arsta = ath12k_link_sta_find_by_addr(arvif->ar, peer_mac);
 	if (!arsta) {
-		spin_unlock_bh(&arvif->ar->ab->base_lock);
+		spin_unlock_bh(&arvif->ar->arsta_lock);
 		return -ENOENT;
 	}
 
@@ -12495,13 +12495,13 @@ static int ath12k_vendor_get_sta_info_dumpit(struct wiphy *wiphy,
 		       arsta->peer_ps_state))
 		goto unlock;
 
-	spin_unlock_bh(&arvif->ar->ab->base_lock);
+	spin_unlock_bh(&arvif->ar->arsta_lock);
 
 	*storage += 1;
 	return skb->len;
 
 unlock:
-	spin_unlock_bh(&arvif->ar->ab->base_lock);
+	spin_unlock_bh(&arvif->ar->arsta_lock);
 	return -ENOBUFS;
 }
 
