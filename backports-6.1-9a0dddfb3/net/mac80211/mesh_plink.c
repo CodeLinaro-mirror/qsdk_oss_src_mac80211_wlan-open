@@ -222,12 +222,13 @@ static int mesh_plink_frame_tx(struct ieee80211_sub_if_data *sdata,
 	bool include_plid = false;
 	u16 peering_proto = 0;
 	u8 *pos, ie_len = 4;
-	u8 ie_len_he_cap, ie_len_eht_cap;
+	u8 ie_len_he_cap, ie_len_eht_cap, ie_len_uhr_cap;
 	int hdr_len = offsetofend(struct ieee80211_mgmt, u.action.u.self_prot);
 	int err = -ENOMEM;
 
 	ie_len_he_cap = ieee80211_ie_len_he_cap(sdata);
 	ie_len_eht_cap = ieee80211_ie_len_eht_cap(sdata);
+	ie_len_uhr_cap = ieee80211_ie_len_uhr_cap(sdata);
 	skb = dev_alloc_skb(local->tx_headroom +
 			    hdr_len +
 			    2 + /* capability info */
@@ -247,6 +248,8 @@ static int mesh_plink_frame_tx(struct ieee80211_sub_if_data *sdata,
 			    ie_len_eht_cap +
 			    2 + 1 + offsetof(struct ieee80211_eht_operation, optional) +
 				    offsetof(struct ieee80211_eht_operation_info, optional) +
+			    ie_len_uhr_cap +
+			    2 + 1 + sizeof(struct ieee80211_uhr_operation) +
 			    2 + 8 + /* peering IE */
 			    sdata->u.mesh.ie_len);
 	if (!skb)
@@ -348,7 +351,9 @@ static int mesh_plink_frame_tx(struct ieee80211_sub_if_data *sdata,
 		    mesh_add_he_oper_ie(sdata, skb) ||
 		    mesh_add_he_6ghz_cap_ie(sdata, skb) ||
 		    mesh_add_eht_cap_ie(sdata, skb, ie_len_eht_cap) ||
-		    mesh_add_eht_oper_ie(sdata, skb))
+		    mesh_add_eht_oper_ie(sdata, skb) ||
+		    mesh_add_uhr_cap_ie(sdata, skb) ||
+		    mesh_add_uhr_oper_ie(sdata, skb))
 			goto free;
 	}
 
