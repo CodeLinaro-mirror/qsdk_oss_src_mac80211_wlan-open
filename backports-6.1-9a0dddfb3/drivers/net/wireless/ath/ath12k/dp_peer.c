@@ -14,6 +14,26 @@
 #include "qcn_extns/ipa/dp_ipa.h"
 #endif
 
+u16 ath12k_dp_get_peer_based_tcl_metadata(struct ath12k_dp *dp, u16 peer_id,
+					  u8 valid_htt_ext)
+{
+	u16 metadata = 0;
+
+	if (dp->tcl_metadata_ver == HTT_OPTION_TCL_METADATA_VER_V3) {
+		metadata = u32_encode_bits(0, HTT_TCL_META_DATA_TYPE_V3) |
+			   u32_encode_bits(peer_id, HTT_TCL_META_DATA_PEER_ID_V3) |
+			   u32_encode_bits(valid_htt_ext, HTT_TCL_META_DATA_VALID_HTT_V3);
+
+		return metadata;
+	}
+
+	metadata = u32_encode_bits(0, HTT_TCL_META_DATA_TYPE) |
+		   u32_encode_bits(peer_id, HTT_TCL_META_DATA_PEER_ID) |
+		   u32_encode_bits(valid_htt_ext, HTT_TCL_META_DATA_VALID_HTT);
+
+	return metadata;
+}
+
 struct ath12k_dp_link_peer *
 ath12k_dp_link_peer_find_by_vdev_id_and_addr(struct ath12k_dp *dp,
 					     int vdev_id, const u8 *addr)
@@ -652,9 +672,7 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 	peer->dp_peer = dp_peer;
 	peer->hw_link_id = hw_link_id;
 	peer->event.common.hw_link_id = hw_link_id;
-	peer->tcl_metadata |= u32_encode_bits(0, HTT_TCL_META_DATA_TYPE) |
-			      u32_encode_bits(peer->peer_id, HTT_TCL_META_DATA_PEER_ID);
-	peer->tcl_metadata &= ~HTT_TCL_META_DATA_VALID_HTT;
+	peer->tcl_metadata |= ath12k_dp_get_peer_based_tcl_metadata(dp, peer->peer_id, 0);
 
 	ret = ath12k_dp_peer_link_stats_alloc(peer, dp_pdev);
 	if (ret)
