@@ -32,4 +32,5 @@ ath12k_wifi8-y += core.o \
 ath12k_wifi8-$(CPTCFG_QCN_EXTN) += qcn_extns/mgmt_rx_extn.o
 ath12k_wifi8-$(CPTCFG_ATH12K_PPE_DS_SUPPORT) += ppeds.o
 ath12k_wifi8-$(CPTCFG_EXT_IPA_OFFLOAD) += qcn_extns/ipa/dp_ipa_fse.o \
-					  qcn_extns/ipa/dp_ipa.o
+					  qcn_extns/ipa/dp_ipa.o \
+					  qcn_extns/ipa/dp_ipa_rx.o

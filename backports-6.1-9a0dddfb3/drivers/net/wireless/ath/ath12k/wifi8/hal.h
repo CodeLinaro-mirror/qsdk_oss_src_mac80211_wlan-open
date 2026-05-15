@@ -103,6 +103,9 @@ enum rdi_based_source_ring_selection {
 	SOURCE_RING_CTRL_UNUSED,
 	SOURCE_RING_CTRL_MGMT,
 	SOURCE_RING_CTRL_FW2,
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	SOURCE_RING_CTRL_IPA,
+#endif
 };
 
 /* calculate the register address from bar0 of shadow register x */

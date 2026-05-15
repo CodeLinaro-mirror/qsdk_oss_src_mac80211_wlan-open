@@ -210,7 +210,11 @@ static struct ath12k_hw_ring_mask ath12k_wifi8_hw_ring_mask_qcn9625 = {
 		ATH12K_WIFI8_REGULAR_RX_RING_MASK(2),
 		ATH12K_WIFI8_REGULAR_RX_RING_MASK(3),
 		0, 0, 0,
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+		0,
+#else
 		ATH12K_WIFI8_REGULAR_RX_RING_MASK(4),
+#endif
 		0,
 		BIT(ATH12K_DP_RX_ROAMING_RING1),
 	},
