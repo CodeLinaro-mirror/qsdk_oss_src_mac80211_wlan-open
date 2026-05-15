@@ -702,6 +702,7 @@ int ath12k_wifi7_dp_rx_process_wbm_err(struct ath12k_dp *dp,
 	struct hal_wbm_release_ring *hw_rx_desc = NULL;
 	struct hal_wbm_release_ring *next_hw_rx_desc = NULL;
 	struct hal_wbm_release_ring *pf_next_hw_rx_desc = NULL;
+	int rx_status_idx = smp_processor_id() + DP_REO_DST_RING_MAX;
 	u8 device_id;
 	u16 total_rx_reaped = 0;
 	u16 num_rx_reaped = 0;
@@ -733,7 +734,7 @@ int ath12k_wifi7_dp_rx_process_wbm_err(struct ath12k_dp *dp,
 		valid_entries = budget;
 
 	rx_status_desc =
-		(struct hal_rx_spd_data *)dp_hw_grp->rx_status_buf[4];
+		(struct hal_rx_spd_data *)dp_hw_grp->rx_status_buf[rx_status_idx];
 
 	ath12k_dp_srng_dst_invalidate_entries(dp, srng, valid_entries);
 
