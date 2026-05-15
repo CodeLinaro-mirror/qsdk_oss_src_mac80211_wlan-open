@@ -1039,14 +1039,14 @@ void ath12k_mac_peer_disassoc(struct ath12k_base *ab, struct ieee80211_sta *sta,
 	}
 }
 
-static u64 ath12k_link_sta_hash_key(const u8 *addr)
+static u64 ath12k_htlist_hash_key(const u8 *addr)
 {
 	return ether_addr_to_u64(addr);
 }
 
 static u32 ath12k_link_sta_hash_idx(struct ath12k *ar, const u8 *addr)
 {
-	u64 key = ath12k_link_sta_hash_key(addr);
+	u64 key = ath12k_htlist_hash_key(addr);
 
 	return hash_min(key, ar->arsta_hash_bits);
 }
@@ -1285,6 +1285,140 @@ bool ath12k_arsta_itr_on_ab_by_addr(struct ath12k_base *ab, const u8 *addr,
 	return false;
 }
 EXPORT_SYMBOL(ath12k_arsta_itr_on_ab_by_addr);
+
+/* ahsta (ath12k_sta) group-level hashtable */
+static u32 ath12k_sta_hash_idx(struct ath12k_hw_group *ag, const u8 *addr)
+{
+	return hash_min(ath12k_htlist_hash_key(addr), ag->ahsta_hash_bits);
+}
+
+int ath12k_sta_hlist_add(struct ath12k_hw_group *ag,
+			 struct ath12k_sta *ahsta)
+{
+	struct ath12k_sta *tmp;
+	struct hlist_head *bucket;
+
+	lockdep_assert_held(&ag->ahsta_lock);
+
+	if (!ag->ahsta_list)
+		return -EINVAL;
+
+	bucket = &ag->ahsta_list[ath12k_sta_hash_idx(ag, ahsta->addr)];
+	hlist_for_each_entry(tmp, bucket, hlist_addr) {
+		if (ether_addr_equal(tmp->addr, ahsta->addr))
+			return -EEXIST;
+	}
+
+	if (!hlist_unhashed(&ahsta->hlist_addr)) {
+		pr_warn("ath12k: ahsta %pM already in group hash list\n",
+			ahsta->addr);
+		return -EEXIST;
+	}
+
+	hlist_add_head(&ahsta->hlist_addr, bucket);
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_sta_hlist_add);
+
+int ath12k_sta_hlist_delete(struct ath12k_hw_group *ag,
+			    struct ath12k_sta *ahsta)
+{
+	lockdep_assert_held(&ag->ahsta_lock);
+
+	if (!hlist_unhashed(&ahsta->hlist_addr))
+		hlist_del_init(&ahsta->hlist_addr);
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_sta_hlist_delete);
+
+int ath12k_sta_hlist_init(struct ath12k_hw_group *ag)
+{
+	struct ath12k_base *ab;
+	u32 sta_max = 0, buckets;
+	int i;
+
+	lockdep_assert_held(&ag->ahsta_lock);
+
+	if (ag->ahsta_list) {
+		__hash_init(ag->ahsta_list, BIT(ag->ahsta_hash_bits));
+		return 0;
+	}
+
+	if (!ag->num_devices || !ag->num_hw)
+		return -EINVAL;
+
+	/* Size the table to cover all stations across every device in the group */
+	for (i = 0; i < ag->num_devices; i++) {
+		ab = ag->ab[i];
+		if (ab)
+			sta_max += ath12k_core_get_max_station_per_radio(ab) *
+					ab->num_radios;
+	}
+	if (!sta_max)
+		sta_max = 128 * ag->num_hw;
+
+	ag->ahsta_hash_bits = order_base_2(sta_max);
+
+	buckets = BIT(ag->ahsta_hash_bits);
+	ag->ahsta_list = kcalloc(buckets, sizeof(*ag->ahsta_list), GFP_ATOMIC);
+	if (!ag->ahsta_list)
+		return -ENOMEM;
+
+	__hash_init(ag->ahsta_list, buckets);
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_sta_hlist_init);
+
+void ath12k_sta_hlist_head_destroy(struct ath12k_hw_group *ag)
+{
+	lockdep_assert_held(&ag->ahsta_lock);
+
+	kfree(ag->ahsta_list);
+	ag->ahsta_list = NULL;
+	ag->ahsta_hash_bits = 0;
+}
+EXPORT_SYMBOL(ath12k_sta_hlist_head_destroy);
+
+void ath12k_sta_hlist_destroy(struct ath12k_hw_group *ag)
+{
+	struct ath12k_sta *ahsta;
+	struct hlist_node *tmp;
+	u32 bkt;
+
+	lockdep_assert_held(&ag->ahsta_lock);
+
+	if (!ag->ahsta_list)
+		return;
+
+	for (bkt = 0; bkt < BIT(ag->ahsta_hash_bits); bkt++) {
+		hlist_for_each_entry_safe(ahsta, tmp,
+					  &ag->ahsta_list[bkt], hlist_addr)
+			hash_del(&ahsta->hlist_addr);
+	}
+}
+EXPORT_SYMBOL(ath12k_sta_hlist_destroy);
+
+struct ath12k_sta *ath12k_sta_find_by_addr(struct ath12k_hw_group *ag,
+					   const u8 *addr)
+{
+	struct ath12k_sta *ahsta;
+	struct hlist_head *bucket;
+
+	lockdep_assert_held(&ag->ahsta_lock);
+
+	if (!ag->ahsta_list)
+		return NULL;
+
+	bucket = &ag->ahsta_list[ath12k_sta_hash_idx(ag, addr)];
+	hlist_for_each_entry(ahsta, bucket, hlist_addr) {
+		if (ether_addr_equal(ahsta->addr, addr))
+			return ahsta;
+	}
+
+	return NULL;
+}
+EXPORT_SYMBOL(ath12k_sta_find_by_addr);
 
 int ath12k_peer_send_assoc_vendor_response(const struct ath12k_dp_link_peer *peer,
 					   bool is_assoc)

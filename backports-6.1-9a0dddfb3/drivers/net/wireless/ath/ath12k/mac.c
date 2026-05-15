@@ -14061,14 +14061,29 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 		arvif = wiphy_dereference(wiphy, ahvif->link[link_id]);
 		if (!arvif)
 			goto exit;
+
+		/* Register ahsta in the group-level hashtable.*/
+		if (!ahsta->links_map) {
+			INIT_HLIST_NODE(&ahsta->hlist_addr);
+			ether_addr_copy(ahsta->addr, sta->addr);
+			spin_lock_bh(&ag->ahsta_lock);
+			ret = ath12k_sta_hlist_add(ag, ahsta);
+			spin_unlock_bh(&ag->ahsta_lock);
+			if (ret) {
+				ath12k_hw_warn(ah,
+					       "failed to add ahsta %pM to group hash: %d\n",
+					       sta->addr, ret);
+				goto exit;
+			}
+		}
+
 		ret = ath12k_dp_arch_peer_create(arvif->ar->ab->dp,
 						 ah, sta->addr,
 						 &dp_params, vif);
 		if (ret) {
 			ath12k_hw_warn(ah, "unable to create ath12k_dp_peer for sta %pM",
 				       sta->addr);
-
-			goto exit;
+			goto hash_del;
 		}
 		links_map = ahsta->links_map;
 		if (!test_bit(link_id, &links_map)) {
@@ -14283,6 +14298,11 @@ ml_station_remove:
 						   sta, arvif->ar->hw_link_id);
 
 		wiphy_work_cancel(wiphy, &ahsta->set_4addr_wk);
+
+		/* Remove ahsta from the group-level hashtable. */
+		spin_lock_bh(&ag->ahsta_lock);
+		ath12k_sta_hlist_delete(ag, ahsta);
+		spin_unlock_bh(&ag->ahsta_lock);
 	}
 
 	if (ag->wsi_remap_in_progress && !ah->num_ml_peers) {
@@ -14296,6 +14316,12 @@ peer_delete:
 	if (ret)
 		ath12k_dp_arch_peer_delete(arvif->ar->ab->dp, ah, sta->addr, sta,
 					   arvif->ar->hw_link_id);
+hash_del:
+	if (ret) {
+		spin_lock_bh(&ag->ahsta_lock);
+		ath12k_sta_hlist_delete(ag, ahsta);
+		spin_unlock_bh(&ag->ahsta_lock);
+	}
 exit:
 
 	if (ret && is_recovery)
@@ -27287,6 +27313,14 @@ int ath12k_mac_allocate(struct ath12k_hw_group *ag)
 		ath12k_ag_set_ah(ag, i, ah);
 		ah->ag = ag;
 		ag->num_hw++;
+	}
+
+	spin_lock_bh(&ag->ahsta_lock);
+	ret = ath12k_sta_hlist_init(ag);
+	spin_unlock_bh(&ag->ahsta_lock);
+	if (ret) {
+		ath12k_err(NULL, "failed to init ahsta hash table: %d\n", ret);
+		goto err;
 	}
 
 	return 0;
