@@ -6846,6 +6846,8 @@ struct wiphy_radio {
  * @max_beacon_size: maximum size of the beacon frame supported by the
  *	driver. This field must be set to a non-zero value by the driver to
  *	advertise the maximum allowed size for beacon frame.
+ *
+ *  @sta_dfs: Enable or disable Station DFS support.
  */
 struct wiphy {
 	struct mutex mtx;
@@ -7009,6 +7011,7 @@ struct wiphy {
 
 	u8 mbssid_max_ngroups;
 	u16 max_beacon_size;
+	u8 sta_dfs_en;
 
 	char priv[] __aligned(NETDEV_ALIGN);
 };
