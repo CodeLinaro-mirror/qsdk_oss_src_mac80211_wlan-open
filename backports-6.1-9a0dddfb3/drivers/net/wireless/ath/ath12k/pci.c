@@ -1122,10 +1122,20 @@ void ath12k_pci_power_down(struct ath12k_base *ab, bool is_suspend)
 {
 	struct ath12k_pci *ab_pci = ath12k_pci_priv(ab);
 
+#ifdef CONFIG_IO_COHERENCY
+	int ret;
+#endif
+
 	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
 	ath12k_mhi_soc_reset(ab);
+
+#ifdef CONFIG_IO_COHERENCY
+	ret = ath12k_core_config_iocoherency(ab, false);
+	if (ret)
+		ath12k_err(ab, "failed to configure IOCoherency: %d\n", ret);
+#endif
 
 	/* restore aspm in case firmware bootup fails */
 	ath12k_pci_aspm_restore(ab_pci);
@@ -1302,12 +1312,6 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
 
 	ab->dev = &pdev->dev;
 	pci_set_drvdata(pdev, ab);
-#ifdef CONFIG_IO_COHERENCY
-	pdev->dev.dma_coherent = true;
-	ret = ath12k_core_config_iocoherency(ab, true);
-	if (ret)
-		ath12k_err(ab, "failed to configure IOCoherency: %d\n", ret);
-#endif
 	ab_pci = ath12k_pci_priv(ab);
 	ab_pci->dev_id = pci_dev->device;
 	ab_pci->ab = ab;
@@ -1523,9 +1527,6 @@ static void ath12k_pci_remove(struct pci_dev *pdev)
 {
 	struct ath12k_base *ab = pci_get_drvdata(pdev);
 	struct ath12k_pci *ab_pci = ath12k_pci_priv(ab);
-#ifdef CONFIG_IO_COHERENCY
-	int ret;
-#endif
 
 	ath12k_pci_set_irq_affinity_hint(ab_pci, NULL);
 
@@ -1563,11 +1564,6 @@ qmi_fail:
 	ath12k_dp_ipa_plugin_deregister_ops_extn(ab);
 #endif
 	ath12k_pci_msi_free(ab_pci);
-#ifdef CONFIG_IO_COHERENCY
-	ret = ath12k_core_config_iocoherency(ab, false);
-	if (ret)
-		ath12k_err(ab, "failed to configure IOCoherency: %d\n", ret);
-#endif
 	ath12k_core_free(ab);
 }
 
