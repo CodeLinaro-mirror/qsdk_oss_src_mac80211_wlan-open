@@ -732,7 +732,7 @@ struct hal_rx_spd_data {
 	u8 key_id_octate;
 	u8 rsvd1;
 	u8 ad2[ETH_ALEN];
-	u8 rsvd2[2];
+	u16 cce_metadata;
 } __packed;
 
 static_assert(sizeof(struct hal_rx_spd_data) == 64,

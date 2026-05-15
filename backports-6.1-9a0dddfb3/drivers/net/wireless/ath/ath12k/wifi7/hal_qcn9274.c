@@ -930,6 +930,9 @@ void ath12k_wifi7_hal_extract_rx_spd_data_qcn9274(struct hal_rx_spd_data *rx_inf
 		rx_info->seq_ctl =
 			__le16_to_cpu(rx_desc->u.qcn9274_compact.mpdu_start.seq_ctrl);
 
+		rx_info->cce_metadata =
+			__le16_to_cpu(rx_desc->u.qcn9274_compact.msdu_end.cce_metadata);
+
 		if (__le32_to_cpu(rx_desc->u.qcn9274_compact.mpdu_start.info4) &
 		    RX_MPDU_START_INFO4_MAC_ADDR1_VALID)
 			memcpy(rx_info->ad1,
@@ -1147,7 +1150,6 @@ const struct hal_ops hal_qcn9274_ops = {
 	.hal_mon_ops_init = ath12k_wifi7_hal_mon_ops_init,
 	.get_hw_hptp = ath12k_wifi7_hal_get_hw_hptp,
 	.rx_desc_get_fse_info = ath12k_wifi7_hal_rx_desc_get_fse_info_qcn9274,
-	.rx_desc_get_cce_metadata = ath12k_wifi7_hal_rx_desc_get_cce_metadata_qcn9274,
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 	.reo_hw_setup_ipa = ath12k_hal_reo_ring_ipa_ctrl_hash_ix0_setup,
 #endif
