@@ -12468,7 +12468,7 @@ static int ath12k_vendor_get_sta_info_dumpit(struct wiphy *wiphy,
 	spin_lock_bh(&arvif->ar->arsta_lock);
 
 	arsta = ath12k_link_sta_find_by_addr(arvif->ar, peer_mac);
-	if (!arsta) {
+	if (!arsta || arsta->is_self_peer) {
 		spin_unlock_bh(&arvif->ar->arsta_lock);
 		return -ENOENT;
 	}

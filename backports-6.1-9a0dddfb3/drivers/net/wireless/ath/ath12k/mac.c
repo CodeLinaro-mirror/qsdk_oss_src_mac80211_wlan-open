@@ -1980,6 +1980,25 @@ void ath12k_mac_dp_peer_cleanup(struct ath12k *ar)
 					  ath12k_mac_link_sta_hlist_cleanup,
 					  ar);
 
+	/* Delete all the self dp_peers on asserted radio
+	 */
+	list_for_each_entry_safe_reverse(arvif, tmp_vif, &ar->arvifs, list) {
+		if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
+			ath12k_dp_arch_peer_delete(dp, ar->ah, arvif->bssid,
+						   NULL, ar->hw_link_id);
+			if (arvif->self_arsta) {
+				spin_lock_bh(&ar->arsta_lock);
+				ath12k_link_sta_hlist_delete(ar, arvif->self_arsta);
+				spin_unlock_bh(&ar->arsta_lock);
+				kfree(arvif->self_arsta);
+				arvif->self_arsta = NULL;
+			}
+
+			arvif->num_stations = 0;
+			arvif->num_peers = 0;
+		}
+	}
+
 	/* The hash table should be empty after cleanup. */
 	spin_lock_bh(&ar->arsta_lock);
 	if (ar->arsta_list) {
@@ -1995,17 +2014,6 @@ void ath12k_mac_dp_peer_cleanup(struct ath12k *ar)
 		ath12k_warn(ar->ab, "failed to reinit arsta hash table\n");
 	}
 	spin_unlock_bh(&ar->arsta_lock);
-
-	/* Delete all the self dp_peers on asserted radio
-	 */
-	list_for_each_entry_safe_reverse(arvif, tmp_vif, &ar->arvifs, list) {
-		if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
-			ath12k_dp_arch_peer_delete(dp, ah, arvif->bssid,
-						   NULL, ar->hw_link_id);
-			arvif->num_stations = 0;
-			arvif->num_peers = 0;
-		}
-	}
 
 	/*Dp peer cleanup part*/
 	list_for_each_entry_safe(dp_peer, tmp_dp_peer, &dp_peer_list, list) {
@@ -6453,6 +6461,17 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 
 		ath12k_dp_arch_peer_delete(dp, ah, arvif->bssid,
 					   NULL, ar->hw_link_id);
+
+		/* Remove and free the self-peer arsta that was registered
+		 * in ar->arsta_list during vdev creation.
+		 */
+		if (arvif->self_arsta) {
+			spin_lock_bh(&ar->arsta_lock);
+			ath12k_link_sta_hlist_delete(ar, arvif->self_arsta);
+			spin_unlock_bh(&ar->arsta_lock);
+			kfree(arvif->self_arsta);
+			arvif->self_arsta = NULL;
+		}
 	}
 
 	ath12k_debugfs_remove_interface(arvif);
@@ -18608,6 +18627,42 @@ static int ath12k_mac_cu_mem_setup(struct ath12k *ar,
 	return 0;
 }
 
+/* Expected to be called only for WMI_VDEV_TYPE_AP */
+int ath12k_mac_self_peer_arsta_create(struct ath12k *ar,
+				      struct ath12k_link_vif *arvif,
+				      enum wmi_vdev_type vdev_type)
+{
+	struct ath12k_link_sta *arsta;
+	int ret;
+
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	arsta = kzalloc(sizeof(*arsta), GFP_KERNEL);
+	if (!arsta)
+		return -ENOMEM;
+
+	INIT_HLIST_NODE(&arsta->hlist_addr);
+	arsta->ahsta = NULL;
+	arsta->arvif = arvif;
+	arsta->link_id = arvif->link_id;
+	arsta->is_self_peer = true;
+	ether_addr_copy(arsta->addr, arvif->bssid);
+
+	spin_lock_bh(&ar->arsta_lock);
+	ret = ath12k_link_sta_hlist_add(ar, arsta);
+	spin_unlock_bh(&ar->arsta_lock);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed to add self-peer arsta %pM to hash: %d\n",
+			    arvif->bssid, ret);
+		kfree(arsta);
+		return ret;
+	}
+
+	arvif->self_arsta = arsta;
+	return 0;
+}
+
 int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 			   bool is_bridge_vdev)
 {
@@ -18898,6 +18953,13 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 			goto err_vdev_del;
 		}
 
+		/* Allocate and register a self-peer arsta so that the BSS MAC
+		 * address is reachable via ar->arsta_list lookups.
+		 */
+		ret = ath12k_mac_self_peer_arsta_create(ar, arvif, ahvif->vdev_type);
+		if (ret)
+			goto err_dp_peer_del;
+
 		peer_param.vdev_id = arvif->vdev_id;
 		peer_param.peer_addr = arvif->bssid;
 		peer_param.peer_type = WMI_PEER_TYPE_DEFAULT;
@@ -18907,7 +18969,7 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		if (ret) {
 			ath12k_warn(ab, "failed to vdev %d create peer for AP: %d\n",
 				    arvif->vdev_id, ret);
-			goto err_dp_peer_del;
+			goto err_self_arsta_del;
 		}
 
 		ret = ath12k_mac_set_kickout(arvif);
@@ -19085,6 +19147,15 @@ err_peer_del:
 			ath12k_warn(ar->ab, "failed to delete peer %pM vdev_id %d ret %d\n",
 				    link_addr, arvif->vdev_id, fbret);
 		}
+	}
+
+err_self_arsta_del:
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_AP && arvif->self_arsta) {
+		spin_lock_bh(&ar->arsta_lock);
+		ath12k_link_sta_hlist_delete(ar, arvif->self_arsta);
+		spin_unlock_bh(&ar->arsta_lock);
+		kfree(arvif->self_arsta);
+		arvif->self_arsta = NULL;
 	}
 
 err_dp_peer_del:

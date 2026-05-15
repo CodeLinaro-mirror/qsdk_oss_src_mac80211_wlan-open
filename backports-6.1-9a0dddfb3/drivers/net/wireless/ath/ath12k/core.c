@@ -3653,6 +3653,15 @@ static int ath12k_mlo_core_recovery_reconfig_link_bss(struct ath12k *ar,
 		}
 
 		dp_peer_created = true;
+
+		if (ahvif->vdev_type == WMI_VDEV_TYPE_AP &&
+		    !arvif->self_arsta) {
+			ret = ath12k_mac_self_peer_arsta_create(ar, arvif,
+								ahvif->vdev_type);
+			if (ret)
+				goto exit;
+		}
+
 		param.vdev_id = arvif->vdev_id;
 		param.peer_type = WMI_PEER_TYPE_DEFAULT;
 		param.peer_addr = ar->mac_addr;
@@ -3689,6 +3698,14 @@ exit:
 	if (ret && dp_peer_created)
 		ath12k_dp_arch_peer_delete(ab->dp, ah, arvif->bssid,
 					   NULL, ar->hw_link_id);
+
+	if (ret && arvif->self_arsta) {
+		spin_lock_bh(&ar->arsta_lock);
+		ath12k_link_sta_hlist_delete(ar, arvif->self_arsta);
+		spin_unlock_bh(&ar->arsta_lock);
+		kfree(arvif->self_arsta);
+		arvif->self_arsta = NULL;
+	}
 
 	ath12k_dbg(ab, ATH12K_DBG_MODE1_RECOVERY,
 		   "ret:%d No. of vdev created:%d, links_map:0x%x, flag:%d\n",

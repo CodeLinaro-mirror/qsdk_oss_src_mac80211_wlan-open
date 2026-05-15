@@ -795,6 +795,13 @@ struct ath12k_link_vif {
 
 	/* shared memory to firmware for critical update procedure */
 	struct ath12k_cu_mem *cu_mem;
+
+	/* arsta for the BSS self peer (vdev peer)
+	 * NULL if not yet created or already freed.
+	 * Protected by wiphy->mtx.
+	 */
+	struct ath12k_link_sta *self_arsta;
+
 	dma_addr_t cu_mem_paddr;
 	u32 nav_status;
 	u32 nav_threshold;
@@ -1147,6 +1154,10 @@ struct ath12k_link_sta {
 	u16 ast_idx;
 
 	bool is_bridge_peer;
+	/* true when this arsta represents the BSS self peer (vdev peer),
+	 * ahsta is NULL in this case.
+	 */
+	bool is_self_peer;
 	/* will be saved to use during recovery */
 	struct ieee80211_key_conf *keys[WMI_MAX_KEY_INDEX + 1];
 #ifdef CPTCFG_ATH12K_CFR
