@@ -92,6 +92,7 @@ void ath12k_hal_tx_configure_bank_register(struct ath12k_base *ab,
 {
         ab->hal.hal_ops->tx_configure_bank_register(ab, bank_config, bank_id);
 }
+EXPORT_SYMBOL(ath12k_hal_tx_configure_bank_register);
 
 void ath12k_hal_reoq_lut_addr_read_enable(struct ath12k_base *ab)
 {
@@ -379,6 +380,7 @@ dma_addr_t ath12k_hal_srng_get_hp_addr(struct ath12k_base *ab,
 		       ((unsigned long)srng->u.dst_ring.hp_addr -
 			 (unsigned long)ab->hal.rdp.vaddr);
 }
+EXPORT_SYMBOL(ath12k_hal_srng_get_hp_addr);
 
 dma_addr_t ath12k_hal_srng_get_tp_addr(struct ath12k_base *ab,
 				       struct hal_srng *srng)

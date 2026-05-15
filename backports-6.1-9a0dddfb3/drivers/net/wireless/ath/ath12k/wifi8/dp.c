@@ -28,6 +28,7 @@
 #include "mgmt_rx.h"
 #include "dp_peer.h"
 #include "ppeds.h"
+#include "../qcn_extns/ipa/dp_ipa_pub.h"
 
 extern struct ppe_ds_wlan_ops_v2 ppeds_wifi8_wlanops_v2;
 
@@ -568,10 +569,16 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 	}
 #endif
 
-
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ab->dp->ppe.ppe_ops->ath12k_ppeds_interrupt_start(ab);
 #endif
+
+	ret = ath12k_dp_ipa_init(ab);
+	if (ret) {
+		ath12k_err(ab, "IPA: ipa init failed");
+		goto fail_congestion_control;
+	}
+
 	dp_wifi8->init_done = true;
 	ath12k_info(ab, "CUMAC init successful");
 	return 0;

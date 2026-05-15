@@ -287,12 +287,7 @@ int ath12k_dp_peer_setup(struct ath12k *ar, void *ptr, struct ath12k_link_vif *a
 	if (ar->radio_cfg.pdev_to_reo_dest)
 		reo_dest = ar->radio_cfg.pdev_to_reo_dest;
 
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
-	if (IPA_CTX(ab) && IPA_CTX(ab)->ipa_ops &&
-	    IPA_CTX(ab)->ipa_ops->ipa_set_default_routing)
-		reo_dest = IPA_CTX(ab)->ipa_ops->ipa_set_default_routing
-			(reo_dest);
-#endif
+	reo_dest = ath12k_dp_ipa_arch_op_rx_default_routing(ab, reo_dest);
 
 	ret = ath12k_wmi_set_peer_param(ar, addr, vdev_id,
 					WMI_PEER_SET_DEFAULT_ROUTING,
