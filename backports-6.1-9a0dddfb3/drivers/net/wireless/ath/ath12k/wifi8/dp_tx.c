@@ -1481,6 +1481,13 @@ ath12k_wifi8_dp_tx_process_features(struct ath12k_dp_vif *dp_vif,
 			return DP_TX_RETURN;
 	}
 
+	/* Process Scatter-Gather Feature */
+	if (DP_SKB_FEATURE_ENABLED(skb_ctrl->features, DP_FEATURE_SG)) {
+		msdu_info->ext_kmem = true;
+		msdu_info->ext_desc.ext_feature |= DP_EXT_SG;
+		msdu_info->to_fw = 0;
+	}
+
 	return ret;
 }
 
@@ -1776,10 +1783,12 @@ ath12k_wifi8_dp_tx_update_gsn_metadata(struct ath12k_dp_tx_msdu_info *msdu_info,
  */
 static int
 ath12k_wifi8_dp_ext_desc_populate(struct ath12k_dp *dp,
+				  struct ath12k_dp_vif *dp_vif,
 				  struct ath12k_dp_link_vif *dp_link_vif,
+				  struct sk_buff *skb,
 				  struct ath12k_dp_tx_msdu_info *msdu_info,
 				  struct ath12k_tx_desc_info *tx_desc,
-				  bool gsn_valid, int gsn)
+				  bool gsn_valid, int gsn, u8 ring_id)
 {
 	struct ath12k_dp_ext_desc *ext_desc = NULL;
 	struct ath12k_dp_ext_desc_msdu_info *ext_msdu_info =
@@ -1825,6 +1834,10 @@ ath12k_wifi8_dp_ext_desc_populate(struct ath12k_dp *dp,
 		break;
 	case DP_EXT_TSO:
 	case DP_EXT_SG:
+		if (ath12k_dp_sg_ext_desc_populate(dp, dp_vif, ext_desc,
+							 skb, ring_id))
+			goto fail_free_ext_desc;
+		tx_desc->is_from_sg = 1;
 		break;
 	default:
 		break;
@@ -1914,10 +1927,11 @@ fail_free_ext_desc:
  */
 static enum ath12k_dp_feature_result
 ath12k_wifi8_dp_tx_desc_populate(struct ath12k_dp *dp, struct sk_buff *skb,
+				 struct ath12k_dp_vif *dp_vif,
 				 struct ath12k_dp_link_vif *dp_link_vif,
 				 struct ath12k_dp_tx_msdu_info *msdu_info,
 				 struct ath12k_tx_desc_info *tx_desc,
-				 bool gsn_valid, int gsn)
+				 bool gsn_valid, int gsn, u8 ring_id)
 {
 	int ret = 0;
 
@@ -1925,8 +1939,9 @@ ath12k_wifi8_dp_tx_desc_populate(struct ath12k_dp *dp, struct sk_buff *skb,
 	tx_desc->skb = skb;
 
 	if (msdu_info->ext_kmem)
-		ret = ath12k_wifi8_dp_ext_desc_populate(dp, dp_link_vif, msdu_info,
-							tx_desc, gsn_valid, gsn);
+		ret = ath12k_wifi8_dp_ext_desc_populate(dp, dp_vif, dp_link_vif,
+							skb, msdu_info, tx_desc,
+							gsn_valid, gsn, ring_id);
 
 	if (msdu_info->to_fw) {
 		msdu_info->flags0 |= u32_encode_bits(1,
@@ -1947,6 +1962,7 @@ ath12k_wifi8_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 			      struct ath12k_dp_skb_ctrl *skb_ctrl, bool htt_mesh)
 {
 	struct ath12k_dp *central_dp = ath12k_get_central_dp(dp_pdev->dp);
+	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
 	struct ath12k_tx_desc_info *tx_desc = NULL;
 	enum ath12k_dp_tx_enq_error drop_reason;
 	u32 qos_nw_delay = msdu_info->qos_nw_delay;
@@ -1987,9 +2003,9 @@ ath12k_wifi8_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 		msdu_info->vdev_id = ahvif->dp_vif.dp_vif_id;
 	}
 
-	ret = ath12k_wifi8_dp_tx_desc_populate(central_dp, skb, dp_link_vif,
+	ret = ath12k_wifi8_dp_tx_desc_populate(central_dp, skb, dp_vif, dp_link_vif,
 					       msdu_info, tx_desc,
-					       gsn_valid, gsn);
+					       gsn_valid, gsn, ring_id);
 
 	if (ret < 0) {
 		drop_reason = DP_TX_ENQ_DROP_TCL_DESC_NA;
@@ -2008,11 +2024,10 @@ ath12k_wifi8_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 	return DP_TX_ENQ_SUCCESS;
 
 fail:
-	if (tx_desc && tx_desc->ext_kmem) {
-		ath12k_core_dma_unmap_single(central_dp->dev,
-					     tx_desc->paddr_ext_desc,
-					     tx_desc->ext_desc_len,
-					     DMA_TO_DEVICE);
+	if (tx_desc && tx_desc->ext_desc) {
+		if (tx_desc->is_from_sg)
+			ath12k_dp_tx_sg_unmap_buf(central_dp, tx_desc->ext_desc, skb);
+		ath12k_dp_ext_desc_unmap(central_dp, tx_desc->paddr_ext_desc);
 		kmem_cache_free(central_dp->ext_cache, tx_desc->ext_desc);
 	}
 
@@ -2151,8 +2166,8 @@ void ath12k_wifi8_ucast_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 	msdu_info.group_slot = -1;
 	tx_desc->hw_link_id = dp_pdev->hw_link_id;
 
-	ret = ath12k_wifi8_dp_tx_desc_populate(central_dp, skb, dp_link_vif, &msdu_info,
-					       tx_desc, false, 0);
+	ret = ath12k_wifi8_dp_tx_desc_populate(central_dp, skb, dp_vif, dp_link_vif,
+					       &msdu_info, tx_desc, false, 0, ring_id);
 	if (ret != DP_TX_FEATURE_SUCCESS) {
 		drop_reason = DP_TX_ENQ_DROP_TCL_DESC_NA;
 		goto fail;
@@ -2173,11 +2188,10 @@ void ath12k_wifi8_ucast_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 	return;
 
 fail:
-	if (tx_desc && tx_desc->ext_kmem) {
-		ath12k_core_dma_unmap_single(central_dp->dev,
-					     tx_desc->paddr_ext_desc,
-					     tx_desc->ext_desc_len,
-					     DMA_TO_DEVICE);
+	if (tx_desc && tx_desc->ext_desc) {
+		if (tx_desc->is_from_sg)
+			ath12k_dp_tx_sg_unmap_buf(central_dp, tx_desc->ext_desc, skb);
+		ath12k_dp_ext_desc_unmap(central_dp, tx_desc->paddr_ext_desc);
 		kmem_cache_free(central_dp->ext_cache, tx_desc->ext_desc);
 	}
 
@@ -3359,6 +3373,12 @@ int ath12k_wifi8_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 
 		if (unlikely(!(sw_metadata->flags & DP_TX_DESC_FLAG_FAST))) {
 			if (tx_desc->ext_kmem) {
+				/* Unmap SG buffers */
+				if (tx_desc->is_from_sg) {
+					ath12k_dp_tx_sg_unmap_buf(dp, tx_desc->ext_desc,
+								  tx_desc->skb);
+					tx_desc->is_from_sg = 0;
+				}
 				ath12k_core_dma_unmap_single(dp->dev,
 							     tx_desc->paddr_ext_desc,
 							     tx_desc->ext_desc_len,

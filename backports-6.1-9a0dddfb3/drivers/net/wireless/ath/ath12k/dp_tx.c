@@ -708,6 +708,59 @@ drop:
 }
 EXPORT_SYMBOL(ath12k_dp_tx_classify_packet);
 
+int ath12k_dp_sg_ext_desc_populate(struct ath12k_dp *dp,
+					 struct ath12k_dp_vif *dp_vif,
+					 struct ath12k_dp_ext_desc *ext_desc,
+					 struct sk_buff *skb, u8 ring_id)
+{
+	dma_addr_t paddr[DP_TX_MAX_NUM_FRAGS];
+	const skb_frag_t *frag;
+	size_t len;
+	u32 hlen, nr_frags, cur_frag, i;
+
+	nr_frags = skb_shinfo(skb)->nr_frags;
+	hlen = skb_headlen(skb);
+
+	paddr[0] = ath12k_core_dma_map_single(dp->dev, skb->data, hlen, DMA_TO_DEVICE);
+	if (!paddr[0]) {
+		ath12k_dbg(NULL, ATH12K_DBG_DP_TX, "%p:DMA mapping failed for skb head\n",
+			   dp);
+		goto fail_skb_head;
+	}
+
+	ath12k_dp_ext_desc_set_buf0(ext_desc, paddr[0], hlen);
+
+	for (cur_frag = 0; cur_frag < nr_frags; cur_frag++) {
+		frag = &skb_shinfo(skb)->frags[cur_frag];
+		len = skb_frag_size(frag);
+
+		paddr[cur_frag + 1] = ath12k_core_dma_map_frag(dp->dev, frag, len, 0,
+							       DMA_TO_DEVICE);
+		if (!paddr[cur_frag + 1]) {
+			ath12k_dbg(NULL, ATH12K_DBG_DP_TX, "%p:DMA mapping failed for frag\n",
+				   dp);
+			goto fail_skb_frag;
+		}
+		ath12k_dp_ext_desc_set_buf(ext_desc, paddr[cur_frag + 1], len,
+					   cur_frag + 1);
+	}
+
+	return 0;
+
+fail_skb_frag:
+	for (i = 0; i < cur_frag; i++) {
+		frag = &skb_shinfo(skb)->frags[i];
+		len = skb_frag_size(frag);
+		ath12k_core_dma_unmap_page(dp->dev, paddr[i + 1], len,
+					   DMA_TO_DEVICE);
+	}
+	ath12k_core_dma_unmap_single(dp->dev, paddr[0], hlen, DMA_TO_DEVICE);
+fail_skb_head:
+	DP_STATS_INC(dp_vif, tx_i.sg_dma_map_err, 1, ring_id);
+	return -ENOMEM;
+}
+EXPORT_SYMBOL(ath12k_dp_sg_ext_desc_populate);
+
 #ifndef CPTCFG_QCN_EXTN
 bool ath12k_dp_tx_dma_map(struct ath12k_dp *dp,
 			  struct sk_buff *skb, u32 len,
