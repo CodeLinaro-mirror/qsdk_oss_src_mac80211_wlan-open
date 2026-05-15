@@ -5344,6 +5344,20 @@ u8 ieee80211_ie_len_eht_cap(struct ieee80211_sub_if_data *sdata)
 	return 0;
 }
 
+u8 ieee80211_ie_len_uhr_cap(struct ieee80211_sub_if_data *sdata)
+{
+	struct ieee80211_supported_band *sband;
+
+	sband = ieee80211_get_sband(sdata);
+	if (!sband)
+		return 0;
+
+	if (!ieee80211_get_uhr_iftype_cap_vif(sband, &sdata->vif))
+		return 0;
+
+	return 2 + 1 + sizeof(struct ieee80211_uhr_cap_elem_fixed);
+}
+
 int ieee80211_put_eht_cap(struct sk_buff *skb,
 			  struct ieee80211_sub_if_data *sdata,
 			  const struct ieee80211_supported_band *sband,
