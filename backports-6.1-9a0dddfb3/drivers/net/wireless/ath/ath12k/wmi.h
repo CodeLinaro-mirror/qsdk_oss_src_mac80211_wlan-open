@@ -3992,6 +3992,7 @@ struct wmi_vdev_start_req_arg {
 	bool ht40plus;
 	bool chan_radar;
 	bool freq2_radar;
+	bool is_stadfs_en;
 	bool allow_he;
 	u32 min_power;
 	u32 max_power;
@@ -4641,6 +4642,7 @@ struct wmi_bcn_send_from_host_cmd {
 #define WMI_CHAN_INFO_DFS_FREQ2		BIT(16)
 #define WMI_CHAN_INFO_ALLOW_HE		BIT(17)
 #define WMI_CHAN_INFO_PSC		BIT(18)
+#define WMI_CHAN_INFO_STA_DFS		BIT(20)
 
 #define WMI_CHAN_REG_INFO1_MIN_PWR	GENMASK(7, 0)
 #define WMI_CHAN_REG_INFO1_MAX_PWR	GENMASK(15, 8)
