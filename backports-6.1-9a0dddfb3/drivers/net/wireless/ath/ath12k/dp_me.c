@@ -22,6 +22,25 @@
 #include "dp_ext_desc.h"
 #include "qcn_extns/me_snoop_extn.h"
 
+static inline u16 ath12k_dp_get_me_peer_id(struct ath12k_dp *dp,
+					   struct ath12k_dp_peer *dp_peer,
+					   u8 hw_link_id)
+{
+	struct ath12k_dp_link_peer *link_peer;
+
+	if (dp->global_peer_id_supported)
+		return dp_peer->peer_id;
+
+	link_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, hw_link_id);
+	if (!link_peer) {
+		ath12k_dbg(NULL, ATH12K_DBG_DP_TX,
+			   "Link Peer NOT FOUND for hw_link_id%u", hw_link_id);
+		return HAL_INVALID_PEERID;
+	}
+
+	return link_peer->peer_id;
+}
+
 static int ath12k_dp_tx_me5(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
 			    struct ath12k_dp_link_vif *link_vif,
 			    struct ath12k_dp_peer *dp_peer,
@@ -33,11 +52,13 @@ static int ath12k_dp_tx_me5(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
 	int group_slot = -1;
 	u8 ring_id = smp_processor_id();
 	struct ath12k_pdev_dp *dp_pdev = NULL;
-	enum ath12k_dp_tx_enq_error err;
+	enum ath12k_dp_tx_enq_error err = 0;
 
 	dp_pdev = ath12k_dp_to_dp_pdev(dp, link_vif->pdev_idx);
-	if (!dp_pdev)
+	if (!dp_pdev) {
+		err = DP_TX_ENQ_DROP_INV_PDEV;
 		goto fail;
+	}
 
 	ether_addr_copy(msdu_info->ext_desc.peer_mac_addr, dp_peer->addr);
 	msdu_info->ext_kmem = true;
@@ -67,28 +88,26 @@ static int ath12k_dp_tx_me6(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
 			    struct ath12k_me_ctx *me_ctx,
 			    struct ath12k_dp_tx_msdu_info *msdu_info)
 {
-	struct ath12k_dp_link_peer *link_peer;
 	struct ath12k_vif *ahvif = container_of(dp_vif, struct ath12k_vif, dp_vif);
 	u16 peer_id;
 	struct sk_buff *skb = me_ctx->skb;
 	int group_slot = -1;
 	u8 ring_id = smp_processor_id();
 	struct ath12k_pdev_dp *dp_pdev = NULL;
-	enum ath12k_dp_tx_enq_error err;
+	enum ath12k_dp_tx_enq_error err = 0;
 	u16 mdata = 0;
 
-	link_peer = ath12k_dp_link_peer_find_by_id(dp, dp_peer->peer_id);
-	if (!link_peer) {
-		ath12k_dbg(NULL, ATH12K_DBG_DP_TX, "%p:Link Peer NOT FOUND IN ME6", dp);
+	dp_pdev = ath12k_dp_to_dp_pdev(dp, link_vif->pdev_idx);
+	if (!dp_pdev) {
+		err = DP_TX_ENQ_DROP_INV_PDEV;
 		goto fail;
 	}
 
-	dp_pdev = ath12k_dp_to_dp_pdev(dp, link_vif->pdev_idx);
-	if (!dp_pdev)
+	peer_id = ath12k_dp_get_me_peer_id(dp, dp_peer, dp_pdev->hw_link_id);
+	if (peer_id == HAL_INVALID_PEERID) {
+		err = DP_TX_ENQ_DROP_INV_PEER;
 		goto fail;
-
-	/* Assign peer_id of link peer*/
-	peer_id = link_peer->peer_id;
+	}
 
 	/*
 	 * Prepare metadata with peer_id
