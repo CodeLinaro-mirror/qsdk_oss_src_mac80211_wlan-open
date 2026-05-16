@@ -1454,14 +1454,25 @@ static bool ath12k_is_offset_invalid_for_bw(struct ath12k *ar,
 {
 	struct ieee80211_chanctx_conf *ctx = NULL;
 	struct ath12k_link_vif *arvif;
+	bool sta_dfs_en = ath12k_ar_to_hw(ar)->wiphy->sta_dfs_en;
 	u16 ch_width = 0;
 
 	list_for_each_entry(arvif, &ar->arvifs, list) {
-		if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
-			ctx = &arvif->chanctx;
-			ch_width = ath12k_mac_get_chan_width(ctx->def.width);
-			break;
-		}
+		u32 vdev_type;
+
+		if (!arvif->chanctx.def.chan)
+			continue;
+
+		vdev_type = arvif->ahvif->vdev_type;
+		if (vdev_type != WMI_VDEV_TYPE_AP &&
+		    vdev_type != WMI_VDEV_TYPE_STA)
+			continue;
+
+		if (vdev_type == WMI_VDEV_TYPE_STA && !sta_dfs_en)
+			continue;
+
+		ctx = &arvif->chanctx;
+		break;
 	}
 
 	if (!ctx) {
@@ -1469,6 +1480,7 @@ static bool ath12k_is_offset_invalid_for_bw(struct ath12k *ar,
 		return false;
 	}
 
+	ch_width = ath12k_mac_get_chan_width(ctx->def.width);
 	switch (ch_width) {
 	case ATH12K_CHWIDTH_320:
 		return ath12k_is_320mhz_offset_invalid(freq_offset);
