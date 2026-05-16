@@ -4354,7 +4354,7 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 	u32 changed;
 	u8 retry_short = 0, retry_long = 0;
 	u32 frag_threshold = 0, rts_threshold = 0;
-	u8 coverage_class = 0;
+	u8 coverage_class = 0, sta_dfs_en = 0;
 #ifdef CPTCFG_QCN_EXTN
 	u8 muedca_mode = NL80211_MUEDCA_FIRMWARE_MODE;
 #endif /* CPTCFG_QCN_EXTN */
@@ -4782,6 +4782,7 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 					rdev->wiphy.muedca_mode;
 		}
 #endif /* CPTCFG_QCN_EXTN */
+		rdev->wiphy.sta_dfs_en = sta_dfs_en;
 
 		result = rdev_set_wiphy_params(rdev, radio_idx, changed);
 		if (result) {
