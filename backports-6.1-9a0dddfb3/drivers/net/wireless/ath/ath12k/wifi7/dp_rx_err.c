@@ -431,7 +431,7 @@ ath12k_wifi7_dp_process_wbm_rx_packets(struct ath12k_dp *dp,
 	struct ath12k_base *partner_ab;
 	struct ath12k_dp *partner_dp;
 	struct ath12k_vif *ahvif = NULL;
-	u8 hw_link_id, pdev_id, link_id;
+	u8 hw_link_id, pdev_id;
 	int msdu_idx = 0;
 	u32 drop_reason, error_code;
 	bool drop, stats_needed = false;
@@ -516,7 +516,7 @@ ath12k_wifi7_dp_process_wbm_rx_packets(struct ath12k_dp *dp,
 		}
 
 		hw_link_id = ath12k_dp_validate_hw_link_id(hw_link_id);
-		link_id = peer->hw_links[hw_link_id];
+		spd_desc_l->reo.src_link_id = hw_link_id;
 		ahvif = ath12k_vif_to_ahvif(peer->vif);
 
 		msdu = spd_desc_l->msdu;
