@@ -111,6 +111,7 @@ void ath12k_wifi7_convert_n_deliver_nw_frame(struct ath12k_pdev_dp *dp_pdev,
 	struct ieee80211_sta *pubsta = NULL;
 	struct ath12k_hal *hal;
 	u8 *rx_tlv_hdr;
+	bool ret;
 
 	hal = dp_pdev->dp->hal;
 
@@ -144,8 +145,12 @@ void ath12k_wifi7_convert_n_deliver_nw_frame(struct ath12k_pdev_dp *dp_pdev,
 
 	/* copy from scratch_pad to ieee80211_rx_status */
 	tlv_info = &rx_spd->tlv_info;
-	ath12k_wifi7_dp_rx_h_ppdu(dp_pdev, status, tlv_info,
+	ret = ath12k_wifi7_dp_rx_h_ppdu(dp_pdev, status, tlv_info,
 				  HAL_WBM_REL_SRC_MODULE_REO);
+	if (ret) {
+		dev_kfree_skb_any(msdu);
+		return;
+	}
 
 	ath12k_wifi7_dp_rx_h_undecap_eth(dp_pdev, msdu, peer->sec_type,
 					 status,

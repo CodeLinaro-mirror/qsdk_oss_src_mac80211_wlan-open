@@ -619,6 +619,7 @@ int ath12k_wifi7_deliver_raw_frame(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_hal *hal;
 	u8 *rx_tlv_hdr;
 	bool is_mcbc = false;
+	bool ret;
 
 	is_mcbc = is_ieee80211_frame_mcast(msdu);
 
@@ -655,8 +656,12 @@ int ath12k_wifi7_deliver_raw_frame(struct ath12k_pdev_dp *dp_pdev,
 
 	/* copy from scratch_pad to ieee80211_rx_status */
 	tlv_info = &rx_spd->tlv_info;
-	ath12k_wifi7_dp_rx_h_ppdu(dp_pdev, status, tlv_info,
-				  HAL_WBM_REL_SRC_MODULE_REO);
+	ret = ath12k_wifi7_dp_rx_h_ppdu(dp_pdev, status, tlv_info,
+					HAL_WBM_REL_SRC_MODULE_REO);
+	if (ret) {
+		dev_kfree_skb_any(msdu);
+		return 1;
+	}
 
 	ath12k_dp_rx_h_undecap_raw(dp_pdev, msdu,
 				   (struct hal_rx_desc *)rx_tlv_hdr,
@@ -699,6 +704,7 @@ int ath12k_wifi7_deliver_nwifi_frame(struct ath12k_pdev_dp *dp_pdev,
 	u8 *rx_tlv_hdr;
 	struct ieee80211_hdr *hdr;
 	u32 hdr_len;
+	bool ret;
 
 	/* ideally driver should not be doing this check.
 	 * instead HW should flag this with error_code
@@ -743,8 +749,12 @@ int ath12k_wifi7_deliver_nwifi_frame(struct ath12k_pdev_dp *dp_pdev,
 
 	/* copy from scratch_pad to ieee80211_rx_status */
 	tlv_info = &rx_spd->tlv_info;
-	ath12k_wifi7_dp_rx_h_ppdu(dp_pdev, status, tlv_info,
+	ret = ath12k_wifi7_dp_rx_h_ppdu(dp_pdev, status, tlv_info,
 				  HAL_WBM_REL_SRC_MODULE_REO);
+	if (ret) {
+		dev_kfree_skb_any(msdu);
+		return 1;
+	}
 
 	ath12k_wifi7_dp_rx_h_undecap_nwifi(dp_pdev, msdu, peer->sec_type,
 					   status,
@@ -795,6 +805,7 @@ int ath12k_wifi7_deliver_ethernet_frame(struct ath12k_pdev_dp *dp_pdev,
 	u8 tid;
 	struct ieee80211_sta *pubsta = NULL;
 	struct ath12k_hal *hal = dp_pdev->dp->hal;
+	bool ret;
 
 	rx_tlv_hdr = rx_spd->vaddr;
 	rx_msdu_info = &rx_spd->rx_msdu_info;
@@ -820,10 +831,15 @@ int ath12k_wifi7_deliver_ethernet_frame(struct ath12k_pdev_dp *dp_pdev,
 
 	if (unlikely(!ath12k_wifi7_compare_tlv_info(prev_tlv_info,
 						    tlv_info))) {
-		ath12k_wifi7_dp_rx_h_ppdu(dp_pdev,
-					  status,
-					  tlv_info,
-					  HAL_WBM_REL_SRC_MODULE_REO);
+		ret = ath12k_wifi7_dp_rx_h_ppdu(dp_pdev,
+						status,
+						tlv_info,
+						HAL_WBM_REL_SRC_MODULE_REO);
+
+		if (ret) {
+			dev_kfree_skb_any(msdu);
+			return 1;
+		}
 
 		status->flag |= RX_FLAG_8023 |
 			RX_FLAG_DECRYPTED |
