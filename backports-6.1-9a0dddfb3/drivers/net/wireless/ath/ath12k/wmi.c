@@ -293,6 +293,10 @@ static const struct ath12k_wmi_tlv_policy ath12k_wmi_tlv_policies[] = {
 		.min_len = sizeof(struct wmi_offchan_data_tx_compl_event) },
 	[WMI_TAG_PEER_STA_PS_STATECHANGE_EVENT] = {
 		.min_len = sizeof(struct wmi_peer_sta_ps_state_chg_event) },
+#ifdef CPTCFG_QCN_EXTN
+	[WMI_TAG_PEER_RATECODE_LIST_EVENT] = {
+		.min_len = sizeof(struct wmi_peer_ratecode_list_fixed_param) },
+#endif
 };
 
 __le32 ath12k_wmi_tlv_hdr(u32 cmd, u32 len)

@@ -10066,6 +10066,95 @@ struct wmi_energy_mgmt_oem_data_event {
 /* each WMI cmd can hold 58 channel entries at most */
 #define ATH12K_WMI_MAX_NUM_CHAN_PER_CMD	58
 
+#ifdef CPTCFG_QCN_EXTN
+struct wmi_peer_ratecode_list_fixed_param {
+	struct ath12k_wmi_mac_addr_params macaddr;
+	u32 ratecount;
+	u32 vdev_id;
+	u32 pdev_id;
+	u32 ratecount_ext;
+} __packed;
+
+struct wmi_peer_cck_ofdm_rate_info {
+	u32 ratecode_legacy;
+} __packed;
+
+struct wmi_peer_mcs_rate_info {
+	u32 rt_code_20;
+	u32 rt_code_40;
+	u32 rt_code_80;
+	u32 rt_code_160;
+	u32 rt_code_320;
+} __packed;
+
+struct wmi_pdev_set_smart_ant_cmd {
+	u32 tlv_header;
+	union {
+		u32 mac_id;
+		u32 pdev_id;
+	};
+	u32 enable;
+	u32 mode;
+	u32 rx_antenna;
+	u32 tx_default_antenna;
+} __packed;
+
+struct wmi_pdev_smart_ant_gpio_handle_cmd {
+	u32 tlv_header;
+	u32 gpio_pin;
+	u32 gpio_func;
+	u32 pdev_id;
+} __packed;
+
+struct wmi_pdev_set_rx_antenna_cmd {
+	u32 tlv_header;
+	union {
+		u32 mac_id;
+		u32 pdev_id;
+	};
+	u32 rx_antenna;
+} __packed;
+
+struct wmi_pdev_set_tx_antenna_cmd {
+	u32 tlv_header;
+	u32 vdev_id;
+	struct ath12k_wmi_mac_addr_params macaddr;
+} __packed;
+
+struct wmi_peer_set_smart_tx_ant_series_cmd {
+	u32 tlv_header;
+	u32 ant_series;
+} __packed;
+
+struct wmi_peer_set_smart_ant_train_ant_fixed_param_cmd {
+	u32 tlv_header;
+	u32 vdev_id;
+	struct ath12k_wmi_mac_addr_params macaddr;
+	u32 numpkts;
+	u32 per_check_bitmap;
+} __packed;
+
+struct wmi_peer_set_smart_ant_train_ant_param {
+	u32 tlv_header;
+	union {
+		u32 train_rate_series;
+		u32 train_rate_series_lo;
+	};
+	u32 train_antenna_series;
+	u32 rc_flags;
+	u32 train_rate_series_hi;
+	u32 train_rate_series_ext;
+} __packed;
+
+struct wmi_peer_set_smart_ant_node_config_ops_cmd {
+	u32 tlv_header;
+	u32 vdev_id;
+	struct ath12k_wmi_mac_addr_params macaddr;
+	u32 cmd_id;
+	u32 args_count;
+} __packed;
+#endif /* CPTCFG_QCN_EXTN */
+
 int ath12k_wmi_cmd_send(struct ath12k_wmi_pdev *wmi, struct sk_buff *skb,
 			u32 cmd_id);
 struct sk_buff *ath12k_wmi_alloc_skb(struct ath12k_wmi_base *wmi_sc, u32 len);
