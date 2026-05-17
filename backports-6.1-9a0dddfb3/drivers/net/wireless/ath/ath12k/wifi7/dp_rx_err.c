@@ -109,10 +109,7 @@ void ath12k_wifi7_convert_n_deliver_nw_frame(struct ath12k_pdev_dp *dp_pdev,
 	struct rx_tlv_info_1 *tlv_info;
 	struct sk_buff *msdu = rx_spd->msdu;
 	struct ieee80211_sta *pubsta = NULL;
-	struct ath12k_hal *hal;
 	u8 *rx_tlv_hdr;
-
-	hal = dp_pdev->dp->hal;
 
 	rx_msdu_info = &rx_spd->rx_msdu_info;
 	rx_mpdu_info = &rx_spd->rx_mpdu_info;
@@ -137,10 +134,6 @@ void ath12k_wifi7_convert_n_deliver_nw_frame(struct ath12k_pdev_dp *dp_pdev,
 	msdu->priority = rx_mpdu_info->tid;
 
 	ath12k_wifi7_dp_rx_h_csum_offload(msdu, rx_msdu_info);
-
-	ath12k_wifi7_dp_extract_rx_spd_data(hal,
-					    rx_spd,
-					    (struct hal_rx_desc *)rx_tlv_hdr, 1);
 
 	/* copy from scratch_pad to ieee80211_rx_status */
 	tlv_info = &rx_spd->tlv_info;
@@ -290,11 +283,9 @@ static bool ath12k_wifi7_handle_reo_route(struct ath12k_pdev_dp *dp_pdev,
 					  struct rx_tlv_info_1 *prev_tlv_info,
 					  struct hal_rx_desc *desc)
 {
-	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k *ar = dp_pdev->ar;
 
-	if (dp->hal->hal_ops->rx_desc_get_cce_metadata(desc) !=
-						ATH12K_ROUTE_EAP_METADATA)
+	if (spd_desc_l->cce_metadata != ATH12K_ROUTE_EAP_METADATA)
 		return true;
 
 	switch (peer->rx_decap_type) {
@@ -457,6 +448,8 @@ ath12k_wifi7_dp_process_wbm_rx_packets(struct ath12k_dp *dp,
 		rx_msdu_info = &spd_desc_l->rx_msdu_info;
 		rx_mpdu_info = &spd_desc_l->rx_mpdu_info;
 		rx_desc = (struct hal_rx_desc *)spd_desc_l->vaddr;
+
+		ath12k_wifi7_dp_extract_rx_spd_data(hal, spd_desc_l, rx_desc, 1);
 
 		drop = ath12k_wifi7_wbm_drop_needed(spd_desc_l->wbm.release_source_module,
 						    spd_desc_l->wbm.reo_push_reason,

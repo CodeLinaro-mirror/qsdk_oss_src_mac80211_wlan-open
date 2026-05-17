@@ -1690,7 +1690,6 @@ struct hal_ops {
 	void (*rx_desc_get_fse_info)(struct hal_rx_desc *desc,
 				     struct rx_mpdu_desc_info *rx_mpdu_info);
 
-	u16 (*rx_desc_get_cce_metadata)(struct hal_rx_desc *desc);
 	bool (*hal_tx_ppe2tcl_ring_halt_get)(struct ath12k_base *ab);
 	void (*hal_tx_ppe2tcl_ring_halt_set)(struct ath12k_base *ab);
 	void (*hal_tx_ppe2tcl_ring_halt_reset)(struct ath12k_base *ab);
