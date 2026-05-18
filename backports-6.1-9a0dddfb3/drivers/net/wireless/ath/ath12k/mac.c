@@ -26561,6 +26561,8 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_BEACON_PROTECTION);
 	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_BEACON_ADVERTISED_TTLM_OFFLOAD);
 
+	wiphy->flags |= WIPHY_FLAG_SUPPORTS_BEACON_TX_SYNC;
+
 	if (test_bit(WMI_TLV_SERVICE_BSS_COLOR_OFFLOAD, ar->ab->wmi_ab.svc_map))
 		wiphy_ext_feature_set(ar->ah->hw->wiphy,
 				      NL80211_EXT_FEATURE_BSS_COLOR);
