@@ -2906,19 +2906,54 @@ static int ath12k_get_tid_tx_stats_attr_size(void)
 	return nla_total_size_nested(size);
 }
 
+static int ath12k_get_tid_rx_stats_attr_size(void)
+{
+	int size;
+	int delay_size;
+
+	/* delivered_to_stack, msdu_cnt, mcast_msdu_cnt, bcast_msdu_cnt */
+	size = nla_total_size(sizeof(u32)) * 4;
+
+	/* fail_cnt[DP_TID_RX_SW_DROP_MAX] */
+	size += nla_total_size_nested(nla_total_size(sizeof(u32)) *
+				      DP_TID_RX_SW_DROP_MAX);
+
+	/* reo_err: reo_code_inv (u32) + reo_codes nested */
+	size += nla_total_size(sizeof(u32));
+	size += nla_total_size_nested(nla_total_size(sizeof(u32)) *
+				      HAL_REO_DEST_RING_ERROR_CODE_MAX);
+
+	/* rxdma_err: rxdma_code_inv (u32) + rxdma_codes nested */
+	size += nla_total_size(sizeof(u32));
+	size += nla_total_size_nested(nla_total_size(sizeof(u32)) *
+				      HAL_REO_ENTR_RING_RXDMA_ECODE_MAX);
+
+	/* to_stack_delay, intfrm_delay */
+	delay_size = nla_total_size_nested(nla_total_size_64bit(sizeof(u64)) *
+					   HIST_BUCKET_MAX);
+	delay_size += nla_total_size(sizeof(u32)) * 3;
+	size += nla_total_size_nested(delay_size) * 2;
+
+	/* Outer per-TID nest */
+	return nla_total_size_nested(size);
+}
+
 static int ath12k_get_tid_stats_attr_size(void)
 {
-	int tx_size;
+	int tx_size, rx_size;
 
 	/* TID_TX_STATS nest */
 	tx_size = ath12k_get_tid_tx_stats_attr_size() *
 			QCA_VENDOR_WLAN_TELEMETRY_VOW_DATA_TIDS;
 	tx_size = nla_total_size_nested(tx_size);
 
-	/* TID_RX_STATS nest (placeholder for future RX TID stats) */
+	/* TID_RX_STATS nest */
+	rx_size = ath12k_get_tid_rx_stats_attr_size() *
+			QCA_VENDOR_WLAN_TELEMETRY_VOW_DATA_TIDS;
+	rx_size = nla_total_size_nested(rx_size);
 
 	/* Outer TID_STATS_EVENT nest */
-	return nla_total_size_nested(tx_size);
+	return nla_total_size_nested(tx_size + rx_size);
 }
 
 static int ath12k_get_dp_peer_attr_len(struct ath12k_telemetry_command *cmd)
@@ -7319,6 +7354,113 @@ static int ath12k_fill_tid_delay_stats(struct sk_buff *vendor_event,
 	return 0;
 }
 
+static int ath12k_fill_tid_rx_stats(struct sk_buff *vendor_event,
+				    const struct ath12k_tid_rx_stats *rx,
+				    int tid_idx)
+{
+	struct nlattr *tid_attr;
+	struct nlattr *arr_attr;
+	int i;
+
+	tid_attr = nla_nest_start(vendor_event, tid_idx + 1);
+	if (!tid_attr)
+		return -EINVAL;
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_TID_RX_DELIVERED_TO_STACK,
+			rx->delivered_to_stack) ||
+	    nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TID_RX_MSDU_CNT,
+			rx->msdu_cnt) ||
+	    nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_TID_RX_MCAST_MSDU_CNT,
+			rx->mcast_msdu_cnt) ||
+	    nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_TID_RX_BCAST_MSDU_CNT,
+			rx->bcast_msdu_cnt)) {
+		nla_nest_cancel(vendor_event, tid_attr);
+		return -EINVAL;
+	}
+
+	/* RX fail counts */
+	arr_attr = nla_nest_start(vendor_event,
+				  QCA_VENDOR_ATTR_TID_RX_FAIL_CNT);
+	if (!arr_attr) {
+		nla_nest_cancel(vendor_event, tid_attr);
+		return -EINVAL;
+	}
+	for (i = 0; i < DP_TID_RX_SW_DROP_MAX &&
+		    i < ARRAY_SIZE(rx->fail_cnt); i++) {
+		if (nla_put_u32(vendor_event, i + 1, rx->fail_cnt[i])) {
+			nla_nest_cancel(vendor_event, arr_attr);
+			nla_nest_cancel(vendor_event, tid_attr);
+			return -EINVAL;
+		}
+	}
+	nla_nest_end(vendor_event, arr_attr);
+
+	/* REO error stats */
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_TID_RX_REO_ERR_CODE_INV,
+			rx->reo_err.reo_code_inv)) {
+		nla_nest_cancel(vendor_event, tid_attr);
+		return -EINVAL;
+	}
+
+	arr_attr = nla_nest_start(vendor_event,
+				  QCA_VENDOR_ATTR_TID_RX_REO_ERR_CODES);
+	if (!arr_attr) {
+		nla_nest_cancel(vendor_event, tid_attr);
+		return -EINVAL;
+	}
+	for (i = 0; i < HAL_REO_DEST_RING_ERROR_CODE_MAX &&
+		    i < ARRAY_SIZE(rx->reo_err.reo_code); i++) {
+		if (nla_put_u32(vendor_event, i + 1,
+				rx->reo_err.reo_code[i])) {
+			nla_nest_cancel(vendor_event, arr_attr);
+			nla_nest_cancel(vendor_event, tid_attr);
+			return -EINVAL;
+		}
+	}
+	nla_nest_end(vendor_event, arr_attr);
+
+	/* RXDMA error stats */
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_TID_RX_RXDMA_ERR_CODE_INV,
+			rx->rxdma_err.rxdma_code_inv)) {
+		nla_nest_cancel(vendor_event, tid_attr);
+		return -EINVAL;
+	}
+
+	arr_attr = nla_nest_start(vendor_event,
+				  QCA_VENDOR_ATTR_TID_RX_RXDMA_ERR_CODES);
+	if (!arr_attr) {
+		nla_nest_cancel(vendor_event, tid_attr);
+		return -EINVAL;
+	}
+	for (i = 0; i < HAL_REO_ENTR_RING_RXDMA_ECODE_MAX &&
+		    i < ARRAY_SIZE(rx->rxdma_err.rxdma_code); i++) {
+		if (nla_put_u32(vendor_event, i + 1,
+				rx->rxdma_err.rxdma_code[i])) {
+			nla_nest_cancel(vendor_event, arr_attr);
+			nla_nest_cancel(vendor_event, tid_attr);
+			return -EINVAL;
+		}
+	}
+	nla_nest_end(vendor_event, arr_attr);
+
+	/* Delay stats */
+	if (ath12k_fill_tid_delay_stats(vendor_event, &rx->to_stack_delay,
+					QCA_VENDOR_ATTR_TID_RX_TO_STACK_DELAY) ||
+	    ath12k_fill_tid_delay_stats(vendor_event, &rx->intfrm_delay,
+					QCA_VENDOR_ATTR_TID_RX_INTFRM_DELAY)) {
+		nla_nest_cancel(vendor_event, tid_attr);
+		return -EINVAL;
+	}
+
+	nla_nest_end(vendor_event, tid_attr);
+	return 0;
+}
+
 static int ath12k_fill_tid_tx_stats(struct sk_buff *vendor_event,
 				    const struct ath12k_tid_tx_stats *tx,
 				    int tid_idx)
@@ -7417,6 +7559,7 @@ static int ath12k_fill_radio_tid_stats(struct ath12k *ar,
 {
 	struct ath12k_base *ab = ar->ab;
 	struct nlattr *tx_attr;
+	struct nlattr *rx_attr;
 	int tid;
 
 	/* TX TID stats */
@@ -7439,6 +7582,23 @@ static int ath12k_fill_radio_tid_stats(struct ath12k *ar,
 	nla_nest_end(vendor_event, tx_attr);
 
 	/* RX TID stats */
+	rx_attr = nla_nest_start(vendor_event,
+				 QCA_VENDOR_ATTR_WLAN_TELEMETRY_TID_RX_STATS);
+	if (!rx_attr) {
+		ath12k_err(ab, "nla nest failure: TID RX stats");
+		return -EINVAL;
+	}
+
+	for (tid = 0; tid < QCA_VENDOR_WLAN_TELEMETRY_VOW_DATA_TIDS; tid++) {
+		if (ath12k_fill_tid_rx_stats(vendor_event,
+					     &tid_stats->tid_rx[tid], tid)) {
+			ath12k_err(ab, "Error filling TID RX stats for tid %d",
+				   tid);
+			nla_nest_cancel(vendor_event, rx_attr);
+			return -EINVAL;
+		}
+	}
+	nla_nest_end(vendor_event, rx_attr);
 
 	return 0;
 }
