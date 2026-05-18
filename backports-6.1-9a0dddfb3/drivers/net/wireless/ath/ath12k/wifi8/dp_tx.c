@@ -966,16 +966,17 @@ static u16 ath12k_wifi8_mcbc_get_gsn(struct ath12k_dp_vif *dp_vif)
 }
 
 /**
- * ath12k_wifi8_tx_validate_recovery() - Check recovery state
+ * ath12k_wifi8_tx_recovery_drop() - Check if packet has to be dropped during recovery
  * @ab: ath12k_base
  *
- * Returns: true if in recovery, false otherwise
+ * Returns: true if packet needs to be dropped, false otherwise
  */
-static bool ath12k_wifi8_tx_validate_recovery(struct ath12k_base *ab)
+static bool ath12k_wifi8_tx_recovery_drop(struct ath12k_base *ab)
 {
-	return unlikely(test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS,
+	return unlikely((test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS,
 			&ab->dev_flags) ||
-			test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags));
+			test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags)) &&
+			ab->soc_reset_reason != ATH12K_Q6_BCR_RESET);
 }
 
 /**
@@ -2003,7 +2004,7 @@ void ath12k_wifi8_ucast_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 	central_dp = ath12k_get_central_dp(dp_pdev->dp);
 
 	/* Check recovery state */
-	if (ath12k_wifi8_tx_validate_recovery(central_dp->ab)) {
+	if (ath12k_wifi8_tx_recovery_drop(central_dp->ab)) {
 		ieee80211_free_txskb(dp_pdev->ar->ah->hw, skb);
 		drop_reason = DP_TX_ENQ_DROP_FW_RECOVERY;
 		return;
@@ -2198,7 +2199,7 @@ void ath12k_wifi8_mcbc_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 		ath12k_wifi8_dp_get_ring_id(central_dp, &ring_id, skb);
 
 		/* Check recovery state */
-		if (ath12k_wifi8_tx_validate_recovery(central_dp->ab)) {
+		if (ath12k_wifi8_tx_recovery_drop(central_dp->ab)) {
 			DP_STATS_INC(dp_vif,
 				     tx_i.drop[DP_TX_ENQ_DROP_FW_RECOVERY],
 				     1, ring_id);
