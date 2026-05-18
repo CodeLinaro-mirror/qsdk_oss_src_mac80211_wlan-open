@@ -2317,6 +2317,12 @@ fail:
 	return drop_reason;
 }
 
+
+void ath12k_wifi7_dp_tx_set_ast(struct ath12k_dp_peer *dp_peer,
+				struct ath12k_dp_tx_msdu_info *msdu_info)
+{
+}
+
 static inline void
 ath12k_wifi7_dp_tx_get_hw_link_id_from_ppdu_id(struct hal_tx_status *ts,
 					       struct ath12k_dp *dp)

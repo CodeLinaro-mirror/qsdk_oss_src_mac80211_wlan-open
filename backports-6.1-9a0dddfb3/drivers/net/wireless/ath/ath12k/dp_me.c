@@ -120,6 +120,8 @@ static int ath12k_dp_tx_me6(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
 	msdu_info->data_len = skb->len;
 	msdu_info->me_convert = true;
 
+	ath12k_dp_tx_set_ast(dp, dp_peer, msdu_info);
+
 	err = ath12k_dp_tx_mcast_send(dp_pdev, ahvif, link_vif, ring_id,
 				      msdu_info, false, 0, group_slot,
 				      skb_get(skb), NULL, NULL);

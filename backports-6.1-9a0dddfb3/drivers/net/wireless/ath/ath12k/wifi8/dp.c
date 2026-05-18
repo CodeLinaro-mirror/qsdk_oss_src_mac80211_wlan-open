@@ -1168,6 +1168,7 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.rx_flow_fse_cache_operation = ath12k_wifi8_dp_rx_flow_fse_cache_operation,
 	.get_peer_init_status = ath12k_wifi8_dp_get_peer_init_status,
 	.fetch_rx_desc_replenish_ring_id = ath12k_wifi8_dp_fetch_replenish_ring_id,
+	.dp_tx_set_ast = ath12k_wifi8_dp_tx_set_ast,
 	/* UMAC reset operations */
 	.umac_reset_handle_pre_reset = ath12k_wifi8_umac_reset_handle_pre_reset,
 	.umac_reset_handle_post_reset_start =
