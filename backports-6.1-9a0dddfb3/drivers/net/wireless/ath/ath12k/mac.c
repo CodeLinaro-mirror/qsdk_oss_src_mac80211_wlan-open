@@ -16391,14 +16391,12 @@ static void ath12k_mac_set_hemcsmap(struct ath12k *ar,
 		else
 			rxmcs_map |= IEEE80211_HE_MCS_NOT_SUPPORTED << (i * 2);
 
-		if (i < maxtxnss_160 &&
-		    (ar->cfg_tx_chainmask >> cap->tx_chain_mask_shift) & BIT(i))
+		if (i < maxtxnss_160)
 			txmcs_map_160 |= IEEE80211_HE_MCS_SUPPORT_0_11 << (i * 2);
 		else
 			txmcs_map_160 |= IEEE80211_HE_MCS_NOT_SUPPORTED << (i * 2);
 
-		if (i < maxrxnss_160 &&
-		    (ar->cfg_rx_chainmask >> cap->rx_chain_mask_shift) & BIT(i))
+		if (i < maxrxnss_160)
 			rxmcs_map_160 |= IEEE80211_HE_MCS_SUPPORT_0_11 << (i * 2);
 		else
 			rxmcs_map_160 |= IEEE80211_HE_MCS_NOT_SUPPORTED << (i * 2);
