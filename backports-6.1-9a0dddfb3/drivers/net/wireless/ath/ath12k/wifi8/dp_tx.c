@@ -563,8 +563,8 @@ bool ath12k_get_qos_params_delay_bound(struct ath12k_base *ab, u8 qos_id,
 
 #define ATH12K_HIST_AVG_DIV	2
 
-void ath12k_sdwf_compute_hw_delay(struct ath12k *ar, struct hal_tx_status *ts,
-				  u32 *hw_delay)
+void ath12k_wifi8_compute_hw_delay(struct ath12k *ar, struct hal_tx_status *ts,
+				   u32 *hw_delay)
 {
 	/* low 32 alone will be filled for TSF2 from FW and the value can be
 	 * negative for both TSF2 and TQM delta
@@ -822,7 +822,7 @@ void ath12k_qos_stats_update(struct ath12k *ar, struct sk_buff *skb,
 
 	qos_delay = &link_peer->peer_stats.qos_stats->qos_delay[tid][q_id];
 
-	ath12k_sdwf_compute_hw_delay(ar, ts, &hw_delay);
+	ath12k_wifi8_compute_hw_delay(ar, ts, &hw_delay);
 	if (hw_delay > HW_TX_DELAY_MAX) {
 		mld_qos->tx_invalid_delay_pkts++;
 		qos_delay->invalid_delay_pkts++;

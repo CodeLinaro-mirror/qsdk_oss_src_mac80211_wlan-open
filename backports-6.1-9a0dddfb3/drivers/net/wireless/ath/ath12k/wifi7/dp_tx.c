@@ -387,8 +387,8 @@ bool ath12k_get_qos_params_delay_bound(struct ath12k_base *ab, u8 qos_id,
 
 #define ATH12K_HIST_AVG_DIV	2
 
-void ath12k_sdwf_compute_hw_delay(struct ath12k *ar, struct hal_tx_status *ts,
-				  u32 *hw_delay)
+void ath12k_wifi7_compute_hw_delay(struct ath12k *ar, struct hal_tx_status *ts,
+				   u32 *hw_delay)
 {
 	/* low 32 alone will be filled for TSF2 from FW and the value can be
 	 * negative for both TSF2 and TQM delta
@@ -647,7 +647,7 @@ void ath12k_qos_stats_update(struct ath12k *ar, struct sk_buff *skb,
 
 	qos_delay = &link_peer->peer_stats.qos_stats->qos_delay[tid][q_id];
 
-	ath12k_sdwf_compute_hw_delay(ar, ts, &hw_delay);
+	ath12k_wifi7_compute_hw_delay(ar, ts, &hw_delay);
 	if (hw_delay > HW_TX_DELAY_MAX) {
 		mld_qos->tx_invalid_delay_pkts++;
 		qos_delay->invalid_delay_pkts++;
@@ -1068,6 +1068,62 @@ void ath12k_wifi7_dp_tx_hal_tcl_desc_update(struct hal_tcl_data_cmd *hal_tcl_des
 		le32_encode_bits(msdu_info->bss_ast_hash,
 				 HAL_TCL_DATA_CMD_INFO4_CACHE_SET_NUM);
 	hal_tcl_desc->info5 = 0;
+}
+
+/**
+ * ath12k_wifi7_dp_tx_update_delay_stats() - Update SW/HW delay histograms at completion
+ * @dp_pdev: DP pdev handle
+ * @skb: Socket buffer (skb->tstamp holds the MAC TX entry time set by
+ *        __net_timestamp() in mac_op_tx)
+ * @ts: TX completion status (contains hardware timestamps)
+ * @ring_id: TX ring index
+ * @enqueue_tstamp: HW TCL enqueue time in microseconds, captured just before
+ *                  the TCL ring is released in ath12k_wifi7_dp_tx_hw_enqueue()
+ *                  and stored in tx_desc->hw_enqueue_tstamp.
+ *
+ * Called at TX completion time when VoW delay stats are enabled.
+ * Updates:
+ *   - swq_delay: SW enqueue delay (mac_op_tx entry -> HW TCL enqueue).
+ *                Computed as enqueue_tstamp - entry_tstamp, where
+ *                entry_tstamp is read from skb->tstamp via skb_get_ktime().
+ *   - hwtx_delay: HW transmit delay (TQM enqueue -> TX completion), derived
+ *                 from hardware timestamps in the WBM completion ring entry
+ *                 via ath12k_sdwf_compute_hw_delay().
+ *   - intfrm_delay: updated at enqueue time in
+ *                   ath12k_wifi7_dp_tx_delay_pre_enqueue().
+ *
+ * Return: void
+ */
+static inline void
+ath12k_wifi7_dp_tx_update_delay_stats(struct ath12k_pdev_dp *dp_pdev,
+				      struct sk_buff *skb,
+				      struct hal_tx_status *ts,
+				      u8 ring_id,
+				      u32 enqueue_tstamp)
+{
+	struct ath12k_tid_tx_stats *tid_tx;
+	u32 sw_delay, hw_delay;
+	u32 entry_tstamp;
+	u8 vow_tid;
+
+	vow_tid = ath12k_vow_tid_validate(ts->tid);
+
+	if (ring_id >= DP_TCL_NUM_RING_MAX)
+		return;
+
+	tid_tx = &dp_pdev->tid_stats.tid_tx[ring_id][vow_tid];
+
+	entry_tstamp = (u32)ktime_to_us(skb_get_ktime(skb));
+	if (enqueue_tstamp && entry_tstamp) {
+		sw_delay = enqueue_tstamp - entry_tstamp;
+		ath12k_dp_update_hist_stats(&tid_tx->swq_delay,
+					    sw_delay / USEC_PER_MSEC);
+	}
+
+	ath12k_wifi7_compute_hw_delay(dp_pdev->ar, ts, &hw_delay);
+	if (hw_delay <= HW_TX_DELAY_MAX)
+		ath12k_dp_update_hist_stats(&tid_tx->hwtx_delay,
+					    hw_delay / USEC_PER_MSEC);
 }
 
 /**
@@ -2937,7 +2993,7 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 	u8 tid = 0;
 	u8 vow_tid = 0;
 	enum ath12k_dp_tx_comp_error drop_reason = DP_TX_COMP_ERR_MISC;
-	u32 msdu_len = msdu->len;
+	u32 msdu_len = msdu->len, enq_tstamp = 0;
 	u8 tx_desc_flags = sw_metadata->flags;
 
 	if (WARN_ON_ONCE(ts->buf_rel_source != HAL_WBM_REL_SRC_MODULE_TQM)) {
@@ -3009,6 +3065,8 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 								ts->buf_rel_source);
 #endif
 			if (unlikely(ath12k_dp_vow_stats_enabled(dp_pdev))) {
+				enq_tstamp = sw_metadata->hw_enqueue_tstamp;
+
 				vow_tid = ath12k_vow_tid_validate(ts->tid);
 				if (ts->status < HAL_WBM_TQM_REL_REASON_MAX)
 					DP_PDEV_TID_TX_REASON_INC(dp_pdev,
@@ -3016,6 +3074,10 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 								      vow_tid,
 								      tqm_status_cnt,
 								      ts->status);
+
+				ath12k_wifi7_dp_tx_update_delay_stats(dp_pdev, msdu,
+								      ts, ring,
+								      enq_tstamp);
 			}
 
 			if (ath12k_tid_stats_enabled(dp_pdev)) {
@@ -3725,6 +3787,7 @@ void ath12k_ppeds_tx_update_stats(struct ath12k *ar, int skb_len,
 	int ring_id = 0;
 	int vow_tid = 0;
 	u8 hw_link_id = 0;
+	u32 hw_delay = 0;
 
 	memset(&info, 0, sizeof(info));
 	info.status.rates[0].idx = -1;
@@ -3803,9 +3866,12 @@ void ath12k_ppeds_tx_update_stats(struct ath12k *ar, int skb_len,
 		}
 
 		if (unlikely(ath12k_dp_vow_stats_enabled(dp_pdev))) {
+			struct ath12k_tid_tx_stats *tid_tx;
+
 			/* Track TQM status */
+			vow_tid = ath12k_vow_tid_validate(ts.tid);
+			tid_tx = &dp_pdev->tid_stats.tid_tx[ring_id][vow_tid];
 			if (ts.buf_rel_source == HAL_WBM_REL_SRC_MODULE_TQM) {
-				vow_tid = ath12k_vow_tid_validate(ts.tid);
 				if (ts.status < HAL_WBM_TQM_REL_REASON_MAX)
 					DP_PDEV_TID_TX_REASON_INC(dp_pdev,
 								      ring_id,
@@ -3813,6 +3879,10 @@ void ath12k_ppeds_tx_update_stats(struct ath12k *ar, int skb_len,
 								      tqm_status_cnt,
 								      ts.status);
 			}
+			ath12k_wifi7_compute_hw_delay(ar, &ts, &hw_delay);
+			if (hw_delay <= HW_TX_DELAY_MAX)
+				ath12k_dp_update_hist_stats(&tid_tx->hwtx_delay,
+							    hw_delay / USEC_PER_MSEC);
 		}
 	}
 
