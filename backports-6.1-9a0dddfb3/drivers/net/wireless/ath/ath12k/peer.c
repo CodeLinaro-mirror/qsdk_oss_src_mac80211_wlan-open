@@ -997,9 +997,6 @@ int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif,
 			err_ret = ret;
 
 		ar->num_peers--;
-#ifdef CPTCFG_QCN_EXTN
-		ath12k_smart_ant_api_peer_disconnect(arsta);
-#endif
 
 		/*
 		 * arvif::num_peers will be decremented during vdev stop

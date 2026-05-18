@@ -13045,10 +13045,6 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 	if (sta->mlo)
 		return ret;
 
-#ifdef CPTCFG_QCN_EXTN
-	ath12k_smart_ant_api_peer_disconnect(arsta);
-#endif
-
 	ath12k_dp_peer_cleanup(ar, arvif->vdev_id, arsta->addr);
 
 	/*
