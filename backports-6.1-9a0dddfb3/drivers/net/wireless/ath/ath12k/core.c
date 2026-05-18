@@ -1667,12 +1667,12 @@ static void ath12k_core_hw_group_stop(struct ath12k_hw_group *ag)
 		mutex_unlock(&ab->core_lock);
 	}
 
-	ath12k_core_cu_mem_pool_deinit(ag);
-
 	wiphy_work_cancel(ah->hw->wiphy, &ag->stats_work.stats_nb_work);
 	ath12k_stats_event_work_free(&ag->stats_work);
 
 	ath12k_mac_unregister(ag);
+
+	ath12k_core_cu_mem_pool_deinit(ag);
 
 	ath12k_mac_mlo_teardown(ag);
 
@@ -2070,6 +2070,10 @@ static int ath12k_core_hw_group_start(struct ath12k_hw_group *ag)
 	if (WARN_ON(ret))
 		goto err_mac_destroy;
 
+	ret = ath12k_core_cu_mem_pool_init(ag);
+	if (ret)
+		goto err_mlo_teardown;
+
 	if (!ag->wsi_remap_in_progress) {
 		ret = ath12k_mac_register(ag);
 		if (WARN_ON(ret))
@@ -2079,10 +2083,6 @@ static int ath12k_core_hw_group_start(struct ath12k_hw_group *ag)
 	set_bit(ATH12K_GROUP_FLAG_REGISTERED, &ag->flags);
 
 	spin_lock_init(&ag->qos.profile_lock);
-
-	ret = ath12k_core_cu_mem_pool_init(ag);
-	if (ret)
-		goto err_mlo_teardown;
 
 core_pdev_create:
 	for (i = 0; i < ag->num_devices; i++) {
