@@ -32,8 +32,9 @@ int ath12k_dp_mon_rx_filter_alloc(struct ath12k_pdev_dp *dp_pdev)
 	dp_mon_pdev->rx_filter = rx_filter;
 
 	for (mode = 0; mode < DP_MON_FILTER_MAX_MODE; mode++) {
-		rx_filter[mode] = kzalloc(sizeof(struct dp_mon_rx_filter) *
-					DP_MON_FILTER_SRNG_TYPE_MAX, GFP_KERNEL);
+		rx_filter[mode] = (struct dp_mon_rx_filter *)
+				kzalloc(sizeof(struct dp_mon_rx_filter) *
+				DP_MON_FILTER_SRNG_TYPE_MAX, GFP_KERNEL);
 		if (!rx_filter[mode])
 			goto free_rx_filter;
 	}
@@ -1524,14 +1525,16 @@ int ath12k_dp_mon_tx_filter_alloc(struct ath12k_pdev_dp *dp_pdev)
 		return -EINVAL;
 	}
 
-	tx_mon_filter = kzalloc(rq_size, GFP_KERNEL);
+	tx_mon_filter = (struct dp_mon_tx_filter **)
+				kzalloc(rq_size, GFP_KERNEL);
 	if (!tx_mon_filter)
 		return -ENOMEM;
 
 	dp_mon_pdev->tx_mon_filter = tx_mon_filter;
 	rq_size = sizeof(struct dp_mon_tx_filter) * DP_MON_TX_FILTER_SRNG_TYPE_MAX;
 	for (mode = 0; mode < DP_MON_TX_FILTER_MAX; mode++) {
-		tx_mon_filter[mode] = kzalloc(rq_size, GFP_KERNEL);
+		tx_mon_filter[mode] = (struct dp_mon_tx_filter *)
+					kzalloc(rq_size, GFP_KERNEL);
 		if (!tx_mon_filter[mode])
 			goto free_tx_filter;
 	}
