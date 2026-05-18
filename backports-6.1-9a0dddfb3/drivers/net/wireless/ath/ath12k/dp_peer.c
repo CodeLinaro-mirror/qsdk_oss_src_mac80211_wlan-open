@@ -1837,9 +1837,52 @@ bool ath12k_dp_hw_peer_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
 }
 EXPORT_SYMBOL(ath12k_dp_hw_peer_stats_enabled);
 
+int ath12k_dp_alloc_delay_stats_peer(struct ath12k_dp_peer *dp_peer)
+{
+	int tid, ring_id;
+	struct ath12k_dp_mld_peer_stats *mld_stats;
+	struct ath12k_dp_peer_delay_stats *delay_stats;
+	struct ath12k_dp_peer_delay_tx_stats *tx_delay;
+	struct ath12k_dp_peer_delay_rx_stats *rx_delay;
+
+	if (!dp_peer)
+		return -EINVAL;
+
+	mld_stats = &dp_peer->mld_stats;
+
+	if (mld_stats->delay_stats)
+		return 0;
+
+	mld_stats->delay_stats = kzalloc(sizeof(*mld_stats->delay_stats),
+					 GFP_ATOMIC);
+
+	if (!mld_stats->delay_stats)
+		return -ENOMEM;
+
+	delay_stats = mld_stats->delay_stats;
+
+	for (tid = 0; tid < DP_TID_MAX; tid++) {
+		for (ring_id = 0; ring_id < DP_REO_DST_RING_MAX; ring_id++) {
+			tx_delay = &delay_stats->delay_tid_stats[tid][ring_id].tx_delay;
+			rx_delay = &delay_stats->delay_tid_stats[tid][ring_id].rx_delay;
+
+			ath12k_dp_hist_init(&tx_delay->tx_swq_delay,
+					    HIST_TYPE_SW_ENQEUE_DELAY);
+			ath12k_dp_hist_init(&tx_delay->hwtx_delay,
+					    HIST_TYPE_HW_COMP_DELAY);
+			ath12k_dp_hist_init(&rx_delay->to_stack_delay,
+					    HIST_TYPE_REAP_STACK);
+		}
+	}
+
+	return 0;
+}
+
 int ath12k_dp_peer_stats_alloc(struct ath12k_dp_peer *dp_peer,
 			       struct ath12k_pdev_dp *dp_pdev)
 {
+	int ret = 0;
+
 	if (!dp_peer || !dp_pdev) {
 		ath12k_err(NULL,
 			   "Stats alloc NULL arg: dp_peer=%p dp_pdev=%p\n",
@@ -1860,7 +1903,15 @@ int ath12k_dp_peer_stats_alloc(struct ath12k_dp_peer *dp_peer,
 		}
 	}
 
-	return 0;
+	if (ath12k_dp_delay_stats_enabled(dp_pdev)) {
+		ret = ath12k_dp_alloc_delay_stats_peer(dp_peer);
+		if (ret)
+			ath12k_warn(dp_pdev->ar->ab,
+				    "Failed to allocate delay stats for peer: %d\n", ret);
+		return ret;
+	}
+
+	return ret;
 }
 EXPORT_SYMBOL(ath12k_dp_peer_stats_alloc);
 
@@ -1871,6 +1922,9 @@ void ath12k_dp_peer_stats_free(struct ath12k_dp_peer *dp_peer)
 
 	kfree(dp_peer->mld_stats.hw_mld_stats);
 	dp_peer->mld_stats.hw_mld_stats = NULL;
+
+	kfree(dp_peer->mld_stats.delay_stats);
+	dp_peer->mld_stats.delay_stats = NULL;
 }
 EXPORT_SYMBOL(ath12k_dp_peer_stats_free);
 

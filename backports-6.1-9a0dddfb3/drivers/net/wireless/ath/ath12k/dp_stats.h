@@ -48,6 +48,7 @@ struct ath12k_dp_link_peer;
 #define IS_VALID_RSSI(rssi) ((rssi) <= 0)
 #define IS_VALID_RATE(rate) ((rate) >= 0)
 
+#define DP_TID_MAX	9
 #define nla_total_size_nested(x) nla_total_size(x)
 /**
  * enum ath12k_stats_object:	Defines the Stats specific to object
@@ -698,10 +699,6 @@ struct ath12k_dp_mld_peer_hw_stats {
 	struct ath12k_dp_mld_peer_hw_rx_stats hw_mld_rx;
 };
 
-struct ath12k_dp_mld_peer_stats {
-	struct ath12k_dp_mld_peer_hw_stats *hw_mld_stats;
-};
-
 /**
  * struct ath12k_dp_link_peer_hw_tx_stats - Per-link HW TX statistics
  * @sum_ack_rssi:       Signed sum of ACK RSSI values (dBm) across PPDUs
@@ -1044,6 +1041,30 @@ struct ath12k_rx_peer_user_stats {
 	u32 mpdu_cnt_fcs_ok;
 	u32 mpdu_cnt_fcs_err;
 	struct pkt_type ppdu;
+};
+
+struct ath12k_dp_peer_delay_tx_stats {
+	struct hist_stats tx_swq_delay;
+	struct hist_stats hwtx_delay;
+};
+
+struct ath12k_dp_peer_delay_rx_stats {
+	struct hist_stats to_stack_delay;
+};
+
+struct ath12k_dp_peer_delay_tid_stats {
+	struct ath12k_dp_peer_delay_tx_stats tx_delay;
+	struct ath12k_dp_peer_delay_rx_stats rx_delay;
+};
+
+struct ath12k_dp_peer_delay_stats {
+	struct ath12k_dp_peer_delay_tid_stats delay_tid_stats[DP_TID_MAX]
+							     [DP_REO_DST_RING_MAX];
+};
+
+struct ath12k_dp_mld_peer_stats {
+	struct ath12k_dp_mld_peer_hw_stats *hw_mld_stats;
+	struct ath12k_dp_peer_delay_stats *delay_stats;
 };
 
 #define MCS_VALID 1
