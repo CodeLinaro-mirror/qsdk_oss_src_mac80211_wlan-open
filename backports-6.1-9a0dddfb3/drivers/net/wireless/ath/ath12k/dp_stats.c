@@ -595,7 +595,9 @@ int ath12k_dp_pdev_get_tid_stats(struct ath12k *ar,
 				 struct ath12k_dp_aggr_pdev_tid_stats *tid_stats)
 {
 	struct ath12k_tid_tx_stats *per_ring_tx;
-	struct ath12k_tid_tx_stats *dst_tx;
+	struct ath12k_tid_rx_stats *per_ring_rx;
+	struct ath12k_tid_tx_stats *aggr_tx;
+	struct ath12k_tid_rx_stats *aggr_rx;
 	u8 tid;
 	int ring_id, i;
 
@@ -606,49 +608,95 @@ int ath12k_dp_pdev_get_tid_stats(struct ath12k *ar,
 	memset(tid_stats, 0, sizeof(*tid_stats));
 
 	for (tid = 0; tid < VOW_DATA_TID_MAX; tid++) {
-		dst_tx = &tid_stats->tid_tx[tid];
-		dst_tx->swq_delay.min = U32_MAX;
-		dst_tx->hwtx_delay.min = U32_MAX;
-		dst_tx->intfrm_delay.min = U32_MAX;
+		aggr_tx = &tid_stats->tid_tx[tid];
+		aggr_tx->swq_delay.min = U32_MAX;
+		aggr_tx->hwtx_delay.min = U32_MAX;
+		aggr_tx->intfrm_delay.min = U32_MAX;
+
+		aggr_rx = &tid_stats->tid_rx[tid];
+		aggr_rx->to_stack_delay.min = U32_MAX;
+		aggr_rx->intfrm_delay.min = U32_MAX;
 	}
 
 	/* Aggregate stats for each TID (0-8) */
 	for (tid = 0; tid < VOW_DATA_TID_MAX; tid++) {
-		dst_tx = &tid_stats->tid_tx[tid];
-		/* Aggregate TX counters from all TCL rings directly to output */
+		aggr_tx = &tid_stats->tid_tx[tid];
+		aggr_rx = &tid_stats->tid_rx[tid];
+		/* Aggregate TX counters from all TCL rings */
 		for (ring_id = 0; ring_id < DP_TCL_NUM_RING_MAX; ring_id++) {
 			per_ring_tx = &ar->dp.tid_stats.tid_tx[ring_id][tid];
 
 			/* Aggregate TQM status counters */
 			for (i = 0; i < HAL_WBM_TQM_REL_REASON_MAX; i++)
-				dst_tx->tqm_status_cnt[i] +=
+				aggr_tx->tqm_status_cnt[i] +=
 					per_ring_tx->tqm_status_cnt[i];
 
 			/* Aggregate HTT status counters */
 			for (i = 0; i < HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX; i++)
-				dst_tx->htt_status_cnt[i] +=
+				aggr_tx->htt_status_cnt[i] +=
 					per_ring_tx->htt_status_cnt[i];
 
 			/* Aggregate SW drop counters */
 			for (i = 0; i < DP_TID_TX_SW_DROP_MAX; i++)
-				dst_tx->swdrop_cnt[i] +=
+				aggr_tx->swdrop_cnt[i] +=
 					per_ring_tx->swdrop_cnt[i];
 
 			/* Aggregate delay histograms */
 			ath12k_dp_accumulate_hist_stats(&per_ring_tx->swq_delay,
-							&dst_tx->swq_delay);
+							&aggr_tx->swq_delay);
 			ath12k_dp_accumulate_hist_stats(&per_ring_tx->hwtx_delay,
-							&dst_tx->hwtx_delay);
+							&aggr_tx->hwtx_delay);
 			ath12k_dp_accumulate_hist_stats(&per_ring_tx->intfrm_delay,
-							&dst_tx->intfrm_delay);
+							&aggr_tx->intfrm_delay);
 		}
 
-		if (dst_tx->swq_delay.min == U32_MAX)
-			dst_tx->swq_delay.min = 0;
-		if (dst_tx->hwtx_delay.min == U32_MAX)
-			dst_tx->hwtx_delay.min = 0;
-		if (dst_tx->intfrm_delay.min == U32_MAX)
-			dst_tx->intfrm_delay.min = 0;
+		/* Aggregate RX counters from all REO rings */
+		for (ring_id = 0; ring_id < DP_REO_DST_RING_MAX; ring_id++) {
+			per_ring_rx = &ar->dp.tid_stats.tid_rx[ring_id][tid];
+
+			/* Aggregate normal RX counters */
+			aggr_rx->msdu_cnt += per_ring_rx->msdu_cnt;
+			aggr_rx->mcast_msdu_cnt += per_ring_rx->mcast_msdu_cnt;
+			aggr_rx->bcast_msdu_cnt += per_ring_rx->bcast_msdu_cnt;
+			aggr_rx->delivered_to_stack += per_ring_rx->delivered_to_stack;
+
+			/* Aggregate Rx SW drop counters */
+			for (i = 0; i < DP_TID_RX_SW_DROP_MAX; i++)
+				aggr_rx->fail_cnt[i] += per_ring_rx->fail_cnt[i];
+
+			/* Aggregate REO error counters */
+			aggr_rx->reo_err.reo_code_inv +=
+				per_ring_rx->reo_err.reo_code_inv;
+
+			for (i = 0; i < HAL_REO_DEST_RING_ERROR_CODE_MAX; i++)
+				aggr_rx->reo_err.reo_code[i] +=
+					per_ring_rx->reo_err.reo_code[i];
+
+			/* Aggregate RXDMA error counters */
+			aggr_rx->rxdma_err.rxdma_code_inv +=
+				per_ring_rx->rxdma_err.rxdma_code_inv;
+
+			for (i = 0; i < HAL_REO_ENTR_RING_RXDMA_ECODE_MAX; i++)
+				aggr_rx->rxdma_err.rxdma_code[i] +=
+					per_ring_rx->rxdma_err.rxdma_code[i];
+
+			/* Aggregate RX delay histograms */
+			ath12k_dp_accumulate_hist_stats(&per_ring_rx->to_stack_delay,
+							&aggr_rx->to_stack_delay);
+			ath12k_dp_accumulate_hist_stats(&per_ring_rx->intfrm_delay,
+							&aggr_rx->intfrm_delay);
+		}
+
+		if (aggr_tx->swq_delay.min == U32_MAX)
+			aggr_tx->swq_delay.min = 0;
+		if (aggr_tx->hwtx_delay.min == U32_MAX)
+			aggr_tx->hwtx_delay.min = 0;
+		if (aggr_tx->intfrm_delay.min == U32_MAX)
+			aggr_tx->intfrm_delay.min = 0;
+		if (aggr_rx->to_stack_delay.min == U32_MAX)
+			aggr_rx->to_stack_delay.min = 0;
+		if (aggr_rx->intfrm_delay.min == U32_MAX)
+			aggr_rx->intfrm_delay.min = 0;
 	}
 
 	return 0;
@@ -765,6 +813,34 @@ void ath12k_dp_hist_init(struct hist_stats *hist_stats,
 	hist_stats->hist.hist_type = hist_type;
 }
 EXPORT_SYMBOL(ath12k_dp_hist_init);
+
+/**
+ * ath12k_dp_tid_rx_stats_hist_init - Initialize delay histograms for per-TID RX stats
+ * @dp_pdev: DP pdev handle
+ *
+ * Initializes delay histograms (reap-to-stack and interframe) for all
+ * per ring, per tid during pdev allocation.
+ */
+void ath12k_dp_tid_rx_stats_hist_init(struct ath12k_pdev_dp *dp_pdev)
+{
+	int ring, tid;
+
+	if (!dp_pdev)
+		return;
+
+	for (ring = 0; ring < DP_REO_DST_RING_MAX; ring++) {
+		for (tid = 0; tid < VOW_DATA_TID_MAX; tid++) {
+			struct ath12k_tid_rx_stats *tid_rx;
+
+			tid_rx = &dp_pdev->tid_stats.tid_rx[ring][tid];
+			ath12k_dp_hist_init(&tid_rx->to_stack_delay,
+					    HIST_TYPE_REAP_STACK);
+			ath12k_dp_hist_init(&tid_rx->intfrm_delay,
+					    HIST_TYPE_PDEV_SW_INTERFRAME_DELAY);
+		}
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_tid_rx_stats_hist_init);
 
 /**
  * ath12k_dp_tid_tx_stats_hist_init() - Initialize delay histograms for per-TID TX stats

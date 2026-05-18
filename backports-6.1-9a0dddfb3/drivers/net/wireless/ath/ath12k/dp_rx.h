@@ -326,7 +326,8 @@ int ath12k_dp_rx_pkt_type_filter(struct ath12k *ar,
 				 u32 meta_data);
 int ath12k_dp_rxdma_buf_setup(struct ath12k_base *ab);
 void ath12k_dp_rx_skb_free(struct sk_buff *skb, struct ath12k_dp *dp, int ring,
-			   enum ath12k_dp_rx_error drop_reason);
+			   enum ath12k_dp_rx_error drop_reason,
+			   struct ath12k_pdev_dp *dp_pdev, u8 tid);
 void ath12k_dp_rx_classify_mscs(struct ath12k_base *ab,
 				struct ath12k_dp_peer *peer,
 				struct sk_buff *msdu, u8 tid);

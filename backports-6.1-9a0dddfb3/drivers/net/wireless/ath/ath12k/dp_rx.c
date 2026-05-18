@@ -503,7 +503,8 @@ void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 
 			if (unlikely(paddr == DMA_MAPPING_ERROR)) {
 				ath12k_dp_rx_skb_free(skb, dp, 0,
-						      DP_RX_ERR_DROP_REPLENISH);
+						      DP_RX_ERR_DROP_REPLENISH,
+						      NULL, 0);
 				rx_desc->skb = NULL;
 				rx_desc->vaddr = NULL;
 				break;
@@ -1748,7 +1749,8 @@ int ath12k_dp_rx_pkt_type_filter(struct ath12k *ar,
 }
 
 void ath12k_dp_rx_skb_free(struct sk_buff *skb, struct ath12k_dp *dp, int ring,
-			   enum ath12k_dp_rx_error drop_reason)
+			   enum ath12k_dp_rx_error drop_reason,
+			   struct ath12k_pdev_dp *dp_pdev, u8 tid)
 {
 	if (ring >= DP_REO_DST_RING_MAX) {
 		ath12k_dbg(dp->ab, ATH12K_DBG_TELEMETRY, "Invalid Rx Ring %u\n",
@@ -1760,6 +1762,17 @@ void ath12k_dp_rx_skb_free(struct sk_buff *skb, struct ath12k_dp *dp, int ring,
 		DP_DEVICE_STATS_INC(dp, rx.rx_err[DP_RX_ERR_DROP_MISC][ring], 1);
 	else
 		DP_DEVICE_STATS_INC(dp, rx.rx_err[drop_reason][ring], 1);
+
+	/* Update VoW stats for invalid peer drops */
+	if (dp_pdev && drop_reason == DP_RX_ERR_DROP_INV_PEER) {
+		if (ath12k_dp_stats_enabled(dp_pdev) &&
+		    ath12k_dp_vow_stats_enabled(dp_pdev)) {
+			DP_PDEV_TID_RX_REASON_INC(dp_pdev, ring,
+						  ath12k_vow_tid_validate(tid),
+						  fail_cnt,
+						  DP_TID_RX_INVALID_PEER_VDEV);
+		}
+	}
 
 	IPA_SET_RX_BUF_SMMU_UNMAP(dp->ab, skb, true);
 	dev_kfree_skb_any(skb);
