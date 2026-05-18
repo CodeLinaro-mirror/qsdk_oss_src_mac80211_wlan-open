@@ -4005,7 +4005,7 @@ static inline u32 ath12k_effective_rx_chains(struct ath12k *ar, u32 chainmask)
 	return chains;
 }
 
-static u8 ath12k_get_nss_160mhz(struct ath12k *ar,
+u8 ath12k_get_nss_160mhz(struct ath12k *ar,
 				u8 max_nss)
 {
 	u8 nss_ratio_info = ar->pdev->cap.nss_ratio_info;
@@ -4033,7 +4033,7 @@ static u8 ath12k_get_nss_160mhz(struct ath12k *ar,
 	return max_sup_nss;
 }
 
-static u8 ath12k_get_nss_320mhz(struct ath12k *ar,
+u8 ath12k_get_nss_320mhz(struct ath12k *ar,
 				u8 max_nss)
 {
 	u8 nss_ratio_info = ar->pdev->cap.nss_ratio_info;
