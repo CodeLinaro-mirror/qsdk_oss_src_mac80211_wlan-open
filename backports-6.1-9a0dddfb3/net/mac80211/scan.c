@@ -844,6 +844,9 @@ static int __ieee80211_start_scan(struct ieee80211_sub_if_data *sdata,
 			__ieee80211_validate_scan_freqs(sdata, req);
 		}
 
+		if (!req->n_channels)
+			return -EINVAL;
+
 		local->hw_scan_req = kmalloc(struct_size(local->hw_scan_req,
 							 req.channels,
 							 req->n_channels) +
@@ -950,8 +953,10 @@ static int __ieee80211_start_scan(struct ieee80211_sub_if_data *sdata,
 	ieee80211_recalc_idle(local);
 
 	if (hw_scan) {
-		WARN_ON(!ieee80211_prep_hw_scan(sdata));
-		rc = drv_hw_scan(local, sdata, local->hw_scan_req);
+		if (WARN_ON(!ieee80211_prep_hw_scan(sdata)))
+			rc = -EINVAL;
+		else
+			rc = drv_hw_scan(local, sdata, local->hw_scan_req);
 	} else {
 		rc = ieee80211_start_sw_scan(local, sdata);
 	}
