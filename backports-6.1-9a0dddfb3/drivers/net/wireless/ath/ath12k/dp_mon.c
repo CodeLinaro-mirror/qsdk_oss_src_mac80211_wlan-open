@@ -3323,7 +3323,6 @@ ath12k_dp_ext_mon_config_offchan_capture(struct ath12k_pdev_dp *dp_pdev, bool en
 		    "no active monitor vdev found for offchan capture\n");
 }
 
-static
 int ath12k_dp_ext_mon_set_rx_filter(struct ath12k_pdev_dp *dp_pdev,
 				    const struct ath12k_ext_mon_filter_config *new_config)
 {
@@ -3408,6 +3407,7 @@ int ath12k_dp_ext_mon_set_rx_filter(struct ath12k_pdev_dp *dp_pdev,
 
 	return ret;
 }
+EXPORT_SYMBOL(ath12k_dp_ext_mon_set_rx_filter);
 
 static int
 ath12k_dp_ext_mon_add_rx_peers(struct ath12k_pdev_dp *dp_pdev,
@@ -3677,6 +3677,9 @@ int ath12k_dp_ext_mon_set_filter(struct ath12k_pdev_dp *dp_pdev,
 {
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	int ret = 0;
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp_pdev->dp);
 
 	if (unlikely(!dp_mon_pdev)) {
 		ath12k_warn(dp_pdev->dp, "monitor pdev is null\n");
@@ -3685,7 +3688,10 @@ int ath12k_dp_ext_mon_set_filter(struct ath12k_pdev_dp *dp_pdev,
 
 	switch (req->direction) {
 	case QCA_VENDOR_EXT_MON_DIRECTION_RX:
-		ret = ath12k_dp_ext_mon_set_rx_filter(dp_pdev, &req->filter);
+		if (mon_ops && mon_ops->ext_mon_set_rx_filter) {
+			ret = mon_ops->ext_mon_set_rx_filter(dp_pdev, &req->filter);
+			break;
+		}
 		break;
 	case QCA_VENDOR_EXT_MON_DIRECTION_TX:
 		ret = ath12k_dp_ext_mon_set_tx_filter(dp_pdev, &req->filter);
@@ -3936,7 +3942,7 @@ int ath12k_dp_ext_mon_alloc(struct ath12k_pdev_dp *dp_pdev)
 }
 EXPORT_SYMBOL(ath12k_dp_ext_mon_alloc);
 
-static void
+void
 ath12k_dp_ext_mon_drain_peer_list(struct ath12k_pdev_dp *dp_pdev,
 				  struct list_head *peer_list,
 				  int vdev_id)
@@ -3969,6 +3975,7 @@ ath12k_dp_ext_mon_drain_peer_list(struct ath12k_pdev_dp *dp_pdev,
 		kfree(peer);
 	}
 }
+EXPORT_SYMBOL(ath12k_dp_ext_mon_drain_peer_list);
 
 void ath12k_dp_ext_mon_free(struct ath12k_pdev_dp *dp_pdev)
 {

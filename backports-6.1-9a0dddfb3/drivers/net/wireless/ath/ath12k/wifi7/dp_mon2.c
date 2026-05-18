@@ -69,6 +69,7 @@ const struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_dual_ring_ops = {
 	.ext_mon_alloc = ath12k_dp_ext_mon_alloc,
 	.ext_mon_free = ath12k_dp_ext_mon_free,
 	.ext_mon_setup_rx_filter = ath12k_wifi7_dp_ext_mon_setup_rx_filter,
+	.ext_mon_set_rx_filter = ath12k_dp_ext_mon_set_rx_filter,
 	/* Below are TxMonitor Ops */
 	/* At Device Init/Exit */
 	.mon_tx_srng_alloc_setup = ath12k_dp_mon_tx_srng_alloc_setup,
