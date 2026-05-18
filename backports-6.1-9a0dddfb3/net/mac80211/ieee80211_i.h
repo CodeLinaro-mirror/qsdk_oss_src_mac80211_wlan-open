@@ -1092,6 +1092,10 @@ struct ieee80211_link_data_ap {
 	/* to be used after channel switch. */
 	struct cfg80211_beacon_data *next_beacon;
 	bool after_beacon_cu;
+
+	/* repurposed link bandwidth details */
+	enum ieee80211_sta_rx_bandwidth repurposed_adv_bw;
+	bool repurposed_adv_bw_valid;
 };
 
 struct ieee80211_link_data {
