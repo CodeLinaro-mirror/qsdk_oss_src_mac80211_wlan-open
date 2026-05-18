@@ -1245,6 +1245,27 @@ ieee80211_ap_power_type(u8 control)
 	}
 }
 
+static bool ieee80211_6ghz_sta_power_type_disallowed
+				(struct ieee80211_sub_if_data *sdata,
+				 struct cfg80211_chan_def *chandef,
+				 enum ieee80211_ap_reg_power ap_power_type)
+{
+	enum nl80211_regulatory_power_modes power_mode;
+
+	if (sdata->vif.type != NL80211_IFTYPE_STATION)
+		return false;
+
+	power_mode = ieee80211_mac_to_cfg_power_type(ap_power_type);
+	if (power_mode >= NL80211_REG_NUM_POWER_MODES)
+		return false;
+
+	return cfg80211_validate_freq_width_for_pwr_mode
+						(sdata->local->hw.wiphy,
+						 chandef,
+						 power_mode,
+						 IEEE80211_CHAN_DISABLED);
+}
+
 /**
  * ieee80211_notify_colocated_ap_6ghz_update - Notify colocated AP links
  * @sdata: STA interface that learned the updated 6 GHz information
@@ -1524,6 +1545,17 @@ static int ieee80211_config_bw(struct ieee80211_link_data *link,
 		if (he_6ghz_oper) {
 			enum ieee80211_ap_reg_power ap_power_type =
 				ieee80211_ap_power_type(he_6ghz_oper->control);
+
+			if (ieee80211_6ghz_sta_power_type_disallowed
+							(sdata,
+							 &chanreq.oper,
+							 ap_power_type)) {
+				link_info(link,
+					  "AP %pM power mode %d disallowed by reg rules, disconnect\n",
+					  link->u.mgd.bssid, ap_power_type);
+				return -EINVAL;
+			}
+
 			if (ap_power_type != link->conf->power_type) {
 #ifdef CPTCFG_QCN_EXTN
 				ret = ieee80211_validate_6ghz_chandef_extn(sdata->local,
@@ -6523,13 +6555,28 @@ static int ieee80211_prep_channel(struct ieee80211_sub_if_data *sdata,
 			link->conf->pwr_reduction = *elems->pwr_constr_elem;
 
 		he_6ghz_oper = ieee80211_he_6ghz_oper(elems->he_operation);
-		if (he_6ghz_oper)
-			link->conf->power_type =
+		if (he_6ghz_oper) {
+			enum ieee80211_ap_reg_power ap_power_type =
 				ieee80211_ap_power_type(he_6ghz_oper->control);
-		else
+
+			if (ieee80211_6ghz_sta_power_type_disallowed
+							(sdata,
+							 &chanreq.oper,
+							 ap_power_type)) {
+				link_info(link,
+					  "AP %pM power mode %d disallowed by reg rules, reject\n",
+					  cbss->bssid, ap_power_type);
+				rcu_read_unlock();
+				kfree(elems);
+				return -EINVAL;
+			}
+
+			link->conf->power_type = ap_power_type;
+		} else {
 			link_info(link,
 				  "HE 6 GHz operation missing (on %d MHz), expect issues\n",
 				  cbss->channel->center_freq);
+		}
 
 		link->conf->tpe = elems->tpe;
 		ieee80211_rearrange_tpe(&link->conf->tpe, &ap_chandef,
