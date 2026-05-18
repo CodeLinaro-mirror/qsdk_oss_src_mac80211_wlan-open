@@ -14242,8 +14242,7 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 			 * during recovery so that it can clean up its memory.
 			 */
 
-			else if (is_recovery &&
-				 old_state == IEEE80211_STA_NONE &&
+			else if (old_state == IEEE80211_STA_NONE &&
 				 new_state == IEEE80211_STA_NOTEXIST)
 				goto ml_station_remove;
 			else
