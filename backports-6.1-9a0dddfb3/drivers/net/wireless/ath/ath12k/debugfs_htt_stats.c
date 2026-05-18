@@ -8117,6 +8117,7 @@ ath12k_htt_print_phy_stats_tlv(const void *tag_buf, u16 tag_len,
 	u32 len = stats_req->buf_len;
 	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
 	u8 *buf = stats_req->buf, i;
+	struct ath12k *ar;
 
 	if (tag_len < sizeof(*htt_stats_buf))
 		return;
@@ -8128,6 +8129,26 @@ ath12k_htt_print_phy_stats_tlv(const void *tag_buf, u16 tag_len,
 	for (i = 0; i < ATH12K_HTT_STATS_MAX_CHAINS; i++)
 		len += scnprintf(buf + len, buf_len - len, "runtime_nf_chain[%d] = %d\n",
 				 i, a_sle32_to_cpu(htt_stats_buf->runtime_nf_chain[i]));
+
+	/* Extract static NF values for telemetry if ar back-pointer is set.
+	 * Dynamic (runtime) NF is obtained via the WMI BSS survey path
+	 * (same as iw dev survey dump), not from HTT PHY stats.
+	 */
+	if (stats_req->ar) {
+		ar = stats_req->ar;
+
+		/* Verify ar is still valid by checking if stats_req is still set.
+		 * This prevents use-after-free if telemetry cleanup runs concurrently.
+		 */
+		spin_lock_bh(&ar->data_lock);
+		if (ar->debug.htt_stats.stats_req == stats_req) {
+			/* Store all static NF chains (1 = invalid/unused sentinel) */
+			for (i = 0; i < ATH12K_HTT_STATS_MAX_CHAINS; i++)
+				ar->bdf_nf_chains[i] =
+					a_sle32_to_cpu(htt_stats_buf->nf_chain[i]);
+		}
+		spin_unlock_bh(&ar->data_lock);
+	}
 	len += scnprintf(buf + len, buf_len - len, "false_radar_cnt = %u / %u (mins)\n",
 			 le32_to_cpu(htt_stats_buf->false_radar_cnt),
 			 le32_to_cpu(htt_stats_buf->fw_run_time));
@@ -15241,6 +15262,7 @@ static int ath12k_open_htt_stats(struct inode *inode,
 	}
 
 	ar->debug.htt_stats.stats_req = stats_req;
+	stats_req->ar = ar;
 	stats_req->type = type;
 	stats_req->cfg_param[0] = ar->debug.htt_stats.cfg_param[0];
 	stats_req->cfg_param[1] = ar->debug.htt_stats.cfg_param[1];

@@ -1797,6 +1797,15 @@ struct ath12k {
 	struct completion mvr_complete;
 	bool twt_enabled;
 	struct wmi_rssi_dbm_conv_offsets rssi_offsets;
+	/* HTT PHY stats NF values (type 37), populated by ath12k_telemetry_get_phy_nf().
+	 * bdf_nf_chains[]: static/characterized NF per chain. The firmware reports 1
+	 * as a sentinel for unused/inactive chains. This is unambiguous because valid
+	 * noise floor readings are always negative (in dBm, e.g. -95), so a positive
+	 * value of 1 cannot be a real NF measurement.
+	 * Dynamic (runtime) NF is obtained via ar->survey[idx].noise from the WMI BSS
+	 * channel info path (same mechanism as iw dev survey dump).
+	 */
+	s32 bdf_nf_chains[ATH12K_HTT_STATS_MAX_CHAINS];
 	u16 csa_active_cnt;
 	s32 sensitivity_level;
 

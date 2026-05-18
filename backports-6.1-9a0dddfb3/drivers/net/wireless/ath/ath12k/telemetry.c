@@ -10,6 +10,7 @@
 #include <linux/module.h>
 #include "telemetry_agent_if.h"
 #include "../telemetry_agent_wifi_driver_if.h"
+#include "debugfs_htt_stats.h"
 
 #define MIN_THERSHOLD_PERCENTAGE 0
 #define MAX_THERSHOLD_PERCENTAGE 100
@@ -382,3 +383,67 @@ bool ath12k_telemetry_get_sla_num_pkts(u32 *pkt_num)
 	return true;
 }
 EXPORT_SYMBOL(ath12k_telemetry_get_sla_num_pkts);
+
+/**
+ * ath12k_telemetry_get_phy_nf() - Fetch static NF from HTT PHY stats.
+ *
+ * Requests HTT stats type ATH12K_DBG_HTT_EXT_PHY_COUNTERS_AND_PHY_STATS (37)
+ * and extracts:
+ *  - bdf_nf_chains[]: all static NF chain values (1 = invalid sentinel)
+ *
+ * Dynamic (runtime) NF is obtained separately via the WMI BSS survey path
+ * (same mechanism as "iw dev survey dump"), not from HTT PHY stats.
+ *
+ * ath12k_debugfs_htt_stats_req() is synchronous: it blocks on
+ * stats_req->htt_stats_rcvd until the firmware response is fully received
+ * and all TLVs (including HTT_STATS_PHY_STATS_TAG) have been processed by
+ * ath12k_debugfs_htt_ext_stats_handler(). The NF values are therefore
+ * already stored in ar->bdf_nf_chains[] before the call returns, making it
+ * safe to free stats_req and clear ar->debug.htt_stats.stats_req immediately
+ * afterwards.
+ *
+ * Must be called with wiphy_lock held.
+ *
+ * Returns 0 on success, negative error code on failure.
+ */
+#ifdef CPTCFG_ATH12K_DEBUGFS
+int ath12k_telemetry_get_phy_nf(struct ath12k *ar)
+{
+	struct debug_htt_stats_req *stats_req;
+	int ret;
+
+	stats_req = kzalloc(sizeof(*stats_req) + ATH12K_HTT_STATS_BUF_SIZE,
+			    GFP_KERNEL);
+	if (!stats_req)
+		return -ENOMEM;
+
+	stats_req->type = ATH12K_DBG_HTT_EXT_PHY_COUNTERS_AND_PHY_STATS;
+	stats_req->ar = ar;
+
+	spin_lock_bh(&ar->data_lock);
+	if (ar->debug.htt_stats.stats_req) {
+		spin_unlock_bh(&ar->data_lock);
+		kfree(stats_req);
+		return -EBUSY;
+	}
+	ar->debug.htt_stats.stats_req = stats_req;
+	spin_unlock_bh(&ar->data_lock);
+
+	ret = ath12k_debugfs_htt_stats_req(ar);
+
+	/* Clear the pointer under data_lock before freeing stats_req.
+	 * ath12k_debugfs_htt_ext_stats_handler() accesses stats_req fields
+	 * under data_lock; clearing the pointer here while holding the same
+	 * lock ensures any handler already inside its critical section
+	 * completes before we free, and any subsequent late firmware response
+	 * (e.g. arriving after a timeout) will see NULL and bail out safely.
+	 */
+	spin_lock_bh(&ar->data_lock);
+	ar->debug.htt_stats.stats_req = NULL;
+	spin_unlock_bh(&ar->data_lock);
+	kfree(stats_req);
+
+	return ret;
+}
+EXPORT_SYMBOL(ath12k_telemetry_get_phy_nf);
+#endif /* CPTCFG_ATH12K_DEBUGFS */

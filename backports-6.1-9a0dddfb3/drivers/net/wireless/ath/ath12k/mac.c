@@ -24024,9 +24024,8 @@ send_fail_resp:
 	return -EINVAL;
 }
 
-static void
-ath12k_mac_update_bss_chan_survey(struct ath12k *ar,
-				  struct ieee80211_channel *channel)
+void ath12k_mac_update_bss_chan_survey(struct ath12k *ar,
+				       struct ieee80211_channel *channel)
 {
 	int ret;
 	enum wmi_bss_chan_info_req_type type = WMI_BSS_SURVEY_REQ_TYPE_READ;
@@ -26778,7 +26777,7 @@ static int ath12k_mac_setup(struct ath12k *ar)
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_pdev *pdev = ar->pdev;
 	u8 pdev_idx = ar->pdev_idx;
-	int ret;
+	int i, ret;
 
 	ar->lmac_id = ath12k_hw_get_mac_from_pdev_id(ab->hw_params, pdev_idx);
 
@@ -26802,6 +26801,9 @@ static int ath12k_mac_setup(struct ath12k *ar)
 	ar->mgmt_tx_retry_limit = ATH12K_MGMT_TX_RETRY_LIMIT_DEFAULT;
 	ar->dfs_sub_channel_marking = true;
 	ar->radio_cfg.chan144_enabled = false;
+
+	for (i = 0; i < ATH12K_HTT_STATS_MAX_CHAINS; i++)
+		ar->bdf_nf_chains[i] = 1;
 
 	spin_lock_init(&ar->data_lock);
 	spin_lock_init(&ar->arsta_lock);

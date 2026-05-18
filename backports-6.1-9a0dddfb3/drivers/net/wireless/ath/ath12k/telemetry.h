@@ -142,4 +142,7 @@ void ath12k_send_rssi_rate_breach_indication(struct work_struct *work);
 void ath12k_rssi_rate_breach_indication(u8 *mac_addr, u8 breach_type,
 					u32 threshold_value, u32 detected_value,
 					bool set_clear);
+#ifdef CPTCFG_ATH12K_DEBUGFS
+int ath12k_telemetry_get_phy_nf(struct ath12k *ar);
+#endif /* CPTCFG_ATH12K_DEBUGFS */
 #endif /* ATH12K_TELEMETRY_H */
