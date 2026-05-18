@@ -2221,13 +2221,16 @@ static void ath12k_dp_tx_spt_free_and_deinit(struct ath12k_dp_hw_group *dp_hw_gr
 		spin_lock_bh(&dp_hw_grp->tx_desc_lock[pool_id]);
 		for (j = 0; j < ATH12K_TX_SPT_PAGES_PER_POOL; j++) {
 			tx_spt_page = j + pool_id * ATH12K_TX_SPT_PAGES_PER_POOL;
-			if (!dp_hw_grp->txbaddr[tx_spt_page])
+			if (!dp_hw_grp->txbaddr || !dp_hw_grp->txbaddr[tx_spt_page])
 				continue;
 			kfree(dp_hw_grp->txbaddr[tx_spt_page]);
 			dp_hw_grp->txbaddr[tx_spt_page] = NULL;
 		}
 		spin_unlock_bh(&dp_hw_grp->tx_desc_lock[pool_id]);
 	}
+
+	kfree(dp_hw_grp->txbaddr);
+	dp_hw_grp->txbaddr = NULL;
 
 	if (dp_hw_grp->spt_info) {
 		for (i = 0; i < dp_hw_grp->num_spt_pages; i++) {
@@ -2268,10 +2271,19 @@ static int ath12k_dp_tx_spt_alloc_and_init(struct ath12k_base *ab)
 	if (dp_hw_grp->num_spt_pages > ATH12K_MAX_PPT_ENTRIES)
 		dp_hw_grp->num_spt_pages = ATH12K_MAX_PPT_ENTRIES;
 
+	dp_hw_grp->txbaddr = kcalloc(dp_hw_grp->num_spt_pages,
+				     sizeof(*dp_hw_grp->txbaddr), GFP_KERNEL);
+	if (!dp_hw_grp->txbaddr) {
+		ret = -ENOMEM;
+		goto unlock;
+	}
+
 	dp_hw_grp->spt_info = kcalloc(dp_hw_grp->num_spt_pages,
 				      sizeof(struct ath12k_spt_info), GFP_KERNEL);
 	if (!dp_hw_grp->spt_info) {
 		ret = -ENOMEM;
+		kfree(dp_hw_grp->txbaddr);
+		dp_hw_grp->txbaddr = NULL;
 		goto free;
 	}
 
@@ -2560,6 +2572,8 @@ void ath12k_dp_umac_tx_desc_cleanup(struct ath12k_base *ab)
 
 		for (j = 0; j < ATH12K_TX_SPT_PAGES_PER_POOL; j++) {
 			tx_spt_page = j + pool_id * ATH12K_TX_SPT_PAGES_PER_POOL;
+			if (!dp_hw_grp->txbaddr || !dp_hw_grp->txbaddr[tx_spt_page])
+				continue;
 			tx_desc_info = dp_hw_grp->txbaddr[tx_spt_page];
 			for (k = 0; k < ATH12K_MAX_SPT_ENTRIES; k++) {
 				if (!tx_desc_info[k].in_use)

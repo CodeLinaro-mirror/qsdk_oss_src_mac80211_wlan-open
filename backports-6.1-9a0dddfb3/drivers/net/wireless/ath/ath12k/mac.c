@@ -19749,6 +19749,8 @@ void ath12k_mac_vif_unref(struct ath12k_dp *dp, struct ieee80211_vif *vif)
 
 		for (j = 0; j < ATH12K_TX_SPT_PAGES_PER_POOL; j++) {
 			tx_spt_page = j + i * ATH12K_TX_SPT_PAGES_PER_POOL;
+			if (!dp_hw_grp->txbaddr || !dp_hw_grp->txbaddr[tx_spt_page])
+				continue;
 			tx_desc_info = dp_hw_grp->txbaddr[tx_spt_page];
 
 			if (!tx_desc_info)
@@ -26732,9 +26734,11 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 			is_raw_mode = true;
 
 		/* Do not allow monitor interface creation if hardware
-		 * does not support it or if radio is a scan radio
+		 * does not support it, if runtime monitor support is
+		 * disabled, or if radio is a scan radio
 		 */
 		if (!ar->ab->hw_params->supports_monitor ||
+		    !ath12k_dp_ring_cfg->monitor_support ||
 		    ath12k_scan_radio_supported(ar->pdev))
 			is_monitor_disable = true;
 

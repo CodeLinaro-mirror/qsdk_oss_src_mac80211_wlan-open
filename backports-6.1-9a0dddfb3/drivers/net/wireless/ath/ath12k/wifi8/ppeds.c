@@ -1123,24 +1123,11 @@ int ath12k_wifi8_dp_ppeds_register_soc(struct ath12k_dp *dp, struct dp_ppe_ds_id
 		return -EOPNOTSUPP;
 	}
 
-	if (!ath12k_ppeds_ppe2tcl_ring_size ||
-		!ath12k_ppeds_reo2ppe_ring_size ||
-		!ath12k_ppeds_tqm2ppe_ring_size ||
-		ath12k_ppeds_ppe2tcl_ring_size > DP_PPE2TCL_RING_SIZE ||
-		ath12k_ppeds_reo2ppe_ring_size > DP_REO2PPE_RING_SIZE ||
-		ath12k_ppeds_tqm2ppe_ring_size > DP_TQM2PPE_RING_SIZE) {
-		ath12k_err(ab, "Invalid ring size ppe2tcl:%d reo2ppe:%d tqm2ppe:%d\n",
-				ath12k_ppeds_ppe2tcl_ring_size,
-				ath12k_ppeds_reo2ppe_ring_size,
-				ath12k_ppeds_tqm2ppe_ring_size);
-		return -EOPNOTSUPP;
-	}
-
 	for (ring_idx = 0; ring_idx < ath12k_ppeds_ppe2tcl_rings_max; ring_idx++) {
 
 		ppe2tcl_ring = &ab->hal.srng_list[dp->ppe.ppe2tcl_ring[ring_idx].ring_id];
 		ring_info->ppe2tcl_ba[ring_idx] = dp->ppe.ppe2tcl_ring[ring_idx].paddr;
-		ring_info->ppe2tcl_num_desc[ring_idx] = ath12k_ppeds_ppe2tcl_ring_size;
+		ring_info->ppe2tcl_num_desc[ring_idx] = DP_PPE2TCL_RING_SIZE;
 		ring_info->num_ppe2tcl = ath12k_ppeds_ppe2tcl_rings_max;
 		ath12k_info(ab, "PPEDS reg - PPE2TCL ring_id:%d ppe2tcl_ring:%p\n",
 				dp->ppe.ppe2tcl_ring[ring_idx].ring_id,
@@ -1174,7 +1161,7 @@ int ath12k_wifi8_dp_ppeds_register_soc(struct ath12k_dp *dp, struct dp_ppe_ds_id
 	for (ring_idx = 0; ring_idx < ath12k_ppeds_reo2ppe_rings_max; ring_idx++) {
 		reo2ppe_ring = &ab->hal.srng_list[dp->ppe.reo2ppe_ring[ring_idx].ring_id];
 		ring_info->reo2ppe_ba[ring_idx] = dp->ppe.reo2ppe_ring[ring_idx].paddr;
-		ring_info->reo2ppe_num_desc[ring_idx] = ath12k_ppeds_reo2ppe_ring_size;
+		ring_info->reo2ppe_num_desc[ring_idx] = DP_REO2PPE_RING_SIZE;
 		ring_info->num_reo2ppe = ath12k_ppeds_reo2ppe_rings_max;
 		ath12k_info(ab, "PPEDS reg - REO2PPE ring_id:%d reo2ppe_ring:%p\n",
 				dp->ppe.reo2ppe_ring[ring_idx].ring_id,
@@ -1218,7 +1205,7 @@ int ath12k_wifi8_dp_ppeds_register_soc(struct ath12k_dp *dp, struct dp_ppe_ds_id
 
 		/* HW buffer manager - TQM2PPE ring and PPE2WBM */
 		hbm_ring_info->tqm2ppe_ba = dp->ppe.tqm2ppe_txcmp_ring.paddr;
-		hbm_ring_info->tqm2ppe_num_desc = ath12k_ppeds_tqm2ppe_ring_size;
+		hbm_ring_info->tqm2ppe_num_desc = DP_TQM2PPE_RING_SIZE;
 		ath12k_info(ab, "PPEDS:HBM tqm2ppe_ba:%pad num_desc:%u\n",
 				&hbm_ring_info->tqm2ppe_ba,
 				hbm_ring_info->tqm2ppe_num_desc);
@@ -1459,7 +1446,7 @@ int ath12k_wifi8_dp_srng_ppeds_setup(struct ath12k_base *ab)
 		       idx, dp->ppe.reo2ppe_ring[idx].ring_id);
 		ret = ath12k_wifi8_ppeds_dp_srng_alloc(ab, &dp->ppe.reo2ppe_ring[idx],
 				HAL_REO2PPE,
-				0, ath12k_ppeds_reo2ppe_ring_size);
+				0, DP_REO2PPE_RING_SIZE);
 		if (ret) {
 			ath12k_warn(ab, "failed to set up reo2ppe ring:%d ring_num:%d\n",
 					ret, idx);
@@ -1473,7 +1460,7 @@ int ath12k_wifi8_dp_srng_ppeds_setup(struct ath12k_base *ab)
 	for (idx = 0; idx < ath12k_ppeds_ppe2tcl_rings_max; idx++) {
 		ret = ath12k_wifi8_ppeds_dp_srng_alloc(ab, &dp->ppe.ppe2tcl_ring[idx],
 				HAL_PPE2TCL,
-				0, ath12k_ppeds_ppe2tcl_ring_size);
+				0, DP_PPE2TCL_RING_SIZE);
 		if (ret) {
 			ath12k_warn(ab, "failed to set up ppe2tcl ring :%d\n", ret);
 			goto err;
@@ -1506,7 +1493,7 @@ skip_ppeds_dp_srng_ring_alloc:
 	for (idx = 0; idx < ath12k_ppeds_reo2ppe_rings_max; idx++) {
 		ret = ath12k_wifi8_ppeds_dp_srng_init(ab, &dp->ppe.reo2ppe_ring[idx],
 				HAL_REO2PPE,
-				0, 0, ath12k_ppeds_reo2ppe_ring_size,
+				0, 0, DP_REO2PPE_RING_SIZE,
 				restore_idx.reo2ppe_start_idx);
 		if (ret) {
 			ath12k_warn(ab, "failed to set up reo2ppe ring :%d\n", ret);
@@ -1520,7 +1507,7 @@ skip_ppeds_dp_srng_ring_alloc:
 	for (idx = 0; idx < ath12k_ppeds_ppe2tcl_rings_max; idx++) {
 		ret = ath12k_wifi8_ppeds_dp_srng_init(ab, &dp->ppe.ppe2tcl_ring[idx],
 				HAL_PPE2TCL,
-				0, 0, ath12k_ppeds_ppe2tcl_ring_size,
+				0, 0, DP_PPE2TCL_RING_SIZE,
 				restore_idx.ppe2tcl_start_idx);
 		if (ret) {
 			ath12k_warn(ab, "failed to set up ppe2tcl ring :%d\n", ret);
@@ -1538,7 +1525,7 @@ skip_ppeds_dp_srng_ring_alloc:
 	ret = ath12k_dp_srng_setup(ab, &dp->ppe.tqm2ppe_txcmp_ring,
 					HAL_TQM2PPE,
 					PPEDS_TQM2PPE_TX_CMPLN_RING_NUM, 0,
-					ath12k_ppeds_tqm2ppe_ring_size);
+					DP_TQM2PPE_RING_SIZE);
 	if (ret) {
 		ath12k_err(ab,
 				"failed to set up wbm2sw ppeds tx completion ring :%d\n",

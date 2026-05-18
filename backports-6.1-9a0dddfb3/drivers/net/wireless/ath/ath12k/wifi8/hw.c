@@ -376,12 +376,10 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 					BIT(NL80211_IFTYPE_AP) |
 					BIT(NL80211_IFTYPE_MESH_POINT) |
 					BIT(NL80211_IFTYPE_AP_VLAN),
-#ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 		.supports_monitor = true,
 		.max_clients_supported = 512,
 		.max_clients_dbs = 256,
 		.max_clients_dbs_sbs = 170,
-#endif
 
 		.idle_ps = false,
 		.cold_boot_calib = ATH12K_COLD_BOOT_CALIB,
@@ -456,7 +454,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.mlo_3_link_tx_support = true,
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
-		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
+		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES_DEFAULT,
 		.peer_del_all_support = true,
 	},
 	{
@@ -495,12 +493,10 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 					BIT(NL80211_IFTYPE_AP) |
 					BIT(NL80211_IFTYPE_MESH_POINT) |
 					BIT(NL80211_IFTYPE_AP_VLAN),
-#ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 		.supports_monitor = true,
 		.max_clients_supported = 512,
 		.max_clients_dbs = 256,
 		.max_clients_dbs_sbs = 170,
-#endif
 
 		.idle_ps = false,
 		.cold_boot_calib = ATH12K_COLD_BOOT_CALIB,
@@ -573,7 +569,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.mlo_3_link_tx_support = true,
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
-		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
+		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES_DEFAULT,
 	},
 	{
 		.name = "qcn9625 hw2.0",
@@ -612,12 +608,10 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 					BIT(NL80211_IFTYPE_AP) |
 					BIT(NL80211_IFTYPE_MESH_POINT) |
 					BIT(NL80211_IFTYPE_AP_VLAN),
-#ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 		.supports_monitor = true,
 		.max_clients_supported = 512,
 		.max_clients_dbs = 256,
 		.max_clients_dbs_sbs = 170,
-#endif
 
 		.idle_ps = false,
 		.cold_boot_calib = true,
@@ -692,7 +686,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.mlo_3_link_tx_support = true,
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
-		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
+		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES_DEFAULT,
 		.peer_del_all_support = true,
 	},
 };
@@ -1325,6 +1319,19 @@ int ath12k_wifi8_hw_init(struct ath12k_base *ab)
 {
 	struct ath12k_hw_params *hw_params = NULL;
 	int i;
+
+	/* Set num_rx_spt_pages for all wifi8 hw_params entries
+	 */
+
+	for (i = 0; i < ARRAY_SIZE(ath12k_wifi8_hw_params); i++) {
+		hw_params = &ath12k_wifi8_hw_params[i];
+		if (hw_params->hw_rev == ab->hw_rev) {
+			hw_params->num_rx_spt_pages =
+			    ath12k_dp_ring_cfg->rx_desc_count_wifi8 /
+			    ATH12K_MAX_SPT_ENTRIES;
+			break;
+		}
+	}
 
 	for (i = 0; i < ARRAY_SIZE(ath12k_wifi8_hw_params); i++) {
 		hw_params = &ath12k_wifi8_hw_params[i];

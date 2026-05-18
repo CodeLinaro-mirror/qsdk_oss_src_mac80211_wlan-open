@@ -97,47 +97,48 @@
 #define DP_TX_COMP_RING4_SIZE	1024
 
 #else
-/* Default profile values */
-#define DP_REO2PPE_RING_SIZE	16384
-#define DP_PPE2TCL_RING_SIZE	8192
-#define DP_RX_RELEASE_RING_SIZE	16384
-#define DP_RXDMA_BUF_RING_SIZE	8192
-#define DP_PPE_WBM2SW_RING_SIZE	32768
-#define DP_TQM2PPE_RING_SIZE	32768
+/* Runtime: ring sizes selected
+ */
+#define DP_REO2PPE_RING_SIZE		(ath12k_dp_ring_cfg->reo2ppe_ring)
+#define DP_PPE2TCL_RING_SIZE		(ath12k_dp_ring_cfg->ppe2tcl_ring)
+#define DP_RX_RELEASE_RING_SIZE		(ath12k_dp_ring_cfg->rx_release_ring_size)
+#define DP_RXDMA_BUF_RING_SIZE		(ath12k_dp_ring_cfg->rxdma_buf_ring_size)
+#define DP_TX_COMP_PPEDS_RING_SIZE	(ath12k_dp_ring_cfg->tx_comp_ppeds_ring_size)
+#define DP_PPE_WBM2SW_RING_SIZE		(ath12k_dp_ring_cfg->ppe_wbm2sw_ring_size)
+#define DP_TQM2PPE_RING_SIZE		(ath12k_dp_ring_cfg->tqm2ppe_ring_size)
 
-#define DP_REO_DST_RING0_SIZE	8192
-#define DP_REO_DST_RING1_SIZE	8192
-#define DP_REO_DST_RING2_SIZE	8192
-#define DP_REO_DST_RING3_SIZE	8192
-#define DP_REO_DST_RING4_SIZE	8192
+#define DP_REO_DST_RING0_SIZE		(ath12k_dp_ring_cfg->reo_dst_ring_size[0])
+#define DP_REO_DST_RING1_SIZE		(ath12k_dp_ring_cfg->reo_dst_ring_size[1])
+#define DP_REO_DST_RING2_SIZE		(ath12k_dp_ring_cfg->reo_dst_ring_size[2])
+#define DP_REO_DST_RING3_SIZE		(ath12k_dp_ring_cfg->reo_dst_ring_size[3])
+#define DP_REO_DST_RING4_SIZE		(ath12k_dp_ring_cfg->reo_dst_ring_size[4])
 
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
-#define DP_TCL_DATA_RING0_SIZE	8192
-#define DP_TCL_DATA_RING1_SIZE	8192
-#define DP_TCL_DATA_RING2_SIZE	8192
-#define DP_TCL_DATA_RING3_SIZE	8192
-#define DP_TCL_DATA_RING4_SIZE	8192
+#define DP_TCL_DATA_RING0_SIZE		8192
+#define DP_TCL_DATA_RING1_SIZE		8192
+#define DP_TCL_DATA_RING2_SIZE		8192
+#define DP_TCL_DATA_RING3_SIZE		8192
+#define DP_TCL_DATA_RING4_SIZE		8192
 
-#define DP_TX_COMP_RING0_SIZE	8192
-#define DP_TX_COMP_RING1_SIZE	8192
-#define DP_TX_COMP_RING2_SIZE	8192
-#define DP_TX_COMP_RING3_SIZE	8192
-#define DP_TX_COMP_RING4_SIZE	8192
+#define DP_TX_COMP_RING0_SIZE		8192
+#define DP_TX_COMP_RING1_SIZE		8192
+#define DP_TX_COMP_RING2_SIZE		8192
+#define DP_TX_COMP_RING3_SIZE		8192
+#define DP_TX_COMP_RING4_SIZE		8192
 #else /* CPTCFG_EXT_IPA_OFFLOAD */
-#define DP_TX_COMP_PPEDS_RING_SIZE	32768
-#define DP_TCL_DATA_RING0_SIZE	2048
-#define DP_TCL_DATA_RING1_SIZE	2048
-#define DP_TCL_DATA_RING2_SIZE	2048
-#define DP_TCL_DATA_RING3_SIZE	2048
-#define DP_TCL_DATA_RING4_SIZE	2048
+#define DP_TCL_DATA_RING0_SIZE		(ath12k_dp_ring_cfg->tcl_data_ring_size[0])
+#define DP_TCL_DATA_RING1_SIZE		(ath12k_dp_ring_cfg->tcl_data_ring_size[1])
+#define DP_TCL_DATA_RING2_SIZE		(ath12k_dp_ring_cfg->tcl_data_ring_size[2])
+#define DP_TCL_DATA_RING3_SIZE		(ath12k_dp_ring_cfg->tcl_data_ring_size[3])
+#define DP_TCL_DATA_RING4_SIZE		(ath12k_dp_ring_cfg->tcl_data_ring_size[4])
 
-#define DP_TX_COMP_RING0_SIZE	32768
-#define DP_TX_COMP_RING1_SIZE	32768
-#define DP_TX_COMP_RING2_SIZE	32768
-#define DP_TX_COMP_RING3_SIZE	32768
-#define DP_TX_COMP_RING4_SIZE	32768
+#define DP_TX_COMP_RING0_SIZE		(ath12k_dp_ring_cfg->tx_compl_ring_size[0])
+#define DP_TX_COMP_RING1_SIZE		(ath12k_dp_ring_cfg->tx_compl_ring_size[1])
+#define DP_TX_COMP_RING2_SIZE		(ath12k_dp_ring_cfg->tx_compl_ring_size[2])
+#define DP_TX_COMP_RING3_SIZE		(ath12k_dp_ring_cfg->tx_compl_ring_size[3])
+#define DP_TX_COMP_RING4_SIZE		(ath12k_dp_ring_cfg->tx_compl_ring_size[4])
 #endif /* CPTCFG_EXT_IPA_OFFLOAD */
-#endif /* CONFIG_ATH12K_MEM_PROFILE */
+#endif /* CONFIG_ATH12K_MEM_PROFILE_512M / 256M / runtime */
 
 #else /* CPTCFG_QCN_EXTN */
 #define ATH12K_DP_INI_GET(__ini__)	ath12k_cfg_get(ab, ATH12K_CFG_DP_##__ini__)
@@ -996,7 +997,7 @@ struct ath12k_dp {
 	u32 num_spt_pages;
 	u32 rx_ppt_base;
 	struct ath12k_rx_desc_info **rxbaddr;
-	struct ath12k_tx_desc_info *txbaddr[ATH12K_NUM_TX_SPT_PAGES];
+	struct ath12k_tx_desc_info **txbaddr;
 	struct ath12k_ppeds_tx_desc_info **ppedstxbaddr;
 	struct list_head rx_ppeds_reuse_list;
 	struct list_head rx_desc_free_list;

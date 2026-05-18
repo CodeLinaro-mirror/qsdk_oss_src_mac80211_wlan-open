@@ -182,13 +182,13 @@ struct wmi_tlv_mgmt_rx_parse {
 	bool frame_buf_done;
 	struct ath12k_mgmt_rx_cu_arg cu_params;
 	struct ath12k_wmi_mgmt_rx_mlo_link_removal_info
-		*link_removal_info[TARGET_NUM_VDEVS * ATH12K_WMI_MLO_MAX_LINKS];
+		**link_removal_info;
 	u32 num_link_removal_info_count;
 	bool mgmt_ml_info_done;
 	bool bpcc_buf_done;
 	bool parse_link_removal_info_done;
 	struct ath12k_wmi_mgmt_rx_mlo_bcast_ttlm_info
-		*bcast_ttlm_info[TARGET_NUM_VDEVS - 1];
+		**bcast_ttlm_info;
 	u32 num_bcast_ttlm_info_count;
 	bool parse_bcast_ttlm_info_done;
 };
@@ -10090,11 +10090,26 @@ static int ath12k_pull_mgmt_rx_params_tlv(struct ath12k_base *ab,
 	int i, ret;
 
 	memset(&parse, 0, sizeof(parse));
+
+	parse.link_removal_info = kcalloc(TARGET_NUM_VDEVS * ATH12K_WMI_MLO_MAX_LINKS,
+					  sizeof(*parse.link_removal_info), GFP_ATOMIC);
+	if (!parse.link_removal_info)
+		return -ENOMEM;
+
+	parse.bcast_ttlm_info = kcalloc(TARGET_NUM_VDEVS - 1,
+					sizeof(*parse.bcast_ttlm_info), GFP_ATOMIC);
+	if (!parse.bcast_ttlm_info) {
+		kfree(parse.link_removal_info);
+		return -ENOMEM;
+	}
+
 	ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
 				  ath12k_wmi_tlv_mgmt_rx_parse,
 				  &parse);
 	if (ret) {
 		ath12k_warn(ab, "failed to parse mgmt rx tlv %d\n", ret);
+		kfree(parse.link_removal_info);
+		kfree(parse.bcast_ttlm_info);
 		return ret;
 	}
 
@@ -10103,6 +10118,8 @@ static int ath12k_pull_mgmt_rx_params_tlv(struct ath12k_base *ab,
 
 	if (!ev || !frame) {
 		ath12k_warn(ab, "failed to fetch mgmt rx hdr");
+		kfree(parse.link_removal_info);
+		kfree(parse.bcast_ttlm_info);
 		return -EPROTO;
 	}
 
@@ -10129,6 +10146,8 @@ static int ath12k_pull_mgmt_rx_params_tlv(struct ath12k_base *ab,
 
 	if (skb->len < (frame - skb->data) + hdr->buf_len) {
 		ath12k_warn(ab, "invalid length in mgmt rx hdr ev");
+		kfree(parse.link_removal_info);
+		kfree(parse.bcast_ttlm_info);
 		return -EPROTO;
 	}
 
@@ -10145,6 +10164,9 @@ static int ath12k_pull_mgmt_rx_params_tlv(struct ath12k_base *ab,
 	skb_put(skb, frame - skb->data);
 	skb_pull(skb, frame - skb->data);
 	skb_put(skb, hdr->buf_len);
+
+	kfree(parse.link_removal_info);
+	kfree(parse.bcast_ttlm_info);
 
 	return 0;
 }
