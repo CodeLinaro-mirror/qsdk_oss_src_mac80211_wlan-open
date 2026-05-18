@@ -2079,6 +2079,7 @@ void ath12k_wifi7_ucast_handler(struct ath12k_dp_vif *dp_vif,
 	u8 ring_id = 0;
 	int group_slot = -1;
 	u32 len = skb->len;
+	u8 tid = skb->priority & IEEE80211_QOS_CTL_TID_MASK;
 	enum ath12k_dp_tx_enq_error drop_reason = DP_TX_ENQ_DROP_MISC;
 
 	if (unlikely(!arvif || !arvif->is_created))
@@ -2212,9 +2213,14 @@ fail:
 	if (tx_desc)
 		ath12k_dp_tx_release_txbuf(dp, tx_desc, ring_id);
 
-	if (dp_pdev && ath12k_dp_stats_enabled(dp_pdev) &&
-	    ath12k_tid_stats_enabled(dp_pdev))
-		ath12k_dp_tx_drop_tid_stats(dp_vif, drop_reason, skb, len);
+	if (dp_pdev && ath12k_dp_stats_enabled(dp_pdev)) {
+		if (ath12k_tid_stats_enabled(dp_pdev))
+			ath12k_dp_tx_drop_tid_stats(dp_vif, drop_reason, tid, len);
+
+		if (ath12k_dp_vow_stats_enabled(dp_pdev))
+			ath12k_dp_tx_drop_pdev_tid_stats(dp_pdev, drop_reason,
+							 tid, ring_id);
+	}
 
 	ath12k_mac_ieee80211_free_txskb(ahvif->ah->hw, skb, dp_pdev,
 					arsta ? ath12k_ahsta_to_sta(arsta->ahsta) : NULL,
@@ -2239,6 +2245,7 @@ ath12k_wifi7_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 	u32 qos_nw_delay = msdu_info->qos_nw_delay;
 	int ret;
 	bool is_mcast = true;
+	u8 tid = skb->priority & IEEE80211_QOS_CTL_TID_MASK;
 
 	tx_desc = ath12k_dp_tx_assign_buffer(dp->dp_hw_grp,
 					     dp->dp_hw_grp->tx_desc_free_list,
@@ -2302,6 +2309,11 @@ fail:
 
 	if (tx_desc)
 		ath12k_dp_tx_release_txbuf(dp, tx_desc, ring_id);
+
+	if (dp_pdev && ath12k_dp_stats_enabled(dp_pdev) &&
+	    ath12k_dp_vow_stats_enabled(dp_pdev))
+		ath12k_dp_tx_drop_pdev_tid_stats(dp_pdev, drop_reason, tid, ring_id);
+
 	return drop_reason;
 }
 

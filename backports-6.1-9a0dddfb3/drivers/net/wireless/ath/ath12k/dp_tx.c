@@ -722,16 +722,10 @@ EXPORT_SYMBOL(ath12k_dp_tx_get_encap_type);
 
 void ath12k_dp_tx_drop_tid_stats(struct ath12k_dp_vif *dp_vif,
 				 enum ath12k_dp_tx_enq_error drop_reason,
-				 struct sk_buff *skb, u32 len)
+				 u8 tid, u32 len)
 {
 	struct ath12k_vif *ahvif = container_of(dp_vif, struct ath12k_vif, dp_vif);
 	enum ath12k_tx_drop_reasons drop;
-	u8 tid;
-
-	if (!skb)
-		return;
-
-	tid = skb->priority & IEEE80211_QOS_CTL_TID_MASK;
 
 	switch (drop_reason) {
 	case DP_TX_ENQ_DROP_SW_DESC_NA:
@@ -747,6 +741,31 @@ void ath12k_dp_tx_drop_tid_stats(struct ath12k_dp_vif *dp_vif,
 	ath12k_tid_tx_drop_stats(ahvif, tid, len, drop);
 }
 EXPORT_SYMBOL(ath12k_dp_tx_drop_tid_stats);
+
+void ath12k_dp_tx_drop_pdev_tid_stats(struct ath12k_pdev_dp *dp_pdev,
+				      enum ath12k_dp_tx_enq_error drop_reason,
+				      u8 tid, u8 ring_id)
+{
+	tid = ath12k_vow_tid_validate(tid);
+
+	switch (drop_reason) {
+	case DP_TX_ENQ_DROP_SW_DESC_NA:
+		DP_PDEV_TID_TX_REASON_INC(dp_pdev, ring_id, tid,
+					  swdrop_cnt, DP_TID_TX_DESC_ERR);
+		break;
+	case DP_TX_ENQ_DROP_DMA_ERR:
+		DP_PDEV_TID_TX_REASON_INC(dp_pdev, ring_id, tid,
+					  swdrop_cnt, DP_TID_TX_DMA_MAP_ERR);
+		break;
+	case DP_TX_ENQ_DROP_HW_ENQ_FAIL:
+		DP_PDEV_TID_TX_REASON_INC(dp_pdev, ring_id, tid,
+					  swdrop_cnt, DP_TID_TX_HW_ENQUEUE);
+		break;
+	default:
+		break;
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_tx_drop_pdev_tid_stats);
 
 void ath12k_dp_tx_stats_update_pre_enqueue(struct ath12k_pdev_dp *dp_pdev,
 					   struct ath12k_dp_vif *dp_vif,

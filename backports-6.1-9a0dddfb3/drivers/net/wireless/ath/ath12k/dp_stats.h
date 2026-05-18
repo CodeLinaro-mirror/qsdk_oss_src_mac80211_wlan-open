@@ -598,13 +598,29 @@ struct delay_stats {
 };
 
 /**
+ * enum ath12k_dp_tid_tx_sw_drop - TID TX sw drop reasons
+ * @DP_TID_TX_DESC_ERR: TX descriptor error
+ * @DP_TID_TX_DMA_MAP_ERR: DMA mapping error
+ * @DP_TID_TX_HW_ENQUEUE: HW enqueue failure
+ * @DP_TID_TX_SW_DROP_MAX: Maximum TX drop reasons
+ */
+enum ath12k_dp_tid_tx_sw_drop {
+	DP_TID_TX_DESC_ERR,
+	DP_TID_TX_DMA_MAP_ERR,
+	DP_TID_TX_HW_ENQUEUE,
+	DP_TID_TX_SW_DROP_MAX,
+};
+
+/**
  * struct ath12k_tid_tx_stats - Per-TID TX statistics
  * @tqm_status_cnt: TQM release reason counters
  * @htt_status_cnt: HTT completion status counters
+ * @swdrop_cnt: Software drop reason counters
  */
 struct ath12k_tid_tx_stats {
 	u32 tqm_status_cnt[HAL_WBM_TQM_REL_REASON_MAX];
 	u32 htt_status_cnt[HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX];
+	u32 swdrop_cnt[DP_TID_TX_SW_DROP_MAX];
 };
 
 /**
