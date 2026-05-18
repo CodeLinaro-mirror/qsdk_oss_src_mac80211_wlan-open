@@ -1131,6 +1131,9 @@ void ath12k_dp_rx_pktlog_process(struct ath12k_pdev_dp *dp_pdev,
 void ath12k_dp_mon_rx_process_dest_pktlog(struct ath12k_pdev_dp *dp_pdev,
 					  struct sk_buff *skb,
 					  struct hal_rx_mon_ppdu_info *ppdu_info);
+int ath12k_dp_mon_rx_wq_init_common(struct ath12k_pdev_dp *dp_pdev,
+				    void (*work_handler)(struct work_struct *));
+
 
 static inline
 int ath12k_dp_mon_rx_alloc(struct ath12k_dp *dp)
