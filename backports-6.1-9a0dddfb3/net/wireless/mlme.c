@@ -1094,6 +1094,15 @@ void cfg80211_dfs_channels_update_work(struct work_struct *work)
 				cfg80211_chandef_create(&chandef, c,
 							NL80211_CHAN_NO_HT);
 
+				if (radar_event == NL80211_RADAR_NOP_FINISHED) {
+					wiphy_dbg(wiphy,
+						  "DFS NOL completed for freq=%u",
+						  c->center_freq);
+					wiphy_lock(wiphy);
+					rdev_start_punctured_cac(rdev, &chandef);
+					wiphy_unlock(wiphy);
+				}
+
 				nl80211_radar_notify(rdev, &chandef,
 						     radar_event, NULL,
 						     GFP_ATOMIC);
@@ -1277,6 +1286,27 @@ void cfg80211_cac_event(struct net_device *netdev,
 	nl80211_radar_notify(rdev, chandef, event, netdev, gfp);
 }
 EXPORT_SYMBOL(cfg80211_cac_event);
+
+void cfg80211_punct_cac_finished(struct net_device *netdev,
+				 const struct cfg80211_chan_def *chandef,
+				 gfp_t gfp)
+{
+	struct wireless_dev *wdev = netdev->ieee80211_ptr;
+	struct wiphy *wiphy = wdev->wiphy;
+	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wiphy);
+
+	trace_cfg80211_cac_event(netdev, NL80211_RADAR_CAC_FINISHED, 0);
+	cfg80211_set_dfs_state(wiphy, chandef, NL80211_DFS_AVAILABLE);
+
+	wiphy_dbg(wiphy,
+		  "DFS punctured CAC finished, send CAC FINISHED to hostapd chandef chan=%u width=%u cf1=%u cf2=%u punctured=0x%x radar_bitmap=0x%x\n",
+		  chandef->chan ? chandef->chan->center_freq : 0,
+		  chandef->width, chandef->center_freq1, chandef->center_freq2,
+		  chandef->punctured, chandef->radar_bitmap);
+
+	nl80211_radar_notify(rdev, chandef, NL80211_RADAR_CAC_FINISHED, netdev, gfp);
+}
+EXPORT_SYMBOL(cfg80211_punct_cac_finished);
 
 static void
 __cfg80211_background_cac_event(struct cfg80211_registered_device *rdev,

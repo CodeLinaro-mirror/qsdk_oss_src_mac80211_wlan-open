@@ -737,6 +737,8 @@ ieee80211_alloc_chanctx(struct ieee80211_local *local,
 
 	INIT_LIST_HEAD(&ctx->assigned_links);
 	INIT_LIST_HEAD(&ctx->reserved_links);
+	INIT_LIST_HEAD(&ctx->punct_obj_list);
+	ctx->punct_obj_count = 0;
 	ctx->conf.def = chanreq->oper;
 	ctx->conf.ap = chanreq->ap;
 	ctx->conf.rx_chains_static = 1;
@@ -827,10 +829,103 @@ static void ieee80211_free_chanctx(struct ieee80211_local *local,
 	WARN_ON_ONCE(ieee80211_chanctx_refcount(local, ctx) != 0);
 
 	list_del_rcu(&ctx->list);
+	ieee80211_punct_obj_list_free(local, ctx);
 	ieee80211_del_chanctx(local, ctx, skip_idle_recalc);
 	atomic_sub(sizeof(*ctx) + local->hw.chanctx_data_size,
 		   &local->memory_stats.malloc_size);
 	kfree_rcu(ctx, rcu_head);
+}
+
+/**
+ * ieee80211_punct_obj_in_chanctx - check if a puncture object fits a chanctx
+ * @obj: puncture object to check
+ * @ctx: channel context to check against
+ *
+ * Return: true when the object's 20 MHz center frequency is within @ctx.
+ */
+static bool
+ieee80211_punct_obj_in_chanctx(struct ieee80211_punct_obj *obj,
+			       struct ieee80211_chanctx *ctx)
+{
+	int width = cfg80211_chandef_get_width(&ctx->conf.def);
+	int start_freq;
+	int end_freq;
+
+	if (!ctx->conf.def.chan || width < 0)
+		return false;
+
+	start_freq = ctx->conf.def.chan->center_freq;
+	end_freq = start_freq + width;
+
+	return obj->center_freq >= start_freq && obj->center_freq < end_freq;
+}
+
+/**
+ * ieee80211_punct_obj_migrate - move puncture CAC objects between chanctxs
+ * @local: mac80211 local state
+ * @old_ctx: channel context currently owning puncture objects
+ * @new_ctx: replacement channel context to receive puncture objects
+ *
+ * Channel context migration:
+ * DFS radar detection starts the radar puncture flow in which the driver
+ * reports the puncture pattern to userspace and hostapd responds with a CSA.
+ * When mac80211 applies the CSA, links move from the old channel context to
+ * a new channel context. Without migration, freeing the old context would also
+ * tear down any in-progress puncture CAC objects, including their timers and
+ * queued work.
+ *
+ * Preserve the puncture CAC state by moving objects from @old_ctx to @new_ctx
+ * when the object's 20 MHz channel is still a subchannel of the new channel
+ * context. If a matching object already exists in the new context, leave the
+ * old object in place for normal old-context cleanup.
+ */
+static void
+ieee80211_punct_obj_migrate(struct ieee80211_local *local,
+			    struct ieee80211_chanctx *old_ctx,
+			    struct ieee80211_chanctx *new_ctx)
+{
+	struct ieee80211_punct_obj *old_obj, *tmp;
+	struct cfg80211_chan_def *old_def = &old_ctx->conf.def;
+	struct cfg80211_chan_def *new_def = &new_ctx->conf.def;
+
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	if (old_ctx == new_ctx)
+		return;
+
+	if (list_empty(&old_ctx->punct_obj_list))
+		return;
+
+	if (!old_def->chan || !new_def->chan)
+		return;
+
+	list_for_each_entry_safe(old_obj, tmp, &old_ctx->punct_obj_list, list) {
+		struct ieee80211_punct_obj *new_obj;
+		bool duplicate = false;
+
+		if (!ieee80211_punct_obj_in_chanctx(old_obj, new_ctx))
+			continue;
+
+		list_for_each_entry(new_obj, &new_ctx->punct_obj_list, list) {
+			if (new_obj->center_freq == old_obj->center_freq) {
+				duplicate = true;
+				break;
+			}
+		}
+
+		if (duplicate ||
+		    new_ctx->punct_obj_count >= IEEE80211_MAX_PUNCT_OBJS)
+			continue;
+
+		list_move_tail(&old_obj->list, &new_ctx->punct_obj_list);
+		old_ctx->punct_obj_count--;
+		new_ctx->punct_obj_count++;
+		old_obj->ctx = new_ctx;
+
+		wiphy_dbg(local->hw.wiphy,
+			  "DFS puncture: migrated obj freq=%u old_ctx=%p new_ctx=%p\n",
+			  old_obj->center_freq, old_ctx, new_ctx);
+	}
 }
 
 void ieee80211_recalc_chanctx_chantype(struct ieee80211_local *local,
@@ -1458,8 +1553,10 @@ ieee80211_link_use_reserved_reassign(struct ieee80211_link_data *link)
 
 	ieee80211_check_fast_xmit_iface(sdata);
 
-	if (ieee80211_chanctx_refcount(local, old_ctx) == 0)
+	if (ieee80211_chanctx_refcount(local, old_ctx) == 0) {
+		ieee80211_punct_obj_migrate(local, old_ctx, new_ctx);
 		ieee80211_free_chanctx(local, old_ctx, false);
+	}
 
 	ieee80211_recalc_chanctx_min_def(local, new_ctx, NULL, false);
 	ieee80211_recalc_smps_chanctx(local, new_ctx);
@@ -1882,6 +1979,9 @@ static int ieee80211_vif_use_reserved_switch(struct ieee80211_local *local)
 	list_for_each_entry_safe(ctx, ctx_tmp, &local->chanctx_list, list) {
 		if (ctx->replace_state != IEEE80211_CHANCTX_WILL_BE_REPLACED)
 			continue;
+
+		ieee80211_punct_obj_migrate(local, ctx, ctx->replace_ctx);
+		ieee80211_punct_obj_list_free(local, ctx);
 
 		ctx->replace_ctx->replace_ctx = NULL;
 		ctx->replace_ctx->replace_state =
