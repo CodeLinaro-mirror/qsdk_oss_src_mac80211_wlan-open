@@ -4908,30 +4908,59 @@ ath12k_wifi8_hal_mon_tx_parse_user_desc_per_user(const void *tlv_data,
 }
 
 static __always_inline void
+ath12k_wifi8_hal_tx_mon_user_desc_info_compact(
+	u32 *info, const struct hal_tx_mon_user_desc_common_compact *c)
+{
+	info[0]  = __le32_to_cpu(c->info0);
+	info[1]  = __le32_to_cpu(c->info1);
+	info[2]  = __le32_to_cpu(c->info2);
+	info[3]  = __le32_to_cpu(c->info3);
+	info[4]  = __le32_to_cpu(c->info4);
+	info[5]  = __le32_to_cpu(c->info5);
+	info[6]  = __le32_to_cpu(c->info6);
+	info[7]  = __le32_to_cpu(c->info7);
+	info[8]  = __le32_to_cpu(c->info8);
+	info[9]  = __le32_to_cpu(c->info9);
+	info[10] = __le32_to_cpu(c->info10);
+	info[11] = __le32_to_cpu(c->info11);
+	info[12] = __le32_to_cpu(c->info12);
+	info[13] = __le32_to_cpu(c->info13);
+}
+
+static __always_inline void
+ath12k_wifi8_hal_tx_mon_user_desc_info(u32 *info,
+				       const struct hal_tx_mon_user_desc_common *f)
+{
+	info[0]  = __le32_to_cpu(f->info0);
+	info[1]  = __le32_to_cpu(f->info1);
+	info[2]  = __le32_to_cpu(f->info2);
+	info[3]  = __le32_to_cpu(f->info3);
+	info[4]  = __le32_to_cpu(f->info4);
+	info[5]  = __le32_to_cpu(f->info5);
+	info[6]  = __le32_to_cpu(f->info6);
+	info[7]  = __le32_to_cpu(f->info7);
+	info[8]  = __le32_to_cpu(f->info8);
+	info[9]  = __le32_to_cpu(f->info9);
+	info[10] = __le32_to_cpu(f->info10);
+	info[11] = __le32_to_cpu(f->info11);
+	info[12] = __le32_to_cpu(f->info12);
+	info[13] = __le32_to_cpu(f->info13);
+}
+
+static __always_inline void
 ath12k_wifi8_hal_mon_tx_get_user_desc_common
 			(const void *tlv_data,
-			 struct hal_mon_tx_usr_desc_common *usr_common)
+			 struct hal_mon_tx_usr_desc_common *usr_common,
+			 u16 tlv_len)
 {
 	u8 num_ltf_symbols;
 	u32 info[15];
-	const struct hal_tx_mon_user_desc_common *user_desc_common = tlv_data;
-	const struct hal_tx_mon_phy_desc *phy_desc = tlv_data;
 
-	info[0] = __le32_to_cpu(user_desc_common->info0);
-	info[1] = __le32_to_cpu(user_desc_common->info1);
-	info[2] = __le32_to_cpu(user_desc_common->info2);
-	info[3] = __le32_to_cpu(user_desc_common->info3);
-	info[4] = __le32_to_cpu(user_desc_common->info4);
-	info[5] = __le32_to_cpu(user_desc_common->info5);
-	info[6] = __le32_to_cpu(user_desc_common->info6);
-	info[7] = __le32_to_cpu(user_desc_common->info7);
-	info[8] = __le32_to_cpu(user_desc_common->info8);
-	info[9] = __le32_to_cpu(user_desc_common->info9);
-	info[10] = __le32_to_cpu(user_desc_common->info10);
-	info[11] = __le32_to_cpu(user_desc_common->info11);
-	info[12] = __le32_to_cpu(user_desc_common->info12);
-	info[13] = __le32_to_cpu(user_desc_common->info13);
-	info[14] = __le32_to_cpu(phy_desc->info3);
+	if (likely(tlv_len < HAL_MON_TX_USER_DESC_COMMON_TLV_SIZE))
+		ath12k_wifi8_hal_tx_mon_user_desc_info_compact(info, tlv_data);
+	else
+		ath12k_wifi8_hal_tx_mon_user_desc_info(info, tlv_data);
+	info[14] = info[3];
 
 	usr_common->ltf_size =
 		u32_get_bits(info[0],
@@ -5329,7 +5358,8 @@ ath12k_wifi8_hal_mon_tx_parse_elr_sig_uhr(const void *tlv_data,
 
 static __always_inline void
 ath12k_wifi8_hal_mon_tx_parse_user_desc_common(const void *tlv_data,
-					       struct hal_tx_mon_ppdu_info *ppdu_info)
+					       struct hal_tx_mon_ppdu_info *ppdu_info,
+					       u16 tlv_len)
 {
 	struct hal_mon_tx_usr_desc_common usr_common = {0};
 	u8 su_or_mu = ppdu_info->su_or_mu;
@@ -5337,7 +5367,7 @@ ath12k_wifi8_hal_mon_tx_parse_user_desc_common(const void *tlv_data,
 	u8 num_users = ppdu_info->num_users;
 
 	usr_common.num_users = num_users;
-	ath12k_wifi8_hal_mon_tx_get_user_desc_common(tlv_data, &usr_common);
+	ath12k_wifi8_hal_mon_tx_get_user_desc_common(tlv_data, &usr_common, tlv_len);
 
 	switch (ppdu_info->rx_status.preamble_type) {
 	case HAL_RX_PREAMBLE_11AX:
@@ -5502,11 +5532,18 @@ ath12k_wifi8_hal_mon_tx_status_get_num_user(struct ath12k_hal *hal,
 	}
 
 	case HAL_RX_RESPONSE_REQUIRED_INFO: {
-		struct hal_tx_mon_rx_resp_req_info *rx_resp_req_info =
-				(struct hal_tx_mon_rx_resp_req_info *)tx_tlv;
+		if (likely(tlv_len < HAL_MON_TX_RX_RESP_REQ_INFO_TLV_SIZE)) {
+			const struct hal_tx_mon_rx_resp_req_info_compact *rx_resp_req =
+				(const struct hal_tx_mon_rx_resp_req_info_compact *)
+				tx_tlv;
 
-		info = __le32_to_cpu(rx_resp_req_info->info1);
+			info = __le32_to_cpu(rx_resp_req->info1);
+		} else {
+			const struct hal_tx_mon_rx_resp_req_info *rx_resp_req =
+				(const struct hal_tx_mon_rx_resp_req_info *)tx_tlv;
 
+			info = __le32_to_cpu(rx_resp_req->info1);
+		}
 		*num_users =
 		u32_get_bits(info,
 			     HAL_TX_MON_RX_RESPONSE_REQUIRED_INFO1_RESPONSE_STA_COUNT);
@@ -5595,26 +5632,49 @@ ath12k_wifi8_hal_tx_mon_get_wmask_config(struct hal_tx_mon_wmask_config *wmsk)
 	wmsk->tx_fes_status_end = HAL_TX_MON_WMASK_FES_STATUS_END_CFG;
 	wmsk->response_end_status = HAL_TX_MON_WMASK_RESPONSE_END_STATUS_CFG;
 	wmsk->tx_fes_status_prot = HAL_TX_MON_WMASK_FES_STATUS_PROT_CFG;
+	wmsk->mactx_user_desc_common = HAL_TX_MON_WMASK_USER_DESC_COMMON_CFG;
+	wmsk->rx_resp_required_info = HAL_TX_MON_WMASK_RX_RESP_REQUIRED_INFO_CFG;
+}
+
+static __always_inline void
+ath12k_wifi8_hal_tx_mon_rx_resp_req_info_compact(
+	u32 *info, const struct hal_tx_mon_rx_resp_req_info_compact *r)
+{
+	info[0] = __le32_to_cpu(r->info0);
+	info[1] = __le32_to_cpu(r->info1);
+	info[2] = __le32_to_cpu(r->info2);
+	info[3] = __le32_to_cpu(r->info3);
+	info[4] = __le32_to_cpu(r->info4);
+}
+
+static __always_inline void
+ath12k_wifi8_hal_tx_mon_rx_resp_req_info(u32 *info,
+					 const struct hal_tx_mon_rx_resp_req_info *r)
+{
+	info[0] = __le32_to_cpu(r->info0);
+	info[1] = __le32_to_cpu(r->info1);
+	info[2] = __le32_to_cpu(r->info2);
+	info[3] = __le32_to_cpu(r->info3);
+	info[4] = __le32_to_cpu(r->info4);
 }
 
 static __always_inline void
 ath12k_wifi8_hal_mon_tx_parse_rx_resp_req_info
 				(const void *tlv_data,
 				 struct hal_tx_mon_ppdu_info *tx_ppdu_info,
-				 struct hal_tx_mon_status_info *status_info)
+				 struct hal_tx_mon_status_info *status_info,
+				 u16 tlv_len)
 {
-	const struct hal_tx_mon_rx_resp_req_info *rx_resp_req_info = tlv_data;
 	u32 info[5];
 	u32 ppdu_id;
 	u32 addr_32;
 	u16 addr_16;
 	u8 reception_type;
 
-	info[0] = __le32_to_cpu(rx_resp_req_info->info0);
-	info[1] = __le32_to_cpu(rx_resp_req_info->info1);
-	info[2] = __le32_to_cpu(rx_resp_req_info->info2);
-	info[3] = __le32_to_cpu(rx_resp_req_info->info3);
-	info[4] = __le32_to_cpu(rx_resp_req_info->info4);
+	if (likely(tlv_len < HAL_MON_TX_RX_RESP_REQ_INFO_TLV_SIZE))
+		ath12k_wifi8_hal_tx_mon_rx_resp_req_info_compact(info, tlv_data);
+	else
+		ath12k_wifi8_hal_tx_mon_rx_resp_req_info(info, tlv_data);
 
 	ppdu_id = u32_get_bits(info[0],
 			       HAL_TX_MON_RX_RESPONSE_REQUIRED_INFO0_PHY_PPDU_ID);
@@ -6123,7 +6183,8 @@ ath12k_wifi8_hal_mon_tx_parse_status_tlv(struct ath12k_hal *hal,
 	case HAL_RX_RESPONSE_REQUIRED_INFO: {
 		ath12k_wifi8_hal_mon_tx_parse_rx_resp_req_info(tlv_data,
 							       tx_ppdu_info,
-							       status_info);
+							       status_info,
+							       tlv_len);
 		status = HAL_TX_MON_RESPONSE_REQUIRED_INFO;
 		break;
 	}
@@ -6430,7 +6491,8 @@ ath12k_wifi8_hal_mon_tx_parse_status_tlv(struct ath12k_hal *hal,
 
 	case HAL_MACTX_USER_DESC_COMMON:
 		ath12k_wifi8_hal_mon_tx_parse_user_desc_common(tlv_data,
-							       tx_ppdu_info);
+							       tx_ppdu_info,
+							       tlv_len);
 		break;
 
 	case HAL_FW2SW_MON: {

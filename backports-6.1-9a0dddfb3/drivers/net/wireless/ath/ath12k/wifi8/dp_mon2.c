@@ -63,6 +63,9 @@ const struct ath12k_dp_arch_mon_ops ath12k_wifi8_dp_arch_mon_dual_ring_ops = {
 	.mon_tx_dst_ring_cleanup = ath12k_dp_mon_tx_dst_ring_cleanup,
 	.mon_tx_wq_start = ath12k_dp_mon_tx_wq_start,
 	.mon_tx_wq_stop = ath12k_dp_mon_tx_wq_stop,
+	.get_htt_tx_mon_cfg_msg_size = ath12k_wifi8_dp_htt_tx_mon_cfg_msg_size_get,
+	.htt_tx_mon_cfg_fill_extended_wmask =
+		ath12k_wifi8_htt_tx_mon_cfg_fill_extended_wmask,
 };
 
 static inline void
@@ -2049,4 +2052,23 @@ int ath12k_wifi8_dp_ext_mon_validate_request(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	return 0;
+}
+
+int ath12k_wifi8_dp_htt_tx_mon_cfg_msg_size_get(void)
+{
+	return sizeof(struct htt_tx_mon_ring_selection_cfg_cmd);
+}
+
+void ath12k_wifi8_htt_tx_mon_cfg_fill_extended_wmask(
+		struct htt_tx_mon_ring_selection_cfg_cmd *cmd,
+		const struct htt_tx_ring_tlv_filter *htt_tlv_filter)
+{
+	/*word 13*/
+	cmd->tlv_word_mask_in6 |=
+		le32_encode_bits(htt_tlv_filter->wmask.mactx_user_desc_common,
+				 HTT_TX_MON_WMASK_IN6_MACTX_USR_DESC_CMN_MASK);
+	/*word 14*/
+	cmd->tlv_word_mask_in7 |=
+		le32_encode_bits(htt_tlv_filter->wmask.rx_resp_required_info,
+				 HTT_TX_MON_WMASK_IN7_RX_RESP_REQD_INFO_MASK);
 }
