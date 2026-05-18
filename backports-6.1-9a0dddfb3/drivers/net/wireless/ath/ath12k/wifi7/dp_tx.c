@@ -1287,6 +1287,25 @@ int ath12k_wifi7_dp_tx_hw_enqueue(struct ath12k_dp_link_vif *dp_link_vif,
 }
 #endif
 
+#ifdef CPTCFG_ATH12K_UCAST_ENABLE_AST_OVERRIDE
+void ucast_enable_ast_override(struct ath12k_link_sta *arsta,
+			       u16 *bss_ast_idx, u16 *bss_ast_hash,
+			       bool *lookup_override)
+{
+	if (arsta) {
+		*bss_ast_idx = arsta->ast_idx;
+		*bss_ast_hash = arsta->ast_hash;
+		*lookup_override = true;
+	}
+}
+#else
+void ucast_enable_ast_override(struct ath12k_link_sta *arsta,
+			       u16 *bss_ast_idx, u16 *bss_ast_hash,
+			       bool *lookup_override)
+{
+}
+#endif
+
 /**
  * ath12k_wifi7_ucast_setup_msdu_info() - Setup MSDU info for unicast transmission
  * @dp_link_vif: DP link virtual interface containing bank, lmac, vdev, and AST info
@@ -1301,16 +1320,33 @@ int ath12k_wifi7_dp_tx_hw_enqueue(struct ath12k_dp_link_vif *dp_link_vif,
  */
 static void ath12k_wifi7_ucast_setup_msdu_info(struct ath12k_dp_link_vif *dp_link_vif,
 					       struct ath12k_dp_tx_msdu_info *msdu_info,
-					       struct sk_buff *skb, bool htt_mesh)
+					       struct sk_buff *skb, bool htt_mesh,
+					       struct ath12k_link_sta *arsta)
 {
+	u16 bss_ast_idx;
+	u16 bss_ast_hash;
+	bool lookup_override;
+
+	if (!msdu_info)
+		return;
+
+	/* default: use main link vif */
+	bss_ast_idx = dp_link_vif->ast_idx;
+	bss_ast_hash = dp_link_vif->ast_hash;
+	lookup_override = false;
+
+	ucast_enable_ast_override(arsta, &bss_ast_idx, &bss_ast_hash,
+				  &lookup_override);
+
+	msdu_info->bss_ast_idx = bss_ast_idx;
+	msdu_info->bss_ast_hash = bss_ast_hash;
+	msdu_info->lookup_override = lookup_override;
+
 	msdu_info->bank_id = dp_link_vif->bank_id;
 	msdu_info->meta_data_flags = dp_link_vif->tcl_metadata;
 	msdu_info->lmac_id = dp_link_vif->lmac_id;
 	msdu_info->vdev_id = dp_link_vif->vdev_id;
-	msdu_info->bss_ast_idx = dp_link_vif->ast_idx;
-	msdu_info->bss_ast_hash = dp_link_vif->ast_hash;
 	msdu_info->type = HAL_TCL_DESC_TYPE_BUFFER;
-	msdu_info->lookup_override = false;
 	msdu_info->ext_kmem = htt_mesh;
 	msdu_info->htt_mesh = htt_mesh;
 }
@@ -2171,7 +2207,7 @@ void ath12k_wifi7_ucast_handler(struct ath12k_dp_vif *dp_vif,
 					      skb, ring_id, len);
 
 	/* Setup MSDU info */
-	ath12k_wifi7_ucast_setup_msdu_info(dp_link_vif, &msdu_info, skb, htt_mesh);
+	ath12k_wifi7_ucast_setup_msdu_info(dp_link_vif, &msdu_info, skb, htt_mesh, arsta);
 
 	/* Fast path: no features enabled */
 	if (unlikely((DP_FEATURE_IS_ANY(dp_vif) || skb_ctrl->features))) {
