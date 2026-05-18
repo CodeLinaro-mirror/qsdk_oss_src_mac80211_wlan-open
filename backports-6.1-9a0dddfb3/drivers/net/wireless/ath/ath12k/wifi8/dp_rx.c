@@ -5080,15 +5080,19 @@ int ath12k_wifi8_dp_rx_process_reo_flush_err(struct ath12k_dp *dp, int budget)
 				    BUFFER_ADDR_INFO1_RET_BUF_MGR);
 		cookie = le32_get_bits(rx_desc->buf_addr_info.info1,
 				       BUFFER_ADDR_INFO1_SW_COOKIE);
-		desc_info = ath12k_dp_get_rx_desc(dp, cookie);
-
-		if (!desc_info)
-			continue;
 
 		if (rbm == dp->hal->hal_params->rx_buf_rbm) {
+			desc_info = ath12k_dp_get_rx_desc(dp, cookie);
+			if (!desc_info)
+				continue;
+
 			list_add_tail(&desc_info->list, &rx_desc_used_list);
 			stats->rx_flush_pkts++;
 		} else if (rbm == dp->hal->hal_params->rx_mgmt_buf_rbm) {
+			desc_info = ath12k_mgmt_get_rx_desc_from_cookie(mgmt, cookie);
+			if (!desc_info)
+				continue;
+
 			list_add_tail(&desc_info->list, &rx_mgmt_desc_used_list);
 			stats->rx_mgmt_flush_pkts++;
 		} else {
