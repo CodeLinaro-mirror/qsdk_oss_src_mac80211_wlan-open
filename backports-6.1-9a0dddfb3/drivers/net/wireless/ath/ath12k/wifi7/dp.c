@@ -235,6 +235,10 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 	int i;
 
 	dp->tcl_metadata_ver = HTT_OPTION_TCL_METADATA_VER_V2;
+	dp->htt_tx_mon_cfg_msg_size =
+			(u16)offsetof(struct htt_tx_mon_ring_selection_cfg_cmd,
+				      tlv_word_mask_in6);
+	dp->htt_tx_mon_cfg_version = 0; /* wifi7 baseline */
 	INIT_LIST_HEAD(&dp->reo_cmd_list);
 	INIT_LIST_HEAD(&dp->reo_cmd_cache_flush_list);
 	INIT_LIST_HEAD(&dp->reo_cmd_update_rx_queue_list);

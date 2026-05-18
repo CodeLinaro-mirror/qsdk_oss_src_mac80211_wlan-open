@@ -1093,6 +1093,8 @@ struct ath12k_dp {
 	u8 link_id_offset;
 	u8 link_id_bits;
 	u8 tcl_metadata_ver;
+	u16 htt_tx_mon_cfg_msg_size;
+	u8 htt_tx_mon_cfg_version;
 
 	struct ath12k_dbg_dp_svc_sort_stats svc_sort_stats;
 
