@@ -9274,6 +9274,20 @@ struct ath12k_wmi_pdev_stats_params {
 	struct ath12k_wmi_pdev_rx_stats_params rx;
 } __packed;
 
+/**
+ * struct ath12k_wmi_mib_stats_event - WMI MIB stats event payload
+ * Sent by firmware periodically via WMI_UPDATE_WHAL_MIB_STATS_EVENTID.
+ * All counters are incremental (not accumulated).
+ */
+struct ath12k_wmi_mib_stats_event {
+	__le32 tlv_header;
+	__le32 ack_rx_bad;
+	__le32 rts_bad;
+	__le32 rts_good;
+	__le32 fcs_bad;
+	__le32 no_beacons;
+} __packed;
+
 struct ath12k_fw_stats_req_params {
 	u32 stats_id;
 	u32 vdev_id;

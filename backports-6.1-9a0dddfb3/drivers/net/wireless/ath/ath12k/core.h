@@ -524,6 +524,9 @@ struct ath12k_mgmt_frame_stats {
 	u64 aggr_tx_mgmt_fail_cnt;
 	u64 aggr_tx_mgmt_success_cnt;
 	u64 rx_pn_err_cnt;
+	u32 rx_assoc_no_rate_match;
+	u32 rx_assoc_bad_wpaie;
+	u32 rx_assoc_cap_mismatch;
 };
 
 struct ath12k_tx_conf {

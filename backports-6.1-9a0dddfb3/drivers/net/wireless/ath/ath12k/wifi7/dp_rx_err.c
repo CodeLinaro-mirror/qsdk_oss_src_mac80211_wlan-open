@@ -630,7 +630,7 @@ ath12k_wifi7_dp_process_wbm_rx_packets(struct ath12k_dp *dp,
 					drop_reason = ATH_RX_ECHO_ERR;
 				break;
 			case HAL_REO_ENTR_RING_RXDMA_ECODE_DECRYPT_ERR:
-			case HAL_REO_ENTR_RING_RXDMA_ECODE_TKIP_MIC_ERR:
+				dp_pdev->stats.telemetry_stats.rx_decrypt_err++;
 				if (ath12k_wifi7_dp_rx_h_mpdu_err(dp, rx_desc)
 					& HAL_RX_MPDU_ERR_TKIP_MIC) {
 					drop = ath12k_wifi7_dp_tkip_mic_err(dp_pdev,
@@ -643,6 +643,24 @@ ath12k_wifi7_dp_process_wbm_rx_packets(struct ath12k_dp *dp,
 					drop_reason = ATH_RX_TKIP_MIC_ERR;
 					break;
 				}
+				break;
+			case HAL_REO_ENTR_RING_RXDMA_ECODE_TKIP_MIC_ERR:
+				dp_pdev->stats.telemetry_stats.rx_mic_err++;
+				if (ath12k_wifi7_dp_rx_h_mpdu_err(dp, rx_desc)
+					& HAL_RX_MPDU_ERR_TKIP_MIC) {
+					drop = ath12k_wifi7_dp_tkip_mic_err(dp_pdev,
+									    peer,
+									    &rx_status,
+									    spd_desc_l,
+									    napi,
+									    &prev_tlv);
+
+					drop_reason = ATH_RX_TKIP_MIC_ERR;
+					break;
+				}
+				break;
+			case HAL_REO_ENTR_RING_RXDMA_ECODE_OVERFLOW_ERR:
+				dp_pdev->stats.telemetry_stats.rx_over_run++;
 				break;
 			default:
 				drop = true;
