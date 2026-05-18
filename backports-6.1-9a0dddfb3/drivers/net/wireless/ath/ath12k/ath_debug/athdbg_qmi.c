@@ -256,6 +256,26 @@ struct qmi_elem_info qmi_wlanfw_ddr_dump_region_ind_msg_v01_ei[] = {
 					   file_name),
 	},
 	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x11,
+		.offset         = offsetof(struct
+					   wlanfw_ddr_dump_region_ind_msg_v01,
+					   indication_type_valid),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_1_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x11,
+		.offset         = offsetof(struct
+					   wlanfw_ddr_dump_region_ind_msg_v01,
+					   indication_type),
+	},
+	{
 		.data_type      = QMI_EOTI,
 		.array_type       = NO_ARRAY,
 		.tlv_type       = QMI_COMMON_TLV_TYPE,
@@ -277,6 +297,43 @@ static const struct qmi_elem_info qmi_wlanfw_respond_mem_resp_msg_v01_ei[] = {
 		.data_type	= QMI_EOTI,
 		.array_type	= NO_ARRAY,
 		.tlv_type	= QMI_COMMON_TLV_TYPE,
+	},
+};
+
+struct qmi_elem_info qmi_wlanfw_ddr_dump_upload_done_req_msg_v01_ei[] = {
+	{
+		.data_type      = QMI_UNSIGNED_4_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u32),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x01,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_ddr_dump_upload_done_req_msg_v01,
+					   status),
+	},
+	{
+		.data_type      = QMI_EOTI,
+		.array_type       = NO_ARRAY,
+		.tlv_type       = QMI_COMMON_TLV_TYPE,
+	},
+};
+
+struct qmi_elem_info qmi_wlanfw_ddr_dump_upload_done_resp_msg_v01_ei[] = {
+	{
+		.data_type      = QMI_STRUCT,
+		.elem_len       = 1,
+		.elem_size      = sizeof(struct qmi_response_type_v01),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x02,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_ddr_dump_upload_done_resp_msg_v01,
+					   resp),
+		.ei_array      = qmi_response_type_v01_ei,
+	},
+	{
+		.data_type      = QMI_EOTI,
+		.array_type       = NO_ARRAY,
+		.tlv_type       = QMI_COMMON_TLV_TYPE,
 	},
 };
 
@@ -337,8 +394,8 @@ out:
 }
 EXPORT_SYMBOL(athdbg_qmi_handle_init);
 
-static void athdbg_coredump_ddr_dump(struct ath12k_base *ab,
-				     struct ath12k_qmi_event_ddr_dump_region *event_data)
+static int athdbg_coredump_ddr_dump(struct ath12k_base *ab,
+				    struct ath12k_qmi_event_ddr_dump_region *event_data)
 {
 	struct ath12k_dump_segment *segment;
 	void *dump = NULL;
@@ -347,18 +404,18 @@ static void athdbg_coredump_ddr_dump(struct ath12k_base *ab,
 
 	segment = vzalloc(sizeof(*segment));
 	if (!segment)
-		return;
+		return -ENOMEM;
 
 	if (event_data->total_size) {
 		dump = vzalloc(event_data->total_size);
 		if (!dump) {
 			vfree(segment);
-			return;
+			return -ENOMEM;
 		}
 	} else {
 		pr_err("Invalid total_size: 0\n");
 		vfree(segment);
-		return;
+		return -EINVAL;
 	}
 
 	for (i = 0; i < event_data->mem_seg_len; i++) {
@@ -392,20 +449,75 @@ static void athdbg_coredump_ddr_dump(struct ath12k_base *ab,
 	/* dev_coredumpv() takes ownership of the buffer */
 	dev_coredumpv(ab->dev, segment->vaddr, segment->len, GFP_KERNEL);
 	vfree(segment);
-	return;
+	return 0;
 #endif
 
 	vfree(segment);
 	vfree(dump);
+	return 0;
+}
+
+static int athdbg_qmi_ddr_dump_upload_done_req_send_sync(struct ath12k_base *ab,
+							 u32 status)
+{
+	struct qmi_wlanfw_ddr_dump_upload_done_req_msg_v01 *req;
+	struct qmi_wlanfw_ddr_dump_upload_done_resp_msg_v01 *resp;
+	struct qmi_txn txn;
+	int ret;
+
+	req = kzalloc(sizeof(*req), GFP_KERNEL);
+	if (!req)
+		return -ENOMEM;
+
+	resp = kzalloc(sizeof(*resp), GFP_KERNEL);
+	if (!resp) {
+		kfree(req);
+		return -ENOMEM;
+	}
+
+	req->status = status;
+
+	ret = qmi_txn_init(&ab->qmi.handle, &txn,
+			   qmi_wlanfw_ddr_dump_upload_done_resp_msg_v01_ei, resp);
+	if (ret < 0)
+		goto out;
+
+	ret = qmi_send_request(&ab->qmi.handle, NULL, &txn,
+			       QMI_WLANFW_DDR_DUMP_UPLOAD_DONE_REQ_V01,
+			       WLANFW_DDR_DUMP_UPLOAD_DONE_REQ_MSG_V01_MAX_MSG_LEN,
+			       qmi_wlanfw_ddr_dump_upload_done_req_msg_v01_ei, req);
+	if (ret < 0) {
+		qmi_txn_cancel(&txn);
+		pr_warn("Failed to send QDSS Dump upload done request, err %d\n", ret);
+		goto out;
+	}
+
+	ret = qmi_txn_wait(&txn, msecs_to_jiffies(ATH12K_QMI_WLANFW_TIMEOUT_MS));
+	if (ret < 0)
+		goto out;
+
+	if (resp->resp.result != QMI_RESULT_SUCCESS_V01) {
+		pr_warn("QDSS Dump upload done resp failed, result: %d, err: %d\n",
+			resp->resp.result, resp->resp.error);
+		ret = -EINVAL;
+		goto out;
+	}
+
+out:
+	kfree(req);
+	kfree(resp);
+	return ret;
 }
 
 static void athdbg_qmi_event_ddr_dump_region_req(struct athdbg_qmi *dbg_qmi, void *data)
 {
 	struct ath12k_base *ab = container_of(dbg_qmi, struct ath12k_base, dbg_qmi);
 	struct ath12k_qmi_event_ddr_dump_region *event_data = data;
-	int i;
+	int i, status;
 
-	athdbg_coredump_ddr_dump(ab, event_data);
+	status = athdbg_coredump_ddr_dump(ab, event_data);
+	if (event_data->indication_type_valid && event_data->indication_type)
+		athdbg_qmi_ddr_dump_upload_done_req_send_sync(ab, status);
 
 	for (i = 0; i < event_data->mem_seg_len; i++) {
 		if (event_data->mem_seg[i].valid && event_data->mem_seg[i].va)
@@ -853,29 +965,30 @@ void athdbg_qmi_wlanfw_ddr_dump_region_ind_cb(struct qmi_handle *qmi_hdl,
 					      const void *data)
 {
 	struct ath12k_qmi *qmi = container_of(qmi_hdl, struct ath12k_qmi, handle);
-	struct ath12k_base *ab = qmi->ab;
 	const struct wlanfw_ddr_dump_region_ind_msg_v01 *ind_msg = data;
 	struct athdbg_qmi_event_qdss_trace_save_data qdss_data = {0};
 	struct ath12k_qmi_event_ddr_dump_region *event_data;
-	struct ath12k_fw_mem *mem_seg = NULL;
 	struct target_mem_chunk *fw_mem = NULL;
-	uintptr_t offset = 0;
+	struct ath12k_fw_mem *mem_seg = NULL;
+	struct ath12k_base *ab = qmi->ab;
+	int status = DUMP_UPLOAD_FAILED;
 	int i, j, qdss_seg_count = 0;
+	uintptr_t offset = 0;
 
 	if (!txn || !ind_msg) {
-		pr_err("Spurious indication\n");
+		pr_err("Failed with invalid indication received\n");
 		return;
 	}
 
 	if (!ind_msg->mem_seg_len) {
-		pr_err("Number of DDR Dump region is not given\n");
-		return;
+		pr_err("Failed with number of DDR dump segment is zero\n");
+		goto end;
 	}
 
 	if (ind_msg->mem_seg_len > ATH12K_QMI_WLANFW_MAX_NUM_MEM_SEG_V01) {
-		pr_err("DDR Dump region count %u exceeds max %u\n",
+		pr_err("Failed DDR Dump region count %u exceeds max %u\n",
 		       ind_msg->mem_seg_len, ATH12K_QMI_WLANFW_MAX_NUM_MEM_SEG_V01);
-		return;
+		goto end;
 	}
 
 	for (i = 0; i < ind_msg->mem_seg_len; i++) {
@@ -892,13 +1005,14 @@ void athdbg_qmi_wlanfw_ddr_dump_region_ind_cb(struct qmi_handle *qmi_hdl,
 			qdss_data.mem_seg[i].size = ind_msg->mem_seg[i].size;
 		}
 		athdbg_coredump_qdss_dump(ab, &qdss_data);
-		return;
+		status = DUMP_UPLOAD_SUCCESS;
+		goto end;
 	}
 
 	pr_info("Received QMI WLFW DDR Dump region indication\n");
 	event_data = kzalloc(sizeof(*event_data), GFP_KERNEL);
 	if (!event_data)
-		return;
+		goto end;
 
 	if (ind_msg->file_name_valid)
 		strscpy(event_data->file_name, ind_msg->file_name,
@@ -906,6 +1020,11 @@ void athdbg_qmi_wlanfw_ddr_dump_region_ind_cb(struct qmi_handle *qmi_hdl,
 	else
 		strscpy(event_data->file_name, "ddr_dump_region",
 			QMI_WLANFW_MAX_STR_LEN_V01 + 1);
+
+	if (ind_msg->indication_type_valid && ind_msg->indication_type) {
+		event_data->indication_type_valid = 1;
+		event_data->indication_type = 1;
+	}
 
 	pr_info("DDR Dump region filename: %s\n", event_data->file_name);
 
@@ -955,7 +1074,7 @@ void athdbg_qmi_wlanfw_ddr_dump_region_ind_cb(struct qmi_handle *qmi_hdl,
 	event_data->mem_seg_len = j;
 
 	if (!j) {
-		pr_err("No valid segments found matching allocated DDR regions\n");
+		pr_err("Failed with no valid segments found matching allocated DDR regions\n");
 		goto cleanup_and_free;
 	}
 
@@ -969,6 +1088,10 @@ cleanup_and_free:
 			iounmap(event_data->mem_seg[i].va);
 	}
 	kfree(event_data);
+
+end:
+	if (ind_msg->indication_type_valid && ind_msg->indication_type)
+		athdbg_qmi_ddr_dump_upload_done_req_send_sync(ab, status);
 }
 
 int athdbg_qmi_worker_init(void *qmi_ab)
