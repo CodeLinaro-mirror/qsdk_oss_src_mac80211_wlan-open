@@ -492,6 +492,7 @@ static const struct nla_policy nl80211_txattr_policy[NL80211_TXRATE_MAX + 1] = {
 	[NL80211_TXRATE_UHR_UEQM_P] =
 		NLA_POLICY_EXACT_LEN(sizeof(struct nl80211_uhr_ueqm_pattern)),
 	[NL80211_TXRATE_UHR_ELR] = NLA_POLICY_MAX(NLA_U8, NL80211_UHR_ELR_ENABLE),
+	[NL80211_TXRATE_UHR_2XLDPC] = NLA_POLICY_MAX(NLA_U8, NL80211_UHR_2XLDPC_ENABLE),
 };
 
 static const struct nla_policy
@@ -6636,6 +6637,7 @@ static int nl80211_parse_tx_bitrate_mask(struct genl_info *info,
 		mask->control[i].uhr_gi = 0xFF;
 		mask->control[i].uhr_ltf = 0xFF;
 		mask->control[i].uhr_elr = 0xFF;
+		mask->control[i].uhr_2xldpc = 0xFF;
 
 		mask->control[i].legacy_mcs_changed = false;
 		mask->control[i].ht_mcs_changed = false;
@@ -6781,6 +6783,14 @@ static int nl80211_parse_tx_bitrate_mask(struct genl_info *info,
 
 			if (nl80211_validate_uhr_elr(band, sband, wdev->iftype))
 				return -EINVAL;
+		}
+
+		if (tb[NL80211_TXRATE_UHR_2XLDPC]) {
+			if (!ieee80211_get_uhr_iftype_cap(sband, wdev->iftype))
+				return -EINVAL;
+
+			mask->control[band].uhr_2xldpc =
+					nla_get_u8(tb[NL80211_TXRATE_UHR_2XLDPC]);
 		}
 
 		if (mask->control[band].legacy == 0) {
