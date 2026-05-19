@@ -24102,6 +24102,7 @@ ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 	enum nl80211_band band;
 	u32 param_value;
 	u32 vdev_param;
+	u8 uhr_2xldpc;
 	u8 he_ltf = 0;
 	u8 he_gi = 0;
 	u8 eht_ltf = 0;
@@ -24129,6 +24130,8 @@ ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 	he_ltf = mask->control[band].he_ltf;
 	eht_gi = mask->control[band].eht_gi;
 	eht_ltf = mask->control[band].eht_ltf;
+
+	uhr_2xldpc = mask->control[band].uhr_2xldpc;
 
 	he_num_rates = ath12k_mac_bitrate_mask_num_he_rates(ar, band, mask);
 	eht_num_rates = ath12k_mac_bitrate_mask_num_eht_rates(ar, band, mask);
@@ -24204,6 +24207,16 @@ ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 						    WMI_VDEV_PARAM_UHR_ELR, uhr_elr);
 		if (ret) {
 			ath12k_warn(ar->ab, "Failed to set UHR ELR mode on vdev %i: %d\n",
+				    arvif->vdev_id, ret);
+			return ret;
+		}
+	}
+
+	if (uhr_2xldpc != 0xFF) {
+		ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
+						    WMI_VDEV_PARAM_2XLDPC, uhr_2xldpc);
+		if (ret) {
+			ath12k_warn(ar->ab, "Failed to set 2xLDPC on vdev %i: %d\n",
 				    arvif->vdev_id, ret);
 			return ret;
 		}
