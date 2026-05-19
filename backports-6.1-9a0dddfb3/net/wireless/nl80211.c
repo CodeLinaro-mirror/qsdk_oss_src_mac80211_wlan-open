@@ -4502,26 +4502,11 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 			}
 		} else {
 			if (!info->attrs[NL80211_ATTR_MLO_LINK_ID]) {
-				if (txp_wdev) {
-					result = rdev_set_tx_power(rdev, txp_wdev,
-								   radio_idx,
-								   type, mbm, link_id);
-					if (result) {
-						goto out;
-					}
-				} else {
-					if (!rdev->wiphy.n_radio) {
-						result = rdev_set_tx_power(rdev, NULL,
-									   radio_idx,
-									   type, mbm,
-									   link_id);
-
-						if (result)
-							goto out;
-					} else {
-						result = -EOPNOTSUPP;
-						goto out;
-					}
+				result = rdev_set_tx_power(rdev, txp_wdev,
+						radio_idx,
+						type, mbm, link_id);
+				if (result) {
+					goto out;
 				}
 			} else {
 				result = -EINVAL;
