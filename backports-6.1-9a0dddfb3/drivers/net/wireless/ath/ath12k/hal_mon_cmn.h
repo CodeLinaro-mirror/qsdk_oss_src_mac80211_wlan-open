@@ -1260,6 +1260,7 @@ struct hal_mon_ops {
 					void *ring_entry,
 					struct ath12k_mon_ring_desc_info *desc_info);
 	bool (*is_mon_buf_addr_tlv)(u32 tlv_tag);
+	bool (*tx_mon_pkt_buf_cnt_in_desc)(void);
 };
 
 static inline u16
@@ -1573,6 +1574,15 @@ ath12k_hal_is_mon_buf_addr_tlv(struct ath12k_hal *hal, u32 tlv_tag)
 {
 	if (hal->hal_mon_ops->is_mon_buf_addr_tlv)
 		return hal->hal_mon_ops->is_mon_buf_addr_tlv(tlv_tag);
+
+	return false;
+}
+
+static inline bool
+ath12k_hal_mon_tx_pkt_buf_cnt_in_desc(struct ath12k_hal *hal)
+{
+	if (hal->hal_mon_ops->tx_mon_pkt_buf_cnt_in_desc)
+		return hal->hal_mon_ops->tx_mon_pkt_buf_cnt_in_desc();
 
 	return false;
 }

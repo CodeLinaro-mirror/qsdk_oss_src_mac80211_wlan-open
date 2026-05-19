@@ -1795,6 +1795,7 @@ void ath12k_wifi8_hal_mon_set_mon_buf_desc(void *desc, u32 addr_lo,
 					   u32 addr_hi, u64 cookie);
 
 bool ath12k_wifi8_is_mon_buf_addr_tlv(u32 tlv_tag);
+bool ath12k_wifi8_tx_mon_pkt_buf_cnt_in_desc(void);
 
 enum hal_tx_mon_status
 ath12k_wifi8_hal_mon_tx_status_get_num_user(struct ath12k_hal *hal,

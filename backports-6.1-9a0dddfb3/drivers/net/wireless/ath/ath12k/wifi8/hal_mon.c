@@ -5500,6 +5500,11 @@ bool ath12k_wifi8_is_mon_buf_addr_tlv(u32 tlv_tag)
 	return (tlv_tag == HAL_MON_BUF_ADDR);
 }
 
+bool ath12k_wifi8_tx_mon_pkt_buf_cnt_in_desc(void)
+{
+	return true;
+}
+
 enum hal_tx_mon_status
 ath12k_wifi8_hal_mon_tx_status_get_num_user(struct ath12k_hal *hal,
 					    u16 tlv_tag,
@@ -6525,6 +6530,8 @@ ath12k_wifi8_extract_tx_mon_ring_desc(struct ath12k_hal *hal,
 					      HAL_MON_DEST_INFO0_END_OFFSET);
 	desc_info->end_reason = le32_get_bits(info0,
 					      HAL_MON_DEST_INFO0_END_REASON);
+	desc_info->pkt_buf_cnt = le32_get_bits(info0,
+					       HAL_MON_DEST_INFO0_PKT_BUFFER_CNT);
 
 	if (desc_info->empty_desc)
 		return 0;

@@ -387,8 +387,7 @@ ath12k_dp_mon_tx_desc_free(struct list_head *local_list,
 /**
  * ath12k_dp_mon_tx_free_pkt_buf() - Free packet buffers from TLV data
  * @pdev_dp: Pointer to DP PDEV context containing device and statistics info
- * @mon_buf: Pointer to monitor buffer containing TLV data to be parsed
- * @mon_buf_len: Length of valid data in the monitor buffer
+ * @status_desc: Status descriptor containing monitor buffer and TLV metadata
  *
  * This function parses TLV data from a monitor status buffer and frees any
  * packet buffers referenced by HAL_TX_MON_BUF_ADDR TLVs. It performs
@@ -416,7 +415,7 @@ ath12k_dp_mon_tx_desc_free(struct list_head *local_list,
  */
 static void
 ath12k_dp_mon_tx_free_pkt_buf(struct ath12k_pdev_dp *pdev_dp,
-			      u8 *mon_buf, u32 mon_buf_len)
+			      struct ath12k_dp_mon_status_desc *status_desc)
 {
 	struct ath12k_dp *dp = pdev_dp->dp;
 	struct ath12k_base *ab = dp->ab;
@@ -428,7 +427,11 @@ ath12k_dp_mon_tx_free_pkt_buf(struct ath12k_pdev_dp *pdev_dp,
 	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
 	struct ath12k_pdev_tx_mon *dp_pdev_tx_mon;
 	struct ath12k_pdev_tx_mon_stats *tx_mon_stats;
+	u8 *mon_buf = status_desc->mon_buf;
+	u32 mon_buf_len = status_desc->buf_len;
+	u8 pkt_buf_cnt = status_desc->pkt_buf_cnt;
 	u8 *ptr = mon_buf;
+	u8 found = 0;
 	u16 tlv_tag, tlv_len;
 
 	dp_pdev_tx_mon = pdev_dp->dp_mon_pdev ?
@@ -482,6 +485,9 @@ ath12k_dp_mon_tx_free_pkt_buf(struct ath12k_pdev_dp *pdev_dp,
 			page_frag_free(pkt_desc->mon_buf);
 			pkt_desc->mon_buf = NULL;
 			pkt_desc->in_use = DP_MON_DESC_H_PROC_ERR;
+
+			if (pkt_buf_cnt && ++found == pkt_buf_cnt)
+				break;
 		}
 
 next_tlv:
@@ -527,14 +533,14 @@ next_tlv:
  */
 static void
 ath12k_dp_tx_mon_flush_tlv(struct ath12k_pdev_dp *pdev_dp,
-			   struct ath12k_dp_mon_status_desc *status_desc)
+			   struct ath12k_dp_mon_status_desc *status_desc,
+			   bool pkt_buf_cnt_in_desc)
 {
 	struct ath12k_pdev_tx_mon_stats *mon_stats;
 	u8 *mon_buf = status_desc->mon_buf;
-	u32 mon_buf_len = status_desc->buf_len;
-	u8 *ptr = mon_buf;
 
-	ath12k_dp_mon_tx_free_pkt_buf(pdev_dp, ptr, mon_buf_len);
+	if (!pkt_buf_cnt_in_desc || status_desc->pkt_buf_cnt)
+		ath12k_dp_mon_tx_free_pkt_buf(pdev_dp, status_desc);
 
 	if (unlikely(!pdev_dp->dp_mon_pdev || !pdev_dp->dp_mon_pdev->dp_pdev_tx_mon))
 		return;
@@ -561,6 +567,8 @@ ath12k_dp_tx_mon_flush_desc_list(struct ath12k_pdev_dp *dp_pdev,
 {
 	struct ath12k_dp_mon_desc *tmp_desc, *entry_desc;
 	struct ath12k_dp_mon *dp_mon = dp_pdev->dp_mon_pdev->dp_mon;
+	struct ath12k_hal *hal = &dp_pdev->dp->ab->hal;
+	bool pkt_buf_cnt_in_desc = ath12k_hal_mon_tx_pkt_buf_cnt_in_desc(hal);
 	struct ath12k_dp_mon_status_desc desc;
 
 	list_for_each_entry_safe(entry_desc, tmp_desc,
@@ -575,8 +583,9 @@ ath12k_dp_tx_mon_flush_desc_list(struct ath12k_pdev_dp *dp_pdev,
 		desc.mon_buf = entry_desc->mon_buf;
 		desc.buf_len = entry_desc->buf_len;
 		desc.end_of_ppdu = entry_desc->end_of_ppdu;
+		desc.pkt_buf_cnt = entry_desc->pkt_buf_cnt;
 
-		ath12k_dp_tx_mon_flush_tlv(dp_pdev, &desc);
+		ath12k_dp_tx_mon_flush_tlv(dp_pdev, &desc, pkt_buf_cnt_in_desc);
 
 		entry_desc->mon_buf = NULL;
 		entry_desc->buf_len = 0;
@@ -3552,6 +3561,7 @@ static int ath12k_dp_tx_mon_prep_wq(struct list_head *mon_desc_used_list,
 		ppdu_desc->status_desc[desc_cnt].paddr = desc->paddr;
 		ppdu_desc->status_desc[desc_cnt].buf_len = desc->buf_len;
 		ppdu_desc->status_desc[desc_cnt].end_of_ppdu = desc->end_of_ppdu;
+		ppdu_desc->status_desc[desc_cnt].pkt_buf_cnt = desc->pkt_buf_cnt;
 		ppdu_desc->status_desc_cnt++;
 	}
 
@@ -3638,7 +3648,7 @@ int ath12k_dp_mon_tx_process_ring(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_pdev_tx_mon *dp_pdev_tx_mon;
 	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
 	struct ath12k_hal *hal = &ab->hal;
-	struct ath12k_mon_ring_desc_info desc_info;
+	struct ath12k_mon_ring_desc_info desc_info = {};
 	struct hal_srng *tx_mon_dst_ring;
 	struct list_head *mon_desc_head;
 	void *ring_entry;
@@ -3737,6 +3747,7 @@ int ath12k_dp_mon_tx_process_ring(struct ath12k_pdev_dp *dp_pdev,
 			end_offset = ATH12K_DP_MON_TX_BUF_SIZE - 1;
 		}
 		mon_desc->buf_len = end_offset;
+		mon_desc->pkt_buf_cnt = desc_info.pkt_buf_cnt;
 		list_add_tail(&mon_desc->list, mon_desc_head);
 
 		status_frag = (u8 *)mon_desc->mon_buf;
@@ -4389,6 +4400,8 @@ void ath12k_dp_mon_tx_display_filters(struct ath12k_dp *dp,
 			   src_tlv_filter->data_log_typ);
 		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "mac_addr_filter_en: %d",
 			   src_tlv_filter->mac_addr_filter_en);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "pkt_buf_cnt_en: %d",
+			   src_tlv_filter->pkt_buf_cnt_en);
 	}
 }
 EXPORT_SYMBOL(ath12k_dp_mon_tx_display_filters);
@@ -4397,6 +4410,8 @@ void
 ath12k_dp_mon_tx_setup_mon_mode_filter(struct ath12k_dp *dp,
 				       struct htt_tx_ring_tlv_filter *src_tlv_filter)
 {
+	struct ath12k_hal *hal = dp->hal;
+
 	src_tlv_filter->tx_mon_downstream_tlv_flags =
 					HTT_TX_MON_FILTER_DW_STRM_TLV_DEFAULT_MODE;
 	src_tlv_filter->tx_mon_upstream_tlv_flags0 =
@@ -4434,6 +4449,7 @@ ath12k_dp_mon_tx_setup_mon_mode_filter(struct ath12k_dp *dp,
 	src_tlv_filter->tx_mon_mgmt_pkt_dma_len = DP_TX_MON_MAX_DMA_LENGTH;
 	src_tlv_filter->tx_mon_data_pkt_dma_len = DP_TX_MON_MAX_DMA_LENGTH;
 	src_tlv_filter->tx_mon_ctrl_pkt_dma_len = DP_TX_MON_MAX_DMA_LENGTH;
+	src_tlv_filter->pkt_buf_cnt_en = ath12k_hal_mon_tx_pkt_buf_cnt_in_desc(hal);
 }
 EXPORT_SYMBOL(ath12k_dp_mon_tx_setup_mon_mode_filter);
 
@@ -4509,6 +4525,7 @@ void ath12k_dp_mon_tx_prepare_filter(struct ath12k_dp *dp,
 		dst_tlv_filter->data_log_typ |= src_tlv_filter->data_log_typ;
 
 		dst_tlv_filter->txmon_disable |= src_tlv_filter->txmon_disable;
+		dst_tlv_filter->pkt_buf_cnt_en |= src_tlv_filter->pkt_buf_cnt_en;
 		dst_tlv_filter->tx_mon_mgmt_pkt_dma_len |=
 					src_tlv_filter->tx_mon_mgmt_pkt_dma_len;
 		dst_tlv_filter->tx_mon_data_pkt_dma_len |=

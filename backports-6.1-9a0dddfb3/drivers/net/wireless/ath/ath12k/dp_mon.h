@@ -765,6 +765,7 @@ struct ath12k_dp_mon_status_desc {
 	u8 *mon_buf;
 	u16 buf_len:12,
 	    end_of_ppdu:1;
+	u8 pkt_buf_cnt;
 } __packed;
 
 /**
@@ -813,6 +814,7 @@ struct ath12k_mon_ring_desc_info {
 	u32 end_offset;
 	u32 end_reason;
 	bool empty_desc;
+	u8 pkt_buf_cnt;
 };
 
 /**
@@ -940,6 +942,7 @@ struct ath12k_dp_mon_desc {
 	u16 buf_len:12,
 	    in_use:3,
 	    end_of_ppdu:1;
+	u8 pkt_buf_cnt;
 } __packed;
 
 enum ath12k_ext_mon_cmd_type {
