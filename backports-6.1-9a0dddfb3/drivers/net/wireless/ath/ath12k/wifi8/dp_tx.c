@@ -2107,7 +2107,7 @@ fail:
 	    ath12k_tid_stats_enabled(dp_pdev))
 		ath12k_dp_tx_drop_tid_stats(dp_vif, drop_reason, tid, len);
 
-	ath12k_mac_ieee80211_free_txskb(dp_pdev->ar->ah->hw, skb, dp_pdev,
+	ath12k_mac_ieee80211_free_txskb(ahvif->ah->hw, skb, dp_pdev,
 					arsta ? ath12k_ahsta_to_sta(arsta->ahsta) : NULL,
 					dp_vif, drop_reason, ring_id, false);
 }
