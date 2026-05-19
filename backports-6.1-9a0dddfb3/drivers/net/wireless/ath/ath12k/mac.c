@@ -24220,6 +24220,7 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 	struct ath12k_dp_link_peer *link_peer;
 	u32 pn_errors = 0, mic_errors = 0, decrypt_errors = 0;
 	int hw_link_id, stats_link_id, i;
+	bool is_ds_vif = false;
 
 	if (!link_sta->sta) {
 		ath12k_err(NULL, "Failed to proceed: link_sta->sta is NULL");
@@ -24274,7 +24275,15 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_PACKETS);
 		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_BYTES);
 
+		is_ds_vif = ath12k_vif_to_ahvif(vif)->dp_vif.ppe_vp_type ==
+				PPE_VP_USER_TYPE_DS;
 		for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
+			/* PPE sync credits DS VIF WDS peer traffic only on
+			 * DP_REO_PPEDS_RING_IDX; skip lower ring indices to
+			 * avoid double-counting.
+			 */
+			if (peer->use_4addr && is_ds_vif && i < DP_REO_PPEDS_RING_IDX)
+				continue;
 			link_sinfo->rx_bytes +=
 				peer_stats->rx[i].sent_to_stack.bytes +
 				peer_stats->rx[i].sent_to_stack_fast.bytes;
@@ -24297,7 +24306,6 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 	/*Need to get this ack signal from htt stats*/
 	link_sinfo->ack_signal = link_peer->peer_stats.last_ack_rssi;
 	link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_ACK_SIGNAL);
-
 	link_sinfo->avg_ack_signal =
 		-(s8)ewma_avg_ack_rssi_read(&link_peer->peer_stats.avg_ack_rssi);
 	link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_ACK_SIGNAL_AVG);
@@ -28767,6 +28775,7 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 	const u8 *peer_mac = NULL;
 	struct ieee80211_sta *sta;
 	bool is_ap_vlan = false;
+	bool is_ds_vif = false;
 	struct ath12k_dp_preserved_stats *del_stats;
 	struct ath12k_dp_pkt_info vif_ppeds_rx;
 	struct ieee80211_vif *master_vif;
@@ -28794,15 +28803,11 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 		peer_mac = sta->addr;
 		is_ap_vlan = true;
 	} else {
-		/*
-		 * Master VIF: Accumulate hardware PPE DS ring stats and
-		 * preserved stats from any torn-down link VIFs.
+		/* Master VIF - accumulate the preserved stats of deleted links.
 		 */
-		vif_ppeds_rx = dp_vif->rx_stats[DP_REO_PPEDS_RING_IDX].ppeds_rx;
-		stats->rx_packets += vif_ppeds_rx.packets;
-		stats->rx_bytes += vif_ppeds_rx.bytes;
 		ath12k_mac_add_preserved_stats(stats, &dp_vif->link_vif_delete_stats);
 	}
+	is_ds_vif = (ahvif->dp_vif.ppe_vp_type == PPE_VP_USER_TYPE_DS);
 	for_each_set_bit(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
 		if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
 			continue;
@@ -28838,13 +28843,33 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 				continue;
 			peer_stats = &peer->stats[stats_link_id];
 
+			if (ath12k_extd_rx_stats_enabled(ar))
+				goto rx_stats;
 			for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
+				/* PPE sync credits DS VIF WDS peer traffic only on
+				 * DP_REO_PPEDS_RING_IDX. Skip lower ring indices
+				 * to avoid double-counting.
+				 */
+				if (is_ds_vif && i < DP_REO_PPEDS_RING_IDX)
+					continue;
 				stats->rx_packets +=
 					(peer_stats->rx[i].sent_to_stack.packets +
 					 peer_stats->rx[i].sent_to_stack_fast.packets);
 				stats->rx_bytes +=
 					(peer_stats->rx[i].sent_to_stack.bytes +
 					 peer_stats->rx[i].sent_to_stack_fast.bytes);
+			}
+rx_stats:
+			/* Override PPEDS ring sent_to_stack with extended RX monitor
+			 * MSDU totals.
+			 */
+			if (ar && ath12k_extd_rx_stats_enabled(ar)) {
+				if (link_peer && link_peer->peer_stats.rx_stats) {
+					stats->rx_packets +=
+						link_peer->peer_stats.rx_stats->num_msdu;
+					stats->rx_bytes +=
+					link_peer->peer_stats.rx_stats->num_msdu_bytes;
+				}
 			}
 			for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
 				stats->tx_packets += peer_stats->tx[i].comp_pkt.packets;
@@ -28855,6 +28880,16 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 		}
 		spin_unlock_bh(&dp->dp_lock);
 	}
+	/*
+	 * Accumulate hardware PPE DS ring stats on the master VIF if extended rx stats
+	 * are not enabled.
+	 */
+	if (ar && vif->type == NL80211_IFTYPE_AP && !ath12k_extd_rx_stats_enabled(ar)) {
+		vif_ppeds_rx = dp_vif->rx_stats[DP_REO_PPEDS_RING_IDX].ppeds_rx;
+		stats->rx_packets += vif_ppeds_rx.packets;
+		stats->rx_bytes += vif_ppeds_rx.bytes;
+	}
+
 out:
 	rcu_read_unlock();
 }

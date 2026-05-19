@@ -2761,7 +2761,7 @@ ath12k_dp_aggr_proto_peer_rx_stats(struct ath12k_dp_peer_stats *dst_peer_stats,
 static void ath12k_dp_aggr_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 					      struct ath12k_dp_peer_stats *dst_peer_stats,
 					      struct ath12k_dp_peer_stats *src_peer_stats,
-					      bool is_vdev_peer)
+					      bool is_vdev_peer, bool is_ds_wds_peer)
 {
 	int i, j;
 
@@ -2833,11 +2833,6 @@ static void ath12k_dp_aggr_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 		dst_peer_stats->rx[i].recv_from_reo.bytes +=
 			src_peer_stats->rx[i].recv_from_reo.bytes;
 
-		dst_peer_stats->rx[i].sent_to_stack.packets +=
-			src_peer_stats->rx[i].sent_to_stack.packets;
-		dst_peer_stats->rx[i].sent_to_stack.bytes +=
-			src_peer_stats->rx[i].sent_to_stack.bytes;
-
 		dst_peer_stats->rx[i].sent_to_stack_fast.packets +=
 			src_peer_stats->rx[i].sent_to_stack_fast.packets;
 		dst_peer_stats->rx[i].sent_to_stack_fast.bytes +=
@@ -2866,6 +2861,19 @@ static void ath12k_dp_aggr_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 				ath12k_dp_aggr_proto_peer_rx_stats(dst_peer_stats,
 								   src_peer_stats, i);
 		}
+		/*
+		 * For DS VIFs, the RX packets are accounted at peer level by the
+		 * ppe sync stats callback on DP_REO_PPEDS_RING_IDX for wds peers only.
+		 * Skip other rings aggregation and present only the stats accounted
+		 * on DP_REO_PPEDS_RING_IDX for WDS peers.
+		 */
+		if (is_ds_wds_peer && i < DP_REO_PPEDS_RING_IDX)
+			continue;
+
+		dst_peer_stats->rx[i].sent_to_stack.packets +=
+			src_peer_stats->rx[i].sent_to_stack.packets;
+		dst_peer_stats->rx[i].sent_to_stack.bytes +=
+			src_peer_stats->rx[i].sent_to_stack.bytes;
 	}
 
 	/*rx error stats*/
@@ -2927,7 +2935,7 @@ static void ath12k_dp_update_tx_ext_htt_stats(struct ath12k_htt_tx_stats *dst_pe
 static void ath12k_dp_update_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 						struct ath12k_dp_peer_stats *dst_peer_stats,
 						struct ath12k_dp_peer_stats *src_peer_stats,
-						bool is_vdev_peer)
+						bool is_vdev_peer, bool is_ds_wds_peer)
 {
 	int i, j;
 
@@ -3000,10 +3008,6 @@ static void ath12k_dp_update_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 		dst_peer_stats->rx[i].recv_from_reo.bytes =
 			src_peer_stats->rx[i].recv_from_reo.bytes;
 
-		dst_peer_stats->rx[i].sent_to_stack.packets =
-			src_peer_stats->rx[i].sent_to_stack.packets;
-		dst_peer_stats->rx[i].sent_to_stack.bytes =
-			src_peer_stats->rx[i].sent_to_stack.bytes;
 		dst_peer_stats->rx[i].sent_to_stack_fast.packets =
 			src_peer_stats->rx[i].sent_to_stack_fast.packets;
 		dst_peer_stats->rx[i].sent_to_stack_fast.bytes =
@@ -3032,6 +3036,20 @@ static void ath12k_dp_update_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 				ath12k_dp_update_proto_peer_rx_stats(dst_peer_stats,
 								     src_peer_stats, i);
 		}
+		/*
+		 * For DS VIFs, the RX packets are accounted at peer level by the
+		 * ppe sync stats callback on DP_REO_PPEDS_RING_IDX for wds peers only.
+		 * Skip other rings aggregation and present only the stats accounted
+		 * on DP_REO_PPEDS_RING_IDX for WDS peers.
+		 */
+		if (is_ds_wds_peer && i < DP_REO_PPEDS_RING_IDX)
+			continue;
+
+		dst_peer_stats->rx[i].sent_to_stack.packets =
+			src_peer_stats->rx[i].sent_to_stack.packets;
+		dst_peer_stats->rx[i].sent_to_stack.bytes =
+			src_peer_stats->rx[i].sent_to_stack.bytes;
+
 	}
 
 	/*rx error stats*/
@@ -3181,9 +3199,27 @@ ath12k_dp_aggregate_link_rx_mon_stats(struct ath12k_rx_peer_stats *dst,
 	}
 }
 
+/* Override PPEDS ring sent_to_stack with extended RX monitor MSDU totals to account
+ * non PPE traffic also if extended rx stats is enabled.
+ * PPE sync credits DS VIF WDS peer traffic exclusively on DP_REO_PPEDS_RING_IDX.
+ */
+static void ath12k_dp_override_ppeds_rx(struct ath12k_dp_peer_stats *peer_stats,
+					struct ath12k_rx_peer_stats *rx_stats,
+					bool is_ds_wds_peer)
+{
+	if (!is_ds_wds_peer || !peer_stats || !rx_stats)
+		return;
+
+	peer_stats->rx[DP_REO_PPEDS_RING_IDX].sent_to_stack.packets =
+							rx_stats->num_msdu;
+	peer_stats->rx[DP_REO_PPEDS_RING_IDX].sent_to_stack.bytes =
+							rx_stats->num_msdu_bytes;
+}
+
 static void ath12k_dp_aggr_peer_stats(struct ath12k_link_vif *arvif,
 				      struct ath12k_dp_link_peer *link_peer,
-				      struct ath12k_dp_aggr_vif_stats *aggr_vif_stats)
+				      struct ath12k_dp_aggr_vif_stats *aggr_vif_stats,
+				      bool is_ds_vif)
 {
 	struct ath12k_dp_peer *peer;
 	struct ath12k_pdev_dp *dp_pdev = &arvif->ar->dp;
@@ -3193,6 +3229,7 @@ static void ath12k_dp_aggr_peer_stats(struct ath12k_link_vif *arvif,
 	struct ath12k_htt_tx_stats *src_htt_stats = NULL;
 	struct ath12k_htt_tx_stats *dst_htt_stats = NULL;
 	struct ath12k_rx_peer_stats *rx_peer_stats = NULL;
+	bool is_ds_wds_peer = false;
 
 	if (!link_peer->dp_peer)
 		return;
@@ -3200,11 +3237,12 @@ static void ath12k_dp_aggr_peer_stats(struct ath12k_link_vif *arvif,
 	peer = link_peer->dp_peer;
 	stats_link_id = ar->hw_link_id;
 	link_peer_stats = &aggr_vif_stats->link_peer_stats;
+	is_ds_wds_peer = is_ds_vif && peer->use_4addr;
 	if (stats_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS) {
 		ath12k_dp_aggr_per_pkt_peer_stats(dp_pdev, &aggr_vif_stats->peer_stats,
 						  &peer->stats[stats_link_id],
-						  peer->is_vdev_peer);
-
+						  peer->is_vdev_peer,
+						  is_ds_wds_peer);
 		dst_htt_stats = link_peer_stats->tx_stats;
 		src_htt_stats = link_peer->peer_stats.tx_stats;
 		rx_peer_stats =  link_peer->peer_stats.rx_stats;
@@ -3215,6 +3253,15 @@ static void ath12k_dp_aggr_peer_stats(struct ath12k_link_vif *arvif,
 			ath12k_dp_aggregate_link_rx_mon_stats(link_peer_stats->rx_stats,
 							      rx_peer_stats);
 	}
+	/* For non-WDS peers on a DS VIF, the PPE sync callback
+	 * does not populate the DS stats. Skip updating the counters
+	 *  from monitor as well for non wds cases. override only for
+	 *  the WDS peers.
+	 */
+	if (ath12k_extd_rx_stats_enabled(ar))
+		ath12k_dp_override_ppeds_rx(&aggr_vif_stats->peer_stats,
+					    link_peer_stats->rx_stats,
+					    is_ds_wds_peer);
 }
 
 /**
@@ -3244,7 +3291,8 @@ ath12k_dp_aggr_link_vif_del_stats(struct ath12k_link_vif *arvif,
 }
 
 static void ath12k_vif_iterate_peer(struct ath12k_link_vif *arvif,
-				    struct ath12k_dp_aggr_vif_stats *aggr_vif_stats)
+				    struct ath12k_dp_aggr_vif_stats *aggr_vif_stats,
+				    bool is_ds_vif)
 {
 
 	struct ath12k_dp *dp = arvif ->ar->ab->dp;
@@ -3256,7 +3304,7 @@ static void ath12k_vif_iterate_peer(struct ath12k_link_vif *arvif,
 	list_for_each_entry(link_peer, &dp->peers, list)  {
 		if (link_peer->vdev_id != vdev_id)
 			continue;
-		ath12k_dp_aggr_peer_stats(arvif, link_peer, aggr_vif_stats);
+		ath12k_dp_aggr_peer_stats(arvif, link_peer, aggr_vif_stats, is_ds_vif);
 	}
 	spin_unlock_bh(&dp->dp_lock);
 }
@@ -3344,6 +3392,7 @@ void ath12k_dp_get_pdev_stats(struct ath12k_pdev_dp *pdev,
 	struct ath12k_link_vif *arvif;
 	struct ath12k_dp_aggr_pdev_stats *aggr_pdev_stats =
 					&telemetry_radio->aggr_pdev_stats;
+	bool is_ds_vif = false;
 
 	if (ath12k_dp_stats_enabled(&ar->dp) &&
 	    ath12k_dp_debug_stats_enabled(&ar->dp))
@@ -3356,7 +3405,9 @@ void ath12k_dp_get_pdev_stats(struct ath12k_pdev_dp *pdev,
 		aggr_vif_stats->link_peer_stats.rx_stats =
 					aggr_pdev_stats->link_peer_stats.rx_stats;
 		list_for_each_entry(arvif, &ar->arvifs, list) {
-			ath12k_vif_iterate_peer(arvif, aggr_vif_stats);
+			is_ds_vif = (arvif->ahvif->dp_vif.ppe_vp_type ==
+					  PPE_VP_USER_TYPE_DS);
+			ath12k_vif_iterate_peer(arvif, aggr_vif_stats, is_ds_vif);
 			/* Include deleted link peer stats stored at link VIF */
 			ath12k_dp_aggr_link_vif_del_stats(arvif, aggr_vif_stats);
 		}
@@ -3377,6 +3428,8 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 	unsigned long links_map = ahvif->links_map;
 	struct ath12k_dp_aggr_vif_stats *aggr_vif_stats =
 						&telemetry_vif->aggr_vif_stats;
+	bool is_ds_vif = (ahvif->dp_vif.ppe_vp_type == PPE_VP_USER_TYPE_DS);
+	bool is_extd_rx_set = false;
 
 	if (ath12k_dp_stats_enabled(&ar->dp) &&
 	    ath12k_dp_debug_stats_enabled(&ar->dp))
@@ -3393,7 +3446,7 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 		arvif = rcu_dereference(ahvif->link[link_id]);
 
 		if (arvif && arvif->is_started) {
-			ath12k_vif_iterate_peer(arvif, aggr_vif_stats);
+			ath12k_vif_iterate_peer(arvif, aggr_vif_stats, is_ds_vif);
 			/* Include deleted link peer stats for specific link VIF */
 			ath12k_dp_aggr_link_vif_del_stats(arvif, aggr_vif_stats);
 		}
@@ -3401,15 +3454,13 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 	} else {
 		/*MLD vif stats*/
 		ath12k_dp_aggr_vif_ingress_stats(&ar->dp, aggr_vif_stats, dp_vif);
-		ath12k_dp_aggr_vif_ppeds_sync_stats(aggr_vif_stats, dp_vif);
-
 		/*legacy vif stats handling*/
 		if (hweight16(links_map) == 0) {
 			arvif =  &ahvif->deflink;
 
 			if (arvif && arvif->is_started) {
-
-				ath12k_vif_iterate_peer(arvif, aggr_vif_stats);
+				is_extd_rx_set = ath12k_extd_rx_stats_enabled(arvif->ar);
+				ath12k_vif_iterate_peer(arvif, aggr_vif_stats, is_ds_vif);
 				/* Include deleted link peer stats for legacy VIF */
 				ath12k_dp_aggr_link_vif_del_stats(arvif, aggr_vif_stats);
 			}
@@ -3422,7 +3473,8 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 					rcu_read_unlock();
 					continue;
 				}
-				ath12k_vif_iterate_peer(arvif, aggr_vif_stats);
+				is_extd_rx_set = ath12k_extd_rx_stats_enabled(arvif->ar);
+				ath12k_vif_iterate_peer(arvif, aggr_vif_stats, is_ds_vif);
 				/* Include deleted link peer stats of each link VIF
 				 * in MLD VIF
 				 */
@@ -3435,6 +3487,7 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 						 &dp_vif->link_vif_delete_stats,
 						 "link_vif_delete_stats");
 		}
+		ath12k_dp_aggr_vif_ppeds_sync_stats(aggr_vif_stats, dp_vif);
 	}
 }
 
@@ -3512,7 +3565,8 @@ static int
 ath12k_dp_get_link_peer_stats(struct ath12k_link_vif *arvif,
 			      struct ath12k_dp_peer_stats *peer_stats,
 			      u8 *addr, u8 link_id, bool valid_link,
-			      struct ath12k_dp_link_peer_stats *link_peer_stats)
+			      struct ath12k_dp_link_peer_stats *link_peer_stats,
+			      bool is_ds_vif)
 {
 	struct ath12k_dp *dp = arvif->ar->ab->dp;
 	struct ath12k_pdev_dp *dp_pdev = &arvif->ar->dp;
@@ -3525,6 +3579,8 @@ ath12k_dp_get_link_peer_stats(struct ath12k_link_vif *arvif,
 	struct ath12k_htt_tx_stats *src_htt_stats = NULL;
 	struct ath12k_rx_peer_stats *dst_stats = link_peer_stats->rx_stats;
 	int ret = 0;
+	bool is_ds_wds_peer = false;
+	struct ath12k_dp_peer_stats *cur_peer_stats = NULL;
 
 	spin_lock_bh(&dp->dp_lock);
 	link_peer = ath12k_dp_link_peer_find_by_addr(dp, addr);
@@ -3540,16 +3596,23 @@ ath12k_dp_get_link_peer_stats(struct ath12k_link_vif *arvif,
 			peer = link_peer->dp_peer;
 			stats_link_id = hw_link_id;
 			src_htt_stats = link_peer->peer_stats.tx_stats;
+			is_ds_wds_peer = is_ds_vif && peer->use_4addr;
 			if (stats_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS) {
+				cur_peer_stats = &peer->stats[stats_link_id];
 				ath12k_dp_update_per_pkt_peer_stats(dp_pdev, peer_stats,
-								    &peer->stats[stats_link_id],
-								    peer->is_vdev_peer);
+								    cur_peer_stats,
+								    peer->is_vdev_peer,
+								    is_ds_wds_peer);
 				if (ath12k_extd_tx_stats_enabled(ar))
 					ath12k_dp_update_tx_ext_htt_stats(dst_htt_stats,
 									 src_htt_stats);
-				if (ath12k_extd_rx_stats_enabled(ar))
+				if (ath12k_extd_rx_stats_enabled(ar)) {
 					ret = ath12k_update_peer_rx_mon_stats(link_peer,
 									      dst_stats);
+					ath12k_dp_override_ppeds_rx(cur_peer_stats,
+								    dst_stats,
+								    is_ds_wds_peer);
+				}
 			}
 			spin_unlock_bh(&dp->dp_lock);
 			return ret;
@@ -3564,7 +3627,8 @@ ath12k_dp_get_link_peer_stats(struct ath12k_link_vif *arvif,
 void ath12k_update_ext_stats(struct ath12k *ar,
 			     struct ath12k_dp_peer *peer,
 			     u8 link_id,
-			     struct ath12k_dp_link_peer_stats *link_peer_stats)
+			     struct ath12k_dp_link_peer_stats *link_peer_stats,
+			     bool is_ds_wds_peer)
 {
 	struct ath12k_dp_link_peer *tmp_peer = NULL;
 	int ret = 0;
@@ -3642,18 +3706,24 @@ ath12k_dp_update_legacy_peer_stats(struct ath12k *ar,
 				   struct ath12k_dp_peer *peer,
 				   struct ath12k_telemetry_dp_peer *telemetry_peer,
 				   struct ath12k_dp_peer_stats *peer_stats,
-				   struct ath12k_dp_link_peer_stats *link_stats)
+				   struct ath12k_dp_link_peer_stats *link_stats,
+				   bool is_ds_wds_peer)
 {
 	u8 link_id;
 
 	telemetry_peer->peer_type = ATH12K_LEGACY_PEER;
 	for (link_id = 0; link_id < ATH12K_DP_PEER_MAX_MLO_LINKS; link_id++) {
+		ath12k_update_ext_stats(ar, peer, link_id, link_stats, is_ds_wds_peer);
 		ath12k_dp_aggr_per_pkt_peer_stats(&ar->dp,
 						  peer_stats,
 						  &peer->stats[link_id],
-						  peer->is_vdev_peer);
-		ath12k_update_ext_stats(ar, peer, link_id, link_stats);
+						  peer->is_vdev_peer,
+						  is_ds_wds_peer);
 	}
+	if (ath12k_extd_rx_stats_enabled(ar))
+		ath12k_dp_override_ppeds_rx(peer_stats, link_stats->rx_stats,
+					    is_ds_wds_peer);
+
 }
 
 int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
@@ -3665,15 +3735,20 @@ int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
 	struct ath12k *ar = &ahvif->ah->radio[0];
 	struct ath12k_dp_peer_stats *peer_stats;
 	struct ath12k_dp_link_peer_stats *link_stats;
+	struct ath12k_rx_peer_stats *rx_stats;
 	struct ath12k_dp_peer *peer;
 	int stats_link_id, i, ret = 0;
 	unsigned long links_map = ahvif->links_map;
 	bool valid_link = ahvif->links_map & BIT(link_id);
+	bool is_ds_vif = (ahvif->dp_vif.ppe_vp_type == PPE_VP_USER_TYPE_DS);
+	bool ds_wds_peer = false;
+	bool is_vdev_peer = false;
 
 	spin_lock_bh(&dp_hw->peer_lock);
 	peer = ath12k_dp_peer_find(dp_hw, addr);
 	peer_stats = &telemetry_peer->peer_stats;
 	link_stats = &telemetry_peer->link_peer_stats;
+	rx_stats = link_stats->rx_stats;
 
 	if (ath12k_dp_stats_enabled(&ar->dp) &&
 	    ath12k_dp_debug_stats_enabled(&ar->dp))
@@ -3695,6 +3770,8 @@ int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
 		}
 
 		/*Peer stats of MLD peer for requested link id*/
+		ds_wds_peer = is_ds_vif && peer->use_4addr;
+		is_vdev_peer = peer->is_vdev_peer;
 		if (valid_link) {
 			rcu_read_lock();
 			arvif = rcu_dereference(ahvif->link[link_id]);
@@ -3702,12 +3779,17 @@ int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
 				telemetry_peer->peer_type = ATH12K_LINK_PEER;
 				stats_link_id = arvif->ar->hw_link_id;
 				if (stats_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS) {
+					ath12k_update_ext_stats(ar, peer, stats_link_id,
+								link_stats, ds_wds_peer);
 					ath12k_dp_update_per_pkt_peer_stats(&ar->dp,
 									    peer_stats,
 									    &peer->stats[stats_link_id],
-									    peer->is_vdev_peer);
-					ath12k_update_ext_stats(ar, peer, stats_link_id,
-								link_stats);
+									    is_vdev_peer,
+									    ds_wds_peer);
+					if (ath12k_extd_rx_stats_enabled(ar))
+						ath12k_dp_override_ppeds_rx(peer_stats,
+									    rx_stats,
+									    ds_wds_peer);
 				}
 			}
 			goto unlock;
@@ -3726,7 +3808,8 @@ int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
 				ath12k_dp_update_legacy_peer_stats(ar, peer,
 								   telemetry_peer,
 								   peer_stats,
-								   link_stats);
+								   link_stats,
+								   ds_wds_peer);
 			} else {
 				telemetry_peer->peer_type = ATH12K_MLD_PEER;
 				/* Aggregated peer stats of all link in MLD peer*/
@@ -3734,7 +3817,8 @@ int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
 					ath12k_dp_aggr_per_pkt_peer_stats(&ar->dp,
 									  peer_stats,
 									  &peer->stats[i],
-									  peer->is_vdev_peer);
+									  is_vdev_peer,
+									  ds_wds_peer);
 				/* Include preserved stats of deleted link peers
 				 * when reporting MLD peer stats
 				 */
@@ -3743,6 +3827,13 @@ int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
 							 "link_peer_delete_stats");
 				ath12k_dp_aggr_htt_stats(ar, peer, link_stats);
 				ath12k_dp_aggr_rx_mon_stats(ar, peer, link_stats);
+				/* Replace PPE-synced PPEDS ring counter with extended
+				 * RX monitor MSDU totals for DS VIF WDS peers in MLD.
+				 */
+				if (ath12k_extd_rx_stats_enabled(ar))
+					ath12k_dp_override_ppeds_rx(peer_stats,
+								    link_stats->rx_stats,
+								     ds_wds_peer);
 			}
 			spin_unlock_bh(&dp_hw->peer_lock);
 			return ret;
@@ -3756,7 +3847,7 @@ int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
 			if (arvif)
 				ret = ath12k_dp_get_link_peer_stats(arvif, peer_stats, addr,
 								   link_id, valid_link,
-								   link_stats);
+								   link_stats, is_ds_vif);
 			goto unlock;
 		} else {
 			/*Peer stats of link peer without link id*/
@@ -3768,7 +3859,7 @@ int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
 				}
 				ret = ath12k_dp_get_link_peer_stats(arvif, peer_stats, addr,
 								   link_id, valid_link,
-								   link_stats);
+								   link_stats, is_ds_vif);
 				if (!ret)
 					goto unlock;
 			}
