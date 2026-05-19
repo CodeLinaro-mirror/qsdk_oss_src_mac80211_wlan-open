@@ -81,11 +81,10 @@ void ath12k_wifi8_pci_get_soc_reset_reason(struct ath12k_base *ab)
 	val = ath12k_pci_read32(ab, QCN9625_WLAON_SOC_RESET_CAUSE_SHADOW_REG);
 
 	if (ab->is_cumac_chip && (val & QCN9625_RESET_CAUSE_Q6_BCR))
-		ab->soc_reset_reason = ATH12K_Q6_BCR_RESET;
-	else
-		ab->soc_reset_reason = ATH12K_GLOBAL_SOC_RESET;
+		set_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags);
 
-	ath12k_info(ab, "soc reset reason is : %d\n", ab->soc_reset_reason);
+	ath12k_info(ab, "Q6 BCR: %s\n",
+		    test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags) ? "yes" : "no");
 }
 
 static const struct ath12k_reg_base ath12k_wifi8_pci_reg_base = {

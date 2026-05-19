@@ -973,10 +973,10 @@ static u16 ath12k_wifi8_mcbc_get_gsn(struct ath12k_dp_vif *dp_vif)
  */
 static bool ath12k_wifi8_tx_recovery_drop(struct ath12k_base *ab)
 {
-	return unlikely((test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS,
+	return unlikely(test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS,
 			&ab->dev_flags) ||
-			test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags)) &&
-			ab->soc_reset_reason != ATH12K_Q6_BCR_RESET);
+			(test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags) &&
+			!test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags)));
 }
 
 /**

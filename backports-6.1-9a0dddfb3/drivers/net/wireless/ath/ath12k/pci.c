@@ -243,7 +243,7 @@ static void ath12k_pci_sw_reset(struct ath12k_base *ab, bool power_on)
 	ath12k_pci_clear_dbg_registers(ab);
 
 	if (!power_on) {
-		if (ab->soc_reset_reason == ATH12K_Q6_BCR_RESET)
+		if (test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags))
 			ath12k_pci_q6_only_reset(ab);
 		else
 			ath12k_pci_soc_global_reset(ab);

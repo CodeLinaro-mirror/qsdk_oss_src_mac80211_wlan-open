@@ -1111,7 +1111,7 @@ int ath12k_hal_srng_init(struct ath12k_base *ab)
 	int ret;
 
 	if (test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags) &&
-		     ab->soc_reset_reason == ATH12K_Q6_BCR_RESET) {
+		     test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags)) {
 		ath12k_info(ab, "Skip HAL re-init during Q6 BCR RESET\n");
 		return 0;
 	}
@@ -1157,7 +1157,7 @@ void ath12k_hal_srng_deinit(struct ath12k_base *ab)
 		return;
 
 	if (test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags) &&
-		     ab->soc_reset_reason == ATH12K_Q6_BCR_RESET) {
+		     test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags)) {
 		ath12k_info(ab, "Skip HAL deinit during Q6 BCR RESET\n");
 		return;
 	}
@@ -1543,4 +1543,3 @@ void ath12k_hal_srng_dst_invalidate_entries_no_dsb(struct ath12k_dp *dp,
 	}
 }
 EXPORT_SYMBOL(ath12k_hal_srng_dst_invalidate_entries_no_dsb);
-
