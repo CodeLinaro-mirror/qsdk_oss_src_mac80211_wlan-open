@@ -1200,6 +1200,12 @@ void ath12k_hal_dump_srng_stats(struct ath12k_base *ab)
 			   jiffies_to_msecs(jiffies - irq_grp->timestamp));
 	}
 
+	/* If rdp.vaddr is not set, then every per ring tp_addr will
+	 * not be valid. Therefore, skip srng stats dump
+	 */
+	if (!ab->hal.rdp.vaddr)
+		return;
+
 	for (i = 0; i < HAL_SRNG_RING_ID_MAX; i++) {
 		srng = &ab->hal.srng_list[i];
 
