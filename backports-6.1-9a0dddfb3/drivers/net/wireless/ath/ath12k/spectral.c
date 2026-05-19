@@ -58,7 +58,10 @@
 #define SPECTRAL_SUMMARY_INFO2_PEAK_SIGNED_IDX		GENMASK(11, 0)
 #define SPECTRAL_SUMMARY_INFO2_PEAK_MAGNITUDE		GENMASK(21, 12)
 #define SPECTRAL_SUMMARY_INFO2_NARROWBAND_MASK		GENMASK(29, 22)
-#define SPECTRAL_SUMMARY_INFO2_GAIN_CHANGE		BIT(30)
+#define SPECTRAL_SUMMARY_INFO3_GAIN_CHANGE		BIT(16)
+
+#define ATH12K_SPECTRAL_SUMMARY_PAD_BLANKING_TAG	0xc0debeaf
+#define ATH12K_SPECTRAL_NUM_DETECTORS			2
 
 struct spectral_tlv {
 	__le32 timestamp;
@@ -72,6 +75,13 @@ struct spectral_summary_fft_report {
 	__le32 reserve0;
 	__le32 info2;
 	__le32 reserve1;
+} __packed;
+
+struct spectral_summary_report_padding {
+	__le32 hdr_a;
+	__le32 hdr_b;
+	__le32 hdr_c;
+	__le32 hdr_d;
 } __packed;
 
 struct ath12k_spectral_summary_report {
@@ -88,6 +98,7 @@ struct ath12k_spectral_summary_report {
 	bool primary80;
 	bool gain_change;
 	bool false_scan;
+	u8 blanking_status;
 };
 
 #define SPECTRAL_FFT_REPORT_INFO0_DETECTOR_ID		GENMASK(1, 0)
@@ -532,6 +543,22 @@ static int ath12k_spectral_pull_summary(struct ath12k *ar,
 					struct spectral_summary_fft_report *summary,
 					struct ath12k_spectral_summary_report *report)
 {
+	struct spectral_summary_report_padding *padding;
+	u32 tlv_header;
+	u32 summary_pad_sz;
+	u8 tag;
+	u8 sign;
+
+	if (!meta || !summary || !report)
+		return -EINVAL;
+
+	tlv_header = __le32_to_cpu(summary->tlv_header);
+	sign = FIELD_GET(SPECTRAL_TLV_HDR_SIGN, tlv_header);
+	tag = FIELD_GET(SPECTRAL_TLV_HDR_TAG, tlv_header);
+	if (sign != ATH12K_SPECTRAL_SIGNATURE ||
+	    tag != ATH12K_SPECTRAL_TAG_SCAN_SUMMARY)
+		return -EINVAL;
+
 	report->timestamp = __le32_to_cpu(summary->timestamp);
 	report->agc_total_gain = FIELD_GET(SPECTRAL_SUMMARY_INFO0_AGC_TOTAL_GAIN,
 					   __le32_to_cpu(summary->info0));
@@ -547,25 +574,42 @@ static int ath12k_spectral_pull_summary(struct ath12k *ar,
 				       __le32_to_cpu(summary->info0));
 	report->detector_id = FIELD_GET(SPECTRAL_SUMMARY_INFO0_DETECTOR_ID,
 					__le32_to_cpu(summary->info0));
+	if (report->detector_id >= ATH12K_SPECTRAL_NUM_DETECTORS) {
+		ath12k_warn(ar->ab, "invalid detector id %u\n",
+			    report->detector_id);
+		return -EINVAL;
+	}
 	report->primary80 = FIELD_GET(SPECTRAL_SUMMARY_INFO0_PRI80,
 				      __le32_to_cpu(summary->info0));
 	report->peak_idx = FIELD_GET(SPECTRAL_SUMMARY_INFO2_PEAK_SIGNED_IDX,
 				     __le32_to_cpu(summary->info2));
 	report->peak_mag = FIELD_GET(SPECTRAL_SUMMARY_INFO2_PEAK_MAGNITUDE,
 				     __le32_to_cpu(summary->info2));
-	report->gain_change = FIELD_GET(SPECTRAL_SUMMARY_INFO2_GAIN_CHANGE,
-					__le32_to_cpu(summary->info2));
+	report->gain_change = FIELD_GET(SPECTRAL_SUMMARY_INFO3_GAIN_CHANGE,
+					__le32_to_cpu(summary->reserve1));
+
+	report->blanking_status = 0;
+	summary_pad_sz = ar->ab->hw_params->spectral.summary_pad_sz;
+	if (summary_pad_sz >= sizeof(*padding) &&
+	    ath12k_scan_radio_blanking_supported(ar->pdev)) {
+		padding = (struct spectral_summary_report_padding *)
+			((u8 *)summary + sizeof(*summary));
+		if (__le32_to_cpu(padding->hdr_a) ==
+		    ATH12K_SPECTRAL_SUMMARY_PAD_BLANKING_TAG)
+			report->blanking_status = 1;
+	}
 
 	memcpy(&report->meta, meta, sizeof(*meta));
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
-		   "spectral summary: ts=%u agc_gain=%u ob_flag=%u grp_idx=%u rf_sat=%u inb_pwr_db=%u false_scan=%u det_id=%u pri80=%u peak_idx=%d peak_mag=%u gain_chg=%u\n",
+		   "spectral summary: ts=%u agc_gain=%u ob_flag=%u grp_idx=%u rf_sat=%u inb_pwr_db=%u false_scan=%u det_id=%u pri80=%u peak_idx=%d peak_mag=%u gain_chg=%u blanking=%u\n",
 		   report->timestamp, report->agc_total_gain,
 		   report->out_of_band_flag, report->grp_idx,
 		   report->rf_saturation, report->inb_pwr_db,
 		   report->false_scan, report->detector_id,
 		   report->primary80, report->peak_idx,
-		   report->peak_mag, report->gain_change);
+		   report->peak_mag, report->gain_change,
+		   report->blanking_status);
 
 	return 0;
 }
@@ -869,6 +913,7 @@ int ath12k_spectral_process_fft(struct ath12k *ar,
 		ath12k_spectral_peer_chwidth_to_nl(summary->meta.ch_width);
 	fft_sample->sscan_bw     =
 		ath12k_spectral_peer_chwidth_to_nl(summary->meta.ch_width);
+	fft_sample->detector_info.blanking_status = summary->blanking_status;
 	fft_sample->fft_width = ar->spectral.params.scan_fft_size;
 	memcpy(fft_sample->macaddr, ar->mac_addr, sizeof(fft_sample->macaddr));
 	ath12k_dbg(ab, ATH12K_DBG_SPECTRAL, "spectral fft: ar->mac_addr=%pM\n",
@@ -1012,8 +1057,13 @@ static int ath12k_spectral_process_data(struct ath12k *ar,
 			}
 
 			summary = (struct spectral_summary_fft_report *)tlv;
-			ath12k_spectral_pull_summary(ar, &param->meta,
-						     summary, &summ_rpt);
+			ret = ath12k_spectral_pull_summary(ar, &param->meta,
+							   summary, &summ_rpt);
+			if (ret) {
+				ath12k_warn(ab, "failed to pull spectral summary %d\n",
+					    ret);
+				goto err;
+			}
 			break;
 		case ATH12K_SPECTRAL_TAG_SCAN_SEARCH:
 			if (tlv_len < (sizeof(struct spectral_search_fft_report) -
