@@ -610,7 +610,12 @@ static bool __ieee80211_can_leave_ch(struct ieee80211_sub_if_data *sdata,
 	if (!ieee80211_is_radar_required(local, req))
 		return true;
 
-	if (sdata->vif.type != NL80211_IFTYPE_STATION) {
+	if (sdata->vif.type != NL80211_IFTYPE_STATION
+#ifdef CPTCFG_QCN_EXTN
+	    && !(sdata->vif.type == NL80211_IFTYPE_AP &&
+		 local->hw.wiphy->allow_scan_on_dfs_chan)
+#endif /* CPTCFG_QCN_EXTN */
+	    ) {
 		if (!regulatory_pre_cac_allowed(local->hw.wiphy))
 			return false;
 	}

@@ -6985,6 +6985,10 @@ struct wiphy {
 	u8 muedca_mode;
 #endif /* CPTCFG_QCN_EXTN */
 
+#ifdef CPTCFG_QCN_EXTN
+	bool allow_scan_on_dfs_chan;
+#endif /* CPTCFG_QCN_EXTN */
+
 	char fw_version[ETHTOOL_FWVERS_LEN];
 	u32 hw_version;
 
