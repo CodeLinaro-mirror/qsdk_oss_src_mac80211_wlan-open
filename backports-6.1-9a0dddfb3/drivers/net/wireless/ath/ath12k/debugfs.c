@@ -6737,10 +6737,10 @@ static ssize_t ath12k_write_reset_dp_stats(struct file *file,
 	spin_lock_bh(&ah->dp_hw.peer_lock);
 	list_for_each_entry(dp_peer, &ah->dp_hw.peers, list) {
 		memset(&dp_peer->stats, 0, sizeof(dp_peer->stats));
-		/* Reset HW MLD stats */
-		if (dp_peer->mld_stats.hw_mld_stats)
-			memset(dp_peer->mld_stats.hw_mld_stats, 0,
-			       sizeof(*dp_peer->mld_stats.hw_mld_stats));
+		/* Reset HW stats */
+		if (dp_peer->mld_stats.hw_stats)
+			memset(dp_peer->mld_stats.hw_stats, 0,
+			       sizeof(*dp_peer->mld_stats.hw_stats));
 		/* Clear peer-level preserved stats */
 		ath12k_dp_clear_preserved_stats(&dp_peer->link_peer_delete_stats);
 		ath12k_dp_peer_clear_qos_stats(dp_peer);
