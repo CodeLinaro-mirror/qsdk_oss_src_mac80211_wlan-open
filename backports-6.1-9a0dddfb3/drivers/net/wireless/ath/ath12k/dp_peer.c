@@ -1891,13 +1891,13 @@ int ath12k_dp_peer_stats_alloc(struct ath12k_dp_peer *dp_peer,
 	}
 
 	if (ath12k_dp_hw_peer_stats_enabled(dp_pdev) &&
-	    !dp_peer->mld_stats.hw_mld_stats) {
-		dp_peer->mld_stats.hw_mld_stats =
-			kzalloc(sizeof(*dp_peer->mld_stats.hw_mld_stats),
+	    !dp_peer->mld_stats.hw_stats) {
+		dp_peer->mld_stats.hw_stats =
+			kzalloc(sizeof(*dp_peer->mld_stats.hw_stats),
 				GFP_ATOMIC);
-		if (!dp_peer->mld_stats.hw_mld_stats) {
+		if (!dp_peer->mld_stats.hw_stats) {
 			ath12k_err(NULL,
-				   "failed to alloc hw_mld_stats for peer %pM\n",
+				   "failed to alloc hw_stats for peer %pM\n",
 				   dp_peer->addr);
 			return -ENOMEM;
 		}
@@ -1920,8 +1920,8 @@ void ath12k_dp_peer_stats_free(struct ath12k_dp_peer *dp_peer)
 	if (!dp_peer)
 		return;
 
-	kfree(dp_peer->mld_stats.hw_mld_stats);
-	dp_peer->mld_stats.hw_mld_stats = NULL;
+	kfree(dp_peer->mld_stats.hw_stats);
+	dp_peer->mld_stats.hw_stats = NULL;
 
 	kfree(dp_peer->mld_stats.delay_stats);
 	dp_peer->mld_stats.delay_stats = NULL;

@@ -729,14 +729,14 @@ struct ath12k_mld_qos_stats {
 DECLARE_EWMA(avg_ack_rssi, 10, 8)
 
 /**
- * struct ath12k_dp_mld_peer_hw_tx_stats - MLD-level aggregated HW TX statistics
- *					   accounted across all links
+ * struct ath12k_dp_peer_hw_tx_stats - Peer HW TX statistics
+ *
  * @failed_bytes: Total bytes in failed TX frames
  * @drop_bytes:   Total bytes dropped during TX
  * @drop1_pkts:   Packets dropped due to AQM (Tx, No Tx, Aged, FW reason)
  * @drop2_pkts:   Feature specific packets drops (SMD/Reserved drops)
  */
-struct ath12k_dp_mld_peer_hw_tx_stats {
+struct ath12k_dp_peer_hw_tx_stats {
 	u64 failed_bytes;
 	u64 drop_bytes;
 	u32 drop1_pkts;
@@ -744,14 +744,14 @@ struct ath12k_dp_mld_peer_hw_tx_stats {
 };
 
 /**
- * struct ath12k_dp_mld_peer_hw_rx_stats - MLD-level aggregated HW RX statistics
- *					   accounted across all links
+ * struct ath12k_dp_peer_hw_rx_stats - Peer HW RX statistics
+ *
  * @drop_ucast_bytes:  Total unicast bytes dropped
  * @drop_gcast_bytes:  Total multicast/broadcast bytes dropped
  * @drop2_pkts:        Packets dropped (SDWF - Backpressure/MSDU drop)
  * @drop_gcast_pkts:   Multicast/broadcast packets dropped
  */
-struct ath12k_dp_mld_peer_hw_rx_stats {
+struct ath12k_dp_peer_hw_rx_stats {
 	u64 drop_ucast_bytes;
 	u64 drop_gcast_bytes;
 	u32 drop2_pkts;
@@ -759,13 +759,14 @@ struct ath12k_dp_mld_peer_hw_rx_stats {
 };
 
 /**
- * struct ath12k_dp_mld_peer_hw_stats - MLD-level aggregated HW TX/RX statistics
- * @hw_mld_tx: MLD-level aggregated HW TX statistics
- * @hw_mld_rx: MLD-level aggregated HW RX statistics
+ * struct ath12k_dp_peer_hw_stats - Peer HW TX/RX statistics
+ *
+ * @hw_tx: Peer HW TX statistics
+ * @hw_rx: Peer HW RX statistics
  */
-struct ath12k_dp_mld_peer_hw_stats {
-	struct ath12k_dp_mld_peer_hw_tx_stats hw_mld_tx;
-	struct ath12k_dp_mld_peer_hw_rx_stats hw_mld_rx;
+struct ath12k_dp_peer_hw_stats {
+	struct ath12k_dp_peer_hw_tx_stats hw_tx;
+	struct ath12k_dp_peer_hw_rx_stats hw_rx;
 };
 
 /**
@@ -1132,7 +1133,7 @@ struct ath12k_dp_peer_delay_stats {
 };
 
 struct ath12k_dp_mld_peer_stats {
-	struct ath12k_dp_mld_peer_hw_stats *hw_mld_stats;
+	struct ath12k_dp_peer_hw_stats *hw_stats;
 	struct ath12k_dp_peer_delay_stats *delay_stats;
 };
 
