@@ -22224,7 +22224,8 @@ ath12k_mac_unassign_vif_chanctx_handle(struct ieee80211_hw *hw,
 				 "mac chanctx unassign for vdev_id %i vdev_subtype %0x\n",
 				 arvif->vdev_id, arvif->vdev_subtype);
 
-	if (unlikely(test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)))
+	if (unlikely(test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags) ||
+		     test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags)))
 		goto cleanup;
 
 	if (ahvif->vdev_type != WMI_VDEV_TYPE_STA)
