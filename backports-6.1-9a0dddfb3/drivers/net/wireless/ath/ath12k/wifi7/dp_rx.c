@@ -944,20 +944,26 @@ static inline void
 ath12k_dp_rx_update_vow_stats(struct ath12k_pdev_dp *dp_pdev,
 				    struct link_peer_rx_tid_stats *stats,
 				    struct sk_buff *msdu,
-				    struct rx_msdu_desc_info *rx_msdu_info)
+				    struct rx_msdu_desc_info *rx_msdu_info,
+				    u8 tid,
+				    struct ath12k_tid_rx_stats *tid_rx_stats_ring)
 {
 	u32 current_ts;
+	u32 reap_delay, intfrm_delay;
+	struct ath12k_tid_rx_stats *tid_rx_stats;
 	const u8 *da = NULL;
+
+	/* Use cached pointer with offset for TID */
+	tid_rx_stats = &tid_rx_stats_ring[tid];
 
 	current_ts = (u32)ktime_to_ms(ktime_get_real());
 
-	stats->reap_to_stack_delay_sum += (current_ts - msdu->tstamp);
-	stats->delay_pkt_count++;
+	reap_delay = current_ts - msdu->tstamp;
+	ath12k_dp_update_hist_stats(&tid_rx_stats->to_stack_delay, reap_delay);
 
 	if (dp_pdev->prev_rx_timestamp) {
-		stats->intfrm_delay_sum +=
-			(current_ts - dp_pdev->prev_rx_timestamp);
-		stats->intfrm_pkt_count++;
+		intfrm_delay = current_ts - dp_pdev->prev_rx_timestamp;
+		ath12k_dp_update_hist_stats(&tid_rx_stats->intfrm_delay, intfrm_delay);
 	}
 	dp_pdev->prev_rx_timestamp = current_ts;
 
@@ -1002,6 +1008,7 @@ ath12k_wifi7_dp_process_reo_rx_packets(struct ath12k_dp *dp,
 	struct link_peer_rx_tid_stats *stats;
 	u8 tid = 0;
 	u8 active_tid_mask = 0;
+	struct ath12k_tid_rx_stats *tid_rx_stats_ring = NULL;
 
 	rcu_read_lock();
 
@@ -1078,6 +1085,8 @@ ath12k_wifi7_dp_process_reo_rx_packets(struct ath12k_dp *dp,
 				continue;
 			}
 
+			tid_rx_stats_ring = &dp_pdev->tid_stats.tid_rx[ring_id][0];
+
 			partner_ab = partner_dp->ab;
 			pdev_active = partner_ab->pdevs_active[pdev_id];
 
@@ -1090,6 +1099,10 @@ ath12k_wifi7_dp_process_reo_rx_packets(struct ath12k_dp *dp,
 				continue;
 			}
 		}
+
+		if (unlikely(ath12k_dp_stats_enabled(dp_pdev) &&
+			     ath12k_dp_vow_stats_enabled(dp_pdev)))
+			msdu->tstamp = (u32)ktime_to_ms(ktime_get_real());
 
 		prefetch(&partner_dp->hal);
 		/*
@@ -1160,10 +1173,10 @@ ath12k_wifi7_dp_process_reo_rx_packets(struct ath12k_dp *dp,
 						RX_SENT_TO_STACK, ring_id);
 
 				if (ath12k_dp_vow_stats_enabled(dp_pdev))
-					ath12k_dp_rx_update_vow_stats(dp_pdev,
-									    stats,
-									    msdu,
-									    rx_msdu_info);
+					ath12k_dp_rx_update_vow_stats(dp_pdev, stats,
+								      msdu, rx_msdu_info,
+								      tid,
+								      tid_rx_stats_ring);
 			}
 
 			ath12k_wifi7_deliver_ethernet_frame(dp_pdev, spd_desc_l,
@@ -1337,7 +1350,6 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 
 		ath12k_dp_rx_buffer_unmap(dp, sw_rx_desc);
 		rx_spd->msdu = sw_rx_desc->skb;
-
 		rx_spd->vaddr = sw_rx_desc->vaddr;
 		rx_spd->reo.ring_id = ring_id;
 

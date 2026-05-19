@@ -67,15 +67,11 @@ struct link_peer_rx_tid_stats {
 	    sent_to_stack_mcast_fast_bytes	: 24;
 	u32 sg_cnt				: 8,
 	    sg_bytes				: 24;
-	u32 reap_to_stack_delay_sum;
-	u32 intfrm_delay_sum;
 	u8 non_amsdu;
 	u8 amsdu;
 	u8 mpdu_retry;
 	u8 mcast_cnt;
 	u8 bcast_cnt;
-	u8 delay_pkt_count;
-	u8 intfrm_pkt_count;
 } __aligned(64);
 
 bool ath12k_dp_rx_check_nwifi_hdr_len_valid(struct ath12k_dp *dp,
@@ -427,7 +423,6 @@ ath12k_wifi7_dp_rx_update_vow_stats(struct ath12k_pdev_dp *pdev,
 				    int ring_id, u8 active_tid_mask)
 {
 	struct ath12k_tid_rx_stats *tid_rx_stats;
-	u32 reap_delay, intfrm_delay;
 	int i;
 
 	if (!ath12k_dp_stats_enabled(pdev) ||
@@ -446,25 +441,8 @@ ath12k_wifi7_dp_rx_update_vow_stats(struct ath12k_pdev_dp *pdev,
 					   stats->sent_to_stack_mcast +
 					   stats->sent_to_stack_ucast_fast +
 					   stats->sent_to_stack_mcast_fast;
-
-		/* Update delay histograms with batch averages */
-		if (stats->delay_pkt_count) {
-			reap_delay = stats->reap_to_stack_delay_sum /
-					 stats->delay_pkt_count;
-			intfrm_delay = stats->intfrm_delay_sum /
-					   stats->intfrm_pkt_count;
-
-			ath12k_dp_update_hist_stats(&tid_rx_stats->to_stack_delay,
-						    reap_delay);
-			ath12k_dp_update_hist_stats(&tid_rx_stats->intfrm_delay,
-						    intfrm_delay);
-
-			stats->reap_to_stack_delay_sum = 0;
-			stats->intfrm_delay_sum = 0;
-			stats->delay_pkt_count = 0;
-			stats->intfrm_pkt_count = 0;
-		}
 	}
+	pdev->prev_rx_timestamp = 0;
 }
 
 static inline void
