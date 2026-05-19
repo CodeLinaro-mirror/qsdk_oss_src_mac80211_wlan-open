@@ -8033,11 +8033,17 @@ static ssize_t ath12k_debugfs_dump_device_mgmt_srng_stats(struct file *file,
 	len += scnprintf(buf + len, size - len, "Invalid type packets: %u\n",
 			 device_stats->invalid_pkts);
 
+	len += scnprintf(buf + len, size - len, "BAR packets: %u\n",
+			 device_stats->bar_pkts[ATH12K_MGMT_SRNG_PKT_TYPE_RX]);
+
 	len += scnprintf(buf + len, size - len, "Error ring packets: %u\n",
 			 device_stats->err_ring_pkts);
 
 	len += scnprintf(buf + len, size - len, "Fragment packets: %u\n",
 			 device_stats->frag_pkts);
+
+	len += scnprintf(buf + len, size - len, "BAR error packets: %u\n",
+			 device_stats->bar_pkts[ATH12K_MGMT_SRNG_PKT_TYPE_RX_ERR]);
 
 	len += scnprintf(buf + len, size - len, "RXDMA errors:\n");
 	for (i = 0; i < HAL_REO_ENTR_RING_RXDMA_ECODE_MAX; i++)

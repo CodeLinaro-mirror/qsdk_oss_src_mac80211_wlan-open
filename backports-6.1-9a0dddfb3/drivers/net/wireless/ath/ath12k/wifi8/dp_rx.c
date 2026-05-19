@@ -3985,7 +3985,6 @@ static int ath12k_wifi8_dp_rx_wbm_idle_buf_0_config_qcn9625(struct ath12k_base *
 	tlv_filter.rx_filter = HTT_RX_TLV_FLAGS_RXDMA_RING;
 	tlv_filter.rxmon_disable = true;
 	tlv_filter.enable_fp = 1;
-	tlv_filter.fp_ctrl_filter = FILTER_CTRL_BA_REQ;
 	tlv_filter.fp_data_filter = FILTER_DATA_UCAST | FILTER_DATA_MCAST |
 				    FILTER_DATA_NULL;
 	tlv_filter.offset_valid = true;
@@ -4036,7 +4035,6 @@ static int ath12k_wifi8_dp_rx_ppe2wbm_idle_buf_config_qcn9625(struct ath12k_base
 	tlv_filter.rx_filter = HTT_RX_TLV_FLAGS_RXDMA_RING;
 	tlv_filter.rxmon_disable = true;
 	tlv_filter.enable_fp = 1;
-	tlv_filter.fp_ctrl_filter = FILTER_CTRL_BA_REQ;
 	tlv_filter.fp_data_filter = FILTER_DATA_UCAST | FILTER_DATA_MCAST |
 		FILTER_DATA_NULL;
 	tlv_filter.offset_valid = true;

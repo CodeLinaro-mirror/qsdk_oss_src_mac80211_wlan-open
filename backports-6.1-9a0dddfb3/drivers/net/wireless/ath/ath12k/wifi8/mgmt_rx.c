@@ -178,6 +178,7 @@ try_again:
 
 	while ((desc = ath12k_hal_srng_dst_get_next_cached_entry(ab, srng, NULL))) {
 		struct hal_rx_mpdu_ext_desc_info *mpdu_ext_info = &desc->rx_mpdu_ext_info;
+		struct hal_rx_mpdu_desc *mpdu_info = &desc->rx_mpdu_info;
 		struct hal_rx_msdu_desc *msdu_info = &desc->rx_msdu_info;
 		enum hal_reo_dest_ring_push_reason push_reason;
 		u32 cookie;
@@ -189,8 +190,9 @@ try_again:
 
 		desc_info = ath12k_mgmt_get_rx_desc_from_cookie(mgmt, cookie);
 		if (!desc_info) {
-			ath12k_warn(ab, "Unable to retrieve rx_desc for cookie 0x%x",
-				    cookie);
+			ath12k_err(ab, "Unable to retrieve mgmt rx_desc for cookie 0x%x",
+				   cookie);
+			WARN_ON_ONCE(1);
 			continue;
 		}
 
@@ -221,7 +223,15 @@ try_again:
 
 		if (!le32_get_bits(mpdu_ext_info->info0,
 				   HAL_RX_MPDU_EXT_DESC_INFO_INFO0_MGMT_PKT)) {
-			mgmt->srng_stats.invalid_pkts++;
+			/* BAR frames reach REO to move the BA window so consume the frame
+			 * silently.
+			 */
+			if (!!(le32_to_cpu(mpdu_info->info0) &
+			       HAL_RX_MPDU_DESC_INFO_INFO0_BAR_FRAME_FLAG))
+				mgmt->srng_stats.bar_pkts[ATH12K_MGMT_SRNG_PKT_TYPE_RX]++;
+			else
+				mgmt->srng_stats.invalid_pkts++;
+
 			dev_kfree_skb_any(mmpdu);
 			continue;
 		}
@@ -1037,6 +1047,7 @@ ath12k_wifi8_mgmt_rx_reap_err_packets(struct ath12k_base *ab,
 
 	while ((desc = ath12k_hal_srng_dst_get_next_cached_entry(ab, srng, NULL))) {
 		struct hal_rx_mpdu_ext_desc_info *mpdu_ext_info = &desc->rx_mpdu_ext_info;
+		struct hal_rx_mpdu_desc *mpdu_info = &desc->rx_mpdu_info;
 
 		mgmt->srng_stats.err_ring_pkts++;
 
@@ -1048,8 +1059,13 @@ ath12k_wifi8_mgmt_rx_reap_err_packets(struct ath12k_base *ab,
 		}
 
 		desc_info = err_info.rx_desc;
-		if (!desc_info)
+		if (!desc_info) {
+			ath12k_err(ab,
+				   "Unable to retrieve mgmt err rx_desc for cookie 0x%x",
+				   err_info.cookie);
+			WARN_ON_ONCE(1);
 			continue;
+		}
 
 		if (desc_info->magic != ATH12K_MGMT_RX_DESC_MAGIC)
 			ath12k_warn(ab, "MGMT RX err desc is tainted");
@@ -1067,7 +1083,16 @@ ath12k_wifi8_mgmt_rx_reap_err_packets(struct ath12k_base *ab,
 
 		if (!le32_get_bits(mpdu_ext_info->info0,
 				   HAL_RX_MPDU_EXT_DESC_INFO_INFO0_MGMT_PKT)) {
-			mgmt->srng_stats.invalid_pkts++;
+			/* BAR frames reach REO to move the BA window so consume the frame
+			 * silently.
+			 */
+			if (!!(le32_to_cpu(mpdu_info->info0) &
+			       HAL_RX_MPDU_DESC_INFO_INFO0_BAR_FRAME_FLAG))
+				mgmt->srng_stats.bar_pkts
+					[ATH12K_MGMT_SRNG_PKT_TYPE_RX_ERR]++;
+			else
+				mgmt->srng_stats.invalid_pkts++;
+
 			dev_kfree_skb_any(mmpdu);
 			continue;
 		}
@@ -1398,7 +1423,7 @@ int ath12k_wifi8_mgmt_wbm_ring_sel_config_qcn9625(struct ath12k_base *ab)
 	tlv_filter.rxmon_disable = true;
 	tlv_filter.enable_fp = 1;
 
-	ath12k_core_srng_get_htt_mgmt_filter(ab, &tlv_filter.fp_mgmt_filter);
+	ath12k_core_srng_get_htt_mgmt_filter(ab, &tlv_filter);
 
 	tlv_filter.offset_valid = true;
 	tlv_filter.rx_packet_offset = hal_rx_desc_sz;

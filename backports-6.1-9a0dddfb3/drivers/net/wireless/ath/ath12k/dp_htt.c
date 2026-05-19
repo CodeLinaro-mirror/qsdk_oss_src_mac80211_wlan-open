@@ -2725,13 +2725,17 @@ err_free:
 }
 EXPORT_SYMBOL(ath12k_dp_tx_htt_srng_setup);
 
-void ath12k_dp_get_htt_mgmt_filter(struct ath12k_base *ab, u16 *mgmt_filter)
+void ath12k_dp_get_htt_mgmt_filter(struct ath12k_base *ab,
+				   struct htt_rx_ring_tlv_filter *tlv_filter)
 {
-	u16 filter = FILTER_MGMT_ALL;
+	u16 ctrl_filter = FILTER_CTRL_BA_REQ;
+	u16 mgmt_filter = FILTER_MGMT_ALL;
 
-	filter &= ~(FILTER_MGMT_PROBE_REQ | FILTER_MGMT_PROBE_RESP |
-		    FILTER_MGMT_BEACON);
-	*mgmt_filter = filter;
+	mgmt_filter &= ~(FILTER_MGMT_PROBE_REQ | FILTER_MGMT_PROBE_RESP |
+			 FILTER_MGMT_BEACON);
+
+	tlv_filter->fp_mgmt_filter = mgmt_filter;
+	tlv_filter->fp_ctrl_filter = ctrl_filter;
 }
 EXPORT_SYMBOL(ath12k_dp_get_htt_mgmt_filter);
 
