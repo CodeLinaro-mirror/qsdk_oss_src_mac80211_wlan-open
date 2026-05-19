@@ -2000,6 +2000,8 @@ int ath12k_wmi_vdev_start(struct ath12k *ar, struct wmi_vdev_start_req_arg *arg,
 	struct ath12k_wmi_channel_params *chan;
 	struct wmi_tlv *tlv;
 	void *ptr;
+	struct wmi_vdev_start_uhr_config *uhr_config;
+	bool uhr_config_present = false;
 	int ret, len, i, ml_arg_size = 0;
 
 	if (WARN_ON(arg->ssid_len > sizeof(cmd->ssid.ssid)))
@@ -2020,13 +2022,26 @@ int ath12k_wmi_vdev_start(struct ath12k *ar, struct wmi_vdev_start_req_arg *arg,
 								arg->band_center_freq1);
 	if (device_params_present)
 		len += TLV_HDR_SIZE + sizeof(*chan_device);
+	else
+		len += TLV_HDR_SIZE;
 
-	/* Reserve space for: device (empty), dbw_chan_info, vdev_start_smd_params,
-	 * vdev_start_uhr_config empty TLVs, plus uhr_ap_npca_params when enabled.
+	/* Reserve spaces for dbw_chan_info, vdev_start_smd_params
+	 * and vdev_start_uhr_config.
 	 */
-	len += 7 * TLV_HDR_SIZE;
+	len += 3 * TLV_HDR_SIZE;
+
+	if (!restart &&
+	    arg->uhr_config.adv_notification_interval &&
+	    arg->uhr_config.post_notification_interval &&
+	    arg->uhr_config.update_in_tim_interval) {
+		uhr_config_present = true;
+		len += sizeof(*uhr_config);
+	}
+
 	if (arg->npca.enabled)
 		len += TLV_HDR_SIZE + sizeof(*npca_params);
+	else
+		len += TLV_HDR_SIZE;
 	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
 	if (!skb)
 		return -ENOMEM;
@@ -2189,10 +2204,32 @@ int ath12k_wmi_vdev_start(struct ath12k *ar, struct wmi_vdev_start_req_arg *arg,
 	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
 	ptr += sizeof(*tlv);
 
-	/* vdev_start_uhr_config TLV */
+
 	tlv = ptr;
-	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
-	ptr += sizeof(*tlv);
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
+					 uhr_config_present ? sizeof(*uhr_config) : 0);
+	ptr += TLV_HDR_SIZE;
+
+	if (uhr_config_present) {
+		uhr_config = ptr;
+		uhr_config->tlv_header =
+			ath12k_wmi_tlv_cmd_hdr(WMI_TAG_VDEV_START_UHR_CONFIG,
+					       sizeof(*uhr_config));
+		uhr_config->uhr_cu_intervals =
+			le32_encode_bits(arg->uhr_config.adv_notification_interval,
+					 WMI_UHR_CU_INTERVALS_ADV_NOTIF_MASK) |
+			le32_encode_bits(arg->uhr_config.post_notification_interval,
+					 WMI_UHR_CU_INTERVALS_POST_NOTIF_MASK) |
+			le32_encode_bits(arg->uhr_config.update_in_tim_interval,
+					 WMI_UHR_CU_INTERVALS_UPD_TIM_MASK);
+		ath12k_dbg(ar->ab, ATH12K_DBG_WMI | ATH12K_DBG_CU,
+			   "vdev %u uhr_config adv_notif=%u post_notif=%u upd_tim=%u\n",
+			   arg->vdev_id,
+			   arg->uhr_config.adv_notification_interval,
+			   arg->uhr_config.post_notification_interval,
+			   arg->uhr_config.update_in_tim_interval);
+		ptr += sizeof(*uhr_config);
+	}
 
 	/* uhr_ap_npca_params TLV */
 	if (arg->npca.enabled) {
