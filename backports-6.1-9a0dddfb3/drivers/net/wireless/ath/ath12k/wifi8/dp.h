@@ -20,6 +20,7 @@
 #define DP_WBM_REFILL_RING_MAX         4
 #define DP_FSE_CMD_RING_SIZE		8192
 #define DP_PPE2WBM_REFILL_RING_MAX     3
+#define DP_PPE2WBM_SFE_POOL_REFILL_RING_NUM	5
 #define DP_PPE2WBM_REFILL_RING_SIZE    8192
 #define DP_TELEMETRY_TX_RING_SIZE	256
 #define DP_TELEMETRY_RX_RING_SIZE	256
@@ -37,6 +38,7 @@
 #define DP_WBM_SFE_HIGH_WATERMARK	0x1000
 #define DP_WBM_MGMT_HIGH_WATERMARK	0x200
 #define DP_WBM_PPE_HIGH_WATERMARK	0x1000
+#define DP_PPE2WBM_DEDICATED_POOL	0
 #else
 #define DP_WBM_IDLE_BUF_RING_SIZE	ATH12K_DP_INI_GET(WBM_IDLE_BUF_RING_SIZE)
 #define DP_PPE2WBM_IDLE_BUF_RING_SIZE	ATH12K_DP_INI_GET(PPE2WBM_IDLE_BUF_RING_SIZE)
@@ -44,6 +46,7 @@
 #define DP_WBM_SFE_HIGH_WATERMARK	ATH12K_DP_INI_GET(WBM_SFE_HIGH_WATERMARK)
 #define DP_WBM_MGMT_HIGH_WATERMARK	ATH12K_DP_INI_GET(WBM_MGMT_HIGH_WATERMARK)
 #define DP_WBM_PPE_HIGH_WATERMARK	ATH12K_DP_INI_GET(WBM_PPE_HIGH_WATERMARK)
+#define DP_PPE2WBM_DEDICATED_POOL	ATH12K_DP_INI_GET(PPE2WBM_DEDICATED_BUF_POOL)
 #endif
 
 struct stats_to_peer_id_map {
@@ -132,6 +135,8 @@ struct ath12k_dp_wifi8 {
 	u32 *sam_cmd_staging;
 	struct dp_srng ppe2wbm_refill_ring[DP_PPE2WBM_REFILL_RING_MAX];
 	struct dp_srng ppe2wbm_idle_buf_ring;
+	u8 num_ppe2wbm_refill_rings;
+	bool dp_ppe2wbm_use_dedicated_pool;
 	struct dp_srng rx_peer_telemetry_ring;
 	struct dp_srng tx_peer_telemetry_ring;
 #ifdef CPTCFG_QCN_EXTN

@@ -1121,10 +1121,19 @@ int ath12k_wifi8_hal_get_rdi_source_cfg(struct ath12k_base *ab, int source)
 	const struct ath12k_hal_rdi_mapping *rdi_mapping = hal->rdi_mapping;
 	unsigned long rdi_based_source_cfg = 0;
 	int i;
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(ab->dp);
 
 	for (i = 0; i < HAL_RDI_MAPPING_MAX; i++)
 		if (rdi_mapping[i].source == source)
 			set_bit(i, &rdi_based_source_cfg);
+
+	/*  include PPE RDI's in SFE when using common pool */
+	if ((source == SOURCE_RING_CTRL_SFE) &&
+	    !dp_wifi8->dp_ppe2wbm_use_dedicated_pool) {
+		rdi_based_source_cfg |=	BIT(DESTINATION_RING_CTRL_PPE) |
+					BIT(DESTINATION_RING_CTRL_PPE1) |
+					BIT(DESTINATION_RING_CTRL_PPE2);
+	}
 
 	return rdi_based_source_cfg;
 }

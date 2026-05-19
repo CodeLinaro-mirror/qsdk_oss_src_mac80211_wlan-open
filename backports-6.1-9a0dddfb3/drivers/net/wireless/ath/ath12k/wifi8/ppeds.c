@@ -368,7 +368,14 @@ int ath12k_wifi8_dp_rx_bufs_replenish_ppeds(struct ath12k_base *ab, int req_entr
 	int count = 0, num_remain, i;
 	u8 mgr =  ab->hal.hal_params->rx_buf_rbm;
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(ab->dp);
-	u32 ring_id = dp_wifi8->ppe2wbm_refill_ring[PPE2WBM_SW_REFILL_RING].ring_id;
+	u32 ring_id;
+	int cpu_id = smp_processor_id();
+
+	if (!dp_wifi8->dp_ppe2wbm_use_dedicated_pool)
+		ring_id = dp_wifi8->wbm_refill_ring[cpu_id %
+						    DP_WBM_REFILL_RING_MAX].ring_id;
+	else
+		ring_id = dp_wifi8->ppe2wbm_refill_ring[PPE2WBM_SW_REFILL_RING].ring_id;
 
 	ppe2wbm_refill_srng = &ab->hal.srng_list[ring_id];
 

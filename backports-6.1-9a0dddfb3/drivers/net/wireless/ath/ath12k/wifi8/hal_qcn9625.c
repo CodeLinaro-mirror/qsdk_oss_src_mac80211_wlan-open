@@ -277,7 +277,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 	},
 	[HAL_WBM_BUF] = {
 		.start_ring_id = HAL_SRNG_RING_ID_WBM_BUF1,
-		.max_rings = 4,
+		.max_rings = 6,
 		.entry_size = sizeof(struct hal_wbm_buffer_ring) >> 2,
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_SRC,
