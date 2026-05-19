@@ -6073,24 +6073,6 @@ struct wmi_dcs_cw_info {
 	__le32 channel;
 };
 
-struct wmi_dcs_wlan_interference_stats {
-	u32 reg_tsf32;
-	u32 last_ack_rssi;
-	u32 tx_waste_time;
-	u32 rx_time;
-	u32 phyerr_cnt;
-	u32 listen_time;
-	u32 reg_tx_frame_cnt;
-	u32 reg_rx_frame_cnt;
-	u32 reg_rxclr_cnt;
-	u32 reg_cycle_cnt;
-	u32 reg_rxclr_ext_cnt;
-	u32 reg_ofdm_phyerr_cnt;
-	u32 reg_cck_phyerr_cnt;
-	s32 chan_nf;
-	u32 my_bss_rx_cycle_count;
-};
-
 struct wmi_dcs_wlan_interference_stats_ev {
 	__le32 reg_tsf32;
 	__le32 last_ack_rssi;
