@@ -2017,6 +2017,10 @@ void ath12k_wifi7_mcbc_handler(struct ath12k_dp_vif *dp_vif,
 			continue;
 		}
 
+		if (unlikely(ath12k_dp_stats_enabled(dp_pdev)))
+			if (unlikely(ath12k_dp_delay_stats_enabled(dp_pdev)))
+				__net_timestamp(skb);
+
 		ath12k_wifi7_dp_get_ring_id(dp_pdev->dp, &ring_id, skb);
 		dp = dp_pdev->dp;
 
@@ -2424,6 +2428,248 @@ static void ath12k_wifi7_dp_tx_free_txbuf(struct ath12k_dp *dp,
 	rcu_read_unlock();
 }
 
+static u32 ath12k_dp_tx_compute_hw_delay(struct ath12k_pdev_dp *dp_pdev,
+					 struct hal_tx_status *ts)
+{
+	struct ath12k_dp *dp = dp_pdev->dp;
+	struct ath12k *ar = dp_pdev->ar;
+	struct ath12k_hw_group *ag = ar->ab->ag;
+	struct ath12k_pdev_dp *tx_dp_pdev;
+	struct ath12k *tx_ar, *primary_ar;
+	u32 fw_delay_us = 0;
+	u32 tqm_enqueue_us, final_tqm_enqueue_us;
+	u32 compl_tsf_us, final_compl_tsf_us;
+	int delta_tqm, delta_tsf2;
+
+	if (unlikely(!ar || !ar->ab))
+		return 0;
+
+	/*
+	 * FW/HW delay: time from TQM enqueue to over-the-air TX completion.
+	 * Use HW buffer_timestamp (from TQM) instead of SW hw_tstamp.
+	 */
+	tqm_enqueue_us = TX_COMPL_BUFFER_TSTAMP_US(ts->buffer_timestamp);
+	compl_tsf_us   = ts->tsf;
+
+	if (unlikely(tqm_enqueue_us == 0 || compl_tsf_us == 0))
+		return 0;
+
+	if (unlikely(ag->mlo_tstamp_offset == 0))
+		return 0;
+
+	primary_ar = ar->ab->pdevs[0].ar;
+	if (primary_ar)
+		delta_tqm = (int)ag->mlo_tstamp_offset - (int)primary_ar->delta_tqm;
+	else
+		delta_tqm = (int)ag->mlo_tstamp_offset - (int)ar->delta_tqm;
+
+	tx_dp_pdev = ath12k_dp_hw_grp_to_dp_pdev(dp->dp_hw_grp, ts->hw_link_id);
+	tx_ar = (tx_dp_pdev && tx_dp_pdev->ar) ? tx_dp_pdev->ar : ar;
+
+	if (unlikely(!tx_ar))
+		return 0;
+
+	delta_tsf2 = (int)ag->mlo_tstamp_offset - (int)tx_ar->delta_tsf2;
+
+	final_tqm_enqueue_us = (tqm_enqueue_us + delta_tqm) & HW_TX_DELAY_MASK;
+	final_compl_tsf_us = (compl_tsf_us + delta_tsf2) & HW_TX_DELAY_MASK;
+
+	fw_delay_us = (final_compl_tsf_us - final_tqm_enqueue_us) & HW_TX_DELAY_MASK;
+
+	/* Discard values that exceed the plausible maximum (clock wrap-around
+	 * or uninitialized MLO offsets produce very large unsigned results).
+	 */
+	if (fw_delay_us > HW_TX_DELAY_MAX)
+		fw_delay_us = 0;
+
+	return fw_delay_us;
+}
+
+static u32 ath12k_dp_tx_jitter_get_avg_jitter(u32 curr_delay, u32 prev_delay,
+					      u32 avg_jitter)
+{
+	u32 curr_jitter;
+	s32 jitter_diff;
+
+	curr_jitter = abs(curr_delay - prev_delay);
+	if (!avg_jitter)
+		return curr_jitter;
+
+	jitter_diff = curr_jitter - avg_jitter;
+	if (jitter_diff < 0)
+		avg_jitter = avg_jitter -
+			(abs(jitter_diff) >> DP_AVG_JITTER_WEIGHT_DENOM);
+	else
+		avg_jitter = avg_jitter +
+			(abs(jitter_diff) >> DP_AVG_JITTER_WEIGHT_DENOM);
+
+	return avg_jitter;
+}
+
+static u32 ath12k_dp_tx_jitter_get_avg_delay(u32 curr_delay, u32 avg_delay)
+{
+	s32 delay_diff;
+
+	if (!avg_delay)
+		return curr_delay;
+
+	delay_diff = curr_delay - avg_delay;
+	if (delay_diff < 0)
+		avg_delay = avg_delay -
+				(abs(delay_diff) >> DP_AVG_DELAY_WEIGHT_DENOM);
+	else
+		avg_delay = avg_delay +
+				(abs(delay_diff) >> DP_AVG_DELAY_WEIGHT_DENOM);
+
+	return avg_delay;
+}
+
+static void ath12k_dp_tx_update_jitter_stats(struct ath12k_dp_peer *peer,
+					     struct hal_tx_status *ts,
+					     u32 fwhw_transmit_delay, u8 ring,
+					     u8 tid)
+{
+	u32 avg_delay, avg_jitter, prev_delay;
+	struct ath12k_dp_peer_jitter_stats *jitter_stats;
+	struct ath12k_dp_peer_tid_jitter_stats *jitter_tid_stats;
+
+	jitter_stats = peer->mld_stats.jitter_stats;
+
+	if (!jitter_stats)
+		return;
+
+	jitter_tid_stats = &jitter_stats->tid_stats[tid][ring];
+
+	if (ts->status !=  HAL_WBM_TQM_REL_REASON_FRAME_ACKED) {
+		jitter_tid_stats->tx_drop += 1;
+		return;
+	}
+
+	if (fwhw_transmit_delay != 0) {
+		avg_delay = jitter_tid_stats->tx_avg_delay;
+		avg_jitter = jitter_tid_stats->tx_avg_jitter;
+		prev_delay = jitter_tid_stats->tx_prev_delay;
+		avg_jitter = ath12k_dp_tx_jitter_get_avg_jitter(fwhw_transmit_delay,
+								prev_delay,
+								avg_jitter);
+		avg_delay = ath12k_dp_tx_jitter_get_avg_delay(fwhw_transmit_delay,
+							      avg_delay);
+		jitter_tid_stats->tx_avg_delay = avg_delay;
+		jitter_tid_stats->tx_avg_jitter = avg_jitter;
+		jitter_tid_stats->tx_prev_delay = fwhw_transmit_delay;
+		jitter_tid_stats->tx_total_success += 1;
+	} else {
+		jitter_tid_stats->tx_avg_err += 1;
+	}
+}
+
+static void
+ath12k_dp_tx_compute_sw_delay(struct ath12k_pdev_dp *dp_pdev,
+			      struct ath12k_dp_peer *peer, u8 ring,
+			      struct hal_tx_status *ts,
+			      struct ath12k_tx_sw_metadata *sw_metadata)
+{
+	struct ath12k_dp_peer_delay_stats *delay_stats;
+	struct ath12k_dp_peer_delay_tx_stats *tx_delay;
+	u32 sw_delay = 0, ingress_tstamp;
+	u8 tid;
+
+	delay_stats = peer->mld_stats.delay_stats;
+
+	if (!delay_stats)
+		return;
+
+	tid = ts->tid;
+	if (unlikely(tid >= DP_TID_MAX))
+		tid = DP_TID_MAX - 1;
+
+	tx_delay = &delay_stats->delay_tid_stats[tid][ring].tx_delay;
+	ingress_tstamp = (u32)ktime_to_us(skb_get_ktime(sw_metadata->skb));
+
+	/* SW Enqueue Delay */
+	if (!sw_metadata->hw_enqueue_tstamp || !ingress_tstamp)
+		return;
+
+	sw_delay = sw_metadata->hw_enqueue_tstamp - ingress_tstamp;
+	ath12k_dp_update_hist_stats(&tx_delay->tx_swq_delay, sw_delay);
+}
+
+static void
+ath12k_dp_tx_compute_hw_delay_stats(struct ath12k_pdev_dp *dp_pdev,
+				    struct ath12k_dp_peer *peer, u8 ring,
+				    struct hal_tx_status *ts)
+{
+	struct ath12k_dp_peer_delay_stats *delay_stats;
+	struct ath12k_dp_peer_delay_tx_stats *tx_delay;
+	u32 fwhw_transmit_delay = 0;
+	u8 tid;
+
+	delay_stats = peer->mld_stats.delay_stats;
+
+	if (!delay_stats)
+		return;
+
+	tid = ts->tid;
+	if (unlikely(tid >= DP_TID_MAX))
+		tid = DP_TID_MAX - 1;
+
+	tx_delay = &delay_stats->delay_tid_stats[tid][ring].tx_delay;
+
+	/* HW Delay stats */
+	fwhw_transmit_delay = ath12k_dp_tx_compute_hw_delay(dp_pdev, ts);
+	if (fwhw_transmit_delay)
+		ath12k_dp_update_hist_stats(&tx_delay->hwtx_delay, fwhw_transmit_delay);
+
+	/* Jitter stats computation */
+	ath12k_dp_tx_update_jitter_stats(peer, ts, fwhw_transmit_delay, ring, tid);
+}
+
+static void
+ath12k_dp_tx_compute_sojourn_stats(struct ath12k_dp_peer *peer,
+				   struct ath12k_tx_sw_metadata *sw_metadata,
+				   struct hal_tx_status *ts,
+				   u8 ring)
+{
+	u8 tid;
+	u32 delta_us;
+	struct ath12k_dp_peer_tid_sojourn_stats *sojourn_stats;
+
+	if (!peer->mld_stats.sojourn_stats)
+		return;
+
+	tid = ts->tid;
+	if (unlikely(tid >= DP_TID_MAX))
+		tid = DP_TID_MAX - 1;
+
+	sojourn_stats = &peer->mld_stats.sojourn_stats->tid_stats[tid][ring];
+
+	delta_us = (u32)ktime_to_us(ktime_get_real()) - sw_metadata->hw_enqueue_tstamp;
+
+	sojourn_stats->sum_sojourn_msdu += delta_us;
+	sojourn_stats->num_msdus++;
+	ewma_avg_sojourn_add(&sojourn_stats->avg_sojourn_msdu, delta_us);
+}
+
+static void
+ath12k_dp_tx_update_peer_latency_stats(struct ath12k_pdev_dp *dp_pdev,
+				       struct ath12k_dp_peer *peer,
+				       struct hal_tx_status *ts,
+				       u8 ring,
+				       struct ath12k_tx_sw_metadata *sw_metadata)
+{
+	if (!peer)
+		return;
+
+	/* Delay stats (TX sw) */
+	ath12k_dp_tx_compute_sw_delay(dp_pdev, peer, ring, ts, sw_metadata);
+
+	/* Delay stats (Tx hw)and Jitter stats */
+	ath12k_dp_tx_compute_hw_delay_stats(dp_pdev, peer, ring, ts);
+
+	/* Sojourn stats */
+	ath12k_dp_tx_compute_sojourn_stats(peer, sw_metadata, ts, ring);
+}
+
 static void
 ath12k_wifi7_dp_tx_htt_tx_complete_buf(struct ath12k_dp *dp,
 				       struct sk_buff *msdu,
@@ -2431,7 +2677,7 @@ ath12k_wifi7_dp_tx_htt_tx_complete_buf(struct ath12k_dp *dp,
 				       struct hal_tx_status *ts,
 				       struct ath12k_tx_sw_metadata *sw_metadata,
 				       u16 peer_id, int link_id,
-				       struct ath12k_dp_peer *dp_peer)
+				       struct ath12k_dp_peer *dp_peer, u8 ring)
 {
 	struct ieee80211_tx_status status = { 0 };
 	struct ieee80211_tx_info *info;
@@ -2512,10 +2758,14 @@ ath12k_wifi7_dp_tx_htt_tx_complete_buf(struct ath12k_dp *dp,
 		status.sta = ath12k_dp_link_peer_get_sta(peer);
 	}
 
-	if ((unlikely(ath12k_dp_stats_enabled(dp_pdev))) &&
-	    (unlikely(ath12k_debugfs_is_qos_stats_enabled(dp_pdev->ar)))) {
-		ath12k_qos_stats_update(dp_pdev->ar, msdu, ts, dp_pdev,
-					msdu->tstamp);
+	if (unlikely(ath12k_dp_stats_enabled(dp_pdev))) {
+		if (unlikely(ath12k_debugfs_is_qos_stats_enabled(dp_pdev->ar)))
+			ath12k_qos_stats_update(dp_pdev->ar, msdu, ts, dp_pdev,
+						msdu->tstamp);
+		if (unlikely(ath12k_dp_delay_stats_enabled(dp_pdev)))
+			ath12k_dp_tx_update_peer_latency_stats(dp_pdev, peer->dp_peer,
+							       ts, ring,
+							       sw_metadata);
 	}
 
 	status.skb = msdu;
@@ -2783,7 +3033,7 @@ ath12k_wifi7_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 		ts->status = HAL_WBM_TQM_REL_REASON_FRAME_ACKED;
 		ath12k_wifi7_dp_tx_htt_tx_complete_buf(dp, msdu, tx_ring, ts,
 						       sw_metadata, ts->peer_id,
-						       link_id, peer);
+						       link_id, peer, ring_id);
 		break;
 	case HAL_WBM_REL_HTT_TX_COMP_STATUS_DROP:
 	case HAL_WBM_REL_HTT_TX_COMP_STATUS_TTL:
@@ -2980,105 +3230,6 @@ ath12k_wifi7_dp_tx_update_txcompl(struct ath12k_pdev_dp *dp_pdev,
 	spin_unlock_bh(&dp->dp_lock);
 }
 
-static u32 ath12k_dp_tx_compute_hw_delay(struct ath12k_pdev_dp *dp_pdev,
-					 struct hal_tx_status *ts)
-{
-	struct ath12k_dp *dp = dp_pdev->dp;
-	struct ath12k *ar = dp_pdev->ar;
-	struct ath12k_hw_group *ag = ar->ab->ag;
-	struct ath12k_pdev_dp *tx_dp_pdev;
-	struct ath12k *tx_ar, *primary_ar;
-	u32 fw_delay_us = 0;
-	u32 tqm_enqueue_us, final_tqm_enqueue_us;
-	u32 compl_tsf_us, final_compl_tsf_us;
-	int delta_tqm, delta_tsf2;
-
-	if (unlikely(!ar || !ar->ab))
-		return 0;
-
-	/*
-	 * FW/HW delay: time from TQM enqueue to over-the-air TX completion.
-	 * Use HW buffer_timestamp (from TQM) instead of SW hw_tstamp.
-	 */
-	tqm_enqueue_us = TX_COMPL_BUFFER_TSTAMP_US(ts->buffer_timestamp);
-	compl_tsf_us   = ts->tsf;
-
-	if (unlikely(tqm_enqueue_us == 0 || compl_tsf_us == 0))
-		return 0;
-
-	if (unlikely(ag->mlo_tstamp_offset == 0))
-		return 0;
-
-	primary_ar = ar->ab->pdevs[0].ar;
-	if (primary_ar)
-		delta_tqm = (int)ag->mlo_tstamp_offset - (int)primary_ar->delta_tqm;
-	else
-		delta_tqm = (int)ag->mlo_tstamp_offset - (int)ar->delta_tqm;
-
-	tx_dp_pdev = ath12k_dp_hw_grp_to_dp_pdev(dp->dp_hw_grp, ts->hw_link_id);
-	tx_ar = (tx_dp_pdev && tx_dp_pdev->ar) ? tx_dp_pdev->ar : ar;
-
-	if (unlikely(!tx_ar))
-		return 0;
-
-	delta_tsf2 = (int)ag->mlo_tstamp_offset - (int)tx_ar->delta_tsf2;
-
-	final_tqm_enqueue_us = (tqm_enqueue_us + delta_tqm) & HW_TX_DELAY_MASK;
-	final_compl_tsf_us = (compl_tsf_us + delta_tsf2) & HW_TX_DELAY_MASK;
-
-	fw_delay_us = (final_compl_tsf_us - final_tqm_enqueue_us) & HW_TX_DELAY_MASK;
-
-	/* Discard values that exceed the plausible maximum (clock wrap-around
-	 * or uninitialized MLO offsets produce very large unsigned results).
-	 */
-	if (fw_delay_us > HW_TX_DELAY_MAX)
-		fw_delay_us = 0;
-
-	return fw_delay_us;
-}
-
-static void
-ath12k_dp_tx_compute_tid_delay(struct ath12k_pdev_dp *dp_pdev,
-			       struct ath12k_dp_peer *peer, u8 ring,
-			       struct hal_tx_status *ts)
-{
-	struct ath12k_dp_peer_delay_stats *delay_stats = NULL;
-	struct ath12k_dp_peer_delay_tx_stats *tx_delay;
-	u32 fwhw_transmit_delay = 0;
-	u8 tid;
-
-	delay_stats = peer->mld_stats.delay_stats;
-
-	if (!delay_stats)
-		return;
-
-	tid = ts->tid;
-	if (unlikely(tid >= DP_TID_MAX))
-		tid = DP_TID_MAX - 1;
-
-	tx_delay = &delay_stats->delay_tid_stats[tid][ring].tx_delay;
-
-	/* Placeholder: SW Enqueue Delay */
-
-	fwhw_transmit_delay = ath12k_dp_tx_compute_hw_delay(dp_pdev, ts);
-	ath12k_dp_update_hist_stats(&tx_delay->hwtx_delay, fwhw_transmit_delay);
-
-	/* Placeholder: Jitter stats computation */
-}
-
-static void ath12k_dp_tx_update_peer_latency_stats(struct ath12k_pdev_dp *dp_pdev,
-						   struct ath12k_dp_peer *peer,
-						   struct hal_tx_status *ts,
-						   u8 ring)
-{
-	if (!peer)
-		return;
-
-	ath12k_dp_tx_compute_tid_delay(dp_pdev, peer, ring, ts);
-
-	/* Placeholder: Sojourn stats computation */
-}
-
 static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 					     struct sk_buff *msdu,
 					     struct hal_tx_status *ts,
@@ -3169,7 +3320,8 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 			}
 			if (unlikely(ath12k_dp_delay_stats_enabled(dp_pdev)))
 				ath12k_dp_tx_update_peer_latency_stats(dp_pdev, peer,
-								       ts, ring);
+								       ts, ring,
+								       sw_metadata);
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 			if (peer->is_mmesh_peer)
 				ath12k_dp_tx_update_mmesh_stats(dp, dp_pdev,
@@ -3998,6 +4150,12 @@ void ath12k_ppeds_tx_update_stats(struct ath12k *ar, int skb_len,
 							    hw_delay / USEC_PER_MSEC);
 		}
 	}
+
+	if (ath12k_dp_stats_enabled(dp_pdev) &&
+	    ath12k_dp_delay_stats_enabled(dp_pdev))
+
+		ath12k_dp_tx_compute_hw_delay_stats(dp_pdev, peer->dp_peer,
+						    DP_TCL_PPEDS_RING_IDX, &ts);
 
 	if (ts.status != HAL_WBM_TQM_REL_REASON_FRAME_ACKED &&
 	    !tx_status_default) {

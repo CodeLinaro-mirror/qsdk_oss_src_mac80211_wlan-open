@@ -50,6 +50,9 @@ struct ath12k_dp_link_peer;
 #define IS_VALID_RSSI(rssi) ((rssi) <= 0)
 #define IS_VALID_RATE(rate) ((rate) >= 0)
 
+#define DP_AVG_JITTER_WEIGHT_DENOM 4
+#define DP_AVG_DELAY_WEIGHT_DENOM 3
+
 #define DP_TID_MAX	9
 #define nla_total_size_nested(x) nla_total_size(x)
 /**
