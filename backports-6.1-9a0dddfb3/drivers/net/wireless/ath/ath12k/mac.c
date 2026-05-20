@@ -21515,11 +21515,11 @@ ath12k_mac_update_vif_chan_extras(struct ath12k *ar,
                                             ar->awgn_chandef.chan->center_freq);
                         }
                 } else {
-                        if ((ar->awgn_chandef.chan->center_freq ==
-                             chandef->chan->center_freq) &&
-                            (ar->awgn_chandef.width != chandef->width)) {
+			if ((ar->awgn_chandef.chan->center_freq !=
+			     chandef->chan->center_freq) ||
+			    (ar->awgn_chandef.width != chandef->width)) {
 				ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
-						 "AWGN : BW reduction is complete\n");
+						 "AWGN : BW reduction/Channel switch is complete\n");
                                 ar->awgn_intf_handling_in_prog = false;
                         } else {
                                 ath12k_warn(ab, "AWGN : awgn_freq : %d chan_freq %d"
