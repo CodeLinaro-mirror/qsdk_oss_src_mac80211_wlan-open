@@ -10351,7 +10351,8 @@ int ath12k_mac_op_set_radar_background(struct ieee80211_hw *hw,
 				return 0;
 		}
 
-		if (!(def->chan->flags & IEEE80211_CHAN_RADAR))
+		if (!cfg80211_chandef_dfs_required(hw->wiphy, def,
+						   NL80211_IFTYPE_AP))
 			return -EINVAL;
 
 		/* Note: Only Half width and full bandwidth is supported */

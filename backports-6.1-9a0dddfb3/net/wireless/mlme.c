@@ -1335,8 +1335,11 @@ __cfg80211_background_cac_event(struct cfg80211_registered_device *rdev,
 		wdev = rdev->background_radar_wdev;
 		break;
 	case NL80211_RADAR_CAC_ABORTED:
-		if (!cancel_delayed_work(&rdev->background_cac_done_wk))
+		if (!cancel_delayed_work(&rdev->background_cac_done_wk)) {
+			cfg80211_sched_dfs_chan_update(rdev);
 			return;
+		}
+		cfg80211_sched_dfs_chan_update(rdev);
 		wdev = rdev->background_radar_wdev;
 		break;
 	case NL80211_RADAR_CAC_STARTED:
@@ -1352,8 +1355,11 @@ __cfg80211_background_cac_event(struct cfg80211_registered_device *rdev,
 
 	w_chandef = wdev_chandef(wdev, 0);
 
-	if ((event == NL80211_RADAR_CAC_FINISHED || event == NL80211_RADAR_CAC_ABORTED) &&
-	    w_chandef && cfg80211_chandef_identical(w_chandef, chandef)) {
+	if (((event == NL80211_RADAR_CAC_FINISHED &&
+	      reg_get_dfs_region(&rdev->wiphy) == NL80211_DFS_ETSI) ||
+	     (event == NL80211_RADAR_CAC_ABORTED)) &&
+	    (cfg80211_chandef_identical(&rdev->background_radar_chandef, chandef) ||
+	     (w_chandef && cfg80211_chandef_identical(w_chandef, chandef)))) {
 		rdev->background_radar_wdev = NULL;
 	}
 }
@@ -1462,11 +1468,14 @@ void cfg80211_stop_background_radar_detection(struct wireless_dev *wdev)
 		return;
 
 	rdev_set_radar_background(rdev, NULL);
-	rdev->background_radar_wdev = NULL; /* Release offchain ownership */
 
 	__cfg80211_background_cac_event(rdev, wdev,
 					&rdev->background_radar_chandef,
 					NL80211_RADAR_CAC_ABORTED);
+	if (rdev->background_radar_wdev == wdev) {
+
+		rdev->background_radar_wdev = NULL;
+	}
 }
 
 int cfg80211_assoc_ml_reconf(struct cfg80211_registered_device *rdev,
