@@ -14314,8 +14314,8 @@ static int ath12k_vendor_set_tid_map_precedence(struct wiphy *wiphy,
 	}
 
 	prec_val = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_TID_MAP_PRECEDENCE_VAL]);
-	if (prec_val > 0xB) {
-		ath12k_err(NULL, "tid_map_prty: VAL=%u out of range (0-11)\n",
+	if (prec_val > ATH12K_DP_MAX_TID_PRECEDENCE_VAL) {
+		ath12k_err(NULL, "tid_map_prty: VAL=%u out of range (0=DSCP, 1=PCP)\n",
 			   prec_val);
 		return -EINVAL;
 	}

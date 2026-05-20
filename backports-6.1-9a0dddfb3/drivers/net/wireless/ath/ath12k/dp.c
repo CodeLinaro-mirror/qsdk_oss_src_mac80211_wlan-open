@@ -131,7 +131,7 @@ EXPORT_SYMBOL(ath12k_dp_pcp_tid_map);
  * register writer with no validation.  All sanity checks are performed here:
  *
  *   1. dp_hw_grp must not be NULL.
- *   2. tid_map_precedence must be in range 0-11 (values 12-15 are HW reserved).
+ *   2. tid_map_precedence must be 0 (DSCP) or 1 (PCP).
  *   3. At least one non-NULL SOC with a valid ab pointer must exist.
  *   4. Each SOC's dp->ab must not be NULL before calling HAL.
  *
@@ -153,7 +153,7 @@ int ath12k_dp_tid_map_precedence(struct ath12k_dp_hw_group *dp_hw_grp)
 
 	if (dp_hw_grp->tid_map_precedence > ATH12K_DP_MAX_TID_PRECEDENCE_VAL) {
 		ath12k_err(NULL,
-			   "tid_map_prty: precedence=%u out of range (0-11)\n",
+			   "tid_map_prty: precedence=%u out of range (0=DSCP, 1=PCP)\n",
 			   dp_hw_grp->tid_map_precedence);
 		return -EINVAL;
 	}

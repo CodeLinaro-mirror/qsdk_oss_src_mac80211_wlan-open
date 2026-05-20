@@ -154,6 +154,36 @@ enum rdi_based_source_ring_selection {
 #define HAL_CE_WFSS_CE_REG_BASE                 0x1B80000
 #define HAL_DP_REG_WINDOW_OFFSET                0x00180000
 
+/*
+ * TCL register offsets for PCP-TID map and TID map precedence.
+ * These are relative to HAL_SEQ_WCSS_UMAC_TCL_REG.
+ */
+#define HAL_TCL_R0_PCP_TID_MAP_OFFSET		0x137C
+#define HAL_TCL_R0_TID_MAP_PRTY_OFFSET		0x13CC
+
+#define HAL_TCL_R0_PCP_TID_MAP_ADDR \
+	(HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL_R0_PCP_TID_MAP_OFFSET)
+#define HAL_TCL_R0_PCP_TID_MAP_PRTY_OFFSET \
+	(HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL_R0_TID_MAP_PRTY_OFFSET)
+
+/* wifi8 TID map precedence register field masks
+ * Register: UMAC_TCL_R0_TID_PCP_DSCP_PRIORITY (offset 0x13CC from TCL base)
+ *   Bit  0     : VAL  - TID priority order (0=DSCP>PCP, 1=PCP>DSCP)
+ *   Bits 3:1   : TID_DEF - Default TID when no TID is valid for an MSDU
+ */
+#define HAL_TCL_TID_MAP_PRTY_VAL_MASK		GENMASK(0, 0)
+#define HAL_TCL_TID_MAP_PRTY_TID_DEF_MASK	GENMASK(3, 1)
+
+/* PCP-TID map register bit-field masks (3 bits per PCP value, PCP0 at [2:0]) */
+#define HAL_TCL_R0_PCP_TID_MAP_PCP_0		GENMASK(2, 0)	/* 0x7      */
+#define HAL_TCL_R0_PCP_TID_MAP_PCP_1		GENMASK(5, 3)	/* 0x38     */
+#define HAL_TCL_R0_PCP_TID_MAP_PCP_2		GENMASK(8, 6)	/* 0x1c0    */
+#define HAL_TCL_R0_PCP_TID_MAP_PCP_3		GENMASK(11, 9)	/* 0xe00    */
+#define HAL_TCL_R0_PCP_TID_MAP_PCP_4		GENMASK(14, 12)	/* 0x7000   */
+#define HAL_TCL_R0_PCP_TID_MAP_PCP_5		GENMASK(17, 15)	/* 0x38000  */
+#define HAL_TCL_R0_PCP_TID_MAP_PCP_6		GENMASK(20, 18)	/* 0x1c0000 */
+#define HAL_TCL_R0_PCP_TID_MAP_PCP_7		GENMASK(23, 21)	/* 0xe00000 */
+
 #define HAL_TCL_SW_CONFIG_BANK_ADDR		0x00F130E0
 
 /* To set mcast pkt ctrl vlaues */

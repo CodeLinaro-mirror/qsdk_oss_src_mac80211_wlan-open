@@ -131,7 +131,10 @@ struct ath12k_dp_hw_link {
 #define DP_TOTAL_REO_DST_RINGS (DP_REO_DST_RING_MAX + DP_REO_ERR_RINGS_MAX)
 
 #define ATH12K_DP_PCP_TID_MAP_SIZE	8
-#define ATH12K_DP_MAX_TID_PRECEDENCE_VAL 11
+/* Unified TID map precedence: 0 = DSCP wins, 1 = PCP wins.
+ * HLOS is always present but implicitly enabled by other features.
+ */
+#define ATH12K_DP_MAX_TID_PRECEDENCE_VAL 1
 
 struct ath12k_dp_hw {
 	struct ath12k_dp_peer __rcu *dp_peer_list[MAX_DP_PEER_LIST_SIZE];
