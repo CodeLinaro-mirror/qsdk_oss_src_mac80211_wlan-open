@@ -17256,17 +17256,18 @@ static int ath12k_mac_mgmt_action_frame_fill_elem(struct ath12k_link_vif *arvif,
 	 */
 	if (has_protected) {
 		switch (skb_cb->cipher) {
-		/* Currently only for CCMP cipher suite, we asked for it via
-		 * setting %IEEE80211_KEY_FLAG_GENERATE_IV_MGMT in key. Check
-		 * ath12k_install_key()
+		/* Cipher suite having flag %IEEE80211_KEY_FLAG_GENERATE_IV_MGMT set in
+		 * key needs to be processed. See ath12k_install_key()
 		 */
 		case WLAN_CIPHER_SUITE_CCMP:
+		case WLAN_CIPHER_SUITE_CCMP_256:
 			iv_len = IEEE80211_CCMP_HDR_LEN;
 			break;
-		case WLAN_CIPHER_SUITE_TKIP:
-		case WLAN_CIPHER_SUITE_CCMP_256:
 		case WLAN_CIPHER_SUITE_GCMP:
 		case WLAN_CIPHER_SUITE_GCMP_256:
+			iv_len = IEEE80211_GCMP_HDR_LEN;
+			break;
+		case WLAN_CIPHER_SUITE_TKIP:
 		case WLAN_CIPHER_SUITE_AES_CMAC:
 		case WLAN_CIPHER_SUITE_BIP_GMAC_128:
 		case WLAN_CIPHER_SUITE_BIP_GMAC_256:
