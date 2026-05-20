@@ -139,6 +139,9 @@ ath12k_debugfs_sta_update_success(struct ath12k_dp_link_peer *peer,
 	if (txrate->flags & RATE_INFO_FLAGS_EHT_MCS) {
 		STATS_OP_FMT(SUCC).eht[0][mcs] += succ_bytes;
 		STATS_OP_FMT(SUCC).eht[1][mcs] += succ_pkts;
+	} else if (txrate->flags & RATE_INFO_FLAGS_UHR_MCS) {
+		STATS_OP_FMT(SUCC).uhr[0][mcs] += succ_bytes;
+		STATS_OP_FMT(SUCC).uhr[1][mcs] += succ_pkts;
 	} else if (txrate->flags & RATE_INFO_FLAGS_HE_MCS) {
 		STATS_OP_FMT(SUCC).he[0][mcs] += succ_bytes;
 		STATS_OP_FMT(SUCC).he[1][mcs] += succ_pkts;
@@ -206,9 +209,15 @@ ath12k_debugfs_sta_update_success(struct ath12k_dp_link_peer *peer,
 		if (txrate->flags & RATE_INFO_FLAGS_EHT_MCS) {
 			STATS_OP_FMT(AMPDU).eht[0][mcs] += ampdu_bytes;
 			STATS_OP_FMT(AMPDU).eht[1][mcs] += ampdu_pkts;
+		} else if (txrate->flags & RATE_INFO_FLAGS_UHR_MCS) {
+			STATS_OP_FMT(AMPDU).uhr[0][mcs] += ampdu_bytes;
+			STATS_OP_FMT(AMPDU).uhr[1][mcs] += ampdu_pkts;
 		} else if (txrate->flags & RATE_INFO_FLAGS_HE_MCS) {
 			STATS_OP_FMT(AMPDU).he[0][mcs] += ampdu_bytes;
 			STATS_OP_FMT(AMPDU).he[1][mcs] += ampdu_pkts;
+		} else if (txrate->flags & RATE_INFO_FLAGS_VHT_MCS) {
+			STATS_OP_FMT(AMPDU).vht[0][mcs] += ampdu_bytes;
+			STATS_OP_FMT(AMPDU).vht[1][mcs] += ampdu_pkts;
 		} else if (txrate->flags & RATE_INFO_FLAGS_MCS) {
 			STATS_OP_FMT(AMPDU).ht[0][mcs] += ampdu_bytes;
 			STATS_OP_FMT(AMPDU).ht[1][mcs] += ampdu_pkts;
@@ -255,6 +264,9 @@ ath12k_debugfs_sta_update_retry(struct ath12k_dp_link_peer *peer,
 	if (txrate->flags & RATE_INFO_FLAGS_EHT_MCS) {
 		STATS_OP_FMT(RETRY).eht[0][mcs] += retry_bytes;
 		STATS_OP_FMT(RETRY).eht[1][mcs] += mpdu_retry_pkts;
+	} else if (txrate->flags & RATE_INFO_FLAGS_UHR_MCS) {
+		STATS_OP_FMT(RETRY).uhr[0][mcs] += retry_bytes;
+		STATS_OP_FMT(RETRY).uhr[1][mcs] += mpdu_retry_pkts;
 	} else if (txrate->flags & RATE_INFO_FLAGS_HE_MCS) {
 		STATS_OP_FMT(RETRY).he[0][mcs] += retry_bytes;
 		STATS_OP_FMT(RETRY).he[1][mcs] += mpdu_retry_pkts;
@@ -328,6 +340,9 @@ ath12k_debugfs_sta_update_failure(struct ath12k_dp_link_peer *peer,
 	if (txrate->flags & RATE_INFO_FLAGS_EHT_MCS) {
 		STATS_OP_FMT(FAIL).eht[0][mcs] += failed_bytes;
 		STATS_OP_FMT(FAIL).eht[1][mcs] += failed_pkts;
+	} else if (txrate->flags & RATE_INFO_FLAGS_UHR_MCS) {
+		STATS_OP_FMT(FAIL).uhr[0][mcs] += failed_bytes;
+		STATS_OP_FMT(FAIL).uhr[1][mcs] += failed_pkts;
 	} else if (txrate->flags & RATE_INFO_FLAGS_HE_MCS) {
 		STATS_OP_FMT(FAIL).he[0][mcs] += failed_bytes;
 		STATS_OP_FMT(FAIL).he[1][mcs] += failed_pkts;

@@ -251,6 +251,11 @@ ath12k_dp_update_tx_ext_htt_aggr_stats(struct ath12k *ar,
 					src_peer_stats->stats[i].eht[j][k];
 			}
 
+			for (k = 0; k < ATH12K_UHR_MCS_NUM; k++) {
+				dst_peer_stats->stats[i].uhr[j][k] +=
+					src_peer_stats->stats[i].uhr[j][k];
+			}
+
 			for (k = 0; k < ATH12K_BW_NUM; k++) {
 				dst_peer_stats->stats[i].bw[j][k] +=
 					src_peer_stats->stats[i].bw[j][k];
@@ -347,6 +352,18 @@ ath12k_dp_update_tx_ext_htt_aggr_stats(struct ath12k *ar,
 		for (j = 0; j < MAX_MCS; j++)
 			dst_peer_stats->mu_be_ppdu_cnt[i].mcs_count[j] +=
 				src_peer_stats->mu_be_ppdu_cnt[i].mcs_count[j];
+	}
+
+	/* SU BN PPDU Count */
+	for (i = 0; i < MAX_MCS; i++)
+		dst_peer_stats->su_bn_ppdu_cnt.mcs_count[i] +=
+			src_peer_stats->su_bn_ppdu_cnt.mcs_count[i];
+
+	/* MU BN PPDU Count Array */
+	for (i = 0; i < TXRX_TYPE_MU_MAX; i++) {
+		for (j = 0; j < MAX_MCS; j++)
+			dst_peer_stats->mu_bn_ppdu_cnt[i].mcs_count[j] +=
+				src_peer_stats->mu_bn_ppdu_cnt[i].mcs_count[j];
 	}
 
 	/* Punctured BW Array */

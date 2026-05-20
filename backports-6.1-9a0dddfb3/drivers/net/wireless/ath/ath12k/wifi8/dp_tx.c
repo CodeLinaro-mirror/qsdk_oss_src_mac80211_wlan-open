@@ -2801,6 +2801,12 @@ ath12k_wifi8_dp_tx_update_txcompl(struct ath12k_pdev_dp *dp_pdev,
 			ath12k_mac_eht_ru_tones_to_nl80211_eht_ru_alloc(ts->tones);
 	}
 
+	if (ts->ofdma && ts->pkt_type == HAL_TX_RATE_STATS_PKT_TYPE_11BN) {
+		txrate.bw = RATE_INFO_BW_EHT_RU;
+		txrate.eht_ru_alloc =
+			ath12k_mac_eht_ru_tones_to_nl80211_eht_ru_alloc(ts->tones);
+	}
+
 	spin_lock_bh(&dp->dp_lock);
 	peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, ts->hw_link_id);
 	if (peer)

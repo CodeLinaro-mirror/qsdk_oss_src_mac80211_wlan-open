@@ -424,6 +424,7 @@ struct ath12k_htt_data_stats {
 	u64 vht[ATH12K_COUNTER_TYPE_MAX][ATH12K_VHT_MCS_NUM];
 	u64 he[ATH12K_COUNTER_TYPE_MAX][ATH12K_HE_MCS_NUM];
 	u64 eht[ATH12K_COUNTER_TYPE_MAX][ATH12K_EHT_MCS_NUM];
+	u64 uhr[ATH12K_COUNTER_TYPE_MAX][ATH12K_UHR_MCS_NUM]; /* UHR (11BN) */
 	u64 bw[ATH12K_COUNTER_TYPE_MAX][ATH12K_BW_NUM];
 	u64 nss[ATH12K_COUNTER_TYPE_MAX][ATH12K_NSS_NUM];
 	u64 gi[ATH12K_COUNTER_TYPE_MAX][ATH12K_GI_NUM];
@@ -481,6 +482,8 @@ struct ath12k_htt_tx_stats {
 	struct ath12k_tx_pkt_info transmit_type_mpdu_succ_tried[MAX_TRANSMIT_TYPES];
 	struct pkt_type su_be_ppdu_cnt;
 	struct pkt_type mu_be_ppdu_cnt[TXRX_TYPE_MU_MAX];
+	struct pkt_type su_bn_ppdu_cnt;
+	struct pkt_type mu_bn_ppdu_cnt[TXRX_TYPE_MU_MAX];
 	u32 punc_bw[MAX_PUNCTURED_MODE];
 	u32 rts_success;
 	u32 rts_failure;
