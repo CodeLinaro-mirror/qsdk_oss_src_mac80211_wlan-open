@@ -1543,6 +1543,9 @@ struct ath12k_radio_cfg {
 	s32 temperature;                    /* Last temperature reading in °C */
 	u8 temperature_query_pending;       /* Query sent, waiting for response */
 	u32 msdu_ttl;
+
+	/* [15:0] 2G/5G pair id, [31:16] 6G super-domain id */
+	u32 regdomain;
 	bool chan144_enabled;
 	u32 pdev_to_reo_dest;
 };
