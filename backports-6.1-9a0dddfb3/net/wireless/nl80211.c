@@ -21309,6 +21309,39 @@ static int nl80211_critical_update(struct sk_buff *skb,
 	return rdev_critical_update(rdev, dev, link_id, &params);
 }
 
+void cfg80211_cu_notify(struct wireless_dev *wdev,
+			unsigned int link_id,
+			enum nl80211_cu_state cu_state)
+{
+	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wdev->wiphy);
+	struct sk_buff *msg;
+	void *hdr;
+
+	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
+	if (!msg)
+		return;
+
+	hdr = nl80211hdr_put(msg, 0, 0, 0,
+			     NL80211_CMD_CRITICAL_UPDATE_NOTIFY);
+	if (!hdr)
+		goto free_msg;
+
+	if (nla_put_u32(msg, NL80211_ATTR_WIPHY, rdev->wiphy_idx) ||
+	    nla_put_u32(msg, NL80211_ATTR_IFINDEX, wdev->netdev->ifindex) ||
+	    nla_put_u8(msg, NL80211_ATTR_MLO_LINK_ID, link_id) ||
+	    nla_put_u8(msg, NL80211_ATTR_CU_STATE, cu_state))
+		goto free_msg;
+
+	genlmsg_end(msg, hdr);
+	genlmsg_multicast_netns(&nl80211_fam, wiphy_net(wdev->wiphy),
+				msg, 0, NL80211_MCGRP_MLME, GFP_KERNEL);
+	return;
+
+free_msg:
+	nlmsg_free(msg);
+}
+EXPORT_SYMBOL(cfg80211_cu_notify);
+
 #define SELECTOR(__sel, name, value) \
 	((__sel) == (value)) ? NL80211_IFL_SEL_##name :
 int __missing_selector(void);

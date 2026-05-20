@@ -8875,6 +8875,23 @@ mesh_nss_offld_proxy_path_exp_update(struct ieee80211_vif *vif, u8* da,
 void ieee80211_critical_update(struct ieee80211_vif *vif, unsigned int link_id,
 				bool critical_flag, u8 bpcc);
 
+/**
+ * ieee80211_cu_notify - notify mac80211 of a UHR ECU state transition
+ * @hw: pointer to the hardware
+ * @vif: virtual interface
+ * @link_id: the link on which the state transition occurred
+ * @cu_state: new ECU state, see &enum nl80211_cu_state
+ *
+ * Called by the driver at each ECU phase boundary. mac80211 updates
+ * @link_conf->cu_in_progress accordingly and forwards a
+ * %NL80211_CMD_CRITICAL_UPDATE_NOTIFY event carrying %NL80211_ATTR_CU_STATE
+ * to user space. On %NL80211_CU_STATE_ECU_END the CU session is cleared.
+ */
+void ieee80211_cu_notify(struct ieee80211_hw *hw,
+			 struct ieee80211_vif *vif,
+			 unsigned int link_id,
+			 enum nl80211_cu_state cu_state);
+
 /*
  * ieee80211_gstrings_stats - stats for ethtool interface
  */
