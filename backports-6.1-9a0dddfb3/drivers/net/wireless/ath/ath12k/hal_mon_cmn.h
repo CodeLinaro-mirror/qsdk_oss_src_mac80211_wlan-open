@@ -613,6 +613,7 @@ struct hal_rx_mon_msdu_info {
 	    cce_metadata:16;
 	u32 fse_metadata;
 	u32 flow_idx;
+	u8 msdu_index;
 };
 
 struct hal_rx_user_ctrl_frm_info {
@@ -789,6 +790,7 @@ struct hal_rx_mon_ppdu_info {
 	u8 band;
 	u32 rx_antenna;
 	u8 num_non_ofdma_users;
+	u16 vendor_tlv_len;
 };
 
 #define HAL_RX_MON_OFFSET(block, field) block##_##field##_OFFSET
