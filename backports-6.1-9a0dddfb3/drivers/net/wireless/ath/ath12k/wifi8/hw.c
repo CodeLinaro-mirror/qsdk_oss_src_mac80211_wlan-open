@@ -524,7 +524,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.rfkill_cfg = 0,
 		.rfkill_on_level = 0,
 
-		.rddm_size = 0x600000,
+		.rddm_size = 0x680000,
 
 		.def_num_link = 0,
 		.max_mlo_peer = 256,
