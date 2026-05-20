@@ -751,6 +751,8 @@ ieee80211_alloc_chanctx(struct ieee80211_local *local,
 	INIT_LIST_HEAD(&ctx->reserved_links);
 	INIT_LIST_HEAD(&ctx->punct_obj_list);
 	ctx->punct_obj_count = 0;
+	INIT_LIST_HEAD(&ctx->csa_pending_list);
+	wiphy_delayed_work_init(&ctx->csa_batch_work, ieee80211_csa_batch_work);
 	ctx->conf.def = chanreq->oper;
 	ctx->conf.ap = chanreq->ap;
 	ctx->conf.rx_chains_static = 1;
@@ -839,6 +841,24 @@ static void ieee80211_free_chanctx(struct ieee80211_local *local,
 	lockdep_assert_wiphy(local->hw.wiphy);
 
 	WARN_ON_ONCE(ieee80211_chanctx_refcount(local, ctx) != 0);
+
+	/*
+	 * Only cancel the batch work if it was actually armed.  Calling
+	 * wiphy_delayed_work_cancel() on a never-queued delayed_work
+	 * triggers a lockdep "non-static key" warning because the embedded
+	 * timer's lock class has not yet been registered via any actual use.
+	 */
+	if (ctx->csa_batch_queued) {
+		wiphy_delayed_work_cancel(local->hw.wiphy, &ctx->csa_batch_work);
+		{
+			struct ieee80211_link_data *link, *tmp;
+
+			list_for_each_entry_safe(link, tmp,
+						 &ctx->csa_pending_list,
+						 csa.batch_list)
+				list_del_init(&link->csa.batch_list);
+		}
+	}
 
 	list_del_rcu(&ctx->list);
 	ieee80211_punct_obj_list_free(local, ctx);
@@ -1800,14 +1820,13 @@ static int ieee80211_vif_use_reserved_switch(struct ieee80211_local *local)
 		}
 
 		if (n_assigned != n_reserved) {
-			if (n_ready == n_reserved) {
-				wiphy_info(local->hw.wiphy,
-					   "channel context reservation cannot be finalized because some interfaces aren't switching\n");
-				err = -EBUSY;
-				goto err;
-			}
+			if (n_ready != n_reserved)
+				return -EAGAIN;
 
-			return -EAGAIN;
+			wiphy_info(local->hw.wiphy,
+				   "channel context reservation cannot be finalized because some interfaces aren't switching\n");
+			err = -EBUSY;
+			goto err;
 		}
 
 		ctx->conf.radar_enabled = false;

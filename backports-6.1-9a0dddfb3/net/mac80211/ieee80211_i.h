@@ -990,6 +990,11 @@ struct ieee80211_chanctx {
 	struct list_head punct_obj_list;
 	/* Number of current unpuncture objects in punct_obj_list. */
 	int punct_obj_count;
+	/* CSA batching state -- protected by wiphy mutex */
+	struct list_head csa_pending_list;
+	struct wiphy_delayed_work csa_batch_work;
+	u8 csa_batch_max_count;
+	bool csa_batch_queued; /* set when batch work is first armed */
 
 	/* MUST be last - ends in a flexible-array member. */
 	struct ieee80211_chanctx_conf conf;
@@ -1156,6 +1161,12 @@ struct ieee80211_link_data {
 		struct wiphy_work finalize_work;
 		struct ieee80211_chan_req chanreq;
 		enum ieee80211_ap_reg_power power_mode;
+		/* CSA batching: entry in chanctx->csa_pending_list */
+		struct list_head batch_list;
+		/* BSS_CHANGED_* flags captured in phase 1 for deferred commit */
+		u64 changed;
+		/* countdown value saved for cfg80211 notification in batch work */
+		u8 count;
 	} csa;
 
 	struct wiphy_work color_change_finalize_work;
@@ -2295,6 +2306,7 @@ int ieee80211_mgmt_tx_cancel_wait(struct wiphy *wiphy,
 
 /* channel switch handling */
 void ieee80211_csa_finalize_work(struct wiphy *wiphy, struct wiphy_work *work);
+void ieee80211_csa_batch_work(struct wiphy *wiphy, struct wiphy_work *work);
 int ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 			     struct cfg80211_csa_settings *params);
 /* awgn interference handling */
