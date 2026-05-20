@@ -654,6 +654,17 @@ struct ieee80211_bss_npca_params {
 };
 
 /**
+ * struct ieee80211_uhr_config - UHR critical-update interval configuration.
+ *
+ * @adv_notification_interval: advance notification interval value in TUs (0 = not set).
+ * @update_in_tim_interval: update in TIM interval value in TUs (0 = not set).
+ */
+struct ieee80211_uhr_config {
+	u8 adv_notification_interval;
+	u8 update_in_tim_interval;
+};
+
+/**
  * struct ieee80211_bss_conf - holds the BSS's changing parameters
  *
  * This structure keeps information about a BSS (and an association
@@ -831,6 +842,7 @@ struct ieee80211_bss_npca_params {
  * @beacon_tx_mode: Beacon Tx Mode setting.
  * @ml_max_rec_links: ML Max recommended links
  * @dps_assist_support: does this BSS support DPS Assist Support.
+ * @uhr_config: UHR critical-update interval configuration timers.
  * @smd_params: advertised SMD feature params.
  */
 struct ieee80211_bss_conf {
@@ -960,6 +972,7 @@ struct ieee80211_bss_conf {
 	u8 ml_max_rec_links;
 	bool is_cfp_enabled;
 	bool dps_assist_support;
+	struct ieee80211_uhr_config uhr_config;
 	enum nl80211_auth_type auth_type;
 	struct cfg80211_smd_params smd_params;
 	struct ieee80211_bss_npca_params npca;

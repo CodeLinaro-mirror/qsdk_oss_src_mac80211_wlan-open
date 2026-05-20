@@ -1882,6 +1882,15 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 			link->conf->npca = npca_params;
 			changed |= BSS_CHANGED_NPCA;
 		}
+
+		link_conf->uhr_config.adv_notification_interval =
+			(params->uhr_cap->fixed.mac.mac_cap[3] &
+			 IEEE80211_UHR_MAC_CAP3_PARAM_UPD_ADV_NOTIF_INTV) >> 2;
+		link_conf->uhr_config.update_in_tim_interval =
+			((params->uhr_cap->fixed.mac.mac_cap[3] &
+			  IEEE80211_UHR_MAC_CAP3_UPD_IND_TIM_INTV_LOW) >> 5) |
+			((params->uhr_cap->fixed.mac.mac_cap[4] &
+			  IEEE80211_UHR_MAC_CAP4_UPD_IND_TIM_INTV_HIGH) << 3);
 	}
 
 	if (sdata->vif.type == NL80211_IFTYPE_AP &&

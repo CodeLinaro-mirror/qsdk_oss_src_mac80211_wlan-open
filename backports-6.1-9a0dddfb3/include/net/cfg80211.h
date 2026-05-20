@@ -2023,6 +2023,7 @@ struct cfg80211_ttlm_params {
  * @ttlm_params: tid-to-link mapping parameters
  * @dps_assist_disable: indicates AP to disable DPS Assist Support.
  * @smd_params: SMD params for a AP
+ * @uhr_cap: UHR capabilities element (or %NULL if not provided)
  */
 struct cfg80211_ap_settings {
 	struct cfg80211_chan_def chandef;
@@ -2050,6 +2051,7 @@ struct cfg80211_ap_settings {
 	const struct ieee80211_eht_cap_elem *eht_cap;
 	const struct ieee80211_eht_operation *eht_oper;
 	const struct ieee80211_uhr_operation *uhr_oper;
+	const struct ieee80211_uhr_cap_elem *uhr_cap;
 	bool ht_required, vht_required, he_required, sae_h2e_required;
 	bool twt_responder;
 	u32 flags;
