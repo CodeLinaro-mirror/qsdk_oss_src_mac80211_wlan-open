@@ -450,17 +450,26 @@ static void ath12k_dp_rx_enqueue_free(struct ath12k_dp *dp,
 			end = rx_desc->vaddr + DP_RX_BUFFER_SIZE;
 			ath12k_core_dmac_inv_range(rx_desc->vaddr, end);
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
-	if (ab->ath12k_base_extn.ipa_ctx && ab->ath12k_base_extn.ipa_ctx->ipa_ops &&
-	    ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap)
-		ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap
-			(ab, skb, DP_RX_BUFFER_SIZE, 0,
-			 ab->ath12k_base_extn.ipa_ctx->hdl);
-	rx_desc->ipa_mapped = false;
+			/* Only SMMU-unmap if this buffer was successfully
+			 * SMMU-mapped (ipa_mapped tracks actual map success).
+			 */
+			if (rx_desc->ipa_mapped &&
+			    ab->ath12k_base_extn.ipa_ctx &&
+			    ab->ath12k_base_extn.ipa_ctx->ipa_ops &&
+			    ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap)
+				ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap
+					(ab, skb, DP_RX_BUFFER_SIZE, 0,
+					 rx_desc->ipa_hdl);
+			rx_desc->ipa_mapped = false;
 
-	ath12k_core_dma_unmap_single(dp->dev,
-				     ATH12K_SKB_CB(skb)->paddr,
-				     DP_RX_BUFFER_SIZE,
-				     DMA_FROM_DEVICE);
+			/* Only DMA-unmap if paddr is valid (non-zero means
+			 * dma_map_single succeeded earlier).
+			 */
+			if (ATH12K_SKB_CB(skb)->paddr)
+				ath12k_core_dma_unmap_single(dp->dev,
+							     ATH12K_SKB_CB(skb)->paddr,
+							     DP_RX_BUFFER_SIZE,
+							     DMA_FROM_DEVICE);
 #endif
 
 			dev_kfree_skb_any(skb);
@@ -507,11 +516,19 @@ void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 		paddr = dma_map_single(dp->dev, skb->data, DP_RX_BUFFER_SIZE,
 				       DMA_FROM_DEVICE);
+
+		if (dma_mapping_error(dp->dev, paddr)) {
+			/* DMA mapping failed */
+			ath12k_dp_rx_skb_free(skb, dp, 0,
+					      DP_RX_ERR_DROP_REPLENISH);
+			break;
+		}
+
 		ATH12K_SKB_CB(skb)->paddr = paddr;
 #else
 		paddr = virt_to_phys(skb->data);
 #endif
-		if(unlikely(!paddr)) {
+		if (unlikely(!paddr)) {
 			ath12k_dp_rx_skb_free(skb, dp, 0,
 					      DP_RX_ERR_DROP_REPLENISH);
 			break;
@@ -523,13 +540,41 @@ void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 		rx_desc->vaddr = skb->data;
 		rx_desc->is_frag = 0;
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
-		if (ab->ath12k_base_extn.ipa_ctx &&
+		rx_desc->ipa_mapped = false;
+		rx_desc->ipa_hdl = ab->ath12k_base_extn.ipa_ctx ?
+				   ab->ath12k_base_extn.ipa_ctx->hdl : 0;
+		ATH12K_SKB_CB(skb)->ipa_hdl = rx_desc->ipa_hdl;
+		/* Use g_ipa_is_ready (lockless) instead of ipa_is_ready() here.
+		 * ipa_is_ready() acquires a mutex internally and must not be
+		 * called from softirq/atomic context (NAPI poll).
+		 */
+		if (g_ipa_is_ready &&
+		    ab->ath12k_base_extn.ipa_ctx &&
 		    ab->ath12k_base_extn.ipa_ctx->ipa_ops &&
-		    ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap)
-			ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap
-				(ab, skb, DP_RX_BUFFER_SIZE, 1,
-				 ab->ath12k_base_extn.ipa_ctx->hdl);
-		rx_desc->ipa_mapped = true;
+		    ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap) {
+			int smmu_ret;
+
+			smmu_ret = ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap
+					(ab, skb, DP_RX_BUFFER_SIZE, 1,
+					 ab->ath12k_base_extn.ipa_ctx->hdl);
+			if (unlikely(smmu_ret)) {
+				ath12k_warn(ab, "IPA SMMU map failed for RX buf: %d\n",
+					    smmu_ret);
+				/* Undo WLAN SMMU map so this IOVA is not leaked */
+				ath12k_core_dma_unmap_single(dp->dev, paddr,
+							     DP_RX_BUFFER_SIZE,
+							     DMA_FROM_DEVICE);
+				ATH12K_SKB_CB(skb)->paddr = 0;
+				rx_desc->skb = NULL;
+				rx_desc->paddr = 0;
+				rx_desc->vaddr = NULL;
+				allocated_entries--;
+				dev_kfree_skb_any(skb);
+				break;
+			} else {
+				rx_desc->ipa_mapped = true;
+			}
+		}
 #endif
 	}
 
@@ -660,14 +705,7 @@ void ath12k_dp_rx_reo_cmd_list_cleanup(struct ath12k_base *ab)
 	spin_lock_bh(&dp->reo_cmd_lock);
 	list_for_each_entry_safe(cmd, tmp, &dp->reo_cmd_list, list) {
 		list_del(&cmd->list);
-		rx_tid = &cmd->data;
-		if (rx_tid->vaddr) {
-			rx_tid->active = false;
-			ath12k_core_dma_unmap_single(ab->dev, rx_tid->paddr,
-						     rx_tid->size, DMA_BIDIRECTIONAL);
-			kfree(rx_tid->vaddr);
-			rx_tid->vaddr = NULL;
-		}
+		cmd->handler(dp, &cmd->data, HAL_REO_CMD_DRAIN);
 		kfree(cmd);
 	}
 
@@ -694,9 +732,13 @@ void ath12k_dp_reo_cmd_free(struct ath12k_dp *dp, void *ctx,
 {
 	struct ath12k_dp_rx_tid *rx_tid = ctx;
 
-	if (status != HAL_REO_CMD_SUCCESS)
+	if (status == HAL_REO_CMD_DRAIN)
+		goto free_desc;
+	else if (status != HAL_REO_CMD_SUCCESS)
 		ath12k_warn(dp->ab, "failed to flush rx tid hw desc, tid %d status %d\n",
 			    rx_tid->tid, status);
+
+free_desc:
 	ath12k_hal_reo_shared_qaddr_cache_clear(dp->ab);
 
 	if (rx_tid->vaddr) {
@@ -1808,15 +1850,22 @@ void ath12k_dp_rx_skb_free(struct sk_buff *skb, struct ath12k_dp *dp, int ring,
 		DP_DEVICE_STATS_INC(dp, rx.rx_err[drop_reason][ring], 1);
 
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
-	if (ab->ath12k_base_extn.ipa_ctx && ab->ath12k_base_extn.ipa_ctx->ipa_ops &&
+	/* Only SMMU-unmap if the ATH12K_SKB_IPA_MAP_UNMAP flag is set,
+	 * meaning the buffer was actually SMMU-mapped.  The flag is
+	 * cleared by __dp_ipa_handle_buf_smmu_map_unmap on success.
+	 */
+	if ((ATH12K_SKB_CB(skb)->flags & ATH12K_SKB_IPA_MAP_UNMAP) &&
+	    ab->ath12k_base_extn.ipa_ctx && ab->ath12k_base_extn.ipa_ctx->ipa_ops &&
 	    ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap)
 		ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap
 			(ab, skb, DP_RX_BUFFER_SIZE, 0,
-			 ab->ath12k_base_extn.ipa_ctx->hdl);
-	ath12k_core_dma_unmap_single(dp->dev,
-				     ATH12K_SKB_CB(skb)->paddr,
-				     DP_RX_BUFFER_SIZE,
-				     DMA_FROM_DEVICE);
+			 ATH12K_SKB_CB(skb)->ipa_hdl);
+	/* Only DMA-unmap if paddr is valid. */
+	if (ATH12K_SKB_CB(skb)->paddr)
+		ath12k_core_dma_unmap_single(dp->dev,
+					     ATH12K_SKB_CB(skb)->paddr,
+					     DP_RX_BUFFER_SIZE,
+					     DMA_FROM_DEVICE);
 #endif
 	dev_kfree_skb_any(skb);
 }

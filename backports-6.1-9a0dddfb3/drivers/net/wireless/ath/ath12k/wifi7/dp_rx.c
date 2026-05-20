@@ -226,15 +226,21 @@ void ath12k_wifi7_dp_rx_tid_del_func(struct ath12k_dp *dp, void *ctx,
 	struct ath12k_dp_rx_tid *rx_tid = ctx, *update_rx_tid;
 	struct ath12k_dp_rx_reo_cache_flush_elem *elem, *tmp;
 	struct dp_reo_update_rx_queue_elem *qelem, *qtmp;
+	bool need_cache_clear = false;
 
-	if (status == HAL_REO_CMD_DRAIN) {
-		goto free_desc;
-	} else if (status != HAL_REO_CMD_SUCCESS) {
+	if (status != HAL_REO_CMD_SUCCESS && status != HAL_REO_CMD_DRAIN) {
 		/* Shouldn't happen! Cleanup in case of other failure? */
 		ath12k_warn(ab, "failed to delete rx tid %d hw descriptor %d\n",
 			    rx_tid->tid, status);
 		return;
 	}
+
+	/* DRAIN means HW returned pending MSDUs but the queue is deleted.
+	 * Like SUCCESS, we must still send a FLUSH_CACHE command to evict
+	 * the queue descriptor from the REO HW cache before unmapping it.
+	 * Jumping directly to free_desc skips that flush and can leave a
+	 * stale IOVA in the REO cache, causing an SMMU fault.
+	 */
 
 	/* Check if there is any pending rx_queue, if yes then update it */
 	spin_lock_bh(&dp->reo_cmd_update_rx_queue_lock);
@@ -255,15 +261,40 @@ void ath12k_wifi7_dp_rx_tid_del_func(struct ath12k_dp *dp, void *ctx,
 			update_rx_tid->size = 0;
 			update_rx_tid->pending_desc_size = 0;
 
+			/* Zero LUT entry only after the cmd is confirmed in the
+			 * REO ring; deferring prevents REO from reading a zero
+			 * IOVA for frames that are still in-flight.
+			 */
+			ath12k_wifi7_peer_rx_tid_qref_reset(ab,
+				qelem->is_ml_peer ? qelem->ml_peer_id : qelem->peer_id,
+				qelem->tid);
+			need_cache_clear = true;
+
 			list_del(&qelem->list);
 			kfree(qelem);
 		}
 	}
 	spin_unlock_bh(&dp->reo_cmd_update_rx_queue_lock);
 
+	if (need_cache_clear)
+		ath12k_wifi7_hal_reo_shared_qaddr_cache_clear(ab);
+
 	elem = kzalloc(sizeof(*elem), GFP_ATOMIC);
-	if (!elem)
+	if (!elem) {
+		/* OOM: cannot queue the cache-flush list element and cannot
+		 * call ath12k_wifi7_dp_reo_cache_flush() either (it also
+		 * kzallocs a dp_cmd tracking struct).  We have no allocation-
+		 * free path to send FLUSH_CACHE to REO, so we must unmap
+		 * without flushing.  The REO internal cache may still hold
+		 * this IOVA; if REO follows it after the unmap an SMMU fault
+		 * is possible — see warning below for details.
+		 */
+		ath12k_warn(ab,
+			    "REO flush-cache OOM: unmapping tid %d paddr 0x%llx "
+			    "without FLUSH_CACHE — SMMU fault possible\n",
+			    rx_tid->tid, (unsigned long long)rx_tid->paddr);
 		goto free_desc;
+	}
 
 	elem->ts = jiffies;
 	memcpy(&elem->data, rx_tid, sizeof(*rx_tid));
@@ -369,6 +400,7 @@ void ath12k_wifi7_dp_rx_peer_tid_delete(struct ath12k *ar,
 	struct dp_reo_update_rx_queue_elem *elem, *tmp;
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_dp *dp   = ath12k_ab_to_dp(ab);
+	bool need_cache_clear = false;
 
 	if (!rx_tid->active)
 		return;
@@ -403,14 +435,25 @@ void ath12k_wifi7_dp_rx_peer_tid_delete(struct ath12k *ar,
 		temp_rx_tid->size = 0;
 		temp_rx_tid->pending_desc_size = 0;
 
+		/* Zero the LUT entry only after UPDATE_RX_QUEUE is confirmed
+		 * in the REO command ring.  If the ring was full and the cmd
+		 * was deferred (resend_flag=true), clearing the LUT here
+		 * would hand REO a zero IOVA for in-flight frames and trigger
+		 * an SMMU fault or silent memory corruption.
+		 */
+		ath12k_wifi7_peer_rx_tid_qref_reset(ab,
+			elem->is_ml_peer ? elem->ml_peer_id : elem->peer_id,
+			elem->tid);
+		need_cache_clear = true;
+
 		list_del(&elem->list);
 		kfree(elem);
 	}
 	spin_unlock_bh(&dp->reo_cmd_update_rx_queue_lock);
 
 	rx_tid->active = false;
-	ath12k_wifi7_peer_rx_tid_qref_reset(ab,	peer->mlo ? peer->ml_id : peer->peer_id, tid);
-	ath12k_wifi7_hal_reo_shared_qaddr_cache_clear(ab);
+	if (need_cache_clear)
+		ath12k_wifi7_hal_reo_shared_qaddr_cache_clear(ab);
 	rx_tid->vaddr = NULL;
 	rx_tid->paddr = 0;
 	rx_tid->size = 0;
@@ -1607,7 +1650,7 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 	valid_entries = __ath12k_hal_srng_dst_num_free(srng, false);
 	if (unlikely(!valid_entries)) {
 		ath12k_hal_srng_access_end(ab, srng);
-		return -EINVAL;
+		goto exit;
 	}
 	ath12k_hal_srng_dst_invalidate_entry(dp, srng, valid_entries);
 #endif
@@ -1709,17 +1752,21 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 		spd_desc_l->vaddr = desc_info->vaddr;
 		msdu = desc_info->skb;
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
-		if (ab->ath12k_base_extn.ipa_ctx &&
+		if (desc_info->ipa_mapped &&
+		    ab->ath12k_base_extn.ipa_ctx &&
 		    ab->ath12k_base_extn.ipa_ctx->ipa_ops &&
 		    ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap)
 			ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap(ab,
 					msdu, DP_RX_BUFFER_SIZE, 0,
 					ab->ath12k_base_extn.ipa_ctx->hdl);
 		desc_info->ipa_mapped = false;
+		if (ATH12K_SKB_CB(msdu)->paddr) {
+			ath12k_core_dma_unmap_single(dp->dev, ATH12K_SKB_CB(msdu)->paddr,
+						     DP_RX_BUFFER_SIZE,
+						     DMA_FROM_DEVICE);
+			ATH12K_SKB_CB(msdu)->paddr = 0;
+		}
 
-		ath12k_core_dma_unmap_single(dp->dev, ATH12K_SKB_CB(msdu)->paddr,
-					     DP_RX_BUFFER_SIZE,
-					     DMA_FROM_DEVICE);
 #endif
 
 		hw_link_id = le32_get_bits(desc->info0,
@@ -1777,6 +1824,7 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 			first_msdu_tp = last_tp;
 			done = true;
 		} else {
+			desc_info->skb = NULL;
 			list_add_tail(&desc_info->list, &rx_desc_sg_list);
 			spd_desc_l->msdu = msdu;
 			incomplete_msdu_chain++;
@@ -2036,6 +2084,10 @@ ath12k_wifi7_dp_rx_h_defrag_reo_reinject(struct ath12k_dp *dp,
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 	buf_paddr = dma_map_single(ab->dev, defrag_skb->data, DP_RX_BUFFER_SIZE,
 				   DMA_FROM_DEVICE);
+	if (unlikely(dma_mapping_error(ab->dev, buf_paddr))) {
+		ath12k_err(ab, "DMA map failed for defrag reinject buffer\n");
+		return -ENOMEM;
+	}
 	ATH12K_SKB_CB(defrag_skb)->paddr = buf_paddr;
 	if (ab->ath12k_base_extn.ipa_ctx && ab->ath12k_base_extn.ipa_ctx->ipa_ops &&
 	    ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap)
@@ -2131,6 +2183,7 @@ ath12k_wifi7_dp_rx_h_defrag_reo_reinject(struct ath12k_dp *dp,
 	return 0;
 
 err_free_desc:
+	memset(&msdu0->buf_addr_info, 0, sizeof(msdu0->buf_addr_info));
 	spin_lock_bh(&dp->rx_desc_lock);
 	desc_info->in_use = false;
 	desc_info->skb = NULL;
@@ -2148,7 +2201,8 @@ err_unmap_dma:
 				ab->ath12k_base_extn.ipa_ctx->hdl);
 #endif
 	ath12k_core_dma_unmap_single(ab->dev, buf_paddr, DP_RX_BUFFER_SIZE,
-				     DMA_TO_DEVICE);
+				     DMA_FROM_DEVICE);
+	ATH12K_SKB_CB(defrag_skb)->paddr = 0;
 	return ret;
 }
 
@@ -2424,15 +2478,19 @@ ath12k_wifi7_dp_process_rx_err_buf(struct ath12k_pdev_dp *dp_pdev,
 	list_add_tail(&desc_info->list, used_list);
 
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
-	if (ab->ath12k_base_extn.ipa_ctx && ab->ath12k_base_extn.ipa_ctx->ipa_ops &&
+	if (desc_info->ipa_mapped &&
+	    ab->ath12k_base_extn.ipa_ctx && ab->ath12k_base_extn.ipa_ctx->ipa_ops &&
 	    ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap)
 		ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap(ab,
 				msdu, DP_RX_BUFFER_SIZE, 0,
 				ab->ath12k_base_extn.ipa_ctx->hdl);
 	desc_info->ipa_mapped = false;
-	ath12k_core_dma_unmap_single(ab->dev,
-				     ATH12K_SKB_CB(msdu)->paddr,
-				     DP_RX_BUFFER_SIZE, DMA_FROM_DEVICE);
+	if (ATH12K_SKB_CB(msdu)->paddr) {
+		ath12k_core_dma_unmap_single(ab->dev,
+					     ATH12K_SKB_CB(msdu)->paddr,
+					     DP_RX_BUFFER_SIZE, DMA_FROM_DEVICE);
+		ATH12K_SKB_CB(msdu)->paddr = 0;
+	}
 #else
 	ath12k_core_dmac_inv_range(desc_info->vaddr,
 				   desc_info->vaddr + DP_RX_BUFFER_SIZE);
@@ -2541,15 +2599,19 @@ static int ath12k_wifi7_handle_msdu_buftype(struct ath12k_dp *dp,
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 	{
 		struct ath12k_base *ab = dp->ab;
-		if (ab->ath12k_base_extn.ipa_ctx &&
+		if (desc_info->ipa_mapped &&
+		    ab->ath12k_base_extn.ipa_ctx &&
 		    ab->ath12k_base_extn.ipa_ctx->ipa_ops &&
 		    ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap)
 			ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap(ab,
 					msdu, DP_RX_BUFFER_SIZE, 0,
 					ab->ath12k_base_extn.ipa_ctx->hdl);
-		ath12k_core_dma_unmap_single(dp->dev, ATH12K_SKB_CB(msdu)->paddr,
-					     DP_RX_BUFFER_SIZE, DMA_FROM_DEVICE);
 		desc_info->ipa_mapped = false;
+		if (ATH12K_SKB_CB(msdu)->paddr) {
+			ath12k_core_dma_unmap_single(dp->dev, ATH12K_SKB_CB(msdu)->paddr,
+						     DP_RX_BUFFER_SIZE, DMA_FROM_DEVICE);
+			ATH12K_SKB_CB(msdu)->paddr = 0;
+		}
 	}
 #endif
 	dev_kfree_skb_any(msdu);
@@ -3410,15 +3472,19 @@ int ath12k_wifi7_dp_rx_process_wbm_err(struct ath12k_dp *dp,
 		desc_info->skb = NULL;
 
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
-		if (ab->ath12k_base_extn.ipa_ctx &&
+		if (desc_info->ipa_mapped &&
+		    ab->ath12k_base_extn.ipa_ctx &&
 		    ab->ath12k_base_extn.ipa_ctx->ipa_ops &&
 		    ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap)
 			ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_rx_buf_smmu_map_unmap(ab,
 					msdu, DP_RX_BUFFER_SIZE, 0,
 					ab->ath12k_base_extn.ipa_ctx->hdl);
 		desc_info->ipa_mapped = false;
-		ath12k_core_dma_unmap_single(dp->dev, ATH12K_SKB_CB(msdu)->paddr,
-					     DP_RX_BUFFER_SIZE, DMA_FROM_DEVICE);
+		if (ATH12K_SKB_CB(msdu)->paddr) {
+			ath12k_core_dma_unmap_single(dp->dev, ATH12K_SKB_CB(msdu)->paddr,
+						     DP_RX_BUFFER_SIZE, DMA_FROM_DEVICE);
+			ATH12K_SKB_CB(msdu)->paddr = 0;
+		}
 #endif
 		device_id = desc_info->device_id;
 		partner_dp = ath12k_dp_hw_grp_to_dp(dp_hw_grp, device_id);
@@ -4250,8 +4316,7 @@ int ath12k_wifi7_dp_pdev_alloc(struct ath12k_base *ab)
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_pdev_dp *dp_pdev;
 	struct ath12k *ar;
-	int ret;
-	int i;
+	int ret, i, j;
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ret = ath12k_dp_ppe_rxole_rxdma_cfg(ab);
@@ -4293,16 +4358,23 @@ int ath12k_wifi7_dp_pdev_alloc(struct ath12k_base *ab)
 			ret = ath12k_dp_mon_pdev_init(dp_pdev);
 			if (ret) {
 				ath12k_warn(ab, "failed to initialize mon pdev %d\n", i);
-				goto err;
+				goto err_cleanup_pdevs;
 			}
 
 			ret = ath12k_dp_mon_pdev_rx_alloc(dp_pdev, i);
-			if (ret)
-				goto err;
+			if (ret) {
+				ath12k_warn(ab,
+					    "failed to alloc rx filter for pdev %d\n",
+					    i);
+				goto err_mon_pdev_deinit;
+			}
 
 			ret = ath12k_dp_mon_pdev_rx_htt_setup(dp_pdev, i);
-			if (ret)
-				goto err;
+			if (ret) {
+				ath12k_warn(ab,
+					    "failed to setup rx htt for pdev %d\n", i);
+				goto err_mon_pdev_rx_free;
+			}
 
 			dp_pdev->dp_mon_pdev_configured = true;
 		}
@@ -4311,7 +4383,7 @@ int ath12k_wifi7_dp_pdev_alloc(struct ath12k_base *ab)
 	ret = ath12k_dp_ppeds_start(ab);
 	if (ret) {
 		ath12k_err(ab, "failed to start DP PPEDS\n");
-		goto err;
+		goto err_cleanup_pdevs;
 	}
 
 	spin_lock_bh(&dp->dp_lock);
@@ -4324,8 +4396,23 @@ int ath12k_wifi7_dp_pdev_alloc(struct ath12k_base *ab)
 	dp->num_radios = ab->num_radios;
 
 	return ret;
-err:
-	ath12k_wifi7_dp_pdev_free(ab);
+err_mon_pdev_rx_free:
+	/* Clean up the current pdev's RX allocation */
+	ath12k_dp_mon_pdev_rx_free(dp_pdev);
+err_mon_pdev_deinit:
+	/* Clean up the current pdev's monitor initialization */
+	ath12k_dp_mon_pdev_deinit(dp_pdev);
+err_cleanup_pdevs:
+	/* Clean up all previously configured pdevs */
+	for (j = 0; j < i; j++) {
+		ar = ab->pdevs[j].ar;
+		if (ar->dp.dp_mon_pdev_configured) {
+			ath12k_dp_mon_pdev_rx_free(&ar->dp);
+			ath12k_dp_mon_pdev_deinit(&ar->dp);
+			ar->dp.dp_mon_pdev_configured = false;
+		}
+	}
+
 	ath12k_dp_ppeds_stop(ab);
 out:
 	return ret;

@@ -1794,16 +1794,28 @@ int ath12k_wmi_send_peer_create_cmd(struct ath12k *ar,
 }
 
 int ath12k_wmi_send_peer_delete_cmd(struct ath12k *ar,
-				    const u8 *peer_addr, u8 vdev_id)
+				    const u8 *peer_addr, u8 vdev_id,
+				    struct ath12k_sta *ahsta)
 {
+	struct ath12k_hw_group *ag = ar->ab->ag;
 	struct ath12k_wmi_pdev *wmi = ar->wmi;
 	struct wmi_peer_delete_cmd *cmd;
+	struct ath12k_wmi_peer_delete_mlo_params *mlo_params;
 	struct sk_buff *skb;
-	int ret;
+	struct wmi_tlv *tlv;
+	void *ptr;
+	u32 mlo_hw_link_id_bitmap = 0;
+	int ret, len;
 
-	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
+	if (ahsta)
+		mlo_hw_link_id_bitmap = ahsta->mlo_hw_link_id_bitmap;
+
+	len = sizeof(*cmd) + sizeof(*mlo_params) + TLV_HDR_SIZE;
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
 	if (!skb)
 		return -ENOMEM;
+
+	ptr = skb->data;
 
 	cmd = (struct wmi_peer_delete_cmd *)skb->data;
 	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_PEER_DELETE_CMD,
@@ -1812,9 +1824,33 @@ int ath12k_wmi_send_peer_delete_cmd(struct ath12k *ar,
 	ether_addr_copy(cmd->peer_macaddr.addr, peer_addr);
 	cmd->vdev_id = cpu_to_le32(vdev_id);
 
+	ptr += sizeof(*cmd);
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, sizeof(*mlo_params));
+
+	ptr += TLV_HDR_SIZE;
+	mlo_params = ptr;
+	mlo_params->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_MLO_PARAMS_PEER_DELETE,
+							sizeof(*mlo_params));
+
+	if (ag && (ath12k_hw_group_recovery_in_progress(ag) ||
+	    (ahsta && ahsta->peer_delete_send_mlo_hw_bitmap)) &&
+	    mlo_hw_link_id_bitmap)
+		mlo_hw_link_id_bitmap &= ~BIT(ar->pdev->hw_link_id);
+	else
+		mlo_hw_link_id_bitmap = 0;
+
+	mlo_params->mlo_hw_link_id_bitmap = cpu_to_le32(mlo_hw_link_id_bitmap);
+
 	ath12k_dbg(ar->ab, ATH12K_DBG_PEER | ATH12K_DBG_MLME,
-		   "WMI peer delete vdev_id %d peer_addr %pM num_peer : %d\n",
-		   vdev_id,  peer_addr, ar->num_peers);
+		   "WMI peer delete vdev_id %d peer_addr %pM num_peer : %d hw_link_id_bitmap 0x%x\n",
+		   vdev_id,  peer_addr, ar->num_peers, mlo_hw_link_id_bitmap);
+
+	if (ahsta && ahsta->peer_delete_send_mlo_hw_bitmap) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
+			   "WMI peer delete peer_delete_send_mlo_hw_bitmap: 0x%x\n",
+			   ahsta->peer_delete_send_mlo_hw_bitmap);
+	}
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_PEER_DELETE_CMDID);
 	if (ret) {
@@ -3645,7 +3681,8 @@ int ath12k_wmi_update_scan_chan_list(struct ath12k *ar,
 }
 
 void ath12k_wmi_start_scan_init(struct ath12k *ar,
-				struct ath12k_wmi_scan_req_arg *arg)
+				struct ath12k_wmi_scan_req_arg *arg,
+				enum nl80211_iftype vif_type)
 {
 	/* setup commonly used values */
 	arg->scan_req_id = 1;
@@ -3657,6 +3694,14 @@ void ath12k_wmi_start_scan_init(struct ath12k *ar,
 	arg->dwell_time_passive_6g = 70;
 	arg->min_rest_time = 50;
 	arg->max_rest_time = 500;
+
+	if (vif_type == NL80211_IFTYPE_STATION) {
+		arg->scan_priority = WMI_SCAN_PRIORITY_HIGH;
+		arg->dwell_time_active = 70;
+		arg->dwell_time_active_2g = 70;
+		arg->dwell_time_active_6g = 80;
+		arg->dwell_time_passive_6g = 80;
+	}
 
 	if (ar->scan_min_rest_time)
 		arg->min_rest_time = ar->scan_min_rest_time;
@@ -10720,7 +10765,8 @@ ath12k_pdev_bss_chan_info_event(struct ath12k_base *ab, struct sk_buff *skb)
 	survey->noise     = le32_to_cpu(bss_ch_info_ev.noise_floor);
 	survey->time      = div_u64(total, cc_freq_hz);
 	survey->time_busy = div_u64(busy, cc_freq_hz);
-	survey->time_rx   = div_u64(rx_bss, cc_freq_hz);
+	survey->time_rx   = div_u64(rx, cc_freq_hz);
+	survey->time_bss_rx = div_u64(rx_bss, cc_freq_hz);
 	survey->time_tx   = div_u64(tx, cc_freq_hz);
 	survey->filled   |= (SURVEY_INFO_NOISE_DBM |
 			     SURVEY_INFO_TIME |

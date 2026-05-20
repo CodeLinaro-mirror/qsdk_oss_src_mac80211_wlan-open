@@ -1203,7 +1203,9 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
 	ab->msi.config = &ath12k_wifi7_msi_config[ATH12K_MSI_CONFIG_PCI];
 	pci_set_drvdata(pdev, ab);
 	spin_lock_init(&ab_pci->window_lock);
-
+#ifdef PLATFORM_SDX85
+	ab->fw_recovery_support = ATH12K_FW_RECOVERY_ENABLE_AUTO;
+#endif
 	ret = ath12k_pci_claim(ab_pci, pdev);
 	if (ret) {
 		ath12k_err(ab, "failed to claim device: %d\n", ret);

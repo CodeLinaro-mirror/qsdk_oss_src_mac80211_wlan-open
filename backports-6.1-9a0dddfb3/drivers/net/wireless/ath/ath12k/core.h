@@ -246,6 +246,10 @@ struct ath12k_skb_cb {
 	u32 cipher;
 	u8 flags;
 	u8 link_id;
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	u8 ipa_hdl;
+#endif
+
 };
 
 struct ath12k_skb_rxcb {
@@ -839,6 +843,7 @@ struct ath12k_vif {
 	/* indicates bitmap of link vif created in FW */
 	u32 links_map;
 	u8 last_scan_link;
+	u8 roc_link_id;
 	struct ath12k_vlan_iface *vlan_iface;
 	bool mode0_recover_bridge_vdevs;
 	u8 device_bitmap;
@@ -848,6 +853,8 @@ struct ath12k_vif {
 	struct ath12k_wmm_stats wmm_stats;
 #ifdef CPTCFG_ATH12K_DEBUGFS
 	struct dentry *debugfs_primary_link;
+	struct dentry *debugfs_linkstats;
+	struct dentry *mld_stats;
 	struct dentry *debugfs_wmm_stats_vdev;
 	struct dentry *debugfs_reset_wmm_stats;
 	struct pcpu_netdev_tid_stats __percpu *tstats;
@@ -1031,6 +1038,8 @@ struct ath12k_sta {
 	u8 primary_link_id;
 	/* indicates bitmap of devices where peers are created */
 	u8 device_bitmap;
+	u32 mlo_hw_link_id_bitmap;
+	bool peer_delete_send_mlo_hw_bitmap;
 
 #ifdef CPTCFG_MAC80211_DEBUGFS
 	/* protected by conf_mutex */
@@ -1279,6 +1288,7 @@ struct ath12k {
 		bool is_roc:1;
 		bool roc_notify:1;
 		int roc_freq;
+		int scan_id;
 		struct wiphy_work vdev_clean_wk;
 		struct ath12k_link_vif *arvif;
 	} scan;
@@ -1701,6 +1711,7 @@ struct ath12k_hw_group {
 	bool wsi_remap_in_progress;
 	struct completion peer_cleanup_complete;
 	u64 wsi_peer_clean_timeout;
+	atomic_t mac80211_restart_pending;
 };
 
 /* Holds WSI info specific to each device, excluding WSI group info */

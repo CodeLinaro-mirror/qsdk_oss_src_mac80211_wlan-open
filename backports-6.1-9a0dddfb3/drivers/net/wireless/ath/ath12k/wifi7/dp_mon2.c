@@ -922,7 +922,7 @@ ath12k_wifi7_dp_mon_restitch_frags(struct sk_buff *mpdu,
 	struct hal_rx_mon_msdu_info *msdu_meta;
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_pdev_mon_dp_stats *mon_stats = &dp_pdev->dp_mon_pdev->mon_stats;
-	u32 hdr_frag_size, frag_size, frag_page_offset, msdu_llc_len;
+	u32 hdr_frag_size, frag_size, frag_page_offset, msdu_llc_len, pad_byte_holder;
 	u32 tot_msdu_len = 0;
 	u8 mpdu_buf_len;
 	u8 num_frags = ath12k_dp_mon_get_num_frags_in_fraglist(mpdu);
@@ -977,11 +977,20 @@ ath12k_wifi7_dp_mon_restitch_frags(struct sk_buff *mpdu,
 		ret = -EINVAL;
 		goto free_mpdu;
 	}
+	pad_byte_holder = ATH12K_DP_MON_RX_BUF_SIZE -
+				(frag_size + ATH12K_MON_RX_PKT_OFFSET);
 
 	/* Adjust frag[1] offset to skip decap header and L3 padding.
 	 * This ensures the fragment points to the start of the L3 payload.
 	 */
 	frag_page_offset = ATH12K_DP_MON_DECAP_HDR_SIZE + ATH12K_DP_MON_L3_HDR_PAD;
+
+	frag_addr = ath12k_dp_mon_skb_get_frag_addr(mpdu, 1);
+	ethvlan = (struct vlan_ethhdr *)(frag_addr + ATH12K_DP_MON_L3_HDR_PAD);
+	if (ethvlan->h_vlan_proto == htons(ETH_P_8021Q))
+		frag_page_offset += ATH12K_DP_MON_ETH_TYPE_VLAN_LEN;
+	else if (ethvlan->h_vlan_proto == htons(ETH_P_8021AD))
+		frag_page_offset += ATH12K_DP_MON_ETH_TYPE_DOUBLE_VLAN_LEN;
 
 	if (unlikely(frag_size <= frag_page_offset)) {
 		ath12k_dbg(dp->ab, ATH12K_DBG_DP_MON_RX,
@@ -990,13 +999,6 @@ ath12k_wifi7_dp_mon_restitch_frags(struct sk_buff *mpdu,
 		ret = -EINVAL;
 		goto free_mpdu;
 	}
-
-	frag_addr = ath12k_dp_mon_skb_get_frag_addr(mpdu, 1);
-	ethvlan = (struct vlan_ethhdr *)(frag_addr + ATH12K_DP_MON_L3_HDR_PAD);
-	if (ethvlan->h_vlan_proto == htons(ETH_P_8021Q))
-		frag_page_offset += ATH12K_DP_MON_ETH_TYPE_VLAN_LEN;
-	else if (ethvlan->h_vlan_proto == htons(ETH_P_8021AD))
-		frag_page_offset += ATH12K_DP_MON_ETH_TYPE_DOUBLE_VLAN_LEN;
 
 	ret = ath12k_dp_mon_adj_frag_offset(mpdu, 1, frag_page_offset);
 	if (unlikely(ret)) {
@@ -1019,9 +1021,7 @@ ath12k_wifi7_dp_mon_restitch_frags(struct sk_buff *mpdu,
 			struct ath12k_dp_mon_pad_params params = {
 				.frag_size = frag_size,
 				.msdu_llc_len = msdu_llc_len,
-				.pad_byte_holder =
-					ATH12K_DP_MON_RX_BUF_SIZE -
-						(frag_size + ATH12K_MON_RX_PKT_OFFSET),
+				.pad_byte_holder = pad_byte_holder,
 				.frag_idx = 1,
 				.is_head_msdu = true,
 			};
@@ -1523,6 +1523,7 @@ ath12k_wifi7_dp_mon_rx_process_ppdu(struct work_struct *work)
 			if (filter_category == DP_MPDU_FILTER_CATEGORY_MO)
 				goto free_buf;
 
+			rcu_read_lock_bh();
 			spin_lock_bh(&dp->dp_lock);
 
 			if (!list_empty(&dp->neighbor_peers)) {
@@ -1578,6 +1579,7 @@ ath12k_wifi7_dp_mon_rx_process_ppdu(struct work_struct *work)
 
 unlock:
 			spin_unlock_bh(&dp->dp_lock);
+			rcu_read_unlock_bh();
 free_buf:
 			page_frag_free(status_desc->mon_buf);
 			mon_stats->status_buf_free++;

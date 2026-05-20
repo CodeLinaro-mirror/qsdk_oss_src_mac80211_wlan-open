@@ -8,6 +8,9 @@
 #include "../hif.h"
 #include "hal.h"
 #include "hal_rx.h"
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#include "qcn_extns/ipa/dp_ipa.h"
+#endif
 
 static
 void ath12k_wifi7_hal_reo_set_desc_hdr(struct hal_desc_header *hdr,
@@ -982,14 +985,25 @@ void ath12k_hal_reo_ring_ipa_ctrl_hash_ix0_setup(struct ath12k_base *ab)
 
 	curr = ath12k_hif_read32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_IX_0);
 
-	val = HAL_WIFI7_HASH_ROUTING_RING_SW4 |
-			HAL_WIFI7_HASH_ROUTING_RING_SW4 << 4 |
-			HAL_WIFI7_HASH_ROUTING_RING_SW4 << 8 |
-			HAL_WIFI7_HASH_ROUTING_RING_SW4 << 12 |
-			HAL_WIFI7_HASH_ROUTING_RING_SW4 << 16 |
-			HAL_WIFI7_HASH_ROUTING_RING_SW4 << 20 |
-			HAL_WIFI7_HASH_ROUTING_RING_SW4 << 24 |
-			HAL_WIFI7_HASH_ROUTING_RING_SW4 << 28;
+	if (ath12k_ipa_is_vlan_enabled()) {
+		val = HAL_WIFI7_HASH_ROUTING_RING_SW4 |
+				HAL_WIFI7_HASH_ROUTING_RING_SW4 << 4 |
+				HAL_WIFI7_HASH_ROUTING_RING_SW4 << 8 |
+				HAL_WIFI7_HASH_ROUTING_RING_SW3 << 12 |
+				HAL_WIFI7_HASH_ROUTING_RING_SW4 << 16 |
+				HAL_WIFI7_HASH_ROUTING_RING_SW4 << 20 |
+				HAL_WIFI7_HASH_ROUTING_RING_SW4 << 24 |
+				HAL_WIFI7_HASH_ROUTING_RING_SW4 << 28;
+	} else {
+		val = HAL_WIFI7_HASH_ROUTING_RING_SW4 |
+				HAL_WIFI7_HASH_ROUTING_RING_SW4 << 4 |
+				HAL_WIFI7_HASH_ROUTING_RING_SW4 << 8 |
+				HAL_WIFI7_HASH_ROUTING_RING_SW4 << 12 |
+				HAL_WIFI7_HASH_ROUTING_RING_SW4 << 16 |
+				HAL_WIFI7_HASH_ROUTING_RING_SW4 << 20 |
+				HAL_WIFI7_HASH_ROUTING_RING_SW4 << 24 |
+				HAL_WIFI7_HASH_ROUTING_RING_SW4 << 28;
+	}
 
 	ath12k_hif_write32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_IX_0,
 			   val);

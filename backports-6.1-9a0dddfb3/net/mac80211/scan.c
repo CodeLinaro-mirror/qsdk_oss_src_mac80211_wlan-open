@@ -491,7 +491,6 @@ static void __ieee80211_scan_completed(struct ieee80211_hw *hw, bool aborted)
 	}
 
 	if (scan_req != local->int_scan_req && scan_req &&
-		(scan_req->wdev == &scan_sdata->wdev) &&
 		(scan_req->wiphy == local->hw.wiphy)) {
 		local->scan_info.aborted = aborted;
 		cfg80211_scan_done(scan_req, &local->scan_info);

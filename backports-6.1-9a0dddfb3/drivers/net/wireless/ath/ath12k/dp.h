@@ -390,6 +390,7 @@ struct ath12k_rx_desc_info {
 	u64 rsvd0;
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 	bool ipa_mapped;
+	u8 ipa_hdl;
 #endif
 };
 
@@ -699,6 +700,7 @@ struct ath12k_dp {
 	struct dp_rxdma_ring rx_refill_buf_ring;
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 	struct dp_rxdma_ring rx_refill_buf_ring2;
+	struct dp_rxdma_ring rx_refill_buf_ring3;
 #endif
 	struct dp_srng rx_mac_buf_ring[MAX_RXDMA_PER_PDEV];
 	struct dp_srng rxdma_err_dst_ring[MAX_RXDMA_PER_PDEV];
@@ -736,7 +738,7 @@ struct ath12k_dp {
 	/*Neighbors Peer list for NAC RSSI*/
 	struct list_head neighbor_peers;
 	int num_nrps;
-	unsigned long ppeds_service_running;
+	unsigned long service_rings_running;
 	bool stats_disable;
 
 	/* HW link ID position in PPDU_ID */
@@ -1105,6 +1107,7 @@ void ath12k_dp_srng_common_cleanup(struct ath12k_base *ab);
 enum ath12k_dp_eapol_key_type ath12k_dp_get_eapol_subtype(u8 *data);
 ssize_t ath12k_dp_dump_device_ring_stats(struct ath12k_base *ab,
 					 char *buf, int size);
+void ath12k_dp_clear_link_desc_pool(struct ath12k_dp *dp);
 void ath12k_dp_get_device_stats(struct ath12k_dp *dp,
 				struct ath12k_telemetry_dp_device *telemetry_device);
 int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,

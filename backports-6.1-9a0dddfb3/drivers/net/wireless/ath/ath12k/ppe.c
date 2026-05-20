@@ -455,13 +455,14 @@ static int ath12k_dp_ppeds_tx_comp_poll(struct napi_struct *napi, int budget)
 	int total_budget = (budget << 2) - 1;
 	int work_done;
 
-	set_bit(ATH12K_DP_PPEDS_TX_COMP_NAPI_BIT, &dp->ppeds_service_running);
+	set_bit(ATH12K_DP_PPEDS_TX_COMP_NAPI_BIT, &dp->service_rings_running);
 	work_done = ath12k_ppeds_tx_completion_handler(ab, total_budget);
 	if (!ab->stats_disable)
 		ab->dp->ppe.ppeds_stats.tx_desc_freed += work_done;
 
 	work_done = (work_done + 1) >> 2;
-	clear_bit(ATH12K_DP_PPEDS_TX_COMP_NAPI_BIT, &dp->ppeds_service_running);
+	clear_bit(ATH12K_DP_PPEDS_TX_COMP_NAPI_BIT,
+		  &dp->service_rings_running);
 
 	if (budget > work_done) {
 		napi_complete(napi);
@@ -524,7 +525,7 @@ void ath12k_ppeds_notify_napi_done_v2(int ds_node_id)
 	struct ath12k_base *ab = ds_node_map[ds_node_id];
 	struct ath12k_dp *dp = ab->dp;
 
-	clear_bit(ATH12K_DP_PPEDS_NAPI_DONE_BIT, &dp->ppeds_service_running);
+	clear_bit(ATH12K_DP_PPEDS_NAPI_DONE_BIT, &dp->service_rings_running);
 
 	if (ab->dp_umac_reset.umac_pre_reset_in_prog)
 		ath12k_umac_reset_notify_pre_reset_done(ab);
@@ -1300,8 +1301,11 @@ int ath12k_ppeds_attach(struct ath12k_base *ab)
 	for (i = 0; i < PPE_VP_ENTRIES_MAX; i++) {
 		ab->dp->ppe.ppe_vp_tbl_registered[i] = 0;
 		ab->dp->ppe.ppe_vp_search_idx_tbl_set[i] = 0;
-		ab->dp->ppe.ppe_vp_profile[i].is_configured = false;
+		memset(&ab->dp->ppe.ppe_vp_profile[i], 0, sizeof(struct ath12k_dp_ppe_vp_profile));
 	}
+
+	ab->dp->ppe.num_ppe_vp_profiles = 0;
+	ab->dp->ppe.num_ppe_vp_entries = 0;
 
 	ds_node_id = ab->dp->ppe.nss_plugin_ops->ds_inst_alloc(&ppeds_ops_v2,
 							       sizeof(struct ath12k_base *));
@@ -1380,8 +1384,11 @@ int ath12k_ppeds_detach(struct ath12k_base *ab)
 	for (i = 0; i < PPE_VP_ENTRIES_MAX; i++) {
 		ab->dp->ppe.ppe_vp_tbl_registered[i] = 0;
 		ab->dp->ppe.ppe_vp_search_idx_tbl_set[i] = 0;
-		ab->dp->ppe.ppe_vp_profile[i].is_configured = false;
+		memset(&ab->dp->ppe.ppe_vp_profile[i], 0, sizeof(struct ath12k_dp_ppe_vp_profile));
 	}
+
+	ab->dp->ppe.num_ppe_vp_profiles = 0;
+	ab->dp->ppe.num_ppe_vp_entries = 0;
 
 	ath12k_dbg(ab, ATH12K_DBG_PPE, "PPEDS detach success\n");
 
@@ -2122,7 +2129,7 @@ void ath12k_dp_ppeds_service_enable_disable(struct ath12k_base *ab,
 	struct ath12k_dp *dp = ab->dp;
 
 	if (enable)
-		set_bit(ATH12K_DP_PPEDS_NAPI_DONE_BIT, &dp->ppeds_service_running);
+		set_bit(ATH12K_DP_PPEDS_NAPI_DONE_BIT, &dp->service_rings_running);
 
 	if (ab->dp->ppe.nss_plugin_ops)
 		ab->dp->ppe.nss_plugin_ops->service_status_update(ab->dp->ppe.ds_node_id, enable);

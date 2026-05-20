@@ -65,6 +65,9 @@ static inline void ieee80211_rx_stats_reason(struct ieee80211_sub_if_data *sdata
 	if (!sdata->txrx_stats)
 		return;
 
+	if (tid >= IEEE80211_NUM_TIDS)
+		return;
+
 	txrx_stats = this_cpu_ptr(sdata->txrx_stats);
 	u64_stats_update_begin(&txrx_stats->syncp);
 	switch (reason) {
@@ -103,6 +106,9 @@ static inline void ieee80211_rx_drop_stats_reason(struct ieee80211_sub_if_data *
 	struct pcpu_txrx_stats *txrx_stats;
 
 	if (!sdata->txrx_stats)
+		return;
+
+	if (tid >= IEEE80211_NUM_TIDS)
 		return;
 
 	txrx_stats = this_cpu_ptr(sdata->txrx_stats);
@@ -6190,7 +6196,8 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 			rx.sdata = prev;
 			if (prev_flag) {
 				status->link_valid = (prev_linkid >= 0);
-				if (status->link_valid)
+				if (status->link_valid &&
+				    prev_linkid != IEEE80211_MLD_MAX_NUM_LINKS)
 					status->link_id = prev_linkid;
 			}
 			ieee80211_rx_for_interface(&rx, skb, false, is_mgmt);
@@ -6262,7 +6269,8 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 		if (flag) {
 			rx.sdata = prev;
 			status->link_valid = !!valid_links;
-			if (status->link_valid)
+			if (status->link_valid &&
+			    link_id != IEEE80211_MLD_MAX_NUM_LINKS)
 				status->link_id = link_id;
 
 			if (ieee80211_rx_for_interface(&rx, skb, true, is_mgmt))

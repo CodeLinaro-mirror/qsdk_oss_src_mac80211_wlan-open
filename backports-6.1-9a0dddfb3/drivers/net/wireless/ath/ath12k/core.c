@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ *  Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/module.h>
@@ -68,6 +68,12 @@ unsigned int ath12k_ppe_ds_enabled = true;
 module_param_named(ppe_ds_enable, ath12k_ppe_ds_enabled, uint, 0644);
 MODULE_PARM_DESC(ppe_ds_enable, "ppe_ds_enable: 0-disable, 1-enable");
 
+#define ATH12K_PROBE_ORDER_MASK 0xF
+#define ATH12K_PROBE_ORDER_SHIFT 4
+int ath12k_valid_probe_order;
+unsigned int ath12k_probe_order_param;
+module_param_named(probe_order, ath12k_probe_order_param, uint, 0644);
+MODULE_PARM_DESC(probe_order, "Probe order (hex bitfield, 4-bit per device)");
 #ifdef CPTCFG_ATH12K_POWER_OPTIMIZATION
 extern struct ath12k_ps_context ath12k_global_ps_ctx;
 #endif
@@ -1068,7 +1074,7 @@ void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag)
 			ath12k_qmi_firmware_stop(ab);
 			ath12k_hif_power_down(ab, false);
 			ath12k_core_to_group_ref_put(ab);
-			ath12k_qmi_free_target_mem_chunk(ab);
+			ath12k_qmi_free_resource(ab);
 			ab->pm_suspend = true;
 			ath12k_info(ab, "Q6 power down\n");
 		}
@@ -2686,6 +2692,12 @@ static void ath12k_core_restart(struct work_struct *work)
 			goto exit_restart;
 		}
 
+		if (atomic_cmpxchg(&ag->mac80211_restart_pending, 0, 1)) {
+			ath12k_warn(ab, "mac80211 restart already pending, skip\n");
+			mutex_unlock(&ag->mutex);
+			goto exit_restart;
+		}
+
 		for (i = 0; i < ag->num_hw; i++) {
 			ah = ath12k_ag_to_ah(ag, i);
 			ieee80211_restart_hw(ah->hw);
@@ -3119,6 +3131,7 @@ static int ath12k_mlo_core_recovery_reconfig_link_bss(struct ath12k *ar,
 	int ret = -1;
 	u8 link_id;
 	bool is_bridge_vdev;
+	struct ath12k_dp_peer_create_params dp_params = {};
 
 	lockdep_assert_wiphy(ah->hw->wiphy);
 
@@ -3147,6 +3160,12 @@ static int ath12k_mlo_core_recovery_reconfig_link_bss(struct ath12k *ar,
 	}
 
 	if (!is_bridge_vdev) {
+		if (!ctx->def.chan) {
+			ath12k_dbg(ab, ATH12K_DBG_MODE1_RECOVERY,
+				   "Skipping vdev start for MLD %pM as chanctx is not assigned\n",
+				   arvif->bssid);
+			goto exit;
+		}
 		ath12k_mac_vif_cache_flush(ar, arvif);
 
 		if (ar->supports_6ghz && ctx->def.chan->band == NL80211_BAND_6GHZ &&
@@ -3183,6 +3202,16 @@ static int ath12k_mlo_core_recovery_reconfig_link_bss(struct ath12k *ar,
 	if (ab->hw_params->vdev_start_delay &&
 	    (ahvif->vdev_type == WMI_VDEV_TYPE_AP ||
 	    ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR)) {
+		dp_params.is_vdev_peer = true;
+		dp_params.hw_link_id = ar->hw_link_id;
+
+		ret = ath12k_dp_peer_create(&ah->dp_hw, arvif->bssid, &dp_params, vif);
+		if (ret) {
+			ath12k_warn(ab, "failed to create dp_peer for vdev AP %d: %d\n",
+				    arvif->vdev_id, ret);
+			goto exit;
+		}
+
 		param.vdev_id = arvif->vdev_id;
 		param.peer_type = WMI_PEER_TYPE_DEFAULT;
 		param.peer_addr = ar->mac_addr;
@@ -3194,13 +3223,6 @@ static int ath12k_mlo_core_recovery_reconfig_link_bss(struct ath12k *ar,
 			goto exit;
                 }
         }
-
-	if (!is_bridge_vdev && !ctx->def.chan) {
-		ath12k_dbg(ab, ATH12K_DBG_MODE1_RECOVERY,
-			   "Skipping vdev start for MLD %pM as chanctx is not assigned\n",
-			   arvif->bssid);
-		goto exit;
-	}
 
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
 		ret = ath12k_mac_monitor_start(ar);
@@ -4064,6 +4086,7 @@ static struct ath12k_hw_group *ath12k_core_hw_group_alloc(struct ath12k_base *ab
 	mutex_init(&ag->mutex);
 	init_completion(&ag->umac_reset_complete);
 	init_completion(&ag->peer_cleanup_complete);
+	atomic_set(&ag->mac80211_restart_pending, 0);
 	ag->mlo_capable = false;
 	ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
 	ag->wsi_load_info = NULL;
@@ -4332,6 +4355,45 @@ static int ath12k_core_get_wsi_index(struct ath12k_hw_group *ag,
 	return 0;
 }
 
+static int validate_probe_order_param(unsigned int probe_order, u8 num_devices,
+					struct ath12k_base *ab)
+{
+	unsigned int temp_val = probe_order;
+	int i, max_soc = 0;
+	u8 seen_ids = 0;
+
+	while (temp_val) {
+		temp_val = temp_val >> ATH12K_PROBE_ORDER_SHIFT;
+		max_soc++;
+	}
+	temp_val = probe_order;
+	if (num_devices !=  max_soc) {
+		ath12k_dbg(ab, ATH12K_DBG_BOOT,
+				"Invalid module param\n");
+		return -1;
+	}
+	for (i = 0; i < num_devices; i++) {
+		unsigned int temp1_val = (temp_val >> (i *
+						ATH12K_PROBE_ORDER_SHIFT));
+		u8 device_id = temp1_val & ATH12K_PROBE_ORDER_MASK;
+		if ((device_id  == 0) || (device_id > num_devices)) {
+			ath12k_dbg(ab, ATH12K_DBG_BOOT,
+				"ath12k: invalid device ID %u at position %d in probe_order\n",
+					device_id, i);
+			return -1;
+		}
+		if (seen_ids & BIT(device_id)) {
+			ath12k_dbg(ab, ATH12K_DBG_BOOT,
+				"ath12k: duplicate device ID %u in probe_order\n",
+					 device_id);
+			return -1;
+		}
+		seen_ids |= BIT(device_id);
+
+	}
+	return 0;
+}
+
 static struct ath12k_hw_group *ath12k_core_hw_group_assign(struct ath12k_base *ab)
 {
 	struct ath12k_wsi_info *wsi = &ab->wsi_info;
@@ -4403,7 +4465,22 @@ exit:
 	}
 
 	ab->device_id = ag->num_probed++;
+	if (ath12k_probe_order_param) {
+		if (!ath12k_valid_probe_order) {
+			if (validate_probe_order_param(
+						ath12k_probe_order_param,
+						ag->num_devices, ab) == 0)
+				ath12k_valid_probe_order = 1;
+			else
+				ath12k_probe_order_param = 0;
+		}
 
+		if (ath12k_valid_probe_order) {
+			ab->device_id = (ath12k_probe_order_param &
+					ATH12K_PROBE_ORDER_MASK) - 1;
+			ath12k_probe_order_param >>= ATH12K_PROBE_ORDER_SHIFT;
+		}
+	}
 	if (ag->id != ATH12K_INVALID_GROUP_ID)
 		ab->is_static_bypassed = (ath12k_wsi_bypass_bmap & (1 << wsi->index));
 	else if (ath12k_wsi_bypass_bmap)
@@ -5076,6 +5153,9 @@ int ath12k_core_init(struct ath12k_base *ab)
 	if (ret)
 		ath12k_warn(ab, "failed to register panic handler: %d\n", ret);
 
+#ifdef CPTCFG_ATHDEBUG
+	athdbg_ops_register(ab);
+#endif
 	mutex_lock(&ath12k_hw_group_mutex);
 
 	ag = ath12k_core_hw_group_assign(ab);

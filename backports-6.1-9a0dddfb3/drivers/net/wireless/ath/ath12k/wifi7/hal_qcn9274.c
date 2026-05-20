@@ -153,7 +153,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 	[HAL_RXDMA_BUF] = {
 		.start_ring_id = HAL_SRNG_SW2RXDMA_BUF0,
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
-		.max_rings = 3,
+		.max_rings = 4,
 #else
 		.max_rings = 1,
 #endif
@@ -697,7 +697,8 @@ const struct ath12k_hw_hal_params ath12k_wifi7_hw_hal_params_ipq5332 = {
 			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW2_EN |
 			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW3_EN |
 			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW4_EN |
-			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW5_EN,
+			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW5_EN |
+			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW6_EN,
 	.link_desc_size = HAL_LINK_DESC_SIZE,
 	.num_mpdus_per_link_desc = HAL_NUM_MPDUS_PER_LINK_DESC,
 	.num_tx_msdus_per_link_desc = HAL_NUM_TX_MSDUS_PER_LINK_DESC,

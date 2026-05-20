@@ -233,8 +233,6 @@ void ath12k_dp_mon_rx_deliver_skb(struct ath12k_pdev_dp *dp_pdev,
 				  struct ieee80211_rx_status *status,
 				  struct hal_rx_mon_ppdu_info *ppduinfo)
 {
-	struct ath12k_dp *dp = dp_pdev->dp;
-	struct ath12k_base *ab = dp->ab;
 	static const struct ieee80211_radiotap_he known = {
 		.data1 = cpu_to_le16(IEEE80211_RADIOTAP_HE_DATA1_DATA_MCS_KNOWN |
 				     IEEE80211_RADIOTAP_HE_DATA1_BW_RU_ALLOC_KNOWN),
@@ -242,11 +240,6 @@ void ath12k_dp_mon_rx_deliver_skb(struct ath12k_pdev_dp *dp_pdev,
 	};
 	struct ieee80211_rx_status *rx_status;
 	struct ieee80211_radiotap_he *he = NULL;
-	struct ieee80211_sta *pubsta = NULL;
-	struct ath12k_dp_link_peer *peer;
-	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
-	bool is_mcbc = rxcb->is_mcbc;
-	u8 addr[ETH_ALEN] = {0};
 
 	status->link_valid = 0;
 	status->link_id = 0;
@@ -258,52 +251,13 @@ void ath12k_dp_mon_rx_deliver_skb(struct ath12k_pdev_dp *dp_pdev,
 		status->flag |= RX_FLAG_RADIOTAP_HE;
 	}
 
-	spin_lock_bh(&dp->dp_lock);
-	peer = ath12k_dp_link_peer_find_by_id(dp, ppduinfo->peer_id);
-	if (peer && peer->sta) {
-		memcpy(addr, peer->addr, ETH_ALEN);
-		pubsta = peer->sta;
-		if (pubsta->valid_links) {
-			status->link_valid = 1;
-			status->link_id = peer->link_id;
-		}
-	}
-
-	spin_unlock_bh(&dp->dp_lock);
-
-	ath12k_dbg(ab, ATH12K_DBG_DATA,
-		   "rx skb %p len %u peer %pM %u %s %s%s%s%s%s%s%s%s %srate_idx %u vht_nss %u freq %u band %u flag 0x%x fcs-err %i mic-err %i amsdu-more %i\n",
-		   msdu,
-		   msdu->len,
-		   addr,
-		   rxcb->tid,
-		   (is_mcbc) ? "mcast" : "ucast",
-		   (status->encoding == RX_ENC_LEGACY) ? "legacy" : "",
-		   (status->encoding == RX_ENC_HT) ? "ht" : "",
-		   (status->encoding == RX_ENC_VHT) ? "vht" : "",
-		   (status->encoding == RX_ENC_HE) ? "he" : "",
-		   (status->bw == RATE_INFO_BW_40) ? "40" : "",
-		   (status->bw == RATE_INFO_BW_80) ? "80" : "",
-		   (status->bw == RATE_INFO_BW_160) ? "160" : "",
-		   (status->bw == RATE_INFO_BW_320) ? "320" : "",
-		   status->enc_flags & RX_ENC_FLAG_SHORT_GI ? "sgi " : "",
-		   status->rate_idx,
-		   status->nss,
-		   status->freq,
-		   status->band, status->flag,
-		   !!(status->flag & RX_FLAG_FAILED_FCS_CRC),
-		   !!(status->flag & RX_FLAG_MMIC_ERROR),
-		   !!(status->flag & RX_FLAG_AMSDU_MORE));
-
-	ath12k_dbg_dump(ab, ATH12K_DBG_DP_RX, NULL, "dp rx msdu: ",
-			msdu->data, msdu->len);
 	rx_status = IEEE80211_SKB_RXCB(msdu);
 	*rx_status = *status;
 
 	if (!napi)
 		ieee80211_rx_ni(ath12k_dp_pdev_to_hw(dp_pdev), msdu);
 	else
-		ieee80211_rx_napi(ath12k_dp_pdev_to_hw(dp_pdev), pubsta, msdu, napi);
+		ieee80211_rx_napi(ath12k_dp_pdev_to_hw(dp_pdev), NULL, msdu, napi);
 }
 EXPORT_SYMBOL(ath12k_dp_mon_rx_deliver_skb);
 
@@ -1112,6 +1066,8 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 	}
 
 	peer->peer_stats.rx_retries = user_stats->mpdu_retry;
+	peer->rssi_comb = ppdu_info->rssi_comb;
+	ewma_avg_rssi_add(&peer->avg_rssi, ppdu_info->rssi_comb);
 
 	if (!ath12k_extd_rx_stats_enabled(pdev_dp->ar))
 		return;
@@ -1122,9 +1078,6 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 
 	ppdu_info->usr_nss_sum += user_stats->nss;
 	ppdu_info->usr_ru_tones_sum += user_stats->ul_ofdma_ru_width;
-
-	peer->rssi_comb = ppdu_info->rssi_comb;
-	ewma_avg_rssi_add(&peer->avg_rssi, ppdu_info->rssi_comb);
 
 	num_msdu = user_stats->tcp_msdu_count + user_stats->tcp_ack_msdu_count +
 		   user_stats->udp_msdu_count + user_stats->other_msdu_count;
@@ -2139,9 +2092,9 @@ ath12k_dp_mon_fill_rx_rate(struct ath12k_pdev_dp *dp_pdev,
 		rx_status->encoding = RX_ENC_HT;
 		rx_status->bw = ath12k_mac_bw_to_mac80211_bw(bw);
 		if (rate_mcs > ATH12K_HT_MCS_MAX) {
-			ath12k_warn(ar->ab,
-				    "Received with invalid mcs in HT mode %d\n",
-				     rate_mcs);
+			ath12k_dbg(ar->ab, ATH12K_DBG_DP_MON_RX,
+				   "Received with invalid mcs in HT mode %d\n",
+				   rate_mcs);
 			break;
 		}
 		rx_status->rate_idx = rate_mcs + (8 * (nss - 1));
@@ -2154,9 +2107,9 @@ ath12k_dp_mon_fill_rx_rate(struct ath12k_pdev_dp *dp_pdev,
 		rx_status->nss = nss;
 		rx_status->rate_idx = rate_mcs;
 		if (rate_mcs > ATH12K_VHT_MCS_MAX) {
-			ath12k_warn(ar->ab,
-				    "Received with invalid mcs in VHT mode %d\n",
-				     rate_mcs);
+			ath12k_dbg(ar->ab, ATH12K_DBG_DP_MON_RX,
+				   "Received with invalid mcs in VHT mode %d\n",
+				   rate_mcs);
 			break;
 		}
 		if (sgi)
@@ -2165,9 +2118,9 @@ ath12k_dp_mon_fill_rx_rate(struct ath12k_pdev_dp *dp_pdev,
 	case RX_MSDU_START_PKT_TYPE_11AX:
 		rx_status->rate_idx = rate_mcs;
 		if (rate_mcs > ATH12K_HE_MCS_MAX) {
-			ath12k_warn(ar->ab,
-				    "Received with invalid mcs in HE mode %d\n",
-				    rate_mcs);
+			ath12k_dbg(ar->ab, ATH12K_DBG_DP_MON_RX,
+				   "Received with invalid mcs in HE mode %d\n",
+				   rate_mcs);
 			break;
 		}
 		rx_status->encoding = RX_ENC_HE;
@@ -2178,9 +2131,9 @@ ath12k_dp_mon_fill_rx_rate(struct ath12k_pdev_dp *dp_pdev,
 	case RX_MSDU_START_PKT_TYPE_11BE:
 		rx_status->rate_idx = rate_mcs;
 		if (rate_mcs > ATH12K_EHT_MCS_MAX) {
-			ath12k_warn(ar->ab,
-				    "Received with invalid mcs in EHT mode %d\n",
-				    rate_mcs);
+			ath12k_dbg(ar->ab, ATH12K_DBG_DP_MON_RX,
+				   "Received with invalid mcs in EHT mode %d\n",
+				   rate_mcs);
 			break;
 		}
 		rx_status->encoding = RX_ENC_EHT;
@@ -2189,7 +2142,7 @@ ath12k_dp_mon_fill_rx_rate(struct ath12k_pdev_dp *dp_pdev,
 		rx_status->he_gi = ath12k_he_gi_to_nl80211_he_gi(sgi);
 		break;
 	default:
-		ath12k_dbg(ar->ab, ATH12K_DBG_DATA,
+		ath12k_dbg(ar->ab, ATH12K_DBG_DP_MON_RX,
 			   "monitor receives invalid preamble type %d",
 			    pkt_type);
 		break;
