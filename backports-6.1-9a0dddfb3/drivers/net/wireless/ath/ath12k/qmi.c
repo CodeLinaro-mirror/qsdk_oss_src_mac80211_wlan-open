@@ -5306,8 +5306,8 @@ success:
 			goto out_qmi_cal;
 		}
 
-		ath12k_dbg(ab, ATH12K_DBG_QMI, "qmi caldata downloaded: type: %u\n",
-			   file_type);
+		ath12k_info(ab, "qmi caldata downloaded: type: %u, size: %u\n",
+			    file_type, fw_size);
 
 out_qmi_cal:
 		if (!ab->qmi.target.eeprom_caldata)
@@ -5328,7 +5328,8 @@ out_qmi_cal:
 
 out:
 	ath12k_core_free_bdf(ab, &bd);
-	ath12k_dbg(ab, ATH12K_DBG_QMI, "qmi BDF download sequence completed\n");
+	ath12k_info(ab, "qmi BDF download sequence completed for type: %u, size: %u\n",
+		    type, fw_size);
 
 	return ret;
 }
