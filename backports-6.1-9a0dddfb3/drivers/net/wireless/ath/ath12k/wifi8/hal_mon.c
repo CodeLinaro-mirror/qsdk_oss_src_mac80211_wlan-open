@@ -2749,6 +2749,9 @@ ath12k_wifi8_hal_mon_rx_ppdu_eu_stats_info_get(const void *tlv_data, u32 userid,
 	case HAL_RX_PREAMBLE_11BE:
 		ppdu_info->is_eht = true;
 		break;
+	case HAL_RX_PREAMBLE_11BN:	/* UHR */
+		ppdu_info->is_uhr = true;
+		break;
 	default:
 		break;
 	}
@@ -2840,6 +2843,9 @@ ath12k_wifi8_hal_mon_rx_ppdu_eu_stats_info_get_compact(
 		break;
 	case HAL_RX_PREAMBLE_11BE:
 		ppdu_info->is_eht = true;
+		break;
+	case HAL_RX_PREAMBLE_11BN:	/* UHR */
+		ppdu_info->is_uhr = true;
 		break;
 	default:
 		break;

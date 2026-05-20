@@ -2755,6 +2755,11 @@ static int ath12k_vendor_get_rx_mon_stats_size(void)
 					    ATH12K_EHT_MCS_NUM;
 	attr_size += nla_total_size_nested(payload_size);
 
+	/* BN (UHR/11BN) MCS array */
+	payload_size = nla_total_size_64bit(sizeof(stats.pkt_stats.bn_mcs_count[0])) *
+					    ATH12K_UHR_MCS_NUM;
+	attr_size += nla_total_size_nested(payload_size);
+
 	/* NSS array */
 	payload_size = nla_total_size_64bit(sizeof(stats.pkt_stats.nss_count[0])) *
 					    ATH12K_NSS_NUM;
@@ -2823,7 +2828,7 @@ static int ath12k_vendor_get_rx_mon_stats_size(void)
 
 	/* su_ppdu_count stats */
 	payload_size_pkt = nla_total_size(sizeof(u32)) *
-				QCA_VENDOR_WLAN_TELEMETRY_EHT_MCS_MAX;
+				QCA_VENDOR_WLAN_TELEMETRY_UHR_MCS_MAX;
 	attr_size_pkt   = nla_total_size_nested(payload_size_pkt);
 	attr_size_dot11 = attr_size_pkt *
 				QCA_WLAN_VENDOR_ATTR_WLAN_TELEMETRY_RX_PKT_TYPE_MAX;
@@ -2831,7 +2836,7 @@ static int ath12k_vendor_get_rx_mon_stats_size(void)
 
 	/* proto_type stats */
 	payload_size_pkt = nla_total_size(sizeof(u32)) *
-				QCA_VENDOR_WLAN_TELEMETRY_EHT_MCS_MAX;
+				QCA_VENDOR_WLAN_TELEMETRY_UHR_MCS_MAX;
 	attr_size_pkt   = nla_total_size_nested(payload_size_pkt);
 	attr_size_dot11 = attr_size_pkt *
 				QCA_WLAN_VENDOR_ATTR_WLAN_TELEMETRY_RX_PKT_TYPE_MAX;
@@ -2843,7 +2848,7 @@ static int ath12k_vendor_get_rx_mon_stats_size(void)
 	attr_size_ppdu_nss = nla_total_size_nested(payload_size_ppdu_nss);
 
 	payload_size_ppdu_mcs = nla_total_size(sizeof(u32)) *
-				QCA_VENDOR_WLAN_TELEMETRY_EHT_MCS_MAX;
+				QCA_VENDOR_WLAN_TELEMETRY_UHR_MCS_MAX;
 	attr_size_ppdu_mcs = nla_total_size_nested(payload_size_ppdu_mcs);
 
 	payload_size_user =
@@ -4947,7 +4952,7 @@ static int ath12k_vendor_fill_rx_rate_stats(struct sk_buff *skb,
 {
 	struct nlattr *rx_rate_attr, *bw_nest, *gi_nest, *nss_nest;
 	struct nlattr *legacy_attr, *ht_attr, *vht_attr, *he_attr;
-	struct nlattr *eht_attr, *bw_attr, *nss_attr, *gi_attr;
+	struct nlattr *eht_attr, *uhr_attr, *bw_attr, *nss_attr, *gi_attr;
 	int i, bw, gi, nss;
 	u64 count;
 	const int max_mcs = QCA_VENDOR_WLAN_TELEMETRY_HT_MCS_MAX;
@@ -5007,6 +5012,20 @@ static int ath12k_vendor_fill_rx_rate_stats(struct sk_buff *skb,
 			return -EMSGSIZE;
 	}
 	nla_nest_end(skb, eht_attr);
+
+	/* BN (UHR/11BN) MCS counts */
+	uhr_attr = nla_nest_start(skb,
+				 QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_MON_BN_CNT);
+	if (!uhr_attr)
+		return -EMSGSIZE;
+
+	for (i = 0; i < QCA_VENDOR_WLAN_TELEMETRY_UHR_MCS_MAX; i++) {
+		if (nla_put_u64_64bit(skb, (i + 1),
+				      rate_stats->bn_mcs_count[i],
+				      NL80211_ATTR_PAD))
+			return -EMSGSIZE;
+	}
+	nla_nest_end(skb, uhr_attr);
 
 	/* NSS counts */
 	nss_attr = nla_nest_start(skb,
@@ -5149,7 +5168,7 @@ static int ath12k_put_rx_mu_stats(struct sk_buff *skb,
 		if (!mcs)
 			return -EMSGSIZE;
 
-		for (j = 0; j < QCA_VENDOR_WLAN_TELEMETRY_EHT_MCS_MAX; j++)
+		for (j = 0; j < QCA_VENDOR_WLAN_TELEMETRY_UHR_MCS_MAX; j++)
 			nla_put_u32(skb, j + 1,
 				    rx_mu[i].ppdu.mcs_count[j]);
 
@@ -5427,7 +5446,7 @@ static int ath12k_vendor_fill_rx_mon_stats(struct sk_buff *skb,
 			return -EMSGSIZE;
 		}
 
-		for (j = 0; j < QCA_VENDOR_WLAN_TELEMETRY_EHT_MCS_MAX; j++) {
+		for (j = 0; j < QCA_VENDOR_WLAN_TELEMETRY_UHR_MCS_MAX; j++) {
 			val = rx_stats->proto_type[i].mcs_count[j];
 
 			if (nla_put_u32(skb, j + 1, val)) {
@@ -5466,7 +5485,7 @@ static int ath12k_vendor_fill_rx_mon_stats(struct sk_buff *skb,
 			return -EMSGSIZE;
 		}
 
-		for (j = 0; j < QCA_VENDOR_WLAN_TELEMETRY_EHT_MCS_MAX; j++) {
+		for (j = 0; j < QCA_VENDOR_WLAN_TELEMETRY_UHR_MCS_MAX; j++) {
 			val = rx_stats->su_ppdu_count[i].mcs_count[j];
 			if (nla_put_u32(skb, j + 1, val)) {
 				nla_nest_cancel(skb, pkt_type_nest);

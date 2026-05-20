@@ -521,6 +521,21 @@ static void ath12k_mac_bridge_vdevs_down(struct ieee80211_hw *hw,
 					 struct ath12k_vif *ahvif, u8 cur_link_id);
 static void ath12k_mac_bridge_vdevs_up(struct ath12k_link_vif *arvif);
 
+enum nl80211_uhr_gi ath12k_mac_uhr_gi_to_nl80211_uhr_gi(u8 sgi)
+{
+	switch (sgi) {
+	case RX_MSDU_START_SGI_0_8_US:
+		return NL80211_RATE_INFO_UHR_GI_0_8;
+	case RX_MSDU_START_SGI_1_6_US:
+		return NL80211_RATE_INFO_UHR_GI_1_6;
+	case RX_MSDU_START_SGI_3_2_US:
+		return NL80211_RATE_INFO_UHR_GI_3_2;
+	default:
+		return NL80211_RATE_INFO_UHR_GI_0_8;
+	}
+}
+EXPORT_SYMBOL(ath12k_mac_uhr_gi_to_nl80211_uhr_gi);
+
 enum nl80211_eht_gi ath12k_mac_eht_gi_to_nl80211_eht_gi(u8 sgi)
 {
 	switch (sgi) {

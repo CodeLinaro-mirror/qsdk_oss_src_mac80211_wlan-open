@@ -20,6 +20,7 @@ struct ath12k_dp_link_peer;
 #define INVALID_SVC_ID			0xFF
 #define DP_REO_RING_MAX			4
 
+#define ATH12K_UHR_MCS_NUM	24	/* UHR (11BN) */
 #define ATH12K_EHT_MCS_NUM	16
 #define ATH12K_HE_MCS_NUM       14
 #define ATH12K_VHT_MCS_NUM      10
@@ -40,7 +41,8 @@ struct ath12k_dp_link_peer;
 #define MAX_MCS_11AC 12
 #define MAX_MCS_11AX 14
 #define MAX_MCS_11BE 16
-#define MAX_MCS (16 + 1)
+#define MAX_MCS_11BN 24
+#define MAX_MCS (24 + 1)
 
 #define INVALID_RSSI	GENMASK(7, 0)
 #define INVALID_RATE	GENMASK(7, 0)
@@ -1099,6 +1101,7 @@ struct ath12k_rx_peer_rate_stats {
 	u64 vht_mcs_count[HAL_RX_MAX_MCS_VHT + 1];
 	u64 he_mcs_count[HAL_RX_MAX_MCS_HE + 1];
 	u64 be_mcs_count[HAL_RX_MAX_MCS_BE + 1];
+	u64 bn_mcs_count[HAL_RX_MAX_MCS_BN + 1];	/* UHR (11BN) */
 	u64 nss_count[HAL_RX_MAX_NSS];
 	u64 bw_count[HAL_RX_BW_MAX];
 	u64 gi_count[HAL_RX_GI_MAX];
@@ -1155,6 +1158,7 @@ static const u8 max_mcs_by_preamble[HAL_RX_PREAMBLE_MAX] = {
 	[HAL_RX_PREAMBLE_11AC] = MAX_MCS_11AC,
 	[HAL_RX_PREAMBLE_11AX] = MAX_MCS_11AX,
 	[HAL_RX_PREAMBLE_11BE] = MAX_MCS_11BE,
+	[HAL_RX_PREAMBLE_11BN] = MAX_MCS_11BN,	/* UHR */
 };
 
 struct ath12k_rx_peer_total_stats {
@@ -1319,7 +1323,7 @@ struct ath12k_rx_peer_stats {
 	u64 num_ppdus;
 
 	u32 nss_info:4,
-	    mcs_info:4,
+	    mcs_info:8,
 	    bw_info:4,
 	    gi_info:4,
 	    preamble_info:4;
