@@ -70,6 +70,7 @@ struct ath_debug_base {
 	char bus[BUS_NAME_LEN];
 	struct mutex uio_lock; /* protects UIO data ring writes */
 	struct athdbg_uio_trace uio_trace;
+	u32 nl_portid;
 };
 
 u64 athdbg_conv_str_to_dbgmask(const char *dbgmask);

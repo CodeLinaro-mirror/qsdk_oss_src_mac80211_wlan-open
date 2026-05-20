@@ -8,6 +8,7 @@
 #include "debug.h"
 #include "mhi.h"
 #include "pci.h"
+#include "ath_debug/athdbg_netlink.h"
 
 
 extern struct ath_debug_base *athdbg_base;
@@ -160,4 +161,12 @@ void athdbg_if_setmask(u64 debug_mask)
 u64 athdbg_if_getmask(void)
 {
 	return ath12k_debug_mask;
+}
+
+void athdbg_if_send_tlv(struct ath12k_base *ab, u32 event_id,
+			const void *tlv_data, size_t tlv_len)
+{
+	if (!athdbg_base)
+		return;
+	athdbg_netlink_send(ab, event_id, tlv_data, tlv_len);
 }
