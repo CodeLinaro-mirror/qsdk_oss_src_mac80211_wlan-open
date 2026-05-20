@@ -1407,6 +1407,58 @@ unsigned int cfg80211_chandef_dfs_cac_time(struct wiphy *wiphy,
                                            const struct cfg80211_chan_def *chandef,
 					   bool is_bgcac, bool is_dbw_cac);
 
+#ifdef CPTCFG_QCA_LAB_TEST_FEATURES
+/**
+ * cfg80211_set_radio_bgcac_cac_time - set per-radio BG CAC timeout override
+ * @wiphy: the wiphy whose radio config has to be updated
+ * @radio_idx: radio index in @wiphy
+ * @cac_time_ms: BG CAC timeout override in milliseconds, or 0 to clear
+ *
+ * This test-only helper stores a runtime BG CAC timeout override in the
+ * per-radio wiphy configuration. It does not update channel state or notify
+ * userspace because BG CAC timeout is consumed only by in-kernel CAC timeout
+ * calculations.
+ *
+ * Return: 0 on success, negative errno on failure.
+ */
+int cfg80211_set_radio_bgcac_cac_time(struct wiphy *wiphy,
+				      u32 radio_idx,
+				      u32 cac_time_ms);
+
+/**
+ * cfg80211_get_radio_bgcac_cac_time - get per-radio BG CAC timeout override
+ * @wiphy: the wiphy whose radio config has to be queried
+ * @radio_idx: radio index in @wiphy
+ *
+ * Return: configured BG CAC timeout override in milliseconds, or 0 if unset.
+ */
+u32 cfg80211_get_radio_bgcac_cac_time(struct wiphy *wiphy, u32 radio_idx);
+
+/**
+ * cfg80211_update_dfs_cac_time - update DFS CAC timeout
+ * @wiphy: the wiphy whose regulatory/channel state has to be updated
+ * @start_freq_mhz: first center frequency to update, or 0 for all
+ * @end_freq_mhz: last center frequency to update, or 0 for all
+ * @cac_time_ms: CAC timeout in milliseconds
+ *
+ * Test-only helper for driver controlled CAC timeout overrides. It updates the
+ * pending requested_regd, active regdomain copy and current channel entries so
+ * queued work, regulatory rules and channel data stay in sync. The caller must
+ * hold wiphy lock. The regulatory notification is deferred on cfg80211_wq.
+ *
+ * The pending regdomain update keeps queued regulatory work coherent, the
+ * active regdomain update keeps rule attributes coherent, and the channel
+ * update keeps userspace-visible channel CAC values coherent.
+ *
+ * Return: 0 on success, negative errno on failure.
+ */
+int
+cfg80211_update_dfs_cac_time(struct wiphy *wiphy,
+			     u32 start_freq_mhz,
+			     u32 end_freq_mhz,
+			     u32 cac_time_ms);
+#endif /* CPTCFG_QCA_LAB_TEST_FEATURES */
+
 /**
  * ieee80211_chandef_max_power - maximum transmission power for the chandef
  *
@@ -6573,9 +6625,14 @@ struct wiphy_iftype_akm_suites {
  *
  * @rts_threshold: RTS threshold (dot11RTSThreshold);
  *	-1 (default) = RTS/CTS disabled
+ * @bgcac_cac_ms: test-only per-radio background CAC timeout override in ms;
+ *	0 means use regulatory default behavior
  */
 struct wiphy_radio_cfg {
 	u32 rts_threshold;
+#ifdef CPTCFG_QCA_LAB_TEST_FEATURES
+	u32 bgcac_cac_ms;
+#endif
 #ifdef CPTCFG_QCN_EXTN
 	u8 muedca_mode;
 #endif /* CPTCFG_QCN_EXTN */

@@ -21,6 +21,12 @@
 
 #define WIPHY_IDX_INVALID	-1
 
+struct cfg80211_reg_change_event_work {
+	struct work_struct work;
+	struct wiphy *wiphy;
+	struct regulatory_request request;
+};
+
 struct cfg80211_registered_device {
 	const struct cfg80211_ops *ops;
 	struct list_head list;
