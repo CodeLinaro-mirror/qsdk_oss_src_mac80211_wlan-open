@@ -4307,6 +4307,13 @@ static void ath12k_update_recovery_mode(struct ath12k_hw_group *ag,
 	if (ath12k_check_erp_power_down(ag))
 		ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
 
+	/* Fallback to mode0 recovery during a cumac HW crash */
+	if (asserted_ab->is_cumac_chip &&
+	    asserted_ab->soc_reset_reason == ATH12K_GLOBAL_SOC_RESET) {
+		ath12k_info(asserted_ab, "Recovery is falling back to Mode0 due to cumac HW assert\n");
+		ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
+	}
+
 	if (host_rm > ag->recovery_mode)
 		ath12k_fallback_cleanup(ag);
 }
