@@ -5163,6 +5163,10 @@ struct ieee80211_ops {
 				    struct ieee80211_vif *vif,
 				    struct ieee80211_link_sta *link_sta,
 				    struct link_station_info *link_sinfo);
+	void (*set_preserved_link_stats)(struct ieee80211_hw *hw,
+					 struct ieee80211_vif *vif,
+					 struct ieee80211_sta *sta,
+					 struct station_info *sinfo);
 
 	/**
 	 * @ampdu_action:
