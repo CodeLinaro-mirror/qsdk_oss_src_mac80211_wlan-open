@@ -889,13 +889,6 @@ bool ieee80211_sdata_has_txrx_stats_offload(struct ieee80211_sub_if_data *sdata)
 	if (sdata->vif.offload_flags & IEEE80211_OFFLOAD_TXRX_STATS)
 		return true;
 
-	/* AP_VLAN has no vdev in firmware; check parent AP's offload flag */
-	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN && sdata->bss) {
-		struct ieee80211_sub_if_data *master =
-			container_of(sdata->bss, struct ieee80211_sub_if_data, u.ap);
-		return (master->vif.offload_flags & IEEE80211_OFFLOAD_TXRX_STATS);
-	}
-
 	return false;
 }
 
