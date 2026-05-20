@@ -1201,6 +1201,7 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.dp_peer_fetch_smd_ctx = ath12k_wifi8_fetch_smd_ctx,
 	.dp_qos_queue_setup = ath12k_wifi8_qos_queue_setup,
 	.peer_tx_tid_update_for_smd = ath12k_wifi8_peer_tx_tid_update_for_smd,
+	.dump_svc_sorted_list = ath12k_wifi8_dp_tx_dump_svc_sorted_list,
 };
 
 struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab)

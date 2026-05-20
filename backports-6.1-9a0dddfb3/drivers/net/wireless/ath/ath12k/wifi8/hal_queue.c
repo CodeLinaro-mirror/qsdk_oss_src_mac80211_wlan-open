@@ -297,6 +297,11 @@ int ath12k_wifi8_hal_tx_msdu_queue_setup(struct ath12k_dp_hw_group *dp_hw_grp,
 	msduq->info17 = le32_encode_bits(ti->stats_id,
 					 HAL_TX_MSDU_FLOW_TQM_STATS_ID);
 
+	if (ti->svc < HAL_TQM_SERVICE_CATEGORY_MAX)
+		msduq->info16 =
+			le32_encode_bits(1, HAL_TX_MSDU_FLOW_SERVICE_CATEGORY_VALID) |
+			le32_encode_bits(ti->svc, HAL_TX_MSDU_FLOW_SERVICE_CATEGORY);
+
 	ath12k_core_dma_sync_single_for_device(dev, ti->paddr,
 					       MSDU_STRUCT_SZ,
 					       DMA_BIDIRECTIONAL);

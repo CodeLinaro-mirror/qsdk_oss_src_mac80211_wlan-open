@@ -87,4 +87,6 @@ void ath12k_wifi8_mcbc_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 			       struct ath12k_dp_skb_ctrl *skb_ctrl, u32 qos_nw_delay,
 			       bool htt_mesh, struct ath12k_vif *vlan_ahvif,
 			       struct ieee80211_tx_info *info);
+ssize_t ath12k_wifi8_dp_tx_dump_svc_sorted_list(struct ath12k_dp *dp, u8 ac_mask,
+						char *buf, int size);
 #endif

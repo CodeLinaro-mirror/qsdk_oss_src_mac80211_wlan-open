@@ -8065,6 +8065,112 @@ static const struct file_operations fops_device_mgmt_srng_stats = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath12k_dump_svc_sorted_list(struct file *file,
+					   char __user *user_buf,
+					   size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	u8 ac_mask;
+	char *buf;
+	const int size = 2048;
+	int len = 0, retval;
+
+	buf = kzalloc(size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	ac_mask = ab->dp->svc_sort_stats.ac_mask;
+
+	if (ab->dp->arch_ops->dump_svc_sorted_list) {
+		len += scnprintf(buf + len, size - len,
+				 "\nSC mask 0x%x sorted list:\n",
+				 ac_mask);
+		len += ab->dp->arch_ops->dump_svc_sorted_list(ab->dp,
+							      ac_mask,
+							      buf + len,
+							      size - len);
+	}
+
+	retval = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return retval;
+}
+
+static const struct file_operations fops_svc_sorted_list = {
+	.open = simple_open,
+	.read = ath12k_dump_svc_sorted_list,
+};
+
+static ssize_t ath12k_read_sorted_ac_mask(struct file *file,
+					  char __user *user_buf,
+					  size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	u8 ac_mask;
+	char buf[32];
+	size_t len;
+
+	ac_mask = ab->dp->svc_sort_stats.ac_mask;
+
+	len = scnprintf(buf, sizeof(buf), "0x%x\n", ac_mask);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t ath12k_write_sorted_ac_mask(struct file *file,
+					   const char __user *user_buf,
+					   size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	u8 ac_mask;
+	char buf[64];
+	int num_args;
+
+	if (count >= sizeof(buf))
+		return -EINVAL;
+
+	if (copy_from_user(buf, user_buf, count))
+		return -EFAULT;
+
+	buf[count] = '\0';
+
+	num_args = sscanf(buf, "0x%hhx", &ac_mask);
+	if (num_args != 1)
+		return -EINVAL;
+
+	if (ac_mask > ((1 << (IEEE80211_AC_BK + 1)) - 1))
+		ac_mask = (1 << (IEEE80211_AC_BK + 1)) - 1;
+
+	ab->dp->svc_sort_stats.ac_mask = ac_mask;
+
+	return count;
+}
+
+static const struct file_operations fops_svc_sorted_ac_mask = {
+	.read = ath12k_read_sorted_ac_mask,
+	.write = ath12k_write_sorted_ac_mask,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+static void ath12k_debugfs_dp_svc_sorted_flow_init(struct ath12k_base *ab)
+{
+	struct dentry *svc_sorted_flow_dir;
+
+	svc_sorted_flow_dir = debugfs_create_dir("svc_sorted_flow",
+						 ab->debugfs_soc);
+
+	debugfs_create_file("list", 0400, svc_sorted_flow_dir, ab,
+			    &fops_svc_sorted_list);
+	debugfs_create_file("ac_mask", 0600, svc_sorted_flow_dir, ab,
+			    &fops_svc_sorted_ac_mask);
+
+	ab->dp->svc_sort_stats.ac_mask = (1 << (IEEE80211_AC_BK + 1)) - 1;
+}
+
 void ath12k_debugfs_pdev_create(struct ath12k_base *ab) {
 	debugfs_create_file("simulate_fw_crash", 0600, ab->debugfs_soc, ab,
 			    &fops_simulate_fw_crash);
@@ -8101,6 +8207,7 @@ void ath12k_debugfs_pdev_create(struct ath12k_base *ab) {
 	debugfs_create_file("simulate_host_crash", 0600, ab->debugfs_soc, ab,
 		&fops_simulate_host_crash);
 
+	ath12k_debugfs_dp_svc_sorted_flow_init(ab);
 }
 
 void ath12k_debugfs_unregister(struct ath12k *ar)

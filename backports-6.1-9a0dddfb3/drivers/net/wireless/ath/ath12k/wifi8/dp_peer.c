@@ -851,7 +851,8 @@ int ath12k_dp_peer_fetch_smd_tx_ctx(struct ath12k_base *ab,
 
 int ath12k_dp_tqm_remove_msduq_send(struct ath12k_base *ab,
 				    struct ath12k_dp_msdu_q_info *sw_msduq_ptr,
-				    struct ath12k_dp_peer *dp_peer)
+				    struct ath12k_dp_peer *dp_peer,
+				    u16 count)
 {
 	struct ath12k_hal_tqm_cmd cmd;
 	int ret = 0;
@@ -861,11 +862,15 @@ int ath12k_dp_tqm_remove_msduq_send(struct ath12k_base *ab,
 
 	memset(&cmd, 0, sizeof(cmd));
 	cmd.std.peer_id = (u16)dp_peer->peer_id;
-	cmd.remove_msdu_params.type = HAL_WIFIREMOVE_MSDUS_AND_DISABLE_FLOW;
 	cmd.remove_msdu_params.block_tx_notify_frame_removal = 0;
-	cmd.remove_msdu_params.count = 0xFFFF;
+	cmd.remove_msdu_params.count = count;
 	cmd.remove_msdu_params.qtype = sw_msduq_ptr->flow_info.flow_type;
 	cmd.remove_msdu_params.msdu_q_paddr = sw_msduq_ptr->msdu_q_paddr;
+
+	if (count == ATH12K_MAX_MSDU_COUNT)
+		cmd.remove_msdu_params.type = HAL_WIFIREMOVE_MSDUS_AND_DISABLE_FLOW;
+	else
+		cmd.remove_msdu_params.type = HAL_WIFIREMOVE_HEAD_MSDUS;
 
 	ret = ath12k_wifi8_dp_tqm_cmd_send(ab, HAL_TQM_REMOVE_MSDU_BO, &cmd,
 					   NULL, NULL);
@@ -912,7 +917,8 @@ int ath12k_dp_tqm_remove_mcast_queues(struct ath12k_base *ab,
 	sw_msduq_ptr = tx_flow_info->mcast_msduq;
 	ret = ath12k_dp_tqm_remove_msduq_send(ab,
 					      sw_msduq_ptr,
-					      dp_peer);
+					      dp_peer,
+					      ATH12K_MAX_MSDU_COUNT);
 	if (ret) {
 		ath12k_err(ab,
 			   "TQM MSDUQ send failed for MCAST frame for peer %pM id %d",
@@ -956,7 +962,8 @@ int ath12k_dp_tqm_remove_data_queues(struct ath12k_base *ab,
 	sw_msduq_ptr = tx_flow_info->hol_msduq;
 	ret = ath12k_dp_tqm_remove_msduq_send(ab,
 					      sw_msduq_ptr,
-					      dp_peer);
+					      dp_peer,
+					      ATH12K_MAX_MSDU_COUNT);
 	if (ret) {
 		ath12k_err(ab,
 			   "TQM MSDUQ send failed for HOL frame for peer %pM id %d",
@@ -972,7 +979,8 @@ int ath12k_dp_tqm_remove_data_queues(struct ath12k_base *ab,
 			sw_msduq_ptr = tx_flow_info->tid_info[tid].msduq[q];
 			ret = ath12k_dp_tqm_remove_msduq_send(ab,
 							      sw_msduq_ptr,
-							      dp_peer);
+							      dp_peer,
+							      ATH12K_MAX_MSDU_COUNT);
 			if (ret) {
 				ath12k_err(
 				ab,
@@ -1021,7 +1029,8 @@ int ath12k_dp_tqm_remove_mgmt_queues(struct ath12k_base *ab,
 			continue;
 		ret = ath12k_dp_tqm_remove_msduq_send(ab,
 						      sw_msduq_ptr,
-						      dp_peer);
+						      dp_peer,
+						      ATH12K_MAX_MSDU_COUNT);
 		if (ret) {
 			ath12k_err(ab,
 				   "TQM MSDUQ fail: MGMT frame %d peer %pM id %d",
@@ -1066,7 +1075,8 @@ int ath12k_dp_tqm_remove_link_mgmt_queues(struct ath12k_base *ab,
 	idx = ATH12K_LINK_TO_MGMT_TYPE(hw_link_id);
 	sw_msduq_ptr = tx_flow_info->mgmt_msduq[idx];
 	ret = ath12k_dp_tqm_remove_msduq_send(ab, sw_msduq_ptr,
-					      dp_peer);
+					      dp_peer,
+					      ATH12K_MAX_MSDU_COUNT);
 	if (ret) {
 		ath12k_err(ab,
 			   "TQM Link mgmt MSDUQ fail: peer %pM linkid %d",

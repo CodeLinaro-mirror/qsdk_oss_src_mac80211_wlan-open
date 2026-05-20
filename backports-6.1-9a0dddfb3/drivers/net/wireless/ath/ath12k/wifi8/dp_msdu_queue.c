@@ -101,6 +101,7 @@ int ath12k_init_tx_msdu_flowq(struct ath12k_dp_hw_group *dp_hw_grp,
 	ti.peer_id = peer->peer_id;
 	ti.bitmap = sw_msduq_ptr->bitmap;
 	ti.msduq_sam_id = sw_msduq_ptr->msduq_sam_id;
+	ti.svc = HAL_TQM_SERVICE_CATEGORY_MAX;
 
 	ti.stats_id = peer->stats_id;
 
