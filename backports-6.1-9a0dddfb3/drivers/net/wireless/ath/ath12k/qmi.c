@@ -4210,15 +4210,35 @@ void ath12k_qmi_free_target_mem_chunk(struct ath12k_base *ab)
 			if (test_bit(ATH12K_FLAG_FIXED_MEM_REGION, &ab->dev_flags) &&
 			    ab->qmi.target_mem[i].v.ioaddr) {
 #ifdef PLATFORM_SDX85
-				dma_free_attrs(ab->dev,
-					       ab->qmi.target_mem[i].size,
-					       ab->qmi.target_mem[i].v.ioaddr,
-					       ab->qmi.target_mem[i].paddr,
-					       DMA_ATTR_FORCE_CONTIGUOUS);
+				if (ab->qmi.target_mem[i].type == AFC_REGION_TYPE &&
+				    ab->qmi.target_mem[i].v.addr) {
+					dma_free_coherent(ab->dev,
+							  ab->qmi.target_mem[i].size,
+							  ab->qmi.target_mem[i].v.addr,
+							  ab->qmi.target_mem[i].paddr);
+					ab->qmi.target_mem[i].v.addr = NULL;
+				} else {
+					dma_free_attrs(ab->dev,
+						       ab->qmi.target_mem[i].size,
+						       ab->qmi.target_mem[i].v.ioaddr,
+						       ab->qmi.target_mem[i].paddr,
+						       DMA_ATTR_FORCE_CONTIGUOUS);
+					ab->qmi.target_mem[i].v.ioaddr = NULL;
+				}
 #else
-				iounmap(ab->qmi.target_mem[i].v.ioaddr);
+				if (ab->qmi.target_mem[i].type == AFC_REGION_TYPE &&
+				    ab->hif.bus != ATH12K_BUS_HYBRID &&
+				    ab->qmi.target_mem[i].v.addr) {
+					dma_free_coherent(ab->dev,
+							  ab->qmi.target_mem[i].size,
+							  ab->qmi.target_mem[i].v.addr,
+							  ab->qmi.target_mem[i].paddr);
+					ab->qmi.target_mem[i].v.addr = NULL;
+				} else {
+					iounmap(ab->qmi.target_mem[i].v.ioaddr);
+					ab->qmi.target_mem[i].v.ioaddr = NULL;
+				}
 #endif
-				ab->qmi.target_mem[i].v.ioaddr = NULL;
 			} else {
 				if (!ab->qmi.target_mem[i].v.addr)
 					continue;
