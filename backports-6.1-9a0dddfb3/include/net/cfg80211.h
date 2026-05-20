@@ -5537,6 +5537,9 @@ struct cfg80211_ap_power_save_params {
  *
  * @start_radar_detection: Start radar detection in the driver.
  *
+ * @dfs_process_radar_detection: Process radar detection notification in the
+ *	driver before cfg80211 updates the DFS state.
+ *
  * @start_punctured_cac: Start CAC for a punctured 20 MHz sub-channel after
  *	the cfg80211 NOL tracker reports NOP finished for that sub-channel.
  *
@@ -5953,6 +5956,8 @@ struct cfg80211_ops {
 					 struct net_device *dev,
 					 struct cfg80211_chan_def *chandef,
 					 u32 cac_time_ms, int link_id);
+	void	(*dfs_process_radar_detection)(struct wiphy *wiphy,
+					       struct cfg80211_chan_def *chandef);
 	void	(*start_punctured_cac)(struct wiphy *wiphy,
 				       struct cfg80211_chan_def *chandef);
 	void	(*end_cac)(struct wiphy *wiphy,

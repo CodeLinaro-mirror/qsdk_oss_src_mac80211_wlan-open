@@ -1559,6 +1559,24 @@ struct channel_radar_info {
 	struct ieee80211_channel *radar_channel;
 };
 
+/**
+ * ieee80211_dfs_process_radar_detection - process a queued radar event
+ * @wiphy: wiphy owning the mac80211 instance
+ * @chandef: channel definition carrying radar bitmap/channel information
+ */
+void ieee80211_dfs_process_radar_detection(struct wiphy *wiphy,
+					   struct cfg80211_chan_def *chandef);
+
+/**
+ * ieee80211_dfs_radar_detected_processing - process a queued radar event
+ * @local: mac80211 local state
+ * @radar_bitmap: bitmap of 20 MHz sub-channels hit by radar
+ * @radar_channel: channel where radar was detected, or NULL for default flow
+ */
+void ieee80211_dfs_radar_detected_processing(struct ieee80211_local *local,
+					     u16 radar_bitmap,
+					     struct ieee80211_channel *radar_channel);
+
 struct channel_awgn_info {
 	struct list_head list;
 	struct ieee80211_channel *awgn_channel;

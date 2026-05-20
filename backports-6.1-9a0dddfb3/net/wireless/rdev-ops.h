@@ -1252,6 +1252,13 @@ rdev_start_radar_detection(struct cfg80211_registered_device *rdev,
 	return ret;
 }
 
+static inline void rdev_dfs_radar_process(struct cfg80211_registered_device *rdev,
+					  struct cfg80211_chan_def *chandef)
+{
+	if (rdev->ops->dfs_process_radar_detection)
+		rdev->ops->dfs_process_radar_detection(&rdev->wiphy, chandef);
+}
+
 static inline void
 rdev_start_punctured_cac(struct cfg80211_registered_device *rdev,
 			 struct cfg80211_chan_def *chandef)

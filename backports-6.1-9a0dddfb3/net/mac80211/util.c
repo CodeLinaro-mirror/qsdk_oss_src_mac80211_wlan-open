@@ -4445,13 +4445,7 @@ void ieee80211_start_punctured_cac(struct wiphy *wiphy,
 	}
 }
 
-/**
- * ieee80211_dfs_radar_detected_processing - process a queued radar event
- * @local: mac80211 local state
- * @radar_bitmap: bitmap of 20 MHz sub-channels hit by radar
- * @radar_channel: channel where radar was detected, or NULL for default flow
- */
-static void
+void
 ieee80211_dfs_radar_detected_processing(struct ieee80211_local *local,
 					u16 radar_bitmap,
 					struct ieee80211_channel *radar_channel)
@@ -4505,6 +4499,15 @@ ieee80211_dfs_radar_detected_processing(struct ieee80211_local *local,
 			ieee80211_punct_radar_update(local, &chandef, ctx, radar_bitmap);
 		cfg80211_radar_event(local->hw.wiphy, &chandef, GFP_KERNEL);
 	}
+}
+
+void ieee80211_dfs_process_radar_detection(struct wiphy *wiphy,
+					   struct cfg80211_chan_def *chandef)
+{
+	struct ieee80211_local *local = wiphy_priv(wiphy);
+
+	ieee80211_dfs_radar_detected_processing(local, chandef->radar_bitmap,
+						chandef->chan);
 }
 
 /**
