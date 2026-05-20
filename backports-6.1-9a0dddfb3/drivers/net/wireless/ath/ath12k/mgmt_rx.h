@@ -108,6 +108,7 @@ struct ath12k_device_mgmt_srng_stats {
 	/* subset of err_ring_pkts */
 	u32 rxdma_err[HAL_REO_ENTR_RING_RXDMA_ECODE_MAX];
 	u32 reo_err[HAL_REO_DEST_RING_ERROR_CODE_MAX];
+	u32 reo_err_rx[ATH12K_SRNG_STATS_MGMT_FRM_STYPE_MAX];
 	u32 frag_pkts;
 
 #ifdef CPTCFG_QCN_EXTN

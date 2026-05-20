@@ -8055,6 +8055,11 @@ static ssize_t ath12k_debugfs_dump_device_mgmt_srng_stats(struct file *file,
 		len += scnprintf(buf + len, size - len, "  %s: %u\n",
 				 reo_err[i], device_stats->reo_err[i]);
 
+	len += scnprintf(buf + len, size - len, "REO errors (delivered):\n");
+	for (i = 0; i < ATH12K_SRNG_STATS_MGMT_FRM_STYPE_MAX-1; i++)
+		len += scnprintf(buf + len, size - len, "  %s: %u\n",
+				 frm_stype[i], device_stats->reo_err_rx[i]);
+
 	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
 }
 

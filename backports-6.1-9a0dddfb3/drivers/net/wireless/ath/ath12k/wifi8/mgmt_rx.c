@@ -850,7 +850,107 @@ void ath12k_wifi8_mgmt_rx_deliver_mmpdu(struct ath12k_mgmt *mgmt,
 	ieee80211_rx_ni(hw, mmpdu);
 }
 
-static void ath12k_wifi8_mgmt_rx_process_err_mmpdu(struct ath12k_mgmt *mgmt,
+static bool ath12k_wifi8_mgmt_rx_h_reo_err(struct ath12k_mgmt *mgmt,
+					   struct sk_buff_head *mmpdu_list,
+					   struct sk_buff *mmpdu)
+{
+	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(mmpdu);
+	u32 hal_rx_desc_sz = mgmt->hal->hal_desc_sz;
+	struct hal_rx_desc_data rx_desc_data = {0};
+	struct ath12k_mgmt *partner_mgmt = mgmt;
+	struct hal_rx_desc *rx_desc, *lrx_desc;
+	u16 buf_hdr_len, mmpdu_len;
+	struct ath12k *partner_ar;
+	struct ieee80211_hdr *hdr;
+	struct sk_buff *last_buf;
+	u16 frm_stype, fc;
+
+	mgmt->srng_stats.reo_err[rxcb->err_code]++;
+
+	switch (rxcb->err_code) {
+	case HAL_REO_DEST_RING_ERROR_CODE_FRAME_2K_JUMP:
+	case HAL_REO_DEST_RING_ERROR_CODE_FRAME_OOR:
+	case HAL_REO_DEST_RING_ERROR_CODE_FRAME_SN_EQUALS_SSN:
+		break;
+	default:
+		goto drop;
+	}
+
+	last_buf = ath12k_mgmt_rx_get_mmpdu_last_buf(mmpdu_list, mmpdu);
+	if (!last_buf)
+		goto drop;
+
+	rx_desc = (struct hal_rx_desc *)mmpdu->data;
+	lrx_desc = (struct hal_rx_desc *)last_buf->data;
+
+	ath12k_wifi8_mgmt_extract_rx_desc_data(mgmt, &rx_desc_data, rx_desc, lrx_desc);
+	if (!rx_desc_data.msdu_done)
+		goto drop;
+
+	buf_hdr_len = hal_rx_desc_sz + rx_desc_data.l3_pad_bytes;
+	mmpdu_len = rx_desc_data.msdu_len;
+
+	if (sizeof(struct ieee80211_hdr) > mmpdu_len ||
+	    buf_hdr_len + sizeof(struct ieee80211_hdr) > MGMT_RX_BUFFER_SIZE)
+		goto drop;
+
+	hdr = (struct ieee80211_hdr *)(mmpdu->data + buf_hdr_len);
+
+	if (ieee80211_is_action(hdr->frame_control) &&
+	    (mmpdu_len < IEEE80211_MIN_ACTION_SIZE ||
+	     buf_hdr_len + IEEE80211_MIN_ACTION_SIZE > MGMT_RX_BUFFER_SIZE))
+		goto drop;
+
+	fc = le16_to_cpu(hdr->frame_control);
+	frm_stype = FIELD_GET(IEEE80211_FCTL_STYPE, fc);
+
+	partner_ar = ath12k_core_ar_from_hw_link_id(mgmt->ab, rxcb->hw_link_id);
+	if (partner_ar)
+		partner_mgmt = partner_ar->ab->mgmt ? partner_ar->ab->mgmt : mgmt;
+
+	/**
+	 * Allow pre-connection frames such as (Authentication,
+	 * (Re)Association Request, (Re)Association Response, Deauthentication,
+	 * Disassociation, and non-robust Action) frames with SN related errors
+	 * as we might have a stale peer entry.
+	 */
+	if ((ieee80211_is_deauth(hdr->frame_control) ||
+	     ieee80211_is_disassoc(hdr->frame_control) ||
+	     !_ieee80211_is_robust_mgmt_frame(hdr))) {
+		partner_mgmt->srng_stats.reo_err_rx[frm_stype]++;
+		return false;
+	}
+
+drop:
+	return true;
+}
+
+static void ath12k_wifi8_mgmt_rx_clean_up_err_sg_mmpdu(struct sk_buff_head *mmpdu_list,
+						       struct sk_buff *mmpdu)
+{
+	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(mmpdu);
+	bool mmpdu_continues = rxcb->is_continuation;
+	struct sk_buff *skb;
+
+	dev_kfree_skb_any(mmpdu);
+
+	if (!mmpdu_continues)
+		return;
+
+	while ((skb = __skb_dequeue(mmpdu_list))) {
+		rxcb = ATH12K_SKB_RXCB(skb);
+		mmpdu_continues = rxcb->is_continuation;
+		dev_kfree_skb_any(skb);
+
+		/* last buf, stop */
+		if (!mmpdu_continues)
+			break;
+	}
+}
+
+/* Return: true when frame to be dropped, false otherwise */
+static bool ath12k_wifi8_mgmt_rx_process_err_mmpdu(struct ath12k_mgmt *mgmt,
+						   struct sk_buff_head *mmpdu_list,
 						   struct sk_buff *mmpdu)
 {
 	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(mmpdu);
@@ -860,14 +960,18 @@ static void ath12k_wifi8_mgmt_rx_process_err_mmpdu(struct ath12k_mgmt *mgmt,
 		mgmt->srng_stats.rxdma_err[rxcb->err_code]++;
 		break;
 	case HAL_REO_REL_SRC_MODULE_REO:
-		mgmt->srng_stats.reo_err[rxcb->err_code]++;
+		if (!ath12k_wifi8_mgmt_rx_h_reo_err(mgmt, mmpdu_list, mmpdu))
+			return false;
 		break;
 	default:
 		/* invalid source, free the buffer */
 		break;
 	}
 
-	dev_kfree_skb_any(mmpdu);
+	/* Clean-up continuation buffers while dropping */
+	ath12k_wifi8_mgmt_rx_clean_up_err_sg_mmpdu(mmpdu_list, mmpdu);
+
+	return true;
 }
 
 #ifndef CPTCFG_QCN_EXTN
@@ -905,10 +1009,9 @@ void ath12k_wifi8_mgmt_rx_process_packets(struct ath12k_mgmt *mgmt,
 			continue;
 		}
 
-		if (pkt_type == ATH12K_MGMT_SRNG_PKT_TYPE_RX_ERR) {
-			ath12k_wifi8_mgmt_rx_process_err_mmpdu(mgmt, mmpdu);
+		if (pkt_type == ATH12K_MGMT_SRNG_PKT_TYPE_RX_ERR &&
+		    ath12k_wifi8_mgmt_rx_process_err_mmpdu(mgmt, mmpdu_list, mmpdu))
 			continue;
-		}
 
 		ret = ath12k_wifi8_mgmt_rx_process_mmpdu(mgmt, partner_ar, mmpdu,
 							 mmpdu_list, &rx_status);
