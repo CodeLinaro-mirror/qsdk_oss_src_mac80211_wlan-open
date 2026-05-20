@@ -2170,6 +2170,36 @@ static int ath12k_get_peer_rx_stats_size(void)
 	return total_size;
 }
 
+/**
+ * ath12k_get_hw_tx_stats_attr_size() - NL buffer size for HW offload TX stats
+ *
+ * Returns the size covering all HW TX attributes.
+ */
+static int ath12k_get_hw_tx_stats_attr_size(void)
+{
+	int size = 0;
+
+	size += nla_total_size_64bit(sizeof(u64)) * 4;
+	size += nla_total_size(sizeof(u32)) * 3;
+
+	return size;
+}
+
+/**
+ * ath12k_get_hw_rx_stats_attr_size() - NL buffer size for HW offload RX stats
+ *
+ * Returns the size covering all HW RX attributes.
+ */
+static int ath12k_get_hw_rx_stats_attr_size(void)
+{
+	int size = 0;
+
+	size += nla_total_size_64bit(sizeof(u64)) * 6;
+	size += nla_total_size(sizeof(u32)) * 6;
+
+	return size;
+}
+
 static int ath12k_get_feat_rx_peer_attr_size(void)
 {
 	int payload_size;
@@ -2189,6 +2219,9 @@ static int ath12k_get_feat_rx_peer_attr_size(void)
 	payload_size = nla_total_size(sizeof(u32)) *
 			HAL_REO_DEST_RING_ERROR_CODE_MAX;
 	attr_size += nla_total_size_nested(payload_size);
+
+	/* HW RX stats Attr Size */
+	attr_size += ath12k_get_hw_rx_stats_attr_size();
 
 	/* Parent RX Stats Attr Size */
 	total_size = nla_total_size_nested(attr_size);
@@ -2504,6 +2537,9 @@ static int ath12k_get_feat_tx_peer_attr_size(void)
 		/* TCL Ring Attr size */
 		total_size += nla_total_size_nested(attr_size);
 	}
+
+	/* HW TX stats Attr Size */
+	total_size += ath12k_get_hw_tx_stats_attr_size();
 
 	/* Parent Tx per_pkt Attr Size */
 	total_size = nla_total_size_nested(total_size);
@@ -4510,11 +4546,103 @@ static int ath12k_fill_peer_proto_stats(struct ath12k *ar,
 	return 0;
 }
 
+/**
+ * ath12k_fill_peer_hw_tx_stats() - Pack HW TX stats into Ring 0's per-pkt stats
+ *				    nested attribute.
+ *
+ * Called only when ring_num is 0 and HW offload stats are enabled.
+ * Return: Invalid when failed, 0 when successful.
+ */
+static int
+ath12k_fill_peer_hw_tx_stats(struct sk_buff *vendor_event,
+			     struct ath12k_dp_link_peer_stats *link_peer_stats,
+			     struct ath12k_dp_mld_peer_stats *mld_stats,
+			     int peer_type)
+{
+	struct ath12k_dp_link_peer_hw_tx_stats *hw_link_tx;
+	struct ath12k_dp_peer_hw_tx_stats *hw_tx;
+
+	if (peer_type == ATH12K_LEGACY_PEER || peer_type == ATH12K_LINK_PEER) {
+		if (!link_peer_stats || !link_peer_stats->hw_link_stats) {
+			ath12k_err(NULL,
+				   " Invalid link_peer_stats: ptr:%p hw_link_stats:%p\n",
+				   link_peer_stats,
+				   link_peer_stats ? link_peer_stats->hw_link_stats :
+				   NULL);
+			return -EINVAL;
+		}
+
+		hw_link_tx = &link_peer_stats->hw_link_stats->hw_link_tx;
+
+		if (nla_put_u64_64bit(vendor_event,
+				      QCA_VENDOR_ATTR_PER_PKT_STATS_TX_SUM_ACK_RSSI,
+				      hw_link_tx->sum_ack_rssi, NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failure: TX SUM_ACK_RSSI");
+			return -EINVAL;
+		}
+
+		if (nla_put_u64_64bit(vendor_event,
+				      QCA_VENDOR_ATTR_PER_PKT_STATS_TX_SUM_PHY_RATE,
+				      hw_link_tx->sum_phy_rate, NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failure: TX SUM_PHY_RATE");
+			return -EINVAL;
+		}
+		if (nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_PER_PKT_STATS_TX_ACKED_PPDU_COUNT,
+				hw_link_tx->acked_ppdu_count)) {
+			ath12k_err(NULL, "nla put failure: TX ACKED_PPDU_COUNT");
+			return -EINVAL;
+		}
+	}
+
+	if (peer_type != ATH12K_LINK_PEER) {
+		if (!mld_stats || !mld_stats->hw_stats) {
+			ath12k_err(NULL,
+				   "Invalid mld_stats: ptr:%p hw_stats:%p\n",
+				   mld_stats,
+				   mld_stats ? mld_stats->hw_stats : NULL);
+			return -EINVAL;
+		}
+
+		hw_tx = &mld_stats->hw_stats->hw_tx;
+
+		if (nla_put_u64_64bit(vendor_event,
+				      QCA_VENDOR_ATTR_PER_PKT_STATS_TX_FAILED_BYTES,
+				      hw_tx->failed_bytes,
+				      NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failure: TX FAILED_BYTES");
+			return -EINVAL;
+		}
+		if (nla_put_u64_64bit(vendor_event,
+				      QCA_VENDOR_ATTR_PER_PKT_STATS_TX_DROP_BYTES,
+				      hw_tx->drop_bytes,
+				      NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failure: TX DROP_BYTES");
+			return -EINVAL;
+		}
+		if (nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_PER_PKT_STATS_TX_DROP1_PKTS,
+				hw_tx->drop1_pkts)) {
+			ath12k_err(NULL, "nla put failure: TX DROP1_PKTS");
+			return -EINVAL;
+		}
+		if (nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_PER_PKT_STATS_TX_DROP2_PKTS,
+				hw_tx->drop2_pkts)) {
+			ath12k_err(NULL, "nla put failure: TX DROP2_PKTS");
+			return -EINVAL;
+		}
+	}
+
+	return 0;
+}
+
 static int ath12k_fill_peer_tx_stats(struct ath12k *ar,
 				     struct sk_buff *vendor_event,
 				     struct ath12k_dp_peer_stats *peer_stats,
 				     bool is_extended,
 				     struct ath12k_dp_link_peer_stats *link_peer_stats,
+				     struct ath12k_dp_mld_peer_stats *mld_stats,
 				     int peer_type)
 {
 	struct nlattr *attr1;
@@ -4544,6 +4672,21 @@ static int ath12k_fill_peer_tx_stats(struct ath12k *ar,
 			nla_nest_end(vendor_event, attr);
 			return -EINVAL;
 		}
+
+		/* HW offload TX stats — Ring 0 only */
+		if (((ring_num + 1) == QCA_VENDOR_ATTR_WLAN_TELEMETRY_TCL_RING_0) &&
+		    ath12k_dp_hw_peer_stats_enabled(&ar->dp)) {
+			if (ath12k_fill_peer_hw_tx_stats(vendor_event,
+							 link_peer_stats,
+							 mld_stats,
+							 peer_type)) {
+				ath12k_err(NULL, "Error filling peer HW TX stats");
+				nla_nest_end(vendor_event, attr1);
+				nla_nest_end(vendor_event, attr);
+				return -EINVAL;
+			}
+		}
+
 		nla_nest_end(vendor_event, attr1);
 	}
 	nla_nest_end(vendor_event, attr);
@@ -5529,10 +5672,131 @@ static int ath12k_vendor_fill_rx_mon_stats(struct sk_buff *skb,
 	return 0;
 }
 
+/**
+ * ath12k_fill_peer_hw_rx_stats() - Pack HW RX stats into Ring 0's per-pkt
+ *				    stats nested attribute.
+ *
+ * Called only when ring_num is 0 and HW stats are enabled.
+ * Return: Invalid when failed, 0 when successful.
+ */
+
+static int
+ath12k_fill_peer_hw_rx_stats(struct sk_buff *vendor_event,
+			     struct ath12k_dp_link_peer_stats *link_peer_stats,
+			     struct ath12k_dp_mld_peer_stats *mld_stats,
+			     int peer_type)
+{
+	struct ath12k_dp_link_peer_hw_rx_stats *hw_link_rx;
+	struct ath12k_dp_peer_hw_rx_stats *hw_rx;
+
+	if (!link_peer_stats || !link_peer_stats->hw_link_stats) {
+		ath12k_err(NULL, "Invalid link_peer_stats: ptr:%p hw_link_stats:%p\n",
+			   link_peer_stats,
+			   link_peer_stats ? link_peer_stats->hw_link_stats : NULL);
+		return -EINVAL;
+	}
+
+	hw_link_rx = &link_peer_stats->hw_link_stats->hw_link_rx;
+
+	if (nla_put_u64_64bit(vendor_event,
+			      QCA_VENDOR_ATTR_PER_PKT_STATS_RX_SUCCESS_GCAST_BYTES,
+			      hw_link_rx->success_gcast_bytes, NL80211_ATTR_PAD)) {
+		ath12k_err(NULL, "nla put failure: RX SUCCESS_GCAST_BYTES");
+		return -EINVAL;
+	}
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_PER_PKT_STATS_RX_SUCCESS_GCAST_PKTS,
+			hw_link_rx->success_gcast_pkts)) {
+		ath12k_err(NULL, "nla put failure: RX SUCCESS_GCAST_PKTS");
+		return -EINVAL;
+	}
+	if (nla_put_u64_64bit(vendor_event,
+			      QCA_VENDOR_ATTR_PER_PKT_STATS_RX_FAILED_MPDU_BYTES,
+			      hw_link_rx->failed_mpdu_bytes, NL80211_ATTR_PAD)) {
+		ath12k_err(NULL, "nla put failure: RX FAILED_MPDU_BYTES");
+		return -EINVAL;
+	}
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_PER_PKT_STATS_RX_FAILED_MPDU,
+			hw_link_rx->failed_mpdu)) {
+		ath12k_err(NULL, "nla put failure: RX FAILED_MPDU");
+		return -EINVAL;
+	}
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_PER_PKT_STATS_RX_DROP1_UCAST_PKTS,
+			hw_link_rx->drop1_ucast_pkts)) {
+		ath12k_err(NULL, "nla put failure: RX DROP1_UCAST_PKTS");
+		return -EINVAL;
+	}
+
+	if (peer_type == ATH12K_LEGACY_PEER || peer_type == ATH12K_LINK_PEER) {
+		if (nla_put_u64_64bit(vendor_event,
+				      QCA_VENDOR_ATTR_PER_PKT_STATS_RX_SUM_RSSI,
+				      hw_link_rx->sum_rssi, NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failure: RX SUM_RSSI");
+			return -EINVAL;
+		}
+		if (nla_put_u64_64bit(vendor_event,
+				      QCA_VENDOR_ATTR_PER_PKT_STATS_RX_SUM_PHY_RATE,
+				      hw_link_rx->sum_phy_rate, NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failure: RX SUM_PHY_RATE");
+			return -EINVAL;
+		}
+		if (nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_PER_PKT_STATS_RX_SUCCESS_PPDU_COUNT,
+				hw_link_rx->success_ppdu_count)) {
+			ath12k_err(NULL, "nla put failure: RX SUCCESS_PPDU_COUNT");
+			return -EINVAL;
+		}
+	}
+
+	if (peer_type != ATH12K_LINK_PEER) {
+		if (!mld_stats || !mld_stats->hw_stats) {
+			ath12k_err(NULL,
+				   "Invalid mld_stats: ptr:%p hw_stats:%p\n",
+				   mld_stats,
+				   mld_stats ? mld_stats->hw_stats : NULL);
+			return -EINVAL;
+		}
+
+		hw_rx = &mld_stats->hw_stats->hw_rx;
+
+		if (nla_put_u64_64bit(vendor_event,
+				      QCA_VENDOR_ATTR_PER_PKT_STATS_RX_DROP_UCAST_BYTES,
+				      hw_rx->drop_ucast_bytes,
+				      NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failure: RX DROP_UCAST_BYTES");
+			return -EINVAL;
+		}
+		if (nla_put_u64_64bit(vendor_event,
+				      QCA_VENDOR_ATTR_PER_PKT_STATS_RX_DROP_GCAST_BYTES,
+				      hw_rx->drop_gcast_bytes,
+				      NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failure: RX DROP_GCAST_BYTES");
+			return -EINVAL;
+		}
+		if (nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_PER_PKT_STATS_RX_DROP2_UCAST_PKTS,
+				hw_rx->drop2_pkts)) {
+			ath12k_err(NULL, "nla put failure: RX DROP2_UCAST_PKTS");
+			return -EINVAL;
+		}
+		if (nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_PER_PKT_STATS_RX_DROP_GCAST_PKTS,
+				hw_rx->drop_gcast_pkts)) {
+			ath12k_err(NULL, "nla put failure: RX DROP_GCAST_PKTS");
+			return -EINVAL;
+		}
+	}
+
+	return 0;
+}
+
 static int ath12k_fill_peer_rx_stats(struct ath12k *ar,
 				     struct sk_buff *vendor_event,
 				     struct ath12k_dp_peer_stats *peer_stats,
 				     struct ath12k_dp_link_peer_stats *link_peer_stats,
+				     struct ath12k_dp_mld_peer_stats *mld_stats,
 				     bool is_extended,
 				     int peer_type)
 {
@@ -5567,6 +5831,21 @@ static int ath12k_fill_peer_rx_stats(struct ath12k *ar,
 				   ring_num + 1);
 			return -EINVAL;
 		}
+
+		/* HW offload RX stats — Ring 0 only */
+		if (((ring_num + 1) == QCA_VENDOR_ATTR_WLAN_TELEMETRY_REO_RING_0) &&
+		    ath12k_dp_hw_peer_stats_enabled(&ar->dp)) {
+			if (ath12k_fill_peer_hw_rx_stats(vendor_event,
+							 link_peer_stats,
+							 mld_stats,
+							 peer_type)) {
+				ath12k_err(NULL, "Error filling peer HW RX stats");
+				nla_nest_end(vendor_event, attr1);
+				nla_nest_end(vendor_event, attr);
+				return -EINVAL;
+			}
+		}
+
 		nla_nest_end(vendor_event, attr1);
 	}
 	nla_nest_end(vendor_event, attr);
@@ -6003,6 +6282,8 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 					    struct ath12k_telemetry_command *cmd)
 {
 	struct ath12k_telemetry_dp_peer *telemetry_peer;
+	struct ath12k_dp_link_peer_hw_stats *hw_link_stats;
+	struct ath12k_dp_peer_hw_stats *hw_stats;
 	struct ath12k_htt_tx_stats *htt_tx_stats;
 	struct ath12k *ar = &ahvif->ah->radio[0];
 	struct ath12k_dp_proto_stats_peer *proto;
@@ -6044,6 +6325,29 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 	}
 	telemetry_peer->peer_stats.proto = proto;
 
+	if (ath12k_dp_hw_peer_stats_enabled(&ar->dp)) {
+		hw_link_stats = vzalloc(sizeof(*hw_link_stats));
+		if (!hw_link_stats) {
+			vfree(proto);
+			vfree(htt_tx_stats);
+			vfree(rx_mon_stats);
+			vfree(telemetry_peer);
+			return -ENOMEM;
+		}
+		telemetry_peer->link_peer_stats.hw_link_stats = hw_link_stats;
+
+		hw_stats = vzalloc(sizeof(*hw_stats));
+		if (!hw_stats) {
+			vfree(hw_link_stats);
+			vfree(proto);
+			vfree(htt_tx_stats);
+			vfree(rx_mon_stats);
+			vfree(telemetry_peer);
+			return -ENOMEM;
+		}
+		telemetry_peer->mld_stats.hw_stats = hw_stats;
+	}
+
 	if (ath12k_dp_get_peer_stats(ahvif, telemetry_peer, cmd->mac,
 				     cmd->link_id)) {
 		ath12k_err(NULL, "Error getting peer stats from dp");
@@ -6059,6 +6363,7 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 						      &telemetry_peer->peer_stats,
 						      telemetry_peer->is_extended,
 						      &telemetry_peer->link_peer_stats,
+						      &telemetry_peer->mld_stats,
 						      telemetry_peer->peer_type)) {
 				ath12k_err(NULL, "nla put failure: Sta tx stats");
 				goto out;
@@ -6094,6 +6399,7 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 						      vendor_event,
 						      &telemetry_peer->peer_stats,
 						      &telemetry_peer->link_peer_stats,
+						      &telemetry_peer->mld_stats,
 						      telemetry_peer->is_extended,
 						      telemetry_peer->peer_type)) {
 				ath12k_err(NULL, "nla put failure: Sta rx stats");
@@ -6164,6 +6470,10 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 
 	ret = 0;
 out:
+	if (ath12k_dp_hw_peer_stats_enabled(&ar->dp)) {
+		vfree(hw_stats);
+		vfree(hw_link_stats);
+	}
 	vfree(proto);
 	vfree(htt_tx_stats);
 	vfree(rx_mon_stats);
@@ -6770,6 +7080,7 @@ static int ath12k_fill_vap_rx_stats(struct ath12k *ar,
 					vendor_event,
 					&telemetry_vif->aggr_vif_stats.peer_stats,
 					&telemetry_vif->aggr_vif_stats.link_peer_stats,
+					&telemetry_vif->aggr_vif_stats.mld_stats,
 					telemetry_vif->is_extended,
 					ATH12K_PEER_INVAL);
 
@@ -7058,6 +7369,7 @@ static int ath12k_fill_vap_tx_stats(struct ath12k *ar,
 					&telemetry_vif->aggr_vif_stats.peer_stats,
 					telemetry_vif->is_extended,
 					&telemetry_vif->aggr_vif_stats.link_peer_stats,
+					&telemetry_vif->aggr_vif_stats.mld_stats,
 					ATH12K_PEER_INVAL);
 	if (ret) {
 		ath12k_err(NULL, "Error filling vap tx stats");
@@ -7079,6 +7391,8 @@ static int ath12k_prepare_vif_vendor_event(struct sk_buff *vendor_event,
 	struct ath12k_dp_proto_stats_vif *vif_proto;
 	struct ath12k_rx_peer_stats *rx_mon_stats;
 	struct ath12k_htt_tx_stats *htt_tx_stats;
+	struct ath12k_dp_link_peer_hw_stats *hw_link_stats;
+	struct ath12k_dp_peer_hw_stats *hw_stats;
 	struct ath12k *ar = &ahvif->ah->radio[0];
 	struct nlattr *attr;
 	u8 index;
@@ -7133,6 +7447,32 @@ static int ath12k_prepare_vif_vendor_event(struct sk_buff *vendor_event,
 
 	for (index = 0; index < DP_TCL_NUM_RING_MAX; index++)
 		telemetry_vif->aggr_vif_stats.stats[index].proto = (vif_proto + index);
+
+	if (ath12k_dp_hw_peer_stats_enabled(&ar->dp)) {
+		hw_link_stats = vzalloc(sizeof(*hw_link_stats));
+		if (!hw_link_stats) {
+			vfree(vif_proto);
+			vfree(peer_proto);
+			vfree(rx_mon_stats);
+			vfree(htt_tx_stats);
+			vfree(telemetry_vif);
+			return -ENOMEM;
+		}
+		telemetry_vif->aggr_vif_stats.link_peer_stats.hw_link_stats =
+									hw_link_stats;
+
+		hw_stats = vzalloc(sizeof(*hw_stats));
+		if (!hw_stats) {
+			vfree(hw_link_stats);
+			vfree(vif_proto);
+			vfree(peer_proto);
+			vfree(rx_mon_stats);
+			vfree(htt_tx_stats);
+			vfree(telemetry_vif);
+			return -ENOMEM;
+		}
+		telemetry_vif->aggr_vif_stats.mld_stats.hw_stats = hw_stats;
+	}
 
 	if (ath12k_send_cp_event(cmd, vendor_event, ahvif))
 		ath12k_err(NULL, "Failed to send cp event");
@@ -7193,6 +7533,10 @@ static int ath12k_prepare_vif_vendor_event(struct sk_buff *vendor_event,
 
 	ret = 0;
 out:
+	if (ath12k_dp_hw_peer_stats_enabled(&ar->dp)) {
+		vfree(hw_stats);
+		vfree(hw_link_stats);
+	}
 	vfree(vif_proto);
 	vfree(peer_proto);
 	vfree(htt_tx_stats);
@@ -7266,6 +7610,7 @@ static int ath12k_fill_radio_rx_stats(struct ath12k *ar,
 					vendor_event,
 					&telemetry_radio->aggr_pdev_stats.peer_stats,
 					&telemetry_radio->aggr_pdev_stats.link_peer_stats,
+					&telemetry_radio->aggr_pdev_stats.mld_stats,
 					telemetry_radio->is_extended,
 					ATH12K_PEER_INVAL);
 
@@ -7286,6 +7631,7 @@ static int ath12k_fill_radio_tx_stats(struct ath12k *ar,
 					&telemetry_radio->aggr_pdev_stats.peer_stats,
 					telemetry_radio->is_extended,
 					link_peer_stats,
+					&telemetry_radio->aggr_pdev_stats.mld_stats,
 					ATH12K_PEER_INVAL);
 
 	return ret;
@@ -7613,6 +7959,8 @@ static int ath12k_prepare_radio_vendor_event(struct sk_buff *vendor_event,
 	struct ath12k_htt_tx_stats *htt_tx_stats;
 	struct ath12k_rx_peer_stats *rx_mon_stats;
 	struct ath12k_dp_aggr_pdev_tid_stats *flat_tid_stats;
+	struct ath12k_dp_link_peer_hw_stats *hw_link_stats;
+	struct ath12k_dp_peer_hw_stats *hw_stats;
 	struct nlattr *attr;
 	int ret = -EINVAL;
 	u32 dp_tx_failed = 0;
@@ -7671,6 +8019,28 @@ static int ath12k_prepare_radio_vendor_event(struct sk_buff *vendor_event,
 	}
 	telemetry_radio->aggr_pdev_stats.link_peer_stats.rx_stats = rx_mon_stats;
 
+	if (ath12k_dp_hw_peer_stats_enabled(&ar->dp)) {
+		hw_link_stats = vzalloc(sizeof(*hw_link_stats));
+		if (!hw_link_stats) {
+			vfree(rx_mon_stats);
+			vfree(htt_tx_stats);
+			vfree(telemetry_radio);
+			return -ENOMEM;
+		}
+		telemetry_radio->aggr_pdev_stats.link_peer_stats.hw_link_stats =
+									hw_link_stats;
+
+		hw_stats = vzalloc(sizeof(*hw_stats));
+		if (!hw_stats) {
+			vfree(hw_link_stats);
+			vfree(rx_mon_stats);
+			vfree(htt_tx_stats);
+			vfree(telemetry_radio);
+			return -ENOMEM;
+		}
+		telemetry_radio->aggr_pdev_stats.mld_stats.hw_stats = hw_stats;
+	}
+
 	ath12k_dp_get_pdev_stats(dp_pdev, telemetry_radio);
 
 	/* Compute total TX failures from aggregated pdev stats (includes
@@ -7725,6 +8095,10 @@ static int ath12k_prepare_radio_vendor_event(struct sk_buff *vendor_event,
 
 	ret = 0;
 out:
+	if (ath12k_dp_hw_peer_stats_enabled(&ar->dp)) {
+		vfree(hw_stats);
+		vfree(hw_link_stats);
+	}
 	vfree(htt_tx_stats);
 	vfree(rx_mon_stats);
 	vfree(telemetry_radio);
