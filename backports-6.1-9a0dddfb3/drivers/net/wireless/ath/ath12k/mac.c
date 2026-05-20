@@ -17416,9 +17416,14 @@ check_rm_action_frame:
 		}
 		break;
 	default:
-		/* nothing to fill */
-		MGMT_RESET_LINK_AGNOSTIC(can_override_mld_tx, skb_cb);
-		return 0;
+		if (ath12k_vs_action_has_ml_link_info_ie_extn(ar, category, buf,
+							      skb->data + skb->len))
+			MGMT_SET_LINK_AGNOSTIC(can_override_mld_tx, skb_cb);
+		else {
+			/* nothing to fill */
+			MGMT_RESET_LINK_AGNOSTIC(can_override_mld_tx, skb_cb);
+			return 0;
+		}
 	}
 
 #undef MGMT_RESET_LINK_AGNOSTIC
