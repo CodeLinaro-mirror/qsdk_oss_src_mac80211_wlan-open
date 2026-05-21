@@ -3228,6 +3228,203 @@ static void ath12k_dp_override_ppeds_rx(struct ath12k_dp_peer_stats *peer_stats,
 							rx_stats->num_msdu_bytes;
 }
 
+static void
+ath12k_dp_aggregate_hw_link_tx_stats(struct ath12k_dp_link_peer_hw_tx_stats *dst,
+				     const struct ath12k_dp_link_peer_hw_tx_stats *src)
+{
+	if (!dst || !src)
+		return;
+
+	/* Placeholder for HW link Tx stats aggregation */
+
+	/**
+	 * sum_ack_rssi, sum_phy_rate and acked_ppdu_count are link-specific,
+	 * not aggregated.
+	 */
+}
+
+/**
+ * ath12k_dp_aggr_hw_link_tx_stats() - Aggregate HW offload TX link stats
+ *				       across all links of an MLD peer.
+ * @ar: ath12k radio pointer
+ * @peer: MLD dp_peer
+ * @link_peer_stats: destination telemetry link stats buffer
+ *
+ * Iterates over all data links of the MLD peer and accumulates the link level
+ * HW Tx counters into the telmetry structure.
+ * sum_ack_rssi and sum_phy_rate are link-specific and are NOT aggregated.
+ */
+static void
+ath12k_dp_aggr_hw_link_tx_stats(struct ath12k *ar, struct ath12k_dp_peer *peer,
+				struct ath12k_dp_link_peer_stats *link_peer_stats)
+{
+	struct ath12k_dp_link_peer *tmp_peer = NULL;
+	struct ath12k_dp_link_peer_hw_tx_stats *dst, *src;
+	u8 tmp_link_id;
+
+	if (!ath12k_dp_hw_peer_stats_enabled(&ar->dp))
+		return;
+
+	if (!link_peer_stats->hw_link_stats)
+		return;
+
+	dst = &link_peer_stats->hw_link_stats->hw_link_tx;
+
+	rcu_read_lock();
+	for (tmp_link_id = 0; tmp_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS; tmp_link_id++) {
+		tmp_peer = ath12k_dp_link_peer_find_by_hw_link_id(peer, tmp_link_id);
+		if (!tmp_peer || !tmp_peer->peer_stats.hw_link_stats)
+			continue;
+
+		src = &tmp_peer->peer_stats.hw_link_stats->hw_link_tx;
+
+		if (dst && src)
+			ath12k_dp_aggregate_hw_link_tx_stats(dst, src);
+	}
+	rcu_read_unlock();
+}
+
+static void
+ath12k_dp_aggregate_hw_link_rx_stats(struct ath12k_dp_link_peer_hw_rx_stats *dst,
+				     const struct ath12k_dp_link_peer_hw_rx_stats *src)
+{
+	if (!dst || !src)
+		return;
+
+	dst->success_gcast_bytes += src->success_gcast_bytes;
+	dst->failed_mpdu_bytes   += src->failed_mpdu_bytes;
+	dst->drop1_ucast_pkts    += src->drop1_ucast_pkts;
+	dst->success_gcast_pkts  += src->success_gcast_pkts;
+	dst->failed_mpdu         += src->failed_mpdu;
+	/**
+	 * success_ppdu_count, sum_rssi and sum_phy_rate are link-specific,
+	 * not aggregated
+	 */
+}
+
+/**
+ * ath12k_dp_aggr_hw_link_rx_stats() - Aggregate HW RX link stats
+ *				       across all links of an MLD peer.
+ * @ar: ath12k radio pointer
+ * @peer: MLD dp_peer
+ * @link_peer_stats: destination telemetry link stats buffer
+ *
+ * Iterates over all data links of the MLD peer and accumulates the
+ * link-level HW RX counters into telemetry structure.
+ */
+static void
+ath12k_dp_aggr_hw_link_rx_stats(struct ath12k *ar, struct ath12k_dp_peer *peer,
+				struct ath12k_dp_link_peer_stats *link_peer_stats)
+{
+	struct ath12k_dp_link_peer *tmp_peer = NULL;
+	struct ath12k_dp_link_peer_hw_rx_stats *dst, *src;
+	u8 tmp_link_id;
+
+	if (!ath12k_dp_hw_peer_stats_enabled(&ar->dp))
+		return;
+
+	if (!link_peer_stats->hw_link_stats)
+		return;
+
+	dst = &link_peer_stats->hw_link_stats->hw_link_rx;
+
+	rcu_read_lock();
+	for (tmp_link_id = 0; tmp_link_id < ATH12K_DP_PEER_MAX_MLO_LINKS; tmp_link_id++) {
+		tmp_peer = ath12k_dp_link_peer_find_by_hw_link_id(peer, tmp_link_id);
+		if (!tmp_peer || !tmp_peer->peer_stats.hw_link_stats)
+			continue;
+
+		src = &tmp_peer->peer_stats.hw_link_stats->hw_link_rx;
+
+		if (dst && src)
+			ath12k_dp_aggregate_hw_link_rx_stats(dst, src);
+	}
+	rcu_read_unlock();
+}
+
+/**
+ * ath12k_dp_aggr_hw_link_stats() - Aggregate HW TX and RX link stats
+ *				    across all links of an MLD peer.
+ * @ar: ath12k radio pointer
+ * @peer: MLD dp_peer
+ * @link_peer_stats: destination telemetry link stats buffer
+ *
+ * Iterates over all data links of the MLD peer and accumulates the
+ * link-level HW TX and RX counters into telemetry structure.
+ */
+static void
+ath12k_dp_aggr_hw_link_stats(struct ath12k *ar, struct ath12k_dp_peer *peer,
+			     struct ath12k_dp_link_peer_stats *link_peer_stats)
+{
+	ath12k_dp_aggr_hw_link_tx_stats(ar, peer, link_peer_stats);
+	ath12k_dp_aggr_hw_link_rx_stats(ar, peer, link_peer_stats);
+}
+
+/**
+ * ath12k_dp_update_hw_peer_tx_stats() - Copy peer HW offload TX stats
+ * @ar: ath12k radio pointer
+ * @peer: MLD dp_peer (source)
+ * @mld_stats: destination telemetry MLD stats buffer
+ *
+ * Copies the MLD-level HW TX drop counters into the telemetry structure.
+ */
+static void
+ath12k_dp_update_hw_peer_tx_stats(struct ath12k *ar,
+				  struct ath12k_dp_peer *peer,
+				  struct ath12k_dp_mld_peer_stats *mld_stats)
+{
+	if (!ath12k_dp_hw_peer_stats_enabled(&ar->dp))
+		return;
+
+	if (!mld_stats->hw_stats || !peer->mld_stats.hw_stats)
+		return;
+
+	memcpy(&mld_stats->hw_stats->hw_tx,
+	       &peer->mld_stats.hw_stats->hw_tx,
+	       sizeof(mld_stats->hw_stats->hw_tx));
+}
+
+/**
+ * ath12k_dp_update_hw_peer_rx_stats() - Copy peer HW offload RX stats
+ * @ar: ath12k radio pointer
+ * @peer: MLD dp_peer (source)
+ * @mld_stats: destination telemetry MLD stats buffer
+ *
+ * Copies the MLD-level HW RX drop counters into the telemetry query structure.
+ */
+static void
+ath12k_dp_update_hw_peer_rx_stats(struct ath12k *ar,
+				  struct ath12k_dp_peer *peer,
+				  struct ath12k_dp_mld_peer_stats *mld_stats)
+{
+	if (!ath12k_dp_hw_peer_stats_enabled(&ar->dp))
+		return;
+
+	if (!mld_stats->hw_stats || !peer->mld_stats.hw_stats)
+		return;
+
+	memcpy(&mld_stats->hw_stats->hw_rx,
+	       &peer->mld_stats.hw_stats->hw_rx,
+	       sizeof(mld_stats->hw_stats->hw_rx));
+}
+
+/**
+ * ath12k_dp_update_hw_peer_stats() - Copy peer HW offload TX and RX stats
+ * @ar: ath12k radio pointer
+ * @peer: MLD dp_peer (source)
+ * @mld_stats: destination telemetry MLD stats buffer
+ *
+ * Copies the MLD-level HW TX and RX counters into the telemetry query structure.
+ */
+
+static void
+ath12k_dp_update_hw_peer_stats(struct ath12k *ar, struct ath12k_dp_peer *peer,
+			       struct ath12k_dp_mld_peer_stats *mld_stats)
+{
+	ath12k_dp_update_hw_peer_tx_stats(ar, peer, mld_stats);
+	ath12k_dp_update_hw_peer_rx_stats(ar, peer, mld_stats);
+}
+
 static void ath12k_dp_aggr_peer_stats(struct ath12k_link_vif *arvif,
 				      struct ath12k_dp_link_peer *link_peer,
 				      struct ath12k_dp_aggr_vif_stats *aggr_vif_stats,
@@ -3241,6 +3438,10 @@ static void ath12k_dp_aggr_peer_stats(struct ath12k_link_vif *arvif,
 	struct ath12k_htt_tx_stats *src_htt_stats = NULL;
 	struct ath12k_htt_tx_stats *dst_htt_stats = NULL;
 	struct ath12k_rx_peer_stats *rx_peer_stats = NULL;
+	struct ath12k_dp_link_peer_hw_tx_stats *src_hw_link_tx = NULL;
+	struct ath12k_dp_link_peer_hw_rx_stats *src_hw_link_rx = NULL;
+	struct ath12k_dp_link_peer_hw_tx_stats *dst_hw_link_tx = NULL;
+	struct ath12k_dp_link_peer_hw_rx_stats *dst_hw_link_rx = NULL;
 	bool is_ds_wds_peer = false;
 
 	if (!link_peer->dp_peer)
@@ -3264,6 +3465,20 @@ static void ath12k_dp_aggr_peer_stats(struct ath12k_link_vif *arvif,
 		if (ath12k_extd_rx_stats_enabled(ar))
 			ath12k_dp_aggregate_link_rx_mon_stats(link_peer_stats->rx_stats,
 							      rx_peer_stats);
+		if (ath12k_dp_hw_peer_stats_enabled(dp_pdev) &&
+		    link_peer->peer_stats.hw_link_stats &&
+		    link_peer_stats->hw_link_stats) {
+			src_hw_link_tx = &link_peer->peer_stats.hw_link_stats->hw_link_tx;
+			src_hw_link_rx = &link_peer->peer_stats.hw_link_stats->hw_link_rx;
+
+			dst_hw_link_tx = &link_peer_stats->hw_link_stats->hw_link_tx;
+			dst_hw_link_rx = &link_peer_stats->hw_link_stats->hw_link_rx;
+
+			ath12k_dp_aggregate_hw_link_tx_stats(dst_hw_link_tx,
+							     src_hw_link_tx);
+			ath12k_dp_aggregate_hw_link_rx_stats(dst_hw_link_rx,
+							     src_hw_link_rx);
+		}
 	}
 	/* For non-WDS peers on a DS VIF, the PPE sync callback
 	 * does not populate the DS stats. Skip updating the counters
@@ -3307,16 +3522,28 @@ static void ath12k_vif_iterate_peer(struct ath12k_link_vif *arvif,
 				    bool is_ds_vif)
 {
 
-	struct ath12k_dp *dp = arvif ->ar->ab->dp;
-	u32 vdev_id = arvif-> vdev_id;
 	struct ath12k_dp_link_peer *link_peer;
+	struct ath12k *ar = arvif->ar;
+	struct ath12k_dp *dp = ar->ab->dp;
+	u32 vdev_id = arvif->vdev_id;
 
 	/* Iterate through all peers of particular vif*/
 	spin_lock_bh(&dp->dp_lock);
-	list_for_each_entry(link_peer, &dp->peers, list)  {
+	list_for_each_entry(link_peer, &dp->peers, list) {
 		if (link_peer->vdev_id != vdev_id)
 			continue;
+
 		ath12k_dp_aggr_peer_stats(arvif, link_peer, aggr_vif_stats, is_ds_vif);
+
+		/* Copy them exactly once using the primary link peer to avoid
+		 * redundant copies when multiple link peers share the same
+		 * MLD peer.
+		 */
+		if (link_peer->primary_link && link_peer->dp_peer) {
+			ath12k_dp_update_hw_peer_stats(ar, link_peer->dp_peer,
+						       &aggr_vif_stats->mld_stats);
+		}
+
 	}
 	spin_unlock_bh(&dp->dp_lock);
 }
@@ -3573,6 +3800,80 @@ int ath12k_update_peer_rx_mon_stats(struct ath12k_dp_link_peer *link_peer,
 	return 0;
 }
 
+/**
+ * ath12k_update_peer_hw_link_tx_stats() - Get HW offload TX link stats from a
+ *					   link peer.
+ * @dst: destination hw_link_stats buffer
+ * @src: source hw_link_stats from the link peer
+ *
+ * Performs a memcpy of the hw_link_tx sub-structure.
+ */
+static inline void
+ath12k_update_peer_hw_link_tx_stats(struct ath12k_dp_link_peer_hw_stats *dst,
+				    const struct ath12k_dp_link_peer_hw_stats *src)
+{
+	if (!dst || !src)
+		return;
+
+	memcpy(&dst->hw_link_tx, &src->hw_link_tx, sizeof(dst->hw_link_tx));
+}
+
+/**
+ * ath12k_update_peer_hw_rx_link_stats() - Get HW offload RX link stats from a
+ *					   link peer.
+ * @dst: destination hw_link_stats buffer
+ * @src: source hw_link_stats from the link peer
+ *
+ * Performs a memcpy of the hw_link_rx sub-structure.
+ */
+static inline void
+ath12k_update_peer_hw_link_rx_stats(struct ath12k_dp_link_peer_hw_stats *dst,
+				    const struct ath12k_dp_link_peer_hw_stats *src)
+{
+	if (!dst || !src)
+		return;
+
+	memcpy(&dst->hw_link_rx, &src->hw_link_rx, sizeof(dst->hw_link_rx));
+}
+
+/**
+ * ath12k_dp_update_hw_link_stats() - Copy HW link TX and RX stats from a link
+ *				      peer into the telemetry buffer.
+ * @dp_pdev: DP radio pointer
+ * @dp_peer: MLD dp_peer
+ * @link_id: link ID to look up the link peer
+ * @link_peer_stats: destination telemetry link stats buffer
+ *
+ * Looks up the link peer for the given link_id and copies both hw_link_tx
+ * and hw_link_rx sub-structures if both buffers are allocated.
+ */
+static void
+ath12k_dp_update_hw_link_stats(struct ath12k_pdev_dp *dp_pdev,
+			       struct ath12k_dp_peer *dp_peer,
+			       u8 link_id,
+			       struct ath12k_dp_link_peer_stats *link_peer_stats)
+{
+	struct ath12k_dp_link_peer *tmp_peer;
+
+	if (!ath12k_dp_hw_peer_stats_enabled(dp_pdev))
+		return;
+
+	rcu_read_lock();
+	tmp_peer = rcu_dereference(dp_peer->link_peers[link_id]);
+	if (!tmp_peer || !tmp_peer->peer_stats.hw_link_stats)
+		goto unlock;
+
+	if (link_peer_stats->hw_link_stats) {
+		ath12k_update_peer_hw_link_tx_stats(link_peer_stats->hw_link_stats,
+						    tmp_peer->peer_stats.hw_link_stats);
+		ath12k_update_peer_hw_link_rx_stats(link_peer_stats->hw_link_stats,
+						    tmp_peer->peer_stats.hw_link_stats);
+	}
+
+unlock:
+	rcu_read_unlock();
+}
+
 static int
 ath12k_dp_get_link_peer_stats(struct ath12k_link_vif *arvif,
 			      struct ath12k_dp_peer_stats *peer_stats,
@@ -3615,6 +3916,9 @@ ath12k_dp_get_link_peer_stats(struct ath12k_link_vif *arvif,
 								    cur_peer_stats,
 								    peer->is_vdev_peer,
 								    is_ds_wds_peer);
+				ath12k_dp_update_hw_link_stats(&ar->dp, peer,
+							       stats_link_id,
+							       link_peer_stats);
 				if (ath12k_extd_tx_stats_enabled(ar))
 					ath12k_dp_update_tx_ext_htt_stats(dst_htt_stats,
 									 src_htt_stats);
@@ -3724,6 +4028,9 @@ ath12k_dp_update_legacy_peer_stats(struct ath12k *ar,
 	u8 link_id;
 
 	telemetry_peer->peer_type = ATH12K_LEGACY_PEER;
+
+	ath12k_dp_update_hw_peer_stats(ar, peer, &telemetry_peer->mld_stats);
+
 	for (link_id = 0; link_id < ATH12K_DP_PEER_MAX_MLO_LINKS; link_id++) {
 		ath12k_update_ext_stats(ar, peer, link_id, link_stats, is_ds_wds_peer);
 		ath12k_dp_aggr_per_pkt_peer_stats(&ar->dp,
@@ -3731,6 +4038,8 @@ ath12k_dp_update_legacy_peer_stats(struct ath12k *ar,
 						  &peer->stats[link_id],
 						  peer->is_vdev_peer,
 						  is_ds_wds_peer);
+		ath12k_dp_update_hw_link_stats(&ar->dp, peer, link_id,
+					       link_stats);
 	}
 	if (ath12k_extd_rx_stats_enabled(ar))
 		ath12k_dp_override_ppeds_rx(peer_stats, link_stats->rx_stats,
@@ -3747,6 +4056,7 @@ int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
 	struct ath12k *ar = &ahvif->ah->radio[0];
 	struct ath12k_dp_peer_stats *peer_stats;
 	struct ath12k_dp_link_peer_stats *link_stats;
+	struct ath12k_dp_mld_peer_stats *mld_stats;
 	struct ath12k_rx_peer_stats *rx_stats;
 	struct ath12k_dp_peer *peer;
 	int stats_link_id, i, ret = 0;
@@ -3759,6 +4069,7 @@ int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
 	spin_lock_bh(&dp_hw->peer_lock);
 	peer = ath12k_dp_peer_find(dp_hw, addr);
 	peer_stats = &telemetry_peer->peer_stats;
+	mld_stats = &telemetry_peer->mld_stats;
 	link_stats = &telemetry_peer->link_peer_stats;
 	rx_stats = link_stats->rx_stats;
 
@@ -3798,6 +4109,10 @@ int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
 									    &peer->stats[stats_link_id],
 									    is_vdev_peer,
 									    ds_wds_peer);
+					ath12k_dp_update_hw_link_stats(&ar->dp,
+								       peer,
+								       stats_link_id,
+								       link_stats);
 					if (ath12k_extd_rx_stats_enabled(ar))
 						ath12k_dp_override_ppeds_rx(peer_stats,
 									    rx_stats,
@@ -3839,6 +4154,9 @@ int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
 							 "link_peer_delete_stats");
 				ath12k_dp_aggr_htt_stats(ar, peer, link_stats);
 				ath12k_dp_aggr_rx_mon_stats(ar, peer, link_stats);
+				ath12k_dp_update_hw_peer_stats(ar, peer, mld_stats);
+				ath12k_dp_aggr_hw_link_stats(ar, peer, link_stats);
+
 				/* Replace PPE-synced PPEDS ring counter with extended
 				 * RX monitor MSDU totals for DS VIF WDS peers in MLD.
 				 */
