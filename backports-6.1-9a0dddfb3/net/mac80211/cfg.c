@@ -5016,7 +5016,12 @@ __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 		return err;
 #endif
 
-	if (chanreq.oper.punctured && !link_conf->eht_support)
+	/* Allow channel switch with puncture bitmap if the link is repurposed,
+	 * where EHT support is disabled but the channel definitions are same
+	 * across different BSS of radio.
+	 */
+	if (chanreq.oper.punctured && !link_conf->eht_support &&
+	    !(sdata->vif.repurposed_links & BIT(link_id)))
 		return -EINVAL;
 
 	/* don't allow another channel switch if one is already active. */
