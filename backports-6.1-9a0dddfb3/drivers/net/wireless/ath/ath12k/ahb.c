@@ -645,8 +645,8 @@ static int ath12k_ahb_ext_grp_napi_poll(struct napi_struct *napi, int budget)
 
 	work_done = irq_grp->irq_handler(irq_grp->dp, irq_grp, budget);
 	if (work_done < budget) {
-		napi_complete_done(napi, work_done);
-		ath12k_ahb_ext_grp_enable(irq_grp);
+		if (likely(napi_complete_done(napi, work_done)))
+			ath12k_ahb_ext_grp_enable(irq_grp);
 	}
 
 	if (work_done > budget)
@@ -662,9 +662,30 @@ static irqreturn_t ath12k_ahb_ext_interrupt_handler(int irq, void *arg)
 	/* last interrupt received for this group */
 	irq_grp->timestamp = jiffies;
 
-	ath12k_ahb_ext_grp_disable(irq_grp);
-
-	napi_schedule(&irq_grp->napi);
+	/* Use napi_schedule_prep() to atomically check and set the NAPI
+	 * scheduled state before disabling the IRQs. This prevents a
+	 * disable_irq_nosync() reference count imbalance that occurs when
+	 * multiple IRQs belonging to the same group fire simultaneously on
+	 * different CPUs.
+	 *
+	 * In IPQ5332 (AHB), a single IRQ group can contain multiple IRQs
+	 * with different SMP affinities (e.g., host2rxdma-monitor-ring1 on
+	 * CPU1 and wbm2host-tx-completions-ring4 on CPU2 both belong to
+	 * group 3). If both fire at the same time, both CPUs enter this
+	 * handler concurrently. The old code called ath12k_ahb_ext_grp_disable()
+	 * unconditionally, causing disable_irq_nosync() to be called twice
+	 * (count=2), while napi_complete_done() only calls enable_irq() once
+	 * (count=1). This left all IRQs in the group permanently disabled,
+	 * stalling TX completions and eventually causing station disassociation.
+	 *
+	 * By checking napi_schedule_prep() first, only the first CPU to win
+	 * the atomic test-and-set disables the IRQs and schedules NAPI. The
+	 * second CPU skips the disable, keeping the reference count balanced.
+	 */
+	if (napi_schedule_prep(&irq_grp->napi)) {
+		ath12k_ahb_ext_grp_disable(irq_grp);
+		__napi_schedule(&irq_grp->napi);
+	}
 
 	return IRQ_HANDLED;
 }
