@@ -44,6 +44,9 @@ const struct ath12k_dp_arch_mon_ops ath12k_wifi8_dp_arch_mon_dual_ring_ops = {
 	.rx_enable_packet_filters = ath12k_dp_mon_rx_enable_packet_filters,
 	.pktlog_config = ath12k_dp_mon_pktlog_config_filter,
 	.htt_rx_filter_rxmon_cfg = ath12k_dp_htt_rx_filter_rxmon_cfg,
+	.ext_mon_validate_request = ath12k_wifi8_dp_ext_mon_validate_request,
+	.ext_mon_alloc = ath12k_dp_ext_mon_alloc,
+	.ext_mon_free = ath12k_dp_ext_mon_free,
 };
 
 static inline void
@@ -566,13 +569,79 @@ int ath12k_wifi8_dp_mon_update_band_and_get_freq(struct ath12k_base *ab, int pde
 	return freq;
 }
 
+static int
+ath12k_wifi8_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
+					struct hal_rx_mon_ppdu_info *ppdu_info,
+					struct sk_buff *mpdu,
+					struct ieee80211_rx_status *rxs)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_dp_rx_ext_mon *config;
+	struct ieee80211_hdr *hdr;
+	u8 filter_category, type;
+
+	spin_lock(&dp_mon_pdev->rx_ext_mon_lock);
+	config = dp_mon_pdev->rx_ext_mon_config;
+
+	if (unlikely(!(config && config->enable))) {
+		spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
+		ath12k_warn(dp_pdev->dp, "ext mon not enabled\n");
+		return -EINVAL;
+	}
+
+	filter_category =
+		ppdu_info->userstats[ppdu_info->user_id].filter_category;
+
+	hdr = (struct ieee80211_hdr *)ath12k_dp_mon_skb_get_frag_addr(mpdu, 0);
+
+	type = ((__le16_to_cpu(hdr->frame_control) & IEEE80211_FCTL_FTYPE) >>
+		ATH12K_FC0_TYPE_SHIFT);
+
+	if (unlikely(type >= ATH12K_EXT_MON_FRAME_MAX)) {
+		spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON,
+			   "Incorrect type received in fc: %x\n", hdr->frame_control);
+		return -EINVAL;
+	}
+
+	switch (filter_category) {
+	case DP_MPDU_FILTER_CATEGORY_MD:
+		if (config->md_enabled) {
+			if (config->peer_count && ppdu_info->nrp_info.fc_valid &&
+			    ppdu_info->nrp_info.to_ds_flag &&
+			    ppdu_info->nrp_info.mac_addr2_valid)
+				ath12k_dp_ext_mon_update_snr(ppdu_info, config);
+		}
+		break;
+	default:
+		spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON,
+			   "Filter category not handled in wifi8 ext mon: %x\n",
+			   filter_category);
+		return -EINVAL;
+	}
+
+	/* Unlock spinlock here; ext_mon_config must not be
+	 * accessed beyond this point
+	 */
+	spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
+
+	skb_reserve(mpdu, ATH12K_DP_MON_MAX_RADIO_TAP_HDR);
+	ath12k_dp_mon_update_radiotap(dp_pdev, ppdu_info, mpdu, rxs);
+
+	ath12k_dp_mon_rx_deliver_skb(dp_pdev, NULL, mpdu, rxs, ppdu_info);
+
+	return 0;
+}
+
 int
 ath12k_wifi8_dp_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 				    struct hal_rx_mon_ppdu_info *ppdu_info,
 				    struct sk_buff *mpdu)
 {
 	struct ieee80211_rx_status rxs = {0};
-	int freq_update = -1;
+	int freq_update = -1, ret = 0;
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 
 	ath12k_dp_mon_fill_rx_stats_info(ppdu_info, &rxs);
 
@@ -583,9 +652,6 @@ ath12k_wifi8_dp_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	if (freq_update != -1)
 		rxs.freq = freq_update;
 
-	skb_reserve(mpdu, ATH12K_DP_MON_MAX_RADIO_TAP_HDR);
-	ath12k_dp_mon_update_radiotap(dp_pdev, ppdu_info, mpdu, &rxs);
-
 	rxs.flag |= RX_FLAG_ONLY_MONITOR;
 	if (skb_shinfo(mpdu)->nr_frags)
 		rxs.flag |= RX_FLAG_AMSDU_MORE;
@@ -593,9 +659,17 @@ ath12k_wifi8_dp_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	if (ppdu_info->mpdu_info[ppdu_info->user_id].err_bitmap & HAL_RX_MPDU_ERR_FCS)
 		rxs.flag |= RX_FLAG_FAILED_FCS_CRC;
 
-	ath12k_dp_mon_rx_deliver_skb(dp_pdev, NULL, mpdu, &rxs, ppdu_info);
+	if (!(dp_mon_pdev->rx_ext_mon_config &&
+	      dp_mon_pdev->rx_ext_mon_config->enable)) {
+		skb_reserve(mpdu, ATH12K_DP_MON_MAX_RADIO_TAP_HDR);
+		ath12k_dp_mon_update_radiotap(dp_pdev, ppdu_info, mpdu, &rxs);
+		ath12k_dp_mon_rx_deliver_skb(dp_pdev, NULL, mpdu, &rxs, ppdu_info);
+	} else {
+		ret = ath12k_wifi8_dp_ext_mon_rx_deliver_mpdu(dp_pdev, ppdu_info,
+							      mpdu, &rxs);
+	}
 
-	return 0;
+	return ret;
 }
 
 static int
@@ -1100,7 +1174,13 @@ void ath12k_wifi8_dp_mon_rx_process_mpdu_queue(struct ath12k_pdev_dp *dp_pdev,
 			}
 		}
 
-		ath12k_wifi8_dp_mon_rx_deliver_mpdu(dp_pdev, ppdu_info, mpdu);
+		ret = ath12k_wifi8_dp_mon_rx_deliver_mpdu(dp_pdev, ppdu_info, mpdu);
+		if (unlikely(ret)) {
+			dev_kfree_skb_any(mpdu);
+			mon_stats->num_skb_free++;
+			num_skb = 0;
+			pkt_tlv = 0;
+		}
 
 next_mpdu:
 		mon_stats->num_skb_to_mac80211 += num_skb;
@@ -1740,4 +1820,82 @@ void ath12k_wifi8_dp_mon_rx_wq_deinit(struct ath12k_pdev_dp *dp_pdev)
 
 	flush_workqueue(mon_pdev->rxmon_wq);
 	destroy_workqueue(mon_pdev->rxmon_wq);
+}
+
+int ath12k_wifi8_dp_ext_mon_validate_request(struct ath12k_pdev_dp *dp_pdev,
+					     const struct ath12k_ext_mon_config *req)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev;
+	const struct ath12k_ext_mon_peer_info *peer = NULL;
+	int i;
+
+	dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	if (!dp_mon_pdev) {
+		ath12k_warn(dp_pdev->dp, "monitor pdev is null");
+		return -EINVAL;
+	}
+
+	if (req->cmd_type == ATH12K_EXT_MON_CMD_TYPE_SET_FILTER &&
+	    !req->filter.disable) {
+		/*
+		 * For wifi8, only MSDU level is supported. MPDU and PPDU levels
+		 * are not supported yet.
+		 */
+		if (req->filter.level != ATH12K_EXT_MON_FILTER_LEVEL_MSDU) {
+			ath12k_warn(dp_pdev->dp,
+				    "only MSDU level is supported");
+			return -EINVAL;
+		}
+
+		/*
+		 * For wifi8, as of now only target_neighbor pkt config is supported.
+		 * A pkt config is considered active when any filter[] entry is non-zero.
+		 * Reject upfront if all_peer, all_neighbor or target_peer are
+		 * active so the caller is informed that these modes are not
+		 * supported.
+		 */
+		if (ath12k_dp_ext_mon_is_mode_enabled(&req->filter.all_peer) ||
+		    ath12k_dp_ext_mon_is_mode_enabled(&req->filter.all_neighbor) ||
+		    ath12k_dp_ext_mon_is_mode_enabled(&req->filter.target_peer)) {
+			ath12k_warn(dp_pdev->dp,
+				    "only target_neighbor pkt config is supported");
+			return -EINVAL;
+		}
+
+		/*
+		 * For wifi8, only full packet length is supported. Short packet
+		 * lengths (64B, 128B, 256B) are not supported. Any configured
+		 * frame type length must be ATH12K_EXT_MON_LEN_FULL_PKT.
+		 */
+		for (i = 0; i < ATH12K_EXT_MON_FRAME_MAX; i++) {
+			if (req->filter.target_neighbor.len[i] &&
+			    req->filter.target_neighbor.len[i] !=
+					ATH12K_EXT_MON_LEN_FULL_PKT) {
+				ath12k_warn(dp_pdev->dp,
+					    "only full packet length is supported");
+				return -EINVAL;
+			}
+		}
+	}
+
+	if (req->cmd_type == ATH12K_EXT_MON_CMD_TYPE_SET_PEER) {
+		if (req->peer.action == ATH12K_EXT_MON_PEER_ACTION_ADD) {
+			for (i = 0; i < req->peer.count; i++) {
+				peer = &req->peer.peer_info[i];
+				/*
+				 * For wifi8, ra_addr is not supported. Reject any
+				 * request with ra_addr set or a non-default bitmap.
+				 */
+				if (peer->ra_addr || peer->bitmap !=
+						ATH12K_EXT_MON_DEFAULT_PEER_BITMAP) {
+					ath12k_warn(dp_pdev->dp,
+						    "invalid ra_addr: %d or bitmap: %02x",
+						    peer->ra_addr, peer->bitmap);
+					return -EINVAL;
+				}
+			}
+		}
+	}
+
+	return 0;
 }
