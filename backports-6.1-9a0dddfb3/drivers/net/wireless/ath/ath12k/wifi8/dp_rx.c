@@ -4972,6 +4972,27 @@ void ath12k_wifi8_dp_rx_ring_free(struct ath12k_base *ab)
 #endif
 }
 
+static void ath12k_configure_wbm_rxdma_watermark(struct ath12k_base *ab)
+{
+	int i;
+	int sfe_watermark[] = HAL_UMAC_WBM_BUFF_DESC_RING_CFG1;
+	int mgmt_watermark[] = HAL_UMAC_WBM_BUFF_DESC_RING_CFG2;
+	int ppe_watermark[] = HAL_UMAC_WBM_BUFF_DESC_RING_CFG3;
+	int wbm_base = HAL_SEQ_WCSS_UMAC_WBM_REG;
+	u32 sfe_val = ((DP_WBM_SFE_HIGH_WATERMARK - HAL_UMAC_WBM_LOW_WATERMARK_DIFF) <<
+			HAL_UMAC_WBM_LOW_WATERMARK_SHIFT) | DP_WBM_SFE_HIGH_WATERMARK;
+	u32 mgmt_val = ((DP_WBM_MGMT_HIGH_WATERMARK - HAL_UMAC_WBM_LOW_WATERMARK_DIFF) <<
+			HAL_UMAC_WBM_LOW_WATERMARK_SHIFT) | DP_WBM_MGMT_HIGH_WATERMARK;
+	u32 ppe_val = ((DP_WBM_PPE_HIGH_WATERMARK - HAL_UMAC_WBM_LOW_WATERMARK_DIFF) <<
+			HAL_UMAC_WBM_LOW_WATERMARK_SHIFT) | DP_WBM_PPE_HIGH_WATERMARK;
+
+	for (i = 0; i < HAL_UMAC_WBM_MAX_WATERMARK_CFG_REGS; i++) {
+		ath12k_hif_write32(ab, wbm_base + sfe_watermark[i], sfe_val);
+		ath12k_hif_write32(ab, wbm_base + mgmt_watermark[i], mgmt_val);
+		ath12k_hif_write32(ab, wbm_base + ppe_watermark[i], ppe_val);
+	}
+}
+
 int ath12k_wifi8_dp_rx_ring_setup(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
@@ -4995,6 +5016,8 @@ int ath12k_wifi8_dp_rx_ring_setup(struct ath12k_base *ab)
 			    ATH12K_DP_RX_ROAMING_RING1, ret);
 		return ret;
 	}
+
+	ath12k_configure_wbm_rxdma_watermark(ab);
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ret = ath12k_wifi8_dp_ppe2wbm_srng_setup(ab);
