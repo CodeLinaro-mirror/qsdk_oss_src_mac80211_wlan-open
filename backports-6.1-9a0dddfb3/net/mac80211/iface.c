@@ -1918,7 +1918,8 @@ static void ieee80211_setup_sdata(struct ieee80211_sub_if_data *sdata,
 	sdata->noack_map = 0;
 
 	sdata->chan_hw_idx = -1;
-	sdata->flags &= ~IEEE80211_SDATA_OFFCHAN_PACKETS;
+	sdata->flags &= ~(IEEE80211_SDATA_OFFCHAN_PACKETS |
+			  IEEE80211_SDATA_EXT_MONITOR_ENABLED);
 
 	/* only monitor/p2p-device differ */
 	if (sdata->dev) {
@@ -2601,3 +2602,14 @@ void ieee80211_enable_offchan_packet_capture(struct ieee80211_vif *vif,
 	}
 }
 EXPORT_SYMBOL(ieee80211_enable_offchan_packet_capture);
+
+void ieee80211_enable_ext_monitor(struct ieee80211_vif *vif, bool enable)
+{
+	struct ieee80211_sub_if_data *sdata = vif_to_sdata(vif);
+
+	if (enable)
+		sdata->flags |= IEEE80211_SDATA_EXT_MONITOR_ENABLED;
+	else
+		sdata->flags &= ~IEEE80211_SDATA_EXT_MONITOR_ENABLED;
+}
+EXPORT_SYMBOL(ieee80211_enable_ext_monitor);

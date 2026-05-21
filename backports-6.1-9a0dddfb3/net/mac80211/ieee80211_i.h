@@ -881,6 +881,7 @@ struct ieee80211_if_mesh {
  * @IEEE80211_SDATA_DISCONNECT_HW_RESTART: Disconnect after hardware restart
  *  recovery
  * @IEEE80211_SDATA_OFFCHAN_PACKETS: interface expects offchan monitor packets
+ * @IEEE80211_SDATA_EXT_MONITOR_ENABLED: interface has extended monitor enabled
  */
 enum ieee80211_sub_if_data_flags {
 	IEEE80211_SDATA_ALLMULTI		= BIT(0),
@@ -889,6 +890,7 @@ enum ieee80211_sub_if_data_flags {
 	IEEE80211_SDATA_IN_DRIVER		= BIT(5),
 	IEEE80211_SDATA_DISCONNECT_HW_RESTART	= BIT(6),
 	IEEE80211_SDATA_OFFCHAN_PACKETS		= BIT(7),
+	IEEE80211_SDATA_EXT_MONITOR_ENABLED	= BIT(8),
 };
 
 /**

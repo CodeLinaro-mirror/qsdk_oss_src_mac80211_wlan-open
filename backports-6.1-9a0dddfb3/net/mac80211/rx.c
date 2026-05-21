@@ -883,6 +883,9 @@ ieee80211_rx_monitor(struct ieee80211_local *local, struct sk_buff *origskb,
 	unsigned int min_head_len;
 	bool tid_stats_disable = local->hw.tid_stats_disable;
 	int hw_idx = -1;
+	struct ieee80211_ext_mon_rx_event_extn rx_event;
+	enum ieee80211_ext_mon_event_type_extn ext_mon_evt =
+				IEEE80211_EXT_MON_POST_RTAP;
 
 	if (WARN_ON_ONCE(status->flag & RX_FLAG_RADIOTAP_TLV_AT_END &&
 			 !skb_mac_header_was_set(origskb))) {
@@ -997,13 +1000,24 @@ ieee80211_rx_monitor(struct ieee80211_local *local, struct sk_buff *origskb,
 
 		skb->dev = prev_sdata->dev;
 		ieee80211_rx_stats(skb->dev, skb->len);
-		if (!tid_stats_disable) {
-			ieee80211_rx_stats_reason(prev_sdata, skb->len, status->tid,
+		if (!tid_stats_disable)
+			ieee80211_rx_stats_reason(prev_sdata, skb->len,
+						  status->tid,
 						  RX_TOTAL_PKTS);
-			ieee80211_rx_stats_reason(prev_sdata, skb->len, status->tid,
-						  RX_NETIF_PKTS);
+		if ((prev_sdata->flags & IEEE80211_SDATA_EXT_MONITOR_ENABLED) &&
+		    ieee80211_ext_mon_rx_notifier_has_listeners_extn()) {
+			rx_event.mpdu = skb;
+			rx_event.hw = &local->hw;
+			ieee80211_ext_mon_rx_notifier_call_extn(ext_mon_evt,
+								&rx_event);
+			dev_kfree_skb(skb);
+		} else {
+			if (!tid_stats_disable)
+				ieee80211_rx_stats_reason(prev_sdata, skb->len,
+							  status->tid,
+							  RX_NETIF_PKTS);
+			netif_receive_skb(skb);
 		}
-		netif_receive_skb(skb);
 		prev_sdata = sdata;
 	}
 
@@ -1017,13 +1031,24 @@ ieee80211_rx_monitor(struct ieee80211_local *local, struct sk_buff *origskb,
 		if (skb) {
 			skb->dev = prev_sdata->dev;
 			ieee80211_rx_stats(skb->dev, skb->len);
-			if (!tid_stats_disable) {
+			if (!tid_stats_disable)
 				ieee80211_rx_stats_reason(prev_sdata, skb->len,
-							  status->tid, RX_TOTAL_PKTS);
-				ieee80211_rx_stats_reason(prev_sdata, skb->len,
-							  status->tid, RX_NETIF_PKTS);
+							  status->tid,
+							  RX_TOTAL_PKTS);
+			if ((prev_sdata->flags & IEEE80211_SDATA_EXT_MONITOR_ENABLED) &&
+			    ieee80211_ext_mon_rx_notifier_has_listeners_extn()) {
+				rx_event.mpdu = skb;
+				rx_event.hw = &local->hw;
+				ieee80211_ext_mon_rx_notifier_call_extn(ext_mon_evt,
+									&rx_event);
+				dev_kfree_skb(skb);
+			} else {
+				if (!tid_stats_disable)
+					ieee80211_rx_stats_reason(prev_sdata, skb->len,
+								  status->tid,
+								  RX_NETIF_PKTS);
+				netif_receive_skb(skb);
 			}
-			netif_receive_skb(skb);
 		}
 	}
 
