@@ -5405,9 +5405,14 @@ void ieee80211_check_fast_rx_iface(struct ieee80211_sub_if_data *sdata)
 void ieee80211_rx_update_stats(struct ieee80211_hw *hw, struct ieee80211_sta *pubsta,
 			       int link_id, u32 len, struct ieee80211_rx_status *status)
 {
-	struct sta_info *sta = container_of(pubsta, struct sta_info, sta);
+	struct sta_info *sta;
 	struct link_sta_info *link_sta;
 	struct ieee80211_sta_rx_stats *stats;
+
+	if (!pubsta)
+		return;
+
+	sta = container_of(pubsta, struct sta_info, sta);
 
 	rcu_read_lock();
 	if (link_id >= 0 && link_id < ARRAY_SIZE(sta->link) &&
