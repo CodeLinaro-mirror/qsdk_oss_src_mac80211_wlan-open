@@ -19532,7 +19532,10 @@ static void ath12k_mac_disable_sg_netdev_work(struct work_struct *work)
 
 	netdev = wdev->netdev;
 
-	rtnl_lock();
+	if (!rtnl_trylock()) {
+		schedule_work(&ahvif->disable_sg_netdev_work);
+		return;
+	}
 	/* Disable SG by default for interface */
 	netdev->features &= ~NETIF_F_SG;
 	netdev->wanted_features &= ~NETIF_F_SG;
