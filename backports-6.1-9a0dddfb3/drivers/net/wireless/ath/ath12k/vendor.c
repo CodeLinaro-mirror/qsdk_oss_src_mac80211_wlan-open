@@ -691,6 +691,11 @@ ath12k_rx_flow_tag_op_policy[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_RING_ID]  = {.type = NLA_U8},
 };
 
+static const struct nla_policy
+ath12k_fse_cce_stats_policy[QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_PDEV_ID] = {.type = NLA_U32},
+};
+
 static int ath12k_dp_rx_update_pdev_protocol_tag(struct wiphy *wiphy,
 						 struct wireless_dev *wdev,
 						 const void *data, int data_len);
@@ -698,6 +703,10 @@ static int ath12k_dp_rx_update_pdev_protocol_tag(struct wiphy *wiphy,
 static int ath12k_dp_rx_flow_tag_op(struct wiphy *wiphy,
 				    struct wireless_dev *wdev,
 				    const void *data, int data_len);
+
+static int ath12k_dp_rx_fse_cce_stats_dump(struct wiphy *wiphy,
+					   struct wireless_dev *wdev,
+					   const void *data, int data_len);
 
 /**
  * ath12k_vendor_repurpose_link() - Mark an MLO link for repurposing
@@ -17327,6 +17336,14 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.maxattr = QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_MAX,
 		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
 	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_FSE_CCE_STATS_DUMP,
+		.doit = ath12k_dp_rx_fse_cce_stats_dump,
+		.policy = ath12k_fse_cce_stats_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
+	},
 };
 
 /**
@@ -17557,6 +17574,116 @@ ath12k_dp_rx_flow_tag_op(struct wiphy *wiphy,
 	}
 
 	return ret;
+}
+
+/**
+ * ath12k_dp_rx_fse_cce_stats_dump() - Dump FSE/CCE statistics via NL vendor cmd.
+ *
+ * Reads from dp_pdev->fse_cce_stats (per-pdev CCE/FSE counters) and
+ * ab->dp_hw_grp->fst (FST table state) and returns them in the NL reply.
+ */
+static int
+ath12k_dp_rx_fse_cce_stats_dump(struct wiphy *wiphy,
+				struct wireless_dev *wdev,
+				const void *data, int data_len)
+{
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_MAX + 1];
+	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
+	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
+	struct ath12k_fse_cce_stats *st;
+	struct dp_rx_fst *fst;
+	struct ath12k *ar;
+	struct sk_buff *skb;
+	u32 pdev_id = 0;
+	int ret, i;
+
+	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_MAX,
+			data, data_len,
+			ath12k_fse_cce_stats_policy, NULL);
+	if (ret) {
+		ath12k_err(NULL, "fse_cce_stats: nla_parse failed: %d\n", ret);
+		return ret;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_PDEV_ID])
+		pdev_id = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_PDEV_ID]);
+
+	ar = ath12k_ah_to_ar(ah, pdev_id);
+	if (!ar) {
+		ath12k_err(NULL, "fse_cce_stats: no ar for pdev_id %u\n", pdev_id);
+		return -EINVAL;
+	}
+
+	st  = &ar->dp.fse_cce_stats;
+	fst = ath12k_ab_to_dp(ar->ab)->dp_hw_grp->fst;
+
+	skb = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, NLMSG_DEFAULT_SIZE);
+	if (!skb)
+		return -ENOMEM;
+
+	/* Per-protocol CCE tagged-pkt counters: attrs 2..21 */
+	for (i = 0; i < ATH12K_PKT_TYPE_MAX; i++) {
+		if (nla_put_u64_64bit(skb,
+				      QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_CCE_TAGGED_PKTS_0
+				      + i,
+				      st->cce_tagged_pkts[i],
+				      QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_INVALID))
+			goto fail;
+	}
+
+	if (nla_put_u64_64bit(skb, QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_CCE_DROP_PKTS,
+			      st->cce_drop_pkts,
+			      QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_INVALID) ||
+	    nla_put_u64_64bit(skb, QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_FSE_TAGGED_PKTS,
+			      st->fse_tagged_pkts,
+			      QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_INVALID) ||
+	    nla_put_u64_64bit(skb, QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_FSE_DROP_PKTS,
+			      st->fse_drop_pkts,
+			      QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_INVALID) ||
+	    nla_put_u64_64bit(skb, QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_FSE_NEW_FLOW,
+			      st->fse_new_flow_pkts,
+			      QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_INVALID) ||
+	    nla_put_u64_64bit(skb, QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_REO_CCE_DROP,
+			      st->reo_err_cce_drop,
+			      QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_INVALID) ||
+	    nla_put_u64_64bit(skb, QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_WBM_CCE_DROP,
+			      st->wbm_reo_cce_drop,
+			      QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_INVALID) ||
+	    nla_put_u64_64bit(skb, QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_WBM_FSE_DROP,
+			      st->wbm_rxdma_fse_drop,
+			      QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_INVALID))
+		goto fail;
+
+	if (fst) {
+		if (nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_FST_NUM_ENTRIES,
+				fst->num_entries) ||
+		    nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_FST_IPV4_CNT,
+				fst->ipv4_fse_rule_cnt) ||
+		    nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_FST_IPV6_CNT,
+				fst->ipv6_fse_rule_cnt) ||
+		    nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_FST_ADD_FAIL,
+				fst->flow_add_fail) ||
+		    nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_FST_DEL_FAIL,
+				fst->flow_del_fail))
+			goto fail;
+	}
+
+	/* Per-protocol CCE tag map: 20 entries, each as packed u32 (tag | enabled<<16) */
+	for (i = 0; i < ATH12K_PKT_TYPE_MAX; i++) {
+		u32 val = (u32)ar->dp.protocol_tag_map[i].tag |
+			  (ar->dp.protocol_tag_map[i].enabled ? BIT(16) : 0);
+
+		if (nla_put_u32(skb,
+				QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_CCE_PROTO_TAG_0 + i,
+				val))
+			goto fail;
+	}
+
+	return cfg80211_vendor_cmd_reply(skb);
+
+fail:
+	kfree_skb(skb);
+	return -EMSGSIZE;
 }
 
 static const struct nl80211_vendor_cmd_info ath12k_vendor_events[] = {

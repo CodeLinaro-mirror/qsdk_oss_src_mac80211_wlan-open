@@ -7990,4 +7990,59 @@ enum qca_wlan_vendor_attr_rx_flow_tag_op {
 		QCA_WLAN_VENDOR_ATTR_RX_FLOW_TAG_AFTER_LAST - 1,
 };
 
+/* QCA_NL80211_VENDOR_SUBCMD_FSE_CCE_STATS_DUMP (529)
+ *
+ * Dump FSE and CCE statistics from the kernel driver.
+ *
+ * Request attributes:
+ * @QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_PDEV_ID: u32. Pdev index to query.
+ *
+ * Response attributes (all u64 unless noted):
+ * Attrs 2..21 — per-protocol CCE tagged-pkt counters (one per ath12k_routing_pkt_type).
+ * @QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_CCE_DROP_PKTS: Packets dropped via CCE sentinel.
+ * @QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_FSE_TAGGED_PKTS: Packets with valid FSE match.
+ * @QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_FSE_DROP_PKTS: Packets dropped via FSE drop bit.
+ * @QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_FSE_NEW_FLOW: Packets triggering new flow install.
+ * @QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_REO_CCE_DROP: REO exception ring CCE drops.
+ * @QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_WBM_CCE_DROP: WBM REO-src CCE drops.
+ * @QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_WBM_FSE_DROP: WBM RxDMA-src FSE drops.
+ * @QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_FST_NUM_ENTRIES: u32. Active FST entries.
+ * @QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_FST_IPV4_CNT: u32. IPv4 flow rules installed.
+ * @QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_FST_IPV6_CNT: u32. IPv6 flow rules installed.
+ * @QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_FST_ADD_FAIL: u32. Flow add failure count.
+ * @QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_FST_DEL_FAIL: u32. Flow delete failure count.
+ */
+enum qca_wlan_vendor_attr_fse_cce_stats {
+	QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_INVALID       = 0,
+	QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_PDEV_ID       = 1,  /* u32, request */
+	/* per-protocol CCE tagged-pkt counters (u64) — attrs 2..21 */
+	QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_CCE_TAGGED_PKTS_0  = 2,
+	QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_CCE_TAGGED_PKTS_19 = 21,
+	/* aggregate CCE/FSE counters */
+	QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_CCE_DROP_PKTS  = 22, /* u64 */
+	QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_FSE_TAGGED_PKTS = 23, /* u64 */
+	QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_FSE_DROP_PKTS   = 24, /* u64 */
+	QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_FSE_NEW_FLOW    = 25, /* u64 */
+	QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_REO_CCE_DROP    = 26, /* u64 */
+	QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_WBM_CCE_DROP    = 27, /* u64 */
+	QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_WBM_FSE_DROP    = 28, /* u64 */
+	/* FST table state */
+	QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_FST_NUM_ENTRIES = 29, /* u32 */
+	QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_FST_IPV4_CNT    = 30, /* u32 */
+	QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_FST_IPV6_CNT    = 31, /* u32 */
+	QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_FST_ADD_FAIL    = 32, /* u32 */
+	QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_FST_DEL_FAIL    = 33, /* u32 */
+	/*
+	 * Per-protocol CCE tag map: attrs 34..53.
+	 * Each is a u32 encoding tag (bits 15:0) and enabled (bit 16).
+	 * Index i = ath12k_routing_pkt_type; attr = 34 + i.
+	 */
+	QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_CCE_PROTO_TAG_0  = 34,
+	QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_CCE_PROTO_TAG_19 = 53,
+
+	QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_MAX =
+		QCA_WLAN_VENDOR_ATTR_FSE_CCE_STATS_AFTER_LAST - 1,
+};
+
 #endif
