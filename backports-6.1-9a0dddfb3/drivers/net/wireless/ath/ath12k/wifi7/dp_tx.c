@@ -1578,6 +1578,8 @@ ath12k_wifi7_dp_ext_desc_populate(struct ath12k_dp *dp,
 							       dp_link_vif, gsn);
 
 		msdu_info->data_len = ATH12K_TX_MSDU_EXT_SZ + htt_desc_size;
+		msdu_info->meta_data_flags |= HTT_TCL_META_DATA_VALID_HTT;
+		msdu_info->meta_data_flags |= HTT_TCL_META_DATA_GLOBAL_HTT_EXT_PRESENT;
 		msdu_info->to_fw = true;
 	}
 
