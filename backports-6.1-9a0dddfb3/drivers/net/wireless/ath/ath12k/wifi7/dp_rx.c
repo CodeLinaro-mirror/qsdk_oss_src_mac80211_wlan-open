@@ -1114,6 +1114,11 @@ ath12k_wifi7_dp_process_reo_rx_packets(struct ath12k_dp *dp,
 						    spd_desc_l,
 						    (struct hal_rx_desc *)rx_tlv_hdr);
 
+		dp_rx_update_protocol_tag(partner_ab, dp_pdev, msdu,
+					  (struct hal_rx_desc *)rx_tlv_hdr);
+		dp_rx_update_flow_tag(partner_ab, dp_pdev, msdu,
+				      (struct hal_rx_desc *)rx_tlv_hdr);
+
 		if (likely(msdu_idx + 1 < num_msdus)) {
 			struct hal_rx_spd_data *spd_desc_next = &rx_spd[msdu_idx + 1];
 
@@ -2000,6 +2005,8 @@ ath12k_wifi7_dp_process_rx_err_buf(struct ath12k_pdev_dp *dp_pdev,
 
 	rx_desc = (struct hal_rx_desc *)msdu->data;
 	ath12k_wifi7_dp_extract_rx_desc_data(dp, &rx_desc_data, rx_desc, rx_desc);
+
+	dp_rx_update_protocol_tag(ab, dp_pdev, msdu, rx_desc);
 
 	if (ath12k_dp_stats_enabled(dp_pdev) &&
 	    ath12k_tid_stats_enabled(dp_pdev)) {

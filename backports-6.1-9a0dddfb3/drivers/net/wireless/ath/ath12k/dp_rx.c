@@ -1697,6 +1697,71 @@ out:
 	return ret;
 }
 
+/**
+ * dp_rx_update_protocol_tag() - stamp rxcb->protocol_tag from CCE metadata
+ *
+ * Called in the REO hot path for every MSDU after MPDU validation.  Reads the
+ * CCE match bit from the rx_msdu_end TLV; if set, copies cce_metadata into
+ * rxcb->protocol_tag and increments the per-protocol CCE hit counter.
+ * No-op when CCE_MATCH is clear or hal_ops are not available.
+ */
+void dp_rx_update_protocol_tag(struct ath12k_base *ab,
+			       struct ath12k_pdev_dp *dp_pdev,
+			       struct sk_buff *msdu,
+			       struct hal_rx_desc *rx_desc)
+{
+	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
+	const struct hal_ops *hal_ops = ab->hw_params->hal_ops;
+	u16 cce_meta;
+	int i;
+
+	if (!hal_ops->rx_get_cce_match_bit ||
+	    !hal_ops->rx_get_cce_match_bit(rx_desc))
+		return;
+
+	if (!hal_ops->rx_get_cce_metadata)
+		return;
+
+	cce_meta = hal_ops->rx_get_cce_metadata(rx_desc);
+	rxcb->protocol_tag = cce_meta;
+
+	for (i = 0; i < ATH12K_PKT_TYPE_MAX; i++) {
+		if (dp_pdev->protocol_tag_map[i].enabled &&
+		    dp_pdev->protocol_tag_map[i].tag == cce_meta) {
+			dp_pdev->fse_cce_stats.cce_tagged_pkts[i]++;
+			break;
+		}
+	}
+}
+EXPORT_SYMBOL_GPL(dp_rx_update_protocol_tag);
+
+/**
+ * dp_rx_update_flow_tag() - stamp rxcb->flow_tag from FSE metadata
+ *
+ * Called in the REO hot path for every MSDU after MPDU validation.  Copies
+ * the lower 16 bits of fse_metadata (the user-programmed flow tag) into
+ * rxcb->flow_tag and increments the FSE hit counter when non-zero.
+ */
+void dp_rx_update_flow_tag(struct ath12k_base *ab,
+			   struct ath12k_pdev_dp *dp_pdev,
+			   struct sk_buff *msdu,
+			   struct hal_rx_desc *rx_desc)
+{
+	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
+	const struct hal_ops *hal_ops = ab->hw_params->hal_ops;
+	u16 flow_tag;
+
+	if (!hal_ops->rx_get_fse_metadata)
+		return;
+
+	flow_tag = (u16)(hal_ops->rx_get_fse_metadata(rx_desc) & 0xFFFF);
+	rxcb->flow_tag = flow_tag;
+
+	if (flow_tag)
+		dp_pdev->fse_cce_stats.fse_tagged_pkts++;
+}
+EXPORT_SYMBOL_GPL(dp_rx_update_flow_tag);
+
 void ath12k_dp_fst_core_map_init(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);

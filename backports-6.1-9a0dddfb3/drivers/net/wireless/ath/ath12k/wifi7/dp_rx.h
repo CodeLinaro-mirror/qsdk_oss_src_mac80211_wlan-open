@@ -128,7 +128,6 @@ void ath12k_wifi7_dp_extract_rx_spd_data(struct ath12k_hal *hal,
 {
 	hal->hal_ops->extract_rx_spd_data(rx_info, rx_desc);
 }
-
 static inline
 void ath12k_wifi7_dp_extract_rx_desc_data(struct ath12k_dp *dp,
 					  struct hal_rx_desc_data *rx_desc_data,
