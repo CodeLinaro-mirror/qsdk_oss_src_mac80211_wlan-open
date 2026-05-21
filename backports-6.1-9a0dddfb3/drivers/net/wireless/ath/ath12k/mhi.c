@@ -211,19 +211,23 @@ static void ath12k_mhi_op_status_cb(struct mhi_controller *mhi_cntrl,
 		ath12k_mhi_set_state_bit(ab_pci, ATH12K_MHI_MISSION_MODE);
 		break;
 	case MHI_CB_EE_RDDM:
+
+		/* RDDM event valid only in MISSION mode. We can ignore duplicate
+		 * RDDM event or RDDM event which not in mission mode.
+		 */
+		if (!test_bit(ATH12K_MHI_MISSION_MODE, &ab_pci->mhi_state)) {
+			ath12k_dbg(ab, ATH12K_DBG_BOOT,
+				   "Ignore RDDM event: Duplicate / MHI in not in mission mode\n");
+			return;
+		}
+
 		clear_bit(ATH12K_MHI_MISSION_MODE, &ab_pci->mhi_state);
+
 		/* In-case of rddm for mhi soc reset */
 		if (test_bit(ATH12K_MHI_SOC_RESET, &ab_pci->mhi_state)) {
 			ath12k_dbg(ab, ATH12K_DBG_BOOT, "Triggering RDDM from mhi soc reset\n");
 			clear_bit(ATH12K_MHI_SOC_RESET, &ab_pci->mhi_state);
 			complete(&ab->rddm_reset_done);
-			return;
-		}
-
-		/* Skip consecutive RDDM events to avoid redundant recovery */
-		if (mhi_get_exec_env(ab_pci->mhi_ctrl) == mhi_cntrl->ee) {
-			ath12k_dbg(ab, ATH12K_DBG_BOOT,
-				   "Ignore RDDM event as MHI is in same state\n");
 			return;
 		}
 
