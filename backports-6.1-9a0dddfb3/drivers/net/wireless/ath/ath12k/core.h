@@ -853,6 +853,9 @@ struct ath12k_dp_vif {
 
 	struct ath12k_dp_vif_extn dp_extn;
 	u8 ahvif_id;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	int ppe_vp_profile_idx;
+#endif
 };
 
 enum ath12k_tx_pkt_reasons {

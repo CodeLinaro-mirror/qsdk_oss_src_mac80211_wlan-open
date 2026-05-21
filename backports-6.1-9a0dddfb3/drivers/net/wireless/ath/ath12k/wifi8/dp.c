@@ -688,6 +688,15 @@ static void ath12k_wifi8_dp_vif_configure(struct ath12k_dp *dp,
 		ath12k_wifi8_hal_vdev_mcast_ctrl_set(central_ab, dp_vif->dp_vif_id,
 						HAL_TX_PACKET_CONTROL_CONFIG_DEFAULT);
 		ath12k_mac_vif_unref(central_dp, ahvif->vif);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+		if (!ab->dp->ppe.ppe_ops ||
+			!ab->dp->ppe.ppe_ops->ath12k_dp_ppeds_dealloc_ppe_vp_profile) {
+			ath12k_err(ab, "vp_prof dealloc hdlr not present during deinit");
+			return;
+		}
+		ab->dp->ppe.ppe_ops->ath12k_dp_ppeds_dealloc_ppe_vp_profile(ab,
+				dp_vif->ppe_vp_profile_idx, ahvif->vif->type);
+#endif
 		return;
 	} else if (optype == ATH12K_DP_OP_INIT) {
 		/*TODO keep vdev_id check disabled for initial emulation */
@@ -739,8 +748,17 @@ static void ath12k_wifi8_dp_vif_configure(struct ath12k_dp *dp,
 								new_bank_config);
 			dp_vif->bank_id = bank_id;
 		}
-		return;
 	}
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	/*
+	 * PPEDS - Configure the vp profile during vif configure.
+	 */
+	ath12k_wifi8_ppeds_attach_vif(ab, ahvif,
+			dp_vif->ahvif_id,
+			dp_vif->bank_id,
+			HAL_TX_WILD_CARD_LINK_ID);
+#endif
 }
 
 static void ath12k_wifi8_dp_link_vif_configure(struct ath12k_dp *dp,
