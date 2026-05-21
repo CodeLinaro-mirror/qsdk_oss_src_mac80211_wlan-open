@@ -2667,6 +2667,7 @@ struct ath12k_skb_tx_info {
 	struct ieee80211_tx_rate rate;
 };
 
+#define ATH12K_ERP_CUMAC_UNSET -1U
 enum ath12k_core_erp_cumac_config_bitmap {
 	ATH12K_ERP_CUMAC_PDEV_SUSPEND = BIT(0),
 	ATH12K_ERP_CUMAC_Q6_PWR_DOWN = BIT(1),

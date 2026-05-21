@@ -251,7 +251,7 @@ module_param_named(reorder_VI_timeout, ath12k_reorder_VI_timeout, uint, 0644);
 MODULE_PARM_DESC(reorder_VI_timeout, "Reorder VI timeout (ms)");
 EXPORT_SYMBOL(ath12k_reorder_VI_timeout);
 
-static unsigned int ath12k_erp_cumac_config = ATH12K_ERP_CUMAC_PDEV_SUSPEND;
+static unsigned int ath12k_erp_cumac_config = ATH12K_ERP_CUMAC_UNSET;
 module_param_named(erp_cumac_config, ath12k_erp_cumac_config, uint, 0644);
 MODULE_PARM_DESC(erp_cumac_config,
 		 "ErP CUMAC configuration bitmap: BIT(0): pdev suspend, BIT(1): Q6 power down");
@@ -1114,15 +1114,91 @@ static void ath12k_core_cleanup(struct ath12k_base *ab)
 	ath12k_dp_umac_reset_deinit(ab);
 }
 
+static void ath12k_core_power_down_device(struct ath12k_hw_group *ag,
+					  struct ath12k_base *ab, bool standby_mode,
+					  bool *wifi_standby_enabled)
+{
+	struct ath12k *ar;
+	u8 total_vdevs;
+	int i;
+	bool skip_power_down = false;
+
+	if (!ab)
+		return;
+
+	if (standby_mode) {
+		if (ab->is_cumac_chip) {
+			if (ath12k_erp_cumac_config != ATH12K_ERP_CUMAC_UNSET) {
+				/* User override: skip mac stop and q6 power down */
+				if (!(ath12k_erp_cumac_config &
+				      ATH12K_ERP_CUMAC_PDEV_SUSPEND))
+					return;
+				/* User override: mac stop but skip q6 power down */
+				if (!(ath12k_erp_cumac_config &
+				      ATH12K_ERP_CUMAC_Q6_PWR_DOWN))
+					skip_power_down = true;
+			} else {
+				/* No user override: mac stop always, q6 power down
+				 * only when all wifi interfaces are being brought down.
+				 */
+				if (*wifi_standby_enabled)
+					skip_power_down = true;
+			}
+		}
+
+		for (i = 0; i < ab->num_radios; i++) {
+			ar = ab->pdevs[i].ar;
+
+			if (ar) {
+				if (ar->allocated_vdev_map) {
+					*wifi_standby_enabled = true;
+					skip_power_down = true;
+				} else
+					ath12k_mac_stop(ar);
+
+				ar->cumac_cmd_sent = false;
+			}
+		}
+	}
+
+	if (!skip_power_down &&
+	    !test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags)) {
+		ab->qmi.num_radios = U8_MAX;
+		if (ab->is_cumac_chip) {
+			ab->is_cumac_chip = false;
+			ag->cumac_selected = false;
+			ag->cumac_chip_id = ATH12K_CUMAC_CHIP_ID_INVALID;
+		}
+		ab->cumac_configured = false;
+		ath12k_umac_reset_fallback_cleanup(ab);
+		ath12k_hif_mgmt_irq_disable(ab);
+		ath12k_hif_irq_disable(ab);
+		ath12k_hif_ce_irq_disable(ab);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+		if (ab->dp->ppe.ppe_ops &&
+		    ab->dp->ppe.ppe_ops->ath12k_ppeds_interrupt_stop)
+			ab->dp->ppe.ppe_ops->ath12k_ppeds_interrupt_stop(ab);
+#endif
+		ath12k_qmi_firmware_stop(ab);
+		ath12k_core_cleanup(ab);
+		total_vdevs = ath12k_core_get_total_num_vdevs(ab);
+		ab->free_vdev_map = (1LL << (ab->num_radios * total_vdevs)) - 1;
+		ab->free_vdev_stats_id_map = 0;
+		ath12k_core_to_group_ref_put(ab);
+		ath12k_qmi_free_resource(ab);
+		ath12k_hif_power_down(ab, false);
+		ath12k_info(ab, "Q6 power down\n");
+	}
+}
+
 void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag, bool standby_mode)
 {
-	struct ath12k_base *ab;
 	struct ath12k_hw *ah;
-	struct ath12k *ar;
+	struct ath12k_base *ab;
+	struct ath12k_base *cumac_ab = NULL;
+	bool wifi_standby_enabled = false;
 	unsigned long time_left;
-	int i, j, ret;
-	bool skip_power_down;
-	u8 total_vdevs;
+	int i, ret;
 
 	if (!test_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ag->flags)) {
 		reinit_completion(&ag->umac_reset_complete);
@@ -1153,60 +1229,19 @@ void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag, bool standby_
 
 	for (i = 0; i < ag->num_devices; i++) {
 		ab = ag->ab[i];
-		skip_power_down = false;
 
-		if (standby_mode) {
-			/* If CUMAC and skip pdev suspend */
-			if (ab->is_cumac_chip &&
-			    !(ath12k_erp_cumac_config & ATH12K_ERP_CUMAC_PDEV_SUSPEND))
-				continue;
-			/* If CUMAC and skip Q6 power down */
-			else if (ab->is_cumac_chip &&
-				!(ath12k_erp_cumac_config & ATH12K_ERP_CUMAC_Q6_PWR_DOWN))
-				skip_power_down = true;
-
-			for (j = 0; j < ab->num_radios; j++) {
-				ar = ab->pdevs[j].ar;
-
-				if (ar) {
-					if (ar->allocated_vdev_map)
-						skip_power_down = true;
-					else
-						ath12k_mac_stop(ar);
-					ar->cumac_cmd_sent = false;
-				}
-			}
+		if (ab->is_cumac_chip) {
+			cumac_ab = ab;
+			continue;
 		}
 
-		if (!skip_power_down &&
-		    !test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags)) {
-			ab->qmi.num_radios = U8_MAX;
-			if (ab->is_cumac_chip) {
-				ab->is_cumac_chip = false;
-				ag->cumac_selected = false;
-				ag->cumac_chip_id = ATH12K_CUMAC_CHIP_ID_INVALID;
-			}
-			ab->cumac_configured = false;
-			ath12k_umac_reset_fallback_cleanup(ab);
-			ath12k_hif_mgmt_irq_disable(ab);
-			ath12k_hif_irq_disable(ab);
-			ath12k_hif_ce_irq_disable(ab);
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-			if (ab->dp->ppe.ppe_ops &&
-				ab->dp->ppe.ppe_ops->ath12k_ppeds_interrupt_stop)
-				ab->dp->ppe.ppe_ops->ath12k_ppeds_interrupt_stop(ab);
-#endif
-			ath12k_qmi_firmware_stop(ab);
-			ath12k_core_cleanup(ab);
-			total_vdevs = ath12k_core_get_total_num_vdevs(ab);
-			ab->free_vdev_map = (1LL << (ab->num_radios * total_vdevs)) - 1;
-			ab->free_vdev_stats_id_map = 0;
-			ath12k_core_to_group_ref_put(ab);
-			ath12k_qmi_free_resource(ab);
-			ath12k_hif_power_down(ab, false);
-			ath12k_info(ab, "Q6 power down\n");
-		}
+		ath12k_core_power_down_device(ag, ab, standby_mode,
+					      &wifi_standby_enabled);
 	}
+
+	if (cumac_ab)
+		ath12k_core_power_down_device(ag, cumac_ab, standby_mode,
+					      &wifi_standby_enabled);
 
 	if (!test_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ag->flags))
 		set_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ag->flags);
