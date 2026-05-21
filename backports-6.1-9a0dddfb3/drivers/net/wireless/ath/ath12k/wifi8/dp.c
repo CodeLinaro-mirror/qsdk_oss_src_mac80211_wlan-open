@@ -1061,7 +1061,7 @@ int ath12k_wifi8_fetch_smd_ctx(struct ath12k_base *ab, struct ath12k_dp_hw *dp_h
 	int ret, tid;
 	bool sent = false;
 	bool clear_vld = ath12k_wifi8_clear_vld_after_smd_ctx_fetch &&
-			 ctx->in.rx_tid_bitmap == 0xffff;
+			 ctx->in.rx_tid_bitmap == 0xff;
 
 	spin_lock_bh(&dp_hw->peer_lock);
 	dp_peer = ath12k_dp_peer_find(dp_hw, ctx->peer_addr);
@@ -1090,7 +1090,7 @@ int ath12k_wifi8_fetch_smd_ctx(struct ath12k_base *ab, struct ath12k_dp_hw *dp_h
 		cmd.addr_hi = upper_32_bits(rx_tid->paddr);
 		cmd.flag = HAL_REO_CMD_FLG_NEED_STATUS;
 
-		if (clear_vld) {
+		if (clear_vld && !ath12k_wifi8_hal_is_reo_nonqos_mgmt_tid(tid)) {
 			struct ath12k_reo_cmd_entry cmds[2];
 			struct ath12k_reo_dp_cmd_desc descs[2];
 
