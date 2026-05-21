@@ -672,6 +672,15 @@ struct ath12k_vap_cfg {
 	u32 rx_decap_type;
 	u32 protection_mode;
 	u32 bw_nss_rate;
+	u32 chwidth;
+	u32 nss;
+	u32 fixed_rate;
+	u32 ul_fixed_rate;
+	u32 fixed_vht_mcs;
+	u32 fixed_he_mcs;
+	u32 fixed_eht_mcs;
+	u32 ul_fixed_he_mcs;
+	u32 ul_fixed_eht_mcs;
 	u32 eht_ul_ldpc;
 	u32 eht_ul_ltf;
 	u32 eht_ul_nss;
