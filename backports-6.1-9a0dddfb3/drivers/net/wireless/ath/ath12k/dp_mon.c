@@ -3196,6 +3196,7 @@ int ath12k_dp_ext_mon_set_rx_filter(struct ath12k_pdev_dp *dp_pdev,
 {
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	struct ath12k_dp_rx_ext_mon *rx_ext_mon;
+	bool already_enabled;
 	int ret = 0;
 
 	if (unlikely(!dp_mon_pdev)) {
@@ -3211,12 +3212,13 @@ int ath12k_dp_ext_mon_set_rx_filter(struct ath12k_pdev_dp *dp_pdev,
 		return -EINVAL;
 	}
 
-	if (rx_ext_mon->enable == !new_config->disable) {
+	if (new_config->disable && !rx_ext_mon->enable) {
 		spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
-		ath12k_warn(dp_pdev->dp, "already %s\n",
-			    rx_ext_mon->enable ? "enabled" : "disabled");
+		ath12k_warn(dp_pdev->dp, "already disabled\n");
 		return -EINVAL;
 	}
+
+	already_enabled = rx_ext_mon->enable;
 	spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
 
 	if (new_config->disable) {
@@ -3233,15 +3235,20 @@ int ath12k_dp_ext_mon_set_rx_filter(struct ath12k_pdev_dp *dp_pdev,
 
 		ath12k_dp_ext_mon_update_rx_config(dp_mon_pdev, new_config);
 	} else {
+		if (already_enabled)
+			ath12k_dp_ext_mon_rx_config_filter(dp_pdev, false);
+		else
+			ath12k_dp_mon_rx_mon_mode_config_filter(dp_pdev, false);
+
 		ath12k_dp_ext_mon_update_rx_config(dp_mon_pdev, new_config);
-		ath12k_dp_mon_rx_mon_mode_config_filter(dp_pdev, false);
 		ath12k_dp_ext_mon_rx_config_filter(dp_pdev, true);
 		ret = ath12k_dp_mon_rx_update_ring_filter(dp_pdev);
 		if (ret) {
 			ath12k_warn(dp_pdev->dp,
 				    "failed to update ring filter: %d\n", ret);
 			ath12k_dp_ext_mon_rx_config_filter(dp_pdev, false);
-			ath12k_dp_mon_rx_mon_mode_config_filter(dp_pdev, true);
+			if (!already_enabled)
+				ath12k_dp_mon_rx_mon_mode_config_filter(dp_pdev, true);
 			return ret;
 		}
 	}
