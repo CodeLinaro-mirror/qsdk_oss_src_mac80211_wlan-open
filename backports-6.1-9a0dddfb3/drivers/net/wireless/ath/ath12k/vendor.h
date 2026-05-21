@@ -130,6 +130,11 @@ struct oem_vendor_build {
  *     qca_wlan_vendor_attr_hw_blocked_chans_resp,
  *     qca_wlan_vendor_attr_hw_blocked_chans_radio and
  *     qca_wlan_vendor_attr_hw_blocked_chans_band.
+ *
+ * @QCA_NL80211_VENDOR_SUBCMD_CH_SWITCH_REASON: Vendor event used to notify
+ *     userspace about the reason for a channel switch. Event attributes are
+ *     defined in enum qca_wlan_vendor_attr_ch_switch_reason. Reason codes are
+ *     defined in enum qca_wlan_vendor_ch_switch_reason.
  */
 enum qca_nl80211_vendor_subcmds {
 	/* Wi-Fi configuration subcommand */
@@ -189,6 +194,7 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_SET_TID_MAP_PRECEDENCE = 524,
 	QCA_NL80211_VENDOR_SUBCMD_GET_TID_MAP_PRECEDENCE = 525,
 	QCA_NL80211_VENDOR_SUBCMD_HW_BLOCKED_CHANS = 526,
+	QCA_NL80211_VENDOR_SUBCMD_CH_SWITCH_REASON = 527,
 };
 
 /**
@@ -348,6 +354,7 @@ enum qca_nl80211_vendor_events {
 	 * @ATTR - qca_wlan_vendor_attr_set_wifi
 	 */
 	QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_INDEX = 19,
+	QCA_NL80211_VENDOR_SUBCMD_CH_SWITCH_REASON_INDEX = 20,
 };
 
 /**
@@ -5102,6 +5109,69 @@ enum qca_wlan_vendor_attr_config_esp_param {
 };
 
 /**
+ * enum qca_wlan_vendor_ch_switch_reason - Reason for channel switch
+ * @QCA_WLAN_VENDOR_CH_SWITCH_REASON_UNKNOWN: Reason unknown
+ * @QCA_WLAN_VENDOR_CH_SWITCH_REASON_DFS_RADAR: DFS radar detected
+ * @QCA_WLAN_VENDOR_CH_SWITCH_REASON_AWGN_INTERFERENCE: AWGN interference detected
+ * @QCA_WLAN_VENDOR_CH_SWITCH_REASON_CSA: Channel Switch Announcement
+ * @QCA_WLAN_VENDOR_CH_SWITCH_REASON_BW_REDUCTION: Channel switch to reduce BW
+ * @QCA_WLAN_VENDOR_CH_SWITCH_REASON_USER_REQUEST: User-initiated channel change
+ */
+enum qca_wlan_vendor_ch_switch_reason {
+	QCA_WLAN_VENDOR_CH_SWITCH_REASON_UNKNOWN,
+	QCA_WLAN_VENDOR_CH_SWITCH_REASON_DFS_RADAR,
+	QCA_WLAN_VENDOR_CH_SWITCH_REASON_AWGN_INTERFERENCE,
+	QCA_WLAN_VENDOR_CH_SWITCH_REASON_CSA,
+	QCA_WLAN_VENDOR_CH_SWITCH_REASON_BW_REDUCTION,
+	QCA_WLAN_VENDOR_CH_SWITCH_REASON_USER_REQUEST,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_ch_switch_reason - Attributes for channel switch
+ * reason vendor event
+ * @QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_UNSPEC: Reserved attribute
+ * @QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_CODE: reason enum value
+ * @QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_CUR_FREQ: primary channel freq (MHz)
+ *     of the current/old channel
+ * @QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_CUR_WIDTH: channel width of the
+ *     current/old channel
+ * @QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_CUR_CENTER_FREQ1: center frequency
+ *     of the first segment of the current/old channel
+ * @QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_CUR_CENTER_FREQ2: center frequency
+ *     of the second segment of the current/old channel for 80+80 MHz operation;
+ *     0 if not applicable
+ * @QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_CUR_PUNCTURED: punctured subchannel
+ *     bitmap of the current/old channel
+ * @QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_CUR_RADAR_BITMAP: radar subchannel
+ *     bitmap of the current/old channel; each set bit represents a
+ *     20 MHz subchannel on which radar has been detected; 0 if no
+ *     radar subchannels are flagged
+ * @QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_NEW_FREQ: primary channel freq (MHz)
+ *     of the new channel
+ * @QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_NEW_WIDTH: channel width of the new
+ *     channel
+ * @QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_AFTER_LAST: Internal use
+ * @QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_MAX: Maximum attribute value
+ */
+enum qca_wlan_vendor_attr_ch_switch_reason {
+	QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_UNSPEC,
+	QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_CODE,
+	QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_CUR_FREQ,
+	QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_CUR_WIDTH,
+	QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_CUR_CENTER_FREQ1,
+	QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_CUR_CENTER_FREQ2,
+	QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_CUR_PUNCTURED,
+	QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_CUR_RADAR_BITMAP,
+	QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_NEW_FREQ,
+	QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_NEW_WIDTH,
+
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_MAX =
+	QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_AFTER_LAST - 1,
+};
+
+/**
  * enum qca_wlan_vendor_attr_ctl_table - Attributes for CTL table vendor command
  * @QCA_WLAN_VENDOR_ATTR_CTL_TABLE_INVALID: Invalid attribute
  * @QCA_WLAN_VENDOR_ATTR_CTL_TABLE_BAND: Band for CTL table (u32)
@@ -6450,6 +6520,10 @@ int ath12k_vendor_send_es_oem_data(struct ieee80211_hw *hw, u8 radio_id, u32 con
 int ath12k_vendor_register(struct ath12k_hw *ah);
 int ath12k_vendor_put_umac_migration_notif(struct ieee80211_vif *vif,
 					   u8 *mld_addr, u8 link_id);
+int ath12k_vendor_ch_switch_reason_notify(struct ath12k *ar,
+					  enum qca_wlan_vendor_ch_switch_reason reason,
+					  const struct cfg80211_chan_def *old_chandef,
+					  const struct cfg80211_chan_def *new_chandef);
 
 /**
  * enum qca_wlan_vendor_attr_tdma_schedule - Attributes for
