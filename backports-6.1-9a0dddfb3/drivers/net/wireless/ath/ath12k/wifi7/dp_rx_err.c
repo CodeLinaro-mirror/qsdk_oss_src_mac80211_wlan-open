@@ -437,6 +437,32 @@ ath12k_wifi7_dp_process_wbm_rx_packets(struct ath12k_dp *dp,
 
 		if (spd_desc_l->wbm.release_source_module ==
 				HAL_WBM_REL_SRC_MODULE_REO) {
+			const struct hal_ops *hal_ops = partner_ab->hw_params->hal_ops;
+
+			if (hal_ops->rx_get_cce_metadata &&
+			    hal_ops->rx_get_cce_metadata(rx_desc) == CCE_DROP) {
+				dp_pdev->fse_cce_stats.wbm_reo_cce_drop++;
+				dp_pdev->fse_cce_stats.cce_drop_pkts++;
+				dev_kfree_skb_any(msdu);
+				spd_desc_l->msdu = NULL;
+				continue;
+			}
+		} else if (spd_desc_l->wbm.release_source_module ==
+				HAL_WBM_REL_SRC_MODULE_RXDMA) {
+			const struct hal_ops *hal_ops = partner_ab->hw_params->hal_ops;
+
+			if (hal_ops->rx_get_fse_metadata &&
+			    (hal_ops->rx_get_fse_metadata(rx_desc) & FSE_FLOW_DROP_BIT)) {
+				dp_pdev->fse_cce_stats.wbm_rxdma_fse_drop++;
+				dp_pdev->fse_cce_stats.fse_drop_pkts++;
+				dev_kfree_skb_any(msdu);
+				spd_desc_l->msdu = NULL;
+				continue;
+			}
+		}
+
+		if (spd_desc_l->wbm.release_source_module ==
+				HAL_WBM_REL_SRC_MODULE_REO) {
 			if (spd_desc_l->wbm.reo_push_reason ==
 				HAL_REO_DEST_RING_PUSH_REASON_ROUTING_INSTRUCTION) {
 				dp->device_stats.wbm_err.hal_reo_route++;
