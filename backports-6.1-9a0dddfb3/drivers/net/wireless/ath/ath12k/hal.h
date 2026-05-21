@@ -783,6 +783,17 @@ struct ath12k_hal_reo_cmd {
 	u8 pn_127_48_info;
 };
 
+#define HAL_REO_CMD_FLG_NEED_STATUS		BIT(0)
+#define HAL_REO_CMD_FLG_STATS_CLEAR		BIT(1)
+#define HAL_REO_CMD_FLG_FLUSH_BLOCK_LATER	BIT(2)
+#define HAL_REO_CMD_FLG_FLUSH_RELEASE_BLOCKING	BIT(3)
+#define HAL_REO_CMD_FLG_FLUSH_NO_INVAL		BIT(4)
+#define HAL_REO_CMD_FLG_FLUSH_FWD_ALL_MPDUS	BIT(5)
+#define HAL_REO_CMD_FLG_FLUSH_ALL		BIT(6)
+#define HAL_REO_CMD_FLG_UNBLK_RESOURCE		BIT(7)
+#define HAL_REO_CMD_FLG_UNBLK_CACHE		BIT(8)
+#define HAL_REO_CMD_FLG_FLUSH_QUEUE_1K_DESC	BIT(9)
+
 struct ath12k_reo_cmd_entry {
 	enum hal_reo_cmd_type type;
 	struct ath12k_hal_reo_cmd cmd;

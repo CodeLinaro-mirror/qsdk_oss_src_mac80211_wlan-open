@@ -646,6 +646,136 @@ static const struct file_operations fops_qos_msduq = {
 	.llseek = default_llseek,
 };
 
+static void ath12k_dbg_sta_reo_queue_stats_cb(struct ath12k_dp *dp, void *ctx,
+					      struct hal_reo_status *status)
+{
+	struct ath12k_dp_rx_tid *rx_tid = ctx;
+	struct ath12k_base *ab = dp->ab;
+	struct hal_reo_status_queue_stats *qs = &status->u.queue_stats;
+
+	if (status->uniform_hdr.cmd_status != HAL_REO_CMD_SUCCESS) {
+		ath12k_warn(ab, "reo queue stats failed tid %u status %d\n",
+			    rx_tid->tid, status->uniform_hdr.cmd_status);
+		return;
+	}
+
+	ath12k_info(ab, "REO queue stats tid %u: ssn %u cur_idx %u\n",
+		    rx_tid->tid, qs->ssn, qs->curr_idx);
+	ath12k_info(ab, "last_rx: enqueue_ts %08x dequeue_ts %08x\n",
+		    qs->last_rx_queue_ts, qs->last_rx_dequeue_ts);
+	ath12k_info(ab, "count: cur_mpdu %u cur_msdu %u\n",
+		    qs->curr_mpdu_cnt, qs->curr_msdu_cnt);
+	ath12k_info(ab, "fwd_timeout %u fwd_bar %u dup_count %u\n",
+		    qs->timeout_cnt, qs->fwd_due_to_bar_cnt, qs->dup_cnt);
+	ath12k_info(ab, "frames_in_order %u bar_rcvd %u\n",
+		    qs->frames_in_order_cnt, qs->bar_rx_cnt);
+	ath12k_info(ab, "num_mpdus %u num_msdus %u total_bytes %u\n",
+		    qs->num_mpdu_processed_cnt, qs->num_msdu_processed_cnt,
+		    qs->total_num_processed_byte_cnt);
+	ath12k_info(ab, "late_rcvd %u win_jump_2k %u hole_cnt %u\n",
+		    qs->late_rx_mpdu_cnt, qs->num_window_2k_jump_cnt,
+		    qs->reorder_hole_cnt);
+}
+
+static ssize_t ath12k_dbg_sta_write_fetch_reo_ctx(struct file *file,
+					   const char __user *user_buf,
+					   size_t count, loff_t *ppos)
+{
+	struct ieee80211_sta *sta = file->private_data;
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+	struct ath12k_hw *ah = ahsta->ahvif->ah;
+	struct ath12k_link_sta *primary_arsta;
+	struct ath12k *ar;
+	struct ath12k_dp_peer *dp_peer;
+	struct ath12k_hal_reo_cmd cmd;
+	u32 tid_bitmap;
+	int ret, tid;
+	bool sent = false;
+
+	ret = kstrtou32_from_user(user_buf, count, 0, &tid_bitmap);
+	if (ret)
+		return ret;
+
+	wiphy_lock(ah->hw->wiphy);
+	mutex_lock(&ah->hw_mutex);
+
+	if (ah->state != ATH12K_HW_STATE_ON) {
+		ret = -ENETDOWN;
+		goto out;
+	}
+
+	/* REO queues live on the primary link's chip (wifi7) or the
+	 * CU-MAC chip (wifi8); both are reached via primary_link_id.
+	 */
+	primary_arsta = ahsta->link[ahsta->primary_link_id];
+	if (!primary_arsta || !primary_arsta->arvif->ar) {
+		ret = -ENOENT;
+		goto out;
+	}
+
+	ar = primary_arsta->arvif->ar;
+
+	if (!tid_bitmap ||
+	    tid_bitmap & ~GENMASK(ar->ab->hal.hal_params->num_tids - 1, 0)) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	/* dp_peer is keyed by MLD address (sta->addr), not per-link address */
+	spin_lock_bh(&ah->dp_hw.peer_lock);
+	dp_peer = ath12k_dp_peer_find(&ah->dp_hw, sta->addr);
+	if (!dp_peer) {
+		spin_unlock_bh(&ah->dp_hw.peer_lock);
+		ret = -ENOENT;
+		goto out;
+	}
+
+	for (tid = 0; tid < ar->ab->hal.hal_params->num_tids; tid++) {
+		struct ath12k_dp_rx_tid *rx_tid;
+
+		if (!(tid_bitmap & BIT(tid)))
+			continue;
+
+		rx_tid = &dp_peer->rx_tid[tid];
+		if (!rx_tid->active || !rx_tid->paddr)
+			continue;
+
+		memset(&cmd, 0, sizeof(cmd));
+		cmd.addr_lo = lower_32_bits(rx_tid->paddr);
+		cmd.addr_hi = upper_32_bits(rx_tid->paddr);
+		cmd.flag = HAL_REO_CMD_FLG_NEED_STATUS;
+
+		ret = ath12k_dp_arch_reo_cmd_send(ar->ab->dp, rx_tid,
+						  sizeof(*rx_tid),
+						  HAL_REO_CMD_GET_QUEUE_STATS,
+						  &cmd,
+						  ath12k_dbg_sta_reo_queue_stats_cb);
+		if (ret) {
+			ath12k_warn(ar->ab,
+				    "failed reo get_queue_stats tid %d (%d)\n",
+				    tid, ret);
+			break;
+		}
+		sent = true;
+	}
+	spin_unlock_bh(&ah->dp_hw.peer_lock);
+
+	if (!ret)
+		ret = sent ? count : -ENOENT;
+out:
+	mutex_unlock(&ah->hw_mutex);
+	wiphy_unlock(ah->hw->wiphy);
+
+	return ret;
+}
+
+static const struct file_operations fops_fetch_reo_ctx = {
+	.write = ath12k_dbg_sta_write_fetch_reo_ctx,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 static ssize_t
 ath12k_dbg_sta_read_scs(struct file *file, char __user *user_buf,
 			size_t count, loff_t *ppos)
@@ -1405,6 +1535,7 @@ void ath12k_debugfs_sta_op_add(struct ieee80211_hw *hw, struct ieee80211_vif *vi
 	debugfs_create_file("delba", 0200, dir, sta, &fops_delba);
 	debugfs_create_file("primary_link_id", 0400, dir, sta, &fops_primary_link_id);
 	debugfs_create_file("primary_link_info", 0400, dir, sta, &fops_primary_link_info);
+	debugfs_create_file("fetch_reo_ctx", 0200, dir, sta, &fops_fetch_reo_ctx);
 }
 EXPORT_SYMBOL(ath12k_debugfs_sta_op_add);
 
