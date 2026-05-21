@@ -1084,8 +1084,10 @@ int ieee80211_set_monitor_channel(struct wiphy *wiphy,
 {
 	struct ieee80211_local *local = wiphy_priv(wiphy);
 	struct ieee80211_sub_if_data *sdata;
+	struct ieee80211_chanctx *ctx;
 	struct ieee80211_chan_req chanreq = { .oper = *chandef };
-	int ret;
+	struct ieee80211_chan_req tmp;
+	int ret = 0;
 
 	lockdep_assert_wiphy(local->hw.wiphy);
 
@@ -1119,11 +1121,50 @@ int ieee80211_set_monitor_channel(struct wiphy *wiphy,
 				       &chanreq.oper))
 		return 0;
 
+	/*
+	 * Scan the chanctx list for a context that already has links under
+	 * reservation and is compatible with the requested chanreq.  If one
+	 * exists, attach the monitor to it without releasing the current
+	 * channel; the MVR machinery will move all participants atomically
+	 * once every reserved link calls
+	 * ieee80211_link_use_reserved_context().
+	 */
+	list_for_each_entry(ctx, &local->chanctx_list, list) {
+		if (list_empty(&ctx->reserved_links))
+			continue;
+
+		if (!ieee80211_chanctx_compatible(ctx, &chanreq, &tmp))
+			continue;
+
+		/* Guard against duplicate reservation (e.g. two AP links on
+		 * the same chanctx each triggering set_monitor_channel).
+		 * A second list_add would corrupt reserved_chanctx_list and
+		 * reset reserved_ready to false.
+		 */
+		if (sdata->deflink.reserved_chanctx == ctx)
+			goto done;
+
+		ret = ieee80211_link_reserve_chanctx(&sdata->deflink,
+						     &chanreq,
+						     ctx->mode, false);
+		if (!ret) {
+			sdata->deflink.reserved_ready = true;
+			sdata_dbg(sdata,
+				  "MON-CSA set_monitor_channel: reserved monitor on existing ctx (freq=%d), marked ready for MVR\n",
+				  ctx->conf.def.chan ?
+				  ctx->conf.def.chan->center_freq : 0);
+			goto done;
+		}
+	}
+
 	ieee80211_link_release_channel(&sdata->deflink);
 	ret = ieee80211_link_use_channel(&sdata->deflink, &chanreq,
 					 IEEE80211_CHANCTX_SHARED);
 	if (ret)
 		return ret;
+	sdata_dbg(sdata,
+		  "MON-CSA set_monitor_channel: direct use_channel succeeded (freq=%d)\n",
+		  chandef->chan ? chandef->chan->center_freq : 0);
 done:
 	local->monitor_chanreq = chanreq;
 	return 0;
@@ -4323,9 +4364,7 @@ static int ieee80211_start_radar_detection(struct wiphy *wiphy,
 	struct ieee80211_chan_req chanreq = { .oper = *chandef };
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_link_data *link_data;
-	struct ieee80211_sub_if_data *mon_sdata = NULL;
-	struct net_device *mon_dev = NULL;
-	int err, radio_idx;
+	int err;
 	ktime_t ktime = ms_to_ktime(cac_time_ms);
 
 	lockdep_assert_wiphy(local->hw.wiphy);
@@ -4336,33 +4375,6 @@ static int ieee80211_start_radar_detection(struct wiphy *wiphy,
 	link_data = sdata_dereference(sdata->link[link_id], sdata);
 	if (!link_data)
 		return -ENOLINK;
-
-	radio_idx = cfg80211_get_hw_idx_by_chan(wiphy, chandef->chan);
-
-	rcu_read_lock();
-	list_for_each_entry_rcu(mon_sdata, &sdata->local->mon_list, u.mntr.list) {
-		struct cfg80211_chan_def *mon_chandef;
-
-		mon_chandef = &mon_sdata->vif.bss_conf.chanreq.oper;
-		if (mon_chandef->chan &&
-		    mon_chandef->chan->band == chandef->chan->band &&
-		    radio_idx == cfg80211_get_hw_idx_by_chan(wiphy, mon_chandef->chan)) {
-			mon_dev = mon_sdata->dev;
-			dev_hold(mon_dev);
-			break;
-		}
-	}
-	rcu_read_unlock();
-
-	if (mon_dev) {
-		err = ieee80211_set_monitor_channel(local->hw.wiphy, mon_dev, chandef);
-		mon_sdata = IEEE80211_DEV_TO_SUB_IF(mon_dev);
-		if (err)
-			sdata_info(mon_sdata,
-				   "Failed to change monitor interface channel: %d\n",
-				   err);
-		dev_put(mon_dev);
-	}
 
 	/* whatever, but channel contexts should not complain about that one */
 	link_data->smps_mode = IEEE80211_SMPS_OFF;
@@ -4687,7 +4699,6 @@ static int __ieee80211_csa_finalize(struct ieee80211_link_data *link_data)
 	struct ieee80211_sub_if_data *sdata = link_data->sdata;
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_bss_conf *link_conf = link_data->conf;
-	struct ieee80211_sub_if_data *mon_sdata = NULL;
 	u64 changed = 0;
 	int dfs_required;
 	int err;
@@ -4697,27 +4708,6 @@ static int __ieee80211_csa_finalize(struct ieee80211_link_data *link_data)
 	if (link_data->csa.power_mode != IEEE80211_REG_UNSET_AP) {
 		link_data->conf->power_type = link_data->csa.power_mode;
 		link_data->csa.power_mode = IEEE80211_REG_UNSET_AP;
-	}
-
-	list_for_each_entry_rcu(mon_sdata, &local->mon_list, u.mntr.list) {
-		struct cfg80211_chan_def *chandef;
-		struct ieee80211_link_data *mon_link;
-
-		mon_link = &mon_sdata->deflink;
-		chandef = &mon_sdata->vif.bss_conf.chanreq.oper;
-		if (!chandef->chan ||
-		    chandef->chan->band != link_conf->chanreq.oper.chan->band)
-			continue;
-
-		if (mon_link->reserved_chanctx) {
-			if (!mon_link->reserved_ready) {
-				err = ieee80211_link_use_reserved_context(mon_link);
-				if (err)
-					return err;
-			}
-			break;
-		}
-		break;
 	}
 
 	/*
@@ -4981,9 +4971,7 @@ __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 	struct ieee80211_chanctx *chanctx;
 	struct ieee80211_bss_conf *link_conf;
 	struct ieee80211_link_data *link_data;
-	struct ieee80211_sub_if_data *mon_sdata;
-	struct ieee80211_chanctx_conf *mon_conf;
-	struct ieee80211_chanctx *mon_chanctx = NULL;
+	struct ieee80211_link_data *mon_link;
 	u64 changed = 0;
 	u8 link_id = params->link_id;
 	int err;
@@ -5062,30 +5050,11 @@ __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 	if (err)
 		goto out;
 
-	list_for_each_entry_rcu(mon_sdata, &local->mon_list, u.mntr.list) {
-		struct cfg80211_chan_def *chandef;
-		struct ieee80211_link_data *mon_link = &mon_sdata->deflink;
-		struct ieee80211_bss_conf *bss_conf = &mon_sdata->vif.bss_conf;
-
-		chandef = &bss_conf->chanreq.oper;
-		if (!chandef->chan ||
-		    chandef->chan->band != chanreq.oper.chan->band)
-			continue;
-
-		mon_conf = wiphy_dereference(wiphy, bss_conf->chanctx_conf);
-		if (!mon_conf)
-			continue;
-
-		if (!mon_link->reserved_chanctx) {
-			mon_chanctx = container_of(mon_conf,
-						   struct ieee80211_chanctx, conf);
-			err = ieee80211_link_reserve_chanctx(mon_link, &chanreq,
-							     mon_chanctx->mode,
-							     params->radar_required);
-			if (err)
-				goto out;
-		}
-	}
+	/* The monitor reservation is handled by ieee80211_set_monitor_channel()
+	 * when hostapd sends NL80211_CMD_SET_CHANNEL for the monitor interface.
+	 * Capture the monitor link here for rollback use only.
+	 */
+	mon_link = ieee80211_chanctx_find_monitor_link(chanctx);
 
 	/* if reservation is invalid then this will fail */
 	err = ieee80211_check_combinations(sdata, NULL, chanctx->mode, 0, -1);
@@ -5103,28 +5072,8 @@ __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 					break;
 			}
 		} else {
-			if (mon_chanctx) {
-				list_for_each_entry_rcu(mon_sdata,
-							&local->mon_list,
-							u.mntr.list) {
-					struct cfg80211_chan_def *chandef;
-					struct ieee80211_link_data *mon_link;
-					struct ieee80211_bss_conf *bss_conf;
-
-					mon_link = &mon_sdata->deflink;
-					bss_conf = &mon_sdata->vif.bss_conf;
-					chandef = &bss_conf->chanreq.oper;
-					if (chandef->chan &&
-					    chandef->chan->band !=
-						chanreq.oper.chan->band)
-						continue;
-
-					if (!mon_link || !mon_link->reserved_chanctx)
-						continue;
-
-					ieee80211_link_unreserve_chanctx(mon_link);
-				}
-			}
+			if (mon_link && mon_link->reserved_chanctx)
+				ieee80211_link_unreserve_chanctx(mon_link);
 			ieee80211_link_unreserve_chanctx(link_data);
 		}
 		goto out;
@@ -5149,28 +5098,8 @@ __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 					break;
 			}
 		} else {
-			if (mon_chanctx) {
-				list_for_each_entry_rcu(mon_sdata,
-							&local->mon_list,
-							u.mntr.list) {
-					struct cfg80211_chan_def *chandef;
-					struct ieee80211_link_data *mon_link;
-					struct ieee80211_bss_conf *bss_conf;
-
-					mon_link = &mon_sdata->deflink;
-					bss_conf = &mon_sdata->vif.bss_conf;
-					chandef = &bss_conf->chanreq.oper;
-					if (chandef->chan &&
-					    chandef->chan->band !=
-						chanreq.oper.chan->band)
-						continue;
-
-					if (!mon_link || !mon_link->reserved_chanctx)
-						continue;
-
-					ieee80211_link_unreserve_chanctx(mon_link);
-				}
-			}
+			if (mon_link && mon_link->reserved_chanctx)
+				ieee80211_link_unreserve_chanctx(mon_link);
 			ieee80211_link_unreserve_chanctx(link_data);
 		}
 		goto out;

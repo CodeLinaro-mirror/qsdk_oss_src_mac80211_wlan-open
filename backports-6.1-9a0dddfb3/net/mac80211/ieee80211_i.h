@@ -2977,6 +2977,14 @@ ieee80211_chanreq_downgrade(struct ieee80211_chan_req *chanreq,
 bool ieee80211_chanreq_identical(const struct ieee80211_chan_req *a,
 				 const struct ieee80211_chan_req *b);
 
+const struct ieee80211_chan_req *
+ieee80211_chanctx_compatible(struct ieee80211_chanctx *ctx,
+			     const struct ieee80211_chan_req *req,
+			     struct ieee80211_chan_req *tmp);
+
+struct ieee80211_link_data *
+ieee80211_chanctx_find_monitor_link(struct ieee80211_chanctx *ctx);
+
 int __must_check
 _ieee80211_link_use_channel(struct ieee80211_link_data *link,
 			    const struct ieee80211_chan_req *req,

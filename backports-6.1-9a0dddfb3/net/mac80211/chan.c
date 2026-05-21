@@ -72,6 +72,18 @@ static bool ieee80211_can_create_new_chanctx(struct ieee80211_local *local,
 	       ieee80211_max_num_channels(local, radio_idx);
 }
 
+struct ieee80211_link_data *
+ieee80211_chanctx_find_monitor_link(struct ieee80211_chanctx *ctx)
+{
+	struct ieee80211_link_data *link;
+
+	list_for_each_entry(link, &ctx->assigned_links, assigned_chanctx_list) {
+		if (link->sdata->vif.type == NL80211_IFTYPE_MONITOR)
+			return link;
+	}
+	return NULL;
+}
+
 static struct ieee80211_chanctx *
 ieee80211_link_get_chanctx(struct ieee80211_link_data *link)
 {
@@ -117,7 +129,7 @@ ieee80211_chanreq_compatible(const struct ieee80211_chan_req *a,
 	return tmp;
 }
 
-static const struct ieee80211_chan_req *
+const struct ieee80211_chan_req *
 ieee80211_chanctx_compatible(struct ieee80211_chanctx *ctx,
 			     const struct ieee80211_chan_req *req,
 			     struct ieee80211_chan_req *tmp)
