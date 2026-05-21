@@ -11,25 +11,14 @@
 #include "dbring.h"
 #include "vendor.h"
 
-/* enum ath12k_spectral_mode:
- *
- * @SPECTRAL_DISABLED: spectral mode is disabled
- * @SPECTRAL_BACKGROUND: hardware sends samples when it is not busy with
- *	something else.
- * @SPECTRAL_MANUAL: spectral scan is enabled, triggering for samples
- *	is performed manually.
- */
-enum ath12k_spectral_mode {
-	ATH12K_SPECTRAL_DISABLED = 0,
-	ATH12K_SPECTRAL_BACKGROUND,
-	ATH12K_SPECTRAL_MANUAL,
-};
+#define ATH12K_SPECTRAL_NUM_DETECTORS	2
+#define ATH12K_SPECTRAL_DETECTOR_NORMAL	0
+#define ATH12K_SPECTRAL_DETECTOR_AGILE	1
 
 /**
  * struct ath12k_spectral_params - parameters passed to WMI spectral scan config
  *
  * @scan_count:          number of FFT samples to capture; 0 = unlimited
- *                       (always 0 in background mode regardless of this value)
  * @scan_period:         time between consecutive scan triggers (in TU)
  * @scan_priority:       scan priority relative to other HW operations
  * @scan_fft_size:       FFT size as log2 (e.g. 8 => 256 bins); validated
@@ -100,9 +89,11 @@ struct ath12k_spectral {
 	struct dentry *scan_ctl;
 	struct dentry *scan_count;
 	struct dentry *scan_bins;
-	enum ath12k_spectral_mode mode;
+	enum spectral_scan_mode mode;
 	struct ath12k_spectral_params     params;
 	struct ath12k_spectral_diag_stats diag;
+	bool dbr_buff_debug;
+	u32 prev_tstamp[ATH12K_SPECTRAL_NUM_DETECTORS];
 	bool enabled;
 	bool is_primary;
 	bool scan_active;
@@ -111,12 +102,17 @@ struct ath12k_spectral {
 	u32 samples_done;
 	u32 sub_buf_size;
 	u32 num_sub_bufs;
+	/* fields populated from WMI_PDEV_SSCAN_FW_PARAM_EVENTID */
 	u32 pri20_freq;
 	u32 sscan_cfreq1;
 	u32 sscan_cfreq2;
-	u32 sscan_bw;
+	u8  sscan_bw;
 	u32 start_freq;
 	u32 end_freq;
+	/* timestamp WAR state */
+	u32 last_fft_timestamp[SPECTRAL_SCAN_MODE_MAX]; /* last raw FFT timestamp */
+	u32 timestamp_war_offset[SPECTRAL_SCAN_MODE_MAX]; /* accumulated WAR offset */
+	u32 target_reset_count;   /* number of target resets seen */
 };
 
 #ifdef CPTCFG_ATH12K_SPECTRAL
@@ -128,10 +124,10 @@ int ath12k_spectral_init(struct ath12k_base *ab);
 void ath12k_spectral_deinit(struct ath12k_base *ab);
 int ath12k_spectral_vif_stop(struct ath12k_link_vif *arvif);
 void ath12k_spectral_reset_buffer(struct ath12k *ar);
-enum ath12k_spectral_mode ath12k_spectral_get_mode(struct ath12k *ar);
+enum spectral_scan_mode ath12k_spectral_get_mode(struct ath12k *ar);
 struct ath12k_dbring *ath12k_spectral_get_dbring(struct ath12k *ar);
 int ath12k_spectral_configure_scan_params(struct ath12k *ar,
-					  enum ath12k_spectral_mode mode);
+						  enum spectral_scan_mode mode);
 int ath12k_spectral_stop_scan(struct ath12k *ar);
 int ath12k_spectral_start_scan(struct ath12k *ar);
 int ath12k_spectral_send_complete_event(struct ath12k *ar,
@@ -159,9 +155,9 @@ static inline void ath12k_spectral_reset_buffer(struct ath12k *ar)
 }
 
 static inline
-enum ath12k_spectral_mode ath12k_spectral_get_mode(struct ath12k *ar)
+enum spectral_scan_mode ath12k_spectral_get_mode(struct ath12k *ar)
 {
-	return ATH12K_SPECTRAL_DISABLED;
+	return SPECTRAL_SCAN_MODE_INVALID;
 }
 
 static inline
@@ -171,7 +167,7 @@ struct ath12k_dbring *ath12k_spectral_get_dbring(struct ath12k *ar)
 }
 
 static inline int ath12k_spectral_configure_scan_params(struct ath12k *ar,
-							enum ath12k_spectral_mode mode)
+							enum spectral_scan_mode mode)
 {
 	return 0;
 }

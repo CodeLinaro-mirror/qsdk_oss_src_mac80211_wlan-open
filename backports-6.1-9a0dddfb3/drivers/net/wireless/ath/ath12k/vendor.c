@@ -15167,6 +15167,8 @@ static int ath12k_vendor_spectral_scan_start(struct wiphy *wiphy,
 	/* Default: update params AND trigger a scan. */
 	enum qca_wlan_vendor_attr_spectral_scan_request_type req_type =
 		QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_REQUEST_TYPE_SCAN_AND_CONFIG;
+	enum qca_wlan_vendor_spectral_scan_mode nl_mode =
+		QCA_WLAN_VENDOR_SPECTRAL_SCAN_MODE_NORMAL;
 	struct ath12k *ar;
 	int ret;
 
@@ -15177,10 +15179,20 @@ static int ath12k_vendor_spectral_scan_start(struct wiphy *wiphy,
 	if (tb[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_REQUEST_TYPE])
 		req_type = nla_get_u32(tb[
 				QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_REQUEST_TYPE]);
+	if (tb[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_MODE])
+		nl_mode = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_MODE]);
 
 	ar = ath12k_spectral_get_ar_from_wdev(wdev);
 	if (!ar)
 		return -EINVAL;
+
+	if (nl_mode > QCA_WLAN_VENDOR_SPECTRAL_SCAN_MODE_AGILE)
+		return -EINVAL;
+
+	if (nl_mode == QCA_WLAN_VENDOR_SPECTRAL_SCAN_MODE_AGILE) {
+		ath12k_warn(ar->ab, "Agile scan not supported\n");
+		return -EOPNOTSUPP;
+	}
 
 	/* Step 1: update scan params in software if request includes CONFIG. */
 	if (req_type != QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_REQUEST_TYPE_SCAN) {
@@ -15272,11 +15284,12 @@ static int ath12k_vendor_spectral_scan_start(struct wiphy *wiphy,
 		}
 
 		ar->spectral.samples_done = 0;
-		ret = ath12k_spectral_configure_scan_params(ar, ATH12K_SPECTRAL_MANUAL);
+		ret = ath12k_spectral_configure_scan_params(ar,
+							    SPECTRAL_SCAN_MODE_NORMAL);
 		if (ret)
 			return ret;
 		ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
-			   "spectral scan_start: configure_scan_params(MANUAL) OK\n");
+			   "spectral scan_start: configure_scan_params(NORMAL) OK\n");
 
 		ret = ath12k_spectral_start_scan(ar);
 		if (ret)
@@ -15502,7 +15515,7 @@ static int ath12k_vendor_spectral_get_status(struct wiphy *wiphy,
 					     struct wireless_dev *wdev,
 					     const void *data, int data_len)
 {
-	enum ath12k_spectral_mode mode;
+	enum spectral_scan_mode mode;
 	struct sk_buff *skb;
 	struct ath12k *ar;
 
@@ -15520,15 +15533,21 @@ static int ath12k_vendor_spectral_get_status(struct wiphy *wiphy,
 	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
 		   "spectral get_status: mode=%d(%s) enabled=%d active=%d\n",
 		   mode,
-		   mode == ATH12K_SPECTRAL_DISABLED   ? "DISABLED" :
-		   mode == ATH12K_SPECTRAL_BACKGROUND ? "BACKGROUND" : "MANUAL",
-		   mode != ATH12K_SPECTRAL_DISABLED,
-		   mode == ATH12K_SPECTRAL_BACKGROUND);
+		   mode >= SPECTRAL_SCAN_MODE_MAX ? "DISABLED" :
+		   mode == SPECTRAL_SCAN_MODE_AGILE ? "AGILE" : "NORMAL",
+		   mode < SPECTRAL_SCAN_MODE_MAX,
+		   mode < SPECTRAL_SCAN_MODE_MAX);
 
-	if (mode != ATH12K_SPECTRAL_DISABLED)
+	if (mode < SPECTRAL_SCAN_MODE_MAX)
 		nla_put_flag(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_STATUS_IS_ENABLED);
-	if (mode == ATH12K_SPECTRAL_BACKGROUND)
+	if (mode < SPECTRAL_SCAN_MODE_MAX)
 		nla_put_flag(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_STATUS_IS_ACTIVE);
+	if (mode == SPECTRAL_SCAN_MODE_AGILE)
+		nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_STATUS_MODE,
+			    QCA_WLAN_VENDOR_SPECTRAL_SCAN_MODE_AGILE);
+	else if (mode == SPECTRAL_SCAN_MODE_NORMAL)
+		nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_STATUS_MODE,
+			    QCA_WLAN_VENDOR_SPECTRAL_SCAN_MODE_NORMAL);
 
 	return cfg80211_vendor_cmd_reply(skb);
 }
