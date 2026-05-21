@@ -705,8 +705,6 @@ skip_dma_alloc:
 		}
 		/* follow through when ring_num != HAL_WBM2SW_REL_ERR_RING_NUM */
 		fallthrough;
-	case HAL_PEER_TX_TELEMETRY:
-	case HAL_PEER_RX_TELEMETRY:
 	case HAL_REO_EXCEPTION:
 	case HAL_REO_REINJECT:
 	case HAL_REO_CMD:
@@ -752,6 +750,18 @@ skip_dma_alloc:
 		params.intr_batch_cntr_thres_entries =
 			HAL_SRNG_INT_BATCH_THRESHOLD_TX;
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_TX;
+		break;
+	case HAL_PEER_TX_TELEMETRY:
+		params.intr_batch_cntr_thres_entries =
+			HAL_SRNG_INT_BATCH_THRESHOLD_TX_TELEMETRY;
+		params.intr_timer_thres_us =
+			HAL_SRNG_INT_TIMER_THRESHOLD_TX_TELEMETRY;
+		break;
+	case HAL_PEER_RX_TELEMETRY:
+		params.intr_batch_cntr_thres_entries =
+			HAL_SRNG_INT_BATCH_THRESHOLD_RX_TELEMETRY;
+		params.intr_timer_thres_us =
+			HAL_SRNG_INT_TIMER_THRESHOLD_RX_TELEMETRY;
 		break;
 	default:
 		ath12k_warn(ab, "Not a valid ring type in dp :%d\n", type);

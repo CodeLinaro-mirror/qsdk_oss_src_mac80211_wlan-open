@@ -169,6 +169,22 @@ static int ath12k_wifi8_cumac_dp_service_srng(struct ath12k_dp *dp,
 			goto done;
 	}
 
+	if (dp->hw_params->ring_mask->tx_peer_telemetry[grp_id]) {
+		work_done = ath12k_wifi8_dp_process_tx_peer_telemetry(dp, budget);
+		budget -= work_done;
+		tot_work_done += work_done;
+		if (budget <= 0)
+			goto done;
+	}
+
+	if (dp->hw_params->ring_mask->rx_peer_telemetry[grp_id]) {
+		work_done = ath12k_wifi8_dp_process_rx_peer_telemetry(dp, budget);
+		budget -= work_done;
+		tot_work_done += work_done;
+		if (budget <= 0)
+			goto done;
+	}
+
 	tot_work_done += ath12k_wifi8_non_cumac_dp_service_srng(dp, irq_grp, budget);
 done:
 	return tot_work_done;

@@ -2421,20 +2421,6 @@ ath12k_wifi8_dp_tx_htt_tx_complete_buf(struct ath12k_dp *dp,
 	rcu_read_unlock();
 }
 
-static void ath12k_wifi8_dp_tx_update_peer_basic_stats(struct ath12k_dp_peer *peer,
-						       u32 msdu_len, u8 tx_status,
-						       u8 link_id, int ring_id)
-{
-	DP_PEER_STATS_PKT_LEN(peer, tx, ring_id, comp_pkt, link_id, 1, msdu_len);
-
-	if (tx_status == HAL_WBM_TQM_REL_REASON_FRAME_ACKED) {
-		DP_PEER_STATS_PKT_LEN(peer, tx, ring_id, tx_success, link_id,
-				      1, msdu_len);
-	} else {
-		DP_PEER_STATS_INC(peer, tx, ring_id, tx_failed, link_id, 1);
-	}
-}
-
 static void ath12k_wifi8_dp_tx_comp_update_peer_stats(struct ath12k_dp_peer *peer,
 						      struct hal_tx_status *ts,
 						      int ring_id, u16 tx_desc_flags,
@@ -2449,9 +2435,6 @@ static void ath12k_wifi8_dp_tx_comp_update_peer_stats(struct ath12k_dp_peer *pee
 				DP_PEER_STATS_PKT_LEN(peer, tx, ring_id, mcast,
 						      link_id, 1, msdu_len);
 		}
-	} else {
-		DP_PEER_STATS_PKT_LEN(peer, tx, ring_id, ucast, link_id, 1,
-				      msdu_len);
 	}
 
 	if (ts->buf_rel_source != HAL_WBM_REL_SRC_MODULE_TQM) {
@@ -2463,13 +2446,6 @@ static void ath12k_wifi8_dp_tx_comp_update_peer_stats(struct ath12k_dp_peer *pee
 	}
 
 	if (ts->status == HAL_WBM_TQM_REL_REASON_FRAME_ACKED) {
-		DP_PEER_STATS_COND_INC(peer, tx, ring_id, retry_count, link_id,
-				       ts->transmit_cnt > 1, 1);
-
-		DP_PEER_STATS_COND_INC(peer, tx, ring_id, total_msdu_retries,
-				       link_id, ts->transmit_cnt > 1,
-				       ts->transmit_cnt - 1);
-
 		DP_PEER_STATS_COND_INC(peer, tx, ring_id, multiple_retry_count,
 				       link_id, ts->transmit_cnt > 2, 1);
 
@@ -2499,9 +2475,6 @@ ath12k_wifi8_dp_tx_htt_update_peer_stats(struct ath12k_dp *dp,
 					 u8 tx_desc_flags)
 {
 	if (peer) {
-		ath12k_wifi8_dp_tx_update_peer_basic_stats(peer, msdu_len,
-							   htt_status, link_id,
-							   ring_id);
 		if (unlikely(ath12k_dp_stats_enabled(dp_pdev))) {
 			if (ath12k_dp_debug_stats_enabled(dp_pdev))
 				ath12k_wifi8_dp_tx_comp_update_peer_stats(peer,
@@ -2884,9 +2857,6 @@ static void ath12k_wifi8_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 
 	if (peer) {
 		hw_link_id = ath12k_dp_validate_hw_link_id(ts->hw_link_id);
-		ath12k_wifi8_dp_tx_update_peer_basic_stats(peer, msdu_len,
-							   ts->status,
-							   hw_link_id, ring);
 
 		if (unlikely(ath12k_dp_stats_enabled(dp_pdev))) {
 			if (ath12k_dp_debug_stats_enabled(dp_pdev))
