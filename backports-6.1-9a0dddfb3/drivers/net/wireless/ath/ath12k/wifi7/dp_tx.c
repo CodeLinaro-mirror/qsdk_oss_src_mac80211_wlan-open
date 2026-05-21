@@ -2375,8 +2375,17 @@ fail:
 
 
 void ath12k_wifi7_dp_tx_set_ast(struct ath12k_dp_peer *dp_peer,
-				struct ath12k_dp_tx_msdu_info *msdu_info)
+				struct ath12k_dp_tx_msdu_info *msdu_info,
+				u8 hw_link_id)
 {
+	struct ath12k_dp_link_peer *dp_link_peer;
+
+	dp_link_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, hw_link_id);
+
+	if (dp_link_peer) {
+		msdu_info->bss_ast_hash = dp_link_peer->ast_hash;
+		msdu_info->bss_ast_idx = dp_link_peer->hw_peer_id;
+	}
 }
 
 static inline void
