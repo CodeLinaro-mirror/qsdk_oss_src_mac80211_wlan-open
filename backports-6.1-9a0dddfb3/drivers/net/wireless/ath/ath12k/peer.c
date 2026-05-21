@@ -1106,6 +1106,12 @@ int ath12k_link_sta_hlist_init(struct ath12k *ar)
 	sta_max = ath12k_core_get_max_station_per_radio(ar->ab);
 
 	ar->arsta_hash_bits = order_base_2(sta_max);
+	if (!ar->arsta_hash_bits) {
+		ath12k_warn(ar->ab, "sta_max=%u too small, using default\n",
+			    sta_max);
+		ar->arsta_hash_bits =
+			order_base_2(ATH12K_CP_PEER_HASHTABLE_DEFAULT_ENTRIES);
+	}
 
 	buckets = BIT(ar->arsta_hash_bits);
 	ar->arsta_list = kcalloc(buckets, sizeof(*ar->arsta_list), GFP_ATOMIC);
@@ -1409,10 +1415,18 @@ int ath12k_sta_hlist_init(struct ath12k_hw_group *ag)
 			sta_max += ath12k_core_get_max_station_per_radio(ab) *
 					ab->num_radios;
 	}
+
 	if (!sta_max)
-		sta_max = 128 * ag->num_hw;
+		sta_max = ATH12K_CP_PEER_HASHTABLE_DEFAULT_ENTRIES * ag->num_hw;
 
 	ag->ahsta_hash_bits = order_base_2(sta_max);
+	if (!ag->ahsta_hash_bits) {
+		ath12k_hw_warn(ag->ah[0], "sta_max=%u too small, using default\n",
+			       sta_max);
+		ag->ahsta_hash_bits =
+			order_base_2(ATH12K_CP_PEER_HASHTABLE_DEFAULT_ENTRIES *
+				     ag->num_hw);
+	}
 
 	buckets = BIT(ag->ahsta_hash_bits);
 	ag->ahsta_list = kcalloc(buckets, sizeof(*ag->ahsta_list), GFP_ATOMIC);

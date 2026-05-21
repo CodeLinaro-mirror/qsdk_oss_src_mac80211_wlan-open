@@ -22,6 +22,8 @@
  */
 #define ATH12K_PEER_DEL_TRACKER_MAX_ENTRIES 512
 
+#define ATH12K_CP_PEER_HASHTABLE_DEFAULT_ENTRIES 128
+
 /* Hash key structure for peer deletion tracking */
 struct ath12k_peer_del_key {
 	u8 addr[ETH_ALEN];
