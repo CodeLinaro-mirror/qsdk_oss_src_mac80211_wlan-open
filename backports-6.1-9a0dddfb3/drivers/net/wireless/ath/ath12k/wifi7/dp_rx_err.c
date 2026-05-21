@@ -449,7 +449,6 @@ ath12k_wifi7_dp_process_wbm_rx_packets(struct ath12k_dp *dp,
 	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
 	struct sk_buff *msdu;
 	struct ath12k_dp_hw_link *hw_links = dp_hw_grp->hw_links;
-	struct sk_buff_head msdu_list;
 	struct ath12k_base *partner_ab;
 	struct ath12k_dp *partner_dp;
 	struct ath12k_vif *ahvif = NULL;
@@ -469,8 +468,6 @@ ath12k_wifi7_dp_process_wbm_rx_packets(struct ath12k_dp *dp,
 	struct hal_rx_desc *rx_desc;
 	int reason, device_id, pdev_idx;
 
-	skb_queue_head_init(&msdu_list);
-
 	rcu_read_lock();
 
 	for (msdu_idx = 0; msdu_idx < num_msdus; msdu_idx++) {
@@ -489,7 +486,7 @@ ath12k_wifi7_dp_process_wbm_rx_packets(struct ath12k_dp *dp,
 						    spd_desc_l->wbm.rxdma_push_reason,
 						    spd_desc_l->wbm.rxdma_error_code);
 		if (drop) {
-			__skb_queue_tail(&msdu_list, spd_desc_l->msdu);
+			dev_kfree_skb_any(spd_desc_l->msdu);
 			spd_desc_l->msdu = NULL;
 		}
 
@@ -505,8 +502,8 @@ ath12k_wifi7_dp_process_wbm_rx_packets(struct ath12k_dp *dp,
 		dp_pdev = ath12k_dp_to_dp_pdev(partner_dp, pdev_id);
 		if (unlikely(!dp_pdev)) {
 			if (spd_desc_l->msdu) {
-				__skb_queue_tail(&msdu_list, spd_desc_l->msdu);
-						 spd_desc_l->msdu = NULL;
+				dev_kfree_skb_any(spd_desc_l->msdu);
+				spd_desc_l->msdu = NULL;
 			}
 			continue;
 		}
@@ -514,8 +511,8 @@ ath12k_wifi7_dp_process_wbm_rx_packets(struct ath12k_dp *dp,
 		partner_ab = partner_dp->ab;
 		if (!rcu_dereference(partner_ab->pdevs_active[pdev_id])) {
 			if (spd_desc_l->msdu) {
-				__skb_queue_tail(&msdu_list, spd_desc_l->msdu);
-						 spd_desc_l->msdu = NULL;
+				dev_kfree_skb_any(spd_desc_l->msdu);
+				spd_desc_l->msdu = NULL;
 			}
 			continue;
 		}
@@ -534,8 +531,8 @@ ath12k_wifi7_dp_process_wbm_rx_packets(struct ath12k_dp *dp,
 							   dp_pdev, peer_id);
 		if (!peer) {
 			if (spd_desc_l->msdu) {
-				__skb_queue_tail(&msdu_list, spd_desc_l->msdu);
-						 spd_desc_l->msdu = NULL;
+				dev_kfree_skb_any(spd_desc_l->msdu);
+				spd_desc_l->msdu = NULL;
 			}
 			continue;
 		}
@@ -742,8 +739,6 @@ ath12k_wifi7_dp_process_wbm_rx_packets(struct ath12k_dp *dp,
 			prefetch(skb_shinfo(next_msdu));
 		}
 	}
-
-	dev_kfree_skb_list_fast(&msdu_list);
 
 	rcu_read_unlock();
 }
