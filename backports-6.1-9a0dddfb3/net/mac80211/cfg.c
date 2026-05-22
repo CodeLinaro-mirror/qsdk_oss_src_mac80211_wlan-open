@@ -2041,6 +2041,19 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 #endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */
 
 	ieee80211_set_critical_update(sdata, link_id, &params->beacon.cu_params, false);
+
+#ifdef CPTCFG_QCN_EXTN
+	/*
+	 * Boot-up CAC: if this is the first BSS being started on a 5 GHz DFS
+	 * channel, start the per-chanctx dfs_cac_timer with the regulatory
+	 * CAC time for the channel. Subsequent start_ap calls on the same
+	 * chanctx see the timer already active and inherit its timing state.
+	 */
+	if (cfg80211_chandef_dfs_usable(local->hw.wiphy, &params->chandef) &&
+	    !cfg80211_chandef_dfs_available(local->hw.wiphy, &params->chandef))
+		ieee80211_start_ap_bootup_cac_extn(sdata, link, params);
+#endif /* CPTCFG_QCN_EXTN */
+
 	return 0;
 
 error:

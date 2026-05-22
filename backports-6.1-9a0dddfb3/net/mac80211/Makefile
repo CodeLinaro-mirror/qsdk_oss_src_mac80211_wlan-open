@@ -69,7 +69,8 @@ mac80211-$(CPTCFG_QCN_EXTN) += \
 	qcn_extns/bw240MHz.o \
 	qcn_extns/driver-ops_extn.o \
 	qcn_extns/iface_extn.o \
-	qcn_extns/notify.o
+	qcn_extns/notify.o \
+	qcn_extns/dfs_extn.o
 
 obj-y += tests/
 
