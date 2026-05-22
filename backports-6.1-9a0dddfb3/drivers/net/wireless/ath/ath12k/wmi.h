@@ -3203,7 +3203,7 @@ struct ath12k_wmi_pdev_band_to_mac_params {
 #define WMI_TBTT_COUNT_DOWN_CFG_TTLM_EXP_DUR		BIT(5)
 #define WMI_TBTT_COUNT_DOWN_CFG_ML_RECONFIG		BIT(6)
 #define WMI_TBTT_COUNT_DOWN_CFG_UHR_EBPCC		BIT(7)
-#define WMI_TBTT_COUNT_DOWN_CFG_UHR_PARAM_UPD		BIT(8)
+#define WMI_TBTT_COUNT_DOWN_CFG_UHR_COUNTDOWN		BIT(8)
 
 struct ath12k_wmi_shared_cu_mem_config {
 	__le32 config;
@@ -3706,7 +3706,7 @@ struct ath12k_cu_mem_layout_arg {
 	};
 	union {
 		struct {
-			u16 uhr_param_update;
+			u16 uhr_countdown;
 			u16 uhr_ebpcc;
 		};
 		u32 offset4;
@@ -3755,7 +3755,7 @@ struct wmi_vdev_create_cu_mem_offset_info {
 	 *  - offset_info_2: [15:0] eht_bpcc, [31:16] ml-reconfig
 	 *  - offset_info_3: [15:0] ttlm_max_chan_switch_time,
 	 *                   [31:16] ttlm_expected_duration
-	 *  - offset_info_4: [15:0] uhr_param_update, [31:16] uhr_ebpcc
+	 *  - offset_info_4: [15:0] uhr_countdown, [31:16] uhr_ebpcc
 	 *  - offset_info_5: [15:0] max channel switch timer, [31:16] reserved
 	 */
 	__le32 offset_info_1;

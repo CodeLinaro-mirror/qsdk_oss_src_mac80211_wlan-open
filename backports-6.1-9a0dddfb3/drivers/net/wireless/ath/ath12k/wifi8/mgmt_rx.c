@@ -641,8 +641,11 @@ ath12k_wifi8_cu_mem_update(struct ath12k_base *ab,
 			   struct ath12k_link_vif *arvif, bool is_probe_req)
 {
 	struct ieee80211_vif *vif = arvif->ahvif->vif;
-	u32 eht_bpcc, cu_flags, reconfig, expec_dur;
-	bool eht_cu;
+	struct ieee80211_bss_conf *link_conf;
+	u32 eht_bpcc = 0, cu_flags = 0, reconfig = 0, expec_dur = 0;
+	u32 uhr_ebpcc = 0, uhr_countdown = 0;
+	bool eht_cu = false, uhr_cu = false;
+	unsigned int dbg_level = is_probe_req ? ATH12K_DBG_L1 : ATH12K_DBG_L0;
 
 	if (ab->cu_mem_cfg_mask & WMI_TBTT_COUNT_DOWN_CFG_EHT_BPCC) {
 		ath12k_mac_read_cu_mem(arvif,
@@ -654,9 +657,6 @@ ath12k_wifi8_cu_mem_update(struct ath12k_base *ab,
 						eht_bpcc) / sizeof(u32),
 				       &eht_bpcc);
 		eht_cu = u32_get_bits(cu_flags, BIT(0));
-		ath12k_dbg(ab, ATH12K_DBG_CU,
-			   "cu_update vdev %d eht_cu %d eht_bpcc %u\n",
-			   arvif->vdev_id, eht_cu, eht_bpcc);
 		ieee80211_critical_update(vif, arvif->link_id,
 					  !!eht_cu, (u8)eht_bpcc);
 	}
@@ -667,12 +667,37 @@ ath12k_wifi8_cu_mem_update(struct ath12k_base *ab,
 						reconfig) / sizeof(u32),
 				       &reconfig);
 		if (arvif->is_link_removal_in_progress)
-			ath12k_dbg(ab, ATH12K_DBG_CU,
-				   "cu_update vdev %d reconfig %u\n",
-				   arvif->vdev_id, reconfig);
-		if (reconfig)
 			ieee80211_link_removal_count_update(vif, arvif->link_id,
 							    (u16)reconfig);
+	}
+
+	link_conf = rcu_dereference(vif->link_conf[arvif->link_id]);
+
+	if (link_conf && link_conf->cu_info.cu_in_progress) {
+		if (ab->cu_mem_cfg_mask & WMI_TBTT_COUNT_DOWN_CFG_UHR_EBPCC) {
+			ath12k_mac_read_cu_mem(arvif,
+					       offsetof(struct ath12k_cu_mem,
+							cu_flags) / sizeof(u32),
+					       &cu_flags);
+			ath12k_mac_read_cu_mem(arvif,
+					       offsetof(struct ath12k_cu_mem,
+							uhr_ebpcc) / sizeof(u32),
+					       &uhr_ebpcc);
+			uhr_cu = u32_get_bits(cu_flags, BIT(1));
+		}
+
+		if (ab->cu_mem_cfg_mask & WMI_TBTT_COUNT_DOWN_CFG_UHR_COUNTDOWN) {
+			ath12k_mac_read_cu_mem(arvif,
+					       offsetof(struct ath12k_cu_mem,
+							uhr_countdown) / sizeof(u32),
+					       &uhr_countdown);
+		}
+		if (((ab->cu_mem_cfg_mask & WMI_TBTT_COUNT_DOWN_CFG_UHR_EBPCC) ||
+		     (ab->cu_mem_cfg_mask & WMI_TBTT_COUNT_DOWN_CFG_UHR_COUNTDOWN)) &&
+		    uhr_countdown)
+			ieee80211_critical_update_ecu(vif, arvif->link_id,
+						      !!uhr_cu, (u8)uhr_ebpcc,
+						       uhr_countdown);
 	}
 
 	if (is_probe_req &&
@@ -683,14 +708,18 @@ ath12k_wifi8_cu_mem_update(struct ath12k_base *ab,
 				       sizeof(u32),
 				       &expec_dur);
 		if (expec_dur) {
-			ath12k_dbg(ab, ATH12K_DBG_CU,
-				   "cu_update vdev %d expec_dur %u\n",
-				   arvif->vdev_id, expec_dur);
 			ieee80211_ttlm_info_expec_dur_update(vif, arvif->link_id,
 							     expec_dur);
 		}
 	}
+
+	ath12k_dbg_level(ab, ATH12K_DBG_CU, dbg_level,
+			 "cu_update vdev %d eht_cu %d eht_bpcc %u reconfig %u uhr_cu %d uhr_ebpcc %u uhr_countdown %u expec_dur %u\n",
+			 arvif->vdev_id, eht_cu, eht_bpcc, reconfig,
+			 uhr_cu, uhr_ebpcc,
+			 uhr_countdown, expec_dur);
 }
+
 
 static u8 ath12k_wifi8_mgmt_rx_get_vdev_id(struct ath12k_base *ab,
 					   enum ath12k_peer_metadata_version ver,
