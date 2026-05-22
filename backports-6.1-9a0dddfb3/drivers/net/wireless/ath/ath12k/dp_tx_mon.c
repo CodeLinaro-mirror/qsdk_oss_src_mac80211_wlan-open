@@ -3892,6 +3892,69 @@ void ath12k_dp_mon_tx_htt_src_ring_cleanup(struct ath12k_dp *dp)
 		mon_ops->mon_tx_htt_srng_cleanup(dp);
 }
 
+int ath12k_dp_ext_mon_tx_alloc(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_dp_tx_ext_mon_config *tx_config;
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_pdev_tx_mon *tx_mon;
+
+	if (unlikely(!dp_mon_pdev)) {
+		ath12k_warn(dp_pdev->dp->ab, "monitor pdev is null\n");
+		return -EINVAL;
+	}
+
+	tx_mon = dp_mon_pdev->dp_pdev_tx_mon;
+	if (unlikely(!tx_mon)) {
+		ath12k_warn(dp_pdev->dp->ab, "tx monitor is null\n");
+		return -EINVAL;
+	}
+
+	spin_lock_init(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+
+	tx_config = kzalloc(sizeof(*tx_config), GFP_KERNEL);
+	if (!tx_config)
+		return -ENOMEM;
+
+	INIT_LIST_HEAD(&tx_config->peer_list);
+
+	spin_lock_bh(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+	tx_mon->tx_ext_mon.tx_ext_mon_config = tx_config;
+	spin_unlock_bh(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_dp_ext_mon_tx_alloc);
+
+void ath12k_dp_ext_mon_tx_free(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_dp_tx_ext_mon_config *tx_config;
+	struct ath12k_pdev_tx_mon *tx_mon;
+
+	if (unlikely(!dp_mon_pdev)) {
+		ath12k_warn(dp_pdev->dp->ab, "monitor pdev is null\n");
+		return;
+	}
+
+	tx_mon = dp_mon_pdev->dp_pdev_tx_mon;
+	if (unlikely(!tx_mon)) {
+		ath12k_warn(dp_pdev->dp->ab, "tx monitor is null\n");
+		return;
+	}
+
+	spin_lock_bh(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+	tx_config = tx_mon->tx_ext_mon.tx_ext_mon_config;
+	if (!tx_config) {
+		spin_unlock_bh(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+		return;
+	}
+	tx_mon->tx_ext_mon.tx_ext_mon_config = NULL;
+	spin_unlock_bh(&tx_mon->tx_ext_mon.tx_ext_mon_lock);
+
+	kfree(tx_config);
+}
+EXPORT_SYMBOL(ath12k_dp_ext_mon_tx_free);
+
 void ath12k_dp_mon_tx_pdev_free(struct ath12k_pdev_dp *dp_pdev)
 {
 	struct ath12k_dp *dp;
@@ -3915,6 +3978,8 @@ void ath12k_dp_mon_tx_pdev_free(struct ath12k_pdev_dp *dp_pdev)
 		mon_ops->mon_tx_wq_stop(dp_pdev);
 	if (mon_ops->mon_tx_dst_ring_cleanup)
 		mon_ops->mon_tx_dst_ring_cleanup(dp_pdev);
+	if (mon_ops->ext_mon_tx_free)
+		mon_ops->ext_mon_tx_free(dp_pdev);
 }
 EXPORT_SYMBOL(ath12k_dp_mon_tx_pdev_free);
 
@@ -4029,6 +4094,7 @@ int ath12k_dp_mon_tx_pdev_alloc(struct ath12k_pdev_dp *dp_pdev,
 {
 	struct ath12k_dp *dp;
 	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	int ext_ret;
 	int ret = 0;
 
 	if (unlikely(!dp_pdev)) {
@@ -4060,6 +4126,16 @@ int ath12k_dp_mon_tx_pdev_alloc(struct ath12k_pdev_dp *dp_pdev,
 		if (ret)
 			ath12k_warn(dp, "failed to start TX mon WQ for mac_id %d: %d\n",
 				    mac_id, ret);
+	}
+
+	if (mon_ops->ext_mon_tx_alloc) {
+		ext_ret = mon_ops->ext_mon_tx_alloc(dp_pdev);
+		if (ext_ret) {
+			/* Non-fatal: TX ext mon is not critical to pdev bringup */
+			ath12k_warn(dp->ab,
+				    "failed to allocate TX ext mon for %s mac_id %d: %d\n",
+				    dev_name(dp_pdev->dp->ab->dev), mac_id, ext_ret);
+		}
 	}
 
 	return ret;
