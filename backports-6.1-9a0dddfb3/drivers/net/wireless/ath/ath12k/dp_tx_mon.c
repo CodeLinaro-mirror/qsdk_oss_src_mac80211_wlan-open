@@ -4313,6 +4313,10 @@ void ath12k_dp_mon_tx_display_filters(struct ath12k_dp *dp,
 			   src_tlv_filter->tx_mon_upstream_tlv_flags1);
 		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "upstream TLV Flags-2: 0x%X",
 			   src_tlv_filter->tx_mon_upstream_tlv_flags2);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "upstream TLV Flags-3: 0x%X",
+			   src_tlv_filter->tx_mon_upstream_tlv_flags3);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "downstream TLV Flags-1: 0x%X",
+			   src_tlv_filter->tx_mon_downstream_tlv_flags1);
 
 		/* Print wmask configuration */
 		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "wmask pcu_ppdu_setup_init: 0x%X",
@@ -4420,6 +4424,10 @@ ath12k_dp_mon_tx_setup_mon_mode_filter(struct ath12k_dp *dp,
 					HTT_TX_MON_FILTER_UP_STRM_TLV_FLAG1;
 	src_tlv_filter->tx_mon_upstream_tlv_flags2 =
 					HTT_TX_MON_FILTER_UP_STRM_TLV_FLAG2;
+	src_tlv_filter->tx_mon_upstream_tlv_flags3 =
+					HTT_TX_FILTER_TLV_FLAGS3_UHR_PREAMBLE_ALL;
+	src_tlv_filter->tx_mon_downstream_tlv_flags1 =
+					HTT_TX_FILTER_TLV_DS_FLAGS1_ALL;
 
 	src_tlv_filter->tx_mon_mgmt_filter = 0x1;
 	src_tlv_filter->tx_mon_data_filter = 0x1;
@@ -4494,6 +4502,10 @@ void ath12k_dp_mon_tx_prepare_filter(struct ath12k_dp *dp,
 			src_tlv_filter->tx_mon_upstream_tlv_flags1;
 		dst_tlv_filter->tx_mon_upstream_tlv_flags2 |=
 			src_tlv_filter->tx_mon_upstream_tlv_flags2;
+		dst_tlv_filter->tx_mon_upstream_tlv_flags3 |=
+			src_tlv_filter->tx_mon_upstream_tlv_flags3;
+		dst_tlv_filter->tx_mon_downstream_tlv_flags1 |=
+			src_tlv_filter->tx_mon_downstream_tlv_flags1;
 		dst_tlv_filter->tx_mon_mgmt_filter |=
 					src_tlv_filter->tx_mon_mgmt_filter;
 		dst_tlv_filter->tx_mon_data_filter |=
