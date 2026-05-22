@@ -384,7 +384,7 @@ void ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *
 		return;
 	}
 
-	skb_trim(msdu, msdu->len - FCS_LEN);
+	pskb_trim(msdu, msdu->len - FCS_LEN);
 
 	if (!decrypted)
 		return;
@@ -395,28 +395,28 @@ void ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *
 
 	/* Tail */
 	if (status->flag & RX_FLAG_IV_STRIPPED) {
-		skb_trim(msdu, msdu->len -
-			 ath12k_dp_rx_crypto_mic_len(dp, enctype));
+		pskb_trim(msdu, msdu->len -
+			  ath12k_dp_rx_crypto_mic_len(dp, enctype));
 
-		skb_trim(msdu, msdu->len -
-			 ath12k_dp_rx_crypto_icv_len(dp, enctype));
+		pskb_trim(msdu, msdu->len -
+			  ath12k_dp_rx_crypto_icv_len(dp, enctype));
 	} else {
 		/* MIC */
 		if (status->flag & RX_FLAG_MIC_STRIPPED)
-			skb_trim(msdu, msdu->len -
-				 ath12k_dp_rx_crypto_mic_len(dp, enctype));
+			pskb_trim(msdu, msdu->len -
+				  ath12k_dp_rx_crypto_mic_len(dp, enctype));
 
 		/* ICV */
 		if (status->flag & RX_FLAG_ICV_STRIPPED)
-			skb_trim(msdu, msdu->len -
-				 ath12k_dp_rx_crypto_icv_len(dp, enctype));
+			pskb_trim(msdu, msdu->len -
+				  ath12k_dp_rx_crypto_icv_len(dp, enctype));
 	}
 
 	/* MMIC */
 	if ((status->flag & RX_FLAG_MMIC_STRIPPED) &&
 	    !ieee80211_has_morefrags(hdr->frame_control) &&
 	    enctype == HAL_ENCRYPT_TYPE_TKIP_MIC)
-		skb_trim(msdu, msdu->len - IEEE80211_CCMP_MIC_LEN);
+		pskb_trim(msdu, msdu->len - IEEE80211_CCMP_MIC_LEN);
 
 	/* Head */
 	if (status->flag & RX_FLAG_IV_STRIPPED) {
@@ -424,7 +424,7 @@ void ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *
 		crypto_len = ath12k_dp_rx_crypto_param_len(dp, enctype);
 
 		memmove(msdu->data + crypto_len, msdu->data, hdr_len);
-		skb_pull(msdu, crypto_len);
+		pskb_pull(msdu, crypto_len);
 	}
 }
 EXPORT_SYMBOL(ath12k_dp_rx_h_undecap_raw);

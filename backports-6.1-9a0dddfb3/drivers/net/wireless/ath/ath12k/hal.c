@@ -728,6 +728,15 @@ u32 ath12k_hal_srng_access_begin(struct ath12k_base *ab, struct hal_srng *srng)
 }
 EXPORT_SYMBOL(ath12k_hal_srng_access_begin);
 
+void *ath12k_hal_srng_fetch_entry(struct hal_srng *srng, u16 offset)
+{
+	u32 ttp = (srng->u.dst_ring.tp + srng->entry_size * offset) %
+			srng->ring_size;
+
+	return srng->ring_base_vaddr + ttp;
+}
+EXPORT_SYMBOL(ath12k_hal_srng_fetch_entry);
+
 u32 ath12k_hal_srng_access_begin_no_lock(struct hal_srng *srng)
 {
 	return __ath12k_hal_srng_access_begin(srng);

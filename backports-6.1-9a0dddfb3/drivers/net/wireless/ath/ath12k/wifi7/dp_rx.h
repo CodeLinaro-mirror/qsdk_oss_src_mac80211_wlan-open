@@ -171,10 +171,8 @@ void ath12k_wifi7_dp_rx_h_undecap_eth(struct ath12k_pdev_dp *dp_pdev,
 				      bool mesh_ctrl_present,
 				      struct hal_rx_desc *desc,
 				      bool is_mcbc, u16 tid);
-void ath12k_wifi7_dp_adjust_skb(struct ath12k_pdev_dp *dp_pdev,
-				struct hal_rx_spd_data *spd_desc_l,
+void ath12k_wifi7_dp_adjust_skb(struct hal_rx_spd_data *spd_desc_l,
 				struct link_peer_rx_tid_stats *stats,
-				struct ieee80211_rx_status *rx_status,
 				int *msdu_idx, u32 hal_rx_desc_sz);
 static inline u8 ath12k_wifi7_dp_rx_get_msdu_src_link(struct ath12k_dp *dp,
 						      struct hal_rx_desc *desc)
@@ -514,11 +512,10 @@ static void ath12k_wifi7_dp_rx_h_undecap_nwifi(struct ath12k_pdev_dp *dp_pdev,
 }
 
 static inline u8
-ath12k_wifi7_rx_create_fraglist(struct ath12k_pdev_dp *dp_pdev,
-				struct hal_rx_spd_data **spd_desc,
-				u32 rx_tlv_sz,
-				struct ieee80211_rx_status *status)
+ath12k_wifi7_rx_create_fraglist(struct hal_rx_spd_data *spd_desc,
+				u32 rx_tlv_sz)
 {
+	struct hal_rx_spd_data *spd_desc_orig = spd_desc;
 	struct sk_buff *parent = NULL;
 	struct sk_buff *frag_list = NULL;
 	struct sk_buff *tmp = NULL;
@@ -529,28 +526,30 @@ ath12k_wifi7_rx_create_fraglist(struct ath12k_pdev_dp *dp_pdev,
 	u16 frag_list_len = 0;
 	u16 buf_size = DP_RX_BUFFER_SIZE;
 
-	rx_msdu_info = &((*spd_desc)->rx_msdu_info);
+	rx_msdu_info = &spd_desc->rx_msdu_info;
 
 	msdu_len = rx_msdu_info->msdu_length;
 	l3_pad_bytes = rx_msdu_info->l3_header_padding_msb ? 2 : 0;
 
-	parent = (*spd_desc)->msdu;
+	parent = spd_desc->msdu;
 
 	skb_put(parent, buf_size);
 	skb_pull(parent, rx_tlv_sz + l3_pad_bytes);
 
+	msdu_len -= parent->len;
+
 	/* set checksum pass or fail only in parent skb */
 	ath12k_wifi7_dp_rx_h_csum_offload(parent, rx_msdu_info);
 
-	(*spd_desc)->first_sg_frame = 0;
+	spd_desc->first_sg_frame = 0;
 	do {
-		(*spd_desc)++;
+		spd_desc++;
 
 		if (!frag_list) {
-			frag_list = (*spd_desc)->msdu;
+			frag_list = spd_desc->msdu;
 			tmp = frag_list;
 		} else {
-			tmp->next = (*spd_desc)->msdu;
+			tmp->next = spd_desc->msdu;
 			tmp = tmp->next;
 		}
 
@@ -564,20 +563,21 @@ ath12k_wifi7_rx_create_fraglist(struct ath12k_pdev_dp *dp_pdev,
 		skb_pull(tmp, rx_tlv_sz);
 		frag_list_len += tmp->len;
 		idx++;
-	} while (!(*spd_desc)->last_sg_frame);
-	(*spd_desc)->last_sg_frame = 0;
+	} while (!spd_desc->last_sg_frame);
+	spd_desc->last_sg_frame = 0;
 
 	skb_shinfo(parent)->frag_list = frag_list;
+	parent->data_len = 0;
 	parent->data_len += frag_list_len;
 	parent->len += frag_list_len;
 
-	/* save the parent skb in the last scratch_pad desc
-	 * the last spad->vaddr (TLV_HDR) of the SG frame
+	/* save the vaddr in the first scratch_pad desc
+	 * since the last spad->vaddr (TLV_HDR) of the SG frame
 	 * holds proper radio params and these parameters
 	 * are needed to fill ieee80211_rx_status based on
 	 * DECAP type.
 	 */
-	(*spd_desc)->msdu = parent;
+	spd_desc_orig->vaddr = spd_desc->vaddr;
 	return idx;
 }
 
@@ -649,9 +649,11 @@ int ath12k_wifi7_deliver_raw_frame(struct ath12k_pdev_dp *dp_pdev,
 	struct sk_buff *msdu = rx_spd->msdu;
 	struct ieee80211_sta *pubsta = NULL;
 	struct ath12k_hal *hal;
-	u8 *rx_tlv_hdr;
+	struct hal_rx_desc *rx_tlv_hdr;
 	bool is_mcbc = false;
-	bool ret;
+	bool ret, decrypted;
+	bool ra_mcbc = rx_spd->rx_msdu_info.da_is_mcbc &&
+				!peer->is_reset_mcbc;
 
 	is_mcbc = is_ieee80211_frame_mcast(msdu);
 
@@ -660,7 +662,7 @@ int ath12k_wifi7_deliver_raw_frame(struct ath12k_pdev_dp *dp_pdev,
 	rx_msdu_info = &rx_spd->rx_msdu_info;
 	rx_mpdu_info = &rx_spd->rx_mpdu_info;
 
-	rx_tlv_hdr = rx_spd->vaddr;
+	rx_tlv_hdr = (struct hal_rx_desc *)rx_spd->vaddr;
 
 	status->flag &= ~(RX_FLAG_FAILED_FCS_CRC |
 			  RX_FLAG_MMIC_ERROR |
@@ -679,12 +681,18 @@ int ath12k_wifi7_deliver_raw_frame(struct ath12k_pdev_dp *dp_pdev,
 	msdu->priority = rx_mpdu_info->tid;
 
 	ath12k_wifi7_dp_extract_rx_spd_data(hal,
-					    rx_spd,
-					    (struct hal_rx_desc *)rx_tlv_hdr, 1);
+					    rx_spd, rx_tlv_hdr, 1);
 
-	if (ath12k_hal_rx_h_is_decrypted(hal,
-					 (struct hal_rx_desc *)rx_tlv_hdr))
+	decrypted = ath12k_hal_rx_h_is_decrypted(hal, rx_tlv_hdr);
+
+	if (decrypted) {
 		status->flag |= RX_FLAG_DECRYPTED | RX_FLAG_MMIC_STRIPPED;
+
+		if (ra_mcbc)
+			status->flag |= RX_FLAG_MIC_STRIPPED | RX_FLAG_ICV_STRIPPED;
+		else
+			status->flag |= RX_FLAG_IV_STRIPPED | RX_FLAG_PN_VALIDATED;
+	}
 
 	/* copy from scratch_pad to ieee80211_rx_status */
 	tlv_info = &rx_spd->tlv_info;

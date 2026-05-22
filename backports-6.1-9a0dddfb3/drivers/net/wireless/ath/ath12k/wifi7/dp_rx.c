@@ -901,10 +901,8 @@ u16 ath12k_wifi7_dp_rx_get_peer_id(struct ath12k_base *ab,
 	}
 }
 
-void ath12k_wifi7_dp_adjust_skb(struct ath12k_pdev_dp *dp_pdev,
-				struct hal_rx_spd_data *spd_desc_l,
+void ath12k_wifi7_dp_adjust_skb(struct hal_rx_spd_data *spd_desc_l,
 				struct link_peer_rx_tid_stats *stats,
-				struct ieee80211_rx_status *rx_status,
 				int *msdu_idx, u32 hal_rx_desc_sz)
 {
 	struct sk_buff *msdu = spd_desc_l->msdu;
@@ -924,10 +922,8 @@ void ath12k_wifi7_dp_adjust_skb(struct ath12k_pdev_dp *dp_pdev,
 		 * multiple buffers/skbs. pulling of TLV header and
 		 * setting of length is done in below API.
 		 */
-		idx = ath12k_wifi7_rx_create_fraglist(dp_pdev,
-						      &spd_desc_l,
-						      hal_rx_desc_sz,
-						      rx_status);
+		idx = ath12k_wifi7_rx_create_fraglist(spd_desc_l,
+						      hal_rx_desc_sz);
 		*msdu_idx += idx;
 		if (stats) {
 			stats->sg_cnt++;
@@ -1040,7 +1036,6 @@ ath12k_wifi7_dp_process_reo_rx_packets(struct ath12k_dp *dp,
 
 		rx_msdu_info = &spd_desc_l->rx_msdu_info;
 		rx_mpdu_info = &spd_desc_l->rx_mpdu_info;
-		rx_tlv_hdr = spd_desc_l->vaddr;
 		msdu = spd_desc_l->msdu;
 		vaddr = spd_desc_l->vaddr;
 
@@ -1153,6 +1148,7 @@ ath12k_wifi7_dp_process_reo_rx_packets(struct ath12k_dp *dp,
 			active_tid_mask = 0;
 		}
 
+		/* stats should be collected only after the below assignment */
 		active_tid_mask |= 1 << tid;
 		stats = &tid_stats[tid];
 
@@ -1166,8 +1162,10 @@ ath12k_wifi7_dp_process_reo_rx_packets(struct ath12k_dp *dp,
 		msdu_len = rx_msdu_info->msdu_length;
 		l3_pad_bytes = rx_msdu_info->l3_header_padding_msb ? 2 : 0;
 
-		ath12k_wifi7_dp_adjust_skb(dp_pdev, spd_desc_l, stats,
-					   &rx_status, &msdu_idx, hal_rx_desc_sz);
+		ath12k_wifi7_dp_adjust_skb(spd_desc_l, stats,
+					   &msdu_idx, hal_rx_desc_sz);
+
+		rx_tlv_hdr = spd_desc_l->vaddr;
 
 		/* beyond this point RX TLV info could be over-written by
 		 * user-specific meta data, hence copy all the nessacary info
@@ -1237,6 +1235,26 @@ ath12k_wifi7_dp_process_reo_rx_packets(struct ath12k_dp *dp,
 						active_tid_mask);
 
 	rcu_read_unlock();
+}
+
+static bool check_sg_termination(struct hal_srng *srng,
+				 int valid_entries)
+{
+	struct hal_reo_dest_ring *desc;
+	struct rx_msdu_desc *msdu_info;
+
+	if (valid_entries >= 9)
+		return true;
+
+	if (!valid_entries)
+		return false;
+
+	desc = (struct hal_reo_dest_ring *)
+		ath12k_hal_srng_fetch_entry(srng,
+				valid_entries - 1);
+	msdu_info = &desc->rx_msdu_info;
+	return !(le32_to_cpu(msdu_info->info0) &
+			RX_MSDU_DESC_INFO0_MSDU_CONTINUATION);
 }
 
 int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
@@ -1352,7 +1370,7 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 			 *       hence an MSDU at best will need 2 buffers.
 			 */
 			if (first_sg_frame) {
-				if (valid_entries < 9) {
+				if (!check_sg_termination(srng, valid_entries)) {
 					__ath12k_hal_srng_update_tp(srng,
 								    curr_tp);
 					break;
