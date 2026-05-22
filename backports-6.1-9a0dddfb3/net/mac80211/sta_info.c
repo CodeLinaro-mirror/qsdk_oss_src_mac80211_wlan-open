@@ -2715,19 +2715,11 @@ static inline u64 sta_get_stats_bytes(struct ieee80211_sta_rx_stats *rxstats)
 void sta_set_accumulated_removed_links_sinfo(struct sta_info *sta,
 					     struct station_info *sinfo)
 {
-	struct ieee80211_sub_if_data *sdata = sta->sdata;
-	struct ieee80211_local *local = sdata->local;
-
 	/* Accumulating the removed link statistics. */
-	if (ieee80211_sdata_has_txrx_stats_offload(sdata)) {
-		/* Fetch preserved stats from driver */
-		drv_set_preserved_link_stats(local, sdata, &sta->sta, sinfo);
-	} else {
-		sinfo->tx_packets = sta->rem_link_stats.tx_packets;
-		sinfo->rx_packets = sta->rem_link_stats.rx_packets;
-		sinfo->tx_bytes = sta->rem_link_stats.tx_bytes;
-		sinfo->rx_bytes = sta->rem_link_stats.rx_bytes;
-	}
+	sinfo->tx_packets = sta->rem_link_stats.tx_packets;
+	sinfo->rx_packets = sta->rem_link_stats.rx_packets;
+	sinfo->tx_bytes = sta->rem_link_stats.tx_bytes;
+	sinfo->rx_bytes = sta->rem_link_stats.rx_bytes;
 	sinfo->tx_retries = sta->rem_link_stats.tx_retries;
 	sinfo->tx_failed = sta->rem_link_stats.tx_failed;
 	sinfo->rx_dropped_misc = sta->rem_link_stats.rx_dropped_misc;

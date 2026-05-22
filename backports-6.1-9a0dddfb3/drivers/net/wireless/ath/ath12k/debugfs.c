@@ -6789,7 +6789,6 @@ static ssize_t ath12k_write_reset_dp_stats(struct file *file,
 		list_for_each_entry(arvif, &ar->arvifs, list) {
 			dp_vif = &arvif->ahvif->dp_vif;
 			memset(&dp_vif->stats, 0, sizeof(dp_vif->stats));
-			memset(&dp_vif->rx_stats, 0, sizeof(dp_vif->rx_stats));
 			ath12k_dp_vif_reset_del_stats(dp_vif, arvif->ahvif->links_map);
 
 			if (ath12k_proto_stats_enabled(&ar->dp))
