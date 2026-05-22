@@ -13926,6 +13926,38 @@ exit:
 	return ret;
 }
 
+static bool ath12k_mac_check_if_link_is_active(struct ieee80211_hw *hw,
+					       struct ieee80211_vif *vif,
+					       struct ieee80211_sta *sta,
+					       bool existing_sta)
+{
+	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
+	struct wiphy *wiphy = hw->wiphy;
+	struct ath12k_link_vif *arvif;
+	u8 link_id = 0;
+	unsigned long links_map;
+
+	lockdep_assert_wiphy(wiphy);
+
+	/*
+	 * fetch the links that are valid in this sta entry and
+	 * figure out if any radio is in asserted state
+	 */
+	links_map = sta->valid_links;
+
+	for_each_set_bit(link_id, &links_map, IEEE80211_MLD_MAX_NUM_LINKS) {
+		arvif = wiphy_dereference(wiphy, ahvif->link[link_id]);
+		if (!arvif->ar ||
+		    ath12k_dp_umac_reset_in_progress(arvif->ar->ab) ||
+		    test_bit(ATH12K_FLAG_CRASH_FLUSH, &arvif->ar->ab->dev_flags) ||
+		    (!existing_sta &&
+		     test_bit(ATH12K_FLAG_RECOVERY, &arvif->ar->ab->dev_flags))) {
+			return false;
+		}
+	}
+	return true;
+}
+
 static int ath12k_mac_reconfig_ahsta_links_mode0(struct ath12k_hw *ah,
 						 struct ath12k_sta *ahsta,
 						 struct ath12k_vif *ahvif,
@@ -13999,9 +14031,8 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 	struct ath12k *ar = ah->radio;
 	struct ath12k_hw_group *ag = ar->ab->ag;
 	unsigned long links_map = 0;
-	bool is_recovery = false;
+	bool is_recovery = false, existing_sta;
 	u8 link_id = 0, active_num_devices;
-	u8 t_link_id = 0;
 	u16 bridge_bitmap = 0;
 	int ret = -EINVAL;
 	struct ath12k_dp_peer_create_params dp_params = {0};
@@ -14062,27 +14093,15 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 		ahsta->free_logical_idx_map = U16_MAX;
 		/* ML sta */
 		links_map = ahsta->links_map;
-		if (sta->mlo && ((!ahsta->links_map &&
-		    (hweight16(sta->valid_links) == 1)) ||
-		     test_bit(link_id, &links_map))) {
-			/*
-			 * fetch the links that are valid in this sta entry and
-			 * figure out if any radio is in asserted state
-			 */
-			links_map = sta->valid_links;
-			for_each_set_bit(t_link_id, &links_map,
-					 IEEE80211_MLD_MAX_NUM_LINKS) {
-				arvif = wiphy_dereference(wiphy, ahvif->link[t_link_id]);
-				if (!arvif->ar ||
-				     ath12k_dp_umac_reset_in_progress(arvif->ar->ab) ||
-				     test_bit(ATH12K_FLAG_RECOVERY,
-					      &arvif->ar->ab->dev_flags) ||
-				     test_bit(ATH12K_FLAG_CRASH_FLUSH,
-					      &arvif->ar->ab->dev_flags)) {
-					ret = -EINVAL;
-					goto exit;
-				}
+		existing_sta = test_bit(link_id, &links_map);
+
+		if (sta->mlo) {
+			if (!ath12k_mac_check_if_link_is_active(hw, vif, sta,
+								existing_sta)) {
+				ret = -EINVAL;
+				goto exit;
 			}
+
 			ahsta->ml_peer_id = ATH12K_MLO_PEER_ID_INVALID;
 			ahsta->is_mlo = true;
 			dp_params.is_mlo = true;
