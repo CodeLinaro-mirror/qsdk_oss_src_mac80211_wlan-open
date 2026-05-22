@@ -19332,7 +19332,9 @@ err_vdev_del:
 		list_del(&arvif->list);
 	spin_unlock_bh(&ar->data_lock);
 err_cu_mem:
+	spin_lock_bh(&ar->data_lock);
 	ath12k_core_cu_mem_free(ar, arvif);
+	spin_unlock_bh(&ar->data_lock);
 err:
 	arvif->ar = NULL;
 	return ret;
@@ -20082,7 +20084,9 @@ err_vdev_del:
 	arvif->peer_del_all_enable = false;
 
 	/* Free shared memory allocated for TBTT countdown offsets */
+	spin_lock_bh(&ar->data_lock);
 	ath12k_core_cu_mem_free(ar, arvif);
+	spin_unlock_bh(&ar->data_lock);
 
 	wiphy_work_cancel(ath12k_ar_to_hw(ar)->wiphy,
 			  &arvif->update_bcn_tx_status_work);
