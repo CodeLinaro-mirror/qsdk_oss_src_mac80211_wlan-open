@@ -1152,6 +1152,7 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_HE_MUEDCA_MODE] = { .type = NLA_U8 },
 	[NL80211_ATTR_LOW_POWER_20MHZ] = { .type = NLA_U8 },
 	[NL80211_ATTR_BEACON_TX_SYNC_SUPPORT] = { .type = NLA_FLAG },
+	[NL80211_ATTR_MAX_CH_SWITCH_TIME] = { .type = NLA_U32 },
 };
 
 /* policy for the key attributes */
