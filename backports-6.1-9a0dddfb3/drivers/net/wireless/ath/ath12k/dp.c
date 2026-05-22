@@ -2788,6 +2788,20 @@ static void ath12k_dp_aggr_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 		dst_peer_stats->tx[i].tx_failed +=
 			src_peer_stats->tx[i].tx_failed;
 
+		/* HW peer stats report these counters OOB without debug stats.
+		 * Non-HW targets keep the existing debug-stats gated path below.
+		 */
+		if (ath12k_dp_hw_peer_stats_enabled(dp_pdev)) {
+			dst_peer_stats->tx[i].retry_count +=
+				src_peer_stats->tx[i].retry_count;
+			dst_peer_stats->tx[i].total_msdu_retries +=
+				src_peer_stats->tx[i].total_msdu_retries;
+			dst_peer_stats->tx[i].ucast.packets +=
+				src_peer_stats->tx[i].ucast.packets;
+			dst_peer_stats->tx[i].ucast.bytes +=
+				src_peer_stats->tx[i].ucast.bytes;
+		}
+
 		if (ath12k_dp_stats_enabled(dp_pdev)) {
 			if (ath12k_dp_debug_stats_enabled(dp_pdev)) {
 				for (j = 0; j < HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX; j++)
@@ -2799,10 +2813,16 @@ static void ath12k_dp_aggr_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 
 				dst_peer_stats->tx[i].release_src_not_tqm +=
 					src_peer_stats->tx[i].release_src_not_tqm;
-				dst_peer_stats->tx[i].retry_count +=
-					src_peer_stats->tx[i].retry_count;
-				dst_peer_stats->tx[i].total_msdu_retries +=
-					src_peer_stats->tx[i].total_msdu_retries;
+				if (!ath12k_dp_hw_peer_stats_enabled(dp_pdev)) {
+					dst_peer_stats->tx[i].retry_count +=
+						src_peer_stats->tx[i].retry_count;
+					dst_peer_stats->tx[i].total_msdu_retries +=
+						src_peer_stats->tx[i].total_msdu_retries;
+					dst_peer_stats->tx[i].ucast.packets +=
+						src_peer_stats->tx[i].ucast.packets;
+					dst_peer_stats->tx[i].ucast.bytes +=
+						src_peer_stats->tx[i].ucast.bytes;
+				}
 				dst_peer_stats->tx[i].multiple_retry_count +=
 					src_peer_stats->tx[i].multiple_retry_count;
 				dst_peer_stats->tx[i].ofdma +=
@@ -2813,11 +2833,6 @@ static void ath12k_dp_aggr_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 					src_peer_stats->tx[i].non_amsdu_cnt;
 				dst_peer_stats->tx[i].inval_link_id_pkt_cnt +=
 					src_peer_stats->tx[i].inval_link_id_pkt_cnt;
-				dst_peer_stats->tx[i].ucast.packets +=
-					src_peer_stats->tx[i].ucast.packets;
-				dst_peer_stats->tx[i].ucast.bytes +=
-					src_peer_stats->tx[i].ucast.bytes;
-
 				if (is_vdev_peer) {
 					dst_peer_stats->tx[i].mcast.packets +=
 						src_peer_stats->tx[i].mcast.packets;
@@ -2848,6 +2863,16 @@ static void ath12k_dp_aggr_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 		dst_peer_stats->rx[i].sent_to_stack_fast.bytes +=
 			src_peer_stats->rx[i].sent_to_stack_fast.bytes;
 
+		/* HW peer stats report these counters OOB without debug stats.
+		 * Non-HW targets keep the existing debug-stats gated path below.
+		 */
+		if (ath12k_dp_hw_peer_stats_enabled(dp_pdev)) {
+			dst_peer_stats->rx[i].ucast.packets +=
+				src_peer_stats->rx[i].ucast.packets;
+			dst_peer_stats->rx[i].ucast.bytes +=
+				src_peer_stats->rx[i].ucast.bytes;
+		}
+
 		if (ath12k_dp_stats_enabled(dp_pdev)) {
 			if (ath12k_dp_debug_stats_enabled(dp_pdev)) {
 				dst_peer_stats->rx[i].mcast.packets +=
@@ -2855,10 +2880,12 @@ static void ath12k_dp_aggr_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 				dst_peer_stats->rx[i].mcast.bytes +=
 					src_peer_stats->rx[i].mcast.bytes;
 
-				dst_peer_stats->rx[i].ucast.packets +=
-					src_peer_stats->rx[i].ucast.packets;
-				dst_peer_stats->rx[i].ucast.bytes +=
-					src_peer_stats->rx[i].ucast.bytes;
+				if (!ath12k_dp_hw_peer_stats_enabled(dp_pdev)) {
+					dst_peer_stats->rx[i].ucast.packets +=
+						src_peer_stats->rx[i].ucast.packets;
+					dst_peer_stats->rx[i].ucast.bytes +=
+						src_peer_stats->rx[i].ucast.bytes;
+				}
 
 				dst_peer_stats->rx[i].non_amsdu +=
 					src_peer_stats->rx[i].non_amsdu;
@@ -2962,6 +2989,20 @@ static void ath12k_dp_update_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 		dst_peer_stats->tx[i].tx_failed =
 			src_peer_stats->tx[i].tx_failed;
 
+		/* HW peer stats report these counters OOB without debug stats.
+		 * Non-HW targets keep the existing debug-stats gated path below.
+		 */
+		if (ath12k_dp_hw_peer_stats_enabled(dp_pdev)) {
+			dst_peer_stats->tx[i].retry_count =
+				src_peer_stats->tx[i].retry_count;
+			dst_peer_stats->tx[i].total_msdu_retries =
+				src_peer_stats->tx[i].total_msdu_retries;
+			dst_peer_stats->tx[i].ucast.packets =
+				src_peer_stats->tx[i].ucast.packets;
+			dst_peer_stats->tx[i].ucast.bytes =
+				src_peer_stats->tx[i].ucast.bytes;
+		}
+
 		if (ath12k_dp_stats_enabled(dp_pdev)) {
 			if (ath12k_dp_debug_stats_enabled(dp_pdev)) {
 				for (j = 0; j < HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX; j++)
@@ -2974,10 +3015,16 @@ static void ath12k_dp_update_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 
 				dst_peer_stats->tx[i].release_src_not_tqm =
 					src_peer_stats->tx[i].release_src_not_tqm;
-				dst_peer_stats->tx[i].retry_count =
-					src_peer_stats->tx[i].retry_count;
-				dst_peer_stats->tx[i].total_msdu_retries =
-					src_peer_stats->tx[i].total_msdu_retries;
+				if (!ath12k_dp_hw_peer_stats_enabled(dp_pdev)) {
+					dst_peer_stats->tx[i].retry_count =
+						src_peer_stats->tx[i].retry_count;
+					dst_peer_stats->tx[i].total_msdu_retries =
+						src_peer_stats->tx[i].total_msdu_retries;
+					dst_peer_stats->tx[i].ucast.packets =
+						src_peer_stats->tx[i].ucast.packets;
+					dst_peer_stats->tx[i].ucast.bytes =
+						src_peer_stats->tx[i].ucast.bytes;
+				}
 				dst_peer_stats->tx[i].multiple_retry_count =
 					src_peer_stats->tx[i].multiple_retry_count;
 				dst_peer_stats->tx[i].ofdma =
@@ -2988,11 +3035,6 @@ static void ath12k_dp_update_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 					src_peer_stats->tx[i].non_amsdu_cnt;
 				dst_peer_stats->tx[i].inval_link_id_pkt_cnt =
 					src_peer_stats->tx[i].inval_link_id_pkt_cnt;
-				dst_peer_stats->tx[i].ucast.packets =
-					src_peer_stats->tx[i].ucast.packets;
-				dst_peer_stats->tx[i].ucast.bytes =
-					src_peer_stats->tx[i].ucast.bytes;
-
 				if (is_vdev_peer) {
 					dst_peer_stats->tx[i].mcast.packets =
 						src_peer_stats->tx[i].mcast.packets;
@@ -3023,6 +3065,16 @@ static void ath12k_dp_update_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 		dst_peer_stats->rx[i].sent_to_stack_fast.bytes =
 			src_peer_stats->rx[i].sent_to_stack_fast.bytes;
 
+		/* HW peer stats report these counters OOB without debug stats.
+		 * Non-HW targets keep the existing debug-stats gated path below.
+		 */
+		if (ath12k_dp_hw_peer_stats_enabled(dp_pdev)) {
+			dst_peer_stats->rx[i].ucast.packets =
+				src_peer_stats->rx[i].ucast.packets;
+			dst_peer_stats->rx[i].ucast.bytes =
+				src_peer_stats->rx[i].ucast.bytes;
+		}
+
 		if (ath12k_dp_stats_enabled(dp_pdev)) {
 			if (ath12k_dp_debug_stats_enabled(dp_pdev)) {
 				dst_peer_stats->rx[i].mcast.packets =
@@ -3030,10 +3082,12 @@ static void ath12k_dp_update_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 				dst_peer_stats->rx[i].mcast.bytes =
 					src_peer_stats->rx[i].mcast.bytes;
 
-				dst_peer_stats->rx[i].ucast.packets =
-					src_peer_stats->rx[i].ucast.packets;
-				dst_peer_stats->rx[i].ucast.bytes =
-					src_peer_stats->rx[i].ucast.bytes;
+				if (!ath12k_dp_hw_peer_stats_enabled(dp_pdev)) {
+					dst_peer_stats->rx[i].ucast.packets =
+						src_peer_stats->rx[i].ucast.packets;
+					dst_peer_stats->rx[i].ucast.bytes =
+						src_peer_stats->rx[i].ucast.bytes;
+				}
 
 				dst_peer_stats->rx[i].non_amsdu =
 					src_peer_stats->rx[i].non_amsdu;

@@ -4335,7 +4335,7 @@ static int ath12k_fill_peer_proto_tx_stats_attrs(struct sk_buff *vendor_event,
 static int ath12k_fill_peer_tx_per_pkt_stats_attrs(struct sk_buff *vendor_event,
 						   struct ath12k_dp_peer_stats *peer_stats,
 						   int ring_num,
-						   bool is_extended)
+						   bool is_extended, bool is_hw_stats)
 {
 	struct nlattr *attr;
 	int reason;
@@ -4402,6 +4402,57 @@ static int ath12k_fill_peer_tx_per_pkt_stats_attrs(struct sk_buff *vendor_event,
 		return -EINVAL;
 	}
 
+	/* HW peer stats report these counters OOB without extended stats.
+	 * Non-HW targets keep the existing extended-stats gated output below.
+	 */
+	if (is_hw_stats) {
+		if (nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_PER_PKT_STATS_TX_RETRY_COUNT,
+				peer_stats->tx[ring_num].retry_count)) {
+			ath12k_err(NULL, "nla put failure: Peer tx per pkt stats attr %d | ring %d",
+				   QCA_VENDOR_ATTR_PER_PKT_STATS_TX_RETRY_COUNT,
+				   ring_num + 1);
+			return -EINVAL;
+		}
+
+		if (nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_PER_PKT_STATS_TX_TOTAL_MSDU_RETRIES,
+				peer_stats->tx[ring_num].total_msdu_retries)) {
+			ath12k_err(NULL, "nla put failure: Peer tx per pkt stats attr %d | ring %d",
+				   QCA_VENDOR_ATTR_PER_PKT_STATS_TX_TOTAL_MSDU_RETRIES,
+				   ring_num + 1);
+			return -EINVAL;
+		}
+
+		attr = nla_nest_start(vendor_event,
+				      QCA_VENDOR_ATTR_PER_PKT_STATS_TX_PKTINFO_UCAST);
+		if (!attr) {
+			ath12k_err(NULL,
+				   "nla nest failure: Peer per pkt stats - ucast");
+			return -EINVAL;
+		}
+		if (nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_PKTS,
+				peer_stats->tx[ring_num].ucast.packets)) {
+			ath12k_err(NULL, "nla put failure: Peer tx per pkt stats attr %d packets | ring %d",
+				   QCA_VENDOR_ATTR_PER_PKT_STATS_TX_PKTINFO_UCAST,
+				   ring_num + 1);
+			nla_nest_end(vendor_event, attr);
+			return -EINVAL;
+		}
+		if (nla_put_u64_64bit(vendor_event,
+				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_BYTES,
+				      peer_stats->tx[ring_num].ucast.bytes,
+				      NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failure: Peer tx per pkt stats attr %d bytes | ring %d",
+				   QCA_VENDOR_ATTR_PER_PKT_STATS_TX_PKTINFO_UCAST,
+				   ring_num + 1);
+			nla_nest_end(vendor_event, attr);
+			return -EINVAL;
+		}
+		nla_nest_end(vendor_event, attr);
+	}
+
 	/* Advance Stats */
 	if (!is_extended)
 		return 0;
@@ -4454,19 +4505,51 @@ static int ath12k_fill_peer_tx_per_pkt_stats_attrs(struct sk_buff *vendor_event,
 		return -EINVAL;
 	}
 
-	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_PER_PKT_STATS_TX_RETRY_COUNT,
-			peer_stats->tx[ring_num].retry_count)) {
-		ath12k_err(NULL, "nla put failure: Peer tx per pkt stats attr %d | ring %d",
-			   QCA_VENDOR_ATTR_PER_PKT_STATS_TX_RETRY_COUNT, ring_num + 1);
-		return -EINVAL;
-	}
+	if (!is_hw_stats) {
+		if (nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_PER_PKT_STATS_TX_RETRY_COUNT,
+				peer_stats->tx[ring_num].retry_count)) {
+			ath12k_err(NULL, "nla put failure: Peer tx per pkt stats attr %d | ring %d",
+				   QCA_VENDOR_ATTR_PER_PKT_STATS_TX_RETRY_COUNT,
+				   ring_num + 1);
+			return -EINVAL;
+		}
 
-	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_PER_PKT_STATS_TX_TOTAL_MSDU_RETRIES,
-			peer_stats->tx[ring_num].total_msdu_retries)) {
-		ath12k_err(NULL, "nla put failure: Peer tx per pkt stats attr %d | ring %d",
-			   QCA_VENDOR_ATTR_PER_PKT_STATS_TX_TOTAL_MSDU_RETRIES,
-			   ring_num + 1);
-		return -EINVAL;
+		if (nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_PER_PKT_STATS_TX_TOTAL_MSDU_RETRIES,
+				peer_stats->tx[ring_num].total_msdu_retries)) {
+			ath12k_err(NULL, "nla put failure: Peer tx per pkt stats attr %d | ring %d",
+				   QCA_VENDOR_ATTR_PER_PKT_STATS_TX_TOTAL_MSDU_RETRIES,
+				   ring_num + 1);
+			return -EINVAL;
+		}
+
+		attr = nla_nest_start(vendor_event,
+				      QCA_VENDOR_ATTR_PER_PKT_STATS_TX_PKTINFO_UCAST);
+		if (!attr) {
+			ath12k_err(NULL,
+				   "nla nest failure: Peer per pkt stats - ucast");
+			return -EINVAL;
+		}
+		if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_PKTS,
+				peer_stats->tx[ring_num].ucast.packets)) {
+			ath12k_err(NULL, "nla put failure: Peer tx per pkt stats attr %d packets | ring %d",
+				   QCA_VENDOR_ATTR_PER_PKT_STATS_TX_PKTINFO_UCAST,
+				   ring_num + 1);
+			nla_nest_end(vendor_event, attr);
+			return -EINVAL;
+		}
+		if (nla_put_u64_64bit(vendor_event,
+				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_BYTES,
+				      peer_stats->tx[ring_num].ucast.bytes,
+				      NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failure: Peer tx per pkt stats attr %d bytes | ring %d",
+				   QCA_VENDOR_ATTR_PER_PKT_STATS_TX_PKTINFO_UCAST,
+				   ring_num + 1);
+			nla_nest_end(vendor_event, attr);
+			return -EINVAL;
+		}
+		nla_nest_end(vendor_event, attr);
 	}
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_PER_PKT_STATS_TX_MULTIPLE_RETRY_COUNT,
@@ -4528,32 +4611,6 @@ static int ath12k_fill_peer_tx_per_pkt_stats_attrs(struct sk_buff *vendor_event,
 			      NL80211_ATTR_PAD)) {
 		ath12k_err(NULL, "nla put failure: Peer tx per pkt stats attr %d bytes | ring %d",
 			   QCA_VENDOR_ATTR_PER_PKT_STATS_TX_PKTINFO_MCAST,
-			   ring_num + 1);
-		nla_nest_end(vendor_event, attr);
-		return -EINVAL;
-	}
-	nla_nest_end(vendor_event, attr);
-
-	attr = nla_nest_start(vendor_event,
-			      QCA_VENDOR_ATTR_PER_PKT_STATS_TX_PKTINFO_UCAST);
-	if (!attr) {
-		ath12k_err(NULL,
-			   "nla nest failure: Peer per pkt stats - ucast");
-		return -EINVAL;
-	}
-	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_PKTS,
-			peer_stats->tx[ring_num].ucast.packets)) {
-		ath12k_err(NULL, "nla put failure: Peer tx per pkt stats attr %d packets | ring %d",
-			   QCA_VENDOR_ATTR_PER_PKT_STATS_TX_PKTINFO_UCAST,
-			   ring_num + 1);
-		nla_nest_end(vendor_event, attr);
-		return -EINVAL;
-	}
-	if (nla_put_u64_64bit(vendor_event, QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_BYTES,
-			      peer_stats->tx[ring_num].ucast.bytes,
-			      NL80211_ATTR_PAD)) {
-		ath12k_err(NULL, "nla put failure: Peer tx per pkt stats attr %d bytes | ring %d",
-			   QCA_VENDOR_ATTR_PER_PKT_STATS_TX_PKTINFO_UCAST,
 			   ring_num + 1);
 		nla_nest_end(vendor_event, attr);
 		return -EINVAL;
@@ -4767,6 +4824,11 @@ static int ath12k_fill_peer_tx_stats(struct ath12k *ar,
 	struct nlattr *attr1;
 	struct nlattr *attr;
 	int ring_num;
+	bool is_hw_stats;
+
+
+	if (ath12k_dp_hw_peer_stats_enabled(&ar->dp))
+		is_hw_stats = true;
 
 	/*Tx Per Pkt Stats*/
 	attr = nla_nest_start(vendor_event, QCA_VENDOR_ATTR_WLAN_TELEMETRY_TX_PER_PKT_STATS_EVENT);
@@ -4785,7 +4847,8 @@ static int ath12k_fill_peer_tx_stats(struct ath12k *ar,
 		}
 
 		if (ath12k_fill_peer_tx_per_pkt_stats_attrs(vendor_event, peer_stats,
-							    ring_num, is_extended)) {
+							    ring_num, is_extended,
+							    is_hw_stats)) {
 			ath12k_err(NULL, "Error filling peer tx per pkt stats for ring %d",
 				   ring_num + 1);
 			nla_nest_end(vendor_event, attr);
@@ -4955,7 +5018,7 @@ static int ath12k_fill_peer_rx_wbm_err_attrs(struct sk_buff *vendor_event,
 static int ath12k_fill_peer_rx_per_pkt_stats_attrs(struct sk_buff *vendor_event,
 						   struct ath12k_dp_peer_stats *peer_stats,
 						   int ring_num,
-						   bool is_extended)
+						   bool is_extended, bool is_hw_stats)
 {
 	struct nlattr *attr;
 
@@ -5041,6 +5104,39 @@ static int ath12k_fill_peer_rx_per_pkt_stats_attrs(struct sk_buff *vendor_event,
 	}
 	nla_nest_end(vendor_event, attr);
 
+	/* HW peer stats report these counters OOB without extended stats.
+	 * Non-HW targets keep the existing extended-stats gated output below.
+	 */
+	if (is_hw_stats) {
+		attr = nla_nest_start(vendor_event,
+				      QCA_VENDOR_ATTR_PER_PKT_STATS_RX_PKTINFO_UCAST);
+		if (!attr) {
+			ath12k_err(NULL,
+				   "nla nest failure: Peer per pkt stats - ucast");
+			return -EINVAL;
+		}
+		if (nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_PKTS,
+				peer_stats->rx[ring_num].ucast.packets)) {
+			ath12k_err(NULL, "nla put failure: Peer rx per pkt stats attr %d packets | ring %d",
+				   QCA_VENDOR_ATTR_PER_PKT_STATS_RX_PKTINFO_UCAST,
+				   ring_num + 1);
+			nla_nest_end(vendor_event, attr);
+			return -EINVAL;
+		}
+		if (nla_put_u64_64bit(vendor_event,
+				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_BYTES,
+				      peer_stats->rx[ring_num].ucast.bytes,
+				      NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failure: Peer rx per pkt stats attr %d bytes | ring %d",
+				   QCA_VENDOR_ATTR_PER_PKT_STATS_RX_PKTINFO_UCAST,
+				   ring_num + 1);
+			nla_nest_end(vendor_event, attr);
+			return -EINVAL;
+		}
+		nla_nest_end(vendor_event, attr);
+	}
+
 	/* Advance Stats */
 	if (!is_extended)
 		return 0;
@@ -5073,33 +5169,36 @@ static int ath12k_fill_peer_rx_per_pkt_stats_attrs(struct sk_buff *vendor_event,
 	}
 	nla_nest_end(vendor_event, attr);
 
-	attr = nla_nest_start(vendor_event,
-			      QCA_VENDOR_ATTR_PER_PKT_STATS_RX_PKTINFO_UCAST);
-	if (!attr) {
-		ath12k_err(NULL,
-			   "nla nest failure: Peer per pkt stats - rx ucast");
-		return -EINVAL;
-	}
+	if (!is_hw_stats) {
+		attr = nla_nest_start(vendor_event,
+				      QCA_VENDOR_ATTR_PER_PKT_STATS_RX_PKTINFO_UCAST);
+		if (!attr) {
+			ath12k_err(NULL,
+				   "nla nest failure: Peer per pkt stats - rx ucast");
+			return -EINVAL;
+		}
 
-	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_PKTS,
-			peer_stats->rx[ring_num].ucast.packets)) {
-		ath12k_err(NULL, "nla put failure: Peer rx per pkt stats attr %d packets | ring %d",
-			   QCA_VENDOR_ATTR_PER_PKT_STATS_RX_PKTINFO_UCAST,
-			   ring_num + 1);
-		nla_nest_end(vendor_event, attr);
-		return -EINVAL;
-	}
+		if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_PKTS,
+				peer_stats->rx[ring_num].ucast.packets)) {
+			ath12k_err(NULL, "nla put failure: Peer rx per pkt stats attr %d packets | ring %d",
+				   QCA_VENDOR_ATTR_PER_PKT_STATS_RX_PKTINFO_UCAST,
+				   ring_num + 1);
+			nla_nest_end(vendor_event, attr);
+			return -EINVAL;
+		}
 
-	if (nla_put_u64_64bit(vendor_event, QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_BYTES,
-			      peer_stats->rx[ring_num].ucast.bytes,
-			      NL80211_ATTR_PAD)) {
-		ath12k_err(NULL, "nla put failure: Peer rx per pkt stats attr %d bytes | ring %d",
-			   QCA_VENDOR_ATTR_PER_PKT_STATS_RX_PKTINFO_UCAST,
-			   ring_num + 1);
+		if (nla_put_u64_64bit(vendor_event,
+				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_BYTES,
+				      peer_stats->rx[ring_num].ucast.bytes,
+				      NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failure: Peer rx per pkt stats attr %d bytes | ring %d",
+				   QCA_VENDOR_ATTR_PER_PKT_STATS_RX_PKTINFO_UCAST,
+				   ring_num + 1);
+			nla_nest_end(vendor_event, attr);
+			return -EINVAL;
+		}
 		nla_nest_end(vendor_event, attr);
-		return -EINVAL;
 	}
-	nla_nest_end(vendor_event, attr);
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_PER_PKT_STATS_RX_NON_AMSDU,
 			peer_stats->rx[ring_num].non_amsdu)) {
@@ -5937,6 +6036,10 @@ static int ath12k_fill_peer_rx_stats(struct ath12k *ar,
 	struct nlattr *attr;
 	int ring_num;
 	struct ath12k_rx_peer_stats *rx_mon_stats;
+	bool is_hw_stats;
+
+	if (ath12k_dp_hw_peer_stats_enabled(&ar->dp))
+		is_hw_stats = true;
 
 	/*Rx Per Pkt Stats*/
 	attr = nla_nest_start(vendor_event, QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_PER_PKT_STATS_EVENT);
@@ -5958,7 +6061,8 @@ static int ath12k_fill_peer_rx_stats(struct ath12k *ar,
 		if (ath12k_fill_peer_rx_per_pkt_stats_attrs(vendor_event,
 							    peer_stats,
 							    ring_num,
-							    is_extended)) {
+							    is_extended,
+							    is_hw_stats)) {
 			ath12k_err(NULL,
 				   "nla put failure: Peer rx per_pkt stats for ring %d",
 				   ring_num + 1);
