@@ -2348,8 +2348,6 @@ static inline bool ieee80211_sdata_running(struct ieee80211_sub_if_data *sdata)
 	return test_bit(SDATA_STATE_RUNNING, &sdata->state);
 }
 
-bool ieee80211_sdata_has_txrx_stats_offload(struct ieee80211_sub_if_data *sdata);
-
 /* link handling */
 void ieee80211_link_setup(struct ieee80211_link_data *link);
 void ieee80211_link_init(struct ieee80211_sub_if_data *sdata,
