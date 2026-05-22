@@ -50,7 +50,7 @@ void *ath12k_sfe_get_ab_from_vif(struct ieee80211_vif *vif,
 {
 	struct ath12k_base *ab = NULL, *resultant_ab = NULL;
 	struct ath12k *ar;
-	struct ath12k_link_sta *peer;
+	struct ath12k_link_sta *arsta;
 	struct ath12k_vif *ahvif;
 	struct ath12k_link_vif *arvif;
 	unsigned long links;
@@ -72,8 +72,8 @@ void *ath12k_sfe_get_ab_from_vif(struct ieee80211_vif *vif,
 			continue;
 		ab = ar->ab;
 		spin_lock_bh(&ar->arsta_lock);
-		peer = ath12k_link_sta_find_by_addr(ar, peer_mac);
-		if (peer)
+		arsta = ath12k_link_sta_find_by_addr(ar, peer_mac);
+		if (arsta)
 			resultant_ab = ab;
 		spin_unlock_bh(&ar->arsta_lock);
 

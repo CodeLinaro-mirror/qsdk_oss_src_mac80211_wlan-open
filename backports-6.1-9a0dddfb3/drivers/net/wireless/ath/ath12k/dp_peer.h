@@ -16,7 +16,6 @@
 
 #define ATH12K_DP_PEER_ID_INVALID              0xFFFF
 #define ATH12K_3LINK_MLO_MAX_STA_LINKS         3
-#define ATH12K_DATA_TID_MAX 8
 
 /* 17 tids for DP, 2 for mgmt, and 1 shared between DP and mgmt */
 #define ATH12K_MAX_TIDS 20
@@ -309,7 +308,6 @@ struct ath12k_dp_link_peer *
 ath12k_dp_link_peer_find_by_ml_peer_vdev_id(struct ath12k_dp *dp,
 					    int peer_id,
 					    int vdev_id);
-
 static inline struct ieee80211_sta *
 ath12k_dp_peer_get_sta(const struct ath12k_dp_peer *peer)
 {

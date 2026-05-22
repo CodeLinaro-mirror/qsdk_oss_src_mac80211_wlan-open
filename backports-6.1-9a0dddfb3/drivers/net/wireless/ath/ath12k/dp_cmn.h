@@ -14,6 +14,7 @@
 
 /* Max number of links for MLO connection */
 #define ATH12K_DP_PEER_MAX_MLO_LINKS 5
+#define ATH12K_DATA_TID_MAX 8
 
 struct ath12k_hw_group;
 struct ath12k_sta;
@@ -286,7 +287,11 @@ enum ath12k_dp_link_peer_param {
 	ATH12K_DP_LINK_PEER_AUTHORIZE_PARAM,
 	ATH12K_DP_LINK_PEER_ASSOC_PARAM,
 	ATH12K_DP_LINK_PEER_MAC_ADDR_PARAM,
-	ATH12K_DP_LINK_PEER_MAX_PARAM,
+	ATH12K_DP_LINK_PEER_IS_PRIMARY,
+	ATH12K_DP_LINK_PEER_MIGRATION_PARAM,
+	ATH12K_DP_LINK_PEER_TID_WEIGHT_PARAM,
+	ATH12K_DP_LINK_PEER_TXRATE_PARAM,
+	ATH12k_DP_LINK_PEER_MAX_PARAM,
 };
 
 struct ath12k_config_atf_params {
@@ -328,6 +333,10 @@ union ath12k_config_param {
 	bool assoc_success;
 	struct ath12k_dp_peer_pn_params pn_params;
 	bool dms_disable;
+	bool is_primary;
+	u8 hw_link_id;
+	u8 tid_weight[ATH12K_DATA_TID_MAX];
+	struct ath12k_dp_link_peer_rate_info rate_info;
 };
 
 /*
@@ -356,7 +365,6 @@ int ath12k_dp_peer_set_param_by_mac_addr(struct ath12k_dp_hw *dp_hw,
 int ath12k_dp_peer_get_param_by_mac_addr(struct ath12k_dp_hw *dp_hw, const u8 *addr,
 					 enum ath12k_dp_peer_param param,
 					 union ath12k_config_param *val);
-
 int ath12k_dp_peer_get_param_by_peer_id(struct ath12k_pdev_dp *dp_pdev, u16 peer_id,
 					enum ath12k_dp_peer_param param,
 					union ath12k_config_param *val);
@@ -454,14 +462,12 @@ struct ath12k_4addr_params {
 	u16 tcl_metadata;
 };
 
-void ath12k_dp_peer_set_4addr_params(void *ptr, int ppe_vp_num);
+bool ath12k_dp_peer_set_4addr_params(void *ptr, int ppe_vp_num);
 int ath12k_dp_link_peer_get_4addr_params(void *ptr, const u8 *addr,
 					 struct ath12k_4addr_params *params);
-
 int ath12k_dp_peer_set_key_config(struct ath12k_pdev_dp *dp_pdev, const u8 *addr,
 				  enum set_key_cmd cmd, struct ieee80211_key_conf *key,
 				  struct ieee80211_sta *sta,
 				  enum hal_encrypt_type *enctype);
-
 void ath12k_dp_peer_cleanup_all(struct ath12k *ar);
 #endif

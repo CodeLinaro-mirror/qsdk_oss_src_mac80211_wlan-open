@@ -1695,11 +1695,12 @@ static int ath12k_mac_set_kickout(struct ath12k_link_vif *arvif)
 	return 0;
 }
 
-void ath12k_mac_link_sta_hlist_cleanup(void *data,
-				       struct ieee80211_sta *sta)
+void ath12k_mac_peer_hlist_cleanup(void *data,
+				   struct ieee80211_sta *sta)
 {
 	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
 	struct ath12k *ar = data;
+	struct ath12k_hw_group *ag = ar->ah->ag;
 	struct ath12k_link_sta *arsta;
 	struct ath12k_link_vif *arvif;
 	u8 link_id;
@@ -1716,7 +1717,17 @@ void ath12k_mac_link_sta_hlist_cleanup(void *data,
 		spin_lock_bh(&ar->arsta_lock);
 		ath12k_link_sta_hlist_delete(ar, arsta);
 		spin_unlock_bh(&ar->arsta_lock);
+
 		ahsta->ar_bitmap &= ~BIT(ar->radio_idx);
+	}
+
+	/* If no radio has any link peer for this station, remove ahsta
+	 * from the group-level ahsta_list.
+	 */
+	if (!ahsta->ar_bitmap) {
+		spin_lock_bh(&ag->ahsta_lock);
+		ath12k_sta_hlist_delete(ag, ahsta);
+		spin_unlock_bh(&ag->ahsta_lock);
 	}
 }
 
@@ -1741,181 +1752,11 @@ static void ath12k_mac_dec_num_stations(struct ath12k_link_vif *arvif,
 #endif
 }
 
-int ath12k_mac_partner_peer_cleanup(struct ath12k_base *ab)
+void ath12k_mac_dp_peer_cleanup_all(struct ath12k *ar)
 {
-	struct ath12k_base *partner_ab;
-	struct ath12k_dp *dp;
-	struct ath12k_hw_group *ag = ab->ag;
-	struct ath12k_link_vif *arvif;
-	struct ath12k_vif *ahvif;
-	struct ieee80211_sta *sta;
-	struct ieee80211_vif *vif;
-	struct ath12k_sta *ahsta;
-	struct ath12k_link_sta *arsta;
-	struct ath12k_dp_link_peer *peer, *tmp;
-	struct ath12k *ar;
-	struct ath12k_hw *ah = ath12k_ag_to_ah(ag,0);
-	struct wiphy *wiphy = ah->hw->wiphy;
-	int idx, i, k, ret = 0;
-	struct ar_sta_cookie *sta_cookie;
-	u8 link_id;
-
-	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2)
-		return ret;
-
-	wiphy_lock(wiphy);
-
-	for (idx = 0; idx < ag->num_devices; idx++) {
-		void *cookie_table[MAX_RADIOS] = {0};
-		int cookie_idx[MAX_RADIOS] = {0};
-
-		partner_ab = ag->ab[idx];
-		dp = ath12k_ab_to_dp(partner_ab);
-
-		if (partner_ab->is_bypassed || ab == partner_ab)
-			continue;
-
-		for (i = 0; i < partner_ab->num_radios; i++) {
-			ar = partner_ab->pdevs[i].ar;
-
-			if (!ar->num_peers)
-				continue;
-
-			cookie_table[i] =
-				kcalloc(ar->num_peers, sizeof(struct ar_sta_cookie),
-					GFP_KERNEL);
-
-			if (!cookie_table[i])
-				goto free_tables;
-		}
-
-		spin_lock_bh(&dp->dp_lock);
-
-		list_for_each_entry_safe(peer, tmp, &partner_ab->dp->peers, list) {
-			int ix, pdv_id;
-
-			if (!ath12k_dp_link_peer_get_sta(peer) || !peer->mlo ||
-			    !ath12k_dp_link_peer_get_vif(peer))
-				continue;
-
-			link_id = peer->link_id;
-			/* get arsta */
-			sta = ath12k_dp_link_peer_get_sta(peer);
-			ahsta = ath12k_sta_to_ahsta(sta);
-			arsta = wiphy_dereference(wiphy, ahsta->link[link_id]);
-
-			/* get arvif */
-			vif = ath12k_dp_link_peer_get_vif(peer);
-			ahvif = (struct ath12k_vif *)vif->drv_priv;
-			/* TODO: re-write this function or check if a data
-			 * structure needs to be modified to make a critical
-			 * section short.
-			 */
-			arvif = wiphy_dereference(wiphy, ahvif->link[link_id]);
-
-			ar = arvif->ar;
-			if (!ar)
-				continue;
-
-			ix = cookie_idx[ar->pdev_idx]++;
-			pdv_id = ar->pdev_idx;
-			sta_cookie = &((struct ar_sta_cookie *)cookie_table[pdv_id])[ix];
-			memcpy(sta_cookie->addr, arsta->addr, ETH_ALEN);
-			sta_cookie->vdev_id = arvif->vdev_id;
-		}
-
-		spin_unlock_bh(&dp->dp_lock);
-
-		for (i = 0; i < partner_ab->num_radios; i++) {
-			int pdv_id;
-
-			ar = partner_ab->pdevs[i].ar;
-			if (!ar || !ar->num_peers)
-				continue;
-
-			pdv_id = ar->pdev_idx;
-
-			for (k = 0; k < cookie_idx[pdv_id]; k++) {
-				int vid;
-				u8 *addr;
-
-				sta_cookie =
-				&((struct ar_sta_cookie *)cookie_table[pdv_id])[k];
-
-				vid = sta_cookie->vdev_id;
-				addr = sta_cookie->addr;
-
-				spin_lock_bh(&dp->dp_lock);
-
-				peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp,
-										    vid,
-										    addr);
-				if (!peer || !ath12k_dp_link_peer_get_sta(peer) ||
-				    !peer->mlo || !ath12k_dp_link_peer_get_vif(peer)) {
-					spin_unlock_bh(&dp->dp_lock);
-					continue;
-				}
-
-				link_id = peer->link_id;
-				vif = ath12k_dp_link_peer_get_vif(peer);
-				ahvif = (struct ath12k_vif *)vif->drv_priv;
-
-				/* get arsta */
-				sta = ath12k_dp_link_peer_get_sta(peer);
-				ahsta = ath12k_sta_to_ahsta(sta);
-				arsta = wiphy_dereference(wiphy, ahsta->link[link_id]);
-
-				/* TODO: re-write this function or check if a data
-				 * structure needs to be modified to make a critical
-				 * section short.
-				 */
-				arvif = wiphy_dereference(wiphy, ahvif->link[link_id]);
-				ar = arvif->ar;
-
-				spin_unlock_bh(&dp->dp_lock);
-
-				if (!ar)
-					continue;
-
-				bool bitmap_flag = ahsta->peer_delete_send_mlo_hw_bitmap;
-				ret = ath12k_peer_delete(ar, vid, addr, false,
-							 ahsta->mlo_hw_link_id_bitmap,
-							 bitmap_flag);
-				if (ret) {
-					ath12k_err(partner_ab,
-						   "failed to delete peer vdev_id %d addr %pM ret %d\n",
-						   vid, addr, ret);
-					continue;
-				}
-
-				if (ahsta->peer_delete_cmd_sent_bitmap &
-						BIT(arsta->link_id))
-					ath12k_mac_station_post_remove(ar, arvif,
-								       arsta->addr,
-								       ahsta,
-								       arsta->link_id);
-
-				spin_lock_bh(&ar->arsta_lock);
-				ath12k_link_sta_hlist_delete(ar, arsta);
-				spin_unlock_bh(&ar->arsta_lock);
-
-				arvif->num_stations--;
-				wiphy_work_cancel(wiphy, &arsta->update_wk);
-			}
-		}
-free_tables:
-		for (i = 0; i < partner_ab->num_radios; i++)
-			kfree(cookie_table[i]);
-	}
-
-	wiphy_unlock(wiphy);
-	return ret;
-}
-
-void ath12k_mac_dp_peer_cleanup(struct ath12k *ar)
-{
-	struct ath12k_link_vif *arvif, *tmp_vif;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ar->ab);
+	struct ath12k_link_vif *arvif, *tmp_vif;
+	struct ath12k_hw_group *ag = ar->ah->ag;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -1929,7 +1770,7 @@ void ath12k_mac_dp_peer_cleanup(struct ath12k *ar)
 	/* Cleanup address hash maintained for arsta by iterating over sta
 	 */
 	ieee80211_iterate_stations_atomic(ar->ah->hw,
-					  ath12k_mac_link_sta_hlist_cleanup,
+					  ath12k_mac_peer_hlist_cleanup,
 					  ar);
 
 	/* Delete all the self dp_peers on asserted radio
@@ -1967,8 +1808,12 @@ void ath12k_mac_dp_peer_cleanup(struct ath12k *ar)
 	}
 	spin_unlock_bh(&ar->arsta_lock);
 
+	spin_lock_bh(&ag->ahsta_lock);
+	ath12k_sta_hlist_destroy_with_no_ar(ag);
+	spin_unlock_bh(&ag->ahsta_lock);
+
 	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
-			 "ath12k mac peer cleanup done\n");
+			 "ath12k mac dp peer cleanup done\n");
 }
 
 static int ath12k_mac_vdev_setup_sync(struct ath12k *ar)
@@ -2600,43 +2445,34 @@ static void ath12k_wmi_migration_cmd_work(struct work_struct *work)
 						     wmi_migration_cmd_work);
 	struct ath12k *ar = arvif->ar;
 	struct ath12k_hw *ah = ar->ah;
+	struct ath12k_hw_group *ag = ah->ag;
+	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ath12k_mac_pri_link_migr_peer_node *peer_node, *tmp_peer;
-	struct ath12k_dp_peer *ml_peer;
 	struct ath12k_sta *ahsta;
 	const struct ath12k_hw_ops *hw_ops = ar->ab->hw_params->hw_ops;
-	u16 ml_peer_id;
 
 	if (wait_for_completion_timeout(&arvif->wmi_migration_event_resp,
 					ATH12K_MIGRATION_TIMEOUT_HZ))
 		return;
 
-	spin_lock_bh(&ah->dp_hw.peer_lock);
-
 	arvif->is_umac_migration_in_progress = false;
 
 	list_for_each_entry_safe(peer_node, tmp_peer, &arvif->peer_migrate_list, list) {
-		rcu_read_lock();
-		/* Use wifi8-specific DP migration handler.
-		 * otherwise use default behavior (wifi7)
-		 */
 		if (hw_ops && hw_ops->dp_peer_migration) {
 			hw_ops->dp_peer_migration(arvif, peer_node);
 		} else {
-			/* Default behavior for wifi7 */
-			ml_peer_id = peer_node->ml_peer_id | ATH12K_PEER_ML_ID_VALID;
-			ml_peer = rcu_dereference(ah->dp_hw.dp_peer_list[ml_peer_id]);
-			if (ml_peer &&
-			    ml_peer->dp_peer_state < ATH12K_DP_PEER_LOGICALLY_DELETED) {
-				ahsta = ath12k_sta_to_ahsta(ml_peer->sta);
+			spin_lock_bh(&ag->ahsta_lock);
+			ahsta = ath12k_sta_find_by_addr_and_ahvif(ag,
+								  peer_node->sta->addr,
+								  ahvif);
+			if (ahsta)
 				ahsta->is_migration_in_progress = false;
-			}
+			spin_unlock_bh(&ag->ahsta_lock);
 		}
 
-		rcu_read_unlock();
 		list_del(&peer_node->list);
 		kfree(peer_node);
 	}
-	spin_unlock_bh(&ah->dp_hw.peer_lock);
 }
 
 static int ath12k_mac_get_max_vht_mcs_map(u16 mcs_map, int nss)
@@ -5812,16 +5648,15 @@ void ath12k_bss_assoc(struct ath12k *ar,
 	struct ath12k_link_sta *arsta;
 	struct ieee80211_sta *ap_sta;
 	struct ath12k_sta *ahsta;
-	struct ath12k_dp_link_peer *peer;
 	struct ieee80211_sta_he_cap he_cap;
 	struct ieee80211_sta_ht_cap ht_cap;
 	struct ieee80211_he_6ghz_capa he_6ghz_cap;
 	struct ath12k_hw_group *ag;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ar->ab);
 	bool is_auth = false;
 	bool is_peer_dms = false;
 	u32 hemode = 0, bandwidth;
 	int ret;
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ar->ab);
 	struct ath12k_dp_vif *dp_vif;
 	struct ath12k_me_db *me_db;
 	u16 bridge_bitmap;
@@ -5829,6 +5664,7 @@ void ath12k_bss_assoc(struct ath12k *ar,
 	bool is_bridge_vdev = ath12k_mac_is_bridge_vdev(arvif);
 	struct ath12k_hw *ah = NULL;
 	union ath12k_config_param val = {0};
+	void *dp_peer;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -5956,14 +5792,19 @@ void ath12k_bss_assoc(struct ath12k *ar,
 		return;
 	}
 
-	spin_lock_bh(&dp->dp_lock);
-	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, arvif->vdev_id, arsta->addr);
-	if (peer && !peer->assoc_success) {
-		ath12k_warn(ar->ab, "peer assoc failure in firmware %pM\n", arsta->addr);
-		spin_unlock_bh(&dp->dp_lock);
-		return;
+	dp_peer = ath12k_sta_get_dp_peer_wiphy_locked(ath12k_ar_to_hw(ar)->wiphy,
+						      arsta->ahsta);
+	if (dp_peer) {
+		ret = ath12k_dp_link_peer_get_param_by_dp_peer_and_link_mac(
+				dp_peer, arsta->addr,
+				ATH12K_DP_LINK_PEER_ASSOC_PARAM, &val);
+		if (ret || !val.assoc_success) {
+			ath12k_warn(ar->ab,
+				    "peer assoc failure in firmware %pM (ret=%d)\n",
+				    arsta->addr, ret);
+			return;
+		}
 	}
-	spin_unlock_bh(&dp->dp_lock);
 
 	ath12k_dp_arch_link_peer_assoc(dp, &ar->ah->dp_hw,
 				       vif->cfg.ap_addr, ar->hw_link_id);
@@ -10914,7 +10755,6 @@ int ath12k_mac_set_key(struct ath12k *ar, enum set_key_cmd cmd,
 {
 	struct ieee80211_sta *sta = NULL;
 	struct ath12k_base *ab = ar->ab;
-	struct ath12k_dp_link_peer *peer;
 	struct ath12k_sta *ahsta;
 	const u8 *peer_addr;
 	int ret;
@@ -10940,25 +10780,20 @@ int ath12k_mac_set_key(struct ath12k *ar, enum set_key_cmd cmd,
 	/* the peer should not disappear in mid-way (unless FW goes awry) since
 	 * we already hold wiphy lock. we just make sure its there now.
 	 */
-	spin_lock_bh(&ab->dp->dp_lock);
-	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(ab->dp, arvif->vdev_id,
-							    peer_addr);
-
-	if (!peer) {
-		spin_unlock_bh(&ab->dp->dp_lock);
-
+	spin_lock_bh(&ar->arsta_lock);
+	if (!ath12k_link_sta_find_by_addr(ar, peer_addr)) {
+		spin_unlock_bh(&ar->arsta_lock);
 		if (cmd == SET_KEY) {
 			ath12k_warn(ab, "cannot install key for non-existent peer %pM\n",
 				    peer_addr);
 			return -EOPNOTSUPP;
 		}
-
 		/* if the peer doesn't exist there is no key to disable
 		 * anymore
 		 */
 		return 0;
 	}
-	spin_unlock_bh(&ab->dp->dp_lock);
+	spin_unlock_bh(&ar->arsta_lock);
 
 	if (key->flags & IEEE80211_KEY_FLAG_PAIRWISE)
 		flags |= WMI_KEY_PAIRWISE;
@@ -12295,14 +12130,14 @@ static int ath12k_mac_station_assoc(struct ath12k *ar,
 	struct cfg80211_chan_def def;
 	enum nl80211_band band;
 	struct cfg80211_bitrate_mask *mask;
-	void *dp_peer;
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ar->ab);
 	u8 link_id = arvif->link_id;
 	u32 bandwidth;
 	struct ieee80211_sta_ht_cap ht_cap;
 	struct ieee80211_sta_he_cap he_cap;
 	struct ieee80211_he_6ghz_capa he_6ghz_cap;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ar->ab);
 	union ath12k_config_param val = {0};
+	void *dp_peer;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -12390,7 +12225,6 @@ static int ath12k_mac_station_assoc(struct ath12k *ar,
 						    ATH12K_DP_PEER_DMS_DISABLE_PARAM,
 						    &val);
 	}
-
 	ath12k_dp_arch_link_peer_assoc(dp, &ar->ah->dp_hw,
 				       sta->addr, ar->hw_link_id);
 
@@ -12749,6 +12583,7 @@ static void ath12k_sta_set_4addr_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 	unsigned long links;
 	int ret = 0;
 	u8 link_id;
+	bool get_ret, set_ret = 1;
 	void *dp_peer;
 
 	ahsta = container_of(wk, struct ath12k_sta, set_4addr_wk);
@@ -12760,12 +12595,8 @@ static void ath12k_sta_set_4addr_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 		return;
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	ath12k_dp_peer_set_4addr_params(dp_peer, ahsta->ppe_vp_num);
-
 	if (ahsta->vlan_iface)
 		ath12k_ppe_ds_attach_vlan_vif_link(ahsta->vlan_iface, ahsta->ppe_vp_num);
-#else
-	ath12k_dp_peer_set_4addr_params(dp_peer, 0);
 #endif
 
 
@@ -12792,13 +12623,22 @@ static void ath12k_sta_set_4addr_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 						  WMI_PEER_4ADDR_ALLOW_EAPOL_DATA_FRAME);
 		}
 
-		ret = ath12k_dp_link_peer_get_4addr_params(dp_peer, arsta->addr, &params);
-
-		if (!ret) {
+		get_ret = ath12k_dp_link_peer_get_4addr_params(dp_peer, arsta->addr,
+							       &params);
+		if (!get_ret) {
 			arsta->tcl_metadata = params.tcl_metadata;
 			arsta->ast_hash = params.ast_hash;
 			arsta->ast_idx = params.hw_peer_id;
 		}
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+		if (set_ret)
+			set_ret = ath12k_dp_peer_set_4addr_params(dp_peer,
+								  ahsta->ppe_vp_num);
+#else
+		if (set_ret)
+			set_ret = ath12k_dp_peer_set_4addr_params(dp_peer, 0);
+#endif
 
 		if (ahvif->dp_vif.tx_encap_type != ATH12K_HW_TXRX_ETHERNET)
 			continue;
@@ -13569,42 +13409,68 @@ static void ath12k_sta_migration_wk(struct work_struct *wk)
 {
 	struct ath12k_sta *ahsta = container_of(wk, struct ath12k_sta, migration_wk);
 	struct ath12k_sta_migration_data *data = &ahsta->migration_data;
-	struct ath12k_dp_link_peer *peer;
-	struct ath12k_base *pri_ab;
+	struct ath12k_link_sta *arsta;
+	struct ath12k *pri_ar;
 	unsigned long time_left;
-	struct ath12k_dp *dp;
+	union ath12k_config_param val = {0};
 	bool ret = false;
+	void *dp_peer;
 
 	time_left = wait_for_completion_timeout(&ahsta->dp_migration_event, 2 * HZ);
 	if (!time_left)
 		goto send_dp_tx_event;
 
-	pri_ab = data->ab;
-	if (WARN_ON(!pri_ab))
+	pri_ar = data->ar;
+	if (WARN_ON(!pri_ar))
 		return;
 
-	dp = ath12k_ab_to_dp(pri_ab);
-
-	spin_lock_bh(&dp->dp_lock);
-
-	peer = ath12k_dp_link_peer_find_by_id(dp, data->peer_id);
-	if (WARN_ON(!peer)) {
-		spin_unlock_bh(&dp->dp_lock);
-		return;
+	/* This work runs without wiphy lock (ieee80211_queue_work), so
+	 * get_dp_peer_rcu must be used with rcu_read_lock.
+	 */
+	rcu_read_lock();
+	spin_lock_bh(&pri_ar->arsta_lock);
+	arsta = ath12k_link_sta_find_by_addr(pri_ar, data->link_addr);
+	if (!arsta) {
+		spin_unlock_bh(&pri_ar->arsta_lock);
+		ath12k_err(pri_ar->ab, "arsta not available %pM\n",
+			   data->link_addr);
+		WARN_ON(1);
+		goto err_unlock;
+	}
+	dp_peer = ath12k_sta_get_dp_peer_rcu(arsta->ahsta);
+	if (!dp_peer) {
+		spin_unlock_bh(&pri_ar->arsta_lock);
+		ath12k_err(pri_ar->ab, "dp_peer not available %pM\n",
+			   data->link_addr);
+		WARN_ON(1);
+		goto err_unlock;
+	}
+	ret = ath12k_dp_link_peer_get_param_by_dp_peer_and_link_mac(
+				dp_peer, data->link_addr,
+				ATH12K_DP_LINK_PEER_IS_PRIMARY, &val);
+	if (ret) {
+		spin_unlock_bh(&pri_ar->arsta_lock);
+		ath12k_err(pri_ar->ab,
+			   "Primary link information unavailable for peer %pM\n",
+			   data->link_addr);
+		goto err_unlock;
 	}
 
 	/* if everything went good then this peer should be the primary peer now */
-	if (!peer->primary_link)
+	if (!val.is_primary) {
+		spin_unlock_bh(&pri_ar->arsta_lock);
 		goto err_unlock;
+	}
 
 	/* update the new primary link */
-	ahsta->primary_link_id = peer->link_id;
+	ahsta->primary_link_id = arsta->link_id;
+	spin_unlock_bh(&pri_ar->arsta_lock);
 	ret = false;
 
 err_unlock:
-	spin_unlock_bh(&dp->dp_lock);
+	rcu_read_unlock();
 send_dp_tx_event:
-	ath12k_dp_tx_htt_pri_link_migr_msg(data->ab, data->vdev_id, data->peer_id,
+	ath12k_dp_tx_htt_pri_link_migr_msg(data->ar->ab, data->vdev_id, data->peer_id,
 					   data->ml_peer_id, data->pdev_id, data->chip_id,
 					   data->ppe_vp_num, ret);
 
@@ -14434,7 +14300,6 @@ void ath12k_mac_op_link_sta_rc_update(struct ieee80211_hw *hw,
 	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
 	struct ath12k_link_sta *arsta;
 	struct ath12k_link_vif *arvif;
-	struct ath12k_dp_link_peer *peer;
 	u32 bw, smps;
 
 	rcu_read_lock();
@@ -14455,19 +14320,15 @@ void ath12k_mac_op_link_sta_rc_update(struct ieee80211_hw *hw,
 			    link_sta->link_id, sta->addr);
 		return;
 	}
-	spin_lock_bh(&ar->ab->dp->dp_lock);
-
-	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(ar->ab->dp, arvif->vdev_id,
-							    arsta->addr);
-	if (!peer) {
-		spin_unlock_bh(&ar->ab->dp->dp_lock);
+	spin_lock_bh(&ar->arsta_lock);
+	if (!ath12k_link_sta_find_by_addr(ar, arsta->addr)) {
+		spin_unlock_bh(&ar->arsta_lock);
 		rcu_read_unlock();
 		ath12k_warn(ar->ab, "mac sta rc update failed to find peer %pM on vdev %i\n",
 			    arsta->addr, arvif->vdev_id);
 		return;
 	}
-
-	spin_unlock_bh(&ar->ab->dp->dp_lock);
+	spin_unlock_bh(&ar->arsta_lock);
 
 	if (arsta->link_id >= IEEE80211_MLD_MAX_NUM_LINKS) {
 		rcu_read_unlock();
@@ -15141,6 +15002,7 @@ skip_pri_link_selection:
 				/* Re-add the deflink addr to hash table
 				 */
 				spin_lock_bh(&tmp_ar->arsta_lock);
+				INIT_HLIST_NODE(&def_arsta->hlist_addr);
 				ath12k_link_sta_hlist_add(tmp_ar, def_arsta);
 				spin_unlock_bh(&tmp_ar->arsta_lock);
 				ath12k_dp_arch_assoc_link_update(tmp_ar->ab->dp, ah, sta);
@@ -15486,14 +15348,14 @@ static int ath12k_mac_get_next_pri_link(struct ath12k_sta *ahsta, u8 *pri_link_i
 
 static void
 ath12k_mac_free_link_migr_peer_list(struct ath12k_hw *ah,
-				    struct list_head *peer_migr_list)
+				    struct list_head *peer_migr_list,
+				    struct ath12k_vif *ahvif)
 {
 	struct ath12k_mac_pri_link_migr_peer_node *peer_node, *tmp_peer;
-	struct ath12k_dp_peer *ml_peer;
+	struct ath12k_hw_group *ag = ah->ag;
 	struct ath12k_sta *ahsta;
 
-	lockdep_assert_held(&ah->dp_hw.peer_lock);
-
+	lockdep_assert_wiphy(ah->hw->wiphy);
 	/* This list contains only the peers failed to send migration
 	 * request to firmware. No need to take further action here,
 	 * the requester of this migration request will handle these
@@ -15504,34 +15366,30 @@ ath12k_mac_free_link_migr_peer_list(struct ath12k_hw *ah,
 				 "pri link migrate: free ml_peer_id %u from migrate list\n",
 				 peer_node->ml_peer_id);
 
-		rcu_read_lock();
-		/* TODO: Need to check if we ml_peer_id validation
-		 */
-		ml_peer = rcu_dereference(ah->dp_hw.dp_peer_list[peer_node->ml_peer_id]);
-
-		if (ml_peer &&
-		    ml_peer->dp_peer_state < ATH12K_DP_PEER_LOGICALLY_DELETED) {
-			ahsta = ath12k_sta_to_ahsta(ath12k_dp_peer_get_sta(ml_peer));
+		spin_lock_bh(&ag->ahsta_lock);
+		ahsta = ath12k_sta_find_by_addr_and_ahvif(ag, peer_node->sta->addr,
+							  ahvif);
+		if (ahsta)
 			ahsta->is_migration_in_progress = false;
-		}
+		spin_unlock_bh(&ag->ahsta_lock);
 
-		rcu_read_unlock();
 		list_del(&peer_node->list);
 		kfree(peer_node);
 	}
 }
 
 static struct ath12k_mac_pri_link_migr_peer_node *
-ath12k_mac_get_link_migr_peer_node(struct ath12k_dp_peer *ml_peer,
+ath12k_mac_get_link_migr_peer_node(struct ath12k_sta *ahsta,
 				   u8 pri_link_id)
 {
 	struct ath12k_mac_pri_link_migr_peer_node *node;
-	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(ath12k_dp_peer_get_sta(ml_peer));
 	struct ath12k_vif *ahvif = ahsta->ahvif;
 	struct ath12k_hw *ah = ahvif->ah;
 	struct ath12k_link_sta *arsta = ahsta->link[pri_link_id];
 	struct ath12k_link_vif *arvif;
+	union ath12k_config_param val;
 	u8 hw_link_id;
+	void *dp_peer;
 
 	lockdep_assert_wiphy(ah->hw->wiphy);
 
@@ -15542,6 +15400,21 @@ ath12k_mac_get_link_migr_peer_node(struct ath12k_dp_peer *ml_peer,
 	if (!arvif || !arvif->ar)
 		return NULL;
 
+	dp_peer = ath12k_sta_get_dp_peer_wiphy_locked(ah->hw->wiphy, ahsta);
+	if (!dp_peer) {
+		ath12k_err(arvif->ar->ab,
+			   "dp_peer unavailable for MAC %pM\n", ahsta->addr);
+		return NULL;
+	}
+
+	if (ath12k_dp_peer_get_param_by_dp_peer(dp_peer,
+						ATH12K_DP_PEER_PEERID_PARAM,
+						&val)) {
+		ath12k_err(arvif->ar->ab,
+			   "peer info unavailable for MAC %pM\n", ahsta->addr);
+		return NULL;
+	}
+
 	hw_link_id = arvif->ar->pdev->hw_link_id;
 
 	node = kzalloc(sizeof(*node), GFP_ATOMIC);
@@ -15549,19 +15422,18 @@ ath12k_mac_get_link_migr_peer_node(struct ath12k_dp_peer *ml_peer,
 		return NULL;
 
 	INIT_LIST_HEAD(&node->list);
-	node->ml_peer_id = ml_peer->peer_id & ~ATH12K_PEER_ML_ID_VALID;
+	node->ml_peer_id = val.peer_id & ~ATH12K_PEER_ML_ID_VALID;
 	node->hw_link_id = hw_link_id;
 	/* Update chosen primary link id to node info.
 	 * This will be used later for WiFi-8 master migration.
 	 */
 	node->pri_link_id = pri_link_id;
-	node->sta = ml_peer->sta;
+	node->sta = ath12k_ahsta_to_sta(ahsta);
 
 	return node;
 }
 
-static int ath12k_mac_handle_sta_migration(struct ath12k_dp_peer *ml_peer,
-					   struct ath12k_sta *ahsta, u8 link_id,
+static int ath12k_mac_handle_sta_migration(struct ath12k_sta *ahsta, u8 link_id,
 					   struct list_head *list_head, int *num_peers)
 {
 	struct ath12k_mac_pri_link_migr_peer_node *peer_node;
@@ -15581,13 +15453,13 @@ static int ath12k_mac_handle_sta_migration(struct ath12k_dp_peer *ml_peer,
 		return -EINVAL;
 	}
 
-	peer_node = ath12k_mac_get_link_migr_peer_node(ml_peer, pri_link_id);
+	peer_node = ath12k_mac_get_link_migr_peer_node(ahsta, pri_link_id);
 	if (!peer_node)
 		return -ENOMEM;
 
 	ath12k_dbg_level(NULL, ATH12K_DBG_MAC, ATH12K_DBG_L2,
 			 "ML sta %pM will migrate pri link to link_id %u hw_link_id %u\n",
-			 ml_peer->addr, pri_link_id, peer_node->hw_link_id);
+			 ahsta->addr, pri_link_id, peer_node->hw_link_id);
 
 	list_add(&peer_node->list, list_head);
 	ahsta->is_migration_in_progress = true;
@@ -15602,13 +15474,14 @@ ath12k_mac_process_link_migrate_req(struct ath12k_vif *ahvif,
 {
 	struct ath12k_link_vif *arvif, *arvif_itr;
 	struct ath12k_hw *ah = ahvif->ah;
+	struct ath12k_hw_group *ag = ah->ag;
 	struct list_head peer_migr_list;
-	struct ath12k_dp_peer *ml_peer;
-	struct ath12k_link_sta *arsta;
-	unsigned long int valid_links = ahvif->links_map;
 	struct ath12k_sta *ahsta;
-	int ret, num_peers = 0;
+	struct ath12k_link_sta *arsta;
 	struct ath12k *ar;
+	unsigned long int valid_links = ahvif->links_map;
+	int ret, num_peers = 0;
+	u32 bkt;
 	u8 link_id;
 	bool found;
 
@@ -15630,25 +15503,19 @@ ath12k_mac_process_link_migrate_req(struct ath12k_vif *ahvif,
 			return -EOPNOTSUPP;
 	}
 
-	spin_lock_bh(&ah->dp_hw.peer_lock);
-
 	/* Request for single MLD peer */
 	if (!is_zero_ether_addr(params->addr)) {
 		ath12k_dbg_level(NULL, ATH12K_DBG_MAC, ATH12K_DBG_L2,
 				 "pri link migrate: single peer migration\n");
 
-		ml_peer = ath12k_dp_peer_find(&ah->dp_hw, params->addr);
-		if (!ml_peer) {
+		spin_lock_bh(&ag->ahsta_lock);
+		ahsta = ath12k_sta_find_by_addr_and_ahvif(ag, params->addr, ahvif);
+		if (!ahsta || !ahsta->is_mlo) {
+			spin_unlock_bh(&ag->ahsta_lock);
 			ret = -ENODEV;
 			goto exit_link_migrate_req;
 		}
-
-		if (!ml_peer->is_mlo || ml_peer->is_vdev_peer) {
-			ret = -EINVAL;
-			goto exit_link_migrate_req;
-		}
-
-		ahsta = ath12k_sta_to_ahsta(ath12k_dp_peer_get_sta(ml_peer));
+		spin_unlock_bh(&ag->ahsta_lock);
 
 		arvif = ath12k_get_arvif_from_link_id(ahvif, ahsta->primary_link_id);
 		if (!arvif || !arvif->is_up || !arvif->ar) {
@@ -15658,7 +15525,7 @@ ath12k_mac_process_link_migrate_req(struct ath12k_vif *ahvif,
 
 		ar = arvif->ar;
 
-		ret = ath12k_mac_handle_sta_migration(ml_peer, ahsta, params->link_id,
+		ret = ath12k_mac_handle_sta_migration(ahsta, params->link_id,
 						      &peer_migr_list, &num_peers);
 		if (ret)
 			goto exit_link_migrate_req;
@@ -15683,11 +15550,13 @@ ath12k_mac_process_link_migrate_req(struct ath12k_vif *ahvif,
 
 	ar = arvif->ar;
 
-	list_for_each_entry(ml_peer, &ah->dp_hw.peers, list) {
-		if (!ml_peer->is_mlo || ml_peer->is_vdev_peer)
+	spin_lock_bh(&ah->ag->ahsta_lock);
+	ath12k_ahsta_for_each(ah->ag, bkt, ahsta) {
+		if (!ahsta->is_mlo)
 			continue;
 
-		ahsta = ath12k_sta_to_ahsta(ath12k_dp_peer_get_sta(ml_peer));
+		if (!(ahsta->ar_bitmap & BIT(ar->radio_idx)))
+			continue;
 
 		valid_links = ahsta->links_map;
 		found = false;
@@ -15720,13 +15589,14 @@ ath12k_mac_process_link_migrate_req(struct ath12k_vif *ahvif,
 		if (!found)
 			continue;
 
-		ret = ath12k_mac_handle_sta_migration(ml_peer, ahsta, 0xFF,
+		ret = ath12k_mac_handle_sta_migration(ahsta, 0xFF,
 						      &peer_migr_list, &num_peers);
 		/* Errors are now ignored to prevent skipping valid peers*/
 		if (ret)
 			ath12k_err(ar->ab, "Primary migration skipped for %pM ret:%d\n",
-				   ml_peer->addr, ret);
+				   ahsta->addr, ret);
 	}
+	spin_unlock_bh(&ah->ag->ahsta_lock);
 
 send_link_mig_cmd:
 	if (num_peers == 0)
@@ -15741,19 +15611,14 @@ send_link_mig_cmd:
 	if (ret)
 		goto exit_link_migrate_req;
 
-	spin_unlock_bh(&ah->dp_hw.peer_lock);
-
 	ret = ath12k_wmi_mlo_send_ptqm_migrate_cmd(arvif,
 						   &peer_migr_list, num_peers);
 	if (ret)
 		ath12k_err(arvif->ar->ab, "Failed to migrate pri link ret %d\n",
 			   ret);
 
-	spin_lock_bh(&ah->dp_hw.peer_lock);
-
 exit_link_migrate_req:
-	ath12k_mac_free_link_migr_peer_list(ah, &peer_migr_list);
-	spin_unlock_bh(&ah->dp_hw.peer_lock);
+	ath12k_mac_free_link_migr_peer_list(ah, &peer_migr_list, ahvif);
 	return ret;
 }
 
@@ -18692,6 +18557,7 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	u8 link_id, link_addr[ETH_ALEN];
 	struct ath12k_dp_link_vif *dp_link_vif = NULL;
 	u8 mac_addr[ETH_ALEN];
+	u8 *vdev_create_mac;
 	u8 mask[ETH_ALEN] = {0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00};
 	int txpower = NL80211_TX_POWER_AUTOMATIC;
 	u8 map_id;
@@ -18927,14 +18793,16 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	if (ret)
 		goto err;
 
-	ret = ath12k_wmi_vdev_create(ar, vdev_arg.type == WMI_VDEV_TYPE_MONITOR ?
-				     mac_addr : arvif->bssid, &vdev_arg);
+	vdev_create_mac = (vdev_arg.type == WMI_VDEV_TYPE_MONITOR) ? mac_addr :
+				arvif->bssid;
+	ret = ath12k_wmi_vdev_create(ar, vdev_create_mac, &vdev_arg);
 	if (ret) {
 		ath12k_warn(ab, "failed to create WMI vdev %d: %d\n",
 			    arvif->vdev_id, ret);
 		goto err_cu_mem;
 	}
 
+	memcpy(arvif->addr, vdev_create_mac, ETH_ALEN);
 	if (is_bridge_vdev)
 		ar->num_created_bridge_vdevs++;
 	else
@@ -22369,11 +22237,15 @@ ath12k_mac_assign_vif_chanctx_handle(struct ieee80211_hw *hw,
 	/* for some targets bss peer must be created before vdev_start */
 	if (ab->hw_params->vdev_start_delay &&
 	    ahvif->vdev_type != WMI_VDEV_TYPE_AP &&
-	    ahvif->vdev_type != WMI_VDEV_TYPE_MONITOR &&
-	    !ath12k_dp_link_peer_exist_by_vdev_id(ab->dp, arvif->vdev_id)) {
-		memcpy(&arvif->chanctx, ctx, sizeof(*ctx));
-		ret = 0;
-		goto out;
+	    ahvif->vdev_type != WMI_VDEV_TYPE_MONITOR) {
+		spin_lock_bh(&ar->arsta_lock);
+		if (!ath12k_link_sta_find_by_vdev_id(ar, arvif->vdev_id)) {
+			spin_unlock_bh(&ar->arsta_lock);
+			memcpy(&arvif->chanctx, ctx, sizeof(*ctx));
+			ret = 0;
+			goto out;
+		}
+		spin_unlock_bh(&ar->arsta_lock);
 	}
 
 	if (!ab->hw_params->vdev_start_delay &&
@@ -29362,27 +29234,35 @@ void ath12k_mac_remove_bridge_vdevs_iter(void *data, u8 *mac,
 void ath12k_mac_wsi_remap_peer_cleanup(struct ath12k_base *ab,
 				       bool skip_legacy)
 {
-	struct ath12k_dp_link_peer *link_peer, *tmp;
-	struct ath12k_sta *ahsta;
 	struct ieee80211_sta *sta;
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_pdev *pdev_iter;
+	struct ath12k *ar_iter;
+	struct ath12k_link_sta *arsta_iter;
+	u32 __bkt;
+	int i;
 
 	ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS, "Bypass: Starting peer cleanup\n");
-	spin_lock_bh(&dp->dp_lock);
-	list_for_each_entry_safe(link_peer, tmp, &dp->peers, list) {
-		sta = ath12k_dp_link_peer_get_sta(link_peer);
-		if (!sta)
+
+	for (i = 0; i < ab->num_radios; i++) {
+		pdev_iter = &ab->pdevs[i];
+		ar_iter = pdev_iter->ar;
+		if (!ar_iter)
 			continue;
 
-		if (skip_legacy && !sta->mlo)
-			continue;
+		spin_lock_bh(&ar_iter->arsta_lock);
+		ath12k_link_sta_for_each(ar_iter, __bkt, arsta_iter) {
+			if (!arsta_iter->ahsta)
+				continue;
 
-		ahsta = (struct ath12k_sta *)sta->drv_priv;
+			sta = ath12k_ahsta_to_sta(arsta_iter->ahsta);
+			if (skip_legacy && !sta->mlo)
+				continue;
 
-		ath12k_mac_peer_disassoc(ab, sta, ahsta,
-					 ATH12K_DBG_WSI_BYPASS);
+			ath12k_mac_peer_disassoc(ab, sta, arsta_iter->ahsta,
+						 ATH12K_DBG_WSI_BYPASS);
+		}
+		spin_unlock_bh(&ar_iter->arsta_lock);
 	}
-	spin_unlock_bh(&dp->dp_lock);
 }
 
 int ath12k_mac_dynamic_wsi_remap(struct ath12k_base *ab)

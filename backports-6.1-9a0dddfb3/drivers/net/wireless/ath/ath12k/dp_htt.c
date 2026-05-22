@@ -2095,12 +2095,13 @@ ath12k_htt_pri_link_peer_migrate_indication(struct ath12k_base *ab,
 
 	ahsta = ath12k_sta_to_ahsta(ath12k_dp_link_peer_get_sta(peer));
 
-	ahsta->migration_data.ab = ab;
+	ahsta->migration_data.ar = arvif->ar;
 	ahsta->migration_data.vdev_id = vdev_id;
 	ahsta->migration_data.peer_id = peer_id;
 	ahsta->migration_data.ml_peer_id = ml_peer_id;
 	ahsta->migration_data.pdev_id = pdev_id;
 	ahsta->migration_data.chip_id = chip_id;
+	memcpy(ahsta->migration_data.link_addr, peer->addr, ETH_ALEN);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ahsta->migration_data.ppe_vp_num = peer->dp_peer->ppe_vp_num;
 #else
