@@ -3193,23 +3193,6 @@ ath12k_dp_aggregate_link_rx_mon_stats(struct ath12k_rx_peer_stats *dst,
 	}
 }
 
-/* Override PPEDS ring sent_to_stack with extended RX monitor MSDU totals to account
- * non PPE traffic also if extended rx stats is enabled.
- * PPE sync credits DS VIF WDS peer traffic exclusively on DP_REO_PPEDS_RING_IDX.
- */
-static void ath12k_dp_override_ppeds_rx(struct ath12k_dp_peer_stats *peer_stats,
-					struct ath12k_rx_peer_stats *rx_stats,
-					bool is_ds_wds_peer)
-{
-	if (!is_ds_wds_peer || !peer_stats || !rx_stats)
-		return;
-
-	peer_stats->rx[DP_REO_PPEDS_RING_IDX].sent_to_stack.packets =
-							rx_stats->num_msdu;
-	peer_stats->rx[DP_REO_PPEDS_RING_IDX].sent_to_stack.bytes =
-							rx_stats->num_msdu_bytes;
-}
-
 static void
 ath12k_dp_aggregate_hw_link_tx_stats(struct ath12k_dp_link_peer_hw_tx_stats *dst,
 				     const struct ath12k_dp_link_peer_hw_tx_stats *src)
@@ -3502,7 +3485,7 @@ static void ath12k_vif_iterate_peer(struct ath12k_link_vif *arvif,
 		if (link_peer->vdev_id != vdev_id)
 			continue;
 
-		ath12k_dp_aggr_peer_stats(arvif, link_peer, aggr_vif_stats, is_ds_vif);
+		ath12k_dp_aggr_peer_stats(arvif, link_peer, aggr_vif_stats);
 
 		/* Copy them exactly once using the primary link peer to avoid
 		 * redundant copies when multiple link peers share the same
@@ -4004,7 +3987,6 @@ int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
 	struct ath12k_dp_peer_stats *peer_stats;
 	struct ath12k_dp_link_peer_stats *link_stats;
 	struct ath12k_dp_mld_peer_stats *mld_stats;
-	struct ath12k_rx_peer_stats *rx_stats;
 	struct ath12k_dp_peer *peer;
 	int stats_link_id, i, ret = 0;
 	unsigned long links_map = ahvif->links_map;
