@@ -855,4 +855,7 @@ void ath12k_mac_get_6ghz_power_mode_decision(
 	enum ieee80211_ap_reg_power power_type,
 	struct ath12k_6ghz_pwr_mode_decision *decision);
 
+u8 ath12k_get_nss_160mhz(struct ath12k *ar, u8 max_nss);
+u8 ath12k_get_nss_320mhz(struct ath12k *ar, u8 max_nss);
+
 #endif
