@@ -218,6 +218,7 @@ static bool ath12k_wifi7_dp_tkip_mic_err(struct ath12k_pdev_dp *dp_pdev,
 					 struct napi_struct *napi,
 					 struct rx_tlv_info_1 *prev_tlv_info)
 {
+	struct link_peer_rx_tid_stats stats;
 	int ret;
 
 	ret = ath12k_wifi7_dp_rx_h_ppdu(dp_pdev, rx_status, &spd_desc_l->tlv_info,
@@ -227,23 +228,10 @@ static bool ath12k_wifi7_dp_tkip_mic_err(struct ath12k_pdev_dp *dp_pdev,
 
 	rx_status->flag |= RX_FLAG_MMIC_ERROR;
 
-	switch (peer->rx_decap_type) {
-	case DP_RX_DECAP_TYPE_ETHERNET2_DIX:
-		ath12k_wifi7_convert_n_deliver_nw_frame(dp_pdev, spd_desc_l,
-							peer, rx_status,
-							napi,
-							prev_tlv_info);
-		break;
-	case DP_RX_DECAP_TYPE_RAW:
-	case DP_RX_DECAP_TYPE_NATIVE_WIFI:
-		ath12k_wifi7_wbm_process_frame(dp_pdev, spd_desc_l,
-					       peer, rx_status,
-					       napi,
-					       prev_tlv_info);
-		break;
-	default:
-		return true;
-	}
+	ath12k_wifi7_deliver_raw_frame(dp_pdev, spd_desc_l,
+				       peer, rx_status,
+				       napi, &stats,
+				       prev_tlv_info);
 
 	return false;
 }
