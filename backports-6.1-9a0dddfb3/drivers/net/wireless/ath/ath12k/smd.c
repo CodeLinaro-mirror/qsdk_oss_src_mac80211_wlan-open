@@ -14,7 +14,6 @@
 #include "dp_cmn.h"
 #include "debug.h"
 
-
 static int ath12k_uhr_smd_transfer_ext_ctx(struct ath12k_vif *ahvif,
 					   struct ieee80211_sta *current_sta,
 					   struct ieee80211_sta *target_sta,
@@ -1203,4 +1202,13 @@ int ath12k_smd_uhr_link_reconfig(struct ieee80211_hw *hw,
 	}
 
 	return 0;
+}
+
+int ath12k_smd_global_init(struct ath12k_base *ab)
+{
+	return 0;
+}
+
+void ath12k_smd_global_deinit(void)
+{
 }
