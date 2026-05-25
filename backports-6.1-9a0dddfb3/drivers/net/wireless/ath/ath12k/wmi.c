@@ -12245,9 +12245,11 @@ static int ath12k_service_available_event(struct ath12k_base *ab, struct sk_buff
 static void ath12k_peer_assoc_conf_event(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	struct wmi_peer_assoc_conf_arg peer_assoc_conf = {0};
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	struct ath12k_dp_link_peer *peer;
 	struct ath12k *ar;
+	union ath12k_config_param val = {0};
+	struct ath12k_sta *ahsta;
+	struct ath12k_link_sta *arsta;
+	void *dp_peer;
 
 	if (ath12k_pull_peer_assoc_conf_ev(ab, skb, &peer_assoc_conf) != 0) {
 		ath12k_warn(ab, "failed to extract peer assoc conf event");
@@ -12269,13 +12271,30 @@ static void ath12k_peer_assoc_conf_event(struct ath12k_base *ab, struct sk_buff 
 		return;
 	}
 
-	spin_lock_bh(&dp->dp_lock);
-	peer =  ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, peer_assoc_conf.vdev_id,
-							     peer_assoc_conf.macaddr);
-	if (peer && !peer_assoc_conf.status)
-		peer->assoc_success = true;
-	spin_unlock_bh(&dp->dp_lock);
+	if (!peer_assoc_conf.status) {
+		spin_lock_bh(&ar->arsta_lock);
+		arsta = ath12k_link_sta_find_by_addr(ar, peer_assoc_conf.macaddr);
+		if (!arsta) {
+			spin_unlock_bh(&ar->arsta_lock);
+			goto done;
+		}
 
+		ahsta = arsta->ahsta;
+		dp_peer = ath12k_sta_get_dp_peer_rcu(ahsta);
+		if (!dp_peer) {
+			spin_unlock_bh(&ar->arsta_lock);
+			goto done;
+		}
+
+		val.assoc_success = true;
+		ath12k_dp_link_peer_set_param_by_dp_peer_and_link_id(dp_peer,
+								     arsta->link_id,
+								     ATH12K_DP_LINK_PEER_ASSOC_PARAM,
+								     &val);
+		spin_unlock_bh(&ar->arsta_lock);
+	}
+
+done:
 	complete(&ar->peer_assoc_done);
 	rcu_read_unlock();
 }

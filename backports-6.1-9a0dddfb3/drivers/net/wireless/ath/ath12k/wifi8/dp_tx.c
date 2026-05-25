@@ -1260,6 +1260,8 @@ static int ath12k_wifi8_mcbc_setup_encryption(struct ath12k_dp_vif *dp_vif,
 	}
 
 	/* Get multicast key */
+	spin_lock_bh(&peer->dp_peer->keys_lock);
+
 	key = peer->dp_peer->keys[peer->dp_peer->mcast_keyidx];
 	if (key) {
 		skb_cb->cipher = key->cipher;
@@ -1271,6 +1273,8 @@ static int ath12k_wifi8_mcbc_setup_encryption(struct ath12k_dp_vif *dp_vif,
 						cpu_to_le16(IEEE80211_FCTL_PROTECTED);
 		}
 	}
+
+	spin_unlock_bh(&peer->dp_peer->keys_lock);
 
 	mpsk_enabled = !is_sta && ath12k_wifi8_is_mpsk_enabled(ahvif);
 	if (mpsk_enabled) {

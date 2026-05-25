@@ -10885,28 +10885,42 @@ static int ath12k_vendor_atf_offload_wmm_ac_config(struct ath12k *ar,
 static void ath12k_update_atf_peer_info(struct ath12k *ar,
 					struct ath12k_atf_peer_params *peer_param)
 {
-	struct ath12k_dp *dp;
-	struct ath12k_dp_link_peer *link_peer;
+	struct ath12k_link_sta *arsta;
 	struct ath12k_atf_peer_info *param_peer_info;
-	struct ath12k_base *ab = ar->ab;
+	union ath12k_config_param val = {0};
 	int i;
+	void *dp_peer;
 
 	param_peer_info = peer_param->peer_info;
 
-	dp = ath12k_ab_to_dp(ab);
-	spin_lock_bh(&dp->dp_lock);
+	rcu_read_lock();
+	spin_lock_bh(&ar->arsta_lock);
 
 	for (i = 0; i < peer_param->num_peers; i++) {
-		link_peer = ath12k_dp_link_peer_find_by_addr(dp, param_peer_info->peer_macaddr);
-		if (!link_peer)
+		arsta = ath12k_link_sta_find_by_addr(ar, param_peer_info->peer_macaddr);
+		if (!arsta || !arsta->ahsta) {
+			param_peer_info++;
 			continue;
+		}
 
-		link_peer->atf_peer_conf_airtime = param_peer_info->percentage_peer;
-		link_peer->atf_group_index = param_peer_info->group_index;
+		dp_peer = ath12k_sta_get_dp_peer_rcu(arsta->ahsta);
+		if (!dp_peer) {
+			param_peer_info++;
+			continue;
+		}
+
+		val.atf_params.atf_peer_conf_airtime = param_peer_info->percentage_peer;
+		val.atf_params.atf_group_index = param_peer_info->group_index;
+
+		ath12k_dp_link_peer_set_param_by_dp_peer_and_link_id(dp_peer,
+								     arsta->link_id,
+								     ATH12K_DP_LINK_PEER_ATF_PARAM,
+								     &val);
 		param_peer_info++;
 	}
 
-	spin_unlock_bh(&dp->dp_lock);
+	spin_unlock_bh(&ar->arsta_lock);
+	rcu_read_unlock();
 }
 
 static int ath12k_vendor_atf_offload_peer_config(struct ath12k *ar,
