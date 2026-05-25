@@ -1914,95 +1914,12 @@ free_tables:
 
 void ath12k_mac_dp_peer_cleanup(struct ath12k *ar)
 {
-	struct list_head peers, dp_peer_list;
-	struct ath12k_dp_link_peer *peer, *tmp_link_peer;
-	struct ath12k_base *ab = ar->ab;
-	struct ath12k_hw_group *ag = ab->ag;
-	struct ath12k_dp_peer *dp_peer, *tmp_dp_peer;
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_link_vif *arvif, *tmp_vif;
-	struct ieee80211_sta *sta;
-	struct ath12k_sta *ahsta;
-	struct ath12k_hw *ah = ar->ah;
-	struct ath12k_dp_hw *dp_hw = &ah->dp_hw;
-	struct ath12k_dp_rx_tid *rx_tid;
-	int i, num_tids;
-	u16 peerid_index;
-
-	INIT_LIST_HEAD(&peers);
-	INIT_LIST_HEAD(&dp_peer_list);
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ar->ab);
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
-	num_tids = ab->hal.hal_params->num_tids;
-	spin_lock_bh(&dp->dp_lock);
-	list_for_each_entry_safe(peer, tmp_link_peer, &dp->peers, list) {
-		ath12k_dp_ipa_peer_notify(ar, peer, NULL, peer->vdev_id, false);
-		/*Skip this for non primary_links and vdev peers*/
-		if (ath12k_dp_link_peer_get_sta(peer) && peer->dp_peer &&
-		    peer->primary_link) {
-			for (i = 0; i < num_tids; i++) {
-				rx_tid = &peer->dp_peer->rx_tid[i];
-
-				ath12k_dp_arch_rx_peer_tid_delete(dp, ar, peer, i);
-				ath12k_dp_rx_frags_cleanup(rx_tid, true);
-			}
-		}
-
-		/* cleanup dp peer */
-		spin_lock_bh(&dp_hw->peer_lock);
-		if (peer->dp_peer) {
-			dp_peer = peer->dp_peer;
-			peerid_index = ath12k_dp_peer_get_peerid_index(dp, peer->peer_id);
-			if (!dp_peer->is_vdev_peer)
-				dp_peer->peer_links_map &= ~BIT(peer->link_id);
-			rcu_assign_pointer(dp_peer->link_peers[peer->hw_link_id], NULL);
-			rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], NULL);
-
-			/*vdev peer cleanup is taken care later*/
-			if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE2 &&
-			    !dp_peer->is_vdev_peer && dp_peer->peer_links_map == 0) {
-				ath12k_dbg(ab, ATH12K_DBG_MAC | ATH12K_DBG_PEER,
-					   "dp_peer %pM dosent have active link_peers\n",
-					   dp_peer->addr);
-				if (dp_peer->is_mlo &&
-				    dp_peer->peer_id != ATH12K_MLO_PEER_ID_INVALID) {
-					sta = ath12k_dp_peer_get_sta(dp_peer);
-					ahsta = ath12k_sta_to_ahsta(sta);
-					clear_bit(dp_peer->peer_id,
-						  dp_hw->free_peer_id_map);
-					clear_bit(ahsta->ml_peer_id,
-						  ah->free_ml_peer_id_map);
-					ahsta->ml_peer_id = ATH12K_MLO_PEER_ID_INVALID;
-					ah->num_ml_peers--;
-				}
-				list_del(&dp_peer->list);
-				list_add(&dp_peer->list, &dp_peer_list);
-			}
-		}
-		spin_unlock_bh(&dp_hw->peer_lock);
-
-		ath12k_dp_link_peer_rhash_delete(dp, peer);
-		list_del(&peer->list);
-		list_add(&peer->list, &peers);
-	}
-	spin_unlock_bh(&dp->dp_lock);
-
-	synchronize_rcu();
-
-	/*Link peer cleanup part*/
-	list_for_each_entry_safe(peer, tmp_link_peer, &peers, list) {
-		if (ath12k_dp_link_peer_get_sta(peer) && peer->dp_peer &&
-		    peer->primary_link) {
-			for (i = 0; i < num_tids; i++) {
-				rx_tid = &peer->dp_peer->rx_tid[i];
-
-				del_timer_sync(&rx_tid->frag_timer);
-			}
-		}
-		peer->dp_peer = NULL;
-		ath12k_link_peer_free(peer);
-	}
+	ath12k_dp_peer_cleanup_all(ar);
 
 	ath12k_debugfs_nrp_cleanup_all(ar);
 
@@ -2050,20 +1967,6 @@ void ath12k_mac_dp_peer_cleanup(struct ath12k *ar)
 	}
 	spin_unlock_bh(&ar->arsta_lock);
 
-	/*Dp peer cleanup part*/
-	list_for_each_entry_safe(dp_peer, tmp_dp_peer, &dp_peer_list, list) {
-		list_del(&dp_peer->list);
-
-		if (dp_peer->qos && dp_peer->qos->telemetry_peer_ctx)
-			ath12k_telemetry_peer_ctx_free(dp_peer->qos->telemetry_peer_ctx);
-		if (dp_peer->sta_id != ATH12K_STA_ID_INVALID)
-			clear_bit(dp_peer->sta_id, dp_hw->free_sta_id_map);
-
-		if (!dp_peer->peer_links_map) {
-			kfree(dp_peer->qos);
-			kfree(dp_peer);
-		}
-	}
 	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
 			 "ath12k mac peer cleanup done\n");
 }
