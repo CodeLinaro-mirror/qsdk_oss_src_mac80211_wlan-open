@@ -423,7 +423,7 @@ int ath12k_ppeds_attach_link_vif(struct ath12k_link_vif *arvif, int vp_num,
 	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
 		return 0;
 
-	if (vp_num <= 0)
+	if (vp_num <= 0 || ahvif->dp_vif.ppe_vp_type != PPE_VP_USER_TYPE_DS)
 		return 0;
 
 	if (ahvif->vif->type != NL80211_IFTYPE_AP && ahvif->vif->type != NL80211_IFTYPE_STATION) {
@@ -535,6 +535,13 @@ int ath12k_ppeds_attach_link_vif(struct ath12k_link_vif *arvif, int vp_num,
 			prim_vp_profile =
 				ppe_ops->ath12k_dp_ppeds_get_vp_profile_from_idx(prim_ab,
 							arvif->ppe_vp_profile_idx);
+			if (!prim_vp_profile) {
+				ath12k_warn(ab, "Invalid PPE VP profile idx:%d",
+						arvif->ppe_vp_profile_idx);
+				spin_unlock(&ppe->ppe_vp_tbl_lock);
+				rcu_read_unlock();
+				return 0;
+			}
 
 			vp_profile->search_idx_reg_num =
 					prim_vp_profile->search_idx_reg_num;
@@ -599,9 +606,17 @@ void ath12k_dp_tx_ppeds_cfg_astidx_cache_mapping(struct ath12k_base *ab,
 	    !arvif->primary_sta_link)
 		return;
 
+	if (arvif->ahvif->dp_vif.ppe_vp_type != PPE_VP_USER_TYPE_DS)
+		return;
+
 	spin_lock(&ppe->ppe_vp_tbl_lock);
 	vp_profile = ppe_ops->ath12k_dp_ppeds_get_vp_profile_from_idx(ab,
 							ppe_vp_profile_idx);
+	if (!vp_profile) {
+		spin_unlock(&ppe->ppe_vp_tbl_lock);
+		return;
+	}
+
 	if (!vp_profile->is_configured) {
 		ath12k_err(ab, "Invalid PPE VP profile for vdev_id:%d",
 			   arvif->vdev_id);
@@ -642,9 +657,17 @@ void ath12k_ppeds_detach_link_apvlan_vif(struct ath12k_link_vif *arvif,
 	spin_lock(&ppe->ppe_vp_tbl_lock);
 	vp_profile = ppe_ops->ath12k_dp_ppeds_get_vp_profile_from_idx(ab,
 							ppe_vp_profile_idx);
+	if (!vp_profile) {
+		ath12k_err(ab, "Invalid PPE VP idx:%d for vdev_id:%d",
+				ppe_vp_profile_idx, arvif->vdev_id);
+		spin_unlock(&ppe->ppe_vp_tbl_lock);
+		return;
+	}
+
 	if (!vp_profile->is_configured) {
 		ath12k_err(ab, "Invalid PPE VP profile for vdev_id:%d",
 			   arvif->vdev_id);
+		vlan_iface->ppe_vp_profile_idx[link_id] = ATH12K_INVALID_VP_PROFILE_IDX;
 		spin_unlock(&ppe->ppe_vp_tbl_lock);
 		return;
 	}
