@@ -1005,6 +1005,7 @@ struct ath12k_vif {
 			u8 tim_len;
 			u32 ssid_len;
 			u8 ssid[IEEE80211_MAX_SSID_LEN];
+			bool dynamic_vlan;
 			bool hidden_ssid;
 			/* P2P_IE with NoA attribute for P2P_GO case */
 			u32 noa_len;
@@ -1053,7 +1054,6 @@ struct ath12k_vif {
 	 */
 	struct ieee80211_chanctx_conf chanctx;
 	struct ath12k_reg_tpc_power_info reg_tpc_info;
-
 	struct ath12k_event_queue event_queue;
 };
 
