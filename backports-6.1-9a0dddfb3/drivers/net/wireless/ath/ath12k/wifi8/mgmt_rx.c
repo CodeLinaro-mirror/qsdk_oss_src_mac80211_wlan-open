@@ -1311,7 +1311,8 @@ void ath12k_wifi8_mgmt_workqueue(struct work_struct *w)
 	struct ath12k_mgmt_irq_grp *irq_grp = from_work(irq_grp, work, intr_wq);
 	struct ath12k_base *ab = irq_grp->ab;
 
-	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
+	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags) ||
+	    ab->ag->wsi_remap_in_progress || ab->is_bypassed)
 		return;
 
 	ath12k_wifi8_mgmt_service_srng(ab, irq_grp);
@@ -1324,7 +1325,8 @@ void ath12k_wifi8_mgmt_tasklet(struct tasklet_struct *t)
 	struct ath12k_mgmt_irq_grp *irq_grp = from_tasklet(irq_grp, t, intr_tq);
 	struct ath12k_base *ab = irq_grp->ab;
 
-	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
+	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags) ||
+	    ab->ag->wsi_remap_in_progress || ab->is_bypassed)
 		return;
 
 	ath12k_wifi8_mgmt_service_srng(ab, irq_grp);

@@ -2346,9 +2346,15 @@ int ath12k_wsi_bypass_precheck(struct ath12k_base *ab, unsigned int value)
 		return -EBUSY;
 	}
 
-	if (((ag->num_devices - ag->num_bypassed) == ATH12K_MIN_ACTIVE_CHIP_FOR_BYPASS) &&
-	    value == ATH12K_WSI_BYPASS_REMOVE_DEVICE) {
-		ath12k_err(ab, "Min 2 Chip has to be active.\n");
+	if (ab->is_cumac_chip) {
+		ath12k_err(ab, "Bypass of CUMAC chip is not supported\n");
+		return -EOPNOTSUPP;
+	}
+
+	if ((!(test_bit(WMI_TLV_SERVICE_11BN, ab->wmi_ab.svc_map)) &&
+	    ((ag->num_devices - ag->num_bypassed) == ATH12K_MIN_ACTIVE_CHIP_FOR_BYPASS) &&
+	    value == ATH12K_WSI_BYPASS_REMOVE_DEVICE)) {
+		ath12k_err(ab, "Min 2 Chip has to be active for EHT device.\n");
 		return -EINVAL;
 	}
 
