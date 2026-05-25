@@ -4022,13 +4022,14 @@ resp_out:
 
 /* clang stack usage explodes if this is inlined */
 static noinline_for_stack
-int ath12k_qmi_respond_fw_mem_request(struct ath12k_base *ab)
+int ath12k_qmi_respond_fw_mem_request(struct ath12k_base *ab, void *data)
 {
 	struct qmi_wlanfw_respond_mem_req_msg_v01 *req;
 	struct qmi_wlanfw_respond_mem_resp_msg_v01 resp = {};
 	struct qmi_txn txn;
-	int ret = 0, i;
+	int ret = 0, i = 0;
 	bool delayed;
+	int idx, seg_start_idx, *curr_seg_cnt = data;
 
 	req = kzalloc(sizeof(*req), GFP_KERNEL);
 	if (!req)
@@ -4046,16 +4047,18 @@ int ath12k_qmi_respond_fw_mem_request(struct ath12k_base *ab)
 			   ab->qmi.mem_seg_count);
 	} else {
 		delayed = false;
-		req->mem_seg_len = ab->qmi.mem_seg_count;
-		for (i = 0; i < req->mem_seg_len ; i++) {
-			req->mem_seg[i].addr = ab->qmi.target_mem[i].paddr;
-			req->mem_seg[i].size = ab->qmi.target_mem[i].size;
-			req->mem_seg[i].type = ab->qmi.target_mem[i].type;
+		req->mem_seg_len = *curr_seg_cnt;
+		seg_start_idx = ab->qmi.mem_seg_count - *curr_seg_cnt;
+		for (idx = 0, i = seg_start_idx; i < ab->qmi.mem_seg_count; i++) {
+			req->mem_seg[idx].addr = ab->qmi.target_mem[i].paddr;
+			req->mem_seg[idx].size = ab->qmi.target_mem[i].size;
+			req->mem_seg[idx].type = ab->qmi.target_mem[i].type;
 			ath12k_dbg(ab, ATH12K_DBG_QMI,
-				   "qmi req mem_seg[%d] %pad %u %u\n", i,
+				   "qmi req mem_seg[%d] %pad %u %u\n", idx,
 				   &ab->qmi.target_mem[i].paddr,
 				   ab->qmi.target_mem[i].size,
 				   ab->qmi.target_mem[i].type);
+			idx++;
 		}
 	}
 
@@ -4135,6 +4138,82 @@ static void ath12k_free_mlo_glb_per_device_crash_info(
 	}
 }
 
+#if defined(ATH12K_CMA_SUPPORT)
+static void ath12k_memdev_release(struct device *dev)
+{
+	/* No-op release callback required by the device core. */
+}
+
+int ath12k_memdev_init(struct ath12k_base *ab, struct ath12k_mem_dev *mem_dev,
+		       const char *name)
+{
+	struct device *dev = &mem_dev->dev;
+	int ret, idx;
+
+	memset(dev, 0, sizeof(*dev));
+
+	device_initialize(dev);
+	dev->parent = ab->dev;
+	dev->release = ath12k_memdev_release;
+	dev->of_node = of_node_get(ab->dev->of_node);
+	dev_set_name(dev, "ath12k_%s.%s", name, dev_name(ab->dev));
+
+	ret = dma_coerce_mask_and_coherent(dev, dma_get_mask(ab->dev));
+	if (ret)
+		goto err_put;
+
+	ret = device_add(dev);
+	if (ret)
+		goto err_put;
+
+	mem_dev->dev_registered = true;
+
+	idx = of_property_match_string(dev->of_node, "memory-region-names", name);
+	if (idx < 0) {
+		ret = idx;
+		goto err_del;
+	}
+
+	ret = of_reserved_mem_device_init_by_idx(dev, dev->of_node, idx);
+	if (ret)
+		goto err_del;
+
+	mem_dev->rmem_inited = true;
+	return 0;
+
+err_del:
+	device_del(dev);
+	mem_dev->dev_registered = false;
+err_put:
+	of_node_put(dev->of_node);
+	dev->of_node = NULL;
+	put_device(dev);
+	return ret;
+}
+
+void ath12k_memdev_deinit(struct ath12k_base *ab, struct ath12k_mem_dev *mem_dev)
+{
+	struct device *dev = &mem_dev->dev;
+
+	if (mem_dev->rmem_inited) {
+		of_reserved_mem_device_release(dev);
+		mem_dev->rmem_inited = false;
+	}
+
+	if (mem_dev->dev_registered) {
+		device_del(dev);
+		mem_dev->dev_registered = false;
+	}
+
+	if (dev->of_node) {
+		of_node_put(dev->of_node);
+		dev->of_node = NULL;
+	}
+
+	put_device(dev);
+}
+#endif
+
 static void ath12k_qmi_free_mlo_mem_chunk(struct ath12k_base *ab,
 					  struct target_mem_chunk *chunk,
 					  int idx)
@@ -4143,6 +4222,8 @@ static void ath12k_qmi_free_mlo_mem_chunk(struct ath12k_base *ab,
 	struct ath12k_host_mlo_mem_arena *mlomem_arena_ctx = &ag->mlomem_arena;
 	struct target_mem_chunk *mlo_chunk;
 	bool fixed_mem;
+	struct device *dev = ab->mlo_mem_dev.rmem_inited ?
+			     &ab->mlo_mem_dev.dev : ab->dev;
 
 	lockdep_assert_held(&ag->mutex);
 
@@ -4159,7 +4240,7 @@ static void ath12k_qmi_free_mlo_mem_chunk(struct ath12k_base *ab,
 
 	if (fixed_mem && mlo_chunk->v.ioaddr) {
 #ifdef PLATFORM_SDX
-		dma_free_attrs(ab->dev,
+		dma_free_attrs(dev,
 			       mlo_chunk->size,
 			       mlo_chunk->v.ioaddr,
 			       mlo_chunk->paddr,
@@ -4169,7 +4250,7 @@ static void ath12k_qmi_free_mlo_mem_chunk(struct ath12k_base *ab,
 #endif
 		mlo_chunk->v.ioaddr = NULL;
 	} else if (mlo_chunk->v.addr) {
-		dma_free_coherent(ab->dev,
+		dma_free_coherent(dev,
 				  mlo_chunk->size,
 				  mlo_chunk->v.addr,
 				  mlo_chunk->paddr);
@@ -4198,6 +4279,7 @@ void ath12k_qmi_free_target_mem_chunk(struct ath12k_base *ab)
 {
 	struct ath12k_hw_group *ag = ab->ag;
 	int i, mlo_idx;
+	struct device *dev;
 
 	for (i = 0, mlo_idx = 0; i < ab->qmi.mem_seg_count; i++) {
 		if (ab->qmi.target_mem[i].type == MLO_GLOBAL_MEM_REGION_TYPE) {
@@ -4208,18 +4290,20 @@ void ath12k_qmi_free_target_mem_chunk(struct ath12k_base *ab)
 						      &ab->qmi.target_mem[i],
 						      mlo_idx++);
 		} else {
+			dev = ab->qmi_mem_dev.rmem_inited ?
+			      &ab->qmi_mem_dev.dev : ab->dev;
 			if (test_bit(ATH12K_FLAG_FIXED_MEM_REGION, &ab->dev_flags) &&
 			    ab->qmi.target_mem[i].v.ioaddr) {
 #ifdef PLATFORM_SDX
 				if (ab->qmi.target_mem[i].type == AFC_REGION_TYPE &&
 				    ab->qmi.target_mem[i].v.addr) {
-					dma_free_coherent(ab->dev,
+					dma_free_coherent(dev,
 							  ab->qmi.target_mem[i].size,
 							  ab->qmi.target_mem[i].v.addr,
 							  ab->qmi.target_mem[i].paddr);
 					ab->qmi.target_mem[i].v.addr = NULL;
 				} else {
-					dma_free_attrs(ab->dev,
+					dma_free_attrs(dev,
 						       ab->qmi.target_mem[i].size,
 						       ab->qmi.target_mem[i].v.ioaddr,
 						       ab->qmi.target_mem[i].paddr,
@@ -4230,7 +4314,7 @@ void ath12k_qmi_free_target_mem_chunk(struct ath12k_base *ab)
 				if (ab->qmi.target_mem[i].type == AFC_REGION_TYPE &&
 				    ab->hif.bus != ATH12K_BUS_HYBRID &&
 				    ab->qmi.target_mem[i].v.addr) {
-					dma_free_coherent(ab->dev,
+					dma_free_coherent(dev,
 							  ab->qmi.target_mem[i].size,
 							  ab->qmi.target_mem[i].v.addr,
 							  ab->qmi.target_mem[i].paddr);
@@ -4243,7 +4327,7 @@ void ath12k_qmi_free_target_mem_chunk(struct ath12k_base *ab)
 			} else {
 				if (!ab->qmi.target_mem[i].v.addr)
 					continue;
-				dma_free_coherent(ab->dev,
+				dma_free_coherent(dev,
 						  ab->qmi.target_mem[i].prev_size,
 						  ab->qmi.target_mem[i].v.addr,
 						  ab->qmi.target_mem[i].paddr);
@@ -4252,6 +4336,7 @@ void ath12k_qmi_free_target_mem_chunk(struct ath12k_base *ab)
 		}
 	}
 
+	ab->qmi.mem_seg_count = 0;
 	ab->host_ddr_fixed_mem_off = 0;
 
 	if (!ag->num_started && ag->mlo_mem.init_done) {
@@ -4261,34 +4346,37 @@ void ath12k_qmi_free_target_mem_chunk(struct ath12k_base *ab)
 }
 
 static int ath12k_qmi_alloc_chunk(struct ath12k_base *ab,
-				  struct target_mem_chunk *chunk)
+				  struct target_mem_chunk *chunk,
+				  struct device *dev)
 {
+#ifndef ATH12K_CMA_SUPPORT
 	/* Firmware reloads in recovery/resume.
 	 * In such cases, no need to allocate memory for FW again.
 	 */
 	if (chunk->v.addr) {
 		if (chunk->prev_type == chunk->type &&
 		    chunk->prev_size == chunk->size)
-			goto this_chunk_done;
+			return 0;
 
 		/* cannot reuse the existing chunk */
 		dma_free_coherent(ab->dev, chunk->prev_size,
 				  chunk->v.addr, chunk->paddr);
 		chunk->v.addr = NULL;
 	}
+#endif
 
-	chunk->v.addr = dma_alloc_coherent(ab->dev,
+	chunk->v.addr = dma_alloc_coherent(dev,
 					   chunk->size,
 					   &chunk->paddr,
 					   GFP_KERNEL | __GFP_NOWARN);
 	if (!chunk->v.addr) {
-		if (chunk->size > ATH12K_QMI_MAX_CHUNK_SIZE) {
+		if (!ab->qmi_mem_dev.rmem_inited &&
+		    chunk->size > ATH12K_QMI_MAX_CHUNK_SIZE) {
 			ab->qmi.target_mem_delayed = true;
 			ath12k_warn(ab,
 				    "qmi dma allocation failed (%d B type %u), will try later with small size\n",
 				    chunk->size,
 				    chunk->type);
-			ath12k_qmi_free_target_mem_chunk(ab);
 			return -EAGAIN;
 		}
 		ath12k_warn(ab, "memory allocation failure for %u size: %d\n",
@@ -4297,16 +4385,45 @@ static int ath12k_qmi_alloc_chunk(struct ath12k_base *ab,
 	}
 	chunk->prev_type = chunk->type;
 	chunk->prev_size = chunk->size;
-this_chunk_done:
 	return 0;
 }
 
-static int ath12k_qmi_alloc_target_mem_chunk(struct ath12k_base *ab)
+static void ath12k_qmi_free_target_mem_chunk_range(struct ath12k_base *ab,
+						   u32 start_idx, u32 end_idx)
+{
+	struct device *dev = ab->qmi_mem_dev.rmem_inited ?
+			      &ab->qmi_mem_dev.dev : ab->dev;
+	u32 i;
+
+	for (i = start_idx; i < end_idx; i++) {
+		struct target_mem_chunk *chunk = &ab->qmi.target_mem[i];
+
+		if (!chunk->paddr)
+			goto clear_entry;
+
+		if (chunk->type != MLO_GLOBAL_MEM_REGION_TYPE ||
+		    !ab->ag->num_started) {
+			if (chunk->v.ioaddr)
+				dma_free_coherent(dev, chunk->size,
+						  chunk->v.addr, chunk->paddr);
+		}
+
+clear_entry:
+		memset(chunk, 0, sizeof(*chunk));
+	}
+}
+
+static int ath12k_qmi_alloc_target_mem_chunk(struct ath12k_base *ab,
+					     struct target_mem_chunk *req_mem,
+					     u32 req_mem_seg_count)
 {
 	struct target_mem_chunk *chunk, *mlo_chunk;
 	struct ath12k_hw_group *ag = ab->ag;
 	int i, mlo_idx, ret;
 	int mlo_size = 0;
+	int old_seg_cnt = ab->qmi.mem_seg_count;
+	int seg_cnt = old_seg_cnt;
+	struct device *dev;
 
 	mutex_lock(&ag->mutex);
 
@@ -4314,11 +4431,17 @@ static int ath12k_qmi_alloc_target_mem_chunk(struct ath12k_base *ab)
 		memset(ag->mlo_mem.chunk, 0, sizeof(ag->mlo_mem.chunk));
 		ag->mlo_mem.init_done = true;
 	}
+	if (old_seg_cnt + req_mem_seg_count > ATH12K_QMI_WLANFW_MAX_NUM_MEM_SEG_V01) {
+		ret = -ENOSPC;
+		goto err;
+	}
 
 	ab->qmi.target_mem_delayed = false;
 
-	for (i = 0, mlo_idx = 0; i < ab->qmi.mem_seg_count; i++) {
-		chunk = &ab->qmi.target_mem[i];
+	for (i = 0, mlo_idx = 0; i < req_mem_seg_count; i++) {
+		chunk = &ab->qmi.target_mem[seg_cnt];
+		chunk->type = req_mem[i].type;
+		chunk->size = req_mem[i].size;
 
 		/* Allocate memory for the region and the functionality supported
 		 * on the host. For the non-supported memory region, host does not
@@ -4330,6 +4453,7 @@ static int ath12k_qmi_alloc_target_mem_chunk(struct ath12k_base *ab)
 		case AFC_REGION_TYPE:
 		case PAGEABLE_MEM_REGION_TYPE:
 		case CALDB_MEM_REGION_TYPE:
+		case BDF_MEM_REGION_TYPE:
 			if ((chunk->type == CALDB_MEM_REGION_TYPE &&
 			     (!ab->hw_params->cold_boot_calib ||
 			      !ath12k_dp_ring_cfg->cold_boot_calib)) ||
@@ -4338,9 +4462,12 @@ static int ath12k_qmi_alloc_target_mem_chunk(struct ath12k_base *ab)
 				chunk->v.addr = NULL;
 				break;
 			}
-			ret = ath12k_qmi_alloc_chunk(ab, chunk);
+			dev = ab->qmi_mem_dev.rmem_inited ?
+			      &ab->qmi_mem_dev.dev : ab->dev;
+			ret = ath12k_qmi_alloc_chunk(ab, chunk, dev);
 			if (ret)
 				goto err;
+			seg_cnt++;
 			break;
 		case MLO_GLOBAL_MEM_REGION_TYPE:
 			if (!chunk->size) {
@@ -4367,9 +4494,11 @@ static int ath12k_qmi_alloc_target_mem_chunk(struct ath12k_base *ab)
 					goto err;
 				}
 			} else {
+				dev = ab->mlo_mem_dev.rmem_inited ?
+				      &ab->mlo_mem_dev.dev : ab->dev;
 				mlo_chunk->size = chunk->size;
 				mlo_chunk->type = chunk->type;
-				ret = ath12k_qmi_alloc_chunk(ab, mlo_chunk);
+				ret = ath12k_qmi_alloc_chunk(ab, mlo_chunk, dev);
 				if (ret)
 					goto err;
 				memset(mlo_chunk->v.addr, 0, mlo_chunk->size);
@@ -4380,6 +4509,7 @@ static int ath12k_qmi_alloc_target_mem_chunk(struct ath12k_base *ab)
 			ag->mlo_mem.is_mlo_mem_avail = true;
 			mlo_idx++;
 
+			seg_cnt++;
 			break;
 		default:
 			ath12k_warn(ab, "memory type %u not supported\n",
@@ -4392,19 +4522,20 @@ static int ath12k_qmi_alloc_target_mem_chunk(struct ath12k_base *ab)
 
 	if (!ag->mlo_mem.mlo_mem_size) {
 		ag->mlo_mem.mlo_mem_size = mlo_size;
-	} else if (ag->mlo_mem.mlo_mem_size != mlo_size) {
+	} else if (mlo_idx && ag->mlo_mem.mlo_mem_size != mlo_size) {
 		ath12k_err(ab, "QMI MLO memory size error, expected size is %d but requested size is %d",
 			   ag->mlo_mem.mlo_mem_size, mlo_size);
 		ret = -EINVAL;
 		goto err;
 	}
 
+	ab->qmi.mem_seg_count = seg_cnt;
 	mutex_unlock(&ag->mutex);
 
-	return 0;
+	return (seg_cnt - old_seg_cnt);
 
 err:
-	ath12k_qmi_free_target_mem_chunk(ab);
+	ath12k_qmi_free_target_mem_chunk_range(ab, old_seg_cnt, seg_cnt);
 
 	mutex_unlock(&ag->mutex);
 
@@ -4648,7 +4779,9 @@ static int ath12k_qmi_alloc_afc_reserved_mem(struct ath12k_base *ab, int dst_idx
 	return 0;
 }
 
-static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
+static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab,
+					      struct target_mem_chunk *req_mem,
+					      u32 req_mem_seg_count)
 {
 	struct reserved_mem *ddr_rmem = NULL, *rmem = NULL;
 	struct ath12k_hw_group *ag = ab->ag;
@@ -4656,6 +4789,9 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 	int i, idx, ret;
 
 	mutex_lock(&ag->mutex);
+	ab->qmi.mem_seg_count = req_mem_seg_count;
+	memcpy(ab->qmi.target_mem, req_mem,
+	       sizeof(struct target_mem_chunk) * req_mem_seg_count);
 	if (!ag->mlo_mem.init_done) {
 		memset(ag->mlo_mem.chunk, 0, sizeof(ag->mlo_mem.chunk));
 		ag->mlo_mem.init_done = true;
@@ -4828,7 +4964,9 @@ out:
 	return ret;
 }
 #else
-static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
+static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab,
+					      struct target_mem_chunk *req_mem,
+					      u32 req_mem_seg_count)
 {
 	struct reserved_mem *ddr_rmem = NULL, *rmem = NULL;
 	struct ath12k_hw_group *ag = ab->ag;
@@ -4836,6 +4974,9 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 	int i, idx, ret;
 
 	mutex_lock(&ag->mutex);
+	ab->qmi.mem_seg_count = req_mem_seg_count;
+	memcpy(ab->qmi.target_mem, req_mem,
+	       sizeof(struct target_mem_chunk) * req_mem_seg_count);
 	if (!ag->mlo_mem.init_done) {
 		memset(ag->mlo_mem.chunk, 0, sizeof(ag->mlo_mem.chunk));
 		ag->mlo_mem.init_done = true;
@@ -6318,12 +6459,12 @@ int ath12k_qmi_event_server_arrive(struct ath12k_qmi *qmi)
 
 /* clang stack usage explodes if this is inlined */
 static noinline_for_stack
-int ath12k_qmi_event_mem_request(struct ath12k_qmi *qmi)
+int ath12k_qmi_event_mem_request(struct ath12k_qmi *qmi, void *data)
 {
 	struct ath12k_base *ab = qmi->ab;
 	int ret;
 
-	ret = ath12k_qmi_respond_fw_mem_request(ab);
+	ret = ath12k_qmi_respond_fw_mem_request(ab, data);
 	if (ret < 0) {
 		ath12k_warn(ab, "qmi failed to respond fw mem req:%d\n", ret);
 		return ret;
@@ -6482,7 +6623,9 @@ static void ath12k_qmi_msg_mem_request_cb(struct qmi_handle *qmi_hdl,
 	struct ath12k_qmi *qmi = container_of(qmi_hdl, struct ath12k_qmi, handle);
 	struct ath12k_base *ab = qmi->ab;
 	const struct qmi_wlanfw_request_mem_ind_msg_v01 *msg = data;
-	int i, ret;
+	int i, ret, *event_data;
+	struct target_mem_chunk *req_mem = NULL;
+	u32 req_mem_seg_count;
 
 	ath12k_dbg(ab, ATH12K_DBG_QMI, "qmi firmware request memory request\n");
 
@@ -6491,32 +6634,51 @@ static void ath12k_qmi_msg_mem_request_cb(struct qmi_handle *qmi_hdl,
 		ath12k_warn(ab, "Invalid memory segment length: %u\n",
 			    msg->mem_seg_len);
 
-	ab->qmi.mem_seg_count = msg->mem_seg_len;
+	event_data = kzalloc(sizeof(*event_data), GFP_KERNEL);
+	if (!event_data)
+		return;
 
-	for (i = 0; i < qmi->mem_seg_count ; i++) {
-		ab->qmi.target_mem[i].type = msg->mem_seg[i].type;
-		ab->qmi.target_mem[i].size = msg->mem_seg[i].size;
+	req_mem = kcalloc(msg->mem_seg_len,
+			  sizeof(*req_mem),
+			  GFP_KERNEL);
+	if (!req_mem) {
+		kfree(event_data);
+		return;
+	}
+
+	req_mem_seg_count = msg->mem_seg_len;
+
+	for (i = 0; i < req_mem_seg_count; i++) {
+		req_mem[i].type = msg->mem_seg[i].type;
+		req_mem[i].size = msg->mem_seg[i].size;
 		ath12k_dbg(ab, ATH12K_DBG_QMI, "qmi mem seg type %d size %d\n",
 			   msg->mem_seg[i].type, msg->mem_seg[i].size);
 	}
 
 	if (test_bit(ATH12K_FLAG_FIXED_MEM_REGION, &ab->dev_flags)) {
-		ret = ath12k_qmi_assign_target_mem_chunk(ab);
+		ret = ath12k_qmi_assign_target_mem_chunk(ab, req_mem, req_mem_seg_count);
 		if (ret) {
 			ath12k_warn(ab, "failed to assign qmi target memory: %d\n",
 				    ret);
+			kfree(event_data);
+			kfree(req_mem);
 			return;
 		}
+		ret = req_mem_seg_count;
 	} else {
-		ret = ath12k_qmi_alloc_target_mem_chunk(ab);
-		if (ret) {
+		ret = ath12k_qmi_alloc_target_mem_chunk(ab, req_mem, req_mem_seg_count);
+		if (ret != req_mem_seg_count) {
 			ath12k_warn(ab, "qmi failed to alloc target memory: %d\n",
 				    ret);
+			kfree(event_data);
+			kfree(req_mem);
 			return;
 		}
 	}
 
-	ath12k_qmi_driver_event_post(qmi, ATH12K_QMI_EVENT_REQUEST_MEM, NULL);
+	kfree(req_mem);
+	*event_data = ret;
+	ath12k_qmi_driver_event_post(qmi, ATH12K_QMI_EVENT_REQUEST_MEM, event_data);
 }
 
 static void ath12k_qmi_msg_mem_ready_cb(struct qmi_handle *qmi_hdl,
@@ -6801,7 +6963,7 @@ static void ath12k_qmi_driver_event_work(struct work_struct *work)
 			clear_bit(ATH12K_FLAG_WMI_INIT_DONE, &ab->dev_flags);
 			break;
 		case ATH12K_QMI_EVENT_REQUEST_MEM:
-			ret = ath12k_qmi_event_mem_request(qmi);
+			ret = ath12k_qmi_event_mem_request(qmi, event->data);
 			if (ret < 0)
 				set_bit(ATH12K_FLAG_QMI_FAIL, &ab->dev_flags);
 			break;

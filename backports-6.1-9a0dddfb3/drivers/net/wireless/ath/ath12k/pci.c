@@ -1414,6 +1414,21 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
 	ab->id.subsystem_vendor = pdev->subsystem_vendor;
 	ab->id.subsystem_device = pdev->subsystem_device;
 
+#if defined(ATH12K_CMA_SUPPORT)
+	clear_bit(ATH12K_FLAG_FIXED_MEM_REGION, &ab->dev_flags);
+	ret = ath12k_memdev_init(ab, &ab->mlo_mem_dev, "mlo-global-mem");
+	if (ret)
+		ath12k_err(&pdev->dev,
+			"failed to init mlo mem helper device: %d, falling back to global cma\n",
+			ret);
+
+	ret = ath12k_memdev_init(ab, &ab->qmi_mem_dev, "host-ddr-mem");
+	if (ret)
+		ath12k_err(&pdev->dev,
+			"failed to init qmi mem helper device: %d, falling back to global cma\n",
+			ret);
+#endif
+
 	device_id = ath12k_get_device_family(pci_dev);
 	if (device_id >= ATH12K_DEVICE_FAMILY_MAX) {
 		ath12k_err(ab, "failed to get device family id\n");
@@ -1594,6 +1609,12 @@ err_pci_free_region:
 	ath12k_pci_free_region(ab_pci);
 
 err_free_core:
+#if defined(ATH12K_CMA_SUPPORT)
+	if (ab->qmi_mem_dev.rmem_inited)
+		ath12k_memdev_deinit(ab, &ab->qmi_mem_dev);
+	if (ab->mlo_mem_dev.rmem_inited)
+		ath12k_memdev_deinit(ab, &ab->mlo_mem_dev);
+#endif
 	ath12k_core_free(ab);
 
 	return ret;
@@ -1647,6 +1668,12 @@ qmi_fail:
 	ret = ath12k_core_config_iocoherency(ab, false);
 	if (ret)
 		ath12k_err(ab, "failed to configure IOCoherency: %d\n", ret);
+#endif
+#if defined(ATH12K_CMA_SUPPORT)
+	if (ab->qmi_mem_dev.rmem_inited)
+		ath12k_memdev_deinit(ab, &ab->qmi_mem_dev);
+	if (ab->mlo_mem_dev.rmem_inited)
+		ath12k_memdev_deinit(ab, &ab->mlo_mem_dev);
 #endif
 	ath12k_core_free(ab);
 }
