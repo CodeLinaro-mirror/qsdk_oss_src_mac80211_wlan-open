@@ -15,6 +15,8 @@
 #include "debug.h"
 #include "peer.h"
 
+static int ath12k_smd_ctx_vendor_version = 1;
+
 static void ath12k_smd_ctx_hw_tx_tid_cb(struct ath12k_dp *dp, void *cb_ctx,
 					u8 *addr, u8 tid);
 static void ath12k_smd_ctx_hw_rx_tid_cb(struct ath12k_dp *dp, void *cb_ctx,
@@ -1409,6 +1411,7 @@ int ath12k_smd_collect_sta_session_ctx(struct ath12k *ar, struct sk_buff *mmpdu)
 		return -ENOMEM;
 	}
 
+	spin_lock_init(&req->lock);
 	req->mmpdu = mmpdu;
 	req->type = uhr_reconf_type;
 	req->handler = ath12k_smd_update_ctx_to_stack;
@@ -1444,14 +1447,420 @@ void ath12k_smd_update_ctx_to_stack(struct ath12k_smd_info *smd_info,
 				    struct ath12k_smd_ctx_req *req)
 {}
 
+u16 ath12k_smd_ctx_get_rx_ba_bufsize(struct ath12k_base *ab, struct ath12k_hw *ah,
+				     const u8 *peer_addr, u8 tid, u16 orig_ba_win_sz)
+{
+	struct ath12k_dp_peer *dp_peer;
+	struct ath12k_dp *dp = ab->dp;
+	u32 ba_win_sz = 0;
+	u16 _ssn;
+
+	if (orig_ba_win_sz)
+		return orig_ba_win_sz;
+
+	/* fetch current active buffer size from dp */
+	spin_lock_bh(&ah->dp_hw.peer_hash_lock);
+
+	dp_peer = ath12k_dp_peer_find_by_addr(&ah->dp_hw, (u8 *)peer_addr);
+	if (dp_peer && dp_peer->rx_tid[tid].active)
+		ba_win_sz = dp_peer->rx_tid[tid].ba_win_sz;
+
+	spin_unlock_bh(&ah->dp_hw.peer_hash_lock);
+
+	if (ba_win_sz)
+		return ba_win_sz;
+
+	/* get default buffer size as a last resort */
+	ath12k_dp_rx_peer_tid_ba_config(dp, tid, &ba_win_sz, &_ssn);
+
+	return ba_win_sz;
+}
+
+static int
+ath12k_smd_ctx_highest_sn_from_bitmap(u16 ssn, const u32 *bitmap_words,
+				      int num_words)
+{
+	int word;
+	u16 offset;
+
+	for (word = num_words - 1; word >= 0; word--) {
+		if (bitmap_words[word])
+			break;
+	}
+
+	if (word < 0)
+		return -ENOENT;
+
+	offset = (word * 32) + __fls(bitmap_words[word]);
+
+	return (ssn + offset) & IEEE80211_SN_MASK;
+}
+
+static void
+ath12k_smd_ctx_hw_tid_update_rx_sn_from_bitmap(struct ath12k_smd_ctx_req *req,
+					       u8 tid, u16 ssn, int num_words)
+{
+	struct ath12k_smd_reo_bitmap *reo_bitmap;
+	int sn;
+
+	if (!test_bit(ATH12K_SMD_CTX_VALID_UL_SN, req->ctx.valid_ctx_bmap))
+		return;
+
+	reo_bitmap = &req->ctx.vendor_ctx.ctx_v1.ul_reo_bmap[tid];
+	sn = ath12k_smd_ctx_highest_sn_from_bitmap(ssn,
+						   &reo_bitmap->bitmap_31_0,
+						   num_words);
+	req->ctx.ul.sn[tid] = (sn >= 0) ? sn : ssn;
+}
+
+static void
+ath12k_smd_ctx_hw_tid_cb_vendor_1k_status(struct hal_reo_status *reo_status,
+					  struct ath12k_smd_ctx_req *req, u8 tid)
+{
+	struct hal_reo_status_queue_1k_stats *q_1k_stats;
+	struct hal_rx_reo_bitmap_1023_288 *bitmap;
+	struct ath12k_smd_reo_bitmap *reo_bitmap;
+
+	reo_bitmap = &req->ctx.vendor_ctx.ctx_v1.ul_reo_bmap[tid];
+	q_1k_stats = &reo_status->u.queue_1k_stats;
+	bitmap = &q_1k_stats->bitmap;
+
+	/* copy bitmaps of bits 1023..288 */
+	memcpy((void *)&reo_bitmap->bitmap_1023_288_grp, (void *)bitmap,
+	       sizeof(*bitmap));
+
+	if (test_bit(ATH12K_SMD_CTX_VALID_UL_SN, req->ctx.valid_ctx_bmap)) {
+		int num_words = sizeof(*reo_bitmap) / sizeof(u32);
+		u16 ssn = req->ctx.ul.sn[tid];
+
+		ath12k_smd_ctx_hw_tid_update_rx_sn_from_bitmap(req, tid, ssn, num_words);
+	}
+}
+
+static void
+ath12k_smd_ctx_hw_tid_cb_vendor_v1(void *cb_data, struct ath12k_smd_ctx_req *req, bool tx,
+				   u8 tid)
+{
+	struct ath12k_smd_ctx_tx_cb_per_tid *tx_cb_data;
+	struct hal_reo_status_queue_stats *q_stats;
+	struct ath12k_smd_reo_bitmap *reo_bitmap;
+	struct hal_rx_reo_bitmap_287_0 *bitmap;
+	u8 *pn;
+
+	/* Tx data */
+	if (tx) {
+		tx_cb_data = (struct ath12k_smd_ctx_tx_cb_per_tid *)cb_data;
+
+		if (tid != ATH12K_SMD_TX_MGMT_TID) {
+			req->ctx.vendor_ctx.ctx_v1.dl_data_lsn_offset[tid] =
+				tx_cb_data->lsn_offset;
+			return;
+		}
+
+		req->ctx.vendor_ctx.ctx_v1.dl_mgmt_sn = tx_cb_data->sn;
+		req->ctx.pn_len = tx_cb_data->pn_len;
+		memcpy(req->ctx.vendor_ctx.ctx_v1.dl_mgmt_pn, tx_cb_data->pn,
+		       tx_cb_data->pn_len);
+
+		ath12k_dbg_level(NULL, ATH12K_DBG_SMD, ATH12K_DBG_L3,
+				 "%s cb tid: %u sn: %u, pn_len: %u, pn: %*ph",
+				 tx ? "DL" : "UL", tid,
+				 req->ctx.vendor_ctx.ctx_v1.dl_mgmt_sn,
+				 req->ctx.pn_len,
+				 req->ctx.pn_len, req->ctx.vendor_ctx.ctx_v1.dl_mgmt_pn);
+
+		return;
+	}
+
+	/* Rx data */
+	q_stats = &((struct hal_reo_status *)cb_data)->u.queue_stats;
+	if (tid == ATH12K_SMD_RX_MGMT_TID) {
+		req->ctx.vendor_ctx.ctx_v1.ul_mgmt_sn = q_stats->ssn;
+
+		req->ctx.pn_len = q_stats->pn_len;
+		pn = req->ctx.vendor_ctx.ctx_v1.ul_mgmt_pn;
+		memcpy(&pn[0], &q_stats->pn_31_0, sizeof(q_stats->pn_31_0));
+		memcpy(&pn[4], &q_stats->pn_47_32, sizeof(q_stats->pn_47_32));
+
+		ath12k_dbg_level(NULL, ATH12K_DBG_SMD, ATH12K_DBG_L3,
+				 "%s cb tid: %u sn: %u, pn_len: %u, pn: %*ph",
+				 tx ? "DL" : "UL", tid,
+				 req->ctx.vendor_ctx.ctx_v1.ul_mgmt_sn,
+				 req->ctx.pn_len,
+				 req->ctx.pn_len, req->ctx.vendor_ctx.ctx_v1.ul_mgmt_pn);
+
+		return;
+	}
+
+	reo_bitmap = &req->ctx.vendor_ctx.ctx_v1.ul_reo_bmap[tid];
+	bitmap = &q_stats->bitmap;
+
+	/* copy bitmaps of bits 287..0 */
+	memcpy((void *)&reo_bitmap->bitmap_287_0_grp, (void *)bitmap,
+	       sizeof(*bitmap));
+
+	if (q_stats->to_follow_1k && test_bit(tid, req->wait_for_1k_status_ctx)) {
+		if (test_bit(ATH12K_SMD_CTX_VALID_UL_SN, req->ctx.valid_ctx_bmap))
+			req->ctx.ul.sn[tid] = q_stats->ssn;
+		return;
+	}
+
+	clear_bit(tid, req->wait_for_1k_status_ctx);
+	ath12k_smd_ctx_hw_tid_update_rx_sn_from_bitmap(req, tid, q_stats->ssn, 9);
+}
+
+static void ath12k_smd_ctx_hw_tid_cb_vendor(void *cb_data, struct ath12k_smd_ctx_req *req,
+					    bool tx, u8 tid)
+{
+	switch (ath12k_smd_ctx_vendor_version) {
+	case 1:
+		ath12k_smd_ctx_hw_tid_cb_vendor_v1(cb_data, req, tx, tid);
+		break;
+	default:
+		ath12k_dbg(NULL, ATH12K_DBG_SMD,
+			   "Unsupported SMD Vendor ctx HW cb version=%d",
+			   ath12k_smd_ctx_vendor_version);
+	}
+}
+
 static void ath12k_smd_ctx_hw_tx_tid_cb(struct ath12k_dp *dp, void *cb_ctx,
 					u8 *addr, u8 tid)
 {
-	// handle TQM per-TID cb
+	struct ath12k_smd_ctx_tx_cb_per_tid *cb_data = cb_ctx;
+	struct ath12k_smd_info *smd_info;
+	struct ath12k_base *ab = dp->ab;
+	struct ath12k_smd_ctx_req *req;
+	struct ieee80211_sta *sta;
+	struct ath12k_sta *ahsta;
+	struct ath12k_hw *ah;
+
+	ath12k_dbg_level(ab, ATH12K_DBG_SMD, ATH12K_DBG_L2,
+			 "%s for %pM tid: %u", __func__, addr, tid);
+
+	guard(rcu)();
+
+	ah = ab->ag->ah[0]; /* fetch default hw */
+	sta = ieee80211_find_sta_by_ifaddr(ah->hw, addr, NULL);
+	if (!sta) {
+		ath12k_err(ab, "No STA found for %pM to process SMD ctx", addr);
+		return;
+	}
+
+	ahsta = ath12k_sta_to_ahsta(sta);
+	smd_info = &ahsta->smd_info;
+
+	req = smd_info->current_req;
+	if (!req) {
+		ath12k_err(ab, "Current request not found for %pM to process SMD ctx",
+			   sta->addr);
+		return;
+	}
+
+	spin_lock_bh(&req->lock);
+	if (!test_bit(tid, req->ctx.dl.valid_tid_bmap) &&
+	    tid != ATH12K_SMD_TX_MGMT_TID) {
+		spin_unlock_bh(&req->lock);
+		return;
+	}
+
+	/* Data TIDs */
+	if (test_bit(tid, req->ctx.dl.valid_tid_bmap)) {
+		bool ba_setup = false;
+		u16 ba_buf_size = 0;
+
+		set_bit(tid, req->ctx.dl.completed_tid_bmap);
+
+		if (test_bit(ATH12K_SMD_CTX_VALID_DL_SN, req->ctx.valid_ctx_bmap))
+			req->ctx.dl.sn[tid] = cb_data->sn;
+
+		if (test_bit(ATH12K_SMD_CTX_VALID_PN, req->ctx.valid_ctx_bmap) &&
+		    cb_data->pn_len) {
+			req->ctx.pn_len = cb_data->pn_len;
+			memcpy(req->ctx.dl.pn, cb_data->pn, cb_data->pn_len);
+		}
+
+		if (test_bit(ATH12K_SMD_CTX_VALID_BA_PARAMS, req->ctx.valid_ctx_bmap)) {
+			spin_lock_bh(&ahsta->ba_lock);
+			if (ahsta->tx_ba_params[tid].valid) {
+				struct ath12k_smd_ctx_ba *dl_ba = &req->ctx.dl.ba[tid];
+				u16 buf_size_base = 0, buf_size_ext = 0;
+
+				ba_setup = true;
+				ba_buf_size = ahsta->tx_ba_params[tid].buf_size;
+
+				dl_ba->amsdu_supported = ahsta->tx_ba_params[tid].amsdu;
+				dl_ba->ba_policy = ahsta->tx_ba_params[tid].policy;
+				dl_ba->timeout = ahsta->tx_ba_params[tid].timeout;
+				ath12k_smd_ctx_encode_ba_buf_size(ba_buf_size,
+								  &buf_size_base,
+								  &buf_size_ext);
+				dl_ba->buffer_size = buf_size_base;
+				dl_ba->ext_buffer_size = buf_size_ext;
+			}
+			spin_unlock_bh(&ahsta->ba_lock);
+		}
+
+		/* LSN Offset */
+		ath12k_smd_ctx_hw_tid_cb_vendor(cb_data, req, true, tid);
+
+		ath12k_dbg_level(ab, ATH12K_DBG_SMD, ATH12K_DBG_L3,
+				 "DL cb tid: %u sn: %u, lsn_offset: %u, pn_len: %u, pn: %*ph, ba_setup: %s, ba_amsdu: %d, ba_policy: %d, ba_buffer_size: %u, ba_timeout: %u",
+				 tid,
+				 req->ctx.dl.sn[tid],
+				 cb_data->lsn_offset,
+				 req->ctx.pn_len,
+				 req->ctx.pn_len, req->ctx.dl.pn,
+				 ba_setup ? "valid" : "invalid",
+				 req->ctx.dl.ba[tid].amsdu_supported,
+				 req->ctx.dl.ba[tid].ba_policy,
+				 ba_buf_size,
+				 req->ctx.dl.ba[tid].timeout);
+
+		spin_unlock_bh(&req->lock);
+		return;
+	}
+
+	/* Mgmt TID */
+	ath12k_smd_ctx_hw_tid_cb_vendor(cb_data, req, true, tid);
+	spin_unlock_bh(&req->lock);
 }
 
 static void ath12k_smd_ctx_hw_rx_tid_cb(struct ath12k_dp *dp, void *cb_ctx,
 					struct hal_reo_status *reo_status)
 {
-	// handle REO per-TID cb
+	struct ath12k_dp_smd_ctx *smd_data = cb_ctx;
+	struct hal_reo_status_queue_stats *q_stats;
+	struct ath12k_smd_info *smd_info;
+	struct ath12k_base *ab = dp->ab;
+	struct ath12k_smd_ctx_req *req;
+	struct ieee80211_sta *sta;
+	struct ath12k_sta *ahsta;
+	u8 tid = smd_data->out.tid;
+	struct ath12k_hw *ah;
+
+	ath12k_dbg_level(ab, ATH12K_DBG_SMD, ATH12K_DBG_L2,
+			 "%s for %pM tid: %u", __func__, smd_data->peer_addr, tid);
+
+	guard(rcu)();
+
+	ah = ab->ag->ah[0]; /* fetch default hw */
+	sta = ieee80211_find_sta_by_ifaddr(ah->hw, smd_data->peer_addr, NULL);
+	if (!sta) {
+		ath12k_err(ab, "No STA found for %pM to process SMD ctx",
+			   smd_data->peer_addr);
+		return;
+	}
+
+	ahsta = ath12k_sta_to_ahsta(sta);
+	smd_info = &ahsta->smd_info;
+
+	req = smd_info->current_req;
+	if (!req) {
+		ath12k_err(ab, "Current request not found for %pM to process SMD ctx",
+			   sta->addr);
+		return;
+	}
+
+	spin_lock_bh(&req->lock);
+	if (!test_bit(tid, req->ctx.ul.valid_tid_bmap) &&
+	    tid != ATH12K_SMD_RX_MGMT_TID) {
+		spin_unlock_bh(&req->lock);
+		return;
+	}
+
+	/* If the STA is using 1k BlockAck buffer size, REO posts two status responses
+	 * for the queue stats request to copy the complete Rx bitmap:
+	 *     queue stats followed by queue_1k_stats
+	 */
+	if (ath12k_hal_rx_reo_1k_status(ab, reo_status)) {
+		if (!test_bit(tid, req->ctx.ul.valid_tid_bmap)) {
+			spin_unlock_bh(&req->lock);
+			return;
+		}
+
+		if (test_bit(tid, req->wait_for_1k_status_ctx)) {
+			ath12k_dbg_level(ab, ATH12K_DBG_SMD, ATH12K_DBG_L3,
+					 "REO 1k status cb with ext bitmaps for tid: %u",
+					 tid);
+			ath12k_smd_ctx_hw_tid_cb_vendor_1k_status(reo_status, req, tid);
+			clear_bit(tid, req->wait_for_1k_status_ctx);
+			set_bit(tid, req->ctx.ul.completed_tid_bmap);
+		}
+		spin_unlock_bh(&req->lock);
+		return;
+	}
+
+	q_stats = &reo_status->u.queue_stats;
+
+	if (ath12k_hal_rx_reo_status(ab, reo_status) && q_stats->to_follow_1k) {
+		set_bit(tid, req->wait_for_1k_status_ctx);
+		ath12k_dbg_level(ab, ATH12K_DBG_SMD, ATH12K_DBG_L3,
+				 "REO 1k status to follow for tid: %u", tid);
+	}
+
+	/* Data TIDs */
+	if (test_bit(tid, req->ctx.ul.valid_tid_bmap)) {
+		bool ba_setup = false;
+		u16 ba_buf_size = 0;
+
+		if (!test_bit(tid, req->wait_for_1k_status_ctx))
+			set_bit(tid, req->ctx.ul.completed_tid_bmap);
+
+		if (test_bit(ATH12K_SMD_CTX_VALID_PN, req->ctx.valid_ctx_bmap) &&
+		    q_stats->pn_len) {
+			req->ctx.pn_len = q_stats->pn_len;
+			memcpy(&req->ctx.ul.pn[tid][0], &q_stats->pn_31_0,
+			       sizeof(q_stats->pn_31_0));
+			memcpy(&req->ctx.ul.pn[tid][4], &q_stats->pn_47_32,
+			       sizeof(q_stats->pn_47_32));
+		}
+		if (test_bit(ATH12K_SMD_CTX_VALID_BA_PARAMS, req->ctx.valid_ctx_bmap)) {
+			spin_lock_bh(&ahsta->ba_lock);
+			if (ahsta->rx_ba_params[tid].valid) {
+				struct ath12k_smd_ctx_ba *ul_ba = &req->ctx.ul.ba[tid];
+				u16 orig_buf_size = ahsta->rx_ba_params[tid].buf_size;
+				u16 buf_size_base = 0, buf_size_ext = 0;
+
+				ba_setup = true;
+				ba_buf_size =
+					ath12k_smd_ctx_get_rx_ba_bufsize(ab, ah,
+									 sta->addr,
+									 tid,
+									 orig_buf_size);
+
+				ul_ba->amsdu_supported = ahsta->rx_ba_params[tid].amsdu;
+				ul_ba->ba_policy = ahsta->rx_ba_params[tid].policy;
+				ul_ba->timeout = ahsta->rx_ba_params[tid].timeout;
+				ath12k_smd_ctx_encode_ba_buf_size(ba_buf_size,
+								  &buf_size_base,
+								  &buf_size_ext);
+				ul_ba->buffer_size = buf_size_base;
+				ul_ba->ext_buffer_size = buf_size_ext;
+			}
+
+			spin_unlock_bh(&ahsta->ba_lock);
+		}
+
+		/* Rx SN computation and REO Bitmap */
+		ath12k_smd_ctx_hw_tid_cb_vendor((void *)reo_status, req, false, tid);
+
+		ath12k_dbg_level(ab, ATH12K_DBG_SMD, ATH12K_DBG_L3,
+				 "UL cb tid: %u sn: %u, pn_len: %u, pn: %*ph, ba_setup: %s, ba_amsdu: %d, ba_policy: %d, ba_buffer_size: %u, ba_timeout: %u",
+				 tid,
+				 req->ctx.ul.sn[tid],
+				 q_stats->pn_len,
+				 q_stats->pn_len, req->ctx.ul.pn[tid],
+				 ba_setup ? "valid" : "invalid",
+				 req->ctx.ul.ba[tid].amsdu_supported,
+				 req->ctx.ul.ba[tid].ba_policy,
+				 ba_buf_size,
+				 req->ctx.ul.ba[tid].timeout);
+
+		spin_unlock_bh(&req->lock);
+		return;
+	}
+
+	/* Mgmt TID */
+	ath12k_smd_ctx_hw_tid_cb_vendor((void *)reo_status, req, false, tid);
+	spin_unlock_bh(&req->lock);
 }

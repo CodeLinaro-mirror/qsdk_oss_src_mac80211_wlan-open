@@ -1745,6 +1745,8 @@ struct hal_ops {
 					     int mac_id,
 					     int idx,
 					     enum hal_ring_type);
+	bool (*hal_rx_reo_status)(struct hal_reo_status *reo_status);
+	bool (*hal_rx_reo_1k_status)(struct hal_reo_status *reo_status);
 };
 
 static inline
@@ -2017,4 +2019,9 @@ void *__ath12k_hal_get_dst_srng_desc(struct hal_srng *srng,
 int __ath12k_hal_srng_dst_num_available_to_reap(struct hal_srng *srng,
 						bool sync_hw_ptr);
 void *ath12k_hal_srng_fetch_entry(struct hal_srng *srng, u16 offset);
+
+bool ath12k_hal_rx_reo_status(struct ath12k_base *ab, struct hal_reo_status *reo_status);
+bool ath12k_hal_rx_reo_1k_status(struct ath12k_base *ab,
+				 struct hal_reo_status *reo_status);
+
 #endif
