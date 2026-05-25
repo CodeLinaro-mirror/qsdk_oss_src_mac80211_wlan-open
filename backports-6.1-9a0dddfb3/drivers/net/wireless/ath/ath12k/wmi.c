@@ -4766,7 +4766,7 @@ int ath12k_wmi_send_smd_roam_config(struct ath12k *ar,
 	     arg->cmd_type == SMD_ROAM_CONFIG_CMD_DYNAMIC_CONTEXT) ||
 	    (arg->role == SMD_ROAM_CONFIG_ROLE_SERVING_AP &&
 	     arg->cmd_type == SMD_ROAM_CONFIG_CMD_EXEC_REQ))
-		len +=  TLV_HDR_SIZE + (ATH12K_SMD_NUM_TIDS * sizeof(*tid_info));
+		len +=  TLV_HDR_SIZE + (IEEE80211_MAX_NUM_TIDS * sizeof(*tid_info));
 
 	/* Allocate an SKB for the command */
 	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
@@ -4804,11 +4804,11 @@ int ath12k_wmi_send_smd_roam_config(struct ath12k *ar,
 
 		ptr += sizeof(*cmd);
 		tlv = ptr;
-		len = ATH12K_SMD_NUM_TIDS * sizeof(*tid_info);
+		len = IEEE80211_MAX_NUM_TIDS * sizeof(*tid_info);
 		tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, len);
 		ptr += TLV_HDR_SIZE;
 
-		for (i = 0; i < ATH12K_SMD_NUM_TIDS; i++) {
+		for (i = 0; i < IEEE80211_MAX_NUM_TIDS; i++) {
 			tid_info = ptr;
 			tid_info->tlv_header =
 				ath12k_wmi_tlv_cmd_hdr(WMI_TAG_SMD_ROAM_PEER_TID_INFO,
@@ -12177,6 +12177,102 @@ static void ath12k_update_assoc_fail_stats(struct ath12k *ar,
 	spin_unlock_bh(&ar->data_lock);
 }
 
+/* Note: called under rcu_read_lock() */
+static void ath12k_update_peer_tx_ba_params(struct ath12k *ar,
+					    struct ieee80211_vif *vif,
+					    struct sk_buff *skb)
+{
+	const u8 *buf, *addba_ext_ie, *end;
+	struct ath12k_link_sta *arsta;
+	u16 capab, buf_size, timeout;
+	struct ieee80211_mgmt *mgmt;
+	struct ieee80211_sta *sta;
+	struct ath12k_sta *ahsta;
+	u8 category, action, tid;
+	bool has_protected;
+	size_t min_len;
+
+	mgmt = (struct ieee80211_mgmt *)skb->data;
+	has_protected = ieee80211_has_protected(mgmt->frame_control);
+	end = skb->data + skb->len;
+
+	min_len = offsetof(struct ieee80211_mgmt, u.action.u.addba_resp.variable);
+	if (has_protected)
+		min_len += IEEE80211_CCMP_HDR_LEN;
+
+	if (skb->len < min_len)
+		return;
+
+	buf = &mgmt->u.action.category;
+
+	if (has_protected)
+		buf += IEEE80211_CCMP_HDR_LEN;
+
+	category = *buf++;
+	action = *buf++;
+
+	if (category != WLAN_CATEGORY_BACK || action != WLAN_ACTION_ADDBA_RESP)
+		return;
+
+	buf += 3; /* skip dialog token and status */
+
+	capab = get_unaligned_le16(buf);
+	buf += 2;
+
+	timeout = get_unaligned_le16(buf);
+	buf += 2;
+
+	tid = u16_get_bits(capab, IEEE80211_ADDBA_PARAM_TID_MASK);
+	buf_size = u16_get_bits(capab, IEEE80211_ADDBA_PARAM_BUF_SIZE_MASK);
+
+	spin_lock_bh(&ar->arsta_lock);
+	arsta = ath12k_link_sta_find_by_addr(ar, mgmt->sa);
+	if (!arsta || !arsta->ahsta) {
+		spin_unlock_bh(&ar->arsta_lock);
+		return;
+	}
+
+	ahsta = arsta->ahsta;
+	sta = ath12k_ahsta_to_sta(ahsta);
+
+	addba_ext_ie = cfg80211_find_ie(WLAN_EID_ADDBA_EXT, (u8 *)mgmt + min_len,
+					skb->len - min_len);
+	if (!addba_ext_ie)
+		goto skip_addba_ext;
+
+	if (addba_ext_ie[1] &&
+	    addba_ext_ie + addba_ext_ie[1] + 1 <= end &&
+	    sta->deflink.eht_cap.has_eht) {
+		u8 buf_size_1k;
+
+		buf_size_1k = u8_get_bits(addba_ext_ie[2],
+					  IEEE80211_ADDBA_EXT_BUF_SIZE_MASK);
+		buf_size |= (u16)buf_size_1k << IEEE80211_ADDBA_EXT_BUF_SIZE_SHIFT;
+
+		buf_size = min(buf_size, IEEE80211_MAX_AMPDU_BUF_EHT);
+	}
+
+skip_addba_ext:
+	spin_lock_bh(&ahsta->ba_lock);
+
+	ahsta->tx_ba_params[tid].valid = true;
+	ahsta->tx_ba_params[tid].tid = tid;
+	ahsta->tx_ba_params[tid].amsdu = capab & IEEE80211_ADDBA_PARAM_AMSDU_MASK;
+	ahsta->tx_ba_params[tid].timeout = timeout;
+	ahsta->tx_ba_params[tid].buf_size = buf_size;
+	ahsta->tx_ba_params[tid].policy =
+		(capab & IEEE80211_ADDBA_PARAM_POLICY_MASK) >> 1;
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_SMD,
+		   "AddBA Response from %pM, tid: %u amsdu: %d timeout: %u buf_size: %u policy: %d",
+		   sta->addr, tid,
+		   ahsta->tx_ba_params[tid].amsdu, timeout, buf_size,
+		   ahsta->tx_ba_params[tid].policy);
+
+	spin_unlock_bh(&ahsta->ba_lock);
+	spin_unlock_bh(&ar->arsta_lock);
+}
+
 static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	struct ath12k_wmi_mgmt_rx_arg rx_ev = {0};
@@ -12192,6 +12288,7 @@ static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 	struct ath12k_mgmt_frame_stats *mgmt_stats;
 	u16 frm_stype;
 	struct ath12k_link_vif *arvif = NULL;
+	struct ieee80211_vif *vif = NULL;
 	struct ieee80211_sta *sta;
 	struct ath12k_sta *ahsta;
 	s8 rssi;
@@ -12369,6 +12466,15 @@ static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 			arsta->min_rssi = min(arsta->min_rssi, rssi);
 		}
 	}
+
+	if (arvif && arvif->ahvif)
+		vif = ath12k_ahvif_to_vif(arvif->ahvif);
+
+	if (vif &&
+	    (vif->type == NL80211_IFTYPE_AP || vif->type == NL80211_IFTYPE_STATION) &&
+	    ieee80211_is_action(hdr->frame_control))
+		ath12k_update_peer_tx_ba_params(ar, vif, skb);
+
 skip_rssi_update:
 	rcu_read_unlock();
 

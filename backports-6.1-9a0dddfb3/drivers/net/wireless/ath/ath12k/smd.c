@@ -603,10 +603,14 @@ static int ath12k_uhr_execute_transition(struct ath12k_vif *ahvif,
 			   "smd: execute_transition sap=%pM tap=%pM assoc_link=%u\n",
 			   current_sta->addr, target_sta->addr,
 			   target_ahsta->assoc_link_id);
+		spin_lock_bh(&current_ahsta->ba_lock);
+		spin_lock_bh(&target_ahsta->ba_lock);
 		memcpy(target_ahsta->rx_ba_params, current_ahsta->rx_ba_params,
 		       sizeof(target_ahsta->rx_ba_params));
 		memcpy(target_ahsta->tx_ba_params, current_ahsta->tx_ba_params,
 		       sizeof(target_ahsta->tx_ba_params));
+		spin_unlock_bh(&target_ahsta->ba_lock);
+		spin_unlock_bh(&current_ahsta->ba_lock);
 	}
 
 	if (target_sta)
@@ -715,12 +719,14 @@ static void ath12k_mac_smd_roam_config(struct ieee80211_hw *hw,
 			if (WARN_ON(!arsta))
 				continue;
 			ether_addr_copy(arg.peer_mac, arsta->addr);
-			for (tid = 0; tid < ATH12K_SMD_NUM_TIDS; tid++) {
+			spin_lock_bh(&ahsta->ba_lock);
+			for (tid = 0; tid < IEEE80211_MAX_NUM_TIDS; tid++) {
 				arg.peer_tid_info[tid].tx_buf_size =
 					ahsta->tx_ba_params[tid].buf_size;
 				arg.peer_tid_info[tid].rx_buf_size =
 					ahsta->rx_ba_params[tid].buf_size;
 			}
+			spin_unlock_bh(&ahsta->ba_lock);
 		}
 		ath12k_dbg(arvif->ar->ab, ATH12K_DBG_SMD,
 			   "smd: roam_config vdev=%u peer=%pM flags=0x%x dl_drain=%u\n",
@@ -869,7 +875,7 @@ static int update_smd_forall_links_locked(struct ieee80211_hw *hw,
 			if (WARN_ON(!arsta))
 				continue;
 			ether_addr_copy(arg.peer_mac, arsta->addr);
-			for (i = 0; i < ATH12K_SMD_NUM_TIDS; i++) {
+			for (i = 0; i < IEEE80211_MAX_NUM_TIDS; i++) {
 				arg.peer_tid_info[i].tx_buf_size = 0;
 				arg.peer_tid_info[i].rx_buf_size = 0;
 			}
