@@ -22524,20 +22524,25 @@ static inline struct ath12k *ath12k_mac_get_ar(struct ath12k_hw *ah,
 static struct ieee80211_chanctx_conf *ath12k_mac_get_ctx_for_bridge(struct ath12k_hw *ah, u8 link_idx)
 {
 	struct ath12k *ar;
-	struct ath12k_link_vif *arvif;
+	struct ath12k_link_vif *arvif = NULL;
+	struct ieee80211_channel *chan;
 
 	ar = ath12k_mac_get_ar(ah, link_idx);
 	if (!ar)
 		return NULL;
 
-	arvif = list_first_entry_or_null(&ar->arvifs, struct ath12k_link_vif,
-					 list);
-
-	if (arvif && !(ATH12K_SCAN_LINKS_MASK & BIT(arvif->link_id)) &&
-	    arvif->chanctx.def.chan)
-		return &arvif->chanctx;
-	else
-		return NULL;
+	list_for_each_entry(arvif, &ar->arvifs, list) {
+		if (arvif && !(ATH12K_SCAN_LINKS_MASK & BIT(arvif->link_id)) &&
+		    arvif->chanctx.def.chan) {
+			chan = arvif->chanctx.def.chan;
+			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
+					 "selected arvif link_id=%u bssid=%pM freq %d\n",
+					 arvif->link_id, arvif->bssid,
+					 chan->center_freq);
+			return &arvif->chanctx;
+		}
+	}
+	return NULL;
 }
 
 static bool ath12k_mac_need_ctx_sync(struct ieee80211_chanctx_conf *new_ctx,
