@@ -172,7 +172,7 @@ static int ath12k_wifi8_dp_ppeds_alloc_vp_tbl_entry(struct ath12k_base *ab,
 	if (central_ab->dp->ppe.ppe_vp_tbl_registered[ppe_vp_profile_idx]) {
 		ath12k_err(central_ab, "Entry exist:vp_tbl enty alloc failed:%d\n",
 				ppe_vp_profile_idx);
-		return -ENOSR;
+		return ppe_vp_profile_idx;
 	}
 
 	central_ab->dp->ppe.num_ppe_vp_entries++;
@@ -192,9 +192,10 @@ static int ath12k_wifi8_dp_ppeds_alloc_vp_search_idx_tbl_entry(struct ath12k_bas
 	}
 
 	if (central_ab->dp->ppe.ppe_vp_search_idx_tbl_set[ppe_vp_profile_idx]) {
-		ath12k_err(central_ab, "Entry exist:vp_srch_idx_tbl alloc failed:%d\n",
+		ath12k_dbg(central_ab, ATH12K_DBG_PPE,
+				"Entry exist:vp_srch_idx_tbl alloc failed:%d\n",
 				ppe_vp_profile_idx);
-		return -ENOSR;
+		return (ppe_vp_profile_idx & PPE_VP_WIFI8_SEARCH_INDEX_REG_NUM_MASK);
 	}
 
 	central_ab->dp->ppe.num_ppe_vp_search_idx_entries++;
@@ -229,6 +230,133 @@ ath12k_wifi8_dp_ppeds_get_vp_profile(struct ath12k_base *ab,
 	}
 
 	return &central_ab->dp->ppe.ppe_vp_profile[ppe_vp_idx];
+}
+
+int ath12k_wifi8_ppeds_attach_vif(struct ath12k_base *ab,
+				struct ath12k_vif *ahvif,
+				u32 vdev_id, int bank_id, u8 lmac_id)
+{
+	struct wireless_dev *wdev = ieee80211_vif_to_wdev(ahvif->vif);
+	struct ath12k_dp_ppe_vp_profile *vp_profile = NULL;
+	struct ath12k_ppe *ppe = &ab->dp->ppe;
+	int ppe_vp_profile_idx, ppe_vp_tbl_idx = -1;
+	int ppe_vp_search_tbl_idx = -1;
+	int ret;
+	enum nl80211_iftype vif_type;
+	struct ath12k_ppeds_arch_ops *ppe_ops = ppe->ppe_ops;
+	int vp_num = ahvif->dp_vif.ppe_vp_num;
+
+	if (!wdev)
+		return -EOPNOTSUPP;
+
+	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
+		return 0;
+
+	if (vp_num <= 0)
+		return 0;
+
+	if (ahvif->vif->type != NL80211_IFTYPE_AP &&
+		ahvif->vif->type != NL80211_IFTYPE_STATION) {
+		ath12k_dbg(ab, ATH12K_DBG_PPE,
+			   "DS is not supported for vap type %d\n", ahvif->vif->type);
+		return 0;
+	}
+
+	/*Allocate a ppe vp profile for a vap */
+	spin_lock(&ppe->ppe_vp_tbl_lock);
+	if (!ppe_ops->ath12k_dp_ppeds_alloc_ppe_vp_profile) {
+		ath12k_dbg(ab, ATH12K_DBG_PPE,
+			   "Alloc handle not present:%s",
+			   wdev->netdev->name);
+		spin_unlock(&ppe->ppe_vp_tbl_lock);
+		return 0;
+	}
+	ppe_vp_profile_idx =
+		ppe_ops->ath12k_dp_ppeds_alloc_ppe_vp_profile(ab,
+				&vp_profile, vp_num);
+	if (!vp_profile) {
+		ath12k_dbg(ab, ATH12K_DBG_PPE,
+			   "flows for %s cannot get vp_profile",
+			   wdev->netdev->name);
+		spin_unlock(&ppe->ppe_vp_tbl_lock);
+		return 0;
+	}
+
+	if (!ppe_ops->ath12k_dp_ppeds_alloc_vp_tbl_entry) {
+		ath12k_err(ab, "Alloc failed vdev_id:%d", vdev_id);
+		ret = -ENOSR;
+		goto dealloc_vp_profile;
+	}
+	ppe_vp_tbl_idx =
+		ppe_ops->ath12k_dp_ppeds_alloc_vp_tbl_entry(ab,
+				ppe_vp_profile_idx);
+	if (ppe_vp_tbl_idx < 0) {
+		ath12k_err(ab, "Failed to allocate PPE VP idx for vdev_id:%d", vdev_id);
+		ret = -ENOSR;
+		goto dealloc_vp_profile;
+	}
+
+	if (ahvif->vif->type == NL80211_IFTYPE_STATION) {
+		if (!ppe_ops->ath12k_dp_ppeds_alloc_vp_search_idx_tbl_entry) {
+			ath12k_err(ab,
+					"Failed srch idx tbl alloc - vdev_id:%d",
+					vdev_id);
+			ret = -ENOSR;
+			goto dealloc_vp_profile;
+		}
+		ppe_vp_search_tbl_idx =
+			ppe_ops->ath12k_dp_ppeds_alloc_vp_search_idx_tbl_entry(ab,
+					ppe_vp_profile_idx);
+		if (ppe_vp_search_tbl_idx < 0) {
+			ath12k_err(ab,
+				"Failed to alloc srch tbl idx for vdev_id:%d", vdev_id);
+			ret = -ENOSR;
+			goto dealloc_vp_profile;
+		}
+		vp_profile->search_idx_reg_num = ppe_vp_search_tbl_idx;
+	}
+
+	vp_profile->vp_num = vp_num;
+	vp_profile->ppe_vp_num_idx = ppe_vp_tbl_idx;
+	vp_profile->to_fw = 0;
+	vp_profile->use_ppe_int_pri = 0;
+	vp_profile->drop_prec_enable = 0;
+	vp_profile->entry_valid = true;
+
+	ahvif->dp_vif.ppe_vp_profile_idx = ppe_vp_profile_idx;
+
+	ath12k_dp_ppeds_tx_set_ppe_vp_entry(ab, vp_profile,
+					    ppe_vp_profile_idx,
+					    vdev_id, bank_id, lmac_id);
+
+	spin_unlock(&ppe->ppe_vp_tbl_lock);
+
+	ath12k_dbg(ab, ATH12K_DBG_PPE,
+			"PPEDS vp profile setup success soc:%d node_id:%d vdev_id %d\n",
+			ab->dp->ppe.ppeds_soc_idx, ab->dp->ppe.ds_node_id, vdev_id);
+	ath12k_dbg(ab, ATH12K_DBG_PPE,
+			"vpnum:%d ppe_vp_idx:%d ppe_vp_tbl_idx:%d to_fw %d int_pri %d\n",
+			vp_num, ppe_vp_profile_idx, ppe_vp_tbl_idx, vp_profile->to_fw,
+			vp_profile->use_ppe_int_pri);
+	ath12k_dbg(ab, ATH12K_DBG_PPE,
+			"prec_en %d search_idx_reg_num %d\n",
+			vp_profile->drop_prec_enable, vp_profile->search_idx_reg_num);
+
+	return 0;
+
+dealloc_vp_profile:
+	vif_type = ahvif->vif->type;
+	if (!ppe_ops->ath12k_dp_ppeds_dealloc_ppe_vp_profile) {
+		ath12k_err(ab, "Failed to dealloc vp profile:vdev_id:%d",
+				vdev_id);
+		spin_unlock(&ppe->ppe_vp_tbl_lock);
+		return ret;
+	}
+	ppe_ops->ath12k_dp_ppeds_dealloc_ppe_vp_profile(ab,
+			ppe_vp_profile_idx, vif_type);
+	spin_unlock(&ppe->ppe_vp_tbl_lock);
+
+	return ret;
 }
 
 irqreturn_t ath12k_wifi8_ds_ppe2tcl_irq_handler(int irq, void *ctxt)
