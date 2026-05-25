@@ -172,7 +172,7 @@ struct ath12k_dp_peer {
 	u8 hw_link_id;
 
 	u8 primary_link_id;
-	u8 assoc_link_id;
+	u8 assoc_hw_link_id;
 
 	/* Lock for protection of link_peers*/
 	spinlock_t link_peers_lock;
