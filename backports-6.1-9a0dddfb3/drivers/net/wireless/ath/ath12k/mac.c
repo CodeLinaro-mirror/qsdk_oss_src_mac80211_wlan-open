@@ -10040,6 +10040,15 @@ static int ath12k_start_scan(struct ath12k *ar,
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
+#ifdef CPTCFG_QCN_EXTN
+	spin_lock_bh(&ar->ar_extn.cbs.lock);
+	if (ath12k_cbs_allow_mac80211_scan(ar)) {
+		spin_unlock_bh(&ar->ar_extn.cbs.lock);
+		return -EBUSY;
+	}
+	spin_unlock_bh(&ar->ar_extn.cbs.lock);
+#endif
+
 	if (ath12k_spectral_get_mode(ar) == ATH12K_SPECTRAL_BACKGROUND)
 		ath12k_spectral_reset_buffer(ar);
 
