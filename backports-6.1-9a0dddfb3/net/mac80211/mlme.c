@@ -1431,7 +1431,7 @@ ieee80211_sta_bw_reconfig_start_csa(struct ieee80211_link_data *link,
 
 	cfg80211_ch_switch_started_notify(sdata->dev, &csa_ie.chanreq.oper,
 					  link->link_id, csa_ie.count,
-					  csa_ie.mode);
+					  csa_ie.mode, 0);
 
 	now = jiffies;
 	link->u.mgd.csa.time = now +
