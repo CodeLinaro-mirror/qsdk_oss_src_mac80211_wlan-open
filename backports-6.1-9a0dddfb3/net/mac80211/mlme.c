@@ -1421,7 +1421,7 @@ ieee80211_sta_bw_reconfig_start_csa(struct ieee80211_link_data *link,
 	link->u.mgd.beacon_crc_valid = false;
 	link->u.mgd.csa.blocked_tx = csa_ie.mode;
 	link->u.mgd.csa.bw_reconfig = true;
-	if (csa_ie.mode)
+	if (csa_ie.mode && !ieee80211_vif_is_mld(&sdata->vif))
 		ieee80211_vif_block_queues_csa(sdata);
 
 	link_info(link,
@@ -3407,7 +3407,7 @@ ieee80211_sta_process_chanswitch(struct ieee80211_link_data *link,
 	link->u.mgd.csa.blocked_tx = csa_ie.mode;
 	link->u.mgd.csa.bw_reconfig = false;
 
-	if (csa_ie.mode)
+	if (csa_ie.mode && !ieee80211_vif_is_mld(&sdata->vif))
 		ieee80211_vif_block_queues_csa(sdata);
 
 	cfg80211_ch_switch_started_notify(sdata->dev, &csa_ie.chanreq.oper,
