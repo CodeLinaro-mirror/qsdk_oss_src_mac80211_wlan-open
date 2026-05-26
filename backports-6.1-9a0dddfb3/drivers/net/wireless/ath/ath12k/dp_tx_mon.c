@@ -5,8 +5,8 @@
 
 #include "dp_mon.h"
 #include "dp_tx_mon.h"
+#include "dp_mon_filter.h"
 
-#ifdef CPTCFG_ATH12K_TX_MONITOR
 /**
  * ath12k_dp_mon_tx_setup_ppdu_desc() - Setup TX monitor PPDU descriptor pool
  * @dp_pdev: Pointer to DP PDEV context for device-specific operations
@@ -108,12 +108,6 @@ static int ath12k_dp_mon_tx_wq_init(struct ath12k_pdev_dp *dp_pdev)
 	} else {
 		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
 			   "TX monitor vendor TLV already allocated, reusing\n");
-	}
-
-	if (WARN_ON(dp_mon_pdev->txmon_wq)) {
-		ath12k_err(dp_pdev->dp->ab,
-			   "TX monitor work queue not cleaned up properly\n");
-		return -EINVAL;
 	}
 
 	INIT_LIST_HEAD(&dp_mon_pdev->tx_mon_desc_work_list);
@@ -299,18 +293,6 @@ void ath12k_dp_mon_tx_wq_stop(struct ath12k_pdev_dp *dp_pdev)
 	}
 }
 EXPORT_SYMBOL(ath12k_dp_mon_tx_wq_stop);
-#else
-int ath12k_dp_mon_tx_wq_start(struct ath12k_pdev_dp *dp_pdev, u32 mac_id)
-{
-	return 0;
-}
-EXPORT_SYMBOL(ath12k_dp_mon_tx_wq_start);
-
-void ath12k_dp_mon_tx_wq_stop(struct ath12k_pdev_dp *dp_pdev)
-{
-}
-EXPORT_SYMBOL(ath12k_dp_mon_tx_wq_stop);
-#endif
 
 /**
  * ath12k_dp_mon_tx_desc_free() - Free monitor descriptors
@@ -3565,3 +3547,1032 @@ move_next:
 	return num_buffs_reaped;
 }
 EXPORT_SYMBOL(ath12k_dp_mon_tx_process_ring);
+
+int ath12k_dp_mon_tx_srng_alloc(struct ath12k_dp *dp)
+{
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	int ret = 0;
+
+	if (!ath12k_dp_tx_mon_feature_eval(dp))
+		return 0;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (!mon_ops) {
+		ath12k_err(dp->ab, "TX Monitor: No monitor ops available");
+		return -EINVAL;
+	}
+
+	if (mon_ops->mon_tx_srng_alloc_setup) {
+		ret = mon_ops->mon_tx_srng_alloc_setup(dp);
+		if (ret)
+			ath12k_err(dp->ab, "TX Monitor: SRNG setup failed, ret=%d", ret);
+	}
+
+	return ret;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_srng_alloc);
+
+void ath12k_dp_mon_tx_htt_src_ring_cleanup(struct ath12k_dp *dp)
+{
+	const struct ath12k_dp_arch_mon_ops *mon_ops  = ath12k_dp_mon_ops_get(dp);
+
+	if (mon_ops && mon_ops->mon_tx_htt_srng_cleanup)
+		mon_ops->mon_tx_htt_srng_cleanup(dp);
+}
+
+void ath12k_dp_mon_tx_pdev_free(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_dp *dp;
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+
+	if (unlikely(!dp_pdev)) {
+		ath12k_err(NULL, "Tx Mon: Invalid DP Pdev\n");
+		return;
+	}
+
+	dp = dp_pdev->dp;
+	if (!ath12k_dp_tx_mon_feature_eval(dp))
+		return;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (!mon_ops)
+		return;
+
+	if (mon_ops->mon_tx_wq_stop)
+		mon_ops->mon_tx_wq_stop(dp_pdev);
+	if (mon_ops->mon_tx_dst_ring_cleanup)
+		mon_ops->mon_tx_dst_ring_cleanup(dp_pdev);
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_pdev_free);
+
+int ath12k_dp_mon_tx_htt_src_ring_setup(struct ath12k_dp *dp)
+{
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	int ret = -EINVAL;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (mon_ops && mon_ops->mon_tx_htt_srng_setup) {
+		ret = mon_ops->mon_tx_htt_srng_setup(dp);
+		if (ret)
+			ath12k_err(dp->ab, "TX Monitor: srng htt setup failed(%d)", ret);
+	}
+
+	return ret;
+}
+
+int ath12k_dp_mon_tx_config_monitor_mode(struct ath12k *ar, bool set)
+{
+	struct ath12k_base *ab;
+	struct ath12k_dp *dp;
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	struct ath12k_pdev_dp *dp_pdev;
+	int ret = -EINVAL;
+
+	if (unlikely(!ar || !ar->ab)) {
+		ath12k_err(NULL, "Invalid Radio / Radio base\n");
+		return -EINVAL;
+	}
+
+	ab = ar->ab;
+	dp = ath12k_ab_to_dp(ab);
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+	dp_pdev = &ar->dp;
+
+	if (set) {
+		ret = ath12k_dp_mon_tx_htt_src_ring_setup(dp);
+		if (ret) {
+			ath12k_err(dp->ab, "TX Monitor: HTT setup failed, ret=%d", ret);
+			return ret;
+		}
+	}
+
+	if (mon_ops && mon_ops->mon_tx_filter_configure) {
+		ret = mon_ops->mon_tx_filter_configure(dp_pdev, set);
+		if (ret)
+			ath12k_err(dp->ab, "TX Monitor: Filter config failed, ret=%d",
+				   ret);
+	}
+
+	return ret;
+}
+
+int ath12k_dp_mon_tx_update_filter(struct ath12k *ar)
+{
+	struct ath12k_base *ab;
+	struct ath12k_dp *dp;
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	struct ath12k_pdev_dp *dp_pdev;
+	int ret = -EINVAL;
+
+	if (unlikely(!ar || !ar->ab)) {
+		ath12k_err(NULL, "Invalid Radio / Radio base\n");
+		return -EINVAL;
+	}
+
+	ab = ar->ab;
+	dp_pdev = &ar->dp;
+	dp = ath12k_ab_to_dp(ab);
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (mon_ops && dp_pdev && mon_ops->mon_tx_filter_update)
+		ret = mon_ops->mon_tx_filter_update(dp_pdev);
+
+	if (ret)
+		ath12k_warn(ab, "Tx Mon : Filter update failed\n");
+
+	return ret;
+}
+
+void ath12k_dp_mon_tx_srng_free(struct ath12k_dp *dp)
+{
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+
+	if (!ath12k_dp_tx_mon_feature_eval(dp))
+		return;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	ath12k_dp_mon_tx_htt_src_ring_cleanup(dp);
+
+	if (mon_ops && mon_ops->mon_tx_srng_cleanup)
+		mon_ops->mon_tx_srng_cleanup(dp);
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_srng_free);
+
+int ath12k_dp_mon_tx_pdev_alloc(struct ath12k_pdev_dp *dp_pdev,
+				u32 mac_id)
+{
+	struct ath12k_dp *dp;
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	int ret = 0;
+
+	if (unlikely(!dp_pdev)) {
+		ath12k_err(NULL, "Tx Mon: Invalid DP Pdev\n");
+		return -EINVAL;
+	}
+
+	dp = dp_pdev->dp;
+	if (!ath12k_dp_tx_mon_feature_eval(dp))
+		return 0;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (!mon_ops) {
+		ath12k_warn(dp, "Tx Mon: mon ops is NULL\n");
+		return -EINVAL;
+	}
+
+	if (mon_ops->mon_tx_dst_ring_alloc_setup) {
+		ret = mon_ops->mon_tx_dst_ring_alloc_setup(dp_pdev, mac_id);
+		if (ret) {
+			ath12k_warn(dp, "Tx Mon: failed to alloc dst ring\n");
+			return ret;
+		}
+	}
+
+	if (mon_ops->mon_tx_wq_start) {
+		ret = mon_ops->mon_tx_wq_start(dp_pdev, mac_id);
+		if (ret)
+			ath12k_warn(dp, "failed to start TX mon WQ for mac_id %d: %d\n",
+				    mac_id, ret);
+	}
+
+	return ret;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_pdev_alloc);
+
+int ath12k_dp_mon_tx_desc_pool_alloc(struct ath12k_dp *dp)
+{
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
+	int ret = 0;
+
+	spin_lock_init(&dp_mon->tx_mon_desc_lock);
+	spin_lock_bh(&dp_mon->tx_mon_desc_lock);
+	dp_mon->tx_mon_buf_ring_ready = false;
+	dp_mon->tx_mon_desc_pool = kcalloc(DP_TX_MONITOR_BUF_RING_SIZE,
+					   sizeof(*dp_mon->tx_mon_desc_pool),
+					   GFP_ATOMIC);
+	if (!dp_mon->tx_mon_desc_pool) {
+		ath12k_warn(dp, "failed to allocate memory for tx mon desc pool\n");
+		ret = -ENOMEM;
+	}
+	spin_unlock_bh(&dp_mon->tx_mon_desc_lock);
+	return ret;
+}
+
+void ath12k_dp_mon_tx_desc_pool_free(struct ath12k_dp *dp)
+{
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
+
+	spin_lock_bh(&dp_mon->tx_mon_desc_lock);
+	kfree(dp_mon->tx_mon_desc_pool);
+	dp_mon->tx_mon_desc_pool = NULL;
+	spin_unlock_bh(&dp_mon->tx_mon_desc_lock);
+}
+
+size_t ath12k_dp_mon_get_tx_free_desc_list(struct ath12k_dp *dp,
+					   struct dp_rxdma_mon_ring *rx_ring,
+					   struct list_head *list)
+{
+	struct dp_mon_desc_list_params list_params = {
+		.desc_lock = &dp->dp_mon->tx_mon_desc_lock,
+		.free_list = &dp->dp_mon->tx_mon_desc_free_list,
+		.list_local = list,
+	};
+
+	return ath12k_dp_mon_get_free_desc_list(dp, rx_ring, &list_params);
+}
+
+int ath12k_dp_mon_tx_buff_alloc(struct ath12k_dp *dp)
+{
+	struct ath12k_base *ab = dp->ab;
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
+	struct dp_rxdma_mon_ring *tx_ring;
+	int num_entries, ret = -EINVAL, i, free_list_count;
+	LIST_HEAD(list);
+
+	INIT_LIST_HEAD(&dp_mon->tx_mon_desc_free_list);
+
+	spin_lock_bh(&dp_mon->tx_mon_desc_lock);
+	if (!dp_mon->tx_mon_desc_pool) {
+		spin_unlock_bh(&dp_mon->tx_mon_desc_lock);
+		ath12k_warn(dp, "tx mon desc pool not available\n");
+		return -ENOMEM;
+	}
+
+	if (dp_mon->tx_mon_buf_ring_ready) {
+		spin_unlock_bh(&dp_mon->tx_mon_desc_lock);
+		ath12k_dbg(dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "TX monitor: Buffers available\n");
+		return 0;
+	}
+
+	for (i = 0; i < DP_TX_MONITOR_BUF_RING_SIZE; i++) {
+		dp_mon->tx_mon_desc_pool[i].magic = ATH12K_MON_MAGIC_VALUE;
+		INIT_LIST_HEAD(&dp_mon->tx_mon_desc_pool[i].list);
+		list_add_tail(&dp_mon->tx_mon_desc_pool[i].list,
+			      &dp_mon->tx_mon_desc_free_list);
+	}
+
+	spin_unlock_bh(&dp_mon->tx_mon_desc_lock);
+
+	tx_ring = &dp_mon->tx_mon_buf_ring;
+
+	num_entries =  tx_ring->refill_buf_ring.size /
+		ath12k_hal_srng_get_entrysize(ab, HAL_TX_MONITOR_BUF);
+	tx_ring->bufs_max = num_entries;
+
+	free_list_count =
+		ath12k_dp_mon_get_tx_free_desc_list(dp, tx_ring, &list);
+
+	if (unlikely(!free_list_count)) {
+		ath12k_warn(dp, "Tx Mon: No entries available for mon buf ring\n");
+		return -ENOMEM;
+	}
+
+	ret = ath12k_dp_mon_tx_buf_replenish(dp, tx_ring, &list, free_list_count);
+	if (ret) {
+		ath12k_warn(dp, "Tx Mon: Replenish of mon buf ring failed\n");
+		return ret;
+	}
+
+	spin_lock_bh(&dp_mon->tx_mon_desc_lock);
+	dp_mon->tx_mon_buf_ring_ready = true;
+	spin_unlock_bh(&dp_mon->tx_mon_desc_lock);
+
+	return ret;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_buff_alloc);
+
+int ath12k_dp_mon_tx_htt_dst_ring_setup(struct ath12k_pdev_dp *dp_pdev, u32 mac_id)
+{
+	struct ath12k_dp *dp = dp_pdev->dp;
+	u32 ring_id;
+	int ret;
+
+	ring_id = dp_pdev->dp_mon_pdev->tx_mon_dst_ring.ring_id;
+	ret = ath12k_dp_tx_htt_srng_setup(dp->ab, ring_id, mac_id,
+					  HAL_TX_MONITOR_DST);
+	if (ret)
+		ath12k_warn(dp->ab, "TX Monitor: failed to configure dst ring %d\n", ret);
+
+	return ret;
+}
+
+int ath12k_dp_mon_tx_monitor_start_stop(struct ath12k *ar, bool state)
+{
+	int ret = -EOPNOTSUPP;
+	struct ath12k_pdev_mon_dp *dp_mon_pdev;
+
+	dp_mon_pdev = ar->dp.dp_mon_pdev;
+	if (!dp_mon_pdev) {
+		ath12k_warn(ar->ab, "Tx Monitor: Invalid Pdev (%d)\n",
+			    ret);
+		return ret;
+	}
+
+	if (state && dp_mon_pdev->tx_monitor_started) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_DP_MON,
+			   "Tx mon already active on requested interface\n");
+		return 0;
+	}
+
+	if (!state && !dp_mon_pdev->tx_monitor_started) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_DP_MON,
+			   "Not running Tx mon on requested interface\n");
+		return 0;
+	}
+
+	ret = ath12k_dp_mon_tx_config_monitor_mode(ar, state);
+	if (ret) {
+		ath12k_warn(ar->ab, "Tx Monitor: Configuration Failure %d\n",
+			    ret);
+		return ret;
+	}
+
+	ret = ath12k_dp_mon_tx_update_filter(ar);
+	if (ret) {
+		ath12k_warn(ar->ab, "Tx Monitor: fail tx monitor filter update ret %d\n",
+			    ret);
+		/* always set tx mon mode as false in case of failure*/
+		if (ath12k_dp_mon_tx_config_monitor_mode(ar, false)) {
+			ath12k_err(ar->ab,
+				   "Tx Mon: Config failure potential state mismatch\n");
+			return ret;
+		}
+		dp_mon_pdev->tx_monitor_started = false;
+		return ret;
+	}
+	dp_mon_pdev->tx_monitor_started = state;
+	return ret;
+}
+
+int ath12k_dp_mon_tx_set_monitor_flags(struct ath12k *ar, u32 new_flags, u32 *cur_flags)
+{
+	bool req_state;
+	int ret = -EINVAL;
+	struct ath12k_pdev_mon_dp *dp_mon_pdev;
+
+	dp_mon_pdev = ar->dp.dp_mon_pdev;
+	if (!dp_mon_pdev) {
+		ath12k_warn(ar->ab, "Tx Monitor: Invalid Pdev (%d)\n", ret);
+		return ret;
+	}
+
+	if (!ath12k_dp_tx_mon_feature_eval(ar->dp.dp))
+		return 0;
+
+	req_state = !(new_flags & MONITOR_FLAG_SKIP_TX);
+	ret = ath12k_dp_mon_tx_monitor_start_stop(ar, req_state);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "Tx Monitor: Attempted %d state change failed(%d)\n",
+			    req_state, ret);
+		return ret;
+	}
+	*cur_flags &= ~MONITOR_FLAG_SKIP_TX; // Clear Flag
+	*cur_flags |= new_flags & MONITOR_FLAG_SKIP_TX;
+	ath12k_dbg(ar->ab, ATH12K_DBG_DP_MON_TX, "Tx Monitor req. state:%d ret (%d)\n",
+		   dp_mon_pdev->tx_monitor_started, ret);
+	return ret;
+}
+
+bool ath12k_dp_tx_mon_feature_eval(struct ath12k_dp *dp)
+{
+	struct ath12k_base *ab;
+
+	if (!dp)
+		return false;
+
+	ab = dp->ab;
+	if (!ab || !ab->cfg_ctx)
+		return false;
+
+	if (!ab->hw_params)
+		return false;
+
+	if (!DP_TX_MONITOR || !ab->hw_params->supports_tx_monitor) {
+		ab->hw_params->supports_tx_monitor = false;
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "TX Monitor disabled\n");
+		return false;
+	}
+
+	return true;
+}
+EXPORT_SYMBOL(ath12k_dp_tx_mon_feature_eval);
+
+void ath12k_dp_mon_tx_buff_free(struct ath12k_dp *dp)
+{
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
+	dma_addr_t dma_paddr;
+	int i;
+	u8 *tx_mon_buf;
+
+	spin_lock_bh(&dp_mon->tx_mon_desc_lock);
+	dp_mon->tx_mon_buf_ring_ready = false;
+
+	if (!dp_mon->tx_mon_desc_pool) {
+		spin_unlock_bh(&dp_mon->tx_mon_desc_lock);
+		return;
+	}
+
+	for (i = 0; i < DP_TX_MONITOR_BUF_RING_SIZE; i++) {
+		if (dp_mon->tx_mon_desc_pool[i].in_use != DP_MON_DESC_TO_HW)
+			continue;
+
+		tx_mon_buf = dp_mon->tx_mon_desc_pool[i].mon_buf;
+
+		if (tx_mon_buf) {
+			dma_paddr = dp_mon->tx_mon_desc_pool[i].paddr;
+			ath12k_core_dma_unmap_page(dp->dev, dma_paddr,
+						   ATH12K_DP_MON_TX_BUF_SIZE,
+						   DMA_FROM_DEVICE);
+			page_frag_free(tx_mon_buf);
+			dp_mon->tx_num_frag_free++;
+		}
+		ath12k_dp_mon_desc_reset(&dp_mon->tx_mon_desc_pool[i]);
+	}
+
+	spin_unlock_bh(&dp_mon->tx_mon_desc_lock);
+}
+
+void ath12k_dp_mon_tx_display_filters(struct ath12k_dp *dp,
+				      enum dp_mon_tx_filter_mode mode,
+				      struct dp_mon_tx_filter *filter)
+{
+	struct ath12k_base *ab =  dp->ab;
+	struct htt_tx_ring_tlv_filter *src_tlv_filter =
+				&filter->filter;
+	if (!ab) {
+		ath12k_err(NULL, "ath12k base invalid - skip tx filter display\n");
+		return;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "TX MON RING TLV FILTER CONFIG");
+	ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "[Mode: %d]: Valid: %d",
+		   mode, filter->valid);
+	if (filter->valid) {
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "downstream TLV Flags: 0x%X",
+			   src_tlv_filter->tx_mon_downstream_tlv_flags);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "upstream TLV Flags-0: 0x%X",
+			   src_tlv_filter->tx_mon_upstream_tlv_flags0);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "upstream TLV Flags-1: 0x%X",
+			   src_tlv_filter->tx_mon_upstream_tlv_flags1);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "upstream TLV Flags-2: 0x%X",
+			   src_tlv_filter->tx_mon_upstream_tlv_flags2);
+
+		/* Print wmask configuration */
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "wmask pcu_ppdu_setup_init: 0x%X",
+			   src_tlv_filter->wmask.pcu_ppdu_setup_init);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "wmask tx_peer_entry: 0x%X",
+			   src_tlv_filter->wmask.tx_peer_entry);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "wmask tx_queue_ext: 0x%X",
+			   src_tlv_filter->wmask.tx_queue_ext);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "wmask tx_fes_status_end: 0x%X",
+			   src_tlv_filter->wmask.tx_fes_status_end);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "wmask response_end_status: 0x%X",
+			   src_tlv_filter->wmask.response_end_status);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "wmask tx_fes_status_prot: 0x%X",
+			   src_tlv_filter->wmask.tx_fes_status_prot);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "wmask tx_fes_setup: 0x%X",
+			   src_tlv_filter->wmask.tx_fes_setup);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "wmask tx_msdu_start: 0x%X",
+			   src_tlv_filter->wmask.tx_msdu_start);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "wmask tx_mpdu_start: 0x%X",
+			   src_tlv_filter->wmask.tx_mpdu_start);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "wmask rxpcu_user_setup: 0x%X",
+			   src_tlv_filter->wmask.rxpcu_user_setup);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "wmask compaction_enable: %d",
+			   src_tlv_filter->wmask.compaction_enable);
+
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "mgmt filter enable: %d",
+			   src_tlv_filter->tx_mon_mgmt_filter);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "data filter enable: %d",
+			   src_tlv_filter->tx_mon_data_filter);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "ctrl filter enable: %d",
+			   src_tlv_filter->tx_mon_ctrl_filter);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "packet dma length data: %d",
+			   src_tlv_filter->tx_mon_data_pkt_dma_len);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "packet dma length ctrl: %d",
+			   src_tlv_filter->tx_mon_ctrl_pkt_dma_len);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "packet dma length mgmt: %d",
+			   src_tlv_filter->tx_mon_mgmt_pkt_dma_len);
+
+		/* Print MPDU/MSDU start/end flags */
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "mgmt_mpdu_end: %d",
+			   src_tlv_filter->mgmt_mpdu_end);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "mgmt_msdu_end: %d",
+			   src_tlv_filter->mgmt_msdu_end);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "mgmt_msdu_start: %d",
+			   src_tlv_filter->mgmt_msdu_start);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "mgmt_mpdu_start: %d",
+			   src_tlv_filter->mgmt_mpdu_start);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "ctrl_mpdu_end: %d",
+			   src_tlv_filter->ctrl_mpdu_end);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "ctrl_msdu_end: %d",
+			   src_tlv_filter->ctrl_msdu_end);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "ctrl_msdu_start: %d",
+			   src_tlv_filter->ctrl_msdu_start);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "ctrl_mpdu_start: %d",
+			   src_tlv_filter->ctrl_mpdu_start);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "data_mpdu_end: %d",
+			   src_tlv_filter->data_mpdu_end);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "data_msdu_end: %d",
+			   src_tlv_filter->data_msdu_end);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "data_msdu_start: %d",
+			   src_tlv_filter->data_msdu_start);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "data_mpdu_start: %d",
+			   src_tlv_filter->data_mpdu_start);
+
+		/* Print additional boolean flags */
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "txmon_disable: %d",
+			   src_tlv_filter->txmon_disable);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "mgmt_mpdu_msdu_log_en: %d",
+			   src_tlv_filter->mgmt_mpdu_msdu_log_en);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "ctrl_mpdu_msdu_log_en: %d",
+			   src_tlv_filter->ctrl_mpdu_msdu_log_en);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "data_mpdu_msdu_log_en: %d",
+			   src_tlv_filter->data_mpdu_msdu_log_en);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "mgmt_log_typ: %d",
+			   src_tlv_filter->mgmt_log_typ);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "ctrl_log_typ: %d",
+			   src_tlv_filter->ctrl_log_typ);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "data_log_typ: %d",
+			   src_tlv_filter->data_log_typ);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "mac_addr_filter_en: %d",
+			   src_tlv_filter->mac_addr_filter_en);
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_display_filters);
+
+void
+ath12k_dp_mon_tx_setup_mon_mode_filter(struct ath12k_dp *dp,
+				       struct htt_tx_ring_tlv_filter *src_tlv_filter)
+{
+	src_tlv_filter->tx_mon_downstream_tlv_flags =
+					HTT_TX_MON_FILTER_DW_STRM_TLV_DEFAULT_MODE;
+	src_tlv_filter->tx_mon_upstream_tlv_flags0 =
+					HTT_TX_MON_FILTER_UP_STRM_TLV_FLAG0;
+	src_tlv_filter->tx_mon_upstream_tlv_flags1 =
+					HTT_TX_MON_FILTER_UP_STRM_TLV_FLAG1;
+	src_tlv_filter->tx_mon_upstream_tlv_flags2 =
+					HTT_TX_MON_FILTER_UP_STRM_TLV_FLAG2;
+
+	src_tlv_filter->tx_mon_mgmt_filter = 0x1;
+	src_tlv_filter->tx_mon_data_filter = 0x1;
+	src_tlv_filter->tx_mon_ctrl_filter = 0x1;
+
+	src_tlv_filter->mgmt_mpdu_end = 1;
+	src_tlv_filter->mgmt_msdu_end = 1;
+	src_tlv_filter->mgmt_msdu_start = 1;
+	src_tlv_filter->mgmt_mpdu_start = 1;
+	src_tlv_filter->ctrl_mpdu_end = 1;
+	src_tlv_filter->ctrl_msdu_end = 1;
+	src_tlv_filter->ctrl_msdu_start = 1;
+	src_tlv_filter->ctrl_mpdu_start = 1;
+	src_tlv_filter->data_mpdu_end = 1;
+	src_tlv_filter->data_msdu_end = 1;
+	src_tlv_filter->data_msdu_start = 1;
+	src_tlv_filter->data_mpdu_start = 1;
+
+	src_tlv_filter->mgmt_mpdu_msdu_log_en = 1;
+	src_tlv_filter->ctrl_mpdu_msdu_log_en = 1;
+	src_tlv_filter->data_mpdu_msdu_log_en = 1;
+
+	src_tlv_filter->mgmt_log_typ = HTT_TX_MON_WMASK_IN2_MPDU_LOG;
+	src_tlv_filter->ctrl_log_typ = HTT_TX_MON_WMASK_IN2_MPDU_LOG;
+	src_tlv_filter->data_log_typ = HTT_TX_MON_WMASK_IN2_MPDU_LOG;
+
+	src_tlv_filter->tx_mon_mgmt_pkt_dma_len = DP_TX_MON_MAX_DMA_LENGTH;
+	src_tlv_filter->tx_mon_data_pkt_dma_len = DP_TX_MON_MAX_DMA_LENGTH;
+	src_tlv_filter->tx_mon_ctrl_pkt_dma_len = DP_TX_MON_MAX_DMA_LENGTH;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_setup_mon_mode_filter);
+
+void ath12k_dp_mon_tx_prepare_filter(struct ath12k_dp *dp,
+				     struct ath12k_pdev_dp *dp_pdev,
+				     enum dp_mon_tx_filter_srng_type srng_type,
+				     struct dp_mon_tx_filter *tx_mon_filter)
+{
+	enum dp_mon_tx_filter_mode mode = 0;
+	struct htt_tx_ring_tlv_filter *dst_tlv_filter = &tx_mon_filter->filter;
+	struct htt_tx_ring_tlv_filter *src_tlv_filter;
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct dp_mon_tx_filter *src_tx_mon_filter;
+	struct hal_tx_mon_wmask_config *src_wmask;
+	struct hal_tx_mon_wmask_config *dest_wmask = &tx_mon_filter->filter.wmask;
+
+	if (!dp_mon_pdev || !dp_mon_pdev->tx_mon_filter) {
+		ath12k_dbg(dp->ab, ATH12K_DBG_DP_MON_TX,
+			   "TX Mon: prepare filter skipped - not initialized\n");
+		return;
+	}
+
+	/*
+	 * loop through all the modes
+	 */
+	for (mode = 0; mode < DP_MON_TX_FILTER_MAX; mode++) {
+		src_tx_mon_filter = &dp_mon_pdev->tx_mon_filter[mode][srng_type];
+		src_tlv_filter = &src_tx_mon_filter->filter;
+		src_wmask = &src_tlv_filter->wmask;
+
+		if (!src_tx_mon_filter->valid)
+			continue;
+
+		tx_mon_filter->valid = true;
+		dst_tlv_filter->tx_mon_downstream_tlv_flags |=
+			src_tlv_filter->tx_mon_downstream_tlv_flags;
+		dst_tlv_filter->tx_mon_upstream_tlv_flags0 |=
+			src_tlv_filter->tx_mon_upstream_tlv_flags0;
+		dst_tlv_filter->tx_mon_upstream_tlv_flags1 |=
+			src_tlv_filter->tx_mon_upstream_tlv_flags1;
+		dst_tlv_filter->tx_mon_upstream_tlv_flags2 |=
+			src_tlv_filter->tx_mon_upstream_tlv_flags2;
+		dst_tlv_filter->tx_mon_mgmt_filter |=
+					src_tlv_filter->tx_mon_mgmt_filter;
+		dst_tlv_filter->tx_mon_data_filter |=
+					src_tlv_filter->tx_mon_data_filter;
+		dst_tlv_filter->tx_mon_ctrl_filter |=
+					src_tlv_filter->tx_mon_ctrl_filter;
+
+		dst_tlv_filter->mgmt_mpdu_end |= src_tlv_filter->mgmt_mpdu_end;
+		dst_tlv_filter->mgmt_msdu_end |= src_tlv_filter->mgmt_msdu_end;
+		dst_tlv_filter->mgmt_msdu_start |= src_tlv_filter->mgmt_msdu_start;
+		dst_tlv_filter->mgmt_mpdu_start |= src_tlv_filter->mgmt_mpdu_start;
+		dst_tlv_filter->ctrl_mpdu_end |= src_tlv_filter->ctrl_mpdu_end;
+		dst_tlv_filter->ctrl_msdu_end |= src_tlv_filter->ctrl_msdu_end;
+		dst_tlv_filter->ctrl_msdu_start |= src_tlv_filter->ctrl_msdu_start;
+		dst_tlv_filter->ctrl_mpdu_start |= src_tlv_filter->ctrl_mpdu_start;
+		dst_tlv_filter->data_mpdu_end |= src_tlv_filter->data_mpdu_end;
+		dst_tlv_filter->data_msdu_end |= src_tlv_filter->data_msdu_end;
+		dst_tlv_filter->data_msdu_start |= src_tlv_filter->data_msdu_start;
+		dst_tlv_filter->data_mpdu_start |= src_tlv_filter->data_mpdu_start;
+		dst_tlv_filter->mgmt_mpdu_msdu_log_en |=
+					src_tlv_filter->mgmt_mpdu_msdu_log_en;
+		dst_tlv_filter->ctrl_mpdu_msdu_log_en |=
+					src_tlv_filter->ctrl_mpdu_msdu_log_en;
+		dst_tlv_filter->data_mpdu_msdu_log_en |=
+					src_tlv_filter->data_mpdu_msdu_log_en;
+
+		dst_tlv_filter->mgmt_log_typ |= src_tlv_filter->mgmt_log_typ;
+		dst_tlv_filter->ctrl_log_typ |= src_tlv_filter->ctrl_log_typ;
+		dst_tlv_filter->data_log_typ |= src_tlv_filter->data_log_typ;
+
+		dst_tlv_filter->txmon_disable |= src_tlv_filter->txmon_disable;
+		dst_tlv_filter->tx_mon_mgmt_pkt_dma_len |=
+					src_tlv_filter->tx_mon_mgmt_pkt_dma_len;
+		dst_tlv_filter->tx_mon_data_pkt_dma_len |=
+					src_tlv_filter->tx_mon_data_pkt_dma_len;
+		dst_tlv_filter->tx_mon_ctrl_pkt_dma_len |=
+					src_tlv_filter->tx_mon_ctrl_pkt_dma_len;
+
+		dest_wmask->pcu_ppdu_setup_init |= src_wmask->pcu_ppdu_setup_init;
+		dest_wmask->tx_peer_entry |= src_wmask->tx_peer_entry;
+		dest_wmask->tx_queue_ext |= src_wmask->tx_queue_ext;
+		dest_wmask->tx_fes_status_end |= src_wmask->tx_fes_status_end;
+		dest_wmask->response_end_status |= src_wmask->response_end_status;
+		dest_wmask->tx_fes_status_prot |= src_wmask->tx_fes_status_prot;
+		dest_wmask->tx_fes_setup |= src_wmask->tx_fes_setup;
+		dest_wmask->tx_msdu_start |= src_wmask->tx_msdu_start;
+		dest_wmask->tx_mpdu_start |= src_wmask->tx_mpdu_start;
+		dest_wmask->rxpcu_user_setup |= src_wmask->rxpcu_user_setup;
+		dest_wmask->compaction_enable |= src_wmask->compaction_enable;
+
+		ath12k_generic_dbg(ATH12K_DBG_DP_MON_TX, ATH12K_DBG_L1,
+				   "Updated Tx filters for mode: %d", mode);
+		ath12k_dp_mon_tx_display_filters(dp, mode, tx_mon_filter);
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_prepare_filter);
+
+int
+ath12k_dp_mon_tx_htt_update_filters(struct ath12k_dp *dp,
+				    struct ath12k_pdev_dp *dp_pdev,
+				    enum dp_mon_tx_filter_srng_type srng_type,
+				    struct htt_tx_ring_tlv_filter *tx_tlv_filter)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	int ret = -EINVAL;
+	enum hal_ring_type ring_type = HAL_TX_MONITOR_DST;
+	struct ath12k_base *ab = dp->ab;
+
+	int ring_buf_size, mac_id, ring_id;
+
+	if (!dp_mon_pdev || !dp->ab) {
+		ath12k_err(NULL, "Tx Mon: mon pdev/base invalid - skip filter config\n");
+		return ret;
+	}
+
+	ring_id = dp_mon_pdev->tx_mon_dst_ring.ring_id;
+	mac_id = dp_pdev->mac_id;
+	ring_buf_size = DP_RXDMA_REFILL_RING_SIZE;
+
+	ret = ath12k_dp_htt_mon_tx_filter_setup(dp->ab, ring_id, mac_id,
+						ring_type, ring_buf_size,
+						tx_tlv_filter);
+	if (ret) {
+		ath12k_err(dp->ab,
+			   "Tx Mon filter setup fail ring = %d srng_type = %d (%d)\n",
+			   ring_id, srng_type, ret);
+		return ret;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_htt_update_filters);
+
+int ath12k_dp_mon_tx_srng_alloc_setup(struct ath12k_dp *dp)
+{
+	struct ath12k_base *ab = dp->ab;
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
+	int ret;
+
+	/*Todo : DP_TX_MONITOR_BUF_RING_SIZE is 8192 - 512M profile will need
+	 *	 smaller size
+	 */
+	ret = ath12k_dp_srng_setup(ab,
+				   &dp_mon->tx_mon_buf_ring.refill_buf_ring,
+				   HAL_TX_MONITOR_BUF, 0, 0,
+				   DP_TX_MONITOR_BUF_RING_SIZE);
+	if (ret) {
+		ath12k_warn(dp, "Tx Mon: failed to setup buffer srng (%d)\n", ret);
+		return ret;
+	}
+
+	ret = ath12k_dp_mon_tx_desc_pool_alloc(dp);
+
+	return ret;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_srng_alloc_setup);
+
+void ath12k_dp_mon_tx_srng_cleanup(struct ath12k_dp *dp)
+{
+	struct ath12k_base *ab = dp->ab;
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
+	struct dp_srng *srng;
+
+	srng = &dp_mon->tx_mon_buf_ring.refill_buf_ring;
+	ath12k_dp_mon_tx_desc_pool_free(dp);
+	ath12k_dp_srng_cleanup(ab, srng);
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_srng_cleanup);
+
+void ath12k_dp_mon_tx_filter_free(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct dp_mon_tx_filter **tx_mon_filter = NULL;
+	struct ath12k_dp *dp = dp_pdev->dp;
+	enum dp_mon_tx_filter_mode mode;
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+
+	if (!dp_mon_pdev || !dp) {
+		ath12k_err(NULL, "Monitor pdev/dp is NULL - skip free\n");
+		return;
+	}
+
+	tx_mon_filter = dp_mon_pdev->tx_mon_filter;
+
+	if (!tx_mon_filter) {
+		ath12k_warn(dp, "Monitor tx filter is NULL - skip free\n");
+		return;
+	}
+
+	for (mode = 0; mode < DP_MON_TX_FILTER_MAX; mode++) {
+		if (!tx_mon_filter[mode])
+			continue;
+		kfree(tx_mon_filter[mode]);
+		tx_mon_filter[mode] = NULL;
+	}
+
+	kfree(tx_mon_filter);
+	dp_mon_pdev->tx_mon_filter = NULL;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_filter_free);
+
+int ath12k_dp_mon_tx_filter_alloc(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct dp_mon_tx_filter **tx_mon_filter = NULL;
+	struct ath12k_dp *dp = dp_pdev->dp;
+	enum dp_mon_tx_filter_mode mode;
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	size_t rq_size = sizeof(struct dp_mon_tx_filter *) * DP_MON_TX_FILTER_MAX;
+
+	if (!dp_mon_pdev || !dp) {
+		ath12k_err(NULL, "Monitor pdev/dp is NULL\n");
+		return -EINVAL;
+	}
+
+	tx_mon_filter = (struct dp_mon_tx_filter **)
+				kzalloc(rq_size, GFP_KERNEL);
+	if (!tx_mon_filter)
+		return -ENOMEM;
+
+	dp_mon_pdev->tx_mon_filter = tx_mon_filter;
+	rq_size = sizeof(struct dp_mon_tx_filter) * DP_MON_TX_FILTER_SRNG_TYPE_MAX;
+	for (mode = 0; mode < DP_MON_TX_FILTER_MAX; mode++) {
+		tx_mon_filter[mode] = (struct dp_mon_tx_filter *)
+					kzalloc(rq_size, GFP_KERNEL);
+		if (!tx_mon_filter[mode])
+			goto free_tx_filter;
+	}
+
+	return 0;
+
+free_tx_filter:
+	ath12k_dp_mon_tx_filter_free(dp_pdev);
+	return -ENOMEM;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_filter_alloc);
+
+int ath12k_dp_mon_tx_dst_ring_alloc_setup(struct ath12k_pdev_dp *dp_pdev,
+					  u32 mac_id)
+{
+	struct ath12k_dp *dp = dp_pdev->dp;
+	int ret;
+
+	ret = ath12k_dp_srng_setup(dp->ab,
+				   &dp_pdev->dp_mon_pdev->tx_mon_dst_ring,
+				   HAL_TX_MONITOR_DST, 0, mac_id,
+				   DP_TX_MONITOR_DEST_RING_SIZE);
+	if (ret) {
+		ath12k_warn(dp->ab, "Tx Mon: failed dest. ring allocation/setup\n");
+		return ret;
+	}
+
+	ret = ath12k_dp_mon_tx_htt_dst_ring_setup(dp_pdev, mac_id);
+
+	if (ret) {
+		ath12k_warn(dp->ab, "Tx Mon: failed dest. ring config\n");
+		return ret;
+	}
+
+	ret = ath12k_dp_mon_tx_filter_alloc(dp_pdev);
+	if (ret)
+		ath12k_warn(dp->ab, "Tx Mon: failed filter alloc\n");
+
+	return ret;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_dst_ring_alloc_setup);
+
+void ath12k_dp_mon_tx_dst_ring_cleanup(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_dp *dp = dp_pdev->dp;
+
+	ath12k_dp_mon_tx_filter_free(dp_pdev);
+	ath12k_dp_srng_cleanup(dp->ab, &dp_pdev->dp_mon_pdev->tx_mon_dst_ring);
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_dst_ring_cleanup);
+
+void ath12k_dp_mon_tx_htt_srng_cleanup(struct ath12k_dp *dp)
+{
+	ath12k_dp_mon_tx_buff_free(dp);
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_htt_srng_cleanup);
+
+int ath12k_dp_mon_tx_htt_srng_setup(struct ath12k_dp *dp)
+{
+	struct ath12k_base *ab = dp->ab;
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
+	u32 ring_id;
+	int ret;
+
+	/* This is deferred buffer initialization, This is freed at mon_tx_srng_cleanup */
+	ret = ath12k_dp_mon_tx_buff_alloc(dp);
+	if (ret) {
+		ath12k_warn(dp->ab, "TX Monitor: Buffer setup failed(%d)\n", ret);
+		return ret;
+	}
+
+	ring_id = dp_mon->tx_mon_buf_ring.refill_buf_ring.ring_id;
+	ret = ath12k_dp_tx_htt_srng_setup(ab, ring_id,
+					  0, HAL_TX_MONITOR_BUF);
+	if (ret)
+		ath12k_warn(ab, "TX Monitor:failed to configure buffer ring %d\n", ret);
+
+	return ret;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_htt_srng_setup);
+
+int ath12k_dp_mon_tx_config_filter(struct ath12k_pdev_dp *dp_pdev,
+				   bool enable)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_dp *dp = dp_pdev->dp;
+	struct dp_mon_tx_filter filter = {0};
+
+	struct htt_tx_ring_tlv_filter *src_tlv_filter;
+	enum dp_mon_tx_filter_mode mode = DP_MON_TX_FULL_MONITOR;
+	enum dp_mon_tx_filter_srng_type srng_type =
+		DP_MON_TX_FILTER_SRNG_TYPE_TXMON_DEST;
+
+	if (!dp || !dp->hal) {
+		ath12k_err(NULL, "dp / dp hal  invalid - skipping tx mon mode config\n");
+		return -EINVAL;
+	}
+
+	if (enable) {
+		filter.valid = true;
+		src_tlv_filter = &filter.filter;
+		ath12k_dp_mon_tx_setup_mon_mode_filter(dp, src_tlv_filter);
+		ath12k_hal_mon_tx_get_wmask_config(dp->hal, &src_tlv_filter->wmask);
+		dp_mon_pdev->tx_mon_filter[mode][srng_type] = filter;
+	} else {
+		dp_mon_pdev->tx_mon_filter[mode][srng_type] = filter;
+	}
+	ath12k_dp_mon_tx_display_filters(dp, mode, &filter);
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_config_filter);
+
+int ath12k_dp_mon_tx_update_ring_filter(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_dp *dp = dp_pdev->dp;
+	struct dp_mon_tx_filter tx_mon_filter = {0};
+	struct htt_tx_ring_tlv_filter *tx_tlv_filter;
+	int ret = -EINVAL;
+	enum dp_mon_tx_filter_srng_type srng_type = DP_MON_TX_FILTER_SRNG_TYPE_TXMON_DEST;
+
+	if (!dp) {
+		ath12k_err(NULL, "dp invalid - skipping tx mon filter update\n");
+		return ret;
+	}
+
+	tx_tlv_filter = &tx_mon_filter.filter;
+	ath12k_dp_mon_tx_prepare_filter(dp, dp_pdev, srng_type, &tx_mon_filter);
+	if (tx_mon_filter.valid)
+		tx_tlv_filter->txmon_disable = false;
+	else
+		tx_tlv_filter->txmon_disable = true;
+
+	ret = ath12k_dp_mon_tx_htt_update_filters(dp, dp_pdev, srng_type,
+						  tx_tlv_filter);
+
+	return ret;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_update_ring_filter);
+
+int ath12k_dp_mon_tx_buf_replenish(struct ath12k_dp *dp,
+				   struct dp_rxdma_mon_ring *buf_ring,
+				   struct list_head *used_list,
+				   int req_entries)
+{
+	struct dp_mon_desc_list_params list_params = {
+		.desc_lock = &dp->dp_mon->tx_mon_desc_lock,
+		.free_list = &dp->dp_mon->tx_mon_desc_free_list,
+		.list_local = used_list,
+		.pf_cache = &dp->dp_mon->tx_mon_pf_cache,
+		.buff_size = ATH12K_DP_MON_TX_BUF_SIZE
+	};
+
+	return ath12k_dp_mon_buf_replenish(dp, buf_ring, req_entries, &list_params);
+}
+
+void ath12k_dp_mon_tx_process_low_thres(struct ath12k_dp *dp)
+{
+	struct ath12k_base *ab = dp->ab;
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
+	struct dp_rxdma_mon_ring *tx_buff_ring;
+	struct hal_srng *srng;
+	int num_free, free_list_count;
+	LIST_HEAD(list);
+
+	spin_lock_bh(&dp_mon->tx_mon_desc_lock);
+
+	/* Rings are not initialized - deffer the refill
+	 * This IRQ group is shared by Rx Mon dest. ring interrupts - Likely to happen
+	 */
+	if (!dp_mon->tx_mon_buf_ring_ready) {
+		spin_unlock_bh(&dp_mon->tx_mon_desc_lock);
+		return;
+	}
+
+	tx_buff_ring = &dp_mon->tx_mon_buf_ring;
+	srng = &dp->hal->srng_list[tx_buff_ring->refill_buf_ring.ring_id];
+
+	spin_lock_bh(&srng->lock);
+	ath12k_hal_srng_access_begin(ab, srng);
+
+	num_free = ath12k_hal_srng_src_num_free(ab, srng, true);
+	/* if ring is less than half filled need to replenish */
+	if (num_free < (tx_buff_ring->bufs_max / 2)) {
+		ath12k_hal_srng_access_end(ab, srng);
+		spin_unlock_bh(&srng->lock);
+		spin_unlock_bh(&dp_mon->tx_mon_desc_lock);
+		return;
+	}
+
+	ath12k_hal_srng_access_end(ab, srng);
+	spin_unlock_bh(&srng->lock);
+
+	free_list_count =
+		ath12k_dp_mon_list_cut_nodes(&list,
+					     &dp->dp_mon->tx_mon_desc_free_list,
+					     num_free);
+	spin_unlock_bh(&dp_mon->tx_mon_desc_lock);
+
+	if (free_list_count)
+		ath12k_dp_mon_tx_buf_replenish(dp, tx_buff_ring, &list, free_list_count);
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_process_low_thres);

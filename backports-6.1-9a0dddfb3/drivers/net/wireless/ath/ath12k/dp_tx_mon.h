@@ -2,6 +2,8 @@
 /*
  * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
+#ifndef ATH12K_DP_TX_MON_H
+#define ATH12K_DP_TX_MON_H
 
 #define ATH12K_DP_MON_TX_MAX_RADIO_TAP_HDR 512
 
@@ -108,6 +110,9 @@
 #define ATH12K_RATE_STATUS_DEFAULT_NSS     1
 #define ATH12K_RATE_STATUS_DEFAULT_IDX	  -1
 
+enum dp_mon_tx_filter_mode;
+struct dp_mon_tx_filter;
+
 struct ieee80211_frame_min {
 	__le16 frame_control;
 	__le16 duration;
@@ -139,8 +144,44 @@ enum txmon_generated_response {
 	TXMON_GEN_RESP_SELFGEN_NDP_LMR
 };
 
-int ath12k_dp_mon_tx_process_ring(struct ath12k_pdev_dp *dp_pdev, int mac_id,
-				  struct napi_struct *napi, int *budget);
-
 /* TX Monitor PPDU Processing */
 void ath12k_dp_tx_mon_process_ppdu(struct work_struct *work);
+
+int ath12k_dp_mon_tx_srng_alloc_setup(struct ath12k_dp *dp);
+void ath12k_dp_mon_tx_srng_cleanup(struct ath12k_dp *dp);
+int ath12k_dp_mon_tx_dst_ring_alloc_setup(struct ath12k_pdev_dp *dp_pdev, u32 mac_id);
+void ath12k_dp_mon_tx_dst_ring_cleanup(struct ath12k_pdev_dp *dp_pdev);
+int ath12k_dp_mon_tx_htt_srng_setup(struct ath12k_dp *dp);
+void ath12k_dp_mon_tx_htt_srng_cleanup(struct ath12k_dp *dp);
+int ath12k_dp_mon_tx_config_filter(struct ath12k_pdev_dp *dp_pdev, bool enable);
+int ath12k_dp_mon_tx_update_ring_filter(struct ath12k_pdev_dp *dp_pdev);
+int ath12k_dp_mon_tx_wq_start(struct ath12k_pdev_dp *dp_pdev, u32 mac_id);
+void ath12k_dp_mon_tx_wq_stop(struct ath12k_pdev_dp *dp_pdev);
+int ath12k_dp_mon_tx_desc_pool_alloc(struct ath12k_dp *dp);
+void ath12k_dp_mon_tx_desc_pool_free(struct ath12k_dp *dp);
+int ath12k_dp_mon_tx_buff_alloc(struct ath12k_dp *dp);
+int ath12k_dp_mon_tx_htt_dst_ring_setup(struct ath12k_pdev_dp *dp_pdev, u32 mac_id);
+int ath12k_dp_mon_tx_monitor_start_stop(struct ath12k *ar, bool state);
+void ath12k_dp_mon_tx_filter_free(struct ath12k_pdev_dp *dp_pdev);
+bool ath12k_dp_tx_mon_feature_eval(struct ath12k_dp *dp);
+int ath12k_dp_mon_tx_srng_alloc(struct ath12k_dp *dp);
+void ath12k_dp_mon_tx_htt_src_ring_cleanup(struct ath12k_dp *dp);
+void ath12k_dp_mon_tx_pdev_free(struct ath12k_pdev_dp *dp_pdev);
+int ath12k_dp_mon_tx_htt_src_ring_setup(struct ath12k_dp *dp);
+int ath12k_dp_mon_tx_config_monitor_mode(struct ath12k *ar, bool set);
+int ath12k_dp_mon_tx_update_filter(struct ath12k *ar);
+void ath12k_dp_mon_tx_srng_free(struct ath12k_dp *dp);
+int ath12k_dp_mon_tx_pdev_alloc(struct ath12k_pdev_dp *dp_pdev,
+				u32 mac_id);
+int ath12k_dp_mon_tx_set_monitor_flags(struct ath12k *ar, u32 new_flags, u32 *cur_flags);
+void ath12k_dp_mon_tx_process_low_thres(struct ath12k_dp *dp);
+int ath12k_dp_mon_tx_process_ring(struct ath12k_pdev_dp *dp_pdev, int mac_id,
+				  struct napi_struct *napi, int *budget);
+void ath12k_dp_mon_tx_display_filters(struct ath12k_dp *dp,
+				      enum dp_mon_tx_filter_mode mode,
+				      struct dp_mon_tx_filter *filter);
+void
+ath12k_dp_mon_tx_setup_mon_mode_filter(struct ath12k_dp *dp,
+				       struct htt_tx_ring_tlv_filter *src_tlv_filter);
+
+#endif /* ATH12K_DP_TX_MON_H */

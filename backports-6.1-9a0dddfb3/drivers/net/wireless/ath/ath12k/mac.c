@@ -31,6 +31,7 @@
 #include "dp.h"
 #include "dp_cmn.h"
 #include "dp_tx.h"
+#include "dp_tx_mon.h"
 #include "vendor.h"
 #include "telemetry_agent_if.h"
 #include "ppe.h"
