@@ -4535,9 +4535,16 @@ skip_ml_params:
 		ptr += sizeof(*eht_mcs);
 	}
 
-	/* Update MCS15 capability */
+	/* Set EHT OPS present bit for peer assoc only based on enable_mcs15 flag
+	 * and EHT phy capability MCS15 bits. In struct ath12k_wmi_peer_assoc_arg,
+	 * peer_eht_cap_phy is an array of 3 32-bit unsigned integers. From 19 to
+	 * 22 bits in eht_cap_phy[1] are for MCS15 in 80Mhz, 160MHz and 320Mhz.
+	 */
 	if (!arg->enable_mcs15)
 		cmd->peer_eht_ops |= cpu_to_le32(IEEE80211_EHT_OPER_MCS15_DISABLE);
+	else if (arg->peer_eht_cap_phy[1] &
+		 (IEEE80211_EHT_PHY_CAP6_MCS15_SUPP_MASK << 16))
+		cmd->peer_eht_ops |= cpu_to_le32(BIT(0));
 
 	tlv = ptr;
 	len = arg->ml.enabled ? arg->ml.num_partner_links * sizeof(*partner_info) : 0;
