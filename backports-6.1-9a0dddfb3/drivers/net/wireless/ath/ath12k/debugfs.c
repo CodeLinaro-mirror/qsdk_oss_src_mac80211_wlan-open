@@ -235,6 +235,30 @@ static int print_btcoex_stats(char *buf, int size, void *stats_ptr)
 				btcoex_stats->wl_tx_req_cntr);
 	return len;
 }
+
+static int print_blanking_stats(char *buf, int size, void *stats_ptr)
+{
+	struct wmi_ctrl_path_blanking_stats *blanking_stats = stats_ptr;
+	int len = 0;
+
+	len += scnprintf(buf + len, size - len, "WMI_CTRL_PATH_BLANKING_STATS:\n");
+	len += scnprintf(buf + len, size - len, "blanking_mode = %u\n",
+			 le32_to_cpu(blanking_stats->blanking_mode));
+	len += scnprintf(buf + len, size - len, "is_blanking_enabled = %u\n",
+			 le32_to_cpu(blanking_stats->is_blanking_enabled));
+	len += scnprintf(buf + len, size - len, "gate_2g_enabled = %u\n",
+			 le32_to_cpu(blanking_stats->gate_2g_enabled));
+	len += scnprintf(buf + len, size - len, "gate_5g_enabled = %u\n",
+			 le32_to_cpu(blanking_stats->gate_5g_enabled));
+	len += scnprintf(buf + len, size - len, "gate_6g_enabled = %u\n",
+			 le32_to_cpu(blanking_stats->gate_6g_enabled));
+	len += scnprintf(buf + len, size - len, "blanking_count = %u\n",
+			 le32_to_cpu(blanking_stats->blanking_count));
+	len += scnprintf(buf + len, size - len, "blanking_duration(us) = %u\n",
+			 le32_to_cpu(blanking_stats->blanking_duration));
+	return len;
+}
+
 static int print_mem_stats(char *buf, int size, void *stats_ptr)
 {   struct wmi_ctrl_path_mem_stats_params *mem_stats = stats_ptr;
 	int len = 0;
@@ -4110,6 +4134,10 @@ static ssize_t ath12k_read_all_wmi_ctrl_path_stats(struct file *file,
 			break;
 		case WMI_CTRL_PATH_AFC_STATS:
 			len += print_afc_stats(buf + len, size - len, stats->stats_ptr);
+			break;
+		case WMI_CTRL_PATH_BLANKING_STATS:
+			len += print_blanking_stats(buf + len, size - len,
+							stats->stats_ptr);
 			break;
 		default:
 			len += scnprintf(buf + len, size - len, "Unknown tagid: %u\n",

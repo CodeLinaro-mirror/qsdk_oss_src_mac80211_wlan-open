@@ -11837,9 +11837,9 @@ ath12k_mac_bitrate_mask_num_uhr_rates(struct ath12k *ar,
 	return num_rates;
 }
 
-static enum wmi_phy_mode ath12k_mac_get_phymode(struct ath12k *ar,
-						enum nl80211_band band,
-						enum nl80211_chan_width width)
+enum wmi_phy_mode ath12k_mac_get_phymode(struct ath12k *ar,
+					 enum nl80211_band band,
+					 enum nl80211_chan_width width)
 {
 	if (ath12k_scan_radio_supported(ar->pdev))
 		return ath12k_ax_phymodes[band][width];

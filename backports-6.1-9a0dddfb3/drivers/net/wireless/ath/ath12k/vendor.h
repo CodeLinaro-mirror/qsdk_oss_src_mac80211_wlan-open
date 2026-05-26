@@ -215,6 +215,7 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_SET_MULTI_BSS_PARAM = 530,
 	QCA_NL80211_VENDOR_SUBCMD_WLAN_NFCAL_POWER_EVENT = 531,
 	QCA_NL80211_VENDOR_SUBCMD_RF_PATH_MODE = 532,
+	QCA_NL80211_VENDOR_SUBCMD_SCAN_RADIO_CHAN_STATS = 533,
 };
 
 /**
@@ -385,6 +386,7 @@ enum qca_nl80211_vendor_events {
 	QCA_NL80211_VENDOR_SUBCMD_CHAIN_MASK_INDEX = 23,
 	QCA_NL80211_VENDOR_SUBCMD_WLAN_NFCAL_POWER_EVENT_INDEX = 24,
 	QCA_NL80211_VENDOR_SUBCMD_RF_PATH_MODE_INDEX = 25,
+	QCA_NL80211_VENDOR_SUBCMD_SCAN_RADIO_CHAN_STATS_INDEX = 26,
 };
 
 /**
@@ -5320,6 +5322,36 @@ enum qca_vendor_wlan_home_offchan_tx_rx_frame_attr {
 };
 
 /**
+ * enum qca_wlan_vendor_attr_scan_radio_chan_stats - Attributes for
+ * QCA_NL80211_VENDOR_SUBCMD_SCAN_RADIO_CHAN_STATS event.
+ *
+ * Sent by the driver per WMI chan_info event on a scan-radio pdev.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_SCAN_RADIO_CHAN_STATS_FREQ: u32, channel freq in MHz.
+ * @QCA_WLAN_VENDOR_ATTR_SCAN_RADIO_CHAN_STATS_BLANKING_VALID: u8, non-zero
+ *	when blanking parameters below are valid.
+ * @QCA_WLAN_VENDOR_ATTR_SCAN_RADIO_CHAN_STATS_BLANKING_COUNT: u32, number of
+ *	blanking events during the measurement period.
+ * @QCA_WLAN_VENDOR_ATTR_SCAN_RADIO_CHAN_STATS_BLANKING_DURATION: u32, total
+ *	blanking duration in microseconds.
+ * @QCA_WLAN_VENDOR_ATTR_SCAN_RADIO_CHAN_STATS_PHYMODE: NUL-terminated string,
+ *	current PHY mode of the scan radio home channel (e.g. "11AXHE80").
+ */
+enum qca_wlan_vendor_attr_scan_radio_chan_stats {
+	QCA_WLAN_VENDOR_ATTR_SCAN_RADIO_CHAN_STATS_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_SCAN_RADIO_CHAN_STATS_FREQ = 1,
+	QCA_WLAN_VENDOR_ATTR_SCAN_RADIO_CHAN_STATS_BLANKING_VALID = 2,
+	QCA_WLAN_VENDOR_ATTR_SCAN_RADIO_CHAN_STATS_BLANKING_COUNT = 3,
+	QCA_WLAN_VENDOR_ATTR_SCAN_RADIO_CHAN_STATS_BLANKING_DURATION = 4,
+	QCA_WLAN_VENDOR_ATTR_SCAN_RADIO_CHAN_STATS_PHYMODE = 5,
+
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_SCAN_RADIO_CHAN_STATS_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_SCAN_RADIO_CHAN_STATS_MAX =
+		QCA_WLAN_VENDOR_ATTR_SCAN_RADIO_CHAN_STATS_AFTER_LAST - 1,
+};
+
+/**
  * enum qca_wlan_vendor_attr_config_esp_param - Parameters for ESP configuration
  *
  * Attributes used to configure (set command) or report (get command)
@@ -6844,9 +6876,10 @@ enum qca_wlan_vendor_sdwf_peer_msduq_svc_type {
 
 #define ATH_PARAM_MASK     0x1000
 enum ath_cfg_param_radio {
-	ACFG_PARAM_RADIO_TXCHAINMASK	      = 1  | ATH_PARAM_MASK,
-	ACFG_PARAM_RADIO_RXCHAINMASK	      = 2  | ATH_PARAM_MASK,
+	ACFG_PARAM_RADIO_TXCHAINMASK	      = 1   | ATH_PARAM_MASK,
+	ACFG_PARAM_RADIO_RXCHAINMASK	      = 2   | ATH_PARAM_MASK,
 	PARAM_RADIO_TXCHAINSOFT               = 361 | ATH_PARAM_MASK,
+	ACFG_PARAM_RADIO_SCAN_BLANKING_MODE   = 525 | ATH_PARAM_MASK,
 };
 
 enum qca_wlan_vendor_channel_width
