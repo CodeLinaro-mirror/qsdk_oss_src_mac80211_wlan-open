@@ -6862,9 +6862,71 @@ static const struct file_operations fops_reset_proto_stats = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath12k_write_set_sta_primary_link(struct file *file,
+					 const char __user *user_buf,
+					 size_t count, loff_t *ppos)
+{
+	struct ath12k_hw *ah = file->private_data;
+	char buf[IFNAMSIZ + 4]; /* ifname + space + up-to-3-digit number + NUL */
+	char ifname[IFNAMSIZ];
+	u8 hw_link_id;
+	int i, free_slot = -1;
+	size_t len;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+	buf[len] = '\0';
+
+	if (sscanf(buf, "%15s %hhu", ifname, &hw_link_id) != 2)
+		return -EINVAL;
+
+	if (hw_link_id >= ah->num_radio)
+		return -EINVAL;
+
+	ath12k_info(NULL, "ifname: %s, hw_link_id: %d", ifname, hw_link_id);
+
+	mutex_lock(&ah->hw_mutex);
+	for (i = 0; i < ATH12K_GROUP_MAX_RADIO; i++) {
+		if (ah->pending_primary_link[i].valid &&
+		    strncmp(ah->pending_primary_link[i].ifname, ifname, IFNAMSIZ) == 0) {
+			/* Update existing entry for this ifname. */
+			ah->pending_primary_link[i].hw_link_id = hw_link_id;
+			ath12k_info(NULL, "Overriding with hw_link_id: %d\n",
+				   hw_link_id);
+			mutex_unlock(&ah->hw_mutex);
+			return count;
+		}
+
+		if (free_slot < 0 && !ah->pending_primary_link[i].valid)
+			free_slot = i;
+	}
+
+	if (free_slot < 0) {
+		mutex_unlock(&ah->hw_mutex);
+		return -ENOSPC;
+	}
+
+	strscpy(ah->pending_primary_link[free_slot].ifname, ifname, IFNAMSIZ);
+	ah->pending_primary_link[free_slot].hw_link_id = hw_link_id;
+	ah->pending_primary_link[free_slot].valid = true;
+	mutex_unlock(&ah->hw_mutex);
+	return count;
+}
+
+static const struct file_operations ath12k_fops_set_sta_primary_link = {
+	.write = ath12k_write_set_sta_primary_link,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 void ath12k_hw_debugfs_register(struct ath12k_hw *ah)
 {
 	struct ieee80211_hw *hw = ah->hw;
+
+	debugfs_create_file("set_sta_primary_link", 0200, hw->wiphy->debugfsdir, ah,
+			    &ath12k_fops_set_sta_primary_link);
 
 	debugfs_create_file("dp_stats_mask", 0644, hw->wiphy->debugfsdir, ah,
 			    &fops_dp_stats_mask);

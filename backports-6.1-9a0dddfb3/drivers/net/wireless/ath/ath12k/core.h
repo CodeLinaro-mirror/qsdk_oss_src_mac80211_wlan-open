@@ -1889,6 +1889,12 @@ struct ath12k_6ghz_sp_reg_rule {
 	struct ieee80211_reg_rule sp_reg_rule[];
 };
 
+struct ath12k_pending_primary_link {
+	char ifname[IFNAMSIZ];
+	u8 hw_link_id;
+	bool valid;
+};
+
 struct ath12k_hw {
 	struct ieee80211_hw *hw;
 	struct device *dev;
@@ -1917,6 +1923,11 @@ struct ath12k_hw {
 	u32 num_ml_peers;
 	u32 max_ml_peer_ids;
 	u16 last_ml_peer_id;
+
+	/* Pending primary_link values written before STA vdev creation.
+	 * Indexed by slot; protected by hw_mutex.
+	 */
+	struct ath12k_pending_primary_link pending_primary_link[ATH12K_GROUP_MAX_RADIO];
 
 	/* Keep last */
 	struct ath12k radio[] __aligned(sizeof(void *));
