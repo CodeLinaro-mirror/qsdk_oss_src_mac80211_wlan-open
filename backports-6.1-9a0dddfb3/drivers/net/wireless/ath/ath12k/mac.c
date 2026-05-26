@@ -21937,6 +21937,305 @@ out:
 	kfree(vdev_ids);
 }
 
+/**
+ * ath12k_mac_is_same_chan_bw_reduced() - Check same-channel bandwidth reduction
+ * @old: old channel definition
+ * @new: new channel definition
+ *
+ * Channel switch reason detection needs to identify transitions that keep the
+ * same primary channel but reduce operating bandwidth. This pattern is shared
+ * by secondary-segment AWGN recovery and COEX bandwidth reduction handling.
+ * Use cfg80211 width conversion instead of comparing nl80211 width enums
+ * directly because enum values are not ordered by bandwidth.
+ *
+ * Return: true if @new keeps the same channel as @old with lower bandwidth.
+ */
+static bool
+ath12k_mac_is_same_chan_bw_reduced(const struct cfg80211_chan_def *old,
+				   const struct cfg80211_chan_def *new)
+{
+	int old_width, new_width;
+
+	if (!old || !new || !old->chan || !new->chan)
+		return false;
+
+	old_width = cfg80211_chandef_get_width(old);
+	new_width = cfg80211_chandef_get_width(new);
+	if (old_width < 0 || new_width < 0)
+		return false;
+
+	return cfg80211_channel_identical(old->chan, new->chan) &&
+	       new_width < old_width;
+}
+
+/**
+ * ath12k_mac_is_awgn_recovery_switch() - Check if switch matches AWGN recovery
+ * @ar: ath12k device pointer
+ * @vifs: Array of vif/chanctx switch entries
+ * @n_vifs: Number of entries in vifs array
+ *
+ * AWGN handling uses ar->awgn_intf_handling_in_prog to track that recovery is
+ * pending, but that flag alone is not sufficient to classify every concurrent
+ * channel switch as AWGN-triggered. A user-requested switch can arrive while
+ * AWGN handling is still in progress and would otherwise be misreported as an
+ * AWGN switch.
+ *
+ * To avoid that false positive, match the actual chanctx transition against
+ * the chandef saved when AWGN was detected. Primary 20 MHz interference is
+ * considered recovered by moving away from the AWGN channel. Secondary
+ * interference is considered recovered by staying on the same primary channel
+ * while reducing bandwidth.
+ *
+ * Return: true if the switch matches the expected AWGN recovery transition.
+ */
+static bool
+ath12k_mac_is_awgn_recovery_switch(struct ath12k *ar,
+				   struct ieee80211_vif_chanctx_switch *vifs,
+				   int n_vifs)
+{
+	struct cfg80211_chan_def awgn_chandef = {};
+	u32 intf_bitmap = 0;
+	bool awgn_in_prog;
+	int i;
+
+	spin_lock_bh(&ar->data_lock);
+	awgn_in_prog = ar->awgn_intf_handling_in_prog;
+	if (awgn_in_prog) {
+		awgn_chandef = ar->awgn_chandef;
+		intf_bitmap = ar->chan_bw_interference_bitmap;
+	}
+	spin_unlock_bh(&ar->data_lock);
+
+	if (!awgn_in_prog || !awgn_chandef.chan)
+		return false;
+
+	for (i = 0; i < n_vifs; i++) {
+		const struct cfg80211_chan_def *old, *new;
+		bool channel_changed;
+
+		old = &vifs[i].old_ctx->def;
+		new = &vifs[i].new_ctx->def;
+
+		if (!old->chan || !new->chan)
+			continue;
+
+		if (!cfg80211_chandef_identical(old, &awgn_chandef))
+			continue;
+
+		channel_changed = !cfg80211_channel_identical(old->chan,
+							      new->chan);
+		if (channel_changed) {
+			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC,
+					 ATH12K_DBG_L2,
+					 "mac ch switch awgn pri bitmap 0x%x old %u/%d new %u/%d\n",
+					 intf_bitmap, old->chan->center_freq,
+					 old->width, new->chan->center_freq,
+					 new->width);
+			return true;
+		}
+
+		if (intf_bitmap && !(intf_bitmap & WMI_DCS_SEG_PRI20) &&
+		    ath12k_mac_is_same_chan_bw_reduced(old, new)) {
+			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC,
+					 ATH12K_DBG_L2,
+					 "mac ch switch awgn sec bitmap 0x%x old %u/%d new %u/%d\n",
+					 intf_bitmap, old->chan->center_freq,
+					 old->width, new->chan->center_freq,
+					 new->width);
+			return true;
+		}
+	}
+
+	return false;
+}
+
+/**
+ * ath12k_mac_is_dfs_radar_switch() - Check if switch vacates radar channel
+ * @ar: ath12k device pointer
+ * @vifs: Array of vif/chanctx switch entries
+ * @n_vifs: Number of entries in vifs array
+ *
+ * A chanctx with radar detection enabled does not by itself mean radar was
+ * detected; it only means DFS detection was required/enabled on that context.
+ * Report DFS radar as the channel switch reason only when the old chandef is
+ * already in NOL due to radar detection and the new chandef is different,
+ * indicating that the switch is moving away from the radar-affected channel.
+ *
+ * Return: true if the switch is caused by vacating a radar-affected channel.
+ */
+static bool
+ath12k_mac_is_dfs_radar_switch(struct ath12k *ar,
+			       struct ieee80211_vif_chanctx_switch *vifs,
+			       int n_vifs)
+{
+	int i;
+
+	if (!ar->ah || !ar->ah->hw)
+		return false;
+
+	for (i = 0; i < n_vifs; i++) {
+		const struct cfg80211_chan_def *old, *new;
+		bool radar_detected;
+		bool channel_changed;
+
+		old = &vifs[i].old_ctx->def;
+		new = &vifs[i].new_ctx->def;
+		radar_detected = !cfg80211_chandef_dfs_nol_clear(ar->ah->hw->wiphy,
+								 old);
+		channel_changed = !cfg80211_chandef_identical(old, new);
+
+		if (radar_detected && channel_changed) {
+			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC,
+					 ATH12K_DBG_L2,
+					 "mac ch switch dfs old %u new %u radar %d changed %d\n",
+					 old->chan->center_freq, new->chan->center_freq,
+					 radar_detected, channel_changed);
+			return true;
+		}
+	}
+
+	return false;
+}
+
+/**
+ * ath12k_mac_is_bw_reduction() - Check if switch is bandwidth reduction
+ * @ar: ath12k device pointer
+ * @vifs: Array of vif/chanctx switch entries
+ * @n_vifs: Number of entries in vifs array
+ *
+ * Return: true if any switched vif/link keeps its channel and reduces bandwidth.
+ */
+static bool
+ath12k_mac_is_bw_reduction(struct ath12k *ar,
+			   struct ieee80211_vif_chanctx_switch *vifs,
+			   int n_vifs)
+{
+	int i;
+
+	for (i = 0; i < n_vifs; i++) {
+		const struct cfg80211_chan_def *old, *new;
+
+		old = &vifs[i].old_ctx->def;
+		new = &vifs[i].new_ctx->def;
+
+		if (ath12k_mac_is_same_chan_bw_reduced(old, new)) {
+			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC,
+					 ATH12K_DBG_L2,
+					 "mac ch bw reduction old %u/%d new %u/%d\n",
+					 old->chan->center_freq, old->width,
+					 new->chan->center_freq, new->width);
+			return true;
+		}
+	}
+
+	return false;
+}
+
+/**
+ * ath12k_mac_is_csa_switch() - Check if switch is caused by active CSA
+ * @vifs: Array of vif/chanctx switch entries
+ * @n_vifs: Number of entries in vifs array
+ *
+ * mac80211 marks link configuration with csa_active while processing a channel
+ * switch announcement. Treat any switching link with csa_active set as a CSA
+ * initiated channel switch.
+ *
+ * Return: true if any switched vif/link has CSA active.
+ */
+static bool
+ath12k_mac_is_csa_switch(struct ieee80211_vif_chanctx_switch *vifs,
+			 int n_vifs)
+{
+	const struct ieee80211_bss_conf *link_conf;
+	int i;
+
+	for (i = 0; i < n_vifs; i++) {
+		link_conf = vifs[i].link_conf;
+		if (link_conf && link_conf->csa_active)
+			return true;
+	}
+
+	return false;
+}
+
+/**
+ * ath12k_mac_get_ch_switch_reason() - Determine reason for channel switch
+ * @ar: ath12k device pointer
+ * @vifs: Array of vif/chanctx switch entries
+ * @n_vifs: Number of entries in vifs array
+ *
+ * Analyzes the current state and the requested channel switch to determine
+ * the most likely reason for the channel change.
+ *
+ * Return: enum qca_wlan_vendor_ch_switch_reason value
+ */
+static enum qca_wlan_vendor_ch_switch_reason
+ath12k_mac_get_ch_switch_reason(struct ath12k *ar,
+				struct ieee80211_vif_chanctx_switch *vifs,
+				int n_vifs)
+{
+	enum qca_wlan_vendor_ch_switch_reason reason;
+
+	if (ath12k_mac_is_awgn_recovery_switch(ar, vifs, n_vifs))
+		reason = QCA_WLAN_VENDOR_CH_SWITCH_REASON_AWGN_INTERFERENCE;
+	else if (ath12k_mac_is_dfs_radar_switch(ar, vifs, n_vifs))
+		reason = QCA_WLAN_VENDOR_CH_SWITCH_REASON_DFS_RADAR;
+	else if (ath12k_mac_is_bw_reduction(ar, vifs, n_vifs))
+		reason = QCA_WLAN_VENDOR_CH_SWITCH_REASON_BW_REDUCTION;
+	else if (ath12k_mac_is_csa_switch(vifs, n_vifs))
+		reason = QCA_WLAN_VENDOR_CH_SWITCH_REASON_CSA;
+	else
+		reason = QCA_WLAN_VENDOR_CH_SWITCH_REASON_USER_REQUEST;
+
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
+			 "mac ch switch selected reason %d n_vifs %d\n",
+			 reason, n_vifs);
+
+	return reason;
+}
+
+/**
+ * ath12k_mac_validate_vif_chanctx_switch() - Validate VIF channel context
+ * switch inputs
+ *
+ * Perform sanity checks on an array of VIF channel context switch entries.
+ * Ensures that:
+ *   - The input array is valid and non-empty
+ *   - Each entry contains both old and new channel contexts
+ *   - The underlying channel definitions in both contexts are non-NULL
+ *
+ * This helper is primarily used to guard against invalid or incomplete
+ * data before proceeding with channel switch operations.
+ *
+ * @vifs: Array of vif/chanctx switch entries
+ * @n_vifs: Number of entries in vifs array
+ *
+ * Return: true if all entries contain usable old/new channel contexts.
+ */
+static bool
+ath12k_mac_validate_vif_chanctx_switch(struct ieee80211_vif_chanctx_switch *vifs,
+				       int n_vifs)
+{
+	int i;
+
+	if (n_vifs <= 0)
+		return false;
+
+	if (WARN_ON(!vifs))
+		return false;
+
+	for (i = 0; i < n_vifs; i++) {
+		if (WARN_ON(!vifs[i].old_ctx || !vifs[i].new_ctx))
+			return false;
+
+		if (WARN_ON(!vifs[i].old_ctx->def.chan ||
+			    !vifs[i].new_ctx->def.chan))
+			return false;
+	}
+
+	return true;
+}
+
 static void
 ath12k_mac_process_update_vif_chan(struct ath12k *ar,
 				   struct ieee80211_vif_chanctx_switch *vifs,
@@ -21954,6 +22253,17 @@ ath12k_mac_process_update_vif_chan(struct ath12k *ar,
 		if (WARN_ON(n_vifs > TARGET_NUM_VDEVS))
 			/* should not happen */
 			return;
+	}
+
+	if (ath12k_mac_validate_vif_chanctx_switch(vifs, n_vifs)) {
+		enum qca_wlan_vendor_ch_switch_reason reason;
+		const struct cfg80211_chan_def *old_chandef, *new_chandef;
+
+		old_chandef = &vifs[0].old_ctx->def;
+		new_chandef = &vifs[0].new_ctx->def;
+		reason = ath12k_mac_get_ch_switch_reason(ar, vifs, n_vifs);
+		ath12k_vendor_ch_switch_reason_notify(ar, reason, old_chandef,
+						      new_chandef);
 	}
 
 	if (ath12k_wmi_is_mvr_supported(ab))
