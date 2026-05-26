@@ -79,7 +79,8 @@ static void
 ath12k_wifi8_dp_update_tx_link_telemetry(struct ath12k_dp_peer *dp_peer,
 					 struct ath12k_dp_link_peer *link_peer,
 					 int link_id,
-					 const struct tx_peer_band_telemetry *band)
+					 const struct tx_peer_band_telemetry *band,
+					 u64 drop_bytes, u32 drop1_pkts)
 {
 	struct ath12k_dp_link_peer_hw_tx_stats *hw_link_tx;
 	struct ath12k_dp_peer_tx_stats *tx;
@@ -91,20 +92,20 @@ ath12k_wifi8_dp_update_tx_link_telemetry(struct ath12k_dp_peer *dp_peer,
 	tx = &dp_peer->stats[link_id].tx[0];
 	hw_link_tx = &link_peer->peer_stats.hw_link_stats->hw_link_tx;
 
-	tx->tx_success.bytes +=
-		(u64)le32_to_cpu(band->info0) |
-		((u64)le32_get_bits(band->info1,
-		TX_PEER_BAND_TELEMETRY_STATS_INFO1_UPPER_SUCCESS_BYTES) << 32);
-
-	tx->tx_success.packets +=
-		le32_get_bits(band->info1,
-			      TX_PEER_BAND_TELEMETRY_STATS_INFO1_NUM_SUCCESS_PACKETS);
-
 	tx->total_msdu_retries +=
 		le32_get_bits(band->info2,
 			      TX_PEER_BAND_TELEMETRY_STATS_INFO2_NUM_RETRANSMISSIONS);
 
 	if (!dp_peer->is_vdev_peer) {
+		tx->tx_success.bytes +=
+			(u64)le32_to_cpu(band->info0) |
+			((u64)le32_get_bits(band->info1,
+			 TX_PEER_BAND_TELEMETRY_STATS_INFO1_UPPER_SUCCESS_BYTES) << 32);
+
+		tx->tx_success.packets +=
+			le32_get_bits(band->info1,
+			      TX_PEER_BAND_TELEMETRY_STATS_INFO1_NUM_SUCCESS_PACKETS);
+
 		tx->ucast.bytes +=
 			(u64)le32_to_cpu(band->info0) |
 			((u64)le32_get_bits(band->info1,
@@ -113,6 +114,9 @@ ath12k_wifi8_dp_update_tx_link_telemetry(struct ath12k_dp_peer *dp_peer,
 		tx->ucast.packets +=
 		le32_get_bits(band->info1,
 			      TX_PEER_BAND_TELEMETRY_STATS_INFO1_NUM_SUCCESS_PACKETS);
+	} else {
+		tx->tx_success.bytes += drop_bytes;
+		tx->tx_success.packets += drop1_pkts;
 	}
 
 	hw_link_tx->sum_ack_rssi +=
@@ -148,7 +152,8 @@ ath12k_wifi8_dp_update_tx_peer_telemetry(struct ath12k_dp_peer *dp_peer,
 	struct ath12k_dp_link_peer *link_peer;
 	struct ath12k_dp_peer_tx_stats *tx;
 	int link_id, primary_link_id = -1;
-	u32 failed_pkts, retried_pkts;
+	u32 failed_pkts, retried_pkts, drop1_pkts;
+	u64 drop_bytes;
 	u8 band_id;
 
 	if (!dp_peer->mld_stats.hw_stats)
@@ -162,14 +167,20 @@ ath12k_wifi8_dp_update_tx_peer_telemetry(struct ath12k_dp_peer *dp_peer,
 		((u64)le32_get_bits(tx_desc->info1,
 		TX_PEER_TELEMETRY_DESC_INFO1_UPPER_FAIL_BYTES) << 32);
 
-	hw_tx->drop_bytes +=
+	drop_bytes =
 		(u64)le32_to_cpu(tx_desc->lower_drop_bytes) |
 		((u64)le32_get_bits(tx_desc->info1,
 		TX_PEER_TELEMETRY_DESC_INFO1_UPPER_DROP_BYTES) << 32);
 
-	hw_tx->drop1_pkts +=
+
+	drop1_pkts =
 		le32_get_bits(tx_desc->num_dropped1_packets,
 			      TX_PEER_TELEMETRY_DESC_NUM_DROPPED1_PACKETS);
+
+	if (!dp_peer->is_vdev_peer) {
+		hw_tx->drop_bytes += drop_bytes;
+		hw_tx->drop1_pkts += drop1_pkts;
+	}
 
 	hw_tx->drop2_pkts +=
 		le32_get_bits(tx_desc->num_dropped2_packets,
@@ -185,6 +196,8 @@ ath12k_wifi8_dp_update_tx_peer_telemetry(struct ath12k_dp_peer *dp_peer,
 
 	/* Per-band/link Tx stats */
 	for (link_id = 0; link_id < ATH12K_DP_PEER_MAX_MLO_LINKS; link_id++) {
+		u32 success_pkts_mask, success_bytes_mask;
+
 		link_peer = rcu_dereference(dp_peer->link_peers[link_id]);
 		if (!link_peer)
 			continue;
@@ -201,27 +214,41 @@ ath12k_wifi8_dp_update_tx_peer_telemetry(struct ath12k_dp_peer *dp_peer,
 
 		ath12k_wifi8_dp_update_tx_link_telemetry(dp_peer, link_peer,
 							 link_id,
-							 &tx_desc->peer_band[band_id]);
+							 &tx_desc->peer_band[band_id],
+							 drop_bytes, drop1_pkts);
 
-		comp_pkt.packets +=
-		le32_get_bits(tx_desc->peer_band[band_id].info1,
-			      TX_PEER_BAND_TELEMETRY_STATS_INFO1_NUM_SUCCESS_PACKETS);
-		comp_pkt.bytes +=
-			(u64)le32_to_cpu(tx_desc->peer_band[band_id].info0) |
-			((u64)le32_get_bits(tx_desc->peer_band[band_id].info1,
-			TX_PEER_BAND_TELEMETRY_STATS_INFO1_UPPER_SUCCESS_BYTES) << 32);
+		if (!dp_peer->is_vdev_peer) {
+			success_pkts_mask =
+				TX_PEER_BAND_TELEMETRY_STATS_INFO1_NUM_SUCCESS_PACKETS;
+			success_bytes_mask =
+				TX_PEER_BAND_TELEMETRY_STATS_INFO1_UPPER_SUCCESS_BYTES;
+
+			comp_pkt.packets +=
+				le32_get_bits(tx_desc->peer_band[band_id].info1,
+					      success_pkts_mask);
+			comp_pkt.bytes +=
+				(u64)le32_to_cpu(tx_desc->peer_band[band_id].info0) |
+				((u64)le32_get_bits(tx_desc->peer_band[band_id].info1,
+						     success_bytes_mask) << 32);
+		}
+	}
+
+	if (dp_peer->is_vdev_peer) {
+		comp_pkt.packets += drop1_pkts;
+		comp_pkt.bytes += drop_bytes;
 	}
 
 	if (primary_link_id < 0)
 		return;
 
 	/* Add MLD-level failed packets/bytes to comp_pkt totals */
-	comp_pkt.packets += failed_pkts;
-	comp_pkt.bytes +=
-		(u64)le32_to_cpu(tx_desc->lower_fail_bytes) |
-		((u64)le32_get_bits(tx_desc->info1,
-			TX_PEER_TELEMETRY_DESC_INFO1_UPPER_FAIL_BYTES) << 32);
-
+	if (!dp_peer->is_vdev_peer) {
+		comp_pkt.packets += failed_pkts;
+		comp_pkt.bytes +=
+			(u64)le32_to_cpu(tx_desc->lower_fail_bytes) |
+			((u64)le32_get_bits(tx_desc->info1,
+				TX_PEER_TELEMETRY_DESC_INFO1_UPPER_FAIL_BYTES) << 32);
+	}
 	/* Store MLD-level stats into primary link's stats[primary_link_id].tx[0] */
 	tx = &dp_peer->stats[primary_link_id].tx[0];
 	tx->comp_pkt.packets += comp_pkt.packets;
