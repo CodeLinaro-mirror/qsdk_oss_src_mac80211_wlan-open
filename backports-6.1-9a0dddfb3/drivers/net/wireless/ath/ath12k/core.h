@@ -336,14 +336,6 @@ enum ath12k_hw_rev {
 
 #define ATH12K_DIAG_HW_ID_OFFSET	16
 
-enum ath12k_soc_reset_reason {
-	ATH12K_RESET_NONE = 0,
-	/* Full SOC reset, resets MAC/PHY/Q6 */
-	ATH12K_GLOBAL_SOC_RESET,
-	/* Q6 subsystem only reset*/
-	ATH12K_Q6_BCR_RESET,
-};
-
 enum ath12k_firmware_mode {
 	/* the default mode, standard 802.11 functionality */
 	ATH12K_FIRMWARE_MODE_NORMAL,
@@ -504,6 +496,7 @@ enum ath12k_dev_flags {
 	ATH12K_FLAG_UMAC_RECOVERY_START,
 	ATH12K_FLAG_SOC_CREATE_FAIL,
 	ATH12K_FLAG_MGMT_IRQ_ENABLED,
+	ATH12K_FLAG_RECOVERY_Q6_BCR,
 };
 
 enum ath12k_mlo_recovery_mode {
@@ -2387,7 +2380,6 @@ struct ath12k_base {
 
 	u32 *crash_info_address;
 	u32 *recovery_mode_address;
-	enum ath12k_soc_reset_reason soc_reset_reason;
 
 	u32 fw_dbglog_param;
 	u64 fw_dbglog_val;

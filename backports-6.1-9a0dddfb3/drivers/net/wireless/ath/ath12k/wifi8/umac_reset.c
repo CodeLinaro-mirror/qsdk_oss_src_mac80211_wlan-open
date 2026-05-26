@@ -81,7 +81,7 @@ void ath12k_wifi8_umac_reset_handle_init_recovery(struct ath12k_base *ab)
 
 	/* Set umac in recovery flag for soc under Q6 only reset */
 	if (test_bit(ATH12K_FLAG_RECOVERY, &cumac_ab->dev_flags) &&
-	    cumac_ab->soc_reset_reason == ATH12K_Q6_BCR_RESET) {
+	    test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &cumac_ab->dev_flags)) {
 		set_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &cumac_ab->dev_flags);
 	}
 
@@ -117,7 +117,7 @@ static void ath12k_wifi8_post_pre_reset_send_cb(struct ath12k_base *ab)
 
 	/* Enqueue clear_link_desc_pool task for the current ab */
 	if (ab->is_bypassed || (test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags) &&
-	    ab->soc_reset_reason != ATH12K_Q6_BCR_RESET))
+	    !test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags)))
 		return;
 
 	spin_lock_irqsave(&mlo_umac_reset->task_queue_lock, flags);
@@ -171,7 +171,7 @@ void ath12k_wifi8_umac_reset_handle_pre_reset(struct ath12k_base *ab)
 	cumac_ab = ath12k_dp_get_ab_from_dp_hw_group(ag->dp_hw_grp);
 
 	if (test_bit(ATH12K_FLAG_RECOVERY, &cumac_ab->dev_flags) &&
-	    cumac_ab->soc_reset_reason == ATH12K_Q6_BCR_RESET) {
+	    test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &cumac_ab->dev_flags)) {
 		ret = ath12k_cumac_hw_pre_reset(cumac_ab);
 		if (ret) {
 			ath12k_err(ab, "CUMAC HW pre reset failed");
@@ -263,7 +263,7 @@ void ath12k_wifi8_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 	cumac_ab = ath12k_dp_get_ab_from_dp_hw_group(ag->dp_hw_grp);
 
 	if (test_bit(ATH12K_FLAG_RECOVERY, &cumac_ab->dev_flags) &&
-	    cumac_ab->soc_reset_reason == ATH12K_Q6_BCR_RESET) {
+	    test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &cumac_ab->dev_flags)) {
 		ret = ath12k_cumac_hw_reset(cumac_ab);
 		if (ret) {
 			ath12k_err(ab, "CUMAC HW post reset failed");
@@ -322,7 +322,7 @@ void ath12k_wifi8_umac_reset_handle_post_reset_complete(struct ath12k_base *ab)
 	/* Handle only once */
 	if (mlo_umac_reset->initiator_chip == ab->device_id &&
 	    test_bit(ATH12K_FLAG_RECOVERY, &cumac_ab->dev_flags) &&
-	    cumac_ab->soc_reset_reason == ATH12K_Q6_BCR_RESET) {
+	    test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &cumac_ab->dev_flags)) {
 		ret = ath12k_cumac_hw_post_reset(cumac_ab);
 		if (ret) {
 			ath12k_err(ab, "CUMAC HW post reset failed");
