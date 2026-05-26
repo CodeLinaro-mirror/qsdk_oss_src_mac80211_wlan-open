@@ -37,15 +37,11 @@ struct ath12k_dp_hw_link {
 #if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined(CPTCFG_ATH12K_MEM_PROFILE_512M)
 #define DP_TX_COMP_RING_SIZE           16384
 #define ATH12K_NUM_POOL_TX_DESC        16384
-#define DP_PPE_WBM2SW_RING_SIZE	8192
-#define DP_TQM2PPE_RING_SIZE 8192
 /* TODO: revisit this count during testing */
 #define DP_RX_BUFFER_SIZE		1856
 #elif defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
 #define DP_TX_COMP_RING_SIZE           16384
 #define ATH12K_NUM_POOL_TX_DESC        8192
-#define DP_PPE_WBM2SW_RING_SIZE 8192
-#define DP_TQM2PPE_RING_SIZE 8192
 /* TODO: revisit this count during testing */
 #define DP_RX_BUFFER_SIZE       1856
 #else
@@ -55,8 +51,6 @@ struct ath12k_dp_hw_link {
 #define DP_TX_COMP_RING_SIZE           32768
 #endif
 #define ATH12K_NUM_POOL_TX_DESC                32768
-#define DP_PPE_WBM2SW_RING_SIZE	32768
-#define DP_TQM2PPE_RING_SIZE 32768
 /* TODO: revisit this count during testing */
 #define DP_RX_BUFFER_SIZE		2048
 #endif
