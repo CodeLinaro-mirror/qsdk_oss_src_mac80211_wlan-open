@@ -78,8 +78,8 @@ struct ath12k_dp_hw_link {
 #define ATH12K_RX_SPT_PAGE_OFFSET  \
 	(ATH12K_NUM_PPEDS_TX_SPT_PAGES + ATH12K_NUM_TX_SPT_PAGES)
 #define ATH12K_TX_SPT_OFFSET ATH12K_NUM_PPEDS_TX_SPT_PAGES
-#define ATH12K_RX_SPT_OFFSET (ATH12K_TX_SPT_PAGES_PER_POOL * ATH12K_HW_MAX_QUEUES)
-
+#define ATH12K_RX_SPT_OFFSET \
+	(ATH12K_NUM_PPEDS_TX_SPT_PAGES + ATH12K_NUM_TX_SPT_PAGES)
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #define ATH12K_NUM_PPEDS_TX_SPT_PAGES \
 	(ath12k_ppeds_desc_params.num_ppeds_desc / ATH12K_MAX_SPT_ENTRIES)
@@ -172,6 +172,20 @@ struct ath12k_dp_hw_group {
 	/* protects shared TX SPT page and descriptor pool initialization across SOCs */
 	struct mutex tx_init_lock;
 	struct device *tx_spt_dev;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	struct ath12k_ppeds_tx_desc_info **ppedstxbaddr;
+	struct list_head ppeds_tx_desc_free_list;
+	struct list_head ppeds_tx_desc_reuse_list;
+	int ppeds_tx_desc_reuse_list_len;
+	/* protects the ppeds free and reuse desc lists */
+	spinlock_t ppeds_tx_desc_lock;
+	bool ppeds_tx_desc_initialized;
+	/* protects shared PPEDS TX SPT page and descriptor pool init across SOCs */
+	struct mutex ppeds_tx_init_lock;
+	struct device *ppeds_tx_spt_dev;
+	struct ath12k_spt_info *ppeds_spt_info;
+	u32 ppeds_num_spt_pages;
+#endif
 	u8  pcp_tid_map[ATH12K_DP_PCP_TID_MAP_SIZE];
 	u8  tid_map_precedence;
 #ifdef CPTCFG_QCN_EXTN

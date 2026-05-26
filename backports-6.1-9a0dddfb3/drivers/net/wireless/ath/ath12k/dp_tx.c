@@ -80,7 +80,7 @@ EXPORT_SYMBOL(ath12k_dp_tx_get_mcast_group_slot);
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 void
-ath12k_dp_ppeds_tx_release_desc_list_bulk(struct ath12k_dp *dp,
+ath12k_dp_ppeds_tx_release_desc_list_bulk(struct ath12k_dp_hw_group *dp_hw_grp,
 					  struct list_head *local_list,
 					  int local_list_len,
 					  struct list_head *local_list_no_skb,
@@ -93,7 +93,7 @@ ath12k_dp_ppeds_tx_release_desc_list_bulk(struct ath12k_dp *dp,
 	int count = 0;
 	struct list_head local_list_for_reuse;
 
-	spin_lock_bh(&dp->ppe.ppeds_tx_desc_lock);
+	spin_lock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
 
 	if (unlikely(list_no_skb_count)) {
 		list_for_each_entry_safe(desc, tmp, local_list_no_skb, list) {
@@ -101,16 +101,16 @@ ath12k_dp_ppeds_tx_release_desc_list_bulk(struct ath12k_dp *dp,
 			desc->in_use = false;
 		}
 
-		list_splice_tail(local_list_no_skb, &dp->ppe.ppeds_tx_desc_free_list);
+		list_splice_tail(local_list_no_skb, &dp_hw_grp->ppeds_tx_desc_free_list);
 	}
 
 	hotlist_remaining_len = ath12k_ppeds_desc_params.ppeds_hotlist_len -
-						dp->ppe.ppeds_tx_desc_reuse_list_len;
+						dp_hw_grp->ppeds_tx_desc_reuse_list_len;
 
 	if (likely(hotlist_remaining_len >= local_list_len)) {
-		list_splice_tail(local_list, &dp->ppe.ppeds_tx_desc_reuse_list);
-		dp->ppe.ppeds_tx_desc_reuse_list_len += local_list_len;
-		spin_unlock_bh(&dp->ppe.ppeds_tx_desc_lock);
+		list_splice_tail(local_list, &dp_hw_grp->ppeds_tx_desc_reuse_list);
+		dp_hw_grp->ppeds_tx_desc_reuse_list_len += local_list_len;
+		spin_unlock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
 		return;
 	}
 
@@ -138,9 +138,10 @@ ath12k_dp_ppeds_tx_release_desc_list_bulk(struct ath12k_dp *dp,
 		/* cut the local_list into local_list_for_reuse and local_list */
 		list_cut_position(&local_list_for_reuse, local_list, &last_desc->list);
 
-		/* merge local_list_for_reuse into global dp->ppe.ppeds_tx_desc_reuse_list */
-		list_splice_tail(&local_list_for_reuse, &dp->ppe.ppeds_tx_desc_reuse_list);
-		dp->ppe.ppeds_tx_desc_reuse_list_len += count + 1;
+		/* merge local_list_for_reuse into global ppeds_tx_desc_reuse_list */
+		list_splice_tail(&local_list_for_reuse,
+				 &dp_hw_grp->ppeds_tx_desc_reuse_list);
+		dp_hw_grp->ppeds_tx_desc_reuse_list_len += count + 1;
 	}
 
 skip_reuse_list:
@@ -163,9 +164,9 @@ skip_reuse_list:
 	}
 
 	/* Add the remaining descriptors to the free list */
-	list_splice_tail(local_list, &dp->ppe.ppeds_tx_desc_free_list);
+	list_splice_tail(local_list, &dp_hw_grp->ppeds_tx_desc_free_list);
 
-	spin_unlock_bh(&dp->ppe.ppeds_tx_desc_lock);
+	spin_unlock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
 
 	dev_kfree_skb_list_fast(&free_list_head);
 }
@@ -186,7 +187,6 @@ void ath12k_dp_ppeds_tx_comp_get_desc(struct ath12k_base *ab,
 }
 EXPORT_SYMBOL(ath12k_dp_ppeds_tx_comp_get_desc);
 
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 void ath12k_hal_srng_ppeds_dst_inv_entry(struct ath12k_base *ab,
 					 struct hal_srng *srng, int entries)
 {
@@ -217,7 +217,6 @@ void ath12k_hal_srng_ppeds_dst_inv_entry(struct ath12k_base *ab,
 	dsb(st);
 }
 EXPORT_SYMBOL(ath12k_hal_srng_ppeds_dst_inv_entry);
-#endif
 
 u16 dp_sawf_msduq_peer_id_set(u16 peer_id, u8 msduq)
 {

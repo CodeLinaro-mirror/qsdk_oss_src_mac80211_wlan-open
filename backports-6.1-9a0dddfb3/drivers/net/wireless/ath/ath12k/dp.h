@@ -587,6 +587,7 @@ struct ath12k_ppeds_tx_desc_info {
 			u8 mac_id;
 			u8 pool_id;
 			u8 flags;
+			u8 device_id;
 		};
 	};
 };
@@ -1035,7 +1036,6 @@ struct ath12k_dp {
 	u32 rx_ppt_base;
 	struct ath12k_rx_desc_info **rxbaddr;
 	struct ath12k_tx_desc_info **txbaddr;
-	struct ath12k_ppeds_tx_desc_info **ppedstxbaddr;
 	struct list_head rx_ppeds_reuse_list;
 	struct list_head rx_desc_free_list;
 	/* protects the free desc list */
@@ -1885,14 +1885,6 @@ void ath12k_dp_srng_common_cleanup(struct ath12k_base *ab);
 enum ath12k_dp_eapol_key_type ath12k_dp_get_eapol_subtype(u8 *data);
 ssize_t ath12k_dp_dump_device_ring_stats(struct ath12k_base *ab,
 					 char *buf, int size);
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-struct ath12k_ppeds_tx_desc_info *ath12k_dp_get_ppeds_tx_desc(struct ath12k_base *ab,
-							      u32 desc_id);
-int ath12k_dp_ppeds_cc_desc_init(struct ath12k_base *ab);
-int ath12k_dp_ppeds_cc_desc_cleanup(struct ath12k_base *ab);
-void ath12k_dp_ppeds_tx_cmem_init(struct ath12k_base *ab, struct ath12k_dp *dp);
-int ath12k_dp_ppe_rxole_rxdma_cfg(struct ath12k_base *ab);
-#endif
 void ath12k_dp_get_device_stats(struct ath12k_dp *dp,
 				struct ath12k_telemetry_dp_device *telemetry_device);
 int ath12k_dp_get_link_peer_stats(struct ath12k_pdev_dp *dp_pdev,
@@ -1946,9 +1938,8 @@ void ath12k_dp_ppeds_tx_comp_get_desc(struct ath12k_base *ab,
 				      struct ath12k_ppeds_tx_desc_info **tx_desc);
 struct ath12k_ppeds_tx_desc_info *ath12k_dp_get_ppeds_tx_desc(struct ath12k_base *ab,
 							      u32 desc_id);
-int ath12k_dp_ppeds_cc_desc_init(struct ath12k_base *ab);
 int ath12k_dp_ppeds_cc_desc_cleanup(struct ath12k_base *ab);
-void ath12k_dp_ppeds_tx_cmem_init(struct ath12k_base *ab, struct ath12k_dp *dp);
+void ath12k_dp_ppeds_tx_cmem_init(struct ath12k_base *ab);
 int ath12k_dp_ppe_rxole_rxdma_cfg(struct ath12k_base *ab);
 void ath12k_dp_increment_bank_num_users(struct ath12k_dp *dp,
 					int bank_id);

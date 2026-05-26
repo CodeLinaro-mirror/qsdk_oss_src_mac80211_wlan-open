@@ -5195,6 +5195,9 @@ static struct ath12k_hw_group *ath12k_core_hw_group_alloc(struct ath12k_base *ab
 	INIT_WORK(&ag->reset_group_work, ath12k_core_update_userpd_state);
 	mutex_init(&ag->mutex);
 	mutex_init(&ag->dp_hw_grp->tx_init_lock);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	mutex_init(&ag->dp_hw_grp->ppeds_tx_init_lock);
+#endif
 	init_completion(&ag->umac_reset_complete);
 	init_completion(&ag->peer_cleanup_complete);
 	spin_lock_init(&ag->ahsta_lock);
