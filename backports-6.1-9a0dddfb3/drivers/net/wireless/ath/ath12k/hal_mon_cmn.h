@@ -69,6 +69,13 @@ struct ath12k_mon_ring_desc_info;
 #define HAL_TLV_64_HDR_LEN		GENMASK(21, 10)
 #define HAL_TLV_64_USR_ID		GENMASK(31, 26)
 
+enum hal_rx_mpdu_filter_category {
+	HAL_RX_MPDU_FILTER_CATEGORY_FP,
+	HAL_RX_MPDU_FILTER_CATEGORY_MD,
+	HAL_RX_MPDU_FILTER_CATEGORY_MO,
+	HAL_RX_MPDU_FILTER_CATEGORY_FP_MO
+};
+
 struct hal_rx_u_sig_info {
 	u8 phy_version;
 	bool ul_dl;

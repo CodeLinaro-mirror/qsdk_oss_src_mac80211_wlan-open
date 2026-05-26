@@ -358,13 +358,6 @@ ath12k_dp_mon_parse_mpdu_start(struct ath12k_dp *dp, struct ath12k_mon_data *pmo
 	mpdu_meta = (struct ath12k_dp_mon_mpdu_meta *)skb->data;
 	mpdu_meta->decap_type =  ppdu_info->mpdu_info[user_id].decap_type;
 
-	if (mpdu_meta->decap_type != DP_RX_DECAP_TYPE_RAW && ppdu_info->fc_valid &&
-	    ieee80211_is_ctl(ppdu_info->frame_control) &&
-	    (ppdu_info->userstats[user_id].filter_category ==
-		DP_MPDU_FILTER_CATEGORY_MO))
-		ppdu_info->userstats[user_id].filter_category =
-						DP_MPDU_FILTER_CATEGORY_FP;
-
 	return 0;
 }
 
