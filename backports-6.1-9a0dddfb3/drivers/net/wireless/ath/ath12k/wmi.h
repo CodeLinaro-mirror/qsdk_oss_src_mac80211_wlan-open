@@ -3907,6 +3907,8 @@ enum wmi_vdev_uhr_cu_state {
 	WMI_VDEV_UHR_CU_IN_PROGRESS,
 	WMI_VDEV_UHR_CU_ESTABLISHED,
 	WMI_VDEV_UHR_CU_SESSION_END,
+	WMI_VDEV_UHR_CU_POST_NOTIF_DONE,
+	WMI_VDEV_UHR_CU_SESSION_ABORT
 };
 
 /**
@@ -5052,6 +5054,12 @@ struct wmi_uhr_ap_mode_tuple_params {
 	__le32 tlv_header;
 	__le32 vdev_id_mode_bitmap;
 } __packed;
+
+struct ath12k_wmi_uhr_cu_event_parse {
+	struct wmi_pdev_uhr_cu_event_fixed_param fixed;
+	const struct wmi_vdev_uhr_cu_status *status;
+	u32 count;
+};
 
 #define WMI_UHR_MODE_TUP_VDEV_ID		GENMASK(7, 0)
 #define WMI_UHR_MODE_TUP_DPS_STATE		GENMASK(9, 8)

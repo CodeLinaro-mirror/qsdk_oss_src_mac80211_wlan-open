@@ -612,6 +612,11 @@ int ath12k_mac_op_critical_update(struct ieee80211_hw *hw,
 				  unsigned int link_id,
 				  enum nl80211_cu_type cu_type,
 				  const u8 *ie, size_t ie_len);
+void ath12k_mac_handle_pdev_uhr_cu_event(struct ath12k_base *ab,
+					 u32 pdev_id,
+					 const struct wmi_vdev_uhr_cu_status *status,
+					 u32 count);
+
 /* In the bitmap 0 indicates no puncturing and 1 indicated that sub channel is
  * punctured
  */

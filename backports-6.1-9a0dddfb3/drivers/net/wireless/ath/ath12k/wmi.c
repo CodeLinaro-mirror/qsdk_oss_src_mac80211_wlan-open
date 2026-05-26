@@ -215,6 +215,9 @@ ath12k_wmi_gpio_input_event(struct ath12k_base *ab, struct sk_buff *skb);
 static void
 ath12k_wmi_event_peer_sta_ps_state_chg(struct ath12k_base *ab, struct sk_buff *skb);
 
+static void
+ath12k_wmi_pdev_uhr_cu_event(struct ath12k_base *ab, struct sk_buff *skb);
+
 static const struct ath12k_wmi_tlv_policy ath12k_wmi_tlv_policies[] = {
 	[WMI_TAG_ARRAY_BYTE] = { .min_len = 0 },
 	[WMI_TAG_ARRAY_UINT32] = { .min_len = 0 },
@@ -257,6 +260,10 @@ static const struct ath12k_wmi_tlv_policy ath12k_wmi_tlv_policies[] = {
 		.min_len = sizeof(struct wmi_scan_event) },
 	[WMI_TAG_PEER_STA_KICKOUT_EVENT] = {
 		.min_len = sizeof(struct wmi_peer_sta_kickout_event) },
+	[WMI_TAG_PDEV_UHR_CU_EVENT_FIXED_PARAM] = {
+		.min_len = sizeof(struct wmi_pdev_uhr_cu_event_fixed_param) },
+	[WMI_TAG_VDEV_UHR_CU_STATUS] = {
+		.min_len = sizeof(struct wmi_vdev_uhr_cu_status) },
 	[WMI_TAG_ROAM_EVENT] = {
 		.min_len = sizeof(struct wmi_roam_event) },
 	[WMI_TAG_CHAN_INFO_EVENT] = {
@@ -15529,6 +15536,76 @@ static void ath12k_wmi_event_teardown_complete(struct ath12k_base *ab,
 	}
 }
 
+static int ath12k_wmi_uhr_cu_status_parse(struct ath12k_base *ab,
+					  u16 tag, u16 len,
+					  const void *ptr, void *data)
+{
+	struct ath12k_wmi_uhr_cu_event_parse *arg = data;
+
+	if (tag != WMI_TAG_VDEV_UHR_CU_STATUS)
+		return -EPROTO;
+
+	if (!arg->status)
+		arg->status = ptr;
+
+	arg->count++;
+	return 0;
+}
+
+static int ath12k_wmi_uhr_cu_event_parse(struct ath12k_base *ab,
+					 u16 tag, u16 len,
+					 const void *ptr, void *data)
+{
+	struct ath12k_wmi_uhr_cu_event_parse *arg = data;
+	int ret;
+
+	switch (tag) {
+	case WMI_TAG_PDEV_UHR_CU_EVENT_FIXED_PARAM:
+		arg->fixed = *(const struct wmi_pdev_uhr_cu_event_fixed_param *)ptr;
+		break;
+	case WMI_TAG_ARRAY_STRUCT:
+		if (len == 0)
+			break;
+		ret = ath12k_wmi_tlv_iter(ab, ptr, len,
+					  ath12k_wmi_uhr_cu_status_parse, arg);
+		if (ret) {
+			ath12k_warn(ab, "failed to parse uhr cu status tlv: %d\n",
+				    ret);
+			return ret;
+		}
+		break;
+	default:
+		break;
+	}
+	return 0;
+}
+
+static void ath12k_wmi_pdev_uhr_cu_event(struct ath12k_base *ab,
+					 struct sk_buff *skb)
+{
+	struct ath12k_wmi_uhr_cu_event_parse arg = {};
+	int ret;
+
+	ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
+				  ath12k_wmi_uhr_cu_event_parse, &arg);
+	if (ret) {
+		ath12k_warn(ab, "failed to parse pdev uhr cu event tlv: %d\n", ret);
+		return;
+	}
+
+	if (!arg.count || !arg.status)
+		return;
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI | ATH12K_DBG_CU,
+		   "wmi pdev uhr cu event pdev_id %u vdev_status_count %u\n",
+		   le32_to_cpu(arg.fixed.pdev_id), arg.count);
+
+	ath12k_mac_handle_pdev_uhr_cu_event(ab,
+					    le32_to_cpu(arg.fixed.pdev_id),
+					    arg.status,
+					    arg.count);
+}
+
 static void ath12k_wmi_event_send_cumac_complete(struct ath12k_base *ab,
 						 struct sk_buff *skb)
 {
@@ -19126,6 +19203,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 		break;
 	case WMI_MLO_TEARDOWN_COMPLETE_EVENTID:
 		ath12k_wmi_event_teardown_complete(ab, skb);
+		break;
+	case WMI_PDEV_UHR_CU_EVENTID:
+		ath12k_wmi_pdev_uhr_cu_event(ab, skb);
 		break;
 	case WMI_PDEV_SET_CUMAC_CHIP_ID_CONFIRMATION_EVENTID:
 		ath12k_wmi_event_send_cumac_complete(ab, skb);

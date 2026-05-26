@@ -6467,6 +6467,20 @@ static void ath12k_update_obss_color_notify_work(struct wiphy *wiphy,
 	arvif->obss_color_bitmap = 0;
 }
 
+static void ath12k_uhr_cu_notify_work(struct wiphy *wiphy,
+				      struct wiphy_work *work)
+{
+	struct ath12k_link_vif *arvif = container_of(work, struct ath12k_link_vif,
+						uhr_cu_notify_work);
+
+	if (!arvif->ar)
+		return;
+
+	if (arvif->is_created)
+		ieee80211_cu_notify(arvif->ar->ah->hw, arvif->ahvif->vif,
+				    arvif->link_id, arvif->pending_cu_state);
+}
+
 static void ath12k_mac_init_arvif_rssi(struct ath12k_link_vif *arvif)
 {
 	arvif->rssi_deauth_cfg.enabled = false;
@@ -6517,6 +6531,8 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 				ath12k_update_obss_color_notify_work);
 		wiphy_work_init(&arvif->update_bcn_template_work,
 				ath12k_update_bcn_template_work);
+		wiphy_work_init(&arvif->uhr_cu_notify_work,
+				ath12k_uhr_cu_notify_work);
 	}
 	arvif->num_stations = 0;
 	arvif->num_peers = 0;
@@ -6688,6 +6704,8 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 				  &arvif->update_obss_color_notify_work);
 		wiphy_work_cancel(ah->hw->wiphy,
 				  &arvif->update_bcn_template_work);
+		wiphy_work_cancel(ah->hw->wiphy,
+				  &arvif->uhr_cu_notify_work);
 	}
 	wiphy_work_cancel(ah->hw->wiphy,
 			  &arvif->peer_ch_width_switch_work);
@@ -31557,6 +31575,86 @@ int ath12k_mac_op_critical_update(struct ieee80211_hw *hw,
 	return 0;
 }
 EXPORT_SYMBOL(ath12k_mac_op_critical_update);
+
+/**
+ * ath12k_wmi_to_nl80211_cu_state - translate firmware UHR CU state to nl80211
+ * @wmi_state: firmware state value from &enum wmi_vdev_uhr_cu_state
+ * @cu_state:  on success, set to the corresponding &enum nl80211_cu_state
+ *
+ * Returns 0 on success, -EINVAL if @wmi_state is not recognised.
+ */
+static int ath12k_wmi_to_nl80211_cu_state(u32 wmi_state,
+					  enum nl80211_cu_state *cu_state)
+{
+	switch (wmi_state) {
+	case WMI_VDEV_UHR_CU_IN_PROGRESS:
+		*cu_state = NL80211_CU_STATE_STARTED;
+		return 0;
+	case WMI_VDEV_UHR_CU_ESTABLISHED:
+		*cu_state = NL80211_CU_STATE_ADV_NOTIFICATION_END;
+		return 0;
+	case WMI_VDEV_UHR_CU_POST_NOTIF_DONE:
+		*cu_state = NL80211_CU_STATE_POST_NOTIFICATION_END;
+		return 0;
+	case WMI_VDEV_UHR_CU_SESSION_END:
+		*cu_state = NL80211_CU_STATE_ECU_END;
+		return 0;
+	default:
+		return -EINVAL;
+	}
+}
+
+/**
+ * ath12k_mac_handle_pdev_uhr_cu_event - handle WMI_PDEV_UHR_CU_EVENTID
+ * @ab:     ath12k_base for this pdev
+ * @pdev_id: pdev that generated the event
+ * @status: array of per-vdev CU status entries from firmware
+ * @count:  number of entries in @status
+ *
+ * Called from the WMI event handler with the parsed per-vdev UHR CU state.
+ * Maps each firmware CU state to the corresponding nl80211_cu_state and
+ * notifies mac80211 via ieee80211_cu_notify().
+ */
+void ath12k_mac_handle_pdev_uhr_cu_event(struct ath12k_base *ab,
+					 u32 pdev_id,
+					 const struct wmi_vdev_uhr_cu_status *status,
+					 u32 count)
+{
+	struct ath12k_link_vif *arvif;
+	enum nl80211_cu_state cu_state;
+	u32 i, vdev_id, state;
+
+	guard(rcu)();
+
+	for (i = 0; i < count; i++) {
+		vdev_id = le32_to_cpu(status[i].vdev_id);
+		state   = le32_to_cpu(status[i].status);
+
+		arvif = ath12k_mac_get_arvif_by_vdev_id(ab, vdev_id);
+		if (!arvif) {
+			ath12k_warn(ab,
+				    "pdev uhr cu event: unknown vdev_id %u\n",
+				    vdev_id);
+			continue;
+		}
+
+		if (ath12k_wmi_to_nl80211_cu_state(state, &cu_state)) {
+			ath12k_warn(ab,
+				    "pdev uhr cu event: unknown state %u for vdev %u\n",
+				    state, vdev_id);
+			continue;
+		}
+
+		ath12k_dbg(ab, ATH12K_DBG_MAC | ATH12K_DBG_CU,
+			   "pdev %u uhr cu vdev %u state %u -> nl80211 cu_state %u\n",
+			   pdev_id, vdev_id, state, cu_state);
+
+		arvif->pending_cu_state = cu_state;
+		wiphy_work_queue(arvif->ar->ah->hw->wiphy,
+				 &arvif->uhr_cu_notify_work);
+	}
+}
+EXPORT_SYMBOL(ath12k_mac_handle_pdev_uhr_cu_event);
 
 int ath12k_mac_read_cu_mem(struct ath12k_link_vif *arvif, u16 offset, u32 *val)
 {
