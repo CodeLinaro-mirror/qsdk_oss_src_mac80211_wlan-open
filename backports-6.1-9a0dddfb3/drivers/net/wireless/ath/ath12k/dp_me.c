@@ -114,13 +114,13 @@ static int ath12k_dp_tx_me6(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
 	 */
 	mdata |= ath12k_dp_get_peer_based_tcl_metadata(dp, peer_id, 0);
 
-	msdu_info->to_fw = 1;
+	msdu_info->to_fw = 0;
 	msdu_info->ext_kmem = false;
 	msdu_info->meta_data_flags = mdata;
 	msdu_info->data_len = skb->len;
 	msdu_info->me_convert = true;
 
-	ath12k_dp_tx_set_ast(dp, dp_peer, msdu_info);
+	ath12k_dp_tx_set_ast(dp, dp_peer, msdu_info, dp_pdev->hw_link_id);
 
 	err = ath12k_dp_tx_mcast_send(dp_pdev, ahvif, link_vif, ring_id,
 				      msdu_info, false, 0, group_slot,

@@ -1953,7 +1953,8 @@ fail:
  * @msdu_info: MSDU information
  */
 void ath12k_wifi8_dp_tx_set_ast(struct ath12k_dp_peer *dp_peer,
-				struct ath12k_dp_tx_msdu_info *msdu_info)
+				struct ath12k_dp_tx_msdu_info *msdu_info,
+				u8 hw_link_id)
 {
 	msdu_info->bss_ast_hash = dp_peer->peer_ext_ctx->ast_hash;
 	msdu_info->bss_ast_idx = dp_peer->peer_ext_ctx->ast_index;

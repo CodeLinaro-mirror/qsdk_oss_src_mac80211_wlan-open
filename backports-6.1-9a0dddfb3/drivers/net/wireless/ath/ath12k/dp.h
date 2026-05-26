@@ -772,7 +772,8 @@ struct ath12k_dp_arch_ops {
 				 struct ath12k_dp_skb_ctrl *skb_ctrl,
 				 bool htt_mesh);
 	void (*dp_tx_set_ast)(struct ath12k_dp_peer *dp_peer,
-			      struct ath12k_dp_tx_msdu_info *msdu_info);
+			      struct ath12k_dp_tx_msdu_info *msdu_info,
+			      u8 hw_link_id);
 
 	/* UMAC reset operations */
 	void (*umac_reset_handle_pre_reset)(struct ath12k_base *ab);
@@ -1659,9 +1660,10 @@ ath12k_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 
 static inline void ath12k_dp_tx_set_ast(struct ath12k_dp *dp,
 					struct ath12k_dp_peer *dp_peer,
-					struct ath12k_dp_tx_msdu_info *msdu_info)
+					struct ath12k_dp_tx_msdu_info *msdu_info,
+					u8 hw_link_id)
 {
-	dp->arch_ops->dp_tx_set_ast(dp_peer, msdu_info);
+	dp->arch_ops->dp_tx_set_ast(dp_peer, msdu_info, hw_link_id);
 }
 
 static inline int ath12k_dp_qos_queue_setup(struct ath12k_dp *dp,
