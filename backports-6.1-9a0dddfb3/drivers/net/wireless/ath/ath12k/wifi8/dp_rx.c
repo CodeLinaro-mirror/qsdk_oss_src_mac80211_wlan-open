@@ -3854,10 +3854,16 @@ int ath12k_wifi8_dp_rx_process_err(struct ath12k_dp *dp,
 		goto done;
 
 	if (num_ppe2wbm_reaped) {
-		refill_srng =
-			&ab->hal.srng_list[
-				dp_wifi8->ppe2wbm_refill_ring
-				[PPE2WBM_SW_REFILL_RING].ring_id];
+		u32 ring_id;
+
+		if (!dp_wifi8->dp_ppe2wbm_use_dedicated_pool)
+			ring_id = dp_wifi8->wbm_refill_ring[cpu_id %
+				  DP_WBM_REFILL_RING_MAX].ring_id;
+		else
+			ring_id = dp_wifi8->ppe2wbm_refill_ring
+				  [PPE2WBM_SW_REFILL_RING].ring_id;
+
+		refill_srng = &ab->hal.srng_list[ring_id];
 		ath12k_dp_rx_bufs_replenish(dp, refill_srng, &ppe2wbm_used_list, false);
 	}
 
@@ -4042,6 +4048,13 @@ static int ath12k_wifi8_dp_rx_ppe2wbm_idle_buf_config_qcn9625(struct ath12k_base
 	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
 		return 0;
 
+	/*
+	 * When no dedicated PPE2WBM pool is configured, source ring
+	 * is selected from the SFE pool.
+	 */
+	if (!dp_wifi8->dp_ppe2wbm_use_dedicated_pool)
+		return 0;
+
 	ring_id = dp_wifi8->ppe2wbm_idle_buf_ring.ring_id;
 	tlv_filter.rx_filter = HTT_RX_TLV_FLAGS_RXDMA_RING;
 	tlv_filter.rxmon_disable = true;
@@ -4115,10 +4128,11 @@ void ath12k_wifi8_dp_ppe2wbm_srng_free(struct ath12k_base *ab)
 	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
 		return;
 
-	for (i = 0 ; i < DP_PPE2WBM_REFILL_RING_MAX; i++)
+	for (i = 0 ; i < dp_wifi8->num_ppe2wbm_refill_rings; i++)
 		ath12k_dp_srng_cleanup(ab, &dp_wifi8->ppe2wbm_refill_ring[i]);
 
-	ath12k_dp_srng_cleanup(ab, &dp_wifi8->ppe2wbm_idle_buf_ring);
+	if (dp_wifi8->dp_ppe2wbm_use_dedicated_pool)
+		ath12k_dp_srng_cleanup(ab, &dp_wifi8->ppe2wbm_idle_buf_ring);
 }
 
 int ath12k_wifi8_dp_ppe2wbm_srng_setup(struct ath12k_base *ab)
@@ -4137,24 +4151,40 @@ int ath12k_wifi8_dp_ppe2wbm_srng_setup(struct ath12k_base *ab)
 		return -EINVAL;
 	}
 
-	for (i = 0 ; i < DP_PPE2WBM_REFILL_RING_MAX; i++) {
+	/*
+	 * When no dedicated PPE2WBM pool is configured, SFE buffers are used.
+	 * Hence, a separate PPE2WBM idle pool is not required.
+	 * A dedicated SW2WBM refill ring is used for PPE refill.
+	 */
+	if (!dp_wifi8->dp_ppe2wbm_use_dedicated_pool) {
 		ret = ath12k_dp_srng_setup(ab,
-				&dp_wifi8->ppe2wbm_refill_ring[i],
-				HAL_PPE2WBM_BUF, i, 0,
+				&dp_wifi8->ppe2wbm_refill_ring[0],
+				HAL_WBM_BUF, DP_PPE2WBM_SFE_POOL_REFILL_RING_NUM, 0,
 				ath12k_ppeds_ppe2wbm_ring_size);
 		if (ret) {
 			ath12k_warn(ab, "failed to setup WBM refill ring\n");
 			goto fail;
 		}
-	}
+	} else {
+		for (i = 0 ; i < DP_PPE2WBM_REFILL_RING_MAX; i++) {
+			ret = ath12k_dp_srng_setup(ab,
+						   &dp_wifi8->ppe2wbm_refill_ring[i],
+						   HAL_PPE2WBM_BUF, i, 0,
+						   ath12k_ppeds_ppe2wbm_ring_size);
+			if (ret) {
+				ath12k_warn(ab, "failed to setup WBM refill ring\n");
+				goto fail;
+			}
+		}
 
-	ret = ath12k_dp_srng_setup(ab,
-			&dp_wifi8->ppe2wbm_idle_buf_ring,
-			HAL_PPE2WBM_IDLE_BUF, 0, 0,
-			DP_PPE2WBM_IDLE_BUF_RING_SIZE);
-	if (ret) {
-		ath12k_warn(ab, "failed to setup wbm idle buf ring\n");
-		goto fail;
+		ret = ath12k_dp_srng_setup(ab,
+					   &dp_wifi8->ppe2wbm_idle_buf_ring,
+					   HAL_PPE2WBM_IDLE_BUF, 0, 0,
+					   DP_PPE2WBM_IDLE_BUF_RING_SIZE);
+		if (ret) {
+			ath12k_warn(ab, "failed to setup wbm idle buf ring\n");
+			goto fail;
+		}
 	}
 
 	return 0;
@@ -4169,12 +4199,21 @@ int ath12k_wifi8_dp_ppe2wbm_buf_ring_init(struct ath12k_base *ab)
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
 	struct hal_srng *srng = NULL;
 	size_t req_entries;
-	u32 ring_id = dp_wifi8->ppe2wbm_refill_ring[PPE2WBM_SW_REFILL_RING].ring_id;
+	u32 ring_id;
 	LIST_HEAD(used_list);
 
 	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
 		return 0;
 
+	/*
+	 * When no dedicated PPE2WBM pool is configured, SFE buffers are used.
+	 * Buffer allocation is handled by standard SFE pool initialization.
+	 * Skip initialization of buffers in the PPE2WBM buffer ring.
+	 */
+	if (!dp_wifi8->dp_ppe2wbm_use_dedicated_pool)
+		return 0;
+
+	ring_id = dp_wifi8->ppe2wbm_refill_ring[PPE2WBM_SW_REFILL_RING].ring_id;
 	if (ring_id >= HAL_SRNG_RING_ID_MAX) {
 		ath12k_err(ab, "Invalid PPE2WBM ring_id: %u\n", ring_id);
 		return -EINVAL;
@@ -4201,6 +4240,14 @@ void ath12k_wifi8_dp_rx_ppe2wbm_idle_buff_init(struct ath12k_base *ab)
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(ab->dp);
 
 	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
+		return;
+
+	/*
+	 * When no dedicated PPE2WBM pool is configured, SFE buffers are used.
+	 * The SFE idle pool initialization is sufficient to handle buffer allocation.
+	 * PPE2WBM idle pool initialization is not required.
+	 */
+	if (!dp_wifi8->dp_ppe2wbm_use_dedicated_pool)
 		return;
 
 	idle_buf_srng = &ab->hal.srng_list[dp_wifi8->ppe2wbm_idle_buf_ring.ring_id];
