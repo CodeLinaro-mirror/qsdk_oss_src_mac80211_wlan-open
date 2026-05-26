@@ -165,6 +165,7 @@ struct dp_mon_desc_list_params {
 	struct list_head *list_local;
 	struct page_frag_cache *pf_cache;
 	size_t buff_size;
+	bool is_tx_monitor;
 };
 
 enum dp_mon_stats_mode {
@@ -638,51 +639,6 @@ struct ath12k_pdev_mon_dp_stats {
 };
 
 /**
- * struct ath12k_pdev_tx_mon_stats - TX Monitor Statistics
- * @empty_descriptors: Incremented when hardware provides empty descriptors
- * @truncated_ppdu: Incremented when PPDUs are truncated due to insufficient
- *                  buffer space or hardware limitations. This can indicate
- *                  buffer pool exhaustion.
- * @tx_pkt_tlv_free: Count of TX packet TLV buffers freed back to the pool.
- *                  Used for tracking buffer lifecycle and detecting leaks
- * @tx_status_buf_free: Count of TX status buffers freed back to the pool.
- * @tx_wq_scheduled: Number of times work queue is scheduled
- * @tx_ppdu_desc_invalid: Number of invalid PPDU descriptors encountered
- * @tx_ppdu_desc_overflow: Number of PPDU descriptor buffer overflows
- * @tx_work_queue_stalls: Work queue stall events (processing hangs)
- * @tx_ppdu_parse_errors: Number of PPDU parsing errors
- * @tx_status_buf_null: Number of null status buffer pointers encountered
- * @tx_ppdu_processed: Total number of TX PPDUs processed in work queue
- * @tx_status_desc_processed: Total number of status descriptors processed
- * @tx_data_frames: Total number of data frames transmitted
- * @tx_su_ppdu_count: Number of Single User (SU) PPDUs transmitted
- * @tx_mu_ppdu_count: Number of Multi User (MU) PPDUs transmitted
- * @tx_mu_user_count: Total number of users in all MU PPDUs
- */
-struct ath12k_pdev_tx_mon_stats {
-	u32 empty_descriptors;
-	u32 truncated_ppdu;
-	u32 tx_pkt_tlv_free;
-	u32 tx_status_buf_free;
-	u32 tx_wq_scheduled;
-	u32 tx_ppdu_desc_invalid;
-	u32 tx_ppdu_desc_overflow;
-	u32 tx_work_queue_stalls;
-	u32 tx_ppdu_parse_errors;
-	u32 tx_status_buf_null;
-	u32 tx_ppdu_processed;
-	u32 tx_status_desc_processed;
-	u32 tx_data_frames;
-	u32 tx_su_ppdu_count;
-	u32 tx_mu_ppdu_count;
-	u32 tx_mu_user_count;
-	u32 tx_ppdu_delivery_errors;
-	u32 tx_prot_ppdu_delivered;
-	u32 tx_data_ppdu_delivered;
-	u32 tx_ppdu_delivered;
-};
-
-/**
  * struct ath12k_dp_tx_mon - DP-level TX monitor context
  * @tx_mon_buf_ring: TX monitor refill buffer ring
  * @tx_mon_desc_pool: TX monitor descriptor pool
@@ -692,6 +648,7 @@ struct ath12k_pdev_tx_mon_stats {
  * @tx_num_frag_replenish: Count of replenished TX monitor fragments
  * @tx_num_frag_free: Count of freed TX monitor fragments
  * @tx_mon_buf_ring_ready: Refill ring descriptor availability state
+ * @tx_mon_stats: Buffer lifecycle statistics at SOC level
  */
 struct ath12k_dp_tx_mon {
 	struct dp_rxdma_mon_ring tx_mon_buf_ring;
@@ -702,6 +659,7 @@ struct ath12k_dp_tx_mon {
 	u32 tx_num_frag_replenish;
 	u32 tx_num_frag_free;
 	bool tx_mon_buf_ring_ready;
+	struct ath12k_dp_tx_mon_stats tx_mon_stats;
 };
 
 struct ath12k_pdev_mon_dp;
@@ -713,7 +671,7 @@ struct ath12k_pdev_mon_dp;
  * @tx_mon_dst_ring: TX monitor destination ring
  * @tx_mon_filter: TX monitor filter table
  * @tx_monitor_started: TX monitor active state
- * @tx_mon_stats: TX monitor statistics
+ * @pdev_tx_mon_stats: TX monitor statistics
  * @txmon_wq: TX monitor worker queue
  * @txmon_work: TX monitor worker
  * @tx_mon_ppdu_desc_lock: Lock for TX monitor PPDU descriptors
@@ -732,7 +690,8 @@ struct ath12k_pdev_tx_mon {
 	struct dp_srng tx_mon_dst_ring;
 	struct dp_mon_tx_filter **tx_mon_filter;
 	bool tx_monitor_started:1;
-	struct ath12k_pdev_tx_mon_stats tx_mon_stats;
+	u8 tx_monitor_mode;
+	struct ath12k_pdev_tx_mon_stats pdev_tx_mon_stats;
 	struct workqueue_struct *txmon_wq;
 	struct work_struct txmon_work;
 	spinlock_t tx_mon_ppdu_desc_lock;
@@ -836,7 +795,6 @@ struct ath12k_mon_ring_desc_info {
  * @rxmon_wq: Dedicated work queue for RX monitor frame processing
  * @smart_mon_filter: Smart monitor filter configuration (4-bit CMDV format)
  * @smart_mon_state: Current state of smart monitor functionality
- * @dp_pdev_tx_mon: Per-pdev TX monitor context (rings, filters, stats, WQ)
  * @rx_ext_mon_config: Current filter and peer configs for Rx extended monitor.
  * @rx_ext_mon_lock: Spinlock protecting the Rx extended monitor struct.
  *

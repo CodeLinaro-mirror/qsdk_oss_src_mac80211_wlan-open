@@ -409,6 +409,7 @@ int ath12k_dp_mon_rx_buf_replenish(struct ath12k_dp *dp,
 		.list_local = used_list,
 		.pf_cache = &dp->dp_mon->rx_mon_pf_cache,
 		.buff_size = ATH12K_DP_MON_RX_BUF_SIZE,
+		.is_tx_monitor = false,
 	};
 
 	return ath12k_dp_mon_buf_replenish(dp, buf_ring, req_entries, &list_params);
@@ -430,6 +431,7 @@ int ath12k_dp_mon_buf_replenish(struct ath12k_dp *dp,
 	dma_addr_t paddr;
 	int ret = 0;
 	u8 *mon_buf;
+	bool tx_monitor = (list_params->is_tx_monitor);
 
 	list_for_each_entry_safe(mon_desc, tmp_mon_desc, list_params->list_local, list) {
 		if (unlikely(mon_desc->in_use != DP_MON_DESC_REPLENISH)) {
@@ -443,6 +445,8 @@ int ath12k_dp_mon_buf_replenish(struct ath12k_dp *dp,
 		mon_buf = page_frag_alloc(list_params->pf_cache,
 					  list_params->buff_size, GFP_ATOMIC);
 		if (unlikely(!mon_buf)) {
+			if (tx_monitor)
+				dp_mon->dp_tx_mon->tx_mon_stats.alloc_fail++;
 			ret = -ENOMEM;
 			goto out;
 		}
@@ -452,6 +456,8 @@ int ath12k_dp_mon_buf_replenish(struct ath12k_dp *dp,
 		paddr = ath12k_core_dma_map_page(ab->dev, page, offset,
 						 list_params->buff_size, DMA_FROM_DEVICE);
 		if (unlikely(dma_mapping_error(ab->dev, paddr))) {
+			if (tx_monitor)
+				dp_mon->dp_tx_mon->tx_mon_stats.dma_fail++;
 			page_frag_free(mon_buf);
 			mon_desc->mon_buf = NULL;
 			dp_mon->num_frag_free++;
@@ -493,6 +499,8 @@ int ath12k_dp_mon_buf_replenish(struct ath12k_dp *dp,
 		ath12k_hal_mon_set_mon_buf_desc(&ab->hal, mon_buf_desc, addr_lo,
 						addr_hi, cookie);
 		req_entries--;
+		if (tx_monitor)
+			dp_mon->dp_tx_mon->tx_mon_stats.buf_replenished++;
 	}
 
 ring_unlock:
@@ -605,6 +613,7 @@ size_t ath12k_dp_mon_get_rx_free_desc_list(struct ath12k_dp *dp,
 		.desc_lock = &dp->dp_mon->mon_desc_lock,
 		.free_list = &dp->dp_mon->mon_desc_free_list,
 		.list_local = list,
+		.is_tx_monitor = false,
 	};
 
 	return ath12k_dp_mon_get_free_desc_list(dp, rx_ring, &list_params, ring_lvl);

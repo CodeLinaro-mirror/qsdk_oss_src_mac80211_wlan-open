@@ -107,7 +107,6 @@ ath12k_dp_mon_tx_setup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev)
 		INIT_LIST_HEAD(&dp_pdev_tx_mon->tx_mon_ppdu_desc_pool[i].list);
 		list_add_tail(&dp_pdev_tx_mon->tx_mon_ppdu_desc_pool[i].list,
 			      &dp_pdev_tx_mon->tx_mon_ppdu_desc_free_list);
-		dp_mon_pdev->mon_stats.ppdu_desc_free++;
 	}
 	spin_unlock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
 	dp_pdev_tx_mon->tx_mon_ppdu_desc_initialized = true;
@@ -370,8 +369,9 @@ EXPORT_SYMBOL(ath12k_dp_mon_tx_wq_stop);
  * @dp_mon: DP monitor handle
  */
 static void
-ath12k_dp_mon_tx_desc_free(struct list_head *local_list,
-			   struct ath12k_dp_mon *dp_mon)
+ath12k_dp_mon_tx_desc_free(struct ath12k_pdev_dp *dp_pdev,
+				struct list_head *local_list,
+				struct ath12k_dp_mon *dp_mon)
 {
 	struct ath12k_dp_tx_mon *dp_tx_mon;
 
@@ -382,11 +382,12 @@ ath12k_dp_mon_tx_desc_free(struct list_head *local_list,
 	spin_lock_bh(&dp_tx_mon->tx_mon_desc_lock);
 	list_splice_tail_init(local_list, &dp_tx_mon->tx_mon_desc_free_list);
 	spin_unlock_bh(&dp_tx_mon->tx_mon_desc_lock);
+	ATH12K_TX_MON_STAT_INC(dp_pdev, mon_desc_free);
 }
 
 /**
  * ath12k_dp_mon_tx_free_pkt_buf() - Free packet buffers from TLV data
- * @pdev_dp: Pointer to DP PDEV context containing device and statistics info
+ * @dp_pdev: Pointer to DP PDEV context containing device and statistics info
  * @status_desc: Status descriptor containing monitor buffer and TLV metadata
  *
  * This function parses TLV data from a monitor status buffer and frees any
@@ -414,10 +415,10 @@ ath12k_dp_mon_tx_desc_free(struct list_head *local_list,
  * Locking: Uses internal locking for descriptor list management.
  */
 static void
-ath12k_dp_mon_tx_free_pkt_buf(struct ath12k_pdev_dp *pdev_dp,
+ath12k_dp_mon_tx_free_pkt_buf(struct ath12k_pdev_dp *dp_pdev,
 			      struct ath12k_dp_mon_status_desc *status_desc)
 {
-	struct ath12k_dp *dp = pdev_dp->dp;
+	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_hal *hal = &ab->hal;
 	struct dp_mon_packet_info *packet_info;
@@ -426,7 +427,6 @@ ath12k_dp_mon_tx_free_pkt_buf(struct ath12k_pdev_dp *pdev_dp,
 	struct list_head mon_desc_used_list;
 	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
 	struct ath12k_pdev_tx_mon *dp_pdev_tx_mon;
-	struct ath12k_pdev_tx_mon_stats *tx_mon_stats;
 	u8 *mon_buf = status_desc->mon_buf;
 	u32 mon_buf_len = status_desc->buf_len;
 	u8 pkt_buf_cnt = status_desc->pkt_buf_cnt;
@@ -434,11 +434,11 @@ ath12k_dp_mon_tx_free_pkt_buf(struct ath12k_pdev_dp *pdev_dp,
 	u8 found = 0;
 	u16 tlv_tag, tlv_len;
 
-	dp_pdev_tx_mon = pdev_dp->dp_mon_pdev ?
-			 pdev_dp->dp_mon_pdev->dp_pdev_tx_mon : NULL;
+	dp_pdev_tx_mon = dp_pdev->dp_mon_pdev ?
+			 dp_pdev->dp_mon_pdev->dp_pdev_tx_mon : NULL;
 	if (unlikely(!dp_pdev_tx_mon || !dp_mon))
 		return;
-	tx_mon_stats = &dp_pdev_tx_mon->tx_mon_stats;
+
 	INIT_LIST_HEAD(&mon_desc_used_list);
 
 	do {
@@ -456,15 +456,17 @@ ath12k_dp_mon_tx_free_pkt_buf(struct ath12k_pdev_dp *pdev_dp,
 			if (unlikely(!pkt_desc)) {
 				ath12k_warn(ab,
 					    "mon_flush: NULL pkt_desc received in macid %d\n",
-					    pdev_dp->mac_id);
+					    dp_pdev->mac_id);
+				ATH12K_TX_MON_STAT_INC(dp_pdev, pkt_buf_null);
 				goto next_tlv;
 			}
 
 			if (unlikely(pkt_desc->magic !=
 				     ATH12K_MON_MAGIC_VALUE)) {
+				ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, magic_value_error);
 				ath12k_warn(ab,
 					    "mon_flush: invalid magic value in macid %d\n",
-					    pdev_dp->mac_id);
+					    dp_pdev->mac_id);
 				goto next_tlv;
 			}
 
@@ -473,14 +475,14 @@ ath12k_dp_mon_tx_free_pkt_buf(struct ath12k_pdev_dp *pdev_dp,
 			if (unlikely(pkt_desc->in_use != DP_MON_DESC_TO_HW)) {
 				ath12k_warn(ab,
 					    "mon_flush: invalid in_use=[%d] flag, macid %d\n",
-					    pkt_desc->in_use, pdev_dp->mac_id);
+					    pkt_desc->in_use, dp_pdev->mac_id);
 				goto next_tlv;
 			}
 
 			ath12k_core_dma_unmap_page(dp->dev, pkt_desc->paddr,
 						   ATH12K_DP_MON_TX_BUF_SIZE,
 						   DMA_FROM_DEVICE);
-			tx_mon_stats->tx_pkt_tlv_free++;
+			ATH12K_TX_MON_STAT_INC(dp_pdev, pkt_tlv_free);
 
 			page_frag_free(pkt_desc->mon_buf);
 			pkt_desc->mon_buf = NULL;
@@ -496,12 +498,12 @@ next_tlv:
 	} while ((ptr - mon_buf) < mon_buf_len);
 
 	if (likely(!list_empty(&mon_desc_used_list)))
-		ath12k_dp_mon_tx_desc_free(&mon_desc_used_list, dp_mon);
+		ath12k_dp_mon_tx_desc_free(dp_pdev, &mon_desc_used_list, dp_mon);
 }
 
 /**
  * ath12k_dp_tx_mon_flush_tlv() - Flush TLV data and free associated resources
- * @pdev_dp: Pointer to DP PDEV context for device access and statistics
+ * @dp_pdev: Pointer to DP PDEV context for device access and statistics
  * @status_desc: Pointer to status descriptor containing TLV buffer information
  *
  * This function performs comprehensive cleanup of a monitor status descriptor
@@ -532,20 +534,18 @@ next_tlv:
  * Memory: Frees both embedded packet buffers and the status buffer itself.
  */
 static void
-ath12k_dp_tx_mon_flush_tlv(struct ath12k_pdev_dp *pdev_dp,
+ath12k_dp_tx_mon_flush_tlv(struct ath12k_pdev_dp *dp_pdev,
 			   struct ath12k_dp_mon_status_desc *status_desc,
 			   bool pkt_buf_cnt_in_desc)
 {
-	struct ath12k_pdev_tx_mon_stats *mon_stats;
 	u8 *mon_buf = status_desc->mon_buf;
 
 	if (!pkt_buf_cnt_in_desc || status_desc->pkt_buf_cnt)
-		ath12k_dp_mon_tx_free_pkt_buf(pdev_dp, status_desc);
+		ath12k_dp_mon_tx_free_pkt_buf(dp_pdev, status_desc);
 
-	if (unlikely(!pdev_dp->dp_mon_pdev || !pdev_dp->dp_mon_pdev->dp_pdev_tx_mon))
+	if (unlikely(!dp_pdev->dp_mon_pdev || !dp_pdev->dp_mon_pdev->dp_pdev_tx_mon))
 		return;
-	mon_stats = &pdev_dp->dp_mon_pdev->dp_pdev_tx_mon->tx_mon_stats;
-	mon_stats->tx_status_buf_free++;
+	ATH12K_TX_MON_STAT_INC(dp_pdev, status_buf_free);
 	page_frag_free(mon_buf);
 }
 
@@ -593,7 +593,7 @@ ath12k_dp_tx_mon_flush_desc_list(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	/* Free descriptor list */
-	ath12k_dp_mon_tx_desc_free(mon_desc_list, dp_mon);
+	ath12k_dp_mon_tx_desc_free(dp_pdev, mon_desc_list, dp_mon);
 }
 
 /**
@@ -684,6 +684,7 @@ ath12k_dp_mon_tx_prep_ppdu_info(struct ath12k_pdev_mon_dp *dp_mon_pdev,
 		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
 			   "hal_status=%d, num_users=%u, tlv_tag=0x%x\n",
 			   hal_status, num_users, tlv_tag);
+		ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, get_num_users_failed);
 		return -EINVAL;
 	}
 
@@ -702,7 +703,7 @@ ath12k_dp_mon_tx_prep_ppdu_info(struct ath12k_pdev_mon_dp *dp_mon_pdev,
 
 /**
  * ath12k_dp_mon_tx_deep_free_ppdu_info() - Deep cleanup of PPDU info structures
- * @pdev_dp: Pointer to DP PDEV context for device-specific operations
+ * @dp_pdev: Pointer to DP PDEV context for device-specific operations
  * @mon_data: Pointer to monitor data containing PPDU info structures to clean
  *
  * This function performs comprehensive cleanup of all MPDU socket buffers
@@ -717,7 +718,7 @@ ath12k_dp_mon_tx_prep_ppdu_info(struct ath12k_pdev_mon_dp *dp_mon_pdev,
  * 4. Using dev_kfree_skb_any() for safe deallocation in any context
  */
 static void
-ath12k_dp_mon_tx_deep_free_ppdu_info(struct ath12k_pdev_dp *pdev_dp,
+ath12k_dp_mon_tx_deep_free_ppdu_info(struct ath12k_pdev_dp *dp_pdev,
 				     struct ath12k_mon_data *mon_data)
 {
 	int i;
@@ -746,49 +747,6 @@ ath12k_dp_mon_tx_deep_free_ppdu_info(struct ath12k_pdev_dp *pdev_dp,
 
 	mon_data->prot_ppdu_info.tx_info.ba_user_id = -1;
 	mon_data->data_ppdu_info.tx_info.ba_user_id = -1;
-}
-
-/**
- * ath12k_dp_tx_mon_update_stats() - Update comprehensive TX monitor statistics
- * @dp_pdev: DP PDEV context
- * @ppdu_info: PPDU information from TLV parsing
- *
- * This function updates detailed TX monitor statistics based on parsed PPDU
- * information. It tracks frame types, PHY modes, rates, transmission status,
- * and other detailed metrics for monitoring and debugging purposes.
- */
-static void ath12k_dp_tx_mon_update_stats(struct ath12k_pdev_dp *dp_pdev,
-					  struct dp_mon_tx_ppdu_info *ppdu_info)
-{
-	struct ath12k_pdev_mon_dp *dp_mon_pdev;
-	struct ath12k_pdev_tx_mon_stats *tx_stats;
-	struct hal_tx_mon_ppdu_info *tx_info;
-
-	if (unlikely(!ppdu_info))
-		return;
-
-	dp_mon_pdev = dp_pdev->dp_mon_pdev;
-	if (unlikely(!dp_mon_pdev || !dp_mon_pdev->dp_pdev_tx_mon))
-		return;
-
-	tx_stats = &dp_mon_pdev->dp_pdev_tx_mon->tx_mon_stats;
-	tx_info = &ppdu_info->tx_info;
-
-	tx_stats->tx_ppdu_processed++;
-
-	if (tx_info->is_data)
-		tx_stats->tx_data_frames++;
-
-	if (tx_info->num_users > 1) {
-		tx_stats->tx_mu_ppdu_count++;
-		tx_stats->tx_mu_user_count += tx_info->num_users;
-	} else {
-		tx_stats->tx_su_ppdu_count++;
-	}
-
-	dp_mon_pdev->mon_stats.num_ppdu_processed++;
-	if (tx_info->is_data)
-		dp_mon_pdev->mon_stats.pkt_tlv_processed++;
 }
 
 /**
@@ -849,7 +807,7 @@ ath12k_dp_tx_mon_update_ampdu_info(struct dp_mon_tx_ppdu_info *ppdu_info,
  * Return: Generated sk_buff or NULL on failure
  */
 static struct sk_buff *
-ath12k_dp_tx_mon_gen_rts(struct ath12k_pdev_dp *pdev_dp,
+ath12k_dp_tx_mon_gen_rts(struct ath12k_pdev_dp *dp_pdev,
 			 struct dp_mon_tx_ppdu_info *ppdu_info,
 			 struct hal_tx_mon_status_info *status_info,
 			 u8 window_flag)
@@ -868,8 +826,13 @@ ath12k_dp_tx_mon_gen_rts(struct ath12k_pdev_dp *pdev_dp,
 
 	skb = dev_alloc_skb(ATH12K_DP_MON_MAX_RADIO_TAP_HDR +
 			    rts_frame_size);
-	if (!skb)
+	if (!skb) {
+		ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, skb_alloc_failed);
+		ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, self_gen_failed);
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+				"Failed to generate rts frame.");
 		return NULL;
+	}
 
 	skb_reserve(skb, ATH12K_DP_MON_MAX_RADIO_TAP_HDR);
 
@@ -885,7 +848,7 @@ ath12k_dp_tx_mon_gen_rts(struct ath12k_pdev_dp *pdev_dp,
 	rts->duration = duration_le;
 
 	if (!status_info->protection_addr)
-		status_info = &pdev_dp->dp_mon_pdev->mon_data.data_status_info;
+		status_info = &dp_pdev->dp_mon_pdev->mon_data.data_status_info;
 
 	if (window_flag == INITIATOR_WINDOW) {
 		memcpy(rts->ra, status_info->addr1, ETH_ALEN);
@@ -910,8 +873,9 @@ ath12k_dp_tx_mon_gen_rts(struct ath12k_pdev_dp *pdev_dp,
  * Return: Generated sk_buff or NULL on failure
  */
 static struct sk_buff *
-ath12k_dp_tx_mon_gen_cts2self(struct dp_mon_tx_ppdu_info *ppdu_info,
-			      struct hal_tx_mon_status_info *status_info)
+ath12k_dp_tx_mon_gen_cts2self(struct ath12k_pdev_dp *dp_pdev,
+					struct dp_mon_tx_ppdu_info *ppdu_info,
+					struct hal_tx_mon_status_info *status_info)
 {
 	struct sk_buff *skb;
 	struct ieee80211_cts *cts;
@@ -927,8 +891,13 @@ ath12k_dp_tx_mon_gen_cts2self(struct dp_mon_tx_ppdu_info *ppdu_info,
 
 	skb = dev_alloc_skb(ATH12K_DP_MON_MAX_RADIO_TAP_HDR +
 			    cts_frame_size);
-	if (!skb)
+	if (!skb) {
+		ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, skb_alloc_failed);
+		ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, self_gen_failed);
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+				   "Failed to generate cts2self frame.");
 		return NULL;
+	}
 
 	skb_reserve(skb, ATH12K_DP_MON_MAX_RADIO_TAP_HDR);
 
@@ -960,8 +929,9 @@ ath12k_dp_tx_mon_gen_cts2self(struct dp_mon_tx_ppdu_info *ppdu_info,
  * Return: 0 on success
  */
 static int
-ath12k_dp_tx_mon_gen_cts(struct dp_mon_tx_ppdu_info *ppdu_info,
-			 struct hal_tx_mon_status_info *status_info)
+ath12k_dp_tx_mon_gen_cts(struct ath12k_pdev_dp *dp_pdev,
+				struct dp_mon_tx_ppdu_info *ppdu_info,
+				struct hal_tx_mon_status_info *status_info)
 {
 	struct sk_buff *skb = NULL;
 	struct sk_buff_head *mpdu_q;
@@ -970,7 +940,8 @@ ath12k_dp_tx_mon_gen_cts(struct dp_mon_tx_ppdu_info *ppdu_info,
 		return -EINVAL;
 
 	mpdu_q = &ppdu_info->tx_info.rx_status.mpdu_q[0];
-	skb = ath12k_dp_tx_mon_gen_cts2self(ppdu_info, status_info);
+	skb = ath12k_dp_tx_mon_gen_cts2self(dp_pdev,
+		ppdu_info, status_info);
 	if (!skb)
 		return -ENOMEM;
 
@@ -981,7 +952,7 @@ ath12k_dp_tx_mon_gen_cts(struct dp_mon_tx_ppdu_info *ppdu_info,
 
 /**
  * ath12k_dp_tx_mon_gen_qos_null_3addr() - Generate 3-address QoS NULL frame
- * @pdev_dp: Pointer to DP PDEV context for device-specific operations
+ * @dp_pdev: Pointer to DP PDEV context for device-specific operations
  * @ppdu_info: PPDU info structure
  *
  * Creates 3-address QoS NULL frame for medium protection. Uses standard
@@ -990,7 +961,7 @@ ath12k_dp_tx_mon_gen_cts(struct dp_mon_tx_ppdu_info *ppdu_info,
  * Return: Generated sk_buff or NULL on failure
  */
 static struct sk_buff *
-ath12k_dp_tx_mon_gen_qos_null_3addr(struct ath12k_pdev_dp *pdev_dp,
+ath12k_dp_tx_mon_gen_qos_null_3addr(struct ath12k_pdev_dp *dp_pdev,
 				    struct dp_mon_tx_ppdu_info *ppdu_info)
 {
 	struct sk_buff *skb;
@@ -1008,8 +979,13 @@ ath12k_dp_tx_mon_gen_qos_null_3addr(struct ath12k_pdev_dp *pdev_dp,
 
 	skb = dev_alloc_skb(ATH12K_DP_MON_MAX_RADIO_TAP_HDR +
 			    qos_null_frame_size);
-	if (!skb)
+	if (!skb) {
+		ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, skb_alloc_failed);
+		ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, self_gen_failed);
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+				   "Failed to generate qos null 3 address frame.");
 		return NULL;
+	}
 
 	skb_reserve(skb, ATH12K_DP_MON_MAX_RADIO_TAP_HDR);
 
@@ -1025,7 +1001,7 @@ ath12k_dp_tx_mon_gen_qos_null_3addr(struct ath12k_pdev_dp *pdev_dp,
 	duration_le = cpu_to_le16(tx_info->rx_status.rx_duration);
 	qos_null->duration_id = duration_le;
 
-	status_info = &pdev_dp->dp_mon_pdev->mon_data.data_status_info;
+	status_info = &dp_pdev->dp_mon_pdev->mon_data.data_status_info;
 	memcpy(qos_null->addr1, status_info->addr1, ETH_ALEN);
 	memcpy(qos_null->addr2, status_info->addr2, ETH_ALEN);
 	memcpy(qos_null->addr3, status_info->addr3, ETH_ALEN);
@@ -1039,7 +1015,7 @@ ath12k_dp_tx_mon_gen_qos_null_3addr(struct ath12k_pdev_dp *pdev_dp,
 
 /**
  * ath12k_dp_tx_mon_gen_qos_null_4addr() - Generate 4-address QoS NULL frame
- * @pdev_dp: Pointer to DP PDEV context for device-specific operations
+ * @dp_pdev: Pointer to DP PDEV context for device-specific operations
  * @ppdu_info: PPDU info structure
  *
  * Creates 4-address QoS NULL frame for medium protection. Uses standard
@@ -1048,7 +1024,7 @@ ath12k_dp_tx_mon_gen_qos_null_3addr(struct ath12k_pdev_dp *pdev_dp,
  * Return: Generated sk_buff or NULL on failure
  */
 static struct sk_buff *
-ath12k_dp_tx_mon_gen_qos_null_4addr(struct ath12k_pdev_dp *pdev_dp,
+ath12k_dp_tx_mon_gen_qos_null_4addr(struct ath12k_pdev_dp *dp_pdev,
 				    struct dp_mon_tx_ppdu_info *ppdu_info)
 {
 	struct sk_buff *skb;
@@ -1066,8 +1042,13 @@ ath12k_dp_tx_mon_gen_qos_null_4addr(struct ath12k_pdev_dp *pdev_dp,
 
 	skb = dev_alloc_skb(ATH12K_DP_MON_MAX_RADIO_TAP_HDR +
 			    frame_size);
-	if (!skb)
+	if (!skb) {
+		ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, skb_alloc_failed);
+		ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, self_gen_failed);
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+				   "Failed to generate qos null 4 address frame.");
 		return NULL;
+	}
 
 	skb_reserve(skb, ATH12K_DP_MON_MAX_RADIO_TAP_HDR);
 
@@ -1084,7 +1065,7 @@ ath12k_dp_tx_mon_gen_qos_null_4addr(struct ath12k_pdev_dp *pdev_dp,
 	duration_le = cpu_to_le16(tx_info->rx_status.rx_duration);
 	qos_null_4addr->duration_id = duration_le;
 
-	status_info = &pdev_dp->dp_mon_pdev->mon_data.data_status_info;
+	status_info = &dp_pdev->dp_mon_pdev->mon_data.data_status_info;
 
 	memcpy(qos_null_4addr->addr1, status_info->addr1, ETH_ALEN);
 	memcpy(qos_null_4addr->addr2, status_info->addr2, ETH_ALEN);
@@ -1099,7 +1080,7 @@ ath12k_dp_tx_mon_gen_qos_null_4addr(struct ath12k_pdev_dp *pdev_dp,
 
 /**
  * ath12k_dp_tx_mon_generate_prot_frm() - Generate protection frame
- * @pdev_dp: DP pdev handle
+ * @dp_pdev: DP pdev handle
  * @tx_prot_ppdu_info: Protection PPDU information
  *
  * Generates protection frames (RTS/CTS) based on protection type
@@ -1109,7 +1090,7 @@ ath12k_dp_tx_mon_gen_qos_null_4addr(struct ath12k_pdev_dp *pdev_dp,
  * Return: 0 on success, negative error code on failure
  */
 static int
-ath12k_dp_tx_mon_generate_prot_frm(struct ath12k_pdev_dp *pdev_dp,
+ath12k_dp_tx_mon_generate_prot_frm(struct ath12k_pdev_dp *dp_pdev,
 				   struct dp_mon_tx_ppdu_info *tx_prot_ppdu_info)
 {
 	struct sk_buff *skb = NULL;
@@ -1122,7 +1103,7 @@ ath12k_dp_tx_mon_generate_prot_frm(struct ath12k_pdev_dp *pdev_dp,
 	tx_info = &tx_prot_ppdu_info->tx_info;
 	mpdu_q = &tx_info->rx_status.mpdu_q[0];
 
-	status_info = &pdev_dp->dp_mon_pdev->mon_data.prot_status_info;
+	status_info = &dp_pdev->dp_mon_pdev->mon_data.prot_status_info;
 	protection_type = status_info->medium_prot_type;
 
 	switch (protection_type) {
@@ -1132,36 +1113,36 @@ ath12k_dp_tx_mon_generate_prot_frm(struct ath12k_pdev_dp *pdev_dp,
 	case DP_MON_TX_MEDIUM_RTS_LEGACY:
 	case DP_MON_TX_MEDIUM_RTS_11AC_STATIC_BW:
 	case DP_MON_TX_MEDIUM_RTS_11AC_DYNAMIC_BW:
-		skb = ath12k_dp_tx_mon_gen_rts(pdev_dp,
+		skb = ath12k_dp_tx_mon_gen_rts(dp_pdev,
 					       tx_prot_ppdu_info,
 					       status_info,
 					       window_flag);
 		break;
 
 	case DP_MON_TX_MEDIUM_CTS2SELF:
-		skb = ath12k_dp_tx_mon_gen_cts2self(tx_prot_ppdu_info,
-						    status_info);
+		skb = ath12k_dp_tx_mon_gen_cts2self(dp_pdev,
+			tx_prot_ppdu_info, status_info);
 		break;
 
 	case DP_MON_TX_MEDIUM_QOS_NULL_NO_ACK_3ADDR:
-		skb = ath12k_dp_tx_mon_gen_qos_null_3addr(pdev_dp,
+		skb = ath12k_dp_tx_mon_gen_qos_null_3addr(dp_pdev,
 							  tx_prot_ppdu_info);
 		break;
 
 	case DP_MON_TX_MEDIUM_QOS_NULL_NO_ACK_4ADDR:
-		skb = ath12k_dp_tx_mon_gen_qos_null_4addr(pdev_dp,
+		skb = ath12k_dp_tx_mon_gen_qos_null_4addr(dp_pdev,
 							  tx_prot_ppdu_info);
 		break;
 
 	default:
-		ath12k_dbg(pdev_dp->dp->ab, ATH12K_DBG_DP_MON_TX,
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
 			   "TX monitor: No protection frame needed, type=%u\n",
 			   protection_type);
 		return 0;
 	}
 
 	if (!skb) {
-		ath12k_dbg(pdev_dp->dp->ab, ATH12K_DBG_DP_MON_TX,
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
 			   "TX monitor: Failed to generate protection frame type %u\n",
 			   protection_type);
 		return -ENOMEM;
@@ -1170,7 +1151,7 @@ ath12k_dp_tx_mon_generate_prot_frm(struct ath12k_pdev_dp *pdev_dp,
 	skb_queue_tail(mpdu_q, skb);
 	tx_prot_ppdu_info->contains_host_frames = true;
 
-	ath12k_dbg(pdev_dp->dp->ab, ATH12K_DBG_DP_MON_TX,
+	ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
 		   "TX monitor: Generated protection frame type %u\n",
 		   protection_type);
 
@@ -1253,6 +1234,7 @@ ath12k_dp_tx_mon_process_mpdu_start(struct ath12k_pdev_dp *dp_pdev,
 
 	skb = dev_alloc_skb(ATH12K_DP_MON_TX_MAX_RADIO_TAP_HDR);
 	if (unlikely(!skb)) {
+		ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, skb_alloc_failed);
 		ath12k_warn(dp_pdev->dp->ab,
 			    "TX Mon: SKB allocation failed for user %u\n",
 			    usr_idx);
@@ -1341,10 +1323,11 @@ int ath12k_dp_tx_mon_generate_data_frm(struct dp_mon_tx_ppdu_info *ppdu_info,
  * Return: 0 on success, negative error code on failure
  */
 static int
-ath12k_dp_tx_mon_extract_buffer_info(struct ath12k_dp_mon *dp_mon,
+ath12k_dp_tx_mon_extract_buffer_info(struct ath12k_pdev_dp *dp_pdev,
 				     struct dp_mon_tx_ppdu_info *tx_ppdu_info,
 				     u32 usr_idx)
 {
+	struct ath12k_dp_mon *dp_mon = dp_pdev->dp_mon_pdev->dp_mon;
 	struct hal_tx_mon_ppdu_info *hal_info;
 	struct hal_tx_mon_packet_info *packet_info = NULL;
 	struct list_head mon_desc_used_list;
@@ -1388,6 +1371,7 @@ ath12k_dp_tx_mon_extract_buffer_info(struct ath12k_dp_mon *dp_mon,
 	mon_desc = (struct ath12k_dp_mon_desc *)(uintptr_t)(packet_info->sw_cookie);
 
 	if (unlikely(mon_desc->magic != ATH12K_MON_MAGIC_VALUE)) {
+		ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, magic_value_error);
 		ath12k_warn(dp_mon->dp->ab,
 			    "TX Mon: Invalid magic value 0x%x for user %u\n",
 			    mon_desc->magic, usr_idx);
@@ -1443,7 +1427,7 @@ ath12k_dp_tx_mon_extract_buffer_info(struct ath12k_dp_mon *dp_mon,
 
 return_mon_desc:
 
-	ath12k_dp_mon_tx_desc_free(&mon_desc_used_list, dp_mon);
+	ath12k_dp_mon_tx_desc_free(dp_pdev, &mon_desc_used_list, dp_mon);
 	return ret;
 }
 
@@ -1454,8 +1438,9 @@ return_mon_desc:
  * Return: 0 on success, negative error code on failure
  */
 static int
-ath12k_dp_tx_mon_generate_ack_frm(struct dp_mon_tx_ppdu_info *tx_data_ppdu_info,
-				  struct hal_tx_mon_status_info *status_info)
+ath12k_dp_tx_mon_generate_ack_frm(struct ath12k_pdev_dp *dp_pdev,
+					struct dp_mon_tx_ppdu_info *tx_data_ppdu_info,
+					struct hal_tx_mon_status_info *status_info)
 {
 	struct sk_buff *skb;
 	struct hal_tx_mon_ppdu_info *tx_info;
@@ -1471,8 +1456,13 @@ ath12k_dp_tx_mon_generate_ack_frm(struct dp_mon_tx_ppdu_info *tx_data_ppdu_info,
 	usr_mpdu_q = &tx_info->rx_status.mpdu_q[0];
 
 	skb = dev_alloc_skb(ATH12K_DP_MON_MAX_RADIO_TAP_HDR + frame_len);
-	if (!skb)
+	if (!skb) {
+		ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, skb_alloc_failed);
+		ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, self_gen_failed);
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+				   "Failed to generate ack frame.");
 		return -ENOMEM;
+	}
 
 	skb_reserve(skb, ATH12K_DP_MON_MAX_RADIO_TAP_HDR);
 	ack = (struct ieee80211_frame_min *)skb_put_zero(skb, frame_len);
@@ -1530,9 +1520,10 @@ ath12k_dp_tx_mon_check_ba_tlv_missing(struct dp_mon_tx_ppdu_info *ppdu_info)
  * Return: 0 on success, negative error code on failure
  */
 static int
-ath12k_dp_tx_mon_gen_block_ack(struct dp_mon_tx_ppdu_info *ppdu_info,
-			       struct hal_tx_mon_status_info *status_info,
-			       u8 window_flag)
+ath12k_dp_tx_mon_gen_block_ack(struct ath12k_pdev_dp *dp_pdev,
+					struct dp_mon_tx_ppdu_info *ppdu_info,
+					struct hal_tx_mon_status_info *status_info,
+					u8 window_flag)
 {
 	struct sk_buff *skb;
 	struct hal_tx_mon_ppdu_info *tx_info;
@@ -1552,8 +1543,14 @@ ath12k_dp_tx_mon_gen_block_ack(struct dp_mon_tx_ppdu_info *ppdu_info,
 	user_id = tx_info->ba_user_id;
 	ba_bitmap_sz = tx_info->rx_status.userstats[user_id].ba_bitmap_sz;
 
-	if (ba_bitmap_sz > ATH12K_DP_MON_TX_BA_BITMAP_SZ_MAX)
+	if (ba_bitmap_sz > ATH12K_DP_MON_TX_BA_BITMAP_SZ_MAX) {
+		ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, self_gen_failed);
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+					"BA frame gen failed: bitmap_sz %u exceeds max %u for user %u\n",
+					ba_bitmap_sz, ATH12K_DP_MON_TX_BA_BITMAP_SZ_MAX,
+					user_id);
 		return -EINVAL;
+	}
 
 	bitmap_bytes = ATH12K_DP_MON_TX_BA_BITMAP_BYTES(ba_bitmap_sz);
 
@@ -1563,8 +1560,13 @@ ath12k_dp_tx_mon_gen_block_ack(struct dp_mon_tx_ppdu_info *ppdu_info,
 		bitmap_bytes;
 
 	skb = dev_alloc_skb(ATH12K_DP_MON_MAX_RADIO_TAP_HDR + total_frame_sz);
-	if (!skb)
+	if (!skb) {
+		ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, skb_alloc_failed);
+		ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, self_gen_failed);
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+				   "Failed to generate block ack frame.");
 		return -ENOMEM;
+	}
 
 	skb_reserve(skb, ATH12K_DP_MON_MAX_RADIO_TAP_HDR);
 
@@ -1653,9 +1655,10 @@ ath12k_dp_tx_mon_add_mu_ba_per_user_info(struct hal_tx_mon_ppdu_info *tx_info,
  * Return: Generated sk_buff or NULL on failure
  */
 static struct sk_buff *
-ath12k_dp_tx_mon_gen_mu_block_ack(struct hal_tx_mon_ppdu_info *tx_info,
-				  struct hal_tx_mon_status_info *status_info,
-				  u8 window_flag, u8 num_users)
+ath12k_dp_tx_mon_gen_mu_block_ack(struct ath12k_pdev_dp *dp_pdev,
+					struct hal_tx_mon_ppdu_info *tx_info,
+					struct hal_tx_mon_status_info *status_info,
+					u8 window_flag, u8 num_users)
 {
 	struct sk_buff *skb;
 	struct ieee80211_mu_block_ack_hdr *mu_ba_hdr;
@@ -1672,8 +1675,13 @@ ath12k_dp_tx_mon_gen_mu_block_ack(struct hal_tx_mon_ppdu_info *tx_info,
 	}
 
 	skb = dev_alloc_skb(ATH12K_DP_MON_MAX_RADIO_TAP_HDR + total_frame_sz);
-	if (!skb)
+	if (!skb) {
+		ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, skb_alloc_failed);
+		ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, self_gen_failed);
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+				   "Failed to generate mu block ack frame.");
 		return NULL;
+	}
 
 	skb_reserve(skb, ATH12K_DP_MON_MAX_RADIO_TAP_HDR);
 
@@ -1720,7 +1728,7 @@ ath12k_dp_tx_mon_gen_mu_block_ack(struct hal_tx_mon_ppdu_info *tx_info,
 
 /**
  * ath12k_dp_tx_mon_generate_mu_block_ack_frm() - Generate and enqueue MU Block ACK
- * @pdev_dp: DP pdev handle
+ * @dp_pdev: DP pdev handle
  * @tx_ppdu_info: PPDU info structure
  * @window_flag: Window flag for address ordering
  * @mac_id: MAC ID
@@ -1731,7 +1739,7 @@ ath12k_dp_tx_mon_gen_mu_block_ack(struct hal_tx_mon_ppdu_info *tx_info,
  * Return: 0 on success, negative error code on failure
  */
 static int
-ath12k_dp_tx_mon_generate_mu_block_ack_frm(struct ath12k_pdev_dp *pdev_dp,
+ath12k_dp_tx_mon_generate_mu_block_ack_frm(struct ath12k_pdev_dp *dp_pdev,
 					   struct dp_mon_tx_ppdu_info *tx_ppdu_info,
 					   struct hal_tx_mon_status_info *status_info,
 					   u8 window_flag)
@@ -1748,7 +1756,7 @@ ath12k_dp_tx_mon_generate_mu_block_ack_frm(struct ath12k_pdev_dp *pdev_dp,
 	tx_info = &tx_ppdu_info->tx_info;
 	num_users = tx_info->num_users;
 	if (num_users == 0 || num_users > HAL_MAX_UL_MU_USERS) {
-		ath12k_dbg(pdev_dp->dp->ab, ATH12K_DBG_DP_MON_TX,
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
 			   "TX Mon: Invalid users for MU Block ACK\n");
 		return -EINVAL;
 	}
@@ -1756,16 +1764,16 @@ ath12k_dp_tx_mon_generate_mu_block_ack_frm(struct ath12k_pdev_dp *pdev_dp,
 	ba_user_id = tx_info->ba_user_id;
 	/* Only the last user should proceed with MU Block ACK generation */
 	if (ba_user_id != num_users - 1) {
-		ath12k_dbg(pdev_dp->dp->ab, ATH12K_DBG_DP_MON_TX,
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
 			   "TX Mon: Skipping MU Block ACK for user %u (not last user)\n",
 			   ba_user_id);
 		return 0;
 	}
 
-	mu_ba_skb = ath12k_dp_tx_mon_gen_mu_block_ack(tx_info, status_info,
-						      window_flag, num_users);
+	mu_ba_skb = ath12k_dp_tx_mon_gen_mu_block_ack(dp_pdev, tx_info,
+		status_info, window_flag, num_users);
 	if (!mu_ba_skb) {
-		ath12k_warn(pdev_dp->dp->ab,
+		ath12k_warn(dp_pdev->dp->ab,
 			    "TX Mon: Failed to generate MU Block ACK frame\n");
 		return -ENOMEM;
 	}
@@ -1775,7 +1783,7 @@ ath12k_dp_tx_mon_generate_mu_block_ack_frm(struct ath12k_pdev_dp *pdev_dp,
 
 	tx_info->rx_status.he_mu_flags = 0;
 
-	ath12k_dbg(pdev_dp->dp->ab, ATH12K_DBG_DP_MON_TX,
+	ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
 		   "TX Mon: Generated and enqueued MU Block ACK for %u users\n",
 		   num_users);
 
@@ -1784,16 +1792,16 @@ ath12k_dp_tx_mon_generate_mu_block_ack_frm(struct ath12k_pdev_dp *pdev_dp,
 
 /**
  * ath12k_dp_tx_mon_generated_response_frm() - Generate response frames
- * @pdev_dp: DP pdev handle
+ * @dp_pdev: DP pdev handle
  * @tx_data_ppdu_info: Data PPDU information
  *
  * Return: 0 on success, negative error code on failure
  */
 static int
-ath12k_dp_tx_mon_generated_response_frm(struct ath12k_pdev_dp *pdev_dp,
+ath12k_dp_tx_mon_generated_response_frm(struct ath12k_pdev_dp *dp_pdev,
 					struct dp_mon_tx_ppdu_info *tx_data_ppdu_info)
 {
-	struct ath12k_pdev_mon_dp *dp_mon_pdev = pdev_dp->dp_mon_pdev;
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	struct hal_tx_mon_status_info *tx_status_info;
 	u8 gen_response = 0;
 	int ret = 0;
@@ -1801,24 +1809,25 @@ ath12k_dp_tx_mon_generated_response_frm(struct ath12k_pdev_dp *pdev_dp,
 	tx_status_info = &dp_mon_pdev->mon_data.data_status_info;
 	gen_response = tx_status_info->generated_response;
 
-	ath12k_dbg(pdev_dp->dp->ab, ATH12K_DBG_DP_MON_TX,
+	ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
 		   "TX monitor: Processing response frame, type=%u\n",
 		   gen_response);
 
 	switch (gen_response) {
 	case TXMON_GEN_RESP_SELFGEN_ACK:
-		ret = ath12k_dp_tx_mon_generate_ack_frm(tx_data_ppdu_info,
-							tx_status_info);
+		ret = ath12k_dp_tx_mon_generate_ack_frm(dp_pdev,
+			tx_data_ppdu_info, tx_status_info);
 		break;
 	case TXMON_GEN_RESP_SELFGEN_CTS:
-		ret = ath12k_dp_tx_mon_gen_cts(tx_data_ppdu_info,
-					       tx_status_info);
+		ret = ath12k_dp_tx_mon_gen_cts(dp_pdev,
+			tx_data_ppdu_info, tx_status_info);
 		break;
 	case TXMON_GEN_RESP_SELFGEN_BA:
 		if (ath12k_dp_tx_mon_check_ba_tlv_missing(tx_data_ppdu_info))
 			break;
 
-		ret = ath12k_dp_tx_mon_gen_block_ack(tx_data_ppdu_info,
+		ret = ath12k_dp_tx_mon_gen_block_ack(dp_pdev,
+								tx_data_ppdu_info,
 						     tx_status_info,
 						     RESPONSE_WINDOW);
 		break;
@@ -1826,7 +1835,7 @@ ath12k_dp_tx_mon_generated_response_frm(struct ath12k_pdev_dp *pdev_dp,
 		if (ath12k_dp_tx_mon_check_ba_tlv_missing(tx_data_ppdu_info))
 			break;
 
-		ret = ath12k_dp_tx_mon_generate_mu_block_ack_frm(pdev_dp,
+		ret = ath12k_dp_tx_mon_generate_mu_block_ack_frm(dp_pdev,
 								 tx_data_ppdu_info,
 								 tx_status_info,
 								 RESPONSE_WINDOW);
@@ -1838,14 +1847,14 @@ ath12k_dp_tx_mon_generated_response_frm(struct ath12k_pdev_dp *pdev_dp,
 	case TXMON_GEN_RESP_SELFGEN_NDP_LMR:
 		break;
 	default:
-		ath12k_dbg(pdev_dp->dp->ab, ATH12K_DBG_DP_MON_TX,
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
 			   "TX monitor: No response frame needed, type=%u\n",
 			   gen_response);
 		break;
 	}
 
 	if (ret) {
-		ath12k_warn(pdev_dp->dp->ab,
+		ath12k_warn(dp_pdev->dp->ab,
 			    "Failed to generate response frame\n");
 		return ret;
 	}
@@ -1856,7 +1865,7 @@ ath12k_dp_tx_mon_generated_response_frm(struct ath12k_pdev_dp *pdev_dp,
 
 /**
  * ath12k_dp_tx_mon_update_ppdu_info_status() - Update PPDU info based on TLV status
- * @pdev_dp: DP pdev handle
+ * @dp_pdev: DP pdev handle
  * @tx_ppdu_info: Could be either of below
  * tx_data_ppdu_info: Data PPDU information structure
  * tx_prot_ppdu_info: Protection PPDU information structure
@@ -1872,7 +1881,7 @@ ath12k_dp_tx_mon_generated_response_frm(struct ath12k_pdev_dp *pdev_dp,
  * Return: 0 on success, negative error code on failure
  */
 static int
-ath12k_dp_tx_mon_update_ppdu_info_status(struct ath12k_pdev_dp *pdev_dp,
+ath12k_dp_tx_mon_update_ppdu_info_status(struct ath12k_pdev_dp *dp_pdev,
 					 struct dp_mon_tx_ppdu_info *tx_ppdu_info,
 					 u32 tlv_status)
 {
@@ -1905,16 +1914,16 @@ ath12k_dp_tx_mon_update_ppdu_info_status(struct ath12k_pdev_dp *pdev_dp,
 		tx_ppdu_info->tx_info.rx_status.ppdu_ts =
 			tx_ppdu_info->tx_info.rx_status.ppdu_ts << 1;
 
-		ret = ath12k_dp_tx_mon_generate_prot_frm(pdev_dp,
+		ret = ath12k_dp_tx_mon_generate_prot_frm(dp_pdev,
 							 tx_ppdu_info);
 		break;
 
 	case HAL_TX_MON_MPDU_START:
-		ret = ath12k_dp_tx_mon_process_mpdu_start(pdev_dp,
+		ret = ath12k_dp_tx_mon_process_mpdu_start(dp_pdev,
 							  tx_ppdu_info,
 							  usr_idx);
 		if (ret) {
-			ath12k_warn(pdev_dp->dp->ab,
+			ath12k_warn(dp_pdev->dp->ab,
 				    "TX Mon: Failed to process MPDU start: %d\n",
 				    ret);
 		}
@@ -1939,7 +1948,8 @@ ath12k_dp_tx_mon_update_ppdu_info_status(struct ath12k_pdev_dp *pdev_dp,
 		ret = ath12k_dp_tx_mon_generate_data_frm(tx_ppdu_info,
 							 usr_idx, true);
 		if (ret) {
-			ath12k_warn(pdev_dp->dp->ab,
+			ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, data_gen_failed);
+			ath12k_warn(dp_pdev->dp->ab,
 				    "TX Mon: Failed to gen data frm for user %u: %d\n",
 				    usr_idx, ret);
 			tx_info->is_used = 0;
@@ -1951,10 +1961,11 @@ ath12k_dp_tx_mon_update_ppdu_info_status(struct ath12k_pdev_dp *pdev_dp,
 		 * Buffer address processing - extract buffer and transfer ownership
 		 */
 		tx_info->is_used = 1;
-		ret = ath12k_dp_tx_mon_extract_buffer_info(pdev_dp->dp_mon_pdev->dp_mon,
+		ret = ath12k_dp_tx_mon_extract_buffer_info(dp_pdev,
 							   tx_ppdu_info, usr_idx);
 		if (ret) {
-			ath12k_warn(pdev_dp->dp->ab,
+			ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, buf_extract_failed);
+			ath12k_warn(dp_pdev->dp->ab,
 				    "TX Mon: Failed to extract buffer info: %d\n",
 				    ret);
 			tx_info->is_used = 0;
@@ -1962,7 +1973,8 @@ ath12k_dp_tx_mon_update_ppdu_info_status(struct ath12k_pdev_dp *pdev_dp,
 			ret = ath12k_dp_tx_mon_generate_data_frm(tx_ppdu_info,
 								 usr_idx, false);
 			if (ret) {
-				ath12k_warn(pdev_dp->dp->ab,
+				ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, data_gen_failed);
+				ath12k_warn(dp_pdev->dp->ab,
 					    "TX Mon: Failed to add buffer fragment: %d\n",
 					    ret);
 				tx_info->is_used = 0;
@@ -1978,19 +1990,19 @@ ath12k_dp_tx_mon_update_ppdu_info_status(struct ath12k_pdev_dp *pdev_dp,
 		u8 i;
 
 		for (i = 0; i < num_users && i < HAL_MAX_UL_MU_USERS; i++) {
-			ath12k_dp_tx_mon_free_last_mpdu_q(pdev_dp->dp_mon_pdev,
+			ath12k_dp_tx_mon_free_last_mpdu_q(dp_pdev->dp_mon_pdev,
 							  tx_ppdu_info,
 							  i);
 		}
 		break;
 
 	case HAL_TX_MON_RESPONSE_END_STATUS_INFO:
-		ret = ath12k_dp_tx_mon_generated_response_frm(pdev_dp,
+		ret = ath12k_dp_tx_mon_generated_response_frm(dp_pdev,
 							      tx_ppdu_info);
 		break;
 
 	case HAL_TX_MON_FW2SW:
-		status_info = &pdev_dp->dp_mon_pdev->mon_data.data_status_info;
+		status_info = &dp_pdev->dp_mon_pdev->mon_data.data_status_info;
 		tx_ppdu_info->tx_info.rx_status.freq = status_info->freq;
 
 		break;
@@ -2004,7 +2016,7 @@ ath12k_dp_tx_mon_update_ppdu_info_status(struct ath12k_pdev_dp *pdev_dp,
 
 /**
  * ath12k_dp_mon_tx_process_tlv() - Process TLV data with early filtering
- * @pdev_dp: DP PDEV context
+ * @dp_pdev: DP PDEV context
  * @status_desc: Status descriptor containing TLV data
  * @mon_data: Monitor data structure
  *
@@ -2012,7 +2024,7 @@ ath12k_dp_tx_mon_update_ppdu_info_status(struct ath12k_pdev_dp *pdev_dp,
  * filtering during TLV processing for optimal performance.
  */
 static void
-ath12k_dp_mon_tx_process_tlv(struct ath12k_pdev_dp *pdev_dp,
+ath12k_dp_mon_tx_process_tlv(struct ath12k_pdev_dp *dp_pdev,
 			     struct ath12k_dp_mon_status_desc *status_desc,
 			     struct ath12k_mon_data *mon_data)
 {
@@ -2029,16 +2041,16 @@ ath12k_dp_mon_tx_process_tlv(struct ath12k_pdev_dp *pdev_dp,
 	do {
 		tlv_hdr = (struct hal_tlv_64_hdr *)mon_buf_iter;
 
-		tlv_tag = ath12k_hal_get_tlv_hdr_tag(&pdev_dp->dp->ab->hal, tlv_hdr->tl);
+		tlv_tag = ath12k_hal_get_tlv_hdr_tag(&dp_pdev->dp->ab->hal, tlv_hdr->tl);
 		tlv_len = le64_get_bits(tlv_hdr->tl, HAL_TLV_64_HDR_LEN);
 		tlv_userid = le64_get_bits(tlv_hdr->tl, HAL_TLV_64_USR_ID);
 
-		ppdu_info = ath12k_hal_mon_tx_ppdu_info(&pdev_dp->dp->ab->hal,
+		ppdu_info = ath12k_hal_mon_tx_ppdu_info(&dp_pdev->dp->ab->hal,
 							mon_data, tlv_tag);
 		is_prot_ppdu = (ppdu_info == &mon_data->prot_ppdu_info);
 
 		tlv_status =
-			ath12k_hal_mon_tx_parse_status(&pdev_dp->dp->ab->hal,
+			ath12k_hal_mon_tx_parse_status(&dp_pdev->dp->ab->hal,
 						       &ppdu_info->tx_info,
 						       &mon_data->data_status_info,
 						       &mon_data->prot_status_info,
@@ -2049,11 +2061,12 @@ ath12k_dp_mon_tx_process_tlv(struct ath12k_pdev_dp *pdev_dp,
 						       tx_tlv_start);
 
 		/* Process TLV status and update PPDU information */
-		ret = ath12k_dp_tx_mon_update_ppdu_info_status(pdev_dp,
+		ret = ath12k_dp_tx_mon_update_ppdu_info_status(dp_pdev,
 							       ppdu_info,
 							       tlv_status);
 		if (ret) {
-			ath12k_dbg(pdev_dp->dp->ab, ATH12K_DBG_DP_MON_TX,
+			ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, tlv_process_failed);
+			ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
 				   "TLV status processing failed: %d", ret);
 		}
 
@@ -2477,7 +2490,7 @@ ath12k_dp_mon_tx_update_rtap_vendor_tlv(struct ath12k_pdev_dp *dp_pdev,
 
 /**
  * ath12k_dp_mon_tx_update_mon_info() - Comprehensive monitor info population
- * @pdev_dp: ath12k pdev dp context
+ * @dp_pdev: ath12k pdev dp context
  * @mon_info: mac80211 tx monitor info to fill
  * @ppdu_info: PPDU info structure containing HAL data
  * @status_info: HAL TX monitor status info
@@ -2703,8 +2716,13 @@ ath12k_dp_tx_mon_generate_ack_rx_frm(struct ath12k_pdev_dp *dp_pdev,
 
 	frame_skb = dev_alloc_skb(ATH12K_DP_MON_TX_MAX_RADIO_TAP_HDR +
 				  sizeof(struct ieee80211_frame_min));
-	if (!frame_skb)
+	if (!frame_skb) {
+		ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, skb_alloc_failed);
+		ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, self_gen_failed);
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+				   "Failed to generate ack rx frame.");
 		return NULL;
+	}
 
 	skb_reserve(frame_skb, ATH12K_DP_MON_TX_MAX_RADIO_TAP_HDR);
 
@@ -2788,8 +2806,13 @@ ath12k_dp_tx_mon_generate_cts_rx_frm(struct ath12k_pdev_dp *dp_pdev,
 
 	frame_skb = dev_alloc_skb(ATH12K_DP_MON_TX_MAX_RADIO_TAP_HDR +
 				  sizeof(struct ieee80211_cts));
-	if (!frame_skb)
+	if (!frame_skb) {
+		ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, skb_alloc_failed);
+		ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, self_gen_failed);
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
+				   "Failed to generate cts rx frame.");
 		return NULL;
+	}
 
 	skb_reserve(frame_skb, ATH12K_DP_MON_TX_MAX_RADIO_TAP_HDR);
 
@@ -3024,7 +3047,7 @@ static u8 ath12k_dp_tx_mon_gi_to_nl80211(u8 hal_gi)
 
 /**
  * ath12k_dp_mon_tx_fill_rate_status() - Populate tx_status->rates from HAL info
- * @pdev_dp: ath12k pdev dp context
+ * @dp_pdev: ath12k pdev dp context
  * @ppdu_info: PPDU info structure containing HAL data
  * @status: TX status structure to populate
  *
@@ -3290,8 +3313,10 @@ int ath12k_dp_tx_mon_deliver_ppdu(struct ath12k_pdev_dp *dp_pdev,
 		return -EINVAL;
 
 	num_users = data_ppdu_info->num_users;
-	if (num_users > HAL_MAX_UL_MU_USERS)
+	if (num_users > HAL_MAX_UL_MU_USERS) {
+		ATH12K_TX_MON_STAT_INC(dp_pdev, mu_user_frame);
 		num_users = HAL_MAX_UL_MU_USERS;
+	}
 
 	for (i = 0; i < num_users; i++) {
 		mpdu_q = &data_ppdu_info->rx_status.mpdu_q[i];
@@ -3308,6 +3333,12 @@ int ath12k_dp_tx_mon_deliver_ppdu(struct ath12k_pdev_dp *dp_pdev,
 						     mpdu_q, i,
 						     &mon_data->prot_ppdu_info);
 	}
+
+	if (prot_ppdu_info->is_used)
+		ATH12K_TX_MON_STAT_INC(dp_pdev, prot_ppdu_delivered);
+
+	if (data_ppdu_info->is_used)
+		ATH12K_TX_MON_STAT_INC(dp_pdev, data_ppdu_delivered);
 
 	return 0;
 }
@@ -3333,17 +3364,12 @@ void ath12k_dp_tx_mon_process_ppdu(struct work_struct *work)
 	struct ath12k_pdev_tx_mon *dp_pdev_tx_mon =
 		container_of(work, struct ath12k_pdev_tx_mon, txmon_work);
 	struct ath12k_pdev_mon_dp *dp_mon_pdev;
-	struct ath12k_pdev_dp *pdev_dp;
+	struct ath12k_pdev_dp *dp_pdev;
 	struct ath12k_dp_mon_ppdu_desc *ppdu_desc;
 	struct ath12k_dp_mon_status_desc *status_desc;
 	struct ath12k_mon_data *mon_data;
-	struct ath12k_pdev_tx_mon_stats *tx_stats;
-	struct hal_tx_mon_ppdu_info *data_info;
-	struct hal_tx_mon_ppdu_info *prot_info;
-	int desc_idx, desc_count = 0;
-	int ppdu_processed = 0;
-	int total_status_desc = 0, prep_failed = 0;
-	int ret;
+	int desc_idx, ppdu_prep_failed = 0;
+	int ppdu_processed_cnt = 0, total_status_desc_cnt = 0;
 
 	if (unlikely(!dp_pdev_tx_mon)) {
 		ath12k_err(NULL, "TX Mon: NULL dp_pdev_tx_mon in work queue\n");
@@ -3356,14 +3382,13 @@ void ath12k_dp_tx_mon_process_ppdu(struct work_struct *work)
 		return;
 	}
 
-	pdev_dp = dp_mon_pdev->dp_pdev;
-	if (unlikely(!pdev_dp)) {
-		ath12k_err(NULL, "TX Mon: NULL pdev_dp in work queue\n");
+	dp_pdev = dp_mon_pdev->dp_pdev;
+	if (unlikely(!dp_pdev)) {
+		ath12k_err(NULL, "TX Mon: NULL dp_pdev in work queue\n");
 		return;
 	}
 
 	mon_data = &dp_mon_pdev->mon_data;
-	tx_stats = &dp_pdev_tx_mon->tx_mon_stats;
 
 	spin_lock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
 	if (!dp_pdev_tx_mon->tx_mon_ppdu_desc_initialized) {
@@ -3378,102 +3403,91 @@ void ath12k_dp_tx_mon_process_ppdu(struct work_struct *work)
 			    &dp_pdev_tx_mon->tx_mon_ppdu_desc_proc_list,
 			    list) {
 		if (unlikely(ppdu_desc->status_desc_cnt == 0)) {
-			ath12k_warn(pdev_dp->dp->ab,
+			ATH12K_TX_MON_STAT_INC(dp_pdev, zero_status_desc);
+			ath12k_warn(dp_pdev->dp->ab,
 				    "TX Mon: Invalid PPDU desc or zero status count\n");
-			tx_stats->tx_ppdu_desc_invalid++;
-			desc_count++;
 			continue;
 		}
 
 		if (unlikely(ppdu_desc->status_desc_cnt > ATH12K_DP_MON_STATUS_BUF)) {
-			ath12k_warn(pdev_dp->dp->ab,
+			ath12k_warn(dp_pdev->dp->ab,
 				    "TX Mon: PPDU desc overflow count=%u max=%u\n",
 				    ppdu_desc->status_desc_cnt, ATH12K_DP_MON_STATUS_BUF);
-			tx_stats->tx_ppdu_desc_overflow++;
 			ppdu_desc->status_desc_cnt = ATH12K_DP_MON_STATUS_BUF;
-			tx_stats->tx_work_queue_stalls++;
+			ATH12K_TX_MON_STAT_INC(dp_pdev, ppdu_desc_overflow);
 		}
 
-		if (ath12k_dp_mon_tx_prep_ppdu_info(dp_mon_pdev, ppdu_desc)) {
-			tx_stats->tx_ppdu_parse_errors++;
-			prep_failed++;
-			goto ppdu_prep_failed;
-		}
+		ppdu_prep_failed = ath12k_dp_mon_tx_prep_ppdu_info(dp_mon_pdev,
+							ppdu_desc);
 
 		for (desc_idx = 0; desc_idx < ppdu_desc->status_desc_cnt; desc_idx++) {
 			status_desc = &ppdu_desc->status_desc[desc_idx];
 
 			if (unlikely(!status_desc->mon_buf)) {
-				ath12k_dbg(pdev_dp->dp->ab, ATH12K_DBG_DP_MON_TX,
+				ATH12K_TX_MON_STAT_INC(dp_pdev, status_buf_null);
+				ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
 					   "TX Mon: Null buffer address in ppdu desc idx=%d\n",
 					   desc_idx);
-				tx_stats->tx_status_buf_null++;
 				continue;
 			}
 
-			ath12k_core_dma_unmap_page(pdev_dp->dp->dev,
+			ath12k_core_dma_unmap_page(dp_pdev->dp->dev,
 						   status_desc->paddr,
 						   ATH12K_DP_MON_TX_BUF_SIZE,
 						   DMA_FROM_DEVICE);
 
+			if (ppdu_prep_failed) {
+				page_frag_free(status_desc->mon_buf);
+				status_desc->mon_buf = NULL;
+				status_desc->paddr = 0;
+				status_desc->buf_len = 0;
+				status_desc->end_of_ppdu = false;
+				continue;
+			}
+
 			mon_data->data_ppdu_info.contains_host_frames = false;
 			mon_data->prot_ppdu_info.contains_host_frames = false;
 
-			ath12k_dp_mon_tx_process_tlv(pdev_dp,
+			ath12k_dp_mon_tx_process_tlv(dp_pdev,
 						     status_desc, mon_data);
-			ath12k_dp_mon_tx_populate_ppdu_info(pdev_dp,
+			ath12k_dp_mon_tx_populate_ppdu_info(dp_pdev,
 							    status_desc,
 							    mon_data);
 
-			if (status_desc->end_of_ppdu) {
-				ath12k_dp_tx_mon_update_stats(pdev_dp,
-							      &mon_data->data_ppdu_info);
+			if (status_desc->end_of_ppdu)
+				ath12k_dp_tx_mon_deliver_ppdu(dp_pdev, mon_data);
 
-				prot_info = &mon_data->prot_ppdu_info.tx_info;
-				data_info = &mon_data->data_ppdu_info.tx_info;
-
-				ret = ath12k_dp_tx_mon_deliver_ppdu(pdev_dp, mon_data);
-				if (ret) {
-					tx_stats->tx_ppdu_delivery_errors++;
-				} else {
-					if (prot_info && prot_info->is_used)
-						tx_stats->tx_prot_ppdu_delivered++;
-
-					if (data_info && data_info->is_used)
-						tx_stats->tx_data_ppdu_delivered++;
-				}
-				tx_stats->tx_ppdu_delivered++;
-			}
 			page_frag_free(status_desc->mon_buf);
 			status_desc->mon_buf = NULL;
 			status_desc->paddr = 0;
 			status_desc->buf_len = 0;
 			status_desc->end_of_ppdu = false;
-			total_status_desc++;
+			total_status_desc_cnt++;
+			ATH12K_TX_MON_STAT_INC(dp_pdev, status_desc_processed);
 		}
-		ppdu_processed++;
+		if (ppdu_prep_failed) {
+			ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, ppdu_prep_failed);
+			goto ppdu_prep_failed;
+		}
+
+		ppdu_processed_cnt++;
+		ATH12K_TX_MON_STAT_INC(dp_pdev, ppdu_processed);
 
 ppdu_prep_failed:
-		desc_count++;
 		/* Reset PPDU descriptor for reuse */
 		ath12k_dp_mon_reset_ppdu_desc(ppdu_desc);
 		/* Deep cleanup of PPDU info */
-		ath12k_dp_mon_tx_deep_free_ppdu_info(pdev_dp, mon_data);
+		ath12k_dp_mon_tx_deep_free_ppdu_info(dp_pdev, mon_data);
 	}
 
 	spin_lock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
 	list_splice_tail_init(&dp_pdev_tx_mon->tx_mon_ppdu_desc_proc_list,
 			      &dp_pdev_tx_mon->tx_mon_ppdu_desc_free_list);
-	dp_mon_pdev->mon_stats.ppdu_desc_free += desc_count;
 	spin_unlock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
 
-	/* Update statistics */
-	tx_stats->tx_ppdu_processed += ppdu_processed;
-	tx_stats->tx_status_desc_processed += total_status_desc;
-
-	ath12k_dbg(pdev_dp->dp->ab, ATH12K_DBG_DP_MON_TX,
+	ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
 		   "TX Mon: Work queue processed %d PPDUs, %d status descriptors\n",
-		   ppdu_processed, total_status_desc);
+		   ppdu_processed_cnt, total_status_desc_cnt);
 }
 
 /**
@@ -3499,10 +3513,8 @@ ath12k_dp_tx_mon_get_ppdu_desc(struct ath12k_pdev_mon_dp *dp_mon_pdev)
 			(&dp_pdev_tx_mon->tx_mon_ppdu_desc_free_list,
 			 struct ath12k_dp_mon_ppdu_desc, list);
 
-	if (likely(ppdu_desc)) {
+	if (likely(ppdu_desc))
 		list_del(&ppdu_desc->list);
-		dp_mon_pdev->mon_stats.ppdu_desc_free--;
-	}
 
 	spin_unlock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
 
@@ -3530,17 +3542,15 @@ static int ath12k_dp_tx_mon_prep_wq(struct list_head *mon_desc_used_list,
 	struct ath12k_pdev_tx_mon *dp_pdev_tx_mon = dp_mon_pdev->dp_pdev_tx_mon;
 	struct ath12k_dp_mon_ppdu_desc *ppdu_desc;
 	struct ath12k_dp_mon_desc *desc;
-	struct ath12k_pdev_mon_dp_stats *mon_stats = &dp_mon_pdev->mon_stats;
 	int desc_cnt;
+	struct ath12k_pdev_dp *dp_pdev = dp_mon_pdev->dp_pdev;
 
 	if (unlikely(!dp_pdev_tx_mon))
 		return -EINVAL;
 
 	ppdu_desc = ath12k_dp_tx_mon_get_ppdu_desc(dp_mon_pdev);
-	if (unlikely(!ppdu_desc)) {
-		mon_stats->ppdu_desc_free_list_empty_cnt++;
+	if (unlikely(!ppdu_desc))
 		return -ENOENT;
-	}
 
 	/* Copy monitor descriptors to PPDU descriptor */
 	list_for_each_entry(desc, mon_desc_used_list, list) {
@@ -3551,8 +3561,8 @@ static int ath12k_dp_tx_mon_prep_wq(struct list_head *mon_desc_used_list,
 			spin_lock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
 			list_add_tail(&ppdu_desc->list,
 				      &dp_pdev_tx_mon->tx_mon_ppdu_desc_free_list);
-			mon_stats->ppdu_desc_free++;
 			spin_unlock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
+			ATH12K_TX_MON_STAT_INC(dp_pdev, ppdu_desc_overflow);
 			return -EOVERFLOW;
 		}
 
@@ -3699,6 +3709,7 @@ int ath12k_dp_mon_tx_process_ring(struct ath12k_pdev_dp *dp_pdev,
 							      ring_entry,
 							      &desc_info);
 		if (ret) {
+			ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, ring_extract_failed);
 			ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX,
 				   "Failed to extract TX mon ring desc: %d\n",
 				   ret);
@@ -3706,10 +3717,9 @@ int ath12k_dp_mon_tx_process_ring(struct ath12k_pdev_dp *dp_pdev,
 		}
 
 		if (desc_info.empty_desc) {
-			dp_pdev_tx_mon->tx_mon_stats.empty_descriptors++;
-
+			ATH12K_TX_MON_STAT_INC(dp_pdev, empty_descriptor);
 			if (desc_info.end_reason == HAL_MON_PPDU_TRUNCATED) {
-				dp_pdev_tx_mon->tx_mon_stats.truncated_ppdu++;
+				ATH12K_TX_MON_STAT_INC(dp_pdev, truncated_buf);
 				ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX,
 					   "TX Mon: truncated ppdu end, mac_id=%d\n",
 					   mac_id);
@@ -3752,6 +3762,7 @@ int ath12k_dp_mon_tx_process_ring(struct ath12k_pdev_dp *dp_pdev,
 
 		status_frag = (u8 *)mon_desc->mon_buf;
 		if (unlikely(!status_frag)) {
+			ATH12K_TX_MON_STAT_INC(dp_pdev, null_buf);
 			ath12k_err(ab, "TX Mon: NULL buffer received in mac_id %d\n",
 				   mac_id);
 			goto move_next;
@@ -3761,6 +3772,10 @@ int ath12k_dp_mon_tx_process_ring(struct ath12k_pdev_dp *dp_pdev,
 		    end_reason == HAL_MON_PPDU_TRUNCATED) {
 			ath12k_dp_tx_mon_flush_desc_list(dp_pdev,
 							 mon_desc_head);
+			if (end_reason == HAL_MON_PPDU_TRUNCATED)
+				ATH12K_TX_MON_STAT_INC(dp_pdev, truncated_buf);
+			else
+				ATH12K_TX_MON_STAT_INC(dp_pdev, flushed_buf);
 			ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX,
 				   "TX Mon: Flush Detected - Buffers Dropped\n");
 			*budget -= 1;
@@ -3776,6 +3791,7 @@ int ath12k_dp_mon_tx_process_ring(struct ath12k_pdev_dp *dp_pdev,
 			ret = ath12k_dp_tx_mon_prep_wq(mon_desc_head,
 						       dp_mon_pdev);
 			if (ret) {
+				ATH12K_TX_MON_STAT_INC_ERR(dp_pdev, prep_wq_failed);
 				ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX,
 					   "TX Mon: Add mon desc to ppdu fail - ret %d",
 					   ret);
@@ -3784,17 +3800,15 @@ int ath12k_dp_mon_tx_process_ring(struct ath12k_pdev_dp *dp_pdev,
 				goto move_next;
 			}
 
-			if (queue_work(dp_pdev_tx_mon->txmon_wq,
-			    &dp_pdev_tx_mon->txmon_work))
-				dp_pdev_tx_mon->tx_mon_stats.tx_wq_scheduled++;
-
-			ath12k_dp_mon_tx_desc_free(mon_desc_head, dp_mon);
+			queue_work(dp_pdev_tx_mon->txmon_wq, &dp_pdev_tx_mon->txmon_work);
+			ath12k_dp_mon_tx_desc_free(dp_pdev, mon_desc_head, dp_mon);
 		}
 
 move_next:
 		ring_entry = ath12k_hal_srng_dst_get_next_entry(ab,
 								tx_mon_dst_ring);
 		num_buffs_reaped++;
+		ATH12K_TX_MON_STAT_INC(dp_pdev, num_bufs_reaped);
 	}
 
 	ath12k_hal_srng_access_end(ab, tx_mon_dst_ring);
@@ -4056,6 +4070,7 @@ size_t ath12k_dp_mon_get_tx_free_desc_list(struct ath12k_dp *dp,
 	list_params.list_local = list;
 	list_params.pf_cache = NULL;
 	list_params.buff_size = 0;
+	list_params.is_tx_monitor = true;
 
 	return ath12k_dp_mon_get_free_desc_list(dp, rx_ring, &list_params, 0);
 }
@@ -4822,6 +4837,47 @@ int ath12k_dp_mon_tx_htt_srng_setup(struct ath12k_dp *dp)
 }
 EXPORT_SYMBOL(ath12k_dp_mon_tx_htt_srng_setup);
 
+void ath12k_dp_mon_tx_update_buf_ownership_stats(struct ath12k_dp *dp)
+{
+	struct ath12k_dp_mon *mon_dp = dp->dp_mon;
+	struct ath12k_dp_tx_mon_stats *stats;
+	struct ath12k_dp_mon_desc *desc;
+	u32 with_hw = 0, in_reap = 0, free = 0, proc_err = 0, replenish_err = 0, i;
+
+	if (!mon_dp || !mon_dp->dp_tx_mon)
+		return;
+
+	stats = &mon_dp->dp_tx_mon->tx_mon_stats;
+	/* lockdep_assert_held(&dp_mon->tx_mon_desc_lock) */
+	for (i = 0; i < DP_TX_MONITOR_BUF_RING_SIZE; i++) {
+		desc = &mon_dp->dp_tx_mon->tx_mon_desc_pool[i];
+		switch (desc->in_use) {
+		case DP_MON_DESC_TO_HW:
+			with_hw++;
+			break;
+		case DP_MON_DESC_PACKET_REAP:
+		case DP_MON_DESC_STATUS_REAP:
+			in_reap++;
+			break;
+		case DP_MON_DESC_REPLENISH:
+			free++;
+			break;
+		case DP_MON_DESC_H_PROC_ERR:
+			proc_err++;
+			break;
+		case DP_MON_DESC_H_REPLENISH_ERR:
+			replenish_err++;
+			break;
+		}
+	}
+	stats->with_hw = with_hw;
+	stats->in_reap = in_reap;
+	stats->free = free;
+	stats->proc_err = proc_err;
+	stats->replenish_err = replenish_err;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_update_buf_ownership_stats);
+
 int ath12k_dp_mon_tx_config_filter(struct ath12k_pdev_dp *dp_pdev,
 				   bool enable)
 {
@@ -4901,6 +4957,7 @@ int ath12k_dp_mon_tx_buf_replenish(struct ath12k_dp *dp,
 	list_params.list_local = used_list;
 	list_params.pf_cache = &dp_tx_mon->tx_mon_pf_cache;
 	list_params.buff_size = ATH12K_DP_MON_TX_BUF_SIZE;
+	list_params.is_tx_monitor = true;
 
 	return ath12k_dp_mon_buf_replenish(dp, buf_ring, req_entries, &list_params);
 }
