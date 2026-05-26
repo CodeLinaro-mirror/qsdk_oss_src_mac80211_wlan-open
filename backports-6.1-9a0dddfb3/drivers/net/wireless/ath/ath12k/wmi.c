@@ -11789,6 +11789,13 @@ static void ath12k_scan_event(struct ath12k_base *ab, struct sk_buff *skb)
 		ar = ath12k_mac_get_ar_by_vdev_id(ab, le32_to_cpu(scan_ev.vdev_id));
 	}
 
+#ifdef CPTCFG_QCN_EXTN
+	if (ath12k_cbs_skip_scan_event_and_send_scan_complete(ar, &scan_ev)) {
+		rcu_read_unlock();
+		return;
+	}
+#endif
+
 	if (!ar) {
 		ath12k_warn(ab, "Received scan event for unknown vdev");
 		rcu_read_unlock();
@@ -12000,6 +12007,14 @@ static void ath12k_chan_info_event(struct ath12k_base *ab, struct sk_buff *skb)
 	switch (ar->scan.state) {
 	case ATH12K_SCAN_IDLE:
 	case ATH12K_SCAN_STARTING:
+
+#ifdef CPTCFG_QCN_EXTN
+		if (ath12k_is_cbs_vendor_event(ar) &&
+		    le32_to_cpu(ch_info_ev.cmd_flags) ==
+		    WMI_CHAN_INFO_START_RESP)
+			break;
+#endif
+
 		ath12k_warn(ab, "received chan info event without a scan request, ignoring\n");
 		goto exit;
 	case ATH12K_SCAN_RUNNING:
