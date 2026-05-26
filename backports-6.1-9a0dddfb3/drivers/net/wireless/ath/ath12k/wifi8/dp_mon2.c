@@ -1698,19 +1698,8 @@ void ath12k_wifi8_dp_mon_rx_dual_ring_cleanup_ppdu_desc(struct ath12k_pdev_dp *d
 
 int ath12k_wifi8_dp_mon_rx_wq_init(struct ath12k_pdev_dp *dp_pdev)
 {
-	struct ath12k_pdev_mon_dp *mon_pdev = dp_pdev->dp_mon_pdev;
-
-	mon_pdev->rxmon_wq = alloc_workqueue("rxmon_wq", WQ_UNBOUND, 0);
-	if (unlikely(!mon_pdev->rxmon_wq)) {
-		ath12k_warn(dp_pdev->dp,
-			    "failed to allocate rxmon workqueue for mac_id %d\n",
-			    dp_pdev->mac_id);
-		return -ENOMEM;
-	}
-
-	INIT_WORK(&mon_pdev->rxmon_work, ath12k_wifi8_dp_mon_rx_process_ppdu);
-
-	return 0;
+	return ath12k_dp_mon_rx_wq_init_common(dp_pdev,
+					       ath12k_wifi8_dp_mon_rx_process_ppdu);
 }
 
 static void ath12k_wifi8_dp_mon_rx_drain_wq(struct ath12k_pdev_dp *dp_pdev)
