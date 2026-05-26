@@ -1446,9 +1446,8 @@ void ath12k_dp_tx_cc_cleanup(struct ath12k_base *ab)
 	struct ath12k_dp *desc_dp;
 	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
 	struct ath12k_tx_desc_info *tx_desc_info;
-	struct ath12k_skb_cb *skb_cb;
 	struct sk_buff *skb;
-	struct ath12k *ar;
+	struct ath12k_pdev_dp *dp_pdev = NULL;
 	struct sk_buff_head free_list;
 	int j, k;
 	u32 pool_id, tx_spt_page;
@@ -1474,11 +1473,15 @@ void ath12k_dp_tx_cc_cleanup(struct ath12k_base *ab)
 				if (!skb)
 					continue;
 
+				/* reset per-iteration to avoid stale pointer */
+				dp_pdev = NULL;
 				if (tx_desc_info[k].hw_link_id < ATH12K_GROUP_MAX_RADIO) {
 					u8 hw_link_id = tx_desc_info[k].hw_link_id;
 					u8 device_id =
 						dp_hw_grp->hw_links[hw_link_id].device_id;
 					desc_dp = dp_hw_grp->dp[device_id];
+					dp_pdev = ath12k_dp_hw_grp_to_dp_pdev
+							(dp->dp_hw_grp, hw_link_id);
 					if (desc_dp != dp)
 						continue;
 				}
@@ -1498,14 +1501,13 @@ void ath12k_dp_tx_cc_cleanup(struct ath12k_base *ab)
 				}
 
 				/* if we are unregistering, hw would've been destroyed and
-				 * ar is no longer valid
+				 * pdev is no longer valid
 				 */
 				if (!(test_bit(ATH12K_FLAG_UNREGISTERING,
 					       &ab->dev_flags))) {
-					skb_cb = ATH12K_SKB_CB(skb);
-					ar = skb_cb->u.ar;
-					if (atomic_dec_and_test(&ar->dp.num_tx_pending))
-						wake_up(&ar->dp.tx_empty_waitq);
+					if (dp_pdev &&
+					    atomic_dec_and_test(&dp_pdev->num_tx_pending))
+						wake_up(&dp_pdev->tx_empty_waitq);
 				}
 
 				ath12k_core_dma_unmap_single(dp->dev,
