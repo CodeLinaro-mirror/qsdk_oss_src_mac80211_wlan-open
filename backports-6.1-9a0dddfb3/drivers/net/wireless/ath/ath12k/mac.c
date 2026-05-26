@@ -10556,6 +10556,10 @@ static int ath12k_mac_initiate_hw_scan(struct ieee80211_hw *hw,
 		arg->scan_f_passive = 1;
 	}
 
+	if (!is_zero_ether_addr(req->bssid) &&
+	    !is_broadcast_ether_addr(req->bssid))
+		ether_addr_copy(arg->bssid_list[0].addr, req->bssid);
+
 	if (n_channels) {
 		arg->chan_list.num_chan = n_channels;
 		arg->chan_list.chan = kcalloc(arg->chan_list.num_chan,
