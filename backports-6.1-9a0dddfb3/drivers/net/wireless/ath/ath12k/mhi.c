@@ -292,7 +292,7 @@ int ath12k_mhi_register(struct ath12k_pci *ab_pci)
 	mhi_ctrl->cntrl_dev = ab->dev;
 	mhi_ctrl->regs = ab->mem;
 	mhi_ctrl->reg_len = ab->mem_len;
-	mhi_ctrl->rddm_size = hw_params->rddm_size;
+	mhi_ctrl->rddm_size = hw_params->rddm_size ?: ATH12K_PCI_FW_RDDM_SZ;
 	mhi_ctrl->standard_elf_image = hw_params->fw.std_elf_img;
 	if (hw_params->otp_board_id_register) {
 		if (!of_property_read_u32(ab->dev->of_node, "qcom,board_id", &board_id) &&
@@ -342,8 +342,6 @@ int ath12k_mhi_register(struct ath12k_pci *ab_pci)
 			mhi_ctrl->fw_image = ab_pci->amss_path;
 		}
 	}
-
-	mhi_ctrl->rddm_size = ATH12K_PCI_FW_RDDM_SZ;
 
 	ret = ath12k_mhi_get_msi(ab_pci);
 	if (ret) {
