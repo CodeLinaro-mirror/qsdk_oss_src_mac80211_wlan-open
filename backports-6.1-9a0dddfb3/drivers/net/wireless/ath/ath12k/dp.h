@@ -767,7 +767,7 @@ struct ath12k_dp_arch_ops {
 				 struct ath12k_vif *ahvif,
 				 struct ath12k_dp_link_vif *dp_link_vif,
 				 u8 ring_id, struct ath12k_dp_tx_msdu_info *msdu_info,
-				 bool gsn_valid, u16 gsn, int group_slot,
+				 bool gsn_valid, u16 gsn,
 				 struct sk_buff *skb, struct ath12k_link_sta *arsta,
 				 struct ath12k_dp_skb_ctrl *skb_ctrl,
 				 bool htt_mesh);
@@ -1648,13 +1648,13 @@ ath12k_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 			struct ath12k_vif *ahvif,
 			struct ath12k_dp_link_vif *dp_link_vif,
 			u8 ring_id, struct ath12k_dp_tx_msdu_info *msdu_info,
-			bool gsn_valid, u16 gsn, int group_slot,
+			bool gsn_valid, u16 gsn,
 			struct sk_buff *skb, struct ath12k_link_sta *arsta,
 			struct ath12k_dp_skb_ctrl *skb_ctrl)
 {
 	return dp_pdev->dp->arch_ops->dp_tx_mcast_send(dp_pdev, ahvif, dp_link_vif,
 						       ring_id, msdu_info, gsn_valid,
-						       gsn, group_slot, skb, arsta,
+						       gsn, skb, arsta,
 						       skb_ctrl, false);
 }
 

@@ -1545,7 +1545,6 @@ fail_skb_head:
  * @tx_desc: SW TX descriptor to update with ext_desc pointer and physical address
  * @gsn_valid: Whether the Global Sequence Number is valid for MLO multicast
  * @gsn: Global Sequence Number value to embed in metadata
- * @group_slot: VLAN group key slot index (-1 if not applicable)
  *
  * Allocates an extended descriptor from the ext_cache slab, then populates
  * it based on the ext_feature type:
@@ -1565,7 +1564,7 @@ ath12k_wifi7_dp_ext_desc_populate(struct ath12k_dp *dp,
 				  struct ath12k_dp_tx_msdu_info *msdu_info,
 				  struct ath12k_tx_desc_info *tx_desc,
 				  bool gsn_valid, int gsn,
-				  int group_slot, u8 ring_id)
+				  u8 ring_id)
 {
 	struct ath12k_dp_ext_desc *ext_desc = NULL;
 	struct ath12k_dp_ext_desc_msdu_info *ext_msdu_info =
@@ -1646,7 +1645,7 @@ ath12k_wifi7_dp_ext_desc_populate(struct ath12k_dp *dp,
 		msdu_info->to_fw = true;
 	}
 
-	if (group_slot > 0) {
+	if (msdu_info->group_slot > 0) {
 		htt_desc_size = sizeof(struct hal_tx_msdu_metadata);
 		htt_desc_ext = (struct hal_tx_msdu_metadata *)
 				ath12k_dp_ext_desc_get_rsvd0(ext_desc);
@@ -1658,7 +1657,7 @@ ath12k_wifi7_dp_ext_desc_populate(struct ath12k_dp *dp,
 		htt_desc_ext->info0 |=
 			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_KEY_FLAGS);
 		htt_desc_ext->info2 |=
-			le32_encode_bits(group_slot,
+			le32_encode_bits(msdu_info->group_slot,
 					 HAL_TX_MSDU_METADATA_INFO2_KEY_FLAGS);
 
 		if (gsn_valid)
@@ -1696,7 +1695,6 @@ fail_free_ext_desc:
  * @tx_desc: SW TX descriptor to populate
  * @gsn_valid: Whether the Global Sequence Number is valid
  * @gsn: Global Sequence Number value
- * @group_slot: VLAN group key slot index (-1 if not applicable)
  *
  * Stores the DMA physical address, data length, and FW-redirect flag into
  * the SW TX descriptor. If extended kernel memory is required (ext_kmem is
@@ -1713,7 +1711,7 @@ ath12k_wifi7_dp_tx_desc_populate(struct ath12k_pdev_dp *dp_pdev,
 				 struct ath12k_dp_tx_msdu_info *msdu_info,
 				 struct ath12k_tx_desc_info *tx_desc,
 				 bool gsn_valid, int gsn,
-				 int group_slot, u8 ring_id)
+				 u8 ring_id)
 {
 	int ret = 0;
 
@@ -1725,8 +1723,7 @@ ath12k_wifi7_dp_tx_desc_populate(struct ath12k_pdev_dp *dp_pdev,
 		ret = ath12k_wifi7_dp_ext_desc_populate(dp_pdev->dp, dp_vif,
 							dp_link_vif,
 							skb, msdu_info, tx_desc,
-							gsn_valid, gsn,
-							group_slot, ring_id);
+							gsn_valid, gsn, ring_id);
 
 	if (msdu_info->to_fw) {
 		msdu_info->flags0 |= u32_encode_bits(1,
@@ -1750,51 +1747,6 @@ ath12k_wifi7_dp_tx_desc_populate(struct ath12k_pdev_dp *dp_pdev,
 static u16 ath12k_wifi7_mcbc_get_gsn(struct ath12k_dp_vif *dp_vif)
 {
 	return atomic_inc_return(&dp_vif->mcbc_gsn) & 0xfff;
-}
-
-/**
- * ath12k_wifi7_get_mcast_group_slot() - Get VLAN group key slot for multicast
- * @vif: IEEE 802.11 virtual interface (parent AP vif)
- * @vlan_vif: IEEE 802.11 VLAN virtual interface (AP_VLAN type)
- * @arvif: ath12k link virtual interface
- * @link_id: MLO link identifier
- * @skb: Socket buffer whose skb_cb will be populated with cipher/link info
- *
- * For AP_VLAN interfaces with a non-pairwise (group) key, looks up the
- * per-link group key slot index from the VLAN interface's grp_key_slot_map.
- * Returns -1 if the vlan_vif is not an AP_VLAN, if the key is pairwise,
- * if the VLAN interface is in WDS 4-address mode, or if any pointer is NULL.
- *
- * Returns: group key slot index on success, -1 if not applicable
- */
-static int ath12k_wifi7_get_mcast_group_slot(struct ieee80211_vif *vif,
-					     struct ieee80211_vif *vlan_vif,
-					     u8 link_id,
-					     struct ieee80211_tx_info *info,
-					     struct sk_buff *skb)
-{
-	struct ath12k_vif *vlan_ahvif;
-	struct ath12k_vlan_iface *vif_vlan;
-	struct ieee80211_key_conf *hw_key = info->control.hw_key;
-	int group_slot = -1;
-	u8 keyidx;
-
-	if (vlan_vif && vlan_vif->type == NL80211_IFTYPE_AP_VLAN) {
-		vlan_ahvif = ath12k_vif_to_ahvif(vlan_vif);
-		if (!vlan_ahvif)
-			return -1;
-
-		if (!hw_key ||
-		    (hw_key->flags & IEEE80211_KEY_FLAG_PAIRWISE))
-			return -1;
-
-		keyidx = hw_key->keyidx;
-		vif_vlan = vlan_ahvif->vlan_iface;
-		if (vif_vlan && !vif_vlan->is_wds_4addr)
-			group_slot = vif_vlan->grp_key_slot_map[link_id][keyidx];
-	}
-
-	return group_slot;
 }
 
 /**
@@ -1875,7 +1827,7 @@ static int ath12k_wifi7_mcbc_setup_msdu_info(struct ath12k_dp_link_vif *dp_link_
  * @link_id: MLO link identifier
  * @skb: Socket buffer whose skb_cb will be populated with cipher/link info
  * @is_sta: True if the transmitting vdev is in STA mode (skips group slot lookup)
- * @group_slot: Output pointer for the VLAN group key slot index
+ * @msdu_info: MSDU info used to carry group slot metadata
  * @vlan_vif: VLAN virtual interface for group key slot lookup (may be NULL)
  *
  * Resolves the ath12k link vif for the given link_id, sets the skb_cb fields
@@ -1890,7 +1842,7 @@ static int ath12k_wifi7_mcbc_setup_encryption(struct ath12k_dp_vif *dp_vif,
 					      u8 link_id,
 					      struct sk_buff *skb,
 					      bool is_sta, bool is_eth,
-					      int *group_slot,
+					      struct ath12k_dp_tx_msdu_info *msdu_info,
 					      struct ieee80211_tx_info *info,
 					      struct ieee80211_vif *vlan_vif)
 {
@@ -1936,11 +1888,10 @@ static int ath12k_wifi7_mcbc_setup_encryption(struct ath12k_dp_vif *dp_vif,
 		skb_cb->flags |= ATH12K_SKB_CIPHER_SET;
 	}
 
-	if (!is_sta)
-		*group_slot = ath12k_wifi7_get_mcast_group_slot(ahvif->vif,
-								vlan_vif,
-								link_id,
-								info, skb);
+	if (!is_sta && vlan_vif && vlan_vif->type == NL80211_IFTYPE_AP_VLAN)
+		msdu_info->group_slot =
+			ath12k_dp_tx_get_mcast_group_slot(ath12k_vif_to_ahvif(vlan_vif),
+							  link_id, info);
 	spin_unlock_bh(&ar->ab->dp->dp_lock);
 
 	return 0;
@@ -2001,7 +1952,6 @@ void ath12k_wifi7_mcbc_handler(struct ath12k_dp_vif *dp_vif,
 	u8 ring_id = 0;
 	enum ath12k_dp_feature_result feature_ret;
 	enum ath12k_dp_tx_enq_error err;
-	int group_slot = -1;
 	u32 len;
 	int ret;
 
@@ -2012,9 +1962,6 @@ void ath12k_wifi7_mcbc_handler(struct ath12k_dp_vif *dp_vif,
 		gsn = ath12k_wifi7_mcbc_get_gsn(dp_vif);
 	} else {
 		set_bit(link_id, &links_map);
-		if (!is_sta)
-			group_slot = ath12k_wifi7_get_mcast_group_slot
-					(ahvif->vif, vlan_vif, link_id, info, skb);
 	}
 
 	/* Update entry statistics */
@@ -2081,10 +2028,11 @@ void ath12k_wifi7_mcbc_handler(struct ath12k_dp_vif *dp_vif,
 
 		len = skb_new->len;
 		/* Setup encryption */
+		msdu_info.group_slot = -1;
 		ret = ath12k_wifi7_mcbc_setup_encryption(dp_vif, dp_pdev,
 							 link_id, skb_new,
 							 is_sta, is_eth,
-							 &group_slot,
+							 &msdu_info,
 							 info, vlan_vif);
 		if (ret) {
 			dev_kfree_skb_any(skb_new);
@@ -2128,7 +2076,7 @@ void ath12k_wifi7_mcbc_handler(struct ath12k_dp_vif *dp_vif,
 
 		err = ath12k_wifi7_dp_tx_mcast_send(dp_pdev, ahvif, dp_link_vif,
 						    ring_id, &msdu_info, gsn_valid,
-						    gsn, group_slot, skb_new, arsta,
+						    gsn, skb_new, arsta,
 						    skb_ctrl, htt_mesh);
 
 		if (unlikely(err != DP_TX_ENQ_SUCCESS)) {
@@ -2175,7 +2123,6 @@ void ath12k_wifi7_ucast_handler(struct ath12k_dp_vif *dp_vif,
 	bool feat_bypass = true;
 	bool dma_map = false;
 	u8 ring_id = 0;
-	int group_slot = -1;
 	u32 len = skb->len;
 	u8 tid = skb->priority & IEEE80211_QOS_CTL_TID_MASK;
 	enum ath12k_dp_tx_enq_error drop_reason = DP_TX_ENQ_DROP_MISC;
@@ -2267,6 +2214,7 @@ skip_assign_buffer:
 
 	msdu_info.desc_id = tx_desc->desc_id;
 	msdu_info.data_len = len;
+	msdu_info.group_slot = -1;
 
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 	 tx_desc->mmesh = (ahvif &&
@@ -2279,7 +2227,7 @@ skip_assign_buffer:
 
 	ret = ath12k_wifi7_dp_tx_desc_populate(dp_pdev, skb, dp_vif, dp_link_vif,
 					       &msdu_info, tx_desc, false, 0,
-					       group_slot, ring_id);
+					       ring_id);
 	if (ret != DP_TX_FEATURE_SUCCESS) {
 		drop_reason = DP_TX_ENQ_DROP_TCL_DESC_NA;
 		goto fail;
@@ -2330,7 +2278,7 @@ ath12k_wifi7_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 			      struct ath12k_vif *ahvif,
 			      struct ath12k_dp_link_vif *dp_link_vif,
 			      u8 ring_id, struct ath12k_dp_tx_msdu_info *msdu_info,
-			      bool gsn_valid, u16 gsn, int group_slot,
+			      bool gsn_valid, u16 gsn,
 			      struct sk_buff *skb, struct ath12k_link_sta *arsta,
 			      struct ath12k_dp_skb_ctrl *skb_ctrl, bool htt_mesh)
 {
@@ -2375,7 +2323,7 @@ ath12k_wifi7_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 
 	ret = ath12k_wifi7_dp_tx_desc_populate(dp_pdev, skb, dp_vif, dp_link_vif,
 					       msdu_info, tx_desc,
-					       gsn_valid, gsn, group_slot, ring_id);
+					       gsn_valid, gsn, ring_id);
 
 	if (ret < 0) {
 		drop_reason = DP_TX_ENQ_DROP_TCL_DESC_NA;

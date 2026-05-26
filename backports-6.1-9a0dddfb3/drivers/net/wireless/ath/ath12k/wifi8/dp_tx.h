@@ -72,7 +72,7 @@ ath12k_wifi8_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 			      struct ath12k_vif *ahvif,
 			      struct ath12k_dp_link_vif *dp_link_vif,
 			      u8 ring_id, struct ath12k_dp_tx_msdu_info *msdu_info,
-			      bool gsn_valid, u16 gsn, int group_slot,
+			      bool gsn_valid, u16 gsn,
 			      struct sk_buff *skb, struct ath12k_link_sta *arsta,
 			      struct ath12k_dp_skb_ctrl *skb_ctrl, bool htt_mesh);
 void ath12k_wifi8_dp_tx_set_ast(struct ath12k_dp_peer *dp_peer,

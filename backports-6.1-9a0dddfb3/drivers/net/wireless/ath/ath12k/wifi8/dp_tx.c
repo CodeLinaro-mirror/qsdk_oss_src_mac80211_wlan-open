@@ -1008,6 +1008,11 @@ void ath12k_wifi8_dp_get_ring_id(struct ath12k_dp *dp, u8 *ring_id,
 #endif
 }
 
+static void
+ath12k_wifi8_dp_tx_update_gsn_metadata(struct ath12k_dp_tx_msdu_info *msdu_info,
+				       struct ath12k_dp_link_vif *dp_link_vif,
+				       int mcbc_gsn);
+
 /**
  * ath12k_wifi8_ucast_setup_msdu_info() - Setup MSDU info for unicast transmission
  * @arvif: ath12k link virtual interface
@@ -1173,13 +1178,23 @@ static int ath12k_wifi8_mcbc_setup_msdu_info(struct ath12k_link_vif *arvif,
 	msdu_info->type = HAL_TCL_DESC_TYPE_BUFFER;
 	msdu_info->pkt_offset = 0;
 
-	if (gsn_valid)
+	if (gsn_valid && !arsta)
 		msdu_info->vdev_id += HTT_TX_MLO_MCAST_HOST_REINJECT_BASE_VDEV_ID;
 	else if (arvif->nawds_support && !msdu_info->lookup_override)
 		msdu_info->meta_data_flags |= u32_encode_bits(1,
 					HTT_TCL_META_DATA_HOST_INSPECTED_MISSION);
 
 	return 0;
+}
+
+static bool ath12k_wifi8_is_mpsk_enabled(struct ath12k_vif *ahvif)
+{
+	if (ahvif->vif &&
+	    ahvif->vif->type == NL80211_IFTYPE_AP &&
+	    ahvif->u.ap.dynamic_vlan)
+		return true;
+
+	return false;
 }
 
 /**
@@ -1189,6 +1204,7 @@ static int ath12k_wifi8_mcbc_setup_msdu_info(struct ath12k_link_vif *arvif,
  * @link_id: MLO link identifier
  * @skb: Socket buffer whose skb_cb will be populated with cipher/link info
  * @is_sta: True if the transmitting vdev is in STA mode (skips group slot lookup)
+ * @msdu_info: MSDU info used to carry group slot metadata
  *
  * Resolves the ath12k link vif for the given link_id, sets the skb_cb fields
  * (ar, link_id, vif), and looks up the BSS peer to find the current multicast
@@ -1202,6 +1218,8 @@ static int ath12k_wifi8_mcbc_setup_encryption(struct ath12k_dp_vif *dp_vif,
 					      u8 link_id,
 					      struct sk_buff *skb,
 					      bool is_sta, bool is_eth,
+					      struct ath12k_dp_tx_msdu_info *msdu_info,
+					      struct ath12k_vif *vlan_ahvif,
 					      struct ieee80211_tx_info *info)
 {
 	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
@@ -1211,6 +1229,7 @@ static int ath12k_wifi8_mcbc_setup_encryption(struct ath12k_dp_vif *dp_vif,
 	struct ath12k_dp_link_peer *peer;
 	struct ieee80211_key_conf *key;
 	struct ath12k *ar;
+	bool mpsk_enabled;
 
 	if (!is_eth)
 		ath12k_mlo_mcast_update_tx_link_address(ahvif->vif, link_id,
@@ -1251,6 +1270,16 @@ static int ath12k_wifi8_mcbc_setup_encryption(struct ath12k_dp_vif *dp_vif,
 				hdr->frame_control |=
 						cpu_to_le16(IEEE80211_FCTL_PROTECTED);
 		}
+	}
+
+	mpsk_enabled = !is_sta && ath12k_wifi8_is_mpsk_enabled(ahvif);
+	if (mpsk_enabled) {
+		if (vlan_ahvif && vlan_ahvif->vif->type == NL80211_IFTYPE_AP_VLAN)
+			msdu_info->group_slot =
+				ath12k_dp_tx_get_mcast_group_slot(vlan_ahvif,
+								  link_id, info);
+		else if (ahvif->vif && ahvif->vif->type == NL80211_IFTYPE_AP)
+			msdu_info->group_slot = 0;
 	}
 
 	spin_unlock_bh(&ar->ab->dp->dp_lock);
@@ -1717,6 +1746,23 @@ static int ath12k_wifi8_dp_tx_hw_enqueue(struct ath12k_dp_link_vif *dp_link_vif,
 }
 #endif
 
+static void
+ath12k_wifi8_dp_tx_update_gsn_metadata(struct ath12k_dp_tx_msdu_info *msdu_info,
+				       struct ath12k_dp_link_vif *dp_link_vif,
+				       int mcbc_gsn)
+{
+	msdu_info->meta_data_flags =
+		u32_encode_bits(HTT_TCL_META_DATA_TYPE_GLOBAL_SEQ_NUM,
+				HTT_TCL_META_DATA_TYPE_V3) |
+		u32_encode_bits(mcbc_gsn,
+				HTT_TCL_META_DATA_GLOBAL_SEQ_NUM_V3);
+
+	if (dp_link_vif->nawds_support)
+		msdu_info->meta_data_flags |=
+			u32_encode_bits(1,
+					HTT_TCL_META_DATA_GSN_INSPECTED_V3);
+}
+
 /**
  * ath12k_wifi8_dp_ext_desc_populate() - Allocate and populate extended TX descriptor
  * @dp: DP structure for slab cache access and DMA mapping
@@ -1801,6 +1847,36 @@ ath12k_wifi8_dp_ext_desc_populate(struct ath12k_dp *dp,
 		ext_data_len = ATH12K_TX_MSDU_EXT_SZ + htt_desc_size;
 	}
 
+	if (msdu_info->group_slot >= 0) {
+		htt_desc_size = sizeof(struct hal_tx_msdu_metadata);
+		htt_desc_ext = (struct hal_tx_msdu_metadata *)
+				ath12k_dp_ext_desc_get_rsvd0(ext_desc);
+		if (!htt_desc_ext)
+			goto fail_free_ext_desc;
+
+		htt_desc_ext->info0 |=
+			le32_encode_bits(1,
+					 HAL_TX_MSDU_METADATA_INFO0_HOST_TX_DESC_POOL) |
+			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_KEY_FLAGS);
+		htt_desc_ext->info2 |=
+			le32_encode_bits(msdu_info->group_slot,
+					 HAL_TX_MSDU_METADATA_INFO2_KEY_FLAGS);
+
+		if (gsn_valid) {
+			ath12k_wifi8_dp_tx_update_gsn_metadata(msdu_info,
+							       dp_link_vif, gsn);
+			msdu_info->vdev_id |=
+				HTT_TX_MLO_MCAST_HOST_REINJECT_BASE_VDEV_ID;
+		}
+
+		ext_data_len = ATH12K_TX_MSDU_EXT_SZ + htt_desc_size;
+		if (!gsn_valid)
+			msdu_info->meta_data_flags |= HTT_TCL_META_DATA_VALID_HTT;
+		msdu_info->meta_data_flags |=
+			u32_encode_bits(1, HTT_TCL_META_DATA_GLOBAL_HTT_EXT_PRESENT_V3);
+		msdu_info->to_fw = true;
+	}
+
 	msdu_info->type = HAL_TCL_DESC_TYPE_EXT_DESC;
 	msdu_info->data_len = ext_data_len;
 	msdu_info->paddr = ath12k_dp_ext_desc_map(dp, ext_desc);
@@ -1866,7 +1942,7 @@ ath12k_wifi8_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 			      struct ath12k_vif *ahvif,
 			      struct ath12k_dp_link_vif *dp_link_vif,
 			      u8 ring_id, struct ath12k_dp_tx_msdu_info *msdu_info,
-			      bool gsn_valid, u16 gsn, int group_slot,
+			      bool gsn_valid, u16 gsn,
 			      struct sk_buff *skb, struct ath12k_link_sta *arsta,
 			      struct ath12k_dp_skb_ctrl *skb_ctrl, bool htt_mesh)
 {
@@ -2072,6 +2148,7 @@ void ath12k_wifi8_ucast_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 
 	msdu_info.desc_id = tx_desc->desc_id;
 	msdu_info.data_len = len;
+	msdu_info.group_slot = -1;
 	tx_desc->hw_link_id = dp_pdev->hw_link_id;
 
 	ret = ath12k_wifi8_dp_tx_desc_populate(central_dp, skb, dp_link_vif, &msdu_info,
@@ -2150,7 +2227,6 @@ void ath12k_wifi8_mcbc_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 	struct sk_buff *skb_new;
 	struct ath12k_dp *central_dp = NULL;
 	unsigned long links_map = 0;
-	int group_slot = -1;
 	u32 len;
 	u16 gsn;
 	u8 ring_id = 0;
@@ -2222,9 +2298,11 @@ void ath12k_wifi8_mcbc_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 		len = skb_new->len;
 
 		/* Setup encryption.*/
+		msdu_info.group_slot = -1;
 		ret = ath12k_wifi8_mcbc_setup_encryption(dp_vif, dp_pdev,
 							 link_id, skb_new,
-							 is_sta, is_eth, info);
+							 is_sta, is_eth, &msdu_info,
+							 vlan_ahvif, info);
 		if (ret) {
 			dev_kfree_skb_any(skb_new);
 			DP_STATS_INC(dp_vif,
@@ -2264,7 +2342,7 @@ void ath12k_wifi8_mcbc_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 
 		err = ath12k_wifi8_dp_tx_mcast_send(dp_pdev, ahvif, dp_link_vif, ring_id,
 						    &msdu_info, gsn_valid, gsn,
-						    group_slot, skb_new, arsta, skb_ctrl,
+						    skb_new, arsta, skb_ctrl,
 						    htt_mesh);
 
 		if (unlikely(err != DP_TX_ENQ_SUCCESS)) {
