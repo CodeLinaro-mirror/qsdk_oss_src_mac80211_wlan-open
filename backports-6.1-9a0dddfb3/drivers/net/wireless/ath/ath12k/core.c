@@ -1676,6 +1676,9 @@ static void ath12k_core_hw_group_stop(struct ath12k_hw_group *ag)
 		ab = ag->ab[i];
 		if (!ab || ab->is_bypassed)
 			continue;
+
+		ath12k_core_nol_extn_auto_dump_all_radios(ab);
+
 		mutex_lock(&ab->core_lock);
 		ath12k_core_pdev_deinit(ab);
 		mutex_unlock(&ab->core_lock);
@@ -2097,6 +2100,14 @@ static int ath12k_core_hw_group_start(struct ath12k_hw_group *ag)
 	set_bit(ATH12K_GROUP_FLAG_REGISTERED, &ag->flags);
 
 	spin_lock_init(&ag->qos.profile_lock);
+
+	for (i = 0; i < ag->num_devices; i++) {
+		ab = ag->ab[i];
+		if (!ab || ab->is_bypassed)
+			continue;
+
+		ath12k_core_nol_extn_auto_restore_all_radios(ab);
+	}
 
 core_pdev_create:
 	for (i = 0; i < ag->num_devices; i++) {
