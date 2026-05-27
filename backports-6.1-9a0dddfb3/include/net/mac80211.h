@@ -8760,4 +8760,15 @@ int ieee80211_clear_repurpose_link(struct ieee80211_vif *vif, u8 link_id);
  */
 void ieee80211_enable_offchan_packet_capture(struct ieee80211_vif *vif,
 					     bool enable);
+
+/**
+ * ieee80211_enable_ext_monitor - Enable extended monitor indication
+ *
+ * This function lets drivers indicate whether extended monitor support is
+ * enabled on a vif, so mac80211 can make RX path decisions based on it.
+ *
+ * @vif: vif for which extended monitor is enabled/disabled
+ * @enable: enable/disable extended monitor indication
+ */
+void ieee80211_enable_ext_monitor(struct ieee80211_vif *vif, bool enable);
 #endif /* MAC80211_H */
