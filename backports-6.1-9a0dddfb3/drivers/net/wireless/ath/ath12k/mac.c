@@ -14609,6 +14609,23 @@ static int ath12k_mac_reconfig_ahsta_links_mode0(struct ath12k_hw *ah,
 	return ret;
 }
 
+static void ath12k_mac_sta_smd_info_cleanup(struct ath12k_sta *ahsta)
+{
+	struct ath12k_smd_ctx_req *req, *tmp;
+
+	cancel_work_sync(&ahsta->smd_info.ctx_wk);
+	kfree(ahsta->smd_info.current_req);
+	ahsta->smd_info.current_req = NULL;
+
+	if (list_empty(&ahsta->smd_info.ctx_list))
+		return;
+
+	list_for_each_entry_safe(req, tmp, &ahsta->smd_info.ctx_list, list) {
+		list_del(&req->list);
+		kfree(req);
+	}
+}
+
 int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 			    struct ieee80211_vif *vif,
 			    struct ieee80211_sta *sta,
@@ -14824,6 +14841,12 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 			goto exit;
 		}
 
+		if (vif->type == NL80211_IFTYPE_AP && sta->smd_params.smd_enabled) {
+			INIT_LIST_HEAD(&ahsta->smd_info.ctx_list);
+			spin_lock_init(&ahsta->smd_info.ctx_list_lock);
+			INIT_WORK(&ahsta->smd_info.ctx_wk,
+				  ath12k_smd_ctx_collector_work);
+		}
 	}
 
 	/* In the ML station scenario, activate all partner links once the
@@ -14983,6 +15006,10 @@ ml_station_remove:
 		if (sta->mlo) {
 			ath12k_mac_ml_station_remove(ahvif, ahsta);
 			cancel_work_sync(&ahsta->migration_wk);
+			if (vif->type == NL80211_IFTYPE_AP &&
+			    sta->smd_params.smd_enabled) {
+				ath12k_mac_sta_smd_info_cleanup(ahsta);
+			}
 		} else {
 			link_id = ffs(ahsta->links_map) - 1;
 			if (is_recovery && link_id >= 0) {

@@ -1354,6 +1354,12 @@ struct ath12k_smd_info {
 	bool latest_ctx_valid;
 	ktime_t latest_ctx_ts;
 	struct ath12k_smd_ctx latest_ctx;
+
+	/* protects @ctx_list */
+	spinlock_t ctx_list_lock;
+	struct list_head ctx_list;
+	struct work_struct ctx_wk;
+
 	struct ath12k_smd_ctx_req *current_req;
 };
 

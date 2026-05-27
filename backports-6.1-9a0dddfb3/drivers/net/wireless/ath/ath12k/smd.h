@@ -86,6 +86,13 @@ struct ath12k_smd_ctx_ba {
 	    ext_buffer_size:10;
 };
 
+enum ath12k_smd_ctx_state {
+	SMD_CTX_INIT,
+	SMD_CTX_WAITING,
+	SMD_CTX_RUNNING,
+	SMD_CTX_COMPLETE,
+};
+
 /* Vendor Context and TLVs */
 
 #define SMD_CTX_TLV_TYPE_VENDOR 221
@@ -182,6 +189,7 @@ struct ath12k_smd_ctx {
 struct ath12k_smd_ctx_req {
 	/* protects @req data */
 	spinlock_t lock;
+	enum ath12k_smd_ctx_state state;
 	enum ieee80211_uhr_link_reconf_resp_type type;
 	DECLARE_BITMAP(wait_for_1k_status_ctx, IEEE80211_MAX_NUM_TIDS);
 	bool tx_done; /* mark Tx HW block completion */
@@ -190,6 +198,7 @@ struct ath12k_smd_ctx_req {
 	struct sk_buff *mmpdu;
 	u8 sta_addr[ETH_ALEN];
 	ktime_t enqueued_ts;
+	struct list_head list;
 	void (*handler)(struct ath12k_smd_info *smd_info, struct ath12k_smd_ctx_req *req);
 };
 
@@ -237,5 +246,8 @@ void ath12k_smd_get_vendor_ctx_bitmaps(struct ath12k_smd_ctx *drv_ctx,
 				       struct ath12k_rx_smd_ctx_per_tid *tid);
 int ath12k_smd_set_vendor_ctx(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 			      struct ath12k_smd_ctx *ctx, struct ieee80211_sta *sta);
+
+void ath12k_smd_ctx_queue_work(struct work_struct *ctx_wk);
+void ath12k_smd_ctx_collector_work(struct work_struct *work);
 
 #endif /* ATH12K_SMD_H */
