@@ -958,7 +958,7 @@ ath12k_dp_rx_update_vow_stats(struct ath12k_pdev_dp *dp_pdev,
 
 	current_ts = (u32)ktime_to_ms(ktime_get_real());
 
-	reap_delay = current_ts - msdu->tstamp;
+	reap_delay = current_ts - (u32)ktime_to_ms(msdu->tstamp);
 	ath12k_dp_update_hist_stats(&tid_rx_stats->to_stack_delay, reap_delay);
 
 	if (dp_pdev->prev_rx_timestamp) {
@@ -975,6 +975,27 @@ ath12k_dp_rx_update_vow_stats(struct ath12k_pdev_dp *dp_pdev,
 				stats->bcast_cnt++;
 		}
 	}
+}
+
+static void
+ath12k_dp_rx_update_delay_stats(struct ath12k_dp_peer *peer, struct sk_buff *msdu,
+				u8 tid, u8 ring)
+{
+	u32 current_ts, rx_delay;
+	struct ath12k_dp_peer_delay_stats *delay_stats;
+	struct ath12k_dp_peer_delay_tid_stats *delay_tid_stats;
+
+	delay_stats = peer->mld_stats.delay_stats;
+
+	if (!delay_stats)
+		return;
+
+	delay_tid_stats = &delay_stats->delay_tid_stats[tid][ring];
+	current_ts = (u32)ktime_to_ms(ktime_get_real());
+
+	rx_delay = current_ts - (u32)ktime_to_ms(msdu->tstamp);
+	ath12k_dp_update_hist_stats(&delay_tid_stats->rx_delay.to_stack_delay,
+				    rx_delay);
 }
 
 static void
@@ -1009,6 +1030,7 @@ ath12k_wifi7_dp_process_reo_rx_packets(struct ath12k_dp *dp,
 	u8 tid = 0;
 	u8 active_tid_mask = 0;
 	struct ath12k_tid_rx_stats *tid_rx_stats_ring = NULL;
+	bool is_delay_enabled = false;
 
 	rcu_read_lock();
 
@@ -1084,6 +1106,7 @@ ath12k_wifi7_dp_process_reo_rx_packets(struct ath12k_dp *dp,
 				prev_hw_link_id = 0xff;
 				continue;
 			}
+			is_delay_enabled = ath12k_dp_delay_stats_enabled(dp_pdev);
 
 			tid_rx_stats_ring = &dp_pdev->tid_stats.tid_rx[ring_id][0];
 
@@ -1101,8 +1124,8 @@ ath12k_wifi7_dp_process_reo_rx_packets(struct ath12k_dp *dp,
 		}
 
 		if (unlikely(ath12k_dp_stats_enabled(dp_pdev) &&
-			     ath12k_dp_vow_stats_enabled(dp_pdev)))
-			msdu->tstamp = (u32)ktime_to_ms(ktime_get_real());
+			     (ath12k_dp_vow_stats_enabled(dp_pdev) || is_delay_enabled)))
+			__net_timestamp(msdu);
 
 		prefetch(&partner_dp->hal);
 		/*
@@ -1177,6 +1200,9 @@ ath12k_wifi7_dp_process_reo_rx_packets(struct ath12k_dp *dp,
 								      msdu, rx_msdu_info,
 								      tid,
 								      tid_rx_stats_ring);
+				if (is_delay_enabled)
+					ath12k_dp_rx_update_delay_stats(peer, msdu,
+									tid, ring_id);
 			}
 
 			ath12k_wifi7_deliver_ethernet_frame(dp_pdev, spd_desc_l,
