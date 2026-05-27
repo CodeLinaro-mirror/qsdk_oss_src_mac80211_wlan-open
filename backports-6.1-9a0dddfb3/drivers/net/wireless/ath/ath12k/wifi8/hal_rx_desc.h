@@ -25,14 +25,8 @@ enum rx_desc_decrypt_status_code {
 
 
 struct hal_rxpt_classify_info {
-	__le32 info0;
-	__le32 info1;
-	__le32 info2;
-	__le32 info3;
-	__le32 info4;
-	__le32 info5;
-	__le32 info6;
-};
+	__le32 rsvd0[7];
+} __packed;
 
 #define RX_MPDU_INFO_INFO2_MPDU_FRAME_CONTROL_VALID			BIT(0)
 #define RX_MPDU_INFO_INFO2_MAC_ADDR_AD2_VALID				BIT(3)

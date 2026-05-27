@@ -3027,23 +3027,20 @@ int ath12k_wifi8_dp_rx_flow_fse_cache_operation(struct ath12k_base *ab,
 		fse_cmd.dest_ip[1] = htonl(tuple_info->dest_ip_95_64);
 		fse_cmd.dest_ip[2] = htonl(tuple_info->dest_ip_63_32);
 		fse_cmd.dest_ip[3] = htonl(tuple_info->dest_ip_31_0);
+		fse_cmd.src_port = cpu_to_le16(tuple_info->src_port);
+		fse_cmd.dest_port = cpu_to_le16(tuple_info->dest_port);
 		fse_cmd.info0 =
-			cpu_to_le32(FIELD_PREP(HAL_FSE_CMD_INFO0_SRC_PORT,
-					       tuple_info->src_port) |
-				    FIELD_PREP(HAL_FSE_CMD_INFO0_DEST_PORT,
-					       tuple_info->dest_port));
-		fse_cmd.info1 =
-			cpu_to_le32(FIELD_PREP(HAL_FSE_CMD_INFO1_L4_PROTOCOL,
+			cpu_to_le32(FIELD_PREP(HAL_FSE_CMD_INFO0_L4_PROTOCOL,
 					       tuple_info->l4_protocol) |
-				    FIELD_PREP(HAL_FSE_CMD_INFO1_GSE_CTRL,
+				    FIELD_PREP(HAL_FSE_CMD_INFO0_GSE_CTRL,
 					       HAL_FSE_GSE_CTRL_INVAL_SINGLE));
 	} else if (op_code == DP_FST_CACHE_INVALIDATE_FULL) {
-		fse_cmd.info1 =
-			cpu_to_le32(FIELD_PREP(HAL_FSE_CMD_INFO1_GSE_CTRL,
+		fse_cmd.info0 =
+			cpu_to_le32(FIELD_PREP(HAL_FSE_CMD_INFO0_GSE_CTRL,
 					       HAL_FSE_GSE_CTRL_INVAL_ALL));
 	} else if (op_code == DP_FST_DISABLE) {
-		fse_cmd.info1 =
-			cpu_to_le32(FIELD_PREP(HAL_FSE_CMD_INFO1_GSE_CTRL,
+		fse_cmd.info0 =
+			cpu_to_le32(FIELD_PREP(HAL_FSE_CMD_INFO0_GSE_CTRL,
 					       HAL_FSE_GSE_CTRL_SRCH_DIS));
 	} else if (op_code == DP_FST_ENABLE) {
 		ath12k_dbg(ab, ATH12K_DBG_DP_FST,

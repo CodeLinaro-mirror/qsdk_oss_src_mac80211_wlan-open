@@ -54,11 +54,11 @@ ath12k_wifi8_hal_mon_get_nrp_mac_addr(u16 addr_l16, u32 addr_h32, u8 *addr)
 }
 
 static __always_inline void
-ath12k_wifi8_hal_mon_handle_ofdma_info(u32 *info,
+ath12k_wifi8_hal_mon_handle_ofdma_info(u32 resp_ref, u32 resp_ref_ext,
 				       struct hal_rx_user_status *rx_user_status)
 {
-	rx_user_status->ul_ofdma_user_v0_word0 = info[12];
-	rx_user_status->ul_ofdma_user_v0_word1 = info[13];
+	rx_user_status->ul_ofdma_user_v0_word0 = resp_ref;
+	rx_user_status->ul_ofdma_user_v0_word1 = resp_ref_ext;
 }
 
 static __always_inline void
@@ -66,19 +66,19 @@ ath12k_wifi8_hal_mon_populate_byte_count(u32 *info,
 					 struct hal_rx_user_status *rx_user_status)
 {
 	rx_user_status->mpdu_ok_byte_count =
-		u32_get_bits(info[8],
-			     HAL_RX_PPDU_END_USER_STATS_INFO8_MPDU_OK_BYTE_CNT);
+		u32_get_bits(info[3],
+			     HAL_RX_PPDU_END_USER_STATS_INFO3_MPDU_OK_BYTE_CNT);
 	rx_user_status->mpdu_err_byte_count =
-		u32_get_bits(info[9],
-			     HAL_RX_PPDU_END_USER_STATS_INFO9_MPDU_ERR_BYTE_CNT);
+		u32_get_bits(info[4],
+			     HAL_RX_PPDU_END_USER_STATS_INFO4_MPDU_ERR_BYTE_CNT);
 }
 
 static __always_inline void
-ath12k_wifi8_hal_mon_handle_ofdma_info_compact(u32 *info,
+ath12k_wifi8_hal_mon_handle_ofdma_info_compact(u32 resp_ref, u32 resp_ref_ext,
 					       struct hal_rx_user_status *rx_user_status)
 {
-	rx_user_status->ul_ofdma_user_v0_word0 = info[12];
-	rx_user_status->ul_ofdma_user_v0_word1 = info[13];
+	rx_user_status->ul_ofdma_user_v0_word0 = resp_ref;
+	rx_user_status->ul_ofdma_user_v0_word1 = resp_ref_ext;
 }
 
 static __always_inline void
@@ -87,11 +87,11 @@ ath12k_wifi8_hal_mon_populate_byte_count_compact(
 					struct hal_rx_user_status *rx_user_status)
 {
 	rx_user_status->mpdu_ok_byte_count =
-		u32_get_bits(info[8],
-			     HAL_RX_PPDU_END_USER_STATS_INFO8_MPDU_OK_BYTE_CNT_CMPCT);
+		u32_get_bits(info[3],
+			     HAL_RX_PPDU_END_USER_STATS_INFO3_MPDU_OK_BYTE_CNT_CMPCT);
 	rx_user_status->mpdu_err_byte_count =
-		u32_get_bits(info[9],
-			     HAL_RX_PPDU_END_USER_STATS_INFO9_MPDU_ERR_BYTE_CNT_CMPCT);
+		u32_get_bits(info[4],
+			     HAL_RX_PPDU_END_USER_STATS_INFO4_MPDU_ERR_BYTE_CNT_CMPCT);
 }
 
 static __always_inline void
@@ -2241,7 +2241,7 @@ ath12k_wifi8_hal_mon_parse_user_info(const struct hal_receive_user_info *rx_usr_
 	u64 ru_index_320mhz = 0;
 	u32 ru_index_per80mhz;
 
-	reception_type = le32_get_bits(rx_usr_info->info0,
+	reception_type = le16_get_bits(rx_usr_info->info0,
 				       HAL_RX_USR_INFO0_RECEPTION_TYPE);
 
 	switch (reception_type) {
@@ -2261,7 +2261,7 @@ ath12k_wifi8_hal_mon_parse_user_info(const struct hal_receive_user_info *rx_usr_
 		ppdu_info->reception_type = HAL_RX_RECEPTION_TYPE_MU_OFDMA_MIMO;
 	}
 
-	ppdu_info->is_stbc = le32_get_bits(rx_usr_info->info0, HAL_RX_USR_INFO0_STBC);
+	ppdu_info->is_stbc = le16_get_bits(rx_usr_info->info0, HAL_RX_USR_INFO0_STBC);
 	ppdu_info->ldpc = le32_get_bits(rx_usr_info->info2, HAL_RX_USR_INFO2_LDPC);
 	ppdu_info->dcm = le32_get_bits(rx_usr_info->info2, HAL_RX_USR_INFO2_STA_DCM);
 	ppdu_info->bw = le32_get_bits(rx_usr_info->info1, HAL_RX_USR_INFO1_RX_BW);
@@ -2450,23 +2450,18 @@ ath12k_wifi8_hal_mon_rx_mpdu_start_info_get(const void *tlv_data, u32 userid,
 	struct hal_rx_mpdu_start *mpdu_start =
 		(struct hal_rx_mpdu_start *)tlv_data;
 	u16 peer_id, addr_16;
-	u32 info[9], addr_32;
+	u32 info[5], addr_32;
 	u8 user_id = ppdu_info->user_id;
 
-	info[0] = __le32_to_cpu(mpdu_start->info0);
 	info[1] = __le32_to_cpu(mpdu_start->info1);
-	info[2] = __le32_to_cpu(mpdu_start->info2);
+	info[2] = le16_to_cpu(mpdu_start->info2);
 	info[3] = __le32_to_cpu(mpdu_start->info3);
 	info[4] = __le32_to_cpu(mpdu_start->info4);
-	info[5] = __le32_to_cpu(mpdu_start->info5);
-	info[6] = __le32_to_cpu(mpdu_start->info6);
-	info[7] = __le32_to_cpu(mpdu_start->info7);
-	info[8] = __le32_to_cpu(mpdu_start->info8);
 
-	ppdu_info->grp_id = u32_get_bits(info[3],
-					 HAL_RX_MPDU_START_INFO3_SW_GRP_ID);
+	ppdu_info->grp_id = u32_get_bits(info[2],
+					 HAL_RX_MPDU_START_INFO2_SW_GRP_ID);
 
-	peer_id = u32_get_bits(info[2], HAL_RX_MPDU_START_INFO2_PEERID);
+	peer_id = le16_to_cpu(mpdu_start->sw_peer_id);
 	if (peer_id)
 		ppdu_info->peer_id = peer_id;
 
@@ -2482,24 +2477,21 @@ ath12k_wifi8_hal_mon_rx_mpdu_start_info_get(const void *tlv_data, u32 userid,
 			     HAL_RX_MPDU_START_INFO1_FC_VALID);
 
 	ppdu_info->mpdu_info[user_id].raw_mpdu =
-		u32_get_bits(info[4], HAL_RX_MPDU_START_INFO4_RAW_MPDU);
+		u32_get_bits(info[3], HAL_RX_MPDU_START_INFO3_RAW_MPDU);
 	if (ppdu_info->mpdu_info[user_id].raw_mpdu)
 		ppdu_info->mpdu_info[user_id].decap_type = DP_RX_DECAP_TYPE_RAW;
 	else
 		ppdu_info->mpdu_info[user_id].decap_type =
-			u32_get_bits(info[4], HAL_RX_MPDU_START_INFO4_DECAP_TYPE);
+			u32_get_bits(info[3], HAL_RX_MPDU_START_INFO3_DECAP_TYPE);
 
-	ppdu_info->mpdu_len += u32_get_bits(info[5],
-					    HAL_RX_MPDU_START_INFO5_MPDU_LEN);
+	ppdu_info->mpdu_len += u32_get_bits(info[4],
+					    HAL_RX_MPDU_START_INFO4_MPDU_LEN);
 	ppdu_info->nrp_info.mcast_bcast =
-		u32_get_bits(info[5], HAL_RX_MPDU_START_INFO5_MCAST_BCAST);
+		u32_get_bits(info[4], HAL_RX_MPDU_START_INFO4_MCAST_BCAST);
 	ppdu_info->nrp_info.frame_control =
-		u32_get_bits(info[6],
-			     HAL_RX_MPDU_START_INFO6_FC_FIELD);
-	addr_16 = u32_get_bits(info[7],
-			       HAL_RX_MPDU_START_INFO7_ADDR2_15_0);
-	addr_32 = u32_get_bits(info[8],
-			       HAL_RX_MPDU_START_INFO8_ADDR2_47_16);
+		le16_to_cpu(mpdu_start->mpdu_frame_control_field);
+	addr_16 = le16_to_cpu(mpdu_start->mac_addr_ad2_15_0);
+	addr_32 = le32_to_cpu(mpdu_start->mac_addr_ad2_47_16);
 	if (ppdu_info->nrp_info.fc_valid &&
 	    ppdu_info->nrp_info.to_ds_flag &&
 	    ppdu_info->nrp_info.mac_addr2_valid)
@@ -2507,11 +2499,10 @@ ath12k_wifi8_hal_mon_rx_mpdu_start_info_get(const void *tlv_data, u32 userid,
 						      ppdu_info->nrp_info.mac_addr2);
 
 	ppdu_info->userstats[user_id].sw_peer_id = peer_id;
-	ppdu_info->userstats[user_id].ampdu_id =
-		u32_get_bits(info[3], HAL_RX_MPDU_START_INFO3_PPDU_ID);
+	ppdu_info->userstats[user_id].ampdu_id = le16_to_cpu(mpdu_start->phy_ppdu_id);
 	ppdu_info->userstats[user_id].filter_category =
-		u32_get_bits(info[3],
-			     HAL_RX_MPDU_START_INFO3_FILTER_CAT);
+		u32_get_bits(info[2],
+			     HAL_RX_MPDU_START_INFO2_FILTER_CAT);
 	ppdu_info->userstats[user_id].mpdu_retry +=
 		u32_get_bits(info[1], HAL_RX_MPDU_START_INFO1_MPDU_RETRY);
 	ppdu_info->userstats[user_id].frame_control_info_valid =
@@ -2530,23 +2521,18 @@ ath12k_wifi8_hal_mon_rx_mpdu_start_info_get_compact(
 	struct hal_rx_mon_mpdu_start_compact *mpdu_start =
 		(struct hal_rx_mon_mpdu_start_compact *)tlv_data;
 	u16 peer_id, addr_16;
-	u32 info[9], addr_32;
+	u32 info[5], addr_32;
 	u8 user_id = ppdu_info->user_id;
 
-	info[0] = __le32_to_cpu(mpdu_start->info0);
 	info[1] = __le32_to_cpu(mpdu_start->info1);
-	info[2] = __le32_to_cpu(mpdu_start->info2);
+	info[2] = le16_to_cpu(mpdu_start->info2);
 	info[3] = __le32_to_cpu(mpdu_start->info3);
 	info[4] = __le32_to_cpu(mpdu_start->info4);
-	info[5] = __le32_to_cpu(mpdu_start->info5);
-	info[6] = __le32_to_cpu(mpdu_start->info6);
-	info[7] = __le32_to_cpu(mpdu_start->info7);
-	info[8] = __le32_to_cpu(mpdu_start->info8);
 
-	ppdu_info->grp_id = u32_get_bits(info[3],
-					 HAL_RX_MPDU_START_INFO3_SW_GRP_ID_CMPCT);
+	ppdu_info->grp_id = u32_get_bits(info[2],
+					 HAL_RX_MPDU_START_INFO2_SW_GRP_ID_CMPCT);
 
-	peer_id = u32_get_bits(info[2], HAL_RX_MPDU_START_INFO2_PEERID_CMPCT);
+	peer_id = le16_to_cpu(mpdu_start->sw_peer_id);
 	if (peer_id)
 		ppdu_info->peer_id = peer_id;
 
@@ -2561,25 +2547,22 @@ ath12k_wifi8_hal_mon_rx_mpdu_start_info_get_compact(
 		u32_get_bits(info[1],
 			     HAL_RX_MPDU_START_INFO1_FC_VALID_CMPCT);
 	ppdu_info->mpdu_info[user_id].raw_mpdu =
-		u32_get_bits(info[4], HAL_RX_MPDU_START_INFO4_RAW_MPDU_CMPCT);
+		u32_get_bits(info[3], HAL_RX_MPDU_START_INFO3_RAW_MPDU_CMPCT);
 	if (ppdu_info->mpdu_info[user_id].raw_mpdu)
 		ppdu_info->mpdu_info[user_id].decap_type = DP_RX_DECAP_TYPE_RAW;
 	else
 		ppdu_info->mpdu_info[user_id].decap_type =
-			u32_get_bits(info[4], HAL_RX_MPDU_START_INFO4_DECAP_TYPE_CMPCT);
+			u32_get_bits(info[3], HAL_RX_MPDU_START_INFO3_DECAP_TYPE_CMPCT);
 
-	ppdu_info->mpdu_len += u32_get_bits(info[5],
-					    HAL_RX_MPDU_START_INFO5_MPDU_LEN_CMPCT);
+	ppdu_info->mpdu_len += u32_get_bits(info[4],
+					    HAL_RX_MPDU_START_INFO4_MPDU_LEN_CMPCT);
 	ppdu_info->nrp_info.mcast_bcast =
-		u32_get_bits(info[5], HAL_RX_MPDU_START_INFO5_MCAST_BCAST_CMPCT);
+		u32_get_bits(info[4], HAL_RX_MPDU_START_INFO4_MCAST_BCAST_CMPCT);
 	ppdu_info->nrp_info.frame_control =
-		u32_get_bits(info[6],
-			     HAL_RX_MPDU_START_INFO6_FC_FIELD_CMPCT);
+		le16_to_cpu(mpdu_start->mpdu_frame_control_field);
 
-	addr_16 = u32_get_bits(info[7],
-			       HAL_RX_MPDU_START_INFO7_ADDR2_15_0_CMPCT);
-	addr_32 = u32_get_bits(info[8],
-			       HAL_RX_MPDU_START_INFO8_ADDR2_47_16_CMPCT);
+	addr_16 = le16_to_cpu(mpdu_start->mac_addr_ad2_15_0);
+	addr_32 = le32_to_cpu(mpdu_start->mac_addr_ad2_47_16);
 	if (ppdu_info->nrp_info.fc_valid &&
 	    ppdu_info->nrp_info.to_ds_flag &&
 	    ppdu_info->nrp_info.mac_addr2_valid)
@@ -2587,11 +2570,10 @@ ath12k_wifi8_hal_mon_rx_mpdu_start_info_get_compact(
 						      ppdu_info->nrp_info.mac_addr2);
 
 	ppdu_info->userstats[user_id].sw_peer_id = peer_id;
-	ppdu_info->userstats[user_id].ampdu_id =
-		u32_get_bits(info[3], HAL_RX_MPDU_START_INFO3_PPDU_ID_CMPCT);
+	ppdu_info->userstats[user_id].ampdu_id = le16_to_cpu(mpdu_start->phy_ppdu_id);
 	ppdu_info->userstats[user_id].filter_category =
-		u32_get_bits(info[3],
-			     HAL_RX_MPDU_START_INFO3_FILTER_CAT_CMPCT);
+		u32_get_bits(info[2],
+			     HAL_RX_MPDU_START_INFO2_FILTER_CAT_CMPCT);
 	ppdu_info->userstats[user_id].mpdu_retry +=
 		u32_get_bits(info[1], HAL_RX_MPDU_START_INFO1_MPDU_RETRY_CMPCT);
 	ppdu_info->userstats[user_id].frame_control_info_valid =
@@ -2675,29 +2657,18 @@ ath12k_wifi8_hal_mon_rx_ppdu_eu_stats_info_get(const void *tlv_data, u32 userid,
 	struct hal_rx_ppdu_end_user_stats *ppdu_eu_stats =
 		(struct hal_rx_ppdu_end_user_stats *)tlv_data;
 	u32 tid_bitmap;
-	u32 info[14];
+	u32 info[6];
 
-	info[0] = __le32_to_cpu(ppdu_eu_stats->info0);
 	info[1] = __le32_to_cpu(ppdu_eu_stats->info1);
 	info[2] = __le32_to_cpu(ppdu_eu_stats->info2);
 	info[3] = __le32_to_cpu(ppdu_eu_stats->info3);
 	info[4] = __le32_to_cpu(ppdu_eu_stats->info4);
 	info[5] = __le32_to_cpu(ppdu_eu_stats->info5);
-	info[6] = __le32_to_cpu(ppdu_eu_stats->info6);
-	info[7] = __le32_to_cpu(ppdu_eu_stats->info7);
-	info[8] = __le32_to_cpu(ppdu_eu_stats->info8);
-	info[9] = __le32_to_cpu(ppdu_eu_stats->info9);
-	info[10] = __le32_to_cpu(ppdu_eu_stats->info10);
-	info[11] = __le32_to_cpu(ppdu_eu_stats->info11);
-	info[12] = __le32_to_cpu(ppdu_eu_stats->usr_resp_ref);
-	info[13] = __le32_to_cpu(ppdu_eu_stats->usr_resp_ref_ext);
 
 	ppdu_info->num_mpdu_fcs_err =
 		u32_get_bits(info[1],
 			     HAL_RX_PPDU_END_USER_STATS_INFO1_MPDU_CNT_FCS_ERR);
-	ppdu_info->peer_id =
-		u32_get_bits(info[1],
-			     HAL_RX_PPDU_END_USER_STATS_INFO1_PEER_ID);
+	ppdu_info->peer_id = le16_to_cpu(ppdu_eu_stats->sw_peer_id);
 	ppdu_info->fc_valid =
 		u32_get_bits(info[2],
 			     HAL_RX_PPDU_END_USER_STATS_INFO2_FC_VALID);
@@ -2707,30 +2678,17 @@ ath12k_wifi8_hal_mon_rx_ppdu_eu_stats_info_get(const void *tlv_data, u32 userid,
 	ppdu_info->num_mpdu_fcs_ok =
 		u32_get_bits(info[2],
 			     HAL_RX_PPDU_END_USER_STATS_INFO2_MPDU_CNT_FCS_OK);
-	ppdu_info->ast_index =
-		u32_get_bits(info[3],
-			     HAL_RX_PPDU_END_USER_STATS_INFO3_AST_INDEX);
-	ppdu_info->tcp_msdu_count =
-		u32_get_bits(info[5],
-			     HAL_RX_PPDU_END_USER_STATS_INFO5_TCP_MSDU_CNT);
-	ppdu_info->udp_msdu_count =
-		u32_get_bits(info[5],
-			     HAL_RX_PPDU_END_USER_STATS_INFO5_UDP_MSDU_CNT);
-	ppdu_info->other_msdu_count =
-		u32_get_bits(info[6],
-			     HAL_RX_PPDU_END_USER_STATS_INFO6_OTHER_MSDU_CNT);
-	ppdu_info->tcp_ack_msdu_count =
-		u32_get_bits(info[6],
-			     HAL_RX_PPDU_END_USER_STATS_INFO6_TCP_ACK_MSDU_CNT);
-	tid_bitmap = u32_get_bits(info[7],
-				  HAL_RX_PPDU_END_USER_STATS_INFO7_TID_BITMAP);
+	ppdu_info->ast_index = le16_to_cpu(ppdu_eu_stats->ast_index);
+	ppdu_info->tcp_msdu_count = le16_to_cpu(ppdu_eu_stats->tcp_msdu_count);
+	ppdu_info->udp_msdu_count = le16_to_cpu(ppdu_eu_stats->udp_msdu_count);
+	ppdu_info->other_msdu_count = le16_to_cpu(ppdu_eu_stats->other_msdu_count);
+	ppdu_info->tcp_ack_msdu_count = le16_to_cpu(ppdu_eu_stats->tcp_ack_msdu_count);
+	tid_bitmap = le16_to_cpu(ppdu_eu_stats->received_qos_data_tid_bitmap);
 	ppdu_info->tid = ffs(tid_bitmap) - 1;
 	ppdu_info->mpdu_retry_cnt =
-		u32_get_bits(info[11],
-			     HAL_RX_PPDU_END_USER_STATS_INFO11_MPDU_RETRY_CNT);
-	ppdu_info->retried_msdu_count =
-		u32_get_bits(info[10],
-			     HAL_RX_PPDU_END_USER_STATS_INFO10_MSDU_RETRY_CNT);
+		u32_get_bits(info[5],
+			     HAL_RX_PPDU_END_USER_STATS_INFO5_MPDU_RETRY_CNT);
+	ppdu_info->retried_msdu_count = le16_to_cpu(ppdu_eu_stats->retried_msdu_count);
 
 	switch (ppdu_info->preamble_type) {
 	case HAL_RX_PREAMBLE_11N:
@@ -2755,7 +2713,10 @@ ath12k_wifi8_hal_mon_rx_ppdu_eu_stats_info_get(const void *tlv_data, u32 userid,
 	if (userid < HAL_MAX_UL_MU_USERS) {
 		struct hal_rx_user_status *rxuser_stats =
 				&ppdu_info->userstats[userid];
-		ath12k_wifi8_hal_mon_handle_ofdma_info(info,
+		u32 resp_ref = __le32_to_cpu(ppdu_eu_stats->usr_resp_ref);
+		u32 resp_ref_ext = __le32_to_cpu(ppdu_eu_stats->usr_resp_ref_ext);
+
+		ath12k_wifi8_hal_mon_handle_ofdma_info(resp_ref, resp_ref_ext,
 						       rxuser_stats);
 		ath12k_wifi8_hal_mon_populate_byte_count(info,
 							 rxuser_stats);
@@ -2770,29 +2731,18 @@ ath12k_wifi8_hal_mon_rx_ppdu_eu_stats_info_get_compact(
 	struct hal_rx_mon_ppdu_end_user_stats_compact *ppdu_eu_stats =
 		(struct hal_rx_mon_ppdu_end_user_stats_compact *)tlv_data;
 	u32 tid_bitmap;
-	u32 info[14];
+	u32 info[6];
 
-	info[0] = __le32_to_cpu(ppdu_eu_stats->info0);
 	info[1] = __le32_to_cpu(ppdu_eu_stats->info1);
 	info[2] = __le32_to_cpu(ppdu_eu_stats->info2);
 	info[3] = __le32_to_cpu(ppdu_eu_stats->info3);
 	info[4] = __le32_to_cpu(ppdu_eu_stats->info4);
 	info[5] = __le32_to_cpu(ppdu_eu_stats->info5);
-	info[6] = __le32_to_cpu(ppdu_eu_stats->info6);
-	info[7] = __le32_to_cpu(ppdu_eu_stats->info7);
-	info[8] = __le32_to_cpu(ppdu_eu_stats->info8);
-	info[9] = __le32_to_cpu(ppdu_eu_stats->info9);
-	info[10] = __le32_to_cpu(ppdu_eu_stats->info10);
-	info[11] = __le32_to_cpu(ppdu_eu_stats->info11);
-	info[12] = __le32_to_cpu(ppdu_eu_stats->usr_resp_ref);
-	info[13] = __le32_to_cpu(ppdu_eu_stats->usr_resp_ref_ext);
 
 	ppdu_info->num_mpdu_fcs_err =
 		u32_get_bits(info[1],
 			     HAL_RX_PPDU_END_USER_STATS_INFO1_MPDU_CNT_FCS_ERR_CMPCT);
-	ppdu_info->peer_id =
-		u32_get_bits(info[1],
-			     HAL_RX_PPDU_END_USER_STATS_INFO1_PEER_ID_CMPCT);
+	ppdu_info->peer_id = le16_to_cpu(ppdu_eu_stats->sw_peer_id);
 	ppdu_info->fc_valid =
 		u32_get_bits(info[2],
 			     HAL_RX_PPDU_END_USER_STATS_INFO2_FC_VALID_CMPCT);
@@ -2802,30 +2752,17 @@ ath12k_wifi8_hal_mon_rx_ppdu_eu_stats_info_get_compact(
 	ppdu_info->num_mpdu_fcs_ok =
 		u32_get_bits(info[2],
 			     HAL_RX_PPDU_END_USER_STATS_INFO2_MPDU_CNT_FCS_OK_CMPCT);
-	ppdu_info->ast_index =
-		u32_get_bits(info[3],
-			     HAL_RX_PPDU_END_USER_STATS_INFO3_AST_INDEX_CMPCT);
-	ppdu_info->tcp_msdu_count =
-		u32_get_bits(info[5],
-			     HAL_RX_PPDU_END_USER_STATS_INFO5_TCP_MSDU_CNT_CMPCT);
-	ppdu_info->udp_msdu_count =
-		u32_get_bits(info[5],
-			     HAL_RX_PPDU_END_USER_STATS_INFO5_UDP_MSDU_CNT_CMPCT);
-	ppdu_info->other_msdu_count =
-		u32_get_bits(info[6],
-			     HAL_RX_PPDU_END_USER_STATS_INFO6_OTHER_MSDU_CNT_CMPCT);
-	ppdu_info->tcp_ack_msdu_count =
-		u32_get_bits(info[6],
-			     HAL_RX_PPDU_END_USER_STATS_INFO6_TCP_ACK_MSDU_CNT_CMPCT);
-	tid_bitmap = u32_get_bits(info[7],
-				  HAL_RX_PPDU_END_USER_STATS_INFO7_TID_BITMAP_CMPCT);
+	ppdu_info->ast_index = le16_to_cpu(ppdu_eu_stats->ast_index);
+	ppdu_info->tcp_msdu_count = le16_to_cpu(ppdu_eu_stats->tcp_msdu_count);
+	ppdu_info->udp_msdu_count = le16_to_cpu(ppdu_eu_stats->udp_msdu_count);
+	ppdu_info->other_msdu_count = le16_to_cpu(ppdu_eu_stats->other_msdu_count);
+	ppdu_info->tcp_ack_msdu_count = le16_to_cpu(ppdu_eu_stats->tcp_ack_msdu_count);
+	tid_bitmap = le16_to_cpu(ppdu_eu_stats->received_qos_data_tid_bitmap);
 	ppdu_info->tid = ffs(tid_bitmap) - 1;
 	ppdu_info->mpdu_retry_cnt =
-		u32_get_bits(info[11],
-			     HAL_RX_PPDU_END_USER_STATS_INFO11_MPDU_RETRY_CNT_CMPCT);
-	ppdu_info->retried_msdu_count =
-		u32_get_bits(info[10],
-			     HAL_RX_PPDU_END_USER_STATS_INFO10_MSDU_RETRY_CNT_CMPCT);
+		u32_get_bits(info[5],
+			     HAL_RX_PPDU_END_USER_STATS_INFO5_MPDU_RETRY_CNT_CMPCT);
+	ppdu_info->retried_msdu_count = le16_to_cpu(ppdu_eu_stats->retried_msdu_count);
 
 	switch (ppdu_info->preamble_type) {
 	case HAL_RX_PREAMBLE_11N:
@@ -2850,7 +2787,10 @@ ath12k_wifi8_hal_mon_rx_ppdu_eu_stats_info_get_compact(
 	if (userid < HAL_MAX_UL_MU_USERS) {
 		struct hal_rx_user_status *rxuser_stats =
 				&ppdu_info->userstats[userid];
-		ath12k_wifi8_hal_mon_handle_ofdma_info_compact(info,
+		u32 resp_ref = __le32_to_cpu(ppdu_eu_stats->usr_resp_ref);
+		u32 resp_ref_ext = __le32_to_cpu(ppdu_eu_stats->usr_resp_ref_ext);
+
+		ath12k_wifi8_hal_mon_handle_ofdma_info_compact(resp_ref, resp_ref_ext,
 							       rxuser_stats);
 		ath12k_wifi8_hal_mon_populate_byte_count_compact(info,
 								 rxuser_stats);
@@ -2904,16 +2844,9 @@ ath12k_wifi8_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 		u64 ppdu_ts = ath12k_hal_le32hilo_to_u64(ppdu_start->ppdu_start_ts_63_32,
 							 ppdu_start->ppdu_start_ts_31_0);
 
-		info[0] = __le32_to_cpu(ppdu_start->info0);
+		info[0] = le16_to_cpu(ppdu_start->phy_ppdu_id);
 
-		ppdu_info->ppdu_id = u32_get_bits(info[0],
-						  HAL_RX_PPDU_START_INFO0_PPDU_ID);
-
-		info[1] = __le32_to_cpu(ppdu_start->info1);
-		ppdu_info->chan_num = u32_get_bits(info[1],
-						   HAL_RX_PPDU_START_INFO1_CHAN_NUM);
-		ppdu_info->freq = u32_get_bits(info[1],
-					       HAL_RX_PPDU_START_INFO1_CHAN_FREQ);
+		ppdu_info->ppdu_id = info[0];
 		ppdu_info->ppdu_ts = ppdu_ts;
 
 		if (ppdu_info->ppdu_id != ppdu_info->last_ppdu_id) {
@@ -3012,13 +2945,14 @@ ath12k_wifi8_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 		const struct hal_rx_ppdu_end_duration *ppdu_rx_duration = tlv_data;
 		u32 info[1];
 
-		info[0] = __le32_to_cpu(ppdu_rx_duration->info2);
+		info[0] = __le32_to_cpu(ppdu_rx_duration->info0);
 		ppdu_info->rx_antenna =
 			u32_get_bits(info[0],
-				     HAL_RX_PPDU_END_DURATION_INFO2_RX_ANTENNA);
-		info[0] = __le32_to_cpu(ppdu_rx_duration->info3);
+				     HAL_RX_PPDU_END_DURATION_INFO0_RX_ANTENNA);
+		info[0] = __le32_to_cpu(ppdu_rx_duration->info1);
 		ppdu_info->rx_duration =
-			u32_get_bits(info[0], HAL_RX_PPDU_END_DURATION);
+			u32_get_bits(info[0],
+				     HAL_RX_PPDU_END_DURATION_INFO1_RX_PPDU_DURATION);
 		ppdu_info->tsft = __le32_to_cpu(ppdu_rx_duration->info1);
 		ppdu_info->tsft = (ppdu_info->tsft << 32) |
 				   __le32_to_cpu(ppdu_rx_duration->info0);
