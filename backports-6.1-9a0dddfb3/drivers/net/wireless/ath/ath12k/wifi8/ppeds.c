@@ -170,7 +170,8 @@ static int ath12k_wifi8_dp_ppeds_alloc_vp_tbl_entry(struct ath12k_base *ab,
 	}
 
 	if (central_ab->dp->ppe.ppe_vp_tbl_registered[ppe_vp_profile_idx]) {
-		ath12k_err(central_ab, "Entry exist:vp_tbl enty alloc failed:%d\n",
+		ath12k_dbg(central_ab, ATH12K_DBG_PPE,
+				"Entry exist:vp_tbl enty alloc failed:%d\n",
 				ppe_vp_profile_idx);
 		return ppe_vp_profile_idx;
 	}
