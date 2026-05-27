@@ -2495,7 +2495,8 @@ int ath12k_mac_vdev_stop(struct ath12k_link_vif *arvif)
 		   ahvif->vif->addr, arvif->vdev_id);
 
 	if (!ath12k_mac_is_bridge_vdev(arvif) &&
-	    test_bit(ATH12K_FLAG_CAC_RUNNING, &ar->dev_flags)) {
+	    test_bit(ATH12K_FLAG_CAC_RUNNING, &ar->dev_flags) &&
+	    !ieee80211_cac_started_any_5ghz_link(ahvif->vif, arvif->link_id)) {
 		clear_bit(ATH12K_FLAG_CAC_RUNNING, &ar->dev_flags);
 		ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
 				 "CAC Stopped for vdev %d\n",
