@@ -70,6 +70,7 @@
 #define	ATH12K_DP_MON_KEYIV			0x20
 #define ATH12K_DP_MON_ETH_TYPE_VLAN_LEN		4
 #define ATH12K_DP_MON_ETH_TYPE_DOUBLE_VLAN_LEN	8
+#define DP_RXDMA_MONITOR_DEFAULT_RING_FILL_LVL 1024
 
 #if defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
 #define ATH12K_DP_SMART_MON_FILTER_DEFAULT	(DP_SMART_MON_PROFILE_256M | \
@@ -153,6 +154,7 @@ struct dp_rxdma_mon_ring {
 	/* Protects bufs_idr */
 	spinlock_t idr_lock;
 	int bufs_max;
+	int bufs_fill_lvl;
 };
 
 struct dp_mon_desc_list_params {
@@ -1086,6 +1088,7 @@ void ath12k_dp_mon_rx_nrp_set(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_rx_nrp_reset(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_rx_smart_mon_set(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_rx_smart_mon_reset(struct ath12k_pdev_dp *dp_pdev);
+int ath12k_dp_mon_rx_monitor_mode_buf_setup(struct ath12k *ar);
 size_t ath12k_dp_mon_list_cut_nodes(struct list_head *list, struct list_head *head,
 				    size_t count);
 void ath12k_dp_mon_rx_deliver_skb(struct ath12k_pdev_dp *dp_pdev,
@@ -1137,7 +1140,8 @@ int ath12k_dp_mon_get_link_peer_rssi(struct ath12k *ar, const u8 *peer_mac,
 size_t
 ath12k_dp_mon_get_free_desc_list(struct ath12k_dp *dp,
 				 struct dp_rxdma_mon_ring *rx_ring,
-				 struct dp_mon_desc_list_params *list_params);
+				 struct dp_mon_desc_list_params *list_params,
+				 size_t max_entries);
 void ath12k_dp_rx_pktlog_process(struct ath12k_pdev_dp *dp_pdev,
 				 struct ath12k_dp_mon_status_desc *status_desc);
 void ath12k_dp_mon_rx_process_dest_pktlog(struct ath12k_pdev_dp *dp_pdev,

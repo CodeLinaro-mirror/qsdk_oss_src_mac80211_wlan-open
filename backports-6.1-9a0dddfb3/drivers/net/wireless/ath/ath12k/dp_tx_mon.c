@@ -3783,7 +3783,7 @@ size_t ath12k_dp_mon_get_tx_free_desc_list(struct ath12k_dp *dp,
 		.list_local = list,
 	};
 
-	return ath12k_dp_mon_get_free_desc_list(dp, rx_ring, &list_params);
+	return ath12k_dp_mon_get_free_desc_list(dp, rx_ring, &list_params, 0);
 }
 
 int ath12k_dp_mon_tx_buff_alloc(struct ath12k_dp *dp)
