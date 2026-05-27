@@ -14147,6 +14147,8 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 		if (!arvif)
 			goto exit;
 
+		dp_params.hw_link_id = arvif->ar->hw_link_id;
+
 		/* Register ahsta in the group-level hashtable.*/
 		if (!ahsta->links_map) {
 			INIT_HLIST_NODE(&ahsta->hlist_addr);
