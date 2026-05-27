@@ -2877,6 +2877,24 @@ ath12k_dp_ext_mon_update_rx_config(struct ath12k_pdev_mon_dp *dp_mon_pdev,
 }
 
 static
+void ath12k_dp_ext_mon_enable_mac_ext_mon(struct ath12k_pdev_dp *dp_pdev,
+					  bool enable)
+{
+	struct ieee80211_vif *mon_vif = NULL;
+	struct ath12k_link_vif *arvif = NULL;
+
+	list_for_each_entry(arvif, &dp_pdev->ar->arvifs, list) {
+		if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR &&
+		    arvif->is_started) {
+			mon_vif = arvif->ahvif->vif;
+			break;
+		}
+	}
+	if (mon_vif)
+		ieee80211_enable_ext_monitor(mon_vif, enable);
+}
+
+static
 int ath12k_dp_ext_mon_set_rx_filter(struct ath12k_pdev_dp *dp_pdev,
 				    const struct ath12k_ext_mon_filter_config *new_config)
 {
@@ -2920,6 +2938,7 @@ int ath12k_dp_ext_mon_set_rx_filter(struct ath12k_pdev_dp *dp_pdev,
 		}
 
 		ath12k_dp_ext_mon_update_rx_config(dp_mon_pdev, new_config);
+		ath12k_dp_ext_mon_enable_mac_ext_mon(dp_pdev, false);
 	} else {
 		if (already_enabled)
 			ath12k_dp_ext_mon_rx_config_filter(dp_pdev, false);
@@ -2937,6 +2956,7 @@ int ath12k_dp_ext_mon_set_rx_filter(struct ath12k_pdev_dp *dp_pdev,
 				ath12k_dp_mon_rx_mon_mode_config_filter(dp_pdev, true);
 			return ret;
 		}
+		ath12k_dp_ext_mon_enable_mac_ext_mon(dp_pdev, true);
 	}
 
 	return ret;
@@ -3516,6 +3536,7 @@ void ath12k_dp_ext_mon_reset(struct ath12k_pdev_dp *dp_pdev)
 	}
 
 	ath12k_dp_ext_mon_rx_config_filter(dp_pdev, false);
+	ath12k_dp_ext_mon_enable_mac_ext_mon(dp_pdev, false);
 
 	spin_lock(&dp_mon_pdev->rx_ext_mon_lock);
 	rx_config = dp_mon_pdev->rx_ext_mon_config;
