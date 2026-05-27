@@ -12262,13 +12262,38 @@ skip_mgmt_stats:
 	 */
 	status->flag |= RX_FLAG_SKIP_MONITOR;
 
-	/* In case of PMF, FW delivers decrypted frames with Protected Bit set
-	 * including group privacy action frames.
+	/* In case of PMF or (Re)Association Request/Response encryption,
+	 * FW delivers decrypted frames with Protected Bit set including
+	 * group privacy action frames.
 	 */
 	if (ieee80211_has_protected(hdr->frame_control)) {
+		struct ath12k_link_sta *arsta;
+		struct ieee80211_sta *sta;
+		bool enc_assoc;
+
+		spin_lock_bh(&ar->arsta_lock);
+		arsta = ath12k_link_sta_find_by_addr(ar, hdr->addr2);
+		if (!arsta) {
+			spin_unlock_bh(&ar->arsta_lock);
+			ath12k_warn(ab, "arsta not found %pM\n",
+				    hdr->addr2);
+			dev_kfree_skb(skb);
+			goto exit;
+		}
+
+		sta = ath12k_ahsta_to_sta(arsta->ahsta);
+
+		enc_assoc = sta && sta->epp_peer &&
+			    (ieee80211_is_assoc_req(hdr->frame_control) ||
+			     ieee80211_is_assoc_resp(hdr->frame_control) ||
+			     ieee80211_is_reassoc_req(hdr->frame_control) ||
+			     ieee80211_is_reassoc_resp(hdr->frame_control));
+
+		spin_unlock_bh(&ar->arsta_lock);
 		status->flag |= RX_FLAG_DECRYPTED;
 
-		if (!ieee80211_is_robust_mgmt_frame(skb)) {
+		if (!ieee80211_is_robust_mgmt_frame(skb) &&
+		    !enc_assoc) {
 			status->flag |= RX_FLAG_IV_STRIPPED |
 					RX_FLAG_MMIC_STRIPPED;
 			hdr->frame_control = __cpu_to_le16(fc &
