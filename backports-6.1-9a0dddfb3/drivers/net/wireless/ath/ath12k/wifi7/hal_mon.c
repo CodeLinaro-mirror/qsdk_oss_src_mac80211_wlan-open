@@ -1561,7 +1561,7 @@ ath12k_wifi7_hal_mon_rx_set_filter_cat_fp(struct hal_rx_mon_ppdu_info *ppdu_info
 
 	/* Connected-client control frames will arrive as MO; reclassify them to FP.
 	 */
-	if (ppdu_info->mpdu_info[user_id].decap_type != DP_RX_DECAP_TYPE_RAW &&
+	if (ppdu_info->mpdu_info[user_id].decap_type == DP_RX_DECAP_TYPE_ETHERNET2_DIX &&
 	    ppdu_info->nrp_info.fc_valid &&
 	    ieee80211_is_ctl(ppdu_info->nrp_info.frame_control) &&
 	    (ppdu_info->userstats[user_id].filter_category ==
