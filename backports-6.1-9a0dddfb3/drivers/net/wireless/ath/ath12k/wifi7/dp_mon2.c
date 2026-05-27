@@ -2259,6 +2259,19 @@ int ath12k_wifi7_dp_ext_mon_validate_request(struct ath12k_pdev_dp *dp_pdev,
 		return -EINVAL;
 	}
 
+	/*
+	 * For wifi7, 256B len is not supported hence rejecting.
+	 */
+	if (req->filter.all_peer.len[ATH12K_EXT_MON_FRAME_MGMT] ==
+		ATH12K_EXT_MON_LEN_256B ||
+	    req->filter.all_peer.len[ATH12K_EXT_MON_FRAME_CTRL] ==
+		ATH12K_EXT_MON_LEN_256B ||
+	    req->filter.all_peer.len[ATH12K_EXT_MON_FRAME_DATA] ==
+		ATH12K_EXT_MON_LEN_256B) {
+		ath12k_warn(dp_pdev->dp, "256B packet len is not supported");
+		return -EINVAL;
+	}
+
 	if (req->peer.action == ATH12K_EXT_MON_PEER_ACTION_ADD) {
 		for (i = 0; i < req->peer.count; i++) {
 			peer = &req->peer.peer_info[i];
