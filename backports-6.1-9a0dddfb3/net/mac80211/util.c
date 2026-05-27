@@ -4013,7 +4013,6 @@ void ieee80211_dfs_cac_cancel(struct ieee80211_local *local,
 		for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS;
 		     link_id++) {
 			struct ieee80211_chanctx *curr_ctx;
-			struct ieee80211_chanctx_conf *conf;
 
 			link = sdata_dereference(sdata->link[link_id],
 						 sdata);
@@ -4032,20 +4031,16 @@ void ieee80211_dfs_cac_cancel(struct ieee80211_local *local,
 				continue;
 			}
 
-			hrtimer_cancel(&link->dfs_cac_timer);
-			wiphy_work_cancel(wiphy, &link->dfs_cac_timer_work);
-
-			conf = rcu_dereference_protected(link->conf->chanctx_conf,
-							 lockdep_is_held(&wiphy->mtx));
-			if (conf) {
-				curr_ctx = container_of(conf,
-							struct ieee80211_chanctx, conf);
-			} else {
+			curr_ctx = ieee80211_link_get_chanctx(link);
+			if (!curr_ctx) {
 				sdata_info(sdata,
 					   "Unable to get current channel context for chan: %d\n",
 					   chandef.chan->center_freq);
 				return;
 			}
+
+			hrtimer_cancel(&curr_ctx->dfs_cac_timer);
+			wiphy_work_cancel(wiphy, &curr_ctx->dfs_cac_timer_work);
 
 			/*
 			 * Release monitor VAP first to avoid

@@ -3932,16 +3932,44 @@ void ieee80211_dynamic_ps_timer(struct timer_list *t)
 	wiphy_work_queue(local->hw.wiphy, &local->dynamic_ps_enable_work);
 }
 
+bool ieee80211_cac_started_any_5ghz_link(struct ieee80211_vif *vif,
+					 unsigned int link_id)
+{
+	struct ieee80211_sub_if_data *sdata = vif_to_sdata(vif);
+	struct ieee80211_link_data *link;
+	struct ieee80211_chanctx *ctx;
+	struct ieee80211_link_data *tmp_link;
+
+	link = sdata_dereference(sdata->link[link_id], sdata);
+	if (!link)
+		return false;
+
+	ctx = ieee80211_link_get_chanctx(link);
+	if (!ctx)
+		return false;
+
+	list_for_each_entry(tmp_link, &ctx->assigned_links,
+			    assigned_chanctx_list) {
+		if (tmp_link == link)
+			continue;
+
+		if (tmp_link->sdata->wdev.links[tmp_link->link_id].cac_started)
+			return true;
+	}
+
+	return false;
+}
+EXPORT_SYMBOL(ieee80211_cac_started_any_5ghz_link);
+
 enum hrtimer_restart ieee80211_dfs_cac_timeout(struct hrtimer *timer)
 {
-        struct ieee80211_link_data *link =
-                container_of(timer, struct ieee80211_link_data,
-                             dfs_cac_timer);
-        struct ieee80211_sub_if_data *sdata = link->sdata;
+	struct ieee80211_chanctx *ctx =
+		container_of(timer, struct ieee80211_chanctx,
+			     dfs_cac_timer);
 
-        wiphy_work_queue(sdata->local->hw.wiphy, &link->dfs_cac_timer_work);
+	wiphy_work_queue(ctx->local->hw.wiphy, &ctx->dfs_cac_timer_work);
 
-        return HRTIMER_NORESTART;
+	return HRTIMER_NORESTART;
 }
 
 static void
@@ -3982,13 +4010,30 @@ ieee80211_dfs_cac_handle_deferred_up_links(struct ieee80211_link_data *link)
 
 void ieee80211_dfs_cac_timer_work(struct wiphy *wiphy, struct wiphy_work *work)
 {
-	struct ieee80211_link_data *link =
-		container_of(work, struct ieee80211_link_data,
+	struct ieee80211_chanctx *ctx =
+		container_of(work, struct ieee80211_chanctx,
 			     dfs_cac_timer_work);
-	struct cfg80211_chan_def chandef = link->conf->chanreq.oper;
-	struct ieee80211_sub_if_data *sdata = link->sdata;
+	struct ieee80211_local *local = ctx->local;
+	struct ieee80211_link_data *link;
+	struct cfg80211_chan_def chandef;
+	struct ieee80211_sub_if_data *sdata;
+	bool link_found = false;
 
-	lockdep_assert_wiphy(sdata->local->hw.wiphy);
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	list_for_each_entry(link, &ctx->assigned_links, assigned_chanctx_list) {
+		if (link->sdata->wdev.links[link->link_id].cac_started) {
+			link_found = true;
+			break;
+		}
+	}
+
+	if (!link_found)
+		return;
+
+	sdata = link->sdata;
+	chandef = link->conf->chanreq.oper;
+
 
 	if (sdata->wdev.links[link->link_id].cac_started) {
 		if (!link->conf->deferred_up) {

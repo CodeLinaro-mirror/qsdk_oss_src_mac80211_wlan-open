@@ -8721,6 +8721,18 @@ ieee80211_rx_send_mscs_tuple(struct ieee80211_sta *pubsta,
 int ieee80211_get_link_assoc_status(struct ieee80211_vif *vif, u8 link_id);
 
 /**
+ * ieee80211_cac_started_any_5ghz_link - check whether CAC is running on any
+ * 5 GHz link
+ * @vif: virtual interface
+ * @link_id: link identifier
+ *
+ * Return: true if any 5 GHz link in the same channel has CAC started, false
+ * otherwise.
+ */
+bool ieee80211_cac_started_any_5ghz_link(struct ieee80211_vif *vif,
+					 unsigned int link_id);
+
+/**
  * ieee80211_tx_monitor_offload - h/w offloaded tx monitor callback
  *
  * This function can be used by driver to deliver packet to upper layer

@@ -457,7 +457,6 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata, bool going_do
 	u32 hw_reconf_flags = 0;
 	int i, flushed;
 	struct ps_data *ps;
-	struct cfg80211_chan_def chandef;
 	bool cancel_scan;
 	struct cfg80211_nan_func *func;
 
@@ -545,17 +544,18 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata, bool going_do
 	wiphy_work_cancel(local->hw.wiphy, &sdata->deflink.csa.finalize_work);
 	wiphy_work_cancel(local->hw.wiphy,
 			  &sdata->deflink.color_change_finalize_work);
-	hrtimer_cancel(&sdata->deflink.dfs_cac_timer);
-	wiphy_work_cancel(local->hw.wiphy,
-				  &sdata->deflink.dfs_cac_timer_work);
 
-	if (sdata->wdev.links[0].cac_started) {
-		chandef = sdata->vif.bss_conf.chanreq.oper;
-		WARN_ON(local->suspended);
-		ieee80211_link_release_channel(&sdata->deflink);
-		cfg80211_cac_event(sdata->dev, &chandef,
-				   NL80211_RADAR_CAC_ABORTED,
-				   GFP_KERNEL, 0);
+	if (sdata->wdev.links[sdata->deflink.link_id].cac_started) {
+		bool cac_aborted = false;
+
+		ieee80211_handle_cac_stop(local->hw.wiphy, sdata,
+					  &sdata->deflink, sdata->deflink.conf,
+					  &cac_aborted);
+
+		if (cac_aborted) {
+			WARN_ON(local->suspended);
+			ieee80211_link_release_channel(&sdata->deflink);
+		}
 	}
 
 	if (sdata->vif.type == NL80211_IFTYPE_AP) {

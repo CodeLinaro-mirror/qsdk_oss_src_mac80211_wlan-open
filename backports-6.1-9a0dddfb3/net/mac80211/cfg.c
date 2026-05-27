@@ -2132,6 +2132,55 @@ static void ieee80211_free_next_beacon(struct ieee80211_link_data *link)
 	link->u.ap.next_beacon = NULL;
 }
 
+void ieee80211_handle_cac_stop(struct wiphy *wiphy,
+			       struct ieee80211_sub_if_data *sdata,
+			       struct ieee80211_link_data *link,
+			       struct ieee80211_bss_conf *link_conf,
+			       bool *cac_aborted)
+{
+	struct cfg80211_chan_def chandef = link_conf->chanreq.oper;
+	struct ieee80211_chanctx *ctx;
+	struct ieee80211_link_data *tmp_link;
+
+	if (cac_aborted)
+		*cac_aborted = false;
+
+	ctx = ieee80211_link_get_chanctx(link);
+	if (!ctx)
+		return;
+
+	list_for_each_entry(tmp_link, &ctx->assigned_links,
+			    assigned_chanctx_list) {
+		if (tmp_link == link)
+			continue;
+
+		if (!tmp_link->sdata->wdev.links[tmp_link->link_id].cac_started)
+			continue;
+
+		/*
+		 * A CAC is still running on this channel. Keep the single
+		 * shared CAC timer running, but clear only this link's flag
+		 * since cac_started is set on all links.
+		 */
+		sdata->wdev.links[link->link_id].cac_started = false;
+		return;
+	}
+
+	/*
+	 * No other link on this channel has cac_started set. Stop the single
+	 * shared CAC timer and notify cfg80211, which clears cac_started for
+	 * all links in the same channel.
+	 */
+	hrtimer_cancel(&ctx->dfs_cac_timer);
+	wiphy_work_cancel(wiphy, &ctx->dfs_cac_timer_work);
+
+	cfg80211_cac_event(sdata->dev, &chandef, NL80211_RADAR_CAC_ABORTED,
+			   GFP_KERNEL, link->link_id);
+
+	if (cac_aborted)
+		*cac_aborted = true;
+}
+
 static int ieee80211_stop_ap(struct wiphy *wiphy, struct net_device *dev,
 			     unsigned int link_id)
 {
@@ -2142,7 +2191,6 @@ static int ieee80211_stop_ap(struct wiphy *wiphy, struct net_device *dev,
 	struct probe_resp *old_probe_resp;
 	struct fils_discovery_data *old_fils_discovery;
 	struct unsol_bcast_probe_resp_data *old_unsol_bcast_probe_resp;
-	struct cfg80211_chan_def chandef;
 	struct ieee80211_link_data *link =
 		sdata_dereference(sdata->link[link_id], sdata);
 	struct ieee80211_bss_conf *link_conf;
@@ -2258,12 +2306,8 @@ static int ieee80211_stop_ap(struct wiphy *wiphy, struct net_device *dev,
 					  BSS_CHANGED_BEACON_ENABLED);
 
 	if (sdata->wdev.links[link_id].cac_started) {
-		chandef = link_conf->chanreq.oper;
-		hrtimer_cancel(&link->dfs_cac_timer);
-		wiphy_work_cancel(wiphy, &link->dfs_cac_timer_work);
-		cfg80211_cac_event(sdata->dev, &chandef,
-				   NL80211_RADAR_CAC_ABORTED,
-				   GFP_KERNEL, link_id);
+		ieee80211_handle_cac_stop(wiphy, sdata, link, link_conf,
+					  NULL);
 	}
 
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
@@ -4364,6 +4408,7 @@ static int ieee80211_start_radar_detection(struct wiphy *wiphy,
 	struct ieee80211_chan_req chanreq = { .oper = *chandef };
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_link_data *link_data;
+	struct ieee80211_chanctx *ctx;
 	int err;
 	ktime_t ktime = ms_to_ktime(cac_time_ms);
 
@@ -4380,18 +4425,32 @@ static int ieee80211_start_radar_detection(struct wiphy *wiphy,
 	link_data->smps_mode = IEEE80211_SMPS_OFF;
 	link_data->needed_rx_chains = local->rx_chains;
 
-	if (!link_data->conf->deferred_up) {
-		err = ieee80211_link_use_channel(link_data, &chanreq,
-						 IEEE80211_CHANCTX_SHARED);
-		if (err)
-			return err;
-	} else {
-		if (!link_data->conf->chanreq.oper.chan) {
-			sdata_info(sdata, "No channel context for CSA-DFS CAC\n");
+	ctx = ieee80211_link_get_chanctx(link_data);
+	if (!ctx) {
+		if (!link_data->conf->deferred_up) {
+			err = ieee80211_link_use_channel(link_data, &chanreq,
+							 IEEE80211_CHANCTX_SHARED);
+			if (err) {
+				sdata_info(sdata,
+					   "No channel context for DFS CAC %d\n",
+					   err);
+				return err;
+			}
+
+			ctx = ieee80211_link_get_chanctx(link_data);
+			if (!ctx) {
+				sdata_info(sdata,
+					   "No channel context for DFS CAC\n");
+				return -EINVAL;
+			}
+		} else {
+			sdata_info(sdata, "No channel context for DFS CAC\n");
 			return -EINVAL;
 		}
 	}
-	hrtimer_start(&link_data->dfs_cac_timer, ktime, HRTIMER_MODE_REL);
+
+	hrtimer_start(&ctx->dfs_cac_timer, ktime, HRTIMER_MODE_REL);
+
 	return 0;
 }
 
@@ -4400,24 +4459,26 @@ static void ieee80211_end_cac(struct wiphy *wiphy,
 {
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	struct ieee80211_local *local = sdata->local;
-	struct ieee80211_link_data *link_data;
+	struct ieee80211_link_data *link_data, *tmp_link;
+	struct ieee80211_chanctx *ctx;
 
 	lockdep_assert_wiphy(local->hw.wiphy);
 
-	list_for_each_entry(sdata, &local->interfaces, list) {
-		link_data = sdata_dereference(sdata->link[link_id], sdata);
-		if (!link_data)
-			continue;
+	link_data = sdata_dereference(sdata->link[link_id], sdata);
+	if (!link_data)
+		return;
 
-		hrtimer_cancel(&link_data->dfs_cac_timer);
-		wiphy_work_cancel(wiphy,
-				  &link_data->dfs_cac_timer_work);
+	ctx = ieee80211_link_get_chanctx(link_data);
+	if (!ctx)
+		return;
 
-		if (sdata->wdev.links[link_id].cac_started) {
-			ieee80211_link_release_channel(link_data);
-			sdata->wdev.links[link_id].cac_started = false;
-		}
-	}
+	hrtimer_cancel(&ctx->dfs_cac_timer);
+	wiphy_work_cancel(wiphy, &ctx->dfs_cac_timer_work);
+	ieee80211_link_release_channel(link_data);
+
+	list_for_each_entry(tmp_link, &ctx->assigned_links,
+			    assigned_chanctx_list)
+		sdata->wdev.links[tmp_link->link_id].cac_started = false;
 }
 
 static struct cfg80211_beacon_data *

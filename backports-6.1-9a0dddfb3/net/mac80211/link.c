@@ -136,11 +136,6 @@ void ieee80211_link_init(struct ieee80211_sub_if_data *sdata,
 			ieee80211_advertised_ttlm_evt_notify_work);
 	INIT_LIST_HEAD(&link->assigned_chanctx_list);
 	INIT_LIST_HEAD(&link->reserved_chanctx_list);
-	wiphy_work_init(&link->dfs_cac_timer_work,
-				ieee80211_dfs_cac_timer_work);
-
-	hrtimer_init(&link->dfs_cac_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
-	link->dfs_cac_timer.function = ieee80211_dfs_cac_timeout;
 	link->ap_power_level = IEEE80211_UNSET_POWER_LEVEL;
 	link->user_power_level = local->user_power_level;
 
@@ -182,12 +177,9 @@ void ieee80211_link_stop(struct ieee80211_link_data *link)
 			  &link->csa.finalize_work);
 
 	if (link->sdata->wdev.links[link->link_id].cac_started) {
-		wiphy_work_cancel(link->sdata->local->hw.wiphy,
-				  &link->dfs_cac_timer_work);
-		cfg80211_cac_event(link->sdata->dev,
-				   &link->conf->chanreq.oper,
-				   NL80211_RADAR_CAC_ABORTED,
-				   GFP_KERNEL, link->link_id);
+		ieee80211_handle_cac_stop(link->sdata->local->hw.wiphy,
+					  link->sdata, link, link->conf,
+					  NULL);
 	}
 
 	ieee80211_link_release_channel(link);
@@ -229,7 +221,6 @@ static void ieee80211_free_links(struct ieee80211_sub_if_data *sdata,
 	unsigned int link_id;
 	struct ieee80211_link_data *link;
 	struct ieee80211_bss_conf *link_conf;
-	struct cfg80211_chan_def chandef;
 
 	for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS; link_id++) {
 		link = &links[link_id]->data;
@@ -238,17 +229,17 @@ static void ieee80211_free_links(struct ieee80211_sub_if_data *sdata,
 		if (!link || !link_conf)
 			continue;
 
-		hrtimer_cancel(&link->dfs_cac_timer);
-		wiphy_work_cancel(link->sdata->local->hw.wiphy,
-					  &link->dfs_cac_timer_work);
 		if (sdata->wdev.links[link_id].cac_started) {
-			chandef = link_conf->chanreq.oper;
-			WARN_ON(sdata->local->suspended);
-			ieee80211_link_release_channel(link);
-			cfg80211_cac_event(sdata->dev,
-					   &chandef,
-					   NL80211_RADAR_CAC_ABORTED,
-					   GFP_KERNEL, link_id);
+			bool cac_aborted = false;
+
+			ieee80211_handle_cac_stop(sdata->local->hw.wiphy, sdata,
+						  link, link_conf,
+						  &cac_aborted);
+
+			if (cac_aborted) {
+				WARN_ON(sdata->local->suspended);
+				ieee80211_link_release_channel(link);
+			}
 		}
 
 		kfree(links[link_id]);
