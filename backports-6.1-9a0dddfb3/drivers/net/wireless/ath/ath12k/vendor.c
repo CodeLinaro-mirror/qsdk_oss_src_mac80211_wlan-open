@@ -15159,6 +15159,41 @@ static struct ath12k *ath12k_spectral_get_ar_from_wdev(struct wireless_dev *wdev
 	return ar;
 }
 
+/* Build and send the SPECTRAL_SCAN_START reply skb with an error code,
+ * matching the QCA vendor spec. Always returns -EINVAL so callers can
+ * `return ath12k_spectral_scan_start_reply_error(...)`.
+ */
+static int
+ath12k_spectral_scan_start_reply_error(struct wiphy *wiphy,
+			enum qca_wlan_vendor_spectral_scan_error_code err_code)
+{
+	struct sk_buff *skb;
+
+	skb = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, NLMSG_DEFAULT_SIZE);
+	if (skb) {
+		nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_ERROR_CODE,
+			    err_code);
+		cfg80211_vendor_cmd_reply(skb);
+	}
+	return -EINVAL;
+}
+
+/* Resolve the BW slot index for FFT-size validation. */
+static int
+ath12k_spectral_resolve_bw_idx(struct ath12k *ar, struct nlattr **tb)
+{
+	if (tb[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_BANDWIDTH]) {
+		u8 bw = nla_get_u8(tb[
+			QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_BANDWIDTH]);
+		return ath12k_spectral_nl80211_bw_to_idx(bw);
+	}
+
+	if (ar->spectral.params.bandwidth)
+		return ath12k_spectral_nl80211_bw_to_idx(ar->spectral.params.bandwidth);
+
+	return -1;
+}
+
 static int ath12k_vendor_spectral_scan_start(struct wiphy *wiphy,
 					     struct wireless_dev *wdev,
 					     const void *data, int data_len)
@@ -15187,16 +15222,97 @@ static int ath12k_vendor_spectral_scan_start(struct wiphy *wiphy,
 		return -EINVAL;
 
 	if (nl_mode > QCA_WLAN_VENDOR_SPECTRAL_SCAN_MODE_AGILE)
-		return -EINVAL;
+		return ath12k_spectral_scan_start_reply_error(wiphy,
+				QCA_WLAN_VENDOR_SPECTRAL_SCAN_ERR_PARAM_INVALID_VALUE);
 
 	if (nl_mode == QCA_WLAN_VENDOR_SPECTRAL_SCAN_MODE_AGILE) {
-		ath12k_warn(ar->ab, "Agile scan not supported\n");
-		return -EOPNOTSUPP;
+		ath12k_warn(ar->ab, "spectral scan: agile mode not supported\n");
+		return ath12k_spectral_scan_start_reply_error(wiphy,
+				QCA_WLAN_VENDOR_SPECTRAL_SCAN_ERR_MODE_UNSUPPORTED);
 	}
 
 	/* Step 1: update scan params in software if request includes CONFIG. */
 	if (req_type != QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_REQUEST_TYPE_SCAN) {
 		struct ath12k_spectral_params *p = &ar->spectral.params;
+
+		/* Validate user-supplied attrs BEFORE storing. The ATTR_U32 macro
+		 * below unconditionally writes into *p, so a post-store check
+		 * would leave dirty state behind on rejection.
+		 */
+		if (nl_mode == QCA_WLAN_VENDOR_SPECTRAL_SCAN_MODE_NORMAL &&
+		    (tb[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FREQUENCY] ||
+		     tb[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FREQUENCY_2])) {
+			ath12k_warn(ar->ab,
+				    "spectral scan: frequency param not supported in normal mode\n");
+			return ath12k_spectral_scan_start_reply_error(wiphy,
+				QCA_WLAN_VENDOR_SPECTRAL_SCAN_ERR_PARAM_UNSUPPORTED);
+		}
+
+		/* Reject out-of-range scan_rpt_mode (valid 0..3). */
+		if (tb[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_RPT_MODE]) {
+			u32 v = nla_get_u32(tb[
+				QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_RPT_MODE]);
+
+			if (v > ATH12K_SPECTRAL_RPT_MODE_MAX) {
+				ath12k_warn(ar->ab,
+					    "spectral scan: rpt_mode %u out of range [0, %u]\n",
+					    v, ATH12K_SPECTRAL_RPT_MODE_MAX);
+				return ath12k_spectral_scan_start_reply_error(wiphy,
+				QCA_WLAN_VENDOR_SPECTRAL_SCAN_ERR_PARAM_INVALID_VALUE);
+			}
+		}
+
+		/* Reject out-of-range bandwidth (nl80211_chan_width). */
+		if (tb[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_BANDWIDTH]) {
+			u8 v = nla_get_u8(tb[
+				QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_BANDWIDTH]);
+
+			if (v > NL80211_CHAN_WIDTH_320) {
+				ath12k_warn(ar->ab,
+					    "spectral scan: bandwidth %u out of range [0, %u]\n",
+					    v, NL80211_CHAN_WIDTH_320);
+				return ath12k_spectral_scan_start_reply_error(wiphy,
+				QCA_WLAN_VENDOR_SPECTRAL_SCAN_ERR_PARAM_INVALID_VALUE);
+			}
+		}
+
+		/* Reject scan_count > MAX. */
+		if (tb[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_SCAN_COUNT]) {
+			u32 v = nla_get_u32(tb[
+				QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_SCAN_COUNT]);
+
+			if (v > ATH12K_SPECTRAL_SCAN_COUNT_MAX) {
+				ath12k_warn(ar->ab,
+					    "spectral scan: count %u exceeds max %u\n",
+					    v, ATH12K_SPECTRAL_SCAN_COUNT_MAX);
+				return ath12k_spectral_scan_start_reply_error(wiphy,
+				QCA_WLAN_VENDOR_SPECTRAL_SCAN_ERR_PARAM_INVALID_VALUE);
+			}
+		}
+
+		/* Reject fft_size out of [fft_size_min, fft_size_max[bw]].
+		 * If we don't know the BW (no attr in this call, no cached
+		 * attr), fall back to the chip-wide cap so we don't falsely
+		 * narrow to the 20 MHz slot before the vdev is on a channel.
+		 */
+		if (tb[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FFT_SIZE]) {
+			u32 v = nla_get_u32(tb[
+				QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FFT_SIZE]);
+			u32 fft_min  = ar->spectral.param_min_max.fft_size_min;
+			int idx      = ath12k_spectral_resolve_bw_idx(ar, tb);
+			u32 fft_max  = (idx >= 0)
+				       ? ar->spectral.param_min_max.fft_size_max[idx]
+				       : ilog2(ar->ab->hw_params->spectral.max_fft_bins);
+
+			if (v < fft_min || v > fft_max) {
+				ath12k_warn(ar->ab,
+					    "spectral scan: fft_size %u out of [%u, %u] (bw_idx %d)\n",
+					    v, fft_min, fft_max, idx);
+				return ath12k_spectral_scan_start_reply_error(wiphy,
+				QCA_WLAN_VENDOR_SPECTRAL_SCAN_ERR_PARAM_INVALID_VALUE);
+			}
+		}
+
 #define ATTR_U32(id, fptr) do {				\
 	const int _a = (id);				\
 	if (tb[_a])					\

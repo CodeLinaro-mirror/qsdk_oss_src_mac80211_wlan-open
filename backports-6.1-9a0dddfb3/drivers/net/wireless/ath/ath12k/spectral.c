@@ -13,11 +13,8 @@
 
 #define ATH12K_SPECTRAL_DWORD_SIZE		4
 #define ATH12K_SPECTRAL_BIN_SIZE		1
-#define ATH12K_SPECTRAL_ATH12K_MIN_BINS		64
 #define ATH12K_SPECTRAL_ATH12K_MIN_IB_BINS	(ATH12K_SPECTRAL_ATH12K_MIN_BINS>>1)
 #define ATH12K_SPECTRAL_ATH12K_MAX_IB_BINS(x)	((x)->hw_params->spectral.max_fft_bins >> 1)
-
-#define ATH12K_SPECTRAL_SCAN_COUNT_MAX		4095
 
 /* Max channel computed by sum of 2g and 5g band channels */
 #define ATH12K_SPECTRAL_TOTAL_CHANNEL		41
@@ -317,6 +314,40 @@ struct ath12k_link_vif *ath12k_spectral_get_vdev(struct ath12k *ar)
 	return list_first_entry(&ar->arvifs, typeof(*arvif), list);
 }
 
+int ath12k_spectral_nl80211_bw_to_idx(enum nl80211_chan_width bw)
+{
+	switch (bw) {
+	case NL80211_CHAN_WIDTH_20_NOHT:
+	case NL80211_CHAN_WIDTH_20:	return ATH12K_SPECTRAL_BW_20MHZ;
+	case NL80211_CHAN_WIDTH_40:	return ATH12K_SPECTRAL_BW_40MHZ;
+	case NL80211_CHAN_WIDTH_80:	return ATH12K_SPECTRAL_BW_80MHZ;
+	case NL80211_CHAN_WIDTH_160:return ATH12K_SPECTRAL_BW_160MHZ;
+	case NL80211_CHAN_WIDTH_320:return ATH12K_SPECTRAL_BW_320MHZ;
+	default:
+		return -1;
+	}
+}
+
+static void ath12k_spectral_init_param_min_max(struct ath12k *ar)
+{
+	struct ath12k_spectral_param_min_max *pmm = &ar->spectral.param_min_max;
+	u16 chip_cap = ilog2(ar->ab->hw_params->spectral.max_fft_bins);
+	int i;
+
+	pmm->fft_size_min   = ATH12K_SPECTRAL_FFT_SIZE_MIN;
+	pmm->scan_count_max = ATH12K_SPECTRAL_SCAN_COUNT_MAX;
+
+	/* Default every BW slot to the chip's FFT-engine ceiling. */
+	for (i = 0; i < ATH12K_SPECTRAL_NUM_BW_SLOTS; i++)
+		pmm->fft_size_max[i] = chip_cap;
+
+	/* 20/40 MHz have a tighter HW spec ceiling. */
+	pmm->fft_size_max[ATH12K_SPECTRAL_BW_20MHZ] =
+		min_t(u16, chip_cap, ATH12K_SPECTRAL_FFT_SIZE_MAX_20MHZ);
+	pmm->fft_size_max[ATH12K_SPECTRAL_BW_40MHZ] =
+		min_t(u16, chip_cap, ATH12K_SPECTRAL_FFT_SIZE_MAX_40MHZ);
+}
+
 int ath12k_spectral_start_scan(struct ath12k *ar)
 {
 	struct ath12k_link_vif *arvif;
@@ -359,6 +390,16 @@ int ath12k_spectral_start_scan(struct ath12k *ar)
 	ar->spectral.scan_active = true;
 	spin_unlock_bh(&ar->spectral.lock);
 
+	/* Arm the host-side completion timer. If the FW fails to deliver
+	 * scan_count FFT reports within this window we send a TIMEOUT event
+	 * with the partial count.
+	 */
+	if (ar->spectral.params.completion_timeout_us > 0)
+		hrtimer_start(&ar->spectral.scan_completion_timer,
+			      ns_to_ktime((u64)ar->spectral.params.completion_timeout_us *
+					  NSEC_PER_USEC),
+			      HRTIMER_MODE_REL);
+
 	return 0;
 }
 
@@ -385,6 +426,11 @@ int ath12k_spectral_stop_scan(struct ath12k *ar)
 	ar->spectral.mode = SPECTRAL_SCAN_MODE_INVALID;
 	ar->spectral.scan_active = false;
 	spin_unlock_bh(&ar->spectral.lock);
+
+	/* Cancel after dropping the spectral lock — the hrtimer cb takes the
+	 * same lock, so cancelling while holding it would deadlock.
+	 */
+	hrtimer_cancel(&ar->spectral.scan_completion_timer);
 
 	ret = ath12k_wmi_vdev_spectral_enable(ar, arvif->vdev_id,
 					      ATH12K_WMI_SPECTRAL_TRIGGER_CMD_CLEAR,
@@ -1297,6 +1343,17 @@ static int ath12k_spectral_process_data(struct ath12k *ar,
 				goto err;
 			}
 
+			/* Drop FFT samples that arrive after userspace stopped
+			 * the scan or the timeout fired — mode/scan_active have
+			 * already been flipped under the lock we hold.
+			 */
+			if (ar->spectral.mode == SPECTRAL_SCAN_MODE_INVALID) {
+				ath12k_dbg(ab, ATH12K_DBG_SPECTRAL,
+					   "spectral: dropping stale fft sample after scan stop\n");
+				quit = true;
+				break;
+			}
+
 			ath12k_dbg(ab, ATH12K_DBG_SPECTRAL,
 				   "spectral fft tlv: len=%d\n", tlv_len);
 			if (ath12k_debug_mask & ATH12K_DBG_SPECTRAL)
@@ -1330,6 +1387,11 @@ unlock:
 	if (send_complete) {
 		enum qca_wlan_vendor_spectral_scan_complete_status s =
 			QCA_WLAN_VENDOR_SPECTRAL_SCAN_COMPLETE_STATUS_SUCCESSFUL;
+		/* Cancel the host-side timeout — finite scan succeeded.
+		 * Lock already dropped, so this can't deadlock against the
+		 * hrtimer callback which takes the same lock.
+		 */
+		hrtimer_cancel(&ar->spectral.scan_completion_timer);
 		ath12k_spectral_send_complete_event(ar, s, ar->spectral.samples_done);
 	}
 	return ret;
@@ -1431,6 +1493,79 @@ int ath12k_spectral_send_complete_event(struct ath12k *ar,
 	return 0;
 }
 
+/* Process-context worker: runs when the hrtimer expires. The hrtimer
+ * itself runs in softirq and cannot issue WMI commands or sleep.
+ */
+static void ath12k_spectral_timeout_work(struct work_struct *work)
+{
+	struct ath12k_spectral *sp =
+		container_of(work, struct ath12k_spectral, scan_timeout_work);
+	struct ath12k *ar = container_of(sp, struct ath12k, spectral);
+	struct ath12k_link_vif *arvif;
+	u32 received;
+	int ret;
+
+	spin_lock_bh(&sp->lock);
+	/* Drop the timeout if the scan already completed by another path
+	 * (success in process_data, explicit stop_scan, or deinit) — the
+	 * hrtimer cb may have raced with that path and queued us anyway.
+	 * scan_active flips to false in send_complete_event() and stop_scan().
+	 */
+	if (!sp->scan_active || sp->mode == SPECTRAL_SCAN_MODE_INVALID) {
+		spin_unlock_bh(&sp->lock);
+		return;
+	}
+	received = sp->timeout_received_count;
+	sp->mode = SPECTRAL_SCAN_MODE_INVALID;
+	sp->scan_active = false;
+	spin_unlock_bh(&sp->lock);
+
+	arvif = ath12k_spectral_get_vdev(ar);
+	if (arvif) {
+		ret = ath12k_wmi_vdev_spectral_enable(ar, arvif->vdev_id,
+					ATH12K_WMI_SPECTRAL_TRIGGER_CMD_CLEAR,
+					ATH12K_WMI_SPECTRAL_ENABLE_CMD_DISABLE);
+		if (ret)
+			ath12k_warn(ar->ab,
+				    "failed to disable spectral scan on vdev %d after timeout: %d\n",
+				    arvif->vdev_id, ret);
+	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+		   "spectral scan timeout: received %u/%u reports\n",
+		   received, sp->params.scan_count);
+
+	ath12k_spectral_send_complete_event(ar,
+		QCA_WLAN_VENDOR_SPECTRAL_SCAN_COMPLETE_STATUS_TIMEOUT,
+		received);
+}
+
+/* hrtimer callback: runs in softirq context. Snapshot received-sample
+ * count and defer the rest to the work item — WMI commands and the
+ * vendor cmd reply skb cannot run in softirq.
+ */
+static enum hrtimer_restart ath12k_spectral_scan_timeout(struct hrtimer *timer)
+{
+	struct ath12k_spectral *sp =
+		container_of(timer, struct ath12k_spectral, scan_completion_timer);
+
+	/* Already in softirq — plain spin_lock is sufficient (no _bh). */
+	spin_lock(&sp->lock);
+
+	if (sp->mode == SPECTRAL_SCAN_MODE_INVALID || !sp->scan_active) {
+		spin_unlock(&sp->lock);
+		return HRTIMER_NORESTART;
+	}
+
+	sp->timeout_received_count = sp->samples_done;
+
+	spin_unlock(&sp->lock);
+
+	schedule_work(&sp->scan_timeout_work);
+
+	return HRTIMER_NORESTART;
+}
+
 int ath12k_spectral_vif_stop(struct ath12k_link_vif *arvif)
 {
 	if (!arvif->spectral_enabled)
@@ -1469,6 +1604,13 @@ void ath12k_spectral_deinit(struct ath12k_base *ab)
 		spin_lock_bh(&sp->lock);
 		sp->enabled = false;
 		spin_unlock_bh(&sp->lock);
+
+		/* Cancel the host-side timeout and flush its worker before
+		 * tearing down the WMI scan / debugfs / dbring. After
+		 * cancel_work_sync the worker can't re-arm anything.
+		 */
+		hrtimer_cancel(&sp->scan_completion_timer);
+		cancel_work_sync(&sp->scan_timeout_work);
 
 		if (ar->spectral.mode < SPECTRAL_SCAN_MODE_MAX) {
 			wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
@@ -1579,6 +1721,10 @@ int ath12k_spectral_init(struct ath12k_base *ab)
 		idr_init(&sp->rx_ring.bufs_idr);
 		spin_lock_init(&sp->rx_ring.idr_lock);
 		spin_lock_init(&sp->lock);
+		hrtimer_init(&sp->scan_completion_timer, CLOCK_MONOTONIC,
+			     HRTIMER_MODE_REL);
+		sp->scan_completion_timer.function = ath12k_spectral_scan_timeout;
+		INIT_WORK(&sp->scan_timeout_work, ath12k_spectral_timeout_work);
 
 		ret = ath12k_spectral_ring_alloc(ar, &db_cap);
 		if (ret) {
@@ -1614,6 +1760,8 @@ int ath12k_spectral_init(struct ath12k_base *ab)
 		sp->enabled = true;
 
 		spin_unlock_bh(&sp->lock);
+
+		ath12k_spectral_init_param_min_max(ar);
 
 		ret = ath12k_spectral_debug_register(ar);
 		if (ret) {
