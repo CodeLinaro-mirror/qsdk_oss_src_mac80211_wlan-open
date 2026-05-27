@@ -4121,6 +4121,13 @@ static int _nl80211_parse_chandef(struct cfg80211_registered_device *rdev,
 		chandef->edmg.channels = 0;
 	}
 
+	if (info->attrs[NL80211_ATTR_RADAR_BITMAP]) {
+		int radar_bitmap;
+
+		radar_bitmap = nla_get_u16(info->attrs[NL80211_ATTR_RADAR_BITMAP]);
+		chandef->radar_bitmap = radar_bitmap;
+	}
+
 	if (!cfg80211_chandef_valid(chandef)) {
 		NL_SET_ERR_MSG(extack, "invalid channel definition");
 		return -EINVAL;
@@ -12543,11 +12550,7 @@ static int nl80211_notify_radar_detection(struct sk_buff *skb,
 		return -EINVAL;
 	}
 
-	/* Do not process this notification if radar is already detected
-	 * by kernel on this channel, and return success.
-	 */
-	if (chandef.chan->dfs_state == NL80211_DFS_UNAVAILABLE)
-		return 0;
+	rdev_dfs_radar_process(rdev, &chandef);
 
 	cfg80211_set_dfs_state(wiphy, &chandef, NL80211_DFS_UNAVAILABLE);
 

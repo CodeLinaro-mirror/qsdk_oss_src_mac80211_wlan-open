@@ -6787,6 +6787,7 @@ const struct cfg80211_ops mac80211_config_ops = {
 #endif
 	.get_channel = ieee80211_cfg_get_channel,
 	.start_radar_detection = ieee80211_start_radar_detection,
+	.dfs_process_radar_detection = ieee80211_dfs_process_radar_detection,
 	.start_punctured_cac = ieee80211_start_punctured_cac,
 	.end_cac = ieee80211_end_cac,
 	.channel_switch = ieee80211_channel_switch,
