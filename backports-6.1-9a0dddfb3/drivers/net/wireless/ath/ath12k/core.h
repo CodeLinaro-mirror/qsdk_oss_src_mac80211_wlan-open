@@ -1242,7 +1242,8 @@ struct ath12k_sta {
 #endif
 	u16 free_logical_idx_map;
 
-	void *dp_peer;
+	/* Opaque RCU pointer to ath12k_dp_peer */
+	void __rcu *dp_peer;
 };
 
 #define ATH12K_INVALID_RSSI_FULL -1

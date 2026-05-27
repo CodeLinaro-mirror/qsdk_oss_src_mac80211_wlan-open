@@ -274,7 +274,7 @@ void ath12k_peer_unmap_event(struct ath12k_base *ab, u8 vdev_id, u16 peer_id,
 void ath12k_peer_map_event(struct ath12k_base *ab, u8 vdev_id, u16 peer_id,
 			   u8 *mac_addr, u16 ast_hash, u16 hw_peer_id, bool is_wds);
 struct ath12k_dp_peer *ath12k_dp_peer_find(struct ath12k_dp_hw *dp_hw,
-					   u8 *addr);
+					   const u8 *addr);
 struct ath12k_dp_peer *ath12k_dp_peer_find_by_addr_and_sta(struct ath12k_dp_hw *dp_hw,
 							   u8 *addr, struct ieee80211_sta *sta);
 struct ath12k_dp_peer *ath12k_dp_peer_create_find(struct ath12k_dp_hw *dp_hw, u8 *addr,
