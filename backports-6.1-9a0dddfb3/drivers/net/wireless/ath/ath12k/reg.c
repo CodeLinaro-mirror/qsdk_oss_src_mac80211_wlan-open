@@ -536,6 +536,45 @@ int ath12k_reg_get_num_chans_in_band(struct ath12k *ar,
 	return count;
 }
 
+/**
+ * ath12k_reg_get_fallback_regd() - find a usable regulatory domain
+ * @ab: ath12k base
+ * @pdev_id: preferred pdev index
+ *
+ * Prefer new_regd[pdev_id], then default_regd[pdev_id], then any available
+ * regdomain in @ab. This covers early set_cactimeout calls before firmware
+ * sends WMI_REG_CHAN_LIST_CC_EXT_EVENT and split 5G-low/5G-high setups where
+ * firmware may only populate the primary pdev regdomain.
+ *
+ * Return: regdomain on success, NULL if none is available.
+ */
+static struct ieee80211_regdomain *
+ath12k_reg_get_fallback_regd(struct ath12k_base *ab, u8 pdev_id)
+{
+	struct ieee80211_regdomain *regd;
+	int i;
+
+	regd = ab->new_regd[pdev_id];
+	if (regd)
+		return regd;
+
+	regd = ab->default_regd[pdev_id];
+	if (regd)
+		return regd;
+
+	for (i = 0; i < ab->hw_params->max_radios; i++) {
+		regd = ab->new_regd[i];
+		if (regd)
+			return regd;
+
+		regd = ab->default_regd[i];
+		if (regd)
+			return regd;
+	}
+
+	return NULL;
+}
+
 int ath12k_regd_update(struct ath12k *ar, bool init)
 {
 	struct ath12k_hw *ah = ath12k_ar_to_ah(ar);
@@ -580,7 +619,7 @@ int ath12k_regd_update(struct ath12k *ar, bool init)
 			regd = (struct ieee80211_regdomain *)&ath12k_world_regd;
 		}
 	} else {
-		regd = ab->new_regd[pdev_id];
+		regd = ath12k_reg_get_fallback_regd(ab, pdev_id);
 	}
 
 	if (!regd) {
@@ -618,6 +657,17 @@ int ath12k_regd_update(struct ath12k *ar, bool init)
 		ret = -ENOMEM;
 		goto err;
 	}
+
+#if defined(CPTCFG_QCN_EXTN) && defined(CPTCFG_QCA_LAB_TEST_FEATURES)
+	{
+		struct ath12k *ar_tmp;
+		int i;
+
+		for_each_ar(ah, ar_tmp, i) {
+			ath12k_update_regd_cac_timeout_ext(ar_tmp, regd_copy);
+		}
+	}
+#endif /* CPTCFG_QCN_EXTN && CPTCFG_QCA_LAB_TEST_FEATURES */
 
 	ret = regulatory_set_wiphy_regd(hw->wiphy, regd_copy);
 
