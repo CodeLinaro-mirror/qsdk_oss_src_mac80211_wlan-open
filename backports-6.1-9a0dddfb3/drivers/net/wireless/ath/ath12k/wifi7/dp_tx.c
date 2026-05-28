@@ -152,19 +152,21 @@ static inline u8 ath12k_get_qos_tag(u32 mark)
 	return 0;
 }
 
-static inline void
-ath12k_dp_qos_update(struct ath12k_dp *dp, struct ath12k_pdev_dp *dp_pdev,
-		     u32 mark, struct hal_tcl_data_cmd *desc, u8 qos_tag,
-		     u8 *addr)
+static void
+ath12k_wifi7_dp_qos_update(struct ath12k_dp *dp, struct ath12k_pdev_dp *dp_pdev,
+			   u32 mark, struct hal_tcl_data_cmd *desc, u8 qos_tag,
+			   struct ath12k_dp_peer *dp_peer, u8 link_id)
 {
-	struct ath12k_dp_link_peer *link_peer;
-	struct ath12k_dp_peer *dp_peer;
 	u8 scs_id;
 	u16 msduq, peer_id;
 	u16 qos_id = QOS_ID_MAX;
 	int ret;
 
 	if (mark & SDWF_VALID_MASK) {
+		/*
+		 * dp_peer is NULL in this case
+		 * hence find dp_peer using peer_id
+		 */
 		rcu_read_lock();
 		peer_id = u32_get_bits(mark, SDWF_PEER_ID);
 		dp_peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, peer_id);
@@ -178,30 +180,15 @@ ath12k_dp_qos_update(struct ath12k_dp *dp, struct ath12k_pdev_dp *dp_pdev,
 						      msduq);
 		rcu_read_unlock();
 	} else if (qos_tag == QOS_SCS_TAG) {
-		struct ath12k_dp_hw *dp_hw = dp_pdev->dp_hw;
-
 		scs_id = u32_get_bits(mark, QOS_QOS_ID_MASK);
 
-		spin_lock_bh(&dp_hw->peer_hash_lock);
-		dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, addr);
-		if (!dp_peer) {
-			spin_unlock_bh(&dp_hw->peer_hash_lock);
+		if (!dp_peer)
 			return;
-		}
 
-		link_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer,
-								   dp_pdev->hw_link_id);
-		if (!link_peer) {
-			spin_unlock_bh(&dp_hw->peer_hash_lock);
-			return;
-		}
-
-		ret = ath12k_dp_peer_scs_data(dp, dp_peer->qos,
-					      scs_id, link_peer, dp_pdev->ar,
-					      &msduq, &qos_id);
-
-		spin_unlock_bh(&dp_hw->peer_hash_lock);
-
+		ret = ath12k_dp_peer_scs_data(dp,
+					      scs_id, dp_pdev->dp_hw,
+					      &msduq, &qos_id,
+					      dp_peer, link_id);
 		if (ret != 0) {
 			ath12k_err(dp->ab, "SCS Peer Data is NULL");
 			return;
@@ -1169,7 +1156,8 @@ int ath12k_wifi7_dp_tx_hw_enqueue(struct ath12k_dp_link_vif *dp_link_vif,
 				  u32 qos_nw_delay,
 				  struct ath12k_tx_desc_info *tx_desc,
 				  struct ath12k_dp_vif *dp_vif,
-				  bool feat_bypass, bool is_mcast)
+				  bool feat_bypass, bool is_mcast,
+				  struct ath12k_dp_peer *dp_peer)
 {
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_hal *hal = dp->hal;
@@ -1195,20 +1183,20 @@ int ath12k_wifi7_dp_tx_hw_enqueue(struct ath12k_dp_link_vif *dp_link_vif,
 		ath12k_wifi_qos_hlos_tid(hal_tcl_desc, msdu_info->tid);
 
 	if (unlikely(skb->mark & SDWF_VALID_MASK)) {
-		ath12k_dp_qos_update(dp, dp_pdev, skb->mark, hal_tcl_desc,
-				     0, NULL);
+		ath12k_wifi7_dp_qos_update(dp, dp_pdev, skb->mark, hal_tcl_desc,
+					   0, dp_peer, dp_link_vif->link_id);
 		ath12k_dp_sdwftx_ingress_stats_update(dp_pdev->ar,
 						      &skb->mark,
 						      qos_nw_delay,
 						      skb_headlen(skb));
 	}
 
-	if (unlikely(arsta)) {
+	if (unlikely(dp_peer)) {
 		qos_tag = ath12k_get_qos_tag(skb->mark);
 		if (qos_tag)
-			ath12k_dp_qos_update(dp, dp_pdev, skb->mark,
-					     hal_tcl_desc,
-					     qos_tag, arsta->ahsta->addr);
+			ath12k_wifi7_dp_qos_update(dp, dp_pdev, skb->mark,
+						   hal_tcl_desc, qos_tag,
+						   dp_peer, dp_link_vif->link_id);
 	}
 
 	ath12k_dmb();
@@ -1237,7 +1225,8 @@ int ath12k_wifi7_dp_tx_hw_enqueue(struct ath12k_dp_link_vif *dp_link_vif,
 				  u32 qos_nw_delay,
 				  struct ath12k_tx_desc_info *tx_desc,
 				  struct ath12k_dp_vif *dp_vif,
-				  bool feat_bypass, bool is_mcast)
+				  bool feat_bypass, bool is_mcast,
+				  struct ath12k_dp_peer *dp_peer)
 {
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_hal *hal = dp->hal;
@@ -1264,20 +1253,20 @@ int ath12k_wifi7_dp_tx_hw_enqueue(struct ath12k_dp_link_vif *dp_link_vif,
 		ath12k_wifi_qos_hlos_tid(&tcl_desc, msdu_info->tid);
 
 	if (unlikely(skb->mark & SDWF_VALID_MASK)) {
-		ath12k_dp_qos_update(dp, dp_pdev, skb->mark, &tcl_desc,
-				     0, NULL);
+		ath12k_wifi7_dp_qos_update(dp, dp_pdev, skb->mark, &tcl_desc,
+					   0, dp_peer, dp_link_vif->link_id);
 		ath12k_dp_sdwftx_ingress_stats_update(dp_pdev->ar,
 						      &skb->mark,
 						      qos_nw_delay,
 						      skb_headlen(skb));
 	}
 
-	if (unlikely(arsta)) {
+	if (unlikely(dp_peer)) {
 		qos_tag = ath12k_get_qos_tag(skb->mark);
 		if (qos_tag)
-			ath12k_dp_qos_update(dp, dp_pdev, skb->mark,
-					     &tcl_desc,
-					     qos_tag, arsta->ahsta->addr);
+			ath12k_wifi7_dp_qos_update(dp, dp_pdev, skb->mark,
+						   &tcl_desc, qos_tag,
+						   dp_peer, dp_link_vif->link_id);
 	}
 
 	memcpy(hal_tcl_desc, &tcl_desc, sizeof(tcl_desc));
@@ -2089,7 +2078,8 @@ void ath12k_wifi7_ucast_handler(struct ath12k_dp_vif *dp_vif,
 				struct ath12k_link_sta *arsta,
 				struct sk_buff *skb,
 				struct ath12k_dp_skb_ctrl *skb_ctrl,
-				u32 qos_nw_delay, bool htt_mesh)
+				u32 qos_nw_delay, bool htt_mesh,
+				struct ath12k_dp_peer *dp_peer)
 {
 	struct ath12k_vif *ahvif = container_of(dp_vif, struct ath12k_vif, dp_vif);
 	struct ath12k_link_vif *arvif = rcu_dereference(ahvif->link[link_id]);
@@ -2216,7 +2206,7 @@ skip_assign_buffer:
 	/* Enqueue to hardware */
 	ret = ath12k_wifi7_dp_tx_hw_enqueue(dp_link_vif, dp_pdev, &msdu_info, ring_id,
 					    arsta, skb, qos_nw_delay,
-					    tx_desc, dp_vif, feat_bypass, false);
+					    tx_desc, dp_vif, feat_bypass, false, dp_peer);
 	if (ret) {
 		drop_reason = DP_TX_ENQ_DROP_HW_ENQ_FAIL;
 		goto fail;
@@ -2314,7 +2304,7 @@ ath12k_wifi7_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 	ret = ath12k_wifi7_dp_tx_hw_enqueue(dp_link_vif, dp_pdev, msdu_info,
 					    ring_id, arsta, skb, qos_nw_delay,
 					    tx_desc, &ahvif->dp_vif, false,
-					    is_mcast);
+					    is_mcast, NULL);
 	if (ret) {
 		drop_reason = DP_TX_ENQ_DROP_HW_ENQ_FAIL;
 		goto fail;
@@ -3859,7 +3849,8 @@ u32 ath12k_wifi7_dp_tx_get_vdev_bank_config(struct ath12k_base *ab,
 
 int ath12k_wifi7_sdwf_reinject_handler(struct ath12k_pdev_dp *dp_pdev,
 				       struct ath12k_link_vif *arvif,
-				       struct sk_buff *skb, struct ath12k_link_sta *arsta)
+				       struct sk_buff *skb, struct ath12k_link_sta *arsta,
+				       struct ath12k_dp_peer *dp_peer)
 {
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct ath12k_dp_vif *dp_vif = &arvif->ahvif->dp_vif;
@@ -3887,7 +3878,8 @@ int ath12k_wifi7_sdwf_reinject_handler(struct ath12k_pdev_dp *dp_pdev,
 					  info, 0, false, NULL);
 	else
 		ath12k_wifi7_ucast_handler(dp_vif, arvif->link_id,
-					   arsta, skb, &skb_ctrl, 0, false);
+					   arsta, skb, &skb_ctrl, 0, false,
+					   dp_peer);
 	return 0;
 }
 

@@ -105,7 +105,8 @@ u32 ath12k_wifi8_dp_tx_get_vdev_bank_config(struct ath12k_base *ab,
 int ath12k_wifi8_sdwf_reinject_handler(struct ath12k_pdev_dp *dp_pdev,
 				       struct ath12k_link_vif *arvif,
 				       struct sk_buff *skb,
-				       struct ath12k_link_sta *arsta);
+				       struct ath12k_link_sta *arsta,
+				       struct ath12k_dp_peer *dp_peer);
 int ath12k_wifi8_dp_tx_ring_setup(struct ath12k_base *ab);
 void ath12k_wifi8_dp_tx_ring_cleanup(struct ath12k_base *ab);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
@@ -151,7 +152,8 @@ void ath12k_wifi8_dp_tx_set_ast(struct ath12k_dp_peer *dp_peer,
 void ath12k_wifi8_ucast_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 				struct ath12k_link_sta *arsta, struct sk_buff *skb,
 				struct ath12k_dp_skb_ctrl *skb_ctrl, u32 qos_nw_delay,
-				struct ath12k_vif *vlan_ahvif);
+				struct ath12k_vif *vlan_ahvif,
+				struct ath12k_dp_peer *dp_peer);
 void ath12k_wifi8_mcbc_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 			       struct ath12k_link_sta *arsta, struct sk_buff *skb,
 			       bool is_eth, bool gsn_valid, bool is_sta,

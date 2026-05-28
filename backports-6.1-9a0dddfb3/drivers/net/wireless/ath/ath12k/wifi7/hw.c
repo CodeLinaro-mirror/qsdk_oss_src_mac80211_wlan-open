@@ -1478,6 +1478,7 @@ int ath12k_dp_mmesh_tx(struct ieee80211_hw *hw, struct ath12k_base *ab,
 	u16 len;
 	int ret;
 	struct ath12k_sta *ahsta = NULL;
+	struct ath12k_dp_peer *dp_peer = NULL;
 
 	/* Get station info if needed */
 	if (sta) {
@@ -1486,6 +1487,7 @@ int ath12k_dp_mmesh_tx(struct ieee80211_hw *hw, struct ath12k_base *ab,
 		qos_tag = u32_get_bits(skb->mark, QOS_TAG_MASK);
 		if (ahsta->use_4addr_set || qos_tag)
 			arsta = rcu_dereference(ahsta->link[link_id]);
+		dp_peer = ath12k_sta_get_dp_peer_rcu(ahsta);
 	}
 
 	if (ahvif->dp_vif.tx_encap_type == ATH12K_HW_TXRX_NATIVE_WIFI ||
@@ -1565,7 +1567,7 @@ int ath12k_dp_mmesh_tx(struct ieee80211_hw *hw, struct ath12k_base *ab,
 				ath12k_wifi7_ucast_handler(dp_vif, link_id, arsta,
 							   skb_cloned, skb_ctrl,
 							   qos_nw_delay,
-							   true);
+							   true, dp_peer);
 			} else {
 				ath12k_wifi7_mcbc_handler(dp_vif, link_id, arsta,
 							  skb_cloned, is_eth,
@@ -1642,6 +1644,7 @@ void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	bool is_eth = false, gsn_valid = true;
 	bool is_dvlan = false, is_sta = false;
 	bool htt_mesh = false;
+	struct ath12k_dp_peer *dp_peer = NULL;
 
 	/* Check queue stop */
 	if (unlikely(ah->queue_stop)) {
@@ -1718,6 +1721,7 @@ void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 		qos_tag = u32_get_bits(skb->mark, QOS_TAG_MASK);
 		if (ahsta->use_4addr_set || qos_tag)
 			arsta = rcu_dereference(ahsta->link[link_id]);
+		dp_peer = ath12k_sta_get_dp_peer_rcu(ahsta);
 	}
 
 	/* to check for if MAC has added the encrption in case of
@@ -1754,7 +1758,7 @@ void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	if (!is_mcast) {
 		/* Unicast path */
 		ath12k_wifi7_ucast_handler(dp_vif, link_id, arsta, skb,
-					   &skb_ctrl, qos_nw_delay, htt_mesh);
+					   &skb_ctrl, qos_nw_delay, htt_mesh, dp_peer);
 	} else {
 
 		if (!vif->valid_links || is_dvlan || (is_eth && sta) ||

@@ -1097,6 +1097,7 @@ static void ath12k_wifi8_mac_op_tx(struct ieee80211_hw *hw,
 	struct ath12k_dp_skb_ctrl skb_ctrl = {0};
 	bool htt_mesh;
 	int ret;
+	struct ath12k_dp_peer *dp_peer = NULL;
 
 	/* Check queue stop.*/
 	if (unlikely(ah->queue_stop)) {
@@ -1178,6 +1179,7 @@ static void ath12k_wifi8_mac_op_tx(struct ieee80211_hw *hw,
 		qos_tag = u32_get_bits(skb->mark, QOS_TAG_MASK);
 		if (ahsta->use_4addr_set || qos_tag)
 			arsta = rcu_dereference(ahsta->link[link_id]);
+		dp_peer = ath12k_sta_get_dp_peer_rcu(ahsta);
 	}
 
 	/* Checking if it is a DVLAN frame */
@@ -1193,7 +1195,7 @@ static void ath12k_wifi8_mac_op_tx(struct ieee80211_hw *hw,
 	/* Route based on multicast/unicast. */
 	if (!is_mcast) {
 		ath12k_wifi8_ucast_handler(dp_vif, link_id, arsta, skb,
-					   &skb_ctrl, qos_nw_delay, vlan_ahvif);
+					   &skb_ctrl, qos_nw_delay, vlan_ahvif, dp_peer);
 	} else {
 		if (!vif->valid_links || is_dvlan || (is_eth && sta) ||
 		    test_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ah->ag->flags))

@@ -734,7 +734,8 @@ struct ath12k_dp_arch_ops {
 				    u8 chip_id, u8 pdev_id);
 	int (*sdwf_reinject_handler)(struct ath12k_pdev_dp *dp_pdev,
 				     struct ath12k_link_vif *arvif,
-				     struct sk_buff *skb, struct ath12k_link_sta *arsta);
+				     struct sk_buff *skb, struct ath12k_link_sta *arsta,
+				     struct ath12k_dp_peer *dp_peer);
 	int (*dp_msdu_htt_connect)(struct ath12k_dp *dp);
 	int (*dp_peer_create)(struct ath12k_hw *ah, u8 *addr,
 			      struct ath12k_dp_peer_create_params *params,
@@ -808,8 +809,9 @@ struct ath12k_dp_arch_ops {
 				     struct ath12k_dp_smd_ctx *ctx,
 				     void (*cb)(struct ath12k_dp *dp, void *ctx,
 						struct hal_reo_status *status));
-	int (*dp_qos_queue_setup)(struct ath12k_base *ab, struct ath12k_pdev_dp *dp_pdev,
-				  u16 msduq, u16 peer_id, u16 qos_id);
+	int (*dp_qos_queue_setup)(struct ath12k_dp_hw_group *dp_hw_grp,
+				  struct ath12k_dp_peer *dp_peer,
+				  u16 msduq, u16 qos_id);
 	int (*peer_tx_tid_update_for_smd)(struct ath12k_base *ab,
 					  struct ath12k_dp_hw *dp_hw,
 					  const u8 *peer_addr,
@@ -1705,13 +1707,13 @@ static inline void ath12k_dp_tx_set_ast(struct ath12k_dp *dp,
 }
 
 static inline int ath12k_dp_qos_queue_setup(struct ath12k_dp *dp,
-					    struct ath12k_base *ab,
-					    struct ath12k_pdev_dp *dp_pdev,
-					    u16 msduq, u16 peer_id, u16 qos_id)
+					    struct ath12k_dp_hw_group *dp_hw_grp,
+					    struct ath12k_dp_peer *dp_peer,
+					    u16 msduq, u16 qos_id)
 {
 	if (dp->arch_ops->dp_qos_queue_setup)
-		return dp->arch_ops->dp_qos_queue_setup(ab, dp_pdev, msduq,
-							peer_id, qos_id);
+		return dp->arch_ops->dp_qos_queue_setup(dp_hw_grp, dp_peer,
+							msduq, qos_id);
 	return -EOPNOTSUPP;
 }
 

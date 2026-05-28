@@ -29,7 +29,8 @@ u32 ath12k_wifi7_dp_tx_get_vdev_bank_config(struct ath12k_base *ab,
 int ath12k_wifi7_sdwf_reinject_handler(struct ath12k_pdev_dp *dp_pdev,
 				       struct ath12k_link_vif *arvif,
 				       struct sk_buff *skb,
-				       struct ath12k_link_sta *arsta);
+				       struct ath12k_link_sta *arsta,
+				       struct ath12k_dp_peer *dp_peer);
 int ath12k_wifi7_dp_tx_ring_setup(struct ath12k_base *ab);
 void ath12k_wifi7_dp_tx_ring_cleanup(struct ath12k_base *ab);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
@@ -60,7 +61,8 @@ void ath12k_wifi7_ucast_handler(struct ath12k_dp_vif *dp_vif,
 				struct ath12k_link_sta *arsta,
 				struct sk_buff *skb,
 				struct ath12k_dp_skb_ctrl *skb_ctrl,
-				u32 qos_nw_delay, bool htt_mesh);
+				u32 qos_nw_delay, bool htt_mesh,
+				struct ath12k_dp_peer *dp_peer);
 
 enum ath12k_dp_tx_enq_error
 ath12k_wifi7_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
