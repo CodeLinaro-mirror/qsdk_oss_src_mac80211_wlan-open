@@ -2157,8 +2157,7 @@ void ath12k_dp_cmn_device_deinit(struct ath12k_dp *dp)
 	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &dp->ab->dev_flags))
 		return;
 
-	if (test_bit(ATH12K_FLAG_RECOVERY, &dp->ab->dev_flags) &&
-	    test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &dp->ab->dev_flags)) {
+	if (test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &dp->ab->dev_flags)) {
 		ath12k_info(dp->ab, "Skip DP deinit during Q6 BCR RESET\n");
 		return;
 	}
@@ -2192,8 +2191,7 @@ int ath12k_dp_cmn_device_init(struct ath12k_dp *dp)
 	ath12k_dp_tx_comp_ring_size[3] = DP_TX_COMP_RING3_SIZE;
 	ath12k_dp_tx_comp_ring_size[4] = DP_TX_COMP_RING4_SIZE;
 
-	if (test_bit(ATH12K_FLAG_RECOVERY, &dp->ab->dev_flags) &&
-	    test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &dp->ab->dev_flags)) {
+	if (test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &dp->ab->dev_flags)) {
 		ath12k_info(dp->ab, "Skip DP re-init during Q6 BCR RESET\n");
 		return 0;
 	}

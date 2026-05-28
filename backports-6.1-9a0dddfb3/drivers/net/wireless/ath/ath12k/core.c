@@ -1093,7 +1093,8 @@ static void ath12k_core_cleanup(struct ath12k_base *ab)
 	mutex_lock(&ab->core_lock);
 	ath12k_core_pdev_deinit(ab);
 	ath12k_dp_arch_pdev_free(ab->dp);
-	ath12k_ce_cleanup_pipes(ab);
+	if (!test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags))
+		ath12k_ce_cleanup_pipes(ab);
 	ath12k_wmi_detach(ab);
 	mutex_unlock(&ab->core_lock);
 
@@ -1205,7 +1206,8 @@ static void ath12k_core_stop(struct ath12k_base *ab)
 {
 	ath12k_core_to_group_ref_put(ab);
 	ath12k_acpi_stop(ab);
-	ath12k_hif_stop(ab);
+	if (!test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags))
+		ath12k_hif_stop(ab);
 	ath12k_wmi_detach(ab);
 	ath12k_mgmt_device_deinit(ab->mgmt);
 	ath12k_dp_cmn_device_deinit(ab->dp);
@@ -1520,10 +1522,14 @@ static int ath12k_core_start(struct ath12k_base *ab)
 		goto err_wmi_detach;
 	}
 
-	ret = ath12k_hif_start(ab);
-	if (ret) {
-		ath12k_err(ab, "failed to start HIF: %d\n", ret);
-		goto err_wmi_detach;
+	if (!test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags)) {
+		ret = ath12k_hif_start(ab);
+		if (ret) {
+			ath12k_err(ab, "failed to start HIF: %d\n", ret);
+			goto err_wmi_detach;
+		}
+	} else {
+		ath12k_hif_ce_irq_enable(ab);
 	}
 
 	ret = ath12k_htc_wait_target(&ab->htc);
@@ -2414,10 +2420,12 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 		return 0;
 	}
 
-	ret = ath12k_ce_init_pipes(ab);
-	if (ret) {
-		ath12k_err(ab, "failed to initialize CE: %d\n", ret);
-		goto err_firmware_stop;
+	if (!test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags)) {
+		ret = ath12k_ce_init_pipes(ab);
+		if (ret) {
+			ath12k_err(ab, "failed to initialize CE: %d\n", ret);
+			goto err_firmware_stop;
+		}
 	}
 
 	mutex_lock(&ab->core_lock);

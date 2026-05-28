@@ -80,10 +80,8 @@ void ath12k_wifi8_umac_reset_handle_init_recovery(struct ath12k_base *ab)
 	set_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags);
 
 	/* Set umac in recovery flag for soc under Q6 only reset */
-	if (test_bit(ATH12K_FLAG_RECOVERY, &cumac_ab->dev_flags) &&
-	    test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &cumac_ab->dev_flags)) {
+	if (test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &cumac_ab->dev_flags))
 		set_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &cumac_ab->dev_flags);
-	}
 
 	ath12k_hif_irq_disable(ab);
 	ath12k_hif_mgmt_irq_disable(ab);
@@ -170,8 +168,7 @@ void ath12k_wifi8_umac_reset_handle_pre_reset(struct ath12k_base *ab)
 
 	cumac_ab = ath12k_dp_get_ab_from_dp_hw_group(ag->dp_hw_grp);
 
-	if (test_bit(ATH12K_FLAG_RECOVERY, &cumac_ab->dev_flags) &&
-	    test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &cumac_ab->dev_flags)) {
+	if (test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &cumac_ab->dev_flags)) {
 		ret = ath12k_cumac_hw_pre_reset(cumac_ab);
 		if (ret) {
 			ath12k_err(ab, "CUMAC HW pre reset failed");
@@ -262,8 +259,7 @@ void ath12k_wifi8_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 
 	cumac_ab = ath12k_dp_get_ab_from_dp_hw_group(ag->dp_hw_grp);
 
-	if (test_bit(ATH12K_FLAG_RECOVERY, &cumac_ab->dev_flags) &&
-	    test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &cumac_ab->dev_flags)) {
+	if (test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &cumac_ab->dev_flags)) {
 		ret = ath12k_cumac_hw_reset(cumac_ab);
 		if (ret) {
 			ath12k_err(ab, "CUMAC HW post reset failed");
@@ -321,7 +317,6 @@ void ath12k_wifi8_umac_reset_handle_post_reset_complete(struct ath12k_base *ab)
 
 	/* Handle only once */
 	if (mlo_umac_reset->initiator_chip == ab->device_id &&
-	    test_bit(ATH12K_FLAG_RECOVERY, &cumac_ab->dev_flags) &&
 	    test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &cumac_ab->dev_flags)) {
 		ret = ath12k_cumac_hw_post_reset(cumac_ab);
 		if (ret) {
