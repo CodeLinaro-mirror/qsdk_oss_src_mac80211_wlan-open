@@ -316,7 +316,7 @@ struct hal_eht_sig_ofdma_cmn_eb1 {
 #define HAL_RX_EHT_SIG_OFDMA_EB2_RU_ALLOC_2_4		GENMASK_ULL(35, 27)
 #define HAL_RX_EHT_SIG_OFDMA_EB2_RU_ALLOC_2_5		GENMASK_ULL(44, 36)
 #define HAL_RX_EHT_SIG_OFDMA_EB2_RU_ALLOC_2_6		GENMASK_ULL(53, 45)
-#define HAL_RX_EHT_SIG_OFDMA_EB2_MCS			GNEMASK_ULL(57, 54)
+#define HAL_RX_EHT_SIG_OFDMA_EB2_MCS			GENMASK_ULL(57, 54)
 
 struct hal_eht_sig_ofdma_cmn_eb2 {
 	__le64 info0;
@@ -491,7 +491,7 @@ struct hal_uhr_sig_ofdma_cmn_eb1 {
 #define HAL_RX_UHR_SIG_OFDMA_EB2_RU_ALLOC_2_4		GENMASK_ULL(35, 27)
 #define HAL_RX_UHR_SIG_OFDMA_EB2_RU_ALLOC_2_5		GENMASK_ULL(44, 36)
 #define HAL_RX_UHR_SIG_OFDMA_EB2_RU_ALLOC_2_6		GENMASK_ULL(53, 45)
-#define HAL_RX_UHR_SIG_OFDMA_EB2_CRC			GNEMASK_ULL(57, 54)
+#define HAL_RX_UHR_SIG_OFDMA_EB2_CRC			GENMASK_ULL(57, 54)
 
 struct hal_uhr_sig_ofdma_cmn_eb2 {
 	__le64 info0;
@@ -584,10 +584,12 @@ struct hal_rx_he_sig_b2_ofdma_info {
 #define HAL_RX_PHYRX_RSSI_LEGACY_INFO_INFO1_RSSI_COMB		GENMASK(15, 8)
 
 struct hal_rx_phyrx_rssi_legacy_info {
-	__le32 info0;
-	__le32 rsvd0[8];
-	__le32 info1;
-	__le32 rsvd1[2];
+	__le16 info0;
+	__le16 rsvd0;
+	__le32 rsvd1[8];
+	__le16 info1;
+	__le16 rsvd2;
+	__le32 rsvd3[4];
 } __packed;
 
 #define HAL_RX_USR_INFO0_USR_RSSI		GENMASK(7, 0)
@@ -648,23 +650,24 @@ struct hal_receive_user_info {
  */
 struct hal_rx_mpdu_start {
 	__le32 rsvd0;
+	__le32 rsvd1;
 	__le32 info0;
-	__le32 rsvd1[6];
+	__le32 rsvd2[5];
 	__le32 info1;
-	__le32 rsvd2;
 	__le16 rsvd3;
 	__le16 sw_peer_id;
+	__le32 rsvd4;
 	__le16 info2;
 	__le16 phy_ppdu_id;
 	__le32 info3;
 	__le32 info4;
 	__le16 mpdu_frame_control_field;
-	__le16 rsvd4;
-	__le32 rsvd5;
-	__le16 rsvd6;
+	__le16 rsvd5;
+	__le32 rsvd6;
+	__le16 rsvd7;
 	__le16 mac_addr_ad2_15_0;
 	__le32 mac_addr_ad2_47_16;
-	__le32 rsvd7[20];
+	__le32 rsvd8[20];
 } __packed;
 
 #define HAL_RX_MSDU_END_INFO0_SW_FRAME_GRP_ID			GENMASK(8, 2)
@@ -704,12 +707,12 @@ struct hal_tlv_parsed_hdr {
 	u8 *data;
 };
 
-#define MPDU_START_SELECT_INFO0_ENCYRPT_TYP                      BIT(0)
+#define MPDU_START_SELECT_INFO0_ENCYRPT_TYP                      BIT(1)
 #define MPDU_START_SELECT_INFO1_FC_ADDR2_DS_RETRY                BIT(4)
 #define MPDU_START_SELECT_INFO2                                  BIT(5)
 #define MPDU_START_SELECT_INFO3_INFO4                            BIT(6)
 #define MPDU_START_SELECT_FC                                     BIT(7)
-#define MPDU_START_SELECT_INFO5                                  BIT(8)
+#define MPDU_START_SELECT_AD2                                    BIT(8)
 
 #define RX_MON_MPDU_START_WMASK \
 		(MPDU_START_SELECT_INFO0_ENCYRPT_TYP |                \
@@ -717,9 +720,9 @@ struct hal_tlv_parsed_hdr {
 		 MPDU_START_SELECT_INFO2 |                            \
 		 MPDU_START_SELECT_INFO3_INFO4 |                      \
 		 MPDU_START_SELECT_FC |                               \
-		 MPDU_START_SELECT_INFO5)
+		 MPDU_START_SELECT_AD2)
 
-#define HAL_RX_MPDU_START_INFO0_ENCYRPT_TYP_CMPCT		GENMASK(5, 2)
+#define HAL_RX_MPDU_START_INFO0_ENCRYPT_TYP_CMPCT		GENMASK(5, 2)
 #define HAL_RX_MPDU_START_INFO1_FC_VALID_CMPCT			BIT(0)
 #define HAL_RX_MPDU_START_INFO1_ADDR2_VALID_CMPCT		BIT(3)
 #define HAL_RX_MPDU_START_INFO1_TO_DS_CMPCT			BIT(17)
@@ -738,12 +741,12 @@ struct hal_tlv_parsed_hdr {
  * mpdu start wmask.
  */
 struct hal_rx_mon_mpdu_start_compact {
-	__le32 rsvd0;
 	__le32 info0;
+	__le32 rsvd0;
 	__le32 info1;
-	__le32 rsvd1;
-	__le16 rsvd2;
+	__le16 rsvd1;
 	__le16 sw_peer_id;
+	__le32 rsvd2;
 	__le16 info2;
 	__le16 phy_ppdu_id;
 	__le32 info3;
