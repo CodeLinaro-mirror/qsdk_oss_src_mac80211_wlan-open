@@ -1908,7 +1908,6 @@ ath12k_wifi8_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 	if (msdu_info->me_convert) {
 		gsn_valid = false;
 		msdu_info->tx_notify_frame = 0;
-		msdu_info->lookup_override = true;
 		msdu_info->vdev_id = ahvif->dp_vif.dp_vif_id;
 	}
 
