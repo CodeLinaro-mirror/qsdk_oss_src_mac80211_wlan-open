@@ -23056,6 +23056,10 @@ static int nl80211_send_mgmt_critical_update_len(struct wireless_dev *wdev)
 	/*Add length for critical_update and mld_list nla header */
 	cu_len += 12;
 	list_for_each_entry(tmp_wdev, &rdev->wiphy.wdev_list, list) {
+		if (tmp_wdev->iftype != NL80211_IFTYPE_AP &&
+		    tmp_wdev->iftype != NL80211_IFTYPE_AP_VLAN)
+			continue;
+
 		/* Add length for mld,link list nla header and
 		 * length for WDEV ifindex
 		 */
@@ -23093,6 +23097,9 @@ static int nl80211_send_mgmt_critical_update(struct sk_buff *msg, struct wireles
 		goto nla_fail_cu;
 
 	list_for_each_entry(tmp_wdev, &rdev->wiphy.wdev_list, list) {
+		if (tmp_wdev->iftype != NL80211_IFTYPE_AP &&
+		    tmp_wdev->iftype != NL80211_IFTYPE_AP_VLAN)
+			continue;
 		if (!tmp_wdev->valid_links)
 			continue;
 		if (!tmp_wdev->critical_update)
