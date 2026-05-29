@@ -90,8 +90,9 @@ struct ath12k_link_vif;
 #if defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
 #define ATH12K_COLD_BOOT_CALIB		false
 #else
-#define ATH12K_COLD_BOOT_CALIB		true
+#define ATH12K_COLD_BOOT_CALIB		(ath12k_dp_ring_cfg->cold_boot_calib)
 #endif
+#define ATH12K_COLD_BOOT_CALIB_DEFAULT	true
 
 #define TARGET_NUM_PEERS_PDEV_SINGLE	(TARGET_NUM_STATIONS_SINGLE + \
 					 TARGET_NUM_VDEVS)

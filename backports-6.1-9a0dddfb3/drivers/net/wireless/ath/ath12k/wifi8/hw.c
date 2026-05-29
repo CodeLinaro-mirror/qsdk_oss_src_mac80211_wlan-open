@@ -382,7 +382,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.max_clients_dbs_sbs = 170,
 
 		.idle_ps = false,
-		.cold_boot_calib = ATH12K_COLD_BOOT_CALIB,
+		.cold_boot_calib = ATH12K_COLD_BOOT_CALIB_DEFAULT,
 		.download_calib = true,
 		.supports_suspend = false,
 		.reoq_lut_support = true,
@@ -499,7 +499,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.max_clients_dbs_sbs = 170,
 
 		.idle_ps = false,
-		.cold_boot_calib = ATH12K_COLD_BOOT_CALIB,
+		.cold_boot_calib = ATH12K_COLD_BOOT_CALIB_DEFAULT,
 		.download_calib = true,
 		.supports_suspend = false,
 		.reoq_lut_support = true,
@@ -614,7 +614,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.max_clients_dbs_sbs = 170,
 
 		.idle_ps = false,
-		.cold_boot_calib = true,
+		.cold_boot_calib = ATH12K_COLD_BOOT_CALIB_DEFAULT,
 		.download_calib = true,
 		.supports_suspend = false,
 		.reoq_lut_support = true,

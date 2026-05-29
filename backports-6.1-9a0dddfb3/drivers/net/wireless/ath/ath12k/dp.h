@@ -443,7 +443,7 @@ enum ath12k_dp_eapol_key_type {
 #if defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
 #define DP_NUM_CLIENTS_MAX 56
 #else
-#define DP_NUM_CLIENTS_MAX 64
+#define DP_NUM_CLIENTS_MAX (ath12k_dp_ring_cfg->dp_num_clients_max)
 #endif
 #define DP_AVG_TIDS_PER_CLIENT 2
 #define DP_NUM_TIDS_MAX (DP_NUM_CLIENTS_MAX * DP_AVG_TIDS_PER_CLIENT)

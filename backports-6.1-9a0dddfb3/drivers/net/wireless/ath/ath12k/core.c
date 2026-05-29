@@ -217,10 +217,17 @@ static const struct ath12k_dp_ring_cfg ath12k_dp_ring_cfgs[] = {
 		.dp_max_clients			= 512,
 		.num_pool_ppeds_tx_desc		= 0x8000,
 		.ppeds_hotlist_len_max		= 1024,
+		.dp_num_clients_max		= 64,
+		.dp_mon_status_buf		= 320,
 		.reo_dst_ring_size		= { 8192, 8192, 8192, 8192, 8192 },
 		.tcl_data_ring_size		= { 2048, 2048, 2048, 2048, 2048 },
 		.tx_compl_ring_size		= { 32768, 32768, 32768, 32768, 32768 },
 		.monitor_support		= true,
+		.cfr_support			= true,
+		.spectral_support		= true,
+		.tx_monitor_support		= true,
+		.sdwf_support			= true,
+		.cold_boot_calib		= true,
 	},
 	[ATH12K_MEM_PROFILE_BALANCED] = {
 		.rxdma_buf_ring_size		= 8192,
@@ -249,10 +256,17 @@ static const struct ath12k_dp_ring_cfg ath12k_dp_ring_cfgs[] = {
 		.dp_max_clients			= 512,
 		.num_pool_ppeds_tx_desc		= 0x8000,
 		.ppeds_hotlist_len_max		= 1024,
+		.dp_num_clients_max		= 64,
+		.dp_mon_status_buf		= 320,
 		.reo_dst_ring_size		= { 8192, 8192, 8192, 8192, 8192 },
 		.tcl_data_ring_size		= { 2048, 2048, 2048, 2048, 2048 },
 		.tx_compl_ring_size		= { 16384, 16384, 16384, 16384, 16384 },
 		.monitor_support		= true,
+		.cfr_support			= true,
+		.spectral_support		= true,
+		.tx_monitor_support		= false,
+		.sdwf_support			= true,
+		.cold_boot_calib		= true,
 	},
 	[ATH12K_MEM_PROFILE_OPTIMIZED] = {
 		.rxdma_buf_ring_size		= 2048,
@@ -281,10 +295,17 @@ static const struct ath12k_dp_ring_cfg ath12k_dp_ring_cfgs[] = {
 		.dp_max_clients			= 512,
 		.num_pool_ppeds_tx_desc		= 0x2000,
 		.ppeds_hotlist_len_max		= 256,
+		.dp_num_clients_max		= 56,
+		.dp_mon_status_buf		= 20,
 		.reo_dst_ring_size		= { 2048, 2048, 2048, 512, 512 },
 		.tcl_data_ring_size		= { 512, 512, 512, 128, 128 },
 		.tx_compl_ring_size		= { 8192, 8192, 8192, 1024, 1024 },
 		.monitor_support		= true,
+		.cfr_support			= false,
+		.spectral_support		= false,
+		.tx_monitor_support		= false,
+		.sdwf_support			= false,
+		.cold_boot_calib		= false,
 	},
 };
 
@@ -1597,11 +1618,22 @@ static int ath12k_core_pdev_init(struct ath12k_base *ab)
 {
 	ath12k_fse_init(ab);
 	ath12k_telemetry_init(ab);
-	ath12k_dp_accel_cfg_init(ab);
+
+	/* Initialize SAWF/SDWF only if supported by the active memory profile */
+	if (ath12k_dp_ring_cfg->sdwf_support)
+		ath12k_dp_accel_cfg_init(ab);
+
 	ath12k_thermal_register(ab);
-	ath12k_spectral_init(ab);
-	/* Check if cfr_enable_bmap is set for the corresponding HW */
-	if (ath12k_cfr_enable_bmap & (1 << ab->device_id)) {
+
+	/* Initialize spectral only if supported by the active memory profile */
+	if (ath12k_dp_ring_cfg->spectral_support)
+		ath12k_spectral_init(ab);
+
+	/* Check if cfr_enable_bmap is set for the corresponding HW and
+	 * CFR is supported by the active memory profile
+	 */
+	if ((ath12k_dp_ring_cfg->cfr_support) &&
+	    (ath12k_cfr_enable_bmap & (1 << ab->device_id))) {
 		ath12k_info(ab, "Enabling CFR for chip id:%d\n", ab->device_id);
 		ath12k_cfr_init(ab);
 	}
@@ -1614,12 +1646,23 @@ void ath12k_core_pdev_deinit(struct ath12k_base *ab)
 	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
-	ath12k_dp_accel_cfg_deinit(ab);
+	/* Deinitialize SAWF/SDWF only if it was initialized based on memory profile */
+	if (ath12k_dp_ring_cfg->sdwf_support)
+		ath12k_dp_accel_cfg_deinit(ab);
+
 	ath12k_fse_deinit(ab);
 	ath12k_telemetry_deinit(ab);
 	ath12k_thermal_unregister(ab);
-	ath12k_spectral_deinit(ab);
-	if (ath12k_cfr_enable_bmap & (1 << ab->device_id))
+
+	/* Deinitialize spectral only if it was initialized based on memory profile */
+	if (ath12k_dp_ring_cfg->spectral_support)
+		ath12k_spectral_deinit(ab);
+
+	/* Deinitialize CFR only if it was initialized based on memory profile
+	 * and cfr_enable_bmap
+	 */
+	if (ath12k_dp_ring_cfg->cfr_support &&
+	    (ath12k_cfr_enable_bmap & (1 << ab->device_id)))
 		ath12k_cfr_deinit(ab);
 }
 
@@ -1756,6 +1799,19 @@ static void ath12k_core_dump_mem_profile_info(struct ath12k_base *ab)
 		    ath12k_dp_ring_cfg->tx_compl_ring_size[3],
 		    ath12k_dp_ring_cfg->tx_compl_ring_size[4],
 		    ath12k_dp_ring_cfg->monitor_support);
+
+	ath12k_info(ab,
+		    "dp_ring_cfg: cfr=%u spectral=%u tx_mon=%u sdwf=%u cold_boot=%u\n",
+		    ath12k_dp_ring_cfg->cfr_support,
+		    ath12k_dp_ring_cfg->spectral_support,
+		    ath12k_dp_ring_cfg->tx_monitor_support,
+		    ath12k_dp_ring_cfg->sdwf_support,
+		    ath12k_dp_ring_cfg->cold_boot_calib);
+
+	ath12k_info(ab,
+		    "dp_ring_cfg: dp_num_clients_max=%u dp_mon_status_buf=%u\n",
+		    ath12k_dp_ring_cfg->dp_num_clients_max,
+		    ath12k_dp_ring_cfg->dp_mon_status_buf);
 }
 
 static int ath12k_core_start(struct ath12k_base *ab)
