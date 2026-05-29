@@ -344,10 +344,14 @@ void ath12k_wifi8_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 	struct ath12k_dp_peer *dp_peer;
 	struct ath12k_dp_hw *dp_hw = &ah->dp_hw;
 	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8;
+	struct ath12k_dp *central_dp = ath12k_get_central_dp(dp);
+	struct ath12k_base *ab = central_dp->ab;
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(central_dp);
+	struct hal_srng *srng = &ab->hal.srng_list[dp_wifi8->sam_cmd_ring.ring_id];
 	u16 link_band_id[HAL_TASC_BAND_MAX];
 	u16 peerid_index;
 	struct ath12k_sta *ahsta;
-	int i;
+	int i, ret;
 
 	dp_hw_grp_wifi8 = ath12k_get_dp_hw_group_wifi8(dp->dp_hw_grp);
 
@@ -383,6 +387,24 @@ void ath12k_wifi8_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 	clear_bit(dp_peer->stats_id, dp_hw_grp_wifi8->free_stats_id);
 
 	clear_bit(dp_peer->sta_id, dp_hw->free_sta_id_map);
+
+	/* Send peer clear command over all links.
+	 * TODO: In v2 hardware, a new link_mask field allows a single SAM command
+	 * to be sent for all links, with bits set for each link.
+	 */
+	if (!dp_peer->is_vdev_peer && ab && srng) {
+		for (i = 0; i < HAL_TX_NUM_MAX_LINKS; i++) {
+			ret = ath12k_wifi8_hal_tx_sam_cmd_send
+						(ab, srng, i,
+						 HAL_SAM_PEER_CLEAR_PROGRAMMING_BO,
+						 dp_peer->sta_id, false);
+
+			if (ret < 0)
+				ath12k_warn(ab,
+					    "failed to send SAM peer clear command for link %d: %d\n",
+					    i, ret);
+		}
+	}
 
 	if (dp_peer->dp_peer_state >= ATH12K_DP_PEER_LOGICALLY_DELETED) {
 		ath12k_wifi8_dp_peer_cleanup(dp_hw, dp_peer);
