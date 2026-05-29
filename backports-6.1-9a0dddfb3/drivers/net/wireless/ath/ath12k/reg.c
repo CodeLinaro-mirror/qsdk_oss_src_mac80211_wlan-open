@@ -665,6 +665,7 @@ int ath12k_regd_update(struct ath12k *ar, bool init)
 
 		for_each_ar(ah, ar_tmp, i) {
 			ath12k_update_regd_cac_timeout_ext(ar_tmp, regd_copy);
+			ath12k_update_regd_block_dfs_ext(ar_tmp, regd_copy);
 		}
 	}
 #endif /* CPTCFG_QCN_EXTN && CPTCFG_QCA_LAB_TEST_FEATURES */
@@ -4156,6 +4157,92 @@ u8 ath12k_reg_get_opclass_from_bw(u16 bw)
 			return ath12k_opclass_bw_map[i].opclass;
 
 	return 0;
+}
+
+/**
+ * ath12k_reg_get_class_from_country() - Get operating class table for a country
+ * @country: 3-byte country code array, or NULL for global
+ *
+ * Returns the operating class map table for the given country.  Currently
+ * ath12k only defines the global operating class table (global_op_class[]).
+ * Country-specific tables (US, EU, Japan, etc.) can be added here in the
+ * future when needed.
+ *
+ * Passing NULL (or any unrecognised country) returns global_op_class[].
+ *
+ * Return: Pointer to the operating class map table (never NULL).
+ */
+static const struct ath12k_op_class_map_t *
+ath12k_reg_get_class_from_country(const u8 *country)
+{
+	return global_op_class;
+}
+
+/* Convert an IEEE channel number to a frequency using opclass table params */
+static u32 ath12k_opclass_chan_to_freq(const struct ath12k_op_class_map_t *tbl,
+				       u8 ieee_chan)
+{
+	return tbl->start_freq + (ATH12K_FREQ_TO_CHAN_SCALE * ieee_chan);
+}
+
+/*
+ * Search for @freq in a single opclass entry's channel list.
+ * The channel list ends at a zero entry (terminator) or at the array bound.
+ * Returns the opclass on match, 0 if not found.
+ */
+static u8 ath12k_search_freq_in_opclass(const struct ath12k_op_class_map_t *tbl,
+					u32 freq)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(tbl->channels); i++) {
+		u8 chan = tbl->channels[i];
+
+		if (!chan)
+			break;
+
+		if (ath12k_opclass_chan_to_freq(tbl, chan) == freq)
+			return tbl->op_class;
+	}
+
+	return 0;
+}
+
+static u8 ath12k_get_opclass_by_freq(const struct ath12k_op_class_map_t *tbl,
+				     u32 freq, u16 ch_width,
+				     u16 behav_limit)
+{
+	u8 opclass;
+
+	for (; tbl && tbl->op_class; tbl++) {
+		if (tbl->chan_spacing != ch_width)
+			continue;
+
+		if (!(tbl->behav_limit & behav_limit))
+			continue;
+
+		opclass = ath12k_search_freq_in_opclass(tbl, freq);
+		if (opclass)
+			return opclass;
+	}
+
+	return 0;
+}
+
+/**
+ * ath12k_reg_get_opclass_from_freq_width() - Get operating class for a channel
+ * @country: 3-byte country code, or NULL for global operating class table
+ * @freq: channel center frequency in MHz
+ * @ch_width: channel width in MHz
+ * @behav_limit: behavior limit bitmask
+ *
+ * Return: Operating class on success, 0 if no entry matches.
+ */
+u8 ath12k_reg_get_opclass_from_freq_width(const u8 *country, u32 freq,
+					  u16 ch_width, u16 behav_limit)
+{
+	return ath12k_get_opclass_by_freq(ath12k_reg_get_class_from_country(country),
+					  freq, ch_width, behav_limit);
 }
 
 s16 ath12k_reg_psd_2_eirp(s16 psd, uint16_t ch_bw)

@@ -692,6 +692,33 @@ void ath12k_reg_fill_subchan_centers(u8 nchans, u8 cfi, u8 *subchannels);
  * Return: Operating class on success, 0 on failure
  */
 u8 ath12k_reg_get_opclass_from_bw(u16 bw);
+/**
+ * ath12k_reg_get_opclass_from_freq_width() - Get operating class for a channel
+ * @country:     3-byte country code, or NULL for global operating class table
+ * @freq:        Channel center frequency in MHz
+ * @ch_width:    Channel width in MHz (e.g. 20 for 20 MHz BW)
+ * @behav_limit: Behavior limit bitmask (e.g. BIT(BEHAV_NONE))
+ *
+ * Obtains the operating class table via ath12k_reg_get_class_from_country()
+ * (currently always returns global_op_class[]) and searches for an entry
+ * matching @freq, @ch_width, and @behav_limit.
+ *
+ * The lookup uses three helpers:
+ *   - ath12k_get_opclass_by_freq(): iterates the table, filters by
+ *     chan_spacing and behav_limit, then delegates to the next helper.
+ *   - ath12k_search_freq_in_opclass(): walks a single opclass entry's
+ *     channel list (zero-terminated) looking for a frequency match.
+ *   - ath12k_opclass_chan_to_freq(): converts an IEEE channel number to
+ *     frequency as start_freq + ATH12K_FREQ_TO_CHAN_SCALE * ieee_chan.
+ *
+ * Typical call for 5 GHz 20 MHz global operating class:
+ *   ath12k_reg_get_opclass_from_freq_width(NULL, freq, 20, BIT(BEHAV_NONE))
+ *
+ * Return: Operating class on success, 0 if not found.
+ */
+u8 ath12k_reg_get_opclass_from_freq_width(const u8 *country, u32 freq,
+					  u16 ch_width, u16 behav_limit);
+
 s16 ath12k_reg_psd_2_eirp(s16 psd, uint16_t ch_bw);
 void ath12k_reg_get_regulatory_pwrs(struct ath12k *ar, u32 freq,
 				    u8 reg_6g_power_mode, s8 *max_reg_eirp,
