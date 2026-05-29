@@ -1220,6 +1220,65 @@ void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr,
 }
 
 /**
+ * struct ath12k_batch_cleanup_ctx - Context for the phase-1 peer-collection
+ *                                   iterator used by
+ *                                   ath12k_dp_link_peer_batch_cleanup.
+ * @ar:           Radio instance; forwarded to __ath12k_dp_link_peer_unassign.
+ * @dp:           Global ath12k_dp; forwarded to __ath12k_dp_link_peer_unassign.
+ * @dp_hw:        dp_hw pointer; forwarded to __ath12k_dp_link_peer_unassign.
+ * @peer_match:   Optional caller-supplied filter; NULL means match all peers.
+ * @context:      Opaque data forwarded to @peer_match.
+ * @cleanup_list: Local list onto which matched peers are collected; freed
+ *                after synchronize_rcu() in phase 2.
+ * @count:        Number of peers collected so far.
+ */
+struct ath12k_batch_cleanup_ctx {
+	struct ath12k    *ar;
+	struct ath12k_dp *dp;
+	struct ath12k_dp_hw *dp_hw;
+	bool (*peer_match)(struct ath12k_dp_link_peer *link_peer, void *data);
+	void             *context;
+	struct list_head  cleanup_list;
+	int               count;
+};
+
+/**
+ * ath12k_batch_cleanup_cb() - Phase-1 per-peer callback for
+ *                             ath12k_dp_link_peer_batch_cleanup.
+ * @peer: Current ath12k_dp_link_peer visited by the iterator.
+ * @data: Pointer to struct ath12k_batch_cleanup_ctx.
+ *
+ * Mirrors the body of the old list_for_each_entry_safe loop:
+ *   - skips peers that do not satisfy ctx->peer_match (if set)
+ *   - calls __ath12k_dp_link_peer_unassign to detach the peer from all
+ *     data-path tables
+ *   - appends the peer to ctx->cleanup_list for phase-2 freeing
+ *
+ * Must NOT call synchronize_rcu() or sleep; that is done by the caller
+ * after iteration completes.
+ *
+ * Return: always 0 (iteration is never aborted).
+ */
+static void ath12k_batch_cleanup_cb(struct ath12k_pdev_dp *dp_pdev,
+				    struct ath12k_dp_link_peer *peer, void *data)
+{
+	struct ath12k_batch_cleanup_ctx *ctx = data;
+
+	if (ctx->peer_match && !ctx->peer_match(peer, ctx->context))
+		return;
+
+	spin_lock_bh(&dp_pdev->dp->dp_lock);
+
+	__ath12k_dp_link_peer_unassign(ctx->ar, ctx->dp, ctx->dp_hw,
+				       peer, NULL, peer->addr);
+
+	spin_unlock_bh(&dp_pdev->dp->dp_lock);
+
+	list_add_tail(&peer->list, &ctx->cleanup_list);
+	ctx->count++;
+}
+
+/**
  * ath12k_dp_link_peer_batch_cleanup()
  * @ar: ath12k radio instance
  * @peer_match: Callback to determine if peer should be cleaned up
@@ -1235,41 +1294,32 @@ ath12k_dp_link_peer_batch_cleanup(struct ath12k *ar,
 						     void *),
 				  void *context)
 {
-	struct ath12k_dp *dp = ar->dp.dp;
-	struct ath12k_dp_hw *dp_hw = &ar->ah->dp_hw;
 	struct ath12k_dp_link_peer *peer, *tmp;
-	struct list_head cleanup_list;
-	int count = 0;
+	struct ath12k_batch_cleanup_ctx ctx = {
+		.ar         = ar,
+		.dp         = ar->dp.dp,
+		.dp_hw      = &ar->ah->dp_hw,
+		.peer_match = peer_match,
+		.context    = context,
+	};
 
-	INIT_LIST_HEAD(&cleanup_list);
+	INIT_LIST_HEAD(&ctx.cleanup_list);
 
-	spin_lock_bh(&dp_hw->peer_hash_lock);
-	spin_lock_bh(&dp->dp_lock);
-
-	list_for_each_entry_safe(peer, tmp, &dp->peers, list) {
-		if (peer_match && !peer_match(peer, context))
-			continue;
-
-		__ath12k_dp_link_peer_unassign(ar, dp, dp_hw, peer, NULL, peer->addr);
-
-		list_add_tail(&peer->list, &cleanup_list);
-		count++;
-	}
-
-	spin_unlock_bh(&dp->dp_lock);
-	spin_unlock_bh(&dp_hw->peer_hash_lock);
-
-	if (!count)
-		return count;
+	/* Phase 1: collect and unlink matched peers via the RCU-safe iterator */
+	ath12k_dp_link_peer_iterate_by_dp_pdev(&ar->dp,
+					       ath12k_batch_cleanup_cb, &ctx);
+	if (!ctx.count)
+		return 0;
 
 	synchronize_rcu();
 
-	list_for_each_entry_safe(peer, tmp, &cleanup_list, list) {
+	/* Phase 2: free peers after RCU grace period */
+	list_for_each_entry_safe(peer, tmp, &ctx.cleanup_list, list) {
 		list_del(&peer->list);
 		__ath12k_link_peer_free(peer);
 	}
 
-	return count;
+	return ctx.count;
 }
 EXPORT_SYMBOL(ath12k_dp_link_peer_batch_cleanup);
 
@@ -1854,131 +1904,6 @@ u8 ath12k_dp_validate_hw_link_id(u8 hw_link_id)
 	return hw_link_id;
 }
 EXPORT_SYMBOL(ath12k_dp_validate_hw_link_id);
-
-/**
- * ath12k_dp_me_peer_walk_action(): Walks across DP peers and performs desired action.
- * @dp - Data path object for SOC.
- * @dp_vif - Data path Virtual Interface
- * @dp_link_vif - Data Path Link specific object.
- * @action_fn: Desired action fn.
- * @app_data: App data to perform the relevant action.
- *
- * Returns: Success or Failure.
- */
-int ath12k_dp_peer_walk_action(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
-			       struct ath12k_dp_link_vif *dp_link_vif,
-			       int (*action_fn)(struct ath12k_dp *,
-						struct ath12k_dp_vif *,
-						struct ath12k_dp_link_vif *,
-						struct ath12k_dp_peer *,
-						void *,
-						struct ath12k_dp_tx_msdu_info *msdu_info),
-			       void *app_data,
-			       struct ath12k_dp_tx_msdu_info *msdu_info)
-{
-	struct ath12k_dp_link_peer *peer = NULL;
-	int vdev_id = dp_link_vif->vdev_id;
-	int ret = 0;
-
-	if (!action_fn)
-		return -EOPNOTSUPP;
-
-	spin_lock_bh(&dp->dp_lock);
-	list_for_each_entry(peer, &dp->peers, list) {
-		/*
-		 * Extract dp_peer from the link_peer obj.
-		 */
-		struct ath12k_dp_peer *dp_peer = peer->dp_peer;
-
-		/*
-		 * We ignore for Repeator for the current Mcast case.
-		 */
-		if (!dp_peer || dp_peer->use_4addr)
-			continue;
-
-		/*
-		 * We ignore the peers whose vdev_id does not match.
-		 */
-		if (peer->vdev_id != vdev_id)
-			continue;
-
-		/*
-		 * We process the pkt on primary_link alone.
-		 */
-		if (!peer->primary_link)
-			continue;
-
-		/*
-		 * Desired Control/Data path functionality will be invoked here.
-		 */
-		ret = action_fn(dp, dp_vif, dp_link_vif, dp_peer, app_data,
-				msdu_info);
-
-		/* TODO:
-		 * Debug the reason for failure. Increment stats basing on ret.
-		 */
-
-		if (ret)
-			break;
-	}
-	spin_unlock_bh(&dp->dp_lock);
-
-	return ret;
-}
-
-/**
- * ath12k_dp_iterate_vdev_link_peer - Iterate over all peers in a vdev
- * @dp: Data path context
- * @vdev_id: Virtual device ID to filter peers
- * @callback: Function to call for each matching peer
- *
- * Iterates over all link peers associated with the specified vdev_id and
- * invokes the callback function for each match. Caller must hold dp->dp_lock.
- */
-void ath12k_dp_iterate_vdev_link_peer(struct ath12k_dp *dp, int vdev_id,
-				      void (*callback)(struct ath12k_dp *,
-						       struct ath12k_dp_link_peer *))
-{
-	struct ath12k_dp_link_peer *peer;
-
-	if (!dp || !callback)
-		return;
-
-	lockdep_assert_held(&dp->dp_lock);
-
-	list_for_each_entry(peer, &dp->peers, list) {
-		if (peer->vdev_id == vdev_id)
-			callback(dp, peer);
-	}
-}
-EXPORT_SYMBOL(ath12k_dp_iterate_vdev_link_peer);
-
-/**
- * ath12k_dp_iterate_pdev_link_peer - Iterate over all peers in a pdev
- * @dp: Data path context
- * @pdev_idx: Physical device ID to filter peers
- * @callback: Function to call for each matching peer
- *
- * Iterates over all link peers associated with the specified pdev_idx and
- * invokes the callback function for each match. Caller must hold dp->dp_lock.
- */
-void ath12k_dp_iterate_pdev_link_peer(struct ath12k_dp *dp, int pdev_idx,
-				      void (*callback)(struct ath12k_dp *,
-						       struct ath12k_dp_link_peer *))
-{
-	struct ath12k_dp_link_peer *peer;
-
-	if (!dp || !callback)
-		return;
-
-	lockdep_assert_held(&dp->dp_lock);
-
-	list_for_each_entry(peer, &dp->peers, list) {
-		if (peer->pdev_idx == pdev_idx)
-			callback(dp, peer);
-	}
-}
-EXPORT_SYMBOL(ath12k_dp_iterate_pdev_link_peer);
 
 struct ath12k_dp_vif *ath12k_dp_peer_get_dp_vif(struct ath12k_dp_peer *dp_peer)
 {
@@ -2923,7 +2848,8 @@ ath12k_dp_link_peer_iterate_by_dp_pdev(struct ath12k_pdev_dp *dp_pdev,
 
 	for (i = start; i < end; i++) {
 		dp_peer = rcu_dereference(dp_hw->dp_peer_list[i]);
-		if (!dp_peer)
+		if (!dp_peer ||
+		    dp_peer->dp_peer_state >= ATH12K_DP_PEER_LOGICALLY_DELETED)
 			continue;
 
 		link_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer,
@@ -2939,93 +2865,171 @@ ath12k_dp_link_peer_iterate_by_dp_pdev(struct ath12k_pdev_dp *dp_pdev,
 }
 EXPORT_SYMBOL(ath12k_dp_link_peer_iterate_by_dp_pdev);
 
-void ath12k_dp_peer_cleanup_all(struct ath12k *ar)
+void
+ath12k_dp_link_peer_iterate_by_device(struct ath12k_dp *dp,
+				      void (*iter_fn)(struct ath12k_pdev_dp *dp_pdev,
+						      struct ath12k_dp_link_peer *peer,
+						      void *context),
+				      void *data)
 {
-	struct ath12k_dp_link_peer *link_peer, *tmp_link_peer;
-	struct list_head peers, dp_peer_list;
+	struct ath12k_pdev_dp *dp_pdev;
+	int i;
+
+	rcu_read_lock();
+
+	for (i = 0; i < MAX_RADIOS; i++) {
+		dp_pdev = rcu_dereference(dp->dp_pdevs[i]);
+		if (!dp_pdev)
+			continue;
+
+		ath12k_dp_link_peer_iterate_by_dp_pdev(dp_pdev, iter_fn, data);
+	}
+
+	rcu_read_unlock();
+}
+EXPORT_SYMBOL(ath12k_dp_link_peer_iterate_by_device);
+
+void ath12k_dp_peer_iterate_by_vif(struct ath12k_dp_hw *dp_hw,
+				   struct ieee80211_vif *vif,
+				   void (*iter_fn)(struct ath12k_dp_peer *peer,
+						   void *context),
+				   void *data)
+{
+	struct ath12k_dp_peer *peer;
+
+	if (!dp_hw || !vif || !iter_fn)
+		return;
+
+	spin_lock_bh(&dp_hw->peer_list_lock);
+
+	list_for_each_entry(peer, &dp_hw->peers, list) {
+		if (ath12k_dp_peer_get_vif(peer) != vif)
+			continue;
+
+		iter_fn(peer, data);
+	}
+
+	spin_unlock_bh(&dp_hw->peer_list_lock);
+}
+EXPORT_SYMBOL(ath12k_dp_peer_iterate_by_vif);
+
+struct ath12k_mac_cleanup_ctx {
+	struct ath12k    *ar;
+	struct list_head  link_peers;
+	struct list_head  dp_peers;
+};
+
+static void ath12k_mac_dp_peer_cleanup_cb(struct ath12k_pdev_dp *dp_pdev,
+					  struct ath12k_dp_link_peer *link_peer,
+					  void *data)
+{
+	struct ath12k_mac_cleanup_ctx *ctx = data;
+	struct ath12k *ar = ctx->ar;
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_hw_group *ag = ab->ag;
-	struct ath12k_dp_peer *dp_peer, *tmp_dp_peer;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	int i, num_tids;
+	struct ath12k_dp_hw *dp_hw = &ar->ah->dp_hw;
+	struct ath12k_hw *ah = ar->ah;
+	struct ath12k_dp_peer *dp_peer;
+	struct ath12k_dp_rx_tid *rx_tid;
+	int i, num_tids = ab->hal.hal_params->num_tids;
 	u16 peerid_index;
 	struct ieee80211_sta *sta;
 	struct ath12k_sta *ahsta;
+
+	spin_lock_bh(&dp->dp_lock);
+	ath12k_dp_ipa_peer_notify(ar, link_peer, NULL, link_peer->vdev_id, false);
+	/*Skip this for non primary_links and vdev peers*/
+	if (ath12k_dp_link_peer_get_sta(link_peer) && link_peer->dp_peer &&
+	    link_peer->primary_link) {
+		for (i = 0; i < num_tids; i++) {
+			rx_tid = &link_peer->dp_peer->rx_tid[i];
+
+			spin_lock_bh(&rx_tid->tid_lock);
+			ath12k_dp_arch_rx_peer_tid_delete(dp, ar, link_peer, i);
+			ath12k_dp_rx_frags_cleanup(rx_tid, true);
+			spin_unlock_bh(&rx_tid->tid_lock);
+		}
+	}
+
+	/* cleanup dp peer */
+	if (link_peer->dp_peer) {
+		dp_peer = link_peer->dp_peer;
+
+		if (!dp_peer->is_vdev_peer)
+			dp_peer->peer_links_map &= ~BIT(link_peer->link_id);
+
+		rcu_assign_pointer(dp_peer->link_peers[link_peer->hw_link_id], NULL);
+
+		if (link_peer->peer_id != ATH12K_MLO_PEER_ID_INVALID) {
+			peerid_index = ath12k_dp_peer_get_peerid_index(dp,
+								       link_peer->peer_id);
+			rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], NULL);
+		}
+
+		/*vdev peer cleanup is taken care later*/
+		if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE2 &&
+		    !dp_peer->is_vdev_peer && dp_peer->peer_links_map == 0) {
+			ath12k_dbg(ab, ATH12K_DBG_MAC | ATH12K_DBG_PEER,
+				   "dp_peer %pM dosent have active link_peers\n",
+				    dp_peer->addr);
+			if (dp_peer->is_mlo &&
+			    dp_peer->peer_id != ATH12K_MLO_PEER_ID_INVALID) {
+				sta = ath12k_dp_peer_get_sta(dp_peer);
+				ahsta = ath12k_sta_to_ahsta(sta);
+				clear_bit(dp_peer->peer_id, dp_hw->free_peer_id_map);
+				clear_bit(ahsta->ml_peer_id, ah->free_ml_peer_id_map);
+				ahsta->ml_peer_id = ATH12K_MLO_PEER_ID_INVALID;
+				ah->num_ml_peers--;
+			}
+
+			/* NULL out ahsta->dp_peer before synchronize_rcu() */
+			sta = ath12k_dp_peer_get_sta(dp_peer);
+			if (sta) {
+				ahsta = ath12k_sta_to_ahsta(sta);
+				rcu_assign_pointer(ahsta->dp_peer, NULL);
+			}
+
+			ath12k_dp_peer_hash_table_delete(dp_hw, dp_peer);
+
+			/* Remove ath12k_dp_peer from linked list */
+			spin_lock_bh(&dp_hw->peer_list_lock);
+			list_del(&dp_peer->list);
+			list_add(&dp_peer->list, &ctx->dp_peers);
+			spin_unlock_bh(&dp_hw->peer_list_lock);
+		}
+	}
+
+	ath12k_dp_link_peer_rhash_delete(dp, link_peer);
+	list_del(&link_peer->list);
+	list_add(&link_peer->list, &ctx->link_peers);
+	spin_unlock_bh(&dp->dp_lock);
+}
+
+void ath12k_dp_peer_cleanup_all(struct ath12k *ar)
+{
+	struct ath12k_dp_link_peer *link_peer, *tmp_link_peer;
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp_peer *dp_peer, *tmp_dp_peer;
+	int i, num_tids;
 	struct ath12k_hw *ah = ar->ah;
 	struct ath12k_dp_hw *dp_hw = &ah->dp_hw;
 	struct ath12k_dp_rx_tid *rx_tid;
-
-	INIT_LIST_HEAD(&peers);
-	INIT_LIST_HEAD(&dp_peer_list);
+	struct ath12k_mac_cleanup_ctx ctx = {.ar = ar};
 
 	num_tids = ab->hal.hal_params->num_tids;
 
-	spin_lock_bh(&dp_hw->peer_hash_lock);
-	spin_lock_bh(&dp->dp_lock);
-	list_for_each_entry_safe(link_peer, tmp_link_peer, &dp->peers, list) {
-		ath12k_dp_ipa_peer_notify(ar, link_peer, NULL, link_peer->vdev_id, false);
-		/*Skip this for non primary_links and vdev peers*/
-		if (ath12k_dp_link_peer_get_sta(link_peer) && link_peer->dp_peer &&
-		    link_peer->primary_link) {
-			for (i = 0; i < num_tids; i++) {
-				rx_tid = &link_peer->dp_peer->rx_tid[i];
+	INIT_LIST_HEAD(&ctx.link_peers);
+	INIT_LIST_HEAD(&ctx.dp_peers);
 
-				spin_lock_bh(&rx_tid->tid_lock);
-				ath12k_dp_arch_rx_peer_tid_delete(dp, ar, link_peer, i);
-				ath12k_dp_rx_frags_cleanup(rx_tid, true);
-				spin_unlock_bh(&rx_tid->tid_lock);
-			}
-		}
-
-		/* cleanup dp peer */
-		if (link_peer->dp_peer) {
-			dp_peer = link_peer->dp_peer;
-			peerid_index = ath12k_dp_peer_get_peerid_index(dp,
-								       link_peer->peer_id);
-			if (!dp_peer->is_vdev_peer)
-				dp_peer->peer_links_map &= ~BIT(link_peer->link_id);
-			rcu_assign_pointer(dp_peer->link_peers[link_peer->hw_link_id],
-					   NULL);
-			rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], NULL);
-
-			/*vdev peer cleanup is taken care later*/
-			if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE2 &&
-			    !dp_peer->is_vdev_peer && dp_peer->peer_links_map == 0) {
-				ath12k_dbg(ab, ATH12K_DBG_MAC | ATH12K_DBG_PEER,
-					   "dp_peer %pM doesn't have active link_peers\n",
-					   dp_peer->addr);
-				if (dp_peer->is_mlo &&
-				    dp_peer->peer_id != ATH12K_MLO_PEER_ID_INVALID) {
-					sta = ath12k_dp_peer_get_sta(dp_peer);
-					ahsta = ath12k_sta_to_ahsta(sta);
-					clear_bit(dp_peer->peer_id,
-						  dp_hw->free_peer_id_map);
-					clear_bit(ahsta->ml_peer_id,
-						  ah->free_ml_peer_id_map);
-					ahsta->ml_peer_id = ATH12K_MLO_PEER_ID_INVALID;
-					ah->num_ml_peers--;
-				}
-				ath12k_dp_peer_hash_table_delete(dp_hw, dp_peer);
-
-				/* Remove dp_peer from linked list holding list_lock */
-				spin_lock_bh(&dp_hw->peer_list_lock);
-				list_del(&dp_peer->list);
-				list_add(&dp_peer->list, &dp_peer_list);
-				spin_unlock_bh(&dp_hw->peer_list_lock);
-			}
-		}
-
-		ath12k_dp_link_peer_rhash_delete(dp, link_peer);
-		list_del(&link_peer->list);
-		list_add(&link_peer->list, &peers);
-	}
-	spin_unlock_bh(&dp->dp_lock);
-	spin_unlock_bh(&dp_hw->peer_hash_lock);
-
+	/* Phase 1: collect and unlink all peers via the RCU-safe iterator */
+	ath12k_dp_link_peer_iterate_by_device(dp, ath12k_mac_dp_peer_cleanup_cb,
+					      &ctx);
 	synchronize_rcu();
 
 	/*Link peer cleanup part*/
-	list_for_each_entry_safe(link_peer, tmp_link_peer, &peers, list) {
+	list_for_each_entry_safe(link_peer, tmp_link_peer, &ctx.link_peers, list) {
 		if (ath12k_dp_link_peer_get_sta(link_peer) && link_peer->dp_peer &&
 		    link_peer->primary_link) {
 			for (i = 0; i < num_tids; i++) {
@@ -3039,7 +3043,7 @@ void ath12k_dp_peer_cleanup_all(struct ath12k *ar)
 	}
 
 	/*Dp peer cleanup part*/
-	list_for_each_entry_safe(dp_peer, tmp_dp_peer, &dp_peer_list, list) {
+	list_for_each_entry_safe(dp_peer, tmp_dp_peer, &ctx.dp_peers, list) {
 		list_del(&dp_peer->list);
 
 		if (dp_peer->qos && dp_peer->qos->telemetry_peer_ctx)

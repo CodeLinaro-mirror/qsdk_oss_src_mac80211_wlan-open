@@ -2138,9 +2138,9 @@ u64 ath12k_get_timestamp_in_us(void)
        return ((u64)ts.tv_sec * 1000000) + (ts.tv_nsec / 1000);
 }
 
-void ath12k_dp_mon_peer_update_telemetry_stats(struct ath12k_base *ab,
-                                              struct ath12k_dp_link_peer *peer,
-                                              struct ath12k_pdev *pdev)
+void ath12k_dp_mon_peer_update_telemetry_stats(struct ath12k_pdev_dp *dp_pdev,
+					       struct ath12k_dp_link_peer *peer,
+					       void *context)
 {
        struct ath12k_mon_peer_airtime_stats *airtime_stats;
        struct peer_airtime_consumption *peer_consump;
@@ -2148,9 +2148,7 @@ void ath12k_dp_mon_peer_update_telemetry_stats(struct ath12k_base *ab,
        u32 remainder, time_diff;
        u32 usage;
        u16 consump_per_sec;
-       struct ath12k *ar = pdev->ar;
-       struct ath12k_pdev_dp *dp = &ar->dp;
-       struct ath12k_pdev_dp_stats *pdev_stats = &dp->stats;
+	struct ath12k_pdev_dp_stats *pdev_stats = &dp_pdev->stats;
        u8 ac;
 	struct ath12k_atf_peer_airtime *atf_airtime;
 
@@ -2207,54 +2205,24 @@ void ath12k_dp_mon_peer_update_telemetry_stats(struct ath12k_base *ab,
 	       pdev_stats->atf_airtime.rx_airtime_consumption[ac] += peer_consump->consumption;
                peer_consump->consumption = 0;
 
-               ath12k_dbg(ab,
-                          ATH12K_DBG_DP_HTT,
-                          "peer: %pM time diff: %d link air tx: %d rx: %d cons tx: %d rx: %d\n",
-                          peer->addr, time_diff,
-                          pdev_stats->telemetry_stats.tx_link_airtime[ac],
-                          pdev_stats->telemetry_stats.rx_link_airtime[ac],
-                          airtime_stats->tx_airtime_consumption[ac].avg_consumption_per_sec,
-                          airtime_stats->rx_airtime_consumption[ac].avg_consumption_per_sec);
+		ath12k_dbg(dp_pdev->dp->ab,
+			   ATH12K_DBG_DP_HTT,
+			   "peer: %pM time diff: %d link air tx: %d rx: %d cons tx: %d rx: %d\n",
+			    peer->addr, time_diff,
+			    pdev_stats->telemetry_stats.tx_link_airtime[ac],
+			    pdev_stats->telemetry_stats.rx_link_airtime[ac],
+			    airtime_stats->tx_airtime_consumption[ac].avg_consumption_per_sec,
+			    airtime_stats->rx_airtime_consumption[ac].avg_consumption_per_sec);
        }
 
        airtime_stats->last_update_time = current_time;
-}
-
-static inline void ath12k_pdev_dp_iterate_peer(struct ath12k_base *ab,
-                                              struct ath12k_pdev *pdev,
-                                              void (*iter)(struct ath12k_base *ab, struct ath12k_dp_link_peer *peer, struct ath12k_pdev *pdev))
-{
-       struct ath12k_dp_link_peer *peer, *tmp;
-       struct ieee80211_sta *sta;
-       struct ath12k *ar;
-
-       if (!pdev || !pdev->ar)
-               return;
-       ar = pdev->ar;
-       spin_lock_bh(&ab->dp->dp_lock);
-	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
-		if (!ath12k_dp_link_peer_get_vif(peer))
-			continue;
-
-		sta = ath12k_dp_link_peer_get_sta(peer);
-               if (!sta)
-                       continue;
-               /* In a split PHY scenario, if a pdev-level event occurs,
-                * halt the operation if the peer belongs to a different pdev
-                * than the one that triggered the event.
-                */
-               if (peer->pdev_idx != ar->pdev_idx)
-                       continue;
-
-               iter(ab, peer, pdev);
-       }
-       spin_unlock_bh(&ab->dp->dp_lock);
 }
 
 int ath12k_dp_mon_pdev_update_telemetry_stats(struct ath12k_base *ab,
                                              const int pdev_id)
 {
        struct ath12k_pdev *pdev;
+	struct ath12k_pdev_dp *dp_pdev;
 
        rcu_read_lock();
        pdev = rcu_dereference(ab->pdevs_active[pdev_id]);
@@ -2266,9 +2234,12 @@ int ath12k_dp_mon_pdev_update_telemetry_stats(struct ath12k_base *ab,
        if (pdev->ar)
                ath12k_dp_mon_clear_pdev_airtime_stats(pdev->ar);
 
-       ath12k_pdev_dp_iterate_peer(ab, pdev,
-                                   ath12k_dp_mon_peer_update_telemetry_stats);
-       rcu_read_unlock();
+	dp_pdev = &pdev->ar->dp;
+
+	ath12k_dp_link_peer_iterate_by_dp_pdev(dp_pdev,
+					       ath12k_dp_mon_peer_update_telemetry_stats,
+					       NULL);
+	rcu_read_unlock();
 
        return 0;
 }

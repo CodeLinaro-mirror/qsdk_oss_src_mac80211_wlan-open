@@ -11330,9 +11330,9 @@ static int ath12k_vendor_atf_offload_peer_config(struct ath12k *ar,
 }
 
 static
-void ath12k_atf_offload_reset_stats_iterator(struct ath12k_pdev_dp *dp_pdev,
-					     struct ath12k_dp_link_peer *peer,
-					     void *data)
+void ath12k_atf_offload_reset_stats_cb(struct ath12k_pdev_dp *dp_pdev,
+				       struct ath12k_dp_link_peer *peer,
+				       void *data)
 {
 	struct ath12k_atf_peer_airtime *atf_peer_airtime;
 
@@ -11363,7 +11363,7 @@ static void ath12k_atf_offload_reset_stats(struct ath12k *ar)
 	}
 
 	ath12k_dp_link_peer_iterate_by_dp_pdev(&ar->dp,
-					       ath12k_atf_offload_reset_stats_iterator,
+					       ath12k_atf_offload_reset_stats_cb,
 					       NULL);
 
 	ar->atf_stats_accum_start_time = ath12k_get_timestamp_in_us();
@@ -11375,9 +11375,9 @@ struct ath12k_atf_update_airtime_params {
 };
 
 static
-void ath12k_atf_offload_update_peer_airtime_iterator(struct ath12k_pdev_dp *dp_pdev,
-						     struct ath12k_dp_link_peer *peer,
-						     void *data)
+void ath12k_atf_offload_update_peer_airtime_cb(struct ath12k_pdev_dp *dp_pdev,
+					       struct ath12k_dp_link_peer *peer,
+					       void *data)
 {
 	int ac, i;
 	u8 group_index = 0xFF;
@@ -11459,7 +11459,7 @@ static void ath12k_atf_offload_update_peer_airtime(struct ath12k *ar)
 	params.pdev_actual_airtime = pdev_actual_airtime;
 
 	ath12k_dp_link_peer_iterate_by_dp_pdev(&ar->dp,
-					       ath12k_atf_offload_update_peer_airtime_iterator,
+					       ath12k_atf_offload_update_peer_airtime_cb,
 					       &params);
 
 	ath12k_info(ar->ab, "Total Airtime(us)     %u", pdev_actual_airtime);
@@ -11471,9 +11471,9 @@ struct ath12k_atf_offload_stats {
 	struct atf_peer_stat *peer_stats;
 };
 
-static void ath12k_atf_offload_print_stats_iterator(struct ath12k_pdev_dp *dp_pdev,
-						    struct ath12k_dp_link_peer *peer,
-						    void *data)
+static void ath12k_atf_offload_print_stats_cb(struct ath12k_pdev_dp *dp_pdev,
+					      struct ath12k_dp_link_peer *peer,
+					      void *data)
 {
 	struct ath12k_atf_offload_stats *offload_stats =
 					(struct ath12k_atf_offload_stats *)data;
@@ -11546,7 +11546,7 @@ static void ath12k_atf_offload_print_stats(struct timer_list *t)
 
 	offload_stats.peer_stats = peer_stats;
 	ath12k_dp_link_peer_iterate_by_dp_pdev(&ar->dp,
-					       ath12k_atf_offload_print_stats_iterator,
+					       ath12k_atf_offload_print_stats_cb,
 					       &offload_stats);
 
 	ath12k_info(ar->ab, "*****************************************************************************************************");
@@ -11683,7 +11683,7 @@ struct ath12k_atf_dumpit_ctx {
 };
 
 /**
- * ath12k_vendor_atf_stats_dumpit_iterator() - Per-peer callback for ATF stats dumpit.
+ * ath12k_vendor_atf_stats_dumpit_cb() - Per-peer callback for ATF stats dumpit.
  * @peer: Current ath12k_dp_link_peer being visited by the iterator.
  * @data: Pointer to a struct ath12k_atf_dumpit_ctx.
  *
@@ -11697,9 +11697,9 @@ struct ath12k_atf_dumpit_ctx {
  * Return: 0 to continue iteration, negative errno to abort.
  */
 static void
-ath12k_vendor_atf_stats_dumpit_iterator(struct ath12k_pdev_dp *dp_pdev,
-					struct ath12k_dp_link_peer *peer,
-					void *data)
+ath12k_vendor_atf_stats_dumpit_cb(struct ath12k_pdev_dp *dp_pdev,
+				  struct ath12k_dp_link_peer *peer,
+				  void *data)
 {
 	struct ath12k_atf_dumpit_ctx *ctx = (struct ath12k_atf_dumpit_ctx *)data;
 	struct sk_buff *msg = ctx->msg;
@@ -11827,7 +11827,7 @@ static int ath12k_vendor_atf_stats_dumpit(struct wiphy *wiphy,
 	ctx.tailroom   = skb_tailroom(msg);
 
 	ath12k_dp_link_peer_iterate_by_dp_pdev(&ar->dp,
-					       ath12k_vendor_atf_stats_dumpit_iterator,
+					       ath12k_vendor_atf_stats_dumpit_cb,
 					       &ctx);
 	if (ctx.ret)
 		return ctx.ret;
