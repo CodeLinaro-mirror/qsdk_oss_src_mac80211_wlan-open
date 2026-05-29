@@ -79,16 +79,22 @@ static u16 ath12k_wifi8_sta_id_alloc(struct ath12k_dp_hw *dp_hw)
 
 static u16
 ath12k_wifi8_ucast_stats_id_alloc(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8,
-				  u16 dp_peer_id, u8 tid, u8 hw_link_id)
+				  u16 dp_peer_id, u8 tid, u8 hw_link_id,
+				  unsigned int num_peer)
 {
 	u16 stats_id;
+	u16 max_stats_id = ATH12K_DEFAULT_UCAST_STATS_ID;
 	int i;
 
+	if (num_peer >= ATH12K_DEFAULT_UCAST_STATS_ID)
+		max_stats_id = ATH12K_MAX_EXT_UCAST_STATS_ID;
+
 	stats_id = dp_hw_grp_wifi8->last_ucast_stats_id;
-	for (i = 0; i < ATH12K_MAX_UCAST_STATS_ID; i++) {
+
+	for (i = 0; i < max_stats_id; i++) {
 		stats_id++;
 
-		if (stats_id >= ATH12K_MAX_UCAST_STATS_ID)
+		if (stats_id >= max_stats_id)
 			stats_id = 0;
 
 		if (test_bit(stats_id, dp_hw_grp_wifi8->free_stats_id))
@@ -208,6 +214,7 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 	struct ath12k_pdev_dp *dp_pdev;
 	int ret;
 	struct ath12k_dp_rx_tid *rx_tid;
+	unsigned int num_peers;
 
 	dp_hw_grp_wifi8 = ath12k_get_dp_hw_group_wifi8(ah->ag->dp_hw_grp);
 
@@ -320,11 +327,13 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 							     ATH12K_INVALID_TID,
 							     params->hw_link_id);
 	} else {
+		num_peers = bitmap_weight(dp_hw->free_peer_id_map, ATH12K_MAX_PEER_ID);
 		dp_peer->stats_id =
 			ath12k_wifi8_ucast_stats_id_alloc(dp_hw_grp_wifi8,
 							  dp_peer->peer_id,
 							  ATH12K_INVALID_TID,
-							  params->hw_link_id);
+							  params->hw_link_id,
+							  num_peers);
 	}
 
 	/* Add ath12k_dp_peer to the linked list holding peer_list_lock */
