@@ -2273,8 +2273,8 @@ int ath12k_dp_mon_pdev_update_telemetry_stats(struct ath12k_base *ab,
        return 0;
 }
 
-static void ath12k_dp_mon_peer_telemetry_stats(const struct ath12k_dp_link_peer *peer,
-                                              struct ath12k_peer_telemetry_stats *stats)
+void ath12k_dp_mon_peer_telemetry_stats(const struct ath12k_dp_link_peer *peer,
+					struct ath12k_peer_telemetry_stats *stats)
 {
        const struct ath12k_dp_mon_peer_stats *dp_stats;
        u8 ac;
@@ -2289,27 +2289,6 @@ static void ath12k_dp_mon_peer_telemetry_stats(const struct ath12k_dp_link_peer 
 	stats->snr = dp_stats->avg_snr;
 }
 EXPORT_SYMBOL(ath12k_dp_mon_pdev_update_telemetry_stats);
-
-int ath12k_dp_get_peer_telemetry_stats(struct ath12k_base *ab,
-                                      const u8 *peer_addr,
-                                      struct ath12k_peer_telemetry_stats *stats)
-{
-       struct ath12k_dp_link_peer *peer;
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-
-	lockdep_assert_held(&dp->dp_lock);
-       peer = ath12k_dp_link_peer_find_by_addr(dp, peer_addr);
-       if (!peer) {
-               ath12k_dbg(ab,
-                          ATH12K_DBG_DP_HTT,
-                          "Failed to find peer at addr: %pM\n", peer_addr);
-               return -EINVAL;
-       }
-
-       ath12k_dp_mon_peer_telemetry_stats(peer, stats);
-
-       return 0;
-}
 
 static inline struct sk_buff *ath12k_mon_get_last_skb_from_fraglist(struct sk_buff *skb)
 {

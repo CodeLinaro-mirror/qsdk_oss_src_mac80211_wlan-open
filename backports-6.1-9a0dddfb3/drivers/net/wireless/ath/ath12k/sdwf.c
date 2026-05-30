@@ -216,13 +216,16 @@ void ath12k_get_peer_sla_config(struct ath12k_base *ab,
 	int tid, q_id;
 	struct ath12k_msduq *msduq_map;
 
-	lockdep_assert_held(&ab->dp->dp_lock);
-
+	WARN_ON(!rcu_read_lock_held());
 	sawf_ctx = ath12k_get_qos(ab);
 	if (!sawf_ctx)
 		return;
 
-	peer_ctx = ath12k_sdwf_get_qos_ctx(ab, peer->dp_peer);
+	/* Read qos context directly without allocation — caller holds rcu_read_lock */
+	peer_ctx = peer->dp_peer->qos;
+	if (!peer_ctx)
+		return;
+
 	for (tid = 0; tid < QOS_TID_MAX; tid++) {
 		for (q_id = 0; q_id < QOS_TID_MDSUQ_MAX; q_id++) {
 			msduq_map  =  &peer_ctx->msduq_map[tid][q_id];

@@ -1041,9 +1041,8 @@ int ath12k_dp_mon_buf_replenish(struct ath12k_dp *dp,
 void ath12k_dp_mon_rx_process_ulofdma_stats(struct hal_rx_mon_ppdu_info *ppdu_info);
 int ath12k_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int mac_id,
 				       struct napi_struct *napi, int *budget);
-int ath12k_dp_get_peer_telemetry_stats(struct ath12k_base *ab,
-                                      const u8 *peer_addr,
-                                      struct ath12k_peer_telemetry_stats *stats);
+void ath12k_dp_mon_peer_telemetry_stats(const struct ath12k_dp_link_peer *peer,
+					struct ath12k_peer_telemetry_stats *stats);
 
 int ath12k_dp_mon_pdev_update_telemetry_stats(struct ath12k_base *ab,
                                              int pdev_id);

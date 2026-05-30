@@ -85,6 +85,7 @@ static int ath12k_telemetry_create_destroy_peer_agent(struct ath12k_base *ab,
 	peer_obj.pdev_id = ath12k_get_pdev_id(pdev);
 	ether_addr_copy(peer_obj.peer_mac_addr, peer->addr);
 	peer_obj.peer_id = peer->peer_id;
+	peer_obj.hw_link_id = peer->hw_link_id;
 	ath12k_dbg(NULL, ATH12K_DBG_RM,
 		   "id: %d peer: %p (ab:%p - pdev:%p) soc id: %d (pdev id: %d)\n",
 		   peer_obj.peer_id,
@@ -487,6 +488,8 @@ static int ath12k_calculate_link_rssi(struct ath12k_dp_link_peer *peer)
 	WARN_ON(!rcu_read_lock_held());
 	sta = ath12k_dp_link_peer_get_sta(peer);
 	link_sta = rcu_dereference(sta->link[peer->link_id]);
+	if (!link_sta)
+		return 0;
 	bw = link_sta->bandwidth;
 
 	bw_offset = ath12k_mac_get_bw_offset(bw);
@@ -500,27 +503,52 @@ static int ath12k_calculate_link_rssi(struct ath12k_dp_link_peer *peer)
 	return avg_snr;
 }
 
-int ath12k_get_peer_stats(int obj_id, void *parent,
+int ath12k_get_peer_stats(int obj_id, void *parent, u8 hw_link_id,
 			  struct agent_peer_iface_stats_obj *stats)
 {
 	int peer_id = obj_id;
 	struct ath12k_base *ab = (struct ath12k_base *)parent;
 	struct ath12k_peer_telemetry_stats dp_stats;
 	struct ath12k_dp_link_peer *peer;
+	struct ath12k *ar;
 	u8 ac;
 
-	/* Telemetry agent is expected to hold lock while fetching this stats
-	 */
 	if (!ab) {
 		ath12k_err(NULL, "Invalid peer object received from telemetry agent object\n");
 		return -EINVAL;
 	}
 
-	spin_lock_bh(&ab->dp->dp_lock);
-	peer = ath12k_dp_link_peer_find_by_id(ab->dp, peer_id);
+	/*
+	 * The telemetry agent calls this while holding agent_lock and
+	 * peer_db_lock.  The old implementation acquired dp_lock here,
+	 * creating an AB-BA deadlock with the teardown path:
+	 *
+	 *   stats path:    agent_lock -> peer_db_lock -> dp_lock  (old)
+	 *   teardown path: dp_lock -> agent_lock
+	 *
+	 * Fix: use hw_link_id to resolve the per-radio dp_pdev, then look
+	 * up the peer under rcu_read_lock() via the per-pdev peer-ID table
+	 * (ath12k_dp_link_peer_find_by_peerid_index).  This avoids dp_lock
+	 * entirely and is safe because:
+	 *   - ath12k_dp_link_peer_find_by_peerid_index() is RCU-safe
+	 *   - ath12k_calculate_link_rssi() requires rcu_read_lock_held()
+	 *   - airtime stats are read from peer->peer_stats.dp_mon_stats.mon_stats
+	 *     which mirrors what ath12k_dp_get_peer_telemetry_stats() reads;
+	 *     the u16 avg_consumption_per_sec fields are safe to read without
+	 *     dp_lock for telemetry purposes (slightly stale reads are acceptable)
+	 */
+
+	ar = ath12k_core_ar_from_hw_link_id(ab, hw_link_id);
+	if (!ar) {
+		ath12k_err(NULL, "No radio found for hw_link_id %u\n", hw_link_id);
+		return -EINVAL;
+	}
+
+	rcu_read_lock();
+	peer = ath12k_dp_link_peer_find_by_peerid_index(ab->dp, &ar->dp, peer_id);
 	if (!peer || peer->is_bridge_peer || !peer->assoc_success ||
 	    !ath12k_dp_link_peer_get_sta(peer)) {
-		spin_unlock_bh(&ab->dp->dp_lock);
+		rcu_read_unlock();
 		return -EINVAL;
 	}
 
@@ -528,9 +556,7 @@ int ath12k_get_peer_stats(int obj_id, void *parent,
 	ether_addr_copy(stats->peer_mld_mac, peer->ml_addr);
 	ether_addr_copy(stats->peer_link_mac, peer->addr);
 
-	if (ath12k_dp_get_peer_telemetry_stats(ab, peer->addr, &dp_stats))
-		ath12k_err(NULL, "Failed to get telemetry peer stats for %pM\n",
-			   peer->addr);
+	ath12k_dp_mon_peer_telemetry_stats(peer, &dp_stats);
 
 	stats->rssi = ath12k_calculate_link_rssi(peer);
 	if (peer->primary_link) {
@@ -551,7 +577,8 @@ int ath12k_get_peer_stats(int obj_id, void *parent,
 			   dp_stats.tx_airtime_consumption[ac],
 			   dp_stats.rx_airtime_consumption[ac]);
 	}
-	spin_unlock_bh(&ab->dp->dp_lock);
+
+	rcu_read_unlock();
 
 	return 0;
 }
@@ -631,6 +658,7 @@ static int ath12k_telemetry_peer_agent_update(struct ath12k_base *ab,
 	peer_obj.pdev_id = ath12k_get_pdev_id(pdev);
 	ether_addr_copy(peer_obj.peer_mac_addr, peer->addr);
 	peer_obj.peer_id = peer->peer_id;
+	peer_obj.hw_link_id = peer->hw_link_id;
 
 	if (is_create)
 		g_agent_ops->agent_peer_create_handler(peer, &peer_obj);
