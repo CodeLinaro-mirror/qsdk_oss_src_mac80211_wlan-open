@@ -23772,7 +23772,7 @@ static int ath12k_mac_apply_vdev_ratemask(struct ath12k_link_vif *arvif,
 
 	/* Fill the vdev rate mask params for HT from MCS mask */
 	arg.type = VDEV_RATEMASK_TYPE_HT;
-	arg.mask_lower32 = ht_m[0];
+	memcpy(&arg.mask_lower32, ht_m, sizeof(arg.mask_lower32));
 	ret = ath12k_wmi_vdev_rate_mask(arvif->ar, &arg);
 	if (ret)
 		return ret;
@@ -23803,12 +23803,27 @@ static int ath12k_mac_apply_vdev_ratemask(struct ath12k_link_vif *arvif,
 	if (ret)
 		return ret;
 
-	/* Fill the vdev rate mask params for HE from MCS mask */
+	/*
+	 * Populate HE vdev rate mask params from MCS mask.
+	 * Each NSS uses 14 consecutive bits: starting with NSS 0,
+	 * followed by NSS 1, and so on.
+	 */
+	lower64 = 0;
+	higher64 = 0;
+	for (nss = 0; nss < NL80211_HE_NSS_MAX; nss++) {
+		mcs = he_m[nss] & 0x3FFF;
+		offset = nss * 14;
+
+		if (offset < 64)
+			lower64 |= (u64)mcs << offset;
+		else
+			higher64 |= (u64)mcs << (offset - 64);
+	}
 	arg.type = VDEV_RATEMASK_TYPE_HE;
-	arg.mask_lower32 = (u32)he_m[0] | ((u32)he_m[1] << 16);
-	arg.mask_higher32 = (u32)he_m[2] | ((u32)he_m[3] << 16);
-	arg.mask_lower32_2 = (u32)he_m[4] | ((u32)he_m[5] << 16);
-	arg.mask_higher32_2 = (u32)he_m[6] | ((u32)he_m[7] << 16);
+	arg.mask_lower32 = lower_32_bits(lower64);
+	arg.mask_higher32 = upper_32_bits(lower64);
+	arg.mask_lower32_2 = lower_32_bits(higher64);
+	arg.mask_higher32_2 = upper_32_bits(higher64);
 	ret = ath12k_wmi_vdev_rate_mask(arvif->ar, &arg);
 	if (ret)
 		return ret;
