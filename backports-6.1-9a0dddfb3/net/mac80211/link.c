@@ -128,6 +128,7 @@ void ieee80211_link_init(struct ieee80211_sub_if_data *sdata,
 
 	wiphy_work_init(&link->csa.finalize_work,
 			ieee80211_csa_finalize_work);
+	INIT_LIST_HEAD(&link->csa.batch_list);
 	wiphy_work_init(&link->color_change_finalize_work,
 			ieee80211_color_change_finalize_work);
 	wiphy_delayed_work_init(&link->color_collision_detect_work,

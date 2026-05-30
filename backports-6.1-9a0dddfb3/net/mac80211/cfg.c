@@ -24,6 +24,15 @@
 #include "wme.h"
 #include "qcn_extns/cmn_extn.h"
 
+/*
+ * When IEEE80211_HW_BATCH_CSA is set, mac80211 waits up to this many
+ * milliseconds after the first CSA request on a chanctx before committing
+ * the beacons to hardware.  The intent is to allow hostapd time to issue
+ * NL80211_CMD_CHANNEL_SWITCH for all co-located AP VIFs within a single
+ * beacon interval (~100 ms for a typical 10 TU interval).
+ */
+#define IEEE80211_CSA_BATCH_TIMEOUT_MS 100
+
 static struct ieee80211_link_data *
 ieee80211_link_or_deflink(struct ieee80211_sub_if_data *sdata, int link_id,
 			  bool require_valid)
@@ -2176,6 +2185,8 @@ static int ieee80211_stop_ap(struct wiphy *wiphy, struct net_device *dev,
 	 * to acquire the sdata lock and deadlock will be avoided.
 	 */
 	wiphy_work_cancel(wiphy, &link->csa.finalize_work);
+	/* remove from any in-flight CSA batch so the batch worker skips it */
+	list_del_init(&link->csa.batch_list);
 
 	/* see comment above */
 	wiphy_work_cancel(wiphy, &link->color_change_finalize_work);
@@ -4957,6 +4968,114 @@ static void ieee80211_color_change_abort(struct ieee80211_link_data *link)
 	cfg80211_color_change_aborted_notify(link->sdata->dev, link->link_id);
 }
 
+/*
+ * ieee80211_csa_batch_work - Phase 2 of batched CSA.
+ *
+ * Fires either immediately (when every AP link on the chanctx has submitted)
+ * or after IEEE80211_CSA_BATCH_TIMEOUT_MS, whichever comes first.  At this
+ * point all pending links have already reserved the new chanctx (Phase 1).
+ * This function commits the CSA beacons to hardware simultaneously for every
+ * collected link, ensuring the VDEV restart cannot preempt any VIF before its
+ * clients have seen a CSA IE.
+ */
+void ieee80211_csa_batch_work(struct wiphy *wiphy, struct wiphy_work *work)
+{
+	struct ieee80211_chanctx *ctx =
+		container_of(container_of(work, struct wiphy_delayed_work, work),
+			     struct ieee80211_chanctx, csa_batch_work);
+	struct ieee80211_link_data *link, *tmp;
+
+	lockdep_assert_wiphy(wiphy);
+
+	list_for_each_entry_safe(link, tmp, &ctx->csa_pending_list,
+				 csa.batch_list) {
+		struct ieee80211_sub_if_data *sdata = link->sdata;
+
+		list_del_init(&link->csa.batch_list);
+
+		if (!ieee80211_sdata_running(sdata))
+			continue;
+
+		if (link->csa_block_tx)
+			ieee80211_vif_block_queues_csa(sdata);
+
+		cfg80211_ch_switch_started_notify(sdata->dev,
+						  &link->csa.chanreq.oper,
+						  link->link_id,
+						  link->csa.count,
+						  link->csa_block_tx,
+						  0);
+
+		if (link->csa.changed) {
+			ieee80211_link_info_change_notify(sdata, link,
+							  link->csa.changed);
+			drv_channel_switch_beacon(sdata,
+						  &link->csa.chanreq.oper);
+		} else {
+			/* beacon unchanged — finalize immediately */
+			ieee80211_csa_finalize(link);
+		}
+	}
+}
+
+/*
+ * Enqueue @link into the per-chanctx CSA batch and schedule the batch worker.
+ * Called from __ieee80211_channel_switch() when IEEE80211_HW_BATCH_CSA is set.
+ *
+ * If every AP link currently assigned to @ctx has already submitted a CSA
+ * request (n_pending >= n_ap_assigned) the worker is fired immediately
+ * (delay = 0) so there is no unnecessary extra latency in the common case
+ * where hostapd issues all requests back-to-back.  Otherwise an
+ * IEEE80211_CSA_BATCH_TIMEOUT_MS one-shot timer is armed; on expiry the
+ * worker commits whatever links are ready.
+ */
+static void ieee80211_csa_batch_enqueue(struct ieee80211_local *local,
+					struct ieee80211_link_data *link,
+					struct ieee80211_chanctx *ctx,
+					struct cfg80211_csa_settings *params)
+{
+	struct ieee80211_link_data *iter;
+	int n_ap_assigned = 0, n_pending;
+
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	list_add_tail(&link->csa.batch_list, &ctx->csa_pending_list);
+	ctx->csa_batch_max_count = max(ctx->csa_batch_max_count, params->count);
+
+	list_for_each_entry(iter, &ctx->assigned_links, assigned_chanctx_list) {
+		switch (iter->sdata->vif.type) {
+		case NL80211_IFTYPE_AP:
+		case NL80211_IFTYPE_P2P_GO:
+		case NL80211_IFTYPE_ADHOC:
+		case NL80211_IFTYPE_MESH_POINT:
+			n_ap_assigned++;
+			break;
+		default:
+			break;
+		}
+	}
+	n_pending = list_count_nodes(&ctx->csa_pending_list);
+
+	if (n_pending >= n_ap_assigned) {
+		/* All AP-like links collected — fire without delay.
+		 * Only cancel the existing timer if the work was previously
+		 * armed; cancelling a never-queued delayed_work touches an
+		 * uninitialised timer and triggers a NULL dereference.
+		 */
+		if (ctx->csa_batch_queued)
+			wiphy_delayed_work_cancel(local->hw.wiphy,
+						  &ctx->csa_batch_work);
+		wiphy_delayed_work_queue(local->hw.wiphy, &ctx->csa_batch_work,
+					 0);
+	} else {
+		wiphy_delayed_work_queue(local->hw.wiphy,
+					 &ctx->csa_batch_work,
+					 msecs_to_jiffies
+					 (IEEE80211_CSA_BATCH_TIMEOUT_MS));
+	}
+	ctx->csa_batch_queued = true;
+}
+
 static int
 __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 			   struct cfg80211_csa_settings *params)
@@ -5122,6 +5241,22 @@ __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 		link_conf->csa_active = false;
 	} else {
 		link_conf->csa_active = true;
+	}
+
+	/*
+	 * Batch CSA: defer beacon installation and driver notification until
+	 * all AP VIFs on this chanctx have submitted their CSA request (or a
+	 * one-TBTT timeout fires).  The block_tx queue stop and the cfg80211
+	 * start-notify are also deferred to ieee80211_csa_batch_work() so that
+	 * all VIFs begin their countdown simultaneously.
+	 * Scan radio skips this path because it never sets csa_active.
+	 */
+	if (!wdev_is_scan_radio(&sdata->wdev)) {
+		link_data->csa.changed = changed;
+		link_data->csa.count   = params->count;
+		link_data->csa_block_tx = params->block_tx;
+		ieee80211_csa_batch_enqueue(local, link_data, chanctx, params);
+		goto out;
 	}
 
 	if (params->block_tx)
