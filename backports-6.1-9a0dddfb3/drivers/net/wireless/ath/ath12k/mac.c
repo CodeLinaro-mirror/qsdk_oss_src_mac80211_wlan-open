@@ -16812,6 +16812,86 @@ int ath12k_mac_set_rx_antenna(struct ath12k *ar, u32 rx_ant)
 	return 0;
 }
 
+/**
+ * ath12k_vendor_send_agile_capable_event - Send agile-capable vendor event
+ * @ar: pointer to ath12k radio
+ *
+ * Sends a QCA_NL80211_VENDOR_SUBCMD_GET_WIPHY_CONFIGURATION vendor event
+ * carrying QCA_WLAN_VENDOR_ATTR_CONFIG_AGILE_CAPABLE after every chainmask
+ * change, so hostapd can update its background CAC state.
+ *   1 = new chainmask is in adfs_chain_mask (Agile DFS capable)
+ *   0 = new chainmask is NOT in adfs_chain_mask
+ */
+static void ath12k_vendor_send_agile_capable_event(struct ath12k *ar)
+{
+	struct sk_buff *vendor_event;
+	u8 adfs_capable;
+	u8 hw_idx;
+	int vendor_buffer_len = nla_total_size(sizeof(u8)) +
+				nla_total_size(sizeof(u8));
+	int subcmd_idx = QCA_NL80211_VENDOR_SUBCMD_GET_WIPHY_CONFIGURATION_INDEX;
+
+	adfs_capable = test_bit(ar->cfg_rx_chainmask,
+				&ar->pdev->cap.adfs_chain_mask) ? 1 : 0;
+
+	hw_idx = cfg80211_get_hw_idx_by_freq(ar->ah->hw->wiphy,
+					     ar->freq_range.start_freq);
+
+	vendor_event = cfg80211_vendor_event_alloc(ar->ah->hw->wiphy, NULL,
+						   vendor_buffer_len,
+						   subcmd_idx,
+						   GFP_KERNEL);
+	if (!vendor_event) {
+		ath12k_warn(ar->ab, "failed to alloc agile_capable vendor event\n");
+		return;
+	}
+
+	if (nla_put_u8(vendor_event, QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX,
+		       hw_idx) ||
+	    nla_put_u8(vendor_event, QCA_WLAN_VENDOR_ATTR_CONFIG_AGILE_CAPABLE,
+		       adfs_capable)) {
+		kfree_skb(vendor_event);
+		ath12k_warn(ar->ab, "failed to put agile_capable attrs\n");
+		return;
+	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+		   "mac agile_capable vendor event: adfs_capable=%d rx_chainmask=0x%x adfs_chain_mask=0x%lx\n",
+		   adfs_capable, ar->cfg_rx_chainmask,
+		   ar->pdev->cap.adfs_chain_mask);
+
+	cfg80211_vendor_event(vendor_event, GFP_KERNEL);
+}
+
+static void ath12k_mac_handle_agile_cac_on_chainmask_change(struct ath12k *ar)
+{
+	struct ath12k_hw *ah = ath12k_ar_to_ah(ar);
+	struct ath12k_link_vif *arvif;
+	struct ath12k_vif *ahvif;
+	int ret;
+
+	if (ar->agile_chandef.chan) {
+		/* Abort running agile CAC after chainmask is set */
+		list_for_each_entry(arvif, &ar->arvifs, list) {
+			ahvif = arvif->ahvif;
+			if (arvif->is_started &&
+			    ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
+				ret = ath12k_wmi_vdev_adfs_ocac_abort_cmd_send(ar,
+								arvif->vdev_id);
+				if (!ret) {
+					ar->agile_abort_pending = true;
+					memset(&ar->agile_chandef, 0,
+					       sizeof(ar->agile_chandef));
+					ar->agile_chandef.chan = NULL;
+				}
+				break;
+			}
+		}
+		cfg80211_background_cac_abort(ah->hw->wiphy);
+	}
+	ath12k_vendor_send_agile_capable_event(ar);
+}
+
 static int __ath12k_set_antenna(struct ath12k *ar, u32 tx_ant, u32 rx_ant,
 				bool is_dynamic)
 {
@@ -16862,6 +16942,9 @@ static int __ath12k_set_antenna(struct ath12k *ar, u32 tx_ant, u32 rx_ant,
 			    ret, rx_ant);
 		return ret;
 	}
+
+	if (is_dynamic)
+		ath12k_mac_handle_agile_cac_on_chainmask_change(ar);
 
 	return 0;
 }
@@ -17953,6 +18036,12 @@ skip_state_check:
 
 	if (ath12k_check_erp_power_down(ag))
 		clear_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ag->flags);
+
+	for_each_ar(ah, ar, i) {
+		if (test_bit(ar->cfg_rx_chainmask,
+			     &ar->pdev->cap.adfs_chain_mask))
+			ath12k_vendor_send_agile_capable_event(ar);
+	}
 
 	return 0;
 
@@ -26971,8 +27060,9 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 		if (test_bit(WMI_TLV_SERVICE_SCAN_PHYMODE_SUPPORT, ar->ab->wmi_ab.svc_map))
 			ieee80211_hw_set(hw, SUPPORTS_EXT_REMAIN_ON_CHAN);
 
-		if ((ar->pdev->cap.supported_bands & WMI_HOST_WLAN_5GHZ_CAP)) {
-			if (test_bit(ar->cfg_rx_chainmask, &cap->adfs_chain_mask)) {
+		if (ar->mac.sbands[NL80211_BAND_5GHZ].channels) {
+			if (test_bit(ar->cfg_rx_chainmask,
+				     &ar->pdev->cap.adfs_chain_mask)) {
 				wiphy_ext_feature_set(hw->wiphy,
 					      NL80211_EXT_FEATURE_RADAR_BACKGROUND);
 			} else if (test_bit(WMI_TLV_SERVICE_SW_PROG_DFS_SUPPORT,
