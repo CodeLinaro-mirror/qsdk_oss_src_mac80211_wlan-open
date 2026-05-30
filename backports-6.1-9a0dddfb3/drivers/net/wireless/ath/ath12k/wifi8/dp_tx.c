@@ -3193,6 +3193,7 @@ int ath12k_wifi8_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 	u32 tqm_rel_reason[MAX_TQM_RELEASE_REASON] = {0};
 	u32 fw_tx_status[MAX_FW_TX_STATUS] = {0};
 	u32 htt_status = 0, tx_completed = 0;
+	u32 tx_desc_free_cnt = 0, *tx_desc_used_cnt;
 	u8 tid = 0;
 
 	ath12k_hal_srng_access_dst_ring_begin_nolock(ab, status_ring);
@@ -3271,6 +3272,8 @@ int ath12k_wifi8_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 			list_add_tail(&tx_desc->list,
 				      &dp->dp_hw_grp->tx_spl_desc_free_list[ring_id]);
 
+		tx_desc_free_cnt++;
+
 		sw_metadata->skb = tx_desc->skb;
 		sw_metadata->paddr = tx_desc->paddr;
 		sw_metadata->len = tx_desc->len;
@@ -3299,6 +3302,9 @@ int ath12k_wifi8_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 	}
 
 	list_splice(&desc_free_list, &dp->dp_hw_grp->tx_desc_free_list[ring_id]);
+
+	tx_desc_used_cnt = this_cpu_ptr(dp_hw_grp->tx_desc_used_cnt);
+	(*tx_desc_used_cnt) -= tx_desc_free_cnt;
 
 	spin_unlock_bh(&dp->dp_hw_grp->tx_desc_lock[ring_id]);
 
@@ -4297,10 +4303,6 @@ tx_buf_release:
 			sw_metadata.flags = tx_desc->flags;
 			sw_metadata.hw_link_id = tx_desc->hw_link_id;
 
-			tx_desc->skb = NULL;
-			tx_desc->skb_ext_desc = NULL;
-			tx_desc->in_use = false;
-			tx_desc->flags = 0;
 			tx_desc->paddr_ext_desc = 0;
 
 			pdev_tx_comp_cnt[sw_metadata.hw_link_id]++;
@@ -4370,15 +4372,918 @@ int ath12k_wifi8_dp_tx_process_sam_status(struct ath12k_dp *dp, int budget)
 	return quota - budget;
 }
 
+/**
+ * ath12k_wifi8_dp_tx_calculate_drop2 - Calculate per-flow MSDU drop counts
+ *                                      using the weighted-cost algorithm
+ *
+ * dp:          Data-path context.
+ * svc_datas:   Array of HAL_TQM_SERVICE_CATEGORY_MAX sorted-flow descriptors.
+ *              Each element lists up to HAL_TQM_MAX_SORTED_FLOW flows for one
+ *              service category, ordered by msdu_count descending.
+ *              svc_datas[s].weight carries the per-service drop weight.
+ * target_drop: Total number of MSDUs to remove.
+ * drop:        Output descriptor.  On return, drop->flows[i] identifies a
+ *              flow and the number of MSDUs to remove from it.
+ *
+ * Implements the weighted-cost drop algorithm:
+ *  1. Build a flat list of flows across all services;
+ *     cost = msdu_count * weight.  Sort by cost descending (insertion sort,
+ *     at most HAL_TQM_MAX_SORTED_FLOW_ALL_SVC entries).
+ *  2. Find the smallest prefix of the sorted list from which target_drop MSDUs
+ *     can be removed.  A floor (limit = next_entry.cost) prevents any single
+ *     flow from being drained below the level of its neighbours.
+ *  3. Compute excess_num = num_can_drop - target_drop and redistribute it back
+ *     to services proportionally by weight (giveback), so the total drop
+ *     matches target_drop as closely as possible.
+ *  4. Store the net per-flow drop counts in drop.
+ *
+ * Returns 0 on success, -EINVAL on bad arguments.
+ */
+void
+ath12k_wifi8_dp_tx_calculate_drop2(struct ath12k_wifi8_dp_congestion_control *congstn,
+				   struct ath12k_wifi8_svc_sorted_flows *svc_datas,
+				   u32 target_drop,
+				   struct ath12k_wifi8_svc_remove_flows *drop)
+{
+	struct ath12k_wifi8_dp_tx_flow_cost *entries = congstn->entries;
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8 =
+		container_of(congstn, struct ath12k_dp_hw_group_wifi8, congstn);
+	struct ath12k_dp *dp = dp_hw_grp_wifi8->cumac_dp;
+	u32 excess_nums[HAL_TQM_SERVICE_CATEGORY_MAX] = {};
+	u32 num_drop_queues_per_svc[HAL_TQM_SERVICE_CATEGORY_MAX] = {};
+	enum hal_tqm_service_category svc;
+	u32 num_can_drop, excess_num;
+	u32 contrib_x1000, limit;
+	int n_entries, prefix_end;
+	int i, j;
+
+	memset(drop, 0, sizeof(*drop));
+
+	if (!target_drop)
+		return;
+
+	/* Step 1 – build flat list: cost = msdu_count * weight */
+	n_entries = 0;
+	for (svc = 0; svc < HAL_TQM_SERVICE_CATEGORY_MAX; svc++) {
+		struct ath12k_wifi8_svc_sorted_flows *sd = &svc_datas[svc];
+		int nf = sd->num_flows;
+
+		if (!sd->weight)
+			continue;
+
+		for (i = 0; i < nf && n_entries < HAL_TQM_MAX_SORTED_FLOW_ALL_SVC; i++) {
+			entries[n_entries].svc    = svc;
+			entries[n_entries].idx    = i;
+			entries[n_entries].num    = sd->flows[i].msdu_count;
+			entries[n_entries].weight = sd->weight;
+			entries[n_entries].cost   = sd->flows[i].msdu_count *
+						    sd->weight;
+			n_entries++;
+		}
+	}
+
+	/* Sort by cost descending – insertion sort (n_entries <= 64) */
+	for (i = 1; i < n_entries; i++) {
+		struct ath12k_wifi8_dp_tx_flow_cost tmp = entries[i];
+
+		j = i - 1;
+		while (j >= 0 && entries[j].cost < tmp.cost) {
+			entries[j + 1] = entries[j];
+			j--;
+		}
+		entries[j + 1] = tmp;
+	}
+
+	/* Step 2 – find smallest prefix covering target_drop
+	 *
+	 * For each candidate prefix of length prefix_end, the floor is set to
+	 * the cost of the first excluded entry (limit = entries[prefix_end].cost).
+	 * Each entry in the prefix can contribute at most
+	 *   delta_num = (entry.cost - limit) / entry.weight  MSDUs.
+	 * We stop as soon as the cumulative delta_num >= target_drop.
+	 */
+	prefix_end   = 1;
+	limit        = 0;
+	num_can_drop = 0;
+
+	while (prefix_end < n_entries) {
+		limit = entries[prefix_end].cost;
+
+		num_can_drop = 0;
+		for (i = 0; i < prefix_end; i++) {
+			u32 delta_cost = entries[i].cost - limit;
+			u32 delta_num  = 0;
+
+			if (delta_cost > 0 && entries[i].weight)
+				delta_num = delta_cost / entries[i].weight;
+
+			num_can_drop += delta_num;
+		}
+
+		if (num_can_drop >= target_drop)
+			break;
+
+		prefix_end++;
+	}
+
+	/* When the prefix-based loop cannot accumulate enough drops to meet
+	 * target_drop — this covers:
+	 *   - n_entries == 1: the while loop never executes (1 < 1 is false)
+	 *   - n_entries > 1 but all prefix candidates are exhausted without
+	 *     reaching target_drop (total available msdus may still be >=
+	 *     target_drop, but the floor limit prevents it)
+	 *
+	 * Fall back to limit=0 so every entry contributes its full msdu_count
+	 * (delta_num = cost/weight = msdu_count).  The excess giveback in
+	 * Step 3 will then reduce the total back towards target_drop.
+	 */
+	if (num_can_drop < target_drop) {
+		limit        = 0;
+		prefix_end   = n_entries;
+		num_can_drop = 0;
+		for (i = 0; i < n_entries; i++) {
+			if (entries[i].weight)
+				num_can_drop += entries[i].num;
+		}
+	}
+
+	/* Step 3 – compute excess and distribute giveback proportionally
+	 *
+	 * excess_num = num_can_drop - target_drop (over-drop).
+	 * Redistribute excess back to services proportionally:
+	 *   contrib = sum(num_drop_queues[s] / weight[s])
+	 *   ref_num = excess_num / contrib
+	 *   excess_nums[s] = ref_num / weight[s]
+	 *
+	 * Use a x1000 scaling factor to avoid fractional arithmetic.
+	 */
+	if (num_can_drop > target_drop)
+		excess_num = num_can_drop - target_drop;
+	else
+		excess_num = 0;
+
+	if (!excess_num)
+		goto skip_excess;
+
+	for (i = 0; i < prefix_end; i++)
+		num_drop_queues_per_svc[entries[i].svc]++;
+
+	contrib_x1000 = 0;
+	for (svc = 0; svc < HAL_TQM_SERVICE_CATEGORY_MAX; svc++) {
+		if (num_drop_queues_per_svc[svc] > 0 && svc_datas[svc].weight)
+			contrib_x1000 += num_drop_queues_per_svc[svc] * 1000 * 100 /
+					 svc_datas[svc].weight;
+	}
+
+	if (contrib_x1000) {
+		for (svc = 0; svc < HAL_TQM_SERVICE_CATEGORY_MAX; svc++) {
+			if (!num_drop_queues_per_svc[svc] || !svc_datas[svc].weight)
+				continue;
+
+			excess_nums[svc] = (excess_num * 1000 * 100) /
+					   (contrib_x1000 * svc_datas[svc].weight);
+		}
+	}
+
+skip_excess:
+	/* Step 4 – store net drop counts in @drop */
+	for (i = 0; i < prefix_end; i++) {
+		u8 svc_idx = entries[i].svc;
+		u8 flow_idx = entries[i].idx;
+		u32 delta_cost = entries[i].cost - limit;
+		u32 delta_num = 0;
+
+		if (delta_cost > 0 && entries[i].weight)
+			delta_num = delta_cost / entries[i].weight;
+
+		if (delta_num > excess_nums[svc_idx])
+			delta_num -= excess_nums[svc_idx];
+		else
+			delta_num = 0;
+
+		if (!delta_num)
+			continue;
+
+		if (drop->num_flows >= HAL_TQM_MAX_SORTED_FLOW_ALL_SVC)
+			break;
+
+		drop->flows[drop->num_flows].u.flow_number =
+			svc_datas[svc_idx].flows[flow_idx].u.flow_number;
+		drop->flows[drop->num_flows].svc = svc_idx;
+		drop->flows[drop->num_flows].drop = delta_num;
+		drop->flows[drop->num_flows].idx = entries[i].idx;
+		drop->num_flows++;
+	}
+
+	/* Post-process: integer rounding in the giveback calculation may
+	 * cause the sum of per-flow drops to exceed target_drop by a few
+	 * MSDUs.  Walk the drop list from the last entry backwards and
+	 * shave off the surplus so the total never exceeds target_drop.
+	 */
+	if (drop->num_flows > 0) {
+		u32 total_drops = 0;
+		int k;
+
+		for (k = 0; k < drop->num_flows; k++)
+			total_drops += drop->flows[k].drop;
+
+		if (total_drops > target_drop) {
+			u32 over = total_drops - target_drop;
+
+			for (k = (int)drop->num_flows - 1; k >= 0 && over > 0; k--) {
+				u32 reduce = min(drop->flows[k].drop, over);
+
+				drop->flows[k].drop -= reduce;
+				over -= reduce;
+			}
+		}
+	}
+
+	ath12k_dbg(dp->ab, ATH12K_DBG_DP_TX,
+		   "congestion recovery2: target=%u can_drop=%u excess=%u flows=%u\n",
+		   target_drop, num_can_drop, excess_num, drop->num_flows);
+}
+
+void
+ath12k_wifi8_dp_tx_calculate_drop(struct ath12k_wifi8_dp_congestion_control *congstn,
+				  struct ath12k_wifi8_svc_sorted_flows *svc_datas,
+				  u32 target_drop,
+				  struct ath12k_wifi8_svc_remove_flows *drop)
+{
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8 =
+		container_of(congstn, struct ath12k_dp_hw_group_wifi8, congstn);
+	struct ath12k_dp *dp = dp_hw_grp_wifi8->cumac_dp;
+	enum hal_tqm_service_category svc;
+	u32 score[HAL_TQM_SERVICE_CATEGORY_MAX] = {0};
+	u32 final_drop[HAL_TQM_SERVICE_CATEGORY_MAX] = {0};
+	bool is_locked[HAL_TQM_SERVICE_CATEGORY_MAX] = {false};
+	struct ath12k_wifi8_svc_sorted_flows *svc_data;
+	struct ath12k_wifi8_flow_entry *entry;
+	u32 svc_drop, svc_total, flow_drop;
+	u32 total_active_msdu = 0, remaining_drop, flow_grace_count;
+	bool violation_found;
+	u8 i, idx;
+
+	for (svc = 0; svc < HAL_TQM_SERVICE_CATEGORY_MAX; svc++) {
+		svc_data = &svc_datas[svc];
+
+		total_active_msdu += svc_data->total_msdu_count;
+		score[svc] = (svc_data->total_msdu_count * svc_data->weight) / 100;
+	}
+
+	if (!total_active_msdu)
+		return;
+
+	remaining_drop = target_drop;
+
+	i = 0;
+	violation_found = true;
+
+	while (i < HAL_TQM_SERVICE_CATEGORY_MAX && remaining_drop && violation_found) {
+		bool current_pass_violators[HAL_TQM_SERVICE_CATEGORY_MAX] = {false};
+		u32 share, composite_score = 0;
+
+		i++;
+		violation_found = false;
+
+		for (svc = 0; svc < HAL_TQM_SERVICE_CATEGORY_MAX; svc++) {
+			if (!is_locked[svc])
+				composite_score += score[svc];
+		}
+
+		if (!composite_score)
+			break;
+
+		for (svc = 0; svc < HAL_TQM_SERVICE_CATEGORY_MAX; svc++) {
+			if (is_locked[svc] || !score[svc])
+				continue;
+
+			svc_data = &svc_datas[svc];
+			share = remaining_drop * score[svc] / composite_score;
+
+			if (share > svc_data->total_msdu_count) {
+				share = svc_data->total_msdu_count;
+				current_pass_violators[svc] = true;
+				violation_found = true;
+			}
+			final_drop[svc] = share;
+		}
+
+		if (violation_found) {
+			for (svc = 0; svc < HAL_TQM_SERVICE_CATEGORY_MAX; svc++) {
+				if (current_pass_violators[svc]) {
+					remaining_drop -= final_drop[svc];
+					is_locked[svc] = true;
+				}
+			}
+		} else {
+			remaining_drop = 0;
+		}
+	}
+
+	ath12k_dbg(dp->ab, ATH12K_DBG_DP_TX,
+		   "congestion recovery: total_msdu=%u drop_needed=%u remaining=%u\n",
+		   total_active_msdu, target_drop, remaining_drop);
+
+	svc = HAL_TQM_SERVICE_CATEGORY_MAX;
+	drop->num_flows = 0;
+	while (svc) {
+		svc--;
+		svc_data = &svc_datas[svc];
+
+		svc_drop  = final_drop[svc];
+		svc_total = svc_data->total_msdu_count;
+		if (!svc_drop)
+			continue;
+
+		flow_grace_count = congstn->flow_drop_grace_percent * svc_total / 100;
+
+		idx = svc_data->num_flows;
+		while (idx) {
+			idx--;
+
+			entry = &svc_data->flows[idx];
+
+			/* assumed the flows are in sort order */
+			if (entry->msdu_count >= flow_grace_count)
+				break;
+
+			/* skip the flows below the grace count */
+			svc_total -= entry->msdu_count;
+		}
+
+		if (!svc_total)
+			continue;
+
+		for (idx = 0; idx < svc_data->num_flows; idx++) {
+			if (drop->num_flows >= HAL_TQM_MAX_SORTED_FLOW_ALL_SVC)
+				break;
+
+			entry = &svc_data->flows[idx];
+			if (entry->msdu_count < flow_grace_count)
+				continue;
+
+			flow_drop = (svc_drop * entry->msdu_count) / svc_total;
+
+			i = drop->num_flows;
+
+			drop->flows[i].u.flow_number = entry->u.flow_number;
+			drop->flows[i].svc = svc;
+			drop->flows[i].drop = flow_drop;
+			drop->flows[i].idx = idx;
+
+			drop->num_flows++;
+		}
+	}
+}
+
+static int
+ath12k_wifi8_dp_tx_proceed_drop(struct ath12k_wifi8_dp_congestion_control *congstn,
+				struct ath12k_wifi8_svc_sorted_flows *svc_datas,
+				unsigned long drop_jiffies,
+				struct ath12k_wifi8_svc_remove_flows *drop)
+{
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8 =
+		container_of(congstn, struct ath12k_dp_hw_group_wifi8, congstn);
+	struct ath12k_dp *dp = dp_hw_grp_wifi8->cumac_dp;
+	struct ath12k_wifi8_flow_remove_entry *entry;
+	struct ath12k_wifi8_flow_entry *flow;
+	struct ath12k_dp_tx_flow_info *tx_flow_info;
+	struct ath12k_dp_msdu_q_info *msduq;
+	struct ath12k_pdev_dp *dp_pdev;
+	struct ath12k_hal_tqm_cmd cmd;
+	struct ath12k_base *ab = dp->ab;
+	u32 peer_id, tid_num, flow_type, limit;
+	struct ath12k_dp_peer *dp_peer;
+	enum hal_tlv_tag_be tag;
+	u8 pdev_id, idx;
+	int ret = 0;
+
+	for (idx = 0; idx < drop->num_flows; idx++) {
+		entry = &drop->flows[idx];
+
+		peer_id   = entry->u.flow_info.peer_id;
+		tid_num   = ath12k_dp_tx_get_tid(entry->u.flow_info.tid_num);
+		flow_type = entry->u.flow_info.flow_type;
+
+		rcu_read_lock();
+
+		dp_peer = NULL;
+		for (pdev_id = 0; pdev_id < ab->num_radios; pdev_id++) {
+			dp_pdev = rcu_dereference(dp->dp_pdevs[pdev_id]);
+			if (!dp_pdev)
+				continue;
+
+			dp_peer = ath12k_dp_peer_find_by_peerid_index(dp,
+								      dp_pdev,
+								      peer_id);
+			if (dp_peer)
+				break;
+		}
+
+		if (!dp_peer) {
+			rcu_read_unlock();
+			ath12k_err(ab, "peer find failed for flow peer_id %d\n",
+				   peer_id);
+			continue;
+		}
+
+		tx_flow_info = ath12k_dp_get_tx_flow_info_from_peer(dp_peer);
+		if (!tx_flow_info) {
+			ath12k_err(ab, "invalid tx flow info peer %pM in proceed drop",
+				   dp_peer->addr);
+			rcu_read_unlock();
+			continue;
+		}
+
+		spin_lock_bh(&tx_flow_info->tx_q_lock);
+
+		if (flow_type == HTT_TID_MSDUQ_MCAST) {
+			msduq = tx_flow_info->mcast_msduq;
+		} else {
+			if (tid_num >= ATH12K_MAX_NUM_DATA_TIDS ||
+			    flow_type >= ATH12K_MAX_DP_MSDUQ_PER_TID) {
+				spin_unlock_bh(&tx_flow_info->tx_q_lock);
+				rcu_read_unlock();
+				continue;
+			}
+
+			msduq = tx_flow_info->tid_info[tid_num].msduq[flow_type];
+		}
+
+		if (!msduq || msduq->msduq_state != ATH12K_TX_Q_INIT_DONE) {
+			spin_unlock_bh(&tx_flow_info->tx_q_lock);
+			rcu_read_unlock();
+			continue;
+		}
+
+		/* Track continuous drops: if this flow was dropped in the
+		 * previous handler invocation (last_drop_jiffies matches
+		 * congstn->last_jiffies), increment the consecutive drop
+		 * counter; otherwise reset it to 1.
+		 */
+		if ((msduq->last_drop_jiffies &&
+		     msduq->last_drop_jiffies == congstn->last_drop_jiffies) ||
+		    msduq->in_threshold_list)
+			msduq->consecutive_drop_count++;
+		else
+			msduq->consecutive_drop_count = 1;
+
+		msduq->last_drop_jiffies = drop_jiffies;
+
+		memset(&cmd, 0, sizeof(cmd));
+		cmd.std.peer_id = (u16)peer_id;
+
+		/* If the flow has been continuously dropped for
+		 * continuous_drop_threshold consecutive invocations and is
+		 * not already in the threshold list, add it to the
+		 * per-service-category threshold list.
+		 */
+		if (msduq->consecutive_drop_count >= congstn->continuous_drop_threshold) {
+			flow = &svc_datas[entry->svc].flows[entry->idx];
+			limit = flow->msdu_count - entry->drop;
+
+			entry->limited = 1;
+			entry->limit = limit;
+
+			if (!msduq->in_threshold_list &&
+			    entry->svc < HAL_TQM_SERVICE_CATEGORY_MAX) {
+				spin_lock(&congstn->threshold_list_lock);
+
+				msduq->in_threshold_list = true;
+				list_add_tail(&msduq->threshold_node,
+					      &congstn->threshold_list[entry->svc]);
+
+				ath12k_dbg(ab, ATH12K_DBG_DP_TX,
+					   "flow 0x%x add in threshold limit %u\n",
+					   msduq->queue_number, limit);
+
+				spin_unlock(&congstn->threshold_list_lock);
+			}
+
+			cmd.update_tx_msdu_params.svc = entry->svc;
+			cmd.update_tx_msdu_params.tx_flow_number = msduq->queue_number;
+			cmd.update_tx_msdu_params.msdu_q_paddr = msduq->msdu_q_paddr;
+			cmd.update_tx_msdu_params.tid = msduq->flow_info.tid_num;
+			cmd.update_tx_msdu_params.hard_drop_threshold = limit;
+			cmd.update_tx_msdu_params.update_hard_drop_threshold = true;
+
+			tag = HAL_TQM_UPDATE_MSDUQ_BO;
+		} else {
+			cmd.remove_msdu_params.type = HAL_WIFIREMOVE_HEAD_MSDUS;
+			cmd.remove_msdu_params.block_tx_notify_frame_removal = 0;
+			cmd.remove_msdu_params.count = (u16)min_t(u32,
+								  entry->drop,
+								  ATH12K_MAX_MSDU_COUNT);
+			cmd.remove_msdu_params.qtype = msduq->flow_info.flow_type;
+			cmd.remove_msdu_params.msdu_q_paddr = msduq->msdu_q_paddr;
+
+			tag = HAL_TQM_REMOVE_MSDU_BO;
+		}
+
+		ret = ath12k_wifi8_dp_tqm_cmd_send(ab, tag, &cmd, NULL, NULL);
+		if (ret)
+			ath12k_warn(ab, "tqm %s cmd failed ret %d peer %pM\n",
+				    ((tag == HAL_TQM_REMOVE_MSDU_BO) ?
+				     "remove" : "update msdu"),
+				    ret, dp_peer->addr);
+
+		spin_unlock_bh(&tx_flow_info->tx_q_lock);
+		rcu_read_unlock();
+	}
+
+	return ret;
+}
+
+static void
+ath12k_wifi8_dp_tx_restore_flow_limit(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8,
+				      unsigned long cur_jiffies)
+{
+	struct ath12k_wifi8_dp_congestion_control *congstn = &dp_hw_grp_wifi8->congstn;
+	struct ath12k_dp *dp = dp_hw_grp_wifi8->cumac_dp;
+	struct ath12k_dp_msdu_q_info *msduq, *tmp;
+	struct ath12k_base *ab = dp->ab;
+	enum hal_tqm_service_category svc;
+	LIST_HEAD(restore_list);
+	u16 hard_drop_threshold = ATH12K_DP_TX_DEFAULT_HARD_DROP_THRESHOLD;
+	int ret;
+
+	/* Collect all flows that have not been seen (dropped) for the past
+	 * 1 second from all per-service-category threshold lists.
+	 */
+	spin_lock_bh(&congstn->threshold_list_lock);
+	for (svc = 0; svc < HAL_TQM_SERVICE_CATEGORY_MAX; svc++) {
+		list_for_each_entry_safe(msduq, tmp,
+					 &congstn->threshold_list[svc],
+					 threshold_node) {
+			if (time_after(cur_jiffies,
+				       msduq->last_drop_jiffies + HZ)) {
+				list_del(&msduq->threshold_node);
+				msduq->in_threshold_list = false;
+				msduq->consecutive_drop_count = 0;
+				list_add_tail(&msduq->threshold_node,
+					      &restore_list);
+			}
+		}
+	}
+	spin_unlock_bh(&congstn->threshold_list_lock);
+
+	if (list_empty(&restore_list))
+		return;
+
+	/* Send TQM update to reset hard drop threshold to default for each
+	 * flow not seen for the past 1 second.
+	 */
+	list_for_each_entry_safe(msduq, tmp, &restore_list, threshold_node) {
+		list_del(&msduq->threshold_node);
+
+		ath12k_dbg(ab, ATH12K_DBG_DP_TX, "flow 0x%x removed threshold\n",
+			   msduq->queue_number);
+
+		ret = ath12k_wifi8_dp_tx_update_msdu_flow(dp, msduq->queue_number,
+							  msduq->flow_info.tid_num,
+							  msduq->svc,
+							  hard_drop_threshold);
+		if (ret)
+			ath12k_warn(ab,
+				    "failed to reset hard drop threshold for flow %u: %d\n",
+				    msduq->queue_number, ret);
+	}
+}
+
+static u32 ath12k_wifi8_dp_tx_get_desc_used_cnt(struct ath12k_dp_hw_group *dp_hw_grp)
+{
+	int cpu;
+	u32 used_cnt = 0, *tx_desc_used_cnt;
+
+	for_each_possible_cpu(cpu) {
+		tx_desc_used_cnt = per_cpu_ptr(dp_hw_grp->tx_desc_used_cnt, cpu);
+		used_cnt += *tx_desc_used_cnt;
+	}
+
+	return used_cnt;
+}
+
+void ath12k_wifi8_dp_tx_congestion_recovery_handler(struct timer_list *t)
+{
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8 =
+					from_timer(dp_hw_grp_wifi8, t, congstn.timer);
+	struct ath12k_wifi8_dp_congestion_control *congstn = &dp_hw_grp_wifi8->congstn;
+	struct ath12k_wifi8_svc_sorted_flows *svc_data = congstn->svc_data;
+	struct ath12k_wifi8_svc_remove_flows *drop = congstn->drop;
+	struct ath12k_dp *dp = dp_hw_grp_wifi8->cumac_dp;
+	struct ath12k_wifi8_svc_sorted_flows *svc_flows;
+	struct ath12k_wifi8_flow_entry *entry;
+	struct ath12k_base *ab = dp->ab;
+	enum hal_tqm_service_category svc;
+	u32 flow_number, high_msdu_count, total_active_msdu;
+	u32 retry_used_cnt, used_cnt, target_drop;
+	u8 idx, i, svc_mask = (1 << HAL_TQM_SERVICE_CATEGORY_MAX) - 1;
+	unsigned long cur_jiffies;
+	int ret;
+
+	if (!congstn->init)
+		return;
+
+	cur_jiffies = jiffies;
+
+	used_cnt = ath12k_wifi8_dp_tx_get_desc_used_cnt(dp_hw_grp_wifi8->dp_hw_grp);
+	if (used_cnt < congstn->used_threshold)
+		goto skip_drop;
+
+	if (!svc_data)
+		goto skip_drop;
+
+	if (!drop)
+		goto skip_drop;
+
+	memset(drop, 0, sizeof(*drop));
+	memset(svc_data, 0, HAL_TQM_SERVICE_CATEGORY_MAX * sizeof(*svc_data));
+
+	ath12k_wifi8_hal_tqm_sorting_latch(&ab->hal);
+
+	total_active_msdu = 0;
+	while (svc_mask) {
+		svc = fls(svc_mask) - 1;
+		svc_mask ^= 1 << svc;
+
+		svc_flows = &svc_data[svc];
+		svc_flows->weight = congstn->weights[svc];
+
+		for (idx = 0; idx < HAL_TQM_MAX_SORTED_FLOW; idx++) {
+			ret = ath12k_wifi8_hal_tqm_get_svc_sorted_list(&ab->hal,
+								       svc,
+								       idx,
+								       &flow_number,
+								       &high_msdu_count);
+			if (ret || !high_msdu_count)
+				continue;
+
+			entry = &svc_flows->flows[svc_flows->num_flows];
+
+			entry->u.flow_number = flow_number;
+			entry->svc = svc;
+			entry->msdu_count = high_msdu_count;
+			total_active_msdu += high_msdu_count;
+
+			svc_flows->num_flows++;
+			svc_flows->total_msdu_count += high_msdu_count;
+		}
+	}
+
+	if (!total_active_msdu)
+		goto skip_drop;
+
+	retry_used_cnt = ath12k_wifi8_dp_tx_get_desc_used_cnt(dp_hw_grp_wifi8->dp_hw_grp);
+	if (used_cnt < retry_used_cnt)
+		used_cnt = retry_used_cnt;
+
+	target_drop = used_cnt - congstn->used_threshold;
+	if (target_drop < total_active_msdu) {
+		congstn->calculate_drop(congstn, svc_data,
+					used_cnt - congstn->used_threshold,
+					drop);
+	} else {
+		drop->num_flows = 0;
+		for (svc = 0; svc < HAL_TQM_SERVICE_CATEGORY_MAX; svc++) {
+			svc_flows = &svc_data[svc];
+			if (!svc_flows->weight)
+				continue;
+
+			for (idx = 0; idx < svc_flows->num_flows; idx++) {
+				if (drop->num_flows >= ARRAY_SIZE(drop->flows))
+					break;
+
+				entry = &svc_flows->flows[idx];
+				i = drop->num_flows;
+
+				drop->flows[i].u.flow_number = entry->u.flow_number;
+				drop->flows[i].svc = entry->svc;
+				drop->flows[i].drop = entry->msdu_count;
+				drop->flows[i].idx = idx;
+
+				drop->num_flows++;
+			}
+		}
+	}
+
+	if (!drop->num_flows)
+		goto skip_drop;
+
+	ret = ath12k_wifi8_dp_tx_proceed_drop(congstn, svc_data, cur_jiffies, drop);
+	if (ret)
+		ath12k_warn(ab, "drop msdu failed %d tx_desc_used_cnt %d\n",
+			    ret, used_cnt);
+
+	/* Store this congestion recovery event in the circular history buffer */
+	if (congstn->history && congstn->history_enable) {
+		struct ath12k_wifi8_congstn_history_entry *hist;
+		enum hal_tqm_service_category hsvc;
+
+		spin_lock(&congstn->history_lock);
+		hist = &congstn->history[congstn->history_head];
+
+		hist->timestamp = cur_jiffies;
+		hist->total_active_msdu = total_active_msdu;
+		hist->used_threshold = congstn->used_threshold;
+		hist->target_drop = target_drop;
+		hist->used_cnt = used_cnt;
+		hist->num_drop_flows = drop->num_flows;
+
+		for (hsvc = 0; hsvc < HAL_TQM_SERVICE_CATEGORY_MAX; hsvc++) {
+			hist->svc_num_flows[hsvc] = svc_data[hsvc].num_flows;
+			hist->svc_total_msdu[hsvc] = svc_data[hsvc].total_msdu_count;
+		}
+
+		memcpy(hist->drop_flows, drop->flows,
+		       drop->num_flows * sizeof(*drop->flows));
+
+		congstn->history_head = (congstn->history_head + 1) %
+					congstn->history_size;
+		congstn->history_count++;
+		spin_unlock(&congstn->history_lock);
+	}
+
+	congstn->last_drop_jiffies = cur_jiffies;
+
+skip_drop:
+	if (used_cnt > congstn->max_used)
+		congstn->max_used = used_cnt;
+
+	congstn->tick_counter++;
+	if (congstn->tick_counter >= congstn->scaling_factor) {
+		congstn->tick_counter = 0;
+		ath12k_wifi8_dp_tx_restore_flow_limit(dp_hw_grp_wifi8, cur_jiffies);
+	}
+
+	congstn->last_jiffies = cur_jiffies;
+	if (congstn->start)
+		mod_timer(&dp_hw_grp_wifi8->congstn.timer,
+			  jiffies + msecs_to_jiffies(dp_hw_grp_wifi8->congstn.interval));
+}
+
+int ath12k_wifi8_dp_tx_congestion_control_init(struct ath12k_dp *dp)
+{
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8 =
+			ath12k_get_dp_hw_group_wifi8(dp->dp_hw_grp);
+	struct ath12k_wifi8_dp_congestion_control *congstn =
+			&dp_hw_grp_wifi8->congstn;
+	enum hal_tqm_service_category svc;
+
+	if (!ath12k_congestion_ctrl)
+		return 0;
+
+	if (congstn->init)
+		return 0;
+
+	if (!ath12k_drop_algo)
+		congstn->calculate_drop = ath12k_wifi8_dp_tx_calculate_drop;
+	else
+		congstn->calculate_drop = ath12k_wifi8_dp_tx_calculate_drop2;
+
+	congstn->weights[HAL_TQM_SERVICE_CATEGORY_SC0] = 0;
+	congstn->weights[HAL_TQM_SERVICE_CATEGORY_SC1] = 10;
+	congstn->weights[HAL_TQM_SERVICE_CATEGORY_SC2] = 40;
+	congstn->weights[HAL_TQM_SERVICE_CATEGORY_SC3] = 50;
+
+	congstn->used_threshold = ATH12K_DP_TX_GET_USED_THRSHLD(ATH12K_NUM_POOL_TX_DESC,
+								ATH12K_HW_MAX_QUEUES);
+	congstn->flow_drop_grace_percent = ATH12K_DP_TX_SORT_FLOW_DROP_GRACE;
+
+	/* Enable sorting for flows in service category.*/
+	ath12k_wifi8_hal_enable_service_category_sorting(&dp->ab->hal);
+
+	timer_setup(&congstn->timer,
+		    ath12k_wifi8_dp_tx_congestion_recovery_handler, 0);
+
+	congstn->interval = ATH12K_DP_TX_CONGESTION_CTRL_INTERVAL_MS;
+	congstn->scaling_factor = ATH12K_DP_TX_CONGESTION_CTRL_2SEC_MS /
+				  congstn->interval;
+
+	/* Initialize per-service-category threshold lists */
+	congstn->continuous_drop_threshold = ATH12K_DP_TX_FLOW_CONTINUOUS_DROP_THRESHOLD;
+	for (svc = 0; svc < HAL_TQM_SERVICE_CATEGORY_MAX; svc++)
+		INIT_LIST_HEAD(&congstn->threshold_list[svc]);
+
+	spin_lock_init(&congstn->threshold_list_lock);
+
+	congstn->svc_data = kcalloc(HAL_TQM_SERVICE_CATEGORY_MAX,
+				    sizeof(*congstn->svc_data), GFP_KERNEL);
+	if (!congstn->svc_data)
+		goto err;
+
+	congstn->drop = kzalloc(sizeof(*congstn->drop), GFP_KERNEL);
+	if (!congstn->drop)
+		goto err_svc_data;
+
+	congstn->entries = kcalloc(HAL_TQM_MAX_SORTED_FLOW_ALL_SVC,
+				   sizeof(*congstn->entries),
+				   GFP_KERNEL);
+	if (!congstn->entries)
+		goto err_drop;
+
+	/* Allocate and initialize history circular buffer */
+	congstn->history_size = (ATH12K_DP_TX_CONGSTN_HISTORY_DURATION_SEC * 1000)
+				/ congstn->interval;
+	congstn->history = vcalloc(congstn->history_size, sizeof(*congstn->history));
+	if (!congstn->history)
+		goto err_entries;
+
+	congstn->history_head = 0;
+	congstn->history_count = 0;
+	spin_lock_init(&congstn->history_lock);
+
+	/* History logging is disabled by default; enable via debugfs */
+	congstn->history_enable = false;
+	congstn->init = true;
+
+	congstn->start = true;
+	mod_timer(&congstn->timer, jiffies + msecs_to_jiffies(congstn->interval));
+
+	return 0;
+
+err_entries:
+	kfree(congstn->entries);
+	congstn->entries = NULL;
+
+err_drop:
+	kfree(congstn->drop);
+	congstn->drop = NULL;
+
+err_svc_data:
+	kfree(congstn->svc_data);
+	congstn->svc_data = NULL;
+
+err:
+	return -ENOMEM;
+}
+
+void ath12k_wifi8_dp_tx_congestion_control_deinit(struct ath12k_dp *dp)
+{
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8 =
+			ath12k_get_dp_hw_group_wifi8(dp->dp_hw_grp);
+	struct ath12k_wifi8_dp_congestion_control *congstn =
+			&dp_hw_grp_wifi8->congstn;
+	struct ath12k_dp_msdu_q_info *msduq, *tmp;
+	enum hal_tqm_service_category svc;
+
+	if (!ath12k_congestion_ctrl)
+		return;
+
+	if (!congstn->init)
+		return;
+
+	congstn->start = false;
+	del_timer_sync(&congstn->timer);
+
+	/* Drain all per-service-category threshold lists */
+	spin_lock_bh(&congstn->threshold_list_lock);
+	for (svc = 0; svc < HAL_TQM_SERVICE_CATEGORY_MAX; svc++) {
+		list_for_each_entry_safe(msduq, tmp,
+					 &congstn->threshold_list[svc],
+					 threshold_node) {
+			list_del(&msduq->threshold_node);
+			msduq->in_threshold_list = false;
+		}
+	}
+	spin_unlock_bh(&congstn->threshold_list_lock);
+
+	/* Free dynamically allocated buffers */
+	kfree(congstn->svc_data);
+	congstn->svc_data = NULL;
+
+	kfree(congstn->drop);
+	congstn->drop = NULL;
+
+	kfree(congstn->entries);
+	congstn->entries = NULL;
+
+	vfree(congstn->history);
+	congstn->history = NULL;
+
+	congstn->init = false;
+}
+
 ssize_t ath12k_wifi8_dp_tx_dump_svc_sorted_list(struct ath12k_dp *dp, u8 ac_mask,
 						char *buf, int size)
 {
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8;
 	enum hal_tqm_service_category svc;
 	u32 flow_number, high_msdu_count;
 	int len = 0, ret;
 	u8 idx;
 
 	dp = ath12k_get_central_dp(dp);
+	if (!dp) {
+		len += scnprintf(buf + len, size - len, "DP unavailable\n");
+		goto out;
+	}
+
+	dp_hw_grp_wifi8 = ath12k_get_dp_hw_group_wifi8(dp->dp_hw_grp);
+	if (!dp_hw_grp_wifi8->congstn.init) {
+		len += scnprintf(buf + len, size - len, "Not inited\n");
+		goto out;
+	}
 
 	len += scnprintf(buf + len, size - len,
 			 "SVC\tidx\tFlow number\tmsdu_count\n");
@@ -4405,5 +5310,404 @@ ssize_t ath12k_wifi8_dp_tx_dump_svc_sorted_list(struct ath12k_dp *dp, u8 ac_mask
 		}
 	}
 
+out:
 	return len;
+}
+
+ssize_t ath12k_wifi8_dp_tx_dump_congestion_ctrl_stats(struct ath12k_dp *dp,
+						      char *buf, int size)
+{
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8;
+	struct ath12k_wifi8_dp_congestion_control *congstn;
+	struct ath12k_dp_msdu_q_info *msduq;
+	enum hal_tqm_service_category svc;
+	struct ath12k_hal *hal;
+	u32 threshold_count;
+	int len = 0;
+
+	dp = ath12k_get_central_dp(dp);
+	if (!dp)
+		return 0;
+
+	dp_hw_grp_wifi8 = ath12k_get_dp_hw_group_wifi8(dp->dp_hw_grp);
+	if (!dp_hw_grp_wifi8)
+		return 0;
+
+	congstn = &dp_hw_grp_wifi8->congstn;
+	if (!congstn->init) {
+		len += scnprintf(buf + len, size - len, "Not inited\n");
+		goto out;
+	}
+
+	hal = &dp->ab->hal;
+
+	len += scnprintf(buf + len, size - len,
+			 "Congestion Control Statistics:\n");
+	len += scnprintf(buf + len, size - len,
+			 "algorithm:                 %u\n",
+			 ath12k_drop_algo);
+	len += scnprintf(buf + len, size - len,
+			 "init:                      %s\n",
+			 congstn->init ? "true" : "false");
+	len += scnprintf(buf + len, size - len,
+			 "start:                     %s\n",
+			 congstn->start ? "true" : "false");
+	len += scnprintf(buf + len, size - len,
+			 "interval:                  %u ms\n",
+			 congstn->interval);
+	len += scnprintf(buf + len, size - len,
+			 "tx_desc_used_cnt:          %u\n",
+			 ath12k_wifi8_dp_tx_get_desc_used_cnt(dp->dp_hw_grp));
+	len += scnprintf(buf + len, size - len,
+			 "used_threshold:            %u\n",
+			 congstn->used_threshold);
+	len += scnprintf(buf + len, size - len,
+			 "max_used:                  %u\n",
+			 congstn->max_used);
+
+	svc = HAL_TQM_SERVICE_CATEGORY_MAX;
+	len += scnprintf(buf + len, size - len,
+			 "\nTotal active_msdu:       %u\n",
+			 ath12k_wifi8_hal_tqm_get_active_msdu(hal, svc));
+
+	for (svc = 0; svc < HAL_TQM_SERVICE_CATEGORY_MAX; svc++)
+		len += scnprintf(buf + len, size - len,
+				 "SC%d active_msdu: %u\n",
+				 svc,
+				 ath12k_wifi8_hal_tqm_get_active_msdu(hal, svc));
+
+	len += scnprintf(buf + len, size - len,
+			 "\nflow_drop_grace_percent:   %u%%\n",
+			 congstn->flow_drop_grace_percent);
+	len += scnprintf(buf + len, size - len,
+			 "continuous_drop_threshold: %u\n",
+			 congstn->continuous_drop_threshold);
+	len += scnprintf(buf + len, size - len,
+			 "scaling_factor:            %u\n",
+			 congstn->scaling_factor);
+	len += scnprintf(buf + len, size - len,
+			 "tick_counter:              %u\n",
+			 congstn->tick_counter);
+	len += scnprintf(buf + len, size - len,
+			 "last_drop_jiffies:         %lu\n",
+			 congstn->last_drop_jiffies);
+	len += scnprintf(buf + len, size - len,
+			 "last_jiffies:              %lu\n",
+			 congstn->last_jiffies);
+	len += scnprintf(buf + len, size - len,
+			 "history_enable:            %s (param type %u: 0=disable, 1=enable)\n",
+			 congstn->history_enable ? "true" : "false",
+			 ATH12K_CONGSTN_CTRL_HISTORY_ENABLE);
+
+	len += scnprintf(buf + len, size - len,
+			 "\nPer-Service-Category Weights:\n");
+	for (svc = 0; svc < HAL_TQM_SERVICE_CATEGORY_MAX; svc++)
+		len += scnprintf(buf + len, size - len,
+				 "SC%d weight: %u\n",
+				 svc, congstn->weights[svc]);
+
+	len += scnprintf(buf + len, size - len,
+			 "\nThreshold List (continuously dropped flows):\n");
+	len += scnprintf(buf + len, size - len,
+			 "SVC\tpeer_id\ttid\tflow_type\tconsec_drops\tlast_drop_jiffies\n");
+
+	spin_lock_bh(&congstn->threshold_list_lock);
+	for (svc = 0; svc < HAL_TQM_SERVICE_CATEGORY_MAX; svc++) {
+		threshold_count = 0;
+		list_for_each_entry(msduq, &congstn->threshold_list[svc],
+				    threshold_node) {
+			len += scnprintf(buf + len, size - len,
+					 "SC%d\t%u\t%u\t%u\t\t%u\t\t%lu\n",
+					 svc,
+					 msduq->flow_info.peer_id,
+					 msduq->flow_info.tid_num,
+					 msduq->flow_info.flow_type,
+					 msduq->consecutive_drop_count,
+					 msduq->last_drop_jiffies);
+			threshold_count++;
+			if (len >= size - 128)
+				break;
+		}
+		if (!threshold_count)
+			len += scnprintf(buf + len, size - len,
+					 "SC%d: (empty)\n", svc);
+	}
+	spin_unlock_bh(&congstn->threshold_list_lock);
+
+out:
+	return len;
+}
+
+/**
+ * ath12k_wifi8_dp_tx_dump_congestion_recovery_hist() - Dump the circular
+ *   history buffer of congestion recovery events to a user-supplied buffer.
+ *
+ * @dp:   DP context (will be resolved to the central DP internally).
+ * @buf:  Output character buffer.
+ * @size: Size of @buf in bytes.
+ *
+ * Each entry in the history corresponds to one invocation of
+ * ath12k_wifi8_dp_tx_congestion_recovery_handler() that resulted in a drop
+ * action.  The entries are printed in reverse chronological order (latest first).
+ *
+ * Returns the number of bytes written to @buf.
+ */
+ssize_t ath12k_wifi8_dp_tx_dump_congestion_recovery_hist(struct ath12k_dp *dp,
+							 char *buf, int size)
+{
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8;
+	struct ath12k_wifi8_dp_congestion_control *congstn;
+	struct ath12k_wifi8_congstn_history_entry *hist;
+	const struct ath12k_wifi8_flow_remove_entry *f;
+	enum hal_tqm_service_category svc;
+	u32 total, i, seq;
+	u8 fi;
+	int len = 0;
+
+	dp = ath12k_get_central_dp(dp);
+	if (!dp)
+		return 0;
+
+	dp_hw_grp_wifi8 = ath12k_get_dp_hw_group_wifi8(dp->dp_hw_grp);
+	if (!dp_hw_grp_wifi8)
+		return 0;
+
+	congstn = &dp_hw_grp_wifi8->congstn;
+	if (!congstn->init) {
+		len += scnprintf(buf + len, size - len, "Not inited\n");
+		goto out;
+	}
+
+	spin_lock_bh(&congstn->history_lock);
+
+	if (!congstn->history) {
+		len += scnprintf(buf + len, size - len,
+				 "Congestion Recovery History: (buffer not allocated)\n");
+		goto unlock;
+	}
+
+	total = min_t(u32, congstn->history_count,
+		      congstn->history_size);
+
+	len += scnprintf(buf + len, size - len,
+			 "Congestion Recovery History (%u entries, %u total events, %u Max used):\n",
+			 total, congstn->history_count, congstn->max_used);
+
+	if (!total) {
+		len += scnprintf(buf + len, size - len, "  (no events recorded)\n");
+		goto unlock;
+	}
+
+	len += scnprintf(buf + len, size - len,
+			 "  seq  timestamp    used_cnt  threshold  total_msdu  target_drop  num_flows\n");
+
+	/* history_head points to the next write slot.
+	 * The last written (latest) entry is at (history_head - 1).
+	 * Iterate backwards from there to print latest first.
+	 */
+	for (i = 0; i < total; i++) {
+		u32 idx = (congstn->history_head - 1 - i + congstn->history_size) %
+			  congstn->history_size;
+
+		hist = &congstn->history[idx];
+		seq = congstn->history_count - i;
+
+		len += scnprintf(buf + len, size - len,
+				 "  %-4u %-12lu %-9u %-10u %-11u %-12u %u\n",
+				 seq,
+				 hist->timestamp,
+				 hist->used_cnt,
+				 hist->used_threshold,
+				 hist->total_active_msdu,
+				 hist->target_drop,
+				 hist->num_drop_flows);
+
+		/* Per-service-category breakdown */
+		for (svc = 0; svc < HAL_TQM_SERVICE_CATEGORY_MAX; svc++) {
+			if (!hist->svc_num_flows[svc] && !hist->svc_total_msdu[svc])
+				continue;
+			len += scnprintf(buf + len, size - len,
+					 "       SC%d: flows=%u msdu=%u\n",
+					 svc,
+					 hist->svc_num_flows[svc],
+					 hist->svc_total_msdu[svc]);
+		}
+
+		/* Per-flow drop details */
+		if (hist->num_drop_flows > 0) {
+			len += scnprintf(buf + len, size - len,
+					 "       drops: flow_num   SC  peer  tid  flow_type  count  limit\n");
+			for (fi = 0; fi < hist->num_drop_flows; fi++) {
+				f = &hist->drop_flows[fi];
+				len += scnprintf(buf + len, size - len,
+						 "              0x%06x  SC%d  %-5u %-4u %-10u %-7u %-6u\n",
+						 f->u.flow_number,
+						 f->svc,
+						 f->u.flow_info.peer_id,
+						 f->u.flow_info.tid_num,
+						 f->u.flow_info.flow_type,
+						 f->drop,
+						 f->limit);
+				if (len >= size - 256)
+					break;
+			}
+		}
+
+		if (len >= size - 256)
+			break;
+	}
+
+unlock:
+	spin_unlock_bh(&congstn->history_lock);
+out:
+	return len;
+}
+
+int ath12k_wifi8_dp_tx_set_congestion_ctrl_param(struct ath12k_dp *dp,
+						 u32 type, u32 value)
+{
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8;
+	struct ath12k_wifi8_dp_congestion_control *congstn;
+
+	dp = ath12k_get_central_dp(dp);
+	if (!dp)
+		return -EINVAL;
+
+	dp_hw_grp_wifi8 = ath12k_get_dp_hw_group_wifi8(dp->dp_hw_grp);
+	if (!dp_hw_grp_wifi8)
+		return -EINVAL;
+
+	congstn = &dp_hw_grp_wifi8->congstn;
+	if (!congstn->init) {
+		ath12k_warn(dp->ab,
+			    "congestion ctrl not inited\n");
+		return -EOPNOTSUPP;
+	}
+
+	switch (type) {
+	case ATH12K_CONGSTN_CTRL_USED_THRESHOLD:
+		congstn->used_threshold = value;
+		ath12k_dbg(dp->ab, ATH12K_DBG_DP_TX,
+			   "congestion ctrl: used_threshold set to %u\n", value);
+		break;
+	case ATH12K_CONGSTN_CTRL_FLOW_DROP_GRACE_PCT:
+		if (value > 100)
+			return -EINVAL;
+		congstn->flow_drop_grace_percent = (u8)value;
+		ath12k_dbg(dp->ab, ATH12K_DBG_DP_TX,
+			   "congestion ctrl: flow_drop_grace_percent set to %u\n", value);
+		break;
+	case ATH12K_CONGSTN_CTRL_HISTORY_ENABLE:
+		if (value != 0 && value != 1)
+			return -EINVAL;
+		spin_lock_bh(&congstn->history_lock);
+		congstn->history_enable = (value != 0);
+		spin_unlock_bh(&congstn->history_lock);
+		ath12k_dbg(dp->ab, ATH12K_DBG_DP_TX,
+			   "congestion ctrl: history_enable set to %u\n", value);
+		break;
+	case ATH12K_CONGSTN_CTRL_RESET_USED:
+		congstn->max_used = 0;
+		ath12k_dbg(dp->ab, ATH12K_DBG_DP_TX,
+			   "congestion ctrl: Reset max used\n");
+		break;
+	default:
+		ath12k_warn(dp->ab,
+			    "congestion ctrl: unknown param type %u\n", type);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+int ath12k_wifi8_dp_tx_update_msdu_flow(struct ath12k_dp *dp,
+					u32 flow_number,
+					u8 tid,
+					u8 service_category,
+					u16 hard_drop_threshold)
+{
+	struct ath12k_dp_tx_flow_info *tx_flow_info;
+	struct ath12k_dp_msdu_q_info *sw_msduq_ptr = NULL;
+	struct ath12k_hal_tqm_cmd cmd;
+	struct ath12k_dp_peer *dp_peer;
+	struct ath12k_pdev_dp *dp_pdev;
+	union {
+		u32 flow_number;
+		struct ath12k_flow_metadata flow_info;
+	} flow;
+	u8 pdev_id, flow_type;
+	int ret = 0;
+
+	flow.flow_number = flow_number;
+	flow_type = flow.flow_info.flow_type;
+
+	rcu_read_lock();
+	for (pdev_id = 0; pdev_id < dp->ab->num_radios; pdev_id++) {
+		dp_pdev = rcu_dereference(dp->dp_pdevs[pdev_id]);
+		if (!dp_pdev)
+			continue;
+
+		dp_peer = ath12k_dp_peer_find_by_peerid_index(dp,
+							      dp_pdev,
+							      flow.flow_info.peer_id);
+		if (dp_peer)
+			break;
+	}
+
+	if (!dp_peer) {
+		ret = -ENOENT;
+		goto out;
+	}
+
+	tx_flow_info = ath12k_dp_get_tx_flow_info_from_peer(dp_peer);
+	if (!tx_flow_info) {
+		ret = -ENOENT;
+		goto out;
+	}
+
+	spin_lock_bh(&tx_flow_info->tx_q_lock);
+
+	if (flow_type == HTT_TID_MSDUQ_MCAST) {
+		sw_msduq_ptr = tx_flow_info->mcast_msduq;
+	} else {
+		if (tid >= ATH12K_MAX_NUM_DATA_TIDS ||
+		    flow_type >= ATH12K_MAX_DP_MSDUQ_PER_TID)
+			goto unlock;
+
+		sw_msduq_ptr = tx_flow_info->tid_info[tid].msduq[flow_type];
+	}
+
+	if (!sw_msduq_ptr || sw_msduq_ptr->msduq_state != ATH12K_TX_Q_INIT_DONE)
+		goto unlock;
+
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.std.peer_id = (u16)dp_peer->peer_id;
+
+	cmd.update_tx_msdu_params.svc = (enum hal_tqm_service_category)service_category;
+	cmd.update_tx_msdu_params.tx_flow_number = sw_msduq_ptr->queue_number;
+	cmd.update_tx_msdu_params.msdu_q_paddr = sw_msduq_ptr->msdu_q_paddr;
+	cmd.update_tx_msdu_params.tid = tid;
+	cmd.update_tx_msdu_params.hard_drop_threshold = hard_drop_threshold;
+
+	if (hard_drop_threshold)
+		cmd.update_tx_msdu_params.update_hard_drop_threshold = true;
+
+	ret = ath12k_wifi8_dp_tqm_cmd_send(dp->ab, HAL_TQM_UPDATE_MSDUQ_BO, &cmd,
+					   NULL, NULL);
+	if (ret) {
+		ath12k_err(dp->ab, "TQM UPDATE MSDUQ send failed for peer %pM id %d tid %d svc %d msduq %d\n",
+			   dp_peer->addr, dp_peer->peer_id, tid,
+			   service_category,
+			   flow_type);
+		goto unlock;
+	}
+
+	ath12k_dbg(dp->ab, ATH12K_DBG_DP_TX, "TQM update MSDUQ peer %pM flow_num 0x%x svc %d tid %d\n",
+		   dp_peer->addr, flow_number, service_category, tid);
+
+unlock:
+	spin_unlock_bh(&tx_flow_info->tx_q_lock);
+out:
+	rcu_read_unlock();
+	return ret;
 }

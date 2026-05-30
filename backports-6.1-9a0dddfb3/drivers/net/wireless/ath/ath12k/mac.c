@@ -5077,6 +5077,8 @@ static void ath12k_peer_assoc_h_phymode(struct ath12k *ar,
 			 arsta->addr, ath12k_mac_phymode_str(phymode));
 
 	arg->peer_phymode = phymode;
+	arsta->phymode = phymode;
+
 	WARN_ON(phymode == MODE_UNKNOWN);
 }
 
@@ -20892,6 +20894,7 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 {
 	const struct cfg80211_chan_def* chandef=ctx ? &ctx->def : NULL;
 	struct ath12k_vif* ahvif=arvif->ahvif;
+	struct ath12k_dp_link_vif *dp_link_vif;
 	struct ath12k* ar=arvif->ar;
 	struct ieee80211_hw* hw=ath12k_ar_to_hw(ar);
 	struct wmi_vdev_start_req_arg arg={};
@@ -21074,6 +21077,9 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 #endif /* CPTCFG_QCN_EXTN */
 		return ret;
 	}
+
+	dp_link_vif = &ahvif->dp_vif.dp_link_vif[arvif->link_id];
+	dp_link_vif->phymode = arg.mode;
 
 	arvif->last_vht_tx_mcs_map = 0;
 	arvif->last_ht_tx_mcs_map = 0;

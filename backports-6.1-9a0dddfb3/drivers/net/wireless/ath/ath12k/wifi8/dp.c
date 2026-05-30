@@ -251,6 +251,8 @@ static void ath12k_wifi8_dp_umac_deinit(struct ath12k_dp *dp)
 		return;
 	}
 
+	ath12k_wifi8_dp_tx_congestion_control_deinit(dp);
+
 	ath12k_dp_link_desc_cleanup(ab, dp->link_desc_banks,
 				    HAL_WBM_IDLE_LINK, &dp->wbm_idle_ring);
 
@@ -506,11 +508,22 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 
 	ret = ath12k_wifi8_dp_tx_pool_create(dp->dp_hw_grp);
 	if (ret) {
-		ath12k_warn(dp, "dp pool create for queues failed %d\n", ret);
+		ath12k_warn(ab, "dp pool create for queues failed %d\n", ret);
 		goto fail_pn_counter_page_free;
 	}
 
-	ath12k_wifi8_dp_telemetry_init(dp);
+	/* init for congestion control.*/
+	ret = ath12k_wifi8_dp_tx_congestion_control_init(dp);
+	if (ret) {
+		ath12k_warn(ab, "dp congestion control init failed %d\n", ret);
+		goto fail_pool_destroy;
+	}
+
+	ret = ath12k_wifi8_dp_telemetry_init(dp);
+	if (ret) {
+		ath12k_warn(ab, "dp telemetry init failed %d\n", ret);
+		goto fail_congestion_control;
+	}
 
 	spin_lock_init(&dp_hw_group_wifi8->htt_cmd_retry_lock);
 	INIT_DELAYED_WORK(&dp_hw_group_wifi8->dp_htt_retry_dwork,
@@ -525,7 +538,7 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 		ret = dp->ppe.ppe_ops->ath12k_ppeds_start(ab);
 		if (ret) {
 			ath12k_err(ab, "failed to start DP PPEDS\n");
-			goto fail_pn_counter_page_free;
+			goto fail_htt_retry;
 		}
 	}
 #endif
@@ -537,6 +550,20 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 	dp_wifi8->init_done = true;
 	ath12k_info(ab, "CUMAC init successful");
 	return 0;
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+fail_htt_retry:
+	atomic_set(&dp_hw_group_wifi8->retry_work_active, 0);
+	cancel_delayed_work_sync(&dp_hw_group_wifi8->dp_htt_retry_dwork);
+	ath12k_wifi8_dp_telemetry_deinit(dp);
+#endif
+
+fail_congestion_control:
+	ath12k_wifi8_dp_tx_congestion_control_deinit(dp);
+
+fail_pool_destroy:
+	ath12k_wifi8_dp_tx_pool_destroy(dp->dp_hw_grp);
+
 fail_pn_counter_page_free:
 	ath12k_dp_pn_counter_page_free(dp->dp_hw_grp);
 
@@ -1245,6 +1272,10 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.dp_qos_queue_setup = ath12k_wifi8_qos_queue_setup,
 	.peer_tx_tid_update_for_smd = ath12k_wifi8_peer_tx_tid_update_for_smd,
 	.dump_svc_sorted_list = ath12k_wifi8_dp_tx_dump_svc_sorted_list,
+	.update_tx_msdu_flow = ath12k_wifi8_dp_tx_update_msdu_flow,
+	.dump_congestion_ctrl_stats = ath12k_wifi8_dp_tx_dump_congestion_ctrl_stats,
+	.dump_congestion_recovery_hist = ath12k_wifi8_dp_tx_dump_congestion_recovery_hist,
+	.set_congestion_ctrl_param = ath12k_wifi8_dp_tx_set_congestion_ctrl_param,
 };
 
 struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab)

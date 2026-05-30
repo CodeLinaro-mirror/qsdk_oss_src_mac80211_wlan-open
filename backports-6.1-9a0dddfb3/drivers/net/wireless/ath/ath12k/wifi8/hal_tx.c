@@ -559,6 +559,13 @@ int ath12k_wifi8_hal_tqm_update_msduq(struct ath12k_base *ab,
 						HAL_TQM_FLOW_SERVICE_CATEGORY);
 	}
 
+	if (update_params->update_hard_drop_threshold) {
+		desc->info1 |= le32_encode_bits(1,
+						HAL_TQM_FLOW_UPDATE_HARD_DROP_THRESHOLD);
+		desc->info4 = le32_encode_bits(update_params->hard_drop_threshold,
+					       HAL_TQM_FLOW_HARD_DROP_THRESHOLD);
+	}
+
 	return le32_get_bits(desc->cmd_hdr.info0, HAL_TQM_CMD_NUMBER);
 }
 
@@ -1076,6 +1083,37 @@ void ath12k_wifi8_hal_tqm_sorting_latch(struct ath12k_hal *hal)
 	struct ath12k_base *ab = container_of(hal, struct ath12k_base, hal);
 
 	ath12k_hif_write32(ab, HAL_TQM_R0_SORTING_REG, HAL_TQM_R0_SORTING_LATCH);
+}
+
+u32 ath12k_wifi8_hal_tqm_get_active_msdu(struct ath12k_hal *hal,
+					 enum hal_tqm_service_category svc)
+{
+	struct ath12k_base *ab = container_of(hal, struct ath12k_base, hal);
+	u32 msdu_count;
+
+	switch (svc) {
+	case HAL_TQM_SERVICE_CATEGORY_SC0:
+		msdu_count = ath12k_hif_read32(ab, HAL_TQM_R0_SC0_ACTIVE_MSDU_CNT);
+		break;
+	case HAL_TQM_SERVICE_CATEGORY_SC1:
+		msdu_count = ath12k_hif_read32(ab, HAL_TQM_R0_SC1_ACTIVE_MSDU_CNT);
+		break;
+	case HAL_TQM_SERVICE_CATEGORY_SC2:
+		msdu_count = ath12k_hif_read32(ab, HAL_TQM_R0_SC2_ACTIVE_MSDU_CNT);
+		break;
+	case HAL_TQM_SERVICE_CATEGORY_SC3:
+		msdu_count = ath12k_hif_read32(ab, HAL_TQM_R0_SC3_ACTIVE_MSDU_CNT);
+		break;
+	case HAL_TQM_SERVICE_CATEGORY_MAX:
+		msdu_count = ath12k_hif_read32(ab, HAL_TQM_R0_ACTIVE_MSDU_CNT);
+		break;
+	default:
+		ath12k_warn(ab, "active msdu cnt failed due to invalid svc %d\n", svc);
+		msdu_count = 0;
+		break;
+	}
+
+	return msdu_count;
 }
 
 int ath12k_wifi8_hal_tqm_get_svc_sorted_list(struct ath12k_hal *hal,

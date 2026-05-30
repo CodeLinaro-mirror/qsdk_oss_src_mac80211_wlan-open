@@ -2244,6 +2244,7 @@ static void ath12k_dp_tx_spt_free_and_deinit(struct ath12k_dp_hw_group *dp_hw_gr
 		kfree(dp_hw_grp->spt_info);
 		dp_hw_grp->spt_info = NULL;
 	}
+
 	dp_hw_grp->tx_spt_dev = NULL;
 	dp_hw_grp->tx_desc_initialized = false;
 }
@@ -2273,7 +2274,7 @@ static int ath12k_dp_tx_spt_alloc_and_init(struct ath12k_base *ab)
 				      sizeof(struct ath12k_spt_info), GFP_KERNEL);
 	if (!dp_hw_grp->spt_info) {
 		ret = -ENOMEM;
-		goto unlock;
+		goto free;
 	}
 
 	dp_hw_grp->tx_spt_dev = ab->dev;

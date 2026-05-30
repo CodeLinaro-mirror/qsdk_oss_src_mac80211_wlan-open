@@ -9,8 +9,34 @@
 
 #include "../dp.h"
 #include "hal_desc.h"
+#include "hal.h"
+#include "dp_tx_flow_info.h"
 
 #define DP_TX_SFE_BUFFER_SIZE           256
+
+#define ATH12K_DP_TX_CONGESTION_CTRL_INTERVAL_MS	100
+#define ATH12K_DP_TX_CONGESTION_CTRL_2SEC_MS		(2 * MSEC_PER_SEC)
+#define ATH12K_DP_TX_GET_USED_THRSHLD(_cnt_, _POOL_)	(((_cnt_) * (_POOL_) * 80) / 100)
+#define ATH12K_DP_TX_DEFAULT_HARD_DROP_THRESHOLD	10240
+#define ATH12K_DP_TX_SORT_FLOW_DROP_GRACE		2
+#define ATH12K_DP_TX_FLOW_CONTINUOUS_DROP_THRESHOLD	5
+
+/**
+ * enum ath12k_wifi8_congstn_ctrl_param_type - congestion control parameter types
+ * ATH12K_CONGSTN_CTRL_USED_THRESHOLD: set used_threshold (u32)
+ * ATH12K_CONGSTN_CTRL_FLOW_DROP_GRACE_PCT: set flow_drop_grace_percent (0-100)
+ * ATH12K_CONGSTN_CTRL_HISTORY_ENABLE: enable(1)/disable(0) history logging
+ * ATH12K_CONGSTN_CTRL_RESET_USED: Reset the max used count
+ */
+enum ath12k_wifi8_congstn_ctrl_param_type {
+	ATH12K_CONGSTN_CTRL_USED_THRESHOLD,
+	ATH12K_CONGSTN_CTRL_FLOW_DROP_GRACE_PCT,
+	ATH12K_CONGSTN_CTRL_HISTORY_ENABLE,
+	ATH12K_CONGSTN_CTRL_RESET_USED,
+
+	/* keep last */
+	ATH12K_CONGSTN_CTRL_TYPE_MAX
+};
 
 struct ath12k_dp_tx_queue {
 	u16 peer_id;
@@ -26,6 +52,50 @@ struct ath12k_dp_tqm_cmd {
 	void (*handler)(struct ath12k_dp *dp, void *ctx,
 			struct hal_tqm_status *tqm_status);
 };
+
+struct ath12k_wifi8_dp_tx_flow_cost {
+	u8 svc;
+	u8 idx;
+	u32 num;
+	u32 weight;
+	u32 cost;
+};
+
+struct ath12k_wifi8_flow_entry {
+	union {
+		u32 flow_number;
+		struct ath12k_flow_metadata flow_info;
+	} u;
+	enum hal_tqm_service_category svc;
+	u32 msdu_count;
+};
+
+struct ath12k_wifi8_flow_remove_entry {
+	union {
+		u32 flow_number;
+		struct ath12k_flow_metadata flow_info;
+	} u;
+	u32 drop;
+	u8 svc:2,
+	   idx:4,
+	   limited:1;
+	u32 limit;
+};
+
+struct ath12k_wifi8_svc_sorted_flows {
+	struct ath12k_wifi8_flow_entry flows[HAL_TQM_MAX_SORTED_FLOW];
+	u32 total_msdu_count;
+	u8 num_flows;
+	u8 weight;
+};
+
+struct ath12k_wifi8_svc_remove_flows {
+	struct ath12k_wifi8_flow_remove_entry flows[HAL_TQM_MAX_SORTED_FLOW_ALL_SVC];
+	u8 num_flows;
+};
+
+extern bool ath12k_congestion_ctrl;
+extern unsigned int ath12k_drop_algo;
 
 int ath12k_wifi8_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int budget);
 u32 ath12k_wifi8_dp_tx_get_vdev_bank_config(struct ath12k_base *ab,
@@ -90,4 +160,16 @@ void ath12k_wifi8_mcbc_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 			       struct ieee80211_tx_info *info);
 ssize_t ath12k_wifi8_dp_tx_dump_svc_sorted_list(struct ath12k_dp *dp, u8 ac_mask,
 						char *buf, int size);
+int ath12k_wifi8_dp_tx_congestion_control_init(struct ath12k_dp *dp);
+void ath12k_wifi8_dp_tx_congestion_control_deinit(struct ath12k_dp *dp);
+void ath12k_wifi8_dp_tx_congestion_recovery_handler(struct timer_list *t);
+int ath12k_wifi8_dp_tx_update_msdu_flow(struct ath12k_dp *dp, u32 flow_number,
+					u8 tid, u8 service_category,
+					u16 hard_drop_threshold);
+ssize_t ath12k_wifi8_dp_tx_dump_congestion_ctrl_stats(struct ath12k_dp *dp,
+						      char *buf, int size);
+ssize_t ath12k_wifi8_dp_tx_dump_congestion_recovery_hist(struct ath12k_dp *dp,
+							 char *buf, int size);
+int ath12k_wifi8_dp_tx_set_congestion_ctrl_param(struct ath12k_dp *dp,
+						 u32 type, u32 value);
 #endif

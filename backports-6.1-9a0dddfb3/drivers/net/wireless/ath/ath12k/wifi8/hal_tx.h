@@ -149,6 +149,8 @@ void ath12k_wifi8_hal_tqm_update_msduq_cmd_status(struct ath12k_base *ab,
 						  struct hal_tlv_64_hdr *tlv,
 						  struct hal_tqm_status *status);
 void ath12k_wifi8_hal_tqm_sorting_latch(struct ath12k_hal *hal);
+u32 ath12k_wifi8_hal_tqm_get_active_msdu(struct ath12k_hal *hal,
+					 enum hal_tqm_service_category svc);
 int ath12k_wifi8_hal_tqm_get_svc_sorted_list(struct ath12k_hal *hal,
 					     enum hal_tqm_service_category svc,
 					     u8 idx,
