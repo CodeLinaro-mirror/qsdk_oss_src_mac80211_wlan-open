@@ -1485,6 +1485,7 @@ ath12k_wlan_telemetry_feat_policy[QCA_VENDOR_ATTR_WLAN_FEAT_MAX + 1] = {
 	[QCA_VENDOR_ATTR_WLAN_FEAT_SDWFDELAY] = {.type = NLA_FLAG},
 	[QCA_VENDOR_ATTR_WLAN_FEAT_PROTO] = {.type = NLA_FLAG},
 	[QCA_VENDOR_ATTR_WLAN_FEAT_TID] = {.type = NLA_FLAG},
+	[QCA_VENDOR_ATTR_WLAN_FEAT_DELAY] = {.type = NLA_FLAG},
 };
 
 int ath12k_extract_feat_inputs(struct nlattr *tb_attr,
@@ -1522,6 +1523,9 @@ int ath12k_extract_feat_inputs(struct nlattr *tb_attr,
 	if (cmd->svc_id != INVALID_SVC_ID &&
 	    feat_attr[QCA_VENDOR_ATTR_WLAN_FEAT_SDWFDELAY])
 		cmd->feat.feat_sdwfdelay = true;
+
+	if (feat_attr[QCA_VENDOR_ATTR_WLAN_FEAT_DELAY])
+		cmd->feat.feat_delay = true;
 
 	return ret;
 }
@@ -3015,6 +3019,53 @@ static int ath12k_get_tid_stats_attr_size(void)
 	return nla_total_size_nested(tx_size + rx_size);
 }
 
+/**
+ * ath12k_get_delay_hist_attr_size() - Calculate NL buffer size for one histogram
+ *
+ * Returns the netlink attribute size needed to serialize a single
+ * struct hist_stats (min, max, avg + HIST_BUCKET_MAX frequency buckets).
+ */
+static int ath12k_get_delay_hist_attr_size(void)
+{
+	int size = 0;
+	int freq_payload;
+
+	/* min, max, avg */
+	size += nla_total_size(sizeof(u32)) * 3;
+
+	/* freq array: HIST_BUCKET_MAX u64 values */
+	freq_payload = nla_total_size_64bit(sizeof(u64)) *
+		QCA_WLAN_VENDOR_ATTR_TELE_DELAY_HIST_BUCKET_MAX;
+	size += nla_total_size_nested(freq_payload);
+
+	return size;
+}
+
+/**
+ * ath12k_get_delay_stats_attr_size() - Calculate NL buffer size for all TID delay stats
+ *
+ * Returns the total netlink attribute size needed to serialize
+ * struct ath12k_dp_peer_tid_agg_delay_stats (DP_TID_MAX TIDs, each with
+ * TX SW queue, TX HW, and RX to-stack delay histograms).
+ */
+static int ath12k_get_delay_stats_attr_size(void)
+{
+	int hist_size;
+	int tid_size;
+	int total_size;
+
+	hist_size = ath12k_get_delay_hist_attr_size();
+
+	/* Per TID: TID index + 3 nested histograms */
+	tid_size = nla_total_size(sizeof(u8));
+	tid_size += nla_total_size_nested(hist_size) * 3;
+
+	/* DP_TID_MAX TIDs, each wrapped in a nested attr */
+	total_size = nla_total_size_nested(tid_size) * DP_TID_MAX;
+
+	return total_size;
+}
+
 static int ath12k_get_dp_peer_attr_len(struct ath12k_telemetry_command *cmd)
 {
 	int total_size = 0;
@@ -3038,6 +3089,9 @@ static int ath12k_get_dp_peer_attr_len(struct ath12k_telemetry_command *cmd)
 
 	if (cmd->feat.feat_sdwfdelay)
 		total_size += ath12k_get_feat_sdwfdelay_attr_size(cmd);
+
+	if (cmd->feat.feat_delay)
+		total_size += ath12k_get_delay_stats_attr_size();
 
 	return total_size;
 }
@@ -4814,6 +4868,141 @@ ath12k_fill_peer_hw_tx_stats(struct sk_buff *vendor_event,
 	return 0;
 }
 
+/**
+ * ath12k_fill_tid_delay_stats() - Serialize a hist_stats delay structure
+ * @vendor_event: netlink skb
+ * @delay: pointer to the hist_stats to serialize
+ * @attr_id: the TID TX attribute ID to use as the outer nest
+ *           (QCA_VENDOR_ATTR_TID_TX_SWQ_DELAY, _HWTX_DELAY, or _INTFRM_DELAY)
+ *
+ * Emits:
+ *   <attr_id>
+ *     QCA_VENDOR_ATTR_TID_DELAY_MAX_VAL  (u32)
+ *     QCA_VENDOR_ATTR_TID_DELAY_MIN_VAL  (u32)
+ *     QCA_VENDOR_ATTR_TID_DELAY_AVG_VAL  (u32)
+ *     QCA_VENDOR_ATTR_TID_DELAY_HIST     (nested)
+ *       1 .. HIST_BUCKET_MAX  (u64 each)
+ *   </attr_id>
+ *
+ * Return: 0 on success, -EINVAL on failure.
+ */
+static int ath12k_fill_tid_delay_stats(struct sk_buff *vendor_event,
+				       const struct hist_stats *delay,
+				       int attr_id)
+{
+	struct nlattr *delay_attr;
+	struct nlattr *hist_attr;
+	int i;
+
+	delay_attr = nla_nest_start(vendor_event, attr_id);
+	if (!delay_attr)
+		return -EINVAL;
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TID_DELAY_MAX_VAL,
+			delay->max) ||
+	    nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TID_DELAY_MIN_VAL,
+			delay->min) ||
+	    nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TID_DELAY_AVG_VAL,
+			delay->avg)) {
+		nla_nest_cancel(vendor_event, delay_attr);
+		return -EINVAL;
+	}
+
+	hist_attr = nla_nest_start(vendor_event,
+				   QCA_VENDOR_ATTR_TID_DELAY_HIST);
+	if (!hist_attr) {
+		nla_nest_cancel(vendor_event, delay_attr);
+		return -EINVAL;
+	}
+
+	for (i = 0; i < QCA_WLAN_VENDOR_ATTR_TELE_DELAY_HIST_BUCKET_MAX &&
+	     i < ARRAY_SIZE(delay->hist.freq); i++) {
+		if (nla_put_u64_64bit(vendor_event, i + 1,
+				      delay->hist.freq[i],
+				      NL80211_ATTR_PAD)) {
+			nla_nest_cancel(vendor_event, hist_attr);
+			nla_nest_cancel(vendor_event, delay_attr);
+			return -EINVAL;
+		}
+	}
+	nla_nest_end(vendor_event, hist_attr);
+	nla_nest_end(vendor_event, delay_attr);
+
+	return 0;
+}
+
+/**
+ * ath12k_fill_peer_delay_stats() - Fill per-TID delay stats into NL vendor event
+ * @ar: ath12k radio pointer (unused, kept for consistency with other fill functions)
+ * @vendor_event: sk_buff to write into
+ * @peer_stats: peer stats containing the delay pointer
+ *
+ * Serializes peer_stats->delay (struct ath12k_dp_peer_tid_agg_delay_stats) into
+ * the vendor event buffer. For each TID (0..DP_TID_MAX-1) it emits:
+ *   - QCA_VENDOR_ATTR_DELAY_STATS_TX_SWQ  (nested hist_stats)
+ *   - QCA_VENDOR_ATTR_DELAY_STATS_TX_HW   (nested hist_stats)
+ *   - QCA_VENDOR_ATTR_DELAY_STATS_RX_TO_STACK (nested hist_stats)
+ *
+ * Returns 0 on success, negative error code on failure.
+ * If peer_stats->delay is NULL the function returns 0 immediately.
+ */
+static int ath12k_fill_peer_delay_stats(struct ath12k *ar,
+					struct sk_buff *vendor_event,
+					struct ath12k_dp_peer_stats *peer_stats)
+{
+	struct ath12k_dp_peer_tid_agg_delay_stats *delay = peer_stats->delay;
+	struct ath12k_dp_peer_delay_tid_stats *tid_stats;
+	struct nlattr *tid_attr;
+	int tid;
+	int ret;
+
+	if (!delay)
+		return 0;
+
+	for (tid = 0; tid < DP_TID_MAX; tid++) {
+		tid_stats = &delay->tid_stats[tid];
+
+		tid_attr = nla_nest_start(vendor_event, tid + 1);
+		if (!tid_attr) {
+			ath12k_err(NULL, "nla nest failure: delay stats TID %d", tid);
+			return -EINVAL;
+		}
+
+		ret = ath12k_fill_tid_delay_stats(vendor_event,
+						  &tid_stats->tx_delay.tx_swq_delay,
+						  QCA_VENDOR_ATTR_DELAY_STATS_TX_SWQ);
+		if (ret) {
+			ath12k_err(NULL, "Error filling TX SWQ delay for TID %d", tid);
+			nla_nest_cancel(vendor_event, tid_attr);
+			return ret;
+		}
+
+		ret = ath12k_fill_tid_delay_stats(vendor_event,
+						  &tid_stats->tx_delay.hwtx_delay,
+						  QCA_VENDOR_ATTR_DELAY_STATS_TX_HW);
+		if (ret) {
+			ath12k_err(NULL, "Error filling TX HW delay for TID %d", tid);
+			nla_nest_cancel(vendor_event, tid_attr);
+			return ret;
+		}
+
+		ret =
+		    ath12k_fill_tid_delay_stats(vendor_event,
+						&tid_stats->rx_delay.to_stack_delay,
+						QCA_VENDOR_ATTR_DELAY_STATS_RX_TO_STACK);
+		if (ret) {
+			ath12k_err(NULL,
+				   "Error filling RX to-stack delay for TID %d", tid);
+			nla_nest_cancel(vendor_event, tid_attr);
+			return ret;
+		}
+
+		nla_nest_end(vendor_event, tid_attr);
+	}
+
+	return 0;
+}
+
 static int ath12k_fill_peer_tx_stats(struct ath12k *ar,
 				     struct sk_buff *vendor_event,
 				     struct ath12k_dp_peer_stats *peer_stats,
@@ -6525,6 +6714,7 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 	struct ath12k_htt_tx_stats *htt_tx_stats;
 	struct ath12k *ar = &ahvif->ah->radio[0];
 	struct ath12k_dp_proto_stats_peer *proto;
+	struct ath12k_dp_peer_tid_agg_delay_stats *delay;
 	struct ath12k_rx_peer_stats *rx_mon_stats;
 	struct nlattr *attr;
 	int ret = -EINVAL;
@@ -6577,13 +6767,22 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 		hw_stats = vzalloc(sizeof(*hw_stats));
 		if (!hw_stats) {
 			vfree(hw_link_stats);
+		}
+		telemetry_peer->mld_stats.hw_stats = hw_stats;
+	}
+
+	if (ath12k_dp_delay_stats_enabled(&ar->dp)) {
+		delay = vzalloc(sizeof(*delay));
+
+		if (!delay) {
+			vfree(hw_link_stats);
 			vfree(proto);
 			vfree(htt_tx_stats);
 			vfree(rx_mon_stats);
 			vfree(telemetry_peer);
 			return -ENOMEM;
 		}
-		telemetry_peer->mld_stats.hw_stats = hw_stats;
+		telemetry_peer->peer_stats.delay = delay;
 	}
 
 	if (ath12k_dp_get_peer_stats(ahvif, telemetry_peer, cmd->mac,
@@ -6706,6 +6905,24 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 		}
 	}
 
+	if (cmd->feat.feat_delay) {
+		attr = nla_nest_start(vendor_event,
+				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_DELAY_EVENT);
+		if (attr) {
+			if (ath12k_fill_peer_delay_stats(ar,
+							 vendor_event,
+							 &telemetry_peer->peer_stats)) {
+				ath12k_err(NULL, "nla put failure: Delay stats");
+				ret = -EINVAL;
+				goto out;
+			}
+			nla_nest_end(vendor_event, attr);
+		} else {
+			ath12k_err(NULL, "nla nest failure: Sta Delay feat stats");
+			goto out;
+		}
+	}
+
 	ret = 0;
 out:
 	if (ath12k_dp_hw_peer_stats_enabled(&ar->dp)) {
@@ -6713,6 +6930,7 @@ out:
 		vfree(hw_link_stats);
 	}
 	vfree(proto);
+	vfree(delay);
 	vfree(htt_tx_stats);
 	vfree(rx_mon_stats);
 	vfree(telemetry_peer);
@@ -7873,69 +8091,6 @@ static int ath12k_fill_radio_tx_stats(struct ath12k *ar,
 					ATH12K_PEER_INVAL);
 
 	return ret;
-}
-
-/**
- * ath12k_fill_tid_delay_stats() - Serialize a hist_stats delay structure
- * @vendor_event: netlink skb
- * @delay: pointer to the hist_stats to serialize
- * @attr_id: the TID TX attribute ID to use as the outer nest
- *           (QCA_VENDOR_ATTR_TID_TX_SWQ_DELAY, _HWTX_DELAY, or _INTFRM_DELAY)
- *
- * Emits:
- *   <attr_id>
- *     QCA_VENDOR_ATTR_TID_DELAY_MAX_VAL  (u32)
- *     QCA_VENDOR_ATTR_TID_DELAY_MIN_VAL  (u32)
- *     QCA_VENDOR_ATTR_TID_DELAY_AVG_VAL  (u32)
- *     QCA_VENDOR_ATTR_TID_DELAY_HIST     (nested)
- *       1 .. HIST_BUCKET_MAX  (u64 each)
- *   </attr_id>
- *
- * Return: 0 on success, -EINVAL on failure.
- */
-static int ath12k_fill_tid_delay_stats(struct sk_buff *vendor_event,
-					  const struct hist_stats *delay,
-					  int attr_id)
-{
-	struct nlattr *delay_attr;
-	struct nlattr *hist_attr;
-	int i;
-
-	delay_attr = nla_nest_start(vendor_event, attr_id);
-	if (!delay_attr)
-		return -EINVAL;
-
-	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TID_DELAY_MAX_VAL,
-			delay->max) ||
-	    nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TID_DELAY_MIN_VAL,
-			delay->min) ||
-	    nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TID_DELAY_AVG_VAL,
-			delay->avg)) {
-		nla_nest_cancel(vendor_event, delay_attr);
-		return -EINVAL;
-	}
-
-	hist_attr = nla_nest_start(vendor_event,
-				   QCA_VENDOR_ATTR_TID_DELAY_HIST);
-	if (!hist_attr) {
-		nla_nest_cancel(vendor_event, delay_attr);
-		return -EINVAL;
-	}
-
-	for (i = 0; i < QCA_WLAN_VENDOR_ATTR_TELE_DELAY_HIST_BUCKET_MAX &&
-	     i < ARRAY_SIZE(delay->hist.freq); i++) {
-		if (nla_put_u64_64bit(vendor_event, i + 1,
-				      delay->hist.freq[i],
-				      NL80211_ATTR_PAD)) {
-			nla_nest_cancel(vendor_event, hist_attr);
-			nla_nest_cancel(vendor_event, delay_attr);
-			return -EINVAL;
-		}
-	}
-	nla_nest_end(vendor_event, hist_attr);
-	nla_nest_end(vendor_event, delay_attr);
-
-	return 0;
 }
 
 static int ath12k_fill_tid_rx_stats(struct sk_buff *vendor_event,

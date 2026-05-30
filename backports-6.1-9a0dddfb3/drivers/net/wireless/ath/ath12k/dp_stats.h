@@ -1026,6 +1026,7 @@ struct ath12k_dp_peer_stats {
 	struct ath12k_tele_qos_tx_ctx tx_ctx;
 	struct ath12k_tele_qos_delay_ctx delay_ctx;
 	struct ath12k_dp_proto_stats_peer *proto;
+	struct ath12k_dp_peer_tid_agg_delay_stats *delay;
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 	struct ath12k_dp_peer_mmesh_stats mmesh_stat;
 #endif
@@ -1084,6 +1085,7 @@ struct ath12k_stats_feat {
 	bool feat_sdwfdelay;
 	bool feat_proto;
 	bool feat_tid;
+	bool feat_delay;
 };
 
 struct ath12k_telemetry_command {
@@ -1176,6 +1178,17 @@ struct ath12k_rx_peer_user_stats {
 	u32 mpdu_cnt_fcs_ok;
 	u32 mpdu_cnt_fcs_err;
 	struct pkt_type ppdu;
+};
+
+/**
+ * struct ath12k_dp_peer_tid_agg_delay_stats - Container for aggregated all-rings stats
+ * @tid_stats: Array of per-TID statistics aggregated across all rings
+ *
+ * This structure holds delay statistics for all TIDs, where each TID's statistics
+ * represent the aggregation of data from all rings.
+ */
+struct ath12k_dp_peer_tid_agg_delay_stats {
+	struct ath12k_dp_peer_delay_tid_stats tid_stats[DP_TID_MAX];
 };
 
 #define MCS_VALID 1
@@ -1828,4 +1841,7 @@ void ath12k_dp_tid_rx_stats_hist_init(struct ath12k_pdev_dp *dp_pdev);
  * allocation before any delay stats are updated.
  */
 void ath12k_dp_tid_tx_stats_hist_init(struct ath12k_pdev_dp *dp_pdev);
+
+void ath12k_dp_accumulate_hist_stats(struct hist_stats *src_hist_stats,
+				     struct hist_stats *dst_hist_stats);
 #endif

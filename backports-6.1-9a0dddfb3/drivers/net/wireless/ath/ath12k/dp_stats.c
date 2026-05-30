@@ -575,7 +575,7 @@ void ath12k_dp_clear_preserved_stats(struct ath12k_dp_preserved_stats *stats)
  * Accumulates frequency buckets and updates min/max/avg in dst.
  * The hist_type of dst is preserved; src's hist_type is ignored.
  */
-static void ath12k_dp_accumulate_hist_stats(struct hist_stats *src_hist_stats,
+void ath12k_dp_accumulate_hist_stats(struct hist_stats *src_hist_stats,
 				     struct hist_stats *dst_hist_stats)
 {
 	u8 index;
@@ -809,7 +809,10 @@ void ath12k_dp_update_hist_stats(struct hist_stats *hist_stats, u32 value)
 
 	ath12k_dp_hist_fill_buckets(&hist_stats->hist, value);
 
-	if (value != 0 && value < hist_stats->min)
+	if (!value)
+		return;
+
+	if (value < hist_stats->min)
 		hist_stats->min = value;
 
 	if (value > hist_stats->max)
