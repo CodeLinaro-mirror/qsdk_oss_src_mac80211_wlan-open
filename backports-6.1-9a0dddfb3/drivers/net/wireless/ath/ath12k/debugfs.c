@@ -6415,7 +6415,6 @@ static void ath12k_dp_peer_reset_delay_stats(struct ath12k_dp_peer *dp_peer)
 	struct ath12k_dp_peer_delay_tid_stats *delay_tid_stats;
 	struct ath12k_dp_peer_delay_tx_stats *tx_delay;
 	struct ath12k_dp_peer_delay_rx_stats *rx_delay;
-	u8 index;
 	u8 tid, ring_id;
 
 	if (!dp_peer || !dp_peer->mld_stats.delay_stats)
@@ -6424,23 +6423,45 @@ static void ath12k_dp_peer_reset_delay_stats(struct ath12k_dp_peer *dp_peer)
 	delay_stats = dp_peer->mld_stats.delay_stats;
 
 	rcu_read_lock();
-	for (index = 0; index < ATH12K_DP_PEER_MAX_MLO_LINKS; index++) {
-		for (tid = 0; tid < DP_TID_MAX; tid++) {
-			for (ring_id = 0; ring_id < DP_REO_DST_RING_MAX; ring_id++) {
-				delay_tid_stats =
-					&delay_stats->delay_tid_stats[tid][ring_id];
-				tx_delay = &delay_tid_stats->tx_delay;
-				rx_delay = &delay_tid_stats->rx_delay;
+	for (tid = 0; tid < DP_TID_MAX; tid++) {
+		for (ring_id = 0; ring_id < DP_REO_DST_RING_MAX; ring_id++) {
+			delay_tid_stats =
+				&delay_stats->delay_tid_stats[tid][ring_id];
+			tx_delay = &delay_tid_stats->tx_delay;
+			rx_delay = &delay_tid_stats->rx_delay;
 
-				ath12k_dp_hist_init(&tx_delay->tx_swq_delay,
-						    HIST_TYPE_SW_ENQEUE_DELAY);
-				ath12k_dp_hist_init(&tx_delay->hwtx_delay,
-						    HIST_TYPE_HW_COMP_DELAY);
-				ath12k_dp_hist_init(&rx_delay->to_stack_delay,
-						    HIST_TYPE_REAP_STACK);
-			}
+			ath12k_dp_hist_init(&tx_delay->tx_swq_delay,
+					    HIST_TYPE_SW_ENQEUE_DELAY);
+			ath12k_dp_hist_init(&tx_delay->hwtx_delay,
+					    HIST_TYPE_HW_COMP_DELAY);
+			ath12k_dp_hist_init(&rx_delay->to_stack_delay,
+					    HIST_TYPE_REAP_STACK);
 		}
 	}
+	rcu_read_unlock();
+}
+
+static void ath12k_dp_peer_reset_jitter_stats(struct ath12k_dp_peer *dp_peer)
+{
+	if (!dp_peer)
+		return;
+
+	rcu_read_lock();
+	if (dp_peer->mld_stats.jitter_stats)
+		memset(dp_peer->mld_stats.jitter_stats, 0,
+		       sizeof(struct ath12k_dp_peer_jitter_stats));
+	rcu_read_unlock();
+}
+
+static void ath12k_dp_peer_reset_sojourn_stats(struct ath12k_dp_peer *dp_peer)
+{
+	if (!dp_peer)
+		return;
+
+	rcu_read_lock();
+	if (dp_peer->mld_stats.sojourn_stats)
+		memset(dp_peer->mld_stats.sojourn_stats, 0,
+		       sizeof(struct ath12k_dp_peer_sojourn_stats));
 	rcu_read_unlock();
 }
 
@@ -6464,6 +6485,8 @@ static ssize_t ath12k_write_reset_latency_stats(struct file *file,
 	spin_lock_bh(&ah->dp_hw.peer_lock);
 	list_for_each_entry(dp_peer, &ah->dp_hw.peers, list) {
 		ath12k_dp_peer_reset_delay_stats(dp_peer);
+		ath12k_dp_peer_reset_jitter_stats(dp_peer);
+		ath12k_dp_peer_reset_sojourn_stats(dp_peer);
 	}
 	spin_unlock_bh(&ah->dp_hw.peer_lock);
 
@@ -6844,8 +6867,12 @@ static ssize_t ath12k_write_reset_dp_stats(struct file *file,
 				       sizeof(*tmp_peer->peer_stats.hw_link_stats));
 		}
 
-		if (dp_pdev && ath12k_dp_delay_stats_enabled(dp_pdev))
+		dp_pdev = &ar->dp;
+		if (dp_pdev && ath12k_dp_delay_stats_enabled(dp_pdev)) {
 			ath12k_dp_peer_reset_delay_stats(dp_peer);
+			ath12k_dp_peer_reset_jitter_stats(dp_peer);
+			ath12k_dp_peer_reset_sojourn_stats(dp_peer);
+		}
 
 		rcu_read_unlock();
 	}

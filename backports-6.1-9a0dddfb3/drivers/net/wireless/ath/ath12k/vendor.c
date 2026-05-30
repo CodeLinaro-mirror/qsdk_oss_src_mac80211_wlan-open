@@ -1486,6 +1486,8 @@ ath12k_wlan_telemetry_feat_policy[QCA_VENDOR_ATTR_WLAN_FEAT_MAX + 1] = {
 	[QCA_VENDOR_ATTR_WLAN_FEAT_PROTO] = {.type = NLA_FLAG},
 	[QCA_VENDOR_ATTR_WLAN_FEAT_TID] = {.type = NLA_FLAG},
 	[QCA_VENDOR_ATTR_WLAN_FEAT_DELAY] = {.type = NLA_FLAG},
+	[QCA_VENDOR_ATTR_WLAN_FEAT_JITTER] = {.type = NLA_FLAG},
+	[QCA_VENDOR_ATTR_WLAN_FEAT_SOJOURN] = {.type = NLA_FLAG},
 };
 
 int ath12k_extract_feat_inputs(struct nlattr *tb_attr,
@@ -1526,6 +1528,12 @@ int ath12k_extract_feat_inputs(struct nlattr *tb_attr,
 
 	if (feat_attr[QCA_VENDOR_ATTR_WLAN_FEAT_DELAY])
 		cmd->feat.feat_delay = true;
+
+	if (feat_attr[QCA_VENDOR_ATTR_WLAN_FEAT_JITTER])
+		cmd->feat.feat_jitter = true;
+
+	if (feat_attr[QCA_VENDOR_ATTR_WLAN_FEAT_SOJOURN])
+		cmd->feat.feat_sojourn = true;
 
 	return ret;
 }
@@ -3007,12 +3015,12 @@ static int ath12k_get_tid_stats_attr_size(void)
 
 	/* TID_TX_STATS nest */
 	tx_size = ath12k_get_tid_tx_stats_attr_size() *
-			QCA_VENDOR_WLAN_TELEMETRY_VOW_DATA_TIDS;
+			QCA_VENDOR_WLAN_TELEMETRY_DATA_TIDS;
 	tx_size = nla_total_size_nested(tx_size);
 
 	/* TID_RX_STATS nest */
 	rx_size = ath12k_get_tid_rx_stats_attr_size() *
-			QCA_VENDOR_WLAN_TELEMETRY_VOW_DATA_TIDS;
+			QCA_VENDOR_WLAN_TELEMETRY_DATA_TIDS;
 	rx_size = nla_total_size_nested(rx_size);
 
 	/* Outer TID_STATS_EVENT nest */
@@ -3066,6 +3074,50 @@ static int ath12k_get_delay_stats_attr_size(void)
 	return total_size;
 }
 
+/**
+ * ath12k_get_jitter_stats_attr_size() - Calculate NL buffer size for all Jitter stats
+ *
+ * Returns the total netlink attribute size needed to serialize
+ * struct ath12k_dp_peer_tid_jitter_stats.
+ */
+static int ath12k_get_jitter_stats_attr_size(void)
+{
+	int tid_size;
+	int total_size = 0;
+
+	/* Per TID: TID index (u8) + 3x u32 + 3x u64 */
+	tid_size = nla_total_size(sizeof(u8)) +
+		   nla_total_size(sizeof(u32)) * 3 +
+		   nla_total_size_64bit(sizeof(u64)) * 3;
+
+	/* DP_TID_MAX TIDs, each wrapped in a nested attr */
+	total_size = nla_total_size_nested(tid_size) * DP_TID_MAX;
+
+	return total_size;
+}
+
+/**
+ * ath12k_get_sojourn_stats_attr_size() - Calculate NL buffer size for all Sojourn stats
+ *
+ * Returns the total netlink attribute size needed to serialize
+ * struct ath12k_dp_peer_tid_sojourn_stats.
+ */
+static int ath12k_get_sojourn_stats_attr_size(void)
+{
+	int tid_size;
+	int total_size = 0;
+
+	/* Per TID: TID index (u8) + 2x u32 */
+	tid_size = nla_total_size(sizeof(u8)) +
+		   nla_total_size(sizeof(u32)) +
+		   nla_total_size(sizeof(u64));
+
+	/* DP_TID_MAX TIDs, each wrapped in a nested attr */
+	total_size = nla_total_size_nested(tid_size) * DP_TID_MAX;
+
+	return total_size;
+}
+
 static int ath12k_get_dp_peer_attr_len(struct ath12k_telemetry_command *cmd)
 {
 	int total_size = 0;
@@ -3092,6 +3144,12 @@ static int ath12k_get_dp_peer_attr_len(struct ath12k_telemetry_command *cmd)
 
 	if (cmd->feat.feat_delay)
 		total_size += ath12k_get_delay_stats_attr_size();
+
+	if (cmd->feat.feat_jitter)
+		total_size += ath12k_get_jitter_stats_attr_size();
+
+	if (cmd->feat.feat_sojourn)
+		total_size += ath12k_get_sojourn_stats_attr_size();
 
 	return total_size;
 }
@@ -5003,6 +5061,103 @@ static int ath12k_fill_peer_delay_stats(struct ath12k *ar,
 	return 0;
 }
 
+/**
+ * ath12k_fill_peer_jitter_stats() - Fill Jitter stats into NL vendor event
+ * @ar: ath12k radio pointer (unused, kept for consistency with other fill functions)
+ * @vendor_event: sk_buff to write into
+ * @peer_stats: peer stats containing the delay pointer
+ *
+ * Returns 0 on success, negative error code on failure.
+ * If peer_stats->jitter is NULL the function returns 0 immediately.
+ */
+static int ath12k_fill_peer_jitter_stats(struct ath12k *ar,
+					 struct sk_buff *vendor_event,
+					 struct ath12k_dp_peer_stats *peer_stats)
+{
+	struct nlattr *tid_attr;
+	int tid;
+
+	if (!peer_stats->jitter)
+		return 0;
+
+	for (tid = 0; tid < QCA_VENDOR_WLAN_TELEMETRY_DATA_TIDS; tid++) {
+		tid_attr = nla_nest_start(vendor_event, tid + 1);
+		if (!tid_attr) {
+			ath12k_err(NULL, "nla nest failure: jitter stats TID %d", tid);
+			return -EINVAL;
+		}
+
+		if (nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_JITTER_STATS_TX_AVG_JITTER,
+				peer_stats->jitter->tid_stats[tid].tx_avg_jitter) ||
+		    nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_JITTER_STATS_TX_AVG_DELAY,
+				peer_stats->jitter->tid_stats[tid].tx_avg_delay) ||
+		    nla_put_u64_64bit(vendor_event,
+				      QCA_VENDOR_ATTR_JITTER_STATS_TX_AVG_ERR,
+				      peer_stats->jitter->tid_stats[tid].tx_avg_err,
+				      NL80211_ATTR_PAD) ||
+		    nla_put_u64_64bit(vendor_event,
+				      QCA_VENDOR_ATTR_JITTER_STATS_TX_TOTAL_SUCCESS,
+				      peer_stats->jitter->tid_stats[tid].tx_total_success,
+				      NL80211_ATTR_PAD) ||
+		    nla_put_u64_64bit(vendor_event,
+				      QCA_VENDOR_ATTR_JITTER_STATS_TX_DROP,
+				      peer_stats->jitter->tid_stats[tid].tx_drop,
+				      NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failure: jitter stats attr");
+			nla_nest_cancel(vendor_event, tid_attr);
+			return -EINVAL;
+		}
+
+		nla_nest_end(vendor_event, tid_attr);
+	}
+
+	return 0;
+}
+
+static int ath12k_fill_peer_sojourn_stats(struct ath12k *ar,
+					  struct sk_buff *vendor_event,
+					  struct ath12k_dp_peer_stats *peer_stats)
+{
+	struct ath12k_dp_peer_tid_sojourn_stats *tid_stats;
+	struct nlattr *tid_attr;
+	int tid;
+	u64 avg_sojourn_msdu;
+
+	if (!peer_stats->sojourn)
+		return 0;
+
+	for (tid = 0; tid < QCA_VENDOR_WLAN_TELEMETRY_DATA_TIDS; tid++) {
+		tid_stats = &peer_stats->sojourn->tid_stats[tid];
+		tid_attr = nla_nest_start(vendor_event, tid + 1);
+		if (!tid_attr) {
+			ath12k_err(NULL, "nla nest failure: sojourn stats TID %d", tid);
+			return -EINVAL;
+		}
+
+		avg_sojourn_msdu = ewma_avg_sojourn_read(&tid_stats->avg_sojourn_msdu);
+
+		if (nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_SOJOURN_STATS_SUM_SOJOURN_MSDU,
+				tid_stats->sum_sojourn_msdu) ||
+		    nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_SOJOURN_STATS_NUM_MSDUS,
+				tid_stats->num_msdus) ||
+		    nla_put_u64_64bit(vendor_event,
+				      QCA_VENDOR_ATTR_SOJOURN_STATS_AVG_SOJOURN_MSDU,
+				      avg_sojourn_msdu, NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failure: sojourn stats attr");
+			nla_nest_cancel(vendor_event, tid_attr);
+			return -EINVAL;
+		}
+
+		nla_nest_end(vendor_event, tid_attr);
+	}
+
+	return 0;
+}
+
 static int ath12k_fill_peer_tx_stats(struct ath12k *ar,
 				     struct sk_buff *vendor_event,
 				     struct ath12k_dp_peer_stats *peer_stats,
@@ -6714,7 +6869,9 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 	struct ath12k_htt_tx_stats *htt_tx_stats;
 	struct ath12k *ar = &ahvif->ah->radio[0];
 	struct ath12k_dp_proto_stats_peer *proto;
-	struct ath12k_dp_peer_tid_agg_delay_stats *delay;
+	struct ath12k_dp_peer_tid_agg_delay_stats *delay = NULL;
+	struct ath12k_dp_peer_tid_agg_jitter_stats *jitter = NULL;
+	struct ath12k_dp_peer_tid_agg_sojourn_stats *sojourn = NULL;
 	struct ath12k_rx_peer_stats *rx_mon_stats;
 	struct nlattr *attr;
 	int ret = -EINVAL;
@@ -6783,6 +6940,31 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 			return -ENOMEM;
 		}
 		telemetry_peer->peer_stats.delay = delay;
+
+		jitter = vzalloc(sizeof(*jitter));
+		if (!jitter) {
+			vfree(delay);
+			vfree(hw_link_stats);
+			vfree(proto);
+			vfree(htt_tx_stats);
+			vfree(rx_mon_stats);
+			vfree(telemetry_peer);
+			return -ENOMEM;
+		}
+		telemetry_peer->peer_stats.jitter = jitter;
+
+		sojourn = vzalloc(sizeof(*sojourn));
+		if (!sojourn) {
+			vfree(jitter);
+			vfree(delay);
+			vfree(hw_link_stats);
+			vfree(proto);
+			vfree(htt_tx_stats);
+			vfree(rx_mon_stats);
+			vfree(telemetry_peer);
+			return -ENOMEM;
+		}
+		telemetry_peer->peer_stats.sojourn = sojourn;
 	}
 
 	if (ath12k_dp_get_peer_stats(ahvif, telemetry_peer, cmd->mac,
@@ -6923,6 +7105,42 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 		}
 	}
 
+	if (cmd->feat.feat_jitter) {
+		attr = nla_nest_start(vendor_event,
+				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_JITTER_EVENT);
+		if (attr) {
+			if (ath12k_fill_peer_jitter_stats(ar,
+							  vendor_event,
+							  &telemetry_peer->peer_stats)) {
+				ath12k_err(NULL, "nla put failure: Jitter stats");
+				ret = -EINVAL;
+				goto out;
+			}
+			nla_nest_end(vendor_event, attr);
+		} else {
+			ath12k_err(NULL, "nla nest failure: Sta Jitter feat stats");
+			goto out;
+		}
+	}
+
+	if (cmd->feat.feat_sojourn) {
+		attr = nla_nest_start(vendor_event,
+				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_SOJOURN_EVENT);
+		if (attr) {
+			if (ath12k_fill_peer_sojourn_stats(ar,
+							   vendor_event,
+							   &telemetry_peer->peer_stats)) {
+				ath12k_err(NULL, "nla put failure: Sojourn stats");
+				ret = -EINVAL;
+				goto out;
+			}
+			nla_nest_end(vendor_event, attr);
+		} else {
+			ath12k_err(NULL, "nla nest failure: Sta Sojourn feat stats");
+			goto out;
+		}
+	}
+
 	ret = 0;
 out:
 	if (ath12k_dp_hw_peer_stats_enabled(&ar->dp)) {
@@ -6931,6 +7149,8 @@ out:
 	}
 	vfree(proto);
 	vfree(delay);
+	vfree(jitter);
+	vfree(sojourn);
 	vfree(htt_tx_stats);
 	vfree(rx_mon_stats);
 	vfree(telemetry_peer);
@@ -8309,7 +8529,7 @@ static int ath12k_fill_radio_tid_stats(struct ath12k *ar,
 		return -EINVAL;
 	}
 
-	for (tid = 0; tid < QCA_VENDOR_WLAN_TELEMETRY_VOW_DATA_TIDS; tid++) {
+	for (tid = 0; tid < QCA_VENDOR_WLAN_TELEMETRY_DATA_TIDS; tid++) {
 		if (ath12k_fill_tid_tx_stats(vendor_event,
 					     &tid_stats->tid_tx[tid], tid)) {
 			ath12k_err(ab, "Error filling TID TX stats for tid %d",
@@ -8328,7 +8548,7 @@ static int ath12k_fill_radio_tid_stats(struct ath12k *ar,
 		return -EINVAL;
 	}
 
-	for (tid = 0; tid < QCA_VENDOR_WLAN_TELEMETRY_VOW_DATA_TIDS; tid++) {
+	for (tid = 0; tid < QCA_VENDOR_WLAN_TELEMETRY_DATA_TIDS; tid++) {
 		if (ath12k_fill_tid_rx_stats(vendor_event,
 					     &tid_stats->tid_rx[tid], tid)) {
 			ath12k_err(ab, "Error filling TID RX stats for tid %d",
