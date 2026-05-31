@@ -49,7 +49,6 @@ static int ath12k_dp_tx_me5(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
 {
 	struct sk_buff *skb = me_ctx->skb;
 	struct ath12k_vif *ahvif = container_of(dp_vif, struct ath12k_vif, dp_vif);
-	int group_slot = -1;
 	u8 ring_id = smp_processor_id();
 	struct ath12k_pdev_dp *dp_pdev = NULL;
 	enum ath12k_dp_tx_enq_error err = 0;
@@ -68,9 +67,10 @@ static int ath12k_dp_tx_me5(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
 	msdu_info->data_len = skb->len;
 	msdu_info->me_convert = true;
 	msdu_info->lookup_override = false;
+	msdu_info->group_slot = -1;
 
 	err = ath12k_dp_tx_mcast_send(dp_pdev, ahvif, link_vif, ring_id,
-				      msdu_info, false, 0, group_slot,
+				      msdu_info, false, 0,
 				      skb_get(skb), NULL, NULL);
 
 	if (unlikely(err != DP_TX_ENQ_SUCCESS))
@@ -92,7 +92,6 @@ static int ath12k_dp_tx_me6(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
 	struct ath12k_vif *ahvif = container_of(dp_vif, struct ath12k_vif, dp_vif);
 	u16 peer_id;
 	struct sk_buff *skb = me_ctx->skb;
-	int group_slot = -1;
 	u8 ring_id = smp_processor_id();
 	struct ath12k_pdev_dp *dp_pdev = NULL;
 	enum ath12k_dp_tx_enq_error err = 0;
@@ -120,12 +119,13 @@ static int ath12k_dp_tx_me6(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
 	msdu_info->meta_data_flags = mdata;
 	msdu_info->data_len = skb->len;
 	msdu_info->me_convert = true;
+	msdu_info->group_slot = -1;
 
 	msdu_info->lookup_override = true;
 	ath12k_dp_tx_set_ast(dp, dp_peer, msdu_info, dp_pdev->hw_link_id);
 
 	err = ath12k_dp_tx_mcast_send(dp_pdev, ahvif, link_vif, ring_id,
-				      msdu_info, false, 0, group_slot,
+				      msdu_info, false, 0,
 				      skb_get(skb), NULL, NULL);
 
 	if (unlikely(err != DP_TX_ENQ_SUCCESS))

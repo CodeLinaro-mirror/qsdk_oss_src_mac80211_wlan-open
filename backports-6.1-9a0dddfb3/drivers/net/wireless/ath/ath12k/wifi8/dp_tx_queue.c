@@ -358,6 +358,7 @@ struct hal_txpt_classify_info
 	ti.flow_handler = HAL_WIFITXPT_TO_TQM;
 	ti.flow_loop_handler = HAL_WIFITXPT_LOOP_TO_TQM;
 	ti.metadata = peer ? peer->peer_id : HAL_INVALID_PEERID;
+	ti.assoc_link_id = peer->hw_link_id;
 	ti.paddr = txpt_paddr;
 	ath12k_wifi8_hal_txpt_classify_info_setup(dp_hw_grp, tx_tid_ptr, &ti);
 	return tx_tid_ptr;

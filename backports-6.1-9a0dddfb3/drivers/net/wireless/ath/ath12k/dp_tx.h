@@ -90,6 +90,9 @@ void ath12k_dp_tx_stats_post_enqueue(struct ath12k_dp *dp,
 				     struct ath12k_dp_tx_msdu_info *msdu_info,
 				     u8 ring_id, u32 len, bool is_mcast,
 				     struct ath12k_tx_desc_info *tx_desc);
+int ath12k_dp_tx_get_mcast_group_slot(struct ath12k_vif *vlan_ahvif,
+				      u8 link_id,
+				      struct ieee80211_tx_info *info);
 
 /**
  * ath12k_wifi7_tx_classify_packet() - Classify packet type
@@ -339,6 +342,7 @@ struct ath12k_dp_ext_desc_msdu_info {
  * @rbm_id: Return Buffer Manager ID (set from tcl_to_cmp_rbm_map at enqueue)
  * @pkt_offset: Packet offset within the buffer (typically 0)
  * @lookup_override: If true, use bss_ast_idx for address lookup instead of DA
+ * @group_slot: VLAN group-key slot for MPSK multicast; -1 when not applicable
  * @is_null: True if the frame is a null-function frame
  * @to_fw: True if the frame should be redirected to firmware
  * @ext_kmem: True if an extended descriptor (ext_cache slab) is required
@@ -367,6 +371,7 @@ struct ath12k_dp_tx_msdu_info {
 	u8 rbm_id;
 	u8 pkt_offset;
 	u8 tx_notify_frame;
+	s8 group_slot;
 
 	u8 lookup_override	: 1,
 	   is_null		: 1,

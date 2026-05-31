@@ -44,6 +44,40 @@ void ath12k_tid_tx_drop_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 rea
 }
 EXPORT_SYMBOL(ath12k_tid_tx_drop_stats);
 
+int ath12k_dp_tx_get_mcast_group_slot(struct ath12k_vif *vlan_ahvif,
+				      u8 link_id,
+				      struct ieee80211_tx_info *info)
+{
+	struct ath12k_vlan_iface *vif_vlan;
+	struct ieee80211_key_conf *hw_key;
+	u8 keyidx;
+	int slot;
+
+	if (!vlan_ahvif || !vlan_ahvif->vlan_iface ||
+	    vlan_ahvif->vlan_iface->is_wds_4addr || !info)
+		return -1;
+
+	if (link_id >= ATH12K_NUM_MAX_LINKS)
+		return -1;
+
+	hw_key = info->control.hw_key;
+	if (!hw_key || (hw_key->flags & IEEE80211_KEY_FLAG_PAIRWISE))
+		return -1;
+
+	keyidx = hw_key->keyidx;
+	if (keyidx > WMI_MAX_KEY_INDEX)
+		return -1;
+
+	vif_vlan = vlan_ahvif->vlan_iface;
+	slot = vif_vlan->grp_key_slot_map[link_id][keyidx];
+	if (slot == ATH12K_GROUP_KEY_SLOT_INVALID ||
+	    slot <= 0 || slot >= ATH12K_GROUP_KEYS_NUM_MAX)
+		return -1;
+
+	return slot;
+}
+EXPORT_SYMBOL(ath12k_dp_tx_get_mcast_group_slot);
+
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 void
 ath12k_dp_ppeds_tx_release_desc_list_bulk(struct ath12k_dp *dp,
