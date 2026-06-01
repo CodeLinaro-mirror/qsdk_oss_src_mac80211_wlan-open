@@ -239,9 +239,15 @@ static void ath12k_wifi8_dp_umac_deinit(struct ath12k_dp *dp)
 	struct ath12k_dp_hw_group_wifi8 *dp_hw_group_wifi8 =
 				ath12k_get_dp_hw_group_wifi8(dp->dp_hw_grp);
 
+	if (!dp_wifi8->init_done) {
+		ath12k_info(ab, "DP de-init is already complete. Skip de-init");
+		return;
+	}
+
 	if (!dp_wifi8->cumac) {
 		ath12k_warn(ab, "Skipping ring deinit for non-cumac target");
 		dp_wifi8->init_done = false;
+		ath12k_hif_ext_irq_cleanup(ab);
 		return;
 	}
 
@@ -284,6 +290,7 @@ static void ath12k_wifi8_dp_umac_deinit(struct ath12k_dp *dp)
 						   dp_hw_group_wifi8->mec_timer_key);
 	dp_wifi8->init_done = false;
 	dp_hw_group_wifi8->cumac_dp = NULL;
+	ath12k_hif_ext_irq_cleanup(ab);
 	ath12k_info(ab, "CUMAC de-init successful");
 }
 
@@ -668,7 +675,6 @@ static void ath12k_wifi8_dp_op_device_deinit(struct ath12k_dp *dp)
 		return;
 
 	ath12k_dp_mon_rx_free(dp);
-	ath12k_hif_ext_irq_cleanup(ab);
 }
 
 static int ath12k_wifi8_dp_op_mlo_init(struct ath12k_dp *dp)
