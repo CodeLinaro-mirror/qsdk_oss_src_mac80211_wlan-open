@@ -43,6 +43,7 @@ ath12k_wifi_config_policy[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_VAP_SUBMODE] = {.type = NLA_U8 },
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_DYNAMIC_VLAN] = {.type = NLA_U8 },
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PARAMS] = { .type = NLA_NESTED },
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_ALLOW_3ADDR_MC] = { .type = NLA_U8 },
 };
 
 static const struct nla_policy
