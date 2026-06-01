@@ -72,6 +72,37 @@ bool ath12k_link_sta_hlist_empty(struct ath12k *ar);
 void ath12k_link_sta_hlist_delete(struct ath12k *ar, struct ath12k_link_sta *arsta);
 int ath12k_link_sta_hlist_add(struct ath12k *ar, struct ath12k_link_sta *arsta);
 struct ath12k_link_sta *ath12k_link_sta_find_by_addr(struct ath12k *ar, const u8 *addr);
+
+/**
+ * ath12k_link_sta_for_each - iterate over all link STAs on a radio
+ * @_ar:    struct ath12k * whose arsta_list is walked
+ * @_bkt:   u32 bucket counter declared by the caller
+ * @_arsta: loop cursor (struct ath12k_link_sta *)
+ *
+ * Caller must hold @_ar->arsta_lock.
+ */
+#define ath12k_link_sta_for_each(_ar, _bkt, _arsta)			\
+	for ((_bkt) = 0;						\
+	     (_ar)->arsta_list && (_bkt) < BIT((_ar)->arsta_hash_bits);	\
+	     (_bkt)++)							\
+		hlist_for_each_entry((_arsta),				\
+				 &(_ar)->arsta_list[(_bkt)], hlist_addr)
+
+/**
+ * ath12k_ahsta_for_each - iterate over all MLD/STA entries in ag->ahsta_list
+ * @_ag:    struct ath12k_hw_group * whose ahsta_list is walked
+ * @_bkt:   u32 bucket counter declared by the caller
+ * @_ahsta: loop cursor (struct ath12k_sta *)
+ *
+ * Caller must hold @_ag->ahsta_lock.
+ */
+#define ath12k_ahsta_for_each(_ag, _bkt, _ahsta)			\
+	for ((_bkt) = 0;						\
+	     (_ag)->ahsta_list && (_bkt) < BIT((_ag)->ahsta_hash_bits);	\
+	     (_bkt)++)							\
+		hlist_for_each_entry((_ahsta),				\
+				 &(_ag)->ahsta_list[(_bkt)], hlist_addr)
+
 void ath12k_mac_peer_disassoc(struct ath12k_base *ab, struct ieee80211_sta *sta,
 			      struct ath12k_sta *ahsta,
 			      enum ath12k_debug_mask debug_mask);
@@ -163,13 +194,19 @@ int ath12k_arsta_itr_on_ar_by_vdev_id(struct ath12k *ar, u32 vdev_id,
 int ath12k_sta_hlist_init(struct ath12k_hw_group *ag);
 void ath12k_sta_hlist_head_destroy(struct ath12k_hw_group *ag);
 void ath12k_sta_hlist_destroy(struct ath12k_hw_group *ag);
+void ath12k_sta_hlist_destroy_with_no_ar(struct ath12k_hw_group *ag);
 int ath12k_sta_hlist_add(struct ath12k_hw_group *ag, struct ath12k_sta *ahsta);
 int ath12k_sta_hlist_delete(struct ath12k_hw_group *ag, struct ath12k_sta *ahsta);
 struct ath12k_sta *ath12k_sta_find_by_addr(struct ath12k_hw_group *ag,
 					   const u8 *addr);
+struct ath12k_sta *ath12k_sta_find_by_addr_and_ahvif(struct ath12k_hw_group *ag,
+						     const u8 *addr,
+						     const struct ath12k_vif *ahvif);
 /* CP-level pre-emptive duplicate peer sanity check */
 int ath12k_cp_peer_sanity_check(struct ath12k *ar,
 				struct ath12k_link_vif *arvif,
 				struct ath12k_link_sta *arsta,
 				struct ath12k_sta *ahsta);
+struct ath12k_link_sta *ath12k_link_sta_find_by_vdev_id(struct ath12k *ar,
+							u32 vdev_id);
 #endif /* _PEER_H_ */

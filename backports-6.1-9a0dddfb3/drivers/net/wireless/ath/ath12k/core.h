@@ -716,6 +716,7 @@ struct ath12k_link_vif {
 	bool is_started;
 	bool is_up;
 	u8 bssid[ETH_ALEN];
+	u8 addr[ETH_ALEN];
 	struct cfg80211_bitrate_mask bitrate_mask;
 	struct delayed_work connection_loss_work;
 	int num_legacy_stations;
@@ -1184,7 +1185,8 @@ struct ath12k_link_sta {
 };
 
 struct ath12k_sta_migration_data {
-	struct ath12k_base *ab;
+	struct ath12k *ar;
+	u8 link_addr[ETH_ALEN];
 	u16 vdev_id;
 	u16 peer_id;
 	u16 ml_peer_id;

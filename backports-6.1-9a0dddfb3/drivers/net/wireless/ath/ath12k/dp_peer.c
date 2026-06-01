@@ -2374,6 +2374,13 @@ static inline int ath12k_dp_link_peer_set_param(struct ath12k_dp_link_peer *link
 	case ATH12K_DP_LINK_PEER_ASSOC_PARAM:
 		link_peer->assoc_success = val->assoc_success;
 	break;
+	case ATH12K_DP_LINK_PEER_TID_WEIGHT_PARAM: {
+		u8 i;
+
+		for (i = 0; i < ATH12K_DATA_TID_MAX; i++)
+			link_peer->tid_weight[i] = val->tid_weight[i];
+	break;
+	}
 	default:
 		ath12k_err(NULL, "Invalid set param %d", param);
 		ret = -EINVAL;
@@ -2395,8 +2402,15 @@ static inline int ath12k_dp_link_peer_get_param(struct ath12k_dp_link_peer *link
 	case ATH12K_DP_LINK_PEER_ASSOC_PARAM:
 		val->assoc_success = link_peer->assoc_success;
 	break;
+	case ATH12K_DP_LINK_PEER_IS_PRIMARY:
+		val->is_primary = link_peer->primary_link;
+	break;
 	case ATH12K_DP_LINK_PEER_MAC_ADDR_PARAM:
 		ether_addr_copy(val->addr, link_peer->addr);
+	break;
+	case ATH12K_DP_LINK_PEER_TXRATE_PARAM:
+		ath12k_link_peer_get_sta_rate_info_stats(link_peer,
+							 &val->rate_info);
 	break;
 	default:
 		ath12k_err(NULL, "Invalid set param %d", param);
@@ -2752,7 +2766,7 @@ int ath12k_dp_link_peer_get_4addr_params(void *ptr, const u8 *addr,
 	return 0;
 }
 
-void ath12k_dp_peer_set_4addr_params(void *ptr, int ppe_vp_num)
+bool ath12k_dp_peer_set_4addr_params(void *ptr, int ppe_vp_num)
 {
 	struct ath12k_dp_peer *dp_peer = (struct ath12k_dp_peer *)ptr;
 
@@ -2766,6 +2780,8 @@ void ath12k_dp_peer_set_4addr_params(void *ptr, int ppe_vp_num)
 
 	if (ath12k_dp_peer_get_vif_type(dp_peer) == NL80211_IFTYPE_AP)
 		dp_peer->dev = ath12k_dp_peer_get_sta(dp_peer)->dev;
+
+	return 0;
 }
 
 void

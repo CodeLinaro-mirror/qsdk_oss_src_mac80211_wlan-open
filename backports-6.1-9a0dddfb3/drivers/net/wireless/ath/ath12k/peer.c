@@ -12,6 +12,7 @@
 #include "ppe.h"
 #endif
 #include "telemetry_agent_if.h"
+#include "mac.h"
 
 /* Timer callback for peer deletion timeout */
 static void ath12k_peer_del_timeout(struct timer_list *t)
@@ -645,27 +646,23 @@ static int __ath12k_peer_delete(struct ath12k *ar, u32 vdev_id, u8 *addr,
 {
 	struct ath12k_link_vif *arvif = NULL;
 	struct ath12k_base *ab = ar->ab;
-	struct ath12k_dp_link_peer *peer = NULL;
 	struct ath12k_sta *ahsta = NULL;
+	struct ath12k_link_sta *arsta;
 	int link_id = -1;
 	int ret;
 	bool was_mlo = false;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
-	spin_lock_bh(&ar->ab->dp->dp_lock);
-
-	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(ab->dp,
-							    vdev_id, addr);
-	if (peer && ath12k_dp_link_peer_get_sta(peer)) {
-		ahsta = ath12k_sta_to_ahsta(ath12k_dp_link_peer_get_sta(peer));
-		link_id = peer->link_id;
+	spin_lock_bh(&ar->arsta_lock);
+	arsta = ath12k_link_sta_find_by_addr(ar, addr);
+	if (arsta && arsta->ahsta) {
+		ahsta = arsta->ahsta;
+		link_id = arsta->link_id;
+		if (arsta->ahsta->is_mlo && !arsta->is_bridge_peer)
+			was_mlo = true;
 	}
-
-	if (peer && peer->mlo && !peer->is_bridge_peer)
-		was_mlo = true;
-
-	spin_unlock_bh(&ar->ab->dp->dp_lock);
+	spin_unlock_bh(&ar->arsta_lock);
 
 	ath12k_dp_link_peer_unassign(ar, vdev_id, addr);
 
@@ -798,11 +795,9 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 {
 	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(arvif->ahvif);
 	u8 link_id = arvif->link_id;
-	struct ath12k_dp_link_peer *peer;
 	struct ath12k_sta *ahsta = NULL;
 	int ret;
 	u32 mlo_hw_link_id_bitmap = 0, peer_delete_send_mlo_hw_bitmap = 0;
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ar->ab);
 	struct ath12k_peer_map_pending_event *map_event = &ar->peer_map_event;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
@@ -825,15 +820,6 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 			    "failed to create peer due to insufficient peer entry resource in firmware\n");
 		return -ENOBUFS;
 	}
-
-	spin_lock_bh(&dp->dp_lock);
-	peer = ath12k_dp_link_peer_find_by_pdev_idx(dp, ar->pdev_idx,
-						    arg->peer_addr);
-	if (peer) {
-		spin_unlock_bh(&dp->dp_lock);
-		return -EINVAL;
-	}
-	spin_unlock_bh(&dp->dp_lock);
 
 	reinit_completion(&ar->peer_create_done);
 
@@ -1121,6 +1107,7 @@ void ath12k_link_sta_hlist_destroy(struct ath12k *ar)
 	struct ath12k_link_sta *arsta;
 	struct hlist_node *tmp;
 	u32 bkt;
+	u8 ar_bmp = BIT(ar->radio_idx);
 
 	lockdep_assert_held(&ar->arsta_lock);
 
@@ -1128,8 +1115,12 @@ void ath12k_link_sta_hlist_destroy(struct ath12k *ar)
 		return;
 
 	for (bkt = 0; bkt < BIT(ar->arsta_hash_bits); bkt++) {
-		hlist_for_each_entry_safe(arsta, tmp, &ar->arsta_list[bkt], hlist_addr)
-			hash_del(&arsta->hlist_addr);
+		hlist_for_each_entry_safe(arsta, tmp, &ar->arsta_list[bkt], hlist_addr) {
+			if (!hlist_unhashed(&arsta->hlist_addr)) {
+				arsta->ahsta->ar_bitmap &= ~ar_bmp;
+				hash_del(&arsta->hlist_addr);
+			}
+		}
 	}
 }
 
@@ -1451,6 +1442,27 @@ void ath12k_sta_hlist_destroy(struct ath12k_hw_group *ag)
 }
 EXPORT_SYMBOL(ath12k_sta_hlist_destroy);
 
+void ath12k_sta_hlist_destroy_with_no_ar(struct ath12k_hw_group *ag)
+{
+	struct ath12k_sta *ahsta;
+	struct hlist_node *tmp;
+	u32 bkt;
+
+	lockdep_assert_held(&ag->ahsta_lock);
+
+	if (!ag->ahsta_list)
+		return;
+
+	for (bkt = 0; bkt < BIT(ag->ahsta_hash_bits); bkt++) {
+		hlist_for_each_entry_safe(ahsta, tmp,
+					  &ag->ahsta_list[bkt], hlist_addr) {
+			if (!ahsta->ar_bitmap)
+				hlist_del_init(&ahsta->hlist_addr);
+		}
+	}
+}
+EXPORT_SYMBOL(ath12k_sta_hlist_destroy_with_no_ar);
+
 struct ath12k_sta *ath12k_sta_find_by_addr(struct ath12k_hw_group *ag,
 					   const u8 *addr)
 {
@@ -1471,6 +1483,29 @@ struct ath12k_sta *ath12k_sta_find_by_addr(struct ath12k_hw_group *ag,
 	return NULL;
 }
 EXPORT_SYMBOL(ath12k_sta_find_by_addr);
+
+struct ath12k_sta *ath12k_sta_find_by_addr_and_ahvif(struct ath12k_hw_group *ag,
+						     const u8 *addr,
+						     const struct ath12k_vif *ahvif)
+{
+	struct ath12k_sta *ahsta;
+	struct hlist_head *bucket;
+
+	lockdep_assert_held(&ag->ahsta_lock);
+
+	if (!ag->ahsta_list)
+		return NULL;
+
+	bucket = &ag->ahsta_list[ath12k_sta_hash_idx(ag, addr)];
+	hlist_for_each_entry(ahsta, bucket, hlist_addr) {
+		if (ether_addr_equal(ahsta->addr, addr) &&
+		    ahsta->ahvif == ahvif)
+			return ahsta;
+	}
+
+	return NULL;
+}
+EXPORT_SYMBOL(ath12k_sta_find_by_addr_and_ahvif);
 
 static bool ath12k_sta_find_duplicate(struct ath12k_hw_group *ag,
 				      const u8 *addr, u8 radio_idx,
@@ -1501,6 +1536,196 @@ static bool ath12k_sta_find_duplicate(struct ath12k_hw_group *ag,
 	return false;
 }
 
+/* Remote peer MAC check against all created vdev MACs on @ar.
+ *
+ * @ar : radio in which the duplicate detection is performed.
+ * @link_mac: link-level MAC of the remote peer being created.
+ * @mld_mac:  MLD MAC of the remote peer, or NULL for legacy peers.
+ *
+ * Checks that neither the peer link MAC nor its MLD MAC conflicts
+ * with the link MAC or MLD MAC of any existing vdev on this radio.
+ * For AP vdevs the bssid is already covered by self_arsta in
+ * arsta_list (Phase 1); only the MLD MAC of an AP vdev is checked.
+ *
+ * ar->data_lock is held while iterating ar->arvifs.
+ */
+static int ath12k_remote_peer_vdev_mac_check(struct ath12k *ar,
+					     const u8 *link_mac,
+					     const u8 *mld_mac)
+{
+	struct ath12k_link_vif *arvif_itr;
+	bool itr_is_mlo;
+	const u8 *itr_mld_mac;
+
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	spin_lock_bh(&ar->data_lock);
+	list_for_each_entry(arvif_itr, &ar->arvifs, list) {
+		if (!arvif_itr->is_created)
+			continue;
+
+		itr_is_mlo = ath12k_mac_is_ml_arvif(arvif_itr);
+		itr_mld_mac = itr_is_mlo ? arvif_itr->ahvif->vif->addr : NULL;
+
+		/* For AP vdevs, bssid is covered by self_arsta in arsta_list
+		 * (Phase 1). Only check the MLD MAC.
+		 */
+		if (arvif_itr->ahvif->vdev_type != WMI_VDEV_TYPE_AP) {
+			/* peer link MAC vs itr link MAC */
+			if (ether_addr_equal(arvif_itr->addr, link_mac)) {
+				spin_unlock_bh(&ar->data_lock);
+				ath12k_warn(ar->ab,
+					    "mac_sanity[remote_peer]: peer link MAC %pM conflicts with vdev %d addr on radio %d arvif_itr->addr=%pM\n",
+					    link_mac, arvif_itr->vdev_id,
+					    ar->radio_idx, arvif_itr->addr);
+				return -EEXIST;
+			}
+
+			/* peer MLD MAC vs itr link MAC */
+			if (mld_mac &&
+			    ether_addr_equal(arvif_itr->addr, mld_mac)) {
+				spin_unlock_bh(&ar->data_lock);
+				ath12k_warn(ar->ab,
+					    "mac_sanity[remote_peer]: peer MLD MAC %pM conflicts with vdev %d addr on radio %d\n",
+					    mld_mac, arvif_itr->vdev_id,
+					    ar->radio_idx);
+				return -EEXIST;
+			}
+		}
+
+		if (itr_is_mlo) {
+			/* peer link MAC vs itr MLD MAC */
+			if (ether_addr_equal(itr_mld_mac, link_mac)) {
+				spin_unlock_bh(&ar->data_lock);
+				ath12k_warn(ar->ab,
+					    "mac_sanity[remote_peer]: peer link MAC %pM conflicts with vdev %d MLD MAC on radio %d\n",
+					    link_mac, arvif_itr->vdev_id,
+					    ar->radio_idx);
+				return -EEXIST;
+			}
+
+			/* peer MLD MAC vs itr MLD MAC */
+			if (mld_mac &&
+			    ether_addr_equal(itr_mld_mac, mld_mac)) {
+				spin_unlock_bh(&ar->data_lock);
+				ath12k_warn(ar->ab,
+					    "mac_sanity[remote_peer]: peer MLD MAC %pM conflicts with vdev %d MLD MAC on radio %d\n",
+					    mld_mac, arvif_itr->vdev_id,
+					    ar->radio_idx);
+				return -EEXIST;
+			}
+		}
+	}
+	spin_unlock_bh(&ar->data_lock);
+
+	return 0;
+}
+
+/* Phase 3 helper: check the current vdev's own MACs against all other
+ * created vdevs on @ar to detect conflicts before a peer is created.
+ *
+ * @ar : radio in which the duplicate detection is performed.
+ * @arvif:    the link vif for which a peer is being created.
+ *
+ * The following arvif_itr entries are skipped during iteration:
+ *   - not yet created (is_created == false)
+ *   - self (arvif_itr == arvif): no conflict with own vdev
+ *   - bridge AP vdev sharing the same ahvif: its bssid is covered
+ *     by its own self_arsta in arsta_list (Phase 1)
+ *
+ * For non-bridge AP vdevs the bssid is covered by self_arsta in
+ * arsta_list and is therefore already checked in Phase 1; only the
+ * MLD MAC of an AP vdev is checked here since it is never added to
+ * arsta_list.
+ *
+ * ar->data_lock is held while iterating ar->arvifs as it guards all
+ * list_add / list_del operations on that list.
+ */
+static int ath12k_self_peer_vdev_mac_check(struct ath12k *ar,
+					   struct ath12k_link_vif *arvif)
+{
+	const u8 *cur_link_mac = arvif->addr;
+	bool cur_is_mlo = ath12k_mac_is_ml_arvif(arvif);
+	const u8 *cur_mld_mac = cur_is_mlo ? arvif->ahvif->vif->addr : NULL;
+	struct ath12k_link_vif *arvif_itr;
+	bool itr_is_mlo;
+	const u8 *itr_mld_mac;
+
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	spin_lock_bh(&ar->data_lock);
+	list_for_each_entry(arvif_itr, &ar->arvifs, list) {
+		if (!arvif_itr->is_created)
+			continue;
+
+		/* Skip self */
+		if (arvif_itr == arvif)
+			continue;
+
+		/* Bridge AP vdev shares the same ahvif as its parent AP vdev.
+		 * Its bssid is covered by its own self_arsta in arsta_list.
+		 */
+		if (ath12k_mac_is_bridge_vdev(arvif_itr) &&
+		    arvif_itr->ahvif == arvif->ahvif)
+			continue;
+
+		itr_is_mlo = ath12k_mac_is_ml_arvif(arvif_itr);
+		itr_mld_mac = itr_is_mlo ? arvif_itr->ahvif->vif->addr : NULL;
+
+		/* For non-bridge AP vdevs, bssid is covered by self_arsta in
+		 * arsta_list (Phase 1). Only check the MLD MAC.
+		 */
+		if (arvif_itr->ahvif->vdev_type != WMI_VDEV_TYPE_AP) {
+			/* cur link MAC vs itr link MAC */
+			if (ether_addr_equal(arvif_itr->addr, cur_link_mac)) {
+				spin_unlock_bh(&ar->data_lock);
+				ath12k_warn(ar->ab,
+					    "mac_sanity[self_peer]: vdev %d link MAC %pM conflicts with vdev %d addr on radio %d\n",
+					    arvif->vdev_id, cur_link_mac,
+					    arvif_itr->vdev_id, ar->radio_idx);
+				return -EEXIST;
+			}
+
+			/* cur MLD MAC vs itr link MAC */
+			if (cur_mld_mac &&
+			    ether_addr_equal(arvif_itr->addr, cur_mld_mac)) {
+				spin_unlock_bh(&ar->data_lock);
+				ath12k_warn(ar->ab,
+					    "mac_sanity[self_peer]: vdev %d MLD MAC %pM conflicts with vdev %d addr on radio %d\n",
+					    arvif->vdev_id, cur_mld_mac,
+					    arvif_itr->vdev_id, ar->radio_idx);
+				return -EEXIST;
+			}
+		}
+
+		if (itr_is_mlo) {
+			/* cur link MAC vs itr MLD MAC */
+			if (ether_addr_equal(itr_mld_mac, cur_link_mac)) {
+				spin_unlock_bh(&ar->data_lock);
+				ath12k_warn(ar->ab,
+					    "mac_sanity[self_peer]: vdev %d link MAC %pM conflicts with vdev %d MLD MAC on radio %d\n",
+					    arvif->vdev_id, cur_link_mac,
+					    arvif_itr->vdev_id, ar->radio_idx);
+				return -EEXIST;
+			}
+
+			/* cur MLD MAC vs itr MLD MAC */
+			if (cur_mld_mac &&
+			    ether_addr_equal(itr_mld_mac, cur_mld_mac)) {
+				spin_unlock_bh(&ar->data_lock);
+				ath12k_warn(ar->ab,
+					    "mac_sanity[self_peer]: vdev %d MLD MAC %pM conflicts with vdev %d MLD MAC on radio %d\n",
+					    arvif->vdev_id, cur_mld_mac,
+					    arvif_itr->vdev_id, ar->radio_idx);
+				return -EEXIST;
+			}
+		}
+	}
+	spin_unlock_bh(&ar->data_lock);
+
+	return 0;
+}
+
 int ath12k_cp_peer_sanity_check(struct ath12k *ar,
 				struct ath12k_link_vif *arvif,
 				struct ath12k_link_sta *arsta,
@@ -1518,7 +1743,7 @@ int ath12k_cp_peer_sanity_check(struct ath12k *ar,
 	found_arsta = ath12k_link_sta_find_by_addr(ar, new_link_mac);
 	if (found_arsta) {
 		ath12k_warn(ar->ab,
-			    "cp_sanity: peer %pM already in arsta hash on radio %d vdev %d (self=%d)\n",
+			    "mac_sanity: peer %pM already in arsta hash on radio %d vdev %d (self=%d)\n",
 			    new_link_mac, ar->radio_idx,
 			    found_arsta->arvif->vdev_id,
 			    found_arsta->is_self_peer);
@@ -1531,7 +1756,7 @@ int ath12k_cp_peer_sanity_check(struct ath12k *ar,
 		found_arsta = ath12k_link_sta_find_by_addr(ar, ahsta->addr);
 		if (found_arsta) {
 			ath12k_warn(ar->ab,
-				    "cp_sanity: MLD MAC %pM already in arsta hash on radio %d vdev %d (self=%d)\n",
+				    "mac_sanity: MLD MAC %pM already in arsta hash on radio %d vdev %d (self=%d)\n",
 				    ahsta->addr, ar->radio_idx,
 				    found_arsta->arvif->vdev_id,
 				    found_arsta->is_self_peer);
@@ -1549,7 +1774,7 @@ int ath12k_cp_peer_sanity_check(struct ath12k *ar,
 	if (ath12k_sta_find_duplicate(ag, new_link_mac, ar->radio_idx, ahsta)) {
 		spin_unlock_bh(&ag->ahsta_lock);
 		ath12k_warn(ar->ab,
-			    "cp_sanity: peer link MAC %pM conflicts with existing MLO MLD MAC on radio %d\n",
+			    "mac_sanity: peer link MAC %pM conflicts with existing MLO MLD MAC on radio %d\n",
 			    new_link_mac, ar->radio_idx);
 		return -EEXIST;
 	}
@@ -1558,13 +1783,21 @@ int ath12k_cp_peer_sanity_check(struct ath12k *ar,
 	if (is_mlo && ath12k_sta_find_duplicate(ag, ahsta->addr, ar->radio_idx, ahsta)) {
 		spin_unlock_bh(&ag->ahsta_lock);
 		ath12k_warn(ar->ab,
-			    "cp_sanity: MLO peer MLD MAC %pM conflicts with existing MLO ahsta on radio %d\n",
+			    "mac_sanity: MLO peer MLD MAC %pM conflicts with existing MLO ahsta on radio %d\n",
 			    ahsta->addr, ar->radio_idx);
 		return -EEXIST;
 	}
 	spin_unlock_bh(&ag->ahsta_lock);
 
-	return 0;
+	/* Phase 3: check MACs against existing vdev MACs on this radio.
+	 * For self-peer: check the new vdev's own MACs vs existing vdevs.
+	 * For remote peer: check the peer MACs vs existing vdev MACs.
+	 */
+	if (arsta->is_self_peer)
+		return ath12k_self_peer_vdev_mac_check(ar, arvif);
+
+	return ath12k_remote_peer_vdev_mac_check(ar, new_link_mac,
+						    is_mlo ? ahsta->addr : NULL);
 }
 EXPORT_SYMBOL(ath12k_cp_peer_sanity_check);
 
@@ -1624,3 +1857,37 @@ int ath12k_peer_send_assoc_vendor_response(const struct ath12k_dp_link_peer *pee
 
 	return 0;
 }
+
+/**
+ * ath12k_link_sta_find_by_vdev_id() - find the first arsta matching @vdev_id
+ * @ar:      radio whose arsta hash table is searched
+ * @vdev_id: vdev identifier to match against arsta->arvif->vdev_id
+ *
+ * Walks all buckets of the arsta hash table and returns the first
+ * ath12k_link_sta whose associated arvif carries @vdev_id.
+ *
+ * Context: Caller must hold ar->arsta_lock.
+ * Return: pointer to the matching ath12k_link_sta, or NULL if not found.
+ */
+struct ath12k_link_sta *ath12k_link_sta_find_by_vdev_id(struct ath12k *ar,
+							u32 vdev_id)
+{
+	struct ath12k_link_sta *arsta;
+	u32 bkt;
+
+	lockdep_assert_held(&ar->arsta_lock);
+
+	if (!ar->arsta_list)
+		return NULL;
+
+	for (bkt = 0; bkt < BIT(ar->arsta_hash_bits); bkt++) {
+		hlist_for_each_entry(arsta, &ar->arsta_list[bkt], hlist_addr) {
+			if (arsta->arvif &&
+			    arsta->arvif->vdev_id == vdev_id)
+				return arsta;
+		}
+	}
+
+	return NULL;
+}
+EXPORT_SYMBOL(ath12k_link_sta_find_by_vdev_id);

@@ -2818,39 +2818,48 @@ static void ath12k_rfkill_work(struct work_struct *work)
 
 static void ath12k_mac_peer_ab_disassoc(struct ath12k_base *ab)
 {
-	struct ath12k_dp_link_peer *peer, *tmp;
 	struct ath12k_sta *ahsta;
 	struct ieee80211_sta *sta;
+	struct ath12k_pdev *pdev;
+	struct ath12k *ar_iter;
+	struct ath12k_link_sta *arsta_iter;
+	u32 __bkt;
+	int i;
 
-	spin_lock_bh(&ab->dp->dp_lock);
-	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
-
-		if (!ath12k_dp_link_peer_get_vif(peer))
+	for (i = 0; i < ab->num_radios; i++) {
+		pdev = &ab->pdevs[i];
+		ar_iter = pdev->ar;
+		if (!ar_iter)
 			continue;
 
-		/* In case of STA Vif type,
-		 * report disconnect will be sent during sta_restart work.
-		 */
-		if (ath12k_dp_link_peer_get_vif_type(peer) == NL80211_IFTYPE_STATION)
-			continue;
+		spin_lock_bh(&ar_iter->arsta_lock);
+		ath12k_link_sta_for_each(ar_iter, __bkt, arsta_iter) {
+			struct ath12k_vif *ahvif;
 
-		sta = ath12k_dp_link_peer_get_sta(peer);
-		if (!sta)
-			continue;
+			if (arsta_iter->is_self_peer)
+				continue;
 
-		ahsta = (struct ath12k_sta *)sta->drv_priv;
-		/* Sending low ack event to hostapd to remove (free) the
-		 * existing STAs since FW is crashed and recovering at the momemt.
-		 * After recovery, FW comes up with no information about peers.
-		 * To stop any operation related to peers coming from upper
-		 * layers.
-		 * Here, 0xFFFF is used to differentiate between low ack event
-		 * sent during recovery versus normal low ack event. In normal,
-		 * low ack event, num_packets is not expected to be 0xFFFF.
-		 */
-		ath12k_mac_peer_disassoc(ab, sta, ahsta, ATH12K_DBG_MAC);
+			ahvif = arsta_iter->arvif->ahvif;
+			/* In case of STA Vif type, report disconnect will
+			 * be sent during sta_restart work.
+			 */
+			if (ahvif->vif->type == NL80211_IFTYPE_STATION)
+				continue;
+
+			sta = ath12k_ahsta_to_sta(arsta_iter->ahsta);
+			ahsta = arsta_iter->ahsta;
+			/* Sending low ack event to hostapd to remove (free)
+			 * the existing STAs since FW is crashed and recovering.
+			 * After recovery, FW comes up with no information about
+			 * peers. To stop any operation related to peers coming
+			 * from upper layers.
+			 * Here, 0xFFFF is used to differentiate between low ack
+			 * event sent during recovery versus normal low ack event.
+			 */
+			ath12k_mac_peer_disassoc(ab, sta, ahsta, ATH12K_DBG_MAC);
+		}
+		spin_unlock_bh(&ar_iter->arsta_lock);
 	}
-	spin_unlock_bh(&ab->dp->dp_lock);
 }
 
 void ath12k_core_halt(struct ath12k *ar)
@@ -2890,7 +2899,7 @@ void ath12k_core_halt(struct ath12k *ar)
 
 	ath12k_telemetry_ab_peer_agent_destroy(ab);
 
-	ath12k_mac_dp_peer_cleanup(ar);
+	ath12k_mac_dp_peer_cleanup_all(ar);
 	cancel_work_sync(&ar->regd_update_work);
 	cancel_work_sync(&ar->reg_set_previous_country);
 	cancel_work_sync(&ar->change_6g_txpow_sta_mode_work);
@@ -3203,8 +3212,6 @@ static void ath12k_core_mode1_recovery_sta_list(void *data, struct ieee80211_sta
 	struct ath12k *ar = arvif->ar;
 	struct ath12k_base *ab = arvif->ar->ab;
 	struct ath12k_key_conf *key_conf = NULL;
-	struct ath12k_dp_link_peer *peer;
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ar->ab);
 	struct ieee80211_key_conf *key;
 	int ret = -1, key_idx;
 	u8 link_id = arvif->link_id;
@@ -3234,14 +3241,13 @@ static void ath12k_core_mode1_recovery_sta_list(void *data, struct ieee80211_sta
 	    vif->type != NL80211_IFTYPE_MESH_POINT)
 		return;
 
-	spin_lock_bh(&dp->dp_lock);
-	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, arvif->vdev_id, arsta->addr);
-	if (peer) {
+	spin_lock_bh(&ar->arsta_lock);
+	if (ath12k_link_sta_find_by_addr(ar, arsta->addr)) {
+		spin_unlock_bh(&ar->arsta_lock);
 		sta_added = true;
-		spin_unlock_bh(&dp->dp_lock);
 		goto key_add;
 	}
-	spin_unlock_bh(&dp->dp_lock);
+	spin_unlock_bh(&ar->arsta_lock);
 
 	prev_state = arsta->ahsta->state;
 	for (state = IEEE80211_STA_NOTEXIST;
@@ -3613,7 +3619,6 @@ static int ath12k_mlo_core_recovery_reconfig_link_bss(struct ath12k *ar,
 	enum ieee80211_ap_reg_power power_type;
 	struct ath12k_wmi_peer_create_arg param;
 	struct ieee80211_chanctx_conf *ctx = &arvif->chanctx;
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	int ret = -1;
 	u8 link_id;
 	bool is_bridge_vdev, dp_peer_created = false;
@@ -3667,17 +3672,18 @@ static int ath12k_mlo_core_recovery_reconfig_link_bss(struct ath12k *ar,
 		}
 	}
 
-	spin_lock_bh(&dp->dp_lock);
-        /* for some targets bss peer must be created before vdev_start */
+	/* for some targets bss peer must be created before vdev_start */
 	if (ab->hw_params->vdev_start_delay &&
 	    ahvif->vdev_type != WMI_VDEV_TYPE_AP &&
-	    ahvif->vdev_type != WMI_VDEV_TYPE_MONITOR &&
-	    !ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, arvif->vdev_id, arvif->bssid)) {
-		ret = 0;
-		spin_unlock_bh(&dp->dp_lock);
-		goto exit;
+	    ahvif->vdev_type != WMI_VDEV_TYPE_MONITOR) {
+		spin_lock_bh(&ar->arsta_lock);
+		if (!ath12k_link_sta_find_by_addr(ar, arvif->bssid)) {
+			ret = 0;
+			spin_unlock_bh(&ar->arsta_lock);
+			goto exit;
+		}
+		spin_unlock_bh(&ar->arsta_lock);
 	}
-	spin_unlock_bh(&dp->dp_lock);
 
 	if (ab->hw_params->vdev_start_delay &&
 	    (ahvif->vdev_type == WMI_VDEV_TYPE_AP ||
@@ -3762,10 +3768,13 @@ static void ath12k_core_peer_disassoc(struct ath12k_hw_group *ag,
 				      struct ath12k_base *assert_ab)
 {
 	struct ath12k_base *ab;
-	struct ath12k_dp_link_peer *peer, *tmp;
 	struct ath12k_sta *ahsta;
 	struct ieee80211_sta *sta;
-	int i;
+	struct ath12k_pdev *pdev_iter;
+	struct ath12k *ar_iter;
+	struct ath12k_link_sta *arsta_iter;
+	u32 __bkt;
+	int radio_idx, i;
 
 	for (i = 0; i < ag->num_devices; i++) {
 		ab = ag->ab[i];
@@ -3778,30 +3787,33 @@ static void ath12k_core_peer_disassoc(struct ath12k_hw_group *ag,
 				continue;
 		}
 
-		spin_lock_bh(&ab->dp->dp_lock);
-		list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
-			if (!ath12k_dp_link_peer_get_sta(peer) ||
-			    !ath12k_dp_link_peer_get_vif(peer))
+		for (radio_idx = 0; radio_idx < ab->num_radios; radio_idx++) {
+			pdev_iter = &ab->pdevs[radio_idx];
+			ar_iter = pdev_iter->ar;
+			if (!ar_iter)
 				continue;
 
-			/* Allow sending disassoc to legacy peer
-			 * only for asserted radio
-			 */
-			if (!peer->mlo && ab != assert_ab)
-				continue;
+			spin_lock_bh(&ar_iter->arsta_lock);
+			ath12k_link_sta_for_each(ar_iter, __bkt, arsta_iter) {
 
-			sta = ath12k_dp_link_peer_get_sta(peer);
-			ahsta = (struct ath12k_sta *)sta->drv_priv;
+				if (arsta_iter->is_self_peer)
+					continue;
 
-			/* Send low ack to disassoc the MLD station
-			 * Need to check on the sequence as FW has
-			 * discarded the management packet at this
-			 * sequence.
-			 */
-			ath12k_mac_peer_disassoc(ab, sta, ahsta,
-						 ATH12K_DBG_MODE1_RECOVERY);
+				/* Allow sending disassoc to legacy peer
+				 * only for asserted radio
+				 */
+				if (!arsta_iter->ahsta->is_mlo && ab != assert_ab)
+					continue;
+
+				sta = ath12k_ahsta_to_sta(arsta_iter->ahsta);
+				ahsta = arsta_iter->ahsta;
+
+				/* Send low ack to disassoc the MLD station */
+				ath12k_mac_peer_disassoc(ab, sta, ahsta,
+							 ATH12K_DBG_MODE1_RECOVERY);
+			}
+			spin_unlock_bh(&ar_iter->arsta_lock);
 		}
-		spin_unlock_bh(&ab->dp->dp_lock);
 	}
 }
 
@@ -3871,8 +3883,6 @@ int ath12k_recovery_reconfig(struct ath12k_base *ab)
 	struct ath12k_hw_group *ag = ab->ag;
 	struct ath12k_base *partner_ab;
 	struct ath12k_hw *ah = ath12k_ag_to_ah(ag, 0);
-	struct ath12k_dp_link_peer *peer;
-	struct ath12k_dp *dp;
 	struct ieee80211_key_conf *key;
 	int i, j, key_idx;
 	int ret = -EINVAL;
@@ -4042,15 +4052,13 @@ skip_link_info:
 				if (ath12k_mac_is_bridge_vdev(arvif))
 					continue;
 
-				dp = ath12k_ab_to_dp(partner_ab);
-				spin_lock_bh(&dp->dp_lock);
-				peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, arvif->vdev_id, arvif->bssid);
-				if (!peer) {
+				spin_lock_bh(&ar->arsta_lock);
+				if (!ath12k_link_sta_find_by_addr(ar, arvif->bssid)) {
 					ath12k_info(ab, "Failed to fetch the peer during reconfig\n");
-					spin_unlock_bh(&dp->dp_lock);
+					spin_unlock_bh(&ar->arsta_lock);
 					continue;
 				}
-				spin_unlock_bh(&dp->dp_lock);
+				spin_unlock_bh(&ar->arsta_lock);
 
 				ath12k_reset_group_key_slots(arvif, ahvif);
 				for (key_idx = 0; key_idx < WMI_MAX_KEY_INDEX; key_idx++) {
@@ -4491,8 +4499,7 @@ static void ath12k_core_reset(struct work_struct *work)
 		ath12k_core_to_group_ref_put(ab);
 
 	if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE0) {
-		if (ath12k_core_trigger_umac_reset(ab, WMI_MLO_TEARDOWN_SSR_REASON) ||
-		    ath12k_mac_partner_peer_cleanup(ab)) {
+		if (ath12k_core_trigger_umac_reset(ab, WMI_MLO_TEARDOWN_SSR_REASON)) {
 			/* Fallback to Mode0 if umac reset/peer_cleanup is
 			 * failed
 			 */

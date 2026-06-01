@@ -9556,9 +9556,9 @@ int ath12k_vendor_trigg_pri_link_migrate(struct wiphy *wiphy,
 	arg.link_id = link_id;
 	memcpy(arg.addr, mac_addr, ETH_ALEN);
 
-	mutex_lock(&ahvif->ah->hw_mutex);
+	wiphy_lock(wiphy);
 	ret = ath12k_mac_process_link_migrate_req(ahvif, &arg);
-	mutex_unlock(&ahvif->ah->hw_mutex);
+	wiphy_unlock(wiphy);
 
 	if (ret)
 		ath12k_info(NULL,

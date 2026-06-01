@@ -116,6 +116,7 @@ ath12k_dp_peer_migration_qcn9625(struct ath12k_link_vif *arvif,
 	struct ath12k_sta *ahsta;
 	u8 old_link_id;
 
+	rcu_read_lock();
 	/* The primary_link_id needs to be updated here based on the link_id sent
 	 * in the migration command.
 	 */
@@ -158,6 +159,7 @@ ath12k_dp_peer_migration_qcn9625(struct ath12k_link_vif *arvif,
 			   "Updated primary_link_id from %u to %u for sta %pM\n",
 			   old_link_id, peer_node->pri_link_id, ml_peer->sta->addr);
 	}
+	rcu_read_unlock();
 }
 
 static const struct ath12k_hw_ops qcn9625_ops = {

@@ -11381,16 +11381,15 @@ static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 	struct ieee80211_hdr *hdr;
 	u16 fc;
 	struct ieee80211_supported_band *sband;
-	struct ath12k_dp_link_peer *peer;
-	struct ieee80211_vif *vif;
 	struct ath12k_vif *ahvif;
 	struct ath12k_mgmt_frame_stats *mgmt_stats;
 	u16 frm_stype;
-	struct ath12k_dp *dp;
 	struct ath12k_link_vif *arvif = NULL;
 	struct ieee80211_sta *sta;
 	struct ath12k_sta *ahsta;
 	s8 rssi;
+	u32 vdev_id;
+	u8 link_id;
 	struct ath12k_link_vif *arvif_iter;
 
 	rx_ev.num_link_removal_info = 0;
@@ -11470,14 +11469,12 @@ static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 	    skb->len >= offsetof(struct ieee80211_mgmt, u.assoc_req.variable))
 		ath12k_update_assoc_fail_stats(ar, hdr, skb);
 
-	dp = ath12k_ab_to_dp(ab);
-	spin_lock_bh(&dp->dp_lock);
-
-	peer = ath12k_dp_link_peer_find_by_addr(dp, hdr->addr1);
-	if(!peer)
-		peer = ath12k_dp_link_peer_find_by_addr(dp, hdr->addr3);
-	if (!peer) {
-		spin_unlock_bh(&dp->dp_lock);
+	spin_lock_bh(&ar->arsta_lock);
+	arsta = ath12k_link_sta_find_by_addr(ar, hdr->addr1);
+	if (!arsta)
+		arsta = ath12k_link_sta_find_by_addr(ar, hdr->addr3);
+	if (!arsta || !arsta->arvif->ahvif) {
+		spin_unlock_bh(&ar->arsta_lock);
 		/* 802.11 Probe Request address fields (ToDS=0, FromDS=0):
 		 * addr1 = DA (Destination Address) - ff:ff:ff:ff:ff:ff for broadcast
 		 * addr2 = SA/TA (Source/Transmitter - STA MAC address)
@@ -11522,22 +11519,19 @@ static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 		goto skip_mgmt_stats;
 	}
 
-	vif = ath12k_dp_link_peer_get_vif(peer);
-
-	spin_unlock_bh(&dp->dp_lock);
-
-	if (!vif)
-		goto skip_mgmt_stats;
+	link_id = arsta->link_id;
+	vdev_id = arsta->arvif->vdev_id;
+	ahvif = arsta->arvif->ahvif;
+	spin_unlock_bh(&ar->arsta_lock);
 
 	spin_lock_bh(&ar->data_lock);
 
-	ahvif = ath12k_vif_to_ahvif(vif);
 	mgmt_stats = &ahvif->mgmt_stats;
 	mgmt_stats->rx_cnt[frm_stype]++;
 	mgmt_stats->aggr_rx_mgmt++;
 
 	rcu_read_lock();
-	arvif = ath12k_mac_get_arvif(ar, peer->vdev_id);
+	arvif = ath12k_mac_get_arvif(ar, vdev_id);
 	if (rx_ev.status & WMI_RX_STATUS_ERR_PN) {
 		mgmt_stats->rx_pn_err_cnt++;
 		if (arvif)
@@ -11558,8 +11552,8 @@ static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 		if (!ahsta)
 			goto skip_rssi_update;
 
-		if (peer->link_id < IEEE80211_MLD_MAX_NUM_LINKS)
-			arsta = rcu_dereference(ahsta->link[peer->link_id]);
+		if (link_id < IEEE80211_MLD_MAX_NUM_LINKS)
+			arsta = rcu_dereference(ahsta->link[link_id]);
 		if (!arsta)
 			arsta = &ahsta->deflink;
 
@@ -11854,73 +11848,73 @@ static void ath12k_scan_event(struct ath12k_base *ab, struct sk_buff *skb)
 	rcu_read_unlock();
 }
 
+struct ath12k_kickout_ctx {
+	struct ath12k_base *ab;
+	const struct wmi_peer_sta_kickout_arg *arg;
+};
+
+static void ath12k_kickout_iter_cb(struct ath12k *ar,
+				   struct ath12k_link_sta *arsta,
+				   void *data)
+{
+	struct ath12k_kickout_ctx *ctx = data;
+	const struct wmi_peer_sta_kickout_arg *arg = ctx->arg;
+	struct ath12k_vif *ahvif;
+	struct ieee80211_sta *sta;
+	unsigned int link_id;
+	bool is_mlo;
+
+	if (!arsta->arvif || !arsta->arvif->ahvif) {
+		ath12k_warn(ctx->ab, "invalid arvif in peer sta kickout ev");
+		return;
+	}
+
+	ahvif = arsta->arvif->ahvif;
+	is_mlo = arsta->ahsta ? arsta->ahsta->is_mlo : false;
+
+	if (is_mlo)
+		sta = ieee80211_find_sta_by_link_addrs(ar->ah->hw, arg->mac_addr,
+						       NULL, &link_id);
+	else
+		sta = ieee80211_find_sta_by_ifaddr(ath12k_ar_to_hw(ar),
+					   arg->mac_addr, NULL);
+	if (!sta) {
+		ath12k_warn(ctx->ab, "Spurious quick kickout for %sSTA %pM\n",
+			    is_mlo ? "MLO " : "", arg->mac_addr);
+		return;
+	}
+
+	if (is_mlo && arsta->link_id != link_id) {
+		ath12k_warn(ctx->ab,
+			    "Spurious quick kickout for MLO STA %pM with invalid link_id, peer: %d, sta: %d\n",
+			    arg->mac_addr, arsta->link_id, link_id);
+		return;
+	}
+
+	if (ar->ab->hw_params->handle_beacon_miss &&
+	    ahvif->vif->type == NL80211_IFTYPE_STATION &&
+	    arg->reason == __cpu_to_le32(WMI_PEER_STA_KICKOUT_REASON_INACTIVITY))
+		ath12k_mac_handle_beacon_miss(ar, arsta->arvif->vdev_id);
+	else
+		ieee80211_report_low_ack(sta, 10);
+
+	ath12k_dbg(ctx->ab, ATH12K_DBG_PEER, "peer sta kickout event %pM",
+		   arg->mac_addr);
+}
+
 static void ath12k_peer_sta_kickout_event(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	struct wmi_peer_sta_kickout_arg arg = {};
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	struct ieee80211_sta *sta;
-	struct ath12k_dp_link_peer *peer;
-	struct ath12k_vif *ahvif;
-	unsigned int link_id;
-	struct ath12k *ar;
+	struct ath12k_kickout_ctx ctx = { .ab = ab, .arg = &arg };
 
 	if (ath12k_pull_peer_sta_kickout_ev(ab, skb, &arg) != 0) {
 		ath12k_warn(ab, "failed to extract peer sta kickout event");
 		return;
 	}
 
-	rcu_read_lock();
-
-	spin_lock_bh(&dp->dp_lock);
-
-	peer = ath12k_dp_link_peer_find_by_addr(dp, arg.mac_addr);
-
-	if (!peer) {
-		ath12k_warn(ab, "peer not found %pM\n",
-			    arg.mac_addr);
-		goto exit;
-	}
-
-	ar = ath12k_mac_get_ar_by_vdev_id(ab, peer->vdev_id);
-	if (!ar) {
-		ath12k_warn(ab, "invalid ar in peer sta kickout ev");
-		goto exit;
-	}
-
-	ahvif = ath12k_vif_to_ahvif(ath12k_dp_link_peer_get_vif(peer));
-
-	if (peer->mlo)
-		sta = ieee80211_find_sta_by_link_addrs(ar->ah->hw, arg.mac_addr,
-						       NULL, &link_id);
-	else
-		sta = ieee80211_find_sta_by_ifaddr(ath12k_ar_to_hw(ar),
-					   arg.mac_addr, NULL);
-	if (!sta) {
-		ath12k_warn(ab, "Spurious quick kickout for %sSTA %pM\n",
-			    peer->mlo ? "MLO " : "", arg.mac_addr);
-		goto exit;
-	}
-
-	if (peer->mlo && peer->link_id != link_id) {
-		ath12k_warn(ab,
-			    "Spurious quick kickout for MLO STA %pM with invalid link_id, peer: %d, sta: %d\n",
-			    arg.mac_addr, peer->link_id, link_id);
-		goto exit;
-	}
-
-	if (ar->ab->hw_params->handle_beacon_miss &&
-	    ahvif->vif->type == NL80211_IFTYPE_STATION &&
-	    arg.reason == __cpu_to_le32(WMI_PEER_STA_KICKOUT_REASON_INACTIVITY))
-		ath12k_mac_handle_beacon_miss(ar, peer->vdev_id);
-	else
-		ieee80211_report_low_ack(sta, 10);
-
-	ath12k_dbg(ab, ATH12K_DBG_PEER, "peer sta kickout event %pM",
-		   arg.mac_addr);
-
-exit:
-	spin_unlock_bh(&dp->dp_lock);
-	rcu_read_unlock();
+	if (!ath12k_arsta_itr_on_ab_by_addr(ab, arg.mac_addr,
+					    ath12k_kickout_iter_cb, &ctx))
+		ath12k_warn(ab, "peer not found %pM\n", arg.mac_addr);
 }
 
 static void ath12k_roam_event(struct ath12k_base *ab, struct sk_buff *skb)
@@ -12272,6 +12266,7 @@ static void ath12k_peer_assoc_conf_event(struct ath12k_base *ab, struct sk_buff 
 	}
 
 	if (!peer_assoc_conf.status) {
+		/* rcu_read_lock already taken */
 		spin_lock_bh(&ar->arsta_lock);
 		arsta = ath12k_link_sta_find_by_addr(ar, peer_assoc_conf.macaddr);
 		if (!arsta) {
@@ -16699,9 +16694,8 @@ static void ath12k_wmi_peer_migration_event(struct ath12k_base *ab,
 	struct ath12k_mac_pri_link_migr_peer_node *peer_node, *tmp_peer;
 	const struct ath12k_hw_ops *hw_ops;
 	struct ath12k *ar;
+	struct ath12k_hw_group *ag;
 	struct ath12k_link_vif *arvif;
-	struct ath12k_dp_link_peer *peer;
-	struct ath12k_pdev_dp *dp_pdev;
 	struct ieee80211_sta *sta;
 	struct ath12k_sta *ahsta;
 	int vdev_id, num_peers, ret, i;
@@ -16729,15 +16723,15 @@ static void ath12k_wmi_peer_migration_event(struct ath12k_base *ab,
 	}
 
 	ar = arvif->ar;
+	ag = ar->ah->ag;
 	hw_ops = ar->ab->hw_params->hw_ops;
 
 	ath12k_dbg(ab, ATH12K_DBG_WMI,
 		   "MLO Peer Migration event received for vdev %d, num_peers %d\n",
 		   vdev_id, num_peers);
 
-	spin_lock_bh(&ab->dp->dp_lock);
-
 	for (i = 0; i < num_peers; i++) {
+		union ath12k_config_param val = {0};
 		ml_peer_id = le32_get_bits(parse.peer_info[i]->status_info,
 					   WMI_MLO_PRIMARY_LINK_PEER_MIGRATION_STATUS_ML_PEER_ID);
 		status = le32_get_bits(parse.peer_info[i]->status_info,
@@ -16760,25 +16754,27 @@ static void ath12k_wmi_peer_migration_event(struct ath12k_base *ab,
 		if (!(hw_ops && hw_ops->dp_peer_migration))
 			ml_peer_id |= ATH12K_PEER_ML_ID_VALID;
 
-		dp_pdev = &ar->dp;
-		peer = ath12k_dp_link_peer_find_by_peerid_index(ab->dp, dp_pdev,
-								ml_peer_id);
-		if (!peer) {
+		ret = ath12k_dp_peer_get_param_by_peer_id(
+				&ar->dp, ml_peer_id,
+				ATH12K_DP_PEER_MAC_ADDR_PARAM,
+				&val);
+		if (ret) {
 			ath12k_err(ab, "failed to find ML peer with id %d\n", ml_peer_id);
 			goto exit_pri_link_mig_event;
 		}
 
 		ath12k_dbg(ab, ATH12K_DBG_WMI,
-			   "peer migration status ML peer id %d status %u\n",
-			   ml_peer_id, status);
+			   "peer migration status ML peer id %d status %u MAC %pM\n",
+			   ml_peer_id, status, val.addr);
 
-		sta = ath12k_dp_link_peer_get_sta(peer);
-		if (!sta)
+		spin_lock_bh(&ag->ahsta_lock);
+		ahsta = ath12k_sta_find_by_addr_and_ahvif(ag, val.addr, arvif->ahvif);
+		if (!ahsta) {
+			spin_unlock_bh(&ag->ahsta_lock);
 			continue;
-
-		ahsta = (struct ath12k_sta *)sta->drv_priv;
-
+		}
 		ahsta->is_migration_in_progress = false;
+		sta = ath12k_ahsta_to_sta(ahsta);
 
 		/* Only disassoc when ML link removal in not in progress since
 		 * if migration failed, ML link removal handling will take
@@ -16788,6 +16784,7 @@ static void ath12k_wmi_peer_migration_event(struct ath12k_base *ab,
 		    status != WMI_PRIMARY_LINK_PEER_MIGRATION_SUCCESS) {
 			ath12k_mac_peer_disassoc(ab, sta, ahsta,
 						 ATH12K_DBG_WMI);
+			spin_unlock_bh(&ag->ahsta_lock);
 			continue;
 		}
 
@@ -16795,16 +16792,16 @@ static void ath12k_wmi_peer_migration_event(struct ath12k_base *ab,
 		 * possibly in HTT part some error occured
 		 */
 		if (!arvif->is_link_removal_in_progress &&
-		    ahsta->primary_link_id == peer->link_id) {
+		    ahsta->primary_link_id == arvif->link_id) {
 			ath12k_err(ab,
 				   "unknown error occured during peer migration, disconnecting\n");
 			ath12k_mac_peer_disassoc(ab, sta, ahsta,
 						 ATH12K_DBG_WMI);
 		}
+		spin_unlock_bh(&ag->ahsta_lock);
 	}
 
 exit_pri_link_mig_event:
-	spin_unlock_bh(&ab->dp->dp_lock);
 	rcu_read_unlock();
 
 	/* Event is received for all queued ML peers in this arvif */
@@ -17063,40 +17060,43 @@ static int ath12k_wmi_tlv_mlo_3_link_tlt_evt_parse(struct ath12k_base *ab,
 }
 
 static u32 ath12k_mlo_get_link_maxphyrate(struct ath12k_base *ab,
-                                          struct ath12k_dp_link_peer *peer,
-                                          u16 hw_link_id)
+					   struct rate_info *txrate,
+					   u8 peer_hw_link_id,
+					   u16 hw_link_id)
 {
-       u32 maxphyrate;
+	if (hw_link_id == INVALID_HW_LINK_ID) {
+		ath12k_err(ab, "invalid hw link id is passed: %d", hw_link_id);
+		return 0;
+	}
 
-       if (hw_link_id == INVALID_HW_LINK_ID) {
-               ath12k_err(ab, "invalid hw link id is passed: %d",
-                          hw_link_id);
-               return 0;
-       }
+	if (hw_link_id != peer_hw_link_id)
+		return 0;
 
-       if (hw_link_id != peer->hw_link_id)
-               return 0;
-
-       maxphyrate = cfg80211_calculate_bitrate(&peer->txrate);
-
-       return maxphyrate;
+	return cfg80211_calculate_bitrate(txrate);
 }
 
 static void
-ath12k_update_peer_tlt_selection(struct ath12k_base *ab,
-                                struct ath12k_dp_link_peer *peer,
-                       struct mlo_tlt_selection_evt_params *evt_params)
+ath12k_update_peer_tlt_selection_weights(struct ath12k *ar,
+					 struct ath12k_link_sta *arsta,
+					 void *data)
 {
+	struct mlo_tlt_selection_evt_params *evt_params = data;
+	struct ath12k_base *ab = ar->ab;
 	u8 tid_weight[ATH12K_DATA_TID_MAX] = {0};
 	u8 primary_tid_weight = 0;
 	u8 secondary_tid_weight = 0;
 	u32 primary_tid_capacity = 0;
 	u32 secondary_tid_capacity = 0;
 	u64 total_capacity = 0;
+	union ath12k_config_param val = {0};
+	union ath12k_config_param link_val = {0};
+	struct ath12k_dp_peer *dp_peer;
 	u8 i = 0;
 	u8 tid_bitmap = 0;
 	u8 common_link_tid_bitmap = 0;
 	u32 common_link_capacity = 0;
+	u8 link_id = arsta->link_id, hw_link_id = ar->hw_link_id;
+	int ret;
 
 	/* check whether link bitmap is valid or not */
 	if ((evt_params->link_bmap[0] == 0) ||
@@ -17107,21 +17107,38 @@ ath12k_update_peer_tlt_selection(struct ath12k_base *ab,
 		return;
 	}
 
-	if (!ath12k_dp_link_peer_get_sta(peer) ||
-	    !ath12k_dp_link_peer_get_sta(peer)->valid_links)
+	if (!arsta->ahsta || !ath12k_ahsta_to_sta(arsta->ahsta)->valid_links)
 		return;
 
 	/* non 3 link association */
-	if (hweight16(ath12k_dp_link_peer_get_sta(peer)->valid_links) !=
+	if (hweight16(ath12k_ahsta_to_sta(arsta->ahsta)->valid_links) !=
 	    ATH12K_3LINK_MLO_MAX_STA_LINKS)
 		return;
+
+	dp_peer = ath12k_sta_get_dp_peer_rcu(arsta->ahsta);
+	if (!dp_peer) {
+		ath12k_warn(ab, "tlt selection: dp_peer not found for %pM\n",
+			    arsta->addr);
+		return;
+	}
+
+	ret = ath12k_dp_link_peer_get_param_by_dp_peer_and_link_id(
+			dp_peer, link_id,
+			ATH12K_DP_LINK_PEER_TXRATE_PARAM, &link_val);
+	if (ret) {
+		ath12k_warn(ab, "tlt selection: txrate get failed for %pM link %u\n",
+			    arsta->addr, link_id);
+		return;
+	}
 
 	/* find the common link */
 	common_link_tid_bitmap =
 		evt_params->link_bmap[0] & evt_params->link_bmap[1];
 	if (common_link_tid_bitmap) {
 		common_link_capacity =
-			ath12k_mlo_get_link_maxphyrate(ab, peer,
+			ath12k_mlo_get_link_maxphyrate(ab,
+						       &link_val.rate_info.txrate,
+						       hw_link_id,
 						       GET_3_LINK_TX_HW_LINK_ID(common_link_tid_bitmap));
 		/* distribute the common link capacity */
 		if (common_link_capacity) {
@@ -17130,24 +17147,28 @@ ath12k_update_peer_tlt_selection(struct ath12k_base *ab,
 		}
 	}
 
-	/* calulate primary tid capacity */
+	/* calculate primary tid capacity */
 	for (i = 0; i < ATH12K_DATA_TID_MAX; i++) {
 		/* skip the common link capacity addition */
-		tid_bitmap = ((evt_params->link_bmap[0])  & (1 << i));
+		tid_bitmap = ((evt_params->link_bmap[0]) & (1 << i));
 		if (tid_bitmap && (tid_bitmap != common_link_tid_bitmap)) {
 			primary_tid_capacity +=
-				ath12k_mlo_get_link_maxphyrate(ab, peer,
+				ath12k_mlo_get_link_maxphyrate(ab,
+							       &link_val.rate_info.txrate,
+							       hw_link_id,
 							       GET_3_LINK_TX_HW_LINK_ID(tid_bitmap));
 		}
 	}
 
-	/* calulate secondary tid capacity */
+	/* calculate secondary tid capacity */
 	for (i = 0; i < ATH12K_DATA_TID_MAX; i++) {
 		/* skip the common link capacity addition */
-		tid_bitmap = ((evt_params->link_bmap[1])  & (1 << i));
+		tid_bitmap = ((evt_params->link_bmap[1]) & (1 << i));
 		if (tid_bitmap && (tid_bitmap != common_link_tid_bitmap)) {
 			secondary_tid_capacity +=
-				ath12k_mlo_get_link_maxphyrate(ab, peer,
+				ath12k_mlo_get_link_maxphyrate(ab,
+							       &link_val.rate_info.txrate,
+							       hw_link_id,
 							       GET_3_LINK_TX_HW_LINK_ID(tid_bitmap));
 		}
 	}
@@ -17201,54 +17222,37 @@ ath12k_update_peer_tlt_selection(struct ath12k_base *ab,
 	tid_weight[6] = primary_tid_weight;
 	tid_weight[7] = secondary_tid_weight;
 
-	for (i = 0; i < ATH12K_DATA_TID_MAX; i++) {
-		if (peer->tid_weight[i] != tid_weight[i])
-			peer->tid_weight[i] = tid_weight[i];
-	}
+	memcpy(val.tid_weight, tid_weight, sizeof(tid_weight));
 
-	return;
+	/* Write the computed tid_weight[] back via the param API */
+	ret = ath12k_dp_link_peer_set_param_by_dp_peer_and_link_id(
+			dp_peer, link_id,
+			ATH12K_DP_LINK_PEER_TID_WEIGHT_PARAM, &val);
+	if (ret)
+		ath12k_warn(ab,
+			    "tlt selection: tid_weight set failed for %pM link %u\n",
+			    arsta->addr, link_id);
 }
 
 static void ath12k_wmi_mlo_3_link_tlt_selection(struct ath12k_base *ab,
-                                                struct sk_buff *skb)
+						struct sk_buff *skb)
 {
-        struct mlo_tlt_selection_evt_params tlt_sel_params = {0};
-	struct ath12k_dp_link_peer *peer = NULL;
-	struct ath12k_dp *dp;
-        int ret, i;
+	struct mlo_tlt_selection_evt_params tlt_sel_params = {0};
+	int ret;
 
-        ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
-                                  ath12k_wmi_tlv_mlo_3_link_tlt_evt_parse,
-                                  &tlt_sel_params);
-        if (ret) {
-                ath12k_warn(ab, "failed to fetch tlt selection tlv %d", ret);
-                return;
-        }
+	ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
+				  ath12k_wmi_tlv_mlo_3_link_tlt_evt_parse,
+				  &tlt_sel_params);
+	if (ret) {
+		ath12k_warn(ab, "failed to fetch tlt selection tlv %d", ret);
+		return;
+	}
 
-	dp = ath12k_ab_to_dp(ab);
-	spin_lock_bh(&dp->dp_lock);
-
-        for (i = 0; i < ab->num_radios; i++) {
-               if (!is_zero_ether_addr(tlt_sel_params.mld_addr)) {
-                       peer = ath12k_dp_link_peer_find_by_addr(dp, tlt_sel_params.mld_addr);
-                       if (!peer) {
-                               continue;
-		       }
-		       break;
-               }
-       }
-
-        if (!peer) {
-                ath12k_warn(ab, "peer not found %pM",
-                            tlt_sel_params.mld_addr);
-                goto exit;
-        }
-
-        ath12k_update_peer_tlt_selection(ab, peer, &tlt_sel_params);
-
-exit:
-	spin_unlock_bh(&dp->dp_lock);
-        return;
+	if (!ath12k_arsta_itr_on_ab_by_addr(ab, tlt_sel_params.mld_addr,
+					    ath12k_update_peer_tlt_selection_weights,
+					    &tlt_sel_params))
+		ath12k_warn(ab, "tlt selection: peer not found %pM\n",
+			    tlt_sel_params.mld_addr);
 }
 
 static void

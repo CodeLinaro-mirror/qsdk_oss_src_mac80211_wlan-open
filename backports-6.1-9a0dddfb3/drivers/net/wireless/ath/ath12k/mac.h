@@ -319,7 +319,7 @@ ath12k_mac_fill_reg_tpc_info_with_psd_eirp_pwr_for_client_sp(struct ath12k *ar,
 							     struct ieee80211_chanctx_conf *ctx);
 
 void ath12k_mac_drain_tx(struct ath12k *ar);
-void ath12k_mac_dp_peer_cleanup(struct ath12k *ar);
+void ath12k_mac_dp_peer_cleanup_all(struct ath12k *ar);
 int ath12k_mac_tx_mgmt_pending_free(int buf_id, void *skb, void *ctx);
 enum rate_info_bw ath12k_mac_bw_to_mac80211_bw(enum ath12k_supported_bw bw);
 enum ath12k_supported_bw ath12k_mac_mac80211_bw_to_ath12k_bw(enum rate_info_bw bw);
@@ -343,7 +343,6 @@ void ath12k_mac_get_any_chanctx_conf_iter(struct ieee80211_hw *hw,
 					  void *data);
 int ath12k_mac_mlo_teardown_with_umac_reset(struct ath12k_base *ab,
 					    enum wmi_mlo_tear_down_reason_code_type reason_code);
-int ath12k_mac_partner_peer_cleanup(struct ath12k_base *ab);
 enum nl80211_he_gi ath12k_mac_he_gi_to_nl80211_he_gi(u8 sgi);
 u16 ath12k_mac_he_convert_tones_to_ru_tones(u16 tones);
 enum nl80211_eht_ru_alloc ath12k_mac_eht_ru_tones_to_nl80211_eht_ru_alloc(u16 ru_tones);
