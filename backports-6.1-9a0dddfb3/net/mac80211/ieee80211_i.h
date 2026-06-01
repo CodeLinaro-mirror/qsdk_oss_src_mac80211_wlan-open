@@ -2928,6 +2928,8 @@ void ieee80211_recalc_smps(struct ieee80211_sub_if_data *sdata,
 void ieee80211_recalc_min_chandef(struct ieee80211_sub_if_data *sdata,
 				  int link_id);
 
+bool ieee80211_is_scan_ongoing(struct ieee80211_hw *hw,
+			       struct cfg80211_chan_def *chandef);
 size_t ieee80211_ie_split_vendor(const u8 *ies, size_t ielen, size_t offset);
 u8 *ieee80211_ie_build_ht_cap(u8 *pos, struct ieee80211_sta_ht_cap *ht_cap,
 			      u16 cap);

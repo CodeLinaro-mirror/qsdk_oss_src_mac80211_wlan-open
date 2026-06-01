@@ -4410,6 +4410,13 @@ __ieee80211_is_scan_ongoing(struct wiphy *wiphy,
 	return false;
 }
 
+bool ieee80211_is_scan_ongoing(struct ieee80211_hw *hw,
+			       struct cfg80211_chan_def *chandef)
+{
+	return __ieee80211_is_scan_ongoing(hw->wiphy, hw_to_local(hw), chandef);
+}
+EXPORT_SYMBOL(ieee80211_is_scan_ongoing);
+
 static int ieee80211_start_radar_detection(struct wiphy *wiphy,
 					   struct net_device *dev,
 					   struct cfg80211_chan_def *chandef,
