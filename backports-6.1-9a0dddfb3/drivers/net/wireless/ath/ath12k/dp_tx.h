@@ -93,6 +93,10 @@ void ath12k_dp_tx_stats_post_enqueue(struct ath12k_dp *dp,
 int ath12k_dp_tx_get_mcast_group_slot(struct ath12k_vif *vlan_ahvif,
 				      u8 link_id,
 				      struct ieee80211_tx_info *info);
+int ath12k_dp_sg_ext_desc_populate(struct ath12k_dp *dp,
+				   struct ath12k_dp_vif *dp_vif,
+				   struct ath12k_dp_ext_desc *ext_desc,
+				   struct sk_buff *skb, u8 ring_id);
 
 /**
  * ath12k_wifi7_tx_classify_packet() - Classify packet type
