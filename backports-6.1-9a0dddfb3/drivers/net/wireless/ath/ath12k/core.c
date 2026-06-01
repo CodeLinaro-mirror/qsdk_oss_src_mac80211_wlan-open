@@ -6025,16 +6025,35 @@ out:
                     atomic_read(&ath12k_coredump_ram_info.num_chip));
 }
 
+struct ath12k_breach_ctx {
+	bool is_mlo;
+	u8 mld_addr_buf[ETH_ALEN];
+	struct ieee80211_vif *vif;
+};
+
+static void ath12k_arsta_telemetry_notify_breach_cb(struct ath12k *ar,
+						    struct ath12k_link_sta *arsta,
+						    void *data)
+{
+	struct ath12k_breach_ctx *ctx = (struct ath12k_breach_ctx *)data;
+
+	ctx->is_mlo = arsta->ahsta->is_mlo;
+	ctx->vif = ath12k_ahvif_to_vif(arsta->arvif->ahvif);
+
+	if (arsta->ahsta->is_mlo)
+		ether_addr_copy(ctx->mld_addr_buf, arsta->ahsta->addr);
+}
+
 void ath12k_telemetry_notify_breach(u8 *mac_addr, u8 svc_id, u8 param,
 				    bool set_clear, u8 tid)
 {
 	struct ath12k_hw_group *ag = NULL;
 	struct ieee80211_vif *vif = NULL;
 	struct ath12k_base *ab = NULL;
-	struct ath12k_dp_link_peer *peer = NULL;
 	int soc;
-	u8 mld_addr_buf[ETH_ALEN] = {0};
 	u8 *mld_addr = NULL;
+	struct ath12k_breach_ctx ctx = {0};
+	bool ret = false;
 
 	if (!mac_addr)
 		return;
@@ -6054,17 +6073,15 @@ void ath12k_telemetry_notify_breach(u8 *mac_addr, u8 svc_id, u8 param,
 				continue;
 			}
 
-			spin_lock_bh(&ab->dp->dp_lock);
-			peer = ath12k_dp_link_peer_find_by_addr(ab->dp, mac_addr);
-			if (peer) {
-				vif = ath12k_dp_link_peer_get_vif(peer);
-				if (peer->mlo) {
-					ether_addr_copy(mld_addr_buf, peer->ml_addr);
-					mld_addr = mld_addr_buf;
-				}
+			ret = ath12k_arsta_itr_on_ab_by_addr(ab, mac_addr,
+							     ath12k_arsta_telemetry_notify_breach_cb,
+							     &ctx);
+			if (ret) {
+				vif = ctx.vif;
+				if (ctx.is_mlo)
+					mld_addr = ctx.mld_addr_buf;
 				ath12k_dbg(ab, ATH12K_DBG_QOS, "Breach detected: Peer %pM\n",
 					   mac_addr);
-				spin_unlock_bh(&ab->dp->dp_lock);
 				mutex_unlock(&ath12k_hw_group_mutex);
 				ath12k_vendor_telemetry_notify_breach(vif,
 								      mac_addr,
@@ -6075,7 +6092,6 @@ void ath12k_telemetry_notify_breach(u8 *mac_addr, u8 svc_id, u8 param,
 								      mld_addr);
 				return;
 			}
-			spin_unlock_bh(&ab->dp->dp_lock);
 		}
 	}
 	mutex_unlock(&ath12k_hw_group_mutex);
@@ -6091,11 +6107,10 @@ void ath12k_rssi_rate_notify_breach_event(u8 *mac_addr, u8 breach_type,
 	struct ath12k_hw_group *ag = NULL;
 	struct ieee80211_vif *vif = NULL;
 	struct ath12k_base *ab = NULL;
-	struct ath12k_dp_link_peer *peer = NULL;
-	struct ath12k_dp *dp;
 	int soc;
-	u8 mld_addr_buf[ETH_ALEN] = {0};
 	u8 *mld_addr = NULL;
+	struct ath12k_breach_ctx ctx = {0};
+	bool ret = false;
 
 	if (!mac_addr)
 		return;
@@ -6115,19 +6130,16 @@ void ath12k_rssi_rate_notify_breach_event(u8 *mac_addr, u8 breach_type,
 				continue;
 			}
 
-			dp = ath12k_ab_to_dp(ab);
-			spin_lock_bh(&dp->dp_lock);
-			peer = ath12k_dp_link_peer_find_by_addr(dp, mac_addr);
-			if (peer) {
-				vif = ath12k_dp_link_peer_get_vif(peer);
-				if (peer->mlo) {
-					ether_addr_copy(mld_addr_buf, peer->ml_addr);
-					mld_addr = mld_addr_buf;
-				}
+			ret = ath12k_arsta_itr_on_ab_by_addr(ab, mac_addr,
+							     ath12k_arsta_telemetry_notify_breach_cb,
+							     &ctx);
+			if (ret) {
+				vif = ctx.vif;
+				if (ctx.is_mlo)
+					mld_addr = ctx.mld_addr_buf;
 				ath12k_dbg(ab, ATH12K_DBG_TELEMETRY,
 					   "RSSI/Rate Breach detected: Peer %pM type %u\n",
 					   mac_addr, breach_type);
-				spin_unlock_bh(&dp->dp_lock);
 				mutex_unlock(&ath12k_hw_group_mutex);
 				ath12k_vendor_rssi_rate_notify_breach(vif,
 								      mac_addr,
@@ -6138,7 +6150,6 @@ void ath12k_rssi_rate_notify_breach_event(u8 *mac_addr, u8 breach_type,
 								      mld_addr);
 				return;
 			}
-			spin_unlock_bh(&dp->dp_lock);
 		}
 	}
 	mutex_unlock(&ath12k_hw_group_mutex);

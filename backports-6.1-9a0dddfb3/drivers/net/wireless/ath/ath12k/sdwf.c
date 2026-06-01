@@ -323,8 +323,9 @@ struct ath12k *ath12k_sdwf_get_ar_from_vif(struct wireless_dev *wdev,
 	struct ieee80211_sta *sta;
 	struct ath12k_sta *ahsta;
 	struct ath12k_dp_peer *dp_peer;
-	struct ath12k_dp_link_peer *link_peer;
 	u8 link_id;
+	union ath12k_config_param val = {0};
+	int ret = -EINVAL;
 
 	if (!wdev)
 		return NULL;
@@ -380,16 +381,22 @@ struct ath12k *ath12k_sdwf_get_ar_from_vif(struct wireless_dev *wdev,
 	ab = ar->ab;
 	dp = ab->dp;
 
+	*peer_id = ATH12K_PEER_ID_INVALID;
+
 	if (dp->global_peer_id_supported) {
-		*peer_id = dp_peer->peer_id;
+		ret = ath12k_dp_peer_get_param_by_dp_peer(dp_peer,
+							  ATH12K_DP_PEER_PEERID_PARAM,
+							  &val);
 	} else {
-		link_peer = ath12k_dp_link_peer_find_by_logical_link_id(dp_peer,
-									link_id);
-		if (link_peer)
-			*peer_id = link_peer->peer_id;
-		else
-			*peer_id = ATH12K_PEER_ID_INVALID;
+		ret = ath12k_dp_link_peer_get_param_by_dp_peer_and_link_id(dp_peer,
+									   link_id,
+									   ATH12K_DP_LINK_PEER_PEERID_PARAM,
+									   &val);
 	}
+
+	if (!ret)
+		*peer_id = val.peer_id;
+
 	rcu_read_unlock();
 
 	if (*peer_id == ATH12K_PEER_ID_INVALID)
@@ -1228,6 +1235,7 @@ int ath12k_telemetry_get_qos_stats(struct ath12k_vif *ahvif,
 	int ret = 0;
 	u8 link_id, mac_addr[ETH_ALEN] = { 0 };
 	bool qos_stats_lvl;
+	void *dp_peer;
 
 	link_id = cmd->link_id;
 	memcpy(mac_addr, cmd->mac, ETH_ALEN);
@@ -1312,13 +1320,21 @@ skip_link_mac_fill:
 		goto out;
 	}
 
-	spin_lock_bh(&ab->dp->dp_lock);
-	peer = ath12k_dp_link_peer_find_by_addr(ab->dp, mac_addr);
+	dp_peer = ath12k_sta_get_dp_peer_wiphy_locked(wiphy, ahsta);
+	if (!dp_peer) {
+		ret = -ENOENT;
+		goto out;
+	}
+
+	peer = ath12k_dp_link_peer_find_by_mac_addr((struct ath12k_dp_peer *)dp_peer,
+						    mac_addr);
 	if (!peer) {
 		ath12k_err(ab, "Peer not present\n");
 		ret = -ENOENT;
-		goto end;
+		goto out;
 	}
+
+	spin_lock_bh(&ab->dp->dp_lock);
 
 	if (cmd->feat.feat_sdwfdelay) {
 		ret = ath12k_telemetry_get_qos_delaystats(ab,

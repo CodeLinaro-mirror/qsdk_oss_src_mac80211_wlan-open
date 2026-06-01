@@ -183,6 +183,8 @@ struct ath12k_dp_peer {
 
 	enum hal_pn_type pn_type;
 
+	/* Lock for protection of keys */
+	spinlock_t keys_lock;
 	struct ieee80211_key_conf *keys[WMI_MAX_KEY_INDEX + 1];
 	struct ath12k_dp_rx_tid rx_tid[ATH12K_MAX_TIDS];
 
@@ -364,12 +366,10 @@ void ath12k_dp_peer_qos_free(struct ath12k_dp *dp,
 bool ath12k_dp_qos_stats_alloc(struct ath12k *ar,
 			       struct ieee80211_vif *vif,
 			       struct ath12k_dp_link_peer *peer);
-int ath12k_dp_peer_scs_add(struct ath12k_base *ab,
-			   struct ath12k_dp_peer_qos *qos,
-			   u8 scs_id, u16 qos_profile_id);
-int ath12k_dp_peer_scs_del(struct ath12k_base *ab,
-			   struct ath12k_dp_peer_qos *qos,
-			   u8 scs_id);
+int ath12k_dp_peer_scs_add(struct ath12k_pdev_dp *dp_pdev, u16 peer_id, u8 qm_id,
+			   u16 qos_id);
+int ath12k_dp_peer_scs_del(struct ath12k_pdev_dp *dp_pdev, u16 peer_id, u8 qm_id,
+			   u16 *qos_id);
 int ath12k_dp_peer_scs_data(struct ath12k_dp *dp,
 			    struct ath12k_dp_peer_qos *qos, u8 scs_id,
 			    struct ath12k_dp_link_peer *link_peer,
@@ -390,7 +390,7 @@ void ath12k_peer_qos_queue_ind_handler(struct ath12k_base *ab,
 void ath12k_link_peer_free(struct ath12k_dp_link_peer *peer);
 void ath12k_link_sta_hlist_delete(struct ath12k *ar, struct ath12k_link_sta *arsta);
 struct ath12k_dp_peer *ath12k_dp_vdev_peer_find(struct ath12k_dp_hw *dp_hw,
-						u8 *addr, u8 hw_link_id);
+						const u8 *addr, u8 hw_link_id);
 struct ath12k_dp_peer *ath12k_dp_vdev_peer_check(struct ath12k_dp_hw *dp_hw,
 						 u8 *addr, u8 hw_link_id);
 u8 ath12k_dp_validate_hw_link_id(u8 hw_link_id);

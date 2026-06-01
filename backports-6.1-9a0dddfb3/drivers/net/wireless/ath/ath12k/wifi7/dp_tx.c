@@ -1882,11 +1882,15 @@ static int ath12k_wifi7_mcbc_setup_encryption(struct ath12k_dp_vif *dp_vif,
 	}
 
 	/* Get multicast key */
+	spin_lock_bh(&peer->dp_peer->keys_lock);
+
 	key = peer->dp_peer->keys[peer->dp_peer->mcast_keyidx];
 	if (key) {
 		skb_cb->cipher = key->cipher;
 		skb_cb->flags |= ATH12K_SKB_CIPHER_SET;
 	}
+
+	spin_unlock_bh(&peer->dp_peer->keys_lock);
 
 	if (!is_sta && vlan_vif && vlan_vif->type == NL80211_IFTYPE_AP_VLAN)
 		msdu_info->group_slot =

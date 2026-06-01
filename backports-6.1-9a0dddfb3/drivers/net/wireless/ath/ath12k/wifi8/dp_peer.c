@@ -242,6 +242,7 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 	}
 	rcu_read_unlock();
 
+	spin_lock_init(&dp_peer->keys_lock);
 	dp_peer->sta_id = ATH12K_STA_ID_INVALID;
 	ether_addr_copy(dp_peer->addr, addr);
 	dp_peer->sta = params->sta;

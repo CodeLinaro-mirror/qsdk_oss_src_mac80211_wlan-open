@@ -269,11 +269,39 @@ u16 ath12k_dp_peer_get_peer_id(struct ath12k_dp_hw *dp_hw, u8 *addr);
 u16 ath12k_dp_peer_get_sta_id(struct ath12k_dp_hw *dp_hw, u8 *addr);
 
 enum ath12k_dp_peer_param {
+	ATH12K_DP_PEER_PEERID_PARAM,
+	ATH12K_DP_PEER_MSCS_PARAM,
+	ATH12K_DP_PEER_DMS_DISABLE_PARAM,
+	ATH12K_DP_PEER_AUTHORIZE_PARAM,
+	ATH12K_DP_PEER_PN_PARAMS,
+	ATH12K_DP_PEER_KEYS_PARAM,
+	ATH12K_DP_PEER_CLEAR_KEYS_PARAM,
+	ATH12K_DP_PEER_MAC_ADDR_PARAM,
 	ATH12K_DP_PEER_MAX_PARAM,
 };
 
 enum ath12k_dp_link_peer_param {
+	ATH12K_DP_LINK_PEER_PEERID_PARAM,
+	ATH12K_DP_LINK_PEER_ATF_PARAM,
+	ATH12K_DP_LINK_PEER_AUTHORIZE_PARAM,
+	ATH12K_DP_LINK_PEER_ASSOC_PARAM,
+	ATH12K_DP_LINK_PEER_MAC_ADDR_PARAM,
 	ATH12K_DP_LINK_PEER_MAX_PARAM,
+};
+
+struct ath12k_config_atf_params {
+	u8 atf_group_index;
+	u32 atf_peer_conf_airtime;
+};
+
+struct ath12k_dp_peer_keys_params {
+	int len;
+	struct ieee80211_key_conf *keys[WMI_MAX_KEY_INDEX + 1];
+};
+
+struct ath12k_dp_peer_pn_params {
+	u8 keyidx;
+	struct ieee80211_key_conf *key;
 };
 
 /**
@@ -291,6 +319,15 @@ enum ath12k_dp_link_peer_param {
  *
  */
 union ath12k_config_param {
+	u16 peer_id;
+	u8 addr[ETH_ALEN];
+	bool is_authorized;
+	struct ath12k_config_atf_params atf_params;
+	struct cfg80211_qm_req_desc_data mscs_params;
+	struct ath12k_dp_peer_keys_params keys_params;
+	bool assoc_success;
+	struct ath12k_dp_peer_pn_params pn_params;
+	bool dms_disable;
 };
 
 /*
@@ -319,6 +356,10 @@ int ath12k_dp_peer_set_param_by_mac_addr(struct ath12k_dp_hw *dp_hw,
 int ath12k_dp_peer_get_param_by_mac_addr(struct ath12k_dp_hw *dp_hw, const u8 *addr,
 					 enum ath12k_dp_peer_param param,
 					 union ath12k_config_param *val);
+
+int ath12k_dp_peer_get_param_by_peer_id(struct ath12k_pdev_dp *dp_pdev, u16 peer_id,
+					enum ath12k_dp_peer_param param,
+					union ath12k_config_param *val);
 /*
  * Control path to Data path interface APIs for link peer set and get params.
  *
@@ -406,4 +447,19 @@ void *ath12k_sta_get_dp_peer_wiphy_locked(struct wiphy *wiphy, struct ath12k_sta
  * Return: pointer to ath12k_dp_peer or NULL
  */
 void *ath12k_sta_get_dp_peer_rcu(struct ath12k_sta *ahsta);
+
+struct ath12k_4addr_params {
+	u16 ast_hash;
+	u16 hw_peer_id;
+	u16 tcl_metadata;
+};
+
+void ath12k_dp_peer_set_4addr_params(void *ptr, int ppe_vp_num);
+int ath12k_dp_link_peer_get_4addr_params(void *ptr, const u8 *addr,
+					 struct ath12k_4addr_params *params);
+
+int ath12k_dp_peer_set_key_config(struct ath12k_pdev_dp *dp_pdev, const u8 *addr,
+				  enum set_key_cmd cmd, struct ieee80211_key_conf *key,
+				  struct ieee80211_sta *sta,
+				  enum hal_encrypt_type *enctype);
 #endif

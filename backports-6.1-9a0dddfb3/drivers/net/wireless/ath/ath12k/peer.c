@@ -797,12 +797,10 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		       struct ath12k_wmi_peer_create_arg *arg)
 {
 	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(arvif->ahvif);
-	struct ath12k_vif *ahvif = arvif->ahvif;
 	u8 link_id = arvif->link_id;
 	struct ath12k_dp_link_peer *peer;
 	struct ath12k_sta *ahsta = NULL;
 	int ret;
-	struct ath12k_dp_link_vif *dp_link_vif = &ahvif->dp_vif.dp_link_vif[link_id];
 	u32 mlo_hw_link_id_bitmap = 0, peer_delete_send_mlo_hw_bitmap = 0;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ar->ab);
 	struct ath12k_peer_map_pending_event *map_event = &ar->peer_map_event;
@@ -877,18 +875,6 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		return ret;
 	}
 
-	spin_lock_bh(&dp->dp_lock);
-
-	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, arg->vdev_id,
-							    arg->peer_addr);
-
-	if (peer) {
-		if (vif->type == NL80211_IFTYPE_STATION) {
-			dp_link_vif->ast_hash = peer->ast_hash;
-			dp_link_vif->ast_idx = peer->hw_peer_id;
-		}
-	}
-
 	ath12k_dbg(ar->ab, ATH12K_DBG_PEER, "peer created %pM\n", arg->peer_addr);
 
 	ar->num_peers++;
@@ -898,8 +884,6 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		if (!arg->mlo_bridge_peer)
 			ar->num_ml_peers++;
 	}
-
-	spin_unlock_bh(&dp->dp_lock);
 
 	return ret;
 }

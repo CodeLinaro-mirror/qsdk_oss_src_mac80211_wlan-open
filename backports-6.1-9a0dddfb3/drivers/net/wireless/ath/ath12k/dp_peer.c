@@ -463,7 +463,7 @@ struct ath12k_dp_peer *ath12k_dp_peer_find_by_addr_and_sta(struct ath12k_dp_hw *
 EXPORT_SYMBOL(ath12k_dp_peer_find_by_addr_and_sta);
 
 struct ath12k_dp_peer *ath12k_dp_vdev_peer_find(struct ath12k_dp_hw *dp_hw,
-						u8 *addr, u8 hw_link_id)
+						const u8 *addr, u8 hw_link_id)
 {
 	struct ath12k_dp_peer *dp_peer;
 
@@ -614,6 +614,7 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
 	u8 hw_link_id = ar->hw_link_id;
+	struct ath12k_dp_link_vif *dp_link_vif = &ahvif->dp_vif.dp_link_vif[link_id];
 
 	peer = kzalloc(sizeof(*peer), GFP_KERNEL);
 	if (!peer)
@@ -652,6 +653,11 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 
 	peer->max_rssi = S8_MIN;
 	peer->min_rssi = S8_MAX;
+
+	if (vif->type == NL80211_IFTYPE_STATION) {
+		dp_link_vif->ast_hash = peer->ast_hash;
+		dp_link_vif->ast_idx = peer->hw_peer_id;
+	}
 
 	if (!sta)
 		is_vdev_peer = true;
@@ -1413,9 +1419,9 @@ u16 ath12k_dp_peer_qos_msduq(struct ath12k_base *ab,
 	return msduq;
 }
 
-int ath12k_dp_peer_scs_add(struct ath12k_base *ab,
-			   struct ath12k_dp_peer_qos *qos,
-			   u8 scs_id, u16 qos_id)
+static int __ath12k_dp_peer_scs_add(struct ath12k_base *ab,
+				    struct ath12k_dp_peer_qos *qos,
+				    u8 scs_id, u16 qos_id)
 {
 	struct ath12k_dl_scs *scs;
 	u16 qos_data;
@@ -1437,9 +1443,44 @@ int ath12k_dp_peer_scs_add(struct ath12k_base *ab,
 	return 0;
 }
 
-int ath12k_dp_peer_scs_del(struct ath12k_base *ab,
-			   struct ath12k_dp_peer_qos *qos,
-			   u8 scs_id)
+int ath12k_dp_peer_scs_add(struct ath12k_pdev_dp *dp_pdev, u16 peer_id, u8 qm_id,
+			   u16 qos_id)
+{
+	struct ath12k *ar = dp_pdev->ar;
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp_peer *dp_peer;
+	int ret;
+	struct ath12k_dp_peer_qos *qos;
+
+	rcu_read_lock();
+	dp_peer = ath12k_dp_peer_find_by_peerid_index(dp_pdev->dp, dp_pdev,
+						      peer_id);
+	if (!dp_peer) {
+		ath12k_err(ab, "SCS peer is NULL");
+		ret = -EINVAL;
+		goto ret;
+	}
+
+	if (!dp_peer->qos) {
+		qos = ath12k_dp_peer_qos_alloc(ar->ab->dp, dp_peer);
+		if (!qos) {
+			ath12k_err(ab, "SCS QoS is NULL");
+			ret = -EINVAL;
+			goto ret;
+		}
+	} else {
+		qos = dp_peer->qos;
+	}
+
+	ret =  __ath12k_dp_peer_scs_add(ar->ab, qos, qm_id, qos_id);
+ret:
+	rcu_read_unlock();
+	return ret;
+}
+
+static int __ath12k_dp_peer_scs_del(struct ath12k_base *ab,
+				    struct ath12k_dp_peer_qos *qos,
+				    u8 scs_id)
 {
 	struct ath12k_dl_scs *scs;
 	u16 qos_data;
@@ -1457,6 +1498,37 @@ int ath12k_dp_peer_scs_del(struct ath12k_base *ab,
 	ath12k_info(ab, "Peer QoS del scs_id:%d | msduq:%d| qos_id:%d",
 		    scs_id, u16_get_bits(qos_data, SCS_MSDUQ_MASK),
 		    u16_get_bits(qos_data, SCS_QOS_ID_MASK));
+	return 0;
+}
+
+int ath12k_dp_peer_scs_del(struct ath12k_pdev_dp *dp_pdev, u16 peer_id, u8 qm_id,
+			   u16 *qos_id)
+{
+	struct ath12k *ar = dp_pdev->ar;
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp_peer *dp_peer;
+	struct ath12k_dp_peer_qos *qos;
+
+	rcu_read_lock();
+	dp_peer = ath12k_dp_peer_find_by_peerid_index(dp_pdev->dp, dp_pdev,
+						      peer_id);
+	if (!dp_peer) {
+		ath12k_err(ab, "SCS peer is NULL");
+		rcu_read_unlock();
+		return -EINVAL;
+	}
+
+	qos = dp_peer->qos;
+	if (!qos) {
+		ath12k_err(ab, "SCS QoS is NULL");
+		rcu_read_unlock();
+		return -EINVAL;
+	}
+
+	*qos_id = ath12k_dp_peer_scs_get_qos_id(ar->ab, qos, qm_id);
+	__ath12k_dp_peer_scs_del(ar->ab, qos, qm_id);
+
+	rcu_read_unlock();
 	return 0;
 }
 
@@ -2080,8 +2152,89 @@ int ath12k_dp_peer_set_param_by_dp_peer(void *ptr, enum ath12k_dp_peer_param par
 					union ath12k_config_param *val)
 {
 	int ret = 0;
+	struct ath12k_dp_peer *dp_peer = (struct ath12k_dp_peer *)ptr;
 
 	switch (param) {
+	case ATH12K_DP_PEER_MSCS_PARAM:
+	{
+		struct ath12k_dp_vif *dp_vif = ath12k_dp_peer_get_dp_vif(dp_peer);
+		struct cfg80211_qm_req_desc_data *qm_req_desc = &val->mscs_params;
+		u8 req_type = qm_req_desc->request_type;
+
+		switch (qm_req_desc->request_type) {
+		case IEEE80211_QM_ADD_REQ:
+			if (dp_peer->mscs_session_exists)
+				return -EINVAL;
+			dp_peer->mscs_session_exists = true;
+			dp_vif->mscs_hlos_tid_override++;
+			dp_vif->dp_features |= DP_FEATURE_HLOS;
+			fallthrough;
+		case IEEE80211_QM_CHANGE_REQ:
+			dp_peer->mscs_ctxt.user_priority_bitmap =
+				qm_req_desc->user_priority_bitmap;
+			dp_peer->mscs_ctxt.user_priority_limit =
+				qm_req_desc->user_priority_limit;
+			dp_peer->mscs_ctxt.tclas_mask =
+				qm_req_desc->tclas_mask;
+
+			ath12k_dbg(NULL, ATH12K_DBG_QOS,
+				   "MSCS: %s: peer %pM, bmap 0x%x, limit %u, mask 0x%x",
+				   (req_type == IEEE80211_QM_CHANGE_REQ) ? "CHANGE" :
+				   "ADD",
+				   dp_peer->addr,
+				   dp_peer->mscs_ctxt.user_priority_bitmap,
+				   dp_peer->mscs_ctxt.user_priority_limit,
+				   dp_peer->mscs_ctxt.tclas_mask);
+
+			ath12k_dbg(NULL, ATH12K_DBG_QOS,
+				   "mscs_session_exists %u, mscs_tid_override %u",
+				   dp_peer->mscs_session_exists,
+				   dp_vif->mscs_hlos_tid_override);
+		break;
+		case IEEE80211_QM_REMOVE_REQ:
+			dp_peer->mscs_session_exists = false;
+			dp_vif->dp_features &= ~DP_FEATURE_HLOS;
+			if (dp_vif->mscs_hlos_tid_override > 0) {
+				dp_vif->mscs_hlos_tid_override--;
+			} else {
+				ath12k_dbg(NULL, ATH12K_DBG_QOS,
+					   "MSCS: TID override counter underflow");
+				return -EINVAL;
+			}
+
+			ath12k_dbg(NULL, ATH12K_DBG_QOS,
+				   "MSCS: REMOVE peer %pM, mscs_session_exists %u",
+				   dp_peer->addr, dp_peer->mscs_session_exists);
+
+			ath12k_dbg(NULL, ATH12K_DBG_QOS, "mscs_tid_override %u",
+				   dp_vif->mscs_hlos_tid_override);
+		break;
+		default:
+			ret = -EINVAL;
+		}
+	}
+	break;
+	case ATH12K_DP_PEER_AUTHORIZE_PARAM:
+		dp_peer->is_authorized = val->is_authorized;
+	break;
+	case ATH12K_DP_PEER_DMS_DISABLE_PARAM:
+		dp_peer->dms_disable = val->dms_disable;
+	break;
+	case ATH12K_DP_PEER_CLEAR_KEYS_PARAM:
+	{
+		int i;
+
+		ath12k_dp_peer_get_param_by_dp_peer(dp_peer, ATH12K_DP_PEER_KEYS_PARAM,
+						    val);
+
+		spin_lock_bh(&dp_peer->keys_lock);
+
+		for (i = 0; i < val->keys_params.len; i++)
+			dp_peer->keys[i] = NULL;
+
+		spin_unlock_bh(&dp_peer->keys_lock);
+	}
+	break;
 	default:
 		ath12k_err(NULL, "Invalid set param %d", param);
 		ret = -EINVAL;
@@ -2093,9 +2246,45 @@ int ath12k_dp_peer_set_param_by_dp_peer(void *ptr, enum ath12k_dp_peer_param par
 int ath12k_dp_peer_get_param_by_dp_peer(void *ptr, enum ath12k_dp_peer_param param,
 					union ath12k_config_param *val)
 {
-	int ret = 0;
+	int ret = 0, len, i;
+	struct ath12k_dp_peer *dp_peer = (struct ath12k_dp_peer *)ptr;
 
 	switch (param) {
+	case ATH12K_DP_PEER_PEERID_PARAM:
+		val->peer_id = dp_peer->peer_id;
+	break;
+	case ATH12K_DP_PEER_DMS_DISABLE_PARAM:
+		val->dms_disable = dp_peer->dms_disable;
+	break;
+	case ATH12K_DP_PEER_KEYS_PARAM:
+		spin_lock_bh(&dp_peer->keys_lock);
+
+		len = ARRAY_SIZE(dp_peer->keys);
+
+		for (i = 0; i < len; i++) {
+			if (!dp_peer->keys[i])
+				continue;
+
+			val->keys_params.keys[i] = dp_peer->keys[i];
+		}
+
+		val->keys_params.len = len;
+
+		spin_unlock_bh(&dp_peer->keys_lock);
+	break;
+	case ATH12K_DP_PEER_PN_PARAMS:
+		spin_lock_bh(&dp_peer->keys_lock);
+
+		val->pn_params.key = dp_peer->keys[val->pn_params.keyidx];
+
+		spin_unlock_bh(&dp_peer->keys_lock);
+	break;
+	case ATH12K_DP_PEER_AUTHORIZE_PARAM:
+		val->is_authorized = dp_peer->is_authorized;
+	break;
+	case ATH12K_DP_PEER_MAC_ADDR_PARAM:
+		ether_addr_copy(val->addr, dp_peer->addr);
+	break;
 	default:
 		ath12k_err(NULL, "Invalid set param %d", param);
 		ret = -EINVAL;
@@ -2114,7 +2303,7 @@ int ath12k_dp_peer_set_param_by_mac_addr(struct ath12k_dp_hw *dp_hw,
 
 	spin_lock_bh(&dp_hw->peer_lock);
 	dp_peer = ath12k_dp_peer_find(dp_hw, addr);
-	if (!dp_peer) {
+	if (!dp_peer || dp_peer->is_vdev_peer) {
 		spin_unlock_bh(&dp_hw->peer_lock);
 		return -EINVAL;
 	}
@@ -2134,13 +2323,35 @@ int ath12k_dp_peer_get_param_by_mac_addr(struct ath12k_dp_hw *dp_hw, const u8 *a
 
 	spin_lock_bh(&dp_hw->peer_lock);
 	dp_peer = ath12k_dp_peer_find(dp_hw, addr);
-	if (!dp_peer) {
+	if (!dp_peer || dp_peer->is_vdev_peer) {
 		spin_unlock_bh(&dp_hw->peer_lock);
 		return -EINVAL;
 	}
 
 	ret = ath12k_dp_peer_get_param_by_dp_peer(dp_peer, param, val);
 	spin_unlock_bh(&dp_hw->peer_lock);
+
+	return ret;
+}
+
+int ath12k_dp_peer_get_param_by_peer_id(struct ath12k_pdev_dp *dp_pdev, u16 peer_id,
+					enum ath12k_dp_peer_param param,
+					union ath12k_config_param *val)
+{
+	int ret;
+	struct ath12k_dp_peer *dp_peer;
+
+	rcu_read_lock();
+
+	dp_peer = ath12k_dp_peer_find_by_peerid_index(dp_pdev->dp, dp_pdev, peer_id);
+	if (!dp_peer) {
+		rcu_read_unlock();
+		return -ENOENT;
+	}
+
+	ret = ath12k_dp_peer_get_param_by_dp_peer(dp_peer, param, val);
+
+	rcu_read_unlock();
 
 	return ret;
 }
@@ -2152,6 +2363,16 @@ static inline int ath12k_dp_link_peer_set_param(struct ath12k_dp_link_peer *link
 	int ret = 0;
 
 	switch (param) {
+	case ATH12K_DP_LINK_PEER_ATF_PARAM:
+		link_peer->atf_group_index = val->atf_params.atf_group_index;
+		link_peer->atf_peer_conf_airtime = val->atf_params.atf_peer_conf_airtime;
+	break;
+	case ATH12K_DP_LINK_PEER_AUTHORIZE_PARAM:
+		link_peer->is_authorized = val->is_authorized;
+	break;
+	case ATH12K_DP_LINK_PEER_ASSOC_PARAM:
+		link_peer->assoc_success = val->assoc_success;
+	break;
 	default:
 		ath12k_err(NULL, "Invalid set param %d", param);
 		ret = -EINVAL;
@@ -2167,6 +2388,15 @@ static inline int ath12k_dp_link_peer_get_param(struct ath12k_dp_link_peer *link
 	int ret = 0;
 
 	switch (param) {
+	case ATH12K_DP_LINK_PEER_PEERID_PARAM:
+		val->peer_id = link_peer->peer_id;
+	break;
+	case ATH12K_DP_LINK_PEER_ASSOC_PARAM:
+		val->assoc_success = link_peer->assoc_success;
+	break;
+	case ATH12K_DP_LINK_PEER_MAC_ADDR_PARAM:
+		ether_addr_copy(val->addr, link_peer->addr);
+	break;
 	default:
 		ath12k_err(NULL, "Invalid set param %d", param);
 		ret = -EINVAL;
@@ -2281,7 +2511,7 @@ int ath12k_dp_link_peer_set_param_by_mld_and_link_mac(struct ath12k_dp_hw *dp_hw
 
 	spin_lock_bh(&dp_hw->peer_lock);
 	dp_peer = ath12k_dp_peer_find(dp_hw, mld_mac);
-	if (!dp_peer) {
+	if (!dp_peer || dp_peer->is_vdev_peer) {
 		spin_unlock_bh(&dp_hw->peer_lock);
 		rcu_read_unlock();
 		return -EINVAL;
@@ -2316,7 +2546,7 @@ int ath12k_dp_link_peer_get_param_by_mld_and_link_mac(struct ath12k_dp_hw *dp_hw
 
 	spin_lock_bh(&dp_hw->peer_lock);
 	dp_peer = ath12k_dp_peer_find(dp_hw, mld_mac);
-	if (!dp_peer) {
+	if (!dp_peer || dp_peer->is_vdev_peer) {
 		spin_unlock_bh(&dp_hw->peer_lock);
 		rcu_read_unlock();
 		return -EINVAL;
@@ -2350,7 +2580,7 @@ int ath12k_dp_link_peer_set_param_by_mld_mac_and_link_id(struct ath12k_dp_hw *dp
 
 	spin_lock_bh(&dp_hw->peer_lock);
 	dp_peer = ath12k_dp_peer_find(dp_hw, mld_mac);
-	if (!dp_peer) {
+	if (!dp_peer || dp_peer->is_vdev_peer) {
 		spin_unlock_bh(&dp_hw->peer_lock);
 		rcu_read_unlock();
 		return -EINVAL;
@@ -2384,7 +2614,7 @@ int ath12k_dp_link_peer_get_param_by_mld_mac_and_link_id(struct ath12k_dp_hw *dp
 
 	spin_lock_bh(&dp_hw->peer_lock);
 	dp_peer = ath12k_dp_peer_find(dp_hw, mld_mac);
-	if (!dp_peer) {
+	if (!dp_peer || dp_peer->is_vdev_peer) {
 		spin_unlock_bh(&dp_hw->peer_lock);
 		rcu_read_unlock();
 		return -EINVAL;
@@ -2424,6 +2654,7 @@ void *ath12k_sta_get_dp_peer_wiphy_locked(struct wiphy *wiphy, struct ath12k_sta
 	/* Use wiphy_dereference for proper RCU access with wiphy lock */
 	return wiphy_dereference(wiphy, ahsta->dp_peer);
 }
+EXPORT_SYMBOL(ath12k_sta_get_dp_peer_wiphy_locked);
 
 /**
  * ath12k_sta_get_dp_peer_rcu() - Get dp_peer with RCU read lock held
@@ -2446,4 +2677,92 @@ void *ath12k_sta_get_dp_peer_rcu(struct ath12k_sta *ahsta)
 		return NULL;
 
 	return rcu_dereference(ahsta->dp_peer);
+}
+EXPORT_SYMBOL(ath12k_sta_get_dp_peer_rcu);
+
+int ath12k_dp_peer_set_key_config(struct ath12k_pdev_dp *dp_pdev, const u8 *addr,
+				  enum set_key_cmd cmd, struct ieee80211_key_conf *key,
+				  struct ieee80211_sta *sta,
+				  enum hal_encrypt_type *enctype)
+{
+	struct ath12k_dp_peer *dp_peer;
+	struct ath12k_dp_hw *dp_hw = dp_pdev->dp_hw;
+
+	spin_lock_bh(&dp_hw->peer_lock);
+
+	if (sta)
+		dp_peer = ath12k_dp_peer_find(dp_hw, sta->addr);
+	else
+		dp_peer = ath12k_dp_vdev_peer_find(dp_hw, addr, dp_pdev->ar->hw_link_id);
+
+	if (!dp_peer) {
+		spin_unlock_bh(&dp_hw->peer_lock);
+		return -ENOENT;
+	}
+
+	spin_lock_bh(&dp_peer->keys_lock);
+
+	if (cmd == SET_KEY) {
+		dp_peer->keys[key->keyidx] = key;
+		if (key->flags & IEEE80211_KEY_FLAG_PAIRWISE) {
+			dp_peer->ucast_keyidx = key->keyidx;
+			dp_peer->sec_type = ath12k_dp_tx_get_encrypt_type(key->cipher);
+			*enctype = dp_peer->sec_type;
+		} else {
+			dp_peer->mcast_keyidx = key->keyidx;
+			dp_peer->sec_type_grp =
+					ath12k_dp_tx_get_encrypt_type(key->cipher);
+			*enctype = dp_peer->sec_type_grp;
+		}
+	} else if (cmd == DISABLE_KEY) {
+		dp_peer->keys[key->keyidx] = NULL;
+		if (key->flags & IEEE80211_KEY_FLAG_PAIRWISE)
+			dp_peer->ucast_keyidx = 0;
+		else
+			dp_peer->mcast_keyidx = 0;
+	}
+
+	spin_unlock_bh(&dp_peer->keys_lock);
+	spin_unlock_bh(&dp_hw->peer_lock);
+
+	return 0;
+}
+
+int ath12k_dp_link_peer_get_4addr_params(void *ptr, const u8 *addr,
+					 struct ath12k_4addr_params *params)
+{
+	struct ath12k_dp_link_peer *link_peer;
+	struct ath12k_dp_peer *dp_peer = (struct ath12k_dp_peer *)ptr;
+
+	rcu_read_lock();
+
+	link_peer = ath12k_dp_link_peer_find_by_mac_addr(dp_peer, addr);
+	if (!link_peer) {
+		rcu_read_unlock();
+		return -ENOENT;
+	}
+
+	params->tcl_metadata = link_peer->tcl_metadata;
+	params->ast_hash = link_peer->ast_hash;
+	params->hw_peer_id = link_peer->hw_peer_id;
+
+	rcu_read_unlock();
+
+	return 0;
+}
+
+void ath12k_dp_peer_set_4addr_params(void *ptr, int ppe_vp_num)
+{
+	struct ath12k_dp_peer *dp_peer = (struct ath12k_dp_peer *)ptr;
+
+	dp_peer->vdev_type_4addr |= BIT(ath12k_dp_peer_get_vif_type(dp_peer));
+	dp_peer->is_reset_mcbc = true;
+	dp_peer->use_4addr = true;
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	dp_peer->ppe_vp_num = ppe_vp_num;
+#endif
+
+	if (ath12k_dp_peer_get_vif_type(dp_peer) == NL80211_IFTYPE_AP)
+		dp_peer->dev = ath12k_dp_peer_get_sta(dp_peer)->dev;
 }
