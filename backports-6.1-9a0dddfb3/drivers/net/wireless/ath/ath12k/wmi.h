@@ -2532,6 +2532,7 @@ enum wmi_tlv_tag {
 	WMI_CTRL_PATH_AFC_STATS = 0x42A,
 	WMI_TAG_VDEV_PN_MGMT_RX_FILTER_CMD = 0x42E,
 	WMI_TAG_BCN_TMPL_ML_INFO_CMD = 0x436,
+	WMI_TAG_PEER_TX_FILTER_CMD = 0x437,
 	WMI_TAG_MLO_MGMT_RX_CU_PARAMS = 0x439,
 	WMI_TAG_MLO_PARAMS_PEER_DELETE = 0x43E,
 	WMI_TAG_HALPHY_CTRL_PATH_CMD_FIXED_PARAM = 0x442,
@@ -10385,6 +10386,26 @@ struct ath12k_set_neighbor_rx_params {
 	u8 nrp_addr[ETH_ALEN];
 };
 
+enum wmi_peer_tx_filter_action {
+	WMI_PEER_TX_FILTER_ACTION_ADD                           = 0x1,
+	WMI_PEER_TX_FILTER_ACTION_REMOVE                        = 0x2,
+	WMI_PEER_TX_FILTER_ACTION_ADD_AND_ENABLE_FILTERING      = 0x3,
+	WMI_PEER_TX_FILTER_ACTION_REMOVE_AND_CLEAR_FILTERING    = 0x4,
+};
+
+struct wmi_vdev_set_tx_peer_filter_cmd {
+	__le32 tlv_header;
+	__le32 vdev_id;
+	struct ath12k_wmi_mac_addr_params macaddr;
+	__le32 action;
+} __packed;
+
+struct ath12k_set_tx_peer_filter_params {
+	u32 vdev_id;
+	u8 mac_addr[ETH_ALEN];
+	u32 action;
+};
+
 enum ath12k_wmi_frame_tx_status {
 	WMI_FRAME_TX_STATUS_OK,
 	WMI_FRAME_TX_STATUS_XRETRY,
@@ -11209,6 +11230,8 @@ int ath12k_wmi_send_wsi_stats_info(struct ath12k *ar,
 				   struct ath12k_wmi_wsi_stats_info_param *param);
 int ath12k_wmi_vdev_set_neighbor_rx_cmd(struct ath12k *ar,
 					struct ath12k_set_neighbor_rx_params *param);
+int ath12k_wmi_vdev_set_tx_peer_filter_cmd(struct ath12k *ar,
+					struct ath12k_set_tx_peer_filter_params *param);
 int ath12k_wmi_vdev_tsf_tstamp_action_cmd(struct ath12k *ar, u8 vdev_id);
 int ath12k_wmi_vdev_set_pn_mgmt_rx_filter_cmd(struct ath12k *ar, u32 vdev_id,
 					      u32 pn_rx_filter);

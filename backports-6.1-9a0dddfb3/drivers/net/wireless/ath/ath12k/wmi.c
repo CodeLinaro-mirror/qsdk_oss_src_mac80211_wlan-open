@@ -21824,6 +21824,40 @@ int ath12k_wmi_vdev_set_neighbor_rx_cmd(struct ath12k *ar,
 	return ret;
 }
 
+int ath12k_wmi_vdev_set_tx_peer_filter_cmd(struct ath12k *ar,
+				 struct ath12k_set_tx_peer_filter_params *param)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct wmi_vdev_set_tx_peer_filter_cmd *cmd;
+	struct sk_buff *skb;
+	int ret;
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_vdev_set_tx_peer_filter_cmd *)skb->data;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_PEER_TX_FILTER_CMD,
+						sizeof(*cmd));
+	cmd->vdev_id = cpu_to_le32(param->vdev_id);
+	cmd->action = cpu_to_le32(param->action);
+	ether_addr_copy(cmd->macaddr.addr, param->mac_addr);
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "WMI set peer tx filter vdev_id %d action %d mac %pM\n",
+		   param->vdev_id, param->action, param->mac_addr);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_PEER_TX_FILTER_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed to send WMI_PEER_TX_FILTER_CMDID cmd\n");
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+EXPORT_SYMBOL(ath12k_wmi_vdev_set_tx_peer_filter_cmd);
+
 static void *
 ath12k_populate_link_control_tlv(void *buf_ptr,
 				 struct ath12k_wmi_ttlm_peer_params *params)
