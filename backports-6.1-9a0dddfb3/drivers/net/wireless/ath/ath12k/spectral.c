@@ -5,6 +5,7 @@
  */
 
 #include <linux/relay.h>
+#include <asm/unaligned.h>
 #include "core.h"
 #include "debug.h"
 
@@ -16,15 +17,12 @@
 #define ATH12K_SPECTRAL_ATH12K_MIN_IB_BINS	(ATH12K_SPECTRAL_ATH12K_MIN_BINS>>1)
 #define ATH12K_SPECTRAL_ATH12K_MAX_IB_BINS(x)	((x)->hw_params->spectral.max_fft_bins >> 1)
 
-/* Max channel computed by sum of 2g and 5g band channels */
-#define ATH12K_SPECTRAL_TOTAL_CHANNEL		41
-#define ATH12K_SPECTRAL_SAMPLES_PER_CHANNEL	70
+#define ATH12K_SPECTRAL_SCAN_COUNT_MAX		4095
+
 #define ATH12K_SPECTRAL_PER_SAMPLE_SIZE(x)	(sizeof(struct fft_sample_ath12k) + \
 						 ATH12K_SPECTRAL_ATH12K_MAX_IB_BINS(x))
-#define ATH12K_SPECTRAL_TOTAL_SAMPLE		(ATH12K_SPECTRAL_TOTAL_CHANNEL * \
-						 ATH12K_SPECTRAL_SAMPLES_PER_CHANNEL)
 #define ATH12K_SPECTRAL_SUB_BUFF_SIZE(x)	ATH12K_SPECTRAL_PER_SAMPLE_SIZE(x)
-#define ATH12K_SPECTRAL_NUM_SUB_BUF		ATH12K_SPECTRAL_TOTAL_SAMPLE
+#define ATH12K_SPECTRAL_NUM_SUB_BUF		ATH12K_SPECTRAL_SCAN_COUNT_MAX
 
 #define ATH12K_SPECTRAL_20MHZ			20
 #define ATH12K_SPECTRAL_40MHZ			40
@@ -38,6 +36,9 @@
 #define ATH12K_SPECTRAL_TAG_RADAR_FFT		0x1
 #define ATH12K_SPECTRAL_TAG_SCAN_SUMMARY	0x2
 #define ATH12K_SPECTRAL_TAG_SCAN_SEARCH		0x3
+
+#define ATH12K_SPECTRAL_PWR_FORMAT_LINEAR	0
+#define ATH12K_SPECTRAL_PWR_FORMAT_DBM		1
 
 #define SPECTRAL_TLV_HDR_LEN				GENMASK(15, 0)
 #define SPECTRAL_TLV_HDR_TAG				GENMASK(23, 16)
@@ -837,34 +838,117 @@ static int ath12k_spectral_pull_search(struct ath12k *ar,
 	return 0;
 }
 
-static void ath12k_spectral_parse_fft(u8 *outbins, u8 *inbins, int num_bins, u8 fft_sz)
+static u8 ath12k_spectral_clamp_fft_bin_value(u16 fft_bin_value, u32 pwr_format)
+{
+	switch (pwr_format) {
+	case ATH12K_SPECTRAL_PWR_FORMAT_LINEAR:
+		if (fft_bin_value > U8_MAX)
+			return U8_MAX;
+
+		return fft_bin_value;
+	case ATH12K_SPECTRAL_PWR_FORMAT_DBM:
+		if ((s8)fft_bin_value > S8_MAX)
+			return S8_MAX;
+
+		if ((s8)fft_bin_value < S8_MIN)
+			return S8_MIN;
+
+		return fft_bin_value;
+	default:
+		return 0;
+	}
+}
+
+static void ath12k_spectral_parse_fft(u8 *outbins, u8 *inbins, int num_bins,
+				      u8 fft_sz, u32 pwr_format)
 {
 	int i, j;
+	u32 fft_bin_val;
 
 	i = 0;
 	j = 0;
 	while (i < num_bins) {
-		outbins[i] = inbins[j];
+		switch (fft_sz) {
+		case sizeof(u8):
+			fft_bin_val = inbins[j];
+			break;
+		case sizeof(__le16):
+			fft_bin_val = get_unaligned_le16(&inbins[j]);
+			break;
+		case sizeof(__le32):
+			fft_bin_val = get_unaligned_le32(&inbins[j]);
+			break;
+		default:
+			fft_bin_val = inbins[j];
+			break;
+		}
+
+		outbins[i] = ath12k_spectral_clamp_fft_bin_value(fft_bin_val,
+								 pwr_format);
 		i++;
 		j += fft_sz;
 	}
 }
 
-static u8 ath12k_spectral_peer_chwidth_to_nl(u32 ch_width)
+static u8 ath12k_spectral_chwidth_to_nl(u32 ch_width)
 {
 	switch (ch_width) {
+	case WMI_PEER_CHWIDTH_20MHZ:
+		return NL80211_CHAN_WIDTH_20;
 	case WMI_PEER_CHWIDTH_40MHZ:
 		return NL80211_CHAN_WIDTH_40;
 	case WMI_PEER_CHWIDTH_80MHZ:
 		return NL80211_CHAN_WIDTH_80;
 	case WMI_PEER_CHWIDTH_160MHZ:
 		return NL80211_CHAN_WIDTH_160;
+	case WMI_PEER_CHWIDTH_MAX:
 	case WMI_PEER_CHWIDTH_320MHZ:
 		return NL80211_CHAN_WIDTH_320;
-	case WMI_PEER_CHWIDTH_20MHZ:
 	default:
 		return NL80211_CHAN_WIDTH_20;
 	}
+}
+
+static u32 ath12k_spectral_chwidth_to_mhz(u32 ch_width)
+{
+	switch (ch_width) {
+	case WMI_PEER_CHWIDTH_20MHZ:
+	default:
+		return ATH12K_SPECTRAL_20MHZ;
+	case WMI_PEER_CHWIDTH_40MHZ:
+		return ATH12K_SPECTRAL_40MHZ;
+	case WMI_PEER_CHWIDTH_80MHZ:
+		return ATH12K_SPECTRAL_80MHZ;
+	case WMI_PEER_CHWIDTH_160MHZ:
+		return ATH12K_SPECTRAL_160MHZ;
+	case WMI_PEER_CHWIDTH_320MHZ:
+	case WMI_PEER_CHWIDTH_MAX:
+		return ATH12K_SPECTRAL_320MHZ;
+	}
+}
+
+static int ath12k_spectral_get_lowest_chn_idx(struct ath12k *ar,
+					      u8 *chn_idx_lowest_enabled)
+{
+	u8 rx_chainmask;
+
+	if (!chn_idx_lowest_enabled)
+		return -EINVAL;
+
+	rx_chainmask = ar->cfg_rx_chainmask;
+	if (!rx_chainmask) {
+		ath12k_warn(ar->ab, "invalid rx chainmask 0x%x\n", rx_chainmask);
+		return -EINVAL;
+	}
+
+	*chn_idx_lowest_enabled = __ffs(rx_chainmask);
+	if (*chn_idx_lowest_enabled >= WMI_MAX_CHAINS) {
+		ath12k_warn(ar->ab, "invalid chain index %u for rx chainmask 0x%x\n",
+			    *chn_idx_lowest_enabled, rx_chainmask);
+		return -EINVAL;
+	}
+
+	return 0;
 }
 
 static int ath12k_spectral_fill_fft_sample(struct ath12k *ar,
@@ -878,23 +962,43 @@ static int ath12k_spectral_fill_fft_sample(struct ath12k *ar,
 {
 	struct ath12k_base *ab = ar->ab;
 	u16 length, end_bin;
+	u32 center_freq, half_bw, start_freq, end_freq;
+	u32 cfreq1, cfreq2;
+	u32 meta_freq1, meta_freq2;
+	u8 chn_idx_lowest_enabled;
+	int ret;
 
 	length = sizeof(*fft_sample) - sizeof(struct fft_sample_tlv) + num_bins;
 	fft_sample->tlv.type = ATH_FFT_SAMPLE_ATH12K;
 	fft_sample->tlv.length = __cpu_to_be16(length);
 
+	meta_freq1 = __le32_to_cpu(summary->meta.freq1);
+	meta_freq2 = __le32_to_cpu(summary->meta.freq2);
+
+	cfreq1 = ar->spectral.sscan_cfreq1 ? ar->spectral.sscan_cfreq1 : meta_freq1;
+	cfreq2 = ar->spectral.sscan_cfreq2 ? ar->spectral.sscan_cfreq2 : meta_freq2;
+
+	ret = ath12k_spectral_get_lowest_chn_idx(ar, &chn_idx_lowest_enabled);
+	if (ret)
+		return ret;
+
 	fft_sample->signature = __cpu_to_be32(ATH12K_SPECTRAL_SIGNATURE);
-	fft_sample->pri_freq = __cpu_to_be32(summary->meta.freq1);
+	fft_sample->pri_freq = __cpu_to_be32(ar->spectral.pri20_freq);
 	fft_sample->target_reset_count = __cpu_to_be32(ar->spectral.target_reset_count);
-	fft_sample->cfreq1 = __cpu_to_be32(summary->meta.freq1);
-	fft_sample->cfreq2 = __cpu_to_be32(summary->meta.freq2);
-	fft_sample->sscan_cfreq1 = __cpu_to_be32(summary->meta.freq1);
-	fft_sample->sscan_cfreq2 = __cpu_to_be32(summary->meta.freq2);
+	fft_sample->cfreq1 = __cpu_to_be32(cfreq1);
+	fft_sample->cfreq2 = __cpu_to_be32(cfreq2);
+	fft_sample->sscan_cfreq1 = __cpu_to_be32(cfreq1);
+	fft_sample->sscan_cfreq2 = __cpu_to_be32(cfreq2);
 	fft_sample->bin_pwr_count = __cpu_to_be32(num_bins);
 
+	center_freq = cfreq1;
+	half_bw = ath12k_spectral_chwidth_to_mhz(summary->meta.ch_width) / 2;
+	start_freq = center_freq - half_bw;
+	end_freq = center_freq + half_bw;
+
 	end_bin = num_bins ? num_bins - 1 : 0;
-	fft_sample->detector_info.start_frequency = __cpu_to_be32(summary->meta.freq1);
-	fft_sample->detector_info.end_frequency = __cpu_to_be32(summary->meta.freq2);
+	fft_sample->detector_info.start_frequency = __cpu_to_be32(start_freq);
+	fft_sample->detector_info.end_frequency = __cpu_to_be32(end_freq);
 	fft_sample->detector_info.timestamp =
 		__cpu_to_be32(search->adjusted_timestamp);
 	fft_sample->detector_info.last_tstamp =
@@ -913,7 +1017,7 @@ static int ath12k_spectral_fill_fft_sample(struct ath12k *ar,
 	fft_sample->detector_info.max_magnitude =
 		__cpu_to_be16(search->peak_mag);
 	fft_sample->detector_info.noise_floor =
-		__cpu_to_be16((s16)summary->meta.noise_floor[search->chain_idx]);
+		__cpu_to_be16((s16)summary->meta.noise_floor[chn_idx_lowest_enabled]);
 
 	summary->inb_pwr_db >>= 1;
 	fft_sample->detector_info.rssi = (u8)summary->inb_pwr_db;
@@ -924,25 +1028,17 @@ static int ath12k_spectral_fill_fft_sample(struct ath12k *ar,
 	fft_sample->spectral_mode =
 		ath12k_spectral_get_scan_mode_from_detector(search->detector_id);
 	fft_sample->operating_bw =
-		ath12k_spectral_peer_chwidth_to_nl(summary->meta.ch_width);
+		ath12k_spectral_chwidth_to_nl(summary->meta.ch_width);
 	fft_sample->sscan_bw =
-		ath12k_spectral_peer_chwidth_to_nl(summary->meta.ch_width);
-	fft_sample->fft_width = ar->spectral.params.scan_fft_size;
+		ath12k_spectral_chwidth_to_nl(summary->meta.ch_width);
+	fft_sample->fft_width = ATH12K_SPECTRAL_BIN_SIZE;
 	memcpy(fft_sample->macaddr, ar->mac_addr, sizeof(fft_sample->macaddr));
 	ath12k_dbg(ab, ATH12K_DBG_SPECTRAL, "spectral fft: ar->mac_addr=%pM\n",
 		   ar->mac_addr);
 
-	/* If freq2 is available then the spectral scan results are fragmented as
-	 * primary and secondary
-	 */
-	if (fragment_sample && summary->meta.freq2) {
-		fft_sample->detector_info.is_sec80 = !ar->spectral.is_primary;
-		/* We have to toggle the is_primary to handle the next report */
-		ar->spectral.is_primary = !ar->spectral.is_primary;
-	}
-
 	ath12k_spectral_parse_fft(fft_sample->data, fft_report->bins, num_bins,
-				  ab->hw_params->spectral.fft_bin_sz);
+				  ab->hw_params->spectral.fft_bin_sz,
+				  ar->spectral.params.scan_pwr_format);
 
 	ath12k_dbg(ab, ATH12K_DBG_SPECTRAL,
 		   "spectral fft bins: num_bins=%d fft_size=%u\n", num_bins,
@@ -990,7 +1086,7 @@ int ath12k_spectral_process_fft(struct ath12k *ar,
 	int tlv_len, bin_len, num_bins;
 	size_t fft_bin_size;
 	size_t total_bins;
-	u8 chan_width_mhz;
+	u8 chan_width;
 	int ret, i;
 	u32 check_length;
 	bool fragment_sample = false;
@@ -1112,12 +1208,12 @@ int ath12k_spectral_process_fft(struct ath12k *ar,
 	ath12k_spectral_verify_ts(ar, data, search.adjusted_timestamp,
 				  search.detector_id);
 
-	chan_width_mhz = ar->spectral.ch_width;
+	chan_width = ar->spectral.ch_width;
 
-	switch (chan_width_mhz) {
+	switch (chan_width) {
 	case WMI_PEER_CHWIDTH_20MHZ:
 		for (i = 0; i < spectral_cap.num_fft_size_caps_entry; i++) {
-			if (spectral_cap.fft_size_caps->sscan_bw == chan_width_mhz) {
+			if (spectral_cap.fft_size_caps->sscan_bw == chan_width) {
 				supported_flags = spectral_cap.fft_size_caps->supported_flags;
 				supported_flags >>= 6;
 				if (!(supported_flags & 1)) {
@@ -1130,11 +1226,11 @@ int ath12k_spectral_process_fft(struct ath12k *ar,
 			}
 			spectral_cap.fft_size_caps++;
 		}
-		summary->meta.ch_width = ATH12K_SPECTRAL_20MHZ;
+		summary->meta.ch_width = chan_width;
 		break;
 	case WMI_PEER_CHWIDTH_40MHZ:
 		for (i = 0; i < spectral_cap.num_fft_size_caps_entry; i++) {
-			if (spectral_cap.fft_size_caps->sscan_bw == chan_width_mhz) {
+			if (spectral_cap.fft_size_caps->sscan_bw == chan_width) {
 				supported_flags = spectral_cap.fft_size_caps->supported_flags;
 				supported_flags >>= 7;
 				if (!(supported_flags & 1)) {
@@ -1150,11 +1246,11 @@ int ath12k_spectral_process_fft(struct ath12k *ar,
 			}
 			spectral_cap.fft_size_caps++;
 		}
-		summary->meta.ch_width = ATH12K_SPECTRAL_40MHZ;
+		summary->meta.ch_width = chan_width;
 		break;
 	case WMI_PEER_CHWIDTH_80MHZ:
 		for (i = 0; i < spectral_cap.num_fft_size_caps_entry; i++) {
-			if (spectral_cap.fft_size_caps->sscan_bw == chan_width_mhz) {
+			if (spectral_cap.fft_size_caps->sscan_bw == chan_width) {
 				supported_flags = spectral_cap.fft_size_caps->supported_flags;
 				supported_flags >>= 8;
 				if (!(supported_flags & 1)) {
@@ -1170,11 +1266,11 @@ int ath12k_spectral_process_fft(struct ath12k *ar,
 			}
 			spectral_cap.fft_size_caps++;
 		}
-		summary->meta.ch_width = ATH12K_SPECTRAL_80MHZ;
+		summary->meta.ch_width = chan_width;
 		break;
 	case WMI_PEER_CHWIDTH_160MHZ:
 		for (i = 0; i < spectral_cap.num_fft_size_caps_entry; i++) {
-			if (spectral_cap.fft_size_caps->sscan_bw == chan_width_mhz) {
+			if (spectral_cap.fft_size_caps->sscan_bw == chan_width) {
 				supported_flags = spectral_cap.fft_size_caps->supported_flags;
 				supported_flags >>= 8;
 				if (!(supported_flags & 1)) {
@@ -1190,13 +1286,13 @@ int ath12k_spectral_process_fft(struct ath12k *ar,
 			}
 			spectral_cap.fft_size_caps++;
 		}
-		summary->meta.ch_width = ATH12K_SPECTRAL_160MHZ;
+		summary->meta.ch_width = chan_width;
 		if (ab->hw_params->spectral.fragment_160mhz)
 			fragment_sample = true;
 		break;
 	case WMI_PEER_CHWIDTH_MAX:
 		for (i = 0; i < spectral_cap.num_fft_size_caps_entry; i++) {
-			if (spectral_cap.fft_size_caps->sscan_bw == chan_width_mhz) {
+			if (spectral_cap.fft_size_caps->sscan_bw == chan_width) {
 				supported_flags = spectral_cap.fft_size_caps->supported_flags;
 				supported_flags >>= 8;
 				if (!(supported_flags & 1)) {
@@ -1212,10 +1308,10 @@ int ath12k_spectral_process_fft(struct ath12k *ar,
 			}
 			spectral_cap.fft_size_caps++;
 		}
-		summary->meta.ch_width = ATH12K_SPECTRAL_320MHZ;
+		summary->meta.ch_width = chan_width;
 		break;
 	default:
-		ath12k_warn(ab, "invalid channel width %d\n", chan_width_mhz);
+		ath12k_warn(ab, "invalid channel width %d\n", chan_width);
 		return -EINVAL;
 	}
 
