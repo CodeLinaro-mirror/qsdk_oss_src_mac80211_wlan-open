@@ -11021,17 +11021,29 @@ static int ath12k_vendor_atf_offload_peer_config(struct ath12k *ar,
 	return ret;
 }
 
+static
+void ath12k_atf_offload_reset_stats_iterator(struct ath12k_pdev_dp *dp_pdev,
+					     struct ath12k_dp_link_peer *peer,
+					     void *data)
+{
+	struct ath12k_atf_peer_airtime *atf_peer_airtime;
+
+	if (!ath12k_dp_link_peer_get_sta(peer))
+		return;
+
+	peer->atf_actual_airtime = 0;
+	atf_peer_airtime = &peer->atf_peer_airtime;
+
+	memset(atf_peer_airtime, 0, sizeof(*atf_peer_airtime));
+}
+
 static void ath12k_atf_offload_reset_stats(struct ath12k *ar)
 {
-	struct ath12k_dp_link_peer *peer, *tmp;
-	struct ath12k_base *ab = ar->ab;
-	struct ath12k_atf_peer_airtime *atf_peer_airtime;
 	struct ath12k_pdev_dp *dp = &ar->dp;
 	struct ath12k_pdev_dp_stats *pdev_stats = &dp->stats;
 	struct ath12k_atf_pdev_airtime *atf_pdev_airtime =
 		&pdev_stats->atf_airtime;
 	struct ath12k_atf *atf_table = &ar->atf_table;
-	struct ath12k_dp *ab_dp = ath12k_ab_to_dp(ab);
 	int i;
 
 	memset(atf_pdev_airtime, 0, sizeof(*atf_pdev_airtime));
@@ -11042,115 +11054,157 @@ static void ath12k_atf_offload_reset_stats(struct ath12k *ar)
 		atf_table->group_info[i].atf_actual_ul_duration = 0;
 	}
 
-	spin_lock_bh(&ab_dp->dp_lock);
-	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
-		if (peer->pdev_idx != ar->pdev_idx && !ath12k_dp_link_peer_get_sta(peer))
-			continue;
+	ath12k_dp_link_peer_iterate_by_dp_pdev(&ar->dp,
+					       ath12k_atf_offload_reset_stats_iterator,
+					       NULL);
 
-		peer->atf_actual_airtime = 0;
-		atf_peer_airtime = &peer->atf_peer_airtime;
-
-		memset(atf_peer_airtime, 0, sizeof(*atf_peer_airtime));
-	}
-	spin_unlock_bh(&ab_dp->dp_lock);
 	ar->atf_stats_accum_start_time = ath12k_get_timestamp_in_us();
+}
+
+struct ath12k_atf_update_airtime_params {
+	u32 pdev_ul_airtime;
+	u32 pdev_actual_airtime;
+};
+
+static
+void ath12k_atf_offload_update_peer_airtime_iterator(struct ath12k_pdev_dp *dp_pdev,
+						     struct ath12k_dp_link_peer *peer,
+						     void *data)
+{
+	int ac, i;
+	u8 group_index = 0xFF;
+	struct ath12k *ar = dp_pdev->ar;
+	struct ath12k_atf_update_airtime_params *params =
+					(struct ath12k_atf_update_airtime_params *)data;
+	u32 pdev_ul_airtime = params->pdev_ul_airtime;
+	u32 pdev_actual_airtime = params->pdev_actual_airtime;
+	struct ath12k_atf_peer_airtime *atf_peer_airtime;
+	u32 peer_airtime, peer_ul_airtime;
+
+	if (!ath12k_dp_link_peer_get_sta(peer))
+		return;
+
+	peer_airtime = 0;
+	peer_ul_airtime = 0;
+
+	for (i = 0; i < ar->atf_table.total_groups; i++) {
+		if (peer->atf_group_index ==
+				ar->atf_table.group_info[i].group_id) {
+			group_index = i;
+			break;
+		}
+	}
+
+	atf_peer_airtime = &peer->atf_peer_airtime;
+
+	for (ac = 0; ac < WME_NUM_AC; ac++) {
+		peer_airtime += atf_peer_airtime->tx_airtime_consumption[ac].consumption;
+		peer_ul_airtime += atf_peer_airtime->rx_airtime_consumption[ac].consumption;
+	}
+
+	if (peer_airtime > 0 && pdev_actual_airtime > 0) {
+		peer->atf_actual_duration = peer_airtime;
+		peer->atf_actual_airtime =
+			(u32)div_u64((u64)peer_airtime * 100ULL,  pdev_actual_airtime);
+	} else {
+		peer->atf_actual_airtime = 0;
+		peer->atf_actual_duration = 0;
+	}
+
+	if (peer_ul_airtime > 0 && pdev_ul_airtime > 0) {
+		peer->atf_actual_ul_duration = peer_ul_airtime;
+		peer->atf_ul_airtime =
+			(u32)div_u64((u64)peer_ul_airtime * 100ULL, pdev_ul_airtime);
+	} else {
+		peer->atf_ul_airtime = 0;
+		peer->atf_actual_ul_duration = 0;
+	}
+
+	if (group_index < ar->atf_table.total_groups) {
+		ar->atf_table.group_info[group_index].atf_actual_duration += peer_airtime;
+		ar->atf_table.group_info[group_index].atf_actual_ul_duration +=
+									peer_ul_airtime;
+		ar->atf_table.group_info[group_index].atf_actual_airtime +=
+								peer->atf_actual_airtime;
+	} else {
+		ath12k_warn(ar->ab, "ATF: Invalid group index %u for peer %pM (max: %u)",
+			    group_index, peer->addr, ar->atf_table.total_groups - 1);
+	}
 }
 
 static void ath12k_atf_offload_update_peer_airtime(struct ath12k *ar)
 {
-	struct ath12k_dp_link_peer *peer, *tmp;
-	struct ath12k_base *ab = ar->ab;
-	struct ath12k_atf_peer_airtime *atf_peer_airtime;
-	struct ath12k_dp *dp;
 	struct ath12k_pdev_dp *ar_dp = &ar->dp;
 	struct ath12k_pdev_dp_stats *pdev_stats = &ar_dp->stats;
 	struct ath12k_atf_pdev_airtime *atf_pdev_airtime =
 		&pdev_stats->atf_airtime;
-	u8 group_index = 0xFF;
-	u32 peer_airtime, peer_ul_airtime, pdev_actual_airtime = 0, pdev_ul_airtime = 0;
-	int ac, i;
+	u32 pdev_actual_airtime = 0, pdev_ul_airtime = 0;
+	int ac;
+	struct ath12k_atf_update_airtime_params params;
 
 	for (ac = 0; ac < WME_NUM_AC; ac++) {
 		pdev_actual_airtime += atf_pdev_airtime->tx_airtime_consumption[ac];
 		pdev_ul_airtime += atf_pdev_airtime->rx_airtime_consumption[ac];
 	}
 
-	dp = ath12k_ab_to_dp(ar->ab);
-	spin_lock_bh(&dp->dp_lock);
-	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
-		if (peer->pdev_idx != ar->pdev_idx && !ath12k_dp_link_peer_get_sta(peer))
-			continue;
-		peer_airtime = 0;
-		peer_ul_airtime = 0;
+	params.pdev_ul_airtime = pdev_ul_airtime;
+	params.pdev_actual_airtime = pdev_actual_airtime;
 
-		for (i = 0; i < ar->atf_table.total_groups; i++) {
-			if (peer->atf_group_index ==
-					ar->atf_table.group_info[i].group_id) {
-				group_index = i;
-				break;
-			}
-		}
+	ath12k_dp_link_peer_iterate_by_dp_pdev(&ar->dp,
+					       ath12k_atf_offload_update_peer_airtime_iterator,
+					       &params);
 
-		atf_peer_airtime = &peer->atf_peer_airtime;
-
-		for (ac = 0; ac < WME_NUM_AC; ac++) {
-			peer_airtime += atf_peer_airtime->tx_airtime_consumption[ac].consumption;
-			peer_ul_airtime += atf_peer_airtime->rx_airtime_consumption[ac].consumption;
-		}
-
-		if (peer_airtime > 0 && pdev_actual_airtime > 0) {
-			peer->atf_actual_duration = peer_airtime;
-			peer->atf_actual_airtime =
-				(u32)div_u64((u64)peer_airtime * 100ULL,  pdev_actual_airtime);
-		} else {
-			peer->atf_actual_airtime = 0;
-			peer->atf_actual_duration = 0;
-		}
-
-		if (peer_ul_airtime > 0 && pdev_ul_airtime > 0) {
-			peer->atf_actual_ul_duration = peer_ul_airtime;
-			peer->atf_ul_airtime =
-				(u32)div_u64((u64)peer_ul_airtime * 100ULL, pdev_ul_airtime);
-		} else {
-			peer->atf_ul_airtime = 0;
-			peer->atf_actual_ul_duration = 0;
-		}
-
-		if (group_index < ar->atf_table.total_groups) {
-			ar->atf_table.group_info[group_index].atf_actual_duration += peer_airtime;
-			ar->atf_table.group_info[group_index].atf_actual_ul_duration += peer_ul_airtime;
-			ar->atf_table.group_info[group_index].atf_actual_airtime +=
-				peer->atf_actual_airtime;
-		} else {
-			ath12k_warn(ar->ab, "ATF: Invalid group index %u for peer %pM (max: %u)",
-				    group_index, peer->addr, ar->atf_table.total_groups - 1);
-		}
-	}
-	spin_unlock_bh(&dp->dp_lock);
 	ath12k_info(ar->ab, "Total Airtime(us)     %u", pdev_actual_airtime);
 	ath12k_info(ar->ab, "Total UL Airtime(us)  %u", pdev_ul_airtime);
+}
+
+struct ath12k_atf_offload_stats {
+	u16 peer_count;
+	struct atf_peer_stat *peer_stats;
+};
+
+static void ath12k_atf_offload_print_stats_iterator(struct ath12k_pdev_dp *dp_pdev,
+						    struct ath12k_dp_link_peer *peer,
+						    void *data)
+{
+	struct ath12k_atf_offload_stats *offload_stats =
+					(struct ath12k_atf_offload_stats *)data;
+	struct atf_peer_stat *peer_stats = offload_stats->peer_stats;
+	u16 peer_count = offload_stats->peer_count;
+
+	if (!ath12k_dp_link_peer_get_sta(peer))
+		return;
+
+	if (peer_count >= ATH12K_ATF_MAX_PEERS)
+		return;
+
+	memcpy(peer_stats[peer_count].addr, peer->addr, ETH_ALEN);
+	peer_stats[peer_count].atf_actual_airtime = peer->atf_actual_airtime;
+	peer_stats[peer_count].atf_peer_conf_airtime = peer->atf_peer_conf_airtime;
+	peer_stats[peer_count].atf_group_index = peer->atf_group_index;
+	peer_stats[peer_count].atf_actual_duration = peer->atf_actual_duration;
+	peer_stats[peer_count].atf_ul_airtime = peer->atf_ul_airtime;
+	peer_stats[peer_count].atf_actual_ul_duration = peer->atf_actual_ul_duration;
+
+	offload_stats->peer_count++;
 }
 
 static void ath12k_atf_offload_print_stats(struct timer_list *t)
 {
 	struct ath12k *ar = from_timer(ar, t, atf_stats_timer);
-	struct ath12k_dp_link_peer *peer, *tmp;
-	struct ath12k_base *ab = ar->ab;
-	struct ath12k_dp *dp;
 	u8 borrowed, unused;
-	int i, peer_count = 0;
+	int i;
 	struct ath12k_atf *atf_table = &ar->atf_table;
 	struct atf_peer_stat *peer_stats;
 	u64 current_time = ath12k_get_timestamp_in_us();
 	u32 time_diff = (u32)(current_time - ar->atf_stats_accum_start_time);
+	struct ath12k_atf_offload_stats offload_stats = {0};
 
 	peer_stats = kcalloc(ATH12K_ATF_MAX_PEERS, sizeof(*peer_stats), GFP_ATOMIC);
 	if (!peer_stats) {
 		ath12k_warn(ar->ab, "ATF: Failed to allocate memory for peer stats");
 		return;
 	}
-
-	dp = ath12k_ab_to_dp(ar->ab);
 
 	ath12k_info(ar->ab, "Total radio duration(us): %u", time_diff);
 	ath12k_atf_offload_update_peer_airtime(ar);
@@ -11182,31 +11236,16 @@ static void ath12k_atf_offload_print_stats(struct timer_list *t)
 			    (u32)div_u64((u64)ar->atf_table.group_info[i].atf_actual_duration * 100ULL, time_diff) : 0);
 	}
 
-	spin_lock_bh(&dp->dp_lock);
-	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
-		if (peer->pdev_idx != ar->pdev_idx)
-			continue;
-
-		if (!ath12k_dp_link_peer_get_sta(peer))
-			continue;
-
-		memcpy(peer_stats[peer_count].addr, peer->addr, ETH_ALEN);
-		peer_stats[peer_count].atf_actual_airtime = peer->atf_actual_airtime;
-		peer_stats[peer_count].atf_peer_conf_airtime = peer->atf_peer_conf_airtime;
-		peer_stats[peer_count].atf_group_index = peer->atf_group_index;
-		peer_stats[peer_count].atf_actual_duration = peer->atf_actual_duration;
-		peer_stats[peer_count].atf_ul_airtime = peer->atf_ul_airtime;
-		peer_stats[peer_count].atf_actual_ul_duration = peer->atf_actual_ul_duration;
-
-		peer_count++;
-	}
-	spin_unlock_bh(&dp->dp_lock);
+	offload_stats.peer_stats = peer_stats;
+	ath12k_dp_link_peer_iterate_by_dp_pdev(&ar->dp,
+					       ath12k_atf_offload_print_stats_iterator,
+					       &offload_stats);
 
 	ath12k_info(ar->ab, "*****************************************************************************************************");
 	ath12k_info(ar->ab, "**************************************** ATF STATS For PEERs ****************************************");
 	ath12k_info(ar->ab, "PeerMAC             GroupId  Configured  Actual(Relative)    Borrowed    Unused    Duration(us)   ActualUL  UL(us)  Actual");
 
-	for (i = 0; i < peer_count; i++) {
+	for (i = 0; i < offload_stats.peer_count; i++) {
 		borrowed = 0;
 		unused = 0;
 
@@ -11314,6 +11353,93 @@ static int ath12k_vendor_offload_ssid_scheduling_config(struct ieee80211_hw *hw,
 	return ret;
 }
 
+/**
+ * struct ath12k_atf_dumpit_ctx - Context passed to the per-peer iterator
+ *                                used by ath12k_vendor_atf_stats_dumpit.
+ * @msg:          SKB being filled with netlink attributes.
+ * @peers_data:   Outer nest attribute wrapping all per-peer entries.
+ * @storage:      Pointer to the dumpit storage counter (counts peers emitted).
+ * @j:            Running index used as the nest key for each peer entry.
+ * @tailroom:     Remaining tailroom in @msg; updated after each peer entry.
+ * @nested_range: Size of the last peer entry; used to track tailroom usage.
+ * @ret:          Accumulated return value; set to a negative errno on error.
+ */
+struct ath12k_atf_dumpit_ctx {
+	struct sk_buff *msg;
+	struct nlattr *peers_data;
+	unsigned long *storage;
+	int j;
+	int tailroom;
+	int nested_range;
+	int ret;
+};
+
+/**
+ * ath12k_vendor_atf_stats_dumpit_iterator() - Per-peer callback for ATF stats dumpit.
+ * @peer: Current ath12k_dp_link_peer being visited by the iterator.
+ * @data: Pointer to a struct ath12k_atf_dumpit_ctx.
+ *
+ * Called once per peer by ath12k_dp_link_peer_iterate_by_dp_pdev().
+ * Skips non-STA peers, checks remaining SKB tailroom, then serialises
+ * the peer's ATF airtime counters as nested netlink attributes into the
+ * SKB carried in the context. On any nla_put failure the nest is
+ * cancelled and a negative errno is stored in ctx->ret; returning that
+ * non-zero value stops the iteration immediately.
+ *
+ * Return: 0 to continue iteration, negative errno to abort.
+ */
+static void
+ath12k_vendor_atf_stats_dumpit_iterator(struct ath12k_pdev_dp *dp_pdev,
+					struct ath12k_dp_link_peer *peer,
+					void *data)
+{
+	struct ath12k_atf_dumpit_ctx *ctx = (struct ath12k_atf_dumpit_ctx *)data;
+	struct sk_buff *msg = ctx->msg;
+	struct nlattr *peer_data;
+	int nest_start_length = 0;
+	int nest_end_length = 0;
+
+	if (!ath12k_dp_link_peer_get_sta(peer))
+		return;
+
+	if (ctx->tailroom <= ctx->nested_range)
+		return;
+
+	peer_data = nla_nest_start(msg, ctx->j++);
+	if (!peer_data) {
+		ctx->ret = -ENOBUFS;
+		return;
+	}
+
+	if (nla_put(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_STATS_MAC,
+		    ETH_ALEN, peer->addr) ||
+	    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_TX_BE_AIRTIME,
+			peer->atf_peer_airtime.tx_airtime_consumption[0].consumption) ||
+	    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_TX_BK_AIRTIME,
+			peer->atf_peer_airtime.tx_airtime_consumption[1].consumption) ||
+	    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_TX_VI_AIRTIME,
+			peer->atf_peer_airtime.tx_airtime_consumption[2].consumption) ||
+	    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_TX_VO_AIRTIME,
+			peer->atf_peer_airtime.tx_airtime_consumption[3].consumption) ||
+	    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_RX_BE_AIRTIME,
+			peer->atf_peer_airtime.rx_airtime_consumption[0].consumption) ||
+	    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_RX_BK_AIRTIME,
+			peer->atf_peer_airtime.rx_airtime_consumption[1].consumption) ||
+	    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_RX_VI_AIRTIME,
+			peer->atf_peer_airtime.rx_airtime_consumption[2].consumption) ||
+	    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_RX_VO_AIRTIME,
+			peer->atf_peer_airtime.rx_airtime_consumption[3].consumption)) {
+		nla_nest_cancel(msg, peer_data);
+		ctx->ret = -ENOBUFS;
+		return;
+	}
+
+	*ctx->storage += 1;
+	nest_end_length = nla_nest_end(msg, peer_data);
+	ctx->nested_range = nest_end_length - nest_start_length;
+	ctx->tailroom -= ctx->nested_range;
+}
+
 static int ath12k_vendor_atf_stats_dumpit(struct wiphy *wiphy,
 					  struct wireless_dev *wdev,
 					  struct sk_buff *msg,
@@ -11324,14 +11450,11 @@ static int ath12k_vendor_atf_stats_dumpit(struct wiphy *wiphy,
 	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
 	struct ath12k_hw *ah = hw->priv;
 	struct ath12k *ar;
-	struct ath12k_dp_link_peer *peer, *tmp;
 	struct ath12k_base *ab;
-	struct ath12k_dp *dp;
 	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_MAX + 1];
-	struct nlattr *peer_attr, *peer_data, *peers_data;
-	int ret, j = 0;
-	int tailroom = 0, nest_start_length = 0;
-	int nest_end_length = 0, nested_range = 0;
+	struct nlattr *peer_attr, *peers_data;
+	struct ath12k_atf_dumpit_ctx ctx = {};
+	int ret;
 	u8 radio_id;
 
 	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_MAX, data, data_len,
@@ -11363,8 +11486,6 @@ static int ath12k_vendor_atf_stats_dumpit(struct wiphy *wiphy,
 	if (!storage)
 		return -ENODATA;
 
-	dp = ath12k_ab_to_dp(ar->ab);
-
 	peer_attr = nla_nest_start(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_STATS);
 	if (!peer_attr)
 		return -ENOBUFS;
@@ -11392,49 +11513,17 @@ static int ath12k_vendor_atf_stats_dumpit(struct wiphy *wiphy,
 	if (!peers_data)
 		return -ENOBUFS;
 
-	tailroom = skb_tailroom(msg);
-	spin_lock_bh(&dp->dp_lock);
-	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
-		if (peer->pdev_idx != ar->pdev_idx && !ath12k_dp_link_peer_get_sta(peer))
-			continue;
+	ctx.msg        = msg;
+	ctx.peers_data = peers_data;
+	ctx.storage    = storage;
+	ctx.tailroom   = skb_tailroom(msg);
 
-		if (tailroom <= nested_range)
-			break;
+	ath12k_dp_link_peer_iterate_by_dp_pdev(&ar->dp,
+					       ath12k_vendor_atf_stats_dumpit_iterator,
+					       &ctx);
+	if (ctx.ret)
+		return ctx.ret;
 
-		peer_data = nla_nest_start(msg, j++);
-		if (!peer_data)
-			return -ENOBUFS;
-
-		if (nla_put(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_STATS_MAC,
-			    ETH_ALEN, peer->addr) ||
-		    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_TX_BE_AIRTIME,
-				peer->atf_peer_airtime.tx_airtime_consumption[0].consumption) ||
-		    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_TX_BK_AIRTIME,
-				peer->atf_peer_airtime.tx_airtime_consumption[1].consumption) ||
-		    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_TX_VI_AIRTIME,
-				peer->atf_peer_airtime.tx_airtime_consumption[2].consumption) ||
-		    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_TX_VO_AIRTIME,
-				peer->atf_peer_airtime.tx_airtime_consumption[3].consumption) ||
-		    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_RX_BE_AIRTIME,
-				peer->atf_peer_airtime.rx_airtime_consumption[0].consumption) ||
-		    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_RX_BK_AIRTIME,
-				peer->atf_peer_airtime.rx_airtime_consumption[1].consumption) ||
-		    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_RX_VI_AIRTIME,
-				peer->atf_peer_airtime.rx_airtime_consumption[2].consumption) ||
-		    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_RX_VO_AIRTIME,
-				peer->atf_peer_airtime.rx_airtime_consumption[3].consumption)) {
-			nla_nest_cancel(msg, peer_data);
-			spin_unlock_bh(&dp->dp_lock);
-			return -ENOBUFS;
-		}
-		nla_nest_end(msg, peer_data);
-
-		*storage += 1;
-		nest_end_length = nla_nest_end(msg, peer_data);
-		nested_range = nest_end_length - nest_start_length;
-		tailroom -= nested_range;
-	}
-	spin_unlock_bh(&dp->dp_lock);
 	nla_nest_end(msg, peers_data);
 	nla_nest_end(msg, peer_attr);
 	if (*storage == ar->num_peers)

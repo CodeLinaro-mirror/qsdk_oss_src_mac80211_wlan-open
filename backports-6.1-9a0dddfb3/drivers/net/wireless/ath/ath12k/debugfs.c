@@ -2597,7 +2597,6 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
 	struct ath12k_neighbor_peer *nrp = NULL, *tmp = NULL;
-	struct ath12k_dp_link_peer *peer = NULL;
 	struct ath12k_link_vif *arvif = NULL;
 	struct ath12k_set_neighbor_rx_params *param = NULL;
 	u8 mac[ETH_ALEN] = {0};
@@ -2704,17 +2703,6 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 			goto err_free;
 		}
 
-		list_for_each_entry(peer, &dp->peers, list) {
-			if (ether_addr_equal(peer->addr, mac)) {
-				spin_unlock_bh(&dp->dp_lock);
-				ath12k_warn(ab,
-					    "cannot add associated peer as neighbor peer %pM\n",
-					    mac);
-				ret = -EINVAL;
-				goto err_free;
-			}
-		}
-
 		list_for_each_entry(nrp, &dp->neighbor_peers, list) {
 			if (ether_addr_equal(nrp->addr, mac)) {
 				spin_unlock_bh(&dp->dp_lock);
@@ -2725,6 +2713,17 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 			}
 		}
 		spin_unlock_bh(&dp->dp_lock);
+
+		spin_lock_bh(&ar->arsta_lock);
+		if (ath12k_link_sta_find_by_addr(ar, mac)) {
+			spin_unlock_bh(&ar->arsta_lock);
+			ath12k_warn(ab,
+				    "cannot add associated peer as neighbor peer %pM\n",
+				     mac);
+			ret = -EINVAL;
+			goto err_free;
+		}
+		spin_unlock_bh(&ar->arsta_lock);
 
 		nrp = kzalloc(sizeof(*nrp), GFP_KERNEL);
 		if (!nrp) {

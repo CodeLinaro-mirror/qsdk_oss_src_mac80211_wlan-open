@@ -462,4 +462,6 @@ int ath12k_dp_peer_set_key_config(struct ath12k_pdev_dp *dp_pdev, const u8 *addr
 				  enum set_key_cmd cmd, struct ieee80211_key_conf *key,
 				  struct ieee80211_sta *sta,
 				  enum hal_encrypt_type *enctype);
+
+void ath12k_dp_peer_cleanup_all(struct ath12k *ar);
 #endif

@@ -478,4 +478,11 @@ u8 ath12k_dp_peer_convert_hw_to_logical_link_id(struct ath12k_dp_peer *dp_peer,
 
 	return dp_peer->hw_links[hw_link_id];
 }
+
+void
+ath12k_dp_link_peer_iterate_by_dp_pdev(struct ath12k_pdev_dp *dp_pdev,
+				       void (*iter_fn)(struct ath12k_pdev_dp *dp_pdev,
+						       struct ath12k_dp_link_peer *peer,
+						       void *context),
+				       void *data);
 #endif
