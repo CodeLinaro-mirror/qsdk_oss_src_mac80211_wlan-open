@@ -2052,6 +2052,28 @@ static inline int drv_uhr_mode_update(struct ieee80211_local *local,
 	return ret;
 }
 
+static inline int drv_critical_update(struct ieee80211_local *local,
+				      struct ieee80211_sub_if_data *sdata,
+				      unsigned int link_id,
+				      enum nl80211_cu_type cu_type,
+				      const u8 *ie, size_t ie_len)
+{
+	int ret = -EOPNOTSUPP;
+
+	might_sleep();
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	trace_drv_critical_update(local, sdata, link_id, cu_type,
+				  ie, ie_len);
+	if (local->ops->critical_update)
+		ret = local->ops->critical_update(&local->hw, &sdata->vif,
+						  link_id, cu_type,
+						  ie, ie_len);
+
+	trace_drv_return_int(local, ret);
+	return ret;
+}
+
 #ifdef CPTCFG_QCN_EXTN
 static inline int
 drv_set_muedca_mode(struct ieee80211_local *local,

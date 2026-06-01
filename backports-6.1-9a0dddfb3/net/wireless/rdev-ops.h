@@ -1790,4 +1790,19 @@ static inline int rdev_uhr_link_reconf(struct cfg80211_registered_device *rdev,
 
 	return ret;
 }
+
+static inline int rdev_critical_update(struct cfg80211_registered_device *rdev,
+				       struct net_device *dev,
+				       unsigned int link_id,
+				       struct cfg80211_critical_update_params *params)
+{
+	int ret = -EOPNOTSUPP;
+
+	trace_rdev_critical_update(&rdev->wiphy, dev, link_id, params);
+	if (rdev->ops->critical_update)
+		ret = rdev->ops->critical_update(&rdev->wiphy, dev, link_id, params);
+	trace_rdev_return_int(&rdev->wiphy, ret);
+	return ret;
+}
+
 #endif /* __CFG80211_RDEV_OPS */

@@ -4526,6 +4526,33 @@ TRACE_EVENT(rdev_uhr_mode_update,
 		  __entry->npca_update_mask)
 );
 
+TRACE_EVENT(rdev_critical_update,
+	TP_PROTO(struct wiphy *wiphy, struct net_device *netdev,
+		  unsigned int link_id,
+		  struct cfg80211_critical_update_params *params),
+
+	TP_ARGS(wiphy, netdev, link_id, params),
+
+	TP_STRUCT__entry(WIPHY_ENTRY
+		NETDEV_ENTRY
+		__field(u32, link_id)
+		__field(u32, cu_type)
+		__field(size_t, elem_len)
+	),
+
+	TP_fast_assign(WIPHY_ASSIGN;
+		NETDEV_ASSIGN;
+		__entry->link_id = link_id;
+		__entry->cu_type = params->cu_info.cu_type;
+		__entry->elem_len = params->elem_len;
+	),
+
+	TP_printk(WIPHY_PR_FMT ", " NETDEV_PR_FMT
+		  ", link_id: %u cu_type: %u elem_len: %zu",
+		  WIPHY_PR_ARG, NETDEV_PR_ARG,
+		  __entry->link_id, __entry->cu_type, __entry->elem_len)
+);
+
 TRACE_EVENT(rdev_smd_prepare,
 	TP_PROTO(struct wiphy *wiphy, struct net_device *netdev,
 		 struct cfg80211_smd_prepare_req *req),
