@@ -22,8 +22,10 @@
 #include "dp_peer.h"
 #include "dp_tx_queue.h"
 #include <linux/vmalloc.h>
+#include "../ppe_public.h"
+#include "ppeds.h"
 
-#define ATH12K_HW_MAX_ACTIVE_QUEUES		3
+#define ATH12K_HW_MAX_ACTIVE_QUEUES	3
 
 struct ath12k_tx_sw_metadata {
 	struct sk_buff *skb;
@@ -3040,7 +3042,7 @@ int ath12k_wifi8_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 	u32 tqm_rel_reason[MAX_TQM_RELEASE_REASON] = {0};
 	u32 fw_tx_status[MAX_FW_TX_STATUS] = {0};
 	u32 htt_status = 0, tx_completed = 0;
-	u32 tx_desc_free_cnt = 0, *tx_desc_used_cnt;
+	u32 tx_desc_free_cnt = 0;
 	u8 tid = 0;
 
 	ath12k_hal_srng_access_dst_ring_begin_nolock(ab, status_ring);
@@ -3159,8 +3161,7 @@ int ath12k_wifi8_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 
 	list_splice(&desc_free_list, &dp->dp_hw_grp->tx_desc_free_list[ring_id]);
 
-	tx_desc_used_cnt = this_cpu_ptr(dp_hw_grp->tx_desc_used_cnt);
-	(*tx_desc_used_cnt) -= tx_desc_free_cnt;
+	this_cpu_sub(dp_hw_grp->pcpu_tx->cnt, tx_desc_free_cnt);
 
 	spin_unlock_bh(&dp->dp_hw_grp->tx_desc_lock[ring_id]);
 
@@ -4264,6 +4265,8 @@ tx_buf_release:
 			ppeds_tx_desc->in_use = false;
 			list_add_tail(&ppeds_tx_desc->list,
 				      &dp->dp_hw_grp->ppeds_tx_desc_free_list);
+
+			this_cpu_dec(dp->dp_hw_grp->pcpu_tx->ppeds_cnt);
 			skb = ppeds_tx_desc->skb;
 			ppeds_tx_desc->skb = NULL;
 			spin_unlock_bh(&dp->dp_hw_grp->ppeds_tx_desc_lock);
@@ -4901,17 +4904,25 @@ ath12k_wifi8_dp_tx_restore_flow_limit(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp
 	}
 }
 
-static u32 ath12k_wifi8_dp_tx_get_desc_used_cnt(struct ath12k_dp_hw_group *dp_hw_grp)
+static void ath12k_wifi8_dp_tx_get_desc_used_cnt(struct ath12k_dp_hw_group *dp_hw_grp,
+						 u32 *count,
+						 u32 *ppeds_count)
 {
+	struct ath12k_dp_desc_used_stats_pcpu *pcpu_tx;
+	u32 used_cnt = 0, ppeds_used_cnt = 0;
 	int cpu;
-	u32 used_cnt = 0, *tx_desc_used_cnt;
 
 	for_each_possible_cpu(cpu) {
-		tx_desc_used_cnt = per_cpu_ptr(dp_hw_grp->tx_desc_used_cnt, cpu);
-		used_cnt += *tx_desc_used_cnt;
+		pcpu_tx = per_cpu_ptr(dp_hw_grp->pcpu_tx, cpu);
+
+		used_cnt += pcpu_tx->cnt;
+		ppeds_used_cnt += pcpu_tx->ppeds_cnt;
 	}
 
-	return used_cnt;
+	*count = used_cnt;
+	*ppeds_count = ppeds_used_cnt;
+
+	return;
 }
 
 void ath12k_wifi8_dp_tx_congestion_recovery_handler(struct timer_list *t)
@@ -4920,15 +4931,19 @@ void ath12k_wifi8_dp_tx_congestion_recovery_handler(struct timer_list *t)
 					from_timer(dp_hw_grp_wifi8, t, congstn.timer);
 	struct ath12k_wifi8_dp_congestion_control *congstn = &dp_hw_grp_wifi8->congstn;
 	struct ath12k_wifi8_svc_sorted_flows *svc_data = congstn->svc_data;
+	u8 idx, i, svc_mask = (1 << HAL_TQM_SERVICE_CATEGORY_MAX) - 1;
 	struct ath12k_wifi8_svc_remove_flows *drop = congstn->drop;
+	u32 target_drop = 0, ppeds_target_drop = 0, total_drop;
+	u32 flow_number, high_msdu_count, total_active_msdu;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	struct ppe_ds_wlan_rxfill_ring_info info = { };
+#endif
 	struct ath12k_dp *dp = dp_hw_grp_wifi8->cumac_dp;
 	struct ath12k_wifi8_svc_sorted_flows *svc_flows;
 	struct ath12k_wifi8_flow_entry *entry;
-	struct ath12k_base *ab = dp->ab;
 	enum hal_tqm_service_category svc;
-	u32 flow_number, high_msdu_count, total_active_msdu;
-	u32 retry_used_cnt, used_cnt, target_drop;
-	u8 idx, i, svc_mask = (1 << HAL_TQM_SERVICE_CATEGORY_MAX) - 1;
+	struct ath12k_base *ab = dp->ab;
+	u32 used_cnt, ppeds_used_cnt;
 	unsigned long cur_jiffies;
 	int ret;
 
@@ -4937,15 +4952,24 @@ void ath12k_wifi8_dp_tx_congestion_recovery_handler(struct timer_list *t)
 
 	cur_jiffies = jiffies;
 
-	used_cnt = ath12k_wifi8_dp_tx_get_desc_used_cnt(dp_hw_grp_wifi8->dp_hw_grp);
-	if (used_cnt < congstn->used_threshold)
-		goto skip_drop;
+	ath12k_wifi8_dp_tx_get_desc_used_cnt(dp_hw_grp_wifi8->dp_hw_grp,
+					     &used_cnt,
+					     &ppeds_used_cnt);
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	ath12k_ppeds_get_rxfill_ring_info_v2(dp_hw_grp_wifi8->cumac_dp->ppe.ds_node_id,
+					     &info);
+	ppeds_used_cnt -= (info.wifi8.prim_active_cnt + info.wifi8.secd_active_cnt);
+#endif
+	if (used_cnt <= congstn->used_threshold &&
+	    ppeds_used_cnt <= congstn->ppeds_used_threshold)
+		goto out;
 
 	if (!svc_data)
-		goto skip_drop;
+		goto out;
 
 	if (!drop)
-		goto skip_drop;
+		goto out;
 
 	memset(drop, 0, sizeof(*drop));
 	memset(svc_data, 0, HAL_TQM_SERVICE_CATEGORY_MAX * sizeof(*svc_data));
@@ -4984,14 +5008,16 @@ void ath12k_wifi8_dp_tx_congestion_recovery_handler(struct timer_list *t)
 	if (!total_active_msdu)
 		goto skip_drop;
 
-	retry_used_cnt = ath12k_wifi8_dp_tx_get_desc_used_cnt(dp_hw_grp_wifi8->dp_hw_grp);
-	if (used_cnt < retry_used_cnt)
-		used_cnt = retry_used_cnt;
+	if (used_cnt > congstn->used_threshold)
+		target_drop = used_cnt - congstn->used_threshold;
 
-	target_drop = used_cnt - congstn->used_threshold;
-	if (target_drop < total_active_msdu) {
+	if (ppeds_used_cnt > congstn->ppeds_used_threshold)
+		ppeds_target_drop = ppeds_used_cnt - congstn->ppeds_used_threshold;
+
+	total_drop = target_drop + ppeds_target_drop;
+	if (total_drop < total_active_msdu) {
 		congstn->calculate_drop(congstn, svc_data,
-					used_cnt - congstn->used_threshold,
+					total_drop,
 					drop);
 	} else {
 		drop->num_flows = 0;
@@ -5022,9 +5048,10 @@ void ath12k_wifi8_dp_tx_congestion_recovery_handler(struct timer_list *t)
 
 	ret = ath12k_wifi8_dp_tx_proceed_drop(congstn, svc_data, cur_jiffies, drop);
 	if (ret)
-		ath12k_warn(ab, "drop msdu failed %d tx_desc_used_cnt %d\n",
-			    ret, used_cnt);
+		ath12k_warn(ab, "drop msdu failed %d used_cnt %u ppeds_used_cnt %u\n",
+			    ret, used_cnt, ppeds_used_cnt);
 
+skip_drop:
 	/* Store this congestion recovery event in the circular history buffer */
 	if (congstn->history && congstn->history_enable) {
 		struct ath12k_wifi8_congstn_history_entry *hist;
@@ -5036,8 +5063,10 @@ void ath12k_wifi8_dp_tx_congestion_recovery_handler(struct timer_list *t)
 		hist->timestamp = cur_jiffies;
 		hist->total_active_msdu = total_active_msdu;
 		hist->used_threshold = congstn->used_threshold;
-		hist->target_drop = target_drop;
+		hist->ppeds_used_threshold = congstn->ppeds_used_threshold;
+		hist->target_drop = total_drop;
 		hist->used_cnt = used_cnt;
+		hist->ppeds_used_cnt = ppeds_used_cnt;
 		hist->num_drop_flows = drop->num_flows;
 
 		for (hsvc = 0; hsvc < HAL_TQM_SERVICE_CATEGORY_MAX; hsvc++) {
@@ -5056,9 +5085,9 @@ void ath12k_wifi8_dp_tx_congestion_recovery_handler(struct timer_list *t)
 
 	congstn->last_drop_jiffies = cur_jiffies;
 
-skip_drop:
-	if (used_cnt > congstn->max_used)
-		congstn->max_used = used_cnt;
+out:
+	if (used_cnt + ppeds_used_cnt > congstn->max_used)
+		congstn->max_used = used_cnt + ppeds_used_cnt;
 
 	congstn->tick_counter++;
 	if (congstn->tick_counter >= congstn->scaling_factor) {
@@ -5099,6 +5128,11 @@ int ath12k_wifi8_dp_tx_congestion_control_init(struct ath12k_dp *dp)
 	congstn->used_threshold =
 			ATH12K_DP_TX_GET_USED_THRSHLD(ATH12K_NUM_POOL_TX_DESC,
 						      ATH12K_HW_MAX_ACTIVE_QUEUES);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	congstn->ppeds_used_threshold =
+		ATH12K_DP_TX_GET_USED_THRSHLD(ath12k_ppeds_desc_params.num_ppeds_desc,
+					      1);
+#endif
 	congstn->flow_drop_grace_percent = ATH12K_DP_TX_SORT_FLOW_DROP_GRACE;
 
 	/* Enable sorting for flows in service category.*/
@@ -5273,7 +5307,10 @@ ssize_t ath12k_wifi8_dp_tx_dump_congestion_ctrl_stats(struct ath12k_dp *dp,
 	struct ath12k_dp_msdu_q_info *msduq;
 	enum hal_tqm_service_category svc;
 	struct ath12k_hal *hal;
-	u32 threshold_count;
+	u32 threshold_count, used_cnt, ppeds_used_cnt;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	struct ppe_ds_wlan_rxfill_ring_info info = { };
+#endif
 	int len = 0;
 
 	dp = ath12k_get_central_dp(dp);
@@ -5292,6 +5329,10 @@ ssize_t ath12k_wifi8_dp_tx_dump_congestion_ctrl_stats(struct ath12k_dp *dp,
 
 	hal = &dp->ab->hal;
 
+	ath12k_wifi8_dp_tx_get_desc_used_cnt(dp->dp_hw_grp,
+					     &used_cnt,
+					     &ppeds_used_cnt);
+
 	len += scnprintf(buf + len, size - len,
 			 "Congestion Control Statistics:\n");
 	len += scnprintf(buf + len, size - len,
@@ -5308,10 +5349,24 @@ ssize_t ath12k_wifi8_dp_tx_dump_congestion_ctrl_stats(struct ath12k_dp *dp,
 			 congstn->interval);
 	len += scnprintf(buf + len, size - len,
 			 "tx_desc_used_cnt:          %u\n",
-			 ath12k_wifi8_dp_tx_get_desc_used_cnt(dp->dp_hw_grp));
+			 used_cnt);
+	len += scnprintf(buf + len, size - len,
+			 "ppeds_tx_desc_used_cnt:    %u\n",
+			 ppeds_used_cnt);
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	ath12k_ppeds_get_rxfill_ring_info_v2(dp->ppe.ds_node_id,
+					     &info);
+	len += scnprintf(buf + len, size - len,
+			 "ppeds_refill_cnt:          %u\n",
+			 info.wifi8.prim_active_cnt + info.wifi8.secd_active_cnt);
+#endif
 	len += scnprintf(buf + len, size - len,
 			 "used_threshold:            %u\n",
 			 congstn->used_threshold);
+	len += scnprintf(buf + len, size - len,
+			 "ppeds_used_threshold:      %u\n",
+			 congstn->ppeds_used_threshold);
 	len += scnprintf(buf + len, size - len,
 			 "max_used:                  %u\n",
 			 congstn->max_used);
@@ -5450,7 +5505,7 @@ ssize_t ath12k_wifi8_dp_tx_dump_congestion_recovery_hist(struct ath12k_dp *dp,
 	}
 
 	len += scnprintf(buf + len, size - len,
-			 "  seq  timestamp    used_cnt  threshold  total_msdu  target_drop  num_flows\n");
+			 "  seq  timestamp    used_cnt  ppeds_used_cnt  threshold  ppeds_threshold  total_msdu  target_drop  num_flows\n");
 
 	/* history_head points to the next write slot.
 	 * The last written (latest) entry is at (history_head - 1).
@@ -5464,11 +5519,13 @@ ssize_t ath12k_wifi8_dp_tx_dump_congestion_recovery_hist(struct ath12k_dp *dp,
 		seq = congstn->history_count - i;
 
 		len += scnprintf(buf + len, size - len,
-				 "  %-4u %-12lu %-9u %-10u %-11u %-12u %u\n",
+				 "  %-4u %-12lu %-9u %-15u %-10u %-16u %-11u %-12u %u\n",
 				 seq,
 				 hist->timestamp,
 				 hist->used_cnt,
+				 hist->ppeds_used_cnt,
 				 hist->used_threshold,
+				 hist->ppeds_used_threshold,
 				 hist->total_active_msdu,
 				 hist->target_drop,
 				 hist->num_drop_flows);
@@ -5561,6 +5618,11 @@ int ath12k_wifi8_dp_tx_set_congestion_ctrl_param(struct ath12k_dp *dp,
 		congstn->max_used = 0;
 		ath12k_dbg(dp->ab, ATH12K_DBG_DP_TX,
 			   "congestion ctrl: Reset max used\n");
+		break;
+	case ATH12K_CONGSTN_CTRL_PPEDS_USED_THRESHOLD:
+		congstn->ppeds_used_threshold = value;
+		ath12k_dbg(dp->ab, ATH12K_DBG_DP_TX,
+			   "congestion ctrl: ppeds_used_threshold set to %u\n", value);
 		break;
 	default:
 		ath12k_warn(dp->ab,

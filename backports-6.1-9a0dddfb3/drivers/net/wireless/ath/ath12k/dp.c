@@ -1909,6 +1909,7 @@ void ath12k_dp_ppeds_tx_desc_cleanup(struct ath12k_base *ab)
 {
 	struct ath12k_ppeds_tx_desc_info *ppeds_tx_descs;
 	struct ath12k_dp_hw_group *dp_hw_grp = ath12k_ab_to_dp(ab)->dp_hw_grp;
+	u32 tx_desc_free_cnt = 0;
 	struct sk_buff *skb;
 	int i, j;
 
@@ -1939,9 +1940,11 @@ void ath12k_dp_ppeds_tx_desc_cleanup(struct ath12k_base *ab)
 
 			list_add_tail(&ppeds_tx_descs[j].list,
 				      &dp_hw_grp->ppeds_tx_desc_free_list);
+			tx_desc_free_cnt++;
 		}
 	}
 
+	this_cpu_sub(dp_hw_grp->pcpu_tx->ppeds_cnt, tx_desc_free_cnt);
 	dp_hw_grp->ppeds_tx_desc_reuse_list_len = 0;
 
 	spin_unlock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
@@ -3022,7 +3025,6 @@ void ath12k_dp_umac_tx_desc_cleanup(struct ath12k_base *ab)
 	dp = ath12k_ab_to_dp(ab);
 	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
 	int cpu;
-	u32 *tx_desc_used_cnt;
 
 	/* TX Descriptor cleanup */
 	for (pool_id = 0; pool_id < ATH12K_HW_MAX_QUEUES; pool_id++) {
@@ -3087,10 +3089,9 @@ void ath12k_dp_umac_tx_desc_cleanup(struct ath12k_base *ab)
 
 	rcu_read_unlock();
 
-	for_each_possible_cpu(cpu) {
-		tx_desc_used_cnt = per_cpu_ptr(dp_hw_grp->tx_desc_used_cnt, cpu);
-		*tx_desc_used_cnt = 0;
-	}
+	for_each_possible_cpu(cpu)
+		per_cpu(dp_hw_grp->pcpu_tx->cnt, cpu) = 0;
+
 }
 EXPORT_SYMBOL(ath12k_dp_umac_tx_desc_cleanup);
 

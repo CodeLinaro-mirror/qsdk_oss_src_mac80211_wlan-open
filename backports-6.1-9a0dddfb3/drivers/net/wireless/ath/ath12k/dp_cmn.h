@@ -160,6 +160,11 @@ struct ath12k_dp_hw {
 	DECLARE_HASHTABLE(peer_hash, ATH12K_DP_PEER_HASH_BITS);
 };
 
+struct ath12k_dp_desc_used_stats_pcpu {
+	u32 cnt;
+	u32 ppeds_cnt;
+};
+
 struct ath12k_dp_hw_group {
 	struct ath12k_dp_hw_link hw_links[ATH12K_GROUP_MAX_RADIO];
 	struct ath12k_dp *dp[ATH12K_MAX_SOCS];
@@ -171,7 +176,7 @@ struct ath12k_dp_hw_group {
 	struct ath12k_tx_desc_info **txbaddr;
 	struct list_head tx_desc_free_list[ATH12K_HW_MAX_QUEUES];
 	struct list_head tx_spl_desc_free_list[ATH12K_HW_MAX_QUEUES];
-	u32 __percpu *tx_desc_used_cnt;
+	struct ath12k_dp_desc_used_stats_pcpu __percpu *pcpu_tx;
 	/* protects the free and used desc lists */
 	spinlock_t tx_desc_lock[ATH12K_HW_MAX_QUEUES];
 	bool tx_desc_initialized;

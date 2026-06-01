@@ -74,6 +74,7 @@ struct ath12k_ppeds_desc_params ath12k_ppeds_desc_params = {
 	.num_ppeds_desc = ATH12K_NUM_POOL_PPEDS_TX_DESC_DEFAULT,
 	.ppeds_hotlist_len = ATH12K_PPEDS_HOTLIST_LEN_MAX_DEFAULT,
 };
+EXPORT_SYMBOL(ath12k_ppeds_desc_params);
 
 module_param_named(num_ppeds_tx_desc, ath12k_ppeds_desc_params.num_ppeds_desc, uint, 0644);
 MODULE_PARM_DESC(num_ppeds_tx_desc, "Number of PPEDS descriptors");
@@ -5176,8 +5177,8 @@ static struct ath12k_hw_group *ath12k_core_hw_group_alloc(struct ath12k_base *ab
 		return NULL;
 	}
 
-	ag->dp_hw_grp->tx_desc_used_cnt = alloc_percpu(u32);
-	if (!ag->dp_hw_grp->tx_desc_used_cnt) {
+	ag->dp_hw_grp->pcpu_tx = alloc_percpu(typeof(*ag->dp_hw_grp->pcpu_tx));
+	if (!ag->dp_hw_grp->pcpu_tx) {
 		kfree(ag->dp_hw_grp);
 		kfree(ag);
 		return NULL;
@@ -5249,7 +5250,7 @@ static void ath12k_core_hw_group_free(struct ath12k_hw_group *ag)
 	ath12k_sta_hlist_destroy(ag);
 	ath12k_sta_hlist_head_destroy(ag);
 	spin_unlock_bh(&ag->ahsta_lock);
-	free_percpu(ag->dp_hw_grp->tx_desc_used_cnt);
+	free_percpu(ag->dp_hw_grp->pcpu_tx);
 	kfree(ag->dp_hw_grp);
 	kfree(ag);
 

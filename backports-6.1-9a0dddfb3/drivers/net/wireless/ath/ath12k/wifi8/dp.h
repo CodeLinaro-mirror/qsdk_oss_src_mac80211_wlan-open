@@ -120,7 +120,9 @@ struct ath12k_wifi8_dp_stats {
  * struct ath12k_wifi8_congstn_history_entry - single congestion recovery event record
  * @timestamp:         jiffies at the time of the handler invocation
  * @used_cnt:          tx_desc_used_cnt at the time of the invocation
+ * @ppeds_used_cnt:    ppeds_tx_desc_used_cnt at the time of the invocation
  * @used_threshold:    congestion threshold configured
+ * @ppeds_used_threshold:    congestion threshold for PPEDS configured
  * @total_active_msdu: total active MSDUs across all service categories
  * @target_drop:       number of MSDUs targeted for removal
  * @num_drop_flows:    number of flows selected for drop
@@ -132,8 +134,10 @@ struct ath12k_wifi8_congstn_history_entry {
 	unsigned long timestamp;
 	u32 total_active_msdu;
 	u32 used_threshold;
+	u32 ppeds_used_threshold;
 	u32 target_drop;
 	u32 used_cnt;
+	u32 ppeds_used_cnt;
 	u8  num_drop_flows;
 	u8  svc_num_flows[HAL_TQM_SERVICE_CATEGORY_MAX];
 	u32 svc_total_msdu[HAL_TQM_SERVICE_CATEGORY_MAX];
@@ -150,6 +154,7 @@ struct ath12k_wifi8_dp_congestion_control {
 	bool start;
 	u32 interval;
 	u32 used_threshold;
+	u32 ppeds_used_threshold;
 	u32 max_used;
 	u8 flow_drop_grace_percent;
 	u32 weights[HAL_TQM_SERVICE_CATEGORY_MAX];
