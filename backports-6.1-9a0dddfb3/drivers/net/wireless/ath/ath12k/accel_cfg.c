@@ -25,6 +25,19 @@ u32 ath_encode_mlo_metadata(u8 link_id)
 	return mlo_metadata;
 }
 
+u32 ath_encode_metadata(u8 link_id, u16 msduq_peer)
+{
+	u32 metadata = 0;
+
+	if (link_id != ATH12k_MLO_LINK_ID_INVALID)
+		metadata |= ath_encode_mlo_metadata(link_id);
+
+	if (msduq_peer != SDWF_PEER_MSDUQ_INVALID)
+		metadata |= ath_encode_sdwf_metadata(msduq_peer);
+
+	return metadata;
+}
+
 /**
  * ath12k_mlo_info_get() - Get MLO information
  * @node_id: DS node identifier
@@ -181,9 +194,12 @@ u32 ath12k_get_metadata_info(struct ath_dp_metadata_param *md_param)
 	struct  wireless_dev *wdev = NULL;
 	struct  ieee80211_hw *hw;
 	u32 metadata = 0;
-	u16 msduq_peer;
+	u16 msduq_peer = SDWF_PEER_MSDUQ_INVALID;
 	u8 *dest_mac = NULL;
 	u8 link_id = ATH12k_MLO_LINK_ID_INVALID;
+
+	if (!md_param)
+		return metadata;
 
 	if (md_param->is_mlo_param_valid) {
 		dest_dev = md_param->mlo_param.in_dest_dev;
@@ -214,18 +230,13 @@ u32 ath12k_get_metadata_info(struct ath_dp_metadata_param *md_param)
 
 	ath12k_get_ingress_mlo_dev_info(dest_dev, wdev, dest_mac, &link_id, md_param);
 
-	/* Encode MLO metadata only if link_id updated */
-	if (link_id != ATH12k_MLO_LINK_ID_INVALID)
-		metadata |= ath_encode_mlo_metadata(link_id);
-
 	if (md_param->is_sawf_param_valid) {
 		msduq_peer = ath12k_sdwf_get_msduq_peer(wdev, dest_mac,
 				&md_param->sawf_param,
 				md_param->is_scs_mscs);
-		/* Encode SDWF metadata only if msduq_id updated */
-		if (msduq_peer != SDWF_PEER_MSDUQ_INVALID)
-			metadata |= ath_encode_sdwf_metadata(msduq_peer);
 	}
+
+	metadata = ath_encode_metadata(link_id, msduq_peer);
 
 	if (md_param->ast_param.valid) {
 		ath12k_dbg(NULL, ATH12K_DBG_PEER, "ast_info:%d hw_peer_id:%d\n",

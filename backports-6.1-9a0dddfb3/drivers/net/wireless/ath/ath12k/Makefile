@@ -79,7 +79,8 @@ ath12k-$(CPTCFG_QCN_EXTN) += \
 	qcn_extns/mgmt_rx_extn.o \
 	qcn_extns/dp_tx_extn.o \
 	qcn_extns/scan_extn.o \
-	qcn_extns/cbs_extn.o
+	qcn_extns/cbs_extn.o \
+	qcn_extns/sdwf_extn.o
 
 ath12k-$(CPTCFG_QCN_EXTN_MESH_SUPPORT) += \
 	qcn_extns/mesh-extn.o

@@ -54,7 +54,6 @@ struct ath12k_afc_host_request;
 struct ath12k_base;
 struct ath12k_hw_group;
 
-
 struct ath12k_wifi_generic_params {
 	u32 command;
 	u32 value;
@@ -200,6 +199,7 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_GET_TID_MAP_PRECEDENCE = 525,
 	QCA_NL80211_VENDOR_SUBCMD_HW_BLOCKED_CHANS = 526,
 	QCA_NL80211_VENDOR_SUBCMD_CH_SWITCH_REASON = 527,
+	QCA_NL80211_VENDOR_SUBCMD_SDWF_PEER_MSDUQ_EVENT = 528,
 };
 
 /**
@@ -360,6 +360,7 @@ enum qca_nl80211_vendor_events {
 	 */
 	QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_INDEX = 19,
 	QCA_NL80211_VENDOR_SUBCMD_CH_SWITCH_REASON_INDEX = 20,
+	QCA_NL80211_VENDOR_SUBCMD_SDWF_PEER_MSDUQ_EVENT_INDEX = 21,
 };
 
 /**
@@ -6554,7 +6555,91 @@ enum qca_wlan_vendor_attr_tid_map_precedence {
 	QCA_WLAN_VENDOR_ATTR_TID_MAP_PRECEDENCE_TID_DEF,
 	QCA_WLAN_VENDOR_ATTR_TID_MAP_PRECEDENCE_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_TID_MAP_PRECEDENCE_MAX =
-		QCA_WLAN_VENDOR_ATTR_TID_MAP_PRECEDENCE_AFTER_LAST - 1,
+	QCA_WLAN_VENDOR_ATTR_TID_MAP_PRECEDENCE_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_sdwf_peer_msduq_params - Attributes used in
+ * Peer MSDUQ event NL Msg (QCA_NL80211_VENDOR_SUBCMD_SDWF_PEER_MSDUQ_EVENT).
+ *
+ * @QCA_WLAN_VENDOR_ATTR_SDWF_PEER_MSDUQ_HW_LINK_ID: u16 attribute
+ * Represents hardware link id on which the station is connected.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_SDWF_PEER_MSDUQ_MAC: 6bytes mac address attribute
+ * Represents link mac address of the station.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_SDWF_PEER_MSDUQ_MLD_MAC: 6bytes mac address attribute
+ * Represents mld mac address of the station if it is MLO capable.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_SDWF_PEER_MSDUQ_ID: u8 attribute
+ * Represents msduq id for which notification is being sent.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_SDWF_PEER_MSDUQ_EVENT_TYPE: u8 attribute
+ * Represents event type (add/delete/update)
+ *
+ * @QCA_WLAN_VENDOR_ATTR_SDWF_PEER_MSDUQ_SVC_ID: u8 attribute
+ * Represents service class id.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_SDWF_PEER_MSDUQ_SVC_TYPE: u8 attribute
+ * Represents service class type.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_SDWF_PEER_MSDUQ_SVC_PRIORITY: u8 attribute
+ * Represents service class priority.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_SDWF_PEER_MSDUQ_TID: u8 attribute
+ * Represents service class traffic identifier (TID).
+ *
+ * @QCA_WLAN_VENDOR_ATTR_SDWF_PEER_MSDUQ_AC: u8 attribute
+ * Represents service class access category (AC).
+ *
+ * @QCA_WLAN_VENDOR_ATTR_SDWF_PEER_MSDUQ_MARK_METADATA: u32 attribute
+ * Represents mark metadata.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_SDWF_PEER_MSDUQ_SERVICE_INTERVAL: u32 attribute
+ * Represents service interval (in milliseconds).
+ *
+ * @QCA_WLAN_VENDOR_ATTR_SDWF_PEER_MSDUQ_BURST_SIZE: u32 attribute
+ * Represents burst size (in bytes).
+ *
+ * @QCA_WLAN_VENDOR_ATTR_SDWF_PEER_MSDUQ_DELAY_BOUND: u32 attribute
+ * Represents delay bound (in milliseconds).
+ *
+ * @QCA_WLAN_VENDOR_ATTR_SDWF_PEER_MSDUQ_MIN_THROUGHPUT: u32 attribute
+ * Represents minimum throughput (in kbps).
+ */
+enum qca_wlan_vendor_attr_sdwf_peer_msduq_params {
+	QCA_WLAN_VENDOR_ATTR_SDWF_PEER_MSDUQ_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_SDWF_PEER_MSDUQ_HW_LINK_ID,
+	QCA_WLAN_VENDOR_ATTR_SDWF_PEER_MSDUQ_MAC,
+	QCA_WLAN_VENDOR_ATTR_SDWF_PEER_MSDUQ_MLD_MAC,
+	QCA_WLAN_VENDOR_ATTR_SDWF_PEER_MSDUQ_ID,
+	QCA_WLAN_VENDOR_ATTR_SDWF_PEER_MSDUQ_EVENT_TYPE,
+	QCA_WLAN_VENDOR_ATTR_SDWF_PEER_MSDUQ_SVC_ID,
+	QCA_WLAN_VENDOR_ATTR_SDWF_PEER_MSDUQ_SVC_TYPE,
+	QCA_WLAN_VENDOR_ATTR_SDWF_PEER_MSDUQ_SVC_PRIORITY,
+	QCA_WLAN_VENDOR_ATTR_SDWF_PEER_MSDUQ_TID,
+	QCA_WLAN_VENDOR_ATTR_SDWF_PEER_MSDUQ_AC,
+	QCA_WLAN_VENDOR_ATTR_SDWF_PEER_MSDUQ_MARK_METADATA,
+	QCA_WLAN_VENDOR_ATTR_SDWF_PEER_MSDUQ_SERVICE_INTERVAL,
+	QCA_WLAN_VENDOR_ATTR_SDWF_PEER_MSDUQ_BURST_SIZE,
+	QCA_WLAN_VENDOR_ATTR_SDWF_PEER_MSDUQ_DELAY_BOUND,
+	QCA_WLAN_VENDOR_ATTR_SDWF_PEER_MSDUQ_MIN_THROUGHPUT,
+
+	/* Keep last */
+	QCA_WLAN_VENDOR_ATTR_SDWF_PEER_MSDUQ_LAST,
+	QCA_WLAN_VENDOR_ATTR_SDWF_PEER_MSDUQ_MAX =
+		QCA_WLAN_VENDOR_ATTR_SDWF_PEER_MSDUQ_LAST - 1,
+};
+
+enum qca_wlan_vendor_sawf_peer_msduq_event_type {
+	QCA_WLAN_VENDOR_SDWF_PEER_MSDUQ_EVENT_ADD = 0,
+	QCA_WLAN_VENDOR_SDWF_PEER_MSDUQ_EVENT_DELETE = 1,
+	QCA_WLAN_VENDOR_SDWF_PEER_MSDUQ_EVENT_UPDATE = 2,
+};
+
+enum qca_wlan_vendor_sdwf_peer_msduq_svc_type {
+	QCA_WLAN_VENDOR_SDWF_PEER_MSDUQ_SVC_TYPE_DL = 0,
+	QCA_WLAN_VENDOR_SDWF_PEER_MSDUQ_SVC_TYPE_UL = 1,
 };
 
 #define ATH12K_VENDOR_PUT(vendor_event, type, attr, param)             \
@@ -6687,4 +6772,46 @@ enum qca_wlan_vendor_attr_tdma_schedule {
 		QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_AFTER_LAST - 1,
 };
 
+/**
+ * struct ath12k_sdwf_msduq_evt_data - Per-peer MSDUQ vendor event payload.
+ *
+ * @hw_link_id:       Hardware link ID of the radio the peer is associated on.
+ * @link_mac:         Link MAC address of the peer.
+ * @mld_mac:          MLD MAC address (valid only when @mlo is true).
+ * @mlo:              True when the peer is an MLO peer.
+ * @msduq_id:         MSDUQ identifier within the peer's QoS context.
+ * @svc_id:           Service class ID assigned to this MSDUQ.
+ * @svc_type:         Service class type (DL=0, UL=1).
+ * @priority:         Service class priority.
+ * @tid:              Traffic identifier mapped to this MSDUQ.
+ * @ac:               Access category mapped to this MSDUQ.
+ * @mark_metadata:    SKB mark/metadata value for this flow.
+ * @service_interval: Service interval in milliseconds.
+ * @burst_size:       Burst size in bytes.
+ * @delay_bound:      Delay bound in milliseconds.
+ * @min_throughput:   Minimum throughput in kbps.
+ * @peer_id:          Peer ID used to look up the peer.
+ */
+struct ath12k_sdwf_msduq_evt_data {
+	u16 hw_link_id;
+	u8 link_mac[ETH_ALEN];
+	u8 mld_mac[ETH_ALEN];
+	bool mlo;
+	u8 msduq_id;
+	u8 svc_id;
+	u8 svc_type;
+	u8 priority;
+	u8 tid;
+	u8 ac;
+	u32 mark_metadata;
+	u32 service_interval;
+	u32 burst_size;
+	u32 delay_bound;
+	u32 min_throughput;
+	u16 peer_id;
+};
+
+void
+ath12k_vendor_sdwf_msduq_send_event(struct ath12k *ar,
+				    const struct ath12k_sdwf_msduq_evt_data *e);
 #endif
