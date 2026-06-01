@@ -998,6 +998,14 @@ struct ieee80211_chanctx {
 	u8 csa_batch_max_count;
 	bool csa_batch_queued; /* set when batch work is first armed */
 
+	struct ieee80211_local *local;
+
+	/* Shared DFS CAC hrtimer and workqueue to complete the CAC for this
+	 * chanctx.
+	 */
+	struct hrtimer dfs_cac_timer;
+	struct wiphy_work dfs_cac_timer_work;
+
 	/* MUST be last - ends in a flexible-array member. */
 	struct ieee80211_chanctx_conf conf;
 };
@@ -1188,8 +1196,6 @@ struct ieee80211_link_data {
 	int ap_power_level; /* in dBm */
 
 	bool radar_required;
-	struct hrtimer dfs_cac_timer;
-	struct wiphy_work dfs_cac_timer_work;
 
 	union {
 		struct ieee80211_link_data_managed mgd;
@@ -3053,6 +3059,13 @@ void ieee80211_link_release_channel(struct ieee80211_link_data *link);
 void ieee80211_link_vlan_copy_chanctx(struct ieee80211_link_data *link);
 void ieee80211_link_copy_chanctx_to_vlans(struct ieee80211_link_data *link,
 					  bool clear);
+struct ieee80211_chanctx *
+ieee80211_link_get_chanctx(struct ieee80211_link_data *link);
+void ieee80211_handle_cac_stop(struct wiphy *wiphy,
+			       struct ieee80211_sub_if_data *sdata,
+			       struct ieee80211_link_data *link,
+			       struct ieee80211_bss_conf *link_conf,
+			       bool *cac_aborted);
 int ieee80211_chanctx_refcount(struct ieee80211_local *local,
 			       struct ieee80211_chanctx *ctx);
 

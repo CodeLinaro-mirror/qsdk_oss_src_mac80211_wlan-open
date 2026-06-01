@@ -497,6 +497,11 @@ void cfg80211_background_cac_done_wk(struct work_struct *work);
 
 void cfg80211_background_cac_abort_wk(struct work_struct *work);
 
+void cfg80211_set_cac_started(struct cfg80211_registered_device *rdev,
+			      struct wireless_dev *wdev,
+			      unsigned int link_id,
+			      const struct cfg80211_chan_def *chandef);
+
 bool cfg80211_any_wiphy_oper_chan(struct wiphy *wiphy,
 				  struct ieee80211_channel *chan);
 

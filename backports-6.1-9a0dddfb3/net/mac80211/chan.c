@@ -84,7 +84,7 @@ ieee80211_chanctx_find_monitor_link(struct ieee80211_chanctx *ctx)
 	return NULL;
 }
 
-static struct ieee80211_chanctx *
+struct ieee80211_chanctx *
 ieee80211_link_get_chanctx(struct ieee80211_link_data *link)
 {
 	struct ieee80211_local *local __maybe_unused = link->sdata->local;
@@ -762,6 +762,11 @@ ieee80211_alloc_chanctx(struct ieee80211_local *local,
 	ctx->conf.radio_idx = radio_idx;
 	ctx->radar_detected = false;
 	_ieee80211_recalc_chanctx_min_def(local, ctx, NULL, false);
+
+	ctx->local = local;
+	hrtimer_init(&ctx->dfs_cac_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	ctx->dfs_cac_timer.function = ieee80211_dfs_cac_timeout;
+	wiphy_work_init(&ctx->dfs_cac_timer_work, ieee80211_dfs_cac_timer_work);
 
 	return ctx;
 }
@@ -2057,6 +2062,9 @@ void __ieee80211_link_release_channel(struct ieee80211_link_data *link,
 					 lockdep_is_held(&local->hw.wiphy->mtx));
 	if (!conf)
 		return;
+
+	/* Link is going down; clear deferred_up to avoid stale DFS state. */
+	link_conf->deferred_up = false;
 
 	ctx = container_of(conf, struct ieee80211_chanctx, conf);
 

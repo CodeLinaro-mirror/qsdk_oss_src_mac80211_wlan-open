@@ -12487,6 +12487,8 @@ static int nl80211_start_radar_detection(struct sk_buff *skb,
 	wdev->links[link_id].cac_start_time = jiffies;
 	wdev->links[link_id].cac_time_ms = cac_time_ms;
 
+	cfg80211_set_cac_started(rdev, wdev, link_id, &chandef);
+
 	if (nla_get_flag(info->attrs[NL80211_ATTR_SKIP_CAC])) {
 		cfg80211_cac_event(dev, &chandef,
 				NL80211_RADAR_CAC_FINISHED,

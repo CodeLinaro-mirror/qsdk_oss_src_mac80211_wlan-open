@@ -1241,6 +1241,30 @@ void cfg80211_awgn_event(struct wiphy *wiphy, struct cfg80211_chan_def *chandef,
 }
 EXPORT_SYMBOL(cfg80211_awgn_event);
 
+static void cfg80211_clear_cac_started(struct cfg80211_registered_device *rdev,
+				       const struct cfg80211_chan_def *chandef,
+				       unsigned int link_id,
+				       const char *netdev_name)
+{
+	struct wireless_dev *tmp_wdev;
+	unsigned int tmp_link_id;
+
+	list_for_each_entry(tmp_wdev, &rdev->wiphy.wdev_list, list) {
+		for_each_valid_link(tmp_wdev, tmp_link_id) {
+			struct cfg80211_chan_def *tmp_chandef =
+				wdev_chandef(tmp_wdev, tmp_link_id);
+
+			if (!tmp_chandef || !tmp_chandef->chan)
+				continue;
+
+			if (tmp_chandef->chan != chandef->chan)
+				continue;
+
+			tmp_wdev->links[tmp_link_id].cac_started = false;
+		}
+	}
+}
+
 void cfg80211_cac_event(struct net_device *netdev,
 			const struct cfg80211_chan_def *chandef,
 			enum nl80211_radar_event event, gfp_t gfp,
@@ -1273,7 +1297,8 @@ void cfg80211_cac_event(struct net_device *netdev,
 		cfg80211_sched_dfs_chan_update(rdev);
 		fallthrough;
 	case NL80211_RADAR_CAC_ABORTED:
-		wdev->links[link_id].cac_started = false;
+		cfg80211_clear_cac_started(rdev, chandef, link_id,
+					   netdev->name);
 		break;
 	case NL80211_RADAR_CAC_STARTED:
 		wdev->links[link_id].cac_started = true;
@@ -1307,6 +1332,63 @@ void cfg80211_punct_cac_finished(struct net_device *netdev,
 	nl80211_radar_notify(rdev, chandef, NL80211_RADAR_CAC_FINISHED, netdev, gfp);
 }
 EXPORT_SYMBOL(cfg80211_punct_cac_finished);
+
+static bool cfg80211_link_beaconing_enabled(struct wireless_dev *wdev,
+					    unsigned int link_id)
+{
+	switch (wdev->iftype) {
+	case NL80211_IFTYPE_AP:
+	case NL80211_IFTYPE_P2P_GO:
+		return wdev->links[link_id].ap.beacon_interval;
+	case NL80211_IFTYPE_ADHOC:
+		return wdev->u.ibss.ssid_len;
+	case NL80211_IFTYPE_MESH_POINT:
+		return wdev->u.mesh.id_len;
+	default:
+		return false;
+	}
+}
+
+void cfg80211_set_cac_started(struct cfg80211_registered_device *rdev,
+			      struct wireless_dev *wdev,
+			      unsigned int link_id,
+			      const struct cfg80211_chan_def *chandef)
+{
+	struct wireless_dev *tmp_wdev;
+	unsigned int tmp_link_id;
+	unsigned long cac_start_time;
+	unsigned int cac_time_ms;
+
+	lockdep_assert_wiphy(&rdev->wiphy);
+
+	cac_start_time = wdev->links[link_id].cac_start_time;
+	cac_time_ms = wdev->links[link_id].cac_time_ms;
+
+	list_for_each_entry(tmp_wdev, &rdev->wiphy.wdev_list, list) {
+		for_each_valid_link(tmp_wdev, tmp_link_id) {
+			struct cfg80211_chan_def *tmp_chandef;
+
+			if (tmp_wdev == wdev &&
+			    tmp_link_id == link_id)
+				continue;
+
+			if (!cfg80211_link_beaconing_enabled(tmp_wdev, tmp_link_id))
+				continue;
+
+			tmp_chandef = wdev_chandef(tmp_wdev, tmp_link_id);
+			if (!tmp_chandef || !tmp_chandef->chan)
+				continue;
+
+			if (tmp_chandef->chan != chandef->chan)
+				continue;
+
+			tmp_wdev->links[tmp_link_id].cac_started = true;
+			tmp_wdev->links[tmp_link_id].cac_start_time =
+				cac_start_time;
+			tmp_wdev->links[tmp_link_id].cac_time_ms = cac_time_ms;
+		}
+	}
+}
 
 static void
 __cfg80211_background_cac_event(struct cfg80211_registered_device *rdev,
