@@ -409,8 +409,13 @@ EXPORT_SYMBOL(ath12k_telemetry_get_sla_num_pkts);
 #ifdef CPTCFG_ATH12K_DEBUGFS
 int ath12k_telemetry_get_phy_nf(struct ath12k *ar)
 {
+	struct ath12k_base *ab = ar->ab;
 	struct debug_htt_stats_req *stats_req;
 	int ret;
+
+	if (!ab->ag || test_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ab->ag->flags) ||
+	    test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags))
+		return -ESHUTDOWN;
 
 	stats_req = kzalloc(sizeof(*stats_req) + ATH12K_HTT_STATS_BUF_SIZE,
 			    GFP_KERNEL);
