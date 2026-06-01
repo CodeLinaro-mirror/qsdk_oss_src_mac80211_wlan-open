@@ -1059,9 +1059,6 @@ ath12k_wifi7_dp_process_reo_rx_packets(struct ath12k_dp *dp,
 		hw_link_id = ath12k_dp_validate_hw_link_id(spd_desc_l->reo.src_link_id);
 		tid = rx_mpdu_info->tid;
 
-		active_tid_mask |= 1 << tid;
-		stats = &tid_stats[tid];
-
 		rx_mpdu_info->flow_info.peer_id =
 			ath12k_wifi7_dp_rx_get_peer_id(dp->ab, dp->peer_metadata_ver,
 						       rx_mpdu_info->peer_meta_data);
@@ -1155,6 +1152,9 @@ ath12k_wifi7_dp_process_reo_rx_packets(struct ath12k_dp *dp,
 			memset(tid_stats, 0, sizeof(tid_stats));
 			active_tid_mask = 0;
 		}
+
+		active_tid_mask |= 1 << tid;
+		stats = &tid_stats[tid];
 
 		stats->received_frm_reo_cnt++;
 		stats->received_frm_reo_bytes += rx_msdu_info->msdu_length;
