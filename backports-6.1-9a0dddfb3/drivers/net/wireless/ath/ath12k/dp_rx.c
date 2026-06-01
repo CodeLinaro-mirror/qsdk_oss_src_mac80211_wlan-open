@@ -1400,8 +1400,8 @@ void ath12k_dp_fst_core_map_init(struct ath12k_base *ab)
 	int i;
 	int core_map_index = 0;
 
-	for (i = 0; i < 4; i++) {
-		fst_config->fst_core_map[i] = 0xf;
+	for (i = 0; i < ATH12K_DP_FST_NUM_CORES; i++) {
+		fst_config->fst_core_map[i] = ATH12K_DP_MAX_FST_CORE_MASK;
 		if ((fst_core_mask >> i) & 0x1) {
 			fst_config->fst_core_map[core_map_index] = i;
 			core_map_index++;
@@ -1414,11 +1414,9 @@ void ath12k_dp_fst_core_map_init(struct ath12k_base *ab)
 	ath12k_dbg(ab, ATH12K_DBG_DP_FST, "FST core_mask %x num_cores %d\n",
 		   fst_config->fst_core_mask, fst_config->fst_num_cores);
 
-	ath12k_dbg(ab, ATH12K_DBG_DP_FST, "FST core map %x %x %x %x\n",
-		   fst_config->fst_core_map[0],
-		   fst_config->fst_core_map[1],
-		   fst_config->fst_core_map[2],
-		   fst_config->fst_core_map[3]);
+	for (i = 0; i < ATH12K_DP_FST_NUM_CORES; i++)
+		ath12k_dbg(ab, ATH12K_DBG_DP_FST, "FST core map[%d] %x\n",
+			   i, fst_config->fst_core_map[i]);
 }
 
 void ath12k_dp_rx_fst_init(struct ath12k_base *ab)

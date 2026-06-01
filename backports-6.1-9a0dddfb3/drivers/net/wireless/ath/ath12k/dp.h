@@ -902,12 +902,13 @@ struct ath12k_device_dp_stats {
 	u32 rx_pkt_null_frame_handled;
 };
 
+#define ATH12K_DP_FST_NUM_CORES NR_CPUS
 #define ATH12K_DP_MIN_FST_CORE_MASK 0x1
-#define ATH12K_DP_MAX_FST_CORE_MASK 0xf
+#define ATH12K_DP_MAX_FST_CORE_MASK ((1 << ATH12K_DP_FST_NUM_CORES) - 1)
 
 struct dp_fst_config {
 	u32 fst_core_mask;
-	u8 fst_core_map[4];
+	u8 fst_core_map[ATH12K_DP_FST_NUM_CORES];
 	u8 fst_num_cores;
 	u8 core_idx;
 };
