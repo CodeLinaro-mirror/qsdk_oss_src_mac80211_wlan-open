@@ -709,10 +709,12 @@ struct hal_rx_spd_data {
 	struct rx_tlv_info_1 tlv_info;
 	union {
 		u16 flags;
-		u16 first_sg_frame                              : 1,
-		    last_sg_frame                               : 1,
-		    is_frag                                     : 1,
-		    rsvd0                                       : 13;
+		struct {
+			u16 first_sg_frame             : 1,
+			    last_sg_frame              : 1,
+			    is_frag                    : 1,
+			    rsvd0                      : 13;
+		};
 	};
 	__le16 frame_ctl;
 	__le16 duration_id;

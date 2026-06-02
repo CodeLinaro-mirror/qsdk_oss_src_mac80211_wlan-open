@@ -460,19 +460,26 @@ ath12k_wifi7_dp_process_wbm_rx_packets(struct ath12k_dp *dp,
 	for (msdu_idx = 0; msdu_idx < num_msdus; msdu_idx++) {
 		struct hal_rx_spd_data *spd_desc_l = &rx_spd[msdu_idx];
 		struct ieee80211_rx_status rx_status = {0};
+		enum hal_wbm_rel_src_module src =
+			spd_desc_l->wbm.release_source_module;
 
 		rx_msdu_info = &spd_desc_l->rx_msdu_info;
 		rx_mpdu_info = &spd_desc_l->rx_mpdu_info;
-		rx_desc = (struct hal_rx_desc *)spd_desc_l->vaddr;
 
-		ath12k_wifi7_dp_extract_rx_spd_data(hal, spd_desc_l, rx_desc, 1);
-		hw_link_id = ath12k_wifi7_dp_rx_get_msdu_src_link(dp, rx_desc);
-
-		drop = ath12k_wifi7_wbm_drop_needed(spd_desc_l->wbm.release_source_module,
+		drop = ath12k_wifi7_wbm_drop_needed(src,
 						    spd_desc_l->wbm.reo_push_reason,
 						    spd_desc_l->wbm.reo_error_code,
 						    spd_desc_l->wbm.rxdma_push_reason,
 						    spd_desc_l->wbm.rxdma_error_code);
+
+		if (!drop)
+			ath12k_wifi7_dp_adjust_skb(spd_desc_l, NULL,
+						   &msdu_idx, hal_rx_desc_sz);
+
+		rx_desc = (struct hal_rx_desc *)spd_desc_l->vaddr;
+		ath12k_wifi7_dp_extract_rx_spd_data(hal, spd_desc_l, rx_desc, 1);
+		hw_link_id = ath12k_wifi7_dp_rx_get_msdu_src_link(dp, rx_desc);
+
 		if (drop) {
 			dev_kfree_skb_any(spd_desc_l->msdu);
 			spd_desc_l->msdu = NULL;
@@ -484,6 +491,8 @@ ath12k_wifi7_dp_process_wbm_rx_packets(struct ath12k_dp *dp,
 		partner_dp = ath12k_dp_hw_grp_to_dp(dp_hw_grp, device_id);
 		pdev_id = ath12k_hw_mac_id_to_pdev_id(partner_dp->hw_params,
 						      pdev_idx);
+
+		dp->device_stats.rx_wbm_rel_source[src][device_id]++;
 
 		dp_pdev = ath12k_dp_to_dp_pdev(partner_dp, pdev_id);
 		if (unlikely(!dp_pdev)) {
@@ -502,10 +511,6 @@ ath12k_wifi7_dp_process_wbm_rx_packets(struct ath12k_dp *dp,
 			}
 			continue;
 		}
-
-		if (spd_desc_l->msdu)
-			ath12k_wifi7_dp_adjust_skb(dp_pdev, spd_desc_l, NULL,
-						   &rx_status, &msdu_idx, hal_rx_desc_sz);
 
 		peer_metadata = rx_mpdu_info->peer_meta_data;
 		peer_id = ath12k_wifi7_dp_rx_get_peer_id(dp->ab, dp->peer_metadata_ver,
@@ -534,7 +539,6 @@ ath12k_wifi7_dp_process_wbm_rx_packets(struct ath12k_dp *dp,
 			ahvif->wmm_stats.total_wmm_rx_pkts[ahvif->wmm_stats.rx_type]++;
 		}
 
-
 		if (ath12k_dp_stats_enabled(dp_pdev)) {
 			if (ath12k_tid_stats_enabled(dp_pdev))
 				stats_needed = true;
@@ -543,7 +547,7 @@ ath12k_wifi7_dp_process_wbm_rx_packets(struct ath12k_dp *dp,
 				vow_stats_needed = true;
 		}
 
-		if (stats_needed) {
+		if (ahvif && stats_needed) {
 			int pkt_rsn = ath12k_wifi7_get_rx_frame_type(peer->rx_decap_type);
 
 			ath12k_tid_rx_stats(ahvif, tid, msdu_len, pkt_rsn);
@@ -642,10 +646,12 @@ ath12k_wifi7_dp_process_wbm_rx_packets(struct ath12k_dp *dp,
 						       1, hw_link_id);
 				break;
 			case HAL_REO_ENTR_RING_RXDMA_ECODE_MULTICAST_ECHO_ERR:
-				drop = ath12k_dp_rx_h_mec_drop(dp_pdev, ahvif,
-							       hw_link_id, peer_id);
-				if (drop)
-					drop_reason = ATH_RX_ECHO_ERR;
+				if (ahvif)
+					ath12k_dp_rx_h_mec_drop(dp_pdev, ahvif,
+								hw_link_id,
+								peer_id);
+				drop = true;
+				drop_reason = ATH_RX_ECHO_ERR;
 				break;
 			case HAL_REO_ENTR_RING_RXDMA_ECODE_DECRYPT_ERR:
 				dp_pdev->stats.telemetry_stats.rx_decrypt_err++;
@@ -718,6 +724,26 @@ ath12k_wifi7_dp_process_wbm_rx_packets(struct ath12k_dp *dp,
 	}
 
 	rcu_read_unlock();
+}
+
+static bool check_sg_termination(struct hal_srng *srng,
+				 int valid_entries)
+{
+	struct hal_wbm_release_ring_cc_rx *desc;
+	struct rx_msdu_desc *msdu_info;
+
+	if (valid_entries >= 9)
+		return true;
+
+	if (!valid_entries)
+		return false;
+
+	desc = (struct hal_wbm_release_ring_cc_rx *)
+		ath12k_hal_srng_fetch_entry(srng,
+					    valid_entries - 1);
+	msdu_info = &desc->rx_msdu_info;
+	return !(le32_to_cpu(msdu_info->info0) &
+			RX_MSDU_DESC_INFO0_MSDU_CONTINUATION);
 }
 
 int ath12k_wifi7_dp_rx_process_wbm_err(struct ath12k_dp *dp,
@@ -822,7 +848,8 @@ int ath12k_wifi7_dp_rx_process_wbm_err(struct ath12k_dp *dp,
 			 *       hence an MSDU at best will need 2 buffers.
 			 */
 			if (first_sg_frame) {
-				if (valid_entries < 9) {
+				if (!check_sg_termination(srng,
+							  valid_entries)) {
 					__ath12k_hal_srng_update_tp(srng,
 								    curr_tp);
 					break;

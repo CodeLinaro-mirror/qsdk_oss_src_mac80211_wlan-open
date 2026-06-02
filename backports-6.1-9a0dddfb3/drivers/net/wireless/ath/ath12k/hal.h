@@ -2003,4 +2003,5 @@ void *__ath12k_hal_get_dst_srng_desc(struct hal_srng *srng,
 				     void **next_desc);
 int __ath12k_hal_srng_dst_num_available_to_reap(struct hal_srng *srng,
 						bool sync_hw_ptr);
+void *ath12k_hal_srng_fetch_entry(struct hal_srng *srng, u16 offset);
 #endif
