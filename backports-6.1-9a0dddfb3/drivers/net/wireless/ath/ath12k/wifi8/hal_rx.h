@@ -309,8 +309,7 @@ ath12k_wifi8_hal_rx_msdu_link_desc_set(struct ath12k_base *ab,
 				       enum hal_wbm_rel_bm_act action);
 int ath12k_wifi8_hal_reo_rel_parse_err(struct ath12k_dp *dp, void *desc,
 				       struct hal_rx_reo_dest_rel_info *rel_info);
-void ath12k_wifi8_hal_rx_reo_ent_paddr_get(struct ath12k_base *ab,
-					   struct ath12k_buffer_addr *buff_addr,
+void ath12k_wifi8_hal_rx_reo_ent_paddr_get(struct ath12k_buffer_addr *buff_addr,
 					   dma_addr_t *paddr, u32 *cookie);
 void ath12k_wifi8_hal_reo_init_cmd_ring(struct ath12k_base *ab,
 					struct hal_srng *srng);
