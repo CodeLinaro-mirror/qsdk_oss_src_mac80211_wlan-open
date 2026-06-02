@@ -1840,6 +1840,7 @@ struct ath12k {
 	struct ath12k_cfr cfr;
 #endif
 	struct cfg80211_chan_def agile_chandef;
+	bool agile_abort_pending; /* WMI abort sent; awaiting firmware ACK */
 	struct wiphy_work agile_cac_abort_wq;
 	u32 free_map_id;
 	struct ath12k_qos_map *qos_map;

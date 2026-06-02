@@ -16965,12 +16965,35 @@ static void ath12k_process_ocac_complete_event(struct ath12k_base *ab,
 		   __le32_to_cpu(ev->center_freq),
 		   __le32_to_cpu(ev->center_freq1),
 		   __le32_to_cpu(ev->center_freq2));
-	if (status) {
-		ath12k_mac_background_dfs_event(ar, ATH12K_BGDFS_ABORT);
-	} else {
-		memset(&ar->agile_chandef, 0, sizeof(struct cfg80211_chan_def));
-		ar->agile_chandef.chan = NULL;
+
+	/* Validate that the event is for the channel we are currently
+	 * tracking. A stale ACK for a previous channel (e.g. firmware
+	 * completing an abort we issued before starting a new CAC) carries
+	 * a different freq — ignore it to avoid disturbing the new CAC.
+	 */
+	if (ar->agile_chandef.chan &&
+	    ar->agile_chandef.center_freq1 != __le32_to_cpu(ev->center_freq1)) {
+		ath12k_dbg(ab, ATH12K_DBG_WMI,
+			   "aDFS OCAC event for stale center_freq1 %u MHz (current %u MHz), ignoring",
+			   __le32_to_cpu(ev->center_freq1),
+			   ar->agile_chandef.center_freq1);
+		goto exit;
 	}
+
+	if (status) {
+		if (ar->agile_abort_pending) {
+			/* WMI ACK for an abort we initiated via
+			 * ath12k_mac_op_abort_radar_background(). cfg80211 was
+			 * already notified by the stop path; do not forward.
+			 */
+			ar->agile_abort_pending = false;
+		} else {
+			/* Firmware-initiated abort — cfg80211 must be notified. */
+			ath12k_mac_background_dfs_event(ar, ATH12K_BGDFS_ABORT);
+		}
+	}
+
+	memset(&ar->agile_chandef, 0, sizeof(struct cfg80211_chan_def));
 exit:
 	kfree(tb);
 }

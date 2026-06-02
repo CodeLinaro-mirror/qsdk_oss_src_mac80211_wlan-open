@@ -1419,7 +1419,11 @@ __cfg80211_background_cac_event(struct cfg80211_registered_device *rdev,
 	case NL80211_RADAR_CAC_ABORTED:
 		if (!cancel_delayed_work(&rdev->background_cac_done_wk)) {
 			cfg80211_sched_dfs_chan_update(rdev);
-			return;
+			/* For non-ETSI CAC monitoring will keep happening
+			 * even if the work is not running
+			 */
+			if (reg_get_dfs_region(&rdev->wiphy) == NL80211_DFS_ETSI)
+				return;
 		}
 		cfg80211_sched_dfs_chan_update(rdev);
 		wdev = rdev->background_radar_wdev;
