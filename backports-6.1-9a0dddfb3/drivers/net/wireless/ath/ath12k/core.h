@@ -136,6 +136,13 @@
 #define ATH12K_UMAC_RESET_TIMEOUT_IN_MS         1000
 
 #define ATH12K_MAX_TID_VALUE 8
+
+/* Maximum number of AKM suites supported:
+ * WPA2-PSK (00-0F-AC:4), SAE (00-0F-AC:8), SAE-EXT (00-0F-AC:24),
+ * FT-SAE (00-0F-AC:9), FT-SAE-EXT (00-0F-AC:25)
+ */
+#define ATH12K_MAX_AKM_SUITES		5
+
 #define ATH12K_FREE_MAP_ID_MASK GENMASK(31, 0)
 
 #define ATH12K_GROUP_KEYS_NUM_MAX	128
