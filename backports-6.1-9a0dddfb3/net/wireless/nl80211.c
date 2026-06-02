@@ -11701,6 +11701,11 @@ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 		if (cfg80211_off_channel_oper_allowed(wdev, chan))
 			continue;
 
+#ifdef CPTCFG_QCN_EXTN
+		if (wdev->wiphy->allow_scan_on_dfs_chan)
+			continue;
+#endif /* CPTCFG_QCN_EXTN */
+
 		if (!cfg80211_wdev_on_sub_chan(wdev, chan, true)) {
 			err = -EBUSY;
 			goto out_free;
@@ -15361,13 +15366,21 @@ static int nl80211_tx_mgmt(struct sk_buff *skb, struct genl_info *info)
 			goto out;
 	}
 
-	if (!chandef.chan && params->offchan) {
+	if (!chandef.chan && params->offchan
+#ifdef CPTCFG_QCN_EXTN
+	    && !wdev->wiphy->allow_scan_on_dfs_chan
+#endif /* CPTCFG_QCN_EXTN */
+	    ) {
 		err = -EINVAL;
 		goto out;
 	}
 
 	if (params->offchan &&
-	    !cfg80211_off_channel_oper_allowed(wdev, chandef.chan)) {
+	    !cfg80211_off_channel_oper_allowed(wdev, chandef.chan)
+#ifdef CPTCFG_QCN_EXTN
+	    && !wdev->wiphy->allow_scan_on_dfs_chan
+#endif /* CPTCFG_QCN_EXTN */
+	    ) {
 		err = -EBUSY;
 		goto out;
 	}
