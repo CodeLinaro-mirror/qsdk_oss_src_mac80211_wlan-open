@@ -6389,8 +6389,10 @@ void ath12k_core_cu_mem_free_all(struct ath12k *ar)
 {
 	struct ath12k_link_vif *arvif_itr;
 
+	spin_lock_bh(&ar->data_lock);
 	list_for_each_entry(arvif_itr, &ar->arvifs, list)
 		ath12k_core_cu_mem_free(arvif_itr->ar, arvif_itr);
+	spin_unlock_bh(&ar->data_lock);
 }
 
 int ath12k_core_cu_mem_pool_init(struct ath12k_hw_group *ag)
