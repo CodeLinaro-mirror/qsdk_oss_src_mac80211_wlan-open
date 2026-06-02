@@ -1394,14 +1394,23 @@ static bool
 cfg80211_offchan_chain_is_active(struct cfg80211_registered_device *rdev,
 				 struct ieee80211_channel *channel)
 {
-	if (!rdev->background_radar_wdev)
-		return false;
+	int i;
 
-	if (!cfg80211_chandef_valid(&rdev->background_radar_chandef))
-		return false;
+	for (i = 0; i < max_t(int, 1, rdev->wiphy.n_radio); i++) {
+		struct cfg80211_bg_radar *bgr =
+			&rdev->wiphy.radio_cfg[i].bg_radar;
 
-	return cfg80211_is_sub_chan(&rdev->background_radar_chandef, channel,
-				    false);
+		if (!bgr->active)
+			continue;
+
+		if (!cfg80211_chandef_valid(&bgr->chandef))
+			continue;
+
+		if (cfg80211_is_sub_chan(&bgr->chandef, channel, false))
+			return true;
+	}
+
+	return false;
 }
 
 bool cfg80211_any_wiphy_oper_chan(struct wiphy *wiphy,

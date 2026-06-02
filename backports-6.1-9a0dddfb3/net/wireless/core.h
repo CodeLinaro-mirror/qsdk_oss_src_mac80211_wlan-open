@@ -90,11 +90,6 @@ struct cfg80211_registered_device {
 
 	struct delayed_work dfs_update_channels_wk;
 
-	struct wireless_dev *background_radar_wdev;
-	struct cfg80211_chan_def background_radar_chandef;
-	struct delayed_work background_cac_done_wk;
-	struct work_struct background_cac_abort_wk;
-
 	/* netlink port which started critical protocol (0 means not started) */
 	u32 crit_proto_nlportid;
 
@@ -489,9 +484,14 @@ int
 cfg80211_start_background_radar_detection(struct cfg80211_registered_device *rdev,
 					  struct wireless_dev *wdev,
 					  struct cfg80211_chan_def *chandef,
-					  int link_id);
+					  int link_id, int radio_idx);
 
-void cfg80211_stop_background_radar_detection(struct wireless_dev *wdev);
+void cfg80211_stop_background_radar_detection(struct wireless_dev *wdev,
+					      int link_id);
+
+int cfg80211_stop_background_radar_detection_for_radio(
+		struct cfg80211_registered_device *rdev,
+		int radio_idx);
 
 void cfg80211_background_cac_done_wk(struct work_struct *work);
 

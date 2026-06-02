@@ -647,11 +647,6 @@ use_default_name:
 	INIT_WORK(&rdev->rfkill_block, cfg80211_rfkill_block_work);
 	INIT_WORK(&rdev->conn_work, cfg80211_conn_work);
 	INIT_WORK(&rdev->event_work, cfg80211_event_work);
-	INIT_WORK(&rdev->background_cac_abort_wk,
-		  cfg80211_background_cac_abort_wk);
-	INIT_DELAYED_WORK(&rdev->background_cac_done_wk,
-			  cfg80211_background_cac_done_wk);
-
 	init_waitqueue_head(&rdev->dev_wait);
 
 	/*
@@ -1092,21 +1087,39 @@ int wiphy_register(struct wiphy *wiphy)
 		 wiphy->max_num_akm_suites > CFG80211_MAX_NUM_AKM_SUITES)
 		return -EINVAL;
 
-	/* Allocate radio configuration space for multi-radio wiphy */
-	if (wiphy->n_radio > 0) {
+	/*
+	 * Allocate radio configuration space. A non-multi-radio wiphy
+	 * (n_radio == 0) still gets a single slot so background radar
+	 * background radar state and other per-radio state have a uniform home.
+	 */
+	{
 		int idx;
+		int n_radio_cfg = max_t(int, 1, wiphy->n_radio);
 
-		wiphy->radio_cfg = kcalloc(wiphy->n_radio,
+		wiphy->radio_cfg = kcalloc(n_radio_cfg,
 					   sizeof(*wiphy->radio_cfg),
 					   GFP_KERNEL);
 		if (!wiphy->radio_cfg)
 			return -ENOMEM;
-		/* Initialize wiphy radio parameters to IEEE 802.11
-		 * MIB default values. RTS threshold is disabled by
-		 * default with the special -1 value.
+		/* Initialize wiphy radio parameters to IEEE 802.11 MIB
+		 * default values. RTS threshold is disabled by default
+		 * with the special -1 value. Also prime each embedded
+		 * background radar state.
 		 */
-		for (idx = 0; idx < wiphy->n_radio; idx++)
+		for (idx = 0; idx < n_radio_cfg; idx++) {
+			struct cfg80211_bg_radar *bgr =
+				&wiphy->radio_cfg[idx].bg_radar;
+
 			wiphy->radio_cfg[idx].rts_threshold = (u32)-1;
+			bgr->wiphy = wiphy;
+			bgr->radio_idx = idx;
+			bgr->link_id = -1;
+			bgr->active = false;
+			INIT_WORK(&bgr->cac_abort_wk,
+				  cfg80211_background_cac_abort_wk);
+			INIT_DELAYED_WORK(&bgr->cac_done_wk,
+					  cfg80211_background_cac_done_wk);
+		}
 	}
 
 	/* check and set up bitrates */
@@ -1238,6 +1251,7 @@ void cfg80211_process_wiphy_works(struct cfg80211_registered_device *rdev,
 void wiphy_unregister(struct wiphy *wiphy)
 {
 	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wiphy);
+	int i;
 
 	wait_event(rdev->dev_wait, ({
 		int __count;
@@ -1289,17 +1303,23 @@ void wiphy_unregister(struct wiphy *wiphy)
 	cancel_work_sync(&rdev->conn_work);
 	flush_work(&rdev->event_work);
 	cancel_delayed_work_sync(&rdev->dfs_update_channels_wk);
-	cancel_delayed_work_sync(&rdev->background_cac_done_wk);
 	flush_work(&rdev->destroy_work);
 	flush_work(&rdev->propagate_radar_detect_wk);
 	flush_work(&rdev->propagate_cac_done_wk);
 	flush_work(&rdev->mgmt_registrations_update_wk);
-	flush_work(&rdev->background_cac_abort_wk);
+	for (i = 0; i < max_t(int, 1, rdev->wiphy.n_radio); i++) {
+		struct cfg80211_bg_radar *bgr =
+			&rdev->wiphy.radio_cfg[i].bg_radar;
+
+		cancel_delayed_work_sync(&bgr->cac_done_wk);
+		flush_work(&bgr->cac_abort_wk);
+	}
 
 	cfg80211_rdev_free_wowlan(rdev);
 	cfg80211_free_coalesce(rdev->coalesce);
 	rdev->coalesce = NULL;
 	kfree(wiphy->radio_cfg);
+	wiphy->radio_cfg = NULL;
 }
 EXPORT_SYMBOL(wiphy_unregister);
 
@@ -1321,6 +1341,18 @@ void cfg80211_dev_free(struct cfg80211_registered_device *rdev)
 	}
 	list_for_each_entry_safe(scan, tmp, &rdev->bss_list, list)
 		cfg80211_put_bss(&rdev->wiphy, &scan->pub);
+	/* Cancel any primed bg-radar works before destroying the mutex. */
+	if (rdev->wiphy.radio_cfg) {
+		int i, n = max_t(int, 1, rdev->wiphy.n_radio);
+
+		for (i = 0; i < n; i++) {
+			struct cfg80211_bg_radar *bgr =
+				&rdev->wiphy.radio_cfg[i].bg_radar;
+
+			cancel_delayed_work_sync(&bgr->cac_done_wk);
+			flush_work(&bgr->cac_abort_wk);
+		}
+	}
 	mutex_destroy(&rdev->wiphy.mtx);
 
 	/*
@@ -1331,6 +1363,7 @@ void cfg80211_dev_free(struct cfg80211_registered_device *rdev)
 	 * can just free it here.
 	 */
 	kfree(rcu_dereference_raw(rdev->wiphy.regd));
+	kfree(rdev->wiphy.radio_cfg);
 
 	kfree(rdev);
 }
@@ -1419,6 +1452,20 @@ static void _cfg80211_unregister_wdev(struct wireless_dev *wdev,
 		}
 	}
 
+	/* Clear any bgr->wdev back-pointer to this wdev so a pending work
+	 * callback does not dereference a freed pointer after unregister.
+	 */
+	if (rdev->wiphy.radio_cfg) {
+		int i;
+
+		for (i = 0; i < max_t(int, 1, rdev->wiphy.n_radio); i++) {
+			struct cfg80211_bg_radar *bgr =
+				&rdev->wiphy.radio_cfg[i].bg_radar;
+
+			if (bgr->wdev == wdev)
+				bgr->wdev = NULL;
+		}
+	}
 	wdev->connected = false;
 }
 
@@ -1457,7 +1504,7 @@ void cfg80211_leave(struct cfg80211_registered_device *rdev,
 		wdev->is_netdev_going_down = true;
 	cfg80211_pmsr_wdev_down(wdev);
 
-	cfg80211_stop_background_radar_detection(wdev);
+	cfg80211_stop_background_radar_detection(wdev, link_id);
 
 	switch (wdev->iftype) {
 	case NL80211_IFTYPE_ADHOC:

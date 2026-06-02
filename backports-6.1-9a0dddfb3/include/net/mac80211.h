@@ -4956,8 +4956,8 @@ struct ieee80211_ppe_vp_ds_params {
  *	Background radar/CAC detection allows to avoid the CAC downtime
  *	switching to a different channel during CAC detection on the selected
  *	radar channel.
- *	The caller is expected to set chandef pointer to NULL in order to
- *	disable background CAC/radar detection.
+ * @abort_radar_background: Abort background radar/CAC detection previously
+ *	configured on @chandef.
  * @net_fill_forward_path: Called from .ndo_fill_forward_path in order to
  *	resolve a path for hardware flow offloading
  * @can_activate_links: Checks if a specific active_links bitmap is
@@ -5392,6 +5392,8 @@ struct ieee80211_ops {
 				     struct ieee80211_sta *sta, u8 flowid);
 	int (*set_radar_background)(struct ieee80211_hw *hw,
 				    struct cfg80211_chan_def *chandef);
+	int (*abort_radar_background)(struct ieee80211_hw *hw,
+				      const struct cfg80211_chan_def *chandef);
 	bool (*can_activate_links)(struct ieee80211_hw *hw,
 				   struct ieee80211_vif *vif,
 				   u16 active_links);

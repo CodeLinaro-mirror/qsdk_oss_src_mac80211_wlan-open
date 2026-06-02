@@ -42,7 +42,7 @@ static int ___cfg80211_stop_ap(struct cfg80211_registered_device *rdev,
 
 	err = rdev_stop_ap(rdev, dev, link_id);
 	if (!err) {
-		cfg80211_stop_background_radar_detection(wdev);
+		cfg80211_stop_background_radar_detection(wdev, link_id);
 		wdev->links[link_id].ap.beacon_interval = 0;
 		wdev->links[link_id].ap.ssid_len = 0;
 		memset(&wdev->links[link_id].ap.chandef, 0,

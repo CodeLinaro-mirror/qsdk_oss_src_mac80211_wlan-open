@@ -1502,6 +1502,27 @@ rdev_set_radar_background(struct cfg80211_registered_device *rdev,
 }
 
 static inline int
+rdev_abort_radar_background(struct cfg80211_registered_device *rdev,
+			    const struct cfg80211_chan_def *chandef)
+{
+	struct wiphy *wiphy = &rdev->wiphy;
+	int ret = -EOPNOTSUPP;
+
+	/* abort_radar_background is a dedicated op rather than reusing
+	 * set_radar_background(NULL) — needed for multi-radio HW where a NULL
+	 * chandef cannot identify which radio to stop.
+	 */
+	trace_rdev_set_radar_background(wiphy, (struct cfg80211_chan_def *)chandef);
+	if (rdev->ops->abort_radar_background)
+		ret = rdev->ops->abort_radar_background(wiphy, chandef);
+	else if (rdev->ops->set_radar_background)
+		ret = rdev->ops->set_radar_background(wiphy, NULL);
+	trace_rdev_return_int(wiphy, ret);
+
+	return ret;
+}
+
+static inline int
 rdev_add_intf_link(struct cfg80211_registered_device *rdev,
 		   struct wireless_dev *wdev,
 		   unsigned int link_id)
