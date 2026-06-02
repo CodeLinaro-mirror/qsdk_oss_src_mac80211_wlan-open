@@ -22,6 +22,8 @@
 #include "dp_peer.h"
 #include "dp_tx_queue.h"
 
+#define ATH12K_HW_MAX_ACTIVE_QUEUES		3
+
 struct ath12k_tx_sw_metadata {
 	struct sk_buff *skb;
 	u64 paddr      : 40,
@@ -5224,8 +5226,9 @@ int ath12k_wifi8_dp_tx_congestion_control_init(struct ath12k_dp *dp)
 	congstn->weights[HAL_TQM_SERVICE_CATEGORY_SC2] = 40;
 	congstn->weights[HAL_TQM_SERVICE_CATEGORY_SC3] = 50;
 
-	congstn->used_threshold = ATH12K_DP_TX_GET_USED_THRSHLD(ATH12K_NUM_POOL_TX_DESC,
-								ATH12K_HW_MAX_QUEUES);
+	congstn->used_threshold =
+			ATH12K_DP_TX_GET_USED_THRSHLD(ATH12K_NUM_POOL_TX_DESC,
+						      ATH12K_HW_MAX_ACTIVE_QUEUES);
 	congstn->flow_drop_grace_percent = ATH12K_DP_TX_SORT_FLOW_DROP_GRACE;
 
 	/* Enable sorting for flows in service category.*/
