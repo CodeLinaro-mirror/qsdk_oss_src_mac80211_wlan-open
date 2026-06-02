@@ -1960,11 +1960,11 @@ static int ath12k_select_cumac_chip(struct ath12k_hw_group *ag)
 		return -EINVAL;
 
 	cumac_ab->is_cumac_chip = true;
-	ag->cumac_chip_id = cumac_ab->wsi_info.index;
+	ag->cumac_chip_id = cumac_ab->device_id;
 	ag->cumac_selected = true;
 	ath12k_info(cumac_ab,
 		    "Selected CUMAC chip: chip_id=%d band=%d\n",
-		    cumac_ab->wsi_info.index,
+		    cumac_ab->device_id,
 		    curr_band);
 
 	return 0;

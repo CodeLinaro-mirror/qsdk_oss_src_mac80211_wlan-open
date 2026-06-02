@@ -244,7 +244,7 @@ static void ath12k_wifi8_dp_umac_deinit(struct ath12k_dp *dp)
 		return;
 	}
 
-	if (!dp_wifi8->cumac) {
+	if (!ab->is_cumac_chip) {
 		ath12k_warn(ab, "Skipping ring deinit for non-cumac target");
 		dp_wifi8->init_done = false;
 		ath12k_hif_ext_irq_cleanup(ab);
@@ -352,19 +352,14 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 	u32 n_link_desc = 0;
 	int i;
 
-	if (ab->device_id == 0)
-		dp_wifi8->cumac = true;
-	else
-		dp_wifi8->cumac = false;
-
-	ath12k_info(ab, "chip_id: %d, CUMAC: %d\n", ab->device_id, dp_wifi8->cumac);
-
 	if (dp_wifi8->init_done) {
 		ath12k_info(ab, "DP init is already done. Skip re-init");
 		return 0;
 	}
 
-	if (!dp_wifi8->cumac) {
+	if (ab->is_cumac_chip) {
+		ath12k_info(ab, "chip_id: %d is CUMAC\n", ab->device_id);
+	} else {
 		ath12k_wifi8_enable_hif_interrupts(dp, ath12k_wifi8_non_cumac_dp_service_srng);
 		dp_wifi8->init_done = true;
 		ath12k_info(ab, "Skipping ring init for non-cumac target");

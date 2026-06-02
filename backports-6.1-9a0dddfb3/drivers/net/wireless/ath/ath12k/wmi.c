@@ -14738,8 +14738,9 @@ static void ath12k_wmi_event_send_cumac_complete(struct ath12k_base *ab,
 {
 	const struct wmi_mlo_send_cumac_complete_event *ev;
 	struct ath12k *ar = NULL;
+	struct ath12k_pdev *pdev = NULL;
 	const void **tb;
-	int ret;
+	int ret, i;
 
 	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
 	if (IS_ERR(tb)) {
@@ -14755,8 +14756,14 @@ static void ath12k_wmi_event_send_cumac_complete(struct ath12k_base *ab,
 		return;
 	}
 
-	rcu_read_lock();
-	ar = ath12k_mac_get_ar_by_pdev_id(ab, le32_to_cpu(ev->pdev_id));
+	for (i = 0; i < ab->num_radios; i++) {
+		pdev = &ab->pdevs[i];
+		if (pdev && pdev->pdev_id == le32_to_cpu(ev->pdev_id)) {
+			ar = pdev->ar;
+			break;
+		}
+	}
+
 	if (!ar) {
 		ath12k_warn(ab, "invalid pdev id in cumac completion event %d",
 			    ev->pdev_id);
@@ -14773,7 +14780,6 @@ static void ath12k_wmi_event_send_cumac_complete(struct ath12k_base *ab,
 
 out:
 	kfree(tb);
-	rcu_read_unlock();
 }
 
 #ifdef CPTCFG_ATH12K_DEBUGFS
@@ -21125,8 +21131,8 @@ int ath12k_wmi_send_cumac_config(struct ath12k *ar,
 	cmd->pdev_id = cpu_to_le32(ar->pdev->pdev_id);
 	cmd->cumac_chip_id = cpu_to_le32(cumac_chip_id);
 
-	ath12k_dbg(ab, ATH12K_DBG_BOOT, "wmi send cumac config cumac chip id:%d\n",
-		   cumac_chip_id);
+	ath12k_dbg(ab, ATH12K_DBG_BOOT, "wmi send cumac config cumac chip id:%d on pdev id %d\n",
+		   cumac_chip_id, cmd->pdev_id);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb,
 				  WMI_PDEV_SET_CUMAC_CHIP_CMDID);
