@@ -157,7 +157,8 @@ void ath12k_wifi8_mcbc_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 			       bool is_eth, bool gsn_valid, bool is_sta,
 			       struct ath12k_dp_skb_ctrl *skb_ctrl, u32 qos_nw_delay,
 			       bool htt_mesh, struct ath12k_vif *vlan_ahvif,
-			       struct ieee80211_tx_info *info);
+			       struct ieee80211_tx_info *info,
+			       struct ieee80211_sta *sta);
 ssize_t ath12k_wifi8_dp_tx_dump_svc_sorted_list(struct ath12k_dp *dp, u8 ac_mask,
 						char *buf, int size);
 int ath12k_wifi8_dp_tx_congestion_control_init(struct ath12k_dp *dp);

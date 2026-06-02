@@ -157,7 +157,7 @@ ath12k_dp_qos_update(struct ath12k_dp *dp, struct ath12k_pdev_dp *dp_pdev,
 		     u32 mark, struct hal_tcl_data_cmd *desc, u8 qos_tag,
 		     u8 *addr)
 {
-	struct ath12k_dp_link_peer *peer;
+	struct ath12k_dp_link_peer *link_peer;
 	struct ath12k_dp_peer *dp_peer;
 	u8 scs_id;
 	u16 msduq, peer_id;
@@ -178,18 +178,29 @@ ath12k_dp_qos_update(struct ath12k_dp *dp, struct ath12k_pdev_dp *dp_pdev,
 						      msduq);
 		rcu_read_unlock();
 	} else if (qos_tag == QOS_SCS_TAG) {
+		struct ath12k_dp_hw *dp_hw = dp_pdev->dp_hw;
+
 		scs_id = u32_get_bits(mark, QOS_QOS_ID_MASK);
 
-		spin_lock_bh(&dp->dp_lock);
-		peer = ath12k_dp_link_peer_find_by_addr(dp, addr);
-		if (!peer) {
-			spin_unlock_bh(&dp->dp_lock);
+		spin_lock_bh(&dp_hw->peer_hash_lock);
+		dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, addr);
+		if (!dp_peer) {
+			spin_unlock_bh(&dp_hw->peer_hash_lock);
 			return;
 		}
-		ret = ath12k_dp_peer_scs_data(dp, peer->dp_peer->qos,
-					      scs_id, peer, dp_pdev->ar,
+
+		link_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer,
+								   dp_pdev->hw_link_id);
+		if (!link_peer) {
+			spin_unlock_bh(&dp_hw->peer_hash_lock);
+			return;
+		}
+
+		ret = ath12k_dp_peer_scs_data(dp, dp_peer->qos,
+					      scs_id, link_peer, dp_pdev->ar,
 					      &msduq, &qos_id);
-		spin_unlock_bh(&dp->dp_lock);
+
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
 
 		if (ret != 0) {
 			ath12k_err(dp->ab, "SCS Peer Data is NULL");
@@ -524,14 +535,14 @@ void ath12k_qos_stats_update(struct ath12k *ar, struct sk_buff *skb,
 		return;
 	}
 
-	spin_lock_bh(&dp->dp_lock);
 	spin_lock_bh(&dp_hw->peer_hash_lock);
+	spin_lock_bh(&dp->dp_lock);
 
 	mld_qos = &mld_peer->mld_qos_stats[tid][q_id];
 
 	if (!link_peer->peer_stats.qos_stats) {
-		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		spin_unlock_bh(&dp->dp_lock);
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		return;
 	}
 
@@ -748,8 +759,8 @@ void ath12k_qos_stats_update(struct ath12k *ar, struct sk_buff *skb,
 	}
 
 out:
-	spin_unlock_bh(&dp_hw->peer_hash_lock);
 	spin_unlock_bh(&dp->dp_lock);
+	spin_unlock_bh(&dp_hw->peer_hash_lock);
 
 	if (update_pri_peer) {
 		pri_peer = ath12k_dp_link_peer_find_by_hw_link_id(mld_peer,
@@ -1197,7 +1208,7 @@ int ath12k_wifi7_dp_tx_hw_enqueue(struct ath12k_dp_link_vif *dp_link_vif,
 		if (qos_tag)
 			ath12k_dp_qos_update(dp, dp_pdev, skb->mark,
 					     hal_tcl_desc,
-					     qos_tag, arsta->addr);
+					     qos_tag, arsta->ahsta->addr);
 	}
 
 	ath12k_dmb();
@@ -1266,7 +1277,7 @@ int ath12k_wifi7_dp_tx_hw_enqueue(struct ath12k_dp_link_vif *dp_link_vif,
 		if (qos_tag)
 			ath12k_dp_qos_update(dp, dp_pdev, skb->mark,
 					     &tcl_desc,
-					     qos_tag, arsta->addr);
+					     qos_tag, arsta->ahsta->addr);
 	}
 
 	memcpy(hal_tcl_desc, &tcl_desc, sizeof(tcl_desc));
@@ -1791,12 +1802,13 @@ static int ath12k_wifi7_mcbc_setup_encryption(struct ath12k_dp_vif *dp_vif,
 					      bool is_sta, bool is_eth,
 					      struct ath12k_dp_tx_msdu_info *msdu_info,
 					      struct ieee80211_tx_info *info,
-					      struct ieee80211_vif *vlan_vif)
+					      struct ieee80211_vif *vlan_vif,
+					      struct ieee80211_sta *sta)
 {
 	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
 	struct ath12k_vif *ahvif = container_of(dp_vif, struct ath12k_vif, dp_vif);
 	struct ath12k_link_vif *arvif = NULL;
-	struct ath12k_dp_link_peer *peer;
+	struct ath12k_dp_peer *dp_peer;
 	struct ieee80211_key_conf *key;
 	struct ath12k *ar;
 
@@ -1821,29 +1833,34 @@ static int ath12k_wifi7_mcbc_setup_encryption(struct ath12k_dp_vif *dp_vif,
 		return 0;
 
 	/* Find peer */
-	spin_lock_bh(&ar->ab->dp->dp_lock);
-	peer = ath12k_dp_link_peer_find_by_addr(ar->ab->dp, arvif->bssid);
-	if (!peer) {
-		spin_unlock_bh(&ar->ab->dp->dp_lock);
+	/* TODO: Handle scenario of same mac address across different vdevs */
+	spin_lock_bh(&dp_pdev->dp_hw->peer_hash_lock);
+	if (sta)
+		dp_peer = ath12k_dp_peer_find_by_addr(dp_pdev->dp_hw, sta->addr);
+	else
+		dp_peer = ath12k_dp_peer_find_by_addr(dp_pdev->dp_hw, arvif->bssid);
+
+	if (!dp_peer) {
+		spin_unlock_bh(&dp_pdev->dp_hw->peer_hash_lock);
 		return -ENOENT;
 	}
 
 	/* Get multicast key */
-	spin_lock_bh(&peer->dp_peer->keys_lock);
+	spin_lock_bh(&dp_peer->keys_lock);
 
-	key = peer->dp_peer->keys[peer->dp_peer->mcast_keyidx];
+	key = dp_peer->keys[dp_peer->mcast_keyidx];
 	if (key) {
 		skb_cb->cipher = key->cipher;
 		skb_cb->flags |= ATH12K_SKB_CIPHER_SET;
 	}
 
-	spin_unlock_bh(&peer->dp_peer->keys_lock);
+	spin_unlock_bh(&dp_peer->keys_lock);
 
 	if (!is_sta && vlan_vif && vlan_vif->type == NL80211_IFTYPE_AP_VLAN)
 		msdu_info->group_slot =
 			ath12k_dp_tx_get_mcast_group_slot(ath12k_vif_to_ahvif(vlan_vif),
 							  link_id, info);
-	spin_unlock_bh(&ar->ab->dp->dp_lock);
+	spin_unlock_bh(&dp_pdev->dp_hw->peer_hash_lock);
 
 	return 0;
 }
@@ -1890,7 +1907,8 @@ void ath12k_wifi7_mcbc_handler(struct ath12k_dp_vif *dp_vif,
 			       struct ieee80211_vif *vlan_vif,
 			       struct ath12k_dp_skb_ctrl *skb_ctrl,
 			       struct ieee80211_tx_info *info,
-			       u32 qos_nw_delay, bool htt_mesh)
+			       u32 qos_nw_delay, bool htt_mesh,
+			       struct ieee80211_sta *sta)
 {
 	struct ath12k_dp *dp;
 	struct ath12k_dp_link_vif *dp_link_vif;
@@ -1995,7 +2013,7 @@ void ath12k_wifi7_mcbc_handler(struct ath12k_dp_vif *dp_vif,
 							 link_id, skb_new,
 							 is_sta, is_eth,
 							 &msdu_info,
-							 info, vlan_vif);
+							 info, vlan_vif, sta);
 		if (ret) {
 			dev_kfree_skb_any(skb_new);
 			DP_STATS_INC(dp_vif,
@@ -3866,7 +3884,7 @@ int ath12k_wifi7_sdwf_reinject_handler(struct ath12k_pdev_dp *dp_pdev,
 	if (is_mcast)
 		ath12k_wifi7_mcbc_handler(dp_vif, arvif->link_id, arsta, skb,
 					  is_eth, false, false, NULL, &skb_ctrl,
-					  info, 0, false);
+					  info, 0, false, NULL);
 	else
 		ath12k_wifi7_ucast_handler(dp_vif, arvif->link_id,
 					   arsta, skb, &skb_ctrl, 0, false);

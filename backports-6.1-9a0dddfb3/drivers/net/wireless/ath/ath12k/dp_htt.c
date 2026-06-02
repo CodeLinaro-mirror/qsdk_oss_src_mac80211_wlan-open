@@ -2109,7 +2109,7 @@ ath12k_htt_pri_link_peer_migrate_indication(struct ath12k_base *ab,
 #endif
 	reinit_completion(&ahsta->dp_migration_event);
 
-	ret = ath12k_dp_peer_migrate(ahsta, peer_id, chip_id);
+	ret = ath12k_dp_peer_migrate(ahsta, peer_id, chip_id, pdev_id);
 	if (ret)
 		ath12k_warn(pri_ab, "htt ML peer failed to migrate (%d)\n", ret);
 
@@ -2194,16 +2194,14 @@ static int ath12k_fw_mpdu_stats_update(struct ath12k_base *ab,
 	tid = u16_get_bits(info, SAWF_TTH_TID_MASK);
 	q_type = u16_get_bits(info, SAWF_TTH_QTYPE_MASK);
 
-	spin_lock_bh(&dp->dp_lock);
-	link_peer = ath12k_dp_link_peer_find_by_id(dp, peer_id);
+	rcu_read_lock();
+	link_peer = ath12k_dp_link_peer_find_by_peerid_index(dp, NULL, peer_id);
 	if (!link_peer) {
-		spin_unlock_bh(&dp->dp_lock);
+		rcu_read_unlock();
 		return -ENOENT;
 	}
 	vdev_id = link_peer->vdev_id;
-	spin_unlock_bh(&dp->dp_lock);
 
-	rcu_read_lock();
 	ar = ath12k_mac_get_ar_by_vdev_id(ab, vdev_id);
 	if (!ar) {
 		rcu_read_unlock();

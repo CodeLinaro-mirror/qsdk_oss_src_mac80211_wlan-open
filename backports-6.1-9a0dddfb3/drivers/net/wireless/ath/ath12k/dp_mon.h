@@ -1148,7 +1148,7 @@ void ath12k_dp_ext_mon_update_snr(struct hal_rx_mon_ppdu_info *ppdu_info,
 				  struct ath12k_dp_rx_ext_mon *config);
 
 void ath12k_dp_mon_reset_ppdu_desc(struct ath12k_dp_mon_ppdu_desc *ppdu_desc);
-int ath12k_dp_mon_get_link_peer_rssi(struct ath12k *ar, const u8 *peer_mac,
+int ath12k_dp_mon_get_link_peer_rssi(void *ptr, const u8 *peer_mac,
 				     s8 *min_rssi, s8 *max_rssi);
 size_t
 ath12k_dp_mon_get_free_desc_list(struct ath12k_dp *dp,
@@ -1848,4 +1848,7 @@ ath12k_dp_get_avg_snr(u8 snr, u8 avg_snr)
 
 	return avg_snr;
 }
+
+void ath12k_dp_mon_peer_telemetry_stats(const struct ath12k_dp_link_peer *peer,
+					struct ath12k_peer_telemetry_stats *stats);
 #endif

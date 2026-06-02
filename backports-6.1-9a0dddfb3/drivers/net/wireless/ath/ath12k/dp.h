@@ -731,7 +731,7 @@ struct ath12k_dp_arch_ops {
 	int (*peer_migrate_reo_cmd)(struct ath12k_dp *dp,
 				    struct ath12k_dp_link_peer *peer,
 				    u16 peer_id,
-				    u8 chip_id);
+				    u8 chip_id, u8 pdev_id);
 	int (*sdwf_reinject_handler)(struct ath12k_pdev_dp *dp_pdev,
 				     struct ath12k_link_vif *arvif,
 				     struct sk_buff *skb, struct ath12k_link_sta *arsta);
@@ -747,7 +747,6 @@ struct ath12k_dp_arch_ops {
 				       struct ath12k_dp_link_peer *peer);
 	void (*dp_link_peer_unassign_id)(struct ath12k_dp *dp,  struct ath12k *ar,
 					 struct ath12k_dp_link_peer *peer);
-	void (*dp_link_peer_delete)(struct ath12k_base *ab, u32 vdev_id, u8 *addr);
 	void (*peer_cleanup_indication)(struct ath12k_dp *dp, struct sk_buff *skb);
 	int (*dp_ppeds_tx_completion_handler)(struct ath12k_base *ab, int budget);
 	void (*dp_link_peer_assoc)(struct ath12k_dp_hw *dp_hw, struct ath12k_dp *dp,
@@ -1466,14 +1465,6 @@ static inline void ath12k_dp_arch_link_peer_unassign_id(struct ath12k_dp *dp,
 		dp->arch_ops->dp_link_peer_unassign_id(dp, ar, peer);
 }
 
-static inline void ath12k_dp_arch_link_peer_delete(struct ath12k_dp *dp,
-						   struct ath12k_base *ab,
-						   u32 vdev_id, u8 *addr)
-{
-	if (dp->arch_ops->dp_link_peer_delete)
-		dp->arch_ops->dp_link_peer_delete(ab, vdev_id, addr);
-}
-
 static inline void ath12k_dp_arch_peer_cleanup_indication(struct ath12k_dp *dp,
 							  struct sk_buff *skb)
 {
@@ -1683,10 +1674,10 @@ int ath12k_dp_tid_map_precedence(struct ath12k_dp_hw_group *dp_hw_grp);
 static inline int
 ath12k_dp_arch_peer_migrate_reo_cmd(struct ath12k_dp *dp,
 				    struct ath12k_dp_link_peer *peer,
-				     u16 peer_id, u8 chip_id)
+				     u16 peer_id, u8 chip_id, u8 pdev_id)
 {
 	return dp->arch_ops->peer_migrate_reo_cmd(dp, peer, peer_id,
-						  chip_id);
+						  chip_id, pdev_id);
 }
 
 static inline
@@ -1732,8 +1723,9 @@ int ath12k_dp_get_pdev_telemetry_stats(struct ath12k_base *ab,
 int ath12k_dp_pdev_pre_alloc(struct ath12k *ar);
 int ath12k_dp_tx_htt_srng_setup(struct ath12k_base *ab, u32 ring_id,
 				int mac_id, enum hal_ring_type ring_type);
-int ath12k_dp_peer_setup(struct ath12k *ar, struct ath12k_link_vif *arvif, const u8 *addr);
-void ath12k_dp_peer_cleanup(struct ath12k *ar, int vdev_id, const u8 *addr);
+int ath12k_dp_peer_setup(struct ath12k *ar, void *ptr, struct ath12k_link_vif *arvif,
+			 const u8 *addr, u8 link_id);
+void ath12k_dp_peer_cleanup(struct ath12k *ar, void *ptr, int vdev_id, const u8 *addr);
 void ath12k_dp_srng_cleanup(struct ath12k_base *ab, struct dp_srng *ring);
 int ath12k_dp_srng_setup(struct ath12k_base *ab, struct dp_srng *ring,
 			 enum hal_ring_type type, int ring_num,

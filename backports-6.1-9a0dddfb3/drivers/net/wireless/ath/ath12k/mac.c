@@ -6287,7 +6287,7 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
 		ret = ath12k_peer_delete(ar, arvif->vdev_id, arvif->bssid,
-					 false, 0, false);
+					 false, 0, false, NULL);
 		if (ret)
 			ath12k_warn(ar->ab, "failed to submit AP self-peer removal on vdev %d link id %d: %d"
 				    "num_peers: %d",
@@ -10946,7 +10946,7 @@ int ath12k_mac_set_key(struct ath12k *ar, enum set_key_cmd cmd,
 		return ret;
 	}
 
-	ret = ath12k_dp_rx_peer_pn_replay_config(arvif, peer_addr, cmd, key);
+	ret = ath12k_dp_rx_peer_pn_replay_config(arvif, peer_addr, cmd, key, sta);
 	if (ret) {
 		ath12k_warn(ab, "failed to offload PN replay detection %d\n", ret);
 		return ret;
@@ -12934,6 +12934,8 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 	struct ieee80211_vif *vif = ahvif->vif;
 	bool skip_peer_del = false;
 	int ret = 0;
+	void *dp_peer = ath12k_sta_get_dp_peer_wiphy_locked(ath12k_ar_to_hw(ar)->wiphy,
+							    ahsta);
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -12958,7 +12960,7 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 	ath12k_smart_ant_api_peer_disconnect(arsta);
 #endif
 
-	ath12k_dp_peer_cleanup(ar, arvif->vdev_id, arsta->addr);
+	ath12k_dp_peer_cleanup(ar, dp_peer, arvif->vdev_id, arsta->addr);
 
 	/*
 	 * Check if peer_del_all is enabled for this vdev
@@ -12974,7 +12976,7 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 
 	ret = ath12k_peer_delete(ar, arvif->vdev_id, arsta->addr, skip_peer_del,
 				 ahsta->mlo_hw_link_id_bitmap,
-				 ahsta->peer_delete_send_mlo_hw_bitmap);
+				 ahsta->peer_delete_send_mlo_hw_bitmap, sta);
 	if (ret)
 		ath12k_warn(ar->ab, "Failed to delete peer: %pM for VDEV: %d ar->num_peers: %d arvif->num_peers: %d\n",
 			    arsta->addr, arvif->vdev_id, ar->num_peers, arvif->num_peers);
@@ -13097,7 +13099,7 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 free_peer:
 	ath12k_peer_delete(ar, arvif->vdev_id, arsta->addr, false,
 			   arsta->ahsta->mlo_hw_link_id_bitmap,
-			   arsta->ahsta->peer_delete_send_mlo_hw_bitmap);
+			   arsta->ahsta->peer_delete_send_mlo_hw_bitmap, sta);
 	if (arsta->ahsta->peer_delete_cmd_sent_bitmap & BIT(arsta->link_id)) {
 		ath12k_mac_station_post_remove(ar, arvif, arsta->addr, arsta->ahsta,
 					       arsta->link_id);
@@ -13755,8 +13757,11 @@ static int ath12k_mac_handle_link_sta_state(struct ieee80211_hw *hw,
 	 */
 	} else if (old_state == IEEE80211_STA_AUTH &&
 		   new_state == IEEE80211_STA_ASSOC) {
+		void *dp_peer = ath12k_sta_get_dp_peer_wiphy_locked(hw->wiphy,
+								    arsta->ahsta);
 
-		ret = ath12k_dp_peer_setup(ar, arvif, arsta->addr);
+		ret = ath12k_dp_peer_setup(ar, dp_peer, arvif, arsta->addr,
+					   arsta->link_id);
 		if (ret) {
 			ath12k_warn(ar->ab, "failed to setup dp for peer %pM on vdev %i (%d)\n",
 					arsta->addr, arvif->vdev_id, ret);
@@ -14863,6 +14868,7 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 	u8 link_id, tmp_link_id, pri_link_id;
 	int ret, assoc_status, result;
 	bool bitmap_flag = 0;
+	void *dp_peer = ath12k_sta_get_dp_peer_wiphy_locked(hw->wiphy, ahsta);
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -14919,7 +14925,8 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 				return ret;
 			}
 
-			ret = ath12k_dp_peer_setup(ar, arvif, arsta->addr);
+			ret = ath12k_dp_peer_setup(ar, dp_peer, arvif, arsta->addr,
+						   arsta->link_id);
 			if (ret) {
 				ath12k_warn(ar->ab, "peer %pM setup failed ret: %d\n",
 					    arsta->addr, ret);
@@ -19231,7 +19238,7 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 err_peer_del:
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
 		fbret = ath12k_peer_delete(ar, arvif->vdev_id, link_addr,
-					   false, 0, false);
+					   false, 0, false, NULL);
 		if (fbret) {
 			ath12k_warn(ar->ab, "failed to delete peer %pM vdev_id %d ret %d\n",
 				    link_addr, arvif->vdev_id, fbret);

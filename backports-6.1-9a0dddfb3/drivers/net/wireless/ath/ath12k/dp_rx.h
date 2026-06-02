@@ -133,6 +133,10 @@ struct ath12k_dp_rx_tid {
 	/* Info related to UMAC migration */
 	u16     peer_id;
 	u8      chip_id;
+	u8      pdev_id;
+
+	/* Per-TID lock protecting concurrent access to this TID's state */
+	spinlock_t tid_lock;
 };
 
 struct ath12k_dp_rx_reo_cache_flush_elem {
@@ -263,7 +267,8 @@ int ath12k_dp_rx_ampdu_stop(struct ath12k *ar,
 int ath12k_dp_rx_peer_pn_replay_config(struct ath12k_link_vif *arvif,
 				       const u8 *peer_addr,
 				       enum set_key_cmd key_cmd,
-				       struct ieee80211_key_conf *key);
+				       struct ieee80211_key_conf *key,
+				       struct ieee80211_sta *sta);
 void ath12k_dp_rx_peer_tid_cleanup(struct ath12k *ar,
 				   struct ath12k_dp_link_peer *peer);
 int ath12k_dp_rx_reo_setup(struct ath12k_base *ab);
@@ -322,14 +327,11 @@ void ath12k_dp_rx_fst_init(struct ath12k_base *ab);
 ssize_t ath12k_dp_dump_fst_table(struct ath12k_base *ab, char *buf, int size);
 size_t ath12k_dp_list_cut_nodes(struct list_head *list,
 				struct list_head *head, size_t count, uint8_t pool_type);
-int ath12k_dp_rx_peer_tid_setup(struct ath12k *ar, const u8 *peer_mac, int vdev_id,
+int ath12k_dp_rx_peer_tid_setup(struct ath12k *ar, struct ath12k_dp_peer *dp_peer,
+				const u8 *peer_mac, int vdev_id,
 				u8 tid, u32 ba_win_sz, u16 ssn,
 				enum hal_pn_type pn_type);
 void ath12k_dp_tid_cleanup(struct ath12k_base *ab);
-void ath12k_dp_peer_tid_setup(struct ath12k_base *ab);
-void ath12k_dp_peer_reo_tid_setup(struct ath12k *ar, int vdev_id,
-				  const u8 *peer_mac);
-void ath12k_dp_tid_setup(void *data, struct ieee80211_sta *sta);
 void ath12k_dp_reset_rx_reo_tid_q(void *vaddr, u32 ba_window_size, u8 tid);
 int
 ath12k_dp_rx_htt_rxdma_rxole_ppe_cfg_set(struct ath12k_base *ab,
@@ -339,7 +341,7 @@ ath12k_dp_primary_peer_migrate_setup(struct ath12k_dp *dp, void *ctx,
 				     struct hal_reo_status *status);
 int
 ath12k_dp_peer_migrate(struct ath12k_sta *ahsta, u16 peer_id,
-		       u8 chip_id);
+		       u8 chip_id, u8 pdev_id);
 int ath12k_dp_rx_pkt_type_filter(struct ath12k *ar,
 				 enum ath12k_routing_pkt_type pkt_type,
 				 u32 meta_data);

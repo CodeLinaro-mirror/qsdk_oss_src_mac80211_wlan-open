@@ -14677,6 +14677,7 @@ static int ath12k_vendor_get_sta_info_dumpit(struct wiphy *wiphy,
 	s8 data_min_rssi = 0, data_max_rssi = 0;
 	int ret;
 	const u8 *peer_mac;
+	void *dp_peer;
 
 	lockdep_assert_wiphy(wiphy);
 
@@ -14725,7 +14726,13 @@ static int ath12k_vendor_get_sta_info_dumpit(struct wiphy *wiphy,
 		return -ENOENT;
 	}
 
-	ret = ath12k_dp_mon_get_link_peer_rssi(arvif->ar, peer_mac,
+	dp_peer = ath12k_sta_get_dp_peer_wiphy_locked(wiphy, arsta->ahsta);
+	if (!dp_peer) {
+		spin_unlock_bh(&arvif->ar->arsta_lock);
+		return -ENOENT;
+	}
+
+	ret = ath12k_dp_mon_get_link_peer_rssi(dp_peer, peer_mac,
 					       &data_min_rssi,
 					       &data_max_rssi);
 	if (ret) {

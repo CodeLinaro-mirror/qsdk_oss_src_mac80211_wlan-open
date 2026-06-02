@@ -737,8 +737,12 @@ static ssize_t ath12k_dbg_sta_write_fetch_reo_ctx(struct file *file,
 			continue;
 
 		rx_tid = &dp_peer->rx_tid[tid];
-		if (!rx_tid->active || !rx_tid->paddr)
+
+		spin_lock_bh(&rx_tid->tid_lock);
+		if (!rx_tid->active || !rx_tid->paddr) {
+			spin_unlock_bh(&rx_tid->tid_lock);
 			continue;
+		}
 
 		memset(&cmd, 0, sizeof(cmd));
 		cmd.addr_lo = lower_32_bits(rx_tid->paddr);
@@ -750,6 +754,8 @@ static ssize_t ath12k_dbg_sta_write_fetch_reo_ctx(struct file *file,
 						  HAL_REO_CMD_GET_QUEUE_STATS,
 						  &cmd,
 						  ath12k_dbg_sta_reo_queue_stats_cb);
+		spin_unlock_bh(&rx_tid->tid_lock);
+
 		if (ret) {
 			ath12k_warn(ar->ab,
 				    "failed reo get_queue_stats tid %d (%d)\n",

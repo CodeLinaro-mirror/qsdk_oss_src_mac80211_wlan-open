@@ -2272,6 +2272,7 @@ int ath12k_dp_mon_pdev_update_telemetry_stats(struct ath12k_base *ab,
 
        return 0;
 }
+EXPORT_SYMBOL(ath12k_dp_mon_pdev_update_telemetry_stats);
 
 void ath12k_dp_mon_peer_telemetry_stats(const struct ath12k_dp_link_peer *peer,
 					struct ath12k_peer_telemetry_stats *stats)
@@ -2288,7 +2289,6 @@ void ath12k_dp_mon_peer_telemetry_stats(const struct ath12k_dp_link_peer *peer,
        }
 	stats->snr = dp_stats->avg_snr;
 }
-EXPORT_SYMBOL(ath12k_dp_mon_pdev_update_telemetry_stats);
 
 static inline struct sk_buff *ath12k_mon_get_last_skb_from_fraglist(struct sk_buff *skb)
 {
@@ -2772,28 +2772,18 @@ ath12k_dp_mon_fill_rx_rate(struct ath12k_pdev_dp *dp_pdev,
 }
 EXPORT_SYMBOL(ath12k_dp_mon_fill_rx_rate);
 
-int ath12k_dp_mon_get_link_peer_rssi(struct ath12k *ar, const u8 *peer_mac,
+int ath12k_dp_mon_get_link_peer_rssi(void *ptr, const u8 *peer_mac,
 				     s8 *min_rssi, s8 *max_rssi)
 {
-	struct ath12k_base *ab;
-	struct ath12k_dp *dp;
 	struct ath12k_dp_link_peer *link_peer;
+	struct ath12k_dp_peer *dp_peer = (struct ath12k_dp_peer *)ptr;
 
-	if (!ar || !peer_mac || !min_rssi || !max_rssi)
-		return -EINVAL;
+	rcu_read_lock();
 
-	ab = ar->ab;
-	dp = ath12k_ab_to_dp(ab);
-
-	if (!dp)
-		return -EINVAL;
-
-	spin_lock_bh(&dp->dp_lock);
-
-	link_peer = ath12k_dp_link_peer_find_by_addr(dp, peer_mac);
+	link_peer = ath12k_dp_link_peer_find_by_mac_addr(dp_peer, peer_mac);
 	if (!link_peer) {
-		spin_unlock_bh(&dp->dp_lock);
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON,
+		rcu_read_unlock();
+		ath12k_dbg(NULL, ATH12K_DBG_DP_MON,
 			   "dp_mon: link_peer not found for %pM\n", peer_mac);
 		return -ENOENT;
 	}
@@ -2801,9 +2791,9 @@ int ath12k_dp_mon_get_link_peer_rssi(struct ath12k *ar, const u8 *peer_mac,
 	*min_rssi = link_peer->min_rssi;
 	*max_rssi = link_peer->max_rssi;
 
-	spin_unlock_bh(&dp->dp_lock);
+	rcu_read_unlock();
 
-	ath12k_dbg(ab, ATH12K_DBG_DP_MON,
+	ath12k_dbg(NULL, ATH12K_DBG_DP_MON,
 		   "dp_mon: Retrieved RSSI for %pM: min=%d, max=%d\n",
 		   peer_mac, *min_rssi, *max_rssi);
 

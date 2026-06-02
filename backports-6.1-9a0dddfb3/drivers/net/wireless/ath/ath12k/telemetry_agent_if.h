@@ -72,11 +72,9 @@ void ath12k_telemetry_destroy_resources(struct ath12k_hw_group *ag);
 int ath12k_telemetry_pdev_agent_create_handler(struct ath12k_pdev *pdev);
 int ath12k_telemetry_pdev_agent_delete_handler(struct ath12k_pdev *pdev);
 int ath12k_telemetry_peer_agent_create_handler(struct ath12k *ar,
-					       const int vdev_id,
-					       const u8 *addr);
+					       struct ath12k_dp_link_peer *link_peer);
 int ath12k_telemetry_peer_agent_delete_handler(struct ath12k *ar,
-					       const int vdev_id,
-					       const u8 *addr);
+					       struct ath12k_dp_link_peer *link_peer);
 int ath12k_telemetry_ab_peer_agent_create(struct ath12k_base *ab);
 int ath12k_telemetry_ab_peer_agent_destroy(struct ath12k_base *ab);
 void ath12k_telemetry_destroy_peer_agent_resources(void);

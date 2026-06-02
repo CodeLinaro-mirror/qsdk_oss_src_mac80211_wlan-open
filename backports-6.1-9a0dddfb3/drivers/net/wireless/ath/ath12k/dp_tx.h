@@ -64,7 +64,7 @@ int ath12k_sdwf_reinject_handler(struct ath12k_base *ab, struct sk_buff *skb,
 				 struct htt_tx_completion *status_desc, u8 mac_id);
 int ath12k_dp_mmesh_tx(struct ieee80211_hw *hw, struct ath12k_base *ab,
 		       struct ath12k_link_vif *arvif, struct ieee80211_vif *vlan_vif,
-		       struct sk_buff *skb, struct ath12k_sta *ahsta,
+		       struct sk_buff *skb, struct ieee80211_sta *sta,
 		       struct ath12k_dp_skb_ctrl *skb_ctrl, bool is_eth,
 		       u8 link_id, bool is_mcast, bool *htt_mesh,
 		       struct ieee80211_tx_info *info, u32 qos_nw_delay);

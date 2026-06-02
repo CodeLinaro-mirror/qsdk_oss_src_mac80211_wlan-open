@@ -579,7 +579,6 @@ int ath12k_get_peer_stats(int obj_id, void *parent, u8 hw_link_id,
 	}
 
 	rcu_read_unlock();
-
 	return 0;
 }
 
@@ -669,22 +668,16 @@ static int ath12k_telemetry_peer_agent_update(struct ath12k_base *ab,
 }
 
 int ath12k_telemetry_peer_agent_create_handler(struct ath12k *ar,
-					       const int vdev_id,
-					       const u8 *addr)
+					       struct ath12k_dp_link_peer *peer)
 {
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_pdev *pdev = ar->pdev;
-	struct ath12k_dp_link_peer *peer = NULL;
 
 	if (!pdev || !g_agent_ops ||
 	    !g_agent_ops->agent_peer_create_handler)
 		return -EINVAL;
 
 	lockdep_assert_held(&ab->dp->dp_lock);
-
-	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(ab->dp, vdev_id, addr);
-	if (!peer)
-		return -EINVAL;
 
 	/* Create only for STA type */
 	if (ath12k_dp_link_peer_get_vif_type(peer) != NL80211_IFTYPE_AP)
@@ -696,12 +689,10 @@ int ath12k_telemetry_peer_agent_create_handler(struct ath12k *ar,
 }
 
 int ath12k_telemetry_peer_agent_delete_handler(struct ath12k *ar,
-					       const int vdev_id,
-					       const u8 *addr)
+					       struct ath12k_dp_link_peer *peer)
 {
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_pdev *pdev = ar->pdev;
-	struct ath12k_dp_link_peer *peer = NULL;
 
 	if (!pdev || !g_agent_ops ||
 	    !g_agent_ops->agent_peer_destroy_handler) {
@@ -710,13 +701,6 @@ int ath12k_telemetry_peer_agent_delete_handler(struct ath12k *ar,
 	}
 
 	lockdep_assert_held(&ab->dp->dp_lock);
-
-	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(ab->dp, vdev_id, addr);
-	if (!peer) {
-		ath12k_dbg(NULL, ATH12K_DBG_RM,
-			   "No peer found while deleting peer back reference in TA\n");
-		return -EINVAL;
-	}
 
 	/* Create only for STA type */
 	if (ath12k_dp_link_peer_get_vif_type(peer) != NL80211_IFTYPE_AP) {

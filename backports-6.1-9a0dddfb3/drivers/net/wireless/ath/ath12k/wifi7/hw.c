@@ -1454,7 +1454,7 @@ static int ath12k_wifi7_tx_setup_link(struct ieee80211_vif *vif,
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 int ath12k_dp_mmesh_tx(struct ieee80211_hw *hw, struct ath12k_base *ab,
 		       struct ath12k_link_vif *arvif, struct ieee80211_vif *vlan_vif,
-		       struct sk_buff *skb, struct ath12k_sta *ahsta,
+		       struct sk_buff *skb, struct ieee80211_sta *sta,
 		       struct ath12k_dp_skb_ctrl *skb_ctrl, bool is_eth,
 		       u8 link_id, bool is_mcast, bool *htt_mesh,
 		       struct ieee80211_tx_info *info, u32 qos_nw_delay)
@@ -1477,11 +1477,12 @@ int ath12k_dp_mmesh_tx(struct ieee80211_hw *hw, struct ath12k_base *ab,
 	u8 flags;
 	u16 len;
 	int ret;
-
+	struct ath12k_sta *ahsta = NULL;
 
 	/* Get station info if needed */
-	if (ahsta) {
+	if (sta) {
 		is_sta = true;
+		ahsta = ath12k_sta_to_ahsta(sta);
 		qos_tag = u32_get_bits(skb->mark, QOS_TAG_MASK);
 		if (ahsta->use_4addr_set || qos_tag)
 			arsta = rcu_dereference(ahsta->link[link_id]);
@@ -1570,7 +1571,7 @@ int ath12k_dp_mmesh_tx(struct ieee80211_hw *hw, struct ath12k_base *ab,
 							  skb_cloned, is_eth,
 							  false, is_sta, vlan_vif,
 							  skb_ctrl, info,
-							  qos_nw_delay, false);
+							  qos_nw_delay, false, sta);
 				ieee80211_free_txskb(hw, skb_cloned);
 			}
 			local_bh_enable();
@@ -1734,7 +1735,7 @@ void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 	if (ahvif->vap_submode == QCA_WLAN_VENDOR_VAP_SUBMODE_MESH) {
-		ret = ath12k_dp_mmesh_tx(hw, ar->ab,  arvif, vlan_vif, skb, ahsta,
+		ret = ath12k_dp_mmesh_tx(hw, ar->ab,  arvif, vlan_vif, skb, sta,
 					 &skb_ctrl, is_eth, link_id, is_mcast,
 					 &htt_mesh, &info_tx, qos_nw_delay);
 
@@ -1763,7 +1764,7 @@ void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 
 		ath12k_wifi7_mcbc_handler(dp_vif, link_id, arsta, skb, is_eth,
 					  gsn_valid, is_sta, vlan_vif, &skb_ctrl,
-					  &info_tx, qos_nw_delay, htt_mesh);
+					  &info_tx, qos_nw_delay, htt_mesh, sta);
 		ieee80211_free_txskb(hw, skb);
 	}
 	local_bh_enable();
