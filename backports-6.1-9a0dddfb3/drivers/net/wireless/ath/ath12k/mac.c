@@ -611,6 +611,9 @@ ath12k_mac_bw_to_mac80211_bw(enum ath12k_supported_bw bw)
 	case ATH12K_BW_160:
 		ret = RATE_INFO_BW_160;
 		break;
+	case ATH12K_BW_240:
+		ret = RATE_INFO_BW_160;
+		break;
 	case ATH12K_BW_320:
 		ret = RATE_INFO_BW_320;
 		break;
