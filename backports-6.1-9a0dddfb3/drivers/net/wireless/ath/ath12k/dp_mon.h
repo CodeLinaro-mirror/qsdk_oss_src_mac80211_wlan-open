@@ -227,6 +227,8 @@ struct ath12k_dp_arch_mon_ops {
 			      u32 filter, bool enable);
 	void (*htt_rx_filter_rxmon_cfg)(void *ptr,
 					struct htt_rx_ring_tlv_filter *tlv_filter);
+	void (*htt_rx_phy_err_filter_cfg)(void *ptr,
+					  struct htt_rx_ring_tlv_filter *tlv_filter);
 	int (*ext_mon_validate_request)(struct ath12k_pdev_dp *dp_pdev,
 					const struct ath12k_ext_mon_config *req);
 	int (*ext_mon_alloc)(struct ath12k_pdev_dp *dp_pdev);
@@ -1608,6 +1610,21 @@ void ath12k_dp_mon_rx_enable(struct ath12k_dp *dp, void *cmd,
 
 	if (mon_ops && mon_ops->htt_rx_filter_rxmon_cfg)
 		mon_ops->htt_rx_filter_rxmon_cfg(cmd, tlv_filter);
+}
+
+static inline
+void ath12k_dp_mon_rx_phy_err_filter_cfg(struct ath12k_dp *dp, void *cmd,
+					 struct htt_rx_ring_tlv_filter *tlv_filter)
+{
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+
+	if (unlikely(!dp || !dp->dp_mon))
+		return;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (mon_ops && mon_ops->htt_rx_phy_err_filter_cfg)
+		mon_ops->htt_rx_phy_err_filter_cfg(cmd, tlv_filter);
 }
 
 static inline
