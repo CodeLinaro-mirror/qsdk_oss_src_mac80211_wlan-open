@@ -1864,7 +1864,7 @@ ath12k_wifi8_dp_ext_desc_populate(struct ath12k_dp *dp,
 		ext_data_len = ATH12K_TX_MSDU_EXT_SZ + htt_desc_size;
 	}
 
-	if (msdu_info->group_slot >= 0) {
+	if (msdu_info->group_slot > 0) {
 		htt_desc_size = sizeof(struct hal_tx_msdu_metadata);
 		htt_desc_ext = (struct hal_tx_msdu_metadata *)
 				ath12k_dp_ext_desc_get_rsvd0(ext_desc);
@@ -1956,6 +1956,57 @@ ath12k_wifi8_dp_tx_desc_populate(struct ath12k_dp *dp, struct sk_buff *skb,
 	return ret;
 }
 
+static void *ath12k_dp_metadata_align_skb_head(struct sk_buff *skb, u8 len)
+{
+	void *metadata;
+
+	if (unlikely(skb_cow_head(skb, len)))
+		return NULL;
+
+	skb_push(skb, len);
+	metadata = skb->data;
+	memset(metadata, 0, len);
+
+	return metadata;
+}
+
+static int
+ath12k_wifi8_dp_prepare_group_htt_metadata(struct sk_buff *skb,
+					   struct ath12k_dp_tx_msdu_info *msdu_info,
+					   struct ath12k_dp_link_vif *dp_link_vif,
+					   bool gsn_valid, int gsn)
+{
+	struct hal_tx_msdu_metadata *htt_desc;
+	u8 align_pad, htt_desc_size, htt_hdr_size;
+
+	align_pad = (unsigned long)skb->data & (HTT_META_DATA_ALIGNMENT - 1);
+	htt_desc_size = ALIGN(sizeof(*htt_desc), HTT_META_DATA_ALIGNMENT);
+	htt_hdr_size = align_pad + htt_desc_size;
+
+	htt_desc = ath12k_dp_metadata_align_skb_head(skb, htt_hdr_size);
+	if (!htt_desc)
+		return -ENOMEM;
+
+	htt_desc->info0 |=
+		le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_HOST_TX_DESC_POOL) |
+		le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_KEY_FLAGS);
+	htt_desc->info2 |=
+		le32_encode_bits(msdu_info->group_slot,
+				 HAL_TX_MSDU_METADATA_INFO2_KEY_FLAGS);
+
+	if (gsn_valid)
+		ath12k_wifi8_dp_tx_update_gsn_metadata(msdu_info, dp_link_vif, gsn);
+
+	msdu_info->meta_data_flags |= HTT_TCL_META_DATA_VALID_HTT;
+	msdu_info->meta_data_flags |=
+		u32_encode_bits(1, HTT_TCL_META_DATA_GLOBAL_HTT_EXT_PRESENT_V3);
+	msdu_info->pkt_offset = htt_hdr_size;
+	msdu_info->data_len = skb->len - htt_hdr_size;
+	msdu_info->to_fw = true;
+
+	return 0;
+}
+
 enum ath12k_dp_tx_enq_error
 ath12k_wifi8_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 			      struct ath12k_vif *ahvif,
@@ -1987,6 +2038,16 @@ ath12k_wifi8_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 	if (!tx_desc) {
 		drop_reason = DP_TX_ENQ_DROP_SW_DESC_NA;
 		goto fail;
+	}
+
+	if (msdu_info->group_slot == 0) {
+		ret = ath12k_wifi8_dp_prepare_group_htt_metadata(skb, msdu_info,
+								 dp_link_vif,
+								 gsn_valid, gsn);
+		if (ret) {
+			drop_reason = DP_TX_ENQ_DROP_TCL_DESC_NA;
+			goto fail;
+		}
 	}
 
 	ath12k_wifi8_dp_dma_align_handler(central_dp, skb);
