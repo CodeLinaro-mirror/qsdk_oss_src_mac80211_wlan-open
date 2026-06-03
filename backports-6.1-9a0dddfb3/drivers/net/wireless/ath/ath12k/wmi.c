@@ -16790,7 +16790,7 @@ exit_pri_link_mig_event:
 
 	/* Event is received for all queued ML peers in this arvif */
 	if (list_empty(&arvif->peer_migrate_list)) {
-		complete(&arvif->wmi_migration_event_resp);
+		complete_all(&arvif->wmi_migration_event_resp);
 		arvif->is_umac_migration_in_progress = false;
 
 		/* Migration happened because of ML removal */
