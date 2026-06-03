@@ -14270,7 +14270,9 @@ static u32 ath12k_get_diag_hw_id(struct ath12k_base *ab)
 	switch (ab->hw_params->hw_rev) {
 #ifdef CPTCFG_QCN_EXTN
 	case ATH12K_HW_QCN9074_HW10:
-		return HW_QCN9000;
+		return ATH12K_CNSS_DIAG_HW_QCN9074;
+	case ATH12K_HW_QCN9160_HW10:
+		return ATH12K_CNSS_DIAG_HW_QCN9160;
 #endif
 	default:
 		/* For all other chipsets, use hw_rev + offset */
