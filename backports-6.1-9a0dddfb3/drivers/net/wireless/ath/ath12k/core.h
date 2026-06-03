@@ -678,6 +678,7 @@ struct ath12k_vap_cfg {
 	u32 ul_fixed_eht_mcs;
 	u32 eht_ul_ldpc;
 	u32 eht_ul_ltf;
+	u32 eht_ltf;
 	u32 eht_ul_nss;
 	u32 eht_ul_ppdu_bw;
 	u32 eht_ul_shortgi;
