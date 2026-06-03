@@ -256,12 +256,12 @@ module_param_named(erp_cumac_config, ath12k_erp_cumac_config, uint, 0644);
 MODULE_PARM_DESC(erp_cumac_config,
 		 "ErP CUMAC configuration bitmap: BIT(0): pdev suspend, BIT(1): Q6 power down");
 
-bool ath12k_congestion_ctrl;
+bool ath12k_congestion_ctrl = true;
 module_param_named(congestion_ctrl, ath12k_congestion_ctrl, bool, 0644);
 MODULE_PARM_DESC(congestion_ctrl, "Congestion control 0-disable (default) 1-enable");
 EXPORT_SYMBOL(ath12k_congestion_ctrl);
 
-unsigned int ath12k_drop_algo;
+unsigned int ath12k_drop_algo = 1;
 module_param_named(drop_algo, ath12k_drop_algo, uint, 0644);
 MODULE_PARM_DESC(drop_algo, "Congestion drop algorithm type: 0-composite (default) 1-flat");
 EXPORT_SYMBOL(ath12k_drop_algo);
