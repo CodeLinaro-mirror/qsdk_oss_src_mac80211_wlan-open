@@ -8314,14 +8314,17 @@ static int ath12k_fill_radio_tx_stats(struct ath12k *ar,
 }
 
 static int ath12k_fill_tid_rx_stats(struct sk_buff *vendor_event,
-				    const struct ath12k_tid_rx_stats *rx,
-				    int tid_idx)
+				    const struct ath12k_dp_aggr_pdev_tid_stats *tid_stats,
+				    int tid)
 {
+	const struct ath12k_tid_rx_stats *rx = &tid_stats->tid_rx[tid];
+	const struct ath12k_reo_error_stats *reo_err = &tid_stats->tid_reo_err[tid];
+	const struct ath12k_rxdma_error_stats *rxdma_err = &tid_stats->tid_rxdma_err[tid];
 	struct nlattr *tid_attr;
 	struct nlattr *arr_attr;
 	int i;
 
-	tid_attr = nla_nest_start(vendor_event, tid_idx + 1);
+	tid_attr = nla_nest_start(vendor_event, tid + 1);
 	if (!tid_attr)
 		return -EINVAL;
 
@@ -8360,7 +8363,7 @@ static int ath12k_fill_tid_rx_stats(struct sk_buff *vendor_event,
 	/* REO error stats */
 	if (nla_put_u32(vendor_event,
 			QCA_VENDOR_ATTR_TID_RX_REO_ERR_CODE_INV,
-			rx->reo_err.reo_code_inv)) {
+			reo_err->reo_code_inv)) {
 		nla_nest_cancel(vendor_event, tid_attr);
 		return -EINVAL;
 	}
@@ -8372,9 +8375,9 @@ static int ath12k_fill_tid_rx_stats(struct sk_buff *vendor_event,
 		return -EINVAL;
 	}
 	for (i = 0; i < HAL_REO_DEST_RING_ERROR_CODE_MAX &&
-		    i < ARRAY_SIZE(rx->reo_err.reo_code); i++) {
+		    i < ARRAY_SIZE(reo_err->reo_code); i++) {
 		if (nla_put_u32(vendor_event, i + 1,
-				rx->reo_err.reo_code[i])) {
+				reo_err->reo_code[i])) {
 			nla_nest_cancel(vendor_event, arr_attr);
 			nla_nest_cancel(vendor_event, tid_attr);
 			return -EINVAL;
@@ -8385,7 +8388,7 @@ static int ath12k_fill_tid_rx_stats(struct sk_buff *vendor_event,
 	/* RXDMA error stats */
 	if (nla_put_u32(vendor_event,
 			QCA_VENDOR_ATTR_TID_RX_RXDMA_ERR_CODE_INV,
-			rx->rxdma_err.rxdma_code_inv)) {
+			rxdma_err->rxdma_code_inv)) {
 		nla_nest_cancel(vendor_event, tid_attr);
 		return -EINVAL;
 	}
@@ -8397,9 +8400,9 @@ static int ath12k_fill_tid_rx_stats(struct sk_buff *vendor_event,
 		return -EINVAL;
 	}
 	for (i = 0; i < HAL_REO_ENTR_RING_RXDMA_ECODE_MAX &&
-		    i < ARRAY_SIZE(rx->rxdma_err.rxdma_code); i++) {
+		    i < ARRAY_SIZE(rxdma_err->rxdma_code); i++) {
 		if (nla_put_u32(vendor_event, i + 1,
-				rx->rxdma_err.rxdma_code[i])) {
+				rxdma_err->rxdma_code[i])) {
 			nla_nest_cancel(vendor_event, arr_attr);
 			nla_nest_cancel(vendor_event, tid_attr);
 			return -EINVAL;
@@ -8549,8 +8552,7 @@ static int ath12k_fill_radio_tid_stats(struct ath12k *ar,
 	}
 
 	for (tid = 0; tid < QCA_VENDOR_WLAN_TELEMETRY_DATA_TIDS; tid++) {
-		if (ath12k_fill_tid_rx_stats(vendor_event,
-					     &tid_stats->tid_rx[tid], tid)) {
+		if (ath12k_fill_tid_rx_stats(vendor_event, tid_stats, tid)) {
 			ath12k_err(ab, "Error filling TID RX stats for tid %d",
 				   tid);
 			nla_nest_cancel(vendor_event, rx_attr);
