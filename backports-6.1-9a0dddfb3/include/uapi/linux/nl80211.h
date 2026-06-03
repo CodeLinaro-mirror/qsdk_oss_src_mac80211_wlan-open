@@ -3122,6 +3122,9 @@ enum nl80211_commands {
  *	the current channel and the expected time of the first beacon
  *	transmitted by the AP in the new channel, expressed in TUs.
  *
+ * @NL80211_ATTR_STA_DFS_EN: flag/u8 attribute to enable or disable
+ *	Station DFS (Dynamic Frequency Selection) support. Only applicable
+ *	in ETSI regulatory domains. 0 = disabled, 1 = enabled.
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
@@ -3750,6 +3753,7 @@ enum nl80211_attrs {
 
 	NL80211_ATTR_MAX_CH_SWITCH_TIME,
 
+	NL80211_ATTR_STA_DFS_EN,
 	/* add attributes here, update the policy in nl80211.c */
 
 	__NL80211_ATTR_AFTER_LAST,

@@ -761,6 +761,7 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_WIPHY_FRAG_THRESHOLD] = { .type = NLA_U32 },
 	[NL80211_ATTR_WIPHY_RTS_THRESHOLD] = { .type = NLA_U32 },
 	[NL80211_ATTR_WIPHY_COVERAGE_CLASS] = { .type = NLA_U8 },
+	[NL80211_ATTR_STA_DFS_EN] = NLA_POLICY_MAX(NLA_U8, 1),
 	[NL80211_ATTR_WIPHY_DYN_ACK] = { .type = NLA_FLAG },
 
 	[NL80211_ATTR_IFTYPE] = NLA_POLICY_MAX(NLA_U32, NL80211_IFTYPE_MAX),
@@ -3150,6 +3151,8 @@ static int nl80211_send_wiphy(struct cfg80211_registered_device *rdev,
 				rdev->wiphy.rts_threshold) ||
 		    nla_put_u8(msg, NL80211_ATTR_WIPHY_COVERAGE_CLASS,
 			       rdev->wiphy.coverage_class) ||
+		    nla_put_u8(msg, NL80211_ATTR_STA_DFS_EN,
+			       rdev->wiphy.sta_dfs_en) ||
 		    nla_put_u8(msg, NL80211_ATTR_MAX_NUM_SCAN_SSIDS,
 			       rdev->wiphy.max_scan_ssids) ||
 		    nla_put_u8(msg, NL80211_ATTR_MAX_NUM_SCHED_SCAN_SSIDS,
@@ -4700,10 +4703,17 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 	}
 #endif /* CPTCFG_QCN_EXTN */
 
+	if (info->attrs[NL80211_ATTR_STA_DFS_EN]) {
+		if (reg_get_dfs_region(&rdev->wiphy) != NL80211_DFS_ETSI)
+			return -EINVAL;
+		sta_dfs_en = nla_get_u8(info->attrs[NL80211_ATTR_STA_DFS_EN]);
+		changed |= WIPHY_PARAM_STA_DFS_EN;
+	}
+
 	if (changed) {
 		u8 old_retry_short, old_retry_long;
 		u32 old_frag_threshold, old_rts_threshold;
-		u8 old_coverage_class, i;
+		u8 old_coverage_class, i, old_sta_dfs_en;
 		u32 old_txq_limit, old_txq_memory_limit, old_txq_quantum;
 		u32 *old_radio_rts_threshold = NULL;
 #ifdef CPTCFG_QCN_EXTN
@@ -4735,6 +4745,7 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 		old_retry_long = rdev->wiphy.retry_long;
 		old_frag_threshold = rdev->wiphy.frag_threshold;
 		old_rts_threshold = rdev->wiphy.rts_threshold;
+		old_sta_dfs_en = rdev->wiphy.sta_dfs_en;
 		if (old_radio_rts_threshold) {
 			for (i = 0 ; i < rdev->wiphy.n_radio; i++)
 				old_radio_rts_threshold[i] =
@@ -4781,7 +4792,8 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 					rdev->wiphy.muedca_mode;
 		}
 #endif /* CPTCFG_QCN_EXTN */
-		rdev->wiphy.sta_dfs_en = sta_dfs_en;
+		if (changed & WIPHY_PARAM_STA_DFS_EN)
+			rdev->wiphy.sta_dfs_en = sta_dfs_en;
 
 		result = rdev_set_wiphy_params(rdev, radio_idx, changed);
 		if (result) {
@@ -4789,6 +4801,7 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 			rdev->wiphy.retry_long = old_retry_long;
 			rdev->wiphy.frag_threshold = old_frag_threshold;
 			rdev->wiphy.rts_threshold = old_rts_threshold;
+			rdev->wiphy.sta_dfs_en = old_sta_dfs_en;
 			if (old_radio_rts_threshold) {
 				for (i = 0 ; i < rdev->wiphy.n_radio; i++)
 					rdev->wiphy.radio_cfg[i].rts_threshold =

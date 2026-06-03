@@ -4072,6 +4072,7 @@ enum cfg80211_connect_params_changed {
  * @WIPHY_PARAM_TXQ_MEMORY_LIMIT: TXQ memory limit has been changed
  * @WIPHY_PARAM_TXQ_QUANTUM: TXQ scheduler quantum
  * @WIPHY_PARAM_MUEDCA_MODE: MUEDCA mode
+ * @WIPHY_PARAM_STA_DFS_EN: sta_dfs_en has been changed
  */
 enum wiphy_params_flags {
 	WIPHY_PARAM_RETRY_SHORT		= BIT(0),
@@ -4086,6 +4087,7 @@ enum wiphy_params_flags {
 #ifdef CPTCFG_QCN_EXTN
 	WIPHY_PARAM_MUEDCA_MODE		= BIT(9),
 #endif /* CPTCFG_QCN_EXTN */
+	WIPHY_PARAM_STA_DFS_EN		= BIT(10),
 };
 
 #define IEEE80211_DEFAULT_AIRTIME_WEIGHT	256
@@ -6922,7 +6924,7 @@ struct wiphy_radio {
  *	driver. This field must be set to a non-zero value by the driver to
  *	advertise the maximum allowed size for beacon frame.
  *
- *  @sta_dfs: Enable or disable Station DFS support.
+ * @sta_dfs_en: Enable or disable Station DFS support.
  */
 struct wiphy {
 	struct mutex mtx;
