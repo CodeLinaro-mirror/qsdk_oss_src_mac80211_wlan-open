@@ -2580,7 +2580,8 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 			    !partner_ab->recovery_start)
 				continue;
 
-			ath12k_hif_irq_enable(partner_ab);
+			if (!test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags))
+				ath12k_hif_irq_enable(partner_ab);
 
 			ret = ath12k_dp_rxdma_ring_sel_config(partner_ab);
 			if (ret) {
