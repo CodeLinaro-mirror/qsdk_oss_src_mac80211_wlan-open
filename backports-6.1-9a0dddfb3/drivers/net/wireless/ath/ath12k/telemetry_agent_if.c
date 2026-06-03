@@ -20,6 +20,8 @@ struct telemetry_agent_ops *g_agent_ops;
 
 EXPORT_SYMBOL(g_agent_ops);
 
+static bool ta_resources_created;
+
 int ath12k_telemetry_ab_agent_create_handler(struct ath12k_base *ab)
 {
 	struct agent_psoc_obj psoc_obj;
@@ -167,11 +169,26 @@ int ath12k_telemetry_ab_peer_agent_create(struct ath12k_base *ab)
  *
  * This routine may become unnecessary once the above limitation is resolved.
  */
-void ath12k_telemetry_create_resources(struct ath12k_hw_group *ag)
+/*
+ * Internal function - does NOT take ag->mutex
+ * Assumes caller already holds the mutex (e.g., core.c HW ready path)
+ */
+void __ath12k_telemetry_create_resources_locked(struct ath12k_hw_group *ag)
 {
 	struct ath12k_pdev *pdev;
 	struct ath12k_base *ab;
 	int i, ret, pdev_idx;
+
+	/* Guard: Only create resources if HW is ready and not already created */
+	if (ta_resources_created) {
+		ath12k_dbg(NULL, ATH12K_DBG_RM, "TA resources already created, skipping\n");
+		return;
+	}
+
+	if (!ath12k_hw_group_started) {
+		ath12k_dbg(NULL, ATH12K_DBG_RM, "HW group not started, skipping TA resource creation\n");
+		return;
+	}
 
 	if (!ag) {
 		ag = ath12k_core_get_ag();
@@ -181,7 +198,7 @@ void ath12k_telemetry_create_resources(struct ath12k_hw_group *ag)
 		}
 	}
 
-	mutex_lock(&ag->mutex);
+	/* NOTE: Caller MUST already hold ag->mutex */
 	for (i = 0; i < ag->num_devices; i++) {
 		ab = ag->ab[i];
 		if (!ab)
@@ -210,6 +227,27 @@ void ath12k_telemetry_create_resources(struct ath12k_hw_group *ag)
 		if (ret)
 			continue;
 	}
+
+	/* Mark resources as created after successful creation */
+	ta_resources_created = true;
+	ath12k_info(NULL, "telemetry agent resources created\n");
+}
+
+/*
+ * External function - TAKES ag->mutex before calling internal function
+ */
+void ath12k_telemetry_create_resources(struct ath12k_hw_group *ag)
+{
+	if (!ag) {
+		ag = ath12k_core_get_ag();
+		if (!ag) {
+			ath12k_err(NULL, "Fails to get ag, skipped to create telemetry resources\n");
+			return;
+		}
+	}
+
+	mutex_lock(&ag->mutex);
+	__ath12k_telemetry_create_resources_locked(ag);
 	mutex_unlock(&ag->mutex);
 }
 
@@ -218,7 +256,6 @@ static u32 ath12k_telemetry_agent_init(void)
 	int status = 0;
 
 	ath12k_telemetry_create_resources(NULL);
-	ath12k_info(NULL, "telemetry agent init Done\n");
 	return status;
 }
 
@@ -337,6 +374,8 @@ void ath12k_telemetry_destroy_resources(struct ath12k_hw_group *ag)
 		}
 	}
 
+	/* Reset the flag when destroying resources */
+	ta_resources_created = false;
 	mutex_unlock(&ag->mutex);
 }
 
