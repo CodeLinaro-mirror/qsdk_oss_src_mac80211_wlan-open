@@ -2997,7 +2997,7 @@ static void ath12k_mac_handle_beacon_iter(void *data, u8 *mac,
 	if (!ether_addr_equal(mgmt->bssid, vif->bss_conf.bssid))
 		return;
 
-	cancel_delayed_work(&ahvif->deflink.connection_loss_work);
+	cancel_delayed_work_sync(&ahvif->deflink.connection_loss_work);
 }
 
 void ath12k_mac_handle_beacon(struct ath12k *ar, struct sk_buff *skb)
@@ -5932,7 +5932,8 @@ void ath12k_bss_disassoc(struct ath12k *ar,
 
 	memset(&arvif->rekey_data, 0, sizeof(arvif->rekey_data));
 
-	cancel_delayed_work(&ahvif->deflink.connection_loss_work);
+	if (arvif == &ahvif->deflink)
+		cancel_delayed_work_sync(&ahvif->deflink.connection_loss_work);
 }
 
 u32 ath12k_mac_get_rate_hw_value(int bitrate)
