@@ -10232,6 +10232,7 @@ int ath12k_mac_op_set_radar_background(struct ieee80211_hw *hw,
 	if (!def) {
 		ret = ath12k_wmi_vdev_adfs_ocac_abort_cmd_send(ar,arvif->vdev_id);
 		if (!ret) {
+			ar->agile_abort_pending = true;
 			memset(&ar->agile_chandef, 0, sizeof(struct cfg80211_chan_def));
 			ar->agile_chandef.chan = NULL;
 		}
@@ -10265,6 +10266,10 @@ int ath12k_mac_op_set_radar_background(struct ieee80211_hw *hw,
 
 		ret = ath12k_wmi_vdev_adfs_ch_cfg_cmd_send(ar, arvif->vdev_id, def);
 		if (!ret) {
+			/* Clear pending abort flag — new CAC started, any in-flight
+			 * abort ACK belongs to the previous channel.
+			 */
+			ar->agile_abort_pending = false;
 			memcpy(&ar->agile_chandef, def, sizeof(struct cfg80211_chan_def));
 		} else {
 			memset(&ar->agile_chandef, 0, sizeof(struct cfg80211_chan_def));
@@ -20523,32 +20528,32 @@ ath12k_mac_mlo_get_vdev_args(struct ath12k_link_vif *arvif,
 void ath12k_agile_cac_abort_work(struct wiphy *wiphy,
 				 struct wiphy_work *work)
 {
-        struct ath12k *ar = container_of(work, struct ath12k,
-                                         agile_cac_abort_wq);
+	struct ath12k *ar = container_of(work, struct ath12k,
+					 agile_cac_abort_wq);
 	struct ath12k_link_vif *arvif;
-        struct ath12k_vif *ahvif;
-        bool arvif_found = false;
-        int ret = 0;
+	struct ath12k_vif *ahvif;
+	bool arvif_found = false;
+	int ret = 0;
 
-        list_for_each_entry(arvif, &ar->arvifs, list) {
-                ahvif = arvif->ahvif;
-                if (arvif->is_started &&
-                    ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
-                        arvif_found = true;
-                        break;
-                }
-        }
+	list_for_each_entry(arvif, &ar->arvifs, list) {
+		ahvif = arvif->ahvif;
+		if (arvif->is_started &&
+		    ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
+			arvif_found = true;
+			break;
+		}
+	}
 
-        if (!arvif_found)
-                goto err;
+	if (!arvif_found)
+		goto err;
 
-        ret = ath12k_wmi_vdev_adfs_ocac_abort_cmd_send(ar, arvif->vdev_id);
-
-        if (!ret) {
-                memset(&ar->agile_chandef, 0, sizeof(struct cfg80211_chan_def));
-                ar->agile_chandef.chan = NULL;
-        } else
-                goto err;
+	ret = ath12k_wmi_vdev_adfs_ocac_abort_cmd_send(ar, arvif->vdev_id);
+	if (!ret) {
+		ar->agile_abort_pending = true;
+		memset(&ar->agile_chandef, 0, sizeof(struct cfg80211_chan_def));
+		ar->agile_chandef.chan = NULL;
+	} else
+		goto err;
 
 err:
 	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L3,
@@ -20698,6 +20703,7 @@ ath12k_mac_vdev_config_after_start(struct ath12k_link_vif *arvif,
 				 ar->agile_chandef.chan->center_freq);
 		ret = ath12k_wmi_vdev_adfs_ocac_abort_cmd_send(ar,arvif->vdev_id);
 		if (!ret) {
+			ar->agile_abort_pending = true;
 			memset(&ar->agile_chandef, 0, sizeof(struct cfg80211_chan_def));
 			ar->agile_chandef.chan = NULL;
 			ath12k_mac_background_dfs_event(ar, ATH12K_BGDFS_ABORT);
