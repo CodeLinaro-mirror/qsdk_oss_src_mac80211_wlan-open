@@ -1535,6 +1535,7 @@ static void ath12k_wifi8_hal_deinit_qcn9625(struct ath12k_hal *hal)
 
 static void ath12k_wifi8_hal_set_reg_writer_hptp_addr(struct ath12k_base *ab,
 						      struct hal_srng *srng,
+						      int mac_id,
 						      int idx,
 						      enum hal_ring_type ring_type)
 {
@@ -1547,7 +1548,10 @@ static void ath12k_wifi8_hal_set_reg_writer_hptp_addr(struct ath12k_base *ab,
 		break;
 
 	case HAL_RXDMA_MONITOR_DST:
-		offset = HAL_REG_WRITER_RXMON_M0_MON2SW_DEST_RING;
+		if (mac_id == 0)
+			offset = HAL_REG_WRITER_RXMON_M0_MON2SW_DEST_RING;
+		else
+			offset = HAL_REG_WRITER_RXMON_M1_MON2SW_DEST_RING;
 		break;
 
 	case HAL_TX_MONITOR_BUF:
@@ -1555,7 +1559,10 @@ static void ath12k_wifi8_hal_set_reg_writer_hptp_addr(struct ath12k_base *ab,
 		break;
 
 	case HAL_TX_MONITOR_DST:
-		offset = HAL_REG_WRITER_TXMON_M0_MON2SW_DEST_RING;
+		if (mac_id == 0)
+			offset = HAL_REG_WRITER_TXMON_M0_MON2SW_DEST_RING;
+		else
+			offset = HAL_REG_WRITER_TXMON_M1_MON2SW_DEST_RING;
 		break;
 
 	case HAL_ASE_STATUS_RING:
