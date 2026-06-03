@@ -701,6 +701,12 @@ struct ath12k_rssi_deauth_config {
 	s8 noise_floor_offset;
 } __packed;
 
+struct ath12k_mbssid_info {
+	int tx_vdev_id;
+	u32 nontx_cnt;
+	DECLARE_BITMAP(nontx_vdev_bmap, ATH12k_MAX_MBSSID_NONTX_INTERFACES);
+};
+
 struct ath12k_link_vif {
 	u32 vdev_id;
 	u32 beacon_interval;
@@ -815,6 +821,9 @@ struct ath12k_link_vif {
 
 	/* Flag to track vdev fixed rate is set or not */
 	bool fixed_rate_set;
+
+	/* Structure to store an MBSSID set info */
+	struct ath12k_mbssid_info *mbssid_info;
 };
 
 struct ath12k_dp_link_vif {
