@@ -4485,11 +4485,12 @@ static void ieee80211_end_cac(struct wiphy *wiphy,
 
 	hrtimer_cancel(&ctx->dfs_cac_timer);
 	wiphy_work_cancel(wiphy, &ctx->dfs_cac_timer_work);
-	ieee80211_link_release_channel(link_data);
 
 	list_for_each_entry(tmp_link, &ctx->assigned_links,
 			    assigned_chanctx_list)
 		sdata->wdev.links[tmp_link->link_id].cac_started = false;
+
+	ieee80211_link_release_channel(link_data);
 }
 
 static struct cfg80211_beacon_data *
