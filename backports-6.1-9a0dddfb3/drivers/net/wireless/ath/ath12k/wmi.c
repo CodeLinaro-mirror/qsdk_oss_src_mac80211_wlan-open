@@ -2797,6 +2797,38 @@ int ath12k_wmi_pdev_set_param(struct ath12k *ar, u32 param_id,
 	return ret;
 }
 
+int ath12k_wmi_send_pdev_set_rf_path_cmd(struct ath12k *ar, u32 rf_path)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct wmi_pdev_set_rf_path_cmd *cmd;
+	struct sk_buff *skb;
+	int ret;
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_pdev_set_rf_path_cmd *)skb->data;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_PDEV_SET_RF_PATH_CMD_FIXED_PARAM,
+						 sizeof(*cmd));
+	cmd->pdev_id = cpu_to_le32(ar->pdev->pdev_id);
+	cmd->rf_path = cpu_to_le32(rf_path);
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "WMI pdev set_rf_path %u pdev_id %u\n",
+		   rf_path, ar->pdev->pdev_id);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_PDEV_SET_RF_PATH_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed to send WMI_PDEV_SET_RF_PATH_CMDID: %d\n",
+			    ret);
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+
 int ath12k_wmi_pdev_set_ps_mode(struct ath12k *ar, int vdev_id, u32 enable)
 {
 	struct ath12k_wmi_pdev *wmi = ar->wmi;
@@ -18116,6 +18148,56 @@ static void ath12k_wmi_energy_mgmt_oem_data_event(struct ath12k_base *ab,
 				       num_bytes_valid, tlv->value);
 }
 
+static void ath12k_wmi_pdev_rf_path_resp_event(struct ath12k_base *ab,
+					       struct sk_buff *skb)
+{
+	const struct wmi_pdev_set_rf_path_resp_event *ev;
+	struct ath12k *ar = NULL;
+	const void **tb;
+	u32 pdev_id;
+	int ret, i;
+
+	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
+	if (IS_ERR(tb)) {
+		ret = PTR_ERR(tb);
+		ath12k_warn(ab, "failed to parse rf_path resp TLV: %d\n", ret);
+		return;
+	}
+
+	ev = tb[WMI_TAG_PDEV_SET_RF_PATH_RESP_EVENT_FIXED_PARAM];
+	if (!ev) {
+		ath12k_warn(ab, "rf_path resp event TLV not found\n");
+		goto out;
+	}
+
+	pdev_id = le32_to_cpu(ev->pdev_id);
+
+	/* pdevs_active may be NULL before any VAP is created; use pdevs[] instead. */
+	for (i = 0; i < ab->num_radios; i++) {
+		if (ab->pdevs[i].pdev_id == pdev_id) {
+			ar = ab->pdevs[i].ar;
+			break;
+		}
+	}
+
+	if (!ar) {
+		ath12k_warn(ab, "rf_path resp: invalid pdev_id %u\n", pdev_id);
+		goto out;
+	}
+
+	ar->rf_path_ctx.is_fw_resp_success = !le32_to_cpu(ev->status);
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI,
+		   "rf_path resp: pdev_id %u rf_path %u status %u\n",
+		   pdev_id,
+		   le32_to_cpu(ev->rf_path),
+		   le32_to_cpu(ev->status));
+
+	complete(&ar->rf_path_ctx.rf_switch_done);
+out:
+	kfree(tb);
+}
+
 struct ath12k_nfcal_parse_state {
 	const struct wmi_pdev_nfcal_power_all_channels_event *ev;
 	struct ath12k_wmi_nfcal_power_event *param;
@@ -18418,6 +18500,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 		break;
 	case WMI_TBTTOFFSET_EXT_UPDATE_EVENTID:
 		ath12k_wmi_event_tbttoffset_update(ab, skb);
+		break;
+	case WMI_PDEV_SET_RF_PATH_RESP_EVENTID:
+		ath12k_wmi_pdev_rf_path_resp_event(ab, skb);
 		break;
 	/* add Unsupported events (rare) here */
 	case WMI_PEER_OPER_MODE_CHANGE_EVENTID:

@@ -598,6 +598,7 @@ enum wmi_tlv_cmd_id {
 	WMI_PDEV_SET_BIOS_GEO_TABLE_CMDID = 0x4045,
 	WMI_PDEV_MEC_AGING_TIMER_CONFIG_CMDID = 0x4049,
 	WMI_PDEV_SET_BIOS_INTERFACE_CMDID = 0x404A,
+	WMI_PDEV_SET_RF_PATH_CMDID = 0x4050,
 	WMI_PDEV_WSI_STATS_INFO_CMDID = 0x4051,
 	WMI_PDEV_SET_CUMAC_CHIP_CMDID = 0x405D,
 	WMI_VDEV_CREATE_CMDID = WMI_TLV_CMD(WMI_GRP_VDEV),
@@ -1081,6 +1082,8 @@ enum wmi_tlv_event_id {
 		WMI_PDEV_GET_HALPHY_CAL_STATUS_EVENTID + 4,
 	WMI_PDEV_RSSI_DBM_CONVERSION_PARAMS_INFO_EVENTID =
 					WMI_PDEV_GET_HALPHY_CAL_STATUS_EVENTID + 5,
+	WMI_PDEV_SET_RF_PATH_RESP_EVENTID =
+					WMI_PDEV_GET_HALPHY_CAL_STATUS_EVENTID + 8,
 	WMI_PDEV_SET_CUMAC_CHIP_ID_CONFIRMATION_EVENTID = 0x4038,
 	WMI_VDEV_START_RESP_EVENTID = WMI_TLV_CMD(WMI_GRP_VDEV),
 	WMI_VDEV_STOPPED_EVENTID,
@@ -2516,6 +2519,8 @@ enum wmi_tlv_tag {
 	WMI_CTRL_PATH_PMLO_STATS = 0x479,
 	WMI_TAG_TDMA_SCHEDULE_REQUEST_CMD = 0x47f,
 	WMI_TAG_SCAN_BLANKING_PARAMS_INFO = 0x486,
+	WMI_TAG_PDEV_SET_RF_PATH_CMD_FIXED_PARAM = 0x494,
+	WMI_TAG_PDEV_SET_RF_PATH_RESP_EVENT_FIXED_PARAM = 0x49E,
 	WMI_TAG_MLO_PRIMARY_LINK_PEER_MIGRATION_FIXED_PARAM = 0x4a3,
 	WMI_TAG_MLO_NEW_PRIMARY_LINK_PEER_INFO = 0x4a4,
 	WMI_TAG_MLO_PRIMARY_LINK_PEER_MIGRATION_COMPL_FIXED_PARAM = 0x4a5,
@@ -4329,6 +4334,18 @@ struct wmi_pdev_set_param_cmd {
 	__le32 pdev_id;
 	__le32 param_id;
 	__le32 param_value;
+} __packed;
+
+struct wmi_pdev_set_rf_path_cmd {
+	__le32 tlv_header;
+	__le32 pdev_id;
+	__le32 rf_path;
+} __packed;
+
+struct wmi_pdev_set_rf_path_resp_event {
+	__le32 pdev_id;
+	__le32 rf_path;
+	__le32 status;
 } __packed;
 
 struct wmi_pdev_set_ps_mode_cmd {
@@ -10344,6 +10361,7 @@ int ath12k_wmi_set_peer_param(struct ath12k *ar, const u8 *peer_addr,
 			      u32 vdev_id, u32 param_id, u32 param_val);
 int ath12k_wmi_pdev_set_param(struct ath12k *ar, u32 param_id,
 			      u32 param_value, u8 pdev_id);
+int ath12k_wmi_send_pdev_set_rf_path_cmd(struct ath12k *ar, u32 rf_path);
 int ath12k_wmi_pdev_set_ps_mode(struct ath12k *ar, int vdev_id, u32 enable);
 int ath12k_wmi_pdev_set_timer_for_mec(struct ath12k *ar, int vdev_id,
 				      u32 mec_timer);

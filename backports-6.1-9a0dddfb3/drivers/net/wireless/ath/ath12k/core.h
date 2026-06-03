@@ -1733,6 +1733,28 @@ struct ath12k_cu_mem {
 	__le32 max_chan_switch_time;
 } __packed;
 
+/**
+ * struct ath12k_rf_path_ctx - per-radio RF path switch state
+ * @current_index: active RF path index
+ * @target_index: requested RF path index
+ * @freq_low:  active 5G lower bound in MHz for the current RF path
+ * @freq_high: active 5G upper bound in MHz for the current RF path
+ * @rf_switch_done: signals FW response received
+ * @is_switch_in_progress: true while RF path switch is in progress
+ * @is_fw_resp_success: FW reported switch success
+ * @supported: true if radio advertised valid EXT2 secondary 5G caps
+ */
+struct ath12k_rf_path_ctx {
+	u32  current_index;
+	u32  target_index;
+	u32  freq_low;
+	u32  freq_high;
+	struct completion rf_switch_done;
+	bool is_switch_in_progress;
+	bool is_fw_resp_success;
+	bool supported;
+};
+
 struct ath12k {
 	struct ath12k_base *ab;
 	u8 pdev_idx;
@@ -2014,6 +2036,7 @@ struct ath12k {
 	struct work_struct mvr_ch_switch_notify_work;
 	u32 mvr_ch_switch_notify_vdev_bm;
 	struct ath12k_peer_map_pending_event peer_map_event;
+	struct ath12k_rf_path_ctx rf_path_ctx;
 };
 
 struct ath12k_6ghz_sp_reg_rule {

@@ -27809,6 +27809,8 @@ static int ath12k_mac_setup(struct ath12k *ar)
 	init_completion(&ar->tsf_report_done);
 	init_completion(&ar->cumac_setup_done);
 
+	init_completion(&ar->rf_path_ctx.rf_switch_done);
+
 	INIT_DELAYED_WORK(&ar->scan.timeout, ath12k_scan_timeout_work);
 	INIT_DELAYED_WORK(&ar->scan.roc_done, ath12k_scan_roc_done);
 	wiphy_work_init(&ar->scan.vdev_clean_wk, ath12k_scan_vdev_clean_work);
