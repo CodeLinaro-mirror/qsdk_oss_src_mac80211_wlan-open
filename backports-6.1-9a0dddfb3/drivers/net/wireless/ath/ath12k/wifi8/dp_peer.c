@@ -283,6 +283,7 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 	} else {
 		ahsta->dp_peer_id = dp_peer->peer_id;
 		rcu_assign_pointer(ahsta->dp_peer, dp_peer);
+		dp_peer->assoc_hw_link_id = params->hw_link_id;
 	}
 
 	/* cache net dev here and reuse it during process rx */
@@ -1604,6 +1605,7 @@ void ath12k_wifi8_dp_assoc_link_update(struct ath12k_dp *dp,
 				goto end;
 			}
 			rcu_read_unlock();
+			dp_peer->assoc_hw_link_id = ti.assoc_link_id;
 
 			ath12k_wifi8_hal_txpt_classify_info_setup(dp_hw_grp,
 								  tx_tid_ptr, &ti);

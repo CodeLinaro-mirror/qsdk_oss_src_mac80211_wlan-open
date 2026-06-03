@@ -113,8 +113,6 @@ int ath12k_tx_classify_info_alloc(struct ath12k_dp_hw_group *dp_hw_grp,
 	int success_count = 0;
 	enum ath12k_classify_bank_subid bank_sub_id;
 	struct device *dev = ath12k_dp_get_dev_from_dp_hw_group(dp_hw_grp);
-	struct ath12k_sta *ahsta;
-	u8 assoc_link_id;
 
 	if (!peer)
 		return -EINVAL;
@@ -190,21 +188,10 @@ int ath12k_tx_classify_info_alloc(struct ath12k_dp_hw_group *dp_hw_grp,
 		ti.flow_loop_handler = HAL_WIFITXPT_LOOP_TO_TQM;
 		ti.msdu_drop = 0;
 		ti.metadata = peer ? peer->peer_id : HAL_INVALID_PEERID;
-		if (ath12k_dp_peer_get_sta(peer)) {
-			rcu_read_lock();
-			ahsta = ath12k_sta_to_ahsta(ath12k_dp_peer_get_sta(peer));
-			assoc_link_id = ath12k_dp_peer_get_sta(peer)->mlo ?
-					ahsta->assoc_link_id :
-					ahsta->deflink.link_id;
-			ti.assoc_link_id =
-			ath12k_dp_peer_convert_logical_to_hw_link_id(peer,
-								     assoc_link_id);
-			if (ti.assoc_link_id == ATH12K_INVALID_HW_LINKID) {
-				rcu_read_unlock();
-				return -EINVAL;
-			}
-			rcu_read_unlock();
-		}
+		if (peer->is_vdev_peer)
+			ti.assoc_link_id = peer->hw_link_id;
+		else
+			ti.assoc_link_id = peer->assoc_hw_link_id;
 
 		ath12k_wifi8_hal_txpt_classify_info_setup(dp_hw_grp, tx_tid_ptr, &ti);
 		success_count++;
@@ -358,6 +345,7 @@ struct hal_txpt_classify_info
 	ti.flow_handler = HAL_WIFITXPT_TO_TQM;
 	ti.flow_loop_handler = HAL_WIFITXPT_LOOP_TO_TQM;
 	ti.metadata = peer ? peer->peer_id : HAL_INVALID_PEERID;
+	/* mcast flowq will be allocated only for bss peer */
 	ti.assoc_link_id = peer->hw_link_id;
 	ti.paddr = txpt_paddr;
 	ath12k_wifi8_hal_txpt_classify_info_setup(dp_hw_grp, tx_tid_ptr, &ti);
@@ -427,6 +415,8 @@ int ath12k_tx_alloc_hol_flow_ptr(struct ath12k_dp_hw_group *dp_hw_grp,
 	ti.flow_handler = HAL_WIFITXPT_TO_TQM;
 	ti.flow_loop_handler = HAL_WIFITXPT_LOOP_TO_TQM;
 	ti.metadata = peer ? peer->peer_id : HAL_INVALID_PEERID;
+	ti.assoc_link_id = peer->assoc_hw_link_id;
+
 	ti.paddr = txpt_paddr;
 	ath12k_wifi8_hal_txpt_classify_info_setup(dp_hw_grp, tx_tid_ptr, &ti);
 	return 0;
