@@ -179,7 +179,6 @@ struct ath12k_wifi8_dp_congestion_control {
 
 struct ath12k_dp_wifi8 {
 	struct ath12k_dp *dp;
-	bool cumac;
 	bool init_done;
 	atomic_t sam_cmd_num;
 	struct dp_srng tx_exception;

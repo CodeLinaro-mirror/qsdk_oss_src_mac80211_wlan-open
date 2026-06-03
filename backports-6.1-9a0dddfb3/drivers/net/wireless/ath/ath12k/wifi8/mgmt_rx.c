@@ -1480,11 +1480,6 @@ int ath12k_wifi8_mgmt_op_device_init(struct ath12k_mgmt *mgmt)
 	struct ath12k_base *ab = mgmt->ab;
 	int ret;
 
-	/* Assign device_id=0 chip as C-UMAC; it will be cleaned up later by
-	 * C-UMAC selection algorithm.
-	 */
-	ab->is_cumac_chip = ab->device_id == 0;
-
 	if (!ab->is_cumac_chip) {
 		ath12k_dbg(ab, ATH12K_DBG_MGMT,
 			   "Skip mgmt op init for non C-UMAC device %d", ab->device_id);
