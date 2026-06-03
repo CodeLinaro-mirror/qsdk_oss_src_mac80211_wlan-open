@@ -664,8 +664,6 @@ struct ath12k_rxdma_error_stats {
  * @mcast_msdu_cnt: Num Mcast Msdus received from HW
  * @bcast_msdu_cnt: Num Bcast Msdus received from HW
  * @delivered_to_stack: packets delivered to stack
- * @reo_err: REO error statistics
- * @rxdma_err: RXDMA error statistics
  */
 struct ath12k_tid_rx_stats {
 	struct hist_stats to_stack_delay;
@@ -675,8 +673,6 @@ struct ath12k_tid_rx_stats {
 	u32 bcast_msdu_cnt;
 	u32 delivered_to_stack;
 	u32 fail_cnt[DP_TID_RX_SW_DROP_MAX];
-	struct ath12k_reo_error_stats reo_err;
-	struct ath12k_rxdma_error_stats rxdma_err;
 };
 
 /**
@@ -701,21 +697,29 @@ struct ath12k_tid_tx_stats {
  * struct ath12k_dp_pdev_tid_stats - VoW TID statistics
  * @tid_tx: Per-ring, per-TID TX statistics [ring][tid]
  * @tid_rx: Per-ring, per-TID RX statistics [ring][tid]
+ * @tid_reo_err: Per-TID REO error statistics [tid]
+ * @tid_rxdma_err: Per-TID RXDMA error statistics [tid]
  */
 struct ath12k_dp_pdev_tid_stats {
 	struct ath12k_tid_tx_stats tid_tx[DP_TCL_NUM_RING_MAX][VOW_DATA_TID_MAX];
 	struct ath12k_tid_rx_stats tid_rx[DP_REO_DST_RING_MAX][VOW_DATA_TID_MAX];
+	struct ath12k_reo_error_stats tid_reo_err[VOW_DATA_TID_MAX];
+	struct ath12k_rxdma_error_stats tid_rxdma_err[VOW_DATA_TID_MAX];
 };
 
 /**
  * struct ath12k_dp_aggr_pdev_tid_stats
  * @tid_tx: per-TID TX statistics [tid]
  * @tid_rx: per-TID RX statistics [tid]
+ * @tid_reo_err: Per-TID REO error statistics [tid]
+ * @tid_rxdma_err: Per-TID RXDMA error statistics [tid]
  * Per-TID stats aggregated across rings
  */
 struct ath12k_dp_aggr_pdev_tid_stats {
 	struct ath12k_tid_tx_stats tid_tx[VOW_DATA_TID_MAX];
 	struct ath12k_tid_rx_stats tid_rx[VOW_DATA_TID_MAX];
+	struct ath12k_reo_error_stats tid_reo_err[VOW_DATA_TID_MAX];
+	struct ath12k_rxdma_error_stats tid_rxdma_err[VOW_DATA_TID_MAX];
 };
 
 struct ath12k_qos_stats {
