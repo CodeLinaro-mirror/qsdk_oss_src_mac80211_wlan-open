@@ -4413,7 +4413,7 @@ void ieee80211_start_punctured_cac(struct wiphy *wiphy,
 	if (!chandef || !chandef->chan)
 		return;
 
-	cac_time = chandef->chan->dfs_cac_ms * IEEE80211_OFFCHAN_CAC_MULTIPLIER;
+	cac_time = cfg80211_chandef_dfs_cac_time(wiphy, chandef, true, false);
 	if (!cac_time)
 		cac_time = IEEE80211_DFS_MIN_CAC_TIME_MS;
 

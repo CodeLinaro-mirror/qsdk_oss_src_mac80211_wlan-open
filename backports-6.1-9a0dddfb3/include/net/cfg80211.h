@@ -180,7 +180,6 @@ enum ieee80211_channel_flags {
 #define IEEE80211_DFS_MIN_NOP_TIME_MS		(30 * 60 * 1000)
 #define IEEE80211_MAX_PUNCT_OBJS 2
 #define IEEE80211_MAX_20MHZ_SUBCHANS 16
-#define IEEE80211_OFFCHAN_CAC_MULTIPLIER 6
 
 /**
  * struct ieee80211_channel - channel definition
