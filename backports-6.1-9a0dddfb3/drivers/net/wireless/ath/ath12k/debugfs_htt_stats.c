@@ -14137,6 +14137,180 @@ static void ath12k_htt_print_enhanced_ctl_stats(const void *tag_buf, u16 tag_len
 	stats_req->buf_len = len;
 }
 
+static void ath12k_htt_print_dfs_radar_history_tlv(const void *tag_buf, u16 tag_len,
+						struct debug_htt_stats_req *stats_req)
+{
+	const struct ath12k_htt_stats_dfs_radar_history_tlv *htt_stats_buf = tag_buf;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
+	u32 len = stats_req->buf_len;
+	u32 freq_info, rssi_info, domain_info, sidx_info;
+	u32 duration_info, threshld_info, pr_info;
+	u32 i, num_entries;
+	u8 *buf = stats_req->buf;
+
+	if (tag_len < sizeof(*htt_stats_buf))
+		return;
+
+	len += scnprintf(buf + len, buf_len - len,
+			"\n===RADAR_HISTORY===:\n");
+	len += scnprintf(buf + len, buf_len - len,
+			"|=======================================================================================================================================================|\n");
+	len += scnprintf(buf + len, buf_len - len,
+			"|%-3s|%-9s|%-6s|%-5s|%-7s|%-9s|%-6s|%-4s|%-6s|%-6s|%-12s|%-9s|%-9s|%-9s|%-9s|%-9s|\n",
+			"Idx", "Freq(MHz)", "DetId", "Chirp", "PulseId",
+			"RSSI(dBm)", "Domain", "Type", "RFType",
+			"SIDX", "FreqOff(kHz)", "MinDur(us)", "MaxDur(us)",
+			"Threshold", "MinPRI(us)", "MaxPRI(us)");
+	len += scnprintf(buf + len, buf_len - len,
+			"|-----|---------------|--------------|--------------|--------------|------------|--------|------------|----------|----------|------------|--------------|\n");
+	num_entries = min_t(u32, le32_to_cpu(htt_stats_buf->count),
+						HTT_STATS_DFS_RADAR_HISTORY_MAX_ENTRIES);
+
+	for (i = 0; i < num_entries; i++) {
+		freq_info =
+			le32_to_cpu(htt_stats_buf->radar_entry_stats[i].freq_det_info);
+		rssi_info =
+			le32_to_cpu(htt_stats_buf->radar_entry_stats[i].rssi_pulse_info);
+		domain_info =
+			le32_to_cpu(htt_stats_buf->radar_entry_stats[i].domain_type_info);
+		sidx_info =
+			le32_to_cpu(htt_stats_buf->radar_entry_stats[i].sidx_freq_info);
+		duration_info =
+			le32_to_cpu(htt_stats_buf->radar_entry_stats[i].dur_info);
+		threshld_info =
+			le32_to_cpu(htt_stats_buf->radar_entry_stats[i].threshold_info);
+		pr_info =
+			le32_to_cpu(htt_stats_buf->radar_entry_stats[i].pri_info);
+
+		if (len + 350 > buf_len) {
+			len += scnprintf(buf + len, buf_len - len,
+					"... (output truncated, insufficient buffer space)\n");
+			break;
+		}
+		len += scnprintf(buf + len, buf_len - len,
+				"|%-3u|%-9u|%-6u|%-5u|%-7u|%-9d|%-6x|0x%02x|0x%03x|%-6d|%-12d|%-9u|%-9u|%-9u|%-9u|%-9u|\n",
+				i + 1,
+				u32_get_bits(freq_info,
+			HTT_STATS_DFS_RADAR_HISTORY_RADAR_ENTRY_STATS_CHAN_FREQ_GET),
+				u32_get_bits(freq_info,
+			HTT_STATS_DFS_RADAR_HISTORY_RADAR_ENTRY_STATS_DETECTOR_ID_GET),
+				u32_get_bits(freq_info,
+			HTT_STATS_DFS_RADAR_HISTORY_RADAR_ENTRY_STATS_IS_CHIRP_GET),
+				u32_get_bits(rssi_info,
+			HTT_STATS_DFS_RADAR_HISTORY_RADAR_ENTRY_STATS_RF_PULSEID_GET),
+				(s8)u32_get_bits(rssi_info,
+			HTT_STATS_DFS_RADAR_HISTORY_RADAR_ENTRY_STATS_RADAR_RSSI_DBM_GET),
+				u32_get_bits(domain_info,
+			HTT_STATS_DFS_RADAR_HISTORY_RADAR_ENTRY_STATS_DOMAIN_GET),
+				u32_get_bits(domain_info,
+			HTT_STATS_DFS_RADAR_HISTORY_RADAR_ENTRY_STATS_TYPE_GET),
+				u32_get_bits(domain_info,
+			HTT_STATS_DFS_RADAR_HISTORY_RADAR_ENTRY_STATS_RF_RADAR_TYPE_GET),
+				(s16)u32_get_bits(sidx_info,
+			HTT_STATS_DFS_RADAR_HISTORY_RADAR_ENTRY_STATS_SIDX_GET),
+				(s16)u32_get_bits(sidx_info,
+			HTT_STATS_DFS_RADAR_HISTORY_RADAR_ENTRY_STATS_FREQ_OFFSET_GET),
+				u32_get_bits(duration_info,
+			HTT_STATS_DFS_RADAR_HISTORY_RADAR_ENTRY_STATS_RF_MINDUR_GET),
+				u32_get_bits(duration_info,
+			HTT_STATS_DFS_RADAR_HISTORY_RADAR_ENTRY_STATS_RF_MAXDUR_GET),
+				u32_get_bits(threshld_info,
+			HTT_STATS_DFS_RADAR_HISTORY_RADAR_ENTRY_STATS_RF_THRESHOLD_GET),
+				u32_get_bits(pr_info,
+			HTT_STATS_DFS_RADAR_HISTORY_RADAR_ENTRY_STATS_RF_MINPRI_GET),
+				u32_get_bits(pr_info,
+			HTT_STATS_DFS_RADAR_HISTORY_RADAR_ENTRY_STATS_RF_MAXPRI_GET));
+	}
+
+	len += scnprintf(buf + len, buf_len - len,
+			"|=======================================================================================================================================================|\n");
+	len += scnprintf(buf + len, buf_len - len,
+		"Total Resets: %u, Buffer Write Index: %u\n",
+		le32_to_cpu(htt_stats_buf->count), le32_to_cpu(htt_stats_buf->idx));
+
+	stats_req->buf_len = len;
+}
+
+static void
+ath12k_htt_print_dfs_ini_tlv(const void *tag_buf, u16 tag_len,
+			      struct debug_htt_stats_req *stats_req)
+{
+	const struct ath12k_htt_stats_dfs_ini_tlv *htt_stats_buf = tag_buf;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
+	u32 len = stats_req->buf_len;
+	u8 *buf = stats_req->buf;
+	u8 i;
+
+	/* Register names in wfax_dfs_common[] order (phyDfsIni.h) */
+	static const char * const dfs_reg_names[ATH12K_HTT_STATS_DFS_INI_NUM_REGS] = {
+		"RADAR_POW_DET_L",
+		"RADAR_DETECTION_U",
+		"RADAR_PULSE_THR_L",
+		"RADAR_POW_DET_U",
+		"RADAR_PULSE_THR_U",
+		"SRCH_FFT_CTRL2_0_L",
+		"SRCH_FFT_CTRL1_U",
+		"SRCH_FFT_CTRL2_1_L",
+		"RADAR_DETECTION_L",
+		"SRCH_FFT_CTRL2_1_U",
+	};
+
+	if (tag_len < sizeof(*htt_stats_buf))
+		return;
+
+	len += scnprintf(buf + len, buf_len - len, "HTT_STATS_DFS_INI_REG:\n");
+	for (i = 0; i < ATH12K_HTT_STATS_DFS_INI_NUM_REGS; i++)
+		len += scnprintf(buf + len, buf_len - len,
+				 "%-24s 0x%08x\n",
+				 dfs_reg_names[i],
+				 le32_to_cpu(htt_stats_buf->reg_val[i]));
+	len += scnprintf(buf + len, buf_len - len, "\n");
+
+	stats_req->buf_len = len;
+}
+
+static void ath12k_htt_print_dfs_ipc_ring_tlv(const void *tag_buf, u16 tag_len,
+					       struct debug_htt_stats_req *stats_req)
+{
+	const struct ath12k_htt_stats_dfs_ipc_ring_tlv *htt_stats_buf = tag_buf;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
+	u32 len = stats_req->buf_len;
+	u8 *buf = stats_req->buf;
+	static const char * const ring_name[ATH12K_HTT_STATS_DFS_IPC_RING_COUNT] = {
+		"DFS0", "DFS1", "DFS2"
+	};
+	int i;
+
+	if (tag_len < sizeof(*htt_stats_buf))
+		return;
+
+	len += scnprintf(buf + len, buf_len - len,
+			"\n===DFS IPC Ring Stats===\n");
+	len += scnprintf(buf + len, buf_len - len,
+			"|------------------|------------|------------------|------------|------------------|\n");
+	len += scnprintf(buf + len, buf_len - len,
+			"|%-18s|%-12s|%-18s|%-12s|%-18s|\n",
+			"Ring", "HeadIdx", "ShadowHeadIdx",
+			"TailIdx", "ShadowTailIdx");
+	len += scnprintf(buf + len, buf_len - len,
+			"|------------------|------------|------------------|------------|------------------|\n");
+
+	for (i = 0; i < ATH12K_HTT_STATS_DFS_IPC_RING_COUNT; i++) {
+		len += scnprintf(buf + len, buf_len - len,
+				"|%-18s|%-12u|%-18u|%-12u|%-18u|\n",
+				ring_name[i],
+				le32_to_cpu(htt_stats_buf->ipc_ring_stats[i].head_idx),
+			le32_to_cpu(htt_stats_buf->ipc_ring_stats[i].shadow_head_idx),
+				le32_to_cpu(htt_stats_buf->ipc_ring_stats[i].tail_idx),
+			le32_to_cpu(htt_stats_buf->ipc_ring_stats[i].shadow_tail_idx));
+	}
+
+	len += scnprintf(buf + len, buf_len - len,
+			"|------------------|------------|------------------|------------|------------------|\n");
+
+	stats_req->buf_len = len;
+}
+
 static void ath12k_htt_print_dpd_halphy_tlv(const void *tag_buf, u16 tag_len,
 struct debug_htt_stats_req *stats_req)
 {
@@ -15331,6 +15505,18 @@ static int ath12k_dbg_htt_ext_stats_parse(struct ath12k_base *ab,
 	case HTT_STATS_SCHED_TXQ_TX_MODE_SIMPLIFIED_TAG:
 		ath12k_htt_print_sched_txq_tx_mode_simplified_tlv(tag_buf,
 								  len, stats_req);
+		break;
+
+	case HTT_STATS_DFS_RADAR_HISTORY_TAG:
+		ath12k_htt_print_dfs_radar_history_tlv(tag_buf, len, stats_req);
+		break;
+
+	case HTT_STATS_DFS_INI_TAG:
+		ath12k_htt_print_dfs_ini_tlv(tag_buf, len, stats_req);
+		break;
+
+	case HTT_STATS_DFS_IPC_RING_TAG:
+		ath12k_htt_print_dfs_ipc_ring_tlv(tag_buf, len, stats_req);
 		break;
 
 	case HTT_STATS_PHY_DPD_DEBUG_V1_TAG:
