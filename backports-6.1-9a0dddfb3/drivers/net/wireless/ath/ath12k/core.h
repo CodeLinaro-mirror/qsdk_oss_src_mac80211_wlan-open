@@ -1562,6 +1562,20 @@ struct ath12k_radio_cfg {
 };
 
 /**
+ * enum ath12k_rf_path_index - internal RF path operating range selection
+ * @ATH12K_RF_PATH_FULL_RANGE: Primary path — full 5G operating range
+ * @ATH12K_RF_PATH_HIGH_RANGE: Secondary path — high 5G operating range only
+ *
+ * Used as the value of ath12k_rf_path_ctx.current_index and for internal
+ * comparisons in mac.c and reg.c.  Vendor-facing code in vendor.c uses the
+ * parallel qca_wlan_vendor_rf_path_mode enum which has identical values.
+ */
+enum ath12k_rf_path_index {
+	ATH12K_RF_PATH_FULL_RANGE = 0,
+	ATH12K_RF_PATH_HIGH_RANGE = 1,
+};
+
+/**
  * struct ath12k_chanctx_switch_stats - Channel context switch profiling statistics
  * @total_switches: Total number of channel switches completed
  * @last_switch_time_us: Duration of the most recent channel switch in microseconds
@@ -2316,6 +2330,8 @@ struct ath12k_base {
 	struct ath12k_pdev __rcu *pdevs_active[MAX_RADIOS];
 
 	struct ath12k_wmi_hal_reg_capabilities_ext_arg hal_reg_cap[MAX_RADIOS];
+	/* Secondary RF path freq caps from SERVICE_READY_EXT2 (rf_switch_config) */
+	struct ath12k_wmi_hal_reg_capabilities_ext2_arg hal_reg_cap_ext2[MAX_RADIOS];
 	unsigned long long free_vdev_map;
 	unsigned long long free_vdev_stats_id_map;
 	wait_queue_head_t peer_mapping_wq;
