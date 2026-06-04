@@ -14264,7 +14264,7 @@ u16 tag_len, struct debug_htt_stats_req *stats_req)
 		return;
 
 	len += scnprintf(buf + len, buf_len - len,
-			"===================== DPD HW Cal Results =====================\n");
+		"===================== DPD HW Cal Results =====================\n");
 
 	for (i = 0; i < ATH12K_HTT_STATS_MAX_CHAINS; i++) {
 		len += scnprintf(buf + len, buf_len - len,
@@ -14289,6 +14289,215 @@ u16 tag_len, struct debug_htt_stats_req *stats_req)
 					      (s32 *)htt_stats_buf->nmse_chain[i],
 					      ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
 	}
+
+	stats_req->buf_len = len;
+}
+
+static void ath12k_htt_print_phy_dpd_debug_tlv(const void *tag_buf, u16 tag_len,
+						struct debug_htt_stats_req *stats_req)
+{
+	const struct ath12k_htt_phy_dpd_debug_chain_tlv *htt_stats_buf = tag_buf;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE, len = stats_req->buf_len;
+	__le32 arr_le32[ATH12K_HTT_MAX_DPD_CAL_TABLE];
+	s32 arr_s32[ATH12K_HTT_MAX_DPD_CAL_TABLE];
+	s8 arr_s8[ATH12K_HTT_MAX_DPD_CAL_TABLE];
+	u8 *buf = stats_req->buf;
+	u8 i;
+
+	if (tag_len < sizeof(*htt_stats_buf))
+		return;
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "\n===== PHY DPD Debug Stats [chain %u] =====\n",
+			 htt_stats_buf->chain_idx);
+	len += scnprintf(buf + len, buf_len - len,
+			 "version = %u\n", htt_stats_buf->version);
+	len += scnprintf(buf + len, buf_len - len,
+			 "chainmask = 0x%x\n",
+			 le16_to_cpu(htt_stats_buf->chainmask));
+	len += scnprintf(buf + len, buf_len - len,
+			 "num_gain_idx = %u\n\n", htt_stats_buf->num_gain_idx);
+
+	for (i = 0; i < ATH12K_HTT_MAX_DPD_CAL_TABLE; i++)
+		arr_s32[i] = a_sle32_to_cpu(
+				htt_stats_buf->dpd_debug_params[i].dpd_out_nmse_x10);
+	len += print_array_to_buf_s32(buf, len, "dpd_out_nmse_x10", 0,
+				      arr_s32, ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+
+	for (i = 0; i < ATH12K_HTT_MAX_DPD_CAL_TABLE; i++)
+		arr_le32[i] = htt_stats_buf->dpd_debug_params[i].pa_max_avg_tx;
+	len += print_array_to_buf(buf, len, "pa_max_avg_tx",
+				  arr_le32, ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+
+	for (i = 0; i < ATH12K_HTT_MAX_DPD_CAL_TABLE; i++)
+		arr_le32[i] = htt_stats_buf->dpd_debug_params[i].dpd_training_cnt;
+	len += print_array_to_buf(buf, len, "dpd_training_cnt",
+				  arr_le32, ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+
+	for (i = 0; i < ATH12K_HTT_MAX_DPD_CAL_TABLE; i++)
+		arr_le32[i] = htt_stats_buf->dpd_debug_params[i].dpd_scaling;
+	len += print_array_to_buf(buf, len, "dpd_scaling",
+				  arr_le32, ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+
+	for (i = 0; i < ATH12K_HTT_MAX_DPD_CAL_TABLE; i++)
+		arr_s32[i] = (s16)le16_to_cpu(
+			htt_stats_buf->dpd_debug_params[i].dpd_training_power_db8);
+	len += print_array_to_buf_s32(buf, len, "dpd_training_power_db8", 0,
+				      arr_s32, ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+
+	for (i = 0; i < ATH12K_HTT_MAX_DPD_CAL_TABLE; i++)
+		arr_le32[i] = htt_stats_buf->dpd_debug_params[i].dpd_out_sq;
+	len += print_array_to_buf(buf, len, "dpd_out_sq",
+				  arr_le32, ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+
+	for (i = 0; i < ATH12K_HTT_MAX_DPD_CAL_TABLE; i++)
+		arr_s32[i] = htt_stats_buf->dpd_debug_params[i].dpd_state;
+	len += print_array_to_buf_s32(buf, len, "dpd_state", 0,
+				      arr_s32, ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+
+	for (i = 0; i < ATH12K_HTT_MAX_DPD_CAL_TABLE; i++)
+		arr_s32[i] = htt_stats_buf->dpd_debug_params[i].dpd_in_glut;
+	len += print_array_to_buf_s32(buf, len, "dpd_in_glut", 0,
+				      arr_s32, ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+
+	for (i = 0; i < ATH12K_HTT_MAX_DPD_CAL_TABLE; i++)
+		arr_s32[i] = htt_stats_buf->dpd_debug_params[i].dpd_in_tx_gain;
+	len += print_array_to_buf_s32(buf, len, "dpd_in_tx_gain", 0,
+				      arr_s32, ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+
+	for (i = 0; i < ATH12K_HTT_MAX_DPD_CAL_TABLE; i++)
+		arr_s8[i] = htt_stats_buf->dpd_debug_params[i].dpd_out_train_dac_gain;
+	len += print_array_to_buf_s8(buf, len, "dpd_out_train_dac_gain", 0,
+				     arr_s8, ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+
+	for (i = 0; i < ATH12K_HTT_MAX_DPD_CAL_TABLE; i++)
+		arr_s8[i] = htt_stats_buf->dpd_debug_params[i].dpd_in_gc;
+	len += print_array_to_buf_s8(buf, len, "dpd_in_gc", 0,
+				     arr_s8, ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+
+	for (i = 0; i < ATH12K_HTT_MAX_DPD_CAL_TABLE; i++)
+		arr_s32[i] = htt_stats_buf->dpd_debug_params[i].dpd_out_sq_idx;
+	len += print_array_to_buf_s32(buf, len, "dpd_out_sq_idx", 0,
+				      arr_s32, ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+
+	for (i = 0; i < ATH12K_HTT_MAX_DPD_CAL_TABLE; i++)
+		arr_s32[i] = htt_stats_buf->dpd_debug_params[i].dpd_out_train_rx_gain_idx;
+	len += print_array_to_buf_s32(buf, len, "dpd_out_train_rx_gain_idx", 0,
+				      arr_s32, ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+
+	for (i = 0; i < ATH12K_HTT_MAX_DPD_CAL_TABLE; i++)
+		arr_s32[i] = htt_stats_buf->dpd_debug_params[i].dpd_in_kernel_sel;
+	len += print_array_to_buf_s32(buf, len, "dpd_in_kernel_sel", 0,
+				      arr_s32, ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+
+	stats_req->buf_len = len;
+}
+
+static void ath12k_htt_print_phy_tpc_debug_tlv(const void *tag_buf, u16 tag_len,
+						struct debug_htt_stats_req *stats_req)
+{
+	const struct ath12k_htt_phy_tpc_debug_chain_tlv *htt_stats_buf = tag_buf;
+	const struct ath12k_htt_phy_tpc_debug_params_v1 *tpc_params;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE, len = stats_req->buf_len;
+	u8 *buf = stats_req->buf;
+
+	if (tag_len < sizeof(*htt_stats_buf))
+		return;
+
+	tpc_params = &htt_stats_buf->tpc_debug_params;
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "\n===== PHY TPC Debug Stats [chain %u] =====\n",
+			 htt_stats_buf->chain_idx);
+	len += scnprintf(buf + len, buf_len - len,
+			 "version = %u\n", htt_stats_buf->version);
+	len += scnprintf(buf + len, buf_len - len,
+			 "chainmask = 0x%x\n",
+			 le16_to_cpu(htt_stats_buf->chainmask));
+	len += scnprintf(buf + len, buf_len - len,
+			 "  lat_glut_idx = %u\n", tpc_params->lat_glut_idx);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  lat_tx_gain_idx = %u\n", tpc_params->lat_tx_gain_idx);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  lat_dac_gain = %d\n", tpc_params->lat_dac_gain);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  lat_target_power = %d\n", tpc_params->lat_target_power);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  lat_acc_clpc_error = %d\n", tpc_params->lat_acc_clpc_error);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  lat_clpc_err = %d\n", tpc_params->lat_clpc_err);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  lat_meas_pwr = %d\n", tpc_params->lat_meas_pwr);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  lat_wsi_temp_valid = %u\n", tpc_params->lat_wsi_temp_valid);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  lat_wsi_full_pkt_pwr_valid = %u\n",
+			 tpc_params->lat_wsi_full_pkt_pwr_valid);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  lat_wsi_pream_pwr_valid = %u\n",
+			 tpc_params->lat_wsi_pream_pwr_valid);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  lat_wsi_temp = %d\n", tpc_params->lat_wsi_temp);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  lat_wsi_full_pkt_pwr = %u\n",
+			 tpc_params->lat_wsi_full_pkt_pwr);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  lat_wsi_pream_pwr = %u\n", tpc_params->lat_wsi_pream_pwr);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  lat_wsi_tx_gain_idx = %u\n", tpc_params->lat_wsi_tx_gain_idx);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  lat_wsi_tpc_pdet_gain_idx = %u\n",
+			 tpc_params->lat_wsi_tpc_pdet_gain_idx);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  lat_wsi_tpc_attn = %u\n", tpc_params->lat_wsi_tpc_attn);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  glut_dac_gain_cal = %d\n", tpc_params->glut_dac_gain_cal);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  glut_max_dac_gain_cal = %d\n",
+			 tpc_params->glut_max_dac_gain_cal);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  dpd_dac_gainal = %d\n", tpc_params->dpd_dac_gainal);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  dpd_tx_gain_idx_cal = %u\n", tpc_params->dpd_tx_gain_idx_cal);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  target_pwr_clpc_thr_corr = %d\n",
+			 tpc_params->target_pwr_clpc_thr_corr);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  olpc_mode = %u\n", tpc_params->olpc_mode);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  wsi_timeout = %u\n", tpc_params->wsi_timeout);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  target_pwr_clpc_thr_update = %d\n",
+			 tpc_params->target_pwr_clpc_thr_update);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  ro_temp_valid = %u\n", tpc_params->ro_temp_valid);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  ro_full_pkt_pwr_valid = %u\n",
+			 tpc_params->ro_full_pkt_pwr_valid);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  ro_pream_pwr_valid = %u\n", tpc_params->ro_pream_pwr_valid);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  ro_temp = %d\n", tpc_params->ro_temp);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  ro_full_pkt_pwr = %u\n", tpc_params->ro_full_pkt_pwr);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  ro_pream_pwr = %u\n", tpc_params->ro_pream_pwr);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  ro_tpc_fe_sel = %u\n", tpc_params->ro_tpc_fe_sel);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  ro_full_pkt_avg_out = %u\n", tpc_params->ro_full_pkt_avg_out);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  ro_lat_dc = %u\n", tpc_params->ro_lat_dc);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  ro_pdacc_avg_out = %u\n", tpc_params->ro_pdacc_avg_out);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  temp_per_chain = %u\n", tpc_params->temp_per_chain);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  cal_cmd = %u\n", tpc_params->cal_cmd);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  cal_time = %u\n", tpc_params->cal_time);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  cal_result = %u\n", tpc_params->cal_result);
 
 	stats_req->buf_len = len;
 }
@@ -15032,6 +15241,14 @@ static int ath12k_dbg_htt_ext_stats_parse(struct ath12k_base *ab,
 	case HTT_STATS_SCHED_TXQ_TX_MODE_SIMPLIFIED_TAG:
 		ath12k_htt_print_sched_txq_tx_mode_simplified_tlv(tag_buf,
 								  len, stats_req);
+		break;
+
+	case HTT_STATS_PHY_DPD_DEBUG_TAG:
+		ath12k_htt_print_phy_dpd_debug_tlv(tag_buf, len, stats_req);
+		break;
+
+	case HTT_STATS_PHY_TPC_DEBUG_TAG:
+		ath12k_htt_print_phy_tpc_debug_tlv(tag_buf, len, stats_req);
 		break;
 
 	default:
