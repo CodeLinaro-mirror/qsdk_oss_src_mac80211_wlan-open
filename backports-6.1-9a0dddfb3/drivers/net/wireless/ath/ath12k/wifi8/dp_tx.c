@@ -5075,6 +5075,7 @@ skip_drop:
 
 int ath12k_wifi8_dp_tx_congestion_control_init(struct ath12k_dp *dp)
 {
+	struct ath12k_base *ab = dp->ab;
 	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8 =
 			ath12k_get_dp_hw_group_wifi8(dp->dp_hw_grp);
 	struct ath12k_wifi8_dp_congestion_control *congstn =

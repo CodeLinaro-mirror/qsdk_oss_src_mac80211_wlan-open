@@ -1397,6 +1397,7 @@ static int ath12k_wifi8_dp_mon_rx_add_ppdu_desc(struct list_head *mon_desc_used_
 	}
 
 	list_for_each_entry(desc, mon_desc_used_list, list) {
+		struct ath12k_base *ab = dp_mon->dp->ab;
 		desc_cnt = ppdu_desc->status_desc_cnt;
 		if (unlikely(desc_cnt >= ATH12K_DP_MON_STATUS_BUF)) {
 			ath12k_warn(dp_mon->dp,
@@ -1868,6 +1869,7 @@ int ath12k_wifi8_dp_mon_rx_dual_ring_setup_ppdu_desc(struct ath12k_pdev_dp *dp_p
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
+	struct ath12k_base *ab = dp->ab;
 	u32 mon_status_buf = ATH12K_DP_MON_STATUS_BUF;
 	int i, ret;
 

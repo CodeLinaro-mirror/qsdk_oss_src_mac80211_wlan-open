@@ -24,75 +24,43 @@ struct ath12k_link_vif;
 /* Target configuration defines */
 
 
-#if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || \
-	defined(CPTCFG_ATH12K_MEM_PROFILE_512M) || \
-	defined(CONFIG_ATH12K_MEM_PROFILE_256M)  || \
-	defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
 /* Num VDEVS per radio */
-#define TARGET_NUM_VDEVS        (8 + 1)
+#define TARGET_NUM_VDEVS		(ab->mem_params.num_vdevs)
 /* Maximum number of AP interfaces allowed per radio for MBSSID.
  * This excludes the monitor vdev included in TARGET_NUM_VDEVS.
  */
-#define ATH12K_MBSSID_MAX_INTERFACES	(TARGET_NUM_VDEVS - 1)
+#define ATH12K_MBSSID_MAX_INTERFACES	((ab->mem_params.num_vdevs) - 1)
 
 /* Num of Bridge vdevs per radio */
-#define TARGET_NUM_BRIDGE_VDEVS		0
-#define ATH12K_MAX_NUM_VDEVS_NLINK	TARGET_NUM_BRIDGE_VDEVS
-
-#if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined(CPTCFG_ATH12K_MEM_PROFILE_512M)
-#define ATH12K_QMI_TARGET_MEM_MODE      ATH12K_QMI_TARGET_MEM_MODE_512M
-#else
-#define ATH12K_QMI_TARGET_MEM_MODE      ATH12K_QMI_TARGET_MEM_MODE_256M
-#endif
-
-/* Max num of stations for Single Radio mode */
-#define TARGET_NUM_STATIONS_SINGLE     128
-
-/* Max num of stations for DBS */
-#define TARGET_NUM_STATIONS_DBS                64
-/* Max num of stations for DBS_SBS */
-#define TARGET_NUM_STATIONS_DBS_SBS	42
-#else
-/* Num VDEVS per radio */
-#define TARGET_NUM_VDEVS		(ath12k_dp_ring_cfg->num_vdevs)
-/* Maximum number of AP interfaces allowed per radio for MBSSID.
- * This excludes the monitor vdev included in TARGET_NUM_VDEVS.
- */
-#define ATH12K_MBSSID_MAX_INTERFACES	((ath12k_dp_ring_cfg->num_vdevs) - 1)
-
-/* Num of Bridge vdevs per radio */
-#define TARGET_NUM_BRIDGE_VDEVS		(ath12k_dp_ring_cfg->num_bridge_vdevs)
-#define ATH12K_MAX_NUM_VDEVS_NLINK	(ath12k_dp_ring_cfg->num_max_vdevs_nlink)
-#define ATH12K_QMI_TARGET_MEM_MODE      (ath12k_dp_ring_cfg->target_mem_mode)
+#define ATH12K_MAX_NUM_VDEVS_NLINK	(ab->mem_params.num_max_vdevs_nlink)
+#define TARGET_NUM_BRIDGE_VDEVS		(ab->mem_params.num_bridge_vdevs)
+#define ATH12K_QMI_TARGET_MEM_MODE      (ab->mem_params.target_mem_mode)
 
 #define TARGET_NUM_STATIONS_SINGLE	\
-	((ath12k_dp_ring_cfg->num_stations_single) ? \
-	 (ath12k_dp_ring_cfg->num_stations_single) : \
+	((ab->mem_params.num_stations_single) ? \
+	 (ab->mem_params.num_stations_single) : \
 	 ((ath12k_max_clients > ab->hw_params->max_clients_supported) ? \
 	  ab->hw_params->max_clients_supported : ath12k_max_clients))
 
 /* Max num of stations for DBS */
 #define TARGET_NUM_STATIONS_DBS		\
-	((ath12k_dp_ring_cfg->num_stations_dbs) ? \
-	 (ath12k_dp_ring_cfg->num_stations_dbs) : \
+	((ab->mem_params.num_stations_dbs) ? \
+	 (ab->mem_params.num_stations_dbs) : \
 	 (((int)(ath12k_max_clients / 2) > ab->hw_params->max_clients_dbs) ? \
 	  ab->hw_params->max_clients_dbs : (int)ath12k_max_clients / 2))
 
 /* Max num of stations for DBS_SBS */
 #define TARGET_NUM_STATIONS_DBS_SBS	\
-	((ath12k_dp_ring_cfg->num_stations_dbs_sbs) ? \
-	 (ath12k_dp_ring_cfg->num_stations_dbs_sbs) : \
+	((ab->mem_params.num_stations_dbs_sbs) ? \
+	 (ab->mem_params.num_stations_dbs_sbs) : \
 	 (((int)(ath12k_max_clients / 3) > ab->hw_params->max_clients_dbs_sbs) ? \
 	  ab->hw_params->max_clients_dbs_sbs : (int)ath12k_max_clients / 3))
-
-#endif
 
 #if defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
 #define ATH12K_COLD_BOOT_CALIB		false
 #else
-#define ATH12K_COLD_BOOT_CALIB		(ath12k_dp_ring_cfg->cold_boot_calib)
+#define ATH12K_COLD_BOOT_CALIB		true
 #endif
-#define ATH12K_COLD_BOOT_CALIB_DEFAULT	true
 
 #define TARGET_NUM_PEERS_PDEV_SINGLE	(TARGET_NUM_STATIONS_SINGLE + \
 					 TARGET_NUM_VDEVS)
@@ -402,7 +370,6 @@ struct ath12k_hw_params {
 	bool mlo_3_link_tx_support;
 	bool quad_ring_monitor_support;
 	const char *board_magic;
-	u32 num_rx_spt_pages;
 	bool peer_del_all_support;
 	u8 tlv_logger_support;
 };
