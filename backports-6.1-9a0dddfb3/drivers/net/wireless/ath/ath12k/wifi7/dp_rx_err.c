@@ -655,14 +655,8 @@ ath12k_wifi7_dp_process_wbm_rx_packets(struct ath12k_dp *dp,
 				break;
 			case HAL_REO_ENTR_RING_RXDMA_ECODE_DECRYPT_ERR:
 				dp_pdev->stats.telemetry_stats.rx_decrypt_err++;
-				drop = ath12k_wifi7_dp_tkip_mic_err(dp_pdev,
-								    peer,
-								    &rx_status,
-								    spd_desc_l,
-								    napi,
-								    &prev_tlv);
-
-				drop_reason = ATH_RX_TKIP_MIC_ERR;
+				drop = true;
+				drop_reason = ATH_RX_RXDMA_ERR;
 				break;
 			case HAL_REO_ENTR_RING_RXDMA_ECODE_TKIP_MIC_ERR:
 				dp_pdev->stats.telemetry_stats.rx_mic_err++;
