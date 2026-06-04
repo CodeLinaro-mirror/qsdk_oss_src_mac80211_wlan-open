@@ -15058,6 +15058,24 @@ nla_fail:
 	return ret;
 }
 
+void ath12k_vendor_event_chain_mask_changed(struct ath12k *ar)
+{
+	struct sk_buff *event;
+
+	event = cfg80211_vendor_event_alloc(ar->ah->hw->wiphy, NULL, 0,
+					    QCA_NL80211_VENDOR_SUBCMD_CHAIN_MASK_INDEX,
+					    GFP_ATOMIC);
+	if (!event) {
+		ath12k_warn(ar->ab,
+			    "failed to alloc skb for dynamic chain mask vendor event\n");
+		return;
+	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+		   "sending dynamic chain mask vendor event\n");
+	cfg80211_vendor_event(event, GFP_ATOMIC);
+}
+
 static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
@@ -15465,7 +15483,10 @@ static const struct nl80211_vendor_cmd_info ath12k_vendor_events[] = {
 		.vendor_id = QCA_NL80211_VENDOR_ID,
 		.subcmd = QCA_NL80211_VENDOR_SUBCMD_GET_WIPHY_CONFIGURATION,
 	},
-
+	[QCA_NL80211_VENDOR_SUBCMD_CHAIN_MASK_INDEX] = {
+		.vendor_id = QCA_NL80211_VENDOR_ID,
+		.subcmd = QCA_NL80211_VENDOR_SUBCMD_CHAIN_MASK_CHANGED,
+	},
 };
 
 int ath12k_vendor_register(struct ath12k_hw *ah)

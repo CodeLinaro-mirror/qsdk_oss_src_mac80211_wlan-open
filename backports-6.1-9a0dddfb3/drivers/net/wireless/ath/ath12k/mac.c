@@ -16956,8 +16956,10 @@ static int __ath12k_set_antenna(struct ath12k *ar, u32 tx_ant, u32 rx_ant,
 		return ret;
 	}
 
-	if (is_dynamic)
+	if (is_dynamic) {
 		ath12k_mac_handle_agile_cac_on_chainmask_change(ar);
+		ath12k_vendor_event_chain_mask_changed(ar);
+	}
 
 	return 0;
 }
