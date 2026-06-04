@@ -891,7 +891,7 @@ ieee80211_punct_obj_in_chanctx(struct ieee80211_punct_obj *obj,
 	if (!ctx->conf.def.chan || width < 0)
 		return false;
 
-	start_freq = ctx->conf.def.chan->center_freq;
+	start_freq = KHZ_TO_MHZ(cfg80211_get_start_freq(&ctx->conf.def, 1));
 	end_freq = start_freq + width;
 
 	return obj->center_freq >= start_freq && obj->center_freq < end_freq;
