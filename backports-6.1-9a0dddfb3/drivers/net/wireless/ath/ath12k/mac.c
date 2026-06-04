@@ -10209,6 +10209,9 @@ int ath12k_mac_op_set_radar_background(struct ieee80211_hw *hw,
 	if (ar->ab->dfs_region == ATH12K_DFS_REG_UNSET)
 		return -EINVAL;
 
+	if (ieee80211_is_scan_ongoing(hw, def))
+		return -EAGAIN;
+
 	if (!test_bit(ar->cfg_rx_chainmask, &ar->pdev->cap.adfs_chain_mask)) {
 		if (!test_bit(WMI_TLV_SERVICE_SW_PROG_DFS_SUPPORT,
 			      ar->ab->wmi_ab.svc_map))
@@ -10498,6 +10501,41 @@ static int ath12k_mac_initiate_hw_scan(struct ieee80211_hw *hw,
 	}
 	/* Add a margin to account for event/command processing */
 	scan_timeout = scan_timeout + ATH12K_MAC_SCAN_TIMEOUT_MSECS;
+
+	/* Abort any ongoing ADFS background CAC on this radio before scanning */
+	if ((ar->pdev->cap.supported_bands & WMI_HOST_WLAN_5GHZ_CAP) &&
+	    test_bit(ar->cfg_rx_chainmask, &ar->pdev->cap.adfs_chain_mask) &&
+	    ar->agile_chandef.chan) {
+		struct ath12k_link_vif *ap_arvif;
+		bool ap_found = false;
+
+		list_for_each_entry(ap_arvif, &ar->arvifs, list) {
+			if (ap_arvif->is_started &&
+			    ap_arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
+				ap_found = true;
+				break;
+			}
+		}
+
+		if (ap_found) {
+			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
+					 "Aborting ongoing BG CAC on freq %d before scan",
+					 ar->agile_chandef.chan->center_freq);
+			ret = ath12k_wmi_vdev_adfs_ocac_abort_cmd_send(ar,
+								       ap_arvif->vdev_id);
+			if (!ret) {
+				ar->agile_abort_pending = true;
+				ath12k_mac_background_dfs_event(ar, ATH12K_BGDFS_ABORT);
+				memset(&ar->agile_chandef, 0,
+				       sizeof(struct cfg80211_chan_def));
+				ar->agile_chandef.chan = NULL;
+			} else {
+				ath12k_warn(ar->ab,
+					    "failed to abort agile CAC before scan on vdev %d\n",
+					    ap_arvif->vdev_id);
+			}
+		}
+	}
 
 	ret = ath12k_start_scan(ar, arg);
 	if (ret) {
