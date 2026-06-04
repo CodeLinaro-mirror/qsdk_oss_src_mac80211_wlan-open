@@ -665,10 +665,12 @@ fail_dp_mon_rx_free:
 static void ath12k_wifi8_dp_op_device_deinit(struct ath12k_dp *dp)
 {
 	struct ath12k_base *ab = dp->ab;
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
 
 	if (!ab)
 		return;
 
+	ath12k_dp_srng_cleanup(ab, &dp_wifi8->rx_ase_status_ring);
 	ath12k_dp_mon_rx_free(dp);
 }
 
