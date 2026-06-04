@@ -176,6 +176,8 @@ static int ath12k_erp_set_pkt_filter(struct ath12k *ar, u32 bitmap,
 				     enum ath12k_wmi_pkt_route_opcode op_code)
 {
 	struct ath12k_wmi_pkt_route_param param = {};
+	struct ath12k_base *ab = ar->ab;
+	int ret;
 
 	lockdep_assert_held(&erp_sm.lock);
 
@@ -185,22 +187,23 @@ static int ath12k_erp_set_pkt_filter(struct ath12k *ar, u32 bitmap,
 	if (op_code == ATH12K_WMI_PKTROUTE_ADD) {
 		bitmap = ath12k_erp_convert_trigger_bitmap(bitmap);
 		if (!bitmap) {
-			ath12k_err(NULL, "invalid wake up trigger bitmap\n");
+			ath12k_err(ab, "invalid wake up trigger bitmap\n");
 			return -EINVAL;
 		}
 	}
 
 	param.opcode = op_code;
 	param.meta_data = ATH12K_RX_PROTOCOL_TAG_START_OFFSET + bitmap;
-	param.dst_ring = ATH12K_REO_RELEASE_RING;
+	param.dst_ring = ab->hal.hal_params->dp_rx_err_rdi;
 	param.dst_ring_handler = ATH12K_WMI_PKTROUTE_USE_CCE;
 	param.route_type_bmap = bitmap;
-	if (ath12k_wmi_send_pdev_pkt_route(ar, &param)) {
-		ath12k_err(NULL, "failed to set packet bitmap");
-		return -EINVAL;
+	ret = ath12k_wmi_send_pdev_pkt_route(ar, &param);
+	if (ret) {
+		ath12k_err(ab, "failed to set pkt filter: %d\n", ret);
+		return ret;
 	}
 
-	spin_lock_bh(&ar->ab->base_lock);
+	spin_lock_bh(&ab->base_lock);
 	if (op_code == ATH12K_WMI_PKTROUTE_ADD) {
 		ar->erp_trigger_set = true;
 		erp_sm.active_ar.trigger = bitmap;
@@ -208,7 +211,7 @@ static int ath12k_erp_set_pkt_filter(struct ath12k *ar, u32 bitmap,
 		ar->erp_trigger_set = false;
 		erp_sm.active_ar.trigger = 0;
 	}
-	spin_unlock_bh(&ar->ab->base_lock);
+	spin_unlock_bh(&ab->base_lock);
 
 	return 0;
 }
