@@ -203,10 +203,11 @@ struct ath12k_sta *ath12k_sta_find_by_addr_and_ahvif(struct ath12k_hw_group *ag,
 						     const u8 *addr,
 						     const struct ath12k_vif *ahvif);
 /* CP-level pre-emptive duplicate peer sanity check */
-int ath12k_cp_peer_sanity_check(struct ath12k *ar,
-				struct ath12k_link_vif *arvif,
-				struct ath12k_link_sta *arsta,
-				struct ath12k_sta *ahsta);
+int ath12k_mac_addr_collision_check(struct ath12k *ar,
+				    struct ath12k_link_vif *arvif,
+				    const u8 *link_mac,
+				    bool is_self_peer,
+				    struct ath12k_sta *ahsta);
 struct ath12k_link_sta *ath12k_link_sta_find_by_vdev_id(struct ath12k *ar,
 							u32 vdev_id);
 #endif /* _PEER_H_ */
