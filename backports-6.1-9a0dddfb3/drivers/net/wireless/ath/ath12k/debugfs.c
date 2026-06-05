@@ -617,6 +617,24 @@ static ssize_t ath12k_dump_mgmt_stats(struct file *file,
 		len += scnprintf(buf + len, size - len,
 				 "  Total TX Mgmt failure count = %llu\n",
 				 mgmt_stats->aggr_tx_mgmt_fail_cnt);
+		len += scnprintf(buf + len, size - len,
+				 "  Total TX Cmpl success pkts = %llu\n",
+				 mgmt_stats->tx_cmpl_succ_pkts);
+		len += scnprintf(buf + len, size - len,
+				 "  Total TX Cmpl success bytes = %llu\n",
+				 mgmt_stats->tx_cmpl_succ_bytes);
+		len += scnprintf(buf + len, size - len,
+				 "  Total TX Cmpl retry pkts = %llu\n",
+				 mgmt_stats->tx_cmpl_retry_pkts);
+		len += scnprintf(buf + len, size - len,
+				 "  Total TX Cmpl retry bytes = %llu\n",
+				 mgmt_stats->tx_cmpl_retry_bytes);
+		len += scnprintf(buf + len, size - len,
+				 "  Total TX Cmpl error pkts = %llu\n",
+				 mgmt_stats->tx_cmpl_err_pkts);
+		len += scnprintf(buf + len, size - len,
+				 "  Total TX Cmpl error bytes = %llu\n",
+				 mgmt_stats->tx_cmpl_err_bytes);
 		len += scnprintf(buf + len, size - len, "  Success frames:\n");
 		for (i = 0; i < ATH12K_STATS_MGMT_FRM_TYPE_MAX-1; i++)
 			len += scnprintf(buf + len, size - len, "       %s: %d\n",
