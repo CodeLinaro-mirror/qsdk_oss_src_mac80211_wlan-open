@@ -188,7 +188,7 @@ ath12k_wifi7_dp_qos_update(struct ath12k_dp *dp, struct ath12k_pdev_dp *dp_pdev,
 		ret = ath12k_dp_peer_scs_data(dp,
 					      scs_id, dp_pdev->dp_hw,
 					      &msduq, &qos_id,
-					      dp_peer, link_id);
+					      dp_peer);
 		if (ret != 0) {
 			ath12k_err(dp->ab, "SCS Peer Data is NULL");
 			return;

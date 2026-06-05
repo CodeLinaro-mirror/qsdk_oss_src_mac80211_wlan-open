@@ -1448,7 +1448,7 @@ bool ath12k_dp_qos_stats_alloc(struct ath12k *ar,
 
 static u16 ath12k_get_tid_msduq(struct ath12k_base *ab,
 				struct ath12k_dp_peer_qos *qos,
-				struct ath12k_dp_peer *dp_peer, u8 link_id,
+				struct ath12k_dp_peer *dp_peer,
 				struct ath12k_dp_hw *dp_hw,
 				u16 qos_id, u8 svc_id, u8 tid)
 {
@@ -1489,8 +1489,8 @@ static u16 ath12k_get_tid_msduq(struct ath12k_base *ab,
 			struct ath12k_dp_link_peer *link_peer;
 			u8 hostq_id = msduq - MSDUQ_MAX_DEF;
 
-			link_peer = ath12k_dp_link_peer_find_by_logical_link_id(dp_peer,
-										link_id);
+			link_peer = ath12k_dp_link_peer_find_by_logical_link_id
+						(dp_peer, dp_peer->primary_link_id);
 			if (link_peer) {
 				telemetry_peer_ctx =
 					ath12k_telemetry_peer_ctx_alloc(dp_hw,
@@ -1518,7 +1518,7 @@ static u16 ath12k_get_tid_msduq(struct ath12k_base *ab,
 
 u16 ath12k_dp_peer_qos_msduq(struct ath12k_base *ab,
 			     struct ath12k_dp_peer_qos *qos,
-			     struct ath12k_dp_peer *dp_peer, u8 link_id,
+			     struct ath12k_dp_peer *dp_peer,
 			     struct ath12k_dp_hw *dp_hw,
 			     u16 qos_id, u8 svc_id)
 {
@@ -1534,7 +1534,7 @@ u16 ath12k_dp_peer_qos_msduq(struct ath12k_base *ab,
 	}
 
 	/* Get MSDUQ for excat QoS profile TID */
-	msduq = ath12k_get_tid_msduq(ab, qos, dp_peer, link_id, dp_hw, qos_id,
+	msduq = ath12k_get_tid_msduq(ab, qos, dp_peer, dp_hw, qos_id,
 				     svc_id, qos_tid);
 
 	/* Get MSDUQ for lower QoS profile TID */
@@ -1542,7 +1542,7 @@ u16 ath12k_dp_peer_qos_msduq(struct ath12k_base *ab,
 		u8 tid = qos_tid - 1;
 
 		while (tid < qos_tid) {
-			msduq = ath12k_get_tid_msduq(ab, qos, dp_peer, link_id, dp_hw,
+			msduq = ath12k_get_tid_msduq(ab, qos, dp_peer, dp_hw,
 						     qos_id, svc_id, tid);
 			if (msduq != QOS_INVALID_MSDUQ)
 				break;
@@ -1554,7 +1554,7 @@ u16 ath12k_dp_peer_qos_msduq(struct ath12k_base *ab,
 		u8 tid = qos_tid + 1;
 
 		while (tid < QOS_MAX_TID) {
-			msduq = ath12k_get_tid_msduq(ab, qos, dp_peer, link_id, dp_hw,
+			msduq = ath12k_get_tid_msduq(ab, qos, dp_peer, dp_hw,
 						     qos_id, svc_id, tid);
 			if (msduq != QOS_INVALID_MSDUQ)
 				break;
@@ -1668,8 +1668,7 @@ int ath12k_dp_peer_scs_data(struct ath12k_dp *dp,
 			    u8 scs_id,
 			    struct ath12k_dp_hw *dp_hw,
 			    u16 *queue, u16 *id,
-			    struct ath12k_dp_peer *dp_peer,
-			    u8 link_id)
+			    struct ath12k_dp_peer *dp_peer)
 {
 	struct ath12k_dp_peer_qos *qos;
 	u16 qos_data;
@@ -1700,7 +1699,7 @@ int ath12k_dp_peer_scs_data(struct ath12k_dp *dp,
 	if (qos_id > QOS_UL_ID_MAX && qos_id < QOS_ID_INVALID)
 		msduq = qos_id - QOS_LEGACY_DL_ID_MIN;
 	else
-		msduq = ath12k_dp_peer_qos_msduq(dp->ab, qos, dp_peer, link_id,
+		msduq = ath12k_dp_peer_qos_msduq(dp->ab, qos, dp_peer,
 						 dp_hw, qos_id, scs_id);
 
 	if (msduq == QOS_INVALID_MSDUQ)
