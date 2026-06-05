@@ -18889,17 +18889,12 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	if (ret) {
 		ath12k_warn(ab, "failed to create vdev parameters %d: %d\n",
 			    arvif->vdev_id, ret);
-	        spin_lock_bh(&ar->ab->base_lock);
-		ab->free_vdev_map |= 1LL << arvif->vdev_id;
-		spin_unlock_bh(&ar->ab->base_lock);
-		ar->free_map_id |= 1 << arvif->map_id;
-
-		goto err;
+		goto err_free_vdev_id;
 	}
 
 	ret = ath12k_mac_cu_mem_setup(ar, arvif, &vdev_arg);
 	if (ret)
-		goto err;
+		goto err_free_vdev_id;
 
 	vdev_create_mac = (vdev_arg.type == WMI_VDEV_TYPE_MONITOR) ? mac_addr :
 				arvif->bssid;
@@ -18909,10 +18904,6 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		ath12k_warn(ab,
 			    "peer_sanity: duplicate MAC %pM on vdev %d, rejecting\n",
 			    vdev_create_mac, arvif->vdev_id);
-		spin_lock_bh(&ar->ab->base_lock);
-		ab->free_vdev_map |= 1LL << arvif->vdev_id;
-		spin_unlock_bh(&ar->ab->base_lock);
-		ar->free_map_id |= 1 << arvif->map_id;
 		goto err_cu_mem;
 	}
 
@@ -19200,11 +19191,6 @@ err_vdev_del:
 	arvif->is_created = false;
 	arvif->ar = NULL;
 	ar->allocated_vdev_map &= ~(1LL << arvif->vdev_id);
-	spin_lock_bh(&ar->ab->base_lock);
-	ab->free_vdev_map |= 1LL << arvif->vdev_id;
-	spin_unlock_bh(&ar->ab->base_lock);
-	ar->free_map_id |= 1 << arvif->map_id;
-	ab->free_vdev_stats_id_map &= ~(1LL << arvif->vdev_stats_id);
 	spin_lock_bh(&ar->data_lock);
 	if (!list_empty(&ar->arvifs))
 		list_del(&arvif->list);
@@ -19213,6 +19199,13 @@ err_cu_mem:
 	spin_lock_bh(&ar->data_lock);
 	ath12k_core_cu_mem_free(ar, arvif);
 	spin_unlock_bh(&ar->data_lock);
+err_free_vdev_id:
+	if (arvif->vdev_stats_id != ATH12K_INVAL_VDEV_STATS_ID)
+		ab->free_vdev_stats_id_map &= ~(1LL << arvif->vdev_stats_id);
+	spin_lock_bh(&ar->ab->base_lock);
+	ab->free_vdev_map |= 1LL << arvif->vdev_id;
+	spin_unlock_bh(&ar->ab->base_lock);
+	ar->free_map_id |= 1 << arvif->map_id;
 err:
 	arvif->ar = NULL;
 	return ret;
