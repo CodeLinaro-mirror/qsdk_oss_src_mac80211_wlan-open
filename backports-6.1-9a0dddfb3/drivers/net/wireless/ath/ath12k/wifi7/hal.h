@@ -716,7 +716,8 @@ struct hal_rx_spd_data {
 			u16 first_sg_frame             : 1,
 			    last_sg_frame              : 1,
 			    is_frag                    : 1,
-			    rsvd0                      : 13;
+			    cce_match		       : 1,
+			    rsvd0                      : 12;
 		};
 	};
 	__le16 frame_ctl;

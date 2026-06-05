@@ -536,12 +536,25 @@ void ath12k_dp_tid_wbm_err_stats(struct ath12k_pdev_dp *dp_pdev,
 				 u8 tid,
 				 bool is_reo,
 				 u32 error_code);
-void dp_rx_update_protocol_tag(struct ath12k_base *ab,
-			       struct ath12k_pdev_dp *dp_pdev,
+/**
+ * struct dp_rx_tag_params - chip-independent CCE/FSE classification results
+ *
+ * Populated by wifi7/wifi8 callers from their chip-specific scratchpad or HAL
+ * ops before calling dp_rx_update_protocol_tag() / dp_rx_update_flow_tag().
+ */
+struct dp_rx_tag_params {
+	bool    cce_match;
+	u16     cce_metadata;
+	bool    flow_idx_invalid;
+	bool    flow_idx_timeout;
+	u16     flow_metadata;
+};
+
+void dp_rx_update_protocol_tag(struct ath12k_pdev_dp *dp_pdev,
 			       struct sk_buff *msdu,
-			       struct hal_rx_desc *rx_desc);
-void dp_rx_update_flow_tag(struct ath12k_base *ab,
-			   struct ath12k_pdev_dp *dp_pdev,
+			       const struct dp_rx_tag_params *tag);
+
+void dp_rx_update_flow_tag(struct ath12k_pdev_dp *dp_pdev,
 			   struct sk_buff *msdu,
-			   struct hal_rx_desc *rx_desc);
+			   const struct dp_rx_tag_params *tag);
 #endif /* ATH12K_DP_RX_H */

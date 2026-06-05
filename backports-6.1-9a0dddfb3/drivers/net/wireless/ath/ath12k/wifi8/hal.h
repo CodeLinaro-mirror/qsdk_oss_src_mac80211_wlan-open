@@ -1827,7 +1827,8 @@ struct hal_rx_spd_data {
 			u8 first_sg_frame		: 1,
 			    last_sg_frame		: 1,
 			    is_frag			: 1,
-			    rsvd0			: 5;
+			    cce_match                   : 1,
+			    rsvd0			: 4;
 		};
 	};
 

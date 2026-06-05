@@ -1216,6 +1216,9 @@ void ath12k_wifi8_hal_extract_rx_spd_data_qcn9625(struct hal_rx_spd_data *rx_inf
 	rx_info->tlv_info.sgi = ath12k_wifi8_hal_rx_h_sgi_qcn9625(rx_desc);
 	rx_info->cce_metadata =
 		__le16_to_cpu(rx_desc->u.qcn9625_compact.msdu_end.cce_metadata);
+	rx_info->cce_match =
+		le16_get_bits(rx_desc->u.qcn9625_compact.msdu_end.info8,
+			      RX_MSDU_END_INFO8_CCE_MATCH);
 
 	rx_info->rx_mpdu_info.flow_idx_timeout =
 		le32_get_bits(flow_idx_info, RX_MSDU_END_INFO8_FLOW_IDX_TIMEOUT);
