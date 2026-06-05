@@ -116,9 +116,9 @@ module_param_named(ppe2wbm_ring_size, ath12k_ppeds_ppe2wbm_ring_size, uint, 0644
 MODULE_PARM_DESC(ppe2wbm_ring_size, "PPE2WBM Ring size");
 EXPORT_SYMBOL(ath12k_ppeds_ppe2wbm_ring_size);
 
-unsigned int ath12k_ppeds_pkt_pre_hdr_mode = 3;
+unsigned int ath12k_ppeds_pkt_pre_hdr_mode;
 module_param_named(pkt_pre_hdr_mode, ath12k_ppeds_pkt_pre_hdr_mode, uint, 0644);
-MODULE_PARM_DESC(pkt_pre_hdr_mode, "pkt_pre_hdr_mode: 3-default");
+MODULE_PARM_DESC(pkt_pre_hdr_mode, "Read hint values:\n  0 - 192 bytes (default)\n  1 - 128 bytes\n  2 - 0 bytes\n  3 - full packet");
 EXPORT_SYMBOL(ath12k_ppeds_pkt_pre_hdr_mode);
 #endif
 
