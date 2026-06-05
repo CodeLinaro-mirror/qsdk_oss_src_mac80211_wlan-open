@@ -7884,6 +7884,16 @@ enum ieee80211_ap_reg_power {
  * @links.cac_start_time: timestamp (jiffies) when the dfs state was
  *	entered.
  * @links.cac_time_ms: CAC time in ms
+ * @links.enhanced_bpcc: Enhanced BSS Parameter Change Count (4-bit, modulo 16)
+ *	as defined in IEEE 802.11bn/D1.5 37.30.3
+ * @links.enhanced_critical_update: true when the UHR Parameters Update
+ *	element is present in the received frame, indicating an Enhanced
+ *	Critical Update session is active for this link.
+ * @links.ecu_countdown_timer: Countdown Timer; initialized to
+ *	advance notification interval. Indicates the number of
+ *	TBTTs until the UHR Parameters Update element's update(s) take
+ *	effect. Value 1 = next TBTT. Value > 127 = update already took
+ *	effect (Countdown Timer - 127) beacon intervals ago.
  * @link[].link_removal_tbtt_count: Link removal count for the bss
  * @valid_links: bitmap describing what elements of @links are valid
  * @link_removal_flag: ML link reconfigure removal params updated on anyone
@@ -8013,6 +8023,9 @@ struct wireless_dev {
 		u32 link_removal_tbtt_count;
 		u32 ttlm_expec_dur;
 		u8 reg_6g_power_mode;
+		u8 enhanced_bpcc; /* Enhanced BPCC (IEEE 802.11bn 37.30.3) */
+		bool enhanced_critical_update;
+		u8 ecu_countdown_timer;
 	} links[IEEE80211_MLD_MAX_NUM_LINKS];
 	u16 valid_links;
 
