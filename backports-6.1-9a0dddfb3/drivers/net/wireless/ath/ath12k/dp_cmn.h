@@ -284,6 +284,7 @@ enum ath12k_dp_peer_param {
 	ATH12K_DP_PEER_KEYS_PARAM,
 	ATH12K_DP_PEER_CLEAR_KEYS_PARAM,
 	ATH12K_DP_PEER_MAC_ADDR_PARAM,
+	ATH12K_DP_PEER_PRIMARY_LINK_ID_PARAM,
 	ATH12K_DP_PEER_MAX_PARAM,
 };
 
@@ -343,6 +344,7 @@ union ath12k_config_param {
 	u8 hw_link_id;
 	u8 tid_weight[ATH12K_DATA_TID_MAX];
 	struct ath12k_dp_link_peer_rate_info rate_info;
+	u8 primary_link_id;
 };
 
 /*

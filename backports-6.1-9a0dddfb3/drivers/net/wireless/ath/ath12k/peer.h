@@ -213,4 +213,6 @@ int ath12k_mac_addr_collision_check(struct ath12k *ar,
 				    struct ath12k_sta *ahsta);
 struct ath12k_link_sta *ath12k_link_sta_find_by_vdev_id(struct ath12k *ar,
 							u32 vdev_id);
+void ath12k_sta_update_primary_link(struct wiphy *wiphy,
+				    struct ath12k_sta *ahsta, u8 link_id);
 #endif /* _PEER_H_ */

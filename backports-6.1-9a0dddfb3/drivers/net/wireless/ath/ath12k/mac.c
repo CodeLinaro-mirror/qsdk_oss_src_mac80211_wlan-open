@@ -13181,7 +13181,7 @@ static int ath12k_mac_assign_link_sta(struct ath12k_hw *ah,
 								     false;
 	if (is_bridge_peer) {
 		eth_random_addr(arsta->addr);
-		ahsta->primary_link_id = link_id;
+		ath12k_sta_update_primary_link(ah->hw->wiphy, ahsta, link_id);
 	} else {
 		link_sta = wiphy_dereference(ah->hw->wiphy, sta->link[link_id]);
 		if (!link_sta)
@@ -13612,6 +13612,12 @@ static void ath12k_sta_migration_wk(struct work_struct *wk)
 
 	/* update the new primary link */
 	ahsta->primary_link_id = arsta->link_id;
+
+	val.primary_link_id = arsta->link_id;
+	ath12k_dp_peer_set_param_by_dp_peer(dp_peer,
+					    ATH12K_DP_PEER_PRIMARY_LINK_ID_PARAM,
+					    &val);
+
 	spin_unlock_bh(&pri_ar->arsta_lock);
 	ret = false;
 
@@ -13907,6 +13913,8 @@ static int ath12k_mac_reconfig_ahsta_links_mode0(struct ath12k_hw *ah,
 	struct ath12k *ar;
 	int ret;
 
+	lockdep_assert_wiphy(hw->wiphy);
+
 	links_to_unmap = ahsta->links_map;
 	/*
 	 * Link only 1 link at a time as addtional links are mapped
@@ -13943,7 +13951,7 @@ static int ath12k_mac_reconfig_ahsta_links_mode0(struct ath12k_hw *ah,
 	}
 
 	ahsta->assoc_link_id = link_to_assign;
-	ahsta->primary_link_id = link_to_assign;
+	ath12k_sta_update_primary_link(hw->wiphy, ahsta, link_to_assign);
 	arsta->is_assoc_link = true;
 	ath12k_dbg(NULL, ATH12K_DBG_MAC | ATH12K_DBG_BOOT,
 		   "mac reconfig assign link sta: link_id:%d sta link_map:0x%x vif link_map:0x%x sta valid links:%ld\n",
@@ -14094,7 +14102,8 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 			if (sta->mlo) {
 				arsta->is_assoc_link = true;
 				ahsta->assoc_link_id = link_id;
-				ahsta->primary_link_id = link_id;
+
+				ath12k_sta_update_primary_link(wiphy, ahsta, link_id);
 
 				init_completion(&ahsta->dp_migration_event);
 				INIT_WORK(&ahsta->migration_wk, ath12k_sta_migration_wk);
@@ -15000,7 +15009,8 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 								 ahsta->links_map);
 			if (pri_link_id == IEEE80211_MLD_MAX_NUM_LINKS) {
 				pri_link_id = ahsta->assoc_link_id;
-				ahsta->primary_link_id = pri_link_id;
+				ath12k_sta_update_primary_link(hw->wiphy, ahsta,
+							       pri_link_id);
 			} else {
 				arvif =
 				wiphy_dereference(hw->wiphy, ahvif->link[pri_link_id]);
@@ -15020,7 +15030,9 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 						goto skip_pri_link_selection;
 					}
 				}
-				ahsta->primary_link_id = pri_link_id;
+
+				ath12k_sta_update_primary_link(hw->wiphy, ahsta,
+							       pri_link_id);
 			}
 skip_pri_link_selection:
 			ath12k_dbg_level(NULL, ATH12K_DBG_MAC, ATH12K_DBG_L2,
