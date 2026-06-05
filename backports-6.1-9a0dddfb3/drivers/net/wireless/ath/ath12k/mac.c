@@ -18671,6 +18671,7 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	u8 map_id;
 	u32 rep_ul_resp;
 	struct ath12k_dp_peer_create_params params = {};
+	enum ath12k_debug_mask_level dbg_lvl;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -18921,10 +18922,10 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		ar->num_created_vdevs++;
 	arvif->is_created = true;
 
-	if (ahvif->vdev_type != WMI_VDEV_TYPE_STA) {
-		ath12k_dbg(ab, ATH12K_DBG_MAC, "vdev %pM created, vdev_id %d\n",
-		   arvif->bssid, arvif->vdev_id);
-	}
+	dbg_lvl = (ahvif->vdev_type == WMI_VDEV_TYPE_STA) ? ATH12K_DBG_L1 : ATH12K_DBG_L0;
+	ath12k_dbg_level(ab, ATH12K_DBG_MAC, dbg_lvl,
+			 "vdev addr %pM bssid: %pM created, vdev_id %d\n",
+			 arvif->addr, arvif->bssid, arvif->vdev_id);
 	ar->allocated_vdev_map |= 1LL << arvif->vdev_id;
 
 	spin_lock_bh(&ar->data_lock);
