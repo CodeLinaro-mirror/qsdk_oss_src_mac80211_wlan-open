@@ -1608,6 +1608,12 @@ enum qca_wlan_vendor_attr_config {
 	 */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_6GHZ_VLP_PRIORITY_THRESH_FREQ = 151,
 
+	/* 8-bit unsigned value to enable/disable the driver to allow forwarding
+	 * 3-address multicast frames in WDS mode
+	 * 1-Enable, 0-Disable.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ALLOW_3ADDR_MC = 152,
+
 	/* Keep last */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_CONFIG_MAX =

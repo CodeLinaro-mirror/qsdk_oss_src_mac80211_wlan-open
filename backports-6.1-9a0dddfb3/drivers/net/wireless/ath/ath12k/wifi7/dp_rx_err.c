@@ -317,10 +317,20 @@ static bool ath12k_wifi7_handle_null_queue(struct ath12k_pdev_dp *dp_pdev,
 	bool is_4addr_sta = peer->vdev_type_4addr & BIT(NL80211_IFTYPE_STATION);
 	bool to_ds = rx_msdu_info->to_ds;
 	bool fr_ds = rx_msdu_info->fr_ds;
+	struct ath12k_dp_vif *dp_vif;
+	struct ath12k_vif *ahvif;
+	bool allow_3addr_mc;
 
 	switch (peer->rx_decap_type) {
 	case DP_RX_DECAP_TYPE_ETHERNET2_DIX:
-		if (is_4addr_sta && is_mcbc && !to_ds)
+#ifdef CPTCFG_QCN_EXTN
+		if (peer && peer->vif) {
+			ahvif = ath12k_vif_to_ahvif(peer->vif);
+			dp_vif = &ahvif->dp_vif;
+			allow_3addr_mc = dp_vif->dp_extn.allow_3addr_mc;
+		}
+#endif
+		if (is_4addr_sta && is_mcbc && !to_ds && !allow_3addr_mc)
 			return true;
 
 		if ((fr_ds && to_ds && peer && !peer->use_4addr) || is_mcbc) {
