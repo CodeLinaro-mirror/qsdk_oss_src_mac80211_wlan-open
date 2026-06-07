@@ -16999,9 +16999,20 @@ static void ath12k_process_ocac_complete_event(struct ath12k_base *ab,
 			/* Firmware-initiated abort — cfg80211 must be notified. */
 			ath12k_mac_background_dfs_event(ar, ATH12K_BGDFS_ABORT);
 		}
+		memset(&ar->agile_chandef, 0, sizeof(struct cfg80211_chan_def));
+		goto exit;
 	}
 
 	memset(&ar->agile_chandef, 0, sizeof(struct cfg80211_chan_def));
+	ar->ap_ps_disabled_by_agile = false;
+	/* Agile CAC succeeded: re-evaluate GAP eligibility.
+	 * For pre-CAC, hostapd will immediately call set_radar_background
+	 * for the next channel, disabling GAP again. For single-channel
+	 * CAC (iw dev), this re-enables GAP as expected.
+	 * Queue work to run in wiphy/sleepable context since
+	 * ap_ps_recalc sends a WMI command.
+	 */
+	wiphy_work_queue(ar->ah->hw->wiphy, &ar->ap_ps_recalc_wq);
 exit:
 	kfree(tb);
 }

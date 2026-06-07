@@ -6155,6 +6155,12 @@ void ath12k_mac_ap_ps_recalc(struct ath12k *ar)
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
+	ath12k_info(ar->ab,
+		    "ap_ps_recalc: ap_ps_enabled=%d agile_chan=%s num_stations=%d ap_ps_state=%d\n",
+		    ar->ap_ps_enabled,
+		    ar->agile_chandef.chan ? "set" : "NULL",
+		    ar->num_stations, ar->ap_ps_state);
+
 	list_for_each_entry_safe(arvif, tmp, &ar->arvifs, list) {
 		if (arvif->ahvif->vdev_type != WMI_VDEV_TYPE_AP &&
 		    arvif->ahvif->vdev_type != WMI_VDEV_TYPE_MONITOR) {
@@ -6165,6 +6171,22 @@ void ath12k_mac_ap_ps_recalc(struct ath12k *ar)
 
 	if (ath12k_vendor_is_service_enabled(ATH12K_VENDOR_APP_ENERGY_SERVICE))
 		allow_ap_ps = false;
+
+	/* GAP and Agile DFS (background CAC) are mutually exclusive.
+	 * If agile CAC is running on this radio, keep GAP disabled so
+	 * the radio stays awake to monitor the background channel.
+	 * GAP will be re-evaluated once agile CAC completes or aborts.
+	 * ap_ps_disabled_by_agile covers the window between sending the
+	 * GAP-off WMI and receiving FW confirmation (agile_chandef not yet set).
+	 */
+	if (ar->agile_chandef.chan || ar->ap_ps_disabled_by_agile) {
+		allow_ap_ps = false;
+		if (ar->ap_ps_enabled)
+			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
+					 "ap ps deferred: agile CAC running on freq %d\n",
+					 ar->agile_chandef.chan ?
+					 ar->agile_chandef.chan->center_freq : 0);
+	}
 
 	if (!allow_ap_ps)
 		ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L0,
@@ -6177,12 +6199,20 @@ void ath12k_mac_ap_ps_recalc(struct ath12k *ar)
 		return;
 
 	ret = ath12k_wmi_pdev_ap_ps_cmd_send(ar, ar->pdev->pdev_id, state);
-	if (!ret)
+	if (!ret) {
 		ar->ap_ps_state = state;
-	else
+		ath12k_info(ar->ab,
+			    "GreenAP: pdev_id %u state changed to %s (ap_ps_enabled=%d num_stations=%d allow_ap_ps=%d)\n",
+			    ar->pdev->pdev_id,
+			    state == ATH12K_AP_PS_STATE_ON ? "ON" : "OFF",
+			    ar->ap_ps_enabled,
+			    ar->num_stations,
+			    allow_ap_ps);
+	} else {
 		ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L0,
 				 "failed to send ap ps command pdev_id %u state %u\n",
 				 ar->pdev->pdev_id, state);
+	}
 }
 
 static void ath12k_free_peer_migrate_list(struct ath12k_link_vif *arvif)
@@ -9356,6 +9386,8 @@ skip_pending_cs_up:
 
 	if (changed & BSS_CHANGED_AP_PS) {
 		ar->ap_ps_enabled = info->ap_ps_enable;
+		if (!info->ap_ps_enable)
+			ar->ap_ps_disabled_by_agile = false;
 		ath12k_mac_ap_ps_recalc(ar);
 	}
 
@@ -10086,6 +10118,33 @@ ath12k_mac_get_started_ap_arvif(struct ath12k *ar)
 	return NULL;
 }
 
+/* Must not be called in bottom half (interrupt/softirq) context as it may sleep. */
+static int ath12k_mac_abort_agile_cac(struct ath12k *ar, bool notify)
+{
+	struct ath12k_link_vif *arvif;
+	int ret;
+
+	arvif = ath12k_mac_get_started_ap_arvif(ar);
+	if (!arvif)
+		return -EINVAL;
+
+	ath12k_info(ar->ab, "abort_agile_cac: vdev %u agile_chan=%s\n",
+		    arvif->vdev_id, ar->agile_chandef.chan ? "set" : "NULL");
+
+	ret = ath12k_wmi_vdev_adfs_ocac_abort_cmd_send(ar, arvif->vdev_id);
+	ath12k_info(ar->ab, "abort_agile_cac: abort_cmd ret=%d\n", ret);
+	if (!ret) {
+		ar->agile_abort_pending = true;
+		ar->ap_ps_disabled_by_agile = false;
+		if (notify)
+			ath12k_mac_background_dfs_event(ar, ATH12K_BGDFS_ABORT);
+		memset(&ar->agile_chandef, 0, sizeof(struct cfg80211_chan_def));
+		ar->agile_chandef.chan = NULL;
+		ath12k_mac_ap_ps_recalc(ar);
+	}
+	return ret;
+}
+
 int ath12k_mac_op_set_radar_background(struct ieee80211_hw *hw,
 				       struct cfg80211_chan_def *def)
 {
@@ -10126,12 +10185,7 @@ int ath12k_mac_op_set_radar_background(struct ieee80211_hw *hw,
 	ahvif = arvif->ahvif;
 
 	if (!def) {
-		ret = ath12k_wmi_vdev_adfs_ocac_abort_cmd_send(ar,arvif->vdev_id);
-		if (!ret) {
-			ar->agile_abort_pending = true;
-			memset(&ar->agile_chandef, 0, sizeof(struct cfg80211_chan_def));
-			ar->agile_chandef.chan = NULL;
-		}
+		ret = ath12k_mac_abort_agile_cac(ar, false);
 	} else {
 		if (!cfg80211_chandef_valid(def))
 			return -EINVAL;
@@ -10160,6 +10214,11 @@ int ath12k_mac_op_set_radar_background(struct ieee80211_hw *hw,
 		if (conf_def.center_freq1 == def->center_freq1)
 			return -EINVAL;
 
+		if (ar->ap_ps_enabled) {
+			ar->ap_ps_disabled_by_agile = true;
+			ath12k_mac_ap_ps_recalc(ar);
+		}
+
 		ret = ath12k_wmi_vdev_adfs_ch_cfg_cmd_send(ar, arvif->vdev_id, def);
 		if (!ret) {
 			/* Clear pending abort flag — new CAC started, any in-flight
@@ -10168,8 +10227,8 @@ int ath12k_mac_op_set_radar_background(struct ieee80211_hw *hw,
 			ar->agile_abort_pending = false;
 			memcpy(&ar->agile_chandef, def, sizeof(struct cfg80211_chan_def));
 		} else {
-			memset(&ar->agile_chandef, 0, sizeof(struct cfg80211_chan_def));
-			ar->agile_chandef.chan = NULL;
+			ar->ap_ps_disabled_by_agile = false;
+			ath12k_mac_ap_ps_recalc(ar);
 		}
 	}
 	return ret;
@@ -10180,9 +10239,7 @@ EXPORT_SYMBOL(ath12k_mac_op_set_radar_background);
 int ath12k_mac_op_abort_radar_background(struct ieee80211_hw *hw,
 					 const struct cfg80211_chan_def *def)
 {
-	struct ath12k_link_vif *arvif;
 	struct ath12k *ar;
-	int ret;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -10197,19 +10254,7 @@ int ath12k_mac_op_abort_radar_background(struct ieee80211_hw *hw,
 	    !cfg80211_chandef_identical(&ar->agile_chandef, def))
 		return -EINVAL;
 
-	arvif = ath12k_mac_get_started_ap_arvif(ar);
-	if (!arvif)
-		return -EINVAL;
-
-	ret = ath12k_wmi_vdev_adfs_ocac_abort_cmd_send(ar, arvif->vdev_id);
-	if (ret)
-		return ret;
-
-	ar->agile_abort_pending = true;
-	memset(&ar->agile_chandef, 0, sizeof(struct cfg80211_chan_def));
-	ar->agile_chandef.chan = NULL;
-
-	return 0;
+	return ath12k_mac_abort_agile_cac(ar, false);
 }
 EXPORT_SYMBOL(ath12k_mac_op_abort_radar_background);
 
@@ -10435,35 +10480,13 @@ static int ath12k_mac_initiate_hw_scan(struct ieee80211_hw *hw,
 	if ((ar->pdev->cap.supported_bands & WMI_HOST_WLAN_5GHZ_CAP) &&
 	    test_bit(ar->cfg_rx_chainmask, &ar->pdev->cap.adfs_chain_mask) &&
 	    ar->agile_chandef.chan) {
-		struct ath12k_link_vif *ap_arvif;
-		bool ap_found = false;
-
-		list_for_each_entry(ap_arvif, &ar->arvifs, list) {
-			if (ap_arvif->is_started &&
-			    ap_arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
-				ap_found = true;
-				break;
-			}
-		}
-
-		if (ap_found) {
-			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
-					 "Aborting ongoing BG CAC on freq %d before scan",
-					 ar->agile_chandef.chan->center_freq);
-			ret = ath12k_wmi_vdev_adfs_ocac_abort_cmd_send(ar,
-								       ap_arvif->vdev_id);
-			if (!ret) {
-				ar->agile_abort_pending = true;
-				ath12k_mac_background_dfs_event(ar, ATH12K_BGDFS_ABORT);
-				memset(&ar->agile_chandef, 0,
-				       sizeof(struct cfg80211_chan_def));
-				ar->agile_chandef.chan = NULL;
-			} else {
-				ath12k_warn(ar->ab,
-					    "failed to abort agile CAC before scan on vdev %d\n",
-					    ap_arvif->vdev_id);
-			}
-		}
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
+				 "Aborting ongoing BG CAC on freq %d before scan",
+				 ar->agile_chandef.chan->center_freq);
+		ret = ath12k_mac_abort_agile_cac(ar, true);
+		if (ret)
+			ath12k_warn(ar->ab,
+				    "failed to abort agile CAC before scan\n");
 	}
 
 	ret = ath12k_start_scan(ar, arg);
@@ -16865,30 +16888,9 @@ static void ath12k_vendor_send_agile_capable_event(struct ath12k *ar)
 
 static void ath12k_mac_handle_agile_cac_on_chainmask_change(struct ath12k *ar)
 {
-	struct ath12k_hw *ah = ath12k_ar_to_ah(ar);
-	struct ath12k_link_vif *arvif;
-	struct ath12k_vif *ahvif;
-	int ret;
+	if (ar->agile_chandef.chan)
+		ath12k_mac_abort_agile_cac(ar, true);
 
-	if (ar->agile_chandef.chan) {
-		/* Abort running agile CAC after chainmask is set */
-		list_for_each_entry(arvif, &ar->arvifs, list) {
-			ahvif = arvif->ahvif;
-			if (arvif->is_started &&
-			    ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
-				ret = ath12k_wmi_vdev_adfs_ocac_abort_cmd_send(ar,
-								arvif->vdev_id);
-				if (!ret) {
-					ar->agile_abort_pending = true;
-					memset(&ar->agile_chandef, 0,
-					       sizeof(ar->agile_chandef));
-					ar->agile_chandef.chan = NULL;
-				}
-				break;
-			}
-		}
-		cfg80211_background_cac_abort(ah->hw->wiphy);
-	}
 	ath12k_vendor_send_agile_capable_event(ar);
 }
 
@@ -20586,35 +20588,24 @@ void ath12k_agile_cac_abort_work(struct wiphy *wiphy,
 {
 	struct ath12k *ar = container_of(work, struct ath12k,
 					 agile_cac_abort_wq);
-	struct ath12k_link_vif *arvif;
-	struct ath12k_vif *ahvif;
-	bool arvif_found = false;
-	int ret = 0;
+	int ret;
 
-	list_for_each_entry(arvif, &ar->arvifs, list) {
-		ahvif = arvif->ahvif;
-		if (arvif->is_started &&
-		    ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
-			arvif_found = true;
-			break;
-		}
-	}
+	ret = ath12k_mac_abort_agile_cac(ar, false);
+	if (ret)
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L3,
+				 "ADFS state can't be reset (ret=%d)\n",
+				 ret);
+}
 
-	if (!arvif_found)
-		goto err;
+void ath12k_ap_ps_recalc_work(struct wiphy *wiphy, struct wiphy_work *work)
+{
+	struct ath12k *ar = container_of(work, struct ath12k, ap_ps_recalc_wq);
 
-	ret = ath12k_wmi_vdev_adfs_ocac_abort_cmd_send(ar, arvif->vdev_id);
-	if (!ret) {
-		ar->agile_abort_pending = true;
-		memset(&ar->agile_chandef, 0, sizeof(struct cfg80211_chan_def));
-		ar->agile_chandef.chan = NULL;
-	} else
-		goto err;
-
-err:
-	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L3,
-			 "ADFS state can't be reset (ret=%d)\n",
-			 ret);
+	ath12k_info(ar->ab,
+		    "ap_ps_recalc_work: agile_chan=%s ap_ps_enabled=%d num_stations=%d ap_ps_state=%d\n",
+		    ar->agile_chandef.chan ? "set" : "NULL",
+		    ar->ap_ps_enabled, ar->num_stations, ar->ap_ps_state);
+	ath12k_mac_ap_ps_recalc(ar);
 }
 
 void ath12k_mac_background_dfs_event(struct ath12k *ar,
@@ -20751,23 +20742,16 @@ ath12k_mac_vdev_config_after_start(struct ath12k_link_vif *arvif,
 	if (ret)
 		ath12k_warn(ab, "failed to set 6G non-ht dup conf for vdev %d: %d\n",
 		            arvif->vdev_id, ret);
-	 /* In case of ADFS, we have to abort ongoing backgrorund CAC */
+	/* In case of ADFS, we have to abort ongoing background CAC */
 	if ((ar->pdev->cap.supported_bands & WMI_HOST_WLAN_5GHZ_CAP) &&
 	    test_bit(ar->cfg_rx_chainmask, &ar->pdev->cap.adfs_chain_mask) &&
 	    ar->agile_chandef.chan) {
 		ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
 				 "Aborting ongoing Agile DFS on freq %d",
 				 ar->agile_chandef.chan->center_freq);
-		ret = ath12k_wmi_vdev_adfs_ocac_abort_cmd_send(ar,arvif->vdev_id);
-		if (!ret) {
-			ar->agile_abort_pending = true;
-			ath12k_mac_background_dfs_event(ar, ATH12K_BGDFS_ABORT);
-			memset(&ar->agile_chandef, 0, sizeof(struct cfg80211_chan_def));
-			ar->agile_chandef.chan = NULL;
-		} else {
-			ath12k_warn(ab, "failed to abort agile CAC for vdev %d",
-				    arvif->vdev_id);
-		}
+		ret = ath12k_mac_abort_agile_cac(ar, true);
+		if (ret)
+			ath12k_warn(ab, "failed to abort agile CAC: %d", ret);
 	}
 
 	/* Enable multi group keys for AP/AP_VLAN when service is advertised */
@@ -27271,6 +27255,7 @@ static int ath12k_mac_setup(struct ath12k *ar)
 	INIT_WORK(&ar->reg_set_previous_country,
 		  ath12k_set_previous_country_work);
 	wiphy_work_init(&ar->agile_cac_abort_wq, ath12k_agile_cac_abort_work);
+	wiphy_work_init(&ar->ap_ps_recalc_wq, ath12k_ap_ps_recalc_work);
 
 	wiphy_work_init(&ar->wmi_mgmt_tx_work, ath12k_mgmt_over_wmi_tx_work);
 	skb_queue_head_init(&ar->wmi_mgmt_tx_queue);
