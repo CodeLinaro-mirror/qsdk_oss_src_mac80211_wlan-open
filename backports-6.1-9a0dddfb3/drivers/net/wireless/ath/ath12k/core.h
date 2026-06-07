@@ -159,6 +159,7 @@ extern bool ath12k_fse_3_tuple_enabled;
 extern bool ath12k_rx_nwifi_err_dump;
 extern bool ath12k_carrier_vow_optimization;
 extern unsigned int ath12k_reorder_VI_timeout;
+extern bool ath12k_mcast_link_bmap_enable;
 #ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 extern unsigned int ath12k_max_clients;
 #endif
@@ -188,6 +189,7 @@ struct ath12k_mgmt_irq_grp;
 #define ATH12K_MLO_METADATA_MLO_ASSIST_TAG_MASK 0xFF800000
 #define ATH12K_MLO_METADATA_TAG_MASK GENMASK(31, 24)
 #define ATH12K_MLO_METADATA_LINKID_MASK GENMASK(20, 16)
+#define ATH12K_MCAST_LINK_BMAP_MASK GENMASK(3, 0)
 #define ATH12k_MLO_LINK_ID_INVALID 0xFF
 #define ATH12k_DS_NODE_ID_INVALID 0xFF
 #define ATH12K_SAWF_PCP_VALID  0x4
@@ -277,6 +279,7 @@ enum ath12k_skb_flags {
 	ATH12K_SKB_MESH_TX_INFO = BIT(7),
 	ATH12K_SKB_MESH_RX_INFO = BIT(8),
 	ATH12K_SKB_MGMT_MLO_PARAMS = BIT(9),
+	ATH12K_SKB_MCAST_LINK_BMAP_VALID = BIT(10),
 };
 
 struct ath12k_skb_cb {
@@ -290,6 +293,7 @@ struct ath12k_skb_cb {
 	u32 cipher;
 	u16 flags;
 	u8 link_id;
+	u8 mcast_link_bmap;
 };
 
 static_assert(sizeof(struct ath12k_skb_cb) <= 48,

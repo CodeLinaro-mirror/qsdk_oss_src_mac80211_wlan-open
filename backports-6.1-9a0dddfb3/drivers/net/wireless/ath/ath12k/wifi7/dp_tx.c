@@ -1898,7 +1898,9 @@ void ath12k_wifi7_mcbc_handler(struct ath12k_dp_vif *dp_vif,
 	struct ath12k_vif *ahvif = container_of(dp_vif, struct ath12k_vif, dp_vif);
 	struct ath12k_dp_tx_msdu_info msdu_info = {0};
 	struct sk_buff *skb_new;
+	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
 	unsigned long links_map = 0;
+	unsigned long filtered_links_map;
 	u16 gsn;
 	u8 ring_id = 0;
 	enum ath12k_dp_feature_result feature_ret;
@@ -1909,6 +1911,15 @@ void ath12k_wifi7_mcbc_handler(struct ath12k_dp_vif *dp_vif,
 	/* Get active links */
 	if (gsn_valid) {
 		links_map = dp_vif->links_map;
+		/* Apply per-packet mcast link bitmap filter if enabled */
+		if (ath12k_mcast_link_bmap_enable &&
+		    (skb_cb->flags & ATH12K_SKB_MCAST_LINK_BMAP_VALID)) {
+			filtered_links_map = links_map &
+				(skb_cb->mcast_link_bmap &
+				 ATH12K_MCAST_LINK_BMAP_MASK);
+			if (filtered_links_map)
+				links_map = filtered_links_map;
+		}
 		/* Get GSN */
 		gsn = ath12k_wifi7_mcbc_get_gsn(dp_vif);
 	} else {

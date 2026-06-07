@@ -232,6 +232,12 @@ bool ath12k_mlo_3_link_tx;
 module_param_named(mlo_3_link_tx, ath12k_mlo_3_link_tx, bool, 0644);
 MODULE_PARM_DESC(mlo_3_link_tx, "3 link MLO active TX support (0 - disable, 1 - enable)");
 
+bool ath12k_mcast_link_bmap_enable;
+module_param_named(mcast_link_bmap_enable, ath12k_mcast_link_bmap_enable, bool, 0644);
+MODULE_PARM_DESC(mcast_link_bmap_enable,
+		 "Enable per-packet MLO multicast link bitmap filtering (0 - disable, 1 - enable)");
+EXPORT_SYMBOL(ath12k_mcast_link_bmap_enable);
+
 unsigned int ath12k_wsi_bypass_bmap;
 module_param_named(wsi_bypass_bmap, ath12k_wsi_bypass_bmap, uint, 0644);
 MODULE_PARM_DESC(wsi_bypass_bmap,
