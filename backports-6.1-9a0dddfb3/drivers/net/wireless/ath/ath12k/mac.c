@@ -10071,13 +10071,27 @@ bool ath12k_is_supported_agile_bandwidth(enum nl80211_chan_width conf_bw,
 	return is_supported;
 }
 
+static struct ath12k_link_vif *
+ath12k_mac_get_started_ap_arvif(struct ath12k *ar)
+{
+	struct ath12k_link_vif *arvif;
+	struct ath12k_vif *ahvif;
+
+	list_for_each_entry(arvif, &ar->arvifs, list) {
+		ahvif = arvif->ahvif;
+		if (arvif->is_started && ahvif->vdev_type == WMI_VDEV_TYPE_AP)
+			return arvif;
+	}
+
+	return NULL;
+}
+
 int ath12k_mac_op_set_radar_background(struct ieee80211_hw *hw,
 				       struct cfg80211_chan_def *def)
 {
 	struct cfg80211_chan_def conf_def;
 	struct ath12k_link_vif *arvif;
 	struct ath12k_vif *ahvif;
-	bool arvif_found = false;
 	struct ath12k *ar;
 	int ret;
 
@@ -10106,16 +10120,10 @@ int ath12k_mac_op_set_radar_background(struct ieee80211_hw *hw,
 			return -EINVAL;
 	}
 
-	list_for_each_entry(arvif, &ar->arvifs, list) {
-		ahvif = arvif->ahvif;
-		if (arvif->is_started && ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
-			arvif_found = true;
-			break;
-		}
-	}
-
-	if (!arvif_found)
+	arvif = ath12k_mac_get_started_ap_arvif(ar);
+	if (!arvif)
 		return -EINVAL;
+	ahvif = arvif->ahvif;
 
 	if (!def) {
 		ret = ath12k_wmi_vdev_adfs_ocac_abort_cmd_send(ar,arvif->vdev_id);
@@ -10164,10 +10172,46 @@ int ath12k_mac_op_set_radar_background(struct ieee80211_hw *hw,
 			ar->agile_chandef.chan = NULL;
 		}
 	}
-	return 0;
+	return ret;
 }
 
 EXPORT_SYMBOL(ath12k_mac_op_set_radar_background);
+
+int ath12k_mac_op_abort_radar_background(struct ieee80211_hw *hw,
+					 const struct cfg80211_chan_def *def)
+{
+	struct ath12k_link_vif *arvif;
+	struct ath12k *ar;
+	int ret;
+
+	lockdep_assert_wiphy(hw->wiphy);
+
+	if (!def || !cfg80211_chandef_valid(def))
+		return -EINVAL;
+
+	ar = ath12k_mac_get_ar_by_chan(hw, def->chan);
+	if (!ar)
+		return -EINVAL;
+
+	if (!ar->agile_chandef.chan ||
+	    !cfg80211_chandef_identical(&ar->agile_chandef, def))
+		return -EINVAL;
+
+	arvif = ath12k_mac_get_started_ap_arvif(ar);
+	if (!arvif)
+		return -EINVAL;
+
+	ret = ath12k_wmi_vdev_adfs_ocac_abort_cmd_send(ar, arvif->vdev_id);
+	if (ret)
+		return ret;
+
+	ar->agile_abort_pending = true;
+	memset(&ar->agile_chandef, 0, sizeof(struct cfg80211_chan_def));
+	ar->agile_chandef.chan = NULL;
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_mac_op_abort_radar_background);
 
 u8
 ath12k_mac_find_link_id_by_ar(struct ath12k_vif *ahvif, struct ath12k *ar)
@@ -20491,7 +20535,8 @@ void ath12k_mac_background_dfs_event(struct ath12k *ar,
 		cfg80211_background_radar_event(ar->ah->hw->wiphy, &ar->agile_chandef, GFP_ATOMIC);
 		wiphy_work_queue(ar->ah->hw->wiphy, &ar->agile_cac_abort_wq);
 	} else if (ev == ATH12K_BGDFS_ABORT) {
-		cfg80211_background_cac_abort(ar->ah->hw->wiphy);
+		cfg80211_background_cac_abort_by_chandef(ar->ah->hw->wiphy,
+							 &ar->agile_chandef);
 	}
 }
 
@@ -20627,9 +20672,9 @@ ath12k_mac_vdev_config_after_start(struct ath12k_link_vif *arvif,
 		ret = ath12k_wmi_vdev_adfs_ocac_abort_cmd_send(ar,arvif->vdev_id);
 		if (!ret) {
 			ar->agile_abort_pending = true;
+			ath12k_mac_background_dfs_event(ar, ATH12K_BGDFS_ABORT);
 			memset(&ar->agile_chandef, 0, sizeof(struct cfg80211_chan_def));
 			ar->agile_chandef.chan = NULL;
-			ath12k_mac_background_dfs_event(ar, ATH12K_BGDFS_ABORT);
 		} else {
 			ath12k_warn(ab, "failed to abort agile CAC for vdev %d",
 				    arvif->vdev_id);

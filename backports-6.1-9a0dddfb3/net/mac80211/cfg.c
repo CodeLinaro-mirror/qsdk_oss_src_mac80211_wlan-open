@@ -6507,6 +6507,26 @@ ieee80211_set_radar_background(struct wiphy *wiphy,
 	return local->ops->set_radar_background(&local->hw, chandef);
 }
 
+static int
+ieee80211_abort_radar_background(struct wiphy *wiphy,
+				 const struct cfg80211_chan_def *chandef)
+{
+	struct ieee80211_local *local = wiphy_priv(wiphy);
+
+	if (local->ops->abort_radar_background)
+		return local->ops->abort_radar_background(&local->hw, chandef);
+
+	/* Drivers without abort_radar_background use set_radar_background(NULL)
+	 * as the stop signal — a separate op is needed for multi-radio HW where
+	 * a NULL chandef cannot identify which radio to abort.
+	 */
+
+	if (!local->ops->set_radar_background)
+		return -EOPNOTSUPP;
+
+	return local->ops->set_radar_background(&local->hw, NULL);
+}
+
 static int ieee80211_add_intf_link(struct wiphy *wiphy,
 				   struct wireless_dev *wdev,
 				   unsigned int link_id)
@@ -7017,6 +7037,7 @@ const struct cfg80211_ops mac80211_config_ops = {
 	.set_sar_specs = ieee80211_set_sar_specs,
 	.color_change = ieee80211_color_change,
 	.set_radar_background = ieee80211_set_radar_background,
+	.abort_radar_background = ieee80211_abort_radar_background,
 	.add_intf_link = ieee80211_add_intf_link,
 	.del_intf_link = ieee80211_del_intf_link,
 	.add_link_station = ieee80211_add_link_station,

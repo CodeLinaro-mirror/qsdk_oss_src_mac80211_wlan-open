@@ -1869,6 +1869,7 @@ static const struct ieee80211_ops ath12k_ops_wifi7 = {
 	.can_neg_ttlm			= ath12k_mac_op_can_neg_ttlm,
 	.apply_neg_ttlm_per_client	= ath12k_mac_op_apply_neg_ttlm_per_client,
 	.set_radar_background           = ath12k_mac_op_set_radar_background,
+	.abort_radar_background		= ath12k_mac_op_abort_radar_background,
 	.erp                            = ath12k_mac_op_erp,
 	.qos_mgmt_cfg                   = ath12k_mac_op_qos_mgmt_cfg,
 	.get_netstats                   = ath12k_mac_op_get_netstats,

@@ -12357,6 +12357,31 @@ static int nl80211_stop_sched_scan(struct sk_buff *skb,
 	return cfg80211_stop_sched_scan_req(rdev, req, false);
 }
 
+static int
+nl80211_get_radio_idx_by_chan(struct wiphy *wiphy,
+			      const struct ieee80211_channel *chan)
+{
+	int radio_idx;
+
+	if (!chan)
+		return -EINVAL;
+
+	/* cfg80211_get_hw_idx_by_chan() returns -1 when wiphy->n_radio == 0
+	 * (single-HW wiphys that do not populate wiphy->radio[]). Background
+	 * CAC must also work on such devices, so treat n_radio == 0 as slot 0.
+	 * cfg80211_get_radio_idx_by_chan() lacks this fallback, hence this
+	 * local wrapper.
+	 */
+	radio_idx = cfg80211_get_hw_idx_by_chan(wiphy, chan);
+	if (!wiphy->n_radio)
+		return 0;
+
+	if (radio_idx < 0 || radio_idx >= wiphy->n_radio)
+		return -EINVAL;
+
+	return radio_idx;
+}
+
 static int nl80211_start_radar_detection(struct sk_buff *skb,
 					 struct genl_info *info)
 {
@@ -12368,7 +12393,11 @@ static int nl80211_start_radar_detection(struct sk_buff *skb,
 	struct cfg80211_chan_def chandef, *chandef_link;
 	enum nl80211_dfs_regions dfs_region;
 	unsigned int cac_time_ms;
+	bool background;
 	int err;
+	int chandef_radio_idx = -1;
+	int link_radio_idx = -1;
+	int requested_radio_idx = -1;
 	bool skip_cac;
 
 	flush_delayed_work(&rdev->dfs_update_channels_wk);
@@ -12385,6 +12414,7 @@ static int nl80211_start_radar_detection(struct sk_buff *skb,
 	}
 
 	guard(wiphy)(wiphy);
+	background = nla_get_flag(info->attrs[NL80211_ATTR_RADAR_BACKGROUND]);
 
 	if (info->attrs[NL80211_ATTR_RADAR_EVENT]) {
 		enum nl80211_radar_event event;
@@ -12409,6 +12439,47 @@ static int nl80211_start_radar_detection(struct sk_buff *skb,
 		goto unlock;
 	}
 
+	if (background) {
+		if (!chandef_link->chan) {
+			err = -EINVAL;
+			goto unlock;
+		}
+
+		chandef_radio_idx = nl80211_get_radio_idx_by_chan(wiphy, chandef.chan);
+		if (chandef_radio_idx < 0) {
+			err = chandef_radio_idx;
+			goto unlock;
+		}
+
+		link_radio_idx =
+			nl80211_get_radio_idx_by_chan(wiphy, chandef_link->chan);
+		if (link_radio_idx < 0) {
+			err = link_radio_idx;
+			goto unlock;
+		}
+
+		if (link_radio_idx != chandef_radio_idx) {
+			err = -EINVAL;
+			goto unlock;
+		}
+
+		/* NL80211_ATTR_WIPHY_RADIO_INDEX is optional. Its presence is the
+		 * opt-in signal for radio-scoped (explicit-radio) mode, which
+		 * allows background CAC ownership to transfer across wdevs when
+		 * the starting wdev goes down. Without this attribute, legacy
+		 * per-netdev scoping is preserved.
+		 */
+		if (info->attrs[NL80211_ATTR_WIPHY_RADIO_INDEX]) {
+			requested_radio_idx =
+				nla_get_u8(info->attrs[NL80211_ATTR_WIPHY_RADIO_INDEX]);
+			if (!wiphy->n_radio || requested_radio_idx >= wiphy->n_radio ||
+			    requested_radio_idx != chandef_radio_idx) {
+				err = -EINVAL;
+				goto unlock;
+			}
+		}
+	}
+
 	if (chandef_link->chan) {
 		if (chandef_link->chan->band != chandef.chan->band) {
 			err = -EINVAL;
@@ -12423,7 +12494,7 @@ static int nl80211_start_radar_detection(struct sk_buff *skb,
 	if (err == 0)
 		return -EINVAL;
 
-	if (nla_get_flag(info->attrs[NL80211_ATTR_RADAR_BACKGROUND]) &&
+	if (background &&
 	    chandef_link && chandef_link->center_freq_device &&
 	    chandef_link->width_device &&
 	    cfg80211_chandef_identical(&chandef, chandef_link)) {
@@ -12432,16 +12503,19 @@ static int nl80211_start_radar_detection(struct sk_buff *skb,
 			goto unlock;
 		}
 		err = cfg80211_start_background_radar_detection(rdev, wdev,
-								&chandef, link_id);
+								&chandef,
+								link_id,
+								requested_radio_idx);
 		goto unlock;
 	}
 
 	if (!cfg80211_chandef_dfs_usable(wiphy, &chandef))
 		return -EINVAL;
 
-	if (nla_get_flag(info->attrs[NL80211_ATTR_RADAR_BACKGROUND]))
+	if (background)
 		return cfg80211_start_background_radar_detection(rdev, wdev,
-								 &chandef, link_id);
+						&chandef, link_id,
+						requested_radio_idx);
 
 	if (cfg80211_beaconing_iface_active(wdev)) {
 		if (cfg80211_chandef_identical(&wdev->links[link_id].csa_target_chandef,
@@ -12528,22 +12602,62 @@ static int nl80211_stop_radar_detection(struct sk_buff *skb,
 	struct net_device *dev = info->user_ptr[1];
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
 	struct cfg80211_registered_device *rdev = info->user_ptr[0];
+	struct wiphy *wiphy = wdev->wiphy;
+	struct cfg80211_bg_radar *bgr;
 	int link_id = nl80211_link_id(info->attrs);
-	struct cfg80211_chan_def *chandef_link, *chandef;
+	struct cfg80211_chan_def *chandef_link;
+	int link_radio_idx;
+	int target_radio_idx;
+	int err;
 
-	if (!rdev->background_radar_wdev)
+	guard(wiphy)(wiphy);
+
+	if (!rdev->wiphy.radio_cfg)
 		return -EINVAL;
 
-	chandef = &rdev->background_radar_chandef;
 	chandef_link = wdev_chandef(wdev, link_id);
 
-	if (!chandef_link)
+	if (!chandef_link || !chandef_link->chan)
 		return -EINVAL;
 
-	if (chandef_link->chan->band != chandef->chan->band)
+	link_radio_idx = nl80211_get_radio_idx_by_chan(wdev->wiphy,
+						       chandef_link->chan);
+	if (link_radio_idx < 0)
+		return link_radio_idx;
+
+	target_radio_idx = link_radio_idx;
+	if (info->attrs[NL80211_ATTR_WIPHY_RADIO_INDEX]) {
+		if (!wdev->wiphy->n_radio)
+			return -EINVAL;
+
+		target_radio_idx =
+			nla_get_u8(info->attrs[NL80211_ATTR_WIPHY_RADIO_INDEX]);
+		if (target_radio_idx >= wdev->wiphy->n_radio ||
+		    target_radio_idx != link_radio_idx)
+			return -EINVAL;
+	}
+
+	if (target_radio_idx < 0 ||
+	    target_radio_idx >= max_t(int, 1, rdev->wiphy.n_radio))
 		return -EINVAL;
 
-	cfg80211_stop_background_radar_detection(wdev);
+	bgr = &rdev->wiphy.radio_cfg[target_radio_idx].bg_radar;
+	if (!bgr->active)
+		return -EINVAL;
+
+	/*
+	 * Cross-wdev stop is allowed only for explicit-radio monitors.
+	 * Legacy monitors remain owner-wdev scoped for compatibility.
+	 */
+	if (bgr->wdev != wdev &&
+	    (!info->attrs[NL80211_ATTR_WIPHY_RADIO_INDEX] ||
+	     !bgr->radio_idx_explicit))
+		return -EINVAL;
+
+	err = cfg80211_stop_background_radar_detection_for_radio(rdev,
+								 target_radio_idx);
+	if (err)
+		return err;
 
 	return 0;
 }
@@ -18719,10 +18833,11 @@ static int parse_tid_conf(struct cfg80211_registered_device *rdev,
 		if (tid_conf->txrate_type != NL80211_TX_RATE_AUTOMATIC) {
 			attr = NL80211_TID_CONFIG_ATTR_TX_RATE;
 			err = nl80211_parse_tx_bitrate_mask(info, attrs, attr,
-						    &tid_conf->txrate_mask, dev,
-						    true, link_id,
-						    wdev_chandef(rdev->background_radar_wdev,
-						    link_id));
+							    &tid_conf->txrate_mask, dev,
+							    true, link_id,
+							    wdev_chandef(
+								dev->ieee80211_ptr,
+								link_id));
 			if (err)
 				return err;
 
@@ -24138,10 +24253,23 @@ nl80211_radar_notify(struct cfg80211_registered_device *rdev,
 			goto nla_put_failure;
 	}
 
-	if (rdev->background_radar_wdev &&
-	    cfg80211_chandef_identical(&rdev->background_radar_chandef, chandef)) {
-		if(nla_put_flag(msg, NL80211_ATTR_RADAR_BACKGROUND))
-			goto nla_put_failure;
+	if (rdev->wiphy.radio_cfg) {
+		int i;
+
+		for (i = 0; i < max_t(int, 1, rdev->wiphy.n_radio); i++) {
+			struct cfg80211_bg_radar *bgr =
+				&rdev->wiphy.radio_cfg[i].bg_radar;
+
+			if (!bgr->active)
+				continue;
+
+			if (!cfg80211_chandef_identical(&bgr->chandef, chandef))
+				continue;
+
+			if (nla_put_flag(msg, NL80211_ATTR_RADAR_BACKGROUND))
+				goto nla_put_failure;
+			break;
+		}
 	}
 
 	if (nla_put_u32(msg, NL80211_ATTR_RADAR_EVENT, event))

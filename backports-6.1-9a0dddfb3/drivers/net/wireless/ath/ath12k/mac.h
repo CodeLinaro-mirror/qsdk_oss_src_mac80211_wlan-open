@@ -681,6 +681,8 @@ void ath12k_tid_to_link_mapping_evt_notify(struct ath12k_link_vif *arvif,
 
 int ath12k_mac_op_set_radar_background(struct ieee80211_hw *hw,
 				       struct cfg80211_chan_def *def);
+int ath12k_mac_op_abort_radar_background(struct ieee80211_hw *hw,
+					 const struct cfg80211_chan_def *def);
 void ath12k_mac_background_dfs_event(struct ath12k *ar,
 				     enum ath12k_background_dfs_events ev);
 int ath12k_wmi_vdev_adfs_ocac_abort_cmd_send(struct ath12k *ar, u32 vdev_id);

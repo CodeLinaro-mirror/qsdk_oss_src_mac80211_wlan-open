@@ -5714,8 +5714,8 @@ struct cfg80211_ap_power_save_params {
  *	Background radar/CAC detection allows to avoid the CAC downtime
  *	switching to a different channel during CAC detection on the selected
  *	radar channel.
- *	The caller is expected to set chandef pointer to NULL in order to
- *	disable background CAC/radar detection.
+ * @abort_radar_background: Abort background radar/CAC detection previously
+ *	configured on @chandef.
  * @add_link_station: Add a link to a station.
  * @mod_link_station: Modify a link of a station.
  * @del_link_station: Remove a link of a station.
@@ -6124,6 +6124,8 @@ struct cfg80211_ops {
 				struct cfg80211_fils_aad *fils_aad);
 	int	(*set_radar_background)(struct wiphy *wiphy,
 					struct cfg80211_chan_def *chandef);
+	int	(*abort_radar_background)(struct wiphy *wiphy,
+					  const struct cfg80211_chan_def *chandef);
 	int	(*add_link_station)(struct wiphy *wiphy, struct net_device *dev,
 				    struct link_station_parameters *params);
 	int	(*mod_link_station)(struct wiphy *wiphy, struct net_device *dev,
@@ -6633,6 +6635,38 @@ struct wiphy_iftype_akm_suites {
 };
 
 /**
+ * struct cfg80211_bg_radar - per-radio background radar/CAC monitor
+ *
+ * Tracks an in-progress background CAC (agile DFS) running on one physical
+ * radio. Embedded by value in &struct wiphy_radio_cfg; lifetime matches the
+ * radio_cfg array allocated in wiphy_register().
+ *
+ * The wiphy, wdev, cac_done_wk, and cac_abort_wk fields are cfg80211
+ * internals managed by net/wireless/mlme.c. Drivers must not read, write,
+ * or re-initialize them.
+ *
+ * @chandef: channel being monitored
+ * @link_id: MLO link id that owns the background radar monitor, or -1
+ * @radio_idx: physical radio index this monitor belongs to
+ * @active: whether a monitor is currently running on this radio
+ * @radio_idx_explicit: set when started with an explicit radio index, making
+ *	the monitor radio-scoped rather than netdev-scoped
+ */
+struct cfg80211_bg_radar {
+	/* cfg80211 internals — do not access from drivers */
+	struct wiphy *wiphy;
+	struct wireless_dev *wdev;
+	struct cfg80211_chan_def chandef;
+	struct delayed_work cac_done_wk;
+	struct work_struct cac_abort_wk;
+	/* driver-visible state */
+	int link_id;
+	int radio_idx;
+	bool active;
+	bool radio_idx_explicit;
+};
+
+/**
  * struct wiphy_radio_cfg - physical radio config of a wiphy
  * This structure describes the configurations of a physical radio in a
  * wiphy. It is used to denote per-radio attributes belonging to a wiphy.
@@ -6650,6 +6684,7 @@ struct wiphy_radio_cfg {
 #ifdef CPTCFG_QCN_EXTN
 	u8 muedca_mode;
 #endif /* CPTCFG_QCN_EXTN */
+	struct cfg80211_bg_radar bg_radar;
 };
 
 /**
@@ -10265,6 +10300,17 @@ void cfg80211_punct_cac_finished(struct net_device *netdev,
  * (CAC) is aborted by a offchannel dedicated chain.
  */
 void cfg80211_background_cac_abort(struct wiphy *wiphy);
+
+/**
+ * cfg80211_background_cac_abort_by_chandef - Background CAC abort by chandef
+ * @wiphy: the wiphy
+ * @chandef: chandef for the background CAC chain to be aborted
+ *
+ * This function is called by the driver when a specific offchannel CAC
+ * operation should be aborted.
+ */
+void cfg80211_background_cac_abort_by_chandef(struct wiphy *wiphy,
+					      const struct cfg80211_chan_def *chandef);
 
 /**
  * cfg80211_gtk_rekey_notify - notify userspace about driver rekeying
