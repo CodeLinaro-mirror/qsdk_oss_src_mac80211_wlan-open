@@ -1566,6 +1566,9 @@ struct ath12k_radio_cfg {
 	u32 regdomain;
 	bool chan144_enabled;
 	u32 pdev_to_reo_dest;
+#ifdef CPTCFG_QCN_EXTN
+	struct ath12k_radio_cfg_extn radio_cfg_extn;
+#endif
 };
 
 /**
