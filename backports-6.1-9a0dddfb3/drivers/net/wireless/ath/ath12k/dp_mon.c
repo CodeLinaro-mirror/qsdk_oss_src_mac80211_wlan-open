@@ -3368,13 +3368,17 @@ void ath12k_dp_ext_mon_process_request(struct ath12k_pdev_dp *dp_pdev,
 		return;
 	}
 
-	mon_ops = ath12k_dp_mon_ops_get(dp_pdev->dp);
-	if (mon_ops && mon_ops->ext_mon_validate_request) {
-		ret = mon_ops->ext_mon_validate_request(dp_pdev, req);
-		if (ret) {
-			ath12k_warn(dp_pdev->dp, "extmon validation failed: %d\n", ret);
-			resp->status_code = ATH12K_EXT_MON_VALIDATION_FAIL;
-			return;
+	if (req->cmd_type == ATH12K_EXT_MON_CMD_TYPE_SET_FILTER ||
+	    req->cmd_type == ATH12K_EXT_MON_CMD_TYPE_SET_PEER) {
+		mon_ops = ath12k_dp_mon_ops_get(dp_pdev->dp);
+		if (mon_ops && mon_ops->ext_mon_validate_request) {
+			ret = mon_ops->ext_mon_validate_request(dp_pdev, req);
+			if (ret) {
+				ath12k_warn(dp_pdev->dp, "extmon validation failed: %d\n",
+					    ret);
+				resp->status_code = ATH12K_EXT_MON_VALIDATION_FAIL;
+				return;
+			}
 		}
 	}
 
@@ -3681,3 +3685,30 @@ int ath12k_dp_mon_rx_wq_init_common(struct ath12k_pdev_dp *dp_pdev,
 	return 0;
 }
 EXPORT_SYMBOL(ath12k_dp_mon_rx_wq_init_common);
+
+void ath12k_dp_ext_mon_update_snr(struct hal_rx_mon_ppdu_info *ppdu_info,
+				  struct ath12k_dp_rx_ext_mon *config)
+{
+	struct ath12k_dp_ext_mon_peer *peer, *tmp;
+	u8 avg_snr;
+	u8 peer_avg_snr;
+
+	if (!list_empty(&config->peer_list)) {
+		list_for_each_entry_safe(peer, tmp,
+					 &config->peer_list, list) {
+			if (ether_addr_equal(peer->peer_info.mac_addr,
+					     ppdu_info->nrp_info.mac_addr2)) {
+				peer_avg_snr = peer->peer_info.snr_info.avg_snr;
+				avg_snr =
+					ath12k_dp_get_avg_snr(ppdu_info->rssi_comb,
+								    peer_avg_snr);
+				peer->peer_info.snr_info.avg_snr = avg_snr;
+				peer->peer_info.snr_info.snr = ppdu_info->rssi_comb;
+				peer->peer_info.snr_info.timestamp =
+						ktime_to_ms(ktime_get_real());
+				break;
+			}
+		}
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_ext_mon_update_snr);

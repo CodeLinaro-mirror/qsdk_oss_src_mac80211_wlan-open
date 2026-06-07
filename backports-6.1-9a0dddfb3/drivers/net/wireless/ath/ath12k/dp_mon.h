@@ -901,6 +901,13 @@ struct ath12k_dp_mon_desc {
 	    end_of_ppdu:1;
 } __packed;
 
+enum ath12k_ext_mon_cmd_type {
+	ATH12K_EXT_MON_CMD_TYPE_SET_FILTER = 1,
+	ATH12K_EXT_MON_CMD_TYPE_GET_FILTER = 2,
+	ATH12K_EXT_MON_CMD_TYPE_SET_PEER = 3,
+	ATH12K_EXT_MON_CMD_TYPE_GET_PEER = 4,
+};
+
 enum ath12k_ext_mon_frame_len {
 	ATH12K_EXT_MON_LEN_64B = 1,
 	ATH12K_EXT_MON_LEN_128B = 2,
@@ -1132,6 +1139,8 @@ void ath12k_dp_ext_mon_process_request(struct ath12k_pdev_dp *dp_pdev,
 int ath12k_dp_ext_mon_alloc(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_ext_mon_free(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_ext_mon_reset(struct ath12k_pdev_dp *dp_pdev);
+void ath12k_dp_ext_mon_update_snr(struct hal_rx_mon_ppdu_info *ppdu_info,
+				  struct ath12k_dp_rx_ext_mon *config);
 
 void ath12k_dp_mon_reset_ppdu_desc(struct ath12k_dp_mon_ppdu_desc *ppdu_desc);
 int ath12k_dp_mon_get_link_peer_rssi(struct ath12k *ar, const u8 *peer_mac,
@@ -1816,5 +1825,22 @@ ath12k_dp_ext_mon_find_mon_vdev_id(struct ath12k_pdev_dp *dp_pdev)
 			return arvif->vdev_id;
 	}
 	return -1;
+}
+
+static inline u8
+ath12k_dp_get_avg_snr(u8 snr, u8 avg_snr)
+{
+	/* Calculating the moving average of SNR */
+	if (avg_snr != 0) {
+		avg_snr =
+			((avg_snr -
+			  (avg_snr >> 2)) +
+			  (snr >> 2));
+	} else {
+		/* First sample */
+		avg_snr = snr;
+	}
+
+	return avg_snr;
 }
 #endif
