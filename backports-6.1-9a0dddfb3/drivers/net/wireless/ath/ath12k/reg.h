@@ -622,6 +622,8 @@ struct ieee80211_regdomain *ath12k_reg_build_regd(struct ath12k_base *ab,
 enum wmi_reg_6g_ap_type
 ath12k_ieee80211_ap_pwr_type_convert(enum ieee80211_ap_reg_power power_type);
 int ath12k_regd_update(struct ath12k *ar, bool init);
+int ath12k_reg_build_regd_for_rf_path(struct ath12k *ar,
+				      struct ieee80211_regdomain **regd_out);
 int ath12k_reg_update_chan_list(struct ath12k *ar, bool wait);
 void ath12k_reg_update_cached_country_regdomain(struct ath12k_base *ab,
 						 const struct ath12k_reg_info *reg_info,
