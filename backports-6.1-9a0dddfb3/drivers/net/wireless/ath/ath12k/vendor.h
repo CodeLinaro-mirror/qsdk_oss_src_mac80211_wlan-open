@@ -214,6 +214,7 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_CHAIN_MASK_CHANGED = 529,
 	QCA_NL80211_VENDOR_SUBCMD_SET_MULTI_BSS_PARAM = 530,
 	QCA_NL80211_VENDOR_SUBCMD_WLAN_NFCAL_POWER_EVENT = 531,
+	QCA_NL80211_VENDOR_SUBCMD_RF_PATH_MODE = 532,
 };
 
 /**
@@ -383,6 +384,7 @@ enum qca_nl80211_vendor_events {
 	 */
 	QCA_NL80211_VENDOR_SUBCMD_CHAIN_MASK_INDEX = 23,
 	QCA_NL80211_VENDOR_SUBCMD_WLAN_NFCAL_POWER_EVENT_INDEX = 24,
+	QCA_NL80211_VENDOR_SUBCMD_RF_PATH_MODE_INDEX = 25,
 };
 
 /**
@@ -7108,4 +7110,54 @@ enum qca_wlan_vendor_attr_set_multi_bss_param {
  *          paths.
  */
 void ath12k_vendor_event_chain_mask_changed(struct ath12k *ar);
+
+/**
+ * enum qca_wlan_vendor_rf_path_mode - RF path configuration modes used as
+ * values for QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_INDEX.
+ *
+ * @QCA_WLAN_VENDOR_RF_PATH_MODE_5G_FULL_RANGE: Full 5G operating range
+ * (4890–5930 MHz, channels 36–177). The radio operates across the complete
+ * 5G band.
+ *
+ * @QCA_WLAN_VENDOR_RF_PATH_MODE_5G_HIGH_RANGE: High 5G operating range
+ * (5490–5930 MHz, channels 100–177). The radio operates on the upper
+ * portion of the 5G band only.
+ */
+enum qca_wlan_vendor_rf_path_mode {
+	QCA_WLAN_VENDOR_RF_PATH_MODE_5G_FULL_RANGE = 0,
+	QCA_WLAN_VENDOR_RF_PATH_MODE_5G_HIGH_RANGE = 1,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_rf_path_mode - Vendor attributes for
+ * QCA_NL80211_VENDOR_SUBCMD_RF_PATH_MODE.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_INDEX: u32 attribute.
+ * Value is one of enum qca_wlan_vendor_rf_path_mode.
+ * SET: desired RF path configuration for all eligible 5G non-6GHz radios.
+ * GET (attribute absent in command): driver returns the current active
+ *   mode via this attribute in the reply.
+ * EVENT: carried in the completion vendor event after a SET attempt,
+ *   regardless of success or failure. Indicates the RF path that was
+ *   requested. Check QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_STATUS for outcome.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_STATUS: u32 attribute.
+ * Carried in the completion vendor event after a SET attempt.
+ * 0 = switch completed successfully.
+ * Non-zero = switch failed; the RF path remains unchanged.
+ * Userspace should check this attribute to determine whether the
+ * requested RF path switch completed successfully before updating
+ * any local state.
+ */
+enum qca_wlan_vendor_attr_rf_path_mode {
+	QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_INDEX   = 1,
+	QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_STATUS  = 2,
+
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_MAX =
+		QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_AFTER_LAST - 1,
+};
+
 #endif

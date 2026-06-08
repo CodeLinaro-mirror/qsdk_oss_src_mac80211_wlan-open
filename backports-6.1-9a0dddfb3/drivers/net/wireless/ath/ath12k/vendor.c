@@ -16037,6 +16037,155 @@ static int ath12k_vendor_spectral_get_status(struct wiphy *wiphy,
 
 #endif /* CPTCFG_ATH12K_SPECTRAL */
 
+static const struct nla_policy
+ath12k_vendor_rf_path_mode_policy[QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_INDEX] = { .type = NLA_U32 },
+};
+
+static void ath12k_vendor_rf_path_mode_event(struct wiphy *wiphy,
+					     u32 rf_path_index,
+					     u32 status)
+{
+	struct sk_buff *skb;
+
+	skb = cfg80211_vendor_event_alloc(wiphy, NULL,
+					  nla_total_size(sizeof(u32)) * 2,
+					  QCA_NL80211_VENDOR_SUBCMD_RF_PATH_MODE_INDEX,
+					  GFP_KERNEL);
+	if (!skb) {
+		ath12k_err(NULL,
+			   "rf_path_mode: failed to alloc vendor event skb\n");
+		return;
+	}
+
+	if (nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_INDEX,
+			rf_path_index) ||
+	    nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_STATUS,
+			status)) {
+		nlmsg_free(skb);
+		ath12k_err(NULL, "rf_path_mode: failed to fill event attr\n");
+		return;
+	}
+
+	cfg80211_vendor_event(skb, GFP_KERNEL);
+}
+
+static int ath12k_vendor_rf_path_mode_get(struct wiphy *wiphy)
+{
+	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
+	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
+	struct sk_buff *reply;
+	struct ath12k *ar;
+	int i;
+
+	for_each_ar(ah, ar, i) {
+		if (!(ar->pdev->cap.supported_bands & WMI_HOST_WLAN_5GHZ_CAP) ||
+		    ar->supports_6ghz || !ar->rf_path_ctx.supported)
+			continue;
+
+		reply = cfg80211_vendor_cmd_alloc_reply_skb(wiphy,
+							    nla_total_size(sizeof(u32)));
+		if (!reply)
+			return -ENOMEM;
+
+		if (nla_put_u32(reply, QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_INDEX,
+				ar->rf_path_ctx.current_index)) {
+			nlmsg_free(reply);
+			return -ENOBUFS;
+		}
+
+		return cfg80211_vendor_cmd_reply(reply);
+	}
+
+	return -EOPNOTSUPP;
+}
+
+static int ath12k_vendor_rf_path_mode_handler(struct wiphy *wiphy,
+					      struct wireless_dev *wdev,
+					      const void *data, int data_len)
+{
+	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
+	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_MAX + 1];
+	struct ath12k *ar;
+	u32 rf_path_index;
+	int ret, i;
+	bool any_failed = false;
+	bool feature_supported = false;
+
+	lockdep_assert_wiphy(wiphy);
+
+	/* Allow the command when the radio is ready (OFF = firmware up, no
+	 * interface yet) or running (ON).  Reject during recovery/wedged
+	 * states where the WMI link may be unavailable.
+	 */
+	if (ah->state == ATH12K_HW_STATE_RESTARTING ||
+	    ah->state == ATH12K_HW_STATE_WEDGED)
+		return -ENODEV;
+
+	if (data && data_len) {
+		ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_MAX,
+				data, data_len,
+				ath12k_vendor_rf_path_mode_policy, NULL);
+		if (ret) {
+			ath12k_err(NULL,
+				   "rf_path_mode: failed to parse attrs: %d\n",
+				   ret);
+			return ret;
+		}
+	} else {
+		memset(tb, 0, sizeof(tb));
+	}
+
+	if (!tb[QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_INDEX])
+		return ath12k_vendor_rf_path_mode_get(wiphy);
+
+	rf_path_index = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_INDEX]);
+	if (rf_path_index > QCA_WLAN_VENDOR_RF_PATH_MODE_5G_HIGH_RANGE) {
+		ath12k_err(NULL,
+			   "rf_path_mode: invalid mode %u (0=5G full range, 1=5G high range)\n",
+			   rf_path_index);
+		return -EINVAL;
+	}
+
+	ath12k_dbg(ath12k_ah_to_ar(ah, 0)->ab, ATH12K_DBG_MAC,
+		   "rf_path_mode SET: requested mode %u (%s)\n",
+		   rf_path_index,
+		   rf_path_index == QCA_WLAN_VENDOR_RF_PATH_MODE_5G_HIGH_RANGE ?
+		   "5G high range" : "5G full range");
+
+	for_each_ar(ah, ar, i) {
+		if (!(ar->pdev->cap.supported_bands & WMI_HOST_WLAN_5GHZ_CAP) ||
+		    ar->supports_6ghz)
+			continue;
+
+		if (!ar->rf_path_ctx.supported)
+			continue;
+
+		feature_supported = true;
+
+		ret = ath12k_mac_handle_rf_path_switch(ar, rf_path_index);
+		if (ret) {
+			ath12k_warn(ar->ab,
+				    "rf_path_mode: pdev %u switch to index %u failed: %d\n",
+				    ar->pdev->pdev_id, rf_path_index, ret);
+			any_failed = true;
+		}
+	}
+
+	if (!feature_supported)
+		return -EOPNOTSUPP;
+
+	/* Always send the completion event — on success and on failure.
+	 * STATUS=0 means the switch succeeded; STATUS=1 means it failed.
+	 * The event is not sent for -EOPNOTSUPP (feature absent entirely)
+	 * since there is nothing meaningful to report in that case.
+	 */
+	ath12k_vendor_rf_path_mode_event(wiphy, rf_path_index,
+					 any_failed ? 1 : 0);
+	return any_failed ? -EIO : 0;
+}
+
 static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
@@ -16400,6 +16549,13 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 #endif /* CPTCFG_ATH12K_SPECTRAL */
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd    = QCA_NL80211_VENDOR_SUBCMD_RF_PATH_MODE,
+		.doit           = ath12k_vendor_rf_path_mode_handler,
+		.policy         = ath12k_vendor_rf_path_mode_policy,
+		.maxattr        = QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_MAX,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
 		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_SET_MULTI_BSS_PARAM,
 		.doit = ath12k_vendor_set_multi_bss_param,
 		.policy = ath12k_multi_bss_param_policy,
@@ -16508,6 +16664,10 @@ static const struct nl80211_vendor_cmd_info ath12k_vendor_events[] = {
 	[QCA_NL80211_VENDOR_SUBCMD_WLAN_NFCAL_POWER_EVENT_INDEX] = {
 		.vendor_id = QCA_NL80211_VENDOR_ID,
 		.subcmd = QCA_NL80211_VENDOR_SUBCMD_WLAN_NFCAL_POWER_EVENT,
+	},
+	[QCA_NL80211_VENDOR_SUBCMD_RF_PATH_MODE_INDEX] = {
+		.vendor_id = QCA_NL80211_VENDOR_ID,
+		.subcmd    = QCA_NL80211_VENDOR_SUBCMD_RF_PATH_MODE,
 	},
 };
 
