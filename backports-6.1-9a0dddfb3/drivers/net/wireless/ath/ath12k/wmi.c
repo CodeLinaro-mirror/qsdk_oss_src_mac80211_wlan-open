@@ -8367,7 +8367,8 @@ static int ath12k_wmi_tlv_mac_phy_caps_ext(struct ath12k_base *ab, u16 tag,
 
 static void ath12k_wmi_uhr_caps_parse(struct ath12k_pdev *pdev, u32 band,
 				      const __le32 cap_mac_info[],
-				      const __le32 cap_phy_info[])
+				      const __le32 cap_phy_info[],
+				      const __le32 npca_info)
 {
 	struct ath12k_band_cap *cap_band = &pdev->cap.band[band];
 	u8 i;
@@ -8377,6 +8378,8 @@ static void ath12k_wmi_uhr_caps_parse(struct ath12k_pdev *pdev, u32 band,
 
 	for (i = 0; i < WMI_MAX_UHRCAP_PHY_SIZE; i++)
 		cap_band->uhr_cap_phy_info[i] = le32_to_cpu(cap_phy_info[i]);
+
+	cap_band->uhr_param_npca_info = le32_to_cpu(npca_info);
 }
 
 static int
@@ -8411,16 +8414,19 @@ ath12k_wmi_tlv_mac_phy_caps_ext2_parse(struct ath12k_base *ab,
 	if (bands & WMI_HOST_WLAN_2GHZ_CAP)
 		ath12k_wmi_uhr_caps_parse(pdev, NL80211_BAND_2GHZ,
 					  caps->uhr_cap_mac_info_2ghz,
-					  caps->uhr_cap_phy_info_2ghz);
+					  caps->uhr_cap_phy_info_2ghz,
+					  cpu_to_le32(0));
 
 	if (bands & WMI_HOST_WLAN_5GHZ_CAP) {
 		ath12k_wmi_uhr_caps_parse(pdev, NL80211_BAND_5GHZ,
 					  caps->uhr_cap_mac_info_5ghz,
-					  caps->uhr_cap_phy_info_5ghz);
+					  caps->uhr_cap_phy_info_5ghz,
+					  caps->npca_capability);
 
 		ath12k_wmi_uhr_caps_parse(pdev, NL80211_BAND_6GHZ,
 					  caps->uhr_cap_mac_info_5ghz,
-					  caps->uhr_cap_phy_info_5ghz);
+					  caps->uhr_cap_phy_info_5ghz,
+					  caps->npca_capability);
 	}
 
 	/* FW provides max TX/RX NSS info via nss_info in EXT2 caps */
