@@ -5224,6 +5224,16 @@ static void ath12k_peer_assoc_h_ttlm(struct ath12k_link_sta *arsta,
 					     &sta->neg_ttlm);
 }
 
+static void ath12k_peer_assoc_h_smd(struct ath12k_link_sta *arsta,
+				    struct ath12k_wmi_peer_assoc_arg *arg)
+{
+	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(arsta->ahsta);
+
+	arg->smd.smd_enabled = sta->smd_params.smd_enabled;
+	memcpy(arg->smd.smd_mac_addr, sta->smd_params.smd_identifier, ETH_ALEN);
+	arg->smd.dl_data_fwd = sta->smd_params.dl_data_fwd;
+}
+
 static void ath12k_peer_assoc_h_flowq(struct ath12k_link_sta *arsta,
 				      struct ath12k_link_vif *arvif,
 				      struct ath12k_wmi_peer_assoc_arg *arg)
@@ -5336,6 +5346,7 @@ void ath12k_peer_assoc_prepare(struct ath12k *ar,
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 	ath12k_peer_assoc_h_mesh_extn(arvif, arsta, link_sta, arg);
 #endif
+	ath12k_peer_assoc_h_smd(arsta, arg);
 
 	arsta->peer_nss = arg->peer_nss;
 

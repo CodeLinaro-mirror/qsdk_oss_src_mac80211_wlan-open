@@ -760,6 +760,16 @@ struct ath12k_rssi_deauth_config {
 	s8 noise_floor_offset;
 } __packed;
 
+struct ath12k_smd_params {
+	bool smd_enabled;
+	u8 smd_identifier[ETH_ALEN];
+	u8 smd_timeout;
+	bool dl_data_fwd;
+	u8 max_num_of_peer_apmlds;
+	bool smd_type;
+	bool ptk_mode;
+};
+
 struct ath12k_link_vif {
 	u32 vdev_id;
 	u32 beacon_interval;
@@ -874,6 +884,8 @@ struct ath12k_link_vif {
 
 	/* Flag to track vdev fixed rate is set or not */
 	bool fixed_rate_set;
+
+	struct ath12k_smd_params smd_params;
 };
 
 struct ath12k_dp_link_vif {

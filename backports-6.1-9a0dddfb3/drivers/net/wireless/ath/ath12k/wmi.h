@@ -1656,6 +1656,7 @@ enum wmi_tlv_peer_flags_ext {
 	WMI_PEER_EXT_320MHZ = BIT(1),
 	WMI_PEER_CFP = BIT(2),
 	WMI_PEER_EXT_UHR = BIT(7),
+	WMI_PEER_EXT_SMD_ASSOC = BIT(31),
 };
 
 /** Enum list of TLV Tags for each parameter structure type. */
@@ -3744,6 +3745,17 @@ struct wmi_vdev_start_mlo_params {
 	__le32 ieee_link_id;
 } __packed;
 
+#define ATH12K_WMI_FLAG_SMD_ENABLED	BIT(0)
+#define ATH12K_WMI_FLAG_SMD_DL_DATA_FWD BIT(1)
+#define ATH12K_WMI_FLAG_SMD_UL_DATA_FWD BIT(2)
+#define ATH12K_WMI_FLAG_SMD_PTK_MODE	BIT(3)
+
+struct wmi_vdev_start_smd_params {
+	__le32 tlv_header;
+	struct ath12k_wmi_mac_addr_params mac_addr;
+	__le32 flags;
+} __packed;
+
 struct wmi_partner_link_info {
 	__le32 tlv_header;
 	__le32 vdev_id;
@@ -3975,6 +3987,16 @@ struct wmi_ml_partner_info {
 	bool mlo_link_del;
 };
 
+struct wmi_smd_arg {
+	bool enabled;
+	u8 smd_mac_addr[ETH_ALEN];
+	u16 smd_timeout;
+	bool dl_data_fwd;
+	u8 max_num_of_peer_apmlds;
+	bool smd_type;
+	bool ptk_mode;
+};
+
 struct wmi_ml_arg {
 	bool enabled;
 	bool assoc_link;
@@ -4027,6 +4049,7 @@ struct wmi_vdev_start_req_arg {
 	struct wmi_ml_arg ml;
 	u32 width_device;
 	u32 center_freq_device;
+	struct wmi_smd_arg smd;
 };
 
 struct ath12k_wmi_peer_pn_arg {
@@ -4884,6 +4907,12 @@ struct wmi_vdev_install_key_arg {
 #define WMI_HECAP_TXRX_MCS_NSS_IDX_80		0
 #define WMI_HECAP_TXRX_MCS_NSS_IDX_160		1
 
+struct peer_assoc_smd_params {
+	bool smd_enabled;
+	u8 smd_mac_addr[ETH_ALEN];
+	bool dl_data_fwd;
+};
+
 struct peer_assoc_mlo_params {
 	bool enabled;
 	bool assoc_link;
@@ -5184,6 +5213,7 @@ struct ath12k_wmi_peer_assoc_arg {
 	u32 peer_uhr_cap_mac[WMI_MAX_UHRCAP_MAC_SIZE];
 	u32 peer_uhr_cap_phy[WMI_MAX_UHRCAP_PHY_SIZE];
 	u32 sta_id;
+	struct peer_assoc_smd_params smd;
 };
 
 #define ATH12K_WMI_FLAG_MLO_ENABLED			BIT(0)
@@ -5199,6 +5229,18 @@ struct wmi_peer_assoc_mlo_partner_info_params {
 	__le32 flags;
 	__le32 logical_link_idx;
 	__le32 ieee_link_id;
+} __packed;
+
+#define ATH12K_WMI_FLAG_PEER_SMD_ENABLED			BIT(0)
+#define ATH12K_WMI_FLAG_PEER_SMD_DL_DATA_FWD			BIT(1)
+#define ATH12K_WMI_FLAG_PEER_SMD_UL_DATA_FWD			BIT(2)
+#define ATH12K_WMI_FLAG_PEER_SMD_ADD_LINK			BIT(3)
+
+struct wmi_peer_assoc_smd_params {
+	__le32 tlv_header;
+	struct ath12k_wmi_mac_addr_params smd_identifier;
+	__le32 smd_capabilities;
+	__le32 flags;
 } __packed;
 
 struct wmi_peer_assoc_mlo_params {
