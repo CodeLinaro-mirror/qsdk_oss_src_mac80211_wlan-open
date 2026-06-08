@@ -2789,6 +2789,7 @@ struct ieee80211_link_sta {
 	struct ieee80211_he_6ghz_capa he_6ghz_capa;
 	struct ieee80211_sta_eht_cap eht_cap;
 	struct ieee80211_sta_uhr_cap uhr_cap;
+	struct ieee80211_sta_uhr_npca_info npca_info;
 	u32 punctured;
 
 	struct ieee80211_sta_aggregates agg;
@@ -7896,6 +7897,20 @@ ieee80211_get_uhr_iftype_cap_vif(const struct ieee80211_supported_band *sband,
 				 struct ieee80211_vif *vif)
 {
 	return ieee80211_get_uhr_iftype_cap(sband, ieee80211_vif_type_p2p(vif));
+}
+
+/**
+ * ieee80211_get_uhr_iftype_npca_info_vif - return UHR NPCA info for sband/vif
+ * @sband: the sband to search for the iftype on
+ * @vif: the vif to get the iftype from
+ *
+ * Return: pointer to the struct ieee80211_sta_uhr_npca_info, or %NULL if none found
+ */
+static inline const struct ieee80211_sta_uhr_npca_info *
+ieee80211_get_uhr_iftype_npca_info_vif(const struct ieee80211_supported_band *sband,
+					struct ieee80211_vif *vif)
+{
+	return ieee80211_get_uhr_iftype_npca_info(sband, ieee80211_vif_type_p2p(vif));
 }
 
 /**

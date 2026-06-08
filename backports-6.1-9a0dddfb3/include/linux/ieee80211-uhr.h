@@ -193,6 +193,24 @@ struct ieee80211_uhr_cap_elem {
 	u8 variable[];
 } __packed;
 
+/**
+ * struct ieee80211_sta_uhr_npca_info - UHR NPCA (Non-Primary Channel Access) parameters
+ * @npca_enabled: whether NPCA is enabled for this station
+ * @npca_min_dur_threshold: minimum duration threshold for NPCA operation
+ * @npca_switch_delay: delay before switching to non-primary channel
+ * @npca_switch_back_delay: delay before switching back to primary channel
+ * @npca_initial_qsrc: initial quiet-start reference count
+ * @npca_moplen: minimum MPDU/PPDU length for NPCA eligibility
+ */
+struct ieee80211_sta_uhr_npca_info {
+	bool npca_enabled;
+	u8 npca_min_dur_threshold;
+	u8 npca_switch_delay;
+	u8 npca_switch_back_delay;
+	u8 npca_initial_qsrc;
+	u8 npca_moplen;
+};
+
 static inline bool ieee80211_uhr_capa_size_ok(const u8 *data, u8 len,
 					      bool from_ap)
 {
