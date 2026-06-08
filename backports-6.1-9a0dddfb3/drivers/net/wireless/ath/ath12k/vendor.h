@@ -361,6 +361,7 @@ enum qca_nl80211_vendor_events {
 	QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_INDEX = 19,
 	QCA_NL80211_VENDOR_SUBCMD_CH_SWITCH_REASON_INDEX = 20,
 	QCA_NL80211_VENDOR_SUBCMD_SDWF_PEER_MSDUQ_EVENT_INDEX = 21,
+	QCA_NL80211_VENDOR_SUBCMD_GET_WIPHY_CONFIGURATION_INDEX = 22,
 };
 
 /**
@@ -1613,6 +1614,15 @@ enum qca_wlan_vendor_attr_config {
 	 * 1-Enable, 0-Disable.
 	 */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_ALLOW_3ADDR_MC = 152,
+
+	/* Indicates whether the current chainmask on the radio specified by
+	 * %QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX supports Agile DFS.
+	 * 1 = agile DFS capable, 0 = not capable. Used with
+	 * %QCA_NL80211_VENDOR_SUBCMD_GET_WIPHY_CONFIGURATION as a query
+	 * selector and in the unsolicited vendor event sent on dynamic
+	 * chainmask changes.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_AGILE_CAPABLE = 153,
 
 	/* Keep last */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_AFTER_LAST,
