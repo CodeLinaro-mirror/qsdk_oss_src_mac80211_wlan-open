@@ -5471,7 +5471,8 @@ static int ath12k_setup_peer_smps(struct ath12k *ar, struct ath12k_link_vif *arv
 					 ath12k_smps_map[smps]);
 }
 
-int ath12k_mac_set_he_txbf_conf(struct ath12k_link_vif *arvif)
+int ath12k_mac_set_he_txbf_conf(struct ath12k_link_vif *arvif, u32 *val,
+				bool is_cmn_param)
 {
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ath12k *ar = arvif->ar;
@@ -5524,6 +5525,12 @@ int ath12k_mac_set_he_txbf_conf(struct ath12k_link_vif *arvif)
 		   arvif->vap_cfg.he_dl_ofdma_txbf_configured ?
 		   arvif->vap_cfg.he_dl_ofdma_txbf : ar->he_dlbf_enabled,
 		   arvif->vap_cfg.he_dl_ofdma_txbf_configured, value);
+
+	/* For MBSSID enabled case wmi will be sent in ath12k_wmi_multi_vdev_set_param */
+	if (is_cmn_param) {
+		*val = value;
+		return 0;
+	}
 
 	ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id, param, value);
 	if (ret) {
@@ -5616,7 +5623,8 @@ static int ath12k_mac_vif_recalc_sta_he_txbf(struct ath12k *ar,
 	return 0;
 }
 
-int ath12k_mac_set_eht_txbf_conf(struct ath12k_link_vif *arvif)
+int ath12k_mac_set_eht_txbf_conf(struct ath12k_link_vif *arvif, u32 *val,
+				 bool is_cmn_param)
 {
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ath12k *ar = arvif->ar;
@@ -5678,6 +5686,12 @@ int ath12k_mac_set_eht_txbf_conf(struct ath12k_link_vif *arvif)
 		   arvif->vap_cfg.eht_dl_ofdma_txbf_configured ?
 		   arvif->vap_cfg.eht_dl_ofdma_txbf : ar->eht_dlbf_enabled,
 		   arvif->vap_cfg.eht_dl_ofdma_txbf_configured, value);
+
+	/* For MBSSID enabled case wmi will be sent in ath12k_wmi_multi_vdev_set_param */
+	if (is_cmn_param) {
+		*val = value;
+		return 0;
+	}
 
 	ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id, param, value);
 	if (ret) {
@@ -9244,13 +9258,13 @@ skip_pending_cs_up:
 
 	if (changed & BSS_CHANGED_BEACON_ENABLED) {
 		if (info->enable_beacon) {
-			ret = ath12k_mac_set_he_txbf_conf(arvif);
+			ret = ath12k_mac_set_he_txbf_conf(arvif, NULL, false);
 			if (ret)
 				ath12k_warn(ar->ab,
 					    "failed to set HE TXBF config for vdev: %d\n",
 					    arvif->vdev_id);
 
-			ret = ath12k_mac_set_eht_txbf_conf(arvif);
+			ret = ath12k_mac_set_eht_txbf_conf(arvif, NULL, false);
 			if (ret)
 				ath12k_warn(ar->ab,
 					    "failed to set EHT TXBF config for vdev: %d\n",
@@ -30414,3 +30428,36 @@ int ath12k_mac_read_cu_mem(struct ath12k_link_vif *arvif, u16 offset, u32 *val)
 	return 0;
 }
 EXPORT_SYMBOL(ath12k_mac_read_cu_mem);
+
+int ath12k_mac_set_vht_txbf_conf(struct ath12k_link_vif *arvif, u32 *val)
+{
+	struct ath12k *ar = arvif->ar;
+	struct ieee80211_bss_conf *link_conf;
+	u32 value = 0;
+
+	link_conf = ath12k_mac_get_link_bss_conf(arvif);
+	if (!link_conf) {
+		ath12k_warn(ar->ab,
+			    "unable to access bss link conf in vht txbf conf\n");
+		return -EINVAL;
+	}
+
+	if (link_conf->vht_su_beamformer) {
+		value |= WMI_VDEV_PARAM_TXBF_SU_TX_BFER;
+
+		if (link_conf->vht_mu_beamformer)
+			value |= WMI_VDEV_PARAM_TXBF_MU_TX_BFER;
+	}
+
+	if (link_conf->vht_su_beamformee)
+		value |= WMI_VDEV_PARAM_TXBF_SU_TX_BFEE;
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+		   "set vdev %u VHT TXBF conf su_bfer %d su_bfee %d mu_bfer %d value 0x%x\n",
+		   arvif->vdev_id, link_conf->vht_su_beamformer,
+		   link_conf->vht_su_beamformee, link_conf->vht_mu_beamformer,
+		   value);
+	*val = value;
+
+	return 0;
+}
