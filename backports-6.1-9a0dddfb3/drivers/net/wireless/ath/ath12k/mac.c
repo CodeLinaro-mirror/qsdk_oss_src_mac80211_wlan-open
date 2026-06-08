@@ -25073,6 +25073,7 @@ int ath12k_mac_op_cancel_remain_on_channel(struct ieee80211_hw *hw,
 	ath12k_scan_abort(ar);
 
 	cancel_delayed_work_sync(&ar->scan.timeout);
+	cancel_delayed_work_sync(&ar->scan.roc_done);
 
 	return 0;
 }
@@ -26565,6 +26566,8 @@ static void ath12k_mac_hw_unregister(struct ath12k_hw *ah)
 		cancel_work_sync(&ar->reg_set_previous_country);
 		cancel_work_sync(&ar->change_6g_txpow_sta_mode_work);
 		cancel_work_sync(&ar->mvr_ch_switch_notify_work);
+		cancel_delayed_work_sync(&ar->scan.timeout);
+		cancel_delayed_work_sync(&ar->scan.roc_done);
 		ath12k_debugfs_unregister(ar);
 		ath12k_sysfs_cleanup_extn(ar);
 	}
