@@ -259,6 +259,11 @@ ath12k_wifi8_dp_mon_rx_parse_status_buf(struct ath12k_pdev_dp *dp_pdev,
 			msdu_info->last_buffer = true;
 	}
 
+	/* Buffer address TLV is subscribed only when a full packet is
+	 * requested; it is not subscribed for short packets.
+	 */
+	ppdu_info->mpdu_info[user_id].full_pkt = true;
+
 	if (unlikely(packet_info->truncated)) {
 		mon_stats->pkt_tlv_truncated++;
 		ppdu_info->mpdu_info[user_id].truncated = true;
@@ -395,9 +400,11 @@ ath12k_wifi8_dp_mon_rx_parse_mpdu_end(struct ath12k_pdev_dp *dp_pdev,
 	mpdu_meta = (struct ath12k_dp_mon_mpdu_meta *)skb->data;
 	mpdu_meta->truncated = ppdu_info->mpdu_info[user_id].truncated;
 	mpdu_meta->fcs_err = ppdu_info->mpdu_info[user_id].fcs_err;
+	mpdu_meta->full_pkt = ppdu_info->mpdu_info[user_id].full_pkt;
 
 reset_mpdu_info:
 	ppdu_info->mpdu_info[user_id].truncated = false;
+	ppdu_info->mpdu_info[user_id].full_pkt = false;
 	ppdu_info->mpdu_info[user_id].mpdu_start_received = false;
 }
 
@@ -1237,38 +1244,41 @@ void ath12k_wifi8_dp_mon_rx_process_mpdu_queue(struct ath12k_pdev_dp *dp_pdev,
 		}
 
 		if (mpdu_meta->decap_type == DP_RX_DECAP_TYPE_RAW) {
-			fcs_len_left = FCS_LEN;
-			last_frag_idx = skb_shinfo(mpdu)->nr_frags - 1;
-			if (skb_shinfo(mpdu)->nr_frags >= 2) {
-				last_frag_size =
-				ath12k_dp_mon_get_frag_size_by_idx(dp_pdev->dp,
-								   mpdu,
-								   last_frag_idx);
-				if (last_frag_size > 0 && last_frag_size <= FCS_LEN) {
-					ath12k_dp_mon_skb_remove_frag(dp_pdev->dp, mpdu,
-								      last_frag_idx,
-								      buf_size);
-					fcs_len_left -= last_frag_size;
+			if (mpdu_meta->full_pkt) {
+				fcs_len_left = FCS_LEN;
+				last_frag_idx = skb_shinfo(mpdu)->nr_frags - 1;
+				if (skb_shinfo(mpdu)->nr_frags >= 2) {
+					last_frag_size =
+					ath12k_dp_mon_get_frag_size_by_idx(
+								dp_pdev->dp,
+								mpdu, last_frag_idx);
+					if (last_frag_size > 0 && last_frag_size <=
+					    FCS_LEN) {
+						ath12k_dp_mon_skb_remove_frag(
+								dp_pdev->dp,
+								mpdu, last_frag_idx,
+								buf_size);
+						fcs_len_left -= last_frag_size;
+					}
+				}
+
+				last_frag_idx = skb_shinfo(mpdu)->nr_frags - 1;
+				if (fcs_len_left > 0) {
+					last_frag_size =
+					ath12k_dp_mon_get_frag_size_by_idx(
+								dp_pdev->dp, mpdu,
+								last_frag_idx);
+					if (last_frag_size <= fcs_len_left) {
+						dev_kfree_skb_any(mpdu);
+						mon_stats->num_skb_free++;
+						num_skb = 0;
+						pkt_tlv = 0;
+						goto next_mpdu;
+					}
+					skb_coalesce_rx_frag(mpdu, last_frag_idx,
+							-fcs_len_left, 0);
 				}
 			}
-
-			last_frag_idx = skb_shinfo(mpdu)->nr_frags - 1;
-			if (fcs_len_left > 0) {
-				last_frag_size =
-					ath12k_dp_mon_get_frag_size_by_idx(dp_pdev->dp,
-									   mpdu,
-									   last_frag_idx);
-				if (last_frag_size <= fcs_len_left) {
-					dev_kfree_skb_any(mpdu);
-					mon_stats->num_skb_free++;
-					num_skb = 0;
-					pkt_tlv = 0;
-					goto next_mpdu;
-				}
-				skb_coalesce_rx_frag(mpdu, last_frag_idx,
-						     -fcs_len_left, 0);
-			}
-
 			ath12k_dp_mon_cnt_skb_and_frags(mpdu, &num_skb, &pkt_tlv);
 			mon_stats->num_skb_raw += num_skb;
 			mon_stats->num_frag_raw += pkt_tlv;
@@ -1277,14 +1287,16 @@ void ath12k_wifi8_dp_mon_rx_process_mpdu_queue(struct ath12k_pdev_dp *dp_pdev,
 							&pkt_tlv);
 			mon_stats->num_skb_eth += num_skb;
 			mon_stats->num_frag_eth += pkt_tlv;
-			ret = ath12k_wifi8_dp_mon_restitch_frags(mpdu, dp_pdev);
-			if (unlikely(ret)) {
-				dev_kfree_skb_any(mpdu);
-				mon_stats->num_skb_free += num_skb;
-				mon_stats->pkt_tlv_free += pkt_tlv;
-				num_skb = 0;
-				pkt_tlv = 0;
-				goto next_mpdu;
+			if (mpdu_meta->full_pkt) {
+				ret = ath12k_wifi8_dp_mon_restitch_frags(mpdu, dp_pdev);
+				if (unlikely(ret)) {
+					dev_kfree_skb_any(mpdu);
+					mon_stats->num_skb_free += num_skb;
+					mon_stats->pkt_tlv_free += pkt_tlv;
+					num_skb = 0;
+					pkt_tlv = 0;
+					goto next_mpdu;
+				}
 			}
 		}
 
@@ -2080,29 +2092,11 @@ int ath12k_wifi8_dp_ext_mon_validate_request(struct ath12k_pdev_dp *dp_pdev,
 
 	if (req->cmd_type == ATH12K_EXT_MON_CMD_TYPE_SET_FILTER &&
 	    !req->filter.disable) {
-		/*
-		 * For wifi8, only MSDU level is supported. MPDU and PPDU levels
-		 * are not supported yet.
-		 */
-		if (req->filter.level != ATH12K_EXT_MON_FILTER_LEVEL_MSDU) {
+		/* For wifi8, PPDU level is not supported yet. */
+		if (req->filter.level == ATH12K_EXT_MON_FILTER_LEVEL_PPDU) {
 			ath12k_warn(dp_pdev->dp,
-				    "only MSDU level is supported");
+				    "PPDU level is not supported");
 			return -EINVAL;
-		}
-
-		/*
-		 * For wifi8, only full packet length is supported. Short packet
-		 * lengths (64B, 128B, 256B) are not supported. Any configured
-		 * frame type length must be ATH12K_EXT_MON_LEN_FULL_PKT.
-		 */
-		for (i = 0; i < ATH12K_EXT_MON_FRAME_MAX; i++) {
-			if (req->filter.target_neighbor.len[i] &&
-			    req->filter.target_neighbor.len[i] !=
-					ATH12K_EXT_MON_LEN_FULL_PKT) {
-				ath12k_warn(dp_pdev->dp,
-					    "only full packet length is supported");
-				return -EINVAL;
-			}
 		}
 	}
 
