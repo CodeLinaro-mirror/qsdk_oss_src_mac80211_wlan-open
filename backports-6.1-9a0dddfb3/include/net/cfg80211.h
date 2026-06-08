@@ -6224,6 +6224,8 @@ struct cfg80211_ops {
  * @WIPHY_FLAG_SUPPORTS_BEACON_TX_SYNC: Flag attribute indicating that HW
  *	will transmit beacons for all bands at the same time (burst mode) if
  *	the beacon intervals are the same.
+ * @WIPHY_FLAG_SUPPORTS_SMD: Flag attribute indicating that HW will support
+ *      roaming within a seamless mobility domain (SMD).
  */
 enum wiphy_flags {
 	WIPHY_FLAG_SUPPORTS_EXT_KEK_KCK			= BIT(0),
@@ -6254,6 +6256,7 @@ enum wiphy_flags {
 	WIPHY_FLAG_CHANNEL_CHANGE_ON_BEACON		= BIT(25),
 	WIPHY_FLAG_SUPPORTS_CONCUR_MONITOR_N_OTHER_VIF	= BIT(26),
 	WIPHY_FLAG_SUPPORTS_BEACON_TX_SYNC              = BIT(27),
+	WIPHY_FLAG_SUPPORTS_SMD				= BIT(28),
 };
 
 /**

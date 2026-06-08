@@ -3125,6 +3125,18 @@ enum nl80211_commands {
  * @NL80211_ATTR_STA_DFS_EN: flag/u8 attribute to enable or disable
  *	Station DFS (Dynamic Frequency Selection) support. Only applicable
  *	in ETSI regulatory domains. 0 = disabled, 1 = enabled.
+ *
+ * @NL80211_ATTR_SMD_SUPPORT: Flag attribute indicating that HW
+ *	supports roaming within a seamless mobility domain (SMD).
+ *
+ * @NL80211_ATTR_SMD_AP: Flag attribute indicating that HW is capable
+ *	of moving a client between APs within a seamless mobility
+ *	domain (SMD).
+ *
+ * @NL80211_ATTR_SMD_STA_DL_DATA_FWD: Flag attribute indicating that
+ *	HW is capable of forwarding MSDUs when roaming a client between
+ *	APs within a seamless mobility domain (SMD).
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
@@ -3754,6 +3766,11 @@ enum nl80211_attrs {
 	NL80211_ATTR_MAX_CH_SWITCH_TIME,
 
 	NL80211_ATTR_STA_DFS_EN,
+
+	NL80211_ATTR_SMD_SUPPORT,
+	NL80211_ATTR_SMD_AP,
+	NL80211_ATTR_SMD_STA_DL_DATA_FWD,
+
 	/* add attributes here, update the policy in nl80211.c */
 
 	__NL80211_ATTR_AFTER_LAST,
@@ -3904,6 +3921,7 @@ enum nl80211_iftype {
  * @NL80211_STA_FLAG_SPP_AMSDU: station supports SPP A-MSDUs
  * @NL80211_STA_FLAG_FT_AUTH: station uses FT authentication
  * @NL80211_STA_FLAG_CFP: station uses control frame protection
+ * @NL80211_STA_FLAG_SMD: station created via SMD roaming request
  * @NL80211_STA_FLAG_MAX: highest station flag number currently defined
  * @__NL80211_STA_FLAG_AFTER_LAST: internal use
  */
@@ -3919,6 +3937,7 @@ enum nl80211_sta_flags {
 	NL80211_STA_FLAG_SPP_AMSDU,
 	NL80211_STA_FLAG_FT_AUTH,
 	NL80211_STA_FLAG_CFP,
+	NL80211_STA_FLAG_SMD,
 
 	/* keep last */
 	__NL80211_STA_FLAG_AFTER_LAST,
@@ -5758,6 +5777,14 @@ enum nl80211_bss_cannot_use_reasons {
  *	This is a u64 attribute containing a bitmap of values from
  *	&enum nl80211_cannot_use_reasons, note that the attribute may be missing
  *	if no reasons are specified.
+ * @NL80211_BSS_SMD_CAPABLE: flag attribute indicating this BSS supports
+ *	SMD (Seamless Mobility Domain) as defined in IEEE 802.11bn
+ * @NL80211_BSS_SMD_DOMAIN_ID: 6-byte SMD domain identifier of this BSS
+ * @NL80211_BSS_SMD_CAPABILITIES: u8 attribute containing SMD capability
+ *	bits indicating supported SMD features
+ * @NL80211_BSS_SMD_TIMEOUT: u8 attribute containing the SMD timeout
+ *	value in Time Units (TUs), indicating how long SMD state is
+ *	maintained
  * @__NL80211_BSS_AFTER_LAST: internal
  * @NL80211_BSS_MAX: highest BSS attribute
  */
@@ -5787,6 +5814,10 @@ enum nl80211_bss {
 	NL80211_BSS_MLD_ADDR,
 	NL80211_BSS_USE_FOR,
 	NL80211_BSS_CANNOT_USE_REASONS,
+	NL80211_BSS_SMD_CAPABLE,
+	NL80211_BSS_SMD_DOMAIN_ID,
+	NL80211_BSS_SMD_CAPABILITIES,
+	NL80211_BSS_SMD_TIMEOUT,
 
 	/* keep last */
 	__NL80211_BSS_AFTER_LAST,
@@ -7367,6 +7398,8 @@ enum nl80211_ext_feature_index {
 	NL80211_EXT_FEATURE_BEACON_ADVERTISED_TTLM_OFFLOAD,
 	NL80211_EXT_FEATURE_CONTROL_FRAME_PROTECTION,
 	NL80211_EXT_FEATURE_CIP_PADDING_SUPPORT,
+	NL80211_EXT_FEATURE_SMD_SUPPORT_AP,
+	NL80211_EXT_FEATURE_SMD_SUPPORT_DL_PKT_FRWRD,
 
 	/* add new features before the definition below */
 	NUM_NL80211_EXT_FEATURES,
