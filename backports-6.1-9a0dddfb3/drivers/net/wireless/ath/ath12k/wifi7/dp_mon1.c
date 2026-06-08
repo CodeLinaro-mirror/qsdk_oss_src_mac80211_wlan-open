@@ -51,6 +51,10 @@ struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_quad_ring_ops = {
 	.pktlog_config = NULL,
 	.htt_rx_filter_rxmon_cfg = ath12k_dp_htt_rx_filter_rxmon_cfg,
 	.htt_rx_phy_err_filter_cfg = NULL,
+	.rx_undecoded_metadata_config_filter = NULL,
+	.rx_undecoded_metadata_reset_filter = NULL,
+	.rx_undecoded_metadata_capture_set = NULL,
+	.rx_undecoded_phy_err_mask_set = NULL,
 };
 
 int ath12k_wifi7_dp_mon_rx_srng_setup(struct ath12k_dp *dp)
