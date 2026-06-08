@@ -1877,6 +1877,7 @@ struct ath12k {
 	struct ath12k_spectral spectral;
 #endif
 	bool ap_ps_enabled;
+	bool ap_ps_disabled_by_agile;
 	enum ath12k_ap_ps_state ap_ps_state;
 
 	struct cfg80211_chan_def awgn_chandef;
@@ -1916,6 +1917,7 @@ struct ath12k {
 	struct cfg80211_chan_def agile_chandef;
 	bool agile_abort_pending; /* WMI abort sent; awaiting firmware ACK */
 	struct wiphy_work agile_cac_abort_wq;
+	struct wiphy_work ap_ps_recalc_wq;
 	u32 free_map_id;
 	struct ath12k_qos_map *qos_map;
 
