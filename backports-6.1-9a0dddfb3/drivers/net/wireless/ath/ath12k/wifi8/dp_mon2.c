@@ -631,7 +631,10 @@ ath12k_wifi8_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	struct ath12k_dp_rx_ext_mon *config;
 	struct ieee80211_hdr *hdr;
-	u8 filter_category, type;
+	struct ath12k_ext_mon_pkt_config *pkt_config = NULL;
+	u8 filter_category, type, sub_type;
+	bool is_mcast = false;
+	int ret = 0;
 
 	spin_lock(&dp_mon_pdev->rx_ext_mon_lock);
 	config = dp_mon_pdev->rx_ext_mon_config;
@@ -658,18 +661,55 @@ ath12k_wifi8_dp_ext_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	switch (filter_category) {
+	case DP_MPDU_FILTER_CATEGORY_FP:
+		if (config->fp_enabled) {
+			pkt_config = &config->fp;
+			/* When FP statistics are enabled and extended monitor filters
+			 * are ORed in, extra frame type/subtypes may be received;
+			 * explicitly filter out those unintended frames here.
+			 */
+			sub_type = ((__le16_to_cpu(hdr->frame_control) &
+				     IEEE80211_FCTL_STYPE) >> ATH12K_FC0_SUBTYPE_SHIFT);
+			is_mcast = is_multicast_ether_addr(hdr->addr1);
+			ret = ath12k_dp_ext_mon_subtype_check(pkt_config, type,
+							      sub_type, is_mcast);
+			if (unlikely(ret)) {
+				spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
+				ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON,
+					   "Filtered subtype %x\n", sub_type);
+				return -EINVAL;
+			}
+		}
+		break;
 	case DP_MPDU_FILTER_CATEGORY_MD:
 		if (config->md_enabled) {
+			pkt_config = &config->md;
 			if (config->peer_count && ppdu_info->nrp_info.fc_valid &&
 			    ppdu_info->nrp_info.to_ds_flag &&
 			    ppdu_info->nrp_info.mac_addr2_valid)
 				ath12k_dp_ext_mon_update_snr(ppdu_info, config);
 		}
 		break;
+	case DP_MPDU_FILTER_CATEGORY_MO:
+		if (config->mo_enabled)
+			pkt_config = &config->mo;
+		break;
+	case DP_MPDU_FILTER_CATEGORY_FP_MO:
+		if (config->fpmo_enabled)
+			pkt_config = &config->fpmo;
+		break;
 	default:
 		spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
 		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON,
-			   "Filter category not handled in wifi8 ext mon: %x\n",
+			   "Unknown filter category in wifi8 ext mon: %x\n",
+			   filter_category);
+		return -EINVAL;
+	}
+
+	if (unlikely(!pkt_config)) {
+		spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON,
+			   "Filter category %x not enabled in current ext_mon config\n",
 			   filter_category);
 		return -EINVAL;
 	}
@@ -2047,21 +2087,6 @@ int ath12k_wifi8_dp_ext_mon_validate_request(struct ath12k_pdev_dp *dp_pdev,
 		if (req->filter.level != ATH12K_EXT_MON_FILTER_LEVEL_MSDU) {
 			ath12k_warn(dp_pdev->dp,
 				    "only MSDU level is supported");
-			return -EINVAL;
-		}
-
-		/*
-		 * For wifi8, as of now only target_neighbor pkt config is supported.
-		 * A pkt config is considered active when any filter[] entry is non-zero.
-		 * Reject upfront if all_peer, all_neighbor or target_peer are
-		 * active so the caller is informed that these modes are not
-		 * supported.
-		 */
-		if (ath12k_dp_ext_mon_is_mode_enabled(&req->filter.all_peer) ||
-		    ath12k_dp_ext_mon_is_mode_enabled(&req->filter.all_neighbor) ||
-		    ath12k_dp_ext_mon_is_mode_enabled(&req->filter.target_peer)) {
-			ath12k_warn(dp_pdev->dp,
-				    "only target_neighbor pkt config is supported");
 			return -EINVAL;
 		}
 
