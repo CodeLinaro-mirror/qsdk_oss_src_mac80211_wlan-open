@@ -2667,6 +2667,42 @@ static int ath12k_mac_vdev_ratemask(struct ath12k_link_vif *arvif,
 	return 0;
 }
 
+static void
+ath12k_mac_parse_beacon_eht_mcs_nss(struct sk_buff *bcn,
+				    struct ieee80211_eht_mcs_nss_supp *out)
+{
+	const struct ieee80211_eht_cap_elem_fixed *eht_cap;
+	const struct ieee80211_he_cap_elem *he_cap;
+	const u8 *he_ie, *eht_ie, *mcs;
+	u8 mcs_nss_len;
+	int ies_len;
+	u8 *ies;
+
+	memset(out, 0, sizeof(*out));
+
+	ies = ((struct ieee80211_mgmt *)bcn->data)->u.beacon.variable;
+	ies_len = bcn->len - (ies - (u8 *)bcn->data);
+
+	he_ie = cfg80211_find_ext_ie(WLAN_EID_EXT_HE_CAPABILITY, ies, ies_len);
+	if (!he_ie || he_ie[1] < 1 + sizeof(*he_cap))
+		return;
+
+	eht_ie = cfg80211_find_ext_ie(WLAN_EID_EXT_EHT_CAPABILITY, ies, ies_len);
+	if (!eht_ie || eht_ie[1] < 1 + sizeof(*eht_cap))
+		return;
+
+	he_cap  = (const struct ieee80211_he_cap_elem *)(he_ie  + 3);
+	eht_cap = (const struct ieee80211_eht_cap_elem_fixed *)(eht_ie + 3);
+
+	mcs_nss_len = ieee80211_eht_mcs_nss_size(he_cap, eht_cap, true);
+	if (eht_ie[1] < 1 + sizeof(*eht_cap) + mcs_nss_len)
+		return;
+
+	mcs = (const u8 *)(eht_cap + 1);
+
+	memcpy(out, mcs, min_t(u8, mcs_nss_len, sizeof(*out)));
+}
+
 static int ath12k_mac_setup_bcn_tmpl_ema(struct ath12k_link_vif *arvif,
 					 struct ath12k_link_vif *tx_arvif,
 					 u8 bssid_index)
@@ -2697,6 +2733,9 @@ static int ath12k_mac_setup_bcn_tmpl_ema(struct ath12k_link_vif *arvif,
 				    arvif->vdev_id, ret);
 			return ret;
 		}
+
+		ath12k_mac_parse_beacon_eht_mcs_nss(beacons->bcn[0].skb,
+						    &tx_arvif->bcn_eht_mcs_map);
 	}
 
 	for (i = 0; i < beacons->cnt; i++) {
@@ -2835,6 +2874,8 @@ static int ath12k_mac_setup_bcn_tmpl(struct ath12k_link_vif *arvif)
 			    arvif->vdev_id, ret);
 		goto free_bcn_skb;
 	}
+
+	ath12k_mac_parse_beacon_eht_mcs_nss(bcn, &arvif->bcn_eht_mcs_map);
 
 	ret = ath12k_wmi_bcn_tmpl(tx_arvif, &offs, bcn, NULL);
 
@@ -4751,18 +4792,6 @@ ath12k_peer_assoc_build_vendor_event(struct ath12k_sta *ahsta,
 }
 
 
-static bool
-ath12k_peer_assoc_h_eht_masked(const u16 eht_mcs_mask[NL80211_EHT_NSS_MAX])
-{
-	int nss;
-
-	for (nss = 0; nss < NL80211_EHT_NSS_MAX; nss++)
-	       if (eht_mcs_mask[nss])
-		       return false;
-
-	return true;
-}
-
 static void ath12k_peer_assoc_h_phymode(struct ath12k *ar,
 					struct ath12k_link_vif *arvif,
 					struct ath12k_link_sta *arsta,
@@ -4774,7 +4803,6 @@ static void ath12k_peer_assoc_h_phymode(struct ath12k *ar,
 	const u8 *ht_mcs_mask;
 	const u16 *vht_mcs_mask;
 	const u16 *he_mcs_mask;
-	const u16 *eht_mcs_mask;
 	enum wmi_phy_mode phymode = MODE_UNKNOWN;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
@@ -4794,7 +4822,6 @@ static void ath12k_peer_assoc_h_phymode(struct ath12k *ar,
 	ht_mcs_mask = arvif->bitrate_mask.control[band].ht_mcs;
 	vht_mcs_mask = arvif->bitrate_mask.control[band].vht_mcs;
 	he_mcs_mask = arvif->bitrate_mask.control[band].he_mcs;
-	eht_mcs_mask = arvif->bitrate_mask.control[band].eht_mcs;
 
 	if (!link_sta) {
 		ath12k_warn(ar->ab, "unable to access link sta in peer assoc he for sta %pM link %u\n",
@@ -4809,8 +4836,7 @@ static void ath12k_peer_assoc_h_phymode(struct ath12k *ar,
 				phymode = MODE_11BN_UHR40_2G;
 			else
 				phymode = MODE_11BN_UHR20_2G;
-		} else if (link_sta->eht_cap.has_eht &&
-		    !ath12k_peer_assoc_h_eht_masked(eht_mcs_mask)) {
+		} else if (link_sta->eht_cap.has_eht) {
 			if (link_sta->bandwidth == IEEE80211_STA_RX_BW_40)
 				phymode = MODE_11BE_EHT40_2G;
 			else
@@ -4878,46 +4904,43 @@ static void ath12k_peer_assoc_h_phymode(struct ath12k *ar,
 	WARN_ON(phymode == MODE_UNKNOWN);
 }
 
-static void ath12k_mac_set_eht_mcs(u8 rx_tx_mcs7, u8 rx_tx_mcs9,
-				   u8 rx_tx_mcs11, u8 rx_tx_mcs13,
-				   u32 *rx_mcs, u32 *tx_mcs,
-				   const u16 eht_mcs_limit[NL80211_EHT_NSS_MAX])
+static void
+ath12k_mac_set_eht_mcs(u8 own_mcs7, u8 own_mcs9, u8 own_mcs11, u8 own_mcs13,
+		       u8 peer_mcs7, u8 peer_mcs9, u8 peer_mcs11, u8 peer_mcs13,
+		       u32 *peer_rx_mcs, u32 *peer_tx_mcs)
 {
-	int nss;
-	u8 mcs_7 = 0, mcs_9 = 0, mcs_11 = 0, mcs_13 = 0;
-	u8 peer_mcs_7 = 0, peer_mcs_9 = 0, peer_mcs_11 = 0, peer_mcs_13 = 0;
+	u8 own_7, own_9, own_11, own_13;
+	u8 p_mcs_7, p_mcs_9, p_mcs_11, p_mcs_13;
 
-	for (nss = 0; nss < NL80211_EHT_NSS_MAX; nss++) {
-		if (eht_mcs_limit[nss] & 0x00FF)
-			mcs_7++;
-		if (eht_mcs_limit[nss] & 0x0300)
-			mcs_9++;
-		if (eht_mcs_limit[nss] & 0x0C00)
-			mcs_11++;
-		if (eht_mcs_limit[nss] & 0x3000)
-			mcs_13++;
-	}
+	/* TX: peer to us; limit = min(peer TX cap, our RX cap) */
+	own_7  = u8_get_bits(own_mcs7,  IEEE80211_EHT_MCS_NSS_RX);
+	own_9  = u8_get_bits(own_mcs9,  IEEE80211_EHT_MCS_NSS_RX);
+	own_11 = u8_get_bits(own_mcs11, IEEE80211_EHT_MCS_NSS_RX);
+	own_13 = u8_get_bits(own_mcs13, IEEE80211_EHT_MCS_NSS_RX);
+	p_mcs_7  = u8_get_bits(peer_mcs7,  IEEE80211_EHT_MCS_NSS_TX);
+	p_mcs_9  = u8_get_bits(peer_mcs9,  IEEE80211_EHT_MCS_NSS_TX);
+	p_mcs_11 = u8_get_bits(peer_mcs11, IEEE80211_EHT_MCS_NSS_TX);
+	p_mcs_13 = u8_get_bits(peer_mcs13, IEEE80211_EHT_MCS_NSS_TX);
 
-	peer_mcs_7 = u8_get_bits(rx_tx_mcs7, IEEE80211_EHT_MCS_NSS_RX);
-	peer_mcs_9 = u8_get_bits(rx_tx_mcs9, IEEE80211_EHT_MCS_NSS_RX);
-	peer_mcs_11 = u8_get_bits(rx_tx_mcs11, IEEE80211_EHT_MCS_NSS_RX);
-	peer_mcs_13 = u8_get_bits(rx_tx_mcs13, IEEE80211_EHT_MCS_NSS_RX);
+	*peer_tx_mcs = FIELD_PREP(WMI_EHT_MCS_NSS_0_7,   min(p_mcs_7,  own_7))  |
+		       FIELD_PREP(WMI_EHT_MCS_NSS_8_9,   min(p_mcs_9,  own_9))  |
+		       FIELD_PREP(WMI_EHT_MCS_NSS_10_11, min(p_mcs_11, own_11)) |
+		       FIELD_PREP(WMI_EHT_MCS_NSS_12_13, min(p_mcs_13, own_13));
 
-	*rx_mcs = FIELD_PREP(WMI_EHT_MCS_NSS_0_7, min(peer_mcs_7, mcs_7)) |
-		  FIELD_PREP(WMI_EHT_MCS_NSS_8_9, min(peer_mcs_9, mcs_9)) |
-		  FIELD_PREP(WMI_EHT_MCS_NSS_10_11, min(peer_mcs_11, mcs_11)) |
-		  FIELD_PREP(WMI_EHT_MCS_NSS_12_13, min (peer_mcs_13, mcs_13));
+	/* RX: us to peer; limit = min(peer RX cap, our TX cap) */
+	own_7  = u8_get_bits(own_mcs7,  IEEE80211_EHT_MCS_NSS_TX);
+	own_9  = u8_get_bits(own_mcs9,  IEEE80211_EHT_MCS_NSS_TX);
+	own_11 = u8_get_bits(own_mcs11, IEEE80211_EHT_MCS_NSS_TX);
+	own_13 = u8_get_bits(own_mcs13, IEEE80211_EHT_MCS_NSS_TX);
+	p_mcs_7  = u8_get_bits(peer_mcs7,  IEEE80211_EHT_MCS_NSS_RX);
+	p_mcs_9  = u8_get_bits(peer_mcs9,  IEEE80211_EHT_MCS_NSS_RX);
+	p_mcs_11 = u8_get_bits(peer_mcs11, IEEE80211_EHT_MCS_NSS_RX);
+	p_mcs_13 = u8_get_bits(peer_mcs13, IEEE80211_EHT_MCS_NSS_RX);
 
-	peer_mcs_7 = u8_get_bits(rx_tx_mcs7, IEEE80211_EHT_MCS_NSS_TX);
-	peer_mcs_9 = u8_get_bits(rx_tx_mcs9, IEEE80211_EHT_MCS_NSS_TX);
-	peer_mcs_11 = u8_get_bits(rx_tx_mcs11, IEEE80211_EHT_MCS_NSS_TX);
-	peer_mcs_13 = u8_get_bits(rx_tx_mcs13, IEEE80211_EHT_MCS_NSS_TX);
-
-	*tx_mcs = FIELD_PREP(WMI_EHT_MCS_NSS_0_7, min(peer_mcs_7, mcs_7)) |
-		  FIELD_PREP(WMI_EHT_MCS_NSS_8_9, min(peer_mcs_9, mcs_9)) |
-		  FIELD_PREP(WMI_EHT_MCS_NSS_10_11, min(peer_mcs_11, mcs_11)) |
-		  FIELD_PREP(WMI_EHT_MCS_NSS_12_13, min (peer_mcs_13, mcs_13));
-
+	*peer_rx_mcs = FIELD_PREP(WMI_EHT_MCS_NSS_0_7,   min(p_mcs_7,  own_7))  |
+		       FIELD_PREP(WMI_EHT_MCS_NSS_8_9,   min(p_mcs_9,  own_9))  |
+		       FIELD_PREP(WMI_EHT_MCS_NSS_10_11, min(p_mcs_11, own_11)) |
+		       FIELD_PREP(WMI_EHT_MCS_NSS_12_13, min(p_mcs_13, own_13));
 }
 
 static void ath12k_mac_set_eht_ppe_threshold(const u8 *ppe_thres,
@@ -4957,22 +4980,21 @@ static void ath12k_peer_assoc_h_eht(struct ath12k *ar,
 				    struct ieee80211_link_sta *link_sta)
 {
 	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(arsta->ahsta);
-	const struct ieee80211_eht_mcs_nss_supp *own_eht_mcs_nss_supp;
 	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(arvif->ahvif);
 	const struct ieee80211_eht_mcs_nss_supp_20mhz_only *bw_20;
-	enum ieee80211_sta_rx_bandwidth radio_max_bw_caps;
-	const struct ieee80211_sta_eht_cap *own_eht_cap;
+	const struct ieee80211_eht_mcs_nss_supp_bw *own_bw;
 	const struct ieee80211_eht_mcs_nss_supp_bw *bw;
+	enum ieee80211_sta_rx_bandwidth radio_max_bw_caps;
+	struct ieee80211_eht_mcs_nss_supp own_mcs_nss;
+	struct ieee80211_bss_conf *link_conf = NULL;
 	const struct ieee80211_sta_eht_cap *eht_cap;
 	const struct ieee80211_sta_he_cap *he_cap;
-	struct ieee80211_bss_conf *link_conf = NULL;
-	bool user_rate_valid = true;
+	struct ath12k_link_vif *tx_arvif;
+	u32 *peer_rx_mcs, *peer_tx_mcs;
 	struct cfg80211_chan_def def;
 	enum nl80211_band band;
+	int eht_nss;
 	u8 max_nss;
-	u16 *eht_mcs_mask;
-	u32 *rx_mcs, *tx_mcs;
-	int eht_nss, nss_idx;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -5004,12 +5026,21 @@ static void ath12k_peer_assoc_h_eht(struct ath12k *ar,
 	else
 		band = def.chan->band;
 
-	eht_mcs_mask = arvif->bitrate_mask.control[band].eht_mcs;
-	own_eht_cap = &ar->mac.sbands[band].iftype_data->eht_cap;
-	own_eht_mcs_nss_supp = &own_eht_cap->eht_mcs_nss_supp;
+	if (vif->type == NL80211_IFTYPE_AP) {
+		tx_arvif = ath12k_mac_get_tx_arvif(arvif, link_conf);
+		if (!tx_arvif)
+			tx_arvif = arvif;
 
-	if (ath12k_peer_assoc_h_eht_masked((const u16*) eht_mcs_mask))
-		return;
+		own_mcs_nss = tx_arvif->bcn_eht_mcs_map;
+	} else {
+		const struct ieee80211_sta_eht_cap *own_eht_cap =
+			&ar->mac.sbands[band].iftype_data->eht_cap;
+
+		own_mcs_nss = own_eht_cap->eht_mcs_nss_supp;
+	}
+
+	eht_nss = ath12k_mac_max_eht_mcs_nss((void *)&own_mcs_nss,
+					     sizeof(own_mcs_nss));
 
 	arg->eht_flag = true;
 
@@ -5036,31 +5067,8 @@ static void ath12k_peer_assoc_h_eht(struct ath12k *ar,
 	memcpy(arg->peer_eht_cap_phy, eht_cap->eht_cap_elem.phy_cap_info,
 	       sizeof(eht_cap->eht_cap_elem.phy_cap_info));
 
-	rx_mcs = arg->peer_eht_rx_mcs_set;
-	tx_mcs = arg->peer_eht_tx_mcs_set;
-
-	eht_nss = ath12k_mac_max_eht_mcs_nss((void *)own_eht_mcs_nss_supp,
-						  sizeof(*own_eht_mcs_nss_supp));
-
-	if (eht_nss > link_sta->rx_nss) {
-		user_rate_valid = false;
-		for (nss_idx = (link_sta->rx_nss - 1); nss_idx >= 0; nss_idx--) {
-			if (eht_mcs_mask[nss_idx]) {
-				user_rate_valid = true;
-				break;
-			}
-		}
-	}
-
-	if (!user_rate_valid) {
-		ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
-				 "Setting eht range MCS value to peer supported nss:%d for peer %pM\n",
-				 link_sta->rx_nss, arsta->addr);
-		eht_mcs_mask[link_sta->rx_nss - 1] = eht_mcs_mask[eht_nss - 1];
-	}
-
-	bw_20 = &eht_cap->eht_mcs_nss_supp.only_20mhz;
-	bw = &eht_cap->eht_mcs_nss_supp.bw._80;
+	peer_rx_mcs = arg->peer_eht_rx_mcs_set;
+	peer_tx_mcs = arg->peer_eht_tx_mcs_set;
 
 	radio_max_bw_caps = ath12k_get_radio_max_bw_caps(ar, band,
 							 link_sta->bandwidth,
@@ -5068,50 +5076,66 @@ static void ath12k_peer_assoc_h_eht(struct ath12k *ar,
 
 	switch (min(link_sta->sta_max_bandwidth, radio_max_bw_caps)) {
 	case IEEE80211_STA_RX_BW_320:
+		own_bw = &own_mcs_nss.bw._320;
 		bw = &eht_cap->eht_mcs_nss_supp.bw._320;
-		ath12k_mac_set_eht_mcs(bw->rx_tx_mcs9_max_nss,
+		ath12k_mac_set_eht_mcs(own_bw->rx_tx_mcs9_max_nss,
+				       own_bw->rx_tx_mcs9_max_nss,
+				       own_bw->rx_tx_mcs11_max_nss,
+				       own_bw->rx_tx_mcs13_max_nss,
+				       bw->rx_tx_mcs9_max_nss,
 				       bw->rx_tx_mcs9_max_nss,
 				       bw->rx_tx_mcs11_max_nss,
 				       bw->rx_tx_mcs13_max_nss,
-				       &rx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_320],
-				       &tx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_320],
-				       eht_mcs_mask);
+				       &peer_rx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_320],
+				       &peer_tx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_320]);
 		arg->peer_eht_mcs_count++;
 		fallthrough;
 	case IEEE80211_STA_RX_BW_160:
+		own_bw = &own_mcs_nss.bw._160;
 		bw = &eht_cap->eht_mcs_nss_supp.bw._160;
-		ath12k_mac_set_eht_mcs(bw->rx_tx_mcs9_max_nss,
+		ath12k_mac_set_eht_mcs(own_bw->rx_tx_mcs9_max_nss,
+				       own_bw->rx_tx_mcs9_max_nss,
+				       own_bw->rx_tx_mcs11_max_nss,
+				       own_bw->rx_tx_mcs13_max_nss,
+				       bw->rx_tx_mcs9_max_nss,
 				       bw->rx_tx_mcs9_max_nss,
 				       bw->rx_tx_mcs11_max_nss,
 				       bw->rx_tx_mcs13_max_nss,
-				       &rx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_160],
-				       &tx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_160],
-				       eht_mcs_mask);
+				       &peer_rx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_160],
+				       &peer_tx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_160]);
 		arg->peer_eht_mcs_count++;
 		fallthrough;
 	default:
 		if (!(link_sta->he_cap.he_cap_elem.phy_cap_info[0] &
-			IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_MASK_ALL)) {
+		      IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_MASK_ALL)) {
+			own_bw = &own_mcs_nss.bw._80;
 			bw_20 = &eht_cap->eht_mcs_nss_supp.only_20mhz;
-
-			ath12k_mac_set_eht_mcs(bw_20->rx_tx_mcs7_max_nss,
-					       bw_20->rx_tx_mcs9_max_nss,
-					       bw_20->rx_tx_mcs11_max_nss,
-					       bw_20->rx_tx_mcs13_max_nss,
-					       &rx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_80],
-					       &tx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_80],
-					       eht_mcs_mask);
+			ath12k_mac_set_eht_mcs(
+					own_bw->rx_tx_mcs9_max_nss,
+					own_bw->rx_tx_mcs9_max_nss,
+					own_bw->rx_tx_mcs11_max_nss,
+					own_bw->rx_tx_mcs13_max_nss,
+					bw_20->rx_tx_mcs7_max_nss,
+					bw_20->rx_tx_mcs9_max_nss,
+					bw_20->rx_tx_mcs11_max_nss,
+					bw_20->rx_tx_mcs13_max_nss,
+					&peer_rx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_80],
+					&peer_tx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_80]);
 		} else {
+			own_bw = &own_mcs_nss.bw._80;
 			bw = &eht_cap->eht_mcs_nss_supp.bw._80;
-			ath12k_mac_set_eht_mcs(bw->rx_tx_mcs9_max_nss,
-					       bw->rx_tx_mcs9_max_nss,
-					       bw->rx_tx_mcs11_max_nss,
-					       bw->rx_tx_mcs13_max_nss,
-					       &rx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_80],
-					       &tx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_80],
-					       eht_mcs_mask);
+			ath12k_mac_set_eht_mcs(
+					own_bw->rx_tx_mcs9_max_nss,
+					own_bw->rx_tx_mcs9_max_nss,
+					own_bw->rx_tx_mcs11_max_nss,
+					own_bw->rx_tx_mcs13_max_nss,
+					bw->rx_tx_mcs9_max_nss,
+					bw->rx_tx_mcs9_max_nss,
+					bw->rx_tx_mcs11_max_nss,
+					bw->rx_tx_mcs13_max_nss,
+					&peer_rx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_80],
+					&peer_tx_mcs[WMI_EHTCAP_TXRX_MCS_NSS_IDX_80]);
 		}
-
 		arg->peer_eht_mcs_count++;
 		break;
 	}
