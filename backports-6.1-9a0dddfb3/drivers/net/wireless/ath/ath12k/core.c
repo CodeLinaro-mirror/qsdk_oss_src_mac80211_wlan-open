@@ -2475,6 +2475,7 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 
 	mutex_unlock(&ab->core_lock);
 
+	ab->cumac_configured = false;
 	hw_grp_ready = ath12k_core_hw_group_start_ready(ag);
 	if (is_ready)
 		*is_ready = hw_grp_ready;
