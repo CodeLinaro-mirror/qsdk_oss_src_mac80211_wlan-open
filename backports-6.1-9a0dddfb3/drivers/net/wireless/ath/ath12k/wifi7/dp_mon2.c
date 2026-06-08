@@ -77,13 +77,21 @@ static inline void
 ath12k_wifi7_dp_mon_rx_memset_ppdu_info(struct ath12k_pdev_dp *pdev_dp,
 					struct hal_rx_mon_ppdu_info *ppdu_info)
 {
+	struct ath12k_pdev_mon_dp_stats *mon_stats = &pdev_dp->dp_mon_pdev->mon_stats;
 	struct sk_buff *skb;
 	int i;
+	int num_skb = 0, frag_cnt = 0;
 
 	/* Check all queues for unexpected length and free skbs */
 	for (i = 0; i < HAL_MAX_UL_MU_USERS; i++) {
-		while ((skb = skb_dequeue(&ppdu_info->mpdu_q[i])))
+		while ((skb = skb_dequeue(&ppdu_info->mpdu_q[i]))) {
+			ath12k_dp_mon_cnt_skb_and_frags(skb, &num_skb, &frag_cnt);
 			dev_kfree_skb_any(skb);
+			mon_stats->num_skb_free += num_skb;
+			mon_stats->pkt_tlv_free += frag_cnt;
+			num_skb = 0;
+			frag_cnt = 0;
+		}
 	}
 
 	memset(ppdu_info, 0, sizeof(*ppdu_info));
@@ -138,6 +146,7 @@ ath12k_wifi7_dp_mon_rx_parse_status_buf(struct ath12k_pdev_dp *dp_pdev,
 		ath12k_warn(dp, "pkt buf: invalid magic value in mac_id %d\n",
 			    dp_pdev->mac_id);
 		ret = -EINVAL;
+		mon_stats->invalid_pkt_magic_num++;
 		goto buf_replenish;
 	}
 
@@ -147,6 +156,7 @@ ath12k_wifi7_dp_mon_rx_parse_status_buf(struct ath12k_pdev_dp *dp_pdev,
 			    mon_desc->in_use,
 			    dp_pdev->mac_id);
 		ret = -EINVAL;
+		mon_stats->invalid_in_use++;
 		goto buf_replenish;
 	}
 
@@ -175,6 +185,7 @@ ath12k_wifi7_dp_mon_rx_parse_status_buf(struct ath12k_pdev_dp *dp_pdev,
 		ath12k_warn(dp, "pkt buf: packet buffer without rx hdr in mac_id %d\n",
 			    dp_pdev->mac_id);
 		page_frag_free(mon_buf);
+		mon_stats->rx_hdr_not_rcvd++;
 		mon_stats->pkt_tlv_free++;
 		goto buf_replenish;
 	}
@@ -203,6 +214,7 @@ ath12k_wifi7_dp_mon_rx_parse_status_buf(struct ath12k_pdev_dp *dp_pdev,
 
 		if (!tmp_skb) {
 			page_frag_free(mon_buf);
+			mon_stats->skb_alloc_fail++;
 			mon_stats->pkt_tlv_free++;
 			goto buf_replenish;
 		}
@@ -326,6 +338,7 @@ ath12k_wifi7_dp_mon_parse_status_rx_hdr(struct ath12k_pdev_dp *dp_pdev,
 			if (!tmp_skb)
 				return -ENOMEM;
 
+			mon_stats->num_skb_alloc++;
 			ath12k_dp_mon_append_skb(skb, tmp_skb);
 		}
 
@@ -340,12 +353,15 @@ ath12k_wifi7_dp_mon_parse_status_rx_hdr(struct ath12k_pdev_dp *dp_pdev,
 }
 
 static int
-ath12k_dp_mon_parse_mpdu_start(struct ath12k_dp *dp, struct ath12k_mon_data *pmon)
+ath12k_dp_mon_parse_mpdu_start(struct ath12k_pdev_dp *dp_pdev,
+			       struct ath12k_mon_data *pmon)
 {
+	struct ath12k_dp *dp = dp_pdev->dp;
 	struct hal_rx_mon_ppdu_info *ppdu_info = &pmon->mon_ppdu_info;
 	struct ath12k_dp_mon_mpdu_meta *mpdu_meta;
 	struct sk_buff *skb;
 	u8 user_id = ppdu_info->user_id;
+	struct ath12k_pdev_mon_dp_stats *mon_stats = &dp_pdev->dp_mon_pdev->mon_stats;
 
 	if (!ppdu_info->mpdu_info[user_id].rx_hdr_rcvd)
 		return 0;
@@ -353,6 +369,7 @@ ath12k_dp_mon_parse_mpdu_start(struct ath12k_dp *dp, struct ath12k_mon_data *pmo
 	skb = skb_peek_tail(&ppdu_info->mpdu_q[user_id]);
 	if (unlikely(!skb)) {
 		ath12k_warn(dp, "No skb found in the mpdu skb queue\n");
+		mon_stats->null_mpdu_q++;
 		return -ENODATA;
 	}
 
@@ -363,8 +380,10 @@ ath12k_dp_mon_parse_mpdu_start(struct ath12k_dp *dp, struct ath12k_mon_data *pmo
 }
 
 static void
-ath12k_wifi7_dp_mon_rx_parse_mpdu_end(struct ath12k_dp *dp, struct ath12k_mon_data *pmon)
+ath12k_wifi7_dp_mon_rx_parse_mpdu_end(struct ath12k_pdev_dp *dp_pdev,
+				      struct ath12k_mon_data *pmon)
 {
+	struct ath12k_dp *dp = dp_pdev->dp;
 	struct hal_rx_mon_ppdu_info *ppdu_info = &pmon->mon_ppdu_info;
 	struct ath12k_dp_mon_mpdu_meta *mpdu_meta;
 	struct sk_buff *skb;
@@ -401,11 +420,11 @@ ath12k_wifi7_dp_mon_rx_parse_dest_tlv(struct ath12k_pdev_dp *dp_pdev,
 
 	switch (hal_status) {
 	case HAL_RX_MON_STATUS_MPDU_START:
-		return ath12k_dp_mon_parse_mpdu_start(dp_pdev->dp, pmon);
+		return ath12k_dp_mon_parse_mpdu_start(dp_pdev, pmon);
 	case HAL_RX_MON_STATUS_BUF_ADDR:
 		return ath12k_wifi7_dp_mon_rx_parse_status_buf(dp_pdev, pmon, tlv_data);
 	case HAL_RX_MON_STATUS_MPDU_END:
-		ath12k_wifi7_dp_mon_rx_parse_mpdu_end(dp_pdev->dp, pmon);
+		ath12k_wifi7_dp_mon_rx_parse_mpdu_end(dp_pdev, pmon);
 		break;
 	case HAL_RX_MON_STATUS_MSDU_END:
 		ath12k_wifi7_dp_mon_rx_parse_status_msdu_end(pmon);
@@ -1281,6 +1300,7 @@ ath12k_wifi7_dp_mon_restitch_frags(struct sk_buff *mpdu,
 			   "mon_rx_restitch: not enough frags %d to proceed further",
 			   num_frags);
 		ret = -EINVAL;
+		mon_stats->min_frags_unavailable++;
 		goto free_mpdu;
 	}
 
@@ -1289,6 +1309,7 @@ ath12k_wifi7_dp_mon_restitch_frags(struct sk_buff *mpdu,
 	if (unlikely(!mpdu_buf_len)) {
 		ath12k_warn(dp, "mon_rx_restitch: calculated buffer length is 0\n");
 		ret = -EINVAL;
+		mon_stats->invalid_mpdu_hdr_len++;
 		goto free_mpdu;
 	}
 
@@ -1306,7 +1327,7 @@ ath12k_wifi7_dp_mon_restitch_frags(struct sk_buff *mpdu,
 		skb_coalesce_rx_frag(head_msdu, 0, -(hdr_frag_size - mpdu_buf_len), 0);
 
 	msdu_meta = ath12k_dp_mon_get_msdu_meta(mpdu);
-	if (!msdu_meta) {
+	if (unlikely(!msdu_meta)) {
 		ath12k_warn(dp,
 			    "mon_rx_restitch: Failed to get MSDU metadata from frag-1\n");
 		ret = -EINVAL;
@@ -1422,11 +1443,13 @@ void ath12k_wifi7_dp_mon_rx_process_mpdu_queue(struct ath12k_pdev_dp *dp_pdev,
 		 * skip these cases.
 		 */
 		if ((!mpdu->len) || (mpdu_meta->truncated)) {
-			ath12k_dp_mon_cnt_skb_and_frags(mpdu, &num_skb, &pkt_tlv);
+			ath12k_dp_mon_cnt_skb_and_frags(mpdu, &num_skb,
+							&pkt_tlv);
 			mon_stats->num_skb_raw += num_skb;
 			mon_stats->num_frag_raw += pkt_tlv;
 			dev_kfree_skb_any(mpdu);
-			mon_stats->num_skb_free++;
+			mon_stats->num_skb_free += num_skb;
+			mon_stats->pkt_tlv_free += pkt_tlv;
 			num_skb = 0;
 			pkt_tlv = 0;
 			goto next_mpdu;
@@ -1454,20 +1477,22 @@ void ath12k_wifi7_dp_mon_rx_process_mpdu_queue(struct ath12k_pdev_dp *dp_pdev,
 				last_idx = skb_shinfo(mpdu)->nr_frags - 1;
 				skb_coalesce_rx_frag(mpdu, last_idx,
 						     -fcs_len_left, 0);
-				ath12k_dp_mon_cnt_skb_and_frags(mpdu, &num_skb,
-								&pkt_tlv);
 			}
+			ath12k_dp_mon_cnt_skb_and_frags(mpdu, &num_skb,
+							&pkt_tlv);
 			mon_stats->num_skb_raw += num_skb;
 			mon_stats->num_frag_raw += pkt_tlv;
 		} else {
-			ath12k_dp_mon_cnt_skb_and_frags(mpdu, &num_skb, &pkt_tlv);
+			ath12k_dp_mon_cnt_skb_and_frags(mpdu, &num_skb,
+							&pkt_tlv);
 			mon_stats->num_skb_eth += num_skb;
 			mon_stats->num_frag_eth += pkt_tlv;
 			if (mpdu_meta->full_pkt) {
 				ret = ath12k_wifi7_dp_mon_restitch_frags(mpdu, dp_pdev);
 				if (unlikely(ret)) {
 					dev_kfree_skb_any(mpdu);
-					mon_stats->num_skb_free++;
+					mon_stats->num_skb_free += num_skb;
+					mon_stats->pkt_tlv_free += pkt_tlv;
 					num_skb = 0;
 					pkt_tlv = 0;
 					goto next_mpdu;
@@ -1478,8 +1503,11 @@ void ath12k_wifi7_dp_mon_rx_process_mpdu_queue(struct ath12k_pdev_dp *dp_pdev,
 		ret = ath12k_wifi7_dp_mon_rx_deliver_mpdu(dp_pdev, ppdu_info, mpdu,
 							  mpdu_id++);
 		if (unlikely(ret)) {
+			ath12k_dp_mon_cnt_skb_and_frags(mpdu, &num_skb,
+							&pkt_tlv);
 			dev_kfree_skb_any(mpdu);
-			mon_stats->num_skb_free++;
+			mon_stats->num_skb_free += num_skb;
+			mon_stats->pkt_tlv_free += pkt_tlv;
 			num_skb = 0;
 			pkt_tlv = 0;
 			goto next_mpdu;
@@ -1488,6 +1516,8 @@ void ath12k_wifi7_dp_mon_rx_process_mpdu_queue(struct ath12k_pdev_dp *dp_pdev,
 next_mpdu:
 		mon_stats->num_skb_to_mac80211 += num_skb;
 		mon_stats->pkt_tlv_to_mac80211 += pkt_tlv;
+		num_skb = 0;
+		pkt_tlv = 0;
 	}
 }
 
@@ -1651,6 +1681,7 @@ static int ath12k_wifi7_dp_mon_rx_add_ppdu_desc(struct list_head *mon_desc_used_
 
 	spin_lock_bh(&dp_mon_pdev->ppdu_desc_lock);
 	list_add_tail(&ppdu_desc->list, &dp_mon_pdev->ppdu_desc_used_list);
+	mon_stats->ppdu_desc_used++;
 	spin_unlock_bh(&dp_mon_pdev->ppdu_desc_lock);
 
 	queue_work(dp_mon_pdev->rxmon_wq, &dp_mon_pdev->rxmon_work);
@@ -1711,7 +1742,8 @@ ath12k_wifi7_dp_mon_rx_h_drop_tlv(struct ath12k_pdev_dp *pdev_dp,
 	struct ath12k_pdev_mon_dp_stats *mon_stats = &dp_mon_pdev->mon_stats;
 	struct ath12k_dp_mon_status_desc *status_desc;
 	struct sk_buff *mpdu;
-	u32 *num_skb_free, *pkt_tlv_free;
+	u32 num_skb_free = 0;
+	u32 pkt_tlv_free = 0;
 	u8 status_desc_cnt, i;
 
 	status_desc_cnt = ppdu_desc->status_desc_cnt;
@@ -1727,10 +1759,13 @@ ath12k_wifi7_dp_mon_rx_h_drop_tlv(struct ath12k_pdev_dp *pdev_dp,
 
 	for (i = 0; i < HAL_MAX_UL_MU_USERS; i++) {
 		while ((mpdu = skb_dequeue(&ppdu_info->mpdu_q[i]))) {
-			num_skb_free = &mon_stats->num_skb_free;
-			pkt_tlv_free = &mon_stats->pkt_tlv_free;
-			ath12k_dp_mon_cnt_skb_and_frags(mpdu, num_skb_free, pkt_tlv_free);
+			ath12k_dp_mon_cnt_skb_and_frags(mpdu, &num_skb_free,
+							&pkt_tlv_free);
 			dev_kfree_skb_any(mpdu);
+			mon_stats->num_skb_free += num_skb_free;
+			mon_stats->pkt_tlv_free += pkt_tlv_free;
+			num_skb_free = 0;
+			pkt_tlv_free = 0;
 		}
 	}
 }
@@ -1992,6 +2027,7 @@ int ath12k_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int mac_i
 		if (unlikely(mon_desc->magic != ATH12K_MON_MAGIC_VALUE)) {
 			ath12k_warn(dp, "mon_dest: invalid magic value in mac_id %d\n",
 				    pdev_dp->mac_id);
+			mon_stats->invalid_status_magic_num++;
 			goto move_next;
 		}
 
@@ -2000,6 +2036,7 @@ int ath12k_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int mac_i
 				    "mon_dest: invalid in_use=[%d] flag, mac_id %d\n",
 				    mon_desc->in_use,
 				    pdev_dp->mac_id);
+			mon_stats->invalid_in_use++;
 			goto move_next;
 		}
 
@@ -2018,9 +2055,10 @@ int ath12k_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int mac_i
 				    "mon_dest: invalid offset %u received in mac_id %d\n",
 				    end_offset, pdev_dp->mac_id);
 
-		if (unlikely(end_offset > ATH12K_DP_MON_RX_BUF_SIZE))
+		if (unlikely(end_offset > ATH12K_DP_MON_RX_BUF_SIZE)) {
 			end_offset = ATH12K_DP_MON_RX_BUF_SIZE - 1;
-
+			mon_stats->invalid_end_offset++;
+		}
 		/* The hardware reports the buffer length as (actual_length - 1),
 		 * likely due to internal indexing or alignment constraints.
 		 * To obtain the true buffer length for processing, increment
