@@ -3132,6 +3132,17 @@ enum nl80211_commands {
  *	key parameters for SMD Per-AP MLD PTK mode key exhange. Use with
  *	%NL80211_CMD_ASSOCIATE for SMD Mode 1 Association
  *
+ * @NL80211_ATTR_SMD_PTK_MODE: U8 Attribute specifying the SMD PTK Mode.
+ *	0 = Per-SMD PTK mode (Mode 0), 1 = Per-AP MLD PTK mode (Mode 1),
+ *	Used with %NL80211_CMD_ASSOCIATE for SMD key management configuration.
+ *
+ * @NL80211_ATTR_SMD_KDK: Binary attribute containing the SMD KDK used
+ *	for PTK Mode 1 (Per-AP MLD PTK).
+ *
+ * @NL80211_ATTR_DH_PARAMS: Binary Attribute containing Diffie-Hellman public
+ *	key parameters for SMD Per-AP MLD PTK mode key exhange. Use with
+ *	NL80211_CMD_ASSOCIATE for SMD Mode 1 Association
+ *
  * @NL80211_ATTR_SMD_IDENTIFIER, Binary attribute containing the 6-byte
  *	SMD identifier for SMD domain association context. Used with SMD
  *	association commands for identification and PMKSA management.
@@ -3793,6 +3804,9 @@ enum nl80211_attrs {
 	NL80211_ATTR_STA_DFS_EN,
 
 	NL80211_ATTR_SMD_ENABLED,
+	NL80211_ATTR_SMD_PTK_MODE,
+	NL80211_ATTR_SMD_KDK,
+	NL80211_ATTR_DH_PARAMS,
 	NL80211_ATTR_SMD_IDENTIFIER,
 	NL80211_ATTR_SMD_DISCOVERY_TARGETS,
 	NL80211_ATTR_SMD_SUPPORT,

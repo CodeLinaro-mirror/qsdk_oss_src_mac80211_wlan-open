@@ -807,6 +807,7 @@ struct ieee80211_parsed_tpe {
  * @beacon_tx_mode: Beacon Tx Mode setting.
  * @ml_max_rec_links: ML Max recommended links
  * @dps_assist_support: does this BSS support DPS Assist Support.
+ * @smd_params: advertised SMD feature params.
  */
 struct ieee80211_bss_conf {
 	struct ieee80211_vif *vif;
@@ -936,6 +937,7 @@ struct ieee80211_bss_conf {
 	bool is_cfp_enabled;
 	bool dps_assist_support;
 	enum nl80211_auth_type auth_type;
+	struct cfg80211_smd_params smd_params;
 };
 
 /**
@@ -2859,6 +2861,7 @@ struct ieee80211_link_sta {
  * @reconf: bitmap of links added and removed during multi-link
  *	reconfiguration.
  * @control_mic_pad: Padding info for control frames
+ * @smd_params: SMD parameters
  */
 struct ieee80211_sta {
 	u8 addr[ETH_ALEN] __aligned(2);
@@ -2903,6 +2906,8 @@ struct ieee80211_sta {
 	struct net_device *dev;
 	struct ieee80211_neg_ttlm neg_ttlm;
 	u8 control_mic_pad;
+
+	struct  cfg80211_peer_smd_params smd_params;
 
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
