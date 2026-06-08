@@ -4097,12 +4097,14 @@ int ath12k_dp_mon_tx_htt_src_ring_setup(struct ath12k_dp *dp)
 	return ret;
 }
 
-int ath12k_dp_mon_tx_config_monitor_mode(struct ath12k *ar, bool set)
+int ath12k_dp_mon_tx_config_full_monitor(struct ath12k *ar, bool set)
 {
 	struct ath12k_base *ab;
 	struct ath12k_dp *dp;
 	const struct ath12k_dp_arch_mon_ops *mon_ops;
 	struct ath12k_pdev_dp *dp_pdev;
+	struct ath12k_pdev_mon_dp *dp_mon_pdev;
+	struct ath12k_pdev_tx_mon *tx_mon;
 	int ret = -EINVAL;
 
 	if (unlikely(!ar || !ar->ab)) {
@@ -4114,6 +4116,8 @@ int ath12k_dp_mon_tx_config_monitor_mode(struct ath12k *ar, bool set)
 	dp = ath12k_ab_to_dp(ab);
 	mon_ops = ath12k_dp_mon_ops_get(dp);
 	dp_pdev = &ar->dp;
+	dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	tx_mon = dp_mon_pdev->dp_pdev_tx_mon;
 
 	if (set) {
 		ret = ath12k_dp_mon_tx_htt_src_ring_setup(dp);
@@ -4124,6 +4128,7 @@ int ath12k_dp_mon_tx_config_monitor_mode(struct ath12k *ar, bool set)
 	}
 
 	if (mon_ops && mon_ops->mon_tx_filter_configure) {
+		tx_mon->tx_monitor_mode = DP_MON_TX_FULL_MONITOR;
 		ret = mon_ops->mon_tx_filter_configure(dp_pdev, set);
 		if (ret)
 			ath12k_err(dp->ab, "TX Monitor: Filter config failed, ret=%d",
@@ -4405,7 +4410,7 @@ int ath12k_dp_mon_tx_monitor_start_stop(struct ath12k *ar, bool state)
 		return 0;
 	}
 
-	ret = ath12k_dp_mon_tx_config_monitor_mode(ar, state);
+	ret = ath12k_dp_mon_tx_config_full_monitor(ar, state);
 	if (ret) {
 		ath12k_warn(ar->ab, "Tx Monitor: Configuration Failure %d\n",
 			    ret);
@@ -4417,7 +4422,7 @@ int ath12k_dp_mon_tx_monitor_start_stop(struct ath12k *ar, bool state)
 		ath12k_warn(ar->ab, "Tx Monitor: fail tx monitor filter update ret %d\n",
 			    ret);
 		/* always set tx mon mode as false in case of failure*/
-		if (ath12k_dp_mon_tx_config_monitor_mode(ar, false)) {
+		if (ath12k_dp_mon_tx_config_full_monitor(ar, false)) {
 			ath12k_err(ar->ab,
 				   "Tx Mon: Config failure potential state mismatch\n");
 			return ret;

@@ -19,4 +19,6 @@ int ath12k_wifi7_dp_ext_mon_validate_request(struct ath12k_pdev_dp *dp_pdev,
 					     const struct ath12k_ext_mon_config *req);
 int ath12k_wifi7_dp_ext_mon_filter(struct sk_buff *mpdu,
 				   struct ath12k_dp_tx_ext_mon_config *tx_ext_mon);
+int ath12k_wifi7_dp_mon_tx_config_filter(struct ath12k_pdev_dp *dp_pdev,
+					 bool enable);
 #endif

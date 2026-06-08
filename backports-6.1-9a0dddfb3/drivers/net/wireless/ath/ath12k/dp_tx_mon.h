@@ -310,7 +310,7 @@ int ath12k_dp_mon_tx_srng_init(struct ath12k_dp *dp);
 void ath12k_dp_mon_tx_htt_src_ring_cleanup(struct ath12k_dp *dp);
 void ath12k_dp_mon_tx_pdev_free(struct ath12k_pdev_dp *dp_pdev);
 int ath12k_dp_mon_tx_htt_src_ring_setup(struct ath12k_dp *dp);
-int ath12k_dp_mon_tx_config_monitor_mode(struct ath12k *ar, bool set);
+int ath12k_dp_mon_tx_config_full_monitor(struct ath12k *ar, bool set);
 int ath12k_dp_mon_tx_update_filter(struct ath12k *ar);
 void ath12k_dp_mon_tx_srng_free(struct ath12k_dp *dp);
 void ath12k_dp_mon_tx_srng_deinit(struct ath12k_dp *dp);
