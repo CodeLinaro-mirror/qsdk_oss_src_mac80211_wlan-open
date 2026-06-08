@@ -3678,6 +3678,17 @@ enum ieee80211_reasoncode {
 	WLAN_REASON_MESH_CHAN = 66,
 };
 
+/* SMD BSS Transition Parameters Element */
+
+/* ST Preparation flags */
+#define ST_PREP_FLAG_GOT_DH     BIT(0)
+#define ST_PREP_FLAG_GOT_NONCE  BIT(1)
+#define ST_PREP_FLAG_SUCCESS    BIT(2)
+
+/* Constants */
+#define WLAN_NONCE_LEN          32
+#define SMD_MAX_DH_RESP_LEN     256
+
 
 /* Information Element IDs */
 enum ieee80211_eid {
@@ -3893,6 +3904,7 @@ enum ieee80211_eid_ext {
 	WLAN_EID_EXT_FILS_PUBLIC_KEY = 12,
 	WLAN_EID_EXT_FILS_NONCE = 13,
 	WLAN_EID_EXT_FUTURE_CHAN_GUIDANCE = 14,
+	WLAN_EID_EXT_DH_PARAMETER = 32,
 	WLAN_EID_EXT_HE_CAPABILITY = 35,
 	WLAN_EID_EXT_HE_OPERATION = 36,
 	WLAN_EID_EXT_UORA = 37,
@@ -3953,6 +3965,7 @@ enum ieee80211_category {
 	WLAN_CATEGORY_VHT = 21,
 	WLAN_CATEGORY_S1G = 22,
 	WLAN_CATEGORY_PROTECTED_EHT = 37,
+	WLAN_CATEGORY_PROTECTED_UHR = 43,
 	WLAN_CATEGORY_VENDOR_SPECIFIC_PROTECTED = 126,
 	WLAN_CATEGORY_VENDOR_SPECIFIC = 127,
 };
@@ -4041,6 +4054,12 @@ enum ieee80211_protected_eht_actioncode {
 	WLAN_PROTECTED_EHT_ACTION_LINK_RECONFIG_NOTIF = 10,
 	WLAN_PROTECTED_EHT_ACTION_LINK_RECONFIG_REQ = 11,
 	WLAN_PROTECTED_EHT_ACTION_LINK_RECONFIG_RESP = 12,
+};
+
+/* Protected UHR action codes */
+enum ieee80211_protected_uhr_actioncode {
+	WLAN_PROTECTED_UHR_ACTION_LINK_RECONFIG_REQ = 0,
+	WLAN_PROTECTED_UHR_ACTION_LINK_RECONFIG_RESP = 1,
 };
 
 /* Security key length */
@@ -5076,6 +5095,9 @@ struct ieee80211_enh_crit_upd {
 #define IEEE80211_RNR_TBTT_PARAMS_PSD_NO_LIMIT			127
 #define IEEE80211_RNR_TBTT_PARAMS_PSD_RESERVED			-128
 
+/* RNR SMD extensions */
+#define IEEE80211_RNR_BSS_PARAM_MEMBER_OF_SMD			BIT(7)
+
 struct ieee80211_neighbor_ap_info {
 	u8 tbtt_info_hdr;
 	u8 tbtt_info_len;
@@ -5125,6 +5147,10 @@ struct ieee80211_tbtt_info_ge_11 {
 	s8 psd_20;
 	struct ieee80211_rnr_mld_params mld_params;
 	struct ieee80211_enh_crit_upd enh_crit_upd;
+} __packed;
+
+struct ieee80211_rnr_uhr_params {
+	u8 smd_id; /* 1-byte SMD ID for correlation */
 } __packed;
 
 /* multi-link device */
@@ -5227,6 +5253,7 @@ struct ieee80211_mle_preq_common_info {
 #define IEEE80211_MLC_RECONF_PRES_EML_CAPA		0x0020
 #define IEEE80211_MLC_RECONF_PRES_MLD_CAPA_OP		0x0040
 #define IEEE80211_MLC_RECONF_PRES_EXT_MLD_CAPA_OP	0x0080
+#define IEEE80211_MLC_RECONF_PRES_TARGET_AP_MLD_MAC_ADDR BIT(8)
 
 /* no fixed fields in RECONF */
 
@@ -5547,6 +5574,8 @@ static inline bool ieee80211_mle_size_ok(const u8 *data, size_t len)
 			common += 2;
 		if (control & IEEE80211_MLC_RECONF_PRES_EXT_MLD_CAPA_OP)
 			common += 2;
+		if (control & IEEE80211_MLC_RECONF_PRES_TARGET_AP_MLD_MAC_ADDR)
+			common += ETH_ALEN;
 		break;
 	case IEEE80211_ML_CONTROL_TYPE_TDLS:
 		common += sizeof(struct ieee80211_mle_tdls_common_info);

@@ -3617,6 +3617,11 @@ struct cfg80211_bss {
 	u8 use_for;
 	u8 cannot_use_reasons;
 
+	u8 smd_identifier[ETH_ALEN];
+	u8 smd_capabilities;
+	u16 smd_timeout;
+	bool has_smd;
+
 	u8 priv[] __aligned(sizeof(void *));
 };
 

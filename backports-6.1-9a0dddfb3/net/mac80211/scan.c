@@ -164,6 +164,20 @@ void ieee80211_inform_bss(struct wiphy *wiphy,
 
 	ieee80211_inform_bss_extn(cbss, elems);
 
+	/* Extract SMD information if present */
+	if (elems->smd_info) {
+		memcpy(bss->smd_info.smd_identifier,
+		       elems->smd_info->smd_identifier, ETH_ALEN);
+		bss->smd_info.smd_capabilities = elems->smd_info->smd_capabilities;
+		bss->smd_info.timeout_value = le16_to_cpu(elems->smd_info->timeout_value);
+		bss->has_smd = true;
+	} else {
+		bss->has_smd = false;
+		bss->smd_info.timeout_value = 0x0;
+		bss->smd_info.smd_capabilities = 0x0;
+		memset(bss->smd_info.smd_identifier, 0x0, ETH_ALEN);
+	}
+
 	kfree(elems);
 }
 
