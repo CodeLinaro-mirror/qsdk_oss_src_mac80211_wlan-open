@@ -2873,6 +2873,23 @@ void ath12k_dp_ext_mon_enable_mac_ext_mon(struct ath12k_pdev_dp *dp_pdev,
 		ieee80211_enable_ext_monitor(mon_vif, enable);
 }
 
+static void
+ath12k_dp_ext_mon_config_offchan_capture(struct ath12k_pdev_dp *dp_pdev, bool enable)
+{
+	struct ath12k_link_vif *arvif;
+
+	list_for_each_entry(arvif, &dp_pdev->ar->arvifs, list) {
+		if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR &&
+		    arvif->is_started) {
+			ieee80211_enable_offchan_packet_capture(arvif->ahvif->vif,
+								enable);
+			return;
+		}
+	}
+	ath12k_warn(dp_pdev->dp,
+		    "no active monitor vdev found for offchan capture\n");
+}
+
 static
 int ath12k_dp_ext_mon_set_rx_filter(struct ath12k_pdev_dp *dp_pdev,
 				    const struct ath12k_ext_mon_filter_config *new_config)
@@ -2880,6 +2897,7 @@ int ath12k_dp_ext_mon_set_rx_filter(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	struct ath12k_dp_rx_ext_mon *rx_ext_mon;
 	bool already_enabled;
+	bool offchan_capture_enabled;
 	int ret = 0;
 
 	if (unlikely(!dp_mon_pdev)) {
@@ -2902,6 +2920,8 @@ int ath12k_dp_ext_mon_set_rx_filter(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	already_enabled = rx_ext_mon->enable;
+	offchan_capture_enabled =
+		!!(rx_ext_mon->metadata & ATH12K_EXT_MON_METADATA_OFFCHAN_PKT);
 	spin_unlock(&dp_mon_pdev->rx_ext_mon_lock);
 
 	if (new_config->disable) {
@@ -2915,6 +2935,13 @@ int ath12k_dp_ext_mon_set_rx_filter(struct ath12k_pdev_dp *dp_pdev,
 			ath12k_dp_mon_rx_mon_mode_config_filter(dp_pdev, false);
 			return ret;
 		}
+
+		/*
+		 * If off-channel packet capture was previously enabled,
+		 * disable it now that ext mon is being disabled.
+		 */
+		if (offchan_capture_enabled)
+			ath12k_dp_ext_mon_config_offchan_capture(dp_pdev, false);
 
 		ath12k_dp_ext_mon_update_rx_config(dp_mon_pdev, new_config);
 		ath12k_dp_ext_mon_enable_mac_ext_mon(dp_pdev, false);
@@ -2936,6 +2963,14 @@ int ath12k_dp_ext_mon_set_rx_filter(struct ath12k_pdev_dp *dp_pdev,
 			return ret;
 		}
 		ath12k_dp_ext_mon_enable_mac_ext_mon(dp_pdev, true);
+
+		/*
+		 * If the off-channel packet capture bit is set in metadata,
+		 * enable IEEE80211_SDATA_OFFCHAN_PACKETS on the monitor VIF
+		 * so that off-channel frames are delivered to this interface.
+		 */
+		if (new_config->meta_data & ATH12K_EXT_MON_METADATA_OFFCHAN_PKT)
+			ath12k_dp_ext_mon_config_offchan_capture(dp_pdev, true);
 	}
 
 	return ret;
@@ -3520,6 +3555,7 @@ void ath12k_dp_ext_mon_reset(struct ath12k_pdev_dp *dp_pdev)
 
 	ath12k_dp_ext_mon_rx_config_filter(dp_pdev, false);
 	ath12k_dp_ext_mon_enable_mac_ext_mon(dp_pdev, false);
+	ath12k_dp_ext_mon_config_offchan_capture(dp_pdev, false);
 
 	spin_lock(&dp_mon_pdev->rx_ext_mon_lock);
 	rx_config = dp_mon_pdev->rx_ext_mon_config;
