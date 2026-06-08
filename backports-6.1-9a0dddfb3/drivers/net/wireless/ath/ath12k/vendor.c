@@ -1489,6 +1489,7 @@ ath12k_wlan_telemetry_feat_policy[QCA_VENDOR_ATTR_WLAN_FEAT_MAX + 1] = {
 	[QCA_VENDOR_ATTR_WLAN_FEAT_DELAY] = {.type = NLA_FLAG},
 	[QCA_VENDOR_ATTR_WLAN_FEAT_JITTER] = {.type = NLA_FLAG},
 	[QCA_VENDOR_ATTR_WLAN_FEAT_SOJOURN] = {.type = NLA_FLAG},
+	[QCA_VENDOR_ATTR_WLAN_FEAT_MON_STATS] = {.type = NLA_FLAG},
 };
 
 int ath12k_extract_feat_inputs(struct nlattr *tb_attr,
@@ -1518,6 +1519,9 @@ int ath12k_extract_feat_inputs(struct nlattr *tb_attr,
 
 	if (feat_attr[QCA_VENDOR_ATTR_WLAN_FEAT_TID])
 		cmd->feat.feat_tid = true;
+
+	if (feat_attr[QCA_VENDOR_ATTR_WLAN_FEAT_MON_STATS])
+		cmd->feat.feat_mon_stats = true;
 
 	if (cmd->svc_id != INVALID_SVC_ID &&
 	    feat_attr[QCA_VENDOR_ATTR_WLAN_FEAT_SDWFTX])
@@ -2515,6 +2519,14 @@ static int ath12k_get_feat_proto_peer_attr_size(void)
 	return total_size;
 }
 
+static u32 ath12k_get_mon_stats_attr_size(void)
+{
+	u32 payload_size;
+
+	payload_size = nla_total_size(sizeof(u32)) * QCA_VENDOR_ATTR_MON_STATS_MAX;
+	return nla_total_size_nested(payload_size);
+}
+
 static int ath12k_get_feat_tx_peer_attr_size(void)
 {
 	struct ath12k_dp_peer_tx_stats tx_stats;
@@ -3136,6 +3148,9 @@ static int ath12k_get_dp_peer_attr_len(struct ath12k_telemetry_command *cmd)
 
 	if (cmd->feat.feat_proto)
 		total_size += ath12k_get_feat_proto_peer_attr_size();
+
+	if (cmd->feat.feat_mon_stats)
+		total_size += ath12k_get_mon_stats_attr_size();
 
 	if (cmd->feat.feat_sdwftx)
 		total_size += ath12k_get_feat_sdwftx_attr_size(cmd);
@@ -8563,6 +8578,280 @@ static int ath12k_fill_radio_tid_stats(struct ath12k *ar,
 	return 0;
 }
 
+static int ath12k_fill_radio_mon_stats(struct sk_buff *vendor_event,
+				       struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_pdev_mon_dp_stats *stats;
+	struct ath12k_dp_mon *dp_mon;
+
+	stats = &dp_pdev->dp_mon_pdev->mon_stats;
+	dp_mon = dp_pdev->dp_mon_pdev->dp_mon;
+
+	if (!dp_mon) {
+		ath12k_err(NULL, "dp_mon not present");
+		return -ENODEV;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_STATUS_BUF_REAPED,
+			stats->status_buf_reaped)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "status_buf_reaped");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_STATUS_BUF_PROCESSED,
+			stats->status_buf_processed)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s",
+			   "status_buf_processed");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_STATUS_BUF_FREE,
+			stats->status_buf_free)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "status_buf_free");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_STATUS_BUF_ERROR_FREE,
+			stats->status_buf_error_free)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s",
+			   "status_buf_error_free");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_RING_DESC_EMPTY,
+			stats->ring_desc_empty)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "ring_desc_empty");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_RING_DESC_FLUSH,
+			stats->ring_desc_flush)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "ring_desc_flush");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_RING_DESC_TRUNC,
+			stats->ring_desc_trunc)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "ring_desc_trunc");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_PKT_TLV_PROCESSED,
+			stats->pkt_tlv_processed)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "pkt_tlv_processed");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_PKT_TLV_FREE,
+			stats->pkt_tlv_free)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "pkt_tlv_free");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_PKT_TLV_ERROR_FREE,
+			stats->pkt_tlv_error_free)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "pkt_tlv_error_free");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_PKT_TLV_TO_MAC80211,
+			stats->pkt_tlv_to_mac80211)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s",
+			   "pkt_tlv_to_mac80211");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_PKT_TLV_TRUNCATED,
+			stats->pkt_tlv_truncated)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "pkt_tlv_truncated");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_PKT_TLV_REAPED,
+			stats->pkt_tlv_reaped)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "pkt_tlv_reaped");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_NUM_SKB_ALLOC,
+			stats->num_skb_alloc)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "num_skb_alloc");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_NUM_SKB_FREE,
+			stats->num_skb_free)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "num_skb_free");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_NUM_SKB_TO_MAC80211,
+			stats->num_skb_to_mac80211)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s",
+			   "num_skb_to_mac80211");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_NUM_PPDU_REAPED,
+			stats->num_ppdu_reaped)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "num_ppdu_reaped");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_NUM_PPDU_PROCESSED,
+			stats->num_ppdu_processed)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "num_ppdu_processed");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_NUM_SKB_RAW,
+			stats->num_skb_raw)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "num_skb_raw");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_NUM_FRAG_RAW,
+			stats->num_frag_raw)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "num_frag_raw");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_NUM_SKB_ETH,
+			stats->num_skb_eth)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "num_skb_eth");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_NUM_FRAG_ETH,
+			stats->num_frag_eth)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "num_frag_eth");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_DROP_TLV,
+			stats->drop_tlv)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "drop_tlv");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_PPDU_DESC_USED,
+			stats->ppdu_desc_used)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "ppdu_desc_used");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_PPDU_DESC_PROC,
+			stats->ppdu_desc_proc)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "ppdu_desc_proc");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_PPDU_DESC_FREE,
+			stats->ppdu_desc_free)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "ppdu_desc_free");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_MON_STATS_PPDU_DESC_FREE_LIST_EMPTY_CNT,
+			stats->ppdu_desc_free_list_empty_cnt)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s",
+			   "ppdu_desc_free_list_empty_cnt");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_MON_STATS_RESTITCH_INSUFF_FRAGS_CNT,
+			stats->restitch_insuff_frags_cnt)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s",
+			   "restitch_insuff_frags_cnt");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_MON_STATS_INVALID_STATUS_MAGIC_NUM,
+			stats->invalid_status_magic_num)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s",
+			   "invalid_status_magic_num");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_MON_STATS_INVALID_PKT_MAGIC_NUM,
+			stats->invalid_pkt_magic_num)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s",
+			   "invalid_pkt_magic_num");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_NULL_MPDU_Q,
+			stats->null_mpdu_q)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "null_mpdu_q");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_SKB_ALLOC_FAIL,
+			stats->skb_alloc_fail)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "skb_alloc_fail");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_RX_HDR_NOT_RCVD,
+			stats->rx_hdr_not_rcvd)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "rx_hdr_not_rcvd");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_MIN_FRAGS_UNAVAILABLE,
+			stats->min_frags_unavailable)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s",
+			   "min_frags_unavailable");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_INVALID_MPDU_HDR_LEN,
+			stats->invalid_mpdu_hdr_len)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s",
+			   "invalid_mpdu_hdr_len");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_INVALID_IN_USE,
+			stats->invalid_in_use)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "invalid_in_use");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_INVALID_END_OFFSET,
+			stats->invalid_end_offset)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "invalid_end_offset");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_STATUS_FRAG_ADD_TO_SKB,
+			stats->status_frag_add_to_skb)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s",
+			   "status_frag_add_to_skb");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_MON_STATS_STATUS_NUM_FRAG_REPLENISH,
+			dp_mon->num_frag_replenish)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "num_frag_replenish");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_MON_STATS_STATUS_NUM_FRAG_FREE,
+			dp_mon->num_frag_free)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "num_frag_free");
+		return -EMSGSIZE;
+	}
+
+	return 0;
+}
+
 static int ath12k_prepare_radio_vendor_event(struct sk_buff *vendor_event,
 					     struct ath12k_pdev_dp *dp_pdev,
 					     struct ath12k_telemetry_command *cmd)
@@ -8703,6 +8992,23 @@ static int ath12k_prepare_radio_vendor_event(struct sk_buff *vendor_event,
 			nla_nest_end(vendor_event, attr);
 		} else {
 			ath12k_err(ab, "NLA nest failure: Radio tx feat stats");
+			goto out;
+		}
+	}
+
+	if (cmd->feat.feat_mon_stats) {
+		attr = nla_nest_start(vendor_event,
+				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_MON_STATS_EVENT);
+		if (attr) {
+			if (ath12k_fill_radio_mon_stats(vendor_event, dp_pdev)) {
+				ath12k_err(ab,
+					   "Error filling radio mon feat stats");
+				nla_nest_cancel(vendor_event, attr);
+				goto out;
+			}
+			nla_nest_end(vendor_event, attr);
+		} else {
+			ath12k_err(ab, "nla nest failure: Radio mon feat stats");
 			goto out;
 		}
 	}
