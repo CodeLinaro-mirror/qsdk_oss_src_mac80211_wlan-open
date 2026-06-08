@@ -954,6 +954,7 @@ enum ath12k_ext_mon_peer_action {
 enum ath12k_ext_mon_monitor_flags {
 	ATH12K_EXT_MON_DEFAULT = 0,
 	ATH12K_EXT_MON_PKT_CAP,
+	ATH12K_EXT_MON_MAX
 };
 
 struct ath12k_ext_mon_pkt_config {
@@ -964,6 +965,7 @@ struct ath12k_ext_mon_pkt_config {
 struct ath12k_ext_mon_filter_config {
 	enum ath12k_ext_mon_filter_level level;
 	bool disable;
+	enum ath12k_ext_mon_monitor_flags monitor_flags;
 	struct ath12k_ext_mon_pkt_config all_peer;
 	struct ath12k_ext_mon_pkt_config all_neighbor;
 	struct ath12k_ext_mon_pkt_config target_peer;

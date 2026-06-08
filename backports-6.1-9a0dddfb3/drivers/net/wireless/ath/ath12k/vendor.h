@@ -6063,6 +6063,10 @@ enum qca_vendor_extended_monitor_status_code {
  *     Indicates packet metadata bitmap configured by the user.
  *     The bitmap definition is application-specific and should be agreed upon
  *     between the driver and the user space application.
+ *
+ * @QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_MON_FLAG: u8 attribute.
+ *     Configures the peer filtering mode for extended monitor.
+ *     Uses enum qca_vendor_extended_monitor_flags.
  */
 enum qca_vendor_attr_extended_monitor_filter_config {
 	QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_INVALID = 0,
@@ -6073,11 +6077,29 @@ enum qca_vendor_attr_extended_monitor_filter_config {
 	QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_TARGET_PEER = 5,
 	QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_TARGET_NEIGHBOR = 6,
 	QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_META_DATA = 7,
+	QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_MON_FLAG = 8,
 
 	/* keep last */
 	QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_AFTER_LAST,
 	QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_MAX =
 		QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_vendor_extended_monitor_flags - Peer filtering monitor flags for
+ * extended monitor. Used with %QCA_VENDOR_ATTR_EXT_MON_FILTER_CONFIG_MON_FLAG.
+ *
+ * @QCA_VENDOR_EXT_MON_FLAG_DEFAULT: Default bitmap-based filter monitor flags.
+ *
+ * @QCA_VENDOR_EXT_MON_FLAG_PKT_CAP: Special Packet Capture.
+ *     Enables packet capture of frames at h/w for defined type of frames.
+ *     type of frames that can be enabled - ARP,DHCP,EAPOL,DNS,ICMP,MGMT
+ *
+ */
+enum qca_vendor_extended_monitor_flags {
+	QCA_VENDOR_EXT_MON_FLAG_DEFAULT,
+	QCA_VENDOR_EXT_MON_FLAG_PKT_CAP,
+	QCA_VENDOR_EXT_MON_FLAG_MAX
 };
 
 /**
