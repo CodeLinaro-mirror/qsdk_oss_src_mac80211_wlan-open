@@ -41,6 +41,8 @@ struct dp_mon_tx_filter {
 enum dp_mon_tx_filter_mode {
 	DP_MON_TX_FULL_MONITOR,
 	DP_MON_TX_FILTER_PKTLOG_HYBRID,
+	DP_MON_TX_FILTER_EXT_MON_MODE,
+	DP_MON_TX_FILTER_SPL_PKT_CAP,
 	DP_MON_TX_FILTER_MAX
 };
 

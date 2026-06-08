@@ -4097,6 +4097,54 @@ int ath12k_dp_mon_tx_htt_src_ring_setup(struct ath12k_dp *dp)
 	return ret;
 }
 
+static void ath12k_dp_tx_mon_reset_ext_mon_config(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_dp_tx_ext_mon *tx_ext_mon;
+	struct ath12k_dp_tx_ext_mon_config *tx_config;
+
+	tx_ext_mon = &dp_pdev->dp_mon_pdev->dp_pdev_tx_mon->tx_ext_mon;
+
+	spin_lock(&tx_ext_mon->tx_ext_mon_lock);
+	tx_config = tx_ext_mon->tx_ext_mon_config;
+	if (tx_config) {
+		tx_config->enable = false;
+		tx_config->level = 0;
+		tx_config->monitor_flags = 0;
+		tx_config->metadata = 0;
+		tx_config->fp_enabled = false;
+		tx_config->fpmo_enabled = false;
+		memset(&tx_config->fp, 0, sizeof(tx_config->fp));
+		memset(&tx_config->fpmo, 0, sizeof(tx_config->fpmo));
+	}
+	spin_unlock(&tx_ext_mon->tx_ext_mon_lock);
+}
+
+static int ath12k_dp_mon_tx_filter_cfg(const struct ath12k_dp_arch_mon_ops *mon_ops,
+				       struct ath12k_pdev_dp *dp_pdev,
+				       u8 new_mode, bool enable)
+{
+	u8 old_mode = dp_pdev->dp_mon_pdev->dp_pdev_tx_mon->tx_monitor_mode;
+	int ret = 0;
+
+	ret = mon_ops->mon_tx_filter_configure(dp_pdev, false);
+
+	if (ret) {
+		ath12k_warn(dp_pdev->dp->ab,
+			    "TX Mon: failed to clear filter mode %u: %d\n",
+			    old_mode, ret);
+		return ret;
+	}
+
+	dp_pdev->dp_mon_pdev->dp_pdev_tx_mon->tx_monitor_mode = new_mode;
+	ret = mon_ops->mon_tx_filter_configure(dp_pdev, enable);
+
+	if (ret)
+		ath12k_warn(dp_pdev->dp->ab,
+			    "TX Mon: failed to %s filter mode %u: %d\n",
+			    enable ? "enable" : "clear", new_mode, ret);
+	return ret;
+}
+
 int ath12k_dp_mon_tx_config_full_monitor(struct ath12k *ar, bool set)
 {
 	struct ath12k_base *ab;
@@ -4128,11 +4176,9 @@ int ath12k_dp_mon_tx_config_full_monitor(struct ath12k *ar, bool set)
 	}
 
 	if (mon_ops && mon_ops->mon_tx_filter_configure) {
-		tx_mon->tx_monitor_mode = DP_MON_TX_FULL_MONITOR;
-		ret = mon_ops->mon_tx_filter_configure(dp_pdev, set);
-		if (ret)
-			ath12k_err(dp->ab, "TX Monitor: Filter config failed, ret=%d",
-				   ret);
+		ret = ath12k_dp_mon_tx_filter_cfg(mon_ops, dp_pdev,
+						  DP_MON_TX_FULL_MONITOR, set);
+		ath12k_dp_tx_mon_reset_ext_mon_config(dp_pdev);
 	}
 
 	return ret;
@@ -4388,6 +4434,8 @@ int ath12k_dp_mon_tx_monitor_start_stop(struct ath12k *ar, bool state)
 	int ret = -EOPNOTSUPP;
 	struct ath12k_pdev_mon_dp *dp_mon_pdev;
 	struct ath12k_pdev_tx_mon *dp_pdev_tx_mon;
+	struct ath12k_dp_tx_ext_mon_config *tx_ext_mon;
+	bool ext_mon_enabled = false;
 
 	dp_mon_pdev = ar->dp.dp_mon_pdev;
 	if (!dp_mon_pdev || !dp_mon_pdev->dp_pdev_tx_mon) {
@@ -4398,7 +4446,13 @@ int ath12k_dp_mon_tx_monitor_start_stop(struct ath12k *ar, bool state)
 
 	dp_pdev_tx_mon = dp_mon_pdev->dp_pdev_tx_mon;
 
-	if (state && dp_pdev_tx_mon->tx_monitor_started) {
+	spin_lock(&dp_pdev_tx_mon->tx_ext_mon.tx_ext_mon_lock);
+	tx_ext_mon = dp_pdev_tx_mon->tx_ext_mon.tx_ext_mon_config;
+	if (tx_ext_mon)
+		ext_mon_enabled = tx_ext_mon->enable;
+	spin_unlock(&dp_pdev_tx_mon->tx_ext_mon.tx_ext_mon_lock);
+
+	if (state && dp_pdev_tx_mon->tx_monitor_started && !ext_mon_enabled) {
 		ath12k_dbg(ar->ab, ATH12K_DBG_DP_MON,
 			   "Tx mon already active on requested interface\n");
 		return 0;
@@ -5312,7 +5366,7 @@ ath12k_dp_ext_mon_get_tx_filter(struct ath12k_pdev_dp *dp_pdev,
 	bool tx_mon_started;
 
 	if (unlikely(!dp_mon_pdev)) {
-		ath12k_warn(dp_pdev->dp, "monitor pdev is null\n");
+		ath12k_warn(dp_pdev->dp->ab, "monitor pdev is null\n");
 		return -EINVAL;
 	}
 
@@ -5360,7 +5414,7 @@ ath12k_dp_ext_mon_get_tx_peer(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_pdev_tx_mon *tx_mon;
 
 	if (unlikely(!dp_mon_pdev)) {
-		ath12k_warn(dp_pdev->dp, "monitor pdev is null\n");
+		ath12k_warn(dp_pdev->dp->ab, "monitor pdev is null\n");
 		return -EINVAL;
 	}
 
@@ -5441,25 +5495,188 @@ ath12k_dp_ext_mon_update_tx_config(struct ath12k_pdev_mon_dp *dp_mon_pdev,
 	return 0;
 }
 
+static int ath12k_dp_mon_tx_update_send_filter(struct ath12k_pdev_dp *dp_pdev,
+					       struct ath12k_pdev_tx_mon *tx_mon,
+					       enum dp_mon_tx_filter_mode mode)
+{
+	const struct ath12k_dp_arch_mon_ops *mon_ops =
+		ath12k_dp_mon_ops_get(dp_pdev->dp);
+	int ret;
+
+	if (unlikely(!mon_ops || !mon_ops->mon_tx_filter_configure))
+		return -EINVAL;
+
+	ret = ath12k_dp_mon_tx_filter_cfg(mon_ops, dp_pdev, mode, true);
+	if (ret)
+		return ret;
+
+	ret = ath12k_dp_mon_tx_update_ring_filter(dp_pdev);
+	if (ret)
+		ath12k_warn(dp_pdev->dp->ab,
+			    "TX Mon: failed to update ring filter for mode %u: %d\n",
+			    mode, ret);
+	return ret;
+}
+
+static void dp_tx_mon_disable_full_tx_mon(struct ath12k_pdev_dp *dp_pdev,
+					  struct ath12k *ar)
+{
+	ath12k_warn(dp_pdev->dp->ab, "TX Mon: disabling TX monitor\n");
+	if (ath12k_dp_mon_tx_monitor_start_stop(ar, false))
+		ath12k_err(dp_pdev->dp->ab,
+			   "TX Mon: disable failed after recovery failure\n");
+}
+
+/*
+ * ath12k_dp_ext_mon_tx_recover() - recovery when ext-mon filter apply fails
+ *
+ * Tries, in order:
+ *   1. Restore previous ext-mon config + filter  (only if ext-mon was on)
+ *   2. Fall back to full monitor via start_stop(true)
+ *   3. Kill the monitor entirely if all else fails
+ */
+static void ath12k_dp_ext_mon_tx_recover(struct ath12k_pdev_dp *dp_pdev,
+					 const struct ath12k_dp_tx_ext_mon_config *old,
+					 enum dp_mon_tx_filter_mode old_mode)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_pdev_tx_mon *tx_mon = dp_mon_pdev->dp_pdev_tx_mon;
+	struct ath12k *ar = dp_pdev->ar;
+
+	if (old->enable) {
+		struct ath12k_ext_mon_filter_config restore = {
+			.level         = old->level,
+			.monitor_flags = old->monitor_flags,
+			.all_peer      = old->fp,
+			.target_peer   = old->fpmo,
+			.meta_data     = old->metadata,
+		};
+		if (!ath12k_dp_ext_mon_update_tx_config(dp_mon_pdev, &restore) &&
+		    !ath12k_dp_mon_tx_update_send_filter(dp_pdev, tx_mon, old_mode))
+			return;
+		ath12k_warn(dp_pdev->dp->ab, "TX Mon: old config restore failed\n");
+	}
+
+	if (!ath12k_dp_mon_tx_monitor_start_stop(ar, true))
+		return;
+
+	dp_tx_mon_disable_full_tx_mon(dp_pdev, ar);
+}
+
 int ath12k_dp_ext_mon_set_tx_filter(struct ath12k_pdev_dp *dp_pdev,
 				    const struct ath12k_ext_mon_filter_config *new_config)
 {
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_pdev_tx_mon *tx_mon;
+	struct ath12k_dp_tx_ext_mon *tx_ext_mon;
+	struct ath12k_dp_tx_ext_mon_config *tx_config;
+	struct ath12k *ar = dp_pdev->ar;
+	struct ath12k_dp_tx_ext_mon_config old;
+	enum dp_mon_tx_filter_mode old_mode;
+	enum dp_mon_tx_filter_mode new_mode = DP_MON_TX_FULL_MONITOR;
+	int ret = 0;
 
 	if (unlikely(!dp_mon_pdev)) {
-		ath12k_warn(dp_pdev->dp, "monitor pdev is null\n");
+		ath12k_warn(dp_pdev->dp->ab, "monitor pdev is null\n");
 		return -EINVAL;
 	}
 
-	if (unlikely(!dp_mon_pdev->dp_pdev_tx_mon)) {
-		ath12k_warn(dp_pdev->dp, "tx monitor pdev is null\n");
+	tx_mon = dp_mon_pdev->dp_pdev_tx_mon;
+	if (unlikely(!tx_mon)) {
+		ath12k_warn(dp_pdev->dp->ab, "tx mon pdev is null\n");
 		return -EINVAL;
 	}
 
-	if (!dp_mon_pdev->dp_pdev_tx_mon->tx_monitor_started) {
-		ath12k_warn(dp_pdev->dp, "Enable TX monitor for this feature.\n");
+	/* S1: TX mon not running */
+	if (!tx_mon->tx_monitor_started) {
+		ath12k_warn(dp_pdev->dp->ab, "TX Mon: enable TX monitor first\n");
 		return -EINVAL;
 	}
-	return ath12k_dp_ext_mon_update_tx_config(dp_mon_pdev, new_config);
+
+	tx_ext_mon = &tx_mon->tx_ext_mon;
+
+	spin_lock(&tx_ext_mon->tx_ext_mon_lock);
+	tx_config = tx_ext_mon->tx_ext_mon_config;
+	if (unlikely(!tx_config)) {
+		spin_unlock(&tx_ext_mon->tx_ext_mon_lock);
+		ath12k_warn(dp_pdev->dp->ab, "ext_mon TX config is null\n");
+		return -EINVAL;
+	}
+
+	/* S2: already disabled, disable request — not honoured */
+	if (new_config->disable && !tx_config->enable) {
+		spin_unlock(&tx_ext_mon->tx_ext_mon_lock);
+		ath12k_warn(dp_pdev->dp->ab, "TX Mon: ext-mon already disabled\n");
+		return -EINVAL;
+	}
+
+	old.enable        = tx_config->enable;
+	old.level         = tx_config->level;
+	old.monitor_flags = tx_config->monitor_flags;
+	old.metadata      = tx_config->metadata;
+	old.fp            = tx_config->fp;
+	old.fpmo          = tx_config->fpmo;
+	old_mode          = tx_mon->tx_monitor_mode;
+	spin_unlock(&tx_ext_mon->tx_ext_mon_lock);
+
+	/* S3: disable — restore full monitor */
+	if (new_config->disable) {
+		ret = ath12k_dp_mon_tx_monitor_start_stop(ar, true);
+		if (ret) {
+			ath12k_warn(dp_pdev->dp->ab,
+				    "TX Mon: full monitor restore failed: %d\n", ret);
+			dp_tx_mon_disable_full_tx_mon(dp_pdev, ar);
+			return ret;
+		}
+		return ret;
+	}
+
+	ret = ath12k_dp_ext_mon_update_tx_config(dp_mon_pdev, new_config);
+	if (ret) {
+		ath12k_warn(dp_pdev->dp->ab,
+			    "TX Mon: config update failed: %d\n", ret);
+		return ret;
+	}
+
+	/* S4/S5: enable or reconfigure */
+	switch (new_config->monitor_flags) {
+	case ATH12K_EXT_MON_DEFAULT:
+		new_mode = DP_MON_TX_FILTER_EXT_MON_MODE;
+		break;
+	case ATH12K_EXT_MON_PKT_CAP:
+		new_mode = DP_MON_TX_FILTER_SPL_PKT_CAP;
+		break;
+	default:
+		ath12k_warn(dp_pdev->dp->ab, "TX Mon: invalid monitor_flags %u\n",
+			    new_config->monitor_flags);
+		return -EINVAL;
+	}
+
+	ret = ath12k_dp_mon_tx_update_send_filter(dp_pdev, tx_mon, new_mode);
+	if (ret) {
+		ath12k_warn(dp_pdev->dp->ab,
+			    "TX Mon: filter apply failed for mode %u: %d\n",
+			    new_mode, ret);
+		ath12k_dp_ext_mon_tx_recover(dp_pdev, &old, old_mode);
+	}
+	return ret;
 }
 EXPORT_SYMBOL(ath12k_dp_ext_mon_set_tx_filter);
+
+enum ath12k_dp_mon_tx_dma_length
+ath12k_dp_mon_tx_get_ext_mon_filter_len(u8 filter_len)
+{
+	switch (filter_len) {
+	case ATH12K_EXT_MON_LEN_64B:
+		return ATH12K_DP_MON_TX_DMA_LENGTH_64B;
+	case ATH12K_EXT_MON_LEN_128B:
+		return ATH12K_DP_MON_TX_DMA_LENGTH_128B;
+	case ATH12K_EXT_MON_LEN_256B:
+		return ATH12K_DP_MON_TX_DMA_LENGTH_256B;
+	case ATH12K_EXT_MON_LEN_FULL_PKT:
+		return ATH12K_DP_MON_TX_DMA_LENGTH_MAX;
+	default:
+		return ATH12K_DP_MON_TX_DMA_LENGTH_MAX;
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_get_ext_mon_filter_len);
