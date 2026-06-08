@@ -714,7 +714,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.quad_ring_monitor_support = false,
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
-		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
+		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES_DEFAULT,
 		.peer_del_all_support = false,
 	},
 	{
@@ -830,7 +830,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.quad_ring_monitor_support = true,
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
-		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
+		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES_DEFAULT,
 		.peer_del_all_support = false,
 	},
 	{
@@ -876,11 +876,9 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 					BIT(NL80211_IFTYPE_AP_VLAN),
 		.supports_monitor = true,
 		.supports_tx_monitor = true,
-#ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 		.max_clients_supported = 512,
 		.max_clients_dbs = 256,
 		.max_clients_dbs_sbs = 170,
-#endif
 
 		.idle_ps = false,
 		.cold_boot_calib = ATH12K_COLD_BOOT_CALIB,
@@ -960,7 +958,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.quad_ring_monitor_support = false,
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
-		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
+		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES_DEFAULT,
 		.peer_del_all_support = false,
 	},
 	{
@@ -1001,11 +999,9 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 				   BIT(NL80211_IFTYPE_MESH_POINT),
 		.supports_monitor = true,
 		.supports_tx_monitor = true,
-#ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 		.max_clients_supported = 256,
 		.max_clients_dbs = 176,
 		.max_clients_dbs_sbs = 85,
-#endif
 
 		.idle_ps = false,
 		.cold_boot_calib = ATH12K_COLD_BOOT_CALIB,
@@ -1079,7 +1075,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.quad_ring_monitor_support = false,
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
-		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
+		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES_DEFAULT,
 		.peer_del_all_support = false,
 	},
 	{
@@ -1120,11 +1116,9 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 					BIT(NL80211_IFTYPE_MESH_POINT),
 		.supports_monitor = true,
 		.supports_tx_monitor = true,
-#ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 		.max_clients_supported = 256,
 		.max_clients_dbs = 176,
 		.max_clients_dbs_sbs = 85,
-#endif
 
 		.idle_ps = false,
 		.cold_boot_calib = ATH12K_COLD_BOOT_CALIB,
@@ -1176,7 +1170,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.quad_ring_monitor_support = false,
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
-		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
+		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES_DEFAULT,
 		.peer_del_all_support = false,
 	},
 	{
@@ -1216,11 +1210,9 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 					BIT(NL80211_IFTYPE_MESH_POINT),
 		.supports_monitor = true,
 		.supports_tx_monitor = true,
-#ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 		.max_clients_supported = 512,
 		.max_clients_dbs = 256,
 		.max_clients_dbs_sbs = 170,
-#endif
 
 		.idle_ps = false,
 		.cold_boot_calib = ATH12K_COLD_BOOT_CALIB,
@@ -1299,7 +1291,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.quad_ring_monitor_support = false,
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
-		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES,
+		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES_DEFAULT,
 		.peer_del_all_support = false,
 	},
 };
@@ -1887,6 +1879,18 @@ int ath12k_wifi7_hw_init(struct ath12k_base *ab)
 	struct ath12k_hw_params *hw_params = NULL;
 	struct ath12k_hw_params *hw_params_msi8 = NULL;
 	int i;
+
+	/* Set num_rx_spt_pages for all wifi7 hw_params entries
+	 */
+	for (i = 0; i < ARRAY_SIZE(ath12k_wifi7_hw_params); i++) {
+		hw_params = &ath12k_wifi7_hw_params[i];
+		if (hw_params->hw_rev == ab->hw_rev) {
+			hw_params->num_rx_spt_pages =
+			    ath12k_dp_ring_cfg->rx_desc_count_wifi7 /
+			    ATH12K_MAX_SPT_ENTRIES;
+			break;
+		}
+	}
 
 	for (i = 0; i < ARRAY_SIZE(ath12k_wifi7_hw_params); i++) {
 		hw_params = &ath12k_wifi7_hw_params[i];

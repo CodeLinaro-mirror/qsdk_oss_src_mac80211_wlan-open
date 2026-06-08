@@ -34,6 +34,7 @@
 #include "wow.h"
 #include "dp_cmn.h"
 #include "dp.h"
+#include "dp_mon.h"
 #include "fse.h"
 #include "accel_cfg.h"
 #include "peer.h"
@@ -110,21 +111,6 @@ module_param_named(hw_buff_mgmt, ath12k_ppeds_hw_buff_mgmt, uint, 0644);
 MODULE_PARM_DESC(hw_buff_mgmt, "hw_buff_mgmt: 0-default");
 EXPORT_SYMBOL(ath12k_ppeds_hw_buff_mgmt);
 
-unsigned int ath12k_ppeds_ppe2tcl_ring_size = 8192;
-module_param_named(ppe2tcl_ring_size, ath12k_ppeds_ppe2tcl_ring_size, uint, 0644);
-MODULE_PARM_DESC(ppe2tcl_ring_size, "PPE2TCL Ring size");
-EXPORT_SYMBOL(ath12k_ppeds_ppe2tcl_ring_size);
-
-unsigned int ath12k_ppeds_reo2ppe_ring_size = 4096;
-module_param_named(reo2ppe_ring_size, ath12k_ppeds_reo2ppe_ring_size, uint, 0644);
-MODULE_PARM_DESC(reo2ppe_ring_size, "REO2PPE Ring size");
-EXPORT_SYMBOL(ath12k_ppeds_reo2ppe_ring_size);
-
-unsigned int ath12k_ppeds_tqm2ppe_ring_size = 8192;
-module_param_named(tqm2ppe_ring_size, ath12k_ppeds_tqm2ppe_ring_size, uint, 0644);
-MODULE_PARM_DESC(tqm2ppe_ring_size, "TQM2PPE Ring size");
-EXPORT_SYMBOL(ath12k_ppeds_tqm2ppe_ring_size);
-
 unsigned int ath12k_ppeds_ppe2wbm_ring_size = 512;
 module_param_named(ppe2wbm_ring_size, ath12k_ppeds_ppe2wbm_ring_size, uint, 0644);
 MODULE_PARM_DESC(ppe2wbm_ring_size, "PPE2WBM Ring size");
@@ -186,11 +172,181 @@ module_param_named(io_coherency, ath12k_io_coherency_enabled, bool, 0644);
 MODULE_PARM_DESC(io_coherency, "Enable io_coherency (0 - disable, 1 - enable)");
 #endif
 
-#ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 unsigned int ath12k_max_clients = 512;
 module_param_named(max_clients, ath12k_max_clients, uint, 0644);
 MODULE_PARM_DESC(max_clients, "Max clients support");
+
+/*
+ * ath12k_active_mem_profile - active memory profile selected at module load.
+ * Set by ath12k_detect_mem_profile(): compile-time macros take priority,
+ * then falls back to mem-profile= kernel cmdline parameter.
+ */
+enum ath12k_mem_profile ath12k_active_mem_profile = ATH12K_MEM_PROFILE_DEFAULT;
+EXPORT_SYMBOL(ath12k_active_mem_profile);
+
+/*
+ * ath12k_dp_ring_cfgs - Ring size configurations indexed by ath12k_mem_profile.
+ *
+ * Index 0 (ATH12K_MEM_PROFILE_DEFAULT)   : 1G / high-memory profile
+ * Index 1 (ATH12K_MEM_PROFILE_BALANCED)  : 512M profile
+ * Index 2 (ATH12K_MEM_PROFILE_OPTIMIZED) : 256M profile
+ */
+static const struct ath12k_dp_ring_cfg ath12k_dp_ring_cfgs[] = {
+	[ATH12K_MEM_PROFILE_DEFAULT] = {
+		.rxdma_buf_ring_size		= 8192,
+		.rx_release_ring_size		= 16384,
+		.reo2ppe_ring			= 16384,
+		.ppe2tcl_ring			= 8192,
+		.tqm2ppe_ring_size		= 32768,
+		.tx_comp_ppeds_ring_size	= 32768,
+		.num_vdevs			= 16 + 1,
+		.num_bridge_vdevs		= 8,
+		.num_max_vdevs_nlink		= (16 + 1) + 8,
+		.target_mem_mode		= ATH12K_QMI_TARGET_MEM_MODE_DEFAULT,
+		.num_pool_tx_desc		= 32768,
+		.ppe_wbm2sw_ring_size		= 32768,
+		.rxdma_monitor_buf_ring_size	= 8192,
+		.rxdma_monitor_dst_ring_size	= 8192,
+		.smart_mon_filter_default	= DP_SMART_MON_PROFILE_1G,
+		.mon_num_ppdu_desc		= 128,
+		.rx_desc_count_wifi7		= 12288,
+		.rx_desc_count_wifi8		= 24576,
+		.num_stations_single		= 0,
+		.num_stations_dbs		= 0,
+		.num_stations_dbs_sbs		= 0,
+		.dp_max_clients			= 512,
+		.num_pool_ppeds_tx_desc		= 0x8000,
+		.ppeds_hotlist_len_max		= 1024,
+		.reo_dst_ring_size		= { 8192, 8192, 8192, 8192, 8192 },
+		.tcl_data_ring_size		= { 2048, 2048, 2048, 2048, 2048 },
+		.tx_compl_ring_size		= { 32768, 32768, 32768, 32768, 32768 },
+		.monitor_support		= true,
+	},
+	[ATH12K_MEM_PROFILE_BALANCED] = {
+		.rxdma_buf_ring_size		= 8192,
+		.rx_release_ring_size		= 8192,
+		.reo2ppe_ring			= 2048,
+		.ppe2tcl_ring			= 2048,
+		.tqm2ppe_ring_size		= 8192,
+		.tx_comp_ppeds_ring_size	= 16384,
+		.num_vdevs			= 8 + 1,
+		.num_bridge_vdevs		= 0,
+		.num_max_vdevs_nlink		= 0,
+		.target_mem_mode		= ATH12K_QMI_TARGET_MEM_MODE_512M,
+		.num_pool_tx_desc		= 16384,
+		.ppe_wbm2sw_ring_size		= 8192,
+		.rxdma_monitor_buf_ring_size	= 256,
+		.rxdma_monitor_dst_ring_size	= 512,
+		.smart_mon_filter_default	= DP_SMART_MON_PROFILE_512M |
+						  (DP_SMART_MON_FILTER_MASK &
+						   ~DP_SMART_MON_VALID),
+		.mon_num_ppdu_desc		= 128,
+		.rx_desc_count_wifi7		= 8192,
+		.rx_desc_count_wifi8		= 8192,
+		.num_stations_single		= 128,
+		.num_stations_dbs		= 64,
+		.num_stations_dbs_sbs		= 42,
+		.dp_max_clients			= 512,
+		.num_pool_ppeds_tx_desc		= 0x8000,
+		.ppeds_hotlist_len_max		= 1024,
+		.reo_dst_ring_size		= { 8192, 8192, 8192, 8192, 8192 },
+		.tcl_data_ring_size		= { 2048, 2048, 2048, 2048, 2048 },
+		.tx_compl_ring_size		= { 16384, 16384, 16384, 16384, 16384 },
+		.monitor_support		= true,
+	},
+	[ATH12K_MEM_PROFILE_OPTIMIZED] = {
+		.rxdma_buf_ring_size		= 2048,
+		.rx_release_ring_size		= 4096,
+		.reo2ppe_ring			= 2048,
+		.ppe2tcl_ring			= 2048,
+		.tqm2ppe_ring_size		= 8192,
+		.tx_comp_ppeds_ring_size	= 8192,
+		.num_vdevs			= 8 + 1,
+		.num_bridge_vdevs		= 0,
+		.num_max_vdevs_nlink		= 0,
+		.target_mem_mode		= ATH12K_QMI_TARGET_MEM_MODE_256M,
+		.num_pool_tx_desc		= 8192,
+		.ppe_wbm2sw_ring_size		= 8192,
+		.rxdma_monitor_buf_ring_size	= 256,
+		.rxdma_monitor_dst_ring_size	= 512,
+		.smart_mon_filter_default	= DP_SMART_MON_PROFILE_256M |
+						  (DP_SMART_MON_FILTER_MASK &
+						   ~DP_SMART_MON_VALID),
+		.mon_num_ppdu_desc		= 8,
+		.rx_desc_count_wifi7		= 8192,
+		.rx_desc_count_wifi8		= 8192,
+		.num_stations_single		= 128,
+		.num_stations_dbs		= 64,
+		.num_stations_dbs_sbs		= 42,
+		.dp_max_clients			= 512,
+		.num_pool_ppeds_tx_desc		= 0x2000,
+		.ppeds_hotlist_len_max		= 256,
+		.reo_dst_ring_size		= { 2048, 2048, 2048, 512, 512 },
+		.tcl_data_ring_size		= { 512, 512, 512, 128, 128 },
+		.tx_compl_ring_size		= { 8192, 8192, 8192, 1024, 1024 },
+		.monitor_support		= true,
+	},
+};
+
+/*
+ * Pointer to the active DP ring size configuration.
+ * Initialized to the default/1G profile; updated once at module load time
+ * by ath12k_detect_mem_profile() based on the mem-profile= cmdline parameter.
+ */
+const struct ath12k_dp_ring_cfg *ath12k_dp_ring_cfg =
+	&ath12k_dp_ring_cfgs[ATH12K_MEM_PROFILE_DEFAULT];
+EXPORT_SYMBOL(ath12k_dp_ring_cfg);
+
+/*
+ * ath12k_detect_mem_profile()
+ *	Detect the active memory profile and initialize ring size config.
+ *	Compile-time macros take priority; runtime cmdline is the fallback.
+ *
+ *	  mem-profile=optimized  -> ATH12K_MEM_PROFILE_OPTIMIZED (256M)
+ *	  mem-profile=balanced   -> ATH12K_MEM_PROFILE_BALANCED  (512M)
+ *	  mem-profile=high       -> ATH12K_MEM_PROFILE_DEFAULT   (1G)
+ *	  (absent)               -> ATH12K_MEM_PROFILE_DEFAULT   (1G)
+ */
+static void ath12k_detect_mem_profile(void)
+{
+	ath12k_active_mem_profile = ATH12K_MEM_PROFILE_DEFAULT;
+
+#if defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
+	ath12k_active_mem_profile = ATH12K_MEM_PROFILE_OPTIMIZED;
+	ath12k_info(NULL, "ath12k: compile-time 256M profile -> OPTIMIZED\n");
+#elif defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined(CPTCFG_ATH12K_MEM_PROFILE_512M)
+	ath12k_active_mem_profile = ATH12K_MEM_PROFILE_BALANCED;
+	ath12k_info(NULL, "ath12k: compile-time 512M profile -> BALANCED\n");
+#else
+	if (strstr(saved_command_line, "mem-profile=optimized")) {
+		ath12k_active_mem_profile = ATH12K_MEM_PROFILE_OPTIMIZED;
+		ath12k_info(NULL, "ath12k: mem-profile=optimized -> OPTIMIZED\n");
+	} else if (strstr(saved_command_line, "mem-profile=balanced")) {
+		ath12k_active_mem_profile = ATH12K_MEM_PROFILE_BALANCED;
+		ath12k_info(NULL, "ath12k: mem-profile=balanced -> BALANCED\n");
+	} else if (strstr(saved_command_line, "mem-profile=high")) {
+		ath12k_active_mem_profile = ATH12K_MEM_PROFILE_DEFAULT;
+		ath12k_info(NULL, "ath12k: mem-profile=high -> DEFAULT\n");
+	} else {
+		ath12k_active_mem_profile = ATH12K_MEM_PROFILE_DEFAULT;
+		ath12k_info(NULL, "ath12k: no mem-profile in cmdline -> DEFAULT\n");
+	}
 #endif
+
+	/* ath12k_active_mem_profile is always set to one of the three valid
+	 * enum values (DEFAULT/BALANCED/OPTIMIZED) by the logic above, so
+	 * this array access is always within bounds.
+	 */
+	ath12k_dp_ring_cfg = &ath12k_dp_ring_cfgs[ath12k_active_mem_profile];
+	ath12k_max_clients = ath12k_dp_ring_cfg->dp_max_clients;
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+		ath12k_ppeds_desc_params.num_ppeds_desc =
+			ath12k_dp_ring_cfg->num_pool_ppeds_tx_desc;
+		ath12k_ppeds_desc_params.ppeds_hotlist_len =
+			ath12k_dp_ring_cfg->ppeds_hotlist_len_max;
+#endif
+}
 
 static unsigned int ath12k_en_fwlog = true;
 module_param_named(en_fwlog, ath12k_en_fwlog, uint, 0644);
@@ -1520,6 +1676,88 @@ static void ath12k_core_pdev_destroy(struct ath12k_base *ab)
 	ath12k_debugfs_pdev_destroy(ab);
 }
 
+/* Temporarily added for debug; will be removed once review is finalised */
+static void ath12k_core_dump_mem_profile_info(struct ath12k_base *ab)
+{
+	ath12k_info(ab, "Station counts: SINGLE=%u DBS=%u DBS_SBS=%u\n",
+		    TARGET_NUM_STATIONS_SINGLE,
+		    TARGET_NUM_STATIONS_DBS,
+		    TARGET_NUM_STATIONS_DBS_SBS);
+
+	ath12k_info(ab, "Station counts: hw_max=[%u,%u,%u]\n",
+		    ab->hw_params->max_clients_supported,
+		    ab->hw_params->max_clients_dbs,
+		    ab->hw_params->max_clients_dbs_sbs);
+
+	ath12k_info(ab,
+		    "dp_ring_cfg: profile=%d rxdma_buf=%u rx_rel=%u reo2ppe=%u ppe2tcl=%u\n",
+		    ath12k_active_mem_profile,
+		    ath12k_dp_ring_cfg->rxdma_buf_ring_size,
+		    ath12k_dp_ring_cfg->rx_release_ring_size,
+		    ath12k_dp_ring_cfg->reo2ppe_ring,
+		    ath12k_dp_ring_cfg->ppe2tcl_ring);
+
+	ath12k_info(ab,
+		    "dp_ring_cfg: tqm2ppe=%u tx_comp_ppeds=%u vdevs=%u bridge_vdevs=%u nlink_vdevs=%u\n",
+		    ath12k_dp_ring_cfg->tqm2ppe_ring_size,
+		    ath12k_dp_ring_cfg->tx_comp_ppeds_ring_size,
+		    ath12k_dp_ring_cfg->num_vdevs,
+		    ath12k_dp_ring_cfg->num_bridge_vdevs,
+		    ath12k_dp_ring_cfg->num_max_vdevs_nlink);
+
+	ath12k_info(ab,
+		    "dp_ring_cfg: mem_mode=%u pool_tx=%u ppe_wbm2sw=%u mon_buf=%u\n",
+		    ath12k_dp_ring_cfg->target_mem_mode,
+		    ath12k_dp_ring_cfg->num_pool_tx_desc,
+		    ath12k_dp_ring_cfg->ppe_wbm2sw_ring_size,
+		    ath12k_dp_ring_cfg->rxdma_monitor_buf_ring_size);
+
+	ath12k_info(ab,
+		    "dp_ring_cfg: mon_dst=%u smart_mon=0x%x ppdu=%u wifi7_rx=%u\n",
+		    ath12k_dp_ring_cfg->rxdma_monitor_dst_ring_size,
+		    ath12k_dp_ring_cfg->smart_mon_filter_default,
+		    ath12k_dp_ring_cfg->mon_num_ppdu_desc,
+		    ath12k_dp_ring_cfg->rx_desc_count_wifi7);
+
+	ath12k_info(ab,
+		    "dp_ring_cfg: wifi8_rx=%u sta_single=%u sta_dbs=%u sta_dbs_sbs=%u\n",
+		    ath12k_dp_ring_cfg->rx_desc_count_wifi8,
+		    ath12k_dp_ring_cfg->num_stations_single,
+		    ath12k_dp_ring_cfg->num_stations_dbs,
+		    ath12k_dp_ring_cfg->num_stations_dbs_sbs);
+
+	ath12k_info(ab,
+		    "dp_ring_cfg: max_clients=%u\n",
+		    ath12k_dp_ring_cfg->dp_max_clients);
+
+	ath12k_info(ab,
+		    "dp_ring_cfg: ppeds_tx=%u ppeds_hotlist=%u\n",
+		    ath12k_dp_ring_cfg->num_pool_ppeds_tx_desc,
+		    ath12k_dp_ring_cfg->ppeds_hotlist_len_max);
+
+	ath12k_info(ab, "dp_ring_cfg: reo_dst=[%u,%u,%u,%u,%u]\n",
+		    ath12k_dp_ring_cfg->reo_dst_ring_size[0],
+		    ath12k_dp_ring_cfg->reo_dst_ring_size[1],
+		    ath12k_dp_ring_cfg->reo_dst_ring_size[2],
+		    ath12k_dp_ring_cfg->reo_dst_ring_size[3],
+		    ath12k_dp_ring_cfg->reo_dst_ring_size[4]);
+
+	ath12k_info(ab, "dp_ring_cfg: tcl=[%u,%u,%u,%u,%u]\n",
+		    ath12k_dp_ring_cfg->tcl_data_ring_size[0],
+		    ath12k_dp_ring_cfg->tcl_data_ring_size[1],
+		    ath12k_dp_ring_cfg->tcl_data_ring_size[2],
+		    ath12k_dp_ring_cfg->tcl_data_ring_size[3],
+		    ath12k_dp_ring_cfg->tcl_data_ring_size[4]);
+
+	ath12k_info(ab, "dp_ring_cfg: tx_compl=[%u,%u,%u,%u,%u] mon_sup=%u\n",
+		    ath12k_dp_ring_cfg->tx_compl_ring_size[0],
+		    ath12k_dp_ring_cfg->tx_compl_ring_size[1],
+		    ath12k_dp_ring_cfg->tx_compl_ring_size[2],
+		    ath12k_dp_ring_cfg->tx_compl_ring_size[3],
+		    ath12k_dp_ring_cfg->tx_compl_ring_size[4],
+		    ath12k_dp_ring_cfg->monitor_support);
+}
+
 static int ath12k_core_start(struct ath12k_base *ab)
 {
 	int ret;
@@ -1618,6 +1856,8 @@ static int ath12k_core_start(struct ath12k_base *ab)
 
 	ath12k_dp_rx_fst_init(ab);
 	ath12k_wsi_load_info_wsiorder_update(ab);
+
+	ath12k_core_dump_mem_profile_info(ab);
 
 	return 0;
 
@@ -5950,6 +6190,11 @@ struct ath12k_base *ath12k_core_alloc(struct device *dev, size_t priv_size,
 	u32 wide_band = ATH12K_WIDE_BAND_NONE;
 	struct ath12k_base *ab;
 	u32 addr;
+
+	/*
+	 * Detect the active memory profile before the device is initialized.
+	 */
+	ath12k_detect_mem_profile();
 
 	ab = kzalloc(sizeof(*ab) + priv_size, GFP_KERNEL);
 	if (!ab)

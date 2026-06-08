@@ -63,8 +63,10 @@ struct stats_to_peer_id_map {
 	defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
 #define ATH12K_RX_DESC_COUNT	8192
 #else
-#define ATH12K_RX_DESC_COUNT	24576
+#define ATH12K_RX_DESC_COUNT	(ath12k_dp_ring_cfg->rx_desc_count_wifi8)
 #endif
+
+#define ATH12K_NUM_RX_SPT_PAGES_DEFAULT	(24576 / ATH12K_MAX_SPT_ENTRIES)
 
 #define ATH12K_INVALID_SVC_ID	0xFF
 

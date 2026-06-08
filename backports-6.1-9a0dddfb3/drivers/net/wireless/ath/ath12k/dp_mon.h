@@ -34,9 +34,9 @@
 #define DP_MON_NUM_PPDU_DESC 128
 
 #else
-#define DP_RXDMA_MONITOR_BUF_RING_SIZE 8192
-#define DP_RXDMA_MONITOR_DST_RING_SIZE 8192
-#define DP_MON_NUM_PPDU_DESC 128
+#define DP_RXDMA_MONITOR_BUF_RING_SIZE	(ath12k_dp_ring_cfg->rxdma_monitor_buf_ring_size)
+#define DP_RXDMA_MONITOR_DST_RING_SIZE	(ath12k_dp_ring_cfg->rxdma_monitor_dst_ring_size)
+#define DP_MON_NUM_PPDU_DESC	(ath12k_dp_ring_cfg->mon_num_ppdu_desc)
 #endif
 
 #else
@@ -81,7 +81,7 @@
 						 (DP_SMART_MON_FILTER_MASK & \
 						  ~DP_SMART_MON_VALID))
 #else
-#define ATH12K_DP_SMART_MON_FILTER_DEFAULT	DP_SMART_MON_PROFILE_1G
+#define ATH12K_DP_SMART_MON_FILTER_DEFAULT (ath12k_dp_ring_cfg->smart_mon_filter_default)
 #endif
 #define DP_TX_MONITOR_BUF_RING_SIZE	8192
 #define DP_TX_MONITOR_DEST_RING_SIZE	8192

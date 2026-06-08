@@ -48,13 +48,16 @@ struct ath12k_dp_hw_link {
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 #define DP_TX_COMP_RING_SIZE           8192
 #else
-#define DP_TX_COMP_RING_SIZE           32768
+#define DP_TX_COMP_RING_SIZE		32768
 #endif
-#define ATH12K_NUM_POOL_TX_DESC                32768
+#define ATH12K_NUM_POOL_TX_DESC		(ath12k_dp_ring_cfg->num_pool_tx_desc)
 /* TODO: revisit this count during testing */
+#if BITS_PER_LONG == 32
+#define DP_RX_BUFFER_SIZE		1856
+#else
 #define DP_RX_BUFFER_SIZE		2048
 #endif
-
+#endif
 #define ATH12K_PAGE_SIZE	PAGE_SIZE
 
 /* Total 1024 entries in PPT, i.e 4K/4 considering 4K aligned
@@ -147,7 +150,7 @@ struct ath12k_dp_hw_group {
 	u8 *rx_status_buf[DP_TOTAL_REO_DST_RINGS];
 	struct ath12k_spt_info *spt_info;
 	u32 num_spt_pages;
-	struct ath12k_tx_desc_info *txbaddr[ATH12K_NUM_TX_SPT_PAGES];
+	struct ath12k_tx_desc_info **txbaddr;
 	struct list_head tx_desc_free_list[ATH12K_HW_MAX_QUEUES];
 	struct list_head tx_spl_desc_free_list[ATH12K_HW_MAX_QUEUES];
 	u32 __percpu *tx_desc_used_cnt;

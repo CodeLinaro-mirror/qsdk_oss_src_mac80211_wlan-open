@@ -160,9 +160,61 @@ extern bool ath12k_rx_nwifi_err_dump;
 extern bool ath12k_carrier_vow_optimization;
 extern unsigned int ath12k_reorder_VI_timeout;
 extern bool ath12k_mcast_link_bmap_enable;
-#ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 extern unsigned int ath12k_max_clients;
-#endif
+
+/*
+ * enum ath12k_mem_profile - active memory profile
+ * @ATH12K_MEM_PROFILE_DEFAULT:   1G / full ring sizes  (mem-profile=high or absent)
+ * @ATH12K_MEM_PROFILE_BALANCED:  512M / reduced sizes  (mem-profile=balanced)
+ * @ATH12K_MEM_PROFILE_OPTIMIZED: 256M / minimal sizes  (mem-profile=optimized)
+ */
+enum ath12k_mem_profile {
+	ATH12K_MEM_PROFILE_DEFAULT,
+	ATH12K_MEM_PROFILE_BALANCED,
+	ATH12K_MEM_PROFILE_OPTIMIZED,
+};
+
+extern enum ath12k_mem_profile ath12k_active_mem_profile;
+
+/**
+ * struct ath12k_dp_ring_cfg - DP ring size configuration per memory profile.
+ *
+ * The global pointer ath12k_dp_ring_cfg is set once at
+ * module load time by ath12k_detect_mem_profile() based on the
+ * mem-profile= kernel cmdline parameter.
+ */
+struct ath12k_dp_ring_cfg {
+	unsigned int rxdma_buf_ring_size;
+	unsigned int rx_release_ring_size;
+	unsigned int reo2ppe_ring;
+	unsigned int ppe2tcl_ring;
+	unsigned int tqm2ppe_ring_size;
+	unsigned int tx_comp_ppeds_ring_size;
+	unsigned int num_vdevs;
+	unsigned int num_bridge_vdevs;
+	unsigned int num_max_vdevs_nlink;
+	unsigned int target_mem_mode;
+	unsigned int num_pool_tx_desc;
+	unsigned int ppe_wbm2sw_ring_size;
+	unsigned int rxdma_monitor_buf_ring_size;
+	unsigned int rxdma_monitor_dst_ring_size;
+	unsigned int smart_mon_filter_default;
+	unsigned int mon_num_ppdu_desc;
+	unsigned int rx_desc_count_wifi7;
+	unsigned int rx_desc_count_wifi8;
+	unsigned int num_stations_single;
+	unsigned int num_stations_dbs;
+	unsigned int num_stations_dbs_sbs;
+	unsigned int dp_max_clients;
+	unsigned int num_pool_ppeds_tx_desc;
+	unsigned int ppeds_hotlist_len_max;
+	unsigned int reo_dst_ring_size[5];
+	unsigned int tcl_data_ring_size[5];
+	unsigned int tx_compl_ring_size[5];
+	unsigned int monitor_support : 1;
+};
+
+extern const struct ath12k_dp_ring_cfg *ath12k_dp_ring_cfg;
 extern bool ath12k_mlo_3_link_tx;
 extern bool ath12k_waltest_mode;
 extern bool ath12k_fw_q6_dump_collection;

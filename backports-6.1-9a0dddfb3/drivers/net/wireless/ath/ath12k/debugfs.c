@@ -4948,20 +4948,27 @@ static ssize_t ath12k_debugfs_dump_ppeds_stats(struct file *file,
 	struct ath12k_link_vif *arvif, *arvif_partner;
 	u8 i, j, link_id, index;
 	bool interface_found;
-	int printed_if[TARGET_NUM_VDEVS * ATH12K_MAX_SOCS], printedindex = 0;
+	int *printed_if;
+	int printedindex = 0;
 	struct ath12k *ar;
 	struct wireless_dev *wdev;
 	struct ath12k_ppeds_stats *ppeds_stats = &ab->dp->ppe.ppeds_stats;
-	int len = 0,  retval;
+	int len = 0, retval;
 	const int size = PAGE_SIZE;
 	char *buf;
 	u32 ppe2tcl_ring_id = dp->ppe.ppe2tcl_ring[0].ring_id;
 	u32 reo2ppe_ring_id = dp->ppe.reo2ppe_ring[0].ring_id;
 
-	memset(printed_if, 0, sizeof(printed_if));
 	buf = kzalloc(size, GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
+
+	printed_if = kcalloc(TARGET_NUM_VDEVS * ATH12K_MAX_SOCS,
+			     sizeof(*printed_if), GFP_KERNEL);
+	if (!printed_if) {
+		kfree(buf);
+		return -ENOMEM;
+	}
 
 	len += scnprintf(buf + len, size - len, "PPEDS_STATS:\n");
 	len += scnprintf(buf + len, size - len, "tcl_prod_cnt= %u\n",
@@ -5072,6 +5079,7 @@ static ssize_t ath12k_debugfs_dump_ppeds_stats(struct file *file,
 		len = size;
 
 	retval = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	kfree(printed_if);
 	kfree(buf);
 
 	return retval;

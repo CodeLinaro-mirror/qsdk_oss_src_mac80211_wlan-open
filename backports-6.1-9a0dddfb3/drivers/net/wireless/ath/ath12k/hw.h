@@ -53,34 +53,37 @@ struct ath12k_link_vif;
 /* Max num of stations for DBS_SBS */
 #define TARGET_NUM_STATIONS_DBS_SBS	42
 #else
-// #ifdef CONFIG_ATH12K_MEM_PROFILE_DEFAULT TODO Enable default profile
 /* Num VDEVS per radio */
-#define TARGET_NUM_VDEVS	(16 + 1)
+#define TARGET_NUM_VDEVS		(ath12k_dp_ring_cfg->num_vdevs)
 /* Maximum number of AP interfaces allowed per radio for MBSSID.
  * This excludes the monitor vdev included in TARGET_NUM_VDEVS.
  */
-#define ATH12K_MBSSID_MAX_INTERFACES	(TARGET_NUM_VDEVS - 1)
+#define ATH12K_MBSSID_MAX_INTERFACES	((ath12k_dp_ring_cfg->num_vdevs) - 1)
 
 /* Num of Bridge vdevs per radio */
-#define TARGET_NUM_BRIDGE_VDEVS		8
-#define ATH12K_MAX_NUM_VDEVS_NLINK	TARGET_NUM_VDEVS + \
-					TARGET_NUM_BRIDGE_VDEVS
-#define ATH12K_QMI_TARGET_MEM_MODE      ATH12K_QMI_TARGET_MEM_MODE_DEFAULT
+#define TARGET_NUM_BRIDGE_VDEVS		(ath12k_dp_ring_cfg->num_bridge_vdevs)
+#define ATH12K_MAX_NUM_VDEVS_NLINK	(ath12k_dp_ring_cfg->num_max_vdevs_nlink)
+#define ATH12K_QMI_TARGET_MEM_MODE      (ath12k_dp_ring_cfg->target_mem_mode)
 
-/* Max num of stations for Single Radio mode */
-#define TARGET_NUM_STATIONS_SINGLE     ((ath12k_max_clients > ab->hw_params->max_clients_supported) ? ab->hw_params->max_clients_supported : ath12k_max_clients)
+#define TARGET_NUM_STATIONS_SINGLE	\
+	((ath12k_dp_ring_cfg->num_stations_single) ? \
+	 (ath12k_dp_ring_cfg->num_stations_single) : \
+	 ((ath12k_max_clients > ab->hw_params->max_clients_supported) ? \
+	  ab->hw_params->max_clients_supported : ath12k_max_clients))
 
 /* Max num of stations for DBS */
-#define TARGET_NUM_STATIONS_DBS		(((int)(ath12k_max_clients / 2) > \
-					ab->hw_params->max_clients_dbs) ? \
-					ab->hw_params->max_clients_dbs : \
-					(int)ath12k_max_clients / 2)
+#define TARGET_NUM_STATIONS_DBS		\
+	((ath12k_dp_ring_cfg->num_stations_dbs) ? \
+	 (ath12k_dp_ring_cfg->num_stations_dbs) : \
+	 (((int)(ath12k_max_clients / 2) > ab->hw_params->max_clients_dbs) ? \
+	  ab->hw_params->max_clients_dbs : (int)ath12k_max_clients / 2))
 
 /* Max num of stations for DBS_SBS */
-#define TARGET_NUM_STATIONS_DBS_SBS	(((int)(ath12k_max_clients / 3) >  \
-					ab->hw_params->max_clients_dbs_sbs) ? \
-					ab->hw_params->max_clients_dbs_sbs : \
-					(int)ath12k_max_clients / 3)
+#define TARGET_NUM_STATIONS_DBS_SBS	\
+	((ath12k_dp_ring_cfg->num_stations_dbs_sbs) ? \
+	 (ath12k_dp_ring_cfg->num_stations_dbs_sbs) : \
+	 (((int)(ath12k_max_clients / 3) > ab->hw_params->max_clients_dbs_sbs) ? \
+	  ab->hw_params->max_clients_dbs_sbs : (int)ath12k_max_clients / 3))
 
 #endif
 
@@ -272,11 +275,10 @@ struct ath12k_hw_params {
 		bool unified_fw_image:1;
 	} fw;
 
-#ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 	u16 max_clients_supported;
 	u16 max_clients_dbs;
 	u16 max_clients_dbs_sbs;
-#endif
+
 	u8 max_radios;
 	bool single_pdev_only:1;
 	u32 qmi_service_ins_id;
