@@ -2369,6 +2369,38 @@ int ath12k_wifi7_dp_ext_mon_validate_request(struct ath12k_pdev_dp *dp_pdev,
 		}
 	}
 
+	/* Monitor flags is not valid for RX direction */
+	if (req->filter.monitor_flags != ATH12K_EXT_MON_DEFAULT &&
+	    req->direction == QCA_VENDOR_EXT_MON_DIRECTION_RX) {
+		ath12k_warn(dp_pdev->dp,
+			    "monitor flags not valid for RX direction");
+		return -EINVAL;
+	}
+
+	/*
+	 * When Monitor flags are passed
+	 * no other args should be passed except direction
+	 */
+	if (req->filter.monitor_flags != ATH12K_EXT_MON_DEFAULT) {
+		if (req->filter.level != ATH12K_EXT_MON_FILTER_LEVEL_MSDU ||
+		    req->filter.disable ||
+		    ath12k_dp_ext_mon_is_mode_enabled(&req->filter.all_peer) ||
+		    ath12k_dp_ext_mon_is_mode_enabled(&req->filter.target_peer) ||
+		    req->peer.count) {
+			ath12k_warn(dp_pdev->dp,
+				    "no other args allowed with monitor flags except direction");
+			return -EINVAL;
+		}
+	}
+
+	if (req->direction == QCA_VENDOR_EXT_MON_DIRECTION_TX &&
+	    req->filter.meta_data > ATH12K_EXT_MON_METADATA_META_HDR) {
+		ath12k_warn(dp_pdev->dp,
+			    "meta_data=%d is not supported for TX direction",
+			    req->filter.meta_data);
+		return -EINVAL;
+	}
+
 	return 0;
 }
 

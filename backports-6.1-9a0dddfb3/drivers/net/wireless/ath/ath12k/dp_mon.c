@@ -3353,11 +3353,13 @@ int ath12k_dp_ext_mon_set_filter(struct ath12k_pdev_dp *dp_pdev,
 	case QCA_VENDOR_EXT_MON_DIRECTION_RX:
 		ret = ath12k_dp_ext_mon_set_rx_filter(dp_pdev, &req->filter);
 		break;
+	case QCA_VENDOR_EXT_MON_DIRECTION_TX:
+		ret = ath12k_dp_ext_mon_set_tx_filter(dp_pdev, &req->filter);
+		break;
 	default:
 		ath12k_warn(dp_pdev->dp, "invalid direction\n");
 		ret = -EINVAL;
 	}
-
 	return ret;
 }
 
