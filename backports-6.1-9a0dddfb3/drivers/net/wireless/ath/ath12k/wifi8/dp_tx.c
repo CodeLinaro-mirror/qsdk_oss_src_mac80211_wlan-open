@@ -284,9 +284,9 @@ static inline u32 ath12k_qos_get_metadata(u16 qos_id)
 	u32 tcl_metadata = 0;
 
 	tcl_metadata = u32_encode_bits(HTT_TCL_META_DATA_TYPE_SVC_ID_BASED,
-				       HTT_TCL_META_DATA_TYPE_MISSION) |
-			u32_encode_bits(1, HTT_TCL_META_DATA_SAWF_TID_OVERRIDE) |
-			u32_encode_bits(qos_id, HTT_TCL_META_DATA_SAWF_SVC_ID);
+				       HTT_TCL_META_DATA_TYPE_V3) |
+			u32_encode_bits(1, HTT_TCL_META_DATA_SAWF_TID_OVERRIDE_V3) |
+			u32_encode_bits(qos_id, HTT_TCL_META_DATA_SAWF_SVC_ID_V3);
 	return tcl_metadata;
 }
 
@@ -1069,10 +1069,9 @@ static void ath12k_wifi8_ucast_setup_msdu_info(struct ath12k_link_vif *arvif,
 			msdu_info->bss_ast_idx = dp_peer->peer_ext_ctx->ast_index;
 			msdu_info->lookup_override = true;
 			msdu_info->meta_data_flags =
-				u32_encode_bits(0, HTT_TCL_META_DATA_TYPE) |
+				u32_encode_bits(0, HTT_TCL_META_DATA_TYPE_V3) |
 				u32_encode_bits(dp_peer->peer_id,
-						HTT_TCL_META_DATA_PEER_ID);
-
+						HTT_TCL_META_DATA_PEER_ID_V3);
 			rcu_read_unlock();
 		}
 	}
@@ -1149,9 +1148,9 @@ static int ath12k_wifi8_mcbc_setup_msdu_info(struct ath12k_link_vif *arvif,
 			msdu_info->bss_ast_idx = dp_peer->peer_ext_ctx->ast_index;
 			msdu_info->lookup_override = true;
 			msdu_info->meta_data_flags =
-				u32_encode_bits(0, HTT_TCL_META_DATA_TYPE) |
+				u32_encode_bits(0, HTT_TCL_META_DATA_TYPE_V3) |
 				u32_encode_bits(dp_peer->peer_id,
-						HTT_TCL_META_DATA_PEER_ID);
+						HTT_TCL_META_DATA_PEER_ID_V3);
 
 			rcu_read_unlock();
 		}
@@ -1167,12 +1166,13 @@ static int ath12k_wifi8_mcbc_setup_msdu_info(struct ath12k_link_vif *arvif,
 		 */
 		msdu_info->meta_data_flags =
 			u32_encode_bits(HTT_TCL_META_DATA_TYPE_GLOBAL_SEQ_NUM,
-					GENMASK(15, 14)) |
-			u32_encode_bits(gsn, GENMASK(11, 0));
+					HTT_TCL_META_DATA_TYPE_V3) |
+			u32_encode_bits(gsn, HTT_TCL_META_DATA_GLOBAL_SEQ_NUM_V3);
 		msdu_info->tx_notify_frame = 6;
 
 		if (arvif->nawds_support)
-			msdu_info->meta_data_flags |= u32_encode_bits(1, BIT(12));
+			msdu_info->meta_data_flags |=
+				u32_encode_bits(1, HTT_TCL_META_DATA_GSN_INSPECTED_V3);
 	}
 
 	msdu_info->bank_id = dp_vif->bank_id;
@@ -1183,8 +1183,8 @@ static int ath12k_wifi8_mcbc_setup_msdu_info(struct ath12k_link_vif *arvif,
 	if (gsn_valid && !arsta)
 		msdu_info->vdev_id += HTT_TX_MLO_MCAST_HOST_REINJECT_BASE_VDEV_ID;
 	else if (arvif->nawds_support && !msdu_info->lookup_override)
-		msdu_info->meta_data_flags |= u32_encode_bits(1,
-					HTT_TCL_META_DATA_HOST_INSPECTED_MISSION);
+		msdu_info->meta_data_flags |=
+			u32_encode_bits(1, HTT_TCL_META_DATA_HOST_INSPECTED_MISSION_V3);
 
 	return 0;
 }
@@ -1850,7 +1850,7 @@ ath12k_wifi8_dp_ext_desc_populate(struct ath12k_dp *dp,
 	}
 
 	if (msdu_info->ext_desc.add_htt_metadata) {
-		msdu_info->meta_data_flags |= HTT_TCL_META_DATA_VALID_HTT;
+		msdu_info->meta_data_flags |= HTT_TCL_META_DATA_VALID_HTT_V3;
 		htt_desc_size = sizeof(struct hal_tx_msdu_metadata);
 		htt_desc_ext = (struct hal_tx_msdu_metadata *)
 				ath12k_dp_ext_desc_get_rsvd0(ext_desc);
