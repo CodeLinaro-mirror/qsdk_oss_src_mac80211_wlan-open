@@ -487,6 +487,19 @@ ath12k_dp_link_peer_iterate_by_dp_pdev(struct ath12k_pdev_dp *dp_pdev,
 						       void *context),
 				       void *data);
 
+void
+ath12k_dp_link_peer_iterate_by_device(struct ath12k_dp *dp,
+				      void (*iter_fn)(struct ath12k_pdev_dp *dp_pdev,
+						      struct ath12k_dp_link_peer *peer,
+						      void *context),
+				      void *data);
+
+/* VIF-based peer iteration functions */
+void ath12k_dp_peer_iterate_by_vif(struct ath12k_dp_hw *dp_hw, struct ieee80211_vif *vif,
+				   void (*iter_fn)(struct ath12k_dp_peer *dp_peer,
+						   void *context),
+				   void *data);
+
 void ath12k_dp_peer_hash_table_add(struct ath12k_dp_hw *dp_hw,
 				   struct ath12k_dp_peer *dp_peer);
 void ath12k_dp_peer_hash_table_delete(struct ath12k_dp_hw *dp_hw,

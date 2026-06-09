@@ -1491,35 +1491,42 @@ ssize_t ath12k_dp_dump_fst_table(struct ath12k_base *ab, char *buf, int size)
 	return ath12k_dp_arch_dump_fst_table(dp, buf, size);
 }
 
-void ath12k_dp_tid_cleanup(struct ath12k_base *ab)
+static void
+ath12k_dp_tid_cleanup_cb(struct ath12k_pdev_dp *dp_pdev,
+			 struct ath12k_dp_link_peer *link_peer, void *context)
 {
-        struct ath12k_dp_link_peer *peer;
+	struct ath12k_dp *dp = dp_pdev->dp;
+	struct ath12k_base *ab = dp->ab;
         struct ath12k_dp_rx_tid *rx_tid;
         int tid;
         void *vaddr;
         u32 *addr_aligned;
 
-        spin_lock_bh(&ab->dp->dp_lock);
-        list_for_each_entry(peer, &ab->dp->peers, list) {
-		if (peer->dp_peer) {
-			for (tid = 0; tid < ab->hal.hal_params->num_tids; tid++) {
-				rx_tid = &peer->dp_peer->rx_tid[tid];
-				spin_lock_bh(&rx_tid->tid_lock);
+	if (!link_peer->primary_link)
+		return;
 
-				if (rx_tid->active) {
-					vaddr = rx_tid->vaddr;
-					addr_aligned = PTR_ALIGN(vaddr,
-								 HAL_LINK_DESC_ALIGN);
-					ath12k_hal_reset_rx_reo_tid_q(&ab->hal,
-								      addr_aligned,
-								      rx_tid->ba_win_sz,
-								      tid);
-				}
-				spin_unlock_bh(&rx_tid->tid_lock);
+	if (link_peer->dp_peer) {
+		for (tid = 0; tid < ab->hal.hal_params->num_tids; tid++) {
+			rx_tid = &link_peer->dp_peer->rx_tid[tid];
+
+			spin_lock_bh(&rx_tid->tid_lock);
+			if (rx_tid->active) {
+				vaddr = rx_tid->vaddr;
+				addr_aligned = PTR_ALIGN(vaddr,
+							 HAL_LINK_DESC_ALIGN);
+				ath12k_hal_reset_rx_reo_tid_q(&ab->hal,
+							      addr_aligned,
+							      rx_tid->ba_win_sz,
+							      tid);
 			}
+			spin_unlock_bh(&rx_tid->tid_lock);
 		}
-        }
-        spin_unlock_bh(&ab->dp->dp_lock);
+	}
+}
+
+void ath12k_dp_tid_cleanup(struct ath12k_base *ab)
+{
+	ath12k_dp_link_peer_iterate_by_device(ab->dp, ath12k_dp_tid_cleanup_cb, NULL);
 }
 EXPORT_SYMBOL(ath12k_dp_tid_cleanup);
 
