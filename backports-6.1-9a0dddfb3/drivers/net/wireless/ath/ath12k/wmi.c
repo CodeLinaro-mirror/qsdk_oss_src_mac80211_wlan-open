@@ -10225,6 +10225,17 @@ static int wmi_process_mgmt_tx_comp(struct ath12k *ar, u32 desc_id,
 			mgmt_stats->tx_compl_succ[frm_stype]++;
 		else
 			mgmt_stats->tx_compl_fail[frm_stype]++;
+
+		if (!status) {
+			mgmt_stats->tx_cmpl_succ_pkts++;
+			mgmt_stats->tx_cmpl_succ_bytes += msdu->len;
+		} else if (status == 3) {
+			mgmt_stats->tx_cmpl_retry_pkts++;
+			mgmt_stats->tx_cmpl_retry_bytes += msdu->len;
+		} else {
+			mgmt_stats->tx_cmpl_err_pkts++;
+			mgmt_stats->tx_cmpl_err_bytes += msdu->len;
+		}
 	}
 
 skip_mgmt_stats:
