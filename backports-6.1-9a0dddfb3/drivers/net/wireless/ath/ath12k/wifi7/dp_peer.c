@@ -120,6 +120,15 @@ int ath12k_wifi7_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 		spin_lock_init(&rx_tid->tid_lock);
 	}
 
+	dp_peer->qos = kzalloc(sizeof(*dp_peer->qos), GFP_KERNEL);
+	if (!dp_peer->qos) {
+		if (sta && sta->mlo)
+			ath12k_wifi7_peer_ml_id_free(ah, ahsta);
+		kfree(dp_peer);
+		return -ENOMEM;
+	}
+
+	spin_lock_init(&dp_peer->qos->lock);
 	spin_lock_init(&dp_peer->keys_lock);
 	ether_addr_copy(dp_peer->addr, addr);
 	dp_peer->sta = params->sta;
@@ -152,6 +161,7 @@ int ath12k_wifi7_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 		rcu_read_unlock();
 		if (sta && sta->mlo)
 			ath12k_wifi7_peer_ml_id_free(ah, ahsta);
+		kfree(dp_peer->qos);
 		kfree(dp_peer);
 		return ret;
 	}
