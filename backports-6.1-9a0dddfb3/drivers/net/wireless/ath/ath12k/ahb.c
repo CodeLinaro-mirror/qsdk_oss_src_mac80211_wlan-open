@@ -1645,6 +1645,10 @@ static int ath12k_get_userpd_id(struct device *dev)
 		userpd_id = ATH12K_QCN6432_USERPD_ID_1;
 	} else if (strcmp(subsys_name, "q6v5_wcss_userpd3") == 0) {
 		userpd_id = ATH12K_QCN6432_USERPD_ID_2;
+	} else if (strcmp(subsys_name, "q6v5_wcss_userpd4") == 0) {
+		userpd_id = ATH12K_QCN9160_USERPD_ID_3;
+	} else {
+		dev_err(dev, "Unknown userpd subsys name: %s\n", subsys_name);
 	}
 
 	return userpd_id;
