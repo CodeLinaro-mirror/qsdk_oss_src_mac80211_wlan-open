@@ -208,10 +208,17 @@ struct ath12k_dp_ring_cfg {
 	unsigned int dp_max_clients;
 	unsigned int num_pool_ppeds_tx_desc;
 	unsigned int ppeds_hotlist_len_max;
+	unsigned int dp_num_clients_max;
+	unsigned int dp_mon_status_buf;
 	unsigned int reo_dst_ring_size[5];
 	unsigned int tcl_data_ring_size[5];
 	unsigned int tx_compl_ring_size[5];
 	unsigned int monitor_support : 1;
+	unsigned int cfr_support : 1;
+	unsigned int spectral_support : 1;
+	unsigned int tx_monitor_support : 1;
+	unsigned int sdwf_support : 1;
+	unsigned int cold_boot_calib : 1;
 };
 
 extern const struct ath12k_dp_ring_cfg *ath12k_dp_ring_cfg;

@@ -117,7 +117,7 @@
 #if defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
 #define ATH12K_DP_MON_STATUS_BUF   20
 #else
-#define ATH12K_DP_MON_STATUS_BUF   320
+#define ATH12K_DP_MON_STATUS_BUF   (ath12k_dp_ring_cfg->dp_mon_status_buf)
 #endif
 
 #define ATH12K_EXT_MON_MAX_PEERS	16
@@ -702,7 +702,8 @@ struct ath12k_dp_mon_status_desc {
  * @list: List entry for PPDU descriptor management
  * @ppdu_id: Unique PPDU identifier from hardware
  * @timestamp: PPDU timestamp for correlation
- * @status_desc: Array of status descriptors containing TLV data
+ * @status_desc: Pointer to dynamically allocated array of status
+ *               descriptors containing TLV data
  * @status_desc_cnt: Number of valid status descriptors in the array
  *
  * This structure represents a complete PPDU for TX monitor processing.
@@ -711,12 +712,16 @@ struct ath12k_dp_mon_status_desc {
  *
  * The structure is allocated from a free list during ring processing
  * and queued for work queue processing when end_of_ppdu is detected.
+ *
+ * Note: status_desc is dynamically allocated to support runtime configuration
+ * of ATH12K_DP_MON_STATUS_BUF size. Memory must be allocated during initialization
+ * and freed during cleanup.
  */
 struct ath12k_dp_mon_ppdu_desc {
 	struct list_head list;
 	u32 ppdu_id;
 	u32 timestamp;
-	struct ath12k_dp_mon_status_desc status_desc[ATH12K_DP_MON_STATUS_BUF];
+	struct ath12k_dp_mon_status_desc *status_desc;
 	u32 status_desc_cnt;
 };
 
