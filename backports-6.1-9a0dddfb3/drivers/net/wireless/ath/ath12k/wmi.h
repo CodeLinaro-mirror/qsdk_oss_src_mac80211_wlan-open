@@ -3101,6 +3101,7 @@ struct ath12k_wmi_resource_config_arg {
 #ifdef CPTCFG_QCN_EXTN
 	u32 hw_blocklist_chans_support;
 #endif
+	bool host_reo_mgmt_support;
 };
 
 struct ath12k_wmi_init_cmd_arg {
@@ -3228,6 +3229,7 @@ struct wmi_ctrl_path_pmlo_telemetry_stats {
 #define WMI_RSRC_CFG_HOST_SVC_FLAG_SUPP_HW_BLACKLIST_CHANS      21
 #endif
 #define WMI_RSRC_CFG_HOST_AFC_TRIGGER_ON_DEFAULT_CC_EVENT_BIT   22
+#define WMI_RSRC_CFG_HOST_SVC_REO_MGMT_SUPPORT                  26
 
 struct ath12k_wmi_resource_config_params {
 	__le32 tlv_header;
