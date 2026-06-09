@@ -3289,6 +3289,11 @@ ieee80211_uhr_cap_ie_to_sta_uhr_cap(struct ieee80211_sub_if_data *sdata,
 				    const struct ieee80211_uhr_cap_elem *uhr_cap,
 				    u8 uhr_cap_len,
 				    struct link_sta_info *link_sta);
+void
+ieee80211_uhr_npca_elem_to_sta_uhr_npca_info(struct ieee80211_sub_if_data *sdata,
+					     struct ieee80211_supported_band *sband,
+					     const struct ieee80211_uhr_operation *uhr_oper,
+					     struct link_sta_info *link_sta);
 
 #if IS_ENABLED(CPTCFG_MAC80211_KUNIT_TEST)
 #define EXPORT_SYMBOL_IF_MAC80211_KUNIT(sym) EXPORT_SYMBOL_IF_KUNIT(sym)
