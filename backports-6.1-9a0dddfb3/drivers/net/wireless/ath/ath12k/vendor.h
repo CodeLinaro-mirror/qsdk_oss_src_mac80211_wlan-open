@@ -26,7 +26,7 @@
 #define QCA_VENDOR_WLAN_TELEMETRY_MCS_MAX \
 	(QCA_VENDOR_WLAN_TELEMETRY_UHR_MCS_MAX + 1)
 
-#define QCA_VENDOR_WLAN_OEM_DATA_BUF_MAX_SIZE		1024
+#define QCA_VENDOR_WLAN_OEM_DATA_BUF_MAX_SIZE		5120
 
 #define QCA_VENDOR_WLAN_TELEMETRY_DATA_TIDS 9
 
@@ -7261,7 +7261,7 @@ enum qca_vendor_oem_device_type {
  * attribute is used to carry the respective data in the reply sent by the
  * driver to userspace. The request to set/query the data and the format of the
  * respective data from the firmware are embedded in the attribute. The
- * maximum size of the attribute payload is 1024 bytes.
+ * maximum size of the attribute payload is 5120 bytes.
  * Userspace has to set the QCA_WLAN_VENDOR_ATTR_OEM_DATA_RESPONSE_EXPECTED
  * attribute when the data is queried from the firmware.
  *
