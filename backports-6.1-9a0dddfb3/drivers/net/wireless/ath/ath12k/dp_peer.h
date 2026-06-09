@@ -287,16 +287,7 @@ struct ath12k_dp_peer *ath12k_dp_peer_create_find(struct ath12k_dp_hw *dp_hw, u8
 						  struct ieee80211_sta *sta,
 						  bool mlo_peer);
 struct ath12k_dp_link_peer *
-ath12k_dp_link_peer_find_by_vdev_id_and_addr(struct ath12k_dp *dp,
-					     int vdev_id, const u8 *addr);
-struct ath12k_dp_link_peer *
 ath12k_dp_link_peer_find_by_addr(struct ath12k_dp *dp, const u8 *addr);
-struct ath12k_dp_link_peer *
-ath12k_dp_link_peer_find_by_id(struct ath12k_dp *dp, int peer_id);
-bool ath12k_dp_link_peer_exist_by_vdev_id(struct ath12k_dp *dp, int vdev_id);
-struct ath12k_dp_link_peer *
-ath12k_dp_link_peer_find_by_pdev_idx(struct ath12k_dp *dp, u8 pdev_idx,
-				     const u8 *addr);
 int ath12k_dp_link_peer_rhash_tbl_init(struct ath12k_dp *dp);
 void ath12k_dp_link_peer_rhash_tbl_destroy(struct ath12k_dp *dp);
 int ath12k_dp_link_peer_rhash_add(struct ath12k_dp *dp,
@@ -309,10 +300,6 @@ struct ath12k_dp_peer *ath12k_dp_peer_find_by_peerid_index(struct ath12k_dp *dp,
 struct ath12k_dp_link_peer *
 ath12k_dp_link_peer_find_by_peerid_index(struct ath12k_dp *dp,
 					 struct ath12k_pdev_dp *dp_pdev, u16 peer_id);
-struct ath12k_dp_link_peer *
-ath12k_dp_link_peer_find_by_ml_peer_vdev_id(struct ath12k_dp *dp,
-					    int peer_id,
-					    int vdev_id);
 static inline struct ieee80211_sta *
 ath12k_dp_peer_get_sta(const struct ath12k_dp_peer *peer)
 {

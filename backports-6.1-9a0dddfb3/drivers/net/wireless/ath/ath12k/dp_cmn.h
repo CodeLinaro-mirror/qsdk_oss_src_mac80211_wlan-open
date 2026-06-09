@@ -266,8 +266,6 @@ ath12k_dp_link_peer_batch_cleanup(struct ath12k *ar,
 unsigned long ath12k_link_peer_last_active(struct ath12k_dp_link_peer *link_peer);
 void ath12k_link_peer_get_sta_rate_info_stats(struct ath12k_dp_link_peer *link_peer,
 					      struct ath12k_dp_link_peer_rate_info *rate_info);
-bool ath12k_dp_link_peer_reset_rx_stats(struct ath12k_dp *dp, const u8 *addr);
-bool ath12k_dp_link_peer_reset_tx_stats(struct ath12k_dp *dp, const u8 *addr);
 int ath12k_dp_mon_init(struct ath12k_dp *dp);
 void ath12k_dp_mon_deinit(struct ath12k_dp *dp);
 void ath12k_dp_cp_link_peer_unassign(struct ath12k *ar, struct ath12k_link_vif *arvif,
