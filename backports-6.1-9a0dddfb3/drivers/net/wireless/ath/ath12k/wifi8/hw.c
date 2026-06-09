@@ -1201,7 +1201,7 @@ static void ath12k_wifi8_mac_op_tx(struct ieee80211_hw *hw,
 
 		ath12k_wifi8_mcbc_handler(dp_vif, link_id, arsta, skb, is_eth,
 					  gsn_valid, is_sta, &skb_ctrl, qos_nw_delay,
-					  htt_mesh, vlan_ahvif, &info_tx);
+					  htt_mesh, vlan_ahvif, &info_tx, sta);
 		ieee80211_free_txskb(hw, skb);
 	}
 

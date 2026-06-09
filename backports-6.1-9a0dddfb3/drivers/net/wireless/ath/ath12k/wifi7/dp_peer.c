@@ -63,7 +63,7 @@ int ath12k_wifi7_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 				struct ath12k_dp_peer_create_params *params,
 				struct ieee80211_vif *vif)
 {
-	u8 i = 0;
+	u8 i = 0, tid;
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
 	struct ath12k_dp_peer *dp_peer;
 	struct ieee80211_sta *sta = NULL;
@@ -72,6 +72,7 @@ int ath12k_wifi7_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 	struct wireless_dev *wdev;
 	struct ath12k_pdev_dp *dp_pdev;
 	int ret;
+	struct ath12k_dp_rx_tid *rx_tid;
 
 	if (params->sta) {
 		sta = params->sta;
@@ -112,6 +113,11 @@ int ath12k_wifi7_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 		if (sta && sta->mlo)
 			ath12k_wifi7_peer_ml_id_free(ah, ahsta);
 		return -ENOMEM;
+	}
+
+	for (tid = 0; tid < ATH12K_MAX_TIDS; tid++) {
+		rx_tid = &dp_peer->rx_tid[tid];
+		spin_lock_init(&rx_tid->tid_lock);
 	}
 
 	spin_lock_init(&dp_peer->keys_lock);

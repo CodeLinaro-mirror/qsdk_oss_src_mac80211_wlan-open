@@ -217,26 +217,32 @@ int ath12k_dp_ppe_rxole_rxdma_cfg(struct ath12k_base *ab)
 EXPORT_SYMBOL(ath12k_dp_ppe_rxole_rxdma_cfg);
 #endif
 
-void ath12k_dp_peer_cleanup(struct ath12k *ar, int vdev_id, const u8 *addr)
+void ath12k_dp_peer_cleanup(struct ath12k *ar, void *ptr, int vdev_id, const u8 *addr)
 {
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_dp_link_peer *peer;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp_peer *dp_peer = (struct ath12k_dp_peer *)ptr;
 
 	/* TODO: Any other peer specific DP cleanup */
+	if (!dp_peer)
+		return;
 
-	spin_lock_bh(&dp->dp_lock);
-	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, vdev_id, addr);
-	if (!peer || !peer->dp_peer) {
+	rcu_read_lock();
+	peer = ath12k_dp_link_peer_find_by_mac_addr(dp_peer, addr);
+	if (!peer) {
 		ath12k_dbg(ab, ATH12K_DBG_PEER,
 			   "failed to lookup peer %pM on vdev %d\n",
 			   addr, vdev_id);
-		spin_unlock_bh(&dp->dp_lock);
+		rcu_read_unlock();
 		return;
 	}
 
+	spin_lock_bh(&dp->dp_lock);
+
 	if (!peer->primary_link) {
 		spin_unlock_bh(&dp->dp_lock);
+		rcu_read_unlock();
 		return;
 	}
 
@@ -247,12 +253,14 @@ void ath12k_dp_peer_cleanup(struct ath12k *ar, int vdev_id, const u8 *addr)
 	if (peer->primary_link)
 		peer->dp_peer->primary_link_frag_setup = false;
 	spin_unlock_bh(&dp->dp_lock);
+	rcu_read_unlock();
 }
 
-int ath12k_dp_peer_setup(struct ath12k *ar, struct ath12k_link_vif *arvif, const u8 *addr)
+int ath12k_dp_peer_setup(struct ath12k *ar, void *ptr, struct ath12k_link_vif *arvif,
+			 const u8 *addr, u8 link_id)
 {
 	struct ath12k_base *ab = ar->ab;
-	struct ath12k_dp_link_peer *peer;
+	struct ath12k_dp_link_peer *link_peer;
 	u32 reo_dest, vdev_id = arvif->vdev_id;
 	struct ieee80211_vif *vif = arvif->ahvif->vif;
 	int ret = 0, tid;
@@ -262,6 +270,11 @@ int ath12k_dp_peer_setup(struct ath12k *ar, struct ath12k_link_vif *arvif, const
 	struct crypto_shash *tfm;
 	u32 ba_win_size;
 	u16 ssn;
+	struct ath12k_dp_rx_tid *rx_tid;
+	struct ath12k_dp_peer *dp_peer = (struct ath12k_dp_peer *)ptr;
+
+	if (!dp_peer)
+		return -ENOENT;
 
 	/* NOTE: reo_dest ring id starts from 1 unlike mac_id which starts from 0 */
 	reo_dest = ar->dp.mac_id + 1;
@@ -295,36 +308,35 @@ int ath12k_dp_peer_setup(struct ath12k *ar, struct ath12k_link_vif *arvif, const
 	if (IS_ERR(tfm))
 		return PTR_ERR(tfm);
 
-	spin_lock_bh(&dp->dp_lock);
-	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, vdev_id, addr);
-	if (!peer) {
+	rcu_read_lock();
+	link_peer = ath12k_dp_link_peer_find_by_logical_link_id(dp_peer, link_id);
+	if (!link_peer) {
 		ath12k_warn(ab, "failed to find the peer to del rx tid\n");
-		spin_unlock_bh(&dp->dp_lock);
+		rcu_read_unlock();
 		ret = -ENOENT;
 		goto free_shash;
 	}
 
-	sta = ath12k_dp_link_peer_get_sta(peer);
+	spin_lock_bh(&dp->dp_lock);
+
+	sta = ath12k_dp_link_peer_get_sta(link_peer);
 	ahsta = ath12k_sta_to_ahsta(sta);
-	if (peer->mlo && peer->link_id != ahsta->primary_link_id) {
-		peer->primary_link = false;
+	if (link_peer->mlo && link_peer->link_id != ahsta->primary_link_id) {
+		link_peer->primary_link = false;
 		arvif->primary_sta_link = false;
 		if (ar->dp.dp_hw) {
-			spin_lock_bh(&ar->dp.dp_hw->peer_hash_lock);
-			if (peer->dp_peer->qos_stats_lvl ==
-			    ATH12K_QOS_MULTI_LINK_STATS)
-				ath12k_dp_qos_stats_alloc(ar, vif, peer);
-			spin_unlock_bh(&ar->dp.dp_hw->peer_hash_lock);
+			if (dp_peer->qos_stats_lvl == ATH12K_QOS_MULTI_LINK_STATS)
+				ath12k_dp_qos_stats_alloc(ar, vif, link_peer);
 		}
 		spin_unlock_bh(&dp->dp_lock);
 		goto free_shash;
 	}
 
-	peer->primary_link = true;
+	link_peer->primary_link = true;
 	arvif->primary_sta_link = true;
 
 	/* Allocate qos stats for primary link alone */
-	ath12k_dp_qos_stats_alloc(ar, vif, peer);
+	ath12k_dp_qos_stats_alloc(ar, vif, link_peer);
 
 	spin_unlock_bh(&dp->dp_lock);
 
@@ -335,54 +347,43 @@ int ath12k_dp_peer_setup(struct ath12k *ar, struct ath12k_link_vif *arvif, const
 
 	for (tid = 0; tid < ab->hal.hal_params->num_tids; tid++) {
 		ath12k_dp_rx_peer_tid_ba_config(dp, tid, &ba_win_size, &ssn);
-		ret = ath12k_dp_rx_peer_tid_setup(ar, addr, vdev_id, tid, ba_win_size,
-						  ssn, HAL_PN_TYPE_NONE);
+		ret = ath12k_dp_rx_peer_tid_setup(ar, dp_peer, addr, vdev_id, tid,
+						  ba_win_size, ssn, HAL_PN_TYPE_NONE);
 		if (ret) {
 			ath12k_warn(ab, "failed to setup rxd tid queue for tid %d: %d\n",
 				    tid, ret);
-			goto peer_clean;
+			goto tid_clean;
 		}
 	}
 
 	spin_lock_bh(&dp->dp_lock);
-	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, vdev_id, addr);
-	if (!peer) {
-		ath12k_warn(ab, "failed to find the peer to set up fragment info\n");
-		ret = -ENOENT;
-		spin_unlock_bh(&dp->dp_lock);
-		goto free_shash;
-	}
 
-	ret = ath12k_dp_rx_peer_frag_setup(ar, peer, tfm);
+	ret = ath12k_dp_rx_peer_frag_setup(ar, link_peer, tfm);
 	if (ret) {
 		ath12k_warn(ab, "failed to setup rx defrag context\n");
 		goto tid_clean;
 	}
 
-	ath12k_dp_ipa_peer_notify(ar, peer, arvif, vdev_id, true);
+	ath12k_dp_ipa_peer_notify(ar, link_peer, arvif, vdev_id, true);
 	spin_unlock_bh(&dp->dp_lock);
 
 	/* TODO: Setup other peer specific resource used in data path */
 
+	rcu_read_unlock();
 	return 0;
 
-peer_clean:
-	spin_lock_bh(&dp->dp_lock);
-	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, vdev_id, addr);
-	if (!peer) {
-		spin_unlock_bh(&dp->dp_lock);
-		ath12k_warn(ab, "failed to find the peer in err case of del rx tid\n");
-		goto free_shash;
-	}
-
 tid_clean:
-	for (tid--; tid >= 0; tid--)
-		ath12k_dp_arch_rx_peer_tid_delete(ab->dp, ar, peer, tid);
+	for (tid--; tid >= 0; tid--) {
+		rx_tid = &link_peer->dp_peer->rx_tid[tid];
 
-	spin_unlock_bh(&dp->dp_lock);
+		spin_lock_bh(&rx_tid->tid_lock);
+		ath12k_dp_arch_rx_peer_tid_delete(ab->dp, ar, link_peer, tid);
+		spin_unlock_bh(&rx_tid->tid_lock);
+	}
 
 free_shash:
 	crypto_free_shash(tfm);
+	rcu_read_unlock();
 	return ret;
 }
 

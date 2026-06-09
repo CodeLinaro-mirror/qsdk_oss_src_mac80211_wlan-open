@@ -256,7 +256,8 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 			       struct ieee80211_sta *sta, u8 *addr, u8 link_id,
 			       struct ieee80211_vif *vif, u8 vp_type, int vp_num,
 			       bool mlo_bridge_peer);
-void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr);
+void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr,
+				  struct ieee80211_sta *sta);
 int
 ath12k_dp_link_peer_batch_cleanup(struct ath12k *ar,
 				  bool (*peer_match)(struct ath12k_dp_link_peer *,

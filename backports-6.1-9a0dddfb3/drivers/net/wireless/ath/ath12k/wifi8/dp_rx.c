@@ -813,8 +813,9 @@ int ath12k_wifi8_peer_rx_tid_reo_update_for_smd(struct ath12k_base *ab,
 	}
 
 	rx_tid = &dp_peer->rx_tid[rx_tid_ctx->tid];
-
+	spin_lock_bh(&rx_tid->tid_lock);
 	if (!rx_tid->active) {
+		spin_unlock_bh(&rx_tid->tid_lock);
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		ath12k_warn(ab, "inactive rx tid %d for peer %pM\n",
 			    rx_tid_ctx->tid, peer_addr);
@@ -829,6 +830,7 @@ int ath12k_wifi8_peer_rx_tid_reo_update_for_smd(struct ath12k_base *ab,
 						   HAL_REO_CMD_FLUSH_CACHE,
 						   &cmd, NULL);
 		if (ret) {
+			spin_unlock_bh(&rx_tid->tid_lock);
 			spin_unlock_bh(&dp_hw->peer_hash_lock);
 			ath12k_warn(ab, "Failed REO cache flush cmd for tid %d: %d\n",
 				    rx_tid_ctx->tid, ret);
@@ -874,6 +876,7 @@ send_cmd:
 						    HAL_REO_CMD_UPDATE_RX_QUEUE,
 						    &cmd, NULL);
 	if (ret) {
+		spin_unlock_bh(&rx_tid->tid_lock);
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		ath12k_warn(ab, "Failed REO update cmd for tid %d: %d\n",
 			    rx_tid_ctx->tid, ret);
@@ -889,6 +892,7 @@ send_cmd:
 	ret = ath12k_wifi8_hal_reo_qdesc_update_bitmaps_direct(ab, rx_tid,
 							       rx_tid_ctx);
 	if (ret) {
+		spin_unlock_bh(&rx_tid->tid_lock);
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		ath12k_warn(ab, "Failed bitmap update for tid %d: %d\n",
 			    rx_tid_ctx->tid, ret);
@@ -896,6 +900,7 @@ send_cmd:
 	}
 
 done:
+	spin_unlock_bh(&rx_tid->tid_lock);
 	spin_unlock_bh(&dp_hw->peer_hash_lock);
 	ath12k_dbg(ab, ATH12K_DBG_DP_RX,
 		   "SMD REO update done for peer %pM tid %d: SSN=0x%x\n",
@@ -963,8 +968,9 @@ int ath12k_wifi8_peer_rx_tid_reo_clear_vld(struct ath12k_base *ab,
 	}
 
 	rx_tid = &dp_peer->rx_tid[tid];
-
+	spin_lock_bh(&rx_tid->tid_lock);
 	if (!rx_tid->active) {
+		spin_unlock_bh(&rx_tid->tid_lock);
 		ath12k_warn(ab, "inactive rx tid %d for peer %pM, skip VLD clear\n",
 			    tid, peer_addr);
 		return -EINVAL;
@@ -986,6 +992,8 @@ int ath12k_wifi8_peer_rx_tid_reo_clear_vld(struct ath12k_base *ab,
 						    sizeof(*rx_tid),
 						    HAL_REO_CMD_UPDATE_RX_QUEUE,
 						    &cmd, NULL);
+	spin_unlock_bh(&rx_tid->tid_lock);
+
 	if (ret) {
 		ath12k_warn(ab, "failed REO VLD clear cmd for peer %pM tid %d: %d\n",
 			    peer_addr, tid, ret);
@@ -2789,7 +2797,7 @@ static int ath12k_wifi8_dp_rx_frag_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	rx_tid = &peer->rx_tid[tid];
-
+	spin_lock_bh(&rx_tid->tid_lock);
 	if ((!skb_queue_empty(&rx_tid->rx_frags) && seqno != rx_tid->cur_sn) ||
 	    skb_queue_empty(&rx_tid->rx_frags)) {
 		/* Flush stored fragments and start a new sequence */
@@ -2799,6 +2807,7 @@ static int ath12k_wifi8_dp_rx_frag_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 
 	if (rx_tid->rx_frag_bitmap & BIT(frag_no)) {
 		/* Fragment already present */
+		spin_unlock_bh(&rx_tid->tid_lock);
 		ret = -EINVAL;
 		goto out_unlock;
 	}
@@ -2817,6 +2826,7 @@ static int ath12k_wifi8_dp_rx_frag_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 						sizeof(*rx_tid->dst_ring_desc),
 						GFP_ATOMIC);
 		if (!rx_tid->dst_ring_desc) {
+			spin_unlock_bh(&rx_tid->tid_lock);
 			ret = -ENOMEM;
 			goto out_unlock;
 		}
@@ -2829,16 +2839,15 @@ static int ath12k_wifi8_dp_rx_frag_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	    rx_tid->rx_frag_bitmap != GENMASK(rx_tid->last_frag_no, 0)) {
 		mod_timer(&rx_tid->frag_timer, jiffies +
 					       ATH12K_DP_RX_FRAGMENT_TIMEOUT_MS);
+		spin_unlock_bh(&rx_tid->tid_lock);
 		goto out_unlock;
 	}
 
-	spin_unlock_bh(&dp->dp_lock);
-	del_timer_sync(&rx_tid->frag_timer);
-	spin_lock_bh(&dp->dp_lock);
+	spin_unlock_bh(&rx_tid->tid_lock);
 
-	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, peer_id);
-	if (!peer)
-		goto err_frags_cleanup;
+	del_timer_sync(&rx_tid->frag_timer);
+
+	spin_lock_bh(&rx_tid->tid_lock);
 
 	if (!ath12k_wifi8_dp_rx_h_defrag_validate_incr_pn(dp_pdev, rx_tid, enctype))
 		goto err_frags_cleanup;
@@ -2855,11 +2864,13 @@ static int ath12k_wifi8_dp_rx_frag_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 		goto err_frags_cleanup;
 
 	ath12k_dp_rx_frags_cleanup(rx_tid, false);
+	spin_unlock_bh(&rx_tid->tid_lock);
 	goto out_unlock;
 
 err_frags_cleanup:
 	dev_kfree_skb_any(defrag_skb);
 	ath12k_dp_rx_frags_cleanup(rx_tid, true);
+	spin_unlock_bh(&rx_tid->tid_lock);
 out_unlock:
 	spin_unlock_bh(&dp->dp_lock);
 	return ret;

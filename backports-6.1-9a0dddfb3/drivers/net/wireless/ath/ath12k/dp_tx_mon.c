@@ -2445,9 +2445,10 @@ ath12k_dp_ext_mon_filter_rx_ctrl(struct ath12k_pdev_dp *dp_pdev,
 				 u32 subtype_filter,
 				 struct ieee80211_hdr *wh)
 {
+	u16 peer_id;
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	struct ath12k_dp *dp = dp_pdev->dp;
-	struct ath12k_dp_link_peer *link_peer;
+	struct ath12k_dp_peer *dp_peer;
 	struct ath12k_dp_ext_mon_peer *peer;
 	struct ath12k_dp_rx_ext_mon *rx_ext_mon = NULL;
 
@@ -2460,15 +2461,16 @@ ath12k_dp_ext_mon_filter_rx_ctrl(struct ath12k_pdev_dp *dp_pdev,
 		return false;
 
 	if (tx_ppdu_info->ack_recvd) {
-		spin_lock_bh(&dp->dp_lock);
-		link_peer = ath12k_dp_link_peer_find_by_addr(dp, wh->addr2);
+		rcu_read_lock();
+		peer_id = tx_ppdu_info->rx_status.userstats[0].sw_peer_id;
+		dp_peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev,
+							      peer_id);
 		/* Excluding ACK for non-connected clients */
-		if (!link_peer || link_peer->peer_id ==
-		    tx_ppdu_info->rx_status.userstats[0].sw_peer_id) {
-			spin_unlock_bh(&dp->dp_lock);
+		if (!dp_peer || dp_peer->is_vdev_peer) {
+			rcu_read_unlock();
 			return false;
 		}
-		spin_unlock_bh(&dp->dp_lock);
+		rcu_read_unlock();
 	}
 
 	spin_lock(&dp_mon_pdev->rx_ext_mon_lock);

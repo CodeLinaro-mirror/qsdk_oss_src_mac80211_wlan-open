@@ -1899,6 +1899,8 @@ static int ath12k_wifi7_dp_rx_frag_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 
 	rx_tid = &peer->rx_tid[tid];
 
+	spin_lock_bh(&rx_tid->tid_lock);
+
 	if ((!skb_queue_empty(&rx_tid->rx_frags) && seqno != rx_tid->cur_sn) ||
 	    skb_queue_empty(&rx_tid->rx_frags)) {
 		/* Flush stored fragments and start a new sequence */
@@ -1909,6 +1911,7 @@ static int ath12k_wifi7_dp_rx_frag_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	if (rx_tid->rx_frag_bitmap & BIT(frag_no)) {
 		/* Fragment already present */
 		ret = -EINVAL;
+		spin_unlock_bh(&rx_tid->tid_lock);
 		goto out_unlock;
 	}
 
@@ -1927,6 +1930,7 @@ static int ath12k_wifi7_dp_rx_frag_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 						GFP_ATOMIC);
 		if (!rx_tid->dst_ring_desc) {
 			ret = -ENOMEM;
+			spin_unlock_bh(&rx_tid->tid_lock);
 			goto out_unlock;
 		}
 	} else {
@@ -1938,16 +1942,15 @@ static int ath12k_wifi7_dp_rx_frag_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	    rx_tid->rx_frag_bitmap != GENMASK(rx_tid->last_frag_no, 0)) {
 		mod_timer(&rx_tid->frag_timer, jiffies +
 					       ATH12K_DP_RX_FRAGMENT_TIMEOUT_MS);
+		spin_unlock_bh(&rx_tid->tid_lock);
 		goto out_unlock;
 	}
 
-	spin_unlock_bh(&dp->dp_lock);
-	del_timer_sync(&rx_tid->frag_timer);
-	spin_lock_bh(&dp->dp_lock);
+	spin_unlock_bh(&rx_tid->tid_lock);
 
-	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, peer_id);
-	if (!peer)
-		goto err_frags_cleanup;
+	del_timer_sync(&rx_tid->frag_timer);
+
+	spin_lock_bh(&rx_tid->tid_lock);
 
 	if (!ath12k_wifi7_dp_rx_h_defrag_validate_incr_pn(dp_pdev, rx_tid, enctype))
 		goto err_frags_cleanup;
@@ -1967,11 +1970,14 @@ static int ath12k_wifi7_dp_rx_frag_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	ath12k_dp_rx_frags_cleanup(rx_tid, false);
+
+	spin_unlock_bh(&rx_tid->tid_lock);
 	goto out_unlock;
 
 err_frags_cleanup:
 	dev_kfree_skb_any(defrag_skb);
 	ath12k_dp_rx_frags_cleanup(rx_tid, true);
+	spin_unlock_bh(&rx_tid->tid_lock);
 out_unlock:
 	spin_unlock_bh(&dp->dp_lock);
 	return ret;
@@ -2818,7 +2824,7 @@ int ath12k_wifi7_dp_rx_flow_delete_all_entries(struct ath12k_dp *dp)
 
 int ath12k_wifi7_dp_peer_migrate_reo_cmd(struct ath12k_dp *dp,
 					 struct ath12k_dp_link_peer *peer,
-					 u16 peer_id, u8 chip_id)
+					 u16 peer_id, u8 chip_id, u8 pdev_id)
 {
 	struct ath12k_hal_reo_cmd cmd = {0};
 	struct ath12k_dp_rx_tid *rx_tid;
@@ -2828,6 +2834,7 @@ int ath12k_wifi7_dp_peer_migrate_reo_cmd(struct ath12k_dp *dp,
 	for (tid = 0; tid < ab->hal.hal_params->num_tids; tid++) {
 		rx_tid = &peer->dp_peer->rx_tid[tid];
 
+		spin_lock_bh(&rx_tid->tid_lock);
 		ath12k_wifi7_peer_rx_tid_qref_reset(ab, peer->dp_peer->peer_id, tid);
 		ath12k_wifi7_hal_reo_shared_qaddr_cache_clear(ab);
 
@@ -2837,17 +2844,24 @@ int ath12k_wifi7_dp_peer_migrate_reo_cmd(struct ath12k_dp *dp,
 		ret = ath12k_wifi7_dp_reo_cmd_send(ab, rx_tid, sizeof(*rx_tid),
 						   HAL_REO_CMD_FLUSH_QUEUE,
 						   &cmd, NULL);
+
 		if (ret) {
 			ath12k_warn(ab, "failed to flush rx tid queue, tid %d (%d)\n",
 				    rx_tid->tid, ret);
+			spin_unlock_bh(&rx_tid->tid_lock);
 			return ret;
 		}
+		spin_unlock_bh(&rx_tid->tid_lock);
 	}
 
 	cmd.flag = 0;
 	rx_tid = &peer->dp_peer->rx_tid[0];
+
+	spin_lock_bh(&rx_tid->tid_lock);
+
 	rx_tid->chip_id = chip_id;
 	rx_tid->peer_id = peer_id;
+	rx_tid->pdev_id = pdev_id;
 
 	cmd.addr_lo = lower_32_bits(rx_tid->paddr);
 	cmd.addr_hi = upper_32_bits(rx_tid->paddr);
@@ -2860,6 +2874,7 @@ int ath12k_wifi7_dp_peer_migrate_reo_cmd(struct ath12k_dp *dp,
 					   ath12k_dp_primary_peer_migrate_setup);
 	if (ret) {
 		ath12k_warn(ab, "failed to flush cache for peer_id %x\n", peer->peer_id);
+		spin_unlock_bh(&rx_tid->tid_lock);
 		return ret;
 	}
 
@@ -2872,6 +2887,7 @@ int ath12k_wifi7_dp_peer_migrate_reo_cmd(struct ath12k_dp *dp,
 	if (ret)
 		ath12k_warn(ab, "failed to unblock cache for peer_id %x\n", peer->peer_id);
 
+	spin_unlock_bh(&rx_tid->tid_lock);
 	return ret;
 }
 

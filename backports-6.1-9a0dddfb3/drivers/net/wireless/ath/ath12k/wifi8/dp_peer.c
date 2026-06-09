@@ -199,7 +199,7 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 				struct ath12k_dp_peer_create_params *params,
 				struct ieee80211_vif *vif)
 {
-	u8 i = 0;
+	u8 i = 0, tid;
 	struct ath12k_dp_peer *dp_peer;
 	struct ath12k_dp_hw *dp_hw = &ah->dp_hw;
 	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8;
@@ -207,6 +207,7 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 	struct ath12k_sta *ahsta = NULL;
 	struct ath12k_pdev_dp *dp_pdev;
 	int ret;
+	struct ath12k_dp_rx_tid *rx_tid;
 
 	dp_hw_grp_wifi8 = ath12k_get_dp_hw_group_wifi8(ah->ag->dp_hw_grp);
 
@@ -241,6 +242,11 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 		return ret;
 	}
 	rcu_read_unlock();
+
+	for (tid = 0; tid < ATH12K_MAX_TIDS; tid++) {
+		rx_tid = &dp_peer->rx_tid[tid];
+		spin_lock_init(&rx_tid->tid_lock);
+	}
 
 	spin_lock_init(&dp_peer->keys_lock);
 	dp_peer->sta_id = ATH12K_STA_ID_INVALID;
@@ -616,22 +622,6 @@ void ath12k_wifi8_dp_link_peer_unassign_id(struct ath12k_dp *dp, struct ath12k *
 	ath12k_wifi8_stats_id_map_update_hw_link(dp_hw_grp_wifi8, peer->dp_peer,
 						       peer);
 	clear_bit(peer->link_band_id, dp_hw_grp_wifi8->free_link_band_id);
-}
-
-void ath12k_wifi8_dp_link_peer_delete(struct ath12k_base *ab, u32 vdev_id, u8 *addr)
-{
-	struct ath12k_dp_link_peer *peer;
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-
-	spin_lock_bh(&dp->dp_lock);
-
-	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(ab->dp, vdev_id, addr);
-	if (!peer)
-		goto exit;
-
-	ath12k_link_peer_free(peer);
-exit:
-	spin_unlock_bh(&dp->dp_lock);
 }
 
 int ath12k_dp_tqm_update_mpduq_sn_pn(struct ath12k_base *ab,
