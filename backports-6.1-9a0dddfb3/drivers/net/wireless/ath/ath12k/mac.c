@@ -6513,6 +6513,7 @@ ath12k_mac_op_change_vif_links(struct ieee80211_hw *hw,
 				ath12k_mac_unassign_link_vif(scan_arvif);
 			} else {
 				scan_arvif->is_scan_vif = false;
+				scan_arvif->is_mlprobe_scan_vif = false;
 			}
 		}
 	}
@@ -6555,6 +6556,7 @@ ath12k_mac_op_change_vif_links(struct ieee80211_hw *hw,
 			}
 			arvif->is_started = false;
 			arvif->is_scan_vif = false;
+			arvif->is_mlprobe_scan_vif = false;
 		}
 
 		/* In case of SSR in progress arvif->is_created is explicitly
@@ -10303,6 +10305,31 @@ ath12k_mac_find_link_id_by_ar(struct ath12k_vif *ahvif, struct ath12k *ar)
 	return ffs(~scan_links_map) - 1;
 }
 
+static bool
+ath12k_mac_scan_probe_req_has_ml_ie(const struct cfg80211_scan_request *req)
+{
+	const struct ieee80211_multi_link_elem *mle;
+	const struct element *elem;
+
+	if (!req->ie || !req->ie_len)
+		return false;
+
+	for_each_element_extid(elem, WLAN_EID_EXT_EHT_MULTI_LINK,
+			       req->ie, req->ie_len) {
+		if (elem->datalen < 1 + sizeof(*mle))
+			continue;
+
+		mle = (const void *)&elem->data[1];
+		if (le16_get_bits(mle->control, IEEE80211_ML_CONTROL_TYPE) !=
+		    IEEE80211_ML_CONTROL_TYPE_PREQ)
+			continue;
+
+		return true;
+	}
+
+	return false;
+}
+
 static int ath12k_mac_initiate_hw_scan(struct ieee80211_hw *hw,
 				       struct ieee80211_vif *vif,
 				       struct ieee80211_scan_request *hw_req,
@@ -10387,12 +10414,16 @@ static int ath12k_mac_initiate_hw_scan(struct ieee80211_hw *hw,
 			return -ENOMEM;
 		}
 
+		arvif->is_scan_vif = true;
+		arvif->is_mlprobe_scan_vif =
+			ath12k_mac_scan_probe_req_has_ml_ie(req);
+
 		if (arvif->link_id == ATH12K_DEFAULT_SCAN_LINK &&
+		    !arvif->is_mlprobe_scan_vif &&
 		    (!is_broadcast_ether_addr(req->bssid) &&
 		     !is_zero_ether_addr(req->bssid)))
 			memcpy(arvif->bssid, req->bssid, ETH_ALEN);
 
-		arvif->is_scan_vif = true;
 		ret = ath12k_mac_vdev_create(ar, arvif, false);
 		if (ret) {
 			ath12k_mac_unassign_link_vif(arvif);
@@ -18823,6 +18854,10 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		}
 
 		if (arvif->link_id == ATH12K_DEFAULT_SCAN_LINK &&
+		    arvif->is_mlprobe_scan_vif) {
+			memcpy(link_addr, vif->addr, ETH_ALEN);
+			memcpy(arvif->bssid, vif->addr, ETH_ALEN);
+		} else if (arvif->link_id == ATH12K_DEFAULT_SCAN_LINK &&
 		    !is_zero_ether_addr(arvif->bssid)) {
 			memcpy(link_addr, arvif->bssid, ETH_ALEN);
 		} else if (link_conf) {
@@ -18974,6 +19009,9 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	ret = ath12k_mac_cu_mem_setup(ar, arvif, &vdev_arg);
 	if (ret)
 		goto err;
+
+	if (arvif->is_scan_vif && arvif->is_mlprobe_scan_vif)
+		ether_addr_copy(vdev_arg.mld_addr, ahvif->vif->addr);
 
 	vdev_create_mac = (vdev_arg.type == WMI_VDEV_TYPE_MONITOR) ? mac_addr :
 				arvif->bssid;
@@ -20034,6 +20072,7 @@ err_vdev_del:
 	/* TODO: recal traffic pause state based on the available vdevs */
 	arvif->is_created = false;
 	arvif->is_scan_vif = false;
+	arvif->is_mlprobe_scan_vif = false;
 	arvif->ar = NULL;
 	arvif->peer_del_all_enable = false;
 
@@ -20121,6 +20160,7 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 				arvif->is_started = false;
 				ar->scan.arvif = NULL;
 				arvif->is_scan_vif = false;
+				arvif->is_mlprobe_scan_vif = false;
 			}
 			wiphy_work_cancel(hw->wiphy, &ar->scan.vdev_clean_wk);
 
@@ -20149,6 +20189,7 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 			}
 			arvif->is_started = false;
 			arvif->is_scan_vif = false;
+			arvif->is_mlprobe_scan_vif = false;
 		}
 
 		ath12k_mac_remove_link_interface(hw, arvif);
