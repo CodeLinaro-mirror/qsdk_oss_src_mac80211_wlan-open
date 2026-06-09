@@ -2818,7 +2818,6 @@ ath12k_wifi8_dp_tx_update_txcompl(struct ath12k_pdev_dp *dp_pdev,
 	struct ieee80211_sta *sta;
 	struct ath12k_sta *ahsta;
 	struct ath12k_dp_peer *dp_peer;
-	struct ath12k_link_sta *arsta;
 	struct rate_info txrate = {0};
 	u16 rate, ru_tones;
 	u8 rate_idx = 0;
@@ -2841,15 +2840,9 @@ ath12k_wifi8_dp_tx_update_txcompl(struct ath12k_pdev_dp *dp_pdev,
 	}
 	sta = ath12k_dp_link_peer_get_sta(peer);
 	ahsta = ath12k_sta_to_ahsta(sta);
-	arsta = &ahsta->deflink;
 
-	/* This is to prefer choose the real NSS value arsta->last_txrate.nss,
-	 * if it is invalid, then choose the NSS value while assoc.
-	 */
 	if (peer->last_txrate.nss)
 		txrate.nss = peer->last_txrate.nss;
-	else
-		txrate.nss = arsta->peer_nss;
 	spin_unlock_bh(&dp->dp_lock);
 
 	switch (ts->pkt_type) {
@@ -3104,7 +3097,7 @@ static void ath12k_wifi8_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 	 * Might end up reporting it out-of-band from HTT stats.
 	 */
 
-	if (ath12k_extd_tx_stats_enabled(ar)) {
+	if (ath12k_extd_tx_stats_enabled(&ar->dp)) {
 		if (ts->flags & HAL_TX_STATUS_FLAGS_FIRST_MSDU) {
 			if (ar->last_ppdu_id == 0) {
 				ar->last_ppdu_id = ts->ppdu_id;

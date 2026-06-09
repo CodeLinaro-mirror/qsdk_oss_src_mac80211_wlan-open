@@ -1556,9 +1556,8 @@ static ssize_t ath12k_dbg_sta_dump_tx_stats(struct file *file,
 	struct ath12k_link_sta *arsta;
 	struct ath12k *ar;
 	struct ath12k_dp_link_peer *link_peer;
-	struct ath12k_dp_peer *peer;
+	struct ath12k_dp_peer *dp_peer = NULL;
 	struct ath12k_dp_peer_stats *peer_stats;
-        struct ath12k_dp *dp;
 	struct ath12k_htt_tx_stats *tx_stats;
 	struct ath12k_htt_data_stats *stats;
 	static const char *str_name[ATH12K_STATS_TYPE_MAX] = {"success", "fail",
@@ -1580,43 +1579,53 @@ static ssize_t ath12k_dbg_sta_dump_tx_stats(struct file *file,
 	wiphy_lock(ah->hw->wiphy);
 
 	if (!(BIT(link_id) & ahsta->links_map)) {
-                wiphy_unlock(ah->hw->wiphy);
-                return -ENOENT;
-        }
+		retval = -ENOENT;
+		goto unlock;
+	}
 
-        arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
-        if (!arsta || !arsta->arvif->ar) {
-                wiphy_unlock(ah->hw->wiphy);
-                return -ENOENT;
-        }
+	arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
+	if (!arsta || !arsta->arvif || !arsta->arvif->ar) {
+		retval = -ENOENT;
+		goto unlock;
+	}
 
-        ar = arsta->arvif->ar;
+	ar = arsta->arvif->ar;
+	if (!ar) {
+		retval = -ENOENT;
+		goto unlock;
+	}
 
-	dp = ath12k_ab_to_dp(ar->ab);
-        spin_lock_bh(&dp->dp_lock);
+	dp_peer = ath12k_sta_get_dp_peer_wiphy_locked(ah->hw->wiphy, ahsta);
+	if (!dp_peer) {
+		retval = -ENOENT;
+		goto unlock;
+	}
 
-        link_peer = ath12k_dp_link_peer_find_by_addr(dp, arsta->addr);
-        if (!link_peer) {
-                spin_unlock_bh(&dp->dp_lock);
-                wiphy_unlock(ah->hw->wiphy);
-                return -ENOENT;
-        }
+	if (ar->hw_link_id >= ATH12K_DP_PEER_MAX_MLO_LINKS) {
+		retval = -ENOENT;
+		goto unlock;
+	}
+
+	rcu_read_lock();
+	link_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, ar->hw_link_id);
+	if (!link_peer) {
+		retval = -ENOENT;
+		goto unlock_rcu;
+	}
 
 	tx_stats = link_peer->peer_stats.tx_stats;
 	if (!tx_stats) {
-		spin_unlock_bh(&dp->dp_lock);
-		wiphy_unlock(ah->hw->wiphy);
-		return -ENOENT;
+		retval = -ENOENT;
+		goto unlock_rcu;
 	}
 
 	u8 *buf __free(kfree) = kzalloc(size, GFP_ATOMIC);
 	if (!buf) {
-		spin_unlock_bh(&dp->dp_lock);
-		wiphy_unlock(ah->hw->wiphy);
-		return -ENOENT;
+		retval = -ENOENT;
+		goto unlock_rcu;
 	}
-	peer = link_peer->dp_peer;
-	peer_stats = &peer->stats[ar->hw_link_id];
+
+	peer_stats = &dp_peer->stats[ar->hw_link_id];
 
 	for (k = 0; k < ATH12K_STATS_TYPE_MAX; k++) {
                for (j = 0; j < ATH12K_COUNTER_TYPE_MAX; j++) {
@@ -1766,11 +1775,13 @@ static ssize_t ath12k_dbg_sta_dump_tx_stats(struct file *file,
 				 wbm_rel_stats[j]);
 	}
 
-	spin_unlock_bh(&dp->dp_lock);
+unlock_rcu:
+	rcu_read_unlock();
 
 	if (len)
 		retval = simple_read_from_buffer(user_buf, count, ppos, buf, len);
 
+unlock:
 	wiphy_unlock(ah->hw->wiphy);
 	return retval;
 
@@ -1787,48 +1798,71 @@ static ssize_t ath12k_dbg_sta_reset_tx_stats(struct file *file,
                                              const char __user *buf,
                                              size_t count, loff_t *ppos)
 {
-        struct ieee80211_link_sta *link_sta = file->private_data;
-        struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(link_sta->sta);
-        struct ath12k_hw *ah = ahsta->ahvif->ah;
-        struct ath12k_link_sta *arsta;
-        u8 link_id = link_sta->link_id;
-        struct ath12k *ar;
-        bool reset;
-        int ret;
-        bool result;
+	struct ieee80211_link_sta *link_sta = file->private_data;
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(link_sta->sta);
+	struct ath12k_hw *ah = ahsta->ahvif->ah;
+	struct ath12k_link_sta *arsta;
+	u8 link_id = link_sta->link_id;
+	struct ath12k *ar;
+	struct ath12k_dp_peer *dp_peer = NULL;
+	struct ath12k_dp_link_peer *link_peer = NULL;
+	struct ath12k_htt_tx_stats *tx_stats;
+	bool reset;
+	int ret;
 
-        ret = kstrtobool_from_user(buf, count, &reset);
-        if (ret)
-                return ret;
+	ret = kstrtobool_from_user(buf, count, &reset);
+	if (ret)
+		return ret;
 
-        if (!reset)
-                return -EINVAL;
+	if (!reset)
+		return -EINVAL;
 
-        wiphy_lock(ah->hw->wiphy);
+	wiphy_lock(ah->hw->wiphy);
 
-        if (!(BIT(link_id) & ahsta->links_map)) {
-                ret = -ENOENT;
-                goto out;
-        }
+	if (!(BIT(link_id) & ahsta->links_map)) {
+		ret = -ENOENT;
+		goto unlock;
+	}
 
-        arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
-        if (!arsta || !arsta->arvif->ar) {
-                ret = -ENOENT;
-                goto out;
-        }
+	arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
+	if (!arsta || !arsta->arvif || !arsta->arvif->ar) {
+		ret = -ENOENT;
+		goto unlock;
+	}
 
-        ar = arsta->arvif->ar;
+	ar = arsta->arvif->ar;
+	if (!ar) {
+		ret = -ENOENT;
+		goto unlock;
+	}
 
-        result = ath12k_dp_link_peer_reset_tx_stats(ath12k_ab_to_dp(ar->ab), arsta->addr);
-        if (!result) {
-                ret = -ENOENT;
-                goto out;
-        }
+	dp_peer = ath12k_sta_get_dp_peer_wiphy_locked(ah->hw->wiphy, ahsta);
+	if (!dp_peer) {
+		ret = -ENOENT;
+		goto unlock;
+	}
 
-        ret = count;
-out:
-        wiphy_unlock(ah->hw->wiphy);
-        return ret;
+	rcu_read_lock();
+	link_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, ar->hw_link_id);
+	if (!link_peer) {
+		ret = -ENOENT;
+		goto unlock_rcu;
+	}
+
+	tx_stats = link_peer->peer_stats.tx_stats;
+	if (!tx_stats) {
+		ret = -ENOENT;
+		goto unlock_rcu;
+	}
+
+	memset(tx_stats, 0, sizeof(*tx_stats));
+	ret = count;
+
+unlock_rcu:
+	rcu_read_unlock();
+unlock:
+	wiphy_unlock(ah->hw->wiphy);
+	return ret;
 }
 
 static const struct file_operations fops_reset_tx_stats = {
@@ -1850,8 +1884,7 @@ ath12k_dbg_sta_dump_driver_rx_pkts_flow(struct file *file,
 	struct ath12k_link_sta *arsta;
 	struct ath12k *ar;
 	struct ath12k_dp_link_peer *link_peer;
-	struct ath12k_dp_peer *peer;
-	struct ath12k_dp *dp;
+	struct ath12k_dp_peer *dp_peer = NULL;
 	struct ath12k_dp_peer_stats *peer_stats;
 	u8 link_id = link_sta->link_id;
 	int len = 0, i, ret = 0;
@@ -1860,37 +1893,47 @@ ath12k_dbg_sta_dump_driver_rx_pkts_flow(struct file *file,
 	wiphy_lock(ah->hw->wiphy);
 
 	if (!(BIT(link_id) & ahsta->links_map)) {
-		wiphy_unlock(ah->hw->wiphy);
-		return -ENOENT;
+		ret = -ENOENT;
+		goto unlock;
 	}
 
 	arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
-	if (!arsta || !arsta->arvif->ar) {
-		wiphy_unlock(ah->hw->wiphy);
-		return -ENOENT;
+	if (!arsta || !arsta->arvif || !arsta->arvif->ar) {
+		ret = -ENOENT;
+		goto unlock;
 	}
 
 	ar = arsta->arvif->ar;
+	if (!ar) {
+		ret = -ENOENT;
+		goto unlock;
+	}
 
-	dp = ath12k_ab_to_dp(ar->ab);
-	spin_lock_bh(&dp->dp_lock);
+	dp_peer = ath12k_sta_get_dp_peer_wiphy_locked(ah->hw->wiphy, ahsta);
+	if (!dp_peer) {
+		ret = -ENOENT;
+		goto unlock;
+	}
 
-	link_peer = ath12k_dp_link_peer_find_by_addr(dp, arsta->addr);
+	if (ar->hw_link_id >= ATH12K_DP_PEER_MAX_MLO_LINKS) {
+		ret = -ENOENT;
+		goto unlock;
+	}
+
+	rcu_read_lock();
+	link_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, ar->hw_link_id);
 	if (!link_peer) {
-		spin_unlock_bh(&dp->dp_lock);
-		wiphy_unlock(ah->hw->wiphy);
-		return -ENOENT;
+		ret = -ENOENT;
+		goto unlock_rcu;
 	}
 
 	u8 *buf __free(kfree) = kzalloc(size, GFP_ATOMIC);
 	if (!buf) {
-		spin_unlock_bh(&dp->dp_lock);
-		wiphy_unlock(ah->hw->wiphy);
-		return -ENOENT;
+		ret = -ENOENT;
+		goto unlock_rcu;
 	}
 
-	peer = link_peer->dp_peer;
-	peer_stats = &peer->stats[ar->hw_link_id];
+	peer_stats = &dp_peer->stats[ar->hw_link_id];
 
 	for (i = 0; i < DP_REO_DST_RING_MAX; i++)
 		recv_from_reo += peer_stats->rx[i].recv_from_reo.packets;
@@ -1908,10 +1951,13 @@ ath12k_dbg_sta_dump_driver_rx_pkts_flow(struct file *file,
 
 	len += scnprintf(buf + len, size - len, "\n");
 
-	spin_unlock_bh(&dp->dp_lock);
+unlock_rcu:
+	rcu_read_unlock();
+
 	if (len)
 		ret = simple_read_from_buffer(user_buf, count, ppos, buf, len);
 
+unlock:
 	wiphy_unlock(ah->hw->wiphy);
 	return ret;
 }
@@ -2056,50 +2102,60 @@ static ssize_t ath12k_dbg_sta_dump_rx_stats(struct file *file,
 	struct ath12k_hw *ah = ahsta->ahvif->ah;
 	struct ath12k_rx_peer_stats *rx_stats;
 	struct ath12k_link_sta *arsta;
+	struct ath12k_dp_peer *dp_peer = NULL;
 	u8 link_id = link_sta->link_id;
 	int len = 0, i, ret = 0;
 	bool he_rates_avail;
 	struct ath12k *ar;
 	struct ath12k_dp_link_peer *link_peer;
-	struct ath12k_dp *dp;
 
 	wiphy_lock(ah->hw->wiphy);
 
 	if (!(BIT(link_id) & ahsta->links_map)) {
-		wiphy_unlock(ah->hw->wiphy);
-		return -ENOENT;
+		ret = -ENOENT;
+		goto unlock;
 	}
 
 	arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
-	if (!arsta || !arsta->arvif->ar) {
-		wiphy_unlock(ah->hw->wiphy);
-		return -ENOENT;
+	if (!arsta || !arsta->arvif || !arsta->arvif->ar) {
+		ret = -ENOENT;
+		goto unlock;
 	}
 
 	ar = arsta->arvif->ar;
+	if (!ar) {
+		ret = -ENOENT;
+		goto unlock;
+	}
 
-	dp = ath12k_ab_to_dp(ar->ab);
-	spin_lock_bh(&dp->dp_lock);
+	dp_peer = ath12k_sta_get_dp_peer_wiphy_locked(ah->hw->wiphy, ahsta);
+	if (!dp_peer) {
+		ret = -ENOENT;
+		goto unlock;
+	}
 
-	link_peer = ath12k_dp_link_peer_find_by_addr(dp, arsta->addr);
+	if (ar->hw_link_id >= ATH12K_DP_PEER_MAX_MLO_LINKS) {
+		ret = -ENOENT;
+		goto unlock;
+	}
+
+	rcu_read_lock();
+	link_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, ar->hw_link_id);
 	if (!link_peer) {
-		spin_unlock_bh(&dp->dp_lock);
-		wiphy_unlock(ah->hw->wiphy);
-		return -ENOENT;
+		ret = -ENOENT;
+		goto unlock_rcu;
 	}
 
 	rx_stats = link_peer->peer_stats.rx_stats;
 	if (!rx_stats) {
-		spin_unlock_bh(&dp->dp_lock);
-		wiphy_unlock(ah->hw->wiphy);
-		return -ENOENT;
+		ret = -ENOENT;
+		goto unlock_rcu;
 	}
 
 	u8 *buf __free(kfree) = kzalloc(size, GFP_ATOMIC);
 	if (!buf) {
-		spin_unlock_bh(&dp->dp_lock);
-		wiphy_unlock(ah->hw->wiphy);
-		return -ENOENT;
+		ret = -ENOENT;
+		goto unlock_rcu;
 	}
 
 	len += scnprintf(buf + len, size - len, "RX peer stats:\n\n");
@@ -2159,12 +2215,11 @@ static ssize_t ath12k_dbg_sta_dump_rx_stats(struct file *file,
 	len += scnprintf(buf + len, size - len, "\nRX success byte stats:\n");
 	len += ath12k_dbg_sta_dump_rate_stats(buf, len, size, he_rates_avail,
 					      &rx_stats->byte_stats);
-
-	spin_unlock_bh(&dp->dp_lock);
-
+unlock_rcu:
+	rcu_read_unlock();
 	if (len)
 		ret = simple_read_from_buffer(user_buf, count, ppos, buf, len);
-
+unlock:
 	wiphy_unlock(ah->hw->wiphy);
 	return ret;
 }
@@ -2186,9 +2241,11 @@ static ssize_t ath12k_dbg_sta_reset_rx_stats(struct file *file,
 	struct ath12k_link_sta *arsta;
 	u8 link_id = link_sta->link_id;
 	struct ath12k *ar;
+	struct ath12k_dp_peer *dp_peer = NULL;
+	struct ath12k_dp_link_peer *link_peer;
+	struct ath12k_rx_peer_stats *rx_stats;
 	bool reset;
 	int ret;
-	bool result;
 
 	ret = kstrtobool_from_user(buf, count, &reset);
 	if (ret)
@@ -2201,25 +2258,51 @@ static ssize_t ath12k_dbg_sta_reset_rx_stats(struct file *file,
 
 	if (!(BIT(link_id) & ahsta->links_map)) {
 		ret = -ENOENT;
-		goto out;
+		goto unlock;
 	}
 
 	arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
-	if (!arsta || !arsta->arvif->ar) {
+	if (!arsta || !arsta->arvif || !arsta->arvif->ar) {
 		ret = -ENOENT;
-		goto out;
+		goto unlock;
 	}
 
 	ar = arsta->arvif->ar;
-
-	result = ath12k_dp_link_peer_reset_rx_stats(ath12k_ab_to_dp(ar->ab), arsta->addr);
-	if (!result) {
+	if (!ar) {
 		ret = -ENOENT;
-		goto out;
+		goto unlock;
 	}
 
+	dp_peer = ath12k_sta_get_dp_peer_wiphy_locked(ah->hw->wiphy, ahsta);
+	if (!dp_peer) {
+		ret = -ENOENT;
+		goto unlock;
+	}
+
+	if (ar->hw_link_id >= ATH12K_DP_PEER_MAX_MLO_LINKS) {
+		ret = -ENOENT;
+		goto unlock;
+	}
+
+	rcu_read_lock();
+	link_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, link_id);
+	if (!link_peer) {
+		ret = -ENOENT;
+		goto unlock_rcu;
+	}
+
+	rx_stats = link_peer->peer_stats.rx_stats;
+	if (!rx_stats) {
+		ret = -ENOENT;
+		goto unlock_rcu;
+	}
+
+	memset(rx_stats, 0, sizeof(*rx_stats));
 	ret = count;
-out:
+
+unlock_rcu:
+	rcu_read_unlock();
+unlock:
 	wiphy_unlock(ah->hw->wiphy);
 	return ret;
 }
@@ -2242,41 +2325,47 @@ ath12k_dbg_sta_read_rx_retries(struct file *file, char __user *user_buf,
 	struct ath12k_hw *ah = ahsta->ahvif->ah;
 	struct ath12k_link_sta *arsta;
 	struct ath12k *ar;
-        struct ath12k_dp_link_peer *link_peer;
-        struct ath12k_dp *dp;
+	struct ath12k_dp_link_peer *link_peer;
+	struct ath12k_dp_peer *dp_peer = NULL;
 	char buf[32];
-	size_t len;
+	size_t len = 0;
+	ssize_t ret = -ENOENT;
 
-        wiphy_lock(ah->hw->wiphy);
+	wiphy_lock(ah->hw->wiphy);
 
-        if (!(BIT(link_id) & ahsta->links_map)) {
-                wiphy_unlock(ah->hw->wiphy);
-                return -ENOENT;
-        }
+	if (!(BIT(link_id) & ahsta->links_map))
+		goto unlock;
 
-        arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
-        if (!arsta || !arsta->arvif->ar) {
-                wiphy_unlock(ah->hw->wiphy);
-                return -ENOENT;
-        }
+	arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
+	if (!arsta || !arsta->arvif || !arsta->arvif->ar)
+		goto unlock;
 
-        ar = arsta->arvif->ar;
+	ar = arsta->arvif->ar;
+	if (!ar)
+		goto unlock;
 
-        dp = ath12k_ab_to_dp(ar->ab);
-        spin_lock_bh(&dp->dp_lock);
+	dp_peer = ath12k_sta_get_dp_peer_wiphy_locked(ah->hw->wiphy, ahsta);
+	if (!dp_peer)
+		goto unlock;
 
-        link_peer = ath12k_dp_link_peer_find_by_addr(dp, arsta->addr);
-        if (!link_peer) {
-                spin_unlock_bh(&dp->dp_lock);
-                wiphy_unlock(ah->hw->wiphy);
-                return -ENOENT;
-        }
+	if (ar->hw_link_id >= ATH12K_DP_PEER_MAX_MLO_LINKS) {
+		ret = -ENOENT;
+		goto unlock;
+	}
+
+	rcu_read_lock();
+	link_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, ar->hw_link_id);
+	if (!link_peer)
+		goto unlock_rcu;
 
 	len = scnprintf(buf, sizeof(buf), "%u\n", link_peer->peer_stats.rx_retries);
-	spin_unlock_bh(&dp->dp_lock);
+unlock_rcu:
+	rcu_read_unlock();
+	if (len)
+		ret = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+unlock:
 	wiphy_unlock(ah->hw->wiphy);
-
-	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	return ret;
 }
 
 static const struct file_operations fops_rx_retries = {
@@ -2299,14 +2388,14 @@ void ath12k_debugfs_link_sta_op_add(struct ieee80211_hw *hw,
 	if (!ar)
 		return;
 
-	if (ath12k_extd_tx_stats_enabled(ar)) {
+	if (ath12k_extd_tx_stats_enabled(&ar->dp)) {
                 debugfs_create_file("tx_stats", 0400, dir, link_sta,
                                     &fops_tx_stats);
                 debugfs_create_file("reset_tx_stats", 0200, dir, link_sta,
                                     &fops_reset_tx_stats);
         }
 
-	if (ath12k_extd_rx_stats_enabled(ar)) {
+	if (ath12k_extd_rx_stats_enabled(&ar->dp)) {
 		debugfs_create_file("rx_stats", 0400, dir, link_sta,
 				    &fops_rx_stats);
 		debugfs_create_file("reset_rx_stats", 0200, dir, link_sta,

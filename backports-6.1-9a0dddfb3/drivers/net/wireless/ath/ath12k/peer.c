@@ -8,6 +8,7 @@
 #include "peer.h"
 #include "dp_peer.h"
 #include "debug.h"
+#include "dp.h"
 #ifdef CPTCFG_MAC80211_PPE_SUPPORT
 #include "ppe.h"
 #endif
@@ -1895,3 +1896,149 @@ struct ath12k_link_sta *ath12k_link_sta_find_by_vdev_id(struct ath12k *ar,
 	return NULL;
 }
 EXPORT_SYMBOL(ath12k_link_sta_find_by_vdev_id);
+
+/*
+ * ath12k_get_link_peer_stats - Wrapper to collect link peer statistics
+ * @arvif: link VIF (non-DP, used for lookups only)
+ * @telemetry_peer: output telemetry peer stats structure
+ * @addr: link MAC address
+ * @link_id: link ID
+ * @valid_link: whether the link ID is valid
+ * @is_ds_vif: flag to check if the vif is configured in DS mode
+ *
+ * Resolves non-DP objects (arvif -> arsta -> ahsta -> peer)
+ * and delegates to ath12k_dp_get_link_peer_stats().
+ */
+static int
+ath12k_get_link_peer_stats(struct ath12k_link_vif *arvif,
+			   struct ath12k_telemetry_dp_peer *telemetry_peer,
+			   u8 *addr, u8 link_id, bool valid_link,
+			   bool is_ds_vif)
+{
+	struct ath12k *ar = arvif->ar;
+	struct ath12k_pdev_dp *dp_pdev = &arvif->ar->dp;
+	struct ath12k_link_sta *arsta;
+	struct ath12k_sta *ahsta;
+	struct ath12k_dp_peer *dp_peer;
+	int hw_link_id = arvif->ar->hw_link_id;
+
+	/* Resolve non-DP objects: arsta -> ahsta -> peer */
+	arsta = ath12k_link_sta_find_by_addr(ar, addr);
+	if (!arsta) {
+		ath12k_err(NULL, "Error link peer not found");
+		return -EINVAL;
+	}
+	ahsta = arsta->ahsta;
+	if (!ahsta)
+		return -ENOENT;
+
+	dp_peer = ath12k_sta_get_dp_peer_wiphy_locked(ar->ah->hw->wiphy, ahsta);
+	if (!dp_peer)
+		return -ENOENT;
+
+	/* Error case handling for legacy peer */
+	if (!dp_peer->is_mlo && valid_link) {
+		ath12k_err(NULL, "Error legacy peer with valid link id");
+		return -EINVAL;
+	}
+
+	if (hw_link_id >= ATH12K_DP_PEER_MAX_MLO_LINKS) {
+		ath12k_err(NULL, "Error Invalid HW link id");
+		return -EINVAL;
+	}
+
+	return ath12k_dp_get_link_peer_stats(dp_pdev, dp_peer,
+					     hw_link_id, telemetry_peer,
+					     is_ds_vif);
+}
+
+/**
+ * ath12k_get_peer_stats - Wrapper to collect peer statistics
+ * @ahvif: MLD VIF (non-DP, used for lookups only)
+ * @telemetry_peer: output telemetry peer stats structure
+ * @addr: MAC address (MLD or link)
+ * @link_id: link ID
+ *
+ * Resolves non-DP objects (ahvif, sta, ahsta, ar, arvif) to DP objects
+ * and delegates to ath12k_dp_get_peer_stats() for the MLD peer path,
+ * or ath12k_get_link_peer_stats() for the link peer path.
+ */
+int ath12k_get_peer_telemetry_stats(struct ath12k_vif *ahvif,
+				    struct ath12k_telemetry_dp_peer *telemetry_peer,
+				    u8 *addr, u8 link_id)
+{
+	struct ath12k_link_vif *arvif;
+	struct ath12k *ar = &ahvif->ah->radio[0];
+	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
+	struct ath12k_dp_peer *dp_peer = NULL;
+	struct ieee80211_sta *sta = NULL;
+	struct ath12k_sta *ahsta = NULL;
+	int stats_link_id = 0, ret = 0;
+	unsigned long links_map = ahvif->links_map;
+	bool valid_link = ahvif->links_map & BIT(link_id);
+	bool is_ds_vif = (ahvif->dp_vif.ppe_vp_type == PPE_VP_USER_TYPE_DS);
+
+	if (ath12k_dp_stats_enabled(&ar->dp) &&
+	    ath12k_dp_debug_stats_enabled(&ar->dp))
+		telemetry_peer->is_extended = true;
+
+	/* Find sta with MLD MAC addr */
+	sta = ieee80211_find_sta_by_ifaddr(ahvif->ah->hw, addr, NULL);
+
+	if (sta) {
+		/* MLD/legacy peer path */
+		ahsta = (struct ath12k_sta *)sta->drv_priv;
+		if (!ahsta)
+			return -ENOENT;
+
+		dp_peer = ath12k_sta_get_dp_peer_wiphy_locked(ahvif->ah->hw->wiphy,
+							      ahsta);
+		if (!dp_peer)
+			return -ENOENT;
+
+		/* For valid_link path, derive stats_link_id from arvif */
+		if (valid_link) {
+			rcu_read_lock();
+			arvif = rcu_dereference(ahvif->link[link_id]);
+			if (arvif)
+				stats_link_id = arvif->ar->hw_link_id;
+			rcu_read_unlock();
+			if (!arvif)
+				return ret;
+		}
+
+		/* Delegate to DP-only function */
+		ret = ath12k_dp_get_peer_stats(dp_pdev, dp_peer, telemetry_peer,
+					       link_id, valid_link, links_map,
+					       stats_link_id, is_ds_vif);
+	} else {
+		/* Link peer path (sta not found via MLD MAC) */
+		telemetry_peer->peer_type = ATH12K_LINK_PEER;
+		if (valid_link) {
+			rcu_read_lock();
+			arvif = rcu_dereference(ahvif->link[link_id]);
+			if (arvif)
+				ret = ath12k_get_link_peer_stats(arvif,
+								 telemetry_peer,
+								 addr, link_id,
+								 valid_link,
+								 is_ds_vif);
+			rcu_read_unlock();
+		} else {
+			rcu_read_lock();
+			for_each_set_bit(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
+				arvif = rcu_dereference(ahvif->link[link_id]);
+				if (!arvif || !arvif->is_created)
+					continue;
+				ret = ath12k_get_link_peer_stats(arvif,
+								 telemetry_peer,
+								 addr, link_id,
+								 valid_link,
+								 is_ds_vif);
+			}
+			rcu_read_unlock();
+		}
+	}
+
+	return ret;
+}

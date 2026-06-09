@@ -124,6 +124,9 @@ int ath12k_peer_del_tracker_clear_vdev(struct ath12k_pdev *pdev, u32 vdev_id);
 int ath12k_peer_del_tracker_clear_pdev(struct ath12k_pdev *pdev);
 int ath12k_peer_del_tracker_wait(struct ath12k_pdev *pdev, const u8 *addr,
 				 unsigned long timeout_ms, const u8 *mld_addr);
+int ath12k_get_peer_telemetry_stats(struct ath12k_vif *ahvif,
+				    struct ath12k_telemetry_dp_peer *telemetry_peer,
+				    u8 *addr, u8 link_id);
 
 static inline
 struct ath12k_link_sta *ath12k_peer_get_link_sta(struct ath12k_base *ab,

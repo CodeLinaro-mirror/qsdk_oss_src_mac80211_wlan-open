@@ -531,7 +531,7 @@ ath12k_dp_ppdu_stats_flush_tlv_parse_update(struct ath12k_pdev_dp *dp_pdev,
 	num_mpdu = HTT_PPDU_STATS_FLUSH_GET_NUM_MPDU(msg->info);
 	peer->tx_retry_failed += num_mpdu;
 
-	if (ath12k_extd_tx_stats_enabled(dp_pdev->ar))
+	if (ath12k_extd_tx_stats_enabled(dp_pdev))
 		ath12k_debugfs_sta_update_failure(peer, num_msdu);
 
 	rcu_read_unlock();
@@ -1247,7 +1247,7 @@ ath12k_update_htt_stats_txrate(struct ath12k_pdev_dp *dp_pdev,
 			peer->txrate.bw = RATE_INFO_BW_EHT_RU;
 	}
 
-	if (ath12k_extd_tx_stats_enabled(dp_pdev->ar)) {
+	if (ath12k_extd_tx_stats_enabled(dp_pdev)) {
 		tx_stats = peer->peer_stats.tx_stats;
 		/* PPDU stats reported for mgmt packet doesn't have valid tx bytes.
 		 * So skip peer stats update for mgmt packets.
@@ -1294,7 +1294,7 @@ ath12k_update_per_peer_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 	ath12k_update_htt_stats_txrate(dp_pdev, peer, user, ppdu_info,
 				       &peer_stats);
 
-	if (ath12k_extd_tx_stats_enabled(dp_pdev->ar) &&
+	if (ath12k_extd_tx_stats_enabled(dp_pdev) &&
 	    peer_stats.tid <= HTT_PPDU_STATS_NON_QOS_TID)
 		ath12k_update_extd_tx_stats(dp_pdev, ppdu_info, peer, &peer_stats,
 					    &ppdu_info->ppdu_stats.user_stats[user]);

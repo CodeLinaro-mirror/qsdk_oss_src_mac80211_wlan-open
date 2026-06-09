@@ -5237,7 +5237,7 @@ static int ath12k_fill_peer_tx_stats(struct ath12k *ar,
 
 	/*Tx Ext Htt Stats*/
 	if (link_peer_stats &&
-	    ath12k_extd_tx_stats_enabled(ar)) {
+	    ath12k_extd_tx_stats_enabled(&ar->dp)) {
 		if (ath12k_fill_peer_tx_ext_stats_wrapper(ar, vendor_event,
 							  link_peer_stats,
 							  peer_type)) {
@@ -6456,7 +6456,7 @@ static int ath12k_fill_peer_rx_stats(struct ath12k *ar,
 	}
 
 	/* RX Monitor Stats - gated by extended stats flag */
-	if (link_peer_stats && ath12k_extd_rx_stats_enabled(ar)) {
+	if (link_peer_stats && ath12k_extd_rx_stats_enabled(&ar->dp)) {
 		rx_mon_stats = link_peer_stats->rx_stats;
 
 		if (!rx_mon_stats)
@@ -6984,8 +6984,8 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 		telemetry_peer->peer_stats.sojourn = sojourn;
 	}
 
-	if (ath12k_dp_get_peer_stats(ahvif, telemetry_peer, cmd->mac,
-				     cmd->link_id)) {
+	if (ath12k_get_peer_telemetry_stats(ahvif, telemetry_peer, cmd->mac,
+					    cmd->link_id)) {
 		ath12k_err(NULL, "Error getting peer stats from dp");
 		goto out;
 	}

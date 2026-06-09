@@ -214,7 +214,7 @@ void ath12k_dp_aggr_per_pkt_rx_stats(struct ath12k_dp_peer_rx_stats *dst_rx_stat
  * @src: Source HTT TX stats structure to aggregate from
 */
 void
-ath12k_dp_update_tx_ext_htt_aggr_stats(struct ath12k *ar,
+ath12k_dp_update_tx_ext_htt_aggr_stats(struct ath12k_pdev_dp *dp_pdev,
 				       struct ath12k_htt_tx_stats *dst_peer_stats,
 				       struct ath12k_htt_tx_stats *src_peer_stats)
 {
@@ -298,7 +298,7 @@ ath12k_dp_update_tx_ext_htt_aggr_stats(struct ath12k *ar,
 	dst_peer_stats->tx_mpdus_tried += src_peer_stats->tx_mpdus_tried;
 	dst_peer_stats->retries_mpdu += src_peer_stats->retries_mpdu;
 
-	if (!ath12k_dp_advance_stats_enabled(&ar->dp))
+	if (!ath12k_dp_advance_stats_enabled(dp_pdev))
 		return;
 
 	/* DEBUG/ADV */
@@ -474,8 +474,7 @@ void ath12k_dp_clear_per_pkt_rx_stats(struct ath12k_dp_peer_stats *rx_peer_stats
  *    link VIF into 'link_vif_delete_stats' of MLD VIF.
  */
 
-void ath12k_dp_aggr_del_stats(struct ath12k *ar,
-			      struct ath12k_dp_peer_stats *dst_peer_stats,
+void ath12k_dp_aggr_del_stats(struct ath12k_dp_peer_stats *dst_peer_stats,
 			      struct ath12k_dp_link_peer_stats *dst_link_peer_stats,
 			      struct ath12k_dp_preserved_stats *src,
 			      const char *stats_type)

@@ -68,16 +68,16 @@ static inline bool ath12k_debugfs_is_pktlog_peer_valid(struct ath12k *ar, u8 *ad
                 ether_addr_equal(addr, ar->debug.pktlog_peer_addr));
 }
 
-static inline int ath12k_extd_tx_stats_enabled(struct ath12k *ar)
+static inline int ath12k_extd_tx_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
 {
-	return ((ar->dp.dp_stats_mask &  DP_ENABLE_STATS) &&
-		(ar->dp.dp_stats_mask & DP_ENABLE_EXT_TX_STATS));
+	return ((dp_pdev->dp_stats_mask &  DP_ENABLE_STATS) &&
+		(dp_pdev->dp_stats_mask & DP_ENABLE_EXT_TX_STATS));
 }
 
-static inline bool ath12k_extd_rx_stats_enabled(struct ath12k *ar)
+static inline bool ath12k_extd_rx_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
 {
-	return ((ar->dp.dp_stats_mask &  DP_ENABLE_STATS) &&
-		(ar->dp.dp_stats_mask & DP_ENABLE_EXT_RX_STATS));
+	return ((dp_pdev->dp_stats_mask &  DP_ENABLE_STATS) &&
+		(dp_pdev->dp_stats_mask & DP_ENABLE_EXT_RX_STATS));
 }
 
 static inline int ath12k_debugfs_rx_filter(struct ath12k *ar)
@@ -306,12 +306,12 @@ static inline void ath12k_hw_debugfs_register(struct ath12k_hw *ah)
 {
 }
 
-static inline int ath12k_extd_tx_stats_enabled(struct ath12k *ar)
+static inline int ath12k_extd_tx_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
 {
 	return 0;
 }
 
-static inline bool ath12k_extd_rx_stats_enabled(struct ath12k *ar)
+static inline bool ath12k_extd_rx_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
 {
 	return false;
 }
