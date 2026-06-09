@@ -2910,6 +2910,7 @@ struct ieee80211_link_sta {
  *	reconfiguration.
  * @control_mic_pad: Padding info for control frames
  * @smd_params: SMD parameters
+ * @epp_peer: Indicates that the peer is an EPP peer.
  */
 struct ieee80211_sta {
 	u8 addr[ETH_ALEN] __aligned(2);
@@ -2956,6 +2957,8 @@ struct ieee80211_sta {
 	u8 control_mic_pad;
 
 	struct  cfg80211_peer_smd_params smd_params;
+
+	bool epp_peer;
 
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
