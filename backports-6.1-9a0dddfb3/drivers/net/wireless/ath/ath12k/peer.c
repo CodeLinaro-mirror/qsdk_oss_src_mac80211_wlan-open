@@ -1630,8 +1630,8 @@ static int ath12k_remote_peer_vdev_mac_check(struct ath12k *ar,
  * The following arvif_itr entries are skipped during iteration:
  *   - not yet created (is_created == false)
  *   - self (arvif_itr == arvif): no conflict with own vdev
- *   - bridge AP vdev sharing the same ahvif: its bssid is covered
- *     by its own self_arsta in arsta_list (Phase 1)
+ *   - either side of a bridge/parent AP vdev pair sharing the same
+ *     ahvif: both share the same MLD MAC by design
  *
  * For non-bridge AP vdevs the bssid is covered by self_arsta in
  * arsta_list and is therefore already checked in Phase 1; only the
@@ -1646,6 +1646,7 @@ static int ath12k_self_peer_vdev_mac_check(struct ath12k *ar,
 {
 	const u8 *cur_link_mac = arvif->addr;
 	bool cur_is_mlo = ath12k_mac_is_ml_arvif(arvif);
+	bool cur_is_bridge = ath12k_mac_is_bridge_vdev(arvif);
 	const u8 *cur_mld_mac = cur_is_mlo ? arvif->ahvif->vif->addr : NULL;
 	struct ath12k_link_vif *arvif_itr;
 	bool itr_is_mlo;
@@ -1662,10 +1663,12 @@ static int ath12k_self_peer_vdev_mac_check(struct ath12k *ar,
 		if (arvif_itr == arvif)
 			continue;
 
-		/* Bridge AP vdev shares the same ahvif as its parent AP vdev.
-		 * Its bssid is covered by its own self_arsta in arsta_list.
+		/* A bridge AP vdev and its parent AP vdev share the same ahvif
+		 * (and thus the same MLD MAC) by design. Skip the check when
+		 * either side of the pair is a bridge vdev.
 		 */
-		if (ath12k_mac_is_bridge_vdev(arvif_itr) &&
+		if ((cur_is_bridge ||
+		     ath12k_mac_is_bridge_vdev(arvif_itr)) &&
 		    arvif_itr->ahvif == arvif->ahvif)
 			continue;
 
