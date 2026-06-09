@@ -4001,8 +4001,7 @@ bool ath12k_dp_tx_mon_feature_eval(struct ath12k_dp *dp)
 	if (!ab->hw_params)
 		return false;
 
-	if (!DP_TX_MONITOR || !ab->hw_params->supports_tx_monitor ||
-	    !ath12k_dp_ring_cfg->tx_monitor_support) {
+	if (!DP_TX_MONITOR || !ab->hw_params->supports_tx_monitor) {
 		ab->hw_params->supports_tx_monitor = false;
 		ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX, "TX Monitor disabled\n");
 		return false;

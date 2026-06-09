@@ -22,7 +22,7 @@
 
 /* Macros parsing INI */
 #ifndef CPTCFG_QCN_EXTN
-#define DP_TX_MONITOR	false
+#define DP_TX_MONITOR	ath12k_dp_ring_cfg->tx_monitor_support
 #define DP_UMAC_RESET_TIMEOUT_IN_MS	1000
 #define DP_REO_EXCEPTION_RING_SIZE	128
 #define DP_REO_REINJECT_RING_SIZE	32
