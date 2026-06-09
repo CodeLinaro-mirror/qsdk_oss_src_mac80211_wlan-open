@@ -129,19 +129,48 @@ struct fft_sample_ath11k {
 	u8 data[];
 } __packed;
 
+struct fft_sample_ath12k_detector_info {
+	__be32 start_frequency;
+	__be32 end_frequency;
+	__be32 timestamp;
+	__be32 last_tstamp;
+	__be32 last_raw_timestamp;
+	__be32 timestamp_war_offset;
+	__be32 raw_timestamp;
+	__be32 reset_delay;
+	__be16 start_bin_idx;
+	__be16 end_bin_idx;
+	__be16 max_index;
+	__be16 max_magnitude;
+	__be16 noise_floor;
+	u8 rssi;
+	u8 agc_total_gain;
+	u8 gainchange;
+	u8 pri80ind;
+	u8 is_sec80;
+	u8 blanking_status;
+} __packed;
+
 struct fft_sample_ath12k {
 	struct fft_sample_tlv tlv;
-	u16 chan_width_mhz;
-	s8 max_index;
-	u8 max_exp;
-	bool is_primary;
-	__be16 freq1;
-	__be16 freq2;
-	__be16 max_magnitude;
-	__be16 rssi;
-	__be32 tsf;
-	__be32 noise;
-
+	__be32 signature;
+	__be32 pri_freq;
+	__be32 target_reset_count;
+	__be32 cfreq1;
+	__be32 cfreq2;
+	__be32 sscan_cfreq1;
+	__be32 sscan_cfreq2;
+	__be32 bin_pwr_count;
+	struct fft_sample_ath12k_detector_info detector_info;
+	s8 spectral_lower_rssi;
+	s8 spectral_upper_rssi;
+	u8 macaddr[SPECTRAL_MAC_ADDR_SIZE];
+	u8 spectral_mode;
+	u8 operating_bw;
+	u8 sscan_bw;
+	u8 fft_width;
+	u8 dcs_enabled;
+	u8 int_type;
 	u8 data[0];
 } __packed;
 
