@@ -3160,7 +3160,7 @@ static ssize_t ath12k_read_mld_stats(struct file *file,
 			"Bridge vdev", "Arsta NA", "Queue Stop",
 			"Feature Error", "HW Enqueue Fail",
 			"MCBC encryption Fail", "MCBC MSDU setup Fail",
-			"FW Recovery"};
+			"Mcast unconnected link", "FW Recovery"};
 
 	if (!ahvif)
 		return -EINVAL;

@@ -1480,6 +1480,8 @@ void ath12k_wifi7_dp_tx_update_gsn_metadata(struct ath12k_dp_tx_msdu_info *msdu_
 	if (dp_link_vif->nawds_support)
 		msdu_info->meta_data_flags |=
 			u32_encode_bits(1, HTT_TCL_META_DATA_GSN_INSPECTED);
+
+	msdu_info->meta_data_flags |= HTT_TCL_META_DATA_GLOBAL_HTT_EXT_PRESENT;
 }
 
 #define HTT_META_DATA_ALIGNMENT 0x8
@@ -1606,14 +1608,13 @@ ath12k_wifi7_dp_ext_desc_populate(struct ath12k_dp *dp,
 		htt_desc_ext->info2 |=
 			le32_encode_bits(msdu_info->group_slot,
 					 HAL_TX_MSDU_METADATA_INFO2_KEY_FLAGS);
+		msdu_info->meta_data_flags |= HTT_TCL_META_DATA_VALID_HTT;
 
 		if (gsn_valid)
 			ath12k_wifi7_dp_tx_update_gsn_metadata(msdu_info,
 							       dp_link_vif, gsn);
 
 		msdu_info->data_len = ATH12K_TX_MSDU_EXT_SZ + htt_desc_size;
-		msdu_info->meta_data_flags |= HTT_TCL_META_DATA_VALID_HTT;
-		msdu_info->meta_data_flags |= HTT_TCL_META_DATA_GLOBAL_HTT_EXT_PRESENT;
 		msdu_info->to_fw = true;
 	}
 

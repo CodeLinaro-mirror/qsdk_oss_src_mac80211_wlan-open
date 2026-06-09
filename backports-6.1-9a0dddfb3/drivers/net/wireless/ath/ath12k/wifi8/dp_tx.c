@@ -1774,6 +1774,8 @@ ath12k_wifi8_dp_tx_update_gsn_metadata(struct ath12k_dp_tx_msdu_info *msdu_info,
 		msdu_info->meta_data_flags |=
 			u32_encode_bits(1,
 					HTT_TCL_META_DATA_GSN_INSPECTED_V3);
+	msdu_info->meta_data_flags |=
+		u32_encode_bits(1, HTT_TCL_META_DATA_GLOBAL_HTT_EXT_PRESENT_V3);
 }
 
 /**
@@ -1886,13 +1888,11 @@ ath12k_wifi8_dp_ext_desc_populate(struct ath12k_dp *dp,
 							       dp_link_vif, gsn);
 			msdu_info->vdev_id |=
 				HTT_TX_MLO_MCAST_HOST_REINJECT_BASE_VDEV_ID;
+		} else {
+			msdu_info->meta_data_flags |= HTT_TCL_META_DATA_VALID_HTT_V3;
 		}
 
 		ext_data_len = ATH12K_TX_MSDU_EXT_SZ + htt_desc_size;
-		if (!gsn_valid)
-			msdu_info->meta_data_flags |= HTT_TCL_META_DATA_VALID_HTT;
-		msdu_info->meta_data_flags |=
-			u32_encode_bits(1, HTT_TCL_META_DATA_GLOBAL_HTT_EXT_PRESENT_V3);
 		msdu_info->to_fw = true;
 	}
 
@@ -1995,13 +1995,11 @@ ath12k_wifi8_dp_prepare_group_htt_metadata(struct sk_buff *skb,
 	htt_desc->info2 |=
 		le32_encode_bits(msdu_info->group_slot,
 				 HAL_TX_MSDU_METADATA_INFO2_KEY_FLAGS);
+	msdu_info->meta_data_flags |= HTT_TCL_META_DATA_VALID_HTT_V3;
 
 	if (gsn_valid)
 		ath12k_wifi8_dp_tx_update_gsn_metadata(msdu_info, dp_link_vif, gsn);
 
-	msdu_info->meta_data_flags |= HTT_TCL_META_DATA_VALID_HTT;
-	msdu_info->meta_data_flags |=
-		u32_encode_bits(1, HTT_TCL_META_DATA_GLOBAL_HTT_EXT_PRESENT_V3);
 	msdu_info->pkt_offset = htt_hdr_size;
 	msdu_info->data_len = skb->len - htt_hdr_size;
 	msdu_info->to_fw = true;
@@ -2333,6 +2331,24 @@ void ath12k_wifi8_mcbc_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 				     tx_i.drop[DP_TX_ENQ_DROP_INV_ARVIF],
 				     1, ring_id);
 			continue;
+		}
+
+		/* For MLO multicast, skip links with no associated stations. */
+		if (ath12k_wifi8_is_mpsk_enabled(ahvif) &&
+		    !(vlan_ahvif && vlan_ahvif->vif->type == NL80211_IFTYPE_AP_VLAN) &&
+		    gsn_valid) {
+			bool no_sta;
+
+			spin_lock_bh(&arvif->ar->data_lock);
+			no_sta = (arvif->num_stations == 0);
+			spin_unlock_bh(&arvif->ar->data_lock);
+
+			if (no_sta) {
+				DP_STATS_INC(dp_vif,
+					     tx_i.drop[DP_TX_ENQ_DROP_MCAST_NO_LINK],
+					     1, ring_id);
+				continue;
+			}
 		}
 
 		dp_link_vif = &dp_vif->dp_link_vif[link_id];
