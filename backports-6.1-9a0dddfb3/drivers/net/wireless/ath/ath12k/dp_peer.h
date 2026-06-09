@@ -220,6 +220,9 @@ struct ath12k_dp_peer {
 	u16 tid_stats_id[ATH12K_MAX_TIDS];
 	u8 tx_encap_type;
 	u8 rx_decap_type;
+
+	/* Hash table node for MAC address lookup */
+	struct hlist_node hash_node;
 };
 
 #define QOS_MSDUQ_MAX ((QOS_TID_MDSUQ_MAX * QOS_TID_MAX) + MSDUQ_MAX_DEF)
@@ -274,8 +277,8 @@ void ath12k_peer_unmap_event(struct ath12k_base *ab, u8 vdev_id, u16 peer_id,
 			     u8 *mac_addr, bool is_wds);
 void ath12k_peer_map_event(struct ath12k_base *ab, u8 vdev_id, u16 peer_id,
 			   u8 *mac_addr, u16 ast_hash, u16 hw_peer_id, bool is_wds);
-struct ath12k_dp_peer *ath12k_dp_peer_find(struct ath12k_dp_hw *dp_hw,
-					   const u8 *addr);
+struct ath12k_dp_peer *ath12k_dp_peer_find_by_addr(struct ath12k_dp_hw *dp_hw,
+						   const u8 *addr);
 struct ath12k_dp_peer *ath12k_dp_peer_find_by_addr_and_sta(struct ath12k_dp_hw *dp_hw,
 							   u8 *addr, struct ieee80211_sta *sta);
 struct ath12k_dp_peer *ath12k_dp_peer_create_find(struct ath12k_dp_hw *dp_hw, u8 *addr,
@@ -483,4 +486,9 @@ ath12k_dp_link_peer_iterate_by_dp_pdev(struct ath12k_pdev_dp *dp_pdev,
 						       struct ath12k_dp_link_peer *peer,
 						       void *context),
 				       void *data);
+
+void ath12k_dp_peer_hash_table_add(struct ath12k_dp_hw *dp_hw,
+				   struct ath12k_dp_peer *dp_peer);
+void ath12k_dp_peer_hash_table_delete(struct ath12k_dp_hw *dp_hw,
+				      struct ath12k_dp_peer *dp_peer);
 #endif

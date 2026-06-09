@@ -1120,11 +1120,11 @@ int ath12k_wifi8_fetch_smd_ctx(struct ath12k_base *ab, struct ath12k_dp_hw *dp_h
 	bool clear_vld = ath12k_wifi8_clear_vld_after_smd_ctx_fetch &&
 			 ctx->in.rx_tid_bitmap == 0xff;
 
-	spin_lock_bh(&dp_hw->peer_lock);
-	dp_peer = ath12k_dp_peer_find(dp_hw, ctx->peer_addr);
+	spin_lock_bh(&dp_hw->peer_hash_lock);
+	dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, ctx->peer_addr);
 
 	if (!dp_peer) {
-		spin_unlock_bh(&dp_hw->peer_lock);
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		return -ENOENT;
 	}
 
@@ -1180,7 +1180,7 @@ int ath12k_wifi8_fetch_smd_ctx(struct ath12k_base *ab, struct ath12k_dp_hw *dp_h
 			ath12k_warn(ab,
 				    "failed to send fetch smd ctx for rx tid queue, tid %d (%d)\n",
 				    rx_tid->tid, ret);
-			spin_unlock_bh(&dp_hw->peer_lock);
+			spin_unlock_bh(&dp_hw->peer_hash_lock);
 			return ret;
 		}
 
@@ -1193,7 +1193,7 @@ int ath12k_wifi8_fetch_smd_ctx(struct ath12k_base *ab, struct ath12k_dp_hw *dp_h
 
 
 	if (!sent) {
-		spin_unlock_bh(&dp_hw->peer_lock);
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		return -ENOENT;
 	}
 
@@ -1203,10 +1203,10 @@ int ath12k_wifi8_fetch_smd_ctx(struct ath12k_base *ab, struct ath12k_dp_hw *dp_h
 	if (ret) {
 		ath12k_warn(ab, "failed to fetch smd ctx tx queues, peer_id %d (%d)\n",
 			    dp_peer->peer_id, ret);
-		spin_unlock_bh(&dp_hw->peer_lock);
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		return ret;
 	}
-	spin_unlock_bh(&dp_hw->peer_lock);
+	spin_unlock_bh(&dp_hw->peer_hash_lock);
 
 	return 0;
 }

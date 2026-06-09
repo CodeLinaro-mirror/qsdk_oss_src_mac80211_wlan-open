@@ -6507,13 +6507,13 @@ static ssize_t ath12k_write_reset_latency_stats(struct file *file,
 	wiphy_lock(ah->hw->wiphy);
 
 	/* Reset protocol stats for all peers */
-	spin_lock_bh(&ah->dp_hw.peer_lock);
+	spin_lock_bh(&ah->dp_hw.peer_list_lock);
 	list_for_each_entry(dp_peer, &ah->dp_hw.peers, list) {
 		ath12k_dp_peer_reset_delay_stats(dp_peer);
 		ath12k_dp_peer_reset_jitter_stats(dp_peer);
 		ath12k_dp_peer_reset_sojourn_stats(dp_peer);
 	}
-	spin_unlock_bh(&ah->dp_hw.peer_lock);
+	spin_unlock_bh(&ah->dp_hw.peer_list_lock);
 
 	wiphy_unlock(ah->hw->wiphy);
 	return count;
@@ -6851,7 +6851,7 @@ static ssize_t ath12k_write_reset_dp_stats(struct file *file,
 
 	wiphy_lock(ah->hw->wiphy);
 
-	spin_lock_bh(&ah->dp_hw.peer_lock);
+	spin_lock_bh(&ah->dp_hw.peer_list_lock);
 	list_for_each_entry(dp_peer, &ah->dp_hw.peers, list) {
 		memset(&dp_peer->stats, 0, sizeof(dp_peer->stats));
 		/* Reset HW stats */
@@ -6901,7 +6901,7 @@ static ssize_t ath12k_write_reset_dp_stats(struct file *file,
 
 		rcu_read_unlock();
 	}
-	spin_unlock_bh(&ah->dp_hw.peer_lock);
+	spin_unlock_bh(&ah->dp_hw.peer_list_lock);
 
 	for (i = 0; i < ah->num_radio; i++) {
 		ar = &ah->radio[i];
@@ -6962,11 +6962,11 @@ static ssize_t ath12k_write_reset_proto_stats(struct file *file,
 	}
 
 	/* Reset protocol stats for all peers */
-	spin_lock_bh(&ah->dp_hw.peer_lock);
+	spin_lock_bh(&ah->dp_hw.peer_list_lock);
 	list_for_each_entry(dp_peer, &ah->dp_hw.peers, list) {
 		ath12k_dp_peer_reset_proto_stats(dp_peer);
 	}
-	spin_unlock_bh(&ah->dp_hw.peer_lock);
+	spin_unlock_bh(&ah->dp_hw.peer_list_lock);
 
 	/* Reset protocol stats for all VIFs */
 	for (i = 0; i < ah->num_radio; i++) {

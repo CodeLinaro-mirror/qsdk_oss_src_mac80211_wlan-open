@@ -802,11 +802,11 @@ int ath12k_wifi8_peer_rx_tid_reo_update_for_smd(struct ath12k_base *ab,
 		return -EINVAL;
 	}
 
-	spin_lock_bh(&dp_hw->peer_lock);
+	spin_lock_bh(&dp_hw->peer_hash_lock);
 
-	dp_peer = ath12k_dp_peer_find(dp_hw, (u8 *)peer_addr);
+	dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, (u8 *)peer_addr);
 	if (!dp_peer) {
-		spin_unlock_bh(&dp_hw->peer_lock);
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		ath12k_warn(ab, "failed to find peer %pM for SMD REO update\n",
 			    peer_addr);
 		return -ENOENT;
@@ -815,7 +815,7 @@ int ath12k_wifi8_peer_rx_tid_reo_update_for_smd(struct ath12k_base *ab,
 	rx_tid = &dp_peer->rx_tid[rx_tid_ctx->tid];
 
 	if (!rx_tid->active) {
-		spin_unlock_bh(&dp_hw->peer_lock);
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		ath12k_warn(ab, "inactive rx tid %d for peer %pM\n",
 			    rx_tid_ctx->tid, peer_addr);
 		return -EINVAL;
@@ -829,7 +829,7 @@ int ath12k_wifi8_peer_rx_tid_reo_update_for_smd(struct ath12k_base *ab,
 						   HAL_REO_CMD_FLUSH_CACHE,
 						   &cmd, NULL);
 		if (ret) {
-			spin_unlock_bh(&dp_hw->peer_lock);
+			spin_unlock_bh(&dp_hw->peer_hash_lock);
 			ath12k_warn(ab, "Failed REO cache flush cmd for tid %d: %d\n",
 				    rx_tid_ctx->tid, ret);
 			return ret;
@@ -874,7 +874,7 @@ send_cmd:
 						    HAL_REO_CMD_UPDATE_RX_QUEUE,
 						    &cmd, NULL);
 	if (ret) {
-		spin_unlock_bh(&dp_hw->peer_lock);
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		ath12k_warn(ab, "Failed REO update cmd for tid %d: %d\n",
 			    rx_tid_ctx->tid, ret);
 		return ret;
@@ -889,14 +889,14 @@ send_cmd:
 	ret = ath12k_wifi8_hal_reo_qdesc_update_bitmaps_direct(ab, rx_tid,
 							       rx_tid_ctx);
 	if (ret) {
-		spin_unlock_bh(&dp_hw->peer_lock);
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		ath12k_warn(ab, "Failed bitmap update for tid %d: %d\n",
 			    rx_tid_ctx->tid, ret);
 		return ret;
 	}
 
 done:
-	spin_unlock_bh(&dp_hw->peer_lock);
+	spin_unlock_bh(&dp_hw->peer_hash_lock);
 	ath12k_dbg(ab, ATH12K_DBG_DP_RX,
 		   "SMD REO update done for peer %pM tid %d: SSN=0x%x\n",
 		   peer_addr, rx_tid_ctx->tid, rx_tid_ctx->ssn);
@@ -953,9 +953,9 @@ int ath12k_wifi8_peer_rx_tid_reo_clear_vld(struct ath12k_base *ab,
 		return -EINVAL;
 	}
 
-	lockdep_assert_held(&dp_hw->peer_lock);
+	lockdep_assert_held(&dp_hw->peer_hash_lock);
 
-	dp_peer = ath12k_dp_peer_find(dp_hw, (u8 *)peer_addr);
+	dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, (u8 *)peer_addr);
 	if (!dp_peer) {
 		ath12k_warn(ab, "failed to find peer %pM for REO VLD clear\n",
 			    peer_addr);

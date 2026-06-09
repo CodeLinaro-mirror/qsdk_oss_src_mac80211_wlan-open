@@ -326,10 +326,10 @@ int ath12k_get_mscs_priority(struct ath_mscs_get_priority_param *params)
 
 	ab = ar->ab;
 
-	spin_lock_bh(&ab->dp->dp_lock);
-	src_peer = ath12k_dp_peer_find(&ar->ah->dp_hw, params->src_mac);
+	spin_lock_bh(&ar->ah->dp_hw.peer_hash_lock);
+	src_peer = ath12k_dp_peer_find_by_addr(&ar->ah->dp_hw, params->src_mac);
 	if (!src_peer) {
-		dst_peer = ath12k_dp_peer_find(&ar->ah->dp_hw,
+		dst_peer = ath12k_dp_peer_find_by_addr(&ar->ah->dp_hw,
 							     params->dst_mac);
 		if (dst_peer) {
 			if (dst_peer->mscs_session_exists &&
@@ -377,11 +377,11 @@ int ath12k_get_mscs_priority(struct ath_mscs_get_priority_param *params)
 		   priority);
 
 	skb->priority = priority;
-	spin_unlock_bh(&ab->dp->dp_lock);
+	spin_unlock_bh(&ar->ah->dp_hw.peer_hash_lock);
 	return ATH12K_DP_MSCS_PEER_LOOKUP_STATUS_ALLOW_MSCS_QOS_TAG_UPDATE;
 
 skip_priority_update:
-	spin_unlock_bh(&ab->dp->dp_lock);
+	spin_unlock_bh(&ar->ah->dp_hw.peer_hash_lock);
 	return status;
 }
 

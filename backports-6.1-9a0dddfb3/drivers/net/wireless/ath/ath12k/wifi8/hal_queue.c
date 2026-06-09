@@ -571,7 +571,7 @@ int ath12k_wifi8_cleanup_all_peers_tx_queues(struct ath12k_dp_hw *dp_hw,
 
 	ath12k_info(ab, "Starting TX queue cleanup for all peers\n");
 
-	spin_lock_bh(&dp_hw->peer_lock);
+	spin_lock_bh(&dp_hw->peer_list_lock);
 
 	/* Iterate through all peers in the list */
 	list_for_each_entry(peer, &dp_hw->peers, list) {
@@ -617,7 +617,7 @@ int ath12k_wifi8_cleanup_all_peers_tx_queues(struct ath12k_dp_hw *dp_hw,
 		}
 	}
 
-	spin_unlock_bh(&dp_hw->peer_lock);
+	spin_unlock_bh(&dp_hw->peer_list_lock);
 
 	ath12k_info(ab, "Completed TX queue cleanup for %d peers\n",
 		    peer_count);
