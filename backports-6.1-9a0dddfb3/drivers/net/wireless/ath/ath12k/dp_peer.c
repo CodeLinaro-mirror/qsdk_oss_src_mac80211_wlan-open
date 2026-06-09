@@ -1915,6 +1915,11 @@ int ath12k_dp_peer_stats_alloc(struct ath12k_dp_peer *dp_peer,
 		}
 	}
 
+	if (ath12k_proto_stats_enabled(dp_pdev)) {
+		ret = ath12k_dp_alloc_proto_stats_peer(dp_peer);
+		if (ret)
+			ath12k_warn(dp_pdev->ar->ab, "Failed to alloc proto stats.\n");
+	}
 	return ret;
 }
 EXPORT_SYMBOL(ath12k_dp_peer_stats_alloc);
@@ -1935,6 +1940,8 @@ void ath12k_dp_peer_stats_free(struct ath12k_dp_peer *dp_peer)
 
 	kfree(dp_peer->mld_stats.sojourn_stats);
 	dp_peer->mld_stats.sojourn_stats = NULL;
+
+	ath12k_dp_free_proto_stats_peer(dp_peer);
 }
 EXPORT_SYMBOL(ath12k_dp_peer_stats_free);
 
