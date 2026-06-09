@@ -882,7 +882,8 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 int ath12k_peer_dp_cp_link_peer_delete(struct ath12k_link_vif *arvif,
 				       struct ath12k_sta *ahsta, u8 link_id,
 				       u8 *addr, u32 mlo_hw_link_id_bitmap,
-				       bool peer_delete_send_mlo_hw_bitmap)
+				       bool peer_delete_send_mlo_hw_bitmap,
+				       bool update_bmap)
 {
 	bool ml_peer_del_all = false;
 	struct ath12k *ar;
@@ -900,7 +901,7 @@ int ath12k_peer_dp_cp_link_peer_delete(struct ath12k_link_vif *arvif,
 
 	ml_peer_del_all = ar->ab->hw_params->peer_del_all_support;
 	ath12k_dp_peer_cleanup(ar, dp_peer, arvif->vdev_id, addr);
-	ath12k_dp_cp_link_peer_unassign(ar, arvif, ahsta, link_id, addr);
+	ath12k_dp_cp_link_peer_unassign(ar, arvif, ahsta, link_id, addr, update_bmap);
 
 	if (ml_peer_del_all && arvif->peer_del_all_enable) {
 		ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
@@ -974,7 +975,8 @@ int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif,
 		ret = ath12k_peer_dp_cp_link_peer_delete(arvif, ahsta, link_id,
 							 link_addr[link_id],
 							 mlo_hw_link_id_bitmap,
-							 bitmap_flag);
+							 bitmap_flag,
+							 false);
 		if (ret)
 			err_ret = ret;
 

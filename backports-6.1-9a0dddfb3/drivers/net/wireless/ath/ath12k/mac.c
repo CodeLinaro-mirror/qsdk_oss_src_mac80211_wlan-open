@@ -15689,13 +15689,15 @@ ath12k_mac_link_reconfig_sta_links(struct ieee80211_hw *hw,
 			u32 hw_link_bmap = ahsta->mlo_hw_link_id_bitmap;
 			char link_addr[ETH_ALEN];
 
+			/* TODO: revisit update hw_link_bmap for uhr reconf use cases. */
 			memcpy(link_addr, arsta->addr, ETH_ALEN);
 			ret =
 			ath12k_peer_dp_cp_link_peer_delete(arvif, ahsta,
 							 link_id,
 							 link_addr,
 							 hw_link_bmap,
-							 bitmap_flag);
+							 bitmap_flag,
+							 true);
 			if (ret)
 				ath12k_warn(ar->ab,
 					    "Failed to remove ml station: %pM for VDEV: %d\n",
@@ -15829,7 +15831,8 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 									   link_id,
 									   link_addr,
 									   hw_link_bmap,
-									   bitmap_flag);
+									   bitmap_flag,
+									   true);
 					if (result)
 						ath12k_warn(ar->ab, "ml arsta %pM remove failed\n",
 							    link_addr);
@@ -15958,7 +15961,8 @@ skip_pri_link_selection:
 									 link_id,
 									 link_addr,
 									 hw_link_bmap,
-									 bitmap_flag);
+									 bitmap_flag,
+									 true);
 				if (ret)
 					ath12k_warn(ar->ab, "Failed to remove ml station: %pM for VDEV: %d\n",
 						    link_addr, arvif->vdev_id);
