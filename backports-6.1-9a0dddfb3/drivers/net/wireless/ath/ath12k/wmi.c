@@ -2005,6 +2005,8 @@ int ath12k_wmi_vdev_start(struct ath12k *ar, struct wmi_vdev_start_req_arg *arg,
 			      TLV_HDR_SIZE + (arg->ml.num_partner_links *
 					      sizeof(*partner_info));
 		len += ml_arg_size;
+	} else {
+		len += 2 * TLV_HDR_SIZE;
 	}
 	device_params_present = ath12k_wmi_check_device_present(arg->width_device,
 								arg->center_freq_device,
@@ -2129,6 +2131,14 @@ int ath12k_wmi_vdev_start(struct ath12k *ar, struct wmi_vdev_start_req_arg *arg,
 		}
 
 		ptr = partner_info;
+	} else {
+		tlv = ptr;
+		tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
+		ptr += TLV_HDR_SIZE;
+
+		tlv = ptr;
+		tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
+		ptr += TLV_HDR_SIZE;
 	}
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "vdev %s id 0x%x freq 0x%x mode 0x%x\n",
