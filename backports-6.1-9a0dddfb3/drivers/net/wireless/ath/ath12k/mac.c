@@ -2959,6 +2959,10 @@ static void ath12k_control_beaconing(struct ath12k_link_vif *arvif,
 
 	/* Skip VDEV UP command in case of Scan Radio */
 	if (!ath12k_scan_radio_supported(ar->pdev)) {
+#ifdef CPTCFG_QCN_EXTN
+		if (ath12k_control_beaconing_bootup_cac_check_extn(ar, arvif, link_conf))
+			return;
+#endif /* CPTCFG_QCN_EXTN */
 		ret = ath12k_wmi_vdev_up(arvif->ar, &params);
 		if (ret) {
 			ath12k_warn(ar->ab, "failed to bring up vdev %d: %i\n",
@@ -9073,6 +9077,12 @@ skip_pending_cs_up:
 					    "failed to set BA BUFFER SIZE %d for vdev: %d\n",
 					     param_value, arvif->vdev_id);
 		}
+
+#ifdef CPTCFG_QCN_EXTN
+		if (info->enable_beacon && !arvif->is_up &&
+		    !(changed & BSS_CHANGED_BEACON_ENABLED))
+			ath12k_control_beaconing(arvif, info);
+#endif /* CPTCFG_QCN_EXTN */
 	}
 
 	if (changed & (BSS_CHANGED_BEACON_INFO | BSS_CHANGED_BEACON)) {
