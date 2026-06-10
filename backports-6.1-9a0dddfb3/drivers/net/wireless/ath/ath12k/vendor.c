@@ -6946,7 +6946,7 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 		telemetry_peer->mld_stats.hw_stats = hw_stats;
 	}
 
-	if (ath12k_dp_delay_stats_enabled(&ar->dp)) {
+	if (ath12k_dp_latency_stats_enabled(&ar->dp)) {
 		delay = vzalloc(sizeof(*delay));
 
 		if (!delay) {
@@ -7105,7 +7105,7 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 		}
 	}
 
-	if (cmd->feat.feat_delay) {
+	if (cmd->feat.feat_delay && ath12k_dp_latency_stats_enabled(&ar->dp)) {
 		attr = nla_nest_start(vendor_event,
 				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_DELAY_EVENT);
 		if (attr) {
@@ -7123,7 +7123,7 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 		}
 	}
 
-	if (cmd->feat.feat_jitter) {
+	if (cmd->feat.feat_jitter && ath12k_dp_latency_stats_enabled(&ar->dp)) {
 		attr = nla_nest_start(vendor_event,
 				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_JITTER_EVENT);
 		if (attr) {
@@ -7141,7 +7141,7 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 		}
 	}
 
-	if (cmd->feat.feat_sojourn) {
+	if (cmd->feat.feat_sojourn && ath12k_dp_latency_stats_enabled(&ar->dp)) {
 		attr = nla_nest_start(vendor_event,
 				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_SOJOURN_EVENT);
 		if (attr) {

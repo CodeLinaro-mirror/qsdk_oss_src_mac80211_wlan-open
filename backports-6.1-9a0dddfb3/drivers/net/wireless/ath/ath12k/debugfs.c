@@ -6893,7 +6893,7 @@ static ssize_t ath12k_write_reset_dp_stats(struct file *file,
 		}
 
 		dp_pdev = &ar->dp;
-		if (dp_pdev && ath12k_dp_delay_stats_enabled(dp_pdev)) {
+		if (dp_pdev && ath12k_dp_latency_stats_enabled(dp_pdev)) {
 			ath12k_dp_peer_reset_delay_stats(dp_peer);
 			ath12k_dp_peer_reset_jitter_stats(dp_peer);
 			ath12k_dp_peer_reset_sojourn_stats(dp_peer);

@@ -1109,7 +1109,7 @@ ath12k_wifi7_dp_process_reo_rx_packets(struct ath12k_dp *dp,
 				prev_hw_link_id = 0xff;
 				continue;
 			}
-			is_delay_enabled = ath12k_dp_delay_stats_enabled(dp_pdev);
+			is_delay_enabled = ath12k_dp_latency_stats_enabled(dp_pdev);
 
 			tid_rx_stats_ring = &dp_pdev->tid_stats.tid_rx[ring_id][0];
 

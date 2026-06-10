@@ -930,7 +930,7 @@ void ath12k_dp_tx_stats_update_pre_enqueue(struct ath12k_pdev_dp *dp_pdev,
 						 TX_RECV_FROM_STACK, ring_id);
 	}
 
-	if (ath12k_dp_delay_stats_enabled(dp_pdev) ||
+	if (ath12k_dp_latency_stats_enabled(dp_pdev) ||
 	    ath12k_dp_vow_stats_enabled(dp_pdev) ||
 	    unlikely(skb->mark & SDWF_VALID_MASK))
 		__net_timestamp(skb);
@@ -1056,7 +1056,7 @@ void ath12k_dp_tx_stats_post_enqueue(struct ath12k_dp *dp,
 				    ATH_TX_UNICAST_PKTS);
 	}
 
-	if (ath12k_dp_delay_stats_enabled(dp_pdev) ||
+	if (ath12k_dp_latency_stats_enabled(dp_pdev) ||
 	    ath12k_dp_vow_stats_enabled(dp_pdev))
 		tx_desc->hw_enqueue_tstamp = (u32)ktime_to_us(ktime_get_real());
 }
