@@ -440,7 +440,6 @@ ath12k_wifi7_dp_rx_update_vow_stats(struct ath12k_pdev_dp *pdev,
 					   stats->sent_to_stack_ucast_fast +
 					   stats->sent_to_stack_mcast_fast;
 	}
-	pdev->prev_rx_timestamp = 0;
 }
 
 static inline void
