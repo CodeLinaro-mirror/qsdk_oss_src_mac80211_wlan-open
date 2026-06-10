@@ -590,7 +590,8 @@ bool ath12k_wifi7_compare_tlv_info(struct rx_tlv_info_1 *prev_tlv_info,
 	    prev_tlv_info->nss != tlv_info->nss ||
 	    prev_tlv_info->sgi != tlv_info->sgi ||
 	    prev_tlv_info->pkt_type != tlv_info->pkt_type ||
-	    prev_tlv_info->bw != tlv_info->bw)
+	    prev_tlv_info->bw != tlv_info->bw ||
+	    prev_tlv_info->decap != tlv_info->decap)
 		return false;
 	else
 		return true;
@@ -606,6 +607,7 @@ void ath12k_wifi7_copy_tlv_info(struct rx_tlv_info_1 *prev_tlv_info,
 	prev_tlv_info->sgi = tlv_info->sgi;
 	prev_tlv_info->pkt_type = tlv_info->pkt_type;
 	prev_tlv_info->bw = tlv_info->bw;
+	prev_tlv_info->decap = tlv_info->decap;
 }
 
 static inline bool
