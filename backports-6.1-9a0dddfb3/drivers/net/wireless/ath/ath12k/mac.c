@@ -9852,8 +9852,10 @@ static int ath12k_start_scan(struct ath12k *ar,
 	spin_unlock_bh(&ar->ar_extn.cbs.lock);
 #endif
 
-	if (ath12k_spectral_get_mode(ar) == ATH12K_SPECTRAL_BACKGROUND)
+#ifdef CPTCFG_ATH12K_SPECTRAL
+	if (ar->spectral.scan_active)
 		ath12k_spectral_reset_buffer(ar);
+#endif
 
 	ret = ath12k_wmi_send_scan_start_cmd(ar, arg);
 	if (ret)

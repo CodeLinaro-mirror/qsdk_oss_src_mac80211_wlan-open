@@ -61,7 +61,6 @@
 #define SPECTRAL_SUMMARY_INFO3_GAIN_CHANGE		BIT(16)
 
 #define ATH12K_SPECTRAL_SUMMARY_PAD_BLANKING_TAG	0xc0debeaf
-#define ATH12K_SPECTRAL_NUM_DETECTORS			2
 
 struct spectral_tlv {
 	__le32 timestamp;
@@ -103,17 +102,25 @@ struct ath12k_spectral_summary_report {
 
 #define SPECTRAL_FFT_REPORT_INFO0_DETECTOR_ID		GENMASK(1, 0)
 #define SPECTRAL_FFT_REPORT_INFO0_FFT_NUM		GENMASK(4, 2)
-#define SPECTRAL_FFT_REPORT_INFO0_RADAR_CHECK		GENMASK(16, 5)
-#define SPECTRAL_FFT_REPORT_INFO0_PEAK_SIGNED_IDX	GENMASK(27, 17)
-#define SPECTRAL_FFT_REPORT_INFO0_CHAIN_IDX		GENMASK(30, 28)
+#define SPECTRAL_FFT_REPORT_INFO0_RADAR_CHECK		GENMASK(18, 5)
+#define SPECTRAL_FFT_REPORT_INFO0_PEAK_SIGNED_IDX	GENMASK(29, 19)
 
-#define SPECTRAL_FFT_REPORT_INFO1_BASE_PWR_DB		GENMASK(8, 0)
-#define SPECTRAL_FFT_REPORT_INFO1_TOTAL_GAIN_DB		GENMASK(16, 9)
+#define SPECTRAL_FFT_REPORT_INFO1_CHAIN_IDX		GENMASK(2, 0)
+#define SPECTRAL_FFT_REPORT_INFO1_BASE_PWR_DB		GENMASK(11, 3)
+#define SPECTRAL_FFT_REPORT_INFO1_TOTAL_GAIN_DB		GENMASK(19, 12)
 
 #define SPECTRAL_FFT_REPORT_INFO2_NUM_STRONG_BINS	GENMASK(7, 0)
 #define SPECTRAL_FFT_REPORT_INFO2_PEAK_MAGNITUDE	GENMASK(17, 8)
 #define SPECTRAL_FFT_REPORT_INFO2_AVG_PWR_DB		GENMASK(24, 18)
 #define SPECTRAL_FFT_REPORT_INFO2_REL_PWR_DB		GENMASK(31, 25)
+
+#define ATH12K_SPECTRAL_FFT_PEAK_IDX_WIDTH		11
+#define ATH12K_SPECTRAL_FFT_PEAK_MAG_WIDTH		10
+#define ath12k_spectral_signed_val(value, width) ({ \
+	u32 __val = (value); \
+	u32 __sign = BIT((width) - 1); \
+	(s16)((__val ^ __sign) - __sign); \
+})
 
 struct spectral_search_fft_report {
 	__le32 timestamp;
@@ -127,6 +134,10 @@ struct spectral_search_fft_report {
 
 struct ath12k_spectral_search_report {
 	u32 timestamp;
+	u32 last_raw_timestamp;
+	u32 adjusted_timestamp;
+	u32 last_timestamp;
+	u32 timestamp_war_offset;
 	u8 detector_id;
 	u8 fft_count;
 	u16 radar_check;
@@ -135,10 +146,132 @@ struct ath12k_spectral_search_report {
 	u16 base_pwr_db;
 	u8 total_gain_db;
 	u8 strong_bin_count;
-	u16 peak_mag;
+	s16 peak_mag;
 	u8 avg_pwr_db;
 	u8 rel_pwr_db;
 };
+
+static enum spectral_scan_mode
+ath12k_spectral_get_scan_mode_from_detector(u8 detector_id)
+{
+	switch (detector_id) {
+	case ATH12K_SPECTRAL_DETECTOR_NORMAL:
+		return SPECTRAL_SCAN_MODE_NORMAL;
+	case ATH12K_SPECTRAL_DETECTOR_AGILE:
+		return SPECTRAL_SCAN_MODE_AGILE;
+	default:
+		return SPECTRAL_SCAN_MODE_INVALID;
+	}
+}
+
+static u8 ath12k_spectral_get_detector_from_scan_mode(enum spectral_scan_mode smode)
+{
+	switch (smode) {
+	case SPECTRAL_SCAN_MODE_NORMAL:
+		return ATH12K_SPECTRAL_DETECTOR_NORMAL;
+	case SPECTRAL_SCAN_MODE_AGILE:
+		return ATH12K_SPECTRAL_DETECTOR_AGILE;
+	default:
+		return ATH12K_SPECTRAL_NUM_DETECTORS;
+	}
+}
+
+static void ath12k_spectral_verify_ts(struct ath12k *ar, u8 *buf,
+				      u32 current_ts, u8 detector_id)
+{
+	struct ath12k_spectral *sp = &ar->spectral;
+
+	if (!sp->dbr_buff_debug)
+		return;
+
+	if (detector_id >= ATH12K_SPECTRAL_NUM_DETECTORS) {
+		ath12k_warn(ar->ab, "spectral detector_id %u exceeds range\n",
+			    detector_id);
+		return;
+	}
+
+	if (sp->prev_tstamp[detector_id] &&
+	    current_ts == sp->prev_tstamp[detector_id]) {
+		ath12k_warn(ar->ab,
+			    "spectral timestamp(%u) in buffer(%p) matches previous timestamp\n",
+			    current_ts, buf);
+	}
+
+	sp->prev_tstamp[detector_id] = current_ts;
+}
+
+static void ath12k_spectral_timestamp_war_init(struct ath12k *ar)
+{
+	struct ath12k_spectral *sp = &ar->spectral;
+	int i;
+
+	for (i = 0; i < SPECTRAL_SCAN_MODE_MAX; i++) {
+		sp->last_fft_timestamp[i] = 0;
+		sp->timestamp_war_offset[i] = 0;
+	}
+
+	sp->target_reset_count = 0;
+	memset(sp->prev_tstamp, 0, sizeof(sp->prev_tstamp));
+}
+
+static int ath12k_spectral_get_adjusted_timestamp(struct ath12k *ar,
+						  u32 raw_timestamp,
+						  u32 reset_delay,
+						  enum spectral_scan_mode smode,
+						  u32 *adjusted_timestamp,
+						  u32 *last_raw_timestamp,
+						  u32 *last_timestamp,
+						  u32 *timestamp_war_offset)
+{
+	struct ath12k_spectral *sp = &ar->spectral;
+	u32 prev_raw;
+	u32 prev_offset;
+	int i;
+
+	if (smode >= SPECTRAL_SCAN_MODE_MAX)
+		return -EINVAL;
+
+	prev_raw = sp->last_fft_timestamp[smode];
+	prev_offset = sp->timestamp_war_offset[smode];
+
+	if (reset_delay) {
+		for (i = 0; i < SPECTRAL_SCAN_MODE_MAX; i++)
+			sp->timestamp_war_offset[i] +=
+				reset_delay + sp->last_fft_timestamp[i];
+		sp->target_reset_count++;
+	}
+
+	sp->last_fft_timestamp[smode] = raw_timestamp;
+
+	*adjusted_timestamp = raw_timestamp + sp->timestamp_war_offset[smode];
+	*last_raw_timestamp = prev_raw;
+	*last_timestamp = prev_raw + prev_offset;
+	*timestamp_war_offset = sp->timestamp_war_offset[smode];
+
+	return 0;
+}
+
+static size_t ath12k_spectral_get_bin_count_after_len_adj(struct ath12k *ar,
+							  size_t fft_bin_len,
+							  size_t *fft_bin_size)
+{
+	struct ath12k_base *ab = ar->ab;
+	size_t bin_sz = ab->hw_params->spectral.fft_bin_sz;
+	size_t bin_count;
+
+	if (!bin_sz) {
+		*fft_bin_size = 0;
+		return 0;
+	}
+
+	bin_count = fft_bin_len / bin_sz;
+	*fft_bin_size = bin_sz;
+
+	/* Only in-band bins are forwarded to userspace */
+	bin_count >>= 1;
+
+	return bin_count;
+}
 
 static struct dentry *create_buf_file_handler(const char *filename,
 					      struct dentry *parent,
@@ -192,7 +325,7 @@ int ath12k_spectral_start_scan(struct ath12k *ar)
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
 	/* No WMI config in firmware yet; trigger would be undefined. */
-	if (ar->spectral.mode == ATH12K_SPECTRAL_DISABLED)
+	if (ar->spectral.mode >= SPECTRAL_SCAN_MODE_MAX)
 		return 0;
 
 	/* Scan already running; avoid restarting and losing in-flight samples. */
@@ -237,7 +370,7 @@ int ath12k_spectral_stop_scan(struct ath12k *ar)
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
 	/* Already disabled; skip redundant CLEAR+DISABLE to firmware. */
-	if (ar->spectral.mode == ATH12K_SPECTRAL_DISABLED) {
+	if (ar->spectral.mode >= SPECTRAL_SCAN_MODE_MAX) {
 		ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
 			   "spectral stop_scan: already disabled, skipping\n");
 		return 0;
@@ -249,7 +382,7 @@ int ath12k_spectral_stop_scan(struct ath12k *ar)
 
 	arvif->spectral_enabled = false;
 	spin_lock_bh(&ar->spectral.lock);
-	ar->spectral.mode = ATH12K_SPECTRAL_DISABLED;
+	ar->spectral.mode = SPECTRAL_SCAN_MODE_INVALID;
 	ar->spectral.scan_active = false;
 	spin_unlock_bh(&ar->spectral.lock);
 
@@ -264,7 +397,7 @@ int ath12k_spectral_stop_scan(struct ath12k *ar)
 }
 
 int ath12k_spectral_configure_scan_params(struct ath12k *ar,
-					  enum ath12k_spectral_mode mode)
+					  enum spectral_scan_mode mode)
 {
 	struct ath12k_wmi_vdev_spectral_conf_arg param = { 0 };
 	struct ath12k_spectral_params *p = &ar->spectral.params;
@@ -272,6 +405,9 @@ int ath12k_spectral_configure_scan_params(struct ath12k *ar,
 	int ret;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	if (mode >= SPECTRAL_SCAN_MODE_MAX)
+		return -EINVAL;
 
 	arvif = ath12k_spectral_get_vdev(ar);
 	if (!arvif)
@@ -300,12 +436,8 @@ int ath12k_spectral_configure_scan_params(struct ath12k *ar,
 		return ret;
 	}
 
-	/* In background mode the hardware triggers continuously; scan_count
-	 * must be 0 (unlimited) regardless of the user-configured value.
-	 */
 	param.vdev_id              = arvif->vdev_id;
-	param.scan_count           = (mode == ATH12K_SPECTRAL_BACKGROUND) ?
-				      0 : max_t(u32, 1, p->scan_count);
+	param.scan_count           = max_t(u32, 1, p->scan_count);
 	param.scan_period          = p->scan_period;
 	param.scan_priority        = p->scan_priority;
 	param.scan_fft_size        = p->scan_fft_size;
@@ -340,21 +472,21 @@ static ssize_t ath12k_read_file_spec_scan_ctl(struct file *file,
 	struct ath12k *ar = file->private_data;
 	char *mode = "";
 	size_t len;
-	enum ath12k_spectral_mode spectral_mode;
+	enum spectral_scan_mode spectral_mode;
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
 	spectral_mode = ar->spectral.mode;
 	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
 
 	switch (spectral_mode) {
-	case ATH12K_SPECTRAL_DISABLED:
+	case SPECTRAL_SCAN_MODE_AGILE:
+		mode = "agile";
+		break;
+	case SPECTRAL_SCAN_MODE_NORMAL:
+		mode = "normal";
+		break;
+	default:
 		mode = "disable";
-		break;
-	case ATH12K_SPECTRAL_BACKGROUND:
-		mode = "background";
-		break;
-	case ATH12K_SPECTRAL_MANUAL:
-		mode = "manual";
 		break;
 	}
 
@@ -380,8 +512,7 @@ static ssize_t ath12k_write_file_spec_scan_ctl(struct file *file,
 	guard(wiphy)(ath12k_ar_to_hw(ar)->wiphy);
 
 	if (strncmp("trigger", buf, 7) == 0) {
-		if (ar->spectral.mode == ATH12K_SPECTRAL_MANUAL ||
-		    ar->spectral.mode == ATH12K_SPECTRAL_BACKGROUND) {
+		if (ar->spectral.mode < SPECTRAL_SCAN_MODE_MAX) {
 			/* reset the configuration to adopt possibly changed
 			 * debugfs parameters
 			 */
@@ -401,11 +532,12 @@ static ssize_t ath12k_write_file_spec_scan_ctl(struct file *file,
 		} else {
 			ret = -EINVAL;
 		}
-	} else if (strncmp("background", buf, 10) == 0) {
+	} else if (strncmp("agile", buf, 5) == 0) {
 		ret = ath12k_spectral_configure_scan_params(ar,
-							    ATH12K_SPECTRAL_BACKGROUND);
-	} else if (strncmp("manual", buf, 6) == 0) {
-		ret = ath12k_spectral_configure_scan_params(ar, ATH12K_SPECTRAL_MANUAL);
+							    SPECTRAL_SCAN_MODE_AGILE);
+	} else if (strncmp("normal", buf, 6) == 0) {
+		ret = ath12k_spectral_configure_scan_params(ar,
+							    SPECTRAL_SCAN_MODE_NORMAL);
 	} else if (strncmp("disable", buf, 7) == 0) {
 		ret = ath12k_spectral_stop_scan(ar);
 	} else {
@@ -618,6 +750,8 @@ static int ath12k_spectral_pull_search(struct ath12k *ar,
 				       struct spectral_search_fft_report *search,
 				       struct ath12k_spectral_search_report *report)
 {
+	u32 peak_idx = 0, peak_mag = 0;
+
 	report->timestamp = __le32_to_cpu(search->timestamp);
 	report->detector_id = FIELD_GET(SPECTRAL_FFT_REPORT_INFO0_DETECTOR_ID,
 					__le32_to_cpu(search->info0));
@@ -625,25 +759,29 @@ static int ath12k_spectral_pull_search(struct ath12k *ar,
 				      __le32_to_cpu(search->info0));
 	report->radar_check = FIELD_GET(SPECTRAL_FFT_REPORT_INFO0_RADAR_CHECK,
 					__le32_to_cpu(search->info0));
-	report->peak_idx = FIELD_GET(SPECTRAL_FFT_REPORT_INFO0_PEAK_SIGNED_IDX,
-				     __le32_to_cpu(search->info0));
-	report->chain_idx = FIELD_GET(SPECTRAL_FFT_REPORT_INFO0_CHAIN_IDX,
-				      __le32_to_cpu(search->info0));
+	peak_idx = FIELD_GET(SPECTRAL_FFT_REPORT_INFO0_PEAK_SIGNED_IDX,
+			     __le32_to_cpu(search->info0));
+	report->peak_idx = ath12k_spectral_signed_val(peak_idx,
+						      ATH12K_SPECTRAL_FFT_PEAK_IDX_WIDTH);
+	report->chain_idx = FIELD_GET(SPECTRAL_FFT_REPORT_INFO1_CHAIN_IDX,
+				      __le32_to_cpu(search->info1));
 	report->base_pwr_db = FIELD_GET(SPECTRAL_FFT_REPORT_INFO1_BASE_PWR_DB,
 					__le32_to_cpu(search->info1));
 	report->total_gain_db = FIELD_GET(SPECTRAL_FFT_REPORT_INFO1_TOTAL_GAIN_DB,
 					  __le32_to_cpu(search->info1));
 	report->strong_bin_count = FIELD_GET(SPECTRAL_FFT_REPORT_INFO2_NUM_STRONG_BINS,
 					     __le32_to_cpu(search->info2));
-	report->peak_mag = FIELD_GET(SPECTRAL_FFT_REPORT_INFO2_PEAK_MAGNITUDE,
-				     __le32_to_cpu(search->info2));
+	peak_mag = FIELD_GET(SPECTRAL_FFT_REPORT_INFO2_PEAK_MAGNITUDE,
+			     __le32_to_cpu(search->info2));
+	report->peak_mag = ath12k_spectral_signed_val(peak_mag,
+						      ATH12K_SPECTRAL_FFT_PEAK_MAG_WIDTH);
 	report->avg_pwr_db = FIELD_GET(SPECTRAL_FFT_REPORT_INFO2_AVG_PWR_DB,
 				       __le32_to_cpu(search->info2));
 	report->rel_pwr_db = FIELD_GET(SPECTRAL_FFT_REPORT_INFO2_REL_PWR_DB,
 				       __le32_to_cpu(search->info2));
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
-		   "spectral fft report: ts=%u det_id=%u fft_num=%u radar_check=%u peak_sidx=%d chn_idx=%u base_pwr_db=%u total_gain_db=%u num_str_bins=%u peak_mag=%u avgpwr_db=%u relpwr_db=%u\n",
+		   "spectral fft report: ts=%u det_id=%u fft_num=%u radar_check=%u peak_sidx=%d chn_idx=%u base_pwr_db=%u total_gain_db=%u num_str_bins=%u peak_mag=%d avgpwr_db=%u relpwr_db=%u\n",
 		   report->timestamp, report->detector_id, report->fft_count,
 		   report->radar_check, report->peak_idx, report->chain_idx,
 		   report->base_pwr_db, report->total_gain_db,
@@ -683,16 +821,113 @@ static u8 ath12k_spectral_peer_chwidth_to_nl(u32 ch_width)
 	}
 }
 
-static u8 ath12k_spectral_mode_to_scan_mode(enum ath12k_spectral_mode mode)
+static int ath12k_spectral_fill_fft_sample(struct ath12k *ar,
+					   struct ath12k_spectral_summary_report *summary,
+					   struct spectral_search_fft_report *fft_report,
+					   const struct ath12k_spectral_search_report
+					   *search,
+					   struct fft_sample_ath12k *fft_sample,
+					   int num_bins,
+					   bool fragment_sample)
 {
-	switch (mode) {
-	case ATH12K_SPECTRAL_MANUAL:
-		return SPECTRAL_SCAN_MODE_NORMAL;
-	case ATH12K_SPECTRAL_BACKGROUND:
-		return SPECTRAL_SCAN_MODE_AGILE;
-	default:
-		return SPECTRAL_SCAN_MODE_INVALID;
+	struct ath12k_base *ab = ar->ab;
+	u16 length, end_bin;
+
+	length = sizeof(*fft_sample) - sizeof(struct fft_sample_tlv) + num_bins;
+	fft_sample->tlv.type = ATH_FFT_SAMPLE_ATH12K;
+	fft_sample->tlv.length = __cpu_to_be16(length);
+
+	fft_sample->signature = __cpu_to_be32(ATH12K_SPECTRAL_SIGNATURE);
+	fft_sample->pri_freq = __cpu_to_be32(summary->meta.freq1);
+	fft_sample->target_reset_count = __cpu_to_be32(ar->spectral.target_reset_count);
+	fft_sample->cfreq1 = __cpu_to_be32(summary->meta.freq1);
+	fft_sample->cfreq2 = __cpu_to_be32(summary->meta.freq2);
+	fft_sample->sscan_cfreq1 = __cpu_to_be32(summary->meta.freq1);
+	fft_sample->sscan_cfreq2 = __cpu_to_be32(summary->meta.freq2);
+	fft_sample->bin_pwr_count = __cpu_to_be32(num_bins);
+
+	end_bin = num_bins ? num_bins - 1 : 0;
+	fft_sample->detector_info.start_frequency = __cpu_to_be32(summary->meta.freq1);
+	fft_sample->detector_info.end_frequency = __cpu_to_be32(summary->meta.freq2);
+	fft_sample->detector_info.timestamp =
+		__cpu_to_be32(search->adjusted_timestamp);
+	fft_sample->detector_info.last_tstamp =
+		__cpu_to_be32(search->last_timestamp);
+	fft_sample->detector_info.last_raw_timestamp =
+		__cpu_to_be32(search->last_raw_timestamp);
+	fft_sample->detector_info.timestamp_war_offset =
+		__cpu_to_be32(search->timestamp_war_offset);
+	fft_sample->detector_info.raw_timestamp =
+		__cpu_to_be32(search->timestamp);
+	fft_sample->detector_info.reset_delay = __cpu_to_be32(summary->meta.reset_delay);
+	fft_sample->detector_info.start_bin_idx = __cpu_to_be16(0);
+	fft_sample->detector_info.end_bin_idx = __cpu_to_be16(end_bin);
+	fft_sample->detector_info.max_index =
+		__cpu_to_be16((s16)search->peak_idx);
+	fft_sample->detector_info.max_magnitude =
+		__cpu_to_be16(search->peak_mag);
+	fft_sample->detector_info.noise_floor =
+		__cpu_to_be16((s16)summary->meta.noise_floor[search->chain_idx]);
+
+	summary->inb_pwr_db >>= 1;
+	fft_sample->detector_info.rssi = (u8)summary->inb_pwr_db;
+	fft_sample->detector_info.agc_total_gain = summary->agc_total_gain;
+	fft_sample->detector_info.gainchange = summary->gain_change;
+	fft_sample->detector_info.pri80ind = summary->primary80;
+	fft_sample->detector_info.blanking_status = summary->blanking_status;
+	fft_sample->spectral_mode =
+		ath12k_spectral_get_scan_mode_from_detector(search->detector_id);
+	fft_sample->operating_bw =
+		ath12k_spectral_peer_chwidth_to_nl(summary->meta.ch_width);
+	fft_sample->sscan_bw =
+		ath12k_spectral_peer_chwidth_to_nl(summary->meta.ch_width);
+	fft_sample->fft_width = ar->spectral.params.scan_fft_size;
+	memcpy(fft_sample->macaddr, ar->mac_addr, sizeof(fft_sample->macaddr));
+	ath12k_dbg(ab, ATH12K_DBG_SPECTRAL, "spectral fft: ar->mac_addr=%pM\n",
+		   ar->mac_addr);
+
+	/* If freq2 is available then the spectral scan results are fragmented as
+	 * primary and secondary
+	 */
+	if (fragment_sample && summary->meta.freq2) {
+		fft_sample->detector_info.is_sec80 = !ar->spectral.is_primary;
+		/* We have to toggle the is_primary to handle the next report */
+		ar->spectral.is_primary = !ar->spectral.is_primary;
 	}
+
+	ath12k_spectral_parse_fft(fft_sample->data, fft_report->bins, num_bins,
+				  ab->hw_params->spectral.fft_bin_sz);
+
+	ath12k_dbg(ab, ATH12K_DBG_SPECTRAL,
+		   "spectral fft bins: num_bins=%d fft_size=%u\n", num_bins,
+		   ar->spectral.params.scan_fft_size);
+	if (ath12k_debug_mask & ATH12K_DBG_SPECTRAL)
+		print_hex_dump(KERN_DEBUG, "fft bins: ", DUMP_PREFIX_OFFSET, 16, 1,
+			       fft_sample->data, num_bins, false);
+
+	ath12k_dbg(ab, ATH12K_DBG_SPECTRAL,
+		   "fft_sample: pri_freq=%u cfreq1=%u cfreq2=%u sscan_cfreq1=%u sscan_cfreq2=%u bins=%u mode=%u op_bw=%u sscan_bw=%u start_freq=%u end_freq=%u rssi=%u nf=%d macaddr=%pM\n",
+		   be32_to_cpu(fft_sample->pri_freq),
+		   be32_to_cpu(fft_sample->cfreq1),
+		   be32_to_cpu(fft_sample->cfreq2),
+		   be32_to_cpu(fft_sample->sscan_cfreq1),
+		   be32_to_cpu(fft_sample->sscan_cfreq2),
+		   be32_to_cpu(fft_sample->bin_pwr_count),
+		   fft_sample->spectral_mode,
+		   fft_sample->operating_bw,
+		   fft_sample->sscan_bw,
+		   be32_to_cpu(fft_sample->detector_info.start_frequency),
+		   be32_to_cpu(fft_sample->detector_info.end_frequency),
+		   fft_sample->detector_info.rssi,
+		   (s16)be16_to_cpu(fft_sample->detector_info.noise_floor),
+		   fft_sample->macaddr);
+
+	if (ar->spectral.rfs_scan)
+		relay_write(ar->spectral.rfs_scan, fft_sample,
+			    sizeof(*fft_sample) +
+			    ATH12K_SPECTRAL_ATH12K_MAX_IB_BINS(ar->ab));
+
+	return 0;
 }
 
 static
@@ -707,13 +942,17 @@ int ath12k_spectral_process_fft(struct ath12k *ar,
 	struct ath12k_spectral_search_report search;
 	struct spectral_tlv *tlv;
 	int tlv_len, bin_len, num_bins;
-	u16 length, end_bin;
+	size_t fft_bin_size;
+	size_t total_bins;
 	u8 chan_width_mhz;
 	int ret, i;
 	u32 check_length;
 	bool fragment_sample = false;
 	struct wmi_spectral_capabilities_event spectral_cap;
 	u32 supported_flags;
+	u8 sign, tag;
+	enum spectral_scan_mode smode;
+
 	spectral_cap = ar->spectral.spectral_cap;
 
 	lockdep_assert_held(&ar->spectral.lock);
@@ -728,6 +967,20 @@ int ath12k_spectral_process_fft(struct ath12k *ar,
 	tlv_len = FIELD_GET(SPECTRAL_TLV_HDR_LEN, __le32_to_cpu(tlv->header));
 	/* convert Dword into bytes */
 	tlv_len *= ATH12K_SPECTRAL_DWORD_SIZE;
+	sign = FIELD_GET(SPECTRAL_TLV_HDR_SIGN, __le32_to_cpu(tlv->header));
+	tag = FIELD_GET(SPECTRAL_TLV_HDR_TAG, __le32_to_cpu(tlv->header));
+	if (sign != ATH12K_SPECTRAL_SIGNATURE ||
+	    tag != ATH12K_SPECTRAL_TAG_SCAN_SEARCH) {
+		ath12k_warn(ab, "invalid fft tlv: sign=0x%x tag=0x%x\n",
+			    sign, tag);
+		return -EINVAL;
+	}
+
+	if (tlv_len < ab->hw_params->spectral.fft_hdr_len) {
+		ath12k_warn(ab, "invalid fft header length %d\n", tlv_len);
+		return -EINVAL;
+	}
+
 	bin_len = tlv_len - ab->hw_params->spectral.fft_hdr_len;
 
 	if (data_len < (bin_len + sizeof(*fft_report))) {
@@ -736,18 +989,18 @@ int ath12k_spectral_process_fft(struct ath12k *ar,
 		return -EINVAL;
 	}
 
-	num_bins = bin_len / ab->hw_params->spectral.fft_bin_sz;
-	/* Only In-band bins are useful to user for visualize */
-	num_bins >>= 1;
+	total_bins = bin_len / ab->hw_params->spectral.fft_bin_sz;
+	num_bins = ath12k_spectral_get_bin_count_after_len_adj(ar, bin_len,
+							       &fft_bin_size);
 
 	ath12k_dbg(ab, ATH12K_DBG_SPECTRAL,
-		   "spectral fft hdr: fft_timestamp=0x%x hdr_len=%d(dwords) tag=0x%x sig=0x%x payload_len=%d total_len=%zu bin_len=%d num_bins=%d\n",
+		   "spectral fft hdr: fft_timestamp=0x%x hdr_len=%d(dwords) tag=0x%x sig=0x%x payload_len=%d total_len=%zu bin_len=%d bin_sz=%zu num_bins=%d\n",
 		   __le32_to_cpu(fft_report->timestamp),
 		   tlv_len / ATH12K_SPECTRAL_DWORD_SIZE,
 		   (u32)FIELD_GET(SPECTRAL_TLV_HDR_TAG, __le32_to_cpu(tlv->header)),
 		   (u32)FIELD_GET(SPECTRAL_TLV_HDR_SIGN, __le32_to_cpu(tlv->header)),
 		   tlv_len, tlv_len + sizeof(*tlv),
-		   bin_len, num_bins);
+		   bin_len, fft_bin_size, num_bins);
 
 	if (num_bins < ATH12K_SPECTRAL_ATH12K_MIN_IB_BINS ||
 	    num_bins > ATH12K_SPECTRAL_ATH12K_MAX_IB_BINS(ab) ||
@@ -768,6 +1021,50 @@ int ath12k_spectral_process_fft(struct ath12k *ar,
 		ath12k_warn(ab, "failed to pull search report %d\n", ret);
 		return ret;
 	}
+
+	if (search.detector_id != summary->detector_id) {
+		ath12k_warn(ab, "detector mismatch: summary=%u fft=%u\n",
+			    summary->detector_id, search.detector_id);
+		return -EINVAL;
+	}
+
+	if (search.detector_id >= ATH12K_SPECTRAL_NUM_DETECTORS) {
+		ath12k_warn(ab, "invalid detector id %u\n",
+			    search.detector_id);
+		return -EINVAL;
+	}
+
+	search.last_raw_timestamp = 0;
+	search.adjusted_timestamp = 0;
+	search.last_timestamp = 0;
+	search.timestamp_war_offset = 0;
+
+	if (ar->spectral.mode < SPECTRAL_SCAN_MODE_MAX &&
+	    ath12k_spectral_get_detector_from_scan_mode(ar->spectral.mode) !=
+							search.detector_id) {
+		ath12k_dbg(ab, ATH12K_DBG_SPECTRAL,
+			   "spectral detector mismatch: mode=%u detector=%u\n",
+			   ar->spectral.mode, search.detector_id);
+	}
+
+	smode = ath12k_spectral_get_scan_mode_from_detector(search.detector_id);
+	if (smode >= SPECTRAL_SCAN_MODE_MAX) {
+		ath12k_warn(ab, "invalid spectral mode %u\n", smode);
+		return -EINVAL;
+	}
+	ret = ath12k_spectral_get_adjusted_timestamp(ar, search.timestamp,
+						     summary->meta.reset_delay, smode,
+						     &search.adjusted_timestamp,
+						     &search.last_raw_timestamp,
+						     &search.last_timestamp,
+						     &search.timestamp_war_offset);
+	if (ret) {
+		ath12k_warn(ab, "failed to adjust timestamp %d\n", ret);
+		return ret;
+	}
+
+	ath12k_spectral_verify_ts(ar, data, search.adjusted_timestamp,
+				  search.detector_id);
 
 	chan_width_mhz = ar->spectral.ch_width;
 
@@ -876,86 +1173,12 @@ int ath12k_spectral_process_fft(struct ath12k *ar,
 		return -EINVAL;
 	}
 
-	length = sizeof(*fft_sample) - sizeof(struct fft_sample_tlv) + num_bins;
-	fft_sample->tlv.type = ATH_FFT_SAMPLE_ATH12K;
-	fft_sample->tlv.length = __cpu_to_be16(length);
-
-	fft_sample->signature = __cpu_to_be32(ATH12K_SPECTRAL_SIGNATURE);
-	fft_sample->pri_freq = __cpu_to_be32(summary->meta.freq1);
-	fft_sample->target_reset_count = __cpu_to_be32(0);
-	fft_sample->cfreq1 = __cpu_to_be32(summary->meta.freq1);
-	fft_sample->cfreq2 = __cpu_to_be32(summary->meta.freq2);
-	fft_sample->sscan_cfreq1 = __cpu_to_be32(summary->meta.freq1);
-	fft_sample->sscan_cfreq2 = __cpu_to_be32(summary->meta.freq2);
-	fft_sample->bin_pwr_count = __cpu_to_be32(num_bins);
-
-	end_bin = num_bins ? num_bins - 1 : 0;
-	fft_sample->detector_info.start_frequency = __cpu_to_be32(summary->meta.freq1);
-	fft_sample->detector_info.end_frequency = __cpu_to_be32(summary->meta.freq2);
-	fft_sample->detector_info.timestamp = __cpu_to_be32(search.timestamp);
-	fft_sample->detector_info.reset_delay = __cpu_to_be32(summary->meta.reset_delay);
-	fft_sample->detector_info.start_bin_idx = __cpu_to_be16(0);
-	fft_sample->detector_info.end_bin_idx = __cpu_to_be16(end_bin);
-	fft_sample->detector_info.max_index =
-		__cpu_to_be16(FIELD_GET(SPECTRAL_FFT_REPORT_INFO0_PEAK_SIGNED_IDX,
-					__le32_to_cpu(fft_report->info0)));
-	fft_sample->detector_info.max_magnitude = __cpu_to_be16(search.peak_mag);
-	fft_sample->detector_info.noise_floor =
-		__cpu_to_be16((s16)summary->meta.noise_floor[search.chain_idx]);
-
-	summary->inb_pwr_db >>= 1;
-	fft_sample->detector_info.rssi = (u8)summary->inb_pwr_db;
-	fft_sample->detector_info.agc_total_gain = summary->agc_total_gain;
-	fft_sample->detector_info.gainchange = summary->gain_change;
-	fft_sample->detector_info.pri80ind = summary->primary80;
-	fft_sample->spectral_mode = ath12k_spectral_mode_to_scan_mode(ar->spectral.mode);
-	fft_sample->operating_bw =
-		ath12k_spectral_peer_chwidth_to_nl(summary->meta.ch_width);
-	fft_sample->sscan_bw     =
-		ath12k_spectral_peer_chwidth_to_nl(summary->meta.ch_width);
-	fft_sample->detector_info.blanking_status = summary->blanking_status;
-	fft_sample->fft_width = ar->spectral.params.scan_fft_size;
-	memcpy(fft_sample->macaddr, ar->mac_addr, sizeof(fft_sample->macaddr));
-	ath12k_dbg(ab, ATH12K_DBG_SPECTRAL, "spectral fft: ar->mac_addr=%pM\n",
-		   ar->mac_addr);
-
-	/* If freq2 is available then the spectral scan results are fragmented as primary and secondary */
-	if (fragment_sample && summary->meta.freq2) {
-		fft_sample->detector_info.is_sec80 = !ar->spectral.is_primary;
-		/* We have to toggle the is_primary to handle the next report */
-		ar->spectral.is_primary = !ar->spectral.is_primary;
-	}
-
-	ath12k_spectral_parse_fft(fft_sample->data, fft_report->bins, num_bins,
-				  ab->hw_params->spectral.fft_bin_sz);
-
-	ath12k_dbg(ab, ATH12K_DBG_SPECTRAL,
-		   "spectral fft bins: num_bins=%d fft_size=%u\n", num_bins,
-		   ar->spectral.params.scan_fft_size);
-	if (ath12k_debug_mask & ATH12K_DBG_SPECTRAL)
-		print_hex_dump(KERN_DEBUG, "fft bins: ", DUMP_PREFIX_OFFSET, 16, 1,
-			       fft_sample->data, num_bins, false);
-
-	ath12k_dbg(ab, ATH12K_DBG_SPECTRAL,
-		   "fft_sample: pri_freq=%u cfreq1=%u cfreq2=%u sscan_cfreq1=%u sscan_cfreq2=%u bins=%u mode=%u op_bw=%u sscan_bw=%u start_freq=%u end_freq=%u rssi=%u nf=%d macaddr=%pM\n",
-		   be32_to_cpu(fft_sample->pri_freq),
-		   be32_to_cpu(fft_sample->cfreq1),
-		   be32_to_cpu(fft_sample->cfreq2),
-		   be32_to_cpu(fft_sample->sscan_cfreq1),
-		   be32_to_cpu(fft_sample->sscan_cfreq2),
-		   be32_to_cpu(fft_sample->bin_pwr_count),
-		   fft_sample->spectral_mode,
-		   fft_sample->operating_bw,
-		   fft_sample->sscan_bw,
-		   be32_to_cpu(fft_sample->detector_info.start_frequency),
-		   be32_to_cpu(fft_sample->detector_info.end_frequency),
-		   fft_sample->detector_info.rssi,
-		   (s16)be16_to_cpu(fft_sample->detector_info.noise_floor),
-		   fft_sample->macaddr);
-
-	if (ar->spectral.rfs_scan) {
-		relay_write(ar->spectral.rfs_scan, fft_sample,
-			sizeof(*fft_sample) + ATH12K_SPECTRAL_ATH12K_MAX_IB_BINS(ar->ab));
+	ret = ath12k_spectral_fill_fft_sample(ar, summary, fft_report, &search,
+					      fft_sample, num_bins,
+					      fragment_sample);
+	if (ret) {
+		ath12k_warn(ab, "failed to fill fft sample %d\n", ret);
+		return ret;
 	}
 	return 0;
 }
@@ -1247,7 +1470,7 @@ void ath12k_spectral_deinit(struct ath12k_base *ab)
 		sp->enabled = false;
 		spin_unlock_bh(&sp->lock);
 
-		if (ar->spectral.mode != ATH12K_SPECTRAL_DISABLED) {
+		if (ar->spectral.mode < SPECTRAL_SCAN_MODE_MAX) {
 			wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
 			ath12k_spectral_stop_scan(ar);
 			wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
@@ -1317,6 +1540,10 @@ static inline int ath12k_spectral_debug_register(struct ath12k *ar)
 		goto debug_unregister;
 	}
 
+	debugfs_create_bool("spectral_dbr_buff_debug", 0600,
+			    ar->debug.debugfs_pdev,
+			    &ar->spectral.dbr_buff_debug);
+
 	return 0;
 
 debug_unregister:
@@ -1362,7 +1589,7 @@ int ath12k_spectral_init(struct ath12k_base *ab)
 
 		spin_lock_bh(&sp->lock);
 
-		sp->mode = ATH12K_SPECTRAL_DISABLED;
+		sp->mode = SPECTRAL_SCAN_MODE_INVALID;
 		sp->params.scan_count          = ATH12K_WMI_SPECTRAL_COUNT_DEFAULT;
 		sp->params.scan_period         = ATH12K_WMI_SPECTRAL_PERIOD_DEFAULT;
 		sp->params.scan_priority       = ATH12K_WMI_SPECTRAL_PRIORITY_DEFAULT;
@@ -1382,6 +1609,8 @@ int ath12k_spectral_init(struct ath12k_base *ab)
 		sp->params.scan_bin_scale      = ATH12K_WMI_SPECTRAL_BIN_SCALE_DEFAULT;
 		sp->params.scan_dbm_adj        = ATH12K_WMI_SPECTRAL_DBM_ADJ_DEFAULT;
 		sp->params.scan_chn_mask       = ATH12K_WMI_SPECTRAL_CHN_MASK_DEFAULT;
+		sp->dbr_buff_debug = false;
+		ath12k_spectral_timestamp_war_init(ar);
 		sp->enabled = true;
 
 		spin_unlock_bh(&sp->lock);
@@ -1401,12 +1630,12 @@ deinit:
 	return ret;
 }
 
-enum ath12k_spectral_mode ath12k_spectral_get_mode(struct ath12k *ar)
+enum spectral_scan_mode ath12k_spectral_get_mode(struct ath12k *ar)
 {
 	if (ar->spectral.enabled)
 		return ar->spectral.mode;
 	else
-		return ATH12K_SPECTRAL_DISABLED;
+		return SPECTRAL_SCAN_MODE_INVALID;
 }
 
 struct ath12k_dbring *ath12k_spectral_get_dbring(struct ath12k *ar)
