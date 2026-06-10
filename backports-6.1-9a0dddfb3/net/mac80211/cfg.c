@@ -5089,10 +5089,12 @@ void ieee80211_csa_batch_work(struct wiphy *wiphy, struct wiphy_work *work)
 						  0);
 
 		if (link->csa.changed) {
+			link->conf->elemid_added = link->csa.elemid_added;
 			ieee80211_link_info_change_notify(sdata, link,
 							  link->csa.changed);
 			drv_channel_switch_beacon(sdata,
 						  &link->csa.chanreq.oper);
+			link->conf->elemid_added = 0;
 		} else {
 			/* beacon unchanged — finalize immediately */
 			ieee80211_csa_finalize(link);
@@ -5334,9 +5336,13 @@ __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 	 * Scan radio skips this path because it never sets csa_active.
 	 */
 	if (!wdev_is_scan_radio(&sdata->wdev)) {
-		link_data->csa.changed = changed;
-		link_data->csa.count   = params->count;
-		link_data->csa_block_tx = params->block_tx;
+		link_data->csa.changed     = changed;
+		link_data->csa.count       = params->count;
+		link_data->csa_block_tx    = params->block_tx;
+		/* Save elemid_added now; the out: label clears it before the
+		 * batch worker pushes the beacon to the driver.
+		 */
+		link_data->csa.elemid_added = link_conf->elemid_added;
 		ieee80211_csa_batch_enqueue(local, link_data, chanctx, params);
 		goto out;
 	}

@@ -1194,8 +1194,10 @@ struct ieee80211_link_data {
 		struct list_head batch_list;
 		/* BSS_CHANGED_* flags captured in phase 1 for deferred commit */
 		u64 changed;
-		/* countdown value saved for cfg80211 notification in batch work */
+		/* countdown and block_tx saved for batch worker */
 		u8 count;
+		/* saved elemid_added for EHT Critical Update in batch worker */
+		bool elemid_added;
 	} csa;
 
 	struct wiphy_work color_change_finalize_work;
