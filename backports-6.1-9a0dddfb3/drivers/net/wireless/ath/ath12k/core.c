@@ -2262,17 +2262,76 @@ static int ath12k_core_send_cumac_chip(struct ath12k_hw_group *ag)
 	return ret;
 }
 
+#define ATH12K_CUMAC_BAND_PRIO_MAX 3
+#define ATH12K_CUMAC_BAND_PRIO_STR_LEN 32
+
+static int ath12k_parse_cumac_band_priority(enum ath12k_cumac_band *prio_band,
+					    struct ath12k_base *ab)
+{
+	char buf[ATH12K_CUMAC_BAND_PRIO_STR_LEN];
+	char *p = buf, *token;
+	int count = 0;
+	bool seen[ATH12K_CUMAC_BAND_PRIO_MAX + 1] = {};
+
+#ifdef CPTCFG_QCN_EXTN
+	const char *ini_val = ab ? ath12k_cfg_get(ab,
+					ATH12K_CFG_CUMAC_BAND_PRIORITY) : NULL;
+
+	if (!ini_val || !ini_val[0])
+		return 0;
+
+	strscpy(buf, ini_val, sizeof(buf));
+	ath12k_dbg(ab, ATH12K_DBG_BOOT,
+		   "cumac_band_priority: using INI value \"%s\"\n", buf);
+#else
+	return 0;
+#endif
+
+	while ((token = strsep(&p, " \t")) != NULL) {
+		enum ath12k_cumac_band band;
+
+		if (!*token)
+			continue;
+
+		if (strcasecmp(token, "2GHz") == 0)
+			band = ATH12K_CUMAC_BAND_2GHZ;
+		else if (strcasecmp(token, "5GHz") == 0)
+			band = ATH12K_CUMAC_BAND_5GHZ;
+		else if (strcasecmp(token, "6GHz") == 0)
+			band = ATH12K_CUMAC_BAND_6GHZ;
+		else {
+			ath12k_warn(ab, "unknown cumac_band_priority token \"%s\", ignoring\n",
+				    token);
+			continue;
+		}
+
+		if (seen[band])
+			continue;
+
+		seen[band] = true;
+		prio_band[count++] = band;
+
+		if (count == ATH12K_CUMAC_BAND_PRIO_MAX)
+			break;
+	}
+
+	return count;
+}
+
 static int ath12k_select_cumac_chip(struct ath12k_hw_group *ag)
 {
 	struct ath12k_base *partner_ab;
 	struct ath12k_base *cumac_ab = NULL;
 	int i, j;
 	enum ath12k_cumac_band preferred_cumac_band;
-	enum ath12k_cumac_band curr_band;
-	enum ath12k_cumac_band ath12k_cumac_prio_band[] = {ATH12K_CUMAC_BAND_2GHZ,
-							   ATH12K_CUMAC_BAND_5GHZ,
-							   ATH12K_CUMAC_BAND_6GHZ};
-	u32 max_prio_order =  ARRAY_SIZE(ath12k_cumac_prio_band);
+	enum ath12k_cumac_band curr_band = ATH12K_CUMAC_BAND_NONE;
+	enum ath12k_cumac_band default_prio_band[] = {ATH12K_CUMAC_BAND_2GHZ,
+						      ATH12K_CUMAC_BAND_5GHZ,
+						      ATH12K_CUMAC_BAND_6GHZ};
+	enum ath12k_cumac_band override_prio_band[ATH12K_CUMAC_BAND_PRIO_MAX];
+	enum ath12k_cumac_band *prio_band;
+	u32 max_prio_order;
+	int override_count;
 
 	if (!ag)
 		return -EINVAL;
@@ -2280,8 +2339,29 @@ static int ath12k_select_cumac_chip(struct ath12k_hw_group *ag)
 	if (ag->cumac_selected)
 		return 0;
 
+	/* Find the first available ab for INI lookup. */
+	partner_ab = NULL;
+	for (i = 0; i < ag->num_devices; i++) {
+		if (ag->ab[i] && !ag->ab[i]->is_bypassed) {
+			partner_ab = ag->ab[i];
+			break;
+		}
+	}
+	override_count = ath12k_parse_cumac_band_priority(override_prio_band,
+							  partner_ab);
+	if (override_count > 0) {
+		prio_band = override_prio_band;
+		max_prio_order = override_count;
+		ath12k_info(NULL,
+			    "CUMAC chip selection: using INI band priority (%d entries)\n",
+			    override_count);
+	} else {
+		prio_band = default_prio_band;
+		max_prio_order = ARRAY_SIZE(default_prio_band);
+	}
+
 	for (j = 0; j < max_prio_order; j++) {
-		preferred_cumac_band = ath12k_cumac_prio_band[j];
+		preferred_cumac_band = prio_band[j];
 		for (i = 0; i < ag->num_devices; i++) {
 			partner_ab = ag->ab[i];
 			if (!partner_ab)
