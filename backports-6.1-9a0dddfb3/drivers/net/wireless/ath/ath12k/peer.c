@@ -719,7 +719,7 @@ int ath12k_peer_delete(struct ath12k *ar, u32 vdev_id, u8 *addr,
 	ret = __ath12k_peer_delete(ar, vdev_id, addr, skip_peer_del,
 				   mlo_hw_link_id_bitmap,
 				   peer_delete_send_mlo_hw_bitmap, sta);
-	if (ret && ret != -EHOSTDOWN)
+	if (ret)
 		return ret;
 
 	ar->num_peers--;
@@ -980,7 +980,8 @@ int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif,
 		if (ret)
 			err_ret = ret;
 
-		ar->num_peers--;
+		if (!ret || !test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags))
+			ar->num_peers--;
 
 		/*
 		 * arvif::num_peers will be decremented during vdev stop

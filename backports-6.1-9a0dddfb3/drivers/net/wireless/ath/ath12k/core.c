@@ -4339,12 +4339,6 @@ static void ath12k_reset_group_key_slots(struct ath12k_link_vif *arvif,
 	}
 }
 
-/* Wrapper function for recovery after crash
- * This recovery function will be called for
- * both Mode 1 and Mode 2. Because both Mode
- * will recover only the crashed radio
- * without affecting the other active radio
- */
 static void ath12k_check_for_valid_chanctx(struct ath12k *ar)
 {
 	struct ath12k_link_vif *arvif, *tmp;
@@ -4354,16 +4348,9 @@ static void ath12k_check_for_valid_chanctx(struct ath12k *ar)
 		if (!arvif->ar)
 			continue;
 
-		if (!ath12k_mac_is_bridge_vdev(arvif) && !arvif->chanctx.def.chan) {
-			spin_lock_bh(&ar->data_lock);
-
-			if (!list_empty(&ar->arvifs))
-				list_del(&arvif->list);
-
-			spin_unlock_bh(&ar->data_lock);
-			arvif->ar = NULL;
-		} else if (arvif->chanctx.def.chan) {
+		if (arvif->chanctx.def.chan) {
 			def = &arvif->chanctx.def;
+			break;
 		}
 	}
 
@@ -4376,6 +4363,12 @@ static void ath12k_check_for_valid_chanctx(struct ath12k *ar)
 	}
 }
 
+/* Wrapper function for recovery after crash
+ * This recovery function will be called for
+ * both Mode 1 and Mode 2. Because both Mode
+ * will recover only the crashed radio
+ * without affecting the other active radio
+ */
 int ath12k_recovery_reconfig(struct ath12k_base *ab)
 {
 	struct ath12k *ar = NULL;
