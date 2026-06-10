@@ -249,7 +249,7 @@ static const struct ath12k_dp_ring_cfg ath12k_dp_ring_cfgs[] = {
 						   ~DP_SMART_MON_VALID),
 		.mon_num_ppdu_desc		= 128,
 		.rx_desc_count_wifi7		= 8192,
-		.rx_desc_count_wifi8		= 8192,
+		.rx_desc_count_wifi8		= 16384,
 		.num_stations_single		= 128,
 		.num_stations_dbs		= 64,
 		.num_stations_dbs_sbs		= 42,
