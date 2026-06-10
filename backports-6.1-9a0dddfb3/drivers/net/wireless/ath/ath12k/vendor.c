@@ -15128,34 +15128,43 @@ ath12k_spectral_scan_policy[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_MAX + 1] =
 };
 
 /* Returns the ath12k radio for a spectral vendor command.
+ *
+ * Reads NL80211_ATTR_WIPHY_RADIO_INDEX from the outer nl80211 message via
+ * rdev->cur_cmd_info->attrs[], maps it to the ar, and verifies at least one
+ * vdev is active (required for WMI spectral commands).
+ *
  * Must be called with the wiphy lock held.
- * Uses the first active link in links_map so it works for single-link
- * (non-MLO) and multi-radio platforms without hardcoding link_id=0.
  */
-static struct ath12k *ath12k_spectral_get_ar_from_wdev(struct wireless_dev *wdev)
+static struct ath12k *ath12k_spectral_get_ar(struct wiphy *wiphy)
 {
-	struct ieee80211_vif *vif;
-	struct ath12k_vif *ahvif;
+	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wiphy);
 	struct ath12k *ar;
-	u8 link_id;
+	u8 radio_idx;
 
-	vif = wdev_to_ieee80211_vif(wdev);
-	if (!vif) {
-		pr_err("ath12k: no ieee80211_vif for %s\n",
-		       wdev->netdev ? wdev->netdev->name : "?");
+	/* cur_cmd_info is set by nl80211_vendor_cmd() before dispatching
+	 * and cleared after; it is always non-NULL here, but guard defensively
+	 * in case of future call-path changes.
+	 */
+	if (!rdev->cur_cmd_info ||
+	    !rdev->cur_cmd_info->attrs[NL80211_ATTR_WIPHY_RADIO_INDEX]) {
+		ath12k_err(NULL,
+			   "spectral: NL80211_ATTR_WIPHY_RADIO_INDEX missing in command\n");
 		return NULL;
 	}
 
-	ahvif = ath12k_vif_to_ahvif(vif);
-	if (!ahvif || !ahvif->links_map) {
-		pr_err("ath12k: ar lookup failed: ahvif=%p links_map=0x%x for %s\n",
-		       ahvif, ahvif ? ahvif->links_map : 0,
-		       wdev->netdev ? wdev->netdev->name : "?");
+	radio_idx = nla_get_u8(rdev->cur_cmd_info->attrs[NL80211_ATTR_WIPHY_RADIO_INDEX]);
+
+	ar = ath12k_get_radio_by_id(wiphy, radio_idx);
+	if (!ar)
+		return NULL;
+
+	if (list_empty(&ar->arvifs)) {
+		ath12k_warn(ar->ab,
+			    "spectral: no active vdev on radio %u, start a vdev first\n",
+			    radio_idx);
 		return NULL;
 	}
 
-	link_id = __ffs(ahvif->links_map);
-	ar = ath12k_get_ar_from_wdev(wdev, link_id);
 	return ar;
 }
 
@@ -15217,7 +15226,7 @@ static int ath12k_vendor_spectral_scan_start(struct wiphy *wiphy,
 	if (tb[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_MODE])
 		nl_mode = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_MODE]);
 
-	ar = ath12k_spectral_get_ar_from_wdev(wdev);
+	ar = ath12k_spectral_get_ar(wiphy);
 	if (!ar)
 		return -EINVAL;
 
@@ -15416,7 +15425,7 @@ static int ath12k_vendor_spectral_scan_start(struct wiphy *wiphy,
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
 		   "spectral scan_start: SUCCESS iface=%s req_type=%d\n",
-		   wdev->netdev ? wdev->netdev->name : "?", req_type);
+		   wdev && wdev->netdev ? wdev->netdev->name : "?", req_type);
 	return 0;
 }
 
@@ -15427,7 +15436,7 @@ static int ath12k_vendor_spectral_scan_stop(struct wiphy *wiphy,
 	struct ath12k *ar;
 	int ret;
 
-	ar = ath12k_spectral_get_ar_from_wdev(wdev);
+	ar = ath12k_spectral_get_ar(wiphy);
 	if (!ar)
 		return -EINVAL;
 
@@ -15439,7 +15448,7 @@ static int ath12k_vendor_spectral_scan_stop(struct wiphy *wiphy,
 	else
 		ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
 			   "spectral scan_stop: SUCCESS iface=%s\n",
-			   wdev->netdev ? wdev->netdev->name : "?");
+			   wdev && wdev->netdev ? wdev->netdev->name : "?");
 	return ret;
 }
 
@@ -15451,7 +15460,7 @@ static int ath12k_vendor_spectral_get_config(struct wiphy *wiphy,
 	struct sk_buff *skb;
 	struct ath12k *ar;
 
-	ar = ath12k_spectral_get_ar_from_wdev(wdev);
+	ar = ath12k_spectral_get_ar(wiphy);
 	if (!ar)
 		return -EINVAL;
 
@@ -15545,7 +15554,7 @@ static int ath12k_vendor_spectral_get_diag(struct wiphy *wiphy,
 	struct sk_buff *skb;
 	struct ath12k *ar;
 
-	ar = ath12k_spectral_get_ar_from_wdev(wdev);
+	ar = ath12k_spectral_get_ar(wiphy);
 	if (!ar)
 		return -EINVAL;
 
@@ -15588,7 +15597,7 @@ static int ath12k_vendor_spectral_get_cap(struct wiphy *wiphy,
 	struct sk_buff *skb;
 	struct ath12k *ar;
 
-	ar = ath12k_spectral_get_ar_from_wdev(wdev);
+	ar = ath12k_spectral_get_ar(wiphy);
 	if (!ar || !ar->spectral.enabled)
 		return -EPERM;
 
@@ -15623,7 +15632,7 @@ static int ath12k_vendor_spectral_get_cap(struct wiphy *wiphy,
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
 		   "spectral get_cap: SUCCESS iface=%s\n",
-		   wdev->netdev ? wdev->netdev->name : "?");
+		   wdev && wdev->netdev ? wdev->netdev->name : "?");
 	return cfg80211_vendor_cmd_reply(skb);
 }
 
@@ -15635,7 +15644,7 @@ static int ath12k_vendor_spectral_get_status(struct wiphy *wiphy,
 	struct sk_buff *skb;
 	struct ath12k *ar;
 
-	ar = ath12k_spectral_get_ar_from_wdev(wdev);
+	ar = ath12k_spectral_get_ar(wiphy);
 	if (!ar)
 		return -EINVAL;
 
@@ -15992,8 +16001,6 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
 		.info.subcmd    = QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_START,
-		.flags          = WIPHY_VENDOR_CMD_NEED_WDEV |
-				  WIPHY_VENDOR_CMD_NEED_RUNNING,
 		.doit           = ath12k_vendor_spectral_scan_start,
 		.policy         = ath12k_spectral_scan_policy,
 		.maxattr        = QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_MAX,
@@ -16001,38 +16008,32 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
 		.info.subcmd    = QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_STOP,
-		.flags          = WIPHY_VENDOR_CMD_NEED_WDEV |
-				  WIPHY_VENDOR_CMD_NEED_RUNNING,
 		.doit           = ath12k_vendor_spectral_scan_stop,
 		.policy         = ath12k_spectral_scan_policy,
 		.maxattr        = QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_MAX,
 	},
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
-		.flags          = WIPHY_VENDOR_CMD_NEED_WDEV,
-		.doit           = ath12k_vendor_spectral_get_config,
 		.info.subcmd    = QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_GET_CONFIG,
+		.doit           = ath12k_vendor_spectral_get_config,
 		.policy         = ath12k_spectral_scan_policy,
 		.maxattr        = QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_MAX,
 	},
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
 		.info.subcmd    = QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_GET_DIAG_STATS,
-		.flags          = WIPHY_VENDOR_CMD_NEED_WDEV,
 		.doit           = ath12k_vendor_spectral_get_diag,
 		.policy         = VENDOR_CMD_RAW_DATA,
 	},
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
 		.info.subcmd    = QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_GET_CAP_INFO,
-		.flags          = WIPHY_VENDOR_CMD_NEED_WDEV,
 		.doit           = ath12k_vendor_spectral_get_cap,
 		.policy         = VENDOR_CMD_RAW_DATA,
 	},
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
 		.info.subcmd    = QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_GET_STATUS,
-		.flags          = WIPHY_VENDOR_CMD_NEED_WDEV,
 		.doit           = ath12k_vendor_spectral_get_status,
 		.policy         = ath12k_spectral_scan_policy,
 		.maxattr        = QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_MAX,

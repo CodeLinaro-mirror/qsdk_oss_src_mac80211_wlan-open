@@ -368,10 +368,12 @@ int ath12k_spectral_start_scan(struct ath12k *ar)
 	}
 
 	arvif = ath12k_spectral_get_vdev(ar);
-	if (!arvif)
+	if (!arvif) {
+		ath12k_warn(ar->ab,
+			    "spectral start_scan: no active vdev on pdev %u\n",
+			    ar->pdev_idx);
 		return -ENODEV;
-
-	ar->spectral.is_primary = true;
+	}
 
 	/* Clear any stale trigger state in firmware. */
 	ret = ath12k_wmi_vdev_spectral_enable(ar, arvif->vdev_id,
@@ -419,10 +421,12 @@ int ath12k_spectral_stop_scan(struct ath12k *ar)
 	}
 
 	arvif = ath12k_spectral_get_vdev(ar);
-	if (!arvif)
+	if (!arvif) {
+		ath12k_warn(ar->ab,
+			    "spectral stop_scan: no active vdev on pdev %u\n",
+			    ar->pdev_idx);
 		return -ENODEV;
-
-	arvif->spectral_enabled = false;
+	}
 	spin_lock_bh(&ar->spectral.lock);
 	ar->spectral.mode = SPECTRAL_SCAN_MODE_INVALID;
 	ar->spectral.scan_active = false;
@@ -457,10 +461,12 @@ int ath12k_spectral_configure_scan_params(struct ath12k *ar,
 		return -EINVAL;
 
 	arvif = ath12k_spectral_get_vdev(ar);
-	if (!arvif)
+	if (!arvif) {
+		ath12k_warn(ar->ab,
+			    "spectral configure_scan_params: no active vdev on pdev %u\n",
+			    ar->pdev_idx);
 		return -ENODEV;
-
-	arvif->spectral_enabled = true;
+	}
 	spin_lock_bh(&ar->spectral.lock);
 	ar->spectral.mode = mode;
 	/* configure always sends CLEAR+DISABLE to firmware, which terminates
