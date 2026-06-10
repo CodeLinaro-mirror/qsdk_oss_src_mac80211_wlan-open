@@ -171,7 +171,7 @@ static int ath12k_dp_me_check(struct ath12k_dp_vif *dp_vif, struct ath12k_me_ctx
 		break;
 	}
 
-	if (!is_multicast_ether_addr(eth_hdr(skb)->h_dest))
+	if (!is_multicast_ether_addr(skb_eth_hdr(skb)->h_dest))
 		goto fail;
 
 	if ((l3_proto == IPPROTO_IGMP) && !(flags & ATH12K_ME_FLAGS_BIT_IGMP_EN))
