@@ -5354,6 +5354,40 @@ static void ath12k_peer_assoc_h_uhr(struct ath12k *ar,
 	       sizeof(uhr_cap->phy.cap));
 }
 
+static void ath12k_peer_assoc_h_npca(struct ath12k *ar,
+				     struct ath12k_link_vif *arvif,
+				     struct ath12k_link_sta *arsta,
+				     struct ath12k_wmi_peer_assoc_arg *arg,
+				     struct ieee80211_link_sta *link_sta)
+{
+	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(arsta->ahsta);
+	const struct ieee80211_sta_uhr_npca_info *npca_info;
+
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	if (!link_sta) {
+		ath12k_warn(ar->ab, "unable to access link sta in peer assoc npca for sta %pM link %u\n",
+			    sta->addr, arsta->link_id);
+		return;
+	}
+
+	if (!link_sta->uhr_cap.has_uhr)
+		return;
+
+	npca_info = &link_sta->npca_info;
+	if (!npca_info->npca_enabled)
+		return;
+
+	arg->npca.enabled = true;
+	arg->npca.npca_offset = link_sta->npca_offset;
+	arg->npca.npca_punct_bitmap = link_sta->npca_puncture_bitmap;
+	arg->npca.npca_min_dur_threshold = npca_info->npca_min_dur_threshold;
+	arg->npca.npca_switch_delay = npca_info->npca_switch_delay;
+	arg->npca.npca_switch_back_delay = npca_info->npca_switch_back_delay;
+	arg->npca.npca_initial_qsrc = npca_info->npca_initial_qsrc;
+	arg->npca.npca_moplen = npca_info->npca_moplen;
+}
+
 #ifndef CPTCFG_QCN_EXTN_MESH_SUPPORT
 static void ath12k_peer_assoc_prepare(struct ath12k *ar,
 				      struct ath12k_link_vif *arvif,
@@ -5390,6 +5424,7 @@ void ath12k_peer_assoc_prepare(struct ath12k *ar,
 	ath12k_peer_assoc_h_he_6ghz(ar, arvif, arsta, arg, link_sta);
 	ath12k_peer_assoc_h_eht(ar, arvif, arsta, arg, link_sta);
 	ath12k_peer_assoc_h_uhr(ar, arvif, arsta, arg, link_sta);
+	ath12k_peer_assoc_h_npca(ar, arvif, arsta, arg, link_sta);
 	ath12k_peer_assoc_h_qos(ar, arvif, arsta, arg);
 	ath12k_peer_assoc_h_smps(arsta, arg, link_sta);
 	ath12k_peer_assoc_h_mlo(arsta, arg);
