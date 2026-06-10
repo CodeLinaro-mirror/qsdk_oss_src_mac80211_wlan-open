@@ -1185,7 +1185,8 @@ int ath12k_pcic_cfg_hybrid_ext_irq(struct ath12k_base *ab,
 	int user_base_data, base_vector, num_vectors = 0;
 
 	if (ab_ahb->userpd_id != ATH12K_QCN6432_USERPD_ID_1 &&
-	    ab_ahb->userpd_id != ATH12K_QCN6432_USERPD_ID_2) {
+	    ab_ahb->userpd_id != ATH12K_QCN6432_USERPD_ID_2 &&
+	    ab_ahb->userpd_id != ATH12K_QCN9160_USERPD_ID_3) {
 		ath12k_warn(ab, "ath12k userpd invalid %d\n", ab_ahb->userpd_id);
 		return -ENODEV;
 	}
@@ -1224,7 +1225,8 @@ int ath12k_pcic_config_hybrid_irq(struct ath12k_base *ab)
 	int i = 0, j = 0;
 
 	if (ab_ahb->userpd_id != ATH12K_QCN6432_USERPD_ID_1 &&
-	    ab_ahb->userpd_id != ATH12K_QCN6432_USERPD_ID_2) {
+	    ab_ahb->userpd_id != ATH12K_QCN6432_USERPD_ID_2 &&
+	    ab_ahb->userpd_id != ATH12K_QCN9160_USERPD_ID_3) {
 		ath12k_warn(ab, "ath12k userpd invalid %d\n", ab_ahb->userpd_id);
 		return -ENODEV;
 	}
