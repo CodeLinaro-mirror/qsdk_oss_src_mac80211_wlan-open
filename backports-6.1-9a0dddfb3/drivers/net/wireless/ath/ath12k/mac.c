@@ -9070,6 +9070,8 @@ skip_pending_cs_up:
 			else
 				param_value = WMI_BA_MODE_BUFFER_SIZE_256;
 
+			arvif->vap_cfg.ba_bufsize = param_value;
+
 			ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id, param_id,
 							    param_value);
 
