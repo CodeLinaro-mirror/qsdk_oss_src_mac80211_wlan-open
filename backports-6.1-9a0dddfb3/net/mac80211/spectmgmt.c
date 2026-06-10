@@ -393,6 +393,13 @@ int ieee80211_parse_ch_switch_ie(struct ieee80211_sub_if_data *sdata,
 
 	/* if data is there validate the bandwidth & use it */
 	if (new_chandef.chan) {
+		if (!cfg80211_chandef_valid(&new_chandef)) {
+			sdata_info(sdata,
+				   "BSS %pM: CSA has invalid channel definition, disconnecting\n",
+				   bssid);
+			return -EINVAL;
+		}
+
 		/* capture the AP chandef before (potential) downgrading */
 		csa_ie->chanreq.ap = new_chandef;
 
