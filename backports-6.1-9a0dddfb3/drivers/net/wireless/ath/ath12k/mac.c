@@ -9081,7 +9081,8 @@ skip_pending_cs_up:
 
 #ifdef CPTCFG_QCN_EXTN
 		if (info->enable_beacon && !arvif->is_up &&
-		    !(changed & BSS_CHANGED_BEACON_ENABLED))
+		    !(changed & BSS_CHANGED_BEACON_ENABLED) &&
+		    !test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags))
 			ath12k_control_beaconing(arvif, info);
 #endif /* CPTCFG_QCN_EXTN */
 	}
