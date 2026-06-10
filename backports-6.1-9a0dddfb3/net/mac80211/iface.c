@@ -1062,6 +1062,13 @@ static bool ieee80211_set_sdata_offload_flags(struct ieee80211_sub_if_data *sdat
 		flags &= ~IEEE80211_OFFLOAD_ENCAP_ENABLED;
 	}
 
+	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN &&
+	    ieee80211_hw_check(&local->hw, VLAN_GROUP_KEY_HW_OFFLOAD) &&
+	    (flags & IEEE80211_OFFLOAD_ENCAP_ENABLED))
+		flags |= IEEE80211_OFFLOAD_ENCAP_MCAST;
+	else if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN)
+		flags &= ~IEEE80211_OFFLOAD_ENCAP_MCAST;
+
 	if (ieee80211_hw_check(&local->hw, SUPPORTS_RX_DECAP_OFFLOAD) &&
 	    ieee80211_iftype_supports_hdr_offload(sdata->vif.type)) {
 		flags |= IEEE80211_OFFLOAD_DECAP_ENABLED;
