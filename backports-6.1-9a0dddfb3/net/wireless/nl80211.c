@@ -30,6 +30,9 @@
 #include "nl80211.h"
 #include "reg.h"
 #include "rdev-ops.h"
+#ifdef CPTCFG_QCN_EXTN
+#include "cfg80211_dfs_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 
 #define VLAN_N_VID	4096
 #define CIGTK_KEY_INDEX_OFFSET 8
@@ -4268,10 +4271,21 @@ static int __nl80211_set_channel(struct cfg80211_registered_device *rdev,
 			nl80211_ignore_cac_update_dfs_state(rdev, &chandef,
 							    iftype);
 #endif /* CPTCFG_QCA_LAB_TEST_FEATURES */
+
+		/*
+		 * Boot-up CAC: skip the beaconing check for 5 GHz DFS channels
+		 * when boot-up CAC is supported so that the preset channel can
+		 * be configured before CAC completes.
+		 */
 		if (!cfg80211_reg_can_beacon_relax(&rdev->wiphy, &chandef,
 						   iftype) &&
+#ifdef CPTCFG_QCN_EXTN
+		    !cfg80211_bootup_cac_is_5g_dfs_chan_extn(&rdev->wiphy,
+							     &chandef) &&
+#endif
 		    !(nla_get_flag(info->attrs[NL80211_ATTR_SKIP_CAC])))
 			return -EINVAL;
+
 		if (wdev->links[link_id].ap.beacon_interval) {
 			struct ieee80211_channel *cur_chan;
 
@@ -7929,11 +7943,24 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 	beacon_check.reg_power =
 		cfg80211_get_6ghz_power_type(params->beacon.tail,
 					     params->beacon.tail_len);
-	if (!cfg80211_reg_check_beaconing(&rdev->wiphy, &params->chandef,
-					  &beacon_check)) {
-		err = -EINVAL;
-		goto out;
+	/*
+	 * Boot-up CAC: skip the beaconing check for 5 GHz DFS channels when
+	 * boot-up CAC is supported.  The driver will defer vdev_up until
+	 * CAC completes; the channel is not yet DFS_AVAILABLE but we allow
+	 * the BSS to be created so that RNR can be populated immediately.
+	 */
+#ifdef CPTCFG_QCN_EXTN
+	if (!cfg80211_bootup_cac_is_5g_dfs_chan_extn(&rdev->wiphy,
+						      &params->chandef)) {
+#endif /* CPTCFG_QCN_EXTN */
+		if (!cfg80211_reg_check_beaconing(&rdev->wiphy, &params->chandef,
+						  &beacon_check)) {
+			err = -EINVAL;
+			goto out;
+		}
+#ifdef CPTCFG_QCN_EXTN
 	}
+#endif /* CPTCFG_QCN_EXTN */
 
 	if (info->attrs[NL80211_ATTR_TX_RATES]) {
 		err = nl80211_parse_tx_bitrate_mask(info, info->attrs,

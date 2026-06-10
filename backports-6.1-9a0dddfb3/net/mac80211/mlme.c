@@ -4039,16 +4039,16 @@ void ieee80211_dfs_cac_timer_work(struct wiphy *wiphy, struct wiphy_work *work)
 
 	if (sdata->wdev.links[link->link_id].cac_started) {
 		if (!link->conf->deferred_up) {
-			ieee80211_link_release_channel(link);
-			cfg80211_cac_event(sdata->dev, &chandef,
-					   NL80211_RADAR_CAC_FINISHED,
-					   GFP_KERNEL, link->link_id);
+#ifdef CPTCFG_QCN_EXTN
+			if (!cfg80211_support_bootup_cac(local->hw.wiphy))
+#endif /* CPTCFG_QCN_EXTN */
+				ieee80211_link_release_channel(link);
 		} else {
-			cfg80211_cac_event(sdata->dev, &chandef,
-					   NL80211_RADAR_CAC_FINISHED,
-					   GFP_KERNEL, link->link_id);
 			ieee80211_dfs_cac_handle_deferred_up_links(link);
 		}
+		cfg80211_cac_event(sdata->dev, &chandef,
+				   NL80211_RADAR_CAC_FINISHED,
+				   GFP_KERNEL, link->link_id);
 	}
 }
 
