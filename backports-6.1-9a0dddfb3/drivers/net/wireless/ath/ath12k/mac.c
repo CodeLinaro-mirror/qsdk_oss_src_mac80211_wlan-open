@@ -2109,7 +2109,8 @@ static void ath12k_mac_nrp_delete(struct ath12k *ar)
 	spin_unlock_bh(&dp->dp_lock);
 
 	if (nrp_pdev_count == 0) {
-		ath12k_err(ar->ab, "NRP pdev_count is 0\n");
+		ath12k_err(ar->ab, "[radio_idx : %u] NRP pdev_count is 0\n",
+			   ar->radio_idx);
 		return;
 	}
 
@@ -2127,8 +2128,9 @@ static void ath12k_mac_nrp_delete(struct ath12k *ar)
 		ret = ath12k_wmi_vdev_set_neighbor_rx_cmd(ar, &param);
 		if (ret) {
 			ath12k_err(ar->ab,
-				   "nrp neighbor vdev delete failed vdev id %d action %d, nrp %pM\n",
-				   param.vdev_id, param.action, param.nrp_addr);
+				   "[radio_idx : %u] nrp neighbor vdev delete failed vdev id %d action %d, nrp %pM\n",
+				   ar->radio_idx, param.vdev_id,
+				   param.action, param.nrp_addr);
 			overall_status = ret;
 		}
 		list_del(&nrp->list);
@@ -2136,7 +2138,8 @@ static void ath12k_mac_nrp_delete(struct ath12k *ar)
 	}
 
 	if (overall_status)
-		ath12k_err(ar->ab, "Some neighbor peer deletions failed during vdev stop\n");
+		ath12k_err(ar->ab, "[radio_idx : %u] Some neighbor peer deletions failed during vdev stop\n",
+			   ar->radio_idx);
 }
 
 int ath12k_mac_vdev_stop(struct ath12k_link_vif *arvif)
@@ -2148,7 +2151,8 @@ int ath12k_mac_vdev_stop(struct ath12k_link_vif *arvif)
 	int ret = -1, num_nrps;
 
 	if (!dp) {
-		ath12k_err(ar->ab, "ath12k_dp not present%s",__func__);
+		ath12k_err(ar->ab, "[vdev_id : %u radio_idx : %u] ath12k_dp not present%s\n",
+			   arvif->vdev_id, ar->radio_idx, __func__);
 		goto err;
 	}
 
@@ -2159,21 +2163,21 @@ int ath12k_mac_vdev_stop(struct ath12k_link_vif *arvif)
 
 	ret = ath12k_peer_del_tracker_clear_vdev(ar->pdev, arvif->vdev_id);
 	if (ret)
-		ath12k_err(ar->ab, "failed to clean up peer_del tracker for vdev_id:%d\n",
-			   arvif->vdev_id);
+		ath12k_err(ar->ab, "[radio_idx : %u] failed to clean up peer_del tracker for vdev_id:%d\n",
+			   ar->radio_idx, arvif->vdev_id);
 
 	if (arvif->num_peers &&
 	    arvif->ahvif->vdev_type != WMI_VDEV_TYPE_STA) {
 		ret = ath12k_wmi_peer_delete_all(arvif);
 		if (ret) {
-			ath12k_warn(ar->ab, "failed to submit peer delete all for vdev_id:%d\n",
-				    arvif->vdev_id);
+			ath12k_warn(ar->ab, "[radio_idx : %u] failed to submit peer delete all for vdev_id:%d\n",
+				    ar->radio_idx, arvif->vdev_id);
 		}
 
 		if (!wait_for_completion_timeout(&ar->delete_all_peer_done,
 						 3 * HZ)) {
-			ath12k_info(ar->ab, "Failed wait to get peer delete all resp:%d cleanup peers",
-				    arvif->vdev_id);
+			ath12k_info(ar->ab, "[radio_idx : %u] Failed wait to get peer delete all resp:%d cleanup peers\n",
+				    ar->radio_idx, arvif->vdev_id);
 			ath12k_peer_cleanup(ar, arvif->vdev_id);
 		}
 		/* Per vif num_peers will have count of station which are not
@@ -2194,7 +2198,8 @@ int ath12k_mac_vdev_stop(struct ath12k_link_vif *arvif)
 	dp_pdev = ath12k_dp_to_dp_pdev(dp, ar->pdev_idx);
 	if (!dp_pdev) {
 		rcu_read_unlock();
-		ath12k_err(ar->ab, "dp_pdev not present%s",__func__);
+		ath12k_err(ar->ab, "[vdev_id : %u radio_idx : %u] dp_pdev not present%s\n",
+			   arvif->vdev_id, ar->radio_idx, __func__);
 		goto err;
 	}
 
@@ -2216,31 +2221,31 @@ int ath12k_mac_vdev_stop(struct ath12k_link_vif *arvif)
 
 	ret = ath12k_wmi_vdev_stop(ar, arvif->vdev_id);
 	if (ret) {
-		ath12k_warn(ar->ab, "failed to stop WMI vdev %i: %d\n",
-			    arvif->vdev_id, ret);
+		ath12k_warn(ar->ab, "[radio_idx : %u] failed to stop WMI vdev %i: %d\n",
+			    ar->radio_idx, arvif->vdev_id, ret);
 		goto err;
 	}
 
 	ret = ath12k_mac_vdev_setup_sync(ar);
 	if (ret) {
-		ath12k_warn(ar->ab, "failed to synchronize setup for vdev %i: %d\n",
-			    arvif->vdev_id, ret);
+		ath12k_warn(ar->ab, "[radio_idx : %u] failed to synchronize setup for vdev %i: %d\n",
+			    ar->radio_idx, arvif->vdev_id, ret);
 		goto err;
 	}
 
 	WARN_ON(ar->num_started_vdevs == 0);
 
 	ar->num_started_vdevs--;
-	ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "vdev %pM stopped, vdev_id %d\n",
-		   ahvif->vif->addr, arvif->vdev_id);
 
+	ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "[radio_idx : %u] vdev %pM stopped, vdev_id %d\n",
+		   ar->radio_idx, ahvif->vif->addr, arvif->vdev_id);
 	if (!ath12k_mac_is_bridge_vdev(arvif) &&
 	    test_bit(ATH12K_FLAG_CAC_RUNNING, &ar->dev_flags) &&
 	    !ieee80211_cac_started_any_5ghz_link(ahvif->vif, arvif->link_id)) {
 		clear_bit(ATH12K_FLAG_CAC_RUNNING, &ar->dev_flags);
 		ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
-				 "CAC Stopped for vdev %d\n",
-				arvif->vdev_id);
+				 "[radio_idx : %u] CAC Stopped for vdev %d\n",
+				 ar->radio_idx, arvif->vdev_id);
 	}
 	ath12k_dp_ipa_vif_notify(arvif, false, false);
 
@@ -2920,8 +2925,8 @@ static void ath12k_control_beaconing(struct ath12k_link_vif *arvif,
 
 		arvif->is_up = false;
 		ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
-			   "vdev %d down with link_id=%u\n",
-			   arvif->vdev_id, arvif->link_id);
+			   "[radio_idx : %u] vdev %d down with link_id=%u\n",
+			   ar->radio_idx, arvif->vdev_id, arvif->link_id);
 		ath12k_mac_bridge_vdevs_down(ath12k_ar_to_hw(arvif->ar),
 					     ahvif, arvif->link_id);
 		return;
@@ -2965,12 +2970,13 @@ static void ath12k_control_beaconing(struct ath12k_link_vif *arvif,
 #endif /* CPTCFG_QCN_EXTN */
 		ret = ath12k_wmi_vdev_up(arvif->ar, &params);
 		if (ret) {
-			ath12k_warn(ar->ab, "failed to bring up vdev %d: %i\n",
-				    arvif->vdev_id, ret);
+			ath12k_warn(ar->ab, "[radio_idx : %u] failed to bring up vdev %d: %i\n",
+				    ar->radio_idx, arvif->vdev_id, ret);
 			return;
 		}
 		arvif->is_up = true;
-		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "mac vdev %d up\n", arvif->vdev_id);
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "[radio_idx : %u] mac vdev %d up\n",
+			   ar->radio_idx, arvif->vdev_id);
 		ath12k_mac_bridge_vdevs_up(arvif);
 	} else {
 		arvif->is_up = false;
@@ -5415,7 +5421,8 @@ int ath12k_mac_set_he_txbf_conf(struct ath12k_link_vif *arvif)
 		value |= u32_encode_bits(HE_DL_OFDMA_TXBF_ENABLE, HE_MODE_DL_OFDMA_TXBF);
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
-		   "Set HE TXBF config: DL=%d UL=%d DLBF=%d, value=0x%x\n",
+		   "[vdev_id : %u radio_idx : %u] Set HE TXBF config: DL=%d UL=%d DLBF=%d, value=0x%x\n",
+		   arvif->vdev_id, ar->radio_idx,
 		   ar->he_dl_enabled, ar->he_ul_enabled, ar->he_dlbf_enabled, value);
 
 	ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id, param, value);
@@ -5553,7 +5560,8 @@ int ath12k_mac_set_eht_txbf_conf(struct ath12k_link_vif *arvif)
 					EHT_MODE_DL_OFDMA_TXBF);
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
-		   "Set EHT TXBF config: DL=%d UL=%d DLBF=%d, value=0x%x\n",
+		   "[vdev_id : %u radio_idx : %u] Set EHT TXBF config: DL=%d UL=%d DLBF=%d, value=0x%x\n",
+		   arvif->vdev_id, ar->radio_idx,
 		   ar->eht_dl_enabled, ar->eht_ul_enabled, ar->eht_dlbf_enabled, value);
 
 	ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id, param, value);
@@ -5859,8 +5867,8 @@ skip_vdev_up:
 	arvif->rekey_data.enable_offload = false;
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
-		   "mac vdev %d up (associated) bssid %pM aid %d\n",
-		   arvif->vdev_id, bssid, vif->cfg.aid);
+		   "[radio_idx : %u] mac vdev %d up (associated) bssid %pM aid %d\n",
+		   ar->radio_idx, arvif->vdev_id, bssid, vif->cfg.aid);
 
 	ret = ath12k_dp_peer_get_param_by_mac_addr(ar->dp.dp_hw, arvif->bssid,
 						   ATH12K_DP_PEER_DMS_DISABLE_PARAM,
@@ -5924,8 +5932,9 @@ void ath12k_bss_disassoc(struct ath12k *ar,
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "mac vdev %i disassoc bssid %pM\n",
-		   arvif->vdev_id, arvif->bssid);
+	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+		   "[radio_idx : %u] mac vdev %i disassoc bssid %pM\n",
+		   ar->radio_idx, arvif->vdev_id, arvif->bssid);
 
 	ret = ath12k_wmi_vdev_down(ar, arvif->vdev_id);
 	if (ret)
@@ -6269,8 +6278,8 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 		ath12k_free_peer_migrate_list(arvif);
 
 	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
-			 "mac remove link interface (vdev %d link id %d)",
-			arvif->vdev_id, arvif->link_id);
+			 "[radio_idx : %u] mac remove link interface (vdev %d link id %d)",
+			 ar->radio_idx, arvif->vdev_id, arvif->link_id);
 
 	if (test_bit(WMI_TLV_SERVICE_11D_OFFLOAD, ar->ab->wmi_ab.svc_map) &&
 	    ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
@@ -6279,15 +6288,16 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 
 	ret = ath12k_spectral_vif_stop(arvif);
 	if (ret)
-		ath12k_warn(ar->ab, "failed to stop spectral for vdev %i: %d\n",
-			    arvif->vdev_id, ret);
+		ath12k_warn(ar->ab, "[radio_idx : %u] failed to stop spectral for vdev %i: %d\n",
+			    ar->radio_idx, arvif->vdev_id, ret);
 
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
 		ret = ath12k_peer_delete(ar, arvif->vdev_id, arvif->bssid,
 					 false, 0, false, NULL);
 		if (ret)
-			ath12k_warn(ar->ab, "failed to submit AP self-peer removal on vdev %d link id %d: %d"
+			ath12k_warn(ar->ab, "[radio_idx : %u] failed to submit AP self-peer removal on vdev %d link id %d: %d"
 				    "num_peers: %d",
+				    ar->radio_idx,
 				    arvif->vdev_id, arvif->link_id, ret, ar->num_peers);
 
 		ath12k_dp_arch_peer_delete(dp, ah, arvif->bssid,
@@ -7339,8 +7349,8 @@ static void ath12k_mac_bridge_vdevs_down(struct ieee80211_hw *hw,
 			}
 			arvif->is_up = false;
 			ath12k_dbg(arvif->ar->ab, ATH12K_DBG_MAC,
-				   "mac bridge vdev %d down with link_id=%u\n",
-				   arvif->vdev_id, arvif->link_id);
+				   "[radio_idx : %u] mac bridge vdev %d down with link_id=%u\n",
+				   arvif->ar->radio_idx, arvif->vdev_id, arvif->link_id);
 		}
 	}
 }
@@ -8922,7 +8932,8 @@ void ath12k_mac_bss_info_changed(struct ath12k *ar,
 				ath12k_mac_parse_tx_pwr_env(ar, arvif);
 
 			if (!chanctx) {
-				ath12k_err(ar->ab, "channel context is NULL");
+				ath12k_err(ar->ab, "[vdev_id : %u radio_idx : %u] channel context is NULL",
+					   arvif->vdev_id, ar->radio_idx);
 				return;
 			}
 
@@ -10373,13 +10384,14 @@ static int ath12k_mac_initiate_hw_scan(struct ieee80211_hw *hw,
 	arvif = ath12k_mac_assign_link_vif(ah, vif, link_id, false);
 
 	if (!arvif) {
-		ath12k_err(ar->ab, "Failed to alloc/assign link vif id %u\n",
-			   link_id);
+		ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] Failed to alloc/assign link vif id %u\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx, link_id);
 		return -ENOMEM;
 	}
 
 	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L0,
-			 "mac link ID %d selected for scan", arvif->link_id);
+			 "[vdev_id : %s radio_idx : %u] mac link ID %d selected for scan",
+			 ATH12K_INVALID_VDEV_ID, ar->radio_idx, arvif->link_id);
 
 	/* If the vif is already assigned to a specific vdev of an ar,
 	 * check whether its already started, vdev which is started
@@ -10412,8 +10424,8 @@ static int ath12k_mac_initiate_hw_scan(struct ieee80211_hw *hw,
 		arvif = ath12k_mac_assign_link_vif(ah, vif, link_id, false);
 
 		if (!arvif) {
-			ath12k_err(ar->ab, "Failed to alloc/assign link vif id %u\n",
-				   link_id);
+			ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] Failed to alloc/assign link vif id %u\n",
+				   ATH12K_INVALID_VDEV_ID, ar->radio_idx, link_id);
 			return -ENOMEM;
 		}
 
@@ -11493,7 +11505,8 @@ static void ath12k_mac_get_psd_channel(struct ath12k *ar,
 	if (*temp_chan) {
 		*tx_power = (*temp_chan)->max_reg_power;
 	} else {
-		ath12k_err(ar->ab, "failed to get channel definition for center freq: %d\n", *center_freq);
+		ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] failed to get channel definition for center freq: %d\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx, *center_freq);
 		*tx_power = ATH12K_MIN_TX_POWER;
 	}
 }
@@ -11633,7 +11646,8 @@ static void ath12k_mac_get_eirp_power(struct ath12k *ar,
 	if (*temp_chan) {
 		*tx_power = (*temp_chan)->max_reg_power;
 	} else {
-		ath12k_err(ar->ab, "failed to get channel definition for center freq: %d\n", *center_freq);
+		ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] failed to get channel definition for center freq: %d\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx, *center_freq);
 		*tx_power = ATH12K_MIN_TX_POWER;
 	}
 }
@@ -12023,7 +12037,8 @@ void ath12k_mac_fill_reg_tpc_info_with_eirp_power(struct ath12k *ar,
 	num_pwr_levels = ath12k_mac_get_num_pwr_levels(&ctx->def, false);
 
 	if (num_pwr_levels > ATH12K_MAX_EIRP_VALS) {
-		ath12k_err(NULL, "num_pwr_levels should not be greater than ATH12K_MAX_EIRP_VALS");
+		ath12k_err(NULL, "[vdev_id : %u radio_idx : %u] num_pwr_levels should not be greater than ATH12K_MAX_EIRP_VALS",
+			   arvif->vdev_id, ar->radio_idx);
 		return;
 	}
 
@@ -13291,7 +13306,9 @@ static int ath12k_send_wsi_load_info(struct ath12k_base *ab, u8 group_id)
 			ar = ath12k_get_ar_by_device_idx(ag,
 							 wsi_load_info->mlo_device_grp.wsi_order[i]);
 			if (!ar) {
-				ath12k_err(NULL, "ar is null");
+				ath12k_err(NULL, "[vdev_id : %s radio_idx : %s] ar is null",
+					   ATH12K_INVALID_VDEV_ID,
+					   ATH12K_INVALID_RADIO_IDX);
 				continue;
 			}
 			param.wsi_ingress_load_info =
@@ -13421,7 +13438,9 @@ static int ath12k_wsi_load_info_stats_update(struct ath12k_vif *ahvif,
 								     hop_deviceid);
 			if (hop_deviceid_index == WSI_INVALID_INDEX) {
 				ath12k_err(NULL,
-					   "hop device id not found in wsi_load_info\n");
+					   "[vdev_id : %s radio_idx : %s] hop device id not found in wsi_load_info\n",
+					   ATH12K_INVALID_VDEV_ID,
+					   ATH12K_INVALID_RADIO_IDX);
 				continue;
 			}
 			wsi_load_info->load_stats[hop_deviceid_index].notify = true;
@@ -13591,16 +13610,16 @@ static void ath12k_sta_migration_wk(struct work_struct *wk)
 	arsta = ath12k_link_sta_find_by_addr(pri_ar, data->link_addr);
 	if (!arsta) {
 		spin_unlock_bh(&pri_ar->arsta_lock);
-		ath12k_err(pri_ar->ab, "arsta not available %pM\n",
-			   data->link_addr);
+		ath12k_err(pri_ar->ab, "[vdev_id : %s radio_idx : %u] arsta not available %pM\n",
+			   ATH12K_INVALID_VDEV_ID, pri_ar->radio_idx, data->link_addr);
 		WARN_ON(1);
 		goto err_unlock;
 	}
 	dp_peer = ath12k_sta_get_dp_peer_rcu(arsta->ahsta);
 	if (!dp_peer) {
 		spin_unlock_bh(&pri_ar->arsta_lock);
-		ath12k_err(pri_ar->ab, "dp_peer not available %pM\n",
-			   data->link_addr);
+		ath12k_err(pri_ar->ab, "[vdev_id : %s radio_idx : %u] dp_peer not available %pM\n",
+			   ATH12K_INVALID_VDEV_ID, pri_ar->radio_idx, data->link_addr);
 		WARN_ON(1);
 		goto err_unlock;
 	}
@@ -13610,8 +13629,8 @@ static void ath12k_sta_migration_wk(struct work_struct *wk)
 	if (ret) {
 		spin_unlock_bh(&pri_ar->arsta_lock);
 		ath12k_err(pri_ar->ab,
-			   "Primary link information unavailable for peer %pM\n",
-			   data->link_addr);
+			   "[vdev_id : %s radio_idx : %u] Primary link information unavailable for peer %pM\n",
+			   ATH12K_INVALID_VDEV_ID, pri_ar->radio_idx, data->link_addr);
 		goto err_unlock;
 	}
 
@@ -13949,7 +13968,8 @@ static int ath12k_mac_reconfig_ahsta_links_mode0(struct ath12k_hw *ah,
 
 	ret = ath12k_mac_assign_link_sta(ah, ahsta, arsta, ahvif, link_to_assign);
 	if (ret) {
-		ath12k_err(NULL, "failed to map link_id %d\n", link_to_assign);
+		ath12k_err(NULL, "failed to map link_id %d\n",
+			   link_to_assign);
 		return ret;
 	}
 
@@ -14171,8 +14191,9 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 
 				if (ret) {
 					ath12k_err(NULL,
-						   "Failure in Mode-0 reconfig: %d\n",
-						   ret);
+						   "[vdev_id : %s radio_idx : %s] Failure in Mode-0 reconfig: %d\n",
+						   ATH12K_INVALID_VDEV_ID,
+						   ATH12K_INVALID_RADIO_IDX, ret);
 					return ret;
 				}
 
@@ -14813,7 +14834,8 @@ static int ath12k_sta_ml_reconfig_handler(struct ieee80211_hw *hw,
 		ar = arvif->ar;
 		if (!ar) {
 			ath12k_err(NULL,
-				   "Failed to get ar to change sta links\n");
+				   "[vdev_id : %u radio_idx : %s] Failed to get ar to change sta links\n",
+				   arvif->vdev_id, ATH12K_INVALID_RADIO_IDX);
 			continue;
 		}
 
@@ -15025,7 +15047,9 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 					 */
 					if (assoc_status != 0) {
 						ath12k_err(NULL,
-							   "Selected pri_link_id:%u, retain pri_link_id:%u\n",
+							   "[vdev_id : %s radio_idx : %s] Selected pri_link_id:%u, retain pri_link_id:%u\n",
+							   ATH12K_INVALID_VDEV_ID,
+							   ATH12K_INVALID_RADIO_IDX,
 							   pri_link_id,
 							   ahsta->primary_link_id);
 						goto skip_pri_link_selection;
@@ -15217,7 +15241,8 @@ void ath12k_mac_op_set_dscp_tid(struct ieee80211_hw *hw,
 
 	ar = arvif->ar;
 	if (!ar) {
-		ath12k_err(NULL, "Failed to set DSCP to TID mapping\n");
+		ath12k_err(NULL, "[vdev_id : %u radio_idx : %s] Failed to set DSCP to TID mapping\n",
+			   arvif->vdev_id, ATH12K_INVALID_RADIO_IDX);
 		kfree(new_qos_map);
 		return;
 	}
@@ -15248,12 +15273,14 @@ static void ath12k_mac_update_qos_map(struct ath12k *ar, struct ath12k_link_vif 
 	max_entries = ab->hal.hal_params->dscp_tid_map_tbl_max_entries;
 
 	if (map_id >= max_entries) {
-		ath12k_err(ar->ab, "failed to find free map_id\n");
+		ath12k_err(ar->ab, "[vdev_id : %u radio_idx : %u] failed to find free map_id\n",
+			   arvif->vdev_id, ar->radio_idx);
 		goto free_qos_map;
 	}
 
 	if (bank_id == DP_INVALID_BANK_ID) {
-		ath12k_err(ar->ab, "unable to find TX bank profile\n");
+		ath12k_err(ar->ab, "[vdev_id : %u radio_idx : %u] unable to find TX bank profile\n",
+			   arvif->vdev_id, ar->radio_idx);
 		goto free_qos_map;
 	}
 
@@ -15302,7 +15329,8 @@ static void ath12k_set_dscp_tid_work(struct wiphy *wiphy, struct wiphy_work *wor
 	qos_map = arvif->qos_map;
 	ar = arvif->ar;
 	if (!ar) {
-		ath12k_err(NULL, "Failed to set DSCP to TID mapping\n");
+		ath12k_err(NULL, "[vdev_id : %u radio_idx : %s] Failed to set DSCP to TID mapping\n",
+			   arvif->vdev_id, ATH12K_INVALID_RADIO_IDX);
 		kfree(arvif->qos_map);
 		arvif->qos_map = NULL;
 		return;
@@ -15567,7 +15595,8 @@ ath12k_mac_get_link_migr_peer_node(struct ath12k_sta *ahsta,
 	dp_peer = ath12k_sta_get_dp_peer_wiphy_locked(ah->hw->wiphy, ahsta);
 	if (!dp_peer) {
 		ath12k_err(arvif->ar->ab,
-			   "dp_peer unavailable for MAC %pM\n", ahsta->addr);
+			   "[vdev_id : %u radio_idx : %u] dp_peer unavailable for MAC %pM\n",
+			   arvif->vdev_id, arvif->ar->radio_idx, ahsta->addr);
 		return NULL;
 	}
 
@@ -15575,7 +15604,8 @@ ath12k_mac_get_link_migr_peer_node(struct ath12k_sta *ahsta,
 						ATH12K_DP_PEER_PEERID_PARAM,
 						&val)) {
 		ath12k_err(arvif->ar->ab,
-			   "peer info unavailable for MAC %pM\n", ahsta->addr);
+			   "[vdev_id : %u radio_idx : %u] peer info unavailable for MAC %pM\n",
+			   arvif->vdev_id, arvif->ar->radio_idx, ahsta->addr);
 		return NULL;
 	}
 
@@ -15757,7 +15787,8 @@ ath12k_mac_process_link_migrate_req(struct ath12k_vif *ahvif,
 						      &peer_migr_list, &num_peers);
 		/* Errors are now ignored to prevent skipping valid peers*/
 		if (ret)
-			ath12k_err(ar->ab, "Primary migration skipped for %pM ret:%d\n",
+			ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] Primary migration skipped for %pM ret:%d\n",
+				   ATH12K_INVALID_VDEV_ID, ar->radio_idx,
 				   ahsta->addr, ret);
 	}
 	spin_unlock_bh(&ah->ag->ahsta_lock);
@@ -15778,8 +15809,8 @@ send_link_mig_cmd:
 	ret = ath12k_wmi_mlo_send_ptqm_migrate_cmd(arvif,
 						   &peer_migr_list, num_peers);
 	if (ret)
-		ath12k_err(arvif->ar->ab, "Failed to migrate pri link ret %d\n",
-			   ret);
+		ath12k_err(arvif->ar->ab, "[vdev_id : %u radio_idx : %u] Failed to migrate pri link ret %d\n",
+			   arvif->vdev_id, arvif->ar->radio_idx, ret);
 
 exit_link_migrate_req:
 	ath12k_mac_free_link_migr_peer_list(ah, &peer_migr_list, ahvif);
@@ -16835,8 +16866,8 @@ int ath12k_mac_set_tx_antenna(struct ath12k *ar, u32 tx_ant)
 	ret = ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_TX_CHAIN_MASK,
 					tx_ant, ar->pdev->pdev_id);
 	if (ret) {
-		ath12k_err(ar->ab, "failed to set tx-chainmask: %d, req 0x%x\n",
-			   ret, tx_ant);
+		ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] failed to set tx-chainmask: %d, req 0x%x\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx, ret, tx_ant);
 		return ret;
 	}
 
@@ -16875,8 +16906,8 @@ int ath12k_mac_set_rx_antenna(struct ath12k *ar, u32 rx_ant)
 	ret = ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_RX_CHAIN_MASK,
 					rx_ant, ar->pdev->pdev_id);
 	if (ret) {
-		ath12k_err(ar->ab, "failed to set rx-chainmask: %d, req 0x%x\n",
-				ret, rx_ant);
+		ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] failed to set rx-chainmask: %d, req 0x%x\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx, ret, rx_ant);
 		return ret;
 	}
 
@@ -16985,16 +17016,16 @@ static int __ath12k_set_antenna(struct ath12k *ar, u32 tx_ant, u32 rx_ant,
 	ret = ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_TX_CHAIN_MASK,
 					tx_ant, ar->pdev->pdev_id);
 	if (ret) {
-		ath12k_err(ar->ab, "failed to set tx-chainmask: %d, req 0x%x\n",
-			    ret, tx_ant);
+		ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] failed to set tx-chainmask: %d, req 0x%x\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx, ret, tx_ant);
 		return ret;
 	}
 
 	ret = ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_RX_CHAIN_MASK,
 					rx_ant, ar->pdev->pdev_id);
 	if (ret) {
-		ath12k_err(ar->ab, "failed to set rx-chainmask: %d, req 0x%x\n",
-			    ret, rx_ant);
+		ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] failed to set rx-chainmask: %d, req 0x%x\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx, ret, rx_ant);
 		return ret;
 	}
 
@@ -17835,15 +17866,18 @@ int ath12k_mac_start(struct ath12k *ar)
 	    ar->pdev_suspend && !ab->powerup_triggered) {
 		ret = ath12k_mac_pdev_resume(ar);
 		if (ret) {
-			ath12k_err(ab, "pdev resume command is failed: %d\n", ret);
+			ath12k_err(ab, "[vdev_id : %s radio_idx : %u] pdev resume command is failed: %d\n",
+				   ATH12K_INVALID_VDEV_ID, ar->radio_idx, ret);
 			goto err;
 		}
 	}
 
-	ath12k_info(ab, "Enabling FW Thermal throttling\n");
+	ath12k_info(ab, "[vdev_id : %s radio_idx : %u] Enabling FW Thermal throttling\n",
+		    ATH12K_INVALID_VDEV_ID, ar->radio_idx);
 	ret = ath12k_thermal_set_throttling(ar, ATH12K_THERMAL_LVL0_DUTY_CYCLE);
 	if (ret) {
-		ath12k_err(ab, "failed to set thermal throttle: (%d)\n", ret);
+		ath12k_err(ab, "[vdev_id : %s radio_idx : %u] failed to set thermal throttle: (%d)\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx, ret);
 		goto err;
 	}
 
@@ -17851,28 +17885,32 @@ int ath12k_mac_start(struct ath12k *ar)
 					1, pdev->pdev_id);
 
 	if (ret) {
-		ath12k_err(ab, "failed to enable PMF QOS: (%d)\n", ret);
+		ath12k_err(ab, "[vdev_id : %s radio_idx : %u] failed to enable PMF QOS: (%d)\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx, ret);
 		goto err;
 	}
 
 	ret = ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_DYNAMIC_BW, 1,
 					pdev->pdev_id);
 	if (ret) {
-		ath12k_err(ab, "failed to enable dynamic bw: %d\n", ret);
+		ath12k_err(ab, "[vdev_id : %s radio_idx : %u] failed to enable dynamic bw: %d\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx, ret);
 		goto err;
 	}
 
 	ret = ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_ARP_AC_OVERRIDE,
 					0, pdev->pdev_id);
 	if (ret) {
-		ath12k_err(ab, "failed to set ac override for ARP: %d\n",
+		ath12k_err(ab, "[vdev_id : %s radio_idx : %u] failed to set ac override for ARP: %d\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx,
 			   ret);
 		goto err;
 	}
 
 	ret = ath12k_wmi_send_dfs_phyerr_offload_enable_cmd(ar, pdev->pdev_id);
 	if (ret) {
-		ath12k_err(ab, "failed to offload radar detection: %d\n",
+		ath12k_err(ab, "[vdev_id : %s radio_idx : %u] failed to offload radar detection: %d\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx,
 			   ret);
 		goto err;
 	}
@@ -17880,7 +17918,8 @@ int ath12k_mac_start(struct ath12k *ar)
 	ret = ath12k_dp_tx_htt_h2t_ppdu_stats_req(ar,
 						  HTT_PPDU_STATS_TAG_DEFAULT);
 	if (ret) {
-		ath12k_err(ab, "failed to req ppdu stats: %d\n", ret);
+		ath12k_err(ab, "[vdev_id : %s radio_idx : %u] failed to req ppdu stats: %d\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx, ret);
 		goto err;
 	}
 
@@ -17888,7 +17927,8 @@ int ath12k_mac_start(struct ath12k *ar)
 					1, pdev->pdev_id);
 
 	if (ret) {
-		ath12k_err(ab, "failed to enable MESH MCAST ENABLE: (%d\n", ret);
+		ath12k_err(ab, "[vdev_id : %s radio_idx : %u] failed to enable MESH MCAST ENABLE: (%d\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx, ret);
 		goto err;
 	}
 
@@ -17902,7 +17942,8 @@ int ath12k_mac_start(struct ath12k *ar)
 	ret = ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_SET_CONG_CTRL_MAX_MSDUS,
 					ATH12K_NUM_POOL_TX_DESC, pdev->pdev_id);
 	if (ret) {
-		ath12k_err(ab, "failed to set congestion control MAX MSDUS: %d\n", ret);
+		ath12k_err(ab, "[vdev_id : %s radio_idx : %u] failed to set congestion control MAX MSDUS: %d\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx, ret);
 		goto err;
 	}
 
@@ -17912,15 +17953,16 @@ int ath12k_mac_start(struct ath12k *ar)
 						ath12k_mlo_3_link_tx, pdev->pdev_id);
 		if (ret) {
 			ath12k_err(ab,
-				   "Failed to enable 3-link tid mapping"
-				   "for pdev id:%d\n", pdev->pdev_id);
+				   "[vdev_id : %s radio_idx : %u] Failed to enable 3-link tid mapping for pdev id:%d\n",
+				   ATH12K_INVALID_VDEV_ID, ar->radio_idx, pdev->pdev_id);
 		}
 	}
 
 	ret = ath12k_dp_rx_pkt_type_filter(ar, ATH12K_PKT_TYPE_EAP,
 					   ATH12K_ROUTE_EAP_METADATA);
 	if (ret) {
-		ath12k_err(ar->ab, "failed to configure EAP pkt route: %d\n", ret);
+		ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] failed to configure EAP pkt route: %d\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx, ret);
 		goto err;
 	}
 
@@ -17930,7 +17972,8 @@ int ath12k_mac_start(struct ath12k *ar)
 						ar->dfs_sub_channel_marking ? 1 : 0,
 						pdev->pdev_id);
 		if (ret) {
-			ath12k_err(ab, "failed to set SUB CHANNEL MARKING: %d\n", ret);
+			ath12k_err(ab, "[vdev_id : %s radio_idx : %u] failed to set SUB CHANNEL MARKING: %d\n",
+				   ATH12K_INVALID_VDEV_ID, ar->radio_idx, ret);
 			goto err;
 		}
 	}
@@ -17976,7 +18019,8 @@ int ath12k_mac_start(struct ath12k *ar)
 		ath12k_dp_mon_rx_stats_config(ar, true, mode);
 		ret = ath12k_dp_mon_rx_update_filter(ar);
 		if (ret && (ret != -EOPNOTSUPP)) {
-			ath12k_err(ab, "failed to configure monitor status ring with default rx_filter: (%d)\n",
+			ath12k_err(ab, "[vdev_id : %s radio_idx : %u] failed to configure monitor status ring with default rx_filter: (%d)\n",
+				   ATH12K_INVALID_VDEV_ID, ar->radio_idx,
 				   ret);
 			goto err;
 		}
@@ -17994,7 +18038,8 @@ int ath12k_mac_start(struct ath12k *ar)
 		ret = ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_IDLE_PS_CONFIG,
 						1, pdev->pdev_id);
 		if (ret) {
-			ath12k_err(ab, "failed to enable idle ps: %d\n", ret);
+			ath12k_err(ab, "[vdev_id : %s radio_idx : %u] failed to enable idle ps: %d\n",
+				   ATH12K_INVALID_VDEV_ID, ar->radio_idx, ret);
 			goto err;
 		}
 	}
@@ -18004,7 +18049,8 @@ int ath12k_mac_start(struct ath12k *ar)
 
 	ret = ath12k_skb_rhash_tbl_init(ar);
 	if (ret) {
-		ath12k_err(ab, "failed to initialize tx skb rhashtable:%d\n", ret);
+		ath12k_err(ab, "[vdev_id : %s radio_idx : %u] failed to initialize tx skb rhashtable:%d\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx, ret);
 		goto err;
 	}
 	return 0;
@@ -18081,7 +18127,8 @@ skip_state_check:
 			if (ret) {
 				ah->state = ATH12K_HW_STATE_OFF;
 
-				ath12k_err(ar->ab, "fail to start mac operations in pdev idx %d ret %d\n",
+				ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] fail to start mac operations in pdev idx %d ret %d\n",
+					   ATH12K_INVALID_VDEV_ID, ar->radio_idx,
 					   ar->pdev_idx, ret);
 				goto fail_start;
 			}
@@ -18202,7 +18249,8 @@ void ath12k_mac_stop(struct ath12k *ar)
 	}
 	ret = ath12k_dp_mon_rx_update_filter(ar);
 	if (ret && (ret != -EOPNOTSUPP))
-		ath12k_err(ar->ab, "failed to clear rx_filter for monitor status ring: (%d)\n",
+		ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] failed to clear rx_filter for monitor status ring: (%d)\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx,
 			   ret);
 
 	clear_bit(ATH12K_FLAG_CAC_RUNNING, &ar->dev_flags);
@@ -18662,15 +18710,16 @@ int ath12k_mac_pdev_resume(struct ath12k *ar)
 	ret = ath12k_wmi_pdev_resume(ar, ar->pdev->pdev_id);
 
 	if (ret) {
-		ath12k_err(ar->ab, "failed to send wmi resume command %d\n", ret);
+		ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] failed to send wmi resume command %d\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx, ret);
 		return ret;
 	}
 
 	time_left = wait_for_completion_timeout(&ar->pdev_resume,
 						ATH12K_PDEV_RESUME_TIMEOUT);
 	if (!time_left) {
-		ath12k_err(ar->ab, "timeout in receiving pdev resume response %d\n",
-			   ar->pdev->pdev_id);
+		ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] timeout in receiving pdev resume response %d\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx, ar->pdev->pdev_id);
 		return -ETIMEDOUT;
 	}
 
@@ -18825,8 +18874,8 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 	/* Scan radio supports only one VAP at a time */
 	if (ath12k_scan_radio_supported(ar->pdev) && ar->num_created_vdevs >= 1) {
-		ath12k_err(ab, "scan radio pdev %d already has a vdev, cannot create more\n",
-			   ar->pdev->pdev_id);
+		ath12k_err(ab, "[vdev_id : %s radio_idx : %u] scan radio pdev %d already has a vdev, cannot create more\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx, ar->pdev->pdev_id);
 		return -EINVAL;
 	}
 
@@ -18834,7 +18883,8 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		ret = ath12k_mac_pdev_resume(ar);
 		if (ret) {
 			ath12k_err(ab,
-				   "vdev could not be created because the pdev failed to resume\n");
+				   "[vdev_id : %s radio_idx : %u] vdev could not be created because the pdev failed to resume\n",
+				   ATH12K_INVALID_VDEV_ID, ar->radio_idx);
 			return ret;
 		}
 	}
@@ -18852,7 +18902,8 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 	if (!is_bridge_vdev) {
 		if (!arvif->is_scan_vif && link_id >= ARRAY_SIZE(vif->link_conf)) {
-			ath12k_warn(ar->ab, "link_id %u exceeds max valid links for vif %pM\n",
+			ath12k_warn(ar->ab, "[vdev_id : %s radio_idx : %u] link_id %u exceeds max valid links for vif %pM\n",
+				    ATH12K_INVALID_VDEV_ID, ar->radio_idx,
 				    link_id, vif->addr);
 			return -EINVAL;
 		}
@@ -18860,7 +18911,8 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		if (link_id < ATH12K_DEFAULT_SCAN_LINK) {
 			link_conf = wiphy_dereference(hw->wiphy, vif->link_conf[link_id]);
 			if (!link_conf && !arvif->is_scan_vif) {
-				ath12k_warn(ar->ab, "unable to access bss link conf in vdev create for vif %pM link %u\n",
+				ath12k_warn(ar->ab, "[vdev_id : %s radio_idx : %u] unable to access bss link conf in vdev create for vif %pM link %u\n",
+					    ATH12K_INVALID_VDEV_ID, ar->radio_idx,
 					    vif->addr, arvif->link_id);
 				return -ENOLINK;
 			}
@@ -18905,7 +18957,8 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	if (ar->fw_stats.en_vdev_stats_ol && !ar->num_created_vdevs) {
 		ret = ath12k_dp_tx_htt_h2t_vdev_stats_ol_req(ar, 0);
 		if (ret) {
-			ath12k_warn(ar->ab, "failed to request vdev stats offload: %d\n", ret);
+			ath12k_warn(ar->ab, "[vdev_id : %s radio_idx : %u] failed to request vdev stats offload: %d\n",
+				    ATH12K_INVALID_VDEV_ID, ar->radio_idx, ret);
 			goto err;
 		}
 	}
@@ -18915,7 +18968,8 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	spin_lock_bh(&ar->ab->base_lock);
 	if (!ab->free_vdev_map) {
 		spin_unlock_bh(&ar->ab->base_lock);
-		ath12k_warn(ar->ab, "failed to create vdev. No free vdev id left.\n");
+		ath12k_warn(ar->ab, "[vdev_id : %s radio_idx : %u] failed to create vdev. No free vdev id left.\n",
+			    ATH12K_INVALID_VDEV_ID, ar->radio_idx);
 		ret = -EINVAL;
 		goto err;
 	}
@@ -18931,7 +18985,8 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	arvif->vdev_subtype = is_bridge_vdev ? WMI_VDEV_SUBTYPE_BRIDGE : WMI_VDEV_SUBTYPE_NONE;
 
 	if (!ar->free_map_id) {
-		ath12k_err(ar->ab, "No free map_id available\n");
+		ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] No free map_id available\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx);
 		ret = -EINVAL;
 		goto err;
 	}
@@ -18991,14 +19046,16 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		arvif->rssi_deauth_cfg.noise_floor_offset = ATH12K_DEFAULT_NOISE_FLOOR;
 
 	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
-			 "rssi deauth: vdev %d initialized - threshold=%d dBm, grace_samples=%u, enabled=%d\n",
+			 "[radio_idx : %u] rssi deauth: vdev %d initialized - threshold=%d dBm, grace_samples=%u, enabled=%d\n",
+			 ar->radio_idx,
 			 arvif->vdev_id, arvif->rssi_deauth_cfg.rssi_threshold,
 			 arvif->rssi_deauth_cfg.grace_samples,
 			 arvif->rssi_deauth_cfg.enabled);
 
 	if (ahvif->vdev_type != WMI_VDEV_TYPE_STA) {
 		ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
-			   "mac vdev create id %d type %d subtype %d map %llx\n",
+			   "[radio_idx : %u] mac vdev create id %d type %d subtype %d map %llx\n",
+			   ar->radio_idx,
 			   arvif->vdev_id, ahvif->vdev_type, arvif->vdev_subtype,
 			   ab->free_vdev_map);
 	}
@@ -19009,8 +19066,8 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 	ret = ath12k_mac_setup_vdev_create_arg(arvif, &vdev_arg);
 	if (ret) {
-		ath12k_warn(ab, "failed to create vdev parameters %d: %d\n",
-			    arvif->vdev_id, ret);
+		ath12k_warn(ab, "[radio_idx : %u] failed to create vdev parameters %d: %d\n",
+			    ar->radio_idx, arvif->vdev_id, ret);
 		goto err_free_vdev_id;
 	}
 
@@ -19034,8 +19091,8 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 	ret = ath12k_wmi_vdev_create(ar, vdev_create_mac, &vdev_arg);
 	if (ret) {
-		ath12k_warn(ab, "failed to create WMI vdev %d: %d\n",
-			    arvif->vdev_id, ret);
+		ath12k_warn(ab, "[radio_idx : %u] failed to create WMI vdev %d: %d\n",
+			    ar->radio_idx, arvif->vdev_id, ret);
 		goto err_cu_mem;
 	}
 
@@ -19048,8 +19105,8 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 	dbg_lvl = (ahvif->vdev_type == WMI_VDEV_TYPE_STA) ? ATH12K_DBG_L1 : ATH12K_DBG_L0;
 	ath12k_dbg_level(ab, ATH12K_DBG_MAC, dbg_lvl,
-			 "vdev addr %pM bssid: %pM created, vdev_id %d\n",
-			 arvif->addr, arvif->bssid, arvif->vdev_id);
+			 "[radio_idx : %u] vdev addr %pM bssid: %pM created, vdev_id %d\n",
+			 ar->radio_idx, arvif->addr, arvif->bssid, arvif->vdev_id);
 	ar->allocated_vdev_map |= 1LL << arvif->vdev_id;
 
 	spin_lock_bh(&ar->data_lock);
@@ -19072,8 +19129,9 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
 					    WMI_VDEV_PARAM_NSS, nss);
 	if (ret) {
-		ath12k_warn(ab, "failed to set vdev %d chainmask 0x%x, nss %d :%d\n",
-			    arvif->vdev_id, ar->cfg_tx_chainmask, nss, ret);
+		ath12k_warn(ab, "[radio_idx : %u] failed to set vdev %d chainmask 0x%x, nss %d :%d\n",
+			    ar->radio_idx, arvif->vdev_id,
+			    ar->cfg_tx_chainmask, nss, ret);
 		goto err_vdev_del;
 	}
 
@@ -19084,8 +19142,8 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 		ret = ath12k_dp_arch_peer_create(ab->dp, ah, arvif->bssid, &params, vif);
 		if (ret) {
-			ath12k_warn(ab, "failed to vdev %d create dp_peer for AP: %d\n",
-				    arvif->vdev_id, ret);
+			ath12k_warn(ab, "[radio_idx : %u] failed to vdev %d create dp_peer for AP: %d\n",
+				    ar->radio_idx, arvif->vdev_id, ret);
 			goto err_vdev_del;
 		}
 
@@ -19103,15 +19161,15 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		peer_param.sta_id = params.sta_id;
 		ret = ath12k_peer_create(ar, arvif, NULL, &peer_param);
 		if (ret) {
-			ath12k_warn(ab, "failed to vdev %d create peer for AP: %d\n",
-				    arvif->vdev_id, ret);
+			ath12k_warn(ab, "[radio_idx : %u] failed to vdev %d create peer for AP: %d\n",
+				    ar->radio_idx, arvif->vdev_id, ret);
 			goto err_self_arsta_del;
 		}
 
 		ret = ath12k_mac_set_kickout(arvif);
 		if (ret) {
-			ath12k_warn(ar->ab, "failed to set vdev %i kickout parameters: %d\n",
-				    arvif->vdev_id, ret);
+			ath12k_warn(ar->ab, "[radio_idx : %u] failed to set vdev %i kickout parameters: %d\n",
+				    ar->radio_idx, arvif->vdev_id, ret);
 			goto err_peer_del;
 		}
 		ret = ath12k_dp_arch_peer_assoc(ab->dp,
@@ -19132,8 +19190,8 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		ret = ath12k_wmi_set_sta_ps_param(ar, arvif->vdev_id,
 						  param_id, param_value);
 		if (ret) {
-			ath12k_warn(ar->ab, "failed to set vdev %d RX wake policy: %d\n",
-				    arvif->vdev_id, ret);
+			ath12k_warn(ar->ab, "[radio_idx : %u] failed to set vdev %d RX wake policy: %d\n",
+				    ar->radio_idx, arvif->vdev_id, ret);
 			goto err_peer_del;
 		}
 
@@ -19142,8 +19200,8 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		ret = ath12k_wmi_set_sta_ps_param(ar, arvif->vdev_id,
 						  param_id, param_value);
 		if (ret) {
-			ath12k_warn(ar->ab, "failed to set vdev %d TX wake threshold: %d\n",
-				    arvif->vdev_id, ret);
+			ath12k_warn(ar->ab, "[radio_idx : %u] failed to set vdev %d TX wake threshold: %d\n",
+				    ar->radio_idx, arvif->vdev_id, ret);
 			goto err_peer_del;
 		}
 
@@ -19152,15 +19210,15 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		ret = ath12k_wmi_set_sta_ps_param(ar, arvif->vdev_id,
 						  param_id, param_value);
 		if (ret) {
-			ath12k_warn(ar->ab, "failed to set vdev %d pspoll count: %d\n",
-				    arvif->vdev_id, ret);
+			ath12k_warn(ar->ab, "[radio_idx : %u] failed to set vdev %d pspoll count: %d\n",
+				    ar->radio_idx, arvif->vdev_id, ret);
 			goto err_peer_del;
 		}
 
 		ret = ath12k_wmi_pdev_set_ps_mode(ar, arvif->vdev_id, false);
 		if (ret) {
-			ath12k_warn(ar->ab, "failed to disable vdev %d ps mode: %d\n",
-				    arvif->vdev_id, ret);
+			ath12k_warn(ar->ab, "[radio_idx : %u] failed to disable vdev %d ps mode: %d\n",
+				    ar->radio_idx, arvif->vdev_id, ret);
 			goto err_peer_del;
 		}
 
@@ -19186,8 +19244,8 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 							param_id, param_value);
 			if (ret) {
 				ath12k_warn(ar->ab,
-				"failed to set vdev %d HE MU mode: %d\n",
-				arvif->vdev_id, ret);
+				"[radio_idx : %u] failed to set vdev %d HE MU mode: %d\n",
+				ar->radio_idx, arvif->vdev_id, ret);
 			}
 			param_value = 0;
 			param_id = WMI_VDEV_PARAM_SET_EHT_MU_MODE;
@@ -19201,8 +19259,8 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 							param_id, param_value);
 			if (ret) {
 				ath12k_warn(ar->ab,
-				"failed to set vdev %d EHT MU mode: %d\n",
-				arvif->vdev_id, ret);
+				"[radio_idx : %u] failed to set vdev %d EHT MU mode: %d\n",
+				ar->radio_idx, arvif->vdev_id, ret);
 			}
 		}
 
@@ -19227,9 +19285,9 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 		if (ret) {
 			ath12k_warn(ar->ab,
-				    "failed to set max recom active links"
+				    "[radio_idx : %u] failed to set max recom active links"
 				    "for vdev %d: %d\n",
-				    arvif->vdev_id, ret);
+				    ar->radio_idx, arvif->vdev_id, ret);
 		}
 	}
 
@@ -19240,8 +19298,8 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
 					    param_id, param_value);
 	if (ret) {
-		ath12k_warn(ar->ab, "failed to set rts threshold for vdev %d: %d\n",
-			    arvif->vdev_id, ret);
+		ath12k_warn(ar->ab, "[radio_idx : %u] failed to set rts threshold for vdev %d: %d\n",
+			    ar->radio_idx, arvif->vdev_id, ret);
 		ar->rts_threshold = -1;
 	} else {
 		ar->rts_threshold = param_value;
@@ -19267,7 +19325,8 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		ret = ath12k_wmi_vdev_set_param_cmd(arvif->ar, arvif->vdev_id,
 						    WMI_VDEV_PARAM_WDS, 1);
 		if (ret) {
-			ath12k_warn(ar->ab, "failed to set WDS vdev param: %d\n", ret);
+			ath12k_warn(ar->ab, "[vdev_id : %u radio_idx : %u] failed to set WDS vdev param: %d\n",
+				    arvif->vdev_id, ar->radio_idx, ret);
 			goto err_vdev_del;
 		}
 		arvif->set_wds_vdev_param = true;
@@ -19280,8 +19339,8 @@ err_peer_del:
 		fbret = ath12k_peer_delete(ar, arvif->vdev_id, link_addr,
 					   false, 0, false, NULL);
 		if (fbret) {
-			ath12k_warn(ar->ab, "failed to delete peer %pM vdev_id %d ret %d\n",
-				    link_addr, arvif->vdev_id, fbret);
+			ath12k_warn(ar->ab, "[radio_idx : %u] failed to delete peer %pM vdev_id %d ret %d\n",
+				    ar->radio_idx, link_addr, arvif->vdev_id, fbret);
 		}
 	}
 
@@ -19521,8 +19580,8 @@ ath12k_mac_assign_vif_to_vdev(struct ieee80211_hw *hw,
 	arvif = ath12k_mac_assign_link_vif(ah, vif, link_id, is_bridge_vdev);
 
 	if (!arvif) {
-		ath12k_err(ab, "Failed to alloc/assign link vif id %u\n",
-			   link_id);
+		ath12k_err(ab, "[vdev_id : %s radio_idx : %u] Failed to alloc/assign link vif id %u\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx, link_id);
 		return NULL;
 	}
 
@@ -19638,7 +19697,8 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 	lockdep_assert_wiphy(hw->wiphy);
 
 	if (!wdev) {
-		ath12k_warn(ar->ab, "Failed to get wdev from vif\n");
+		ath12k_warn(ar->ab, "[vdev_id : %s radio_idx : %u] Failed to get wdev from vif\n",
+			    ATH12K_INVALID_VDEV_ID, ar->radio_idx);
 		return -ENODEV;
 	}
 
@@ -19698,8 +19758,8 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 		break;
 	default:
 		ahvif->vdev_type = WMI_VDEV_TYPE_UNSPEC;
-		ath12k_info(NULL, "VDEV type not assigned for vif_type %u",
-			    vif->type);
+		ath12k_info(NULL, "[vdev_id : %s radio_idx : %u] VDEV type not assigned for vif_type %u",
+			    ATH12K_INVALID_VDEV_ID, ar->radio_idx, vif->type);
 		break;
 	}
 
@@ -19873,7 +19933,8 @@ ppe_vp_config:
 
 	if (vif->type == NL80211_IFTYPE_AP) {
 		ret = ath12k_me_db_init(&ahvif->dp_vif);
-		ath12k_dbg(NULL, ATH12K_DBG_MAC, "ME Database initialization %s\n",
+		ath12k_dbg(NULL, ATH12K_DBG_MAC,
+			   "ME Database initialization %s\n",
 			   (ret < 0) ? "failed" : "succeeded");
 	}
 
@@ -19955,14 +20016,15 @@ int ath12k_mac_pdev_suspend(struct ath12k *ar)
 	ret = ath12k_wmi_pdev_suspend(ar, WMI_PDEV_SUSPEND_AND_DISABLE_INTR,
 				      ar->pdev->pdev_id);
 	if (ret) {
-		ath12k_err(ar->ab, "failed to send wmi suspend command %d\n", ret);
+		ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] failed to send wmi suspend command %d\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx, ret);
 		goto exit;
 	}
 	time_left = wait_for_completion_timeout(&ar->suspend,
 						ATH12K_PDEV_SUSPEND_TIMEOUT);
 	if (!time_left) {
-		ath12k_err(ar->ab, "timeout in receiving pdev suspend response %d\n",
-			   ar->pdev->pdev_id);
+		ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] timeout in receiving pdev suspend response %d\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx, ar->pdev->pdev_id);
 		ret = -ETIMEDOUT;
 		goto exit;
 	}
@@ -19994,16 +20056,16 @@ static int ath12k_mac_vdev_delete(struct ath12k *ar, struct ath12k_link_vif *arv
 
 	ret = ath12k_wmi_vdev_delete(ar, arvif->vdev_id);
 	if (ret) {
-		ath12k_warn(ab, "failed to delete WMI vdev %d: %d\n",
-			    arvif->vdev_id, ret);
+		ath12k_warn(ab, "[radio_idx : %u] failed to delete WMI vdev %d: %d\n",
+			    ar->radio_idx, arvif->vdev_id, ret);
 		goto err_vdev_del;
 	}
 
 	time_left = wait_for_completion_timeout(&ar->vdev_delete_done,
 						ATH12K_VDEV_DELETE_TIMEOUT_HZ);
 	if (time_left == 0) {
-		ath12k_warn(ab, "Timeout in receiving vdev delete response %d\n",
-			    arvif->vdev_id);
+		ath12k_warn(ab, "[radio_idx : %u] Timeout in receiving vdev delete response %d\n",
+			    ar->radio_idx, arvif->vdev_id);
 		goto err_vdev_del;
 	}
 
@@ -20034,8 +20096,8 @@ static int ath12k_mac_vdev_delete(struct ath12k *ar, struct ath12k_link_vif *arv
 		ar->monitor_vdev_created = false;
 	} else if (ahvif->vdev_type != WMI_VDEV_TYPE_STA) {
 		ar->dp.stats.telemetry_stats.sta_vap_exist--;
-		ath12k_dbg(ab, ATH12K_DBG_MAC, "vdev %pM deleted, vdev_id %d\n",
-		   vif->addr, arvif->vdev_id);
+		ath12k_dbg(ab, ATH12K_DBG_MAC, "[radio_idx : %u] vdev %pM deleted, vdev_id %d\n",
+			   ar->radio_idx, vif->addr, arvif->vdev_id);
 	}
 
 err_vdev_del:
@@ -20111,7 +20173,8 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 
 	if (vif->type == NL80211_IFTYPE_AP) {
 		ath12k_me_db_deinit(&ahvif->dp_vif);
-		ath12k_dbg(NULL, ATH12K_DBG_MAC, "ME Database deinitialized\n");
+		ath12k_dbg(NULL, ATH12K_DBG_MAC,
+			   "ME Database deinitialized\n");
 	}
 
 	vif->driver_flags &= ~(IEEE80211_VIF_SUPPORTS_CQM_RSSI |
@@ -20160,8 +20223,8 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 			if (arvif->is_started) {
 				ret = ath12k_mac_vdev_stop(arvif);
 				if (ret) {
-					ath12k_warn(ar->ab, "failed to stop vdev %d: %d\n",
-						    arvif->vdev_id, ret);
+					ath12k_warn(ar->ab, "[radio_idx : %u] failed to stop vdev %d: %d\n",
+						    ar->radio_idx, arvif->vdev_id, ret);
 				}
 				arvif->is_started = false;
 				ar->scan.arvif = NULL;
@@ -20189,8 +20252,8 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 		if (arvif->is_scan_vif && arvif->is_started) {
 			ret = ath12k_mac_vdev_stop(arvif);
 			if (ret) {
-				ath12k_warn(ar->ab, "failed to stop vdev %d: %d\n",
-					    arvif->vdev_id, ret);
+				ath12k_warn(ar->ab, "[radio_idx : %u] failed to stop vdev %d: %d\n",
+					    ar->radio_idx, arvif->vdev_id, ret);
 				goto free_vlan_iface;
 			}
 			arvif->is_started = false;
@@ -20266,7 +20329,8 @@ int ath12k_mac_op_get_antenna(struct ieee80211_hw *hw, u32 *tx_ant, u32 *rx_ant,
 		antennas_tx = max_t(u32, antennas_tx, ar->cfg_tx_chainmask);
 
 		ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
-				 "mac pdev %u freq limits %u->%u MHz\n",
+				 "[vdev_id : %s radio_idx : %u] mac pdev %u freq limits %u->%u MHz\n",
+				 ATH12K_INVALID_VDEV_ID, ar->radio_idx,
 				 ar->pdev->pdev_id, ar->chan_info.low_freq,
 				 ar->chan_info.high_freq);
 	}
@@ -20338,7 +20402,8 @@ static int ath12k_mac_ampdu_action(struct ieee80211_hw *hw,
 
 	if (ret)
 		ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
-			   "unable to perform ampdu action %d for vif %pM link %u ret %d\n",
+			   "[vdev_id : %s radio_idx : %u] unable to perform ampdu action %d for vif %pM link %u ret %d\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx,
 			   params->action, vif->addr, link_id, ret);
 
 	return ret;
@@ -20404,8 +20469,9 @@ int ath12k_mac_mlo_standby_teardown(struct ath12k_hw *ah, bool standby_teardown)
 		}
 
 		if (ret) {
-			ath12k_err(ar->ab, "failed to teardown MLO for pdev_idx  %d: %d\n",
-				   ar->pdev_idx, ret);
+			ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] failed to teardown MLO for pdev_idx  %d: %d\n",
+				   ATH12K_INVALID_VDEV_ID, ar->radio_idx, ar->pdev_idx,
+				   ret);
 			return ret;
 		}
 	}
@@ -20440,7 +20506,8 @@ int ath12k_mac_op_add_chanctx(struct ieee80211_hw *hw,
 	ab = ar->ab;
 
 	ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
-			 "mac chanctx add freq %u width %d ptr %p\n",
+			 "[vdev_id : %s radio_idx : %u] mac chanctx add freq %u width %d ptr %p\n",
+			 ATH12K_INVALID_VDEV_ID, ar->radio_idx,
 			 ctx->def.chan->center_freq, ctx->def.width, ctx);
 
 	spin_lock_bh(&ar->data_lock);
@@ -20470,7 +20537,8 @@ void ath12k_mac_op_remove_chanctx(struct ieee80211_hw *hw,
 	ab = ar->ab;
 
 	ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
-			 "mac chanctx remove freq %u width %d ptr %p\n",
+			 "[vdev_id : %s radio_idx : %u] mac chanctx remove freq %u width %d ptr %p\n",
+			 ATH12K_INVALID_VDEV_ID, ar->radio_idx,
 			 ctx->def.chan->center_freq, ctx->def.width, ctx);
 
 	spin_lock_bh(&ar->data_lock);
@@ -20567,7 +20635,8 @@ ath12k_mac_check_down_grade_phy_mode(struct ath12k *ar,
 		down_mode = ath12k_eht_to_he_phy_mode(mode);
 
 	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
-			 "mac vdev start phymode %s downgrade to %s\n",
+			 "[vdev_id : %s radio_idx : %u] mac vdev start phymode %s downgrade to %s\n",
+			 ATH12K_INVALID_VDEV_ID, ar->radio_idx,
 			 ath12k_mac_phymode_str(mode),
 			 ath12k_mac_phymode_str(down_mode));
 
@@ -20759,7 +20828,8 @@ ath12k_mac_vdev_config_after_start(struct ath12k_link_vif *arvif,
 			ath12k_mac_parse_tx_pwr_env(ar, arvif);
 
 		if (!chanctx) {
-			ath12k_err(ar->ab, "channel context is NULL");
+			ath12k_err(ar->ab, "[vdev_id : %u radio_idx : %u] channel context is NULL",
+				   arvif->vdev_id, ar->radio_idx);
 			return -ENOLINK;
 		}
 
@@ -20792,7 +20862,8 @@ ath12k_mac_vdev_config_after_start(struct ath12k_link_vif *arvif,
 							     false, false);
 
 		ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
-				 "CAC started dfs_cac_time %u center_freq %d center_freq1 %d for vdev %d\n",
+				 "[radio_idx : %u] CAC started dfs_cac_time %u center_freq %d center_freq1 %d for vdev %d\n",
+				 ar->radio_idx,
 				 dfs_cac_time, chandef->chan->center_freq,
 				 chandef->center_freq1,
 				 arvif->vdev_id);
@@ -20812,7 +20883,8 @@ ath12k_mac_vdev_config_after_start(struct ath12k_link_vif *arvif,
 	    test_bit(ar->cfg_rx_chainmask, &ar->pdev->cap.adfs_chain_mask) &&
 	    ar->agile_chandef.chan) {
 		ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
-				 "Aborting ongoing Agile DFS on freq %d",
+				 "[radio_idx : %u] Aborting ongoing Agile DFS on freq %d",
+				 ar->radio_idx,
 				 ar->agile_chandef.chan->center_freq);
 		ret = ath12k_mac_abort_agile_cac(ar, true);
 		if (ret)
@@ -20895,15 +20967,16 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 	if (!is_bridge_vdev) {
 		if (!chandef) {
 			ath12k_warn(ar->ab,
-				    "Chandef is not valid for vif %pM link %u\n",
+				    "[radio_idx : %u] Chandef is not valid for vif %pM link %u\n",
+				    ar->radio_idx,
 				    ahvif->vif->addr, arvif->link_id);
 			return -EINVAL;
 		}
 
 		link_conf = ath12k_mac_get_link_bss_conf(arvif);
 		if (!link_conf) {
-			ath12k_warn(ar->ab, "unable to access bss link conf in vdev start for vif %pM link %u\n",
-				    ahvif->vif->addr, arvif->link_id);
+			ath12k_warn(ar->ab, "[radio_idx : %u] unable to access bss link conf in vdev start for vif %pM link %u\n",
+				    ar->radio_idx, ahvif->vif->addr, arvif->link_id);
 			return -ENOLINK;
 		}
 	}
@@ -21036,7 +21109,8 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 		ath12k_mac_mlo_get_vdev_args(arvif, &arg.ml);
 
 	ath12k_dbg(ab, ATH12K_DBG_MAC,
-		   "mac vdev %d start center_freq %d phymode %s punct_bitmap 0x%x arg.is_stadfs_en:%d\n",
+		   "[radio_idx : %u] mac vdev %d start center_freq %d phymode %s punct_bitmap 0x%x arg.is_stadfs_en:%d\n",
+		   ar->radio_idx,
 		   arg.vdev_id, arg.freq,
 		   ath12k_mac_phymode_str(arg.mode), arg.punct_bitmap, arg.is_stadfs_en);
 
@@ -21044,14 +21118,16 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 
 	ret = ath12k_wmi_vdev_start(ar, &arg, restart);
 	if (ret) {
-		ath12k_warn(ar->ab, "failed to %s WMI vdev %i\n",
+		ath12k_warn(ar->ab, "[radio_idx : %u] failed to %s WMI vdev %i\n",
+			    ar->radio_idx,
 			    restart ? "restart" : "start", arg.vdev_id);
 		return ret;
 	}
 
 	ret = ath12k_mac_vdev_setup_sync(ar);
 	if (ret) {
-		ath12k_warn(ab, "failed to synchronize setup for vdev %i %s: %d\n",
+		ath12k_warn(ab, "[radio_idx : %u] failed to synchronize setup for vdev %i %s: %d\n",
+			    ar->radio_idx,
 			    arg.vdev_id, restart ? "restart" : "start", ret);
 #ifdef CPTCFG_QCN_EXTN
 		if (chandef && ar->last_wmi_vdev_start_status ==
@@ -21067,8 +21143,8 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 	arvif->last_vht_tx_mcs_map = 0;
 	arvif->last_ht_tx_mcs_map = 0;
 	ar->num_started_vdevs++;
-	ath12k_dbg(ab, ATH12K_DBG_MAC, "vdev %pM started, vdev_id %d\n",
-		   arvif->bssid, arvif->vdev_id);
+	ath12k_dbg(ab, ATH12K_DBG_MAC, "[radio_idx : %u] vdev %pM started, vdev_id %d\n",
+		   ar->radio_idx, arvif->bssid, arvif->vdev_id);
 
 	/* For scan vif, STA related configs are not needed */
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA && arvif->is_scan_vif)
@@ -21077,8 +21153,8 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 	if (chandef) {
 		ret = ath12k_mac_vdev_config_after_start(arvif, chandef);
 		if (ret)
-			ath12k_warn(ab, "failed to configure vdev %d after %s: %d\n",
-				    arvif->vdev_id,
+			ath12k_warn(ab, "[radio_idx : %u] failed to configure vdev %d after %s: %d\n",
+				    ar->radio_idx, arvif->vdev_id,
 				    restart ? "restart" : "start", ret);
 	}
 
@@ -21581,7 +21657,8 @@ ath12k_mac_update_vif_chan_extras(struct ath12k *ar,
                             chandef->chan->center_freq) {
                                 ar->awgn_intf_handling_in_prog = false;
 				ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
-						 "AWGN : channel switch completed\n");
+						 "[vdev_id : %s radio_idx : %u] AWGN : channel switch completed\n",
+						 ATH12K_INVALID_VDEV_ID, ar->radio_idx);
                         } else {
                                 ath12k_warn(ab, "AWGN : channel switch is not done, freq : %d\n",
                                             ar->awgn_chandef.chan->center_freq);
@@ -21591,7 +21668,8 @@ ath12k_mac_update_vif_chan_extras(struct ath12k *ar,
 			     chandef->chan->center_freq) ||
 			    (ar->awgn_chandef.width != chandef->width)) {
 				ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
-						 "AWGN : BW reduction/Channel switch is complete\n");
+						 "[vdev_id : %s radio_idx : %u] AWGN : BW reduction/Channel switch is complete\n",
+						 ATH12K_INVALID_VDEV_ID, ar->radio_idx);
                                 ar->awgn_intf_handling_in_prog = false;
                         } else {
                                 ath12k_warn(ab, "AWGN : awgn_freq : %d chan_freq %d"
@@ -21654,7 +21732,8 @@ ath12k_mac_update_vif_chan(struct ath12k *ar,
 		}
 
 		ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
-				 "mac chanctx switch vdev_id %i freq %u->%u width %d->%d link_id:%u\n",
+				 "[radio_idx : %u] mac chanctx switch vdev_id %i freq %u->%u width %d->%d link_id:%u\n",
+				 ar->radio_idx,
 				 arvif->vdev_id,
 				 vifs[i].old_ctx->def.chan->center_freq,
 				 vifs[i].new_ctx->def.chan->center_freq,
@@ -21791,7 +21870,8 @@ ath12k_mac_update_vif_chan_mvr(struct ath12k *ar,
 			continue;
 
 		ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
-				 "mac chanctx switch vdev_id %i freq %u->%u width %d->%d link_id:%u\n",
+				 "[radio_idx : %u] mac chanctx switch vdev_id %i freq %u->%u width %d->%d link_id:%u\n",
+				 ar->radio_idx,
 				 arvif->vdev_id,
 				 vifs[i].old_ctx->def.chan->center_freq,
 				 vifs[i].new_ctx->def.chan->center_freq,
@@ -21842,7 +21922,8 @@ ath12k_mac_update_vif_chan_mvr(struct ath12k *ar,
 			ar->chanctx_switch_stats.mvr_timeout_count++;
 			spin_unlock_bh(&ar->data_lock);
 			kfree(vdev_ids);
-			ath12k_err(ar->ab, "mac mvr cmd response timed out\n");
+			ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] mac mvr cmd response timed out\n",
+				   ATH12K_INVALID_VDEV_ID, ar->radio_idx);
 			/* fallback to restarting one-by-one */
 			return ath12k_mac_update_vif_chan(ar, vifs,
 							  vifs_bridge_link_id,
@@ -21858,8 +21939,8 @@ ath12k_mac_update_vif_chan_mvr(struct ath12k *ar,
 			arvif->mvr_processing = false;
 			vdev_idx = trans_vdev_index;
 			ath12k_err(ab,
-				   "mac failed to restart mbssid tx vdev %d via mvr cmd\n",
-				   tx_arvif->vdev_id);
+				   "[radio_idx : %u] mac failed to restart mbssid tx vdev %d via mvr cmd\n",
+				   ar->radio_idx, tx_arvif->vdev_id);
 		}
 
 		rcu_read_lock();
@@ -21905,8 +21986,8 @@ ath12k_mac_update_vif_chan_mvr(struct ath12k *ar,
 			/* failed to restart vdev via mvr, fallback */
 			arvif->mvr_processing = false;
 			vdev_idx = i;
-			ath12k_err(ab, "mac failed to restart vdev %d via mvr cmd\n",
-				   arvif->vdev_id);
+			ath12k_err(ab, "[radio_idx : %u] mac failed to restart vdev %d via mvr cmd\n",
+				   ar->radio_idx, arvif->vdev_id);
 		}
 
 		if (!is_bridge_vdev) {
@@ -22440,11 +22521,13 @@ ath12k_mac_assign_vif_chanctx_handle(struct ieee80211_hw *hw,
 
 	if (ctx)
 		ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
-				 "mac chanctx assign ptr %p vdev_id %i, vdev_subtype=%0x\n",
+				 "[radio_idx : %u] mac chanctx assign ptr %p vdev_id %i, vdev_subtype=%0x\n",
+				 ar->radio_idx,
 				ctx, arvif->vdev_id, arvif->vdev_subtype);
 	else
 		ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
-				 "mac chanctx for vdev_id %i vdev_subtype=%0x\n",
+				 "[radio_idx : %u] mac chanctx for vdev_id %i vdev_subtype=%0x\n",
+				 ar->radio_idx,
 				 arvif->vdev_id, arvif->vdev_subtype);
 
 
@@ -22456,7 +22539,8 @@ ath12k_mac_assign_vif_chanctx_handle(struct ieee80211_hw *hw,
              ahvif->vdev_type == WMI_VDEV_TYPE_AP)) {
                 power_type = vif->bss_conf.power_type;
 		ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L3,
-				 "mac chanctx power type %d\n", power_type);
+				 "[radio_idx : %u] mac chanctx power type %d\n",
+				 ar->radio_idx, power_type);
                 if (power_type == IEEE80211_REG_UNSET_AP)
                         power_type = IEEE80211_REG_LPI_AP;
 
@@ -22523,7 +22607,8 @@ ath12k_mac_assign_vif_chanctx_handle(struct ieee80211_hw *hw,
 						WMI_PDEV_PARAM_SET_PROMISC_MODE_CMDID,
 						true, ar->pdev->pdev_id);
 		if (ret) {
-			ath12k_err(NULL, "Failed to send WMI_PDEV_PARAM_SET_PROMISC_MODE_CMDID to firmware");
+			ath12k_err(NULL, "[vdev_id : %s radio_idx : %u] Failed to send WMI_PDEV_PARAM_SET_PROMISC_MODE_CMDID to firmware",
+				   ATH12K_INVALID_VDEV_ID, ar->radio_idx);
 			goto out;
 		}
 	}
@@ -22597,7 +22682,7 @@ ath12k_mac_unassign_vif_chanctx_handle(struct ieee80211_hw *hw,
 	} else if (bridge_link_id) {
         	link_id = bridge_link_id;
 	} else {
-        	ath12k_err(NULL, "unable to get the link id\n");
+		ath12k_err(NULL, "unable to get the link id\n");
 	        return;
 	}
 
@@ -22625,11 +22710,13 @@ ath12k_mac_unassign_vif_chanctx_handle(struct ieee80211_hw *hw,
 
 	if (ctx)
 		ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
-				 "mac chanctx unassign ptr %p vdev_id %i vdev_subtype %0x\n",
+				 "[radio_idx : %u] mac chanctx unassign ptr %p vdev_id %i vdev_subtype %0x\n",
+				 ar->radio_idx,
 				 ctx, arvif->vdev_id, arvif->vdev_subtype);
 	else
 		ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
-				 "mac chanctx unassign for vdev_id %i vdev_subtype %0x\n",
+				 "[radio_idx : %u] mac chanctx unassign for vdev_id %i vdev_subtype %0x\n",
+				 ar->radio_idx,
 				 arvif->vdev_id, arvif->vdev_subtype);
 
 	if (unlikely(test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags) ||
@@ -22889,7 +22976,8 @@ static struct ieee80211_chanctx_conf *ath12k_mac_get_ctx_for_bridge(struct ath12
 		    arvif->chanctx.def.chan) {
 			chan = arvif->chanctx.def.chan;
 			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
-					 "selected arvif link_id=%u bssid=%pM freq %d\n",
+					 "[radio_idx : %u] selected arvif link_id=%u bssid=%pM freq %d\n",
+					 ar->radio_idx,
 					 arvif->link_id, arvif->bssid,
 					 chan->center_freq);
 			return &arvif->chanctx;
@@ -22947,7 +23035,8 @@ static int ath12k_mac_sync_ctx_on_radio(struct ieee80211_hw *hw,
 			continue;
 		if (ath12k_mac_need_ctx_sync(ctx, &arvif->chanctx)) {
 			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L3,
-					 "ctx syncing\n");
+					 "[radio_idx : %u] ctx syncing\n",
+					 ar->radio_idx);
 			ath12k_mac_update_active_vif_chan(ar, ctx);
 		}
 		break;
@@ -23075,8 +23164,9 @@ static int ath12k_mac_create_and_start_bridge(struct ieee80211_hw *hw,
 
 				ret = ath12k_mac_assign_vif_chanctx_handle(hw, vif, NULL, bridge_ctx, arvif->link_id, arvif->ar->hw_link_id);
 				if (ret) {
-					ath12k_err(NULL, "Bridge VAP addition during Mode0 recovery failed for MLD:%pM\n",
-						   vif->addr);
+					ath12k_err(NULL, "[vdev_id : %s radio_idx : %s] Bridge VAP addition during Mode0 recovery failed for MLD:%pM\n",
+						   ATH12K_INVALID_VDEV_ID,
+						   ATH12K_INVALID_RADIO_IDX, vif->addr);
 					ath12k_mac_handle_failures_bridge_addition(hw, vif);
 					break;
 				} else {
@@ -23157,7 +23247,9 @@ static int ath12k_mac_create_and_start_bridge(struct ieee80211_hw *hw,
 
 			ret = ath12k_mac_assign_vif_chanctx_handle(hw, vif, NULL, bridge_ctx, link_id, bridge_ar_link_idx);
 			if (ret) {
-				ath12k_err(NULL, "Bridge VAP addition failed for MLD:%pM\n", vif->addr);
+				ath12k_err(NULL, "[vdev_id : %s radio_idx : %s] Bridge VAP addition failed for MLD:%pM\n",
+					   ATH12K_INVALID_VDEV_ID,
+					   ATH12K_INVALID_RADIO_IDX, vif->addr);
 				ath12k_mac_handle_failures_bridge_addition(hw, vif);
 				goto exit;
 			}
@@ -23677,8 +23769,8 @@ static void ath12k_mac_vdev_ml_max_rec_links(struct ath12k_link_vif *arvif,
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
 	if (!ieee80211_vif_is_mld(vif)) {
-		ath12k_err(ar->ab, "Vdev %d is non-MLO, RMSL config is not allowed\n",
-			   arvif->vdev_id);
+		ath12k_err(ar->ab, "[radio_idx : %u] Vdev %d is non-MLO, RMSL config is not allowed\n",
+			   ar->radio_idx, arvif->vdev_id);
 		return;
 	}
 
@@ -24667,8 +24759,8 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 
 	ab = ar->ab;
 	if (!ab) {
-		ath12k_err(NULL,
-			   "unable to determine link sta statistics \n");
+		ath12k_err(NULL, "[vdev_id : %s radio_idx : %u] unable to determine link sta statistics\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx);
 		return;
 	}
 
@@ -24904,8 +24996,8 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 
 	ab = ar->ab;
 	if (!ab) {
-		ath12k_err(NULL,
-			   "unable to determine sta statistics \n");
+		ath12k_err(NULL, "[vdev_id : %s radio_idx : %u] unable to determine sta statistics\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx);
 		return;
 	}
 
@@ -25108,7 +25200,8 @@ int ath12k_mac_op_cancel_remain_on_channel(struct ieee80211_hw *hw,
 
 	ar = arvif->ar;
 	if (!ar) {
-		ath12k_err(NULL, "unable to select device to cancel scan\n");
+		ath12k_err(NULL, "[vdev_id : %u radio_idx : %s] unable to select device to cancel scan\n",
+			   arvif->vdev_id, ATH12K_INVALID_RADIO_IDX);
 		return -EINVAL;
 	}
 
@@ -25148,7 +25241,8 @@ int ath12k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 	lockdep_assert_wiphy(hw->wiphy);
 
 	if (!chandef || !chandef->chan) {
-		ath12k_err(NULL, "%s: null chandef!\n", __func__);
+		ath12k_err(NULL, "%s: null chandef!\n",
+			    __func__);
 		return -EINVAL;
 	}
 
@@ -25160,7 +25254,8 @@ int ath12k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 	ab = ar->ab;
 	if (!test_bit(WMI_TLV_SERVICE_SCAN_PHYMODE_SUPPORT,
 		      ab->wmi_ab.svc_map)) {
-		ath12k_err(ab, "ROC feature not supported!\n");
+		ath12k_err(ab, "[vdev_id : %s radio_idx : %u] ROC feature not supported!\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx);
 		return -EOPNOTSUPP;
 	}
 
@@ -25175,8 +25270,8 @@ int ath12k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 	arvif = ath12k_mac_assign_link_vif(ah, vif, link_id, false);
 
 	if (!arvif) {
-		ath12k_err(ab, "Failed to alloc/assign link vif id %u\n",
-			   link_id);
+		ath12k_err(ab, "[vdev_id : %s radio_idx : %u] Failed to alloc/assign link vif id %u\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx, link_id);
 		return -ENOMEM;
 	}
 	/* If the vif is already assigned to a specific vdev of an ar,
@@ -25198,7 +25293,8 @@ int ath12k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 		if (ar != arvif->ar && arvif->is_started && arvif->is_scan_vif) {
 			ret = ath12k_mac_vdev_stop(arvif);
 			if (ret) {
-				ath12k_err(ab, "Failed to stop vdev in ROC:%d\n", ret);
+				ath12k_err(ab, "[vdev_id : %s radio_idx : %u] Failed to stop vdev in ROC:%d\n",
+					   ATH12K_INVALID_VDEV_ID, ar->radio_idx, ret);
 				return ret;
 			}
 			arvif->is_started = false;
@@ -25215,8 +25311,8 @@ int ath12k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 		arvif = ath12k_mac_assign_link_vif(ah, vif, link_id, false);
 
 		if (!arvif) {
-			ath12k_err(ab, "Failed to alloc/assign link vif id %u\n",
-				   link_id);
+			ath12k_err(ab, "[vdev_id : %s radio_idx : %u] Failed to alloc/assign link vif id %u\n",
+				   ATH12K_INVALID_VDEV_ID, ar->radio_idx, link_id);
 			return -ENOMEM;
 		}
 
@@ -25236,8 +25332,8 @@ int ath12k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 		ret = ath12k_mac_vdev_start(arvif, &ctx);
 		if (ret) {
 			ath12k_err(ar->ab,
-				   "vdev start failed for ROC STA ret: %d\n",
-				   ret);
+				   "[vdev_id : %u radio_idx : %u] vdev start failed for ROC STA ret: %d\n",
+				   arvif->vdev_id, ar->radio_idx, ret);
 			return ret;
 		}
 		ar->scan.arvif = arvif;
@@ -25290,7 +25386,8 @@ int ath12k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 							   sizeof(struct chan_info),
 							   GFP_KERNEL);
 	if (!chaninfo) {
-		ath12k_err(ab, "chan list memory allocation failed\n");
+		ath12k_err(ab, "[vdev_id : %s radio_idx : %u] chan list memory allocation failed\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx);
 		return -ENOMEM;
 	}
 
@@ -25306,7 +25403,8 @@ int ath12k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 		arg->chandef = chandef;
 		ret = ath12k_wmi_update_scan_chan_list(ar, arg);
 		if (ret) {
-			ath12k_err(ab,"unable to update scan list:%d\n", ret);
+			ath12k_err(ab, "[vdev_id : %s radio_idx : %u] unable to update scan list:%d\n",
+				   ATH12K_INVALID_VDEV_ID, ar->radio_idx, ret);
 			return ret;
 		}
 	}
@@ -26491,32 +26589,38 @@ static void ath12k_mac_fetch_coex_info(struct ath12k *ar)
 
         if (of_property_read_u32(dev->of_node, "qcom,pta-num",
                                 &ar->coex.pta_num)) {
-                ath12k_err(ab, "No qcom,pta_num entry in dev-tree.\n");
+		ath12k_err(ab, "[vdev_id : %s radio_idx : %u] No qcom,pta_num entry in dev-tree.\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx);
         }
 
         if (of_property_read_u32(dev->of_node, "qcom,coex-mode",
                                 &ar->coex.coex_mode)) {
-                ath12k_err(ab, "No qcom,coex_mode entry in dev-tree.\n");
+		ath12k_err(ab, "[vdev_id : %s radio_idx : %u] No qcom,coex_mode entry in dev-tree.\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx);
         }
 
         if (of_property_read_u32(dev->of_node, "qcom,bt-active-time",
                                 &ar->coex.bt_active_time_slot)) {
-                ath12k_err(ab, "No qcom,bt-active-time entry in dev-tree.\n");
+		ath12k_err(ab, "[vdev_id : %s radio_idx : %u] No qcom,bt-active-time entry in dev-tree.\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx);
         }
 
         if (of_property_read_u32(dev->of_node, "qcom,bt-priority-time",
                                 &ar->coex.bt_priority_time_slot)) {
-                ath12k_err(ab, "No qcom,bt-priority-time entry in dev-tree.\n");
+		ath12k_err(ab, "[vdev_id : %s radio_idx : %u] No qcom,bt-priority-time entry in dev-tree.\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx);
         }
 
         if (of_property_read_u32(dev->of_node, "qcom,coex-algo",
                                 &ar->coex.coex_algo_type)) {
-                ath12k_err(ab, "No qcom,coex-algo entry in dev-tree.\n");
+		ath12k_err(ab, "[vdev_id : %s radio_idx : %u] No qcom,coex-algo entry in dev-tree.\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx);
         }
 
         if (of_property_read_u32(dev->of_node, "qcom,pta-priority",
                                 &ar->coex.pta_priority)) {
-                ath12k_err(ab, "No qcom,pta-priority entry in dev-tree.\n");
+		ath12k_err(ab, "[vdev_id : %s radio_idx : %u] No qcom,pta-priority entry in dev-tree.\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx);
         }
 
 	ar->coex.pta_algorithm = ar->coex.coex_algo_type;
@@ -26912,13 +27016,15 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 
 	ret = ath12k_mac_setup_iface_combinations(ah);
 	if (ret) {
-		ath12k_err(ab, "failed to setup interface combinations: %d\n", ret);
+		ath12k_err(ab, "failed to setup interface combinations: %d\n",
+			   ret);
 		goto err_complete_cleanup_unregister;
 	}
 
 	ret = ath12k_alloc_per_hw_mac_addr(ah);
 	if (ret) {
-		ath12k_err(ab, "failed to register per hw mac address: %d\n", ret);
+		ath12k_err(ab, "failed to register per hw mac address: %d\n",
+			   ret);
 		goto err_cleanup_if_combs;
 	}
 
@@ -27180,7 +27286,8 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 
 	ret = ieee80211_register_hw(hw);
 	if (ret) {
-		ath12k_err(ab, "ieee80211 registration failed: %d\n", ret);
+		ath12k_err(ab, "ieee80211 registration failed: %d\n",
+			   ret);
 		goto err_cleanup_if_combs;
 	}
 
@@ -27198,7 +27305,8 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 		/* Apply the regd received during initialization */
 		ret = ath12k_regd_update(ar, true);
 		if (ret) {
-			ath12k_err(ar->ab, "ath12k regd update failed: %d\n", ret);
+			ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] ath12k regd update failed: %d\n",
+				   ATH12K_INVALID_VDEV_ID, ar->radio_idx, ret);
 			goto err_unregister_hw;
 		}
 
@@ -27306,7 +27414,8 @@ static int ath12k_mac_setup(struct ath12k *ar)
 	ret = ath12k_link_sta_hlist_init(ar);
 	spin_unlock_bh(&ar->arsta_lock);
 	if (ret) {
-		ath12k_err(ab, "failed to init arsta hash table: %d\n", ret);
+		ath12k_err(ab, "failed to init arsta hash table: %d\n",
+			   ret);
 		return ret;
 	}
 	INIT_LIST_HEAD(&ar->dp.ppdu_stats_info);
@@ -27358,7 +27467,8 @@ static int ath12k_mac_setup(struct ath12k *ar)
 	/* Initialize peer deletion tracker for this pdev */
 	ret = ath12k_peer_del_tracker_init(pdev);
 	if (ret) {
-		ath12k_err(ab, "failed to init peer deletion tracker for pdev %d: %d\n",
+		ath12k_err(ab, "[vdev_id : %s radio_idx : %u] failed to init peer deletion tracker for pdev %d: %d\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx,
 			   pdev->pdev_id, ret);
 
 		return ret;
@@ -27424,7 +27534,8 @@ int __ath12k_mac_mlo_setup(struct ath12k *ar)
 
 	ret = ath12k_wmi_mlo_setup(ar, &mlo);
 	if (ret) {
-		ath12k_err(ab, "failed to send  setup MLO WMI command for pdev %d: %d\n",
+		ath12k_err(ab, "[vdev_id : %s radio_idx : %u] failed to send  setup MLO WMI command for pdev %d: %d\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx,
 			   ar->pdev_idx, ret);
 		return ret;
 	}
@@ -27535,7 +27646,8 @@ int ath12k_mac_mlo_setup(struct ath12k_hw_group *ag)
 
 			ret = __ath12k_mac_mlo_setup(ar);
 			if (ret) {
-				ath12k_err(ar->ab, "failed to setup MLO: %d\n", ret);
+				ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] failed to setup MLO: %d\n",
+					   ATH12K_INVALID_VDEV_ID, ar->radio_idx, ret);
 				goto err_setup;
 			}
 		}
@@ -27582,7 +27694,8 @@ void ath12k_mac_mlo_teardown(struct ath12k_hw_group *ag)
 			ret = __ath12k_mac_mlo_teardown(ar, false,
 							WMI_MLO_TEARDOWN_REASON_HOST_INITIATED);
 			if (ret) {
-				ath12k_err(ar->ab, "failed to teardown MLO: %d\n", ret);
+				ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] failed to teardown MLO: %d\n",
+					   ATH12K_INVALID_VDEV_ID, ar->radio_idx, ret);
 				break;
 			}
 		}
@@ -27860,7 +27973,8 @@ int ath12k_mac_allocate(struct ath12k_hw_group *ag)
 	ret = ath12k_sta_hlist_init(ag);
 	spin_unlock_bh(&ag->ahsta_lock);
 	if (ret) {
-		ath12k_err(NULL, "failed to init ahsta hash table: %d\n", ret);
+		ath12k_err(NULL, "failed to init ahsta hash table: %d\n",
+			   ret);
 		goto err;
 	}
 
@@ -28777,7 +28891,8 @@ ath12k_mac_fill_reg_tpc_info_with_eirp_for_client_sp_pwr_mode(struct ath12k *ar,
 
 	num_pwr_levels = ath12k_mac_get_num_pwr_levels(&ctx->def, false);
 	if (num_pwr_levels > ATH12K_MAX_EIRP_VALS) {
-		ath12k_err(NULL, "num_pwr_levels should not be greater than ATH12K_MAX_EIRP_VALS");
+		ath12k_err(NULL, "[vdev_id : %u radio_idx : %u] num_pwr_levels should not be greater than ATH12K_MAX_EIRP_VALS",
+			   arvif->vdev_id, ar->radio_idx);
 		return;
 	}
 	reg_tpc_info->num_eirp_pwr_levels = num_pwr_levels;
@@ -28987,12 +29102,14 @@ static int ath12k_process_scs_del(struct ath12k *ar, struct ath12k_sta *ahsta,
 	if (qos_dir == QOS_PROFILE_UL) {
 		qos_ctx = ath12k_get_qos(ar->ab);
 		if (!qos_ctx) {
-			ath12k_err(ar->ab, "QoS Context is NULL");
+			ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] QoS Context is NULL",
+				   ATH12K_INVALID_VDEV_ID, ar->radio_idx);
 			return -EINVAL;
 		}
 
 		if (qos_id < QOS_UL_ID_MIN || qos_id > QOS_UL_ID_MAX) {
-			ath12k_err(ar->ab, "Invalid  QoS ID: %d", qos_id);
+			ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] Invalid  QoS ID: %d",
+				   ATH12K_INVALID_VDEV_ID, ar->radio_idx, qos_id);
 			return -EINVAL;
 		}
 
@@ -29046,7 +29163,8 @@ int ath12k_process_scs_desc(struct ath12k *ar, struct ath12k_sta *ahsta,
 	} else if (dir == IEEE80211_QM_DIRECTION_DOWNLINK) {
 		qos_dir = QOS_PROFILE_DL;
 	} else {
-		ath12k_err(ar->ab, "SCS Add failed: SCS ID: %d", dir);
+		ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] SCS Add failed: SCS ID: %d",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx, dir);
 		return IEEE80211_QM_REQ_DECLINED;
 	}
 
@@ -29064,7 +29182,8 @@ int ath12k_process_scs_desc(struct ath12k *ar, struct ath12k_sta *ahsta,
 					     qm_req_desc, addr);
 
 		if (ret != 0) {
-			ath12k_err(ar->ab, "SCS Add failed: SCS ID: %d",
+			ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] SCS Add failed: SCS ID: %d",
+				   ATH12K_INVALID_VDEV_ID, ar->radio_idx,
 				   qm_req_desc->qm_id);
 			status = IEEE80211_QM_REQ_DECLINED;
 		}
@@ -29073,7 +29192,8 @@ int ath12k_process_scs_desc(struct ath12k *ar, struct ath12k_sta *ahsta,
 	case IEEE80211_QM_REMOVE_REQ:
 		ret = ath12k_process_scs_del(ar, ahsta, qm_req_desc, addr);
 		if (ret != 0) {
-			ath12k_err(ar->ab, "SCS Delete Failed: SCS ID: %d",
+			ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] SCS Delete Failed: SCS ID: %d",
+				   ATH12K_INVALID_VDEV_ID, ar->radio_idx,
 				   qm_req_desc->qm_id);
 			status = IEEE80211_QM_REQ_DECLINED;
 		}
@@ -29083,7 +29203,8 @@ int ath12k_process_scs_desc(struct ath12k *ar, struct ath12k_sta *ahsta,
 		ret = ath12k_process_scs_del(ar, ahsta, qm_req_desc, addr);
 
 		if (ret != 0) {
-			ath12k_err(ar->ab, "SCS Update DEL failed: SCS ID: %d",
+			ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] SCS Update DEL failed: SCS ID: %d",
+				   ATH12K_INVALID_VDEV_ID, ar->radio_idx,
 				   qm_req_desc->qm_id);
 			status = IEEE80211_QM_REQ_DECLINED;
 			return status;
@@ -29093,14 +29214,16 @@ int ath12k_process_scs_desc(struct ath12k *ar, struct ath12k_sta *ahsta,
 					     qm_req_desc, addr);
 
 		if (ret != 0) {
-			ath12k_err(ar->ab, "SCS Update ADD failed: SCS ID: %d",
+			ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] SCS Update ADD failed: SCS ID: %d",
+				   ATH12K_INVALID_VDEV_ID, ar->radio_idx,
 				   qm_req_desc->qm_id);
 			status = IEEE80211_QM_REQ_DECLINED;
 		}
 		break;
 
 	default:
-		ath12k_err(ar->ab, "Invalid SCS request type\n");
+		ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] Invalid SCS request type\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx);
 		status = IEEE80211_QM_REQ_DECLINED;
 	}
 
@@ -29761,17 +29884,20 @@ static int ath12k_mac_op_pcie(struct ath12k *ar,
 		if (params->config_type == CFG80211_PCIE_GEN_LANE_STATIC) {
 			if (params->pcie_gen < ATH12K_PCIE_MIN_GEN ||
 			    params->pcie_gen > ATH12K_PCIE_MAX_GEN) {
-				ath12k_err(ar->ab, "Invalid PCIe gen value\n");
+				ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] Invalid PCIe gen value\n",
+					   ATH12K_INVALID_VDEV_ID, ar->radio_idx);
 				return -EINVAL;
 			}
 
 			if (params->pcie_lane < ATH12K_PCIE_MIN_LANE ||
 			    params->pcie_lane > ATH12K_PCIE_MAX_LANE) {
-				ath12k_err(ar->ab, "Invalid PCIe lane value\n");
+				ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] Invalid PCIe lane value\n",
+					   ATH12K_INVALID_VDEV_ID, ar->radio_idx);
 				return -EINVAL;
 			}
 		} else if (params->config_type > CFG80211_PCIE_GEN_LANE_STATIC) {
-			ath12k_err(ar->ab, "Invalid PCIe config type\n");
+			ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] Invalid PCIe config type\n",
+				   ATH12K_INVALID_VDEV_ID, ar->radio_idx);
 			return -EINVAL;
 		}
 
@@ -29791,7 +29917,8 @@ static int ath12k_mac_op_pcie(struct ath12k *ar,
 		else if (params->config_type == CFG80211_PCIE_LOW_POWER_BOTH)
 			wmi_config_type = WMI_PCIE_LPM_L0S_L1;
 		else {
-			ath12k_err(ar->ab, "Invalid PCIe low power mode\n");
+			ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] Invalid PCIe low power mode\n",
+				   ATH12K_INVALID_VDEV_ID, ar->radio_idx);
 			return -EINVAL;
 		}
 
