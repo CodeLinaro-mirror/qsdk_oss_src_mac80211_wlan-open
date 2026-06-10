@@ -154,7 +154,7 @@ static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 	if (dp->hw_params->ring_mask->host2rxmon[grp_id])
 		ath12k_dp_mon_rx_process_low_thres(dp);
 
-	if (dp->hw_params->ring_mask->tx_mon_buff[grp_id])
+	if (dp->hw_params->ring_mask->host2txmon[grp_id])
 		ath12k_dp_mon_tx_process_low_thres(dp);
 
 	/* TODO: Implement handler for other interrupts */
@@ -329,7 +329,7 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 	ret = ath12k_dp_mon_tx_srng_alloc(dp);
 	if (ret) {
 		ath12k_warn(ab, "Tx Mon: failed to setup rings ret = %d\n", ret);
-		goto fail_dp_mon_tx_free;
+		goto fail_dp_mon_rx_free;
 	}
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
@@ -339,9 +339,6 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 #endif
 
 	return 0;
-
-fail_dp_mon_tx_free:
-	ath12k_dp_mon_tx_srng_free(dp);
 
 fail_dp_mon_rx_free:
 	ath12k_dp_mon_rx_free(dp);

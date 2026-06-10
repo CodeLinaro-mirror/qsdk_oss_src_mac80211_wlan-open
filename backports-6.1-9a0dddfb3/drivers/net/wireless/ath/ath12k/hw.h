@@ -233,7 +233,7 @@ struct ath12k_hw_ring_mask {
 	u8 reo_status[ATH12K_EXT_IRQ_NUM_MAX];
 	u8 host2rxdma[ATH12K_EXT_IRQ_NUM_MAX];
 	u8 tx_mon_dest[ATH12K_EXT_IRQ_NUM_MAX];
-	u8 tx_mon_buff[ATH12K_EXT_IRQ_NUM_MAX]; /*host2txmon buff ring*/
+	u8 host2txmon[ATH12K_EXT_IRQ_NUM_MAX]; /*host2txmon buff ring*/
 	u8 host2rxmon[ATH12K_EXT_IRQ_NUM_MAX];
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	u8 ppe2tcl[ATH12K_EXT_IRQ_NUM_MAX];
