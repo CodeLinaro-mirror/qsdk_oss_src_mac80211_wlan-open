@@ -7612,6 +7612,12 @@ struct ath12k_wmi_vdev_spectral_conf_arg {
 	u32 scan_bin_scale;
 	u32 scan_dbm_adj;
 	u32 scan_chn_mask;
+	u32 scan_mode;
+	u32 scan_center_freq1;
+	u32 scan_center_freq2;
+	u32 scan_chan_width;
+	u32 recapture;
+	u32 scan_chan_freq;
 };
 
 struct ath12k_wmi_vdev_spectral_conf_cmd {
@@ -7635,10 +7641,21 @@ struct ath12k_wmi_vdev_spectral_conf_cmd {
 	__le32 scan_bin_scale;
 	__le32 scan_dbm_adj;
 	__le32 scan_chn_mask;
+	__le32 scan_mode;
+	__le32 scan_center_freq1;
+	__le32 scan_chan_freq;
+	__le32 scan_chan_width;
+	__le32 scan_center_freq2;
+	__le32 recapture;
 } __packed;
 
+#define ATH12K_WMI_SPECTRAL_SCAN_MODE_NORMAL     0
+#define ATH12K_WMI_SPECTRAL_SCAN_MODE_AGILE      1
+
+#define ATH12K_WMI_SPECTRAL_TRIGGER_CMD_IGNORE  0
 #define ATH12K_WMI_SPECTRAL_TRIGGER_CMD_TRIGGER  1
 #define ATH12K_WMI_SPECTRAL_TRIGGER_CMD_CLEAR    2
+#define ATH12K_WMI_SPECTRAL_ENABLE_CMD_IGNORE   0
 #define ATH12K_WMI_SPECTRAL_ENABLE_CMD_ENABLE    1
 #define ATH12K_WMI_SPECTRAL_ENABLE_CMD_DISABLE   2
 
