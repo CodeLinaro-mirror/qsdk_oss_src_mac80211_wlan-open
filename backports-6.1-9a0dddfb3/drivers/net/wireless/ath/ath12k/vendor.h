@@ -139,6 +139,12 @@ struct ath12k_vendor_ch_switch_attrs {
  *     userspace about the reason for a channel switch. Event attributes are
  *     defined in enum qca_wlan_vendor_attr_ch_switch_reason. Reason codes are
  *     defined in enum qca_wlan_vendor_ch_switch_reason.
+ *
+ * @QCA_NL80211_VENDOR_SUBCMD_CHAIN_MASK_CHANGED: Vendor event used to notify
+ *     userspace whenever the TX or RX chain mask is updated in the firmware.
+ *     This event carries no attributes; the updated chain mask values can be
+ *     retrieved via the standard wiphy configuration interface after the event
+ *     is received by the userspace.
  */
 enum qca_nl80211_vendor_subcmds {
 	/* Wi-Fi configuration subcommand */
@@ -200,6 +206,7 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_HW_BLOCKED_CHANS = 526,
 	QCA_NL80211_VENDOR_SUBCMD_CH_SWITCH_REASON = 527,
 	QCA_NL80211_VENDOR_SUBCMD_SDWF_PEER_MSDUQ_EVENT = 528,
+	QCA_NL80211_VENDOR_SUBCMD_CHAIN_MASK_CHANGED = 529,
 };
 
 /**
@@ -362,6 +369,12 @@ enum qca_nl80211_vendor_events {
 	QCA_NL80211_VENDOR_SUBCMD_CH_SWITCH_REASON_INDEX = 20,
 	QCA_NL80211_VENDOR_SUBCMD_SDWF_PEER_MSDUQ_EVENT_INDEX = 21,
 	QCA_NL80211_VENDOR_SUBCMD_GET_WIPHY_CONFIGURATION_INDEX = 22,
+	/**
+	 * @QCA_NL80211_VENDOR_SUBCMD_CHAIN_MASK_INDEX:
+	 * Vendor event index used for notifications associated with
+	 * %QCA_NL80211_VENDOR_SUBCMD_CHAIN_MASK_CHANGED.
+	 */
+	QCA_NL80211_VENDOR_SUBCMD_CHAIN_MASK_INDEX = 23,
 };
 
 /**
@@ -6885,4 +6898,17 @@ struct ath12k_sdwf_msduq_evt_data {
 void
 ath12k_vendor_sdwf_msduq_send_event(struct ath12k *ar,
 				    const struct ath12k_sdwf_msduq_evt_data *e);
+
+/**
+ * ath12k_vendor_event_chain_mask_changed() - Notify userspace of a chain mask change.
+ * @ar: per-radio ath12k context for which the chain mask was modified.
+ *
+ * Allocates and sends a %QCA_NL80211_VENDOR_SUBCMD_CHAIN_MASK_CHANGED vendor
+ * event over nl80211 so that userspace applications are notified whenever
+ * the TX or RX chain mask is updated
+ *
+ * Context: Any context. GFP_ATOMIC allocation; safe to call from non-sleepable
+ *          paths.
+ */
+void ath12k_vendor_event_chain_mask_changed(struct ath12k *ar);
 #endif
