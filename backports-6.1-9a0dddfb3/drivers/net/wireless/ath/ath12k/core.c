@@ -429,6 +429,8 @@ bool ath12k_fw_q6_dump_collection;
 module_param_named(fw_q6_dump_collection, ath12k_fw_q6_dump_collection, bool, 0644);
 MODULE_PARM_DESC(fw_q6_dump_collection, "FW Q6 dump collection only: 0-disable (default), 1-enable");
 
+bool ath12k_hw_group_started;
+
 unsigned int ath12k_reorder_VI_timeout;
 module_param_named(reorder_VI_timeout, ath12k_reorder_VI_timeout, uint, 0644);
 MODULE_PARM_DESC(reorder_VI_timeout, "Reorder VI timeout (ms)");
@@ -2855,6 +2857,14 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 			goto err_core_stop;
 		}
 		ath12k_dbg(ab, ATH12K_DBG_BOOT, "group %d started\n", ag->id);
+
+		/* Set global HW group started flag and trigger TA resource creation */
+		ath12k_hw_group_started = true;
+		if (ath12k_telemetry_is_agent_loaded()) {
+			ath12k_info(ab, "Hardware group started, creating TA resources\n");
+			__ath12k_telemetry_create_resources_locked(ag);
+		}
+
 		if (ath12k_ftm_mode)
 			ath12k_info(ab, "FTM mode interface is up\n");
 
