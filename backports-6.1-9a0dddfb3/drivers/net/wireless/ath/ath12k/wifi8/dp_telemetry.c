@@ -634,3 +634,67 @@ int ath12k_wifi8_dp_telemetry_peer_delete(struct ath12k_dp *dp, u16 stats_id,
 	ath12k_wifi8_hal_tasc_peer_rx_band(dp->ab, link_band_id, 0);
 	return 0;
 }
+
+int ath12k_wifi8_dp_telemetry_umac_peer_setup(struct ath12k_base *ab)
+{
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8;
+	struct stats_to_peer_id_map *stats_map;
+	struct ath12k_dp_link_peer *link_peer;
+	u16 link_band_id[HAL_TASC_BAND_MAX];
+	struct ath12k_dp_peer *dp_peer;
+	u16 stats_id;
+	int i;
+
+	dp_hw_grp_wifi8 = ath12k_get_dp_hw_group_wifi8(ab->dp->dp_hw_grp);
+	if (!dp_hw_grp_wifi8)
+		return -EINVAL;
+
+	for (stats_id = 0; stats_id < ATH12K_MAX_STATS_ID; stats_id++) {
+		stats_map = &dp_hw_grp_wifi8->stats_id_map[stats_id];
+		if (stats_map->dp_peer_id == ATH12K_MLO_PEER_ID_INVALID ||
+		    stats_map->hw_link_id == ATH12K_DP_HW_LINK_ID_INVALID)
+			continue;
+
+		for (i = 0; i < HAL_TASC_BAND_MAX; i++)
+			link_band_id[i] = DP_TELEMETRY_INVALID_LINK_BAND_ID;
+
+		rcu_read_lock();
+		dp_peer = ath12k_wifi8_dp_telemetry_peer_find(ab->dp->dp_hw_grp,
+							      stats_map->dp_peer_id,
+							      stats_map->hw_link_id);
+		if (!dp_peer) {
+			rcu_read_unlock();
+			continue;
+		}
+
+		for (i = 0; i < ATH12K_DP_PEER_MAX_MLO_LINKS; i++) {
+			link_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, i);
+			if (!link_peer)
+				continue;
+			link_band_id[link_peer->hw_link_id] = link_peer->link_band_id;
+		}
+		rcu_read_unlock();
+		ath12k_wifi8_dp_telemetry_peer_config(ab->dp, stats_id, link_band_id);
+	}
+
+	return 0;
+}
+
+int ath12k_wifi8_dp_telemetry_umac_setup(struct ath12k_base *ab)
+{
+	int ret;
+
+	ret = ath12k_wifi8_dp_telemetry_ring_setup(ab);
+	if (ret)
+		return ret;
+
+	ret = ath12k_wifi8_dp_telemetry_init(ab->dp);
+	if (ret)
+		return ret;
+
+	ret = ath12k_wifi8_dp_telemetry_umac_peer_setup(ab);
+	if (ret)
+		return ret;
+
+	return 0;
+}

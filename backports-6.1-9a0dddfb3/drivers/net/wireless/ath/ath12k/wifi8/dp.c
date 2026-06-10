@@ -8,6 +8,7 @@
 #include "../debug.h"
 #include "../dp_rx.h"
 #include "../dp_tx.h"
+#include "../dp_peer.h"
 #include "../hif.h"
 #include "../dp_cmn.h"
 #include "../hal.h"
@@ -623,6 +624,8 @@ void ath12k_wifi8_srng_hw_ring_disable(struct ath12k_base *ab)
 	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->rx_ase_status_ring);
 	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->fse_cmd_ring);
 	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->reo_flush_ring);
+	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->tx_peer_telemetry_ring);
+	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->rx_peer_telemetry_ring);
 }
 
 static int ath12k_wifi8_dp_op_device_init(struct ath12k_dp *dp)
@@ -696,6 +699,7 @@ static struct ath12k_dp_hw_group *ath12k_wifi8_dp_hw_group_alloc(void)
 {
 	struct ath12k_dp_hw_group *dp_hw_grp;
 	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8;
+	int i;
 
 	dp_hw_grp = kzalloc(sizeof(*dp_hw_grp) + sizeof(*dp_hw_grp_wifi8), GFP_KERNEL);
 	if (!dp_hw_grp)
@@ -703,6 +707,13 @@ static struct ath12k_dp_hw_group *ath12k_wifi8_dp_hw_group_alloc(void)
 
 	dp_hw_grp_wifi8 = ath12k_get_dp_hw_group_wifi8(dp_hw_grp);
 	dp_hw_grp_wifi8->dp_hw_grp = dp_hw_grp;
+	for (i = 0; i < ATH12K_MAX_STATS_ID; i++) {
+		dp_hw_grp_wifi8->stats_id_map[i].dp_peer_id =
+			ATH12K_MLO_PEER_ID_INVALID;
+		dp_hw_grp_wifi8->stats_id_map[i].tid = ATH12K_INVALID_TID;
+		dp_hw_grp_wifi8->stats_id_map[i].hw_link_id =
+			ATH12K_DP_HW_LINK_ID_INVALID;
+	}
 
 	return dp_hw_grp;
 }

@@ -12,6 +12,7 @@
 #include "mgmt_rx.h"
 #include "dp_tx.h"
 #include "dp_rx.h"
+#include "dp_telemetry.h"
 
 int ath12k_wifi8_dp_rx_wbm_srng_setup(struct ath12k_base *ab);
 
@@ -240,6 +241,15 @@ static void ath12k_wifi8_dp_tx_ring_setup_wrapper(struct ath12k_base *ab)
 	ath12k_wifi8_dp_tx_ring_setup(ab);
 }
 
+static void ath12k_wifi8_dp_telemetry_umac_setup_wrapper(struct ath12k_base *ab)
+{
+	int ret;
+
+	ret = ath12k_wifi8_dp_telemetry_umac_setup(ab);
+	if (ret)
+		ath12k_warn(ab, "failed to setup telemetry config: %d\n", ret);
+}
+
 void ath12k_wifi8_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 {
 	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset;
@@ -284,6 +294,9 @@ void ath12k_wifi8_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 	ath12k_q_post_reset_task(cumac_ab, ath12k_wifi8_dp_rx_mgmt_init);
 	ath12k_q_post_reset_task(cumac_ab, ath12k_wifi8_clean_pending_ast_entries);
 	ath12k_q_post_reset_task(cumac_ab, ath12k_dp_tid_cleanup);
+	/* Telemetry UMAC setup must run after ring setup tasks are queued. */
+	ath12k_q_post_reset_task(cumac_ab,
+				 ath12k_wifi8_dp_telemetry_umac_setup_wrapper);
 }
 
 /**
