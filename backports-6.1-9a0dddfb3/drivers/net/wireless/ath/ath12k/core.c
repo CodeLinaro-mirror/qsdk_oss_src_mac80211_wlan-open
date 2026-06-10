@@ -1400,11 +1400,13 @@ void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag, bool standby_
 			}
 		}
 
+		/* Use first ab to fetch the umac reset timeout */
+		ab = ag->ab[0];
 		time_left = wait_for_completion_timeout(&ag->umac_reset_complete,
-				msecs_to_jiffies(ATH12K_UMAC_RESET_TIMEOUT_IN_MS));
+				msecs_to_jiffies(DP_UMAC_RESET_TIMEOUT_IN_MS));
 		if (!time_left) {
 			ath12k_err(NULL, "UMAC reset didn't get completed within %d ms\n",
-				   ATH12K_UMAC_RESET_TIMEOUT_IN_MS);
+				   DP_UMAC_RESET_TIMEOUT_IN_MS);
 			ag->trigger_umac_reset = false;
 			return;
 		}
@@ -4537,10 +4539,11 @@ static int ath12k_core_trigger_umac_reset(struct ath12k_base *ab,
 	ath12k_mac_mlo_teardown_with_umac_reset(ab, reason_code);
 
 	time_left = wait_for_completion_timeout(&ag->umac_reset_complete,
-			msecs_to_jiffies(ATH12K_UMAC_RESET_TIMEOUT_IN_MS));
+			msecs_to_jiffies(DP_UMAC_RESET_TIMEOUT_IN_MS));
 
 	if (!time_left) {
-		ath12k_warn(ab, "UMAC reset didn't get completed within %d ms\n", ATH12K_UMAC_RESET_TIMEOUT_IN_MS);
+		ath12k_warn(ab, "UMAC reset didn't get completed within %d ms\n",
+			    DP_UMAC_RESET_TIMEOUT_IN_MS);
 		ret = -ETIMEDOUT;
 	}
 
