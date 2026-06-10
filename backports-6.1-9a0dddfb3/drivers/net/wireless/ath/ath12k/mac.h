@@ -583,6 +583,9 @@ int ath12k_mac_op_set_monitor_flags(struct ieee80211_hw *hw,
 int ath12k_mac_op_ap_power_save(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 				int link_id,
 				struct cfg80211_ap_power_save_params *params);
+int ath12k_mac_op_sta_uhr_mode_update(struct ieee80211_hw *hw,
+				      struct ieee80211_vif *vif,
+				      struct ieee80211_sta *sta);
 /* In the bitmap 0 indicates no puncturing and 1 indicated that sub channel is
  * punctured
  */
