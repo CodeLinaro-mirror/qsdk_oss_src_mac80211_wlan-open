@@ -5464,17 +5464,28 @@ int ath12k_mac_set_he_txbf_conf(struct ath12k_link_vif *arvif)
 		if (link_conf->he_su_beamformee)
 			value |= u32_encode_bits(HE_SU_BFEE_ENABLE, HE_MODE_SU_TX_BFEE);
 	}
-	if (ar->he_dl_enabled)
+	/* Per-link override takes precedence when configured; radio-level is fallback */
+	if (arvif->vap_cfg.he_dl_ofdma_configured ?
+	    arvif->vap_cfg.he_dl_ofdma : ar->he_dl_enabled)
 		value |= u32_encode_bits(HE_DL_MUOFDMA_ENABLE, HE_MODE_DL_OFDMA);
-	if (ar->he_ul_enabled)
+	if (arvif->vap_cfg.he_ul_ofdma_configured ?
+	    arvif->vap_cfg.he_ul_ofdma : ar->he_ul_enabled)
 		value |= u32_encode_bits(HE_UL_MUOFDMA_ENABLE, HE_MODE_UL_OFDMA);
-	if (ar->he_dlbf_enabled)
+	if (arvif->vap_cfg.he_dl_ofdma_txbf_configured ?
+	    arvif->vap_cfg.he_dl_ofdma_txbf : ar->he_dlbf_enabled)
 		value |= u32_encode_bits(HE_DL_OFDMA_TXBF_ENABLE, HE_MODE_DL_OFDMA_TXBF);
-
 	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
-		   "[vdev_id : %u radio_idx : %u] Set HE TXBF config: DL=%d UL=%d DLBF=%d, value=0x%x\n",
-		   arvif->vdev_id, ar->radio_idx,
-		   ar->he_dl_enabled, ar->he_ul_enabled, ar->he_dlbf_enabled, value);
+		   "[v_id:%u]HE cfg: DL=%d(ovr=%d) UL=%d(ovr=%d) DLBF=%d(ovr=%d) val=0x%x\n",
+		   arvif->vdev_id,
+		   arvif->vap_cfg.he_dl_ofdma_configured ?
+		   arvif->vap_cfg.he_dl_ofdma : ar->he_dl_enabled,
+		   arvif->vap_cfg.he_dl_ofdma_configured,
+		   arvif->vap_cfg.he_ul_ofdma_configured ?
+		   arvif->vap_cfg.he_ul_ofdma : ar->he_ul_enabled,
+		   arvif->vap_cfg.he_ul_ofdma_configured,
+		   arvif->vap_cfg.he_dl_ofdma_txbf_configured ?
+		   arvif->vap_cfg.he_dl_ofdma_txbf : ar->he_dlbf_enabled,
+		   arvif->vap_cfg.he_dl_ofdma_txbf_configured, value);
 
 	ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id, param, value);
 	if (ret) {
@@ -5602,18 +5613,33 @@ int ath12k_mac_set_eht_txbf_conf(struct ath12k_link_vif *arvif)
 		if (link_conf->eht_su_beamformee)
 			value |= u32_encode_bits(EHT_SU_BFEE_ENABLE, EHT_MODE_SU_TX_BFEE);
 	}
-	if (ar->eht_dl_enabled)
+
+	/* Per-link override takes precedence when configured (bool pair pattern);
+	 * otherwise fall back to the radio-level debugfs setting.
+	 */
+	if (arvif->vap_cfg.eht_dl_ofdma_configured ?
+	    arvif->vap_cfg.eht_dl_ofdma : ar->eht_dl_enabled)
 		value |= u32_encode_bits(EHT_DL_MUOFDMA_ENABLE, EHT_MODE_DL_OFDMA);
-	if (ar->eht_ul_enabled)
+	if (arvif->vap_cfg.eht_ul_ofdma_configured ?
+	    arvif->vap_cfg.eht_ul_ofdma : ar->eht_ul_enabled)
 		value |= u32_encode_bits(EHT_UL_MUOFDMA_ENABLE, EHT_MODE_UL_OFDMA);
-	if (ar->eht_dlbf_enabled)
+	if (arvif->vap_cfg.eht_dl_ofdma_txbf_configured ?
+	    arvif->vap_cfg.eht_dl_ofdma_txbf : ar->eht_dlbf_enabled)
 		value |= u32_encode_bits(EHT_DL_OFDMA_TXBF_ENABLE,
-					EHT_MODE_DL_OFDMA_TXBF);
+					 EHT_MODE_DL_OFDMA_TXBF);
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
-		   "[vdev_id : %u radio_idx : %u] Set EHT TXBF config: DL=%d UL=%d DLBF=%d, value=0x%x\n",
-		   arvif->vdev_id, ar->radio_idx,
-		   ar->eht_dl_enabled, ar->eht_ul_enabled, ar->eht_dlbf_enabled, value);
+		   "[v_id:%u]EHT DL=%d(ovr=%d) UL=%d(ovr=%d) DLBF=%d(ovr=%d) val=0x%x\n",
+		   arvif->vdev_id,
+		   arvif->vap_cfg.eht_dl_ofdma_configured ?
+		   arvif->vap_cfg.eht_dl_ofdma : ar->eht_dl_enabled,
+		   arvif->vap_cfg.eht_dl_ofdma_configured,
+		   arvif->vap_cfg.eht_ul_ofdma_configured ?
+		   arvif->vap_cfg.eht_ul_ofdma : ar->eht_ul_enabled,
+		   arvif->vap_cfg.eht_ul_ofdma_configured,
+		   arvif->vap_cfg.eht_dl_ofdma_txbf_configured ?
+		   arvif->vap_cfg.eht_dl_ofdma_txbf : ar->eht_dlbf_enabled,
+		   arvif->vap_cfg.eht_dl_ofdma_txbf_configured, value);
 
 	ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id, param, value);
 	if (ret) {
