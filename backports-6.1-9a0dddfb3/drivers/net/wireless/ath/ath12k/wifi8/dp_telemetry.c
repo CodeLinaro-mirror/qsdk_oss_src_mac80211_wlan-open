@@ -614,6 +614,41 @@ int ath12k_wifi8_dp_telemetry_deinit(struct ath12k_dp *dp)
 	return 0;
 }
 
+static void ath12k_wifi8_dp_telemetry_set_peer_config(struct ath12k_base *ab, u16 window,
+						      u16 ucast_peer, u8 gcast_dl_peer,
+						      u8 gcast_ul_peer)
+{
+	ath12k_wifi8_hal_tasc_peer_tx_window(ab, window);
+	ath12k_wifi8_hal_tasc_peer_rx_window(ab, window);
+	ath12k_wifi8_hal_tasc_peer_tx_max_peer(ab, ucast_peer, gcast_dl_peer,
+					       gcast_ul_peer);
+	ath12k_wifi8_hal_tasc_peer_rx_max_peer(ab, ucast_peer, gcast_dl_peer);
+}
+
+void ath12k_wifi8_dp_telemetry_peer_count_update(struct ath12k_base *ab,
+						 unsigned int num_peers)
+{
+	u16 window, ucast_peer;
+	u8 gcast_dl_peer, gcast_ul_peer;
+
+	if (num_peers == DP_TELEMETRY_EXT_PEER_START) {
+		window = DP_TELEMETRY_EXT_PEER_2PEER_WINDOW;
+		ucast_peer = DP_TELEMETRY_EXT_MAX_UCAST_PEERS;
+		gcast_dl_peer = DP_TELEMETRY_MAX_GCAST_DL_PEERS;
+		gcast_ul_peer = DP_TELEMETRY_MAX_GCAST_UL_PEERS;
+	} else if (num_peers == DP_TELEMETRY_DEFAULT_PEER_START) {
+		window = DP_TELEMETRY_PEER_2PEER_WINDOW;
+		ucast_peer = DP_TELEMETRY_MAX_UCAST_PEERS;
+		gcast_dl_peer = DP_TELEMETRY_MAX_GCAST_DL_PEERS;
+		gcast_ul_peer = DP_TELEMETRY_MAX_GCAST_UL_PEERS;
+	} else {
+		return;
+	}
+
+	ath12k_wifi8_dp_telemetry_set_peer_config(ab, window, ucast_peer,
+						  gcast_dl_peer, gcast_ul_peer);
+}
+
 int ath12k_wifi8_dp_telemetry_peer_config(struct ath12k_dp *dp, u16 stats_id,
 					  u16 link_band_id[HAL_TASC_BAND_MAX])
 {
