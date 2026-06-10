@@ -109,6 +109,8 @@ struct ath12k_spectral {
 	u32 ch_width;
 	struct wmi_spectral_capabilities_event spectral_cap;
 	u32 samples_done;
+	u32 sub_buf_size;
+	u32 num_sub_bufs;
 };
 
 #ifdef CPTCFG_ATH12K_SPECTRAL

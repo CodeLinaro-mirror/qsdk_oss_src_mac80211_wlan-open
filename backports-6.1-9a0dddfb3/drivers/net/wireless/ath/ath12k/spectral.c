@@ -1124,6 +1124,17 @@ static inline int ath12k_spectral_debug_register(struct ath12k *ar)
 		return -EINVAL;
 	}
 
+	ar->spectral.sub_buf_size = ATH12K_SPECTRAL_SUB_BUFF_SIZE(ar->ab);
+	ar->spectral.num_sub_bufs = ATH12K_SPECTRAL_NUM_SUB_BUF;
+
+	debugfs_create_u32("spectral_data_sub_buffer_size", 0444,
+			   ar->debug.debugfs_pdev,
+			   &ar->spectral.sub_buf_size);
+
+	debugfs_create_u32("spectral_data_num_sub_buffers", 0444,
+			   ar->debug.debugfs_pdev,
+			   &ar->spectral.num_sub_bufs);
+
 	ar->spectral.scan_ctl = debugfs_create_file("spectral_scan_ctl",
 						    0600,
 						    ar->debug.debugfs_pdev, ar,
