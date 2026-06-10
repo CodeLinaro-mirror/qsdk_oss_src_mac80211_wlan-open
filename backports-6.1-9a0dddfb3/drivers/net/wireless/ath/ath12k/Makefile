@@ -46,6 +46,8 @@ ath12k-y += core.o \
 	    me_hmmc.o \
 	    ath12k_notif.o
 
+ath12k-$(CONFIG_KPROBES) += qcn_extns/kprobe.o
+
 ath12k-$(CPTCFG_ATHDEBUG) += athdbg_if.o
 ath12k-$(CPTCFG_ATH12K_AHB) += ahb.o
 ath12k-$(CPTCFG_ATH12K_PPE_DS_SUPPORT) += ppe.o
