@@ -7,6 +7,9 @@
 #ifndef ATH12K_SPECTRAL_H
 #define ATH12K_SPECTRAL_H
 
+#include <linux/hrtimer.h>
+#include <linux/workqueue.h>
+
 #include "../spectral_common.h"
 #include "dbring.h"
 #include "vendor.h"
@@ -14,6 +17,34 @@
 #define ATH12K_SPECTRAL_NUM_DETECTORS	2
 #define ATH12K_SPECTRAL_DETECTOR_NORMAL	0
 #define ATH12K_SPECTRAL_DETECTOR_AGILE	1
+
+#define ATH12K_SPECTRAL_SCAN_COUNT_MAX		4095
+#define ATH12K_SPECTRAL_ATH12K_MIN_BINS		32
+#define ATH12K_SPECTRAL_RPT_MODE_MAX		3
+
+/* Per-BW FFT-size caps. No upper-slot constant — 80/160/320 MHz use
+ * ilog2(max_fft_bins) from hw_params directly (it already encodes
+ * each chip's FFT-engine ceiling).
+ */
+#define ATH12K_SPECTRAL_FFT_SIZE_MIN		5
+#define ATH12K_SPECTRAL_FFT_SIZE_MAX_20MHZ	9
+#define ATH12K_SPECTRAL_FFT_SIZE_MAX_40MHZ	10
+
+/* nl80211_chan_width slots we validate. */
+enum ath12k_spectral_bw_slot {
+	ATH12K_SPECTRAL_BW_20MHZ,
+	ATH12K_SPECTRAL_BW_40MHZ,
+	ATH12K_SPECTRAL_BW_80MHZ,
+	ATH12K_SPECTRAL_BW_160MHZ,
+	ATH12K_SPECTRAL_BW_320MHZ,
+	ATH12K_SPECTRAL_NUM_BW_SLOTS,
+};
+
+struct ath12k_spectral_param_min_max {
+	u16 fft_size_min;
+	u16 fft_size_max[ATH12K_SPECTRAL_NUM_BW_SLOTS];
+	u16 scan_count_max;
+};
 
 /**
  * struct ath12k_spectral_params - parameters passed to WMI spectral scan config
@@ -113,12 +144,23 @@ struct ath12k_spectral {
 	u32 last_fft_timestamp[SPECTRAL_SCAN_MODE_MAX]; /* last raw FFT timestamp */
 	u32 timestamp_war_offset[SPECTRAL_SCAN_MODE_MAX]; /* accumulated WAR offset */
 	u32 target_reset_count;   /* number of target resets seen */
+	/* one-shot hrtimer that fires when the FW fails to deliver scan_count
+	 * FFT reports within params.completion_timeout_us.
+	 */
+	struct hrtimer scan_completion_timer;
+	/* received-count snapshot saved by the hrtimer cb for the worker */
+	u32 timeout_received_count;
+	/* runs ath12k_spectral_send_complete_event from process context */
+	struct work_struct scan_timeout_work;
+	/* per-BW fft_size caps + scalar mins/maxs, populated at probe */
+	struct ath12k_spectral_param_min_max param_min_max;
 };
 
 #ifdef CPTCFG_ATH12K_SPECTRAL
 
 struct ath12k_link_vif *ath12k_spectral_get_vdev(struct ath12k *ar);
 u32 ath12k_spectral_nl_bw_to_wmi(u8 nl_bw);
+int ath12k_spectral_nl80211_bw_to_idx(enum nl80211_chan_width bw);
 
 int ath12k_spectral_init(struct ath12k_base *ab);
 void ath12k_spectral_deinit(struct ath12k_base *ab);
