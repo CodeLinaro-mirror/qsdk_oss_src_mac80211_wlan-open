@@ -30471,3 +30471,73 @@ int ath12k_mac_set_vht_txbf_conf(struct ath12k_link_vif *arvif, u32 *val)
 
 	return 0;
 }
+
+int ath12k_mac_op_sta_uhr_mode_update(struct ieee80211_hw *hw,
+				      struct ieee80211_vif *vif,
+				      struct ieee80211_sta *sta)
+{
+	struct ath12k_vif *ahvif;
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+	struct ath12k_link_vif *arvif;
+	struct ath12k_link_sta *arsta;
+	struct ath12k_dp_link_peer *link_peer;
+	struct ieee80211_link_sta *link_sta;
+	struct cfg80211_uhr_npca_params *npca;
+	struct ath12k_dp *dp;
+	unsigned long valid_links = ahsta->links_map;
+	u32 peer_id;
+	u8 link_id;
+	int ret;
+
+	lockdep_assert_wiphy(hw->wiphy);
+
+	ahvif = ath12k_vif_to_ahvif(vif);
+
+	for_each_set_bit(link_id, &valid_links, ATH12K_NUM_MAX_LINKS) {
+		arsta = wiphy_dereference(hw->wiphy, ahsta->link[link_id]);
+		arvif = ath12k_get_arvif_from_link_id(ahvif, link_id);
+		if (!arsta || !arvif || !arvif->ar)
+			continue;
+
+		link_sta = ath12k_mac_get_link_sta(arsta);
+		if (!link_sta)
+			continue;
+
+		dp = ath12k_ab_to_dp(arvif->ar->ab);
+
+		spin_lock_bh(&dp->dp_lock);
+		link_peer = ath12k_dp_link_peer_find_by_addr(dp, arsta->addr);
+		if (!link_peer || !link_peer->dp_peer) {
+			spin_unlock_bh(&dp->dp_lock);
+			ath12k_warn(arvif->ar->ab,
+				    "UHR OMP: peer lookup failed for link_id=%u addr=%pM\n",
+				    link_id, arsta->addr);
+			continue;
+		}
+
+		peer_id = link_peer->dp_peer->peer_id;
+		spin_unlock_bh(&dp->dp_lock);
+
+		npca = &link_sta->npca;
+		ath12k_dbg(arvif->ar->ab, ATH12K_DBG_WMI,
+			   "UHR OMP: peer_id=%u link_id=%u addr=%pM vdev_id=%u pdev_id=%u hw_link_id=%u npca_en=%u sw_delay=%u swb_delay=%u\n",
+			   peer_id, link_id, arsta->addr, arvif->vdev_id,
+			   arvif->ar->pdev->pdev_id, arvif->ar->pdev->hw_link_id,
+			   npca->enable, npca->switch_delay, npca->switch_back_delay);
+		ret = ath12k_wmi_send_peer_uhr_omp_cmd(arvif->ar, peer_id,
+						       arvif->ar->pdev->pdev_id,
+						       arvif->ar->pdev->hw_link_id,
+						       npca->enable,
+						       npca->switch_delay,
+						       npca->switch_back_delay);
+		if (ret) {
+			ath12k_warn(arvif->ar->ab,
+				    "failed to send UHR OMP cmd for link %u: %d\n",
+				    link_id, ret);
+			return ret;
+		}
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_mac_op_sta_uhr_mode_update);
