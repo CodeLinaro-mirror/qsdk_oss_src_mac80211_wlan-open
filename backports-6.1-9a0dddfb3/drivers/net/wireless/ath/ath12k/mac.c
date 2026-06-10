@@ -27178,6 +27178,8 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 	if (!hw_tx_mon_disabled)
 		ieee80211_hw_set(hw, SUPPORTS_TX_MONITOR_OFFLOAD);
 
+	hw->wiphy->max_num_akm_suites = ATH12K_MAX_AKM_SUITES;
+
 	ret = ieee80211_register_hw(hw);
 	if (ret) {
 		ath12k_err(ab, "ieee80211 registration failed: %d\n", ret);
