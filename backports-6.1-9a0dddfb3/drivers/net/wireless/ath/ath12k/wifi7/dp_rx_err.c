@@ -319,7 +319,7 @@ static bool ath12k_wifi7_handle_null_queue(struct ath12k_pdev_dp *dp_pdev,
 	bool fr_ds = rx_msdu_info->fr_ds;
 	struct ath12k_dp_vif *dp_vif;
 	struct ath12k_vif *ahvif;
-	bool allow_3addr_mc;
+	bool allow_3addr_mc = false;
 
 	switch (peer->rx_decap_type) {
 	case DP_RX_DECAP_TYPE_ETHERNET2_DIX:

@@ -1348,6 +1348,8 @@ static int ath12k_wifi8_dp_rx_h_undecap(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct hal_rx_desc_data rx_desc_data = {0};
 	struct ath12k_dp_peer *dp_peer;
+	struct ath12k_dp_vif *dp_vif;
+	u8 allow_3addr_mc = false;
 	struct ath12k_vif *ahvif;
 	u32 pkt_reason;
 	u8 is_mcbc;
@@ -1387,11 +1389,19 @@ static int ath12k_wifi8_dp_rx_h_undecap(struct ath12k_pdev_dp *dp_pdev,
 			break;
 		}
 
-		/* Drop the 3addr da_mcbc packets for 4addr sta as it will
-		 * double the packet for connected clients.
+		/* Drop the 3addr da_mcbc packets if allow_3addr_mc is not set
+		 * for 4addr sta as it will double the packet for connected clients.
 		 */
+#ifdef CPTCFG_QCN_EXTN
+		if (peer && peer->vif) {
+			ahvif = ath12k_vif_to_ahvif(peer->vif);
+			dp_vif = &ahvif->dp_vif;
+			allow_3addr_mc = dp_vif->dp_extn.allow_3addr_mc;
+		}
+#endif
+
 		if (is_4addr_sta && rx_msdu_info->da_is_mcbc &&
-		    !rx_msdu_info->to_ds) {
+		    !rx_msdu_info->to_ds && !allow_3addr_mc) {
 			if (ath12k_dp_stats_enabled(dp_pdev) &&
 			    ath12k_tid_stats_enabled(dp_pdev)) {
 				rcu_read_lock();
