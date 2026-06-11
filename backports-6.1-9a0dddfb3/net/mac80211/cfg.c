@@ -2051,7 +2051,7 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	 */
 	if (cfg80211_chandef_dfs_usable(local->hw.wiphy, &params->chandef) &&
 	    !cfg80211_chandef_dfs_available(local->hw.wiphy, &params->chandef))
-		ieee80211_start_ap_bootup_cac_extn(sdata, link, params);
+		ieee80211_bootup_cac_start_timer_extn(sdata, link, &params->chandef);
 #endif /* CPTCFG_QCN_EXTN */
 
 	return 0;
@@ -3454,6 +3454,19 @@ static int ieee80211_join_mesh(struct wiphy *wiphy, struct net_device *dev,
 					 IEEE80211_CHANCTX_SHARED);
 	if (err)
 		return err;
+
+#ifdef CPTCFG_QCN_EXTN
+	/*
+	 * Boot-up CAC: Start the per-chanctx CAC timer for mesh on a 5G DFS
+	 * channel, mirroring what ieee80211_start_ap does for AP.
+	 */
+	if (cfg80211_chandef_dfs_usable(sdata->local->hw.wiphy,
+					&setup->chandef) &&
+	    !cfg80211_chandef_dfs_available(sdata->local->hw.wiphy,
+					    &setup->chandef))
+		ieee80211_bootup_cac_start_timer_extn(sdata, &sdata->deflink,
+						      &setup->chandef);
+#endif /* CPTCFG_QCN_EXTN */
 
 	return ieee80211_start_mesh(sdata);
 }

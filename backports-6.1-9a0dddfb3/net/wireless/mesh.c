@@ -9,6 +9,9 @@
 #include "nl80211.h"
 #include "core.h"
 #include "rdev-ops.h"
+#ifdef CPTCFG_QCN_EXTN
+#include "cfg80211_dfs_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 
 /* Default values, timeouts in ms */
 #define MESH_TTL 		31
@@ -207,9 +210,13 @@ int __cfg80211_join_mesh(struct cfg80211_registered_device *rdev,
 	if (err > 0 && !setup->userspace_handles_dfs)
 		return -EINVAL;
 
-	if (!cfg80211_reg_can_beacon(&rdev->wiphy, &setup->chandef,
-				     NL80211_IFTYPE_MESH_POINT))
-		return -EINVAL;
+#ifdef CPTCFG_QCN_EXTN
+	if (!cfg80211_bootup_cac_is_5g_dfs_chan_extn(&rdev->wiphy,
+						      &setup->chandef))
+#endif /* CPTCFG_QCN_EXTN */
+		if (!cfg80211_reg_can_beacon(&rdev->wiphy, &setup->chandef,
+					     NL80211_IFTYPE_MESH_POINT))
+			return -EINVAL;
 
 	err = rdev_join_mesh(rdev, dev, conf, setup);
 	if (!err) {

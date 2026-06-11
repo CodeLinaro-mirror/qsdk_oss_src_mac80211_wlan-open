@@ -4050,6 +4050,12 @@ void ieee80211_dfs_cac_timer_work(struct wiphy *wiphy, struct wiphy_work *work)
 				   NL80211_RADAR_CAC_FINISHED,
 				   GFP_KERNEL, link->link_id);
 	}
+
+#ifdef CPTCFG_QCN_EXTN
+	if (!link->conf->deferred_up &&
+	    cfg80211_support_bootup_cac(local->hw.wiphy))
+		ieee80211_bootup_cac_mesh_vdev_up_extn(ctx);
+#endif /* CPTCFG_QCN_EXTN */
 }
 
 static bool
