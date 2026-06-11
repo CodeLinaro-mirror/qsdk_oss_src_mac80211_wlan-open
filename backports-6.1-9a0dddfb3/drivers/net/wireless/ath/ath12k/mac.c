@@ -10538,6 +10538,10 @@ static int ath12k_mac_initiate_hw_scan(struct ieee80211_hw *hw,
 				    "failed to abort agile CAC before scan\n");
 	}
 
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_wmi_update_strict_passive_scan_extn(ar, arg);
+#endif
+
 	ret = ath12k_start_scan(ar, arg);
 	if (ret) {
 		if (ret == -EBUSY)
