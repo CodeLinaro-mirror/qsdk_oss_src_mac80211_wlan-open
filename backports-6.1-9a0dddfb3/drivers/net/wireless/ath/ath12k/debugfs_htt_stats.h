@@ -470,7 +470,6 @@ enum ath12k_dbg_htt_ext_stats_type {
 	ATH12K_DBG_HTT_DBG_EXT_STATS_RESET_HISTORY		= 82,
 	ATH12K_DBG_HTT_STATS_REGULATORY				= 83,
 	ATH12K_DBG_HTT_DBG_EXT_STATS_DPD_STATS_EXT		= 85,
-	ATH12K_DBG_HTT_DBG_EXT_STATS_PHY_DPD_TPC		= 87,
 
 	/* keep this last */
 	ATH12K_DBG_HTT_NUM_EXT_STATS,
@@ -708,8 +707,6 @@ enum ath12k_dbg_htt_tlv_tag {
 	HTT_STATS_NPCA_STATS_TAG			= 260,
 	HTT_STATS_SCHED_TXQ_TX_MODE_SIMPLIFIED_TAG	= 261,
 	HTT_STATS_SCHED_TXQ_TX_MODE_WINNER_TAG		= 262,
-	HTT_STATS_PHY_DPD_DEBUG_TAG                     = 266,
-	HTT_STATS_PHY_TPC_DEBUG_TAG                     = 267,
 	HTT_STATS_MAX_TAG,
 };
 
@@ -6784,105 +6781,6 @@ struct ath12k_htt_stats_dpd_hw_cal_res_tlv {
 		[ATH12K_HTT_MAX_DPD_CAL_TABLE];
 	a_sle32 nmse_chain[ATH12K_HTT_STATS_MAX_CHAINS]
 		[ATH12K_HTT_MAX_DPD_CAL_TABLE];
-} __packed;
-
-/* subid values for ATH12K_DBG_HTT_DBG_EXT_STATS_PHY_DPD_TPC (cfg_param[0]) */
-#define ATH12K_HTT_STATS_PHY_DPD_TPC_SUBID_DPD		0
-#define ATH12K_HTT_STATS_PHY_DPD_TPC_SUBID_TPC		1
-
-/* PHY DPD debug structures (PHY_DPD_DEBUG_STRUCT_V1) */
-struct ath12k_htt_phy_dpd_common_tlv {
-	__le32 version;
-	__le32 chainmask;
-	__le32 num_gain_idx;
-	u8     reserved[32];
-} __packed;
-
-struct ath12k_htt_phy_dpd_debug_params_v1 {
-	a_sle32 dpd_out_nmse_x10;
-	__le32  pa_max_avg_tx;
-	__le32  dpd_training_cnt;
-	__le32  dpd_scaling;
-	__le16  dpd_training_power_db8;
-	__le16  dpd_out_sq;
-	u8      dpd_state;
-	u8      dpd_in_glut;
-	u8      dpd_in_tx_gain;
-	s8      dpd_out_train_dac_gain;
-	s8      dpd_in_gc;
-	u8      dpd_out_sq_idx;
-	u8      dpd_out_train_rx_gain_idx;
-	u8      dpd_in_kernel_sel;
-} __packed;
-
-struct ath12k_htt_phy_dpd_debug_chain_tlv {
-	u8  chain_idx;
-	u8  version;
-	u16 chainmask;
-	u8  num_gain_idx;
-	u8  reserved[32];
-	u8  pad[3]; /* align dpd_debug_params to 4-byte boundary, matching FW */
-	struct ath12k_htt_phy_dpd_debug_params_v1
-		dpd_debug_params[ATH12K_HTT_MAX_DPD_CAL_TABLE];
-} __packed;
-
-/* PHY TPC debug structures (PHY_TPC_DEBUG_STRUCT_V1) */
-struct ath12k_htt_phy_tpc_debug_params_v1 {
-	u8   lat_glut_idx;
-	u8   lat_tx_gain_idx;
-	s8   lat_dac_gain;
-	s8   lat_target_power;
-	s16  lat_acc_clpc_error;
-	s16  lat_clpc_err;
-	s16  lat_meas_pwr;
-
-	u8   lat_wsi_temp_valid;
-	u8   lat_wsi_full_pkt_pwr_valid;
-	u8   lat_wsi_pream_pwr_valid;
-	u8   pad1; /* align lat_wsi_temp (s16) to 2-byte boundary */
-	s16  lat_wsi_temp;
-	u8   lat_wsi_full_pkt_pwr;
-	u8   lat_wsi_pream_pwr;
-
-	u8   lat_wsi_tx_gain_idx;
-	u8   lat_wsi_tpc_pdet_gain_idx;
-	u8   lat_wsi_tpc_attn;
-
-	s8   glut_dac_gain_cal;
-	s8   glut_max_dac_gain_cal;
-	s8   dpd_dac_gainal;
-	u8   dpd_tx_gain_idx_cal;
-
-	s8   target_pwr_clpc_thr_corr;
-	u8   olpc_mode;
-
-	u8   wsi_timeout;
-	s8   target_pwr_clpc_thr_update;
-
-	u8   ro_temp_valid;
-	u8   ro_full_pkt_pwr_valid;
-	u8   ro_pream_pwr_valid;
-	s16  ro_temp;
-	u8   ro_full_pkt_pwr;
-	u8   ro_pream_pwr;
-
-	u8   ro_tpc_fe_sel;
-	u8   ro_full_pkt_avg_out;
-	u8   ro_lat_dc;
-	u8   ro_pdacc_avg_out;
-
-	u16  temp_per_chain;
-	u8   cal_cmd;
-	u8   cal_time;
-	u8   cal_result;
-} __packed;
-
-struct ath12k_htt_phy_tpc_debug_chain_tlv {
-	u8  chain_idx;
-	u8  version;
-	u16 chainmask;
-	u8  reserved[32];
-	struct ath12k_htt_phy_tpc_debug_params_v1 tpc_debug_params;
 } __packed;
 
 #endif
