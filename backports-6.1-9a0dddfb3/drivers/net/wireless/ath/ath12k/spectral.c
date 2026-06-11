@@ -1155,6 +1155,12 @@ int ath12k_spectral_process_fft(struct ath12k *ar,
 	ret = ath12k_dbring_validate_buffer(ar, data, check_length);
 	if (ret) {
 		ath12k_warn(ar->ab, "found magic value in fft data, dropping\n");
+
+		if (ath12k_debug_mask & ATH12K_DBG_SPECTRAL)
+			print_hex_dump(KERN_DEBUG, "spectral fft dump: ",
+				       DUMP_PREFIX_OFFSET, 16, 1, data,
+				       min_t(u32, data_len, sizeof(*tlv) + tlv_len),
+				       false);
 		return ret;
 	}
 
@@ -1335,6 +1341,7 @@ static int ath12k_spectral_process_data(struct ath12k *ar,
 	struct fft_sample_ath12k *fft_sample = NULL;
 	u8 *data;
 	u32 data_len, i;
+	u32 check_length;
 	u8 sign, tag;
 	int tlv_len, sample_sz;
 	int ret;
@@ -1415,9 +1422,21 @@ static int ath12k_spectral_process_data(struct ath12k *ar,
 				goto err;
 			}
 
-			ret = ath12k_dbring_validate_buffer(ar, data, tlv_len);
+			/*
+			 * Validate current summary TLV only. Do not include optional
+			 * summary padding bytes, as firmware may leave them untouched.
+			 */
+			check_length = sizeof(*summary);
+			ret = ath12k_dbring_validate_buffer(ar, tlv, check_length);
 			if (ret) {
 				ath12k_warn(ar->ab, "found magic value in spectral summary, dropping\n");
+				if (ath12k_debug_mask & ATH12K_DBG_SPECTRAL)
+					print_hex_dump(KERN_DEBUG,
+						       "spectral summary dump: ",
+						       DUMP_PREFIX_OFFSET, 16, 1, tlv,
+						       min_t(u32, data_len - i,
+							     sizeof(*tlv) + tlv_len),
+						       false);
 				goto err;
 			}
 
