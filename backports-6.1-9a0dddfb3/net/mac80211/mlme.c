@@ -1638,7 +1638,7 @@ static int ieee80211_config_bw(struct ieee80211_link_data *link,
 
 	if (!ieee80211_hw_check(&sdata->local->hw, SKIP_CHANDEF_IDENTICAL_CHECK) &&
 	    !cfg80211_chandef_identical(&old_oper, &link->conf->chanreq.oper) &&
-	    (!sdata->wdev.valid_links ||
+	    ((!sdata->wdev.valid_links && link->link_id == 0) ||
 	     (sdata->wdev.valid_links & BIT(link->link_id)))) {
 		link->conf->chanreq.oper = old_oper;
 		return ieee80211_sta_bw_reconfig_start_csa(link, &chanreq.oper,
