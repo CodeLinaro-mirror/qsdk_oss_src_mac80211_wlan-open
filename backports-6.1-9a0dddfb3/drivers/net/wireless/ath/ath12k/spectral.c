@@ -399,7 +399,7 @@ int ath12k_spectral_start_scan(struct ath12k *ar)
 		hrtimer_start(&ar->spectral.scan_completion_timer,
 			      ns_to_ktime((u64)ar->spectral.params.completion_timeout_us *
 					  NSEC_PER_USEC),
-			      HRTIMER_MODE_REL);
+			      HRTIMER_MODE_REL_SOFT);
 
 	return 0;
 }
@@ -1616,6 +1616,7 @@ static void ath12k_spectral_timeout_work(struct work_struct *work)
 	sp->scan_active = false;
 	spin_unlock_bh(&sp->lock);
 
+	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
 	arvif = ath12k_spectral_get_vdev(ar);
 	if (arvif) {
 		ret = ath12k_wmi_vdev_spectral_enable(ar, arvif->vdev_id,
@@ -1626,6 +1627,7 @@ static void ath12k_spectral_timeout_work(struct work_struct *work)
 				    "failed to disable spectral scan on vdev %d after timeout: %d\n",
 				    arvif->vdev_id, ret);
 	}
+	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
 		   "spectral scan timeout: received %u/%u reports\n",
@@ -1645,7 +1647,7 @@ static enum hrtimer_restart ath12k_spectral_scan_timeout(struct hrtimer *timer)
 	struct ath12k_spectral *sp =
 		container_of(timer, struct ath12k_spectral, scan_completion_timer);
 
-	/* Already in softirq — plain spin_lock is sufficient (no _bh). */
+	/* Softirq context (HRTIMER_MODE_REL_SOFT) — plain spin_lock is sufficient. */
 	spin_lock(&sp->lock);
 
 	if (sp->mode == SPECTRAL_SCAN_MODE_INVALID || !sp->scan_active) {
@@ -1818,7 +1820,7 @@ int ath12k_spectral_init(struct ath12k_base *ab)
 		spin_lock_init(&sp->rx_ring.idr_lock);
 		spin_lock_init(&sp->lock);
 		hrtimer_init(&sp->scan_completion_timer, CLOCK_MONOTONIC,
-			     HRTIMER_MODE_REL);
+			     HRTIMER_MODE_REL_SOFT);
 		sp->scan_completion_timer.function = ath12k_spectral_scan_timeout;
 		INIT_WORK(&sp->scan_timeout_work, ath12k_spectral_timeout_work);
 
