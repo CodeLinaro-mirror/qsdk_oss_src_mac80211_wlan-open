@@ -4516,7 +4516,9 @@ enum qca_vendor_wlan_home_offchan_tx_rx_pkt_status {
  * %QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_TX_PKT_STATUS.
  *
  * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_PKT_STATUS_ID: u8 attribute.
- *	Packet identifier/number for this transmission status (0-255).
+ *	Frame identifier supplied by userspace in the TX command (0-255),
+ *	echoed back so the application can correlate per-packet status with
+ *	the original request.
  *
  * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_PKT_STATUS_RESULT:
  * u8 attribute.
@@ -4660,6 +4662,10 @@ enum qca_vendor_wlan_home_offchan_tx_rx_event_tx_pkt_status_attr {
  *	qca_vendor_wlan_home_offchan_tx_rx_event_tx_pkt_status_attr.
  *	The array can contain up to the number of frames specified in
  *	%QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_NUM_FRAMES.
+ *
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_TX_IFINDEX: u32 attribute.
+ *	Interface index of the transmitting interface for the home/off-channel
+ *	TX/RX event. Used by the driver to indicate which netdev sent the frame.
  */
 enum qca_vendor_wlan_home_offchan_tx_rx_attr {
 	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_INVALID = 0,
@@ -4691,6 +4697,7 @@ enum qca_vendor_wlan_home_offchan_tx_rx_attr {
 	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_BLANKING_COUNT,
 	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_BLANKING_DURATION,
 	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_TX_PKT_STATUS,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_TX_IFINDEX,
 
 	/* keep last */
 	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_AFTER_LAST,
@@ -4742,6 +4749,12 @@ enum qca_vendor_wlan_home_offchan_tx_rx_attr {
  *
  * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME_DATA:
  *	Binary attribute. Contains the frame data to be transmitted.
+ *
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME_ID: u8 attribute.
+ *	Application-assigned identifier for this frame (0-255). The driver
+ *	caches this value and echoes it back in the per-packet TX status event
+ *	(%QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_PKT_STATUS_ID) so the
+ *	application can correlate completion status with the original request.
  */
 enum qca_vendor_wlan_home_offchan_tx_rx_frame_attr {
 	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME_INVALID = 0,
@@ -4752,6 +4765,7 @@ enum qca_vendor_wlan_home_offchan_tx_rx_frame_attr {
 	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME_POWER,
 	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME_TX_BEAMFORMING,
 	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME_DATA,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME_ID,
 
 	/* keep last */
 	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME_AFTER_LAST,
