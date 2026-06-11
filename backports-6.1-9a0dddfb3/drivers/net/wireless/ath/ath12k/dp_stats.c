@@ -1257,3 +1257,111 @@ out:
 	spin_unlock_bh(&mld_peer->qos->lock);
 }
 EXPORT_SYMBOL(ath12k_qos_stats_update);
+
+/**
+ * ath12k_dp_netstats_peer_update - DP-only: accumulate net stats for one peer
+ * @dp_hw:          group-level DP hardware context (DP object)
+ * @dp_pdev         Radio level DP context
+ * @dp_peer_addr:   MAC address used to key dp_peer (MLD MAC or link MAC)
+ * @hw_link_id:     hardware link ID of the radio
+ * @peer_mac_filter: if non-NULL, skip peers whose dp_peer->addr doesn't match
+ * @is_ds_vif:      true if this is a DS VIF
+ * @stats:          destination net stats buffer
+ *
+ * Called with ar->arsta_lock held (BH-disabled).
+ * Acquires dp_hw->peer_hash_lock internally (arsta_lock -> peer_hash_lock ordering).
+ */
+void
+ath12k_dp_netstats_peer_update(struct ath12k_dp_hw *dp_hw,
+			       struct ath12k_pdev_dp *dp_pdev,
+			       const u8 *dp_peer_addr,
+			       u8 hw_link_id,
+			       const u8 *peer_mac_filter,
+			       bool is_ds_vif,
+			       struct rtnl_link_stats64 *stats)
+{
+	struct ath12k_dp_peer *dp_peer = NULL;
+	struct ath12k_dp_link_peer *link_peer = NULL;
+	struct ath12k_dp_peer_stats *peer_stats = NULL;
+	struct ath12k_dp_peer_rx_stats *rx_stats = NULL;
+	int i;
+	u32 rx_packets = 0;
+	u64 rx_bytes = 0;
+
+	if (hw_link_id >= ATH12K_DP_PEER_MAX_MLO_LINKS)
+		return;
+
+	/* DP: find MLD/legacy peer by MAC address */
+	spin_lock_bh(&dp_hw->peer_hash_lock);
+	dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, dp_peer_addr);
+	if (!dp_peer) {
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
+		return;
+	}
+
+	rcu_read_lock();
+	link_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, hw_link_id);
+	if (!link_peer) {
+		rcu_read_unlock();
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
+		return;
+	}
+
+	if (peer_mac_filter &&
+	    !ether_addr_equal(link_peer->addr, peer_mac_filter) &&
+	    !ether_addr_equal(link_peer->ml_addr, peer_mac_filter)) {
+		rcu_read_unlock();
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
+		return;
+	}
+
+	peer_stats = &dp_peer->stats[hw_link_id];
+	rx_packets = 0;
+	rx_bytes = 0;
+
+	if (ath12k_dp_hw_peer_stats_enabled(dp_pdev)) {
+		/* When HW stats are enabled, recv_from_reo has
+		 * all the Rx traffic data stored in
+		 * ATH12K_DP_HW_STATS_REO_IDX for SFE or
+		 * DS mode.
+		 */
+		rx_stats = &peer_stats->rx[ATH12K_DP_HW_STATS_REO_IDX];
+		rx_packets += rx_stats->recv_from_reo.packets;
+		rx_bytes += rx_stats->recv_from_reo.bytes;
+	} else {
+		for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
+			/* PPE sync credits DS VIF WDS peer traffic only on
+			 * DP_REO_PPEDS_RING_IDX. Skip lower ring indices
+			 * to avoid double-counting.
+			 */
+			if (is_ds_vif && i < DP_REO_PPEDS_RING_IDX)
+				continue;
+			rx_packets +=
+				(peer_stats->rx[i].sent_to_stack.packets +
+				 peer_stats->rx[i].sent_to_stack_fast.packets);
+			rx_bytes +=
+				(peer_stats->rx[i].sent_to_stack.bytes +
+				 peer_stats->rx[i].sent_to_stack_fast.bytes);
+		}
+
+		if (dp_pdev && ath12k_extd_rx_stats_enabled(dp_pdev) &&
+		    link_peer && link_peer->peer_stats.rx_stats) {
+			/* Override PPEDS ring sent_to_stack with extended RX
+			 * monitor MSDU totals.
+			 */
+			rx_packets = link_peer->peer_stats.rx_stats->num_msdu;
+			rx_bytes = link_peer->peer_stats.rx_stats->num_msdu_bytes;
+		}
+	}
+	stats->rx_packets += rx_packets;
+	stats->rx_bytes += rx_bytes;
+
+	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
+		stats->tx_packets += peer_stats->tx[i].comp_pkt.packets;
+		stats->tx_bytes   += peer_stats->tx[i].comp_pkt.bytes;
+		stats->tx_packets += peer_stats->tx[i].tx_dropped.packets;
+		stats->tx_bytes   += peer_stats->tx[i].tx_dropped.bytes;
+	}
+	rcu_read_unlock();
+	spin_unlock_bh(&dp_hw->peer_hash_lock);
+}

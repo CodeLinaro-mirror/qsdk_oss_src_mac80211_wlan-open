@@ -2073,3 +2073,60 @@ void ath12k_sta_update_primary_link(struct wiphy *wiphy,
 						    &val);
 	}
 }
+
+/**
+ * ath12k_vif_peer_iter_cb - CP iterator callback, called with ar->arsta_lock held
+ *
+ * CP responsibility: resolve the dp_peer MAC address from the CP arsta object.
+ *   - self/BSS peer  -> dp_peer keyed by link MAC  (arsta->addr)
+ *   - regular STA    -> dp_peer keyed by MLD MAC   (arsta->ahsta->addr)
+ *
+ * DP responsibility: fully delegated to ath12k_dp_vif_peer_stats_update().
+ */
+static int ath12k_vif_peer_iter_cb(struct ath12k *ar,
+				   struct ath12k_link_sta *arsta,
+				   void *data)
+{
+	struct ath12k_vif_peer_iter_ctx *ctx = data;
+	const u8 *dp_peer_addr;
+
+	/* CP: resolve dp_peer MAC address (CP -> DP bridge)
+	 * - self/BSS peer: dp_peer is keyed by link-level MAC
+	 * - regular STA:   dp_peer is keyed by MLD MAC
+	 */
+	if (!arsta->is_self_peer && !arsta->ahsta)
+		return 0;
+	dp_peer_addr = arsta->is_self_peer ? arsta->addr : arsta->ahsta->addr;
+
+	/* Delegate to DP layer - no CP objects cross this boundary except
+	 * arvif (bridge: needed to reach dp_pdev inside ath12k_dp_aggr_peer_stats)
+	 */
+	ath12k_dp_vif_peer_stats_update(&ar->ah->dp_hw,
+					&ar->dp,
+					dp_peer_addr,
+					ar->hw_link_id,
+					ctx->arvif,
+					ctx->aggr_vif_stats,
+					ctx->is_ds_vif);
+	return 0;
+}
+
+void ath12k_vif_iterate_peer(struct ath12k_link_vif *arvif,
+			     struct ath12k_dp_aggr_vif_stats *aggr_vif_stats,
+			     bool is_ds_vif)
+{
+	struct ath12k *ar = arvif->ar;
+	struct ath12k_vif_peer_iter_ctx ctx = {
+		.arvif          = arvif,
+		.aggr_vif_stats = aggr_vif_stats,
+		.is_ds_vif      = is_ds_vif,
+	};
+
+	/* Acquire arsta_lock; ath12k_arsta_itr_on_ar_by_vdev_id requires it held.
+	 * Lock ordering: arsta_lock -> peer_hash_lock (acquired inside the callback).
+	 */
+	spin_lock_bh(&ar->arsta_lock);
+	ath12k_arsta_itr_on_ar_by_vdev_id(ar, arvif->vdev_id,
+					  ath12k_vif_peer_iter_cb, &ctx);
+	spin_unlock_bh(&ar->arsta_lock);
+}

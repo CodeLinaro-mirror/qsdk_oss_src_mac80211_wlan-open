@@ -1845,4 +1845,12 @@ void ath12k_qos_stats_update(struct ath12k_dp_peer *mld_peer,
 			     struct ath12k_pdev_dp *dp_pdev,
 			     ktime_t timestamp,
 			     u32 hw_delay);
+
+void ath12k_dp_netstats_peer_update(struct ath12k_dp_hw *dp_hw,
+				    struct ath12k_pdev_dp *dp_pdev,
+				    const u8 *dp_peer_addr,
+				    u8 hw_link_id,
+				    const u8 *peer_mac_filter,
+				    bool is_ds_vif,
+				    struct rtnl_link_stats64 *stats);
 #endif

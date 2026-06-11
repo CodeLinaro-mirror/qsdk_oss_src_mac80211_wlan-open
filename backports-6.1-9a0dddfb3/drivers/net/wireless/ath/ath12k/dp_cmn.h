@@ -136,6 +136,7 @@ struct ath12k_dp_hw_link {
 
 /* Hash table size: 2^11 = 2048 buckets for up to 2048 peers */
 #define ATH12K_DP_PEER_HASH_BITS 11
+#define ATH12K_DP_HW_STATS_REO_IDX 0
 
 struct ath12k_dp_hw {
 	struct ath12k_dp_peer __rcu *dp_peer_list[MAX_DP_PEER_LIST_SIZE];
@@ -258,6 +259,7 @@ enum wme_ac {
 
 struct ath12k_dp_link_peer;
 struct ath12k_dp_link_peer_rate_info;
+struct ath12k_dp_aggr_vif_stats;
 void ath12k_dp_cmn_device_deinit(struct ath12k_dp *dp);
 int ath12k_dp_cmn_device_init(struct ath12k_dp *dp);
 void ath12k_dp_cmn_hw_group_unassign(struct ath12k_dp *dp,
@@ -497,4 +499,11 @@ int ath12k_dp_peer_set_key_config(struct ath12k_pdev_dp *dp_pdev, const u8 *addr
 				  struct ieee80211_sta *sta,
 				  enum hal_encrypt_type *enctype);
 void ath12k_dp_peer_cleanup_all(struct ath12k *ar);
+void ath12k_dp_vif_peer_stats_update(struct ath12k_dp_hw *dp_hw,
+				     struct ath12k_pdev_dp *dp_pdev,
+				     const u8 *dp_peer_addr,
+				     u8 hw_link_id,
+				     struct ath12k_link_vif *arvif,
+				     struct ath12k_dp_aggr_vif_stats *aggr_vif_stats,
+				     bool is_ds_vif);
 #endif

@@ -3598,35 +3598,59 @@ ath12k_dp_aggr_link_vif_del_stats(struct ath12k_link_vif *arvif,
 				 "link_peer_delete_stats");
 }
 
-static void ath12k_vif_iterate_peer(struct ath12k_link_vif *arvif,
-				    struct ath12k_dp_aggr_vif_stats *aggr_vif_stats,
-				    bool is_ds_vif)
+/**
+ * ath12k_dp_vif_peer_stats_update - DP-only: aggregate stats for one peer
+ * @dp_hw:        group-level DP hardware context (DP object)
+ * @dp_pdev:      per-radio DP context (DP object)
+ * @dp_peer_addr: MAC address used to key dp_peer (MLD MAC or link MAC)
+ * @hw_link_id:   hardware link ID of the radio
+ * @arvif:        link VIF (bridge: needed by ath12k_dp_aggr_peer_stats)
+ * @aggr_vif_stats: destination stats buffer
+ * @is_ds_vif:    true if this is a DS VIF
+ *
+ * Called with ar->arsta_lock held (BH-disabled).
+ * Acquires dp_hw->peer_hash_lock internally (arsta_lock -> peer_hash_lock ordering).
+ */
+void
+ath12k_dp_vif_peer_stats_update(struct ath12k_dp_hw *dp_hw,
+				struct ath12k_pdev_dp *dp_pdev,
+				const u8 *dp_peer_addr,
+				u8 hw_link_id,
+				struct ath12k_link_vif *arvif,
+				struct ath12k_dp_aggr_vif_stats *aggr_vif_stats,
+				bool is_ds_vif)
 {
+	struct ath12k_dp_peer      *dp_peer;
+	struct ath12k_dp_link_peer *dp_link_peer;
 
-	struct ath12k_dp_link_peer *link_peer;
-	struct ath12k *ar = arvif->ar;
-	struct ath12k_dp *dp = ar->ab->dp;
-	u32 vdev_id = arvif->vdev_id;
-
-	/* Iterate through all peers of particular vif*/
-	spin_lock_bh(&dp->dp_lock);
-	list_for_each_entry(link_peer, &dp->peers, list) {
-		if (link_peer->vdev_id != vdev_id)
-			continue;
-
-		ath12k_dp_aggr_peer_stats(arvif, link_peer, aggr_vif_stats, is_ds_vif);
-
-		/* Copy them exactly once using the primary link peer to avoid
-		 * redundant copies when multiple link peers share the same
-		 * MLD peer.
-		 */
-		if (link_peer->primary_link && link_peer->dp_peer) {
-			ath12k_dp_update_hw_peer_stats(&ar->dp, link_peer->dp_peer,
-						       &aggr_vif_stats->mld_stats);
-		}
-
+	/* DP: find MLD/legacy peer by MAC address */
+	spin_lock_bh(&dp_hw->peer_hash_lock);
+	dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, dp_peer_addr);
+	if (!dp_peer) {
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
+		return;
 	}
-	spin_unlock_bh(&dp->dp_lock);
+
+	/* DP: find the link peer for this radio's hw_link_id (RCU-protected) */
+	rcu_read_lock();
+	dp_link_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, hw_link_id);
+	if (!dp_link_peer) {
+		rcu_read_unlock();
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
+		return;
+	}
+
+	/* DP: aggregate per-link peer stats */
+	ath12k_dp_aggr_peer_stats(arvif, dp_link_peer, aggr_vif_stats, is_ds_vif);
+
+	/* DP: aggregate MLD-level HW stats exactly once via the primary link peer */
+	if (dp_link_peer->primary_link) {
+		ath12k_dp_update_hw_peer_stats(dp_pdev, dp_peer,
+					       &aggr_vif_stats->mld_stats);
+	}
+
+	rcu_read_unlock();
+	spin_unlock_bh(&dp_hw->peer_hash_lock);
 }
 
 static void
