@@ -127,6 +127,7 @@
 #define ATH12K_PHY_6GHZ "phy03"
 #define ATH12K_PHY_6GHZ_LOW "phy03"
 #define ATH12K_PHY_6GHZ_HIGH "phy04"
+#define ATH12K_PHY_2GHZ_5GHZ "phy05"
 
 #ifdef CPTCFG_QCN_EXTN
 /* Scan radio uses a single PHY name for all bands */
