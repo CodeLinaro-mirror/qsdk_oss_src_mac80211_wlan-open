@@ -1732,8 +1732,8 @@ int ath12k_wmi_vdev_create(struct ath12k *ar, u8 *macaddr,
 
 		ptr += sizeof(*offset_info);
 		ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
-			   "WMI vdev create cu_mem: vdev %d host_addr 0x%08x_%08x size %u off1 0x%08x off2 0x%08x off3 0x%08x off4 0x%08x off5 0x%08x\n",
-			   args->if_id,
+			   "[radio_idx : %u] WMI vdev create cu_mem: vdev %d host_addr 0x%08x_%08x size %u off1 0x%08x off2 0x%08x off3 0x%08x off4 0x%08x off5 0x%08x\n",
+			   ar->radio_idx, args->if_id,
 			   args->cu_mem_info.cu_mem_addr_msb,
 			   args->cu_mem_info.cu_mem_addr_lsb,
 			   args->cu_mem_info.size,
@@ -1745,14 +1745,15 @@ int ath12k_wmi_vdev_create(struct ath12k *ar, u8 *macaddr,
 	}
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
-		   "WMI vdev create: id %d type %d subtype %d macaddr %pM pdevid %d vdev bitmap (allocate:0x%llx free:0x%llx) global_vdev_id:%d\n",
+		   "[radio_idx : %u] WMI vdev create: id %d type %d subtype %d macaddr %pM pdevid %d vdev bitmap (allocate:0x%llx free:0x%llx) global_vdev_id:%d\n",
+		   ar->radio_idx,
 		   args->if_id, args->type, args->subtype, macaddr, args->pdev_id,
 		   ar->allocated_vdev_map, ar->ab->free_vdev_map, cmd->global_vdev_id);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_VDEV_CREATE_CMDID);
 	if (ret) {
-		ath12k_warn(ar->ab,
-			    "failed to submit WMI_VDEV_CREATE_CMDID\n");
+		ath12k_warn(ar->ab, "[vdev_id : %u radio_idx : %u] failed to submit WMI_VDEV_CREATE_CMDID\n",
+			    args->if_id, ar->radio_idx);
 		dev_kfree_skb(skb);
 	}
 
@@ -1776,13 +1777,15 @@ int ath12k_wmi_vdev_delete(struct ath12k *ar, u8 vdev_id)
 	cmd->vdev_id = cpu_to_le32(vdev_id);
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
-		   "WMI vdev delete id %d num_peers : %d vdev bitmap (allocate:0x%llx free:0x%llx)\n",
+		   "[radio_idx : %u] WMI vdev delete id %d num_peers : %d vdev bitmap (allocate:0x%llx free:0x%llx)\n",
+		   ar->radio_idx,
 		   vdev_id, ar->num_peers, ar->allocated_vdev_map,
 		   ar->ab->free_vdev_map);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_VDEV_DELETE_CMDID);
 	if (ret) {
-		ath12k_warn(ar->ab, "failed to submit WMI_VDEV_DELETE_CMDID\n");
+		ath12k_warn(ar->ab, "[vdev_id : %u radio_idx : %u] failed to submit WMI_VDEV_DELETE_CMDID\n",
+			    vdev_id, ar->radio_idx);
 		dev_kfree_skb(skb);
 	}
 
@@ -1810,7 +1813,8 @@ int ath12k_wmi_vdev_stop(struct ath12k *ar, u8 vdev_id)
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_VDEV_STOP_CMDID);
 	if (ret) {
-		ath12k_warn(ar->ab, "failed to submit WMI_VDEV_STOP cmd\n");
+		ath12k_warn(ar->ab, "[vdev_id : %u radio_idx : %u] failed to submit WMI_VDEV_STOP cmd\n",
+			    vdev_id, ar->radio_idx);
 		dev_kfree_skb(skb);
 	}
 
@@ -1838,8 +1842,8 @@ int ath12k_wmi_vdev_down(struct ath12k *ar, u8 vdev_id)
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_VDEV_DOWN_CMDID);
 	if (ret) {
-		ath12k_warn(ar->ab, "failed to submit WMI_VDEV_DOWN cmd vdev id : %d\n",
-			    vdev_id);
+		ath12k_warn(ar->ab, "[radio_idx : %u] failed to submit WMI_VDEV_DOWN cmd vdev id : %d\n",
+			    ar->radio_idx, vdev_id);
 		dev_kfree_skb(skb);
 	}
 
@@ -2096,7 +2100,8 @@ int ath12k_wmi_vdev_start(struct ath12k *ar, struct wmi_vdev_start_req_arg *arg,
 						    ATH12K_WMI_FLAG_MLO_BRIDGE_LINK);
 		ml_params->ieee_link_id = arg->ml.ieee_link_id;
 
-		ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "vdev %d start ml flags 0x%x ieee_link_id=%d\n",
+		ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "[radio_idx : %u] vdev %d start ml flags 0x%x ieee_link_id=%d\n",
+			   ar->radio_idx,
 			   arg->vdev_id, ml_params->flags, ml_params->ieee_link_id);
 
 		ptr += sizeof(*ml_params);
@@ -2125,7 +2130,8 @@ int ath12k_wmi_vdev_start(struct ath12k *ar, struct wmi_vdev_start_req_arg *arg,
 					      le32_encode_bits(arg->ml.partner_info[i].mlo_bridge_link,
 							       ATH12K_WMI_FLAG_MLO_BRIDGE_LINK);
 
-			ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "partner vdev %d hw_link_id %d macaddr%pM flags:0x%x\n",
+			ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "[radio_idx : %u] partner vdev %d hw_link_id %d macaddr%pM flags:0x%x\n",
+				   ar->radio_idx,
 				   partner_info->vdev_id, partner_info->hw_link_id,
 				   partner_info->vdev_addr.addr, partner_info->flags);
 
@@ -2143,7 +2149,8 @@ int ath12k_wmi_vdev_start(struct ath12k *ar, struct wmi_vdev_start_req_arg *arg,
 		ptr += TLV_HDR_SIZE;
 	}
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "vdev %s id 0x%x freq 0x%x mode 0x%x\n",
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "[radio_idx : %u] vdev %s id 0x%x freq 0x%x mode 0x%x\n",
+		   ar->radio_idx,
 		   restart ? "restart" : "start", arg->vdev_id,
 		   arg->freq, arg->mode);
 
@@ -2168,7 +2175,8 @@ int ath12k_wmi_vdev_start(struct ath12k *ar, struct wmi_vdev_start_req_arg *arg,
 		ret = ath12k_wmi_cmd_send(wmi, skb,
 					  WMI_VDEV_START_REQUEST_CMDID);
 	if (ret) {
-		ath12k_warn(ar->ab, "failed to submit vdev_%s cmd\n",
+		ath12k_warn(ar->ab, "[vdev_id : %u radio_idx : %u] failed to submit vdev_%s cmd\n",
+			    arg->vdev_id, ar->radio_idx,
 			    restart ? "restart" : "start");
 		dev_kfree_skb(skb);
 	}
@@ -2203,12 +2211,14 @@ int ath12k_wmi_vdev_up(struct ath12k *ar, struct ath12k_wmi_vdev_up_params *para
 	}
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
-		   "WMI mgmt vdev up id 0x%x assoc id %d bssid %pM\n",
+		   "[radio_idx : %u] WMI mgmt vdev up id 0x%x assoc id %d bssid %pM\n",
+		   ar->radio_idx,
 		   params->vdev_id, params->aid, params->bssid);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_VDEV_UP_CMDID);
 	if (ret) {
-		ath12k_warn(ar->ab, "failed to submit WMI_VDEV_UP cmd\n");
+		ath12k_warn(ar->ab, "[vdev_id : %u radio_idx : %u] failed to submit WMI_VDEV_UP cmd\n",
+			    params->vdev_id, ar->radio_idx);
 		dev_kfree_skb(skb);
 	}
 
@@ -2296,17 +2306,20 @@ int ath12k_wmi_send_peer_create_cmd(struct ath12k *ar,
 	ptr += sizeof(*ml_param);
 
 	ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER | ATH12K_DBG_MLME, ATH12K_DBG_L1,
-			 "WMI peer create vdev_id %d peer_addr %pM ml_flags 0x%x num_peer:%d bridge peer %d\n",
+			 "[radio_idx : %u] WMI peer create vdev_id %d peer_addr %pM ml_flags 0x%x num_peer:%d bridge peer %d\n",
+			 ar->radio_idx,
 			 arg->vdev_id, arg->peer_addr, ml_param->flags,
 			 ar->num_peers, arg->mlo_bridge_peer);
 
 	ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER | ATH12K_DBG_MLME, ATH12K_DBG_L1,
-			 "WMI peer create peer_addr:%pM flags:%d peer_id:%d sta_id:%d\n",
+			 "[vdev_id : %u radio_idx : %u] WMI peer create peer_addr:%pM flags:%d peer_id:%d sta_id:%d\n",
+			 arg->vdev_id, ar->radio_idx,
 			 arg->peer_addr, cmd->flags, arg->peer_id, arg->sta_id);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_PEER_CREATE_CMDID);
 	if (ret) {
-		ath12k_warn(ar->ab, "failed to submit WMI_PEER_CREATE cmd\n");
+		ath12k_warn(ar->ab, "[vdev_id : %u radio_idx : %u] failed to submit WMI_PEER_CREATE cmd\n",
+			    arg->vdev_id, ar->radio_idx);
 		dev_kfree_skb(skb);
 	}
 
@@ -2360,18 +2373,19 @@ int ath12k_wmi_send_peer_delete_cmd(struct ath12k *ar,
 	mlo_params->mlo_hw_link_id_bitmap = cpu_to_le32(mlo_hw_link_id_bitmap);
 
 	ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER | ATH12K_DBG_MLME, ATH12K_DBG_L0,
-			 "WMI peer delete vdev_id %d peer_addr %pM num_peer : %d hw_link_id_bitmap 0x%x\n",
-			 vdev_id,  peer_addr, ar->num_peers, mlo_hw_link_id_bitmap);
+			 "[radio_idx : %u] WMI peer delete vdev_id %d peer_addr %pM num_peer : %d hw_link_id_bitmap 0x%x\n",
+			 ar->radio_idx, vdev_id,  peer_addr,
+			 ar->num_peers, mlo_hw_link_id_bitmap);
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
-		   "WMI peer delete peer_delete_send_mlo_hw_bitmap: 0x%x\n",
-		   peer_delete_send_mlo_hw_bitmap);
+		   "[vdev_id : %u radio_idx : %u] WMI peer delete peer_delete_send_mlo_hw_bitmap: 0x%x\n",
+		   vdev_id, ar->radio_idx, peer_delete_send_mlo_hw_bitmap);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_PEER_DELETE_CMDID);
 	if (ret) {
-		ath12k_warn(ar->ab, "failed to send WMI_PEER_DELETE cmd"
+		ath12k_warn(ar->ab, "[vdev_id : %u radio_idx : %u] failed to send WMI_PEER_DELETE cmd"
 			   " peer_addr %pM num_peer : %d\n",
-			    peer_addr, ar->num_peers);
+			    vdev_id, ar->radio_idx, peer_addr, ar->num_peers);
 		dev_kfree_skb(skb);
 	}
 
@@ -3460,7 +3474,8 @@ int ath12k_wmi_bcn_tmpl(struct ath12k_link_vif *arvif,
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_BCN_TMPL_CMDID);
 	if (ret) {
-		ath12k_warn(ab, "failed to send WMI_BCN_TMPL_CMDID\n");
+		ath12k_warn(ab, "[vdev_id : %u radio_idx : %u] failed to send WMI_BCN_TMPL_CMDID\n",
+			    vdev_id, ar->radio_idx);
 		dev_kfree_skb(skb);
 	}
 

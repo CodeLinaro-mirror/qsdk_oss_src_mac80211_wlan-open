@@ -104,6 +104,9 @@
 #define ATH12K_INVALID_GROUP_ID  0xFF
 #define ATH12K_INVALID_DEVICE_ID 0xFF
 
+#define ATH12K_INVALID_VDEV_ID   "NA"
+#define ATH12K_INVALID_RADIO_IDX "NA"
+
 /* Max MLO clients supported in firmware * Max Radios
  */
 #define ATH12K_MAX_MLO_PEERS		(512 * ATH12K_MIN_NUM_DEVICES_NLINK)

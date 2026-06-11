@@ -285,11 +285,12 @@ void ath12k_peer_del_tracker_remove(struct ath12k_pdev *pdev, u32 vdev_id, const
 		spin_unlock_bh(&tracker->lock);
 		if (!entry) {
 			ath12k_err(ath12k_pdev_to_ab(pdev),
-				   "peer %pM not found in deletion tracker\n", addr);
+				   "[vdev_id : %u radio_idx : %u] peer %pM not found in deletion tracker\n",
+				   vdev_id, pdev->ar->radio_idx, addr);
 		} else {
 			ath12k_err(ath12k_pdev_to_ab(pdev),
-				   "peer %pM vdev mismatch (expected %d, found %d)\n",
-				   addr, vdev_id, entry->vdev_id);
+				   "[radio_idx : %u] peer %pM vdev mismatch (expected %d, found %d)\n",
+				   pdev->ar->radio_idx, addr, vdev_id, entry->vdev_id);
 		}
 	}
 }
@@ -785,8 +786,8 @@ static int ath12k_track_peer_delete(struct ath12k *ar,
 					   mld_addr);
 	if (ret)
 		ath12k_err(ar->ab,
-			   "peer %pM still in deletion tracker after 3s, cannot create\n",
-			   addr);
+			   "[vdev_id : %s radio_idx : %u] peer %pM still in deletion tracker after 3s, cannot create\n",
+			   ATH12K_INVALID_VDEV_ID, ar->radio_idx, addr);
 	return ret;
 }
 
@@ -818,7 +819,8 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 	if (ar->num_peers >= (ar->max_num_peers - 1)) {
 		ath12k_warn(ar->ab,
-			    "failed to create peer due to insufficient peer entry resource in firmware\n");
+			    "[vdev_id : %u radio_idx : %u] failed to create peer due to insufficient peer entry resource in firmware\n",
+			     arg->vdev_id, ar->radio_idx);
 		return -ENOBUFS;
 	}
 
@@ -835,8 +837,8 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	if (ret) {
 		memset(map_event, 0, sizeof(struct ath12k_peer_map_pending_event));
 		ath12k_warn(ar->ab,
-			    "failed to send peer create vdev_id %d ret %d\n",
-			    arg->vdev_id, ret);
+			    "[radio_idx : %u] failed to send peer create vdev_id %d ret %d\n",
+			    ar->radio_idx, arg->vdev_id, ret);
 		return ret;
 	}
 
@@ -863,7 +865,8 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		return ret;
 	}
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_PEER, "peer created %pM\n", arg->peer_addr);
+	ath12k_dbg(ar->ab, ATH12K_DBG_PEER, "[vdev_id : %u radio_idx : %u] peer created %pM\n",
+		   arg->vdev_id, ar->radio_idx, arg->peer_addr);
 
 	ar->num_peers++;
 
