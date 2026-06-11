@@ -242,7 +242,8 @@ void ath12k_dp_ppeds_interrupt_start(struct ath12k_base *ab);
 int ath12k_nss_plugin_register_ops(struct ath12k_base *ab);
 void ath12k_nss_plugin_unregister_ops(struct ath12k_base *ab);
 
-void ath12k_dp_ppeds_tx_release_desc_list_bulk(struct ath12k_dp_hw_group *dp_hw_grp,
+void ath12k_dp_ppeds_tx_release_desc_list_bulk(struct ath12k_base *ab,
+					       struct ath12k_dp_hw_group *dp_hw_grp,
 					       struct list_head *local_list,
 					       int local_list_len,
 					       struct list_head *local_list_no_skb,

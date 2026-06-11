@@ -3826,8 +3826,10 @@ int ath12k_wifi8_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 	}
 	ath12k_hal_srng_access_dst_ring_end_nolock(status_ring);
 
-	ath12k_dp_ppeds_tx_release_desc_list_bulk(dp->dp_hw_grp, &local_list, count,
-						  &local_list_no_skb, list_no_skb_count);
+	ath12k_dp_ppeds_tx_release_desc_list_bulk(dp->ab, dp->dp_hw_grp,
+						  &local_list, count,
+						  &local_list_no_skb,
+						  list_no_skb_count);
 	return (count + list_no_skb_count);
 }
 
