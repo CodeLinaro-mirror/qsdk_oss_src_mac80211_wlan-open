@@ -43,4 +43,5 @@ int ath12k_wifi8_dp_telemetry_peer_config(struct ath12k_dp *dp, u16 stats_id,
 					  u16 link_band_id[HAL_TASC_BAND_MAX]);
 int ath12k_wifi8_dp_telemetry_peer_delete(struct ath12k_dp *dp, u16 stats_id,
 					  u16 link_band_id[HAL_TASC_BAND_MAX]);
+int ath12k_wifi8_dp_telemetry_umac_setup(struct ath12k_base *ab);
 #endif
