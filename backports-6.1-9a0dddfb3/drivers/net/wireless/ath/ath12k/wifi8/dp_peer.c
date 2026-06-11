@@ -380,6 +380,8 @@ void ath12k_wifi8_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 	struct ath12k_dp_wifi8 *dp_wifi8 = NULL;
 	struct hal_srng *srng = NULL;
 	u16 link_band_id[HAL_TASC_BAND_MAX];
+	struct ath12k_dp *umac_dp;
+	unsigned int num_peers;
 	u16 peerid_index;
 	struct ath12k_sta *ahsta;
 	int i, ret;
@@ -412,7 +414,8 @@ void ath12k_wifi8_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 	for (i = 0; i < HAL_TASC_BAND_MAX; i++)
 		link_band_id[i] = DP_TELEMETRY_INVALID_LINK_BAND_ID;
 
-	ath12k_wifi8_dp_telemetry_peer_delete(dp, dp_peer->stats_id, link_band_id);
+	umac_dp = dp_hw_grp_wifi8->cumac_dp;
+	ath12k_wifi8_dp_telemetry_peer_delete(umac_dp, dp_peer->stats_id, link_band_id);
 
 	dp_hw_grp_wifi8->stats_id_map[dp_peer->stats_id].dp_peer_id =
 		ATH12K_MLO_PEER_ID_INVALID;
@@ -450,7 +453,9 @@ void ath12k_wifi8_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 
 	if (dp_peer->dp_peer_state >= ATH12K_DP_PEER_LOGICALLY_DELETED) {
 		ath12k_wifi8_dp_peer_cleanup(dp_hw, dp_peer);
+		num_peers = bitmap_weight(dp_hw->free_peer_id_map, ATH12K_MAX_PEER_ID);
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
+		ath12k_wifi8_dp_telemetry_peer_count_update(umac_dp->ab, num_peers);
 		synchronize_rcu();
 		kfree(dp_peer);
 
@@ -461,8 +466,11 @@ void ath12k_wifi8_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 			peerid_index = dp_peer->peer_id;
 			rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], NULL);
 			ath12k_wifi8_dp_peer_cleanup(dp_hw, dp_peer);
-
+			num_peers = bitmap_weight(dp_hw->free_peer_id_map,
+						  ATH12K_MAX_PEER_ID);
 			spin_unlock_bh(&dp_hw->peer_hash_lock);
+			ath12k_wifi8_dp_telemetry_peer_count_update(umac_dp->ab,
+								    num_peers);
 			synchronize_rcu();
 			kfree(dp_peer);
 			return;
@@ -489,6 +497,7 @@ int ath12k_wifi8_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 	dma_addr_t tx_classify_paddr;
 	struct ath12k_dp *umac_dp;
 	void *tx_classify_vaddr;
+	unsigned int num_peers;
 	bool is_qos = true;
 	int ret, i;
 	int vdev_peer_link_id;
@@ -537,6 +546,9 @@ int ath12k_wifi8_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 	}
 
 	rcu_read_unlock();
+
+	num_peers = bitmap_weight(dp_hw->free_peer_id_map, ATH12K_MAX_PEER_ID);
+	ath12k_wifi8_dp_telemetry_peer_count_update(umac_dp->ab, num_peers);
 
 	/* Configure peer registers for telemetry stats */
 	ath12k_wifi8_dp_telemetry_peer_config(umac_dp, dp_peer->stats_id, link_band_id);
