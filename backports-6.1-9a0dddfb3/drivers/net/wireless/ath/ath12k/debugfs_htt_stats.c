@@ -14264,7 +14264,7 @@ u16 tag_len, struct debug_htt_stats_req *stats_req)
 		return;
 
 	len += scnprintf(buf + len, buf_len - len,
-			"===================== DPD HW Cal Results =====================\n");
+		"===================== DPD HW Cal Results =====================\n");
 
 	for (i = 0; i < ATH12K_HTT_STATS_MAX_CHAINS; i++) {
 		len += scnprintf(buf + len, buf_len - len,
@@ -14289,6 +14289,305 @@ u16 tag_len, struct debug_htt_stats_req *stats_req)
 					      (s32 *)htt_stats_buf->nmse_chain[i],
 					      ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
 	}
+
+	stats_req->buf_len = len;
+}
+
+static void ath12k_htt_print_phy_dpd_debug_tlv(const void *tag_buf, u16 tag_len,
+						struct debug_htt_stats_req *stats_req)
+{
+	const struct ath12k_htt_phy_dpd_debug_chain_tlv *htt_stats_buf = tag_buf;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE, chain_word, len = stats_req->buf_len;
+	u32 word;
+	__le32 arr_le32[ATH12K_HTT_MAX_DPD_CAL_TABLE], le_word;
+	s32 arr_s32[ATH12K_HTT_MAX_DPD_CAL_TABLE];
+	s8 arr_s8[ATH12K_HTT_MAX_DPD_CAL_TABLE];
+	u8 *buf = stats_req->buf;
+	u8 i;
+
+	if (tag_len < sizeof(*htt_stats_buf))
+		return;
+
+	chain_word = le32_to_cpu(htt_stats_buf->chain_idx__version__chainmask);
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "\n===== PHY DPD Debug Stats [chain %u] =====\n",
+			 ATH12K_HTT_PHY_DPD_DEBUG_CHAIN_IDX_GET(chain_word));
+	len += scnprintf(buf + len, buf_len - len, "version = %u\n",
+			 ATH12K_HTT_PHY_DPD_DEBUG_CHAIN_VERSION_GET(chain_word));
+	len += scnprintf(buf + len, buf_len - len, "chainmask = 0x%x\n",
+			 ATH12K_HTT_PHY_DPD_DEBUG_CHAIN_CHAINMASK_GET(chain_word));
+	len += scnprintf(buf + len, buf_len - len, "num_gain_idx = %u\n\n",
+			 ATH12K_HTT_PHY_DPD_DEBUG_NUM_GAIN_IDX_GET(
+				 le32_to_cpu(htt_stats_buf->num_gain_idx__reserved)));
+
+	for (i = 0; i < ATH12K_HTT_MAX_DPD_CAL_TABLE; i++)
+		arr_s32[i] = a_sle32_to_cpu(
+			htt_stats_buf->dpd_debug_params[i].dpd_out_nmse_x10);
+	len += print_array_to_buf_s32(buf, len, "dpd_out_nmse_x10", 0,
+				      arr_s32, ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+
+	for (i = 0; i < ATH12K_HTT_MAX_DPD_CAL_TABLE; i++)
+		arr_le32[i] = htt_stats_buf->dpd_debug_params[i].pa_max_avg_tx;
+	len += print_array_to_buf(buf, len, "pa_max_avg_tx",
+				  arr_le32, ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+
+	for (i = 0; i < ATH12K_HTT_MAX_DPD_CAL_TABLE; i++)
+		arr_le32[i] = htt_stats_buf->dpd_debug_params[i].dpd_training_cnt;
+	len += print_array_to_buf(buf, len, "dpd_training_cnt",
+				  arr_le32, ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+
+	for (i = 0; i < ATH12K_HTT_MAX_DPD_CAL_TABLE; i++)
+		arr_le32[i] = htt_stats_buf->dpd_debug_params[i].dpd_scaling;
+	len += print_array_to_buf(buf, len, "dpd_scaling",
+				  arr_le32, ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+
+	for (i = 0; i < ATH12K_HTT_MAX_DPD_CAL_TABLE; i++) {
+		const struct ath12k_htt_phy_dpd_debug_params_v1 *p =
+			&htt_stats_buf->dpd_debug_params[i];
+
+		word = le32_to_cpu(p->dpd_training_power_db8__dpd_out_sq);
+		arr_s32[i] = (s16)ATH12K_HTT_PHY_DPD_DEBUG_TRAINING_PWR_DB8_GET(word);
+	}
+	len += print_array_to_buf_s32(buf, len, "dpd_training_power_db8", 0,
+				      arr_s32, ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+
+	for (i = 0; i < ATH12K_HTT_MAX_DPD_CAL_TABLE; i++) {
+		const struct ath12k_htt_phy_dpd_debug_params_v1 *p =
+			&htt_stats_buf->dpd_debug_params[i];
+
+		word = le32_to_cpu(p->dpd_training_power_db8__dpd_out_sq);
+		arr_le32[i] = cpu_to_le32(ATH12K_HTT_PHY_DPD_DEBUG_OUT_SQ_GET(word));
+	}
+	len += print_array_to_buf(buf, len, "dpd_out_sq",
+				  arr_le32, ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+
+	for (i = 0; i < ATH12K_HTT_MAX_DPD_CAL_TABLE; i++) {
+		const struct ath12k_htt_phy_dpd_debug_params_v1 *p =
+			&htt_stats_buf->dpd_debug_params[i];
+
+		le_word = p->dpd_state__in_glut__in_tx_gain__out_train_dac_gain;
+		word = le32_to_cpu(le_word);
+		arr_s32[i] = (s8)ATH12K_HTT_PHY_DPD_DEBUG_STATE_GET(word);
+	}
+	len += print_array_to_buf_s32(buf, len, "dpd_state", 0,
+				      arr_s32, ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+
+	for (i = 0; i < ATH12K_HTT_MAX_DPD_CAL_TABLE; i++) {
+		const struct ath12k_htt_phy_dpd_debug_params_v1 *p =
+			&htt_stats_buf->dpd_debug_params[i];
+
+		le_word = p->dpd_state__in_glut__in_tx_gain__out_train_dac_gain;
+		word = le32_to_cpu(le_word);
+		arr_s32[i] = (s8)ATH12K_HTT_PHY_DPD_DEBUG_IN_GLUT_GET(word);
+	}
+	len += print_array_to_buf_s32(buf, len, "dpd_in_glut", 0,
+				      arr_s32, ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+
+	for (i = 0; i < ATH12K_HTT_MAX_DPD_CAL_TABLE; i++) {
+		const struct ath12k_htt_phy_dpd_debug_params_v1 *p =
+			&htt_stats_buf->dpd_debug_params[i];
+
+		le_word = p->dpd_state__in_glut__in_tx_gain__out_train_dac_gain;
+		word = le32_to_cpu(le_word);
+		arr_s32[i] = (s8)ATH12K_HTT_PHY_DPD_DEBUG_IN_TX_GAIN_GET(word);
+	}
+	len += print_array_to_buf_s32(buf, len, "dpd_in_tx_gain", 0,
+				      arr_s32, ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+
+	for (i = 0; i < ATH12K_HTT_MAX_DPD_CAL_TABLE; i++) {
+		const struct ath12k_htt_phy_dpd_debug_params_v1 *p =
+			&htt_stats_buf->dpd_debug_params[i];
+
+		le_word = p->dpd_state__in_glut__in_tx_gain__out_train_dac_gain;
+		word = le32_to_cpu(le_word);
+		arr_s8[i] = (s8)ATH12K_HTT_PHY_DPD_DEBUG_OUT_TRAIN_DAC_GAIN_GET(word);
+	}
+	len += print_array_to_buf_s8(buf, len, "dpd_out_train_dac_gain", 0,
+				     arr_s8, ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+
+	for (i = 0; i < ATH12K_HTT_MAX_DPD_CAL_TABLE; i++) {
+		const struct ath12k_htt_phy_dpd_debug_params_v1 *p =
+			&htt_stats_buf->dpd_debug_params[i];
+
+		le_word = p->dpd_in_gc__out_sq_idx__out_rx_gain_idx__in_kernel_sel;
+		word = le32_to_cpu(le_word);
+		arr_s8[i] = (s8)ATH12K_HTT_PHY_DPD_DEBUG_IN_GC_GET(word);
+	}
+	len += print_array_to_buf_s8(buf, len, "dpd_in_gc", 0,
+				     arr_s8, ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+
+	for (i = 0; i < ATH12K_HTT_MAX_DPD_CAL_TABLE; i++) {
+		const struct ath12k_htt_phy_dpd_debug_params_v1 *p =
+			&htt_stats_buf->dpd_debug_params[i];
+
+		le_word = p->dpd_in_gc__out_sq_idx__out_rx_gain_idx__in_kernel_sel;
+		word = le32_to_cpu(le_word);
+		arr_s32[i] = ATH12K_HTT_PHY_DPD_DEBUG_OUT_SQ_IDX_GET(word);
+	}
+	len += print_array_to_buf_s32(buf, len, "dpd_out_sq_idx", 0,
+				      arr_s32, ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+
+	for (i = 0; i < ATH12K_HTT_MAX_DPD_CAL_TABLE; i++) {
+		const struct ath12k_htt_phy_dpd_debug_params_v1 *p =
+			&htt_stats_buf->dpd_debug_params[i];
+
+		le_word = p->dpd_in_gc__out_sq_idx__out_rx_gain_idx__in_kernel_sel;
+		word = le32_to_cpu(le_word);
+		arr_s32[i] = ATH12K_HTT_PHY_DPD_DEBUG_OUT_TRAIN_RX_GAIN_IDX_GET(word);
+	}
+	len += print_array_to_buf_s32(buf, len, "dpd_out_train_rx_gain_idx", 0,
+				      arr_s32, ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+
+	for (i = 0; i < ATH12K_HTT_MAX_DPD_CAL_TABLE; i++) {
+		const struct ath12k_htt_phy_dpd_debug_params_v1 *p =
+			&htt_stats_buf->dpd_debug_params[i];
+
+		le_word = p->dpd_in_gc__out_sq_idx__out_rx_gain_idx__in_kernel_sel;
+		word = le32_to_cpu(le_word);
+		arr_s32[i] = ATH12K_HTT_PHY_DPD_DEBUG_IN_KERNEL_SEL_GET(word);
+	}
+	len += print_array_to_buf_s32(buf, len, "dpd_in_kernel_sel", 0,
+				      arr_s32, ATH12K_HTT_MAX_DPD_CAL_TABLE, "\n");
+
+	stats_req->buf_len = len;
+}
+
+static void ath12k_htt_print_phy_tpc_debug_tlv(const void *tag_buf, u16 tag_len,
+						struct debug_htt_stats_req *stats_req)
+{
+	const struct ath12k_htt_phy_tpc_debug_chain_tlv *tpc_stats = tag_buf;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE, word, len = stats_req->buf_len;
+	__le32 le_word;
+	u8 *buf = stats_req->buf;
+
+	if (tag_len < sizeof(*tpc_stats))
+		return;
+
+	word = le32_to_cpu(tpc_stats->chain_idx__version__chainmask);
+	len += scnprintf(buf + len, buf_len - len,
+			 "\n===== PHY TPC Debug Stats [chain %u] =====\n",
+			 ATH12K_HTT_PHY_TPC_DEBUG_CHAIN_IDX_GET(word));
+	len += scnprintf(buf + len, buf_len - len, "version = %u\n",
+			 ATH12K_HTT_PHY_TPC_DEBUG_CHAIN_VERSION_GET(word));
+	len += scnprintf(buf + len, buf_len - len, "chainmask = 0x%x\n",
+			 ATH12K_HTT_PHY_TPC_DEBUG_CHAIN_CHAINMASK_GET(word));
+
+	le_word = tpc_stats->lat_glut_idx__tx_gain_idx__dac_gain__target_power;
+	word = le32_to_cpu(le_word);
+	len += scnprintf(buf + len, buf_len - len, "  lat_glut_idx = %u\n",
+			 ATH12K_HTT_PHY_TPC_DEBUG_LAT_GLUT_IDX_GET(word));
+	len += scnprintf(buf + len, buf_len - len, "  lat_tx_gain_idx = %u\n",
+			 ATH12K_HTT_PHY_TPC_DEBUG_LAT_TX_GAIN_IDX_GET(word));
+	len += scnprintf(buf + len, buf_len - len, "  lat_dac_gain = %d\n",
+			 (s8)ATH12K_HTT_PHY_TPC_DEBUG_LAT_DAC_GAIN_GET(word));
+	len += scnprintf(buf + len, buf_len - len, "  lat_target_power = %d\n",
+			 (s8)ATH12K_HTT_PHY_TPC_DEBUG_LAT_TARGET_POWER_GET(word));
+
+	word = le32_to_cpu(tpc_stats->lat_acc_clpc_error__lat_clpc_err);
+	len += scnprintf(buf + len, buf_len - len, "  lat_acc_clpc_error = %d\n",
+			 (s16)ATH12K_HTT_PHY_TPC_DEBUG_LAT_ACC_CLPC_ERROR_GET(word));
+	len += scnprintf(buf + len, buf_len - len, "  lat_clpc_err = %d\n",
+			 (s16)ATH12K_HTT_PHY_TPC_DEBUG_LAT_CLPC_ERR_GET(word));
+
+	le_word = tpc_stats->lat_meas_pwr__lat_wsi_temp_valid__lat_wsi_full_pkt_pwr_valid;
+	word = le32_to_cpu(le_word);
+	len += scnprintf(buf + len, buf_len - len, "  lat_meas_pwr = %d\n",
+			 (s16)ATH12K_HTT_PHY_TPC_DEBUG_LAT_MEAS_PWR_GET(word));
+	len += scnprintf(buf + len, buf_len - len, "  lat_wsi_temp_valid = %u\n",
+			 ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_TEMP_VALID_GET(word));
+	len += scnprintf(buf + len, buf_len - len,
+			 "  lat_wsi_full_pkt_pwr_valid = %u\n",
+			 ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_FULL_PKT_PWR_VALID_GET(word));
+
+	le_word = tpc_stats->lat_wsi_pream_pwr_valid__lat_wsi_temp__lat_wsi_full_pkt_pwr;
+	word = le32_to_cpu(le_word);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  lat_wsi_pream_pwr_valid = %u\n",
+			 ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_PREAM_PWR_VALID_GET(word));
+	len += scnprintf(buf + len, buf_len - len, "  lat_wsi_temp = %d\n",
+			 (s16)ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_TEMP_GET(word));
+	len += scnprintf(buf + len, buf_len - len, "  lat_wsi_full_pkt_pwr = %u\n",
+			 ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_FULL_PKT_PWR_GET(word));
+
+	le_word =
+		tpc_stats->lat_wsi_pream_pwr__tx_gain_idx__tpc_pdet_gain_idx__tpc_attn;
+	word = le32_to_cpu(le_word);
+	len += scnprintf(buf + len, buf_len - len, "  lat_wsi_pream_pwr = %u\n",
+			 ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_PREAM_PWR_GET(word));
+	len += scnprintf(buf + len, buf_len - len, "  lat_wsi_tx_gain_idx = %u\n",
+			 ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_TX_GAIN_IDX_GET(word));
+	len += scnprintf(buf + len, buf_len - len,
+			 "  lat_wsi_tpc_pdet_gain_idx = %u\n",
+			 ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_TPC_PDET_GAIN_IDX_GET(word));
+	len += scnprintf(buf + len, buf_len - len, "  lat_wsi_tpc_attn = %u\n",
+			 ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_TPC_ATTN_GET(word));
+
+	le_word =
+		tpc_stats->glut_dac_gain_cal__max_dac_cal__dpd_dac_gain_cal__tx_gain_idx;
+	word = le32_to_cpu(le_word);
+	len += scnprintf(buf + len, buf_len - len, "  glut_dac_gain_cal = %d\n",
+			 (s8)ATH12K_HTT_PHY_TPC_DEBUG_GLUT_DAC_GAIN_CAL_GET(word));
+	len += scnprintf(buf + len, buf_len - len, "  glut_max_dac_gain_cal = %d\n",
+			 (s8)ATH12K_HTT_PHY_TPC_DEBUG_GLUT_MAX_DAC_GAIN_CAL_GET(word));
+	len += scnprintf(buf + len, buf_len - len, "  dpd_dac_gain_cal = %d\n",
+			 (s8)ATH12K_HTT_PHY_TPC_DEBUG_DPD_DAC_GAIN_CAL_GET(word));
+	len += scnprintf(buf + len, buf_len - len, "  dpd_tx_gain_idx_cal = %u\n",
+			 ATH12K_HTT_PHY_TPC_DEBUG_DPD_TX_GAIN_IDX_CAL_GET(word));
+
+	le_word =
+		tpc_stats->tgt_pwr_clpc_thr_corr__olpc_mode__wsi_timeout__clpc_thr_update;
+	word = le32_to_cpu(le_word);
+	len += scnprintf(buf + len, buf_len - len,
+			 "  target_pwr_clpc_thr_corr = %d\n",
+			 (s8)ATH12K_HTT_PHY_TPC_DEBUG_TGT_PWR_CLPC_THR_CORR_GET(word));
+	len += scnprintf(buf + len, buf_len - len, "  olpc_mode = %u\n",
+			 ATH12K_HTT_PHY_TPC_DEBUG_OLPC_MODE_GET(word));
+	len += scnprintf(buf + len, buf_len - len, "  wsi_timeout = %u\n",
+			 ATH12K_HTT_PHY_TPC_DEBUG_WSI_TIMEOUT_GET(word));
+	len += scnprintf(buf + len, buf_len - len,
+			 "  target_pwr_clpc_thr_update = %d\n",
+			 (s8)ATH12K_HTT_PHY_TPC_DEBUG_TGT_PWR_CLPC_THR_UPDATE_GET(word));
+
+	le_word = tpc_stats->ro_temp_valid__ro_full_pkt_pwr_valid__ro_pream_pwr_valid;
+	word = le32_to_cpu(le_word);
+	len += scnprintf(buf + len, buf_len - len, "  ro_temp_valid = %u\n",
+			 ATH12K_HTT_PHY_TPC_DEBUG_RO_TEMP_VALID_GET(word));
+	len += scnprintf(buf + len, buf_len - len, "  ro_full_pkt_pwr_valid = %u\n",
+			 ATH12K_HTT_PHY_TPC_DEBUG_RO_FULL_PKT_PWR_VALID_GET(word));
+	len += scnprintf(buf + len, buf_len - len, "  ro_pream_pwr_valid = %u\n",
+			 ATH12K_HTT_PHY_TPC_DEBUG_RO_PREAM_PWR_VALID_GET(word));
+
+	word = le32_to_cpu(tpc_stats->ro_temp__ro_full_pkt_pwr__ro_pream_pwr);
+	len += scnprintf(buf + len, buf_len - len, "  ro_temp = %d\n",
+			 (s16)ATH12K_HTT_PHY_TPC_DEBUG_RO_TEMP_GET(word));
+	len += scnprintf(buf + len, buf_len - len, "  ro_full_pkt_pwr = %u\n",
+			 ATH12K_HTT_PHY_TPC_DEBUG_RO_FULL_PKT_PWR_GET(word));
+	len += scnprintf(buf + len, buf_len - len, "  ro_pream_pwr = %u\n",
+			 ATH12K_HTT_PHY_TPC_DEBUG_RO_PREAM_PWR_GET(word));
+
+	le_word = tpc_stats->ro_tpc_fe_sel__full_pkt_avg_out__lat_dc__pdacc_avg_out;
+	word = le32_to_cpu(le_word);
+	len += scnprintf(buf + len, buf_len - len, "  ro_tpc_fe_sel = %u\n",
+			 ATH12K_HTT_PHY_TPC_DEBUG_RO_TPC_FE_SEL_GET(word));
+	len += scnprintf(buf + len, buf_len - len, "  ro_full_pkt_avg_out = %u\n",
+			 ATH12K_HTT_PHY_TPC_DEBUG_RO_FULL_PKT_AVG_OUT_GET(word));
+	len += scnprintf(buf + len, buf_len - len, "  ro_lat_dc = %u\n",
+			 ATH12K_HTT_PHY_TPC_DEBUG_RO_LAT_DC_GET(word));
+	len += scnprintf(buf + len, buf_len - len, "  ro_pdacc_avg_out = %u\n",
+			 ATH12K_HTT_PHY_TPC_DEBUG_RO_PDACC_AVG_OUT_GET(word));
+
+	word = le32_to_cpu(tpc_stats->temp_per_chain__cal_cmd__cal_time);
+	len += scnprintf(buf + len, buf_len - len, "  temp_per_chain = %u\n",
+			 ATH12K_HTT_PHY_TPC_DEBUG_TEMP_PER_CHAIN_GET(word));
+	len += scnprintf(buf + len, buf_len - len, "  cal_cmd = %u\n",
+			 ATH12K_HTT_PHY_TPC_DEBUG_CAL_CMD_GET(word));
+	len += scnprintf(buf + len, buf_len - len, "  cal_time = %u\n",
+			 ATH12K_HTT_PHY_TPC_DEBUG_CAL_TIME_GET(word));
+
+	word = le32_to_cpu(tpc_stats->cal_result__reserved);
+	len += scnprintf(buf + len, buf_len - len, "  cal_result = %u\n",
+			 ATH12K_HTT_PHY_TPC_DEBUG_CAL_RESULT_GET(word));
 
 	stats_req->buf_len = len;
 }
@@ -15032,6 +15331,14 @@ static int ath12k_dbg_htt_ext_stats_parse(struct ath12k_base *ab,
 	case HTT_STATS_SCHED_TXQ_TX_MODE_SIMPLIFIED_TAG:
 		ath12k_htt_print_sched_txq_tx_mode_simplified_tlv(tag_buf,
 								  len, stats_req);
+		break;
+
+	case HTT_STATS_PHY_DPD_DEBUG_V1_TAG:
+		ath12k_htt_print_phy_dpd_debug_tlv(tag_buf, len, stats_req);
+		break;
+
+	case HTT_STATS_PHY_TPC_DEBUG_V1_TAG:
+		ath12k_htt_print_phy_tpc_debug_tlv(tag_buf, len, stats_req);
 		break;
 
 	default:

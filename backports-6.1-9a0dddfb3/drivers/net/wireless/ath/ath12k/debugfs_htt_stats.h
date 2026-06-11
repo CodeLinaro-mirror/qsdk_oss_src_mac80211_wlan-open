@@ -470,6 +470,7 @@ enum ath12k_dbg_htt_ext_stats_type {
 	ATH12K_DBG_HTT_DBG_EXT_STATS_RESET_HISTORY		= 82,
 	ATH12K_DBG_HTT_STATS_REGULATORY				= 83,
 	ATH12K_DBG_HTT_DBG_EXT_STATS_DPD_STATS_EXT		= 85,
+	ATH12K_DBG_HTT_DBG_EXT_STATS_PHY_DPD_TPC		= 87,
 
 	/* keep this last */
 	ATH12K_DBG_HTT_NUM_EXT_STATS,
@@ -707,6 +708,8 @@ enum ath12k_dbg_htt_tlv_tag {
 	HTT_STATS_NPCA_STATS_TAG			= 260,
 	HTT_STATS_SCHED_TXQ_TX_MODE_SIMPLIFIED_TAG	= 261,
 	HTT_STATS_SCHED_TXQ_TX_MODE_WINNER_TAG		= 262,
+	HTT_STATS_PHY_DPD_DEBUG_V1_TAG                  = 266,
+	HTT_STATS_PHY_TPC_DEBUG_V1_TAG                  = 267,
 	HTT_STATS_MAX_TAG,
 };
 
@@ -6781,6 +6784,420 @@ struct ath12k_htt_stats_dpd_hw_cal_res_tlv {
 		[ATH12K_HTT_MAX_DPD_CAL_TABLE];
 	a_sle32 nmse_chain[ATH12K_HTT_STATS_MAX_CHAINS]
 		[ATH12K_HTT_MAX_DPD_CAL_TABLE];
+} __packed;
+
+/* subid values for ATH12K_DBG_HTT_DBG_EXT_STATS_PHY_DPD_TPC (cfg_param[0]) */
+#define ATH12K_HTT_STATS_PHY_DPD_TPC_SUBID_DPD		0
+#define ATH12K_HTT_STATS_PHY_DPD_TPC_SUBID_TPC		1
+
+/* PHY DPD debug structures (PHY_DPD_DEBUG_STRUCT_V1) */
+/* PHY DPD debug structures */
+/* Macros for chain_idx__version__chainmask word */
+#define ATH12K_HTT_PHY_DPD_DEBUG_CHAIN_IDX_M        0x000000ff
+#define ATH12K_HTT_PHY_DPD_DEBUG_CHAIN_IDX_S        0
+#define ATH12K_HTT_PHY_DPD_DEBUG_CHAIN_VERSION_M    0x0000ff00
+#define ATH12K_HTT_PHY_DPD_DEBUG_CHAIN_VERSION_S    8
+#define ATH12K_HTT_PHY_DPD_DEBUG_CHAIN_CHAINMASK_M  0xffff0000
+#define ATH12K_HTT_PHY_DPD_DEBUG_CHAIN_CHAINMASK_S  16
+
+#define ATH12K_HTT_PHY_DPD_DEBUG_CHAIN_IDX_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_DPD_DEBUG_CHAIN_IDX_M) >> \
+	 ATH12K_HTT_PHY_DPD_DEBUG_CHAIN_IDX_S)
+#define ATH12K_HTT_PHY_DPD_DEBUG_CHAIN_VERSION_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_DPD_DEBUG_CHAIN_VERSION_M) >> \
+	 ATH12K_HTT_PHY_DPD_DEBUG_CHAIN_VERSION_S)
+#define ATH12K_HTT_PHY_DPD_DEBUG_CHAIN_CHAINMASK_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_DPD_DEBUG_CHAIN_CHAINMASK_M) >> \
+	 ATH12K_HTT_PHY_DPD_DEBUG_CHAIN_CHAINMASK_S)
+
+/* Macros for num_gain_idx__reserved word */
+#define ATH12K_HTT_PHY_DPD_DEBUG_NUM_GAIN_IDX_M     0x000000ff
+#define ATH12K_HTT_PHY_DPD_DEBUG_NUM_GAIN_IDX_S     0
+
+#define ATH12K_HTT_PHY_DPD_DEBUG_NUM_GAIN_IDX_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_DPD_DEBUG_NUM_GAIN_IDX_M) >> \
+	 ATH12K_HTT_PHY_DPD_DEBUG_NUM_GAIN_IDX_S)
+
+/* Macros for dpd_training_power_db8__dpd_out_sq word */
+#define ATH12K_HTT_PHY_DPD_DEBUG_TRAINING_PWR_DB8_M  0x0000ffff
+#define ATH12K_HTT_PHY_DPD_DEBUG_TRAINING_PWR_DB8_S  0
+#define ATH12K_HTT_PHY_DPD_DEBUG_OUT_SQ_M            0xffff0000
+#define ATH12K_HTT_PHY_DPD_DEBUG_OUT_SQ_S            16
+
+#define ATH12K_HTT_PHY_DPD_DEBUG_TRAINING_PWR_DB8_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_DPD_DEBUG_TRAINING_PWR_DB8_M) >> \
+	 ATH12K_HTT_PHY_DPD_DEBUG_TRAINING_PWR_DB8_S)
+#define ATH12K_HTT_PHY_DPD_DEBUG_OUT_SQ_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_DPD_DEBUG_OUT_SQ_M) >> \
+	 ATH12K_HTT_PHY_DPD_DEBUG_OUT_SQ_S)
+
+/* Macros for dpd_state__...__dpd_out_train_dac_gain word */
+#define ATH12K_HTT_PHY_DPD_DEBUG_STATE_M             0x000000ff
+#define ATH12K_HTT_PHY_DPD_DEBUG_STATE_S             0
+#define ATH12K_HTT_PHY_DPD_DEBUG_IN_GLUT_M           0x0000ff00
+#define ATH12K_HTT_PHY_DPD_DEBUG_IN_GLUT_S           8
+#define ATH12K_HTT_PHY_DPD_DEBUG_IN_TX_GAIN_M        0x00ff0000
+#define ATH12K_HTT_PHY_DPD_DEBUG_IN_TX_GAIN_S        16
+#define ATH12K_HTT_PHY_DPD_DEBUG_OUT_TRAIN_DAC_GAIN_M  0xff000000
+#define ATH12K_HTT_PHY_DPD_DEBUG_OUT_TRAIN_DAC_GAIN_S  24
+
+#define ATH12K_HTT_PHY_DPD_DEBUG_STATE_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_DPD_DEBUG_STATE_M) >> \
+	 ATH12K_HTT_PHY_DPD_DEBUG_STATE_S)
+#define ATH12K_HTT_PHY_DPD_DEBUG_IN_GLUT_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_DPD_DEBUG_IN_GLUT_M) >> \
+	 ATH12K_HTT_PHY_DPD_DEBUG_IN_GLUT_S)
+#define ATH12K_HTT_PHY_DPD_DEBUG_IN_TX_GAIN_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_DPD_DEBUG_IN_TX_GAIN_M) >> \
+	 ATH12K_HTT_PHY_DPD_DEBUG_IN_TX_GAIN_S)
+#define ATH12K_HTT_PHY_DPD_DEBUG_OUT_TRAIN_DAC_GAIN_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_DPD_DEBUG_OUT_TRAIN_DAC_GAIN_M) >> \
+	 ATH12K_HTT_PHY_DPD_DEBUG_OUT_TRAIN_DAC_GAIN_S)
+
+/* Macros for dpd_in_gc__...__dpd_in_kernel_sel word */
+#define ATH12K_HTT_PHY_DPD_DEBUG_IN_GC_M             0x000000ff
+#define ATH12K_HTT_PHY_DPD_DEBUG_IN_GC_S             0
+#define ATH12K_HTT_PHY_DPD_DEBUG_OUT_SQ_IDX_M        0x0000ff00
+#define ATH12K_HTT_PHY_DPD_DEBUG_OUT_SQ_IDX_S        8
+#define ATH12K_HTT_PHY_DPD_DEBUG_OUT_TRAIN_RX_GAIN_IDX_M  0x00ff0000
+#define ATH12K_HTT_PHY_DPD_DEBUG_OUT_TRAIN_RX_GAIN_IDX_S  16
+#define ATH12K_HTT_PHY_DPD_DEBUG_IN_KERNEL_SEL_M     0xff000000
+#define ATH12K_HTT_PHY_DPD_DEBUG_IN_KERNEL_SEL_S     24
+
+#define ATH12K_HTT_PHY_DPD_DEBUG_IN_GC_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_DPD_DEBUG_IN_GC_M) >> \
+	 ATH12K_HTT_PHY_DPD_DEBUG_IN_GC_S)
+#define ATH12K_HTT_PHY_DPD_DEBUG_OUT_SQ_IDX_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_DPD_DEBUG_OUT_SQ_IDX_M) >> \
+	 ATH12K_HTT_PHY_DPD_DEBUG_OUT_SQ_IDX_S)
+#define ATH12K_HTT_PHY_DPD_DEBUG_OUT_TRAIN_RX_GAIN_IDX_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_DPD_DEBUG_OUT_TRAIN_RX_GAIN_IDX_M) >> \
+	 ATH12K_HTT_PHY_DPD_DEBUG_OUT_TRAIN_RX_GAIN_IDX_S)
+#define ATH12K_HTT_PHY_DPD_DEBUG_IN_KERNEL_SEL_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_DPD_DEBUG_IN_KERNEL_SEL_M) >> \
+	 ATH12K_HTT_PHY_DPD_DEBUG_IN_KERNEL_SEL_S)
+
+/* Macros for TPC chain header word */
+#define ATH12K_HTT_PHY_TPC_DEBUG_CHAIN_IDX_M        0x000000ff
+#define ATH12K_HTT_PHY_TPC_DEBUG_CHAIN_IDX_S        0
+#define ATH12K_HTT_PHY_TPC_DEBUG_CHAIN_VERSION_M    0x0000ff00
+#define ATH12K_HTT_PHY_TPC_DEBUG_CHAIN_VERSION_S    8
+#define ATH12K_HTT_PHY_TPC_DEBUG_CHAIN_CHAINMASK_M  0xffff0000
+#define ATH12K_HTT_PHY_TPC_DEBUG_CHAIN_CHAINMASK_S  16
+
+#define ATH12K_HTT_PHY_TPC_DEBUG_CHAIN_IDX_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_CHAIN_IDX_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_CHAIN_IDX_S)
+#define ATH12K_HTT_PHY_TPC_DEBUG_CHAIN_VERSION_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_CHAIN_VERSION_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_CHAIN_VERSION_S)
+#define ATH12K_HTT_PHY_TPC_DEBUG_CHAIN_CHAINMASK_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_CHAIN_CHAINMASK_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_CHAIN_CHAINMASK_S)
+
+/* Macros for TPC word1: lat_glut_idx/lat_tx_gain_idx/lat_dac_gain/lat_target_power */
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_GLUT_IDX_M     0x000000ff
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_GLUT_IDX_S     0
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_TX_GAIN_IDX_M  0x0000ff00
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_TX_GAIN_IDX_S  8
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_DAC_GAIN_M     0x00ff0000
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_DAC_GAIN_S     16
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_TARGET_POWER_M 0xff000000
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_TARGET_POWER_S 24
+
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_GLUT_IDX_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_LAT_GLUT_IDX_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_LAT_GLUT_IDX_S)
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_TX_GAIN_IDX_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_LAT_TX_GAIN_IDX_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_LAT_TX_GAIN_IDX_S)
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_DAC_GAIN_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_LAT_DAC_GAIN_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_LAT_DAC_GAIN_S)
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_TARGET_POWER_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_LAT_TARGET_POWER_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_LAT_TARGET_POWER_S)
+
+/* Macros for TPC word2: lat_acc_clpc_error/lat_clpc_err */
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_ACC_CLPC_ERROR_M  0x0000ffff
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_ACC_CLPC_ERROR_S  0
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_CLPC_ERR_M        0xffff0000
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_CLPC_ERR_S        16
+
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_ACC_CLPC_ERROR_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_LAT_ACC_CLPC_ERROR_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_LAT_ACC_CLPC_ERROR_S)
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_CLPC_ERR_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_LAT_CLPC_ERR_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_LAT_CLPC_ERR_S)
+
+/* Macros for TPC word3: lat_meas_pwr/lat_wsi_temp_valid/lat_wsi_full_pkt_pwr_valid */
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_MEAS_PWR_M               0x0000ffff
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_MEAS_PWR_S               0
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_TEMP_VALID_M         0x00ff0000
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_TEMP_VALID_S         16
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_FULL_PKT_PWR_VALID_M 0xff000000
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_FULL_PKT_PWR_VALID_S 24
+
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_MEAS_PWR_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_LAT_MEAS_PWR_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_LAT_MEAS_PWR_S)
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_TEMP_VALID_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_TEMP_VALID_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_TEMP_VALID_S)
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_FULL_PKT_PWR_VALID_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_FULL_PKT_PWR_VALID_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_FULL_PKT_PWR_VALID_S)
+
+/* Macros for TPC word4: lat_wsi_pream_pwr_valid/lat_wsi_temp/lat_wsi_full_pkt_pwr */
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_PREAM_PWR_VALID_M  0x000000ff
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_PREAM_PWR_VALID_S  0
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_TEMP_M             0x00ffff00
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_TEMP_S             8
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_FULL_PKT_PWR_M     0xff000000
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_FULL_PKT_PWR_S     24
+
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_PREAM_PWR_VALID_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_PREAM_PWR_VALID_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_PREAM_PWR_VALID_S)
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_TEMP_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_TEMP_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_TEMP_S)
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_FULL_PKT_PWR_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_FULL_PKT_PWR_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_FULL_PKT_PWR_S)
+
+/* Macros for TPC word5: lat_wsi_pream_pwr/.../lat_wsi_tpc_attn */
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_PREAM_PWR_M          0x000000ff
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_PREAM_PWR_S          0
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_TX_GAIN_IDX_M        0x0000ff00
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_TX_GAIN_IDX_S        8
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_TPC_PDET_GAIN_IDX_M  0x00ff0000
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_TPC_PDET_GAIN_IDX_S  16
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_TPC_ATTN_M           0xff000000
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_TPC_ATTN_S           24
+
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_PREAM_PWR_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_PREAM_PWR_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_PREAM_PWR_S)
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_TX_GAIN_IDX_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_TX_GAIN_IDX_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_TX_GAIN_IDX_S)
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_TPC_PDET_GAIN_IDX_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_TPC_PDET_GAIN_IDX_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_TPC_PDET_GAIN_IDX_S)
+#define ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_TPC_ATTN_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_TPC_ATTN_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_LAT_WSI_TPC_ATTN_S)
+
+/* Macros for TPC word6: glut_dac_gain_cal/.../dpd_tx_gain_idx_cal */
+#define ATH12K_HTT_PHY_TPC_DEBUG_GLUT_DAC_GAIN_CAL_M      0x000000ff
+#define ATH12K_HTT_PHY_TPC_DEBUG_GLUT_DAC_GAIN_CAL_S      0
+#define ATH12K_HTT_PHY_TPC_DEBUG_GLUT_MAX_DAC_GAIN_CAL_M  0x0000ff00
+#define ATH12K_HTT_PHY_TPC_DEBUG_GLUT_MAX_DAC_GAIN_CAL_S  8
+#define ATH12K_HTT_PHY_TPC_DEBUG_DPD_DAC_GAIN_CAL_M       0x00ff0000
+#define ATH12K_HTT_PHY_TPC_DEBUG_DPD_DAC_GAIN_CAL_S       16
+#define ATH12K_HTT_PHY_TPC_DEBUG_DPD_TX_GAIN_IDX_CAL_M    0xff000000
+#define ATH12K_HTT_PHY_TPC_DEBUG_DPD_TX_GAIN_IDX_CAL_S    24
+
+#define ATH12K_HTT_PHY_TPC_DEBUG_GLUT_DAC_GAIN_CAL_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_GLUT_DAC_GAIN_CAL_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_GLUT_DAC_GAIN_CAL_S)
+#define ATH12K_HTT_PHY_TPC_DEBUG_GLUT_MAX_DAC_GAIN_CAL_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_GLUT_MAX_DAC_GAIN_CAL_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_GLUT_MAX_DAC_GAIN_CAL_S)
+#define ATH12K_HTT_PHY_TPC_DEBUG_DPD_DAC_GAIN_CAL_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_DPD_DAC_GAIN_CAL_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_DPD_DAC_GAIN_CAL_S)
+#define ATH12K_HTT_PHY_TPC_DEBUG_DPD_TX_GAIN_IDX_CAL_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_DPD_TX_GAIN_IDX_CAL_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_DPD_TX_GAIN_IDX_CAL_S)
+
+/* Macros for TPC word7: target_pwr_clpc_thr_corr/.../target_pwr_clpc_thr_update */
+#define ATH12K_HTT_PHY_TPC_DEBUG_TGT_PWR_CLPC_THR_CORR_M    0x000000ff
+#define ATH12K_HTT_PHY_TPC_DEBUG_TGT_PWR_CLPC_THR_CORR_S    0
+#define ATH12K_HTT_PHY_TPC_DEBUG_OLPC_MODE_M                 0x0000ff00
+#define ATH12K_HTT_PHY_TPC_DEBUG_OLPC_MODE_S                 8
+#define ATH12K_HTT_PHY_TPC_DEBUG_WSI_TIMEOUT_M               0x00ff0000
+#define ATH12K_HTT_PHY_TPC_DEBUG_WSI_TIMEOUT_S               16
+#define ATH12K_HTT_PHY_TPC_DEBUG_TGT_PWR_CLPC_THR_UPDATE_M  0xff000000
+#define ATH12K_HTT_PHY_TPC_DEBUG_TGT_PWR_CLPC_THR_UPDATE_S  24
+
+#define ATH12K_HTT_PHY_TPC_DEBUG_TGT_PWR_CLPC_THR_CORR_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_TGT_PWR_CLPC_THR_CORR_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_TGT_PWR_CLPC_THR_CORR_S)
+#define ATH12K_HTT_PHY_TPC_DEBUG_OLPC_MODE_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_OLPC_MODE_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_OLPC_MODE_S)
+#define ATH12K_HTT_PHY_TPC_DEBUG_WSI_TIMEOUT_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_WSI_TIMEOUT_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_WSI_TIMEOUT_S)
+#define ATH12K_HTT_PHY_TPC_DEBUG_TGT_PWR_CLPC_THR_UPDATE_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_TGT_PWR_CLPC_THR_UPDATE_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_TGT_PWR_CLPC_THR_UPDATE_S)
+
+/* Macros for TPC word8: ro_temp_valid/ro_full_pkt_pwr_valid/ro_pream_pwr_valid */
+#define ATH12K_HTT_PHY_TPC_DEBUG_RO_TEMP_VALID_M          0x000000ff
+#define ATH12K_HTT_PHY_TPC_DEBUG_RO_TEMP_VALID_S          0
+#define ATH12K_HTT_PHY_TPC_DEBUG_RO_FULL_PKT_PWR_VALID_M  0x0000ff00
+#define ATH12K_HTT_PHY_TPC_DEBUG_RO_FULL_PKT_PWR_VALID_S  8
+#define ATH12K_HTT_PHY_TPC_DEBUG_RO_PREAM_PWR_VALID_M     0x00ff0000
+#define ATH12K_HTT_PHY_TPC_DEBUG_RO_PREAM_PWR_VALID_S     16
+
+#define ATH12K_HTT_PHY_TPC_DEBUG_RO_TEMP_VALID_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_RO_TEMP_VALID_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_RO_TEMP_VALID_S)
+#define ATH12K_HTT_PHY_TPC_DEBUG_RO_FULL_PKT_PWR_VALID_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_RO_FULL_PKT_PWR_VALID_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_RO_FULL_PKT_PWR_VALID_S)
+#define ATH12K_HTT_PHY_TPC_DEBUG_RO_PREAM_PWR_VALID_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_RO_PREAM_PWR_VALID_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_RO_PREAM_PWR_VALID_S)
+
+/* Macros for TPC word9: ro_temp/ro_full_pkt_pwr/ro_pream_pwr */
+#define ATH12K_HTT_PHY_TPC_DEBUG_RO_TEMP_M          0x0000ffff
+#define ATH12K_HTT_PHY_TPC_DEBUG_RO_TEMP_S          0
+#define ATH12K_HTT_PHY_TPC_DEBUG_RO_FULL_PKT_PWR_M  0x00ff0000
+#define ATH12K_HTT_PHY_TPC_DEBUG_RO_FULL_PKT_PWR_S  16
+#define ATH12K_HTT_PHY_TPC_DEBUG_RO_PREAM_PWR_M     0xff000000
+#define ATH12K_HTT_PHY_TPC_DEBUG_RO_PREAM_PWR_S     24
+
+#define ATH12K_HTT_PHY_TPC_DEBUG_RO_TEMP_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_RO_TEMP_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_RO_TEMP_S)
+#define ATH12K_HTT_PHY_TPC_DEBUG_RO_FULL_PKT_PWR_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_RO_FULL_PKT_PWR_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_RO_FULL_PKT_PWR_S)
+#define ATH12K_HTT_PHY_TPC_DEBUG_RO_PREAM_PWR_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_RO_PREAM_PWR_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_RO_PREAM_PWR_S)
+
+/* Macros for TPC word10: ro_tpc_fe_sel/.../ro_pdacc_avg_out */
+#define ATH12K_HTT_PHY_TPC_DEBUG_RO_TPC_FE_SEL_M      0x000000ff
+#define ATH12K_HTT_PHY_TPC_DEBUG_RO_TPC_FE_SEL_S      0
+#define ATH12K_HTT_PHY_TPC_DEBUG_RO_FULL_PKT_AVG_OUT_M  0x0000ff00
+#define ATH12K_HTT_PHY_TPC_DEBUG_RO_FULL_PKT_AVG_OUT_S  8
+#define ATH12K_HTT_PHY_TPC_DEBUG_RO_LAT_DC_M          0x00ff0000
+#define ATH12K_HTT_PHY_TPC_DEBUG_RO_LAT_DC_S          16
+#define ATH12K_HTT_PHY_TPC_DEBUG_RO_PDACC_AVG_OUT_M   0xff000000
+#define ATH12K_HTT_PHY_TPC_DEBUG_RO_PDACC_AVG_OUT_S   24
+
+#define ATH12K_HTT_PHY_TPC_DEBUG_RO_TPC_FE_SEL_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_RO_TPC_FE_SEL_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_RO_TPC_FE_SEL_S)
+#define ATH12K_HTT_PHY_TPC_DEBUG_RO_FULL_PKT_AVG_OUT_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_RO_FULL_PKT_AVG_OUT_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_RO_FULL_PKT_AVG_OUT_S)
+#define ATH12K_HTT_PHY_TPC_DEBUG_RO_LAT_DC_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_RO_LAT_DC_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_RO_LAT_DC_S)
+#define ATH12K_HTT_PHY_TPC_DEBUG_RO_PDACC_AVG_OUT_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_RO_PDACC_AVG_OUT_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_RO_PDACC_AVG_OUT_S)
+
+/* Macros for TPC word11: temp_per_chain/cal_cmd/cal_time */
+#define ATH12K_HTT_PHY_TPC_DEBUG_TEMP_PER_CHAIN_M  0x0000ffff
+#define ATH12K_HTT_PHY_TPC_DEBUG_TEMP_PER_CHAIN_S  0
+#define ATH12K_HTT_PHY_TPC_DEBUG_CAL_CMD_M         0x00ff0000
+#define ATH12K_HTT_PHY_TPC_DEBUG_CAL_CMD_S         16
+#define ATH12K_HTT_PHY_TPC_DEBUG_CAL_TIME_M        0xff000000
+#define ATH12K_HTT_PHY_TPC_DEBUG_CAL_TIME_S        24
+
+#define ATH12K_HTT_PHY_TPC_DEBUG_TEMP_PER_CHAIN_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_TEMP_PER_CHAIN_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_TEMP_PER_CHAIN_S)
+#define ATH12K_HTT_PHY_TPC_DEBUG_CAL_CMD_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_CAL_CMD_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_CAL_CMD_S)
+#define ATH12K_HTT_PHY_TPC_DEBUG_CAL_TIME_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_CAL_TIME_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_CAL_TIME_S)
+
+/* Macros for TPC word12: cal_result */
+#define ATH12K_HTT_PHY_TPC_DEBUG_CAL_RESULT_M  0x000000ff
+#define ATH12K_HTT_PHY_TPC_DEBUG_CAL_RESULT_S  0
+
+#define ATH12K_HTT_PHY_TPC_DEBUG_CAL_RESULT_GET(_var) \
+	(((_var) & ATH12K_HTT_PHY_TPC_DEBUG_CAL_RESULT_M) >> \
+	 ATH12K_HTT_PHY_TPC_DEBUG_CAL_RESULT_S)
+
+/* htt_stats_phy_dpd_debug_params_v1 - 7 x __le32 words */
+struct ath12k_htt_phy_dpd_debug_params_v1 {
+	a_sle32  dpd_out_nmse_x10;
+	__le32   pa_max_avg_tx;
+	__le32   dpd_training_cnt;
+	__le32   dpd_scaling;
+	/* BIT[15:0] = dpd_training_power_db8, BIT[31:16] = dpd_out_sq */
+	__le32   dpd_training_power_db8__dpd_out_sq;
+	/* BIT[7:0]=state, BIT[15:8]=in_glut, BIT[23:16]=in_tx_gain,
+	 * BIT[31:24]=out_train_dac_gain
+	 */
+	__le32   dpd_state__in_glut__in_tx_gain__out_train_dac_gain;
+	/* BIT[7:0]=in_gc, BIT[15:8]=out_sq_idx,
+	 * BIT[23:16]=out_train_rx_gain_idx, BIT[31:24]=in_kernel_sel
+	 */
+	__le32   dpd_in_gc__out_sq_idx__out_rx_gain_idx__in_kernel_sel;
+} __packed;
+
+/* htt_stats_phy_dpd_debug_chain_v1_tlv */
+struct ath12k_htt_phy_dpd_debug_chain_tlv {
+	/* BIT[7:0]=chain_idx, BIT[15:8]=version, BIT[31:16]=chainmask */
+	__le32 chain_idx__version__chainmask;
+	/* BIT[7:0]=num_gain_idx, BIT[31:8]=reserved */
+	__le32 num_gain_idx__reserved;
+	struct ath12k_htt_phy_dpd_debug_params_v1
+		dpd_debug_params[ATH12K_HTT_MAX_DPD_CAL_TABLE];
+} __packed;
+
+/* PHY TPC debug structures */
+/* htt_stats_phy_tpc_debug_chain_v1_tlv */
+struct ath12k_htt_phy_tpc_debug_chain_tlv {
+	/* BIT[7:0]=chain_idx, BIT[15:8]=version, BIT[31:16]=chainmask */
+	__le32 chain_idx__version__chainmask;
+	/* BIT[7:0]=lat_glut_idx, BIT[15:8]=lat_tx_gain_idx,
+	 * BIT[23:16]=lat_dac_gain, BIT[31:24]=lat_target_power
+	 */
+	__le32 lat_glut_idx__tx_gain_idx__dac_gain__target_power;
+	/* BIT[15:0]=lat_acc_clpc_error, BIT[31:16]=lat_clpc_err */
+	__le32 lat_acc_clpc_error__lat_clpc_err;
+	/* BIT[15:0]=lat_meas_pwr, BIT[23:16]=lat_wsi_temp_valid,
+	 * BIT[31:24]=lat_wsi_full_pkt_pwr_valid
+	 */
+	__le32 lat_meas_pwr__lat_wsi_temp_valid__lat_wsi_full_pkt_pwr_valid;
+	/* BIT[7:0]=lat_wsi_pream_pwr_valid, BIT[23:8]=lat_wsi_temp,
+	 * BIT[31:24]=lat_wsi_full_pkt_pwr
+	 */
+	__le32 lat_wsi_pream_pwr_valid__lat_wsi_temp__lat_wsi_full_pkt_pwr;
+	/* BIT[7:0]=lat_wsi_pream_pwr, BIT[15:8]=lat_wsi_tx_gain_idx,
+	 * BIT[23:16]=lat_wsi_tpc_pdet_gain_idx, BIT[31:24]=lat_wsi_tpc_attn
+	 */
+	__le32 lat_wsi_pream_pwr__tx_gain_idx__tpc_pdet_gain_idx__tpc_attn;
+	/* BIT[7:0]=glut_dac_gain_cal, BIT[15:8]=glut_max_dac_gain_cal,
+	 * BIT[23:16]=dpd_dac_gain_cal, BIT[31:24]=dpd_tx_gain_idx_cal
+	 */
+	__le32 glut_dac_gain_cal__max_dac_cal__dpd_dac_gain_cal__tx_gain_idx;
+	/* BIT[7:0]=target_pwr_clpc_thr_corr, BIT[15:8]=olpc_mode,
+	 * BIT[23:16]=wsi_timeout, BIT[31:24]=target_pwr_clpc_thr_update
+	 */
+	__le32 tgt_pwr_clpc_thr_corr__olpc_mode__wsi_timeout__clpc_thr_update;
+	/* BIT[7:0]=ro_temp_valid, BIT[15:8]=ro_full_pkt_pwr_valid,
+	 * BIT[23:16]=ro_pream_pwr_valid, BIT[31:24]=reserved
+	 */
+	__le32 ro_temp_valid__ro_full_pkt_pwr_valid__ro_pream_pwr_valid;
+	/* BIT[15:0]=ro_temp, BIT[23:16]=ro_full_pkt_pwr,
+	 * BIT[31:24]=ro_pream_pwr
+	 */
+	__le32 ro_temp__ro_full_pkt_pwr__ro_pream_pwr;
+	/* BIT[7:0]=ro_tpc_fe_sel, BIT[15:8]=ro_full_pkt_avg_out,
+	 * BIT[23:16]=ro_lat_dc, BIT[31:24]=ro_pdacc_avg_out
+	 */
+	__le32 ro_tpc_fe_sel__full_pkt_avg_out__lat_dc__pdacc_avg_out;
+	/* BIT[15:0]=temp_per_chain, BIT[23:16]=cal_cmd,
+	 * BIT[31:24]=cal_time
+	 */
+	__le32 temp_per_chain__cal_cmd__cal_time;
+	/* BIT[7:0]=cal_result, BIT[31:8]=reserved */
+	__le32 cal_result__reserved;
 } __packed;
 
 #endif
