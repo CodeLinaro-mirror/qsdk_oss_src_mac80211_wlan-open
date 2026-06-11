@@ -436,7 +436,7 @@ static int ath12k_ahb_power_up(struct ath12k_base *ab)
 	ret = request_firmware(&fw, fw_name, dev);
 	if (ret < 0) {
 		ath12k_err(ab, "request_firmware failed\n");
-		return ret;
+		goto ret;
 	}
 
 	ath12k_dbg(ab, ATH12K_DBG_AHB, "Booting fw image %s, size %zd\n", fw_name,
@@ -535,6 +535,9 @@ err_fw2:
 	release_firmware(fw2);
 err_fw:
 	release_firmware(fw);
+ret:
+	if (ret != 0)
+		ath12k_critical_failure_trigger(ab, ATH12K_FW_LOAD_FAILURE);
 	return ret;
 }
 

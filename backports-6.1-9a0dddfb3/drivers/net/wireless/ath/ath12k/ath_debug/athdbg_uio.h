@@ -9,6 +9,8 @@
 
 #define ATH12K_DEV "host"
 
+int athdbg_uio_register(void);
+int athdbg_uio_unregister(void);
 void athdbg_uio_critical_failure_trigger(struct ath12k_base *ab,
 					 u32 crit_enum);
 
