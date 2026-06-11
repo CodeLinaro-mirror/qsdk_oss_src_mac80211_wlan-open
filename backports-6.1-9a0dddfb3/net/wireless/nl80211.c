@@ -12511,6 +12511,10 @@ static int nl80211_start_radar_detection(struct sk_buff *skb,
 	case NL80211_IFTYPE_P2P_GO:
 	case NL80211_IFTYPE_MESH_POINT:
 	case NL80211_IFTYPE_ADHOC:
+	case NL80211_IFTYPE_STATION:
+		if (wdev->iftype == NL80211_IFTYPE_STATION &&
+		    !wiphy->sta_dfs_en)
+			return -EOPNOTSUPP;
 		break;
 	default:
 		/* caution - see cfg80211_beaconing_iface_active() below */
@@ -12532,12 +12536,15 @@ static int nl80211_start_radar_detection(struct sk_buff *skb,
 	if (dfs_region == NL80211_DFS_UNSET)
 		return -EINVAL;
 
-
 	err = nl80211_parse_chandef(rdev, info, &chandef, wdev);
 	if (err)
 		return err;
 
-	chandef_link = wdev_chandef(wdev, link_id);
+	if (wdev->iftype == NL80211_IFTYPE_STATION)
+		chandef_link = &chandef;
+	else
+		chandef_link = wdev_chandef(wdev, link_id);
+
 	if (!chandef_link) {
 		err = -EINVAL;
 		goto unlock;

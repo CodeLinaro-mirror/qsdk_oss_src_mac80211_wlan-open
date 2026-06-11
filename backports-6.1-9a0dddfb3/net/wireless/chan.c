@@ -1085,6 +1085,10 @@ int cfg80211_chandef_dfs_required(struct wiphy *wiphy,
 		return -EINVAL;
 
 	switch (iftype) {
+	case NL80211_IFTYPE_STATION:
+		if (!wiphy->sta_dfs_en)
+			break;
+		fallthrough;
 	case NL80211_IFTYPE_ADHOC:
 	case NL80211_IFTYPE_AP:
 	case NL80211_IFTYPE_P2P_GO:
@@ -1101,7 +1105,6 @@ int cfg80211_chandef_dfs_required(struct wiphy *wiphy,
 		}
 		return (ret > 0) ? BIT(chandef->width) : ret;
 		break;
-	case NL80211_IFTYPE_STATION:
 	case NL80211_IFTYPE_OCB:
 	case NL80211_IFTYPE_P2P_CLIENT:
 	case NL80211_IFTYPE_MONITOR:
