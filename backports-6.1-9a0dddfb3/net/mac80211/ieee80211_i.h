@@ -533,6 +533,10 @@ struct ieee80211_mgd_assoc_data {
 	const u8 *dh_params;
 	size_t dh_params_len;
 
+	/* SMD Association Control - keep only association-level fields */
+	bool is_smd_prep;
+	u8 ml_reconf_dialog_token;
+
 	u8 ie[];
 };
 
@@ -555,6 +559,141 @@ struct ieee80211_sta_tx_tspec {
 };
 
 DECLARE_EWMA(beacon_signal, 4, 4)
+
+/* Maximum number of SMD prepared targets (from spec: 0-7) */
+#define IEEE80211_SMD_MAX_PREP_TARGETS 8
+
+#define ST_PREP_FLAG_GOT_DH	BIT(0)
+#define ST_PREP_FLAG_GOT_NONCE	BIT(1)
+
+/**
+ * SMD BSS Transition Preparation - Per Link validity
+ * @valid: Link is valid for setup
+ * @link_id: Link ID
+ * @bssid: BSSID of target AP on this link
+ * @freq: Operating frequency
+ * @bss: BSS pointer for this link
+ */
+struct ieee80211_smd_link_info {
+	u32 freq;
+	u8 link_id;
+};
+
+struct ieee80211_smd_target_link;
+
+/**
+ * enum smd_bss_trans_flags - flags for
+ *	&struct ieee80211_smd_prep_target.smd_bss_trans_flags
+ * @SMD_BSS_TRANS_FLAG_AID_PRESENT: ST Prep Response carries a new AID
+ * @SMD_BSS_TRANS_FLAG_DL_BA_INFO_PRESENT: DL BA session info present
+ * @SMD_BSS_TRANS_FLAG_UL_BA_INFO_PRESENT: UL BA session info present
+ * @SMD_BSS_TRANS_FLAG_SCS_LIST_PRESENT: SCS prioritization list present
+ */
+enum smd_bss_trans_flags {
+	SMD_BSS_TRANS_FLAG_AID_PRESENT		= BIT(0),
+	SMD_BSS_TRANS_FLAG_DL_BA_INFO_PRESENT	= BIT(1),
+	SMD_BSS_TRANS_FLAG_UL_BA_INFO_PRESENT	= BIT(2),
+	SMD_BSS_TRANS_FLAG_SCS_LIST_PRESENT	= BIT(3),
+};
+
+/**
+ * struct ieee80211_smd_prep_target - SMD preparation target tracking
+ * @target_mld_addr: MAC address of the target AP MLD
+ * @dialog_token: Dialog token for this preparation
+ * @prep_time: Timestamp when preparation was initiated (jiffies)
+ * @prep_timeout_work: Delayed work for ST Prep timeout handling
+ * @exec_timeout_work: Delayed work for ST Exec timeout handling
+ * @valid: Whether this entry is valid/in-use
+ */
+struct ieee80211_smd_prep_target {
+	struct ieee80211_sub_if_data *sdata;
+	u8 target_mld_addr[ETH_ALEN];
+	u8 dialog_token;
+	struct ieee80211_mgd_assoc_data *assoc_data;
+	struct ieee802_11_elems *elems;
+	unsigned long prep_time;
+	struct wiphy_delayed_work prep_timeout_work;
+	struct wiphy_delayed_work exec_timeout_work;
+	bool valid;
+	bool no_dl_sn;
+	bool no_ul_sn;
+	/* Set when this target is the ROAM ST bssid — gates driver resource
+	 * allocation at PREP-response time vs. deferred to EXEC time.
+	 */
+	bool is_preferred_target;
+
+	/* Driver info built in prep_setup, consumed in prep_activate. */
+	struct ieee80211_uhr_link_reconfig_info *drv_info;
+
+	/* Target AP sta_info - allocated during prep response processing
+	 *  Contains link_sta for each transistioning link
+	 */
+	struct sta_info *target_sta;
+
+	/* ST Prep Response Data */
+	u16 prepared_links_mask;
+	/* ST Exec Response Data */
+	u16 transitioned_links_mask;
+	u8 dh_resp[SMD_MAX_DH_RESP_LEN];
+	size_t dh_resp_len;
+	u8 target_anonce[WLAN_NONCE_LEN];
+	u32 st_prep_flags;
+
+	u16 target_aid;
+	u8 smd_bss_trans_status;
+	u8 smd_bss_trans_flags;
+
+	/* Pre-allocated Target AP Link Structures
+	 *
+	 * Pre-alloc separate link_data and bss_conf for target AP links. These are kept
+	 * separate from sdata->link[] (current AP) until EXECUTION phase atomic swap.
+	 */
+	struct ieee80211_smd_target_link *new_links[IEEE80211_MLD_MAX_NUM_LINKS];
+
+	int primary_link_id;
+
+	u64 changed[IEEE80211_MLD_MAX_NUM_LINKS];
+
+	bool execution_in_progress;
+	bool exec_timeout_started; /* true if exec timeout timer was queued */
+	bool prep_timeout_started; /* true if prep timeout timer was queued */
+
+	/*
+	 * EXEC phase tracking - computed at start of execution
+	 * transitioning_links = prepared_links_mask minus primary (if any)
+	 * old_links[] saves current link pointers before swap for Phase C cleanup
+	 */
+	u16 transitioning_links;
+	struct ieee80211_link_data *old_links[IEEE80211_MLD_MAX_NUM_LINKS];
+	bool sta_inserted;
+	u8 current_sta_addr[ETH_ALEN];
+
+	/* Bitmap correctness fields (Phase 1) */
+	u16 rejected_links_mask;       /* BIT(tap_link_id) rejected in ST Prep Response */
+	u16 dl_drain_link_mask;        /* BIT(primary_link_id) in TAP link ID space */
+	u16 prep_transition_links;     /* links running PREP transition:
+					* exec_path=0: transitioning_links
+					*              (partner tap_link_ids)
+					* exec_path=1 SLO: = dl_drain_link_mask
+					* exec_path=1 MLO: = transitioning_links (same)
+					*/
+	u16 post_exec_transition_links; /* links transitioning after EXEC Response:
+					 * exec_path=0: = dl_drain_link_mask
+					 *               (async FW event)
+					 * exec_path=1 SLO: = 0 (done in PREP)
+					 * exec_path=1 MLO: = dl_drain_link_mask
+					 *                   (immediate)
+					 */
+	u8  exec_path;                 /* 0 = SAP (§37.15.7), 1 = TAP (§37.15.8) */
+	int exec_link_id;              /* link_id carrying EXEC Request/Response */
+	bool transition_done_in_prep;  /* SLO + exec_path=1: EXEC Resp is confirm */
+
+	/* Link ID remap — same-links default: identity (tap_link_id == sap_link_id) */
+	s8  tap_to_sap_link[IEEE80211_MLD_MAX_NUM_LINKS]; /* tap→sap, -1=none */
+	s8  sap_to_tap_link[IEEE80211_MLD_MAX_NUM_LINKS]; /* sap→tap, -1=none */
+	bool link_id_remap;            /* true when any tap_link_id != sap_link_id */
+	u16 tap_prepared_mask;         /* prepared_links_mask in TAP link ID space */
+};
 
 struct ieee80211_if_managed {
 	struct timer_list timer;
@@ -581,7 +720,7 @@ struct ieee80211_if_managed {
 
 	unsigned int flags;
 
-	u16 mcast_seq_last;
+	u16 mcast_seq_last[IEEE80211_MLD_MAX_NUM_LINKS];
 
 	bool status_acked;
 	bool status_received;
@@ -602,7 +741,7 @@ struct ieee80211_if_managed {
 		IEEE80211_SMD_PTK_DISABLED,
 		IEEE80211_SMD_PTK_PER_SMD,
 		IEEE80211_SMD_PTK_PER_AP
-	} smd_ptk_mode; /* control frame protection */
+	} smd_ptk; /* smd ptk mode */
 	/*
 	 * Bitmask of enabled u-apsd queues,
 	 * IEEE80211_WMM_IE_STA_QOSINFO_AC_BE & co. Needs a new association
@@ -682,6 +821,22 @@ struct ieee80211_if_managed {
 		bool enabled;
 		u8 dialog_token;
 	} epcs;
+
+	/* SMD Preparation - support multiple targets */
+	u8 max_prepared_targets;  /* From SMD IE capabilities */
+	u8 num_prepared_targets;  /* Current number of prepared targets */
+	u8 smd_dialog_token_alloc;  /* Dialog token allocator for SMD operations */
+	struct ieee80211_smd_prep_target *prep_targets;  /* Dynamic array */
+
+	/* SMD DL drain completion work - for irqsafe deferred execution.
+	 * Used by ieee80211_smd_dl_drain_complete_irqsafe() which can be
+	 * called from softirq/tasklet context (e.g. WMI event handlers).
+	 */
+	struct wiphy_work smd_dl_drain_work;
+	u8 smd_dl_drain_target_mld_addr[ETH_ALEN];
+	u16 smd_transitioning_links;
+	/* SAP link ID used for initial 802.11 assoc = SMD DL drain link */
+	s8 smd_assoc_link_id;
 };
 
 struct ieee80211_if_ibss {
@@ -921,11 +1076,15 @@ enum ieee80211_sub_if_data_flags {
  *	mode, so queues are stopped
  * @SDATA_STATE_OFFCHANNEL_BEACON_STOPPED: Beaconing was stopped due
  *	to offchannel, reset when offchannel returns
+ * @SDATA_STATE_SMD_BSS_TRANSITION: An SMD BSS Transition is in progress
+ *	on this interface. RX management frames for transitioning links are
+ *	suppressed until the transition completes or is aborted.
  */
 enum ieee80211_sdata_state_bits {
 	SDATA_STATE_RUNNING,
 	SDATA_STATE_OFFCHANNEL,
 	SDATA_STATE_OFFCHANNEL_BEACON_STOPPED,
+	SDATA_STATE_SMD_BSS_TRANSITION,
 };
 
 /**
@@ -1237,6 +1396,21 @@ struct ieee80211_link_data {
 	u16 advertised_ttlm_mst_tsf;
 	enum advertised_ttlm_status_type advertised_ttlm_status;
 	struct wiphy_work advertised_ttlm_evt_notify_work;
+};
+
+/**
+ * struct ieee80211_smd_target_link - Pre-allocated target AP link resources
+ *
+ * @allocated: Whether this structure has been allocated and initialized
+ * @link_id: The link ID this structure is allocated for
+ * @data: Pre-allocated link_data for target AP
+ * @conf: Pre-allocated bss_conf for target AP
+ */
+struct ieee80211_smd_target_link {
+	struct ieee80211_link_data data;
+	struct ieee80211_bss_conf conf;
+	bool allocated;
+	unsigned int link_id;
 };
 
 struct txrx_tid_stats {
@@ -2272,7 +2446,9 @@ void ieee80211_sta_restart(struct ieee80211_sub_if_data *sdata);
 void ieee80211_sta_handle_tspec_ac_params(struct ieee80211_sub_if_data *sdata);
 void ieee80211_sta_connection_lost(struct ieee80211_sub_if_data *sdata,
 				   u8 reason, bool tx);
-void ieee80211_mgd_setup_link(struct ieee80211_link_data *link);
+void ieee80211_mgd_setup_link(struct ieee80211_link_data *link,
+			      struct ieee80211_mgd_assoc_data *assoc_data,
+			      struct ieee80211_mgd_assoc_data *reconf_data);
 void ieee80211_mgd_stop_link(struct ieee80211_link_data *link);
 void ieee80211_mgd_set_link_qos_params(struct ieee80211_link_data *link);
 
@@ -2425,13 +2601,34 @@ static inline bool ieee80211_sdata_running(struct ieee80211_sub_if_data *sdata)
 
 bool ieee80211_sdata_has_txrx_stats_offload(struct ieee80211_sub_if_data *sdata);
 
+static inline bool
+ieee80211_sdata_in_st_bss_transition(struct ieee80211_sub_if_data *sdata,
+				     unsigned int link_id)
+{
+	if (sdata->vif.type != NL80211_IFTYPE_STATION)
+		return false;
+	return !!(sdata->u.mgd.smd_transitioning_links & BIT(link_id));
+}
+
 /* link handling */
 void ieee80211_link_setup(struct ieee80211_link_data *link);
+/* Internal link initialization APIs for staged setup */
+void __ieee80211_link_init_data(struct ieee80211_sub_if_data *sdata,
+				int link_id,
+				struct ieee80211_link_data *link,
+				struct ieee80211_bss_conf *link_conf);
+void __ieee80211_link_assign(struct ieee80211_sub_if_data *sdata,
+			     int link_id,
+			     struct ieee80211_link_data *link,
+			     struct ieee80211_bss_conf *link_conf);
+void __ieee80211_link_unassign(struct ieee80211_sub_if_data *sdata,
+			       int link_id);
 void ieee80211_link_init(struct ieee80211_sub_if_data *sdata,
 			 int link_id,
 			 struct ieee80211_link_data *link,
 			 struct ieee80211_bss_conf *link_conf);
 void ieee80211_link_stop(struct ieee80211_link_data *link);
+void ieee80211_free_link_container(struct ieee80211_link_data *link);
 int ieee80211_vif_set_links(struct ieee80211_sub_if_data *sdata,
 			    u16 new_links, u16 dormant_links);
 static inline void ieee80211_vif_clear_links(struct ieee80211_sub_if_data *sdata)
@@ -3116,6 +3313,10 @@ void ieee80211_handle_cac_stop(struct wiphy *wiphy,
 int ieee80211_chanctx_refcount(struct ieee80211_local *local,
 			       struct ieee80211_chanctx *ctx);
 
+int ieee80211_smd_link_assign_chanctx(struct ieee80211_link_data *link,
+				      const struct ieee80211_chan_req *chanreq,
+				      enum ieee80211_chanctx_mode mode);
+
 void ieee80211_recalc_smps_chanctx(struct ieee80211_local *local,
 				   struct ieee80211_chanctx *chanctx);
 void ieee80211_recalc_chanctx_min_def(struct ieee80211_local *local,
@@ -3303,6 +3504,55 @@ ieee80211_uhr_npca_elem_to_sta_uhr_npca_info(struct ieee80211_sub_if_data *sdata
 					     const struct ieee80211_uhr_operation *uhr_oper,
 					     struct link_sta_info *link_sta);
 
+/* SMD Preparation */
+int ieee80211_smd_alloc_target_sta(struct ieee80211_sub_if_data *sdata,
+				   struct ieee80211_smd_prep_target *target);
+int ieee80211_smd_prep_activate(struct ieee80211_sub_if_data *sdata,
+				struct ieee80211_smd_prep_target *target);
+void ieee80211_smd_remap_sta_links(struct sta_info *target_sta,
+				   const s8 *tap_to_sap);
+
+void ieee80211_smd_prep_init(struct ieee80211_sub_if_data *sdata);
+void ieee80211_smd_prep_deinit(struct ieee80211_sub_if_data *sdata);
+int ieee80211_tx_smd_uhr_link_reconf(struct ieee80211_sub_if_data *sdata,
+				     const u8 *target_addr,
+				     struct cfg80211_smd_prepare_req *req_params,
+				     struct ieee80211_mgd_assoc_data *assoc_data);
+void ieee80211_rx_mgmt_smd_prep_resp(struct ieee80211_sub_if_data *sdata,
+				     struct ieee80211_mgmt *mgmt,
+				     size_t len);
+void ieee80211_smd_prep_timeout_work(struct wiphy *wiphy,
+				     struct wiphy_work *work);
+
+/* SMD Target Management for Concurrent Operations */
+int ieee80211_smd_find_free_target_slot(struct ieee80211_sub_if_data *sdata);
+int ieee80211_smd_find_target_by_addr(struct ieee80211_sub_if_data *sdata,
+				      const u8 *target_addr);
+int ieee80211_smd_find_target_by_dialog_token(struct ieee80211_sub_if_data *sdata,
+					      u8 dialog_token);
+int ieee80211_smd_add_prep_target(struct ieee80211_sub_if_data *sdata,
+				  const u8 *target_addr,
+				  struct ieee80211_mgd_assoc_data *assoc_data);
+void ieee80211_smd_remove_prep_target(struct ieee80211_sub_if_data *sdata,
+				      int slot);
+void ieee80211_smd_prep_reset_target(struct ieee80211_sub_if_data *sdata,
+				     struct ieee80211_smd_prep_target *target,
+				     u16 status, u16 type);
+void ieee80211_smd_start_prep_timeout(struct ieee80211_sub_if_data *sdata,
+				      struct ieee80211_smd_prep_target *target,
+				      u16 timeout_tu);
+struct ieee80211_mgd_assoc_data *
+ieee80211_smd_create_assoc_data(struct ieee80211_sub_if_data *sdata,
+				struct cfg80211_smd_prepare_req *req_params);
+
+struct sk_buff *
+ieee80211_build_uhr_link_reconf_req(struct ieee80211_sub_if_data *sdata,
+				    const u8 *target_addr,
+				    struct cfg80211_smd_prepare_req *req_params,
+				    struct ieee80211_mgd_assoc_data *assoc_data);
+void ieee80211_process_uhr_reconf_resp(struct ieee80211_sub_if_data *sdata,
+				       struct ieee80211_mgmt *mgmt, size_t len);
+
 #if IS_ENABLED(CPTCFG_MAC80211_KUNIT_TEST)
 #define EXPORT_SYMBOL_IF_MAC80211_KUNIT(sym) EXPORT_SYMBOL_IF_KUNIT(sym)
 #define VISIBLE_IF_MAC80211_KUNIT
@@ -3313,6 +3563,23 @@ int ieee80211_calc_chandef_subchan_offset(const struct cfg80211_chan_def *ap,
 void ieee80211_rearrange_tpe_psd(struct ieee80211_parsed_tpe_psd *psd,
 				 const struct cfg80211_chan_def *ap,
 				 const struct cfg80211_chan_def *used);
+bool ieee80211_validate_smd_mlo(struct ieee802_11_elems *elems, bool is_mld);
+
+size_t ieee80211_uhr_link_reconf_frame_calc_len(
+				struct ieee80211_sub_if_data *sdata,
+				struct ieee80211_mgd_assoc_data *add_links_data,
+				struct cfg80211_smd_prepare_req *req_params);
+u8 *ieee80211_add_uhr_link_reconf_elem(struct sk_buff *skb,
+				       struct ieee80211_sub_if_data *sdata,
+				       const u8 *target_addr,
+				       struct ieee80211_mgd_assoc_data *add_links_data,
+				       u16 removed_links,
+				       u8 type);
+u8 *ieee80211_add_uhr_link_reconf_smd_bss_trans_elem(struct sk_buff *skb,
+				struct ieee80211_sub_if_data *sdata,
+				struct cfg80211_smd_prepare_req *req_params);
+u8 *ieee80211_add_uhr_link_reconf_dh_nonce_elems(struct sk_buff *skb,
+				struct cfg80211_smd_prepare_req *req_params);
 #else
 #define EXPORT_SYMBOL_IF_MAC80211_KUNIT(sym)
 #define VISIBLE_IF_MAC80211_KUNIT static
@@ -3328,5 +3595,24 @@ int ieee80211_set_monitor_channel(struct wiphy *wiphy,
 extern struct ieee80211_key *
 ieee80211_lookup_key(struct ieee80211_sub_if_data *sdata, int link_id,
 		     u8 key_idx, bool pairwise, const u8 *mac_addr);
+
+/* PRESENT_ELEMS tracking — used by mlme.c assoc helpers and uhr.c frame builders */
+#define PRESENT_ELEMS_MAX	8
+#define PRESENT_ELEM_EXT_OFFS	0x100
+
+size_t ieee80211_add_link_elems(struct ieee80211_sub_if_data *sdata,
+				struct sk_buff *skb, u16 *capab,
+				const struct element *ext_capa,
+				const u8 *extra_elems,
+				size_t extra_elems_len,
+				unsigned int link_id,
+				struct ieee80211_link_data *link,
+				u16 *present_elems,
+				struct ieee80211_mgd_assoc_data *assoc_data);
+int ieee80211_link_common_elems_size(struct ieee80211_sub_if_data *sdata,
+				     enum nl80211_iftype iftype,
+				     struct cfg80211_bss *cbss,
+				     size_t elems_len);
+
 
 #endif /* IEEE80211_I_H */

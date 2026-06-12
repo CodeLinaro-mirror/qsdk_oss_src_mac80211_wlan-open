@@ -85,20 +85,21 @@ void ieee80211_apvlan_link_clear(struct ieee80211_sub_if_data *sdata)
 void ieee80211_link_setup(struct ieee80211_link_data *link)
 {
 	if (link->sdata->vif.type == NL80211_IFTYPE_STATION)
-		ieee80211_mgd_setup_link(link);
+		ieee80211_mgd_setup_link(link,
+					 link->sdata->u.mgd.assoc_data,
+					 link->sdata->u.mgd.reconf.add_links_data);
 }
 
-void ieee80211_link_init(struct ieee80211_sub_if_data *sdata,
-			 int link_id,
-			 struct ieee80211_link_data *link,
-			 struct ieee80211_bss_conf *link_conf)
+void __ieee80211_link_init_data(struct ieee80211_sub_if_data *sdata,
+				int link_id,
+				struct ieee80211_link_data *link,
+				struct ieee80211_bss_conf *link_conf)
 {
 	struct ieee80211_local *local = sdata->local;
 	bool deflink = link_id < 0;
 
 	if (link_id < 0)
 		link_id = 0;
-
 
 	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN) {
 		struct ieee80211_sub_if_data *ap_bss;
@@ -119,10 +120,11 @@ void ieee80211_link_init(struct ieee80211_sub_if_data *sdata,
 	link->sdata = sdata;
 	link->link_id = link_id;
 	link->conf = link_conf;
+	link->ap_power_level = IEEE80211_UNSET_POWER_LEVEL;
+	link->user_power_level = local->user_power_level;
+
 	link_conf->link_id = link_id;
 	link_conf->vif = &sdata->vif;
-	link->ap_power_level = IEEE80211_UNSET_POWER_LEVEL;
-	link->user_power_level = sdata->local->user_power_level;
 	link_conf->txpower = INT_MIN;
 	link_conf->rts_threshold = (u32) -1;
 
@@ -135,10 +137,9 @@ void ieee80211_link_init(struct ieee80211_sub_if_data *sdata,
 				ieee80211_color_collision_detection_work);
 	wiphy_work_init(&link->advertised_ttlm_evt_notify_work,
 			ieee80211_advertised_ttlm_evt_notify_work);
+
 	INIT_LIST_HEAD(&link->assigned_chanctx_list);
 	INIT_LIST_HEAD(&link->reserved_chanctx_list);
-	link->ap_power_level = IEEE80211_UNSET_POWER_LEVEL;
-	link->user_power_level = local->user_power_level;
 
 	if (!deflink) {
 		switch (sdata->vif.type) {
@@ -158,9 +159,48 @@ void ieee80211_link_init(struct ieee80211_sub_if_data *sdata,
 
 		ieee80211_link_debugfs_add(link);
 	}
+}
+EXPORT_SYMBOL_IF_MAC80211_KUNIT(__ieee80211_link_init_data);
+
+void __ieee80211_link_assign(struct ieee80211_sub_if_data *sdata,
+			     int link_id,
+			     struct ieee80211_link_data *link,
+			     struct ieee80211_bss_conf *link_conf)
+{
+	lockdep_assert_wiphy(sdata->local->hw.wiphy);
 
 	rcu_assign_pointer(sdata->vif.link_conf[link_id], link_conf);
 	rcu_assign_pointer(sdata->link[link_id], link);
+}
+EXPORT_SYMBOL_IF_MAC80211_KUNIT(__ieee80211_link_assign);
+
+void __ieee80211_link_unassign(struct ieee80211_sub_if_data *sdata,
+			       int link_id)
+{
+	struct ieee80211_link_data *link;
+
+	lockdep_assert_wiphy(sdata->local->hw.wiphy);
+
+	link = sdata_dereference(sdata->link[link_id], sdata);
+	if (!link)
+		return;
+
+	rcu_assign_pointer(sdata->vif.link_conf[link_id], NULL);
+	rcu_assign_pointer(sdata->link[link_id], NULL);
+}
+EXPORT_SYMBOL_IF_MAC80211_KUNIT(__ieee80211_link_unassign);
+
+void ieee80211_link_init(struct ieee80211_sub_if_data *sdata,
+			 int link_id,
+			 struct ieee80211_link_data *link,
+			 struct ieee80211_bss_conf *link_conf)
+{
+	__ieee80211_link_init_data(sdata, link_id, link, link_conf);
+
+	if (link_id < 0)
+		link_id = 0;
+
+	__ieee80211_link_assign(sdata, link_id, link, link_conf);
 }
 
 void ieee80211_link_stop(struct ieee80211_link_data *link)
@@ -245,6 +285,24 @@ static void ieee80211_free_links(struct ieee80211_sub_if_data *sdata,
 
 		kfree(links[link_id]);
 	}
+}
+
+/*
+ * Free a dynamically allocated link (struct link_container) given only the
+ * embedded struct ieee80211_link_data pointer.
+ *
+ * Note: Only valid for links allocated via the ieee80211_vif_update_links()
+ * path (i.e. link_container). Must not be used for &sdata->deflink.
+ */
+void ieee80211_free_link_container(struct ieee80211_link_data *link)
+{
+	struct link_container *link_cont;
+
+	if (WARN_ON(!link))
+		return;
+
+	link_cont = container_of(link, struct link_container, data);
+	kfree(link_cont);
 }
 
 static int ieee80211_check_dup_link_addrs(struct ieee80211_sub_if_data *sdata)

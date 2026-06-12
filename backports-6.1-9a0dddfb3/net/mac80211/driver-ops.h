@@ -619,6 +619,33 @@ int drv_sta_state(struct ieee80211_local *local,
 		  enum ieee80211_sta_state old_state,
 		  enum ieee80211_sta_state new_state);
 
+static inline int
+drv_uhr_link_reconfig(struct ieee80211_local *local,
+		      struct ieee80211_sub_if_data *sdata,
+		      struct sta_info *current_sta,
+		      struct sta_info *target_sta,
+		      enum ieee80211_uhr_link_reconfig_action action,
+		      struct ieee80211_uhr_link_reconfig_info *info)
+{
+	int ret = -EOPNOTSUPP;
+
+	might_sleep();
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	sdata = get_bss_sdata(sdata);
+	if (!check_sdata_in_driver(sdata))
+		return -EIO;
+
+	if (local->ops->uhr_link_reconfig)
+		ret = local->ops->uhr_link_reconfig(&local->hw, &sdata->vif,
+						    &current_sta->sta,
+						    target_sta ? &target_sta->sta : NULL,
+						    action, info);
+	/* trace: TODO add DEFINE_EVENT for drv_uhr_link_reconfig in trace.h */
+	trace_drv_return_int(local, ret);
+	return ret;
+}
+
 __must_check
 int drv_sta_set_txpwr(struct ieee80211_local *local,
 		      struct ieee80211_sub_if_data *sdata,

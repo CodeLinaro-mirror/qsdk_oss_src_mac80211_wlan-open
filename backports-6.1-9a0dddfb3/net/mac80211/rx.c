@@ -1597,6 +1597,7 @@ ieee80211_rx_h_check_dup(struct ieee80211_rx_data *rx)
 {
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)rx->skb->data;
 	struct ieee80211_rx_status *status = IEEE80211_SKB_RXCB(rx->skb);
+	int link_id;
 
 	if (status->flag & RX_FLAG_DUP_VALIDATED)
 		return RX_CONTINUE;
@@ -1627,11 +1628,25 @@ ieee80211_rx_h_check_dup(struct ieee80211_rx_data *rx)
 		    sdata->vif.type != NL80211_IFTYPE_STATION)
 			return RX_CONTINUE;
 
-		if (sdata->u.mgd.mcast_seq_last != IEEE80211_SN_MODULO &&
-		    ieee80211_sn_less_eq(sn, sdata->u.mgd.mcast_seq_last))
-			return RX_DROP_U_DUP;
+		/*
+		 * For MLO, each link has an independent group SN counter at
+		 * the AP.  Track mcast_seq_last per link so that a frame on
+		 * link A with a low SN is not dropped because link B has
+		 * already advanced the shared counter past it.
+		 */
+		link_id = rx->link_id >= 0 ? rx->link_id : 0;
+		if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
+			link_id = 0;
 
-		sdata->u.mgd.mcast_seq_last = sn;
+		if (sdata->u.mgd.mcast_seq_last[link_id] != IEEE80211_SN_MODULO &&
+		    ieee80211_sn_less_eq(sn, sdata->u.mgd.mcast_seq_last[link_id])) {
+			pr_debug("%s: mcast dup drop link_id=%d sn=%u last=%u\n",
+				 sdata->name, link_id, sn,
+				 sdata->u.mgd.mcast_seq_last[link_id]);
+			return RX_DROP_U_DUP;
+		}
+
+		sdata->u.mgd.mcast_seq_last[link_id] = sn;
 		return RX_CONTINUE;
 	}
 
@@ -4409,6 +4424,33 @@ ieee80211_rx_h_action(struct ieee80211_rx_data *rx)
 			if (len < offsetofend(typeof(*mgmt),
 					      u.action.u.epcs))
 				goto invalid;
+			goto queue;
+		default:
+			break;
+		}
+		break;
+
+	case WLAN_CATEGORY_PROTECTED_UHR:
+		if (len < offsetofend(typeof(*mgmt),
+				      u.action.u.uhr_link_reconf_resp.action_code))
+			break;
+
+		switch (mgmt->u.action.u.uhr_link_reconf_resp.action_code) {
+		case WLAN_PROTECTED_UHR_ACTION_LINK_RECONFIG_RESP:
+			if (sdata->vif.type != NL80211_IFTYPE_STATION)
+				break;
+
+			/* The UHR Link Reconfig response must have at least:
+			 * category + action + dialog + status + type = 6 bytes
+			 */
+			/* The reconfiguration response action frame must
+			 * least one 'Status Duple' entry (3 octets)
+			 */
+			if (len <
+			    offsetofend(typeof(*mgmt),
+					u.action.u.uhr_link_reconf_resp) + 3)
+				goto invalid;
+
 			goto queue;
 		default:
 			break;

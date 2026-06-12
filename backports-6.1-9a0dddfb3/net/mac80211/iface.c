@@ -1741,6 +1741,18 @@ static void ieee80211_iface_process_skb(struct ieee80211_local *local,
 				break;
 			}
 		}
+	} else if (ieee80211_is_action(mgmt->frame_control) &&
+		   mgmt->u.action.category == WLAN_CATEGORY_PROTECTED_UHR) {
+		if (sdata->vif.type == NL80211_IFTYPE_STATION) {
+			switch (mgmt->u.action.u.uhr_link_reconf_resp.action_code) {
+			case WLAN_ACTION_UHR_LINK_RECONF_RESP:
+				ieee80211_process_uhr_reconf_resp(sdata, mgmt,
+								  skb->len);
+				break;
+			default:
+				break;
+			}
+		}
 	} else if (ieee80211_is_ext(mgmt->frame_control)) {
 		if (sdata->vif.type == NL80211_IFTYPE_STATION)
 			ieee80211_sta_rx_queued_ext(sdata, skb);

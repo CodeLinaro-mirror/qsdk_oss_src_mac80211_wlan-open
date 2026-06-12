@@ -2491,3 +2491,60 @@ void ieee80211_iter_chan_contexts_atomic(
 	rcu_read_unlock();
 }
 EXPORT_SYMBOL_GPL(ieee80211_iter_chan_contexts_atomic);
+
+/**
+ * ieee80211_smd_link_assign_chanctx - Assign channel context for SMD target link
+ * @link: the link to assign channel context to
+ * @chanreq: the channel request with target channel info
+ * @mode: the channel context mode (shared/exclusive)
+ *
+ * Important: Always create a new chanctx rather than trying to find and reuse
+ * existing one. This is intentional for SMD because:
+ *   - The Target AP STA may be on a different channel than the current AP
+ *   - Even if on the same channel, width/center frequency may differ
+ *   - The primary link still uses current AP's chanctx - mixing would
+ *     cause incompatibility warning when ieee80211_recalc_chanctx_chantype()
+ *     runs
+ * Prerequisite:
+ *   - Link must not currently have a chanctx assigned
+ *   - chanreq must be properly populated (e.g. from ieee80211_prep_channel)
+ *
+ * Returns: 0 on success, negative error code on failure
+ */
+int ieee80211_smd_link_assign_chanctx(struct ieee80211_link_data *link,
+				      const struct ieee80211_chan_req *chanreq,
+				      enum ieee80211_chanctx_mode mode)
+{
+	struct ieee80211_sub_if_data *sdata = link->sdata;
+	struct ieee80211_local *local = sdata->local;
+	struct ieee80211_chanctx *ctx;
+	int radio_idx;
+	int ret;
+
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	if (!ieee80211_find_available_radio(local, chanreq,
+					    sdata->wdev.radio_mask,
+					    &radio_idx))
+		return -EBUSY;
+
+	ctx = ieee80211_new_chanctx(local, chanreq, mode,
+				    false, radio_idx);
+	if (IS_ERR(ctx))
+		return PTR_ERR(ctx);
+
+	ieee80211_link_update_chanreq(link, chanreq);
+
+	ret = ieee80211_assign_link_chanctx(link, ctx, false);
+	if (ret) {
+		if (ieee80211_chanctx_refcount(local, ctx) == 0) {
+			ieee80211_free_chanctx(local, ctx, false);
+			return ret;
+		}
+	}
+
+	ieee80211_recalc_smps_chanctx(local, ctx);
+	ieee80211_recalc_radar_chanctx(local, ctx);
+
+	return 0;
+}

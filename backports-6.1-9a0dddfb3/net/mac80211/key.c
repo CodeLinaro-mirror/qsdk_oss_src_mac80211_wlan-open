@@ -533,8 +533,13 @@ static int ieee80211_key_replace(struct ieee80211_sub_if_data *sdata,
 	if (new && sta && pairwise) {
 		/* Unicast rekey needs special handling. With Extended Key ID
 		 * old is still NULL for the first rekey.
+		 *
+		 * Skip for SMD BSS transition: this is a deliberate AP switch,
+		 * not a security-sensitive rekey. The PTK0-rekey warning and
+		 * BA session teardown are not appropriate here.
 		 */
-		ieee80211_pairwise_rekey(old, new);
+		if (!(new->conf.flags & IEEE80211_KEY_FLAG_SMD_PTK))
+			ieee80211_pairwise_rekey(old, new);
 	}
 
 	if (old) {
@@ -969,8 +974,10 @@ int ieee80211_key_link(struct ieee80211_key *key,
 	 * new version of the key to avoid nonce reuse or replay issues.
 	 */
 	if (ieee80211_key_identical(sdata, old_key, key)) {
-		ret = -EALREADY;
-		goto out;
+		if (!(key->conf.flags & IEEE80211_KEY_FLAG_SMD_PTK)) {
+			ret = -EALREADY;
+			goto out;
+		}
 	}
 
 	key->local = sdata->local;
@@ -1180,6 +1187,68 @@ void ieee80211_remove_link_keys(struct ieee80211_link_data *link,
 				      key, NULL);
 		list_add_tail(&key->list, keys);
 	}
+}
+
+/**
+ * ieee80211_smd_remap_link_keys - remove group keys with stale SAP link_ids
+ * @sdata:          station interface
+ * @sap_to_tap_link: mapping from SAP link_id to TAP link_id; -1 = no mapping
+ *
+ * For SMD BSS Transition with a different-links map, group keys (GTK/IGTK/
+ * BIGTK) installed during the PREP split-AP window carry a stale SAP link_id
+ * in key->conf.link_id.  After DL-drain Step C updates the link data's
+ * link_id to the TAP value, ieee80211_key_replace() at key.c:506 refuses to
+ * replace an old key when old->conf.link_id (sap_lid) != new->conf.link_id
+ * (tap_lid), returning -EINVAL and leaving the STA without group key
+ * protection on that link.
+ *
+ * This function iterates sdata->key_list and removes every non-pairwise key
+ * whose conf.link_id maps to a different TAP link_id, using
+ * sdata->link[tap_lid] as the link pointer so that ieee80211_key_replace()
+ * clears the correct gtk[] slot.  Call before cfg80211_notify(COMPLETE) so
+ * that the slot is empty when the post-transition TAP keys arrive.
+ *
+ * Must be called with the wiphy mutex held.
+ */
+void ieee80211_smd_remap_link_keys(struct ieee80211_sub_if_data *sdata,
+				   const s8 *sap_to_tap_link)
+{
+	struct ieee80211_local *local = sdata->local;
+	struct ieee80211_link_data *tap_link;
+	struct ieee80211_key *key, *tmp;
+	LIST_HEAD(stale_keys);
+	int sap_lid, tap_lid;
+
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	list_for_each_entry_safe(key, tmp, &sdata->key_list, list) {
+		if (key->conf.flags & IEEE80211_KEY_FLAG_PAIRWISE)
+			continue;
+
+		sap_lid = key->conf.link_id;
+		if (sap_lid < 0 || sap_lid >= IEEE80211_MLD_MAX_NUM_LINKS)
+			continue;
+
+		tap_lid = sap_to_tap_link[sap_lid];
+		if (tap_lid < 0 || tap_lid == sap_lid)
+			continue;
+
+		/* Key lives in sdata->link[tap_lid]->gtk[] — pass that link so
+		 * ieee80211_key_replace() clears the right slot.
+		 */
+		tap_link = sdata_dereference(sdata->link[tap_lid], sdata);
+		if (!tap_link)
+			continue;
+
+
+		ieee80211_key_replace(key->sdata, tap_link, key->sta,
+				      key->conf.flags & IEEE80211_KEY_FLAG_PAIRWISE,
+				      key, NULL);
+		list_add_tail(&key->list, &stale_keys);
+	}
+
+	ieee80211_free_key_list(local, &stale_keys);
+
 }
 
 void ieee80211_free_key_list(struct ieee80211_local *local,

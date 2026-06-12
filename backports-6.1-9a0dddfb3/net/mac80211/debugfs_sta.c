@@ -1773,7 +1773,16 @@ void ieee80211_sta_debugfs_remove(struct sta_info *sta)
 
 void ieee80211_link_sta_debugfs_add(struct link_sta_info *link_sta)
 {
-	if (WARN_ON(!link_sta->sta->debugfs_dir))
+	/*
+	 * Silently skip if the STA has not been inserted yet — debugfs_dir
+	 * is set up by ieee80211_sta_debugfs_add() in sta_info_insert_finish(),
+	 * which will then call this function for all pre-allocated links.
+	 */
+	if (!link_sta->sta->debugfs_dir)
+		return;
+
+	/* Unexpected duplicate add — link debugfs already exists. */
+	if (WARN_ON(link_sta->debugfs_dir))
 		return;
 
 	/* For non-MLO, leave the files in the main directory. */
@@ -1841,6 +1850,19 @@ void ieee80211_link_sta_debugfs_drv_remove(struct link_sta_info *link_sta)
 	/* Recreate the directory excluding the driver data */
 	debugfs_remove_recursive(link_sta->debugfs_dir);
 	link_sta->debugfs_dir = NULL;
+
+	/*
+	 * Re-add mac80211 files only if this link is still active.
+	 * ieee80211_sta_remove_link() clears valid_links for the removed
+	 * link_id before calling drv_change_sta_links(). Unconditionally
+	 * calling ieee80211_link_sta_debugfs_add() here would either create
+	 * a stale "link-N" directory for a link no longer in valid_links
+	 * (causing "already present" on a subsequent call), or — when
+	 * valid_links reaches zero — enter the non-MLO branch and trigger
+	 * WARN_ON(link_sta != &sta->deflink) for a non-default link.
+	 */
+	if (!(link_sta->sta->sta.valid_links & BIT(link_sta->link_id)))
+		return;
 
 	ieee80211_link_sta_debugfs_add(link_sta);
 }

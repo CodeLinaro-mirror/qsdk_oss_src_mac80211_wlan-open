@@ -703,6 +703,8 @@ static int ieee80211_add_key(struct wiphy *wiphy, struct net_device *dev,
 	case NL80211_IFTYPE_STATION:
 		if (sdata->u.mgd.mfp != IEEE80211_MFP_DISABLED)
 			key->conf.flags |= IEEE80211_KEY_FLAG_RX_MGMT;
+		if (sdata->u.mgd.smd_ptk != IEEE80211_SMD_PTK_DISABLED)
+			key->conf.flags |= IEEE80211_KEY_FLAG_SMD_PTK;
 		break;
 	case NL80211_IFTYPE_AP:
 	case NL80211_IFTYPE_AP_VLAN:
@@ -6885,6 +6887,138 @@ ieee80211_assoc_ml_reconf(struct wiphy *wiphy, struct net_device *dev,
 		return ieee80211_mgd_assoc_ml_reconf(sdata, req);
 }
 
+static int ieee80211_mgd_st_prepare(struct ieee80211_sub_if_data *sdata,
+				    struct cfg80211_smd_prepare_req *req)
+{
+	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
+	struct ieee80211_mgd_assoc_data *assoc_data;
+	int target_slot, ret;
+
+	lockdep_assert_wiphy(sdata->local->hw.wiphy);
+
+	if (!ifmgd->associated) {
+		sdata_err(sdata, "smd: not associated, cannot prepare ST");
+		return -ENOTCONN;
+	}
+
+	if (is_zero_ether_addr(req->target_mld_addr)) {
+		sdata_err(sdata, "smd: invalid target MLD address");
+		return -EINVAL;
+	}
+
+	target_slot = ieee80211_smd_find_target_by_addr(sdata, req->target_mld_addr);
+	if (target_slot >= 0)
+		return -EEXIST;
+
+	if (ifmgd->num_prepared_targets >= ifmgd->max_prepared_targets) {
+		sdata_err(sdata, "smd: max concurrent preparations reached (%d)",
+			  ifmgd->max_prepared_targets);
+		return -ENOSPC;
+	}
+
+	assoc_data = ieee80211_smd_create_assoc_data(sdata, req);
+	if (!assoc_data) {
+		sdata_err(sdata, "smd: failed to create assoc_data");
+		return -ENOMEM;
+	}
+
+	target_slot = ieee80211_smd_add_prep_target(sdata,
+						    req->target_mld_addr,
+						    assoc_data);
+	if (target_slot < 0) {
+		sdata_err(sdata, "smd: failed to add target: %d", target_slot);
+		kfree(assoc_data);
+		return target_slot;
+	}
+
+	sdata->u.mgd.prep_targets[target_slot].exec_path = req->exec_path;
+	sdata->u.mgd.prep_targets[target_slot].no_dl_sn =
+		req->request_dl_sn_not_transferred;
+	sdata->u.mgd.prep_targets[target_slot].no_ul_sn =
+		req->request_ul_sn_not_transferred;
+	sdata->u.mgd.prep_targets[target_slot].is_preferred_target =
+		req->is_preferred_target;
+	ret = ieee80211_tx_smd_uhr_link_reconf(sdata, req->target_mld_addr,
+					       req, assoc_data);
+	if (ret) {
+		sdata_err(sdata, "smd: failed to send prep request: %d", ret);
+		ieee80211_smd_remove_prep_target(sdata, target_slot);
+		return ret;
+	}
+
+	if (assoc_data->smd_timeout)
+		ieee80211_smd_start_prep_timeout(sdata,
+						 &sdata->u.mgd.prep_targets[target_slot],
+						 assoc_data->smd_timeout);
+
+	return 0;
+}
+
+static int ieee80211_mgd_st_execute(struct ieee80211_sub_if_data *sdata,
+				    struct cfg80211_smd_prepare_req *req)
+{
+	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
+	int target_slot;
+	int ret;
+
+	lockdep_assert_wiphy(sdata->local->hw.wiphy);
+
+	if (!ifmgd->associated) {
+		sdata_info(sdata, "SMD EXEC: Not associated, cannot execute ST\n");
+		return -ENOTCONN;
+	}
+
+	if (is_zero_ether_addr(req->target_mld_addr)) {
+		sdata_err(sdata, "SMD EXEC: Invalid target MLD address\n");
+		return -EINVAL;
+	}
+
+	target_slot = ieee80211_smd_find_target_by_addr(sdata, req->target_mld_addr);
+	if (target_slot < 0) {
+		sdata_info(sdata, "SMD EXEC: Target %pM not found in prep array\n",
+			   req->target_mld_addr);
+		return -ENOENT;
+	}
+
+	/*
+	 * For ROAM ST (preferred target): ieee80211_smd_prep_activate() already
+	 * ran at PREP-response time — drv_info was freed, target is driver-ready.
+	 *
+	 * For SMD_EXECUTE (target becomes preferred now): drv_info is still set
+	 * from prep_setup.  Run driver activation before sending the EXEC frame.
+	 */
+	if (ifmgd->prep_targets[target_slot].drv_info) {
+		ret = ieee80211_smd_prep_activate(sdata,
+						  &ifmgd->prep_targets[target_slot]);
+		if (ret)
+			return ret;
+	}
+
+	ret = ieee80211_tx_smd_uhr_link_reconf(sdata, req->target_mld_addr, req, NULL);
+	if (ret) {
+		ieee80211_smd_prep_reset_target(sdata,
+						&ifmgd->prep_targets[target_slot],
+						WLAN_STATUS_UNSPECIFIED_FAILURE, 0);
+		return ret;
+	}
+
+	return 0;
+}
+
+static int
+ieee80211_uhr_link_reconf(struct wiphy *wiphy, struct net_device *dev,
+			  struct cfg80211_smd_prepare_req *req)
+{
+	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+
+	lockdep_assert_wiphy(sdata->local->hw.wiphy);
+
+	if (req->type == IEEE80211_UHR_LINK_RECONF_TYPE_ST_EXEC)
+		return ieee80211_mgd_st_execute(sdata, req);
+
+	return ieee80211_mgd_st_prepare(sdata, req);
+}
+
 static int
 ieee80211_set_epcs(struct wiphy *wiphy, struct net_device *dev, bool enable)
 {
@@ -7145,6 +7279,7 @@ const struct cfg80211_ops mac80211_config_ops = {
 	.set_ttlm = ieee80211_set_ttlm,
 	.get_radio_mask = ieee80211_get_radio_mask,
 	.assoc_ml_reconf = ieee80211_assoc_ml_reconf,
+	.uhr_link_reconf = ieee80211_uhr_link_reconf,
 	.set_epcs = ieee80211_set_epcs,
 	.erp = ieee80211_erp,
 	.set_qos_mgmt_cfg = ieee80211_set_qos_mgmt_cfg,
