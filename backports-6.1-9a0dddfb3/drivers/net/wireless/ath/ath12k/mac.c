@@ -22745,7 +22745,8 @@ ath12k_mac_unassign_vif_chanctx_handle(struct ieee80211_hw *hw,
 
 	if (ahvif->vdev_type != WMI_VDEV_TYPE_STA &&
 	    ahvif->vdev_type != WMI_VDEV_TYPE_MONITOR) {
-		ath12k_bss_disassoc(ar, arvif);
+		if (vif->type != NL80211_IFTYPE_AP)
+			ath12k_bss_disassoc(ar, arvif);
 		ret = ath12k_mac_vdev_stop(arvif);
 		if (ret)
 			ath12k_warn(ab, "failed to stop vdev %i: %d\n",
