@@ -14,6 +14,9 @@ struct ath12k_sta;
 
 #define DP_MAX_NWIFI_HDR_LEN	30
 
+/* 17 tids for DP, 2 for mgmt, and 1 shared between DP and mgmt */
+#define ATH12K_MAX_TIDS 20
+
 #define ip_hdrlen(iph) ((iph)->ihl * 4)
 
 #ifndef CPTCFG_EXT_IPA_OFFLOAD
@@ -137,6 +140,46 @@ struct ath12k_dp_rx_tid {
 
 	/* Per-TID lock protecting concurrent access to this TID's state */
 	spinlock_t tid_lock;
+	void    *smd_ctx;
+};
+
+/**
+ * struct ath12k_dp_smd_parked_rx_info - Parked Rx Q state during SMD BSS transition
+ *
+ * Analogous to smd_parked_ext_ctx for the Tx side. Holds the rx_tid[] state
+ * from the old peer (Current AP) so it can be transferred to the new peer
+ * (Target AP) during EXEC phase, preserving BA session state and REO queue
+ * descriptors.
+ *
+ * The vaddr/paddr in each rx_tid[] entry point to the SAME DMA memory as the
+ * old peer — ownership is transferred, not copied. The frag_timer fields are
+ * NOT valid after parking (must be re-initialized on restore).
+ *
+ * Lifetime: allocated in ath12k_wifi8_dp_smd_prep_rx_tid(), freed in
+ * ath12k_wifi8_dp_smd_exec_rx_tid().
+ */
+struct ath12k_dp_smd_parked_rx_info {
+	/* Snapshot of rx_tid[] from old peer.
+	 * vaddr/paddr: DMA memory ownership transferred (not copied).
+	 * frag_timer: NOT valid — re-initialized on restore.
+	 * rx_frags: flushed before parking (in-flight fragments dropped).
+	 */
+	struct ath12k_dp_rx_tid rx_tid[ATH12K_MAX_TIDS];
+
+	/* MMIC crypto context — ownership transferred (not duplicated) */
+	struct crypto_shash *tfm_mmic;
+
+	/* Number of valid TIDs (from ab->hal.hal_params->num_tids) */
+	u8 num_tids;
+
+	/* Is this parked state valid and ready for EXEC restore? */
+	bool valid;
+
+	/* Completion for synchronous REO flush during PREP phase.
+	 * Signaled by ath12k_wifi8_dp_smd_rx_flush_done() callback when
+	 * the FLUSH_CACHE command completes.
+	 */
+	struct completion flush_done;
 };
 
 struct ath12k_dp_rx_reo_cache_flush_elem {
@@ -361,4 +404,5 @@ int ath12k_dp_rxdma_ring_sel_config(struct ath12k_base *ab);
 u16 ath12k_wifi7_dp_rx_get_peer_id(struct ath12k_base *ab,
 				   enum ath12k_peer_metadata_version ver,
 				   __le32 peer_metadata);
+void ath12k_dp_rx_frag_timer(struct timer_list *timer);
 #endif /* ATH12K_DP_RX_H */

@@ -1372,6 +1372,7 @@ int ath12k_wmi_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 	struct ath12k_wmi_pdev *wmi = ar->wmi;
 	struct wmi_mgmt_send_cmd *cmd;
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(frame);
+	struct ath12k_skb_cb *drv_info = ATH12K_SKB_CB(frame);
 	struct wmi_mlo_mgmt_send_params *ml_params;
 	struct wmi_mgmt_send_params *params;
 	bool tx_params_valid = false;
@@ -1419,6 +1420,9 @@ int ath12k_wmi_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 	cmd->frame_len = cpu_to_le32(frame->len);
 	cmd->buf_len = cpu_to_le32(buf_len);
 	cmd->tx_params_valid = tx_params_valid;
+
+	if (drv_info->flags & ATH12K_SKB_MGMT_SMD_HI_PRI)
+		cmd->tx_flags |= WMI_TX_MGMT_HI_PRIO_FLAG;
 
 	frame_tlv = (struct wmi_tlv *)(skb->data + sizeof(*cmd));
 	frame_tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_BYTE, roundup(buf_len, sizeof(u32)));
@@ -1487,7 +1491,6 @@ int ath12k_wmi_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 			ml_params->hw_link_id = WMI_MLO_MGMT_TID;
 		}
 	}
-
 send:
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_MGMT_TX_SEND_CMDID);
 	if (ret) {
@@ -2004,6 +2007,7 @@ int ath12k_wmi_vdev_start(struct ath12k *ar, struct wmi_vdev_start_req_arg *arg,
 {
 	struct ath12k_wmi_channel_params *chan_device;
 	struct wmi_vdev_start_mlo_params *ml_params;
+	struct wmi_vdev_start_smd_params *smd_params;
 	struct wmi_partner_link_info *partner_info;
 	struct wmi_uhr_ap_npca_params *npca_params;
 	struct ath12k_hw_group *ag = ar->ab->ag;
@@ -2016,7 +2020,7 @@ int ath12k_wmi_vdev_start(struct ath12k *ar, struct wmi_vdev_start_req_arg *arg,
 	void *ptr;
 	struct wmi_vdev_start_uhr_config *uhr_config;
 	bool uhr_config_present = false;
-	int ret, len, i, ml_arg_size = 0;
+	int ret, len, i, ml_arg_size = 0, smd_arg_size = 0;
 
 	if (WARN_ON(arg->ssid_len > sizeof(cmd->ssid.ssid)))
 		return -EINVAL;
@@ -2031,6 +2035,7 @@ int ath12k_wmi_vdev_start(struct ath12k *ar, struct wmi_vdev_start_req_arg *arg,
 	} else {
 		len += 2 * TLV_HDR_SIZE;
 	}
+
 	device_params_present = ath12k_wmi_check_device_present(arg->width_device,
 								arg->center_freq_device,
 								arg->band_center_freq1);
@@ -2052,10 +2057,16 @@ int ath12k_wmi_vdev_start(struct ath12k *ar, struct wmi_vdev_start_req_arg *arg,
 		len += sizeof(*uhr_config);
 	}
 
+	if (!restart && arg->ml.enabled && arg->smd.enabled) {
+		smd_arg_size = sizeof(*smd_params);
+		len += smd_arg_size;
+	}
+
 	if (arg->npca.enabled)
 		len += TLV_HDR_SIZE + sizeof(*npca_params);
 	else
 		len += TLV_HDR_SIZE;
+
 	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
 	if (!skb)
 		return -ENOMEM;
@@ -2185,11 +2196,6 @@ int ath12k_wmi_vdev_start(struct ath12k *ar, struct wmi_vdev_start_req_arg *arg,
 		ptr += TLV_HDR_SIZE;
 	}
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "[radio_idx : %u] vdev %s id 0x%x freq 0x%x mode 0x%x\n",
-		   ar->radio_idx,
-		   restart ? "restart" : "start", arg->vdev_id,
-		   arg->freq, arg->mode);
-
 	if (test_bit(WMI_TLV_SERVICE_SW_PROG_DFS_SUPPORT, ar->ab->wmi_ab.svc_map) &&
 	    device_params_present) {
 		tlv = ptr;
@@ -2214,9 +2220,30 @@ int ath12k_wmi_vdev_start(struct ath12k *ar, struct wmi_vdev_start_req_arg *arg,
 	ptr += sizeof(*tlv);
 
 	/* vdev_start_smd_params TLV */
-	tlv = ptr;
-	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
-	ptr += sizeof(*tlv);
+	if (smd_arg_size) {
+		tlv = ptr;
+		tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
+						 sizeof(*smd_params));
+		ptr += TLV_HDR_SIZE;
+		smd_params = ptr;
+		smd_params->tlv_header =
+			ath12k_wmi_tlv_cmd_hdr(WMI_TAG_SMD_VDEV_START_PARAMS,
+					       sizeof(*smd_params));
+		smd_params->flags =
+			le32_encode_bits(arg->smd.enabled,
+					 ATH12K_WMI_FLAG_SMD_ENABLED) |
+			le32_encode_bits(arg->smd.dl_data_fwd,
+					 ATH12K_WMI_FLAG_SMD_DL_DATA_FWD) |
+			le32_encode_bits(arg->smd.ptk_mode,
+					 ATH12K_WMI_FLAG_SMD_PTK_MODE);
+		ether_addr_copy(smd_params->mac_addr.addr, arg->smd.smd_mac_addr);
+		ptr += sizeof(*smd_params);
+
+	} else {
+		tlv = ptr;
+		tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
+		ptr += TLV_HDR_SIZE;
+	}
 
 
 	tlv = ptr;
@@ -2309,6 +2336,11 @@ int ath12k_wmi_vdev_start(struct ath12k *ar, struct wmi_vdev_start_req_arg *arg,
 		tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
 		ptr += TLV_HDR_SIZE;
 	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "[radio_idx : %u] vdev %s id 0x%x freq 0x%x mode 0x%x\n",
+		   ar->radio_idx,
+		   restart ? "restart" : "start", arg->vdev_id,
+		   arg->freq, arg->mode);
 
 	if (restart)
 		ret = ath12k_wmi_cmd_send(wmi, skb,
@@ -3728,8 +3760,9 @@ int ath12k_wmi_vdev_install_key(struct ath12k *ar,
 	memcpy(tlv->value, arg->key_data, arg->key_len);
 
 	ath12k_dbg_level(ar->ab, ATH12K_DBG_WMI | ATH12K_DBG_EAPOL, ATH12K_DBG_L1,
-			 "WMI vdev install key idx %d cipher %d len %d\n",
-			 arg->key_idx, arg->key_cipher, arg->key_len);
+			 "WMI vdev install key idx %d flags: 0x%x cipher %d len %d\n",
+			 arg->key_idx, arg->key_flags,
+			 arg->key_cipher, arg->key_len);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_VDEV_INSTALL_KEY_CMDID);
 	if (ret) {
@@ -3901,6 +3934,8 @@ static void *ath12k_wmi_peer_assoc_v2_cmd(struct ath12k *ar,
 	struct wmi_peer_uhr_npca_op_params *npca_params;
 	struct wmi_peer_assoc_cip_info *cip_info;
 	struct wmi_tlv *tlv;
+	struct wmi_peer_assoc_smd_params *smd_params;
+	int len;
 
 	if (!test_bit(WMI_SERVICE_EXT_TLV_SUPPORT,
 		     ar->ab->wmi_ab.svc_map))
@@ -3922,15 +3957,12 @@ static void *ath12k_wmi_peer_assoc_v2_cmd(struct ath12k *ar,
 	/*
 	 * Fill empty TLV's for create_mlo_params
 	 */
-
 	tlv = ptr;
 	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
 	ptr += TLV_HDR_SIZE;
 
 	/* Always emit the CIP TLV to preserve ordering */
-
 	cip_info = ptr;
-
 	cip_info->tlv_header =
 		ath12k_wmi_tlv_cmd_hdr(WMI_TAG_PEER_ASSOC_CIP_INFO,
 				       sizeof(*cip_info));
@@ -3940,11 +3972,26 @@ static void *ath12k_wmi_peer_assoc_v2_cmd(struct ath12k *ar,
 	ptr += sizeof(*cip_info);
 
 	/*
-	 * Fill empty TLV's for smd params
+	 * Advertise the SMD params TLV
 	 */
-	tlv = ptr;
-	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_SMD_PARAMS, 0);
-	ptr += TLV_HDR_SIZE;
+	len = sizeof(*smd_params);
+	smd_params = ptr;
+	smd_params->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_SMD_PEER_ASSOC_PARAMS,
+							len);
+	ether_addr_copy(smd_params->smd_identifier.addr, arg->smd.smd_mac_addr);
+	smd_params->smd_capabilities = arg->smd.smd_enabled;
+
+	if (arg->smd.smd_enabled)
+		smd_params->flags |= cpu_to_le32(ATH12K_WMI_FLAG_PEER_SMD_ENABLED);
+
+	if (arg->smd.dl_data_fwd)
+		smd_params->flags |= cpu_to_le32(ATH12K_WMI_FLAG_PEER_SMD_DL_DATA_FWD);
+
+	if (arg->smd.is_tap)
+		smd_params->flags |= cpu_to_le32(ATH12K_WMI_FLAG_PEER_SMD_TAP_LINK);
+	smd_params->flags |= cpu_to_le32(ATH12K_WMI_FLAG_PEER_SMD_ADD_LINK);
+
+	ptr += sizeof(*smd_params);
 
 	/*
 	 * Fill empty TLV's for uhr rateset
@@ -4064,21 +4111,25 @@ int ath12k_wmi_send_peer_assoc_cmd(struct ath12k *ar,
 		len += TLV_HDR_SIZE;
 
 	if (test_bit(WMI_SERVICE_EXT_TLV_SUPPORT, ar->ab->wmi_ab.svc_map)) {
-
-	/* add length for the TLVs which needs to be sent for peer assoc
-	 * v2 command
-	 */
+		/*
+		 * Add length for the TLVs which needs to be sent for
+		 * peer assoc v2 command
+		 */
 
 		/* Dummy TLV inclusion for create mlo params and npca */
 		len += (2 * TLV_HDR_SIZE);
 
 		len += sizeof(struct wmi_peer_assoc_cip_info);
 
-		/* Dummy TLV inclusion for smd params, uhr rateset, npca op */
-		len += (3 * TLV_HDR_SIZE);
+		/*
+		 * Dummy TLV inclusion for uhr rateset, npca op
+		 */
+		len += (2 * TLV_HDR_SIZE);
 
 		if (arg->npca.enabled)
 			len += sizeof(struct wmi_peer_uhr_npca_op_params);
+
+		len += sizeof(struct wmi_peer_assoc_smd_params);
 	}
 
 	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
@@ -4512,6 +4563,98 @@ send:
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 EXPORT_SYMBOL(ath12k_wmi_send_peer_assoc_cmd);
 #endif
+
+int ath12k_wmi_send_smd_roam_config(struct ath12k *ar,
+				    struct ath12k_wmi_smd_roam_config_arg *arg)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct wmi_smd_roam_config_cmd *cmd;
+	struct wmi_smd_roam_config_peer_tid_info *tid_info;
+	struct sk_buff *skb;
+	void *ptr;
+	struct wmi_tlv *tlv;
+	u32 len;
+	int ret;
+
+	/* Calculate the length of the command */
+	len = sizeof(*cmd);
+
+	if ((arg->role == SMD_ROAM_CONFIG_ROLE_TARGET_AP &&
+	     arg->cmd_type == SMD_ROAM_CONFIG_CMD_DYNAMIC_CONTEXT) ||
+	    (arg->role == SMD_ROAM_CONFIG_ROLE_STA &&
+	     arg->cmd_type == SMD_ROAM_CONFIG_CMD_DYNAMIC_CONTEXT) ||
+	    (arg->role == SMD_ROAM_CONFIG_ROLE_SERVING_AP &&
+	     arg->cmd_type == SMD_ROAM_CONFIG_CMD_EXEC_REQ))
+		len +=  TLV_HDR_SIZE + (ATH12K_SMD_NUM_TIDS * sizeof(*tid_info));
+
+	/* Allocate an SKB for the command */
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	/* Assign the initial pointer to the starting of the data segment */
+	ptr = skb->data;
+	cmd = ptr;
+
+	/* Fill in the SKB */
+	cmd->tlv_header =
+		ath12k_wmi_tlv_cmd_hdr(WMI_TAG_SMD_ROAM_CONFIG_PARAMS,
+				       sizeof(*cmd));
+	cmd->vdev_id    = cpu_to_le32(arg->vdev_id);
+	ether_addr_copy(cmd->peer_macaddr.addr, arg->peer_mac);
+	cmd->cmd_flags  = le32_encode_bits(arg->role,
+					   WMI_SMD_ROAM_CONFIG_CMD_FLAGS_ROLE);
+	cmd->cmd_flags  |= le32_encode_bits(arg->cmd_type,
+					    WMI_SMD_ROAM_CONFIG_CMD_FLAGS_CMD_TYPE);
+	cmd->cmd_flags  |= le32_encode_bits(arg->status,
+					    WMI_SMD_ROAM_CONFIG_CMD_FLAGS_STATUS);
+	cmd->cmd_flags  |= le32_encode_bits(arg->flags,
+					    WMI_SMD_ROAM_CONFIG_CMD_FLAGS_FLAGS);
+	cmd->dl_drain_time = arg->dl_drain_time;
+
+	/* Add one TLV for every TID with the MLSN number */
+	if ((arg->role == SMD_ROAM_CONFIG_ROLE_TARGET_AP &&
+	     arg->cmd_type == SMD_ROAM_CONFIG_CMD_DYNAMIC_CONTEXT) ||
+	    (arg->role == SMD_ROAM_CONFIG_ROLE_STA &&
+	     arg->cmd_type == SMD_ROAM_CONFIG_CMD_DYNAMIC_CONTEXT) ||
+	    (arg->role == SMD_ROAM_CONFIG_ROLE_SERVING_AP &&
+	     arg->cmd_type == SMD_ROAM_CONFIG_CMD_EXEC_REQ)) {
+		u32 i;
+
+		ptr += sizeof(*cmd);
+		tlv = ptr;
+		len = ATH12K_SMD_NUM_TIDS * sizeof(*tid_info);
+		tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, len);
+		ptr += TLV_HDR_SIZE;
+
+		for (i = 0; i < ATH12K_SMD_NUM_TIDS; i++) {
+			tid_info = ptr;
+			tid_info->tlv_header =
+				ath12k_wmi_tlv_cmd_hdr(WMI_TAG_SMD_ROAM_PEER_TID_INFO,
+						       sizeof(*tid_info));
+			tid_info->tid_num = i;
+			tid_info->mlsn_offset_word = 0;
+			tid_info->tx_ba_window_size =
+				arg->peer_tid_info[i].tx_buf_size;
+			tid_info->rx_ba_window_size =
+				arg->peer_tid_info[i].rx_buf_size;
+			ptr += sizeof(*tid_info);
+		}
+	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_SMD,
+		   "wmi smd roam config: vdev_id: %d peer_mac_addr: %pM cmd_flags: 0x%x dl_drain_time: %d\n",
+		   cmd->vdev_id, cmd->peer_macaddr.addr,
+		   cmd->cmd_flags, cmd->dl_drain_time);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_ROAM_CONFIG_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to send wmi roam config cmd\n");
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
 
 int ath12k_wmi_update_scan_chan_list(struct ath12k *ar,
 				     struct ath12k_wmi_scan_req_arg *req_arg)
@@ -15258,6 +15401,74 @@ out:
 	kfree(tb);
 }
 
+static void ath12k_wmi_smd_roam_config_event(struct ath12k_base *ab,
+					     struct sk_buff *skb)
+{
+	const struct wmi_smd_roam_config_event *ev;
+	struct ath12k_link_vif *arvif;
+	struct ieee80211_vif *vif;
+	struct ath12k_vif *ahvif;
+	const void **tb;
+	u32 vdev_id, event_flags;
+	u32 role, cmd_type;
+	int ret;
+
+	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
+	if (IS_ERR(tb)) {
+		ret = PTR_ERR(tb);
+		ath12k_warn(ab, "failed to parse smd roam config event tlv: %d\n",
+			    ret);
+		return;
+	}
+
+	ev = tb[WMI_TAG_SMD_ROAM_CONFIG_EVENT];
+	if (!ev) {
+		ath12k_warn(ab, "failed to fetch smd roam config event\n");
+		kfree(tb);
+		return;
+	}
+
+	vdev_id = le32_to_cpu(ev->vdev_id);
+	event_flags = le32_to_cpu(ev->event_flags);
+	role = WMI_PEER_SMD_EVT_FLAGS_GET_ROLE(event_flags);
+	cmd_type = WMI_PEER_SMD_EVT_FLAGS_GET_SMD_TYPE(event_flags);
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI,
+		   "wmi smd roam config event: vdev_id=%u peer=%pM role=%u cmd_type=%u\n",
+		   vdev_id, ev->peer_mac_addr.addr, role, cmd_type);
+
+	rcu_read_lock();
+	arvif = ath12k_mac_get_arvif_by_vdev_id(ab, vdev_id);
+	if (!arvif) {
+		ath12k_warn(ab, "smd roam event: invalid vdev_id %u\n", vdev_id);
+		rcu_read_unlock();
+		kfree(tb);
+		return;
+	}
+
+	ahvif = arvif->ahvif;
+	if (!ahvif->smd.exec_in_progress) {
+		ath12k_warn(ab, "smd roam event: no SMD exec in progress\n");
+		rcu_read_unlock();
+		kfree(tb);
+		return;
+	}
+
+	vif = ahvif->vif;
+
+	/* exec_in_progress is intentionally NOT cleared here: this WMI event
+	 * fires at the START of the DL drain window (FW has begun draining).
+	 * mac80211 still needs to call __ieee80211_smd_dl_drain_complete() and
+	 * then drv_uhr_link_reconfig(DYNAMIC_CONTEXT) before the state is done.
+	 * The clear happens in ath12k_mac_op_uhr_link_reconfig() DYNAMIC_CONTEXT.
+	 */
+	rcu_read_unlock();
+	kfree(tb);
+
+	/* DL drain complete - notify mac80211 to proceed with Phase C */
+	ieee80211_smd_dl_drain_complete_irqsafe(vif, ahvif->smd.target_mld_addr);
+}
+
 #ifdef CPTCFG_ATH12K_DEBUGFS
 
 void ath12k_wmi_crl_path_stats_list_free(struct ath12k *ar, struct list_head *head)
@@ -18741,6 +18952,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 		break;
 	case WMI_PDEV_SET_CUMAC_CHIP_ID_CONFIRMATION_EVENTID:
 		ath12k_wmi_event_send_cumac_complete(ab, skb);
+		break;
+	case WMI_SMD_ROAM_CONFIG_EVENTID:
+		ath12k_wmi_smd_roam_config_event(ab, skb);
 		break;
 	case WMI_HALPHY_STATS_CTRL_PATH_EVENTID:
 		ath12k_wmi_process_tpc_stats(ab, skb);

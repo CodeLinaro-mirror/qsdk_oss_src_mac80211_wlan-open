@@ -246,6 +246,7 @@ void ath12k_dp_peer_cleanup(struct ath12k *ar, void *ptr, int vdev_id, const u8 
 	}
 
 	ath12k_dp_ipa_peer_notify(ar, peer, NULL, vdev_id, false);
+	ath12k_dp_arch_smd_clear_old_peer_rx_lut(dp, peer->dp_peer);
 
 	ath12k_dp_rx_peer_tid_cleanup(ar, peer);
 	crypto_free_shash(peer->dp_peer->tfm_mmic);

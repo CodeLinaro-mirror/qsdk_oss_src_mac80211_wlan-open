@@ -797,6 +797,15 @@ static bool ath12k_wifi8_mac_is_mgmt_action_link_agnostic(struct sk_buff *skb)
 			return false;
 		}
 		break;
+	case WLAN_CATEGORY_PROTECTED_UHR: {
+		u8 type = *(++buf);
+
+		if (type == IEEE80211_UHR_LINK_RECONF_TYPE_ST_EXEC)
+			return false;
+		else
+			return true;
+		break;
+	}
 	default:
 		/* Extend as per feature addition */
 		break;
@@ -880,15 +889,52 @@ ath12k_wifi8_mac_get_tx_link(struct ieee80211_sta *sta, struct ieee80211_vif *vi
 		return ahsta->primary_link_id;
 
 	/* 802.11 frame cases */
-	if (link == IEEE80211_LINK_UNSPECIFIED)
+	if (link == IEEE80211_LINK_UNSPECIFIED) {
 		link = ahsta->deflink.link_id;
+		/* deflink.link_id may be stale (255) after a link is removed from
+		 * the serving-AP STA during SMD transition. Fall back to
+		 * primary_link_id which is stable for the lifetime of the session.
+		 */
+		if (link >= ATH12K_NUM_MAX_LINKS || !(ahsta->links_map & BIT(link)))
+			link = ahsta->primary_link_id;
+	}
 
 	if (!ieee80211_is_mgmt(hdr->frame_control))
 		return link;
 
-	if (ahsta->deflink.arvif->ar) {
+	if (ieee80211_is_action(hdr->frame_control))
+		pr_debug("SMD DBG get_tx_link: sta=%p ahsta=%p arvif=%p lid=%u lmap=0x%x link=%u pri=%u\n",
+			 sta, ahsta, ahsta->deflink.arvif, ahsta->deflink.link_id,
+			 ahsta->links_map, link, ahsta->primary_link_id);
+
+	if (ahsta->deflink.arvif && ahsta->deflink.arvif->ar) {
 		ar = ahsta->deflink.arvif->ar;
 		ab = ar->ab;
+	} else {
+		/* deflink.arvif is stale; derive ar/ab from the resolved link */
+		struct ath12k_link_sta *_arsta = rcu_dereference(ahsta->link[link]);
+
+		if (ieee80211_is_action(hdr->frame_control)) {
+			unsigned long _lmap = ahsta->links_map;
+			u8 _lid;
+
+			pr_debug("SMD DBG get_tx_link: deflink.arvif stale, using link[%u]\n",
+				 link);
+			for_each_set_bit(_lid, &_lmap, ATH12K_NUM_MAX_LINKS) {
+				struct ath12k_link_sta *_ls =
+					rcu_dereference(ahsta->link[_lid]);
+
+				pr_debug("SMD DBG get_tx_link: link[%u] arsta=%p arvif=%p ar=%p\n",
+					 _lid, _ls,
+					 _ls ? _ls->arvif : NULL,
+					 (_ls && _ls->arvif) ? _ls->arvif->ar : NULL);
+			}
+		}
+
+		if (_arsta && _arsta->arvif && _arsta->arvif->ar) {
+			ar = _arsta->arvif->ar;
+			ab = ar->ab;
+		}
 	}
 
 	if (test_bit(ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED, &ab->ag->flags) &&
@@ -1332,6 +1378,7 @@ static const struct ieee80211_ops ath12k_ops_wifi8 = {
 	.change_sta_links               = ath12k_mac_op_change_sta_links,
 	.can_activate_links             = ath12k_mac_op_can_activate_links,
 	.set_dscp_tid                   = ath12k_mac_op_set_dscp_tid,
+	.uhr_link_reconfig              = ath12k_mac_op_uhr_link_reconfig,
 #ifdef CONFIG_PM
 	.suspend			= ath12k_wow_op_suspend,
 	.resume				= ath12k_wow_op_resume,

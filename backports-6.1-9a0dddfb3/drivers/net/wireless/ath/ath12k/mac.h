@@ -10,6 +10,7 @@
 #include <net/mac80211.h>
 #include <net/cfg80211.h>
 #include "wmi.h"
+#include "smd.h"
 
 #include "../../net/mac80211/qcn_extns/cmn_extn.h"
 
@@ -513,6 +514,15 @@ int ath12k_mac_op_erp(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 		      int link_id, struct cfg80211_erp_params *params);
 int ath12k_mac_mgmt_tx(struct ath12k *ar, struct sk_buff *skb,
 		       bool is_prb_rsp);
+int ath12k_mac_op_uhr_link_reconfig(struct ieee80211_hw *hw,
+				    struct ieee80211_vif *vif,
+				    struct ieee80211_sta *current_sta,
+				    struct ieee80211_sta *target_sta,
+				    enum ieee80211_uhr_link_reconfig_action action,
+				    struct ieee80211_uhr_link_reconfig_info *info);
+int ath12k_mac_op_smd_remap_links(struct ath12k_vif *ahvif,
+				  struct ath12k_sta *ahsta_target,
+				  const struct ieee80211_uhr_link_reconfig_info *info);
 void ath12k_mac_add_p2p_noa_ie(struct ath12k *ar,
 			       struct ieee80211_vif *vif,
 			       struct sk_buff *skb,
@@ -872,5 +882,21 @@ int ath12k_mac_set_vht_txbf_conf(struct ath12k_link_vif *arvif,
 				 u32 *val);
 void ath12k_mac_ap_ps_recalc(struct ath12k *ar);
 void ath12k_ap_ps_recalc_work(struct wiphy *wiphy, struct wiphy_work *work);
-
+int ath12k_setup_peer_smps(struct ath12k *ar, struct ath12k_link_vif *arvif,
+			   const u8 *addr,
+			   const struct ieee80211_sta_ht_cap *ht_cap,
+			   const struct ieee80211_he_6ghz_capa *he_6ghz_capa);
+int ath12k_mac_vif_recalc_sta_he_txbf(struct ath12k *ar,
+				      struct ath12k_link_vif *arvif,
+				      struct ieee80211_sta_he_cap *he_cap,
+				      int *hemode);
+u32 ath12k_mac_ieee80211_sta_bw_to_wmi(struct ath12k *ar,
+					struct ieee80211_link_sta *link_sta);
+void ath12k_mac_peer_assoc_prepare_smd(struct ath12k *ar,
+				       struct ath12k_link_vif *arvif,
+				       struct ath12k_link_sta *arsta,
+				       struct ath12k_wmi_peer_assoc_arg *arg,
+				       bool reassoc,
+				       struct ieee80211_link_sta *link_sta,
+				       const struct ath12k_smd_peer_assoc_ctx *ctx);
 #endif

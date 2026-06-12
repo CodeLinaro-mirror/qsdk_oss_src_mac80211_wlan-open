@@ -350,6 +350,7 @@ enum ath12k_skb_flags {
 	ATH12K_SKB_MESH_RX_INFO = BIT(8),
 	ATH12K_SKB_MGMT_MLO_PARAMS = BIT(9),
 	ATH12K_SKB_MCAST_LINK_BMAP_VALID = BIT(10),
+	ATH12K_SKB_MGMT_SMD_HI_PRI = BIT(11),
 };
 
 struct ath12k_skb_cb {
@@ -1181,6 +1182,13 @@ struct ath12k_vif {
 	struct ieee80211_chanctx_conf chanctx;
 	struct ath12k_reg_tpc_power_info reg_tpc_info;
 	struct ath12k_event_queue event_queue;
+	/* SMD BSS Transition state */
+	struct {
+		bool exec_in_progress;
+		u8 target_mld_addr[ETH_ALEN];
+		u16 transitioning_links;
+		u8 primary_link_id;
+	} smd;
 };
 
 struct ath12k_vif_iter {
@@ -1317,6 +1325,20 @@ struct ath12k_sta_migration_data {
 	int ppe_vp_num;
 };
 
+enum ath12k_smd_tid {
+	ATH12K_SMD_TX_MGMT_TID = 15,
+	ATH12K_SMD_RX_MGMT_TID = 16,
+};
+
+#define ATH12K_SMD_NUM_TIDS WMI_SMD_NUM_TIDS
+struct ath12k_ba_session_params {
+	u16  buf_size;
+	u16  ssn;
+	u16  timeout;
+	bool amsdu;
+	bool valid;
+};
+
 struct ath12k_sta {
 	struct ath12k_vif *ahvif;
 	enum hal_pn_type pn_type;
@@ -1367,6 +1389,9 @@ struct ath12k_sta {
 	struct ath12k_sta_extn ahsta_extn;
 #endif
 	u16 free_logical_idx_map;
+
+	struct ath12k_ba_session_params rx_ba_params[ATH12K_SMD_NUM_TIDS];
+	struct ath12k_ba_session_params tx_ba_params[ATH12K_SMD_NUM_TIDS];
 
 	/* Opaque RCU pointer to ath12k_dp_peer */
 	void __rcu *dp_peer;
@@ -2157,6 +2182,18 @@ struct ath12k_pdev_cap {
 	u8 max_tx_nss;
 	u8 max_rx_nss;
 	u32 scan_radio_caps;
+};
+
+struct ath12k_smd_update_work {
+	struct work_struct work;
+	struct ieee80211_hw *hw;
+	struct ath12k_vif *ahvif;
+
+	u16 link_bitmap;
+	u32 role, type, status;
+	u32 dl_sn, ul_sn, dl_drain_time;
+
+	u8 peer_addr[ETH_ALEN];
 };
 
 #define ATH12K_SCAN_RADIO_CAP_SUPPORTED   BIT(0)

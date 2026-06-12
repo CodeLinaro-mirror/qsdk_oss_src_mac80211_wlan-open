@@ -760,6 +760,24 @@ struct ath12k_dp_arch_ops {
 	int (*dp_get_peer_mgmt_flowq)(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 				      u8 *addr,
 				      struct peer_assoc_flowq_params *flowq_params);
+	int (*dp_smd_prep_transfer_ext_ctx)(struct ath12k_dp *dp,
+					    struct ath12k_dp_peer *current_dp_peer,
+					    const u8 *target_mld_addr,
+					    u16 transitioning_links);
+
+	void (*dp_smd_exec_activate_links)(struct ath12k_dp *dp,
+					   struct ath12k_dp_hw *dp_hw,
+					   struct ath12k_dp_vif *dp_vif,
+					   const u8 *addr,
+					   u16 active_hw_links);
+	int (*dp_smd_prep_rx_tid)(struct ath12k_dp *dp,
+				  struct ath12k_dp_hw *dp_hw,
+				  const u8 *addr);
+	int (*dp_smd_exec_rx_tid)(struct ath12k_dp *dp,
+				  struct ath12k_dp_hw *dp_hw,
+				  const u8 *addr);
+	void (*dp_smd_clear_old_peer_rx_lut)(struct ath12k_dp *dp,
+					     struct ath12k_dp_peer *dp_peer);
 	int (*dp_get_peer_holq)(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 				u8 *addr,
 				struct peer_assoc_holq_params *holq_params);
@@ -804,6 +822,7 @@ struct ath12k_dp_arch_ops {
 
 	ssize_t (*dump_srng_stats)(struct ath12k_dp *dp, char *buf, int size);
 	ssize_t (*dump_device_dp_stats)(struct ath12k_dp *dp, char *buf, int size);
+	void (*log_msduq_info9)(struct ath12k_dp *dp, const char *phase);
 	void (*reset_device_dp_stats)(struct ath12k_dp *dp);
 	void (*dp_assoc_link_update)(struct ath12k_dp *dp, struct ath12k_hw *ah,
 				     struct ieee80211_sta *sta);
@@ -838,6 +857,12 @@ struct ath12k_dp_arch_ops {
 	ssize_t (*dump_congestion_recovery_hist)(struct ath12k_dp *dp,
 						 char *buf, int size);
 	int (*set_congestion_ctrl_param)(struct ath12k_dp *dp, u32 type, u32 value);
+	int (*peer_tx_tid_sn_reset)(struct ath12k_base *ab,
+				    struct ath12k_dp_hw *dp_hw,
+				    const u8 *peer_addr);
+	int (*peer_rx_tid_svld_reset)(struct ath12k_base *ab,
+				      struct ath12k_dp_hw *dp_hw,
+				      const u8 *peer_addr);
 };
 
 struct ath12k_bp_stats {
@@ -1380,6 +1405,13 @@ ath12k_dp_arch_dump_fst_table(struct ath12k_dp *dp, char *buf, int size)
 	return dp->arch_ops->dump_fst_table(dp, buf, size);
 }
 
+static inline void
+ath12k_dp_smd_log_msduq_info9(struct ath12k_dp *dp, const char *phase)
+{
+	if (dp && dp->arch_ops && dp->arch_ops->log_msduq_info9)
+		dp->arch_ops->log_msduq_info9(dp, phase);
+}
+
 static inline int
 ath12k_dp_arch_rx_flow_fse_cache_op(struct ath12k_dp *dp,
 				    enum dp_flow_fst_operation op_code,
@@ -1611,6 +1643,85 @@ static inline int ath12k_dp_arch_set_congestion_ctrl_param(struct ath12k_dp *dp,
 		return dp->arch_ops->set_congestion_ctrl_param(dp, type, value);
 
 	return 0;
+}
+
+static inline int
+ath12k_dp_arch_peer_tx_tid_sn_reset(struct ath12k_dp *dp,
+				    struct ath12k_dp_hw *dp_hw,
+				    const u8 *peer_addr)
+{
+	if (dp->arch_ops->peer_tx_tid_sn_reset)
+		return dp->arch_ops->peer_tx_tid_sn_reset(dp->ab, dp_hw,
+							  peer_addr);
+	return -EOPNOTSUPP;
+}
+
+static inline int
+ath12k_dp_arch_peer_rx_tid_svld_reset(struct ath12k_dp *dp,
+				      struct ath12k_dp_hw *dp_hw,
+				      const u8 *peer_addr)
+{
+	if (dp->arch_ops->peer_rx_tid_svld_reset)
+		return dp->arch_ops->peer_rx_tid_svld_reset(dp->ab, dp_hw,
+							    peer_addr);
+	return -EOPNOTSUPP;
+}
+
+static inline int
+ath12k_dp_arch_smd_prep_transfer_ext_ctx(struct ath12k_dp *dp,
+					 struct ath12k_dp_peer *current_dp_peer,
+					 const u8 *target_mld_addr,
+					 u16 transitioning_links)
+{
+	if (dp->arch_ops->dp_smd_prep_transfer_ext_ctx)
+		return dp->arch_ops->dp_smd_prep_transfer_ext_ctx(dp,
+								   current_dp_peer,
+								   target_mld_addr,
+								   transitioning_links);
+
+	return -EOPNOTSUPP;
+}
+
+static inline void
+ath12k_dp_arch_smd_exec_activate_links(struct ath12k_dp *dp,
+				       struct ath12k_dp_hw *dp_hw,
+				       struct ath12k_dp_vif *dp_vif,
+				       const u8 *addr,
+				       u16 active_hw_links)
+{
+	if (dp->arch_ops->dp_smd_exec_activate_links)
+		dp->arch_ops->dp_smd_exec_activate_links(dp, dp_hw, dp_vif,
+							  addr, active_hw_links);
+}
+
+static inline int
+ath12k_dp_arch_smd_prep_rx_tid(struct ath12k_dp *dp,
+			       struct ath12k_dp_hw *dp_hw,
+			       const u8 *addr)
+{
+	if (dp->arch_ops->dp_smd_prep_rx_tid)
+		return dp->arch_ops->dp_smd_prep_rx_tid(dp, dp_hw, addr);
+
+	return -EOPNOTSUPP;
+}
+
+static inline int
+ath12k_dp_arch_smd_exec_rx_tid(struct ath12k_dp *dp,
+			       struct ath12k_dp_hw *dp_hw,
+			       const u8 *addr)
+{
+	if (dp->arch_ops->dp_smd_exec_rx_tid)
+		return dp->arch_ops->dp_smd_exec_rx_tid(dp, dp_hw, addr);
+
+	return -EOPNOTSUPP;
+}
+
+static inline void
+ath12k_dp_arch_smd_clear_old_peer_rx_lut(struct ath12k_dp *dp,
+					 struct ath12k_dp_peer *dp_peer)
+{
+	if (dp->arch_ops->dp_smd_clear_old_peer_rx_lut)
+		dp->arch_ops->dp_smd_clear_old_peer_rx_lut(dp, dp_peer);
 }
 
 static inline void ath12k_dp_get_mac_addr(u32 addr_l32, u16 addr_h16, u8 *addr)

@@ -178,6 +178,23 @@ struct ath12k_dp_hw_group {
 	struct ath12k_dp_hw_group_extn extn;
 #endif
 
+	/* ST (Seamless transition): single in-flight ext_ctx parking
+	 * Used for SLO where target peer doesn't exist during PREPARE.
+	 * For MLO, target peer exists so direct transfer is used instead.
+	 * SMD BSS Transition: parked Rx Q state (analogous to smd_parked_ext_ctx).
+	 * Allocated during PREP phase.
+	 * Consumed and freed during EXEC phase.
+	 * Protected by smd_transition_lock.
+	 */
+	spinlock_t smd_transition_lock;
+	struct ath12k_dp_peer_ext_ctx *smd_parked_ext_ctx;
+	struct ath12k_dp_smd_parked_rx_info *smd_parked_rx_info;
+	u8 smd_target_mld_addr[ETH_ALEN];
+	/* POC: Reuse peer_id to avoid TQM FLOW Q update */
+	u16 smd_old_peer_id;
+	/* true from EXEC_RESP until abort/complete */
+	bool smd_exec_in_progress;
+
 	/* Keep Last */
 	u8 arch_data[] __aligned(sizeof(void *));
 };

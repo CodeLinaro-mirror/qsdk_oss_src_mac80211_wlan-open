@@ -1145,7 +1145,7 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 }
 EXPORT_SYMBOL(ath12k_dp_rx_deliver_msdu);
 
-static void ath12k_dp_rx_frag_timer(struct timer_list *timer)
+void ath12k_dp_rx_frag_timer(struct timer_list *timer)
 {
 	struct ath12k_dp_rx_tid *rx_tid = from_timer(rx_tid, timer, frag_timer);
 
@@ -1158,6 +1158,7 @@ static void ath12k_dp_rx_frag_timer(struct timer_list *timer)
 	ath12k_dp_rx_frags_cleanup(rx_tid, true);
 	spin_unlock_bh(&rx_tid->tid_lock);
 }
+EXPORT_SYMBOL(ath12k_dp_rx_frag_timer);
 
 int ath12k_dp_rx_peer_frag_setup(struct ath12k *ar,
 				 struct ath12k_dp_link_peer *peer,

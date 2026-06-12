@@ -516,6 +516,7 @@ enum wmi_cmd_group {
 	WMI_GRP_SAWF           = 0x49,
 	WMI_GRP_TDMA           = 0x4c,
 	WMI_GRP_ENERGY_MGMT    = 0x4e,
+	WMI_GRP_SMD	       = 0x4f,
 };
 
 #define WMI_CMD_GRP(grp_id) (((grp_id) << 12) | 0x1)
@@ -1034,6 +1035,7 @@ enum wmi_tlv_cmd_id {
 	WMI_ENERGY_MGMT_ECO_MODE_CONFIG_CMDID,
 	/** Command to Handle Energy Management OEM's opaque data */
 	WMI_ENERGY_MGMT_OEM_DATA_CMDID,
+	WMI_ROAM_CONFIG_CMDID = WMI_TLV_CMD(WMI_GRP_SMD),
 };
 
 enum wmi_tlv_event_id {
@@ -1290,6 +1292,7 @@ enum wmi_tlv_event_id {
 	WMI_MLO_TLT_SELECTION_FOR_TID_SPRAY_EVENTID = 0x4800C,
 	WMI_ESP_ESTIMATE_EVENTID = WMI_EVT_GRP_START_ID(WMI_GRP_ESP),
 	WMI_ENERGY_MGMT_OEM_DATA_EVENTID = WMI_EVT_GRP_START_ID(WMI_GRP_ENERGY_MGMT),
+	WMI_SMD_ROAM_CONFIG_EVENTID = WMI_TLV_CMD(WMI_GRP_SMD),
 };
 
 enum wmi_tlv_pdev_param {
@@ -2565,9 +2568,13 @@ enum wmi_tlv_tag {
 	WMI_TAG_ENERGY_MGMT_DPS_ASSISTING_ROLE_CMD_FIXED_PARAM = 0x525,
 	WMI_TAG_MAC_PHY_CAPABILITIES_EXT2 = 0x526,
 	WMI_TAG_PEER_ASSOC_CIP_INFO = 0x527,
-	WMI_TAG_SMD_PARAMS = 0x53E,
+	WMI_TAG_SMD_PEER_ASSOC_PARAMS = 0x53E,
 	WMI_TAG_MLO_PEER_TID_TO_LINK_MAP_EVENT_FIXED_PARAM = 0x544,
 	WMI_TAG_UHR_AP_NPCA_PARAMS = 0x54a,
+	WMI_TAG_SMD_VDEV_START_PARAMS = 0x55A,
+	WMI_TAG_SMD_ROAM_CONFIG_PARAMS = 0x55B,
+	WMI_TAG_SMD_ROAM_CONFIG_EVENT = 0x55C,
+	WMI_TAG_SMD_ROAM_PEER_TID_INFO = 0x55D,
 	WMI_ENERGY_MGMT_OEM_DATA_FIXED_PARAM = 0x56E,
 	WMI_ENERGY_MGMT_OEM_DATA_EVENT_FIXED_PARAM,
 	WMI_TAG_SHARED_CU_MEM_CONFIG = 0x577,
@@ -5070,6 +5077,7 @@ struct peer_assoc_smd_params {
 	bool smd_enabled;
 	u8 smd_mac_addr[ETH_ALEN];
 	bool dl_data_fwd;
+	bool is_tap;
 };
 
 struct peer_assoc_mlo_params {
@@ -5302,6 +5310,50 @@ struct peer_assoc_npca_params {
 	u8 npca_moplen;
 };
 
+enum smd_roam_config_role {
+	SMD_ROAM_CONFIG_ROLE_SERVING_AP = 1,
+	SMD_ROAM_CONFIG_ROLE_TARGET_AP,
+	SMD_ROAM_CONFIG_ROLE_STA,
+};
+
+enum smd_roam_config_status {
+	SMD_ROAM_CONFIG_STATUS_SUCCESS = 0,
+	SMD_ROAM_CONFIG_STATUS_FAILURE,
+};
+
+enum smd_roam_config_cmd_type {
+	SMD_ROAM_CONFIG_CMD_PREP_REQ = 1,
+	SMD_ROAM_CONFIG_CMD_PREP_RESP,
+	SMD_ROAM_CONFIG_CMD_EXEC_REQ,
+	SMD_ROAM_CONFIG_CMD_EXEC_RESP,
+	SMD_ROAM_CONFIG_CMD_DYNAMIC_CONTEXT,
+	SMD_ROAM_CONFIG_CMD_TERMINATION,
+};
+
+enum smd_roam_config_flags {
+	SMD_ROAM_CONFIG_FLAG_DL_SN_NOT_TRANSFERRED = 0x1,
+	SMD_ROAM_CONFIG_FLAG_UL_SN_NOT_TRANSFERRED = 0x2,
+	SMD_ROAM_CONFIG_FLAG_DISABLE_LINK	= 0x4,
+};
+
+#define WMI_SMD_NUM_TIDS 8
+struct ath12k_wmi_smd_roam_tid_ba_info {
+	u32 tx_buf_size;
+	u32 rx_buf_size;
+};
+
+#define WMI_SMD_CTX_NUM_TIDS 8 /* Match it to ATH12K_SMD_CTX_NUM_TIDS */
+struct ath12k_wmi_smd_roam_config_arg {
+	u32 vdev_id;
+	u8 peer_mac[ETH_ALEN];
+	enum smd_roam_config_role role;
+	enum smd_roam_config_cmd_type cmd_type;
+	enum smd_roam_config_status status;
+	enum smd_roam_config_flags flags;
+	u32 dl_drain_time;
+	struct ath12k_wmi_smd_roam_tid_ba_info peer_tid_info[WMI_SMD_NUM_TIDS];
+};
+
 struct ath12k_wmi_peer_assoc_arg {
 	u32 vdev_id;
 	u32 peer_new_assoc;
@@ -5406,6 +5458,7 @@ struct wmi_peer_assoc_mlo_partner_info_params {
 #define ATH12K_WMI_FLAG_PEER_SMD_DL_DATA_FWD			BIT(1)
 #define ATH12K_WMI_FLAG_PEER_SMD_UL_DATA_FWD			BIT(2)
 #define ATH12K_WMI_FLAG_PEER_SMD_ADD_LINK			BIT(3)
+#define ATH12K_WMI_FLAG_PEER_SMD_TAP_LINK			BIT(4)
 
 struct wmi_peer_assoc_smd_params {
 	__le32 tlv_header;
@@ -5464,6 +5517,31 @@ struct wmi_peer_assoc_hol_q_params {
 	__le32 msduq_address;
 	__le32 pn_addr_31_0;
 	__le32 pn_addr_39_32;
+} __packed;
+
+#define WMI_SMD_ROAM_CONFIG_CMD_FLAGS_ROLE		GENMASK(3,   0)
+#define WMI_SMD_ROAM_CONFIG_CMD_FLAGS_CMD_TYPE		GENMASK(11,  4)
+#define WMI_SMD_ROAM_CONFIG_CMD_FLAGS_STATUS		GENMASK(19, 12)
+#define WMI_SMD_ROAM_CONFIG_CMD_FLAGS_FLAGS		GENMASK(27, 20)
+/* TBD: Remaining 4 bits is reserved */
+
+#define WMI_SMD_ROAM_CONFIG_PEER_TID_INFO_MLSN		GENMASK(15, 0)
+#define WMI_SMD_ROAM_CONFIG_PEER_TID_INFO_OFFSET	GENMASK(31, 16)
+
+struct wmi_smd_roam_config_peer_tid_info {
+	__le32 tlv_header;
+	__le32 tid_num;
+	__le32 mlsn_offset_word;
+	__le32 tx_ba_window_size;
+	__le32 rx_ba_window_size;
+} __packed;
+
+struct wmi_smd_roam_config_cmd {
+	__le32 tlv_header;
+	__le32 vdev_id;
+	struct ath12k_wmi_mac_addr_params peer_macaddr;
+	__le32 cmd_flags;
+	__le32 dl_drain_time;
 } __packed;
 
 struct wmi_peer_assoc_complete_cmd {
@@ -5566,6 +5644,7 @@ struct wmi_scan_chan_list_cmd {
 #define WMI_TX_PARAMS_DWORD1_RETRY_LIMIT_EXT	GENMASK(25, 23)
 #define WMI_TX_PARAMS_DWORD1_RSVD		GENMASK(31, 26)
 
+#define WMI_TX_MGMT_HI_PRIO_FLAG		BIT(4)
 
 struct wmi_mgmt_send_cmd {
 	__le32 tlv_header;
@@ -5577,6 +5656,8 @@ struct wmi_mgmt_send_cmd {
 	__le32 frame_len;
 	__le32 buf_len;
 	__le32 tx_params_valid;
+	__le32 tx_flags;
+	__le32 peer_rssi;
 
 	/* This TLV is followed by struct wmi_mgmt_frame */
 
@@ -8698,6 +8779,18 @@ struct wmi_mlo_teardown_complete_event {
 	__le32 status;
 } __packed;
 
+#define WMI_PEER_SMD_EVT_FLAGS_GET_ROLE(event_flags) \
+	FIELD_GET(GENMASK(3, 0), event_flags)
+#define WMI_PEER_SMD_EVT_FLAGS_GET_SMD_TYPE(event_flags) \
+	FIELD_GET(GENMASK(11, 4), event_flags)
+
+struct wmi_smd_roam_config_event {
+	__le32 vdev_id;
+	struct ath12k_wmi_mac_addr_params peer_mac_addr;
+	__le32 dl_drain_time;
+	__le32 event_flags;
+} __packed;
+
 struct wmi_mlo_link_removal_cmd_fixed_param {
 	__le32 tlv_header;
 	__le32 vdev_id;
@@ -10578,6 +10671,8 @@ int ath12k_wmi_pdev_suspend(struct ath12k *ar, u32 suspend_opt,
 			    u32 pdev_id);
 int ath12k_wmi_pdev_resume(struct ath12k *ar, u32 pdev_id);
 
+int ath12k_wmi_send_smd_roam_config(struct ath12k *ar,
+				    struct ath12k_wmi_smd_roam_config_arg *arg);
 int ath12k_wmi_send_peer_assoc_cmd(struct ath12k *ar,
 				   struct ath12k_wmi_peer_assoc_arg *arg);
 int ath12k_wmi_vdev_install_key(struct ath12k *ar,
