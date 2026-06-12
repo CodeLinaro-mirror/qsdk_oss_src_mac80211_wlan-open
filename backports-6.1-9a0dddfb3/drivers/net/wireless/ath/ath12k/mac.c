@@ -6171,11 +6171,11 @@ void ath12k_mac_ap_ps_recalc(struct ath12k *ar)
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
-	ath12k_info(ar->ab,
-		    "ap_ps_recalc: ap_ps_enabled=%d agile_chan=%s num_stations=%d ap_ps_state=%d\n",
-		    ar->ap_ps_enabled,
-		    ar->agile_chandef.chan ? "set" : "NULL",
-		    ar->num_stations, ar->ap_ps_state);
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
+			 "ap_ps_recalc: ap_ps_enabled=%d agile_chan=%s num_stations=%d ap_ps_state=%d\n",
+			 ar->ap_ps_enabled,
+			 ar->agile_chandef.chan ? "set" : "NULL",
+			 ar->num_stations, ar->ap_ps_state);
 
 	list_for_each_entry_safe(arvif, tmp, &ar->arvifs, list) {
 		if (arvif->ahvif->vdev_type != WMI_VDEV_TYPE_AP &&
