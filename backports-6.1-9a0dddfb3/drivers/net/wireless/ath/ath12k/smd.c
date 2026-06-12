@@ -773,6 +773,187 @@ static void ath12k_mac_smd_roam_config(struct ieee80211_hw *hw,
 	}
 }
 
+/* Must be called with wiphy lock held */
+/**
+ * update_smd_forall_links_locked - Send SMD roam config WMI command on all
+ *                                   active links of an MLD vif.
+ *
+ * @hw:    ieee80211_hw (wiphy lock assertion + link dereferencing)
+ * @ahvif: ath12k per-vif state; ahvif->vif used to derive STA vs AP role
+ * @ahsta: ath12k per-sta state; ahsta->sta->addr used as peer_mac.
+ *         Pass NULL when no peer address is needed.
+ * @info:  UHR link reconfiguration parameters:
+ *           - info->action:   REQ vs RESP (WLAN_PROTECTED_UHR_ACTION_*)
+ *           - info->type:     ST_PREP vs ST_EXEC
+ *           - info->status:   status code (response frames)
+ *           - info->transitioning_links: bitmap of links being transitioned
+ *           - info->dl_drain_time_tu:    DL drain period in TUs
+ *           - info->request_dl/ul_sn_not_transferred: SN flags
+ *
+ * Must be called with wiphy mutex held.
+ */
+static int update_smd_forall_links_locked(struct ieee80211_hw *hw,
+					  struct ath12k_vif *ahvif, /* Self */
+					  struct ath12k_sta *ahsta, /* Peer */
+					  u16 link_bitmap,
+					  u32 role, u32 type, u32 status,
+					  u32 dl_sn_not_transferred,
+					  u32 ul_sn_not_transferred,
+					  u32 dl_drain_time)
+{
+	struct ath12k_link_vif *arvif;
+	struct ath12k_wmi_smd_roam_config_arg arg;
+	int ret;
+	u32 link_id;
+
+	lockdep_assert_wiphy(hw->wiphy);
+
+	/* Iterate through each arvif and find the corresponding */
+
+	for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS; link_id++) {
+		arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
+		if (!arvif || !arvif->is_created)
+			continue;
+
+		if (WARN_ON(!arvif->ar))
+			continue;
+
+		memset(&arg, 0, sizeof(arg));
+
+		arg.vdev_id = arvif->vdev_id;
+		arg.role = role;
+		arg.status = status;
+
+		switch (type) {
+		case IEEE80211_SMD_ROAM_CONFIG_TYPE_PREP_REQ:
+			arg.cmd_type = SMD_ROAM_CONFIG_CMD_PREP_REQ;
+			break;
+		case IEEE80211_SMD_ROAM_CONFIG_TYPE_PREP_RESP:
+			arg.cmd_type = SMD_ROAM_CONFIG_CMD_PREP_RESP;
+			break;
+		case IEEE80211_SMD_ROAM_CONFIG_TYPE_EXEC_REQ:
+			arg.cmd_type = SMD_ROAM_CONFIG_CMD_EXEC_REQ;
+			break;
+		case IEEE80211_SMD_ROAM_CONFIG_TYPE_EXEC_RESP:
+			arg.cmd_type = SMD_ROAM_CONFIG_CMD_EXEC_RESP;
+			break;
+		case IEEE80211_SMD_ROAM_CONFIG_TYPE_DYNAMIC_CONTEXT:
+			arg.cmd_type = SMD_ROAM_CONFIG_CMD_DYNAMIC_CONTEXT;
+			break;
+		case IEEE80211_SMD_ROAM_CONFIG_TYPE_TERMINATION:
+			arg.cmd_type = SMD_ROAM_CONFIG_CMD_TERMINATION;
+			break;
+		default:
+			WARN_ON_ONCE(1);
+			return -EINVAL;
+		}
+
+		if (dl_sn_not_transferred)
+			arg.flags |= BIT(0);
+
+		if (ul_sn_not_transferred)
+			arg.flags |= BIT(1);
+
+		arg.dl_drain_time = dl_drain_time;
+
+		if (role == SMD_ROAM_CONFIG_ROLE_STA &&
+		    (link_bitmap & BIT(link_id)))
+			arg.flags |= 0x4;
+
+		if (ahsta) {
+			struct ath12k_link_sta *arsta =
+				wiphy_dereference(hw->wiphy,
+						  ahsta->link[link_id]);
+			int i;
+
+			if (WARN_ON(!arsta))
+				continue;
+			ether_addr_copy(arg.peer_mac, arsta->addr);
+			for (i = 0; i < ATH12K_SMD_NUM_TIDS; i++) {
+				arg.peer_tid_info[i].tx_buf_size = 0;
+				arg.peer_tid_info[i].rx_buf_size = 0;
+			}
+		}
+
+		ret = ath12k_wmi_send_smd_roam_config(arvif->ar, &arg);
+		if (ret) {
+			ath12k_warn(arvif->ar->ab,
+				    "Failed SMD roam config on link %u (ret=%d)\n",
+				    link_id, ret);
+		}
+	}
+
+	return 0;
+}
+
+static void ath12k_uhr_smd_update_workfn(struct work_struct *work)
+{
+	struct ath12k_smd_update_work *ctx =
+		container_of(work, struct ath12k_smd_update_work, work);
+	struct ieee80211_sta *peer;
+	struct ath12k_sta *ahsta = NULL;
+
+	/* Re-derive ahsta under wiphy lock.  The pointer stored at enqueue
+	 * time may have become stale if mac80211 freed the STA before the
+	 * work item ran.  ieee80211_find_sta() is safe to call with the
+	 * wiphy lock held, and update_smd_forall_links_locked() requires
+	 * it, so do both under a single lock acquisition.
+	 */
+	wiphy_lock(ctx->hw->wiphy);
+
+	peer = ieee80211_find_sta(ctx->ahvif->vif, ctx->peer_addr);
+	if (peer)
+		ahsta = ath12k_sta_to_ahsta(peer);
+
+	(void)update_smd_forall_links_locked(ctx->hw, ctx->ahvif,
+					     ahsta,
+					     ctx->link_bitmap,
+					     ctx->role, ctx->type, ctx->status,
+					     ctx->dl_sn, ctx->ul_sn,
+					     ctx->dl_drain_time);
+
+	wiphy_unlock(ctx->hw->wiphy);
+
+	kfree(ctx);
+}
+
+int ath12k_smd_uhr_smd_update(struct ieee80211_hw *hw,
+			      struct ieee80211_vif *vif,
+			      struct ieee80211_sta *peer,
+			      u32 role,
+			      u32 type,
+			      u32 status,
+			      u32 dl_sn,
+			      u32 ul_sn,
+			      u32 dl_drain_time)
+{
+	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
+	struct ath12k_smd_update_work *ctx;
+
+	/* Called from tasklet => must be GFP_ATOMIC */
+	ctx = kzalloc(sizeof(*ctx), GFP_ATOMIC);
+	if (!ctx)
+		return -ENOMEM;
+
+	INIT_WORK(&ctx->work, ath12k_uhr_smd_update_workfn);
+
+	ctx->hw = hw;
+	ctx->ahvif = ahvif; /* Self ahvif */
+	ctx->link_bitmap = 0xffff;
+	ctx->role = role;
+	ctx->type = type;
+	ctx->status = status;
+	ctx->dl_sn = dl_sn;
+	ctx->ul_sn = ul_sn;
+	ctx->dl_drain_time = dl_drain_time;
+	/* Store the MLD address; ahsta is re-derived safely in the workfn */
+	ether_addr_copy(ctx->peer_addr, peer->addr);
+
+	/* Queue onto mac80211 workqueue (sleepable context) */
+	ieee80211_queue_work(hw, &ctx->work);
+	return 0;
+}
+
 static void
 ath12k_smd_remap_vif_links(struct ath12k_vif *ahvif,
 			   const struct ieee80211_uhr_link_reconfig_info *info,

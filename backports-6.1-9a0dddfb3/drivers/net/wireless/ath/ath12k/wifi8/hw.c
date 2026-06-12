@@ -1379,6 +1379,7 @@ static const struct ieee80211_ops ath12k_ops_wifi8 = {
 	.can_activate_links             = ath12k_mac_op_can_activate_links,
 	.set_dscp_tid                   = ath12k_mac_op_set_dscp_tid,
 	.uhr_link_reconfig              = ath12k_mac_op_uhr_link_reconfig,
+	.uhr_smd_update			= ath12k_mac_op_uhr_smd_update,
 #ifdef CONFIG_PM
 	.suspend			= ath12k_wow_op_suspend,
 	.resume				= ath12k_wow_op_resume,

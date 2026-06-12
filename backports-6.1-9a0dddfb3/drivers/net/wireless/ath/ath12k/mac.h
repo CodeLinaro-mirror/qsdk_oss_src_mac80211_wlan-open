@@ -514,6 +514,15 @@ int ath12k_mac_op_erp(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 		      int link_id, struct cfg80211_erp_params *params);
 int ath12k_mac_mgmt_tx(struct ath12k *ar, struct sk_buff *skb,
 		       bool is_prb_rsp);
+int ath12k_mac_op_uhr_smd_update(struct ieee80211_hw *hw,
+				 struct ieee80211_vif *vif,
+				 struct ieee80211_sta *peer,
+				 u32 role,
+				 u32 type,
+				 u32 status,
+				 u32 dl_sn,
+				 u32 ul_sn,
+				 u32 dl_drain_time);
 int ath12k_mac_op_uhr_link_reconfig(struct ieee80211_hw *hw,
 				    struct ieee80211_vif *vif,
 				    struct ieee80211_sta *current_sta,

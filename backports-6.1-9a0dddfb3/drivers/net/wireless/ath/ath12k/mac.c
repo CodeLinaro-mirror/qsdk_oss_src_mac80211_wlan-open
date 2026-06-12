@@ -47,6 +47,7 @@
 #include "mgmt_rx.h"
 #include "qcn_extns/ath12k_cmn_extn.h"
 #include "qcn_extns/ipa/dp_ipa_pub.h"
+#include "mgmt_rx.h"
 
 #define CHAN2G(_channel, _freq, _flags) { \
 	.band                   = NL80211_BAND_2GHZ, \
@@ -19038,6 +19039,17 @@ int ath12k_mac_op_uhr_link_reconfig(struct ieee80211_hw *hw,
 					    action, info);
 }
 EXPORT_SYMBOL(ath12k_mac_op_uhr_link_reconfig);
+
+int ath12k_mac_op_uhr_smd_update(struct ieee80211_hw *hw,
+				 struct ieee80211_vif *vif,
+				 struct ieee80211_sta *peer,
+				 u32 role, u32 type, u32 status,
+				 u32 dl_sn, u32 ul_sn, u32 dl_drain_time)
+{
+	return ath12k_smd_uhr_smd_update(hw, vif, peer, role, type, status,
+					  dl_sn, ul_sn, dl_drain_time);
+}
+EXPORT_SYMBOL(ath12k_mac_op_uhr_smd_update);
 
 int ath12k_mac_op_smd_remap_links(struct ath12k_vif *ahvif,
 				  struct ath12k_sta *ahsta_target,
