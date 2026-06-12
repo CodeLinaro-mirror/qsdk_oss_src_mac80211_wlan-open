@@ -235,18 +235,25 @@ void ath12k_dp_peer_cleanup_tqm_sync(struct ath12k_dp *dp, void *ctx,
 		return;
 	}
 
+	ath12k_dbg(ab, ATH12K_DBG_PEER,
+		   "tqm-cleanup-sync: TQM status successful, proceeding with cleanup\n");
+
 	pdev_id = ath12k_hw_mac_id_to_pdev_id(dp->hw_params,
 					      dp_hw_grp->hw_links[hw_link_id].pdev_idx);
 	rcu_read_lock();
 	dp_pdev = ath12k_dp_to_dp_pdev(dp, pdev_id);
 	if (!dp_pdev) {
 		rcu_read_unlock();
+		ath12k_dbg(ab, ATH12K_DBG_PEER,
+			   "tqm-cleanup-sync: dp_pdev NULL, EXIT\n");
 		return;
 	}
 
 	dp_hw = dp_pdev->dp_hw;
 	if (!dp_hw) {
 		rcu_read_unlock();
+		ath12k_dbg(ab, ATH12K_DBG_PEER,
+			   "tqm-cleanup-sync: dp_hw NULL, EXIT\n");
 		return;
 	}
 
@@ -2322,6 +2329,10 @@ ath12k_wifi8_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 	case HAL_WBM_REL_HTT_TX_COMP_STATUS_TTL:
 	case HAL_WBM_REL_HTT_TX_COMP_STATUS_REINJ:
 	case HAL_WBM_REL_HTT_TX_COMP_STATUS_INSPECT:
+		ath12k_warn(dp->ab,
+			    "smd-tx-dbg: FW TX drop htt_status=%u peer_id=%u ppdu_id=%u hw_link=%u\n",
+			    htt_status, ts->peer_id, ts->ppdu_id,
+			    ts->hw_link_id);
 		switch (htt_status) {
 		case HAL_WBM_REL_HTT_TX_COMP_STATUS_DROP:
 			ts->status = HAL_WBM_TQM_REL_REASON_CMD_REMOVE_MPDU;
@@ -2334,6 +2345,10 @@ ath12k_wifi8_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 		}
 		fallthrough;
 	case HAL_WBM_REL_HTT_TX_COMP_STATUS_VDEVID_MISMATCH:
+		if (htt_status == HAL_WBM_REL_HTT_TX_COMP_STATUS_VDEVID_MISMATCH)
+			ath12k_warn(dp->ab,
+				    "smd-tx-dbg: FW TX drop VDEVID_MISMATCH peer_id=%u ppdu_id=%u hw_link=%u\n",
+				    ts->peer_id, ts->ppdu_id, ts->hw_link_id);
 		ath12k_wifi8_dp_tx_free_txbuf(dp, msdu, sw_metadata);
 		break;
 	case HAL_WBM_REL_HTT_TX_COMP_STATUS_MEC_NOTIFY:

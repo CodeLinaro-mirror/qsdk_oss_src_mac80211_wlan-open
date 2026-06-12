@@ -2428,6 +2428,8 @@ void ath12k_dp_htt_htc_t2h_msg_handler(struct ath12k_base *ab,
 		ath12k_htt_pri_link_peer_migrate_indication(ab, skb);
 		break;
 	case HTT_T2H_MSG_TYPE_GLOBAL_PEER_ID_UNMAP:
+		ath12k_dbg(ab, ATH12K_DBG_PEER,
+			   "htt rx: HTT_T2H_MSG_TYPE_GLOBAL_PEER_ID_UNMAP received\n");
 		ath12k_dp_arch_peer_cleanup_indication(dp, skb);
 		break;
 	default:

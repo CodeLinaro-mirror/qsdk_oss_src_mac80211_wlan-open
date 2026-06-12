@@ -279,6 +279,9 @@ int ieee80211_smd_add_prep_target(struct ieee80211_sub_if_data *sdata,
 
 	sdata->u.mgd.num_prepared_targets++;
 
+	sdata_dbg(sdata, "smd: prep target added %pM slot=%d token=%u\n",
+		  target_addr, slot, sdata->u.mgd.prep_targets[slot].dialog_token);
+
 	/* Initialize link ID remap to identity (same-links map default).
 	 * The actual remap is built in ieee80211_process_smd_prep_resp after
 	 * parse_ml_persta, using fresh TAP BSSIDs from the PREP RESPONSE frame
@@ -372,6 +375,9 @@ int ieee80211_smd_execute_transition(struct ieee80211_sub_if_data *sdata,
 
 	target->transitioning_links = transitioning_links;
 	target->execution_in_progress = true;
+
+	sdata_dbg(sdata, "smd: exec start target=%pM transitioning=0x%x primary=%d\n",
+		  target->target_mld_addr, transitioning_links, target->primary_link_id);
 
 	info->transitioning_links = 0;
 
@@ -572,6 +578,9 @@ static int __smd_dl_drain_remap(struct ieee80211_sub_if_data *sdata,
 		return -EINVAL;
 	}
 
+	sdata_dbg(sdata,
+		  "smd: dl_drain diff-links primary tap=%d sap=%d mask=0x%x\n",
+		  primary_id, primary_sap_link_id, prepared_mask);
 	/*
 	 * Orphan SAP slots must be freed before REMAP_LINKS while
 	 * ahvif->link[] is still SAP-indexed; after remap those slots
@@ -607,17 +616,26 @@ static int __smd_dl_drain_remap(struct ieee80211_sub_if_data *sdata,
 		old_primary_link = sdata->link[primary_sap_link_id];
 		current_sta = sta_info_get(sdata, sdata->vif.cfg.ap_addr);
 		if (current_sta &&
-		    (current_sta->sta.valid_links & BIT(primary_sap_link_id)))
+		    (current_sta->sta.valid_links & BIT(primary_sap_link_id))) {
+			sdata_dbg(sdata,
+				  "smd: dl_drain remove current_sta link sap=%d\n",
+				  primary_sap_link_id);
 			ieee80211_sta_remove_link(current_sta, primary_sap_link_id,
 						  true);
+		}
 
 		target->old_links[primary_sap_link_id] = old_primary_link;
 
 		if (current_sta) {
+			sdata_dbg(sdata,
+				  "smd: dl_drain destroy current_sta pre-remap\n");
 			WARN_ON(__sta_info_destroy(current_sta));
 			current_sta = NULL;
 		}
 
+		sdata_dbg(sdata,
+			  "smd: dl_drain release SAP primary chanctx sap=%d\n",
+			  primary_sap_link_id);
 		ieee80211_smd_stop_old_link(&sdata->vif, old_primary_link,
 					    primary_sap_link_id);
 	}
@@ -629,6 +647,7 @@ static int __smd_dl_drain_remap(struct ieee80211_sub_if_data *sdata,
 	memcpy(remap_info->tap_to_sap_link, target->tap_to_sap_link,
 	       sizeof(remap_info->tap_to_sap_link));
 	remap_info->primary_link_id = (u8)primary_sap_link_id;
+	sdata_dbg(sdata, "smd: dl_drain remap links\n");
 	ret = drv_uhr_link_reconfig(local, sdata, target->target_sta, NULL,
 				    IEEE80211_UHR_LINK_RECONFIG_REMAP_LINKS,
 				    remap_info);
@@ -644,6 +663,12 @@ static int __smd_dl_drain_remap(struct ieee80211_sub_if_data *sdata,
 
 		if (target->new_links[tap_link_id]) {
 			nl = target->new_links[tap_link_id];
+			sdata_dbg(sdata,
+				  "smd: link_conf swap tap=%u sap=%u: %s -> TAP conf (chan %d MHz)\n",
+				  tap_link_id, sap_link_id_local,
+				  sdata->vif.link_conf[tap_link_id] ? "stale" : "NULL",
+				  nl->conf.chanreq.oper.chan ?
+				  nl->conf.chanreq.oper.chan->center_freq : 0);
 			rcu_assign_pointer(sdata->vif.link_conf[tap_link_id],
 					   &nl->conf);
 		}
@@ -665,6 +690,9 @@ static int __smd_dl_drain_remap(struct ieee80211_sub_if_data *sdata,
 			if (tap_link_id == (unsigned int)primary_id)
 				continue;
 			if (target->new_links[tap_link_id]) {
+				sdata_dbg(sdata,
+					  "smd: dl_drain link[%u] = new_links[%u]\n",
+					  tap_link_id, tap_link_id);
 				nl = target->new_links[tap_link_id];
 				__ieee80211_link_assign(sdata, tap_link_id,
 							&nl->data, &nl->conf);
@@ -674,6 +702,9 @@ static int __smd_dl_drain_remap(struct ieee80211_sub_if_data *sdata,
 		for_each_set_bit(tap_link_id, (unsigned long *)&prepared_mask,
 				 IEEE80211_MLD_MAX_NUM_LINKS) {
 			if (target->new_links[tap_link_id]) {
+				sdata_dbg(sdata,
+					  "smd: dl_drain (tdip) link[%u] = new_links[%u]\n",
+					  tap_link_id, tap_link_id);
 				nl = target->new_links[tap_link_id];
 				__ieee80211_link_assign(sdata, tap_link_id,
 							&nl->data, &nl->conf);
@@ -685,6 +716,11 @@ static int __smd_dl_drain_remap(struct ieee80211_sub_if_data *sdata,
 	for (tap_link_id = 0; tap_link_id < IEEE80211_MLD_MAX_NUM_LINKS; tap_link_id++) {
 		if (!target->new_links[tap_link_id])
 			continue;
+		sdata_dbg(sdata,
+			  "smd: dl_drain new_links[%u] link_id %u->%u\n",
+			  tap_link_id,
+			  target->new_links[tap_link_id]->conf.link_id,
+			  tap_link_id);
 		target->new_links[tap_link_id]->conf.link_id = tap_link_id;
 		target->new_links[tap_link_id]->data.link_id = tap_link_id;
 	}
@@ -708,11 +744,16 @@ static int __smd_dl_drain_remap(struct ieee80211_sub_if_data *sdata,
 		ieee80211_link_debugfs_add(&nl->data);
 	}
 
+	sdata_dbg(sdata, "smd: dl_drain remap sta links\n");
 	ieee80211_smd_remap_sta_links(target->target_sta, target->tap_to_sap_link);
 
 	if (!target->transition_done_in_prep) {
 		sdata->vif.active_links |= BIT(primary_id);
 
+		sdata_dbg(sdata,
+			  "smd: dl_drain assoc_success(tap=%d sap=%d) active=0x%x\n",
+			  primary_id, primary_id,
+			  sdata->vif.active_links);
 		ret = ieee80211_smd_assoc_success(sdata, target, primary_id, primary_id);
 		if (ret) {
 			sdata_info(sdata, "smd: dl_drain assoc_success failed: %d\n",
@@ -724,6 +765,10 @@ static int __smd_dl_drain_remap(struct ieee80211_sub_if_data *sdata,
 	sdata->vif.active_links  = target->tap_prepared_mask;
 	sdata->vif.dormant_links = 0;
 	sdata->vif.valid_links   = target->tap_prepared_mask;
+
+	sdata_dbg(sdata,
+		   "smd: dl_drain done (diff-links) active=0x%x\n",
+		   sdata->vif.active_links);
 
 	return 0;
 }
@@ -737,13 +782,20 @@ void __ieee80211_smd_dl_drain_complete(struct ieee80211_sub_if_data *sdata,
 
 	lockdep_assert_wiphy(local->hw.wiphy);
 
-	if (!target || !target->execution_in_progress)
+	if (!target || !target->execution_in_progress) {
+		sdata_dbg(sdata, "smd: dl_drain no exec in progress\n");
 		return;
+	}
 
-	if (!target->target_sta)
+	if (!target->target_sta) {
+		sdata_dbg(sdata, "smd: dl_drain no target_sta\n");
 		return;
+	}
 
 	primary_id = target->primary_link_id;
+
+	sdata_dbg(sdata, "smd: dl_drain starting primary=%d remap=%d\n",
+		  primary_id, target->link_id_remap);
 
 	if (primary_id >= 0) {
 		struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
@@ -754,6 +806,8 @@ void __ieee80211_smd_dl_drain_complete(struct ieee80211_sub_if_data *sdata,
 			__smd_dl_drain_no_remap(sdata, target, primary_id);
 		else
 			__smd_dl_drain_remap(sdata, target, primary_id);
+	} else {
+		sdata_dbg(sdata, "smd: dl_drain no primary link, skip\n");
 	}
 
 	ieee80211_smd_assoc_success_finalize(sdata, target, target->current_sta_addr,
@@ -784,8 +838,11 @@ void ieee80211_smd_dl_drain_complete(struct ieee80211_vif *vif,
 	}
 
 	/* Stale FW notification after transition completed — benign. */
-	if (!target)
+	if (!target) {
+		sdata_dbg(sdata, "smd: dl_drain no active target for %pM (already completed)\n",
+			  target_mld_addr);
 		return;
+	}
 
 	__ieee80211_smd_dl_drain_complete(sdata, target, false);
 }
@@ -851,11 +908,15 @@ void ieee80211_smd_start_exec_timeout(struct ieee80211_sub_if_data *sdata,
 
 	lockdep_assert_wiphy(sdata->local->hw.wiphy);
 
-	if (!target)
+	if (!target) {
+		sdata_dbg(sdata, "smd: no target for exec timeout\n");
 		return;
+	}
 
-	if (!timeout_tu)
+	if (!timeout_tu) {
+		sdata_dbg(sdata, "smd: no exec timeout specified\n");
 		return;
+	}
 
 	timeout_tu *= IEEE80211_SMD_PREP_TIMEOUT_TU;
 	timeout_jiffies = msecs_to_jiffies(timeout_tu);
@@ -865,6 +926,8 @@ void ieee80211_smd_start_exec_timeout(struct ieee80211_sub_if_data *sdata,
 
 	target->exec_timeout_started = true;
 
+	sdata_dbg(sdata, "smd: exec timeout started %pM %u TU\n",
+		  target->target_mld_addr, timeout_tu);
 }
 
 void ieee80211_smd_start_prep_timeout(struct ieee80211_sub_if_data *sdata,
@@ -884,6 +947,9 @@ void ieee80211_smd_start_prep_timeout(struct ieee80211_sub_if_data *sdata,
 				 &target->prep_timeout_work,
 				 timeout_jiffies);
 	target->prep_timeout_started = true;
+
+	sdata_dbg(sdata, "smd: prep timeout started %pM %u TU\n",
+		  target->target_mld_addr, timeout_tu);
 }
 
 static void ieee80211_smd_prep_invalidate_target(struct ieee80211_if_managed *ifmgd,
@@ -919,8 +985,13 @@ void ieee80211_smd_prep_reset_target(struct ieee80211_sub_if_data *sdata,
 
 	lockdep_assert_wiphy(local->hw.wiphy);
 
-	if (!target || !target->valid)
+	if (!target || !target->valid) {
+		sdata_dbg(sdata, "smd: no valid target to reset\n");
 		return;
+	}
+
+	sdata_dbg(sdata, "smd: reset prep target %pM status=%u\n",
+		   target->target_mld_addr, status);
 
 	cfg80211_notify_smd_bss_transition(sdata->dev,
 					   target->target_mld_addr,
@@ -997,6 +1068,9 @@ void ieee80211_smd_prep_reset_target(struct ieee80211_sub_if_data *sdata,
 	ieee80211_smd_free_target_links(target);
 
 	ieee80211_smd_prep_invalidate_target(ifmgd, target);
+
+	sdata_dbg(sdata, "smd: prep target reset, remaining=%d\n",
+		  ifmgd->num_prepared_targets);
 }
 
 void ieee80211_smd_prep_complete_target(struct ieee80211_sub_if_data *sdata,
@@ -1007,8 +1081,11 @@ void ieee80211_smd_prep_complete_target(struct ieee80211_sub_if_data *sdata,
 
 	lockdep_assert_wiphy(sdata->local->hw.wiphy);
 
-	if (!target || !target->valid)
+	if (!target || !target->valid) {
+		sdata_dbg(sdata,
+			  "smd: no valid target to complete\n");
 		return;
+	}
 
 	/* Cancel exec timeout only if it was actually started. */
 	if (target->prep_timeout_started) {
@@ -1040,6 +1117,9 @@ void ieee80211_smd_prep_complete_target(struct ieee80211_sub_if_data *sdata,
 		clear_bit(SDATA_STATE_SMD_BSS_TRANSITION, &sdata->state);
 
 	ieee80211_smd_prep_invalidate_target(ifmgd, target);
+
+	sdata_dbg(sdata, "smd: target complete, remaining=%d\n",
+		  ifmgd->num_prepared_targets);
 }
 
 void ieee80211_smd_prep_reset(struct ieee80211_sub_if_data *sdata,
@@ -1052,6 +1132,8 @@ void ieee80211_smd_prep_reset(struct ieee80211_sub_if_data *sdata,
 
 	if (!ieee80211_vif_is_mld(&sdata->vif))
 		return;
+
+	sdata_dbg(sdata, "smd: reset all prep targets status=%u\n", status_code);
 
 	if (!ifmgd->prep_targets)
 		return;
@@ -1073,18 +1155,22 @@ int ieee80211_smd_parse_trans_params(struct ieee80211_sub_if_data *sdata,
 {
 	size_t remaining = len;
 	const u8 *pos = data;
+	u16 status_code;
 
 	/* Minimum: Presence Bitmap (1) = 4 */
-	if (remaining < 1)
+	if (remaining < 1) {
+		sdata_dbg(sdata, "smd: trans params too short (%zu)\n", len);
 		return -EINVAL;
+	}
 
 	target->smd_bss_trans_flags = *pos++;
 	remaining--;
 
 	if (target->smd_bss_trans_flags & SMD_BSS_TRANS_FLAG_AID_PRESENT) {
-		if (remaining < 2)
+		if (remaining < 2) {
+			sdata_dbg(sdata, "smd: trans params truncated (AID)\n");
 			return -EINVAL;
-
+		}
 		target->target_aid = get_unaligned_le16(pos);
 		pos += 2;
 		remaining -= 2;
@@ -1095,15 +1181,19 @@ int ieee80211_smd_parse_trans_params(struct ieee80211_sub_if_data *sdata,
 	if (target->smd_bss_trans_flags & SMD_BSS_TRANS_FLAG_DL_BA_INFO_PRESENT) {
 		int num_tids;
 
-		if (remaining < 1)
+		if (remaining < 1) {
+			sdata_dbg(sdata, "smd: trans params truncated (DL BA Bitmap)\n");
 			return -EINVAL;
+		}
 
 		num_tids = hweight8(*pos++);
 		remaining--;
 
 		/* Extended BA Parameters Info (3 bytes per TID) */
-		if (remaining < num_tids * 3)
+		if (remaining < num_tids * 3) {
+			sdata_dbg(sdata, "smd: trans params truncated (DL BA Info)\n");
 			return -EINVAL;
+		}
 
 		pos += num_tids * 3;
 		remaining -= num_tids * 3;
@@ -1113,16 +1203,18 @@ int ieee80211_smd_parse_trans_params(struct ieee80211_sub_if_data *sdata,
 		int num_tids;
 
 		/* UL TID Bitmap (1 byte) */
-		if (remaining < 1)
+		if (remaining < 1) {
+			sdata_dbg(sdata, "smd: trans params truncated (UL BA Bitmap)\n");
 			return -EINVAL;
-
+		}
 		num_tids = hweight8(*pos++);
 		remaining--;
 
 		/* Extended BA Parameters Info (3 bytes per TID) */
-		if (remaining < num_tids * 3)
+		if (remaining < num_tids * 3) {
+			sdata_dbg(sdata, "smd: trans params truncated (UL BA Info)\n");
 			return -EINVAL;
-
+		}
 		pos += num_tids * 3;
 		remaining -= num_tids * 3;
 	}
@@ -1131,19 +1223,25 @@ int ieee80211_smd_parse_trans_params(struct ieee80211_sub_if_data *sdata,
 		u8 num_scs;
 
 		/* Number of SCS IDs (1 byte) */
-		if (remaining < 1)
+		if (remaining < 1) {
+			sdata_dbg(sdata, "smd: trans params truncated (SCS Count)\n");
 			return -EINVAL;
-
+		}
 		num_scs = *pos++;
 		remaining--;
 
 		/* SCS ID List (1 byte per ID) */
-		if (remaining < num_scs)
+		if (remaining < num_scs) {
+			sdata_dbg(sdata, "smd: trans params truncated (SCS List)\n");
 			return -EINVAL;
-
+		}
 		pos += num_scs;
 		remaining -= num_scs;
 	}
+
+	sdata_dbg(sdata, "smd: trans params ok status=%u aid=%u flags=0x%x\n",
+		  status_code, target->target_aid,
+		  target->smd_bss_trans_flags);
 
 	return 0;
 }
@@ -1160,11 +1258,15 @@ int ieee80211_smd_parse_exec_trans_params(struct ieee80211_sub_if_data *sdata,
 	*dl_drain_time = 0;
 
 	/* Minimum size: Presence Bitmap (1) = 4 octets */
-	if (remaining < 1)
+	if (remaining < 1) {
+		sdata_dbg(sdata, "smd: exec_trans_params too short (%zu)\n", len);
 		return -EINVAL;
+	}
 
 	st_control = *pos++;
 
+	sdata_dbg(sdata, "smd: exec_trans_params st_control=0x%x\n",
+		  st_control);
 	remaining--;
 
 /* B0: Nominal Maximum DL Draining Period Duration Present */
@@ -1184,6 +1286,9 @@ int ieee80211_smd_parse_exec_trans_params(struct ieee80211_sub_if_data *sdata,
 			return -EINVAL;
 
 		*dl_drain_time = dl_drain_tu;
+		sdata_dbg(sdata, "smd: exec dl_drain=%u TU\n", dl_drain_tu);
+	} else {
+		sdata_dbg(sdata, "smd: exec no dl_drain specified\n");
 	}
 
 	if (st_control & SMD_EXEC_PRESENCE_LATEST_UL_SN_PRESENT) {
@@ -1204,9 +1309,11 @@ int ieee80211_smd_parse_exec_trans_params(struct ieee80211_sub_if_data *sdata,
 		if (num_tids > 0) {
 			size_t sn_bytes = (num_tids * 12 + 7) / 8;
 
-			if (remaining < sn_bytes)
+			if (remaining < sn_bytes) {
+				sdata_dbg(sdata, "smd: exec trans params missing ul_sn_data (need %zu, have %zu)\n",
+					  sn_bytes, remaining);
 				return -EINVAL;
-
+			}
 			pos += sn_bytes;
 			remaining -= sn_bytes;
 		}
@@ -1225,8 +1332,10 @@ int ieee80211_smd_parse_ml_persta(struct ieee80211_sub_if_data *sdata,
 	int link_count = 0;
 	u16 ml_control;
 
-	if (!ieee80211_mle_size_ok(data, len))
+	if (!ieee80211_mle_size_ok(data, len)) {
+		sdata_dbg(sdata, "smd: ml element size invalid\n");
 		return -EINVAL;
+	}
 
 	ml_control = le16_to_cpu(ml->control);
 
@@ -1237,6 +1346,9 @@ int ieee80211_smd_parse_ml_persta(struct ieee80211_sub_if_data *sdata,
 
 	if (len >= sizeof(*ml) + sizeof(*common)) {
 		common = (const void *)ml->variable;
+
+		sdata_dbg(sdata, "smd: mle common_info_len=%d, MLD Addr: %pM\n",
+			  common->len, common->mld_mac_addr);
 
 		if (!ether_addr_equal(common->mld_mac_addr, target->target_mld_addr)) {
 			sdata_info(sdata, "smd: ML MLD addr mismatch got %pM expected %pM\n",
@@ -1266,14 +1378,23 @@ int ieee80211_smd_parse_ml_persta(struct ieee80211_sub_if_data *sdata,
 		if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
 			continue;
 
-		if (!(target->prepared_links_mask & BIT(link_id)))
+		if (!(target->prepared_links_mask & BIT(link_id))) {
+			sdata_dbg(sdata, "smd: link %u not in prepared mask, skipping\n",
+				  link_id);
 			continue;
+		}
 
-		if (!target->assoc_data || !target->assoc_data->link[link_id].bss)
+		if (!target->assoc_data || !target->assoc_data->link[link_id].bss) {
+			sdata_dbg(sdata, "smd: link %u has no BSS in assoc_data, skipping\n",
+				  link_id);
 			continue;
+		}
 
 		if (sta_control & IEEE80211_MLE_STA_CONTROL_STA_MAC_ADDR_PRESENT) {
 			sta_info = prof->variable;
+
+			sdata_dbg(sdata, "smd: link[%u] bssid=%pM\n",
+				  link_id, sta_info);
 
 			ether_addr_copy(target->assoc_data->link[link_id].addr,
 					sta_info);
@@ -1288,6 +1409,8 @@ int ieee80211_smd_parse_ml_persta(struct ieee80211_sub_if_data *sdata,
 
 		link_count++;
 	}
+
+	sdata_dbg(sdata, "smd: ml_element parsed %d links\n", link_count);
 
 	return 0;
 }
@@ -1454,6 +1577,9 @@ int ieee80211_smd_alloc_target_sta(struct ieee80211_sub_if_data *sdata,
 	target->target_sta = sta;
 	target->sta_inserted = false;
 
+	sdata_dbg(sdata, "smd: target sta %pM allocated (valid_links=0x%lx)\n",
+		  target->target_mld_addr, sta->sta.valid_links);
+
 	return 0;
 
 out_free_sta:
@@ -1525,6 +1651,12 @@ ieee80211_smd_compute_prep_bitmaps(struct ieee80211_sub_if_data *sdata,
 	WARN_ON(target->primary_link_id < 0 ||
 		target->primary_link_id >= IEEE80211_MLD_MAX_NUM_LINKS);
 
+	sdata_dbg(sdata,
+		  "smd: prepared=0x%x transitioning=0x%x primary=%d remap=%s\n",
+		  target->prepared_links_mask, target->transitioning_links,
+		  target->primary_link_id,
+		  target->link_id_remap ? "yes (diff-links)" : "no (same-links)");
+
 	return 0;
 }
 
@@ -1555,6 +1687,8 @@ ieee80211_smd_alloc_target_link(struct ieee80211_sub_if_data *sdata,
 	tgt_link->allocated = true;
 	tgt_link->link_id = link_id;
 	target->new_links[link_id] = tgt_link;
+
+	sdata_dbg(sdata, "smd: alloc target link[%u]\n", link_id);
 
 	return tgt_link;
 }

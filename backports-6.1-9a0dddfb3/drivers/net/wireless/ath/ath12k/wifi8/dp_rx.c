@@ -3368,6 +3368,14 @@ static int ath12k_wifi8_dp_rx_h_null_q_desc(struct ath12k_pdev_dp *dp_pdev,
 	rcu_read_lock();
 	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev,
 						   rx_mpdu_info.flow_info.peer_id);
+
+	ath12k_dbg(ab, ATH12K_DBG_DP_RX,
+		   "null_q_desc mcbc: peer_id=%u da_is_mcbc=%u is_decrypted=%u err=0x%x decap=%u",
+		   rx_mpdu_info.flow_info.peer_id,
+		   rx_msdu_info.da_is_mcbc,
+		   rx_desc_data->is_decrypted,
+		   rx_desc_data->err_bitmap,
+		   rx_desc_data->decap);
 	ret = ath12k_wifi8_dp_rx_h_mpdu(dp_pdev, msdu, desc, status, &rx_msdu_info,
 					&rx_mpdu_info, &tlv_info,
 					rx_desc_data->err_bitmap, &fast_rx,

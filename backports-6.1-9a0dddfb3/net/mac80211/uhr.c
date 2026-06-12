@@ -667,6 +667,8 @@ static void ieee80211_process_smd_prep_resp(struct ieee80211_sub_if_data *sdata,
 	if (!ieee80211_sdata_running(sdata))
 		return;
 
+	sdata_dbg(sdata, "smd: processing prep response\n");
+
 	if (mgmt->u.action.u.uhr_link_reconf_resp.status_code) {
 		u16 sc = le16_to_cpu(mgmt->u.action.u.uhr_link_reconf_resp.status_code);
 
@@ -984,6 +986,8 @@ static void ieee80211_process_smd_exec_resp(struct ieee80211_sub_if_data *sdata,
 
 	if (!ieee80211_sdata_running(sdata))
 		return;
+
+	sdata_dbg(sdata, "smd: processing exec response\n");
 
 	pos = mgmt->u.action.u.uhr_link_reconf_resp.variable;
 	len -= offsetofend(typeof(*mgmt), u.action.u.uhr_link_reconf_resp);

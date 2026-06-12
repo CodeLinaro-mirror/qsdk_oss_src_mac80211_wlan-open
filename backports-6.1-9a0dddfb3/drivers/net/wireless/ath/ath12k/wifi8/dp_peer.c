@@ -26,7 +26,13 @@
 void ath12k_dp_tqm_update_completion(struct ath12k_dp *dp, void *ctx,
 				     struct hal_tqm_status *tqm_status)
 {
+	struct ath12k_dp_tx_queue *data = ctx;
 	struct ath12k_base *ab = dp->ab;
+
+	ath12k_dbg(ab, ATH12K_DBG_PEER,
+		   "dp tqm update: peer_id=%u hw_link_id=%u status=%d\n",
+		   data ? data->peer_id : 0, data ? data->hw_link_id : 0,
+		   tqm_status->status_hdr.cmd_execution_status);
 
 	if (tqm_status->status_hdr.cmd_execution_status !=
 	    HAL_TQM_SUCCESSFUL_EXECUTION)
@@ -1735,6 +1741,10 @@ int ath12k_dp_tqm_sync_remove_queues(struct ath12k_base *ab,
 	struct ath12k_hal_tqm_cmd cmd;
 	int ret = 0;
 
+	ath12k_dbg(ab, ATH12K_DBG_PEER,
+		   "tqm-sync: ENTRY peer %pM peer_id=%u hw_link_id=%u\n",
+		   dp_peer->addr, data->peer_id, data->hw_link_id);
+
 	memset(&cmd, 0, sizeof(cmd));
 	cmd.std.peer_id = 0xFFFF;
 	cmd.tqm_sync_params.cb_func = ath12k_dp_peer_cleanup_tqm_sync;
@@ -1743,9 +1753,19 @@ int ath12k_dp_tqm_sync_remove_queues(struct ath12k_base *ab,
 	if (!cmd.tqm_sync_params.cb_func)
 		cmd.tqm_sync_params.data_only = 1;
 
+	ath12k_dbg(ab, ATH12K_DBG_PEER,
+		   "tqm-sync: sending TQM_SYNC_CMD with cb_func=%p cb_ctxt=%p\n",
+		   cmd.tqm_sync_params.cb_func, cmd.tqm_sync_params.cb_ctxt);
 	ret = ath12k_wifi8_dp_tqm_cmd_send(ab, HAL_TQM_SYNC_CMD_BO, &cmd, data,
 					   ath12k_dp_peer_cleanup_tqm_sync);
+	if (ret)
+		ath12k_err(ab, "tqm-sync: TQM_SYNC_CMD send failed ret=%d\n", ret);
+	else
+		ath12k_dbg(ab, ATH12K_DBG_PEER,
+			   "tqm-sync: TQM_SYNC_CMD sent successfully\n");
 
+	ath12k_dbg(ab, ATH12K_DBG_PEER,
+		   "tqm-sync: EXIT peer_id=%u ret=%d\n", data->peer_id, ret);
 	return ret;
 }
 

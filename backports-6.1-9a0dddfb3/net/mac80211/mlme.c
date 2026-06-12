@@ -12254,6 +12254,7 @@ static int ieee80211_smd_init_target_link(struct ieee80211_sub_if_data *sdata,
 
 	sdata->vif.active_links = saved_active_links;  /* Restore active_links */
 
+	sdata_dbg(sdata, "smd: prep_channel deferred to exec\n");
 
 	err = ieee80211_mgd_setup_link_sta(link, target->target_sta, link_sta,
 					   target_bss);
@@ -12265,6 +12266,9 @@ static int ieee80211_smd_init_target_link(struct ieee80211_sub_if_data *sdata,
 
 	ieee80211_sta_init_nss(link_sta);
 
+	sdata_dbg(sdata,
+		  "smd: target link %u initialized for tap (not yet assigned)\n",
+		  tap_link_id);
 
 	return 0;
 }
@@ -12336,18 +12340,24 @@ int ieee80211_smd_assoc_success(struct ieee80211_sub_if_data *sdata,
 		/* else: SLO→MLO new link (sap_link_id > 0) — no current peer, skip */
 	}
 
-	if (old_link)
+	if (old_link) {
+		sdata_dbg(sdata, "smd: stop old link sap=%u tap=%u\n",
+			  sap_link_id, tap_link_id);
 		ieee80211_smd_stop_old_link(&sdata->vif, old_link, sap_link_id);
-
+	}
 	target->old_links[sap_link_id] = sdata->link[sap_link_id];
 
-	if (!target->link_id_remap)
+	if (!target->link_id_remap) {
 		__ieee80211_link_assign(sdata, tap_link_id,
 					&tgt_link->data, &tgt_link->conf);
-	else
+		sdata_dbg(sdata, "smd: swap link[%u] to tap (same-links)\n",
+			  tap_link_id);
+	} else {
 		__ieee80211_link_assign(sdata, sap_link_id,
 					&tgt_link->data, &tgt_link->conf);
-
+		sdata_dbg(sdata, "smd: swap link[sap=%u] to tap (diff-links tap=%u)\n",
+			  sap_link_id, tap_link_id);
+	}
 	synchronize_rcu();
 
 	link = sdata->link[sap_link_id];
@@ -12498,8 +12508,11 @@ ieee80211_smd_assoc_success_finalize(struct ieee80211_sub_if_data *sdata,
 	ieee80211_mgd_reset_mcast_seq(ifmgd, false);
 
 	current_sta = sta_info_get(sdata, current_sta_addr);
-	if (current_sta)
+	if (current_sta) {
+		sdata_dbg(sdata, "smd: destroy current_sta %pM\n",
+			  current_sta->sta.addr);
 		WARN_ON(__sta_info_destroy(current_sta));
+	}
 
 	dyn_info = kzalloc(sizeof(*dyn_info), GFP_KERNEL);
 	if (!dyn_info)
@@ -12557,8 +12570,11 @@ int ieee80211_smd_prep_setup(struct ieee80211_sub_if_data *sdata,
 		return -EINVAL;
 
 	ret = ieee80211_smd_alloc_target_sta(sdata, target);
-	if (ret)
+	if (ret) {
+		sdata_dbg(sdata, "smd: prep_setup: alloc target sta failed: %d\n",
+			  ret);
 		return ret;
+	}
 
 	target_sta = target->target_sta;
 
@@ -12579,6 +12595,11 @@ int ieee80211_smd_prep_setup(struct ieee80211_sub_if_data *sdata,
 
 	transitioning_links = target->prep_transition_links;
 
+	sdata_dbg(sdata,
+		  "smd: prep_setup exec_path=%u prep=0x%x post_exec=0x%x primary=%d exec_link=%d\n",
+		  target->exec_path, transitioning_links,
+		  target->post_exec_transition_links,
+		  target->primary_link_id, target->exec_link_id);
 
 	info = kzalloc(sizeof(*info), GFP_KERNEL);
 	if (!info) {
@@ -12622,16 +12643,24 @@ int ieee80211_smd_prep_setup(struct ieee80211_sub_if_data *sdata,
 
 		ret = ieee80211_smd_init_target_link(sdata, target, tgt_link,
 						     link_id, sap_link_id);
-		if (ret)
+		if (ret) {
+			sdata_dbg(sdata,
+				  "smd: prep_setup init target link %u failed: %d\n",
+				  link_id, ret);
 			goto out_free_links;
+		}
 
 		link = &tgt_link->data;
 		rcu_read_lock();
 		link_sta = rcu_dereference(target_sta->link[sap_link_id]);
 		rcu_read_unlock();
 
-		if (!link_sta || !cbss)
+		if (!link_sta || !cbss) {
+			sdata_dbg(sdata,
+				  "smd: prep_setup missing link_sta/cbss for link %u\n",
+				  link_id);
 			continue;
+		}
 
 		target->changed[link_id] = 0;
 		link->link_id = link_id;
@@ -12702,8 +12731,10 @@ int ieee80211_smd_prep_activate(struct ieee80211_sub_if_data *sdata,
 		return -EINVAL;
 
 	current_sta = sta_info_get(sdata, sdata->vif.cfg.ap_addr);
-	if (!current_sta)
+	if (!current_sta) {
+		sdata_dbg(sdata, "smd: prep_activate no current_sta\n");
 		return -ENOENT;
+	}
 
 	/*
 	 * SLO→MLO upgrade: expand valid_links before the assoc_success loop.
