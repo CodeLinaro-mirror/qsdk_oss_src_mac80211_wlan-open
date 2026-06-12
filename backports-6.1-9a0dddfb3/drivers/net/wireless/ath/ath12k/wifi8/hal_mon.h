@@ -22,6 +22,22 @@
 	sizeof(struct hal_rx_msdu_end)
 #define HAL_MON_RX_PPDU_EU_STATS_TLV_SIZE	\
 	sizeof(struct hal_rx_ppdu_end_user_stats)
+#define HAL_MON_TX_FES_SETUP_TLV_SIZE		\
+	sizeof(struct hal_tx_mon_fes_setup)
+#define HAL_MON_TX_PEER_ENTRY_TLV_SIZE		\
+	sizeof(struct hal_tx_mon_peer_entry)
+#define HAL_MON_TX_QUEUE_EXT_TLV_SIZE		\
+	sizeof(struct hal_tx_mon_queue_ext)
+#define HAL_MON_TX_MPDU_START_TLV_SIZE		\
+	sizeof(struct hal_tx_mon_mpdu_start)
+#define HAL_MON_TX_FES_STATUS_END_TLV_SIZE	\
+	sizeof(struct hal_tx_mon_fes_status_end)
+#define HAL_MON_TX_RESPONSE_END_TLV_SIZE	\
+	sizeof(struct hal_tx_mon_response_end_status)
+#define HAL_MON_TX_FES_STATUS_PROT_TLV_SIZE	\
+	sizeof(struct hal_tx_mon_fes_status_prot)
+#define HAL_MON_TX_PCU_PPDU_SETUP_INIT_TLV_SIZE	\
+	sizeof(struct hal_tx_mon_pcu_ppdu_setup_init)
 
 #define HAL_RX_PPDU_START_INFO0_PPDU_ID			GENMASK(15, 0)
 #define HAL_RX_PPDU_START_INFO1_CHAN_NUM		GENMASK(15, 0)
@@ -746,7 +762,7 @@ struct hal_tlv_parsed_hdr {
 /* The below hal_rx_mon_mpdu_start_compact structure is tied with the mask value
  * RX_MON_MPDU_START_WMASK. If the mask value changes the structure will also
  * change.
- * ipq5424/5332, qcn6432/9274 uses common compact staructure as they share same
+ * ipq5424/5332, qcn6432/9274 uses common compact structure as they share same
  * mpdu start wmask.
  */
 struct hal_rx_mon_mpdu_start_compact {
@@ -783,7 +799,7 @@ struct hal_rx_mon_mpdu_start_compact {
 /* The below hal_rx_mon_msdu_end_compact structure is tied with the mask value
  * RX_MON_MSDU_END_WMASK. If the mask value changes the structure will also
  * change.
- * ipq5424/5332, qcn6432/9274 uses common compact staructure as they share same
+ * ipq5424/5332, qcn6432/9274 uses common compact structure as they share same
  * msdu end wmask.
  */
 struct hal_rx_mon_msdu_end_compact {
@@ -847,7 +863,7 @@ struct hal_rx_mon_msdu_end_compact {
 /* The below hal_rx_mon_ppdu_end_user_stats_compact structure is tied
  * with the mask value RX_MON_PPDU_END_USER_STATS_WMASK.
  * If the mask value changes the structure will also change.
- * ipq5424/5332, qcn6432 uses common compact staructure as they share same
+ * ipq5424/5332, qcn6432 uses common compact structure as they share same
  * wmask and qcn9274 uses hal_rx_mon_ppdu_end_user_stats_compact_qcn9274
  */
 struct hal_rx_mon_ppdu_end_user_stats_compact {
@@ -888,6 +904,574 @@ enum hal_mon_rx_hdr_pkt_type {
 struct hal_mon_rx_hdr {
 	__le32 rsvd;
 	__le32 info0;
+} __packed;
+
+#define HAL_TX_MON_FES_SETUP_INFO0_NUM_OF_USERS		GENMASK(29, 24)
+
+struct hal_tx_mon_fes_setup {
+	__le32 schedule_id;
+	__le32 info0;
+	__le32 rsvd0[14];
+} __packed;
+
+/* The below hal_tx_mon_fes_setup_compact structure is tied with the mask value
+ * HAL_TX_MON_WMASK_FES_SETUP_CFG. If the mask value changes the structure will also
+ * change.
+ * ipq5424/5332, qcn6432/9274 uses common compact structure as they share same
+ * fes setup wmask.
+ */
+
+#define HAL_TX_MON_FES_SETUP_INFO0_NUM_OF_USERS_CMPCT		GENMASK(29, 24)
+
+struct hal_tx_mon_fes_setup_compact {
+	__le32 schedule_id;
+	__le32 info0;
+	__le32 rsvd0;
+} __packed;
+
+#define HAL_TX_MON_PEER_ENTRY_INFO0_MAC_ADR_31_0		GENMASK(31, 0)
+#define HAL_TX_MON_PEER_ENTRY_INFO1_MAC_ADR_47_32		GENMASK(15, 0)
+#define HAL_TX_MON_PEER_ENTRY_INFO1_MAC_ADR_15_0		GENMASK(31, 16)
+#define HAL_TX_MON_PEER_ENTRY_INFO2_MAC_ADR_47_16		GENMASK(31, 0)
+#define HAL_TX_MON_PEER_ENTRY_INFO3_KEY_TYPE			GENMASK(7, 4)
+#define HAL_TX_MON_PEER_ENTRY_INFO4_SW_PEER_ID			GENMASK(31, 16)
+
+struct hal_tx_mon_peer_entry {
+	__le32 info0;
+	__le32 info1;
+	__le32 info2;
+	__le32 info3;
+	__le32 rsvd0[13];
+	__le32 info4;
+	__le32 rsvd1[4];
+} __packed;
+
+/* The below hal_tx_mon_peer_entry_compact structure is tied with the mask value
+ * HAL_TX_MON_WMASK_PEER_ENTRY_CFG. If the mask value changes the structure will also
+ * change.
+ * ipq5424/5332, qcn6432/9274 uses common compact structure as they share same
+ * peer entry wmask.
+ */
+
+#define HAL_TX_MON_PEER_ENTRY_INFO0_MAC_ADR_31_0_CMPCT		GENMASK(31, 0)
+#define HAL_TX_MON_PEER_ENTRY_INFO1_MAC_ADR_47_32_CMPCT		GENMASK(15, 0)
+#define HAL_TX_MON_PEER_ENTRY_INFO1_MAC_ADR_15_0_CMPCT		GENMASK(31, 16)
+#define HAL_TX_MON_PEER_ENTRY_INFO2_MAC_ADR_47_16_CMPCT		GENMASK(31, 0)
+#define HAL_TX_MON_PEER_ENTRY_INFO3_KEY_TYPE_CMPCT		GENMASK(7, 4)
+#define HAL_TX_MON_PEER_ENTRY_INFO4_SW_PEER_ID_CMPCT		GENMASK(31, 16)
+
+struct hal_tx_mon_peer_entry_compact {
+	__le32 info0;
+	__le32 info1;
+	__le32 info2;
+	__le32 info3;
+	__le32 rsvd0;
+	__le32 info4;
+	__le32 rsvd1;
+} __packed;
+
+#define HAL_TX_MON_QUEUE_EXT_INFO0_FRAME_CTRL		GENMASK(15, 0)
+
+struct hal_tx_mon_queue_ext {
+	__le32 info0;
+	__le32 rsvd0[27];
+} __packed;
+
+/* The below hal_tx_mon_queue_ext_compact structure is tied with the mask value
+ * HAL_TX_MON_WMASK_QUEUE_EXT_CFG. If the mask value changes the structure will also
+ * change.
+ * ipq5424/5332, qcn6432/9274 uses common compact structure as they share same
+ * queue ext wmask.
+ */
+
+#define HAL_TX_MON_QUEUE_EXT_INFO0_FRAME_CTRL_CMPCT	GENMASK(15, 0)
+
+struct hal_tx_mon_queue_ext_compact {
+	__le32 info0;
+	__le32 rsvd0;
+} __packed;
+
+#define HAL_TX_MON_MPDU_START_INFO0_SEQ			GENMASK(27, 16)
+
+struct hal_tx_mon_mpdu_start {
+	__le32 rsvd0[2];
+	__le32 info0;
+	__le32 rsvd1[7];
+} __packed;
+
+/* The below hal_tx_mon_mpdu_start_compact structure is tied with the mask value
+ * HAL_TX_MON_WMASK_MPDU_START_CFG. If the mask value changes the structure will also
+ * change.
+ * ipq5424/5332, qcn6432/9274 uses common compact structure as they share same
+ * mpdu start wmask.
+ */
+
+#define HAL_TX_MON_MPDU_START_INFO0_SEQ_CMPCT		GENMASK(27, 16)
+
+struct hal_tx_mon_mpdu_start_compact {
+	__le32 rsvd0[2];
+	__le32 info0;
+	__le32 rsvd1;
+} __packed;
+
+#define HAL_TX_MON_FES_STATUS_END_INFO0_PHYTX_ABORT_REASON	GENMASK(7, 0)
+#define HAL_TX_MON_FES_STATUS_END_INFO0_PHYTX_ABORT_USER_NUM	GENMASK(13, 8)
+#define HAL_TX_MON_FES_STATUS_END_INFO0_PHYTX_ABORT_VALID	BIT(28)
+#define HAL_TX_MON_FES_STATUS_END_INFO1_RESPONSE_TYPE		GENMASK(10, 6)
+#define HAL_TX_MON_FES_STATUS_END_INFO1_R2R_END_STATUS		BIT(11)
+
+struct hal_tx_mon_fes_status_end {
+	__le32 rsvd0;
+	__le32 info0;
+	__le32 info1;
+	__le32 rsvd1[9];
+} __packed;
+
+/* The below hal_tx_mon_fes_status_end_compact structure is tied with the mask value
+ * TX_MON_FES_STATUS_END. If the mask value changes the structure will also
+ * change.
+ * ipq5424/5332, qcn6432/9274 uses common compact structure as they share same
+ * fes status end wmask.
+ */
+
+#define HAL_TX_MON_FES_STATUS_END_INFO0_PHYTX_ABORT_REASON_CMPCT	GENMASK(7, 0)
+#define HAL_TX_MON_FES_STATUS_END_INFO0_PHYTX_ABORT_USER_NUM_CMPCT	GENMASK(13, 8)
+#define HAL_TX_MON_FES_STATUS_END_INFO0_PHYTX_ABORT_VALID_CMPCT		BIT(28)
+#define HAL_TX_MON_FES_STATUS_END_INFO1_RESPONSE_TYPE_CMPCT		GENMASK(10, 6)
+#define HAL_TX_MON_FES_STATUS_END_INFO1_R2R_END_STATUS_CMPCT		BIT(11)
+
+struct hal_tx_mon_fes_status_end_compact {
+	__le32 rsvd0;
+	__le32 info0;
+	__le32 info1;
+	__le32 rsvd1;
+} __packed;
+
+#define HAL_TX_MON_RESPONSE_END_INFO0_GENERATED_RESPONSE	GENMASK(12, 10)
+#define HAL_TX_MON_RESPONSE_END_INFO0_MBA_USER_COUNT		GENMASK(19, 13)
+#define HAL_TX_MON_RESPONSE_END_INFO0_MBA_FAKE_BA_COUNT		GENMASK(26, 20)
+#define HAL_TX_MON_RESPONSE_END_INFO0_COEX_BASED_TX_BW		GENMASK(29, 27)
+
+struct hal_tx_mon_response_end_status {
+	__le32 info0;
+	__le32 rsvd0[9];
+} __packed;
+
+/* The below hal_tx_mon_response_end_compact structure is tied with the mask value
+ * TX_MON_RESPONSE_END. If the mask value changes the structure will also
+ * change.
+ * ipq5424/5332, qcn6432/9274 uses common compact structure as they share same
+ * response end wmask.
+ */
+
+#define HAL_TX_MON_RESPONSE_END_INFO0_GENERATED_RESPONSE_CMPCT		GENMASK(12, 10)
+#define HAL_TX_MON_RESPONSE_END_INFO0_MBA_USER_COUNT_CMPCT		GENMASK(19, 13)
+#define HAL_TX_MON_RESPONSE_END_INFO0_MBA_FAKE_BA_COUNT_CMPCT		GENMASK(26, 20)
+#define HAL_TX_MON_RESPONSE_END_INFO0_COEX_BASED_TX_BW_CMPCT		GENMASK(29, 27)
+
+struct hal_tx_mon_response_end_status_compact {
+	__le32 info0;
+} __packed;
+
+#define HAL_TX_MON_FES_STATUS_PROT_INFO0_SUCCESS		BIT(0)
+
+struct hal_tx_mon_fes_status_prot {
+	__le32 info0;
+	__le32 rsvd0[3];
+} __packed;
+
+/* The below hal_tx_mon_fes_status_prot_compact structure is tied with the mask value
+ * TX_MON_FES_STATUS_PROT. If the mask value changes the structure will also
+ * change.
+ * ipq5424/5332, qcn6432/9274 uses common compact structure as they share same
+ * fes status end wmask.
+ */
+
+#define HAL_TX_MON_FES_STATUS_PROT_INFO0_SUCCESS_CMPCT			BIT(0)
+
+struct hal_tx_mon_fes_status_prot_compact {
+	__le32 info0;
+	__le32 rsvd0;
+} __packed;
+
+#define HAL_TX_MON_PPDU_SETUP_INFO0_PROTECTION_ADDRESS_FIELDS	BIT(21)
+#define HAL_TX_MON_PPDU_SETUP_INFO1_PROT_FRAME_ADDR1_31_0	GENMASK(31, 0)
+#define HAL_TX_MON_PPDU_SETUP_INFO2_PROT_FRAME_ADDR1_47_32	GENMASK(15, 0)
+#define HAL_TX_MON_PPDU_SETUP_INFO2_PROT_FRAME_ADDR2_15_0	GENMASK(31, 16)
+#define HAL_TX_MON_PPDU_SETUP_INFO3_PROT_FRAME_ADDR2_47_16	GENMASK(31, 0)
+#define HAL_TX_MON_PPDU_SETUP_INFO4_PROT_FRAME_ADDR3_31_0	GENMASK(31, 0)
+#define HAL_TX_MON_PPDU_SETUP_INFO5_PROT_FRAME_ADDR3_47_32	GENMASK(15, 0)
+
+struct hal_tx_mon_pcu_ppdu_setup_init {
+	__le32 rsvd0[11];
+	__le32 info0;
+	__le32 rsvd1[2];
+	__le32 info1;
+	__le32 info2;
+	__le32 info3;
+	__le32 rsvd2;
+	__le32 info4;
+	__le32 info5;
+} __packed;
+
+/* The below hal_tx_mon_pcu_ppdu_setup_init_compact structure is tied with the mask value
+ * TX_MON_PPDU_SETUP. If the mask value changes the structure will also
+ * change.
+ * ipq5424/5332, qcn6432/9274 uses common compact structure as they share same
+ * ppdu setup wmask.
+ */
+
+#define HAL_TX_MON_PPDU_SETUP_INFO0_PROTECTION_ADDRESS_FIELDS_CMPCT	BIT(21)
+#define HAL_TX_MON_PPDU_SETUP_INFO1_PROT_FRAME_ADDR1_31_0_CMPCT		GENMASK(31, 0)
+#define HAL_TX_MON_PPDU_SETUP_INFO2_PROT_FRAME_ADDR1_47_32_CMPCT	GENMASK(15, 0)
+#define HAL_TX_MON_PPDU_SETUP_INFO2_PROT_FRAME_ADDR2_15_0_CMPCT		GENMASK(31, 16)
+#define HAL_TX_MON_PPDU_SETUP_INFO3_PROT_FRAME_ADDR2_47_16_CMPCT	GENMASK(31, 0)
+#define HAL_TX_MON_PPDU_SETUP_INFO4_PROT_FRAME_ADDR3_31_0_CMPCT		GENMASK(31, 0)
+#define HAL_TX_MON_PPDU_SETUP_INFO5_PROT_FRAME_ADDR3_47_32_CMPCT	GENMASK(15, 0)
+
+struct hal_tx_mon_pcu_ppdu_setup_init_compact {
+	__le32 rsvd0;
+	__le32 info0;
+	__le32 rsvd1;
+	__le32 info1;
+	__le32 info2;
+	__le32 info3;
+	__le32 rsvd2;
+	__le32 info4;
+	__le32 info5;
+} __packed;
+
+#define HAL_TX_MON_RX_RESPONSE_REQUIRED_INFO0_PHY_PPDU_ID		GENMASK(15, 0)
+#define HAL_TX_MON_RX_RESPONSE_REQUIRED_INFO0_RECEPTION_TYPE		BIT(16)
+#define HAL_TX_MON_RX_RESPONSE_REQUIRED_INFO1_RESPONSE_STA_COUNT	GENMASK(6, 0)
+#define HAL_TX_MON_RX_RESPONSE_REQUIRED_INFO2_ADDR1_31_0		GENMASK(31, 0)
+#define HAL_TX_MON_RX_RESPONSE_REQUIRED_INFO3_ADDR1_47_32		GENMASK(15, 0)
+#define HAL_TX_MON_RX_RESPONSE_REQUIRED_INFO3_ADDR2_15_0		GENMASK(31, 16)
+#define HAL_TX_MON_RX_RESPONSE_REQUIRED_INFO4_ADDR2_47_16		GENMASK(31, 0)
+
+struct hal_tx_mon_rx_resp_req_info {
+	__le32 info0;
+	__le32 rsvd0[4];
+	__le32 info1;
+	__le32 rsvd1[2];
+	__le32 info2;
+	__le32 info3;
+	__le32 info4;
+	__le32 rsvd2[5];
+} __packed;
+
+#define HAL_TX_MON_FES_START_INFO0_MEDIUM_PROT_TYPE	GENMASK(30, 28)
+
+struct hal_tx_mon_fes_status_start {
+	__le32 rsvd0;
+	__le32 info0;
+	__le64 rsvd1;
+} __packed;
+
+#define HAL_TX_MON_FES_STAT_START_PROT_INFO0_TS_LOWER_32	GENMASK(31, 0)
+#define HAL_TX_MON_FES_STAT_START_PROT_INFO1_TS_UPPER_32	GENMASK(31, 0)
+#define HAL_TX_MON_FES_STAT_START_PROT_INFO2_RESPONSE_TYPE	GENMASK(30, 26)
+
+struct hal_tx_mon_fes_status_start_prot {
+	__le32 info0;
+	__le32 info1;
+	__le32 rsvd0;
+	__le32 info2;
+	__le64 rsvd1;
+} __packed;
+
+#define HAL_TX_MON_FES_STAT_START_PPDU_INFO0_TS_LOWER_32	GENMASK(31, 0)
+#define HAL_TX_MON_FES_STAT_START_PPDU_INFO1_TS_UPPER_32	GENMASK(31, 0)
+#define HAL_TX_MON_FES_STAT_START_PPDU_INFO2_NDP_FRAME		GENMASK(18, 16)
+
+struct hal_tx_mon_fes_status_start_ppdu {
+	__le32 info0;
+	__le32 info1;
+	__le32 info2;
+	__le32 rsvd0[3];
+} __packed;
+
+#define HAL_TX_MON_FES_STAT_USER_INFO0_PPDU_TID		GENMASK(29, 26)
+#define HAL_TX_MON_FES_STAT_USER_INFO1_PPDU_DURATION	GENMASK(15, 0)
+
+struct hal_tx_mon_fes_status_user_ppdu {
+	__le32 rsvd0;
+	__le32 info0;
+	__le32 info1;
+	__le32 rsvd1[5];
+} __packed;
+
+#define HAL_TX_MON_FES_STATUS_ACK_OR_BA_INFO0_STAT_TYPE		BIT(0)
+#define HAL_TX_MON_FES_STATUS_ACK_OR_BA_INFO0_ACK_FRM_RSSI	GENMASK(16, 8)
+
+struct hal_tx_mon_fes_status_ack_or_ba {
+	__le32 info0;
+	__le32 rsvd0[9];
+} __packed;
+
+#define HAL_TX_MON_RX_FBM_ACK_INFO0_NO_BMP_AVAILABLE	BIT(0)
+#define HAL_TX_MON_RX_FBM_ACK_INFO0_EXPLICIT_ACK	BIT(1)
+#define HAL_TX_MON_RX_FBM_ACK_INFO0_EXPLICIT_ACK_TYPE	GENMASK(4, 2)
+#define HAL_TX_MON_RX_FBM_ACK_INFO0_BA_BMP_SIZE		GENMASK(6, 5)
+#define HAL_TX_MON_RX_FBM_ACK_INFO0_BA_TID		GENMASK(13, 10)
+#define HAL_TX_MON_RX_FBM_ACK_INFO0_STA_FULL_AID	GENMASK(26, 14)
+#define HAL_TX_MON_RX_FBM_ACK_INFO1_ADDR1_31_0		GENMASK(31, 0)
+#define HAL_TX_MON_RX_FBM_ACK_INFO2_ADDR1_47_32		GENMASK(15, 0)
+#define HAL_TX_MON_RX_FBM_ACK_INFO2_ADDR2_15_0		GENMASK(31, 16)
+#define HAL_TX_MON_RX_FBM_ACK_INFO3_ADDR2_47_16		GENMASK(31, 0)
+#define HAL_TX_MON_RX_FBM_ACK_INFO4_BA_TS_CTRL		GENMASK(15, 0)
+#define HAL_TX_MON_RX_FBM_ACK_INFO4_BA_TS_SEQ		GENMASK(31, 16)
+
+struct hal_tx_mon_rx_frame_bitmap_ack {
+	__le32 info0;
+	__le32 rsvd0;
+	__le32 info1;
+	__le32 info2;
+	__le32 info3;
+	__le32 info4;
+	__le32 rsvd1[8];
+} __packed;
+
+#define HAL_TX_MON_RX_1K_FBM_ACK_INFO0_BA_BMP_SIZE	GENMASK(6, 5)
+#define HAL_TX_MON_RX_1K_FBM_ACK_INFO0_BA_TID		GENMASK(13, 10)
+#define HAL_TX_MON_RX_1K_FBM_ACK_INFO0_STA_FULL_AID	GENMASK(26, 14)
+#define HAL_TX_MON_RX_1K_FBM_ACK_INFO1_ADDR1_31_0	GENMASK(31, 0)
+#define HAL_TX_MON_RX_1K_FBM_ACK_INFO2_ADDR1_47_32	GENMASK(15, 0)
+#define HAL_TX_MON_RX_1K_FBM_ACK_INFO2_ADDR2_15_0	GENMASK(31, 16)
+#define HAL_TX_MON_RX_1K_FBM_ACK_INFO3_ADDR2_47_16	GENMASK(31, 0)
+#define HAL_TX_MON_RX_1K_FBM_ACK_INFO4_BA_TS_CTRL	GENMASK(15, 0)
+#define HAL_TX_MON_RX_1K_FBM_ACK_INFO4_BA_TS_SEQ	GENMASK(31, 16)
+
+struct hal_tx_mon_rx_frame_1k_bitmap_ack {
+	__le32 info0;
+	__le32 info1;
+	__le32 info2;
+	__le32 info3;
+	__le32 info4;
+	__le32 rsvd0[33];
+} __packed;
+
+#define HAL_TX_MON_COEX_TX_STATUS_INFO0_TX_STATUS_REASON	GENMASK(12, 10)
+#define HAL_TX_MON_COEX_TX_STATUS_INFO0_CURRENT_TX_DURATION	GENMASK(31, 16)
+
+struct hal_tx_mon_coex_tx_status {
+	__le32 info0;
+	__le32 rsvd[3];
+} __packed;
+
+#define HAL_TX_MON_HE_SIG_A_SU_INFO0_BEAM_CHANGE	BIT(1)
+#define HAL_TX_MON_HE_SIG_A_SU_INFO0_TRANSMIT_MCS	GENMASK(6, 3)
+#define HAL_TX_MON_HE_SIG_A_SU_INFO0_DCM		BIT(7)
+#define HAL_TX_MON_HE_SIG_A_SU_INFO0_BSS_COLOR_ID	GENMASK(13, 8)
+#define HAL_TX_MON_HE_SIG_A_SU_INFO0_TRANSMIT_BW	GENMASK(20, 19)
+#define HAL_TX_MON_HE_SIG_A_SU_INFO1_TXOP_DURATION	GENMASK(6, 0)
+#define HAL_TX_MON_HE_SIG_A_SU_INFO1_CODING		BIT(7)
+#define HAL_TX_MON_HE_SIG_A_SU_INFO1_STBC		BIT(9)
+#define HAL_TX_MON_HE_SIG_A_SU_INFO1_TXBF		BIT(10)
+#define HAL_TX_MON_HE_SIG_A_SU_INFO1_PE_A_FACTOR	GENMASK(12, 11)
+#define HAL_TX_MON_HE_SIG_A_SU_INFO1_PE_DISAMBIGUITY	BIT(13)
+
+struct hal_tx_mon_he_sig_a_su {
+	__le32 info0;
+	__le32 info1;
+} __packed;
+
+#define HAL_TX_MON_HE_SIG_A_MU_DL_INFO0_MCS_OF_SIG_B		GENMASK(3, 1)
+#define HAL_TX_MON_HE_SIG_A_MU_DL_INFO0_DCM_OF_SIG_B		BIT(4)
+#define HAL_TX_MON_HE_SIG_A_MU_DL_INFO0_BSS_COLOR_ID		GENMASK(10, 5)
+#define HAL_TX_MON_HE_SIG_A_MU_DL_INFO0_TRANSMIT_BW		GENMASK(17, 15)
+#define HAL_TX_MON_HE_SIG_A_MU_DL_INFO0_NUM_SIG_B_SYMBOLS	GENMASK(21, 18)
+#define HAL_TX_MON_HE_SIG_A_MU_DL_INFO0_COMP_MODE_SIG_B		BIT(22)
+#define HAL_TX_MON_HE_SIG_A_MU_DL_INFO1_TXOP_DURATION		GENMASK(6, 0)
+
+struct hal_tx_mon_he_sig_a_mu_dl {
+	__le32 info0;
+	__le32 info1;
+} __packed;
+
+#define HAL_TX_MON_HE_SIG_B2_MU_INFO0_STA_ID		GENMASK(10, 0)
+#define HAL_TX_MON_HE_SIG_B2_MU_INFO0_SPATIAL_CFG	GENMASK(14, 11)
+#define HAL_TX_MON_HE_SIG_B2_MU_INFO0_STA_MCS		GENMASK(18, 15)
+#define HAL_TX_MON_HE_SIG_B2_MU_INFO0_STA_CODING	BIT(20)
+#define HAL_TX_MON_HE_SIG_B2_MU_INFO0_NSTS		GENMASK(30, 28)
+#define HAL_TX_MON_HE_SIG_B2_MU_INFO1_USER_ORDER	GENMASK(7, 0)
+
+struct hal_tx_mon_he_sig_b2_mu {
+	__le32 info0;
+	__le32 info1;
+} __packed;
+
+#define HAL_TX_MON_HE_SIG_B2_OFDMA_INFO0_STA_ID		GENMASK(10, 0)
+#define HAL_TX_MON_HE_SIG_B2_OFDMA_INFO0_NSTS		GENMASK(13, 11)
+#define HAL_TX_MON_HE_SIG_B2_OFDMA_INFO0_TXBF		BIT(14)
+#define HAL_TX_MON_HE_SIG_B2_OFDMA_INFO0_STA_MCS	GENMASK(18, 15)
+#define HAL_TX_MON_HE_SIG_B2_OFDMA_INFO0_STA_DCM	BIT(19)
+#define HAL_TX_MON_HE_SIG_B2_OFDMA_INFO0_STA_CODING	BIT(20)
+#define HAL_TX_MON_HE_SIG_B2_OFDMA_INFO1_USER_ORDER	GENMASK(7, 0)
+
+struct hal_tx_mon_he_sig_b2_ofdma {
+	__le32 info0;
+	__le32 info1;
+} __packed;
+
+#define HAL_TX_MON_VHT_SIG_A_INFO0_BANDWIDTH		GENMASK(1, 0)
+#define HAL_TX_MON_VHT_SIG_A_INFO0_STBC			BIT(3)
+#define HAL_TX_MON_VHT_SIG_A_INFO0_GROUP_ID		GENMASK(9, 4)
+#define HAL_TX_MON_VHT_SIG_A_INFO0_N_STS		GENMASK(21, 10)
+#define HAL_TX_MON_VHT_SIG_A_INFO1_GI_SETTING		GENMASK(1, 0)
+#define HAL_TX_MON_VHT_SIG_A_INFO1_SU_MU_CODING		BIT(2)
+#define HAL_TX_MON_VHT_SIG_A_INFO1_MCS			GENMASK(7, 4)
+#define HAL_TX_MON_VHT_SIG_A_INFO1_BEAMFORMED		BIT(8)
+
+struct hal_tx_mon_mactx_vht_sig_a {
+	__le32 info0;
+	__le32 info1;
+} __packed;
+
+#define HAL_TX_MON_L_SIG_A_INFO0_RATE		GENMASK(3, 0)
+
+struct hal_tx_mon_l_sig_a {
+	__le32 info0;
+	__le32 rsvd0;
+} __packed;
+
+#define HAL_TX_MON_L_SIG_B_INFO0_RATE		GENMASK(3, 0)
+
+struct hal_tx_mon_l_sig_b {
+	__le32 info0;
+	__le32 rsvd0;
+} __packed;
+
+#define HAL_TX_MON_U_SIG_EHT_SU_MU_INFO0_CRC	GENMASK(19, 16)
+
+struct hal_tx_mon_u_sig_eht_su_mu {
+	__le32 rsvd0;
+	__le32 info0;
+} __packed;
+
+#define HAL_TX_MON_HT_SIG_INFO0_MCS		GENMASK(6, 0)
+#define HAL_TX_MON_HT_SIG_INFO0_CBW		BIT(7)
+#define HAL_TX_MON_HT_SIG_INFO1_STBC		GENMASK(5, 4)
+#define HAL_TX_MON_HT_SIG_INFO1_FEC_CODING	BIT(6)
+#define HAL_TX_MON_HT_SIG_INFO1_SHORT_GI	BIT(7)
+
+struct hal_tx_mon_ht_sig_info {
+	__le32 info0;
+	__le32 info1;
+} __packed;
+
+#define HAL_TX_MON_USER_INFO0_LTF_SIZE				GENMASK(12, 11)
+#define HAL_TX_MON_USER_INFO1_NUM_LTF_SYMBOLS                   GENMASK(2, 0)
+#define HAL_TX_MON_USER_INFO2_PE_DISAMBIGUITY			BIT(2)
+#define HAL_TX_MON_USER_INFO2_PE_A_FACTOR			GENMASK(1, 0)
+#define HAL_TX_MON_USER_INFO3_CENTER_RU_0			BIT(21)
+#define HAL_TX_MON_USER_INFO3_CENTER_RU_1			BIT(22)
+#define HAL_TX_MON_USER_INFO4_RU_ALLOC_0123_BAND0_0		GENMASK(8, 0)
+#define HAL_TX_MON_USER_INFO4_RU_ALLOC_0123_BAND0_1		GENMASK(17, 9)
+#define HAL_TX_MON_USER_INFO5_RU_ALLOC_0123_BAND0_2		GENMASK(8, 0)
+#define HAL_TX_MON_USER_INFO5_RU_ALLOC_0123_BAND0_3		GENMASK(17, 9)
+#define HAL_TX_MON_USER_INFO6_RU_ALLOC_0123_BAND1_0		GENMASK(8, 0)
+#define HAL_TX_MON_USER_INFO6_RU_ALLOC_0123_BAND1_1		GENMASK(17, 9)
+#define HAL_TX_MON_USER_INFO7_RU_ALLOC_0123_BAND1_2		GENMASK(8, 0)
+#define HAL_TX_MON_USER_INFO7_RU_ALLOC_0123_BAND1_3		GENMASK(17, 9)
+#define HAL_TX_MON_USER_INFO8_RU_ALLOC_4567_BAND0_0             GENMASK(8, 0)
+#define HAL_TX_MON_USER_INFO8_RU_ALLOC_4567_BAND0_1             GENMASK(17, 9)
+#define HAL_TX_MON_USER_INFO9_RU_ALLOC_4567_BAND0_2             GENMASK(8, 0)
+#define HAL_TX_MON_USER_INFO9_RU_ALLOC_4567_BAND0_3             GENMASK(17, 9)
+#define HAL_TX_MON_USER_INFO10_RU_ALLOC_4567_BAND1_0		GENMASK(8, 0)
+#define HAL_TX_MON_USER_INFO10_RU_ALLOC_4567_BAND1_1		GENMASK(17, 9)
+#define HAL_TX_MON_USER_INFO11_RU_ALLOC_4567_BAND1_2		GENMASK(8, 0)
+#define HAL_TX_MON_USER_INFO11_RU_ALLOC_4567_BAND1_3		GENMASK(17, 9)
+#define HAL_TX_MON_USER_INFO12_DOPPLER_INDICATION               BIT(24)
+#define HAL_TX_MON_USER_INFO13_SPATIAL_REUSE                    GENMASK(15, 0)
+
+struct hal_tx_mon_user_desc_common {
+	__le32 info0;
+	__le32 info1;
+	__le32 info2;
+	__le32 info3;
+	__le32 info4;
+	__le32 info5;
+	__le32 info6;
+	__le32 info7;
+	__le32 info8;
+	__le32 info9;
+	__le32 info10;
+	__le32 info11;
+	__le64 rsvd0;
+	__le32 info12;
+	__le32 info13;
+} __packed;
+
+#define HAL_TX_MON_USER_DESC_PER_USER_INFO0_PSDU_LENGTH			GENMASK(23, 0)
+#define HAL_TX_MON_USER_DESC_PER_USER_INFO1_RU_START_INDEX		GENMASK(7, 0)
+#define HAL_TX_MON_USER_DESC_PER_USER_INFO1_RU_SIZE			GENMASK(11, 8)
+#define HAL_TX_MON_USER_DESC_PER_USER_INFO1_OFDMA_MU_MIMO_ENABLED	BIT(16)
+#define HAL_TX_MON_USER_DESC_PER_USER_INFO1_NSS				GENMASK(19, 17)
+#define HAL_TX_MON_USER_DESC_PER_USER_INFO1_STREAM_OFFSET		GENMASK(22, 20)
+#define HAL_TX_MON_USER_DESC_PER_USER_INFO1_MCS				GENMASK(28, 24)
+#define HAL_TX_MON_USER_DESC_PER_USER_INFO1_DCM				BIT(29)
+#define HAL_TX_MON_USER_DESC_PER_USER_INFO2_FEC_TYPE			BIT(0)
+#define HAL_TX_MON_USER_DESC_PER_USER_INFO2_USER_BF_TYPE		GENMASK(9, 8)
+#define HAL_TX_MON_USER_DESC_PER_USER_INFO2_DROP_USER_CBF		BIT(16)
+#define HAL_TX_MON_USER_DESC_PER_USER_INFO2_LDPC_EXTRA_SYMBOL		BIT(24)
+#define HAL_TX_MON_USER_DESC_PER_USER_INFO2_FORCE_EXTRA_SYMBOL		BIT(25)
+#define HAL_TX_MON_USER_DESC_PER_USER_INFO3_SW_PEER_ID			GENMASK(15, 0)
+
+struct hal_tx_mon_user_desc_per_user {
+	__le32 info0;
+	__le32 info1;
+	__le32 info2;
+	__le32 info3;
+	__le64 rsvd;
+} __packed;
+
+#define HAL_TX_MON_PHY_DESC_INFO0_PKT_TYPE		GENMASK(24, 21)
+#define HAL_TX_MON_PHY_DESC_INFO0_SU_OR_MU		GENMASK(26, 25)
+#define HAL_TX_MON_PHY_DESC_INFO0_MU_TYPE		GENMASK(28, 27)
+#define HAL_TX_MON_PHY_DESC_INFO0_BANDWIDTH		GENMASK(31, 29)
+#define HAL_TX_MON_PHY_DESC_INFO1_STBC			BIT(7)
+#define HAL_TX_MON_PHY_DESC_INFO2_TRIGERRED		BIT(5)
+#define HAL_TX_MON_PHY_DESC_INFO2_AP_PKT_BW		GENMASK(8, 6)
+#define HAL_TX_MON_PHY_DESC_INFO3_CP_SETTING            GENMASK(12, 11)
+#define HAL_TX_MON_PHY_DESC_INFO3_HE_PPDU_SUBTYPE	GENMASK(14, 13)
+#define HAL_TX_MON_PHY_DESC_INFO3_LTF_SIZE		GENMASK(20, 19)
+
+struct hal_tx_mon_phy_desc {
+	__le32 info0;
+	__le32 info1;
+	__le32 info2;
+	__le32 info3;
+} __packed;
+
+#define HAL_TX_MON_BUF_ADDR_INFO0_VIRT_ADDR_31_0	GENMASK(31, 0)
+#define HAL_TX_MON_BUF_ADDR_INFO1_VIRT_ADDR_63_32	GENMASK(31, 0)
+#define HAL_TX_MON_BUF_ADDR_INFO2_DMA_LENGTH		GENMASK(11, 0)
+#define HAL_TX_MON_BUF_ADDR_INFO2_MSDU_CONTINUATION	BIT(16)
+#define HAL_TX_MON_BUF_ADDR_INFO2_TRUNCATED		BIT(17)
+
+struct hal_tx_mon_buf_addr {
+	__le32 info0;
+	__le32 info1;
+	__le32 info2;
+	__le32 rsvd;
+} __packed;
+
+#define HAL_TX_MON_FW2SW_INFO0_BAND_CENTER_FREQ1	GENMASK(15, 0)
+#define HAL_TX_MON_FW2SW_INFO0_BAND_CENTER_FREQ2	GENMASK(31, 16)
+#define HAL_TX_MON_FW2SW_INFO1_PHY_MODE			GENMASK(7, 0)
+#define HAL_TX_MON_FW2SW_INFO1_FREQUENCY		GENMASK(23, 8)
+#define HAL_TX_MON_FW2SW_INFO2_SCHEDULE_ID		GENMASK(31, 0)
+#define HAL_TX_MON_FW2SW_INFO3_COOKIE_SEQ_NO		GENMASK(10, 0)
+#define HAL_TX_MON_FW2SW_INFO3_HW_LINK_ID		GENMASK(13, 11)
+#define HAL_TX_MON_FW2SW_INFO3_PACKET_ID		GENMASK(18, 14)
+#define HAL_TX_MON_FW2SW_INFO3_COOKIE_VALID		BIT(19)
+
+struct hal_tx_mon_fw2sw {
+	__le32 info0;
+	__le32 info1;
+	__le32 info2;
+	__le32 info3;
 } __packed;
 
 static __always_inline void
@@ -936,4 +1520,79 @@ ath12k_wifi8_hal_mon_rx_ppdu_eu_stats_info_parse(const void *tlv_data, u32 useri
 						 struct hal_rx_mon_ppdu_info *ppdu_info,
 						 u32 tlv_len);
 u8 *ath12k_wifi8_hal_mon_rx_desc_get_msdu_payload(void *rx_desc);
+
+void
+ath12k_wifi8_hal_mon_tx_fes_setup_info_parse(const void *tlv_data, u32 userid,
+					     struct hal_tx_mon_ppdu_info *ppdu_info,
+					     u16 tlv_len);
+void
+ath12k_wifi8_hal_mon_tx_peer_entry_info_parse(const void *tlv_data, u32 userid,
+					      struct hal_tx_mon_ppdu_info *ppdu_info,
+					      struct hal_tx_mon_status_info *status_info,
+					      u16 tlv_len);
+void
+ath12k_wifi8_hal_mon_tx_queue_ext_info_parse(const void *tlv_data, u32 userid,
+					     struct hal_tx_mon_ppdu_info *ppdu_info,
+					     u16 tlv_len);
+void
+ath12k_wifi8_hal_mon_tx_mpdu_start_info_parse(const void *tlv_data, u32 userid,
+					      struct hal_tx_mon_ppdu_info *ppdu_info,
+					      u16 tlv_len);
+void
+ath12k_wifi8_hal_mon_tx_fes_status_end_info_parse
+			(const void *tlv_data, u32 userid,
+			 struct hal_tx_mon_ppdu_info *ppdu_info,
+			 struct hal_tx_mon_status_info *status_info,
+			 u16 tlv_len);
+void
+ath12k_wifi8_hal_mon_tx_response_end_status_info_parse
+			(const void *tlv_data, u32 userid,
+			 struct hal_tx_mon_ppdu_info *ppdu,
+			 struct hal_tx_mon_status_info *status_info,
+			 u16 tlv_len);
+void
+ath12k_wifi8_hal_mon_tx_fes_status_prot_info_parse(const void *tlv_data, u32 userid,
+						   struct hal_tx_mon_ppdu_info *ppdu,
+						   u16 tlv_len);
+void
+ath12k_wifi8_hal_mon_tx_pcu_ppdu_setup_init_info_parse
+			(const void *tlv_data,
+			 struct hal_tx_mon_status_info *status_info,
+			 u16 tlv_len);
+
+void ath12k_wifi8_hal_mon_set_mon_buf_desc(void *desc, u32 addr_lo,
+					   u32 addr_hi, u64 cookie);
+
+bool ath12k_wifi8_is_mon_buf_addr_tlv(u32 tlv_tag);
+
+enum hal_tx_mon_status
+ath12k_wifi8_hal_mon_tx_status_get_num_user(struct ath12k_hal *hal,
+					    u16 tlv_tag,
+					    const void *tx_tlv,
+					    u8 *num_users,
+					    u16 tlv_len);
+
+struct dp_mon_tx_ppdu_info *
+ath12k_wifi8_hal_mon_tx_ppdu_info(struct ath12k_hal *hal,
+				  struct ath12k_mon_data *pmon,
+				  u16 tlv_tag);
+
+void
+ath12k_wifi8_hal_tx_mon_get_wmask_config(struct hal_tx_mon_wmask_config *wmsk);
+
+
+enum hal_tx_mon_status
+ath12k_wifi8_hal_mon_tx_parse_status_tlv(struct ath12k_hal *hal,
+					 struct ath12k_mon_data *mon_data,
+					 struct hal_tx_mon_ppdu_info *ppdu_info,
+					 u16 tlv_tag,
+					 const void *tlv_data,
+					 u32 userid,
+					 u16 tlv_len,
+					 u8 *status_frag);
+
+int
+ath12k_wifi8_extract_tx_mon_ring_desc(struct ath12k_hal *hal,
+				      void *ring_entry,
+				      struct ath12k_mon_ring_desc_info *desc_info);
 #endif
