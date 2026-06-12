@@ -404,7 +404,7 @@ ath12k_dp_mon_tx_free_pkt_buf(struct ath12k_pdev_dp *pdev_dp,
 
 	do {
 		tlv = (struct hal_tlv_64_hdr *)ptr;
-		tlv_tag = le64_get_bits(tlv->tl, HAL_TLV_64_HDR_TAG);
+		tlv_tag = ath12k_hal_get_tlv_hdr_tag(hal, tlv->tl);
 		ptr += sizeof(*tlv);
 
 		tlv_len = le64_get_bits(tlv->tl, HAL_TLV_64_HDR_LEN);
@@ -612,7 +612,7 @@ ath12k_dp_mon_tx_prep_ppdu_info(struct ath12k_pdev_mon_dp *dp_mon_pdev,
 
 	tlv_hdr = (struct hal_tlv_64_hdr *)status_desc->mon_buf;
 
-	tlv_tag = le64_get_bits(tlv_hdr->tl, HAL_TLV_64_HDR_TAG);
+	tlv_tag = ath12k_hal_get_tlv_hdr_tag(&dp_pdev->dp->ab->hal, tlv_hdr->tl);
 	tlv_len = le64_get_bits(tlv_hdr->tl, HAL_TLV_64_HDR_LEN);
 	tlv_userid = le64_get_bits(tlv_hdr->tl, HAL_TLV_64_USR_ID);
 
@@ -1981,7 +1981,7 @@ ath12k_dp_mon_tx_process_tlv(struct ath12k_pdev_dp *pdev_dp,
 	do {
 		tlv_hdr = (struct hal_tlv_64_hdr *)mon_buf_iter;
 
-		tlv_tag = le64_get_bits(tlv_hdr->tl, HAL_TLV_64_HDR_TAG);
+		tlv_tag = ath12k_hal_get_tlv_hdr_tag(&pdev_dp->dp->ab->hal, tlv_hdr->tl);
 		tlv_len = le64_get_bits(tlv_hdr->tl, HAL_TLV_64_HDR_LEN);
 		tlv_userid = le64_get_bits(tlv_hdr->tl, HAL_TLV_64_USR_ID);
 

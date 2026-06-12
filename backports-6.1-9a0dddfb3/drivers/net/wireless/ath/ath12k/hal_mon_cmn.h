@@ -66,8 +66,12 @@ struct ath12k_mon_data;
 struct ath12k_mon_ring_desc_info;
 
 #define HAL_TLV_64_HDR_TAG		GENMASK(9, 1)
+#define HAL_TLV_64_HDR_TAG_CMN		GENMASK(9, 0)
 #define HAL_TLV_64_HDR_LEN		GENMASK(21, 10)
 #define HAL_TLV_64_USR_ID		GENMASK(31, 26)
+
+#define HAL_TLV_64_HDR_TAG_SHIFT	1	/* WiFi7: tag is bits[9:1] */
+#define HAL_TLV_64_HDR_TAG_NOSHIFT	0	/* WiFi8: tag is bits[9:0] */
 
 enum hal_rx_mpdu_filter_category {
 	HAL_RX_MPDU_FILTER_CATEGORY_FP,
@@ -841,6 +845,12 @@ struct hal_mon_ops {
 					struct ath12k_mon_ring_desc_info *desc_info);
 	bool (*is_mon_buf_addr_tlv)(u32 tlv_tag);
 };
+
+static inline u16
+ath12k_hal_get_tlv_hdr_tag(const struct ath12k_hal *hal, __le64 tl)
+{
+	return le64_get_bits(tl, HAL_TLV_64_HDR_TAG_CMN) >> hal->tlv_hdr_tag_shift;
+}
 
 static inline struct dp_mon_tx_ppdu_info *
 ath12k_hal_mon_tx_ppdu_info(struct ath12k_hal *hal,
