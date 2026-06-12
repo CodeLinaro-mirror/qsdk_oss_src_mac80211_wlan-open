@@ -5344,6 +5344,11 @@ struct ieee80211_ops {
 			 struct ieee80211_sta *sta,
 			 enum ieee80211_sta_state old_state,
 			 enum ieee80211_sta_state new_state);
+	int (*uhr_smd_update)(struct ieee80211_hw *hw,
+			      struct ieee80211_vif *vif,
+			      struct ieee80211_sta *peer,
+			      u32 role, u32 type, u32 status,
+			      u32 dl_sn, u32 ul_sn, u32 dl_drain_time);
 	int (*uhr_link_reconfig)(struct ieee80211_hw *hw,
 				 struct ieee80211_vif *vif,
 				 struct ieee80211_sta *current_sta,
@@ -9017,4 +9022,19 @@ void ieee80211_enable_offchan_packet_capture(struct ieee80211_vif *vif,
  * @enable: enable/disable extended monitor indication
  */
 void ieee80211_enable_ext_monitor(struct ieee80211_vif *vif, bool enable);
+
+enum ieee80211_smd_roam_config_types {
+	IEEE80211_SMD_ROAM_CONFIG_TYPE_PREP_REQ		= 0,
+	IEEE80211_SMD_ROAM_CONFIG_TYPE_PREP_RESP	= 1,
+	IEEE80211_SMD_ROAM_CONFIG_TYPE_EXEC_REQ		= 2,
+	IEEE80211_SMD_ROAM_CONFIG_TYPE_EXEC_RESP	= 3,
+	IEEE80211_SMD_ROAM_CONFIG_TYPE_DYNAMIC_CONTEXT	= 4,
+	IEEE80211_SMD_ROAM_CONFIG_TYPE_TERMINATION	= 5,
+};
+
+enum ieee80211_smd_roam_role {
+	IEEE80211_SMD_ROAM_ROLE_SERVING_AP = 1,
+	IEEE80211_SMD_ROAM_ROLE_TARGET_AP  = 2,
+	IEEE80211_SMD_ROAM_ROLE_STA        = 3,
+};
 #endif /* MAC80211_H */

@@ -1929,6 +1929,17 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 			IEEE80211_HE_PHY_CAP2_UL_MU_FULL_MU_MIMO;
 	}
 
+	if (params->smd_params.smd_enabled) {
+		memcpy(&link_conf->smd_params.smd_identifier,
+		       params->smd_params.smd_identifier, ETH_ALEN);
+		link_conf->smd_params.smd_enabled = params->smd_params.smd_enabled;
+		link_conf->smd_params.smd_timeout = params->smd_params.smd_timeout;
+		link_conf->smd_params.dl_data_fwd = params->smd_params.dl_data_fwd;
+		link_conf->smd_params.max_num_of_peer_apmlds =
+			params->smd_params.max_num_of_peer_apmlds;
+		link_conf->smd_params.smd_type = params->smd_params.smd_type;
+		link_conf->smd_params.ptk_mode = params->smd_params.ptk_mode;
+	}
 
 	if (params->chandef.chan->band == NL80211_BAND_6GHZ)
 		link_conf->power_type =
@@ -2708,6 +2719,14 @@ static int sta_apply_parameters(struct ieee80211_local *local,
 	    local->hw.queues >= IEEE80211_NUM_ACS)
 		sta->sta.wme = set & BIT(NL80211_STA_FLAG_WME);
 
+	if (mask & BIT(NL80211_STA_FLAG_SMD)) {
+		if (set & BIT(NL80211_STA_FLAG_SMD)) {
+			set_sta_flag(sta, WLAN_STA_SMD);
+		} else {
+			clear_sta_flag(sta, WLAN_STA_SMD);
+		}
+	}
+
 	/* auth flags will be set later for TDLS,
 	 * and for unassociated stations that move to associated */
 	if (!test_sta_flag(sta, WLAN_STA_TDLS_PEER) &&
@@ -2746,6 +2765,15 @@ static int sta_apply_parameters(struct ieee80211_local *local,
 			set_sta_flag(sta, WLAN_STA_TDLS_PEER);
 		else
 			clear_sta_flag(sta, WLAN_STA_TDLS_PEER);
+	}
+
+	if (params->link_sta_params.smd_enabled) {
+		sta->sta.smd_params.smd_enabled = params->link_sta_params.smd_enabled;
+		if (params->link_sta_params.smd_mac_addr)
+			memcpy(sta->sta.smd_params.smd_identifier,
+			       params->link_sta_params.smd_mac_addr, ETH_ALEN);
+		sta->sta.smd_params.dl_data_fwd =
+			params->link_sta_params.smd_dl_data_fwd;
 	}
 
 	if (mask & BIT(NL80211_STA_FLAG_SPP_AMSDU))
@@ -7019,6 +7047,56 @@ ieee80211_uhr_link_reconf(struct wiphy *wiphy, struct net_device *dev,
 	return ieee80211_mgd_st_prepare(sdata, req);
 }
 
+static int ieee80211_smd_roam(struct wiphy *wiphy,
+			      struct net_device *dev,
+			      const struct cfg80211_smd_roam_req *req)
+{
+	struct ieee80211_local *local = wiphy_priv(wiphy);
+	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+	struct sta_info *sta = NULL;
+	u32 type;
+	u32 status = 0;
+
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	if (!req->num_links) {
+		sdata_err(sdata, "smd: num_links zero, no roam config sent");
+		return -EINVAL;
+	}
+
+	sta = sta_info_get_bss(sdata, req->link_macs[0]);
+	if (!sta)
+		return -ENOENT;
+
+	switch (req->type) {
+	case 0:
+		type = IEEE80211_SMD_ROAM_CONFIG_TYPE_PREP_REQ;
+		break;
+	case 1:
+		type = IEEE80211_SMD_ROAM_CONFIG_TYPE_PREP_RESP;
+		break;
+	case 2:
+		type = IEEE80211_SMD_ROAM_CONFIG_TYPE_EXEC_REQ;
+		break;
+	case 3:
+		type = IEEE80211_SMD_ROAM_CONFIG_TYPE_EXEC_RESP;
+		break;
+	case 4:
+		type = IEEE80211_SMD_ROAM_CONFIG_TYPE_DYNAMIC_CONTEXT;
+		break;
+	case 5:
+		type = IEEE80211_SMD_ROAM_CONFIG_TYPE_TERMINATION;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return drv_uhr_smd_update(local, sdata, &sta->sta, req->role, type,
+				  status, req->dl_sn_not_transferred,
+				  req->ul_sn_not_transferred,
+				  req->dl_drain_time);
+}
+
 static int
 ieee80211_set_epcs(struct wiphy *wiphy, struct net_device *dev, bool enable)
 {
@@ -7280,6 +7358,7 @@ const struct cfg80211_ops mac80211_config_ops = {
 	.get_radio_mask = ieee80211_get_radio_mask,
 	.assoc_ml_reconf = ieee80211_assoc_ml_reconf,
 	.uhr_link_reconf = ieee80211_uhr_link_reconf,
+	.smd_roam = ieee80211_smd_roam,
 	.set_epcs = ieee80211_set_epcs,
 	.erp = ieee80211_erp,
 	.set_qos_mgmt_cfg = ieee80211_set_qos_mgmt_cfg,

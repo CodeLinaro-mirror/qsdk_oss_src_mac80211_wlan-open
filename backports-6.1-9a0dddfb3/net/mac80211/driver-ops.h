@@ -620,6 +620,23 @@ int drv_sta_state(struct ieee80211_local *local,
 		  enum ieee80211_sta_state new_state);
 
 static inline int
+drv_uhr_smd_update(struct ieee80211_local *local,
+		   struct ieee80211_sub_if_data *sdata,
+		   struct ieee80211_sta *peer,
+		   u32 role, u32 type, u32 status,
+		   u32 dl_sn, u32 ul_sn, u32 dl_drain_time)
+{
+	int ret = -EOPNOTSUPP;
+
+	if (local->ops->uhr_smd_update)
+		ret = local->ops->uhr_smd_update(&local->hw, &sdata->vif,
+						 peer, role, type, status,
+						 dl_sn, ul_sn, dl_drain_time);
+
+	return ret;
+}
+
+static inline int
 drv_uhr_link_reconfig(struct ieee80211_local *local,
 		      struct ieee80211_sub_if_data *sdata,
 		      struct sta_info *current_sta,

@@ -96,6 +96,7 @@ static const char * const sta_flag_names[] = {
 	FLAG(USES_ENCRYPTION),
 	FLAG(DECAP_OFFLOAD),
 	FLAG(CFP),
+	FLAG(SMD),
 #undef FLAG
 };
 

@@ -1192,6 +1192,9 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_SMD_TIMEOUT] = { .type = NLA_U32 },
 	[NL80211_ATTR_SMD_DH_PUBLIC_KEY] = { .type = NLA_BINARY },
 	[NL80211_ATTR_SMD_TRANSITION_TYPE] = { .type = NLA_U8 },
+	[NL80211_ATTR_PEER_SMD_ENABLED] = { .type = NLA_U8 },
+	[NL80211_ATTR_PEER_SMD_DL_DATA_FWD] = { .type = NLA_U8 },
+	[NL80211_ATTR_PEER_SMD_MAC_ADDR] = NLA_POLICY_EXACT_LEN(6),
 	[NL80211_ATTR_UHR_RECONFIG_TYPE] = NLA_POLICY_MAX(NLA_U8, 1),
 	[NL80211_ATTR_SMD_EXEC_PATH] = NLA_POLICY_MAX(NLA_U8, 1),
 	[NL80211_ATTR_SMD_DL_TID_BITMAP] = { .type = NLA_U8 },
@@ -1202,6 +1205,8 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_SMD_DL_DRAIN_TIME]    = { .type = NLA_U32 },
 	[NL80211_ATTR_SMD_PREFERRED_TARGET] = { .type = NLA_FLAG },
 	[NL80211_ATTR_SMD_LINK_TRANSITION_STATE] = { .type = NLA_U8 },
+	[NL80211_ATTR_SMD_STA_LINK_MACS]    = { .type = NLA_NESTED },
+	[NL80211_ATTR_SMD_STA_LINK_MAC]     = { .type = NLA_BINARY, .len = ETH_ALEN },
 };
 
 /* policy for the key attributes */
@@ -7780,6 +7785,7 @@ static int nl80211_parse_smd_params(struct nlattr *smd_params_attr,
 	/* SMD Identifier is required */
 	if (!tb[NL80211_SMD_PARAMS_ATTR_IDENTIFIER])
 		return -EINVAL;
+
 	memcpy(smd_params->smd_identifier,
 	       nla_data(tb[NL80211_SMD_PARAMS_ATTR_IDENTIFIER]),
 	       ETH_ALEN);
@@ -7787,6 +7793,7 @@ static int nl80211_parse_smd_params(struct nlattr *smd_params_attr,
 	/* SMD Timeout is required */
 	if (!tb[NL80211_SMD_PARAMS_ATTR_TIMEOUT])
 		return -EINVAL;
+
 	smd_params->smd_timeout = nla_get_u16(tb[NL80211_SMD_PARAMS_ATTR_TIMEOUT]);
 
 	/* DL Data Forwarding (optional flag) */
@@ -7796,20 +7803,24 @@ static int nl80211_parse_smd_params(struct nlattr *smd_params_attr,
 	/* Max Number of Peer AP MLDs is required */
 	if (!tb[NL80211_SMD_PARAMS_ATTR_MAX_PEER_APMLDS])
 		return -EINVAL;
+
 	smd_params->max_num_of_peer_apmlds =
 		nla_get_u8(tb[NL80211_SMD_PARAMS_ATTR_MAX_PEER_APMLDS]);
+
 	if (smd_params->max_num_of_peer_apmlds > 7)
 		return -EINVAL;
 
 	/* SMD Type is required */
 	if (!tb[NL80211_SMD_PARAMS_ATTR_TYPE])
 		return -EINVAL;
+
 	smd_params->smd_type =
 		!!nla_get_u8(tb[NL80211_SMD_PARAMS_ATTR_TYPE]);
 
 	/* PTK Mode is required */
 	if (!tb[NL80211_SMD_PARAMS_ATTR_PTK_MODE])
 		return -EINVAL;
+
 	smd_params->ptk_mode =
 		!!nla_get_u8(tb[NL80211_SMD_PARAMS_ATTR_PTK_MODE]);
 
@@ -8185,6 +8196,16 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 	    !nla_get_u8(info->attrs[NL80211_ATTR_DPS_ASSIST]))
 		params->dps_assist_disable = true;
 
+	/* Parse SMD parameters if present */
+	if (info->attrs[NL80211_ATTR_SMD_AP]) {
+		params->smd_params.smd_enabled = true;
+		err = nl80211_parse_smd_params(info->attrs[NL80211_ATTR_SMD_PARAMS],
+					       &params->smd_params);
+		if (err)
+			goto out;
+		pr_debug("nl80211: SMD AP mode enabled\n");
+	}
+
 	/* FIXME: validate MLO/link-id against driver capabilities */
 
 	err = rdev_start_ap(rdev, dev, params);
@@ -8345,6 +8366,7 @@ static const struct nla_policy sta_flags_policy[NL80211_STA_FLAG_MAX + 1] = {
 	[NL80211_STA_FLAG_AUTHENTICATED] = { .type = NLA_FLAG },
 	[NL80211_STA_FLAG_TDLS_PEER] = { .type = NLA_FLAG },
 	[NL80211_STA_FLAG_CFP] = { .type = NLA_FLAG },
+	[NL80211_STA_FLAG_SMD] = { .type = NLA_FLAG },
 };
 
 static int parse_station_flags(struct genl_info *info,
@@ -8396,7 +8418,8 @@ static int parse_station_flags(struct genl_info *info,
 					 BIT(NL80211_STA_FLAG_SHORT_PREAMBLE) |
 					 BIT(NL80211_STA_FLAG_WME) |
 					 BIT(NL80211_STA_FLAG_MFP) |
-					 BIT(NL80211_STA_FLAG_CFP);
++					 BIT(NL80211_STA_FLAG_CFP) |
+					 BIT(NL80211_STA_FLAG_SMD);
 		break;
 	case NL80211_IFTYPE_P2P_CLIENT:
 	case NL80211_IFTYPE_STATION:
@@ -9480,6 +9503,7 @@ int cfg80211_check_station_change(struct wiphy *wiphy,
 				  BIT(NL80211_STA_FLAG_MFP) |
 				  BIT(NL80211_STA_FLAG_SPP_AMSDU) |
 				  BIT(NL80211_STA_FLAG_FT_AUTH) |
+				  BIT(NL80211_STA_FLAG_SMD) |
 				  BIT(NL80211_STA_FLAG_CFP)))
 			return -EINVAL;
 
@@ -9632,6 +9656,109 @@ static int nl80211_parse_sta_channel_info(struct genl_info *info,
 		  nla_len(info->attrs[NL80211_ATTR_STA_SUPPORTED_OPER_CLASSES]);
 	}
 	return 0;
+}
+
+static int nl80211_smd_roam(struct sk_buff *skb, struct genl_info *info)
+{
+	struct cfg80211_registered_device *rdev;
+	struct net_device *dev;
+	struct wireless_dev *wdev;
+	struct cfg80211_smd_roam_req req = {};
+	struct nlattr **tb;
+	struct nlattr *cur;
+	int rem;
+	int ifindex;
+	int err;
+
+	/* IFINDEX is mandatory */
+	if (!info->attrs[NL80211_ATTR_IFINDEX])
+		return -EINVAL;
+
+	ifindex = nla_get_u32(info->attrs[NL80211_ATTR_IFINDEX]);
+
+	dev = dev_get_by_index(genl_info_net(info), ifindex);
+	if (!dev)
+		return -ENODEV;
+
+	wdev = dev->ieee80211_ptr;
+	if (!wdev) {
+		dev_put(dev);
+		return -EINVAL;
+	}
+
+	rdev = wiphy_to_rdev(wdev->wiphy);
+
+	/* Mandatory fields */
+	if (!info->attrs[NL80211_ATTR_SMD_ROLE] ||
+	    !info->attrs[NL80211_ATTR_SMD_TYPE]) {
+		dev_put(dev);
+		return -EINVAL;
+	}
+
+	req.role = nla_get_u32(info->attrs[NL80211_ATTR_SMD_ROLE]);
+	req.type = nla_get_u32(info->attrs[NL80211_ATTR_SMD_TYPE]);
+
+	/* Flags: presence == true */
+	req.dl_sn_not_transferred =
+		!!info->attrs[NL80211_ATTR_SMD_DL_SN_NOT_TRANSFERRED];
+	req.ul_sn_not_transferred =
+		!!info->attrs[NL80211_ATTR_SMD_UL_SN_NOT_TRANSFERRED];
+
+	if (info->attrs[NL80211_ATTR_SMD_DL_DRAIN_TIME])
+		req.dl_drain_time =
+			nla_get_u32(info->attrs[NL80211_ATTR_SMD_DL_DRAIN_TIME]);
+
+	tb = kcalloc(NL80211_ATTR_MAX + 1, sizeof(*tb), GFP_KERNEL);
+	if (!tb) {
+		dev_put(dev);
+		return -ENOMEM;
+	}
+
+	/* Parse nested MAC list */
+	if (info->attrs[NL80211_ATTR_SMD_STA_LINK_MACS]) {
+		nla_for_each_nested(cur,
+				    info->attrs[NL80211_ATTR_SMD_STA_LINK_MACS],
+				    rem) {
+			if (req.num_links >= NL80211_SMD_MAX_LINKS) {
+				err = -E2BIG;
+				goto out;
+			}
+
+			memset(tb, 0, (NL80211_ATTR_MAX + 1) * sizeof(*tb));
+			err = nla_parse_nested(tb, NL80211_ATTR_MAX, cur,
+					       NULL, NULL);
+			if (err)
+				goto out;
+
+			if (!tb[NL80211_ATTR_SMD_STA_LINK_MAC]) {
+				err = -EINVAL;
+				goto out;
+			}
+
+			if (nla_len(tb[NL80211_ATTR_SMD_STA_LINK_MAC]) != ETH_ALEN) {
+				err = -EINVAL;
+				goto out;
+			}
+
+			memcpy(req.link_macs[req.num_links],
+			       nla_data(tb[NL80211_ATTR_SMD_STA_LINK_MAC]),
+			       ETH_ALEN);
+
+			req.num_links++;
+		}
+	}
+
+	if (!rdev->ops->smd_roam) {
+		err = -EOPNOTSUPP;
+		goto out;
+	}
+
+	err = rdev->ops->smd_roam(&rdev->wiphy, dev, &req);
+
+out:
+	kfree(tb);
+	dev_put(dev);
+	return err;
 }
 
 static int nl80211_set_station_tdls(struct genl_info *info,
@@ -9870,6 +9997,19 @@ static int nl80211_set_station(struct sk_buff *skb, struct genl_info *info)
 	if (info->attrs[NL80211_ATTR_MLD_CAPA_AND_OPS])
 		params.link_sta_params.mld_oper =
 			nla_get_u16(info->attrs[NL80211_ATTR_MLD_CAPA_AND_OPS]);
+
+	if (info->attrs[NL80211_ATTR_PEER_SMD_ENABLED])
+		params.link_sta_params.smd_enabled =
+			nla_get_u8(info->attrs[NL80211_ATTR_PEER_SMD_ENABLED]);
+
+	if (info->attrs[NL80211_ATTR_PEER_SMD_DL_DATA_FWD])
+		params.link_sta_params.smd_dl_data_fwd =
+			nla_get_u8(info->attrs[NL80211_ATTR_PEER_SMD_DL_DATA_FWD]);
+
+	if (info->attrs[NL80211_ATTR_PEER_SMD_MAC_ADDR])
+		params.link_sta_params.smd_mac_addr =
+			nla_data(info->attrs[NL80211_ATTR_PEER_SMD_MAC_ADDR]);
+
 	/* Include parameters for TDLS peer (will check later) */
 	err = nl80211_set_station_tdls(info, &params);
 	if (err)
@@ -13717,6 +13857,7 @@ static int nl80211_authenticate(struct sk_buff *skb, struct genl_info *info)
 					       &req.smd_params);
 		if (err)
 			return err;
+		pr_debug("nl80211: SMD STA mode enabled\n");
 	}
 
 	req.bss = cfg80211_get_bss(&rdev->wiphy, chan, bssid, ssid, ssid_len,
@@ -14328,6 +14469,7 @@ static int nl80211_associate(struct sk_buff *skb, struct genl_info *info)
 					       &req.smd_params);
 		if (err)
 			return err;
+		pr_debug("nl80211: SMD STA mode enabled\n");
 	}
 
 	err = nl80211_crypto_settings(rdev, info, &req.crypto, 1);
@@ -21289,6 +21431,9 @@ err_free:
 	return err;
 }
 
+static const struct nla_policy nl80211_smd_roam_policy[NL80211_ATTR_MAX + 1] = {
+};
+
 static const struct genl_ops nl80211_ops[] = {
 	{
 		.cmd = NL80211_CMD_GET_WIPHY,
@@ -22198,6 +22343,13 @@ static const struct genl_small_ops nl80211_small_ops[] = {
 	{
 		.cmd = NL80211_CMD_UHR_LINK_RECONFIG_REQ,
 		.doit = nl80211_uhr_link_reconf,
+		.flags = GENL_UNS_ADMIN_PERM,
+		.internal_flags = IFLAGS(NL80211_FLAG_NEED_NETDEV_UP),
+	},
+	{
+		.cmd = NL80211_CMD_SMD_ROAM,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
+		.doit = nl80211_smd_roam,
 		.flags = GENL_UNS_ADMIN_PERM,
 		.internal_flags = IFLAGS(NL80211_FLAG_NEED_NETDEV_UP),
 	},

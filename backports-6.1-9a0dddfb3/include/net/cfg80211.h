@@ -2262,6 +2262,20 @@ struct link_station_parameters {
 	u16 mld_oper;
 	const struct ieee80211_uhr_cap_elem *uhr_capa;
 	u8 uhr_capa_len;
+	u8 *smd_mac_addr;
+	u8 smd_enabled;
+	u8 smd_dl_data_fwd;
+};
+
+#define NL80211_SMD_MAX_LINKS 16
+struct cfg80211_smd_roam_req {
+	u32 role;
+	u32 type;
+	bool dl_sn_not_transferred;
+	bool ul_sn_not_transferred;
+	u32 dl_drain_time;
+	u8 link_macs[NL80211_SMD_MAX_LINKS][ETH_ALEN];
+	u8 num_links;
 };
 
 /**
@@ -6384,6 +6398,9 @@ struct cfg80211_ops {
 	int (*uhr_link_reconf)(struct wiphy *wiphy,
 			       struct net_device *dev,
 			       struct cfg80211_smd_prepare_req *req);
+	int (*smd_roam)(struct wiphy *wiphy,
+			struct net_device *dev,
+			const struct cfg80211_smd_roam_req *req);
 };
 
 /*
