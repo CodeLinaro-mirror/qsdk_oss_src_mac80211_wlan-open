@@ -578,6 +578,26 @@ void ath12k_wifi8_dp_rx_peer_tid_delete(struct ath12k *ar,
 	if (!rx_tid->active)
 		return;
 
+	/* For MLO peers, rx_tid[] is shared at the MLD level across all links.
+	 * Skip the full delete (REO cmd + qref reset + paddr zero) when this is
+	 * a partial-link removal and other links remain.  Tearing down the HW
+	 * REO queue now would leave a dangling paddr in rx_tid[] that
+	 * smd_prep_rx_tid() still needs to park during BSS Transition.
+	 * The full cleanup runs when the last link is removed (peer_links_map==0).
+	 */
+	if (peer->mlo && hweight32(peer->dp_peer->peer_links_map) > 0) {
+		ath12k_dbg(ab, ATH12K_DBG_SMD,
+			   "dp_rx_peer_tid_delete: MLO skip %pM tid=%u paddr=%pad links=0x%x\n",
+			   peer->addr, tid, &rx_tid->paddr,
+			   peer->dp_peer->peer_links_map);
+		return;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_SMD,
+		   "dp_rx_peer_tid_delete: peer %pM peer_id=%u tid=%u paddr=%pad active=%d\n",
+		   peer->addr, peer->dp_peer->peer_id, tid,
+		   &rx_tid->paddr, rx_tid->active);
+
 	elem = kzalloc(sizeof(*elem), GFP_ATOMIC);
 	if (!elem)
 		return;
@@ -783,6 +803,8 @@ int ath12k_wifi8_peer_rx_tid_reo_update_for_smd(struct ath12k_base *ab,
 	struct ath12k_dp_rx_tid *rx_tid;
 	struct ath12k_hal_reo_cmd cmd;
 	struct ath12k_dp_peer *dp_peer;
+	u32 ba_win_sz;
+	u16 ssn;
 	int ret;
 
 	if (!dp_hw || !peer_addr || !rx_tid_ctx) {
@@ -822,6 +844,20 @@ int ath12k_wifi8_peer_rx_tid_reo_update_for_smd(struct ath12k_base *ab,
 		return -EINVAL;
 	}
 
+	ba_win_sz = rx_tid_ctx->ba_win_sz;
+	if (!ba_win_sz)
+		ba_win_sz = rx_tid->ba_win_sz;
+
+	if (!ba_win_sz) {
+		ath12k_dp_rx_peer_tid_ba_config(ab->dp, rx_tid_ctx->tid,
+						&ba_win_sz, &ssn);
+	}
+
+	if (!rx_tid_ctx->ba_win_sz && ba_win_sz)
+		ath12k_info(ab,
+			    "SMD RX BA update fallback peer %pM tid %u ba_win_sz %u\n",
+			    peer_addr, rx_tid_ctx->tid, ba_win_sz);
+
 	if (!ath12k_wifi8_smd_skip_bitmap_update) {
 		memset(&cmd, 0, sizeof(cmd));
 		cmd.addr_lo = lower_32_bits(rx_tid->paddr);
@@ -845,9 +881,9 @@ int ath12k_wifi8_peer_rx_tid_reo_update_for_smd(struct ath12k_base *ab,
 	cmd.upd0 = HAL_REO_CMD_UPD0_SSN;
 	cmd.upd2 = u32_encode_bits(rx_tid_ctx->ssn, HAL_REO_CMD_UPD2_SSN);
 
-	if (rx_tid_ctx->ba_win_sz) {
+	if (ba_win_sz) {
 		cmd.upd0 |= HAL_REO_CMD_UPD0_BA_WINDOW_SIZE;
-		cmd.ba_window_size = min_t(u32, rx_tid_ctx->ba_win_sz,
+		cmd.ba_window_size = min_t(u32, ba_win_sz,
 					   DP_BA_WIN_SZ_MAX);
 	}
 
@@ -883,7 +919,7 @@ send_cmd:
 		return ret;
 	}
 
-	if (rx_tid_ctx->ba_win_sz)
+	if (ba_win_sz)
 		rx_tid->ba_win_sz = cmd.ba_window_size;
 
 	if (ath12k_wifi8_smd_skip_bitmap_update)
@@ -902,11 +938,98 @@ send_cmd:
 done:
 	spin_unlock_bh(&rx_tid->tid_lock);
 	spin_unlock_bh(&dp_hw->peer_hash_lock);
-	ath12k_dbg(ab, ATH12K_DBG_DP_RX,
+	ath12k_dbg(ab, ATH12K_DBG_PEER,
 		   "SMD REO update done for peer %pM tid %d: SSN=0x%x\n",
 		   peer_addr, rx_tid_ctx->tid, rx_tid_ctx->ssn);
 
 	return 0;
+}
+
+/*
+ * Clear the SVLD (start sequence valid) bit in the REO queue for all data
+ * TIDs of a peer.  Only HAL_REO_CMD_UPD0_SVLD is set in upd0; upd2.SVLD is
+ * left at 0 (from memset) so that hardware writes SVLD=0 to the queue,
+ * signalling that no prior sequence window is valid.
+ *
+ * No SSN, BA-window, PN, or bitmap update is performed — this function is
+ * the minimum required when request_dl_sn_not_transferred is set.
+ */
+int ath12k_wifi8_peer_rx_tid_svld_reset(struct ath12k_base *ab,
+					struct ath12k_dp_hw *dp_hw,
+					const u8 *peer_addr)
+{
+	struct ath12k_dp_rx_tid *rx_tid;
+	struct ath12k_hal_reo_cmd cmd;
+	struct ath12k_dp_peer *dp_peer;
+	int ret = 0;
+	u8 tid;
+
+	if (!dp_hw || !peer_addr)
+		return -EINVAL;
+
+	spin_lock_bh(&dp_hw->peer_hash_lock);
+
+	dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, (u8 *)peer_addr);
+	if (!dp_peer) {
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
+		ath12k_warn(ab, "SMD SVLD reset: peer %pM not found\n", peer_addr);
+		return -ENOENT;
+	}
+	for (tid = 0; tid < ATH12K_SMD_NUM_TIDS; tid++) {
+		rx_tid = &dp_peer->rx_tid[tid];
+		if (!rx_tid->active)
+			continue;
+
+		ath12k_dbg(ab, ATH12K_DBG_PEER,
+			   "SMD SVLD reset: peer %pM tid %u REO SVLD -> 0\n",
+			   peer_addr, tid);
+
+		memset(&cmd, 0, sizeof(cmd));
+		cmd.addr_lo = lower_32_bits(rx_tid->paddr);
+		cmd.addr_hi = upper_32_bits(rx_tid->paddr);
+		cmd.flag    = HAL_REO_CMD_FLG_NEED_STATUS;
+		/* Update SVLD field only; upd2.SVLD = 0 clears it in the queue */
+		cmd.upd0    = HAL_REO_CMD_UPD0_SVLD;
+
+		ret = ath12k_wifi8_dp_reo_cmd_send_highprio(ab, rx_tid,
+							    sizeof(*rx_tid),
+							    HAL_REO_CMD_UPDATE_RX_QUEUE,
+							    &cmd, NULL);
+		if (ret)
+			ath12k_warn(ab,
+				    "SMD SVLD reset failed tid %d peer %pM: %d\n",
+				    tid, peer_addr, ret);
+	}
+#define ATH12K_SMD_RX_MGMT_TID 16
+	/* Management Rx TID (ATH12K_SMD_RX_MGMT_TID = 16) */
+	rx_tid = &dp_peer->rx_tid[ATH12K_SMD_RX_MGMT_TID];
+	if (rx_tid->active) {
+		ath12k_dbg(ab, ATH12K_DBG_PEER,
+			   "SMD SVLD reset: peer %pM tid %u (mgmt) REO SVLD -> 0\n",
+			   peer_addr, ATH12K_SMD_RX_MGMT_TID);
+
+		memset(&cmd, 0, sizeof(cmd));
+		cmd.addr_lo = lower_32_bits(rx_tid->paddr);
+		cmd.addr_hi = upper_32_bits(rx_tid->paddr);
+		cmd.flag    = HAL_REO_CMD_FLG_NEED_STATUS;
+		cmd.upd0    = HAL_REO_CMD_UPD0_SVLD;
+
+		ret = ath12k_wifi8_dp_reo_cmd_send_highprio(ab, rx_tid,
+							    sizeof(*rx_tid),
+							    HAL_REO_CMD_UPDATE_RX_QUEUE,
+							    &cmd, NULL);
+		if (ret)
+			ath12k_warn(ab,
+				    "SMD SVLD reset failed mgmt tid peer %pM: %d\n",
+				    peer_addr, ret);
+	}
+
+	spin_unlock_bh(&dp_hw->peer_hash_lock);
+
+	ath12k_dbg(ab, ATH12K_DBG_PEER,
+		   "SMD SVLD reset done for peer %pM\n", peer_addr);
+
+	return ret;
 }
 
 void ath12k_wifi8_peer_rx_tid_reo_clear_vld_cmd_init(struct ath12k_dp_rx_tid *rx_tid,
@@ -1002,7 +1125,7 @@ int ath12k_wifi8_peer_rx_tid_reo_clear_vld(struct ath12k_base *ab,
 
 	ath12k_info(ab,
 		    "REO VLD cleared for peer %pM tid %d, frames will be released to error path\n",
-		   peer_addr, tid);
+		    peer_addr, tid);
 
 	return 0;
 }
@@ -1039,7 +1162,7 @@ int ath12k_wifi8_peer_rx_tid_reo_update(struct ath12k *ar,
 	rx_tid->ba_win_sz = ba_win_sz;
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
-		   "rx tid queue update successful for tid: %u, peer_id: %d, peer: %pM, link_id: %u ba_win_sz: %u\n",
+		   "rx tid queue update: tid=%u peer_id=%d peer=%pM link=%u ba_win=%u\n",
 		   rx_tid->tid, peer->peer_id, peer->addr,
 		   peer->link_id, rx_tid->ba_win_sz);
 
@@ -3090,8 +3213,9 @@ exit:
 	return num_buffs_reaped;
 }
 
-static inline void ath12k_wifi8_dp_rx_h_err_update_peer_stats(struct ath12k_pdev_dp *dp_pdev,
-							      struct ath12k_skb_rxcb *rxcb)
+static inline void
+ath12k_wifi8_dp_rx_h_err_update_peer_stats(struct ath12k_pdev_dp *dp_pdev,
+					   struct ath12k_skb_rxcb *rxcb)
 {
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_dp_peer *peer = ath12k_dp_peer_find_by_peerid_index(dp_pdev->dp,
@@ -4559,7 +4683,8 @@ ath12k_wifi8_dp_rx_flow_alloc_entry(struct ath12k_base *ab,
 				return fse;
 			}
 		}
-		ath12k_dbg(ab, ATH12K_DBG_DP_FST, "Add entry failed with status %d for tuple with hash %u",
+		ath12k_dbg(ab, ATH12K_DBG_DP_FST,
+			   "Add entry failed with status %d for tuple with hash %u",
 			   status, flow_hash);
 		return NULL;
 	}
@@ -5203,19 +5328,15 @@ int ath12k_wifi8_dp_rx_process_reo_flush_err(struct ath12k_dp *dp, int budget)
 				    BUFFER_ADDR_INFO1_RET_BUF_MGR);
 		cookie = le32_get_bits(rx_desc->buf_addr_info.info1,
 				       BUFFER_ADDR_INFO1_SW_COOKIE);
+		desc_info = ath12k_dp_get_rx_desc(dp, cookie);
+
+		if (!desc_info)
+			continue;
 
 		if (rbm == dp->hal->hal_params->rx_buf_rbm) {
-			desc_info = ath12k_dp_get_rx_desc(dp, cookie);
-			if (!desc_info)
-				continue;
-
 			list_add_tail(&desc_info->list, &rx_desc_used_list);
 			stats->rx_flush_pkts++;
 		} else if (rbm == dp->hal->hal_params->rx_mgmt_buf_rbm) {
-			desc_info = ath12k_mgmt_get_rx_desc_from_cookie(mgmt, cookie);
-			if (!desc_info)
-				continue;
-
 			list_add_tail(&desc_info->list, &rx_mgmt_desc_used_list);
 			stats->rx_mgmt_flush_pkts++;
 		} else {
@@ -5238,4 +5359,315 @@ int ath12k_wifi8_dp_rx_process_reo_flush_err(struct ath12k_dp *dp, int budget)
 						     &rx_mgmt_desc_used_list, false);
 
 	return quota - budget;
+}
+
+static void ath12k_wifi8_dp_smd_rx_flush_done(struct ath12k_dp *dp, void *ctx,
+					      struct hal_reo_status *status)
+{
+	struct ath12k_dp_rx_tid *rx_tid = ctx;
+	struct completion *done = rx_tid->smd_ctx;
+
+	if (status && status->uniform_hdr.cmd_status != HAL_REO_CMD_SUCCESS)
+		ath12k_warn(dp->ab,
+			    "smd prep: REO FLUSH_CACHE failed status=%d\n",
+			    status->uniform_hdr.cmd_status);
+
+	if (done)
+		complete(done);
+}
+
+int ath12k_wifi8_dp_smd_prep_rx_tid(struct ath12k_dp *dp,
+				    struct ath12k_dp_hw *dp_hw,
+				    const u8 *addr)
+{
+	struct ath12k_dp_peer *current_dp_peer;
+	struct ath12k_dp_hw_group *hw_grp = dp->dp_hw_grp;
+	struct ath12k_dp_smd_parked_rx_info *parked;
+	struct ath12k_hal_reo_cmd cmd = {0};
+	struct ath12k_dp_rx_tid *rx_tid;
+	struct ath12k_base *ab = dp->ab;
+	int ret = 0, tid;
+	long timeout;
+
+	spin_lock_bh(&dp_hw->peer_hash_lock);
+	current_dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, addr);
+	spin_unlock_bh(&dp_hw->peer_hash_lock);
+
+	if (!current_dp_peer) {
+		ath12k_warn(ab, "smd prep_rx_tid: peer %pM not found\n", addr);
+		return -ENOENT;
+	}
+
+	/* Allocate parked state container */
+	parked = kzalloc(sizeof(*parked), GFP_KERNEL);
+	if (!parked)
+		return -ENOMEM;
+
+	init_completion(&parked->flush_done);
+	parked->num_tids = ab->hal.hal_params->num_tids;
+
+	spin_lock_bh(&dp->dp_lock);
+
+	for (tid = 0; tid < parked->num_tids; tid++) {
+		rx_tid = &current_dp_peer->rx_tid[tid];
+
+		if (!rx_tid->active)
+			continue;
+
+		/* Drop in-flight reassembly fragments (safe under dp_lock) */
+		ath12k_dp_rx_frags_cleanup(rx_tid, true);
+
+		/*
+		 * Intentionally do NOT clear the REO LUT entry here.
+		 * The Serving AP peer's LUT must remain valid through Phase B
+		 * so that DL frames arriving on the primary link are still
+		 * routed to the (now-parked) REO queue descriptor.
+		 * The LUT will be cleared in Phase C via
+		 * ath12k_wifi8_dp_smd_clear_old_peer_rx_lut().
+		 */
+		current_dp_peer->smd_lut_active_tids |= BIT(tid);
+	}
+
+	rx_tid = &current_dp_peer->rx_tid[0];
+	rx_tid->smd_ctx = &parked->flush_done;
+
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.addr_lo = lower_32_bits(rx_tid->paddr);
+	cmd.addr_hi = upper_32_bits(rx_tid->paddr);
+	cmd.flag = HAL_REO_CMD_FLG_NEED_STATUS | HAL_REO_CMD_FLG_FLUSH_ALL |
+		   HAL_REO_CMD_FLG_FLUSH_FWD_ALL_MPDUS;
+
+	ret = ath12k_wifi8_dp_reo_cmd_send(ab, rx_tid, sizeof(*rx_tid),
+					   HAL_REO_CMD_FLUSH_CACHE,
+					   &cmd,
+					   ath12k_wifi8_dp_smd_rx_flush_done);
+	if (ret) {
+		ath12k_warn(ab, "smd prep: FLUSH_CACHE send failed (%d)\n", ret);
+		rx_tid->smd_ctx = NULL;
+		spin_unlock_bh(&dp->dp_lock);
+		goto err_free;
+	}
+
+	memset(&cmd, 0, sizeof(cmd));
+	cmd.flag = HAL_REO_CMD_FLG_UNBLK_CACHE;
+
+	ret = ath12k_wifi8_dp_reo_cmd_send(ab, rx_tid, sizeof(*rx_tid),
+					   HAL_REO_CMD_UNBLOCK_CACHE,
+					   &cmd, NULL);
+	if (ret)
+		ath12k_warn(ab, "smd prep: UNBLOCK_CACHE failed (%d)\n", ret);
+
+	spin_unlock_bh(&dp->dp_lock);
+
+	timeout = wait_for_completion_timeout(&parked->flush_done,
+					      msecs_to_jiffies(500));
+	if (!timeout) {
+		ath12k_warn(ab, "smd prep: FLUSH_CACHE timed out\n");
+		/* Prevent stale pointer access if callback fires late */
+		spin_lock_bh(&dp->dp_lock);
+		current_dp_peer->rx_tid[0].smd_ctx = NULL;
+		spin_unlock_bh(&dp->dp_lock);
+		ret = -ETIMEDOUT;
+		goto err_free;
+	}
+
+	spin_lock_bh(&dp->dp_lock);
+
+	for (tid = 0; tid < parked->num_tids; tid++) {
+		rx_tid = &current_dp_peer->rx_tid[tid];
+
+		ath12k_dbg(ab, ATH12K_DBG_SMD,
+			   "smd prep: park tid=%u peer_id=%u active=%d paddr=%pad ba_win=%u cur_sn=%u\n",
+			   tid, current_dp_peer->peer_id,
+			   rx_tid->active, &rx_tid->paddr,
+			   rx_tid->ba_win_sz, rx_tid->cur_sn);
+
+		/* Snapshot the full rx_tid state (vaddr/paddr ownership xfer) */
+		memcpy(&parked->rx_tid[tid], rx_tid, sizeof(*rx_tid));
+		parked->rx_tid[tid].smd_ctx = NULL;
+
+		/* Invalidate old peer's entry — DMA memory ownership transferred */
+		rx_tid->active            = false;
+		rx_tid->vaddr             = NULL;
+		rx_tid->paddr             = 0;
+		rx_tid->size              = 0;
+		rx_tid->pending_desc_size = 0;
+		rx_tid->smd_ctx           = NULL;
+		rx_tid->dst_ring_desc     = NULL;
+	}
+
+	/* Transfer MMIC crypto context ownership */
+	parked->tfm_mmic = current_dp_peer->tfm_mmic;
+	current_dp_peer->tfm_mmic = NULL;
+	current_dp_peer->primary_link_frag_setup = false;
+
+	parked->valid = true;
+
+	spin_unlock_bh(&dp->dp_lock);
+
+	for (tid = 0; tid < parked->num_tids; tid++) {
+		if (current_dp_peer->smd_lut_active_tids & BIT(tid))
+			del_timer_sync(&current_dp_peer->rx_tid[tid].frag_timer);
+	}
+
+	spin_lock_bh(&hw_grp->smd_transition_lock);
+
+	if (hw_grp->smd_parked_rx_info) {
+		ath12k_warn(ab,
+			    "smd prep: overwriting stale smd_parked_rx_info!\n");
+		kfree(hw_grp->smd_parked_rx_info);
+	}
+	hw_grp->smd_parked_rx_info = parked;
+
+	spin_unlock_bh(&hw_grp->smd_transition_lock);
+
+	ath12k_dbg(ab, ATH12K_DBG_MAC,
+		   "smd prep: parked rx_tid state peer_id=%u num_tids=%u\n",
+		   current_dp_peer->peer_id, parked->num_tids);
+	return 0;
+
+err_free:
+	kfree(parked);
+	return ret;
+}
+
+int ath12k_wifi8_dp_smd_exec_rx_tid(struct ath12k_dp *dp,
+				    struct ath12k_dp_hw *dp_hw,
+				    const u8 *addr)
+{
+	struct ath12k_dp_peer *target_dp_peer;
+	struct ath12k_dp_hw_group *hw_grp = dp->dp_hw_grp;
+	struct ath12k_dp_smd_parked_rx_info *parked;
+	struct ath12k_dp_rx_tid *src_tid, *dst_tid;
+	struct ath12k_base *ab = dp->ab;
+	int tid;
+
+	spin_lock_bh(&dp_hw->peer_hash_lock);
+	target_dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, addr);
+	spin_unlock_bh(&dp_hw->peer_hash_lock);
+
+	if (!target_dp_peer) {
+		ath12k_warn(ab, "smd exec_rx_tid: peer %pM not found\n", addr);
+		return -ENOENT;
+	}
+
+	/* Retrieve and consume the parked state */
+	spin_lock_bh(&hw_grp->smd_transition_lock);
+	parked = hw_grp->smd_parked_rx_info;
+	hw_grp->smd_parked_rx_info = NULL;
+	spin_unlock_bh(&hw_grp->smd_transition_lock);
+
+	if (!parked || !parked->valid) {
+		ath12k_warn(ab, "smd exec: no valid smd_parked_rx_info\n");
+		kfree(parked);
+		return -ENOENT;
+	}
+
+	spin_lock_bh(&dp->dp_lock);
+
+	for (tid = 0; tid < parked->num_tids; tid++) {
+		src_tid = &parked->rx_tid[tid];
+		dst_tid = &target_dp_peer->rx_tid[tid];
+
+		ath12k_dbg(ab, ATH12K_DBG_SMD,
+			   "smd exec: tid=%u src: act=%d ba=%u sn=%u paddr=%pad | dst: act=%d paddr=%pad id=%u\n",
+			   tid,
+			   src_tid->active, src_tid->ba_win_sz, src_tid->cur_sn,
+			   &src_tid->paddr,
+			   dst_tid->active, &dst_tid->paddr,
+			   target_dp_peer->peer_id);
+
+		if (!src_tid->active)
+			continue;
+
+		WARN_ON(dst_tid->active && dst_tid->cur_sn != 0);
+		if (dst_tid->vaddr) {
+			ath12k_core_dma_unmap_single(ab->dev, dst_tid->paddr,
+						     dst_tid->size,
+						     DMA_BIDIRECTIONAL);
+			kfree(dst_tid->vaddr);
+			dst_tid->vaddr = NULL;
+			dst_tid->paddr = 0;
+		}
+
+		dst_tid->tid               = src_tid->tid;
+		dst_tid->vaddr             = src_tid->vaddr;
+		dst_tid->paddr             = src_tid->paddr;
+		dst_tid->size              = src_tid->size;
+		dst_tid->pending_desc_size = src_tid->pending_desc_size;
+		dst_tid->ba_win_sz         = src_tid->ba_win_sz;
+		dst_tid->active            = true;
+		dst_tid->cur_sn            = src_tid->cur_sn;
+		dst_tid->last_frag_no      = src_tid->last_frag_no;
+		dst_tid->rx_frag_bitmap    = src_tid->rx_frag_bitmap;
+		dst_tid->dst_ring_desc     = src_tid->dst_ring_desc;
+		dst_tid->dp                = dp;
+		dst_tid->smd_ctx           = NULL;
+
+		timer_setup(&dst_tid->frag_timer, ath12k_dp_rx_frag_timer, 0);
+		skb_queue_head_init(&dst_tid->rx_frags);
+
+		if (ab->hw_params->reoq_lut_support) {
+			ath12k_wifi8_peer_rx_tid_qref_setup(ab,
+							    target_dp_peer->peer_id,
+							    tid,
+							    dst_tid->paddr);
+		}
+
+		ath12k_dbg(ab, ATH12K_DBG_MAC,
+			   "smd exec: restored rx_tid[%u] paddr=%pad ba_win=%u active=%d peer_id=%u\n",
+			   tid, &dst_tid->paddr, dst_tid->ba_win_sz,
+			   dst_tid->active, target_dp_peer->peer_id);
+	}
+
+	if (target_dp_peer->tfm_mmic) {
+		ath12k_warn(ab,
+			    "smd exec: target peer already has tfm_mmic — replacing\n");
+		crypto_free_shash(target_dp_peer->tfm_mmic);
+	}
+	target_dp_peer->tfm_mmic = parked->tfm_mmic;
+	parked->tfm_mmic = NULL;
+
+	target_dp_peer->primary_link_frag_setup = true;
+
+	spin_unlock_bh(&dp->dp_lock);
+
+	ath12k_dbg(ab, ATH12K_DBG_MAC,
+		   "smd exec: rx_tid state restored to peer_id=%u for tid_num: %d\n",
+		   target_dp_peer->peer_id,
+		   parked->num_tids);
+
+	kfree(parked);
+
+	return 0;
+}
+
+void ath12k_wifi8_dp_smd_clear_old_peer_rx_lut(struct ath12k_dp *dp,
+					       struct ath12k_dp_peer *dp_peer)
+{
+	struct ath12k_base *ab = dp->ab;
+	u32 tids = dp_peer->smd_lut_active_tids;
+	int tid;
+
+	lockdep_assert_held(&dp->dp_lock);
+
+	if (!tids)
+		return;
+
+	if (!ab->hw_params->reoq_lut_support) {
+		dp_peer->smd_lut_active_tids = 0;
+		return;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_PEER,
+		   "smd phase-c: clearing REO LUT for old peer_id=%u tids=0x%x\n",
+		   dp_peer->peer_id, tids);
+
+	for_each_set_bit(tid, (unsigned long *)&tids,
+			 ab->hal.hal_params->num_tids) {
+		ath12k_wifi8_peer_rx_tid_qref_reset(ab, dp_peer->peer_id, tid);
+	}
+
+	ath12k_wifi8_hal_reo_shared_qaddr_cache_clear(ab);
+	dp_peer->smd_lut_active_tids = 0;
 }

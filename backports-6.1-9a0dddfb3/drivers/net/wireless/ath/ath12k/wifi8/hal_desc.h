@@ -2582,9 +2582,24 @@ struct hal_tqm_get_mpduq_stats_cmd_status {
 	__le32 info20;
 };
 
+/* Chip ID bitmap masks — shared by hal_queue.c and hal_tx.c */
+#define ATH12K_CHIP0_BITMAP_MASK                        BIT(0)
+#define ATH12K_CHIP1_BITMAP_MASK                        BIT(1)
+#define ATH12K_CHIP2_BITMAP_MASK                        BIT(2)
+#define ATH12K_CHIP3_BITMAP_MASK                        BIT(3)
+#define ATH12K_CHIP4_BITMAP_MASK                        BIT(4)
+
 #define HAL_TQM_UPDATE_MPDUQ_INFO0_MPDUQ_ADDR_LO		GENMASK(31, 0)
 #define HAL_TQM_UPDATE_MPDUQ_INFO1_MPDUQ_ADDR_HI		GENMASK(7, 0)
+#define HAL_TQM_UPDATE_MPDU_UPDATE_TX_QUEUE_NUMBER		BIT(8)
 #define HAL_TQM_UPDATE_MPDUQ_INFO1_SEQ_NUM_UPDATE_VALID		BIT(9)
+#define HAL_TQM_UPDATE_MPDU_UPDATE_QUEUE_VALID			BIT(10)
+#define HAL_TQM_UPDATE_MPDU_UPDATE_SW_PEER_ID			BIT(15)
+#define HAL_TQM_UPDATE_MPDU_UPDATE_TID				BIT(16)
+#define HAL_TQM_UPDATE_MPDU_UPDATE_MPDU_TYPE			BIT(18)
+#define HAL_TQM_UPDATE_MPDU_TID_VALUE				GENMASK(28, 25)
+#define HAL_TQM_UPDATE_MPDU_SW_PEER_ID_VALUE			GENMASK(31, 16)
+#define HAL_TQM_UPDATE_MPDU_QUEUE_NUMBER_VALUE			GENMASK(23, 0)
 #define HAL_TQM_UPDATE_MPDUQ_INFO2_START_SEQ_NUM		GENMASK(11, 0)
 #define HAL_TQM_UPDATE_MPDUQ_INFO2_LAST_SEQ_NUM			GENMASK(27, 16)
 #define HAL_TQM_UPDATE_MPDUQ_INFO14_MAX_LSN			GENMASK(29, 18)
@@ -2617,6 +2632,13 @@ struct hal_tqm_update_mpduq {
 };
 
 #define HAL_TQM_UPDATE_MPDUQ_CMD_STATUS_INFO0_UPDATE_REQ_MET	BIT(0)
+#define HAL_TQM_UPDATE_MPDUQ_CMD_STATUS_INFO0_TX_MPDU_QUEUE_NUM	GENMASK(31, 8)
+/* info1 layout matches HAL_TQM_FLOW_UPDATE_STATUS_* (msduq) at the same bit positions */
+#define HAL_TQM_UPDATE_MPDUQ_CMD_STATUS_INFO1_SW_PEER_ID		GENMASK(15, 0)
+#define HAL_TQM_UPDATE_MPDUQ_CMD_STATUS_INFO1_TID			GENMASK(19, 16)
+#define HAL_TQM_UPDATE_MPDUQ_CMD_STATUS_INFO1_ALLOC_SEQ_NUM		GENMASK(31, 20)
+/* info2 carries lower 32 bits of allocated PN; info3[15:0] carries upper 16 bits */
+#define HAL_TQM_UPDATE_MPDUQ_CMD_STATUS_INFO3_ALLOC_PN_UPPER		GENMASK(15, 0)
 struct hal_tqm_update_mpduq_cmd_status {
 	struct hal_uniform_tqm_status_hdr status_hdr;
 	__le32 info0;
@@ -2641,6 +2663,31 @@ struct hal_tqm_update_mpduq_cmd_status {
 	__le32 info19;
 	__le32 info20;
 };
+
+struct hal_tqm_update_tx_mpdu_queue_head_status {
+	struct hal_uniform_tqm_status_hdr status_hdr;
+	__le32 info0;
+	__le32 info1;
+	__le32 info2;
+	__le32 info3;
+	__le32 info4;
+	__le32 info5;
+	__le32 info6;
+	__le32 info7;
+	__le32 info8;
+	__le32 info9;
+	__le32 info10;
+	__le32 info11;
+	__le32 info12;
+	__le32 info13;
+	__le32 info14;
+	__le32 info15;
+	__le32 info16;
+	__le32 info17;
+	__le32 info18;
+	__le32 info19;
+	__le32 info20;
+} __packed;
 
 struct hal_tqm_cmd_params_std {
 	u16 peer_id;
@@ -2673,22 +2720,39 @@ struct hal_tqm_get_mpdu_queue_stats {
 	bool clear_stats;
 };
 
+struct hal_tqm_update_tx_msdu_flow_params {
+	dma_addr_t msdu_q_paddr;
+	u32 tx_flow_number;
+	u16 new_peer_id;
+	u8 tid;
+	u8 bitmap;
+	enum hal_tqm_service_category svc;
+	u16 hard_drop_threshold;
+	bool update_hard_drop_threshold;
+	bool update_peer_id;
+	bool update_tid;
+	bool update_flow_valid;
+	bool update_flow_number;
+	bool update_smd_roaming;
+};
+
 struct hal_tqm_update_mpdu_queue_params {
 	dma_addr_t mpdu_q_paddr;
+	u32 new_queue_number;
 	u32 max_lsn_valid:1,
 	    sn_num_valid:1,
 	    max_lsn:12,
 	    sn_num:12,
 	    reserved:6;
-};
-
-struct hal_tqm_update_tx_msdu_flow_params {
-	enum hal_tqm_service_category svc;
-	u32 tx_flow_number;
-	dma_addr_t msdu_q_paddr;
-	u8 tid;
-	u16 hard_drop_threshold;
-	bool update_hard_drop_threshold;
+	u16 new_peer_id;
+	u8 new_tid;
+	u8 __pad;
+	bool update_peer_id;
+	bool update_tid;
+	bool update_queue_valid;
+	bool update_queue_number;
+	bool update_seq_number;
+	bool update_mpdu_type;
 };
 
 struct ath12k_hal_tqm_cmd {
@@ -2698,8 +2762,8 @@ struct ath12k_hal_tqm_cmd {
 		struct hal_tqm_remove_mpdu_params remove_mpdu_params;
 		struct hal_tqm_sync_cmd_params tqm_sync_params;
 		struct hal_tqm_get_mpdu_queue_stats get_mpduq_stats;
-		struct hal_tqm_update_mpdu_queue_params update_mpduq;
 		struct hal_tqm_update_tx_msdu_flow_params update_tx_msdu_params;
+		struct hal_tqm_update_mpdu_queue_params update_mpduq;
 	};
 };
 
@@ -2745,10 +2809,20 @@ struct hal_tqm_get_mpduq_stats_status {
 	    reserved:11;
 };
 
-struct hal_tqm_status_update_msduq {
-	u32 flow_number;
-	u32 peer_id;
-	u32 tid;
+struct hal_tqm_status_update_msdu_flow {
+	u32 tx_flow_number;
+	u16 sw_peer_id;
+	u8 tid;
+	bool update_requirements_not_met;
+};
+
+struct hal_tqm_status_update_mpdu_queue {
+	u16 sw_peer_id;
+	u8 tid;
+	u32 tx_mpdu_queue_number;
+	u16 allocated_sequence_number;
+	u64 allocated_pn;
+	bool update_requirements_not_met;
 };
 
 struct hal_tqm_status {
@@ -2758,7 +2832,8 @@ struct hal_tqm_status {
 		struct hal_tqm_status_remove_mpdu remove_mpdu;
 		struct hal_tqm_status_sync_cmd sync_status;
 		struct hal_tqm_get_mpduq_stats_status mpduq_stats;
-		struct hal_tqm_status_update_msduq update_msduq_status;
+		struct hal_tqm_status_update_msdu_flow update_msdu_flow;
+		struct hal_tqm_status_update_mpdu_queue update_mpdu_queue;
 	};
 };
 
@@ -2845,7 +2920,7 @@ struct hal_tqm_status {
 #define HAL_TQM_FLOW_RESERVED_7A				GENMASK(31, 29)
 
 // info7
-#define HAL_TQM_FLOW_TX_FLOW_NUMBER				GENMASK(23, 0)
+#define HAL_TQM_FLOW_UPDATE_TX_MSDU_FLOW_NUMBER			GENMASK(23, 0)
 #define HAL_TQM_FLOW_UPDATE_MSDU_QUEUE_SAM_ID			BIT(24)
 #define HAL_TQM_FLOW_UPDATE_SERVICE_CATEGORY_VALID		BIT(25)
 #define HAL_TQM_FLOW_UPDATE_PEER_MLO_STATS_ID			BIT(26)

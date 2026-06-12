@@ -14,10 +14,6 @@
 #define ATH12K_MAX_NUM_OF_EXT_DESCRIPTORS 24
 #define ATH12K_MPDU_SEQ_NUM_MASK 0xFFF
 #define ATH12K_PN_ADDR_HIGH_BYTE_MASK 0x000000FF
-#define ATH12K_CHIP0_BITMAP_MASK 0x1
-#define ATH12K_CHIP1_BITMAP_MASK 0x2
-#define ATH12K_CHIP2_BITMAP_MASK 0x4
-#define ATH12K_CHIP3_BITMAP_MASK 0x8
 
 int ath12k_wifi8_hal_tx_msdu_queue_cleanup(struct ath12k_dp_hw_group *dp_hw_grp,
 					   u32 msduq_idx,

@@ -27,6 +27,7 @@
 #include "umac_reset.h"
 #include "mgmt_rx.h"
 #include "dp_peer.h"
+#include "hal_queue.h"
 #include "ppeds.h"
 
 extern struct ppe_ds_wlan_ops_v2 ppeds_wifi8_wlanops_v2;
@@ -750,6 +751,11 @@ static struct ath12k_dp_hw_group *ath12k_wifi8_dp_hw_group_alloc(void)
 
 	memcpy(dp_hw_grp->pcp_tid_map, ath12k_default_pcp_tid_map,
 	       sizeof(dp_hw_grp->pcp_tid_map));
+	/* Initialize SMD transition lock */
+	spin_lock_init(&dp_hw_grp->smd_transition_lock);
+	dp_hw_grp->smd_parked_ext_ctx = NULL;
+	dp_hw_grp->smd_old_peer_id = 0;
+	eth_zero_addr(dp_hw_grp->smd_target_mld_addr);
 
 	return dp_hw_grp;
 }
@@ -1338,6 +1344,13 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.dump_congestion_ctrl_stats = ath12k_wifi8_dp_tx_dump_congestion_ctrl_stats,
 	.dump_congestion_recovery_hist = ath12k_wifi8_dp_tx_dump_congestion_recovery_hist,
 	.set_congestion_ctrl_param = ath12k_wifi8_dp_tx_set_congestion_ctrl_param,
+	.dp_smd_prep_transfer_ext_ctx = ath12k_wifi8_dp_smd_prep_transfer_ext_ctx,
+	.dp_smd_exec_activate_links = ath12k_wifi8_dp_smd_exec_activate_links,
+	.dp_smd_prep_rx_tid = ath12k_wifi8_dp_smd_prep_rx_tid,
+	.dp_smd_exec_rx_tid = ath12k_wifi8_dp_smd_exec_rx_tid,
+	.dp_smd_clear_old_peer_rx_lut = ath12k_wifi8_dp_smd_clear_old_peer_rx_lut,
+	.peer_tx_tid_sn_reset = ath12k_wifi8_peer_tx_tid_sn_reset,
+	.peer_rx_tid_svld_reset = ath12k_wifi8_peer_rx_tid_svld_reset,
 };
 
 struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab)

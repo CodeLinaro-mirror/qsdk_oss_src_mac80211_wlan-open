@@ -596,7 +596,7 @@ ath12k_wifi8_mgmt_rx_h_mpdu(struct ath12k_mgmt *mgmt, struct sk_buff *mmpdu,
 		arsta = ath12k_link_sta_find_by_addr(partner_ar, hdr->addr1);
 
 	/* Skip self-peer arsta: ahsta is NULL and enctype is not meaningful */
-	if (arsta && !arsta->is_self_peer)
+	if (arsta && arsta->ahsta && !arsta->is_self_peer)
 		enctype = arsta->ahsta->enctype;
 
 	spin_unlock_bh(&partner_ar->arsta_lock);

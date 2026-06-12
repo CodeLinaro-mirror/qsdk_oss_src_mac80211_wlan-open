@@ -473,6 +473,35 @@ int ath12k_wifi8_hal_tqm_update_mpduq(struct ath12k_base *ab,
 	desc->info1 = le32_encode_bits(paddr_hi,
 				       HAL_TQM_UPDATE_MPDUQ_INFO1_MPDUQ_ADDR_HI);
 
+	if (cmd->update_mpduq.update_queue_number) {
+		desc->info1 |= le32_encode_bits(1,
+					HAL_TQM_UPDATE_MPDU_UPDATE_TX_QUEUE_NUMBER);
+		desc->info16 |= le32_encode_bits(cmd->update_mpduq.new_queue_number,
+						 HAL_TQM_UPDATE_MPDU_QUEUE_NUMBER_VALUE);
+	}
+
+	if (cmd->update_mpduq.update_queue_valid)
+		desc->info1 |= le32_encode_bits(1,
+					HAL_TQM_UPDATE_MPDU_UPDATE_QUEUE_VALID);
+
+	if (cmd->update_mpduq.update_peer_id) {
+		desc->info1 |= le32_encode_bits(1,
+					HAL_TQM_UPDATE_MPDU_UPDATE_SW_PEER_ID);
+		desc->info5 |= le32_encode_bits(cmd->update_mpduq.new_peer_id,
+						HAL_TQM_UPDATE_MPDU_SW_PEER_ID_VALUE);
+	}
+
+	if (cmd->update_mpduq.update_tid) {
+		desc->info1 |= le32_encode_bits(1,
+					HAL_TQM_UPDATE_MPDU_UPDATE_TID);
+		desc->info4 |= le32_encode_bits(cmd->update_mpduq.new_tid,
+						HAL_TQM_UPDATE_MPDU_TID_VALUE);
+	}
+
+	if (cmd->update_mpduq.update_mpdu_type)
+		desc->info1 |= le32_encode_bits(1,
+					HAL_TQM_UPDATE_MPDU_UPDATE_MPDU_TYPE);
+
 	if (cmd->update_mpduq.max_lsn_valid) {
 		desc->info14 |=
 			le32_encode_bits(cmd->update_mpduq.max_lsn_valid,
@@ -536,19 +565,22 @@ int ath12k_wifi8_hal_tqm_update_msduq(struct ath12k_base *ab,
 			& 0x000000ff);
 	desc->info0 = le32_encode_bits(paddr_lo, HAL_TQM_FLOW_QUEUE_ADDR_31_0);
 
-	desc->info1 = le32_encode_bits(paddr_hi, HAL_TQM_FLOW_QUEUE_ADDR_39_32) |
+	desc->info1 |= le32_encode_bits(paddr_hi, HAL_TQM_FLOW_QUEUE_ADDR_39_32) |
 		      le32_encode_bits(1, HAL_TQM_FLOW_UPDATE_TX_FLOW_NUMBER) |
 		      le32_encode_bits(1, HAL_TQM_FLOW_UPDATE_FLOW_VALID) |
 		      le32_encode_bits(1, HAL_TQM_FLOW_UPDATE_SW_PEER_ID) |
 		      le32_encode_bits(1, HAL_TQM_FLOW_UPDATE_TID);
 
-	desc->info2 = le32_encode_bits(1, HAL_TQM_FLOW_VALID) |
+	desc->info2 |= le32_encode_bits(1, HAL_TQM_FLOW_VALID) |
 		      le32_encode_bits(update_params->tid,
 				       HAL_TQM_FLOW_TID);
 
-	desc->info5 = le32_encode_bits(cmd->std.peer_id, HAL_TQM_FLOW_SW_PEER_ID);
-	desc->info7 = le32_encode_bits(update_params->tx_flow_number,
-				       HAL_TQM_FLOW_TX_FLOW_NUMBER);
+	if (cmd->update_tx_msdu_params.update_peer_id)
+		desc->info5 |= le32_encode_bits(update_params->new_peer_id,
+						HAL_TQM_FLOW_SW_PEER_ID);
+	if (cmd->update_tx_msdu_params.update_flow_number)
+		desc->info7 |= le32_encode_bits(update_params->tx_flow_number,
+						HAL_TQM_FLOW_UPDATE_TX_MSDU_FLOW_NUMBER);
 
 	if (update_params->svc < HAL_TQM_SERVICE_CATEGORY_MAX) {
 		desc->info6 = le32_encode_bits(1, HAL_TQM_FLOW_SERVICE_CATEGORY_VALID);
@@ -564,6 +596,51 @@ int ath12k_wifi8_hal_tqm_update_msduq(struct ath12k_base *ab,
 						HAL_TQM_FLOW_UPDATE_HARD_DROP_THRESHOLD);
 		desc->info4 = le32_encode_bits(update_params->hard_drop_threshold,
 					       HAL_TQM_FLOW_HARD_DROP_THRESHOLD);
+	}
+
+	if (cmd->update_tx_msdu_params.bitmap) {
+		u8 bitmap = cmd->update_tx_msdu_params.bitmap;
+
+		if (bitmap & ATH12K_CHIP0_BITMAP_MASK) {
+			desc->info2 |=
+			le32_encode_bits(1,
+					 HAL_TQM_FLOW_UPDATE_STATUS_REQUIRED_FOR_CHIP0);
+			desc->info9 |=
+			le32_encode_bits(1,
+					 HAL_TQM_FLOW_STATUS_REQUIRED_FOR_CHIP0);
+		}
+		if (bitmap & ATH12K_CHIP1_BITMAP_MASK) {
+			desc->info2 |=
+			le32_encode_bits(1,
+					 HAL_TQM_FLOW_UPDATE_STATUS_REQUIRED_FOR_CHIP1);
+			desc->info9 |=
+			le32_encode_bits(1,
+					 HAL_TQM_FLOW_STATUS_REQUIRED_FOR_CHIP1);
+		}
+		if (bitmap & ATH12K_CHIP2_BITMAP_MASK) {
+			desc->info2 |=
+			le32_encode_bits(1,
+					 HAL_TQM_FLOW_UPDATE_STATUS_REQUIRED_FOR_CHIP2);
+			desc->info9 |=
+			le32_encode_bits(1,
+					 HAL_TQM_FLOW_STATUS_REQUIRED_FOR_CHIP2);
+		}
+		if (bitmap & ATH12K_CHIP3_BITMAP_MASK) {
+			desc->info2 |=
+			le32_encode_bits(1,
+					 HAL_TQM_FLOW_UPDATE_STATUS_REQUIRED_FOR_CHIP3);
+			desc->info9 |=
+			le32_encode_bits(1,
+					 HAL_TQM_FLOW_STATUS_REQUIRED_FOR_CHIP3);
+		}
+		if (bitmap & ATH12K_CHIP4_BITMAP_MASK) {
+			desc->info2 |=
+			le32_encode_bits(1,
+					 HAL_TQM_FLOW_UPDATE_STATUS_REQUIRED_FOR_CHIP4);
+			desc->info9 |=
+			le32_encode_bits(1,
+					 HAL_TQM_FLOW_STATUS_REQUIRED_FOR_CHIP4);
+		}
 	}
 
 	return le32_get_bits(desc->cmd_hdr.info0, HAL_TQM_CMD_NUMBER);
@@ -583,14 +660,47 @@ int ath12k_wifi8_hal_tqm_cmd_send(struct ath12k_base *ab, struct hal_srng *srng,
 		ath12k_err(ab, "TQM staging buffer not allocated\n");
 		return -ENOMEM;
 	}
+	const char *cmd_type_str;
+
+	/* Map command type to string for debug logging */
+	switch (type) {
+	case HAL_TQM_REMOVE_MSDU_BO:
+		cmd_type_str = "REMOVE_MSDU";
+		break;
+	case HAL_TQM_REMOVE_MPDU_BO:
+		cmd_type_str = "REMOVE_MPDU";
+		break;
+	case HAL_TQM_SYNC_CMD_BO:
+		cmd_type_str = "SYNC_CMD";
+		break;
+	case HAL_TQM_UPDATE_MSDUQ_BO:
+		cmd_type_str = "UPDATE_MSDU_FLOW";
+		break;
+	case HAL_TQM_UPDATE_MPDUQ_BO:
+		cmd_type_str = "UPDATE_MPDU_QUEUE";
+		break;
+	default:
+		cmd_type_str = "UNKNOWN";
+		break;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_PEER,
+		   "hal-tqm-cmd-send: ENTRY type=%s(%d) peer_id=%u\n",
+		   cmd_type_str, type, cmd->std.peer_id);
 	spin_lock_bh(&srng->lock);
 	ath12k_hal_srng_access_begin(ab, srng);
 
 	tlv_desc = (struct hal_tlv_64_hdr *)ab->tqm_cmd_staging;
 	if (!tlv_desc) {
 		ret = -ENOMEM;
+		ath12k_warn(ab, "hal-tqm-cmd-send: No buffer space for %s command peer_id=%u\n",
+			    cmd_type_str, cmd->std.peer_id);
 		goto out;
 	}
+	ath12k_dbg(ab, ATH12K_DBG_PEER,
+		   "hal-tqm-cmd-send: Got TQM descriptor, processing %s command\n",
+		   cmd_type_str);
+
 	switch (type) {
 	case HAL_TQM_REMOVE_MSDU_BO:
 		ret = ath12k_wifi8_hal_tqm_remove_msdu_cmd(ab, tlv_desc, cmd);
@@ -641,6 +751,10 @@ out:
 
 	ath12k_hal_srng_access_end(ab, srng);
 	spin_unlock_bh(&srng->lock);
+
+	ath12k_dbg(ab, ATH12K_DBG_PEER,
+		   "hal-tqm-cmd-send: EXIT %s ret=%d peer_id=%u\n",
+		   cmd_type_str, ret, cmd->std.peer_id);
 
 	return ret;
 }
@@ -745,6 +859,12 @@ void ath12k_wifi8_hal_tqm_update_mpduq_cmd_status(struct ath12k_base *ab,
 {
 	struct hal_tqm_update_mpduq_cmd_status *desc =
 		(struct hal_tqm_update_mpduq_cmd_status *)tlv->value;
+	u32 tx_mpdu_queue_number;
+	u8 update_req_not_met;
+	u16 allocated_seq_num;
+	u64 allocated_pn;
+	u16 sw_peer_id;
+	u8 tid;
 
 	status->status_hdr.status_num = le32_get_bits(desc->status_hdr.info0,
 						      HAL_TQM_STATUS_NUMBER);
@@ -753,6 +873,39 @@ void ath12k_wifi8_hal_tqm_update_mpduq_cmd_status(struct ath12k_base *ab,
 					      HAL_TQM_STATUS_CMD_EXECUTION_STATUS);
 	status->status_hdr.tqm_status_ring = le32_get_bits(desc->status_hdr.info2,
 							   HAL_TQM_STATUS_RING);
+
+	update_req_not_met =
+		le32_get_bits(desc->info0,
+			      HAL_TQM_UPDATE_MPDUQ_CMD_STATUS_INFO0_UPDATE_REQ_MET);
+	tx_mpdu_queue_number =
+		le32_get_bits(desc->info0,
+			      HAL_TQM_UPDATE_MPDUQ_CMD_STATUS_INFO0_TX_MPDU_QUEUE_NUM);
+	sw_peer_id = le32_get_bits(desc->info1,
+				   HAL_TQM_UPDATE_MPDUQ_CMD_STATUS_INFO1_SW_PEER_ID);
+	tid = le32_get_bits(desc->info1, HAL_TQM_UPDATE_MPDUQ_CMD_STATUS_INFO1_TID);
+	allocated_seq_num =
+		le32_get_bits(desc->info1,
+			      HAL_TQM_UPDATE_MPDUQ_CMD_STATUS_INFO1_ALLOC_SEQ_NUM);
+
+	allocated_pn = le32_to_cpu(desc->info2);
+	allocated_pn |=
+	((u64)le32_get_bits(desc->info3,
+			    HAL_TQM_UPDATE_MPDUQ_CMD_STATUS_INFO3_ALLOC_PN_UPPER)) << 32;
+
+	status->update_mpdu_queue.update_requirements_not_met = update_req_not_met;
+	status->update_mpdu_queue.tx_mpdu_queue_number = tx_mpdu_queue_number;
+	status->update_mpdu_queue.sw_peer_id = sw_peer_id;
+	status->update_mpdu_queue.tid = tid;
+	status->update_mpdu_queue.allocated_sequence_number = allocated_seq_num;
+	status->update_mpdu_queue.allocated_pn = allocated_pn;
+
+	ath12k_dbg(ab, ATH12K_DBG_PEER,
+		   "tqm-mpdu-status: s=%u e=%u r=%u nm=%u q=%u p=%u tid=%u sn=%u pn=0x%llx\n",
+		   status->status_hdr.status_num,
+		   status->status_hdr.cmd_execution_status,
+		   status->status_hdr.tqm_status_ring,
+		   update_req_not_met, tx_mpdu_queue_number,
+		   sw_peer_id, tid, allocated_seq_num, allocated_pn);
 }
 
 void ath12k_wifi8_hal_tqm_sync_cmd_status(struct ath12k_base *ab,
@@ -778,28 +931,6 @@ void ath12k_wifi8_hal_tqm_sync_cmd_status(struct ath12k_base *ab,
 	status->sync_status.metadata_2 = le32_get_bits(
 						desc->info2,
 						HAL_TQM_SYNC_STATUS_SW_METADATA_95_64);
-}
-
-void ath12k_wifi8_hal_tqm_update_msduq_cmd_status(struct ath12k_base *ab,
-						  struct hal_tlv_64_hdr *tlv,
-						  struct hal_tqm_status *status)
-{
-	struct hal_tqm_update_tx_msdu_flow_status *desc =
-		(struct hal_tqm_update_tx_msdu_flow_status *)tlv->value;
-	struct hal_tqm_status_hdr *hdr = &status->status_hdr;
-	struct hal_tqm_status_update_msduq *update = &status->update_msduq_status;
-
-	hdr->status_num =  le32_get_bits(desc->status_hdr.info0,
-						       HAL_TQM_STATUS_NUMBER);
-	hdr->cmd_execution_status = le32_get_bits(desc->status_hdr.info2,
-						  HAL_TQM_STATUS_CMD_EXECUTION_STATUS);
-	hdr->tqm_status_ring = le32_get_bits(desc->status_hdr.info2,
-					     HAL_TQM_STATUS_RING);
-	update->flow_number = le32_get_bits(desc->info0,
-					    HAL_TQM_FLOW_UPDATE_STATUS_TX_FLOW_NUMBER);
-	update->peer_id = le32_get_bits(desc->info1,
-					HAL_TQM_FLOW_UPDATE_STATUS_SW_PEER_ID);
-	update->tid = le32_get_bits(desc->info1, HAL_TQM_FLOW_UPDATE_STATUS_TID);
 }
 
 int ath12k_wifi8_hal_tqm_cmd_staging_alloc(struct ath12k_base *ab)
@@ -1223,3 +1354,55 @@ void ath12k_wifi8_hal_tx_set_tid_map_precedence(struct ath12k_base *ab,
 	ath12k_hif_write32(ab, HAL_TCL_R0_PCP_TID_MAP_PRTY_OFFSET, reg_val);
 }
 EXPORT_SYMBOL(ath12k_wifi8_hal_tx_set_tid_map_precedence);
+
+void ath12k_wifi8_hal_tqm_update_msduq_cmd_status(struct ath12k_base *ab,
+						  struct hal_tlv_64_hdr *tlv,
+						  struct hal_tqm_status *status)
+{
+	struct hal_tqm_update_tx_msdu_flow_status *desc =
+		(struct hal_tqm_update_tx_msdu_flow_status *)tlv->value;
+	u8 update_req_not_met;
+	u32 tx_flow_number;
+	u16 sw_peer_id;
+	u8 tid;
+
+	status->status_hdr.status_num = le32_get_bits(desc->status_hdr.info0,
+						      HAL_TQM_STATUS_NUMBER);
+	status->status_hdr.cmd_execution_status = le32_get_bits(
+						desc->status_hdr.info2,
+						HAL_TQM_STATUS_CMD_EXECUTION_STATUS);
+	status->status_hdr.tqm_status_ring = le32_get_bits(desc->status_hdr.info2,
+							   HAL_TQM_STATUS_RING);
+
+	update_req_not_met =
+		le32_get_bits(desc->info0,
+			      HAL_TQM_FLOW_UPDATE_STATUS_REQUIREMENTS_NOT_MET);
+	tx_flow_number = le32_get_bits(desc->info0,
+				       HAL_TQM_FLOW_UPDATE_STATUS_TX_FLOW_NUMBER);
+	sw_peer_id = le32_get_bits(desc->info1,
+				   HAL_TQM_FLOW_UPDATE_STATUS_SW_PEER_ID);
+	tid = le32_get_bits(desc->info1, HAL_TQM_FLOW_UPDATE_STATUS_TID);
+
+	status->update_msdu_flow.update_requirements_not_met = update_req_not_met;
+	status->update_msdu_flow.tx_flow_number = tx_flow_number;
+	status->update_msdu_flow.sw_peer_id = sw_peer_id;
+	status->update_msdu_flow.tid = tid;
+
+	ath12k_dbg(ab, ATH12K_DBG_PEER,
+		   "tqm-msdu-status: s=%u e=%u r=%u nm=%u flow=0x%x peer=%u tid=%u\n",
+		   status->status_hdr.status_num,
+		   status->status_hdr.cmd_execution_status,
+		   status->status_hdr.tqm_status_ring, update_req_not_met,
+		   tx_flow_number, sw_peer_id, tid);
+
+	if (status->status_hdr.cmd_execution_status == HAL_TQM_SUCCESSFUL_EXECUTION &&
+	    !update_req_not_met)
+		ath12k_dbg(ab, ATH12K_DBG_PEER,
+			   "tqm-msdu-status: UPDATE OK peer=%u flow=0x%x tid=%u\n",
+			   sw_peer_id, tx_flow_number, tid);
+	else
+		ath12k_warn(ab,
+			    "tqm-msdu-status: FAILED peer=%u flow=0x%x tid=%u exec=%u nm=%u\n",
+			    sw_peer_id, tx_flow_number, tid,
+			    status->status_hdr.cmd_execution_status, update_req_not_met);
+}

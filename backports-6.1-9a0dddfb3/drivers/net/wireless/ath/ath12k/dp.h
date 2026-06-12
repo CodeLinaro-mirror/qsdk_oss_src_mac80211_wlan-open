@@ -822,7 +822,6 @@ struct ath12k_dp_arch_ops {
 
 	ssize_t (*dump_srng_stats)(struct ath12k_dp *dp, char *buf, int size);
 	ssize_t (*dump_device_dp_stats)(struct ath12k_dp *dp, char *buf, int size);
-	void (*log_msduq_info9)(struct ath12k_dp *dp, const char *phase);
 	void (*reset_device_dp_stats)(struct ath12k_dp *dp);
 	void (*dp_assoc_link_update)(struct ath12k_dp *dp, struct ath12k_hw *ah,
 				     struct ieee80211_sta *sta);
@@ -1403,13 +1402,6 @@ static inline ssize_t
 ath12k_dp_arch_dump_fst_table(struct ath12k_dp *dp, char *buf, int size)
 {
 	return dp->arch_ops->dump_fst_table(dp, buf, size);
-}
-
-static inline void
-ath12k_dp_smd_log_msduq_info9(struct ath12k_dp *dp, const char *phase)
-{
-	if (dp && dp->arch_ops && dp->arch_ops->log_msduq_info9)
-		dp->arch_ops->log_msduq_info9(dp, phase);
 }
 
 static inline int

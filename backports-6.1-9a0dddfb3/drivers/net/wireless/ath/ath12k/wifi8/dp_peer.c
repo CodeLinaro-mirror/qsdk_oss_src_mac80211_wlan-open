@@ -10,15 +10,32 @@
 #include "dp.h"
 #include "dp_peer.h"
 #include "dp_tx_queue.h"
+#include "dp_msdu_queue.h"
 #include "dp_tx_flow_info.h"
 #include "../telemetry_agent_if.h"
 #include "dp_tx.h"
 #include "../dp_tx.h"
 #include "dp_telemetry.h"
+#include "hal_queue.h"
+#include "../mgmt_rx.h"
 
-#define ATH12K_DP_MAX_SEQ_NUM	0xFFF
-#define ATH12K_DP_MAX_POSSIBLE_BA_WIN	0x400
-#define ATH12K_DP_INVALID_MLSN_OFFSET	0xFFFF
+#define ATH12K_DP_MAX_SEQ_NUM  0xFFF
+#define ATH12K_DP_MAX_POSSIBLE_BA_WIN  0x400
+#define ATH12K_DP_INVALID_MLSN_OFFSET  0xFFFF
+
+void ath12k_dp_tqm_update_completion(struct ath12k_dp *dp, void *ctx,
+				     struct hal_tqm_status *tqm_status)
+{
+	struct ath12k_base *ab = dp->ab;
+
+	if (tqm_status->status_hdr.cmd_execution_status !=
+	    HAL_TQM_SUCCESSFUL_EXECUTION)
+		ath12k_warn(ab, "dp tqm update command failed with status %d",
+			    tqm_status->status_hdr.cmd_execution_status);
+	else
+		ath12k_dbg(ab, ATH12K_DBG_PEER,
+			   "dp tqm update completion successful\n");
+}
 
 static u16 ath12k_wifi8_peer_id_alloc(struct ath12k_dp_hw *dp_hw)
 {
@@ -26,6 +43,7 @@ static u16 ath12k_wifi8_peer_id_alloc(struct ath12k_dp_hw *dp_hw)
 	int i;
 
 	spin_lock_bh(&dp_hw->peer_hash_lock);
+
 	peer_id = dp_hw->last_peer_id;
 	for (i = 0; i < ATH12K_MAX_PEER_ID; i++) {
 		peer_id = (peer_id + 1) % ATH12K_MAX_PEER_ID;
@@ -485,6 +503,402 @@ void ath12k_wifi8_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 	spin_unlock_bh(&dp_hw->peer_hash_lock);
 }
 
+void ath12k_wifi8_dp_smd_reset_tx_queue_states(struct ath12k_base *ab,
+					       struct ath12k_dp_tx_flow_info *tx_info,
+					u16 new_peer_id)
+{
+	struct ath12k_dp_mpdu_q_info *mpduq;
+	struct ath12k_dp_msdu_q_info *msduq;
+	int n_mpduq = 0, n_msduq = 0;
+	int i, j;
+
+	spin_lock_bh(&tx_info->tx_q_lock);
+
+	ath12k_dbg(ab, ATH12K_DBG_SMD,
+		   "smd tx-reset: peer_id=%u new_peer_id=%u assoc_links=0x%lx txq_links=0x%lx\n",
+		   tx_info->tid_info[0].peer_id, new_peer_id,
+		   tx_info->assoc_hw_links_bitmap,
+		   tx_info->txq_hw_links_bitmap);
+
+	/* Reset txq_hw_links_bitmap: queues must be re-registered with FW */
+	tx_info->txq_hw_links_bitmap = 0;
+
+	for (i = 0; i < ATH12K_MAX_NUM_DATA_TIDS; i++) {
+		mpduq = tx_info->tid_info[i].mpduq;
+		if (!mpduq)
+			continue;
+
+		if (mpduq->mpduq_state == ATH12K_TX_Q_INIT_DONE) {
+			ath12k_dbg(ab, ATH12K_DBG_SMD,
+				   "smd tx-reset: tid[%d] mpduq paddr=0x%llx INIT_DONE->CREATED peer_id %u->%u\n",
+				   i, (u64)mpduq->mpdu_q_paddr,
+				   mpduq->flow_info.peer_id, new_peer_id);
+			mpduq->mpduq_state = ATH12K_TX_Q_CREATED;
+			mpduq->flow_info.peer_id = new_peer_id;
+			mpduq->queue_number = (mpduq->queue_number & 0xFFFFFF) |
+					      (new_peer_id << 24);
+			ath12k_dbg(ab, ATH12K_DBG_SMD,
+				   "smd tx-reset: tid[%d] mpduq queue_number: 0x%08x\n",
+				   i, mpduq->queue_number);
+			n_mpduq++;
+		}
+
+		for (j = 0; j < ATH12K_MAX_DP_MSDUQ_PER_TID; j++) {
+			msduq = tx_info->tid_info[i].msduq[j];
+			if (!msduq)
+				continue;
+
+			if (msduq->msduq_state == ATH12K_TX_Q_INIT_DONE) {
+				ath12k_dbg(ab, ATH12K_DBG_SMD,
+					   "smd tx-reset: tid[%d] msduq[%d] paddr=0x%llx INIT_DONE->CREATED peer_id %u->%u\n",
+					   i, j, (u64)msduq->msdu_q_paddr,
+					   msduq->flow_info.peer_id, new_peer_id);
+				msduq->msduq_state = ATH12K_TX_Q_CREATED;
+				msduq->flow_info.peer_id = new_peer_id;
+				msduq->queue_number = (msduq->queue_number & 0xFFFFFF) |
+						      (new_peer_id << 24);
+				ath12k_dbg(ab, ATH12K_DBG_SMD,
+					   "smd tx-reset: tid[%d] msduq[%d] queue_number: 0x%08x\n",
+					   i, j, msduq->queue_number);
+				n_msduq++;
+			}
+		}
+	}
+
+	if (tx_info->mcast_mpduq &&
+	    tx_info->mcast_mpduq->mpduq_state == ATH12K_TX_Q_INIT_DONE) {
+		ath12k_dbg(ab, ATH12K_DBG_SMD,
+			   "smd tx-reset: mcast_mpduq paddr=0x%llx INIT_DONE->CREATED peer_id %u->%u\n",
+			   (u64)tx_info->mcast_mpduq->mpdu_q_paddr,
+			   tx_info->mcast_mpduq->flow_info.peer_id, new_peer_id);
+		tx_info->mcast_mpduq->mpduq_state = ATH12K_TX_Q_CREATED;
+		tx_info->mcast_mpduq->flow_info.peer_id = new_peer_id;
+		tx_info->mcast_mpduq->queue_number =
+				(tx_info->mcast_mpduq->queue_number & 0xFFFFFF) |
+				(new_peer_id << 24);
+		ath12k_dbg(ab, ATH12K_DBG_SMD,
+			   "smd tx-reset: mcast_mpduq queue_number: 0x%08x\n",
+			   tx_info->mcast_mpduq->queue_number);
+		n_mpduq++;
+	}
+
+	if (tx_info->mcast_msduq &&
+	    tx_info->mcast_msduq->msduq_state == ATH12K_TX_Q_INIT_DONE) {
+		ath12k_dbg(ab, ATH12K_DBG_SMD,
+			   "smd tx-reset: mcast_msduq paddr=0x%llx INIT_DONE->CREATED peer_id %u->%u\n",
+			   (u64)tx_info->mcast_msduq->msdu_q_paddr,
+			   tx_info->mcast_msduq->flow_info.peer_id, new_peer_id);
+		tx_info->mcast_msduq->msduq_state = ATH12K_TX_Q_CREATED;
+		tx_info->mcast_msduq->flow_info.peer_id = new_peer_id;
+		tx_info->mcast_msduq->queue_number =
+				(tx_info->mcast_msduq->queue_number & 0xFFFFFF) |
+				(new_peer_id << 24);
+		ath12k_dbg(ab, ATH12K_DBG_SMD,
+			   "smd tx-reset: mcast_msduq queue_number: 0x%08x\n",
+			   tx_info->mcast_msduq->queue_number);
+		n_msduq++;
+	}
+
+	if (tx_info->mgmt_mpduq &&
+	    tx_info->mgmt_mpduq->mpduq_state == ATH12K_TX_Q_CREATED) {
+		ath12k_dbg(ab, ATH12K_DBG_SMD,
+			   "smd tx-reset: mgmt_mpduq paddr=0x%llx CREATED->CREATED peer_id %u->%u\n",
+			   (u64)tx_info->mgmt_mpduq->mpdu_q_paddr,
+			   tx_info->mgmt_mpduq->flow_info.peer_id, new_peer_id);
+		tx_info->mgmt_mpduq->mpduq_state = ATH12K_TX_Q_CREATED;
+		tx_info->mgmt_mpduq->flow_info.peer_id = new_peer_id;
+		tx_info->mgmt_mpduq->queue_number =
+			(tx_info->mgmt_mpduq->queue_number & 0xFFFFFF) |
+			(new_peer_id << 24);
+		ath12k_dbg(ab, ATH12K_DBG_SMD,
+			   "smd tx-reset: mgmt_mpduq queue_number: 0x%08x\n",
+			   tx_info->mgmt_mpduq->queue_number);
+		n_mpduq++;
+	}
+
+	for (i = 0; i < MGMT_MSDUQ_TYPE_MAX; i++) {
+		msduq = tx_info->mgmt_msduq[i];
+		if (!msduq)
+			continue;
+
+		if (msduq->msduq_state == ATH12K_TX_Q_CREATED) {
+			ath12k_dbg(ab, ATH12K_DBG_SMD,
+				   "smd tx-reset: mgmt_msduq[%d] paddr=0x%llx CREATED->CREATED peer_id %u->%u\n",
+				   i, (u64)msduq->msdu_q_paddr,
+				   msduq->flow_info.peer_id, new_peer_id);
+			msduq->msduq_state = ATH12K_TX_Q_CREATED;
+			msduq->flow_info.peer_id = new_peer_id;
+			msduq->queue_number = (msduq->queue_number & 0xFFFFFF) |
+					      (new_peer_id << 24);
+			ath12k_dbg(ab, ATH12K_DBG_SMD,
+				   "smd tx-reset: mgmt_msduq queue_number: 0x%08x\n",
+				   msduq->queue_number);
+			n_msduq++;
+		}
+	}
+
+	if (tx_info->hol_msduq &&
+	    tx_info->hol_msduq->msduq_state == ATH12K_TX_Q_CREATED) {
+		ath12k_dbg(ab, ATH12K_DBG_SMD,
+			   "smd tx-reset: hol_msduq paddr=0x%llx CREATED->CREATED peer_id %u->%u\n",
+			   (u64)tx_info->hol_msduq->msdu_q_paddr,
+			   tx_info->hol_msduq->flow_info.peer_id, new_peer_id);
+		tx_info->hol_msduq->msduq_state = ATH12K_TX_Q_CREATED;
+		tx_info->hol_msduq->flow_info.peer_id = new_peer_id;
+		tx_info->hol_msduq->queue_number =
+			(tx_info->hol_msduq->queue_number & 0xFFFFFF) |
+			(new_peer_id << 24);
+		ath12k_dbg(ab, ATH12K_DBG_SMD,
+			   "smd tx-reset: hol_msduq queue_number: 0x%08x\n",
+			   tx_info->hol_msduq->queue_number);
+		n_msduq++;
+	}
+
+	spin_unlock_bh(&tx_info->tx_q_lock);
+
+	ath12k_dbg(ab, ATH12K_DBG_SMD,
+		   "smd tx-reset: done — %d mpduq + %d msduq reset to CREATED, txq_links cleared\n",
+		   n_mpduq, n_msduq);
+}
+
+void ath12k_wifi8_dp_smd_update_queue_peer_id_via_tqm(struct ath12k_base *ab,
+					struct ath12k_dp_hw_group *dp_hw_grp,
+					struct ath12k_dp_tx_flow_info *tx_info,
+					struct ath12k_dp_peer *dp_peer,
+					struct ath12k_dp_vif *dp_vif,
+					u16 old_peer_id)
+{
+	struct ath12k_hal_tqm_cmd cmd = {0};
+	u16 new_peer_id = dp_peer->peer_id;
+	int n_msduq = 0, n_mpduq = 0;
+	int i, j;
+	int ret;
+	u8 bitmap = ath12k_dp_get_chipid_bitmap(dp_hw_grp, dp_peer);
+
+	ath12k_dbg(ab, ATH12K_DBG_SMD,
+		   "smd tqm-update: updating peer_id %u -> %u via TQM UPDATE command\n",
+		   old_peer_id, new_peer_id);
+
+	for (i = 0; i < ATH12K_MAX_NUM_DATA_TIDS; i++) {
+		if (!tx_info->tid_info[i].mpduq)
+			continue;
+		memset(&cmd, 0, sizeof(cmd));
+		cmd.std.peer_id = old_peer_id;
+		cmd.update_mpduq.mpdu_q_paddr =
+			tx_info->tid_info[i].mpduq->mpdu_q_paddr;
+		cmd.update_mpduq.new_peer_id = new_peer_id;
+		cmd.update_mpduq.new_queue_number =
+				tx_info->tid_info[i].mpduq->queue_number;
+		cmd.update_mpduq.update_peer_id = true;
+		cmd.update_mpduq.update_queue_number = true;
+		cmd.update_mpduq.update_queue_valid = false;
+		cmd.update_mpduq.update_tid = false;
+
+		ret = ath12k_wifi8_dp_tqm_cmd_send(ab, HAL_TQM_UPDATE_MPDUQ_BO,
+						   &cmd, &(struct ath12k_dp_tx_queue){
+							   .peer_id = new_peer_id,
+							   .hw_link_id = 0
+						   }, ath12k_dp_tqm_update_completion);
+		if (ret) {
+			ath12k_err(ab, "smd tqm-update: failed tid=%d ret=%d\n", i, ret);
+			continue;
+		}
+		n_mpduq++;
+
+		ath12k_dbg(ab, ATH12K_DBG_SMD,
+			   "smd tqm-update: tid[%d] mpduq updated\n", i);
+	}
+
+	for (i = 0; i < ATH12K_MAX_NUM_DATA_TIDS; i++) {
+		for (j = 0; j < ATH12K_MAX_DP_MSDUQ_PER_TID; j++) {
+			if (!tx_info->tid_info[i].msduq[j])
+				continue;
+
+			memset(&cmd, 0, sizeof(cmd));
+			cmd.std.peer_id = old_peer_id;
+			cmd.update_tx_msdu_params.msdu_q_paddr =
+				tx_info->tid_info[i].msduq[j]->msdu_q_paddr;
+			cmd.update_tx_msdu_params.new_peer_id = new_peer_id;
+			cmd.update_tx_msdu_params.tx_flow_number =
+				tx_info->tid_info[i].msduq[j]->queue_number;
+			cmd.update_tx_msdu_params.update_peer_id = true;
+			cmd.update_tx_msdu_params.update_flow_number = true;
+			cmd.update_tx_msdu_params.update_flow_valid = false;
+			cmd.update_tx_msdu_params.update_tid = false;
+
+			ret = ath12k_wifi8_dp_tqm_cmd_send(ab, HAL_TQM_UPDATE_MSDUQ_BO,
+						&cmd, &(struct ath12k_dp_tx_queue){
+							.peer_id = new_peer_id,
+							.hw_link_id = 0
+						}, ath12k_dp_tqm_update_completion);
+			if (ret) {
+				ath12k_err(ab, "smd tqm-update: failed tid=%d q=%d ret=%d\n",
+					   i, j, ret);
+				continue;
+			}
+			n_msduq++;
+
+			ath12k_dbg(ab, ATH12K_DBG_SMD,
+				   "smd tqm-update: tid[%d] msduq[%d] updated\n", i, j);
+		}
+	}
+
+	if (tx_info->mgmt_mpduq) {
+		memset(&cmd, 0, sizeof(cmd));
+		cmd.std.peer_id = old_peer_id;
+		cmd.update_mpduq.mpdu_q_paddr = tx_info->mgmt_mpduq->mpdu_q_paddr;
+		cmd.update_mpduq.new_peer_id = new_peer_id;
+		cmd.update_mpduq.new_queue_number = tx_info->mgmt_mpduq->queue_number;
+		cmd.update_mpduq.update_peer_id = true;
+		cmd.update_mpduq.update_queue_number = true;
+
+		ret = ath12k_wifi8_dp_tqm_cmd_send(ab, HAL_TQM_UPDATE_MPDUQ_BO,
+						   &cmd, &(struct ath12k_dp_tx_queue){
+							   .peer_id = new_peer_id,
+							   .hw_link_id = 0
+						   }, ath12k_dp_tqm_update_completion);
+		if (!ret) {
+			n_mpduq++;
+			ath12k_dbg(ab, ATH12K_DBG_SMD,
+				   "smd tqm-update: mgmt_mpduq updated\n");
+		}
+	}
+
+	for (i = 0; i < MGMT_MSDUQ_TYPE_MAX; i++) {
+		if (!tx_info->mgmt_msduq[i])
+			continue;
+		memset(&cmd, 0, sizeof(cmd));
+		cmd.std.peer_id = old_peer_id;
+		cmd.update_tx_msdu_params.msdu_q_paddr =
+			tx_info->mgmt_msduq[i]->msdu_q_paddr;
+		cmd.update_tx_msdu_params.new_peer_id = new_peer_id;
+		cmd.update_tx_msdu_params.tx_flow_number =
+			tx_info->mgmt_msduq[i]->queue_number;
+		cmd.update_tx_msdu_params.update_peer_id = true;
+		cmd.update_tx_msdu_params.update_flow_number = true;
+		cmd.update_tx_msdu_params.bitmap = bitmap;
+
+		ret = ath12k_wifi8_dp_tqm_cmd_send(ab, HAL_TQM_UPDATE_MSDUQ_BO,
+						   &cmd, &(struct ath12k_dp_tx_queue){
+							   .peer_id = new_peer_id,
+							   .hw_link_id = 0
+						   }, ath12k_dp_tqm_update_completion);
+		if (!ret) {
+			n_msduq++;
+			ath12k_dbg(ab, ATH12K_DBG_SMD,
+				   "smd tqm-update: mgmt_msduq[%d] updated\n", i);
+		}
+	}
+
+	if (tx_info->hol_msduq) {
+		memset(&cmd, 0, sizeof(cmd));
+		cmd.std.peer_id = old_peer_id;
+		cmd.update_tx_msdu_params.msdu_q_paddr = tx_info->hol_msduq->msdu_q_paddr;
+		cmd.update_tx_msdu_params.new_peer_id = new_peer_id;
+		cmd.update_tx_msdu_params.tx_flow_number =
+			tx_info->hol_msduq->queue_number;
+		cmd.update_tx_msdu_params.update_peer_id = true;
+		cmd.update_tx_msdu_params.update_flow_number = true;
+		cmd.update_tx_msdu_params.bitmap = bitmap;
+
+		ret = ath12k_wifi8_dp_tqm_cmd_send(ab, HAL_TQM_UPDATE_MSDUQ_BO,
+						   &cmd, &(struct ath12k_dp_tx_queue){
+							   .peer_id = new_peer_id,
+							   .hw_link_id = 0
+						   }, ath12k_dp_tqm_update_completion);
+		if (!ret) {
+			n_msduq++;
+			ath12k_dbg(ab, ATH12K_DBG_SMD,
+				   "smd tqm-update: hol_msduq updated\n");
+		}
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_SMD,
+		   "smd tqm-update: completed — %d mpduq + %d msduq updated via TQM\n",
+		   n_mpduq, n_msduq);
+}
+
+/**
+ * enum ath12k_smd_assoc_action - result code from
+ *     ath12k_wifi8_dp_peer_assoc_smd_transition().
+ * @ATH12K_SMD_ASSOC_CONTINUE: not an SMD transition; caller proceeds with
+ *     normal ext_ctx allocation.  @dp_hw->peer_hash_lock remains held.
+ * @ATH12K_SMD_ASSOC_DONE: SMD transition handled (MLO PREP path); caller
+ *     must release @dp_hw->peer_hash_lock and return 0.
+ * @ATH12K_SMD_ASSOC_EXEC: SMD transition handled (SLO post-DL-drain path);
+ *     caller must release @dp_hw->peer_hash_lock, call
+ *     ath12k_wifi8_dp_smd_exec_activate_links(), then return 0.
+ */
+enum ath12k_smd_assoc_action {
+	ATH12K_SMD_ASSOC_CONTINUE = 0,
+	ATH12K_SMD_ASSOC_DONE,
+	ATH12K_SMD_ASSOC_EXEC,
+};
+
+/**
+ * ath12k_wifi8_dp_peer_assoc_smd_transition() - SMD BSS Transition fast path
+ *     in peer_assoc.
+ *
+ * Checks whether this peer_assoc belongs to an in-progress SMD BSS
+ * Transition and shares the parked ext_ctx with the target peer if so.
+ *
+ * Does NOT acquire or release @dp_hw->peer_hash_lock — that remains the
+ * exclusive responsibility of the caller.
+ *
+ * Context: caller holds @dp_hw->peer_hash_lock (bh-disabled).
+ * Return: action code indicating what the caller must do next.
+ */
+static enum ath12k_smd_assoc_action
+ath12k_wifi8_dp_peer_assoc_smd_transition(struct ath12k_dp *dp,
+					  struct ath12k_dp_peer *dp_peer,
+					  const u8 *addr)
+{
+	struct ath12k_dp_peer_ext_ctx *peer_ext_ctx;
+	bool exec_in_progress;
+
+	/* SMD BSS Transition only applies to STA-mode BSS peers. */
+	if (!dp_peer->is_sta_bss_peer)
+		return ATH12K_SMD_ASSOC_CONTINUE;
+
+	spin_lock_bh(&dp->dp_hw_grp->smd_transition_lock);
+
+	if (!dp->dp_hw_grp->smd_parked_ext_ctx ||
+	    !ether_addr_equal(dp->dp_hw_grp->smd_target_mld_addr, addr)) {
+		spin_unlock_bh(&dp->dp_hw_grp->smd_transition_lock);
+		return ATH12K_SMD_ASSOC_CONTINUE;
+	}
+
+	exec_in_progress = dp->dp_hw_grp->smd_exec_in_progress;
+	peer_ext_ctx = dp->dp_hw_grp->smd_parked_ext_ctx;
+	/* Assign under smd_transition_lock to prevent UAF if the transition
+	 * is aborted and smd_parked_ext_ctx freed after the unlock.
+	 * Keep smd_parked_ext_ctx and smd_target_mld_addr set for EXEC.
+	 */
+	dp_peer->peer_ext_ctx = peer_ext_ctx;
+	spin_unlock_bh(&dp->dp_hw_grp->smd_transition_lock);
+
+	if (exec_in_progress) {
+		/* SLO post-DL-drain path: EXEC resp already happened but
+		 * exec_activate_links was skipped because the target peer had
+		 * no links yet.  Now that peer_assoc has been called and the
+		 * peer is fully set up, signal the caller to drive the TQM
+		 * UPDATE + AST transition immediately.
+		 */
+		ath12k_dbg(dp->ab, ATH12K_DBG_SMD,
+			   "smd assoc: shared ext_ctx %pM (SLO post-DL-drain, exec now)\n",
+			   addr);
+		return ATH12K_SMD_ASSOC_EXEC;
+	}
+
+	/* MLO PREP resp path: ext_ctx shared with target peer, TQM/AST
+	 * transition deferred to exec_activate_links during EXEC resp.
+	 */
+	ath12k_dbg(dp->ab, ATH12K_DBG_SMD,
+		   "smd assoc: shared ext_ctx %pM (MLO PREP, AST deferred to EXEC)\n",
+		   addr);
+	return ATH12K_SMD_ASSOC_DONE;
+}
+
 int ath12k_wifi8_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 			       struct ath12k_dp_vif *dp_vif, u8 *addr)
 {
@@ -513,6 +927,33 @@ int ath12k_wifi8_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 	if (!dp_peer) {
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		return -ENOENT;
+	}
+
+	switch (ath12k_wifi8_dp_peer_assoc_smd_transition(dp, dp_peer, addr)) {
+	case ATH12K_SMD_ASSOC_EXEC:
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
+		ath12k_wifi8_dp_smd_exec_activate_links(dp, dp_hw, dp_vif,
+							dp_peer->addr,
+							BIT(dp_peer->hw_link_id));
+		return 0;
+	case ATH12K_SMD_ASSOC_DONE:
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
+		return 0;
+	case ATH12K_SMD_ASSOC_CONTINUE:
+		break;
+	}
+
+	/* SMD BSS Transition: skip allocation if ext_ctx was already shared
+	 * on a prior peer_assoc call for this peer (MLO multi-link case where
+	 * addr is a link address that does not match smd_target_mld_addr).
+	 * Only relevant for STA-mode BSS peers.
+	 */
+	if (dp_peer->is_sta_bss_peer && dp_peer->peer_ext_ctx) {
+		ath12k_dbg(dp->ab, ATH12K_DBG_SMD,
+			   "smd assoc: peer_ext_ctx already exists for %pM, skipping allocation\n",
+			   addr);
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
+		return 0;
 	}
 
 	peer_ext_ctx = kzalloc(sizeof(*peer_ext_ctx), GFP_ATOMIC);
@@ -723,6 +1164,28 @@ int ath12k_dp_tqm_update_mpduq_max_lsn(struct ath12k_base *ab,
 	return ret;
 }
 
+/*
+ * Reset only the SN to 0 in a single MPDUQ.  PN counter and LSN are
+ * intentionally left untouched — used when UL SN is not transferred.
+ */
+static int ath12k_dp_tqm_reset_mpduq_sn(struct ath12k_base *ab,
+					struct ath12k_dp_mpdu_q_info *sw_mpduq_ptr,
+					 struct ath12k_dp_peer *dp_peer)
+{
+	struct ath12k_hal_tqm_cmd cmd = {0};
+
+	if (!sw_mpduq_ptr)
+		return 0;
+
+	cmd.std.peer_id = (u16)dp_peer->peer_id;
+	cmd.update_mpduq.mpdu_q_paddr = sw_mpduq_ptr->mpdu_q_paddr;
+	cmd.update_mpduq.sn_num_valid = 1;
+	cmd.update_mpduq.sn_num = 0;
+
+	return ath12k_wifi8_dp_tqm_cmd_send(ab, HAL_TQM_UPDATE_MPDUQ_BO,
+					    &cmd, NULL, NULL);
+}
+
 int ath12k_wifi8_peer_tx_tid_update_for_smd(struct ath12k_base *ab,
 					    struct ath12k_dp_hw *dp_hw,
 					    const u8 *peer_addr,
@@ -743,7 +1206,8 @@ int ath12k_wifi8_peer_tx_tid_update_for_smd(struct ath12k_base *ab,
 			    tx_tid_ctx->ssn, tx_tid_ctx->tid);
 		return -EINVAL;
 	}
-	if (tx_tid_ctx->tid > ATH12K_SMD_MGMT_TID) {
+
+	if (tx_tid_ctx->tid > ATH12K_SMD_TX_MGMT_TID) {
 		ath12k_warn(ab, "SMD update Invalid TX tid %d\n", tx_tid_ctx->tid);
 		return -EINVAL;
 	}
@@ -769,7 +1233,7 @@ int ath12k_wifi8_peer_tx_tid_update_for_smd(struct ath12k_base *ab,
 	spin_lock_bh(&tx_flow_info->tx_q_lock);
 	if (tx_tid_ctx->tid < ATH12K_MAX_NUM_DATA_TIDS)
 		sw_mpduq_ptr = tx_flow_info->tid_info[tx_tid_ctx->tid].mpduq;
-	else if (tx_tid_ctx->tid == ATH12K_SMD_MGMT_TID)
+	else if (tx_tid_ctx->tid == ATH12K_SMD_TX_MGMT_TID)
 		sw_mpduq_ptr = tx_flow_info->mgmt_mpduq;
 
 	if (!sw_mpduq_ptr) {
@@ -783,7 +1247,7 @@ int ath12k_wifi8_peer_tx_tid_update_for_smd(struct ath12k_base *ab,
 		 */
 		if (tx_tid_ctx->tid != TQM_NON_DATA_TID) {
 			ath12k_dbg(ab, ATH12K_DBG_DP_TX,
-				   "SMD TX update: no mpduq for tid %d peer %pM, skipping\n",
+				   "SMD TX update: no mpduq tid %d peer %pM, skip\n",
 				   tx_tid_ctx->tid, dp_peer->addr);
 			spin_unlock_bh(&dp_hw->peer_hash_lock);
 			return 0;
@@ -806,7 +1270,7 @@ int ath12k_wifi8_peer_tx_tid_update_for_smd(struct ath12k_base *ab,
 	}
 
 	if (tx_tid_ctx->lsn_offset > 0 &&
-	    tx_tid_ctx->lsn_offset <=  ATH12K_DP_MAX_POSSIBLE_BA_WIN) {
+	    tx_tid_ctx->lsn_offset <= ATH12K_DP_MAX_POSSIBLE_BA_WIN) {
 		ret = ath12k_dp_tqm_update_mpduq_max_lsn(ab, sw_mpduq_ptr,
 							 dp_peer,
 							 tx_tid_ctx->lsn_offset);
@@ -827,6 +1291,79 @@ int ath12k_wifi8_peer_tx_tid_update_for_smd(struct ath12k_base *ab,
 		   peer_addr, tx_tid_ctx->tid, tx_tid_ctx->ssn);
 
 	return 0;
+}
+
+/*
+ * Reset TQM SN to 0 for all data TIDs of a peer without touching PN or LSN.
+ * Called when request_ul_sn_not_transferred is set in DYNAMIC_CONTEXT.
+ */
+int ath12k_wifi8_peer_tx_tid_sn_reset(struct ath12k_base *ab,
+				      struct ath12k_dp_hw *dp_hw,
+				      const u8 *peer_addr)
+{
+	struct ath12k_dp_tx_flow_info *tx_flow_info;
+	struct ath12k_dp_mpdu_q_info *sw_mpduq_ptr;
+	struct ath12k_dp_peer *dp_peer;
+	int ret = 0;
+	u8 tid;
+
+	if (!dp_hw || !peer_addr)
+		return -EINVAL;
+
+	spin_lock_bh(&dp_hw->peer_hash_lock);
+
+	dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, (u8 *)peer_addr);
+	if (!dp_peer) {
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
+		ath12k_warn(ab, "failed to find peer %pM for SMD TX update\n",
+			    peer_addr);
+		return -ENOENT;
+	}
+
+	tx_flow_info = ath12k_dp_get_tx_flow_info_from_peer(dp_peer);
+	if (!tx_flow_info) {
+		ath12k_err(ab, "SMD TX update invalid tx flow info peer %pM",
+			   dp_peer->addr);
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
+		return -EINVAL;
+	}
+
+	spin_lock_bh(&tx_flow_info->tx_q_lock);
+
+	for (tid = 0; tid < ATH12K_SMD_NUM_TIDS; tid++) {
+		sw_mpduq_ptr = tx_flow_info->tid_info[tid].mpduq;
+		if (!sw_mpduq_ptr)
+			continue;
+
+		ath12k_dbg(ab, ATH12K_DBG_PEER,
+			   "SMD SN reset: peer %pM tid %u TQM SN -> 0\n",
+			   peer_addr, tid);
+
+		ret = ath12k_dp_tqm_reset_mpduq_sn(ab, sw_mpduq_ptr, dp_peer);
+		if (ret)
+			ath12k_err(ab, "SMD SN reset failed tid %d peer %pM: %d\n",
+				   tid, peer_addr, ret);
+	}
+
+	/* Management TID (ATH12K_SMD_TX_MGMT_TID = 15) uses a separate mpduq */
+	sw_mpduq_ptr = tx_flow_info->mgmt_mpduq;
+	if (sw_mpduq_ptr) {
+		ath12k_dbg(ab, ATH12K_DBG_PEER,
+			   "SMD SN reset: peer %pM tid %u (mgmt) TQM SN -> 0\n",
+			   peer_addr, 15);
+		ret = ath12k_dp_tqm_reset_mpduq_sn(ab, sw_mpduq_ptr, dp_peer);
+		if (ret)
+			ath12k_err(ab, "SMD SN reset failed mgmt tid peer %pM: %d\n",
+				   peer_addr, ret);
+	}
+
+	spin_unlock_bh(&tx_flow_info->tx_q_lock);
+	spin_unlock_bh(&dp_hw->peer_hash_lock);
+
+	ath12k_dbg(ab, ATH12K_DBG_PEER,
+		   "SMD SN reset done for peer %pM\n", peer_addr);
+
+	return ret;
 }
 
 void ath12k_dp_peer_get_mpdu_queues_stats_status(struct ath12k_dp *dp,
@@ -876,14 +1413,15 @@ int ath12k_dp_tqm_get_mpdu_queue_stats(struct ath12k_base *ab,
 
 u16 ath12k_dp_peer_compute_max_lsn(u16 ba_size)
 {
-	return ba_size/2;
+	return ba_size / 2;
 }
 
 int ath12k_dp_peer_fetch_smd_tx_ctx(struct ath12k_base *ab,
 				    struct ath12k_dp_peer *dp_peer,
 				    u32 tx_tid_bitmap,
 				    u16 *tx_tid_ba_win_size)
-{	struct ath12k_dp_tx_flow_info *tx_flow_info;
+{
+	struct ath12k_dp_tx_flow_info *tx_flow_info;
 	struct ath12k_dp_mpdu_q_info *sw_mpduq_ptr = NULL;
 	int tid;
 	int ret = 0;
@@ -935,7 +1473,7 @@ int ath12k_dp_peer_fetch_smd_tx_ctx(struct ath12k_base *ab,
 	}
 
 	/* mgmt tid */
-	if (tx_tid_bitmap & BIT(ATH12K_SMD_MGMT_TID)) {
+	if (tx_tid_bitmap & BIT(ATH12K_SMD_TX_MGMT_TID)) {
 		sw_mpduq_ptr = tx_flow_info->mgmt_mpduq;
 		ret = ath12k_dp_tqm_get_mpdu_queue_stats(ab, sw_mpduq_ptr,
 							 dp_peer, false, 0);
@@ -979,7 +1517,6 @@ int ath12k_dp_tqm_remove_msduq_send(struct ath12k_base *ab,
 	return ret;
 }
 
-
 int ath12k_dp_tqm_remove_mpduq_send(struct ath12k_base *ab,
 				    struct ath12k_dp_mpdu_q_info *sw_mpduq_ptr,
 				    struct ath12k_dp_peer *dp_peer)
@@ -994,7 +1531,7 @@ int ath12k_dp_tqm_remove_mpduq_send(struct ath12k_base *ab,
 	cmd.std.peer_id = (u16)dp_peer->peer_id;
 	cmd.remove_mpdu_params.type = HAL_WIFIREMOVE_MPDUS_AND_DISABLE_QUEUE;
 	cmd.remove_mpdu_params.block_tx_notify_frame_removal = 0;
-	cmd.remove_mpdu_params.count = 0xFFF; //need to check if ffff?
+	cmd.remove_mpdu_params.count = 0xFFF; /* TODO: check if 0xFFFF needed */
 	cmd.remove_mpdu_params.mpdu_q_paddr = sw_mpduq_ptr->mpdu_q_paddr;
 
 	ret = ath12k_wifi8_dp_tqm_cmd_send(ab, HAL_TQM_REMOVE_MPDU_BO, &cmd,
@@ -1002,7 +1539,6 @@ int ath12k_dp_tqm_remove_mpduq_send(struct ath12k_base *ab,
 
 	return ret;
 }
-
 
 int ath12k_dp_tqm_remove_mcast_queues(struct ath12k_base *ab,
 				      struct ath12k_dp_peer *dp_peer)
@@ -1039,7 +1575,7 @@ int ath12k_dp_tqm_remove_mcast_queues(struct ath12k_base *ab,
 			   "TQM MPDUQ send failed for MCAST frame for peer %pM id %d",
 			   dp_peer->addr, dp_peer->peer_id);
 		spin_unlock_bh(&tx_flow_info->tx_q_lock);
-		return ret; //whether to ret or retry?
+		return ret; /* TODO: retry on error? */
 	}
 	if (sw_mpduq_ptr)
 		sw_mpduq_ptr->tqm_send = 1;
@@ -1088,7 +1624,7 @@ int ath12k_dp_tqm_remove_data_queues(struct ath12k_base *ab,
 				"TQM MSDUQ fail: data frame %d tid %d peer %pM id %d",
 				q, tid, dp_peer->addr, dp_peer->peer_id);
 				spin_unlock_bh(&tx_flow_info->tx_q_lock);
-				return ret; //whether to return or continue
+				return ret; /* TODO: return or continue? */
 			}
 			if (sw_msduq_ptr)
 				sw_msduq_ptr->tqm_send = 1;
@@ -1102,7 +1638,7 @@ int ath12k_dp_tqm_remove_data_queues(struct ath12k_base *ab,
 				   "TQM MPDUQ fail: data frame tid %d peer %pM id %d",
 				   tid, dp_peer->addr, dp_peer->peer_id);
 			spin_unlock_bh(&tx_flow_info->tx_q_lock);
-			return ret; //whether to return or continue
+			return ret; /* TODO: return or continue? */
 		}
 		if (sw_mpduq_ptr)
 			sw_mpduq_ptr->tqm_send = 1;
@@ -1151,7 +1687,7 @@ int ath12k_dp_tqm_remove_mgmt_queues(struct ath12k_base *ab,
 			   "TQM MPDUQ fail: MGMT frame peer %pM id %d",
 			   dp_peer->addr, dp_peer->peer_id);
 		spin_unlock_bh(&tx_flow_info->tx_q_lock);
-		return ret; //whether to return or continue
+		return ret; /* TODO: return or continue? */
 	}
 	if (sw_mpduq_ptr)
 		sw_mpduq_ptr->tqm_send = 1;
@@ -1209,6 +1745,7 @@ int ath12k_dp_tqm_sync_remove_queues(struct ath12k_base *ab,
 
 	ret = ath12k_wifi8_dp_tqm_cmd_send(ab, HAL_TQM_SYNC_CMD_BO, &cmd, data,
 					   ath12k_dp_peer_cleanup_tqm_sync);
+
 	return ret;
 }
 
@@ -1252,8 +1789,8 @@ int ath12k_dp_tqm_remove_queues_cmd(struct ath12k_base *ab,
 		ret_mcast = ath12k_dp_tqm_remove_mcast_queues(ab, dp_peer);
 		if (ret_mcast) {
 			ath12k_err(ab,
-				   "Error: TQM Remove MCAST queue peer %d",
-				   dp_peer->peer_id);
+				   "Error: TQM Remove MCAST queue peer %d ret=%d",
+				   dp_peer->peer_id, ret_mcast);
 			return ret_mcast;
 		}
 	} else {
@@ -1271,8 +1808,8 @@ int ath12k_dp_tqm_remove_queues_cmd(struct ath12k_base *ab,
 	data.hw_link_id = hw_link_id;
 	ret_sync = ath12k_dp_tqm_sync_remove_queues(ab, dp_peer, &data);
 	if (ret_sync) {
-		ath12k_err(ab, "Error: TQM SYNC peer %d",
-			   dp_peer->peer_id);
+		ath12k_err(ab, "Error: TQM SYNC peer %d ret=%d",
+			   dp_peer->peer_id, ret_sync);
 		return ret_sync;
 	}
 	return 0;
@@ -1290,17 +1827,26 @@ void ath12k_dp_peer_cleanup_indication(struct ath12k_dp *dp,
 	u8 pdev_id;
 	int ret = 0;
 
+	ath12k_dbg(dp->ab, ATH12K_DBG_PEER,
+		   "peer-cleanup-ind: ENTRY peer_id=%u hw_link_id=%u\n",
+		   peer_id, hw_link_id);
+
 	pdev_id = ath12k_hw_mac_id_to_pdev_id(dp->hw_params,
 					      dp_hw_grp->hw_links[hw_link_id].pdev_idx);
 	rcu_read_lock();
 	dp_pdev = ath12k_dp_to_dp_pdev(dp, pdev_id);
 	if (!dp_pdev) {
+		ath12k_dbg(dp->ab, ATH12K_DBG_PEER,
+			   "peer-cleanup-ind: dp_pdev NULL for pdev_id=%u\n",
+			   pdev_id);
 		rcu_read_unlock();
 		return;
 	}
 
 	dp_hw = dp_pdev->dp_hw;
 	if (!dp_hw) {
+		ath12k_dbg(dp->ab, ATH12K_DBG_PEER,
+			   "peer-cleanup-ind: dp_hw NULL\n");
 		rcu_read_unlock();
 		return;
 	}
@@ -1309,16 +1855,98 @@ void ath12k_dp_peer_cleanup_indication(struct ath12k_dp *dp,
 	dp_peer = rcu_dereference(dp_pdev->dp_hw->dp_peer_list[peer_id]);
 	if (!dp_peer) {
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
+		ath12k_dbg(dp->ab, ATH12K_DBG_PEER,
+			   "peer-cleanup-ind: dp_peer NULL for peer_id=%u\n",
+			   peer_id);
 		rcu_read_unlock();
 		return;
 	}
 
+	ath12k_dbg(dp->ab, ATH12K_DBG_PEER,
+		   "peer-cleanup-ind: found dp_peer %pM peer_id=%u peer_ext_ctx=%p\n",
+		   dp_peer->addr, dp_peer->peer_id, dp_peer->peer_ext_ctx);
+
 	tx_info = ath12k_dp_get_tx_flow_info_from_peer(dp_peer);
 	if (!tx_info) {
+		/* SMD case: peer_ext_ctx was detached during PREP phase (MLO).
+		 * exec_activate_links() already NULLed peer_ext_ctx on the
+		 * current peer during EXEC resp.  Now we just need to send
+		 * TQM_SYNC to trigger the cleanup callback which will skip
+		 * resource freeing (since peer_ext_ctx is NULL).
+		 */
+		ath12k_dbg(dp->ab, ATH12K_DBG_PEER,
+			   "peer-cleanup-ind: tx_info NULL (SMD case), sending TQM_SYNC only\n");
+
+		ret = ath12k_dp_tqm_sync_remove_queues(dp->ab, dp_peer,
+						       &(struct ath12k_dp_tx_queue){
+							   .peer_id = dp_peer->peer_id,
+							   .hw_link_id = hw_link_id
+						       });
+		if (ret) {
+			ath12k_err(dp->ab,
+				   "ERROR: TQM_SYNC failed for SMD peer %pM id=%d ret=%d\n",
+				   dp_peer->addr, dp_peer->peer_id, ret);
+		} else {
+			ath12k_dbg(dp->ab, ATH12K_DBG_PEER,
+				   "peer-cleanup-ind: TQM_SYNC sent for SMD case\n");
+		}
+
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		rcu_read_unlock();
 		return;
 	}
+
+	/*
+	 * SMD transition in progress — peer_ext_ctx still set on current peer.
+	 *
+	 * For SLO: ath12k_uhr_smd_activate_ext_ctx() returns early at EXEC
+	 * resp time because target_ahsta->links_map == 0 (no links yet).
+	 * exec_activate_links() is therefore deferred to the post-DL-drain
+	 * peer_assoc call.  When the current AP peer is deleted before the
+	 * target peer is added, cleanup_indication fires here with
+	 * peer_ext_ctx still set — we must NOT free it.
+	 *
+	 * For MLO: exec_activate_links() runs during EXEC resp and NULLs
+	 * peer_ext_ctx, so smd_parked_ext_ctx is already NULL by the time
+	 * cleanup_indication fires.  This guard is a no-op for MLO.
+	 *
+	 * Detection: smd_parked_ext_ctx == dp_peer->peer_ext_ctx means the
+	 * PREP-phase parking is still pending (exec_activate_links not yet
+	 * called).  Detach peer_ext_ctx from the current peer without freeing
+	 * it — the ext_ctx will be transferred to the target peer when
+	 * exec_activate_links() runs post DL drain.  Send TQM_SYNC only.
+	 */
+	spin_lock_bh(&dp_hw_grp->smd_transition_lock);
+	if (dp_hw_grp->smd_parked_ext_ctx &&
+	    dp_hw_grp->smd_parked_ext_ctx == dp_peer->peer_ext_ctx) {
+		ath12k_dbg(dp->ab, ATH12K_DBG_PEER,
+			   "peer-cleanup-ind: SMD pending (SLO), detach ext_ctx %pM (id=%u)\n",
+			   dp_peer->addr, dp_peer->peer_id);
+		dp_peer->peer_ext_ctx = NULL;
+		spin_unlock_bh(&dp_hw_grp->smd_transition_lock);
+
+		ret = ath12k_dp_tqm_sync_remove_queues(dp->ab, dp_peer,
+						       &(struct ath12k_dp_tx_queue){
+							   .peer_id = dp_peer->peer_id,
+							   .hw_link_id = hw_link_id
+						       });
+		if (ret)
+			ath12k_err(dp->ab,
+				   "ERROR: TQM_SYNC failed for SMD transition peer %pM id=%d ret=%d\n",
+				   dp_peer->addr, dp_peer->peer_id, ret);
+		else
+			ath12k_dbg(dp->ab, ATH12K_DBG_PEER,
+				   "peer-cleanup-ind: TQM_SYNC sent for SMD transition (SLO) case\n");
+
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
+		rcu_read_unlock();
+		return;
+	}
+	spin_unlock_bh(&dp_hw_grp->smd_transition_lock);
+
+	ath12k_dbg(dp->ab, ATH12K_DBG_PEER,
+		   "peer-cleanup-ind: before clear_bit txq_links=0x%lx\n",
+		   tx_info->txq_hw_links_bitmap);
 
 	clear_bit(hw_link_id, &tx_info->txq_hw_links_bitmap);
 
@@ -1328,22 +1956,36 @@ void ath12k_dp_peer_cleanup_indication(struct ath12k_dp *dp,
 			   "ERROR: TQM REMOVE MGMT LINK QUEUE CMD peer %d link %d",
 			   dp_peer->peer_id, hw_link_id);
 	}
+	ath12k_dbg(dp->ab, ATH12K_DBG_PEER,
+		   "peer-cleanup-ind: after clear_bit txq_links=0x%lx\n",
+		   tx_info->txq_hw_links_bitmap);
+
 	/* Check whether event is for last link or not */
 	if (tx_info->txq_hw_links_bitmap) {
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
+		ath12k_dbg(dp->ab, ATH12K_DBG_PEER,
+			   "peer-cleanup-ind: not last link, skipping TQM remove\n");
 		rcu_read_unlock();
 		return;
 	}
 
+	ath12k_dbg(dp->ab, ATH12K_DBG_PEER,
+		   "peer-cleanup-ind: last link, calling TQM remove queues\n");
+
 	ret = ath12k_dp_tqm_remove_queues_cmd(dp->ab, dp_peer, hw_link_id);
 	if (ret) {
 		ath12k_err(dp->ab,
-			   "ERROR: TQM REMOVE QUEUE CMD peer %d",
-			   dp_peer->peer_id);
+			   "ERROR: TQM REMOVE QUEUE CMD peer %d ret=%d",
+			   dp_peer->peer_id, ret);
+	} else {
+		ath12k_dbg(dp->ab, ATH12K_DBG_PEER,
+			   "peer-cleanup-ind: TQM remove queues cmd sent successfully\n");
 	}
 
 	spin_unlock_bh(&dp_hw->peer_hash_lock);
 	rcu_read_unlock();
+	ath12k_dbg(dp->ab, ATH12K_DBG_PEER,
+		   "peer-cleanup-ind: EXIT peer_id=%u\n", peer_id);
 }
 
 void ath12k_wifi8_dp_link_peer_assoc(struct ath12k_dp_hw *dp_hw,
@@ -1374,6 +2016,241 @@ void ath12k_wifi8_dp_link_peer_assoc(struct ath12k_dp_hw *dp_hw,
 
 	ath12k_dp_tx_peer_msduq_mpduq_setup(dp->dp_hw_grp, dp_peer, hw_link_id);
 	spin_unlock_bh(&dp_hw->peer_hash_lock);
+}
+
+int ath12k_wifi8_dp_smd_prep_transfer_ext_ctx(struct ath12k_dp *dp,
+					      struct ath12k_dp_peer *current_dp_peer,
+					const u8 *target_mld_addr,
+					u16 transitioning_links)
+{
+	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
+	struct ath12k_dp_peer_ext_ctx *ext_ctx;
+	u16 old_ast_index;
+
+	if (WARN_ON(!current_dp_peer || !current_dp_peer->peer_ext_ctx)) {
+		ath12k_warn(dp->ab, "smd prep: current peer has no ext_ctx\n");
+		return -EINVAL;
+	}
+
+	ext_ctx = current_dp_peer->peer_ext_ctx;
+	old_ast_index = ext_ctx->ast_index;
+
+	ath12k_dbg(dp->ab, ATH12K_DBG_SMD,
+		   "smd prep: parking ext_ctx %pM->%pM ast=%u links=0x%x\n",
+		   current_dp_peer->addr, target_mld_addr,
+		   old_ast_index, transitioning_links);
+
+	/*
+	 * Park ext_ctx reference in dp_hw_grp for EXEC phase.
+	 *
+	 * We do NOT detach ext_ctx from the current peer, delete the old AST
+	 * entry, or clear ast_index/ast_hash here during PREP.  The STA still
+	 * needs to communicate with the current AP (e.g. send ST Exec Request).
+	 * These operations are deferred to EXEC phase (post ST Exec Response)
+	 * in ath12k_wifi8_dp_smd_exec_activate_links():
+	 *   - current_dp_peer->peer_ext_ctx is NULLed
+	 *   - old AST entry (smd_parked_ext_ctx->ast_index) is deleted
+	 *   - new AST entry is created for the target peer
+	 *   - TQM UPDATE is sent to switch queues to the new peer_id
+	 */
+	spin_lock_bh(&dp_hw_grp->smd_transition_lock);
+	dp_hw_grp->smd_parked_ext_ctx = ext_ctx;
+	dp_hw_grp->smd_old_peer_id = current_dp_peer->peer_id;
+	ether_addr_copy(dp_hw_grp->smd_target_mld_addr, target_mld_addr);
+	spin_unlock_bh(&dp_hw_grp->smd_transition_lock);
+
+	ath12k_dbg(dp->ab, ATH12K_DBG_SMD,
+		   "smd prep: ext_ctx parked %pM peer_id=%u ast_idx=%u (deferred to EXEC)\n",
+		   target_mld_addr, current_dp_peer->peer_id, old_ast_index);
+
+	return 0;
+}
+
+void ath12k_wifi8_dp_smd_update_msduq_chip_status_via_tqm(struct ath12k_base *ab,
+					struct ath12k_dp_hw_group *dp_hw_grp,
+					struct ath12k_dp_tx_flow_info *tx_info,
+					struct ath12k_dp_peer *dp_peer,
+					u8 bitmap)
+{
+	struct ath12k_hal_tqm_cmd cmd = {0};
+	int i, j, ret;
+	int n_msduq = 0;
+
+	if (!bitmap) {
+		ath12k_dbg(ab, ATH12K_DBG_SMD,
+			   "smd tqm-update-chip-req: bitmap=0 for peer_id=%u, skipping\n",
+			   dp_peer->peer_id);
+		return;
+	}
+
+	for (i = 0; i < ATH12K_MAX_NUM_DATA_TIDS; i++) {
+		for (j = 0; j < ATH12K_MAX_DP_MSDUQ_PER_TID; j++) {
+			if (!tx_info->tid_info[i].msduq[j])
+				continue;
+
+			memset(&cmd, 0, sizeof(cmd));
+			cmd.std.peer_id = dp_peer->peer_id;
+			cmd.update_tx_msdu_params.msdu_q_paddr =
+				tx_info->tid_info[i].msduq[j]->msdu_q_paddr;
+			cmd.update_tx_msdu_params.bitmap = bitmap;
+
+			ath12k_dbg(ab, ATH12K_DBG_SMD,
+				   "smd tqm-update-chip-req msduq: tid=%d q=%d flow=0x%x bitmap=0x%x\n",
+				   i, j,
+				   tx_info->tid_info[i].msduq[j]->queue_number,
+				   bitmap);
+
+			ret = ath12k_wifi8_dp_tqm_cmd_send(ab,
+							   HAL_TQM_UPDATE_MSDUQ_BO,
+						&cmd, &(struct ath12k_dp_tx_queue){
+							.peer_id = dp_peer->peer_id,
+							.hw_link_id = 0
+						}, ath12k_dp_tqm_update_completion);
+			if (!ret)
+				n_msduq++;
+		}
+	}
+	ath12k_dbg(ab, ATH12K_DBG_SMD,
+		   "smd tqm-update-chip-req: completed %d msduq updated bitmap=0x%x\n",
+		   n_msduq, bitmap);
+}
+
+void ath12k_wifi8_dp_smd_exec_activate_links(struct ath12k_dp *dp,
+					     struct ath12k_dp_hw *dp_hw,
+					     struct ath12k_dp_vif *dp_vif,
+					     const u8 *addr,
+					     u16 active_links)
+{
+	struct ath12k_ast_entry_config_params ast_param = {0};
+	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
+	struct ath12k_dp_peer *current_dp_peer = NULL;
+	struct ath12k_dp_peer *target_dp_peer;
+	struct ath12k_dp_peer_ext_ctx *ext_ctx;
+	struct ath12k_dp_tx_flow_info *tx_info;
+	struct ath12k_dp *cumac_dp;
+	struct ath12k_base *tqm_ab;
+	u16 old_ast_index = 0;
+	u16 old_peer_id = 0;
+	u8 chip_bitmap;
+	int ret;
+
+	spin_lock_bh(&dp_hw->peer_hash_lock);
+	target_dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, addr);
+	spin_unlock_bh(&dp_hw->peer_hash_lock);
+
+	if (!target_dp_peer) {
+		ath12k_warn(dp->ab,
+			    "smd exec_activate_links: peer %pM not found\n",
+			    addr);
+		return;
+	}
+
+	if (WARN_ON(!target_dp_peer || !target_dp_peer->peer_ext_ctx))
+		return;
+
+	ext_ctx = target_dp_peer->peer_ext_ctx;
+	tx_info = &ext_ctx->tx_flow_info;
+
+	/*
+	 * EXEC phase: complete deferred cleanup from PREP phase.
+	 *
+	 * If smd_parked_ext_ctx matches this ext_ctx, a PREP-phase transfer
+	 * is pending.  We now:
+	 *   1. NULL current peer's peer_ext_ctx (ownership transferred)
+	 *   2. Delete old AST entry (current AP's AST)
+	 *   3. Create new AST entry for target peer
+	 *   4. TQM UPDATE: old_peer_id → target peer_id
+	 */
+	spin_lock_bh(&dp_hw_grp->smd_transition_lock);
+	if (dp_hw_grp->smd_parked_ext_ctx == ext_ctx) {
+		old_peer_id = dp_hw_grp->smd_old_peer_id;
+		old_ast_index = ext_ctx->ast_index;
+		dp_hw_grp->smd_parked_ext_ctx = NULL;
+		eth_zero_addr(dp_hw_grp->smd_target_mld_addr);
+		dp_hw_grp->smd_old_peer_id = 0;
+		dp_hw_grp->smd_exec_in_progress = false;
+	}
+	spin_unlock_bh(&dp_hw_grp->smd_transition_lock);
+
+	if (old_peer_id) {
+		/* 1. NULL current peer's peer_ext_ctx */
+		spin_lock_bh(&dp_hw->peer_hash_lock);
+		if (old_peer_id < MAX_DP_PEER_LIST_SIZE)
+			current_dp_peer = rcu_dereference_protected(
+				dp_hw->dp_peer_list[old_peer_id],
+				lockdep_is_held(&dp_hw->peer_hash_lock));
+		if (current_dp_peer &&
+		    current_dp_peer->peer_ext_ctx == ext_ctx) {
+			current_dp_peer->peer_ext_ctx = NULL;
+			ath12k_dbg(dp->ab, ATH12K_DBG_SMD,
+				   "smd exec: NULLed ext_ctx on current peer id=%u\n",
+				   old_peer_id);
+		}
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
+
+		/* 2. Delete old AST entry */
+		if (old_ast_index) {
+			ath12k_dp_ast_entry_delete(dp_hw_grp, old_ast_index);
+			ath12k_dbg(dp->ab, ATH12K_DBG_SMD,
+				   "smd exec: deleted old AST index=%u\n",
+				   old_ast_index);
+		}
+
+		/* 3. Create new AST entry for target peer */
+		memcpy(ast_param.mac_addr, target_dp_peer->addr, ETH_ALEN);
+		ast_param.peer_id = target_dp_peer->peer_id;
+		ast_param.tx_classify_info_paddr =
+			ext_ctx->tx_flow_info.hw_who_classify_info_paddr;
+		ast_param.ast_entry_flags |= ATH12K_AST_ENTRY_IS_USE_ADDRX;
+		ret = ath12k_dp_ast_entry_create(dp_hw_grp, &ast_param);
+		if (ret) {
+			ath12k_warn(dp->ab,
+				    "smd exec: AST create failed for %pM ret=%d\n",
+				    target_dp_peer->addr, ret);
+		} else {
+			ext_ctx->ast_index = ast_param.ast_index;
+			ext_ctx->ast_hash  = ast_param.ast_hash;
+			if (dp_vif && target_dp_peer->is_sta_bss_peer) {
+				dp_vif->ast_idx  = ast_param.ast_index;
+				dp_vif->ast_hash = ast_param.ast_hash;
+			}
+			ath12k_dbg(dp->ab, ATH12K_DBG_SMD,
+				   "smd exec: new AST index=%u hash=%u for %pM\n",
+				   ast_param.ast_index, ast_param.ast_hash,
+				   target_dp_peer->addr);
+		}
+
+		/* 4. TQM UPDATE: old_peer_id → target peer_id */
+		cumac_dp = ath12k_get_central_dp(dp);
+		tqm_ab = cumac_dp ? cumac_dp->ab : dp->ab;
+		ath12k_wifi8_dp_smd_reset_tx_queue_states(
+			tqm_ab, tx_info, target_dp_peer->peer_id);
+		ath12k_wifi8_dp_smd_update_queue_peer_id_via_tqm(
+			tqm_ab, dp_hw_grp, tx_info,
+			target_dp_peer, dp_vif, old_peer_id);
+	}
+
+	/* Activate TX queues for the new links */
+	spin_lock_bh(&tx_info->tx_q_lock);
+	tx_info->assoc_hw_links_bitmap |= active_links;
+	tx_info->txq_hw_links_bitmap   |= active_links;
+	spin_unlock_bh(&tx_info->tx_q_lock);
+
+	/* Refresh tqm_status_required_for_chipX on every exec_activate_links call,
+	 * including partner-radio invocations (old_peer_id=0), so the chip status
+	 * bits are always in sync with the peer's current link configuration.
+	 */
+	cumac_dp = ath12k_get_central_dp(dp);
+	tqm_ab = cumac_dp ? cumac_dp->ab : dp->ab;
+	chip_bitmap = ath12k_dp_get_chipid_bitmap(dp_hw_grp, target_dp_peer);
+	ath12k_wifi8_dp_smd_update_msduq_chip_status_via_tqm(
+		tqm_ab, dp_hw_grp, tx_info, target_dp_peer, chip_bitmap);
+
+	ath12k_dbg(dp->ab, ATH12K_DBG_SMD,
+		   "smd exec: activated links=0x%x for %pM assoc=0x%lx txq=0x%lx\n",
+		   active_links, target_dp_peer->addr,
+		   tx_info->assoc_hw_links_bitmap,
+		   tx_info->txq_hw_links_bitmap);
 }
 
 int ath12k_wifi8_get_mgmt_flowq(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,

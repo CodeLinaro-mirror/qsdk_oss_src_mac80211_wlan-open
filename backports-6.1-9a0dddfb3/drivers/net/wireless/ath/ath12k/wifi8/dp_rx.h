@@ -137,6 +137,9 @@ ath12k_wifi8_peer_rx_tid_reo_update_for_smd(struct ath12k_base *ab,
 					    struct ath12k_dp_hw *dp_hw,
 					    const u8 *peer_addr,
 					    struct ath12k_rx_smd_ctx_per_tid *rx_tid_ctx);
+int ath12k_wifi8_peer_rx_tid_svld_reset(struct ath12k_base *ab,
+					struct ath12k_dp_hw *dp_hw,
+					const u8 *peer_addr);
 void ath12k_wifi8_peer_rx_tid_reo_clear_vld_cmd_init(struct ath12k_dp_rx_tid *rx_tid,
 						     struct ath12k_hal_reo_cmd *cmd);
 int ath12k_wifi8_peer_rx_tid_reo_clear_vld(struct ath12k_base *ab,
@@ -150,4 +153,14 @@ int ath12k_wifi8_peer_rx_tid_reo_clear_vld(struct ath12k_base *ab,
 extern bool ath12k_wifi8_clear_vld_after_smd_ctx_fetch;
 extern bool ath12k_wifi8_smd_skip_bitmap_update;
 int ath12k_wifi8_dp_rx_ase_htt_srng_setup(struct ath12k_base *ab);
+
+/* SMD BSS Transition: Rx Q Info park / restore */
+int ath12k_wifi8_dp_smd_prep_rx_tid(struct ath12k_dp *dp,
+				    struct ath12k_dp_hw *dp_hw,
+				    const u8 *addr);
+int ath12k_wifi8_dp_smd_exec_rx_tid(struct ath12k_dp *dp,
+				    struct ath12k_dp_hw *dp_hw,
+				    const u8 *addr);
+void ath12k_wifi8_dp_smd_clear_old_peer_rx_lut(struct ath12k_dp *dp,
+					       struct ath12k_dp_peer *dp_peer);
 #endif

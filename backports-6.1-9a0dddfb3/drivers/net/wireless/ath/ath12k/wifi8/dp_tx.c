@@ -258,31 +258,62 @@ void ath12k_dp_peer_cleanup_tqm_sync(struct ath12k_dp *dp, void *ctx,
 		return;
 	}
 
-	if (dp_peer->dp_peer_state < ATH12K_DP_PEER_LOGICALLY_DELETED)
+	ath12k_dbg(ab, ATH12K_DBG_PEER,
+		   "tqm-cleanup-sync: found dp_peer %pM peer_state=%d peer_ext_ctx=%p\n",
+		   dp_peer->addr, dp_peer->dp_peer_state, dp_peer->peer_ext_ctx);
+
+	/* SMD case: peer_ext_ctx was already detached and parked for target AP.
+	 * Skip freeing resources as they will be reused by target AP peer.
+	 */
+	if (!dp_peer->peer_ext_ctx) {
+		ath12k_dbg(ab, ATH12K_DBG_PEER,
+			   "tqm-cleanup-sync: peer_ext_ctx NULL (SMD, resources transferred)\n");
+		goto update_peer_state;
+	}
+
+	if (dp_peer->dp_peer_state < ATH12K_DP_PEER_LOGICALLY_DELETED) {
+		ath12k_dbg(ab, ATH12K_DBG_PEER,
+			   "tqm-cleanup-sync: deleting AST entry ast_index=%u\n",
+			   dp_peer->peer_ext_ctx->ast_index);
 		ath12k_dp_ast_entry_delete(dp->dp_hw_grp,
 					   dp_peer->peer_ext_ctx->ast_index);
+	}
 
 	tx_classify_info_paddr =
 		dp_peer->peer_ext_ctx->tx_flow_info.hw_who_classify_info_paddr;
 	tx_classify_info_vaddr =
 		dp_peer->peer_ext_ctx->tx_flow_info.hw_who_classify_info_vaddr;
-	ath12k_dp_peer_free_queues(dp_hw_grp, dp_peer); //generic free API
+
+	ath12k_dp_peer_free_queues(dp_hw_grp, dp_peer);
 	ath12k_dp_tx_classify_info_free(dp_hw_grp, tx_classify_info_paddr,
 					tx_classify_info_vaddr);
+
+	ath12k_dbg(ab, ATH12K_DBG_PEER,
+		   "tqm-cleanup-sync: freeing peer_ext_ctx\n");
 
 	kfree(dp_peer->peer_ext_ctx);
 	dp_peer->peer_ext_ctx = NULL;
 
+update_peer_state:
+
 	if (dp_peer->dp_peer_state < ATH12K_DP_PEER_LOGICALLY_DELETED) {
+		ath12k_dbg(ab, ATH12K_DBG_PEER,
+			   "tqm-cleanup-sync: setting peer_state to LOGICALLY_DELETED\n");
 		dp_peer->dp_peer_state = ATH12K_DP_PEER_LOGICALLY_DELETED;
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		rcu_read_unlock();
 	} else {
+		ath12k_dbg(ab, ATH12K_DBG_PEER,
+			   "tqm-cleanup-sync: calling dp_peer_cleanup and kfree_rcu\n");
 		ath12k_wifi8_dp_peer_cleanup(dp_hw, dp_peer);
 		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		rcu_read_unlock();
 		kfree_rcu(dp_peer, rcu_head);
 	}
+
+	ath12k_dbg(ab, ATH12K_DBG_PEER,
+		   "tqm-cleanup-sync: EXIT peer_id=%u cleanup complete\n",
+		   peer_id);
 }
 
 static inline u32 ath12k_qos_get_metadata(u16 qos_id)
@@ -5437,14 +5468,15 @@ int ath12k_wifi8_dp_tx_update_msdu_flow(struct ath12k_dp *dp,
 	ret = ath12k_wifi8_dp_tqm_cmd_send(dp->ab, HAL_TQM_UPDATE_MSDUQ_BO, &cmd,
 					   NULL, NULL);
 	if (ret) {
-		ath12k_err(dp->ab, "TQM UPDATE MSDUQ send failed for peer %pM id %d tid %d svc %d msduq %d\n",
+		ath12k_err(dp->ab, "TQM UPDATE MSDUQ send failed %pM id=%d tid=%d svc=%d q=%d\n",
 			   dp_peer->addr, dp_peer->peer_id, tid,
 			   service_category,
 			   flow_type);
 		goto unlock;
 	}
 
-	ath12k_dbg(dp->ab, ATH12K_DBG_DP_TX, "TQM update MSDUQ peer %pM flow_num 0x%x svc %d tid %d\n",
+	ath12k_dbg(dp->ab, ATH12K_DBG_DP_TX,
+		   "TQM update MSDUQ peer %pM flow_num 0x%x svc %d tid %d\n",
 		   dp_peer->addr, flow_number, service_category, tid);
 
 unlock:

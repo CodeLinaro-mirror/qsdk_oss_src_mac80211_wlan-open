@@ -241,7 +241,6 @@ int ath12k_init_tx_msdu_flowq(struct ath12k_dp_hw_group *dp_hw_grp,
 						    &ti);
 }
 
-static inline
 u8 ath12k_dp_get_chipid_bitmap(struct ath12k_dp_hw_group *dp_hw_grp,
 			       struct ath12k_dp_peer *dp_peer)
 {

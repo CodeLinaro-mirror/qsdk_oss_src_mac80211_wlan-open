@@ -1774,6 +1774,7 @@ void ath12k_dp_rx_peer_tid_ba_config(struct ath12k_dp *dp, u8 tid, u32 *ba_win_s
 		dp->ab->hw_params->hw_ops->rx_peer_ba_config(dp->ab, tid, ba_win_size,
 							    ssn);
 }
+EXPORT_SYMBOL(ath12k_dp_rx_peer_tid_ba_config);
 
 bool ath12k_dp_rx_peer_tid_skip_pn_replay(struct ath12k_dp *dp, u8 tid)
 {
