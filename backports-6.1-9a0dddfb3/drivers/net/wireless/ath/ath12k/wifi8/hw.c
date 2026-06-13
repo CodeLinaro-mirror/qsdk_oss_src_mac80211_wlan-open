@@ -522,7 +522,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.supports_shadow_regs = false,
 
 		.num_tcl_banks = 128,
-		.max_tx_ring = 4,
+		.max_tx_ring = MIN(NR_CPUS, 5),
 
 		.mhi_config = &ath12k_wifi8_mhi_config_qcn9625,
 
@@ -552,7 +552,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 
 		.iova_mask = 0,
 
-		.supports_aspm = false,
+		.supports_aspm = true,
 
 		.current_cc_support = false,
 
@@ -581,12 +581,15 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.umac_irq_line_reset = false,
 		.umac_reset_ipc = 0,
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-		.ds_support = false,
+		.ds_support = true,
+		.ds_txrx_hw_auto_idx = true,
+		.ds_hw_buff_mgmt = true,
 #endif
 		.mlo_3_link_tx_support = true,
 		.board_magic = "QCA-ATH12K-BOARD",
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES_DEFAULT,
+		.peer_del_all_support = true,
 	},
 	{
 		.name = "qcn9625 hw2.0",
