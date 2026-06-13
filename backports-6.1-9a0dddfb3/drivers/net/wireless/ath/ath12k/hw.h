@@ -189,6 +189,9 @@ struct ath12k_link_vif;
 #define ATH12K_UMAC_RESET_IPC_IPQ5332   451
 #define ATH12K_UMAC_RESET_IPC_QCN6432   7
 
+/* Max Number of Non-Tx AP interfaces allowed per radio for MBSSID */
+#define ATH12K_MAX_MBSSID_NONTX_INTERFACES   (ATH12K_MBSSID_MAX_INTERFACES - 1)
+
 enum ath12k_hw_rate_cck {
 	ATH12K_HW_RATE_CCK_LP_11M = 0,
 	ATH12K_HW_RATE_CCK_LP_5_5M,
