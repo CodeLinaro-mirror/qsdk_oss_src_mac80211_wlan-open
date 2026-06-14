@@ -1303,6 +1303,12 @@ void ieee80211_stop_mesh(struct ieee80211_sub_if_data *sdata)
 
 	netif_carrier_off(sdata->dev);
 
+	if (sdata->wdev.links[sdata->deflink.link_id].cac_started) {
+		ieee80211_handle_cac_stop(local->hw.wiphy, sdata,
+					  &sdata->deflink,
+					  sdata->deflink.conf, NULL);
+	}
+
 	/* flush STAs and mpaths on this iface */
 	sta_info_flush(sdata, -1);
 	ieee80211_free_keys(sdata, true);
