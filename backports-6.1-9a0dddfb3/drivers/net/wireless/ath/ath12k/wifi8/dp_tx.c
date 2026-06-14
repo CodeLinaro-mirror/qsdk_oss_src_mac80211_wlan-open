@@ -465,16 +465,6 @@ ath12k_dp_sdwftx_ingress_stats_update(struct ath12k *ar,
 		spin_unlock_bh(&dp->dp_lock);
 		rcu_read_unlock();
 	}
-
-	/* Store the NWDELAY to skb->mark which can be fetched
-	 * during tx completion
-	 */
-	if (qos_nw_delay > QOS_NW_DELAY_MAX)
-		qos_nw_delay = QOS_NW_DELAY_MAX;
-
-	*skb_mark = u32_encode_bits(u32_get_bits(*skb_mark, QOS_NW_TAG_SHIFT),
-				    QOS_TAG_ID) | (qos_nw_delay << QOS_NW_DELAY_SHIFT) |
-				    msduq;
 }
 
 void ath12k_sdwf_update_peer_mcs_stats(struct tx_stats *qos_tx,
@@ -566,36 +556,6 @@ bool ath12k_get_qos_params_delay_bound(struct ath12k_base *ab, u8 qos_id,
 
 #define ATH12K_HIST_AVG_DIV	2
 
-void ath12k_wifi8_compute_hw_delay(struct ath12k *ar, struct hal_tx_status *ts,
-				   u32 *hw_delay)
-{
-	/* low 32 alone will be filled for TSF2 from FW and the value can be
-	 * negative for both TSF2 and TQM delta
-	 */
-	int tmp_delta_tsf2 = ar->delta_tsf2, tmp_delta_tqm = ar->delta_tqm;
-	u32 msdu_tqm_enqueue_tstamp_us, final_msdu_tqm_enqueue_tstamp_us;
-	u32 msdu_compl_tsf_tstamp_us, final_msdu_compl_tsf_tstamp_us;
-	struct ath12k_hw_group *ag = ar->ab->ag;
-	/* MLO TSTAMP OFFSET can be negative
-	 */
-	int mlo_offset = ag->mlo_tstamp_offset;
-	int delta_tsf2, delta_tqm;
-
-	msdu_tqm_enqueue_tstamp_us =
-		TX_COMPL_BUFFER_TSTAMP_US(ts->buffer_timestamp);
-	msdu_compl_tsf_tstamp_us = ts->tsf;
-	delta_tsf2 = mlo_offset - tmp_delta_tsf2;
-	delta_tqm = mlo_offset - tmp_delta_tqm;
-
-	final_msdu_tqm_enqueue_tstamp_us =
-		(msdu_tqm_enqueue_tstamp_us + delta_tqm) & HW_TX_DELAY_MASK;
-	final_msdu_compl_tsf_tstamp_us =
-		(msdu_compl_tsf_tstamp_us + delta_tsf2) & HW_TX_DELAY_MASK;
-
-	*hw_delay = (final_msdu_compl_tsf_tstamp_us -
-			final_msdu_tqm_enqueue_tstamp_us) & HW_TX_DELAY_MASK;
-}
-
 /* reinject_pkt stats - needs to be implemented */
 void ath12k_qos_stats_update(struct ath12k *ar, struct sk_buff *skb,
 			     struct hal_tx_status *ts,
@@ -613,7 +573,7 @@ void ath12k_qos_stats_update(struct ath12k *ar, struct sk_buff *skb,
 	struct delay_stats *qos_delay;
 	void *telemetry_peer_ctx = NULL;
 	u64 enqueue_timestamp, total_delay_pkts, tmp_div;
-	u32 len, q_id, tid, hw_delay, nw_delay, sw_delay, delay_bound;
+	u32 len, q_id, tid, hw_delay, nw_delay = 0, sw_delay, delay_bound;
 	u32 pkt_win, num_pkts, dropped_age_out = 0;
 	u16 msduq_id;
 	u8 link_id, pri_link_id, qos_id;
@@ -825,7 +785,7 @@ void ath12k_qos_stats_update(struct ath12k *ar, struct sk_buff *skb,
 
 	qos_delay = &link_peer->peer_stats.qos_stats->qos_delay[tid][q_id];
 
-	ath12k_wifi8_compute_hw_delay(ar, ts, &hw_delay);
+	hw_delay = ts->delay_stats.hw.wifi_sched_latency;
 	if (hw_delay > HW_TX_DELAY_MAX) {
 		mld_qos->tx_invalid_delay_pkts++;
 		qos_delay->invalid_delay_pkts++;
@@ -835,7 +795,9 @@ void ath12k_qos_stats_update(struct ath12k *ar, struct sk_buff *skb,
 	mld_qos->hwdelay_win_total += hw_delay;
 	ath12k_dp_update_hist_stats(&qos_delay->delay_hist, hw_delay);
 
-	nw_delay = u32_get_bits(skb->mark, QOS_NW_DELAY);
+	if (ts->delay_stats.hw.nw_latency_valid)
+		nw_delay = ts->delay_stats.hw.nw_latency;
+
 	mld_qos->nwdelay_win_total += nw_delay;
 
 	enqueue_timestamp = ktime_to_us(timestamp);
@@ -3210,6 +3172,19 @@ ath12k_wifi8_dp_tx_status_parse(struct ath12k_base *ab,
 				      HAL_TQM2SW_COMPLETION_RING_INFO2_LAST_MSDU);
 	ts->msdu_part_of_amsdu =
 			(ts->first_msdu && ts->last_msdu) ? false : true;
+
+	ts->delay_stats.hw.nw_latency_valid = le32_get_bits(desc->info2,
+			HAL_TQM2SW_COMPLETION_RING_INFO2_NW_LATENCY_VLD);
+	ts->delay_stats.hw.nw_latency = le32_get_bits(desc->info2,
+			HAL_TQM2SW_COMPLETION_RING_INFO2_NW_LATENCY);
+
+	ts->delay_stats.hw.stream_id_valid = le32_get_bits(desc->info3,
+			HAL_TQM2SW_COMPLETION_RING_INFO3_TELE_STREAM_ID_VLD);
+	ts->delay_stats.hw.stream_id = le32_get_bits(desc->info4,
+			HAL_TQM2SW_COMPLETION_RING_INFO4_TELE_STREAM_ID);
+
+	ts->delay_stats.hw.wifi_sched_latency = le32_get_bits(desc->info4,
+			HAL_TQM2SW_COMPLETION_RING_INFO4_WIFI_SCHED_LATENCY);
 
 	ath12k_wifi8_dp_tx_get_hw_link_id_from_ppdu_id(ts, ab->dp);
 }

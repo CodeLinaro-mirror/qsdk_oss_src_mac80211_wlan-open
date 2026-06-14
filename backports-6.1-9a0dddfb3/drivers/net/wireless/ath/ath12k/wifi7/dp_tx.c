@@ -401,8 +401,8 @@ void ath12k_wifi7_compute_hw_delay(struct ath12k *ar, struct hal_tx_status *ts,
 	int delta_tsf2, delta_tqm;
 
 	msdu_tqm_enqueue_tstamp_us =
-		TX_COMPL_BUFFER_TSTAMP_US(ts->buffer_timestamp);
-	msdu_compl_tsf_tstamp_us = ts->tsf;
+		TX_COMPL_BUFFER_TSTAMP_US(ts->delay_stats.ts.buffer_timestamp);
+	msdu_compl_tsf_tstamp_us = ts->delay_stats.ts.tsf;
 	delta_tsf2 = mlo_offset - tmp_delta_tsf2;
 	delta_tqm = mlo_offset - tmp_delta_tqm;
 
@@ -2403,8 +2403,9 @@ static u32 ath12k_dp_tx_compute_hw_delay(struct ath12k_pdev_dp *dp_pdev,
 	 * FW/HW delay: time from TQM enqueue to over-the-air TX completion.
 	 * Use HW buffer_timestamp (from TQM) instead of SW hw_tstamp.
 	 */
-	tqm_enqueue_us = TX_COMPL_BUFFER_TSTAMP_US(ts->buffer_timestamp);
-	compl_tsf_us   = ts->tsf;
+	tqm_enqueue_us =
+		TX_COMPL_BUFFER_TSTAMP_US(ts->delay_stats.ts.buffer_timestamp);
+	compl_tsf_us = ts->delay_stats.ts.tsf;
 
 	if (unlikely(tqm_enqueue_us == 0 || compl_tsf_us == 0))
 		return 0;
@@ -3470,9 +3471,11 @@ ath12k_wifi7_dp_tx_status_parse(struct ath12k_base *ab,
 	ts->tid = FIELD_GET(HAL_WBM_RELEASE_TX_INFO3_TID, desc->info3);
 	ts->transmit_cnt = le32_get_bits(desc->info1,
 					 HAL_WBM_COMPL_TX_INFO1_TRANSMIT_COUNT);
-	ts->buffer_timestamp = FIELD_GET(HAL_WBM_RELEASE_TX_INFO2_BUFFER_TIMESTAMP,
-					 desc->info2);
-	ts->tsf = desc->rate_stats.tsf;
+
+	ts->delay_stats.ts.buffer_timestamp =
+		FIELD_GET(HAL_WBM_RELEASE_TX_INFO2_BUFFER_TIMESTAMP, desc->info2);
+	ts->delay_stats.ts.tsf = desc->rate_stats.tsf;
+
 	ts->first_msdu = le32_get_bits(desc->info2,
 				       HAL_WBM_COMPL_TX_INFO2_FIRST_MSDU);
 	ts->last_msdu = le32_get_bits(desc->info2,
