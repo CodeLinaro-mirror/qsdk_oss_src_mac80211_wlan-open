@@ -15,6 +15,7 @@
 #include "../dp_mon_filter.h"
 #include "dp_mon2.h"
 #include "../trace.h"
+#include "../ath12k_notif.h"
 
 const struct ath12k_dp_arch_mon_ops ath12k_wifi8_dp_arch_mon_dual_ring_ops = {
 	.rx_srng_setup = ath12k_dp_mon_rx_srng_setup,
@@ -1406,6 +1407,59 @@ static int ath12k_wifi8_dp_mon_rx_add_ppdu_desc(struct list_head *mon_desc_used_
 	return 0;
 }
 
+static void ath12k_dp_rx_mon_ppdu_notify(struct ath12k_dp *dp,
+					 struct hal_rx_mon_ppdu_info *ppdu_info)
+{
+	struct ath12k_ppdu_event event;
+	struct sk_buff *skb;
+	struct ath12k_ppdu_rx_info *ppdu_evt_data;
+	unsigned int len;
+
+	/* Early exit if no one is listening for RX events - avoid unnecessary work */
+	if (!ath12k_ppdu_notifier_has_listeners(ATH12K_EVENT_PPDU_RX_COMPLETE))
+		return;
+
+	if (ppdu_info->peer_id == HAL_INVALID_PEERID)
+		return;
+
+	/* Send PPDU notification to registered listeners */
+	ppdu_info->device_id = ath12k_get_ab_device_id(dp->ab);
+
+	len = sizeof(*ppdu_evt_data);
+	skb = alloc_skb(len, GFP_ATOMIC);
+	if (!skb) {
+		ath12k_dbg(NULL, ATH12K_DBG_TELEMETRY,
+				"Allocation failed for RX PPDU evt notification data");
+		return;
+	}
+
+	ppdu_evt_data = skb_put_zero(skb, len);
+	memcpy(&ppdu_evt_data->ppdu_info, ppdu_info, sizeof(*ppdu_info));
+
+	/*
+	 * Re-initialize the MPDU queues to safe state
+	 * to avoid corrupted access by listener.
+	 */
+	for (int i = 0; i < HAL_MAX_UL_MU_USERS; i++)
+		skb_queue_head_init(&ppdu_evt_data->ppdu_info.mpdu_q[i]);
+
+	memset(&event, 0, sizeof(event));
+	event.skb = skb;
+
+	ath12k_ppdu_notifier_call_chain(ATH12K_EVENT_PPDU_RX_COMPLETE, &event);
+
+	/*
+	 * NOTE:
+	 * This skb is producer-owned.
+	 * Freeing or cloning it from listener context will cause leaks.
+	 * Only skb_copy() is permitted if a separate buffer is needed.
+	 */
+	if (refcount_read(&skb->users) > 1)
+		ath12k_warn(dp, "SKB ref cnt held by Rx PPDU listener = %d\n",
+			    refcount_read(&skb->users));
+	kfree_skb(skb);
+}
+
 static void
 ath12k_wifi8_dp_mon_rx_h_drop_tlv(struct ath12k_pdev_dp *pdev_dp,
 				  struct hal_rx_mon_ppdu_info *ppdu_info,
@@ -1612,6 +1666,7 @@ ath12k_wifi8_dp_mon_rx_process_ppdu(struct work_struct *work)
 unlock:
 			spin_unlock_bh(&dp->dp_lock);
 			rcu_read_unlock_bh();
+			ath12k_dp_rx_mon_ppdu_notify(dp, ppdu_info);
 free_buf:
 			page_frag_free(status_desc->mon_buf);
 			mon_stats->status_buf_free++;
