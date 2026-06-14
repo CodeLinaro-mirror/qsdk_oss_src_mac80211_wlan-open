@@ -2296,6 +2296,7 @@ nl80211_send_iftype_data(struct sk_buff *msg,
 	const struct ieee80211_sta_he_cap *he_cap = &iftdata->he_cap;
 	const struct ieee80211_sta_eht_cap *eht_cap = &iftdata->eht_cap;
 	const struct ieee80211_sta_uhr_cap *uhr_cap = &iftdata->uhr_cap;
+	const struct ieee80211_sta_uhr_npca_info *npca_info = &iftdata->npca_info;
 
 	if (nl80211_put_iftypes(msg, NL80211_BAND_IFTYPE_ATTR_IFTYPES,
 				iftdata->types_mask))
@@ -2351,7 +2352,10 @@ nl80211_send_iftype_data(struct sk_buff *msg,
 		if (nla_put(msg, NL80211_BAND_IFTYPE_ATTR_UHR_CAP_MAC,
 			    sizeof(uhr_cap->mac), &uhr_cap->mac) ||
 		    nla_put(msg, NL80211_BAND_IFTYPE_ATTR_UHR_CAP_PHY,
-			    sizeof(uhr_cap->phy), &uhr_cap->phy))
+			    sizeof(uhr_cap->phy), &uhr_cap->phy) ||
+		    nla_put(msg, NL80211_BAND_IFTYPE_ATTR_UHR_CAP_NPCA,
+			    sizeof(*npca_info),
+			    npca_info))
 			return -ENOBUFS;
 	}
 
