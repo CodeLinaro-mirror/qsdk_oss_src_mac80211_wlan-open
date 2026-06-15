@@ -1419,15 +1419,15 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
 	clear_bit(ATH12K_FLAG_FIXED_MEM_REGION, &ab->dev_flags);
 	ret = ath12k_memdev_init(ab, &ab->mlo_mem_dev, "mlo-global-mem");
 	if (ret)
-		ath12k_err(&pdev->dev,
-			"failed to init mlo mem helper device: %d, falling back to global cma\n",
-			ret);
+		ath12k_err(ab,
+			   "failed to init mlo mem helper device: %d, falling back to global cma\n",
+			   ret);
 
 	ret = ath12k_memdev_init(ab, &ab->qmi_mem_dev, "host-ddr-mem");
 	if (ret)
-		ath12k_err(&pdev->dev,
-			"failed to init qmi mem helper device: %d, falling back to global cma\n",
-			ret);
+		ath12k_err(ab,
+			   "failed to init qmi mem helper device: %d, falling back to global cma\n",
+			   ret);
 #endif
 
 	device_id = ath12k_get_device_family(pci_dev);

@@ -13,7 +13,7 @@
 #ifdef CONFIG_UPSTREAM_BUILD
 #define NUM_GENERIC_QMI_HANDLER	3
 #else
-#define NUM_GENERIC_QMI_HANDLER	5
+#define NUM_GENERIC_QMI_HANDLER	6
 #endif
 
 extern struct ath_debug_base *athdbg_base;
@@ -342,7 +342,7 @@ struct qmi_elem_info qmi_wlanfw_ddr_dump_upload_done_resp_msg_v01_ei[] = {
 #ifdef CONFIG_UPSTREAM_BUILD
 #define NUM_HANDLER 5
 #else
-#define NUM_HANDLER 9
+#define NUM_HANDLER 10
 #endif
 
 struct qmi_msg_handler *athdbg_append_dbg_handler(const struct qmi_msg_handler *handlers)
