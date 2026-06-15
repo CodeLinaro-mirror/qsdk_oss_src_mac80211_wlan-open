@@ -2857,6 +2857,15 @@ bool ieee80211_is_our_addr(struct ieee80211_sub_if_data *sdata,
 	unsigned int link_id;
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 	struct sta_info *sta;
+
+	if (sdata->wdev.vap_submode == IEEE80211_EXTN_VAP_SUBMODE_MESH) {
+		sta = sta_info_get_bss(sdata, addr);
+		if (sta) {
+			if (out_link_id && ieee80211_vif_is_mld(&sdata->vif))
+				*out_link_id = 0;
+			return true;
+		}
+	}
 #endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */
 
 	/* non-MLO, or MLD address replaced by hardware */
@@ -2879,16 +2888,6 @@ bool ieee80211_is_our_addr(struct ieee80211_sub_if_data *sdata,
 			return true;
 		}
 	}
-#ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
-	if (sdata->wdev.vap_submode == IEEE80211_EXTN_VAP_SUBMODE_MESH) {
-		sta = sta_info_get_bss(sdata, addr);
-		if (sta) {
-			/* TODO: Assign link_id properly if MLO is enabled */
-			*out_link_id = 0;
-			return true;
-		}
-	}
-#endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */
 
 	return false;
 }
