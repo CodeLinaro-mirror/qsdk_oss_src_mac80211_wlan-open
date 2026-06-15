@@ -9291,6 +9291,15 @@ skip_pending_cs_up:
 					 preamble, arvif->vdev_id);
 	}
 
+	if (changed & BSS_CHANGED_STA_NOL_CAC_DONE) {
+		if (vif->cfg.assoc && !arvif->is_up) {
+			ath12k_dp_arch_peer_assoc(ar->ab->dp, &ar->ah->dp_hw,
+						  &ahvif->dp_vif,
+						  vif->cfg.ap_addr);
+			ath12k_bss_assoc(ar, arvif, info);
+		}
+	}
+
 	if (changed & BSS_CHANGED_ASSOC) {
 		if (vif->cfg.assoc) {
 			ath12k_dp_arch_peer_assoc(ar->ab->dp, &ar->ah->dp_hw,
@@ -21588,6 +21597,27 @@ beacon_tmpl_setup:
 	if (arvif->pending_csa_up)
 		return 0;
 
+	/*
+	 * STA vdev on a NOL-history CSA target: CAC must complete before
+	 * vdev_up. mac80211 will fire BSS_CHANGED_ASSOC once CAC passes,
+	 * which re-enters ath12k_bss_assoc() and issues vdev_up then.
+	 * Clear is_up here: for the MVR path no vdev_stop was issued, so
+	 * is_up was never cleared. ath12k_bss_assoc asserts !is_up on entry.
+	 */
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
+		struct ieee80211_sub_if_data *sdata = vif_to_sdata(ahvif->vif);
+		struct ieee80211_link_data *mgd_link;
+
+		rcu_read_lock();
+		mgd_link = rcu_dereference(sdata->link[arvif->link_id]);
+		if (mgd_link && mgd_link->u.mgd.csa.nol_hist_cac_pending) {
+			arvif->is_up = false;
+			rcu_read_unlock();
+			return 0;
+		}
+		rcu_read_unlock();
+	}
+
 	if (arvif->ahvif->vdev_type != WMI_VDEV_TYPE_MONITOR && !arvif->is_up)
 		return -EOPNOTSUPP;
 
@@ -21754,6 +21784,7 @@ ath12k_mac_multi_vdev_restart(struct ath12k *ar,
 	arg.vdev_start_arg.chan_radar = !!(chandef->chan->flags & IEEE80211_CHAN_RADAR);
 	arg.vdev_start_arg.passive = arg.vdev_start_arg.chan_radar;
 	arg.vdev_start_arg.freq2_radar = radar_enabled;
+	arg.vdev_start_arg.is_stadfs_en = !!ath12k_ar_to_hw(ar)->wiphy->sta_dfs_en;
 	arg.vdev_start_arg.passive |= !!(chandef->chan->flags & IEEE80211_CHAN_NO_IR);
 
 	if (test_bit(WMI_TLV_SERVICE_SW_PROG_DFS_SUPPORT, ar->ab->wmi_ab.svc_map) &&
