@@ -19675,6 +19675,10 @@ check_rm_action_frame:
 			MGMT_RESET_LINK_AGNOSTIC(can_override_mld_tx, skb_cb);
 			break;
 		default:
+			/* Beaon Report Response should go in requested frequency */
+			if (ath12k_is_beacon_report_elem(action_code, buf,
+							 skb->data + skb->len))
+				MGMT_RESET_LINK_AGNOSTIC(can_override_mld_tx, skb_cb);
 			return -EINVAL;
 		}
 		break;
