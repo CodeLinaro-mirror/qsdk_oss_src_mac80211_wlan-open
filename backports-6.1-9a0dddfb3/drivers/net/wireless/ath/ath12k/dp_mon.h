@@ -15,6 +15,42 @@
 #include "hal_mon_cmn.h"
 #include "qcn_extns/ath12k_cmn_extn.h"
 #include "qcn_extns/dp_stats_extn.h"
+#include "dp_tx_mon.h"
+#include "qcn_extns/ini.h"
+
+#ifndef CPTCFG_QCN_EXTN
+
+#define DP_RXDMA_MON_STATUS_RING_SIZE	1024
+#define DP_RXDMA_MONITOR_DESC_RING_SIZE	4096
+
+#if defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
+#define DP_RXDMA_MONITOR_BUF_RING_SIZE  256
+#define DP_RXDMA_MONITOR_DST_RING_SIZE  512
+#define DP_MON_NUM_PPDU_DESC 8
+
+#elif defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined(CPTCFG_ATH12K_MEM_PROFILE_512M)
+#define DP_RXDMA_MONITOR_BUF_RING_SIZE  256
+#define DP_RXDMA_MONITOR_DST_RING_SIZE  512
+#define DP_MON_NUM_PPDU_DESC 128
+
+#else
+#define DP_RXDMA_MONITOR_BUF_RING_SIZE	(ath12k_dp_ring_cfg->rxdma_monitor_buf_ring_size)
+#define DP_RXDMA_MONITOR_DST_RING_SIZE	(ath12k_dp_ring_cfg->rxdma_monitor_dst_ring_size)
+#define DP_MON_NUM_PPDU_DESC	(ath12k_dp_ring_cfg->mon_num_ppdu_desc)
+#endif
+
+#else
+#define DP_RXDMA_MON_STATUS_RING_SIZE(ab)	ath12k_cfg_get(ab, \
+	ATH12K_CFG_DP_RXDMA_MON_STATUS_RING_SIZE)
+#define DP_RXDMA_MONITOR_DESC_RING_SIZE(ab)	ath12k_cfg_get(ab, \
+	ATH12K_CFG_DP_RXDMA_MONITOR_DESC_RING_SIZE)
+#define DP_RXDMA_MONITOR_BUF_RING_SIZE(ab)	ath12k_cfg_get(ab, \
+	ATH12K_CFG_DP_RXDMA_MONITOR_BUF_RING_SIZE)
+#define DP_RXDMA_MONITOR_DST_RING_SIZE(ab)	ath12k_cfg_get(ab, \
+	ATH12K_CFG_DP_RXDMA_MONITOR_DST_RING_SIZE)
+#define DP_MON_NUM_PPDU_DESC(ab)		ath12k_cfg_get(ab, \
+	ATH12K_CFG_DP_MON_NUM_PPDU_DESC)
+#endif
 
 #define ATH12K_DP_MON_TX_BUF_SIZE	2048
 #define ATH12K_DP_MON_RX_BUF_SIZE	2048
@@ -34,25 +70,18 @@
 #define	ATH12K_DP_MON_KEYIV			0x20
 #define ATH12K_DP_MON_ETH_TYPE_VLAN_LEN		4
 #define ATH12K_DP_MON_ETH_TYPE_DOUBLE_VLAN_LEN	8
+#define DP_RXDMA_MONITOR_DEFAULT_RING_FILL_LVL 1024
 
-#define DP_RXDMA_MON_STATUS_RING_SIZE	1024
-#define DP_RXDMA_MONITOR_DESC_RING_SIZE	4096
 #if defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
-#define DP_RXDMA_MONITOR_BUF_RING_SIZE  256
-#define DP_RXDMA_MONITOR_DST_RING_SIZE  512
 #define ATH12K_DP_SMART_MON_FILTER_DEFAULT	(DP_SMART_MON_PROFILE_256M | \
 						 (DP_SMART_MON_FILTER_MASK & \
 						  ~DP_SMART_MON_VALID))
 #elif defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined(CPTCFG_ATH12K_MEM_PROFILE_512M)
-#define DP_RXDMA_MONITOR_BUF_RING_SIZE  256
-#define DP_RXDMA_MONITOR_DST_RING_SIZE  512
 #define ATH12K_DP_SMART_MON_FILTER_DEFAULT	(DP_SMART_MON_PROFILE_512M | \
 						 (DP_SMART_MON_FILTER_MASK & \
 						  ~DP_SMART_MON_VALID))
 #else
-#define DP_RXDMA_MONITOR_BUF_RING_SIZE 8192
-#define DP_RXDMA_MONITOR_DST_RING_SIZE 8192
-#define ATH12K_DP_SMART_MON_FILTER_DEFAULT	DP_SMART_MON_PROFILE_1G
+#define ATH12K_DP_SMART_MON_FILTER_DEFAULT (ath12k_dp_ring_cfg->smart_mon_filter_default)
 #endif
 #define DP_TX_MONITOR_BUF_RING_SIZE	8192
 #define DP_TX_MONITOR_DEST_RING_SIZE	8192
@@ -87,10 +116,8 @@
 
 #if defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
 #define ATH12K_DP_MON_STATUS_BUF   20
-#define ATH12K_DP_MON_NUM_PPDU_DESC 8
 #else
-#define ATH12K_DP_MON_STATUS_BUF   320
-#define ATH12K_DP_MON_NUM_PPDU_DESC 128
+#define ATH12K_DP_MON_STATUS_BUF   (ath12k_dp_ring_cfg->dp_mon_status_buf)
 #endif
 
 #define ATH12K_EXT_MON_MAX_PEERS	16
@@ -98,11 +125,12 @@
 
 #define ATH12K_EXT_MON_METADATA_RTAP_HDR	BIT(0)
 #define ATH12K_EXT_MON_METADATA_META_HDR	BIT(1)
+#define ATH12K_EXT_MON_METADATA_OFFCHAN_PKT	BIT(2)
 #define ATH12K_EXT_MON_METADATA_VALID_MASK \
 	(ATH12K_EXT_MON_METADATA_RTAP_HDR | \
-	 ATH12K_EXT_MON_METADATA_META_HDR)
+	 ATH12K_EXT_MON_METADATA_META_HDR | \
+	 ATH12K_EXT_MON_METADATA_OFFCHAN_PKT)
 
-#define ATH12K_EXT_MON_MAX_PEERS		16
 #define ATH12K_EXT_MON_DEFAULT_PEER_BITMAP	0xFF
 
 #define ATH12K_FC0_TYPE_SHIFT		2
@@ -127,6 +155,7 @@ struct dp_rxdma_mon_ring {
 	/* Protects bufs_idr */
 	spinlock_t idr_lock;
 	int bufs_max;
+	int bufs_fill_lvl;
 };
 
 struct dp_mon_desc_list_params {
@@ -234,6 +263,8 @@ struct ath12k_dp_arch_mon_ops {
 	int (*mon_tx_filter_update)(struct ath12k_pdev_dp *dp_pdev);
 	int (*mon_tx_dst_ring_alloc_setup)(struct ath12k_pdev_dp *dp_pdev, u32 mac_id);
 	void (*mon_tx_dst_ring_cleanup)(struct ath12k_pdev_dp *dp_pdev);
+	int (*mon_tx_wq_start)(struct ath12k_pdev_dp *dp_pdev, u32 mac_id);
+	void (*mon_tx_wq_stop)(struct ath12k_pdev_dp *dp_pdev);
 };
 
 /**
@@ -281,6 +312,11 @@ struct ath12k_dp_mon {
 	u32 tx_num_frag_replenish;
 	u32 tx_num_frag_free;
 	bool tx_mon_buf_ring_ready;
+	u32 mon_status_ring_size;
+	u32 mon_desc_ring_size;
+	u32 mon_buf_ring_size;
+	u32 mon_dst_ring_size;
+	u32 mon_num_ppdu_desc;
 };
 
 enum dp_monitor_type {
@@ -558,37 +594,41 @@ struct ath12k_pdev_mon_dp_stats {
 	u32 status_buf_reaped;
 	u32 status_buf_processed;
 	u32 status_buf_free;
-
+	u32 status_buf_error_free;
 	u32 ring_desc_empty;
 	u32 ring_desc_flush;
 	u32 ring_desc_trunc;
-
 	u32 pkt_tlv_processed;
 	u32 pkt_tlv_free;
+	u32 pkt_tlv_error_free;
 	u32 pkt_tlv_to_mac80211;
 	u32 pkt_tlv_truncated;
-
+	u32 pkt_tlv_reaped;
 	u32 num_skb_alloc;
 	u32 num_skb_free;
 	u32 num_skb_to_mac80211;
-
 	u32 num_ppdu_reaped;
 	u32 num_ppdu_processed;
-
 	u32 num_skb_raw;
 	u32 num_frag_raw;
-
 	u32 num_skb_eth;
 	u32 num_frag_eth;
-
 	u32 drop_tlv;
-
 	u32 ppdu_desc_used;
 	u32 ppdu_desc_proc;
 	u32 ppdu_desc_free;
-
 	u32 ppdu_desc_free_list_empty_cnt;
 	u32 restitch_insuff_frags_cnt;
+	u32 invalid_status_magic_num;
+	u32 invalid_pkt_magic_num;
+	u32 null_mpdu_q;
+	u32 skb_alloc_fail;
+	u32 rx_hdr_not_rcvd;
+	u32 min_frags_unavailable;
+	u32 invalid_mpdu_hdr_len;
+	u32 invalid_in_use;
+	u32 invalid_end_offset;
+	u32 status_frag_add_to_skb;
 };
 
 /**
@@ -653,16 +693,17 @@ struct ath12k_pdev_tx_mon_stats {
 struct ath12k_dp_mon_status_desc {
 	dma_addr_t paddr;
 	u8 *mon_buf;
-	u32 buf_len;
-	bool end_of_ppdu;
-};
+	u16 buf_len:12,
+	    end_of_ppdu:1;
+} __packed;
 
 /**
  * struct ath12k_dp_mon_ppdu_desc - TX Monitor PPDU Descriptor
  * @list: List entry for PPDU descriptor management
  * @ppdu_id: Unique PPDU identifier from hardware
  * @timestamp: PPDU timestamp for correlation
- * @status_desc: Array of status descriptors containing TLV data
+ * @status_desc: Pointer to dynamically allocated array of status
+ *               descriptors containing TLV data
  * @status_desc_cnt: Number of valid status descriptors in the array
  *
  * This structure represents a complete PPDU for TX monitor processing.
@@ -671,12 +712,16 @@ struct ath12k_dp_mon_status_desc {
  *
  * The structure is allocated from a free list during ring processing
  * and queued for work queue processing when end_of_ppdu is detected.
+ *
+ * Note: status_desc is dynamically allocated to support runtime configuration
+ * of ATH12K_DP_MON_STATUS_BUF size. Memory must be allocated during initialization
+ * and freed during cleanup.
  */
 struct ath12k_dp_mon_ppdu_desc {
 	struct list_head list;
 	u32 ppdu_id;
 	u32 timestamp;
-	struct ath12k_dp_mon_status_desc status_desc[ATH12K_DP_MON_STATUS_BUF];
+	struct ath12k_dp_mon_status_desc *status_desc;
 	u32 status_desc_cnt;
 };
 
@@ -861,9 +906,16 @@ struct ath12k_dp_mon_desc {
 	u8 *mon_buf;
 	dma_addr_t paddr;
 	u32 magic;
-	u16 buf_len;
-	u8 in_use;
-	u8 end_of_ppdu;
+	u16 buf_len:12,
+	    in_use:3,
+	    end_of_ppdu:1;
+} __packed;
+
+enum ath12k_ext_mon_cmd_type {
+	ATH12K_EXT_MON_CMD_TYPE_SET_FILTER = 1,
+	ATH12K_EXT_MON_CMD_TYPE_GET_FILTER = 2,
+	ATH12K_EXT_MON_CMD_TYPE_SET_PEER = 3,
+	ATH12K_EXT_MON_CMD_TYPE_GET_PEER = 4,
 };
 
 enum ath12k_ext_mon_frame_len {
@@ -1003,25 +1055,18 @@ int ath12k_dp_mon_buf_replenish(struct ath12k_dp *dp,
 				struct dp_rxdma_mon_ring *buf_ring,
 				int req_entries,
 				struct dp_mon_desc_list_params *list_params);
-struct sk_buff *ath12k_dp_mon_tx_alloc_skb(void);
-enum hal_tx_mon_status
-ath12k_dp_mon_tx_parse_mon_status(struct ath12k_pdev_dp *dp_pdev,
-				  struct ath12k_mon_data *pmon,
-				  struct sk_buff *skb,
-				  struct napi_struct *napi,
-				  u32 ppdu_id);
 void ath12k_dp_mon_rx_process_ulofdma_stats(struct hal_rx_mon_ppdu_info *ppdu_info);
 int ath12k_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int mac_id,
 				       struct napi_struct *napi, int *budget);
-int ath12k_dp_get_peer_telemetry_stats(struct ath12k_base *ab,
-                                      const u8 *peer_addr,
-                                      struct ath12k_peer_telemetry_stats *stats);
+void ath12k_dp_mon_peer_telemetry_stats(const struct ath12k_dp_link_peer *peer,
+					struct ath12k_peer_telemetry_stats *stats);
 
 int ath12k_dp_mon_pdev_update_telemetry_stats(struct ath12k_base *ab,
                                              int pdev_id);
 
 void ath12k_dp_rxdma_mon_buf_ring_free(struct ath12k_dp *dp,
 				       struct dp_rxdma_mon_ring *rx_ring);
+void ath12k_dp_mon_cfg_init(struct ath12k_dp *dp);
 int ath12k_dp_mon_rx_srng_setup(struct ath12k_dp *dp);
 void ath12k_dp_mon_rx_srng_cleanup(struct ath12k_dp *dp);
 int ath12k_dp_mon_rx_buf_setup(struct ath12k_dp *dp);
@@ -1059,6 +1104,7 @@ void ath12k_dp_mon_rx_nrp_set(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_rx_nrp_reset(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_rx_smart_mon_set(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_rx_smart_mon_reset(struct ath12k_pdev_dp *dp_pdev);
+int ath12k_dp_mon_rx_monitor_mode_buf_setup(struct ath12k *ar);
 size_t ath12k_dp_mon_list_cut_nodes(struct list_head *list, struct list_head *head,
 				    size_t count);
 void ath12k_dp_mon_rx_deliver_skb(struct ath12k_pdev_dp *dp_pdev,
@@ -1083,7 +1129,6 @@ void ath12k_dp_mon_add_rx_frag(struct sk_buff *skb, const void *mon_buf,
 			       int offset, int frag_len, bool take_frag_ref);
 int ath12k_dp_mon_get_puncture_type(u16 puncture_pattern, u8 bw);
 void ath12k_dp_mon_rx_process_low_thres(struct ath12k_dp *dp);
-void ath12k_dp_mon_tx_process_low_thres(struct ath12k_dp *dp);
 void
 ath12k_dp_mon_cnt_skb_and_frags(struct sk_buff *skb, u32 *skb_count, u32 *frag_count);
 void ath12k_dp_mon_pktlog_config_filter(struct ath12k_pdev_dp *dp_pdev,
@@ -1104,33 +1149,25 @@ void ath12k_dp_ext_mon_process_request(struct ath12k_pdev_dp *dp_pdev,
 int ath12k_dp_ext_mon_alloc(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_ext_mon_free(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_ext_mon_reset(struct ath12k_pdev_dp *dp_pdev);
+void ath12k_dp_ext_mon_update_snr(struct hal_rx_mon_ppdu_info *ppdu_info,
+				  struct ath12k_dp_rx_ext_mon *config);
 
-int ath12k_dp_mon_tx_wq_start(struct ath12k_pdev_dp *dp_pdev, u32 mac_id);
-void ath12k_dp_mon_tx_wq_stop(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_reset_ppdu_desc(struct ath12k_dp_mon_ppdu_desc *ppdu_desc);
-#ifdef CPTCFG_ATH12K_TX_MONITOR
-int ath12k_dp_mon_tx_srng_alloc_setup(struct ath12k_dp *dp);
-void ath12k_dp_mon_tx_srng_cleanup(struct ath12k_dp *dp);
-int ath12k_dp_mon_tx_dst_ring_alloc_setup(struct ath12k_pdev_dp *dp_pdev, u32 mac_id);
-void ath12k_dp_mon_tx_dst_ring_cleanup(struct ath12k_pdev_dp *dp_pdev);
-int ath12k_dp_mon_tx_htt_srng_setup(struct ath12k_dp *dp);
-void ath12k_dp_mon_tx_htt_srng_cleanup(struct ath12k_dp *dp);
-int ath12k_dp_mon_tx_config_filter(struct ath12k_pdev_dp *dp_pdev, bool enable);
-#endif
-int ath12k_dp_mon_tx_desc_pool_alloc(struct ath12k_dp *dp);
-void ath12k_dp_mon_tx_desc_pool_free(struct ath12k_dp *dp);
-int ath12k_dp_mon_tx_buff_alloc(struct ath12k_dp *dp);
-int ath12k_dp_mon_tx_htt_dst_ring_setup(struct ath12k_pdev_dp *dp_pdev, u32 mac_id);
-int ath12k_dp_mon_tx_monitor_start_stop(struct ath12k *ar, bool state);
-int ath12k_dp_mon_tx_set_monitor_flags(struct ath12k *ar, u32 new_flags, u32 *cur_flags);
-int ath12k_dp_mon_get_link_peer_rssi(struct ath12k *ar, const u8 *peer_mac,
+int ath12k_dp_mon_get_link_peer_rssi(void *ptr, const u8 *peer_mac,
 				     s8 *min_rssi, s8 *max_rssi);
-bool ath12k_dp_tx_mon_feature_eval(struct ath12k_dp *dp);
+size_t
+ath12k_dp_mon_get_free_desc_list(struct ath12k_dp *dp,
+				 struct dp_rxdma_mon_ring *rx_ring,
+				 struct dp_mon_desc_list_params *list_params,
+				 size_t max_entries);
 void ath12k_dp_rx_pktlog_process(struct ath12k_pdev_dp *dp_pdev,
 				 struct ath12k_dp_mon_status_desc *status_desc);
 void ath12k_dp_mon_rx_process_dest_pktlog(struct ath12k_pdev_dp *dp_pdev,
 					  struct sk_buff *skb,
 					  struct hal_rx_mon_ppdu_info *ppdu_info);
+int ath12k_dp_mon_rx_wq_init_common(struct ath12k_pdev_dp *dp_pdev,
+				    void (*work_handler)(struct work_struct *));
+
 
 static inline
 int ath12k_dp_mon_rx_alloc(struct ath12k_dp *dp)
@@ -1339,34 +1376,6 @@ int ath12k_dp_mon_pdev_rx_htt_setup(struct ath12k_pdev_dp *dp_pdev, u32 mac_id)
 		}
 	}
 	return 0;
-}
-
-static inline
-int ath12k_dp_mon_tx_update_filter(struct ath12k *ar)
-{
-	struct ath12k_base *ab;
-	struct ath12k_dp *dp;
-	const struct ath12k_dp_arch_mon_ops *mon_ops;
-	struct ath12k_pdev_dp *dp_pdev;
-	int ret = -EINVAL;
-
-	if (unlikely(!ar || !ar->ab)) {
-		ath12k_err(NULL, "Invalid Radio / Radio base\n");
-		return -EINVAL;
-	}
-
-	ab = ar->ab;
-	dp_pdev = &ar->dp;
-	dp = ath12k_ab_to_dp(ab);
-	mon_ops = ath12k_dp_mon_ops_get(dp);
-
-	if (mon_ops && dp_pdev && mon_ops->mon_tx_filter_update)
-		ret = mon_ops->mon_tx_filter_update(dp_pdev);
-
-	if (ret)
-		ath12k_warn(ab, "Tx Mon : Filter update failed\n");
-
-	return ret;
 }
 
 static inline
@@ -1731,175 +1740,6 @@ ath12k_dp_smart_mon_enabled(struct ath12k *ar)
 	return false;
 }
 
-static inline
-int ath12k_dp_mon_tx_srng_alloc(struct ath12k_dp *dp)
-{
-	const struct ath12k_dp_arch_mon_ops *mon_ops;
-	int ret = 0;
-
-	if (!ath12k_dp_tx_mon_feature_eval(dp))
-		return 0;
-
-	mon_ops = ath12k_dp_mon_ops_get(dp);
-
-	if (!mon_ops) {
-		ath12k_err(dp->ab, "TX Monitor: No monitor ops available");
-		return -EINVAL;
-	}
-
-	if (mon_ops->mon_tx_srng_alloc_setup) {
-		ret = mon_ops->mon_tx_srng_alloc_setup(dp);
-		if (ret)
-			ath12k_err(dp->ab, "TX Monitor: SRNG setup failed, ret=%d", ret);
-	}
-
-	return ret;
-}
-
-static inline
-void ath12k_dp_mon_tx_htt_src_ring_cleanup(struct ath12k_dp *dp)
-{
-	const struct ath12k_dp_arch_mon_ops *mon_ops  = ath12k_dp_mon_ops_get(dp);
-
-	if (mon_ops && mon_ops->mon_tx_htt_srng_cleanup)
-		mon_ops->mon_tx_htt_srng_cleanup(dp);
-}
-
-static inline
-void ath12k_dp_mon_tx_srng_free(struct ath12k_dp *dp)
-{
-	const struct ath12k_dp_arch_mon_ops *mon_ops;
-
-	if (!ath12k_dp_tx_mon_feature_eval(dp))
-		return;
-
-	mon_ops = ath12k_dp_mon_ops_get(dp);
-
-	ath12k_dp_mon_tx_htt_src_ring_cleanup(dp);
-
-	if (mon_ops && mon_ops->mon_tx_srng_cleanup)
-		mon_ops->mon_tx_srng_cleanup(dp);
-}
-
-static inline
-int ath12k_dp_mon_tx_pdev_alloc(struct ath12k_pdev_dp *dp_pdev,
-				u32 mac_id)
-{
-	struct ath12k_dp *dp;
-	const struct ath12k_dp_arch_mon_ops *mon_ops;
-	int ret = 0;
-
-	if (unlikely(!dp_pdev)) {
-		ath12k_err(NULL, "Tx Mon: Invalid DP Pdev\n");
-		return -EINVAL;
-	}
-
-	dp = dp_pdev->dp;
-	if (!ath12k_dp_tx_mon_feature_eval(dp))
-		return 0;
-
-	mon_ops = ath12k_dp_mon_ops_get(dp);
-
-	if (!mon_ops) {
-		ath12k_warn(dp, "Tx Mon: mon ops is NULL\n");
-		return -EINVAL;
-	}
-
-	if (mon_ops->mon_tx_dst_ring_alloc_setup) {
-		ret = mon_ops->mon_tx_dst_ring_alloc_setup(dp_pdev, mac_id);
-		if (ret) {
-			ath12k_warn(dp, "Tx Mon: failed to alloc dst ring\n");
-			return ret;
-		}
-	}
-
-	ret = ath12k_dp_mon_tx_wq_start(dp_pdev, mac_id);
-	if (ret)
-		ath12k_warn(dp, "failed to start TX mon WQ for mac_id %d: %d\n",
-			    mac_id, ret);
-
-	return ret;
-}
-
-static inline
-void ath12k_dp_mon_tx_pdev_free(struct ath12k_pdev_dp *dp_pdev)
-{
-	struct ath12k_dp *dp;
-	const struct ath12k_dp_arch_mon_ops *mon_ops;
-
-	if (unlikely(!dp_pdev)) {
-		ath12k_err(NULL, "Tx Mon: Invalid DP Pdev\n");
-		return;
-	}
-
-	dp = dp_pdev->dp;
-	if (!ath12k_dp_tx_mon_feature_eval(dp))
-		return;
-
-	mon_ops = ath12k_dp_mon_ops_get(dp);
-
-	if (!mon_ops)
-		return;
-
-	ath12k_dp_mon_tx_wq_stop(dp_pdev);
-	if (mon_ops->mon_tx_dst_ring_cleanup)
-		mon_ops->mon_tx_dst_ring_cleanup(dp_pdev);
-}
-
-static inline
-int ath12k_dp_mon_tx_htt_src_ring_setup(struct ath12k_dp *dp)
-{
-	const struct ath12k_dp_arch_mon_ops *mon_ops;
-	int ret = -EINVAL;
-
-	mon_ops = ath12k_dp_mon_ops_get(dp);
-
-	if (mon_ops && mon_ops->mon_tx_htt_srng_setup) {
-		ret = mon_ops->mon_tx_htt_srng_setup(dp);
-		if (ret)
-			ath12k_err(dp->ab, "TX Monitor: srng htt setup failed(%d)", ret);
-	}
-
-	return ret;
-}
-
-static inline
-int ath12k_dp_mon_tx_config_monitor_mode(struct ath12k *ar, bool set)
-{
-	struct ath12k_base *ab;
-	struct ath12k_dp *dp;
-	const struct ath12k_dp_arch_mon_ops *mon_ops;
-	struct ath12k_pdev_dp *dp_pdev;
-	int ret = -EINVAL;
-
-	if (unlikely(!ar || !ar->ab)) {
-		ath12k_err(NULL, "Invalid Radio / Radio base\n");
-		return -EINVAL;
-	}
-
-	ab = ar->ab;
-	dp = ath12k_ab_to_dp(ab);
-	mon_ops = ath12k_dp_mon_ops_get(dp);
-	dp_pdev = &ar->dp;
-
-	if (set) {
-		ret = ath12k_dp_mon_tx_htt_src_ring_setup(dp);
-		if (ret) {
-			ath12k_err(dp->ab, "TX Monitor: HTT setup failed, ret=%d", ret);
-			return ret;
-		}
-	}
-
-	if (mon_ops && mon_ops->mon_tx_filter_configure) {
-		ret = mon_ops->mon_tx_filter_configure(dp_pdev, set);
-		if (ret)
-			ath12k_err(dp->ab, "TX Monitor: Filter config failed, ret=%d",
-				   ret);
-	}
-
-	return ret;
-}
-
 static inline void
 ath12k_dp_rx_scan_radio_stats_reset(struct ath12k_hw *ah)
 {
@@ -1996,4 +1836,24 @@ ath12k_dp_ext_mon_find_mon_vdev_id(struct ath12k_pdev_dp *dp_pdev)
 	}
 	return -1;
 }
+
+static inline u8
+ath12k_dp_get_avg_snr(u8 snr, u8 avg_snr)
+{
+	/* Calculating the moving average of SNR */
+	if (avg_snr != 0) {
+		avg_snr =
+			((avg_snr -
+			  (avg_snr >> 2)) +
+			  (snr >> 2));
+	} else {
+		/* First sample */
+		avg_snr = snr;
+	}
+
+	return avg_snr;
+}
+
+void ath12k_dp_mon_peer_telemetry_stats(const struct ath12k_dp_link_peer *peer,
+					struct ath12k_peer_telemetry_stats *stats);
 #endif

@@ -27,6 +27,14 @@ u16 ath12k_wifi8_msduq_sam_id_alloc(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_w
 		if (msduq_sam_id >= MAX_NUM_SAM_MSDU_QUEUES_SUPPORTED)
 			msduq_sam_id = MAX_NUM_SAM_RESERVED_MSDU_QUEUES;
 
+		/* SAM supports queue IDs from a single slice range (slize size: 256)
+		 * due to v1 hardware limitations.
+		 * TODO: Remove after v2 hardware.
+		 */
+		if (msduq_sam_id < HAL_SAM_QUEUE_SLICE_START_IDX ||
+		    msduq_sam_id > HAL_SAM_QUEUE_SLICE_END_IDX)
+			continue;
+
 		if (test_bit(msduq_sam_id, dp_hw_grp_wifi8->msduq_sam_id_alloc_map))
 			continue;
 
@@ -46,11 +54,38 @@ u16 ath12k_wifi8_msduq_sam_id_alloc(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_w
 void ath12k_wifi8_clear_msduq_sam_id(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8,
 				     struct ath12k_dp_msdu_q_info *sw_msduq_ptr)
 {
+	struct ath12k_base *ab = NULL;
+	struct ath12k_dp_wifi8 *dp_wifi8 = NULL;
+	struct hal_srng *srng = NULL;
+	int ret;
+
+	if (!dp_hw_grp_wifi8)
+		return;
+
+	if (dp_hw_grp_wifi8->cumac_dp && dp_hw_grp_wifi8->cumac_dp->ab) {
+		ab = dp_hw_grp_wifi8->cumac_dp->ab;
+		dp_wifi8 = ath12k_get_dp_wifi8(dp_hw_grp_wifi8->cumac_dp);
+		srng = &ab->hal.srng_list[dp_wifi8->sam_cmd_ring.ring_id];
+	}
+
 	if (sw_msduq_ptr->msduq_sam_id != HAL_SAM_INVALID_MSDUQ_ID) {
 		spin_lock_bh(&dp_hw_grp_wifi8->sam_id_lock);
 		clear_bit(sw_msduq_ptr->msduq_sam_id,
 			  dp_hw_grp_wifi8->msduq_sam_id_alloc_map);
 		spin_unlock_bh(&dp_hw_grp_wifi8->sam_id_lock);
+
+		/* Send sam msduq clear command for `msduq_sam_id` to FW.*/
+		if (ab && srng) {
+			ret = ath12k_wifi8_hal_tx_sam_cmd_send
+						(ab, srng, -1,
+						 HAL_SAM_MSDU_QUEUE_CLEAR_PROGRAMMING_BO,
+						 sw_msduq_ptr->msduq_sam_id, false);
+
+			if (ret < 0)
+				ath12k_warn(ab,
+					    "failed to send SAM msdu clear command for %d: %d\n",
+					    sw_msduq_ptr->msduq_sam_id, ret);
+		}
 	}
 }
 
@@ -85,16 +120,71 @@ struct ath12k_dp_msdu_q_info
 	sw_msduq_ptr->flow_info.peer_id = peer->peer_id;
 	sw_msduq_ptr->allocated = 1;
 	sw_msduq_ptr->svc_id = ATH12K_INVALID_SVC_ID;
+	sw_msduq_ptr->svc = HAL_TQM_SERVICE_CATEGORY_MAX;
 
 	return sw_msduq_ptr;
+}
+
+static enum wmi_phy_mode
+ath12k_wifi8_dp_get_phymode(struct ath12k_dp_hw_group *dp_hw_grp,
+			    struct ath12k_dp_peer *peer)
+{
+	struct ath12k_base *ab = ath12k_dp_get_ab_from_dp_hw_group(dp_hw_grp);
+	unsigned long peer_links_map, scan_links_map;
+	struct ath12k_dp_link_vif *dp_link_vif;
+	enum wmi_phy_mode phymode = MODE_11A;
+	struct ath12k_dp_link_peer *link_peer;
+	struct ath12k_link_sta *arsta;
+	struct ieee80211_vif *vif;
+	struct ath12k_vif *ahvif;
+	u8 link_id;
+
+	if (peer->is_vdev_peer) {
+		link_id = peer->hw_links[peer->hw_link_id];
+
+		vif = ath12k_dp_peer_get_vif(peer);
+		if (vif) {
+			ahvif = ath12k_vif_to_ahvif(vif);
+			dp_link_vif = &ahvif->dp_vif.dp_link_vif[link_id];
+			if (dp_link_vif)
+				phymode = dp_link_vif->phymode;
+		}
+	} else {
+		peer_links_map = peer->peer_links_map;
+		scan_links_map = ATH12K_SCAN_LINKS_MASK;
+
+		rcu_read_lock();
+		for_each_andnot_bit(link_id, &peer_links_map,
+				    &scan_links_map,
+				    ATH12K_NUM_MAX_LINKS) {
+			link_peer = rcu_dereference(peer->link_peers[link_id]);
+			if (!link_peer)
+				continue;
+
+			arsta = ath12k_peer_get_link_sta(ab, link_peer);
+			if (!arsta) {
+				ath12k_warn(ab, "Not able to found arsta for the peer %pM with link id %d\n",
+					    peer->addr, link_peer->link_id);
+				continue;
+			}
+
+			phymode = max(phymode, arsta->phymode);
+		}
+		rcu_read_unlock();
+	}
+
+	return phymode;
 }
 
 int ath12k_init_tx_msdu_flowq(struct ath12k_dp_hw_group *dp_hw_grp,
 			      struct ath12k_dp_peer *peer,
 			      struct ath12k_dp_msdu_q_info *sw_msduq_ptr)
 {
+	struct ath12k_base *ab = ath12k_dp_get_ab_from_dp_hw_group(dp_hw_grp);
 	struct hal_tx_msdu_flow_info ti = {0};
 	u8 tid_num = sw_msduq_ptr->flow_info.tid_num;
+	enum wmi_phy_mode phymode;
+	enum wme_ac ac;
 
 	ti.paddr = sw_msduq_ptr->msdu_q_paddr;
 	ti.queue_number = (sw_msduq_ptr->queue_number & 0xFFFFFF);
@@ -103,19 +193,47 @@ int ath12k_init_tx_msdu_flowq(struct ath12k_dp_hw_group *dp_hw_grp,
 	ti.msduq_sam_id = sw_msduq_ptr->msduq_sam_id;
 
 	ti.stats_id = peer->stats_id;
+	ti.tid = ath12k_dp_tx_get_tid(tid_num);
 
 	if (tid_num == MLO_MGMT_TID) {
 		ti.is_mgmtq = true;
-		ti.tid = TQM_NON_DATA_TID;
+		ti.svc = HAL_TQM_SERVICE_CATEGORY_MAX;
 	} else {
-		/*
-		 *  NON_QOS_TID is enum 16 but MSDU HW struct has
-		 *   only 4 bits tid; hence setting to 15 (TQM_NON_DATA_TID)
-		 */
-		ti.tid = (tid_num < NON_QOS_TID) ? tid_num : TQM_NON_DATA_TID;
+		phymode = ath12k_wifi8_dp_get_phymode(dp_hw_grp, peer);
+
+		/* Map the sevice category */
+		ac = ath12k_tid_to_ac(ti.tid > ATH12K_DSCP_PRIORITY ? 0 : ti.tid);
+		switch (ac) {
+		case WME_AC_BE:
+			fallthrough;
+		case WME_AC_BK:
+			if (phymode >= MODE_11AC_VHT20 && phymode <= MODE_11BN_UHR40_2G)
+				ti.svc = HAL_TQM_SERVICE_CATEGORY_SC2;
+			else
+				ti.svc = HAL_TQM_SERVICE_CATEGORY_SC3;
+			break;
+		case WME_AC_VI:
+			fallthrough;
+		case WME_AC_VO:
+			if (phymode >= MODE_11AC_VHT20 && phymode <= MODE_11BN_UHR40_2G)
+				ti.svc = HAL_TQM_SERVICE_CATEGORY_SC0;
+			else
+				ti.svc = HAL_TQM_SERVICE_CATEGORY_SC1;
+			break;
+		default:
+			ath12k_warn(ab, "invalid AC %d for the tid %d peer %pM\n",
+				    ac, ti.tid, peer->addr);
+			ti.svc = HAL_TQM_SERVICE_CATEGORY_MAX;
+			break;
+		}
 	}
 	if (peer->is_mlo)
 		ti.mlo = 1;
+
+	sw_msduq_ptr->svc = ti.svc;
+
+	ath12k_dbg(ab, ATH12K_DBG_DP_TX, "Peer %pM tid %d svc %d flow 0x%x MSDUQ setup\n",
+		   peer->addr, ti.tid, ti.svc, ti.queue_number);
 
 	return ath12k_wifi8_hal_tx_msdu_queue_setup(dp_hw_grp,
 						    sw_msduq_ptr->msduq_idx,
@@ -133,8 +251,8 @@ u8 ath12k_dp_get_chipid_bitmap(struct ath12k_dp_hw_group *dp_hw_grp,
 	u8 bitmap = 0;
 
 	rcu_read_lock();
-	for (i = 0; i < ATH12K_NUM_MAX_LINKS; i++) {
-		link_peer = rcu_dereference(dp_peer->link_peers[i]);
+	for (i = 0; i < ATH12K_DP_PEER_MAX_MLO_LINKS; i++) {
+		link_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, i);
 		if (!link_peer)
 			continue;
 
@@ -220,10 +338,20 @@ void ath12k_free_tx_msdu_flowq(struct ath12k_dp_hw_group *dp_hw_grp,
 {
 	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8 =
 				ath12k_get_dp_hw_group_wifi8(dp_hw_grp);
+	struct ath12k_wifi8_dp_congestion_control *congstn =
+				&dp_hw_grp_wifi8->congstn;
 	struct hal_tx_msdu_flow *msduq;
 
 	if (!sw_msduq_ptr)
 		return;
+
+	/* Remove from per-service-category threshold_list if tracked */
+	if (sw_msduq_ptr->in_threshold_list) {
+		spin_lock_bh(&congstn->threshold_list_lock);
+		list_del(&sw_msduq_ptr->threshold_node);
+		sw_msduq_ptr->in_threshold_list = false;
+		spin_unlock_bh(&congstn->threshold_list_lock);
+	}
 
 	spin_lock_bh(&dp_hw_grp_wifi8->tx_pool_lock);
 	sw_msduq_ptr->allocated = 0;

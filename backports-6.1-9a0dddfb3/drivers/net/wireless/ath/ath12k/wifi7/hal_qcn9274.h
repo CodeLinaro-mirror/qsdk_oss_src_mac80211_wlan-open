@@ -327,4 +327,3 @@ void ath12k_wifi7_hal_rx_desc_get_fse_info_qcn9274(struct hal_rx_desc *desc,
 			      ATH12K_DP_RX_FSE_FLOW_METADATA_MASK);
 #endif
 }
-

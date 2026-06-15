@@ -8,6 +8,7 @@
 
 #include <linux/mhi.h>
 #include <linux/timer.h>
+#include <linux/pci.h>
 
 #include "core.h"
 

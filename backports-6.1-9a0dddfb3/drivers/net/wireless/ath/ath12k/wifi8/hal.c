@@ -17,17 +17,6 @@
 #include "ppeds.h"
 #include "../hal.h"
 
-const struct ath12k_hw_version_map ath12k_wifi8_hw_ver_map[] = {
-	[ATH12K_HW_QCN9625_HW10] = {
-		.hal_params = &ath12k_wifi8_hw_hal_params_qcn9625,
-		.hw_regs = &qcn9625_regs,
-	},
-	[ATH12K_HW_QCN9589_HW10] = {
-		.hal_params = &ath12k_wifi8_hw_hal_params_qcn9625,
-		.hw_regs = &qcn9625_regs,
-	},
-};
-
 static unsigned int ath12k_hal_reo1_ring_id_offset(struct ath12k_hal *hal)
 {
 	return HAL_REO1_RING_ID(hal) - HAL_REO1_RING_BASE_LSB(hal);
@@ -845,6 +834,13 @@ void ath12k_wifi8_hal_get_hw_hptp(struct ath12k_base *ab, enum hal_ring_type typ
 
 		*hp = ath12k_hif_read32(ab, reg_base);
 		*tp = ath12k_hif_read32(ab, reg_base + HAL_TCL1_RING_TP_OFFSET);
+	} else if (srng_config->reg_writer_en) {
+		if (srng_config->ring_dir == HAL_SRNG_DIR_SRC)
+			*hp = ath12k_hif_read32(ab,
+						(unsigned long)srng->u.src_ring.hp_addr);
+		else
+			*tp = ath12k_hif_read32(ab,
+						(unsigned long)srng->u.dst_ring.tp_addr);
 	}
 }
 
@@ -976,6 +972,13 @@ void ath12k_wifi8_hal_tx_set_ppe_vp_entry(struct ath12k_base *ab,
 		u32_encode_bits(lmac_id, HAL_TX_PPE_VP_CFG_LMAC_ID) |
 		u32_encode_bits(vdev_id, HAL_TX_PPE_VP_CFG_VDEV_ID);
 
+	ath12k_dbg(ab, ATH12K_DBG_HAL,
+			"PPE_VP valid:%d srch_idx:%u bank_id:%u lmac_id:%u vdev_id:%u\n",
+			ppe_vp_profile->entry_valid,
+			ppe_vp_profile->search_idx_reg_num,
+			bank_id,
+			lmac_id,
+			vdev_id);
 reg_write:
 	ath12k_hif_write32(central_ab, HAL_TX_PPE_VP_CONFIG_TABLE_ADDR +
 			   (HAL_TX_PPE_VP_CONFIG_TABLE_OFFSET * ppe_vp_idx),
@@ -1125,10 +1128,19 @@ int ath12k_wifi8_hal_get_rdi_source_cfg(struct ath12k_base *ab, int source)
 	const struct ath12k_hal_rdi_mapping *rdi_mapping = hal->rdi_mapping;
 	unsigned long rdi_based_source_cfg = 0;
 	int i;
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(ab->dp);
 
 	for (i = 0; i < HAL_RDI_MAPPING_MAX; i++)
 		if (rdi_mapping[i].source == source)
 			set_bit(i, &rdi_based_source_cfg);
+
+	/*  include PPE RDI's in SFE when using common pool */
+	if ((source == SOURCE_RING_CTRL_SFE) &&
+	    !dp_wifi8->dp_ppe2wbm_use_dedicated_pool) {
+		rdi_based_source_cfg |=	BIT(DESTINATION_RING_CTRL_PPE) |
+					BIT(DESTINATION_RING_CTRL_PPE1) |
+					BIT(DESTINATION_RING_CTRL_PPE2);
+	}
 
 	return rdi_based_source_cfg;
 }
@@ -1158,6 +1170,9 @@ u32 ath12k_hal_srng_get_cmd_size(enum hal_tlv_tag_be type)
 	else if (type == HAL_TQM_GET_MPDUQ_STATS_BO)
 		return ((sizeof(struct hal_tlv_64_hdr) +
 			sizeof(struct hal_tqm_get_mpduq_stats)) >> 2);
+	else if (type == HAL_TQM_UPDATE_MSDUQ_BO)
+		return ((sizeof(struct hal_tlv_64_hdr) +
+			 sizeof(struct hal_tqm_update_tx_msdu_flow)) >> 2);
 	else if (type == HAL_TQM_UPDATE_MPDUQ_BO)
 		return ((sizeof(struct hal_tlv_64_hdr) +
 			sizeof(struct hal_tqm_update_mpduq)) >> 2);

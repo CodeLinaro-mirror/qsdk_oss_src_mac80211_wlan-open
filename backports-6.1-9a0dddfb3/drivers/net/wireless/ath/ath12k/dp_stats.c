@@ -84,6 +84,63 @@ static u16 ath12k_dp_hist_rx_reap2stack_dbucket[HIST_BUCKET_MAX] = {
 static u16 ath12k_dp_hist_hw_tx_comp_dbucket[HIST_BUCKET_MAX] = {
 	0, 250, 500, 750, 1000, 1500, 2000, 2500, 5000, 6000, 7000, 8000, 9000};
 
+/*
+ * ath12k_dp_pdev_sw_enq_dbucket: Pdev software enqueue delay bucket in ms
+ * @index_0 = 0_1 ms
+ * @index_1 = 1_2 ms
+ * @index_2 = 2_3 ms
+ * @index_3 = 3_4 ms
+ * @index_4 = 4_5 ms
+ * @index_5 = 5_6 ms
+ * @index_6 = 6_7 ms
+ * @index_7 = 7_8 ms
+ * @index_8 = 8_9 ms
+ * @index_9 = 9_10 ms
+ * @index_10 = 10_11 ms
+ * @index_11 = 11_12 ms
+ * @index_12 = 12+ ms
+ */
+static u16 ath12k_dp_pdev_sw_enq_dbucket[HIST_BUCKET_MAX] = {
+	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
+
+/*
+ * ath12k_dp_pdev_intfrm_dbucket: Pdev software inter-frame delay bucket in ms
+ * @index_0 = 0_5 ms
+ * @index_1 = 5_10 ms
+ * @index_2 = 10_15 ms
+ * @index_3 = 15_20 ms
+ * @index_4 = 20_25 ms
+ * @index_5 = 25_30 ms
+ * @index_6 = 30_35 ms
+ * @index_7 = 35_40 ms
+ * @index_8 = 40_45 ms
+ * @index_9 = 45_50 ms
+ * @index_10 = 50_55 ms
+ * @index_11 = 55_60 ms
+ * @index_12 = 60+ ms
+ */
+static u16 ath12k_dp_pdev_intfrm_dbucket[HIST_BUCKET_MAX] = {
+	0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60};
+
+/*
+ * ath12k_dp_pdev_hwtx_dbucket: Pdev HW TX completion delay bucket in ms
+ * @index_0 = 0_10 ms
+ * @index_1 = 10_20 ms
+ * @index_2 = 20_30 ms
+ * @index_3 = 30_40 ms
+ * @index_4 = 40_50 ms
+ * @index_5 = 50_60 ms
+ * @index_6 = 60_70 ms
+ * @index_7 = 70_80 ms
+ * @index_8 = 80_90 ms
+ * @index_9 = 90_100 ms
+ * @index_10 = 100_250 ms
+ * @index_11 = 250_500 ms
+ * @index_12 = 500+ ms
+ */
+static u16 ath12k_dp_pdev_hwtx_dbucket[HIST_BUCKET_MAX] = {
+	0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 250, 500};
+
 /**
  * ath12k_dp_aggr_per_pkt_tx_stats - Aggregate per-packet TX statistics
  * @dst_tx_stats: Destination TX stats structure
@@ -157,7 +214,7 @@ void ath12k_dp_aggr_per_pkt_rx_stats(struct ath12k_dp_peer_rx_stats *dst_rx_stat
  * @src: Source HTT TX stats structure to aggregate from
 */
 void
-ath12k_dp_update_tx_ext_htt_aggr_stats(struct ath12k *ar,
+ath12k_dp_update_tx_ext_htt_aggr_stats(struct ath12k_pdev_dp *dp_pdev,
 				       struct ath12k_htt_tx_stats *dst_peer_stats,
 				       struct ath12k_htt_tx_stats *src_peer_stats)
 {
@@ -192,6 +249,11 @@ ath12k_dp_update_tx_ext_htt_aggr_stats(struct ath12k *ar,
 			for (k = 0; k < ATH12K_EHT_MCS_NUM; k++) {
 				dst_peer_stats->stats[i].eht[j][k] +=
 					src_peer_stats->stats[i].eht[j][k];
+			}
+
+			for (k = 0; k < ATH12K_UHR_MCS_NUM; k++) {
+				dst_peer_stats->stats[i].uhr[j][k] +=
+					src_peer_stats->stats[i].uhr[j][k];
 			}
 
 			for (k = 0; k < ATH12K_BW_NUM; k++) {
@@ -236,7 +298,7 @@ ath12k_dp_update_tx_ext_htt_aggr_stats(struct ath12k *ar,
 	dst_peer_stats->tx_mpdus_tried += src_peer_stats->tx_mpdus_tried;
 	dst_peer_stats->retries_mpdu += src_peer_stats->retries_mpdu;
 
-	if (!ath12k_dp_advance_stats_enabled(&ar->dp))
+	if (!ath12k_dp_advance_stats_enabled(dp_pdev))
 		return;
 
 	/* DEBUG/ADV */
@@ -290,6 +352,18 @@ ath12k_dp_update_tx_ext_htt_aggr_stats(struct ath12k *ar,
 		for (j = 0; j < MAX_MCS; j++)
 			dst_peer_stats->mu_be_ppdu_cnt[i].mcs_count[j] +=
 				src_peer_stats->mu_be_ppdu_cnt[i].mcs_count[j];
+	}
+
+	/* SU BN PPDU Count */
+	for (i = 0; i < MAX_MCS; i++)
+		dst_peer_stats->su_bn_ppdu_cnt.mcs_count[i] +=
+			src_peer_stats->su_bn_ppdu_cnt.mcs_count[i];
+
+	/* MU BN PPDU Count Array */
+	for (i = 0; i < TXRX_TYPE_MU_MAX; i++) {
+		for (j = 0; j < MAX_MCS; j++)
+			dst_peer_stats->mu_bn_ppdu_cnt[i].mcs_count[j] +=
+				src_peer_stats->mu_bn_ppdu_cnt[i].mcs_count[j];
 	}
 
 	/* Punctured BW Array */
@@ -400,8 +474,7 @@ void ath12k_dp_clear_per_pkt_rx_stats(struct ath12k_dp_peer_stats *rx_peer_stats
  *    link VIF into 'link_vif_delete_stats' of MLD VIF.
  */
 
-void ath12k_dp_aggr_del_stats(struct ath12k *ar,
-			      struct ath12k_dp_peer_stats *dst_peer_stats,
+void ath12k_dp_aggr_del_stats(struct ath12k_dp_peer_stats *dst_peer_stats,
 			      struct ath12k_dp_link_peer_stats *dst_link_peer_stats,
 			      struct ath12k_dp_preserved_stats *src,
 			      const char *stats_type)
@@ -494,6 +567,37 @@ void ath12k_dp_clear_preserved_stats(struct ath12k_dp_preserved_stats *stats)
 }
 
 /**
+ * ath12k_dp_accumulate_hist_stats() - Accumulate src hist_stats into dst
+ * @src_hist_stats: Source histogram stats (per-ring)
+ * @dst_hist_stats: Destination histogram stats (aggregated output)
+ *
+ * Accumulates frequency buckets and updates min/max/avg in dst.
+ * The hist_type of dst is preserved; src's hist_type is ignored.
+ */
+void ath12k_dp_accumulate_hist_stats(struct hist_stats *src_hist_stats,
+				     struct hist_stats *dst_hist_stats)
+{
+	u8 index;
+
+	if (!src_hist_stats || !dst_hist_stats)
+		return;
+
+	for (index = 0; index < HIST_BUCKET_MAX; index++)
+		dst_hist_stats->hist.freq[index] += src_hist_stats->hist.freq[index];
+
+	if (src_hist_stats->min < dst_hist_stats->min)
+		dst_hist_stats->min = src_hist_stats->min;
+
+	if (src_hist_stats->max > dst_hist_stats->max)
+		dst_hist_stats->max = src_hist_stats->max;
+
+	if (!dst_hist_stats->avg)
+		dst_hist_stats->avg = src_hist_stats->avg;
+	else if (src_hist_stats->avg)
+		dst_hist_stats->avg = (dst_hist_stats->avg + src_hist_stats->avg) / 2;
+}
+
+/*
  * ath12k_dp_pdev_get_tid_stats - Aggregate per-TID statistics across rings
  * @ar: ath12k radio instance
  * @tid_stats: Pre-allocated structure for aggregated statistics
@@ -507,6 +611,9 @@ int ath12k_dp_pdev_get_tid_stats(struct ath12k *ar,
 				 struct ath12k_dp_aggr_pdev_tid_stats *tid_stats)
 {
 	struct ath12k_tid_tx_stats *per_ring_tx;
+	struct ath12k_tid_rx_stats *per_ring_rx;
+	struct ath12k_tid_tx_stats *aggr_tx;
+	struct ath12k_tid_rx_stats *aggr_rx;
 	u8 tid;
 	int ring_id, i;
 
@@ -516,22 +623,96 @@ int ath12k_dp_pdev_get_tid_stats(struct ath12k *ar,
 	/* Clear output structure */
 	memset(tid_stats, 0, sizeof(*tid_stats));
 
+	for (tid = 0; tid < VOW_DATA_TID_MAX; tid++) {
+		aggr_tx = &tid_stats->tid_tx[tid];
+		aggr_tx->swq_delay.min = U32_MAX;
+		aggr_tx->hwtx_delay.min = U32_MAX;
+		aggr_tx->intfrm_delay.min = U32_MAX;
+
+		aggr_rx = &tid_stats->tid_rx[tid];
+		aggr_rx->to_stack_delay.min = U32_MAX;
+		aggr_rx->intfrm_delay.min = U32_MAX;
+	}
+
 	/* Aggregate stats for each TID (0-8) */
 	for (tid = 0; tid < VOW_DATA_TID_MAX; tid++) {
-		/* Aggregate TX counters from all TCL rings directly to output */
+		aggr_tx = &tid_stats->tid_tx[tid];
+		aggr_rx = &tid_stats->tid_rx[tid];
+		/* Aggregate TX counters from all TCL rings */
 		for (ring_id = 0; ring_id < DP_TCL_NUM_RING_MAX; ring_id++) {
 			per_ring_tx = &ar->dp.tid_stats.tid_tx[ring_id][tid];
 
 			/* Aggregate TQM status counters */
 			for (i = 0; i < HAL_WBM_TQM_REL_REASON_MAX; i++)
-				tid_stats->tid_tx[tid].tqm_status_cnt[i] +=
+				aggr_tx->tqm_status_cnt[i] +=
 					per_ring_tx->tqm_status_cnt[i];
 
 			/* Aggregate HTT status counters */
 			for (i = 0; i < HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX; i++)
-				tid_stats->tid_tx[tid].htt_status_cnt[i] +=
+				aggr_tx->htt_status_cnt[i] +=
 					per_ring_tx->htt_status_cnt[i];
+
+			/* Aggregate SW drop counters */
+			for (i = 0; i < DP_TID_TX_SW_DROP_MAX; i++)
+				aggr_tx->swdrop_cnt[i] +=
+					per_ring_tx->swdrop_cnt[i];
+
+			/* Aggregate delay histograms */
+			ath12k_dp_accumulate_hist_stats(&per_ring_tx->swq_delay,
+							&aggr_tx->swq_delay);
+			ath12k_dp_accumulate_hist_stats(&per_ring_tx->hwtx_delay,
+							&aggr_tx->hwtx_delay);
+			ath12k_dp_accumulate_hist_stats(&per_ring_tx->intfrm_delay,
+							&aggr_tx->intfrm_delay);
 		}
+
+		/* Aggregate RX counters from all REO rings */
+		for (ring_id = 0; ring_id < DP_REO_DST_RING_MAX; ring_id++) {
+			per_ring_rx = &ar->dp.tid_stats.tid_rx[ring_id][tid];
+
+			/* Aggregate normal RX counters */
+			aggr_rx->msdu_cnt += per_ring_rx->msdu_cnt;
+			aggr_rx->mcast_msdu_cnt += per_ring_rx->mcast_msdu_cnt;
+			aggr_rx->bcast_msdu_cnt += per_ring_rx->bcast_msdu_cnt;
+			aggr_rx->delivered_to_stack += per_ring_rx->delivered_to_stack;
+
+			/* Aggregate Rx SW drop counters */
+			for (i = 0; i < DP_TID_RX_SW_DROP_MAX; i++)
+				aggr_rx->fail_cnt[i] += per_ring_rx->fail_cnt[i];
+
+			/* Aggregate REO error counters */
+			aggr_rx->reo_err.reo_code_inv +=
+				per_ring_rx->reo_err.reo_code_inv;
+
+			for (i = 0; i < HAL_REO_DEST_RING_ERROR_CODE_MAX; i++)
+				aggr_rx->reo_err.reo_code[i] +=
+					per_ring_rx->reo_err.reo_code[i];
+
+			/* Aggregate RXDMA error counters */
+			aggr_rx->rxdma_err.rxdma_code_inv +=
+				per_ring_rx->rxdma_err.rxdma_code_inv;
+
+			for (i = 0; i < HAL_REO_ENTR_RING_RXDMA_ECODE_MAX; i++)
+				aggr_rx->rxdma_err.rxdma_code[i] +=
+					per_ring_rx->rxdma_err.rxdma_code[i];
+
+			/* Aggregate RX delay histograms */
+			ath12k_dp_accumulate_hist_stats(&per_ring_rx->to_stack_delay,
+							&aggr_rx->to_stack_delay);
+			ath12k_dp_accumulate_hist_stats(&per_ring_rx->intfrm_delay,
+							&aggr_rx->intfrm_delay);
+		}
+
+		if (aggr_tx->swq_delay.min == U32_MAX)
+			aggr_tx->swq_delay.min = 0;
+		if (aggr_tx->hwtx_delay.min == U32_MAX)
+			aggr_tx->hwtx_delay.min = 0;
+		if (aggr_tx->intfrm_delay.min == U32_MAX)
+			aggr_tx->intfrm_delay.min = 0;
+		if (aggr_rx->to_stack_delay.min == U32_MAX)
+			aggr_rx->to_stack_delay.min = 0;
+		if (aggr_rx->intfrm_delay.min == U32_MAX)
+			aggr_rx->intfrm_delay.min = 0;
 	}
 
 	return 0;
@@ -594,6 +775,21 @@ static void ath12k_dp_hist_fill_buckets(struct hist_bucket *hist_bucket, u32 val
 		    ath12k_dp_hist_find_bucket_idx(&ath12k_dp_hist_hw_tx_comp_dbucket[0],
 						   value);
 		break;
+	case HIST_TYPE_PDEV_SW_ENQEUE_DELAY:
+		idx =
+		    ath12k_dp_hist_find_bucket_idx(&ath12k_dp_pdev_sw_enq_dbucket[0],
+						   value);
+		break;
+	case HIST_TYPE_PDEV_HW_TX_COMP_DELAY:
+		idx =
+		    ath12k_dp_hist_find_bucket_idx(&ath12k_dp_pdev_hwtx_dbucket[0],
+						   value);
+		break;
+	case HIST_TYPE_PDEV_SW_INTERFRAME_DELAY:
+		idx =
+		    ath12k_dp_hist_find_bucket_idx(&ath12k_dp_pdev_intfrm_dbucket[0],
+						   value);
+		break;
 	default:
 		__ath12k_warn(NULL, "Unknown hist_type %d\n", hist_type);
 		break;
@@ -612,7 +808,7 @@ void ath12k_dp_update_hist_stats(struct hist_stats *hist_stats, u32 value)
 
 	ath12k_dp_hist_fill_buckets(&hist_stats->hist, value);
 
-	if (value != 0 && value < hist_stats->min)
+	if (value < hist_stats->min)
 		hist_stats->min = value;
 
 	if (value > hist_stats->max)
@@ -633,3 +829,62 @@ void ath12k_dp_hist_init(struct hist_stats *hist_stats,
 	hist_stats->hist.hist_type = hist_type;
 }
 EXPORT_SYMBOL(ath12k_dp_hist_init);
+
+/**
+ * ath12k_dp_tid_rx_stats_hist_init - Initialize delay histograms for per-TID RX stats
+ * @dp_pdev: DP pdev handle
+ *
+ * Initializes delay histograms (reap-to-stack and interframe) for all
+ * per ring, per tid during pdev allocation.
+ */
+void ath12k_dp_tid_rx_stats_hist_init(struct ath12k_pdev_dp *dp_pdev)
+{
+	int ring, tid;
+
+	if (!dp_pdev)
+		return;
+
+	for (ring = 0; ring < DP_REO_DST_RING_MAX; ring++) {
+		for (tid = 0; tid < VOW_DATA_TID_MAX; tid++) {
+			struct ath12k_tid_rx_stats *tid_rx;
+
+			tid_rx = &dp_pdev->tid_stats.tid_rx[ring][tid];
+			ath12k_dp_hist_init(&tid_rx->to_stack_delay,
+					    HIST_TYPE_REAP_STACK);
+			ath12k_dp_hist_init(&tid_rx->intfrm_delay,
+					    HIST_TYPE_PDEV_SW_INTERFRAME_DELAY);
+		}
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_tid_rx_stats_hist_init);
+
+/**
+ * ath12k_dp_tid_tx_stats_hist_init() - Initialize delay histograms for per-TID TX stats
+ * @dp_pdev: DP pdev handle
+ *
+ * Initializes the SW enqueue delay, HW TX completion delay, and interframe
+ * delay histogram objects for every ring/TID slot in dp_pdev->tid_stats.
+ * Must be called during pdev allocation before any delay stats are updated.
+ */
+void ath12k_dp_tid_tx_stats_hist_init(struct ath12k_pdev_dp *dp_pdev)
+{
+	int ring, tid;
+
+	if (!dp_pdev)
+		return;
+
+	for (ring = 0; ring < DP_TCL_NUM_RING_MAX; ring++) {
+		for (tid = 0; tid < VOW_DATA_TID_MAX; tid++) {
+			struct ath12k_tid_tx_stats *tid_tx =
+				&dp_pdev->tid_stats.tid_tx[ring][tid];
+
+			ath12k_dp_hist_init(&tid_tx->swq_delay,
+					    HIST_TYPE_PDEV_SW_ENQEUE_DELAY);
+			ath12k_dp_hist_init(&tid_tx->hwtx_delay,
+					    HIST_TYPE_PDEV_HW_TX_COMP_DELAY);
+			ath12k_dp_hist_init(&tid_tx->intfrm_delay,
+					    HIST_TYPE_PDEV_SW_INTERFRAME_DELAY);
+		}
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_tid_tx_stats_hist_init);

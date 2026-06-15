@@ -11,7 +11,7 @@
 #include "hw.h"
 #include "dp_tx_flow_info.h"
 
-#define ATH12K_SMD_MGMT_TID	BIT(15)
+#define ATH12K_SMD_MGMT_TID	15
 struct peer_assoc_flowq_params;
 struct ath12k_dp_peer_ext_ctx {
 	struct ath12k_dp_tx_flow_info tx_flow_info;
@@ -39,7 +39,6 @@ void ath12k_wifi8_dp_link_peer_assign_id(struct ath12k_dp *dp, struct ath12k *ar
 					 struct ath12k_dp_link_peer *peer);
 void ath12k_wifi8_dp_link_peer_unassign_id(struct ath12k_dp *dp, struct ath12k *ar,
 					   struct ath12k_dp_link_peer *peer);
-void ath12k_wifi8_dp_link_peer_delete(struct ath12k_base *ab, u32 vdev_id, u8 *addr);
 void ath12k_dp_peer_cleanup_indication(struct ath12k_dp *dp,
 				       u16 peer_id,
 				       u8 hw_link_id);
@@ -68,4 +67,8 @@ void ath12k_wifi8_dp_assoc_link_update(struct ath12k_dp *dp,
 bool ath12k_wifi8_dp_peer_ast_param_get(struct ath12k_hw *ah, u16 *ast_info,
 					u16 *hw_peer_id, u8 *addr);
 #endif
+int ath12k_wifi8_peer_tx_tid_update_for_smd(struct ath12k_base *ab,
+					    struct ath12k_dp_hw *dp_hw,
+					    const u8 *peer_addr,
+					    struct ath12k_tx_smd_ctx_per_tid *tx_tid_ctx);
 #endif

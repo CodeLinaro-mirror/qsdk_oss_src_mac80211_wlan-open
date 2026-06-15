@@ -231,10 +231,71 @@ static inline bool ieee80211_uhr_capa_size_ok(const u8 *data, u8 len,
 #define IEEE80211_SMD_INFO_CAPA_TYPE			0x10
 #define IEEE80211_SMD_INFO_CAPA_PTK_PER_AP_MLD		0x20
 
-struct ieee80211_smd_info {
-	u8 id[ETH_ALEN];
-	u8 capa;
-	__le16 timeout;
+/* IEEE 802.11bn SMD (Seamless Mobility Domain) definitions */
+
+/**
+ * enum ieee80211_smd_discovery_method - SMD (Seamless Mobility Domain) Discovery Method
+ * @IEEE80211_SMD_DISCOVERY_UNKNOWN: SMD discovery method unknown
+ * @IEEE80211_SMD_DISCOVERY_PRESP: SMD discovered via SMD IE in Probe response frame
+ * @IEEE80211_SMD_DISCOVERY_RNR: SMD discovered via RNR SMD Hint IE in
+ *	beacon/probe response frame
+ */
+enum ieee80211_smd_discovery_method {
+	IEEE80211_SMD_DISCOVERY_UNKNOWN = 0,
+	IEEE80211_SMD_DISCOVERY_PRESP = 1,
+	IEEE80211_SMD_DISCOVERY_RNR = 2,
+};
+
+/**
+ * struct ieee80211_smd_info_element - SMD Information Element
+ * @smd_identifier: 6-byte SMD Identifier (unique per SMD)
+ * @smd_capabilities: 1-byte SMD Capabilities field
+ * @timeout_value: 2-byte SMD Timeout values in TUs
+ *
+ * This structure represents the payload of the SMD Information Element.
+ * (Extension Element ID 200) as defined in IEEE Std 802.11bn D1.2 §9.4.2.356
+ */
+struct ieee80211_smd_info_element {
+	u8 smd_identifier[6];
+	u8 smd_capabilities;
+	u8 timeout_value;
 } __packed;
+
+/* SMD Capability bits */
+#define IEEE80211_SMD_CAP_DL_DATA_FORWARDING	BIT(0)
+
+/* SMD Neighbor Report Element */
+#define IEEE80211_NR_SUBELEM_SMD_INFO		200
+
+/* SMD Helper functions */
+static inline bool ieee80211_is_smd_capable_ie(const u8 *ie)
+{
+	return ie && ie[0] == WLAN_EID_EXTENSION &&
+		ie[1] >= 9 && ie[2] == WLAN_EID_EXT_SMD;
+}
+
+static inline const u8 *
+ieee80211_get_smd_identifier(const struct ieee80211_smd_info_element *smd_ie)
+{
+	return smd_ie ? smd_ie->smd_identifier : NULL;
+}
+
+static inline bool
+ieee80211_smd_has_dl_forwarding(const struct ieee80211_smd_info_element *smd_ie)
+{
+	return smd_ie &&
+		(smd_ie->smd_capabilities & IEEE80211_SMD_CAP_DL_DATA_FORWARDING);
+}
+
+/* RNR SMD Hint Helper Functions */
+static inline bool ieee80211_rnr_has_smd_hint(u8 bss_params)
+{
+	return !!(bss_params & IEEE80211_RNR_BSS_PARAM_MEMBER_OF_SMD);
+}
+
+static inline int ieee80211_get_rnr_smd_id(struct ieee80211_rnr_uhr_params *uhr_params)
+{
+	return uhr_params ? uhr_params->smd_id : -1;
+}
 
 #endif /* LINUX_IEEE80211_UHR_H */

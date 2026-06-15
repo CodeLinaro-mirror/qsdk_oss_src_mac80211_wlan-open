@@ -757,8 +757,12 @@ int ieee80211_data_to_8023_exthdr(struct sk_buff *skb, struct ethhdr *ehdr,
 			return -1;
 		break;
 	case cpu_to_le16(0):
+		/* NoDS frames shall be used in MMesh mode.
+		 * Allow NoDS frames in AP mode.
+		 */
 		if (iftype != NL80211_IFTYPE_ADHOC &&
 		    iftype != NL80211_IFTYPE_STATION &&
+		    iftype != NL80211_IFTYPE_AP &&
 		    iftype != NL80211_IFTYPE_OCB)
 				return -1;
 		break;

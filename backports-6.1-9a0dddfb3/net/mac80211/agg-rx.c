@@ -243,6 +243,9 @@ static void ieee80211_send_addba_resp(struct sta_info *sta, u8 *da, u16 tid,
 	struct ieee80211_link_data *link;
 	u8 link_id;
 
+	if (amsdu && !ieee80211_get_rx_amsdu_for_tid(sdata, tid))
+		amsdu = false;
+
 	skb = dev_alloc_skb(sizeof(*mgmt) +
 		    2 + sizeof(struct ieee80211_addba_ext_ie) +
 		    local->hw.extra_tx_headroom);

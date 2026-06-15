@@ -17,6 +17,7 @@
 #include <linux/of_reserved_mem.h>
 #include <linux/panic_notifier.h>
 #include <linux/average.h>
+#include <linux/hashtable.h>
 #include <linux/rhashtable.h>
 #include <linux/rcupdate.h>
 #include <linux/smp.h>
@@ -103,6 +104,9 @@
 #define ATH12K_INVALID_GROUP_ID  0xFF
 #define ATH12K_INVALID_DEVICE_ID 0xFF
 
+#define ATH12K_INVALID_VDEV_ID   "NA"
+#define ATH12K_INVALID_RADIO_IDX "NA"
+
 /* Max MLO clients supported in firmware * Max Radios
  */
 #define ATH12K_MAX_MLO_PEERS		(512 * ATH12K_MIN_NUM_DEVICES_NLINK)
@@ -132,9 +136,15 @@
 #define ATH12K_PHY_SCAN_RADIO "phy-scan-00"
 #endif
 #define ATH12K_Q6_POWER_UP_TIMEOUT	(20 * HZ)
-#define ATH12K_UMAC_RESET_TIMEOUT_IN_MS         1000
 
 #define ATH12K_MAX_TID_VALUE 8
+
+/* Maximum number of AKM suites supported:
+ * WPA2-PSK (00-0F-AC:4), SAE (00-0F-AC:8), SAE-EXT (00-0F-AC:24),
+ * FT-SAE (00-0F-AC:9), FT-SAE-EXT (00-0F-AC:25)
+ */
+#define ATH12K_MAX_AKM_SUITES		5
+
 #define ATH12K_FREE_MAP_ID_MASK GENMASK(31, 0)
 
 #define ATH12K_GROUP_KEYS_NUM_MAX	128
@@ -158,12 +168,73 @@ extern bool ath12k_fse_3_tuple_enabled;
 extern bool ath12k_rx_nwifi_err_dump;
 extern bool ath12k_carrier_vow_optimization;
 extern unsigned int ath12k_reorder_VI_timeout;
-#ifndef CONFIG_ATH12K_MEM_PROFILE_512M
+extern bool ath12k_mcast_link_bmap_enable;
 extern unsigned int ath12k_max_clients;
-#endif
+
+/*
+ * enum ath12k_mem_profile - active memory profile
+ * @ATH12K_MEM_PROFILE_DEFAULT:   1G / full ring sizes  (mem-profile=high or absent)
+ * @ATH12K_MEM_PROFILE_BALANCED:  512M / reduced sizes  (mem-profile=balanced)
+ * @ATH12K_MEM_PROFILE_OPTIMIZED: 256M / minimal sizes  (mem-profile=optimized)
+ */
+enum ath12k_mem_profile {
+	ATH12K_MEM_PROFILE_DEFAULT,
+	ATH12K_MEM_PROFILE_BALANCED,
+	ATH12K_MEM_PROFILE_OPTIMIZED,
+};
+
+extern enum ath12k_mem_profile ath12k_active_mem_profile;
+
+/**
+ * struct ath12k_dp_ring_cfg - DP ring size configuration per memory profile.
+ *
+ * The global pointer ath12k_dp_ring_cfg is set once at
+ * module load time by ath12k_detect_mem_profile() based on the
+ * mem-profile= kernel cmdline parameter.
+ */
+struct ath12k_dp_ring_cfg {
+	unsigned int rxdma_buf_ring_size;
+	unsigned int rx_release_ring_size;
+	unsigned int reo2ppe_ring;
+	unsigned int ppe2tcl_ring;
+	unsigned int tqm2ppe_ring_size;
+	unsigned int tx_comp_ppeds_ring_size;
+	unsigned int num_vdevs;
+	unsigned int num_bridge_vdevs;
+	unsigned int num_max_vdevs_nlink;
+	unsigned int target_mem_mode;
+	unsigned int num_pool_tx_desc;
+	unsigned int ppe_wbm2sw_ring_size;
+	unsigned int rxdma_monitor_buf_ring_size;
+	unsigned int rxdma_monitor_dst_ring_size;
+	unsigned int smart_mon_filter_default;
+	unsigned int mon_num_ppdu_desc;
+	unsigned int rx_desc_count_wifi7;
+	unsigned int rx_desc_count_wifi8;
+	unsigned int num_stations_single;
+	unsigned int num_stations_dbs;
+	unsigned int num_stations_dbs_sbs;
+	unsigned int dp_max_clients;
+	unsigned int num_pool_ppeds_tx_desc;
+	unsigned int ppeds_hotlist_len_max;
+	unsigned int dp_num_clients_max;
+	unsigned int dp_mon_status_buf;
+	unsigned int reo_dst_ring_size[5];
+	unsigned int tcl_data_ring_size[5];
+	unsigned int tx_compl_ring_size[5];
+	unsigned int monitor_support : 1;
+	unsigned int cfr_support : 1;
+	unsigned int spectral_support : 1;
+	unsigned int tx_monitor_support : 1;
+	unsigned int sdwf_support : 1;
+	unsigned int cold_boot_calib : 1;
+};
+
+extern const struct ath12k_dp_ring_cfg *ath12k_dp_ring_cfg;
 extern bool ath12k_mlo_3_link_tx;
 extern bool ath12k_waltest_mode;
 extern bool ath12k_fw_q6_dump_collection;
+extern bool ath12k_hw_group_started;
 struct ath12k_dp;
 struct ath12k_hp_update_timer;
 struct ath12k_mgmt;
@@ -187,6 +258,7 @@ struct ath12k_mgmt_irq_grp;
 #define ATH12K_MLO_METADATA_MLO_ASSIST_TAG_MASK 0xFF800000
 #define ATH12K_MLO_METADATA_TAG_MASK GENMASK(31, 24)
 #define ATH12K_MLO_METADATA_LINKID_MASK GENMASK(20, 16)
+#define ATH12K_MCAST_LINK_BMAP_MASK GENMASK(3, 0)
 #define ATH12k_MLO_LINK_ID_INVALID 0xFF
 #define ATH12k_DS_NODE_ID_INVALID 0xFF
 #define ATH12K_SAWF_PCP_VALID  0x4
@@ -276,6 +348,7 @@ enum ath12k_skb_flags {
 	ATH12K_SKB_MESH_TX_INFO = BIT(7),
 	ATH12K_SKB_MESH_RX_INFO = BIT(8),
 	ATH12K_SKB_MGMT_MLO_PARAMS = BIT(9),
+	ATH12K_SKB_MCAST_LINK_BMAP_VALID = BIT(10),
 };
 
 struct ath12k_skb_cb {
@@ -289,6 +362,7 @@ struct ath12k_skb_cb {
 	u32 cipher;
 	u16 flags;
 	u8 link_id;
+	u8 mcast_link_bmap;
 };
 
 static_assert(sizeof(struct ath12k_skb_cb) <= 48,
@@ -325,21 +399,17 @@ enum ath12k_hw_rev {
 	ATH12K_HW_IPQ5424_HW10,
 	ATH12K_HW_QCN6432_HW10,
 	ATH12K_HW_QCN9625_HW10,
+	ATH12K_HW_QCN9625_HW20,
+	ATH12K_HW_QCN9589_HW10,
+
+	/* Always keep extension-specific entries last. */
 #ifdef CPTCFG_QCN_EXTN
 	ATH12K_HW_QCN9074_HW10,
+	ATH12K_HW_QCN9160_HW10,
 #endif
-	ATH12K_HW_QCN9589_HW10,
 };
 
 #define ATH12K_DIAG_HW_ID_OFFSET	16
-
-enum ath12k_soc_reset_reason {
-	ATH12K_RESET_NONE = 0,
-	/* Full SOC reset, resets MAC/PHY/Q6 */
-	ATH12K_GLOBAL_SOC_RESET,
-	/* Q6 subsystem only reset*/
-	ATH12K_Q6_BCR_RESET,
-};
 
 enum ath12k_firmware_mode {
 	/* the default mode, standard 802.11 functionality */
@@ -501,6 +571,7 @@ enum ath12k_dev_flags {
 	ATH12K_FLAG_UMAC_RECOVERY_START,
 	ATH12K_FLAG_SOC_CREATE_FAIL,
 	ATH12K_FLAG_MGMT_IRQ_ENABLED,
+	ATH12K_FLAG_RECOVERY_Q6_BCR,
 };
 
 enum ath12k_mlo_recovery_mode {
@@ -521,7 +592,16 @@ struct ath12k_mgmt_frame_stats {
 	u64 aggr_rx_mgmt;
 	u64 aggr_tx_mgmt_fail_cnt;
 	u64 aggr_tx_mgmt_success_cnt;
+	u64 tx_cmpl_succ_pkts;
+	u64 tx_cmpl_succ_bytes;
+	u64 tx_cmpl_retry_pkts;
+	u64 tx_cmpl_retry_bytes;
+	u64 tx_cmpl_err_pkts;
+	u64 tx_cmpl_err_bytes;
 	u64 rx_pn_err_cnt;
+	u32 rx_assoc_no_rate_match;
+	u32 rx_assoc_bad_wpaie;
+	u32 rx_assoc_cap_mismatch;
 };
 
 struct ath12k_tx_conf {
@@ -666,8 +746,18 @@ struct ath12k_vap_cfg {
 	u32 rx_decap_type;
 	u32 protection_mode;
 	u32 bw_nss_rate;
+	u32 chwidth;
+	u32 nss;
+	u32 fixed_rate;
+	u32 ul_fixed_rate;
+	u32 fixed_vht_mcs;
+	u32 fixed_he_mcs;
+	u32 fixed_eht_mcs;
+	u32 ul_fixed_he_mcs;
+	u32 ul_fixed_eht_mcs;
 	u32 eht_ul_ldpc;
 	u32 eht_ul_ltf;
+	u32 eht_ltf;
 	u32 eht_ul_nss;
 	u32 eht_ul_ppdu_bw;
 	u32 eht_ul_shortgi;
@@ -693,6 +783,24 @@ struct ath12k_rssi_deauth_config {
 	s8 noise_floor_offset;
 } __packed;
 
+#define ATH12K_MAX_NUM_VDEVS 17
+
+struct ath12k_mbssid_info {
+	int tx_vdev_id;
+	u32 nontx_cnt;
+	DECLARE_BITMAP(nontx_vdev_bmap, ATH12K_MAX_NUM_VDEVS);
+};
+
+struct ath12k_smd_params {
+	bool smd_enabled;
+	u8 smd_identifier[ETH_ALEN];
+	u8 smd_timeout;
+	bool dl_data_fwd;
+	u8 max_num_of_peer_apmlds;
+	bool smd_type;
+	bool ptk_mode;
+};
+
 struct ath12k_link_vif {
 	u32 vdev_id;
 	u32 beacon_interval;
@@ -708,6 +816,7 @@ struct ath12k_link_vif {
 	bool is_started;
 	bool is_up;
 	u8 bssid[ETH_ALEN];
+	u8 addr[ETH_ALEN];
 	struct cfg80211_bitrate_mask bitrate_mask;
 	struct delayed_work connection_loss_work;
 	int num_legacy_stations;
@@ -730,6 +839,7 @@ struct ath12k_link_vif {
 	struct ath12k_link_stats link_stats;
 	spinlock_t link_stats_lock; /* Protects updates to link_stats */
 	bool is_scan_vif;
+	bool is_mlprobe_scan_vif;
 	u32 key_cipher;
 	int ppe_vp_profile_idx;
 	int splitphy_ds_bank_id;
@@ -793,12 +903,24 @@ struct ath12k_link_vif {
 
 	/* shared memory to firmware for critical update procedure */
 	struct ath12k_cu_mem *cu_mem;
+
+	/* arsta for the BSS self peer (vdev peer)
+	 * NULL if not yet created or already freed.
+	 * Protected by wiphy->mtx.
+	 */
+	struct ath12k_link_sta *self_arsta;
+
 	dma_addr_t cu_mem_paddr;
 	u32 nav_status;
 	u32 nav_threshold;
 
 	/* Flag to track vdev fixed rate is set or not */
 	bool fixed_rate_set;
+
+	/* Structure to store an MBSSID set info */
+	struct ath12k_mbssid_info *mbssid_info;
+
+	struct ath12k_smd_params smd_params;
 };
 
 struct ath12k_dp_link_vif {
@@ -812,6 +934,7 @@ struct ath12k_dp_link_vif {
 	u8 lmac_id;
 	int bank_id;
 	u8 map_id;
+	enum wmi_phy_mode phymode;
 	struct ath12k_dp_preserved_stats link_peer_delete_stats;
 };
 
@@ -827,6 +950,7 @@ struct ath12k_vlan_iface {
 struct ath12k_dp_vif {
 	u32 dp_features;
 	u8 tx_encap_type;
+	u8 rx_decap_type;
 	u8 search_type;
 	u8 hal_addr_search_flags;
 	u8 vdev_id_check_en;
@@ -853,6 +977,9 @@ struct ath12k_dp_vif {
 
 	struct ath12k_dp_vif_extn dp_extn;
 	u8 ahvif_id;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	int ppe_vp_profile_idx;
+#endif
 };
 
 enum ath12k_tx_pkt_reasons {
@@ -909,7 +1036,7 @@ enum ath12k_rx_pkt_reasons {
 };
 
 enum ath12k_rx_drop_reasons {
-	ATH_RX_FREE_ALLOC,
+	ATH_RX_DESC_ADDR_ZERO,
 	ATH_RX_MSDU_BIT_MISS,
 	ATH_RX_INVALID_RBM,
 	ATH_RX_NULL_Q_DESC,
@@ -932,6 +1059,8 @@ enum ath12k_rx_drop_reasons {
 	ATH_RX_EQUALS_SSN,
 	ATH_RX_ERR_FLAG_SET,
 	ATH_RX_DESC_BLOCKED,
+	ATH_RX_PN_FAIL,
+	ATH_RX_ERR_UNKNOWN,
 	ATH_RX_DROP_REASON_MAX
 };
 
@@ -986,6 +1115,7 @@ struct ath12k_vif {
 			u8 tim_len;
 			u32 ssid_len;
 			u8 ssid[IEEE80211_MAX_SSID_LEN];
+			bool dynamic_vlan;
 			bool hidden_ssid;
 			/* P2P_IE with NoA attribute for P2P_GO case */
 			u32 noa_len;
@@ -1034,7 +1164,6 @@ struct ath12k_vif {
 	 */
 	struct ieee80211_chanctx_conf chanctx;
 	struct ath12k_reg_tpc_power_info reg_tpc_info;
-
 	struct ath12k_event_queue event_queue;
 };
 
@@ -1134,15 +1263,18 @@ struct ath12k_link_sta {
 	 /* for firmware use only */
 	u8 link_idx;
 
-	/* peer addr based rhashtable list pointer */
-	struct rhash_head rhash_addr;
-	bool rhash_done;
+	/* peer addr based hash list node */
+	struct hlist_node hlist_addr;
 
 	u16 tcl_metadata;
 	u16 ast_hash;
 	u16 ast_idx;
 
 	bool is_bridge_peer;
+	/* true when this arsta represents the BSS self peer (vdev peer),
+	 * ahsta is NULL in this case.
+	 */
+	bool is_self_peer;
 	/* will be saved to use during recovery */
 	struct ieee80211_key_conf *keys[WMI_MAX_KEY_INDEX + 1];
 #ifdef CPTCFG_ATH12K_CFR
@@ -1155,10 +1287,12 @@ struct ath12k_link_sta {
 	s8 min_rssi;
 	s8 max_rssi;
 
+	enum wmi_phy_mode phymode;
 };
 
 struct ath12k_sta_migration_data {
-	struct ath12k_base *ab;
+	struct ath12k *ar;
+	u8 link_addr[ETH_ALEN];
 	u16 vdev_id;
 	u16 peer_id;
 	u16 ml_peer_id;
@@ -1171,6 +1305,10 @@ struct ath12k_sta {
 	struct ath12k_vif *ahvif;
 	enum hal_pn_type pn_type;
 	enum hal_encrypt_type enctype;
+	/* MLD address (or link address for non-MLO); key for ag->ahsta_list */
+	u8 addr[ETH_ALEN];
+	/* node for ag->ahsta_list hash table */
+	struct hlist_node hlist_addr;
 	struct ath12k_link_sta deflink;
 	struct ath12k_link_sta __rcu *link[ATH12K_NUM_MAX_LINKS];
 	/* indicates bitmap of link sta created in FW */
@@ -1184,6 +1322,10 @@ struct ath12k_sta {
 	/* indicates bitmap of devices where peers are created */
 	u8 device_bitmap;
 	u32 mlo_hw_link_id_bitmap;
+	/* bitmap of ar->radio_idx values where link peers exist;
+	 * Protected by wiphy->mtx.
+	 */
+	u8 ar_bitmap;
 	/* indicates bitmap of links where peer delete cmd is sent to FW */
 	u32 peer_delete_cmd_sent_bitmap;
 	bool peer_delete_send_mlo_hw_bitmap;
@@ -1210,7 +1352,8 @@ struct ath12k_sta {
 #endif
 	u16 free_logical_idx_map;
 
-	void *dp_peer;
+	/* Opaque RCU pointer to ath12k_dp_peer */
+	void __rcu *dp_peer;
 };
 
 #define ATH12K_INVALID_RSSI_FULL -1
@@ -1517,8 +1660,14 @@ struct ath12k_radio_cfg {
 	s32 temperature;                    /* Last temperature reading in °C */
 	u8 temperature_query_pending;       /* Query sent, waiting for response */
 	u32 msdu_ttl;
+
+	/* [15:0] 2G/5G pair id, [31:16] 6G super-domain id */
+	u32 regdomain;
 	bool chan144_enabled;
 	u32 pdev_to_reo_dest;
+#ifdef CPTCFG_QCN_EXTN
+	struct ath12k_radio_cfg_extn radio_cfg_extn;
+#endif
 };
 
 /**
@@ -1631,8 +1780,13 @@ struct ath12k {
 	 * channel context data, survey info, test mode data.
 	 */
 	spinlock_t data_lock;
+	/* protects arsta hash table access, including BH context paths */
+	spinlock_t arsta_lock;
 
 	struct list_head arvifs;
+	/* per-radio hash buckets for station address lookup */
+	struct hlist_head *arsta_list;
+	u8 arsta_hash_bits;
 	/* should never be NULL; needed for regular htt rx */
 	struct ieee80211_channel *rx_channel;
 
@@ -1732,6 +1886,7 @@ struct ath12k {
 	struct completion completed_11d_scan;
 	enum ath12k_11d_state state_11d;
 	u8 alpha2[REG_ALPHA2_LEN];
+	u16 country_id;
 	bool regdom_set_by_user;
 
 	struct ath12k_btcoex_info coex;
@@ -1757,6 +1912,7 @@ struct ath12k {
 	struct ath12k_spectral spectral;
 #endif
 	bool ap_ps_enabled;
+	bool ap_ps_disabled_by_agile;
 	enum ath12k_ap_ps_state ap_ps_state;
 
 	struct cfg80211_chan_def awgn_chandef;
@@ -1766,6 +1922,15 @@ struct ath12k {
 	struct completion mvr_complete;
 	bool twt_enabled;
 	struct wmi_rssi_dbm_conv_offsets rssi_offsets;
+	/* HTT PHY stats NF values (type 37), populated by ath12k_telemetry_get_phy_nf().
+	 * bdf_nf_chains[]: static/characterized NF per chain. The firmware reports 1
+	 * as a sentinel for unused/inactive chains. This is unambiguous because valid
+	 * noise floor readings are always negative (in dBm, e.g. -95), so a positive
+	 * value of 1 cannot be a real NF measurement.
+	 * Dynamic (runtime) NF is obtained via ar->survey[idx].noise from the WMI BSS
+	 * channel info path (same mechanism as iw dev survey dump).
+	 */
+	s32 bdf_nf_chains[ATH12K_HTT_STATS_MAX_CHAINS];
 	u16 csa_active_cnt;
 	s32 sensitivity_level;
 
@@ -1785,7 +1950,9 @@ struct ath12k {
 	struct ath12k_cfr cfr;
 #endif
 	struct cfg80211_chan_def agile_chandef;
+	bool agile_abort_pending; /* WMI abort sent; awaiting firmware ACK */
 	struct wiphy_work agile_cac_abort_wq;
+	struct wiphy_work ap_ps_recalc_wq;
 	u32 free_map_id;
 	struct ath12k_qos_map *qos_map;
 
@@ -1839,6 +2006,12 @@ struct ath12k_6ghz_sp_reg_rule {
 	struct ieee80211_reg_rule sp_reg_rule[];
 };
 
+struct ath12k_pending_primary_link {
+	char ifname[IFNAMSIZ];
+	u8 hw_link_id;
+	bool valid;
+};
+
 struct ath12k_hw {
 	struct ieee80211_hw *hw;
 	struct device *dev;
@@ -1867,6 +2040,11 @@ struct ath12k_hw {
 	u32 num_ml_peers;
 	u32 max_ml_peer_ids;
 	u16 last_ml_peer_id;
+
+	/* Pending primary_link values written before STA vdev creation.
+	 * Indexed by slot; protected by hw_mutex.
+	 */
+	struct ath12k_pending_primary_link pending_primary_link[ATH12K_GROUP_MAX_RADIO];
 
 	/* Keep last */
 	struct ath12k radio[] __aligned(sizeof(void *));
@@ -2072,6 +2250,11 @@ enum ath12k_cumac_band {
 struct ath12k_hw_group {
 	struct ath12k_dp_hw_group *dp_hw_grp;
 	struct list_head list;
+	/* per-group station (ahsta) address hash table */
+	struct hlist_head *ahsta_list;
+	u8 ahsta_hash_bits;
+	/* protects ahsta_list; may be taken from BH context */
+	spinlock_t ahsta_lock;
 #ifdef CPTCFG_ATH12K_POWER_OPTIMIZATION
 	u8 dbs_power_reduction;
 	u8 eth_power_reduction;
@@ -2102,7 +2285,7 @@ struct ath12k_hw_group {
 	u8 num_userpd_started;
 	struct work_struct reset_group_work;
 	struct ath12k_mlo_wsi_load_info *wsi_load_info;
-	u32 recovery_mode;
+	enum ath12k_mlo_recovery_mode recovery_mode;
 	struct ath12k_mlo_dp_umac_reset mlo_umac_reset;
         struct completion umac_reset_complete;
         bool trigger_umac_reset;
@@ -2330,10 +2513,10 @@ struct ath12k_base {
 	enum ath12k_fw_recovery_option fw_recovery_support;
 	u32 recovery_start_time;
 	bool recovery_start;
+	bool post_reconfig_done;
 
 	u32 *crash_info_address;
 	u32 *recovery_mode_address;
-	enum ath12k_soc_reset_reason soc_reset_reason;
 
 	u32 fw_dbglog_param;
 	u64 fw_dbglog_val;
@@ -2435,12 +2618,6 @@ struct ath12k_base {
 	struct ath12k_base_extn ath12k_base_extn;
 
 	const struct ieee80211_ops_extn *ath12k_ops_extn;
-
-	/* To synchronize rhash tbl write operation */
-	struct mutex tbl_mtx_lock;
-
-	struct rhashtable *rhead_sta_addr;
-	struct rhashtable_params rhash_sta_addr_param;
 
 	bool in_coldboot_fwreset;
 	u32 chwidth_num_peer_caps;
@@ -2596,6 +2773,12 @@ struct ath12k_skb_tx_info {
 	struct rcu_head rcu_head;
 	struct sk_buff *skb;
 	struct ieee80211_tx_rate rate;
+};
+
+#define ATH12K_ERP_CUMAC_UNSET -1U
+enum ath12k_core_erp_cumac_config_bitmap {
+	ATH12K_ERP_CUMAC_PDEV_SUSPEND = BIT(0),
+	ATH12K_ERP_CUMAC_Q6_PWR_DOWN = BIT(1),
 };
 
 void ath12k_core_panic_notifier_unregister(struct ath12k_base *ab);
@@ -3042,9 +3225,10 @@ static inline int ath12k_get_peer_count(struct ath12k_base *ab, bool get_max)
 }
 
 static inline void
-ath12k_core_srng_get_htt_mgmt_filter(struct ath12k_base *ab, u16 *mgmt_filter)
+ath12k_core_srng_get_htt_mgmt_filter(struct ath12k_base *ab,
+				     struct htt_rx_ring_tlv_filter *tlv_filter)
 {
-	ath12k_dp_get_htt_mgmt_filter(ab, mgmt_filter);
+	ath12k_dp_get_htt_mgmt_filter(ab, tlv_filter);
 }
 
 static inline int
@@ -3100,5 +3284,6 @@ int ath12k_core_cu_mem_pool_init(struct ath12k_hw_group *ag);
 void ath12k_core_cu_mem_pool_deinit(struct ath12k_hw_group *ag);
 void ath12k_core_cu_notify(struct ath12k *ar, struct ath12k_link_vif *arvif);
 struct wireless_dev *ath12k_get_wdev_from_netdev(struct net_device *dev);
+int ath12k_wsi_bypass_precheck(struct ath12k_base *ab, unsigned int value);
 
 #endif /* _CORE_H_ */

@@ -487,17 +487,6 @@ extern const struct ath12k_hw_version_map ath12k_wifi7_hw_ver_map[];
 
 #define HAL_SRNG_DESC_LOOP_CNT		0xf0000000
 
-#define HAL_REO_CMD_FLG_NEED_STATUS		BIT(0)
-#define HAL_REO_CMD_FLG_STATS_CLEAR		BIT(1)
-#define HAL_REO_CMD_FLG_FLUSH_BLOCK_LATER	BIT(2)
-#define HAL_REO_CMD_FLG_FLUSH_RELEASE_BLOCKING	BIT(3)
-#define HAL_REO_CMD_FLG_FLUSH_NO_INVAL		BIT(4)
-#define HAL_REO_CMD_FLG_FLUSH_FWD_ALL_MPDUS	BIT(5)
-#define HAL_REO_CMD_FLG_FLUSH_ALL		BIT(6)
-#define HAL_REO_CMD_FLG_UNBLK_RESOURCE		BIT(7)
-#define HAL_REO_CMD_FLG_UNBLK_CACHE		BIT(8)
-#define HAL_REO_CMD_FLG_FLUSH_QUEUE_1K_DESC	BIT(9)
-
 /* Should be matching with HAL_REO_UPD_RX_QUEUE_INFO0_UPD_* fields */
 #define HAL_REO_CMD_UPD0_RX_QUEUE_NUM		BIT(8)
 #define HAL_REO_CMD_UPD0_VLD			BIT(9)
@@ -650,8 +639,7 @@ struct rx_msdu_desc_info {
 	    to_ds                       :  1,
 	    intra_bss                   :  1,
 	    dest_chip_id                :  2,
-	    ra_is_mcbc			:  1,
-	    reserved			:  2;
+	    reserved			:  3;
 };
 
 struct rx_tlv_info_1 {
@@ -664,6 +652,33 @@ struct rx_tlv_info_1 {
 	    mesh_ctrl_present	   	: 1,
 	    pkt_type			: 4,
 	    bw			   	: 3;
+};
+
+struct reo_info {
+	u32 reo_dest_buffer_type                :  1,
+	    reo_push_reason                     :  2,
+	    reo_error_code                      :  5,
+	    captured_msdu_data_size             :  4,
+	    sw_exception                        :  1,
+	    src_link_id                         :  3,
+	    reo_destination_struct_signature    :  4,
+	    ring_id                             :  8,
+	    looping_count                       :  4;
+};
+
+struct wbm_info {
+	u32 release_source_module               :  3,
+	    bm_action				:  3,
+	    buffer_or_desc_type			:  3,
+	    first_msdu_index			:  4,
+	    reserved_2a				:  2,
+	    cache_id                            :  1,
+	    cookie_conversion_status            :  1,
+	    rxdma_push_reason                   :  2,
+	    rxdma_error_code                    :  5,
+	    reo_push_reason                     :  2,
+	    reo_error_code                      :  5,
+	    wbm_internal_error                  :  1;
 };
 
 struct hal_rx_spd_data {
@@ -686,25 +701,29 @@ struct hal_rx_spd_data {
 		struct rx_msdu_desc_info rx_msdu_info;
 	};
 
-	struct rx_tlv_info_1 tlv_info;
-
 	union {
 		u32 info0;
+		struct reo_info reo;
+		struct wbm_info wbm;
+	};
+	struct rx_tlv_info_1 tlv_info;
+	union {
+		u16 flags;
 		struct {
-			u32 reo_dest_buffer_type                :  1,
-			    reo_push_reason                     :  2,
-			    reo_error_code                      :  5,
-			    captured_msdu_data_size             :  4,
-			    sw_exception                        :  1,
-			    src_link_id                         :  3,
-			    reo_destination_struct_signature    :  4,
-			    ring_id                             :  8,
-			    looping_count                       :  4;
+			u16 first_sg_frame             : 1,
+			    last_sg_frame              : 1,
+			    is_frag                    : 1,
+			    rsvd0                      : 13;
 		};
 	};
-	u64 rsvd0;
-	u64 rsvd1;
-	u64 rsvd2;
+	__le16 frame_ctl;
+	__le16 duration_id;
+	__le16 seq_ctl;
+	u8 ad1[ETH_ALEN];
+	u8 key_id_octate;
+	u8 rsvd1;
+	u8 ad2[ETH_ALEN];
+	u16 cce_metadata;
 } __packed;
 
 static_assert(sizeof(struct hal_rx_spd_data) == 64,
@@ -770,7 +789,8 @@ ath12k_wifi7_hal_rx_msdu_link_info_get(struct hal_rx_msdu_link *link,
 u32 ath12k_wifi7_hal_reo_qdesc_size(u32 ba_window_size, u8 tid);
 void ath12k_wifi7_hal_reo_qdesc_setup(struct hal_rx_reo_queue *qdesc,
 				      int tid, u32 ba_window_size,
-				      u32 start_seq, enum hal_pn_type type);
+				      u32 start_seq, enum hal_pn_type type,
+				      u16 stats_id);
 
 void ath12k_wifi7_hal_srng_hw_disable(struct ath12k_base *ab,
 				      struct hal_srng *srng);

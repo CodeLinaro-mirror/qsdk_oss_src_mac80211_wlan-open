@@ -1245,6 +1245,27 @@ ieee80211_ap_power_type(u8 control)
 	}
 }
 
+static bool ieee80211_6ghz_sta_power_type_disallowed
+				(struct ieee80211_sub_if_data *sdata,
+				 struct cfg80211_chan_def *chandef,
+				 enum ieee80211_ap_reg_power ap_power_type)
+{
+	enum nl80211_regulatory_power_modes power_mode;
+
+	if (sdata->vif.type != NL80211_IFTYPE_STATION)
+		return false;
+
+	power_mode = ieee80211_mac_to_cfg_power_type(ap_power_type);
+	if (power_mode >= NL80211_REG_NUM_POWER_MODES)
+		return false;
+
+	return cfg80211_validate_freq_width_for_pwr_mode
+						(sdata->local->hw.wiphy,
+						 chandef,
+						 power_mode,
+						 IEEE80211_CHAN_DISABLED);
+}
+
 /**
  * ieee80211_notify_colocated_ap_6ghz_update - Notify colocated AP links
  * @sdata: STA interface that learned the updated 6 GHz information
@@ -1400,7 +1421,7 @@ ieee80211_sta_bw_reconfig_start_csa(struct ieee80211_link_data *link,
 	link->u.mgd.beacon_crc_valid = false;
 	link->u.mgd.csa.blocked_tx = csa_ie.mode;
 	link->u.mgd.csa.bw_reconfig = true;
-	if (csa_ie.mode)
+	if (csa_ie.mode && !ieee80211_vif_is_mld(&sdata->vif))
 		ieee80211_vif_block_queues_csa(sdata);
 
 	link_info(link,
@@ -1410,7 +1431,7 @@ ieee80211_sta_bw_reconfig_start_csa(struct ieee80211_link_data *link,
 
 	cfg80211_ch_switch_started_notify(sdata->dev, &csa_ie.chanreq.oper,
 					  link->link_id, csa_ie.count,
-					  csa_ie.mode);
+					  csa_ie.mode, 0);
 
 	now = jiffies;
 	link->u.mgd.csa.time = now +
@@ -1524,6 +1545,17 @@ static int ieee80211_config_bw(struct ieee80211_link_data *link,
 		if (he_6ghz_oper) {
 			enum ieee80211_ap_reg_power ap_power_type =
 				ieee80211_ap_power_type(he_6ghz_oper->control);
+
+			if (ieee80211_6ghz_sta_power_type_disallowed
+							(sdata,
+							 &chanreq.oper,
+							 ap_power_type)) {
+				link_info(link,
+					  "AP %pM power mode %d disallowed by reg rules, disconnect\n",
+					  link->u.mgd.bssid, ap_power_type);
+				return -EINVAL;
+			}
+
 			if (ap_power_type != link->conf->power_type) {
 #ifdef CPTCFG_QCN_EXTN
 				ret = ieee80211_validate_6ghz_chandef_extn(sdata->local,
@@ -1605,7 +1637,9 @@ static int ieee80211_config_bw(struct ieee80211_link_data *link,
 	}
 
 	if (!ieee80211_hw_check(&sdata->local->hw, SKIP_CHANDEF_IDENTICAL_CHECK) &&
-	    !cfg80211_chandef_identical(&old_oper, &link->conf->chanreq.oper)) {
+	    !cfg80211_chandef_identical(&old_oper, &link->conf->chanreq.oper) &&
+	    (!sdata->wdev.valid_links ||
+	     (sdata->wdev.valid_links & BIT(link->link_id)))) {
 		link->conf->chanreq.oper = old_oper;
 		return ieee80211_sta_bw_reconfig_start_csa(link, &chanreq.oper,
 							   &ap_chandef);
@@ -3375,12 +3409,12 @@ ieee80211_sta_process_chanswitch(struct ieee80211_link_data *link,
 	link->u.mgd.csa.blocked_tx = csa_ie.mode;
 	link->u.mgd.csa.bw_reconfig = false;
 
-	if (csa_ie.mode)
+	if (csa_ie.mode && !ieee80211_vif_is_mld(&sdata->vif))
 		ieee80211_vif_block_queues_csa(sdata);
 
 	cfg80211_ch_switch_started_notify(sdata->dev, &csa_ie.chanreq.oper,
 					  link->link_id, csa_ie.count,
-					  csa_ie.mode);
+					  csa_ie.mode, csa_ie.max_switch_time);
 
 	if (source == IEEE80211_CSA_SOURCE_BEACON && sdata->u.mgd.associated)
 		ieee80211_cross_link_csa_window_update(link, &csa_ie.chanreq.oper,
@@ -3900,16 +3934,44 @@ void ieee80211_dynamic_ps_timer(struct timer_list *t)
 	wiphy_work_queue(local->hw.wiphy, &local->dynamic_ps_enable_work);
 }
 
+bool ieee80211_cac_started_any_5ghz_link(struct ieee80211_vif *vif,
+					 unsigned int link_id)
+{
+	struct ieee80211_sub_if_data *sdata = vif_to_sdata(vif);
+	struct ieee80211_link_data *link;
+	struct ieee80211_chanctx *ctx;
+	struct ieee80211_link_data *tmp_link;
+
+	link = sdata_dereference(sdata->link[link_id], sdata);
+	if (!link)
+		return false;
+
+	ctx = ieee80211_link_get_chanctx(link);
+	if (!ctx)
+		return false;
+
+	list_for_each_entry(tmp_link, &ctx->assigned_links,
+			    assigned_chanctx_list) {
+		if (tmp_link == link)
+			continue;
+
+		if (tmp_link->sdata->wdev.links[tmp_link->link_id].cac_started)
+			return true;
+	}
+
+	return false;
+}
+EXPORT_SYMBOL(ieee80211_cac_started_any_5ghz_link);
+
 enum hrtimer_restart ieee80211_dfs_cac_timeout(struct hrtimer *timer)
 {
-        struct ieee80211_link_data *link =
-                container_of(timer, struct ieee80211_link_data,
-                             dfs_cac_timer);
-        struct ieee80211_sub_if_data *sdata = link->sdata;
+	struct ieee80211_chanctx *ctx =
+		container_of(timer, struct ieee80211_chanctx,
+			     dfs_cac_timer);
 
-        wiphy_work_queue(sdata->local->hw.wiphy, &link->dfs_cac_timer_work);
+	wiphy_work_queue(ctx->local->hw.wiphy, &ctx->dfs_cac_timer_work);
 
-        return HRTIMER_NORESTART;
+	return HRTIMER_NORESTART;
 }
 
 static void
@@ -3950,26 +4012,43 @@ ieee80211_dfs_cac_handle_deferred_up_links(struct ieee80211_link_data *link)
 
 void ieee80211_dfs_cac_timer_work(struct wiphy *wiphy, struct wiphy_work *work)
 {
-	struct ieee80211_link_data *link =
-		container_of(work, struct ieee80211_link_data,
+	struct ieee80211_chanctx *ctx =
+		container_of(work, struct ieee80211_chanctx,
 			     dfs_cac_timer_work);
-	struct cfg80211_chan_def chandef = link->conf->chanreq.oper;
-	struct ieee80211_sub_if_data *sdata = link->sdata;
+	struct ieee80211_local *local = ctx->local;
+	struct ieee80211_link_data *link;
+	struct cfg80211_chan_def chandef;
+	struct ieee80211_sub_if_data *sdata;
+	bool link_found = false;
 
-	lockdep_assert_wiphy(sdata->local->hw.wiphy);
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	list_for_each_entry(link, &ctx->assigned_links, assigned_chanctx_list) {
+		if (link->sdata->wdev.links[link->link_id].cac_started) {
+			link_found = true;
+			break;
+		}
+	}
+
+	if (!link_found)
+		return;
+
+	sdata = link->sdata;
+	chandef = link->conf->chanreq.oper;
+
 
 	if (sdata->wdev.links[link->link_id].cac_started) {
 		if (!link->conf->deferred_up) {
-			ieee80211_link_release_channel(link);
-			cfg80211_cac_event(sdata->dev, &chandef,
-					   NL80211_RADAR_CAC_FINISHED,
-					   GFP_KERNEL, link->link_id);
+#ifdef CPTCFG_QCN_EXTN
+			if (!cfg80211_support_bootup_cac(local->hw.wiphy))
+#endif /* CPTCFG_QCN_EXTN */
+				ieee80211_link_release_channel(link);
 		} else {
-			cfg80211_cac_event(sdata->dev, &chandef,
-					   NL80211_RADAR_CAC_FINISHED,
-					   GFP_KERNEL, link->link_id);
 			ieee80211_dfs_cac_handle_deferred_up_links(link);
 		}
+		cfg80211_cac_event(sdata->dev, &chandef,
+				   NL80211_RADAR_CAC_FINISHED,
+				   GFP_KERNEL, link->link_id);
 	}
 }
 
@@ -6523,13 +6602,28 @@ static int ieee80211_prep_channel(struct ieee80211_sub_if_data *sdata,
 			link->conf->pwr_reduction = *elems->pwr_constr_elem;
 
 		he_6ghz_oper = ieee80211_he_6ghz_oper(elems->he_operation);
-		if (he_6ghz_oper)
-			link->conf->power_type =
+		if (he_6ghz_oper) {
+			enum ieee80211_ap_reg_power ap_power_type =
 				ieee80211_ap_power_type(he_6ghz_oper->control);
-		else
+
+			if (ieee80211_6ghz_sta_power_type_disallowed
+							(sdata,
+							 &chanreq.oper,
+							 ap_power_type)) {
+				link_info(link,
+					  "AP %pM power mode %d disallowed by reg rules, reject\n",
+					  cbss->bssid, ap_power_type);
+				rcu_read_unlock();
+				kfree(elems);
+				return -EINVAL;
+			}
+
+			link->conf->power_type = ap_power_type;
+		} else {
 			link_info(link,
 				  "HE 6 GHz operation missing (on %d MHz), expect issues\n",
 				  cbss->channel->center_freq);
+		}
 
 		link->conf->tpe = elems->tpe;
 		ieee80211_rearrange_tpe(&link->conf->tpe, &ap_chandef,

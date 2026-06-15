@@ -164,6 +164,9 @@ struct ieee80211_bss {
 
 	/* Keep track of what bits of information we have valid info for. */
 	u8 valid_data;
+
+	bool has_smd;
+	struct ieee80211_smd_info_element smd_info;
 };
 
 /**
@@ -519,6 +522,17 @@ struct ieee80211_mgd_assoc_data {
 
 	size_t ie_len;
 	u8 *ie_pos; /* used to fill ie[] with link[].elems */
+
+	bool smd_enabled;
+	u8 smd_ptk_mode;
+	u8 smd_identifier[ETH_ALEN];
+	u8 smd_capabilities;
+	u16 smd_timeout;
+	const u8 *smd_kdk;
+	size_t smd_kdk_len;
+	const u8 *dh_params;
+	size_t dh_params_len;
+
 	u8 ie[];
 };
 
@@ -584,6 +598,11 @@ struct ieee80211_if_managed {
 		IEEE80211_CFP_REQUIRED
 	} cfp; /* control frame protection */
 
+	enum {
+		IEEE80211_SMD_PTK_DISABLED,
+		IEEE80211_SMD_PTK_PER_SMD,
+		IEEE80211_SMD_PTK_PER_AP
+	} smd_ptk_mode; /* control frame protection */
 	/*
 	 * Bitmask of enabled u-apsd queues,
 	 * IEEE80211_WMM_IE_STA_QOSINFO_AC_BE & co. Needs a new association
@@ -881,6 +900,7 @@ struct ieee80211_if_mesh {
  * @IEEE80211_SDATA_DISCONNECT_HW_RESTART: Disconnect after hardware restart
  *  recovery
  * @IEEE80211_SDATA_OFFCHAN_PACKETS: interface expects offchan monitor packets
+ * @IEEE80211_SDATA_EXT_MONITOR_ENABLED: interface has extended monitor enabled
  */
 enum ieee80211_sub_if_data_flags {
 	IEEE80211_SDATA_ALLMULTI		= BIT(0),
@@ -889,6 +909,7 @@ enum ieee80211_sub_if_data_flags {
 	IEEE80211_SDATA_IN_DRIVER		= BIT(5),
 	IEEE80211_SDATA_DISCONNECT_HW_RESTART	= BIT(6),
 	IEEE80211_SDATA_OFFCHAN_PACKETS		= BIT(7),
+	IEEE80211_SDATA_EXT_MONITOR_ENABLED	= BIT(8),
 };
 
 /**
@@ -939,6 +960,32 @@ enum ieee80211_chanctx_replace_state {
 	IEEE80211_CHANCTX_REPLACES_OTHER,
 };
 
+/**
+ * struct ieee80211_punct_obj - per-20MHz puncture/unpuncture tracking object
+ *
+ * Tracks a single 20 MHz sub-channel that was hit by radar and is being
+ * managed through the NOL -> CAC -> available lifecycle for punctured
+ * operation (11BE).  At most 2 such objects exist per chanctx.
+ *
+ * @list:        linkage into ieee80211_chanctx.punct_obj_list
+ * @center_freq: center frequency (MHz) of the 20 MHz sub-channel
+ * @radar_ts:    jiffies timestamp when the radar was first detected on this
+ *               sub-channel (updated on repeated hits before NOL expires)
+ * @cac_timer:   per-object hrtimer that fires after CAC completes
+ * @cac_work:    wiphy_work queued by @cac_timer to run in wiphy context
+ * @ctx:         back-pointer to the owning chanctx
+ */
+struct ieee80211_punct_obj {
+	struct list_head list;
+	u32 center_freq;
+	unsigned long radar_ts;
+	struct hrtimer cac_timer;
+	struct wiphy_work cac_work;
+	struct ieee80211_chanctx *ctx;
+	struct ieee80211_local *local;
+	bool cac_started;
+};
+
 struct ieee80211_chanctx {
 	struct list_head list;
 	struct rcu_head rcu_head;
@@ -956,6 +1003,27 @@ struct ieee80211_chanctx {
 	struct ieee80211_chan_req req;
 
 	bool radar_detected;
+
+	/*
+	 * Puncture/unpuncture objects for per-20MHz radar tracking (11BE).
+	 * Up to IEEE80211_MAX_PUNCT_OBJS objects are tracked per chanctx.
+	 */
+	struct list_head punct_obj_list;
+	/* Number of current unpuncture objects in punct_obj_list. */
+	int punct_obj_count;
+	/* CSA batching state -- protected by wiphy mutex */
+	struct list_head csa_pending_list;
+	struct wiphy_delayed_work csa_batch_work;
+	u8 csa_batch_max_count;
+	bool csa_batch_queued; /* set when batch work is first armed */
+
+	struct ieee80211_local *local;
+
+	/* Shared DFS CAC hrtimer and workqueue to complete the CAC for this
+	 * chanctx.
+	 */
+	struct hrtimer dfs_cac_timer;
+	struct wiphy_work dfs_cac_timer_work;
 
 	/* MUST be last - ends in a flexible-array member. */
 	struct ieee80211_chanctx_conf conf;
@@ -1092,6 +1160,10 @@ struct ieee80211_link_data_ap {
 	/* to be used after channel switch. */
 	struct cfg80211_beacon_data *next_beacon;
 	bool after_beacon_cu;
+
+	/* repurposed link bandwidth details */
+	enum ieee80211_sta_rx_bandwidth repurposed_adv_bw;
+	bool repurposed_adv_bw_valid;
 };
 
 struct ieee80211_link_data {
@@ -1118,6 +1190,14 @@ struct ieee80211_link_data {
 		struct wiphy_work finalize_work;
 		struct ieee80211_chan_req chanreq;
 		enum ieee80211_ap_reg_power power_mode;
+		/* CSA batching: entry in chanctx->csa_pending_list */
+		struct list_head batch_list;
+		/* BSS_CHANGED_* flags captured in phase 1 for deferred commit */
+		u64 changed;
+		/* countdown and block_tx saved for batch worker */
+		u8 count;
+		/* saved elemid_added for EHT Critical Update in batch worker */
+		bool elemid_added;
 	} csa;
 
 	struct wiphy_work color_change_finalize_work;
@@ -1137,8 +1217,6 @@ struct ieee80211_link_data {
 	int ap_power_level; /* in dBm */
 
 	bool radar_required;
-	struct hrtimer dfs_cac_timer;
-	struct wiphy_work dfs_cac_timer_work;
 
 	union {
 		struct ieee80211_link_data_managed mgd;
@@ -1196,6 +1274,16 @@ struct pcpu_txrx_stats {
 
 struct txrx_stats {
 		struct txrx_tid_stats   tid_stats[IEEE80211_NUM_TIDS];
+};
+
+struct ieee80211_smd_config {
+	bool enabled;
+	const u8 *smd_identifier;
+	u16 smd_timeout;
+	bool dl_data_fwd;
+	u8 max_num_peer_ap;
+	u8 smd_type;
+	u8 ptk_mode;
 };
 
 struct ieee80211_sub_if_data {
@@ -1306,6 +1394,9 @@ struct ieee80211_sub_if_data {
 	u32 rx_dropped;
 
 	int chan_hw_idx;
+
+	/* per-TID RX AMSDU enable bitmap (bit N = TID N); 0xFF = all enabled */
+	u8 rx_amsdu_tid_bitmap;
 
 	/* must be last, dynamically sized area in this! */
 	struct ieee80211_vif vif;
@@ -1517,6 +1608,24 @@ struct channel_radar_info {
 	u16 radar_bitmap;
 	struct ieee80211_channel *radar_channel;
 };
+
+/**
+ * ieee80211_dfs_process_radar_detection - process a queued radar event
+ * @wiphy: wiphy owning the mac80211 instance
+ * @chandef: channel definition carrying radar bitmap/channel information
+ */
+void ieee80211_dfs_process_radar_detection(struct wiphy *wiphy,
+					   struct cfg80211_chan_def *chandef);
+
+/**
+ * ieee80211_dfs_radar_detected_processing - process a queued radar event
+ * @local: mac80211 local state
+ * @radar_bitmap: bitmap of 20 MHz sub-channels hit by radar
+ * @radar_channel: channel where radar was detected, or NULL for default flow
+ */
+void ieee80211_dfs_radar_detected_processing(struct ieee80211_local *local,
+					     u16 radar_bitmap,
+					     struct ieee80211_channel *radar_channel);
 
 struct channel_awgn_info {
 	struct list_head list;
@@ -1835,6 +1944,20 @@ struct ieee80211_local {
 	bool wbrf_supported;
 };
 
+static inline bool
+ieee80211_get_rx_amsdu_for_tid(struct ieee80211_sub_if_data *sdata, u8 tid)
+{
+	if (!sdata)
+		return false;
+	if (tid >= IEEE80211_FIRST_TSPEC_TSID)
+		return true;
+	/* For AP_VLAN, the bitmap is managed on the parent AP sdata */
+	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN && sdata->bss)
+		sdata = container_of(sdata->bss,
+				     struct ieee80211_sub_if_data, u.ap);
+	return !!(sdata->rx_amsdu_tid_bitmap & BIT(tid));
+}
+
 struct ieee80211_queue_info {
 	struct ieee80211_hw *hw;
 	int queue;
@@ -2033,6 +2156,10 @@ struct ieee802_11_elems {
 
 	/* whether/which parse error occurred while retrieving these elements */
 	u8 parse_error;
+
+	/* SMD Information Element */
+	const struct ieee80211_smd_info_element *smd_info;
+	size_t smd_info_len;
 };
 
 static inline struct ieee80211_local *hw_to_local(
@@ -2240,6 +2367,7 @@ int ieee80211_mgmt_tx_cancel_wait(struct wiphy *wiphy,
 
 /* channel switch handling */
 void ieee80211_csa_finalize_work(struct wiphy *wiphy, struct wiphy_work *work);
+void ieee80211_csa_batch_work(struct wiphy *wiphy, struct wiphy_work *work);
 int ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 			     struct cfg80211_csa_settings *params);
 /* awgn interference handling */
@@ -2292,6 +2420,8 @@ static inline bool ieee80211_sdata_running(struct ieee80211_sub_if_data *sdata)
 {
 	return test_bit(SDATA_STATE_RUNNING, &sdata->state);
 }
+
+bool ieee80211_sdata_has_txrx_stats_offload(struct ieee80211_sub_if_data *sdata);
 
 /* link handling */
 void ieee80211_link_setup(struct ieee80211_link_data *link);
@@ -2623,7 +2753,6 @@ struct ieee80211_elems_parse_params {
 	struct cfg80211_bss *bss;
 	int link_id;
 	bool from_ap;
-	size_t scratch_len;
 };
 
 struct ieee802_11_elems *
@@ -2834,6 +2963,8 @@ void ieee80211_recalc_smps(struct ieee80211_sub_if_data *sdata,
 void ieee80211_recalc_min_chandef(struct ieee80211_sub_if_data *sdata,
 				  int link_id);
 
+bool ieee80211_is_scan_ongoing(struct ieee80211_hw *hw,
+			       struct cfg80211_chan_def *chandef);
 size_t ieee80211_ie_split_vendor(const u8 *ies, size_t ielen, size_t offset);
 u8 *ieee80211_ie_build_ht_cap(u8 *pos, struct ieee80211_sta_ht_cap *ht_cap,
 			      u16 cap);
@@ -2921,6 +3052,14 @@ ieee80211_chanreq_downgrade(struct ieee80211_chan_req *chanreq,
 bool ieee80211_chanreq_identical(const struct ieee80211_chan_req *a,
 				 const struct ieee80211_chan_req *b);
 
+const struct ieee80211_chan_req *
+ieee80211_chanctx_compatible(struct ieee80211_chanctx *ctx,
+			     const struct ieee80211_chan_req *req,
+			     struct ieee80211_chan_req *tmp);
+
+struct ieee80211_link_data *
+ieee80211_chanctx_find_monitor_link(struct ieee80211_chanctx *ctx);
+
 int __must_check
 _ieee80211_link_use_channel(struct ieee80211_link_data *link,
 			    const struct ieee80211_chan_req *req,
@@ -2957,6 +3096,13 @@ void ieee80211_link_release_channel(struct ieee80211_link_data *link);
 void ieee80211_link_vlan_copy_chanctx(struct ieee80211_link_data *link);
 void ieee80211_link_copy_chanctx_to_vlans(struct ieee80211_link_data *link,
 					  bool clear);
+struct ieee80211_chanctx *
+ieee80211_link_get_chanctx(struct ieee80211_link_data *link);
+void ieee80211_handle_cac_stop(struct wiphy *wiphy,
+			       struct ieee80211_sub_if_data *sdata,
+			       struct ieee80211_link_data *link,
+			       struct ieee80211_bss_conf *link_conf,
+			       bool *cac_aborted);
 int ieee80211_chanctx_refcount(struct ieee80211_local *local,
 			       struct ieee80211_chanctx *ctx);
 
@@ -2975,6 +3121,71 @@ void ieee80211_dfs_cac_timer_work(struct wiphy *wiphy, struct wiphy_work *work);
 void ieee80211_dfs_cac_cancel(struct ieee80211_local *local,
 			      struct cfg80211_chan_def *def);
 void ieee80211_dfs_radar_detected_work(struct wiphy *wiphy, struct wiphy_work *work);
+
+/**
+ * ieee80211_punct_obj_init - initialise a puncture CAC tracking object
+ * @local: mac80211 local state
+ * @ctx: owning channel context
+ * @obj: pre-allocated object to initialise
+ * @center_freq: 20 MHz sub-channel center frequency in MHz
+ * @radar_hit_ts: timestamp when radar was detected
+ */
+void ieee80211_punct_obj_init(struct ieee80211_local *local,
+			      struct ieee80211_chanctx *ctx,
+			      struct ieee80211_punct_obj *obj,
+			      u32 center_freq,
+			      unsigned long radar_hit_ts);
+
+/**
+ * ieee80211_punct_obj_free - cancel timers and free a puncture object
+ * @local: mac80211 local state
+ * @ctx: owning channel context
+ * @obj: object to destroy
+ */
+void ieee80211_punct_obj_free(struct ieee80211_local *local,
+			      struct ieee80211_chanctx *ctx,
+			      struct ieee80211_punct_obj *obj);
+
+/**
+ * ieee80211_punct_obj_list_free - free all puncture objects on a chanctx
+ * @local: mac80211 local state
+ * @ctx: channel context being torn down
+ */
+void ieee80211_punct_obj_list_free(struct ieee80211_local *local,
+				   struct ieee80211_chanctx *ctx);
+
+/**
+ * ieee80211_punct_cac_work - puncture CAC finished work handler
+ * @wiphy: wiphy on which CAC completed
+ * @work: work item embedded in the puncture object
+ */
+void ieee80211_punct_cac_work(struct wiphy *wiphy, struct wiphy_work *work);
+
+/**
+ * ieee80211_punct_cac_timeout - puncture CAC expiry timer callback
+ * @timer: timer embedded in the puncture object
+ */
+enum hrtimer_restart ieee80211_punct_cac_timeout(struct hrtimer *timer);
+
+/**
+ * ieee80211_punct_radar_update - update puncture objects after radar detection
+ * @local: mac80211 local state
+ * @chandef: channel definition where radar was detected
+ * @ctx: channel context that owns the puncture objects
+ * @radar_bitmap: bitmap of 20 MHz sub-channels hit by radar
+ */
+void ieee80211_punct_radar_update(struct ieee80211_local *local,
+				  struct cfg80211_chan_def *chandef,
+				  struct ieee80211_chanctx *ctx,
+				  u16 radar_bitmap);
+
+/**
+ * ieee80211_start_punctured_cac - start CAC after punctured-channel NOP expiry
+ * @wiphy: wiphy whose cfg80211 NOL worker reported NOP completion
+ * @chandef: 20 MHz chandef for the channel that left NOL
+ */
+void ieee80211_start_punctured_cac(struct wiphy *wiphy,
+				   struct cfg80211_chan_def *chandef);
 void ieee80211_awgn_detected_work(struct work_struct *work);
 int ieee80211_send_action_csa(struct ieee80211_sub_if_data *sdata,
 			      struct cfg80211_csa_settings *csa_settings);

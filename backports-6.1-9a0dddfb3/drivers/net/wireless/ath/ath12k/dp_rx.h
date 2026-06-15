@@ -16,6 +16,17 @@ struct ath12k_sta;
 
 #define ip_hdrlen(iph) ((iph)->ihl * 4)
 
+#ifndef CPTCFG_EXT_IPA_OFFLOAD
+#define VIRT_TO_PHYS(defrag_skb, buf_paddr) \
+({ \
+	(buf_paddr) = (dma_addr_t)virt_to_phys((defrag_skb)->data); \
+})
+
+#define IPA_SET_RX_BUF_SMMU_MAP(...) ((void)0)
+#define IPA_SET_RX_BUF_SMMU_UNMAP(...) ((void)0)
+#define ATH12K_IPA_DMA_MAP_SINGLE(...) ((void)0)
+#endif
+
 /* different supported pkt types for routing */
 enum ath12k_routing_pkt_type {
 	ATH12K_PKT_TYPE_ARP_IPV4,
@@ -122,6 +133,10 @@ struct ath12k_dp_rx_tid {
 	/* Info related to UMAC migration */
 	u16     peer_id;
 	u8      chip_id;
+	u8      pdev_id;
+
+	/* Per-TID lock protecting concurrent access to this TID's state */
+	spinlock_t tid_lock;
 };
 
 struct ath12k_dp_rx_reo_cache_flush_elem {
@@ -224,6 +239,25 @@ static inline u32 ath12k_eht_gi_to_nl80211_eht_gi(u8 sgi)
 	return ret;
 }
 
+static inline u32 ath12k_uhr_gi_to_nl80211_uhr_gi(u8 sgi)
+{
+	u32 ret = 0;
+
+	switch (sgi) {
+	case RX_MSDU_START_SGI_0_8_US:
+		ret = NL80211_RATE_INFO_UHR_GI_0_8;
+		break;
+	case RX_MSDU_START_SGI_1_6_US:
+		ret = NL80211_RATE_INFO_UHR_GI_1_6;
+		break;
+	case RX_MSDU_START_SGI_3_2_US:
+		ret = NL80211_RATE_INFO_UHR_GI_3_2;
+		break;
+	}
+
+	return ret;
+}
+
 int ath12k_dp_rx_ampdu_start(struct ath12k *ar,
 			     struct ieee80211_ampdu_params *params,
 			     u8 link_id);
@@ -233,7 +267,8 @@ int ath12k_dp_rx_ampdu_stop(struct ath12k *ar,
 int ath12k_dp_rx_peer_pn_replay_config(struct ath12k_link_vif *arvif,
 				       const u8 *peer_addr,
 				       enum set_key_cmd key_cmd,
-				       struct ieee80211_key_conf *key);
+				       struct ieee80211_key_conf *key,
+				       struct ieee80211_sta *sta);
 void ath12k_dp_rx_peer_tid_cleanup(struct ath12k *ar,
 				   struct ath12k_dp_link_peer *peer);
 int ath12k_dp_rx_reo_setup(struct ath12k_base *ab);
@@ -292,14 +327,11 @@ void ath12k_dp_rx_fst_init(struct ath12k_base *ab);
 ssize_t ath12k_dp_dump_fst_table(struct ath12k_base *ab, char *buf, int size);
 size_t ath12k_dp_list_cut_nodes(struct list_head *list,
 				struct list_head *head, size_t count, uint8_t pool_type);
-int ath12k_dp_rx_peer_tid_setup(struct ath12k *ar, const u8 *peer_mac, int vdev_id,
+int ath12k_dp_rx_peer_tid_setup(struct ath12k *ar, struct ath12k_dp_peer *dp_peer,
+				const u8 *peer_mac, int vdev_id,
 				u8 tid, u32 ba_win_sz, u16 ssn,
 				enum hal_pn_type pn_type);
 void ath12k_dp_tid_cleanup(struct ath12k_base *ab);
-void ath12k_dp_peer_tid_setup(struct ath12k_base *ab);
-void ath12k_dp_peer_reo_tid_setup(struct ath12k *ar, int vdev_id,
-				  const u8 *peer_mac);
-void ath12k_dp_tid_setup(void *data, struct ieee80211_sta *sta);
 void ath12k_dp_reset_rx_reo_tid_q(void *vaddr, u32 ba_window_size, u8 tid);
 int
 ath12k_dp_rx_htt_rxdma_rxole_ppe_cfg_set(struct ath12k_base *ab,
@@ -309,13 +341,14 @@ ath12k_dp_primary_peer_migrate_setup(struct ath12k_dp *dp, void *ctx,
 				     struct hal_reo_status *status);
 int
 ath12k_dp_peer_migrate(struct ath12k_sta *ahsta, u16 peer_id,
-		       u8 chip_id);
+		       u8 chip_id, u8 pdev_id);
 int ath12k_dp_rx_pkt_type_filter(struct ath12k *ar,
 				 enum ath12k_routing_pkt_type pkt_type,
 				 u32 meta_data);
 int ath12k_dp_rxdma_buf_setup(struct ath12k_base *ab);
 void ath12k_dp_rx_skb_free(struct sk_buff *skb, struct ath12k_dp *dp, int ring,
-			   enum ath12k_dp_rx_error drop_reason);
+			   enum ath12k_dp_rx_error drop_reason,
+			   struct ath12k_pdev_dp *dp_pdev, u8 tid);
 void ath12k_dp_rx_classify_mscs(struct ath12k_base *ab,
 				struct ath12k_dp_peer *peer,
 				struct sk_buff *msdu, u8 tid);
@@ -323,4 +356,7 @@ void ath12k_dp_rx_peer_tid_ba_config(struct ath12k_dp *dp, u8 tid, u32 *ba_win_s
 				     u16 *ssn);
 bool ath12k_dp_rx_peer_tid_skip_pn_replay(struct ath12k_dp *dp, u8 tid);
 int ath12k_dp_rxdma_ring_sel_config(struct ath12k_base *ab);
+u16 ath12k_wifi7_dp_rx_get_peer_id(struct ath12k_base *ab,
+				   enum ath12k_peer_metadata_version ver,
+				   __le32 peer_metadata);
 #endif /* ATH12K_DP_RX_H */

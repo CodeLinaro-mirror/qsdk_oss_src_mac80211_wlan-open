@@ -807,6 +807,7 @@ struct ieee80211_parsed_tpe {
  * @beacon_tx_mode: Beacon Tx Mode setting.
  * @ml_max_rec_links: ML Max recommended links
  * @dps_assist_support: does this BSS support DPS Assist Support.
+ * @smd_params: advertised SMD feature params.
  */
 struct ieee80211_bss_conf {
 	struct ieee80211_vif *vif;
@@ -936,6 +937,7 @@ struct ieee80211_bss_conf {
 	bool is_cfp_enabled;
 	bool dps_assist_support;
 	enum nl80211_auth_type auth_type;
+	struct cfg80211_smd_params smd_params;
 };
 
 /**
@@ -2859,6 +2861,7 @@ struct ieee80211_link_sta {
  * @reconf: bitmap of links added and removed during multi-link
  *	reconfiguration.
  * @control_mic_pad: Padding info for control frames
+ * @smd_params: SMD parameters
  */
 struct ieee80211_sta {
 	u8 addr[ETH_ALEN] __aligned(2);
@@ -2903,6 +2906,8 @@ struct ieee80211_sta {
 	struct net_device *dev;
 	struct ieee80211_neg_ttlm neg_ttlm;
 	u8 control_mic_pad;
+
+	struct  cfg80211_peer_smd_params smd_params;
 
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
@@ -4956,8 +4961,8 @@ struct ieee80211_ppe_vp_ds_params {
  *	Background radar/CAC detection allows to avoid the CAC downtime
  *	switching to a different channel during CAC detection on the selected
  *	radar channel.
- *	The caller is expected to set chandef pointer to NULL in order to
- *	disable background CAC/radar detection.
+ * @abort_radar_background: Abort background radar/CAC detection previously
+ *	configured on @chandef.
  * @net_fill_forward_path: Called from .ndo_fill_forward_path in order to
  *	resolve a path for hardware flow offloading
  * @can_activate_links: Checks if a specific active_links bitmap is
@@ -5163,6 +5168,10 @@ struct ieee80211_ops {
 				    struct ieee80211_vif *vif,
 				    struct ieee80211_link_sta *link_sta,
 				    struct link_station_info *link_sinfo);
+	void (*set_preserved_link_stats)(struct ieee80211_hw *hw,
+					 struct ieee80211_vif *vif,
+					 struct ieee80211_sta *sta,
+					 struct station_info *sinfo);
 
 	/**
 	 * @ampdu_action:
@@ -5388,6 +5397,8 @@ struct ieee80211_ops {
 				     struct ieee80211_sta *sta, u8 flowid);
 	int (*set_radar_background)(struct ieee80211_hw *hw,
 				    struct cfg80211_chan_def *chandef);
+	int (*abort_radar_background)(struct ieee80211_hw *hw,
+				      const struct cfg80211_chan_def *chandef);
 	bool (*can_activate_links)(struct ieee80211_hw *hw,
 				   struct ieee80211_vif *vif,
 				   u16 active_links);
@@ -8717,6 +8728,18 @@ ieee80211_rx_send_mscs_tuple(struct ieee80211_sta *pubsta,
 int ieee80211_get_link_assoc_status(struct ieee80211_vif *vif, u8 link_id);
 
 /**
+ * ieee80211_cac_started_any_5ghz_link - check whether CAC is running on any
+ * 5 GHz link
+ * @vif: virtual interface
+ * @link_id: link identifier
+ *
+ * Return: true if any 5 GHz link in the same channel has CAC started, false
+ * otherwise.
+ */
+bool ieee80211_cac_started_any_5ghz_link(struct ieee80211_vif *vif,
+					 unsigned int link_id);
+
+/**
  * ieee80211_tx_monitor_offload - h/w offloaded tx monitor callback
  *
  * This function can be used by driver to deliver packet to upper layer
@@ -8756,4 +8779,15 @@ int ieee80211_clear_repurpose_link(struct ieee80211_vif *vif, u8 link_id);
  */
 void ieee80211_enable_offchan_packet_capture(struct ieee80211_vif *vif,
 					     bool enable);
+
+/**
+ * ieee80211_enable_ext_monitor - Enable extended monitor indication
+ *
+ * This function lets drivers indicate whether extended monitor support is
+ * enabled on a vif, so mac80211 can make RX path decisions based on it.
+ *
+ * @vif: vif for which extended monitor is enabled/disabled
+ * @enable: enable/disable extended monitor indication
+ */
+void ieee80211_enable_ext_monitor(struct ieee80211_vif *vif, bool enable);
 #endif /* MAC80211_H */

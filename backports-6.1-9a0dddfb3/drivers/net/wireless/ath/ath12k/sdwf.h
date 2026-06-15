@@ -7,6 +7,7 @@
 #define ATH12K_SDWF_H
 
 #include "ath/ath_dp_accel_cfg.h"
+#include "vendor.h"
 
 #define SDWF_PEER_MSDUQ_INVALID 0xFFFF
 #define SDWF_METADATA_INVALID   0xFFFFFFFF
@@ -201,6 +202,12 @@ u16 ath12k_sdwf_get_dl_qos_id(struct ath12k_base *ab, u16 svc_id);
 u16 ath12k_sdwf_get_ul_qos_id(struct ath12k_base *ab, u16 svc_id);
 
 u32 ath_encode_sdwf_metadata(u16 msduq_peer);
+
+void
+ath12k_sdwf_fill_msduq_event_data(struct ath12k_base *ab,
+				  struct ath12k_dp_link_peer *link_peer,
+				  u16 msduq, u16 qos_id,
+				  struct ath12k_sdwf_msduq_evt_data *data);
 
 u16 ath12k_sdwf_get_msduq_peer(struct wireless_dev *wdev, u8 *peer_mac,
 			       struct sawf_param *dl_params,

@@ -645,8 +645,8 @@ static int ath12k_ahb_ext_grp_napi_poll(struct napi_struct *napi, int budget)
 
 	work_done = irq_grp->irq_handler(irq_grp->dp, irq_grp, budget);
 	if (work_done < budget) {
-		napi_complete_done(napi, work_done);
-		ath12k_ahb_ext_grp_enable(irq_grp);
+		if (likely(napi_complete_done(napi, work_done)))
+			ath12k_ahb_ext_grp_enable(irq_grp);
 	}
 
 	if (work_done > budget)
@@ -662,9 +662,30 @@ static irqreturn_t ath12k_ahb_ext_interrupt_handler(int irq, void *arg)
 	/* last interrupt received for this group */
 	irq_grp->timestamp = jiffies;
 
-	ath12k_ahb_ext_grp_disable(irq_grp);
-
-	napi_schedule(&irq_grp->napi);
+	/* Use napi_schedule_prep() to atomically check and set the NAPI
+	 * scheduled state before disabling the IRQs. This prevents a
+	 * disable_irq_nosync() reference count imbalance that occurs when
+	 * multiple IRQs belonging to the same group fire simultaneously on
+	 * different CPUs.
+	 *
+	 * In IPQ5332 (AHB), a single IRQ group can contain multiple IRQs
+	 * with different SMP affinities (e.g., host2rxdma-monitor-ring1 on
+	 * CPU1 and wbm2host-tx-completions-ring4 on CPU2 both belong to
+	 * group 3). If both fire at the same time, both CPUs enter this
+	 * handler concurrently. The old code called ath12k_ahb_ext_grp_disable()
+	 * unconditionally, causing disable_irq_nosync() to be called twice
+	 * (count=2), while napi_complete_done() only calls enable_irq() once
+	 * (count=1). This left all IRQs in the group permanently disabled,
+	 * stalling TX completions and eventually causing station disassociation.
+	 *
+	 * By checking napi_schedule_prep() first, only the first CPU to win
+	 * the atomic test-and-set disables the IRQs and schedules NAPI. The
+	 * second CPU skips the disable, keeping the reference count balanced.
+	 */
+	if (napi_schedule_prep(&irq_grp->napi)) {
+		ath12k_ahb_ext_grp_disable(irq_grp);
+		__napi_schedule(&irq_grp->napi);
+	}
 
 	return IRQ_HANDLED;
 }
@@ -740,7 +761,7 @@ ath12k_ahb_config_ext_irq(struct ath12k_base *ab,
 				irq_grp->irqs[num_irq++] =
 					txmon2host_monitor_destination_mac1;
 
-			if (ring_mask->tx_mon_buff[i] & BIT(j))
+			if (ring_mask->host2txmon[i] & BIT(j))
 				irq_grp->irqs[num_irq++] =
 					host2tx_monitor_ring1;
 
@@ -1589,8 +1610,8 @@ ath12k_ahb_get_device_family(const struct platform_device *pdev)
 	struct ath12k_ahb_driver *driver;
 	const struct of_device_id *of_id;
 
-	for (device_id = ATH12K_DEVICE_FAMILY_WIFI7;
-	     device_id < ATH12K_DEVICE_FAMILY_MAX; device_id++) {
+	for (device_id = ATH12K_DEVICE_FAMILY_START;
+	    device_id < ATH12K_DEVICE_FAMILY_MAX; device_id++) {
 		driver = ath12k_ahb_family_drivers[device_id];
 		if (driver) {
 			of_id = of_match_device(driver->id_table, &pdev->dev);
@@ -1624,6 +1645,10 @@ static int ath12k_get_userpd_id(struct device *dev)
 		userpd_id = ATH12K_QCN6432_USERPD_ID_1;
 	} else if (strcmp(subsys_name, "q6v5_wcss_userpd3") == 0) {
 		userpd_id = ATH12K_QCN6432_USERPD_ID_2;
+	} else if (strcmp(subsys_name, "q6v5_wcss_userpd4") == 0) {
+		userpd_id = ATH12K_QCN9160_USERPD_ID_3;
+	} else {
+		dev_err(dev, "Unknown userpd subsys name: %s\n", subsys_name);
 	}
 
 	return userpd_id;
@@ -1656,6 +1681,7 @@ static int ath12k_ahb_probe(struct platform_device *pdev)
 			bus_type = ATH12K_BUS_AHB;
 			break;
 		case ATH12K_HW_QCN6432_HW10:
+		case ATH12K_HW_QCN9160_HW10:
 			bus_type = ATH12K_BUS_HYBRID;
 			hif_ops = &ath12k_ahb_hif_ops_qcn6432;
 			break;

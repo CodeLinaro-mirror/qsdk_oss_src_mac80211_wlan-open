@@ -143,7 +143,29 @@ struct ath12k_pktlog_remote_service {
 	int connect_done;
 	u32 missed_records;
 	u32 fend_counts;
+	struct ath12k *ar;
 };
+
+/**
+ * struct ath12k_pktlog_remote_id_hdr - Remote pktlog identification header
+ *
+ * Sent at the start of each remote pktlog connection to identify the source.
+ * Total size is 72 bytes to match ODD_HEADER_SIZE in pktlog_remote_ud.py,
+ * allowing the script to skip this header and find the magic number at offset 72.
+ *
+ * @mac_addr:   Device MAC address (6 bytes) - from ar->ab->mac_addr
+ * @ip_addr:    Device local IP address in network byte order (4 bytes)
+ *              Obtained from kernel_getsockname() after connection
+ * @reserved:   Zero-padded reserved bytes (54 bytes)
+ * @radio_name: Radio PHY name, e.g., "phy00" (8 bytes, null-padded)
+ *              Obtained from ar->pdev->phy_name
+ */
+struct ath12k_pktlog_remote_id_hdr {
+	u8   mac_addr[ETH_ALEN];
+	u8   ip_addr[4];
+	u8   reserved[54];
+	char radio_name[8];
+} __packed;
 
 /**
  * struct ath12k_pktlog - Packet log context
@@ -206,8 +228,7 @@ struct ath12k_pktlog {
 	int is_wrap;
 	char ipaddr[ATH12K_IP_ADDR_STR_MAX];
 	u8 pktlog_remote_client;
-	struct ath12k *ar;
-	struct ath12k_pktlog_remote_service rpktlog_svc;
+	struct ath12k_pktlog_remote_service *rpktlog_svc;
 };
 
 struct ath12k_pktlog_decode_info {
@@ -222,4 +243,11 @@ struct ath12k_pl_fw_info {
         u8 chip_info[40];
         u32 pktlog_defs_json_version;
 } __packed;
+
+/* Remote pktlog definitions */
+int ath12k_pktlog_remote_service_send(struct ath12k_pktlog_remote_service *service,
+				      char *buf, int len);
+int ath12k_pktlog_stop_service(struct ath12k *ar);
+void ath12k_pktlog_init_remote_service_work(struct ath12k *ar);
+int ath12k_pktlog_remote_enable(struct ath12k *ar, u32 enable);
 #endif /* _PKTLOG_H_ */

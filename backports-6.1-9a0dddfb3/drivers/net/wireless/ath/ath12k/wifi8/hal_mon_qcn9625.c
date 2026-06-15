@@ -8,22 +8,6 @@
 #include "../dp_mon.h"
 #include "hal_mon.h"
 
-static __always_inline void
-ath12k_wifi8_hal_mon_set_mon_buf_desc(void *desc, u32 addr_lo,
-				      u32 addr_hi, u64 cookie)
-{
-	struct hal_mon_buf_ring *mon_buf_desc = (struct hal_mon_buf_ring *)desc;
-
-	mon_buf_desc->paddr_lo = addr_lo;
-	mon_buf_desc->paddr_hi = addr_hi;
-	mon_buf_desc->cookie = cookie;
-}
-
-bool ath12k_wifi8_is_mon_buf_addr_tlv(u32 tlv_tag)
-{
-	return (tlv_tag == HAL_MON_BUF_ADDR);
-}
-
 const struct hal_mon_ops hal_qcn9625_mon_ops = {
 	.get_mon_mpdu_start_wmask =
 		ath12k_wifi8_hal_mon_rx_mpdu_start_wmask_get,
@@ -41,6 +25,29 @@ const struct hal_mon_ops hal_qcn9625_mon_ops = {
 		ath12k_wifi8_hal_mon_rx_ppdu_eu_stats_info_parse,
 	.rx_desc_get_msdu_payload =
 		ath12k_wifi8_hal_mon_rx_desc_get_msdu_payload,
+
+	.tx_parse_status_tlv = ath12k_wifi8_hal_mon_tx_parse_status_tlv,
+	.tx_status_get_num_user = ath12k_wifi8_hal_mon_tx_status_get_num_user,
 	.hal_mon_set_mon_buf_desc = ath12k_wifi8_hal_mon_set_mon_buf_desc,
 	.is_mon_buf_addr_tlv = ath12k_wifi8_is_mon_buf_addr_tlv,
+	.hal_mon_tx_ppdu_info = ath12k_wifi8_hal_mon_tx_ppdu_info,
+	.get_tx_mon_wmask_config = ath12k_wifi8_hal_tx_mon_get_wmask_config,
+	.tx_fes_setup_info_get =
+		ath12k_wifi8_hal_mon_tx_fes_setup_info_parse,
+	.tx_peer_entry_info_get =
+		ath12k_wifi8_hal_mon_tx_peer_entry_info_parse,
+	.tx_queue_ext_info_get =
+		ath12k_wifi8_hal_mon_tx_queue_ext_info_parse,
+	.tx_mpdu_start_info_get =
+		ath12k_wifi8_hal_mon_tx_mpdu_start_info_parse,
+	.tx_fes_status_info_get =
+		ath12k_wifi8_hal_mon_tx_fes_status_end_info_parse,
+	.tx_response_end_status_info_get =
+		ath12k_wifi8_hal_mon_tx_response_end_status_info_parse,
+	.tx_fes_status_prot_info_get =
+		ath12k_wifi8_hal_mon_tx_fes_status_prot_info_parse,
+	.tx_pcu_ppdu_setup_init_info_get =
+		ath12k_wifi8_hal_mon_tx_pcu_ppdu_setup_init_info_parse,
+	.extract_tx_mon_ring_desc = ath12k_wifi8_extract_tx_mon_ring_desc,
+
 };

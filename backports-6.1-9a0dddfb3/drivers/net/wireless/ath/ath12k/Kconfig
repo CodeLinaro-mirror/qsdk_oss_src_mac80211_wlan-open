@@ -51,15 +51,6 @@ config ATH12K_DEBUG
 	  If unsure, say Y to make it easier to debug problems. But if
 	  you want optimal performance choose N.
 
-config ATH12K_TX_MONITOR
-	bool "ath12k TX monitor support"
-	depends on ATH12K
-	help
-	  Enable ath12k TX monitor (TX status monitoring rings / workqueue).
-	  Say Y to build with TX_MONITOR_ENABLED so that
-	  TX monitor alloc and WQ paths are active.
-	  Say N to compile them out completely.
-
 config EXT_IPA_OFFLOAD
 	bool "Enable IPA offload"
 	depends on ATH12K
@@ -167,6 +158,17 @@ config ATH12K_PPE_DS_SUPPORT
 		Enable ath12k PPE-DS support
 
 		Say Y to enable PPE DS Support. If unsure, say N.
+
+config ATH12K_UCAST_ENABLE_AST_OVERRIDE
+	bool "Enable unicast AST override"
+	depends on ATH12K
+	help
+	  Enable path to force AST override in unicast tx desc
+	  for 4-addr mode this ensure that hardware need not
+	  search the AST table for this peer as index is already
+	  provided.
+
+	  Say Y to enable. If unsure, say N.
 
 config ATHDEBUG_UIO_LOGGING
 	bool "ath12k UIO logging support"

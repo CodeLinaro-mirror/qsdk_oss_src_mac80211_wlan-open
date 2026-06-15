@@ -34,7 +34,6 @@ enum ath12k_dbg_aggr_mode {
 };
 
 void ath12k_wmi_crl_path_stats_list_free(struct ath12k *ar, struct list_head *head);
-int ath12k_wsi_bypass_precheck(struct ath12k_base *ab, unsigned int value);
 
 u32 ath12k_dbg_dump_qos_profile(struct ath12k_base *ab,
 				char *buf, u8 qos_id, u32 size);
@@ -69,16 +68,16 @@ static inline bool ath12k_debugfs_is_pktlog_peer_valid(struct ath12k *ar, u8 *ad
                 ether_addr_equal(addr, ar->debug.pktlog_peer_addr));
 }
 
-static inline int ath12k_extd_tx_stats_enabled(struct ath12k *ar)
+static inline int ath12k_extd_tx_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
 {
-	return ((ar->dp.dp_stats_mask &  DP_ENABLE_STATS) &&
-		(ar->dp.dp_stats_mask & DP_ENABLE_EXT_TX_STATS));
+	return ((dp_pdev->dp_stats_mask &  DP_ENABLE_STATS) &&
+		(dp_pdev->dp_stats_mask & DP_ENABLE_EXT_TX_STATS));
 }
 
-static inline bool ath12k_extd_rx_stats_enabled(struct ath12k *ar)
+static inline bool ath12k_extd_rx_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
 {
-	return ((ar->dp.dp_stats_mask &  DP_ENABLE_STATS) &&
-		(ar->dp.dp_stats_mask & DP_ENABLE_EXT_RX_STATS));
+	return ((dp_pdev->dp_stats_mask &  DP_ENABLE_STATS) &&
+		(dp_pdev->dp_stats_mask & DP_ENABLE_EXT_RX_STATS));
 }
 
 static inline int ath12k_debugfs_rx_filter(struct ath12k *ar)
@@ -307,12 +306,12 @@ static inline void ath12k_hw_debugfs_register(struct ath12k_hw *ah)
 {
 }
 
-static inline int ath12k_extd_tx_stats_enabled(struct ath12k *ar)
+static inline int ath12k_extd_tx_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
 {
 	return 0;
 }
 
-static inline bool ath12k_extd_rx_stats_enabled(struct ath12k *ar)
+static inline bool ath12k_extd_rx_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
 {
 	return false;
 }
@@ -391,5 +390,4 @@ void ath12k_dp_txrx_stats_buf_pktlog_process(struct ath12k *ar, u8 *data,
 void ath12k_cbf_pktlog_process(struct ath12k *ar, u8 *data, u32 len,
 			       struct htt_t2h_ppdu_stats_ind_hdr *htt_hdr,
 			       struct htt_ppdu_stats_rx_mgmtctrl_payload_tlv *cbf_tlv);
-int ath12k_pktlog_remote_enable(struct ath12k *ar, u32 enable);
 #endif /* _ATH12K_DEBUGFS_H_ */

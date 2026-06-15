@@ -72,7 +72,19 @@ static bool ieee80211_can_create_new_chanctx(struct ieee80211_local *local,
 	       ieee80211_max_num_channels(local, radio_idx);
 }
 
-static struct ieee80211_chanctx *
+struct ieee80211_link_data *
+ieee80211_chanctx_find_monitor_link(struct ieee80211_chanctx *ctx)
+{
+	struct ieee80211_link_data *link;
+
+	list_for_each_entry(link, &ctx->assigned_links, assigned_chanctx_list) {
+		if (link->sdata->vif.type == NL80211_IFTYPE_MONITOR)
+			return link;
+	}
+	return NULL;
+}
+
+struct ieee80211_chanctx *
 ieee80211_link_get_chanctx(struct ieee80211_link_data *link)
 {
 	struct ieee80211_local *local __maybe_unused = link->sdata->local;
@@ -117,7 +129,7 @@ ieee80211_chanreq_compatible(const struct ieee80211_chan_req *a,
 	return tmp;
 }
 
-static const struct ieee80211_chan_req *
+const struct ieee80211_chan_req *
 ieee80211_chanctx_compatible(struct ieee80211_chanctx *ctx,
 			     const struct ieee80211_chan_req *req,
 			     struct ieee80211_chan_req *tmp)
@@ -737,6 +749,10 @@ ieee80211_alloc_chanctx(struct ieee80211_local *local,
 
 	INIT_LIST_HEAD(&ctx->assigned_links);
 	INIT_LIST_HEAD(&ctx->reserved_links);
+	INIT_LIST_HEAD(&ctx->punct_obj_list);
+	ctx->punct_obj_count = 0;
+	INIT_LIST_HEAD(&ctx->csa_pending_list);
+	wiphy_delayed_work_init(&ctx->csa_batch_work, ieee80211_csa_batch_work);
 	ctx->conf.def = chanreq->oper;
 	ctx->conf.ap = chanreq->ap;
 	ctx->conf.rx_chains_static = 1;
@@ -746,6 +762,11 @@ ieee80211_alloc_chanctx(struct ieee80211_local *local,
 	ctx->conf.radio_idx = radio_idx;
 	ctx->radar_detected = false;
 	_ieee80211_recalc_chanctx_min_def(local, ctx, NULL, false);
+
+	ctx->local = local;
+	hrtimer_init(&ctx->dfs_cac_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	ctx->dfs_cac_timer.function = ieee80211_dfs_cac_timeout;
+	wiphy_work_init(&ctx->dfs_cac_timer_work, ieee80211_dfs_cac_timer_work);
 
 	return ctx;
 }
@@ -826,11 +847,122 @@ static void ieee80211_free_chanctx(struct ieee80211_local *local,
 
 	WARN_ON_ONCE(ieee80211_chanctx_refcount(local, ctx) != 0);
 
+	/*
+	 * Only cancel the batch work if it was actually armed.  Calling
+	 * wiphy_delayed_work_cancel() on a never-queued delayed_work
+	 * triggers a lockdep "non-static key" warning because the embedded
+	 * timer's lock class has not yet been registered via any actual use.
+	 */
+	if (ctx->csa_batch_queued) {
+		wiphy_delayed_work_cancel(local->hw.wiphy, &ctx->csa_batch_work);
+		{
+			struct ieee80211_link_data *link, *tmp;
+
+			list_for_each_entry_safe(link, tmp,
+						 &ctx->csa_pending_list,
+						 csa.batch_list)
+				list_del_init(&link->csa.batch_list);
+		}
+	}
+
 	list_del_rcu(&ctx->list);
+	ieee80211_punct_obj_list_free(local, ctx);
 	ieee80211_del_chanctx(local, ctx, skip_idle_recalc);
 	atomic_sub(sizeof(*ctx) + local->hw.chanctx_data_size,
 		   &local->memory_stats.malloc_size);
 	kfree_rcu(ctx, rcu_head);
+}
+
+/**
+ * ieee80211_punct_obj_in_chanctx - check if a puncture object fits a chanctx
+ * @obj: puncture object to check
+ * @ctx: channel context to check against
+ *
+ * Return: true when the object's 20 MHz center frequency is within @ctx.
+ */
+static bool
+ieee80211_punct_obj_in_chanctx(struct ieee80211_punct_obj *obj,
+			       struct ieee80211_chanctx *ctx)
+{
+	int width = cfg80211_chandef_get_width(&ctx->conf.def);
+	int start_freq;
+	int end_freq;
+
+	if (!ctx->conf.def.chan || width < 0)
+		return false;
+
+	start_freq = ctx->conf.def.chan->center_freq;
+	end_freq = start_freq + width;
+
+	return obj->center_freq >= start_freq && obj->center_freq < end_freq;
+}
+
+/**
+ * ieee80211_punct_obj_migrate - move puncture CAC objects between chanctxs
+ * @local: mac80211 local state
+ * @old_ctx: channel context currently owning puncture objects
+ * @new_ctx: replacement channel context to receive puncture objects
+ *
+ * Channel context migration:
+ * DFS radar detection starts the radar puncture flow in which the driver
+ * reports the puncture pattern to userspace and hostapd responds with a CSA.
+ * When mac80211 applies the CSA, links move from the old channel context to
+ * a new channel context. Without migration, freeing the old context would also
+ * tear down any in-progress puncture CAC objects, including their timers and
+ * queued work.
+ *
+ * Preserve the puncture CAC state by moving objects from @old_ctx to @new_ctx
+ * when the object's 20 MHz channel is still a subchannel of the new channel
+ * context. If a matching object already exists in the new context, leave the
+ * old object in place for normal old-context cleanup.
+ */
+static void
+ieee80211_punct_obj_migrate(struct ieee80211_local *local,
+			    struct ieee80211_chanctx *old_ctx,
+			    struct ieee80211_chanctx *new_ctx)
+{
+	struct ieee80211_punct_obj *old_obj, *tmp;
+	struct cfg80211_chan_def *old_def = &old_ctx->conf.def;
+	struct cfg80211_chan_def *new_def = &new_ctx->conf.def;
+
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	if (old_ctx == new_ctx)
+		return;
+
+	if (list_empty(&old_ctx->punct_obj_list))
+		return;
+
+	if (!old_def->chan || !new_def->chan)
+		return;
+
+	list_for_each_entry_safe(old_obj, tmp, &old_ctx->punct_obj_list, list) {
+		struct ieee80211_punct_obj *new_obj;
+		bool duplicate = false;
+
+		if (!ieee80211_punct_obj_in_chanctx(old_obj, new_ctx))
+			continue;
+
+		list_for_each_entry(new_obj, &new_ctx->punct_obj_list, list) {
+			if (new_obj->center_freq == old_obj->center_freq) {
+				duplicate = true;
+				break;
+			}
+		}
+
+		if (duplicate ||
+		    new_ctx->punct_obj_count >= IEEE80211_MAX_PUNCT_OBJS)
+			continue;
+
+		list_move_tail(&old_obj->list, &new_ctx->punct_obj_list);
+		old_ctx->punct_obj_count--;
+		new_ctx->punct_obj_count++;
+		old_obj->ctx = new_ctx;
+
+		wiphy_dbg(local->hw.wiphy,
+			  "DFS puncture: migrated obj freq=%u old_ctx=%p new_ctx=%p\n",
+			  old_obj->center_freq, old_ctx, new_ctx);
+	}
 }
 
 void ieee80211_recalc_chanctx_chantype(struct ieee80211_local *local,
@@ -1458,8 +1590,10 @@ ieee80211_link_use_reserved_reassign(struct ieee80211_link_data *link)
 
 	ieee80211_check_fast_xmit_iface(sdata);
 
-	if (ieee80211_chanctx_refcount(local, old_ctx) == 0)
+	if (ieee80211_chanctx_refcount(local, old_ctx) == 0) {
+		ieee80211_punct_obj_migrate(local, old_ctx, new_ctx);
 		ieee80211_free_chanctx(local, old_ctx, false);
+	}
 
 	ieee80211_recalc_chanctx_min_def(local, new_ctx, NULL, false);
 	ieee80211_recalc_smps_chanctx(local, new_ctx);
@@ -1691,14 +1825,13 @@ static int ieee80211_vif_use_reserved_switch(struct ieee80211_local *local)
 		}
 
 		if (n_assigned != n_reserved) {
-			if (n_ready == n_reserved) {
-				wiphy_info(local->hw.wiphy,
-					   "channel context reservation cannot be finalized because some interfaces aren't switching\n");
-				err = -EBUSY;
-				goto err;
-			}
+			if (n_ready != n_reserved)
+				return -EAGAIN;
 
-			return -EAGAIN;
+			wiphy_info(local->hw.wiphy,
+				   "channel context reservation cannot be finalized because some interfaces aren't switching\n");
+			err = -EBUSY;
+			goto err;
 		}
 
 		ctx->conf.radar_enabled = false;
@@ -1883,6 +2016,9 @@ static int ieee80211_vif_use_reserved_switch(struct ieee80211_local *local)
 		if (ctx->replace_state != IEEE80211_CHANCTX_WILL_BE_REPLACED)
 			continue;
 
+		ieee80211_punct_obj_migrate(local, ctx, ctx->replace_ctx);
+		ieee80211_punct_obj_list_free(local, ctx);
+
 		ctx->replace_ctx->replace_ctx = NULL;
 		ctx->replace_ctx->replace_state =
 				IEEE80211_CHANCTX_REPLACE_NONE;
@@ -1926,6 +2062,9 @@ void __ieee80211_link_release_channel(struct ieee80211_link_data *link,
 					 lockdep_is_held(&local->hw.wiphy->mtx));
 	if (!conf)
 		return;
+
+	/* Link is going down; clear deferred_up to avoid stale DFS state. */
+	link_conf->deferred_up = false;
 
 	ctx = container_of(conf, struct ieee80211_chanctx, conf);
 

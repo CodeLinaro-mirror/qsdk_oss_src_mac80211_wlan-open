@@ -21,6 +21,12 @@
 
 #define WIPHY_IDX_INVALID	-1
 
+struct cfg80211_reg_change_event_work {
+	struct work_struct work;
+	struct wiphy *wiphy;
+	struct regulatory_request request;
+};
+
 struct cfg80211_registered_device {
 	const struct cfg80211_ops *ops;
 	struct list_head list;
@@ -83,11 +89,6 @@ struct cfg80211_registered_device {
 	struct work_struct event_work;
 
 	struct delayed_work dfs_update_channels_wk;
-
-	struct wireless_dev *background_radar_wdev;
-	struct cfg80211_chan_def background_radar_chandef;
-	struct delayed_work background_cac_done_wk;
-	struct work_struct background_cac_abort_wk;
 
 	/* netlink port which started critical protocol (0 means not started) */
 	u32 crit_proto_nlportid;
@@ -483,13 +484,23 @@ int
 cfg80211_start_background_radar_detection(struct cfg80211_registered_device *rdev,
 					  struct wireless_dev *wdev,
 					  struct cfg80211_chan_def *chandef,
-					  int link_id);
+					  int link_id, int radio_idx);
 
-void cfg80211_stop_background_radar_detection(struct wireless_dev *wdev);
+void cfg80211_stop_background_radar_detection(struct wireless_dev *wdev,
+					      int link_id);
+
+int cfg80211_stop_background_radar_detection_for_radio(
+		struct cfg80211_registered_device *rdev,
+		int radio_idx);
 
 void cfg80211_background_cac_done_wk(struct work_struct *work);
 
 void cfg80211_background_cac_abort_wk(struct work_struct *work);
+
+void cfg80211_set_cac_started(struct cfg80211_registered_device *rdev,
+			      struct wireless_dev *wdev,
+			      unsigned int link_id,
+			      const struct cfg80211_chan_def *chandef);
 
 bool cfg80211_any_wiphy_oper_chan(struct wiphy *wiphy,
 				  struct ieee80211_channel *chan);

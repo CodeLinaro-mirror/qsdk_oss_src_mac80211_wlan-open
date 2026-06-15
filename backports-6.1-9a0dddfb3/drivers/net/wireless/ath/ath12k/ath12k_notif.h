@@ -16,13 +16,11 @@
  * enum ath12k_event_type - WDI event types
  * @ATH12K_EVENT_PPDU_RX_COMPLETE: RX PPDU completion
  * @ATH12K_EVENT_PPDU_TX_COMPLETE: TX PPDU completion
- * @ATH12K_EVENT_EXT_MON_RX: RX Extended monitor
  * @ATH12K_EVENT_FSE_UPDATE: Flow/Search/Steering Engine update event
  */
 enum ath12k_event_type {
 	ATH12K_EVENT_PPDU_RX_COMPLETE = 1,
 	ATH12K_EVENT_PPDU_TX_COMPLETE,
-	ATH12K_EVENT_EXT_MON_RX,
 	ATH12K_EVENT_FSE_UPDATE,
 };
 
@@ -61,42 +59,6 @@ struct ath12k_ppdu_tx_info {
  */
 struct ath12k_ppdu_event {
 	struct sk_buff *skb;      /* SKB containing PPDU info */
-};
-
-/**
- * struct ath12k_ext_mon_rx_event - Extended monitor RX notifier event
- * @mpdu: The raw MPDU SKB as captured by the driver.
- *        No radiotap header is prepended by the driver. The rx_status
- *        is stored in the SKB's control buffer (cb) and can be accessed
- *        via IEEE80211_SKB_RXCB(mpdu). If the listener forwards the
- *        frame to mac80211 via ieee80211_rx_ni(), mac80211 reads the
- *        rx_status from the cb and prepends the radiotap header.
- *
- *        The driver frees this SKB after srcu_notifier_call_chain()
- *        returns. Listeners that need to retain the frame MUST call
- *        skb_clone() inside the callback and take ownership of the
- *        clone; they must NOT free or hold a reference to @mpdu itself.
- *
- * @hw: Pointer to the ieee80211_hw instance this frame arrived on.
- *      This pointer is valid ONLY for the duration of the notifier
- *      callback. Listeners MUST NOT store this pointer in any global
- *      or persistent context for use after the callback returns — doing
- *      so results in undefined behaviour as the hardware may be torn
- *      down at any time.
- *
- *      If a listener needs to reference the hardware beyond the
- *      callback lifetime (e.g. from a deferred work item), it must
- *      extract hw->wiphy->perm_addr during the callback and use that
- *      MAC address to look up the corresponding wiphy/ieee80211_hw
- *      safely at the point of use.
- *
- * Passed to every registered callback on the ext_mon RX SRCU notifier
- * chain. The chain fires from rxmon workqueue (process) context;
- * callbacks may sleep.
- */
-struct ath12k_ext_mon_rx_event {
-	struct sk_buff *mpdu;
-	struct ieee80211_hw *hw;
 };
 
 /**
@@ -142,10 +104,6 @@ int ath12k_register_ppdu_notifier(struct notifier_block *nb, unsigned long event
 int ath12k_unregister_ppdu_notifier(struct notifier_block *nb, unsigned long event_mask);
 bool ath12k_ppdu_notifier_has_listeners(enum ath12k_event_type event_type);
 int ath12k_ppdu_notifier_call_chain(unsigned long val, void *v);
-int ath12k_register_ext_mon_rx_notifier(struct notifier_block *nb);
-int ath12k_unregister_ext_mon_rx_notifier(struct notifier_block *nb);
-bool ath12k_ext_mon_rx_notifier_has_listeners(void);
-int ath12k_ext_mon_rx_notifier_call_chain(unsigned long val, void *rx_event);
 
 /* FSE_UPDATE notifier APIs */
 int ath12k_register_fse_update_notifier(struct notifier_block *nb,

@@ -103,7 +103,7 @@ int ath12k_dp_htt_connect(struct ath12k_dp *dp)
 			return status;
 	}
 
-	htt_logging_enable = ath12k_cfg_get(ab, ATH12K_CFG_HTT_LOGGING_ENABLE);
+	htt_logging_enable = DP_HTT_LOGGING_ENABLE;
 
 	if (htt_logging_enable) {
 		ath12k_dbg(ab, ATH12K_DBG_DP_HTT, "HTT logging enabled via INI\n");
@@ -531,7 +531,7 @@ ath12k_dp_ppdu_stats_flush_tlv_parse_update(struct ath12k_pdev_dp *dp_pdev,
 	num_mpdu = HTT_PPDU_STATS_FLUSH_GET_NUM_MPDU(msg->info);
 	peer->tx_retry_failed += num_mpdu;
 
-	if (ath12k_extd_tx_stats_enabled(dp_pdev->ar))
+	if (ath12k_extd_tx_stats_enabled(dp_pdev))
 		ath12k_debugfs_sta_update_failure(peer, num_msdu);
 
 	rcu_read_unlock();
@@ -971,6 +971,23 @@ ath12k_update_extd_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 		DP_STATS_INCR(tx_stats, punc_bw[punc_mode], peer_stats->succ_pkts);
 	}
 
+	if (peer_stats->flags == WMI_RATE_PREAMBLE_UHR) {
+		res_mcs = (peer_stats->mcs < MAX_MCS_11BN) ?
+			peer_stats->mcs : (MAX_MCS - 1);
+
+		DP_STATS_INCC(tx_stats, su_bn_ppdu_cnt.mcs_count[res_mcs],
+				1, tx_stats->ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_SU);
+		DP_STATS_INCC(tx_stats,
+				mu_bn_ppdu_cnt[TXRX_TYPE_MU_OFDMA].mcs_count[res_mcs],
+				1, tx_stats->ppdu_type ==
+				HTT_PPDU_STATS_PPDU_TYPE_MU_OFDMA);
+		DP_STATS_INCC(tx_stats,
+				mu_bn_ppdu_cnt[TXRX_TYPE_MU_MIMO].mcs_count[res_mcs],
+				1, tx_stats->ppdu_type ==
+				HTT_PPDU_STATS_PPDU_TYPE_MU_MIMO);
+		DP_STATS_INCR(tx_stats, punc_bw[punc_mode], peer_stats->succ_pkts);
+	}
+
 	tx_pwr = HTT_PPDU_GET_PER_CHAIN_TX_PWR(usr_stats->common.tx_pwr, 0);
 	DP_STATS_UPD(tx_stats, tx_pwr, tx_pwr / usr_stats->common.tx_pwr_multiplier);
 
@@ -1102,6 +1119,8 @@ ath12k_update_htt_stats_txrate(struct ath12k_pdev_dp *dp_pdev,
 			ru_tones = ath12k_dp_he_ru_alloc_from_ru_size(ru_start);
 		else if (flags == WMI_RATE_PREAMBLE_EHT)
 			ru_tones = ath12k_dp_eht_ru_alloc_from_ru_size(ru_start);
+		else if (flags == WMI_RATE_PREAMBLE_UHR)
+			ru_tones = ath12k_dp_eht_ru_alloc_from_ru_size(ru_start);
 	}
 	else if (!ru_format)
 		ru_tones = le16_to_cpu(ru_end) - le16_to_cpu(ru_start) + 1;
@@ -1224,9 +1243,11 @@ ath12k_update_htt_stats_txrate(struct ath12k_pdev_dp *dp_pdev,
 			peer->txrate.bw = RATE_INFO_BW_HE_RU;
 		else if (flags == WMI_RATE_PREAMBLE_EHT)
 			peer->txrate.bw = RATE_INFO_BW_EHT_RU;
+		else if (flags == WMI_RATE_PREAMBLE_UHR)
+			peer->txrate.bw = RATE_INFO_BW_EHT_RU;
 	}
 
-	if (ath12k_extd_tx_stats_enabled(dp_pdev->ar)) {
+	if (ath12k_extd_tx_stats_enabled(dp_pdev)) {
 		tx_stats = peer->peer_stats.tx_stats;
 		/* PPDU stats reported for mgmt packet doesn't have valid tx bytes.
 		 * So skip peer stats update for mgmt packets.
@@ -1273,7 +1294,7 @@ ath12k_update_per_peer_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 	ath12k_update_htt_stats_txrate(dp_pdev, peer, user, ppdu_info,
 				       &peer_stats);
 
-	if (ath12k_extd_tx_stats_enabled(dp_pdev->ar) &&
+	if (ath12k_extd_tx_stats_enabled(dp_pdev) &&
 	    peer_stats.tid <= HTT_PPDU_STATS_NON_QOS_TID)
 		ath12k_update_extd_tx_stats(dp_pdev, ppdu_info, peer, &peer_stats,
 					    &ppdu_info->ppdu_stats.user_stats[user]);
@@ -2074,12 +2095,13 @@ ath12k_htt_pri_link_peer_migrate_indication(struct ath12k_base *ab,
 
 	ahsta = ath12k_sta_to_ahsta(ath12k_dp_link_peer_get_sta(peer));
 
-	ahsta->migration_data.ab = ab;
+	ahsta->migration_data.ar = arvif->ar;
 	ahsta->migration_data.vdev_id = vdev_id;
 	ahsta->migration_data.peer_id = peer_id;
 	ahsta->migration_data.ml_peer_id = ml_peer_id;
 	ahsta->migration_data.pdev_id = pdev_id;
 	ahsta->migration_data.chip_id = chip_id;
+	memcpy(ahsta->migration_data.link_addr, peer->addr, ETH_ALEN);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ahsta->migration_data.ppe_vp_num = peer->dp_peer->ppe_vp_num;
 #else
@@ -2087,7 +2109,7 @@ ath12k_htt_pri_link_peer_migrate_indication(struct ath12k_base *ab,
 #endif
 	reinit_completion(&ahsta->dp_migration_event);
 
-	ret = ath12k_dp_peer_migrate(ahsta, peer_id, chip_id);
+	ret = ath12k_dp_peer_migrate(ahsta, peer_id, chip_id, pdev_id);
 	if (ret)
 		ath12k_warn(pri_ab, "htt ML peer failed to migrate (%d)\n", ret);
 
@@ -2172,16 +2194,14 @@ static int ath12k_fw_mpdu_stats_update(struct ath12k_base *ab,
 	tid = u16_get_bits(info, SAWF_TTH_TID_MASK);
 	q_type = u16_get_bits(info, SAWF_TTH_QTYPE_MASK);
 
-	spin_lock_bh(&dp->dp_lock);
-	link_peer = ath12k_dp_link_peer_find_by_id(dp, peer_id);
+	rcu_read_lock();
+	link_peer = ath12k_dp_link_peer_find_by_peerid_index(dp, NULL, peer_id);
 	if (!link_peer) {
-		spin_unlock_bh(&dp->dp_lock);
+		rcu_read_unlock();
 		return -ENOENT;
 	}
 	vdev_id = link_peer->vdev_id;
-	spin_unlock_bh(&dp->dp_lock);
 
-	rcu_read_lock();
 	ar = ath12k_mac_get_ar_by_vdev_id(ab, vdev_id);
 	if (!ar) {
 		rcu_read_unlock();
@@ -2207,13 +2227,13 @@ static int ath12k_fw_mpdu_stats_update(struct ath12k_base *ab,
 			rcu_read_unlock();
 			return -ENOENT;
 		}
-		spin_lock_bh(&dp_hw->peer_lock);
+		spin_lock_bh(&dp_hw->peer_hash_lock);
 		ath12k_svc_burst_stats_update(ab, dp_peer, tid,
 					      q_type, svc_int_success,
 					      svc_int_failure,
 					      burst_sz_success,
 					      burst_sz_failure);
-		spin_unlock_bh(&dp_hw->peer_lock);
+		spin_unlock_bh(&dp_hw->peer_hash_lock);
 		rcu_read_unlock();
 	} else {
 		rcu_read_unlock();
@@ -2439,7 +2459,7 @@ int ath12k_dp_tx_htt_h2t_ver_req_msg(struct ath12k_base *ab)
 							     HTT_OPTION_TAG) |
 					    le32_encode_bits(HTT_TCL_METADATA_VER_SZ,
 							     HTT_OPTION_LEN) |
-					    le32_encode_bits(HTT_OPTION_TCL_METADATA_VER_V2,
+					    le32_encode_bits(dp->tcl_metadata_ver,
 							     HTT_OPTION_VALUE);
 	}
 
@@ -2623,6 +2643,14 @@ int ath12k_dp_tx_htt_srng_setup(struct ath12k_base *ab, u32 ring_id,
 	hp_addr = ath12k_hal_srng_get_hp_addr(ab, srng);
 	tp_addr = ath12k_hal_srng_get_tp_addr(ab, srng);
 
+	if ((srng->flags & HAL_SRNG_FLAGS_REG_WRITE_EN)) {
+		if (srng->ring_dir == HAL_SRNG_DIR_SRC)
+			hp_addr = 0;
+
+		if (srng->ring_dir == HAL_SRNG_DIR_DST)
+			tp_addr = 0;
+	}
+
 	ret = ath12k_dp_tx_get_ring_id_type(ab, mac_id, ring_id,
 					    ring_type, &htt_ring_type,
 					    &htt_ring_id);
@@ -2717,13 +2745,17 @@ err_free:
 }
 EXPORT_SYMBOL(ath12k_dp_tx_htt_srng_setup);
 
-void ath12k_dp_get_htt_mgmt_filter(struct ath12k_base *ab, u16 *mgmt_filter)
+void ath12k_dp_get_htt_mgmt_filter(struct ath12k_base *ab,
+				   struct htt_rx_ring_tlv_filter *tlv_filter)
 {
-	u16 filter = FILTER_MGMT_ALL;
+	u16 ctrl_filter = FILTER_CTRL_BA_REQ;
+	u16 mgmt_filter = FILTER_MGMT_ALL;
 
-	filter &= ~(FILTER_MGMT_PROBE_REQ | FILTER_MGMT_PROBE_RESP |
-		    FILTER_MGMT_BEACON);
-	*mgmt_filter = filter;
+	mgmt_filter &= ~(FILTER_MGMT_PROBE_REQ | FILTER_MGMT_PROBE_RESP |
+			 FILTER_MGMT_BEACON);
+
+	tlv_filter->fp_mgmt_filter = mgmt_filter;
+	tlv_filter->fp_ctrl_filter = ctrl_filter;
 }
 EXPORT_SYMBOL(ath12k_dp_get_htt_mgmt_filter);
 

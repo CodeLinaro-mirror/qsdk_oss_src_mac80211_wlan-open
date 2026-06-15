@@ -457,7 +457,6 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata, bool going_do
 	u32 hw_reconf_flags = 0;
 	int i, flushed;
 	struct ps_data *ps;
-	struct cfg80211_chan_def chandef;
 	bool cancel_scan;
 	struct cfg80211_nan_func *func;
 
@@ -545,17 +544,18 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata, bool going_do
 	wiphy_work_cancel(local->hw.wiphy, &sdata->deflink.csa.finalize_work);
 	wiphy_work_cancel(local->hw.wiphy,
 			  &sdata->deflink.color_change_finalize_work);
-	hrtimer_cancel(&sdata->deflink.dfs_cac_timer);
-	wiphy_work_cancel(local->hw.wiphy,
-				  &sdata->deflink.dfs_cac_timer_work);
 
-	if (sdata->wdev.links[0].cac_started) {
-		chandef = sdata->vif.bss_conf.chanreq.oper;
-		WARN_ON(local->suspended);
-		ieee80211_link_release_channel(&sdata->deflink);
-		cfg80211_cac_event(sdata->dev, &chandef,
-				   NL80211_RADAR_CAC_ABORTED,
-				   GFP_KERNEL, 0);
+	if (sdata->wdev.links[sdata->deflink.link_id].cac_started) {
+		bool cac_aborted = false;
+
+		ieee80211_handle_cac_stop(local->hw.wiphy, sdata,
+					  &sdata->deflink, sdata->deflink.conf,
+					  &cac_aborted);
+
+		if (cac_aborted) {
+			WARN_ON(local->suspended);
+			ieee80211_link_release_channel(&sdata->deflink);
+		}
 	}
 
 	if (sdata->vif.type == NL80211_IFTYPE_AP) {
@@ -881,20 +881,13 @@ static void ieee80211_uninit(struct net_device *dev)
 	ieee80211_teardown_sdata(sdata);
 }
 
-static bool ieee80211_sdata_has_txrx_stats_offload(struct ieee80211_sub_if_data *sdata)
+bool ieee80211_sdata_has_txrx_stats_offload(struct ieee80211_sub_if_data *sdata)
 {
 	if (!sdata)
 		return false;
 
 	if (sdata->vif.offload_flags & IEEE80211_OFFLOAD_TXRX_STATS)
 		return true;
-
-	/* AP_VLAN has no vdev in firmware; check parent AP's offload flag */
-	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN && sdata->bss) {
-		struct ieee80211_sub_if_data *master =
-			container_of(sdata->bss, struct ieee80211_sub_if_data, u.ap);
-		return (master->vif.offload_flags & IEEE80211_OFFLOAD_TXRX_STATS);
-	}
 
 	return false;
 }
@@ -1925,7 +1918,8 @@ static void ieee80211_setup_sdata(struct ieee80211_sub_if_data *sdata,
 	sdata->noack_map = 0;
 
 	sdata->chan_hw_idx = -1;
-	sdata->flags &= ~IEEE80211_SDATA_OFFCHAN_PACKETS;
+	sdata->flags &= ~(IEEE80211_SDATA_OFFCHAN_PACKETS |
+			  IEEE80211_SDATA_EXT_MONITOR_ENABLED);
 
 	/* only monitor/p2p-device differ */
 	if (sdata->dev) {
@@ -2608,3 +2602,14 @@ void ieee80211_enable_offchan_packet_capture(struct ieee80211_vif *vif,
 	}
 }
 EXPORT_SYMBOL(ieee80211_enable_offchan_packet_capture);
+
+void ieee80211_enable_ext_monitor(struct ieee80211_vif *vif, bool enable)
+{
+	struct ieee80211_sub_if_data *sdata = vif_to_sdata(vif);
+
+	if (enable)
+		sdata->flags |= IEEE80211_SDATA_EXT_MONITOR_ENABLED;
+	else
+		sdata->flags &= ~IEEE80211_SDATA_EXT_MONITOR_ENABLED;
+}
+EXPORT_SYMBOL(ieee80211_enable_ext_monitor);

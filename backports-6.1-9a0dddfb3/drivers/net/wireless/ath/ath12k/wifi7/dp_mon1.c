@@ -63,7 +63,7 @@ int ath12k_wifi7_dp_mon_rx_srng_setup(struct ath12k_dp *dp)
 		srng = &dp_mon->rx_mon_status_refill_ring[i].refill_buf_ring;
 		ret = ath12k_dp_srng_setup(ab, srng,
 					   HAL_RXDMA_MONITOR_STATUS, 0, i,
-					   DP_RXDMA_MON_STATUS_RING_SIZE);
+					   dp_mon->mon_status_ring_size);
 		if (ret) {
 			ath12k_warn(dp, "failed to setup mon status ring %d\n", i);
 			return ret;

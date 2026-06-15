@@ -480,6 +480,33 @@ int ath12k_reg_update_chan_list(struct ath12k *ar, bool wait)
 	return ath12k_wmi_update_scan_chan_list(ar, NULL);
 }
 
+void ath12k_reg_update_cached_country_regdomain(struct ath12k_base *ab,
+						 const struct ath12k_reg_info *reg_info,
+						 u32 domain_code_6g_super_id)
+{
+	struct ath12k *ar;
+	int pdev;
+	u32 regdomain;
+	bool has_6g_rules;
+
+	has_6g_rules = reg_info->num_6g_reg_rules_ap[WMI_REG_INDOOR_AP] ||
+		       reg_info->num_6g_reg_rules_ap[WMI_REG_STD_POWER_AP] ||
+		       reg_info->num_6g_reg_rules_ap[WMI_REG_VLP_AP];
+
+	regdomain = reg_info->reg_dmn_pair & 0xFFFF;
+	if (has_6g_rules)
+		regdomain |= ((domain_code_6g_super_id & 0xFFFF) << 16);
+
+	for (pdev = 0; pdev < ab->hw_params->max_radios; pdev++) {
+		ar = ab->pdevs[pdev].ar;
+		if (ar) {
+			ar->radio_cfg.regdomain = regdomain;
+			memcpy(ar->alpha2, reg_info->alpha2, REG_ALPHA2_LEN);
+			ar->country_id = reg_info->ctry_code;
+		}
+	}
+}
+
 static void ath12k_copy_regd(struct ieee80211_regdomain *regd_orig,
 			     struct ieee80211_regdomain *regd_copy)
 {
@@ -507,6 +534,45 @@ int ath12k_reg_get_num_chans_in_band(struct ath12k *ar,
 	}
 
 	return count;
+}
+
+/**
+ * ath12k_reg_get_fallback_regd() - find a usable regulatory domain
+ * @ab: ath12k base
+ * @pdev_id: preferred pdev index
+ *
+ * Prefer new_regd[pdev_id], then default_regd[pdev_id], then any available
+ * regdomain in @ab. This covers early set_cactimeout calls before firmware
+ * sends WMI_REG_CHAN_LIST_CC_EXT_EVENT and split 5G-low/5G-high setups where
+ * firmware may only populate the primary pdev regdomain.
+ *
+ * Return: regdomain on success, NULL if none is available.
+ */
+static struct ieee80211_regdomain *
+ath12k_reg_get_fallback_regd(struct ath12k_base *ab, u8 pdev_id)
+{
+	struct ieee80211_regdomain *regd;
+	int i;
+
+	regd = ab->new_regd[pdev_id];
+	if (regd)
+		return regd;
+
+	regd = ab->default_regd[pdev_id];
+	if (regd)
+		return regd;
+
+	for (i = 0; i < ab->hw_params->max_radios; i++) {
+		regd = ab->new_regd[i];
+		if (regd)
+			return regd;
+
+		regd = ab->default_regd[i];
+		if (regd)
+			return regd;
+	}
+
+	return NULL;
 }
 
 int ath12k_regd_update(struct ath12k *ar, bool init)
@@ -553,7 +619,7 @@ int ath12k_regd_update(struct ath12k *ar, bool init)
 			regd = (struct ieee80211_regdomain *)&ath12k_world_regd;
 		}
 	} else {
-		regd = ab->new_regd[pdev_id];
+		regd = ath12k_reg_get_fallback_regd(ab, pdev_id);
 	}
 
 	if (!regd) {
@@ -591,6 +657,18 @@ int ath12k_regd_update(struct ath12k *ar, bool init)
 		ret = -ENOMEM;
 		goto err;
 	}
+
+#if defined(CPTCFG_QCN_EXTN) && defined(CPTCFG_QCA_LAB_TEST_FEATURES)
+	{
+		struct ath12k *ar_tmp;
+		int i;
+
+		for_each_ar(ah, ar_tmp, i) {
+			ath12k_update_regd_cac_timeout_ext(ar_tmp, regd_copy);
+			ath12k_update_regd_block_dfs_ext(ar_tmp, regd_copy);
+		}
+	}
+#endif /* CPTCFG_QCN_EXTN && CPTCFG_QCA_LAB_TEST_FEATURES */
 
 	ret = regulatory_set_wiphy_regd(hw->wiphy, regd_copy);
 
@@ -2610,39 +2688,42 @@ ath12_reg_check_afc_payload_validity(struct ath12k *ar,
 }
 
 /**
- * ath12k_radio_has_standalone_sta - Detect standalone STA on a radio
+ * ath12k_radio_get_sta_update_context - Get local STA update context on radio
  * @ar: ATH12K radio instance
  * @total_vifs: Output parameter returning number of valid vifs on the radio
+ * @has_ap: Output parameter indicating whether any AP vdev is present
+ * @has_sp_ap: Output parameter indicating whether any AP vdev is already in SP
  * @sta_link_id: Output parameter returning link ID of the STA
  * @sta_wdev: Output parameter returning wireless_dev of the STA
  *
- * Iterate over all vifs associated with the given radio and determine whether
- * the radio is operating in a standalone STA-only configuration.
- *
- * A radio is considered standalone STA if:
- *   - At least one STA vdev is present, and
- *   - No AP vdevs are present on the same radio.
- *
- * The function deterministically selects the first valid STA vdev found and
- * returns its corresponding link ID and wireless_dev pointer.
+ * Iterate over all vifs associated with the given radio and capture the first
+ * valid STA link context together with whether the radio also hosts an AP and
+ * whether any colocated AP is already operating in SP mode. This lets the
+ * caller distinguish standalone STA from repeater STA and decide whether the
+ * repeater STA can move to SP immediately without rewalking the vif list.
  *
  * Return:
- * * true  - Radio hosts a standalone STA-only configuration
- * * false - Otherwise (mixed AP/STA, no STA, or invalid input)
+ * * true  - At least one valid STA vdev is present
+ * * false - No valid STA vdev is present or input is invalid
  */
-static bool ath12k_radio_has_standalone_sta(struct ath12k *ar,
-					    int *total_vifs,
-					    u8 *sta_link_id,
-					    struct wireless_dev **sta_wdev)
+static bool ath12k_radio_get_sta_update_context(struct ath12k *ar,
+						int *total_vifs,
+						bool *has_ap,
+						bool *has_sp_ap,
+						u8 *sta_link_id,
+						struct wireless_dev **sta_wdev)
 {
 	struct ath12k_link_vif *arvif;
 	bool has_sta;
-	bool has_ap;
+	bool local_has_ap;
+	bool local_has_sp_ap;
 
-	if (!total_vifs || !sta_link_id || !sta_wdev)
+	if (!total_vifs || !has_ap || !has_sp_ap || !sta_link_id || !sta_wdev)
 		return false;
 
 	*total_vifs = 0;
+	*has_ap = false;
+	*has_sp_ap = false;
 	*sta_link_id = 0;
 	*sta_wdev = NULL;
 
@@ -2650,7 +2731,8 @@ static bool ath12k_radio_has_standalone_sta(struct ath12k *ar,
 		return false;
 
 	has_sta = false;
-	has_ap = false;
+	local_has_ap = false;
+	local_has_sp_ap = false;
 	spin_lock_bh(&ar->data_lock);
 	list_for_each_entry(arvif, &ar->arvifs, list) {
 		struct ath12k_vif *ahvif;
@@ -2670,8 +2752,14 @@ static bool ath12k_radio_has_standalone_sta(struct ath12k *ar,
 		(*total_vifs)++;
 
 		if (ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
-			has_ap = true;
-			break;
+			u8 link_id;
+
+			local_has_ap = true;
+			link_id = ath12k_mac_find_link_id_by_ar(ahvif, ar);
+			if (link_id < ATH12K_NUM_MAX_LINKS &&
+			    wdev->links[link_id].reg_6g_power_mode == NL80211_REG_AP_SP)
+				local_has_sp_ap = true;
+			continue;
 		}
 
 		if (!has_sta && ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
@@ -2686,51 +2774,123 @@ static bool ath12k_radio_has_standalone_sta(struct ath12k *ar,
 		}
 	}
 	spin_unlock_bh(&ar->data_lock);
+	*has_ap = local_has_ap;
+	*has_sp_ap = local_has_sp_ap;
 
-	return (!has_ap && has_sta);
+	return has_sta;
 }
 
 
 /**
- * ath12k_change_6g_txpow_sta_mode - Update 6 GHz power mode for standalone STA
+ * ath12k_change_6g_txpow_sta_mode - Update 6 GHz power mode for local STA
  * @ar: ATH12K radio instance
  *
- * Return: If no usable vifs exist, or the radio is not operating in
- * STA-only mode, the function returns without making any changes.
+ * After a local AFC power event completes, trigger a 6 GHz power-mode change
+ * notification on the local STA link so mac80211/driver re-evaluate the
+ * effective STA-side power mode. Standalone STA moves to SP immediately after
+ * AFC completion. Repeater STA moves to SP from the AP-driven SP transition
+ * path after the colocated AP is already in SP. The helper uses
+ * @is_set_pwr_mode = false so it does not overwrite cfg80211's cached
+ * AP-visible power mode while still driving the STA-side
+ * BSS_CHANGED_6GHZ_POWER_MODE flow.
+ *
+ * Return: If no usable vifs exist, or no local STA is present on the radio,
+ * the function returns without making any changes.
  */
 static void ath12k_change_6g_txpow_sta_mode(struct ath12k *ar)
 {
 	int total_vifs;
 	u8 link_id;
-	bool is_standalone_sta;
+	bool has_ap;
+	bool has_sp_ap;
+	bool has_sta;
 	struct wireless_dev *wdev;
+	int ret;
 
 	if (!ar) {
 		pr_err("ath12k_afc: Invalid ar pointer\n");
 		return;
 	}
 
-	is_standalone_sta = ath12k_radio_has_standalone_sta(ar, &total_vifs,
-							    &link_id, &wdev);
+	has_sta = ath12k_radio_get_sta_update_context(ar, &total_vifs,
+						      &has_ap,
+						      &has_sp_ap,
+						      &link_id, &wdev);
 	if (!total_vifs) {
 		ath12k_dbg(ar->ab, ATH12K_DBG_AFC, "No usable vifs found");
 		return;
 	}
 
-	if (!is_standalone_sta)
+	if (!has_sta)
 		return;
 
 	if (!wdev)
 		return;
+
+	if (has_ap && !has_sp_ap) {
+		ath12k_info(ar->ab,
+			    "skip repeater STA 6 GHz AFC SP update: AP not SP pdev %u link %u\n",
+			    ar->pdev->pdev_id, link_id);
+		return;
+	}
 
 #ifdef CPTCFG_QCN_EXTN
 	if (ath12k_change_6g_txpow_sta_mode_validate_extn(ar, wdev, link_id))
 		return;
 #endif
 
-	ieee80211_6ghz_power_mode_change(ar->ah->hw->wiphy,
-					 wdev, NL80211_REG_AP_SP,
-					 link_id, false);
+	ret = ieee80211_6ghz_power_mode_change(ar->ah->hw->wiphy, wdev,
+						       NL80211_REG_AP_SP,
+						       link_id, false);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed to notify %s STA 6 GHz AFC power mode update link %u ret %d\n",
+			    has_ap ? "repeater" : "standalone", link_id, ret);
+		return;
+	}
+
+	ath12k_info(ar->ab,
+		    "notify %s STA 6 GHz AFC SP update pdev %u link %u\n",
+		    has_ap ? "repeater" : "standalone", ar->pdev->pdev_id,
+		    link_id);
+}
+
+/**
+ * ath12k_queue_afc_sta_sp_update - Queue AFC STA SP update when applicable
+ * @ar: ATH12K radio instance
+ *
+ * Queue the AFC-triggered STA SP update directly only for standalone STA.
+ * Repeater STA update is deferred until the colocated AP moves to SP and is
+ * queued from the AP power-mode change path.
+ */
+static void ath12k_queue_afc_sta_sp_update(struct ath12k *ar)
+{
+	struct wireless_dev *wdev;
+	int total_vifs;
+	u8 link_id;
+	bool has_ap;
+	bool has_sp_ap;
+	bool has_sta;
+
+	has_sta = ath12k_radio_get_sta_update_context(ar, &total_vifs,
+						      &has_ap, &has_sp_ap,
+						      &link_id, &wdev);
+	if (!total_vifs) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_AFC, "No usable vifs found");
+		return;
+	}
+
+	if (!has_sta || !wdev)
+		return;
+
+	if (has_ap) {
+		ath12k_info(ar->ab,
+			    "defer repeater STA 6 GHz AFC SP update until AP SP pdev %u link %u\n",
+			    ar->pdev->pdev_id, link_id);
+		return;
+	}
+
+	queue_work(ar->ab->workqueue, &ar->change_6g_txpow_sta_mode_work);
 }
 
 void ath12k_change_6g_txpow_sta_mode_work(struct work_struct *work)
@@ -2810,7 +2970,7 @@ int ath12k_reg_process_afc_power_event(struct ath12k *ar,
 		   ar->pdev_idx);
 	ah->regd_updated = false;
 	queue_work(ab->workqueue, &ar->regd_update_work);
-	queue_work(ab->workqueue, &ar->change_6g_txpow_sta_mode_work);
+	ath12k_queue_afc_sta_sp_update(ar);
 	return ret;
 end:
 	spin_unlock_bh(&ar->data_lock);
@@ -3997,6 +4157,92 @@ u8 ath12k_reg_get_opclass_from_bw(u16 bw)
 			return ath12k_opclass_bw_map[i].opclass;
 
 	return 0;
+}
+
+/**
+ * ath12k_reg_get_class_from_country() - Get operating class table for a country
+ * @country: 3-byte country code array, or NULL for global
+ *
+ * Returns the operating class map table for the given country.  Currently
+ * ath12k only defines the global operating class table (global_op_class[]).
+ * Country-specific tables (US, EU, Japan, etc.) can be added here in the
+ * future when needed.
+ *
+ * Passing NULL (or any unrecognised country) returns global_op_class[].
+ *
+ * Return: Pointer to the operating class map table (never NULL).
+ */
+static const struct ath12k_op_class_map_t *
+ath12k_reg_get_class_from_country(const u8 *country)
+{
+	return global_op_class;
+}
+
+/* Convert an IEEE channel number to a frequency using opclass table params */
+static u32 ath12k_opclass_chan_to_freq(const struct ath12k_op_class_map_t *tbl,
+				       u8 ieee_chan)
+{
+	return tbl->start_freq + (ATH12K_FREQ_TO_CHAN_SCALE * ieee_chan);
+}
+
+/*
+ * Search for @freq in a single opclass entry's channel list.
+ * The channel list ends at a zero entry (terminator) or at the array bound.
+ * Returns the opclass on match, 0 if not found.
+ */
+static u8 ath12k_search_freq_in_opclass(const struct ath12k_op_class_map_t *tbl,
+					u32 freq)
+{
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(tbl->channels); i++) {
+		u8 chan = tbl->channels[i];
+
+		if (!chan)
+			break;
+
+		if (ath12k_opclass_chan_to_freq(tbl, chan) == freq)
+			return tbl->op_class;
+	}
+
+	return 0;
+}
+
+static u8 ath12k_get_opclass_by_freq(const struct ath12k_op_class_map_t *tbl,
+				     u32 freq, u16 ch_width,
+				     u16 behav_limit)
+{
+	u8 opclass;
+
+	for (; tbl && tbl->op_class; tbl++) {
+		if (tbl->chan_spacing != ch_width)
+			continue;
+
+		if (!(tbl->behav_limit & behav_limit))
+			continue;
+
+		opclass = ath12k_search_freq_in_opclass(tbl, freq);
+		if (opclass)
+			return opclass;
+	}
+
+	return 0;
+}
+
+/**
+ * ath12k_reg_get_opclass_from_freq_width() - Get operating class for a channel
+ * @country: 3-byte country code, or NULL for global operating class table
+ * @freq: channel center frequency in MHz
+ * @ch_width: channel width in MHz
+ * @behav_limit: behavior limit bitmask
+ *
+ * Return: Operating class on success, 0 if no entry matches.
+ */
+u8 ath12k_reg_get_opclass_from_freq_width(const u8 *country, u32 freq,
+					  u16 ch_width, u16 behav_limit)
+{
+	return ath12k_get_opclass_by_freq(ath12k_reg_get_class_from_country(country),
+					  freq, ch_width, behav_limit);
 }
 
 s16 ath12k_reg_psd_2_eirp(s16 psd, uint16_t ch_bw)

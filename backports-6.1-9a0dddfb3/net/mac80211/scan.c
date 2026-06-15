@@ -164,6 +164,20 @@ void ieee80211_inform_bss(struct wiphy *wiphy,
 
 	ieee80211_inform_bss_extn(cbss, elems);
 
+	/* Extract SMD information if present */
+	if (elems->smd_info) {
+		memcpy(bss->smd_info.smd_identifier,
+		       elems->smd_info->smd_identifier, ETH_ALEN);
+		bss->smd_info.smd_capabilities = elems->smd_info->smd_capabilities;
+		bss->smd_info.timeout_value = le16_to_cpu(elems->smd_info->timeout_value);
+		bss->has_smd = true;
+	} else {
+		bss->has_smd = false;
+		bss->smd_info.timeout_value = 0x0;
+		bss->smd_info.smd_capabilities = 0x0;
+		memset(bss->smd_info.smd_identifier, 0x0, ETH_ALEN);
+	}
+
 	kfree(elems);
 }
 
@@ -247,6 +261,9 @@ static bool ieee80211_scan_accept_presp(struct ieee80211_sub_if_data *sdata,
 					struct ieee80211_channel *channel,
 					u32 scan_flags, const u8 *da)
 {
+	struct ieee80211_link_data *link_sdata;
+	u8 link_id;
+
 	if (!sdata)
 		return false;
 
@@ -258,7 +275,20 @@ static bool ieee80211_scan_accept_presp(struct ieee80211_sub_if_data *sdata,
 
 	if (scan_flags & NL80211_SCAN_FLAG_RANDOM_ADDR)
 		return true;
-	return ether_addr_equal(da, sdata->vif.addr);
+
+	if (ether_addr_equal(da, sdata->vif.addr))
+		return true;
+
+	for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS; link_id++) {
+		link_sdata = rcu_dereference(sdata->link[link_id]);
+		if (!link_sdata)
+			continue;
+
+		if (ether_addr_equal(da, link_sdata->conf->addr))
+			return true;
+	}
+
+	return false;
 }
 
 void ieee80211_scan_rx(struct ieee80211_local *local, struct sk_buff *skb)
@@ -610,7 +640,12 @@ static bool __ieee80211_can_leave_ch(struct ieee80211_sub_if_data *sdata,
 	if (!ieee80211_is_radar_required(local, req))
 		return true;
 
-	if (sdata->vif.type != NL80211_IFTYPE_STATION) {
+	if (sdata->vif.type != NL80211_IFTYPE_STATION
+#ifdef CPTCFG_QCN_EXTN
+	    && !(sdata->vif.type == NL80211_IFTYPE_AP &&
+		 local->hw.wiphy->allow_scan_on_dfs_chan)
+#endif /* CPTCFG_QCN_EXTN */
+	    ) {
 		if (!regulatory_pre_cac_allowed(local->hw.wiphy))
 			return false;
 	}
@@ -844,6 +879,9 @@ static int __ieee80211_start_scan(struct ieee80211_sub_if_data *sdata,
 			__ieee80211_validate_scan_freqs(sdata, req);
 		}
 
+		if (!req->n_channels)
+			return -EINVAL;
+
 		local->hw_scan_req = kmalloc(struct_size(local->hw_scan_req,
 							 req.channels,
 							 req->n_channels) +
@@ -950,8 +988,10 @@ static int __ieee80211_start_scan(struct ieee80211_sub_if_data *sdata,
 	ieee80211_recalc_idle(local);
 
 	if (hw_scan) {
-		WARN_ON(!ieee80211_prep_hw_scan(sdata));
-		rc = drv_hw_scan(local, sdata, local->hw_scan_req);
+		if (WARN_ON(!ieee80211_prep_hw_scan(sdata)))
+			rc = -EINVAL;
+		else
+			rc = drv_hw_scan(local, sdata, local->hw_scan_req);
 	} else {
 		rc = ieee80211_start_sw_scan(local, sdata);
 	}

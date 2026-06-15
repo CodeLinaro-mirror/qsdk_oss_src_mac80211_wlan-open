@@ -12,41 +12,63 @@
 #include "hw.h"
 #include "dp_ast.h"
 #include "hal.h"
+#include "dp_tx.h"
 #ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/dp.h"
 #endif
 
 #define DP_TX_EXCEPTION_RING_SIZE      512
 #define DP_WBM_REFILL_RING_MAX         4
-#define DP_WBM_REFILL_RING_SIZE        512
-#define DP_WBM_IDLE_BUF_RING_SIZE	12284
-#define DP_FSE_CMD_RING_SIZE		256
+#define DP_FSE_CMD_RING_SIZE		8192
 #define DP_PPE2WBM_REFILL_RING_MAX     3
+#define DP_PPE2WBM_SFE_POOL_REFILL_RING_NUM	5
 #define DP_PPE2WBM_REFILL_RING_SIZE    8192
-#define DP_PPE2WBM_IDLE_BUF_RING_SIZE	12284
 #define DP_TELEMETRY_TX_RING_SIZE	256
 #define DP_TELEMETRY_RX_RING_SIZE	256
 #define DP_REO_FLUSH_RING_SIZE		256
 
+#define ATH12K_DEFAULT_UCAST_STATS_ID	512
+#define ATH12K_MAX_EXT_UCAST_STATS_ID	1024
 #define ATH12K_MAX_UCAST_STATS_ID	1536
 #define ATH12K_MAX_STATS_ID		1624
 #define ATH12K_MIN_DGCAST_STATS_ID	1536
 #define ATH12K_MAX_DGCAST_STATS_ID	1616
 
+#ifndef CPTCFG_QCN_EXTN
+#define DP_WBM_IDLE_BUF_RING_SIZE	12288
+#define DP_PPE2WBM_IDLE_BUF_RING_SIZE	12288
+#define DP_WBM_REFILL_RING_SIZE		512
+#define DP_WBM_SFE_HIGH_WATERMARK	0x1000
+#define DP_WBM_MGMT_HIGH_WATERMARK	0x200
+#define DP_WBM_PPE_HIGH_WATERMARK	0x1000
+#define DP_PPE2WBM_DEDICATED_POOL	0
+#else
+#define DP_WBM_IDLE_BUF_RING_SIZE	ATH12K_DP_INI_GET(WBM_IDLE_BUF_RING_SIZE)
+#define DP_PPE2WBM_IDLE_BUF_RING_SIZE	ATH12K_DP_INI_GET(PPE2WBM_IDLE_BUF_RING_SIZE)
+#define DP_WBM_REFILL_RING_SIZE		ATH12K_DP_INI_GET(WBM_REFILL_RING_SIZE)
+#define DP_WBM_SFE_HIGH_WATERMARK	ATH12K_DP_INI_GET(WBM_SFE_HIGH_WATERMARK)
+#define DP_WBM_MGMT_HIGH_WATERMARK	ATH12K_DP_INI_GET(WBM_MGMT_HIGH_WATERMARK)
+#define DP_WBM_PPE_HIGH_WATERMARK	ATH12K_DP_INI_GET(WBM_PPE_HIGH_WATERMARK)
+#define DP_PPE2WBM_DEDICATED_POOL	ATH12K_DP_INI_GET(PPE2WBM_DEDICATED_BUF_POOL)
+#endif
+
 struct stats_to_peer_id_map {
 	u16 dp_peer_id;
 	u8 tid;
+	u8 hw_link_id;
 };
 
 #if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || \
 	defined(CPTCFG_ATH12K_MEM_PROFILE_512M)
-#define ATH12K_RX_DESC_COUNT	8192
+#define ATH12K_RX_DESC_COUNT	16384
 #elif defined(CONFIG_ATH12K_MEM_PROFILE_256M) || \
 	defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
 #define ATH12K_RX_DESC_COUNT	8192
 #else
-#define ATH12K_RX_DESC_COUNT	24576
+#define ATH12K_RX_DESC_COUNT	(ath12k_dp_ring_cfg->rx_desc_count_wifi8)
 #endif
+
+#define ATH12K_NUM_RX_SPT_PAGES_DEFAULT	(24576 / ATH12K_MAX_SPT_ENTRIES)
 
 #define ATH12K_INVALID_SVC_ID	0xFF
 
@@ -92,9 +114,75 @@ struct ath12k_wifi8_dp_stats {
 	struct ath12k_wifi8_rx_stats rx_stats;
 };
 
+#define ATH12K_DP_TX_CONGSTN_HISTORY_DURATION_SEC	60
+
+/**
+ * struct ath12k_wifi8_congstn_history_entry - single congestion recovery event record
+ * @timestamp:         jiffies at the time of the handler invocation
+ * @used_cnt:          tx_desc_used_cnt at the time of the invocation
+ * @used_threshold:    congestion threshold configured
+ * @total_active_msdu: total active MSDUs across all service categories
+ * @target_drop:       number of MSDUs targeted for removal
+ * @num_drop_flows:    number of flows selected for drop
+ * @svc_num_flows:     per-service-category flow count
+ * @svc_total_msdu:    per-service-category total MSDU count
+ * @drop_flows:        per-flow drop details (flow number, svc, drop count)
+ */
+struct ath12k_wifi8_congstn_history_entry {
+	unsigned long timestamp;
+	u32 total_active_msdu;
+	u32 used_threshold;
+	u32 target_drop;
+	u32 used_cnt;
+	u8  num_drop_flows;
+	u8  svc_num_flows[HAL_TQM_SERVICE_CATEGORY_MAX];
+	u32 svc_total_msdu[HAL_TQM_SERVICE_CATEGORY_MAX];
+	struct ath12k_wifi8_flow_remove_entry drop_flows[HAL_TQM_MAX_SORTED_FLOW_ALL_SVC];
+};
+
+struct ath12k_wifi8_dp_congestion_control {
+	struct timer_list timer;
+	void (*calculate_drop)(struct ath12k_wifi8_dp_congestion_control *congstn,
+			       struct ath12k_wifi8_svc_sorted_flows *svc_datas,
+			       u32 target_drop,
+			       struct ath12k_wifi8_svc_remove_flows *drop);
+	bool init;
+	bool start;
+	u32 interval;
+	u32 used_threshold;
+	u32 max_used;
+	u8 flow_drop_grace_percent;
+	u32 weights[HAL_TQM_SERVICE_CATEGORY_MAX];
+	unsigned long last_jiffies;
+	unsigned long last_drop_jiffies;
+	u32 continuous_drop_threshold;
+	/* per-service-category threshold lists */
+	struct list_head threshold_list[HAL_TQM_SERVICE_CATEGORY_MAX];
+	/* single lock protecting all threshold_list entries */
+	spinlock_t threshold_list_lock;
+	u32 scaling_factor;
+	/* tick counter: incremented each timer invocation to track elapsed time */
+	u32 tick_counter;
+	/* per-invocation sorted-flow scratch buffer (allocated once at init) */
+	struct ath12k_wifi8_svc_sorted_flows *svc_data;
+	/* per-invocation drop scratch buffer (allocated once at init) */
+	struct ath12k_wifi8_svc_remove_flows *drop;
+	struct ath12k_wifi8_dp_tx_flow_cost *entries;
+	/* circular history buffer for congestion recovery log (dynamically allocated) */
+	struct ath12k_wifi8_congstn_history_entry *history;
+	u16 history_size;
+	/* next write index (wraps at ATH12K_DP_TX_CONGSTN_HISTORY_SIZE) */
+	u32 history_head;
+	/* total entries written */
+	u32 history_count;
+	/* lock to protect history */
+	spinlock_t history_lock;
+	/* enable/disable history logging (default: false) */
+	bool history_enable;
+};
+
 struct ath12k_dp_wifi8 {
 	struct ath12k_dp *dp;
-	bool cumac;
 	bool init_done;
 	atomic_t sam_cmd_num;
 	struct dp_srng tx_exception;
@@ -118,6 +206,8 @@ struct ath12k_dp_wifi8 {
 	u32 *sam_cmd_staging;
 	struct dp_srng ppe2wbm_refill_ring[DP_PPE2WBM_REFILL_RING_MAX];
 	struct dp_srng ppe2wbm_idle_buf_ring;
+	u8 num_ppe2wbm_refill_rings;
+	bool dp_ppe2wbm_use_dedicated_pool;
 	struct dp_srng rx_peer_telemetry_ring;
 	struct dp_srng tx_peer_telemetry_ring;
 #ifdef CPTCFG_QCN_EXTN
@@ -164,6 +254,9 @@ struct ath12k_dp_hw_group_wifi8 {
 	u16 last_mpduq_sam_id;
 	/* lock for sam id alloc map*/
 	spinlock_t sam_id_lock;
+
+	/* structure for congestion control.*/
+	struct ath12k_wifi8_dp_congestion_control congstn;
 };
 
 struct dp_hw_grp_timer_entry {

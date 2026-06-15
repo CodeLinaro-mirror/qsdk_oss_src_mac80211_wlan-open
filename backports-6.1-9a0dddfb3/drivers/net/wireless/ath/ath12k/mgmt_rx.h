@@ -103,10 +103,12 @@ struct ath12k_device_mgmt_srng_stats {
 	u32 invalid_pkts; /* non-mgmt pkts invalidly routed to mgmt srng */
 	u32 invalid_push_pkts; /* pkts with invalid push reason */
 	u32 rx_pkts[ATH12K_SRNG_STATS_MGMT_FRM_STYPE_MAX];
+	u32 bar_pkts[ATH12K_MGMT_SRNG_PKT_TYPE_MAX]; /* BAR ctrl frames in mgmt srng */
 	u32 err_ring_pkts;
 	/* subset of err_ring_pkts */
 	u32 rxdma_err[HAL_REO_ENTR_RING_RXDMA_ECODE_MAX];
 	u32 reo_err[HAL_REO_DEST_RING_ERROR_CODE_MAX];
+	u32 reo_err_rx[ATH12K_SRNG_STATS_MGMT_FRM_STYPE_MAX];
 	u32 frag_pkts;
 
 #ifdef CPTCFG_QCN_EXTN
@@ -122,6 +124,7 @@ struct ath12k_mgmt {
 	const struct ath12k_hw_params *hw_params;
 	struct ath12k_mgmt_irq_grp *irq_grp;
 	u8 num_irq_grp;
+	bool init_done;
 
 	/* Rx buffer descriptors for mgmt */
 	struct ath12k_rx_desc_info *rx_desc_baddr[NUM_MGMT_RX_DESC_BLOCKS];

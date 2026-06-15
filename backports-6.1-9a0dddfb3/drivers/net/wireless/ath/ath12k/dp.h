@@ -22,12 +22,184 @@
 
 /* Macros parsing INI */
 #ifndef CPTCFG_QCN_EXTN
-#define DP_TX_MONITOR	false
+#define DP_TX_MONITOR	ath12k_dp_ring_cfg->tx_monitor_support
+#define DP_UMAC_RESET_TIMEOUT_IN_MS	1000
+#define DP_REO_EXCEPTION_RING_SIZE	128
+#define DP_REO_REINJECT_RING_SIZE	32
+#define DP_REO_STATUS_RING_SIZE		2048
+#define DP_REO_CMD_RING_SIZE		256
+#define DP_TCL_STATUS_RING_SIZE	32
+#define DP_WBM_RELEASE_RING_SIZE	64
+#define DP_RXDMA_ERR_DST_RING_SIZE	1024
+#define DP_RXDMA_REFILL_RING_SIZE	2048
+#define DP_HTT_LOGGING_ENABLE	false
+#define HAL_SRNG_INT_BATCH_THRESHOLD_OTHER	1
+#define HAL_SRNG_INT_BATCH_THRESHOLD_PPE2TCL 0
+#define HAL_SRNG_INT_BATCH_THRESHOLD_RX 128
+#define HAL_SRNG_INT_BATCH_THRESHOLD_TX 256
+#define HAL_SRNG_INT_TIMER_THRESHOLD_OTHER 256
+#define HAL_SRNG_INT_TIMER_THRESHOLD_PPE2TCL 3
+#define HAL_SRNG_INT_TIMER_THRESHOLD_RX 200
+#define HAL_SRNG_INT_TIMER_THRESHOLD_TX 1000
+
+#if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined(CPTCFG_ATH12K_MEM_PROFILE_512M)
+/* From 512M profile values */
+#define DP_REO2PPE_RING_SIZE	2048
+#define DP_PPE2TCL_RING_SIZE	2048
+#define DP_RX_RELEASE_RING_SIZE	8192
+#define DP_RXDMA_BUF_RING_SIZE	8192
+#define DP_TX_COMP_PPEDS_RING_SIZE	16384
+#define DP_PPE_WBM2SW_RING_SIZE	8192
+#define DP_TQM2PPE_RING_SIZE	8192
+
+#define DP_REO_DST_RING0_SIZE	8192
+#define DP_REO_DST_RING1_SIZE	8192
+#define DP_REO_DST_RING2_SIZE	8192
+#define DP_REO_DST_RING3_SIZE	8192
+#define DP_REO_DST_RING4_SIZE	8192
+
+#define DP_TCL_DATA_RING0_SIZE	2048
+#define DP_TCL_DATA_RING1_SIZE	2048
+#define DP_TCL_DATA_RING2_SIZE	2048
+#define DP_TCL_DATA_RING3_SIZE	2048
+#define DP_TCL_DATA_RING4_SIZE	2048
+
+#define DP_TX_COMP_RING0_SIZE	16384
+#define DP_TX_COMP_RING1_SIZE	16384
+#define DP_TX_COMP_RING2_SIZE	16384
+#define DP_TX_COMP_RING3_SIZE	16384
+#define DP_TX_COMP_RING4_SIZE	16384
+#elif defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
+/* From 256M profile values */
+#define DP_REO2PPE_RING_SIZE	2048
+#define DP_PPE2TCL_RING_SIZE	2048
+#define DP_RX_RELEASE_RING_SIZE	4096
+#define DP_RXDMA_BUF_RING_SIZE	2048
+#define DP_TX_COMP_PPEDS_RING_SIZE	8192
+#define DP_PPE_WBM2SW_RING_SIZE	8192
+#define DP_TQM2PPE_RING_SIZE	8192
+
+#define DP_REO_DST_RING0_SIZE	2048
+#define DP_REO_DST_RING1_SIZE	2048
+#define DP_REO_DST_RING2_SIZE	2048
+#define DP_REO_DST_RING3_SIZE	512
+#define DP_REO_DST_RING4_SIZE	512
+
+#define DP_TCL_DATA_RING0_SIZE	512
+#define DP_TCL_DATA_RING1_SIZE	512
+#define DP_TCL_DATA_RING2_SIZE	512
+#define DP_TCL_DATA_RING3_SIZE	128
+#define DP_TCL_DATA_RING4_SIZE	128
+
+#define DP_TX_COMP_RING0_SIZE	8192
+#define DP_TX_COMP_RING1_SIZE	8192
+#define DP_TX_COMP_RING2_SIZE	8192
+#define DP_TX_COMP_RING3_SIZE	1024
+#define DP_TX_COMP_RING4_SIZE	1024
+
 #else
+/* Runtime: ring sizes selected
+ */
+#define DP_REO2PPE_RING_SIZE		(ath12k_dp_ring_cfg->reo2ppe_ring)
+#define DP_PPE2TCL_RING_SIZE		(ath12k_dp_ring_cfg->ppe2tcl_ring)
+#define DP_RX_RELEASE_RING_SIZE		(ath12k_dp_ring_cfg->rx_release_ring_size)
+#define DP_RXDMA_BUF_RING_SIZE		(ath12k_dp_ring_cfg->rxdma_buf_ring_size)
+#define DP_TX_COMP_PPEDS_RING_SIZE	(ath12k_dp_ring_cfg->tx_comp_ppeds_ring_size)
+#define DP_PPE_WBM2SW_RING_SIZE		(ath12k_dp_ring_cfg->ppe_wbm2sw_ring_size)
+#define DP_TQM2PPE_RING_SIZE		(ath12k_dp_ring_cfg->tqm2ppe_ring_size)
+
+#define DP_REO_DST_RING0_SIZE		(ath12k_dp_ring_cfg->reo_dst_ring_size[0])
+#define DP_REO_DST_RING1_SIZE		(ath12k_dp_ring_cfg->reo_dst_ring_size[1])
+#define DP_REO_DST_RING2_SIZE		(ath12k_dp_ring_cfg->reo_dst_ring_size[2])
+#define DP_REO_DST_RING3_SIZE		(ath12k_dp_ring_cfg->reo_dst_ring_size[3])
+#define DP_REO_DST_RING4_SIZE		(ath12k_dp_ring_cfg->reo_dst_ring_size[4])
+
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#define DP_TCL_DATA_RING0_SIZE		8192
+#define DP_TCL_DATA_RING1_SIZE		8192
+#define DP_TCL_DATA_RING2_SIZE		8192
+#define DP_TCL_DATA_RING3_SIZE		8192
+#define DP_TCL_DATA_RING4_SIZE		8192
+
+#define DP_TX_COMP_RING0_SIZE		8192
+#define DP_TX_COMP_RING1_SIZE		8192
+#define DP_TX_COMP_RING2_SIZE		8192
+#define DP_TX_COMP_RING3_SIZE		8192
+#define DP_TX_COMP_RING4_SIZE		8192
+#else /* CPTCFG_EXT_IPA_OFFLOAD */
+#define DP_TCL_DATA_RING0_SIZE		(ath12k_dp_ring_cfg->tcl_data_ring_size[0])
+#define DP_TCL_DATA_RING1_SIZE		(ath12k_dp_ring_cfg->tcl_data_ring_size[1])
+#define DP_TCL_DATA_RING2_SIZE		(ath12k_dp_ring_cfg->tcl_data_ring_size[2])
+#define DP_TCL_DATA_RING3_SIZE		(ath12k_dp_ring_cfg->tcl_data_ring_size[3])
+#define DP_TCL_DATA_RING4_SIZE		(ath12k_dp_ring_cfg->tcl_data_ring_size[4])
+
+#define DP_TX_COMP_RING0_SIZE		(ath12k_dp_ring_cfg->tx_compl_ring_size[0])
+#define DP_TX_COMP_RING1_SIZE		(ath12k_dp_ring_cfg->tx_compl_ring_size[1])
+#define DP_TX_COMP_RING2_SIZE		(ath12k_dp_ring_cfg->tx_compl_ring_size[2])
+#define DP_TX_COMP_RING3_SIZE		(ath12k_dp_ring_cfg->tx_compl_ring_size[3])
+#define DP_TX_COMP_RING4_SIZE		(ath12k_dp_ring_cfg->tx_compl_ring_size[4])
+#endif /* CPTCFG_EXT_IPA_OFFLOAD */
+#endif /* CONFIG_ATH12K_MEM_PROFILE_512M / 256M / runtime */
+
+#else /* CPTCFG_QCN_EXTN */
+#define ATH12K_DP_INI_GET(__ini__)	ath12k_cfg_get(ab, ATH12K_CFG_DP_##__ini__)
+
 #define DP_TX_MONITOR \
 	ath12k_cfg_get(ab, ATH12K_CFG_DP_TX_MONITOR)
-#endif /* CPTCFG_QCN_EXTN*/
+#define DP_UMAC_RESET_TIMEOUT_IN_MS	ATH12K_DP_INI_GET(UMAC_RESET_TIMEOUT)
+#define DP_REO_EXCEPTION_RING_SIZE	ATH12K_DP_INI_GET(REO_EXCEPTION_RING_SIZE)
+#define DP_REO_REINJECT_RING_SIZE	ATH12K_DP_INI_GET(REO_REINJECT_RING_SIZE)
+#define DP_REO_STATUS_RING_SIZE		ATH12K_DP_INI_GET(REO_STATUS_RING_SIZE)
+#define DP_REO_CMD_RING_SIZE		ATH12K_DP_INI_GET(REO_CMD_RING_SIZE)
+#define DP_TCL_STATUS_RING_SIZE		ATH12K_DP_INI_GET(TCL_STATUS_RING_SIZE)
+#define DP_WBM_RELEASE_RING_SIZE	ATH12K_DP_INI_GET(WBM_RELEASE_RING_SIZE)
+#define DP_RXDMA_ERR_DST_RING_SIZE	ATH12K_DP_INI_GET(RXDMA_ERR_DST_RING_SIZE)
+#define DP_REO2PPE_RING_SIZE		ATH12K_DP_INI_GET(REO2PPE_RING_SIZE)
+#define DP_PPE2TCL_RING_SIZE		ATH12K_DP_INI_GET(PPE2TCL_RING_SIZE)
+#define DP_RX_RELEASE_RING_SIZE		ATH12K_DP_INI_GET(RX_RELEASE_RING_SIZE)
+#define DP_RXDMA_BUF_RING_SIZE		ATH12K_DP_INI_GET(RXDMA_BUF_RING)
+#define DP_RXDMA_REFILL_RING_SIZE	ATH12K_DP_INI_GET(RXDMA_REFILL_RING_SIZE)
+#define DP_TX_COMP_PPEDS_RING_SIZE	ATH12K_DP_INI_GET(TX_COMP_PPEDS_RING_SIZE)
+#define DP_PPE_WBM2SW_RING_SIZE		ATH12K_DP_INI_GET(PPE_WBM2SW_RING_SIZE)
+#define DP_TQM2PPE_RING_SIZE		ATH12K_DP_INI_GET(TQM2PPE_RING_SIZE)
 
+#define DP_REO_DST_RING0_SIZE		ATH12K_DP_INI_GET(REO_DST_RING0_SIZE)
+#define DP_REO_DST_RING1_SIZE		ATH12K_DP_INI_GET(REO_DST_RING1_SIZE)
+#define DP_REO_DST_RING2_SIZE		ATH12K_DP_INI_GET(REO_DST_RING2_SIZE)
+#define DP_REO_DST_RING3_SIZE		ATH12K_DP_INI_GET(REO_DST_RING3_SIZE)
+#define DP_REO_DST_RING4_SIZE		ATH12K_DP_INI_GET(REO_DST_RING4_SIZE)
+#define DP_HTT_LOGGING_ENABLE		ATH12K_DP_INI_GET(HTT_LOGGING_ENABLE)
+
+#define HAL_SRNG_INT_BATCH_THRESHOLD_OTHER \
+	ATH12K_DP_INI_GET(HAL_SRNG_INT_BATCH_THRESHOLD_OTHER)
+#define HAL_SRNG_INT_BATCH_THRESHOLD_PPE2TCL \
+	ATH12K_DP_INI_GET(HAL_SRNG_INT_BATCH_THRESHOLD_PPE2TCL)
+#define HAL_SRNG_INT_BATCH_THRESHOLD_RX \
+	ATH12K_DP_INI_GET(HAL_SRNG_INT_BATCH_THRESHOLD_RX)
+#define HAL_SRNG_INT_BATCH_THRESHOLD_TX \
+	ATH12K_DP_INI_GET(HAL_SRNG_INT_BATCH_THRESHOLD_TX)
+#define HAL_SRNG_INT_TIMER_THRESHOLD_OTHER \
+	ATH12K_DP_INI_GET(HAL_SRNG_INT_TIMER_THRESHOLD_OTHER)
+#define HAL_SRNG_INT_TIMER_THRESHOLD_PPE2TCL \
+	ATH12K_DP_INI_GET(HAL_SRNG_INT_TIMER_THRESHOLD_PPE2TCL)
+#define HAL_SRNG_INT_TIMER_THRESHOLD_RX \
+	ATH12K_DP_INI_GET(HAL_SRNG_INT_TIMER_THRESHOLD_RX)
+#define HAL_SRNG_INT_TIMER_THRESHOLD_TX \
+	ATH12K_DP_INI_GET(HAL_SRNG_INT_TIMER_THRESHOLD_TX)
+
+#define DP_TCL_DATA_RING0_SIZE		ATH12K_DP_INI_GET(TCL_DATA_RING0_SIZE)
+#define DP_TCL_DATA_RING1_SIZE		ATH12K_DP_INI_GET(TCL_DATA_RING1_SIZE)
+#define DP_TCL_DATA_RING2_SIZE		ATH12K_DP_INI_GET(TCL_DATA_RING2_SIZE)
+#define DP_TCL_DATA_RING3_SIZE		ATH12K_DP_INI_GET(TCL_DATA_RING3_SIZE)
+#define DP_TCL_DATA_RING4_SIZE		ATH12K_DP_INI_GET(TCL_DATA_RING4_SIZE)
+
+#define DP_TX_COMP_RING0_SIZE           ATH12K_DP_INI_GET(TX_COMPL_RING_SIZE_0)
+#define DP_TX_COMP_RING1_SIZE           ATH12K_DP_INI_GET(TX_COMPL_RING_SIZE_1)
+#define DP_TX_COMP_RING2_SIZE           ATH12K_DP_INI_GET(TX_COMPL_RING_SIZE_2)
+#define DP_TX_COMP_RING3_SIZE           ATH12K_DP_INI_GET(TX_COMPL_RING_SIZE_3)
+#define DP_TX_COMP_RING4_SIZE		ATH12K_DP_INI_GET(TX_COMPL_RING_SIZE_4)
+
+#endif /* CPTCFG_QCN_EXTN*/
 
 #define HTT_TCL_META_DATA_PEER_ID_MISSION       GENMASK(15, 3)
 
@@ -139,6 +311,34 @@ struct ath12k_wmm_stats {
        u64 total_wmm_rx_drop[WME_NUM_AC];
 };
 
+/**
+ * struct ath12k_pdev_telemetry_stats - Per-pdev control-path telemetry statistics
+ *
+ * Aggregates radio-level statistics exported via vendor telemetry events.
+ * Fields cover airtime utilisation per access category, TX/RX data throughput
+ * counters, association state, and RX error metrics.  The structure is
+ * populated incrementally in the RX and TX data paths and is periodically
+ * consumed by the telemetry agent for userspace reporting.
+ *
+ * @link_airtime:        Total link airtime consumed per AC (microseconds)
+ * @tx_link_airtime:     TX link airtime per AC (microseconds)
+ * @rx_link_airtime:     RX link airtime per AC (microseconds)
+ * @tx_data_msdu_cnt:    Number of TX data MSDUs successfully transmitted
+ * @total_tx_data_bytes: Total TX data payload bytes
+ * @rx_data_msdu_cnt:    Number of RX data MSDUs received
+ * @total_rx_data_bytes: Total RX data payload bytes
+ * @time_last_assoc:     Timestamp of the most recent station association
+ * @sta_vap_exist:       Non-zero if at least one STA VAP is active on this pdev
+ * @rx_bar_cnt:          BAR frames received; counted before peer lookup so
+ *                       frames with unknown peer_id are not missed
+ * @rx_probe_req_bc:     Broadcast probe requests received; incremented once per
+ *                       frame rather than once per VAP to avoid O(n) VAP
+ *                       iteration in high-density (16+ VAP) deployments
+ * @rx_decrypt_err:      RX decryption error count
+ * @rx_mic_err:          RX MIC (TKIP) error count
+ * @rx_over_run:         RX FIFO overrun error count
+ * @rx_crc_err:          RX FCS/CRC error count (from WMI MIB stats)
+ */
 struct ath12k_pdev_telemetry_stats {
        u32 link_airtime[WLAN_MAX_AC];
        u32 tx_link_airtime[WLAN_MAX_AC];
@@ -149,6 +349,19 @@ struct ath12k_pdev_telemetry_stats {
 	u64 total_rx_data_bytes;
 	u64 time_last_assoc;
 	u8 sta_vap_exist;
+	/* Pdev-level BAR frame counter (counted before peer lookup so
+	 * frames with peer_id=0/invalid are not missed).
+	 */
+	u32 rx_bar_cnt;
+	/* Pdev-level broadcast probe request counter - incremented once per
+	 * broadcast probe rather than once per VAP, avoiding O(n) VAP iteration
+	 * on every broadcast probe in high-density (16+ VAP) environments.
+	 */
+	u32 rx_probe_req_bc;
+	u32 rx_decrypt_err;
+	u32 rx_mic_err;
+	u32 rx_over_run;
+	u32 rx_crc_err;
 };
 
 struct ath12k_atf_pdev_airtime {
@@ -195,6 +408,7 @@ struct ath12k_pdev_dp {
 	struct ath12k_pdev_mon_dp *dp_mon_pdev;
 	struct ath12k_wmm_stats wmm_stats;
 	struct ath12k_dp_pdev_tid_stats tid_stats;
+	u32 prev_rx_timestamp;
 	/* Protected by ab: base lock
 	 * determine when this stats is calculated based on peers
 	 */
@@ -202,6 +416,7 @@ struct ath12k_pdev_dp {
 	u8 qos_stats;
 	/*Neighbors Peer count per pdev*/
 	int num_nrps;
+	u32 prev_tx_enq_tstamp;
 };
 
 #define EAPOL_WPA_KEY_INFO_KEY_TYPE		BIT(3)
@@ -230,7 +445,7 @@ enum ath12k_dp_eapol_key_type {
 #if defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
 #define DP_NUM_CLIENTS_MAX 56
 #else
-#define DP_NUM_CLIENTS_MAX 64
+#define DP_NUM_CLIENTS_MAX (ath12k_dp_ring_cfg->dp_num_clients_max)
 #endif
 #define DP_AVG_TIDS_PER_CLIENT 2
 #define DP_NUM_TIDS_MAX (DP_NUM_CLIENTS_MAX * DP_AVG_TIDS_PER_CLIENT)
@@ -246,105 +461,21 @@ enum ath12k_dp_eapol_key_type {
 #endif
 
 #define DP_BA_WIN_SZ_MAX	1024
-
 #define DP_IDLE_SCATTER_BUFS_MAX 16
-
-#if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined(CPTCFG_ATH12K_MEM_PROFILE_512M)
-#define DP_TX_COMP_RING0_SIZE		16384
-#define DP_TX_COMP_RING1_SIZE		16384
-#define DP_TX_COMP_RING2_SIZE		16384
-#define DP_TX_COMP_RING3_SIZE		16384
-#define DP_TX_COMP_RING4_SIZE		16384
-#define DP_TX_COMP_PPEDS_RING_SIZE		16384
-#define DP_TCL_DATA_RING0_SIZE		2048
-#define DP_TCL_DATA_RING1_SIZE		2048
-#define DP_TCL_DATA_RING2_SIZE		2048
-#define DP_TCL_DATA_RING3_SIZE		2048
-#define DP_TCL_DATA_RING4_SIZE		2048
-#elif defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
-#define DP_TX_COMP_RING0_SIZE		8192
-#define DP_TX_COMP_RING1_SIZE		8192
-#define DP_TX_COMP_RING2_SIZE		8192
-#define DP_TX_COMP_RING3_SIZE		1024
-#define DP_TX_COMP_RING4_SIZE		1024
-#define DP_TX_COMP_PPEDS_RING_SIZE        8192
-#define DP_TCL_DATA_RING0_SIZE		512
-#define DP_TCL_DATA_RING1_SIZE		512
-#define DP_TCL_DATA_RING2_SIZE		512
-#define DP_TCL_DATA_RING3_SIZE		128
-#define DP_TCL_DATA_RING4_SIZE		128
-#else
-//#ifdef CONFIG_ATH12K_MEM_PROFILE_DEFAULT TODO Fix the Default profile enablement
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
-#define DP_TX_COMP_RING0_SIZE		8192
-#define DP_TX_COMP_RING1_SIZE		8192
-#define DP_TX_COMP_RING2_SIZE		8192
-#define DP_TX_COMP_RING3_SIZE		8192
-#define DP_TX_COMP_RING4_SIZE		8192
-#define DP_TCL_DATA_RING0_SIZE		8192
-#define DP_TCL_DATA_RING1_SIZE		8192
-#define DP_TCL_DATA_RING2_SIZE		8192
-#define DP_TCL_DATA_RING3_SIZE		8192
-#define DP_TCL_DATA_RING4_SIZE		8192
-#else
-#define DP_TX_COMP_RING0_SIZE		32768
-#define DP_TX_COMP_RING1_SIZE		32768
-#define DP_TX_COMP_RING2_SIZE		32768
-#define DP_TX_COMP_RING3_SIZE		32768
-#define DP_TX_COMP_RING4_SIZE		32768
-#define DP_TX_COMP_PPEDS_RING_SIZE        32768
-#define DP_TCL_DATA_RING0_SIZE		2048
-#define DP_TCL_DATA_RING1_SIZE		2048
-#define DP_TCL_DATA_RING2_SIZE		2048
-#define DP_TCL_DATA_RING3_SIZE		2048
-#define DP_TCL_DATA_RING4_SIZE		2048
-#endif
-#endif
-
 #define ATH12K_NUM_EAPOL_RESERVE       1024
-
-#define DP_WBM_RELEASE_RING_SIZE	64
 #define DP_RX_ASE_CMD_RING_SIZE		32
 #define DP_RX_ASE_STATUS_RING_SIZE		256
 #define DP_TCL_CMD_RING_SIZE		32
-#define DP_TCL_STATUS_RING_SIZE		32
 #define DP_TQM_CMD_RING_SIZE		16384
 #define DP_TQM_STATUS_RING_SIZE		2048
 #define DP_REO_ROAMING_RING_SIZE	2048
-#if defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
-#define DP_REO_DST_RING0_SIZE      2048
-#define DP_REO_DST_RING1_SIZE      2048
-#define DP_REO_DST_RING2_SIZE      2048
-#define DP_REO_DST_RING3_SIZE      512
-#define DP_REO_DST_RING4_SIZE      512
-#else
-#define DP_REO_DST_RING0_SIZE       8192
-#define DP_REO_DST_RING1_SIZE       8192
-#define DP_REO_DST_RING2_SIZE       8192
-#define DP_REO_DST_RING3_SIZE       8192
-#define DP_REO_DST_RING4_SIZE       8192
-#endif
-#define DP_REO_REINJECT_RING_SIZE	32
-#define DP_REO_EXCEPTION_RING_SIZE	128
-#define DP_REO_CMD_RING_SIZE		256
-#define DP_REO_STATUS_RING_SIZE		2048
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 #define DP_RX_MAC_BUF_RING_SIZE		8192
 #else
 #define DP_RX_MAC_BUF_RING_SIZE		2048
 #endif
-#define DP_RXDMA_REFILL_RING_SIZE	2048
-#define DP_RXDMA_ERR_DST_RING_SIZE	1024
 #define DP_SAM_CMD_RING_SIZE		256
 #define DP_SAM_STATUS_RING_SIZE		256
-
-#if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined(CPTCFG_ATH12K_MEM_PROFILE_512M)
-#define DP_RX_RELEASE_RING_SIZE		8192
-#elif defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
-#define DP_RX_RELEASE_RING_SIZE		4096
-#else
-#define DP_RX_RELEASE_RING_SIZE		16384
-#endif
 
 #define DP_RX_BUFFER_SIZE_LITE	1024
 #define DP_RX_BUFFER_ALIGN_SIZE	128
@@ -382,29 +513,11 @@ enum ath12k_dp_eapol_key_type {
 #define MAX_TQM_RELEASE_REASON 29
 #define MAX_FW_TX_STATUS 7
 
-static const u32 ath12k_dp_tx_comp_ring_size[DP_TCL_NUM_RING_MAX] = {
-	DP_TX_COMP_RING0_SIZE,
-	DP_TX_COMP_RING1_SIZE,
-	DP_TX_COMP_RING2_SIZE,
-	DP_TX_COMP_RING3_SIZE,
-	DP_TX_COMP_RING4_SIZE,
-};
+extern u32 ath12k_dp_tx_comp_ring_size[DP_TCL_NUM_RING_MAX];
 
-static const u32 ath12k_dp_tcl_data_ring_size[DP_TCL_NUM_RING_MAX] = {
-	DP_TCL_DATA_RING0_SIZE,
-	DP_TCL_DATA_RING1_SIZE,
-	DP_TCL_DATA_RING2_SIZE,
-	DP_TCL_DATA_RING3_SIZE,
-	DP_TCL_DATA_RING4_SIZE,
-};
+extern u32 ath12k_dp_tcl_data_ring_size[DP_TCL_NUM_RING_MAX];
 
-static const u32 ath12k_dp_reo_dst_ring_size[DP_REO_DST_RING_MAX] = {
-	DP_REO_DST_RING0_SIZE,
-	DP_REO_DST_RING1_SIZE,
-	DP_REO_DST_RING2_SIZE,
-	DP_REO_DST_RING3_SIZE,
-	DP_REO_DST_RING4_SIZE,
-};
+extern u32 ath12k_dp_reo_dst_ring_size[DP_REO_DST_RING_MAX];
 
 struct ath12k_dp_tx_bank_profile {
 	u8 is_configured;
@@ -443,6 +556,7 @@ struct ath12k_tx_desc_info {
 	u32 desc_id; /* Cookie */
 	u16 len;
 	u16 ext_desc_len;
+	u32 hw_enqueue_tstamp;
 	u8 hw_link_id	: 5,
 	   in_use	: 1,
 	   ext_kmem	: 1,
@@ -547,11 +661,19 @@ struct ath12k_dp_smd_ctx {
 		struct {
 			u32 rx_tid_bitmap;
 			u32 tx_tid_bitmap;
+			u16 tx_tid_ba_size[8];
 		} in;
 		struct {
 			u8 tid;
 		} out;
 	};
+};
+
+struct ath12k_tx_smd_ctx_per_tid {
+	u8 tid;
+	u16 ssn;
+	u16 lsn_offset;
+	u8 pn_number[16];
 };
 
 /* DP arch ops to communicate from common module
@@ -590,7 +712,8 @@ struct ath12k_dp_arch_ops {
 	int (*alloc_reo_qdesc)(struct ath12k_base *ab,
 			       struct ath12k_dp_rx_tid *rx_tid, u16 ssn,
 			       enum hal_pn_type pn_type,
-			       struct hal_rx_reo_queue **addr_aligned);
+			       struct hal_rx_reo_queue **addr_aligned,
+			       u16 stats_id);
 	void (*peer_rx_tid_qref_setup)(struct ath12k_base *ab, u16 peer_id, u16 tid,
 				       dma_addr_t paddr);
 	int (*dp_pdev_alloc)(struct ath12k_base *ab);
@@ -610,10 +733,11 @@ struct ath12k_dp_arch_ops {
 	int (*peer_migrate_reo_cmd)(struct ath12k_dp *dp,
 				    struct ath12k_dp_link_peer *peer,
 				    u16 peer_id,
-				    u8 chip_id);
+				    u8 chip_id, u8 pdev_id);
 	int (*sdwf_reinject_handler)(struct ath12k_pdev_dp *dp_pdev,
 				     struct ath12k_link_vif *arvif,
-				     struct sk_buff *skb, struct ath12k_link_sta *arsta);
+				     struct sk_buff *skb, struct ath12k_link_sta *arsta,
+				     struct ath12k_dp_peer *dp_peer);
 	int (*dp_msdu_htt_connect)(struct ath12k_dp *dp);
 	int (*dp_peer_create)(struct ath12k_hw *ah, u8 *addr,
 			      struct ath12k_dp_peer_create_params *params,
@@ -626,7 +750,6 @@ struct ath12k_dp_arch_ops {
 				       struct ath12k_dp_link_peer *peer);
 	void (*dp_link_peer_unassign_id)(struct ath12k_dp *dp,  struct ath12k *ar,
 					 struct ath12k_dp_link_peer *peer);
-	void (*dp_link_peer_delete)(struct ath12k_base *ab, u32 vdev_id, u8 *addr);
 	void (*peer_cleanup_indication)(struct ath12k_dp *dp, struct sk_buff *skb);
 	int (*dp_ppeds_tx_completion_handler)(struct ath12k_base *ab, int budget);
 	void (*dp_link_peer_assoc)(struct ath12k_dp_hw *dp_hw, struct ath12k_dp *dp,
@@ -655,10 +778,14 @@ struct ath12k_dp_arch_ops {
 				 struct ath12k_vif *ahvif,
 				 struct ath12k_dp_link_vif *dp_link_vif,
 				 u8 ring_id, struct ath12k_dp_tx_msdu_info *msdu_info,
-				 bool gsn_valid, u16 gsn, int group_slot,
+				 bool gsn_valid, u16 gsn,
 				 struct sk_buff *skb, struct ath12k_link_sta *arsta,
 				 struct ath12k_dp_skb_ctrl *skb_ctrl,
 				 bool htt_mesh);
+	void (*dp_tx_set_ast)(struct ath12k_dp_peer *dp_peer,
+			      struct ath12k_dp_tx_msdu_info *msdu_info,
+			      u8 hw_link_id);
+
 	/* UMAC reset operations */
 	void (*umac_reset_handle_pre_reset)(struct ath12k_base *ab);
 	void (*umac_reset_handle_post_reset_start)(struct ath12k_base *ab);
@@ -684,8 +811,23 @@ struct ath12k_dp_arch_ops {
 				     struct ath12k_dp_smd_ctx *ctx,
 				     void (*cb)(struct ath12k_dp *dp, void *ctx,
 						struct hal_reo_status *status));
-	int (*dp_qos_queue_setup)(struct ath12k_base *ab, struct ath12k_pdev_dp *dp_pdev,
-				  u16 msduq, u16 peer_id, u16 qos_id);
+	int (*dp_qos_queue_setup)(struct ath12k_dp_hw_group *dp_hw_grp,
+				  struct ath12k_dp_peer *dp_peer,
+				  u16 msduq, u16 qos_id);
+	int (*peer_tx_tid_update_for_smd)(struct ath12k_base *ab,
+					  struct ath12k_dp_hw *dp_hw,
+					  const u8 *peer_addr,
+					  struct ath12k_tx_smd_ctx_per_tid *tx_tid_ctx);
+	ssize_t (*dump_svc_sorted_list)(struct ath12k_dp *dp, u8 ac_mask,
+					char *buf, int size);
+	int (*update_tx_msdu_flow)(struct ath12k_dp *dp, u32 flow_number,
+				   u8 tid, u8 service_category,
+				   u16 hard_drop_threshold);
+	ssize_t (*dump_congestion_ctrl_stats)(struct ath12k_dp *dp,
+					      char *buf, int size);
+	ssize_t (*dump_congestion_recovery_hist)(struct ath12k_dp *dp,
+						 char *buf, int size);
+	int (*set_congestion_ctrl_param)(struct ath12k_dp *dp, u32 type, u32 value);
 };
 
 struct ath12k_bp_stats {
@@ -772,12 +914,13 @@ struct ath12k_device_dp_stats {
 	u32 rx_pkt_null_frame_handled;
 };
 
+#define ATH12K_DP_FST_NUM_CORES NR_CPUS
 #define ATH12K_DP_MIN_FST_CORE_MASK 0x1
-#define ATH12K_DP_MAX_FST_CORE_MASK 0xf
+#define ATH12K_DP_MAX_FST_CORE_MASK ((1 << ATH12K_DP_FST_NUM_CORES) - 1)
 
 struct dp_fst_config {
 	u32 fst_core_mask;
-	u8 fst_core_map[4];
+	u8 fst_core_map[ATH12K_DP_FST_NUM_CORES];
 	u8 fst_num_cores;
 	u8 core_idx;
 };
@@ -800,6 +943,10 @@ struct ath12k_dp_htt_rxdma_ppe_cfg_param {
 	u8 decap_raw_override;
 	u8 decap_nwifi_override;
 	u8 ip_frag_override;
+};
+
+struct ath12k_dbg_dp_svc_sort_stats {
+	u8 ac_mask;
 };
 
 struct ath12k_dp {
@@ -853,7 +1000,7 @@ struct ath12k_dp {
 	u32 num_spt_pages;
 	u32 rx_ppt_base;
 	struct ath12k_rx_desc_info **rxbaddr;
-	struct ath12k_tx_desc_info *txbaddr[ATH12K_NUM_TX_SPT_PAGES];
+	struct ath12k_tx_desc_info **txbaddr;
 	struct ath12k_ppeds_tx_desc_info **ppedstxbaddr;
 	struct list_head rx_ppeds_reuse_list;
 	struct list_head rx_desc_free_list;
@@ -869,6 +1016,7 @@ struct ath12k_dp {
 	struct ath12k_reo_q_addr_lut reoq_lut;
 	struct ath12k_reo_q_addr_lut ml_reoq_lut;
 	const struct ath12k_hw_params *hw_params;
+	bool hw_peer_stats_support;
 	struct ath12k_device_dp_stats device_stats;
 	struct device *dev;
 	struct ath12k_hal *hal;
@@ -910,6 +1058,9 @@ struct ath12k_dp {
 	/* HW link ID position in PPDU_ID */
 	u8 link_id_offset;
 	u8 link_id_bits;
+	u8 tcl_metadata_ver;
+
+	struct ath12k_dbg_dp_svc_sort_stats svc_sort_stats;
 
 	/* Keep Last */
 	u8 arch_data[] __aligned(sizeof(void *));
@@ -1160,9 +1311,11 @@ static inline int ath12k_dp_arch_peer_rx_tid_reo_update(struct ath12k_dp *dp,
 static inline int ath12k_dp_arch_alloc_reo_qdesc(struct ath12k_dp *dp,
 						 struct ath12k_dp_rx_tid *rx_tid, u16 ssn,
 						 enum hal_pn_type pn_type,
-						 struct hal_rx_reo_queue **addr_aligned)
+						 struct hal_rx_reo_queue **addr_aligned,
+						 u16 stats_id)
 {
-	return dp->arch_ops->alloc_reo_qdesc(dp->ab, rx_tid, ssn, pn_type, addr_aligned);
+	return dp->arch_ops->alloc_reo_qdesc(dp->ab, rx_tid, ssn, pn_type, addr_aligned,
+					     stats_id);
 }
 
 static inline void ath12k_dp_arch_peer_rx_tid_qref_setup(struct ath12k_dp *dp,
@@ -1316,14 +1469,6 @@ static inline void ath12k_dp_arch_link_peer_unassign_id(struct ath12k_dp *dp,
 		dp->arch_ops->dp_link_peer_unassign_id(dp, ar, peer);
 }
 
-static inline void ath12k_dp_arch_link_peer_delete(struct ath12k_dp *dp,
-						   struct ath12k_base *ab,
-						   u32 vdev_id, u8 *addr)
-{
-	if (dp->arch_ops->dp_link_peer_delete)
-		dp->arch_ops->dp_link_peer_delete(ab, vdev_id, addr);
-}
-
 static inline void ath12k_dp_arch_peer_cleanup_indication(struct ath12k_dp *dp,
 							  struct sk_buff *skb)
 {
@@ -1402,6 +1547,19 @@ ath12k_dp_arch_dp_peer_fetch_smd_ctx(struct ath12k_dp *dp,
 {
 	if (dp->arch_ops->dp_peer_fetch_smd_ctx)
 		return dp->arch_ops->dp_peer_fetch_smd_ctx(dp->ab, dp_hw, ctx, cb);
+	return 0;
+}
+
+static inline int
+ath12k_dp_arch_peer_tx_tid_update_for_smd(struct ath12k_dp *dp,
+					  struct ath12k_dp_hw *dp_hw,
+					  const u8 *peer_addr,
+					  struct ath12k_tx_smd_ctx_per_tid *tx_tid_ctx)
+{
+	if (dp->arch_ops->peer_tx_tid_update_for_smd)
+		return dp->arch_ops->peer_tx_tid_update_for_smd(dp->ab, dp_hw,
+								peer_addr,
+								tx_tid_ctx);
 
 	return 0;
 }
@@ -1417,6 +1575,30 @@ ath12k_dp_arch_peer_rx_tid_reo_update_for_smd(struct ath12k_dp *dp,
 		return dp->arch_ops->peer_rx_tid_reo_update_for_smd(dp->ab, dp_hw,
 								    peer_addr,
 								    rx_tid_ctx);
+	return 0;
+}
+
+static inline int ath12k_dp_arch_update_tx_msdu_flow(struct ath12k_dp *dp,
+						     u32 flow_number,
+						     u8 tid,
+						     u8 svc,
+						     u16 hard_drop_threshold)
+{
+	if (dp->arch_ops->update_tx_msdu_flow)
+		return dp->arch_ops->update_tx_msdu_flow(dp,
+							 flow_number,
+							 tid,
+							 svc,
+							 hard_drop_threshold);
+
+	return 0;
+}
+
+static inline int ath12k_dp_arch_set_congestion_ctrl_param(struct ath12k_dp *dp,
+							   u32 type, u32 value)
+{
+	if (dp->arch_ops->set_congestion_ctrl_param)
+		return dp->arch_ops->set_congestion_ctrl_param(dp, type, value);
 
 	return 0;
 }
@@ -1442,12 +1624,18 @@ static inline struct ath12k_pdev_dp *
 ath12k_dp_hw_grp_to_dp_pdev(struct ath12k_dp_hw_group *dp_hw_grp, u8 hw_link_id)
 {
 	struct ath12k_dp_hw_link *hw_links = dp_hw_grp->hw_links;
-	u8 device_id = hw_links[hw_link_id].device_id;
-	struct ath12k_dp *dp = dp_hw_grp->dp[device_id];
+	u8 device_id;
+	struct ath12k_dp *dp;
 	u8 pdev_id;
+
+	if (hw_link_id >= ATH12K_GROUP_MAX_RADIO)
+		return NULL;
 
 	RCU_LOCKDEP_WARN(!rcu_read_lock_held(),
 			 "ath12k dp to dp pdev called without rcu lock");
+
+	device_id = hw_links[hw_link_id].device_id;
+	dp = dp_hw_grp->dp[device_id];
 	if (!dp)
 		return NULL;
 
@@ -1490,10 +1678,10 @@ int ath12k_dp_tid_map_precedence(struct ath12k_dp_hw_group *dp_hw_grp);
 static inline int
 ath12k_dp_arch_peer_migrate_reo_cmd(struct ath12k_dp *dp,
 				    struct ath12k_dp_link_peer *peer,
-				     u16 peer_id, u8 chip_id)
+				     u16 peer_id, u8 chip_id, u8 pdev_id)
 {
 	return dp->arch_ops->peer_migrate_reo_cmd(dp, peer, peer_id,
-						  chip_id);
+						  chip_id, pdev_id);
 }
 
 static inline
@@ -1502,24 +1690,32 @@ ath12k_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 			struct ath12k_vif *ahvif,
 			struct ath12k_dp_link_vif *dp_link_vif,
 			u8 ring_id, struct ath12k_dp_tx_msdu_info *msdu_info,
-			bool gsn_valid, u16 gsn, int group_slot,
+			bool gsn_valid, u16 gsn,
 			struct sk_buff *skb, struct ath12k_link_sta *arsta,
 			struct ath12k_dp_skb_ctrl *skb_ctrl)
 {
 	return dp_pdev->dp->arch_ops->dp_tx_mcast_send(dp_pdev, ahvif, dp_link_vif,
 						       ring_id, msdu_info, gsn_valid,
-						       gsn, group_slot, skb, arsta,
+						       gsn, skb, arsta,
 						       skb_ctrl, false);
 }
 
+static inline void ath12k_dp_tx_set_ast(struct ath12k_dp *dp,
+					struct ath12k_dp_peer *dp_peer,
+					struct ath12k_dp_tx_msdu_info *msdu_info,
+					u8 hw_link_id)
+{
+	dp->arch_ops->dp_tx_set_ast(dp_peer, msdu_info, hw_link_id);
+}
+
 static inline int ath12k_dp_qos_queue_setup(struct ath12k_dp *dp,
-					    struct ath12k_base *ab,
-					    struct ath12k_pdev_dp *dp_pdev,
-					    u16 msduq, u16 peer_id, u16 qos_id)
+					    struct ath12k_dp_hw_group *dp_hw_grp,
+					    struct ath12k_dp_peer *dp_peer,
+					    u16 msduq, u16 qos_id)
 {
 	if (dp->arch_ops->dp_qos_queue_setup)
-		return dp->arch_ops->dp_qos_queue_setup(ab, dp_pdev, msduq,
-							peer_id, qos_id);
+		return dp->arch_ops->dp_qos_queue_setup(dp_hw_grp, dp_peer,
+							msduq, qos_id);
 	return -EOPNOTSUPP;
 }
 
@@ -1531,8 +1727,9 @@ int ath12k_dp_get_pdev_telemetry_stats(struct ath12k_base *ab,
 int ath12k_dp_pdev_pre_alloc(struct ath12k *ar);
 int ath12k_dp_tx_htt_srng_setup(struct ath12k_base *ab, u32 ring_id,
 				int mac_id, enum hal_ring_type ring_type);
-int ath12k_dp_peer_setup(struct ath12k *ar, struct ath12k_link_vif *arvif, const u8 *addr);
-void ath12k_dp_peer_cleanup(struct ath12k *ar, int vdev_id, const u8 *addr);
+int ath12k_dp_peer_setup(struct ath12k *ar, void *ptr, struct ath12k_link_vif *arvif,
+			 const u8 *addr, u8 link_id);
+void ath12k_dp_peer_cleanup(struct ath12k *ar, void *ptr, int vdev_id, const u8 *addr);
 void ath12k_dp_srng_cleanup(struct ath12k_base *ab, struct dp_srng *ring);
 int ath12k_dp_srng_setup(struct ath12k_base *ab, struct dp_srng *ring,
 			 enum hal_ring_type type, int ring_num,
@@ -1582,9 +1779,17 @@ int ath12k_dp_ppe_rxole_rxdma_cfg(struct ath12k_base *ab);
 #endif
 void ath12k_dp_get_device_stats(struct ath12k_dp *dp,
 				struct ath12k_telemetry_dp_device *telemetry_device);
-int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
+int ath12k_dp_get_link_peer_stats(struct ath12k_pdev_dp *dp_pdev,
+				  struct ath12k_dp_peer *peer,
+				  int hw_link_id,
+				  struct ath12k_telemetry_dp_peer *telemetry_peer,
+				  bool is_ds_vif);
+int ath12k_dp_get_peer_stats(struct ath12k_pdev_dp *dp_pdev,
+			     struct ath12k_dp_peer *peer,
 			     struct ath12k_telemetry_dp_peer *telemetry_peer,
-			     u8 *addr, u8 link_id);
+			     u8 link_id, bool valid_link,
+			     unsigned long links_map, int stats_link_id,
+			     bool is_ds_vif);
 void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 			     struct ath12k_telemetry_dp_vif *telemetry_vif,
 			     u8 link_id);
@@ -1631,5 +1836,116 @@ void ath12k_dp_ppeds_tx_cmem_init(struct ath12k_base *ab, struct ath12k_dp *dp);
 int ath12k_dp_ppe_rxole_rxdma_cfg(struct ath12k_base *ab);
 void ath12k_dp_increment_bank_num_users(struct ath12k_dp *dp,
 					int bank_id);
+#endif
+
+#ifdef CPTCFG_QCN_EXTN
+void ath12k_dp_srng_dst_invalidate_entries(struct ath12k_dp *dp,
+					   struct hal_srng *srng,
+					   int entries);
+
+dma_addr_t ath12k_dp_rx_buffer_map(struct ath12k_dp *dp,
+				   struct ath12k_rx_desc_info *rx_sw_desc);
+
+void ath12k_dp_rx_buffer_unmap(struct ath12k_dp *dp,
+			       struct ath12k_rx_desc_info *rx_sw_desc);
+
+struct sk_buff *ath12k_dp_alloc_skb(int size);
+
+void ath12k_dsb(void);
+#else
+static inline
+void ath12k_dp_srng_dst_invalidate_entries(struct ath12k_dp *dp,
+					   struct hal_srng *srng,
+					   int entries)
+{
+	u32 tp, hp;
+	dma_addr_t desc_paddr;
+
+	if (!(srng->flags & HAL_SRNG_FLAGS_CACHED))
+		return;
+
+	tp = srng->u.dst_ring.tp;
+	hp = srng->u.dst_ring.cached_hp;
+
+	desc_paddr = srng->ring_base_paddr + (tp * sizeof(u32));
+	if (hp > tp) {
+		dma_sync_single_for_cpu(dp->dev, desc_paddr,
+					entries * sizeof(u32),
+					DMA_FROM_DEVICE);
+	} else {
+		entries = srng->ring_size - tp;
+		dma_sync_single_for_cpu(dp->dev, desc_paddr,
+					entries * sizeof(u32),
+					DMA_FROM_DEVICE);
+		entries = hp;
+		dma_sync_single_for_cpu(dp->dev,
+					srng->ring_base_paddr,
+					entries * sizeof(u32),
+					DMA_FROM_DEVICE);
+	}
+}
+
+static inline
+dma_addr_t ath12k_dp_rx_buffer_map(struct ath12k_dp *dp,
+				   struct ath12k_rx_desc_info *rx_sw_desc)
+{
+	dma_addr_t dma_addr;
+
+	dma_addr = dma_map_single(dp->dev, (void *)rx_sw_desc->vaddr,
+				  DP_RX_BUFFER_SIZE, DMA_FROM_DEVICE);
+
+	if (dma_mapping_error(dp->dev, dma_addr)) {
+		/* increment error stats */
+		return DMA_MAPPING_ERROR;
+	}
+
+	return dma_addr;
+}
+
+static inline
+void ath12k_dp_rx_buffer_unmap(struct ath12k_dp *dp,
+			       struct ath12k_rx_desc_info *rx_sw_desc)
+{
+	dma_unmap_single(dp->dev, rx_sw_desc->paddr,
+			 DP_RX_BUFFER_SIZE, DMA_FROM_DEVICE);
+}
+
+static inline
+dma_addr_t ath12k_dp_tx_buffer_map(struct ath12k_dp *dp,
+				   struct ath12k_tx_desc_info *tx_sw_desc)
+{
+	dma_addr_t dma_addr;
+
+	dma_addr = dma_map_single(dp->dev, (void *)tx_sw_desc->skb->data,
+				  tx_sw_desc->len, DMA_TO_DEVICE);
+
+	if (dma_mapping_error(dp->dev, dma_addr)) {
+		/* increment error stats */
+		return DMA_MAPPING_ERROR;
+	}
+
+	return dma_addr;
+}
+
+static inline
+void ath12k_dp_tx_buffer_unmap(struct ath12k_dp *dp,
+			       struct ath12k_tx_desc_info *tx_sw_desc)
+{
+	dma_unmap_single(dp->dev, tx_sw_desc->paddr,
+			 tx_sw_desc->length, DMA_TO_DEVICE);
+}
+
+static inline void ath12k_dsb(void)
+{
+	/* this is empty function as data sync barrier is not needed
+	 * as we use map and unmap APIs
+	 */
+}
+
+struct sk_buff *ath12k_dp_alloc_skb(int size)
+{
+	return dev_alloc_skb(size);
+}
+
 #endif
 #endif

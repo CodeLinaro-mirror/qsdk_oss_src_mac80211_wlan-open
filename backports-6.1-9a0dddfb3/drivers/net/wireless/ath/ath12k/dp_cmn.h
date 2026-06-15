@@ -11,9 +11,11 @@
 #ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ath12k_cmn_extn.h"
 #endif
+#include <linux/hashtable.h>
 
 /* Max number of links for MLO connection */
-#define ATH12K_DP_MAX_MLO_LINKS 4
+#define ATH12K_DP_PEER_MAX_MLO_LINKS 5
+#define ATH12K_DATA_TID_MAX 8
 
 struct ath12k_hw_group;
 struct ath12k_sta;
@@ -36,39 +38,27 @@ struct ath12k_dp_hw_link {
 #if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined(CPTCFG_ATH12K_MEM_PROFILE_512M)
 #define DP_TX_COMP_RING_SIZE           16384
 #define ATH12K_NUM_POOL_TX_DESC        16384
-#define DP_REO2PPE_RING_SIZE	2048
-#define DP_PPE2TCL_RING_SIZE	2048
-#define DP_PPE_WBM2SW_RING_SIZE	8192
-#define DP_TQM2PPE_RING_SIZE 8192
-#define DP_RXDMA_BUF_RING_SIZE		8192
 /* TODO: revisit this count during testing */
 #define DP_RX_BUFFER_SIZE		1856
 #elif defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
 #define DP_TX_COMP_RING_SIZE           16384
 #define ATH12K_NUM_POOL_TX_DESC        8192
-#define DP_REO2PPE_RING_SIZE    2048
-#define DP_PPE2TCL_RING_SIZE    2048
-#define DP_PPE_WBM2SW_RING_SIZE 8192
-#define DP_TQM2PPE_RING_SIZE 8192
-#define DP_RXDMA_BUF_RING_SIZE      2048
 /* TODO: revisit this count during testing */
 #define DP_RX_BUFFER_SIZE       1856
 #else
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 #define DP_TX_COMP_RING_SIZE           8192
 #else
-#define DP_TX_COMP_RING_SIZE           32768
+#define DP_TX_COMP_RING_SIZE		32768
 #endif
-#define ATH12K_NUM_POOL_TX_DESC                32768
-#define DP_REO2PPE_RING_SIZE	16384
-#define DP_PPE2TCL_RING_SIZE	8192
-#define DP_PPE_WBM2SW_RING_SIZE	32768
-#define DP_TQM2PPE_RING_SIZE 32768
-#define DP_RXDMA_BUF_RING_SIZE		8192
+#define ATH12K_NUM_POOL_TX_DESC		(ath12k_dp_ring_cfg->num_pool_tx_desc)
 /* TODO: revisit this count during testing */
+#if BITS_PER_LONG == 32
+#define DP_RX_BUFFER_SIZE		1856
+#else
 #define DP_RX_BUFFER_SIZE		2048
 #endif
-
+#endif
 #define ATH12K_PAGE_SIZE	PAGE_SIZE
 
 /* Total 1024 entries in PPT, i.e 4K/4 considering 4K aligned
@@ -135,9 +125,14 @@ struct ath12k_dp_hw_link {
 #define DP_TCL_DESC_TYPE_MAX 2
 #define ATH12K_MAX_AHVIF_ID	255
 #define ATH12K_INVALID_AHVIF_ID	0
+#define DP_REO_ERR_RINGS_MAX 4
+#define DP_TOTAL_REO_DST_RINGS (DP_REO_DST_RING_MAX + DP_REO_ERR_RINGS_MAX)
 
 #define ATH12K_DP_PCP_TID_MAP_SIZE	8
 #define ATH12K_DP_MAX_TID_PRECEDENCE_VAL 11
+
+/* Hash table size: 2^11 = 2048 buckets for up to 2048 peers */
+#define ATH12K_DP_PEER_HASH_BITS 11
 
 struct ath12k_dp_hw {
 	struct ath12k_dp_peer __rcu *dp_peer_list[MAX_DP_PEER_LIST_SIZE];
@@ -146,9 +141,14 @@ struct ath12k_dp_hw {
 	u16 last_peer_id;
 	u16 last_sta_id;
 
-	/* Lock for protection of dp_peer_list and peers */
-	spinlock_t peer_lock;
+	/* Lock for protection of linked list of ath12k_dp_peer*/
+	spinlock_t peer_list_lock;
 	struct list_head peers;
+
+	/* Lock for protection of dp_peer_list and hashtable */
+	spinlock_t peer_hash_lock;
+	/* Generic hash table for fast MAC address lookup */
+	DECLARE_HASHTABLE(peer_hash, ATH12K_DP_PEER_HASH_BITS);
 };
 
 struct ath12k_dp_hw_group {
@@ -156,12 +156,13 @@ struct ath12k_dp_hw_group {
 	struct ath12k_dp *dp[ATH12K_MAX_SOCS];
 	struct dp_rx_fst *fst;
 	u8 *tx_status_buf[ATH12K_HW_MAX_QUEUES];
-	u8 *rx_status_buf[DP_REO_DST_RING_MAX];
+	u8 *rx_status_buf[DP_TOTAL_REO_DST_RINGS];
 	struct ath12k_spt_info *spt_info;
 	u32 num_spt_pages;
-	struct ath12k_tx_desc_info *txbaddr[ATH12K_NUM_TX_SPT_PAGES];
+	struct ath12k_tx_desc_info **txbaddr;
 	struct list_head tx_desc_free_list[ATH12K_HW_MAX_QUEUES];
 	struct list_head tx_spl_desc_free_list[ATH12K_HW_MAX_QUEUES];
+	u32 __percpu *tx_desc_used_cnt;
 	/* protects the free and used desc lists */
 	spinlock_t tx_desc_lock[ATH12K_HW_MAX_QUEUES];
 	bool tx_desc_initialized;
@@ -253,9 +254,10 @@ void ath12k_dp_cmn_update_hw_links(struct ath12k_dp *dp,
 				   struct ath12k *ar);
 int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 			       struct ieee80211_sta *sta, u8 *addr, u8 link_id,
-			       u32 hw_link_id, struct ieee80211_vif *vif,
-			       u8 vp_type, int vp_num, bool mlo_bridge_peer);
-void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr);
+			       struct ieee80211_vif *vif, u8 vp_type, int vp_num,
+			       bool mlo_bridge_peer);
+void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr,
+				  struct ieee80211_sta *sta);
 int
 ath12k_dp_link_peer_batch_cleanup(struct ath12k *ar,
 				  bool (*peer_match)(struct ath12k_dp_link_peer *,
@@ -264,13 +266,212 @@ ath12k_dp_link_peer_batch_cleanup(struct ath12k *ar,
 unsigned long ath12k_link_peer_last_active(struct ath12k_dp_link_peer *link_peer);
 void ath12k_link_peer_get_sta_rate_info_stats(struct ath12k_dp_link_peer *link_peer,
 					      struct ath12k_dp_link_peer_rate_info *rate_info);
-bool ath12k_dp_link_peer_reset_rx_stats(struct ath12k_dp *dp, const u8 *addr);
-bool ath12k_dp_link_peer_reset_tx_stats(struct ath12k_dp *dp, const u8 *addr);
 int ath12k_dp_mon_init(struct ath12k_dp *dp);
 void ath12k_dp_mon_deinit(struct ath12k_dp *dp);
 void ath12k_dp_cp_link_peer_unassign(struct ath12k *ar, struct ath12k_link_vif *arvif,
 				     struct ath12k_sta *ahsta, u8 link_id, u8 *addr);
-struct ath12k_dp_peer *ath12k_dp_peer_find(struct ath12k_dp_hw *dp_hw, u8 *addr);
 u16 ath12k_dp_peer_get_peer_id(struct ath12k_dp_hw *dp_hw, u8 *addr);
 u16 ath12k_dp_peer_get_sta_id(struct ath12k_dp_hw *dp_hw, u8 *addr);
+
+enum ath12k_dp_peer_param {
+	ATH12K_DP_PEER_PEERID_PARAM,
+	ATH12K_DP_PEER_MSCS_PARAM,
+	ATH12K_DP_PEER_DMS_DISABLE_PARAM,
+	ATH12K_DP_PEER_AUTHORIZE_PARAM,
+	ATH12K_DP_PEER_PN_PARAMS,
+	ATH12K_DP_PEER_KEYS_PARAM,
+	ATH12K_DP_PEER_CLEAR_KEYS_PARAM,
+	ATH12K_DP_PEER_MAC_ADDR_PARAM,
+	ATH12K_DP_PEER_MAX_PARAM,
+};
+
+enum ath12k_dp_link_peer_param {
+	ATH12K_DP_LINK_PEER_PEERID_PARAM,
+	ATH12K_DP_LINK_PEER_ATF_PARAM,
+	ATH12K_DP_LINK_PEER_AUTHORIZE_PARAM,
+	ATH12K_DP_LINK_PEER_ASSOC_PARAM,
+	ATH12K_DP_LINK_PEER_MAC_ADDR_PARAM,
+	ATH12K_DP_LINK_PEER_IS_PRIMARY,
+	ATH12K_DP_LINK_PEER_MIGRATION_PARAM,
+	ATH12K_DP_LINK_PEER_TID_WEIGHT_PARAM,
+	ATH12K_DP_LINK_PEER_TXRATE_PARAM,
+	ATH12k_DP_LINK_PEER_MAX_PARAM,
+};
+
+struct ath12k_config_atf_params {
+	u8 atf_group_index;
+	u32 atf_peer_conf_airtime;
+};
+
+struct ath12k_dp_peer_keys_params {
+	int len;
+	struct ieee80211_key_conf *keys[WMI_MAX_KEY_INDEX + 1];
+};
+
+struct ath12k_dp_peer_pn_params {
+	u8 keyidx;
+	struct ieee80211_key_conf *key;
+};
+
+/**
+ * union ath12k_config_param - Generic parameter value container for CP-DP APIs
+ *
+ * This union serves as a type-safe, extensible value carrier used by the
+ * Control Path to Data Path (CP-DP) interface APIs (ath12k_dp_peer_set/get_param
+ * and ath12k_dp_link_peer_set/get_param variants).
+ *
+ * The actual member to read or write is determined by the accompanying
+ * ath12k_dp_peer_param or ath12k_dp_link_peer_param enum value
+ * passed alongside this union. Using a union allows a single, uniform API
+ * signature to accommodate diverse parameter types (integers, flags, structs,
+ * etc.) as new param types are introduced.
+ *
+ */
+union ath12k_config_param {
+	u16 peer_id;
+	u8 addr[ETH_ALEN];
+	bool is_authorized;
+	struct ath12k_config_atf_params atf_params;
+	struct cfg80211_qm_req_desc_data mscs_params;
+	struct ath12k_dp_peer_keys_params keys_params;
+	bool assoc_success;
+	struct ath12k_dp_peer_pn_params pn_params;
+	bool dms_disable;
+	bool is_primary;
+	u8 hw_link_id;
+	u8 tid_weight[ATH12K_DATA_TID_MAX];
+	struct ath12k_dp_link_peer_rate_info rate_info;
+};
+
+/*
+ * Control path to Data path interface APIs for set and get params.
+ *
+ * Two lookup variants are provided for dp_peer-level operations:
+ *
+ *  - _by_dp_peer(): preferred when ath12k_sta is available in the control
+ *    path; caller obtains dp_peer via ath12k_sta_get_dp_peer_wiphy_locked()
+ *    and passes it directly, avoiding a peer table lookup.
+ *
+ *  - _by_mac_addr(): use when ath12k_sta is NOT available, e.g. for
+ *    non-associated peers (bcast/mcast, AP self-peer), or paths that
+ *    receive only a MAC address (debugfs, vendor commands, OEM callbacks).
+ *    Internally takes peer_hash_lock and performs a hash lookup.
+ */
+int ath12k_dp_peer_set_param_by_dp_peer(void *ptr, enum ath12k_dp_peer_param param,
+					union ath12k_config_param *val);
+int ath12k_dp_peer_get_param_by_dp_peer(void *ptr, enum ath12k_dp_peer_param param,
+					union ath12k_config_param *val);
+
+int ath12k_dp_peer_set_param_by_mac_addr(struct ath12k_dp_hw *dp_hw,
+					 const u8 *addr,
+					 enum ath12k_dp_peer_param param,
+					 union ath12k_config_param *val);
+int ath12k_dp_peer_get_param_by_mac_addr(struct ath12k_dp_hw *dp_hw, const u8 *addr,
+					 enum ath12k_dp_peer_param param,
+					 union ath12k_config_param *val);
+int ath12k_dp_peer_get_param_by_peer_id(struct ath12k_pdev_dp *dp_pdev, u16 peer_id,
+					enum ath12k_dp_peer_param param,
+					union ath12k_config_param *val);
+/*
+ * Control path to Data path interface APIs for link peer set and get params.
+ *
+ * Four lookup variants are provided for dp_link_peer-level operations,
+ * differing in how the dp_peer and dp_link_peer are resolved:
+ *
+ *  - _by_dp_peer_and_link_mac(): preferred when ath12k_sta is available and
+ *    the target link is identified by its MAC address. Caller obtains dp_peer
+ *    via ath12k_sta_get_dp_peer_wiphy_locked() and passes it directly,
+ *    avoiding a peer table lookup; link_peer is resolved by link MAC.
+ *
+ *  - _by_dp_peer_and_link_id(): preferred when ath12k_sta and ath12k_link_sta
+ *    are both available. Caller obtains dp_peer via
+ *    ath12k_sta_get_dp_peer_wiphy_locked() and the logical link_id from
+ *    arsta; no peer table lookup needed.
+ *
+ *  - _by_mld_and_link_mac(): use when ath12k_sta is NOT available and only
+ *    the MLD MAC and link MAC addresses are known, e.g. for non-associated
+ *    peers, or paths driven by MAC addresses (debugfs, vendor commands, OEM
+ *    callbacks). Internally takes peer_hash_lock and performs two hash lookups
+ *    (MLD MAC -> dp_peer, link MAC -> link_peer).
+ *
+ *  - _by_mld_mac_and_link_id(): use when ath12k_sta is NOT available and
+ *    only the MLD MAC and logical link_id are known. Same cost as
+ *    _by_mld_and_link_mac() but resolves the link_peer by link ID instead
+ *    of link MAC.
+ */
+int ath12k_dp_link_peer_set_param_by_dp_peer_and_link_mac(void *ptr, const u8 *link_mac,
+							  enum ath12k_dp_link_peer_param param,
+							  union ath12k_config_param *val);
+int ath12k_dp_link_peer_get_param_by_dp_peer_and_link_mac(void *ptr, const u8 *link_mac,
+							  enum ath12k_dp_link_peer_param param,
+							  union ath12k_config_param *val);
+
+int ath12k_dp_link_peer_set_param_by_dp_peer_and_link_id(void *ptr, u8 link_id,
+							 enum ath12k_dp_link_peer_param param,
+							 union ath12k_config_param *val);
+int ath12k_dp_link_peer_get_param_by_dp_peer_and_link_id(void *ptr, u8 link_id,
+							 enum ath12k_dp_link_peer_param param,
+							 union ath12k_config_param *val);
+
+int ath12k_dp_link_peer_set_param_by_mld_and_link_mac(struct ath12k_dp_hw *dp_hw,
+						      const u8 *mld_mac,
+						      const u8 *link_mac,
+						      enum ath12k_dp_link_peer_param param,
+						      union ath12k_config_param *val);
+
+int ath12k_dp_link_peer_get_param_by_mld_and_link_mac(struct ath12k_dp_hw *dp_hw,
+						      const u8 *mld_mac,
+						      const u8 *link_mac,
+						      enum ath12k_dp_link_peer_param param,
+						      union ath12k_config_param *val);
+
+int ath12k_dp_link_peer_set_param_by_mld_mac_and_link_id(struct ath12k_dp_hw *dp_hw,
+							 const u8 *mld_mac, u8 link_id,
+							 enum ath12k_dp_link_peer_param param,
+							 union ath12k_config_param *val);
+int ath12k_dp_link_peer_get_param_by_mld_mac_and_link_id(struct ath12k_dp_hw *dp_hw,
+							 const u8 *mld_mac, u8 link_id,
+							 enum ath12k_dp_link_peer_param param,
+							 union ath12k_config_param *val);
+
+/**
+ * ath12k_sta_get_dp_peer_wiphy_locked() - Get dp_peer with wiphy lock held
+ * @ahsta: pointer to ath12k_sta
+ *
+ * This function retrieves the dp_peer pointer in control path context
+ * where wiphy lock is already held. Uses wiphy_dereference() which
+ * provides proper RCU dereference with wiphy lock protection.
+ *
+ * Context: Must be called with wiphy lock held
+ * Return: pointer to ath12k_dp_peer or NULL
+ */
+void *ath12k_sta_get_dp_peer_wiphy_locked(struct wiphy *wiphy, struct ath12k_sta *ahsta);
+
+/**
+ * ath12k_sta_get_dp_peer_rcu() - Get dp_peer with RCU read lock held
+ * @ahsta: pointer to ath12k_sta
+ *
+ * This function retrieves the dp_peer pointer in datapath/interrupt
+ * context where RCU read lock must be held. This is typically used in
+ * interrupt handlers, NAPI contexts, or other data path operations.
+ *
+ * Context: Must be called with rcu_read_lock held
+ * Return: pointer to ath12k_dp_peer or NULL
+ */
+void *ath12k_sta_get_dp_peer_rcu(struct ath12k_sta *ahsta);
+
+struct ath12k_4addr_params {
+	u16 ast_hash;
+	u16 hw_peer_id;
+	u16 tcl_metadata;
+};
+
+bool ath12k_dp_peer_set_4addr_params(void *ptr, int ppe_vp_num);
+int ath12k_dp_link_peer_get_4addr_params(void *ptr, const u8 *addr,
+					 struct ath12k_4addr_params *params);
+int ath12k_dp_peer_set_key_config(struct ath12k_pdev_dp *dp_pdev, const u8 *addr,
+				  enum set_key_cmd cmd, struct ieee80211_key_conf *key,
+				  struct ieee80211_sta *sta,
+				  enum hal_encrypt_type *enctype);
+void ath12k_dp_peer_cleanup_all(struct ath12k *ar);
 #endif

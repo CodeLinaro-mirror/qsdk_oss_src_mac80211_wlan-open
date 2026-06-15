@@ -246,12 +246,14 @@ enum hal_srng_ring_id {
 	HAL_SRNG_RING_ID_WBM_BUF2,
 	HAL_SRNG_RING_ID_WBM_BUF3,
 	HAL_SRNG_RING_ID_WBM_BUF4,
+	HAL_SRNG_RING_ID_WBM_BUF5,
+	HAL_SRNG_RING_ID_WBM_BUF6,
 	HAL_SRNG_RING_ID_WBM_IDLE_BUF0,
 
-	HAL_SRNG_RING_ID_PPE2WBM_BUF1 = 47,
+	HAL_SRNG_RING_ID_PPE2WBM_BUF1 = 48,
 	HAL_SRNG_RING_ID_PPE2WBM_BUF2,
 	HAL_SRNG_RING_ID_PPE2WBM_BUF3,
-	HAL_SRNG_RING_ID_PPE2WBM_IDLE_BUF0 = 50,
+	HAL_SRNG_RING_ID_PPE2WBM_IDLE_BUF0 = 51,
 
 	HAL_SRNG_RING_ID_WBM_BUF_MGMT = 52,
 	HAL_SRNG_RING_ID_WBM_IDLE_BUF_MGMT = 53,
@@ -783,6 +785,17 @@ struct ath12k_hal_reo_cmd {
 	u8 pn_127_48_info;
 };
 
+#define HAL_REO_CMD_FLG_NEED_STATUS		BIT(0)
+#define HAL_REO_CMD_FLG_STATS_CLEAR		BIT(1)
+#define HAL_REO_CMD_FLG_FLUSH_BLOCK_LATER	BIT(2)
+#define HAL_REO_CMD_FLG_FLUSH_RELEASE_BLOCKING	BIT(3)
+#define HAL_REO_CMD_FLG_FLUSH_NO_INVAL		BIT(4)
+#define HAL_REO_CMD_FLG_FLUSH_FWD_ALL_MPDUS	BIT(5)
+#define HAL_REO_CMD_FLG_FLUSH_ALL		BIT(6)
+#define HAL_REO_CMD_FLG_UNBLK_RESOURCE		BIT(7)
+#define HAL_REO_CMD_FLG_UNBLK_CACHE		BIT(8)
+#define HAL_REO_CMD_FLG_FLUSH_QUEUE_1K_DESC	BIT(9)
+
 struct ath12k_reo_cmd_entry {
 	enum hal_reo_cmd_type type;
 	struct ath12k_hal_reo_cmd cmd;
@@ -971,7 +984,7 @@ struct wbm_idle_scatter_list {
 #define HAL_SRNG_FLAGS_HIGH_THRESH_INTR_EN	0x00080000
 #define HAL_SRNG_FLAGS_CACHED                   0x20000000
 #define HAL_SRNG_FLAGS_LMAC_RING		0x80000000
-#define HAL_SRNG_FLAGS_CACHED                   0x20000000
+#define HAL_SRNG_FLAGS_REG_WRITE_EN		0x40000000
 
 /* Common SRNG ring structure for source and destination rings */
 struct hal_srng {
@@ -989,6 +1002,9 @@ struct hal_srng {
 
 	/* Virtual base address of the ring */
 	u32 *ring_base_vaddr;
+
+	/* Virtual end address of the ring */
+	u32 *ring_vaddr_end;
 
 	/* Number of entries in ring */
 	u32 num_entries;
@@ -1098,18 +1114,15 @@ struct hal_srng {
 
 /* Interrupt mitigation - Batch threshold in terms of number of frames */
 #define HAL_SRNG_INT_BATCH_THRESHOLD_PPE_WBM2SW_REL 256
-#define HAL_SRNG_INT_BATCH_THRESHOLD_TX 256
-#define HAL_SRNG_INT_BATCH_THRESHOLD_RX 128
-#define HAL_SRNG_INT_BATCH_THRESHOLD_PPE2TCL 0
-#define HAL_SRNG_INT_BATCH_THRESHOLD_OTHER 1
 #define HAL_SRNG_INT_BATCH_THRESHOLD_TX_EXCEPTION 8
+/* Interrupt coalescing for peer TX/RX telemetry rings */
+#define HAL_SRNG_INT_BATCH_THRESHOLD_TX_TELEMETRY 10
+#define HAL_SRNG_INT_BATCH_THRESHOLD_RX_TELEMETRY 10
 
 /* Interrupt mitigation - timer threshold in us */
-#define HAL_SRNG_INT_TIMER_THRESHOLD_TX 1000
-#define HAL_SRNG_INT_TIMER_THRESHOLD_RX 200
-#define HAL_SRNG_INT_TIMER_THRESHOLD_PPE2TCL 3
-#define HAL_SRNG_INT_TIMER_THRESHOLD_OTHER 256
 #define HAL_SRNG_INT_TIMER_THRESHOLD_TX_EXCEPTION 128
+#define HAL_SRNG_INT_TIMER_THRESHOLD_TX_TELEMETRY  512000   /* 512 ms */
+#define HAL_SRNG_INT_TIMER_THRESHOLD_RX_TELEMETRY  512000   /* 512 ms */
 
 enum hal_srng_mac_type {
 	ATH12K_HAL_SRNG_UMAC,
@@ -1128,6 +1141,7 @@ struct hal_srng_config {
 	enum hal_srng_dir ring_dir;
 	u32 max_size;
 	const char name[20];
+	bool reg_writer_en;
 };
 
 enum hal_pn_type {
@@ -1431,6 +1445,7 @@ struct ath12k_hal {
 	struct device *dev;
 	const struct hal_ops *hal_ops;
 	const struct hal_mon_ops *hal_mon_ops;
+	u8 tlv_hdr_tag_shift;
 	const struct ath12k_hw_regs *regs;
 	const struct ath12k_hw_hal_params *hal_params;
 	/* Available REO blocking resources bitmap */
@@ -1557,6 +1572,11 @@ enum hal_reo_dest_ring_push_reason {
 	HAL_REO_DEST_RING_PUSH_REASON_RXDMA_FLUSH,
 };
 
+enum hal_rxdma_push_reason {
+	HAL_RXDMA_PUSH_REASON_ERR_DETECTED,
+	HAL_RXDMA_PUSH_REASON_ROUTING_INSTRUCTION,
+};
+
 /* Peer Metadata classification */
 
 /* Version 0 */
@@ -1648,7 +1668,8 @@ struct hal_ops {
 	void (*reoq_lut_set_max_peerid)(struct ath12k_base *ab);
 	void (*reo_qdesc_setup)(struct hal_rx_reo_queue *qdesc,
 				int tid, u32 ba_window_size,
-				u32 start_seq, enum hal_pn_type type);
+				u32 start_seq, enum hal_pn_type type,
+				u16 stats_id);
 	void (*reo_init_cmd_ring)(struct ath12k_base *ab,
 				  struct hal_srng *srng);
 	void (*reo_hw_setup)(struct ath12k_base *ab);
@@ -1687,6 +1708,7 @@ struct hal_ops {
 			    struct hal_srng *srng, uint32_t *hp, uint32_t *tp);
 	void (*rx_desc_get_fse_info)(struct hal_rx_desc *desc,
 				     struct rx_mpdu_desc_info *rx_mpdu_info);
+
 	bool (*hal_tx_ppe2tcl_ring_halt_get)(struct ath12k_base *ab);
 	void (*hal_tx_ppe2tcl_ring_halt_set)(struct ath12k_base *ab);
 	void (*hal_tx_ppe2tcl_ring_halt_reset)(struct ath12k_base *ab);
@@ -1706,6 +1728,11 @@ struct hal_ops {
 			void __iomem *hp_vaddr, dma_addr_t hp_paddr,
 			void __iomem *tp_vaddr, dma_addr_t tp_paddr);
 	void (*hal_ppeds_reo2ppe_cc_config)(struct ath12k_base *ab);
+	u32 (*hal_rx_h_mpdu_err)(struct hal_rx_desc *desc);
+	void (*hal_set_reg_writer_hptp_addr)(struct ath12k_base *ab,
+					     struct hal_srng *srng,
+					     int idx,
+					     enum hal_ring_type);
 };
 
 static inline
@@ -1965,10 +1992,17 @@ u8 ath12k_hal_rx_h_l3pad_get(struct ath12k_hal *hal,
 			     struct hal_rx_desc *desc);
 ssize_t ath12k_hal_dump_ring_stats(struct ath12k_base *ab, enum hal_ring_type type,
 				   int ring_id, char *buf, int size);
+void ath12k_hal_set_low_threshold(struct hal_srng *srng, u32 low_threshold);
 void
 ath12k_hal_get_tlv_params(struct ath12k_hal *hal,
 			  __le64 tlv_header,
 			  u16 *tlv_tag,
 			  u32 *tlv_userid,
 			  u16 *tlv_len);
+void *__ath12k_hal_get_dst_srng_desc(struct hal_srng *srng,
+				     u32 *curr_tp,
+				     void **next_desc);
+int __ath12k_hal_srng_dst_num_available_to_reap(struct hal_srng *srng,
+						bool sync_hw_ptr);
+void *ath12k_hal_srng_fetch_entry(struct hal_srng *srng, u16 offset);
 #endif

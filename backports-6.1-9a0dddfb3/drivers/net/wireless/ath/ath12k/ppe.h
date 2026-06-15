@@ -140,6 +140,14 @@ struct ath12k_ppeds_arch_ops {
 	int (*ath12k_dp_ppeds_alloc_vp_search_idx_tbl_entry)(struct ath12k_base *ab,
 						int ppe_vp_profile_idx);
 	int (*ath12k_ppeds_srng_cmn_setup)(struct ath12k_base *ab);
+	struct ath12k_dp_ppe_vp_profile *
+		(*ath12k_dp_ppeds_get_vp_profile_from_idx)(struct ath12k_base *ab,
+				uint32_t ppe_vp_idx);
+	int (*ath12k_dp_ppeds_get_bank_lmac_id)(struct ath12k_base *ab,
+			struct ath12k *ar,
+			struct ath12k_link_vif *arvif,
+			struct ath12k_dp_ppe_vp_profile *vp_profile,
+			u8 *bank_id, u8 *lmac_id);
 };
 
 struct ath12k_ppeds_napi {

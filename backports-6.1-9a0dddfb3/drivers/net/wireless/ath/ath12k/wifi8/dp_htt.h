@@ -9,6 +9,20 @@
 #include "hal.h"
 #include "dp_peer.h"
 
+/* vdev meta data */
+#define HTT_TCL_META_DATA_VDEV_ID_V3			GENMASK(8, 1)
+#define HTT_TCL_META_DATA_PDEV_ID_V3			GENMASK(10, 9)
+#define HTT_TCL_META_DATA_HOST_INSPECTED_MISSION_V3	BIT(11)
+
+/* QoS meta data */
+#define HTT_TCL_META_DATA_SAWF_SVC_ID_V3	GENMASK(8, 1)
+#define HTT_TCL_META_DATA_SAWF_TID_OVERRIDE_V3	BIT(10)
+
+/* Global sequence number */
+#define HTT_TCL_META_DATA_GSN_INSPECTED_V3		BIT(12)
+#define HTT_TCL_META_DATA_GLOBAL_SEQ_NUM_V3		GENMASK(11, 0)
+#define HTT_TCL_META_DATA_GLOBAL_HTT_EXT_PRESENT_V3	BIT(13)
+
 /**
  * @brief host -> target message to provide msduq and mpduq for given new tid in a peer
  *

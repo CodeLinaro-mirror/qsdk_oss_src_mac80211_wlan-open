@@ -208,6 +208,22 @@ ieee80211_parse_extension_element(u32 *crc,
 			elems->uhr_cap_len = len;
 		}
 		break;
+	case WLAN_EID_EXT_SMD:
+		if (params->mode < IEEE80211_CONN_MODE_UHR)
+			break;
+		calc_crc = true;
+		if (len >= sizeof(*elems->smd_info)) {
+			if (elems->smd_info) {
+				elems->parse_error |=
+					IEEE80211_PARSE_ERR_DUP_ELEM;
+				break;
+			}
+			elems->smd_info = data;
+			elems->smd_info_len = len;
+		} else {
+			elems->parse_error |= IEEE80211_PARSE_ERR_BAD_ELEM_SIZE;
+		}
+		break;
 	}
 
 	if (crc && calc_crc)
@@ -1045,7 +1061,7 @@ ieee802_11_parse_elems_full(struct ieee80211_elems_parse_params *params)
 	const struct element *non_inherit = NULL;
 	u8 *nontransmitted_profile;
 	int nontransmitted_profile_len = 0;
-	size_t scratch_len = params->scratch_len ?: 2 * params->len;
+	size_t scratch_len = 3 * params->len;
 	bool check_inherit = false;
 
 	BUILD_BUG_ON(offsetof(typeof(*elems_parse), elems) != 0);

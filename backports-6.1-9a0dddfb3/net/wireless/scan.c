@@ -11,6 +11,7 @@
 #include <linux/slab.h>
 #include <linux/module.h>
 #include <linux/netdevice.h>
+#include <linux/ieee80211.h>
 #include <linux/wireless.h>
 #include <linux/nl80211.h>
 #include <linux/etherdevice.h>
@@ -76,6 +77,50 @@ MODULE_PARM_DESC(bss_entries_limit,
                  "limit to number of scan BSS entries (per wiphy, default 1000)");
 
 #define IEEE80211_SCAN_RESULT_EXPIRE	(30 * HZ)
+
+VISIBLE_IF_CFG80211_KUNIT void
+cfg80211_extract_smd_info(struct cfg80211_bss *bss,
+			  const u8 *ie, size_t ielen)
+{
+	const u8 *pos = NULL;
+	const u8 *end = NULL;
+
+	if (!ie || !ielen)
+		return;
+
+	pos = ie;
+	end = ie + ielen;
+
+	memset(bss->smd_identifier, 0, ETH_ALEN);
+	bss->smd_capabilities = 0;
+	bss->smd_timeout = 0;
+	bss->has_smd = false;
+
+	while (pos + 1 < end) {
+		u8 id = *pos++;
+		u8 len = *pos++;
+
+		if (pos + len > end)
+			break;
+
+		if (id == WLAN_EID_EXTENSION && len >= 9) {
+			u8 ext_id = *pos;
+
+			if (ext_id == WLAN_EID_EXT_SMD && len == 9) {
+				const u8 *smd_info = pos + 1;
+
+				memcpy(bss->smd_identifier, smd_info, ETH_ALEN);
+				bss->smd_capabilities = smd_info[6];
+				bss->smd_timeout = smd_info[7];
+				bss->has_smd = true;
+				break;
+			}
+		}
+
+		pos += len;
+	}
+}
+EXPORT_SYMBOL_IF_CFG80211_KUNIT(cfg80211_extract_smd_info);
 
 static void bss_free(struct cfg80211_internal_bss *bss)
 {
@@ -1967,6 +2012,11 @@ cfg80211_update_known_bss(struct cfg80211_registered_device *rdev,
 	known->pub.cannot_use_reasons = new->pub.cannot_use_reasons;
 	known->bss_source = new->bss_source;
 
+	memcpy(known->pub.smd_identifier, new->pub.smd_identifier, ETH_ALEN);
+	known->pub.smd_capabilities = new->pub.smd_capabilities;
+	known->pub.smd_timeout = new->pub.smd_timeout;
+	known->pub.has_smd = new->pub.has_smd;
+
 	return true;
 }
 
@@ -2413,6 +2463,8 @@ cfg80211_inform_single_bss_data(struct wiphy *wiphy,
 		break;
 	}
 	rcu_assign_pointer(tmp.pub.ies, ies);
+
+	cfg80211_extract_smd_info(&tmp.pub, data->ie, data->ielen);
 
 	signal_valid = drv_data->chan == channel;
 	spin_lock_bh(&rdev->bss_lock);

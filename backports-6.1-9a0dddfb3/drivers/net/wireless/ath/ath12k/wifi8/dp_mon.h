@@ -10,7 +10,6 @@ extern int ath12k_wifi8_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_
 						    int mac_id,
 						    struct napi_struct *napi,
 						    int *budget);
-
 static inline
 void ath12k_wifi8_dp_mon_ops_register(struct ath12k_dp *dp)
 {

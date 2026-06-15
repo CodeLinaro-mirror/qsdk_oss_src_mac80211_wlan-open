@@ -1252,6 +1252,21 @@ rdev_start_radar_detection(struct cfg80211_registered_device *rdev,
 	return ret;
 }
 
+static inline void rdev_dfs_radar_process(struct cfg80211_registered_device *rdev,
+					  struct cfg80211_chan_def *chandef)
+{
+	if (rdev->ops->dfs_process_radar_detection)
+		rdev->ops->dfs_process_radar_detection(&rdev->wiphy, chandef);
+}
+
+static inline void
+rdev_start_punctured_cac(struct cfg80211_registered_device *rdev,
+			 struct cfg80211_chan_def *chandef)
+{
+	if (rdev->ops->start_punctured_cac)
+		rdev->ops->start_punctured_cac(&rdev->wiphy, chandef);
+}
+
 static inline void
 rdev_end_cac(struct cfg80211_registered_device *rdev,
 	     struct net_device *dev, unsigned int link_id)
@@ -1481,6 +1496,27 @@ rdev_set_radar_background(struct cfg80211_registered_device *rdev,
 	trace_rdev_set_radar_background(wiphy, chandef);
 	if (rdev->ops->set_radar_background)
 		ret = rdev->ops->set_radar_background(wiphy, chandef);
+	trace_rdev_return_int(wiphy, ret);
+
+	return ret;
+}
+
+static inline int
+rdev_abort_radar_background(struct cfg80211_registered_device *rdev,
+			    const struct cfg80211_chan_def *chandef)
+{
+	struct wiphy *wiphy = &rdev->wiphy;
+	int ret = -EOPNOTSUPP;
+
+	/* abort_radar_background is a dedicated op rather than reusing
+	 * set_radar_background(NULL) — needed for multi-radio HW where a NULL
+	 * chandef cannot identify which radio to stop.
+	 */
+	trace_rdev_set_radar_background(wiphy, (struct cfg80211_chan_def *)chandef);
+	if (rdev->ops->abort_radar_background)
+		ret = rdev->ops->abort_radar_background(wiphy, chandef);
+	else if (rdev->ops->set_radar_background)
+		ret = rdev->ops->set_radar_background(wiphy, NULL);
 	trace_rdev_return_int(wiphy, ret);
 
 	return ret;

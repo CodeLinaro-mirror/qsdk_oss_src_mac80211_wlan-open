@@ -18,6 +18,8 @@
 #include "mac.h"
 #include "ppe.h"
 #include "vendor.h"
+#include "debugfs_htt_stats.h"
+#include "spectral.h"
 #include "telemetry.h"
 #include "telemetry_agent_if.h"
 #include "erp.h"
@@ -39,8 +41,11 @@ ath12k_wifi_config_policy[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_IF_OFFLOAD_TYPE] = {.type = NLA_U8},
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX] = {.type = NLA_U8 },
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_6GHZ_VLP_PRIORITY_THRESH_FREQ] = {.type = NLA_U16 },
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_AGILE_CAPABLE] = { .type = NLA_U8 },
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_VAP_SUBMODE] = {.type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_DYNAMIC_VLAN] = {.type = NLA_U8 },
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PARAMS] = { .type = NLA_NESTED },
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_ALLOW_3ADDR_MC] = { .type = NLA_U8 },
 };
 
 static const struct nla_policy
@@ -1482,6 +1487,11 @@ ath12k_wlan_telemetry_feat_policy[QCA_VENDOR_ATTR_WLAN_FEAT_MAX + 1] = {
 	[QCA_VENDOR_ATTR_WLAN_FEAT_SDWFTX] = {.type = NLA_FLAG},
 	[QCA_VENDOR_ATTR_WLAN_FEAT_SDWFDELAY] = {.type = NLA_FLAG},
 	[QCA_VENDOR_ATTR_WLAN_FEAT_PROTO] = {.type = NLA_FLAG},
+	[QCA_VENDOR_ATTR_WLAN_FEAT_TID] = {.type = NLA_FLAG},
+	[QCA_VENDOR_ATTR_WLAN_FEAT_DELAY] = {.type = NLA_FLAG},
+	[QCA_VENDOR_ATTR_WLAN_FEAT_JITTER] = {.type = NLA_FLAG},
+	[QCA_VENDOR_ATTR_WLAN_FEAT_SOJOURN] = {.type = NLA_FLAG},
+	[QCA_VENDOR_ATTR_WLAN_FEAT_MON_STATS] = {.type = NLA_FLAG},
 };
 
 int ath12k_extract_feat_inputs(struct nlattr *tb_attr,
@@ -1509,6 +1519,12 @@ int ath12k_extract_feat_inputs(struct nlattr *tb_attr,
 	if (feat_attr[QCA_VENDOR_ATTR_WLAN_FEAT_PROTO])
 		cmd->feat.feat_proto = true;
 
+	if (feat_attr[QCA_VENDOR_ATTR_WLAN_FEAT_TID])
+		cmd->feat.feat_tid = true;
+
+	if (feat_attr[QCA_VENDOR_ATTR_WLAN_FEAT_MON_STATS])
+		cmd->feat.feat_mon_stats = true;
+
 	if (cmd->svc_id != INVALID_SVC_ID &&
 	    feat_attr[QCA_VENDOR_ATTR_WLAN_FEAT_SDWFTX])
 		cmd->feat.feat_sdwftx = true;
@@ -1516,6 +1532,15 @@ int ath12k_extract_feat_inputs(struct nlattr *tb_attr,
 	if (cmd->svc_id != INVALID_SVC_ID &&
 	    feat_attr[QCA_VENDOR_ATTR_WLAN_FEAT_SDWFDELAY])
 		cmd->feat.feat_sdwfdelay = true;
+
+	if (feat_attr[QCA_VENDOR_ATTR_WLAN_FEAT_DELAY])
+		cmd->feat.feat_delay = true;
+
+	if (feat_attr[QCA_VENDOR_ATTR_WLAN_FEAT_JITTER])
+		cmd->feat.feat_jitter = true;
+
+	if (feat_attr[QCA_VENDOR_ATTR_WLAN_FEAT_SOJOURN])
+		cmd->feat.feat_sojourn = true;
 
 	return ret;
 }
@@ -2165,6 +2190,36 @@ static int ath12k_get_peer_rx_stats_size(void)
 	return total_size;
 }
 
+/**
+ * ath12k_get_hw_tx_stats_attr_size() - NL buffer size for HW offload TX stats
+ *
+ * Returns the size covering all HW TX attributes.
+ */
+static int ath12k_get_hw_tx_stats_attr_size(void)
+{
+	int size = 0;
+
+	size += nla_total_size_64bit(sizeof(u64)) * 4;
+	size += nla_total_size(sizeof(u32)) * 3;
+
+	return size;
+}
+
+/**
+ * ath12k_get_hw_rx_stats_attr_size() - NL buffer size for HW offload RX stats
+ *
+ * Returns the size covering all HW RX attributes.
+ */
+static int ath12k_get_hw_rx_stats_attr_size(void)
+{
+	int size = 0;
+
+	size += nla_total_size_64bit(sizeof(u64)) * 6;
+	size += nla_total_size(sizeof(u32)) * 6;
+
+	return size;
+}
+
 static int ath12k_get_feat_rx_peer_attr_size(void)
 {
 	int payload_size;
@@ -2184,6 +2239,9 @@ static int ath12k_get_feat_rx_peer_attr_size(void)
 	payload_size = nla_total_size(sizeof(u32)) *
 			HAL_REO_DEST_RING_ERROR_CODE_MAX;
 	attr_size += nla_total_size_nested(payload_size);
+
+	/* HW RX stats Attr Size */
+	attr_size += ath12k_get_hw_rx_stats_attr_size();
 
 	/* Parent RX Stats Attr Size */
 	total_size = nla_total_size_nested(attr_size);
@@ -2326,6 +2384,20 @@ static int ath12k_get_htt_tx_stats_adv_attr_size(void)
 	attr_size = nla_total_size_nested(payload_size);
 	total_size += attr_size;
 
+	/* SU BN PPDU Count (struct pkt_type) */
+	/* pkt_type has: mcs_count[MAX_MCS = 25] */
+	payload_size = nla_total_size(sizeof(u32) * MAX_MCS);
+	attr_size = nla_total_size_nested(payload_size);
+	total_size += attr_size;
+
+	/* MU BN PPDU Count Array [TXRX_TYPE_MU_MAX = 2] */
+	/* Each pkt_type has: mcs_count[MAX_MCS = 25] */
+	payload_size = 0;
+	mu_payload = nla_total_size(sizeof(u32)) * MAX_MCS;
+	payload_size += nla_total_size_nested(mu_payload * TXRX_TYPE_MU_MAX);
+	attr_size = nla_total_size_nested(payload_size);
+	total_size += attr_size;
+
 	/* Punctured BW Array [MAX_PUNCTURED_MODE = 5] */
 	payload_size = nla_total_size(sizeof(u32) * MAX_PUNCTURED_MODE);
 	attr_size = nla_total_size_nested(payload_size);
@@ -2376,6 +2448,9 @@ static int ath12k_get_tx_ext_htt_stats_attr_size(void)
 	htt_payload_size += nla_total_size_nested(htt_attr_size);
 
 	htt_attr_size = nla_total_size(sizeof(u64) * ATH12K_EHT_MCS_NUM);
+	htt_payload_size += nla_total_size_nested(htt_attr_size);
+
+	htt_attr_size = nla_total_size(sizeof(u64) * ATH12K_UHR_MCS_NUM);
 	htt_payload_size += nla_total_size_nested(htt_attr_size);
 
 	htt_attr_size = nla_total_size(sizeof(u64) * ATH12K_BW_NUM);
@@ -2446,6 +2521,14 @@ static int ath12k_get_feat_proto_peer_attr_size(void)
 	return total_size;
 }
 
+static u32 ath12k_get_mon_stats_attr_size(void)
+{
+	u32 payload_size;
+
+	payload_size = nla_total_size(sizeof(u32)) * QCA_VENDOR_ATTR_MON_STATS_MAX;
+	return nla_total_size_nested(payload_size);
+}
+
 static int ath12k_get_feat_tx_peer_attr_size(void)
 {
 	struct ath12k_dp_peer_tx_stats tx_stats;
@@ -2499,6 +2582,9 @@ static int ath12k_get_feat_tx_peer_attr_size(void)
 		/* TCL Ring Attr size */
 		total_size += nla_total_size_nested(attr_size);
 	}
+
+	/* HW TX stats Attr Size */
+	total_size += ath12k_get_hw_tx_stats_attr_size();
 
 	/* Parent Tx per_pkt Attr Size */
 	total_size = nla_total_size_nested(total_size);
@@ -2750,6 +2836,11 @@ static int ath12k_vendor_get_rx_mon_stats_size(void)
 					    ATH12K_EHT_MCS_NUM;
 	attr_size += nla_total_size_nested(payload_size);
 
+	/* BN (UHR/11BN) MCS array */
+	payload_size = nla_total_size_64bit(sizeof(stats.pkt_stats.bn_mcs_count[0])) *
+					    ATH12K_UHR_MCS_NUM;
+	attr_size += nla_total_size_nested(payload_size);
+
 	/* NSS array */
 	payload_size = nla_total_size_64bit(sizeof(stats.pkt_stats.nss_count[0])) *
 					    ATH12K_NSS_NUM;
@@ -2818,7 +2909,7 @@ static int ath12k_vendor_get_rx_mon_stats_size(void)
 
 	/* su_ppdu_count stats */
 	payload_size_pkt = nla_total_size(sizeof(u32)) *
-				QCA_VENDOR_WLAN_TELEMETRY_EHT_MCS_MAX;
+				QCA_VENDOR_WLAN_TELEMETRY_UHR_MCS_MAX;
 	attr_size_pkt   = nla_total_size_nested(payload_size_pkt);
 	attr_size_dot11 = attr_size_pkt *
 				QCA_WLAN_VENDOR_ATTR_WLAN_TELEMETRY_RX_PKT_TYPE_MAX;
@@ -2826,7 +2917,7 @@ static int ath12k_vendor_get_rx_mon_stats_size(void)
 
 	/* proto_type stats */
 	payload_size_pkt = nla_total_size(sizeof(u32)) *
-				QCA_VENDOR_WLAN_TELEMETRY_EHT_MCS_MAX;
+				QCA_VENDOR_WLAN_TELEMETRY_UHR_MCS_MAX;
 	attr_size_pkt   = nla_total_size_nested(payload_size_pkt);
 	attr_size_dot11 = attr_size_pkt *
 				QCA_WLAN_VENDOR_ATTR_WLAN_TELEMETRY_RX_PKT_TYPE_MAX;
@@ -2838,7 +2929,7 @@ static int ath12k_vendor_get_rx_mon_stats_size(void)
 	attr_size_ppdu_nss = nla_total_size_nested(payload_size_ppdu_nss);
 
 	payload_size_ppdu_mcs = nla_total_size(sizeof(u32)) *
-				QCA_VENDOR_WLAN_TELEMETRY_EHT_MCS_MAX;
+				QCA_VENDOR_WLAN_TELEMETRY_UHR_MCS_MAX;
 	attr_size_ppdu_mcs = nla_total_size_nested(payload_size_ppdu_mcs);
 
 	payload_size_user =
@@ -2871,6 +2962,177 @@ static int ath12k_vendor_get_rx_mon_stats_size(void)
 	return total_size;
 }
 
+static int ath12k_get_tid_tx_stats_attr_size(void)
+{
+	int size = 0;
+	int delay_hist_size;
+	int delay_stat_size;
+
+	/* tqm_status_cnt */
+	size += nla_total_size_nested(nla_total_size(sizeof(u32)) *
+				      QCA_VENDOR_ATTR_WBM_TQM_REL_REASON_MAX);
+
+	/* htt_status_cnt */
+	size += nla_total_size_nested(nla_total_size(sizeof(u32)) *
+				      QCA_VENDOR_ATTR_WBM_REL_HTT_TX_COMP_STATUS_MAX);
+
+	/* swdrop_cnt */
+	size += nla_total_size_nested(nla_total_size(sizeof(u32)) *
+				      QCA_VENDOR_ATTR_TID_TX_SW_DROP_MAX);
+
+	delay_hist_size = nla_total_size_64bit(sizeof(u64)) *
+				QCA_WLAN_VENDOR_ATTR_TELE_DELAY_HIST_BUCKET_MAX;
+	delay_stat_size = nla_total_size(sizeof(u32)) * 3 +  /* max, min, avg */
+			  nla_total_size_nested(delay_hist_size);
+
+	/* swq_delay, hwtx_delay, intfrm_delay - 3 delay histogram nests */
+	size += nla_total_size_nested(delay_stat_size) * 3;
+
+	/* Outer per-TID nest */
+	return nla_total_size_nested(size);
+}
+
+static int ath12k_get_tid_rx_stats_attr_size(void)
+{
+	int size;
+	int delay_size;
+
+	/* delivered_to_stack, msdu_cnt, mcast_msdu_cnt, bcast_msdu_cnt */
+	size = nla_total_size(sizeof(u32)) * 4;
+
+	/* fail_cnt[DP_TID_RX_SW_DROP_MAX] */
+	size += nla_total_size_nested(nla_total_size(sizeof(u32)) *
+				      DP_TID_RX_SW_DROP_MAX);
+
+	/* reo_err: reo_code_inv (u32) + reo_codes nested */
+	size += nla_total_size(sizeof(u32));
+	size += nla_total_size_nested(nla_total_size(sizeof(u32)) *
+				      HAL_REO_DEST_RING_ERROR_CODE_MAX);
+
+	/* rxdma_err: rxdma_code_inv (u32) + rxdma_codes nested */
+	size += nla_total_size(sizeof(u32));
+	size += nla_total_size_nested(nla_total_size(sizeof(u32)) *
+				      HAL_REO_ENTR_RING_RXDMA_ECODE_MAX);
+
+	/* to_stack_delay, intfrm_delay */
+	delay_size = nla_total_size_nested(nla_total_size_64bit(sizeof(u64)) *
+					   HIST_BUCKET_MAX);
+	delay_size += nla_total_size(sizeof(u32)) * 3;
+	size += nla_total_size_nested(delay_size) * 2;
+
+	/* Outer per-TID nest */
+	return nla_total_size_nested(size);
+}
+
+static int ath12k_get_tid_stats_attr_size(void)
+{
+	int tx_size, rx_size;
+
+	/* TID_TX_STATS nest */
+	tx_size = ath12k_get_tid_tx_stats_attr_size() *
+			QCA_VENDOR_WLAN_TELEMETRY_DATA_TIDS;
+	tx_size = nla_total_size_nested(tx_size);
+
+	/* TID_RX_STATS nest */
+	rx_size = ath12k_get_tid_rx_stats_attr_size() *
+			QCA_VENDOR_WLAN_TELEMETRY_DATA_TIDS;
+	rx_size = nla_total_size_nested(rx_size);
+
+	/* Outer TID_STATS_EVENT nest */
+	return nla_total_size_nested(tx_size + rx_size);
+}
+
+/**
+ * ath12k_get_delay_hist_attr_size() - Calculate NL buffer size for one histogram
+ *
+ * Returns the netlink attribute size needed to serialize a single
+ * struct hist_stats (min, max, avg + HIST_BUCKET_MAX frequency buckets).
+ */
+static int ath12k_get_delay_hist_attr_size(void)
+{
+	int size = 0;
+	int freq_payload;
+
+	/* min, max, avg */
+	size += nla_total_size(sizeof(u32)) * 3;
+
+	/* freq array: HIST_BUCKET_MAX u64 values */
+	freq_payload = nla_total_size_64bit(sizeof(u64)) *
+		QCA_WLAN_VENDOR_ATTR_TELE_DELAY_HIST_BUCKET_MAX;
+	size += nla_total_size_nested(freq_payload);
+
+	return size;
+}
+
+/**
+ * ath12k_get_delay_stats_attr_size() - Calculate NL buffer size for all TID delay stats
+ *
+ * Returns the total netlink attribute size needed to serialize
+ * struct ath12k_dp_peer_tid_agg_delay_stats (DP_TID_MAX TIDs, each with
+ * TX SW queue, TX HW, and RX to-stack delay histograms).
+ */
+static int ath12k_get_delay_stats_attr_size(void)
+{
+	int hist_size;
+	int tid_size;
+	int total_size;
+
+	hist_size = ath12k_get_delay_hist_attr_size();
+
+	/* Per TID: TID index + 3 nested histograms */
+	tid_size = nla_total_size(sizeof(u8));
+	tid_size += nla_total_size_nested(hist_size) * 3;
+
+	/* DP_TID_MAX TIDs, each wrapped in a nested attr */
+	total_size = nla_total_size_nested(tid_size) * DP_TID_MAX;
+
+	return total_size;
+}
+
+/**
+ * ath12k_get_jitter_stats_attr_size() - Calculate NL buffer size for all Jitter stats
+ *
+ * Returns the total netlink attribute size needed to serialize
+ * struct ath12k_dp_peer_tid_jitter_stats.
+ */
+static int ath12k_get_jitter_stats_attr_size(void)
+{
+	int tid_size;
+	int total_size = 0;
+
+	/* Per TID: TID index (u8) + 3x u32 + 3x u64 */
+	tid_size = nla_total_size(sizeof(u8)) +
+		   nla_total_size(sizeof(u32)) * 3 +
+		   nla_total_size_64bit(sizeof(u64)) * 3;
+
+	/* DP_TID_MAX TIDs, each wrapped in a nested attr */
+	total_size = nla_total_size_nested(tid_size) * DP_TID_MAX;
+
+	return total_size;
+}
+
+/**
+ * ath12k_get_sojourn_stats_attr_size() - Calculate NL buffer size for all Sojourn stats
+ *
+ * Returns the total netlink attribute size needed to serialize
+ * struct ath12k_dp_peer_tid_sojourn_stats.
+ */
+static int ath12k_get_sojourn_stats_attr_size(void)
+{
+	int tid_size;
+	int total_size = 0;
+
+	/* Per TID: TID index (u8) + 2x u32 */
+	tid_size = nla_total_size(sizeof(u8)) +
+		   nla_total_size(sizeof(u32)) +
+		   nla_total_size(sizeof(u64));
+
+	/* DP_TID_MAX TIDs, each wrapped in a nested attr */
+	total_size = nla_total_size_nested(tid_size) * DP_TID_MAX;
+
+	return total_size;
+}
+
 static int ath12k_get_dp_peer_attr_len(struct ath12k_telemetry_command *cmd)
 {
 	int total_size = 0;
@@ -2889,11 +3151,23 @@ static int ath12k_get_dp_peer_attr_len(struct ath12k_telemetry_command *cmd)
 	if (cmd->feat.feat_proto)
 		total_size += ath12k_get_feat_proto_peer_attr_size();
 
+	if (cmd->feat.feat_mon_stats)
+		total_size += ath12k_get_mon_stats_attr_size();
+
 	if (cmd->feat.feat_sdwftx)
 		total_size += ath12k_get_feat_sdwftx_attr_size(cmd);
 
 	if (cmd->feat.feat_sdwfdelay)
 		total_size += ath12k_get_feat_sdwfdelay_attr_size(cmd);
+
+	if (cmd->feat.feat_delay)
+		total_size += ath12k_get_delay_stats_attr_size();
+
+	if (cmd->feat.feat_jitter)
+		total_size += ath12k_get_jitter_stats_attr_size();
+
+	if (cmd->feat.feat_sojourn)
+		total_size += ath12k_get_sojourn_stats_attr_size();
 
 	return total_size;
 }
@@ -2988,8 +3262,32 @@ static int ath12k_get_dp_vif_attr_len(struct ath12k_telemetry_command *cmd)
 	return total_size;
 }
 
+static int ath12k_get_radio_cp_attr_len(void)
+{
+	int payload_size;
+
+	payload_size = nla_total_size(sizeof(u32)) *
+		       QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_AFTER_LAST;
+
+	return nla_total_size_nested(payload_size);
+}
+
+static int ath12k_get_vap_cp_attr_len(void)
+{
+	int payload_size;
+
+	payload_size = nla_total_size(sizeof(u32)) +
+		(nla_total_size(sizeof(u64)) * (QCA_VENDOR_ATTR_TELEMETRY_CP_MAX - 1));
+
+	return nla_total_size_nested(payload_size);
+}
+
 static int ath12k_get_dp_radio_attr_len(struct ath12k_telemetry_command *cmd)
 {
+	/* TID Stats Size */
+	if (cmd->feat.feat_tid)
+		return ath12k_get_tid_stats_attr_size();
+
 	/*Aggregated Sta Stats Size */
 	return ath12k_get_dp_peer_attr_len(cmd);
 }
@@ -3006,9 +3304,11 @@ int ath12k_get_dp_vendor_event_len(struct ath12k_telemetry_command *cmd)
 		break;
 	case STATS_OBJ_VIF:
 		total_size += ath12k_get_dp_vif_attr_len(cmd);
+		total_size += ath12k_get_vap_cp_attr_len();
 		break;
 	case STATS_OBJ_RADIO:
 		total_size += ath12k_get_dp_radio_attr_len(cmd);
+		total_size += ath12k_get_radio_cp_attr_len();
 		break;
 	case STATS_OBJ_DEVICE:
 		total_size += ath12k_get_device_attr_size(cmd);
@@ -3116,6 +3416,24 @@ ath12k_fill_peer_tx_htt_stats_data(struct sk_buff *vendor_event,
 				      NL80211_ATTR_PAD)) {
 			ath12k_err(NULL, "nla put error: type %d subtype = %d",
 				   QCA_VENDOR_WLAN_TELEMETRY_TX_EXT_HTT_DATA_EHT_INFO,
+				   i);
+			return -EINVAL;
+		}
+	}
+	nla_nest_end(vendor_event, attr);
+
+	attr = nla_nest_start(vendor_event,
+			      QCA_VENDOR_WLAN_TELEMETRY_TX_EXT_HTT_DATA_UHR_INFO);
+	if (!attr) {
+		ath12k_err(NULL, "nla_nest failure: tx htt stats BN parse");
+		return -EINVAL;
+	}
+	for (i = 0; i < QCA_VENDOR_WLAN_TELEMETRY_UHR_MCS_MAX; i++) {
+		if (nla_put_u64_64bit(vendor_event, (i + 1),
+				      htt_tx_data->uhr[htt_pkt_info][i],
+				      NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put error: type %d subtype = %d",
+				   QCA_VENDOR_WLAN_TELEMETRY_TX_EXT_HTT_DATA_UHR_INFO,
 				   i);
 			return -EINVAL;
 		}
@@ -3374,6 +3692,77 @@ ath12k_fill_mu_be_ppdu_cnt(struct sk_buff *vendor_event,
 					tx_stats->mu_be_ppdu_cnt[i].mcs_count[j])) {
 				ath12k_err(NULL,
 					   "nla put failure: mu be ppdu mcs %d:%d",
+					   i, j);
+				return -EINVAL;
+			}
+		}
+
+		nla_nest_end(vendor_event, mu_attr);
+	}
+	nla_nest_end(vendor_event, attr);
+
+	return 0;
+}
+
+static int
+ath12k_fill_su_bn_ppdu_cnt(struct sk_buff *vendor_event,
+			   struct ath12k_dp_link_peer_stats
+			   *link_peer_stats)
+{
+	struct nlattr *attr;
+	int i;
+
+	attr = nla_nest_start(vendor_event,
+			      QCA_VENDOR_WLAN_TELEMETRY_TX_EXT_HTT_STATS_SU_BN_PPDU_CNT);
+	if (!attr) {
+		ath12k_err(NULL, "nla nest failure: su bn ppdu cnt");
+		return -EINVAL;
+	}
+
+	for (i = 0; i < QCA_VENDOR_WLAN_TELEMETRY_MCS_MAX; i++) {
+		if (nla_put_u32(vendor_event, (i + 1),
+				link_peer_stats->tx_stats->su_bn_ppdu_cnt.mcs_count[i])) {
+			ath12k_err(NULL,
+				   "nla put failure: su bn ppdu mcs %d", i);
+			return -EINVAL;
+		}
+	}
+	nla_nest_end(vendor_event, attr);
+
+	return 0;
+}
+
+static int
+ath12k_fill_mu_bn_ppdu_cnt(struct sk_buff *vendor_event,
+			   struct ath12k_dp_link_peer_stats
+			   *link_peer_stats)
+{
+	struct nlattr *attr, *mu_attr;
+	struct ath12k_htt_tx_stats *tx_stats = NULL;
+	int i, j;
+
+	attr = nla_nest_start(vendor_event,
+			      QCA_VENDOR_WLAN_TELEMETRY_TX_EXT_HTT_STATS_MU_BN_PPDU_CNT);
+	if (!attr) {
+		ath12k_err(NULL, "nla nest failure: mu bn ppdu cnt");
+		return -EINVAL;
+	}
+
+	tx_stats = link_peer_stats->tx_stats;
+	for (i = 0; i < QCA_VENDOR_WLAN_TELEMETRY_TX_EXT_HTT_TXRX_MU_MAX;
+	     i++) {
+		mu_attr = nla_nest_start(vendor_event, (i + 1));
+		if (!mu_attr) {
+			ath12k_err(NULL,
+				   "nla nest failure: mu bn ppdu %d", i);
+			return -EINVAL;
+		}
+
+		for (j = 0; j < QCA_VENDOR_WLAN_TELEMETRY_MCS_MAX; j++) {
+			if (nla_put_u32(vendor_event, (j + 1),
+					tx_stats->mu_bn_ppdu_cnt[i].mcs_count[j])) {
+				ath12k_err(NULL,
+					   "nla put failure: mu bn ppdu mcs %d:%d",
 					   i, j);
 				return -EINVAL;
 			}
@@ -3758,6 +4147,14 @@ ath12k_fill_peer_tx_ext_htt_stats_attr(struct ath12k *ar, struct sk_buff *vendor
 	if (ath12k_fill_mu_be_ppdu_cnt(vendor_event, link_peer_stats))
 		return -EINVAL;
 
+	/* SU BN PPDU Count */
+	if (ath12k_fill_su_bn_ppdu_cnt(vendor_event, link_peer_stats))
+		return -EINVAL;
+
+	/* MU BN PPDU Count */
+	if (ath12k_fill_mu_bn_ppdu_cnt(vendor_event, link_peer_stats))
+		return -EINVAL;
+
 	/* Punctured BW */
 	attr = nla_nest_start(vendor_event,
 			      QCA_VENDOR_WLAN_TELEMETRY_TX_EXT_HTT_STATS_PUNC_BW);
@@ -4069,7 +4466,7 @@ static int ath12k_fill_peer_proto_tx_stats_attrs(struct sk_buff *vendor_event,
 static int ath12k_fill_peer_tx_per_pkt_stats_attrs(struct sk_buff *vendor_event,
 						   struct ath12k_dp_peer_stats *peer_stats,
 						   int ring_num,
-						   bool is_extended)
+						   bool is_extended, bool is_hw_stats)
 {
 	struct nlattr *attr;
 	int reason;
@@ -4136,6 +4533,57 @@ static int ath12k_fill_peer_tx_per_pkt_stats_attrs(struct sk_buff *vendor_event,
 		return -EINVAL;
 	}
 
+	/* HW peer stats report these counters OOB without extended stats.
+	 * Non-HW targets keep the existing extended-stats gated output below.
+	 */
+	if (is_hw_stats) {
+		if (nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_PER_PKT_STATS_TX_RETRY_COUNT,
+				peer_stats->tx[ring_num].retry_count)) {
+			ath12k_err(NULL, "nla put failure: Peer tx per pkt stats attr %d | ring %d",
+				   QCA_VENDOR_ATTR_PER_PKT_STATS_TX_RETRY_COUNT,
+				   ring_num + 1);
+			return -EINVAL;
+		}
+
+		if (nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_PER_PKT_STATS_TX_TOTAL_MSDU_RETRIES,
+				peer_stats->tx[ring_num].total_msdu_retries)) {
+			ath12k_err(NULL, "nla put failure: Peer tx per pkt stats attr %d | ring %d",
+				   QCA_VENDOR_ATTR_PER_PKT_STATS_TX_TOTAL_MSDU_RETRIES,
+				   ring_num + 1);
+			return -EINVAL;
+		}
+
+		attr = nla_nest_start(vendor_event,
+				      QCA_VENDOR_ATTR_PER_PKT_STATS_TX_PKTINFO_UCAST);
+		if (!attr) {
+			ath12k_err(NULL,
+				   "nla nest failure: Peer per pkt stats - ucast");
+			return -EINVAL;
+		}
+		if (nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_PKTS,
+				peer_stats->tx[ring_num].ucast.packets)) {
+			ath12k_err(NULL, "nla put failure: Peer tx per pkt stats attr %d packets | ring %d",
+				   QCA_VENDOR_ATTR_PER_PKT_STATS_TX_PKTINFO_UCAST,
+				   ring_num + 1);
+			nla_nest_end(vendor_event, attr);
+			return -EINVAL;
+		}
+		if (nla_put_u64_64bit(vendor_event,
+				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_BYTES,
+				      peer_stats->tx[ring_num].ucast.bytes,
+				      NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failure: Peer tx per pkt stats attr %d bytes | ring %d",
+				   QCA_VENDOR_ATTR_PER_PKT_STATS_TX_PKTINFO_UCAST,
+				   ring_num + 1);
+			nla_nest_end(vendor_event, attr);
+			return -EINVAL;
+		}
+		nla_nest_end(vendor_event, attr);
+	}
+
 	/* Advance Stats */
 	if (!is_extended)
 		return 0;
@@ -4188,19 +4636,51 @@ static int ath12k_fill_peer_tx_per_pkt_stats_attrs(struct sk_buff *vendor_event,
 		return -EINVAL;
 	}
 
-	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_PER_PKT_STATS_TX_RETRY_COUNT,
-			peer_stats->tx[ring_num].retry_count)) {
-		ath12k_err(NULL, "nla put failure: Peer tx per pkt stats attr %d | ring %d",
-			   QCA_VENDOR_ATTR_PER_PKT_STATS_TX_RETRY_COUNT, ring_num + 1);
-		return -EINVAL;
-	}
+	if (!is_hw_stats) {
+		if (nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_PER_PKT_STATS_TX_RETRY_COUNT,
+				peer_stats->tx[ring_num].retry_count)) {
+			ath12k_err(NULL, "nla put failure: Peer tx per pkt stats attr %d | ring %d",
+				   QCA_VENDOR_ATTR_PER_PKT_STATS_TX_RETRY_COUNT,
+				   ring_num + 1);
+			return -EINVAL;
+		}
 
-	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_PER_PKT_STATS_TX_TOTAL_MSDU_RETRIES,
-			peer_stats->tx[ring_num].total_msdu_retries)) {
-		ath12k_err(NULL, "nla put failure: Peer tx per pkt stats attr %d | ring %d",
-			   QCA_VENDOR_ATTR_PER_PKT_STATS_TX_TOTAL_MSDU_RETRIES,
-			   ring_num + 1);
-		return -EINVAL;
+		if (nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_PER_PKT_STATS_TX_TOTAL_MSDU_RETRIES,
+				peer_stats->tx[ring_num].total_msdu_retries)) {
+			ath12k_err(NULL, "nla put failure: Peer tx per pkt stats attr %d | ring %d",
+				   QCA_VENDOR_ATTR_PER_PKT_STATS_TX_TOTAL_MSDU_RETRIES,
+				   ring_num + 1);
+			return -EINVAL;
+		}
+
+		attr = nla_nest_start(vendor_event,
+				      QCA_VENDOR_ATTR_PER_PKT_STATS_TX_PKTINFO_UCAST);
+		if (!attr) {
+			ath12k_err(NULL,
+				   "nla nest failure: Peer per pkt stats - ucast");
+			return -EINVAL;
+		}
+		if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_PKTS,
+				peer_stats->tx[ring_num].ucast.packets)) {
+			ath12k_err(NULL, "nla put failure: Peer tx per pkt stats attr %d packets | ring %d",
+				   QCA_VENDOR_ATTR_PER_PKT_STATS_TX_PKTINFO_UCAST,
+				   ring_num + 1);
+			nla_nest_end(vendor_event, attr);
+			return -EINVAL;
+		}
+		if (nla_put_u64_64bit(vendor_event,
+				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_BYTES,
+				      peer_stats->tx[ring_num].ucast.bytes,
+				      NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failure: Peer tx per pkt stats attr %d bytes | ring %d",
+				   QCA_VENDOR_ATTR_PER_PKT_STATS_TX_PKTINFO_UCAST,
+				   ring_num + 1);
+			nla_nest_end(vendor_event, attr);
+			return -EINVAL;
+		}
+		nla_nest_end(vendor_event, attr);
 	}
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_PER_PKT_STATS_TX_MULTIPLE_RETRY_COUNT,
@@ -4262,32 +4742,6 @@ static int ath12k_fill_peer_tx_per_pkt_stats_attrs(struct sk_buff *vendor_event,
 			      NL80211_ATTR_PAD)) {
 		ath12k_err(NULL, "nla put failure: Peer tx per pkt stats attr %d bytes | ring %d",
 			   QCA_VENDOR_ATTR_PER_PKT_STATS_TX_PKTINFO_MCAST,
-			   ring_num + 1);
-		nla_nest_end(vendor_event, attr);
-		return -EINVAL;
-	}
-	nla_nest_end(vendor_event, attr);
-
-	attr = nla_nest_start(vendor_event,
-			      QCA_VENDOR_ATTR_PER_PKT_STATS_TX_PKTINFO_UCAST);
-	if (!attr) {
-		ath12k_err(NULL,
-			   "nla nest failure: Peer per pkt stats - ucast");
-		return -EINVAL;
-	}
-	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_PKTS,
-			peer_stats->tx[ring_num].ucast.packets)) {
-		ath12k_err(NULL, "nla put failure: Peer tx per pkt stats attr %d packets | ring %d",
-			   QCA_VENDOR_ATTR_PER_PKT_STATS_TX_PKTINFO_UCAST,
-			   ring_num + 1);
-		nla_nest_end(vendor_event, attr);
-		return -EINVAL;
-	}
-	if (nla_put_u64_64bit(vendor_event, QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_BYTES,
-			      peer_stats->tx[ring_num].ucast.bytes,
-			      NL80211_ATTR_PAD)) {
-		ath12k_err(NULL, "nla put failure: Peer tx per pkt stats attr %d bytes | ring %d",
-			   QCA_VENDOR_ATTR_PER_PKT_STATS_TX_PKTINFO_UCAST,
 			   ring_num + 1);
 		nla_nest_end(vendor_event, attr);
 		return -EINVAL;
@@ -4399,16 +4853,345 @@ static int ath12k_fill_peer_proto_stats(struct ath12k *ar,
 	return 0;
 }
 
+/**
+ * ath12k_fill_peer_hw_tx_stats() - Pack HW TX stats into Ring 0's per-pkt stats
+ *				    nested attribute.
+ *
+ * Called only when ring_num is 0 and HW offload stats are enabled.
+ * Return: Invalid when failed, 0 when successful.
+ */
+static int
+ath12k_fill_peer_hw_tx_stats(struct sk_buff *vendor_event,
+			     struct ath12k_dp_link_peer_stats *link_peer_stats,
+			     struct ath12k_dp_mld_peer_stats *mld_stats,
+			     int peer_type)
+{
+	struct ath12k_dp_link_peer_hw_tx_stats *hw_link_tx;
+	struct ath12k_dp_peer_hw_tx_stats *hw_tx;
+
+	if (peer_type == ATH12K_LEGACY_PEER || peer_type == ATH12K_LINK_PEER) {
+		if (!link_peer_stats || !link_peer_stats->hw_link_stats) {
+			ath12k_err(NULL,
+				   " Invalid link_peer_stats: ptr:%p hw_link_stats:%p\n",
+				   link_peer_stats,
+				   link_peer_stats ? link_peer_stats->hw_link_stats :
+				   NULL);
+			return -EINVAL;
+		}
+
+		hw_link_tx = &link_peer_stats->hw_link_stats->hw_link_tx;
+
+		if (nla_put_u64_64bit(vendor_event,
+				      QCA_VENDOR_ATTR_PER_PKT_STATS_TX_SUM_ACK_RSSI,
+				      hw_link_tx->sum_ack_rssi, NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failure: TX SUM_ACK_RSSI");
+			return -EINVAL;
+		}
+
+		if (nla_put_u64_64bit(vendor_event,
+				      QCA_VENDOR_ATTR_PER_PKT_STATS_TX_SUM_PHY_RATE,
+				      hw_link_tx->sum_phy_rate, NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failure: TX SUM_PHY_RATE");
+			return -EINVAL;
+		}
+		if (nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_PER_PKT_STATS_TX_ACKED_PPDU_COUNT,
+				hw_link_tx->acked_ppdu_count)) {
+			ath12k_err(NULL, "nla put failure: TX ACKED_PPDU_COUNT");
+			return -EINVAL;
+		}
+	}
+
+	if (peer_type != ATH12K_LINK_PEER) {
+		if (!mld_stats || !mld_stats->hw_stats) {
+			ath12k_err(NULL,
+				   "Invalid mld_stats: ptr:%p hw_stats:%p\n",
+				   mld_stats,
+				   mld_stats ? mld_stats->hw_stats : NULL);
+			return -EINVAL;
+		}
+
+		hw_tx = &mld_stats->hw_stats->hw_tx;
+
+		if (nla_put_u64_64bit(vendor_event,
+				      QCA_VENDOR_ATTR_PER_PKT_STATS_TX_FAILED_BYTES,
+				      hw_tx->failed_bytes,
+				      NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failure: TX FAILED_BYTES");
+			return -EINVAL;
+		}
+		if (nla_put_u64_64bit(vendor_event,
+				      QCA_VENDOR_ATTR_PER_PKT_STATS_TX_DROP_BYTES,
+				      hw_tx->drop_bytes,
+				      NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failure: TX DROP_BYTES");
+			return -EINVAL;
+		}
+		if (nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_PER_PKT_STATS_TX_DROP1_PKTS,
+				hw_tx->drop1_pkts)) {
+			ath12k_err(NULL, "nla put failure: TX DROP1_PKTS");
+			return -EINVAL;
+		}
+		if (nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_PER_PKT_STATS_TX_DROP2_PKTS,
+				hw_tx->drop2_pkts)) {
+			ath12k_err(NULL, "nla put failure: TX DROP2_PKTS");
+			return -EINVAL;
+		}
+	}
+
+	return 0;
+}
+
+/**
+ * ath12k_fill_tid_delay_stats() - Serialize a hist_stats delay structure
+ * @vendor_event: netlink skb
+ * @delay: pointer to the hist_stats to serialize
+ * @attr_id: the TID TX attribute ID to use as the outer nest
+ *           (QCA_VENDOR_ATTR_TID_TX_SWQ_DELAY, _HWTX_DELAY, or _INTFRM_DELAY)
+ *
+ * Emits:
+ *   <attr_id>
+ *     QCA_VENDOR_ATTR_TID_DELAY_MAX_VAL  (u32)
+ *     QCA_VENDOR_ATTR_TID_DELAY_MIN_VAL  (u32)
+ *     QCA_VENDOR_ATTR_TID_DELAY_AVG_VAL  (u32)
+ *     QCA_VENDOR_ATTR_TID_DELAY_HIST     (nested)
+ *       1 .. HIST_BUCKET_MAX  (u64 each)
+ *   </attr_id>
+ *
+ * Return: 0 on success, -EINVAL on failure.
+ */
+static int ath12k_fill_tid_delay_stats(struct sk_buff *vendor_event,
+				       const struct hist_stats *delay,
+				       int attr_id)
+{
+	struct nlattr *delay_attr;
+	struct nlattr *hist_attr;
+	int i;
+
+	delay_attr = nla_nest_start(vendor_event, attr_id);
+	if (!delay_attr)
+		return -EINVAL;
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TID_DELAY_MAX_VAL,
+			delay->max) ||
+	    nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TID_DELAY_MIN_VAL,
+			delay->min) ||
+	    nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TID_DELAY_AVG_VAL,
+			delay->avg)) {
+		nla_nest_cancel(vendor_event, delay_attr);
+		return -EINVAL;
+	}
+
+	hist_attr = nla_nest_start(vendor_event,
+				   QCA_VENDOR_ATTR_TID_DELAY_HIST);
+	if (!hist_attr) {
+		nla_nest_cancel(vendor_event, delay_attr);
+		return -EINVAL;
+	}
+
+	for (i = 0; i < QCA_WLAN_VENDOR_ATTR_TELE_DELAY_HIST_BUCKET_MAX &&
+	     i < ARRAY_SIZE(delay->hist.freq); i++) {
+		if (nla_put_u64_64bit(vendor_event, i + 1,
+				      delay->hist.freq[i],
+				      NL80211_ATTR_PAD)) {
+			nla_nest_cancel(vendor_event, hist_attr);
+			nla_nest_cancel(vendor_event, delay_attr);
+			return -EINVAL;
+		}
+	}
+	nla_nest_end(vendor_event, hist_attr);
+	nla_nest_end(vendor_event, delay_attr);
+
+	return 0;
+}
+
+/**
+ * ath12k_fill_peer_delay_stats() - Fill per-TID delay stats into NL vendor event
+ * @ar: ath12k radio pointer (unused, kept for consistency with other fill functions)
+ * @vendor_event: sk_buff to write into
+ * @peer_stats: peer stats containing the delay pointer
+ *
+ * Serializes peer_stats->delay (struct ath12k_dp_peer_tid_agg_delay_stats) into
+ * the vendor event buffer. For each TID (0..DP_TID_MAX-1) it emits:
+ *   - QCA_VENDOR_ATTR_DELAY_STATS_TX_SWQ  (nested hist_stats)
+ *   - QCA_VENDOR_ATTR_DELAY_STATS_TX_HW   (nested hist_stats)
+ *   - QCA_VENDOR_ATTR_DELAY_STATS_RX_TO_STACK (nested hist_stats)
+ *
+ * Returns 0 on success, negative error code on failure.
+ * If peer_stats->delay is NULL the function returns 0 immediately.
+ */
+static int ath12k_fill_peer_delay_stats(struct ath12k *ar,
+					struct sk_buff *vendor_event,
+					struct ath12k_dp_peer_stats *peer_stats)
+{
+	struct ath12k_dp_peer_tid_agg_delay_stats *delay = peer_stats->delay;
+	struct ath12k_dp_peer_delay_tid_stats *tid_stats;
+	struct nlattr *tid_attr;
+	int tid;
+	int ret;
+
+	if (!delay)
+		return 0;
+
+	for (tid = 0; tid < DP_TID_MAX; tid++) {
+		tid_stats = &delay->tid_stats[tid];
+
+		tid_attr = nla_nest_start(vendor_event, tid + 1);
+		if (!tid_attr) {
+			ath12k_err(NULL, "nla nest failure: delay stats TID %d", tid);
+			return -EINVAL;
+		}
+
+		ret = ath12k_fill_tid_delay_stats(vendor_event,
+						  &tid_stats->tx_delay.tx_swq_delay,
+						  QCA_VENDOR_ATTR_DELAY_STATS_TX_SWQ);
+		if (ret) {
+			ath12k_err(NULL, "Error filling TX SWQ delay for TID %d", tid);
+			nla_nest_cancel(vendor_event, tid_attr);
+			return ret;
+		}
+
+		ret = ath12k_fill_tid_delay_stats(vendor_event,
+						  &tid_stats->tx_delay.hwtx_delay,
+						  QCA_VENDOR_ATTR_DELAY_STATS_TX_HW);
+		if (ret) {
+			ath12k_err(NULL, "Error filling TX HW delay for TID %d", tid);
+			nla_nest_cancel(vendor_event, tid_attr);
+			return ret;
+		}
+
+		ret =
+		    ath12k_fill_tid_delay_stats(vendor_event,
+						&tid_stats->rx_delay.to_stack_delay,
+						QCA_VENDOR_ATTR_DELAY_STATS_RX_TO_STACK);
+		if (ret) {
+			ath12k_err(NULL,
+				   "Error filling RX to-stack delay for TID %d", tid);
+			nla_nest_cancel(vendor_event, tid_attr);
+			return ret;
+		}
+
+		nla_nest_end(vendor_event, tid_attr);
+	}
+
+	return 0;
+}
+
+/**
+ * ath12k_fill_peer_jitter_stats() - Fill Jitter stats into NL vendor event
+ * @ar: ath12k radio pointer (unused, kept for consistency with other fill functions)
+ * @vendor_event: sk_buff to write into
+ * @peer_stats: peer stats containing the delay pointer
+ *
+ * Returns 0 on success, negative error code on failure.
+ * If peer_stats->jitter is NULL the function returns 0 immediately.
+ */
+static int ath12k_fill_peer_jitter_stats(struct ath12k *ar,
+					 struct sk_buff *vendor_event,
+					 struct ath12k_dp_peer_stats *peer_stats)
+{
+	struct nlattr *tid_attr;
+	int tid;
+
+	if (!peer_stats->jitter)
+		return 0;
+
+	for (tid = 0; tid < QCA_VENDOR_WLAN_TELEMETRY_DATA_TIDS; tid++) {
+		tid_attr = nla_nest_start(vendor_event, tid + 1);
+		if (!tid_attr) {
+			ath12k_err(NULL, "nla nest failure: jitter stats TID %d", tid);
+			return -EINVAL;
+		}
+
+		if (nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_JITTER_STATS_TX_AVG_JITTER,
+				peer_stats->jitter->tid_stats[tid].tx_avg_jitter) ||
+		    nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_JITTER_STATS_TX_AVG_DELAY,
+				peer_stats->jitter->tid_stats[tid].tx_avg_delay) ||
+		    nla_put_u64_64bit(vendor_event,
+				      QCA_VENDOR_ATTR_JITTER_STATS_TX_AVG_ERR,
+				      peer_stats->jitter->tid_stats[tid].tx_avg_err,
+				      NL80211_ATTR_PAD) ||
+		    nla_put_u64_64bit(vendor_event,
+				      QCA_VENDOR_ATTR_JITTER_STATS_TX_TOTAL_SUCCESS,
+				      peer_stats->jitter->tid_stats[tid].tx_total_success,
+				      NL80211_ATTR_PAD) ||
+		    nla_put_u64_64bit(vendor_event,
+				      QCA_VENDOR_ATTR_JITTER_STATS_TX_DROP,
+				      peer_stats->jitter->tid_stats[tid].tx_drop,
+				      NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failure: jitter stats attr");
+			nla_nest_cancel(vendor_event, tid_attr);
+			return -EINVAL;
+		}
+
+		nla_nest_end(vendor_event, tid_attr);
+	}
+
+	return 0;
+}
+
+static int ath12k_fill_peer_sojourn_stats(struct ath12k *ar,
+					  struct sk_buff *vendor_event,
+					  struct ath12k_dp_peer_stats *peer_stats)
+{
+	struct ath12k_dp_peer_tid_sojourn_stats *tid_stats;
+	struct nlattr *tid_attr;
+	int tid;
+	u64 avg_sojourn_msdu;
+
+	if (!peer_stats->sojourn)
+		return 0;
+
+	for (tid = 0; tid < QCA_VENDOR_WLAN_TELEMETRY_DATA_TIDS; tid++) {
+		tid_stats = &peer_stats->sojourn->tid_stats[tid];
+		tid_attr = nla_nest_start(vendor_event, tid + 1);
+		if (!tid_attr) {
+			ath12k_err(NULL, "nla nest failure: sojourn stats TID %d", tid);
+			return -EINVAL;
+		}
+
+		avg_sojourn_msdu = ewma_avg_sojourn_read(&tid_stats->avg_sojourn_msdu);
+
+		if (nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_SOJOURN_STATS_SUM_SOJOURN_MSDU,
+				tid_stats->sum_sojourn_msdu) ||
+		    nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_SOJOURN_STATS_NUM_MSDUS,
+				tid_stats->num_msdus) ||
+		    nla_put_u64_64bit(vendor_event,
+				      QCA_VENDOR_ATTR_SOJOURN_STATS_AVG_SOJOURN_MSDU,
+				      avg_sojourn_msdu, NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failure: sojourn stats attr");
+			nla_nest_cancel(vendor_event, tid_attr);
+			return -EINVAL;
+		}
+
+		nla_nest_end(vendor_event, tid_attr);
+	}
+
+	return 0;
+}
+
 static int ath12k_fill_peer_tx_stats(struct ath12k *ar,
 				     struct sk_buff *vendor_event,
 				     struct ath12k_dp_peer_stats *peer_stats,
 				     bool is_extended,
 				     struct ath12k_dp_link_peer_stats *link_peer_stats,
+				     struct ath12k_dp_mld_peer_stats *mld_stats,
 				     int peer_type)
 {
 	struct nlattr *attr1;
 	struct nlattr *attr;
 	int ring_num;
+	bool is_hw_stats;
+
+
+	if (ath12k_dp_hw_peer_stats_enabled(&ar->dp))
+		is_hw_stats = true;
 
 	/*Tx Per Pkt Stats*/
 	attr = nla_nest_start(vendor_event, QCA_VENDOR_ATTR_WLAN_TELEMETRY_TX_PER_PKT_STATS_EVENT);
@@ -4427,19 +5210,35 @@ static int ath12k_fill_peer_tx_stats(struct ath12k *ar,
 		}
 
 		if (ath12k_fill_peer_tx_per_pkt_stats_attrs(vendor_event, peer_stats,
-							    ring_num, is_extended)) {
+							    ring_num, is_extended,
+							    is_hw_stats)) {
 			ath12k_err(NULL, "Error filling peer tx per pkt stats for ring %d",
 				   ring_num + 1);
 			nla_nest_end(vendor_event, attr);
 			return -EINVAL;
 		}
+
+		/* HW offload TX stats — Ring 0 only */
+		if (((ring_num + 1) == QCA_VENDOR_ATTR_WLAN_TELEMETRY_TCL_RING_0) &&
+		    ath12k_dp_hw_peer_stats_enabled(&ar->dp)) {
+			if (ath12k_fill_peer_hw_tx_stats(vendor_event,
+							 link_peer_stats,
+							 mld_stats,
+							 peer_type)) {
+				ath12k_err(NULL, "Error filling peer HW TX stats");
+				nla_nest_end(vendor_event, attr1);
+				nla_nest_end(vendor_event, attr);
+				return -EINVAL;
+			}
+		}
+
 		nla_nest_end(vendor_event, attr1);
 	}
 	nla_nest_end(vendor_event, attr);
 
 	/*Tx Ext Htt Stats*/
 	if (link_peer_stats &&
-	    ath12k_extd_tx_stats_enabled(ar)) {
+	    ath12k_extd_tx_stats_enabled(&ar->dp)) {
 		if (ath12k_fill_peer_tx_ext_stats_wrapper(ar, vendor_event,
 							  link_peer_stats,
 							  peer_type)) {
@@ -4582,7 +5381,7 @@ static int ath12k_fill_peer_rx_wbm_err_attrs(struct sk_buff *vendor_event,
 static int ath12k_fill_peer_rx_per_pkt_stats_attrs(struct sk_buff *vendor_event,
 						   struct ath12k_dp_peer_stats *peer_stats,
 						   int ring_num,
-						   bool is_extended)
+						   bool is_extended, bool is_hw_stats)
 {
 	struct nlattr *attr;
 
@@ -4668,6 +5467,39 @@ static int ath12k_fill_peer_rx_per_pkt_stats_attrs(struct sk_buff *vendor_event,
 	}
 	nla_nest_end(vendor_event, attr);
 
+	/* HW peer stats report these counters OOB without extended stats.
+	 * Non-HW targets keep the existing extended-stats gated output below.
+	 */
+	if (is_hw_stats) {
+		attr = nla_nest_start(vendor_event,
+				      QCA_VENDOR_ATTR_PER_PKT_STATS_RX_PKTINFO_UCAST);
+		if (!attr) {
+			ath12k_err(NULL,
+				   "nla nest failure: Peer per pkt stats - ucast");
+			return -EINVAL;
+		}
+		if (nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_PKTS,
+				peer_stats->rx[ring_num].ucast.packets)) {
+			ath12k_err(NULL, "nla put failure: Peer rx per pkt stats attr %d packets | ring %d",
+				   QCA_VENDOR_ATTR_PER_PKT_STATS_RX_PKTINFO_UCAST,
+				   ring_num + 1);
+			nla_nest_end(vendor_event, attr);
+			return -EINVAL;
+		}
+		if (nla_put_u64_64bit(vendor_event,
+				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_BYTES,
+				      peer_stats->rx[ring_num].ucast.bytes,
+				      NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failure: Peer rx per pkt stats attr %d bytes | ring %d",
+				   QCA_VENDOR_ATTR_PER_PKT_STATS_RX_PKTINFO_UCAST,
+				   ring_num + 1);
+			nla_nest_end(vendor_event, attr);
+			return -EINVAL;
+		}
+		nla_nest_end(vendor_event, attr);
+	}
+
 	/* Advance Stats */
 	if (!is_extended)
 		return 0;
@@ -4700,33 +5532,36 @@ static int ath12k_fill_peer_rx_per_pkt_stats_attrs(struct sk_buff *vendor_event,
 	}
 	nla_nest_end(vendor_event, attr);
 
-	attr = nla_nest_start(vendor_event,
-			      QCA_VENDOR_ATTR_PER_PKT_STATS_RX_PKTINFO_UCAST);
-	if (!attr) {
-		ath12k_err(NULL,
-			   "nla nest failure: Peer per pkt stats - rx ucast");
-		return -EINVAL;
-	}
+	if (!is_hw_stats) {
+		attr = nla_nest_start(vendor_event,
+				      QCA_VENDOR_ATTR_PER_PKT_STATS_RX_PKTINFO_UCAST);
+		if (!attr) {
+			ath12k_err(NULL,
+				   "nla nest failure: Peer per pkt stats - rx ucast");
+			return -EINVAL;
+		}
 
-	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_PKTS,
-			peer_stats->rx[ring_num].ucast.packets)) {
-		ath12k_err(NULL, "nla put failure: Peer rx per pkt stats attr %d packets | ring %d",
-			   QCA_VENDOR_ATTR_PER_PKT_STATS_RX_PKTINFO_UCAST,
-			   ring_num + 1);
-		nla_nest_end(vendor_event, attr);
-		return -EINVAL;
-	}
+		if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_PKTS,
+				peer_stats->rx[ring_num].ucast.packets)) {
+			ath12k_err(NULL, "nla put failure: Peer rx per pkt stats attr %d packets | ring %d",
+				   QCA_VENDOR_ATTR_PER_PKT_STATS_RX_PKTINFO_UCAST,
+				   ring_num + 1);
+			nla_nest_end(vendor_event, attr);
+			return -EINVAL;
+		}
 
-	if (nla_put_u64_64bit(vendor_event, QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_BYTES,
-			      peer_stats->rx[ring_num].ucast.bytes,
-			      NL80211_ATTR_PAD)) {
-		ath12k_err(NULL, "nla put failure: Peer rx per pkt stats attr %d bytes | ring %d",
-			   QCA_VENDOR_ATTR_PER_PKT_STATS_RX_PKTINFO_UCAST,
-			   ring_num + 1);
+		if (nla_put_u64_64bit(vendor_event,
+				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_BYTES,
+				      peer_stats->rx[ring_num].ucast.bytes,
+				      NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failure: Peer rx per pkt stats attr %d bytes | ring %d",
+				   QCA_VENDOR_ATTR_PER_PKT_STATS_RX_PKTINFO_UCAST,
+				   ring_num + 1);
+			nla_nest_end(vendor_event, attr);
+			return -EINVAL;
+		}
 		nla_nest_end(vendor_event, attr);
-		return -EINVAL;
 	}
-	nla_nest_end(vendor_event, attr);
 
 	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_PER_PKT_STATS_RX_NON_AMSDU,
 			peer_stats->rx[ring_num].non_amsdu)) {
@@ -4836,7 +5671,7 @@ static int ath12k_vendor_fill_rx_rate_stats(struct sk_buff *skb,
 {
 	struct nlattr *rx_rate_attr, *bw_nest, *gi_nest, *nss_nest;
 	struct nlattr *legacy_attr, *ht_attr, *vht_attr, *he_attr;
-	struct nlattr *eht_attr, *bw_attr, *nss_attr, *gi_attr;
+	struct nlattr *eht_attr, *uhr_attr, *bw_attr, *nss_attr, *gi_attr;
 	int i, bw, gi, nss;
 	u64 count;
 	const int max_mcs = QCA_VENDOR_WLAN_TELEMETRY_HT_MCS_MAX;
@@ -4896,6 +5731,20 @@ static int ath12k_vendor_fill_rx_rate_stats(struct sk_buff *skb,
 			return -EMSGSIZE;
 	}
 	nla_nest_end(skb, eht_attr);
+
+	/* BN (UHR/11BN) MCS counts */
+	uhr_attr = nla_nest_start(skb,
+				 QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_MON_BN_CNT);
+	if (!uhr_attr)
+		return -EMSGSIZE;
+
+	for (i = 0; i < QCA_VENDOR_WLAN_TELEMETRY_UHR_MCS_MAX; i++) {
+		if (nla_put_u64_64bit(skb, (i + 1),
+				      rate_stats->bn_mcs_count[i],
+				      NL80211_ATTR_PAD))
+			return -EMSGSIZE;
+	}
+	nla_nest_end(skb, uhr_attr);
 
 	/* NSS counts */
 	nss_attr = nla_nest_start(skb,
@@ -5038,7 +5887,7 @@ static int ath12k_put_rx_mu_stats(struct sk_buff *skb,
 		if (!mcs)
 			return -EMSGSIZE;
 
-		for (j = 0; j < QCA_VENDOR_WLAN_TELEMETRY_EHT_MCS_MAX; j++)
+		for (j = 0; j < QCA_VENDOR_WLAN_TELEMETRY_UHR_MCS_MAX; j++)
 			nla_put_u32(skb, j + 1,
 				    rx_mu[i].ppdu.mcs_count[j]);
 
@@ -5316,7 +6165,7 @@ static int ath12k_vendor_fill_rx_mon_stats(struct sk_buff *skb,
 			return -EMSGSIZE;
 		}
 
-		for (j = 0; j < QCA_VENDOR_WLAN_TELEMETRY_EHT_MCS_MAX; j++) {
+		for (j = 0; j < QCA_VENDOR_WLAN_TELEMETRY_UHR_MCS_MAX; j++) {
 			val = rx_stats->proto_type[i].mcs_count[j];
 
 			if (nla_put_u32(skb, j + 1, val)) {
@@ -5355,7 +6204,7 @@ static int ath12k_vendor_fill_rx_mon_stats(struct sk_buff *skb,
 			return -EMSGSIZE;
 		}
 
-		for (j = 0; j < QCA_VENDOR_WLAN_TELEMETRY_EHT_MCS_MAX; j++) {
+		for (j = 0; j < QCA_VENDOR_WLAN_TELEMETRY_UHR_MCS_MAX; j++) {
 			val = rx_stats->su_ppdu_count[i].mcs_count[j];
 			if (nla_put_u32(skb, j + 1, val)) {
 				nla_nest_cancel(skb, pkt_type_nest);
@@ -5418,10 +6267,131 @@ static int ath12k_vendor_fill_rx_mon_stats(struct sk_buff *skb,
 	return 0;
 }
 
+/**
+ * ath12k_fill_peer_hw_rx_stats() - Pack HW RX stats into Ring 0's per-pkt
+ *				    stats nested attribute.
+ *
+ * Called only when ring_num is 0 and HW stats are enabled.
+ * Return: Invalid when failed, 0 when successful.
+ */
+
+static int
+ath12k_fill_peer_hw_rx_stats(struct sk_buff *vendor_event,
+			     struct ath12k_dp_link_peer_stats *link_peer_stats,
+			     struct ath12k_dp_mld_peer_stats *mld_stats,
+			     int peer_type)
+{
+	struct ath12k_dp_link_peer_hw_rx_stats *hw_link_rx;
+	struct ath12k_dp_peer_hw_rx_stats *hw_rx;
+
+	if (!link_peer_stats || !link_peer_stats->hw_link_stats) {
+		ath12k_err(NULL, "Invalid link_peer_stats: ptr:%p hw_link_stats:%p\n",
+			   link_peer_stats,
+			   link_peer_stats ? link_peer_stats->hw_link_stats : NULL);
+		return -EINVAL;
+	}
+
+	hw_link_rx = &link_peer_stats->hw_link_stats->hw_link_rx;
+
+	if (nla_put_u64_64bit(vendor_event,
+			      QCA_VENDOR_ATTR_PER_PKT_STATS_RX_SUCCESS_GCAST_BYTES,
+			      hw_link_rx->success_gcast_bytes, NL80211_ATTR_PAD)) {
+		ath12k_err(NULL, "nla put failure: RX SUCCESS_GCAST_BYTES");
+		return -EINVAL;
+	}
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_PER_PKT_STATS_RX_SUCCESS_GCAST_PKTS,
+			hw_link_rx->success_gcast_pkts)) {
+		ath12k_err(NULL, "nla put failure: RX SUCCESS_GCAST_PKTS");
+		return -EINVAL;
+	}
+	if (nla_put_u64_64bit(vendor_event,
+			      QCA_VENDOR_ATTR_PER_PKT_STATS_RX_FAILED_MPDU_BYTES,
+			      hw_link_rx->failed_mpdu_bytes, NL80211_ATTR_PAD)) {
+		ath12k_err(NULL, "nla put failure: RX FAILED_MPDU_BYTES");
+		return -EINVAL;
+	}
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_PER_PKT_STATS_RX_FAILED_MPDU,
+			hw_link_rx->failed_mpdu)) {
+		ath12k_err(NULL, "nla put failure: RX FAILED_MPDU");
+		return -EINVAL;
+	}
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_PER_PKT_STATS_RX_DROP1_UCAST_PKTS,
+			hw_link_rx->drop1_ucast_pkts)) {
+		ath12k_err(NULL, "nla put failure: RX DROP1_UCAST_PKTS");
+		return -EINVAL;
+	}
+
+	if (peer_type == ATH12K_LEGACY_PEER || peer_type == ATH12K_LINK_PEER) {
+		if (nla_put_u64_64bit(vendor_event,
+				      QCA_VENDOR_ATTR_PER_PKT_STATS_RX_SUM_RSSI,
+				      hw_link_rx->sum_rssi, NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failure: RX SUM_RSSI");
+			return -EINVAL;
+		}
+		if (nla_put_u64_64bit(vendor_event,
+				      QCA_VENDOR_ATTR_PER_PKT_STATS_RX_SUM_PHY_RATE,
+				      hw_link_rx->sum_phy_rate, NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failure: RX SUM_PHY_RATE");
+			return -EINVAL;
+		}
+		if (nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_PER_PKT_STATS_RX_SUCCESS_PPDU_COUNT,
+				hw_link_rx->success_ppdu_count)) {
+			ath12k_err(NULL, "nla put failure: RX SUCCESS_PPDU_COUNT");
+			return -EINVAL;
+		}
+	}
+
+	if (peer_type != ATH12K_LINK_PEER) {
+		if (!mld_stats || !mld_stats->hw_stats) {
+			ath12k_err(NULL,
+				   "Invalid mld_stats: ptr:%p hw_stats:%p\n",
+				   mld_stats,
+				   mld_stats ? mld_stats->hw_stats : NULL);
+			return -EINVAL;
+		}
+
+		hw_rx = &mld_stats->hw_stats->hw_rx;
+
+		if (nla_put_u64_64bit(vendor_event,
+				      QCA_VENDOR_ATTR_PER_PKT_STATS_RX_DROP_UCAST_BYTES,
+				      hw_rx->drop_ucast_bytes,
+				      NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failure: RX DROP_UCAST_BYTES");
+			return -EINVAL;
+		}
+		if (nla_put_u64_64bit(vendor_event,
+				      QCA_VENDOR_ATTR_PER_PKT_STATS_RX_DROP_GCAST_BYTES,
+				      hw_rx->drop_gcast_bytes,
+				      NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failure: RX DROP_GCAST_BYTES");
+			return -EINVAL;
+		}
+		if (nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_PER_PKT_STATS_RX_DROP2_UCAST_PKTS,
+				hw_rx->drop2_pkts)) {
+			ath12k_err(NULL, "nla put failure: RX DROP2_UCAST_PKTS");
+			return -EINVAL;
+		}
+		if (nla_put_u32(vendor_event,
+				QCA_VENDOR_ATTR_PER_PKT_STATS_RX_DROP_GCAST_PKTS,
+				hw_rx->drop_gcast_pkts)) {
+			ath12k_err(NULL, "nla put failure: RX DROP_GCAST_PKTS");
+			return -EINVAL;
+		}
+	}
+
+	return 0;
+}
+
 static int ath12k_fill_peer_rx_stats(struct ath12k *ar,
 				     struct sk_buff *vendor_event,
 				     struct ath12k_dp_peer_stats *peer_stats,
 				     struct ath12k_dp_link_peer_stats *link_peer_stats,
+				     struct ath12k_dp_mld_peer_stats *mld_stats,
 				     bool is_extended,
 				     int peer_type)
 {
@@ -5429,6 +6399,10 @@ static int ath12k_fill_peer_rx_stats(struct ath12k *ar,
 	struct nlattr *attr;
 	int ring_num;
 	struct ath12k_rx_peer_stats *rx_mon_stats;
+	bool is_hw_stats;
+
+	if (ath12k_dp_hw_peer_stats_enabled(&ar->dp))
+		is_hw_stats = true;
 
 	/*Rx Per Pkt Stats*/
 	attr = nla_nest_start(vendor_event, QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_PER_PKT_STATS_EVENT);
@@ -5450,12 +6424,28 @@ static int ath12k_fill_peer_rx_stats(struct ath12k *ar,
 		if (ath12k_fill_peer_rx_per_pkt_stats_attrs(vendor_event,
 							    peer_stats,
 							    ring_num,
-							    is_extended)) {
+							    is_extended,
+							    is_hw_stats)) {
 			ath12k_err(NULL,
 				   "nla put failure: Peer rx per_pkt stats for ring %d",
 				   ring_num + 1);
 			return -EINVAL;
 		}
+
+		/* HW offload RX stats — Ring 0 only */
+		if (((ring_num + 1) == QCA_VENDOR_ATTR_WLAN_TELEMETRY_REO_RING_0) &&
+		    ath12k_dp_hw_peer_stats_enabled(&ar->dp)) {
+			if (ath12k_fill_peer_hw_rx_stats(vendor_event,
+							 link_peer_stats,
+							 mld_stats,
+							 peer_type)) {
+				ath12k_err(NULL, "Error filling peer HW RX stats");
+				nla_nest_end(vendor_event, attr1);
+				nla_nest_end(vendor_event, attr);
+				return -EINVAL;
+			}
+		}
+
 		nla_nest_end(vendor_event, attr1);
 	}
 	nla_nest_end(vendor_event, attr);
@@ -5467,7 +6457,7 @@ static int ath12k_fill_peer_rx_stats(struct ath12k *ar,
 	}
 
 	/* RX Monitor Stats - gated by extended stats flag */
-	if (link_peer_stats && ath12k_extd_rx_stats_enabled(ar)) {
+	if (link_peer_stats && ath12k_extd_rx_stats_enabled(&ar->dp)) {
 		rx_mon_stats = link_peer_stats->rx_stats;
 
 		if (!rx_mon_stats)
@@ -5652,7 +6642,7 @@ static int ath12k_tele_sdwftx_stats_update(struct sk_buff *skb, struct ath12k_te
 		goto end;
 	}
 
-	for (pkt_type = 0; pkt_type < DOT11_MAX; pkt_type++) {
+	for (pkt_type = 0; pkt_type < QCA_WLAN_VENDOR_ATTR_TELE_SDWFTX_PKT_TYPE_MAX; pkt_type++) {
 		attr2 = nla_nest_start(skb, QCA_WLAN_VENDOR_ATTR_TELE_SDWFTX_PKT_TYPE_80211_A + pkt_type);
 		if (!attr2) {
 			ath12k_err(NULL, "nla_nest_failure: SDWFTX PKT_TYPE_80211\n");
@@ -5820,7 +6810,7 @@ static int ath12k_tele_sdwfdelay_stats_update(struct sk_buff *skb,
 	size = ARRAY_SIZE(delay->delay_hist.hist.freq);
 	for (buc_id = 0; buc_id < HIST_BUCKET_MAX && buc_id < size; buc_id++) {
 		if (nla_put_u64_64bit(skb,
-				QCA_WLAN_VENDOR_ATTR_TELE_SDWFDELAY_HIST_BUCKET_ID_0 + buc_id,
+				QCA_WLAN_VENDOR_ATTR_TELE_DELAY_HIST_BUCKET_ID_0 + buc_id,
 				delay->delay_hist.hist.freq[buc_id],
 				NL80211_ATTR_PAD)) {
 			ath12k_err(NULL, "nla_put_failure: SDWF DELAY HW_TX_COMP_DELAY TYPE attributes\n");
@@ -5892,9 +6882,14 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 					    struct ath12k_telemetry_command *cmd)
 {
 	struct ath12k_telemetry_dp_peer *telemetry_peer;
+	struct ath12k_dp_link_peer_hw_stats *hw_link_stats;
+	struct ath12k_dp_peer_hw_stats *hw_stats;
 	struct ath12k_htt_tx_stats *htt_tx_stats;
 	struct ath12k *ar = &ahvif->ah->radio[0];
 	struct ath12k_dp_proto_stats_peer *proto;
+	struct ath12k_dp_peer_tid_agg_delay_stats *delay = NULL;
+	struct ath12k_dp_peer_tid_agg_jitter_stats *jitter = NULL;
+	struct ath12k_dp_peer_tid_agg_sojourn_stats *sojourn = NULL;
 	struct ath12k_rx_peer_stats *rx_mon_stats;
 	struct nlattr *attr;
 	int ret = -EINVAL;
@@ -5933,8 +6928,65 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 	}
 	telemetry_peer->peer_stats.proto = proto;
 
-	if (ath12k_dp_get_peer_stats(ahvif, telemetry_peer, cmd->mac,
-				     cmd->link_id)) {
+	if (ath12k_dp_hw_peer_stats_enabled(&ar->dp)) {
+		hw_link_stats = vzalloc(sizeof(*hw_link_stats));
+		if (!hw_link_stats) {
+			vfree(proto);
+			vfree(htt_tx_stats);
+			vfree(rx_mon_stats);
+			vfree(telemetry_peer);
+			return -ENOMEM;
+		}
+		telemetry_peer->link_peer_stats.hw_link_stats = hw_link_stats;
+
+		hw_stats = vzalloc(sizeof(*hw_stats));
+		if (!hw_stats) {
+			vfree(hw_link_stats);
+		}
+		telemetry_peer->mld_stats.hw_stats = hw_stats;
+	}
+
+	if (ath12k_dp_delay_stats_enabled(&ar->dp)) {
+		delay = vzalloc(sizeof(*delay));
+
+		if (!delay) {
+			vfree(hw_link_stats);
+			vfree(proto);
+			vfree(htt_tx_stats);
+			vfree(rx_mon_stats);
+			vfree(telemetry_peer);
+			return -ENOMEM;
+		}
+		telemetry_peer->peer_stats.delay = delay;
+
+		jitter = vzalloc(sizeof(*jitter));
+		if (!jitter) {
+			vfree(delay);
+			vfree(hw_link_stats);
+			vfree(proto);
+			vfree(htt_tx_stats);
+			vfree(rx_mon_stats);
+			vfree(telemetry_peer);
+			return -ENOMEM;
+		}
+		telemetry_peer->peer_stats.jitter = jitter;
+
+		sojourn = vzalloc(sizeof(*sojourn));
+		if (!sojourn) {
+			vfree(jitter);
+			vfree(delay);
+			vfree(hw_link_stats);
+			vfree(proto);
+			vfree(htt_tx_stats);
+			vfree(rx_mon_stats);
+			vfree(telemetry_peer);
+			return -ENOMEM;
+		}
+		telemetry_peer->peer_stats.sojourn = sojourn;
+	}
+
+	if (ath12k_get_peer_telemetry_stats(ahvif, telemetry_peer, cmd->mac,
+					    cmd->link_id)) {
 		ath12k_err(NULL, "Error getting peer stats from dp");
 		goto out;
 	}
@@ -5948,6 +7000,7 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 						      &telemetry_peer->peer_stats,
 						      telemetry_peer->is_extended,
 						      &telemetry_peer->link_peer_stats,
+						      &telemetry_peer->mld_stats,
 						      telemetry_peer->peer_type)) {
 				ath12k_err(NULL, "nla put failure: Sta tx stats");
 				goto out;
@@ -5983,6 +7036,7 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 						      vendor_event,
 						      &telemetry_peer->peer_stats,
 						      &telemetry_peer->link_peer_stats,
+						      &telemetry_peer->mld_stats,
 						      telemetry_peer->is_extended,
 						      telemetry_peer->peer_type)) {
 				ath12k_err(NULL, "nla put failure: Sta rx stats");
@@ -6051,13 +7105,300 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 		}
 	}
 
+	if (cmd->feat.feat_delay) {
+		attr = nla_nest_start(vendor_event,
+				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_DELAY_EVENT);
+		if (attr) {
+			if (ath12k_fill_peer_delay_stats(ar,
+							 vendor_event,
+							 &telemetry_peer->peer_stats)) {
+				ath12k_err(NULL, "nla put failure: Delay stats");
+				ret = -EINVAL;
+				goto out;
+			}
+			nla_nest_end(vendor_event, attr);
+		} else {
+			ath12k_err(NULL, "nla nest failure: Sta Delay feat stats");
+			goto out;
+		}
+	}
+
+	if (cmd->feat.feat_jitter) {
+		attr = nla_nest_start(vendor_event,
+				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_JITTER_EVENT);
+		if (attr) {
+			if (ath12k_fill_peer_jitter_stats(ar,
+							  vendor_event,
+							  &telemetry_peer->peer_stats)) {
+				ath12k_err(NULL, "nla put failure: Jitter stats");
+				ret = -EINVAL;
+				goto out;
+			}
+			nla_nest_end(vendor_event, attr);
+		} else {
+			ath12k_err(NULL, "nla nest failure: Sta Jitter feat stats");
+			goto out;
+		}
+	}
+
+	if (cmd->feat.feat_sojourn) {
+		attr = nla_nest_start(vendor_event,
+				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_SOJOURN_EVENT);
+		if (attr) {
+			if (ath12k_fill_peer_sojourn_stats(ar,
+							   vendor_event,
+							   &telemetry_peer->peer_stats)) {
+				ath12k_err(NULL, "nla put failure: Sojourn stats");
+				ret = -EINVAL;
+				goto out;
+			}
+			nla_nest_end(vendor_event, attr);
+		} else {
+			ath12k_err(NULL, "nla nest failure: Sta Sojourn feat stats");
+			goto out;
+		}
+	}
+
 	ret = 0;
 out:
+	if (ath12k_dp_hw_peer_stats_enabled(&ar->dp)) {
+		vfree(hw_stats);
+		vfree(hw_link_stats);
+	}
 	vfree(proto);
+	vfree(delay);
+	vfree(jitter);
+	vfree(sojourn);
 	vfree(htt_tx_stats);
 	vfree(rx_mon_stats);
 	vfree(telemetry_peer);
 	return ret;
+}
+
+static int ath12k_send_cp_event(struct ath12k_telemetry_command *cmd,
+				struct sk_buff *vendor_event,
+				struct ath12k_vif *ahvif)
+{
+	struct ath12k_mgmt_frame_stats *mgmt_stats = &ahvif->mgmt_stats;
+	u64 tx_success_count = 0, tx_failure_count = 0;
+	struct ath12k_fw_stats_req_params param = {0};
+	struct ath12k_fw_stats_bcn *bcn_stats;
+	struct ath12k_link_vif *arvif;
+	int ret = 0, vdev_id = 0;
+	struct nlattr *attr;
+	bool found = false;
+	struct ath12k *ar;
+
+	/* No specific link requested; fall back to the default link */
+	arvif = &ahvif->deflink;
+	if (cmd->link_id != INVALID_LINK_ID) {
+		/* Validate that the requested link_id is within range and
+		 * actually exists in the driver's active links bitmap.
+		 */
+		if (cmd->link_id >= ATH12K_NUM_MAX_LINKS ||
+		    !(ahvif->links_map & BIT(cmd->link_id))) {
+			ath12k_err(NULL, "Invalid link_id %d for control path stats\n",
+				   cmd->link_id);
+			return -EINVAL;
+		}
+		arvif = ath12k_get_arvif_from_link_id(ahvif, cmd->link_id);
+	}
+
+	if (!arvif || !arvif->ar) {
+		ath12k_err(NULL, "Failed to get arvif for link_id %d\n", cmd->link_id);
+		return -EINVAL;
+	}
+
+	ar = arvif->ar;
+
+	/* Get beacon stats from FW */
+	ath12k_fw_stats_reset(ar);
+	param.pdev_id = ath12k_mac_get_target_pdev_id(ar);
+	param.vdev_id = arvif->vdev_id;
+	param.stats_id = WMI_REQUEST_BCN_STAT;
+
+	ret = ath12k_mac_get_fw_stats_per_vif(ar, &param);
+	if (ret) {
+		ath12k_err(ar->ab, "failed to request fw stats: %d\n", ret);
+		return ret;
+	}
+
+	/* Extract tx_bcn_succ_cnt and tx_bcn_outage_cnt from ar->fw_stats.bcn list */
+	spin_lock_bh(&ar->data_lock);
+	list_for_each_entry(bcn_stats, &ar->fw_stats.bcn, list) {
+		if (bcn_stats->vdev_id == arvif->vdev_id) {
+			vdev_id = bcn_stats->vdev_id;
+			tx_success_count = bcn_stats->tx_bcn_succ_cnt;
+			tx_failure_count = bcn_stats->tx_bcn_outage_cnt;
+			found = true;
+			break;
+		}
+	}
+	spin_unlock_bh(&ar->data_lock);
+	ath12k_fw_stats_bcn_free(&ar->fw_stats.bcn); /* Free after use, outside lock */
+	if (!found) {
+		ath12k_err(ar->ab, "beacon stats not found for vdev_id %d\n",
+			   arvif->vdev_id);
+		return -ENOENT;
+	}
+
+	attr = nla_nest_start(vendor_event,
+			      QCA_VENDOR_ATTR_WLAN_TELEMETRY_VAP_CP_STATS_EVENT);
+	if (!attr) {
+		ath12k_err(ar->ab, "nla nest failure: CP stats\n");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TELEMETRY_CP_VDEV_ID, vdev_id) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_BEACON_COUNT,
+		tx_success_count,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_BEACON_OUTAGE_COUNT,
+		tx_failure_count,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_PROBE_REQUEST,
+		mgmt_stats->tx_succ_cnt[QCA_VENDOR_MGMT_STATS_PROBE_REQ],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_PROBE_RESPONSE,
+		mgmt_stats->tx_succ_cnt[QCA_VENDOR_MGMT_STATS_PROBE_RESP],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_ASSOC_REQUEST_SUCCESS,
+		mgmt_stats->tx_succ_cnt[QCA_VENDOR_MGMT_STATS_ASSOC_REQ],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_ASSOC_REQUEST_FAILURE,
+		mgmt_stats->tx_fail_cnt[QCA_VENDOR_MGMT_STATS_ASSOC_REQ],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_ASSOC_RESPONSE_SUCCESS,
+		mgmt_stats->tx_succ_cnt[QCA_VENDOR_MGMT_STATS_ASSOC_RESP],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_ASSOC_RESPONSE_FAILURE,
+		mgmt_stats->tx_fail_cnt[QCA_VENDOR_MGMT_STATS_ASSOC_RESP],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_ACTION_SENT_SUCCESS,
+		mgmt_stats->tx_succ_cnt[QCA_VENDOR_MGMT_STATS_ACTION],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_ACTION_NO_ACK_SENT_SUCCESS,
+		mgmt_stats->tx_succ_cnt[QCA_VENDOR_MGMT_STATS_ACTION_NO_ACK],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_ACTION_SENT_FAIL,
+		mgmt_stats->tx_fail_cnt[QCA_VENDOR_MGMT_STATS_ACTION],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_ACTION_NO_ACK_SENT_FAIL,
+		mgmt_stats->tx_fail_cnt[QCA_VENDOR_MGMT_STATS_ACTION_NO_ACK],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_ACTION_COMPLETION_SUCCESS,
+		mgmt_stats->tx_compl_succ[QCA_VENDOR_MGMT_STATS_ACTION],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_ACTION_NO_ACK_COMPLETION_SUCCESS,
+		mgmt_stats->tx_compl_succ[QCA_VENDOR_MGMT_STATS_ACTION_NO_ACK],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_ACTION_COMPLETION_FAIL,
+		mgmt_stats->tx_compl_fail[QCA_VENDOR_MGMT_STATS_ACTION],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_ACTION_NO_ACK_COMPLETION_FAIL,
+		mgmt_stats->tx_compl_fail[QCA_VENDOR_MGMT_STATS_ACTION_NO_ACK],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_MGMT_FRAMES,
+		mgmt_stats->aggr_tx_mgmt_cnt,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_MGMT_SUCCESS_COUNT,
+		mgmt_stats->aggr_tx_mgmt_success_cnt,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_TX_MGMT_FAILURE_COUNT,
+		mgmt_stats->aggr_tx_mgmt_fail_cnt,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_RX_BEACON_COUNT,
+		mgmt_stats->rx_cnt[QCA_VENDOR_MGMT_STATS_BEACON],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_RX_PROBE_REQUEST_UCAST,
+		mgmt_stats->rx_cnt[QCA_VENDOR_MGMT_STATS_PROBE_REQ],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_RX_PROBE_REQUEST_BCAST,
+		ar->dp.stats.telemetry_stats.rx_probe_req_bc,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_RX_ASSOC_WITH_NO_RATE_MATCH,
+		mgmt_stats->rx_assoc_no_rate_match,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_RX_ASSOC_WITH_BAD_WPAIE,
+		mgmt_stats->rx_assoc_bad_wpaie,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_RX_ASSOC_WITH_CAP_MISMATCH,
+		mgmt_stats->rx_assoc_cap_mismatch,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_RX_ACTION,
+		mgmt_stats->rx_cnt[QCA_VENDOR_MGMT_STATS_ACTION],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_RX_ACTION_NO_ACK,
+		mgmt_stats->rx_cnt[QCA_VENDOR_MGMT_STATS_ACTION_NO_ACK],
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID) ||
+	    nla_put_u64_64bit
+		(vendor_event,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_RX_MGMT_FRAMES,
+		mgmt_stats->aggr_rx_mgmt,
+		QCA_VENDOR_ATTR_TELEMETRY_CP_INVALID)) {
+		ath12k_err(ar->ab, "nla put failure: cp stats\n");
+		nla_nest_cancel(vendor_event, attr);
+		return -EINVAL;
+	}
+
+	nla_nest_end(vendor_event, attr);
+
+	return 0;
 }
 
 static int ath12k_stats_device_setup(struct ath12k_telemetry_command *cmd)
@@ -6116,6 +7457,234 @@ out:
 	return ret;
 }
 
+/**
+ * ath12k_dp_get_radio_cp_stats() - Collect all Radio Control Path stats
+ * @ar: pointer to ath12k radio instance
+ * @telemetry_radio: pre-populated DP radio stats (RTS counters sourced here)
+ * @dp_tx_failed: aggregated TX failure count from DP layer
+ * @cp_stats: caller-allocated struct to be filled with all CP stat values
+ *
+ * Gathers every field needed by the Radio CP NL event into @cp_stats.
+ *
+ * Return: 0 on success; negative error code if FW stats request fails
+ *         (partial stats are still populated in that case).
+ */
+int ath12k_dp_get_radio_cp_stats(struct ath12k_telemetry_dp_radio *telemetry_radio,
+				 struct ath12k_radio_cp_stats *cp_stats,
+				 struct ath12k *ar,
+				 u32 dp_tx_failed)
+{
+	struct ath12k_dp_link_peer_stats *link_peer_stats;
+	struct ath12k_link_vif *arvif;
+
+	cp_stats->tx_failed = dp_tx_failed;
+
+	/* RTS counters: use the same aggregated pdev stats source as RADIO DP
+	 * so RADIO CP RTS matches RADIO DP RTS exactly.
+	 */
+	if (telemetry_radio &&
+	    telemetry_radio->aggr_pdev_stats.link_peer_stats.tx_stats) {
+		link_peer_stats = &telemetry_radio->aggr_pdev_stats.link_peer_stats;
+		cp_stats->tx_rts_success = link_peer_stats->tx_stats->rts_success;
+		cp_stats->tx_rts_fail    = link_peer_stats->tx_stats->rts_failure;
+	}
+
+	spin_lock_bh(&ar->data_lock);
+	list_for_each_entry(arvif, &ar->arvifs, list)
+		cp_stats->rx_mgmt += arvif->ahvif->mgmt_stats.aggr_rx_mgmt;
+
+	/* Read all telemetry stats under the same lock so they are
+	 * consistent with each other and with rx_mgmt above.
+	 */
+	cp_stats->rx_crc_err     = ar->dp.stats.telemetry_stats.rx_crc_err;
+	cp_stats->rx_decrypt_err = ar->dp.stats.telemetry_stats.rx_decrypt_err;
+	cp_stats->rx_mic_err     = ar->dp.stats.telemetry_stats.rx_mic_err;
+	cp_stats->rx_over_run    = ar->dp.stats.telemetry_stats.rx_over_run;
+	cp_stats->rx_ctrl        = ar->dp.stats.telemetry_stats.rx_bar_cnt;
+	spin_unlock_bh(&ar->data_lock);
+
+	return 0;
+}
+
+/**
+ * ath12k_mac_get_chan_survey_noise() - Read the cached noise floor for a channel.
+ * @ar:      radio instance whose survey cache is queried
+ * @channel: channel whose noise floor is requested
+ *
+ * Uses the same freq-to-survey-index mapping as the WMI survey event handler
+ * (freq_to_idx() in wmi.c) so the correct ar->survey[] slot is always
+ * addressed.  Only bands that this radio actually supports are counted,
+ * matching the indexing used when ar->survey[] is populated.
+ *
+ * Caller must hold the wiphy lock (lockdep_assert_wiphy).
+ *
+ * Return: noise floor in dBm, or ATH12K_DEFAULT_NOISE_FLOOR if the survey
+ *         slot has not been populated yet or the channel is not found.
+ */
+static s8 ath12k_mac_get_chan_survey_noise(struct ath12k *ar,
+					   struct ieee80211_channel *channel)
+{
+	struct ieee80211_supported_band *sband;
+	struct ieee80211_hw *hw = ath12k_ar_to_hw(ar);
+	int band, ch, idx = 0;
+	s8 noise;
+
+	lockdep_assert_wiphy(hw->wiphy);
+
+	for (band = NL80211_BAND_2GHZ; band < NUM_NL80211_BANDS; band++) {
+		if (!ar->mac.sbands[band].channels)
+			continue;
+
+		sband = hw->wiphy->bands[band];
+		if (!sband)
+			continue;
+
+		for (ch = 0; ch < sband->n_channels; ch++, idx++) {
+			if (sband->channels[ch].center_freq == channel->center_freq)
+				goto found;
+		}
+	}
+
+	/* Channel not found in any band supported by this radio */
+	return ATH12K_DEFAULT_NOISE_FLOOR;
+
+found:
+	if (idx >= ATH12K_NUM_CHANS)
+		return ATH12K_DEFAULT_NOISE_FLOOR;
+
+	spin_lock_bh(&ar->data_lock);
+	if (ar->survey[idx].filled & SURVEY_INFO_NOISE_DBM)
+		noise = ar->survey[idx].noise;
+	else
+		noise = ATH12K_DEFAULT_NOISE_FLOOR;
+	spin_unlock_bh(&ar->data_lock);
+
+	return noise;
+}
+
+static int ath12k_fill_radio_cp_stats(struct ath12k_telemetry_dp_radio *telemetry_radio,
+				      struct ath12k_telemetry_command *cmd,
+				      struct sk_buff *vendor_event,
+				      struct ath12k *ar,
+				      u32 dp_tx_failed)
+{
+	struct ath12k_radio_cp_stats cp_stats = {};
+#ifdef CPTCFG_ATH12K_DEBUGFS
+	struct nlattr *nf_nest;
+#endif
+	struct nlattr *attr;
+	s8 dynamic_nf = 0;
+	int ret;
+	int i;
+
+	ret = ath12k_dp_get_radio_cp_stats(telemetry_radio, &cp_stats, ar,
+					   dp_tx_failed);
+	if (ret)
+		return ret;
+
+	/* Obtain dynamic (runtime) NF via the WMI BSS survey path - the same
+	 * mechanism used by "iw dev survey dump".  After triggering the survey
+	 * request, find the survey index for rx_channel and read its noise
+	 * field under data_lock.
+	 *
+	 * Static NF (bdf_nf_chains[]) is fetched separately via HTT PHY stats.
+	 */
+	if (ar->rx_channel) {
+		ath12k_mac_update_bss_chan_survey(ar, ar->rx_channel);
+		dynamic_nf = ath12k_mac_get_chan_survey_noise(ar, ar->rx_channel);
+	}
+
+#ifdef CPTCFG_ATH12K_DEBUGFS
+	/* Fetch static NF chains via HTT PHY stats (type 37) */
+	ret = ath12k_telemetry_get_phy_nf(ar);
+	if (ret)
+		ath12k_warn(ar->ab,
+			    "failed to fetch static NF via HTT PHY stats: %d\n", ret);
+#endif /* CPTCFG_ATH12K_DEBUGFS */
+
+	attr = nla_nest_start(vendor_event,
+			      QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_EVENT);
+	if (!attr) {
+		ath12k_err(ar->ab, "nla nest failure: radio CP stats\n");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_TX_FAILED,
+			cp_stats.tx_failed) ||
+	    nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_TX_RTS_SUCCESS,
+			cp_stats.tx_rts_success) ||
+	    nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_TX_RTS_FAIL,
+			cp_stats.tx_rts_fail) ||
+	    nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_RX_MGMT,
+			cp_stats.rx_mgmt) ||
+	    nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_RX_CTRL,
+			cp_stats.rx_ctrl) ||
+	    nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_RX_DECRYPT_ERR,
+			cp_stats.rx_decrypt_err) ||
+	    nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_RX_MIC_ERR,
+			cp_stats.rx_mic_err) ||
+	    nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_RX_OVER_RUN,
+			cp_stats.rx_over_run) ||
+	    nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_RX_CRC_ERR,
+			cp_stats.rx_crc_err) ||
+	    nla_put_s32(vendor_event,
+			QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_CHAN_NF_DYNAMIC,
+			dynamic_nf)) {
+		ath12k_err(ar->ab, "nla put failure: radio CP stats\n");
+		nla_nest_cancel(vendor_event, attr);
+		return -EINVAL;
+	}
+
+#ifdef CPTCFG_ATH12K_DEBUGFS
+	/* Send all valid static NF chains as a nested attribute.
+	 * Each entry is an NLA_S32 indexed by chain number (1-based).
+	 * Chains with value == 1 are invalid/unused and are skipped.
+	 * bdf_nf_chains[] is only populated when CPTCFG_ATH12K_DEBUGFS is
+	 * enabled (via ath12k_telemetry_get_phy_nf()); omit this attribute
+	 * entirely when built without debugfs to avoid sending stale/zero
+	 * values to userspace.
+	 */
+	nf_nest = nla_nest_start
+		(vendor_event,
+		QCA_VENDOR_ATTR_WLAN_TELEMETRY_RADIO_CP_STATS_CHAN_NF_STATIC);
+	if (!nf_nest) {
+		ath12k_err(ar->ab, "nla nest start failure: static NF\n");
+		nla_nest_cancel(vendor_event, attr);
+		return -EINVAL;
+	}
+	for (i = 0; i < ATH12K_HTT_STATS_MAX_CHAINS; i++) {
+		/* Skip chains where the firmware reported the sentinel value 1.
+		 * The firmware uses 1 (positive 1 dBm) to indicate an unused or
+		 * inactive chain. This value is unambiguous: valid noise floor
+		 * readings are always negative in dBm (e.g. ATH12K_DEFAULT_NOISE_FLOOR
+		 * = -95), so +1 dBm can never occur as a real NF measurement.
+		 */
+		if (ar->bdf_nf_chains[i] != 1 &&
+		    nla_put_s32(vendor_event, i + 1,
+				ar->bdf_nf_chains[i])) {
+			ath12k_err(ar->ab,
+				   "nla put failure: static NF chain %d\n", i + 1);
+			nla_nest_cancel(vendor_event, nf_nest);
+			nla_nest_cancel(vendor_event, attr);
+			return -EINVAL;
+		}
+	}
+	nla_nest_end(vendor_event, nf_nest);
+#endif /* CPTCFG_ATH12K_DEBUGFS */
+	nla_nest_end(vendor_event, attr);
+
+	return 0;
+}
+
 static struct ath12k_vif *ath12k_get_ahvif_from_wdev(struct wireless_dev *wdev)
 {
 	struct ieee80211_vif *vif;
@@ -6142,6 +7711,12 @@ static int ath12k_stats_peer_setup(struct ath12k_telemetry_command *cmd)
 
 	if (!ahvif) {
 		ath12k_err(NULL, "ahvif not present");
+		return -EINVAL;
+	}
+
+	if (ahvif->deflink.ar && ahvif->deflink.ar->ab &&
+	    test_bit(ATH12K_FLAG_CRASH_FLUSH, &ahvif->deflink.ar->ab->dev_flags)) {
+		ath12k_err(NULL, "Peer stats return. Recovery in progress\n");
 		return -EINVAL;
 	}
 
@@ -6199,6 +7774,7 @@ static int ath12k_fill_vap_rx_stats(struct ath12k *ar,
 					vendor_event,
 					&telemetry_vif->aggr_vif_stats.peer_stats,
 					&telemetry_vif->aggr_vif_stats.link_peer_stats,
+					&telemetry_vif->aggr_vif_stats.mld_stats,
 					telemetry_vif->is_extended,
 					ATH12K_PEER_INVAL);
 
@@ -6487,6 +8063,7 @@ static int ath12k_fill_vap_tx_stats(struct ath12k *ar,
 					&telemetry_vif->aggr_vif_stats.peer_stats,
 					telemetry_vif->is_extended,
 					&telemetry_vif->aggr_vif_stats.link_peer_stats,
+					&telemetry_vif->aggr_vif_stats.mld_stats,
 					ATH12K_PEER_INVAL);
 	if (ret) {
 		ath12k_err(NULL, "Error filling vap tx stats");
@@ -6504,14 +8081,21 @@ static int ath12k_prepare_vif_vendor_event(struct sk_buff *vendor_event,
 					   struct ath12k_telemetry_command *cmd)
 {
 	struct ath12k_telemetry_dp_vif *telemetry_vif;
-	struct ath12k *ar = &ahvif->ah->radio[0];
-	struct nlattr *attr;
-	struct ath12k_htt_tx_stats *htt_tx_stats;
-	struct ath12k_rx_peer_stats *rx_mon_stats;
 	struct ath12k_dp_proto_stats_peer *peer_proto;
 	struct ath12k_dp_proto_stats_vif *vif_proto;
+	struct ath12k_rx_peer_stats *rx_mon_stats;
+	struct ath12k_htt_tx_stats *htt_tx_stats;
+	struct ath12k_dp_link_peer_hw_stats *hw_link_stats;
+	struct ath12k_dp_peer_hw_stats *hw_stats;
+	struct ath12k *ar = &ahvif->ah->radio[0];
+	struct nlattr *attr;
 	u8 index;
 	int ret = -EINVAL;
+
+	if (!cmd) {
+		ath12k_err(NULL, "cmd parameter is NULL");
+		return ret;
+	}
 
 	telemetry_vif = vmalloc(sizeof(*telemetry_vif));
 	if (!telemetry_vif) {
@@ -6531,6 +8115,7 @@ static int ath12k_prepare_vif_vendor_event(struct sk_buff *vendor_event,
 	/* Allocate RX monitor stats for vif aggregation */
 	rx_mon_stats = vzalloc(sizeof(*rx_mon_stats));
 	if (!rx_mon_stats) {
+		vfree(htt_tx_stats);
 		vfree(telemetry_vif);
 		return -ENOMEM;
 	}
@@ -6541,7 +8126,7 @@ static int ath12k_prepare_vif_vendor_event(struct sk_buff *vendor_event,
 		vfree(rx_mon_stats);
 		vfree(htt_tx_stats);
 		vfree(telemetry_vif);
-			return -ENOMEM;
+		return -ENOMEM;
 	}
 	telemetry_vif->aggr_vif_stats.peer_stats.proto = peer_proto;
 
@@ -6556,6 +8141,35 @@ static int ath12k_prepare_vif_vendor_event(struct sk_buff *vendor_event,
 
 	for (index = 0; index < DP_TCL_NUM_RING_MAX; index++)
 		telemetry_vif->aggr_vif_stats.stats[index].proto = (vif_proto + index);
+
+	if (ath12k_dp_hw_peer_stats_enabled(&ar->dp)) {
+		hw_link_stats = vzalloc(sizeof(*hw_link_stats));
+		if (!hw_link_stats) {
+			vfree(vif_proto);
+			vfree(peer_proto);
+			vfree(rx_mon_stats);
+			vfree(htt_tx_stats);
+			vfree(telemetry_vif);
+			return -ENOMEM;
+		}
+		telemetry_vif->aggr_vif_stats.link_peer_stats.hw_link_stats =
+									hw_link_stats;
+
+		hw_stats = vzalloc(sizeof(*hw_stats));
+		if (!hw_stats) {
+			vfree(hw_link_stats);
+			vfree(vif_proto);
+			vfree(peer_proto);
+			vfree(rx_mon_stats);
+			vfree(htt_tx_stats);
+			vfree(telemetry_vif);
+			return -ENOMEM;
+		}
+		telemetry_vif->aggr_vif_stats.mld_stats.hw_stats = hw_stats;
+	}
+
+	if (ath12k_send_cp_event(cmd, vendor_event, ahvif))
+		ath12k_err(NULL, "Failed to send cp event");
 
 	ath12k_dp_get_vif_stats(ahvif, telemetry_vif, cmd->link_id);
 
@@ -6613,6 +8227,10 @@ static int ath12k_prepare_vif_vendor_event(struct sk_buff *vendor_event,
 
 	ret = 0;
 out:
+	if (ath12k_dp_hw_peer_stats_enabled(&ar->dp)) {
+		vfree(hw_stats);
+		vfree(hw_link_stats);
+	}
 	vfree(vif_proto);
 	vfree(peer_proto);
 	vfree(htt_tx_stats);
@@ -6631,6 +8249,12 @@ static int ath12k_stats_vif_setup(struct ath12k_telemetry_command *cmd)
 
 	if (!ahvif) {
 		ath12k_err(NULL, "ahvif not present");
+		return -EINVAL;
+	}
+
+	if (ahvif->deflink.ar && ahvif->deflink.ar->ab &&
+	    test_bit(ATH12K_FLAG_CRASH_FLUSH, &ahvif->deflink.ar->ab->dev_flags)) {
+		ath12k_err(NULL, "VAP stats return. Recovery in progress\n");
 		return -EINVAL;
 	}
 
@@ -6680,6 +8304,7 @@ static int ath12k_fill_radio_rx_stats(struct ath12k *ar,
 					vendor_event,
 					&telemetry_radio->aggr_pdev_stats.peer_stats,
 					&telemetry_radio->aggr_pdev_stats.link_peer_stats,
+					&telemetry_radio->aggr_pdev_stats.mld_stats,
 					telemetry_radio->is_extended,
 					ATH12K_PEER_INVAL);
 
@@ -6700,9 +8325,533 @@ static int ath12k_fill_radio_tx_stats(struct ath12k *ar,
 					&telemetry_radio->aggr_pdev_stats.peer_stats,
 					telemetry_radio->is_extended,
 					link_peer_stats,
+					&telemetry_radio->aggr_pdev_stats.mld_stats,
 					ATH12K_PEER_INVAL);
 
 	return ret;
+}
+
+static int ath12k_fill_tid_rx_stats(struct sk_buff *vendor_event,
+				    const struct ath12k_tid_rx_stats *rx,
+				    int tid_idx)
+{
+	struct nlattr *tid_attr;
+	struct nlattr *arr_attr;
+	int i;
+
+	tid_attr = nla_nest_start(vendor_event, tid_idx + 1);
+	if (!tid_attr)
+		return -EINVAL;
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_TID_RX_DELIVERED_TO_STACK,
+			rx->delivered_to_stack) ||
+	    nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TID_RX_MSDU_CNT,
+			rx->msdu_cnt) ||
+	    nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_TID_RX_MCAST_MSDU_CNT,
+			rx->mcast_msdu_cnt) ||
+	    nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_TID_RX_BCAST_MSDU_CNT,
+			rx->bcast_msdu_cnt)) {
+		nla_nest_cancel(vendor_event, tid_attr);
+		return -EINVAL;
+	}
+
+	/* RX fail counts */
+	arr_attr = nla_nest_start(vendor_event,
+				  QCA_VENDOR_ATTR_TID_RX_FAIL_CNT);
+	if (!arr_attr) {
+		nla_nest_cancel(vendor_event, tid_attr);
+		return -EINVAL;
+	}
+	for (i = 0; i < DP_TID_RX_SW_DROP_MAX &&
+		    i < ARRAY_SIZE(rx->fail_cnt); i++) {
+		if (nla_put_u32(vendor_event, i + 1, rx->fail_cnt[i])) {
+			nla_nest_cancel(vendor_event, arr_attr);
+			nla_nest_cancel(vendor_event, tid_attr);
+			return -EINVAL;
+		}
+	}
+	nla_nest_end(vendor_event, arr_attr);
+
+	/* REO error stats */
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_TID_RX_REO_ERR_CODE_INV,
+			rx->reo_err.reo_code_inv)) {
+		nla_nest_cancel(vendor_event, tid_attr);
+		return -EINVAL;
+	}
+
+	arr_attr = nla_nest_start(vendor_event,
+				  QCA_VENDOR_ATTR_TID_RX_REO_ERR_CODES);
+	if (!arr_attr) {
+		nla_nest_cancel(vendor_event, tid_attr);
+		return -EINVAL;
+	}
+	for (i = 0; i < HAL_REO_DEST_RING_ERROR_CODE_MAX &&
+		    i < ARRAY_SIZE(rx->reo_err.reo_code); i++) {
+		if (nla_put_u32(vendor_event, i + 1,
+				rx->reo_err.reo_code[i])) {
+			nla_nest_cancel(vendor_event, arr_attr);
+			nla_nest_cancel(vendor_event, tid_attr);
+			return -EINVAL;
+		}
+	}
+	nla_nest_end(vendor_event, arr_attr);
+
+	/* RXDMA error stats */
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_TID_RX_RXDMA_ERR_CODE_INV,
+			rx->rxdma_err.rxdma_code_inv)) {
+		nla_nest_cancel(vendor_event, tid_attr);
+		return -EINVAL;
+	}
+
+	arr_attr = nla_nest_start(vendor_event,
+				  QCA_VENDOR_ATTR_TID_RX_RXDMA_ERR_CODES);
+	if (!arr_attr) {
+		nla_nest_cancel(vendor_event, tid_attr);
+		return -EINVAL;
+	}
+	for (i = 0; i < HAL_REO_ENTR_RING_RXDMA_ECODE_MAX &&
+		    i < ARRAY_SIZE(rx->rxdma_err.rxdma_code); i++) {
+		if (nla_put_u32(vendor_event, i + 1,
+				rx->rxdma_err.rxdma_code[i])) {
+			nla_nest_cancel(vendor_event, arr_attr);
+			nla_nest_cancel(vendor_event, tid_attr);
+			return -EINVAL;
+		}
+	}
+	nla_nest_end(vendor_event, arr_attr);
+
+	/* Delay stats */
+	if (ath12k_fill_tid_delay_stats(vendor_event, &rx->to_stack_delay,
+					QCA_VENDOR_ATTR_TID_RX_TO_STACK_DELAY) ||
+	    ath12k_fill_tid_delay_stats(vendor_event, &rx->intfrm_delay,
+					QCA_VENDOR_ATTR_TID_RX_INTFRM_DELAY)) {
+		nla_nest_cancel(vendor_event, tid_attr);
+		return -EINVAL;
+	}
+
+	nla_nest_end(vendor_event, tid_attr);
+	return 0;
+}
+
+static int ath12k_fill_tid_tx_stats(struct sk_buff *vendor_event,
+				    const struct ath12k_tid_tx_stats *tx,
+				    int tid_idx)
+{
+	struct nlattr *tid_attr;
+	struct nlattr *arr_attr;
+	int i;
+
+	tid_attr = nla_nest_start(vendor_event, tid_idx + 1);
+	if (!tid_attr)
+		return -EINVAL;
+
+	/* TQM status counts */
+	arr_attr = nla_nest_start(vendor_event,
+				  QCA_VENDOR_ATTR_TID_TX_TQM_STATUS_CNT);
+	if (!arr_attr) {
+		nla_nest_cancel(vendor_event, tid_attr);
+		return -EINVAL;
+	}
+	for (i = 0; i < QCA_VENDOR_ATTR_WBM_TQM_REL_REASON_MAX &&
+		    i < ARRAY_SIZE(tx->tqm_status_cnt); i++) {
+		if (nla_put_u32(vendor_event, i + 1,
+				tx->tqm_status_cnt[i])) {
+			nla_nest_cancel(vendor_event, arr_attr);
+			nla_nest_cancel(vendor_event, tid_attr);
+			return -EINVAL;
+		}
+	}
+	nla_nest_end(vendor_event, arr_attr);
+
+	/* HTT status counts */
+	arr_attr = nla_nest_start(vendor_event,
+				  QCA_VENDOR_ATTR_TID_TX_HTT_STATUS_CNT);
+	if (!arr_attr) {
+		nla_nest_cancel(vendor_event, tid_attr);
+		return -EINVAL;
+	}
+	for (i = 0; i < QCA_VENDOR_ATTR_WBM_REL_HTT_TX_COMP_STATUS_MAX &&
+		    i < ARRAY_SIZE(tx->htt_status_cnt); i++) {
+		if (nla_put_u32(vendor_event, i + 1,
+				tx->htt_status_cnt[i])) {
+			nla_nest_cancel(vendor_event, arr_attr);
+			nla_nest_cancel(vendor_event, tid_attr);
+			return -EINVAL;
+		}
+	}
+	nla_nest_end(vendor_event, arr_attr);
+
+	/* SW drop counts */
+	arr_attr = nla_nest_start(vendor_event,
+				  QCA_VENDOR_ATTR_TID_TX_SW_DROP_CNT);
+	if (!arr_attr) {
+		nla_nest_cancel(vendor_event, tid_attr);
+		return -EINVAL;
+	}
+	for (i = 0; i < QCA_VENDOR_ATTR_TID_TX_SW_DROP_MAX &&
+		    i < ARRAY_SIZE(tx->swdrop_cnt); i++) {
+		if (nla_put_u32(vendor_event, i + 1,
+				tx->swdrop_cnt[i])) {
+			nla_nest_cancel(vendor_event, arr_attr);
+			nla_nest_cancel(vendor_event, tid_attr);
+			return -EINVAL;
+		}
+	}
+	nla_nest_end(vendor_event, arr_attr);
+
+	/* Software queue delay histogram */
+	if (ath12k_fill_tid_delay_stats(vendor_event, &tx->swq_delay,
+					   QCA_VENDOR_ATTR_TID_TX_SWQ_DELAY)) {
+		nla_nest_cancel(vendor_event, tid_attr);
+		return -EINVAL;
+	}
+
+	/* HW TX completion delay histogram */
+	if (ath12k_fill_tid_delay_stats(vendor_event, &tx->hwtx_delay,
+					   QCA_VENDOR_ATTR_TID_TX_HWTX_DELAY)) {
+		nla_nest_cancel(vendor_event, tid_attr);
+		return -EINVAL;
+	}
+
+	/* Inter-frame delay histogram */
+	if (ath12k_fill_tid_delay_stats(vendor_event, &tx->intfrm_delay,
+					   QCA_VENDOR_ATTR_TID_TX_INTFRM_DELAY)) {
+		nla_nest_cancel(vendor_event, tid_attr);
+		return -EINVAL;
+	}
+
+	nla_nest_end(vendor_event, tid_attr);
+
+	return 0;
+}
+
+static int ath12k_fill_radio_tid_stats(struct ath12k *ar,
+				       struct sk_buff *vendor_event,
+				       struct ath12k_dp_aggr_pdev_tid_stats *tid_stats)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct nlattr *tx_attr;
+	struct nlattr *rx_attr;
+	int tid;
+
+	/* TX TID stats */
+	tx_attr = nla_nest_start(vendor_event,
+				 QCA_VENDOR_ATTR_WLAN_TELEMETRY_TID_TX_STATS);
+	if (!tx_attr) {
+		ath12k_err(ab, "nla nest failure: TID TX stats");
+		return -EINVAL;
+	}
+
+	for (tid = 0; tid < QCA_VENDOR_WLAN_TELEMETRY_DATA_TIDS; tid++) {
+		if (ath12k_fill_tid_tx_stats(vendor_event,
+					     &tid_stats->tid_tx[tid], tid)) {
+			ath12k_err(ab, "Error filling TID TX stats for tid %d",
+				   tid);
+			nla_nest_cancel(vendor_event, tx_attr);
+			return -EINVAL;
+		}
+	}
+	nla_nest_end(vendor_event, tx_attr);
+
+	/* RX TID stats */
+	rx_attr = nla_nest_start(vendor_event,
+				 QCA_VENDOR_ATTR_WLAN_TELEMETRY_TID_RX_STATS);
+	if (!rx_attr) {
+		ath12k_err(ab, "nla nest failure: TID RX stats");
+		return -EINVAL;
+	}
+
+	for (tid = 0; tid < QCA_VENDOR_WLAN_TELEMETRY_DATA_TIDS; tid++) {
+		if (ath12k_fill_tid_rx_stats(vendor_event,
+					     &tid_stats->tid_rx[tid], tid)) {
+			ath12k_err(ab, "Error filling TID RX stats for tid %d",
+				   tid);
+			nla_nest_cancel(vendor_event, rx_attr);
+			return -EINVAL;
+		}
+	}
+	nla_nest_end(vendor_event, rx_attr);
+
+	return 0;
+}
+
+static int ath12k_fill_radio_mon_stats(struct sk_buff *vendor_event,
+				       struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_pdev_mon_dp_stats *stats;
+	struct ath12k_dp_mon *dp_mon;
+
+	stats = &dp_pdev->dp_mon_pdev->mon_stats;
+	dp_mon = dp_pdev->dp_mon_pdev->dp_mon;
+
+	if (!dp_mon) {
+		ath12k_err(NULL, "dp_mon not present");
+		return -ENODEV;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_STATUS_BUF_REAPED,
+			stats->status_buf_reaped)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "status_buf_reaped");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_STATUS_BUF_PROCESSED,
+			stats->status_buf_processed)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s",
+			   "status_buf_processed");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_STATUS_BUF_FREE,
+			stats->status_buf_free)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "status_buf_free");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_STATUS_BUF_ERROR_FREE,
+			stats->status_buf_error_free)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s",
+			   "status_buf_error_free");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_RING_DESC_EMPTY,
+			stats->ring_desc_empty)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "ring_desc_empty");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_RING_DESC_FLUSH,
+			stats->ring_desc_flush)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "ring_desc_flush");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_RING_DESC_TRUNC,
+			stats->ring_desc_trunc)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "ring_desc_trunc");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_PKT_TLV_PROCESSED,
+			stats->pkt_tlv_processed)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "pkt_tlv_processed");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_PKT_TLV_FREE,
+			stats->pkt_tlv_free)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "pkt_tlv_free");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_PKT_TLV_ERROR_FREE,
+			stats->pkt_tlv_error_free)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "pkt_tlv_error_free");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_PKT_TLV_TO_MAC80211,
+			stats->pkt_tlv_to_mac80211)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s",
+			   "pkt_tlv_to_mac80211");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_PKT_TLV_TRUNCATED,
+			stats->pkt_tlv_truncated)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "pkt_tlv_truncated");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_PKT_TLV_REAPED,
+			stats->pkt_tlv_reaped)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "pkt_tlv_reaped");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_NUM_SKB_ALLOC,
+			stats->num_skb_alloc)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "num_skb_alloc");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_NUM_SKB_FREE,
+			stats->num_skb_free)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "num_skb_free");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_NUM_SKB_TO_MAC80211,
+			stats->num_skb_to_mac80211)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s",
+			   "num_skb_to_mac80211");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_NUM_PPDU_REAPED,
+			stats->num_ppdu_reaped)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "num_ppdu_reaped");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_NUM_PPDU_PROCESSED,
+			stats->num_ppdu_processed)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "num_ppdu_processed");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_NUM_SKB_RAW,
+			stats->num_skb_raw)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "num_skb_raw");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_NUM_FRAG_RAW,
+			stats->num_frag_raw)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "num_frag_raw");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_NUM_SKB_ETH,
+			stats->num_skb_eth)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "num_skb_eth");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_NUM_FRAG_ETH,
+			stats->num_frag_eth)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "num_frag_eth");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_DROP_TLV,
+			stats->drop_tlv)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "drop_tlv");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_PPDU_DESC_USED,
+			stats->ppdu_desc_used)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "ppdu_desc_used");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_PPDU_DESC_PROC,
+			stats->ppdu_desc_proc)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "ppdu_desc_proc");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_PPDU_DESC_FREE,
+			stats->ppdu_desc_free)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "ppdu_desc_free");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_MON_STATS_PPDU_DESC_FREE_LIST_EMPTY_CNT,
+			stats->ppdu_desc_free_list_empty_cnt)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s",
+			   "ppdu_desc_free_list_empty_cnt");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_MON_STATS_RESTITCH_INSUFF_FRAGS_CNT,
+			stats->restitch_insuff_frags_cnt)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s",
+			   "restitch_insuff_frags_cnt");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_MON_STATS_INVALID_STATUS_MAGIC_NUM,
+			stats->invalid_status_magic_num)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s",
+			   "invalid_status_magic_num");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_MON_STATS_INVALID_PKT_MAGIC_NUM,
+			stats->invalid_pkt_magic_num)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s",
+			   "invalid_pkt_magic_num");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_NULL_MPDU_Q,
+			stats->null_mpdu_q)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "null_mpdu_q");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_SKB_ALLOC_FAIL,
+			stats->skb_alloc_fail)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "skb_alloc_fail");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_RX_HDR_NOT_RCVD,
+			stats->rx_hdr_not_rcvd)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "rx_hdr_not_rcvd");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_MIN_FRAGS_UNAVAILABLE,
+			stats->min_frags_unavailable)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s",
+			   "min_frags_unavailable");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_INVALID_MPDU_HDR_LEN,
+			stats->invalid_mpdu_hdr_len)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s",
+			   "invalid_mpdu_hdr_len");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_INVALID_IN_USE,
+			stats->invalid_in_use)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "invalid_in_use");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_INVALID_END_OFFSET,
+			stats->invalid_end_offset)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "invalid_end_offset");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_MON_STATS_STATUS_FRAG_ADD_TO_SKB,
+			stats->status_frag_add_to_skb)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s",
+			   "status_frag_add_to_skb");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_MON_STATS_STATUS_NUM_FRAG_REPLENISH,
+			dp_mon->num_frag_replenish)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "num_frag_replenish");
+		return -EMSGSIZE;
+	}
+
+	if (nla_put_u32(vendor_event,
+			QCA_VENDOR_ATTR_MON_STATS_STATUS_NUM_FRAG_FREE,
+			dp_mon->num_frag_free)) {
+		ath12k_err(NULL, "nla put failure: mon_stats-> %s", "num_frag_free");
+		return -EMSGSIZE;
+	}
+
+	return 0;
 }
 
 static int ath12k_prepare_radio_vendor_event(struct sk_buff *vendor_event,
@@ -6714,8 +8863,44 @@ static int ath12k_prepare_radio_vendor_event(struct sk_buff *vendor_event,
 	struct ath12k_base *ab = dp_pdev->ar->ab;
 	struct ath12k_htt_tx_stats *htt_tx_stats;
 	struct ath12k_rx_peer_stats *rx_mon_stats;
+	struct ath12k_dp_aggr_pdev_tid_stats *flat_tid_stats;
+	struct ath12k_dp_link_peer_hw_stats *hw_link_stats;
+	struct ath12k_dp_peer_hw_stats *hw_stats;
 	struct nlattr *attr;
 	int ret = -EINVAL;
+	u32 dp_tx_failed = 0;
+	int ring;
+
+	/* TID stats */
+	if (cmd->feat.feat_tid) {
+		flat_tid_stats = vzalloc(sizeof(*flat_tid_stats));
+		if (!flat_tid_stats)
+			return -ENOMEM;
+
+		if (ath12k_dp_pdev_get_tid_stats(ar, flat_tid_stats)) {
+			ath12k_err(ab, "Error getting pdev TID stats");
+			vfree(flat_tid_stats);
+			return -EINVAL;
+		}
+
+		attr = nla_nest_start(vendor_event,
+				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_TID_STATS_EVENT);
+		if (!attr) {
+			ath12k_err(ab, "nla nest failure: Radio TID stats");
+			vfree(flat_tid_stats);
+			return -EINVAL;
+		}
+
+		if (ath12k_fill_radio_tid_stats(ar, vendor_event, flat_tid_stats)) {
+			ath12k_err(ab, "Error filling radio TID stats");
+			nla_nest_cancel(vendor_event, attr);
+			vfree(flat_tid_stats);
+			return -EINVAL;
+		}
+		nla_nest_end(vendor_event, attr);
+		vfree(flat_tid_stats);
+		return 0;
+	}
 
 	telemetry_radio = vmalloc(sizeof(*telemetry_radio));
 	if (!telemetry_radio) {
@@ -6739,7 +8924,44 @@ static int ath12k_prepare_radio_vendor_event(struct sk_buff *vendor_event,
 	}
 	telemetry_radio->aggr_pdev_stats.link_peer_stats.rx_stats = rx_mon_stats;
 
+	if (ath12k_dp_hw_peer_stats_enabled(&ar->dp)) {
+		hw_link_stats = vzalloc(sizeof(*hw_link_stats));
+		if (!hw_link_stats) {
+			vfree(rx_mon_stats);
+			vfree(htt_tx_stats);
+			vfree(telemetry_radio);
+			return -ENOMEM;
+		}
+		telemetry_radio->aggr_pdev_stats.link_peer_stats.hw_link_stats =
+									hw_link_stats;
+
+		hw_stats = vzalloc(sizeof(*hw_stats));
+		if (!hw_stats) {
+			vfree(hw_link_stats);
+			vfree(rx_mon_stats);
+			vfree(htt_tx_stats);
+			vfree(telemetry_radio);
+			return -ENOMEM;
+		}
+		telemetry_radio->aggr_pdev_stats.mld_stats.hw_stats = hw_stats;
+	}
+
 	ath12k_dp_get_pdev_stats(dp_pdev, telemetry_radio);
+
+	/* Compute total TX failures from aggregated pdev stats (includes
+	 * both live and deleted peer stats).
+	 */
+	for (ring = 0; ring < DP_TCL_NUM_RING_MAX; ring++)
+		dp_tx_failed +=
+			telemetry_radio->aggr_pdev_stats.peer_stats.tx[ring].tx_failed;
+
+	/* Fill radio CP stats (pdev-level control path stats) */
+	if ((cmd->feat.feat_tx || cmd->feat.feat_rx) &&
+	    ath12k_fill_radio_cp_stats(telemetry_radio, cmd, vendor_event, ar,
+				       dp_tx_failed)) {
+		ath12k_err(ab, "Error filling radio CP stats");
+		goto out;
+	}
 
 	if (cmd->feat.feat_rx) {
 		attr = nla_nest_start(vendor_event,
@@ -6776,8 +8998,29 @@ static int ath12k_prepare_radio_vendor_event(struct sk_buff *vendor_event,
 		}
 	}
 
+	if (cmd->feat.feat_mon_stats) {
+		attr = nla_nest_start(vendor_event,
+				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_MON_STATS_EVENT);
+		if (attr) {
+			if (ath12k_fill_radio_mon_stats(vendor_event, dp_pdev)) {
+				ath12k_err(ab,
+					   "Error filling radio mon feat stats");
+				nla_nest_cancel(vendor_event, attr);
+				goto out;
+			}
+			nla_nest_end(vendor_event, attr);
+		} else {
+			ath12k_err(ab, "nla nest failure: Radio mon feat stats");
+			goto out;
+		}
+	}
+
 	ret = 0;
 out:
+	if (ath12k_dp_hw_peer_stats_enabled(&ar->dp)) {
+		vfree(hw_stats);
+		vfree(hw_link_stats);
+	}
 	vfree(htt_tx_stats);
 	vfree(rx_mon_stats);
 	vfree(telemetry_radio);
@@ -7036,7 +9279,7 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 	}
 
 	if (tb[QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_COMMAND]) {
-		ath12k_err(NULL,
+		ath12k_dbg(NULL, ATH12K_DBG_CFG,
 			   "wiphy:%p wdev: %p Extract wifi params\n",
 			   wiphy, wdev);
 		memset(&wifi_params, 0, sizeof(struct ath12k_wifi_generic_params));
@@ -7171,6 +9414,31 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 			   wdev->vap_submode, wdev->netdev->name);
 	}
 
+	if (tb[QCA_WLAN_VENDOR_ATTR_CONFIG_DYNAMIC_VLAN]) {
+		u8 dynamic_vlan = nla_get_u8(
+			tb[QCA_WLAN_VENDOR_ATTR_CONFIG_DYNAMIC_VLAN]);
+
+		vif = wdev_to_ieee80211_vif(wdev);
+		if (!vif || vif->type != NL80211_IFTYPE_AP) {
+			ath12k_err(NULL, "%s-invalid vif for dynamic_vlan\n",
+				   __func__);
+			return -EINVAL;
+		}
+
+		ahvif = ath12k_vif_to_ahvif(vif);
+		if (!ahvif) {
+			ath12k_err(NULL, "%s-ahvif is NULL for dynamic_vlan\n",
+				   __func__);
+			return -EINVAL;
+		}
+
+		ahvif->u.ap.dynamic_vlan = !!dynamic_vlan;
+		ath12k_dbg(NULL, ATH12K_DBG_CFG,
+			   "%s-configured dynamic_vlan: %u for(%s)\n",
+			   __func__, ahvif->u.ap.dynamic_vlan,
+			   wdev->netdev->name);
+	}
+
 	if (ath12k_vendor_set_wifi_config_extn(wiphy, tb, wdev))
 		return -EINVAL;
 
@@ -7245,6 +9513,21 @@ static int ath12k_vendor_wiphy_config_handler(struct wiphy *wiphy,
 				return -EINVAL;
 			}
 			break;
+		case QCA_NL80211_VENDOR_RADIO_SMART_ANT_CONFIG:
+			if (!wifi_params.data) {
+				ath12k_err(NULL,
+					   "Invalid SA param command received\n");
+				return -EINVAL;
+			}
+			ret = ath12k_vendor_set_wiphy_sa_configs(wiphy,
+								 &wifi_params);
+			if (ret) {
+				ath12k_err(NULL,
+					   "Failed to set SA config: %d\n", ret);
+				return -EINVAL;
+			}
+			break;
+
 #endif /* CPTCFG_QCN_EXTN */
 
 		default:
@@ -7451,6 +9734,18 @@ static int ath12k_vendor_get_wiphy_config_handler(struct wiphy *wiphy,
 				return -EINVAL;
 			}
 			break;
+#ifdef CPTCFG_QCN_EXTN
+		case QCA_NL80211_VENDOR_RADIO_SMART_ANT_CONFIG:
+			ret = ath12k_vendor_get_wiphy_sa_configs(wiphy,
+								 &wifi_params,
+								 &value);
+			if (ret) {
+				ath12k_err(NULL, "Failed to get SA configs:%d\n",
+					   ret);
+				return -EINVAL;
+			}
+			break;
+#endif
 		default:
 			ath12k_dbg(NULL, ATH12K_DBG_CFG,
 				   "Un-supported generic command\n");
@@ -7484,6 +9779,16 @@ static int ath12k_vendor_get_wiphy_config_handler(struct wiphy *wiphy,
 				goto err;
 			}
 			break;
+#ifdef CPTCFG_QCN_EXTN
+		case QCA_NL80211_VENDOR_RADIO_SMART_ANT_CONFIG:
+			if ((nla_put_u32(skb, data_attr, value)) ||
+			    (nla_put_u32(skb, length_attr, sizeof(u32))) ||
+			    (nla_put_u32(skb, flags_attr, 0))) {
+				ret = -EINVAL;
+				goto err;
+			}
+			break;
+#endif
 		}
 	}
 
@@ -7560,9 +9865,9 @@ int ath12k_vendor_trigg_pri_link_migrate(struct wiphy *wiphy,
 	arg.link_id = link_id;
 	memcpy(arg.addr, mac_addr, ETH_ALEN);
 
-	mutex_lock(&ahvif->ah->hw_mutex);
+	wiphy_lock(wiphy);
 	ret = ath12k_mac_process_link_migrate_req(ahvif, &arg);
-	mutex_unlock(&ahvif->ah->hw_mutex);
+	wiphy_unlock(wiphy);
 
 	if (ret)
 		ath12k_info(NULL,
@@ -8889,28 +11194,42 @@ static int ath12k_vendor_atf_offload_wmm_ac_config(struct ath12k *ar,
 static void ath12k_update_atf_peer_info(struct ath12k *ar,
 					struct ath12k_atf_peer_params *peer_param)
 {
-	struct ath12k_dp *dp;
-	struct ath12k_dp_link_peer *link_peer;
+	struct ath12k_link_sta *arsta;
 	struct ath12k_atf_peer_info *param_peer_info;
-	struct ath12k_base *ab = ar->ab;
+	union ath12k_config_param val = {0};
 	int i;
+	void *dp_peer;
 
 	param_peer_info = peer_param->peer_info;
 
-	dp = ath12k_ab_to_dp(ab);
-	spin_lock_bh(&dp->dp_lock);
+	rcu_read_lock();
+	spin_lock_bh(&ar->arsta_lock);
 
 	for (i = 0; i < peer_param->num_peers; i++) {
-		link_peer = ath12k_dp_link_peer_find_by_addr(dp, param_peer_info->peer_macaddr);
-		if (!link_peer)
+		arsta = ath12k_link_sta_find_by_addr(ar, param_peer_info->peer_macaddr);
+		if (!arsta || !arsta->ahsta) {
+			param_peer_info++;
 			continue;
+		}
 
-		link_peer->atf_peer_conf_airtime = param_peer_info->percentage_peer;
-		link_peer->atf_group_index = param_peer_info->group_index;
+		dp_peer = ath12k_sta_get_dp_peer_rcu(arsta->ahsta);
+		if (!dp_peer) {
+			param_peer_info++;
+			continue;
+		}
+
+		val.atf_params.atf_peer_conf_airtime = param_peer_info->percentage_peer;
+		val.atf_params.atf_group_index = param_peer_info->group_index;
+
+		ath12k_dp_link_peer_set_param_by_dp_peer_and_link_id(dp_peer,
+								     arsta->link_id,
+								     ATH12K_DP_LINK_PEER_ATF_PARAM,
+								     &val);
 		param_peer_info++;
 	}
 
-	spin_unlock_bh(&dp->dp_lock);
+	spin_unlock_bh(&ar->arsta_lock);
+	rcu_read_unlock();
 }
 
 static int ath12k_vendor_atf_offload_peer_config(struct ath12k *ar,
@@ -9011,17 +11330,29 @@ static int ath12k_vendor_atf_offload_peer_config(struct ath12k *ar,
 	return ret;
 }
 
+static
+void ath12k_atf_offload_reset_stats_cb(struct ath12k_pdev_dp *dp_pdev,
+				       struct ath12k_dp_link_peer *peer,
+				       void *data)
+{
+	struct ath12k_atf_peer_airtime *atf_peer_airtime;
+
+	if (!ath12k_dp_link_peer_get_sta(peer))
+		return;
+
+	peer->atf_actual_airtime = 0;
+	atf_peer_airtime = &peer->atf_peer_airtime;
+
+	memset(atf_peer_airtime, 0, sizeof(*atf_peer_airtime));
+}
+
 static void ath12k_atf_offload_reset_stats(struct ath12k *ar)
 {
-	struct ath12k_dp_link_peer *peer, *tmp;
-	struct ath12k_base *ab = ar->ab;
-	struct ath12k_atf_peer_airtime *atf_peer_airtime;
 	struct ath12k_pdev_dp *dp = &ar->dp;
 	struct ath12k_pdev_dp_stats *pdev_stats = &dp->stats;
 	struct ath12k_atf_pdev_airtime *atf_pdev_airtime =
 		&pdev_stats->atf_airtime;
 	struct ath12k_atf *atf_table = &ar->atf_table;
-	struct ath12k_dp *ab_dp = ath12k_ab_to_dp(ab);
 	int i;
 
 	memset(atf_pdev_airtime, 0, sizeof(*atf_pdev_airtime));
@@ -9032,115 +11363,157 @@ static void ath12k_atf_offload_reset_stats(struct ath12k *ar)
 		atf_table->group_info[i].atf_actual_ul_duration = 0;
 	}
 
-	spin_lock_bh(&ab_dp->dp_lock);
-	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
-		if (peer->pdev_idx != ar->pdev_idx && !ath12k_dp_link_peer_get_sta(peer))
-			continue;
+	ath12k_dp_link_peer_iterate_by_dp_pdev(&ar->dp,
+					       ath12k_atf_offload_reset_stats_cb,
+					       NULL);
 
-		peer->atf_actual_airtime = 0;
-		atf_peer_airtime = &peer->atf_peer_airtime;
-
-		memset(atf_peer_airtime, 0, sizeof(*atf_peer_airtime));
-	}
-	spin_unlock_bh(&ab_dp->dp_lock);
 	ar->atf_stats_accum_start_time = ath12k_get_timestamp_in_us();
+}
+
+struct ath12k_atf_update_airtime_params {
+	u32 pdev_ul_airtime;
+	u32 pdev_actual_airtime;
+};
+
+static
+void ath12k_atf_offload_update_peer_airtime_cb(struct ath12k_pdev_dp *dp_pdev,
+					       struct ath12k_dp_link_peer *peer,
+					       void *data)
+{
+	int ac, i;
+	u8 group_index = 0xFF;
+	struct ath12k *ar = dp_pdev->ar;
+	struct ath12k_atf_update_airtime_params *params =
+					(struct ath12k_atf_update_airtime_params *)data;
+	u32 pdev_ul_airtime = params->pdev_ul_airtime;
+	u32 pdev_actual_airtime = params->pdev_actual_airtime;
+	struct ath12k_atf_peer_airtime *atf_peer_airtime;
+	u32 peer_airtime, peer_ul_airtime;
+
+	if (!ath12k_dp_link_peer_get_sta(peer))
+		return;
+
+	peer_airtime = 0;
+	peer_ul_airtime = 0;
+
+	for (i = 0; i < ar->atf_table.total_groups; i++) {
+		if (peer->atf_group_index ==
+				ar->atf_table.group_info[i].group_id) {
+			group_index = i;
+			break;
+		}
+	}
+
+	atf_peer_airtime = &peer->atf_peer_airtime;
+
+	for (ac = 0; ac < WME_NUM_AC; ac++) {
+		peer_airtime += atf_peer_airtime->tx_airtime_consumption[ac].consumption;
+		peer_ul_airtime += atf_peer_airtime->rx_airtime_consumption[ac].consumption;
+	}
+
+	if (peer_airtime > 0 && pdev_actual_airtime > 0) {
+		peer->atf_actual_duration = peer_airtime;
+		peer->atf_actual_airtime =
+			(u32)div_u64((u64)peer_airtime * 100ULL,  pdev_actual_airtime);
+	} else {
+		peer->atf_actual_airtime = 0;
+		peer->atf_actual_duration = 0;
+	}
+
+	if (peer_ul_airtime > 0 && pdev_ul_airtime > 0) {
+		peer->atf_actual_ul_duration = peer_ul_airtime;
+		peer->atf_ul_airtime =
+			(u32)div_u64((u64)peer_ul_airtime * 100ULL, pdev_ul_airtime);
+	} else {
+		peer->atf_ul_airtime = 0;
+		peer->atf_actual_ul_duration = 0;
+	}
+
+	if (group_index < ar->atf_table.total_groups) {
+		ar->atf_table.group_info[group_index].atf_actual_duration += peer_airtime;
+		ar->atf_table.group_info[group_index].atf_actual_ul_duration +=
+									peer_ul_airtime;
+		ar->atf_table.group_info[group_index].atf_actual_airtime +=
+								peer->atf_actual_airtime;
+	} else {
+		ath12k_warn(ar->ab, "ATF: Invalid group index %u for peer %pM (max: %u)",
+			    group_index, peer->addr, ar->atf_table.total_groups - 1);
+	}
 }
 
 static void ath12k_atf_offload_update_peer_airtime(struct ath12k *ar)
 {
-	struct ath12k_dp_link_peer *peer, *tmp;
-	struct ath12k_base *ab = ar->ab;
-	struct ath12k_atf_peer_airtime *atf_peer_airtime;
-	struct ath12k_dp *dp;
 	struct ath12k_pdev_dp *ar_dp = &ar->dp;
 	struct ath12k_pdev_dp_stats *pdev_stats = &ar_dp->stats;
 	struct ath12k_atf_pdev_airtime *atf_pdev_airtime =
 		&pdev_stats->atf_airtime;
-	u8 group_index = 0xFF;
-	u32 peer_airtime, peer_ul_airtime, pdev_actual_airtime = 0, pdev_ul_airtime = 0;
-	int ac, i;
+	u32 pdev_actual_airtime = 0, pdev_ul_airtime = 0;
+	int ac;
+	struct ath12k_atf_update_airtime_params params;
 
 	for (ac = 0; ac < WME_NUM_AC; ac++) {
 		pdev_actual_airtime += atf_pdev_airtime->tx_airtime_consumption[ac];
 		pdev_ul_airtime += atf_pdev_airtime->rx_airtime_consumption[ac];
 	}
 
-	dp = ath12k_ab_to_dp(ar->ab);
-	spin_lock_bh(&dp->dp_lock);
-	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
-		if (peer->pdev_idx != ar->pdev_idx && !ath12k_dp_link_peer_get_sta(peer))
-			continue;
-		peer_airtime = 0;
-		peer_ul_airtime = 0;
+	params.pdev_ul_airtime = pdev_ul_airtime;
+	params.pdev_actual_airtime = pdev_actual_airtime;
 
-		for (i = 0; i < ar->atf_table.total_groups; i++) {
-			if (peer->atf_group_index ==
-					ar->atf_table.group_info[i].group_id) {
-				group_index = i;
-				break;
-			}
-		}
+	ath12k_dp_link_peer_iterate_by_dp_pdev(&ar->dp,
+					       ath12k_atf_offload_update_peer_airtime_cb,
+					       &params);
 
-		atf_peer_airtime = &peer->atf_peer_airtime;
-
-		for (ac = 0; ac < WME_NUM_AC; ac++) {
-			peer_airtime += atf_peer_airtime->tx_airtime_consumption[ac].consumption;
-			peer_ul_airtime += atf_peer_airtime->rx_airtime_consumption[ac].consumption;
-		}
-
-		if (peer_airtime > 0 && pdev_actual_airtime > 0) {
-			peer->atf_actual_duration = peer_airtime;
-			peer->atf_actual_airtime =
-				(u32)div_u64((u64)peer_airtime * 100ULL,  pdev_actual_airtime);
-		} else {
-			peer->atf_actual_airtime = 0;
-			peer->atf_actual_duration = 0;
-		}
-
-		if (peer_ul_airtime > 0 && pdev_ul_airtime > 0) {
-			peer->atf_actual_ul_duration = peer_ul_airtime;
-			peer->atf_ul_airtime =
-				(u32)div_u64((u64)peer_ul_airtime * 100ULL, pdev_ul_airtime);
-		} else {
-			peer->atf_ul_airtime = 0;
-			peer->atf_actual_ul_duration = 0;
-		}
-
-		if (group_index < ar->atf_table.total_groups) {
-			ar->atf_table.group_info[group_index].atf_actual_duration += peer_airtime;
-			ar->atf_table.group_info[group_index].atf_actual_ul_duration += peer_ul_airtime;
-			ar->atf_table.group_info[group_index].atf_actual_airtime +=
-				peer->atf_actual_airtime;
-		} else {
-			ath12k_warn(ar->ab, "ATF: Invalid group index %u for peer %pM (max: %u)",
-				    group_index, peer->addr, ar->atf_table.total_groups - 1);
-		}
-	}
-	spin_unlock_bh(&dp->dp_lock);
 	ath12k_info(ar->ab, "Total Airtime(us)     %u", pdev_actual_airtime);
 	ath12k_info(ar->ab, "Total UL Airtime(us)  %u", pdev_ul_airtime);
+}
+
+struct ath12k_atf_offload_stats {
+	u16 peer_count;
+	struct atf_peer_stat *peer_stats;
+};
+
+static void ath12k_atf_offload_print_stats_cb(struct ath12k_pdev_dp *dp_pdev,
+					      struct ath12k_dp_link_peer *peer,
+					      void *data)
+{
+	struct ath12k_atf_offload_stats *offload_stats =
+					(struct ath12k_atf_offload_stats *)data;
+	struct atf_peer_stat *peer_stats = offload_stats->peer_stats;
+	u16 peer_count = offload_stats->peer_count;
+
+	if (!ath12k_dp_link_peer_get_sta(peer))
+		return;
+
+	if (peer_count >= ATH12K_ATF_MAX_PEERS)
+		return;
+
+	memcpy(peer_stats[peer_count].addr, peer->addr, ETH_ALEN);
+	peer_stats[peer_count].atf_actual_airtime = peer->atf_actual_airtime;
+	peer_stats[peer_count].atf_peer_conf_airtime = peer->atf_peer_conf_airtime;
+	peer_stats[peer_count].atf_group_index = peer->atf_group_index;
+	peer_stats[peer_count].atf_actual_duration = peer->atf_actual_duration;
+	peer_stats[peer_count].atf_ul_airtime = peer->atf_ul_airtime;
+	peer_stats[peer_count].atf_actual_ul_duration = peer->atf_actual_ul_duration;
+
+	offload_stats->peer_count++;
 }
 
 static void ath12k_atf_offload_print_stats(struct timer_list *t)
 {
 	struct ath12k *ar = from_timer(ar, t, atf_stats_timer);
-	struct ath12k_dp_link_peer *peer, *tmp;
-	struct ath12k_base *ab = ar->ab;
-	struct ath12k_dp *dp;
 	u8 borrowed, unused;
-	int i, peer_count = 0;
+	int i;
 	struct ath12k_atf *atf_table = &ar->atf_table;
 	struct atf_peer_stat *peer_stats;
 	u64 current_time = ath12k_get_timestamp_in_us();
 	u32 time_diff = (u32)(current_time - ar->atf_stats_accum_start_time);
+	struct ath12k_atf_offload_stats offload_stats = {0};
 
 	peer_stats = kcalloc(ATH12K_ATF_MAX_PEERS, sizeof(*peer_stats), GFP_ATOMIC);
 	if (!peer_stats) {
 		ath12k_warn(ar->ab, "ATF: Failed to allocate memory for peer stats");
 		return;
 	}
-
-	dp = ath12k_ab_to_dp(ar->ab);
 
 	ath12k_info(ar->ab, "Total radio duration(us): %u", time_diff);
 	ath12k_atf_offload_update_peer_airtime(ar);
@@ -9172,31 +11545,16 @@ static void ath12k_atf_offload_print_stats(struct timer_list *t)
 			    (u32)div_u64((u64)ar->atf_table.group_info[i].atf_actual_duration * 100ULL, time_diff) : 0);
 	}
 
-	spin_lock_bh(&dp->dp_lock);
-	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
-		if (peer->pdev_idx != ar->pdev_idx)
-			continue;
-
-		if (!ath12k_dp_link_peer_get_sta(peer))
-			continue;
-
-		memcpy(peer_stats[peer_count].addr, peer->addr, ETH_ALEN);
-		peer_stats[peer_count].atf_actual_airtime = peer->atf_actual_airtime;
-		peer_stats[peer_count].atf_peer_conf_airtime = peer->atf_peer_conf_airtime;
-		peer_stats[peer_count].atf_group_index = peer->atf_group_index;
-		peer_stats[peer_count].atf_actual_duration = peer->atf_actual_duration;
-		peer_stats[peer_count].atf_ul_airtime = peer->atf_ul_airtime;
-		peer_stats[peer_count].atf_actual_ul_duration = peer->atf_actual_ul_duration;
-
-		peer_count++;
-	}
-	spin_unlock_bh(&dp->dp_lock);
+	offload_stats.peer_stats = peer_stats;
+	ath12k_dp_link_peer_iterate_by_dp_pdev(&ar->dp,
+					       ath12k_atf_offload_print_stats_cb,
+					       &offload_stats);
 
 	ath12k_info(ar->ab, "*****************************************************************************************************");
 	ath12k_info(ar->ab, "**************************************** ATF STATS For PEERs ****************************************");
 	ath12k_info(ar->ab, "PeerMAC             GroupId  Configured  Actual(Relative)    Borrowed    Unused    Duration(us)   ActualUL  UL(us)  Actual");
 
-	for (i = 0; i < peer_count; i++) {
+	for (i = 0; i < offload_stats.peer_count; i++) {
 		borrowed = 0;
 		unused = 0;
 
@@ -9304,6 +11662,93 @@ static int ath12k_vendor_offload_ssid_scheduling_config(struct ieee80211_hw *hw,
 	return ret;
 }
 
+/**
+ * struct ath12k_atf_dumpit_ctx - Context passed to the per-peer iterator
+ *                                used by ath12k_vendor_atf_stats_dumpit.
+ * @msg:          SKB being filled with netlink attributes.
+ * @peers_data:   Outer nest attribute wrapping all per-peer entries.
+ * @storage:      Pointer to the dumpit storage counter (counts peers emitted).
+ * @j:            Running index used as the nest key for each peer entry.
+ * @tailroom:     Remaining tailroom in @msg; updated after each peer entry.
+ * @nested_range: Size of the last peer entry; used to track tailroom usage.
+ * @ret:          Accumulated return value; set to a negative errno on error.
+ */
+struct ath12k_atf_dumpit_ctx {
+	struct sk_buff *msg;
+	struct nlattr *peers_data;
+	unsigned long *storage;
+	int j;
+	int tailroom;
+	int nested_range;
+	int ret;
+};
+
+/**
+ * ath12k_vendor_atf_stats_dumpit_cb() - Per-peer callback for ATF stats dumpit.
+ * @peer: Current ath12k_dp_link_peer being visited by the iterator.
+ * @data: Pointer to a struct ath12k_atf_dumpit_ctx.
+ *
+ * Called once per peer by ath12k_dp_link_peer_iterate_by_dp_pdev().
+ * Skips non-STA peers, checks remaining SKB tailroom, then serialises
+ * the peer's ATF airtime counters as nested netlink attributes into the
+ * SKB carried in the context. On any nla_put failure the nest is
+ * cancelled and a negative errno is stored in ctx->ret; returning that
+ * non-zero value stops the iteration immediately.
+ *
+ * Return: 0 to continue iteration, negative errno to abort.
+ */
+static void
+ath12k_vendor_atf_stats_dumpit_cb(struct ath12k_pdev_dp *dp_pdev,
+				  struct ath12k_dp_link_peer *peer,
+				  void *data)
+{
+	struct ath12k_atf_dumpit_ctx *ctx = (struct ath12k_atf_dumpit_ctx *)data;
+	struct sk_buff *msg = ctx->msg;
+	struct nlattr *peer_data;
+	int nest_start_length = 0;
+	int nest_end_length = 0;
+
+	if (!ath12k_dp_link_peer_get_sta(peer))
+		return;
+
+	if (ctx->tailroom <= ctx->nested_range)
+		return;
+
+	peer_data = nla_nest_start(msg, ctx->j++);
+	if (!peer_data) {
+		ctx->ret = -ENOBUFS;
+		return;
+	}
+
+	if (nla_put(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_STATS_MAC,
+		    ETH_ALEN, peer->addr) ||
+	    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_TX_BE_AIRTIME,
+			peer->atf_peer_airtime.tx_airtime_consumption[0].consumption) ||
+	    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_TX_BK_AIRTIME,
+			peer->atf_peer_airtime.tx_airtime_consumption[1].consumption) ||
+	    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_TX_VI_AIRTIME,
+			peer->atf_peer_airtime.tx_airtime_consumption[2].consumption) ||
+	    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_TX_VO_AIRTIME,
+			peer->atf_peer_airtime.tx_airtime_consumption[3].consumption) ||
+	    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_RX_BE_AIRTIME,
+			peer->atf_peer_airtime.rx_airtime_consumption[0].consumption) ||
+	    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_RX_BK_AIRTIME,
+			peer->atf_peer_airtime.rx_airtime_consumption[1].consumption) ||
+	    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_RX_VI_AIRTIME,
+			peer->atf_peer_airtime.rx_airtime_consumption[2].consumption) ||
+	    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_RX_VO_AIRTIME,
+			peer->atf_peer_airtime.rx_airtime_consumption[3].consumption)) {
+		nla_nest_cancel(msg, peer_data);
+		ctx->ret = -ENOBUFS;
+		return;
+	}
+
+	*ctx->storage += 1;
+	nest_end_length = nla_nest_end(msg, peer_data);
+	ctx->nested_range = nest_end_length - nest_start_length;
+	ctx->tailroom -= ctx->nested_range;
+}
+
 static int ath12k_vendor_atf_stats_dumpit(struct wiphy *wiphy,
 					  struct wireless_dev *wdev,
 					  struct sk_buff *msg,
@@ -9314,14 +11759,11 @@ static int ath12k_vendor_atf_stats_dumpit(struct wiphy *wiphy,
 	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
 	struct ath12k_hw *ah = hw->priv;
 	struct ath12k *ar;
-	struct ath12k_dp_link_peer *peer, *tmp;
 	struct ath12k_base *ab;
-	struct ath12k_dp *dp;
 	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_MAX + 1];
-	struct nlattr *peer_attr, *peer_data, *peers_data;
-	int ret, j = 0;
-	int tailroom = 0, nest_start_length = 0;
-	int nest_end_length = 0, nested_range = 0;
+	struct nlattr *peer_attr, *peers_data;
+	struct ath12k_atf_dumpit_ctx ctx = {};
+	int ret;
 	u8 radio_id;
 
 	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_MAX, data, data_len,
@@ -9353,8 +11795,6 @@ static int ath12k_vendor_atf_stats_dumpit(struct wiphy *wiphy,
 	if (!storage)
 		return -ENODATA;
 
-	dp = ath12k_ab_to_dp(ar->ab);
-
 	peer_attr = nla_nest_start(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_STATS);
 	if (!peer_attr)
 		return -ENOBUFS;
@@ -9382,49 +11822,17 @@ static int ath12k_vendor_atf_stats_dumpit(struct wiphy *wiphy,
 	if (!peers_data)
 		return -ENOBUFS;
 
-	tailroom = skb_tailroom(msg);
-	spin_lock_bh(&dp->dp_lock);
-	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
-		if (peer->pdev_idx != ar->pdev_idx && !ath12k_dp_link_peer_get_sta(peer))
-			continue;
+	ctx.msg        = msg;
+	ctx.peers_data = peers_data;
+	ctx.storage    = storage;
+	ctx.tailroom   = skb_tailroom(msg);
 
-		if (tailroom <= nested_range)
-			break;
+	ath12k_dp_link_peer_iterate_by_dp_pdev(&ar->dp,
+					       ath12k_vendor_atf_stats_dumpit_cb,
+					       &ctx);
+	if (ctx.ret)
+		return ctx.ret;
 
-		peer_data = nla_nest_start(msg, j++);
-		if (!peer_data)
-			return -ENOBUFS;
-
-		if (nla_put(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_STATS_MAC,
-			    ETH_ALEN, peer->addr) ||
-		    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_TX_BE_AIRTIME,
-				peer->atf_peer_airtime.tx_airtime_consumption[0].consumption) ||
-		    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_TX_BK_AIRTIME,
-				peer->atf_peer_airtime.tx_airtime_consumption[1].consumption) ||
-		    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_TX_VI_AIRTIME,
-				peer->atf_peer_airtime.tx_airtime_consumption[2].consumption) ||
-		    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_TX_VO_AIRTIME,
-				peer->atf_peer_airtime.tx_airtime_consumption[3].consumption) ||
-		    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_RX_BE_AIRTIME,
-				peer->atf_peer_airtime.rx_airtime_consumption[0].consumption) ||
-		    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_RX_BK_AIRTIME,
-				peer->atf_peer_airtime.rx_airtime_consumption[1].consumption) ||
-		    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_RX_VI_AIRTIME,
-				peer->atf_peer_airtime.rx_airtime_consumption[2].consumption) ||
-		    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_RX_VO_AIRTIME,
-				peer->atf_peer_airtime.rx_airtime_consumption[3].consumption)) {
-			nla_nest_cancel(msg, peer_data);
-			spin_unlock_bh(&dp->dp_lock);
-			return -ENOBUFS;
-		}
-		nla_nest_end(msg, peer_data);
-
-		*storage += 1;
-		nest_end_length = nla_nest_end(msg, peer_data);
-		nested_range = nest_end_length - nest_start_length;
-		tailroom -= nested_range;
-	}
-	spin_unlock_bh(&dp->dp_lock);
 	nla_nest_end(msg, peers_data);
 	nla_nest_end(msg, peer_attr);
 	if (*storage == ar->num_peers)
@@ -10092,7 +12500,8 @@ static int ath12k_vendor_get_channel_switch_time(struct wiphy *wiphy,
 						     vif->type);
 	if (dfs_required > 0 &&
 	    !cfg80211_chandef_dfs_available(wiphy, &chandef))
-		dfs_time = chandef.chan->dfs_cac_ms;
+		dfs_time = cfg80211_chandef_dfs_cac_time(hw->wiphy, &chandef,
+							 false, false);
 	else
 		dfs_time = 0;
 
@@ -12269,6 +14678,7 @@ static int ath12k_vendor_get_sta_info_dumpit(struct wiphy *wiphy,
 	s8 data_min_rssi = 0, data_max_rssi = 0;
 	int ret;
 	const u8 *peer_mac;
+	void *dp_peer;
 
 	lockdep_assert_wiphy(wiphy);
 
@@ -12309,15 +14719,21 @@ static int ath12k_vendor_get_sta_info_dumpit(struct wiphy *wiphy,
 	if (!arvif || !arvif->ar || !arvif->ar->ab)
 		return -ENOLINK;
 
-	spin_lock_bh(&arvif->ar->ab->base_lock);
+	spin_lock_bh(&arvif->ar->arsta_lock);
 
-	arsta = ath12k_link_sta_find_by_addr(arvif->ar->ab, peer_mac);
-	if (!arsta) {
-		spin_unlock_bh(&arvif->ar->ab->base_lock);
+	arsta = ath12k_link_sta_find_by_addr(arvif->ar, peer_mac);
+	if (!arsta || arsta->is_self_peer) {
+		spin_unlock_bh(&arvif->ar->arsta_lock);
 		return -ENOENT;
 	}
 
-	ret = ath12k_dp_mon_get_link_peer_rssi(arvif->ar, peer_mac,
+	dp_peer = ath12k_sta_get_dp_peer_wiphy_locked(wiphy, arsta->ahsta);
+	if (!dp_peer) {
+		spin_unlock_bh(&arvif->ar->arsta_lock);
+		return -ENOENT;
+	}
+
+	ret = ath12k_dp_mon_get_link_peer_rssi(dp_peer, peer_mac,
 					       &data_min_rssi,
 					       &data_max_rssi);
 	if (ret) {
@@ -12339,13 +14755,13 @@ static int ath12k_vendor_get_sta_info_dumpit(struct wiphy *wiphy,
 		       arsta->peer_ps_state))
 		goto unlock;
 
-	spin_unlock_bh(&arvif->ar->ab->base_lock);
+	spin_unlock_bh(&arvif->ar->arsta_lock);
 
 	*storage += 1;
 	return skb->len;
 
 unlock:
-	spin_unlock_bh(&arvif->ar->ab->base_lock);
+	spin_unlock_bh(&arvif->ar->arsta_lock);
 	return -ENOBUFS;
 }
 
@@ -12461,6 +14877,807 @@ static int ath12k_vendor_oem_data(struct wiphy *wiphy, struct wireless_dev *wdev
 
 	return 0;
 }
+
+static int
+ath12k_vendor_ch_switch_put_chan_base(struct sk_buff *skb,
+				      const struct cfg80211_chan_def *chandef,
+				      const struct ath12k_vendor_ch_switch_attrs *attrs)
+{
+	u32 freq;
+	u8 width;
+	int ret;
+
+	if (!chandef)
+		return -EINVAL;
+
+	freq = chandef->chan ? chandef->chan->center_freq : 0;
+	width = ath12k_nl_chan_bw_to_qca_vendor_chan_bw(chandef->width);
+
+	if (freq) {
+		ret = nla_put_u32(skb, attrs->freq, freq);
+		if (ret)
+			goto nla_fail;
+	}
+
+	if (width) {
+		ret = nla_put_u8(skb, attrs->width, width);
+		if (ret)
+			goto nla_fail;
+	}
+
+	return 0;
+
+nla_fail:
+	return -EMSGSIZE;
+}
+
+static int
+ath12k_vendor_ch_switch_put_cur_chan(struct sk_buff *skb,
+				     const struct cfg80211_chan_def *chandef)
+{
+	static const struct ath12k_vendor_ch_switch_attrs attrs = {
+		.freq = QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_CUR_FREQ,
+		.width = QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_CUR_WIDTH,
+	};
+	int ret;
+
+	if (!chandef)
+		return -EINVAL;
+
+	ret = ath12k_vendor_ch_switch_put_chan_base(skb, chandef, &attrs);
+	if (ret)
+		return ret;
+
+	if (chandef->center_freq1) {
+		ret = nla_put_u32(skb,
+				  QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_CUR_CENTER_FREQ1,
+				  chandef->center_freq1);
+		if (ret)
+			goto nla_fail;
+	}
+
+	if (chandef->center_freq2) {
+		ret = nla_put_u32(skb,
+				  QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_CUR_CENTER_FREQ2,
+				  chandef->center_freq2);
+		if (ret)
+			goto nla_fail;
+	}
+
+	if (chandef->punctured) {
+		ret = nla_put_u16(skb,
+				  QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_CUR_PUNCTURED,
+				  chandef->punctured);
+		if (ret)
+			goto nla_fail;
+	}
+
+	if (chandef->radar_bitmap) {
+		ret = nla_put_u16(skb,
+				  QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_CUR_RADAR_BITMAP,
+				  chandef->radar_bitmap);
+		if (ret)
+			goto nla_fail;
+	}
+
+	return 0;
+
+nla_fail:
+	return -EMSGSIZE;
+}
+
+static int
+ath12k_vendor_ch_switch_put_new_chan(struct sk_buff *skb,
+				     const struct cfg80211_chan_def *chandef)
+{
+	static const struct ath12k_vendor_ch_switch_attrs attrs = {
+		.freq = QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_NEW_FREQ,
+		.width = QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_NEW_WIDTH,
+	};
+
+	return ath12k_vendor_ch_switch_put_chan_base(skb, chandef, &attrs);
+}
+
+/**
+ * ath12k_vendor_ch_switch_reason_notify() - Send channel switch reason event
+ * @ar: ath12k device pointer
+ * @reason: Reason for the channel switch, enum qca_wlan_vendor_ch_switch_reason
+ * @old: Current/old channel definition (may be NULL); all cfg80211_chan_def
+ *       fields are sent to userspace when non-NULL
+ * @new: New channel definition (may be NULL)
+ *
+ * Sends a vendor event to userspace with the reason for an upcoming channel
+ * switch together with the complete cfg80211_chan_def of the current/old
+ * channel (primary freq, width, center_freq1, center_freq2, punctured bitmap)
+ * and the new channel's primary frequency and width.
+ *
+ * This is called before the actual channel change is applied so that userspace
+ * can track the reason and fully reconstruct the old channel configuration.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int ath12k_vendor_ch_switch_reason_notify(struct ath12k *ar,
+					  enum qca_wlan_vendor_ch_switch_reason reason,
+					  const struct cfg80211_chan_def *old_chandef,
+					  const struct cfg80211_chan_def *new_chandef)
+{
+	struct wireless_dev *wdev;
+	struct wiphy *wiphy;
+	struct sk_buff *skb;
+	struct ath12k_link_vif *arvif;
+	u32 old_freq = 0, new_freq = 0;
+	int event_idx;
+	int ret;
+
+	if (!ar || !ar->ab || !ar->ah || !ar->ah->hw)
+		return -EINVAL;
+
+	wiphy = ath12k_ar_to_hw(ar)->wiphy;
+	arvif = ath12k_vendor_get_non_scan_arvif(ar);
+	if (!arvif || !arvif->ahvif || !arvif->ahvif->vif)
+		return -ENODEV;
+
+	wdev = ieee80211_vif_to_wdev(arvif->ahvif->vif);
+	if (!wdev)
+		return -ENODEV;
+
+	event_idx = QCA_NL80211_VENDOR_SUBCMD_CH_SWITCH_REASON_INDEX;
+	skb = cfg80211_vendor_event_alloc(wiphy, wdev, NLMSG_DEFAULT_SIZE,
+					  event_idx, GFP_ATOMIC);
+	if (!skb)
+		return -ENOMEM;
+
+	ret = nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_CH_SWITCH_REASON_CODE, reason);
+	if (ret)
+		goto nla_fail;
+
+	ret = ath12k_vendor_ch_switch_put_cur_chan(skb, old_chandef);
+	if (ret)
+		goto nla_fail;
+
+	ret = ath12k_vendor_ch_switch_put_new_chan(skb, new_chandef);
+	if (ret)
+		goto nla_fail;
+
+	if (old_chandef && old_chandef->chan)
+		old_freq = old_chandef->chan->center_freq;
+
+	if (new_chandef && new_chandef->chan)
+		new_freq = new_chandef->chan->center_freq;
+
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
+			 "vendor ch switch event reason %d old %u/%d center %u/%u punct 0x%x radar 0x%x new %u/%d\n",
+			 reason, old_freq, old_chandef ? old_chandef->width : 0,
+			 old_chandef ? old_chandef->center_freq1 : 0,
+			 old_chandef ? old_chandef->center_freq2 : 0,
+			 old_chandef ? old_chandef->punctured : 0,
+			 old_chandef ? old_chandef->radar_bitmap : 0,
+			 new_freq,
+			 new_chandef ? new_chandef->width : 0);
+
+	cfg80211_vendor_event(skb, GFP_ATOMIC);
+	return 0;
+
+nla_fail:
+	ath12k_warn(ar->ab,
+		    "failed to build channel switch reason vendor event reason %d ret %d\n",
+		    reason, ret);
+	kfree_skb(skb);
+	return ret;
+}
+
+void ath12k_vendor_event_chain_mask_changed(struct ath12k *ar)
+{
+	struct sk_buff *event;
+
+	event = cfg80211_vendor_event_alloc(ar->ah->hw->wiphy, NULL, 0,
+					    QCA_NL80211_VENDOR_SUBCMD_CHAIN_MASK_INDEX,
+					    GFP_ATOMIC);
+	if (!event) {
+		ath12k_warn(ar->ab,
+			    "failed to alloc skb for dynamic chain mask vendor event\n");
+		return;
+	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+		   "sending dynamic chain mask vendor event\n");
+	cfg80211_vendor_event(event, GFP_ATOMIC);
+}
+
+/* ---- Spectral scan vendor command handlers ---- */
+
+#ifdef CPTCFG_ATH12K_SPECTRAL
+
+#define SPECTRAL_SCALING_LOW_LEVEL_OFFSET	7
+#define SPECTRAL_SCALING_HIGH_LEVEL_OFFSET	5
+#define SPECTRAL_SCALING_RSSI_THRESH		5
+#define SPECTRAL_IPQ8074_DEFAULT_MAX_GAIN	62
+
+static const struct nla_policy
+ath12k_spectral_scan_policy[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_SCAN_COUNT] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_SCAN_PERIOD] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_PRIORITY] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FFT_SIZE] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_GC_ENA] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_RESTART_ENA] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_NOISE_FLOOR_REF] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_INIT_DELAY] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_NB_TONE_THR] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_STR_BIN_THR] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_WB_RPT_MODE] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_RSSI_RPT_MODE] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_RSSI_THR] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_PWR_FORMAT] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_RPT_MODE] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_BIN_SCALE] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_DBM_ADJ] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_CHN_MASK] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FFT_PERIOD] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_SHORT_REPORT] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FREQUENCY] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FREQUENCY_2] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_BANDWIDTH] = { .type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FFT_RECAPTURE] = { .type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_COMPLETION_TIMEOUT] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_MODE] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_REQUEST_TYPE] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_DEBUG_LEVEL] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_DMA_RING_DEBUG] = { .type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_DMA_BUFFER_DEBUG] = { .type = NLA_U8 },
+};
+
+/* Returns the ath12k radio for a spectral vendor command.
+ *
+ * Reads NL80211_ATTR_WIPHY_RADIO_INDEX from the outer nl80211 message via
+ * rdev->cur_cmd_info->attrs[], maps it to the ar, and verifies at least one
+ * vdev is active (required for WMI spectral commands).
+ *
+ * Must be called with the wiphy lock held.
+ */
+static struct ath12k *ath12k_spectral_get_ar(struct wiphy *wiphy)
+{
+	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wiphy);
+	struct ath12k *ar;
+	u8 radio_idx;
+
+	/* cur_cmd_info is set by nl80211_vendor_cmd() before dispatching
+	 * and cleared after; it is always non-NULL here, but guard defensively
+	 * in case of future call-path changes.
+	 */
+	if (!rdev->cur_cmd_info ||
+	    !rdev->cur_cmd_info->attrs[NL80211_ATTR_WIPHY_RADIO_INDEX]) {
+		ath12k_err(NULL,
+			   "spectral: NL80211_ATTR_WIPHY_RADIO_INDEX missing in command\n");
+		return NULL;
+	}
+
+	radio_idx = nla_get_u8(rdev->cur_cmd_info->attrs[NL80211_ATTR_WIPHY_RADIO_INDEX]);
+
+	ar = ath12k_get_radio_by_id(wiphy, radio_idx);
+	if (!ar)
+		return NULL;
+
+	if (list_empty(&ar->arvifs)) {
+		ath12k_warn(ar->ab,
+			    "spectral: no active vdev on radio %u, start a vdev first\n",
+			    radio_idx);
+		return NULL;
+	}
+
+	return ar;
+}
+
+/* Build and send the SPECTRAL_SCAN_START reply skb with an error code,
+ * matching the QCA vendor spec. Always returns -EINVAL so callers can
+ * `return ath12k_spectral_scan_start_reply_error(...)`.
+ */
+static int
+ath12k_spectral_scan_start_reply_error(struct wiphy *wiphy,
+			enum qca_wlan_vendor_spectral_scan_error_code err_code)
+{
+	struct sk_buff *skb;
+
+	skb = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, NLMSG_DEFAULT_SIZE);
+	if (skb) {
+		nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_ERROR_CODE,
+			    err_code);
+		cfg80211_vendor_cmd_reply(skb);
+	}
+	return -EINVAL;
+}
+
+/* Resolve the BW slot index for FFT-size validation. */
+static int
+ath12k_spectral_resolve_bw_idx(struct ath12k *ar, struct nlattr **tb)
+{
+	if (tb[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_BANDWIDTH]) {
+		u8 bw = nla_get_u8(tb[
+			QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_BANDWIDTH]);
+		return ath12k_spectral_nl80211_bw_to_idx(bw);
+	}
+
+	if (ar->spectral.params.bandwidth)
+		return ath12k_spectral_nl80211_bw_to_idx(ar->spectral.params.bandwidth);
+
+	return -1;
+}
+
+static int ath12k_vendor_spectral_scan_start(struct wiphy *wiphy,
+					     struct wireless_dev *wdev,
+					     const void *data, int data_len)
+{
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_MAX + 1];
+	/* Default: update params AND trigger a scan. */
+	enum qca_wlan_vendor_attr_spectral_scan_request_type req_type =
+		QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_REQUEST_TYPE_SCAN_AND_CONFIG;
+	enum qca_wlan_vendor_spectral_scan_mode nl_mode =
+		QCA_WLAN_VENDOR_SPECTRAL_SCAN_MODE_NORMAL;
+	struct ath12k *ar;
+	int ret;
+
+	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_MAX,
+			data, data_len, ath12k_spectral_scan_policy, NULL);
+	if (ret)
+		return ret;
+	if (tb[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_REQUEST_TYPE])
+		req_type = nla_get_u32(tb[
+				QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_REQUEST_TYPE]);
+	if (tb[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_MODE])
+		nl_mode = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_MODE]);
+
+	ar = ath12k_spectral_get_ar(wiphy);
+	if (!ar)
+		return -EINVAL;
+
+	if (nl_mode > QCA_WLAN_VENDOR_SPECTRAL_SCAN_MODE_AGILE)
+		return ath12k_spectral_scan_start_reply_error(wiphy,
+				QCA_WLAN_VENDOR_SPECTRAL_SCAN_ERR_PARAM_INVALID_VALUE);
+
+	if (nl_mode == QCA_WLAN_VENDOR_SPECTRAL_SCAN_MODE_AGILE) {
+		ath12k_warn(ar->ab, "spectral scan: agile mode not supported\n");
+		return ath12k_spectral_scan_start_reply_error(wiphy,
+				QCA_WLAN_VENDOR_SPECTRAL_SCAN_ERR_MODE_UNSUPPORTED);
+	}
+
+	/* Step 1: update scan params in software if request includes CONFIG. */
+	if (req_type != QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_REQUEST_TYPE_SCAN) {
+		struct ath12k_spectral_params *p = &ar->spectral.params;
+
+		/* Validate user-supplied attrs BEFORE storing. The ATTR_U32 macro
+		 * below unconditionally writes into *p, so a post-store check
+		 * would leave dirty state behind on rejection.
+		 */
+		if (nl_mode == QCA_WLAN_VENDOR_SPECTRAL_SCAN_MODE_NORMAL &&
+		    (tb[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FREQUENCY] ||
+		     tb[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FREQUENCY_2])) {
+			ath12k_warn(ar->ab,
+				    "spectral scan: frequency param not supported in normal mode\n");
+			return ath12k_spectral_scan_start_reply_error(wiphy,
+				QCA_WLAN_VENDOR_SPECTRAL_SCAN_ERR_PARAM_UNSUPPORTED);
+		}
+
+		/* Reject out-of-range scan_rpt_mode (valid 0..3). */
+		if (tb[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_RPT_MODE]) {
+			u32 v = nla_get_u32(tb[
+				QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_RPT_MODE]);
+
+			if (v > ATH12K_SPECTRAL_RPT_MODE_MAX) {
+				ath12k_warn(ar->ab,
+					    "spectral scan: rpt_mode %u out of range [0, %u]\n",
+					    v, ATH12K_SPECTRAL_RPT_MODE_MAX);
+				return ath12k_spectral_scan_start_reply_error(wiphy,
+				QCA_WLAN_VENDOR_SPECTRAL_SCAN_ERR_PARAM_INVALID_VALUE);
+			}
+		}
+
+		/* Reject out-of-range bandwidth (nl80211_chan_width). */
+		if (tb[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_BANDWIDTH]) {
+			u8 v = nla_get_u8(tb[
+				QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_BANDWIDTH]);
+
+			if (v > NL80211_CHAN_WIDTH_320) {
+				ath12k_warn(ar->ab,
+					    "spectral scan: bandwidth %u out of range [0, %u]\n",
+					    v, NL80211_CHAN_WIDTH_320);
+				return ath12k_spectral_scan_start_reply_error(wiphy,
+				QCA_WLAN_VENDOR_SPECTRAL_SCAN_ERR_PARAM_INVALID_VALUE);
+			}
+		}
+
+		/* Reject scan_count > MAX. */
+		if (tb[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_SCAN_COUNT]) {
+			u32 v = nla_get_u32(tb[
+				QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_SCAN_COUNT]);
+
+			if (v > ATH12K_SPECTRAL_SCAN_COUNT_MAX) {
+				ath12k_warn(ar->ab,
+					    "spectral scan: count %u exceeds max %u\n",
+					    v, ATH12K_SPECTRAL_SCAN_COUNT_MAX);
+				return ath12k_spectral_scan_start_reply_error(wiphy,
+				QCA_WLAN_VENDOR_SPECTRAL_SCAN_ERR_PARAM_INVALID_VALUE);
+			}
+		}
+
+		/* Reject fft_size out of [fft_size_min, fft_size_max[bw]].
+		 * If we don't know the BW (no attr in this call, no cached
+		 * attr), fall back to the chip-wide cap so we don't falsely
+		 * narrow to the 20 MHz slot before the vdev is on a channel.
+		 */
+		if (tb[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FFT_SIZE]) {
+			u32 v = nla_get_u32(tb[
+				QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FFT_SIZE]);
+			u32 fft_min  = ar->spectral.param_min_max.fft_size_min;
+			int idx      = ath12k_spectral_resolve_bw_idx(ar, tb);
+			u32 fft_max  = (idx >= 0)
+				       ? ar->spectral.param_min_max.fft_size_max[idx]
+				       : ilog2(ar->ab->hw_params->spectral.max_fft_bins);
+
+			if (v < fft_min || v > fft_max) {
+				ath12k_warn(ar->ab,
+					    "spectral scan: fft_size %u out of [%u, %u] (bw_idx %d)\n",
+					    v, fft_min, fft_max, idx);
+				return ath12k_spectral_scan_start_reply_error(wiphy,
+				QCA_WLAN_VENDOR_SPECTRAL_SCAN_ERR_PARAM_INVALID_VALUE);
+			}
+		}
+
+#define ATTR_U32(id, fptr) do {				\
+	const int _a = (id);				\
+	if (tb[_a])					\
+		*(fptr) = nla_get_u32(tb[_a]);		\
+} while (0)
+#define ATTR_U8(id, fptr) do {				\
+	const int _a = (id);				\
+	if (tb[_a])					\
+		*(fptr) = nla_get_u8(tb[_a]);		\
+} while (0)
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_SCAN_COUNT,
+			 &p->scan_count);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_SCAN_PERIOD,
+			 &p->scan_period);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_PRIORITY,
+			 &p->scan_priority);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FFT_SIZE,
+			 &p->scan_fft_size);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_GC_ENA,
+			 &p->scan_gc_ena);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_RESTART_ENA,
+			 &p->scan_restart_ena);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_NOISE_FLOOR_REF,
+			 &p->scan_noise_floor_ref);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_INIT_DELAY,
+			 &p->scan_init_delay);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_NB_TONE_THR,
+			 &p->scan_nb_tone_thr);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_STR_BIN_THR,
+			 &p->scan_str_bin_thr);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_WB_RPT_MODE,
+			 &p->scan_wb_rpt_mode);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_RSSI_RPT_MODE,
+			 &p->scan_rssi_rpt_mode);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_RSSI_THR,
+			 &p->scan_rssi_thr);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_PWR_FORMAT,
+			 &p->scan_pwr_format);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_RPT_MODE,
+			 &p->scan_rpt_mode);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_BIN_SCALE,
+			 &p->scan_bin_scale);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_DBM_ADJ,
+			 &p->scan_dbm_adj);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_CHN_MASK,
+			 &p->scan_chn_mask);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FFT_PERIOD,
+			 &p->fft_period);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_SHORT_REPORT,
+			 &p->short_report);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FREQUENCY,
+			 &p->frequency);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FREQUENCY_2,
+			 &p->frequency2);
+		ATTR_U8(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_BANDWIDTH,
+			&p->bandwidth);
+		ATTR_U8(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FFT_RECAPTURE,
+			&p->fft_recapture);
+		ATTR_U32(QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_COMPLETION_TIMEOUT,
+			 &p->completion_timeout_us);
+#undef ATTR_U32
+#undef ATTR_U8
+		ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+			   "spectral config: count=%u period=%u fft_size=%u\n",
+			   p->scan_count, p->scan_period, p->scan_fft_size);
+		ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+			   "spectral config: priority=%u gc_ena=%u short_report=%u\n",
+			   p->scan_priority, p->scan_gc_ena, p->short_report);
+		ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+			   "spectral config: rpt_mode=%u bin_scale=%u chn_mask=%u\n",
+			   p->scan_rpt_mode, p->scan_bin_scale, p->scan_chn_mask);
+		ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+			   "spectral config: freq=%u freq2=%u bw=%u timeout_us=%u\n",
+			   p->frequency, p->frequency2, p->bandwidth,
+			   p->completion_timeout_us);
+	}
+
+	/* Step 2: configure firmware and trigger scan if request includes SCAN. */
+	if (req_type != QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_REQUEST_TYPE_CONFIG) {
+		/* Don't restart a running scan; collected samples would be lost. */
+		if (ar->spectral.scan_active) {
+			ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+				   "spectral scan_start: scan already active, ignoring\n");
+			return 0;
+		}
+
+		ar->spectral.samples_done = 0;
+		ret = ath12k_spectral_configure_scan_params(ar,
+							    SPECTRAL_SCAN_MODE_NORMAL);
+		if (ret)
+			return ret;
+		ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+			   "spectral scan_start: configure_scan_params(NORMAL) OK\n");
+
+		ret = ath12k_spectral_start_scan(ar);
+		if (ret)
+			return ret;
+		ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+			   "spectral scan_start: start_scan OK\n");
+	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+		   "spectral scan_start: SUCCESS iface=%s req_type=%d\n",
+		   wdev && wdev->netdev ? wdev->netdev->name : "?", req_type);
+	return 0;
+}
+
+static int ath12k_vendor_spectral_scan_stop(struct wiphy *wiphy,
+					    struct wireless_dev *wdev,
+					    const void *data, int data_len)
+{
+	struct ath12k *ar;
+	int ret;
+
+	ar = ath12k_spectral_get_ar(wiphy);
+	if (!ar)
+		return -EINVAL;
+
+	ret = ath12k_spectral_stop_scan(ar);
+	if (ret)
+		ath12k_warn(ar->ab,
+			    "spectral scan_stop: stop_scan failed ret=%d\n",
+			    ret);
+	else
+		ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+			   "spectral scan_stop: SUCCESS iface=%s\n",
+			   wdev && wdev->netdev ? wdev->netdev->name : "?");
+	return ret;
+}
+
+static int ath12k_vendor_spectral_get_config(struct wiphy *wiphy,
+					     struct wireless_dev *wdev,
+					     const void *data, int data_len)
+{
+	struct ath12k_spectral_params *p;
+	struct sk_buff *skb;
+	struct ath12k *ar;
+
+	ar = ath12k_spectral_get_ar(wiphy);
+	if (!ar)
+		return -EINVAL;
+
+	skb = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, NLMSG_DEFAULT_SIZE);
+	if (!skb) {
+		ath12k_warn(ar->ab, "spectral get_config: skb alloc failed\n");
+		return -ENOMEM;
+	}
+
+	p = &ar->spectral.params;
+	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+		   "spectral get_config: count=%u period=%u fft_size=%u priority=%u\n",
+		   p->scan_count, p->scan_period, p->scan_fft_size, p->scan_priority);
+	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+		   "spectral get_config: gc_ena=%u restart_ena=%u nf_ref=%u\n",
+		   p->scan_gc_ena, p->scan_restart_ena, p->scan_noise_floor_ref);
+	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+		   "spectral get_config: init_delay=%u nb_tone_thr=%u str_bin_thr=%u\n",
+		   p->scan_init_delay, p->scan_nb_tone_thr, p->scan_str_bin_thr);
+	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+		   "spectral get_config: wb_rpt=%u rssi_rpt=%u rssi_thr=%u pwr_fmt=%u\n",
+		   p->scan_wb_rpt_mode, p->scan_rssi_rpt_mode,
+		   p->scan_rssi_thr, p->scan_pwr_format);
+	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+		   "spectral get_config: rpt_mode=%u bin_scale=%u dbm_adj=%u\n",
+		   p->scan_rpt_mode, p->scan_bin_scale, p->scan_dbm_adj);
+	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+		   "spectral get_config: chn_mask=%u fft_period=%u short_report=%u\n",
+		   p->scan_chn_mask, p->fft_period, p->short_report);
+	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+		   "spectral get_config: freq=%u freq2=%u bw=%u timeout_us=%u\n",
+		   p->frequency, p->frequency2, p->bandwidth, p->completion_timeout_us);
+
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_SCAN_COUNT,
+		    p->scan_count);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_SCAN_PERIOD,
+		    p->scan_period);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_PRIORITY,
+		    p->scan_priority);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FFT_SIZE,
+		    p->scan_fft_size);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_GC_ENA,
+		    p->scan_gc_ena);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_RESTART_ENA,
+		    p->scan_restart_ena);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_NOISE_FLOOR_REF,
+		    p->scan_noise_floor_ref);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_INIT_DELAY,
+		    p->scan_init_delay);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_NB_TONE_THR,
+		    p->scan_nb_tone_thr);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_STR_BIN_THR,
+		    p->scan_str_bin_thr);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_WB_RPT_MODE,
+		    p->scan_wb_rpt_mode);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_RSSI_RPT_MODE,
+		    p->scan_rssi_rpt_mode);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_RSSI_THR,
+		    p->scan_rssi_thr);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_PWR_FORMAT,
+		    p->scan_pwr_format);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_RPT_MODE,
+		    p->scan_rpt_mode);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_BIN_SCALE,
+		    p->scan_bin_scale);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_DBM_ADJ,
+		    p->scan_dbm_adj);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_CHN_MASK,
+		    p->scan_chn_mask);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FFT_PERIOD,
+		    p->fft_period);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_SHORT_REPORT,
+		    p->short_report);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FREQUENCY,
+		    p->frequency);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FREQUENCY_2,
+		    p->frequency2);
+	nla_put_u8(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_BANDWIDTH,
+		   p->bandwidth);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_COMPLETION_TIMEOUT,
+		    p->completion_timeout_us);
+
+	return cfg80211_vendor_cmd_reply(skb);
+}
+
+static int ath12k_vendor_spectral_get_diag(struct wiphy *wiphy,
+					   struct wireless_dev *wdev,
+					   const void *data, int data_len)
+{
+	struct ath12k_spectral_diag_stats *d;
+	struct sk_buff *skb;
+	struct ath12k *ar;
+
+	ar = ath12k_spectral_get_ar(wiphy);
+	if (!ar)
+		return -EINVAL;
+
+	skb = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, 256);
+	if (!skb) {
+		ath12k_warn(ar->ab, "spectral get_diag: skb alloc failed\n");
+		return -ENOMEM;
+	}
+
+	d = &ar->spectral.diag;
+	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+		   "spectral get_diag: sig_mismatch=%llu sec80_insufflen=%llu\n",
+		   d->sig_mismatch, d->sec80_sfft_insufflen);
+	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+		   "spectral get_diag: no_sec80=%llu vhtseg1_mismatch=%llu\n",
+		   d->no_sec80_sfft, d->vhtseg1id_mismatch);
+	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+		   "spectral get_diag: vhtseg2_mismatch=%llu\n",
+		   d->vhtseg2id_mismatch);
+
+	nla_put_u64_64bit(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_DIAG_SIG_MISMATCH,
+			  d->sig_mismatch, NLA_U64);
+	nla_put_u64_64bit(skb,
+			  QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_DIAG_SEC80_SFFT_INSUFFLEN,
+			  d->sec80_sfft_insufflen, NLA_U64);
+	nla_put_u64_64bit(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_DIAG_NOSEC80_SFFT,
+			  d->no_sec80_sfft, NLA_U64);
+	nla_put_u64_64bit(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_DIAG_VHTSEG1ID_MISMATCH,
+			  d->vhtseg1id_mismatch, NLA_U64);
+	nla_put_u64_64bit(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_DIAG_VHTSEG2ID_MISMATCH,
+			  d->vhtseg2id_mismatch, NLA_U64);
+
+	return cfg80211_vendor_cmd_reply(skb);
+}
+
+static int ath12k_vendor_spectral_get_cap(struct wiphy *wiphy,
+					  struct wireless_dev *wdev,
+					  const void *data, int data_len)
+{
+	struct sk_buff *skb;
+	struct ath12k *ar;
+
+	ar = ath12k_spectral_get_ar(wiphy);
+	if (!ar || !ar->spectral.enabled)
+		return -EPERM;
+
+	skb = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, 512);
+	if (!skb) {
+		ath12k_warn(ar->ab, "spectral get_cap: skb alloc failed\n");
+		return -ENOMEM;
+	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+		   "spectral get_cap: hw_gen=3 num_bw_caps=%u fft_size=%u\n",
+		   ar->spectral.spectral_cap.num_bw_caps_entry,
+		   ar->spectral.params.scan_fft_size);
+
+	nla_put_flag(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CAP_PHYDIAG);
+	nla_put_flag(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CAP_RADAR);
+	nla_put_flag(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CAP_SPECTRAL);
+	nla_put_flag(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CAP_ADVANCED_SPECTRAL);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CAP_HW_GEN,
+		    QCA_WLAN_VENDOR_SPECTRAL_SCAN_CAP_HW_GEN_3);
+	nla_put_u16(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CAP_FORMULA_ID, 0);
+	nla_put_u16(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CAP_LOW_LEVEL_OFFSET,
+		    SPECTRAL_SCALING_LOW_LEVEL_OFFSET);
+	nla_put_u16(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CAP_HIGH_LEVEL_OFFSET,
+		    SPECTRAL_SCALING_HIGH_LEVEL_OFFSET);
+	nla_put_u16(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CAP_RSSI_THR,
+		    SPECTRAL_SCALING_RSSI_THRESH);
+	nla_put_u8(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CAP_DEFAULT_AGC_MAX_GAIN,
+		   SPECTRAL_IPQ8074_DEFAULT_MAX_GAIN);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CAP_NUM_DETECTORS_20_MHZ,
+		    ar->spectral.spectral_cap.num_bw_caps_entry);
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+		   "spectral get_cap: SUCCESS iface=%s\n",
+		   wdev && wdev->netdev ? wdev->netdev->name : "?");
+	return cfg80211_vendor_cmd_reply(skb);
+}
+
+static int ath12k_vendor_spectral_get_status(struct wiphy *wiphy,
+					     struct wireless_dev *wdev,
+					     const void *data, int data_len)
+{
+	enum spectral_scan_mode mode;
+	struct sk_buff *skb;
+	struct ath12k *ar;
+
+	ar = ath12k_spectral_get_ar(wiphy);
+	if (!ar)
+		return -EINVAL;
+
+	skb = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, 64);
+	if (!skb) {
+		ath12k_warn(ar->ab, "spectral get_status: skb alloc failed\n");
+		return -ENOMEM;
+	}
+
+	mode = ar->spectral.mode;
+	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
+		   "spectral get_status: mode=%d(%s) enabled=%d active=%d\n",
+		   mode,
+		   mode >= SPECTRAL_SCAN_MODE_MAX ? "DISABLED" :
+		   mode == SPECTRAL_SCAN_MODE_AGILE ? "AGILE" : "NORMAL",
+		   mode < SPECTRAL_SCAN_MODE_MAX,
+		   mode < SPECTRAL_SCAN_MODE_MAX);
+
+	if (mode < SPECTRAL_SCAN_MODE_MAX)
+		nla_put_flag(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_STATUS_IS_ENABLED);
+	if (mode < SPECTRAL_SCAN_MODE_MAX)
+		nla_put_flag(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_STATUS_IS_ACTIVE);
+	if (mode == SPECTRAL_SCAN_MODE_AGILE)
+		nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_STATUS_MODE,
+			    QCA_WLAN_VENDOR_SPECTRAL_SCAN_MODE_AGILE);
+	else if (mode == SPECTRAL_SCAN_MODE_NORMAL)
+		nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_STATUS_MODE,
+			    QCA_WLAN_VENDOR_SPECTRAL_SCAN_MODE_NORMAL);
+
+	return cfg80211_vendor_cmd_reply(skb);
+}
+
+#endif /* CPTCFG_ATH12K_SPECTRAL */
 
 static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 	{
@@ -12673,6 +15890,14 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 	},
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_TRIGGER_SCAN,
+		.doit = ath12k_vendor_parse_cbs_scan_params,
+		.policy = ath12k_vendor_scan_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_SCAN_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
 		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_GET_CHANNEL_SWITCH_TIME,
 		.doit = ath12k_vendor_get_channel_switch_time,
 		.policy = ath12k_vendor_channel_switch_time_policy,
@@ -12770,6 +15995,50 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.policy = ath12k_tid_map_prty_policy,
 		.maxattr = QCA_WLAN_VENDOR_ATTR_TID_MAP_PRECEDENCE_MAX,
 	},
+
+#ifdef CPTCFG_ATH12K_SPECTRAL
+
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd    = QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_START,
+		.doit           = ath12k_vendor_spectral_scan_start,
+		.policy         = ath12k_spectral_scan_policy,
+		.maxattr        = QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_MAX,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd    = QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_STOP,
+		.doit           = ath12k_vendor_spectral_scan_stop,
+		.policy         = ath12k_spectral_scan_policy,
+		.maxattr        = QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_MAX,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd    = QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_GET_CONFIG,
+		.doit           = ath12k_vendor_spectral_get_config,
+		.policy         = ath12k_spectral_scan_policy,
+		.maxattr        = QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_MAX,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd    = QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_GET_DIAG_STATS,
+		.doit           = ath12k_vendor_spectral_get_diag,
+		.policy         = VENDOR_CMD_RAW_DATA,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd    = QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_GET_CAP_INFO,
+		.doit           = ath12k_vendor_spectral_get_cap,
+		.policy         = VENDOR_CMD_RAW_DATA,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd    = QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_GET_STATUS,
+		.doit           = ath12k_vendor_spectral_get_status,
+		.policy         = ath12k_spectral_scan_policy,
+		.maxattr        = QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_MAX,
+	},
+#endif /* CPTCFG_ATH12K_SPECTRAL */
 };
 
 static const struct nl80211_vendor_cmd_info ath12k_vendor_events[] = {
@@ -12804,6 +16073,10 @@ static const struct nl80211_vendor_cmd_info ath12k_vendor_events[] = {
 	[QCA_NL80211_VENDOR_SUBCMD_PRI_LINK_MIGRATE_INDEX] = {
 		.vendor_id = QCA_NL80211_VENDOR_ID,
 		.subcmd = QCA_NL80211_VENDOR_SUBCMD_PRI_LINK_MIGRATE,
+	},
+	[QCA_NL80211_VENDOR_SUBCMD_SCAN_DONE_INDEX] = {
+		.vendor_id = QCA_NL80211_VENDOR_ID,
+		.subcmd = QCA_NL80211_VENDOR_SUBCMD_SCAN_DONE,
 	},
 	[QCA_NL80211_VENDOR_SUBCMD_SCS_RULE_CONFIG_INDEX] = {
 		.vendor_id = QCA_NL80211_VENDOR_ID,
@@ -12840,6 +16113,30 @@ static const struct nl80211_vendor_cmd_info ath12k_vendor_events[] = {
 	[QCA_NL80211_VENDOR_SUBCMD_HW_BLOCKED_CHANS_EVENT_INDEX] = {
 		.vendor_id = QCA_NL80211_VENDOR_ID,
 		.subcmd = QCA_NL80211_VENDOR_SUBCMD_HW_BLOCKED_CHANS,
+	},
+	[QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_INDEX] = {
+		.vendor_id = QCA_NL80211_VENDOR_ID,
+		.subcmd = QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION,
+	},
+	[QCA_NL80211_VENDOR_SUBCMD_CH_SWITCH_REASON_INDEX] = {
+		.vendor_id = QCA_NL80211_VENDOR_ID,
+		.subcmd = QCA_NL80211_VENDOR_SUBCMD_CH_SWITCH_REASON,
+	},
+	[QCA_NL80211_VENDOR_SUBCMD_SDWF_PEER_MSDUQ_EVENT_INDEX] = {
+		.vendor_id = QCA_NL80211_VENDOR_ID,
+		.subcmd = QCA_NL80211_VENDOR_SUBCMD_SDWF_PEER_MSDUQ_EVENT,
+	},
+	[QCA_NL80211_VENDOR_SUBCMD_GET_WIPHY_CONFIGURATION_INDEX] = {
+		.vendor_id = QCA_NL80211_VENDOR_ID,
+		.subcmd = QCA_NL80211_VENDOR_SUBCMD_GET_WIPHY_CONFIGURATION,
+	},
+	[QCA_NL80211_VENDOR_SUBCMD_CHAIN_MASK_INDEX] = {
+		.vendor_id = QCA_NL80211_VENDOR_ID,
+		.subcmd = QCA_NL80211_VENDOR_SUBCMD_CHAIN_MASK_CHANGED,
+	},
+	[QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_COMPLETE_INDEX] = {
+		.vendor_id = QCA_NL80211_VENDOR_ID,
+		.subcmd = QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_COMPLETE,
 	},
 };
 

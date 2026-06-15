@@ -7,6 +7,7 @@
 #define ATH12K_DP_TX_CLASSIFY_H
 
 #include "dp_ast.h"
+#include "hal_desc.h"
 #include "../core.h"
 #include "../peer.h"
 
@@ -14,6 +15,7 @@
 #define ATH12K_MAX_DP_MSDUQ_PER_TID \
 	(ATH12K_NUM_TX_CLASSIFY_BANKS * ATH12K_NUM_MSDU_Q_PER_TID)
 
+#define ATH12K_MAX_MSDU_COUNT		0xFFFF
 #define ATH12K_INVALID_TID		0xFF
 #define ATH12K_NUM_TID_PER_BANK		9
 #define ATH12K_MAX_NUM_DATA_TIDS	8
@@ -84,6 +86,11 @@ struct ath12k_dp_msdu_q_info  {
 	   qos:1,
 	   tqm_send:1,
 	   allocated:1;
+	enum hal_tqm_service_category svc;
+	unsigned long last_drop_jiffies;
+	u32 consecutive_drop_count;
+	bool in_threshold_list;
+	struct list_head threshold_node;
 };
 
 struct ath12k_dp_mpdu_q_info {
@@ -151,6 +158,7 @@ int ath12k_dp_tx_mcast_msduq_mpduq_setup(struct ath12k_dp_hw_group *dp_hw_grp,
 					 struct ath12k_dp_peer *dp_peer);
 int ath12k_wifi8_dp_tx_pool_create(struct ath12k_dp_hw_group *dp_hw_grp);
 void ath12k_wifi8_dp_tx_pool_destroy(struct ath12k_dp_hw_group *dp_hw_grp);
-int ath12k_wifi8_qos_queue_setup(struct ath12k_base *ab, struct ath12k_pdev_dp *dp_pdev,
-				 u16 msduq, u16 peer_id, u16 qos_id);
+int ath12k_wifi8_qos_queue_setup(struct ath12k_dp_hw_group *dp_hw_grp,
+				 struct ath12k_dp_peer *dp_peer,
+				 u16 msduq, u16 qos_id);
 #endif

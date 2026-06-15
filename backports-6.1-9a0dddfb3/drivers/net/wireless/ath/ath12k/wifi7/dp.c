@@ -154,7 +154,7 @@ static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 	if (dp->hw_params->ring_mask->host2rxmon[grp_id])
 		ath12k_dp_mon_rx_process_low_thres(dp);
 
-	if (dp->hw_params->ring_mask->tx_mon_buff[grp_id])
+	if (dp->hw_params->ring_mask->host2txmon[grp_id])
 		ath12k_dp_mon_tx_process_low_thres(dp);
 
 	/* TODO: Implement handler for other interrupts */
@@ -230,6 +230,7 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 	u32 n_link_desc = 0;
 	int i;
 
+	dp->tcl_metadata_ver = HTT_OPTION_TCL_METADATA_VER_V2;
 	INIT_LIST_HEAD(&dp->reo_cmd_list);
 	INIT_LIST_HEAD(&dp->reo_cmd_cache_flush_list);
 	INIT_LIST_HEAD(&dp->reo_cmd_update_rx_queue_list);
@@ -317,6 +318,8 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 		goto fail_dp_rx_free;
 	}
 
+	ath12k_dp_mon_cfg_init(dp);
+
 	ret = ath12k_dp_mon_rx_alloc(dp);
 	if (ret) {
 		ath12k_warn(ab, "failed to setup rxdma rings ret = %d\n", ret);
@@ -326,7 +329,7 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 	ret = ath12k_dp_mon_tx_srng_alloc(dp);
 	if (ret) {
 		ath12k_warn(ab, "Tx Mon: failed to setup rings ret = %d\n", ret);
-		goto fail_dp_mon_tx_free;
+		goto fail_dp_mon_rx_free;
 	}
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
@@ -336,9 +339,6 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 #endif
 
 	return 0;
-
-fail_dp_mon_tx_free:
-	ath12k_dp_mon_tx_srng_free(dp);
 
 fail_dp_mon_rx_free:
 	ath12k_dp_mon_rx_free(dp);
@@ -559,9 +559,9 @@ int ath12k_wifi7_dp_fetch_replenish_ring_id(struct ath12k_dp *dp)
 	return rx_ring->refill_buf_ring.ring_id;
 }
 
-static int ath12k_wifi7_dp_qos_queue_setup(struct ath12k_base *ab,
-					   struct ath12k_pdev_dp *dp_pdev,
-					   u16 msduq, u16 peer_id, u16 qos_id)
+static int ath12k_wifi7_dp_qos_queue_setup(struct ath12k_dp_hw_group *dp_hw_grp,
+					   struct ath12k_dp_peer *dp_peer,
+					   u16 msduq, u16 qos_id)
 {
 	return 0;
 }
@@ -600,6 +600,7 @@ static struct ath12k_dp_arch_ops ath12k_wifi7_dp_arch_ops = {
 	.rx_flow_fse_cache_operation = ath12k_wifi7_dp_rx_flow_fse_cache_operation,
 	.fetch_rx_desc_replenish_ring_id = ath12k_wifi7_dp_fetch_replenish_ring_id,
 	.dp_tx_mcast_send = ath12k_wifi7_dp_tx_mcast_send,
+	.dp_tx_set_ast = ath12k_wifi7_dp_tx_set_ast,
 	/* UMAC reset operations */
 	.umac_reset_handle_pre_reset = ath12k_wifi7_umac_reset_handle_pre_reset_wrapper,
 	.umac_reset_handle_post_reset_start =
@@ -628,6 +629,7 @@ struct ath12k_dp *ath12k_wifi7_dp_init(struct ath12k_base *ab)
 	dp->ab = ab;
 	dp->dev = ab->dev;
 	dp->hw_params = ab->hw_params;
+	dp->hw_peer_stats_support = false;
 	dp->hal = &ab->hal;
 	dp->global_peer_id_supported = false;
 

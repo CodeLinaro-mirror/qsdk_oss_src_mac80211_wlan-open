@@ -676,7 +676,8 @@ struct rx_msdu_end_qcn9625_compact {
 	__le16 da_idx_or_sw_peer_id;
 	__le32 info7;
 	__le32 fse_metadata;
-	__le32 rsvd_0;
+	__le16 cce_metadata;
+	__le16 rsvd_0;
 	__le16 info8;
 	__le16 rsvd_1;
 	__le32 info11;

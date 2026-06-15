@@ -742,7 +742,9 @@ const struct ath12k_hw_hal_params ath12k_wifi7_hw_hal_params_qcn9274 = {
 	.wbm2sw_cc_enable = HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW0_EN |
 			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW1_EN |
 			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW2_EN |
+#ifndef CPTCFG_EXT_IPA_OFFLOAD
 			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW3_EN |
+#endif
 			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW4_EN |
 			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW5_EN |
 			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW6_EN,
@@ -897,15 +899,51 @@ void ath12k_wifi7_hal_extract_rx_spd_data_qcn9274(struct hal_rx_spd_data *rx_inf
 {
 	if (set == 0) {
 		rx_info->tlv_info.decap = ath12k_wifi7_hal_rx_h_decap_type_qcn9274(rx_desc);
+	} else if (set == 1) {
+		rx_info->tlv_info.decap = ath12k_wifi7_hal_rx_h_decap_type_qcn9274(rx_desc);
 		rx_info->tlv_info.mesh_ctrl_present =
 			ath12k_wifi7_hal_rx_h_mesh_ctl_present_qcn9274(rx_desc);
-	} else if (set == 1) {
 		rx_info->tlv_info.freq = ath12k_wifi7_hal_rx_h_freq_qcn9274(rx_desc);
 		rx_info->tlv_info.pkt_type = ath12k_wifi7_hal_rx_h_pkt_type_qcn9274(rx_desc);
 		rx_info->tlv_info.bw = ath12k_wifi7_hal_rx_h_rx_bw_qcn9274(rx_desc);
 		rx_info->tlv_info.rate_mcs = ath12k_wifi7_hal_rx_h_rate_mcs_qcn9274(rx_desc);
 		rx_info->tlv_info.nss = hweight8(ath12k_wifi7_hal_rx_h_nss_qcn9274(rx_desc));
 		rx_info->tlv_info.sgi = ath12k_wifi7_hal_rx_h_sgi_qcn9274(rx_desc);
+
+		__le32 flow_idx_info = rx_desc->u.qcn9274_compact.msdu_end.info7;
+
+		rx_info->rx_mpdu_info.flow_idx_timeout =
+			le32_get_bits(flow_idx_info, RX_MSDU_END_INFO7_FLOW_IDX_TIMEOUT);
+		rx_info->rx_mpdu_info.flow_idx_invalid =
+			le32_get_bits(flow_idx_info, RX_MSDU_END_INFO7_FLOW_IDX_INVALID);
+		rx_info->rx_mpdu_info.flow_info.flow_metadata =
+			le16_get_bits(rx_desc->u.qcn9274_compact.msdu_end.fse_metadata,
+				      ATH12K_DP_RX_FSE_FLOW_METADATA_MASK);
+		rx_info->key_id_octate =
+			le32_get_bits(rx_desc->u.qcn9274_compact.mpdu_start.info5,
+				      RX_MPDU_START_INFO5_KEY_ID) & 0x3;
+
+		rx_info->frame_ctl =
+			__le16_to_cpu(rx_desc->u.qcn9274_compact.mpdu_start.frame_ctrl);
+		rx_info->duration_id =
+			__le16_to_cpu(rx_desc->u.qcn9274_compact.mpdu_start.duration);
+		rx_info->seq_ctl =
+			__le16_to_cpu(rx_desc->u.qcn9274_compact.mpdu_start.seq_ctrl);
+
+		rx_info->cce_metadata =
+			__le16_to_cpu(rx_desc->u.qcn9274_compact.msdu_end.cce_metadata);
+
+		if (__le32_to_cpu(rx_desc->u.qcn9274_compact.mpdu_start.info4) &
+		    RX_MPDU_START_INFO4_MAC_ADDR1_VALID)
+			memcpy(rx_info->ad1,
+			       rx_desc->u.qcn9274_compact.mpdu_start.addr1,
+			       ETH_ALEN);
+
+		if (__le32_to_cpu(rx_desc->u.qcn9274_compact.mpdu_start.info4) &
+		    RX_MPDU_START_INFO4_MAC_ADDR2_VALID)
+			memcpy(rx_info->ad2,
+			       rx_desc->u.qcn9274_compact.mpdu_start.addr2,
+			       ETH_ALEN);
 	}
 }
 
@@ -1125,4 +1163,5 @@ const struct hal_ops hal_qcn9274_ops = {
 	.hal_reo_config_reo2ppe_dest_info = ath12k_wifi7_hal_reo_config_reo2ppe_dest_info,
 	.hal_tx_set_ppe_vp_entry = ath12k_wifi7_hal_tx_set_ppe_vp_entry,
 	.hal_get_tlv_tag_params = ath12k_wifi7_get_tlv_tag_params,
+	.hal_rx_h_mpdu_err = ath12k_wifi7_hal_rx_h_mpdu_err_qcn9274,
 };

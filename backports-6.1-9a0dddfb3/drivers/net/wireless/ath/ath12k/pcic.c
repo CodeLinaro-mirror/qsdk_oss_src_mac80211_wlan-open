@@ -392,9 +392,10 @@ static irqreturn_t ath12k_pcic_ext_interrupt_handler(int irq, void *arg)
 	/* last interrupt received for this group */
 	irq_grp->timestamp = jiffies;
 
-	ath12k_pcic_ext_grp_disable(irq_grp);
-
-	napi_schedule(&irq_grp->napi);
+	if (napi_schedule_prep(&irq_grp->napi)) {
+		ath12k_pcic_ext_grp_disable(irq_grp);
+		__napi_schedule(&irq_grp->napi);
+	}
 
 	return IRQ_HANDLED;
 }
@@ -471,7 +472,7 @@ int ath12k_pcic_ext_cfg_gic_msi_irq(struct ath12k_base *ab,
 
 	if (ab->hw_params->ring_mask->rx_mon_dest[i] ||
 	    ab->hw_params->ring_mask->tx_mon_dest[i] ||
-	    ab->hw_params->ring_mask->tx_mon_buff[i])
+	    ab->hw_params->ring_mask->host2txmon[i])
 		budget = NAPI_POLL_WEIGHT;
 	else
 		budget = ath12k_napi_poll_budget;
@@ -495,7 +496,7 @@ int ath12k_pcic_ext_cfg_gic_msi_irq(struct ath12k_base *ab,
 	    ab->hw_params->ring_mask->rx_mon_status[i] ||
 	    ab->hw_params->ring_mask->host2rxmon[i] ||
 	    ab->hw_params->ring_mask->tx_mon_dest[i] ||
-	    ab->hw_params->ring_mask->tx_mon_buff[i] ||
+	    ab->hw_params->ring_mask->host2txmon[i] ||
 	    ab->hw_params->ring_mask->tx_exception[i] ||
 	    ab->hw_params->ring_mask->tqm_status[i] ||
 	    ab->hw_params->ring_mask->tcl_status[i] ||
@@ -995,7 +996,7 @@ int ath12k_pcic_ext_irq_config(struct ath12k_base *ab,
 
 		if (ab->hw_params->ring_mask->rx_mon_dest[i] ||
 		    ab->hw_params->ring_mask->tx_mon_dest[i] ||
-		    ab->hw_params->ring_mask->tx_mon_buff[i])
+		    ab->hw_params->ring_mask->host2txmon[i])
 			budget = NAPI_POLL_WEIGHT;
 		else
 			budget = ath12k_napi_poll_budget;
@@ -1008,11 +1009,6 @@ int ath12k_pcic_ext_irq_config(struct ath12k_base *ab,
 
 		netif_napi_add_weight(napi_ndev, &irq_grp->napi,
 				      ath12k_pcic_ext_grp_napi_poll, budget);
-
-		if (!irq_grp->napi_enabled) {
-			napi_enable(&irq_grp->napi);
-			irq_grp->napi_enabled = true;
-		}
 
 		if (ab->hw_params->ring_mask->tx[i] ||
 		    ab->hw_params->ring_mask->rx[i] ||
@@ -1029,7 +1025,7 @@ int ath12k_pcic_ext_irq_config(struct ath12k_base *ab,
 		    ab->hw_params->ring_mask->rx_mon_status[i] ||
 		    ab->hw_params->ring_mask->host2rxmon[i] ||
 		    ab->hw_params->ring_mask->tx_mon_dest[i] ||
-		    ab->hw_params->ring_mask->tx_mon_buff[i] ||
+		    ab->hw_params->ring_mask->host2txmon[i] ||
 		    ab->hw_params->ring_mask->tx_exception[i] ||
 		    ab->hw_params->ring_mask->tqm_status[i] ||
 		    ab->hw_params->ring_mask->tcl_status[i] ||
@@ -1189,7 +1185,8 @@ int ath12k_pcic_cfg_hybrid_ext_irq(struct ath12k_base *ab,
 	int user_base_data, base_vector, num_vectors = 0;
 
 	if (ab_ahb->userpd_id != ATH12K_QCN6432_USERPD_ID_1 &&
-	    ab_ahb->userpd_id != ATH12K_QCN6432_USERPD_ID_2) {
+	    ab_ahb->userpd_id != ATH12K_QCN6432_USERPD_ID_2 &&
+	    ab_ahb->userpd_id != ATH12K_QCN9160_USERPD_ID_3) {
 		ath12k_warn(ab, "ath12k userpd invalid %d\n", ab_ahb->userpd_id);
 		return -ENODEV;
 	}
@@ -1228,7 +1225,8 @@ int ath12k_pcic_config_hybrid_irq(struct ath12k_base *ab)
 	int i = 0, j = 0;
 
 	if (ab_ahb->userpd_id != ATH12K_QCN6432_USERPD_ID_1 &&
-	    ab_ahb->userpd_id != ATH12K_QCN6432_USERPD_ID_2) {
+	    ab_ahb->userpd_id != ATH12K_QCN6432_USERPD_ID_2 &&
+	    ab_ahb->userpd_id != ATH12K_QCN9160_USERPD_ID_3) {
 		ath12k_warn(ab, "ath12k userpd invalid %d\n", ab_ahb->userpd_id);
 		return -ENODEV;
 	}

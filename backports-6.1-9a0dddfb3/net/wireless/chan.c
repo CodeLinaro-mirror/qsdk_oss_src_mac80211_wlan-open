@@ -1085,6 +1085,10 @@ int cfg80211_chandef_dfs_required(struct wiphy *wiphy,
 		return -EINVAL;
 
 	switch (iftype) {
+	case NL80211_IFTYPE_STATION:
+		if (!wiphy->sta_dfs_en)
+			break;
+		fallthrough;
 	case NL80211_IFTYPE_ADHOC:
 	case NL80211_IFTYPE_AP:
 	case NL80211_IFTYPE_P2P_GO:
@@ -1101,7 +1105,6 @@ int cfg80211_chandef_dfs_required(struct wiphy *wiphy,
 		}
 		return (ret > 0) ? BIT(chandef->width) : ret;
 		break;
-	case NL80211_IFTYPE_STATION:
 	case NL80211_IFTYPE_OCB:
 	case NL80211_IFTYPE_P2P_CLIENT:
 	case NL80211_IFTYPE_MONITOR:
@@ -1157,6 +1160,7 @@ bool cfg80211_chandef_dfs_nol_clear(struct wiphy *wiphy,
 
 	return true;
 }
+EXPORT_SYMBOL(cfg80211_chandef_dfs_nol_clear);
 
 bool cfg80211_chandef_dfs_usable(struct wiphy *wiphy,
 				 const struct cfg80211_chan_def *chandef)
@@ -1393,14 +1397,23 @@ static bool
 cfg80211_offchan_chain_is_active(struct cfg80211_registered_device *rdev,
 				 struct ieee80211_channel *channel)
 {
-	if (!rdev->background_radar_wdev)
-		return false;
+	int i;
 
-	if (!cfg80211_chandef_valid(&rdev->background_radar_chandef))
-		return false;
+	for (i = 0; i < max_t(int, 1, rdev->wiphy.n_radio); i++) {
+		struct cfg80211_bg_radar *bgr =
+			&rdev->wiphy.radio_cfg[i].bg_radar;
 
-	return cfg80211_is_sub_chan(&rdev->background_radar_chandef, channel,
-				    false);
+		if (!bgr->active)
+			continue;
+
+		if (!cfg80211_chandef_valid(&bgr->chandef))
+			continue;
+
+		if (cfg80211_is_sub_chan(&bgr->chandef, channel, false))
+			return true;
+	}
+
+	return false;
 }
 
 bool cfg80211_any_wiphy_oper_chan(struct wiphy *wiphy,
@@ -1541,6 +1554,45 @@ bool cfg80211_chandef_dfs_available(struct wiphy *wiphy,
 }
 EXPORT_SYMBOL(cfg80211_chandef_dfs_available);
 
+#ifdef CPTCFG_QCA_LAB_TEST_FEATURES
+int cfg80211_set_radio_bgcac_cac_time(struct wiphy *wiphy,
+				      u32 radio_idx,
+				      u32 cac_time_ms)
+{
+	if (!wiphy || !wiphy->radio_cfg || radio_idx >= wiphy->n_radio)
+		return -EINVAL;
+
+	lockdep_assert_wiphy(wiphy);
+
+	wiphy->radio_cfg[radio_idx].bgcac_cac_ms = cac_time_ms;
+
+	return 0;
+}
+EXPORT_SYMBOL(cfg80211_set_radio_bgcac_cac_time);
+
+u32 cfg80211_get_radio_bgcac_cac_time(struct wiphy *wiphy, u32 radio_idx)
+{
+	if (!wiphy || !wiphy->radio_cfg || radio_idx >= wiphy->n_radio)
+		return 0;
+
+	return wiphy->radio_cfg[radio_idx].bgcac_cac_ms;
+}
+EXPORT_SYMBOL(cfg80211_get_radio_bgcac_cac_time);
+
+static u32
+cfg80211_chandef_bgcac_cac_time(struct wiphy *wiphy,
+				const struct cfg80211_chan_def *chandef)
+{
+	int radio_idx;
+
+	radio_idx = cfg80211_get_hw_idx_by_chan(wiphy, chandef->chan);
+	if (radio_idx < 0)
+		return 0;
+
+	return cfg80211_get_radio_bgcac_cac_time(wiphy, radio_idx);
+}
+#endif
+
 static unsigned int cfg80211_get_chans_dfs_cac_time_dbw(struct wiphy *wiphy,
 							const struct cfg80211_chan_def *chandef)
 {
@@ -1625,12 +1677,24 @@ exit:
 	dfs_cac_time = max(t1, t2);
 	if (is_bgcac) {
 		if (regulatory_pre_cac_allowed(wiphy)) {
-			/* For ETSI,
-			   off-channel CAC time  = 6 * CAC time
-			   e.g., off-channel CAC time = (6 * 60) secs = 6 mins
-			   weather-radar off-channel CAC time = (6 * 10) mins = 1 hour
+			/*
+			 * For ETSI,
+			 * off-channel CAC time  = 6 * CAC time
+			 * e.g., off-channel CAC time = (6 * 60) secs = 6 mins
+			 * weather-radar off-channel CAC time = (6 * 10) mins = 1 hour
 			 */
 			dfs_cac_time = dfs_cac_time * 6;
+#ifdef CPTCFG_QCA_LAB_TEST_FEATURES
+			{
+				u32 bgcac_ms;
+
+				bgcac_ms = cfg80211_chandef_bgcac_cac_time(wiphy,
+									   chandef);
+
+				if (bgcac_ms)
+					dfs_cac_time = bgcac_ms;
+			}
+#endif
 		} else {
 			/* For FCC,
 			   off-channel CAC time = CAC time + 2

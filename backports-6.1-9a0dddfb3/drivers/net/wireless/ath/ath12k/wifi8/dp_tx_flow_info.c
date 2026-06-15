@@ -359,33 +359,19 @@ int ath12k_dp_tx_peer_msduq_mpduq_setup(struct ath12k_dp_hw_group *dp_hw_grp,
 	return ret;
 }
 
-int ath12k_wifi8_qos_queue_setup(struct ath12k_base *ab, struct ath12k_pdev_dp *dp_pdev,
-				 u16 msduq, u16 peer_id, u16 qos_id)
+int ath12k_wifi8_qos_queue_setup(struct ath12k_dp_hw_group *dp_hw_grp,
+				 struct ath12k_dp_peer *dp_peer,
+				 u16 msduq, u16 qos_id)
 {
 	u32 tid;
-	struct ath12k_dp *dp;
-	struct ath12k_dp_peer *dp_peer;
 	struct ath12k_dp_tx_flow_info *tx_info;
 	enum htt_tx_tid_msduq_mpdu_type flow_type;
 	struct ath12k_dp_tx_queue_metadata tx_queue_params = {0};
 	int ret;
 
-	dp = ath12k_ab_to_dp(ab);
-	if (!dp)
-		return -EINVAL;
-
-	rcu_read_lock();
-	dp_peer = ath12k_dp_peer_find_by_peerid_index(ab->dp, dp_pdev, peer_id);
-	if (!dp_peer) {
-		rcu_read_unlock();
-		return -ENOENT;
-	}
-
 	tx_info = ath12k_dp_get_tx_flow_info_from_peer(dp_peer);
-	if (!tx_info) {
-		rcu_read_unlock();
+	if (!tx_info)
 		return -ENOENT;
-	}
 
 	tid = u32_get_bits(msduq, MSDUQ_TID);
 
@@ -401,9 +387,8 @@ int ath12k_wifi8_qos_queue_setup(struct ath12k_base *ab, struct ath12k_pdev_dp *
 	tx_queue_params.encap_type = HAL_TCL_ENCAP_TYPE_ETHERNET;
 	tx_queue_params.q_params.svc_id = qos_id & 0xFF;
 
-	ret = ath12k_peer_alloc_dynamic_queue(dp->dp_hw_grp, dp_peer,
+	ret = ath12k_peer_alloc_dynamic_queue(dp_hw_grp, dp_peer,
 					      &tx_queue_params);
-	rcu_read_unlock();
 
 	return ret;
 }

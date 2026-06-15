@@ -12,6 +12,9 @@
 #include "mgmt_rx.h"
 #include "dp_tx.h"
 #include "dp_rx.h"
+#include "dp_telemetry.h"
+
+int ath12k_wifi8_dp_rx_wbm_srng_setup(struct ath12k_base *ab);
 
 /**
  * ath12k_wifi8_clear_link_desc_pool_task - Task to clear link desc pool
@@ -71,11 +74,30 @@ static void ath12k_umac_reset_cleanup_tx_queues(struct ath12k_base *ab)
 
 void ath12k_wifi8_umac_reset_handle_init_recovery(struct ath12k_base *ab)
 {
+	struct ath12k_base *cumac_ab =
+		ath12k_dp_get_ab_from_dp_hw_group(ab->ag->dp_hw_grp);
+
 	/* Pause TX during UMAC reset */
 	set_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags);
 
+	/* Set umac in recovery flag for soc under Q6 only reset */
+	if (test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &cumac_ab->dev_flags))
+		set_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &cumac_ab->dev_flags);
+
 	ath12k_hif_irq_disable(ab);
 	ath12k_hif_mgmt_irq_disable(ab);
+}
+
+static void ath12k_wifi8_umac_reset_refill_rings_deinit(struct ath12k_base *ab)
+{
+	int i;
+	struct ath12k_dp *dp = ab->dp;
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+
+	for (i = 0 ; i < DP_WBM_REFILL_RING_MAX; i++)
+		ath12k_dp_srng_hw_disable(ab, &dp_wifi8->wbm_refill_ring[i]);
+
+	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->wbm_idle_buf_ring);
 }
 
 /**
@@ -90,10 +112,11 @@ static void ath12k_wifi8_post_pre_reset_send_cb(struct ath12k_base *ab)
 {
 	struct ath12k_hw_group *ag = ab->ag;
 	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
-	unsigned long flags;
+	unsigned long flags, end;
 
 	/* Enqueue clear_link_desc_pool task for the current ab */
-	if (ab->is_bypassed || test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags))
+	if (ab->is_bypassed || (test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags) &&
+	    !test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags)))
 		return;
 
 	spin_lock_irqsave(&mlo_umac_reset->task_queue_lock, flags);
@@ -106,7 +129,15 @@ static void ath12k_wifi8_post_pre_reset_send_cb(struct ath12k_base *ab)
 
 	spin_unlock_irqrestore(&mlo_umac_reset->task_queue_lock, flags);
 
-	ath12k_wifi8_mgmt_refill_rings_reinit(ab);
+	ath12k_wifi8_umac_reset_refill_rings_deinit(ab);
+	ath12k_wifi8_mgmt_refill_rings_deinit(ab);
+
+	end = jiffies + msecs_to_jiffies(2);
+	while (time_before(jiffies, end))
+		;
+
+	ath12k_wifi8_dp_rx_wbm_srng_setup(ab);
+	ath12k_wifi8_mgmt_rx_refill_ring_setup(ab);
 
 	/* Enqueue unbound tasks - any CPU can process it */
 	ath12k_q_post_reset_task(ab, ath12k_wifi8_clear_link_desc_pool_task);
@@ -138,8 +169,7 @@ void ath12k_wifi8_umac_reset_handle_pre_reset(struct ath12k_base *ab)
 
 	cumac_ab = ath12k_dp_get_ab_from_dp_hw_group(ag->dp_hw_grp);
 
-	if (test_bit(ATH12K_FLAG_RECOVERY, &cumac_ab->dev_flags) &&
-	    cumac_ab->soc_reset_reason == ATH12K_Q6_BCR_RESET) {
+	if (test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &cumac_ab->dev_flags)) {
 		ret = ath12k_cumac_hw_pre_reset(cumac_ab);
 		if (ret) {
 			ath12k_err(ab, "CUMAC HW pre reset failed");
@@ -211,6 +241,15 @@ static void ath12k_wifi8_dp_tx_ring_setup_wrapper(struct ath12k_base *ab)
 	ath12k_wifi8_dp_tx_ring_setup(ab);
 }
 
+static void ath12k_wifi8_dp_telemetry_umac_setup_wrapper(struct ath12k_base *ab)
+{
+	int ret;
+
+	ret = ath12k_wifi8_dp_telemetry_umac_setup(ab);
+	if (ret)
+		ath12k_warn(ab, "failed to setup telemetry config: %d\n", ret);
+}
+
 void ath12k_wifi8_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 {
 	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset;
@@ -230,8 +269,7 @@ void ath12k_wifi8_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 
 	cumac_ab = ath12k_dp_get_ab_from_dp_hw_group(ag->dp_hw_grp);
 
-	if (test_bit(ATH12K_FLAG_RECOVERY, &cumac_ab->dev_flags) &&
-	    cumac_ab->soc_reset_reason == ATH12K_Q6_BCR_RESET) {
+	if (test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &cumac_ab->dev_flags)) {
 		ret = ath12k_cumac_hw_reset(cumac_ab);
 		if (ret) {
 			ath12k_err(ab, "CUMAC HW post reset failed");
@@ -256,6 +294,9 @@ void ath12k_wifi8_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 	ath12k_q_post_reset_task(cumac_ab, ath12k_wifi8_dp_rx_mgmt_init);
 	ath12k_q_post_reset_task(cumac_ab, ath12k_wifi8_clean_pending_ast_entries);
 	ath12k_q_post_reset_task(cumac_ab, ath12k_dp_tid_cleanup);
+	/* Telemetry UMAC setup must run after ring setup tasks are queued. */
+	ath12k_q_post_reset_task(cumac_ab,
+				 ath12k_wifi8_dp_telemetry_umac_setup_wrapper);
 }
 
 /**
@@ -289,14 +330,15 @@ void ath12k_wifi8_umac_reset_handle_post_reset_complete(struct ath12k_base *ab)
 
 	/* Handle only once */
 	if (mlo_umac_reset->initiator_chip == ab->device_id &&
-	    test_bit(ATH12K_FLAG_RECOVERY, &cumac_ab->dev_flags) &&
-	    cumac_ab->soc_reset_reason == ATH12K_Q6_BCR_RESET) {
+	    test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &cumac_ab->dev_flags)) {
 		ret = ath12k_cumac_hw_post_reset(cumac_ab);
 		if (ret) {
 			ath12k_err(ab, "CUMAC HW post reset failed");
 			return;
 		}
 		ath12k_hif_irq_enable(cumac_ab);
+		ath12k_hif_mgmt_irq_enable(cumac_ab);
+		clear_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &cumac_ab->dev_flags);
 	}
 
 	ath12k_hif_irq_enable(ab);
@@ -1144,9 +1186,32 @@ static int ath12k_ring_idle_check(struct ath12k_base *ab, int i,
 	return 0;
 }
 
+/* TRSLONE-601: WAR
+ * Update the TP of the TQM status ring to ring_size + 32 so that TQM would
+ * not backpressure due to FW not reaping the TQM status ring. In Trestles V2,
+ * the TQM status would be routed only to the chips indicated by status required
+ * bits. And hence this WAR is not required for Trestles V2.
+ */
+static void ath12k_update_tqm_status_ring_tp(struct ath12k_base *ab)
+{
+	struct ath12k_hal_wifi8 *hal_wifi8 = ath12k_get_hal_wifi8(&ab->hal);
+	const struct ath12k_hal_reset_rings *reset_ring;
+	u32 ring_base_msb;
+	u32 ring_size;
+
+	reset_ring = &hal_wifi8->reset_rings[HAL_TQM_LOWPRI_STATUS_RING];
+
+	ring_base_msb = ath12k_hif_read32(ab, reset_ring->srng_misc_reg - 12);
+	ring_size = u32_get_bits(ring_base_msb, HAL_TCL1_RING_BASE_MSB_RING_SIZE);
+
+	ath12k_hif_write32(ab, reset_ring->hp + 4, ring_size + 32);
+}
+
 static int ath12k_clear_pending_interrupts(struct ath12k_base *ab, u32 arg)
 {
-	/* TODO: implement interrupt clearing */
+	/* TRSLONE-601: WAR */
+	ath12k_update_tqm_status_ring_tp(ab);
+
 	return 0;
 }
 

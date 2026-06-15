@@ -20,6 +20,8 @@ struct telemetry_agent_ops *g_agent_ops;
 
 EXPORT_SYMBOL(g_agent_ops);
 
+static bool ta_resources_created;
+
 int ath12k_telemetry_ab_agent_create_handler(struct ath12k_base *ab)
 {
 	struct agent_psoc_obj psoc_obj;
@@ -85,6 +87,7 @@ static int ath12k_telemetry_create_destroy_peer_agent(struct ath12k_base *ab,
 	peer_obj.pdev_id = ath12k_get_pdev_id(pdev);
 	ether_addr_copy(peer_obj.peer_mac_addr, peer->addr);
 	peer_obj.peer_id = peer->peer_id;
+	peer_obj.hw_link_id = peer->hw_link_id;
 	ath12k_dbg(NULL, ATH12K_DBG_RM,
 		   "id: %d peer: %p (ab:%p - pdev:%p) soc id: %d (pdev id: %d)\n",
 		   peer_obj.peer_id,
@@ -119,31 +122,44 @@ static void ath12k_telemetry_send_disassoc_event(struct ath12k_dp_link_peer *pee
 
 	ath12k_peer_send_assoc_vendor_response(peer, false);
 }
+
+void ath12k_telemetry_peer_create_destroy_cb(struct ath12k_pdev_dp *dp_pdev,
+					     struct ath12k_dp_link_peer *peer,
+					     void *context)
+{
+	bool create = *((bool *)context);
+	struct ath12k_pdev *pdev = NULL;
+	struct ath12k_dp *dp = dp_pdev->dp;
+
+	if (!ath12k_dp_link_peer_get_vif(peer) || !ath12k_dp_link_peer_get_sta(peer) ||
+	    (create && !peer->assoc_success))
+		return;
+
+	if (ath12k_dp_link_peer_get_vif_type(peer) != NL80211_IFTYPE_AP) {
+		ath12k_dbg(NULL, ATH12K_DBG_RM,
+			   "Peer reference for non sta type is not supported\n");
+		return;
+	}
+
+	pdev = &dp->ab->pdevs[peer->pdev_idx];
+	ath12k_telemetry_create_destroy_peer_agent(dp->ab, pdev, peer, create);
+
+	if (create)
+		ath12k_telemetry_send_assoc_event(peer);
+	else
+		ath12k_telemetry_send_disassoc_event(peer);
+}
+
 int ath12k_telemetry_ab_peer_agent_create(struct ath12k_base *ab)
 {
-	struct ath12k_pdev *pdev = NULL;
-	struct ath12k_dp_link_peer *peer, *tmp;
+	bool create = true;
 
 	if (!ab)
 		return -EINVAL;
 
-	spin_lock_bh(&ab->dp->dp_lock);
-	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
-		if (!ath12k_dp_link_peer_get_vif(peer) ||
-		    !ath12k_dp_link_peer_get_sta(peer) || !peer->assoc_success)
-			continue;
-
-		if (ath12k_dp_link_peer_get_vif_type(peer) != NL80211_IFTYPE_AP) {
-			ath12k_dbg(NULL, ATH12K_DBG_RM,
-				   "Peer reference for non sta type is not supported\n");
-			continue;
-		}
-
-		pdev = &ab->pdevs[peer->pdev_idx];
-		ath12k_telemetry_create_destroy_peer_agent(ab, pdev, peer, true);
-		ath12k_telemetry_send_assoc_event(peer);
-	}
-	spin_unlock_bh(&ab->dp->dp_lock);
+	ath12k_dp_link_peer_iterate_by_device(ab->dp,
+					      ath12k_telemetry_peer_create_destroy_cb,
+					      &create);
 
 	return 0;
 }
@@ -167,11 +183,26 @@ int ath12k_telemetry_ab_peer_agent_create(struct ath12k_base *ab)
  *
  * This routine may become unnecessary once the above limitation is resolved.
  */
-void ath12k_telemetry_create_resources(struct ath12k_hw_group *ag)
+/*
+ * Internal function - does NOT take ag->mutex
+ * Assumes caller already holds the mutex (e.g., core.c HW ready path)
+ */
+void __ath12k_telemetry_create_resources_locked(struct ath12k_hw_group *ag)
 {
 	struct ath12k_pdev *pdev;
 	struct ath12k_base *ab;
 	int i, ret, pdev_idx;
+
+	/* Guard: Only create resources if HW is ready and not already created */
+	if (ta_resources_created) {
+		ath12k_dbg(NULL, ATH12K_DBG_RM, "TA resources already created, skipping\n");
+		return;
+	}
+
+	if (!ath12k_hw_group_started) {
+		ath12k_dbg(NULL, ATH12K_DBG_RM, "HW group not started, skipping TA resource creation\n");
+		return;
+	}
 
 	if (!ag) {
 		ag = ath12k_core_get_ag();
@@ -181,7 +212,7 @@ void ath12k_telemetry_create_resources(struct ath12k_hw_group *ag)
 		}
 	}
 
-	mutex_lock(&ag->mutex);
+	/* NOTE: Caller MUST already hold ag->mutex */
 	for (i = 0; i < ag->num_devices; i++) {
 		ab = ag->ab[i];
 		if (!ab)
@@ -210,6 +241,27 @@ void ath12k_telemetry_create_resources(struct ath12k_hw_group *ag)
 		if (ret)
 			continue;
 	}
+
+	/* Mark resources as created after successful creation */
+	ta_resources_created = true;
+	ath12k_info(NULL, "telemetry agent resources created\n");
+}
+
+/*
+ * External function - TAKES ag->mutex before calling internal function
+ */
+void ath12k_telemetry_create_resources(struct ath12k_hw_group *ag)
+{
+	if (!ag) {
+		ag = ath12k_core_get_ag();
+		if (!ag) {
+			ath12k_err(NULL, "Fails to get ag, skipped to create telemetry resources\n");
+			return;
+		}
+	}
+
+	mutex_lock(&ag->mutex);
+	__ath12k_telemetry_create_resources_locked(ag);
 	mutex_unlock(&ag->mutex);
 }
 
@@ -218,7 +270,6 @@ static u32 ath12k_telemetry_agent_init(void)
 	int status = 0;
 
 	ath12k_telemetry_create_resources(NULL);
-	ath12k_info(NULL, "telemetry agent init Done\n");
 	return status;
 }
 
@@ -265,8 +316,7 @@ int ath12k_telemetry_pdev_agent_delete_handler(struct ath12k_pdev *pdev)
 
 int ath12k_telemetry_ab_peer_agent_destroy(struct ath12k_base *ab)
 {
-	struct ath12k_pdev *pdev = NULL;
-	struct ath12k_dp_link_peer *peer, *tmp;
+	bool create = false;
 
 	if (!ab) {
 		ath12k_dbg(NULL, ATH12K_DBG_RM,
@@ -274,20 +324,9 @@ int ath12k_telemetry_ab_peer_agent_destroy(struct ath12k_base *ab)
 		return -EINVAL;
 	}
 
-	spin_lock_bh(&ab->dp->dp_lock);
-	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
-		if (!ath12k_dp_link_peer_get_vif(peer) ||
-		    !ath12k_dp_link_peer_get_sta(peer))
-			continue;
-
-		if (ath12k_dp_link_peer_get_vif_type(peer) != NL80211_IFTYPE_AP)
-			continue;
-
-		pdev = &ab->pdevs[peer->pdev_idx];
-		ath12k_telemetry_create_destroy_peer_agent(ab, pdev, peer, false);
-		ath12k_telemetry_send_disassoc_event(peer);
-	}
-	spin_unlock_bh(&ab->dp->dp_lock);
+	ath12k_dp_link_peer_iterate_by_device(ab->dp,
+					      ath12k_telemetry_peer_create_destroy_cb,
+					      &create);
 
 	return 0;
 }
@@ -337,6 +376,8 @@ void ath12k_telemetry_destroy_resources(struct ath12k_hw_group *ag)
 		}
 	}
 
+	/* Reset the flag when destroying resources */
+	ta_resources_created = false;
 	mutex_unlock(&ag->mutex);
 }
 
@@ -487,6 +528,8 @@ static int ath12k_calculate_link_rssi(struct ath12k_dp_link_peer *peer)
 	WARN_ON(!rcu_read_lock_held());
 	sta = ath12k_dp_link_peer_get_sta(peer);
 	link_sta = rcu_dereference(sta->link[peer->link_id]);
+	if (!link_sta)
+		return 0;
 	bw = link_sta->bandwidth;
 
 	bw_offset = ath12k_mac_get_bw_offset(bw);
@@ -500,27 +543,52 @@ static int ath12k_calculate_link_rssi(struct ath12k_dp_link_peer *peer)
 	return avg_snr;
 }
 
-int ath12k_get_peer_stats(int obj_id, void *parent,
+int ath12k_get_peer_stats(int obj_id, void *parent, u8 hw_link_id,
 			  struct agent_peer_iface_stats_obj *stats)
 {
 	int peer_id = obj_id;
 	struct ath12k_base *ab = (struct ath12k_base *)parent;
 	struct ath12k_peer_telemetry_stats dp_stats;
 	struct ath12k_dp_link_peer *peer;
+	struct ath12k *ar;
 	u8 ac;
 
-	/* Telemetry agent is expected to hold lock while fetching this stats
-	 */
 	if (!ab) {
 		ath12k_err(NULL, "Invalid peer object received from telemetry agent object\n");
 		return -EINVAL;
 	}
 
-	spin_lock_bh(&ab->dp->dp_lock);
-	peer = ath12k_dp_link_peer_find_by_id(ab->dp, peer_id);
+	/*
+	 * The telemetry agent calls this while holding agent_lock and
+	 * peer_db_lock.  The old implementation acquired dp_lock here,
+	 * creating an AB-BA deadlock with the teardown path:
+	 *
+	 *   stats path:    agent_lock -> peer_db_lock -> dp_lock  (old)
+	 *   teardown path: dp_lock -> agent_lock
+	 *
+	 * Fix: use hw_link_id to resolve the per-radio dp_pdev, then look
+	 * up the peer under rcu_read_lock() via the per-pdev peer-ID table
+	 * (ath12k_dp_link_peer_find_by_peerid_index).  This avoids dp_lock
+	 * entirely and is safe because:
+	 *   - ath12k_dp_link_peer_find_by_peerid_index() is RCU-safe
+	 *   - ath12k_calculate_link_rssi() requires rcu_read_lock_held()
+	 *   - airtime stats are read from peer->peer_stats.dp_mon_stats.mon_stats
+	 *     which mirrors what ath12k_dp_get_peer_telemetry_stats() reads;
+	 *     the u16 avg_consumption_per_sec fields are safe to read without
+	 *     dp_lock for telemetry purposes (slightly stale reads are acceptable)
+	 */
+
+	ar = ath12k_core_ar_from_hw_link_id(ab, hw_link_id);
+	if (!ar) {
+		ath12k_err(NULL, "No radio found for hw_link_id %u\n", hw_link_id);
+		return -EINVAL;
+	}
+
+	rcu_read_lock();
+	peer = ath12k_dp_link_peer_find_by_peerid_index(ab->dp, &ar->dp, peer_id);
 	if (!peer || peer->is_bridge_peer || !peer->assoc_success ||
 	    !ath12k_dp_link_peer_get_sta(peer)) {
-		spin_unlock_bh(&ab->dp->dp_lock);
+		rcu_read_unlock();
 		return -EINVAL;
 	}
 
@@ -528,9 +596,7 @@ int ath12k_get_peer_stats(int obj_id, void *parent,
 	ether_addr_copy(stats->peer_mld_mac, peer->ml_addr);
 	ether_addr_copy(stats->peer_link_mac, peer->addr);
 
-	if (ath12k_dp_get_peer_telemetry_stats(ab, peer->addr, &dp_stats))
-		ath12k_err(NULL, "Failed to get telemetry peer stats for %pM\n",
-			   peer->addr);
+	ath12k_dp_mon_peer_telemetry_stats(peer, &dp_stats);
 
 	stats->rssi = ath12k_calculate_link_rssi(peer);
 	if (peer->primary_link) {
@@ -551,8 +617,8 @@ int ath12k_get_peer_stats(int obj_id, void *parent,
 			   dp_stats.tx_airtime_consumption[ac],
 			   dp_stats.rx_airtime_consumption[ac]);
 	}
-	spin_unlock_bh(&ab->dp->dp_lock);
 
+	rcu_read_unlock();
 	return 0;
 }
 
@@ -631,6 +697,7 @@ static int ath12k_telemetry_peer_agent_update(struct ath12k_base *ab,
 	peer_obj.pdev_id = ath12k_get_pdev_id(pdev);
 	ether_addr_copy(peer_obj.peer_mac_addr, peer->addr);
 	peer_obj.peer_id = peer->peer_id;
+	peer_obj.hw_link_id = peer->hw_link_id;
 
 	if (is_create)
 		g_agent_ops->agent_peer_create_handler(peer, &peer_obj);
@@ -641,22 +708,16 @@ static int ath12k_telemetry_peer_agent_update(struct ath12k_base *ab,
 }
 
 int ath12k_telemetry_peer_agent_create_handler(struct ath12k *ar,
-					       const int vdev_id,
-					       const u8 *addr)
+					       struct ath12k_dp_link_peer *peer)
 {
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_pdev *pdev = ar->pdev;
-	struct ath12k_dp_link_peer *peer = NULL;
 
 	if (!pdev || !g_agent_ops ||
 	    !g_agent_ops->agent_peer_create_handler)
 		return -EINVAL;
 
 	lockdep_assert_held(&ab->dp->dp_lock);
-
-	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(ab->dp, vdev_id, addr);
-	if (!peer)
-		return -EINVAL;
 
 	/* Create only for STA type */
 	if (ath12k_dp_link_peer_get_vif_type(peer) != NL80211_IFTYPE_AP)
@@ -668,12 +729,10 @@ int ath12k_telemetry_peer_agent_create_handler(struct ath12k *ar,
 }
 
 int ath12k_telemetry_peer_agent_delete_handler(struct ath12k *ar,
-					       const int vdev_id,
-					       const u8 *addr)
+					       struct ath12k_dp_link_peer *peer)
 {
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_pdev *pdev = ar->pdev;
-	struct ath12k_dp_link_peer *peer = NULL;
 
 	if (!pdev || !g_agent_ops ||
 	    !g_agent_ops->agent_peer_destroy_handler) {
@@ -682,13 +741,6 @@ int ath12k_telemetry_peer_agent_delete_handler(struct ath12k *ar,
 	}
 
 	lockdep_assert_held(&ab->dp->dp_lock);
-
-	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(ab->dp, vdev_id, addr);
-	if (!peer) {
-		ath12k_dbg(NULL, ATH12K_DBG_RM,
-			   "No peer found while deleting peer back reference in TA\n");
-		return -EINVAL;
-	}
 
 	/* Create only for STA type */
 	if (ath12k_dp_link_peer_get_vif_type(peer) != NL80211_IFTYPE_AP) {

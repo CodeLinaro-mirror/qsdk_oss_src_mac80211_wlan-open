@@ -10,6 +10,32 @@
 #include "hal_tx.h"
 #include "hal_rx.h"
 
+#define HAL_REG_WRITER_VALUE_BASE_ADDR 0xF1E000
+#define HAL_REG_WRITER_VALUE_OFFSET 0x3000
+
+/**
+ * Enumeration for Reg Write block index selection
+ * Each Enum position corresponds to respective
+ * UMAC_UMCMN_R0_REG_ADDR_LSB_IX_n
+ * UMAC_UMCMN_R0_REG_ADDR_MSB_IX_n
+ * UMAC_UMCMN_R2_REG_VALUE_IX_n
+ *
+ * Any value written to the value register will be copied by
+ * Reg Writer Block to Address written in Reg Address Register.
+ *
+ * NOTE: Only value Registers defined in the enum should be used by the Host.
+ * Rest are unconfigured, and if used may result in invalid memory access
+ **/
+enum hal_reg_write_selection {
+	HAL_REG_WRITER_RXMON_SW2MON_BUF_RING = 0,
+	HAL_REG_WRITER_TXMON_SW2MON_BUF_RING = 0x4,
+	HAL_REG_WRITER_RXMON_M0_MON2SW_DEST_RING = 0x8,
+	HAL_REG_WRITER_RXMON_M1_MON2SW_DEST_RING = 0xc,
+	HAL_REG_WRITER_TXMON_M0_MON2SW_DEST_RING = 0x10,
+	HAL_REG_WRITER_TXMON_M1_MON2SW_DEST_RING = 0x14,
+	HAL_REG_WRITER_RXOLE2SW_ASE_DEST_RING = 0x18,
+};
+
 extern const struct hal_ops hal_qcn9625_ops;
 
 u32 ath12k_wifi8_hal_rx_h_mpdu_err_qcn9625(struct hal_rx_desc *desc);

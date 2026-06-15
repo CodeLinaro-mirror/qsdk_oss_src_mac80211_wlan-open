@@ -24,6 +24,15 @@ enum ath12k_dp_mscs_peer_lookup_status {
 };
 
 /**
+ * ath_encode_metadata() - Encode combined MLO and SDWF metadata
+ * @link_id: MLO link ID; use ATH12k_MLO_LINK_ID_INVALID to skip MLO encoding
+ * @msduq_peer: SDWF peer MSDUQ value; use SDWF_PEER_MSDUQ_INVALID to skip SDWF encoding
+ *
+ * Return: Combined metadata bitmask
+ */
+u32 ath_encode_metadata(u8 link_id, u16 msduq_peer);
+
+/**
  * ath12k_dp_accel_cfg_init() - Initialize dp_accel_cfg context
  * @ab: ath12k_base handle
  *

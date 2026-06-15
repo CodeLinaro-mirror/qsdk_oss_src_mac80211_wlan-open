@@ -43,6 +43,7 @@ struct agent_peer_obj {
 	u8 pdev_id;
 	u8 peer_mac_addr[6];
 	u16 peer_id;
+	u8 hw_link_id;
 };
 
 enum agent_notification_event {
@@ -303,7 +304,7 @@ struct telemetry_agent_ops {
 	int (*agent_get_pdev_info)(void *obj, struct agent_pdev_iface_init_obj *stats);
 	int (*agent_get_peer_info)(void *obj, struct agent_peer_iface_init_obj *stats);
 	int (*agent_get_pdev_stats)(void *obj, struct agent_link_iface_stats_obj *stats);
-	int (*agent_get_peer_stats)(int obj_id, void *parent,
+	int (*agent_get_peer_stats)(int obj_id, void *parent, u8 hw_link_id,
 				    struct agent_peer_iface_stats_obj *stats);
 	int (*agent_get_emesh_pdev_stats)(void *obj,
 					  struct emesh_link_iface_stats_obj *stats);

@@ -3229,6 +3229,7 @@ static inline bool ath12k_cold_boot_cal_needed(struct ath12k_base *ab)
 {
 	return (!ath12k_waltest_mode && !ab->early_cal_support &&
 		ab->hw_params->cold_boot_calib && ath12k_cold_boot_cal &&
+		ath12k_dp_ring_cfg->cold_boot_calib &&
 		ab->qmi.cal_done == 0);
 }
 
@@ -4210,15 +4211,35 @@ void ath12k_qmi_free_target_mem_chunk(struct ath12k_base *ab)
 			if (test_bit(ATH12K_FLAG_FIXED_MEM_REGION, &ab->dev_flags) &&
 			    ab->qmi.target_mem[i].v.ioaddr) {
 #ifdef PLATFORM_SDX85
-				dma_free_attrs(ab->dev,
-					       ab->qmi.target_mem[i].size,
-					       ab->qmi.target_mem[i].v.ioaddr,
-					       ab->qmi.target_mem[i].paddr,
-					       DMA_ATTR_FORCE_CONTIGUOUS);
+				if (ab->qmi.target_mem[i].type == AFC_REGION_TYPE &&
+				    ab->qmi.target_mem[i].v.addr) {
+					dma_free_coherent(ab->dev,
+							  ab->qmi.target_mem[i].size,
+							  ab->qmi.target_mem[i].v.addr,
+							  ab->qmi.target_mem[i].paddr);
+					ab->qmi.target_mem[i].v.addr = NULL;
+				} else {
+					dma_free_attrs(ab->dev,
+						       ab->qmi.target_mem[i].size,
+						       ab->qmi.target_mem[i].v.ioaddr,
+						       ab->qmi.target_mem[i].paddr,
+						       DMA_ATTR_FORCE_CONTIGUOUS);
+					ab->qmi.target_mem[i].v.ioaddr = NULL;
+				}
 #else
-				iounmap(ab->qmi.target_mem[i].v.ioaddr);
+				if (ab->qmi.target_mem[i].type == AFC_REGION_TYPE &&
+				    ab->hif.bus != ATH12K_BUS_HYBRID &&
+				    ab->qmi.target_mem[i].v.addr) {
+					dma_free_coherent(ab->dev,
+							  ab->qmi.target_mem[i].size,
+							  ab->qmi.target_mem[i].v.addr,
+							  ab->qmi.target_mem[i].paddr);
+					ab->qmi.target_mem[i].v.addr = NULL;
+				} else {
+					iounmap(ab->qmi.target_mem[i].v.ioaddr);
+					ab->qmi.target_mem[i].v.ioaddr = NULL;
+				}
 #endif
-				ab->qmi.target_mem[i].v.ioaddr = NULL;
 			} else {
 				if (!ab->qmi.target_mem[i].v.addr)
 					continue;
@@ -4310,7 +4331,8 @@ static int ath12k_qmi_alloc_target_mem_chunk(struct ath12k_base *ab)
 		case PAGEABLE_MEM_REGION_TYPE:
 		case CALDB_MEM_REGION_TYPE:
 			if ((chunk->type == CALDB_MEM_REGION_TYPE &&
-			     !ab->hw_params->cold_boot_calib) ||
+			     (!ab->hw_params->cold_boot_calib ||
+			      !ath12k_dp_ring_cfg->cold_boot_calib)) ||
 			     !chunk->size) {
 				chunk->paddr = 0;
 				chunk->v.addr = NULL;
@@ -4656,8 +4678,9 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 		case M3_DUMP_REGION_TYPE:
 		case PAGEABLE_MEM_REGION_TYPE:
 			if ((ab->qmi.target_mem[i].type == CALDB_MEM_REGION_TYPE &&
-			     !ab->hw_params->cold_boot_calib) ||
-			     !ab->qmi.target_mem[i].size) {
+			     (!ab->hw_params->cold_boot_calib ||
+			      !ath12k_dp_ring_cfg->cold_boot_calib)) ||
+			    !ab->qmi.target_mem[i].size) {
 				ab->qmi.target_mem[idx].paddr = 0;
 				ab->qmi.target_mem[idx].v.ioaddr = NULL;
 				ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
@@ -4835,8 +4858,9 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 		case M3_DUMP_REGION_TYPE:
 		case PAGEABLE_MEM_REGION_TYPE:
 			if ((ab->qmi.target_mem[i].type == CALDB_MEM_REGION_TYPE &&
-			     !ab->hw_params->cold_boot_calib) ||
-			     !ab->qmi.target_mem[i].size) {
+			     (!ab->hw_params->cold_boot_calib ||
+			      !ath12k_dp_ring_cfg->cold_boot_calib)) ||
+			    !ab->qmi.target_mem[i].size) {
 				ab->qmi.target_mem[idx].paddr = 0;
 				ab->qmi.target_mem[idx].v.ioaddr = NULL;
 				ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
@@ -5286,8 +5310,8 @@ success:
 			goto out_qmi_cal;
 		}
 
-		ath12k_dbg(ab, ATH12K_DBG_QMI, "qmi caldata downloaded: type: %u\n",
-			   file_type);
+		ath12k_info(ab, "qmi caldata downloaded: type: %u, size: %u\n",
+			    file_type, fw_size);
 
 out_qmi_cal:
 		if (!ab->qmi.target.eeprom_caldata)
@@ -5308,7 +5332,8 @@ out_qmi_cal:
 
 out:
 	ath12k_core_free_bdf(ab, &bd);
-	ath12k_dbg(ab, ATH12K_DBG_QMI, "qmi BDF download sequence completed\n");
+	ath12k_info(ab, "qmi BDF download sequence completed for type: %u, size: %u\n",
+		    type, fw_size);
 
 	return ret;
 }
@@ -6316,7 +6341,8 @@ static int ath12k_qmi_request_device_info(struct ath12k_base *ab)
 	int ret = 0;
 
 	/*device info message only supported for internal-PCI devices */
-	if (ab->hw_rev != ATH12K_HW_QCN6432_HW10)
+	if (ab->hw_rev != ATH12K_HW_QCN6432_HW10 &&
+		ab->hw_rev != ATH12K_HW_QCN9160_HW10)
 		return 0;
 
 	memset(&req, 0, sizeof(req));

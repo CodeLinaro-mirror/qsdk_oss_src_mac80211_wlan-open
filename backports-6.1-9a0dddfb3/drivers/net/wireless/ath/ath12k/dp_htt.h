@@ -16,6 +16,8 @@ struct ath12k_pdev_dp;
 #define HTT_TAG_TCL_METADATA_VERSION		5
 
 #define HTT_TCL_META_DATA_TYPE			GENMASK(1, 0)
+#define HTT_TCL_META_DATA_TYPE_V3		GENMASK(15, 14)
+#define HTT_TCL_META_DATA_VALID_HTT_V3		BIT(0)
 #define HTT_TCL_META_DATA_VALID_HTT		BIT(2)
 
 /* vdev meta data */
@@ -26,6 +28,7 @@ struct ath12k_pdev_dp;
 /* peer meta data */
 #define HTT_TCL_META_DATA_TYPE_PEER_BASED	0
 #define HTT_TCL_META_DATA_PEER_ID		GENMASK(15, 3)
+#define HTT_TCL_META_DATA_PEER_ID_V3		GENMASK(13, 1)
 
 /* Global sequence number */
 #define HTT_TCL_META_DATA_TYPE_GLOBAL_SEQ_NUM		3
@@ -287,6 +290,7 @@ struct htt_h2t_msg_type_rxdma_rxole_ppe_cfg {
 
 #define HTT_VER_REQ_INFO_MSG_ID		GENMASK(7, 0)
 #define HTT_OPTION_TCL_METADATA_VER_V2	2
+#define HTT_OPTION_TCL_METADATA_VER_V3	3
 #define HTT_OPTION_TAG			GENMASK(7, 0)
 #define HTT_OPTION_LEN			GENMASK(15, 8)
 #define HTT_OPTION_VALUE		GENMASK(31, 16)
@@ -734,6 +738,7 @@ enum htt_stats_frametype {
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO0_DROP_THRES_VAL	BIT(27)
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO0_EN_RXMON		BIT(28)
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO0_PKT_TYPE_EN_DATA	BIT(29)
+#define HTT_RX_RING_SELECTION_CFG_CMD_INFO0_MON_MODE		BIT(30)
 
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO1_BUF_SIZE		GENMASK(15, 0)
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO1_CONF_LEN_MGMT	GENMASK(18, 16)
@@ -1154,6 +1159,7 @@ struct htt_rx_ring_tlv_filter {
 	u16 rx_tlv_offset;
 	bool drop_threshold_valid;
 	bool rxmon_disable;
+	bool is_monitor_mode;
 	u8 rx_hdr_len;
 	u8 rx_mon_fpmo_data_hdrlen;
 	u8 rx_mon_fpmo_ctrl_hdrlen;
@@ -1460,6 +1466,53 @@ struct htt_tx_mon_ring_selection_cfg_cmd {
 	__le32 tlv_word_mask_in5;
 } __packed;
 
+/**
+ * struct htt_tx_ring_tlv_filter - TX monitor TLV filter and capture control
+ * @tx_mon_downstream_tlv_flags: Bitmap of downstream TLVs to be enabled in
+ *	TX monitor capture path.
+ * @tx_mon_upstream_tlv_flags0: Upstream TLV bitmap word 0.
+ * @tx_mon_upstream_tlv_flags1: Upstream TLV bitmap word 1.
+ * @tx_mon_upstream_tlv_flags2: Upstream TLV bitmap word 2.
+ * @wmask: Wildcard mask configuration used for selective matching.
+ *
+ * Frame-class filtering:
+ * @tx_mon_mgmt_filter: Enable management frame capture/filtering.
+ * @tx_mon_data_filter: Enable data frame capture/filtering.
+ * @tx_mon_ctrl_filter: Enable control frame capture/filtering.
+ *
+ * DMA capture length:
+ * @tx_mon_mgmt_pkt_dma_len: Maximum DMA length for management packets.
+ * @tx_mon_data_pkt_dma_len: Maximum DMA length for data packets.
+ * @tx_mon_ctrl_pkt_dma_len: Maximum DMA length for control packets.
+ *
+ * TLV boundary logging control for management frames:
+ * @mgmt_mpdu_end: Capture MPDU_END TLV.
+ * @mgmt_msdu_end: Capture MSDU_END TLV.
+ * @mgmt_msdu_start: Capture MSDU_START TLV.
+ * @mgmt_mpdu_start: Capture MPDU_START TLV.
+ *
+ * TLV boundary logging control for control frames:
+ * @ctrl_mpdu_end: Capture MPDU_END TLV.
+ * @ctrl_msdu_end: Capture MSDU_END TLV.
+ * @ctrl_msdu_start: Capture MSDU_START TLV.
+ * @ctrl_mpdu_start: Capture MPDU_START TLV.
+ *
+ * TLV boundary logging control for data frames:
+ * @data_mpdu_end: Capture MPDU_END TLV.
+ * @data_msdu_end: Capture MSDU_END TLV.
+ * @data_msdu_start: Capture MSDU_START TLV.
+ * @data_mpdu_start: Capture MPDU_START TLV.
+ *
+ * Logging and match control:
+ * @txmon_disable: Disable TX monitor configuration.
+ * @mgmt_mpdu_msdu_log_en: Enable MPDU/MSDU logging for management frames.
+ * @ctrl_mpdu_msdu_log_en: Enable MPDU/MSDU logging for control frames.
+ * @data_mpdu_msdu_log_en: Enable MPDU/MSDU logging for data frames.
+ * @mgmt_log_typ: Select management frame logging type.
+ * @ctrl_log_typ: Select control frame logging type.
+ * @data_log_typ: Select data frame logging type.
+ * @mac_addr_filter_en: Enable MAC address-based filtering.
+ */
 struct htt_tx_ring_tlv_filter {
 	u32 tx_mon_downstream_tlv_flags;
 	u32 tx_mon_upstream_tlv_flags0;
@@ -2925,7 +2978,8 @@ int
 ath12k_dp_tx_htt_h2t_ext_stats_req(struct ath12k *ar, u8 type,
 				   struct htt_ext_stats_cfg_params *cfg_params,
 				   u64 cookie);
-void ath12k_dp_get_htt_mgmt_filter(struct ath12k_base *ab, u16 *mgmt_filter);
+void ath12k_dp_get_htt_mgmt_filter(struct ath12k_base *ab,
+				   struct htt_rx_ring_tlv_filter *tlv_filter);
 int ath12k_dp_tx_htt_rx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 				     int mac_id, enum hal_ring_type ring_type,
 				     int rx_buf_size, u8 rx_pktlog_mode,

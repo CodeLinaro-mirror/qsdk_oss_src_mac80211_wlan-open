@@ -2776,6 +2776,300 @@ static void handle_band_custom(struct wiphy *wiphy,
 				      MHZ_TO_KHZ(20), 0);
 }
 
+static void
+cfg80211_init_reg_request(struct regulatory_request *request,
+			  struct wiphy *wiphy,
+			  const char *alpha2)
+{
+	memset(request, 0, sizeof(*request));
+	request->wiphy_idx = get_wiphy_idx(wiphy);
+	request->alpha2[0] = alpha2[0];
+	request->alpha2[1] = alpha2[1];
+	request->initiator = NL80211_REGDOM_SET_BY_DRIVER;
+}
+
+#ifdef CPTCFG_QCA_LAB_TEST_FEATURES
+static bool cfg80211_is_freq_in_range(u32 freq_mhz, u32 start_mhz, u32 end_mhz)
+{
+	if (!start_mhz && !end_mhz)
+		return true;
+
+	return freq_mhz >= start_mhz && freq_mhz <= end_mhz;
+}
+
+static bool cfg80211_is_reg_rule_in_range(const struct ieee80211_reg_rule *rule,
+					  u32 start_mhz, u32 end_mhz)
+{
+	u32 rule_start_mhz = KHZ_TO_MHZ(rule->freq_range.start_freq_khz);
+	u32 rule_end_mhz = KHZ_TO_MHZ(rule->freq_range.end_freq_khz);
+
+	if (!start_mhz && !end_mhz)
+		return true;
+
+	return rule_end_mhz >= start_mhz && rule_start_mhz <= end_mhz;
+}
+
+/**
+ * cfg80211_update_regd_dfs_cac_time - update CAC timeout in reg rules
+ * @regd: regulatory domain to update
+ * @start_mhz: first frequency to update, or 0 for all
+ * @end_mhz: last frequency to update, or 0 for all
+ * @cac_time_ms: CAC timeout in milliseconds
+ *
+ * Return: true if any DFS rule was updated.
+ */
+static bool cfg80211_update_regd_dfs_cac_time(struct ieee80211_regdomain *regd,
+					      u32 start_mhz, u32 end_mhz,
+					      u32 cac_time_ms)
+{
+	bool changed = false;
+	unsigned int i;
+
+	for (i = 0; i < regd->n_reg_rules; i++) {
+		struct ieee80211_reg_rule *rule = &regd->reg_rules[i];
+
+		if (!(rule->flags & NL80211_RRF_DFS))
+			continue;
+
+		if (!cfg80211_is_reg_rule_in_range(rule, start_mhz, end_mhz))
+			continue;
+
+		if (rule->dfs_cac_ms == cac_time_ms)
+			continue;
+
+		rule->dfs_cac_ms = cac_time_ms;
+		changed = true;
+	}
+
+	return changed;
+}
+
+/**
+ * cfg80211_update_pending_dfs_cac_time - update pending DFS CAC time
+ * @wiphy: wiphy whose pending regulatory request has to be updated
+ * @start_mhz: first center frequency to update, or 0 for all
+ * @end_mhz: last center frequency to update, or 0 for all
+ * @cac_time_ms: CAC timeout in milliseconds
+ *
+ * Return: %true if the pending regdomain changed, %false otherwise.
+ */
+static bool cfg80211_update_pending_dfs_cac_time(struct wiphy *wiphy,
+						 u32 start_mhz, u32 end_mhz,
+						 u32 cac_time_ms)
+{
+	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wiphy);
+	struct ieee80211_regdomain *regd;
+	bool changed = false;
+
+	spin_lock(&reg_requests_lock);
+	regd = (struct ieee80211_regdomain *)rdev->requested_regd;
+	if (regd)
+		changed = cfg80211_update_regd_dfs_cac_time(regd, start_mhz,
+							    end_mhz, cac_time_ms);
+	spin_unlock(&reg_requests_lock);
+
+	return changed;
+}
+
+/**
+ * cfg80211_update_chan_dfs_cac_time - update DFS CAC time for one channel
+ * @chan: channel to update
+ * @start_mhz: first center frequency to update, or 0 for all
+ * @end_mhz: last center frequency to update, or 0 for all
+ * @cac_time_ms: CAC timeout in milliseconds
+ *
+ * Return: %true if the channel CAC timeout changed, %false otherwise.
+ */
+static bool cfg80211_update_chan_dfs_cac_time(struct ieee80211_channel *chan,
+					      u32 start_mhz, u32 end_mhz,
+					      u32 cac_time_ms)
+{
+	if (!(chan->flags & IEEE80211_CHAN_RADAR))
+		return false;
+
+	if (!cfg80211_is_freq_in_range(chan->center_freq, start_mhz, end_mhz))
+		return false;
+
+	if (chan->dfs_cac_ms == cac_time_ms)
+		return false;
+
+	chan->dfs_cac_ms = cac_time_ms;
+
+	return true;
+}
+
+/**
+ * cfg80211_update_wiphy_dfs_cac_channels - update DFS CAC time for channels
+ * @wiphy: wiphy whose channels have to be updated
+ * @start_mhz: first center frequency to update, or 0 for all
+ * @end_mhz: last center frequency to update, or 0 for all
+ * @cac_time_ms: CAC timeout in milliseconds
+ *
+ * Return: %true if any channel CAC timeout changed, %false otherwise.
+ */
+static bool cfg80211_update_wiphy_dfs_cac_channels(struct wiphy *wiphy,
+						   u32 start_mhz, u32 end_mhz,
+						   u32 cac_time_ms)
+{
+	struct ieee80211_supported_band *sband;
+	bool changed = false;
+	unsigned int i;
+
+	sband = wiphy->bands[NL80211_BAND_5GHZ];
+	if (!sband)
+		return false;
+
+	for (i = 0; i < sband->n_channels; i++) {
+		struct ieee80211_channel *chan = &sband->channels[i];
+
+		if (cfg80211_update_chan_dfs_cac_time(chan, start_mhz,
+						      end_mhz, cac_time_ms))
+			changed = true;
+	}
+
+	return changed;
+}
+
+static void cfg80211_reg_change_event_work(struct work_struct *work)
+{
+	struct cfg80211_reg_change_event_work *event_work;
+	struct regulatory_request *request;
+	struct wiphy *wiphy;
+
+	event_work = container_of(work,
+				  struct cfg80211_reg_change_event_work,
+				  work);
+	request = &event_work->request;
+	wiphy = event_work->wiphy;
+
+	rtnl_lock();
+	if (wiphy->flags & WIPHY_FLAG_NOTIFY_REGDOM_BY_DRIVER)
+		reg_call_notifier(wiphy, request);
+	nl80211_send_wiphy_reg_change_event(request);
+	rtnl_unlock();
+
+	put_device(&wiphy->dev);
+	kfree(event_work);
+}
+
+static void
+cfg80211_free_reg_change_event_work(struct cfg80211_reg_change_event_work *event_work)
+{
+	put_device(&event_work->wiphy->dev);
+	kfree(event_work);
+}
+
+static struct cfg80211_reg_change_event_work *
+cfg80211_alloc_reg_change_event_work(struct wiphy *wiphy, const char *alpha2)
+{
+	struct cfg80211_reg_change_event_work *event_work;
+
+	event_work = kzalloc(sizeof(*event_work), GFP_KERNEL);
+	if (!event_work)
+		return NULL;
+
+	INIT_WORK(&event_work->work, cfg80211_reg_change_event_work);
+	event_work->wiphy = wiphy;
+	get_device(&wiphy->dev);
+	cfg80211_init_reg_request(&event_work->request, wiphy, alpha2);
+
+	return event_work;
+}
+
+/**
+ * cfg80211_update_dfs_cac_time - update DFS CAC timeout
+ * @wiphy: the wiphy whose regulatory/channel state has to be updated
+ * @start_freq_mhz: start_freq of the radio
+ * @end_freq_mhz: end_freq of the radio
+ * @cac_time_ms: CAC timeout in milliseconds
+ *
+ * Lab-test helper for driver controlled CAC timeout overrides. It updates the
+ * pending requested_regd, the active regdomain copy and existing channel
+ * entries with the overwritten CAC timeout so that the queued work, regulatory
+ * rules and channel data stay in sync. A wiphy reg-change event is queued on
+ * cfg80211_wq to avoid taking RTNL under wiphy lock.
+ *
+ * cfg80211_update_pending_dfs_cac_time() updates any queued self-managed
+ * regdomain copy. cfg80211_update_regd_dfs_cac_time() updates the active
+ * regdomain copy. cfg80211_update_wiphy_dfs_cac_channels() updates the current
+ * channel entries exposed to userspace with the configured CAC timeout.
+ *
+ * Return: 0 on success, negative errno on failure.
+ */
+int
+cfg80211_update_dfs_cac_time(struct wiphy *wiphy,
+			     u32 start_freq_mhz,
+			     u32 end_freq_mhz,
+			     u32 cac_time_ms)
+{
+	const struct ieee80211_regdomain *old_regd;
+	const struct ieee80211_regdomain *new_regd;
+	struct ieee80211_regdomain *regd;
+	struct cfg80211_reg_change_event_work *event_work;
+	bool active_regd_changed;
+	bool channels_changed;
+	bool pending_changed;
+	int ret = 0;
+
+	if (!wiphy || !cac_time_ms)
+		return -EINVAL;
+
+	if (start_freq_mhz && end_freq_mhz && start_freq_mhz > end_freq_mhz)
+		return -EINVAL;
+
+	lockdep_assert_wiphy(wiphy);
+
+	old_regd = get_wiphy_regdom(wiphy);
+	if (!old_regd) {
+		ret = -ENOENT;
+		return ret;
+	}
+
+	new_regd = reg_copy_regd(old_regd);
+	if (IS_ERR(new_regd)) {
+		ret = PTR_ERR(new_regd);
+		return ret;
+	}
+
+	regd = (struct ieee80211_regdomain *)new_regd;
+	event_work = cfg80211_alloc_reg_change_event_work(wiphy, regd->alpha2);
+	if (!event_work) {
+		kfree(new_regd);
+		return -ENOMEM;
+	}
+
+	pending_changed = cfg80211_update_pending_dfs_cac_time(wiphy,
+							       start_freq_mhz,
+							       end_freq_mhz,
+							       cac_time_ms);
+	active_regd_changed = cfg80211_update_regd_dfs_cac_time(regd,
+								start_freq_mhz,
+								end_freq_mhz,
+								cac_time_ms);
+	channels_changed = cfg80211_update_wiphy_dfs_cac_channels(wiphy,
+								  start_freq_mhz,
+								  end_freq_mhz,
+								  cac_time_ms);
+
+	if (active_regd_changed) {
+		rcu_assign_pointer(wiphy->regd, new_regd);
+		rcu_free_regdom(old_regd);
+	} else {
+		kfree(new_regd);
+	}
+
+	if (!pending_changed && !active_regd_changed && !channels_changed) {
+		cfg80211_free_reg_change_event_work(event_work);
+		return ret;
+	}
+
+	queue_work(cfg80211_wq, &event_work->work);
+
+	return ret;
+}
+EXPORT_SYMBOL(cfg80211_update_dfs_cac_time);
+#endif /* CPTCFG_QCA_LAB_TEST_FEATURES */
+
 /* Used by drivers prior to wiphy registration */
 void wiphy_apply_custom_regulatory(struct wiphy *wiphy,
 				   const struct ieee80211_regdomain *regd)
@@ -3529,10 +3823,7 @@ static void reg_process_self_managed_hint(struct wiphy *wiphy)
 
 	reg_process_ht_flags(wiphy);
 
-	request.wiphy_idx = get_wiphy_idx(wiphy);
-	request.alpha2[0] = regd->alpha2[0];
-	request.alpha2[1] = regd->alpha2[1];
-	request.initiator = NL80211_REGDOM_SET_BY_DRIVER;
+	cfg80211_init_reg_request(&request, wiphy, regd->alpha2);
 
 	if (wiphy->flags & WIPHY_FLAG_NOTIFY_REGDOM_BY_DRIVER)
 		reg_call_notifier(wiphy, &request);

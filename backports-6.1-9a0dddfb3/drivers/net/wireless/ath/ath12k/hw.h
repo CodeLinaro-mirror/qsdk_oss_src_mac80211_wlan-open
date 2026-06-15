@@ -53,42 +53,46 @@ struct ath12k_link_vif;
 /* Max num of stations for DBS_SBS */
 #define TARGET_NUM_STATIONS_DBS_SBS	42
 #else
-// #ifdef CONFIG_ATH12K_MEM_PROFILE_DEFAULT TODO Enable default profile
 /* Num VDEVS per radio */
-#define TARGET_NUM_VDEVS	(16 + 1)
+#define TARGET_NUM_VDEVS		(ath12k_dp_ring_cfg->num_vdevs)
 /* Maximum number of AP interfaces allowed per radio for MBSSID.
  * This excludes the monitor vdev included in TARGET_NUM_VDEVS.
  */
-#define ATH12K_MBSSID_MAX_INTERFACES	(TARGET_NUM_VDEVS - 1)
+#define ATH12K_MBSSID_MAX_INTERFACES	((ath12k_dp_ring_cfg->num_vdevs) - 1)
 
 /* Num of Bridge vdevs per radio */
-#define TARGET_NUM_BRIDGE_VDEVS		8
-#define ATH12K_MAX_NUM_VDEVS_NLINK	TARGET_NUM_VDEVS + \
-					TARGET_NUM_BRIDGE_VDEVS
-#define ATH12K_QMI_TARGET_MEM_MODE      ATH12K_QMI_TARGET_MEM_MODE_DEFAULT
+#define TARGET_NUM_BRIDGE_VDEVS		(ath12k_dp_ring_cfg->num_bridge_vdevs)
+#define ATH12K_MAX_NUM_VDEVS_NLINK	(ath12k_dp_ring_cfg->num_max_vdevs_nlink)
+#define ATH12K_QMI_TARGET_MEM_MODE      (ath12k_dp_ring_cfg->target_mem_mode)
 
-/* Max num of stations for Single Radio mode */
-#define TARGET_NUM_STATIONS_SINGLE     ((ath12k_max_clients > ab->hw_params->max_clients_supported) ? ab->hw_params->max_clients_supported : ath12k_max_clients)
+#define TARGET_NUM_STATIONS_SINGLE	\
+	((ath12k_dp_ring_cfg->num_stations_single) ? \
+	 (ath12k_dp_ring_cfg->num_stations_single) : \
+	 ((ath12k_max_clients > ab->hw_params->max_clients_supported) ? \
+	  ab->hw_params->max_clients_supported : ath12k_max_clients))
 
 /* Max num of stations for DBS */
-#define TARGET_NUM_STATIONS_DBS		(((int)(ath12k_max_clients / 2) > \
-					ab->hw_params->max_clients_dbs) ? \
-					ab->hw_params->max_clients_dbs : \
-					(int)ath12k_max_clients / 2)
+#define TARGET_NUM_STATIONS_DBS		\
+	((ath12k_dp_ring_cfg->num_stations_dbs) ? \
+	 (ath12k_dp_ring_cfg->num_stations_dbs) : \
+	 (((int)(ath12k_max_clients / 2) > ab->hw_params->max_clients_dbs) ? \
+	  ab->hw_params->max_clients_dbs : (int)ath12k_max_clients / 2))
 
 /* Max num of stations for DBS_SBS */
-#define TARGET_NUM_STATIONS_DBS_SBS	(((int)(ath12k_max_clients / 3) >  \
-					ab->hw_params->max_clients_dbs_sbs) ? \
-					ab->hw_params->max_clients_dbs_sbs : \
-					(int)ath12k_max_clients / 3)
+#define TARGET_NUM_STATIONS_DBS_SBS	\
+	((ath12k_dp_ring_cfg->num_stations_dbs_sbs) ? \
+	 (ath12k_dp_ring_cfg->num_stations_dbs_sbs) : \
+	 (((int)(ath12k_max_clients / 3) > ab->hw_params->max_clients_dbs_sbs) ? \
+	  ab->hw_params->max_clients_dbs_sbs : (int)ath12k_max_clients / 3))
 
 #endif
 
 #if defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
 #define ATH12K_COLD_BOOT_CALIB		false
 #else
-#define ATH12K_COLD_BOOT_CALIB		true
+#define ATH12K_COLD_BOOT_CALIB		(ath12k_dp_ring_cfg->cold_boot_calib)
 #endif
+#define ATH12K_COLD_BOOT_CALIB_DEFAULT	true
 
 #define TARGET_NUM_PEERS_PDEV_SINGLE	(TARGET_NUM_STATIONS_SINGLE + \
 					 TARGET_NUM_VDEVS)
@@ -177,12 +181,16 @@ struct ath12k_link_vif;
 #define ATH12K_IPQ5332_USERPD_ID	1
 #define ATH12K_QCN6432_USERPD_ID_1	2
 #define ATH12K_QCN6432_USERPD_ID_2	3
+#define ATH12K_QCN9160_USERPD_ID_3	4
 
 #define ATH12K_HOST_AFC_QCN6432_MEM_OFFSET 0xD8000
 #define ATH12K_MIN_NUM_DEVICES_NLINK 4
 
 #define ATH12K_UMAC_RESET_IPC_IPQ5332   451
 #define ATH12K_UMAC_RESET_IPC_QCN6432   7
+
+/* Max Number of Non-Tx AP interfaces allowed per radio for MBSSID */
+#define ATH12K_MAX_MBSSID_NONTX_INTERFACES   (ATH12K_MBSSID_MAX_INTERFACES - 1)
 
 enum ath12k_hw_rate_cck {
 	ATH12K_HW_RATE_CCK_LP_11M = 0,
@@ -228,7 +236,7 @@ struct ath12k_hw_ring_mask {
 	u8 reo_status[ATH12K_EXT_IRQ_NUM_MAX];
 	u8 host2rxdma[ATH12K_EXT_IRQ_NUM_MAX];
 	u8 tx_mon_dest[ATH12K_EXT_IRQ_NUM_MAX];
-	u8 tx_mon_buff[ATH12K_EXT_IRQ_NUM_MAX]; /*host2txmon buff ring*/
+	u8 host2txmon[ATH12K_EXT_IRQ_NUM_MAX]; /*host2txmon buff ring*/
 	u8 host2rxmon[ATH12K_EXT_IRQ_NUM_MAX];
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	u8 ppe2tcl[ATH12K_EXT_IRQ_NUM_MAX];
@@ -272,11 +280,10 @@ struct ath12k_hw_params {
 		bool unified_fw_image:1;
 	} fw;
 
-#ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 	u16 max_clients_supported;
 	u16 max_clients_dbs;
 	u16 max_clients_dbs_sbs;
-#endif
+
 	u8 max_radios;
 	bool single_pdev_only:1;
 	u32 qmi_service_ins_id;
@@ -300,6 +307,7 @@ struct ath12k_hw_params {
 
 	struct {
 		u8 fft_sz;
+		u8 fft_bin_sz;
 		u8 fft_pad_sz;
 		u8 summary_pad_sz;
 		u8 fft_hdr_len;

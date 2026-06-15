@@ -34,6 +34,7 @@
 #include "wow.h"
 #include "dp_cmn.h"
 #include "dp.h"
+#include "dp_mon.h"
 #include "fse.h"
 #include "accel_cfg.h"
 #include "peer.h"
@@ -110,29 +111,14 @@ module_param_named(hw_buff_mgmt, ath12k_ppeds_hw_buff_mgmt, uint, 0644);
 MODULE_PARM_DESC(hw_buff_mgmt, "hw_buff_mgmt: 0-default");
 EXPORT_SYMBOL(ath12k_ppeds_hw_buff_mgmt);
 
-unsigned int ath12k_ppeds_ppe2tcl_ring_size = 8192;
-module_param_named(ppe2tcl_ring_size, ath12k_ppeds_ppe2tcl_ring_size, uint, 0644);
-MODULE_PARM_DESC(ppe2tcl_ring_size, "PPE2TCL Ring size");
-EXPORT_SYMBOL(ath12k_ppeds_ppe2tcl_ring_size);
-
-unsigned int ath12k_ppeds_reo2ppe_ring_size = 4096;
-module_param_named(reo2ppe_ring_size, ath12k_ppeds_reo2ppe_ring_size, uint, 0644);
-MODULE_PARM_DESC(reo2ppe_ring_size, "REO2PPE Ring size");
-EXPORT_SYMBOL(ath12k_ppeds_reo2ppe_ring_size);
-
-unsigned int ath12k_ppeds_tqm2ppe_ring_size = 8192;
-module_param_named(tqm2ppe_ring_size, ath12k_ppeds_tqm2ppe_ring_size, uint, 0644);
-MODULE_PARM_DESC(tqm2ppe_ring_size, "TQM2PPE Ring size");
-EXPORT_SYMBOL(ath12k_ppeds_tqm2ppe_ring_size);
-
 unsigned int ath12k_ppeds_ppe2wbm_ring_size = 512;
 module_param_named(ppe2wbm_ring_size, ath12k_ppeds_ppe2wbm_ring_size, uint, 0644);
 MODULE_PARM_DESC(ppe2wbm_ring_size, "PPE2WBM Ring size");
 EXPORT_SYMBOL(ath12k_ppeds_ppe2wbm_ring_size);
 
-unsigned int ath12k_ppeds_pkt_pre_hdr_mode = 3;
+unsigned int ath12k_ppeds_pkt_pre_hdr_mode;
 module_param_named(pkt_pre_hdr_mode, ath12k_ppeds_pkt_pre_hdr_mode, uint, 0644);
-MODULE_PARM_DESC(pkt_pre_hdr_mode, "pkt_pre_hdr_mode: 3-default");
+MODULE_PARM_DESC(pkt_pre_hdr_mode, "Read hint values:\n  0 - 192 bytes (default)\n  1 - 128 bytes\n  2 - 0 bytes\n  3 - full packet");
 EXPORT_SYMBOL(ath12k_ppeds_pkt_pre_hdr_mode);
 #endif
 
@@ -186,11 +172,202 @@ module_param_named(io_coherency, ath12k_io_coherency_enabled, bool, 0644);
 MODULE_PARM_DESC(io_coherency, "Enable io_coherency (0 - disable, 1 - enable)");
 #endif
 
-#ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 unsigned int ath12k_max_clients = 512;
 module_param_named(max_clients, ath12k_max_clients, uint, 0644);
 MODULE_PARM_DESC(max_clients, "Max clients support");
+
+/*
+ * ath12k_active_mem_profile - active memory profile selected at module load.
+ * Set by ath12k_detect_mem_profile(): compile-time macros take priority,
+ * then falls back to mem-profile= kernel cmdline parameter.
+ */
+enum ath12k_mem_profile ath12k_active_mem_profile = ATH12K_MEM_PROFILE_DEFAULT;
+EXPORT_SYMBOL(ath12k_active_mem_profile);
+
+/*
+ * ath12k_dp_ring_cfgs - Ring size configurations indexed by ath12k_mem_profile.
+ *
+ * Index 0 (ATH12K_MEM_PROFILE_DEFAULT)   : 1G / high-memory profile
+ * Index 1 (ATH12K_MEM_PROFILE_BALANCED)  : 512M profile
+ * Index 2 (ATH12K_MEM_PROFILE_OPTIMIZED) : 256M profile
+ */
+static const struct ath12k_dp_ring_cfg ath12k_dp_ring_cfgs[] = {
+	[ATH12K_MEM_PROFILE_DEFAULT] = {
+		.rxdma_buf_ring_size		= 8192,
+		.rx_release_ring_size		= 16384,
+		.reo2ppe_ring			= 16384,
+		.ppe2tcl_ring			= 8192,
+		.tqm2ppe_ring_size		= 32768,
+		.tx_comp_ppeds_ring_size	= 32768,
+		.num_vdevs			= 16 + 1,
+		.num_bridge_vdevs		= 8,
+		.num_max_vdevs_nlink		= (16 + 1) + 8,
+		.target_mem_mode		= ATH12K_QMI_TARGET_MEM_MODE_DEFAULT,
+		.num_pool_tx_desc		= 32768,
+		.ppe_wbm2sw_ring_size		= 32768,
+		.rxdma_monitor_buf_ring_size	= 8192,
+		.rxdma_monitor_dst_ring_size	= 8192,
+		.smart_mon_filter_default	= DP_SMART_MON_PROFILE_1G,
+		.mon_num_ppdu_desc		= 128,
+		.rx_desc_count_wifi7		= 12288,
+		.rx_desc_count_wifi8		= 24576,
+		.num_stations_single		= 0,
+		.num_stations_dbs		= 0,
+		.num_stations_dbs_sbs		= 0,
+		.dp_max_clients			= 512,
+		.num_pool_ppeds_tx_desc		= 0x8000,
+		.ppeds_hotlist_len_max		= 1024,
+		.dp_num_clients_max		= 64,
+		.dp_mon_status_buf		= 320,
+		.reo_dst_ring_size		= { 8192, 8192, 8192, 8192, 8192 },
+		.tcl_data_ring_size		= { 2048, 2048, 2048, 2048, 2048 },
+		.tx_compl_ring_size		= { 32768, 32768, 32768, 32768, 32768 },
+		.monitor_support		= true,
+		.cfr_support			= true,
+		.spectral_support		= true,
+		.tx_monitor_support		= true,
+		.sdwf_support			= true,
+		.cold_boot_calib		= true,
+	},
+	[ATH12K_MEM_PROFILE_BALANCED] = {
+		.rxdma_buf_ring_size		= 8192,
+		.rx_release_ring_size		= 8192,
+		.reo2ppe_ring			= 2048,
+		.ppe2tcl_ring			= 2048,
+		.tqm2ppe_ring_size		= 8192,
+		.tx_comp_ppeds_ring_size	= 16384,
+		.num_vdevs			= 8 + 1,
+		.num_bridge_vdevs		= 0,
+		.num_max_vdevs_nlink		= 0,
+		.target_mem_mode		= ATH12K_QMI_TARGET_MEM_MODE_512M,
+		.num_pool_tx_desc		= 16384,
+		.ppe_wbm2sw_ring_size		= 8192,
+		.rxdma_monitor_buf_ring_size	= 256,
+		.rxdma_monitor_dst_ring_size	= 512,
+		.smart_mon_filter_default	= DP_SMART_MON_PROFILE_512M |
+						  (DP_SMART_MON_FILTER_MASK &
+						   ~DP_SMART_MON_VALID),
+		.mon_num_ppdu_desc		= 128,
+		.rx_desc_count_wifi7		= 8192,
+		.rx_desc_count_wifi8		= 16384,
+		.num_stations_single		= 128,
+		.num_stations_dbs		= 64,
+		.num_stations_dbs_sbs		= 42,
+		.dp_max_clients			= 512,
+		.num_pool_ppeds_tx_desc		= 0x8000,
+		.ppeds_hotlist_len_max		= 1024,
+		.dp_num_clients_max		= 64,
+		.dp_mon_status_buf		= 320,
+		.reo_dst_ring_size		= { 8192, 8192, 8192, 8192, 8192 },
+		.tcl_data_ring_size		= { 2048, 2048, 2048, 2048, 2048 },
+		.tx_compl_ring_size		= { 16384, 16384, 16384, 16384, 16384 },
+		.monitor_support		= true,
+		.cfr_support			= true,
+		.spectral_support		= true,
+		.tx_monitor_support		= false,
+		.sdwf_support			= true,
+		.cold_boot_calib		= true,
+	},
+	[ATH12K_MEM_PROFILE_OPTIMIZED] = {
+		.rxdma_buf_ring_size		= 2048,
+		.rx_release_ring_size		= 4096,
+		.reo2ppe_ring			= 2048,
+		.ppe2tcl_ring			= 2048,
+		.tqm2ppe_ring_size		= 8192,
+		.tx_comp_ppeds_ring_size	= 8192,
+		.num_vdevs			= 8 + 1,
+		.num_bridge_vdevs		= 0,
+		.num_max_vdevs_nlink		= 0,
+		.target_mem_mode		= ATH12K_QMI_TARGET_MEM_MODE_256M,
+		.num_pool_tx_desc		= 8192,
+		.ppe_wbm2sw_ring_size		= 8192,
+		.rxdma_monitor_buf_ring_size	= 256,
+		.rxdma_monitor_dst_ring_size	= 512,
+		.smart_mon_filter_default	= DP_SMART_MON_PROFILE_256M |
+						  (DP_SMART_MON_FILTER_MASK &
+						   ~DP_SMART_MON_VALID),
+		.mon_num_ppdu_desc		= 8,
+		.rx_desc_count_wifi7		= 8192,
+		.rx_desc_count_wifi8		= 8192,
+		.num_stations_single		= 128,
+		.num_stations_dbs		= 64,
+		.num_stations_dbs_sbs		= 42,
+		.dp_max_clients			= 512,
+		.num_pool_ppeds_tx_desc		= 0x2000,
+		.ppeds_hotlist_len_max		= 256,
+		.dp_num_clients_max		= 56,
+		.dp_mon_status_buf		= 20,
+		.reo_dst_ring_size		= { 2048, 2048, 2048, 512, 512 },
+		.tcl_data_ring_size		= { 512, 512, 512, 128, 128 },
+		.tx_compl_ring_size		= { 8192, 8192, 8192, 1024, 1024 },
+		.monitor_support		= true,
+		.cfr_support			= false,
+		.spectral_support		= false,
+		.tx_monitor_support		= false,
+		.sdwf_support			= false,
+		.cold_boot_calib		= false,
+	},
+};
+
+/*
+ * Pointer to the active DP ring size configuration.
+ * Initialized to the default/1G profile; updated once at module load time
+ * by ath12k_detect_mem_profile() based on the mem-profile= cmdline parameter.
+ */
+const struct ath12k_dp_ring_cfg *ath12k_dp_ring_cfg =
+	&ath12k_dp_ring_cfgs[ATH12K_MEM_PROFILE_DEFAULT];
+EXPORT_SYMBOL(ath12k_dp_ring_cfg);
+
+/*
+ * ath12k_detect_mem_profile()
+ *	Detect the active memory profile and initialize ring size config.
+ *	Compile-time macros take priority; runtime cmdline is the fallback.
+ *
+ *	  mem-profile=optimized  -> ATH12K_MEM_PROFILE_OPTIMIZED (256M)
+ *	  mem-profile=balanced   -> ATH12K_MEM_PROFILE_BALANCED  (512M)
+ *	  mem-profile=high       -> ATH12K_MEM_PROFILE_DEFAULT   (1G)
+ *	  (absent)               -> ATH12K_MEM_PROFILE_DEFAULT   (1G)
+ */
+static void ath12k_detect_mem_profile(void)
+{
+	ath12k_active_mem_profile = ATH12K_MEM_PROFILE_DEFAULT;
+
+#if defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
+	ath12k_active_mem_profile = ATH12K_MEM_PROFILE_OPTIMIZED;
+	ath12k_info(NULL, "ath12k: compile-time 256M profile -> OPTIMIZED\n");
+#elif defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined(CPTCFG_ATH12K_MEM_PROFILE_512M)
+	ath12k_active_mem_profile = ATH12K_MEM_PROFILE_BALANCED;
+	ath12k_info(NULL, "ath12k: compile-time 512M profile -> BALANCED\n");
+#else
+	if (strstr(saved_command_line, "mem-profile=optimized")) {
+		ath12k_active_mem_profile = ATH12K_MEM_PROFILE_OPTIMIZED;
+		ath12k_info(NULL, "ath12k: mem-profile=optimized -> OPTIMIZED\n");
+	} else if (strstr(saved_command_line, "mem-profile=balanced")) {
+		ath12k_active_mem_profile = ATH12K_MEM_PROFILE_BALANCED;
+		ath12k_info(NULL, "ath12k: mem-profile=balanced -> BALANCED\n");
+	} else if (strstr(saved_command_line, "mem-profile=high")) {
+		ath12k_active_mem_profile = ATH12K_MEM_PROFILE_DEFAULT;
+		ath12k_info(NULL, "ath12k: mem-profile=high -> DEFAULT\n");
+	} else {
+		ath12k_active_mem_profile = ATH12K_MEM_PROFILE_DEFAULT;
+		ath12k_info(NULL, "ath12k: no mem-profile in cmdline -> DEFAULT\n");
+	}
 #endif
+
+	/* ath12k_active_mem_profile is always set to one of the three valid
+	 * enum values (DEFAULT/BALANCED/OPTIMIZED) by the logic above, so
+	 * this array access is always within bounds.
+	 */
+	ath12k_dp_ring_cfg = &ath12k_dp_ring_cfgs[ath12k_active_mem_profile];
+	ath12k_max_clients = ath12k_dp_ring_cfg->dp_max_clients;
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+		ath12k_ppeds_desc_params.num_ppeds_desc =
+			ath12k_dp_ring_cfg->num_pool_ppeds_tx_desc;
+		ath12k_ppeds_desc_params.ppeds_hotlist_len =
+			ath12k_dp_ring_cfg->ppeds_hotlist_len_max;
+#endif
+}
 
 static unsigned int ath12k_en_fwlog = true;
 module_param_named(en_fwlog, ath12k_en_fwlog, uint, 0644);
@@ -232,6 +409,12 @@ bool ath12k_mlo_3_link_tx;
 module_param_named(mlo_3_link_tx, ath12k_mlo_3_link_tx, bool, 0644);
 MODULE_PARM_DESC(mlo_3_link_tx, "3 link MLO active TX support (0 - disable, 1 - enable)");
 
+bool ath12k_mcast_link_bmap_enable;
+module_param_named(mcast_link_bmap_enable, ath12k_mcast_link_bmap_enable, bool, 0644);
+MODULE_PARM_DESC(mcast_link_bmap_enable,
+		 "Enable per-packet MLO multicast link bitmap filtering (0 - disable, 1 - enable)");
+EXPORT_SYMBOL(ath12k_mcast_link_bmap_enable);
+
 unsigned int ath12k_wsi_bypass_bmap;
 module_param_named(wsi_bypass_bmap, ath12k_wsi_bypass_bmap, uint, 0644);
 MODULE_PARM_DESC(wsi_bypass_bmap,
@@ -246,10 +429,27 @@ bool ath12k_fw_q6_dump_collection;
 module_param_named(fw_q6_dump_collection, ath12k_fw_q6_dump_collection, bool, 0644);
 MODULE_PARM_DESC(fw_q6_dump_collection, "FW Q6 dump collection only: 0-disable (default), 1-enable");
 
+bool ath12k_hw_group_started;
+
 unsigned int ath12k_reorder_VI_timeout;
 module_param_named(reorder_VI_timeout, ath12k_reorder_VI_timeout, uint, 0644);
 MODULE_PARM_DESC(reorder_VI_timeout, "Reorder VI timeout (ms)");
 EXPORT_SYMBOL(ath12k_reorder_VI_timeout);
+
+static unsigned int ath12k_erp_cumac_config = ATH12K_ERP_CUMAC_UNSET;
+module_param_named(erp_cumac_config, ath12k_erp_cumac_config, uint, 0644);
+MODULE_PARM_DESC(erp_cumac_config,
+		 "ErP CUMAC configuration bitmap: BIT(0): pdev suspend, BIT(1): Q6 power down");
+
+bool ath12k_congestion_ctrl = true;
+module_param_named(congestion_ctrl, ath12k_congestion_ctrl, bool, 0644);
+MODULE_PARM_DESC(congestion_ctrl, "Congestion control 0-disable (default) 1-enable");
+EXPORT_SYMBOL(ath12k_congestion_ctrl);
+
+unsigned int ath12k_drop_algo = 1;
+module_param_named(drop_algo, ath12k_drop_algo, uint, 0644);
+MODULE_PARM_DESC(drop_algo, "Congestion drop algorithm type: 0-composite (default) 1-flat");
+EXPORT_SYMBOL(ath12k_drop_algo);
 
 /* protected with ath12k_hw_group_mutex */
 static struct list_head ath12k_hw_group_list = LIST_HEAD_INIT(ath12k_hw_group_list);
@@ -1088,7 +1288,8 @@ static void ath12k_core_cleanup(struct ath12k_base *ab)
 	mutex_lock(&ab->core_lock);
 	ath12k_core_pdev_deinit(ab);
 	ath12k_dp_arch_pdev_free(ab->dp);
-	ath12k_ce_cleanup_pipes(ab);
+	if (!test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags))
+		ath12k_ce_cleanup_pipes(ab);
 	ath12k_wmi_detach(ab);
 	mutex_unlock(&ab->core_lock);
 
@@ -1098,15 +1299,91 @@ static void ath12k_core_cleanup(struct ath12k_base *ab)
 	ath12k_dp_umac_reset_deinit(ab);
 }
 
+static void ath12k_core_power_down_device(struct ath12k_hw_group *ag,
+					  struct ath12k_base *ab, bool standby_mode,
+					  bool *wifi_standby_enabled)
+{
+	struct ath12k *ar;
+	u8 total_vdevs;
+	int i;
+	bool skip_power_down = false;
+
+	if (!ab)
+		return;
+
+	if (standby_mode) {
+		if (ab->is_cumac_chip) {
+			if (ath12k_erp_cumac_config != ATH12K_ERP_CUMAC_UNSET) {
+				/* User override: skip mac stop and q6 power down */
+				if (!(ath12k_erp_cumac_config &
+				      ATH12K_ERP_CUMAC_PDEV_SUSPEND))
+					return;
+				/* User override: mac stop but skip q6 power down */
+				if (!(ath12k_erp_cumac_config &
+				      ATH12K_ERP_CUMAC_Q6_PWR_DOWN))
+					skip_power_down = true;
+			} else {
+				/* No user override: mac stop always, q6 power down
+				 * only when all wifi interfaces are being brought down.
+				 */
+				if (*wifi_standby_enabled)
+					skip_power_down = true;
+			}
+		}
+
+		for (i = 0; i < ab->num_radios; i++) {
+			ar = ab->pdevs[i].ar;
+
+			if (ar) {
+				if (ar->allocated_vdev_map) {
+					*wifi_standby_enabled = true;
+					skip_power_down = true;
+				} else
+					ath12k_mac_stop(ar);
+
+				ar->cumac_cmd_sent = false;
+			}
+		}
+	}
+
+	if (!skip_power_down &&
+	    !test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags)) {
+		ab->qmi.num_radios = U8_MAX;
+		if (ab->is_cumac_chip) {
+			ab->is_cumac_chip = false;
+			ag->cumac_selected = false;
+			ag->cumac_chip_id = ATH12K_CUMAC_CHIP_ID_INVALID;
+		}
+		ab->cumac_configured = false;
+		ath12k_umac_reset_fallback_cleanup(ab);
+		ath12k_hif_mgmt_irq_disable(ab);
+		ath12k_hif_irq_disable(ab);
+		ath12k_hif_ce_irq_disable(ab);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+		if (ab->dp->ppe.ppe_ops &&
+		    ab->dp->ppe.ppe_ops->ath12k_ppeds_interrupt_stop)
+			ab->dp->ppe.ppe_ops->ath12k_ppeds_interrupt_stop(ab);
+#endif
+		ath12k_qmi_firmware_stop(ab);
+		ath12k_core_cleanup(ab);
+		total_vdevs = ath12k_core_get_total_num_vdevs(ab);
+		ab->free_vdev_map = (1LL << (ab->num_radios * total_vdevs)) - 1;
+		ab->free_vdev_stats_id_map = 0;
+		ath12k_core_to_group_ref_put(ab);
+		ath12k_qmi_free_resource(ab);
+		ath12k_hif_power_down(ab, false);
+		ath12k_info(ab, "Q6 power down\n");
+	}
+}
+
 void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag, bool standby_mode)
 {
-	struct ath12k_base *ab;
 	struct ath12k_hw *ah;
-	struct ath12k *ar;
+	struct ath12k_base *ab;
+	struct ath12k_base *cumac_ab = NULL;
+	bool wifi_standby_enabled = false;
 	unsigned long time_left;
-	int i, j, ret;
-	bool skip_power_down;
-	u8 total_vdevs;
+	int i, ret;
 
 	if (!test_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ag->flags)) {
 		reinit_completion(&ag->umac_reset_complete);
@@ -1125,11 +1402,13 @@ void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag, bool standby_
 			}
 		}
 
+		/* Use first ab to fetch the umac reset timeout */
+		ab = ag->ab[0];
 		time_left = wait_for_completion_timeout(&ag->umac_reset_complete,
-				msecs_to_jiffies(ATH12K_UMAC_RESET_TIMEOUT_IN_MS));
+				msecs_to_jiffies(DP_UMAC_RESET_TIMEOUT_IN_MS));
 		if (!time_left) {
 			ath12k_err(NULL, "UMAC reset didn't get completed within %d ms\n",
-				   ATH12K_UMAC_RESET_TIMEOUT_IN_MS);
+				   DP_UMAC_RESET_TIMEOUT_IN_MS);
 			ag->trigger_umac_reset = false;
 			return;
 		}
@@ -1137,51 +1416,19 @@ void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag, bool standby_
 
 	for (i = 0; i < ag->num_devices; i++) {
 		ab = ag->ab[i];
-		skip_power_down = false;
 
-		if (standby_mode) {
-			for (j = 0; j < ab->num_radios; j++) {
-				ar = ab->pdevs[j].ar;
-
-				if (ar) {
-					if (ar->allocated_vdev_map)
-						skip_power_down = true;
-					else
-						ath12k_mac_stop(ar);
-					ar->cumac_cmd_sent = false;
-				}
-			}
+		if (ab->is_cumac_chip) {
+			cumac_ab = ab;
+			continue;
 		}
 
-		if (!skip_power_down &&
-		    !test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags)) {
-			ab->qmi.num_radios = U8_MAX;
-			if (ab->is_cumac_chip) {
-				ab->is_cumac_chip = false;
-				ag->cumac_selected = false;
-				ag->cumac_chip_id = ATH12K_CUMAC_CHIP_ID_INVALID;
-			}
-			ab->cumac_configured = false;
-			ath12k_umac_reset_fallback_cleanup(ab);
-			ath12k_hif_mgmt_irq_disable(ab);
-			ath12k_hif_irq_disable(ab);
-			ath12k_hif_ce_irq_disable(ab);
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-			if (ab->dp->ppe.ppe_ops &&
-				ab->dp->ppe.ppe_ops->ath12k_ppeds_interrupt_stop)
-				ab->dp->ppe.ppe_ops->ath12k_ppeds_interrupt_stop(ab);
-#endif
-			ath12k_qmi_firmware_stop(ab);
-			ath12k_core_cleanup(ab);
-			total_vdevs = ath12k_core_get_total_num_vdevs(ab);
-			ab->free_vdev_map = (1LL << (ab->num_radios * total_vdevs)) - 1;
-			ab->free_vdev_stats_id_map = 0;
-			ath12k_core_to_group_ref_put(ab);
-			ath12k_qmi_free_resource(ab);
-			ath12k_hif_power_down(ab, false);
-			ath12k_info(ab, "Q6 power down\n");
-		}
+		ath12k_core_power_down_device(ag, ab, standby_mode,
+					      &wifi_standby_enabled);
 	}
+
+	if (cumac_ab)
+		ath12k_core_power_down_device(ag, cumac_ab, standby_mode,
+					      &wifi_standby_enabled);
 
 	if (!test_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ag->flags))
 		set_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ag->flags);
@@ -1191,7 +1438,8 @@ static void ath12k_core_stop(struct ath12k_base *ab)
 {
 	ath12k_core_to_group_ref_put(ab);
 	ath12k_acpi_stop(ab);
-	ath12k_hif_stop(ab);
+	if (!test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags))
+		ath12k_hif_stop(ab);
 	ath12k_wmi_detach(ab);
 	ath12k_mgmt_device_deinit(ab->mgmt);
 	ath12k_dp_cmn_device_deinit(ab->dp);
@@ -1409,11 +1657,22 @@ static int ath12k_core_pdev_init(struct ath12k_base *ab)
 {
 	ath12k_fse_init(ab);
 	ath12k_telemetry_init(ab);
-	ath12k_dp_accel_cfg_init(ab);
+
+	/* Initialize SAWF/SDWF only if supported by the active memory profile */
+	if (ath12k_dp_ring_cfg->sdwf_support)
+		ath12k_dp_accel_cfg_init(ab);
+
 	ath12k_thermal_register(ab);
-	ath12k_spectral_init(ab);
-	/* Check if cfr_enable_bmap is set for the corresponding HW */
-	if (ath12k_cfr_enable_bmap & (1 << ab->device_id)) {
+
+	/* Initialize spectral only if supported by the active memory profile */
+	if (ath12k_dp_ring_cfg->spectral_support)
+		ath12k_spectral_init(ab);
+
+	/* Check if cfr_enable_bmap is set for the corresponding HW and
+	 * CFR is supported by the active memory profile
+	 */
+	if ((ath12k_dp_ring_cfg->cfr_support) &&
+	    (ath12k_cfr_enable_bmap & (1 << ab->device_id))) {
 		ath12k_info(ab, "Enabling CFR for chip id:%d\n", ab->device_id);
 		ath12k_cfr_init(ab);
 	}
@@ -1426,12 +1685,23 @@ void ath12k_core_pdev_deinit(struct ath12k_base *ab)
 	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
-	ath12k_dp_accel_cfg_deinit(ab);
+	/* Deinitialize SAWF/SDWF only if it was initialized based on memory profile */
+	if (ath12k_dp_ring_cfg->sdwf_support)
+		ath12k_dp_accel_cfg_deinit(ab);
+
 	ath12k_fse_deinit(ab);
 	ath12k_telemetry_deinit(ab);
 	ath12k_thermal_unregister(ab);
-	ath12k_spectral_deinit(ab);
-	if (ath12k_cfr_enable_bmap & (1 << ab->device_id))
+
+	/* Deinitialize spectral only if it was initialized based on memory profile */
+	if (ath12k_dp_ring_cfg->spectral_support)
+		ath12k_spectral_deinit(ab);
+
+	/* Deinitialize CFR only if it was initialized based on memory profile
+	 * and cfr_enable_bmap
+	 */
+	if (ath12k_dp_ring_cfg->cfr_support &&
+	    (ath12k_cfr_enable_bmap & (1 << ab->device_id)))
 		ath12k_cfr_deinit(ab);
 }
 
@@ -1488,6 +1758,101 @@ static void ath12k_core_pdev_destroy(struct ath12k_base *ab)
 	ath12k_debugfs_pdev_destroy(ab);
 }
 
+/* Temporarily added for debug; will be removed once review is finalised */
+static void ath12k_core_dump_mem_profile_info(struct ath12k_base *ab)
+{
+	ath12k_info(ab, "Station counts: SINGLE=%u DBS=%u DBS_SBS=%u\n",
+		    TARGET_NUM_STATIONS_SINGLE,
+		    TARGET_NUM_STATIONS_DBS,
+		    TARGET_NUM_STATIONS_DBS_SBS);
+
+	ath12k_info(ab, "Station counts: hw_max=[%u,%u,%u]\n",
+		    ab->hw_params->max_clients_supported,
+		    ab->hw_params->max_clients_dbs,
+		    ab->hw_params->max_clients_dbs_sbs);
+
+	ath12k_info(ab,
+		    "dp_ring_cfg: profile=%d rxdma_buf=%u rx_rel=%u reo2ppe=%u ppe2tcl=%u\n",
+		    ath12k_active_mem_profile,
+		    ath12k_dp_ring_cfg->rxdma_buf_ring_size,
+		    ath12k_dp_ring_cfg->rx_release_ring_size,
+		    ath12k_dp_ring_cfg->reo2ppe_ring,
+		    ath12k_dp_ring_cfg->ppe2tcl_ring);
+
+	ath12k_info(ab,
+		    "dp_ring_cfg: tqm2ppe=%u tx_comp_ppeds=%u vdevs=%u bridge_vdevs=%u nlink_vdevs=%u\n",
+		    ath12k_dp_ring_cfg->tqm2ppe_ring_size,
+		    ath12k_dp_ring_cfg->tx_comp_ppeds_ring_size,
+		    ath12k_dp_ring_cfg->num_vdevs,
+		    ath12k_dp_ring_cfg->num_bridge_vdevs,
+		    ath12k_dp_ring_cfg->num_max_vdevs_nlink);
+
+	ath12k_info(ab,
+		    "dp_ring_cfg: mem_mode=%u pool_tx=%u ppe_wbm2sw=%u mon_buf=%u\n",
+		    ath12k_dp_ring_cfg->target_mem_mode,
+		    ath12k_dp_ring_cfg->num_pool_tx_desc,
+		    ath12k_dp_ring_cfg->ppe_wbm2sw_ring_size,
+		    ath12k_dp_ring_cfg->rxdma_monitor_buf_ring_size);
+
+	ath12k_info(ab,
+		    "dp_ring_cfg: mon_dst=%u smart_mon=0x%x ppdu=%u wifi7_rx=%u\n",
+		    ath12k_dp_ring_cfg->rxdma_monitor_dst_ring_size,
+		    ath12k_dp_ring_cfg->smart_mon_filter_default,
+		    ath12k_dp_ring_cfg->mon_num_ppdu_desc,
+		    ath12k_dp_ring_cfg->rx_desc_count_wifi7);
+
+	ath12k_info(ab,
+		    "dp_ring_cfg: wifi8_rx=%u sta_single=%u sta_dbs=%u sta_dbs_sbs=%u\n",
+		    ath12k_dp_ring_cfg->rx_desc_count_wifi8,
+		    ath12k_dp_ring_cfg->num_stations_single,
+		    ath12k_dp_ring_cfg->num_stations_dbs,
+		    ath12k_dp_ring_cfg->num_stations_dbs_sbs);
+
+	ath12k_info(ab,
+		    "dp_ring_cfg: max_clients=%u\n",
+		    ath12k_dp_ring_cfg->dp_max_clients);
+
+	ath12k_info(ab,
+		    "dp_ring_cfg: ppeds_tx=%u ppeds_hotlist=%u\n",
+		    ath12k_dp_ring_cfg->num_pool_ppeds_tx_desc,
+		    ath12k_dp_ring_cfg->ppeds_hotlist_len_max);
+
+	ath12k_info(ab, "dp_ring_cfg: reo_dst=[%u,%u,%u,%u,%u]\n",
+		    ath12k_dp_ring_cfg->reo_dst_ring_size[0],
+		    ath12k_dp_ring_cfg->reo_dst_ring_size[1],
+		    ath12k_dp_ring_cfg->reo_dst_ring_size[2],
+		    ath12k_dp_ring_cfg->reo_dst_ring_size[3],
+		    ath12k_dp_ring_cfg->reo_dst_ring_size[4]);
+
+	ath12k_info(ab, "dp_ring_cfg: tcl=[%u,%u,%u,%u,%u]\n",
+		    ath12k_dp_ring_cfg->tcl_data_ring_size[0],
+		    ath12k_dp_ring_cfg->tcl_data_ring_size[1],
+		    ath12k_dp_ring_cfg->tcl_data_ring_size[2],
+		    ath12k_dp_ring_cfg->tcl_data_ring_size[3],
+		    ath12k_dp_ring_cfg->tcl_data_ring_size[4]);
+
+	ath12k_info(ab, "dp_ring_cfg: tx_compl=[%u,%u,%u,%u,%u] mon_sup=%u\n",
+		    ath12k_dp_ring_cfg->tx_compl_ring_size[0],
+		    ath12k_dp_ring_cfg->tx_compl_ring_size[1],
+		    ath12k_dp_ring_cfg->tx_compl_ring_size[2],
+		    ath12k_dp_ring_cfg->tx_compl_ring_size[3],
+		    ath12k_dp_ring_cfg->tx_compl_ring_size[4],
+		    ath12k_dp_ring_cfg->monitor_support);
+
+	ath12k_info(ab,
+		    "dp_ring_cfg: cfr=%u spectral=%u tx_mon=%u sdwf=%u cold_boot=%u\n",
+		    ath12k_dp_ring_cfg->cfr_support,
+		    ath12k_dp_ring_cfg->spectral_support,
+		    ath12k_dp_ring_cfg->tx_monitor_support,
+		    ath12k_dp_ring_cfg->sdwf_support,
+		    ath12k_dp_ring_cfg->cold_boot_calib);
+
+	ath12k_info(ab,
+		    "dp_ring_cfg: dp_num_clients_max=%u dp_mon_status_buf=%u\n",
+		    ath12k_dp_ring_cfg->dp_num_clients_max,
+		    ath12k_dp_ring_cfg->dp_mon_status_buf);
+}
+
 static int ath12k_core_start(struct ath12k_base *ab)
 {
 	int ret;
@@ -1506,10 +1871,14 @@ static int ath12k_core_start(struct ath12k_base *ab)
 		goto err_wmi_detach;
 	}
 
-	ret = ath12k_hif_start(ab);
-	if (ret) {
-		ath12k_err(ab, "failed to start HIF: %d\n", ret);
-		goto err_wmi_detach;
+	if (!test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags)) {
+		ret = ath12k_hif_start(ab);
+		if (ret) {
+			ath12k_err(ab, "failed to start HIF: %d\n", ret);
+			goto err_wmi_detach;
+		}
+	} else {
+		ath12k_hif_ce_irq_enable(ab);
 	}
 
 	ret = ath12k_htc_wait_target(&ab->htc);
@@ -1541,9 +1910,7 @@ static int ath12k_core_start(struct ath12k_base *ab)
 		goto err_hif_stop;
 	}
 
-#ifndef CPTCFG_EXT_IPA_OFFLOAD
 	ath12k_hal_cc_config(ab);
-#endif
 
 	ret = ath12k_wmi_cmd_init(ab);
 	if (ret) {
@@ -1584,6 +1951,8 @@ static int ath12k_core_start(struct ath12k_base *ab)
 
 	ath12k_dp_rx_fst_init(ab);
 	ath12k_wsi_load_info_wsiorder_update(ab);
+
+	ath12k_core_dump_mem_profile_info(ab);
 
 	return 0;
 
@@ -1664,17 +2033,20 @@ static void ath12k_core_hw_group_stop(struct ath12k_hw_group *ag)
 		ab = ag->ab[i];
 		if (!ab || ab->is_bypassed)
 			continue;
+
+		ath12k_core_nol_extn_auto_dump_all_radios(ab);
+
 		mutex_lock(&ab->core_lock);
 		ath12k_core_pdev_deinit(ab);
 		mutex_unlock(&ab->core_lock);
 	}
 
-	ath12k_core_cu_mem_pool_deinit(ag);
-
 	wiphy_work_cancel(ah->hw->wiphy, &ag->stats_work.stats_nb_work);
 	ath12k_stats_event_work_free(&ag->stats_work);
 
 	ath12k_mac_unregister(ag);
+
+	ath12k_core_cu_mem_pool_deinit(ag);
 
 	ath12k_mac_mlo_teardown(ag);
 
@@ -1890,17 +2262,76 @@ static int ath12k_core_send_cumac_chip(struct ath12k_hw_group *ag)
 	return ret;
 }
 
+#define ATH12K_CUMAC_BAND_PRIO_MAX 3
+#define ATH12K_CUMAC_BAND_PRIO_STR_LEN 32
+
+static int ath12k_parse_cumac_band_priority(enum ath12k_cumac_band *prio_band,
+					    struct ath12k_base *ab)
+{
+	char buf[ATH12K_CUMAC_BAND_PRIO_STR_LEN];
+	char *p = buf, *token;
+	int count = 0;
+	bool seen[ATH12K_CUMAC_BAND_PRIO_MAX + 1] = {};
+
+#ifdef CPTCFG_QCN_EXTN
+	const char *ini_val = ab ? ath12k_cfg_get(ab,
+					ATH12K_CFG_CUMAC_BAND_PRIORITY) : NULL;
+
+	if (!ini_val || !ini_val[0])
+		return 0;
+
+	strscpy(buf, ini_val, sizeof(buf));
+	ath12k_dbg(ab, ATH12K_DBG_BOOT,
+		   "cumac_band_priority: using INI value \"%s\"\n", buf);
+#else
+	return 0;
+#endif
+
+	while ((token = strsep(&p, " \t")) != NULL) {
+		enum ath12k_cumac_band band;
+
+		if (!*token)
+			continue;
+
+		if (strcasecmp(token, "2GHz") == 0)
+			band = ATH12K_CUMAC_BAND_2GHZ;
+		else if (strcasecmp(token, "5GHz") == 0)
+			band = ATH12K_CUMAC_BAND_5GHZ;
+		else if (strcasecmp(token, "6GHz") == 0)
+			band = ATH12K_CUMAC_BAND_6GHZ;
+		else {
+			ath12k_warn(ab, "unknown cumac_band_priority token \"%s\", ignoring\n",
+				    token);
+			continue;
+		}
+
+		if (seen[band])
+			continue;
+
+		seen[band] = true;
+		prio_band[count++] = band;
+
+		if (count == ATH12K_CUMAC_BAND_PRIO_MAX)
+			break;
+	}
+
+	return count;
+}
+
 static int ath12k_select_cumac_chip(struct ath12k_hw_group *ag)
 {
 	struct ath12k_base *partner_ab;
 	struct ath12k_base *cumac_ab = NULL;
 	int i, j;
 	enum ath12k_cumac_band preferred_cumac_band;
-	enum ath12k_cumac_band curr_band;
-	enum ath12k_cumac_band ath12k_cumac_prio_band[] = {ATH12K_CUMAC_BAND_2GHZ,
-							   ATH12K_CUMAC_BAND_5GHZ,
-							   ATH12K_CUMAC_BAND_6GHZ};
-	u32 max_prio_order =  ARRAY_SIZE(ath12k_cumac_prio_band);
+	enum ath12k_cumac_band curr_band = ATH12K_CUMAC_BAND_NONE;
+	enum ath12k_cumac_band default_prio_band[] = {ATH12K_CUMAC_BAND_2GHZ,
+						      ATH12K_CUMAC_BAND_5GHZ,
+						      ATH12K_CUMAC_BAND_6GHZ};
+	enum ath12k_cumac_band override_prio_band[ATH12K_CUMAC_BAND_PRIO_MAX];
+	enum ath12k_cumac_band *prio_band;
+	u32 max_prio_order;
+	int override_count;
 
 	if (!ag)
 		return -EINVAL;
@@ -1908,8 +2339,29 @@ static int ath12k_select_cumac_chip(struct ath12k_hw_group *ag)
 	if (ag->cumac_selected)
 		return 0;
 
+	/* Find the first available ab for INI lookup. */
+	partner_ab = NULL;
+	for (i = 0; i < ag->num_devices; i++) {
+		if (ag->ab[i] && !ag->ab[i]->is_bypassed) {
+			partner_ab = ag->ab[i];
+			break;
+		}
+	}
+	override_count = ath12k_parse_cumac_band_priority(override_prio_band,
+							  partner_ab);
+	if (override_count > 0) {
+		prio_band = override_prio_band;
+		max_prio_order = override_count;
+		ath12k_info(NULL,
+			    "CUMAC chip selection: using INI band priority (%d entries)\n",
+			    override_count);
+	} else {
+		prio_band = default_prio_band;
+		max_prio_order = ARRAY_SIZE(default_prio_band);
+	}
+
 	for (j = 0; j < max_prio_order; j++) {
-		preferred_cumac_band = ath12k_cumac_prio_band[j];
+		preferred_cumac_band = prio_band[j];
 		for (i = 0; i < ag->num_devices; i++) {
 			partner_ab = ag->ab[i];
 			if (!partner_ab)
@@ -1929,11 +2381,11 @@ static int ath12k_select_cumac_chip(struct ath12k_hw_group *ag)
 		return -EINVAL;
 
 	cumac_ab->is_cumac_chip = true;
-	ag->cumac_chip_id = cumac_ab->wsi_info.index;
+	ag->cumac_chip_id = cumac_ab->device_id;
 	ag->cumac_selected = true;
 	ath12k_info(cumac_ab,
 		    "Selected CUMAC chip: chip_id=%d band=%d\n",
-		    cumac_ab->wsi_info.index,
+		    cumac_ab->device_id,
 		    curr_band);
 
 	return 0;
@@ -2072,6 +2524,10 @@ static int ath12k_core_hw_group_start(struct ath12k_hw_group *ag)
 	if (WARN_ON(ret))
 		goto err_mac_destroy;
 
+	ret = ath12k_core_cu_mem_pool_init(ag);
+	if (ret)
+		goto err_mlo_teardown;
+
 	if (!ag->wsi_remap_in_progress) {
 		ret = ath12k_mac_register(ag);
 		if (WARN_ON(ret))
@@ -2082,9 +2538,13 @@ static int ath12k_core_hw_group_start(struct ath12k_hw_group *ag)
 
 	spin_lock_init(&ag->qos.profile_lock);
 
-	ret = ath12k_core_cu_mem_pool_init(ag);
-	if (ret)
-		goto err_mlo_teardown;
+	for (i = 0; i < ag->num_devices; i++) {
+		ab = ag->ab[i];
+		if (!ab || ab->is_bypassed)
+			continue;
+
+		ath12k_core_nol_extn_auto_restore_all_radios(ab);
+	}
 
 core_pdev_create:
 	for (i = 0; i < ag->num_devices; i++) {
@@ -2193,11 +2653,6 @@ static int ath12k_core_start_firmware(struct ath12k_base *ab,
 		ath12k_err(ab, "failed to send firmware start: %d\n", ret);
 		return ret;
 	}
-#ifdef CONFIG_IO_COHERENCY
-	ret = ath12k_core_config_iocoherency(ab, true);
-	if (ret)
-		ath12k_err(ab, "failed to configure IOCoherency: %d\n", ret);
-#endif
 
 	/*
 	 * Configure QDSS tracing immediately after QMI-driven firmware start.
@@ -2313,6 +2768,61 @@ static void ath12k_core_wsi_remap_mlo_reconfig(struct ath12k_hw_group *ag)
 	}
 }
 
+int ath12k_wsi_bypass_precheck(struct ath12k_base *ab, unsigned int value)
+{
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k *ar;
+	int i;
+
+	if (!test_bit(WMI_TLV_SERVICE_DYNAMIC_WSI_REMAP_SUPPORT, ab->wmi_ab.svc_map)) {
+		ath12k_err(ab, "Firmware doesn't support dynamic WSI remap\n");
+		return -EOPNOTSUPP;
+	}
+
+	if (ab->ag->wsi_remap_in_progress) {
+		ath12k_err(ab, "WSI remap already in progress..\n");
+		return -EBUSY;
+	}
+
+	if (ath12k_hw_group_recovery_in_progress(ag)) {
+		ath12k_err(ab, "SSR is in progress, cannot allow remap\n");
+		return -EBUSY;
+	}
+
+	if (ab->is_cumac_chip) {
+		ath12k_err(ab, "Bypass of CUMAC chip is not supported\n");
+		return -EOPNOTSUPP;
+	}
+
+	if ((!(test_bit(WMI_TLV_SERVICE_11BN, ab->wmi_ab.svc_map)) &&
+	    ((ag->num_devices - ag->num_bypassed) == ATH12K_MIN_ACTIVE_CHIP_FOR_BYPASS) &&
+	    value == ATH12K_WSI_BYPASS_REMOVE_DEVICE)) {
+		ath12k_err(ab, "Min 2 Chip has to be active for EHT device.\n");
+		return -EINVAL;
+	}
+
+	if ((!ab->is_bypassed && value == ATH12K_WSI_BYPASS_ADD_DEVICE) ||
+	    (ab->is_bypassed && value == ATH12K_WSI_BYPASS_REMOVE_DEVICE)) {
+		ath12k_err(ab, "Invalid operation\n");
+		return -EINVAL;
+	}
+
+	for (i = 0; i < ab->num_radios; i++) {
+		ar = ab->pdevs[i].ar;
+		if (!ar) {
+			ath12k_err(ab, "Invalid Radio\n");
+			return -EINVAL;
+		}
+		if (ar->num_created_vdevs > 0) {
+			ath12k_err(ab, "Vaps are active, cannot do bypass\n");
+			return -EBUSY;
+		}
+	}
+
+	return 0;
+}
+
+
 int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 {
 	struct ath12k_hw_group *ag = ath12k_ab_to_ag(ab);
@@ -2352,10 +2862,12 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 		return 0;
 	}
 
-	ret = ath12k_ce_init_pipes(ab);
-	if (ret) {
-		ath12k_err(ab, "failed to initialize CE: %d\n", ret);
-		goto err_firmware_stop;
+	if (!test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags)) {
+		ret = ath12k_ce_init_pipes(ab);
+		if (ret) {
+			ath12k_err(ab, "failed to initialize CE: %d\n", ret);
+			goto err_firmware_stop;
+		}
 	}
 
 	mutex_lock(&ab->core_lock);
@@ -2384,6 +2896,7 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 
 	mutex_unlock(&ab->core_lock);
 
+	ab->cumac_configured = false;
 	hw_grp_ready = ath12k_core_hw_group_start_ready(ag);
 	if (is_ready)
 		*is_ready = hw_grp_ready;
@@ -2424,6 +2937,14 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 			goto err_core_stop;
 		}
 		ath12k_dbg(ab, ATH12K_DBG_BOOT, "group %d started\n", ag->id);
+
+		/* Set global HW group started flag and trigger TA resource creation */
+		ath12k_hw_group_started = true;
+		if (ath12k_telemetry_is_agent_loaded()) {
+			ath12k_info(ab, "Hardware group started, creating TA resources\n");
+			__ath12k_telemetry_create_resources_locked(ag);
+		}
+
 		if (ath12k_ftm_mode)
 			ath12k_info(ab, "FTM mode interface is up\n");
 
@@ -2483,7 +3004,8 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 			    !partner_ab->recovery_start)
 				continue;
 
-			ath12k_hif_irq_enable(partner_ab);
+			if (!test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags))
+				ath12k_hif_irq_enable(partner_ab);
 
 			ret = ath12k_dp_rxdma_ring_sel_config(partner_ab);
 			if (ret) {
@@ -2735,39 +3257,48 @@ static void ath12k_rfkill_work(struct work_struct *work)
 
 static void ath12k_mac_peer_ab_disassoc(struct ath12k_base *ab)
 {
-	struct ath12k_dp_link_peer *peer, *tmp;
 	struct ath12k_sta *ahsta;
 	struct ieee80211_sta *sta;
+	struct ath12k_pdev *pdev;
+	struct ath12k *ar_iter;
+	struct ath12k_link_sta *arsta_iter;
+	u32 __bkt;
+	int i;
 
-	spin_lock_bh(&ab->dp->dp_lock);
-	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
-
-		if (!ath12k_dp_link_peer_get_vif(peer))
+	for (i = 0; i < ab->num_radios; i++) {
+		pdev = &ab->pdevs[i];
+		ar_iter = pdev->ar;
+		if (!ar_iter)
 			continue;
 
-		/* In case of STA Vif type,
-		 * report disconnect will be sent during sta_restart work.
-		 */
-		if (ath12k_dp_link_peer_get_vif_type(peer) == NL80211_IFTYPE_STATION)
-			continue;
+		spin_lock_bh(&ar_iter->arsta_lock);
+		ath12k_link_sta_for_each(ar_iter, __bkt, arsta_iter) {
+			struct ath12k_vif *ahvif;
 
-		sta = ath12k_dp_link_peer_get_sta(peer);
-		if (!sta)
-			continue;
+			if (arsta_iter->is_self_peer)
+				continue;
 
-		ahsta = (struct ath12k_sta *)sta->drv_priv;
-		/* Sending low ack event to hostapd to remove (free) the
-		 * existing STAs since FW is crashed and recovering at the momemt.
-		 * After recovery, FW comes up with no information about peers.
-		 * To stop any operation related to peers coming from upper
-		 * layers.
-		 * Here, 0xFFFF is used to differentiate between low ack event
-		 * sent during recovery versus normal low ack event. In normal,
-		 * low ack event, num_packets is not expected to be 0xFFFF.
-		 */
-		ath12k_mac_peer_disassoc(ab, sta, ahsta, ATH12K_DBG_MAC);
+			ahvif = arsta_iter->arvif->ahvif;
+			/* In case of STA Vif type, report disconnect will
+			 * be sent during sta_restart work.
+			 */
+			if (ahvif->vif->type == NL80211_IFTYPE_STATION)
+				continue;
+
+			sta = ath12k_ahsta_to_sta(arsta_iter->ahsta);
+			ahsta = arsta_iter->ahsta;
+			/* Sending low ack event to hostapd to remove (free)
+			 * the existing STAs since FW is crashed and recovering.
+			 * After recovery, FW comes up with no information about
+			 * peers. To stop any operation related to peers coming
+			 * from upper layers.
+			 * Here, 0xFFFF is used to differentiate between low ack
+			 * event sent during recovery versus normal low ack event.
+			 */
+			ath12k_mac_peer_disassoc(ab, sta, ahsta, ATH12K_DBG_MAC);
+		}
+		spin_unlock_bh(&ar_iter->arsta_lock);
 	}
-	spin_unlock_bh(&ab->dp->dp_lock);
 }
 
 void ath12k_core_halt(struct ath12k *ar)
@@ -2807,13 +3338,14 @@ void ath12k_core_halt(struct ath12k *ar)
 
 	ath12k_telemetry_ab_peer_agent_destroy(ab);
 
-	ath12k_mac_peer_cleanup_all(ar);
+	ath12k_mac_dp_peer_cleanup_all(ar);
 	cancel_work_sync(&ar->regd_update_work);
 	cancel_work_sync(&ar->reg_set_previous_country);
 	cancel_work_sync(&ar->change_6g_txpow_sta_mode_work);
 	cancel_work_sync(&ab->rfkill_work);
 	cancel_work_sync(&ab->update_11d_work);
 	wiphy_work_cancel(ath12k_ar_to_hw(ar)->wiphy, &ar->agile_cac_abort_wq);
+	ar->agile_abort_pending = false;
 
 	rcu_assign_pointer(ab->pdevs_active[ar->pdev_idx], NULL);
 	synchronize_rcu();
@@ -2895,46 +3427,34 @@ void ath12k_core_radio_cleanup(struct ath12k *ar)
 
 static void ath12k_core_pre_reconfigure_recovery(struct ath12k_base *ab)
 {
-	struct ath12k_hw_group *ag = ab->ag;
 	struct ath12k *ar;
 	struct ath12k_hw *ah;
 	struct ath12k_link_vif *arvif;
-	int i, j;
+	int i;
 
 	spin_lock_bh(&ab->base_lock);
 	ab->stats.fw_crash_counter++;
 	spin_unlock_bh(&ab->base_lock);
 
-	if (ab->is_reset)
-		set_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags);
+	for (i = 0; i < ab->num_radios; i++) {
+		ar = ab->pdevs[i].ar;
+		ah = ar->ah;
 
-	for (i = 0; i < ag->num_hw; i++) {
-		ah = ath12k_ag_to_ah(ag, i);
 		if (!ah || ah->state == ATH12K_HW_STATE_OFF ||
-		    ah->state == ATH12K_HW_STATE_TM ||
-		    ah->state == ATH12K_HW_STATE_RESTARTING)
+		    ah->state == ATH12K_HW_STATE_TM)
 			continue;
 
 		wiphy_lock(ah->hw->wiphy);
-		for (j = 0; j < ah->num_radio; j++) {
-			ar = &ah->radio[j];
-			if (ar->ab->is_bypassed)
-				continue;
 
-			if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE0 &&
-			    !ar->ab->is_reset)
-				continue;
-
-			list_for_each_entry(arvif, &ar->arvifs, list) {
-				if (arvif->is_started)
-					ath12k_debugfs_remove_interface(arvif);
-				arvif->is_started = false;
-				arvif->is_created = false;
-				arvif->is_up = false;
-			}
-			ath12k_core_radio_cleanup(ar);
+		list_for_each_entry(arvif, &ar->arvifs, list) {
+			if (arvif->is_started)
+				ath12k_debugfs_remove_interface(arvif);
+			arvif->is_started = false;
+			arvif->is_created = false;
+			arvif->is_up = false;
 		}
 
+		ath12k_core_radio_cleanup(ar);
 		wiphy_unlock(ah->hw->wiphy);
 	}
 
@@ -2975,48 +3495,21 @@ static void ath12k_core_post_reconfigure_recovery(struct ath12k_base *ab)
 	struct ath12k_hw_group *ag = ab->ag;
 	struct ath12k_hw *ah;
 	struct ath12k *ar;
-	int i, j;
+	int i;
+
+	if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE0)
+		goto cleanup;
 
 	for (i = 0; i < ag->num_hw; i++) {
 		ah = ath12k_ag_to_ah(ag, i);
-		if (!ah || ah->state == ATH12K_HW_STATE_OFF)
+		if (!ah || ah->state == ATH12K_HW_STATE_RESTARTING)
 			continue;
 
-		wiphy_lock(ah->hw->wiphy);
 		mutex_lock(&ah->hw_mutex);
 
 		switch (ah->state) {
 		case ATH12K_HW_STATE_ON:
 			ah->state = ATH12K_HW_STATE_RESTARTING;
-
-			for (j = 0; j < ah->num_radio; j++) {
-				ar = &ah->radio[j];
-				if (ar->ab->is_bypassed)
-					continue;
-
-				if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE0 &&
-				    !ar->ab->is_reset)
-					continue;
-
-				if (ar->scan.state == ATH12K_SCAN_RUNNING ||
-						ar->scan.state == ATH12K_SCAN_STARTING)
-					ar->scan.state = ATH12K_SCAN_ABORTING;
-				ath12k_mac_scan_finish(ar);
-				mutex_unlock(&ah->hw_mutex);
-				wiphy_unlock(ah->hw->wiphy);
-				cancel_delayed_work_sync(&ar->scan.timeout);
-				cancel_delayed_work_sync(&ar->scan.roc_done);
-				wiphy_lock(ah->hw->wiphy);
-				mutex_lock(&ah->hw_mutex);
-				ath12k_core_halt(ar);
-			}
-			/* At this point link peers will be deleted
-			 * for all the radios through
-			 * ath12k_mac_peer_cleannup_all()
-			 */
-			if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE2)
-				ath12k_mac_dp_peer_cleanup(ah, ag->recovery_mode);
-
 			break;
 		case ATH12K_HW_STATE_OFF:
 			ath12k_warn(ab,
@@ -3036,10 +3529,32 @@ static void ath12k_core_post_reconfigure_recovery(struct ath12k_base *ab)
 			ath12k_warn(ab, "fw mode reset done radio %d\n", i);
 			break;
 		}
-
 		mutex_unlock(&ah->hw_mutex);
+	}
+
+cleanup:
+	for (i = 0; i < ab->num_radios; i++) {
+		ar = ab->pdevs[i].ar;
+		/* mlo_capable = 0 split phy will have 2 ah's
+		 * within ag hence aquire lock inside the loop
+		 */
+
+		ah = ar->ah;
+
+		wiphy_lock(ah->hw->wiphy);
+		if (ar->scan.state == ATH12K_SCAN_RUNNING ||
+		    ar->scan.state == ATH12K_SCAN_STARTING)
+			ar->scan.state = ATH12K_SCAN_ABORTING;
+
+		ath12k_mac_scan_finish(ar);
+		wiphy_unlock(ah->hw->wiphy);
+		cancel_delayed_work_sync(&ar->scan.timeout);
+		cancel_delayed_work_sync(&ar->scan.roc_done);
+		wiphy_lock(ah->hw->wiphy);
+		ath12k_core_halt(ar);
 		wiphy_unlock(ah->hw->wiphy);
 	}
+	ab->post_reconfig_done = true;
 
 	complete(&ab->driver_recovery);
 }
@@ -3137,8 +3652,6 @@ static void ath12k_core_mode1_recovery_sta_list(void *data, struct ieee80211_sta
 	struct ath12k *ar = arvif->ar;
 	struct ath12k_base *ab = arvif->ar->ab;
 	struct ath12k_key_conf *key_conf = NULL;
-	struct ath12k_dp_link_peer *peer;
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ar->ab);
 	struct ieee80211_key_conf *key;
 	int ret = -1, key_idx;
 	u8 link_id = arvif->link_id;
@@ -3168,14 +3681,13 @@ static void ath12k_core_mode1_recovery_sta_list(void *data, struct ieee80211_sta
 	    vif->type != NL80211_IFTYPE_MESH_POINT)
 		return;
 
-	spin_lock_bh(&dp->dp_lock);
-	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, arvif->vdev_id, arsta->addr);
-	if (peer) {
+	spin_lock_bh(&ar->arsta_lock);
+	if (ath12k_link_sta_find_by_addr(ar, arsta->addr)) {
+		spin_unlock_bh(&ar->arsta_lock);
 		sta_added = true;
-		spin_unlock_bh(&dp->dp_lock);
 		goto key_add;
 	}
-	spin_unlock_bh(&dp->dp_lock);
+	spin_unlock_bh(&ar->arsta_lock);
 
 	prev_state = arsta->ahsta->state;
 	for (state = IEEE80211_STA_NOTEXIST;
@@ -3547,7 +4059,6 @@ static int ath12k_mlo_core_recovery_reconfig_link_bss(struct ath12k *ar,
 	enum ieee80211_ap_reg_power power_type;
 	struct ath12k_wmi_peer_create_arg param;
 	struct ieee80211_chanctx_conf *ctx = &arvif->chanctx;
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	int ret = -1;
 	u8 link_id;
 	bool is_bridge_vdev, dp_peer_created = false;
@@ -3601,17 +4112,18 @@ static int ath12k_mlo_core_recovery_reconfig_link_bss(struct ath12k *ar,
 		}
 	}
 
-	spin_lock_bh(&dp->dp_lock);
-        /* for some targets bss peer must be created before vdev_start */
+	/* for some targets bss peer must be created before vdev_start */
 	if (ab->hw_params->vdev_start_delay &&
 	    ahvif->vdev_type != WMI_VDEV_TYPE_AP &&
-	    ahvif->vdev_type != WMI_VDEV_TYPE_MONITOR &&
-	    !ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, arvif->vdev_id, arvif->bssid)) {
-		ret = 0;
-		spin_unlock_bh(&dp->dp_lock);
-		goto exit;
+	    ahvif->vdev_type != WMI_VDEV_TYPE_MONITOR) {
+		spin_lock_bh(&ar->arsta_lock);
+		if (!ath12k_link_sta_find_by_addr(ar, arvif->bssid)) {
+			ret = 0;
+			spin_unlock_bh(&ar->arsta_lock);
+			goto exit;
+		}
+		spin_unlock_bh(&ar->arsta_lock);
 	}
-	spin_unlock_bh(&dp->dp_lock);
 
 	if (ab->hw_params->vdev_start_delay &&
 	    (ahvif->vdev_type == WMI_VDEV_TYPE_AP ||
@@ -3628,6 +4140,15 @@ static int ath12k_mlo_core_recovery_reconfig_link_bss(struct ath12k *ar,
 		}
 
 		dp_peer_created = true;
+
+		if (ahvif->vdev_type == WMI_VDEV_TYPE_AP &&
+		    !arvif->self_arsta) {
+			ret = ath12k_mac_self_peer_arsta_create(ar, arvif,
+								ahvif->vdev_type);
+			if (ret)
+				goto exit;
+		}
+
 		param.vdev_id = arvif->vdev_id;
 		param.peer_type = WMI_PEER_TYPE_DEFAULT;
 		param.peer_addr = ar->mac_addr;
@@ -3665,6 +4186,14 @@ exit:
 		ath12k_dp_arch_peer_delete(ab->dp, ah, arvif->bssid,
 					   NULL, ar->hw_link_id);
 
+	if (ret && arvif->self_arsta) {
+		spin_lock_bh(&ar->arsta_lock);
+		ath12k_link_sta_hlist_delete(ar, arvif->self_arsta);
+		spin_unlock_bh(&ar->arsta_lock);
+		kfree(arvif->self_arsta);
+		arvif->self_arsta = NULL;
+	}
+
 	ath12k_dbg(ab, ATH12K_DBG_MODE1_RECOVERY,
 		   "ret:%d No. of vdev created:%d, links_map:0x%x, flag:%d\n",
 		   ret,
@@ -3679,10 +4208,13 @@ static void ath12k_core_peer_disassoc(struct ath12k_hw_group *ag,
 				      struct ath12k_base *assert_ab)
 {
 	struct ath12k_base *ab;
-	struct ath12k_dp_link_peer *peer, *tmp;
 	struct ath12k_sta *ahsta;
 	struct ieee80211_sta *sta;
-	int i;
+	struct ath12k_pdev *pdev_iter;
+	struct ath12k *ar_iter;
+	struct ath12k_link_sta *arsta_iter;
+	u32 __bkt;
+	int radio_idx, i;
 
 	for (i = 0; i < ag->num_devices; i++) {
 		ab = ag->ab[i];
@@ -3695,30 +4227,33 @@ static void ath12k_core_peer_disassoc(struct ath12k_hw_group *ag,
 				continue;
 		}
 
-		spin_lock_bh(&ab->dp->dp_lock);
-		list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
-			if (!ath12k_dp_link_peer_get_sta(peer) ||
-			    !ath12k_dp_link_peer_get_vif(peer))
+		for (radio_idx = 0; radio_idx < ab->num_radios; radio_idx++) {
+			pdev_iter = &ab->pdevs[radio_idx];
+			ar_iter = pdev_iter->ar;
+			if (!ar_iter)
 				continue;
 
-			/* Allow sending disassoc to legacy peer
-			 * only for asserted radio
-			 */
-			if (!peer->mlo && ab != assert_ab)
-				continue;
+			spin_lock_bh(&ar_iter->arsta_lock);
+			ath12k_link_sta_for_each(ar_iter, __bkt, arsta_iter) {
 
-			sta = ath12k_dp_link_peer_get_sta(peer);
-			ahsta = (struct ath12k_sta *)sta->drv_priv;
+				if (arsta_iter->is_self_peer)
+					continue;
 
-			/* Send low ack to disassoc the MLD station
-			 * Need to check on the sequence as FW has
-			 * discarded the management packet at this
-			 * sequence.
-			 */
-			ath12k_mac_peer_disassoc(ab, sta, ahsta,
-						 ATH12K_DBG_MODE1_RECOVERY);
+				/* Allow sending disassoc to legacy peer
+				 * only for asserted radio
+				 */
+				if (!arsta_iter->ahsta->is_mlo && ab != assert_ab)
+					continue;
+
+				sta = ath12k_ahsta_to_sta(arsta_iter->ahsta);
+				ahsta = arsta_iter->ahsta;
+
+				/* Send low ack to disassoc the MLD station */
+				ath12k_mac_peer_disassoc(ab, sta, ahsta,
+							 ATH12K_DBG_MODE1_RECOVERY);
+			}
+			spin_unlock_bh(&ar_iter->arsta_lock);
 		}
-		spin_unlock_bh(&ab->dp->dp_lock);
 	}
 }
 
@@ -3788,8 +4323,6 @@ int ath12k_recovery_reconfig(struct ath12k_base *ab)
 	struct ath12k_hw_group *ag = ab->ag;
 	struct ath12k_base *partner_ab;
 	struct ath12k_hw *ah = ath12k_ag_to_ah(ag, 0);
-	struct ath12k_dp_link_peer *peer;
-	struct ath12k_dp *dp;
 	struct ieee80211_key_conf *key;
 	int i, j, key_idx;
 	int ret = -EINVAL;
@@ -3959,15 +4492,13 @@ skip_link_info:
 				if (ath12k_mac_is_bridge_vdev(arvif))
 					continue;
 
-				dp = ath12k_ab_to_dp(partner_ab);
-				spin_lock_bh(&dp->dp_lock);
-				peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, arvif->vdev_id, arvif->bssid);
-				if (!peer) {
+				spin_lock_bh(&ar->arsta_lock);
+				if (!ath12k_link_sta_find_by_addr(ar, arvif->bssid)) {
 					ath12k_info(ab, "Failed to fetch the peer during reconfig\n");
-					spin_unlock_bh(&dp->dp_lock);
+					spin_unlock_bh(&ar->arsta_lock);
 					continue;
 				}
-				spin_unlock_bh(&dp->dp_lock);
+				spin_unlock_bh(&ar->arsta_lock);
 
 				ath12k_reset_group_key_slots(arvif, ahvif);
 				for (key_idx = 0; key_idx < WMI_MAX_KEY_INDEX; key_idx++) {
@@ -3991,7 +4522,6 @@ skip_link_info:
 	ath12k_core_peer_disassoc(ag, ab);
 	ab->recovery_start = false;
 	ath12k_info(ab, "Mode %d recovery completed\n", ag->recovery_mode - 1);
-	ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
 	wiphy_unlock(ah->hw->wiphy);
 	return ret;
 }
@@ -4100,10 +4630,11 @@ static int ath12k_core_trigger_umac_reset(struct ath12k_base *ab,
 	ath12k_mac_mlo_teardown_with_umac_reset(ab, reason_code);
 
 	time_left = wait_for_completion_timeout(&ag->umac_reset_complete,
-			msecs_to_jiffies(ATH12K_UMAC_RESET_TIMEOUT_IN_MS));
+			msecs_to_jiffies(DP_UMAC_RESET_TIMEOUT_IN_MS));
 
 	if (!time_left) {
-		ath12k_warn(ab, "UMAC reset didn't get completed within %d ms\n", ATH12K_UMAC_RESET_TIMEOUT_IN_MS);
+		ath12k_warn(ab, "UMAC reset didn't get completed within %d ms\n",
+			    DP_UMAC_RESET_TIMEOUT_IN_MS);
 		ret = -ETIMEDOUT;
 	}
 
@@ -4198,31 +4729,37 @@ static void ath12k_core_disable_ext_irq_during_recovery(struct ath12k_base *ab)
 	}
 }
 
-static void ath12k_core_reset(struct work_struct *work)
+static void ath12k_fallback_cleanup(struct ath12k_hw_group *ag)
 {
-	struct ath12k_base *partner_ab, *ab = container_of(work, struct ath12k_base, reset_work);
-	struct ath12k_hw_group *ag = ab->ag;
+	int i, j;
 	struct ath12k_hw *ah;
-	int reset_count, fail_cont_count, i;
-	long time_left;
+	struct ath12k *ar;
 
-	if (!(test_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE, &ab->dev_flags)) &&
-	    !ath12k_waltest_mode) {
-		/* The coredump may not be valid or complete since firmware
-		 * initialization is incomplete.
-		 */
-		if (ab->hif.bus == ATH12K_BUS_PCI)
-			ath12k_coredump_download_rddm(ab);
-		else if (ath12k_fw_q6_dump_collection)
-			ath12k_core_upd_power_down(ab);
-		ath12k_warn(ab, "ignore reset dev flags 0x%lx\n", ab->dev_flags);
-		return;
+	for (i = 0; i < ag->num_hw; i++) {
+		ah = ag->ah[i];
+
+		if (!ah)
+			continue;
+
+		for_each_ar(ah, ar, j) {
+			if (!ar || ar->ab->is_bypassed || !ar->ab->post_reconfig_done)
+				continue;
+
+			spin_lock_bh(&ar->data_lock);
+			INIT_LIST_HEAD(&ar->arvifs);
+			spin_unlock_bh(&ar->data_lock);
+		}
 	}
+}
 
-	ab->recovery_start = false;
+static void ath12k_update_recovery_mode(struct ath12k_hw_group *ag,
+					struct ath12k_base *asserted_ab)
+{
+	enum ath12k_mlo_recovery_mode host_rm = ag->recovery_mode;
 
-	if (ab->recovery_mode_address) {
-		switch (*ab->recovery_mode_address) {
+	if (asserted_ab->recovery_mode_address) {
+		/*get current recovery mode as per FW from shmem*/
+		switch (*asserted_ab->recovery_mode_address) {
 		case ATH12K_MLO_RECOVERY_MODE2:
 			ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE2;
 			break;
@@ -4234,14 +4771,51 @@ static void ath12k_core_reset(struct work_struct *work)
 		default:
 			ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
 		}
-
-		ath12k_dbg(ab, ATH12K_DBG_MODE1_RECOVERY,"mode:%d\n", ag->recovery_mode);
 	} else {
 		ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
 	}
 
 	if (ath12k_check_erp_power_down(ag))
 		ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
+
+	/* Fallback to mode0 recovery during a cumac HW crash */
+	if (asserted_ab->is_cumac_chip &&
+	    !test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &asserted_ab->dev_flags)) {
+		ath12k_info(asserted_ab, "Recovery is falling back to Mode0 due to cumac HW assert\n");
+		ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
+	}
+
+	if (host_rm > ag->recovery_mode)
+		ath12k_fallback_cleanup(ag);
+}
+
+static void ath12k_core_reset(struct work_struct *work)
+{
+	struct ath12k_base *partner_ab, *ab = container_of(work, struct ath12k_base,
+							   reset_work);
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_hw *ah;
+	int reset_count, fail_cont_count, i;
+	long time_left;
+
+	if (!(test_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE, &ab->dev_flags)) &&
+	    !ath12k_waltest_mode) {
+		mutex_lock(&ag->mutex);
+		/* The coredump may not be valid or complete since firmware
+		 * initialization is incomplete.
+		 */
+		if (ab->hif.bus == ATH12K_BUS_PCI)
+			ath12k_coredump_download_rddm(ab);
+		else if (ath12k_fw_q6_dump_collection)
+			ath12k_core_upd_power_down(ab);
+		mutex_unlock(&ag->mutex);
+		ath12k_warn(ab, "ignore reset dev flags 0x%lx\n", ab->dev_flags);
+		return;
+	}
+
+	ab->recovery_start = false;
+
+	ath12k_update_recovery_mode(ag, ab);
 
 	if (ab->fw_recovery_support)
 		ath12k_info(ab, "Recovery is initiated with Mode%d\n",
@@ -4344,7 +4918,8 @@ static void ath12k_core_reset(struct work_struct *work)
 				 * MODE0
 				 */
 				ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
-                        	ath12k_info(ab, "Recovery is falling back to Mode0 as one of the partner chip is already in recovery\n");
+				ath12k_info(ab, "Recovery is falling back to Mode0 as one of the partner chip is already in recovery\n");
+				ath12k_fallback_cleanup(ab->ag);
 				break;
 			} else {
 				/* Set dev flags to UMAC recovery START
@@ -4352,9 +4927,9 @@ static void ath12k_core_reset(struct work_struct *work)
 				 */
 				ath12k_info(ab, "setting teardown to true\n");
 				set_bit(ATH12K_FLAG_UMAC_RECOVERY_START, &partner_ab->dev_flags);
-                        }
-                }
-        }
+			}
+		}
+	}
 
 	/* UMAC RESET relies on ag->num_started as barrier to make sure
 	 * umac related interrupts are received from all non-asserted chips
@@ -4365,13 +4940,13 @@ static void ath12k_core_reset(struct work_struct *work)
 		ath12k_core_to_group_ref_put(ab);
 
 	if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE0) {
-		if (ath12k_core_trigger_umac_reset(ab, WMI_MLO_TEARDOWN_SSR_REASON) ||
-		    ath12k_mac_partner_peer_cleanup(ab)) {
+		if (ath12k_core_trigger_umac_reset(ab, WMI_MLO_TEARDOWN_SSR_REASON)) {
 			/* Fallback to Mode0 if umac reset/peer_cleanup is
 			 * failed
 			 */
 			ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
 			/* TODO: DS: Handle any clean up necessary for Mode1 SSR */
+			ath12k_fallback_cleanup(ab->ag);
 			ath12k_info(ab, "Recovery is falling back to Mode0\n");
 		} else {
 			/* wake queues here as ping should continue for
@@ -4541,6 +5116,13 @@ static struct ath12k_hw_group *ath12k_core_hw_group_alloc(struct ath12k_base *ab
 		return NULL;
 	}
 
+	ag->dp_hw_grp->tx_desc_used_cnt = alloc_percpu(u32);
+	if (!ag->dp_hw_grp->tx_desc_used_cnt) {
+		kfree(ag->dp_hw_grp);
+		kfree(ag);
+		return NULL;
+	}
+
 	ag->id = count;
 #ifdef CPTCFG_ATH12K_POWER_OPTIMIZATION
 	ag->dbs_power_reduction = ATH12K_DEFAULT_POWER_REDUCTION;
@@ -4552,6 +5134,7 @@ static struct ath12k_hw_group *ath12k_core_hw_group_alloc(struct ath12k_base *ab
 	mutex_init(&ag->dp_hw_grp->tx_init_lock);
 	init_completion(&ag->umac_reset_complete);
 	init_completion(&ag->peer_cleanup_complete);
+	spin_lock_init(&ag->ahsta_lock);
 	ag->mlo_capable = false;
 	ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
 	ag->wsi_load_info = NULL;
@@ -4598,6 +5181,11 @@ static void ath12k_core_hw_group_free(struct ath12k_hw_group *ag)
 
 	ath12k_core_free_wsi_info(ag);
 	list_del(&ag->list);
+	spin_lock_bh(&ag->ahsta_lock);
+	ath12k_sta_hlist_destroy(ag);
+	ath12k_sta_hlist_head_destroy(ag);
+	spin_unlock_bh(&ag->ahsta_lock);
+	free_percpu(ag->dp_hw_grp->tx_desc_used_cnt);
 	kfree(ag->dp_hw_grp);
 	kfree(ag);
 
@@ -5186,7 +5774,7 @@ int ath12k_core_dynamic_wsi_remap(struct ath12k_base *ab)
 		mutex_unlock(&ag->mutex);
 		/* Reset the flags */
 		ag->wsi_remap_in_progress = false;
-		ab->wsi_remap_state = 0;
+		ab->wsi_remap_state = ATH12K_WSI_BYPASS_REMOVE_DEVICE;
 		ath12k_info(ab, "WSI remap: Device bypass completed\n");
 	} else if (ab->wsi_remap_state == ATH12K_WSI_BYPASS_ADD_DEVICE) {
 		ab->is_bypassed = false;
@@ -5789,6 +6377,11 @@ struct ath12k_base *ath12k_core_alloc(struct device *dev, size_t priv_size,
 	struct ath12k_base *ab;
 	u32 addr;
 
+	/*
+	 * Detect the active memory profile before the device is initialized.
+	 */
+	ath12k_detect_mem_profile();
+
 	ab = kzalloc(sizeof(*ab) + priv_size, GFP_KERNEL);
 	if (!ab)
 		return NULL;
@@ -5804,7 +6397,6 @@ struct ath12k_base *ath12k_core_alloc(struct device *dev, size_t priv_size,
 		goto err_free_wq;
 
 	mutex_init(&ab->core_lock);
-	mutex_init(&ab->tbl_mtx_lock);
 	spin_lock_init(&ab->base_lock);
 	init_completion(&ab->reset_complete);
 
@@ -5886,16 +6478,35 @@ out:
                     atomic_read(&ath12k_coredump_ram_info.num_chip));
 }
 
+struct ath12k_breach_ctx {
+	bool is_mlo;
+	u8 mld_addr_buf[ETH_ALEN];
+	struct ieee80211_vif *vif;
+};
+
+static void ath12k_arsta_telemetry_notify_breach_cb(struct ath12k *ar,
+						    struct ath12k_link_sta *arsta,
+						    void *data)
+{
+	struct ath12k_breach_ctx *ctx = (struct ath12k_breach_ctx *)data;
+
+	ctx->is_mlo = arsta->ahsta->is_mlo;
+	ctx->vif = ath12k_ahvif_to_vif(arsta->arvif->ahvif);
+
+	if (arsta->ahsta->is_mlo)
+		ether_addr_copy(ctx->mld_addr_buf, arsta->ahsta->addr);
+}
+
 void ath12k_telemetry_notify_breach(u8 *mac_addr, u8 svc_id, u8 param,
 				    bool set_clear, u8 tid)
 {
 	struct ath12k_hw_group *ag = NULL;
 	struct ieee80211_vif *vif = NULL;
 	struct ath12k_base *ab = NULL;
-	struct ath12k_dp_link_peer *peer = NULL;
 	int soc;
-	u8 mld_addr_buf[ETH_ALEN] = {0};
 	u8 *mld_addr = NULL;
+	struct ath12k_breach_ctx ctx = {0};
+	bool ret = false;
 
 	if (!mac_addr)
 		return;
@@ -5915,17 +6526,15 @@ void ath12k_telemetry_notify_breach(u8 *mac_addr, u8 svc_id, u8 param,
 				continue;
 			}
 
-			spin_lock_bh(&ab->dp->dp_lock);
-			peer = ath12k_dp_link_peer_find_by_addr(ab->dp, mac_addr);
-			if (peer) {
-				vif = ath12k_dp_link_peer_get_vif(peer);
-				if (peer->mlo) {
-					ether_addr_copy(mld_addr_buf, peer->ml_addr);
-					mld_addr = mld_addr_buf;
-				}
+			ret = ath12k_arsta_itr_on_ab_by_addr(ab, mac_addr,
+							     ath12k_arsta_telemetry_notify_breach_cb,
+							     &ctx);
+			if (ret) {
+				vif = ctx.vif;
+				if (ctx.is_mlo)
+					mld_addr = ctx.mld_addr_buf;
 				ath12k_dbg(ab, ATH12K_DBG_QOS, "Breach detected: Peer %pM\n",
 					   mac_addr);
-				spin_unlock_bh(&ab->dp->dp_lock);
 				mutex_unlock(&ath12k_hw_group_mutex);
 				ath12k_vendor_telemetry_notify_breach(vif,
 								      mac_addr,
@@ -5936,7 +6545,6 @@ void ath12k_telemetry_notify_breach(u8 *mac_addr, u8 svc_id, u8 param,
 								      mld_addr);
 				return;
 			}
-			spin_unlock_bh(&ab->dp->dp_lock);
 		}
 	}
 	mutex_unlock(&ath12k_hw_group_mutex);
@@ -5952,11 +6560,10 @@ void ath12k_rssi_rate_notify_breach_event(u8 *mac_addr, u8 breach_type,
 	struct ath12k_hw_group *ag = NULL;
 	struct ieee80211_vif *vif = NULL;
 	struct ath12k_base *ab = NULL;
-	struct ath12k_dp_link_peer *peer = NULL;
-	struct ath12k_dp *dp;
 	int soc;
-	u8 mld_addr_buf[ETH_ALEN] = {0};
 	u8 *mld_addr = NULL;
+	struct ath12k_breach_ctx ctx = {0};
+	bool ret = false;
 
 	if (!mac_addr)
 		return;
@@ -5976,19 +6583,16 @@ void ath12k_rssi_rate_notify_breach_event(u8 *mac_addr, u8 breach_type,
 				continue;
 			}
 
-			dp = ath12k_ab_to_dp(ab);
-			spin_lock_bh(&dp->dp_lock);
-			peer = ath12k_dp_link_peer_find_by_addr(dp, mac_addr);
-			if (peer) {
-				vif = ath12k_dp_link_peer_get_vif(peer);
-				if (peer->mlo) {
-					ether_addr_copy(mld_addr_buf, peer->ml_addr);
-					mld_addr = mld_addr_buf;
-				}
+			ret = ath12k_arsta_itr_on_ab_by_addr(ab, mac_addr,
+							     ath12k_arsta_telemetry_notify_breach_cb,
+							     &ctx);
+			if (ret) {
+				vif = ctx.vif;
+				if (ctx.is_mlo)
+					mld_addr = ctx.mld_addr_buf;
 				ath12k_dbg(ab, ATH12K_DBG_TELEMETRY,
 					   "RSSI/Rate Breach detected: Peer %pM type %u\n",
 					   mac_addr, breach_type);
-				spin_unlock_bh(&dp->dp_lock);
 				mutex_unlock(&ath12k_hw_group_mutex);
 				ath12k_vendor_rssi_rate_notify_breach(vif,
 								      mac_addr,
@@ -5999,7 +6603,6 @@ void ath12k_rssi_rate_notify_breach_event(u8 *mac_addr, u8 breach_type,
 								      mld_addr);
 				return;
 			}
-			spin_unlock_bh(&dp->dp_lock);
 		}
 	}
 	mutex_unlock(&ath12k_hw_group_mutex);
@@ -6224,8 +6827,10 @@ void ath12k_core_cu_mem_free_all(struct ath12k *ar)
 {
 	struct ath12k_link_vif *arvif_itr;
 
+	spin_lock_bh(&ar->data_lock);
 	list_for_each_entry(arvif_itr, &ar->arvifs, list)
 		ath12k_core_cu_mem_free(arvif_itr->ar, arvif_itr);
+	spin_unlock_bh(&ar->data_lock);
 }
 
 int ath12k_core_cu_mem_pool_init(struct ath12k_hw_group *ag)

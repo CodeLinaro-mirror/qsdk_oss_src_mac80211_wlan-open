@@ -60,22 +60,11 @@ ath12k_tx_desc_info *ath12k_dp_tx_assign_buffer(struct ath12k_dp_hw_group *dp_hw
 						struct list_head *free_list,
 						u8 pool_id);
 int ath12k_dp_tx_htt_h2t_vdev_stats_ol_req(struct ath12k *ar, u64 reset_bitmask);
-u8 ath12k_dp_get_link_id(struct ath12k_pdev_dp *dp_pdev,
-			 u8 hw_link_id, struct ath12k_dp_peer *peer);
-u8 ath12k_dp_get_hw_link_id(struct ath12k_dp_peer *peer,
-			    u8 link_id);
-void ath12k_dp_tx_update_peer_basic_stats(struct ath12k_dp_peer *peer,
-					  u32 msdu_len, u8 tx_status,
-					  u8 link_id, int ring_id);
-void ath12k_dp_tx_comp_update_peer_stats(struct ath12k_dp_peer *peer,
-					 struct hal_tx_status *ts, int ring_id,
-					 u16 tx_desc_flags, u8 link_id,
-					 u32 msdu_len);
 int ath12k_sdwf_reinject_handler(struct ath12k_base *ab, struct sk_buff *skb,
 				 struct htt_tx_completion *status_desc, u8 mac_id);
 int ath12k_dp_mmesh_tx(struct ieee80211_hw *hw, struct ath12k_base *ab,
 		       struct ath12k_link_vif *arvif, struct ieee80211_vif *vlan_vif,
-		       struct sk_buff *skb, struct ath12k_sta *ahsta,
+		       struct sk_buff *skb, struct ieee80211_sta *sta,
 		       struct ath12k_dp_skb_ctrl *skb_ctrl, bool is_eth,
 		       u8 link_id, bool is_mcast, bool *htt_mesh,
 		       struct ieee80211_tx_info *info, u32 qos_nw_delay);
@@ -86,7 +75,10 @@ enum hal_tcl_encap_type
 ath12k_dp_tx_get_encap_type(struct ath12k_base *ab, struct sk_buff *skb);
 void ath12k_dp_tx_drop_tid_stats(struct ath12k_dp_vif *dp_vif,
 				 enum ath12k_dp_tx_enq_error drop_reason,
-				 struct sk_buff *skb, u32 len);
+				 u8 tid, u32 len);
+void ath12k_dp_tx_drop_pdev_tid_stats(struct ath12k_pdev_dp *dp_pdev,
+				      enum ath12k_dp_tx_enq_error drop_reason,
+				      u8 tid, u8 ring_id);
 void ath12k_dp_tx_stats_update_pre_enqueue(struct ath12k_pdev_dp *dp_pdev,
 					   struct ath12k_dp_vif *dp_vif,
 					   struct sk_buff *skb,
@@ -98,6 +90,13 @@ void ath12k_dp_tx_stats_post_enqueue(struct ath12k_dp *dp,
 				     struct ath12k_dp_tx_msdu_info *msdu_info,
 				     u8 ring_id, u32 len, bool is_mcast,
 				     struct ath12k_tx_desc_info *tx_desc);
+int ath12k_dp_tx_get_mcast_group_slot(struct ath12k_vif *vlan_ahvif,
+				      u8 link_id,
+				      struct ieee80211_tx_info *info);
+int ath12k_dp_sg_ext_desc_populate(struct ath12k_dp *dp,
+				   struct ath12k_dp_vif *dp_vif,
+				   struct ath12k_dp_ext_desc *ext_desc,
+				   struct sk_buff *skb, u8 ring_id);
 
 /**
  * ath12k_wifi7_tx_classify_packet() - Classify packet type
@@ -347,6 +346,7 @@ struct ath12k_dp_ext_desc_msdu_info {
  * @rbm_id: Return Buffer Manager ID (set from tcl_to_cmp_rbm_map at enqueue)
  * @pkt_offset: Packet offset within the buffer (typically 0)
  * @lookup_override: If true, use bss_ast_idx for address lookup instead of DA
+ * @group_slot: VLAN group-key slot for MPSK multicast; -1 when not applicable
  * @is_null: True if the frame is a null-function frame
  * @to_fw: True if the frame should be redirected to firmware
  * @ext_kmem: True if an extended descriptor (ext_cache slab) is required
@@ -375,6 +375,7 @@ struct ath12k_dp_tx_msdu_info {
 	u8 rbm_id;
 	u8 pkt_offset;
 	u8 tx_notify_frame;
+	s8 group_slot;
 
 	u8 lookup_override	: 1,
 	   is_null		: 1,

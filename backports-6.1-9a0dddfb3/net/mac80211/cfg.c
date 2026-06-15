@@ -24,6 +24,15 @@
 #include "wme.h"
 #include "qcn_extns/cmn_extn.h"
 
+/*
+ * When IEEE80211_HW_BATCH_CSA is set, mac80211 waits up to this many
+ * milliseconds after the first CSA request on a chanctx before committing
+ * the beacons to hardware.  The intent is to allow hostapd time to issue
+ * NL80211_CMD_CHANNEL_SWITCH for all co-located AP VIFs within a single
+ * beacon interval (~100 ms for a typical 10 TU interval).
+ */
+#define IEEE80211_CSA_BATCH_TIMEOUT_MS 100
+
 static struct ieee80211_link_data *
 ieee80211_link_or_deflink(struct ieee80211_sub_if_data *sdata, int link_id,
 			  bool require_valid)
@@ -1084,8 +1093,10 @@ int ieee80211_set_monitor_channel(struct wiphy *wiphy,
 {
 	struct ieee80211_local *local = wiphy_priv(wiphy);
 	struct ieee80211_sub_if_data *sdata;
+	struct ieee80211_chanctx *ctx;
 	struct ieee80211_chan_req chanreq = { .oper = *chandef };
-	int ret;
+	struct ieee80211_chan_req tmp;
+	int ret = 0;
 
 	lockdep_assert_wiphy(local->hw.wiphy);
 
@@ -1119,11 +1130,50 @@ int ieee80211_set_monitor_channel(struct wiphy *wiphy,
 				       &chanreq.oper))
 		return 0;
 
+	/*
+	 * Scan the chanctx list for a context that already has links under
+	 * reservation and is compatible with the requested chanreq.  If one
+	 * exists, attach the monitor to it without releasing the current
+	 * channel; the MVR machinery will move all participants atomically
+	 * once every reserved link calls
+	 * ieee80211_link_use_reserved_context().
+	 */
+	list_for_each_entry(ctx, &local->chanctx_list, list) {
+		if (list_empty(&ctx->reserved_links))
+			continue;
+
+		if (!ieee80211_chanctx_compatible(ctx, &chanreq, &tmp))
+			continue;
+
+		/* Guard against duplicate reservation (e.g. two AP links on
+		 * the same chanctx each triggering set_monitor_channel).
+		 * A second list_add would corrupt reserved_chanctx_list and
+		 * reset reserved_ready to false.
+		 */
+		if (sdata->deflink.reserved_chanctx == ctx)
+			goto done;
+
+		ret = ieee80211_link_reserve_chanctx(&sdata->deflink,
+						     &chanreq,
+						     ctx->mode, false);
+		if (!ret) {
+			sdata->deflink.reserved_ready = true;
+			sdata_dbg(sdata,
+				  "MON-CSA set_monitor_channel: reserved monitor on existing ctx (freq=%d), marked ready for MVR\n",
+				  ctx->conf.def.chan ?
+				  ctx->conf.def.chan->center_freq : 0);
+			goto done;
+		}
+	}
+
 	ieee80211_link_release_channel(&sdata->deflink);
 	ret = ieee80211_link_use_channel(&sdata->deflink, &chanreq,
 					 IEEE80211_CHANCTX_SHARED);
 	if (ret)
 		return ret;
+	sdata_dbg(sdata,
+		  "MON-CSA set_monitor_channel: direct use_channel succeeded (freq=%d)\n",
+		  chandef->chan ? chandef->chan->center_freq : 0);
 done:
 	local->monitor_chanreq = chanreq;
 	return 0;
@@ -1312,6 +1362,83 @@ ieee80211_copy_rnr_beacon(u8 *pos, struct cfg80211_rnr_elems *dst,
 	return offset;
 }
 
+static enum ieee80211_sta_rx_bandwidth
+ieee80211_repurposed_adv_bw_from_beacon(struct ieee80211_sub_if_data *sdata,
+					struct ieee80211_link_data *link,
+					const u8 *elems, size_t elems_len)
+{
+	struct cfg80211_chan_def parsed_chandef = link->conf->chanreq.oper;
+	enum ieee80211_sta_rx_bandwidth adv_bw =
+		ieee80211_chan_width_to_rx_bw(parsed_chandef.width);
+	const struct ieee80211_supported_band *sband;
+	const struct element *tmp;
+	struct ieee80211_he_operation *he_oper;
+	struct ieee80211_ht_operation *ht_oper;
+	struct ieee80211_vht_operation *vht_oper;
+	bool parsed_width = false;
+
+	sband = ieee80211_get_link_sband(link);
+	if (!sband)
+		return adv_bw;
+
+	if (!parsed_chandef.chan)
+		return adv_bw;
+
+	/* 6 GHz operation width is derived from HE/EHT operation IEs */
+	if (parsed_chandef.chan->band == NL80211_BAND_6GHZ) {
+		const struct ieee80211_he_6ghz_oper *he_6ghz_oper;
+
+		tmp = cfg80211_find_ext_elem(WLAN_EID_EXT_HE_OPERATION,
+					     elems, elems_len);
+		if (!tmp || tmp->datalen < sizeof(*he_oper) + 1 ||
+		    tmp->datalen < ieee80211_he_oper_size(tmp->data + 1))
+			return adv_bw;
+
+		he_oper = (void *)&tmp->data[1];
+		he_6ghz_oper = ieee80211_he_6ghz_oper(he_oper);
+		if (!he_6ghz_oper)
+			return adv_bw;
+
+		if (ieee80211_chandef_he_6ghz_oper(sdata, link->link_id,
+						   he_oper,
+						   NULL,
+						   &parsed_chandef))
+			parsed_width = true;
+		goto done;
+	}
+
+	tmp = (const struct element *)cfg80211_find_ie(WLAN_EID_HT_OPERATION,
+						       elems, elems_len);
+	if (!tmp || tmp->datalen < sizeof(struct ieee80211_ht_operation))
+		goto done;
+	ht_oper = (void *)tmp->data;
+
+	if (ht_oper &&
+	    ieee80211_chandef_ht_oper(ht_oper, &parsed_chandef))
+		parsed_width = true;
+
+	tmp = (const struct element *)cfg80211_find_ie(WLAN_EID_VHT_OPERATION,
+						       elems, elems_len);
+	if (!tmp || tmp->datalen < sizeof(struct ieee80211_vht_operation))
+		goto done;
+
+	vht_oper = (void *)tmp->data;
+
+	if (vht_oper && ht_oper &&
+	    ieee80211_chandef_vht_oper(&sdata->local->hw, sband->vht_cap.cap,
+				       vht_oper,
+				       ht_oper,
+				       &parsed_chandef))
+		parsed_width = true;
+
+done:
+	if (parsed_width)
+		adv_bw = min_t(enum ieee80211_sta_rx_bandwidth, adv_bw,
+			       ieee80211_chan_width_to_rx_bw(parsed_chandef.width));
+
+	return adv_bw;
+}
+
 static int
 ieee80211_assign_beacon(struct ieee80211_sub_if_data *sdata,
 			struct ieee80211_link_data *link,
@@ -1443,6 +1570,18 @@ ieee80211_assign_beacon(struct ieee80211_sub_if_data *sdata,
 
 	rcu_assign_pointer(link->u.ap.beacon, new);
 	sdata->u.ap.active = true;
+
+	if (ieee80211_vif_is_mld(&sdata->vif) &&
+	    (sdata->vif.repurposed_links & BIT(link->link_id)) &&
+	    params->tail && params->tail_len) {
+		link->u.ap.repurposed_adv_bw =
+			ieee80211_repurposed_adv_bw_from_beacon(sdata, link,
+								params->tail,
+								params->tail_len);
+		link->u.ap.repurposed_adv_bw_valid = true;
+	} else {
+		link->u.ap.repurposed_adv_bw_valid = false;
+	}
 
 	if (old)
 		kfree_rcu(old, rcu_head);
@@ -1902,6 +2041,19 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 #endif /* CPTCFG_QCN_EXTN_MESH_SUPPORT */
 
 	ieee80211_set_critical_update(sdata, link_id, &params->beacon.cu_params, false);
+
+#ifdef CPTCFG_QCN_EXTN
+	/*
+	 * Boot-up CAC: if this is the first BSS being started on a 5 GHz DFS
+	 * channel, start the per-chanctx dfs_cac_timer with the regulatory
+	 * CAC time for the channel. Subsequent start_ap calls on the same
+	 * chanctx see the timer already active and inherit its timing state.
+	 */
+	if (cfg80211_chandef_dfs_usable(local->hw.wiphy, &params->chandef) &&
+	    !cfg80211_chandef_dfs_available(local->hw.wiphy, &params->chandef))
+		ieee80211_start_ap_bootup_cac_extn(sdata, link, params);
+#endif /* CPTCFG_QCN_EXTN */
+
 	return 0;
 
 error:
@@ -2002,6 +2154,55 @@ static void ieee80211_free_next_beacon(struct ieee80211_link_data *link)
 	link->u.ap.next_beacon = NULL;
 }
 
+void ieee80211_handle_cac_stop(struct wiphy *wiphy,
+			       struct ieee80211_sub_if_data *sdata,
+			       struct ieee80211_link_data *link,
+			       struct ieee80211_bss_conf *link_conf,
+			       bool *cac_aborted)
+{
+	struct cfg80211_chan_def chandef = link_conf->chanreq.oper;
+	struct ieee80211_chanctx *ctx;
+	struct ieee80211_link_data *tmp_link;
+
+	if (cac_aborted)
+		*cac_aborted = false;
+
+	ctx = ieee80211_link_get_chanctx(link);
+	if (!ctx)
+		return;
+
+	list_for_each_entry(tmp_link, &ctx->assigned_links,
+			    assigned_chanctx_list) {
+		if (tmp_link == link)
+			continue;
+
+		if (!tmp_link->sdata->wdev.links[tmp_link->link_id].cac_started)
+			continue;
+
+		/*
+		 * A CAC is still running on this channel. Keep the single
+		 * shared CAC timer running, but clear only this link's flag
+		 * since cac_started is set on all links.
+		 */
+		sdata->wdev.links[link->link_id].cac_started = false;
+		return;
+	}
+
+	/*
+	 * No other link on this channel has cac_started set. Stop the single
+	 * shared CAC timer and notify cfg80211, which clears cac_started for
+	 * all links in the same channel.
+	 */
+	hrtimer_cancel(&ctx->dfs_cac_timer);
+	wiphy_work_cancel(wiphy, &ctx->dfs_cac_timer_work);
+
+	cfg80211_cac_event(sdata->dev, &chandef, NL80211_RADAR_CAC_ABORTED,
+			   GFP_KERNEL, link->link_id);
+
+	if (cac_aborted)
+		*cac_aborted = true;
+}
+
 static int ieee80211_stop_ap(struct wiphy *wiphy, struct net_device *dev,
 			     unsigned int link_id)
 {
@@ -2012,7 +2213,6 @@ static int ieee80211_stop_ap(struct wiphy *wiphy, struct net_device *dev,
 	struct probe_resp *old_probe_resp;
 	struct fils_discovery_data *old_fils_discovery;
 	struct unsol_bcast_probe_resp_data *old_unsol_bcast_probe_resp;
-	struct cfg80211_chan_def chandef;
 	struct ieee80211_link_data *link =
 		sdata_dereference(sdata->link[link_id], sdata);
 	struct ieee80211_bss_conf *link_conf;
@@ -2046,6 +2246,8 @@ static int ieee80211_stop_ap(struct wiphy *wiphy, struct net_device *dev,
 	 * to acquire the sdata lock and deadlock will be avoided.
 	 */
 	wiphy_work_cancel(wiphy, &link->csa.finalize_work);
+	/* remove from any in-flight CSA batch so the batch worker skips it */
+	list_del_init(&link->csa.batch_list);
 
 	/* see comment above */
 	wiphy_work_cancel(wiphy, &link->color_change_finalize_work);
@@ -2128,12 +2330,8 @@ static int ieee80211_stop_ap(struct wiphy *wiphy, struct net_device *dev,
 					  BSS_CHANGED_BEACON_ENABLED);
 
 	if (sdata->wdev.links[link_id].cac_started) {
-		chandef = link_conf->chanreq.oper;
-		hrtimer_cancel(&link->dfs_cac_timer);
-		wiphy_work_cancel(wiphy, &link->dfs_cac_timer_work);
-		cfg80211_cac_event(sdata->dev, &chandef,
-				   NL80211_RADAR_CAC_ABORTED,
-				   GFP_KERNEL, link_id);
+		ieee80211_handle_cac_stop(wiphy, sdata, link, link_conf,
+					  NULL);
 	}
 
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
@@ -4225,6 +4423,13 @@ __ieee80211_is_scan_ongoing(struct wiphy *wiphy,
 	return false;
 }
 
+bool ieee80211_is_scan_ongoing(struct ieee80211_hw *hw,
+			       struct cfg80211_chan_def *chandef)
+{
+	return __ieee80211_is_scan_ongoing(hw->wiphy, hw_to_local(hw), chandef);
+}
+EXPORT_SYMBOL(ieee80211_is_scan_ongoing);
+
 static int ieee80211_start_radar_detection(struct wiphy *wiphy,
 					   struct net_device *dev,
 					   struct cfg80211_chan_def *chandef,
@@ -4234,9 +4439,8 @@ static int ieee80211_start_radar_detection(struct wiphy *wiphy,
 	struct ieee80211_chan_req chanreq = { .oper = *chandef };
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_link_data *link_data;
-	struct ieee80211_sub_if_data *mon_sdata = NULL;
-	struct net_device *mon_dev = NULL;
-	int err, radio_idx;
+	struct ieee80211_chanctx *ctx;
+	int err;
 	ktime_t ktime = ms_to_ktime(cac_time_ms);
 
 	lockdep_assert_wiphy(local->hw.wiphy);
@@ -4248,49 +4452,36 @@ static int ieee80211_start_radar_detection(struct wiphy *wiphy,
 	if (!link_data)
 		return -ENOLINK;
 
-	radio_idx = cfg80211_get_hw_idx_by_chan(wiphy, chandef->chan);
-
-	rcu_read_lock();
-	list_for_each_entry_rcu(mon_sdata, &sdata->local->mon_list, u.mntr.list) {
-		struct cfg80211_chan_def *mon_chandef;
-
-		mon_chandef = &mon_sdata->vif.bss_conf.chanreq.oper;
-		if (mon_chandef->chan &&
-		    mon_chandef->chan->band == chandef->chan->band &&
-		    radio_idx == cfg80211_get_hw_idx_by_chan(wiphy, mon_chandef->chan)) {
-			mon_dev = mon_sdata->dev;
-			dev_hold(mon_dev);
-			break;
-		}
-	}
-	rcu_read_unlock();
-
-	if (mon_dev) {
-		err = ieee80211_set_monitor_channel(local->hw.wiphy, mon_dev, chandef);
-		mon_sdata = IEEE80211_DEV_TO_SUB_IF(mon_dev);
-		if (err)
-			sdata_info(mon_sdata,
-				   "Failed to change monitor interface channel: %d\n",
-				   err);
-		dev_put(mon_dev);
-	}
-
 	/* whatever, but channel contexts should not complain about that one */
 	link_data->smps_mode = IEEE80211_SMPS_OFF;
 	link_data->needed_rx_chains = local->rx_chains;
 
-	if (!link_data->conf->deferred_up) {
-		err = ieee80211_link_use_channel(link_data, &chanreq,
-						 IEEE80211_CHANCTX_SHARED);
-		if (err)
-			return err;
-	} else {
-		if (!link_data->conf->chanreq.oper.chan) {
-			sdata_info(sdata, "No channel context for CSA-DFS CAC\n");
+	ctx = ieee80211_link_get_chanctx(link_data);
+	if (!ctx) {
+		if (!link_data->conf->deferred_up) {
+			err = ieee80211_link_use_channel(link_data, &chanreq,
+							 IEEE80211_CHANCTX_SHARED);
+			if (err) {
+				sdata_info(sdata,
+					   "No channel context for DFS CAC %d\n",
+					   err);
+				return err;
+			}
+
+			ctx = ieee80211_link_get_chanctx(link_data);
+			if (!ctx) {
+				sdata_info(sdata,
+					   "No channel context for DFS CAC\n");
+				return -EINVAL;
+			}
+		} else {
+			sdata_info(sdata, "No channel context for DFS CAC\n");
 			return -EINVAL;
 		}
 	}
-	hrtimer_start(&link_data->dfs_cac_timer, ktime, HRTIMER_MODE_REL);
+
+	hrtimer_start(&ctx->dfs_cac_timer, ktime, HRTIMER_MODE_REL);
+
 	return 0;
 }
 
@@ -4299,24 +4490,27 @@ static void ieee80211_end_cac(struct wiphy *wiphy,
 {
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	struct ieee80211_local *local = sdata->local;
-	struct ieee80211_link_data *link_data;
+	struct ieee80211_link_data *link_data, *tmp_link;
+	struct ieee80211_chanctx *ctx;
 
 	lockdep_assert_wiphy(local->hw.wiphy);
 
-	list_for_each_entry(sdata, &local->interfaces, list) {
-		link_data = sdata_dereference(sdata->link[link_id], sdata);
-		if (!link_data)
-			continue;
+	link_data = sdata_dereference(sdata->link[link_id], sdata);
+	if (!link_data)
+		return;
 
-		hrtimer_cancel(&link_data->dfs_cac_timer);
-		wiphy_work_cancel(wiphy,
-				  &link_data->dfs_cac_timer_work);
+	ctx = ieee80211_link_get_chanctx(link_data);
+	if (!ctx)
+		return;
 
-		if (sdata->wdev.links[link_id].cac_started) {
-			ieee80211_link_release_channel(link_data);
-			sdata->wdev.links[link_id].cac_started = false;
-		}
-	}
+	hrtimer_cancel(&ctx->dfs_cac_timer);
+	wiphy_work_cancel(wiphy, &ctx->dfs_cac_timer_work);
+
+	list_for_each_entry(tmp_link, &ctx->assigned_links,
+			    assigned_chanctx_list)
+		sdata->wdev.links[tmp_link->link_id].cac_started = false;
+
+	ieee80211_link_release_channel(link_data);
 }
 
 static struct cfg80211_beacon_data *
@@ -4598,7 +4792,6 @@ static int __ieee80211_csa_finalize(struct ieee80211_link_data *link_data)
 	struct ieee80211_sub_if_data *sdata = link_data->sdata;
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_bss_conf *link_conf = link_data->conf;
-	struct ieee80211_sub_if_data *mon_sdata = NULL;
 	u64 changed = 0;
 	int dfs_required;
 	int err;
@@ -4608,27 +4801,6 @@ static int __ieee80211_csa_finalize(struct ieee80211_link_data *link_data)
 	if (link_data->csa.power_mode != IEEE80211_REG_UNSET_AP) {
 		link_data->conf->power_type = link_data->csa.power_mode;
 		link_data->csa.power_mode = IEEE80211_REG_UNSET_AP;
-	}
-
-	list_for_each_entry_rcu(mon_sdata, &local->mon_list, u.mntr.list) {
-		struct cfg80211_chan_def *chandef;
-		struct ieee80211_link_data *mon_link;
-
-		mon_link = &mon_sdata->deflink;
-		chandef = &mon_sdata->vif.bss_conf.chanreq.oper;
-		if (!chandef->chan ||
-		    chandef->chan->band != link_conf->chanreq.oper.chan->band)
-			continue;
-
-		if (mon_link->reserved_chanctx) {
-			if (!mon_link->reserved_ready) {
-				err = ieee80211_link_use_reserved_context(mon_link);
-				if (err)
-					return err;
-			}
-			break;
-		}
-		break;
 	}
 
 	/*
@@ -4878,6 +5050,116 @@ static void ieee80211_color_change_abort(struct ieee80211_link_data *link)
 	cfg80211_color_change_aborted_notify(link->sdata->dev, link->link_id);
 }
 
+/*
+ * ieee80211_csa_batch_work - Phase 2 of batched CSA.
+ *
+ * Fires either immediately (when every AP link on the chanctx has submitted)
+ * or after IEEE80211_CSA_BATCH_TIMEOUT_MS, whichever comes first.  At this
+ * point all pending links have already reserved the new chanctx (Phase 1).
+ * This function commits the CSA beacons to hardware simultaneously for every
+ * collected link, ensuring the VDEV restart cannot preempt any VIF before its
+ * clients have seen a CSA IE.
+ */
+void ieee80211_csa_batch_work(struct wiphy *wiphy, struct wiphy_work *work)
+{
+	struct ieee80211_chanctx *ctx =
+		container_of(container_of(work, struct wiphy_delayed_work, work),
+			     struct ieee80211_chanctx, csa_batch_work);
+	struct ieee80211_link_data *link, *tmp;
+
+	lockdep_assert_wiphy(wiphy);
+
+	list_for_each_entry_safe(link, tmp, &ctx->csa_pending_list,
+				 csa.batch_list) {
+		struct ieee80211_sub_if_data *sdata = link->sdata;
+
+		list_del_init(&link->csa.batch_list);
+
+		if (!ieee80211_sdata_running(sdata))
+			continue;
+
+		if (link->csa_block_tx)
+			ieee80211_vif_block_queues_csa(sdata);
+
+		cfg80211_ch_switch_started_notify(sdata->dev,
+						  &link->csa.chanreq.oper,
+						  link->link_id,
+						  link->csa.count,
+						  link->csa_block_tx,
+						  0);
+
+		if (link->csa.changed) {
+			link->conf->elemid_added = link->csa.elemid_added;
+			ieee80211_link_info_change_notify(sdata, link,
+							  link->csa.changed);
+			drv_channel_switch_beacon(sdata,
+						  &link->csa.chanreq.oper);
+			link->conf->elemid_added = 0;
+		} else {
+			/* beacon unchanged — finalize immediately */
+			ieee80211_csa_finalize(link);
+		}
+	}
+}
+
+/*
+ * Enqueue @link into the per-chanctx CSA batch and schedule the batch worker.
+ * Called from __ieee80211_channel_switch() when IEEE80211_HW_BATCH_CSA is set.
+ *
+ * If every AP link currently assigned to @ctx has already submitted a CSA
+ * request (n_pending >= n_ap_assigned) the worker is fired immediately
+ * (delay = 0) so there is no unnecessary extra latency in the common case
+ * where hostapd issues all requests back-to-back.  Otherwise an
+ * IEEE80211_CSA_BATCH_TIMEOUT_MS one-shot timer is armed; on expiry the
+ * worker commits whatever links are ready.
+ */
+static void ieee80211_csa_batch_enqueue(struct ieee80211_local *local,
+					struct ieee80211_link_data *link,
+					struct ieee80211_chanctx *ctx,
+					struct cfg80211_csa_settings *params)
+{
+	struct ieee80211_link_data *iter;
+	int n_ap_assigned = 0, n_pending;
+
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	list_add_tail(&link->csa.batch_list, &ctx->csa_pending_list);
+	ctx->csa_batch_max_count = max(ctx->csa_batch_max_count, params->count);
+
+	list_for_each_entry(iter, &ctx->assigned_links, assigned_chanctx_list) {
+		switch (iter->sdata->vif.type) {
+		case NL80211_IFTYPE_AP:
+		case NL80211_IFTYPE_P2P_GO:
+		case NL80211_IFTYPE_ADHOC:
+		case NL80211_IFTYPE_MESH_POINT:
+			n_ap_assigned++;
+			break;
+		default:
+			break;
+		}
+	}
+	n_pending = list_count_nodes(&ctx->csa_pending_list);
+
+	if (n_pending >= n_ap_assigned) {
+		/* All AP-like links collected — fire without delay.
+		 * Only cancel the existing timer if the work was previously
+		 * armed; cancelling a never-queued delayed_work touches an
+		 * uninitialised timer and triggers a NULL dereference.
+		 */
+		if (ctx->csa_batch_queued)
+			wiphy_delayed_work_cancel(local->hw.wiphy,
+						  &ctx->csa_batch_work);
+		wiphy_delayed_work_queue(local->hw.wiphy, &ctx->csa_batch_work,
+					 0);
+	} else {
+		wiphy_delayed_work_queue(local->hw.wiphy,
+					 &ctx->csa_batch_work,
+					 msecs_to_jiffies
+					 (IEEE80211_CSA_BATCH_TIMEOUT_MS));
+	}
+	ctx->csa_batch_queued = true;
+}
+
 static int
 __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 			   struct cfg80211_csa_settings *params)
@@ -4892,9 +5174,7 @@ __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 	struct ieee80211_chanctx *chanctx;
 	struct ieee80211_bss_conf *link_conf;
 	struct ieee80211_link_data *link_data;
-	struct ieee80211_sub_if_data *mon_sdata;
-	struct ieee80211_chanctx_conf *mon_conf;
-	struct ieee80211_chanctx *mon_chanctx = NULL;
+	struct ieee80211_link_data *mon_link;
 	u64 changed = 0;
 	u8 link_id = params->link_id;
 	int err;
@@ -4927,7 +5207,12 @@ __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 		return err;
 #endif
 
-	if (chanreq.oper.punctured && !link_conf->eht_support)
+	/* Allow channel switch with puncture bitmap if the link is repurposed,
+	 * where EHT support is disabled but the channel definitions are same
+	 * across different BSS of radio.
+	 */
+	if (chanreq.oper.punctured && !link_conf->eht_support &&
+	    !(sdata->vif.repurposed_links & BIT(link_id)))
 		return -EINVAL;
 
 	/* don't allow another channel switch if one is already active. */
@@ -4973,30 +5258,11 @@ __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 	if (err)
 		goto out;
 
-	list_for_each_entry_rcu(mon_sdata, &local->mon_list, u.mntr.list) {
-		struct cfg80211_chan_def *chandef;
-		struct ieee80211_link_data *mon_link = &mon_sdata->deflink;
-		struct ieee80211_bss_conf *bss_conf = &mon_sdata->vif.bss_conf;
-
-		chandef = &bss_conf->chanreq.oper;
-		if (!chandef->chan ||
-		    chandef->chan->band != chanreq.oper.chan->band)
-			continue;
-
-		mon_conf = wiphy_dereference(wiphy, bss_conf->chanctx_conf);
-		if (!mon_conf)
-			continue;
-
-		if (!mon_link->reserved_chanctx) {
-			mon_chanctx = container_of(mon_conf,
-						   struct ieee80211_chanctx, conf);
-			err = ieee80211_link_reserve_chanctx(mon_link, &chanreq,
-							     mon_chanctx->mode,
-							     params->radar_required);
-			if (err)
-				goto out;
-		}
-	}
+	/* The monitor reservation is handled by ieee80211_set_monitor_channel()
+	 * when hostapd sends NL80211_CMD_SET_CHANNEL for the monitor interface.
+	 * Capture the monitor link here for rollback use only.
+	 */
+	mon_link = ieee80211_chanctx_find_monitor_link(chanctx);
 
 	/* if reservation is invalid then this will fail */
 	err = ieee80211_check_combinations(sdata, NULL, chanctx->mode, 0, -1);
@@ -5014,28 +5280,8 @@ __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 					break;
 			}
 		} else {
-			if (mon_chanctx) {
-				list_for_each_entry_rcu(mon_sdata,
-							&local->mon_list,
-							u.mntr.list) {
-					struct cfg80211_chan_def *chandef;
-					struct ieee80211_link_data *mon_link;
-					struct ieee80211_bss_conf *bss_conf;
-
-					mon_link = &mon_sdata->deflink;
-					bss_conf = &mon_sdata->vif.bss_conf;
-					chandef = &bss_conf->chanreq.oper;
-					if (chandef->chan &&
-					    chandef->chan->band !=
-						chanreq.oper.chan->band)
-						continue;
-
-					if (!mon_link || !mon_link->reserved_chanctx)
-						continue;
-
-					ieee80211_link_unreserve_chanctx(mon_link);
-				}
-			}
+			if (mon_link && mon_link->reserved_chanctx)
+				ieee80211_link_unreserve_chanctx(mon_link);
 			ieee80211_link_unreserve_chanctx(link_data);
 		}
 		goto out;
@@ -5060,28 +5306,8 @@ __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 					break;
 			}
 		} else {
-			if (mon_chanctx) {
-				list_for_each_entry_rcu(mon_sdata,
-							&local->mon_list,
-							u.mntr.list) {
-					struct cfg80211_chan_def *chandef;
-					struct ieee80211_link_data *mon_link;
-					struct ieee80211_bss_conf *bss_conf;
-
-					mon_link = &mon_sdata->deflink;
-					bss_conf = &mon_sdata->vif.bss_conf;
-					chandef = &bss_conf->chanreq.oper;
-					if (chandef->chan &&
-					    chandef->chan->band !=
-						chanreq.oper.chan->band)
-						continue;
-
-					if (!mon_link || !mon_link->reserved_chanctx)
-						continue;
-
-					ieee80211_link_unreserve_chanctx(mon_link);
-				}
-			}
+			if (mon_link && mon_link->reserved_chanctx)
+				ieee80211_link_unreserve_chanctx(mon_link);
 			ieee80211_link_unreserve_chanctx(link_data);
 		}
 		goto out;
@@ -5101,12 +5327,32 @@ __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 		link_conf->csa_active = true;
 	}
 
+	/*
+	 * Batch CSA: defer beacon installation and driver notification until
+	 * all AP VIFs on this chanctx have submitted their CSA request (or a
+	 * one-TBTT timeout fires).  The block_tx queue stop and the cfg80211
+	 * start-notify are also deferred to ieee80211_csa_batch_work() so that
+	 * all VIFs begin their countdown simultaneously.
+	 * Scan radio skips this path because it never sets csa_active.
+	 */
+	if (!wdev_is_scan_radio(&sdata->wdev)) {
+		link_data->csa.changed     = changed;
+		link_data->csa.count       = params->count;
+		link_data->csa_block_tx    = params->block_tx;
+		/* Save elemid_added now; the out: label clears it before the
+		 * batch worker pushes the beacon to the driver.
+		 */
+		link_data->csa.elemid_added = link_conf->elemid_added;
+		ieee80211_csa_batch_enqueue(local, link_data, chanctx, params);
+		goto out;
+	}
+
 	if (params->block_tx)
 		ieee80211_vif_block_queues_csa(sdata);
 
 	cfg80211_ch_switch_started_notify(sdata->dev,
 					  &link_data->csa.chanreq.oper, link_id,
-					  params->count, params->block_tx);
+					  params->count, params->block_tx, 0);
 
 	if (changed) {
 		ieee80211_link_info_change_notify(sdata, link_data, changed);
@@ -6280,6 +6526,26 @@ ieee80211_set_radar_background(struct wiphy *wiphy,
 	return local->ops->set_radar_background(&local->hw, chandef);
 }
 
+static int
+ieee80211_abort_radar_background(struct wiphy *wiphy,
+				 const struct cfg80211_chan_def *chandef)
+{
+	struct ieee80211_local *local = wiphy_priv(wiphy);
+
+	if (local->ops->abort_radar_background)
+		return local->ops->abort_radar_background(&local->hw, chandef);
+
+	/* Drivers without abort_radar_background use set_radar_background(NULL)
+	 * as the stop signal — a separate op is needed for multi-radio HW where
+	 * a NULL chandef cannot identify which radio to abort.
+	 */
+
+	if (!local->ops->set_radar_background)
+		return -EOPNOTSUPP;
+
+	return local->ops->set_radar_background(&local->hw, NULL);
+}
+
 static int ieee80211_add_intf_link(struct wiphy *wiphy,
 				   struct wireless_dev *wdev,
 				   unsigned int link_id)
@@ -6764,6 +7030,8 @@ const struct cfg80211_ops mac80211_config_ops = {
 #endif
 	.get_channel = ieee80211_cfg_get_channel,
 	.start_radar_detection = ieee80211_start_radar_detection,
+	.dfs_process_radar_detection = ieee80211_dfs_process_radar_detection,
+	.start_punctured_cac = ieee80211_start_punctured_cac,
 	.end_cac = ieee80211_end_cac,
 	.channel_switch = ieee80211_channel_switch,
 	.set_qos_map = ieee80211_set_qos_map,
@@ -6788,6 +7056,7 @@ const struct cfg80211_ops mac80211_config_ops = {
 	.set_sar_specs = ieee80211_set_sar_specs,
 	.color_change = ieee80211_color_change,
 	.set_radar_background = ieee80211_set_radar_background,
+	.abort_radar_background = ieee80211_abort_radar_background,
 	.add_intf_link = ieee80211_add_intf_link,
 	.del_intf_link = ieee80211_del_intf_link,
 	.add_link_station = ieee80211_add_link_station,

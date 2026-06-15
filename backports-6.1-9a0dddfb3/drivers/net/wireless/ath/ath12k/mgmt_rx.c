@@ -69,6 +69,11 @@ void ath12k_mgmt_device_deinit(struct ath12k_mgmt *mgmt)
 	if (!mgmt)
 		return;
 
+	if (test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &mgmt->ab->dev_flags)) {
+		ath12k_info(mgmt->ab, "Skip mgmt deinit during Q6 BCR RESET\n");
+		return;
+	}
+
 	ath12k_mgmt_arch_op_device_deinit(mgmt);
 }
 
@@ -356,7 +361,6 @@ size_t ath12k_mgmt_rx_desc_list_cut_nodes(struct list_head *used_list,
 			break;
 
 		rx_desc = list_entry(curr, struct ath12k_rx_desc_info, list);
-		rx_desc->in_use = true;
 
 		count--;
 		nodes++;

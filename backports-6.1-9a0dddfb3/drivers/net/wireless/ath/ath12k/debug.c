@@ -92,7 +92,15 @@ void __ath12k_dbg(struct ath12k_base *ab, u64 mask,
 #else
 	if (mask & ath12k_debug_mask) {
 		if (ab)
+#if defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
+			/* dev_dbg() is a no-op in 256M profile since CONFIG_DYNAMIC_DEBUG
+			 * is disabled to save memory. Use dev_info() instead
+			 * to ensure debug messages are always emitted.
+			 */
+			dev_info(ab->dev, "%pV", &vaf);
+#else
 			dev_dbg(ab->dev, "%pV", &vaf);
+#endif
 		else
 			pr_info("ath12k: %pV", &vaf);
 	}

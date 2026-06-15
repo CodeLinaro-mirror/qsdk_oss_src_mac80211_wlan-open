@@ -135,6 +135,11 @@ struct wiphy;
  * @IEEE80211_CHAN_ALLOW_20MHZ_ACTIVITY: Allow activity on a 20 MHz channel,
  *	even if otherwise set to NO_IR.
  * @IEEE80211_CHAN_NO_UHR: UHR operation is not permitted on this channel.
+ * @IEEE80211_CHAN_NOL_HISTORY: Radar was detected on this channel
+ *	in the past. This is different from the NOL flag.
+ *	The NOL flag for a channel is cleared after 30 minutes.
+ *	In contrast, once radar is detected, the NOL History flag is set
+ *	and persists permanently for that channel.
  */
 enum ieee80211_channel_flags {
 	IEEE80211_CHAN_DISABLED			= BIT(0),
@@ -165,6 +170,7 @@ enum ieee80211_channel_flags {
 	IEEE80211_CHAN_ALLOW_6GHZ_VLP_AP	= BIT(25),
 	IEEE80211_CHAN_ALLOW_20MHZ_ACTIVITY     = BIT(26),
 	IEEE80211_CHAN_NO_UHR			= BIT(27),
+	IEEE80211_CHAN_NOL_HISTORY		= BIT(28),
 };
 
 #define IEEE80211_CHAN_NO_HT40 \
@@ -172,6 +178,8 @@ enum ieee80211_channel_flags {
 
 #define IEEE80211_DFS_MIN_CAC_TIME_MS		60000
 #define IEEE80211_DFS_MIN_NOP_TIME_MS		(30 * 60 * 1000)
+#define IEEE80211_MAX_PUNCT_OBJS 2
+#define IEEE80211_MAX_20MHZ_SUBCHANS 16
 
 /**
  * struct ieee80211_channel - channel definition
@@ -950,6 +958,7 @@ struct cfg80211_bitrate_mask {
 		enum nl80211_uhr_ltf uhr_ltf;
 		struct cfg80211_uhr_ueqm_pattern ueqm_pattern;
 		u8 uhr_elr;
+		u8 uhr_2xldpc;
 		bool legacy_mcs_changed;
 		bool uhr_mcs_changed;
 		bool eht_mcs_changed;
@@ -1404,6 +1413,58 @@ unsigned int cfg80211_chandef_dfs_cac_time(struct wiphy *wiphy,
                                            const struct cfg80211_chan_def *chandef,
 					   bool is_bgcac, bool is_dbw_cac);
 
+#ifdef CPTCFG_QCA_LAB_TEST_FEATURES
+/**
+ * cfg80211_set_radio_bgcac_cac_time - set per-radio BG CAC timeout override
+ * @wiphy: the wiphy whose radio config has to be updated
+ * @radio_idx: radio index in @wiphy
+ * @cac_time_ms: BG CAC timeout override in milliseconds, or 0 to clear
+ *
+ * This test-only helper stores a runtime BG CAC timeout override in the
+ * per-radio wiphy configuration. It does not update channel state or notify
+ * userspace because BG CAC timeout is consumed only by in-kernel CAC timeout
+ * calculations.
+ *
+ * Return: 0 on success, negative errno on failure.
+ */
+int cfg80211_set_radio_bgcac_cac_time(struct wiphy *wiphy,
+				      u32 radio_idx,
+				      u32 cac_time_ms);
+
+/**
+ * cfg80211_get_radio_bgcac_cac_time - get per-radio BG CAC timeout override
+ * @wiphy: the wiphy whose radio config has to be queried
+ * @radio_idx: radio index in @wiphy
+ *
+ * Return: configured BG CAC timeout override in milliseconds, or 0 if unset.
+ */
+u32 cfg80211_get_radio_bgcac_cac_time(struct wiphy *wiphy, u32 radio_idx);
+
+/**
+ * cfg80211_update_dfs_cac_time - update DFS CAC timeout
+ * @wiphy: the wiphy whose regulatory/channel state has to be updated
+ * @start_freq_mhz: first center frequency to update, or 0 for all
+ * @end_freq_mhz: last center frequency to update, or 0 for all
+ * @cac_time_ms: CAC timeout in milliseconds
+ *
+ * Test-only helper for driver controlled CAC timeout overrides. It updates the
+ * pending requested_regd, active regdomain copy and current channel entries so
+ * queued work, regulatory rules and channel data stay in sync. The caller must
+ * hold wiphy lock. The regulatory notification is deferred on cfg80211_wq.
+ *
+ * The pending regdomain update keeps queued regulatory work coherent, the
+ * active regdomain update keeps rule attributes coherent, and the channel
+ * update keeps userspace-visible channel CAC values coherent.
+ *
+ * Return: 0 on success, negative errno on failure.
+ */
+int
+cfg80211_update_dfs_cac_time(struct wiphy *wiphy,
+			     u32 start_freq_mhz,
+			     u32 end_freq_mhz,
+			     u32 cac_time_ms);
+#endif /* CPTCFG_QCA_LAB_TEST_FEATURES */
+
 /**
  * ieee80211_chandef_max_power - maximum transmission power for the chandef
  *
@@ -1565,6 +1626,41 @@ struct cfg80211_crypto_settings {
 	const u8 *sae_pwd;
 	u8 sae_pwd_len;
 	enum nl80211_sae_pwe_mechanism sae_pwe;
+};
+
+/**
+ * cfg80211_peer_smd_params - Peer settings for SMD
+ * @smd_enabled: Peer is SMD capable
+ * @smd_identifier: SMD ID associated to the peer
+ * @dl_data_fwd: Peer can handle MSDU forwarding
+ */
+struct cfg80211_peer_smd_params {
+	bool smd_enabled;
+	u8 smd_identifier[ETH_ALEN];
+	bool dl_data_fwd;
+};
+
+/**
+ * cfg80211_smd_params - AP settings for SMD
+ *
+ * @smd_enabled: Flag to determine if SMD is enabled
+ * @smd_flags: Bitmap indicating the SMD capabilities
+ * @smd_identifier: SMD ID
+ * @smd_timeout: Timeout in TU for ST preparation
+ * @dl_data_fwd: Flag to indicate if MSDU forwarding is supported
+ * @max_num_of_peer_apmlds: Maximum number of prepared AP MLDs supported
+ * @smd_type: SMD type
+ * @ptk_mode: PTK mode
+ */
+struct cfg80211_smd_params {
+	bool smd_enabled;
+	u8 smd_flags;
+	u8 smd_identifier[ETH_ALEN];
+	u8 smd_timeout;
+	bool dl_data_fwd;
+	u8 max_num_of_peer_apmlds;
+	u8 smd_type;
+	bool ptk_mode;
 };
 
 /**
@@ -1887,6 +1983,7 @@ struct cfg80211_ttlm_params {
  * @ml_max_rec_links: ML Max recommended links
  * @ttlm_params: tid-to-link mapping parameters
  * @dps_assist_disable: indicates AP to disable DPS Assist Support.
+ * @smd_params: SMD params for a AP
  */
 struct cfg80211_ap_settings {
 	struct cfg80211_chan_def chandef;
@@ -1930,6 +2027,7 @@ struct cfg80211_ap_settings {
 	struct cfg80211_ttlm_params ttlm_params;
 	bool is_cfp_enabled;
 	bool dps_assist_disable;
+	struct cfg80211_smd_params smd_params;
 };
 
 
@@ -1966,6 +2064,8 @@ struct cfg80211_ap_update {
  * @link_id: defines the link on which channel switch is expected during
  *	MLO. 0 in case of non-MLO.
  * @unsol_bcast_probe_resp: Unsolicited broadcast probe response parameters
+ * @smd_enabled: SMD is enabled in CSA settings
+ * @smd_params: SMD params in CSA settings
  */
 struct cfg80211_csa_settings {
 	struct cfg80211_chan_def chandef;
@@ -1981,6 +2081,7 @@ struct cfg80211_csa_settings {
 	u8 link_id;
 	struct cfg80211_unsol_bcast_probe_resp unsol_bcast_probe_resp;
 	enum nl80211_regulatory_power_modes he_6ghz_power_type;
+	struct cfg80211_smd_params smd_params;
 };
 
 /**
@@ -3555,6 +3656,11 @@ struct cfg80211_bss {
 	u8 use_for;
 	u8 cannot_use_reasons;
 
+	u8 smd_identifier[ETH_ALEN];
+	u8 smd_capabilities;
+	u16 smd_timeout;
+	bool has_smd;
+
 	u8 priv[] __aligned(sizeof(void *));
 };
 
@@ -3613,6 +3719,7 @@ static inline const u8 *ieee80211_bss_get_ie(struct cfg80211_bss *bss, u8 id)
  *	given an MLD address) by the driver
  * @ap_mld_addr: AP MLD address in case of authentication request with
  *	an AP MLD, valid iff @link_id >= 0
+ * @smd_params: AP SMD parameters
  */
 struct cfg80211_auth_request {
 	struct cfg80211_bss *bss;
@@ -3628,6 +3735,7 @@ struct cfg80211_auth_request {
 	size_t auth_data_len;
 	s8 link_id;
 	const u8 *ap_mld_addr;
+	struct cfg80211_smd_params smd_params;
 };
 
 /**
@@ -3749,6 +3857,7 @@ enum cfg80211_assoc_req_flags {
  *	valid iff @link_id >= 0
  * @ext_mld_capa_ops: extended MLD capabilities and operations set by
  *	userspace for the association
+ * @smd_params: SMD capabilities for the association
  */
 struct cfg80211_assoc_request {
 	struct cfg80211_bss *bss;
@@ -3771,6 +3880,7 @@ struct cfg80211_assoc_request {
 	const u8 *ap_mld_addr;
 	s8 link_id;
 	u16 ext_mld_capa_ops;
+	struct cfg80211_smd_params smd_params;
 };
 
 /**
@@ -4016,6 +4126,7 @@ enum cfg80211_connect_params_changed {
  * @WIPHY_PARAM_TXQ_MEMORY_LIMIT: TXQ memory limit has been changed
  * @WIPHY_PARAM_TXQ_QUANTUM: TXQ scheduler quantum
  * @WIPHY_PARAM_MUEDCA_MODE: MUEDCA mode
+ * @WIPHY_PARAM_STA_DFS_EN: sta_dfs_en has been changed
  */
 enum wiphy_params_flags {
 	WIPHY_PARAM_RETRY_SHORT		= BIT(0),
@@ -4030,6 +4141,7 @@ enum wiphy_params_flags {
 #ifdef CPTCFG_QCN_EXTN
 	WIPHY_PARAM_MUEDCA_MODE		= BIT(9),
 #endif /* CPTCFG_QCN_EXTN */
+	WIPHY_PARAM_STA_DFS_EN		= BIT(10),
 };
 
 #define IEEE80211_DEFAULT_AIRTIME_WEIGHT	256
@@ -5534,6 +5646,12 @@ struct cfg80211_ap_power_save_params {
  *
  * @start_radar_detection: Start radar detection in the driver.
  *
+ * @dfs_process_radar_detection: Process radar detection notification in the
+ *	driver before cfg80211 updates the DFS state.
+ *
+ * @start_punctured_cac: Start CAC for a punctured 20 MHz sub-channel after
+ *	the cfg80211 NOL tracker reports NOP finished for that sub-channel.
+ *
  * @end_cac: End running CAC, probably because a related CAC
  *	was finished on another phy.
  *
@@ -5644,8 +5762,8 @@ struct cfg80211_ap_power_save_params {
  *	Background radar/CAC detection allows to avoid the CAC downtime
  *	switching to a different channel during CAC detection on the selected
  *	radar channel.
- *	The caller is expected to set chandef pointer to NULL in order to
- *	disable background CAC/radar detection.
+ * @abort_radar_background: Abort background radar/CAC detection previously
+ *	configured on @chandef.
  * @add_link_station: Add a link to a station.
  * @mod_link_station: Modify a link of a station.
  * @del_link_station: Remove a link of a station.
@@ -5947,6 +6065,10 @@ struct cfg80211_ops {
 					 struct net_device *dev,
 					 struct cfg80211_chan_def *chandef,
 					 u32 cac_time_ms, int link_id);
+	void	(*dfs_process_radar_detection)(struct wiphy *wiphy,
+					       struct cfg80211_chan_def *chandef);
+	void	(*start_punctured_cac)(struct wiphy *wiphy,
+				       struct cfg80211_chan_def *chandef);
 	void	(*end_cac)(struct wiphy *wiphy,
 			   struct net_device *dev, unsigned int link_id);
 	int	(*update_ft_ies)(struct wiphy *wiphy, struct net_device *dev,
@@ -6050,6 +6172,8 @@ struct cfg80211_ops {
 				struct cfg80211_fils_aad *fils_aad);
 	int	(*set_radar_background)(struct wiphy *wiphy,
 					struct cfg80211_chan_def *chandef);
+	int	(*abort_radar_background)(struct wiphy *wiphy,
+					  const struct cfg80211_chan_def *chandef);
 	int	(*add_link_station)(struct wiphy *wiphy, struct net_device *dev,
 				    struct link_station_parameters *params);
 	int	(*mod_link_station)(struct wiphy *wiphy, struct net_device *dev,
@@ -6145,6 +6269,11 @@ struct cfg80211_ops {
  * @WIPHY_FLAG_DISABLE_WEXT: disable wireless extensions for this device
  * @WIPHY_FLAG_SUPPORTS_CONCUR_MONITOR_N_OTHER_VIF: Flag to advertise concurrent
  *	support for monitor mode alongside AP/STA
+ * @WIPHY_FLAG_SUPPORTS_BEACON_TX_SYNC: Flag attribute indicating that HW
+ *	will transmit beacons for all bands at the same time (burst mode) if
+ *	the beacon intervals are the same.
+ * @WIPHY_FLAG_SUPPORTS_SMD: Flag attribute indicating that HW will support
+ *      roaming within a seamless mobility domain (SMD).
  */
 enum wiphy_flags {
 	WIPHY_FLAG_SUPPORTS_EXT_KEK_KCK			= BIT(0),
@@ -6174,6 +6303,8 @@ enum wiphy_flags {
 	WIPHY_FLAG_NOTIFY_REGDOM_BY_DRIVER		= BIT(24),
 	WIPHY_FLAG_CHANNEL_CHANGE_ON_BEACON		= BIT(25),
 	WIPHY_FLAG_SUPPORTS_CONCUR_MONITOR_N_OTHER_VIF	= BIT(26),
+	WIPHY_FLAG_SUPPORTS_BEACON_TX_SYNC              = BIT(27),
+	WIPHY_FLAG_SUPPORTS_SMD				= BIT(28),
 };
 
 /**
@@ -6555,18 +6686,56 @@ struct wiphy_iftype_akm_suites {
 };
 
 /**
+ * struct cfg80211_bg_radar - per-radio background radar/CAC monitor
+ *
+ * Tracks an in-progress background CAC (agile DFS) running on one physical
+ * radio. Embedded by value in &struct wiphy_radio_cfg; lifetime matches the
+ * radio_cfg array allocated in wiphy_register().
+ *
+ * The wiphy, wdev, cac_done_wk, and cac_abort_wk fields are cfg80211
+ * internals managed by net/wireless/mlme.c. Drivers must not read, write,
+ * or re-initialize them.
+ *
+ * @chandef: channel being monitored
+ * @link_id: MLO link id that owns the background radar monitor, or -1
+ * @radio_idx: physical radio index this monitor belongs to
+ * @active: whether a monitor is currently running on this radio
+ * @radio_idx_explicit: set when started with an explicit radio index, making
+ *	the monitor radio-scoped rather than netdev-scoped
+ */
+struct cfg80211_bg_radar {
+	/* cfg80211 internals — do not access from drivers */
+	struct wiphy *wiphy;
+	struct wireless_dev *wdev;
+	struct cfg80211_chan_def chandef;
+	struct delayed_work cac_done_wk;
+	struct work_struct cac_abort_wk;
+	/* driver-visible state */
+	int link_id;
+	int radio_idx;
+	bool active;
+	bool radio_idx_explicit;
+};
+
+/**
  * struct wiphy_radio_cfg - physical radio config of a wiphy
  * This structure describes the configurations of a physical radio in a
  * wiphy. It is used to denote per-radio attributes belonging to a wiphy.
  *
  * @rts_threshold: RTS threshold (dot11RTSThreshold);
  *	-1 (default) = RTS/CTS disabled
+ * @bgcac_cac_ms: test-only per-radio background CAC timeout override in ms;
+ *	0 means use regulatory default behavior
  */
 struct wiphy_radio_cfg {
 	u32 rts_threshold;
+#ifdef CPTCFG_QCA_LAB_TEST_FEATURES
+	u32 bgcac_cac_ms;
+#endif
 #ifdef CPTCFG_QCN_EXTN
 	u8 muedca_mode;
 #endif /* CPTCFG_QCN_EXTN */
+	struct cfg80211_bg_radar bg_radar;
 };
 
 /**
@@ -6846,6 +7015,8 @@ struct wiphy_radio {
  * @max_beacon_size: maximum size of the beacon frame supported by the
  *	driver. This field must be set to a non-zero value by the driver to
  *	advertise the maximum allowed size for beacon frame.
+ *
+ * @sta_dfs_en: Enable or disable Station DFS support.
  */
 struct wiphy {
 	struct mutex mtx;
@@ -6907,6 +7078,10 @@ struct wiphy {
 	u8 coverage_class;
 #ifdef CPTCFG_QCN_EXTN
 	u8 muedca_mode;
+#endif /* CPTCFG_QCN_EXTN */
+
+#ifdef CPTCFG_QCN_EXTN
+	bool allow_scan_on_dfs_chan;
 #endif /* CPTCFG_QCN_EXTN */
 
 	char fw_version[ETHTOOL_FWVERS_LEN];
@@ -7009,6 +7184,7 @@ struct wiphy {
 
 	u8 mbssid_max_ngroups;
 	u16 max_beacon_size;
+	u8 sta_dfs_en;
 
 	char priv[] __aligned(NETDEV_ALIGN);
 };
@@ -10158,6 +10334,16 @@ void cfg80211_cac_event(struct net_device *netdev,
 			unsigned int link_id);
 
 /**
+ * cfg80211_punct_cac_finished - punctured channel CAC finished event
+ * @netdev: network device
+ * @chandef: chandef for the current channel
+ * @gfp: context flags
+ */
+void cfg80211_punct_cac_finished(struct net_device *netdev,
+				 const struct cfg80211_chan_def *chandef,
+				 gfp_t gfp);
+
+/**
  * cfg80211_background_cac_abort - Channel Availability Check offchan abort event
  * @wiphy: the wiphy
  *
@@ -10165,6 +10351,17 @@ void cfg80211_cac_event(struct net_device *netdev,
  * (CAC) is aborted by a offchannel dedicated chain.
  */
 void cfg80211_background_cac_abort(struct wiphy *wiphy);
+
+/**
+ * cfg80211_background_cac_abort_by_chandef - Background CAC abort by chandef
+ * @wiphy: the wiphy
+ * @chandef: chandef for the background CAC chain to be aborted
+ *
+ * This function is called by the driver when a specific offchannel CAC
+ * operation should be aborted.
+ */
+void cfg80211_background_cac_abort_by_chandef(struct wiphy *wiphy,
+					      const struct cfg80211_chan_def *chandef);
 
 /**
  * cfg80211_gtk_rekey_notify - notify userspace about driver rekeying
@@ -10364,6 +10561,8 @@ void cfg80211_ch_switch_notify(struct net_device *dev,
  * @link_id: the link ID for MLO, must be 0 for non-MLO
  * @count: the number of TBTTs until the channel switch happens
  * @quiet: whether or not immediate quiet was requested by the AP
+ * @mcst_tu: max channel switch time in TUs, 0 if the MCST element was not
+ *	present
  *
  * Inform the userspace about the channel switch that has just
  * started, so that it can take appropriate actions (eg. starting
@@ -10372,7 +10571,7 @@ void cfg80211_ch_switch_notify(struct net_device *dev,
 void cfg80211_ch_switch_started_notify(struct net_device *dev,
 				       struct cfg80211_chan_def *chandef,
 				       unsigned int link_id, u8 count,
-				       bool quiet);
+				       bool quiet, u32 mcst_tu);
 
 /**
  * ieee80211_operating_class_to_band - convert operating class to band

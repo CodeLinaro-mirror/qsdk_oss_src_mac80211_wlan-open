@@ -101,6 +101,19 @@ struct hal_uniform_descriptor_header {
 //info13
 #define HAL_TX_MSDU_FLOW_PROCESSED_BYTE_COUNT_48_32	GENMASK(15, 0)
 #define HAL_TX_MSDU_FLOW_TQM_STATS_ID		GENMASK(10, 0)
+
+//info16
+#define HAL_TX_MSDU_FLOW_RED_MSDU_DROP_THRESHOLD		GENMASK(15, 0)
+#define HAL_TX_MSDU_FLOW_GEN_GREEN_MSDU_DROP_NOTIFICATION	BIT(16)
+#define HAL_TX_MSDU_FLOW_GEN_YELLOW_MSDU_DROP_NOTIFICATION	BIT(17)
+#define HAL_TX_MSDU_FLOW_GEN_RED_MSDU_DROP_NOTIFICATION		BIT(18)
+#define HAL_TX_MSDU_FLOW_GREEN_MSDU_DROP_NOTIFICATION_DONE	BIT(19)
+#define HAL_TX_MSDU_FLOW_YELLOW_MSDU_DROP_NOTIFICATION_DONE	BIT(20)
+#define HAL_TX_MSDU_FLOW_RED_MSDU_DROP_NOTIFICATION_DONE	BIT(21)
+#define HAL_TX_MSDU_FLOW_SERVICE_CATEGORY			GENMASK(23, 22)
+#define HAL_TX_MSDU_FLOW_SERVICE_CATEGORY_VALID			BIT(24)
+#define HAL_TX_MSDU_FLOW_PER_PEER_FLOW_NUMBER			GENMASK(31, 25)
+
 struct hal_tx_msdu_flow {
 	struct hal_uniform_descriptor_header header;
 	__le32 info0;
@@ -238,6 +251,7 @@ struct hal_txpt_classify_info {
 struct hal_tx_msdu_flow_info {
 	dma_addr_t paddr;
 	u32 queue_number;
+	enum hal_tqm_service_category svc;
 	u16 peer_id;
 	u16 msduq_sam_id;
 	u8 bitmap;

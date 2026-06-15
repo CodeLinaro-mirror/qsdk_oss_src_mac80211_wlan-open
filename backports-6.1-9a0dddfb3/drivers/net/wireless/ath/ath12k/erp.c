@@ -176,6 +176,8 @@ static int ath12k_erp_set_pkt_filter(struct ath12k *ar, u32 bitmap,
 				     enum ath12k_wmi_pkt_route_opcode op_code)
 {
 	struct ath12k_wmi_pkt_route_param param = {};
+	struct ath12k_base *ab = ar->ab;
+	int ret;
 
 	lockdep_assert_held(&erp_sm.lock);
 
@@ -185,22 +187,23 @@ static int ath12k_erp_set_pkt_filter(struct ath12k *ar, u32 bitmap,
 	if (op_code == ATH12K_WMI_PKTROUTE_ADD) {
 		bitmap = ath12k_erp_convert_trigger_bitmap(bitmap);
 		if (!bitmap) {
-			ath12k_err(NULL, "invalid wake up trigger bitmap\n");
+			ath12k_err(ab, "invalid wake up trigger bitmap\n");
 			return -EINVAL;
 		}
 	}
 
 	param.opcode = op_code;
 	param.meta_data = ATH12K_RX_PROTOCOL_TAG_START_OFFSET + bitmap;
-	param.dst_ring = ATH12K_REO_RELEASE_RING;
+	param.dst_ring = ab->hal.hal_params->dp_rx_err_rdi;
 	param.dst_ring_handler = ATH12K_WMI_PKTROUTE_USE_CCE;
 	param.route_type_bmap = bitmap;
-	if (ath12k_wmi_send_pdev_pkt_route(ar, &param)) {
-		ath12k_err(NULL, "failed to set packet bitmap");
-		return -EINVAL;
+	ret = ath12k_wmi_send_pdev_pkt_route(ar, &param);
+	if (ret) {
+		ath12k_err(ab, "failed to set pkt filter: %d\n", ret);
+		return ret;
 	}
 
-	spin_lock_bh(&ar->ab->base_lock);
+	spin_lock_bh(&ab->base_lock);
 	if (op_code == ATH12K_WMI_PKTROUTE_ADD) {
 		ar->erp_trigger_set = true;
 		erp_sm.active_ar.trigger = bitmap;
@@ -208,7 +211,7 @@ static int ath12k_erp_set_pkt_filter(struct ath12k *ar, u32 bitmap,
 		ar->erp_trigger_set = false;
 		erp_sm.active_ar.trigger = 0;
 	}
-	spin_unlock_bh(&ar->ab->base_lock);
+	spin_unlock_bh(&ab->base_lock);
 
 	return 0;
 }
@@ -219,6 +222,11 @@ static void ath12k_erp_config_pcie_speed_width(struct pci_dev *root,
 {
 	if (!root || !pci)
 		return;
+
+	ath12k_dbg(NULL, ATH12K_DBG_RM,
+		   "ErP PCIe %s adjust speed %u to %u and width %u to %u\n",
+		   pci_name(root), enter ? pci->speed : 1, enter ? 1 : pci->speed,
+		   enter ? pci->width : 1, enter ? 1 : pci->width);
 
 #ifndef PLATFORM_SDX85
 	if (enter) {
@@ -243,6 +251,8 @@ static void ath12k_erp_enter_pcie_work(struct ath12k_erp_pcie_config *config,
 	struct ath12k_erp_pci_dev *pci;
 	u8 i;
 
+	ath12k_dbg(NULL, ATH12K_DBG_RM, "ErP enter PCIe work\n");
+
 	for (i = 0; i < enter_cnt; i++) {
 		pci = &config->pci[i];
 
@@ -263,6 +273,8 @@ static void ath12k_erp_exit_pcie_work(struct ath12k_erp_pcie_config *config,
 {
 	struct ath12k_erp_pci_dev *pci;
 	u8 i;
+
+	ath12k_dbg(NULL, ATH12K_DBG_RM, "ErP exit PCIe work\n");
 
 	for (i = 0; i < exit_cnt; i++) {
 		pci = &config->pci[i];
@@ -324,8 +336,10 @@ static int ath12k_erp_remove_pcie(struct wiphy *wiphy)
 		return 0;
 
 	pci_dev = ath12k_pci_get_dev_by_ab(ab);
-	if (!pci_dev)
+	if (!pci_dev) {
+		ath12k_dbg(NULL, ATH12K_DBG_RM, "no PCIe device associated with wiphy\n");
 		return 0;
+	}
 
 	for (i = 0; i < erp_pcie_config.enter_cnt; i++) {
 		if (erp_pcie_config.pci[i].dev == pci_dev) {
@@ -380,6 +394,8 @@ static void ath12k_erp_config_pcie_mlo(const struct wiphy *wiphy)
 	if (!erp_pcie_config.enter_cnt)
 		return;
 
+	ath12k_dbg(NULL, ATH12K_DBG_RM, "configuring ErP PCIe for MLO\n");
+
 	for (i = 0; i < erp_pcie_config.enter_cnt; i++) {
 		ab = ab_list[i];
 
@@ -407,8 +423,13 @@ static void ath12k_erp_config_pcie_mlo(const struct wiphy *wiphy)
 			continue;
 		}
 
+		ath12k_dbg(NULL, ATH12K_DBG_RM,
+			   "ErP PCI current link speed %u width %u for dev %s\n",
+			   pci->speed, pci->width, pci_name(pci_dev));
+
 		pci->dev = pci_dev;
 		pci->bus = pci->root->bus;
+
 		ath12k_erp_config_pcie_speed_width(pci->root, pci, true);
 
 		erp_pcie_config.exit_cnt++;
@@ -430,6 +451,8 @@ static int ath12k_erp_config_active_ar(struct wiphy *wiphy, struct nlattr **attr
 	lockdep_assert_held(&erp_sm.lock);
 
 	ar = ah->radio;
+
+	ath12k_dbg(NULL, ATH12K_DBG_RM, "configuring ErP active interface\n");
 
 	if (attrs[QCA_WLAN_VENDOR_ATTR_ERP_CONFIG_TRIGGER]) {
 		trigger = nla_get_u32(attrs[QCA_WLAN_VENDOR_ATTR_ERP_CONFIG_TRIGGER]);
@@ -646,6 +669,8 @@ int ath12k_erp_exit(struct wiphy *wiphy, bool send_event)
 		return -EINVAL;
 	}
 
+	ath12k_dbg(NULL, ATH12K_DBG_RM, "ErP exit started\n");
+
 	active_ar = &erp_sm.active_ar;
 	if (active_ar->ar) {
 		ret = ath12k_erp_set_pkt_filter(active_ar->ar,
@@ -748,6 +773,8 @@ int ath12k_erp_enter(struct ieee80211_hw *hw, struct ieee80211_vif *vif, int lin
 	struct ath12k_hw_group *ag = ath12k_ah_to_ag(ah);
 
 	lockdep_assert_wiphy(hw->wiphy);
+
+	ath12k_dbg(NULL, ATH12K_DBG_RM, "ErP enter\n");
 
 	if (!ath12k_mlo_capable) {
 		ath12k_err(NULL, "command not supported in non-MLO mode\n");

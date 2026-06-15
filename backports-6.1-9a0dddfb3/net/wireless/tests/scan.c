@@ -5,6 +5,7 @@
  * Copyright (C) 2023-2024 Intel Corporation
  */
 #include <linux/ieee80211.h>
+#include <linux/if_ether.h>
 #include <net/cfg80211.h>
 #include <kunit/test.h>
 #include <kunit/skbuff.h>
@@ -878,3 +879,484 @@ static struct kunit_suite scan_6ghz = {
 };
 
 kunit_test_suite(scan_6ghz);
+
+static void test_cfg80211_extract_smd_info_valid(struct kunit *test)
+{
+	struct cfg80211_bss bss = {};
+	u8 valid_ies[] = {
+		WLAN_EID_EXTENSION, 10,
+		WLAN_EID_EXT_SMD,
+		0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
+		0x01,
+		0xE8, 0x03
+	};
+
+	u8 expected_id[] = { 0x11, 0x22, 0x33, 0x44, 0x55, 0x66 };
+
+	cfg80211_extract_smd_info(&bss, valid_ies, sizeof(valid_ies));
+
+	t_expect_smd_fields(test, &bss, true, expected_id, 0x01, 1000);
+}
+
+static void test_cfg80211_extract_smd_info_invalid_length(struct kunit *test)
+{
+	struct cfg80211_bss bss = {};
+	u8 short_ie[] = {
+		WLAN_EID_EXTENSION, 5,
+		WLAN_EID_EXT_SMD,
+		0x11, 0x22, 0x33, 0x44,
+	};
+
+	cfg80211_extract_smd_info(&bss, short_ie, sizeof(short_ie));
+
+	t_expect_smd_fields(test, &bss, false, NULL, 0, 0);
+}
+
+static void test_cfg80211_extract_smd_info_no_smd_eid(struct kunit *test)
+{
+	struct cfg80211_bss bss = {};
+	u8 no_smd_ie[] = {
+		WLAN_EID_EXTENSION, 10,
+		WLAN_EID_EXT_HE_CAPABILITY,
+		0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
+		0x01,
+		0xE8, 0x03
+	};
+
+	cfg80211_extract_smd_info(&bss, no_smd_ie, sizeof(no_smd_ie));
+
+	t_expect_smd_fields(test, &bss, false, NULL, 0, 0);
+}
+
+static void test_cfg80211_extract_smd_info_buffer_overflow(struct kunit *test)
+{
+	struct cfg80211_bss bss = {};
+	u8 buffer_overflow_ie[] = {
+		WLAN_EID_EXTENSION, 15,
+		WLAN_EID_EXT_SMD,
+		0x11, 0x22, 0x33, 0x44, 0x55, 0x66
+	};
+
+	cfg80211_extract_smd_info(&bss, buffer_overflow_ie, sizeof(buffer_overflow_ie));
+
+	t_expect_smd_fields(test, &bss, false, NULL, 0, 0);
+}
+
+static void test_cfg80211_extract_smd_info_with_caps(struct kunit *test)
+{
+	struct cfg80211_bss bss = {};
+	u8 expected_id[] = T_SMD_DOMAIN_ID_1;
+	u8 probe_ies[] = {
+		WLAN_EID_SSID, 8, 'S', 'M', 'D', '-', 'T', 'e', 's', 't',
+		WLAN_EID_SUPP_RATES, 4,
+		0x8c, 0x12, 0x98, 0x24,
+		WLAN_EID_HT_CAPABILITY, 26,
+		0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00,
+		WLAN_EID_VHT_CAPABILITY, 12,
+		0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00,
+		WLAN_EID_EXTENSION, 21,
+		WLAN_EID_EXT_HE_CAPABILITY,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00,
+		WLAN_EID_EXTENSION, 13,
+		WLAN_EID_EXT_EHT_CAPABILITY,
+		0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00,
+
+		WLAN_EID_EXTENSION, 10, WLAN_EID_EXT_SMD,
+		0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
+		T_SMD_CAP_BASIC, 0xE8, 0x03
+	};
+
+	t_expect_smd_fields(test, &bss, true, expected_id, T_SMD_CAP_BASIC, 1000);
+}
+
+static void test_cfg80211_extract_smd_info_emptry_buffer(struct kunit *test)
+{
+	struct cfg80211_bss bss = {};
+
+	cfg80211_extract_smd_info(&bss, NULL, 0);
+
+	t_expect_smd_fields(test, &bss, false, NULL, 0, 0);
+}
+
+static void test_cfg80211_extract_smd_info_endianness(struct kunit *test)
+{
+	struct cfg80211_bss bss = {};
+	u8 expected_id[] = T_SMD_DOMAIN_ID_1;
+	u8 ie_with_timeout[] = {
+		WLAN_EID_EXTENSION, 10,
+		WLAN_EID_EXT_SMD,
+		0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
+		0x01,
+		0x00, 0x10
+	};
+
+	cfg80211_extract_smd_info(&bss, ie_with_timeout, sizeof(ie_with_timeout));
+
+	t_expect_smd_fields(test, &bss, true, expected_id, T_SMD_CAP_BASIC, 4096);
+}
+
+static void test_cfg80211_extract_smd_info_non_smd_ap(struct kunit *test)
+{
+	struct cfg80211_bss bss = {};
+	u8 non_smd_ies[] = {
+		WLAN_EID_SSID, 8, 'N', 'O', 'N', '-', 'S', 'M', 'D', ' ',
+		WLAN_EID_SUPP_RATES, 8,
+		0x82, 0x84, 0x8b, 0x96, 0x0c, 0x12, 0x18, 0x24,
+		WLAN_EID_DS_PARAMS, 1, 11,
+		WLAN_EID_RSN, 20,
+		0x01, 0x00,
+		0x00, 0x0f, 0xac, 0x04,
+		0x01, 0x00,
+		0x00, 0x0f, 0xac, 0x04,
+		0x01, 0x00,
+		0x00, 0x0f, 0xac, 0x02,
+		0x00, 0x00,
+		WLAN_EID_HT_CAPABILITY, 26,
+		0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00,
+	};
+
+	cfg80211_extract_smd_info(&bss, non_smd_ies, sizeof(non_smd_ies));
+
+	t_expect_smd_fields(test, &bss, false, NULL, 0, 0);
+}
+
+static void test_cfg80211_extract_smd_info_alternate_params(struct kunit *test)
+{
+	struct cfg80211_bss bss = {};
+	u8 expected_id[] = { 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff };
+	u8 ies_with_alt_smd[] = {
+		WLAN_EID_SSID, 4, 'S', 'M', 'D', 'A',
+		WLAN_EID_EXTENSION, 10, WLAN_EID_EXT_SMD,
+		0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
+		T_SMD_CAP_DL_FORWARD, 0xD0, 0x07
+	};
+
+	cfg80211_extract_smd_info(&bss, ies_with_alt_smd, sizeof(ies_with_alt_smd));
+
+	t_expect_smd_fields(test, &bss, true, expected_id,
+			    T_SMD_CAP_DL_FORWARD, T_SMD_TIMEOUT_2000);
+}
+
+static void test_cfg80211_extrac_smd_info_clear_old_state(struct kunit *test)
+{
+	struct cfg80211_bss bss = {
+		.has_smd = true,
+		.smd_identifier = { 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF },
+		.smd_capabilities = T_SMD_CAP_DL_FORWARD,
+		.smd_timeout = T_SMD_TIMEOUT_2000,
+	};
+
+	u8 no_smd_ies[] = {
+		WLAN_EID_SSID, 4, 'T', 'e', 's', 't',
+	};
+
+	cfg80211_extract_smd_info(&bss, no_smd_ies, sizeof(no_smd_ies));
+
+	t_expect_smd_fields(test, &bss, false, NULL, 0, 0);
+}
+
+static struct kunit_case smd_extraction_test_cases[] = {
+	KUNIT_CASE(test_cfg80211_extract_smd_info_valid),
+	KUNIT_CASE(test_cfg80211_extract_smd_info_invalid_length),
+	KUNIT_CASE(test_cfg80211_extract_smd_info_no_smd_eid),
+	KUNIT_CASE(test_cfg80211_extract_smd_info_buffer_overflow),
+	KUNIT_CASE(test_cfg80211_extract_smd_info_with_caps),
+	KUNIT_CASE(test_cfg80211_extract_smd_info_emptry_buffer),
+	KUNIT_CASE(test_cfg80211_extract_smd_info_endianness),
+	KUNIT_CASE(test_cfg80211_extract_smd_info_non_smd_ap),
+	KUNIT_CASE(test_cfg80211_extract_smd_info_alternate_params),
+	KUNIT_CASE(test_cfg80211_extrac_smd_info_clear_old_state),
+	{}
+};
+
+static struct kunit_suite smd_extraction = {
+	.name = "cfg80211-smd-extraction",
+	.test_cases = smd_extraction_test_cases,
+};
+
+kunit_test_suite(smd_extraction);
+
+static void test_inform_bss_smd_valid(struct kunit *test)
+{
+	struct inform_bss ctx = { .test = test };
+	struct wiphy *wiphy = T_WIPHY(test, ctx);
+	struct t_wiphy_priv *w_priv = wiphy_priv(wiphy);
+	struct cfg80211_inform_bss inform_bss = t_smd_inform_bss(&ctx, 50);
+	const u8 bssid[ETH_ALEN] = { 0x10, 0x22, 0x33, 0x44, 0x55, 0x66 };
+	u8 expected_id[] = T_SMD_DOMAIN_ID_1;
+	u64 tsf = 0x100000000000000ULL;
+	int beacon_int = 100;
+	u16 capability = 0x1234;
+	u8 probe_resp_ies[] = {
+		WLAN_EID_SSID, 8, 'S', 'M', 'D', '-', 'T', 'e', 's', 't',
+		WLAN_EID_SUPP_RATES, 8, 0x8c, 0x12, 0x98, 0x24, 0xb0, 0x48, 0x60, 0x6c,
+		WLAN_EID_DS_PARAMS, 1, 6,
+		WLAN_EID_EXTENSION, 10, WLAN_EID_EXT_SMD,
+		0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
+		T_SMD_CAP_DL_FORWARD, 0xE8, 0x03
+	};
+	struct cfg80211_bss *bss;
+
+	w_priv->ops->inform_bss = inform_bss_inc_counter;
+	inform_bss.chan = ieee80211_get_channel_khz(wiphy, MHZ_TO_KHZ(2437));
+	KUNIT_ASSERT_NOT_NULL(test, inform_bss.chan);
+
+	bss = cfg80211_inform_bss_data(wiphy, &inform_bss,
+				       CFG80211_BSS_FTYPE_PRESP,
+				       bssid, tsf, beacon_int, capability,
+				       probe_resp_ies, sizeof(probe_resp_ies),
+				       GFP_KERNEL);
+	KUNIT_ASSERT_NOT_NULL(test, bss);
+
+	KUNIT_EXPECT_EQ(test, ctx.inform_bss_count, 1);
+
+	t_expect_smd_fields(test, bss, true, expected_id,
+			    T_SMD_CAP_DL_FORWARD, T_SMD_TIMEOUT_1000);
+
+	cfg80211_put_bss(wiphy, bss);
+}
+
+static void test_inform_bss_smd_absent(struct kunit *test)
+{
+	struct inform_bss ctx = { .test = test };
+	struct wiphy *wiphy = T_WIPHY(test, ctx);
+	struct t_wiphy_priv *w_priv = wiphy_priv(wiphy);
+	struct cfg80211_inform_bss inform_bss = t_smd_inform_bss(&ctx, 50);
+	const u8 bssid[ETH_ALEN] = { 0x10, 0x22, 0x33, 0x44, 0x55, 0x66 };
+	u64 tsf = 0x100000000000000ULL;
+	int beacon_int = 100;
+	u16 capability = 0x1234;
+	u8 probe_resp_ies[] = {
+		WLAN_EID_SSID, 8, 'S', 'M', 'D', '-', 'T', 'e', 's', 't',
+		WLAN_EID_SUPP_RATES, 8, 0x8c, 0x12, 0x98, 0x24, 0xb0, 0x48, 0x60, 0x6c,
+		WLAN_EID_DS_PARAMS, 1, 11,
+		WLAN_EID_HT_CAPABILITY, 26,
+		0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00
+	};
+	struct cfg80211_bss *bss;
+
+	w_priv->ops->inform_bss = inform_bss_inc_counter;
+	inform_bss.chan = ieee80211_get_channel_khz(wiphy, MHZ_TO_KHZ(2462));
+	KUNIT_ASSERT_NOT_NULL(test, inform_bss.chan);
+
+	bss = cfg80211_inform_bss_data(wiphy, &inform_bss,
+				       CFG80211_BSS_FTYPE_PRESP,
+				       bssid, tsf, beacon_int, capability,
+				       probe_resp_ies, sizeof(probe_resp_ies),
+				       GFP_KERNEL);
+	KUNIT_ASSERT_NOT_NULL(test, bss);
+
+	KUNIT_EXPECT_EQ(test, ctx.inform_bss_count, 1);
+
+	t_expect_smd_fields(test, bss, false, NULL, 0, 0);
+
+	cfg80211_put_bss(wiphy, bss);
+}
+
+static void test_inform_bss_smd_update(struct kunit *test)
+{
+	struct inform_bss ctx = { .test = test };
+	struct wiphy *wiphy = T_WIPHY(test, ctx);
+	struct t_wiphy_priv *w_priv = wiphy_priv(wiphy);
+	struct cfg80211_inform_bss inform_bss = t_smd_inform_bss(&ctx, 50);
+	const u8 bssid[ETH_ALEN] = { 0x10, 0x22, 0x33, 0x44, 0x55, 0x66 };
+	u8 expected_id[] = T_SMD_DOMAIN_ID_1;
+	u64 tsf1 = 0x100000000000000ULL;
+	u64 tsf2 = 0x200000000000000ULL;
+	int beacon_int = 100;
+	u16 capability = 0x1234;
+	u8 first_probe_ies[] = {
+		WLAN_EID_SSID, 8, 'S', 'M', 'D', '-', 'T', 'e', 's', 't',
+		WLAN_EID_SUPP_RATES, 8, 0x8c, 0x12, 0x98, 0x24, 0xb0, 0x48, 0x60, 0x6c,
+		WLAN_EID_DS_PARAMS, 1, 6,
+		WLAN_EID_EXTENSION, 10, WLAN_EID_EXT_SMD,
+		0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
+		T_SMD_CAP_BASIC, 0xE8, 0x03
+	};
+	u8 second_probe_ies[] = {
+		WLAN_EID_SSID, 8, 'S', 'M', 'D', '-', 'T', 'e', 's', 't',
+		WLAN_EID_SUPP_RATES, 8, 0x8c, 0x12, 0x98, 0x24, 0xb0, 0x48, 0x60, 0x6c,
+		WLAN_EID_DS_PARAMS, 1, 6,
+		WLAN_EID_EXTENSION, 10, WLAN_EID_EXT_SMD,
+		0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
+		T_SMD_CAP_COMBINED, 0xD0, 0x07
+	};
+	struct cfg80211_bss *bss1, *bss2;
+
+	w_priv->ops->inform_bss = inform_bss_inc_counter;
+	inform_bss.chan = ieee80211_get_channel_khz(wiphy, MHZ_TO_KHZ(2437));
+	KUNIT_ASSERT_NOT_NULL(test, inform_bss.chan);
+
+	bss1 = cfg80211_inform_bss_data(wiphy, &inform_bss,
+					CFG80211_BSS_FTYPE_PRESP,
+					bssid, tsf1, beacon_int, capability,
+					first_probe_ies, sizeof(first_probe_ies),
+					GFP_KERNEL);
+	KUNIT_ASSERT_NOT_NULL(test, bss1);
+
+	KUNIT_EXPECT_EQ(test, ctx.inform_bss_count, 1);
+
+	t_expect_smd_fields(test, bss1, true, expected_id,
+			    T_SMD_CAP_BASIC, T_SMD_TIMEOUT_1000);
+
+	bss2 = cfg80211_inform_bss_data(wiphy, &inform_bss,
+					CFG80211_BSS_FTYPE_PRESP,
+					bssid, tsf2, beacon_int, capability,
+					second_probe_ies, sizeof(second_probe_ies),
+					GFP_KERNEL);
+	KUNIT_ASSERT_NOT_NULL(test, bss2);
+	KUNIT_EXPECT_PTR_EQ(test, bss1, bss2);
+
+	t_expect_smd_fields(test, bss2, true, expected_id,
+			    T_SMD_CAP_COMBINED, T_SMD_TIMEOUT_2000);
+
+	cfg80211_put_bss(wiphy, bss1);
+	cfg80211_put_bss(wiphy, bss2);
+}
+
+static void test_inform_bss_smd_removal(struct kunit *test)
+{
+	struct inform_bss ctx = { .test = test };
+	struct wiphy *wiphy = T_WIPHY(test, ctx);
+	struct t_wiphy_priv *w_priv = wiphy_priv(wiphy);
+	struct cfg80211_inform_bss inform_bss = t_smd_inform_bss(&ctx, 50);
+	const u8 bssid[ETH_ALEN] = { 0x10, 0x22, 0x33, 0x44, 0x55, 0x66 };
+	u8 expected_id[] = T_SMD_DOMAIN_ID_1;
+	u64 tsf1 = 0x100000000000000ULL;
+	u64 tsf2 = 0x200000000000000ULL;
+	int beacon_int = 100;
+	u16 capability = 0x1234;
+	u8 smd_ies[] = {
+		WLAN_EID_SSID, 8, 'S', 'M', 'D', '-', 'T', 'e', 's', 't',
+		WLAN_EID_SUPP_RATES, 8, 0x8c, 0x12, 0x98, 0x24, 0xb0, 0x48, 0x60, 0x6c,
+		WLAN_EID_DS_PARAMS, 1, 6,
+		WLAN_EID_EXTENSION, 10, WLAN_EID_EXT_SMD,
+		0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
+		T_SMD_CAP_BASIC, 0xE8, 0x03
+	};
+	u8 without_smd_ies[] = {
+		WLAN_EID_SSID, 8, 'S', 'M', 'D', '-', 'T', 'e', 's', 't',
+		WLAN_EID_SUPP_RATES, 8, 0x8c, 0x12, 0x98, 0x24, 0xb0, 0x48, 0x60, 0x6c,
+		WLAN_EID_DS_PARAMS, 1, 6,
+		WLAN_EID_HT_CAPABILITY, 26,
+		0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00
+	};
+	struct cfg80211_bss *bss1, *bss2;
+
+	w_priv->ops->inform_bss = inform_bss_inc_counter;
+	inform_bss.chan = ieee80211_get_channel_khz(wiphy, MHZ_TO_KHZ(2437));
+	KUNIT_ASSERT_NOT_NULL(test, inform_bss.chan);
+
+	bss1 = cfg80211_inform_bss_data(wiphy, &inform_bss,
+					CFG80211_BSS_FTYPE_PRESP,
+					bssid, tsf1, beacon_int, capability,
+					smd_ies, sizeof(smd_ies),
+					GFP_KERNEL);
+	KUNIT_ASSERT_NOT_NULL(test, bss1);
+
+	KUNIT_EXPECT_EQ(test, ctx.inform_bss_count, 1);
+
+	t_expect_smd_fields(test, bss1, true, expected_id,
+			    T_SMD_CAP_BASIC, T_SMD_TIMEOUT_1000);
+
+	bss2 = cfg80211_inform_bss_data(wiphy, &inform_bss,
+					CFG80211_BSS_FTYPE_PRESP,
+					bssid, tsf2, beacon_int, capability,
+					without_smd_ies, sizeof(without_smd_ies),
+					GFP_KERNEL);
+	KUNIT_ASSERT_NOT_NULL(test, bss2);
+	KUNIT_EXPECT_PTR_EQ(test, bss1, bss2);
+
+	t_expect_smd_fields(test, bss2, false, NULL, 0, 0);
+
+	cfg80211_put_bss(wiphy, bss1);
+	cfg80211_put_bss(wiphy, bss2);
+}
+
+static void test_inform_bss_frame_smd(struct kunit *test)
+{
+	struct inform_bss ctx = { .test = test };
+	struct wiphy *wiphy = T_WIPHY(test, ctx);
+	struct t_wiphy_priv *w_priv = wiphy_priv(wiphy);
+	struct cfg80211_inform_bss inform_bss = t_smd_inform_bss(&ctx, 50);
+	struct sk_buff *frame = kunit_zalloc_skb(test, 100, GFP_KERNEL);
+	struct ieee80211_mgmt *mgmt;
+	struct cfg80211_bss *bss;
+	u8 bssid[] = { 0x10, 0x22, 0x33, 0x44, 0x55, 0x66 };
+	u8 expected_id[] = T_SMD_DOMAIN_ID_2;
+	u8 smd_ie[] = {
+		WLAN_EID_EXTENSION, 10, WLAN_EID_EXT_SMD,
+		0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
+		T_SMD_CAP_DL_FORWARD, 0xD0, 0x07
+	};
+
+	KUNIT_ASSERT_NOT_NULL(test, frame);
+
+	w_priv->ops->inform_bss = inform_bss_inc_counter;
+	inform_bss.chan = ieee80211_get_channel_khz(wiphy, MHZ_TO_KHZ(2437));
+	KUNIT_ASSERT_NOT_NULL(test, inform_bss.chan);
+
+	mgmt = skb_put_zero(frame, sizeof(*mgmt));
+	mgmt->frame_control = cpu_to_le16(IEEE80211_FTYPE_MGMT |
+					  IEEE80211_STYPE_PROBE_RESP);
+	mgmt->u.probe_resp.timestamp = cpu_to_le16(0x1000000000000000ULL);
+	mgmt->u.probe_resp.beacon_int = cpu_to_le16(100);
+	mgmt->u.probe_resp.capab_info = cpu_to_le16(0x1234);
+	ether_addr_copy(mgmt->bssid, bssid);
+
+	skb_put_u8(frame, WLAN_EID_SSID);
+	skb_put_u8(frame, 8);
+	skb_put_data(frame, "SMD-Test", 8);
+	skb_put_u8(frame, WLAN_EID_SUPP_RATES);
+	skb_put_u8(frame, 8);
+	skb_put_data(frame, "\x8c\x12\x98\x24\xb0\x48\x60\x6c", 8);
+	skb_put_u8(frame, WLAN_EID_DS_PARAMS);
+	skb_put_u8(frame, 1);
+	skb_put_u8(frame, 6);
+	skb_put_data(frame, smd_ie, sizeof(smd_ie));
+
+	bss = cfg80211_inform_bss_frame_data(wiphy, &inform_bss, mgmt,
+					     frame->len, GFP_KERNEL);
+	KUNIT_ASSERT_NOT_NULL(test, bss);
+	KUNIT_EXPECT_EQ(test, ctx.inform_bss_count, 1);
+
+	t_expect_smd_fields(test, bss, true, expected_id,
+			    T_SMD_CAP_DL_FORWARD, T_SMD_TIMEOUT_2000);
+
+	cfg80211_put_bss(wiphy, bss);
+}
+
+static struct kunit_case smd_integration_test_cases[] = {
+	KUNIT_CASE(test_inform_bss_smd_valid),
+	KUNIT_CASE(test_inform_bss_smd_absent),
+	KUNIT_CASE(test_inform_bss_smd_update),
+	KUNIT_CASE(test_inform_bss_smd_removal),
+	KUNIT_CASE(test_inform_bss_frame_smd),
+	{}
+};
+
+static struct kunit_suite smd_integration = {
+	.name = "cfg80211-smd-integration",
+	.test_cases = smd_integration_test_cases,
+};
+
+kunit_test_suite(smd_integration);

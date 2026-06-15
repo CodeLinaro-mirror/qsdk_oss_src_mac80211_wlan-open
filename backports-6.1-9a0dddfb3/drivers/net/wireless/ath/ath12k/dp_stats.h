@@ -20,6 +20,7 @@ struct ath12k_dp_link_peer;
 #define INVALID_SVC_ID			0xFF
 #define DP_REO_RING_MAX			4
 
+#define ATH12K_UHR_MCS_NUM	24	/* UHR (11BN) */
 #define ATH12K_EHT_MCS_NUM	16
 #define ATH12K_HE_MCS_NUM       14
 #define ATH12K_VHT_MCS_NUM      10
@@ -40,7 +41,8 @@ struct ath12k_dp_link_peer;
 #define MAX_MCS_11AC 12
 #define MAX_MCS_11AX 14
 #define MAX_MCS_11BE 16
-#define MAX_MCS (16 + 1)
+#define MAX_MCS_11BN 24
+#define MAX_MCS (24 + 1)
 
 #define INVALID_RSSI	GENMASK(7, 0)
 #define INVALID_RATE	GENMASK(7, 0)
@@ -48,6 +50,10 @@ struct ath12k_dp_link_peer;
 #define IS_VALID_RSSI(rssi) ((rssi) <= 0)
 #define IS_VALID_RATE(rate) ((rate) >= 0)
 
+#define DP_AVG_JITTER_WEIGHT_DENOM 4
+#define DP_AVG_DELAY_WEIGHT_DENOM 3
+
+#define DP_TID_MAX	9
 #define nla_total_size_nested(x) nla_total_size(x)
 /**
  * enum ath12k_stats_object:	Defines the Stats specific to object
@@ -98,6 +104,7 @@ enum ath12k_dp_tx_enq_error {
 	DP_TX_ENQ_DROP_HW_ENQ_FAIL,
 	DP_TX_ENQ_DROP_MCBC_ENCRY_FAIL,
 	DP_TX_ENQ_DROP_MCBC_MSDU_INFO,
+	DP_TX_ENQ_DROP_MCAST_NO_LINK,
 	DP_TX_ENQ_DROP_FW_RECOVERY,
 	DP_TX_ENQ_DROP_SKB_NO_LINEAR,
 	DP_TX_ENQ_ERR_MAX,
@@ -367,6 +374,12 @@ enum ath12k_mu_packet_type {
 #define DP_PDEV_TID_TX_REASON_INC(dp_pdev, ring, tid, array, reason) \
 	((dp_pdev)->tid_stats.tid_tx[ring][tid].array[reason]++)
 
+#define DP_PDEV_TID_RX_REASON_INC(dp_pdev, ring, tid, array, reason) \
+	((dp_pdev)->tid_stats.tid_rx[ring][tid].array[reason]++)
+
+#define DP_PDEV_TID_RX_INC(dp_pdev, ring, tid, counter) \
+	(((dp_pdev)->tid_stats.tid_rx[ring][tid].counter)++)
+
 struct ath12k_wbm_tx_stats {
 	u64 wbm_tx_comp_stats[HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX];
 };
@@ -415,6 +428,7 @@ struct ath12k_htt_data_stats {
 	u64 vht[ATH12K_COUNTER_TYPE_MAX][ATH12K_VHT_MCS_NUM];
 	u64 he[ATH12K_COUNTER_TYPE_MAX][ATH12K_HE_MCS_NUM];
 	u64 eht[ATH12K_COUNTER_TYPE_MAX][ATH12K_EHT_MCS_NUM];
+	u64 uhr[ATH12K_COUNTER_TYPE_MAX][ATH12K_UHR_MCS_NUM]; /* UHR (11BN) */
 	u64 bw[ATH12K_COUNTER_TYPE_MAX][ATH12K_BW_NUM];
 	u64 nss[ATH12K_COUNTER_TYPE_MAX][ATH12K_NSS_NUM];
 	u64 gi[ATH12K_COUNTER_TYPE_MAX][ATH12K_GI_NUM];
@@ -472,6 +486,8 @@ struct ath12k_htt_tx_stats {
 	struct ath12k_tx_pkt_info transmit_type_mpdu_succ_tried[MAX_TRANSMIT_TYPES];
 	struct pkt_type su_be_ppdu_cnt;
 	struct pkt_type mu_be_ppdu_cnt[TXRX_TYPE_MU_MAX];
+	struct pkt_type su_bn_ppdu_cnt;
+	struct pkt_type mu_bn_ppdu_cnt[TXRX_TYPE_MU_MAX];
 	u32 punc_bw[MAX_PUNCTURED_MODE];
 	u32 rts_success;
 	u32 rts_failure;
@@ -575,6 +591,9 @@ enum hist_types {
 	HIST_TYPE_DELAY_PERCENTILE,
 	HIST_TYPE_HW_COMP_DELAY_TSF,
 	HIST_TYPE_HW_COMP_DELAY_JITTER_TSF,
+	HIST_TYPE_PDEV_SW_ENQEUE_DELAY,
+	HIST_TYPE_PDEV_HW_TX_COMP_DELAY,
+	HIST_TYPE_PDEV_SW_INTERFRAME_DELAY,
 	HIST_TYPE_MAX,
 };
 
@@ -598,30 +617,106 @@ struct delay_stats {
 };
 
 /**
+ * enum ath12k_dp_tid_tx_sw_drop - TID TX sw drop reasons
+ * @DP_TID_TX_DESC_ERR: TX descriptor error
+ * @DP_TID_TX_DMA_MAP_ERR: DMA mapping error
+ * @DP_TID_TX_HW_ENQUEUE: HW enqueue failure
+ * @DP_TID_TX_SW_DROP_MAX: Maximum TX drop reasons
+ */
+enum ath12k_dp_tid_tx_sw_drop {
+	DP_TID_TX_DESC_ERR,
+	DP_TID_TX_DMA_MAP_ERR,
+	DP_TID_TX_HW_ENQUEUE,
+	DP_TID_TX_SW_DROP_MAX,
+};
+
+/** enum ath12k_dp_tid_rx_sw_drop
+ * @DP_TID_RX_INVALID_PEER_VDEV
+ * @DP_TID_RX_SW_DROP_MAX
+ */
+enum ath12k_dp_tid_rx_sw_drop {
+	DP_TID_RX_INVALID_PEER_VDEV,
+	DP_TID_RX_SW_DROP_MAX,
+};
+
+/**
+ * struct ath12k_reo_error_stats
+ * @reo_code_inv: Count of unknown REO error codes
+ * @reo_code: counters for each REO error code
+ */
+struct ath12k_reo_error_stats {
+	u32 reo_code_inv;
+	u32 reo_code[HAL_REO_DEST_RING_ERROR_CODE_MAX];
+};
+
+/**
+ * struct ath12k_rxdma_error_stats
+ * @rxdma_code_inv: Count of unknown RXDMA error codes
+ * @rxdma_code: counters for each RXDMA error code
+ */
+struct ath12k_rxdma_error_stats {
+	u32 rxdma_code_inv;
+	u32 rxdma_code[HAL_REO_ENTR_RING_RXDMA_ECODE_MAX];
+};
+
+/**
+ * struct ath12k_tid_rx_stats - Per-TID RX statistics
+ * @msdu_cnt: Num of msdu received from HW
+ * @mcast_msdu_cnt: Num Mcast Msdus received from HW
+ * @bcast_msdu_cnt: Num Bcast Msdus received from HW
+ * @delivered_to_stack: packets delivered to stack
+ * @reo_err: REO error statistics
+ * @rxdma_err: RXDMA error statistics
+ */
+struct ath12k_tid_rx_stats {
+	struct hist_stats to_stack_delay;
+	struct hist_stats intfrm_delay;
+	u32 msdu_cnt;
+	u32 mcast_msdu_cnt;
+	u32 bcast_msdu_cnt;
+	u32 delivered_to_stack;
+	u32 fail_cnt[DP_TID_RX_SW_DROP_MAX];
+	struct ath12k_reo_error_stats reo_err;
+	struct ath12k_rxdma_error_stats rxdma_err;
+};
+
+/**
  * struct ath12k_tid_tx_stats - Per-TID TX statistics
+ * @swq_delay: Software Enqueue Delay counter
+ * @hxtx_delay: Hardware TX Completion Delay counter
+ * @intfrm_delay: Sofware Interframe Delay counter
  * @tqm_status_cnt: TQM release reason counters
  * @htt_status_cnt: HTT completion status counters
+ * @swdrop_cnt: Software drop reason counters
  */
 struct ath12k_tid_tx_stats {
+	struct hist_stats swq_delay;
+	struct hist_stats hwtx_delay;
+	struct hist_stats intfrm_delay;
 	u32 tqm_status_cnt[HAL_WBM_TQM_REL_REASON_MAX];
 	u32 htt_status_cnt[HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX];
+	u32 swdrop_cnt[DP_TID_TX_SW_DROP_MAX];
 };
 
 /**
  * struct ath12k_dp_pdev_tid_stats - VoW TID statistics
  * @tid_tx: Per-ring, per-TID TX statistics [ring][tid]
+ * @tid_rx: Per-ring, per-TID RX statistics [ring][tid]
  */
 struct ath12k_dp_pdev_tid_stats {
 	struct ath12k_tid_tx_stats tid_tx[DP_TCL_NUM_RING_MAX][VOW_DATA_TID_MAX];
+	struct ath12k_tid_rx_stats tid_rx[DP_REO_DST_RING_MAX][VOW_DATA_TID_MAX];
 };
 
 /**
  * struct ath12k_dp_aggr_pdev_tid_stats
  * @tid_tx: per-TID TX statistics [tid]
+ * @tid_rx: per-TID RX statistics [tid]
  * Per-TID stats aggregated across rings
  */
 struct ath12k_dp_aggr_pdev_tid_stats {
 	struct ath12k_tid_tx_stats tid_tx[VOW_DATA_TID_MAX];
+	struct ath12k_tid_rx_stats tid_rx[VOW_DATA_TID_MAX];
 };
 
 struct ath12k_qos_stats {
@@ -642,18 +737,160 @@ struct ath12k_mld_qos_stats {
 
 DECLARE_EWMA(avg_ack_rssi, 10, 8)
 
+/**
+ * struct ath12k_dp_peer_hw_tx_stats - Peer HW TX statistics
+ *
+ * @failed_bytes: Total bytes in failed TX frames
+ * @drop_bytes:   Total bytes dropped during TX
+ * @drop1_pkts:   Packets dropped due to AQM (Tx, No Tx, Aged, FW reason)
+ * @drop2_pkts:   Feature specific packets drops (SMD/Reserved drops)
+ */
+struct ath12k_dp_peer_hw_tx_stats {
+	u64 failed_bytes;
+	u64 drop_bytes;
+	u32 drop1_pkts;
+	u32 drop2_pkts;
+};
+
+/**
+ * struct ath12k_dp_peer_hw_rx_stats - Peer HW RX statistics
+ *
+ * @drop_ucast_bytes:  Total unicast bytes dropped
+ * @drop_gcast_bytes:  Total multicast/broadcast bytes dropped
+ * @drop2_pkts:        Packets dropped (SDWF - Backpressure/MSDU drop)
+ * @drop_gcast_pkts:   Multicast/broadcast packets dropped
+ */
+struct ath12k_dp_peer_hw_rx_stats {
+	u64 drop_ucast_bytes;
+	u64 drop_gcast_bytes;
+	u32 drop2_pkts;
+	u32 drop_gcast_pkts;
+};
+
+/**
+ * struct ath12k_dp_peer_hw_stats - Peer HW TX/RX statistics
+ *
+ * @hw_tx: Peer HW TX statistics
+ * @hw_rx: Peer HW RX statistics
+ */
+struct ath12k_dp_peer_hw_stats {
+	struct ath12k_dp_peer_hw_tx_stats hw_tx;
+	struct ath12k_dp_peer_hw_rx_stats hw_rx;
+};
+
+/**
+ * struct ath12k_dp_link_peer_hw_tx_stats - Per-link HW TX statistics
+ * @sum_ack_rssi:       Signed sum of ACK RSSI values (dBm) across PPDUs
+ * @sum_phy_rate:       Sum of PHY rates (in Kbps) across PPDUs
+ * @acked_ppdu_count:   Number of PPDUs acknowledged by the peer
+ */
+struct ath12k_dp_link_peer_hw_tx_stats {
+	s64 sum_ack_rssi;
+	u64 sum_phy_rate;
+	u32 acked_ppdu_count;
+};
+
+/**
+ * struct ath12k_dp_link_peer_hw_rx_stats - Per-link HW RX statistics
+ * @success_ucast_bytes:  Total unicast bytes successfully received
+ * @success_gcast_bytes:  Total multicast/broadcast bytes successfully received
+ * @failed_mpdu_bytes:    Total bytes in failed MPDUs
+ * @sum_rssi:             Signed sum of RSSI values (dBm) across PPDUs
+ * @sum_phy_rate:         Sum of PHY rates (in Kbps) across PPDUs
+ * @drop1_ucast_pkts:     Unicast packets dropped (Backpressure/MSDU drop)
+ * @success_gcast_pkts:   Multicast/broadcast packets successfully received
+ * @failed_mpdu:          Number of failed MPDUs
+ * @success_ppdu_count:   Number of PPDUs successfully received
+ */
+struct ath12k_dp_link_peer_hw_rx_stats {
+	u64 success_ucast_bytes;
+	u64 success_gcast_bytes;
+	u64 failed_mpdu_bytes;
+	s64 sum_rssi;
+	u64 sum_phy_rate;
+	u32 drop1_ucast_pkts;
+	u32 success_gcast_pkts;
+	u32 failed_mpdu;
+	u32 success_ppdu_count;
+};
+
+/**
+ * struct ath12k_dp_link_peer_hw_stats - Per-link HW TX/RX statistics container
+ * @hw_tx: Per-link HW TX statistics
+ * @hw_rx: Per-link HW RX statistics
+ */
+struct ath12k_dp_link_peer_hw_stats {
+	struct ath12k_dp_link_peer_hw_tx_stats hw_link_tx;
+	struct ath12k_dp_link_peer_hw_rx_stats hw_link_rx;
+};
+
+struct ath12k_dp_peer_delay_tx_stats {
+	struct hist_stats tx_swq_delay;
+	struct hist_stats hwtx_delay;
+};
+
+struct ath12k_dp_peer_delay_rx_stats {
+	struct hist_stats to_stack_delay;
+};
+
+struct ath12k_dp_peer_delay_tid_stats {
+	struct ath12k_dp_peer_delay_tx_stats tx_delay;
+	struct ath12k_dp_peer_delay_rx_stats rx_delay;
+};
+
+struct ath12k_dp_peer_delay_stats {
+	struct ath12k_dp_peer_delay_tid_stats delay_tid_stats[DP_TID_MAX]
+							     [DP_REO_DST_RING_MAX];
+};
+
+struct ath12k_dp_peer_tid_jitter_stats {
+	u32 tx_prev_delay;
+	u32 tx_avg_jitter;
+	u32 tx_avg_delay;
+	u64 tx_avg_err;
+	u64 tx_total_success;
+	u64 tx_drop;
+};
+
+DECLARE_EWMA(avg_sojourn, 10, 8)
+
+struct ath12k_dp_peer_tid_sojourn_stats {
+	struct ewma_avg_sojourn avg_sojourn_msdu;
+	u32 sum_sojourn_msdu;
+	u32 num_msdus;
+};
+
+struct ath12k_dp_peer_sojourn_stats {
+	struct ath12k_dp_peer_tid_sojourn_stats tid_stats[DP_TID_MAX]
+							 [DP_REO_DST_RING_MAX];
+};
+
+struct ath12k_dp_peer_jitter_stats {
+	struct ath12k_dp_peer_tid_jitter_stats tid_stats[DP_TID_MAX]
+							[DP_REO_DST_RING_MAX];
+};
+
+struct ath12k_dp_mld_peer_stats {
+	struct ath12k_dp_peer_hw_stats *hw_stats;
+	struct ath12k_dp_peer_delay_stats *delay_stats;
+	struct ath12k_dp_peer_jitter_stats *jitter_stats;
+	struct ath12k_dp_peer_sojourn_stats *sojourn_stats;
+};
+
 struct ath12k_dp_link_peer_stats {
 	struct ath12k_htt_tx_stats *tx_stats;
 	struct ath12k_rx_peer_stats *rx_stats;
 	struct ath12k_dp_mon_peer_stats dp_mon_stats;
 	struct ath12k_qos_stats *qos_stats;
-	struct ath12k_dp_pkt_info tx_dropped;
+	struct ath12k_dp_link_peer_hw_stats *hw_link_stats;
 	unsigned long last_ack;
 	unsigned long last_rx;
 	u32 rx_dropped;
 	u32 rx_retries;
 	int last_ack_rssi;
 	struct ewma_avg_ack_rssi avg_ack_rssi;
+	/* BAR frame counter: always maintained, independent of extended RX stats mode */
+	u32 num_bar;
 };
 
 struct ath12k_dp_peer_rx_stats {
@@ -661,6 +898,8 @@ struct ath12k_dp_peer_rx_stats {
 	struct ath12k_dp_pkt_info recv_from_reo;
 	struct ath12k_dp_pkt_info sent_to_stack;
 	struct ath12k_dp_pkt_info sent_to_stack_fast;
+	struct ath12k_dp_pkt_info sent_to_stack_ucast_fast;
+	struct ath12k_dp_pkt_info sent_to_stack_mcast_fast;
 
 	/* Debug and Advance */
 	struct ath12k_dp_pkt_info mcast;
@@ -668,6 +907,7 @@ struct ath12k_dp_peer_rx_stats {
 	u32 non_amsdu;
 	u32 msdu_part_of_amsdu;
 	u32 mpdu_retry;
+	struct ath12k_dp_pkt_info sg;
 };
 
 struct ath12k_dp_peer_tx_stats {
@@ -675,6 +915,7 @@ struct ath12k_dp_peer_tx_stats {
 	struct ath12k_dp_pkt_info comp_pkt;
 	struct ath12k_dp_pkt_info tx_success;
 	u32 tx_failed;
+	struct ath12k_dp_pkt_info tx_dropped;
 
 	/* Debug and Advance */
 	u32 wbm_rel_reason[HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX];
@@ -786,6 +1027,9 @@ struct ath12k_dp_peer_stats {
 	struct ath12k_tele_qos_tx_ctx tx_ctx;
 	struct ath12k_tele_qos_delay_ctx delay_ctx;
 	struct ath12k_dp_proto_stats_peer *proto;
+	struct ath12k_dp_peer_tid_agg_delay_stats *delay;
+	struct ath12k_dp_peer_tid_agg_jitter_stats *jitter;
+	struct ath12k_dp_peer_tid_agg_sojourn_stats *sojourn;
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 	struct ath12k_dp_peer_mmesh_stats mmesh_stat;
 #endif
@@ -828,11 +1072,13 @@ struct ath12k_dp_aggr_vif_stats {
 	struct ath12k_dp_tx_vif_stats stats[DP_TCL_NUM_RING_MAX];
 	struct ath12k_dp_peer_stats peer_stats;
 	struct ath12k_dp_link_peer_stats link_peer_stats;
+	struct ath12k_dp_mld_peer_stats mld_stats;
 };
 
 struct ath12k_dp_aggr_pdev_stats {
 	struct ath12k_dp_peer_stats peer_stats;
 	struct ath12k_dp_link_peer_stats link_peer_stats;
+	struct ath12k_dp_mld_peer_stats mld_stats;
 };
 
 struct ath12k_stats_feat {
@@ -841,6 +1087,11 @@ struct ath12k_stats_feat {
 	bool feat_sdwftx;
 	bool feat_sdwfdelay;
 	bool feat_proto;
+	bool feat_tid;
+	bool feat_delay;
+	bool feat_jitter;
+	bool feat_sojourn;
+	bool feat_mon_stats;
 };
 
 struct ath12k_telemetry_command {
@@ -875,6 +1126,7 @@ struct ath12k_telemetry_dp_peer {
 	int peer_type;
 	struct ath12k_dp_peer_stats peer_stats;
 	struct ath12k_dp_link_peer_stats link_peer_stats;
+	struct ath12k_dp_mld_peer_stats mld_stats;
 };
 
 /* Telemetry Vif Stats */
@@ -888,6 +1140,19 @@ struct ath12k_telemetry_dp_vif {
 struct ath12k_telemetry_dp_radio {
 	bool is_extended;
 	struct ath12k_dp_aggr_pdev_stats aggr_pdev_stats;
+};
+
+/* Radio Control Path Stats - populated by ath12k_dp_get_radio_cp_stats() */
+struct ath12k_radio_cp_stats {
+	u32 tx_failed;
+	u32 tx_rts_success;
+	u32 tx_rts_fail;
+	u32 rx_mgmt;
+	u32 rx_ctrl;
+	u32 rx_decrypt_err;
+	u32 rx_mic_err;
+	u32 rx_over_run;
+	u32 rx_crc_err;
 };
 
 /* Telemetry Device Stats */
@@ -906,6 +1171,7 @@ struct ath12k_rx_peer_rate_stats {
 	u64 vht_mcs_count[HAL_RX_MAX_MCS_VHT + 1];
 	u64 he_mcs_count[HAL_RX_MAX_MCS_HE + 1];
 	u64 be_mcs_count[HAL_RX_MAX_MCS_BE + 1];
+	u64 bn_mcs_count[HAL_RX_MAX_MCS_BN + 1];	/* UHR (11BN) */
 	u64 nss_count[HAL_RX_MAX_NSS];
 	u64 bw_count[HAL_RX_BW_MAX];
 	u64 gi_count[HAL_RX_GI_MAX];
@@ -920,8 +1186,37 @@ struct ath12k_rx_peer_user_stats {
 	struct pkt_type ppdu;
 };
 
-struct ath12k_dp_mld_peer_stats {
-	// Placeholder for MLD Peer stats
+/**
+ * struct ath12k_dp_peer_tid_agg_delay_stats - Container for aggregated all-rings stats
+ * @tid_stats: Array of per-TID statistics aggregated across all rings
+ *
+ * This structure holds delay statistics for all TIDs, where each TID's statistics
+ * represent the aggregation of data from all rings.
+ */
+struct ath12k_dp_peer_tid_agg_delay_stats {
+	struct ath12k_dp_peer_delay_tid_stats tid_stats[DP_TID_MAX];
+};
+
+/**
+ * struct ath12k_dp_peer_tid_agg_sojourn_stats - Container for all-rings sojourn stats
+ * @tid_stats: Array of per-TID statistics aggregated across all rings
+ *
+ * This structure holds sojourn statistics for all TIDs, where each TID's statistics
+ * represent the aggregation of data from all rings.
+ */
+struct ath12k_dp_peer_tid_agg_sojourn_stats {
+	struct ath12k_dp_peer_tid_sojourn_stats tid_stats[DP_TID_MAX];
+};
+
+/**
+ * struct ath12k_dp_peer_tid_agg_jitter_stats - Container for all-rings jitter stats
+ * @tid_stats: Array of per-TID statistics aggregated across all rings
+ *
+ * This structure holds jitter statistics for all TIDs, where each TID's statistics
+ * represent the aggregation of data from all rings.
+ */
+struct ath12k_dp_peer_tid_agg_jitter_stats {
+	struct ath12k_dp_peer_tid_jitter_stats tid_stats[DP_TID_MAX];
 };
 
 #define MCS_VALID 1
@@ -942,6 +1237,7 @@ static const u8 max_mcs_by_preamble[HAL_RX_PREAMBLE_MAX] = {
 	[HAL_RX_PREAMBLE_11AC] = MAX_MCS_11AC,
 	[HAL_RX_PREAMBLE_11AX] = MAX_MCS_11AX,
 	[HAL_RX_PREAMBLE_11BE] = MAX_MCS_11BE,
+	[HAL_RX_PREAMBLE_11BN] = MAX_MCS_11BN,	/* UHR */
 };
 
 struct ath12k_rx_peer_total_stats {
@@ -1106,7 +1402,7 @@ struct ath12k_rx_peer_stats {
 	u64 num_ppdus;
 
 	u32 nss_info:4,
-	    mcs_info:4,
+	    mcs_info:8,
 	    bw_info:4,
 	    gi_info:4,
 	    preamble_info:4;
@@ -1158,13 +1454,12 @@ void ath12k_dp_aggr_per_pkt_tx_stats(struct ath12k_dp_peer_tx_stats *dst,
 void ath12k_dp_aggr_per_pkt_rx_stats(struct ath12k_dp_peer_rx_stats *dst,
 				     struct ath12k_dp_peer_rx_stats *src);
 void
-ath12k_dp_update_tx_ext_htt_aggr_stats(struct ath12k *ar,
+ath12k_dp_update_tx_ext_htt_aggr_stats(struct ath12k_pdev_dp *dp_pdev,
 				       struct ath12k_htt_tx_stats *dst_peer_stats,
 				       struct ath12k_htt_tx_stats *src_peer_stats);
 void ath12k_dp_aggr_wbm_rx_stats(struct ath12k_wbm_rx_stats *dst,
 				 struct ath12k_wbm_rx_stats *src);
-void ath12k_dp_aggr_del_stats(struct ath12k *ar,
-			      struct ath12k_dp_peer_stats *dst_peer_stats,
+void ath12k_dp_aggr_del_stats(struct ath12k_dp_peer_stats *dst_peer_stats,
 			      struct ath12k_dp_link_peer_stats *dst_link_peer_stats,
 			      struct ath12k_dp_preserved_stats *src,
 			      const char *stats_type);
@@ -1554,4 +1849,26 @@ void ath12k_dp_update_hist_stats(struct hist_stats *hist_stats, u32 value);
  */
 void ath12k_dp_hist_init(struct hist_stats *hist_stats,
 			 enum hist_types hist_type);
+
+/**
+ * ath12k_dp_tid_rx_stats_hist_init - Initialize delay histograms for per-TID RX stats
+ * @dp_pdev: DP pdev handle
+ *
+ * Initializes delay histograms (reap-to-stack and interframe) for all
+ * per ring, per tid during pdev allocation.
+ */
+void ath12k_dp_tid_rx_stats_hist_init(struct ath12k_pdev_dp *dp_pdev);
+
+/**
+ * ath12k_dp_tid_tx_stats_hist_init() - Initialize delay histograms for per-TID TX stats
+ * @dp_pdev: DP pdev handle
+ *
+ * Initializes swq_delay, hwtx_delay, and intfrm_delay histogram objects for
+ * every ring/TID slot in dp_pdev->tid_stats.  Must be called during pdev
+ * allocation before any delay stats are updated.
+ */
+void ath12k_dp_tid_tx_stats_hist_init(struct ath12k_pdev_dp *dp_pdev);
+
+void ath12k_dp_accumulate_hist_stats(struct hist_stats *src_hist_stats,
+				     struct hist_stats *dst_hist_stats);
 #endif

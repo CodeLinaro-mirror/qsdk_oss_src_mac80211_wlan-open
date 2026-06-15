@@ -302,7 +302,8 @@ u16 ath12k_qos_configure(struct ath12k_base *ab, struct ath12k *ar,
 			ret = ath12k_core_add_dl_qos(ab, params, id);
 	}
 	if (qos_dir == QOS_PROFILE_UL) {
-		if (id != QOS_ID_INVALID && ar && mac_addr)
+		if (id != QOS_ID_INVALID && ar && mac_addr &&
+		    !test_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ar->ab->ag->flags))
 			ret = ath12k_core_config_ul_qos(ar, params, id,
 							mac_addr, true);
 	}
@@ -353,11 +354,13 @@ int ath12k_qos_disable(struct ath12k_base *ab, struct ath12k *ar,
 	if (ret != 0 || qos_ctx->profiles[id].ref_count != 0)
 		return ret;
 
-	if (!test_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ab->ag->flags)) {
+	if (ab->ag && !test_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ab->ag->flags)) {
 		if (qos_dir == QOS_PROFILE_DL) {
 			ret = ath12k_core_del_dl_qos(ab, id);
 		} else if (qos_dir == QOS_PROFILE_UL) {
-			if (ar && mac_addr) {
+			if (ar && mac_addr &&
+			    !test_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN,
+				      &ar->ab->ag->flags)) {
 				ret =  ath12k_core_config_ul_qos(ar, &params, id,
 								 mac_addr, false);
 			}
@@ -421,7 +424,8 @@ ret:
 	if (qos_dir == QOS_PROFILE_DL) {
 		ret = ath12k_core_add_dl_qos(ab, params, id);
 	} else if (qos_dir == QOS_PROFILE_UL) {
-		if (ar && mac_addr) {
+		if (ar && mac_addr && ar->ab->ag &&
+		    !test_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ar->ab->ag->flags)) {
 			ret =  ath12k_core_config_ul_qos(ar, params, id,
 							 mac_addr, true);
 		}

@@ -1493,8 +1493,10 @@ void ieee80211_tx_status_ext(struct ieee80211_hw *hw,
 
 		if (sta->sta.valid_links) {
 			ac = skb_get_queue_mapping(skb);
-			link_sta->tx_stats.bytes[ac] += skb->len;
-			link_sta->tx_stats.packets[ac]++;
+			if (ac < IEEE80211_NUM_ACS) {
+				link_sta->tx_stats.bytes[ac] += skb->len;
+				link_sta->tx_stats.packets[ac]++;
+			}
 		}
 
 		if (status->n_rates)
@@ -1742,8 +1744,10 @@ void ieee80211_free_txskb(struct ieee80211_hw *hw, struct sk_buff *skb)
 	sta = sta_info_get_by_addrs(local, hdr->addr1, hdr->addr2);
 	if (sta && sta->sta.valid_links) {
 		ac = skb_get_queue_mapping(skb);
-		sta->deflink.tx_stats.packets[ac]++;
-		sta->deflink.tx_stats.bytes[ac] += skb->len;
+		if (ac < IEEE80211_NUM_ACS) {
+			sta->deflink.tx_stats.packets[ac]++;
+			sta->deflink.tx_stats.bytes[ac] += skb->len;
+		}
 	}
 	rcu_read_unlock();
 

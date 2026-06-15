@@ -7,11 +7,10 @@
 #include "dp_pool.h"
 #include "../debug.h"
 #include "dp.h"
-#include "dp_tx_flow_info.h"
+#include "dp_tx.h"
 #include "dp_tx_tid.h"
 
 #define ATH12K_MAX_AMSDU_AGGR_LIMIT 256
-#define ATH12K_WIFI_DESC_HARD_DROP_THRESHOLD 10240
 #define ATH12K_MAX_NUM_OF_EXT_DESCRIPTORS 24
 #define ATH12K_MPDU_SEQ_NUM_MASK 0xFFF
 #define ATH12K_PN_ADDR_HIGH_BYTE_MASK 0x000000FF
@@ -78,16 +77,16 @@ int ath12k_wifi8_hal_tx_msdu_queue_cleanup(struct ath12k_dp_hw_group *dp_hw_grp,
 		u32_encode_bits(0, HAL_TX_MSDU_FLOW_GEN_MED_DROP_NOTIFICATION) |
 		u32_encode_bits(0, HAL_TX_MSDU_FLOW_GEN_HARD_DROP_NOTIFICATION) |
 		u32_encode_bits(0, HAL_TX_MSDU_FLOW_ADD_FRAME_COUNT_SINCE_DROP) |
-		u32_encode_bits(ATH12K_WIFI_DESC_HARD_DROP_THRESHOLD,
+		u32_encode_bits(ATH12K_DP_TX_DEFAULT_HARD_DROP_THRESHOLD,
 				HAL_TX_MSDU_FLOW_SLOW_DROP_THRESHOLD);
 	msduq->info9 = cpu_to_le32(info);
 
 	info = le32_to_cpu(msduq->info10);
 	info &= ~(HAL_TX_MSDU_FLOW_MED_DROP_THRESHOLD |
 		  HAL_TX_MSDU_FLOW_HARD_DROP_THRESHOLD);
-	info |= u32_encode_bits(ATH12K_WIFI_DESC_HARD_DROP_THRESHOLD,
+	info |= u32_encode_bits(ATH12K_DP_TX_DEFAULT_HARD_DROP_THRESHOLD,
 				HAL_TX_MSDU_FLOW_MED_DROP_THRESHOLD) |
-		 u32_encode_bits(ATH12K_WIFI_DESC_HARD_DROP_THRESHOLD,
+		 u32_encode_bits(ATH12K_DP_TX_DEFAULT_HARD_DROP_THRESHOLD,
 				 HAL_TX_MSDU_FLOW_HARD_DROP_THRESHOLD);
 	msduq->info10 = cpu_to_le32(info);
 
@@ -288,14 +287,19 @@ int ath12k_wifi8_hal_tx_msdu_queue_setup(struct ath12k_dp_hw_group *dp_hw_grp,
 					HAL_TX_MSDU_FLOW_TQM_STATUS_FOR_CHIP2) |
 		       le32_encode_bits(((ti->bitmap & ATH12K_CHIP3_BITMAP_MASK) ? 1 : 0),
 					HAL_TX_MSDU_FLOW_TQM_STATUS_FOR_CHIP3) |
-		       le32_encode_bits(ATH12K_WIFI_DESC_HARD_DROP_THRESHOLD,
+		       le32_encode_bits(ATH12K_DP_TX_DEFAULT_HARD_DROP_THRESHOLD,
 					HAL_TX_MSDU_FLOW_SLOW_DROP_THRESHOLD);
-	msduq->info10 = le32_encode_bits(ATH12K_WIFI_DESC_HARD_DROP_THRESHOLD,
+	msduq->info10 = le32_encode_bits(ATH12K_DP_TX_DEFAULT_HARD_DROP_THRESHOLD,
 					 HAL_TX_MSDU_FLOW_MED_DROP_THRESHOLD) |
-			le32_encode_bits(ATH12K_WIFI_DESC_HARD_DROP_THRESHOLD,
+			le32_encode_bits(ATH12K_DP_TX_DEFAULT_HARD_DROP_THRESHOLD,
 					 HAL_TX_MSDU_FLOW_HARD_DROP_THRESHOLD);
 	msduq->info17 = le32_encode_bits(ti->stats_id,
 					 HAL_TX_MSDU_FLOW_TQM_STATS_ID);
+
+	if (ti->svc < HAL_TQM_SERVICE_CATEGORY_MAX)
+		msduq->info16 =
+			le32_encode_bits(1, HAL_TX_MSDU_FLOW_SERVICE_CATEGORY_VALID) |
+			le32_encode_bits(ti->svc, HAL_TX_MSDU_FLOW_SERVICE_CATEGORY);
 
 	ath12k_core_dma_sync_single_for_device(dev, ti->paddr,
 					       MSDU_STRUCT_SZ,
@@ -448,8 +452,8 @@ static int ath12k_wifi8_cleanup_peer_mpdu_queues(struct ath12k_dp_hw_group *dp_h
 		ahsta = ath12k_sta_to_ahsta(peer->sta);
 		ti.assoc_link_id = ahsta->assoc_link_id;
 
-		for (j = 0; j < ATH12K_NUM_MAX_LINKS; j++) {
-			link_peer = rcu_dereference(peer->link_peers[j]);
+		for (j = 0; j < ATH12K_DP_PEER_MAX_MLO_LINKS; j++) {
+			link_peer = ath12k_dp_link_peer_find_by_hw_link_id(peer, j);
 			if (!link_peer)
 				continue;
 
@@ -567,7 +571,7 @@ int ath12k_wifi8_cleanup_all_peers_tx_queues(struct ath12k_dp_hw *dp_hw,
 
 	ath12k_info(ab, "Starting TX queue cleanup for all peers\n");
 
-	spin_lock_bh(&dp_hw->peer_lock);
+	spin_lock_bh(&dp_hw->peer_list_lock);
 
 	/* Iterate through all peers in the list */
 	list_for_each_entry(peer, &dp_hw->peers, list) {
@@ -587,7 +591,8 @@ int ath12k_wifi8_cleanup_all_peers_tx_queues(struct ath12k_dp_hw *dp_hw,
 		/* Cleanup MPDU queues for this peer using its associated VIF */
 		dp_vif = NULL;
 		rcu_read_lock();
-		link_peer = rcu_dereference(peer->link_peers[dp_pdev->hw_link_id]);
+		link_peer = ath12k_dp_link_peer_find_by_hw_link_id(peer,
+								   dp_pdev->hw_link_id);
 		if (link_peer && ath12k_dp_link_peer_get_vif(link_peer)) {
 			vif = ath12k_dp_link_peer_get_vif(link_peer);
 			ahvif = ath12k_vif_to_ahvif(vif);
@@ -612,7 +617,7 @@ int ath12k_wifi8_cleanup_all_peers_tx_queues(struct ath12k_dp_hw *dp_hw,
 		}
 	}
 
-	spin_unlock_bh(&dp_hw->peer_lock);
+	spin_unlock_bh(&dp_hw->peer_list_lock);
 
 	ath12k_info(ab, "Completed TX queue cleanup for %d peers\n",
 		    peer_count);

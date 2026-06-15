@@ -35,6 +35,14 @@ u16 ath12k_wifi8_mpduq_sam_id_alloc(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_w
 		if (mpduq_sam_id >= MAX_NUM_SAM_MPDU_QUEUES_SUPPORTED)
 			mpduq_sam_id = MAX_NUM_SAM_RESERVED_MPDU_QUEUES;
 
+		/* SAM supports queue IDs from a single slice range (slize size: 256)
+		 * due to v1 hardware limitations.
+		 * TODO: Remove after v2 hardware.
+		 */
+		if (mpduq_sam_id < HAL_SAM_QUEUE_SLICE_START_IDX ||
+		    mpduq_sam_id > HAL_SAM_QUEUE_SLICE_END_IDX)
+			continue;
+
 		if (test_bit(mpduq_sam_id, dp_hw_grp_wifi8->mpduq_sam_id_alloc_map))
 			continue;
 
@@ -54,11 +62,38 @@ u16 ath12k_wifi8_mpduq_sam_id_alloc(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_w
 void ath12k_wifi8_clear_mpduq_sam_id(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8,
 				     struct ath12k_dp_mpdu_q_info *sw_mpduq_ptr)
 {
+	struct ath12k_base *ab = NULL;
+	struct ath12k_dp_wifi8 *dp_wifi8 = NULL;
+	struct hal_srng *srng = NULL;
+	int ret;
+
+	if (!dp_hw_grp_wifi8)
+		return;
+
+	if (dp_hw_grp_wifi8->cumac_dp && dp_hw_grp_wifi8->cumac_dp->ab) {
+		ab = dp_hw_grp_wifi8->cumac_dp->ab;
+		dp_wifi8 = ath12k_get_dp_wifi8(dp_hw_grp_wifi8->cumac_dp);
+		srng = &ab->hal.srng_list[dp_wifi8->sam_cmd_ring.ring_id];
+	}
+
 	if (sw_mpduq_ptr->mpduq_sam_id != HAL_SAM_INVALID_MPDUQ_ID) {
 		spin_lock_bh(&dp_hw_grp_wifi8->sam_id_lock);
 		clear_bit(sw_mpduq_ptr->mpduq_sam_id,
 			  dp_hw_grp_wifi8->mpduq_sam_id_alloc_map);
 		spin_unlock_bh(&dp_hw_grp_wifi8->sam_id_lock);
+
+		/* Send sam mpduq clear command for `mpduq_sam_id` to FW.*/
+		if (ab && srng) {
+			ret = ath12k_wifi8_hal_tx_sam_cmd_send
+						(ab, srng, -1,
+						 HAL_SAM_MPDU_QUEUE_CLEAR_PROGRAMMING_BO,
+						 sw_mpduq_ptr->mpduq_sam_id, false);
+
+			if (ret < 0)
+				ath12k_warn(ab,
+					    "failed to send SAM mpdu clear command for %d: %d\n",
+					    sw_mpduq_ptr->mpduq_sam_id, ret);
+		}
 	}
 }
 
@@ -147,8 +182,8 @@ u32 ath12k_wifi8_dp_tx_get_he_header_length(struct ath12k_dp_hw_group *dp_hw_grp
 		return 0;
 
 	rcu_read_lock();
-	for (i = 0; i < ATH12K_NUM_MAX_LINKS; i++) {
-		link_peer = rcu_dereference(peer->link_peers[i]);
+	for (i = 0; i < ATH12K_DP_PEER_MAX_MLO_LINKS; i++) {
+		link_peer = ath12k_dp_link_peer_find_by_hw_link_id(peer, i);
 		if (link_peer)
 			break;
 	}
@@ -210,10 +245,8 @@ int ath12k_tx_send_mpduq_init(struct ath12k_dp_hw_group *dp_hw_grp,
 {
 	u8 tid_num = sw_mpduq_ptr->flow_info.tid_num;
 	struct hal_tx_mpdu_queue_head_info ti = {0};
-	struct ath12k_sta *ahsta;
 	struct ath12k_dp_link_peer *link_peer;
 	u8 hw_link_id;
-	u8 assoc_link_id;
 	int i;
 
 	ti.paddr = sw_mpduq_ptr->mpdu_q_paddr;
@@ -232,39 +265,34 @@ int ath12k_tx_send_mpduq_init(struct ath12k_dp_hw_group *dp_hw_grp,
 	}
 	ti.encap_type = tx_encap_type;
 	//TBD: ti.wapi
-	ti.assoc_link_id = ATH12K_INVALID_LINK_ID;
+	if (peer->is_vdev_peer)
+		ti.assoc_link_id = peer->hw_link_id;
+	else
+		ti.assoc_link_id = peer->assoc_hw_link_id;
+
 	ti.link_id1 = ATH12K_INVALID_LINK_ID - 1;
 	ti.link_id2 = ATH12K_INVALID_LINK_ID;
-	if (ath12k_dp_peer_get_sta(peer)) {
-		rcu_read_lock();
-		ahsta = ath12k_sta_to_ahsta(ath12k_dp_peer_get_sta(peer));
-		assoc_link_id = ath12k_dp_peer_get_sta(peer)->mlo ?
-				ahsta->assoc_link_id :
-				ahsta->deflink.link_id;
-		ti.assoc_link_id = ath12k_dp_get_hw_link_id(peer, assoc_link_id);
-		if (ti.assoc_link_id == ATH12K_INVALID_HW_LINKID) {
-			rcu_read_unlock();
-			return -EINVAL;
-		}
-		for (i = 0; i < ATH12K_NUM_MAX_LINKS; i++) {
-			link_peer = rcu_dereference(peer->link_peers[i]);
-			if (!link_peer)
-				continue;
 
-			hw_link_id = link_peer->hw_link_id;
-			if (hw_link_id == ti.assoc_link_id)
-				continue;
-			if (ti.link_id1 == (ATH12K_INVALID_LINK_ID - 1)) {
-				ti.link_id1 = hw_link_id;
-				continue;
-			}
-			if (ti.link_id2 == ATH12K_INVALID_LINK_ID) {
-				ti.link_id2 = hw_link_id;
-				break;
-			}
+	rcu_read_lock();
+	for (i = 0; i < ATH12K_DP_PEER_MAX_MLO_LINKS; i++) {
+		link_peer = ath12k_dp_link_peer_find_by_hw_link_id(peer, i);
+		if (!link_peer)
+			continue;
+
+		hw_link_id = link_peer->hw_link_id;
+		if (hw_link_id == ti.assoc_link_id)
+			continue;
+		if (ti.link_id1 == (ATH12K_INVALID_LINK_ID - 1)) {
+			ti.link_id1 = hw_link_id;
+			continue;
 		}
-		rcu_read_unlock();
+		if (ti.link_id2 == ATH12K_INVALID_LINK_ID) {
+			ti.link_id2 = hw_link_id;
+			break;
+		}
 	}
+	rcu_read_unlock();
+
 	ti.mlo = peer->is_mlo;
 	ti.pn_dma_addr = sw_mpduq_ptr->pn_addr;
 	ti.header_len = ath12k_wifi8_dp_tx_get_header_length(dp_hw_grp, peer,
