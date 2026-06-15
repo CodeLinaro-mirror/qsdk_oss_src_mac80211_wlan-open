@@ -3990,6 +3990,14 @@ struct wmi_peer_uhr_omp_cmd {
 	__le32 pdev_id;
 } __packed;
 
+/* Per-link NPCA info passed to ath12k_wmi_send_peer_uhr_omp_cmd() */
+struct ath12k_wmi_uhr_omp_link_params {
+	u8 hw_link_id;
+	bool npca_enable;
+	u8 npca_switch_delay;
+	u8 npca_switch_back_delay;
+};
+
 #define MGMT_TX_DL_FRM_LEN		     64
 
 struct ath12k_wmi_channel_arg {
@@ -10742,9 +10750,9 @@ int ath12k_wmi_send_low_power_20mhz(struct ath12k *ar, bool config);
 int ath12k_wmi_send_energy_mgmt_oem_data(struct ath12k *ar, u32 content_type,
 					 u32 num_bytes_valid, u8 *data);
 int ath12k_wmi_send_peer_uhr_omp_cmd(struct ath12k *ar, u32 sw_peer_id,
-				     u32 pdev_id, u8 hw_link_id,
-				     bool npca_enable, u8 npca_switch_delay,
-				     u8 npca_switch_back_delay);
+				     u32 pdev_id,
+				     const struct ath12k_wmi_uhr_omp_link_params *links,
+				     u8 num_links);
 int ath12k_wmi_send_pdev_get_nfcal_power_cmd(struct ath12k *ar);
 int ath12k_wmi_multi_vdev_set_param(struct ath12k *ar,
 				    const struct ath12k_mbssid_info *mbssid_info,
