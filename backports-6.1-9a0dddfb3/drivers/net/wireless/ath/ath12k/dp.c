@@ -4895,54 +4895,54 @@ skip_delay:
 }
 
 void ath12k_dp_get_sojourn_stats(struct ath12k_dp_peer *peer,
-				 struct ath12k_dp_peer_stats *peer_stats)
+				 struct ath12k_dp_mld_peer_stats *stats)
 {
 	struct ath12k_dp_mld_peer_stats *mld_stats;
 	struct ath12k_dp_peer_sojourn_stats *sojourn;
 	struct ath12k_dp_peer_tid_agg_sojourn_stats *tid_sojourn;
 
-	if (!peer || !peer_stats)
+	if (!peer || !stats)
 		return;
 
 	mld_stats = &peer->mld_stats;
 
 	sojourn = mld_stats->sojourn_stats;
-	tid_sojourn = peer_stats->sojourn;
+	tid_sojourn = &stats->agg_mld_stats->sojourn;
 
 	ath12k_dp_accumulate_sojourn_stats(sojourn, tid_sojourn);
 }
 
 void ath12k_dp_get_jitter_stats(struct ath12k_dp_peer *peer,
-				struct ath12k_dp_peer_stats *peer_stats)
+				struct ath12k_dp_mld_peer_stats *stats)
 {
 	struct ath12k_dp_mld_peer_stats *mld_stats;
 	struct ath12k_dp_peer_jitter_stats *jitter;
 	struct ath12k_dp_peer_tid_agg_jitter_stats *tid_jitter;
 
-	if (!peer || !peer_stats)
+	if (!peer || !stats)
 		return;
 
 	mld_stats = &peer->mld_stats;
 
 	jitter = mld_stats->jitter_stats;
-	tid_jitter = peer_stats->jitter;
+	tid_jitter = &stats->agg_mld_stats->jitter;
 
 	ath12k_dp_accumulate_jitter_stats(jitter, tid_jitter);
 }
 
 void ath12k_dp_get_delay_stats(struct ath12k_dp_peer *peer,
-			       struct ath12k_dp_peer_stats *peer_stats)
+			       struct ath12k_dp_mld_peer_stats *stats)
 {
 	struct ath12k_dp_mld_peer_stats *mld_stats;
 	struct ath12k_dp_peer_delay_stats *per_ring_stats;
 	struct ath12k_dp_peer_tid_agg_delay_stats *all_rings_stats;
 
-	if (!peer || !peer_stats)
+	if (!peer || !stats)
 		return;
 
 	mld_stats = &peer->mld_stats;
 	per_ring_stats = mld_stats->delay_stats;
-	all_rings_stats = peer_stats->delay;
+	all_rings_stats = &stats->agg_mld_stats->delay;
 
 	ath12k_dp_accumulate_stats_per_tid(per_ring_stats, all_rings_stats);
 }
@@ -4978,9 +4978,9 @@ ath12k_dp_update_legacy_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 
 	if (ath12k_dp_stats_enabled(dp_pdev) &&
 	    ath12k_dp_latency_stats_enabled(dp_pdev)) {
-		ath12k_dp_get_delay_stats(peer, peer_stats);
-		ath12k_dp_get_jitter_stats(peer, peer_stats);
-		ath12k_dp_get_sojourn_stats(peer, peer_stats);
+		ath12k_dp_get_delay_stats(peer, &telemetry_peer->mld_stats);
+		ath12k_dp_get_jitter_stats(peer, &telemetry_peer->mld_stats);
+		ath12k_dp_get_sojourn_stats(peer, &telemetry_peer->mld_stats);
 	}
 }
 
@@ -5095,9 +5095,9 @@ ath12k_dp_get_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 
 			if (ath12k_dp_stats_enabled(dp_pdev) &&
 			    ath12k_dp_latency_stats_enabled(dp_pdev)) {
-				ath12k_dp_get_delay_stats(dp_peer, peer_stats);
-				ath12k_dp_get_jitter_stats(dp_peer, peer_stats);
-				ath12k_dp_get_sojourn_stats(dp_peer, peer_stats);
+				ath12k_dp_get_delay_stats(dp_peer, mld_stats);
+				ath12k_dp_get_jitter_stats(dp_peer, mld_stats);
+				ath12k_dp_get_sojourn_stats(dp_peer, mld_stats);
 			}
 		}
 	}
