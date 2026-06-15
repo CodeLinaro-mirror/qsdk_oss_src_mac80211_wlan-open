@@ -1834,8 +1834,9 @@ ath12k_reg_coalesce_afc_freq_info(struct ath12k *ar,
 
 	j = 0;
 	for (i = 0; i < num_afc_rules; i++) {
+		/* Ranges are sorted at WMI layer; no subsequent entry can be in range. */
 		if (afc_freq_info[i].low_freq > reg_cap->high_5ghz_chan)
-			continue;
+			break;
 
 		if (afc_freq_info[i].high_freq < reg_cap->low_5ghz_chan)
 			continue;
@@ -1859,6 +1860,10 @@ ath12k_reg_coalesce_afc_freq_info(struct ath12k *ar,
 		} else {
 			coalesced_ranges[j - 1].high_freq =
 			    min(afc_freq_info[i].high_freq, reg_cap->high_5ghz_chan);
+			/* Retain the stricter power limit when merging ranges. */
+			coalesced_ranges[j - 1].max_psd =
+			    min_t(s16, coalesced_ranges[j - 1].max_psd,
+				  afc_freq_info[i].max_psd);
 		}
 	}
 

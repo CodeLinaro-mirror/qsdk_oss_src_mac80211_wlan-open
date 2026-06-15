@@ -8011,8 +8011,9 @@ get_psd_limit(u16 freq, u8 num_freq_obj, struct ath12k_afc_freq_obj *afc_freq_in
 			continue;
 		}
 
-		/* Assuming AFC payload is sorted in increasing order of
-		 * frequencies, stop and return here.
+		/* Firmware AFC payload is sorted at WMI ingest; once a
+		 * non-matching range appears after a matching one, no
+		 * further matches are possible.
 		 */
 		if (chan_freq_found)
 			return min_psd;
