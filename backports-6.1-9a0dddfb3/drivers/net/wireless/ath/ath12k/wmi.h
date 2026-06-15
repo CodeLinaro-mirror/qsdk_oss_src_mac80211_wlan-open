@@ -9220,6 +9220,11 @@ struct wmi_twt_disable_event {
 
 #define WMI_ADFS_MODE_QUICK_OCAC		0 /* Agile preCAC */
 #define WMI_ADFS_MODE_QUICK_RCAC		2 /* Agile Rolling CAC */
+
+/* Chainmask capability bits reported in WMI_SERVICE_READY_EXT_EVENTID. */
+#define WMI_SUPPORT_AGILE_SPECTRAL		BIT(5) /* 20/40/80 MHz */
+#define WMI_SUPPORT_AGILE_SPECTRAL_160		BIT(6) /* 160 MHz */
+#define WMI_SUPPORT_AGILE_SPECTRAL_320		BIT(10) /* 320 MHz */
 #define WMI_SUPPORT_CHAIN_MASK_ADFS		BIT(31)
 
 #define MIN_PRECAC_TIMEOUT			(6 * 60 * 1000) /* 6 minutes */
