@@ -538,6 +538,7 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata, bool going_do
 	if (sdata->vif.type == NL80211_IFTYPE_STATION) {
 		sdata->deflink.u.mgd.csa.waiting_bcn = false;
 		sdata->deflink.u.mgd.csa.bw_reconfig = false;
+		sdata->deflink.u.mgd.csa.nol_hist_cac_pending = false;
 	}
 	ieee80211_vif_unblock_queues_csa(sdata);
 

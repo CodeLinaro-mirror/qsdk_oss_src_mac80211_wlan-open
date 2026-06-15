@@ -1422,6 +1422,19 @@ bool cfg80211_chandef_dfs_nol_clear(struct wiphy *wiphy,
 				    const struct cfg80211_chan_def *chandef);
 
 /**
+ * cfg80211_chandef_dfs_nol_history - check if any non-punctured sub-channel
+ *                                    has NOL history and is not yet available
+ * @wiphy: the wiphy to validate against
+ * @chandef: the channel definition to check
+ *
+ * Returns true if at least one sub-channel has IEEE80211_CHAN_NOL_HISTORY set
+ * and has not yet reached NL80211_DFS_AVAILABLE (CAC required before TX).
+ * Returns false if all sub-channels are clean.
+ */
+bool cfg80211_chandef_dfs_nol_history(struct wiphy *wiphy,
+				      const struct cfg80211_chan_def *chandef);
+
+/**
  * cfg80211_chandef_dfs_cac_time - get maximum dfs cac time traversing
  * through the entire channel width
  * @wiphy: the wiphy to validate against
