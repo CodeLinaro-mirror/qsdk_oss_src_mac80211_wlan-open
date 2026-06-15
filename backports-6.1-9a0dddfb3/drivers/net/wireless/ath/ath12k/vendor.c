@@ -16609,6 +16609,162 @@ ath12k_spectral_resolve_bw_idx(struct ath12k *ar, struct nlattr **tb)
 	return -1;
 }
 
+static int
+ath12k_vendor_spectral_validate_agile_cap(struct wiphy *wiphy,
+					  struct ath12k *ar)
+{
+	if (!ath12k_spectral_is_agile_capable(ar)) {
+		ath12k_warn(ar->ab, "spectral scan: agile mode not supported\n");
+		return ath12k_spectral_scan_start_reply_error(wiphy,
+			QCA_WLAN_VENDOR_SPECTRAL_SCAN_ERR_MODE_UNSUPPORTED);
+	}
+	return 0;
+}
+
+static int
+ath12k_vendor_spectral_validate_agile_freq(struct wiphy *wiphy,
+					   struct ath12k *ar,
+					   struct nlattr **tb,
+					   bool has_config)
+{
+	if (has_config && tb[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FREQUENCY]) {
+		u32 frequency;
+
+		frequency = nla_get_u32(tb[
+			QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FREQUENCY]);
+		if (!frequency) {
+			ath12k_warn(ar->ab,
+				    "spectral scan: agile frequency is zero\n");
+			return ath12k_spectral_scan_start_reply_error(wiphy,
+				QCA_WLAN_VENDOR_SPECTRAL_SCAN_ERR_PARAM_NOT_INITIALIZED);
+		}
+	} else if (!has_config && !ar->spectral.params.frequency) {
+		/* SCAN-only request: frequency must have been set by a prior
+		 * CONFIG command. Reject early rather than letting firmware
+		 * run an agile scan at frequency 0.
+		 */
+		ath12k_warn(ar->ab,
+			    "spectral scan: agile frequency not initialized\n");
+		return ath12k_spectral_scan_start_reply_error(wiphy,
+			QCA_WLAN_VENDOR_SPECTRAL_SCAN_ERR_PARAM_NOT_INITIALIZED);
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_FREQUENCY_2]) {
+		ath12k_warn(ar->ab,
+			    "spectral scan: agile frequency2 not supported yet\n");
+		return ath12k_spectral_scan_start_reply_error(wiphy,
+			QCA_WLAN_VENDOR_SPECTRAL_SCAN_ERR_PARAM_UNSUPPORTED);
+	}
+
+	if (has_config) {
+		u32 scan_count = ar->spectral.params.scan_count;
+
+		if (tb[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_SCAN_COUNT])
+			scan_count = nla_get_u32(tb[
+				QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_SCAN_COUNT]);
+
+		if (tb[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_SCAN_COUNT] &&
+		    !scan_count) {
+			ath12k_warn(ar->ab,
+				    "spectral scan: agile finite scan_count required\n");
+			return ath12k_spectral_scan_start_reply_error(wiphy,
+				QCA_WLAN_VENDOR_SPECTRAL_SCAN_ERR_PARAM_INVALID_VALUE);
+		}
+	}
+
+	return 0;
+}
+
+static int
+ath12k_vendor_spectral_validate_agile_width(struct wiphy *wiphy,
+					    struct ath12k *ar,
+					    struct nlattr **tb,
+					    bool has_scan)
+{
+	u8 width;
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_BANDWIDTH]) {
+		width = nla_get_u8(tb[
+			QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_BANDWIDTH]);
+	} else if (ar->spectral.params.bandwidth) {
+		/* bandwidth is zero-initialized and 0 also maps to
+		 * NL80211_CHAN_WIDTH_20_NOHT, so cached bandwidth 0 is treated as
+		 * unset until a later stage adds explicit config-state tracking.
+		 */
+		width = ar->spectral.params.bandwidth;
+	} else if (has_scan) {
+		/* SCAN is being triggered but no bandwidth is set in the request
+		 * or cached from a prior CONFIG. Reject with a clear error rather
+		 * than letting firmware run an agile scan at an undefined width.
+		 */
+		ath12k_warn(ar->ab,
+			    "spectral scan: agile bandwidth not initialized\n");
+		return ath12k_spectral_scan_start_reply_error(wiphy,
+			QCA_WLAN_VENDOR_SPECTRAL_SCAN_ERR_PARAM_NOT_INITIALIZED);
+	} else {
+		/* CONFIG-only request with no bandwidth — accept it. The user
+		 * is setting params incrementally; bandwidth will be validated
+		 * when a scan is actually triggered.
+		 */
+		return 0;
+	}
+
+	if (width > NL80211_CHAN_WIDTH_320) {
+		ath12k_warn(ar->ab,
+			    "spectral scan: agile bandwidth %u out of range [0, %u]\n",
+			    width, NL80211_CHAN_WIDTH_320);
+		return ath12k_spectral_scan_start_reply_error(wiphy,
+			QCA_WLAN_VENDOR_SPECTRAL_SCAN_ERR_PARAM_INVALID_VALUE);
+	}
+
+	if (ath12k_spectral_nl80211_bw_to_idx(width) < 0) {
+		ath12k_warn(ar->ab,
+			    "spectral scan: agile bandwidth %u invalid\n", width);
+		return ath12k_spectral_scan_start_reply_error(wiphy,
+			QCA_WLAN_VENDOR_SPECTRAL_SCAN_ERR_PARAM_INVALID_VALUE);
+	}
+
+	if (width == NL80211_CHAN_WIDTH_80P80) {
+		ath12k_warn(ar->ab,
+			    "spectral scan: agile 80+80 MHz not supported yet\n");
+		return ath12k_spectral_scan_start_reply_error(wiphy,
+			QCA_WLAN_VENDOR_SPECTRAL_SCAN_ERR_PARAM_UNSUPPORTED);
+	}
+
+	if (!ath12k_spectral_is_agile_bw_capable(ar, width)) {
+		ath12k_warn(ar->ab,
+			    "spectral scan: agile bandwidth %u not supported\n", width);
+		return ath12k_spectral_scan_start_reply_error(wiphy,
+			QCA_WLAN_VENDOR_SPECTRAL_SCAN_ERR_MODE_UNSUPPORTED);
+	}
+
+	return 0;
+}
+
+static int
+ath12k_vendor_spectral_validate_agile(struct wiphy *wiphy,
+				      struct ath12k *ar,
+				      struct nlattr **tb,
+				      enum qca_wlan_vendor_attr_spectral_scan_request_type
+				      req_type)
+{
+	bool has_config = req_type !=
+		QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_REQUEST_TYPE_SCAN;
+	bool has_scan = req_type !=
+		QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_REQUEST_TYPE_CONFIG;
+	int ret;
+
+	ret = ath12k_vendor_spectral_validate_agile_cap(wiphy, ar);
+	if (ret)
+		return ret;
+
+	ret = ath12k_vendor_spectral_validate_agile_freq(wiphy, ar, tb, has_config);
+	if (ret)
+		return ret;
+
+	return ath12k_vendor_spectral_validate_agile_width(wiphy, ar, tb, has_scan);
+}
+
 static int ath12k_vendor_spectral_scan_start(struct wiphy *wiphy,
 					     struct wireless_dev *wdev,
 					     const void *data, int data_len)
@@ -16636,12 +16792,22 @@ static int ath12k_vendor_spectral_scan_start(struct wiphy *wiphy,
 	if (!ar)
 		return -EINVAL;
 
+	if (req_type > QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_REQUEST_TYPE_CONFIG)
+		return ath12k_spectral_scan_start_reply_error(wiphy,
+				QCA_WLAN_VENDOR_SPECTRAL_SCAN_ERR_PARAM_INVALID_VALUE);
+
 	if (nl_mode > QCA_WLAN_VENDOR_SPECTRAL_SCAN_MODE_AGILE)
 		return ath12k_spectral_scan_start_reply_error(wiphy,
 				QCA_WLAN_VENDOR_SPECTRAL_SCAN_ERR_PARAM_INVALID_VALUE);
 
 	if (nl_mode == QCA_WLAN_VENDOR_SPECTRAL_SCAN_MODE_AGILE) {
-		ath12k_warn(ar->ab, "spectral scan: agile mode not supported\n");
+		ret = ath12k_vendor_spectral_validate_agile(wiphy, ar, tb,
+						    req_type);
+		if (ret)
+			return ret;
+
+		ath12k_warn(ar->ab,
+			    "spectral scan: agile start path not implemented yet\n");
 		return ath12k_spectral_scan_start_reply_error(wiphy,
 				QCA_WLAN_VENDOR_SPECTRAL_SCAN_ERR_MODE_UNSUPPORTED);
 	}
