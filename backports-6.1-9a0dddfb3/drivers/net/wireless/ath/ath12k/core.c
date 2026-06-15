@@ -4326,9 +4326,8 @@ static void ath12k_reset_group_key_slots(struct ath12k_link_vif *arvif,
 	    ahvif->vif->type == NL80211_IFTYPE_AP_VLAN) {
 		vlan_iface = ahvif->vlan_iface;
 		if (vlan_iface && !vlan_iface->is_wds_4addr)
-			memset(vlan_iface->grp_key_slot_map[arvif->link_id],
-			       ATH12K_GROUP_KEY_SLOT_INVALID,
-			       sizeof(vlan_iface->grp_key_slot_map[arvif->link_id]));
+			vlan_iface->grp_key_slot[arvif->link_id] =
+				ATH12K_GROUP_KEY_SLOT_INVALID;
 	}
 }
 

@@ -48,6 +48,7 @@ u32 ath12k_dp_tx_get_bank_config_from_id(struct ath12k_dp *dp, u8 bank_id);
 
 void ath12k_dp_tx_encap_nwifi(struct sk_buff *skb);
 void *ath12k_dp_metadata_align_skb(struct sk_buff *skb, u8 tail_len);
+void *ath12k_dp_metadata_align_skb_head(struct sk_buff *skb, u8 head_len);
 int ath12k_dp_tx_align_payload(struct ath12k_dp *dp, struct sk_buff **pskb);
 void ath12k_dp_tx_release_txbuf(struct ath12k_dp *dp,
 				struct ath12k_tx_desc_info *tx_desc,
@@ -91,8 +92,7 @@ void ath12k_dp_tx_stats_post_enqueue(struct ath12k_dp *dp,
 				     u8 ring_id, u32 len, bool is_mcast,
 				     struct ath12k_tx_desc_info *tx_desc);
 int ath12k_dp_tx_get_mcast_group_slot(struct ath12k_vif *vlan_ahvif,
-				      u8 link_id,
-				      struct ieee80211_tx_info *info);
+				      u8 link_id);
 int ath12k_dp_sg_ext_desc_populate(struct ath12k_dp *dp,
 				   struct ath12k_dp_vif *dp_vif,
 				   struct ath12k_dp_ext_desc *ext_desc,
@@ -378,13 +378,14 @@ struct ath12k_dp_tx_msdu_info {
 	s8 group_slot;
 
 	u8 lookup_override	: 1,
+	   mpsk_diff_encap	: 1,
 	   is_null		: 1,
 	   to_fw		: 1,
 	   ext_kmem		: 1,
 	   tid_override		: 1,
 	   htt_mesh		: 1,
 	   me_convert		: 1,
-	   reserved		: 2;
+	   reserved		: 1;
 
 	/* Extended descriptor info */
 	struct ath12k_dp_ext_desc_msdu_info ext_desc;

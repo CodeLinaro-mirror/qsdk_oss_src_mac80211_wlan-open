@@ -1254,7 +1254,7 @@ static int ath12k_wifi8_mcbc_setup_encryption(struct ath12k_dp_vif *dp_vif,
 		if (vlan_ahvif && vlan_ahvif->vif->type == NL80211_IFTYPE_AP_VLAN)
 			msdu_info->group_slot =
 				ath12k_dp_tx_get_mcast_group_slot(vlan_ahvif,
-								  link_id, info);
+								  link_id);
 		else if (ahvif->vif && ahvif->vif->type == NL80211_IFTYPE_AP)
 			msdu_info->group_slot = 0;
 	}
@@ -1313,6 +1313,7 @@ ath12k_wifi8_dp_encap_mismatch_handler(struct ath12k_dp_vif *dp_vif,
 	if (msdu_info->ext_desc.encap_type >= HAL_TCL_ENCAP_TYPE_802_3)
 		return DP_TX_ERROR;
 
+	msdu_info->mpsk_diff_encap = true;
 	msdu_info->is_null = ieee80211_is_nullfunc(hdr->frame_control);
 	if (unlikely(dp_vif->tx_encap_type == HAL_TCL_ENCAP_TYPE_ETHERNET)) {
 		msdu_info->ext_kmem = true;
@@ -1731,6 +1732,18 @@ static int ath12k_wifi8_dp_tx_hw_enqueue(struct ath12k_dp_link_vif *dp_link_vif,
 #endif
 
 static void
+ath12k_wifi8_dp_tx_set_group_htt_metadata(struct hal_tx_msdu_metadata *htt_desc,
+					  struct ath12k_dp_tx_msdu_info *msdu_info)
+{
+	htt_desc->info0 |=
+		le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_HOST_TX_DESC_POOL) |
+		le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_KEY_FLAGS);
+	htt_desc->info2 |=
+		le32_encode_bits(msdu_info->group_slot,
+				 HAL_TX_MSDU_METADATA_INFO2_KEY_FLAGS);
+}
+
+static void
 ath12k_wifi8_dp_tx_update_gsn_metadata(struct ath12k_dp_tx_msdu_info *msdu_info,
 				       struct ath12k_dp_link_vif *dp_link_vif,
 				       int mcbc_gsn)
@@ -1839,20 +1852,14 @@ ath12k_wifi8_dp_ext_desc_populate(struct ath12k_dp *dp,
 		ext_data_len = ATH12K_TX_MSDU_EXT_SZ + htt_desc_size;
 	}
 
-	if (msdu_info->group_slot > 0) {
+	if (msdu_info->group_slot >= 0 && msdu_info->mpsk_diff_encap) {
 		htt_desc_size = sizeof(struct hal_tx_msdu_metadata);
 		htt_desc_ext = (struct hal_tx_msdu_metadata *)
 				ath12k_dp_ext_desc_get_rsvd0(ext_desc);
 		if (!htt_desc_ext)
 			goto fail_free_ext_desc;
 
-		htt_desc_ext->info0 |=
-			le32_encode_bits(1,
-					 HAL_TX_MSDU_METADATA_INFO0_HOST_TX_DESC_POOL) |
-			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_KEY_FLAGS);
-		htt_desc_ext->info2 |=
-			le32_encode_bits(msdu_info->group_slot,
-					 HAL_TX_MSDU_METADATA_INFO2_KEY_FLAGS);
+		ath12k_wifi8_dp_tx_set_group_htt_metadata(htt_desc_ext, msdu_info);
 
 		if (gsn_valid) {
 			ath12k_wifi8_dp_tx_update_gsn_metadata(msdu_info,
@@ -1929,20 +1936,6 @@ ath12k_wifi8_dp_tx_desc_populate(struct ath12k_dp *dp, struct sk_buff *skb,
 	return ret;
 }
 
-static void *ath12k_dp_metadata_align_skb_head(struct sk_buff *skb, u8 len)
-{
-	void *metadata;
-
-	if (unlikely(skb_cow_head(skb, len)))
-		return NULL;
-
-	skb_push(skb, len);
-	metadata = skb->data;
-	memset(metadata, 0, len);
-
-	return metadata;
-}
-
 static int
 ath12k_wifi8_dp_prepare_group_htt_metadata(struct sk_buff *skb,
 					   struct ath12k_dp_tx_msdu_info *msdu_info,
@@ -1960,12 +1953,7 @@ ath12k_wifi8_dp_prepare_group_htt_metadata(struct sk_buff *skb,
 	if (!htt_desc)
 		return -ENOMEM;
 
-	htt_desc->info0 |=
-		le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_HOST_TX_DESC_POOL) |
-		le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_KEY_FLAGS);
-	htt_desc->info2 |=
-		le32_encode_bits(msdu_info->group_slot,
-				 HAL_TX_MSDU_METADATA_INFO2_KEY_FLAGS);
+	ath12k_wifi8_dp_tx_set_group_htt_metadata(htt_desc, msdu_info);
 	msdu_info->meta_data_flags |= HTT_TCL_META_DATA_VALID_HTT_V3;
 
 	if (gsn_valid)
@@ -2011,7 +1999,7 @@ ath12k_wifi8_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 		goto fail;
 	}
 
-	if (msdu_info->group_slot == 0) {
+	if (msdu_info->group_slot >= 0 && !msdu_info->mpsk_diff_encap) {
 		ret = ath12k_wifi8_dp_prepare_group_htt_metadata(skb, msdu_info,
 								 dp_link_vif,
 								 gsn_valid, gsn);
@@ -2051,6 +2039,11 @@ ath12k_wifi8_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 		drop_reason = DP_TX_ENQ_DROP_TCL_DESC_NA;
 		goto fail;
 	}
+
+	/* mcast maps skb->len (includes HTT header); fix up tx_desc->len so
+	 * the completion-path unmap covers the same region.
+	 */
+	tx_desc->len = skb->len;
 
 	/* Enqueue to hardware */
 	ret = ath12k_wifi8_dp_tx_hw_enqueue(dp_link_vif, dp_pdev, msdu_info,
@@ -2202,6 +2195,7 @@ void ath12k_wifi8_ucast_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 	msdu_info.desc_id = tx_desc->desc_id;
 	msdu_info.data_len = len;
 	msdu_info.group_slot = -1;
+	msdu_info.mpsk_diff_encap = 0;
 	tx_desc->hw_link_id = dp_pdev->hw_link_id;
 
 	ret = ath12k_wifi8_dp_tx_desc_populate(central_dp, skb, dp_vif, dp_link_vif,
@@ -2370,6 +2364,7 @@ void ath12k_wifi8_mcbc_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 
 		/* Setup encryption.*/
 		msdu_info.group_slot = -1;
+		msdu_info.mpsk_diff_encap = 0;
 		ret = ath12k_wifi8_mcbc_setup_encryption(dp_vif, dp_pdev,
 							 link_id, skb_new,
 							 is_sta, is_eth, &msdu_info,
@@ -2411,9 +2406,9 @@ void ath12k_wifi8_mcbc_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 
 		msdu_info.data_len = len;
 
-		err = ath12k_wifi8_dp_tx_mcast_send(dp_pdev, ahvif, dp_link_vif, ring_id,
-						    &msdu_info, gsn_valid, gsn,
-						    skb_new, arsta, skb_ctrl,
+		err = ath12k_wifi8_dp_tx_mcast_send(dp_pdev, ahvif, dp_link_vif,
+						    ring_id, &msdu_info, gsn_valid,
+						    gsn, skb_new, arsta, skb_ctrl,
 						    htt_mesh);
 
 		if (unlikely(err != DP_TX_ENQ_SUCCESS)) {

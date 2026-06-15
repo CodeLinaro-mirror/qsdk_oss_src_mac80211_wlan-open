@@ -11088,27 +11088,18 @@ static int ath12k_clear_peer_keys(struct ath12k_link_vif *arvif, void *dp_peer,
 
 static int ath12k_group_slot_alloc(struct ath12k *ar,
 				   struct ath12k_link_vif *arvif,
-				   struct ieee80211_key_conf *key,
 				   struct ath12k_vif *vlan_ahvif)
 {
 	int link_id = arvif->link_id;
 	unsigned long bit;
-	u8 *map_entry, *vmap;
 	u8 slot;
-	bool is_vlan = false;
+	struct ath12k_vlan_iface *vlan_iface = vlan_ahvif ? vlan_ahvif->vlan_iface : NULL;
 
-	if (vlan_ahvif->vlan_iface) {
-		/* Retrieve the group key slot map specific to this link */
-		vmap = vlan_ahvif->vlan_iface->grp_key_slot_map[link_id];
-		/* Point to the entry corresponding to the key index */
-		map_entry = &vmap[key->keyidx];
-		is_vlan = true;
-	}
-
-	if (!is_vlan)
+	if (!vlan_iface || vlan_iface->is_wds_4addr ||
+	    link_id >= ATH12K_NUM_MAX_LINKS)
 		return -ENOSPC;
 
-	slot = *map_entry;
+	slot = vlan_iface->grp_key_slot[link_id];
 	if (slot < ATH12K_GROUP_KEYS_NUM_MAX && slot != 0 &&
 	    slot != ATH12K_GROUP_KEY_SLOT_INVALID)
 		return slot;
@@ -11124,28 +11115,25 @@ static int ath12k_group_slot_alloc(struct ath12k *ar,
 
 	slot = bit;
 	clear_bit(slot, arvif->free_groupidx_map);
-	/* Update the VLAN map entry to new slot */
-	*map_entry = slot;
+	vlan_iface->grp_key_slot[link_id] = slot;
 	return slot;
 }
 
 static void ath12k_group_slot_free(struct ath12k_link_vif *arvif,
-				   struct ieee80211_key_conf *key,
-				    struct ath12k_vif *vlan_ahvif)
+				   struct ath12k_vif *vlan_ahvif)
 {
 	int link_id = arvif->link_id;
-	u8 *map_entry, *vmap;
+	struct ath12k_vlan_iface *vlan_iface = vlan_ahvif ? vlan_ahvif->vlan_iface : NULL;
 	u8 slot;
 
-	if (vlan_ahvif && vlan_ahvif->vif->type == NL80211_IFTYPE_AP_VLAN &&
-	    vlan_ahvif->vlan_iface) {
-		vmap = vlan_ahvif->vlan_iface->grp_key_slot_map[link_id];
-		map_entry = &vmap[key->keyidx];
-		slot = *map_entry;
-		if (slot < ATH12K_GROUP_KEYS_NUM_MAX && slot != 0) {
-			set_bit(slot, arvif->free_groupidx_map);
-			*map_entry = ATH12K_GROUP_KEY_SLOT_INVALID;
-		}
+	if (!vlan_iface || vlan_iface->is_wds_4addr ||
+	    link_id >= ATH12K_NUM_MAX_LINKS)
+		return;
+
+	slot = vlan_iface->grp_key_slot[link_id];
+	if (slot < ATH12K_GROUP_KEYS_NUM_MAX && slot != 0) {
+		set_bit(slot, arvif->free_groupidx_map);
+		vlan_iface->grp_key_slot[link_id] = ATH12K_GROUP_KEY_SLOT_INVALID;
 	}
 }
 
@@ -11206,14 +11194,14 @@ int ath12k_mac_set_key(struct ath12k *ar, enum set_key_cmd cmd,
 	    (vlan_ahvif && vlan_ahvif->vif->type == NL80211_IFTYPE_AP_VLAN)) {
 		switch (cmd) {
 		case SET_KEY:
-			idx = ath12k_group_slot_alloc(ar, arvif, key, vlan_ahvif);
+			idx = ath12k_group_slot_alloc(ar, arvif, vlan_ahvif);
 			/* Fallback to SW encryption */
 			if (idx < 0)
 				return 1;
 			key->hw_key_idx = idx;
 			break;
 		case DISABLE_KEY:
-			ath12k_group_slot_free(arvif, key, vlan_ahvif);
+			ath12k_group_slot_free(arvif, vlan_ahvif);
 			break;
 		default:
 			break;
@@ -20182,9 +20170,9 @@ ppe_vp_config:
 			ath12k_ppe_ds_attach_vlan_vif_link(ahvif->vlan_iface,
 							   ahvif->dp_vif.ppe_vp_num);
 #endif
-			memset(ahvif->vlan_iface->grp_key_slot_map,
+			memset(ahvif->vlan_iface->grp_key_slot,
 			       ATH12K_GROUP_KEY_SLOT_INVALID,
-			       sizeof(ahvif->vlan_iface->grp_key_slot_map));
+			       sizeof(ahvif->vlan_iface->grp_key_slot));
 			goto exit;
 		}
 	}
@@ -20198,7 +20186,6 @@ ppe_vp_config:
 			      IEEE80211_VIF_SUPPORTS_CQM_RSSI);
 	if (ath12k_frame_mode == ATH12K_HW_TXRX_ETHERNET) {
 		vif->offload_flags |= IEEE80211_OFFLOAD_ENCAP_4ADDR;
-
 		if (vif->type != NL80211_IFTYPE_AP_VLAN)
 			vif->offload_flags |= IEEE80211_OFFLOAD_ENCAP_MCAST;
 	}
@@ -20484,6 +20471,7 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 			ath12k_ppeds_detach_link_apvlan_vif(arvif, ahvif->vlan_iface, link_id);
 #endif
+			ath12k_group_slot_free(arvif, ahvif);
 			continue;
 		}
 		ar = arvif->ar;

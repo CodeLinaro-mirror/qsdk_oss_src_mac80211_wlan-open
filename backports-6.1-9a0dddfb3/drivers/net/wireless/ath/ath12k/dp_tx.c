@@ -45,33 +45,19 @@ void ath12k_tid_tx_drop_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 rea
 EXPORT_SYMBOL(ath12k_tid_tx_drop_stats);
 
 int ath12k_dp_tx_get_mcast_group_slot(struct ath12k_vif *vlan_ahvif,
-				      u8 link_id,
-				      struct ieee80211_tx_info *info)
+				      u8 link_id)
 {
-	struct ath12k_vlan_iface *vif_vlan;
-	struct ieee80211_key_conf *hw_key;
-	u8 keyidx;
 	int slot;
 
 	if (!vlan_ahvif || !vlan_ahvif->vlan_iface ||
-	    vlan_ahvif->vlan_iface->is_wds_4addr || !info)
+	    vlan_ahvif->vlan_iface->is_wds_4addr)
 		return -1;
 
 	if (link_id >= ATH12K_NUM_MAX_LINKS)
 		return -1;
 
-	hw_key = info->control.hw_key;
-	if (!hw_key || (hw_key->flags & IEEE80211_KEY_FLAG_PAIRWISE))
-		return -1;
-
-	keyidx = hw_key->keyidx;
-	if (keyidx > WMI_MAX_KEY_INDEX)
-		return -1;
-
-	vif_vlan = vlan_ahvif->vlan_iface;
-	slot = vif_vlan->grp_key_slot_map[link_id][keyidx];
-	if (slot == ATH12K_GROUP_KEY_SLOT_INVALID ||
-	    slot <= 0 || slot >= ATH12K_GROUP_KEYS_NUM_MAX)
+	slot = vlan_ahvif->vlan_iface->grp_key_slot[link_id];
+	if (slot <= 0 || slot >= ATH12K_GROUP_KEYS_NUM_MAX)
 		return -1;
 
 	return slot;
@@ -476,6 +462,21 @@ void *ath12k_dp_metadata_align_skb(struct sk_buff *skb, u8 tail_len)
 	return metadata;
 }
 EXPORT_SYMBOL(ath12k_dp_metadata_align_skb);
+
+void *ath12k_dp_metadata_align_skb_head(struct sk_buff *skb, u8 head_len)
+{
+	void *metadata;
+
+	if (unlikely(skb_cow_head(skb, head_len)))
+		return NULL;
+
+	skb_push(skb, head_len);
+	metadata = skb->data;
+	memset(metadata, 0, head_len);
+
+	return metadata;
+}
+EXPORT_SYMBOL(ath12k_dp_metadata_align_skb_head);
 
 static void ath12k_dp_tx_move_payload(struct sk_buff *skb,
 				      unsigned long delta,

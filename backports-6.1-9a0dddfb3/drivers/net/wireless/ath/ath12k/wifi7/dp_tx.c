@@ -974,6 +974,7 @@ ath12k_wifi7_dp_encap_mismatch_handler(struct ath12k_dp_vif *dp_vif,
 	if (msdu_info->ext_desc.encap_type >= HAL_TCL_ENCAP_TYPE_802_3)
 		return DP_TX_ERROR;
 
+	msdu_info->mpsk_diff_encap = true;
 	msdu_info->is_null = ieee80211_is_nullfunc(hdr->frame_control);
 	if (unlikely(dp_vif->tx_encap_type == ATH12K_HW_TXRX_ETHERNET)) {
 		msdu_info->ext_kmem = true;
@@ -1052,7 +1053,8 @@ void ath12k_wifi7_dp_tx_hal_tcl_desc_update(struct hal_tcl_data_cmd *hal_tcl_des
 
 	hal_tcl_desc->info2 = cpu_to_le32(msdu_info->flags0) |
 		le32_encode_bits(msdu_info->data_len, HAL_TCL_DATA_CMD_INFO2_DATA_LEN) |
-		le32_encode_bits(0, HAL_TCL_DATA_CMD_INFO2_PKT_OFFSET);
+		le32_encode_bits(msdu_info->pkt_offset,
+				 HAL_TCL_DATA_CMD_INFO2_PKT_OFFSET);
 
 	hal_tcl_desc->info3 = cpu_to_le32(msdu_info->flags1) |
 		le32_encode_bits(msdu_info->lmac_id, HAL_TCL_DATA_CMD_INFO3_PMAC_ID) |
@@ -1486,6 +1488,48 @@ void ath12k_wifi7_dp_tx_update_gsn_metadata(struct ath12k_dp_tx_msdu_info *msdu_
 
 #define HTT_META_DATA_ALIGNMENT 0x8
 
+static void
+ath12k_wifi7_dp_tx_set_group_htt_metadata(struct hal_tx_msdu_metadata *htt_desc,
+					  struct ath12k_dp_tx_msdu_info *msdu_info)
+{
+	htt_desc->info0 |=
+		le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_HOST_TX_DESC_POOL) |
+		le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_KEY_FLAGS);
+	htt_desc->info2 |=
+		le32_encode_bits(msdu_info->group_slot,
+				 HAL_TX_MSDU_METADATA_INFO2_KEY_FLAGS);
+}
+
+static int
+ath12k_wifi7_dp_prepare_group_htt_metadata(struct sk_buff *skb,
+					   struct ath12k_dp_tx_msdu_info *msdu_info,
+					   struct ath12k_dp_link_vif *dp_link_vif,
+					   bool gsn_valid, int gsn)
+{
+	struct hal_tx_msdu_metadata *htt_desc;
+	u8 align_pad, htt_desc_size, htt_hdr_size;
+
+	align_pad = (unsigned long)skb->data & (HTT_META_DATA_ALIGNMENT - 1);
+	htt_desc_size = ALIGN(sizeof(*htt_desc), HTT_META_DATA_ALIGNMENT);
+	htt_hdr_size = align_pad + htt_desc_size;
+
+	htt_desc = ath12k_dp_metadata_align_skb_head(skb, htt_hdr_size);
+	if (!htt_desc)
+		return -ENOMEM;
+
+	msdu_info->meta_data_flags |= HTT_TCL_META_DATA_VALID_HTT;
+	ath12k_wifi7_dp_tx_set_group_htt_metadata(htt_desc, msdu_info);
+
+	if (gsn_valid)
+		ath12k_wifi7_dp_tx_update_gsn_metadata(msdu_info, dp_link_vif, gsn);
+
+	msdu_info->pkt_offset = htt_hdr_size;
+	msdu_info->data_len = skb->len - htt_hdr_size;
+	msdu_info->to_fw = true;
+
+	return 0;
+}
+
 /**
  * ath12k_wifi7_dp_ext_desc_populate() - Allocate and populate extended TX descriptor
  * @dp: DP structure for slab cache access and DMA mapping
@@ -1594,20 +1638,14 @@ ath12k_wifi7_dp_ext_desc_populate(struct ath12k_dp *dp,
 		msdu_info->to_fw = true;
 	}
 
-	if (msdu_info->group_slot > 0) {
+	if (msdu_info->group_slot > 0 && msdu_info->mpsk_diff_encap) {
 		htt_desc_size = sizeof(struct hal_tx_msdu_metadata);
 		htt_desc_ext = (struct hal_tx_msdu_metadata *)
 				ath12k_dp_ext_desc_get_rsvd0(ext_desc);
 		if (!htt_desc_ext)
 			goto fail_free_ext_desc;
 
-		htt_desc_ext->info0 |=
-			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_HOST_TX_DESC_POOL);
-		htt_desc_ext->info0 |=
-			le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_KEY_FLAGS);
-		htt_desc_ext->info2 |=
-			le32_encode_bits(msdu_info->group_slot,
-					 HAL_TX_MSDU_METADATA_INFO2_KEY_FLAGS);
+		ath12k_wifi7_dp_tx_set_group_htt_metadata(htt_desc_ext, msdu_info);
 		msdu_info->meta_data_flags |= HTT_TCL_META_DATA_VALID_HTT;
 
 		if (gsn_valid)
@@ -1845,12 +1883,12 @@ static int ath12k_wifi7_mcbc_setup_encryption(struct ath12k_dp_vif *dp_vif,
 	}
 
 	spin_unlock_bh(&dp_peer->keys_lock);
+	spin_unlock_bh(&dp_pdev->dp_hw->peer_hash_lock);
 
 	if (!is_sta && vlan_vif && vlan_vif->type == NL80211_IFTYPE_AP_VLAN)
 		msdu_info->group_slot =
 			ath12k_dp_tx_get_mcast_group_slot(ath12k_vif_to_ahvif(vlan_vif),
-							  link_id, info);
-	spin_unlock_bh(&dp_pdev->dp_hw->peer_hash_lock);
+							  link_id);
 
 	return 0;
 }
@@ -1999,6 +2037,7 @@ void ath12k_wifi7_mcbc_handler(struct ath12k_dp_vif *dp_vif,
 		len = skb_new->len;
 		/* Setup encryption */
 		msdu_info.group_slot = -1;
+		msdu_info.mpsk_diff_encap = 0;
 		ret = ath12k_wifi7_mcbc_setup_encryption(dp_vif, dp_pdev,
 							 link_id, skb_new,
 							 is_sta, is_eth,
@@ -2182,6 +2221,7 @@ skip_assign_buffer:
 	msdu_info.desc_id = tx_desc->desc_id;
 	msdu_info.data_len = len;
 	msdu_info.group_slot = -1;
+	msdu_info.mpsk_diff_encap = 0;
 
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
 	 tx_desc->mmesh = (ahvif &&
@@ -2253,7 +2293,6 @@ ath12k_wifi7_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
 	struct ath12k_tx_desc_info *tx_desc = NULL;
 	bool dma_map = false;
-	u32 len = msdu_info->data_len;
 	enum ath12k_dp_tx_enq_error drop_reason;
 	u32 qos_nw_delay = msdu_info->qos_nw_delay;
 	int ret;
@@ -2268,8 +2307,22 @@ ath12k_wifi7_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 		goto fail;
 	}
 
+	if (msdu_info->group_slot > 0 && !msdu_info->mpsk_diff_encap) {
+		ret = ath12k_wifi7_dp_prepare_group_htt_metadata(skb, msdu_info,
+								 dp_link_vif,
+								 gsn_valid, gsn);
+		if (ret) {
+			drop_reason = DP_TX_ENQ_DROP_TCL_DESC_NA;
+			goto fail;
+		}
+	}
+
 	ath12k_wifi7_dp_dma_align_handler(dp, skb);
-	dma_map = ath12k_dp_tx_dma_map(dp, skb, len, tx_desc,
+
+	/* For multicast packets, map the full buffer since MCAST always uses the slow
+	 * path. skb->len includes any HTT metadata as well.
+	 */
+	dma_map = ath12k_dp_tx_dma_map(dp, skb, skb->len, tx_desc,
 				       msdu_info, skb_ctrl);
 
 	if (unlikely(!dma_map)) {
@@ -2297,6 +2350,11 @@ ath12k_wifi7_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 		goto fail;
 	}
 
+	/* mcast maps skb->len (includes HTT header); fix up tx_desc->len so
+	 * the completion-path unmap covers the same region.
+	 */
+	tx_desc->len = skb->len;
+
 	/* Enqueue to hardware */
 	ret = ath12k_wifi7_dp_tx_hw_enqueue(dp_link_vif, dp_pdev, msdu_info,
 					    ring_id, arsta, skb, qos_nw_delay,
@@ -2310,7 +2368,7 @@ ath12k_wifi7_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 
 fail:
 	if (dma_map && tx_desc)
-		ath12k_dp_tx_buffer_unmap(dp->dev, tx_desc->paddr, len,
+		ath12k_dp_tx_buffer_unmap(dp->dev, tx_desc->paddr, skb->len,
 					  DMA_TO_DEVICE);
 
 	if (tx_desc && tx_desc->ext_desc) {

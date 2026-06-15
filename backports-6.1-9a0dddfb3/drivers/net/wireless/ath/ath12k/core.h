@@ -958,7 +958,7 @@ struct ath12k_vlan_iface {
 	struct ieee80211_vif *parent_vif;
 	bool attach_link_done;
 	int ppe_vp_profile_idx[ATH12K_NUM_MAX_LINKS];
-	u8 grp_key_slot_map[ATH12K_NUM_MAX_LINKS][WMI_MAX_KEY_INDEX + 1];
+	u8 grp_key_slot[ATH12K_NUM_MAX_LINKS];
 	bool is_wds_4addr;
 };
 
