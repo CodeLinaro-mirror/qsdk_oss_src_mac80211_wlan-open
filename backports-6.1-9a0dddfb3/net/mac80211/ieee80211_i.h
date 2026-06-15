@@ -1119,6 +1119,8 @@ struct ieee80211_link_data_managed {
 		bool ignored_same_chan;
 		bool blocked_tx;
 		bool bw_reconfig;
+		/* DFS CAC is pending for an NOL history channel */
+		bool nol_hist_cac_pending;
 	} csa;
 
 	struct wiphy_work request_smps_work;
