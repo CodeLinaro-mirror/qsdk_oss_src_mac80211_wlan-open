@@ -31418,6 +31418,146 @@ int ath12k_mac_op_ap_power_save(struct ieee80211_hw *hw, struct ieee80211_vif *v
 }
 EXPORT_SYMBOL(ath12k_mac_op_ap_power_save);
 
+static void
+ath12k_mac_fill_npca_arg(struct ath12k_link_vif *arvif,
+			 bool enabled,
+			 const struct ieee80211_uhr_npca_info *npca,
+			 struct ieee80211_chanctx_conf *chanctx_conf,
+			 struct ath12k_wmi_vdev_uhr_cu_arg *arg)
+{
+	arg->npca.vdev_id = arvif->vdev_id;
+
+	if (!enabled)
+		goto out;
+
+	arg->npca.mode_tuple_field = WMI_NPCA_MODE_ENABLE | WMI_NPCA_MODE_UPDATE;
+	/* Derive NPCA primary channel frequency from the primary channel
+	 * offset field in the IE and the current BSS channel definition.
+	 * The offset is in units of 20 MHz subchannels counted from the
+	 * lowest subchannel of the BSS bandwidth.
+	 */
+	arg->npca.mhz =
+		chanctx_conf->def.center_freq1 -
+		cfg80211_chandef_get_width(&chanctx_conf->def) / 2 +
+		10 +
+		le32_get_bits(npca->params,
+			      IEEE80211_UHR_NPCA_PARAMS_PRIMARY_CHAN_OFFS) * 20;
+	arg->npca.band_center_freq1 = chanctx_conf->def.center_freq1;
+
+	arg->npca.npca_cap1 =
+		le32_get_bits(npca->params,
+			      IEEE80211_UHR_NPCA_PARAMS_PRIMARY_CHAN_OFFS) |
+		le32_get_bits(npca->params,
+			      IEEE80211_UHR_NPCA_PARAMS_MIN_DUR_THRESH) << 8 |
+		le32_get_bits(npca->params,
+			      IEEE80211_UHR_NPCA_PARAMS_SWITCH_DELAY) << 12 |
+		le32_get_bits(npca->params,
+			      IEEE80211_UHR_NPCA_PARAMS_SWITCH_BACK_DELAY) << 18 |
+		le32_get_bits(npca->params,
+			      IEEE80211_UHR_NPCA_PARAMS_INIT_QSRC) << 24 |
+		le32_get_bits(npca->params,
+			      IEEE80211_UHR_NPCA_PARAMS_MOPLEN) << 26 |
+		le32_get_bits(npca->params,
+			      IEEE80211_UHR_NPCA_PARAMS_DIS_SUBCH_BMAP_PRES) << 27;
+
+	if (le32_get_bits(npca->params,
+			  IEEE80211_UHR_NPCA_PARAMS_DIS_SUBCH_BMAP_PRES))
+		arg->npca.npca_cap2 = le16_to_cpu(npca->dis_subch_bmap[0]);
+
+out:
+	ath12k_dbg(arvif->ar->ab, ATH12K_DBG_MAC | ATH12K_DBG_CU,
+		   "UHR NPCA vdev %u mode_tuple 0x%x mhz %u bcf1 %u cap1 0x%x cap2 0x%x\n",
+		   arvif->vdev_id,
+		   arg->npca.mode_tuple_field,
+		   arg->npca.mhz,
+		   arg->npca.band_center_freq1,
+		   arg->npca.npca_cap1,
+		   arg->npca.npca_cap2);
+}
+
+/* Parse UHR Parameters Update IE mode tuples and dispatch the UHR CU WMI command. */
+static int
+ath12k_mac_parse_uhr_params_update_element(struct ath12k_vif *ahvif,
+					   unsigned int link_id,
+					   const u8 *elem, size_t elem_len)
+{
+	const struct ieee80211_uhr_mode_tuple *tuple;
+	const struct ieee80211_uhr_param_upd *param_upd;
+	const struct ieee80211_uhr_npca_info *npca;
+	struct ieee80211_chanctx_conf *chanctx_conf;
+	const struct ieee80211_bss_conf *link_conf;
+	struct ieee80211_hw *hw = ahvif->ah->hw;
+	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(ahvif);
+	struct ath12k_wmi_vdev_uhr_cu_arg arg = {};
+	struct ath12k_link_vif *arvif;
+	bool enabled;
+	u8 mode_id;
+	int ret;
+
+	arvif = ath12k_get_arvif_from_link_id(ahvif, link_id);
+	if (!arvif) {
+		wiphy_err(hw->wiphy, "UHR CU: no arvif for link %u\n", link_id);
+		return -ENOLINK;
+	}
+
+	arg.vdev_id = arvif->vdev_id;
+
+	link_conf = wiphy_dereference(hw->wiphy, vif->link_conf[link_id]);
+	chanctx_conf = link_conf ?
+		wiphy_dereference(hw->wiphy, link_conf->chanctx_conf) : NULL;
+
+	param_upd = (const struct ieee80211_uhr_param_upd *)(elem + 3);
+	ieee80211_uhr_for_each_mode_tuple(tuple, param_upd->variable,
+					  elem_len - 3 - sizeof(*param_upd)) {
+		mode_id = tuple->mode_ctrl & IEEE80211_UHR_PARAM_UPD_MODE_ID;
+		enabled = !!(tuple->mode_ctrl & IEEE80211_UHR_PARAM_UPD_MODE_ENABLE);
+
+		switch (mode_id) {
+		case IEEE80211_UHR_MODE_ID_NPCA:
+			if (!chanctx_conf) {
+				ath12k_warn(arvif->ar->ab,
+					    "UHR CU: no chanctx on vdev %u link %u\n",
+					    arvif->vdev_id, link_id);
+				return -EINVAL;
+			}
+			npca = (const struct ieee80211_uhr_npca_info *)tuple->params;
+			ath12k_mac_fill_npca_arg(arvif, enabled, npca,
+						 chanctx_conf, &arg);
+			break;
+		default:
+			break;
+		}
+	}
+
+	ret = ath12k_wmi_vdev_uhr_cu_cmd(arvif->ar, &arg);
+	if (ret)
+		ath12k_warn(arvif->ar->ab,
+			    "failed to send UHR CU cmd for vdev %u link %u: %d\n",
+			    arvif->vdev_id, link_id, ret);
+	return ret;
+}
+
+int ath12k_mac_op_critical_update(struct ieee80211_hw *hw,
+				  struct ieee80211_vif *vif,
+				  unsigned int link_id,
+				  enum nl80211_cu_type cu_type,
+				  const u8 *elem, size_t elem_len)
+{
+	struct ath12k_vif *ahvif;
+
+	lockdep_assert_wiphy(hw->wiphy);
+
+	ahvif = ath12k_vif_to_ahvif(vif);
+
+	if (cu_type == NL80211_CU_TYPE_UHR_PARAMS)
+		return ath12k_mac_parse_uhr_params_update_element(ahvif,
+								  link_id,
+								  elem, elem_len);
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_mac_op_critical_update);
+
 int ath12k_mac_read_cu_mem(struct ath12k_link_vif *arvif, u16 offset, u32 *val)
 {
 	if (!arvif || !arvif->cu_mem || !val)
