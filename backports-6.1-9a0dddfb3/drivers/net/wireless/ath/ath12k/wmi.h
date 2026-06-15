@@ -680,6 +680,8 @@ enum wmi_tlv_cmd_id {
 	WMI_VDEV_GET_TPC_IE_POWER_CMDID = 0x503B,
 	/** WMI cmd used to control DPS Assisting AP role config */
 	WMI_VDEV_ENERGY_MGMT_DPS_ASSISTING_ROLE_CONFIG_CMDID = 0x503D,
+	/** WMI cmd to initiate a UHR Critical Update session on a vdev */
+	WMI_VDEV_UHR_CU_CMDID = 0x5041,
 	WMI_PEER_CREATE_CMDID = WMI_TLV_CMD(WMI_GRP_PEER),
 	WMI_PEER_DELETE_CMDID,
 	WMI_PEER_FLUSH_TIDS_CMDID,
@@ -1089,6 +1091,7 @@ enum wmi_tlv_event_id {
 					WMI_PDEV_GET_HALPHY_CAL_STATUS_EVENTID + 5,
 	WMI_PDEV_SET_RF_PATH_RESP_EVENTID =
 					WMI_PDEV_GET_HALPHY_CAL_STATUS_EVENTID + 8,
+	WMI_PDEV_UHR_CU_EVENTID = 0x4036,
 	WMI_PDEV_SET_CUMAC_CHIP_ID_CONFIRMATION_EVENTID = 0x4038,
 	WMI_VDEV_START_RESP_EVENTID = WMI_TLV_CMD(WMI_GRP_VDEV),
 	WMI_VDEV_STOPPED_EVENTID,
@@ -2571,11 +2574,21 @@ enum wmi_tlv_tag {
 	WMI_TAG_PEER_ASSOC_CIP_INFO = 0x527,
 	WMI_TAG_SMD_PEER_ASSOC_PARAMS = 0x53E,
 	WMI_TAG_MLO_PEER_TID_TO_LINK_MAP_EVENT_FIXED_PARAM = 0x544,
-	WMI_TAG_UHR_AP_NPCA_PARAMS = 0x54a,
+	WMI_TAG_UHR_AP_DPS_PARAMS = 0x549,
+	WMI_TAG_UHR_AP_NPCA_PARAMS = 0x54A,
+	WMI_TAG_UHR_AP_DUO_PARAMS = 0x54B,
+	WMI_TAG_UHR_AP_PEDCA_PARAMS = 0x54C,
+	WMI_TAG_UHR_AP_DBE_PARAMS = 0x54D,
+	WMI_TAG_UHR_AP_PUO_PARAMS = 0x54E,
+	WMI_TAG_UHR_AP_ELR_RECEPTION_PARAMS = 0x54F,
+	WMI_TAG_VDEV_UHR_CU_CMD_FIXED_PARAM = 0x550,
+	WMI_TAG_VDEV_UHR_CU_STATUS = 0x552,
+	WMI_TAG_PDEV_UHR_CU_EVENT_FIXED_PARAM = 0x553,
 	WMI_TAG_SMD_VDEV_START_PARAMS = 0x55A,
 	WMI_TAG_SMD_ROAM_CONFIG_PARAMS = 0x55B,
 	WMI_TAG_SMD_ROAM_CONFIG_EVENT = 0x55C,
 	WMI_TAG_SMD_ROAM_PEER_TID_INFO = 0x55D,
+	WMI_TAG_UHR_AP_MODE_TUP_ENABLE_DISABLE_UPDATE_PARAM = 0x560,
 	WMI_ENERGY_MGMT_OEM_DATA_FIXED_PARAM = 0x56E,
 	WMI_ENERGY_MGMT_OEM_DATA_EVENT_FIXED_PARAM,
 	WMI_TAG_SHARED_CU_MEM_CONFIG = 0x577,
@@ -3802,6 +3815,7 @@ struct wmi_vdev_start_mlo_params {
 } __packed;
 
 #define WMI_NPCA_MODE_ENABLE            BIT(0)
+#define WMI_NPCA_MODE_UPDATE            BIT(1)
 #define WMI_NPCA_CAP1_MIN_THRESHOLD     GENMASK(11, 8)
 #define WMI_NPCA_CAP1_SWITCH_DELAY      GENMASK(17, 12)
 #define WMI_NPCA_CAP1_SWITCH_BACK_DELAY GENMASK(23, 18)
@@ -3871,6 +3885,51 @@ struct wmi_vdev_start_uhr_config {
 #define WMI_UHR_CU_INTERVALS_ADV_NOTIF_MASK	GENMASK(7, 0)
 #define WMI_UHR_CU_INTERVALS_POST_NOTIF_MASK	GENMASK(15, 8)
 #define WMI_UHR_CU_INTERVALS_UPD_TIM_MASK	GENMASK(23, 16)
+
+/**
+ * struct wmi_vdev_uhr_cu_cmd_fixed_param - fixed parameters for
+ *     WMI_VDEV_UHR_CU_CMDID
+ * @tlv_header: TLV tag (WMI_TAG_VDEV_UHR_CU_CMD_FIXED_PARAM) and length
+ * @vdev_id: vdev on which the Critical Update session is initiated
+ */
+struct wmi_vdev_uhr_cu_cmd_fixed_param {
+	__le32 tlv_header;
+	__le32 vdev_id;
+} __packed;
+
+/**
+ * enum wmi_vdev_uhr_cu_state - UHR Critical Update session state
+ * @WMI_VDEV_UHR_CU_IN_PROGRESS:  CU session is in progress
+ * @WMI_VDEV_UHR_CU_ESTABLISHED:  CU session has been established
+ * @WMI_VDEV_UHR_CU_SESSION_END:  CU session has ended
+ */
+enum wmi_vdev_uhr_cu_state {
+	WMI_VDEV_UHR_CU_IN_PROGRESS,
+	WMI_VDEV_UHR_CU_ESTABLISHED,
+	WMI_VDEV_UHR_CU_SESSION_END,
+};
+
+/**
+ * struct wmi_vdev_uhr_cu_status - per-vdev UHR CU status TLV
+ * @vdev_id:    vdev this status applies to
+ * @status:     CU session state; see &enum wmi_vdev_uhr_cu_state
+ */
+struct wmi_vdev_uhr_cu_status {
+	__le32 vdev_id;
+	__le32 status;
+} __packed;
+
+/**
+ * struct wmi_pdev_uhr_cu_event_fixed_param - fixed parameters for
+ *     WMI_PDEV_UHR_CU_EVENTID
+ * @pdev_id:    pdev that generated the event
+ *
+ * Followed by a WMI_TAG_ARRAY_STRUC TLV containing zero or more
+ * &struct wmi_vdev_uhr_cu_status entries.
+ */
+struct wmi_pdev_uhr_cu_event_fixed_param {
+	__le32 pdev_id;
+} __packed;
 
 struct wmi_vdev_delete_cmd {
 	__le32 tlv_header;
@@ -4875,6 +4934,187 @@ enum reg_super_domain_6g {
        APL1_6G = 0x04,
        FCC1_6G_CL = 0x05,
  };
+
+
+/**
+ * struct wmi_uhr_ap_dps_params - Dynamic Power Save (DPS) parameters
+ *     for WMI_VDEV_UHR_CU_CMDID
+ * @tlv_header: TLV tag (WMI_TAG_UHR_AP_DPS_PARAMS) and length
+ * @vdev_id: vdev to which these DPS parameters apply
+ * @mode_tuple_field: Bit0 = mode enable/disable, Bit1 = mode update,
+ *     Bits2-31 reserved
+ */
+struct wmi_uhr_ap_dps_params {
+	__le32 tlv_header;
+	__le32 vdev_id;
+	__le32 mode_tuple_field;
+} __packed;
+
+#define WMI_DPS_MODE_ENABLE	BIT(0)
+#define WMI_DPS_MODE_UPDATE	BIT(1)
+
+/**
+ * struct wmi_uhr_ap_duo_params - Dynamic Unavailability Operation (DUO) parameters
+ *     for WMI_VDEV_UHR_CU_CMDID
+ * @tlv_header: TLV tag (WMI_TAG_UHR_AP_DUO_PARAMS) and length
+ * @vdev_id: vdev to which these DUO parameters apply
+ * @mode_tuple_field: Bit0 = mode enable/disable, Bit1 = mode update,
+ *     Bits2-31 reserved
+ */
+struct wmi_uhr_ap_duo_params {
+	__le32 tlv_header;
+	__le32 vdev_id;
+	__le32 mode_tuple_field;
+} __packed;
+
+#define WMI_DUO_MODE_ENABLE	BIT(0)
+#define WMI_DUO_MODE_UPDATE	BIT(1)
+
+/**
+ * struct wmi_uhr_ap_pedca_params - Prioritized EDCA (P-EDCA) parameters
+ *     for WMI_VDEV_UHR_CU_CMDID
+ * @tlv_header: TLV tag (WMI_TAG_UHR_AP_PEDCA_PARAMS) and length
+ * @vdev_id: vdev to which these PEDCA parameters apply
+ * @mode_tuple_field: Bit0 = mode enable/disable, Bit1 = mode update,
+ *     Bits2-31 reserved
+ */
+struct wmi_uhr_ap_pedca_params {
+	__le32 tlv_header;
+	__le32 vdev_id;
+	__le32 mode_tuple_field;
+} __packed;
+
+#define WMI_PEDCA_MODE_ENABLE	BIT(0)
+#define WMI_PEDCA_MODE_UPDATE	BIT(1)
+
+/**
+ * struct wmi_uhr_ap_dbe_params - Dynamic Bandwidth Expansion (DBE) parameters
+ *     for WMI_VDEV_UHR_CU_CMDID
+ * @tlv_header: TLV tag (WMI_TAG_UHR_AP_DBE_PARAMS) and length
+ * @vdev_id: vdev to which these DBE parameters apply
+ * @mode_tuple_field: Bit0 = mode enable/disable, Bit1 = mode update,
+ *     Bits2-31 reserved
+ */
+struct wmi_uhr_ap_dbe_params {
+	__le32 tlv_header;
+	__le32 vdev_id;
+	__le32 mode_tuple_field;
+} __packed;
+
+#define WMI_DBE_MODE_ENABLE	BIT(0)
+#define WMI_DBE_MODE_UPDATE	BIT(1)
+
+/**
+ * struct wmi_uhr_ap_puo_params - AP Periodic Unavailability Operation (AP PUO) parameters
+ *     for WMI_VDEV_UHR_CU_CMDID
+ * @tlv_header: TLV tag (WMI_TAG_UHR_AP_PUO_PARAMS) and length
+ * @vdev_id: vdev to which these PUO parameters apply
+ * @mode_tuple_field: Bit0 = mode enable/disable, Bit1 = mode update,
+ *     Bits2-31 reserved
+ */
+struct wmi_uhr_ap_puo_params {
+	__le32 tlv_header;
+	__le32 vdev_id;
+	__le32 mode_tuple_field;
+} __packed;
+
+#define WMI_PUO_MODE_ENABLE	BIT(0)
+#define WMI_PUO_MODE_UPDATE	BIT(1)
+
+/**
+ * struct wmi_uhr_ap_elr_reception_params - ELR Reception
+ *     parameters for WMI_VDEV_UHR_CU_CMDID
+ * @tlv_header: TLV tag (WMI_TAG_UHR_AP_ELR_RECEPTION_PARAMS) and length
+ * @vdev_id: vdev to which these ELR parameters apply
+ * @mode_tuple_field: Bit0 = mode enable/disable, Bit1 = mode update,
+ *     Bits2-31 reserved
+ */
+struct wmi_uhr_ap_elr_reception_params {
+	__le32 tlv_header;
+	__le32 vdev_id;
+	__le32 mode_tuple_field;
+} __packed;
+
+#define WMI_ELR_MODE_ENABLE	BIT(0)
+#define WMI_ELR_MODE_UPDATE	BIT(1)
+
+/**
+ * struct wmi_uhr_ap_mode_tuple_params - per-vdev mode enable/disable/update
+ *     bitmap for WMI_VDEV_UHR_CU_CMDID
+ * @tlv_header: TLV tag
+ *     (WMI_TAG_UHR_AP_MODE_TUPLE_ENABLE_DISABLE_UPDATE_PARAMS) and length
+ * @vdev_id_mode_bitmap: Bits 0:7 = vdev_id; Bits 8:9 = DPS state;
+ *     Bits 10:11 = NPCA state; Bits 12:13 = DUO state;
+ *     Bits 14:15 = PEDCA state; Bits 16:17 = DBE state;
+ *     Bits 18:19 = PUO state; Bits 20:21 = ELR state; Bits 22:31 reserved
+ */
+struct wmi_uhr_ap_mode_tuple_params {
+	__le32 tlv_header;
+	__le32 vdev_id_mode_bitmap;
+} __packed;
+
+#define WMI_UHR_MODE_TUP_VDEV_ID		GENMASK(7, 0)
+#define WMI_UHR_MODE_TUP_DPS_STATE		GENMASK(9, 8)
+#define WMI_UHR_MODE_TUP_NPCA_STATE		GENMASK(11, 10)
+#define WMI_UHR_MODE_TUP_DUO_STATE		GENMASK(13, 12)
+#define WMI_UHR_MODE_TUP_PEDCA_STATE		GENMASK(15, 14)
+#define WMI_UHR_MODE_TUP_DBE_STATE		GENMASK(17, 16)
+#define WMI_UHR_MODE_TUP_PUO_STATE		GENMASK(19, 18)
+#define WMI_UHR_MODE_TUP_ELR_STATE		GENMASK(21, 20)
+
+/**
+ * struct ath12k_wmi_uhr_ap_mode_arg - CPU-format mode parameters for a single
+ *     UHR AP mode (DPS, DUO, P-EDCA, DBE, AP PUO, ELR)
+ * @vdev_id: vdev to which these parameters apply
+ * @mode_tuple_field: Bit0 = mode enable/disable, Bit1 = mode update
+ */
+struct ath12k_wmi_uhr_ap_mode_arg {
+	u32 vdev_id;
+	u32 mode_tuple_field;
+};
+
+/**
+ * struct ath12k_wmi_uhr_ap_npca_arg - CPU-format NPCA parameters
+ * @vdev_id: vdev to which these NPCA parameters apply
+ * @mode_tuple_field: Bit0 = mode enable/disable, Bit1 = mode update
+ * @mhz: NPCA primary channel frequency in MHz
+ * @band_center_freq1: BSS centre frequency in MHz
+ * @puncture_20mhz_bitmap: punctured 20 MHz subchannel bitmap
+ * @npca_cap1: NPCA capability word 1
+ * @npca_cap2: NPCA capability word 2
+ */
+struct ath12k_wmi_uhr_ap_npca_arg {
+	u32 vdev_id;
+	u32 mode_tuple_field;
+	u32 mhz;
+	u32 band_center_freq1;
+	u32 puncture_20mhz_bitmap;
+	u32 npca_cap1;
+	u32 npca_cap2;
+};
+
+/**
+ * struct ath12k_wmi_vdev_uhr_cu_arg - arguments for ath12k_wmi_vdev_uhr_cu_cmd()
+ * @vdev_id: vdev on which the CU session is initiated
+ * @dps: DPS parameters; always sent, Bit1 of mode_tuple_field gates firmware action
+ * @npca: NPCA parameters; always sent, Bit1 of mode_tuple_field gates firmware action
+ * @duo: DUO parameters; always sent, Bit1 of mode_tuple_field gates firmware action
+ * @pedca: PEDCA parameters; always sent, Bit1 of mode_tuple_field gates firmware action
+ * @dbe: DBE parameters; always sent, Bit1 of mode_tuple_field gates firmware action
+ * @puo: PUO parameters; always sent, Bit1 of mode_tuple_field gates firmware action
+ * @elr: ELR reception parameters; always sent, Bit1 of mode_tuple_field
+ *       gates firmware action
+ */
+struct ath12k_wmi_vdev_uhr_cu_arg {
+	u32 vdev_id;
+	struct ath12k_wmi_uhr_ap_mode_arg dps;
+	struct ath12k_wmi_uhr_ap_npca_arg npca;
+	struct ath12k_wmi_uhr_ap_mode_arg duo;
+	struct ath12k_wmi_uhr_ap_mode_arg pedca;
+	struct ath12k_wmi_uhr_ap_mode_arg dbe;
+	struct ath12k_wmi_uhr_ap_mode_arg puo;
+	struct ath12k_wmi_uhr_ap_mode_arg elr;
+};
 
 enum wmi_sta_ps_mode {
 	WMI_STA_PS_MODE_DISABLED = 0,
@@ -10948,6 +11188,8 @@ int ath12k_wmi_send_pcie_gen_lane(struct ath12k *ar, u32 enable, u32 config_type
 int ath12k_wmi_send_pcie_low_power(struct ath12k *ar, u32 enable, u32 config_type);
 int ath12k_wmi_send_dcvs_cmd(struct ath12k *ar, u32 config);
 int ath12k_wmi_send_dps_assist_cmd(struct ath12k *ar, u32 vdev_id, u32 config);
+int ath12k_wmi_vdev_uhr_cu_cmd(struct ath12k *ar,
+			       struct ath12k_wmi_vdev_uhr_cu_arg *arg);
 int ath12k_wmi_send_tdma_schedule_request(struct ath12k *ar,
 					  const struct ath12k_tdma_sched_info *sched);
 int ath12k_wmi_send_low_power_20mhz(struct ath12k *ar, bool config);

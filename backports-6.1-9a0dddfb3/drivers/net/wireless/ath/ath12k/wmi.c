@@ -2965,6 +2965,147 @@ int ath12k_wmi_pdev_set_timer_for_mec(struct ath12k *ar, int vdev_id, u32 mec_ti
 	}
 	return ret;
 }
+
+int ath12k_wmi_vdev_uhr_cu_cmd(struct ath12k *ar,
+			       struct ath12k_wmi_vdev_uhr_cu_arg *arg)
+{
+	struct wmi_vdev_uhr_cu_cmd_fixed_param *cmd;
+	struct wmi_uhr_ap_dps_params *dps;
+	struct wmi_uhr_ap_npca_params *npca;
+	struct wmi_uhr_ap_duo_params *duo;
+	struct wmi_uhr_ap_pedca_params *pedca;
+	struct wmi_uhr_ap_dbe_params *dbe;
+	struct wmi_uhr_ap_puo_params *puo;
+	struct wmi_uhr_ap_elr_reception_params *elr;
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct wmi_tlv *tlv;
+	struct sk_buff *skb;
+	void *ptr;
+	int ret, len;
+
+	len = sizeof(*cmd) +
+	      sizeof(*dps) +
+	      sizeof(*npca) +
+	      sizeof(*duo) +
+	      sizeof(*pedca) +
+	      sizeof(*dbe) +
+	      sizeof(*puo) +
+	      sizeof(*elr) +
+	      TLV_HDR_SIZE; /* empty mode_tuple[] array */
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	ptr = skb->data;
+
+	cmd = ptr;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_VDEV_UHR_CU_CMD_FIXED_PARAM,
+						 sizeof(*cmd));
+	cmd->vdev_id = cpu_to_le32(arg->vdev_id);
+	ptr += sizeof(*cmd);
+
+	dps = ptr;
+	dps->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_UHR_AP_DPS_PARAMS,
+						 sizeof(*dps));
+	dps->vdev_id = cpu_to_le32(arg->dps.vdev_id);
+	dps->mode_tuple_field = cpu_to_le32(arg->dps.mode_tuple_field);
+	ptr += sizeof(*dps);
+
+	npca = ptr;
+	npca->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_UHR_AP_NPCA_PARAMS,
+						  sizeof(*npca));
+	npca->vdev_id = cpu_to_le32(arg->npca.vdev_id);
+	npca->mode_tuple_field = cpu_to_le32(arg->npca.mode_tuple_field);
+	npca->npca_chan.tlv_header =
+		ath12k_wmi_tlv_cmd_hdr(WMI_TAG_CHANNEL,
+				       sizeof(npca->npca_chan));
+	npca->npca_chan.mhz = cpu_to_le32(arg->npca.mhz);
+	npca->npca_chan.band_center_freq1 = cpu_to_le32(arg->npca.band_center_freq1);
+	npca->puncture_20mhz_bitmap = cpu_to_le32(arg->npca.puncture_20mhz_bitmap);
+	npca->npca_cap1 = cpu_to_le32(arg->npca.npca_cap1);
+	npca->npca_cap2 = cpu_to_le32(arg->npca.npca_cap2);
+	ptr += sizeof(*npca);
+
+	duo = ptr;
+	duo->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_UHR_AP_DUO_PARAMS,
+						 sizeof(*duo));
+	duo->vdev_id = cpu_to_le32(arg->duo.vdev_id);
+	duo->mode_tuple_field = cpu_to_le32(arg->duo.mode_tuple_field);
+	ptr += sizeof(*duo);
+
+	pedca = ptr;
+	pedca->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_UHR_AP_PEDCA_PARAMS,
+						   sizeof(*pedca));
+	pedca->vdev_id = cpu_to_le32(arg->pedca.vdev_id);
+	pedca->mode_tuple_field = cpu_to_le32(arg->pedca.mode_tuple_field);
+	ptr += sizeof(*pedca);
+
+	dbe = ptr;
+	dbe->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_UHR_AP_DBE_PARAMS,
+						 sizeof(*dbe));
+	dbe->vdev_id = cpu_to_le32(arg->dbe.vdev_id);
+	dbe->mode_tuple_field = cpu_to_le32(arg->dbe.mode_tuple_field);
+	ptr += sizeof(*dbe);
+
+	puo = ptr;
+	puo->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_UHR_AP_PUO_PARAMS,
+						 sizeof(*puo));
+	puo->vdev_id = cpu_to_le32(arg->puo.vdev_id);
+	puo->mode_tuple_field = cpu_to_le32(arg->puo.mode_tuple_field);
+	ptr += sizeof(*puo);
+
+	elr = ptr;
+	elr->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_UHR_AP_ELR_RECEPTION_PARAMS,
+						 sizeof(*elr));
+	elr->vdev_id = cpu_to_le32(arg->elr.vdev_id);
+	elr->mode_tuple_field = cpu_to_le32(arg->elr.mode_tuple_field);
+	ptr += sizeof(*elr);
+
+	/* Empty array TLV for wmi_uhr_ap_mode_tuple_enable_disable_update_params[] */
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
+	ptr += TLV_HDR_SIZE;
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "WMI vdev_uhr_cu_cmd fixed_param: vdev_id %u\n",
+		   arg->vdev_id);
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "WMI vdev_uhr_cu_cmd dps: vdev_id %u mode_tuple_field 0x%x\n",
+		   arg->dps.vdev_id, arg->dps.mode_tuple_field);
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "WMI vdev_uhr_cu_cmd npca: vdev_id %u mode_tuple_field 0x%x mhz %u bcf1 %u puncture_bitmap 0x%x npca_cap1 0x%x npca_cap2 0x%x\n",
+		   arg->npca.vdev_id, arg->npca.mode_tuple_field,
+		   arg->npca.mhz, arg->npca.band_center_freq1,
+		   arg->npca.puncture_20mhz_bitmap,
+		   arg->npca.npca_cap1, arg->npca.npca_cap2);
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "WMI vdev_uhr_cu_cmd duo: vdev_id %u mode_tuple_field 0x%x\n",
+		   arg->duo.vdev_id, arg->duo.mode_tuple_field);
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "WMI vdev_uhr_cu_cmd pedca: vdev_id %u mode_tuple_field 0x%x\n",
+		   arg->pedca.vdev_id, arg->pedca.mode_tuple_field);
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "WMI vdev_uhr_cu_cmd dbe: vdev_id %u mode_tuple_field 0x%x\n",
+		   arg->dbe.vdev_id, arg->dbe.mode_tuple_field);
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "WMI vdev_uhr_cu_cmd puo: vdev_id %u mode_tuple_field 0x%x\n",
+		   arg->puo.vdev_id, arg->puo.mode_tuple_field);
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "WMI vdev_uhr_cu_cmd elr: vdev_id %u mode_tuple_field 0x%x\n",
+		   arg->elr.vdev_id, arg->elr.mode_tuple_field);
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "WMI vdev_uhr_cu_cmd mode_tuple[]: empty array (0 entries)\n");
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_VDEV_UHR_CU_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed to send WMI_VDEV_UHR_CU_CMDID for vdev %u: %d\n",
+			    arg->vdev_id, ret);
+		dev_kfree_skb(skb);
+	}
+	return ret;
+}
 EXPORT_SYMBOL(ath12k_wmi_pdev_set_timer_for_mec);
 
 int ath12k_wmi_pdev_suspend(struct ath12k *ar, u32 suspend_opt,
