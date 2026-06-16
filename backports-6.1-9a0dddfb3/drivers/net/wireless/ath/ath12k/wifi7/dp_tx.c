@@ -3720,6 +3720,9 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 		if ((sw_metadata->flags & DP_TX_DESC_FLAG_FAST) &&
 		    dp_pdev && !ath12k_dp_stats_enabled(dp_pdev)) {
 			if (likely(sw_metadata->flags & DP_TX_DESC_FLAG_RECYCLE)) {
+				ath12k_dp_tx_buffer_unmap(dp->dev, sw_metadata->paddr,
+							  sw_metadata->len,
+							  DMA_TO_DEVICE);
 				__skb_queue_head(&free_list_head, sw_metadata->skb);
 				sw_metadata->skb = NULL;
 				fast_flag = true;
