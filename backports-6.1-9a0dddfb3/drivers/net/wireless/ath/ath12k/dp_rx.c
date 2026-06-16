@@ -469,6 +469,138 @@ static void ath12k_dp_rx_enqueue_free(struct ath12k_dp *dp,
 	spin_unlock_bh(&dp->rx_desc_lock);
 }
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+/**
+ * ath12k_dp_alloc_rx_skb() - Allocate an RX skb, page-aligned for PPE pool buffers.
+ *
+ * PPE-pool buffers must start on a page boundary so that the IPA SMMU mapping
+ * covers the full buffer without straddling pages.  For DP_RX_PPE_POOL, allocate
+ * an extra PAGE_SIZE bytes and advance skb->data to the next page boundary via
+ * skb_reserve().  Regular pool buffers use the normal allocator.
+ */
+static struct sk_buff *ath12k_dp_alloc_rx_skb(struct ath12k_rx_desc_info *rx_desc)
+{
+	unsigned long pg_offset;
+	struct sk_buff *skb;
+
+	if (rx_desc->src_ring_type != DP_RX_PPE_POOL)
+		return ath12k_dp_alloc_skb(DP_RX_BUFFER_SIZE);
+
+	skb = dev_alloc_skb(DP_RX_BUFFER_SIZE + PAGE_SIZE);
+	if (unlikely(!skb))
+		return NULL;
+
+	pg_offset = PAGE_ALIGN((unsigned long)skb->data) - (unsigned long)skb->data;
+	if (pg_offset)
+		skb_reserve(skb, pg_offset);
+
+	return skb;
+}
+
+/**
+ * ath12k_dp_rx_ipa_dma_mask_save() - Restrict DMA mask to 32 bits for IPA+SMMU.
+ *
+ * When IPA+SMMU is active every RX buffer must reside within 32-bit DMA space.
+ * Save the current mask and apply the narrower one; restore with
+ * ath12k_dp_rx_ipa_dma_mask_restore() after the alloc loop.
+ */
+static void ath12k_dp_rx_ipa_dma_mask_save(struct ath12k_base *ab,
+					   struct ath12k_dp *dp,
+					   u64 *saved_mask, bool *mask_set)
+{
+	if (!IPA_CTX(ab) || !IPA_CTX(ab)->is_smmu_enabled)
+		return;
+
+	*saved_mask = dma_get_mask(dp->dev);
+	if (!dma_set_mask(dp->dev, DMA_BIT_MASK(ATH12K_IPA_RX_BUF_DMA_BITS)))
+		*mask_set = true;
+	else
+		ath12k_warn(ab,
+			    "IPA RX bufs: failed to set %u-bit DMA mask; SMMU faults likely\n",
+			    ATH12K_IPA_RX_BUF_DMA_BITS);
+}
+
+/**
+ * ath12k_dp_rx_ipa_dma_mask_restore() - Restore the DMA mask saved by
+ *                                        ath12k_dp_rx_ipa_dma_mask_save().
+ */
+static void ath12k_dp_rx_ipa_dma_mask_restore(struct ath12k_dp *dp,
+					      u64 saved_mask, bool mask_set)
+{
+	if (mask_set)
+		dma_set_mask(dp->dev, saved_mask);
+}
+
+/**
+ * ath12k_dp_rx_ipa_smmu_buf_map() - Map a PPE-pool RX buffer into IPA SMMU domain.
+ *
+ * Called after the WLAN DMA map succeeds for a DP_RX_PPE_POOL buffer.
+ * On failure, rolls back the SMMU map, the WLAN DMA map, and frees the skb,
+ * leaving rx_desc in a clean state for the caller to break out of the loop.
+ *
+ * Returns 0 on success, negative errno on failure.
+ */
+static int ath12k_dp_rx_ipa_smmu_buf_map(struct ath12k_base *ab,
+					 struct ath12k_dp *dp,
+					 struct ath12k_rx_desc_info *rx_desc,
+					 struct sk_buff *skb,
+					 dma_addr_t paddr)
+{
+	int ret;
+
+	if (!(rx_desc->src_ring_type == DP_RX_PPE_POOL && IPA_CTX(ab) &&
+	      IPA_CTX(ab)->is_smmu_enabled &&
+	      IPA_CTX(ab)->ipa_init_state >= ATH12K_IPA_STATE_SETUP_DONE))
+		return 0;
+
+	ATH12K_SKB_CB(skb)->paddr = paddr;
+	ret = ath12k_dp_ipa_handle_buf_smmu_map_unmap(ab, skb, DP_RX_BUFFER_SIZE,
+						      1, IPA_CTX(ab)->hdl);
+	if (unlikely(ret)) {
+		ath12k_warn(ab, "IPA SMMU map failed for RX buf: %d\n", ret);
+		ath12k_dp_ipa_handle_buf_smmu_map_unmap(ab, skb, DP_RX_BUFFER_SIZE,
+							false, IPA_CTX(ab)->hdl);
+		ath12k_core_dma_unmap_single(dp->dev, paddr, DP_RX_BUFFER_SIZE,
+					     DMA_FROM_DEVICE);
+		ATH12K_SKB_CB(skb)->paddr = 0;
+		rx_desc->skb = NULL;
+		rx_desc->paddr = 0;
+		rx_desc->vaddr = NULL;
+		dev_kfree_skb_any(skb);
+	}
+
+	return ret;
+}
+
+#else /* !CPTCFG_EXT_IPA_OFFLOAD */
+
+static inline struct sk_buff *ath12k_dp_alloc_rx_skb(struct ath12k_rx_desc_info *rx_desc)
+{
+	return ath12k_dp_alloc_skb(DP_RX_BUFFER_SIZE);
+}
+
+static inline void ath12k_dp_rx_ipa_dma_mask_save(struct ath12k_base *ab,
+						   struct ath12k_dp *dp,
+						   u64 *saved_mask, bool *mask_set)
+{
+}
+
+static inline void ath12k_dp_rx_ipa_dma_mask_restore(struct ath12k_dp *dp,
+						      u64 saved_mask, bool mask_set)
+{
+}
+
+static inline int ath12k_dp_rx_ipa_smmu_buf_map(struct ath12k_base *ab,
+						 struct ath12k_dp *dp,
+						 struct ath12k_rx_desc_info *rx_desc,
+						 struct sk_buff *skb,
+						 dma_addr_t paddr)
+{
+	return 0;
+}
+
+#endif /* CPTCFG_EXT_IPA_OFFLOAD */
+
 /* Returns number of Rx buffers replenished */
 void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 				 struct hal_srng *srng,
@@ -485,13 +617,17 @@ void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 	/* Check if descriptors are already initialized (reuse mode) */
 	if (reuse) {
 		/* Count entries for reuse */
-		list_for_each_entry_safe(rx_desc, tmp_rx_desc, used_list, list) {
+		list_for_each_entry(rx_desc, used_list, list)
 			allocated_entries++;
-		}
 	} else {
 		/* Normal mode: allocate and initialize new descriptors */
+		u64 ipa_saved_mask = 0;
+		bool ipa_mask_set = false;
+
+		ath12k_dp_rx_ipa_dma_mask_save(ab, dp, &ipa_saved_mask, &ipa_mask_set);
+
 		list_for_each_entry_safe(rx_desc, tmp_rx_desc, used_list, list) {
-			skb = ath12k_dp_alloc_skb(DP_RX_BUFFER_SIZE);
+			skb = ath12k_dp_alloc_rx_skb(rx_desc);
 			if (unlikely(!skb))
 				break;
 
@@ -512,7 +648,15 @@ void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 
 			rx_desc->paddr = paddr;
 			allocated_entries++;
+
+			if (unlikely(ath12k_dp_rx_ipa_smmu_buf_map(ab, dp, rx_desc,
+								   skb, paddr))) {
+				allocated_entries--;
+				break;
+			}
 		}
+
+		ath12k_dp_rx_ipa_dma_mask_restore(dp, ipa_saved_mask, ipa_mask_set);
 		ath12k_dsb();
 	}
 
@@ -542,7 +686,6 @@ out:
 
 	if (unlikely(!list_empty(used_list)))
 		ath12k_dp_rx_enqueue_free(dp, used_list, reuse);
-
 }
 EXPORT_SYMBOL(ath12k_dp_rx_bufs_replenish);
 

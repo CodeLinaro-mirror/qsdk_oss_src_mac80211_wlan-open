@@ -30,6 +30,10 @@ struct ath12k_sta;
 #define ATH12K_IPA_DMA_MAP_SINGLE(...) ((void)0)
 #endif
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#define ATH12K_IPA_RX_BUF_DMA_BITS	32
+#endif
+
 /* different supported pkt types for routing */
 enum ath12k_routing_pkt_type {
 	ATH12K_PKT_TYPE_ARP_IPV4,
