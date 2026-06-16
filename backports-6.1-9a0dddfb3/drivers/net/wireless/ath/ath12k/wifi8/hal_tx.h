@@ -159,7 +159,7 @@ int ath12k_wifi8_hal_tqm_get_svc_sorted_list(struct ath12k_hal *hal,
 					     u32 *msdu_count);
 int ath12k_wifi8_hal_tx_sam_cmd_send(struct ath12k_base *ab, struct hal_srng *srng,
 				     int src_link_id, enum hal_tlv_tag_be type, int id,
-				     bool clear_all);
+				     bool clear_all, bool force);
 void ath12k_wifi8_hal_tx_set_pcp_tid_map(struct ath12k_base *ab, const u8 *map);
 void ath12k_wifi8_hal_tx_set_tid_map_precedence(struct ath12k_base *ab,
 						const u8 precedence);

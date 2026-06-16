@@ -650,6 +650,8 @@ void ath12k_wifi8_srng_hw_ring_disable(struct ath12k_base *ab)
 	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->reo_flush_ring);
 	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->tx_peer_telemetry_ring);
 	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->rx_peer_telemetry_ring);
+	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->sam_cmd_ring);
+	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->sam_status_ring);
 }
 
 static int ath12k_wifi8_dp_op_device_init(struct ath12k_dp *dp)

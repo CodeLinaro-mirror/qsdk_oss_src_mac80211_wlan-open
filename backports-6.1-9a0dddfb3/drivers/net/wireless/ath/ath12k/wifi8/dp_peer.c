@@ -441,7 +441,7 @@ void ath12k_wifi8_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 				ret = ath12k_wifi8_hal_tx_sam_cmd_send
 						(central_ab, srng, i,
 						 HAL_SAM_PEER_CLEAR_PROGRAMMING_BO,
-						 dp_peer->sta_id, false);
+						 dp_peer->sta_id, false, false);
 
 				if (ret < 0)
 					ath12k_warn(central_ab,
