@@ -1344,7 +1344,7 @@ int ath12k_wifi8_mgmt_rx_refill_ring_setup(struct ath12k_base *ab)
 
 	/* WBM Idle Buffer ring */
 	ret = ath12k_mgmt_srng_setup(ab, &mgmt_wifi8->wbm_idle_buf_ring,
-				     HAL_WBM_BUF_MGMT, 0, 0,
+				     HAL_WBM_IDLE_BUF_MGMT, 0, 0,
 				     ATH12K_MGMT_IRQ_GRP_ID_INVALID,
 				     MGMT_WBM_IDLE_BUF_RING_SIZE);
 	if (ret) {
@@ -1354,7 +1354,7 @@ int ath12k_wifi8_mgmt_rx_refill_ring_setup(struct ath12k_base *ab)
 
 	/* WBM Refill ring */
 	ret = ath12k_mgmt_srng_setup(ab, &mgmt_wifi8->wbm_refill_ring,
-				     HAL_WBM_IDLE_BUF_MGMT, 0, 0,
+				     HAL_WBM_BUF_MGMT, 0, 0,
 				     ATH12K_MGMT_IRQ_GRP_ID_INVALID,
 				     MGMT_REFILL_RING_SIZE);
 	if (ret) {
