@@ -3123,6 +3123,34 @@ int ath12k_wmi_send_pdev_temperature_cmd(struct ath12k *ar)
 	return ret;
 }
 
+int ath12k_wmi_send_pdev_get_nfcal_power_cmd(struct ath12k *ar)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct wmi_get_pdev_nfcal_power_cmd *cmd;
+	struct sk_buff *skb;
+	int ret;
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_get_pdev_nfcal_power_cmd *)skb->data;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_PDEV_GET_NFCAL_POWER,
+						  sizeof(*cmd));
+	cmd->pdev_id = cpu_to_le32(ar->pdev->pdev_id);
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "WMI pdev get nfcal power for pdev_id %d\n", ar->pdev->pdev_id);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_PDEV_GET_NFCAL_POWER_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to send WMI_PDEV_GET_NFCAL_POWER cmd\n");
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+
 int ath12k_wmi_send_bcn_offload_control_cmd(struct ath12k *ar,
 					    u32 vdev_id, u32 bcn_ctrl_op)
 {
@@ -17911,6 +17939,127 @@ static void ath12k_wmi_energy_mgmt_oem_data_event(struct ath12k_base *ab,
 				       num_bytes_valid, tlv->value);
 }
 
+struct ath12k_nfcal_parse_state {
+	const struct wmi_pdev_nfcal_power_all_channels_event *ev;
+	struct ath12k_wmi_nfcal_power_event *param;
+	u32 array_idx;
+};
+
+static void ath12k_wmi_nfcal_parse_array(const void *ptr, u16 len,
+					 void *dst, size_t elem_size,
+					 u32 max_elems, u32 *count)
+{
+	const struct wmi_tlv *tlv;
+	u16 tlv_len;
+	u32 i = 0;
+
+	while (len >= sizeof(*tlv) && i < max_elems) {
+		tlv = ptr;
+		tlv_len = le32_get_bits(tlv->header, WMI_TLV_LEN);
+		ptr += sizeof(*tlv);
+		len -= sizeof(*tlv);
+		if (tlv_len > len || tlv_len < elem_size)
+			break;
+		memcpy((u8 *)dst + i * elem_size, ptr, elem_size);
+		ptr += tlv_len;
+		len -= tlv_len;
+		i++;
+	}
+	*count = i;
+}
+
+static int ath12k_wmi_nfcal_power_tlv_iter(struct ath12k_base *ab, u16 tag,
+					   u16 len, const void *ptr,
+					   void *data)
+{
+	struct ath12k_nfcal_parse_state *s = data;
+	struct ath12k_wmi_nfcal_power_event *param = s->param;
+	u32 count;
+
+	switch (tag) {
+	case WMI_TAG_PDEV_NFCAL_POWER_ALL_CHANNELS_EVENT:
+		if (len >= sizeof(*s->ev))
+			s->ev = ptr;
+		break;
+	case WMI_TAG_ARRAY_STRUCT:
+		switch (s->array_idx++) {
+		case 0: /* nfdbr array */
+			ath12k_wmi_nfcal_parse_array(ptr, len,
+						     param->nfdbr,
+						     sizeof(*param->nfdbr),
+						     ATH12K_WMI_RXG_CAL_CHAN_MAX *
+						     ATH12K_WMI_MAX_NUM_CHAINS,
+						     &count);
+			param->num_nfdbr_dbm = (u16)count;
+			break;
+		case 1: /* nfdbm array */
+			ath12k_wmi_nfcal_parse_array(ptr, len,
+						     param->nfdbm,
+						     sizeof(*param->nfdbm),
+						     ATH12K_WMI_RXG_CAL_CHAN_MAX *
+						     ATH12K_WMI_MAX_NUM_CHAINS,
+						     &count);
+			break;
+		case 2: /* freqnum array */
+			ath12k_wmi_nfcal_parse_array(ptr, len,
+						     param->freqnum,
+						     sizeof(*param->freqnum),
+						     ATH12K_WMI_RXG_CAL_CHAN_MAX,
+						     &count);
+			param->num_freq = (u16)count;
+			break;
+		default:
+			break;
+		}
+		break;
+	default:
+		break;
+	}
+	return 0;
+}
+
+static void ath12k_wmi_pdev_nfcal_power_all_channels_event(struct ath12k_base *ab,
+							   struct sk_buff *skb)
+{
+	struct ath12k_wmi_nfcal_power_event param = {};
+	struct ath12k_nfcal_parse_state s = { .param = &param };
+	struct ath12k *ar;
+	int ret;
+
+	ath12k_info(ab, "WMI_PDEV_NFCAL_POWER_ALL_CHANNELS_EVENTID received from FW\n");
+
+	ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
+				  ath12k_wmi_nfcal_power_tlv_iter, &s);
+	if (ret) {
+		ath12k_warn(ab, "failed to parse nfcal power event tlv: %d\n", ret);
+		return;
+	}
+
+	if (!s.ev) {
+		ath12k_warn(ab, "failed to fetch nfcal power all channels event\n");
+		return;
+	}
+
+	param.pdev_id = le32_to_cpu(s.ev->pdev_id);
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI,
+		   "nfcal power event pdev_id %u num_nfdbr_dbm %u num_freq %u\n",
+		   param.pdev_id, param.num_nfdbr_dbm, param.num_freq);
+
+	rcu_read_lock();
+
+	ar = ath12k_mac_get_ar_by_pdev_id(ab, param.pdev_id);
+	if (!ar) {
+		ath12k_warn(ab, "nfcal power event: invalid pdev_id %u\n", param.pdev_id);
+		rcu_read_unlock();
+		return;
+	}
+
+	ath12k_vendor_nfcal_power_event(ar, &param);
+
+	rcu_read_unlock();
+}
+
 static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
@@ -18184,6 +18333,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 		break;
 	case WMI_ENERGY_MGMT_OEM_DATA_EVENTID:
 		ath12k_wmi_energy_mgmt_oem_data_event(ab, skb);
+		break;
+	case WMI_PDEV_NFCAL_POWER_ALL_CHANNELS_EVENTID:
+		ath12k_wmi_pdev_nfcal_power_all_channels_event(ab, skb);
 		break;
 	default:
 		if (!ath12k_wmi_op_rx_extn(id, ab, skb))
