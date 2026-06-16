@@ -3913,15 +3913,20 @@ void ath12k_qmi_free_target_mem_chunk(struct ath12k_base *ab)
 			if (test_bit(ATH12K_FLAG_FIXED_MEM_REGION, &ab->dev_flags) &&
 			    ab->qmi.target_mem[i].v.ioaddr) {
 				if (IS_ENABLED(CONFIG_IOMMU_SUPPORT)) {
+					if (test_bit(ATH12K_GROUP_FLAG_RECOVERY, &ab->dev_flags)) {
+						ath12k_info(ab, "In recovery! skip mem cleanup");
+						continue;
+					}
 					dma_free_attrs(ab->dev,
 						       ab->qmi.target_mem[i].size,
 						       ab->qmi.target_mem[i].v.ioaddr,
 						       ab->qmi.target_mem[i].paddr,
 						       DMA_ATTR_FORCE_CONTIGUOUS);
-				} else
+					ab->qmi.target_mem[i].v.ioaddr = NULL;
+				} else {
 					iounmap(ab->qmi.target_mem[i].v.ioaddr);
-
-				ab->qmi.target_mem[i].v.ioaddr = NULL;
+					ab->qmi.target_mem[i].v.ioaddr = NULL;
+				}
 			} else {
 				if (!ab->qmi.target_mem[i].v.addr)
 					continue;
@@ -4318,16 +4323,17 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 		case HOST_DDR_REGION_TYPE:
 			if (ddr_rmem->size - sz < ab->qmi.target_mem[i].size) {
 				avail_sz = ddr_rmem->size - sz;
+				ath12k_err(ab, "HOST_DDR_REGION_TYPE: FW reqeusted is more than reserved!");
 				goto print_err;
 			}
 
-			ab->qmi.target_mem[idx].paddr = ddr_rmem->base + sz;
 			/*Try to update it to coherent*/
 			if (!IS_ENABLED(CONFIG_IOMMU_SUPPORT)) {
+				ab->qmi.target_mem[idx].paddr = ddr_rmem->base + sz;
 				ab->qmi.target_mem[idx].v.ioaddr =
 					ioremap(ab->qmi.target_mem[idx].paddr,
 						ab->qmi.target_mem[i].size);
-			} else {
+			} else if (!ab->qmi.target_mem[idx].v.ioaddr) {
 				ab->qmi.target_mem[idx].v.ioaddr =
 						dma_alloc_attrs(ab->dev,
 								ab->qmi.target_mem[i].size,
@@ -4337,6 +4343,7 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 			}
 
 			if (!ab->qmi.target_mem[idx].v.ioaddr) {
+				ath12k_err(ab, "HOST_DDR_REGION_TYPE: Failed to allocate memory!");
 				ret = -EIO;
 				goto out;
 			}
@@ -4354,14 +4361,13 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 				goto out;
 			}
 
-			ab->qmi.target_mem[idx].paddr =
-				bdf_location[ATH12K_QMI_TARGET_MEM_MODE];
-
 			if (!IS_ENABLED(CONFIG_IOMMU_SUPPORT)) {
+				ab->qmi.target_mem[idx].paddr =
+					bdf_location[ATH12K_QMI_TARGET_MEM_MODE];
 				ab->qmi.target_mem[idx].v.ioaddr =
 					ioremap(ab->qmi.target_mem[idx].paddr,
 						ab->qmi.target_mem[i].size);
-			} else {
+			} else if (!ab->qmi.target_mem[idx].v.ioaddr){
 				ab->qmi.target_mem[idx].v.ioaddr =
 						dma_alloc_attrs(ab->dev,
 								ab->qmi.target_mem[i].size,
@@ -4370,6 +4376,7 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 								DMA_ATTR_FORCE_CONTIGUOUS);
 			}
 			if (!ab->qmi.target_mem[idx].v.ioaddr) {
+				ath12k_err(ab, "BDF_MEM_REGION: Memory allocation failed!");
 				ret = -EIO;
 				goto out;
 			}
@@ -4399,14 +4406,14 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 						goto out;
 					}
 
-					ab->qmi.target_mem[idx].paddr =
-						caldb_location[tgt_mem_mode];
 					ab->qmi.target_mem[i].size = caldb_size[0];
 					if (!IS_ENABLED(CONFIG_IOMMU_SUPPORT)) {
+						ab->qmi.target_mem[idx].paddr =
+							caldb_location[tgt_mem_mode];
 						ab->qmi.target_mem[idx].v.ioaddr =
 							ioremap(ab->qmi.target_mem[idx].paddr,
 								ab->qmi.target_mem[i].size);
-					} else {
+					} else if (!ab->qmi.target_mem[idx].v.ioaddr) {
 						ab->qmi.target_mem[idx].v.ioaddr =
 							dma_alloc_attrs(ab->dev,
 									ab->qmi.target_mem[i].size,
@@ -4418,17 +4425,18 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 				} else {
 					if (ddr_rmem->size - sz <
 							ab->qmi.target_mem[i].size) {
+						ath12k_err(ab, "CALDB_MEM_REGION FW requested more memory\n");
 						avail_sz = ddr_rmem->size - sz;
 						goto print_err;
 					}
 
-					ab->qmi.target_mem[idx].paddr =
-						ddr_rmem->base + sz;
 					if (!IS_ENABLED(CONFIG_IOMMU_SUPPORT)) {
+						ab->qmi.target_mem[idx].paddr =
+							ddr_rmem->base + sz;
 						ab->qmi.target_mem[idx].v.ioaddr =
 							ioremap(ab->qmi.target_mem[idx].paddr,
 								ab->qmi.target_mem[i].size);
-					} else {
+					} else if (!ab->qmi.target_mem[idx].v.ioaddr) {
 						ab->qmi.target_mem[idx].v.ioaddr =
 							dma_alloc_attrs(ab->dev,
 									ab->qmi.target_mem[i].size,
@@ -4443,6 +4451,12 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 				ab->qmi.target_mem[idx].v.ioaddr = NULL;
 			}
 
+			if (!ab->qmi.target_mem[idx].v.ioaddr) {
+				ath12k_err(ab, "CALDB_MEM_REGION: Memory allocation failed!");
+				ret = -EIO;
+				goto out;
+			}
+
 			ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
 			ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
 			idx++;
@@ -4451,19 +4465,21 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 			if (ab->hif.bus == ATH12K_BUS_PCI) {
 				if (ddr_rmem->size - sz < ab->qmi.target_mem[i].size) {
 					avail_sz = ddr_rmem->size - sz;
+					ath12k_err(ab, "M3_DUMP_REGION: FW requested more memory");
 					goto print_err;
 				}
-				ab->qmi.target_mem[idx].paddr = ddr_rmem->base + sz;
 				sz += ab->qmi.target_mem[i].size;
 			} else {
 				rmem = ath12k_core_get_reserved_mem_by_name(ab,
 									    "m3-dump");
 				if (!rmem) {
+					ath12k_err(ab, "M3_DUMP_REGION: DT entry is missing");
 					ret = -EINVAL;
 					goto out;
 				}
 
 				if (rmem->size < ab->qmi.target_mem[i].size) {
+					ath12k_err(ab, "M3_DUMP_REGION: FW requested more memory");
 					avail_sz = rmem->size;
 					goto print_err;
 				}
@@ -4471,10 +4487,11 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 			}
 
 			if (!IS_ENABLED(CONFIG_IOMMU_SUPPORT)) {
+				ab->qmi.target_mem[idx].paddr = ddr_rmem->base + sz;
 				ab->qmi.target_mem[idx].v.ioaddr =
 					ioremap(ab->qmi.target_mem[idx].paddr,
 						ab->qmi.target_mem[i].size);
-			} else {
+			} else if (!ab->qmi.target_mem[idx].v.ioaddr) {
 				ab->qmi.target_mem[idx].v.ioaddr =
 					dma_alloc_attrs(ab->dev,
 							ab->qmi.target_mem[i].size,
@@ -4483,6 +4500,7 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 							DMA_ATTR_FORCE_CONTIGUOUS);
 			}
 			if (!ab->qmi.target_mem[idx].v.ioaddr) {
+				ath12k_err(ab, "M3_DUMP_REGION: Memory allocation failed!");
 				ret = -EIO;
 				goto out;
 			}
@@ -4493,11 +4511,13 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 		case MLO_GLOBAL_MEM_REGION_TYPE:
 			rmem = ath12k_core_get_reserved_mem_by_name(ab, "mlo-global-mem");
 			if (!rmem) {
+				ath12k_err(ab, "MLO_GLOBAL_MEM_REGION: DT entry is missing");
 				ret = -EINVAL;
 				goto out;
 			}
 
 			if (rmem->size < ab->qmi.target_mem[i].size) {
+				ath12k_err(ab, "MLO_GLOBAL_MEM_REGION: FW requested more memory");
 				avail_sz = rmem->size;
 				goto print_err;
 			}
@@ -4615,6 +4635,7 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 				rmem = ath12k_core_get_reserved_mem_by_name(ab,
 									    "m3-dump");
 				if (!rmem) {
+					ath12k_err(ab, "AFC_REGION: Node not fount in  dts");
 					ret = -EINVAL;
 					goto out;
 				}
@@ -4629,14 +4650,13 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 					goto out;
 				}
 
-				ab->qmi.target_mem[idx].paddr =
-					rmem->base + ATH12K_HOST_AFC_QCN6432_MEM_OFFSET;
-
 				if (!IS_ENABLED(CONFIG_IOMMU_SUPPORT)) {
+					ab->qmi.target_mem[idx].paddr =
+						rmem->base + ATH12K_HOST_AFC_QCN6432_MEM_OFFSET;
 					ab->qmi.target_mem[idx].v.ioaddr =
 						ioremap(ab->qmi.target_mem[idx].paddr,
 							ab->qmi.target_mem[idx].size);
-				} else {
+				} else if (!ab->qmi.target_mem[idx].v.ioaddr) {
 					ab->qmi.target_mem[idx].v.ioaddr =
 						dma_alloc_attrs(ab->dev,
 								ab->qmi.target_mem[i].size,
@@ -4663,13 +4683,13 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 			break;
 		case PAGEABLE_MEM_REGION_TYPE:
 			if (ab->hif.bus == ATH12K_BUS_PCI) {
-				ab->qmi.target_mem[idx].paddr = ddr_rmem->base + sz;
 				sz += ab->qmi.target_mem[i].size;
 				if (!IS_ENABLED(CONFIG_IOMMU_SUPPORT)) {
+					ab->qmi.target_mem[idx].paddr = ddr_rmem->base + sz;
 					ab->qmi.target_mem[idx].v.ioaddr =
 						ioremap(ab->qmi.target_mem[idx].paddr,
 							ab->qmi.target_mem[i].size);
-				} else {
+				} else if (!ab->qmi.target_mem[idx].v.ioaddr) {
 					ab->qmi.target_mem[idx].v.ioaddr =
 						dma_alloc_attrs(ab->dev,
 								ab->qmi.target_mem[i].size,
@@ -4678,6 +4698,7 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 								DMA_ATTR_FORCE_CONTIGUOUS);
 				}
 				if (!ab->qmi.target_mem[idx].v.ioaddr) {
+					ath12k_err(ab, "PAGEABLE_MEM_REGION: Memory allocation failed!");
 					ret = -EIO;
 					goto out;
 				}
