@@ -831,7 +831,8 @@ static void ieee80211_del_chanctx(struct ieee80211_local *local,
 {
 	lockdep_assert_wiphy(local->hw.wiphy);
 
-	drv_remove_chanctx(local, ctx);
+	if (ctx->driver_present)
+		drv_remove_chanctx(local, ctx);
 
 	if (!skip_idle_recalc)
 		ieee80211_recalc_idle(local);
