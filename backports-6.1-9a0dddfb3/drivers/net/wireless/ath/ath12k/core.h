@@ -763,6 +763,11 @@ struct ath12k_vap_cfg {
 	u32 eht_ul_ppdu_bw;
 	u32 eht_ul_shortgi;
 	u32 eht_ul_stbc;
+	u32 he_ltf;
+	u32 he_ul_ltf;
+	u32 he_ar_gi_ltf;
+	u32 he_ar_ldpc;
+	u32 he_rtsthrshld;
 	u32 enablertscts;
 	u32 he_dcm;
 	u32 he_extrange;
@@ -1680,6 +1685,7 @@ struct ath12k_radio_cfg {
 	u32 regdomain;
 	bool chan144_enabled;
 	u32 pdev_to_reo_dest;
+	u32 cal_ver_check;
 #ifdef CPTCFG_QCN_EXTN
 	struct ath12k_radio_cfg_extn radio_cfg_extn;
 #endif
