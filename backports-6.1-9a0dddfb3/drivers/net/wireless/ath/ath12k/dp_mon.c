@@ -1002,7 +1002,8 @@ void ath12k_dp_mon_rx_update_basic_stats(struct ath12k_dp_link_peer *peer,
 	u32 ru_width_factor;
 	u64 rx_duration_scaled;
 	u16 rx_time_us, num_msdu_retry_count;
-	u8 preamble_type, mcs, nss;
+	u8 preamble_type, mcs, nss, tid;
+	u8 ac = 0;
 
 	if (!rx_stats || !ppdu_info)
 		return;
@@ -1010,6 +1011,8 @@ void ath12k_dp_mon_rx_update_basic_stats(struct ath12k_dp_link_peer *peer,
 	if (ppdu_info->reception_type != HAL_RX_RECEPTION_TYPE_SU)
 		user_stats = &ppdu_info->userstats[uid];
 
+	tid = user_stats ? user_stats->tid : ppdu_info->tid;
+	ac = ath12k_tid_to_ac(tid);
 	preamble_type = user_stats ? user_stats->preamble_type : ppdu_info->preamble_type;
 	mcs = user_stats ? user_stats->mcs : ppdu_info->mcs;
 	nss = user_stats ? user_stats->nss : ppdu_info->nss;
@@ -1041,6 +1044,7 @@ void ath12k_dp_mon_rx_update_basic_stats(struct ath12k_dp_link_peer *peer,
 				       user_stats->mpdu_cnt_fcs_err;
 	}
 
+	rx_stats->rx_duration_ac[ac] += rx_time_us;
 	rx_stats->rx_duration += rx_time_us;
 
 	/* Update per-GI, per-NSS, per-BW, and per-MCS MSDU counts */

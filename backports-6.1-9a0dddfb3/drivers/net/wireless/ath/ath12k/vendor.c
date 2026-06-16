@@ -2874,6 +2874,11 @@ static int ath12k_get_htt_tx_stats_adv_attr_size(void)
 	/* TX msdu flush rsn */
 	total_size += nla_total_size(sizeof(u32));
 
+	/* TX Duration Per AC Array [WME_NUM_AC = 4] */
+	payload_size = nla_total_size(sizeof(u64) * WME_NUM_AC);
+	attr_size = nla_total_size_nested(payload_size);
+	total_size += attr_size;
+
 	return total_size;
 }
 
@@ -3294,6 +3299,11 @@ static int ath12k_vendor_get_rx_mon_stats_size(void)
 	attr_signal_size += nla_total_size(sizeof(stats.signal_stats.rssi_dp));
 	attr_signal_size += nla_total_size(sizeof(stats.signal_stats.rssi_dp_avg));
 	total_size += nla_total_size_nested(attr_signal_size);
+
+	/* Per-AC RX duration nested */
+	payload_size = nla_total_size_64bit(sizeof(stats.rx_duration_ac[0])) *
+					    QCA_VENDOR_WLAN_TELEMETRY_RATE_WME_AC_MAX;
+	total_size += nla_total_size_nested(payload_size);
 
 	/* Parent RX attr size */
 	total_size = nla_total_size_nested(total_size);
@@ -3985,7 +3995,6 @@ ath12k_fill_peer_tx_ppdu_stats_attr(struct ath12k *ar,
 	if (!tx_ppdu_stats)
 		return 0;
 
-
 	/* TX Unicast Success */
 	attr = nla_nest_start(vendor_event,
 			      QCA_VENDOR_WLAN_TELEMETRY_TX_PPDU_STATS_TX_UCAST_SUCC);
@@ -4457,6 +4466,25 @@ ath12k_fill_peer_tx_ppdu_stats_attr(struct ath12k *ar,
 		}
 	}
 
+	nla_nest_end(vendor_event, attr);
+
+	/* TX Duration Per AC */
+	attr = nla_nest_start(vendor_event,
+			      QCA_VENDOR_WLAN_TELEMETRY_TX_PPDU_STATS_DUR_AC);
+	if (!attr) {
+		ath12k_err(NULL, "nla nest failure: tx dur ac");
+		return -EINVAL;
+	}
+	for (i = 0; i < QCA_VENDOR_WLAN_TELEMETRY_RATE_WME_AC_MAX &&
+	     i < WME_NUM_AC; i++) {
+		if (nla_put_u64_64bit(vendor_event, (i + 1),
+				      tx_ppdu_stats->tx_dur_ac[i],
+				      NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failure: tx dur ac %d", i);
+			nla_nest_cancel(vendor_event, attr);
+			return -EINVAL;
+		}
+	}
 	nla_nest_end(vendor_event, attr);
 
 	return 0;
@@ -6103,6 +6131,8 @@ static int ath12k_vendor_fill_rx_mon_stats(struct sk_buff *skb,
 	struct ath12k_dp_link_peer_rx_signal_stats *signal_stats =
 							&rx_stats->signal_stats;
 	u32 val;
+	struct nlattr *ac_attr;
+	int ac;
 
 	/* Basic counters */
 	if (nla_put_u32(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_NUM_MSDU,
@@ -6126,6 +6156,25 @@ static int ath12k_vendor_fill_rx_mon_stats(struct sk_buff *skb,
 			ath12k_err(NULL, "nla failure: RX mon stats - rx duration");
 			return -EMSGSIZE;
 		}
+
+		ac_attr = nla_nest_start(skb,
+					 QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_DUR_AC);
+		if (!ac_attr)
+			return -EMSGSIZE;
+
+		for (ac = 0; ac < QCA_VENDOR_WLAN_TELEMETRY_RATE_WME_AC_MAX &&
+		     ac < WME_NUM_AC ; ac++) {
+			if (nla_put_u64_64bit(skb,
+					      QCA_VENDOR_WLAN_TELEMETRY_RATE_WME_AC_BE
+					      + ac,
+					      rx_stats->rx_duration_ac[ac],
+					      NL80211_ATTR_PAD)) {
+				ath12k_err(NULL, "nla failure: rx duration ac %d", ac);
+				nla_nest_cancel(skb, ac_attr);
+				return -EMSGSIZE;
+			}
+		}
+		nla_nest_end(skb, ac_attr);
 	}
 
 	/* Reception type array */
