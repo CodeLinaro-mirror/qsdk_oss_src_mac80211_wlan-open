@@ -4847,15 +4847,6 @@ static void ath12k_core_reset(struct work_struct *work)
 
 	reset_count = atomic_inc_return(&ab->reset_count);
 
-#ifdef CPTCFG_ATHDEBUG
-	if (ab) {
-		ath12k_info(ab, "%s : collect minidump\n", __func__);
-		athdbg_if_get_service(ab, ATHDBG_SRV_COLLECT_MINIDUMP_REFERENCES);
-		if (ab->fw_recovery_support)
-			athdbg_if_get_service(ab, ATHDBG_SRV_DO_MINIDUMP);
-	}
-#endif
-
 	if (reset_count > 1) {
 		/* Sometimes it happened another reset worker before the previous one
 		 * completed, then the second reset worker will destroy the previous one,
@@ -4893,6 +4884,15 @@ static void ath12k_core_reset(struct work_struct *work)
 
 	mutex_lock(&ag->mutex);
 
+#if defined CPTCFG_ATHDEBUG && defined(CONFIG_QCA_MINIDUMP) &&\
+!defined(CONFIG_ATH12K_MEM_PROFILE_256M)
+	if (ab) {
+		ath12k_info(ab, "%s : collect minidump\n", __func__);
+		athdbg_if_get_service(ab, ATHDBG_SRV_COLLECT_MINIDUMP_REFERENCES);
+		if (ab->fw_recovery_support)
+			athdbg_if_get_service(ab, ATHDBG_SRV_DO_MINIDUMP);
+	}
+#endif
 	ath12k_hif_mgmt_irq_disable(ab);
 	ath12k_core_disable_ext_irq_during_recovery(ab);
 	ath12k_hif_ce_irq_disable(ab);
