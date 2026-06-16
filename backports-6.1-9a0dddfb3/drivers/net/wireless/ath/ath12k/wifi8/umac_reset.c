@@ -13,6 +13,10 @@
 #include "dp_tx.h"
 #include "dp_rx.h"
 #include "dp_telemetry.h"
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+#include "../ppe.h"
+#include "ppeds.h"
+#endif
 
 int ath12k_wifi8_dp_rx_wbm_srng_setup(struct ath12k_base *ab);
 
@@ -97,6 +101,33 @@ static void ath12k_wifi8_umac_reset_refill_rings_deinit(struct ath12k_base *ab)
 	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->wbm_idle_buf_ring);
 }
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+/**
+ * ath12k_wifi8_ppe2wbm_ring_disable
+ * @ab: Pointer to ath12k_base structure
+ *
+ */
+static void ath12k_wifi8_ppe2wbm_ring_disable(struct ath12k_base *ab)
+{
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(ab->dp);
+	uint32_t i;
+
+	for (i = 0 ; i < dp_wifi8->num_ppe2wbm_refill_rings; i++) {
+		ath12k_dp_srng_hw_disable(ab, &dp_wifi8->ppe2wbm_refill_ring[i]);
+		ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET,
+				"PPE2WBM[%d]REFILL:%p cumac=%d\n",
+				i, &dp_wifi8->ppe2wbm_refill_ring[i], ab->is_cumac_chip);
+	}
+
+	if (dp_wifi8->dp_ppe2wbm_use_dedicated_pool) {
+		ath12k_dp_srng_hw_disable(ab, &dp_wifi8->ppe2wbm_idle_buf_ring);
+		ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET,
+				"PPE2WBM IDLE_BUF:%p cumac=%d\n",
+				&dp_wifi8->ppe2wbm_idle_buf_ring, ab->is_cumac_chip);
+	}
+}
+#endif
+
 /**
  * ath12k_wifi8_post_pre_reset_send_cb - Callback after pre_reset message sent
  * @ab: Pointer to ath12k_base structure
@@ -126,6 +157,10 @@ static void ath12k_wifi8_post_pre_reset_send_cb(struct ath12k_base *ab)
 
 	spin_unlock_irqrestore(&mlo_umac_reset->task_queue_lock, flags);
 
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	ath12k_wifi8_ppe2wbm_ring_disable(ab);
+#endif
 	ath12k_wifi8_umac_reset_refill_rings_deinit(ab);
 	ath12k_wifi8_mgmt_refill_rings_deinit(ab);
 
@@ -143,12 +178,36 @@ static void ath12k_wifi8_post_pre_reset_send_cb(struct ath12k_base *ab)
 	ath12k_q_post_reset_task(ab, ath12k_wifi8_dp_tx_tqm_cmd_list_cleanup);
 	ath12k_q_post_reset_task(ab, ath12k_umac_reset_cleanup_tx_queues);
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
+		ath12k_q_post_reset_task(ab, ath12k_dp_ppeds_tx_desc_cleanup);
+#endif
+
 	/* Trigger SMP calls to schedule tasklets on all online CPUs.
 	 * This allows parallel processing of the clear_link_desc_pool tasks
 	 * while FW processes the pre_reset message.
 	 */
 	ath12k_umac_reset_schedule_all_tasklets(ag);
 }
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+/**
+ * ath12k_wifi8_umac_reset_ppeds_stop
+ * @ab: Pointer to ath12k_base structure
+ *
+ */
+static void ath12k_wifi8_umac_reset_ppeds_stop(struct ath12k_base *cumac_ab)
+{
+	if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &cumac_ab->dev_flags)) {
+		ath12k_dp_ppeds_service_enable_disable(cumac_ab, true);
+		cumac_ab->dp->ppe.ppe_ops->ath12k_ppeds_interrupt_stop(cumac_ab);
+		cumac_ab->dp->ppe.ppe_ops->ath12k_ppeds_stop(cumac_ab);
+		ath12k_dp_ppeds_service_enable_disable(cumac_ab, false);
+		ath12k_dbg(cumac_ab, ATH12K_DBG_DP_UMAC_RESET,
+				"PPEDS UMAC RESET INST STOP DONE cumac=%p\n", cumac_ab);
+	}
+}
+#endif
 
 void ath12k_wifi8_umac_reset_handle_pre_reset(struct ath12k_base *ab)
 {
@@ -177,6 +236,9 @@ void ath12k_wifi8_umac_reset_handle_pre_reset(struct ath12k_base *ab)
 		}
 	}
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	ath12k_wifi8_umac_reset_ppeds_stop(cumac_ab);
+#endif
 	ath12k_umac_reset_set_post_send_cb(cumac_ab,
 					   ath12k_wifi8_post_pre_reset_send_cb);
 
@@ -250,6 +312,45 @@ static void ath12k_wifi8_dp_telemetry_umac_setup_wrapper(struct ath12k_base *ab)
 		ath12k_warn(ab, "failed to setup telemetry config: %d\n", ret);
 }
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+static void ath12k_wifi8_umac_reset_ppeds_ring_disable(struct ath12k_base *cumac_ab)
+{
+	uint32_t ring_idx;
+
+	/*
+	 * Disabling PPE2TCL/REO2PPE/TQM2PPE SRNG.
+	 */
+	for (ring_idx = 0; ring_idx < ath12k_ppeds_ppe2tcl_rings_max; ring_idx++)
+		ath12k_dp_srng_hw_disable(cumac_ab,
+				&cumac_ab->dp->ppe.ppe2tcl_ring[ring_idx]);
+
+	for (ring_idx = 0; ring_idx < ath12k_ppeds_reo2ppe_rings_max; ring_idx++)
+		ath12k_dp_srng_hw_disable(cumac_ab,
+				&cumac_ab->dp->ppe.reo2ppe_ring[ring_idx]);
+
+	if (cumac_ab->dp->ppe.hw_buff_mgmt)
+		ath12k_dp_srng_hw_disable(cumac_ab,
+			&cumac_ab->dp->ppe.tqm2ppe_txcmp_ring);
+}
+
+static void ath12k_wifi8_umac_reset_ppeds_srng_setup(struct ath12k_base *cumac_ab)
+{
+	int ret;
+
+	if (cumac_ab->dp->ppe.ppe_ops &&
+			cumac_ab->dp->ppe.ppe_ops->ath12k_ppeds_srng_setup) {
+		ath12k_dbg(cumac_ab, ATH12K_DBG_DP_UMAC_RESET, "cab=%p device_id=%d\n",
+				cumac_ab, cumac_ab ? cumac_ab->device_id : -1);
+		ret = cumac_ab->dp->ppe.ppe_ops->ath12k_ppeds_srng_setup(cumac_ab);
+		if (ret)
+			ath12k_warn(cumac_ab, "failed to set up ppe-ds srngs :%d\n", ret);
+
+		ath12k_dbg(cumac_ab, ATH12K_DBG_DP_UMAC_RESET,
+				"PPEDS UMAC_RESET SRNG SETUP DONE cumac=%p\n", cumac_ab);
+	}
+}
+#endif
+
 void ath12k_wifi8_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 {
 	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset;
@@ -280,6 +381,9 @@ void ath12k_wifi8_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 	ath12k_dp_srng_hw_ring_disable(cumac_ab);
 	ath12k_wifi8_srng_hw_ring_disable(cumac_ab);
 	ath12k_wifi8_srng_hw_mgmt_rings_disable(cumac_ab);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	ath12k_wifi8_umac_reset_ppeds_ring_disable(cumac_ab);
+#endif
 
 	end = jiffies + msecs_to_jiffies(2);
 
@@ -297,6 +401,9 @@ void ath12k_wifi8_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 	/* Telemetry UMAC setup must run after ring setup tasks are queued. */
 	ath12k_q_post_reset_task(cumac_ab,
 				 ath12k_wifi8_dp_telemetry_umac_setup_wrapper);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	ath12k_wifi8_umac_reset_ppeds_srng_setup(cumac_ab);
+#endif
 }
 
 /**
@@ -319,7 +426,30 @@ static void ath12k_wifi8_post_reset_task(struct ath12k_base *ab)
 	/* Free all saved RX SKBs */
 	while ((skb = skb_dequeue(&umac_reset->rx_skb_queue)) != NULL)
 		dev_kfree_skb_any(skb);
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	/* Free all saved TX SKBs */
+	while ((skb = skb_dequeue(&umac_reset->ppeds_tx_skb_queue)) != NULL)
+		dev_kfree_skb_any(skb);
+#endif
 }
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+static void ath12k_wifi8_umac_reset_ppeds_start(struct ath12k_base *ab)
+{
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_base *cumac_ab = ath12k_dp_get_ab_from_dp_hw_group(ag->dp_hw_grp);
+
+	if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &cumac_ab->dev_flags) &&
+		ab->is_cumac_chip) {
+		cumac_ab->dp->ppe.ppe_ops->ath12k_ppeds_start(cumac_ab);
+		cumac_ab->dp->ppe.ppe_ops->ath12k_ppeds_interrupt_start(cumac_ab);
+		ath12k_dbg(cumac_ab, ATH12K_DBG_DP_UMAC_RESET,
+				"PPEDS UMAC_RESET INST START DONE cumac=%p\n",
+				cumac_ab);
+	}
+}
+#endif
 
 void ath12k_wifi8_umac_reset_handle_post_reset_complete(struct ath12k_base *ab)
 {
@@ -343,6 +473,9 @@ void ath12k_wifi8_umac_reset_handle_post_reset_complete(struct ath12k_base *ab)
 
 	ath12k_hif_irq_enable(ab);
 	ath12k_hif_mgmt_irq_enable(ab);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	ath12k_wifi8_umac_reset_ppeds_start(ab);
+#endif
 
 	/* Resume TX during UMAC reset */
 	clear_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags);

@@ -406,6 +406,9 @@ int ath12k_dp_umac_reset_init(struct ath12k_base *ab)
 	/* Initialize SKB queues for deferred cleanup */
 	skb_queue_head_init(&umac_reset->tx_skb_queue);
 	skb_queue_head_init(&umac_reset->rx_skb_queue);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	skb_queue_head_init(&umac_reset->ppeds_tx_skb_queue);
+#endif
 
 	alloc_size = sizeof(struct ath12k_dp_htt_umac_reset_recovery_msg_shmem_t) +
 			    ATH12K_DP_UMAC_RESET_SHMEM_ALIGN - 1;
@@ -1303,6 +1306,9 @@ static void ath12k_umac_reset_free_skb_queues(struct ath12k_base *ab)
 	struct ath12k_dp_umac_reset *umac_reset = &ab->dp_umac_reset;
 	struct sk_buff *skb;
 	u32 tx_count = 0, rx_count = 0;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	u32 ppeds_tx_count = 0;
+#endif
 
 	/* Free all saved TX SKBs */
 	while ((skb = skb_dequeue(&umac_reset->tx_skb_queue)) != NULL) {
@@ -1316,6 +1322,18 @@ static void ath12k_umac_reset_free_skb_queues(struct ath12k_base *ab)
 		rx_count++;
 	}
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	/* Free all saved PPEDS TX SKBs */
+	while ((skb = skb_dequeue(&umac_reset->ppeds_tx_skb_queue)) != NULL) {
+		dev_kfree_skb_any(skb);
+		ppeds_tx_count++;
+	}
+
+	if (ppeds_tx_count)
+		ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET,
+			   "Freed %u TX SKBs during fallback cleanup\n",
+			   ppeds_tx_count);
+#endif
 	if (tx_count || rx_count)
 		ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET,
 			   "Freed %u TX SKBs and %u RX SKBs during fallback cleanup\n",

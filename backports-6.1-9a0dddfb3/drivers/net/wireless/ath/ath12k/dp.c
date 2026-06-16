@@ -1744,9 +1744,10 @@ void ath12k_dp_ppeds_tx_desc_cleanup(struct ath12k_base *ab)
 							   skb->len, DMA_TO_DEVICE,
 							   DMA_ATTR_SKIP_CPU_SYNC);
 
-			skb_queue_tail(&ab->dp_umac_reset.tx_skb_queue, skb);
+			skb_queue_tail(&ab->dp_umac_reset.ppeds_tx_skb_queue, skb);
 
-			list_add_tail(&ppeds_tx_descs[j].list, &dp->ppe.ppeds_tx_desc_free_list);
+			list_add_tail(&ppeds_tx_descs[j].list,
+					&dp->ppe.ppeds_tx_desc_free_list);
 		}
 	}
 

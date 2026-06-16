@@ -223,6 +223,12 @@ static void ath12k_wifi7_post_reset_task(struct ath12k_base *ab)
 	while ((skb = skb_dequeue(&umac_reset->rx_skb_queue)) != NULL)
 		dev_kfree_skb_any(skb);
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	/* Free all saved TX SKBs */
+	while ((skb = skb_dequeue(&umac_reset->ppeds_tx_skb_queue)) != NULL)
+		dev_kfree_skb_any(skb);
+#endif
+
 	/* If ring was not replenished completely due to insufficient
 	 * rx descs in use during umac reset, we take care of replenishing
 	 * the rest of the ring here
