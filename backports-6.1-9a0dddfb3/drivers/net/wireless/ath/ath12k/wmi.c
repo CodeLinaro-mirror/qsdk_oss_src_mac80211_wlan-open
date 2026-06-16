@@ -6911,6 +6911,12 @@ ath12k_wmi_copy_resource_config(struct ath12k_base *ab,
 	ath12k_dbg(ab, ATH12K_DBG_WMI, "ATF: carrier_config %d",
 		   tg_cfg->carrier_config);
 
+	if (tg_cfg->rf_path)
+		wmi_cfg->rf_path = cpu_to_le32(tg_cfg->rf_path);
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "rf_path_config %d",
+		   tg_cfg->rf_path);
+
 	if (tg_cfg->carrier_vow_optimization)
 		wmi_cfg->flag1 |= WMI_RSRC_CFG_FLAG1_VIDEO_OVER_WIFI_ENABLE;
 	wmi_cfg->peer_map_unmap_version = cpu_to_le32(tg_cfg->peer_map_unmap_version);
@@ -7266,6 +7272,8 @@ int ath12k_wmi_cmd_init(struct ath12k_base *ab)
 
 	dp->peer_metadata_ver = arg.res_cfg.peer_metadata_ver;
 
+	/* RF path at boot: 0=full 5G, 1=high 5G (from INI rf_switch_config) */
+	arg.res_cfg.rf_path = ab->rf_switch_config;
 	return ath12k_init_cmd_send(&wmi_ab->wmi[0], &arg);
 }
 
