@@ -11723,7 +11723,7 @@ skip_mgmt_stats:
 	}
 
 #ifdef CPTCFG_QCN_EXTN
-	ath12k_mgmt_rx_event_extn(ar, hdr, &rx_ev);
+	ath12k_mgmt_rx_event_extn(ar, skb, &rx_ev);
 #endif
 
 	ath12k_dbg(ab, ATH12K_DBG_MGMT,
