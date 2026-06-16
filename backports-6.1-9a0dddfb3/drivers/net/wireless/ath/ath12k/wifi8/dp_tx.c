@@ -1608,7 +1608,7 @@ ath12k_wifi8_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 	/* For multicast packets, map the full buffer since MCAST always uses the slow
 	 * path. skb->len includes any HTT metadata as well.
 	 */
-	dma_map = ath12k_dp_tx_dma_map(central_dp, skb, skb->len, tx_desc,
+	dma_map = ATH12K_TX_BUFFER_MAP(central_dp, skb, skb->len, tx_desc,
 				       msdu_info, skb_ctrl);
 
 	if (unlikely(!dma_map)) {
@@ -1777,7 +1777,7 @@ void ath12k_wifi8_ucast_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 		goto fail;
 	}
 
-	dma_map = ath12k_dp_tx_dma_map(central_dp, skb, len, tx_desc, &msdu_info,
+	dma_map = ATH12K_TX_BUFFER_MAP(central_dp, skb, len, tx_desc, &msdu_info,
 				       skb_ctrl);
 	if (unlikely(!dma_map)) {
 		ath12k_warn(central_dp->ab, "failed to DMA map data Tx buffer\n");
@@ -3195,6 +3195,9 @@ int ath12k_wifi8_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 		if ((sw_metadata->flags & DP_TX_DESC_FLAG_FAST) &&
 		    dp_pdev && !ath12k_dp_stats_enabled(dp_pdev)) {
 			if (likely(sw_metadata->flags & DP_TX_DESC_FLAG_RECYCLE)) {
+				ATH12K_TX_BUFFER_UNMAP(dp->dev, sw_metadata->paddr,
+						       sw_metadata->len,
+						       DMA_TO_DEVICE);
 #ifndef CONFIG_IO_COHERENCY
 				__skb_queue_head(&free_list_head, sw_metadata->skb);
 #else

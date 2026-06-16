@@ -16,9 +16,7 @@
 
 #define MAX_TP_TIDS	8
 
-#ifndef CPTCFG_EXT_IPA_OFFLOAD
-
-
+#ifndef PLATFORM_SDX
 #define VIRT_TO_PHYS(defrag_skb, buf_paddr) \
 ({ \
 	(buf_paddr) = (dma_addr_t)virt_to_phys((defrag_skb)->data); \
@@ -35,14 +33,32 @@
 	ring_id = dp->rx_refill_buf_ring.refill_buf_ring.ring_id; \
 })
 
-#define ATH12K_CORE_DMA_UNMAP_SINGLE(partner_dp, desc_info) \
-	ath12k_core_dma_unmap_single(partner_dp->dev, desc_info->paddr, \
-					     DP_RX_BUFFER_SIZE, DMA_FROM_DEVICE)
-
 #define IPA_SET_RX_BUF_SMMU_MAP(...) ((void)0)
 #define IPA_SET_RX_BUF_SMMU_UNMAP(...) ((void)0)
 #define ATH12K_IPA_DMA_MAP_SINGLE(...) ((void)0)
+#define ATH12K_IPA_DMA_UNMAP_SINGLE(...) ((void)0)
 
+#else /* PLATFORM_SDX */
+#define VIRT_TO_PHYS(...) ((void)0)
+#define ATH12K_CORE_DMAC_INV_RANGE(...) ((void)0)
+#define RETURN_IPA_CODE(...) ((void)0)
+#define ATH12K_DP_RXDMA_RING_CONFIG(ring_id, dp) \
+({ \
+	(ring_id) = (dp)->rx_refill_buf_ring.refill_buf_ring.ring_id; \
+})
+#define IPA_SET_RX_BUF_SMMU_MAP(...) ((void)0)
+#define IPA_SET_RX_BUF_SMMU_UNMAP(...) ((void)0)
+#define ATH12K_IPA_DMA_MAP_SINGLE(ab, defrag_skb, buf_paddr) do { \
+	__typeof__(ab) _ab = (ab); \
+	__typeof__(defrag_skb) _skb = (defrag_skb); \
+	(buf_paddr) = dma_map_single((_ab)->dev, (_skb)->data, \
+				     DP_RX_BUFFER_SIZE, DMA_FROM_DEVICE); \
+	if (dma_mapping_error((_ab)->dev, (buf_paddr))) \
+		(buf_paddr) = 0; \
+} while (0)
+#define ATH12K_IPA_DMA_UNMAP_SINGLE(partner_dp, desc_info) \
+	ath12k_core_dma_unmap_single((partner_dp)->dev, (desc_info)->paddr, \
+				     DP_RX_BUFFER_SIZE, DMA_FROM_DEVICE)
 #endif
 
 

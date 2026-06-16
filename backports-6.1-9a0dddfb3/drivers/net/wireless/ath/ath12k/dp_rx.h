@@ -20,7 +20,7 @@ struct ath12k_sta;
 
 #define ip_hdrlen(iph) ((iph)->ihl * 4)
 
-#ifndef CPTCFG_EXT_IPA_OFFLOAD
+#ifndef PLATFORM_SDX
 #define VIRT_TO_PHYS(defrag_skb, buf_paddr) \
 ({ \
 	(buf_paddr) = (dma_addr_t)virt_to_phys((defrag_skb)->data); \
@@ -29,7 +29,26 @@ struct ath12k_sta;
 #define IPA_SET_RX_BUF_SMMU_MAP(...) ((void)0)
 #define IPA_SET_RX_BUF_SMMU_UNMAP(...) ((void)0)
 #define ATH12K_IPA_DMA_MAP_SINGLE(...) ((void)0)
+#define ATH12K_DMA_MAP_SINGLE(ab, defrag_skb, buf_paddr) \
+({ \
+	(void)(ab); \
+	(buf_paddr) = (dma_addr_t)virt_to_phys((defrag_skb)->data); \
+})
+#define ATH12K_DMA_UNMAP_SINGLE(...) ((void)0)
 #else
+#define VIRT_TO_PHYS(...) ((void)0)
+#define ATH12K_DMA_MAP_SINGLE(ab, defrag_skb, buf_paddr) do { \
+	__typeof__(ab) _ab = (ab); \
+	__typeof__(defrag_skb) _skb = (defrag_skb); \
+	(buf_paddr) = dma_map_single((_ab)->dev, (_skb)->data, \
+				     DP_RX_BUFFER_SIZE, DMA_FROM_DEVICE); \
+	if (!dma_mapping_error((_ab)->dev, (buf_paddr))) \
+		ATH12K_SKB_CB(_skb)->paddr = (buf_paddr); \
+	else \
+		(buf_paddr) = 0; \
+} while (0)
+#define ATH12K_DMA_UNMAP_SINGLE(dev, paddr, size, dir) \
+	ath12k_core_dma_unmap_single(dev, paddr, size, dir)
 #define ATH12K_IPA_RX_BUF_DMA_BITS	32
 /* LINUX_6.18 has custom slab of 3136 causing RX buffer non-page aligned */
 #define ATH12K_IPA_DP_RX_BUF_SIZE	3150
