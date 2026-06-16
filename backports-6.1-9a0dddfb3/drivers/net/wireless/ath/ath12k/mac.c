@@ -22549,6 +22549,16 @@ void ath12k_mac_op_change_chanctx(struct ieee80211_hw *hw,
 	if (WARN_ON(changed & IEEE80211_CHANCTX_CHANGE_CHANNEL))
 		return;
 
+	/* Skip vdev restart when CHANCTX_CHANGE_RADAR fires on a NOL channel.
+	 * After radar detection, AP/mesh vdevs are torn down leaving only the
+	 * monitor on this chanctx. Sending an MVR for a NOL channel causes FW
+	 * to reject with status=3 (DFS NOL violation), resulting in an MVR
+	 * timeout and spurious warnings.
+	 */
+	if ((changed & IEEE80211_CHANCTX_CHANGE_RADAR) &&
+	    !cfg80211_chandef_dfs_nol_clear(hw->wiphy, &ctx->def))
+		return;
+
 	if (changed & IEEE80211_CHANCTX_CHANGE_WIDTH ||
 	    changed & IEEE80211_CHANCTX_CHANGE_RADAR ||
 	    changed & IEEE80211_CHANCTX_CHANGE_PUNCTURING)
