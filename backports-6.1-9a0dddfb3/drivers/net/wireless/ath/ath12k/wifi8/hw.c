@@ -465,7 +465,11 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.cumac_support = true,
 		.cumac_chip_priority = 1,
 		.support_umcmn_interrupts = UMCMN_INTERRUPT_POLL,
+#ifdef PLATFORM_SDX
+		.alloc_cacheable_memory = false,
+#else
 		.alloc_cacheable_memory = true,
+#endif
 		.spectral = {
 			.fft_sz = 7,
 			.fft_bin_sz = 1,
