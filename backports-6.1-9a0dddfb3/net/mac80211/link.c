@@ -118,6 +118,7 @@ void ieee80211_link_init(struct ieee80211_sub_if_data *sdata,
 
 	link->sdata = sdata;
 	link->link_id = link_id;
+	link->rx_amsdu_tid_bitmap = 0xFF;
 	link->conf = link_conf;
 	link_conf->link_id = link_id;
 	link_conf->vif = &sdata->vif;
