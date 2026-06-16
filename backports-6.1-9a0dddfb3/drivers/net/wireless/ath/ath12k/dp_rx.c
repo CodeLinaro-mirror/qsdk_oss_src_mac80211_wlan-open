@@ -1342,6 +1342,7 @@ int ath12k_dp_rx_flow_add_entry(struct ath12k_base *ab,
 out:
 	return ret;
 }
+EXPORT_SYMBOL(ath12k_dp_rx_flow_add_entry);
 
 int ath12k_dp_rx_flow_delete_entry(struct ath12k_base *ab,
 				   struct rx_flow_info *flow_info)
@@ -1387,6 +1388,7 @@ int ath12k_dp_rx_flow_delete_entry(struct ath12k_base *ab,
 out:
 	return ret;
 }
+EXPORT_SYMBOL(ath12k_dp_rx_flow_delete_entry);
 
 int ath12k_dp_rx_flow_delete_all_entries(struct ath12k_base *ab)
 {

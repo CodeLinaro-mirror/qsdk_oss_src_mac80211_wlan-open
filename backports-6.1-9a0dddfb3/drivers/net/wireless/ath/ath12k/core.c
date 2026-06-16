@@ -6257,6 +6257,7 @@ struct ath12k_hw_group *ath12k_core_get_ag(void)
 	mutex_unlock(&ath12k_hw_group_mutex);
 	return ag;
 }
+EXPORT_SYMBOL(ath12k_core_get_ag);
 
 int ath12k_core_init(struct ath12k_base *ab)
 {
