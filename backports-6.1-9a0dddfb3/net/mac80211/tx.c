@@ -1681,6 +1681,9 @@ void ieee80211_txq_remove_vlan(struct ieee80211_local *local,
 	if (WARN_ON(sdata->vif.type != NL80211_IFTYPE_AP_VLAN))
 		return;
 
+	if (ieee80211_hw_check(&local->hw, HAS_TX_QUEUE))
+		return;
+
 	ap = container_of(sdata->bss, struct ieee80211_sub_if_data, u.ap);
 
 	if (!ap->vif.txq)
@@ -1741,6 +1744,14 @@ void ieee80211_txq_purge(struct ieee80211_local *local,
 {
 	struct fq *fq = &local->fq;
 	struct fq_tin *tin = &txqi->tin;
+
+	/*
+	 * HAS_TX_QUEUE drivers own their TX queues: mac80211's FQ is never
+	 * initialised, txqi->frags is never populated (ieee80211_queue_skb()
+	 * returns false) and txqi->schedule_order is never linked.
+	 */
+	if (ieee80211_hw_check(&local->hw, HAS_TX_QUEUE))
+		return;
 
 	spin_lock_bh(&fq->lock);
 	fq_tin_reset(fq, tin, fq_skb_free_func);
