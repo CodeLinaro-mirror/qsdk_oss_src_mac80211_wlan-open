@@ -219,6 +219,16 @@ enum ath12k_bus {
 	ATH12K_BUS_HYBRID,
 };
 
+/* nl80211_chan_width slots we validate. */
+enum ath12k_spectral_bw_slot {
+	ATH12K_SPECTRAL_BW_20MHZ,
+	ATH12K_SPECTRAL_BW_40MHZ,
+	ATH12K_SPECTRAL_BW_80MHZ,
+	ATH12K_SPECTRAL_BW_160MHZ,
+	ATH12K_SPECTRAL_BW_320MHZ,
+	ATH12K_SPECTRAL_NUM_BW_SLOTS,
+};
+
 #define ATH12K_EXT_IRQ_NUM_MAX	22
 
 struct hal_rx_desc;
@@ -312,6 +322,8 @@ struct ath12k_hw_params {
 		u8 summary_pad_sz;
 		u8 fft_hdr_len;
 		u16 max_fft_bins;
+		u8 fft_size_min;
+		u16 fft_size_max[ATH12K_SPECTRAL_NUM_BW_SLOTS];
 		bool fragment_160mhz;
 	} spectral;
 
