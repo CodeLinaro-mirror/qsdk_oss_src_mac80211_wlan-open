@@ -2776,6 +2776,12 @@ static void ath12k_mac_dp_peer_cleanup_cb(struct ath12k_pdev_dp *dp_pdev,
 				rcu_assign_pointer(ahsta->dp_peer, NULL);
 			}
 
+			if (dp_peer->peer_id != ATH12K_MLO_PEER_ID_INVALID) {
+				peerid_index = ath12k_dp_peer_get_peerid_index(dp,
+									       dp_peer->peer_id);
+				rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], NULL);
+			}
+
 			ath12k_dp_peer_hash_table_delete(dp_hw, dp_peer);
 
 			/* Remove ath12k_dp_peer from linked list */
