@@ -10724,7 +10724,9 @@ static int ath12k_mac_initiate_hw_scan(struct ieee80211_hw *hw,
 	}
 
 #ifdef CPTCFG_QCN_EXTN
-	ath12k_wmi_update_strict_passive_scan_extn(ar, arg);
+	ath12k_wmi_prepare_scan_req_extn(ar, arg,
+					 req->n_ssids ? req->ssids[0].ssid : NULL,
+					 req->n_ssids ? req->ssids[0].ssid_len : 0);
 #endif
 
 	ret = ath12k_start_scan(ar, arg);
