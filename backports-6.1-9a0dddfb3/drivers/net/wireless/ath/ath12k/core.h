@@ -774,6 +774,20 @@ struct ath12k_vap_cfg {
 	u32 vht_sgimask;
 	u32 vht80_rate;
 	u32 dis_lpi_ant_optimize;
+	/* Per-link EHT OFDMA/TXBF override */
+	bool eht_dl_ofdma_configured;
+	bool eht_dl_ofdma;
+	bool eht_ul_ofdma_configured;
+	bool eht_ul_ofdma;
+	bool eht_dl_ofdma_txbf_configured;
+	bool eht_dl_ofdma_txbf;
+	/* Per-link HE OFDMA/TXBF override */
+	bool he_dl_ofdma_configured;
+	bool he_dl_ofdma;
+	bool he_ul_ofdma_configured;
+	bool he_ul_ofdma;
+	bool he_dl_ofdma_txbf_configured;
+	bool he_dl_ofdma_txbf;
 };
 
 struct ath12k_rssi_deauth_config {
