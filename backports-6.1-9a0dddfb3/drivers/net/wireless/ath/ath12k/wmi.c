@@ -13113,8 +13113,8 @@ static void ath12k_kickout_iter_cb(struct ath12k *ar,
 	else
 		ieee80211_report_low_ack(sta, 10);
 
-	ath12k_dbg_level(ctx->ab, ATH12K_DBG_PEER, ATH12K_DBG_L0,
-			 "peer sta kickout event %pM", arg->mac_addr);
+	ath12k_info(ctx->ab, "peer sta kickout event %pM reason %d\n",
+		   arg->mac_addr, arg->reason);
 }
 
 static void ath12k_peer_sta_kickout_event(struct ath12k_base *ab, struct sk_buff *skb)
