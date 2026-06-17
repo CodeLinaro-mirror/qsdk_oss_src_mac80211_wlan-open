@@ -24403,19 +24403,21 @@ bool ath12k_mac_is_single_rate_bitrate_mask(struct ath12k *ar,
 					    enum nl80211_band band,
 					    const struct cfg80211_bitrate_mask *mask)
 {
-	int cnt;
+	int cnt = 0;
 
-	cnt = hweight32(mask->control[band].legacy);
-	if (cnt > 1)
-		return false;
+	if (band != NL80211_BAND_6GHZ) {
+		cnt = hweight32(mask->control[band].legacy);
+		if (cnt > 1)
+			return false;
 
-	cnt += ath12k_mac_bitrate_mask_num_ht_rates(ar, band, mask);
-	if (cnt > 1)
-		return false;
+		cnt += ath12k_mac_bitrate_mask_num_ht_rates(ar, band, mask);
+		if (cnt > 1)
+			return false;
 
-	cnt += ath12k_mac_bitrate_mask_num_vht_rates(ar, band, mask);
-	if (cnt > 1)
-		return false;
+		cnt += ath12k_mac_bitrate_mask_num_vht_rates(ar, band, mask);
+		if (cnt > 1)
+			return false;
+	}
 
 	cnt += ath12k_mac_bitrate_mask_num_he_rates(ar, band, mask);
 	if (cnt > 1)
@@ -24437,26 +24439,28 @@ u32 ath12k_mac_single_rate_hw_rate_code(struct ath12k *ar,
 	u8 rate_s, i, ueqm_p;
 	u32 rate;
 
-	if (mask->control[band].legacy) {
-		ath12k_mac_get_single_legacy_rate(ar, band, mask, &rate);
-		return rate;
-	}
-
-	for (i = 0; i < ARRAY_SIZE(mask->control[band].ht_mcs); i++) {
-		if (mask->control[band].ht_mcs[i]) {
-			rate_s = ffs((int)mask->control[band].ht_mcs[i]) - 1;
-			rate = ATH12K_HW_RATE_CODE(rate_s, i,
-						   WMI_RATE_PREAMBLE_HT, 0);
+	if (band != NL80211_BAND_6GHZ) {
+		if (mask->control[band].legacy) {
+			ath12k_mac_get_single_legacy_rate(ar, band, mask, &rate);
 			return rate;
 		}
-	}
 
-	for (i = 0; i < ARRAY_SIZE(mask->control[band].vht_mcs); i++) {
-		if (mask->control[band].vht_mcs[i]) {
-			rate_s = ffs((int)mask->control[band].vht_mcs[i]) - 1;
-			rate = ATH12K_HW_RATE_CODE(rate_s, i,
-						   WMI_RATE_PREAMBLE_VHT, 0);
-			return rate;
+		for (i = 0; i < ARRAY_SIZE(mask->control[band].ht_mcs); i++) {
+			if (mask->control[band].ht_mcs[i]) {
+				rate_s = ffs((int)mask->control[band].ht_mcs[i]) - 1;
+				rate = ATH12K_HW_RATE_CODE(rate_s, i,
+							   WMI_RATE_PREAMBLE_HT, 0);
+				return rate;
+			}
+		}
+
+		for (i = 0; i < ARRAY_SIZE(mask->control[band].vht_mcs); i++) {
+			if (mask->control[band].vht_mcs[i]) {
+				rate_s = ffs((int)mask->control[band].vht_mcs[i]) - 1;
+				rate = ATH12K_HW_RATE_CODE(rate_s, i,
+							   WMI_RATE_PREAMBLE_VHT, 0);
+				return rate;
+			}
 		}
 	}
 
