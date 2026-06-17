@@ -680,28 +680,14 @@ int ath12k_dp_pdev_get_tid_stats(struct ath12k *ar,
 			for (i = 0; i < DP_TID_RX_SW_DROP_MAX; i++)
 				aggr_rx->fail_cnt[i] += per_ring_rx->fail_cnt[i];
 
-			/* Aggregate REO error counters */
-			aggr_rx->reo_err.reo_code_inv +=
-				per_ring_rx->reo_err.reo_code_inv;
-
-			for (i = 0; i < HAL_REO_DEST_RING_ERROR_CODE_MAX; i++)
-				aggr_rx->reo_err.reo_code[i] +=
-					per_ring_rx->reo_err.reo_code[i];
-
-			/* Aggregate RXDMA error counters */
-			aggr_rx->rxdma_err.rxdma_code_inv +=
-				per_ring_rx->rxdma_err.rxdma_code_inv;
-
-			for (i = 0; i < HAL_REO_ENTR_RING_RXDMA_ECODE_MAX; i++)
-				aggr_rx->rxdma_err.rxdma_code[i] +=
-					per_ring_rx->rxdma_err.rxdma_code[i];
-
-			/* Aggregate RX delay histograms */
 			ath12k_dp_accumulate_hist_stats(&per_ring_rx->to_stack_delay,
 							&aggr_rx->to_stack_delay);
 			ath12k_dp_accumulate_hist_stats(&per_ring_rx->intfrm_delay,
 							&aggr_rx->intfrm_delay);
 		}
+
+		tid_stats->tid_reo_err[tid] = ar->dp.tid_stats.tid_reo_err[tid];
+		tid_stats->tid_rxdma_err[tid] = ar->dp.tid_stats.tid_rxdma_err[tid];
 
 		if (aggr_tx->swq_delay.min == U32_MAX)
 			aggr_tx->swq_delay.min = 0;
