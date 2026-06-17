@@ -229,7 +229,6 @@ void ath12k_get_peer_sla_config(struct ath12k_base *ab,
 static u8 ath12k_sdwf_alloc_msduq(struct ath12k_base *ab,
 				  struct ath12k_dp_hw *dp_hw,
 				  struct ath12k_dp_peer *dp_peer,
-				  u8 link_id,
 				  u32 svc_id,
 				  bool scs)
 {
@@ -252,7 +251,7 @@ static u8 ath12k_sdwf_alloc_msduq(struct ath12k_base *ab,
 			scs_id = u32_get_bits(svc_id, SCS_SVC_ID_MASK);
 			ath12k_dp_peer_scs_data(ab->dp, scs_id,
 						dp_hw, &msduq, &qos_id,
-						dp_peer, link_id);
+						dp_peer);
 		} else {
 			msduq = u32_get_bits(svc_id, SCS_SVC_ID_MASK);
 		}
@@ -268,7 +267,7 @@ static u8 ath12k_sdwf_alloc_msduq(struct ath12k_base *ab,
 		goto ret;
 
 	spin_lock_bh(&qos->lock);
-	msduq = ath12k_dp_peer_qos_msduq(ab, qos, dp_peer, link_id, dp_hw, qos_id,
+	msduq = ath12k_dp_peer_qos_msduq(ab, qos, dp_peer, dp_hw, qos_id,
 					 svc_id);
 	spin_unlock_bh(&qos->lock);
 ret:
@@ -595,7 +594,7 @@ u16 ath12k_sdwf_get_msduq(struct wireless_dev *wdev,
 		return ret_msduq;
 	}
 
-	msduq = ath12k_sdwf_alloc_msduq(ar->ab, &ar->ah->dp_hw, dp_peer, link_id,
+	msduq = ath12k_sdwf_alloc_msduq(ar->ab, &ar->ah->dp_hw, dp_peer,
 					svc_id, scs);
 	if (msduq != QOS_INVALID_MSDUQ)
 		ret_msduq = FIELD_PREP(SDWF_PEER_ID, peer_id) |
