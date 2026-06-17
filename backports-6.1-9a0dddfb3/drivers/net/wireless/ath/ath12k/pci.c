@@ -1464,6 +1464,13 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
 		}
 	}
 
+#ifdef CPTCFG_QCN_EXTN
+	if (ath12k_cfg_init(ab))
+		ath12k_info(ab, "Failed to initialize per radio INI data\n");
+	else
+		ath12k_info(ab, "Initialized per radio INI data in driver\n");
+#endif
+
 	if (of_property_match_string(ab->dev->of_node, "qcom,early_cal_enabled", "okay") >= 0) {
 		ab->early_cal_support = true;
 		ath12k_info(ab,"coldboot calibration supported in uboot\n");
@@ -1592,6 +1599,9 @@ err_pci_deinit_smmu:
 #endif
 
 err_pci_free_region:
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_cfg_deinit(ab);
+#endif
 	ath12k_pci_free_region(ab_pci);
 
 err_free_core:
@@ -1660,6 +1670,9 @@ qmi_fail:
 		ath12k_memdev_deinit(ab, &ab->qmi_mem_dev);
 	if (ab->mlo_mem_dev.rmem_inited)
 		ath12k_memdev_deinit(ab, &ab->mlo_mem_dev);
+#endif
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_cfg_deinit(ab);
 #endif
 	ath12k_core_free(ab);
 }
