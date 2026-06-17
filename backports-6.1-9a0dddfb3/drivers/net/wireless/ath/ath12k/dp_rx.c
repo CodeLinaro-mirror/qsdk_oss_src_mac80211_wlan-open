@@ -1789,3 +1789,28 @@ int ath12k_dp_rxdma_ring_sel_config(struct ath12k_base *ab)
 
 	return 0;
 }
+
+void
+ath12k_dp_rx_update_eapol_stats(struct ath12k_dp *dp, struct sk_buff *msdu)
+{
+	enum ath12k_dp_eapol_key_type subtype;
+	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)msdu->data;
+	size_t hdr_len = ieee80211_hdrlen(hdr->frame_control);
+	struct ath12k_dp_rx_rfc1042_hdr *llc =
+		(struct ath12k_dp_rx_rfc1042_hdr *)(msdu->data + hdr_len);
+
+	if (llc->snap_type == cpu_to_be16(ETH_P_PAE)) {
+		dp->device_stats.rx_eapol[dp->device_id]++;
+		subtype = ath12k_dp_get_eapol_subtype(msdu->data + hdr_len +
+						      LLC_SNAP_HDR_LEN);
+		if (subtype != DP_EAPOL_KEY_TYPE_MAX && subtype > 0) {
+			dp->device_stats.rx_eapol_type[subtype - 1][dp->device_id]++;
+			ath12k_dbg_level(dp->ab, ATH12K_DBG_EAPOL, ATH12K_DBG_L0,
+					 "Received %s%d EAPOL frame from STA %pM\n",
+					 subtype <= 4 ? "M" : "G",
+					 subtype <= 4 ? subtype : (subtype - 4),
+					 hdr->addr2);
+		}
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_rx_update_eapol_stats);
