@@ -10040,6 +10040,13 @@ static int ath12k_start_scan(struct ath12k *ar,
 
 	ret = wait_for_completion_timeout(&ar->scan.started, 1 * HZ);
 	if (ret == 0) {
+		/* FW assertion right after scan start can trigger WARN_ON.
+		 * Skip the WARN_ON() and WMI scan_stop when CRASH_FLUSH is set -
+		 * the FW is already dead and WMI commands will be dropped.
+		 */
+		if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags))
+			return -ESHUTDOWN;
+
 		WARN_ON(1);
 		ret = ath12k_scan_stop(ar);
 		if (ret)
