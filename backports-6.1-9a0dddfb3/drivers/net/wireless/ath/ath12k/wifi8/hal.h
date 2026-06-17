@@ -549,8 +549,129 @@ enum rdi_based_source_ring_selection {
 #define HAL_REO_FW_MGMT_ROUTING_CFG		0x1c90
 #define HAL_REO_RX_SDWF_CFG			0x1c94
 #define HAL_REO_BACKPRESSURE_DROP_EN		0x1c98
+/* Bit definitions for HAL_REO_BACKPRESSURE_DROP_EN
+ * (UMAC_REO_R0_BACKPRESSURE_DROP_EN, full addr 0xF23C98)
+ * Setting a bit enables backpressure-drop for the corresponding ring:
+ * REO will route packets to the buffer-release ring instead of stalling.
+ */
+#define HAL_REO_BP_DROP_REO2SW0		BIT(0)
+#define HAL_REO_BP_DROP_REO2SW1		BIT(1)
+#define HAL_REO_BP_DROP_REO2SW2		BIT(2)
+#define HAL_REO_BP_DROP_REO2SW3		BIT(3)
+#define HAL_REO_BP_DROP_REO2SW4		BIT(4)
+#define HAL_REO_BP_DROP_REO2SW5		BIT(5)
+#define HAL_REO_BP_DROP_REO2SW6		BIT(6)
+#define HAL_REO_BP_DROP_REO2SW7		BIT(7)
+#define HAL_REO_BP_DROP_REO2SW8		BIT(8)
+#define HAL_REO_BP_DROP_REO2SW9		BIT(9)
+#define HAL_REO_BP_DROP_REO2SW10	BIT(10)
+#define HAL_REO_BP_DROP_REO2SW11	BIT(11)
+#define HAL_REO_BP_DROP_REO2FW		BIT(12)
+#define HAL_REO_BP_DROP_REO2FW_MGMT	BIT(13)
+#define HAL_REO_BP_DROP_REO2PPE		BIT(14)
+#define HAL_REO_BP_DROP_REO2PPE1	BIT(15)
+#define HAL_REO_BP_DROP_REO2PPE2	BIT(16)
+
+/* Convenience masks */
+/* All REO2SW rings (SW0..SW11) — enable backpressure drop for all SW rings */
+#define HAL_REO_BP_DROP_REO2SW_ALL	(HAL_REO_BP_DROP_REO2SW0  | \
+					 HAL_REO_BP_DROP_REO2SW1  | \
+					 HAL_REO_BP_DROP_REO2SW2  | \
+					 HAL_REO_BP_DROP_REO2SW3  | \
+					 HAL_REO_BP_DROP_REO2SW4  | \
+					 HAL_REO_BP_DROP_REO2SW5  | \
+					 HAL_REO_BP_DROP_REO2SW6  | \
+					 HAL_REO_BP_DROP_REO2SW7  | \
+					 HAL_REO_BP_DROP_REO2SW8  | \
+					 HAL_REO_BP_DROP_REO2SW9  | \
+					 HAL_REO_BP_DROP_REO2SW10 | \
+					 HAL_REO_BP_DROP_REO2SW11)
+/* All REO2PPE rings */
+#define HAL_REO_BP_DROP_REO2PPE_ALL	(HAL_REO_BP_DROP_REO2PPE  | \
+					 HAL_REO_BP_DROP_REO2PPE1 | \
+					 HAL_REO_BP_DROP_REO2PPE2)
+
 #define HAL_REO_BACKPRESSURE_BUFFER_RELEASE_RING_SELECT_IX_0	0x1c9c
+/*
+ * Buffer-release ring IDs used in BACKPRESSURE_BUFFER_RELEASE_RING_SELECT:
+ *   HAL_REO_BP_REL_RING_SW0  = 0  → SW0 buffer pool (used by REO2SW / SFE path)
+ *   HAL_REO_BP_REL_RING_DS   = 2  → Dedicated DS buffer pool (used by REO2PPE
+ *                                    when dp_ppe2wbm_use_dedicated_pool is set)
+ *
+ * REO2SW rings always use SW0 (ring 0).
+ * REO2PPE rings use SW0 (ring 0) by default, or DS (ring 2) when the
+ * dedicated PPE-to-WBM buffer pool is enabled.
+ */
+#define HAL_REO_BP_REL_RING_SW0		0  /* SW0 pool — REO2SW / SFE path */
+#define HAL_REO_BP_REL_RING_DS		2  /* DS pool  — REO2PPE dedicated pool */
+
+/*
+ * Bit definitions for HAL_REO_BACKPRESSURE_BUFFER_RELEASE_RING_SELECT_IX_0
+ * (UMAC_REO_R0_BACKPRESSURE_BUFFER_RELEASE_RING_SELECT_IX_0, addr 0xF23C9C)
+ * Each 2-bit field selects which buffer-release ring receives the
+ * backpressure-dropped packets for the corresponding REO destination ring.
+ *
+ * Policy:
+ *   REO2SW rings  → always SW0 (HAL_REO_BP_REL_RING_SW0 = 0)
+ *   REO2PPE rings → SW0 by default; DS pool (HAL_REO_BP_REL_RING_DS = 2)
+ *                   when dp_ppe2wbm_use_dedicated_pool is enabled
+ */
+#define HAL_REO_BP_REL_SEL_REO2SW0	GENMASK(1, 0)
+#define HAL_REO_BP_REL_SEL_REO2SW1	GENMASK(3, 2)
+#define HAL_REO_BP_REL_SEL_REO2SW2	GENMASK(5, 4)
+#define HAL_REO_BP_REL_SEL_REO2SW3	GENMASK(7, 6)
+#define HAL_REO_BP_REL_SEL_REO2SW4	GENMASK(9, 8)
+#define HAL_REO_BP_REL_SEL_REO2SW5	GENMASK(11, 10)
+#define HAL_REO_BP_REL_SEL_REO2SW6	GENMASK(13, 12)
+#define HAL_REO_BP_REL_SEL_REO2SW7	GENMASK(15, 14)
+#define HAL_REO_BP_REL_SEL_REO2SW8	GENMASK(17, 16)
+#define HAL_REO_BP_REL_SEL_REO2SW9	GENMASK(19, 18)
+#define HAL_REO_BP_REL_SEL_REO2SW10	GENMASK(21, 20)
+#define HAL_REO_BP_REL_SEL_REO2SW11	GENMASK(23, 22)
+#define HAL_REO_BP_REL_SEL_REO2FW	GENMASK(25, 24)
+#define HAL_REO_BP_REL_SEL_REO2FW_MGMT	GENMASK(27, 26)
+#define HAL_REO_BP_REL_SEL_REO2PPE	GENMASK(29, 28)
+#define HAL_REO_BP_REL_SEL_REO2PPE1	GENMASK(31, 30)
+
+/*
+ * HAL_REO_BP_REL_SEL_IX0_VAL(ppe_ring) — IX_0 register value
+ *
+ * REO2SW rings (SW0..SW11): always use HAL_REO_BP_REL_RING_SW0 (= 0)
+ * REO2PPE rings (PPE, PPE1): use @ppe_ring, which is:
+ *   - HAL_REO_BP_REL_RING_SW0 (0) when dp_ppe2wbm_use_dedicated_pool = false
+ *   - HAL_REO_BP_REL_RING_DS  (2) when dp_ppe2wbm_use_dedicated_pool = true
+ */
+#define HAL_REO_BP_REL_SEL_IX0_VAL(ppe_ring)				\
+	(u32_encode_bits(HAL_REO_BP_REL_RING_SW0, HAL_REO_BP_REL_SEL_REO2SW0)  | \
+	 u32_encode_bits(HAL_REO_BP_REL_RING_SW0, HAL_REO_BP_REL_SEL_REO2SW1)  | \
+	 u32_encode_bits(HAL_REO_BP_REL_RING_SW0, HAL_REO_BP_REL_SEL_REO2SW2)  | \
+	 u32_encode_bits(HAL_REO_BP_REL_RING_SW0, HAL_REO_BP_REL_SEL_REO2SW3)  | \
+	 u32_encode_bits(HAL_REO_BP_REL_RING_SW0, HAL_REO_BP_REL_SEL_REO2SW4)  | \
+	 u32_encode_bits(HAL_REO_BP_REL_RING_SW0, HAL_REO_BP_REL_SEL_REO2SW5)  | \
+	 u32_encode_bits(HAL_REO_BP_REL_RING_SW0, HAL_REO_BP_REL_SEL_REO2SW6)  | \
+	 u32_encode_bits(HAL_REO_BP_REL_RING_SW0, HAL_REO_BP_REL_SEL_REO2SW7)  | \
+	 u32_encode_bits(HAL_REO_BP_REL_RING_SW0, HAL_REO_BP_REL_SEL_REO2SW8)  | \
+	 u32_encode_bits(HAL_REO_BP_REL_RING_SW0, HAL_REO_BP_REL_SEL_REO2SW9)  | \
+	 u32_encode_bits(HAL_REO_BP_REL_RING_SW0, HAL_REO_BP_REL_SEL_REO2SW10) | \
+	 u32_encode_bits(HAL_REO_BP_REL_RING_SW0, HAL_REO_BP_REL_SEL_REO2SW11) | \
+	 u32_encode_bits((ppe_ring),              HAL_REO_BP_REL_SEL_REO2PPE)  | \
+	 u32_encode_bits((ppe_ring),              HAL_REO_BP_REL_SEL_REO2PPE1))
+
 #define HAL_REO_BACKPRESSURE_BUFFER_RELEASE_RING_SELECT_IX_1	0x1ca0
+/*
+ * Bit definitions for HAL_REO_BACKPRESSURE_BUFFER_RELEASE_RING_SELECT_IX_1
+ * (UMAC_REO_R0_BACKPRESSURE_BUFFER_RELEASE_RING_SELECT_IX_1, addr 0xF23CA0)
+ * Only REO2PPE2 is present in this register.
+ */
+#define HAL_REO_BP_REL_SEL_REO2PPE2	GENMASK(1, 0)
+
+/*
+ * HAL_REO_BP_REL_SEL_IX1_VAL(ppe_ring) — IX_1 register value
+ *
+ * REO2PPE2: use @ppe_ring (same policy as IX_0 PPE rings above)
+ */
+#define HAL_REO_BP_REL_SEL_IX1_VAL(ppe_ring)				\
+	u32_encode_bits((ppe_ring), HAL_REO_BP_REL_SEL_REO2PPE2)
 #define HAL_REO_AGING_FLUSH_LOW_LATENCY_OPTION	\
 	HWIO_REO_R0_AGING_FLUSH_LOW_LATENCY_OPTION_OFFS
 
