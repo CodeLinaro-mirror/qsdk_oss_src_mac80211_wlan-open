@@ -379,6 +379,9 @@ struct ieee80211_vif_chanctx_switch {
  * @BSS_CHANGED_LINK_ADV_TTLM: Advertised TID to Link mapping changed on link interface.
  *	This is used to indicate the driver to start the advertisement of TTLM on this AP
  *	link during start ap.
+ * @BSS_CHANGED_STA_NOL_CAC_DONE: NOL history CAC status changed for a managed link
+ *	This is used to indicate to the driver of the CAC completion for a
+ *	channel marked with NOL history.
  */
 enum ieee80211_bss_change {
 	BSS_CHANGED_ASSOC		= 1<<0,
@@ -423,6 +426,7 @@ enum ieee80211_bss_change {
 	BSS_CHANGED_MLD_ADV_TTLM	= BIT_ULL(40),
 	BSS_CHANGED_LINK_ADV_TTLM	= BIT_ULL(41),
 	BSS_CHANGED_AP_DPS_ASSIST	= BIT_ULL(42),
+	BSS_CHANGED_STA_NOL_CAC_DONE	= BIT_ULL(43),
 	/* when adding here, make sure to change ieee80211_reconfig */
 };
 

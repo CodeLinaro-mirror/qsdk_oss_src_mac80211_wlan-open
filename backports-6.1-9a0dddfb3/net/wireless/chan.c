@@ -712,12 +712,17 @@ static void cfg80211_set_chans_dfs_state(struct wiphy *wiphy, u32 center_freq,
 			if (radar_bitmap & 1 << i) {
 				c->dfs_state = dfs_state;
 				c->dfs_state_entered = jiffies;
+				if (wiphy->sta_dfs_en)
+					c->flags |= IEEE80211_CHAN_NOL_HISTORY;
 			}
 		}
 		else {
 			c->dfs_state = dfs_state;
 			c->dfs_state_entered = jiffies;
 			c->dfs_state_last_available = jiffies;
+			if (dfs_state == NL80211_DFS_UNAVAILABLE &&
+			    wiphy->sta_dfs_en)
+				c->flags |= IEEE80211_CHAN_NOL_HISTORY;
 		}
 	}
 }
