@@ -3101,6 +3101,14 @@ enum nl80211_commands {
  *	this feature during association. This is a flag attribute.
  *	Currently only supported in mac80211 drivers.
  *
+ * @NL80211_ATTR_NPCA_PRIMARY_FREQ: u32 attribute giving the primary channel
+ *	frequency (in MHz) for NPCA operation. Required when configuring NPCA.
+ *
+ * @NL80211_ATTR_NPCA_PUNCT_BITMAP: u32 attribute giving the puncture bitmap
+ *	for the NPCA channel. Optional; if absent, defaults to the primary
+ *	channel's puncture bitmap. Only valid together with
+ *	%NL80211_ATTR_NPCA_PRIMARY_FREQ.
+ *
  * @NL80211_ATTR_PCIE: Nested attributes associated with PCIe low power and
  *	gen/lane mode transitions. See &enum nl80211_pcie_attrs
  *
@@ -3788,6 +3796,8 @@ enum nl80211_attrs {
 
 	NL80211_ATTR_UHR_CAPABILITY,
 	NL80211_ATTR_DISABLE_UHR,
+	NL80211_ATTR_NPCA_PRIMARY_FREQ,
+	NL80211_ATTR_NPCA_PUNCT_BITMAP,
 
 	NL80211_ATTR_PCIE,
 	NL80211_ATTR_DCVS,

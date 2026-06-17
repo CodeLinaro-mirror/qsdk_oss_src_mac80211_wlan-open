@@ -915,7 +915,10 @@ struct key_params {
  *	width
  * @center_frequency_device: center frequency of the device @center_freq1 is
  *	the operating center frequency of the channel
-  */
+ * @npca_freq: primary channel frequency (MHz) for NPCA operation; 0 if NPCA
+ *	is not active
+ * @npca_puncture_bitmap: puncture bitmap for the NPCA channel; 0 if unused
+ */
 struct cfg80211_chan_def {
 	struct ieee80211_channel *chan;
 	enum nl80211_chan_width width;
@@ -927,6 +930,8 @@ struct cfg80211_chan_def {
 	u16 radar_bitmap;
 	enum nl80211_chan_width width_device;
 	u32 center_freq_device;
+	u32 npca_freq;
+	u16 npca_puncture_bitmap;
 };
 
 /**

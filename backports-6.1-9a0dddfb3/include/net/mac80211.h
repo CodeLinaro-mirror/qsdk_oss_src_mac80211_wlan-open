@@ -382,6 +382,7 @@ struct ieee80211_vif_chanctx_switch {
  * @BSS_CHANGED_STA_NOL_CAC_DONE: NOL history CAC status changed for a managed link
  *	This is used to indicate to the driver of the CAC completion for a
  *	channel marked with NOL history.
+ * @BSS_CHANGED_NPCA: NPCA (Non-Primary Channel Access) parameters changed.
  */
 enum ieee80211_bss_change {
 	BSS_CHANGED_ASSOC		= 1<<0,
@@ -427,6 +428,7 @@ enum ieee80211_bss_change {
 	BSS_CHANGED_LINK_ADV_TTLM	= BIT_ULL(41),
 	BSS_CHANGED_AP_DPS_ASSIST	= BIT_ULL(42),
 	BSS_CHANGED_STA_NOL_CAC_DONE	= BIT_ULL(43),
+	BSS_CHANGED_NPCA		= BIT_ULL(44),
 	/* when adding here, make sure to change ieee80211_reconfig */
 };
 
@@ -631,6 +633,24 @@ struct ieee80211_parsed_tpe {
 	struct ieee80211_parsed_tpe_psd psd_local[2], psd_reg_client[2];
 	struct ieee80211_parsed_tpe_eirp additional_max_reg_client[2];
 	struct ieee80211_parsed_tpe_psd additional_psd_reg_client[2];
+};
+
+/**
+ * struct ieee80211_bss_npca_params - BSS NPCA (Non-Primary Channel Access) parameters
+ * @min_dur_thresh: minimum duration threshold (4 bits)
+ * @switch_delay: delay before switching to non-primary channel (6 bits)
+ * @switch_back_delay: delay before switching back to primary channel (6 bits)
+ * @init_qsrc: initial quiet-start reference count (2 bits)
+ * @moplen: minimum PPDU length for NPCA eligibility (1 bit)
+ * @enabled: whether NPCA is active for this BSS
+ */
+struct ieee80211_bss_npca_params {
+	u32 min_dur_thresh:4,
+	    switch_delay:6,
+	    switch_back_delay:6,
+	    init_qsrc:2,
+	    moplen:1,
+	    enabled:1;
 };
 
 /**
@@ -942,6 +962,7 @@ struct ieee80211_bss_conf {
 	bool dps_assist_support;
 	enum nl80211_auth_type auth_type;
 	struct cfg80211_smd_params smd_params;
+	struct ieee80211_bss_npca_params npca;
 };
 
 /**

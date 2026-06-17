@@ -1178,6 +1178,9 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_SMD_SUPPORT] = { .type = NLA_FLAG },
 	[NL80211_ATTR_SMD_AP] = { .type = NLA_FLAG },
 	[NL80211_ATTR_SMD_PARAMS] = { .type = NLA_NESTED },
+	[NL80211_ATTR_NPCA_PRIMARY_FREQ] = { .type = NLA_U32 },
+	[NL80211_ATTR_NPCA_PUNCT_BITMAP] =
+		NLA_POLICY_FULL_RANGE(NLA_U32, &nl80211_punct_bitmap_range),
 };
 
 /* policy for the key attributes */
@@ -4165,6 +4168,25 @@ static int _nl80211_parse_chandef(struct cfg80211_registered_device *rdev,
 		chandef->radar_bitmap = radar_bitmap;
 	}
 
+	if (attrs[NL80211_ATTR_NPCA_PRIMARY_FREQ]) {
+		chandef->npca_freq = nla_get_u32(attrs[NL80211_ATTR_NPCA_PRIMARY_FREQ]);
+		if (!chandef->npca_freq) {
+			NL_SET_ERR_MSG_ATTR(extack,
+					    attrs[NL80211_ATTR_NPCA_PRIMARY_FREQ],
+					    "invalid NPCA primary channel");
+			return -EINVAL;
+		}
+
+		chandef->npca_puncture_bitmap =
+			nla_get_u32_default(attrs[NL80211_ATTR_NPCA_PUNCT_BITMAP],
+					    chandef->punctured);
+	} else if (attrs[NL80211_ATTR_NPCA_PUNCT_BITMAP]) {
+		NL_SET_ERR_MSG_ATTR(extack,
+				    attrs[NL80211_ATTR_NPCA_PUNCT_BITMAP],
+				    "NPCA puncturing only valid with NPCA");
+		return -EINVAL;
+	}
+
 	if (!cfg80211_chandef_valid(chandef)) {
 		NL_SET_ERR_MSG(extack, "invalid channel definition");
 		return -EINVAL;
@@ -4916,6 +4938,15 @@ int nl80211_send_chandef(struct sk_buff *msg, const struct cfg80211_chan_def *ch
 	if (nla_put_u32(msg, NL80211_ATTR_CENTER_FREQ_DEVICE,
 			chandef->center_freq_device) ||
 	    nla_put_u32(msg, NL80211_ATTR_CHANNEL_WIDTH_DEVICE, chandef->width_device))
+		return -ENOBUFS;
+
+	if (chandef->npca_freq &&
+	    nla_put_u32(msg, NL80211_ATTR_NPCA_PRIMARY_FREQ,
+			chandef->npca_freq))
+		return -ENOBUFS;
+	if (chandef->npca_puncture_bitmap &&
+	    nla_put_u32(msg, NL80211_ATTR_NPCA_PUNCT_BITMAP,
+			chandef->npca_puncture_bitmap))
 		return -ENOBUFS;
 
 	return 0;
@@ -7737,6 +7768,28 @@ static int nl80211_parse_smd_params(struct nlattr *smd_params_attr,
 	return 0;
 }
 
+static int nl80211_check_npca(struct cfg80211_registered_device *rdev,
+			      const struct cfg80211_chan_def *chandef,
+			      enum nl80211_iftype iftype,
+			      struct netlink_ext_ack *extack)
+{
+	const struct ieee80211_supported_band *sband;
+	const struct ieee80211_sta_uhr_cap *uhr_cap;
+
+	if (!chandef->npca_freq)
+		return 0;
+
+	sband = rdev->wiphy.bands[chandef->chan->band];
+	uhr_cap = ieee80211_get_uhr_iftype_cap(sband, iftype);
+
+	if (uhr_cap &&
+	    (uhr_cap->mac.mac_cap[0] & IEEE80211_UHR_MAC_CAP0_NPCA_SUPP))
+		return 0;
+
+	NL_SET_ERR_MSG(extack, "NPCA not supported");
+	return -EINVAL;
+}
+
 static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 {
 	struct cfg80211_registered_device *rdev = info->user_ptr[0];
@@ -7941,6 +7994,10 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 	nl80211_ignore_cac_update_dfs_state(rdev, &params->chandef,
 					    wdev->iftype);
 #endif /* CPTCFG_QCA_LAB_TEST_FEATURES */
+	err = nl80211_check_npca(rdev, &params->chandef, wdev->iftype,
+				 info->extack);
+	if (err)
+		goto out;
 
 	beacon_check.iftype = wdev->iftype;
 	beacon_check.relax = true;
