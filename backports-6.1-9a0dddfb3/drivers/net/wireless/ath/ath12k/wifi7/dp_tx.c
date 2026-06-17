@@ -2086,7 +2086,7 @@ void ath12k_wifi7_ucast_handler(struct ath12k_dp_vif *dp_vif,
 	struct ath12k_link_vif *arvif = rcu_dereference(ahvif->link[link_id]);
 	struct ath12k_dp_link_vif *dp_link_vif = &dp_vif->dp_link_vif[link_id];
 	struct ath12k_dp *dp = NULL;
-	struct ath12k *ar = NULL;
+	struct ath12k *ar = arvif->ar;
 	struct ath12k_pdev_dp *dp_pdev = NULL;
 	struct ath12k_tx_desc_info *tx_desc = NULL;
 	struct ath12k_dp_tx_msdu_info msdu_info = {0};
@@ -2098,10 +2098,6 @@ void ath12k_wifi7_ucast_handler(struct ath12k_dp_vif *dp_vif,
 	u8 tid = skb->priority & IEEE80211_QOS_CTL_TID_MASK;
 	enum ath12k_dp_tx_enq_error drop_reason = DP_TX_ENQ_DROP_MISC;
 
-	if (unlikely(!arvif || !arvif->is_created))
-		goto fail;
-
-	ar = arvif->ar;
 	/* Get DP pdev */
 	dp_pdev = ath12k_dp_to_dp_pdev(ar->ab->dp, dp_link_vif->pdev_idx);
 	if (!dp_pdev) {
