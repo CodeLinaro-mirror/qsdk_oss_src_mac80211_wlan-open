@@ -29577,7 +29577,7 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 {
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
 	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
-	struct ath12k *ar;
+	struct ath12k *ar = NULL;
 	struct ath12k_link_vif *arvif;
 	struct ath12k_dp *dp;
 	struct ath12k_dp_peer *peer;
@@ -29593,7 +29593,8 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 	struct ath12k_dp_preserved_stats *del_stats;
 	struct ath12k_dp_pkt_info vif_ppeds_rx;
 	struct ieee80211_vif *master_vif;
-
+	u32 rx_packets;
+	u64 rx_bytes;
 
 	rcu_read_lock();
 	if (vif->type == NL80211_IFTYPE_AP_VLAN) {
@@ -29621,6 +29622,7 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 		 */
 		ath12k_mac_add_preserved_stats(stats, &dp_vif->link_vif_delete_stats);
 	}
+
 	is_ds_vif = (ahvif->dp_vif.ppe_vp_type == PPE_VP_USER_TYPE_DS);
 	for_each_set_bit(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
 		if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
@@ -29640,6 +29642,9 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 		}
 		spin_lock_bh(&dp->dp_lock);
 		list_for_each_entry(link_peer, &dp->peers, list)  {
+			rx_packets = 0;
+			rx_bytes = 0;
+
 			if (link_peer->vdev_id != arvif->vdev_id)
 				continue;
 			/* Isolate AP_VLAN stats to the specific WDS peer */
@@ -29664,13 +29669,26 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 				 */
 				if (is_ds_vif && i < DP_REO_PPEDS_RING_IDX)
 					continue;
-				stats->rx_packets +=
+				rx_packets +=
 					(peer_stats->rx[i].sent_to_stack.packets +
 					 peer_stats->rx[i].sent_to_stack_fast.packets);
-				stats->rx_bytes +=
+				rx_bytes +=
 					(peer_stats->rx[i].sent_to_stack.bytes +
 					 peer_stats->rx[i].sent_to_stack_fast.bytes);
 			}
+
+			if (ar && ath12k_extd_rx_stats_enabled(&ar->dp) && link_peer &&
+			    link_peer->peer_stats.rx_stats) {
+				/* Override PPEDS ring sent_to_stack with extended RX
+				 * monitor MSDU totals.
+				 */
+				rx_packets = link_peer->peer_stats.rx_stats->num_msdu;
+				rx_bytes = link_peer->peer_stats.rx_stats->num_msdu_bytes;
+			}
+
+			stats->rx_packets += rx_packets;
+			stats->rx_bytes += rx_bytes;
+
 			for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
 				stats->tx_packets += peer_stats->tx[i].comp_pkt.packets;
 				stats->tx_bytes   += peer_stats->tx[i].comp_pkt.bytes;
@@ -29683,7 +29701,8 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 	/*
 	 * Accumulate hardware PPE DS ring stats on the master VIF
 	 */
-	if (ar && vif->type == NL80211_IFTYPE_AP) {
+	if (ar && vif->type == NL80211_IFTYPE_AP &&
+	    !ath12k_extd_rx_stats_enabled(&ar->dp)) {
 		vif_ppeds_rx = dp_vif->rx_stats[DP_REO_PPEDS_RING_IDX].ppeds_rx;
 		stats->rx_packets += vif_ppeds_rx.packets;
 		stats->rx_bytes += vif_ppeds_rx.bytes;
