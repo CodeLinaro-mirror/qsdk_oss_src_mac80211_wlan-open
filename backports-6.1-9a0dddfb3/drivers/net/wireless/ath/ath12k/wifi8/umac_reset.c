@@ -1207,10 +1207,106 @@ static void ath12k_update_tqm_status_ring_tp(struct ath12k_base *ab)
 	ath12k_hif_write32(ab, reset_ring->hp + 4, ring_size + 32);
 }
 
+
+static const u32 umcmn_isr_s_regs[] = {
+	[0]  = HAL_UMAC_UMCMN_R0_ISR_S0,
+	[1]  = 0,
+	[2]  = HAL_UMAC_UMCMN_R0_ISR_S2,
+	[3]  = HAL_UMAC_UMCMN_R0_ISR_S3,
+	[4]  = HAL_UMAC_UMCMN_R0_ISR_S4,
+	[5]  = HAL_UMAC_UMCMN_R0_ISR_S5,
+	[6]  = HAL_UMAC_UMCMN_R0_ISR_S6,
+	[7]  = HAL_UMAC_UMCMN_R0_ISR_S7,
+	[8]  = HAL_UMAC_UMCMN_R0_ISR_S8,
+	[9]  = HAL_UMAC_UMCMN_R0_ISR_S9,
+	[10] = HAL_UMAC_UMCMN_R0_ISR_S10,
+	[11] = HAL_UMAC_UMCMN_R0_ISR_S11,
+	[12] = HAL_UMAC_UMCMN_R0_ISR_S12,
+	[13] = HAL_UMAC_UMCMN_R0_ISR_S13,
+	[14] = HAL_UMAC_UMCMN_R0_ISR_S14,
+	[15] = HAL_UMAC_UMCMN_R0_ISR_S15,
+	[16] = HAL_UMAC_UMCMN_R0_ISR_S16,
+	[17] = HAL_UMAC_UMCMN_R0_ISR_S17,
+	[18] = HAL_UMAC_UMCMN_R0_ISR_S18,
+	[19] = HAL_UMAC_UMCMN_R0_ISR_S19,
+	[20] = HAL_UMAC_UMCMN_R0_ISR_S20,
+	[21] = HAL_UMAC_UMCMN_R0_ISR_S21,
+	[22] = HAL_UMAC_UMCMN_R0_ISR_S22,
+	[23] = HAL_UMAC_UMCMN_R0_ISR_S23,
+	[24] = HAL_UMAC_UMCMN_R0_ISR_S24,
+	[25] = HAL_UMAC_UMCMN_R0_ISR_S25,
+	[26] = HAL_UMAC_UMCMN_R0_ISR_S26,
+	[27] = HAL_UMAC_UMCMN_R0_ISR_S27,
+	[28] = HAL_UMAC_UMCMN_R0_ISR_S28,
+	[29] = HAL_UMAC_UMCMN_R0_ISR_S29,
+	[30] = HAL_UMAC_UMCMN_R0_ISR_S30,
+};
+
+static const u32 umcmn_isr_s_fatal_mask[] = {
+	[0]  = 0x00000000,
+	[1]  = 0x00000000,
+	[2]  = 0x0000000F,
+	[3]  = 0x64008000,
+	[4]  = 0x00000000,
+	[5]  = 0x2041401E,
+	[6]  = 0x00000000,
+	[7]  = 0x07FF0000,
+	[8]  = 0x00094000,
+	[9]  = 0x00000000,
+	[10] = 0x4007FFFF,
+	[11] = 0x01140415,
+	[12] = 0x1150D04F,
+	[13] = 0x0002ABEA,
+	[14] = 0x7A497FFF,
+	[15] = 0x00033E02,
+	[16] = 0x000001FE,
+	[17] = 0x00000000,
+	[18] = 0x6002AAAA,
+	[19] = 0x00003492,
+	[20] = 0xF803FE00,
+	[21] = 0x40000FFF,
+	[22] = 0x0AAAB6AD,
+	[23] = 0x01555555,
+	[24] = 0x2AA54A95,
+	[25] = 0x24924955,
+	[26] = 0x09249249,
+	[27] = 0x09249249,
+	[28] = 0x0AD51249,
+	[29] = 0x00000040,
+	[30] = 0x00000AAA,
+};
+
+static void ath12k_clear_isr_registers(struct ath12k_base *ab)
+{
+	int i;
+	int isr_wlan_rx_ok[] = HAL_DMAC_DMCMN_ISR_WLAN_RX_OK;
+
+	/* Clear all ISR_S registers */
+	for (i = 0; i < ARRAY_SIZE(umcmn_isr_s_regs); i++) {
+		if (!umcmn_isr_s_regs[i])
+			continue;
+		ath12k_hif_write32(ab, umcmn_isr_s_regs[i], 0);
+	}
+
+	/* Clear ISR_P register */
+	ath12k_hif_write32(ab, HAL_UMAC_UMCMN_R0_ISR_P, 0);
+
+	/* Clear RX_OK interrupt */
+	for (i = 0; i < ab->num_radios; i++) {
+		ath12k_hif_write32(ab, HAL_SEQ_WCSS_DMAC_DMCMN_REG + isr_wlan_rx_ok[i],
+				   0);
+	}
+}
+
 static int ath12k_clear_pending_interrupts(struct ath12k_base *ab, u32 arg)
 {
 	/* TRSLONE-601: WAR */
 	ath12k_update_tqm_status_ring_tp(ab);
+
+	ath12k_clear_isr_registers(ab);
+
+	ath12k_umcmn_irq_enable(ab);
+	ath12k_umcmn_timer_enable(ab);
 
 	return 0;
 }
@@ -1627,4 +1723,95 @@ int ath12k_cumac_hw_post_reset(struct ath12k_base *ab)
 					 CUMAC_HW_POST_RESET_MAX, "CUMAC HW POST-RESET");
 
 	return 0;
+}
+
+void ath12k_wifi8_umcmn_irq_disable(struct ath12k_base *ab)
+{
+	ath12k_hif_umcmn_irq_disable(ab);
+}
+
+void ath12k_wifi8_umcmn_irq_enable(struct ath12k_base *ab)
+{
+	ath12k_hif_umcmn_irq_enable(ab);
+}
+
+irqreturn_t ath12k_wifi8_umcmn_interrupt_handler(int irq, void *arg)
+{
+	struct ath12k_base *ab = arg;
+	unsigned long isr_p_long;
+	u32 isr_p, isr_s;
+	int bit;
+
+	/* Step 1: Read ISR_P to determine which block triggered the interrupt */
+	isr_p = ath12k_hif_read32(ab, HAL_UMAC_UMCMN_R0_ISR_P);
+	if (!isr_p)
+		return IRQ_HANDLED;
+
+	/* Step 2: For each set bit in ISR_P bits [0-30], read the corresponding
+	 * ISR_S register.
+	 */
+	isr_p_long = isr_p;
+	for_each_set_bit(bit, &isr_p_long, ARRAY_SIZE(umcmn_isr_s_regs)) {
+		/* Bit 1 has no ISR_S1 register */
+		if (!umcmn_isr_s_regs[bit])
+			continue;
+
+		isr_s = ath12k_hif_read32(ab, umcmn_isr_s_regs[bit]);
+
+		/* Step 3: Check for fatal errors */
+		if (isr_s & umcmn_isr_s_fatal_mask[bit]) {
+			ath12k_err(ab,
+				   "umcmn fatal error: ISR_P bit %d, ISR_S%d: 0x%08x, fatal_mask: 0x%08x\n",
+				   bit, bit, isr_s, umcmn_isr_s_fatal_mask[bit]);
+
+			ath12k_err(ab,
+				   "Trigger SOC Global Reset and fallback to mode0 recovery by triggering partner crash\n");
+			clear_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags);
+			ath12k_umcmn_irq_disable(ab);
+			ath12k_core_trigger_partner_device_crash(ab);
+			break;
+		}
+	}
+
+	return IRQ_HANDLED;
+}
+
+void ath12k_umcmn_timer_handler(struct timer_list *t)
+{
+	struct ath12k_base *ab = from_timer(ab, t, umcmn_timer);
+
+	ath12k_wifi8_umcmn_interrupt_handler(ab->umcmn_irq_num, ab);
+
+	if (test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags))
+		mod_timer(&ab->umcmn_timer,
+			  jiffies + msecs_to_jiffies(ATH12K_UMCMN_TIMER_INTERVAL_MS));
+}
+
+
+
+int ath12k_wifi8_umcmn_timer_config(struct ath12k_base *ab)
+{
+	timer_setup(&ab->umcmn_timer, ath12k_umcmn_timer_handler, 0);
+	return 0;
+}
+
+void ath12k_wifi8_umcmn_timer_free(struct ath12k_base *ab)
+{
+	del_timer_sync(&ab->umcmn_timer);
+}
+
+void ath12k_wifi8_umcmn_timer_enable(struct ath12k_base *ab)
+{
+	mod_timer(&ab->umcmn_timer,
+		  jiffies + msecs_to_jiffies(ATH12K_UMCMN_TIMER_INTERVAL_MS));
+}
+
+int ath12k_wifi8_umcmn_irq_config(struct ath12k_base *ab)
+{
+	return ath12k_hif_umcmn_irq_config(ab, ath12k_wifi8_umcmn_interrupt_handler);
+}
+
+void ath12k_wifi8_umcmn_irq_free(struct ath12k_base *ab)
+{
+	ath12k_hif_umcmn_irq_free(ab);
 }

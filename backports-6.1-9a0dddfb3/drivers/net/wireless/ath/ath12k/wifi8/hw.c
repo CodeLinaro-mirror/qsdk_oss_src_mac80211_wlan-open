@@ -185,6 +185,7 @@ static const struct ath12k_hw_ops qcn9625_ops = {
  * Group 10,11 : Monitor destination(TX,RX)
  * Group 12: Monitor buffer(TX,RX)
  * Group 13: Roaming RX ring
+ * Group 18: UMCMN interrupts
  * Group 19-21: PPE interrupts
  * Group 22: UMAC reset
  */
@@ -313,7 +314,15 @@ static struct ath12k_hw_ring_mask ath12k_wifi8_hw_ring_mask_qcn9625 = {
 		0,
 		ATH12K_RX_PEER_TELEMETRY_RING_MASK
 	},
-
+	/* Group 18 */
+	.umcmn_interrupts = {
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		0, 0,
+		ATH12K_UMCMN_INTR_MASK_0,
+	},
 	/* Group 19-21 */
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	.ppe2tcl = {
@@ -444,6 +453,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.en_qdsslog = true,
 		.support_fse = true,
 		.cumac_support = true,
+		.support_umcmn_interrupts = UMCMN_INTERRUPT_POLL,
 		.alloc_cacheable_memory = true,
 		.spectral = {
 			.fft_sz = 7,
@@ -562,6 +572,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.en_qdsslog = true,
 		.support_fse = true,
 		.cumac_support = true,
+		.support_umcmn_interrupts = UMCMN_INTERRUPT_POLL,
 		.alloc_cacheable_memory = true,
 		.spectral = {
 			.fft_sz = 7,
@@ -681,6 +692,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.en_qdsslog = true,
 		.support_fse = true,
 		.cumac_support = true,
+		.support_umcmn_interrupts = UMCMN_INTERRUPT_ENABLE,
 		.alloc_cacheable_memory = true,
 		.spectral = {
 			.fft_sz = 7,

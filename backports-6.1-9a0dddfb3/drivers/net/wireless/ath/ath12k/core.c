@@ -4682,6 +4682,7 @@ void ath12k_core_trigger_partner_device_crash(struct ath12k_base *ab)
 		}
 	}
 }
+EXPORT_SYMBOL(ath12k_core_trigger_partner_device_crash);
 
 static void ath12k_partner_chip_power_state_info(struct ath12k_hw_group *ag,
 						 u8 power_state)
