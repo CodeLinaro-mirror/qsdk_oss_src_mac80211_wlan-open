@@ -1947,6 +1947,7 @@ EXPORT_SYMBOL(ath12k_dp_mon_cfg_init);
 int ath12k_dp_mon_init(struct ath12k_dp *dp)
 {
 	struct ath12k_dp_mon *dp_mon;
+	struct ath12k_dp_tx_mon *dp_tx_mon;
 
 	dp_mon = kzalloc(sizeof(*dp_mon), GFP_KERNEL);
 	if (!dp_mon)
@@ -1954,8 +1955,20 @@ int ath12k_dp_mon_init(struct ath12k_dp *dp)
 
 	dp_mon->dp = dp;
 	dp->dp_mon = dp_mon;
-	spin_lock_init(&dp_mon->tx_mon_desc_lock);
-	dp_mon->tx_mon_buf_ring_ready = false;
+
+	if (ath12k_dp_tx_mon_feature_eval(dp)) {
+		dp_tx_mon = kzalloc(sizeof(*dp_tx_mon), GFP_KERNEL);
+		if (!dp_tx_mon) {
+			dp->dp_mon = NULL;
+			kfree(dp_mon);
+			return -ENOMEM;
+		}
+
+		spin_lock_init(&dp_tx_mon->tx_mon_desc_lock);
+		INIT_LIST_HEAD(&dp_tx_mon->tx_mon_desc_free_list);
+		dp_tx_mon->tx_mon_buf_ring_ready = false;
+		dp_mon->dp_tx_mon = dp_tx_mon;
+	}
 
 	return 0;
 }
@@ -1963,8 +1976,11 @@ EXPORT_SYMBOL(ath12k_dp_mon_init);
 
 void ath12k_dp_mon_deinit(struct ath12k_dp *dp)
 {
-	if (dp->dp_mon)
+	if (dp->dp_mon) {
+		kfree(dp->dp_mon->dp_tx_mon);
+		dp->dp_mon->dp_tx_mon = NULL;
 		kfree(dp->dp_mon);
+	}
 	dp->dp_mon = NULL;
 }
 EXPORT_SYMBOL(ath12k_dp_mon_deinit);
@@ -1972,10 +1988,27 @@ EXPORT_SYMBOL(ath12k_dp_mon_deinit);
 int ath12k_dp_mon_pdev_alloc(struct ath12k_pdev_dp *dp_pdev)
 {
 	struct ath12k_pdev_mon_dp *dp_mon_pdev;
+	struct ath12k_pdev_tx_mon *dp_pdev_tx_mon;
 
 	dp_mon_pdev = kzalloc(sizeof(*dp_mon_pdev), GFP_KERNEL);
 	if (!dp_mon_pdev)
 		return -ENOMEM;
+
+	if (ath12k_dp_tx_mon_feature_eval(dp_pdev->dp)) {
+		struct ath12k_dp_mon *dp_mon = dp_pdev->dp->dp_mon;
+
+		if (dp_mon->dp_tx_mon) {
+			dp_pdev_tx_mon = kzalloc(sizeof(*dp_pdev_tx_mon), GFP_KERNEL);
+			if (!dp_pdev_tx_mon) {
+				kfree(dp_mon_pdev);
+				return -ENOMEM;
+			}
+
+			dp_mon_pdev->dp_pdev_tx_mon = dp_pdev_tx_mon;
+			dp_pdev_tx_mon->mon_pdev = dp_mon_pdev;
+			dp_pdev_tx_mon->dp_tx_mon = dp_mon->dp_tx_mon;
+		}
+	}
 
 	dp_mon_pdev->dp_pdev = dp_pdev;
 	dp_mon_pdev->dp_mon = dp_pdev->dp->dp_mon;
@@ -1992,6 +2025,8 @@ void ath12k_dp_mon_pdev_free(struct ath12k_pdev_dp *dp_pdev)
 {
 	ath12k_mac_cache_smart_mon_filter(dp_pdev,
 					  dp_pdev->dp_mon_pdev->smart_mon_filter);
+	kfree(dp_pdev->dp_mon_pdev->dp_pdev_tx_mon);
+	dp_pdev->dp_mon_pdev->dp_pdev_tx_mon = NULL;
 	kfree(dp_pdev->dp_mon_pdev);
 	dp_pdev->dp_mon_pdev = NULL;
 }

@@ -289,7 +289,6 @@ enum hal_mon_end_reason {
 struct ath12k_dp_mon {
 	struct ath12k_dp *dp;
 	struct dp_rxdma_mon_ring rxdma_mon_buf_ring;
-	struct dp_rxdma_mon_ring tx_mon_buf_ring;
 	struct dp_rxdma_mon_ring rx_mon_status_refill_ring[MAX_RXDMA_PER_PDEV];
 	struct dp_srng rxdma_mon_desc_ring;
 	const struct ath12k_dp_arch_mon_ops *mon_ops;
@@ -304,14 +303,7 @@ struct ath12k_dp_mon {
 	u32 num_frag_replenish;
 	u32 num_frag_free;
 
-	struct ath12k_dp_mon_desc *tx_mon_desc_pool;
-	/* lock for tx_mon_desc_pool */
-	spinlock_t tx_mon_desc_lock;
-	struct list_head tx_mon_desc_free_list;
-	struct page_frag_cache tx_mon_pf_cache;
-	u32 tx_num_frag_replenish;
-	u32 tx_num_frag_free;
-	bool tx_mon_buf_ring_ready;
+	struct ath12k_dp_tx_mon *dp_tx_mon;
 	u32 mon_status_ring_size;
 	u32 mon_desc_ring_size;
 	u32 mon_buf_ring_size;
@@ -640,7 +632,7 @@ struct ath12k_pdev_mon_dp_stats {
  * @tx_pkt_tlv_free: Count of TX packet TLV buffers freed back to the pool.
  *                  Used for tracking buffer lifecycle and detecting leaks
  * @tx_status_buf_free: Count of TX status buffers freed back to the pool.
- * @tx_work_queue_scheduled: Number of times work queue is scheduled
+ * @tx_wq_scheduled: Number of times work queue is scheduled
  * @tx_ppdu_desc_invalid: Number of invalid PPDU descriptors encountered
  * @tx_ppdu_desc_overflow: Number of PPDU descriptor buffer overflows
  * @tx_work_queue_stalls: Work queue stall events (processing hangs)
@@ -658,7 +650,7 @@ struct ath12k_pdev_tx_mon_stats {
 	u32 truncated_ppdu;
 	u32 tx_pkt_tlv_free;
 	u32 tx_status_buf_free;
-	u32 tx_work_queue_scheduled;
+	u32 tx_wq_scheduled;
 	u32 tx_ppdu_desc_invalid;
 	u32 tx_ppdu_desc_overflow;
 	u32 tx_work_queue_stalls;
@@ -674,6 +666,70 @@ struct ath12k_pdev_tx_mon_stats {
 	u32 tx_prot_ppdu_delivered;
 	u32 tx_data_ppdu_delivered;
 	u32 tx_ppdu_delivered;
+};
+
+/**
+ * struct ath12k_dp_tx_mon - DP-level TX monitor context
+ * @tx_mon_buf_ring: TX monitor refill buffer ring
+ * @tx_mon_desc_pool: TX monitor descriptor pool
+ * @tx_mon_desc_lock: Lock protecting descriptor pool and lists
+ * @tx_mon_desc_free_list: Free-list for TX monitor descriptors
+ * @tx_mon_pf_cache: Page-frag cache for TX monitor buffers
+ * @tx_num_frag_replenish: Count of replenished TX monitor fragments
+ * @tx_num_frag_free: Count of freed TX monitor fragments
+ * @tx_mon_buf_ring_ready: Refill ring descriptor availability state
+ */
+struct ath12k_dp_tx_mon {
+	struct dp_rxdma_mon_ring tx_mon_buf_ring;
+	struct ath12k_dp_mon_desc *tx_mon_desc_pool;
+	spinlock_t tx_mon_desc_lock;
+	struct list_head tx_mon_desc_free_list;
+	struct page_frag_cache tx_mon_pf_cache;
+	u32 tx_num_frag_replenish;
+	u32 tx_num_frag_free;
+	bool tx_mon_buf_ring_ready;
+};
+
+struct ath12k_pdev_mon_dp;
+
+/**
+ * struct ath12k_pdev_tx_mon - TX monitor context
+ * @mon_pdev: Back pointer to parent monitor pdev context
+ * @dp_tx_mon: Back pointer to soc-level DP TX monitor context
+ * @tx_mon_dst_ring: TX monitor destination ring
+ * @tx_mon_filter: TX monitor filter table
+ * @tx_monitor_started: TX monitor active state
+ * @tx_mon_stats: TX monitor statistics
+ * @txmon_wq: TX monitor worker queue
+ * @txmon_work: TX monitor worker
+ * @tx_mon_ppdu_desc_lock: Lock for TX monitor PPDU descriptors
+ * @tx_mon_ppdu_desc_pool: TX monitor PPDU descriptor pool
+ * @tx_mon_desc_work_list: TX monitor descriptor work list
+ * @tx_mon_ppdu_desc_used_list: Used TX monitor PPDU descriptor list
+ * @tx_mon_ppdu_desc_free_list: Free TX monitor PPDU descriptor list
+ * @tx_mon_ppdu_desc_proc_list: Processing TX monitor PPDU descriptor list
+ * @tx_mon_ppdu_desc_initialized: TX monitor PPDU descriptor pool init state
+ * @tx_mon_wq_initialized: TX monitor workqueue init state
+ * @tx_pktlog_hybrid: TX pktlog hybrid mode state
+ */
+struct ath12k_pdev_tx_mon {
+	struct ath12k_pdev_mon_dp *mon_pdev;
+	struct ath12k_dp_tx_mon *dp_tx_mon;
+	struct dp_srng tx_mon_dst_ring;
+	struct dp_mon_tx_filter **tx_mon_filter;
+	bool tx_monitor_started:1;
+	struct ath12k_pdev_tx_mon_stats tx_mon_stats;
+	struct workqueue_struct *txmon_wq;
+	struct work_struct txmon_work;
+	spinlock_t tx_mon_ppdu_desc_lock;
+	struct ath12k_dp_mon_ppdu_desc *tx_mon_ppdu_desc_pool;
+	struct list_head tx_mon_desc_work_list;
+	struct list_head tx_mon_ppdu_desc_used_list;
+	struct list_head tx_mon_ppdu_desc_free_list;
+	struct list_head tx_mon_ppdu_desc_proc_list;
+	bool tx_mon_ppdu_desc_initialized:1;
+	bool tx_mon_wq_initialized:1;
+	bool tx_pktlog_hybrid;
 };
 
 /**
@@ -750,11 +806,9 @@ struct ath12k_mon_ring_desc_info {
  * @dp_mon: Pointer to global DP monitor context for shared resources
  * @dp_pdev: Pointer to parent pdev DP context for device-specific operations
  * @rxdma_mon_dst_ring: Array of RX DMA monitor destination rings per RXDMA engine
- * @tx_mon_dst_ring: TX monitor destination ring for capturing transmitted frames
  * @rx_status: IEEE 802.11 RX status structure for monitor frame metadata
  * @mon_data: Monitor data structure containing RX/TX frame processing state
  * @rx_filter: Pointer to array of RX monitor filters for frame selection
- * @tx_mon_filter: Pointer to array of TX monitor filters for frame selection
  * @ppdu_desc_pool: Pool of PPDU descriptors for RX monitor frame processing
  * @ppdu_desc_used_list: List of currently used RX PPDU descriptors
  * @ppdu_desc_free_list: List of available RX PPDU descriptors for allocation
@@ -766,28 +820,7 @@ struct ath12k_mon_ring_desc_info {
  * @rxmon_wq: Dedicated work queue for RX monitor frame processing
  * @smart_mon_filter: Smart monitor filter configuration (4-bit CMDV format)
  * @smart_mon_state: Current state of smart monitor functionality
- * @tx_mon_stats: TX monitor statistics counters for performance tracking
- * @txmon_wq: Dedicated work queue for TX monitor frame processing
- * @txmon_work: Work structure for TX monitor processing in work queue context
- * @ppdu_desc_list: List of PPDU descriptors for TX monitor processing
- * @ppdu_desc_list_lock: Spinlock protecting TX PPDU descriptor list access
- * @ppdu_desc_list_depth: Current depth/count of TX PPDU descriptor list
- * @tx_mon_ppdu_desc_lock: Spinlock protecting TX monitor PPDU descriptor operations
- * @tx_mon_ppdu_desc_pool: Pool of PPDU descriptors for TX monitor processing
- * @tx_mon_desc_work_list: List of TX monitor descriptors for tasklet processing
- * @tx_mon_ppdu_desc_used_list: List of currently used TX PPDU descriptors
- * @tx_mon_ppdu_desc_free_list: List of available TX PPDU descriptors
- * @tx_mon_ppdu_desc_proc_list: List of TX PPDU descriptors pending processing
- * @tx_monitor_started: Flag indicating if TX monitor is currently active
- *
- * @tx_mon_ppdu_desc_initialized: State flag indicating TX monitor PPDU descriptor
- * pool has been successfully initialized and allocated. Used to prevent double-free
- * during error cleanup and ensure proper resource lifecycle management.
- *
- * @tx_mon_wq_initialized: State flag indicating TX monitor work queue has been
- * successfully created and initialized. Used to prevent cleanup attempts on
- * uninitialized work queues and ensure proper shutdown sequencing
- * during error recovery.
+ * @dp_pdev_tx_mon: Per-pdev TX monitor context (rings, filters, stats, WQ)
  * @rx_ext_mon_config: Current filter and peer configs for Rx extended monitor.
  * @rx_ext_mon_lock: Spinlock protecting the Rx extended monitor struct.
  *
@@ -824,12 +857,11 @@ struct ath12k_pdev_mon_dp {
 	struct ath12k_dp_mon *dp_mon;
 	struct ath12k_pdev_dp *dp_pdev;
 	struct dp_srng rxdma_mon_dst_ring[MAX_RXDMA_PER_PDEV];
-	struct dp_srng tx_mon_dst_ring;
+	struct ath12k_pdev_tx_mon *dp_pdev_tx_mon;
 
 	struct ieee80211_rx_status rx_status;
 	struct ath12k_mon_data mon_data;
 	struct dp_mon_rx_filter **rx_filter;
-	struct dp_mon_tx_filter **tx_mon_filter;
 	struct ath12k_dp_mon_ppdu_desc *ppdu_desc_pool;
 	struct list_head ppdu_desc_used_list;
 	struct list_head ppdu_desc_free_list;
@@ -869,26 +901,11 @@ struct ath12k_pdev_mon_dp {
 	u8 smart_mon_filter;
 	enum ath12k_dp_smart_mon_state smart_mon_state;
 
-	bool tx_monitor_started:1;
 	struct ath12k_pdev_mon_dp_extn pdev_mon_dp_extn;
-	struct ath12k_pdev_tx_mon_stats tx_mon_stats;
-	struct workqueue_struct *txmon_wq;
-	struct work_struct txmon_work;
-	struct list_head ppdu_desc_list;
-	/* Spinlock protecting TX monitor PPDU descriptor operations */
-	spinlock_t tx_mon_ppdu_desc_lock;
-	struct ath12k_dp_mon_ppdu_desc *tx_mon_ppdu_desc_pool;
-	struct list_head tx_mon_desc_work_list;
-	struct list_head tx_mon_ppdu_desc_used_list;
-	struct list_head tx_mon_ppdu_desc_free_list;
-	struct list_head tx_mon_ppdu_desc_proc_list;
-	bool tx_mon_ppdu_desc_initialized:1;
-	bool tx_mon_wq_initialized:1;
 	struct ath12k_dp_rx_ext_mon *rx_ext_mon_config;
 	spinlock_t rx_ext_mon_lock;
 	bool rx_pktlog_cbf;
 	u8 rx_pktlog_mode;
-	bool tx_pktlog_hybrid;
 	bool nrp_enabled;
 };
 
