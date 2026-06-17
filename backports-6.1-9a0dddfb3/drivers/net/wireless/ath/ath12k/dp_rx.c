@@ -591,6 +591,9 @@ static int ath12k_dp_rx_ipa_smmu_buf_map(struct ath12k_base *ab,
 static inline struct sk_buff *ath12k_dp_alloc_rx_skb(struct ath12k_base *ab,
 						     struct ath12k_rx_desc_info *rx_desc)
 {
+#if defined(CONFIG_SKB_RECYCLE_SIZE) && (CONFIG_SKB_RECYCLE_SIZE == 1664)
+	return ath12k_dp_alloc_skb(DP_RX_BUFFER_SIZE - NET_SKB_PAD);
+#endif
 	return ath12k_dp_alloc_skb(DP_RX_BUFFER_SIZE);
 }
 
@@ -646,6 +649,9 @@ void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 			if (unlikely(!skb))
 				break;
 
+#if defined(CONFIG_SKB_RECYCLE_SIZE) && (CONFIG_SKB_RECYCLE_SIZE == 1664)
+			skb_reserve(skb, -NET_SKB_PAD);
+#endif
 			rx_desc->skb = skb;
 			rx_desc->vaddr = skb->data;
 			rx_desc->is_frag = 0;

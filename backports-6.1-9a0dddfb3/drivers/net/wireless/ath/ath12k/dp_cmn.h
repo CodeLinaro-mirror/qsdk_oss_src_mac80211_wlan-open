@@ -12,6 +12,7 @@
 #include "qcn_extns/ath12k_cmn_extn.h"
 #endif
 #include <linux/hashtable.h>
+#include <linux/kernel.h>
 
 /* Max number of links for MLO connection */
 #define ATH12K_DP_PEER_MAX_MLO_LINKS 5
@@ -36,20 +37,26 @@ struct ath12k_dp_hw_link {
 	u8 device_id;
 	u8 pdev_idx;
 };
-#if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined(CPTCFG_ATH12K_MEM_PROFILE_512M)
-/* TODO: revisit this count during testing */
-#define DP_RX_BUFFER_SIZE		1856
-#elif defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
-/* TODO: revisit this count during testing */
-#define DP_RX_BUFFER_SIZE       1856
-#else
-/* TODO: revisit this count during testing */
-#if BITS_PER_LONG == 32
-#define DP_RX_BUFFER_SIZE		1856
-#else
-#define DP_RX_BUFFER_SIZE		2048
+
+/* skb_active_profile in linux skbuff.h used to set DP_RX_BUFFER_SIZE
+ * Recycler with ipq52xx or ipq96xx non-minent
+ *                --> headroom removed --> NET_SKB_PAD added
+ *                --> 1664+64 = 1728
+ * Recycler without above case
+ *                --> headroom present --> padding not added
+ *                --> 1856 (32-bit) or 1984 (64-bit)
+ * Recycler not enabled --> (1664 + NET_SKB_PAD) allocated
+ */
+#ifdef CONFIG_SKB_RECYCLER
+#if (CONFIG_SKB_RECYCLE_SIZE == 1664)	/* ipq52xx or ipq96xx non-minent */
+#define DP_RX_BUFFER_SIZE		((skb_active_profile->value) + NET_SKB_PAD)
+#else					/* other profiles */
+#define DP_RX_BUFFER_SIZE		(skb_active_profile->value)
 #endif
+#else					/* recycler not enabled */
+#define DP_RX_BUFFER_SIZE		(1664 + NET_SKB_PAD)
 #endif
+
 #define ATH12K_PAGE_SIZE	PAGE_SIZE
 
 #define ATH12K_NUM_POOL_TX_DESC		(ab->mem_params.dp_params.num_pool_tx_desc)
