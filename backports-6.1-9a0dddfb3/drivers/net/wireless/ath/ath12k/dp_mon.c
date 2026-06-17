@@ -748,6 +748,9 @@ static u8 ath12k_dp_rx_rate_convert_bw(u8 bw)
 	case CMN_BW_160MHZ:
 		ret = RATE_INFO_BW_160;
 		break;
+	case CMN_BW_240MHZ:
+		ret = RATE_INFO_BW_160;
+		break;
 	case CMN_BW_320MHZ:
 		ret = RATE_INFO_BW_320;
 		break;
