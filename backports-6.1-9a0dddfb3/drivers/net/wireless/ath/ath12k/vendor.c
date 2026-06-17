@@ -15627,8 +15627,19 @@ static int ath12k_vendor_spectral_get_cap(struct wiphy *wiphy,
 		    SPECTRAL_SCALING_RSSI_THRESH);
 	nla_put_u8(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CAP_DEFAULT_AGC_MAX_GAIN,
 		   SPECTRAL_IPQ8074_DEFAULT_MAX_GAIN);
-	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CAP_NUM_DETECTORS_20_MHZ,
-		    ar->spectral.spectral_cap.num_bw_caps_entry);
+
+	/* Spectral supports a single detector for 20/40/80/160 MHz on all
+	 * chipsets. 80+80 MHz is never supported. 320 MHz support is
+	 * chipset-specific and tracked in hw_params.
+	 */
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CAP_NUM_DETECTORS_20_MHZ, 1);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CAP_NUM_DETECTORS_40_MHZ, 1);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CAP_NUM_DETECTORS_80_MHZ, 1);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CAP_NUM_DETECTORS_160_MHZ, 1);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CAP_NUM_DETECTORS_80P80_MHZ,
+		    0);
+	nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CAP_NUM_DETECTORS_320_MHZ,
+		    ar->ab->hw_params->spectral.supports_320mhz ? 1 : 0);
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_SPECTRAL,
 		   "spectral get_cap: SUCCESS iface=%s\n",

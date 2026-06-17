@@ -313,6 +313,7 @@ struct ath12k_hw_params {
 		u8 fft_hdr_len;
 		u16 max_fft_bins;
 		bool fragment_160mhz;
+		bool supports_320mhz;
 	} spectral;
 
 	u16 interface_modes;
