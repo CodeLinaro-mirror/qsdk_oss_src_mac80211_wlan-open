@@ -1421,6 +1421,16 @@ ieee80211_sta_bw_reconfig_start_csa(struct ieee80211_link_data *link,
 	link->u.mgd.beacon_crc_valid = false;
 	link->u.mgd.csa.blocked_tx = csa_ie.mode;
 	link->u.mgd.csa.bw_reconfig = true;
+	link->u.mgd.csa.nol_hist_cac_pending = false;
+
+	if (!cfg80211_chandef_dfs_nol_clear(local->hw.wiphy,
+					    &csa_ie.chanreq.oper))
+		goto drop_connection;
+
+	if (cfg80211_chandef_dfs_nol_history(local->hw.wiphy,
+					     &csa_ie.chanreq.oper))
+		link->u.mgd.csa.nol_hist_cac_pending = true;
+
 	if (csa_ie.mode && !ieee80211_vif_is_mld(&sdata->vif))
 		ieee80211_vif_block_queues_csa(sdata);
 
@@ -2806,7 +2816,7 @@ static void ieee80211_chswitch_post_beacon(struct ieee80211_link_data *link)
 	 * When the CSA target channel needs NOL CAC, keep TX blocked.
 	 * TX is unblocked after CAC completes in ieee80211_dfs_cac_timer_work().
 	 */
-	if (link->u.mgd.csa.nol_hist_cac_pending)
+	if (link->u.mgd.csa.nol_hist_cac_pending && !ieee80211_vif_is_mld(&sdata->vif))
 		ieee80211_vif_block_queues_csa(sdata);
 	else
 		ieee80211_vif_unblock_queues_csa(sdata);
@@ -3418,31 +3428,13 @@ ieee80211_sta_process_chanswitch(struct ieee80211_link_data *link,
 	link->u.mgd.csa.bw_reconfig = false;
 	link->u.mgd.csa.nol_hist_cac_pending = false;
 
-	/*
-	 * Handle CSA target channel DFS state:
-	 *
-	 * NOL (DFS_UNAVAILABLE, active NOP): channel is forbidden — disconnect.
-	 * This should have been caught by cfg80211_chandef_usable() above, but
-	 * handle it explicitly in case the AP sends CSA to an in-NOP channel.
-	 *
-	 * NOL history (IEEE80211_CHAN_NOL_HISTORY, DFS_USABLE after NOP expiry):
-	 * CAC is required before TX. Block TX and defer switch completion until
-	 * CAC finishes. wpa_supplicant will start CAC on EVENT_CH_SWITCH.
-	 */
-	if (csa_ie.chanreq.oper.chan &&
-	    (csa_ie.chanreq.oper.chan->flags & IEEE80211_CHAN_RADAR)) {
-		if (csa_ie.chanreq.oper.chan->dfs_state ==
-		    NL80211_DFS_UNAVAILABLE)
-			goto drop_connection;
+	if (!cfg80211_chandef_dfs_nol_clear(local->hw.wiphy,
+					    &csa_ie.chanreq.oper))
+		goto drop_connection;
 
-		/* NOL_HISTORY requires CAC only when channel is not yet
-		 * DFS_AVAILABLE. If a prior successful CAC already cleared it,
-		 * TX can proceed without a new CAC.
-		 */
-		if ((csa_ie.chanreq.oper.chan->flags & IEEE80211_CHAN_NOL_HISTORY) &&
-		    csa_ie.chanreq.oper.chan->dfs_state != NL80211_DFS_AVAILABLE)
-			link->u.mgd.csa.nol_hist_cac_pending = true;
-	}
+	if (cfg80211_chandef_dfs_nol_history(local->hw.wiphy,
+					     &csa_ie.chanreq.oper))
+		link->u.mgd.csa.nol_hist_cac_pending = true;
 
 	if (csa_ie.mode && !ieee80211_vif_is_mld(&sdata->vif))
 		ieee80211_vif_block_queues_csa(sdata);
@@ -5200,6 +5192,7 @@ static void __ieee80211_disconnect(struct ieee80211_sub_if_data *sdata)
 	sdata->deflink.u.mgd.csa.waiting_bcn = false;
 	sdata->deflink.u.mgd.csa.blocked_tx = false;
 	sdata->deflink.u.mgd.csa.bw_reconfig = false;
+	sdata->deflink.u.mgd.csa.nol_hist_cac_pending = false;
 	ieee80211_vif_unblock_queues_csa(sdata);
 
 	ieee80211_report_disconnect(sdata, frame_buf, sizeof(frame_buf), tx,
