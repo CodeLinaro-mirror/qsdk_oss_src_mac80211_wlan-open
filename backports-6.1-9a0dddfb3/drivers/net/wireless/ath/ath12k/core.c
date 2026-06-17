@@ -2433,10 +2433,43 @@ inline int ath12k_wait_for_cumac_completion(struct ath12k_hw_group *ag)
 
 static int ath12k_core_complete_cumac_config(struct ath12k_hw_group *ag)
 {
+	struct ath12k_base *ab = NULL;
 	int ret;
+	int i;
 
 	if (!ag->cumac_enabled)
 		return 0;
+
+	for (i = 0; i < ag->num_devices; i++) {
+		ab = ag->ab[i];
+		if (ab && !ab->is_bypassed)
+			break;
+		ab = NULL;
+	}
+
+	if (!ab) {
+		ath12k_err(NULL, "No valid device found for CUMAC config\n");
+		return -EINVAL;
+	}
+
+	if (!test_bit(WMI_SERVICE_PDEV_SET_CUMAC_CHIP_CMD_SUPPORT,
+		      ab->wmi_ab.svc_map)) {
+		/* FW does not support the CUMAC chip WMI command; hardcode
+		 * chip id 0 as the CUMAC chip and skip the WMI send path.
+		 */
+		ab = ag->ab[0];
+		if (!ab || ab->is_bypassed) {
+			ath12k_err(NULL, "CUMAC chip (device id 0) is unavailable or bypassed\n");
+			return -EINVAL;
+		}
+
+		ath12k_dbg(ab, ATH12K_DBG_BOOT,
+			   "FW does not support CUMAC chip cmd, using chip id 0\n");
+		ag->cumac_chip_id = 0;
+		ag->cumac_selected = true;
+		ab->is_cumac_chip = true;
+		return 0;
+	}
 
 	ret = ath12k_select_cumac_chip(ag);
 	if (ret) {

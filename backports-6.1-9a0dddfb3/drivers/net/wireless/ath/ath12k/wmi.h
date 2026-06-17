@@ -2842,6 +2842,7 @@ enum wmi_tlv_service {
 
 	WMI_TLV_SERVICE_SHARED_CU_MEM_MODEL_COUNT_DOWN = 497,
 	WMI_SERVICE_ML_PEER_MASTER_MIGRATION_SUPPORT = 500,
+	WMI_SERVICE_PDEV_SET_CUMAC_CHIP_CMD_SUPPORT = 520,
 
 	WMI_MAX_EXT2_SERVICE,
 };
@@ -3239,6 +3240,7 @@ struct wmi_ctrl_path_pmlo_telemetry_stats {
 #endif
 #define WMI_RSRC_CFG_HOST_AFC_TRIGGER_ON_DEFAULT_CC_EVENT_BIT   22
 #define WMI_RSRC_CFG_HOST_SVC_REO_MGMT_SUPPORT                  26
+#define WMI_RSRC_CFG_HOST_SVC_FLAG_CUMAC_CMD_SUPPORT_BIT        27
 
 struct ath12k_wmi_resource_config_params {
 	__le32 tlv_header;
