@@ -240,6 +240,8 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_RX_PKT_PROTOCOL_TAG = 535,
 	QCA_NL80211_VENDOR_SUBCMD_RX_FLOW_TAG_OP = 536,
 	QCA_NL80211_VENDOR_SUBCMD_FSE_CCE_STATS_DUMP = 537,
+	QCA_NL80211_VENDOR_SUBCMD_WLAN_STA_MAX_PWR_TABLE = 538,
+	QCA_NL80211_VENDOR_SUBCMD_WLAN_POWER_TABLE = 539,
 };
 
 /**
@@ -5712,6 +5714,70 @@ enum qca_wlan_vendor_attr_ctl_table {
 	QCA_WLAN_VENDOR_ATTR_CTL_TABLE_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_CTL_TABLE_MAX =
 	QCA_WLAN_VENDOR_ATTR_CTL_TABLE_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_sta_max_pwr_table - Attributes for
+ * %QCA_NL80211_VENDOR_SUBCMD_WLAN_STA_MAX_PWR_TABLE
+ *
+ * @QCA_WLAN_VENDOR_ATTR_STA_MAX_PWR_TABLE_INVALID: Reserved.
+ * @QCA_WLAN_VENDOR_ATTR_STA_MAX_PWR_TABLE_RADIO_INDEX: u8. Index of the
+ *	radio (pdev) to which this command is directed.
+ * @QCA_WLAN_VENDOR_ATTR_STA_MAX_PWR_TABLE_NUM_PEERS: u32. Number of STA
+ *	entries being sent in this batch. Maximum 40 per WMI command.
+ * @QCA_WLAN_VENDOR_ATTR_STA_MAX_PWR_TABLE_DATA: Binary blob of packed
+ *	per-STA entries. Each entry is 10 bytes: 6-byte MAC address followed
+ *	by a 4-byte s32 power limit (dBm, little-endian).
+ */
+enum qca_wlan_vendor_attr_sta_max_pwr_table {
+	QCA_WLAN_VENDOR_ATTR_STA_MAX_PWR_TABLE_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_STA_MAX_PWR_TABLE_RADIO_INDEX,
+	QCA_WLAN_VENDOR_ATTR_STA_MAX_PWR_TABLE_NUM_PEERS,
+	QCA_WLAN_VENDOR_ATTR_STA_MAX_PWR_TABLE_DATA,
+
+	/* Keep last */
+	QCA_WLAN_VENDOR_ATTR_STA_MAX_PWR_TABLE_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_STA_MAX_PWR_TABLE_MAX =
+		QCA_WLAN_VENDOR_ATTR_STA_MAX_PWR_TABLE_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_power_table - Attributes for
+ * %QCA_NL80211_VENDOR_SUBCMD_WLAN_POWER_TABLE
+ *
+ * @QCA_WLAN_VENDOR_ATTR_POWER_TABLE_INVALID: Reserved.
+ * @QCA_WLAN_VENDOR_ATTR_POWER_TABLE_RADIO_INDEX: u8. Index of the radio
+ *	(pdev) to which this command is directed.
+ * @QCA_WLAN_VENDOR_ATTR_POWER_TABLE_FREQ_BAND: u32. Frequency band selector.
+ *	0 = 5 GHz, 1 = 2.4 GHz, 2 = 6 GHz.
+ * @QCA_WLAN_VENDOR_ATTR_POWER_TABLE_IS_EXT: u32. 0 for default
+ *	targetPowerR2PTable; 1 to update the extension fields (802.11be targets).
+ * @QCA_WLAN_VENDOR_ATTR_POWER_TABLE_TARGET_TYPE: u32. Chip identifier.
+ *	0 = Alder, 1 = Pine, 0x10 = Waikiki.
+ * @QCA_WLAN_VENDOR_ATTR_POWER_TABLE_SUB_BAND: u32. Sub-band index within
+ *	the selected frequency band.
+ * @QCA_WLAN_VENDOR_ATTR_POWER_TABLE_END_OF_UPDATE: u32. Set to 1 on the
+ *	last sub-band message for a given frequency band to signal completion.
+ * @QCA_WLAN_VENDOR_ATTR_POWER_TABLE_LENGTH: u32. Byte length of the
+ *	following DATA blob.
+ * @QCA_WLAN_VENDOR_ATTR_POWER_TABLE_DATA: Binary blob of rate-to-power
+ *	table data (s8 values), length given by LENGTH attribute.
+ */
+enum qca_wlan_vendor_attr_power_table {
+	QCA_WLAN_VENDOR_ATTR_POWER_TABLE_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_POWER_TABLE_RADIO_INDEX,
+	QCA_WLAN_VENDOR_ATTR_POWER_TABLE_FREQ_BAND,
+	QCA_WLAN_VENDOR_ATTR_POWER_TABLE_IS_EXT,
+	QCA_WLAN_VENDOR_ATTR_POWER_TABLE_TARGET_TYPE,
+	QCA_WLAN_VENDOR_ATTR_POWER_TABLE_SUB_BAND,
+	QCA_WLAN_VENDOR_ATTR_POWER_TABLE_END_OF_UPDATE,
+	QCA_WLAN_VENDOR_ATTR_POWER_TABLE_LENGTH,
+	QCA_WLAN_VENDOR_ATTR_POWER_TABLE_DATA,
+
+	/* Keep last */
+	QCA_WLAN_VENDOR_ATTR_POWER_TABLE_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_POWER_TABLE_MAX =
+		QCA_WLAN_VENDOR_ATTR_POWER_TABLE_AFTER_LAST - 1,
 };
 
 /**
