@@ -142,6 +142,7 @@ ath12k_dp_peer_migration_qcn9625(struct ath12k_link_vif *arvif,
 
 		/* Update to new primary link */
 		ahsta->primary_link_id = peer_node->pri_link_id;
+		ml_peer->primary_link_id = peer_node->pri_link_id;
 
 		/* Set new primary link flags */
 		arsta = rcu_dereference(ahsta->link[peer_node->pri_link_id]);

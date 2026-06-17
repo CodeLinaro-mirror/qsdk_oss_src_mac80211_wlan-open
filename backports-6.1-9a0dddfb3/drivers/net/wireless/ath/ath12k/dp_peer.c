@@ -2060,6 +2060,9 @@ int ath12k_dp_peer_set_param_by_dp_peer(void *ptr, enum ath12k_dp_peer_param par
 		spin_unlock_bh(&dp_peer->keys_lock);
 	}
 	break;
+	case ATH12K_DP_PEER_PRIMARY_LINK_ID_PARAM:
+		dp_peer->primary_link_id = val->primary_link_id;
+	break;
 	default:
 		ath12k_err(NULL, "Invalid set param %d", param);
 		ret = -EINVAL;

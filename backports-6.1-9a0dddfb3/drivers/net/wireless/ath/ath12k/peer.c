@@ -2048,3 +2048,22 @@ int ath12k_get_peer_telemetry_stats(struct ath12k_vif *ahvif,
 
 	return ret;
 }
+
+void ath12k_sta_update_primary_link(struct wiphy *wiphy,
+				    struct ath12k_sta *ahsta, u8 link_id)
+{
+	union ath12k_config_param val;
+	void *dp_peer;
+
+	lockdep_assert_wiphy(wiphy);
+
+	ahsta->primary_link_id = link_id;
+
+	dp_peer = ath12k_sta_get_dp_peer_wiphy_locked(wiphy, ahsta);
+	if (dp_peer) {
+		val.primary_link_id = link_id;
+		ath12k_dp_peer_set_param_by_dp_peer(dp_peer,
+						    ATH12K_DP_PEER_PRIMARY_LINK_ID_PARAM,
+						    &val);
+	}
+}
