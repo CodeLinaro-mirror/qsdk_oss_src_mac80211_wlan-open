@@ -162,6 +162,12 @@ struct ath12k_vendor_ch_switch_attrs {
  *	indicate parameters update for multiple BSS to the driver to perform
  *	driver internals based on the parameter change. The attributes used
  *	with this command are defined in &enum qca_wlan_vendor_attr_set_multi_bss_param.
+ *
+ * @QCA_NL80211_VENDOR_SUBCMD_GREEN_AP: Vendor subcommand used to configure
+ *      and query the Green AP power-save feature on the AP interface.
+ *
+ *      The attributes used with this command are defined in
+ *      enum qca_wlan_vendor_attr_green_ap.
  */
 enum qca_nl80211_vendor_subcmds {
 	/* Wi-Fi configuration subcommand */
@@ -192,6 +198,7 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_ATF_OFFLOAD_OPS = 268,
 	QCA_NL80211_VENDOR_SUBCMD_DCS_CONFIG = 269,
 	QCA_NL80211_VENDOR_SUBCMD_EXTENDED_MONITOR = 272,
+	QCA_NL80211_VENDOR_SUBCMD_GREEN_AP = 280,
 	QCA_NL80211_VENDOR_SUBCMD_ME_LIST = 374,
 	QCA_NL80211_VENDOR_SUBCMD_ME_CONFIG = 375,
 
@@ -2314,6 +2321,73 @@ enum qca_wlan_vendor_attr_atf_offload_ops {
 	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_MAX =
 	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_AFTER_LAST - 1
+};
+
+/**
+ * enum qca_wlan_vendor_attr_green_ap_mode - Green AP operating mode
+ * values used with %QCA_WLAN_VENDOR_ATTR_SET_GREEN_AP_ENABLE_MODE.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_GREEN_AP_MODE_DISABLED: Green AP is disabled.
+ * @QCA_WLAN_VENDOR_ATTR_GREEN_AP_MODE_NO_STA: Green AP is enabled when
+ *	no stations are associated.
+ * @QCA_WLAN_VENDOR_ATTR_GREEN_AP_MODE_NUM_STREAM: Green AP is enabled
+ *	when no multi-stream (NSS > 1) stations are associated.
+ */
+enum qca_wlan_vendor_attr_green_ap_mode {
+	QCA_WLAN_VENDOR_ATTR_GREEN_AP_MODE_DISABLED   = 0,
+	QCA_WLAN_VENDOR_ATTR_GREEN_AP_MODE_NO_STA     = 1,
+	QCA_WLAN_VENDOR_ATTR_GREEN_AP_MODE_NUM_STREAM = 2,
+
+	QCA_WLAN_VENDOR_ATTR_GREEN_AP_MODE_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_GREEN_AP_MODE_MAX =
+	QCA_WLAN_VENDOR_ATTR_GREEN_AP_MODE_AFTER_LAST - 1
+};
+
+/**
+ * enum qca_wlan_vendor_attr_green_ap - Attributes used with
+ * %QCA_NL80211_VENDOR_SUBCMD_GREEN_AP.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_SET_GREEN_AP_ENABLE_MODE: u8 attribute.
+ * Configures the Green AP operating mode for the link identified by
+ * %QCA_WLAN_VENDOR_ATTR_GREEN_AP_LINK_ID. The value is one of
+ * %enum qca_wlan_vendor_attr_green_ap_mode. When Green AP is active the AP reduces
+ * its TX/RX chainmask to 1x1 to save RF power.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_GET_GREEN_AP_ENABLE_MODE: u8 attribute returned
+ * in the GET response. Carries the currently configured Green AP mode value
+ * for the link identified by %QCA_WLAN_VENDOR_ATTR_GREEN_AP_LINK_ID.
+ * Uses the same value space as
+ * %QCA_WLAN_VENDOR_ATTR_SET_GREEN_AP_ENABLE_MODE.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_SET_GREEN_AP_PS_TIMEOUT: u32 attribute.
+ * Configures the power-save transition delay in seconds for the link
+ * identified by %QCA_WLAN_VENDOR_ATTR_GREEN_AP_LINK_ID. The driver waits
+ * this many seconds after the Green AP enable condition is met before actually
+ * switching the chainmask. Valid range: 20 to 65534 seconds.
+ * A value of 0 requests an immediate transition (no delay).
+ *
+ * @QCA_WLAN_VENDOR_ATTR_GET_GREEN_AP_PS_TIMEOUT: u32 attribute returned
+ * in the GET response. Carries the currently configured power-save
+ * transition delay in seconds for the link identified by
+ * %QCA_WLAN_VENDOR_ATTR_GREEN_AP_LINK_ID.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_GREEN_AP_LINK_ID: u8 attribute.
+ * Identifies the MLO link to which the SET or GET operation applies.
+ * Valid values are 0 to %IEEE80211_MLD_MAX_NUM_LINKS - 1.
+ * When this attribute is not present, the operation applies to link 0.
+ * An invalid link ID causes the command to fail with an error.
+ */
+enum qca_wlan_vendor_attr_green_ap {
+	QCA_WLAN_VENDOR_ATTR_GREEN_AP_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_SET_GREEN_AP_ENABLE_MODE,
+	QCA_WLAN_VENDOR_ATTR_GET_GREEN_AP_ENABLE_MODE,
+	QCA_WLAN_VENDOR_ATTR_SET_GREEN_AP_PS_TIMEOUT,
+	QCA_WLAN_VENDOR_ATTR_GET_GREEN_AP_PS_TIMEOUT,
+	QCA_WLAN_VENDOR_ATTR_GREEN_AP_LINK_ID,
+
+	QCA_WLAN_VENDOR_ATTR_GREEN_AP_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_GREEN_AP_MAX =
+	QCA_WLAN_VENDOR_ATTR_GREEN_AP_AFTER_LAST - 1
 };
 
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
