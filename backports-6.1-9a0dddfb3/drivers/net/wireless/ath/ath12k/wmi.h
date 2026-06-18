@@ -2554,6 +2554,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_ENERGY_MGMT_DPS_ASSISTING_ROLE_CMD_FIXED_PARAM = 0x525,
 	WMI_TAG_MAC_PHY_CAPABILITIES_EXT2 = 0x526,
 	WMI_TAG_PEER_ASSOC_CIP_INFO = 0x527,
+	WMI_TAG_SMD_PARAMS = 0x53E,
 	WMI_TAG_MLO_PEER_TID_TO_LINK_MAP_EVENT_FIXED_PARAM = 0x544,
 	WMI_TAG_UHR_AP_NPCA_PARAMS = 0x54a,
 	WMI_ENERGY_MGMT_OEM_DATA_FIXED_PARAM = 0x56E,
@@ -2562,6 +2563,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_SHARED_MEM_TBTT_OFFSET_INFO = 0x578,
 	WMI_TAG_PDEV_SET_CUMAC_CHIP = 0x57A,
 	WMI_TAG_PDEV_SET_CUMAC_COMPLETE = 0x57B,
+	WMI_TAG_PEER_UHR_NPCA_OP_PARAMS = 0x57D,
 	WMI_TAG_MAX
 };
 
@@ -3788,6 +3790,21 @@ struct wmi_vdev_start_smd_params {
 	__le32 tlv_header;
 	struct ath12k_wmi_mac_addr_params mac_addr;
 	__le32 flags;
+} __packed;
+
+#define WMI_NPCA_PEER_CAP1_CHAN_OFFSET       GENMASK(3, 0)
+#define WMI_NPCA_PEER_CAP1_MIN_THRESHOLD     GENMASK(7, 4)
+#define WMI_NPCA_PEER_CAP1_SWITCH_DELAY      GENMASK(13, 8)
+#define WMI_NPCA_PEER_CAP1_SWITCH_BACK_DELAY GENMASK(19, 14)
+#define WMI_NPCA_PEER_CAP1_INITIAL_QSRC      GENMASK(21, 20)
+#define WMI_NPCA_PEER_CAP1_MOPLEN            BIT(22)
+
+#define WMI_NPCA_PEER_CAP2_PUNCTURE_BITMAP   GENMASK(15, 0)
+
+struct wmi_peer_uhr_npca_op_params {
+	__le32 tlv_header;
+	__le32 npca_cap1;
+	__le32 npca_cap2;
 } __packed;
 
 struct wmi_partner_link_info {
@@ -5168,6 +5185,17 @@ struct peer_assoc_holq_params {
 	u32 pn_addr_39_32;
 };
 
+struct peer_assoc_npca_params {
+	bool enabled;
+	u8 npca_offset;
+	u16 npca_punct_bitmap;
+	u8 npca_min_dur_threshold;
+	u8 npca_switch_delay;
+	u8 npca_switch_back_delay;
+	u8 npca_initial_qsrc;
+	u8 npca_moplen;
+};
+
 struct ath12k_wmi_peer_assoc_arg {
 	u32 vdev_id;
 	u32 peer_new_assoc;
@@ -5250,6 +5278,7 @@ struct ath12k_wmi_peer_assoc_arg {
 	u32 peer_uhr_cap_phy[WMI_MAX_UHRCAP_PHY_SIZE];
 	u32 sta_id;
 	struct peer_assoc_smd_params smd;
+	struct peer_assoc_npca_params npca;
 };
 
 #define ATH12K_WMI_FLAG_MLO_ENABLED			BIT(0)

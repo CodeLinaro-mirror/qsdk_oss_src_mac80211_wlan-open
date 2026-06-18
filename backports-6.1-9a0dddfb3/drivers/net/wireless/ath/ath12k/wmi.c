@@ -3787,13 +3787,15 @@ static void *ath12k_wmi_peer_assoc_v2_cmd(struct ath12k *ar,
 					  struct ath12k_wmi_peer_assoc_arg *arg,
 					  enum wmi_tlv_cmd_id *cmd_id)
 {
+	struct wmi_peer_uhr_npca_op_params *npca_params;
+	struct wmi_peer_assoc_cip_info *cip_info;
+	struct wmi_tlv *tlv;
+
 	if (!test_bit(WMI_SERVICE_EXT_TLV_SUPPORT,
 		     ar->ab->wmi_ab.svc_map))
 		return ptr;
 
 	*cmd_id = WMI_PEER_ASSOC_V2_CMDID;
-	struct wmi_tlv *tlv;
-	struct wmi_peer_assoc_cip_info *cip_info;
 
 	/*
 	 * Fill the tlv here for WMI_PEER_ASSOC_V2_CMDID
@@ -3802,7 +3804,6 @@ static void *ath12k_wmi_peer_assoc_v2_cmd(struct ath12k *ar,
 	/*
 	 * Fill empty TLV's for npca_params
 	 */
-
 	tlv = ptr;
 	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
 	ptr += TLV_HDR_SIZE;
@@ -3826,6 +3827,69 @@ static void *ath12k_wmi_peer_assoc_v2_cmd(struct ath12k *ar,
 	cip_info->cfp_padding_bits = cpu_to_le32(arg->control_mic_pad);
 
 	ptr += sizeof(*cip_info);
+
+	/*
+	 * Fill empty TLV's for smd params
+	 */
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_SMD_PARAMS, 0);
+	ptr += TLV_HDR_SIZE;
+
+	/*
+	 * Fill empty TLV's for uhr rateset
+	 */
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
+	ptr += TLV_HDR_SIZE;
+
+	/*
+	 * Emit npca op params TLV; include element inside wrapper when enabled.
+	 */
+	tlv = ptr;
+	if (arg->npca.enabled) {
+		tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
+						 sizeof(*npca_params));
+		ptr += TLV_HDR_SIZE;
+
+		npca_params = ptr;
+		npca_params->tlv_header =
+			ath12k_wmi_tlv_cmd_hdr(WMI_TAG_PEER_UHR_NPCA_OP_PARAMS,
+					       sizeof(*npca_params));
+
+		npca_params->npca_cap1 =
+			le32_encode_bits(arg->npca.npca_offset,
+					 WMI_NPCA_PEER_CAP1_CHAN_OFFSET) |
+			le32_encode_bits(arg->npca.npca_min_dur_threshold,
+					 WMI_NPCA_PEER_CAP1_MIN_THRESHOLD) |
+			le32_encode_bits(arg->npca.npca_switch_delay,
+					 WMI_NPCA_PEER_CAP1_SWITCH_DELAY) |
+			le32_encode_bits(arg->npca.npca_switch_back_delay,
+					 WMI_NPCA_PEER_CAP1_SWITCH_BACK_DELAY) |
+			le32_encode_bits(arg->npca.npca_initial_qsrc,
+					 WMI_NPCA_PEER_CAP1_INITIAL_QSRC) |
+			le32_encode_bits(arg->npca.npca_moplen,
+					 WMI_NPCA_PEER_CAP1_MOPLEN);
+		npca_params->npca_cap2 =
+			le32_encode_bits(arg->npca.npca_punct_bitmap,
+					 WMI_NPCA_PEER_CAP2_PUNCTURE_BITMAP);
+
+		ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+			   "peer npca params assign: vdev_id=%u npca_offset=%u punct_bitmap=0x%x min_dur=%u switch_delay=%u switch_back=%u init_qsrc=%u moplen=%u cap1=0x%x cap2=0x%x\n",
+			   arg->vdev_id,
+			   arg->npca.npca_offset,
+			   arg->npca.npca_punct_bitmap,
+			   arg->npca.npca_min_dur_threshold,
+			   arg->npca.npca_switch_delay,
+			   arg->npca.npca_switch_back_delay,
+			   arg->npca.npca_initial_qsrc,
+			   arg->npca.npca_moplen,
+			   le32_to_cpu(npca_params->npca_cap1),
+			   le32_to_cpu(npca_params->npca_cap2));
+		ptr += sizeof(*npca_params);
+	} else {
+		tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
+		ptr += TLV_HDR_SIZE;
+	}
 
 	return ptr;
 }
@@ -3894,10 +3958,16 @@ int ath12k_wmi_send_peer_assoc_cmd(struct ath12k *ar,
 	 * v2 command
 	 */
 
-	/* Dummy TLV inclusion for create mlo params and npca */
+		/* Dummy TLV inclusion for create mlo params and npca */
 		len += (2 * TLV_HDR_SIZE);
 
 		len += sizeof(struct wmi_peer_assoc_cip_info);
+
+		/* Dummy TLV inclusion for smd params, uhr rateset, npca op */
+		len += (3 * TLV_HDR_SIZE);
+
+		if (arg->npca.enabled)
+			len += sizeof(struct wmi_peer_uhr_npca_op_params);
 	}
 
 	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
