@@ -936,6 +936,7 @@ struct ath12k_link_vif {
 	struct ath12k_mbssid_info *mbssid_info;
 
 	struct ath12k_smd_params smd_params;
+	bool self_peer_authorized;
 };
 
 struct ath12k_dp_link_vif {
