@@ -129,7 +129,10 @@ struct ath12k_dp_hw_link {
 #define DP_TOTAL_REO_DST_RINGS (DP_REO_DST_RING_MAX + DP_REO_ERR_RINGS_MAX)
 
 #define ATH12K_DP_PCP_TID_MAP_SIZE	8
-#define ATH12K_DP_MAX_TID_PRECEDENCE_VAL 11
+/* Unified TID map precedence: 0 = DSCP wins, 1 = PCP wins.
+ * HLOS is always present but implicitly enabled by other features.
+ */
+#define ATH12K_DP_MAX_TID_PRECEDENCE_VAL 1
 
 /* Hash table size: 2^11 = 2048 buckets for up to 2048 peers */
 #define ATH12K_DP_PEER_HASH_BITS 11

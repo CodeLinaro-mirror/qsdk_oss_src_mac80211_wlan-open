@@ -1623,6 +1623,8 @@ const struct hal_ops hal_qcn9625_ops = {
 	.set_link_desc_addr = ath12k_wifi8_hal_set_link_desc_addr,
 	.tx_set_dscp_tid_map = ath12k_wifi8_hal_tx_set_dscp_tid_map,
 	.tx_update_dscp_tid_map = ath12k_wifi8_hal_tx_update_dscp_tid_map,
+	.tx_set_pcp_tid_map = ath12k_wifi8_hal_tx_set_pcp_tid_map,
+	.tx_set_tid_map_precedence = ath12k_wifi8_hal_tx_set_tid_map_precedence,
 	.tx_configure_bank_register =
 				ath12k_wifi8_hal_tx_configure_bank_register,
 	.write_reoq_lut_addr = ath12k_wifi8_hal_write_reoq_lut_addr,
