@@ -2555,6 +2555,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_MAC_PHY_CAPABILITIES_EXT2 = 0x526,
 	WMI_TAG_PEER_ASSOC_CIP_INFO = 0x527,
 	WMI_TAG_MLO_PEER_TID_TO_LINK_MAP_EVENT_FIXED_PARAM = 0x544,
+	WMI_TAG_UHR_AP_NPCA_PARAMS = 0x54a,
 	WMI_ENERGY_MGMT_OEM_DATA_FIXED_PARAM = 0x56E,
 	WMI_ENERGY_MGMT_OEM_DATA_EVENT_FIXED_PARAM,
 	WMI_TAG_SHARED_CU_MEM_CONFIG = 0x577,
@@ -3751,6 +3752,33 @@ struct wmi_vdev_start_mlo_params {
 	__le32 ieee_link_id;
 } __packed;
 
+#define WMI_NPCA_MODE_ENABLE            BIT(0)
+#define WMI_NPCA_CAP1_MIN_THRESHOLD     GENMASK(11, 8)
+#define WMI_NPCA_CAP1_SWITCH_DELAY      GENMASK(17, 12)
+#define WMI_NPCA_CAP1_SWITCH_BACK_DELAY GENMASK(23, 18)
+#define WMI_NPCA_CAP1_INITIAL_QSRC      GENMASK(25, 24)
+#define WMI_NPCA_CAP1_MOPLEN            BIT(26)
+
+struct ath12k_wmi_channel_params {
+	__le32 tlv_header;
+	__le32 mhz;
+	__le32 band_center_freq1;
+	__le32 band_center_freq2;
+	__le32 info;
+	__le32 reg_info_1;
+	__le32 reg_info_2;
+} __packed;
+
+struct wmi_uhr_ap_npca_params {
+	__le32 tlv_header;
+	__le32 vdev_id;
+	__le32 mode_tuple_field;
+	struct ath12k_wmi_channel_params npca_chan;
+	__le32 puncture_20mhz_bitmap;
+	__le32 npca_cap1;
+	__le32 npca_cap2;
+} __packed;
+
 #define ATH12K_WMI_FLAG_SMD_ENABLED	BIT(0)
 #define ATH12K_WMI_FLAG_SMD_DL_DATA_FWD BIT(1)
 #define ATH12K_WMI_FLAG_SMD_UL_DATA_FWD BIT(2)
@@ -4014,6 +4042,17 @@ struct wmi_ml_arg {
 	struct wmi_ml_partner_info partner_info[ATH12K_WMI_MLO_MAX_PARTNER_LINKS];
 };
 
+struct wmi_npca_arg {
+	bool enabled;
+	u32 npca_freq;
+	u16 npca_punct_bitmap;
+	u8 npca_min_dur_threshold;
+	u8 npca_switch_delay;
+	u8 npca_switch_back_delay;
+	u8 npca_initial_qsrc;
+	u8 npca_moplen;
+};
+
 struct wmi_vdev_start_req_arg {
 	u32 vdev_id;
 	u32 freq;
@@ -4053,6 +4092,7 @@ struct wmi_vdev_start_req_arg {
 	u32 mbssid_tx_vdev_id;
 	u32 punct_bitmap;
 	struct wmi_ml_arg ml;
+	struct wmi_npca_arg npca;
 	u32 width_device;
 	u32 center_freq_device;
 	struct wmi_smd_arg smd;
@@ -4709,16 +4749,6 @@ enum reg_super_domain_6g {
        APL1_6G = 0x04,
        FCC1_6G_CL = 0x05,
  };
-
-struct ath12k_wmi_channel_params {
-	__le32 tlv_header;
-	__le32 mhz;
-	__le32 band_center_freq1;
-	__le32 band_center_freq2;
-	__le32 info;
-	__le32 reg_info_1;
-	__le32 reg_info_2;
-} __packed;
 
 enum wmi_sta_ps_mode {
 	WMI_STA_PS_MODE_DISABLED = 0,

@@ -1991,6 +1991,7 @@ int ath12k_wmi_vdev_start(struct ath12k *ar, struct wmi_vdev_start_req_arg *arg,
 	struct ath12k_wmi_channel_params *chan_device;
 	struct wmi_vdev_start_mlo_params *ml_params;
 	struct wmi_partner_link_info *partner_info;
+	struct wmi_uhr_ap_npca_params *npca_params;
 	struct ath12k_hw_group *ag = ar->ab->ag;
 	struct ath12k_wmi_pdev *wmi = ar->wmi;
 	struct wmi_vdev_start_request_cmd *cmd;
@@ -2020,6 +2021,12 @@ int ath12k_wmi_vdev_start(struct ath12k *ar, struct wmi_vdev_start_req_arg *arg,
 	if (device_params_present)
 		len += TLV_HDR_SIZE + sizeof(*chan_device);
 
+	/* Reserve space for: device (empty), dbw_chan_info, vdev_start_smd_params,
+	 * vdev_start_uhr_config empty TLVs, plus uhr_ap_npca_params when enabled.
+	 */
+	len += 7 * TLV_HDR_SIZE;
+	if (arg->npca.enabled)
+		len += TLV_HDR_SIZE + sizeof(*npca_params);
 	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
 	if (!skb)
 		return -ENOMEM;
@@ -2166,6 +2173,90 @@ int ath12k_wmi_vdev_start(struct ath12k *ar, struct wmi_vdev_start_req_arg *arg,
 						  arg->center_freq_device,
 						  arg->width_device);
 		ptr += sizeof(*chan_device);
+	} else {
+		tlv = ptr;
+		tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
+		ptr += sizeof(*tlv);
+	}
+
+	/* dbw_chan_info TLV */
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
+	ptr += sizeof(*tlv);
+
+	/* vdev_start_smd_params TLV */
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
+	ptr += sizeof(*tlv);
+
+	/* vdev_start_uhr_config TLV */
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
+	ptr += sizeof(*tlv);
+
+	/* uhr_ap_npca_params TLV */
+	if (arg->npca.enabled) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "NPCA enabled in WMI\n");
+		tlv = ptr;
+		tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
+						 sizeof(*npca_params));
+		ptr += TLV_HDR_SIZE;
+
+		npca_params = ptr;
+		npca_params->tlv_header =
+			ath12k_wmi_tlv_cmd_hdr(WMI_TAG_UHR_AP_NPCA_PARAMS,
+					       sizeof(*npca_params));
+		npca_params->vdev_id = cpu_to_le32(arg->vdev_id);
+		npca_params->mode_tuple_field = cpu_to_le32(WMI_NPCA_MODE_ENABLE);
+
+		/* Fill npca_chan same as chan_device, then override mhz
+		 * with npca_freq
+		 */
+		if (device_params_present) {
+			ath12k_wmi_set_wmi_channel_device(&npca_params->npca_chan,
+							  arg,
+							  arg->center_freq_device,
+							  arg->width_device);
+		} else {
+			ath12k_wmi_put_wmi_channel(&npca_params->npca_chan, arg);
+			npca_params->npca_chan.tlv_header =
+				ath12k_wmi_tlv_cmd_hdr(WMI_TAG_CHANNEL,
+						       sizeof(npca_params->npca_chan));
+		}
+		npca_params->npca_chan.mhz = cpu_to_le32(arg->npca.npca_freq);
+
+		npca_params->puncture_20mhz_bitmap =
+			cpu_to_le32(arg->npca.npca_punct_bitmap);
+		npca_params->npca_cap1 =
+			le32_encode_bits(arg->npca.npca_min_dur_threshold,
+					 WMI_NPCA_CAP1_MIN_THRESHOLD) |
+			le32_encode_bits(arg->npca.npca_switch_delay,
+					 WMI_NPCA_CAP1_SWITCH_DELAY) |
+			le32_encode_bits(arg->npca.npca_switch_back_delay,
+					 WMI_NPCA_CAP1_SWITCH_BACK_DELAY) |
+			le32_encode_bits(arg->npca.npca_initial_qsrc,
+					 WMI_NPCA_CAP1_INITIAL_QSRC) |
+			le32_encode_bits(arg->npca.npca_moplen,
+					 WMI_NPCA_CAP1_MOPLEN);
+		npca_params->npca_cap2 = 0;
+		ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+			   "npca params assign: vdev_id=%u npca_freq=%u punct_bitmap=0x%x min_dur=%u switch_delay=%u switch_back=%u init_qsrc=%u moplen=%u cap1=0x%x cap2=0x%x\n",
+			   arg->vdev_id,
+			   arg->npca.npca_freq,
+			   arg->npca.npca_punct_bitmap,
+			   arg->npca.npca_min_dur_threshold,
+			   arg->npca.npca_switch_delay,
+			   arg->npca.npca_switch_back_delay,
+			   arg->npca.npca_initial_qsrc,
+			   arg->npca.npca_moplen,
+			   le32_to_cpu(npca_params->npca_cap1),
+			   le32_to_cpu(npca_params->npca_cap2));
+		ptr += sizeof(*npca_params);
+	} else {
+		/* keep TLV order when NPCA disabled */
+		tlv = ptr;
+		tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
+		ptr += TLV_HDR_SIZE;
 	}
 
 	if (restart)

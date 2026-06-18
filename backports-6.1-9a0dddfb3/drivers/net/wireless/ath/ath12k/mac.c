@@ -20942,6 +20942,34 @@ ath12k_mac_mlo_get_vdev_args(struct ath12k_link_vif *arvif,
 	}
 }
 
+static void
+ath12k_mac_npca_get_vdev_args(struct ath12k_link_vif *arvif,
+			      const struct cfg80211_chan_def *chandef,
+			      struct wmi_npca_arg *npca_arg)
+{
+	struct ath12k_vif *ahvif = arvif->ahvif;
+	struct ieee80211_bss_conf *link_conf;
+	struct ath12k_base *ab = arvif->ar->ab;
+
+	link_conf = wiphy_dereference(ahvif->ah->hw->wiphy,
+				      ahvif->vif->link_conf[arvif->link_id]);
+	if (!link_conf) {
+		ath12k_err(ab, "link conf NULL");
+		return;
+	}
+
+	npca_arg->enabled = link_conf->npca.enabled;
+
+	npca_arg->npca_min_dur_threshold = link_conf->npca.min_dur_thresh;
+	npca_arg->npca_switch_delay = link_conf->npca.switch_delay;
+	npca_arg->npca_switch_back_delay = link_conf->npca.switch_back_delay;
+	npca_arg->npca_initial_qsrc = link_conf->npca.init_qsrc;
+	npca_arg->npca_moplen = link_conf->npca.moplen;
+
+	npca_arg->npca_freq = chandef->npca_freq;
+	npca_arg->npca_punct_bitmap = chandef->npca_puncture_bitmap;
+}
+
 void ath12k_agile_cac_abort_work(struct wiphy *wiphy,
 				 struct wiphy_work *work)
 {
@@ -21340,6 +21368,7 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 		   ath12k_mac_phymode_str(arg.mode), arg.punct_bitmap, arg.is_stadfs_en);
 
 	arvif->peer_del_all_enable = false;
+	ath12k_mac_npca_get_vdev_args(arvif, chandef, &arg.npca);
 
 	ret = ath12k_wmi_vdev_start(ar, &arg, restart);
 	if (ret) {
