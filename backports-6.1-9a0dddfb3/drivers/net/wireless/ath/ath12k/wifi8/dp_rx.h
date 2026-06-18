@@ -25,6 +25,12 @@ struct dp_rx_fse {
 	bool is_valid;
 };
 
+#ifndef CPTCFG_EXT_IPA_OFFLOAD
+#define IPA_SET_RX_BUF_SMMU_MAP(...) ((void)0)
+#define IPA_SET_RX_BUF_SMMU_UNMAP(...) ((void)0)
+#define ATH12K_IPA_DMA_MAP_SINGLE(...) ((void)0)
+#endif
+
 int ath12k_wifi8_dp_rx_wbm_buf_ring_init(struct ath12k_base *ab);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 void ath12k_wifi8_dp_rx_ppe2wbm_idle_buff_init(struct ath12k_base *ab);
@@ -289,21 +295,43 @@ ath12k_wifi8_dp_rx_get_peer_id(struct ath12k_base *ab,
 }
 
 static inline struct ath12k_rx_desc_info *
-ath12k_wifi8_get_sw_desc_from_hw_desc(struct hal_reo_dest_ring *desc)
+ath12k_wifi8_get_sw_desc_from_hw_desc(struct ath12k_dp *dp,
+				      struct hal_reo_dest_ring *desc)
 {
-	u64 desc_va = 0;
+	u64 desc_va;
+	struct ath12k_rx_desc_info *sw_rx_desc = NULL;
+	u32 sw_cookie;
 
-	desc_va = ((u64)le32_to_cpu(desc->buf_addr_info.info1) << 32 |
-			le32_to_cpu(desc->buf_addr_info.info0));
+	/* When cookie conversion is enabled the hardware stores the
+	 * SW descriptor VA directly in buf_addr_info; extract it.
+	 * When cookie conversion is disabled (e.g. IPA_OFFLOAD) the
+	 * field holds the raw DMA address + sw_cookie, so fall back
+	 * to the manual SPT lookup.
+	 */
+	if (likely(le32_get_bits(desc->info0,
+			  HAL_REO_DESTINATION_RING_INFO0_COOKIE_CONVERSION_STATUS))) {
+		desc_va = ((u64)le32_to_cpu(desc->buf_addr_info.info1) << 32) |
+				le32_to_cpu(desc->buf_addr_info.info0);
+		sw_rx_desc = (struct ath12k_rx_desc_info *)((unsigned long)desc_va);
+	} else {
+		if (likely(le32_get_bits(desc->rx_mpdu_ext_info.info0,
+				  HAL_RX_MPDU_EXT_DESC_INFO_INFO0_REO_DEST_BUFFER_TYPE) ==
+				HAL_REO_DEST_RING_BUFFER_TYPE_MSDU)) {
+			sw_cookie = le32_get_bits(desc->buf_addr_info.info1,
+						  BUFFER_ADDR_INFO1_SW_COOKIE);
 
-	return (struct ath12k_rx_desc_info *)((unsigned long)desc_va);
+			sw_rx_desc = ath12k_dp_get_rx_desc(dp, sw_cookie);
+		}
+	}
+
+	return sw_rx_desc;
 }
 
 static inline void
-ath12k_wifi8_pretech_next_sw_desc(struct hal_reo_dest_ring *desc)
+ath12k_wifi8_pretech_next_sw_desc(struct ath12k_dp *dp, struct hal_reo_dest_ring *desc)
 {
 	struct ath12k_rx_desc_info *sw_desc =
-		ath12k_wifi8_get_sw_desc_from_hw_desc(desc);
+		ath12k_wifi8_get_sw_desc_from_hw_desc(dp, desc);
 
 	if (sw_desc)
 		prefetch(sw_desc);

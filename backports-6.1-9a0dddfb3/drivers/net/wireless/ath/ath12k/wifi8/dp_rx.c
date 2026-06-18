@@ -2059,7 +2059,7 @@ int ath12k_wifi8_dp_rx_process_reo_rings(struct ath12k_dp *dp,
 		}
 
 		ath12k_wifi8_cpy_hw_rx_desc_to_spad_desc(hw_rx_desc, rx_spd);
-		sw_rx_desc = ath12k_wifi8_get_sw_desc_from_hw_desc(hw_rx_desc);
+		sw_rx_desc = ath12k_wifi8_get_sw_desc_from_hw_desc(dp, hw_rx_desc);
 		ath12k_wifi8_rx_sw_desc_sanity_check(hw_rx_desc, sw_rx_desc,
 						     rx_spd);
 
@@ -2073,7 +2073,7 @@ int ath12k_wifi8_dp_rx_process_reo_rings(struct ath12k_dp *dp,
 		sw_rx_desc->is_frag = 0;
 
 		if (pf_next_hw_rx_desc)
-			ath12k_wifi8_pretech_next_sw_desc(pf_next_hw_rx_desc);
+			ath12k_wifi8_pretech_next_sw_desc(dp, pf_next_hw_rx_desc);
 
 		pf_next_hw_rx_desc = next_hw_rx_desc;
 
@@ -2122,6 +2122,9 @@ int ath12k_wifi8_dp_rx_process_reo_rings(struct ath12k_dp *dp,
 			}
 		}
 
+		if (sw_rx_desc->is_ppe_desc)
+			IPA_SET_RX_BUF_SMMU_UNMAP(ab, sw_rx_desc->skb, false);
+
 		ath12k_dp_rx_buffer_unmap(dp, sw_rx_desc);
 		rx_spd->msdu = sw_rx_desc->skb;
 		rx_spd->vaddr = sw_rx_desc->vaddr;
@@ -2139,8 +2142,13 @@ int ath12k_wifi8_dp_rx_process_reo_rings(struct ath12k_dp *dp,
 
 	if (!list_empty(&ppe2wbm_used_list)) {
 		if (dp_wifi8->dp_ppe2wbm_use_dedicated_pool) {
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+			ring_id = dp_wifi8->extn.ipa->ipa2wbm_ring
+				[ATH12K_DP_WIFI8_IPA2WBM_HOST].ring_id;
+#else
 			ring_id = dp_wifi8->ppe2wbm_refill_ring
 				[PPE2WBM_SW_REFILL_RING].ring_id;
+#endif
 			refill_srng = &ab->hal.srng_list[ring_id];
 			ath12k_dp_rx_bufs_replenish(dp, refill_srng,
 						    &ppe2wbm_used_list, false);
@@ -3427,6 +3435,7 @@ int ath12k_wifi8_dp_rx_process_reo_flush_err(struct ath12k_dp *dp, int budget)
 	struct hal_srng *srng, *refill_srng;
 	struct list_head rx_desc_used_list;
 	struct list_head rx_mgmt_desc_used_list;
+	struct list_head ppe2wbm_used_list;
 	int quota = budget;
 	u32 cookie;
 
@@ -3434,6 +3443,7 @@ int ath12k_wifi8_dp_rx_process_reo_flush_err(struct ath12k_dp *dp, int budget)
 
 	INIT_LIST_HEAD(&rx_desc_used_list);
 	INIT_LIST_HEAD(&rx_mgmt_desc_used_list);
+	INIT_LIST_HEAD(&ppe2wbm_used_list);
 
 	spin_lock_bh(&srng->lock);
 	ath12k_hal_srng_access_begin(ab, srng);
@@ -3453,6 +3463,14 @@ int ath12k_wifi8_dp_rx_process_reo_flush_err(struct ath12k_dp *dp, int budget)
 		if (!desc_info)
 			continue;
 
+		if (desc_info->is_ppe_desc == DP_RX_PPE_POOL) {
+			desc_info->skb = NULL;
+			desc_info->paddr = 0;
+			list_add_tail(&desc_info->list, &ppe2wbm_used_list);
+			stats->rx_flush_pkts++;
+			continue;
+		}
+
 		if (rbm == dp->hal->hal_params->rx_buf_rbm) {
 			list_add_tail(&desc_info->list, &rx_desc_used_list);
 			stats->rx_flush_pkts++;
@@ -3467,6 +3485,16 @@ int ath12k_wifi8_dp_rx_process_reo_flush_err(struct ath12k_dp *dp, int budget)
 
 	ath12k_hal_srng_access_end(ab, srng);
 	spin_unlock_bh(&srng->lock);
+
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	if (!list_empty(&ppe2wbm_used_list)) {
+		u32 ring_id = dp_wifi8->extn.ipa->ipa2wbm_ring[ATH12K_DP_WIFI8_IPA2WBM_HOST].ring_id;
+
+		refill_srng = &ab->hal.srng_list[ring_id];
+		ath12k_dp_rx_bufs_replenish(dp, refill_srng,
+					    &ppe2wbm_used_list, false);
+	}
+#endif
 
 	if (!list_empty(&rx_desc_used_list)) {
 		refill_srng = &ab->hal.srng_list[dp_wifi8->wbm_refill_ring[cpu_id %
