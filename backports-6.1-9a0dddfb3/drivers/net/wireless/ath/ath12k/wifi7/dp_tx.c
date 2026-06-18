@@ -1971,7 +1971,7 @@ void ath12k_wifi7_mcbc_handler(struct ath12k_dp_vif *dp_vif,
 		}
 
 		if (unlikely(ath12k_dp_stats_enabled(dp_pdev)))
-			if (unlikely(ath12k_dp_delay_stats_enabled(dp_pdev)))
+			if (unlikely(ath12k_dp_latency_stats_enabled(dp_pdev)))
 				__net_timestamp(skb);
 
 		ath12k_wifi7_dp_get_ring_id(dp_pdev->dp, &ring_id, skb);
@@ -2714,7 +2714,7 @@ ath12k_wifi7_dp_tx_htt_tx_complete_buf(struct ath12k_dp *dp,
 		if (unlikely(ath12k_debugfs_is_qos_stats_enabled(dp_pdev->ar)))
 			ath12k_qos_stats_update(dp_pdev->ar, msdu, ts, dp_pdev,
 						msdu->tstamp);
-		if (unlikely(ath12k_dp_delay_stats_enabled(dp_pdev)))
+		if (unlikely(ath12k_dp_latency_stats_enabled(dp_pdev)))
 			ath12k_dp_tx_update_peer_latency_stats(dp_pdev, peer->dp_peer,
 							       ts, ring,
 							       sw_metadata);
@@ -3262,7 +3262,7 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 								     TX_COMP,
 								     ring);
 			}
-			if (unlikely(ath12k_dp_delay_stats_enabled(dp_pdev)))
+			if (unlikely(ath12k_dp_latency_stats_enabled(dp_pdev)))
 				ath12k_dp_tx_update_peer_latency_stats(dp_pdev, peer,
 								       ts, ring,
 								       sw_metadata);
@@ -4103,7 +4103,7 @@ void ath12k_ppeds_tx_update_stats(struct ath12k *ar, int skb_len,
 	}
 
 	if (ath12k_dp_stats_enabled(dp_pdev) &&
-	    ath12k_dp_delay_stats_enabled(dp_pdev))
+	    ath12k_dp_latency_stats_enabled(dp_pdev))
 
 		ath12k_dp_tx_compute_hw_delay_stats(dp_pdev, peer->dp_peer,
 						    DP_TCL_PPEDS_RING_IDX, &ts);

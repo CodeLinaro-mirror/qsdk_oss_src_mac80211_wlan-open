@@ -1885,7 +1885,7 @@ int ath12k_dp_peer_stats_alloc(struct ath12k_dp_peer *dp_peer,
 		}
 	}
 
-	if (ath12k_dp_delay_stats_enabled(dp_pdev)) {
+	if (ath12k_dp_latency_stats_enabled(dp_pdev)) {
 		ret = ath12k_dp_alloc_delay_stats_peer(dp_peer);
 		if (ret) {
 			ath12k_warn(dp_pdev->ar->ab,
