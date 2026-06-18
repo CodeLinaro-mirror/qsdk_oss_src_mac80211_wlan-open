@@ -394,6 +394,7 @@ struct ath12k_hw_params {
 	bool is_plink_preferable;
 	bool cfr_support;
 	bool cumac_support;
+	u8 cumac_chip_priority;
 	enum ath12k_umcmn_interrupt_handling support_umcmn_interrupts;
 	u32 cfr_dma_hdr_size;
 	u32 cfr_num_stream_bufs;
