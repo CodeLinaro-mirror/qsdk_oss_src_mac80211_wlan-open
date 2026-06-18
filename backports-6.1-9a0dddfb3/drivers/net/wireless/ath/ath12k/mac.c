@@ -3065,13 +3065,16 @@ static int ath12k_vendor_send_tpc_eirp_event(struct ath12k_link_vif *arvif,
 	struct wireless_dev *wdev;
 	struct sk_buff *vendor_event;
 	int vendor_buffer_len = nla_total_size(sizeof(s32));
+	int link_id = -1;
 
 	wdev = ieee80211_vif_to_wdev(arvif->ahvif->vif);
 	if (!wdev)
 		return -EINVAL;
 
-	if (wdev->valid_links)
+	if (wdev->valid_links) {
+		link_id = arvif->link_id;
 		vendor_buffer_len += nla_total_size(sizeof(u8));
+	}
 
 	vendor_event =
 	cfg80211_vendor_event_alloc(arvif->ar->ah->hw->wiphy, wdev,
@@ -3084,7 +3087,7 @@ static int ath12k_vendor_send_tpc_eirp_event(struct ath12k_link_vif *arvif,
 	if (wdev->valid_links &&
 	    nla_put_u8(vendor_event,
 		       QCA_WLAN_VENDOR_ATTR_TPC_EIRP_EVENT_LINK_ID,
-		       arvif->link_id))
+		       link_id))
 		goto fail;
 
 	if (nla_put_s32(vendor_event,
@@ -3092,10 +3095,17 @@ static int ath12k_vendor_send_tpc_eirp_event(struct ath12k_link_vif *arvif,
 			tpc_eirp_dbm))
 		goto fail;
 
+	ath12k_info(arvif->ar->ab,
+			"TPC: sending vendor NL event subcmd=%u vdev=%u link=%d eirp_dbm=%d\n",
+			QCA_NL80211_VENDOR_SUBCMD_TPC_EIRP_EVENT,
+			arvif->vdev_id, link_id, tpc_eirp_dbm);
 	cfg80211_vendor_event(vendor_event, GFP_KERNEL);
 	return 0;
 
 fail:
+	ath12k_warn(arvif->ar->ab,
+		    "TPC: failed to build vendor event vdev %u link %d eirp_dbm %d\n",
+		    arvif->vdev_id, link_id, tpc_eirp_dbm);
 	kfree_skb(vendor_event);
 	return -EINVAL;
 }
@@ -3104,7 +3114,7 @@ static void ath12k_update_tpc_ie_eirp_work(struct wiphy *wiphy,
 					   struct wiphy_work *work)
 {
 	struct ath12k_link_vif *arvif = container_of(work, struct ath12k_link_vif,
-						     tpc_ie_eirp_work);
+					     tpc_ie_eirp_work);
 
 	lockdep_assert_wiphy(wiphy);
 
@@ -3112,6 +3122,33 @@ static void ath12k_update_tpc_ie_eirp_work(struct wiphy *wiphy,
 		return;
 
 	ath12k_vendor_send_tpc_eirp_event(arvif, arvif->tpc_ie_eirp);
+}
+
+static void ath12k_query_tpc_ie_eirp_if_ready(struct ath12k_link_vif *arvif)
+{
+	int ret;
+	int prev_tpc_ie_eirp;
+
+	if (!arvif || !arvif->ar || !arvif->is_up || !arvif->ahvif ||
+	    !arvif->ahvif->vif ||
+	    arvif->ahvif->vif->type != NL80211_IFTYPE_AP)
+		return;
+
+	/*
+	 * Force the next FW response to be treated as an update even when
+	 * the EIRP value is unchanged (early cached event before vdev-up case).
+	 */
+	prev_tpc_ie_eirp = arvif->tpc_ie_eirp;
+	arvif->tpc_ie_eirp = INT_MIN;
+
+	ret = ath12k_wmi_send_vdev_get_tpc_ie_power(arvif->ar, arvif->vdev_id,
+					      ATH12K_TPC_MGMT_RATE_AUTO);
+	if (ret) {
+		arvif->tpc_ie_eirp = prev_tpc_ie_eirp;
+		ath12k_warn(arvif->ar->ab,
+			    "failed to query tpc eirp after vdev up for vdev %u: %d\n",
+			    arvif->vdev_id, ret);
+	}
 }
 
 static void ath12k_update_bcn_template_work(struct wiphy *wiphy,
@@ -3229,6 +3266,7 @@ static void ath12k_control_beaconing(struct ath12k_link_vif *arvif,
 		arvif->is_up = true;
 		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "mac vdev %d up\n", arvif->vdev_id);
 		ath12k_mac_bridge_vdevs_up(arvif);
+		ath12k_query_tpc_ie_eirp_if_ready(arvif);
 	} else {
 		arvif->is_up = false;
 		ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
@@ -7582,6 +7620,7 @@ static void ath12k_mac_bridge_vdevs_up(struct ath12k_link_vif *arvif)
 				ath12k_dbg(arvif->ar->ab, ATH12K_DBG_MAC, "mac bridge vdev %d link_id %d up\n",
 					   arvif->vdev_id, link_id);
 				arvif->is_up = true;
+				ath12k_query_tpc_ie_eirp_if_ready(arvif);
 			}
 		}
 	}
@@ -7608,6 +7647,7 @@ void ath12k_mac_bridge_vdev_up(struct ath12k_link_vif *arvif)
 			   "mac bridge vdev %d link_id %d up\n",
 			   arvif->vdev_id, arvif->link_id);
 	arvif->is_up = true;
+	ath12k_query_tpc_ie_eirp_if_ready(arvif);
 }
 
 static void ath12k_mac_send_pwr_mode_update(struct ath12k *ar,
