@@ -859,7 +859,7 @@ static inline void
 ath12k_core_dma_clean_range_no_dsb(const void *start, const void *end)
 {
 #ifndef CONFIG_IO_COHERENCY
-#ifndef PLATFORM_SDX85
+#ifndef PLATFORM_SDX
 	dmac_clean_range_no_dsb(start, end);
 #endif
 #endif
