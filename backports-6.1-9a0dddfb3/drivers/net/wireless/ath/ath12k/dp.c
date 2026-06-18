@@ -2560,12 +2560,14 @@ EXPORT_SYMBOL(ath12k_dp_umac_rx_desc_cleanup);
 void ath12k_dp_umac_tx_desc_cleanup(struct ath12k_base *ab)
 {
 	struct ath12k_tx_desc_info *tx_desc_info;
-	struct ath12k_dp *dp, *desc_dp;
+	struct ath12k_dp *dp;
 	struct sk_buff *skb;
 	int i, j, k, pool_id;
 	u32 tx_spt_page;
 	dp = ath12k_ab_to_dp(ab);
 	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
+	int cpu;
+	u32 *tx_desc_used_cnt;
 
 	/* TX Descriptor cleanup */
 	for (pool_id = 0; pool_id < ATH12K_HW_MAX_QUEUES; pool_id++) {
@@ -2584,14 +2586,6 @@ void ath12k_dp_umac_tx_desc_cleanup(struct ath12k_base *ab)
 				if (!skb)
 					continue;
 
-				if (tx_desc_info[k].hw_link_id < ATH12K_GROUP_MAX_RADIO) {
-					u8 hw_link_id = tx_desc_info[k].hw_link_id;
-					u8 device_id =
-						dp_hw_grp->hw_links[hw_link_id].device_id;
-					desc_dp = dp_hw_grp->dp[device_id];
-					if (desc_dp != dp)
-						continue;
-				}
 				tx_desc_info[k].skb = NULL;
 
 				/* Cleanup extension descriptor based on type */
@@ -2623,14 +2617,25 @@ void ath12k_dp_umac_tx_desc_cleanup(struct ath12k_base *ab)
 
 	rcu_read_lock();
 
-	for (i = 0; i < ab->num_radios; i++) {
-		struct ath12k_pdev_dp *dp_pdev = ath12k_dp_to_dp_pdev(dp, i);
+	for (j = 0; j < ATH12K_MAX_SOCS; j++) {
+		dp = dp_hw_grp->dp[j];
+		if (!dp)
+			continue;
 
-		if (dp_pdev)
-			atomic_set(&dp_pdev->num_tx_pending, 0);
+		for (i = 0; i < ab->num_radios; i++) {
+			struct ath12k_pdev_dp *dp_pdev = ath12k_dp_to_dp_pdev(dp, i);
+
+			if (dp_pdev)
+				atomic_set(&dp_pdev->num_tx_pending, 0);
+		}
 	}
 
 	rcu_read_unlock();
+
+	for_each_possible_cpu(cpu) {
+		tx_desc_used_cnt = per_cpu_ptr(dp_hw_grp->tx_desc_used_cnt, cpu);
+		*tx_desc_used_cnt = 0;
+	}
 }
 EXPORT_SYMBOL(ath12k_dp_umac_tx_desc_cleanup);
 

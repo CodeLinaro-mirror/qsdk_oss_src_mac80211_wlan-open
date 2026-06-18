@@ -122,6 +122,8 @@ void ath12k_wifi7_umac_reset_handle_pre_reset_wrapper(struct ath12k_base *ab)
 
 static void ath12k_wifi7_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 {
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
 	struct ath12k_dp *dp;
 	int i, n_link_desc, ret;
 	struct hal_srng *srng = NULL;
@@ -160,7 +162,9 @@ static void ath12k_wifi7_umac_reset_handle_post_reset_start(struct ath12k_base *
 	if (ret)
 		ath12k_warn(ab, "failed to setup rx_refill_buf_ring\n");
 
-	ath12k_dp_umac_tx_desc_cleanup(ab);
+	if (mlo_umac_reset->initiator_chip == ab->device_id)
+		ath12k_dp_umac_tx_desc_cleanup(ab);
+
 	ath12k_dp_umac_rx_desc_cleanup(ab);
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
