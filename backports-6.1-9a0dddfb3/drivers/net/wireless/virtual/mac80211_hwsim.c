@@ -37,6 +37,8 @@
 #include <linux/virtio_ids.h>
 #include <linux/virtio_config.h>
 #include "mac80211_hwsim.h"
+#include <linux/math64.h>
+#include <net/cfg80211.h>
 
 #define WARN_QUEUE 100
 #define MAX_QUEUE 200
@@ -658,6 +660,19 @@ struct mac80211_hwsim_link_data {
 	struct hrtimer beacon_timer;
 };
 
+#define MAX_FAKE_BSS 10
+struct hwsim_fake_bss {
+	u8 bssid[ETH_ALEN];
+	char ssid[33];
+	int freq;
+	bool valid;
+	enum nl80211_chan_width bw;
+	int he;
+	int eht;
+	int ht;
+	int vht;
+};
+
 struct mac80211_hwsim_data {
 	struct list_head list;
 	struct rhash_head rht;
@@ -745,6 +760,9 @@ struct mac80211_hwsim_data {
 
 	/* RSSI in rx status of the receiver */
 	int rx_rssi;
+	int survey_noise;
+	u32 survey_time_busy_pct;
+	struct hwsim_fake_bss fake_bss[MAX_FAKE_BSS];
 
 	/* only used when pmsr capability is supplied */
 	struct cfg80211_pmsr_capabilities pmsr_capa;
@@ -1194,6 +1212,146 @@ static int hwsim_fops_rx_rssi_write(void *dat, u64 val)
 DEFINE_DEBUGFS_ATTRIBUTE(hwsim_fops_rx_rssi,
 			 hwsim_fops_rx_rssi_read, hwsim_fops_rx_rssi_write,
 			 "%lld\n");
+
+static ssize_t hwsim_survey_noise_read(struct file *file, char __user *user_buf,
+				       size_t count, loff_t *ppos)
+{
+	struct mac80211_hwsim_data *data = file->private_data;
+	char buf[32];
+	int len = scnprintf(buf, sizeof(buf), "%d\n", data->survey_noise);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t hwsim_survey_noise_write(struct file *file, const char __user *user_buf,
+					size_t count, loff_t *ppos)
+{
+	struct mac80211_hwsim_data *data = file->private_data;
+	char buf[32];
+	int noise, ret;
+
+	if (count >= sizeof(buf))
+		return -EINVAL;
+	if (copy_from_user(buf, user_buf, count))
+		return -EFAULT;
+	buf[count] = '\0';
+
+	ret = kstrtoint(strim(buf), 0, &noise);
+	if (ret)
+		return ret;
+	if (noise > 0 || noise < -127)
+		return -EINVAL;
+
+	data->survey_noise = noise;
+	return count;
+}
+
+static const struct file_operations hwsim_fops_survey_noise = {
+	.owner = THIS_MODULE,
+	.open = simple_open,
+	.read = hwsim_survey_noise_read,
+	.write = hwsim_survey_noise_write,
+	.llseek = default_llseek,
+};
+
+static int hwsim_fops_survey_time_busy_read(void *dat, u64 *val)
+{
+	struct mac80211_hwsim_data *data = dat;
+	*val = data->survey_time_busy_pct;
+	return 0;
+}
+
+static int hwsim_fops_survey_time_busy_write(void *dat, u64 val)
+{
+	struct mac80211_hwsim_data *data = dat;
+
+	if (val > 100)
+		return -EINVAL;
+
+	data->survey_time_busy_pct = (u32)val;
+	return 0;
+}
+
+DEFINE_DEBUGFS_ATTRIBUTE(hwsim_fops_survey_time_busy,
+			 hwsim_fops_survey_time_busy_read,
+			 hwsim_fops_survey_time_busy_write,
+			 "%llu\n");
+
+static ssize_t hwsim_fops_fake_bss_write(struct file *file, const char __user *user_buf,
+					 size_t count, loff_t *ppos)
+{
+	struct mac80211_hwsim_data *data = file->private_data;
+	char buf[256];
+	char ssid[33];
+	u8 mac[ETH_ALEN];
+	int freq, bw = 20, he = 0, eht = 0, ht = 0, vht = 0;
+	int i, parsed;
+
+	if (count >= sizeof(buf))
+		return -EINVAL;
+
+	if (copy_from_user(buf, user_buf, count))
+		return -EFAULT;
+	buf[count] = '\0';
+
+	if (strncmp(buf, "clear", 5) == 0) {
+		for (i = 0; i < MAX_FAKE_BSS; i++)
+			data->fake_bss[i].valid = false;
+		return count;
+	}
+
+	parsed = sscanf(buf, "%d %hhx:%hhx:%hhx:%hhx:%hhx:%hhx %32s %d %d %d %d %d",
+			&freq, &mac[0], &mac[1], &mac[2], &mac[3], &mac[4], &mac[5],
+			ssid, &bw, &ht, &vht, &he, &eht);
+
+	if (parsed < 8)
+		return -EINVAL;
+
+	for (i = 0; i < MAX_FAKE_BSS; i++) {
+		if (!data->fake_bss[i].valid) {
+			data->fake_bss[i].freq = freq;
+			memcpy(data->fake_bss[i].bssid, mac, ETH_ALEN);
+			strscpy(data->fake_bss[i].ssid, ssid,
+				sizeof(data->fake_bss[i].ssid));
+			data->fake_bss[i].valid = true;
+
+			switch (bw) {
+			case 40:
+				data->fake_bss[i].bw = NL80211_CHAN_WIDTH_40;
+				break;
+			case 80:
+				data->fake_bss[i].bw = NL80211_CHAN_WIDTH_80;
+				break;
+			case 160:
+				data->fake_bss[i].bw = NL80211_CHAN_WIDTH_160;
+				break;
+			case 320:
+				data->fake_bss[i].bw = NL80211_CHAN_WIDTH_320;
+				break;
+			case 20:
+			default:
+				data->fake_bss[i].bw = NL80211_CHAN_WIDTH_20_NOHT;
+				break;
+			}
+
+			data->fake_bss[i].ht = ht;
+			data->fake_bss[i].vht = vht;
+			data->fake_bss[i].he = he;
+			data->fake_bss[i].eht = eht;
+
+			break;
+		}
+	}
+
+	return count;
+}
+
+static const struct file_operations hwsim_fops_fake_bss = {
+	.owner = THIS_MODULE,
+	.open = simple_open,
+	.write = hwsim_fops_fake_bss_write,
+	.llseek = default_llseek,
+};
 
 static netdev_tx_t hwsim_mon_xmit(struct sk_buff *skb,
 					struct net_device *dev)
@@ -2770,12 +2928,20 @@ static int mac80211_hwsim_get_survey(struct ieee80211_hw *hw, int idx,
 	survey->filled = SURVEY_INFO_NOISE_DBM |
 			 SURVEY_INFO_TIME |
 			 SURVEY_INFO_TIME_BUSY;
-	survey->noise = -92;
+	survey->noise = hwsim->survey_noise;
 	survey->time =
 		jiffies_to_msecs(hwsim->survey_data[idx].end -
 				 hwsim->survey_data[idx].start);
-	/* report 12.5% of channel time is used */
-	survey->time_busy = survey->time/8;
+
+	if (hwsim->survey_time_busy_pct > 0) {
+		survey->time_busy = mul_u64_u32_div(survey->time,
+						    hwsim->survey_time_busy_pct,
+						    100);
+	} else {
+		/* report 12.5% of channel time is used */
+		survey->time_busy = survey->time / 8;
+	}
+
 	mutex_unlock(&hwsim->mutex);
 
 	return 0;
@@ -3068,10 +3234,114 @@ out:
 	mutex_unlock(&hwsim->mutex);
 }
 
+static void hwsim_inject_fake_scan_results(struct wiphy *wiphy,
+					   struct mac80211_hwsim_data *hwsim)
+{
+	struct cfg80211_bss *bss;
+	struct ieee80211_channel *channel;
+	int i;
+
+	for (i = 0; i < MAX_FAKE_BSS; i++) {
+		u8 ie[256];
+		size_t ie_len;
+		size_t ssid_len;
+
+		if (!hwsim->fake_bss[i].valid)
+			continue;
+
+		channel = ieee80211_get_channel(wiphy, hwsim->fake_bss[i].freq);
+		if (!channel)
+			continue;
+
+		/* Build a minimal beacon/probe response IE with SSID */
+		ie_len = 0;
+		ssid_len = strlen(hwsim->fake_bss[i].ssid);
+
+		ie[ie_len++] = WLAN_EID_SSID;
+		ie[ie_len++] = ssid_len;
+		memcpy(&ie[ie_len], hwsim->fake_bss[i].ssid, ssid_len);
+		ie_len += ssid_len;
+
+		if (hwsim->fake_bss[i].ht || hwsim->fake_bss[i].vht ||
+		    hwsim->fake_bss[i].he || hwsim->fake_bss[i].eht) {
+			ie[ie_len++] = WLAN_EID_HT_CAPABILITY;
+			ie[ie_len++] = 26;
+			memset(&ie[ie_len], 0, 26);
+			ie_len += 26;
+
+			ie[ie_len++] = WLAN_EID_HT_OPERATION;
+			ie[ie_len++] = 22;
+			memset(&ie[ie_len], 0, 22);
+			if (hwsim->fake_bss[i].bw != NL80211_CHAN_WIDTH_20_NOHT) {
+				ie[ie_len - 22] = channel->hw_value;
+				ie[ie_len - 21] = 1; // secondary channel offset
+			}
+			ie_len += 22;
+		}
+
+		if (hwsim->fake_bss[i].vht || hwsim->fake_bss[i].he ||
+		    hwsim->fake_bss[i].eht) {
+			ie[ie_len++] = WLAN_EID_VHT_CAPABILITY;
+			ie[ie_len++] = 12;
+			memset(&ie[ie_len], 0, 12);
+			ie_len += 12;
+
+			ie[ie_len++] = WLAN_EID_VHT_OPERATION;
+			ie[ie_len++] = 5;
+			memset(&ie[ie_len], 0, 5);
+			if (hwsim->fake_bss[i].bw == NL80211_CHAN_WIDTH_80)
+				ie[ie_len - 5] = 1; // 80 MHz
+			else if (hwsim->fake_bss[i].bw == NL80211_CHAN_WIDTH_160)
+				ie[ie_len - 5] = 2; // 160 MHz
+			ie[ie_len - 4] = channel->hw_value; // center freq
+			ie_len += 5;
+		}
+
+		if (hwsim->fake_bss[i].he || hwsim->fake_bss[i].eht) {
+			ie[ie_len++] = WLAN_EID_EXTENSION;
+			ie[ie_len++] = 1 + 21; // ID + HE MAC/PHY Cap
+			ie[ie_len++] = WLAN_EID_EXT_HE_CAPABILITY;
+			memset(&ie[ie_len], 0, 21);
+			ie_len += 21;
+
+			ie[ie_len++] = WLAN_EID_EXTENSION;
+			ie[ie_len++] = 1 + 6; // ID + HE Op
+			ie[ie_len++] = WLAN_EID_EXT_HE_OPERATION;
+			memset(&ie[ie_len], 0, 6);
+			ie_len += 6;
+		}
+
+		if (hwsim->fake_bss[i].eht) {
+			ie[ie_len++] = WLAN_EID_EXTENSION;
+			ie[ie_len++] = 1 + 13; // ID + EHT MAC/PHY Cap
+			ie[ie_len++] = WLAN_EID_EXT_EHT_CAPABILITY;
+			memset(&ie[ie_len], 0, 13);
+			ie_len += 13;
+
+			ie[ie_len++] = WLAN_EID_EXTENSION;
+			ie[ie_len++] = 1 + 5; // ID + EHT Op
+			ie[ie_len++] = WLAN_EID_EXT_EHT_OPERATION;
+			memset(&ie[ie_len], 0, 5);
+			ie_len += 5;
+		}
+
+		bss = cfg80211_inform_bss(wiphy, channel,
+					  CFG80211_BSS_FTYPE_UNKNOWN,
+					  hwsim->fake_bss[i].bssid, 0,
+					  WLAN_CAPABILITY_ESS, DEFAULT_RX_RSSI,
+					  ie, ie_len, 1, GFP_KERNEL);
+		if (bss)
+			cfg80211_put_bss(wiphy, bss);
+	}
+}
+
 static void mac80211_hwsim_sw_scan_complete(struct ieee80211_hw *hw,
 					    struct ieee80211_vif *vif)
 {
 	struct mac80211_hwsim_data *hwsim = hw->priv;
+	struct wiphy *wiphy = hw->wiphy;
+
+	hwsim_inject_fake_scan_results(wiphy, hwsim);
 
 	mutex_lock(&hwsim->mutex);
 
@@ -5329,6 +5599,8 @@ static int mac80211_hwsim_new_radio(struct genl_info *info,
 	hw->wiphy->ema_max_profile_periodicity = 3;
 
 	data->rx_rssi = DEFAULT_RX_RSSI;
+	data->survey_noise = -92;
+	data->survey_time_busy_pct = 0;
 
 	INIT_DELAYED_WORK(&data->roc_start, hw_roc_start);
 	INIT_DELAYED_WORK(&data->roc_done, hw_roc_done);
@@ -5588,6 +5860,12 @@ static int mac80211_hwsim_new_radio(struct genl_info *info,
 			    &hwsim_fops_group);
 	debugfs_create_file("rx_rssi", 0666, data->debugfs, data,
 			    &hwsim_fops_rx_rssi);
+	debugfs_create_file("survey_noise", 0600, data->debugfs, data,
+			    &hwsim_fops_survey_noise);
+	debugfs_create_file("survey_time_busy_pct", 0600, data->debugfs, data,
+			    &hwsim_fops_survey_time_busy);
+	debugfs_create_file("inject_fake_bss", 0200, data->debugfs, data,
+			    &hwsim_fops_fake_bss);
 	if (!data->use_chanctx)
 		debugfs_create_file("dfs_simulate_radar", 0222,
 				    data->debugfs,
