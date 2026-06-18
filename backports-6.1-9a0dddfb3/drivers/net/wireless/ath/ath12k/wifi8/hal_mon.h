@@ -1202,7 +1202,7 @@ struct hal_tx_mon_fes_status_user_ppdu {
 } __packed;
 
 #define HAL_TX_MON_FES_STATUS_ACK_OR_BA_INFO0_STAT_TYPE		BIT(0)
-#define HAL_TX_MON_FES_STATUS_ACK_OR_BA_INFO0_ACK_FRM_RSSI	GENMASK(16, 8)
+#define HAL_TX_MON_FES_STATUS_ACK_OR_BA_INFO0_ACK_FRM_RSSI	GENMASK(15, 8)
 
 struct hal_tx_mon_fes_status_ack_or_ba {
 	__le32 info0;
@@ -1244,11 +1244,12 @@ struct hal_tx_mon_rx_frame_bitmap_ack {
 
 struct hal_tx_mon_rx_frame_1k_bitmap_ack {
 	__le32 info0;
+	__le32 rsvd0;
 	__le32 info1;
 	__le32 info2;
 	__le32 info3;
 	__le32 info4;
-	__le32 rsvd0[33];
+	__le32 rsvd1[32];
 } __packed;
 
 #define HAL_TX_MON_COEX_TX_STATUS_INFO0_TX_STATUS_REASON	GENMASK(12, 10)
@@ -1583,8 +1584,10 @@ ath12k_wifi8_hal_tx_mon_get_wmask_config(struct hal_tx_mon_wmask_config *wmsk);
 
 enum hal_tx_mon_status
 ath12k_wifi8_hal_mon_tx_parse_status_tlv(struct ath12k_hal *hal,
-					 struct ath12k_mon_data *mon_data,
 					 struct hal_tx_mon_ppdu_info *ppdu_info,
+					 struct hal_tx_mon_status_info *data_status_info,
+					 struct hal_tx_mon_status_info *prot_status_info,
+					 bool is_prot_ppdu,
 					 u16 tlv_tag,
 					 const void *tlv_data,
 					 u32 userid,

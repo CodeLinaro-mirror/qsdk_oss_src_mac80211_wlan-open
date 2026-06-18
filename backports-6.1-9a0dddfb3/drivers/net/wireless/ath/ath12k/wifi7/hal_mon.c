@@ -4102,16 +4102,17 @@ ath12k_wifi7_hal_mon_tx_status_get_num_user(struct ath12k_hal *hal,
 
 enum hal_tx_mon_status
 ath12k_wifi7_hal_mon_tx_parse_status_tlv(struct ath12k_hal *hal,
-					 struct ath12k_mon_data *mon_data,
 					 struct hal_tx_mon_ppdu_info *tx_ppdu_info,
+					 struct hal_tx_mon_status_info *data_status_info,
+					 struct hal_tx_mon_status_info *prot_status_info,
+					 bool is_prot_ppdu,
 					 u16 tlv_tag, const void *tlv_data,
 					 u32 userid, u16 tlv_len,
 					 u8 *status_frag)
 {
 	enum hal_tx_mon_status status = HAL_TX_MON_STATUS_PPDU_NOT_DONE;
-	struct hal_tx_mon_status_info *status_info =
-			(tx_ppdu_info == &mon_data->data_ppdu_info.tx_info) ?
-			&mon_data->data_status_info : &mon_data->prot_status_info;
+	struct hal_tx_mon_status_info *status_info = is_prot_ppdu ?
+					prot_status_info : data_status_info;
 	struct hal_tx_mon_packet_info *packet_info = NULL;
 	u32 info[7] = {0};
 
@@ -4188,9 +4189,8 @@ ath12k_wifi7_hal_mon_tx_parse_status_tlv(struct ath12k_hal *hal,
 	}
 
 	case HAL_PCU_PPDU_SETUP_INIT: {
-		status_info = &mon_data->prot_status_info;
 		ath12k_hal_mon_tx_pcu_ppdu_setup_init_info_get(hal, tlv_data,
-							       status_info, tlv_len);
+							       prot_status_info, tlv_len);
 		status = HAL_TX_MON_PCU_PPDU_SETUP_INIT;
 		break;
 	}
@@ -4215,8 +4215,7 @@ ath12k_wifi7_hal_mon_tx_parse_status_tlv(struct ath12k_hal *hal,
 
 		info[0] = __le32_to_cpu(tx_fes_start->info0);
 
-		status_info = &mon_data->prot_status_info;
-		status_info->medium_prot_type =
+		prot_status_info->medium_prot_type =
 			u32_get_bits(info[0],
 				     HAL_TX_MON_FES_START_INFO0_MEDIUM_PROT_TYPE);
 
