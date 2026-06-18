@@ -743,9 +743,11 @@ void ath12k_wifi8_hal_cc_config(struct ath12k_base *ab)
 				HAL_REO1_SW_COOKIE_CFG_COOKIE_PPT_MSB) |
 		u32_encode_bits(ATH12K_CC_SPT_MSB,
 				HAL_REO1_SW_COOKIE_CFG_COOKIE_SPT_MSB) |
-		u32_encode_bits(1, HAL_REO1_SW_COOKIE_CFG_ALIGN) |
-		u32_encode_bits(1, HAL_REO1_SW_COOKIE_CFG_ENABLE) |
+		u32_encode_bits(1, HAL_REO1_SW_COOKIE_CFG_ALIGN);
+#ifndef CPTCFG_EXT_IPA_OFFLOAD
+	val |= u32_encode_bits(1, HAL_REO1_SW_COOKIE_CFG_ENABLE) |
 		u32_encode_bits(1, HAL_REO1_SW_COOKIE_CFG_GLOBAL_ENABLE);
+#endif
 
 	ath12k_hif_write32(ab, reo_base + HAL_REO1_SW_COOKIE_CFG1(hal), val);
 
