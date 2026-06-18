@@ -2083,6 +2083,7 @@ struct ath12k_band_cap {
 	u32 eht_cap_phy_info[WMI_MAX_EHTCAP_PHY_SIZE];
 	u32 uhr_cap_mac_info[WMI_MAX_UHRCAP_MAC_SIZE];
 	u32 uhr_cap_phy_info[WMI_MAX_UHRCAP_PHY_SIZE];
+	u32 uhr_param_npca_info;
 	u32 eht_mcs_20_only;
 	u32 eht_mcs_80;
 	u32 eht_mcs_160;

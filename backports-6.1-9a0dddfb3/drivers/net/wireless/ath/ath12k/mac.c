@@ -16920,10 +16920,37 @@ static void ath12k_mac_copy_eht_cap(struct ath12k *ar,
 		ath12k_mac_copy_eht_ppe_thresh(&band_cap->eht_ppet, eht_cap);
 }
 
+static void
+ath12k_mac_parse_uhr_npca_fw_info(struct ieee80211_sta_uhr_npca_info *npca_info,
+				  u32 uhr_npca_cap_info)
+{
+	/* Firmware TLV bitfield layout (see ATH12K_WMI_UHR_NPCA_CAP_* in wmi.h):
+	 * bit  0:    npca_enabled
+	 * bits 4:1:  npca_min_dur_threshold
+	 * bits 10:5: npca_switch_delay
+	 * bits 16:11: npca_switch_back_delay
+	 * bits 18:17: npca_initial_qsrc
+	 * bit 19:   npca_moplen
+	 */
+	npca_info->npca_enabled =
+		u32_get_bits(uhr_npca_cap_info, BIT(0));
+	npca_info->npca_min_dur_threshold =
+		u32_get_bits(uhr_npca_cap_info, GENMASK(4, 1));
+	npca_info->npca_switch_delay =
+		u32_get_bits(uhr_npca_cap_info, GENMASK(10, 5));
+	npca_info->npca_switch_back_delay =
+		u32_get_bits(uhr_npca_cap_info, GENMASK(16, 11));
+	npca_info->npca_initial_qsrc =
+		u32_get_bits(uhr_npca_cap_info, GENMASK(18, 17));
+	npca_info->npca_moplen =
+		u32_get_bits(uhr_npca_cap_info, BIT(19));
+}
+
 static void ath12k_mac_copy_uhr_cap(struct ath12k *ar,
 				    struct ath12k_band_cap *band_cap,
 				    int iftype,
-				    struct ieee80211_sta_uhr_cap *uhr_cap)
+				    struct ieee80211_sta_uhr_cap *uhr_cap,
+				    struct ieee80211_sta_uhr_npca_info *npca_info)
 {
 	if (!(test_bit(WMI_TLV_SERVICE_11BN, ar->ab->wmi_ab.svc_map)))
 		return;
@@ -16944,6 +16971,9 @@ static void ath12k_mac_copy_uhr_cap(struct ath12k *ar,
 			~IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_DL_MU_160;
 		uhr_cap->phy.cap[0] &=
 			~IEEE80211_UHR_PHY_CAP0_MAX_NSS_RX_DL_MU_320;
+
+		ath12k_mac_parse_uhr_npca_fw_info(npca_info,
+						   band_cap->uhr_param_npca_info);
 		break;
 	case NL80211_IFTYPE_STATION:
 		/* add if anything needs to be cleared for STA mode */
@@ -16987,7 +17017,7 @@ static int ath12k_mac_copy_sband_iftype_data(struct ath12k *ar,
 		ath12k_mac_copy_eht_cap(ar, band_cap, &he_cap->he_cap_elem, i,
 					&data[idx].eht_cap);
 		ath12k_mac_copy_uhr_cap(ar, band_cap, i,
-					&data[idx].uhr_cap);
+					&data[idx].uhr_cap, &data[idx].npca_info);
 		idx++;
 	}
 
