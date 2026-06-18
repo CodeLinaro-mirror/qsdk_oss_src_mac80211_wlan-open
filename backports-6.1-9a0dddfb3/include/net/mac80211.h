@@ -2791,6 +2791,10 @@ struct ieee80211_sta_aggregates {
  * @eht_cap: EHT capabilities of this STA
  * @uhr_cap: UHR capabilities of this STA
  * @punctured: RU Puncturing bitmap of this STA
+ * @npca_offset: NPCA primary channel offset from the primary channel, derived
+ *	from IEEE80211_UHR_NPCA_PARAMS_PRIMARY_CHAN_OFFS in the UHR operation Element
+ * @npca_puncture_bitmap: NPCA disabled sub-channel bitmap; 0 if the
+ *	DIS_SUBCH_BMAP_PRES flag is not set in the NPCA Element
  * @agg: per-link data for multi-link aggregation
  * @bandwidth: current bandwidth the station can receive with
  * @rx_nss: in HT/VHT, the maximum number of spatial streams the
@@ -2816,6 +2820,8 @@ struct ieee80211_link_sta {
 	struct ieee80211_sta_uhr_cap uhr_cap;
 	struct ieee80211_sta_uhr_npca_info npca_info;
 	u32 punctured;
+	u8 npca_offset;
+	u16 npca_puncture_bitmap;
 
 	struct ieee80211_sta_aggregates agg;
 

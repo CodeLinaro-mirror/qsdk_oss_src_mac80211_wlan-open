@@ -6116,6 +6116,9 @@ static bool ieee80211_assoc_config_link(struct ieee80211_link_data *link,
 						    elems->uhr_cap,
 						    elems->uhr_cap_len,
 						    link_sta);
+		ieee80211_uhr_npca_elem_to_sta_uhr_npca_info(sdata, sband,
+							     elems->uhr_operation,
+							     link_sta);
 
 		bss_conf->uhr_support = link_sta->pub->uhr_cap.has_uhr;
 	} else {
