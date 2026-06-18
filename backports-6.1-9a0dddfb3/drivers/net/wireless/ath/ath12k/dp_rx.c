@@ -2206,7 +2206,10 @@ ath12k_dp_rx_update_vow_stats(struct ath12k_pdev_dp *pdev,
 			continue;
 
 		tid_rx_stats = &pdev->tid_stats.tid_rx[ring_id][i];
-		tid_rx_stats->msdu_cnt           += stats->received_frm_reo_cnt;
+
+		if (!ath12k_dp_hw_peer_stats_enabled(pdev))
+			tid_rx_stats->msdu_cnt   += stats->received_frm_reo_cnt;
+
 		tid_rx_stats->mcast_msdu_cnt     += stats->mcast_cnt;
 		tid_rx_stats->bcast_msdu_cnt     += stats->bcast_cnt;
 		tid_rx_stats->delivered_to_stack += stats->sent_to_stack_ucast +
