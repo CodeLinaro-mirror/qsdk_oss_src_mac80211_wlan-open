@@ -6,6 +6,9 @@
 #include "dp_mon.h"
 #include "dp_tx_mon.h"
 #include "dp_mon_filter.h"
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
+#include <linux/skbuff_ref.h>
+#endif
 
 /**
  * ath12k_dp_mon_tx_setup_ppdu_desc() - Setup TX monitor PPDU descriptor pool

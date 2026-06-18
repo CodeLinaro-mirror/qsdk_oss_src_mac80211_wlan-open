@@ -21,6 +21,7 @@
 #include "../telemetry_agent_if.h"
 #include "dp_peer.h"
 #include "dp_tx_queue.h"
+#include <linux/vmalloc.h>
 
 #define ATH12K_HW_MAX_ACTIVE_QUEUES		3
 
