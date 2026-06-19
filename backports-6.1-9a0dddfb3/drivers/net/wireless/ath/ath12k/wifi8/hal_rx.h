@@ -190,6 +190,82 @@ struct ath12k_hal_rx_cmd_ring_param {
 	u8 hw_link_bitmap;
 };
 
+struct hal_mon_tx_u_sig_uhr_common_info {
+	u8 phy_version;
+	u8 tx_bw;
+	u8 ul_dl;
+	u8 bss_color;
+	u8 txop;
+};
+
+struct hal_mon_tx_u_sig_uhr_common_enc_info {
+	u32 phy_version;
+	u32 tx_bw;
+	u32 ul_dl;
+	u32 bss_color;
+	u32 txop;
+};
+
+struct hal_mon_tx_u_sig_uhr_mu_info {
+	struct hal_mon_tx_u_sig_uhr_common_info common;
+	u8 ppdu_type;
+	u8 validate_or_cobf_cosr;
+	u8 punc_ch_info;
+	u8 mcs;
+	u8 num_uhr_sig_symbols;
+	u8 crc;
+	u8 tail;
+	u8 rx_integ_check;
+	u8 shared_ap_bss_color;
+};
+
+struct hal_mon_tx_u_sig_uhr_mu_enc_info {
+	u32 ppdu_type;
+	u32 validate_or_cobf_cosr;
+	u32 punc_ch_info;
+	u32 mcs;
+	u32 num_uhr_sig_symbols;
+	u32 crc;
+	u32 tail;
+	u32 bad_crc;
+	u32 shared_ap_bss_color;
+};
+
+struct hal_mon_tx_u_sig_uhr_tb_info {
+	struct hal_mon_tx_u_sig_uhr_common_info common;
+	u8 ppdu_type;
+	u8 spatial_reuse;
+	u8 crc;
+	u8 tail;
+	u8 rx_integ_check;
+};
+
+struct hal_mon_tx_u_sig_uhr_tb_enc_info {
+	u32 ppdu_type;
+	u32 spatial_reuse_1;
+	u32 spatial_reuse_2;
+	u32 crc;
+	u32 tail;
+	u32 bad_crc;
+};
+
+struct hal_mon_tx_u_sig_uhr_elr_info {
+	struct hal_mon_tx_u_sig_uhr_common_info common;
+	u8 ppdu_type;
+	u8 validate;
+	u8 crc;
+	u8 tail;
+	u16 sta_id;
+};
+
+struct hal_mon_tx_u_sig_uhr_elr_enc_info {
+	u32 ppdu_type;
+	u32 sta_id;
+	u32 validate;
+	u32 crc;
+	u32 tail;
+};
+
 int
 ath12k_wifi8_hal_invalidate_rx_cache_cmd_send(struct ath12k_base *ab,
 					      struct hal_srng *srng,
