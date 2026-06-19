@@ -363,6 +363,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.mac_type = ATH12K_HAL_SRNG_PMAC,
 		.ring_dir = HAL_SRNG_DIR_SRC,
 		.max_size = HAL_RXDMA_RING_MAX_SIZE_BE,
+		.reg_writer_en = true,
 	},
 	[HAL_RXDMA_MONITOR_DST] = {
 		.start_ring_id = HAL_SRNG_RING_ID_WMAC1_SW2RXMON_BUF0,
@@ -381,6 +382,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.mac_type = ATH12K_HAL_SRNG_PMAC,
 		.ring_dir = HAL_SRNG_DIR_DST,
 		.max_size = HAL_RXDMA_RING_MAX_SIZE_BE,
+		.reg_writer_en = true,
 	},
 	[HAL_WBM_BUF_MGMT] = {
 		.start_ring_id = HAL_SRNG_RING_ID_WBM_BUF_MGMT,
