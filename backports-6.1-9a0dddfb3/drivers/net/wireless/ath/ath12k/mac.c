@@ -21403,7 +21403,9 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 		   ath12k_mac_phymode_str(arg.mode), arg.punct_bitmap, arg.is_stadfs_en);
 
 	arvif->peer_del_all_enable = false;
-	ath12k_mac_npca_get_vdev_args(arvif, chandef, &arg.npca);
+
+	if (chandef && !is_bridge_vdev)
+		ath12k_mac_npca_get_vdev_args(arvif, chandef, &arg.npca);
 
 	ret = ath12k_wmi_vdev_start(ar, &arg, restart);
 	if (ret) {
