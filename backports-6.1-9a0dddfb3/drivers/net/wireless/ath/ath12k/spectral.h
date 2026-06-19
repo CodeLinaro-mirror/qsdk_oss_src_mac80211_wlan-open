@@ -127,6 +127,8 @@ struct ath12k_spectral {
 	u32 scan_count_max;
 	/* fields populated from WMI_PDEV_SSCAN_FW_PARAM_EVENTID */
 	u32 pri20_freq;
+	/* center frequency of the home channel; stays fixed during agile scans */
+	u32 oper_cfreq1;
 	u32 sscan_cfreq1;
 	u32 sscan_cfreq2;
 	u8  sscan_bw;
@@ -142,6 +144,12 @@ struct ath12k_spectral {
 	struct hrtimer scan_completion_timer;
 	/* received-count snapshot saved by the hrtimer cb for the worker */
 	u32 timeout_received_count;
+	/* vdev_id cached at scan-start (under ->lock); used by timeout_work
+	 * to send CLEAR+DISABLE without needing wiphy_lock - calling
+	 * wiphy_lock() from the workqueue deadlocks when wiphy->mtx is
+	 * already held by the nl80211 vendor-command dispatch path.
+	 */
+	u32 active_vdev_id;
 	/* runs ath12k_spectral_send_complete_event from process context */
 	struct work_struct scan_timeout_work;
 	/* per-BW fft_size caps + scalar mins/maxs, populated at probe */
@@ -169,6 +177,16 @@ bool ath12k_spectral_is_agile_capable(struct ath12k *ar);
  */
 bool ath12k_spectral_is_agile_bw_capable(struct ath12k *ar,
 					 enum nl80211_chan_width width);
+
+/**
+ * ath12k_spectral_rollback_agile() - clear cached agile spectral state
+ * @ar: ath12k radio instance
+ *
+ * Clears mode, scan_active, and cached agile frequency and bandwidth
+ * parameters. Called from all agile rollback paths after a configure,
+ * start, or scan failure.
+ */
+void ath12k_spectral_rollback_agile(struct ath12k *ar);
 
 int ath12k_spectral_init(struct ath12k_base *ab);
 void ath12k_spectral_deinit(struct ath12k_base *ab);
@@ -223,6 +241,11 @@ static inline int ath12k_spectral_stop_scan(struct ath12k *ar)
 static inline int ath12k_spectral_start_scan(struct ath12k *ar)
 {
 	return 0;
+}
+
+static inline void
+ath12k_spectral_rollback_agile(struct ath12k *ar)
+{
 }
 
 static inline bool ath12k_spectral_is_agile_capable(struct ath12k *ar)

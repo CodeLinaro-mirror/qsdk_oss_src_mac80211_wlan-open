@@ -8476,6 +8476,7 @@ int ath12k_wmi_vdev_spectral_enable(struct ath12k *ar, u32 vdev_id,
 {
 	struct ath12k_wmi_vdev_spectral_enable_cmd *cmd;
 	struct sk_buff *skb;
+	u32 scan_mode = ATH12K_WMI_SPECTRAL_SCAN_MODE_NORMAL;
 	int ret;
 
 	skb = ath12k_wmi_alloc_skb(ar->wmi->wmi_ab, sizeof(*cmd));
@@ -8489,10 +8490,15 @@ int ath12k_wmi_vdev_spectral_enable(struct ath12k *ar, u32 vdev_id,
 	cmd->vdev_id = cpu_to_le32(vdev_id);
 	cmd->trigger_cmd = cpu_to_le32(trigger);
 	cmd->enable_cmd = cpu_to_le32(enable);
+#ifdef CPTCFG_ATH12K_SPECTRAL
+	if (ar->spectral.mode == SPECTRAL_SCAN_MODE_AGILE)
+		scan_mode = ATH12K_WMI_SPECTRAL_SCAN_MODE_AGILE;
+#endif
+	cmd->scan_mode = cpu_to_le32(scan_mode);
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
-		   "WMI spectral enable cmd vdev id 0x%x trigger_cmd %u enable_cmd %u\n",
-		   vdev_id, trigger, enable);
+		   "WMI spectral enable cmd vdev id 0x%x trigger_cmd %u enable_cmd %u scan_mode %u\n",
+		   vdev_id, trigger, enable, le32_to_cpu(cmd->scan_mode));
 
 	ret = ath12k_wmi_cmd_send(ar->wmi, skb,
 				  WMI_VDEV_SPECTRAL_SCAN_ENABLE_CMDID);
@@ -18028,7 +18034,9 @@ static int ath12k_wmi_pdev_sscan_per_detector_info_parse(struct ath12k_base *soc
 
 	if (tag != WMI_TAG_PDEV_SSCAN_PER_DETECTOR_INFO)
 		return -EPROTO;
-	parse->det_info = (struct ath12k_wmi_pdev_sscan_per_detector_info *)ptr;
+	parse->det_info = container_of(ptr,
+				       struct ath12k_wmi_pdev_sscan_per_detector_info,
+				       detector_id);
 	parse->num_det_info++;
 	return 0;
 }
@@ -18127,8 +18135,15 @@ ath12k_wmi_pdev_sscan_fw_param_event(struct ath12k_base *ab,
 	    test_bit(WMI_TLV_SERVICE_SPECTRAL_SESSION_INFO_SUPPORT,
 		     ab->wmi_ab.svc_map)) {
 		spin_lock_bh(&ar->spectral.lock);
-		ar->spectral.ch_width     = param.ch_info.operating_bw;
+		/*
+		 * Do not update ch_width here. It is set from the vdev
+		 * channel at scan start and must reflect the home channel BW.
+		 * This event arrives after FFT samples are already processed,
+		 * so updating ch_width here would have no effect on them.
+		 * Update the agile scan parameters and primary frequency only.
+		 */
 		ar->spectral.pri20_freq   = param.ch_info.operating_pri20_freq;
+		ar->spectral.oper_cfreq1  = param.ch_info.operating_cfreq1;
 		ar->spectral.sscan_cfreq1 = param.ch_info.sscan_cfreq1;
 		ar->spectral.sscan_cfreq2 = param.ch_info.sscan_cfreq2;
 		ar->spectral.sscan_bw     = param.ch_info.sscan_bw;
