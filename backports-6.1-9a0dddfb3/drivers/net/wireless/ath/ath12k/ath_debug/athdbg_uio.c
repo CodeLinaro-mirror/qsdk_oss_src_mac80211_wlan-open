@@ -1,340 +1,184 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 /* Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.*/
 
-#include <linux/vmalloc.h>
-#include <linux/platform_device.h>
-#include <linux/uio_driver.h>
-#include <linux/mm.h>
-#include <linux/smp.h>
-#include <linux/xarray.h>
-#include "../core.h"
 #include "athdbg_uio.h"
-#include "../debug.h"
+#include "athdbg_core.h"
+#include <linux/notifier.h>
+#include <qca-debug-uio/debug_uio_public.h>
 
-static DEFINE_XARRAY(athdbg_ctxs);
-static struct athdbg_uio_ctx *default_uio_ctx;
+extern struct ath_debug_base *athdbg_base;
 
-static inline struct athdbg_uio_ctx *athdbg_get_ctx(struct ath12k_base *ab)
+static int athdbg_uio_notify_from_ss_cb(struct notifier_block *nb,
+					 unsigned long action, void *data);
+
+static struct notifier_block athdbg_ss_handler_nb = {
+	.notifier_call = athdbg_uio_notify_from_ss_cb,
+	.priority      = 0,
+};
+
+static int athdbg_uio_notify_from_ss_cb(struct notifier_block *nb,
+					 unsigned long action, void *data)
 {
-	return xa_load(&athdbg_ctxs, (unsigned long)ab);
+	u8 *raw = (u8 *)data;
+
+	pr_info("Host sshandler: userspace interrupt received, payload = %02x %02x %02x %02x\n",
+		raw[0], raw[1], raw[2], raw[3]);
+
+	/* Perform any driver-specific handling here. */
+	return NOTIFY_OK;
 }
-static inline int athdbg_put_ctx(struct ath12k_base *ab, struct athdbg_uio_ctx *ctx)
+
+/*
+ * athdbg_uio_reset_rings() - Reset HOST data and interrupt ring indices
+ * to empty state (front=0, rear=0).
+ *
+ * Called from athdbg_uio_register() before registering the notifier to
+ * guarantee a clean ring state on every driver load or reload. Without
+ * this reset, stale rear/front indices left by a previous run can make
+ * the ring appear full, causing the first debug_uio_write_data() call
+ * to return -ENOSPC and drop the critical event.
+ */
+static void athdbg_uio_reset_rings(void)
 {
-	return xa_err(xa_store(&athdbg_ctxs, (unsigned long)ab, ctx, GFP_KERNEL));
-}
-static inline void athdbg_del_ctx(struct ath12k_base *ab)
-{
-	xa_erase(&athdbg_ctxs, (unsigned long)ab);
-}
+	void *data_rb;
+	void *intr_rb;
+	atomic_t *front, *rear;
 
-static int athdbg_uio_irqcontrol(struct uio_info *info, s32 irq_on)
-{
-	return 0;
-}
+	/* Reset data ring (map 1) for HOST */
+	data_rb = debug_uio_get_mem(DEBUG_UIO_DEV_HOST,
+				    DEBUG_UIO_MAP_TYPE_DATA);
+	if (data_rb) {
+		front = (atomic_t *)data_rb;
+		rear  = (atomic_t *)((u8 *)data_rb + sizeof(atomic_t));
+		atomic_set(front, 0);
+		atomic_set(rear,  0);
+		pr_info("athdbg_uio: host data ring reset (front=0 rear=0)\n");
+	} else {
+		pr_warn("athdbg_uio: host data ring not available for reset\n");
+	}
 
-static inline void __athdbg_ring_write(struct athdbg_uio_ctx *ctx,
-				       u8 level, u64 mask,
-				       const char *msg)
-{
-	struct ath12k_debug_log_entry *base;
-	u32 *pidx;
-	size_t size_bytes;
-	u32 entries;
-	u32 idx;
-
-	base = ctx->dbg_buf;
-	pidx = &ctx->dbg_idx;
-	size_bytes = ctx->dbg_size_bytes;
-
-	if (!base || !size_bytes)
-		return;
-
-	entries = size_bytes / sizeof(*base);
-
-	if (!entries)
-		return;
-
-	rcu_read_lock();
-
-	idx = (*pidx)++ % entries;
-
-	base[idx].timestamp = ktime_to_ns(ktime_get());
-	base[idx].debug_mask = mask;
-	base[idx].log_level  = level;
-	strscpy(base[idx].message, msg, sizeof(base[idx].message));
-
-	/* Wait for all the writes to be finished */
-	smp_wmb();
-
-	rcu_read_unlock();
+	/* Reset interrupt ring (map 0) for HOST */
+	intr_rb = debug_uio_get_mem(DEBUG_UIO_DEV_HOST,
+				    DEBUG_UIO_MAP_TYPE_INTERRUPT);
+	if (intr_rb) {
+		front = (atomic_t *)intr_rb;
+		rear  = (atomic_t *)((u8 *)intr_rb + sizeof(atomic_t));
+		atomic_set(front, 0);
+		atomic_set(rear,  0);
+		pr_info("athdbg_uio: host intr ring reset (front=0 rear=0)\n");
+	} else {
+		pr_warn("athdbg_uio: host intr ring not available for reset\n");
+	}
 }
 
 int athdbg_uio_register(struct ath12k_base *ab)
 {
-	struct athdbg_uio_ctx *ctx;
 	int ret = 0;
-	char pd_name[64];
 
-	ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
-	if (!ctx)
-		return -ENOMEM;
-	ctx->ab = ab;
+	mutex_init(&athdbg_base->req_lock);
 
-	snprintf(pd_name, sizeof(pd_name), "ath12k_uio_%s", dev_name(ab->dev));
-	ctx->pdev = platform_device_register_simple(pd_name, -1, NULL, 0);
-	if (IS_ERR(ctx->pdev)) {
-		ret = PTR_ERR(ctx->pdev);
-		ctx->pdev = NULL;
-		goto err_free_ctx;
-	}
-	ctx->uio_dev = &ctx->pdev->dev;
+	/* Reset HOST rings before registering notifier to ensure clean
+	 * state on driver reload — prevents -ENOSPC on first write
+	 */
+	athdbg_uio_reset_rings();
 
-	ctx->dbg_size_bytes  = ATH12K_UIO_DBG_SIZE_BYTES;
-	ctx->crit.size_bytes = ATH12K_UIO_CRIT_SIZE_BYTES;
-
-	ctx->dbg_buf  = kzalloc(ctx->dbg_size_bytes, GFP_KERNEL);
-	if (!ctx->dbg_buf) {
-		ret = -ENOMEM;
-		goto err_unreg_pdev;
+	ret = debug_uio_register_notifier(&athdbg_ss_handler_nb,
+					  DEBUG_UIO_DEV_HOST,
+					  DEBUG_UIO_MAP_TYPE_INTERRUPT);
+	if (ret) {
+		pr_err("Host sshandler: notifier registration failed: %d\n", ret);
+		return ret;
 	}
 
-	ctx->crit.buf = kzalloc(ctx->crit.size_bytes, GFP_KERNEL);
-	if (!ctx->crit.buf) {
-		ret = -ENOMEM;
-		goto err_free_dbg_buf;
-	}
-
-	/* Initialize critical ring metadata */
-	ctx->crit.ring = (struct ath12k_crit_ring *)ctx->crit.buf;
-	ctx->crit.ring->version = 0x00010000;
-	ctx->crit.ring->count = (ctx->crit.size_bytes - sizeof(struct ath12k_crit_ring))
-				 / sizeof(struct ath12k_crit_record);
-	ctx->crit.ring->write_idx = 0;
-	ctx->crit.ring->read_idx = 0;
-	ctx->crit.ring->dropped = 0;
-	ctx->crit.ring->flags = 1;/* Overwrite mode enabled by default */
-
-	/* Records start after metadata */
-	ctx->crit.records = (struct ath12k_crit_record *)((u8 *)ctx->crit.buf +
-			     sizeof(struct ath12k_crit_ring));
-
-	ctx->uio_info = devm_kzalloc(ab->dev, sizeof(*ctx->uio_info), GFP_KERNEL);
-	if (!ctx->uio_info) {
-		ret = -ENOMEM;
-		goto err_free_rings;
-	}
-
-	ctx->uio_info->name    = "ath12k_log";
-	ctx->uio_info->version = "0.2";
-	ctx->uio_info->mem[0].memtype = UIO_MEM_LOGICAL;
-	ctx->uio_info->mem[0].addr = (unsigned long)ctx->dbg_buf;
-	ctx->uio_info->mem[0].size = ctx->dbg_size_bytes;
-	ctx->uio_info->mem[0].internal_addr = ctx->dbg_buf;
-
-	ctx->uio_info->mem[1].memtype = UIO_MEM_LOGICAL;
-	ctx->uio_info->mem[1].addr = (unsigned long)ctx->crit.buf;
-	ctx->uio_info->mem[1].size = ctx->crit.size_bytes;
-	ctx->uio_info->mem[1].internal_addr = ctx->crit.buf;
-
-	ctx->uio_info->irq        = UIO_IRQ_CUSTOM;
-	ctx->uio_info->irqcontrol = athdbg_uio_irqcontrol;
-
-	#ifdef CONFIG_UIO
-	ret = uio_register_device(ctx->uio_dev, ctx->uio_info);
-	#endif
-
-	if (ret)
-		goto err_free_rings;
-	ret = athdbg_put_ctx(ab, ctx);
-	if (ret)
-		goto err_free_rings;
-
-	if (!default_uio_ctx)
-		default_uio_ctx = ctx;
-
-	return 0;
-
-err_free_rings:
-	#ifdef CONFIG_UIO
-	if (ctx->uio_info)
-		uio_unregister_device(ctx->uio_info);
-	#endif
-	kfree(ctx->crit.buf);
-err_free_dbg_buf:
-	kfree(ctx->dbg_buf);
-err_unreg_pdev:
-	if (ctx->pdev)
-		platform_device_unregister(ctx->pdev);
-err_free_ctx:
-	kfree(ctx);
 	return ret;
 }
-EXPORT_SYMBOL(athdbg_uio_register);
 
-void athdbg_uio_unregister(struct ath12k_base *ab)
+int athdbg_uio_unregister(struct ath12k_base *ab)
 {
-	struct athdbg_uio_ctx *ctx = athdbg_get_ctx(ab);
+	debug_uio_unregister_notifier(&athdbg_ss_handler_nb,
+				      DEBUG_UIO_DEV_HOST,
+				      DEBUG_UIO_MAP_TYPE_INTERRUPT);
 
-	if (!ctx)
-		return;
-
-	athdbg_del_ctx(ab);
-
-	if (default_uio_ctx == ctx)
-		default_uio_ctx = NULL;
-
-	#ifdef CONFIG_UIO
-	if (ctx->uio_info)
-		uio_unregister_device(ctx->uio_info);
-	#endif
-	kfree(ctx->dbg_buf);
-	kfree(ctx->crit.buf);
-	if (ctx->pdev)
-		platform_device_unregister(ctx->pdev);
-
-	kfree(ctx);
+	return 0;
 }
-EXPORT_SYMBOL(athdbg_uio_unregister);
 
-void athdbg_uio_log_info(struct ath12k_base *ab, const char *fmt, va_list args)
+/* Map 1 layout: [front(int32)][rear(int32)][4 x 1020-byte payload blocks] */
+#define ATHDBG_UIO_DATA_RING_HEADER_BYTES 8
+#define ATHDBG_UIO_MAX_BUFFER_SIZE        1020
+
+void athdbg_uio_buff_write(struct ath12k_crit_record *payload)
 {
-	struct athdbg_uio_ctx *ctx;
-	char msg[256];
+	void *data_rb;
+	atomic_t *rear_atomic;
+	u32 rear, offset;
+	int ret;
 
-	if (!fmt)
+	/*
+	 * Use debug_uio data + interrupt rings:
+	 *  - snapshot rear BEFORE write to compute offset
+	 *  - write payload via debug_uio_write_data() into data ring (map 1)
+	 *  - send interrupt metadata via debug_uio_notify() with offset/size
+	 */
+
+	data_rb = debug_uio_get_mem(DEBUG_UIO_DEV_HOST,
+				    DEBUG_UIO_MAP_TYPE_DATA);
+	if (!data_rb) {
+		pr_err("athdbg_uio: host data ring not available\n");
 		return;
+	}
 
-	vsnprintf(msg, sizeof(msg), fmt, args);
+	/*
+	 * Data ring (map 1) memory layout:
+	 *
+	 *  Offset 0               : front (atomic_t, 4 bytes) - read index,
+	 *                           advanced by userspace
+	 *  Offset sizeof(atomic_t): rear  (atomic_t, 4 bytes) - write index,
+	 *                           advanced by kernel
+	 *  Offset 8 (HEADER_BYTES): payload[0] (1020 bytes)
+	 *  Offset 8 + 1020        : payload[1] (1020 bytes)
+	 *  Offset 8 + n*1020      : payload[n] (1020 bytes)
+	 *
+	 *  payload[n] offset = ATHDBG_UIO_DATA_RING_HEADER_BYTES
+	 *                      + n * ATHDBG_UIO_MAX_BUFFER_SIZE
+	 */
+	rear_atomic = (atomic_t *)((u8 *)data_rb + sizeof(atomic_t));
+	rear = (u32)atomic_read(rear_atomic);
 
-	if (likely(ab))
-		ctx = athdbg_get_ctx(ab);
-	else
-		ctx = default_uio_ctx;
+	/* Offset into map 1 where this payload will land */
+	offset = ATHDBG_UIO_DATA_RING_HEADER_BYTES +
+		 rear * ATHDBG_UIO_MAX_BUFFER_SIZE;
 
-	if (!ctx)
+	mutex_lock(&athdbg_base->uio_lock);
+
+	/* Set timestamp after acquiring lock so it reflects actual write time */
+	payload->ts_nsec = ktime_to_ns(ktime_get());
+
+	/* Write critical record into HOST data ring */
+	ret = debug_uio_write_data(ATH12K_DEV, payload,
+				   sizeof(*payload));
+	if (ret == -ENOSPC) {
+		pr_err("athdbg_uio: HOST data ring full, dropping critical event\n");
+		athdbg_base->uio_trace.dropped++;
+		mutex_unlock(&athdbg_base->uio_lock);
 		return;
+	}
 
-	__athdbg_ring_write(ctx, ATH12K_LOG_LEVEL_INFO,
-			    ATH12K_DBG_ANY, msg);
+	/* Notify userspace with the offset and size, via interrupt ring */
+	ret = debug_uio_notify(ATH12K_DEV, offset,
+			       (u32)sizeof(*payload));
+	if (ret)
+		pr_err("athdbg_uio: debug_uio_notify failed: %d\n", ret);
+
+	mutex_unlock(&athdbg_base->uio_lock);
 }
-EXPORT_SYMBOL(athdbg_uio_log_info);
-
-void athdbg_uio_log_warn(struct ath12k_base *ab, const char *fmt, va_list args)
-{
-	struct athdbg_uio_ctx *ctx;
-	char msg[256];
-
-	if (!fmt)
-		return;
-
-	vsnprintf(msg, sizeof(msg), fmt, args);
-
-	if (likely(ab))
-		ctx = athdbg_get_ctx(ab);
-	else
-		ctx = default_uio_ctx;
-
-	if (!ctx)
-		return;
-
-	__athdbg_ring_write(ctx, ATH12K_LOG_LEVEL_WARN,
-			    ATH12K_DBG_ANY, msg);
-}
-EXPORT_SYMBOL(athdbg_uio_log_warn);
-
-void athdbg_uio_log_err(struct ath12k_base *ab, const char *fmt, va_list args)
-{
-	struct athdbg_uio_ctx *ctx;
-	char msg[256];
-
-	if (!fmt)
-		return;
-
-	vsnprintf(msg, sizeof(msg), fmt, args);
-
-	if (likely(ab))
-		ctx = athdbg_get_ctx(ab);
-	else
-		ctx = default_uio_ctx;
-
-	if (!ctx)
-		return;
-
-	__athdbg_ring_write(ctx, ATH12K_LOG_LEVEL_ERR,
-			    ATH12K_DBG_ANY, msg);
-}
-EXPORT_SYMBOL(athdbg_uio_log_err);
-
-void athdbg_uio_log_debug(struct ath12k_base *ab, u64 mask, const char *fmt, va_list args)
-{
-	struct athdbg_uio_ctx *ctx;
-	char msg[256];
-
-	if (!fmt)
-		return;
-
-	vsnprintf(msg, sizeof(msg), fmt, args);
-
-	if (likely(ab))
-		ctx = athdbg_get_ctx(ab);
-	else
-		ctx = default_uio_ctx;
-
-
-	if (!ctx)
-		return;
-
-	__athdbg_ring_write(ctx, ATH12K_LOG_LEVEL_DEBUG, mask, msg);
-}
-EXPORT_SYMBOL(athdbg_uio_log_debug);
 
 void athdbg_uio_critical_failure_trigger(struct ath12k_base *ab, uint32_t crit_enum)
 {
-#ifdef CPTCFG_ATHDEBUG_UIO_LOGGING
-	struct athdbg_uio_ctx *ctx;
-	struct ath12k_crit_ring *ring;
-	struct ath12k_crit_record *record;
-	u32 write_idx;
-	bool overwrite;
+	struct ath12k_crit_record payload;
 
-	if (likely(ab))
-		ctx = athdbg_get_ctx(ab);
-	else
-		ctx = default_uio_ctx;
+	payload.radio_id = ab ? ab->device_id : 0xFFFF;  /* 0xFFFF = unknown */
+	payload.crit_enum = crit_enum;
 
-	if (!ctx || !ctx->crit.ring)
-		return;
-
-	ring = ctx->crit.ring;
-	overwrite = ring->flags & 0x1;
-
-	rcu_read_lock();
-
-	/* Check if buffer is full */
-	if (!overwrite && ((ring->write_idx + 1) % ring->count == ring->read_idx)) {
-		ring->dropped++;
-		rcu_read_unlock();
-		return;
-	}
-
-	write_idx = ring->write_idx;
-	record = &ctx->crit.records[write_idx];
-
-	/* Fill record */
-	record->radio_id = ab ? ab->device_id : 0xFFFF;  /* 0xFFFF = unknown */
-	record->crit_enum = crit_enum;
-	record->ts_nsec = ktime_to_ns(ktime_get());
-
-	/* Memory barrier before updating index */
-	smp_wmb();
-
-	/* Update write index */
-	ring->write_idx = (write_idx + 1) % ring->count;
-
-	rcu_read_unlock();
-
-	if (ctx->uio_info)
-		uio_event_notify(ctx->uio_info);
-#endif
+	athdbg_uio_buff_write(&payload);
 }
 EXPORT_SYMBOL(athdbg_uio_critical_failure_trigger);
