@@ -24151,9 +24151,10 @@ static int ath12k_mac_apply_vdev_ratemask(struct ath12k_link_vif *arvif,
 	int ret = 0, nss, offset;
 	u64 lower64, higher64;
 	u16 mcs_map;
-	u32 mcs;
+	u32 mcs, legacy;
 	const u8 *ht_m;
 
+	legacy = mask->control[band].legacy;
 	ht_m = mask->control[band].ht_mcs;
 	vht_m = mask->control[band].vht_mcs;
 	he_m = mask->control[band].he_mcs;
@@ -24169,6 +24170,13 @@ static int ath12k_mac_apply_vdev_ratemask(struct ath12k_link_vif *arvif,
 					      WMI_FIXED_RATE_NONE);
 		arvif->fixed_rate_set = false;
 	}
+
+	/* Fill the vdev rate mask params for legacy rates */
+	arg.type = VDEV_RATEMASK_TYPE_CCK_OFDM;
+	arg.mask_lower32 = legacy;
+	ret = ath12k_wmi_vdev_rate_mask(arvif->ar, &arg);
+	if (ret)
+		return ret;
 
 	/* Fill the vdev rate mask params for HT from MCS mask */
 	arg.type = VDEV_RATEMASK_TYPE_HT;
