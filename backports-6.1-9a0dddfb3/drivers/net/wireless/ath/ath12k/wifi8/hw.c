@@ -1465,5 +1465,9 @@ int ath12k_wifi8_hw_init(struct ath12k_base *ab)
 
 	ath12k_info(ab, "WiFi8 Hardware name: %s\n", ab->hw_params->name);
 
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_wifi8_hw_init_extn(ab);
+#endif
+
 	return 0;
 }
