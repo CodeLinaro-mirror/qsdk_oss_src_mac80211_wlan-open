@@ -8221,6 +8221,20 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 		pr_debug("nl80211: SMD AP mode enabled\n");
 	}
 
+#ifdef CPTCFG_QCN_EXTN
+	/*
+	 * Boot-up CAC + skip_cac: when the driver supports creating all 5 GHz
+	 * BSS interfaces during CAC (boot-up CAC) and the user space requests
+	 * skip_cac, propagate the flag into params so that ieee80211_start_ap
+	 * can handle it (send a dummy CAC_FINISHED event instead of starting
+	 * the boot-up CAC timer).
+	 */
+	if (cfg80211_bootup_cac_is_5g_dfs_chan_extn(&rdev->wiphy,
+						     &params->chandef) &&
+	    info->attrs[NL80211_ATTR_SKIP_CAC])
+		params->skip_cac = nla_get_flag(info->attrs[NL80211_ATTR_SKIP_CAC]);
+#endif /* CPTCFG_QCN_EXTN */
+
 	/* FIXME: validate MLO/link-id against driver capabilities */
 
 	err = rdev_start_ap(rdev, dev, params);
