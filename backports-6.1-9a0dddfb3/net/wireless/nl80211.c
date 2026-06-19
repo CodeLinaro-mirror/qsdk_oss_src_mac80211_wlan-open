@@ -7918,6 +7918,18 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 		params->beacon_tx_mode =
 			nla_get_u32(info->attrs[NL80211_ATTR_BEACON_TX_MODE]);
 
+	if (info->attrs[NL80211_ATTR_MAX_CH_SWITCH_TIME]) {
+		u32 cs_time_tu =
+			nla_get_u32(info->attrs[NL80211_ATTR_MAX_CH_SWITCH_TIME]);
+		u64 residual_cac_ms =
+			DIV_ROUND_UP_ULL((u64) cs_time_tu * 1024, 1000);
+
+		if (residual_cac_ms > U32_MAX)
+			residual_cac_ms = 0;
+
+		params->residual_cac_ms = (u32)residual_cac_ms;
+	}
+
 	err = cfg80211_validate_beacon_int(rdev, dev->ieee80211_ptr->iftype,
 					   params->beacon_interval);
 	if (err)
@@ -12919,6 +12931,17 @@ static int nl80211_start_radar_detection(struct sk_buff *skb,
 	/* If skip_cac is configured, reset the CAC time to 0 */
 	if (skip_cac)
 		cac_time_ms = 0;
+	else if (info->attrs[NL80211_ATTR_MAX_CH_SWITCH_TIME]) {
+		u32 cs_time_tu =
+			nla_get_u32(info->attrs[NL80211_ATTR_MAX_CH_SWITCH_TIME]);
+		u64 residual_cac_ms = DIV_ROUND_UP_ULL((u64) cs_time_tu * 1024, 1000);
+
+		if (residual_cac_ms > U32_MAX)
+			residual_cac_ms = 0;
+
+		if (residual_cac_ms && (residual_cac_ms < cac_time_ms))
+			cac_time_ms = (u32)residual_cac_ms;
+	}
 
 	err = rdev_start_radar_detection(rdev, dev, &chandef, cac_time_ms,
 					 link_id);

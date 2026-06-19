@@ -2024,6 +2024,8 @@ struct cfg80211_ttlm_params {
  * @dps_assist_disable: indicates AP to disable DPS Assist Support.
  * @smd_params: SMD params for a AP
  * @uhr_cap: UHR capabilities element (or %NULL if not provided)
+ * @residual_cac_ms: residual CAC time in milliseconds, derived from
+ *	%NL80211_ATTR_MAX_CH_SWITCH_TIME for AP start
  */
 struct cfg80211_ap_settings {
 	struct cfg80211_chan_def chandef;
@@ -2069,6 +2071,7 @@ struct cfg80211_ap_settings {
 	bool is_cfp_enabled;
 	bool dps_assist_disable;
 	struct cfg80211_smd_params smd_params;
+	u32 residual_cac_ms;
 };
 
 
