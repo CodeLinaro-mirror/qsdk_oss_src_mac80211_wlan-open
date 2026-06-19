@@ -1367,12 +1367,6 @@ static void ath12k_core_power_down_device(struct ath12k_hw_group *ag,
 	if (!skip_power_down &&
 	    !test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags)) {
 		ab->qmi.num_radios = U8_MAX;
-		if (ab->is_cumac_chip) {
-			ab->is_cumac_chip = false;
-			ag->cumac_selected = false;
-			ag->cumac_chip_id = ATH12K_CUMAC_CHIP_ID_INVALID;
-		}
-		ab->cumac_configured = false;
 		ath12k_umac_reset_fallback_cleanup(ab);
 		ath12k_hif_mgmt_irq_disable(ab);
 		ath12k_hif_irq_disable(ab);
@@ -1384,6 +1378,12 @@ static void ath12k_core_power_down_device(struct ath12k_hw_group *ag,
 #endif
 		ath12k_qmi_firmware_stop(ab);
 		ath12k_core_cleanup(ab);
+		if (ab->is_cumac_chip) {
+			ab->is_cumac_chip = false;
+			ag->cumac_selected = false;
+			ag->cumac_chip_id = ATH12K_CUMAC_CHIP_ID_INVALID;
+		}
+		ab->cumac_configured = false;
 		total_vdevs = ath12k_core_get_total_num_vdevs(ab);
 		ab->free_vdev_map = (1LL << (ab->num_radios * total_vdevs)) - 1;
 		ab->free_vdev_stats_id_map = 0;
