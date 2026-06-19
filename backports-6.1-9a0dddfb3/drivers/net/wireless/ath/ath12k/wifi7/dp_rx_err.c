@@ -279,16 +279,22 @@ static bool ath12k_wifi7_handle_reo_route(struct ath12k_pdev_dp *dp_pdev,
 {
 	struct ath12k *ar = dp_pdev->ar;
 
-	if (spd_desc_l->cce_metadata != ATH12K_ROUTE_EAP_METADATA)
-		return true;
-
 	switch (peer->rx_decap_type) {
 	case DP_RX_DECAP_TYPE_ETHERNET2_DIX:
-		ath12k_wifi7_convert_n_deliver_nw_frame(dp_pdev, spd_desc_l,
-							peer, rx_status,
-							napi,
-							prev_tlv_info);
-		break;
+		/*
+		 * Convert eapol packets into 80211 packets as mac80211
+		 * needs unautorized packets in 80211 format.
+		 * Allow all other ERP/other routed packets through
+		 * regular path.
+		 */
+		if (spd_desc_l->cce_metadata == ATH12K_ROUTE_EAP_METADATA) {
+			ath12k_wifi7_convert_n_deliver_nw_frame(dp_pdev, spd_desc_l,
+								peer, rx_status,
+								napi,
+								prev_tlv_info);
+			break;
+		}
+		fallthrough;
 	case DP_RX_DECAP_TYPE_RAW:
 	case DP_RX_DECAP_TYPE_NATIVE_WIFI:
 		ath12k_dp_rx_update_eapol_stats(dp_pdev->dp, spd_desc_l->msdu);
