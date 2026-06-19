@@ -5030,7 +5030,7 @@ static ssize_t ath12k_debugfs_dump_ppeds_stats(struct file *file,
 	len += scnprintf(buf + len, size - len, "\nSRNG_Ring_index_Dump:\n");
 
 	srng = &ab->hal.srng_list[ppe2tcl_ring_id];
-	if (srng) {
+	if (srng && srng->initialized) {
 		len += scnprintf(buf + len, size - len, "ppe2tcl_hp= 0x%x\n",
 				srng->u.src_ring.hp);
 		len += scnprintf(buf + len, size - len, "ppe2tcl_tp= 0x%x\n",
@@ -5038,7 +5038,7 @@ static ssize_t ath12k_debugfs_dump_ppeds_stats(struct file *file,
 	}
 
 	srng = &ab->hal.srng_list[reo2ppe_ring_id];
-	if (srng) {
+	if (srng && srng->initialized) {
 		len += scnprintf(buf + len, size - len, "reo2ppe_hp= 0x%x\n",
 				 *(volatile u32 *)(srng->u.dst_ring.hp_addr));
 		len += scnprintf(buf + len, size - len, "reo2ppe_tp= 0x%x\n",
