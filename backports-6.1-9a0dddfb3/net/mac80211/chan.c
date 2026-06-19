@@ -1313,6 +1313,9 @@ int ieee80211_link_unreserve_chanctx(struct ieee80211_link_data *link)
 			ctx->replace_ctx->replace_state =
 					IEEE80211_CHANCTX_REPLACE_NONE;
 
+			hrtimer_cancel(&ctx->dfs_cac_timer);
+			wiphy_work_cancel(sdata->local->hw.wiphy,
+					  &ctx->dfs_cac_timer_work);
 			list_del_rcu(&ctx->list);
 			kfree_rcu(ctx, rcu_head);
 		} else {
@@ -2047,6 +2050,8 @@ static int ieee80211_vif_use_reserved_switch(struct ieee80211_local *local)
 		ctx->replace_ctx->replace_state =
 				IEEE80211_CHANCTX_REPLACE_NONE;
 
+		hrtimer_cancel(&ctx->dfs_cac_timer);
+		wiphy_work_cancel(local->hw.wiphy, &ctx->dfs_cac_timer_work);
 		list_del_rcu(&ctx->list);
 		kfree_rcu(ctx, rcu_head);
 	}
