@@ -168,8 +168,6 @@ int ath12k_wifi7_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 		return ret;
 	}
 
-	if (dp_pdev && ath12k_proto_stats_enabled(dp_pdev))
-		ath12k_dp_alloc_proto_stats_peer(dp_peer);
 	rcu_read_unlock();
 
 	spin_lock_bh(&dp_hw->peer_hash_lock);
@@ -242,7 +240,6 @@ void ath12k_wifi7_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 
 	kfree(dp_peer->qos);
 	ath12k_dp_peer_stats_free(dp_peer);
-	ath12k_dp_free_proto_stats_peer(dp_peer);
 	kfree(dp_peer);
 }
 

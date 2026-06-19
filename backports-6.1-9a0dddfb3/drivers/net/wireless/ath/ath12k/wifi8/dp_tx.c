@@ -3011,6 +3011,14 @@ static void ath12k_wifi8_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 				ath12k_tid_tx_stats(ahvif, tid, msdu->len,
 						    ATH_TX_COMPLETED_PKTS);
 			}
+
+			/* Update peer level protocol stats at TX completion */
+			if (unlikely(ath12k_proto_stats_enabled(dp_pdev)))
+				ath12k_dp_tx_peer_update_proto_stats(peer,
+								     hw_link_id,
+								     msdu,
+								     TX_COMP,
+								     ring);
 		}
 	} else {
 		DP_DEVICE_STATS_INC(dp, tx_err.tx_comp_err[DP_TX_COMP_ERR_INVALID_PEER][ring], 1);
