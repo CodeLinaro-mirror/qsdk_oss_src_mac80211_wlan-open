@@ -3573,6 +3573,32 @@ TRACE_EVENT(drv_ap_power_save,
 	)
 );
 
+TRACE_EVENT(drv_uhr_mode_update,
+	TP_PROTO(struct ieee80211_local *local,
+		 struct ieee80211_sub_if_data *sdata,
+		 struct sta_info *sta),
+
+	TP_ARGS(local, sdata, sta),
+
+	TP_STRUCT__entry(
+		LOCAL_ENTRY
+		VIF_ENTRY
+		STA_ENTRY
+	),
+
+	TP_fast_assign(
+		LOCAL_ASSIGN;
+		VIF_ASSIGN;
+		STA_ASSIGN;
+	),
+
+	TP_printk(
+		LOCAL_PR_FMT VIF_PR_FMT STA_PR_FMT,
+		LOCAL_PR_ARG, VIF_PR_ARG,
+		STA_PR_ARG
+	)
+);
+
 #ifdef CPTCFG_QCN_EXTN
 TRACE_EVENT(drv_set_muedca_mode,
 		TP_PROTO(struct ieee80211_local *local,

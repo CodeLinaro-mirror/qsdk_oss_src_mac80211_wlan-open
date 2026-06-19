@@ -4478,6 +4478,37 @@ TRACE_EVENT(rdev_ap_power_save,
 		  __entry->dcvs_mode, __entry->dps_assist_enable,
 		  __entry->low_power_20mhz_enable)
 );
+
+TRACE_EVENT(rdev_uhr_mode_update,
+	TP_PROTO(struct wiphy *wiphy, struct net_device *dev,
+		 struct cfg80211_uhr_mode_update_params *params),
+
+	TP_ARGS(wiphy, dev, params),
+
+	TP_STRUCT__entry(
+		WIPHY_ENTRY
+		__string(name, dev->name)
+		__field(u16, npca_update_mask)
+	),
+
+	TP_fast_assign(
+		int i;
+		u16 npca_mask = 0;
+
+		WIPHY_ASSIGN;
+		__assign_str(name, dev->name);
+		for (i = 0; i < IEEE80211_MLD_MAX_NUM_LINKS; i++) {
+			if (params->npca_update[i])
+				npca_mask |= BIT(i);
+		}
+		__entry->npca_update_mask = npca_mask;
+	),
+
+	TP_printk(WIPHY_PR_FMT ", dev: %s, npca_links:0x%04x",
+		  WIPHY_PR_ARG, __get_str(name),
+		  __entry->npca_update_mask)
+);
+
 #endif /* !__RDEV_OPS_TRACE || TRACE_HEADER_MULTI_READ */
 
 #undef TRACE_INCLUDE_PATH
