@@ -4818,6 +4818,11 @@ struct wmi_get_pdev_temperature_cmd {
 	__le32 pdev_id;
 } __packed;
 
+struct wmi_get_pdev_nfcal_power_cmd {
+	__le32 tlv_header;
+	__le32 pdev_id;
+} __packed;
+
 #define WMI_P2P_MAX_NOA_DESCRIPTORS		4
 
 struct wmi_p2p_noa_event {
@@ -10281,6 +10286,37 @@ struct wmi_peer_set_smart_ant_node_config_ops_cmd {
 } __packed;
 #endif /* CPTCFG_QCN_EXTN */
 
+#define ATH12K_WMI_RXG_CAL_CHAN_MAX	8
+#define ATH12K_WMI_MAX_NUM_CHAINS	8
+
+struct wmi_pdev_nfcal_power_all_channels_event {
+	__le32 pdev_id;
+	__le32 nfdbr_len;
+	__le32 nfdbm_len;
+	__le32 freqnum_len;
+} __packed;
+
+struct wmi_pdev_nfcal_power_all_channels_nfdbr {
+	__le32 nfdbr;
+} __packed;
+
+struct wmi_pdev_nfcal_power_all_channels_nfdbm {
+	__le32 nfdbm;
+} __packed;
+
+struct wmi_pdev_nfcal_power_all_channels_freqnum {
+	__le32 freqnum;
+} __packed;
+
+struct ath12k_wmi_nfcal_power_event {
+	s8 nfdbr[ATH12K_WMI_RXG_CAL_CHAN_MAX * ATH12K_WMI_MAX_NUM_CHAINS];
+	s8 nfdbm[ATH12K_WMI_RXG_CAL_CHAN_MAX * ATH12K_WMI_MAX_NUM_CHAINS];
+	u32 freqnum[ATH12K_WMI_RXG_CAL_CHAN_MAX];
+	u16 num_nfdbr_dbm;
+	u16 num_freq;
+	u32 pdev_id;
+};
+
 int ath12k_wmi_cmd_send(struct ath12k_wmi_pdev *wmi, struct sk_buff *skb,
 			u32 cmd_id);
 struct sk_buff *ath12k_wmi_alloc_skb(struct ath12k_wmi_base *wmi_sc, u32 len);
@@ -10622,4 +10658,5 @@ int ath12k_wmi_send_tdma_schedule_request(struct ath12k *ar,
 int ath12k_wmi_send_low_power_20mhz(struct ath12k *ar, bool config);
 int ath12k_wmi_send_energy_mgmt_oem_data(struct ath12k *ar, u32 content_type,
 					 u32 num_bytes_valid, u8 *data);
+int ath12k_wmi_send_pdev_get_nfcal_power_cmd(struct ath12k *ar);
 #endif

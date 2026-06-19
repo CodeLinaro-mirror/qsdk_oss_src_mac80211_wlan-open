@@ -213,6 +213,7 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_SDWF_PEER_MSDUQ_EVENT = 528,
 	QCA_NL80211_VENDOR_SUBCMD_CHAIN_MASK_CHANGED = 529,
 	QCA_NL80211_VENDOR_SUBCMD_SET_MULTI_BSS_PARAM = 530,
+	QCA_NL80211_VENDOR_SUBCMD_WLAN_NFCAL_POWER_EVENT = 531,
 };
 
 /**
@@ -381,6 +382,7 @@ enum qca_nl80211_vendor_events {
 	 * %QCA_NL80211_VENDOR_SUBCMD_CHAIN_MASK_CHANGED.
 	 */
 	QCA_NL80211_VENDOR_SUBCMD_CHAIN_MASK_INDEX = 23,
+	QCA_NL80211_VENDOR_SUBCMD_WLAN_NFCAL_POWER_EVENT_INDEX = 24,
 };
 
 /**
@@ -2119,6 +2121,63 @@ enum qca_nl80211_vendor_fw_recovery_attr {
 	QCA_WLAN_VENDOR_FW_RECOVERY_HW_LINK_ID = 2,
 	QCA_VENDOR_ATTR_FW_RECOVERY_AFTER_LAST,
 	QCA_VENDOR_ATTR_FW_RECOVERY_MAX = QCA_VENDOR_ATTR_FW_RECOVERY_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_nfcal_power_event - Vendor attributes for the
+ * %QCA_NL80211_VENDOR_SUBCMD_WLAN_NFCAL_POWER_EVENT vendor event.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_INVALID:
+ *     Invalid attribute (placeholder).
+ *
+ * @QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_HW_LINK_ID:
+ *     Mandatory attribute (u8) representing the hardware link ID on which
+ *     the noise floor calibration was performed.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_NFDBR:
+ *     Mandatory attribute (NLA_BINARY) containing an array of s8 values
+ *     representing the noise floor in dBr for each calibrated channel/chain.
+ *     The number of valid entries is indicated by
+ *     %QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_NUM_NFDBR_DBM.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_NFDBM:
+ *     Mandatory attribute (NLA_BINARY) containing an array of s8 values
+ *     representing the noise floor in dBm for each calibrated channel/chain.
+ *     The number of valid entries is indicated by
+ *     %QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_NUM_NFDBR_DBM.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_FREQNUM:
+ *     Mandatory attribute (NLA_BINARY) containing an array of u32 values
+ *     representing the frequency numbers (in MHz) for each calibrated channel.
+ *     The number of valid entries is indicated by
+ *     %QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_NUM_FREQ.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_NUM_NFDBR_DBM:
+ *     Mandatory attribute (u16) indicating the number of valid entries in the
+ *     %QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_NFDBR and
+ *     %QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_NFDBM arrays.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_NUM_FREQ:
+ *     Mandatory attribute (u16) indicating the number of valid entries in the
+ *     %QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_FREQNUM array.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_AFTER_LAST:
+ *     Internal marker for the end of attributes.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_MAX:
+ *     Maximum attribute index (for bounds checking).
+ */
+enum qca_wlan_vendor_attr_nfcal_power_event {
+	QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_HW_LINK_ID = 1,
+	QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_NFDBR = 2,
+	QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_NFDBM = 3,
+	QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_FREQNUM = 4,
+	QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_NUM_NFDBR_DBM = 5,
+	QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_NUM_FREQ = 6,
+	QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_MAX =
+		QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_AFTER_LAST - 1,
 };
 
 /**
@@ -4438,6 +4497,7 @@ enum qca_vendor_radio_param {
 	QCA_WLAN_VENDOR_RADIO_PARAM_RX_FLOW_TAG_OP = 91,
 	QCA_WLAN_VENDOR_RADIO_PARAM_GET_CAC_STATE = 92,
 	QCA_WLAN_VENDOR_RADIO_PARAM_SCAN_STRICT_PASSIVE_PCH = 93,
+	QCA_WLAN_VENDOR_RADIO_PARAM_GET_NFCAL_POWER = 94,
 
 	/* Add new params above */
 	QCA_WLAN_VENDOR_RADIO_PARAM_LAST,
@@ -6913,6 +6973,9 @@ struct ath12k_sdwf_msduq_evt_data {
 void
 ath12k_vendor_sdwf_msduq_send_event(struct ath12k *ar,
 				    const struct ath12k_sdwf_msduq_evt_data *e);
+struct ath12k_wmi_nfcal_power_event;
+int ath12k_vendor_nfcal_power_event(struct ath12k *ar,
+				    const struct ath12k_wmi_nfcal_power_event *param);
 
 /**
  * enum qca_wlan_vendor_multi_bss_param_id - multi bss parameters IDs
