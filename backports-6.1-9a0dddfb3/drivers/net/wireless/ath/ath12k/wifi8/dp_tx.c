@@ -2018,7 +2018,11 @@ ath12k_wifi8_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	ath12k_wifi8_dp_dma_align_handler(central_dp, skb);
-	dma_map = ath12k_dp_tx_dma_map(central_dp, skb, msdu_info->data_len, tx_desc,
+
+	/* For multicast packets, map the full buffer since MCAST always uses the slow
+	 * path. skb->len includes any HTT metadata as well.
+	 */
+	dma_map = ath12k_dp_tx_dma_map(central_dp, skb, skb->len, tx_desc,
 				       msdu_info, skb_ctrl);
 
 	if (unlikely(!dma_map)) {
