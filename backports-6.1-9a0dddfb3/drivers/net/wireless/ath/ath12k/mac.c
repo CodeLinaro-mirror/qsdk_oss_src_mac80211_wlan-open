@@ -9370,10 +9370,12 @@ skip_pending_cs_up:
 	}
 
 	if (changed & BSS_CHANGED_STA_NOL_CAC_DONE) {
-		if (vif->cfg.assoc && !arvif->is_up) {
-			ath12k_dp_arch_peer_assoc(ar->ab->dp, &ar->ah->dp_hw,
-						  &ahvif->dp_vif,
-						  vif->cfg.ap_addr);
+		if (vif->cfg.assoc) {
+			/* Reset is_up before vdev_up:
+			 * ath12k_bss_assoc() asserts vdev is not up
+			 * on entry.
+			 */
+			arvif->is_up = false;
 			ath12k_bss_assoc(ar, arvif, info);
 		}
 	}
@@ -21771,11 +21773,9 @@ beacon_tmpl_setup:
 		return 0;
 
 	/*
-	 * STA vdev on a NOL-history CSA target: CAC must complete before
-	 * vdev_up. mac80211 will fire BSS_CHANGED_ASSOC once CAC passes,
-	 * which re-enters ath12k_bss_assoc() and issues vdev_up then.
-	 * Clear is_up here: for the MVR path no vdev_stop was issued, so
-	 * is_up was never cleared. ath12k_bss_assoc asserts !is_up on entry.
+	 * STA vdev switching to a NOL-history channel must not issue vdev_up
+	 * until CAC completes. Return early here; BSS_CHANGED_STA_NOL_CAC_DONE
+	 * will trigger vdev_up once mac80211 signals CAC completion.
 	 */
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
 		struct ieee80211_sub_if_data *sdata = vif_to_sdata(ahvif->vif);
@@ -21784,7 +21784,6 @@ beacon_tmpl_setup:
 		rcu_read_lock();
 		mgd_link = rcu_dereference(sdata->link[arvif->link_id]);
 		if (mgd_link && mgd_link->u.mgd.csa.nol_hist_cac_pending) {
-			arvif->is_up = false;
 			rcu_read_unlock();
 			return 0;
 		}
