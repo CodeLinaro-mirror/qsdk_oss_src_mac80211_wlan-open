@@ -2319,6 +2319,7 @@ static int ath12k_select_cumac_chip(struct ath12k_hw_group *ag)
 	struct ath12k_base *partner_ab;
 	struct ath12k_base *cumac_ab = NULL;
 	int i, j;
+	u8 best_chip_prio;
 	enum ath12k_cumac_band preferred_cumac_band;
 	enum ath12k_cumac_band curr_band = ATH12K_CUMAC_BAND_NONE;
 	enum ath12k_cumac_band default_prio_band[] = {ATH12K_CUMAC_BAND_2GHZ,
@@ -2356,11 +2357,30 @@ static int ath12k_select_cumac_chip(struct ath12k_hw_group *ag)
 		max_prio_order = ARRAY_SIZE(default_prio_band);
 	}
 
+	if (ag->num_devices == 1) {
+		cumac_ab = ag->ab[0];
+		curr_band = ath12k_get_cumac_band(cumac_ab);
+		goto select_cumac;
+	}
+
+	best_chip_prio = U8_MAX;
+	for (i = 0; i < ag->num_devices; i++) {
+		partner_ab = ag->ab[i];
+		if (!partner_ab || partner_ab->is_bypassed)
+			continue;
+		if (partner_ab->hw_params->cumac_chip_priority &&
+		    (partner_ab->hw_params->cumac_chip_priority < best_chip_prio))
+			best_chip_prio = partner_ab->hw_params->cumac_chip_priority;
+	}
+
 	for (j = 0; j < max_prio_order; j++) {
 		preferred_cumac_band = prio_band[j];
 		for (i = 0; i < ag->num_devices; i++) {
 			partner_ab = ag->ab[i];
 			if (!partner_ab)
+				continue;
+
+			if (partner_ab->hw_params->cumac_chip_priority != best_chip_prio)
 				continue;
 
 			curr_band = ath12k_get_cumac_band(partner_ab);
@@ -2373,6 +2393,7 @@ static int ath12k_select_cumac_chip(struct ath12k_hw_group *ag)
 			break;
 	}
 
+select_cumac:
 	if (!cumac_ab)
 		return -EINVAL;
 
