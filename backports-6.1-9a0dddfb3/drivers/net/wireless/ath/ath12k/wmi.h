@@ -3136,6 +3136,7 @@ struct ath12k_wmi_resource_config_arg {
 	bool afc_outdoor_support;
 	u32 carrier_config;
 	u32 rep_ul_resp;
+	u32 rf_path;
 #ifdef CPTCFG_QCN_EXTN
 	u32 hw_blocklist_chans_support;
 #endif
@@ -3347,6 +3348,7 @@ struct ath12k_wmi_resource_config_params {
 	__le32 cbc_flow_ena;
 	__le32 ema_init_config;
 	__le32 carrier_config;
+	__le32 rf_path;
 } __packed;
 
 struct wmi_service_ready_event {

@@ -2460,6 +2460,8 @@ struct ath12k_base {
 	struct ath12k_wmi_hal_reg_capabilities_ext_arg hal_reg_cap[MAX_RADIOS];
 	/* Secondary RF path freq caps from SERVICE_READY_EXT2 (rf_switch_config) */
 	struct ath12k_wmi_hal_reg_capabilities_ext2_arg hal_reg_cap_ext2[MAX_RADIOS];
+	/* Boot-time RF path selection from rf_switch_config INI parameter. */
+	enum ath12k_rf_path_index rf_switch_config;
 	unsigned long long free_vdev_map;
 	unsigned long long free_vdev_stats_id_map;
 	wait_queue_head_t peer_mapping_wq;
