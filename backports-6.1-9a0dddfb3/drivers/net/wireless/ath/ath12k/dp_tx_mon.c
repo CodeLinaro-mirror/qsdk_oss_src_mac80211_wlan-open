@@ -1311,7 +1311,7 @@ int ath12k_dp_tx_mon_generate_data_frm(struct dp_mon_tx_ppdu_info *ppdu_info,
 				ATH12K_DP_MON_TX_BUF_SIZE);
 
 		if (take_ref)
-			skb_frag_ref(skb, skb_shinfo(skb)->nr_frags);
+			skb_frag_ref(skb, skb_shinfo(skb)->nr_frags - 1);
 	}
 	return 0;
 }
@@ -2241,73 +2241,187 @@ ath12k_dp_tx_mon_get_channel_flags(struct hal_rx_mon_ppdu_info *rx_status)
 	return flags;
 }
 
-/**
- * ath12k_dp_tx_mon_update_radiotap_eht() - prepend EHT/U-SIG radiotap TLVs for
- * TX monitor frames.
- * This helper is part of the ath12k TX-monitor “radiotap at end” encoding
- * scheme. When the hardware provides 802.11be (EHT) and U-SIG information
- * for a PPDU, the driver serializes that information into radiotap TLVs and
- * prepends them into the skb (using skb_push()), then marks the skb as
- * containing an “end-TLV block” via TX_MON_FLAG_TLV_AT_END (TLV_AT_END).
- *
- * @mon_skb: monitor skb that will carry the radiotap header + 802.11 frame
- * @mon_info: tx monitor metadata bitmap/state used by mac80211 formatting
- * @ppdu_info: HAL TX monitor PPDU status carrying EHT and U-SIG decode results
- */
-static void ath12k_dp_tx_mon_update_radiotap_eht(struct sk_buff *mon_skb,
-						 struct ieee80211_tx_mon_info *mon_info,
-						 struct hal_tx_mon_ppdu_info *ppdu_info)
+static bool
+ath12k_dp_tx_mon_has_rtap_eht_uhr_tlvs(const struct hal_rx_mon_ppdu_info *rx_status)
 {
-	struct hal_rx_mon_ppdu_info *rx_status = &ppdu_info->rx_status;
-	struct ieee80211_radiotap_tlv *tlv;
+	return rx_status->eht_flags || rx_status->usig_flags ||
+	       rx_status->is_uhr || rx_status->uhr_usig;
+}
+
+static void
+ath12k_dp_tx_mon_get_rtap_eht_uhr_tlv_len(const struct hal_rx_mon_ppdu_info *rx_status,
+					  u16 *total_len, u16 *eht_len, u16 *usig_len,
+					  u16 *uhr_len, u16 *uhr_usig_len,
+					  u16 *uhr_elr_len)
+{
+	if (rx_status->eht_flags) {
+		*eht_len = struct_size((struct ieee80211_radiotap_eht *)NULL, user_info,
+				       rx_status->eht_info.num_user_info);
+		*total_len += sizeof(struct ieee80211_radiotap_tlv) + *eht_len;
+	}
+
+	if (rx_status->usig_flags) {
+		*usig_len = sizeof(struct ieee80211_radiotap_eht_usig);
+		*total_len += sizeof(struct ieee80211_radiotap_tlv) + *usig_len;
+	}
+
+	if (rx_status->uhr_usig) {
+		*uhr_usig_len = sizeof(struct ieee80211_radiotap_uhr_usig);
+		*total_len += sizeof(struct ieee80211_radiotap_tlv) + *uhr_usig_len;
+	}
+
+	if (rx_status->is_uhr && !rx_status->is_uhr_elr) {
+		*uhr_len = struct_size((struct ieee80211_radiotap_uhr *)NULL, user,
+				       rx_status->uhr_info.num_user_info);
+		*total_len += sizeof(struct ieee80211_radiotap_tlv) + *uhr_len;
+	}
+
+	if (rx_status->is_uhr && rx_status->is_uhr_elr) {
+		*uhr_elr_len = sizeof(struct ieee80211_radiotap_uhr_elr);
+		*total_len += sizeof(struct ieee80211_radiotap_tlv) + *uhr_elr_len;
+	}
+}
+
+static struct ieee80211_radiotap_tlv *
+ath12k_dp_tx_mon_add_rtap_usig_tlv(struct ieee80211_radiotap_tlv *tlv,
+				   const struct hal_rx_mon_ppdu_info *rx_status,
+				   bool is_uhr)
+{
+	size_t offset = sizeof(struct ieee80211_radiotap_eht_usig);
+
+	if (is_uhr) {
+		struct ieee80211_radiotap_uhr_usig *uhr_usig;
+
+		tlv->type = cpu_to_le16(IEEE80211_RADIOTAP_EHT_USIG);
+		tlv->len = cpu_to_le16(sizeof(*uhr_usig));
+		uhr_usig = (struct ieee80211_radiotap_uhr_usig *)tlv->data;
+		*uhr_usig = rx_status->u_sig_info.uhr_usig;
+
+		return (struct ieee80211_radiotap_tlv *)&tlv->data[sizeof(*uhr_usig)];
+	}
+
+	tlv->type = cpu_to_le16(IEEE80211_RADIOTAP_EHT_USIG);
+	tlv->len = cpu_to_le16(sizeof(struct ieee80211_radiotap_eht_usig));
+	*(struct ieee80211_radiotap_eht_usig *)tlv->data = rx_status->u_sig_info.usig;
+
+	return (struct ieee80211_radiotap_tlv *)&tlv->data[offset];
+}
+
+static struct ieee80211_radiotap_tlv *
+ath12k_dp_tx_mon_add_rtap_eht_tlv(struct ieee80211_radiotap_tlv *tlv,
+				  const struct hal_rx_mon_ppdu_info *rx_status,
+				  u16 eht_len)
+{
 	struct ieee80211_radiotap_eht *eht;
-	struct ieee80211_radiotap_eht_usig *usig;
-	u16 len = 0, i, eht_len = 0, usig_len;
+	u16 i;
 	u8 user;
 
-	if (!rx_status->eht_flags && !rx_status->usig_flags)
+	tlv->type = cpu_to_le16(IEEE80211_RADIOTAP_EHT);
+	tlv->len = cpu_to_le16(eht_len);
+
+	eht = (struct ieee80211_radiotap_eht *)tlv->data;
+	eht->known = cpu_to_le32(rx_status->eht_info.eht.known);
+
+	for (i = 0; i < ARRAY_SIZE(eht->data) &&
+	     i < ARRAY_SIZE(rx_status->eht_info.eht.data); i++)
+		eht->data[i] = cpu_to_le32(rx_status->eht_info.eht.data[i]);
+
+	for (user = 0; user < rx_status->eht_info.num_user_info; user++)
+		put_unaligned_le32(cpu_to_le32(rx_status->eht_info.user_info[user]),
+				   &eht->user_info[user]);
+
+	return (struct ieee80211_radiotap_tlv *)&tlv->data[eht_len];
+}
+
+static struct ieee80211_radiotap_tlv *
+ath12k_dp_tx_mon_add_rtap_uhr_tlv(struct ieee80211_radiotap_tlv *tlv,
+				  const struct hal_rx_mon_ppdu_info *rx_status,
+				  u16 uhr_len)
+{
+	struct ieee80211_radiotap_uhr *uhr;
+	u16 i;
+	u8 user;
+
+	tlv->type = cpu_to_le16(IEEE80211_RADIOTAP_UHR);
+	tlv->len = cpu_to_le16(uhr_len);
+
+	uhr = (struct ieee80211_radiotap_uhr *)tlv->data;
+	uhr->known = rx_status->uhr_info.uhr.known;
+
+	for (i = 0; i < ARRAY_SIZE(uhr->data) &&
+	     i < ARRAY_SIZE(rx_status->uhr_info.uhr.data); i++)
+		uhr->data[i] = rx_status->uhr_info.uhr.data[i];
+
+	for (user = 0; user < rx_status->uhr_info.num_user_info; user++) {
+		put_unaligned_le32(rx_status->uhr_info.user_known[user],
+				   &uhr->user[user].known);
+		put_unaligned_le32(rx_status->uhr_info.user_info[user],
+				   &uhr->user[user].info);
+	}
+
+	return (struct ieee80211_radiotap_tlv *)&tlv->data[uhr_len];
+}
+
+static void
+ath12k_dp_tx_mon_add_rtap_uhr_elr_tlv(struct ieee80211_radiotap_tlv *tlv,
+				      const struct hal_rx_mon_ppdu_info *rx_status,
+				      u16 uhr_elr_len)
+{
+	struct ieee80211_radiotap_uhr_elr *uhr_elr;
+
+	tlv->type = cpu_to_le16(IEEE80211_RADIOTAP_UHR_ELR);
+	tlv->len = cpu_to_le16(uhr_elr_len);
+
+	uhr_elr = (struct ieee80211_radiotap_uhr_elr *)tlv->data;
+	uhr_elr->known = rx_status->elr_info.known;
+	uhr_elr->sig1 = rx_status->elr_info.sig1;
+	uhr_elr->sig2 = rx_status->elr_info.sig2;
+	uhr_elr->mark = rx_status->elr_info.mark;
+}
+
+/**
+ * ath12k_dp_tx_mon_update_rtap_tlv_at_end() - prepend TX monitor radiotap TLVs
+ * @mon_skb: monitor skb that carries radiotap header and 802.11 frame
+ * @mon_info: TX monitor metadata passed to mac80211
+ * @ppdu_info: HAL TX monitor PPDU status carrying EHT/U-SIG/UHR/ELR content
+ *
+ * Builds a "TLV-at-end" block and prepends it into @mon_skb. The block may
+ * include EHT, EHT U-SIG, UHR U-SIG, UHR, and UHR ELR radiotap TLVs.
+ */
+static void ath12k_dp_tx_mon_update_rtap_tlv_at_end(struct sk_buff *mon_skb,
+						    struct ieee80211_tx_mon_info *mon,
+						    struct hal_tx_mon_ppdu_info *ppdu)
+{
+	struct hal_rx_mon_ppdu_info *rx_status = &ppdu->rx_status;
+	struct ieee80211_radiotap_tlv *tlv;
+	u16 total_len = 0, eht_len = 0, usig_len = 0;
+	u16 uhr_len = 0, uhr_usig_len = 0, uhr_elr_len = 0;
+
+	if (!ath12k_dp_tx_mon_has_rtap_eht_uhr_tlvs(rx_status))
 		return;
 
-	if (rx_status->eht_flags) {
-		eht_len = struct_size(eht, user_info,
-				      rx_status->eht_info.num_user_info);
-		len += sizeof(*tlv) + eht_len;
-	}
-
-	if (rx_status->usig_flags) {
-		usig_len = sizeof(*usig);
-		len += sizeof(*tlv) + usig_len;
-	}
+	ath12k_dp_tx_mon_get_rtap_eht_uhr_tlv_len(rx_status, &total_len,
+						  &eht_len, &usig_len, &uhr_len,
+						  &uhr_usig_len, &uhr_elr_len);
 
 	skb_reset_mac_header(mon_skb);
-	tlv = skb_push(mon_skb, len);
-	tx_mon_hw_set(mon_info, TLV_AT_END);
+	tlv = skb_push(mon_skb, total_len);
+	tx_mon_hw_set(mon, TLV_AT_END);
 
-	if (rx_status->eht_flags) {
-		tlv->type = cpu_to_le16(IEEE80211_RADIOTAP_EHT);
-		tlv->len = cpu_to_le16(eht_len);
+	if (rx_status->eht_flags)
+		tlv = ath12k_dp_tx_mon_add_rtap_eht_tlv(tlv, rx_status, eht_len);
 
-		eht = (struct ieee80211_radiotap_eht *)tlv->data;
-		eht->known = cpu_to_le32(rx_status->eht_info.eht.known);
+	if (rx_status->usig_flags)
+		tlv = ath12k_dp_tx_mon_add_rtap_usig_tlv(tlv, rx_status, false);
 
-		for (i = 0; i < ARRAY_SIZE(eht->data) &&
-		     i < ARRAY_SIZE(rx_status->eht_info.eht.data); i++)
-			eht->data[i] = cpu_to_le32(rx_status->eht_info.eht.data[i]);
+	if (rx_status->uhr_usig)
+		tlv = ath12k_dp_tx_mon_add_rtap_usig_tlv(tlv, rx_status, true);
 
-		for (user = 0; user < rx_status->eht_info.num_user_info; user++)
-			put_unaligned_le32(cpu_to_le32
-					   (rx_status->eht_info.user_info[user]),
-					   &eht->user_info[user]);
+	if (rx_status->is_uhr && !rx_status->is_uhr_elr)
+		tlv = ath12k_dp_tx_mon_add_rtap_uhr_tlv(tlv, rx_status, uhr_len);
 
-		tlv = (struct ieee80211_radiotap_tlv *)&tlv->data[eht_len];
-	}
-
-	if (rx_status->usig_flags) {
-		tlv->type = cpu_to_le16(IEEE80211_RADIOTAP_EHT_USIG);
-		tlv->len = cpu_to_le16(usig_len);
-		usig = (struct ieee80211_radiotap_eht_usig *)tlv->data;
-		*usig = rx_status->u_sig_info.usig;
-	}
+	if (rx_status->is_uhr && rx_status->is_uhr_elr)
+		ath12k_dp_tx_mon_add_rtap_uhr_elr_tlv(tlv, rx_status, uhr_elr_len);
 }
 
 /**
@@ -3034,7 +3148,7 @@ ath12k_dp_mon_tx_deliver_frame(struct ath12k_pdev_dp *dp_pdev,
 		status.rates = &rate_status;
 		ath12k_dp_mon_tx_fill_rate_status(dp_pdev, ppdu_info, &status);
 	} else {
-		ath12k_dp_tx_mon_update_radiotap_eht(skb, &status.mon_info, ppdu_info);
+		ath12k_dp_tx_mon_update_rtap_tlv_at_end(skb, &status.mon_info, ppdu_info);
 	}
 
 	ieee80211_tx_monitor_offload(hw, &status);
@@ -3214,7 +3328,7 @@ void ath12k_dp_tx_mon_process_ppdu(struct work_struct *work)
 	struct ath12k_pdev_tx_mon_stats *tx_stats;
 	struct hal_tx_mon_ppdu_info *data_info;
 	struct hal_tx_mon_ppdu_info *prot_info;
-	int desc_idx, desc_count;
+	int desc_idx, desc_count = 0;
 	int ppdu_processed = 0;
 	int total_status_desc = 0, prep_failed = 0;
 	int ret;
