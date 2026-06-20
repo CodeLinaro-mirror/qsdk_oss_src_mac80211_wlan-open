@@ -938,7 +938,7 @@ int ath12k_wifi8_hal_tx_sam_peer_clear_cmd(struct ath12k_dp_wifi8 *dp_wifi8,
  */
 int ath12k_wifi8_hal_tx_sam_cmd_send(struct ath12k_base *ab, struct hal_srng *srng,
 				     int src_link_id, enum hal_tlv_tag_be type, int id,
-				     bool clear_all)
+				     bool clear_all, bool force)
 {
 	struct hal_tlv_64_hdr *sam_desc, *tlv_desc;
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(ab->dp);
@@ -950,7 +950,7 @@ int ath12k_wifi8_hal_tx_sam_cmd_send(struct ath12k_base *ab, struct hal_srng *sr
 		return -ENOMEM;
 	}
 
-	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
+	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags) && !force)
 		return 0;
 
 	spin_lock_bh(&srng->lock);
@@ -1010,14 +1010,14 @@ void ath12k_wifi8_hal_tx_sam_program_clear(struct ath12k_base *ab)
 	srng = &ab->hal.srng_list[dp_wifi8->sam_cmd_ring.ring_id];
 	ret = ath12k_wifi8_hal_tx_sam_cmd_send(ab, srng, -1,
 					       HAL_SAM_MPDU_QUEUE_CLEAR_PROGRAMMING_BO,
-					       -1, true);
+					       -1, true, true);
 
 	if (ret < 0)
 		ath12k_warn(ab, "failed to send SAM mpdu clear command: %d\n", ret);
 
 	ret = ath12k_wifi8_hal_tx_sam_cmd_send(ab, srng, -1,
 					       HAL_SAM_MSDU_QUEUE_CLEAR_PROGRAMMING_BO,
-					       -1, true);
+					       -1, true, true);
 
 	if (ret < 0)
 		ath12k_warn(ab, "failed to send SAM msdu clear command: %d\n", ret);
@@ -1029,7 +1029,7 @@ void ath12k_wifi8_hal_tx_sam_program_clear(struct ath12k_base *ab)
 	for (i = 0; i < HAL_TX_NUM_MAX_LINKS; i++) {
 		ret = ath12k_wifi8_hal_tx_sam_cmd_send(ab, srng, i,
 						       HAL_SAM_PEER_CLEAR_PROGRAMMING_BO,
-						       -1, true);
+						       -1, true, true);
 
 		if (ret < 0)
 			ath12k_warn(ab,

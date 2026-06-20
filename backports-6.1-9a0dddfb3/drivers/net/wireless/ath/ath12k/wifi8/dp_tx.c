@@ -3725,8 +3725,6 @@ void ath12k_wifi8_dp_tx_ring_cleanup(struct ath12k_base *ab)
 	ath12k_dp_srng_cleanup(ab, &dp_wifi8->sam_status_ring);
 	ath12k_dp_srng_cleanup(ab, &dp_wifi8->sam_cmd_ring);
 	ath12k_dp_srng_cleanup(ab, &dp_wifi8->rx_ase_cmd_ring);
-	ath12k_dp_srng_cleanup(ab, &dp_wifi8->sam_status_ring);
-	ath12k_dp_srng_cleanup(ab, &dp_wifi8->sam_cmd_ring);
 }
 
 int ath12k_wifi8_dp_tx_ring_setup(struct ath12k_base *ab)
