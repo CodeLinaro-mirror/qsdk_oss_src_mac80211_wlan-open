@@ -1413,6 +1413,11 @@
  *	%NL80211_UHR_MODE_UPDATE_ATTR_NPCA_ENABLE,
  *	%NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCH_DELAY and
  *	%NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCHBACK_DELAY.
+ * @NL80211_CMD_CRITICAL_UPDATE: Command sent by hostapd to initiate a
+ *	Critical Update (CU) session on an AP link. Requires
+ *	%NL80211_ATTR_IFINDEX, %NL80211_ATTR_MLO_LINK_ID,
+ *	%NL80211_ATTR_CU_TYPE, and
+ *	%NL80211_ATTR_IE carrying the CU element to be stitched into beacons.
  *
  * @NL80211_CMD_MAX: highest used command number
  * @__NL80211_CMD_AFTER_LAST: internal use
@@ -1699,6 +1704,7 @@ enum nl80211_commands {
 	NL80211_CMD_TRIGGER_SMD_DISCOVERY,
 
 	NL80211_CMD_UHR_MODE_UPDATE,
+	NL80211_CMD_CRITICAL_UPDATE,
 
 	/* add new commands above here */
 
@@ -3199,7 +3205,11 @@ enum nl80211_commands {
  * @NL80211_ATTR_SMD_TIMEOUT: u8 attribute indicating the timeout
  *	for the SMD preparation state for a STA.
  *
+ * @NL80211_ATTR_CU_TYPE: (u8) Critical Update type, see &enum nl80211_cu_type.
+ *      Used with %NL80211_CMD_CRITICAL_UPDATE.
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
+ *
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
  */
@@ -3847,8 +3857,9 @@ enum nl80211_attrs {
 
 	NL80211_ATTR_UHR_MODE_UPDATE_PARAMS,
 
-	/* add attributes here, update the policy in nl80211.c */
+	NL80211_ATTR_CU_TYPE,
 
+	/* add attributes here, update the policy in nl80211.c */
 	__NL80211_ATTR_AFTER_LAST,
 	NUM_NL80211_ATTR = __NL80211_ATTR_AFTER_LAST,
 	NL80211_ATTR_MAX = __NL80211_ATTR_AFTER_LAST - 1
@@ -4228,6 +4239,17 @@ enum nl80211_uhr_elr_config {
 enum nl80211_uhr_2xldpc {
 	NL80211_UHR_2XLDPC_DISABLE,
 	NL80211_UHR_2XLDPC_ENABLE,
+};
+
+/**
+ * enum nl80211_cu_type - Critical Update session type
+ *
+ * @NL80211_CU_TYPE_UHR_PARAMS: UHR parameter update (IEEE 802.11bn).
+ *	The CU element is a UHR Params Update element passed in
+ *	%NL80211_ATTR_IE.
+ */
+enum nl80211_cu_type {
+	NL80211_CU_TYPE_UHR_PARAMS,
 };
 
 /**
