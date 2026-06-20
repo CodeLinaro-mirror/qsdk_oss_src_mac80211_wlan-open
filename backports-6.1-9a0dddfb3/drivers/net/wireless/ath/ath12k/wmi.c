@@ -215,6 +215,9 @@ static const struct ath12k_wmi_tlv_policy ath12k_wmi_tlv_policies[] = {
 		.min_len = sizeof(struct ath12k_wmi_soc_mac_phy_hw_mode_caps_params) },
 	[WMI_TAG_SOC_HAL_REG_CAPABILITIES] = {
 		.min_len = sizeof(struct ath12k_wmi_soc_hal_reg_caps_params) },
+	[WMI_TAG_HAL_REG_CAPABILITIES_EXT2] = {
+		.min_len = sizeof(struct ath12k_wmi_hal_reg_caps_ext2_params) -
+			   sizeof(__le32) },
 	[WMI_TAG_VDEV_START_RESPONSE_EVENT] = {
 		.min_len = sizeof(struct wmi_vdev_start_resp_event) },
 	[WMI_TAG_PEER_DELETE_RESP_EVENT] = {
@@ -8725,6 +8728,83 @@ static int ath12k_wmi_tlv_shared_cu_mem_config(struct ath12k_base *ab, u16 tag,
 	return 0;
 }
 
+/* TLV iterator callback: counts and validates each EXT2 per-phy entry */
+static int ath12k_wmi_hal_reg_caps_ext2_parse(struct ath12k_base *ab,
+					      u16 tag, u16 len,
+					      const void *ptr, void *data)
+{
+	u32 *n_hal_reg_caps_ext2 = data;
+
+	if (tag != WMI_TAG_HAL_REG_CAPABILITIES_EXT2)
+		return -EPROTO;
+
+	if (*n_hal_reg_caps_ext2 >= ab->num_radios)
+		return -ENOBUFS;
+
+	(*n_hal_reg_caps_ext2)++;
+	return 0;
+}
+
+static int ath12k_wmi_hal_reg_caps_ext2(struct ath12k_base *ab,
+					u16 len, const void *ptr, void *data)
+{
+	const struct ath12k_wmi_hal_reg_caps_ext2_params *caps;
+	u32 i, n_hal_reg_caps_ext2 = 0;
+	int ret;
+
+	ret = ath12k_wmi_tlv_iter(ab, ptr, len,
+				  ath12k_wmi_hal_reg_caps_ext2_parse,
+				  &n_hal_reg_caps_ext2);
+	if (ret) {
+		ath12k_warn(ab, "failed to iterate hal_reg_caps_ext2 TLV: %d\n",
+			    ret);
+		return ret;
+	}
+
+	if (!n_hal_reg_caps_ext2)
+		return 0;
+
+	/*
+	 * ptr is the ARRAY_STRUCT payload: a contiguous sequence of
+	 * ath12k_wmi_hal_reg_caps_ext2_params structs, each prefixed by its
+	 * own TLV header (matching ath12k_wmi_hal_reg_caps_ext_params pattern).
+	 */
+	caps = (const struct ath12k_wmi_hal_reg_caps_ext2_params *)ptr;
+
+	for (i = 0; i < n_hal_reg_caps_ext2; i++) {
+		u32 phy_id = le32_to_cpu(caps[i].phy_id);
+
+		if (phy_id >= MAX_RADIOS) {
+			ath12k_warn(ab,
+				    "hal_reg_caps_ext2: ignoring invalid phy_id %u\n",
+				    phy_id);
+			continue;
+		}
+
+		ab->hal_reg_cap_ext2[phy_id].phy_id = phy_id;
+		ab->hal_reg_cap_ext2[phy_id].wireless_modes_ext =
+			le32_to_cpu(caps[i].wireless_modes_ext);
+		ab->hal_reg_cap_ext2[phy_id].low_2ghz_chan_ext =
+			le32_to_cpu(caps[i].low_2ghz_chan_ext);
+		ab->hal_reg_cap_ext2[phy_id].high_2ghz_chan_ext =
+			le32_to_cpu(caps[i].high_2ghz_chan_ext);
+		ab->hal_reg_cap_ext2[phy_id].low_5ghz_chan_ext =
+			le32_to_cpu(caps[i].low_5ghz_chan_ext);
+		ab->hal_reg_cap_ext2[phy_id].high_5ghz_chan_ext =
+			le32_to_cpu(caps[i].high_5ghz_chan_ext);
+
+		ath12k_dbg(ab, ATH12K_DBG_WMI,
+			   "hal_reg_caps_ext2 phy_id %u: 2G_ext [%u, %u] MHz 5G_ext [%u, %u] MHz\n",
+			   phy_id,
+			   ab->hal_reg_cap_ext2[phy_id].low_2ghz_chan_ext,
+			   ab->hal_reg_cap_ext2[phy_id].high_2ghz_chan_ext,
+			   ab->hal_reg_cap_ext2[phy_id].low_5ghz_chan_ext,
+			   ab->hal_reg_cap_ext2[phy_id].high_5ghz_chan_ext);
+	}
+
+	return 0;
+}
+
 static int ath12k_wmi_svc_rdy_ext2_parse(struct ath12k_base *ab,
 					 u16 tag, u16 len,
 					 const void *ptr, void *data)
@@ -8778,6 +8858,13 @@ static int ath12k_wmi_svc_rdy_ext2_parse(struct ath12k_base *ab,
 
 			parse->mac_phy_caps_ext_done = true;
 		} else if (!parse->hal_reg_caps_ext2_done) {
+			ret = ath12k_wmi_hal_reg_caps_ext2(ab, len, ptr, parse);
+			if (ret) {
+				ath12k_warn(ab,
+					    "failed to parse hal_reg_caps_ext2 WMI TLV: %d\n",
+					    ret);
+				return ret;
+			}
 			parse->hal_reg_caps_ext2_done = true;
 		} else if (!parse->scan_radio_caps_done) {
 			ret = ath12k_wmi_tlv_iter(ab, ptr, len,

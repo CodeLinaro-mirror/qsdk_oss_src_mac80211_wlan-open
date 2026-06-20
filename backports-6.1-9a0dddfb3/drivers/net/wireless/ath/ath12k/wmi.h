@@ -2433,6 +2433,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_PEER_CREATE_RESP_EVENT = 0x364,
 	WMI_TAG_MULTIPLE_VDEV_RESTART_RESPONSE_EVENT = 0x365,
 	WMI_TAG_MAC_PHY_CAPABILITIES_EXT = 0x36F,
+	WMI_TAG_HAL_REG_CAPABILITIES_EXT2 = 0x370,
 	WMI_TAG_PDEV_SRG_BSS_COLOR_BITMAP_CMD = 0x37b,
 	WMI_TAG_PDEV_SRG_PARTIAL_BSSID_BITMAP_CMD,
 	WMI_TAG_PDEV_SSCAN_FW_CMD_FIXED_PARAM = 0x37f,
@@ -3001,6 +3002,26 @@ struct ath12k_wmi_hal_reg_capabilities_ext_arg {
 	u32 low_5ghz_chan;
 	u32 high_5ghz_chan;
 };
+
+struct ath12k_wmi_hal_reg_capabilities_ext2_arg {
+	u32 phy_id;
+	u32 wireless_modes_ext;
+	u32 low_2ghz_chan_ext;
+	u32 high_2ghz_chan_ext;
+	u32 low_5ghz_chan_ext;
+	u32 high_5ghz_chan_ext;
+};
+
+/* On-wire TLV struct for WMI_HAL_REG_CAPABILITIES_EXT2 per-phy entry */
+struct ath12k_wmi_hal_reg_caps_ext2_params {
+	__le32 tlv_header;
+	__le32 phy_id;
+	__le32 wireless_modes_ext;
+	__le32 low_2ghz_chan_ext;
+	__le32 high_2ghz_chan_ext;
+	__le32 low_5ghz_chan_ext;
+	__le32 high_5ghz_chan_ext;
+} __packed;
 
 #define WMI_HOST_MAX_PDEV 3
 
