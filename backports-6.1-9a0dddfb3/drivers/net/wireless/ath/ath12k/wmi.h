@@ -33,6 +33,7 @@ struct ath12k_fw_stats;
 struct ath12k_reg_tpc_power_info;
 struct ath12k_qos_params;
 struct ath12k_atf_peer_params;
+struct ath12k_mbssid_info;
 
 extern const char *mgmt_frame_name[];
 
@@ -596,6 +597,7 @@ enum wmi_tlv_cmd_id {
 	WMI_PDEV_SET_NON_SRG_OBSS_BSSID_ENABLE_BITMAP_CMDID,
 	WMI_PDEV_SET_BIOS_SAR_TABLE_CMDID = 0x4044,
 	WMI_PDEV_SET_BIOS_GEO_TABLE_CMDID = 0x4045,
+	WMI_PDEV_MULTIPLE_VDEV_SET_PARAM_CMDID = 0x4048,
 	WMI_PDEV_MEC_AGING_TIMER_CONFIG_CMDID = 0x4049,
 	WMI_PDEV_SET_BIOS_INTERFACE_CMDID = 0x404A,
 	WMI_PDEV_WSI_STATS_INFO_CMDID = 0x4051,
@@ -2486,6 +2488,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_AFC_6GHZ_CHANNEL_INFO,
 	WMI_TAG_AFC_CHAN_EIRP_POWER_INFO,
 	WMI_TAG_BCN_TMPL_ML_PARAMS_CMD = 0x3E6,
+	WMI_TAG_PDEV_MULTIPLE_VDEV_SET_PARAM_CMD = 0x3E8,
 	WMI_TAG_PDEV_MEC_AGEING_TIMER_PARAMS = 0x3E9,
 	WMI_TAG_PDEV_SET_BIOS_INTERFACE_CMD = 0x3FB,
 	WMI_TAG_PEER_CONFIG_PPEDS_ROUTING = 0x3EA,
@@ -10317,6 +10320,17 @@ struct ath12k_wmi_nfcal_power_event {
 	u32 pdev_id;
 };
 
+struct wmi_pdev_multiple_vdev_set_param_cmd {
+	__le32 tlv_header;
+	__le32 pdev_id;
+	__le32 param_id;
+	__le32 param_value;
+	/**
+	 * The TLVs follows this structure:
+	 * __le32 vdev_ids[]; <--- Array of VDEV ids.
+	 */
+} __packed;
+
 int ath12k_wmi_cmd_send(struct ath12k_wmi_pdev *wmi, struct sk_buff *skb,
 			u32 cmd_id);
 struct sk_buff *ath12k_wmi_alloc_skb(struct ath12k_wmi_base *wmi_sc, u32 len);
@@ -10659,4 +10673,7 @@ int ath12k_wmi_send_low_power_20mhz(struct ath12k *ar, bool config);
 int ath12k_wmi_send_energy_mgmt_oem_data(struct ath12k *ar, u32 content_type,
 					 u32 num_bytes_valid, u8 *data);
 int ath12k_wmi_send_pdev_get_nfcal_power_cmd(struct ath12k *ar);
+int ath12k_wmi_multi_vdev_set_param(struct ath12k *ar,
+				    const struct ath12k_mbssid_info *mbssid_info,
+				    u32 param_id, u32 param_value);
 #endif

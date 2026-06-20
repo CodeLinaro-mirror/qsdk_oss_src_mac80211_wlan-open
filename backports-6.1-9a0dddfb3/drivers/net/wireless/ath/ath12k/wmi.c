@@ -21752,3 +21752,63 @@ int ath12k_wmi_vdev_set_pn_mgmt_rx_filter_cmd(struct ath12k *ar, u32 vdev_id,
 	}
 	return ret;
 }
+
+int ath12k_wmi_multi_vdev_set_param(struct ath12k *ar,
+				    const struct ath12k_mbssid_info *mbssid_info,
+				    u32 param_id, u32 param_value)
+{
+	struct wmi_pdev_multiple_vdev_set_param_cmd *cmd;
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct wmi_tlv *tlv;
+	struct sk_buff *skb;
+	unsigned long vdev_id;
+	size_t vdev_ids_len;
+	__le32 *vdev_ids;
+	u32 i = 1;
+	int len, ret;
+
+	if (ar->ab->is_bypassed) {
+		ath12k_warn(ar->ab, "Chip is bypassed, skip multi vdev wmi set cmd");
+		return 0;
+	}
+
+	vdev_ids_len = (mbssid_info->nontx_cnt + 1) * sizeof(*vdev_ids);
+	len = sizeof(*cmd) + TLV_HDR_SIZE + vdev_ids_len;
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_pdev_multiple_vdev_set_param_cmd *)skb->data;
+	cmd->tlv_header =
+		ath12k_wmi_tlv_cmd_hdr(WMI_TAG_PDEV_MULTIPLE_VDEV_SET_PARAM_CMD,
+				       sizeof(*cmd));
+	cmd->pdev_id = cpu_to_le32(ar->pdev->pdev_id);
+	cmd->param_id = cpu_to_le32(param_id);
+	cmd->param_value = cpu_to_le32(param_value);
+
+	tlv = (struct wmi_tlv *)(skb->data + sizeof(*cmd));
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_UINT32, vdev_ids_len);
+	vdev_ids = (__le32 *)tlv->value;
+
+	/* Copy Tx BSS's vdev id */
+	vdev_ids[0] = cpu_to_le32(mbssid_info->tx_vdev_id);
+
+	/* Copy Non-Tx BSS's vdev id */
+	for_each_set_bit(vdev_id, mbssid_info->nontx_vdev_bmap, ATH12K_MAX_NUM_VDEVS)
+		vdev_ids[i++] = cpu_to_le32(vdev_id);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_PDEV_MULTIPLE_VDEV_SET_PARAM_CMDID);
+	if (ret) {
+		ath12k_err(ar->ab,
+			   "failed to send WMI_PDEV_MULTIPLE_VDEV_SET_PARAM_CMDID");
+		dev_kfree_skb(skb);
+	}
+
+	ath12k_info(ar->ab,
+		    "WMI multi vdev set param pdev id %u tx vdev id %u param %u value %u",
+		    ar->pdev->pdev_id, mbssid_info->tx_vdev_id,
+		    param_id, param_value);
+
+	return ret;
+}

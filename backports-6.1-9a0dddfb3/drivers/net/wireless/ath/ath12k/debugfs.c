@@ -6620,9 +6620,9 @@ static ssize_t ath12k_enable_ofdma_txbf(struct file *file,
 
 	list_for_each_entry(arvif, &ar->arvifs, list) {
 		if (!strcmp(mode, "eht"))
-			ath12k_mac_set_eht_txbf_conf(arvif);
+			ath12k_mac_set_eht_txbf_conf(arvif, NULL, false);
 		if (!strcmp(mode, "he"))
-			ath12k_mac_set_he_txbf_conf(arvif);
+			ath12k_mac_set_he_txbf_conf(arvif, NULL, false);
 	}
 unlock:
 	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
