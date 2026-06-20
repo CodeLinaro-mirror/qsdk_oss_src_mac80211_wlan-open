@@ -21407,8 +21407,21 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 	else
 		arg.passive |= !!(chandef->chan->flags & IEEE80211_CHAN_NO_IR);
 
-	if (!restart)
+	if (!restart) {
 		ath12k_mac_mlo_get_vdev_args(arvif, &arg.ml);
+
+		if (link_conf && link_conf->uhr_support) {
+			arg.uhr_config.adv_notification_interval =
+				link_conf->uhr_config.adv_notification_interval;
+
+			/*TODO: currently hardcoded until finalized in
+			 * 802.11bn specification.
+			 */
+			arg.uhr_config.post_notification_interval = 10;
+			arg.uhr_config.update_in_tim_interval =
+				link_conf->uhr_config.update_in_tim_interval;
+		}
+	}
 
 	ath12k_dbg(ab, ATH12K_DBG_MAC,
 		   "[radio_idx : %u] mac vdev %d start center_freq %d phymode %s punct_bitmap 0x%x arg.is_stadfs_en:%d\n",

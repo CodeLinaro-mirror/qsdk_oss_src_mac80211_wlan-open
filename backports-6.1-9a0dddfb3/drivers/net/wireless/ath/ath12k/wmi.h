@@ -2565,6 +2565,7 @@ enum wmi_tlv_tag {
 	WMI_ENERGY_MGMT_OEM_DATA_EVENT_FIXED_PARAM,
 	WMI_TAG_SHARED_CU_MEM_CONFIG = 0x577,
 	WMI_TAG_SHARED_MEM_TBTT_OFFSET_INFO = 0x578,
+	WMI_TAG_VDEV_START_UHR_CONFIG = 0x579,
 	WMI_TAG_PDEV_SET_CUMAC_CHIP = 0x57A,
 	WMI_TAG_PDEV_SET_CUMAC_COMPLETE = 0x57B,
 	WMI_TAG_PEER_UHR_NPCA_OP_PARAMS = 0x57D,
@@ -3840,6 +3841,15 @@ struct wmi_partner_link_info {
 	__le32 ieee_link_id;
 } __packed;
 
+struct wmi_vdev_start_uhr_config {
+	__le32 tlv_header;
+	__le32 uhr_cu_intervals;
+} __packed;
+
+#define WMI_UHR_CU_INTERVALS_ADV_NOTIF_MASK	GENMASK(7, 0)
+#define WMI_UHR_CU_INTERVALS_POST_NOTIF_MASK	GENMASK(15, 8)
+#define WMI_UHR_CU_INTERVALS_UPD_TIM_MASK	GENMASK(23, 16)
+
 struct wmi_vdev_delete_cmd {
 	__le32 tlv_header;
 	__le32 vdev_id;
@@ -4094,6 +4104,12 @@ struct wmi_npca_arg {
 	u8 npca_moplen;
 };
 
+struct wmi_vdev_start_uhr_arg {
+	u8 adv_notification_interval;
+	u8 post_notification_interval;
+	u8 update_in_tim_interval;
+};
+
 struct wmi_vdev_start_req_arg {
 	u32 vdev_id;
 	u32 freq;
@@ -4137,6 +4153,7 @@ struct wmi_vdev_start_req_arg {
 	u32 width_device;
 	u32 center_freq_device;
 	struct wmi_smd_arg smd;
+	struct wmi_vdev_start_uhr_arg uhr_config;
 };
 
 struct ath12k_wmi_peer_pn_arg {
