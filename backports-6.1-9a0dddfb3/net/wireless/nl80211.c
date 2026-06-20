@@ -7491,7 +7491,8 @@ static void nl80211_check_ap_rate_selectors(struct cfg80211_ap_settings *params,
  * HT/VHT requirements/capabilities, we parse them out of the IEs for the
  * benefit of drivers that rebuild IEs in the firmware.
  */
-static int nl80211_calculate_ap_params(struct cfg80211_ap_settings *params)
+static int nl80211_calculate_ap_params(struct cfg80211_ap_settings *params,
+				       struct nlattr **attrs)
 {
 	const struct cfg80211_beacon_data *bcn = &params->beacon;
 	size_t ies_len = bcn->tail_len;
@@ -7545,6 +7546,13 @@ static int nl80211_calculate_ap_params(struct cfg80211_ap_settings *params)
 		if (!ieee80211_uhr_oper_size_ok((const u8 *)params->uhr_oper,
 						cap->datalen - 1, true))
 			return -EINVAL;
+	}
+
+	if (params->uhr_oper &&
+	    attrs[NL80211_ATTR_UHR_CAPABILITY]) {
+		const struct ieee80211_uhr_cap_elem *uhr_cap =
+			nla_data(attrs[NL80211_ATTR_UHR_CAPABILITY]);
+		params->uhr_cap = uhr_cap;
 	}
 
 	return 0;
@@ -8108,7 +8116,7 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 	}
 
-	err = nl80211_calculate_ap_params(params);
+	err = nl80211_calculate_ap_params(params, info->attrs);
 	if (err)
 		goto out;
 
