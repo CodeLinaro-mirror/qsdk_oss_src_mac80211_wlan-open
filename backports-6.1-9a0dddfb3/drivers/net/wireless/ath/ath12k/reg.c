@@ -346,10 +346,29 @@ static void ath12k_regd_update_freq_range(struct ath12k *ar)
 			reg_cap = &ab->hal_reg_cap[phy_id];
 		}
 
-		freq_low = max(reg_cap->low_5ghz_chan, ab->reg_freq_5g.start_freq);
+		freq_low  = max(reg_cap->low_5ghz_chan, ab->reg_freq_5g.start_freq);
 		freq_high = min(reg_cap->high_5ghz_chan, ab->reg_freq_5g.end_freq);
 
-		ath12k_mac_update_freq_range(ar, freq_low, freq_high);
+		if (ar->rf_path_ctx.current_index == ATH12K_RF_PATH_HIGH_RANGE) {
+			/*
+			 * RF path is in secondary (high) range.  Clamp freq_low
+			 * to the stored secondary bound from rf_path_ctx — set
+			 * during the last switch from EXT2 firmware caps — then
+			 * write chan_info / freq_range directly, bypassing
+			 * ath12k_mac_update_freq_range() whose min/max semantics
+			 * cannot narrow freq_range.start_freq (GAP-1).
+			 */
+			freq_low = max(freq_low, ar->rf_path_ctx.freq_low);
+			ar->chan_info.low_freq     = freq_low;
+			ar->chan_info.high_freq    = freq_high;
+			ar->freq_range.start_freq  = MHZ_TO_KHZ(freq_low);
+			ar->freq_range.end_freq    = MHZ_TO_KHZ(freq_high);
+			ath12k_dbg(ab, ATH12K_DBG_REG,
+				   "pdev %u 5G WMI filter restricted (RF secondary): [%u, %u] MHz\n",
+				   ar->pdev->pdev_id, freq_low, freq_high);
+		} else {
+			ath12k_mac_update_freq_range(ar, freq_low, freq_high);
+		}
 	}
 
 	if (supported_bands & WMI_HOST_WLAN_5GHZ_CAP && ar->supports_6ghz) {
@@ -670,9 +689,33 @@ int ath12k_regd_update(struct ath12k *ar, bool init)
 	}
 #endif /* CPTCFG_QCN_EXTN && CPTCFG_QCA_LAB_TEST_FEATURES */
 
-	ret = regulatory_set_wiphy_regd(hw->wiphy, regd_copy);
+	/*
+	 * If the RF path is in secondary (high) range, push a band-limited
+	 * regd so the country-code update does not restore channels 36-100.
+	 * ath12k_reg_build_regd_for_rf_path() sets band_mask=BIT(5GHz) so
+	 * cfg80211 only reprocesses 5 GHz; 2.4/6 GHz state is preserved.
+	 * current_index is the sole state variable — no extra flag needed.
+	 */
+	if (ar->rf_path_ctx.current_index == ATH12K_RF_PATH_HIGH_RANGE) {
+		struct ieee80211_regdomain *rf_regd = NULL;
 
-	kfree(regd_copy);
+		kfree(regd_copy);
+		regd_copy = NULL;
+
+		ret = ath12k_reg_build_regd_for_rf_path(ar, &rf_regd);
+		if (ret) {
+			ath12k_warn(ab,
+				    "rf_path: regd build failed on country update: %d\n",
+				    ret);
+			goto err;
+		}
+
+		ret = regulatory_set_wiphy_regd(hw->wiphy, rf_regd);
+		kfree(rf_regd);
+	} else {
+		ret = regulatory_set_wiphy_regd(hw->wiphy, regd_copy);
+		kfree(regd_copy);
+	}
 
 	if (ret)
 		goto err;
@@ -1581,6 +1624,122 @@ static struct ieee80211_regdomain *ath12k_get_current_regd(struct ath12k *ar)
 end:
 	spin_unlock_bh(&ab->base_lock);
 	return regd;
+}
+
+/**
+ * ath12k_reg_build_regd_for_rf_path - Build a band-limited regd for RF path switch
+ *                                     Constructs a new ieee80211_regdomain with band_mask
+ *                                     set to 5G, so cfg80211 only reprocesses 5GHz
+ *                                     channels, leaving 2.4GHz and 6GHz channel state
+ *                                     unchanged.
+ * @ar:        radio context (must be a non-6 GHz 5G radio)
+ * @regd_out:  on success, holds a kzalloc'd regd; ownership passes to
+ *             cfg80211 via regulatory_set_wiphy_regd()
+ *
+ * The active RF path index is read from ar->rf_path_ctx.current_index.
+ * Returns 0 on success, negative errno on failure.
+ */
+int ath12k_reg_build_regd_for_rf_path(struct ath12k *ar,
+				      struct ieee80211_regdomain **regd_out)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ieee80211_regdomain *base_regd, *new_regd;
+	const struct ieee80211_regdomain *src_non5g;
+	const struct ieee80211_reg_rule *rule;
+	struct wiphy *wiphy = ath12k_ar_to_ah(ar)->hw->wiphy;
+	u32 rf_low_khz, rf_high_khz;
+	int i, k, n_out;
+
+	rf_low_khz  = MHZ_TO_KHZ(ar->rf_path_ctx.freq_low);
+	rf_high_khz = MHZ_TO_KHZ(ar->rf_path_ctx.freq_high);
+
+	/*
+	 * 5G rules are sourced from base_regd, the unmodified country rules,
+	 * then filtered to the RF path range.
+	 * Using base_regd for 5G ensures the full country-code 5G rule
+	 * set is the starting point even if wiphy->regd already holds a
+	 * previously restricted version.
+	 *
+	 * Non-5G rules (2.4 GHz and 6 GHz) are sourced from wiphy->regd so
+	 * that any runtime modifications are preserved verbatim.
+	 *
+	 * cfg80211's reg_is_band_update_allowed() consistency check
+	 * (for band_mask = BIT(NL80211_BAND_5GHZ)) requires
+	 * the non-5G portion of the new regd to match wiphy->regd; copying
+	 * directly from wiphy->regd satisfies this check unconditionally.
+	 * Falls back to base_regd if wiphy->regd is not yet set.
+	 */
+	base_regd = ath12k_get_current_regd(ar);
+	if (!base_regd) {
+		ath12k_warn(ab, "rf_path regd: no base regd available\n");
+		return -EINVAL;
+	}
+
+	rcu_read_lock();
+	src_non5g = rcu_dereference(wiphy->regd);
+	if (!src_non5g)
+		src_non5g = base_regd;
+
+	/* Allocate for the worst case (all rules from both sources kept). */
+	n_out = base_regd->n_reg_rules + src_non5g->n_reg_rules;
+
+	new_regd = kzalloc(sizeof(*new_regd) +
+			   (n_out * sizeof(struct ieee80211_reg_rule)),
+			   GFP_ATOMIC);
+	if (!new_regd) {
+		rcu_read_unlock();
+		return -ENOMEM;
+	}
+
+	memcpy(new_regd->alpha2, base_regd->alpha2, REG_ALPHA2_LEN + 1);
+	new_regd->dfs_region           = base_regd->dfs_region;
+	new_regd->supp_cli_bitmap_6ghz = base_regd->supp_cli_bitmap_6ghz;
+	new_regd->band_mask            = BIT(NL80211_BAND_5GHZ);
+
+	/* Fill output rules: 5G first (filtered from base_regd),
+	 * then non-5G (verbatim from src_non5g).
+	 */
+	k = 0;
+	for (i = 0; i < base_regd->n_reg_rules; i++) {
+		rule = &base_regd->reg_rules[i];
+		if (!(rule->freq_range.start_freq_khz < MHZ_TO_KHZ(5925) &&
+		      rule->freq_range.end_freq_khz   > MHZ_TO_KHZ(4850)))
+			continue;  /* non-5G: handled in next loop */
+
+		if (rule->freq_range.end_freq_khz   <= rf_low_khz ||
+		    rule->freq_range.start_freq_khz >= rf_high_khz)
+			continue;  /* entirely outside RF path range */
+
+		memcpy(&new_regd->reg_rules[k], rule,
+		       sizeof(struct ieee80211_reg_rule));
+		if (new_regd->reg_rules[k].freq_range.start_freq_khz < rf_low_khz)
+			new_regd->reg_rules[k].freq_range.start_freq_khz = rf_low_khz;
+		if (new_regd->reg_rules[k].freq_range.end_freq_khz > rf_high_khz)
+			new_regd->reg_rules[k].freq_range.end_freq_khz = rf_high_khz;
+		k++;
+	}
+	for (i = 0; i < src_non5g->n_reg_rules; i++) {
+		rule = &src_non5g->reg_rules[i];
+		if (rule->freq_range.start_freq_khz < MHZ_TO_KHZ(5925) &&
+		    rule->freq_range.end_freq_khz   > MHZ_TO_KHZ(4850))
+			continue;  /* 5G: already handled above */
+
+		memcpy(&new_regd->reg_rules[k], rule,
+		       sizeof(struct ieee80211_reg_rule));
+		k++;
+	}
+
+	rcu_read_unlock();
+
+	new_regd->n_reg_rules = k;
+	*regd_out = new_regd;
+
+	ath12k_dbg(ab, ATH12K_DBG_REG,
+		   "rf_path regd: path=%u rules=%d (total from %d) freq=[%u,%u] kHz\n",
+		   ar->rf_path_ctx.current_index, k, base_regd->n_reg_rules,
+		   rf_low_khz, rf_high_khz);
+
+	return 0;
 }
 
 /**

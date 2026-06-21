@@ -2053,6 +2053,11 @@ struct ath12k {
 	struct ath12k_rf_path_ctx rf_path_ctx;
 };
 
+static inline bool ath12k_is_rf_path_switch_supported(struct ath12k *ar)
+{
+	return ar->rf_path_ctx.supported;
+}
+
 struct ath12k_6ghz_sp_reg_rule {
 	int num_6ghz_sp_rule;
 	struct ieee80211_reg_rule sp_reg_rule[];

@@ -25976,6 +25976,178 @@ void ath12k_mac_update_freq_range(struct ath12k *ar,
 }
 
 /**
+ * ath12k_mac_handle_rf_path_switch - orchestrate a 5G RF path switch
+ * @ar:            radio context (must be a 5G radio, not 6 GHz)
+ * @rf_path_index: 0 = primary/full range (4890-5930 MHz, ch 36-177)
+ *                 1 = secondary/high range (5490-5930 MHz, ch 100-177)
+ *
+ * Returns:
+ * 0 on success
+ * -EBUSY if a switch is already in progress
+ * -ETIMEDOUT if firmware does not respond
+ * -EIO if firmware rejected the switch,
+ *   or a negative error code from the regd build / wiphy set.
+ */
+int ath12k_mac_handle_rf_path_switch(struct ath12k *ar, u32 rf_path_index)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_rf_path_ctx *ctx = &ar->rf_path_ctx;
+	struct ieee80211_hw *hw = ath12k_ar_to_ah(ar)->hw;
+	struct ath12k_wmi_hal_reg_capabilities_ext_arg  *pri_cap;
+	struct ath12k_wmi_hal_reg_capabilities_ext2_arg *sec_cap;
+	struct ieee80211_regdomain *rf_regd = NULL;
+	u32 phy_id, freq_low, freq_high;
+	unsigned long time_left;
+	int ret;
+
+	lockdep_assert_wiphy(hw->wiphy);
+
+	if (rf_path_index > ATH12K_RF_PATH_HIGH_RANGE) {
+		ath12k_warn(ab, "rf_path_switch: invalid index %u\n", rf_path_index);
+		return -EINVAL;
+	}
+
+	/*
+	 * Per-radio capability gate: ctx->supported is set in
+	 * ath12k_mac_hw_register() from WMI_HAL_REG_CAPABILITIES_EXT2 caps.
+	 * If not set, this radio's PHY does not support RF path switching.
+	 */
+	if (!ath12k_is_rf_path_switch_supported(ar)) {
+		ath12k_warn(ab,
+			    "rf_path_switch: pdev %u does not support RF path switching\n",
+			    ar->pdev->pdev_id);
+		return -EOPNOTSUPP;
+	}
+
+	if (ctx->is_switch_in_progress) {
+		ath12k_warn(ab, "rf_path_switch: switch already in progress\n");
+		return -EBUSY;
+	}
+
+	if (ctx->current_index == rf_path_index) {
+		ath12k_dbg(ab, ATH12K_DBG_MAC,
+			   "rf_path_switch: already at index %u, no-op\n",
+			   rf_path_index);
+		return 0;
+	}
+
+	/*
+	 * Derive freq_low/freq_high from firmware-advertised caps.
+	 */
+	if (ab->hw_params->single_pdev_only)
+		phy_id = ar->pdev->cap.band[WMI_HOST_WLAN_5GHZ_CAP].phy_id;
+	else
+		phy_id = ar->pdev_idx;
+
+	pri_cap = &ab->hal_reg_cap[phy_id];
+	sec_cap = &ab->hal_reg_cap_ext2[phy_id];
+
+	if (rf_path_index == 1) {
+		freq_low  = max(sec_cap->low_5ghz_chan_ext,  ab->reg_freq_5g.start_freq);
+		freq_high = min(sec_cap->high_5ghz_chan_ext, ab->reg_freq_5g.end_freq);
+	} else {
+		freq_low  = max(pri_cap->low_5ghz_chan,  ab->reg_freq_5g.start_freq);
+		freq_high = min(pri_cap->high_5ghz_chan, ab->reg_freq_5g.end_freq);
+	}
+
+	if (!freq_low || !freq_high || freq_low >= freq_high) {
+		ath12k_warn(ab,
+			    "rf_path_switch: pdev %u invalid freq range [%u, %u] MHz for index %u\n",
+			    ar->pdev->pdev_id, freq_low, freq_high, rf_path_index);
+		return -EOPNOTSUPP;
+	}
+
+	ctx->is_fw_resp_success = false;
+	ctx->is_switch_in_progress = true;
+	ctx->target_index = rf_path_index;
+	reinit_completion(&ctx->rf_switch_done);
+
+	/* Send RF path switch WMI cmd to FW */
+	ret = ath12k_wmi_send_pdev_set_rf_path_cmd(ar, rf_path_index);
+	if (ret) {
+		ath12k_warn(ab,
+			    "rf_path_switch: failed to send WMI cmd: %d\n",
+			    ret);
+		goto out;
+	}
+
+	/* wait for firmware confirmation */
+	time_left = wait_for_completion_timeout(&ctx->rf_switch_done,
+						ATH12K_RF_PATH_SWITCH_TIMEOUT);
+	if (!time_left) {
+		if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags)) {
+			ret = -ESHUTDOWN;
+		} else {
+			ath12k_warn(ab,
+				    "rf_path_switch: timed out waiting for FW response\n");
+			ret = -ETIMEDOUT;
+		}
+		goto out;
+	}
+
+	if (!ctx->is_fw_resp_success) {
+		ath12k_warn(ab,
+			    "rf_path_switch: firmware rejected switch to index %u\n",
+			    rf_path_index);
+		ret = -EIO;
+		goto out;
+	}
+
+	/*
+	 * Cache freq bounds for reuse on subsequent country-code changes.
+	 */
+	ctx->freq_low  = freq_low;
+	ctx->freq_high = freq_high;
+
+	/*
+	 * Update the WMI scan channel filter.
+	 */
+	ar->chan_info.low_freq  = freq_low;
+	ar->chan_info.high_freq = freq_high;
+	ar->freq_range.start_freq = MHZ_TO_KHZ(freq_low);
+	ar->freq_range.end_freq   = MHZ_TO_KHZ(freq_high);
+
+	ath12k_dbg(ab, ATH12K_DBG_MAC,
+		   "rf_path_switch: pdev %u Layer 2 updated freq [%u, %u] MHz\n",
+		   ar->pdev->pdev_id, freq_low, freq_high);
+
+	/*
+	 * Rebuild the 5 GHz regulatory domain and push to cfg80211.
+	 */
+	ret = ath12k_reg_build_regd_for_rf_path(ar, &rf_regd);
+	if (ret) {
+		ath12k_warn(ab,
+			    "rf_path_switch: failed to build rf path regd: %d\n",
+			    ret);
+		goto out;
+	}
+
+	ret = regulatory_set_wiphy_regd(hw->wiphy, rf_regd);
+
+	kfree(rf_regd);
+	if (ret) {
+		ath12k_warn(ab,
+			    "rf_path_switch: regulatory_set_wiphy_regd failed: %d\n",
+			    ret);
+		goto out;
+	}
+
+	/* Commit the new state */
+	ctx->current_index = rf_path_index;
+	ctx->is_switch_in_progress = false;
+
+	ath12k_dbg(ab, ATH12K_DBG_MAC,
+		   "rf_path_switch: pdev %u switched to index %u (freq [%u, %u] MHz)\n",
+		   ar->pdev->pdev_id, rf_path_index, freq_low, freq_high);
+
+	return 0;
+
+out:
+	ctx->is_switch_in_progress = false;
+	return ret;
+}
+
+/**
  * ath12k_mac_update_ch_list - disable band chans outside the given frequency
  * @ar: pointer to ath12k structure
  * @band: pointer to the band structure
@@ -27318,6 +27490,22 @@ static int ath12k_alloc_per_hw_mac_addr(struct ath12k_hw *ah)
 	return 0;
 }
 
+static void
+ath12k_fill_rf_path_ctx(struct ath12k *ar,
+			const struct ath12k_wmi_hal_reg_capabilities_ext2_arg *sec_cap,
+			const struct ath12k_wmi_hal_reg_capabilities_ext_arg *pri_cap)
+{
+	if (ar->ab->rf_switch_config == ATH12K_RF_PATH_HIGH_RANGE) {
+		ar->rf_path_ctx.freq_low = sec_cap->low_5ghz_chan_ext;
+		ar->rf_path_ctx.freq_high = sec_cap->high_5ghz_chan_ext;
+		ar->rf_path_ctx.current_index = ATH12K_RF_PATH_HIGH_RANGE;
+	} else {
+		ar->rf_path_ctx.freq_low = pri_cap->low_5ghz_chan;
+		ar->rf_path_ctx.freq_high = pri_cap->high_5ghz_chan;
+		ar->rf_path_ctx.current_index = ATH12K_RF_PATH_FULL_RANGE;
+	}
+}
+
 static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 {
 	struct ieee80211_hw *hw = ah->hw;
@@ -27709,7 +27897,29 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 	ath12k_hw_debugfs_register(ah);
 
 	for_each_ar(ah, ar, i) {
-		/* Apply the regd received during initialization */
+		/*
+		 * Update the secondary frequency ranges if supported for any of
+		 * the radios. Use ar->ab for per-chip cap lookups in MLO.
+		 */
+		if (ar->pdev->cap.supported_bands & WMI_HOST_WLAN_5GHZ_CAP &&
+		    !ar->supports_6ghz) {
+			struct ath12k_base *ar_ab = ar->ab;
+			u32 phy_id = ar_ab->hw_params->single_pdev_only ?
+				ar->pdev->cap.band[WMI_HOST_WLAN_5GHZ_CAP].phy_id :
+				ar->pdev_idx;
+			struct ath12k_wmi_hal_reg_capabilities_ext2_arg *sec_cap =
+				&ar_ab->hal_reg_cap_ext2[phy_id];
+			struct ath12k_wmi_hal_reg_capabilities_ext_arg  *pri_cap =
+				&ar_ab->hal_reg_cap[phy_id];
+
+			ar->rf_path_ctx.supported =
+				sec_cap->low_5ghz_chan_ext != 0 &&
+				sec_cap->high_5ghz_chan_ext != 0;
+
+			if (ath12k_is_rf_path_switch_supported(ar))
+				ath12k_fill_rf_path_ctx(ar, sec_cap, pri_cap);
+		}
+
 		ret = ath12k_regd_update(ar, true);
 		if (ret) {
 			ath12k_err(ar->ab, "[vdev_id : %s radio_idx : %u] ath12k regd update failed: %d\n",
@@ -27752,6 +27962,40 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 				 "mac pdev %u freq limits %u->%u MHz, no. of channels %u\n",
 				 ar->pdev->pdev_id, ar->freq_range.start_freq,
 				 ar->freq_range.end_freq, ar->num_channels);
+	}
+
+	/* Apply band-limited regd for any 5 GHz radio at secondary path.
+	 *
+	 * In MLO, the 6 GHz radio wins the ah->regd_updated gate and the
+	 * 5 GHz radio hits an early return in ath12k_regd_update() before
+	 * it can apply the restriction itself.  This sweep handles that case.
+	 *
+	 * regulatory_set_wiphy_regd() acts on the wiphy, not on individual
+	 * radios; stop after the first qualifying radio.
+	 */
+	for_each_ar(ah, ar, i) {
+		struct ieee80211_regdomain *rf_regd = NULL;
+
+		if (ar->rf_path_ctx.current_index != ATH12K_RF_PATH_HIGH_RANGE)
+			continue;
+
+		ret = ath12k_reg_build_regd_for_rf_path(ar, &rf_regd);
+		if (ret) {
+			ath12k_err(ar->ab,
+				   "rf_path: regd build failed for pdev %u: %d\n",
+				   ar->pdev->pdev_id, ret);
+			goto err_unregister_hw;
+		}
+
+		ret = regulatory_set_wiphy_regd(hw->wiphy, rf_regd);
+		kfree(rf_regd);
+		if (ret) {
+			ath12k_err(ar->ab,
+				   "rf_path: regulatory_set_wiphy_regd failed for pdev %u: %d\n",
+				   ar->pdev->pdev_id, ret);
+			goto err_unregister_hw;
+		}
+		break;
 	}
 
 	return 0;

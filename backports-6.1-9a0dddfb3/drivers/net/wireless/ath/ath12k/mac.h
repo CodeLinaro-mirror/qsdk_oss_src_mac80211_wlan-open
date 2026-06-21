@@ -112,6 +112,7 @@ struct ath12k_generic_iter {
 #define ATH12K_MIN_TX_POWER		-127
 #define ATH12K_PDEV_SUSPEND_TIMEOUT	(2 * HZ)
 #define ATH12K_PDEV_RESUME_TIMEOUT	(2 * HZ)
+#define ATH12K_RF_PATH_SWITCH_TIMEOUT	(3 * HZ)
 #define ATH12K_ERP_BRIDGE_VDEV_REMOVAL_THRESHOLD	2
 
 /* Default management Tx retry limit in firmware */
@@ -825,6 +826,7 @@ int ath12k_mac_vendor_send_disassoc_event(struct ath12k_link_sta *arsta,
 					  struct ieee80211_link_sta *link_sta);
 void ath12k_mac_update_freq_range(struct ath12k *ar,
 				  u32 freq_low, u32 freq_high);
+int ath12k_mac_handle_rf_path_switch(struct ath12k *ar, u32 rf_path_index);
 void ath12k_mac_ieee80211_free_txskb(struct ieee80211_hw *hw,
 				     struct sk_buff *skb,
 				     struct ath12k_pdev_dp *dp_pdev,
