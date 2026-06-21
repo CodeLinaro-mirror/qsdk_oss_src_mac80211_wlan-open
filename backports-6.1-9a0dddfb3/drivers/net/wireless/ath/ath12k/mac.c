@@ -19307,7 +19307,8 @@ u8 ath12k_mac_get_tx_link(struct ieee80211_sta *sta, struct ieee80211_vif *vif,
 
 	/* Use the link id passed or the first available link */
 	if (!sta) {
-		if (link != IEEE80211_LINK_UNSPECIFIED)
+		if (link != IEEE80211_LINK_UNSPECIFIED &&
+		    (ahvif->links_map & BIT(link)))
 			return link;
 
 		link_id = ffs(ahvif->links_map) - 1;
