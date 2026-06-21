@@ -1909,7 +1909,6 @@ int ath12k_wbm_idle_ring_init(struct ath12k_base *ab);
 int ath12k_wbm_idle_ring_setup(struct ath12k_base *ab, u32 *n_link_desc);
 void ath12k_wbm_idle_ring_cleanup(struct ath12k_base *ab);
 int ath12k_dp_srng_common_alloc(struct ath12k_base *ab);
-void ath12k_dp_srng_common_deinit(struct ath12k_base *ab);
 int ath12k_dp_srng_common_init(struct ath12k_base *ab);
 int ath12k_dp_srng_common_setup(struct ath12k_base *ab);
 void ath12k_dp_srng_common_cleanup(struct ath12k_base *ab);

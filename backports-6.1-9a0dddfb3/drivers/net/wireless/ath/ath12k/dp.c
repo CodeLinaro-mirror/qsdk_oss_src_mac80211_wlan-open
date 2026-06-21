@@ -1016,6 +1016,16 @@ int ath12k_dp_srng_common_alloc(struct ath12k_base *ab)
 		goto err;
 	}
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	if (dp->ppe.ppe_ops && dp->ppe.ppe_ops->ath12k_ppeds_srng_cmn_alloc) {
+		ret = dp->ppe.ppe_ops->ath12k_ppeds_srng_cmn_alloc(ab);
+		if (ret) {
+			ath12k_err(ab, "failed to alloc ppe-ds srngs :%d\n", ret);
+			goto err;
+		}
+	}
+#endif
+
 	return 0;
 err:
 	ath12k_dp_srng_common_cleanup(ab);
@@ -1023,15 +1033,6 @@ err:
 	return ret;
 }
 EXPORT_SYMBOL(ath12k_dp_srng_common_alloc);
-
-void ath12k_dp_srng_common_deinit(struct ath12k_base *ab)
-{
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	if (ab->dp->ppe.ppe_ops && ab->dp->ppe.ppe_ops->ath12k_ppeds_srng_cleanup)
-		ab->dp->ppe.ppe_ops->ath12k_ppeds_srng_cleanup(ab);
-#endif
-}
-EXPORT_SYMBOL(ath12k_dp_srng_common_deinit);
 
 int ath12k_dp_srng_common_init(struct ath12k_base *ab)
 {
@@ -1083,21 +1084,16 @@ int ath12k_dp_srng_common_init(struct ath12k_base *ab)
 	ath12k_hal_reo_hw_setup(ab);
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	if (dp->ppe.ppe_ops && dp->ppe.ppe_ops->ath12k_ppeds_srng_cmn_setup) {
-		ret = dp->ppe.ppe_ops->ath12k_ppeds_srng_cmn_setup(ab);
+	if (dp->ppe.ppe_ops && dp->ppe.ppe_ops->ath12k_ppeds_srng_cmn_init) {
+		ret = dp->ppe.ppe_ops->ath12k_ppeds_srng_cmn_init(ab);
 		if (ret) {
 			ath12k_warn(ab, "failed to set up ppe-ds srngs :%d\n", ret);
-			goto err;
+			return ret;
 		}
 	}
 #endif
 
 	return 0;
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-err:
-	dp->ppe.ppe_ops->ath12k_ppeds_srng_cleanup(ab);
-#endif
-	return ret;
 }
 EXPORT_SYMBOL(ath12k_dp_srng_common_init);
 
