@@ -83,9 +83,6 @@ void ath12k_wifi8_umac_reset_handle_init_recovery(struct ath12k_base *ab)
 	/* Set umac in recovery flag for soc under Q6 only reset */
 	if (test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &cumac_ab->dev_flags))
 		set_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &cumac_ab->dev_flags);
-
-	ath12k_hif_irq_disable(ab);
-	ath12k_hif_mgmt_irq_disable(ab);
 }
 
 static void ath12k_wifi8_umac_reset_refill_rings_deinit(struct ath12k_base *ab)
@@ -162,6 +159,9 @@ void ath12k_wifi8_umac_reset_handle_pre_reset(struct ath12k_base *ab)
 	int ret;
 
 	mlo_umac_reset = &ag->mlo_umac_reset;
+
+	ath12k_hif_irq_disable(ab);
+	ath12k_hif_mgmt_irq_disable(ab);
 
 	/* Handle only once */
 	if (mlo_umac_reset->initiator_chip != ab->device_id)
