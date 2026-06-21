@@ -755,6 +755,7 @@ int ath12k_dp_rx_peer_tid_setup(struct ath12k *ar, struct ath12k_dp_peer *dp_pee
 	struct ath12k_dp_link_peer *peer;
 	struct ath12k_dp_rx_tid *rx_tid;
 	dma_addr_t paddr;
+	u16 stats_id;
 	int ret;
 
 	rcu_read_lock();
@@ -812,8 +813,21 @@ int ath12k_dp_rx_peer_tid_setup(struct ath12k *ar, struct ath12k_dp_peer *dp_pee
 
 	rx_tid->ba_win_sz = ba_win_sz;
 
-	ret = ath12k_dp_arch_alloc_reo_qdesc(dp, rx_tid, ssn, pn_type, &addr_aligned,
-					     peer->dp_peer->stats_id);
+	/*
+	 * When VoW stats are disabled, program the peer-level stats_id
+	 * into the REO queue descriptor. When VoW stats are enabled,
+	 * program the per-TID stats_id so HW telemetry ring delivers
+	 * isolated per-TID RX descriptors for this REO queue.
+	 */
+
+	if (tid < ATH12K_DATA_TID_MAX &&
+	    peer->dp_peer->tid_stats_id[tid] < ATH12K_MAX_STATS_ID)
+		stats_id = peer->dp_peer->tid_stats_id[tid];
+	else
+		stats_id = peer->dp_peer->stats_id;
+
+	ret = ath12k_dp_arch_alloc_reo_qdesc(dp, rx_tid, ssn, pn_type,
+					     &addr_aligned, stats_id);
 	if (ret < 0) {
 		spin_unlock_bh(&rx_tid->tid_lock);
 		rcu_read_unlock();
