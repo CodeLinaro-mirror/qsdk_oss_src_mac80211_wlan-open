@@ -24,6 +24,7 @@
 #include "../testmode.h"
 #include "../dp_peer.h"
 #include "../dp_tx.h"
+#include "../mac.h"
 #include "dp_tx.h"
 #include "dp.h"
 #include "hal_qcn9625.h"
@@ -1352,6 +1353,7 @@ static const struct ieee80211_ops ath12k_ops_wifi8 = {
 	.get_6ghz_dev_deployment_type	= ath12k_mac_op_get_6ghz_dev_deployment_type,
 	.ap_power_save                  = ath12k_mac_op_ap_power_save,
 	.set_monitor_flags		= ath12k_mac_op_set_monitor_flags,
+	.uhr_mode_update		= ath12k_mac_op_sta_uhr_mode_update,
 };
 
 int ath12k_wifi8_hw_init(struct ath12k_base *ab)

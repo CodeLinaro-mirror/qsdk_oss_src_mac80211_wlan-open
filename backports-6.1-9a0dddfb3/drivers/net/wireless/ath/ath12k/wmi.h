@@ -719,6 +719,7 @@ enum wmi_tlv_cmd_id {
 	WMI_PEER_TID_RATE_CUSTOM_CMDID,
 	WMI_PEER_NPCA_CAP_CMDID,
 	WMI_PEER_ASSOC_V2_CMDID = 0x6029,
+	WMI_PEER_UHR_OMP_CMDID,
 	WMI_BCN_TX_CMDID = WMI_TLV_CMD(WMI_GRP_MGMT),
 	WMI_PDEV_SEND_BCN_CMDID,
 	WMI_BCN_TMPL_CMDID,
@@ -2569,6 +2570,8 @@ enum wmi_tlv_tag {
 	WMI_TAG_PDEV_SET_CUMAC_CHIP = 0x57A,
 	WMI_TAG_PDEV_SET_CUMAC_COMPLETE = 0x57B,
 	WMI_TAG_PEER_UHR_NPCA_OP_PARAMS = 0x57D,
+	WMI_TAG_PEER_UHR_OMP_CMD = 0x57F,
+	WMI_TAG_PEER_UHR_OMP_NPCA_PARAMS,
 	WMI_TAG_MAX
 };
 
@@ -3959,6 +3962,32 @@ struct wmi_vdev_start_request_cmd {
 	__le32 mbssid_tx_vdev_id;
 	__le32 eht_ops;
 	__le32 punct_bitmap;
+} __packed;
+
+/* omp_npca_caps field bit definitions:
+ *   Bit 0:3  - NPCA hw_link_id
+ *   Bit 4    - Enable (1) / Disable (0) NPCA
+ */
+#define WMI_PEER_UHR_OMP_NPCA_CAPS_HW_LINK_ID   GENMASK(3, 0)
+#define WMI_PEER_UHR_OMP_NPCA_CAPS_ENABLE        BIT(4)
+
+/* omp_npca_param field bit definitions:
+ *   Bit 0:5  - NPCA Switch Delay (ms)
+ *   Bit 6:11 - NPCA Switch Back Delay (ms)
+ */
+#define WMI_PEER_UHR_OMP_NPCA_PARAM_SWITCH_DELAY       GENMASK(5, 0)
+#define WMI_PEER_UHR_OMP_NPCA_PARAM_SWITCH_BACK_DELAY  GENMASK(11, 6)
+
+struct wmi_peer_uhr_omp_npca_params {
+	__le32 tlv_header;
+	__le32 omp_npca_caps;
+	__le32 omp_npca_param;
+} __packed;
+
+struct wmi_peer_uhr_omp_cmd {
+	__le32 tlv_header;
+	__le32 sw_peer_id;
+	__le32 pdev_id;
 } __packed;
 
 #define MGMT_TX_DL_FRM_LEN		     64
@@ -10712,6 +10741,10 @@ int ath12k_wmi_send_tdma_schedule_request(struct ath12k *ar,
 int ath12k_wmi_send_low_power_20mhz(struct ath12k *ar, bool config);
 int ath12k_wmi_send_energy_mgmt_oem_data(struct ath12k *ar, u32 content_type,
 					 u32 num_bytes_valid, u8 *data);
+int ath12k_wmi_send_peer_uhr_omp_cmd(struct ath12k *ar, u32 sw_peer_id,
+				     u32 pdev_id, u8 hw_link_id,
+				     bool npca_enable, u8 npca_switch_delay,
+				     u8 npca_switch_back_delay);
 int ath12k_wmi_send_pdev_get_nfcal_power_cmd(struct ath12k *ar);
 int ath12k_wmi_multi_vdev_set_param(struct ath12k *ar,
 				    const struct ath12k_mbssid_info *mbssid_info,
