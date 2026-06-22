@@ -7513,7 +7513,8 @@ enum qca_wlan_vendor_cfr_stop_reason {
  *
  * @QCA_WLAN_VENDOR_ATTR_PEER_CFR_INTERVAL: Optional (u32)
  * CFR capture interval in microsecond. This attribute is mandatory for
- * version 2 if attribute QCA_WLAN_VENDOR_ATTR_PEER_CFR_DURATION is used.
+ * version 2 if attribute QCA_WLAN_VENDOR_ATTR_PEER_CFR_DURATION or
+ * attribute QCA_WLAN_VENDOR_ATTR_PEER_CFR_CAPTURE_COUNT is used.
  *
  * @QCA_WLAN_VENDOR_ATTR_PEER_CFR_CAPTURE_TYPE: Optional (u32)
  * CFR capture type is defined in enum qca_wlan_vendor_cfr_capture_type.
@@ -7741,6 +7742,44 @@ enum qca_wlan_vendor_cfr_stop_reason {
  * i.e., one report per interval per MAC address. When this flag is not
  * included, all captured frames in the reporting interval are reported.
  * Applicable only for CFR version 3.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_PEER_CFR_RESP_DATA_TOTAL_LEN: Optional (u32)
+ * Total length (in bytes) of the full CFR data being delivered across
+ * multiple fragmented vendor events. Present in every fragment when
+ * QCA_WLAN_VENDOR_ATTR_PEER_CFR_RESP_DATA is bifurcated.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_PEER_CFR_RESP_DATA_OFFSET: Optional (u32)
+ * Byte offset of the QCA_WLAN_VENDOR_ATTR_PEER_CFR_RESP_DATA payload
+ * within the full CFR data buffer. Present in every fragment when
+ * QCA_WLAN_VENDOR_ATTR_PEER_CFR_RESP_DATA is bifurcated.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_PEER_CFR_RESP_DATA_IS_LAST_FRAG: Optional (flag)
+ * When present, indicates that this vendor event carries the final fragment
+ * of a bifurcated QCA_WLAN_VENDOR_ATTR_PEER_CFR_RESP_DATA payload.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_PEER_CFR_TARA_FILTER_AS_FP: Optional (flag)
+ * When present, indicates FP (Filter Pass) category to be used for channel
+ * capture filtering. When not present, indicates MO (Monitor Other) category to
+ * be used for channel capture filtering.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_PEER_CFR_CAPTURE_COUNT: Optional (u16)
+ * Configures the counter value, where after capture_count+1 number of channel
+ * captures, capture stops and resumes after capture interval duration which is
+ * configured via attribute QCA_WLAN_VENDOR_ATTR_PEER_CFR_INTERVAL.
+ * Attributes QCA_WLAN_VENDOR_ATTR_PEER_CFR_CAPTURE_INTERVALMODE_SEL and
+ * QCA_WLAN_VENDOR_ATTR_PEER_CFR_INTERVAL are mandatory for capture count to be
+ * effective.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_PEER_CFR_CAPTURE_INTERVALMODE_SEL: Optional (flag)
+ * When present, indicates attribute QCA_WLAN_VENDOR_ATTR_PEER_CFR_CAPTURE_COUNT
+ * is considered over QCA_WLAN_VENDOR_ATTR_PEER_CFR_DURATION. When not present,
+ * QCA_WLAN_VENDOR_ATTR_PEER_CFR_DURATION is considered if present.
+ * This is a knob flag which controls whether duration mode to be configured or
+ * count mode to be configured.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_PEER_CFR_LINK_ID: Optional (u8)
+ * Specifies the link id on which the CFR capture is to be controlled in case of
+ * MLD interface.
  */
 enum qca_wlan_vendor_peer_cfr_capture_attr {
 	QCA_WLAN_VENDOR_ATTR_PEER_CFR_CAPTURE_INVALID = 0,
@@ -7794,7 +7833,13 @@ enum qca_wlan_vendor_peer_cfr_capture_attr {
 	QCA_WLAN_VENDOR_ATTR_PEER_CFR_STOP_REASON = 48,
 	QCA_WLAN_VENDOR_ATTR_PEER_CFR_FIXED_AGC = 49,
 	QCA_WLAN_VENDOR_ATTR_PEER_CFR_REPORT_ONLY_LAST_FRAME = 50,
-
+	QCA_WLAN_VENDOR_ATTR_PEER_CFR_RESP_DATA_TOTAL_LEN = 51,
+	QCA_WLAN_VENDOR_ATTR_PEER_CFR_RESP_DATA_OFFSET = 52,
+	QCA_WLAN_VENDOR_ATTR_PEER_CFR_RESP_DATA_IS_LAST_FRAG = 53,
+	QCA_WLAN_VENDOR_ATTR_PEER_CFR_TARA_FILTER_AS_FP = 54,
+	QCA_WLAN_VENDOR_ATTR_PEER_CFR_CAPTURE_COUNT = 55,
+	QCA_WLAN_VENDOR_ATTR_PEER_CFR_CAPTURE_INTERVALMODE_SEL = 56,
+	QCA_WLAN_VENDOR_ATTR_PEER_CFR_LINK_ID = 57,
 	/* Keep last */
 	QCA_WLAN_VENDOR_ATTR_PEER_CFR_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_PEER_CFR_MAX =
