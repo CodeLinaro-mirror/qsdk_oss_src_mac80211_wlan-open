@@ -232,6 +232,8 @@ struct ath12k_hw_ring_mask {
 	u8 tx_peer_telemetry[ATH12K_EXT_IRQ_NUM_MAX];
 	u8 rx_peer_telemetry[ATH12K_EXT_IRQ_NUM_MAX];
 	u8 reo_flush[ATH12K_EXT_IRQ_NUM_MAX];
+	/* Dedicated ring for FW-owned buffer completions (fw_tqm2sw WAR) */
+	u8 tqm2sw_fw[ATH12K_EXT_IRQ_NUM_MAX];
 };
 
 enum ath12k_m3_fw_loaders {
@@ -385,6 +387,13 @@ struct ath12k_hw_params {
 	const char *board_magic;
 	bool peer_del_all_support;
 	u8 tlv_logger_support;
+	/*
+	 * fw_tqm2sw_war: enable the dedicated fw_tqm2sw ring WAR for
+	 * FW-owned buffer completions.  This is a hardware bug present on
+	 * Trestles V1 (QCN9625/QCN9589 HW1.0) that is fixed in V2; the WAR
+	 * must not be enabled on V2 or later silicon.
+	 */
+	bool tqm2sw_fw_war;
 };
 
 struct ath12k_hw_ops {

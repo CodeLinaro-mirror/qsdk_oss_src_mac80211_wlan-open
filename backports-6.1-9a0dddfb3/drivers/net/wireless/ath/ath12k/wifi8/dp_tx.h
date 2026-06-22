@@ -130,6 +130,17 @@ ath12k_wifi8_dp_tx_exception_handler(struct ath12k_dp *dp, int budget)
 	return 0;
 }
 #endif
+/*
+ * ath12k_wifi8_dp_tx_exception_fw_buf_handler() - WAR for R-TQM completions.
+ * Sends SW2TQM FW-completion command for FW-owned buffer (cookie RBM != 0),
+ * routing the completion to fw_tqm2sw_ring via C-TQM using
+ * HAL_TQM_FW_COMPLETION_BO (637) with return_buffer_manager set to rbm.
+ */
+int ath12k_wifi8_dp_tx_exception_fw_buf_handler(struct ath12k_dp *dp,
+						dma_addr_t paddr,
+						u8 rbm,
+						u32 cookie);
+int ath12k_wifi8_dp_tqm2sw_fw_handler(struct ath12k_dp *dp, int budget);
 int ath12k_wifi8_dp_tqm_cmd_send(struct ath12k_base *ab,
 				 enum hal_tlv_tag_be type,
 				 struct ath12k_hal_tqm_cmd *cmd,

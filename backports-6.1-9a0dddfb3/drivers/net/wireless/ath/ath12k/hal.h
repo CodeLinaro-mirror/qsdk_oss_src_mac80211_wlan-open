@@ -447,6 +447,12 @@ enum hal_ring_type {
 	HAL_PEER_RX_TELEMETRY,
 	HAL_REO_FLUSH,
 	HAL_TQM2PPE,
+	/*
+	 * HAL_TQM2SW_FW_COMPLETION: dedicated TQM2SW ring for FW-owned buffer
+	 * completions.  Maps to ring_mask->fw_tqm2sw[] so the MSI fires on the
+	 * correct interrupt group (group 14) rather than the regular TX group.
+	 */
+	HAL_TQM2SW_FW_COMPLETION,
 	HAL_MAX_RING_TYPES,
 };
 

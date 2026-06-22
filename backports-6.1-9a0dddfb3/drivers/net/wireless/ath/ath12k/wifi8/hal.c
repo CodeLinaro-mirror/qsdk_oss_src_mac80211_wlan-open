@@ -1184,6 +1184,9 @@ u32 ath12k_hal_srng_get_cmd_size(struct ath12k_base *ab, enum hal_tlv_tag_be typ
 	else if (type == HAL_SAM_PEER_CLEAR_PROGRAMMING_BO)
 		return ((sizeof(struct hal_tlv_64_hdr) +
 			sizeof(struct hal_sam_peer_clear_programming)) >> 2);
+	else if (type == HAL_TQM_FW_COMPLETION_BO)
+		return ((sizeof(struct hal_tlv_64_hdr) +
+			sizeof(struct hal_tqm2sw_completion_ring)) >> 2);
 	return 0;
 }
 
