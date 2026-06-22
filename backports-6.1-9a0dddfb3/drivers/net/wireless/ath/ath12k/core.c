@@ -3204,10 +3204,21 @@ exit:
 
 u8 ath12k_core_get_total_num_vdevs(struct ath12k_base *ab)
 {
-	if (ab->ag && ab->ag->num_devices >= ATH12K_MIN_NUM_DEVICES_NLINK)
-		return TARGET_NUM_VDEVS + TARGET_NUM_BRIDGE_VDEVS;
+	u8 num_vdevs = TARGET_NUM_VDEVS;
 
-	return TARGET_NUM_VDEVS;
+#ifdef CPTCFG_QCN_EXTN
+	if (ab && ab->cfg_ctx) {
+		u32 ini_val = ath12k_cfg_get(ab, ATH12K_CFG_NUM_VDEVS);
+
+		if (ini_val)
+			num_vdevs = (u8)ini_val;
+	}
+#endif
+
+	if (ab->ag && ab->ag->num_devices >= ATH12K_MIN_NUM_DEVICES_NLINK)
+		return num_vdevs + TARGET_NUM_BRIDGE_VDEVS;
+
+	return num_vdevs;
 }
 EXPORT_SYMBOL(ath12k_core_get_total_num_vdevs);
 
@@ -3253,9 +3264,9 @@ bool ath12k_core_is_vdev_limit_reached(struct ath12k *ar,
 		goto exit;
 	}
 
-	if (num_created_vdevs > (TARGET_NUM_VDEVS - 1)) {
+	if (num_created_vdevs > (total_num_vdevs - 1)) {
 		ath12k_err(ab, "failed to create vdev, reached max vdev limit %d [%d]\n",
-			   num_created_vdevs, TARGET_NUM_VDEVS);
+			   num_created_vdevs, total_num_vdevs);
 		ret = true;
 	}
 
