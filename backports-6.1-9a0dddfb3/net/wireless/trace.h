@@ -462,7 +462,6 @@ TRACE_EVENT(rdev_add_virtual_intf,
 	TP_fast_assign(
 		WIPHY_ASSIGN;
 #if LINUX_VERSION_IS_GEQ(6, 7, 0)
-		__string(vir_intf_name, name ? name : "<noname>");
 		__assign_str(vir_intf_name);
 #else
 		__assign_str(vir_intf_name, name ? name : "<noname>");
@@ -4518,7 +4517,11 @@ TRACE_EVENT(rdev_uhr_mode_update,
 		u16 npca_mask = 0;
 
 		WIPHY_ASSIGN;
+#if LINUX_VERSION_IS_GEQ(6, 7, 0)
+		__assign_str(name);
+#else
 		__assign_str(name, dev->name);
+#endif
 		for (i = 0; i < IEEE80211_MLD_MAX_NUM_LINKS; i++) {
 			if (params->npca_update[i])
 				npca_mask |= BIT(i);

@@ -1601,9 +1601,14 @@ int ath12k_spectral_init(struct ath12k_base *ab)
 		idr_init(&sp->rx_ring.bufs_idr);
 		spin_lock_init(&sp->rx_ring.idr_lock);
 		spin_lock_init(&sp->lock);
+#if LINUX_VERSION_IS_GEQ(6, 18, 0)
+		hrtimer_setup(&sp->scan_completion_timer, ath12k_spectral_scan_timeout,
+			      CLOCK_MONOTONIC, HRTIMER_MODE_REL_SOFT);
+#else
 		hrtimer_init(&sp->scan_completion_timer, CLOCK_MONOTONIC,
 			     HRTIMER_MODE_REL_SOFT);
 		sp->scan_completion_timer.function = ath12k_spectral_scan_timeout;
+#endif
 		INIT_WORK(&sp->scan_timeout_work, ath12k_spectral_timeout_work);
 
 		ret = ath12k_spectral_ring_alloc(ar, &db_cap);
