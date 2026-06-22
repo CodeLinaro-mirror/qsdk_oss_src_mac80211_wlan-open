@@ -414,6 +414,99 @@ ath12k_wifi8_dp_update_rx_peer_telemetry(struct ath12k_dp_peer *dp_peer,
 }
 
 /**
+ * ath12k_wifi8_dp_update_tx_tid_telemetry() - Update per-TID TX pdev stats
+ * @dp_pdev: pdev DP context holding tid_stats
+ * @tx_desc: TX peer telemetry descriptor from the ring
+ * @tid: data TID index (0 to ATH12K_DATA_TID_MAX-1)
+ *
+ * Accumulates HW TX completion, drop and fail counters from the
+ * descriptor into dp_pdev->tid_stats.tid_tx[0][tid].tqm_status_cnt[]
+ * using the TASC HW reason indices.
+ */
+static void
+ath12k_wifi8_dp_update_tx_tid_telemetry(struct ath12k_pdev_dp *dp_pdev,
+					const struct tx_peer_telemetry_desc *tx_desc,
+					u8 tid)
+{
+	struct ath12k_tid_tx_stats *tx = &dp_pdev->tid_stats.tid_tx[0][tid];
+	const struct tx_peer_band_telemetry *band;
+	u32 comp_pkts = 0;
+	u8 band_id;
+
+	/*
+	 * Completion count: total packets that were attempted for
+	 * transmission — sum of per-band successfully acked packets
+	 * across all bands plus MLD-level failed packets.
+	 */
+	for (band_id = 0; band_id < MAX_TX_PEER_BAND; band_id++) {
+		band = &tx_desc->peer_band[band_id];
+		comp_pkts += le32_get_bits(band->info1,
+				TX_PEER_BAND_TELEMETRY_STATS_INFO1_NUM_SUCCESS_PACKETS);
+	}
+	comp_pkts += le32_get_bits(tx_desc->num_fail_packets,
+				   TX_PEER_TELEMETRY_DESC_NUM_FAIL_PACKETS);
+
+	tx->tqm_status_cnt[HAL_TASC_REASON_HW_COMPLETION] += comp_pkts;
+
+	tx->tqm_status_cnt[HAL_TASC_REASON_HW_DROP1] +=
+		le32_get_bits(tx_desc->num_dropped1_packets,
+			      TX_PEER_TELEMETRY_DESC_NUM_DROPPED1_PACKETS);
+
+	tx->tqm_status_cnt[HAL_TASC_REASON_HW_DROP2] +=
+		le32_get_bits(tx_desc->num_dropped2_packets,
+			      TX_PEER_TELEMETRY_DESC_NUM_DROPPED2_PACKETS);
+
+	tx->tqm_status_cnt[HAL_TASC_REASON_HW_FAILED] +=
+		le32_get_bits(tx_desc->num_fail_packets,
+			      TX_PEER_TELEMETRY_DESC_NUM_FAIL_PACKETS);
+}
+
+/**
+ * ath12k_wifi8_dp_update_rx_tid_telemetry() - Update per-TID RX pdev stats
+ * @dp_pdev: pdev DP context holding tid_stats
+ * @rx_desc: RX peer telemetry descriptor from the ring
+ * @tid: data TID index (0 to ATH12K_DATA_TID_MAX-1)
+ *
+ * Accumulates HW RX success, unicast drop and gcast drop counters from
+ * the descriptor into dp_pdev->tid_stats.tid_rx[0][tid].
+ */
+static void
+ath12k_wifi8_dp_update_rx_tid_telemetry(struct ath12k_pdev_dp *dp_pdev,
+					const struct rx_peer_telemetry_desc *rx_desc,
+					u8 tid)
+{
+	struct ath12k_tid_rx_stats *rx = &dp_pdev->tid_stats.tid_rx[0][tid];
+	const struct rx_peer_band_telemetry *band;
+	u8 band_id;
+
+	/*
+	 * msdu_cnt: total successfully received unicast MSDUs —
+	 * sum of first-try and retried success packets across all bands.
+	 */
+	for (band_id = 0; band_id < MAX_RX_PEER_BAND; band_id++) {
+		band = &rx_desc->peer_band[band_id];
+
+		rx->msdu_cnt +=
+			le32_get_bits(band->info4,
+			RX_PEER_BAND_TELEMETRY_STATS_INFO4_NUM_SUCES_FST_TRY_UCAST_PKT) +
+			le32_get_bits(band->info5,
+			RX_PEER_BAND_TELEMETRY_STATS_INFO5_NUM_SUCES_RETRIED_UCAST_PKT);
+
+		rx->fail_cnt[DP_TID_RX_HW_DROP1_UCAST] +=
+			le32_get_bits(band->info8,
+			RX_PEER_BAND_TELEMETRY_STATS_INFO8_NUM_UCAST_DROPPED1_PKTS);
+	}
+
+	rx->fail_cnt[DP_TID_RX_HW_DROP2_UCAST] +=
+		le32_get_bits(rx_desc->num_ucast_dropped2_packets,
+			      RX_PEER_TELEMETRY_DESC_NUM_UCAST_DROPPED2_PACKETS);
+
+	rx->fail_cnt[DP_TID_RX_HW_DROP_GCAST] +=
+		le32_get_bits(rx_desc->num_gcast_dropped_packets,
+			      RX_PEER_TELEMETRY_DESC_NUM_GCAST_DROPPED_PACKETS);
+}
+
+/**
  * ath12k_wifi8_dp_process_tx_peer_telemetry() - Process TX peer telemetry ring
  * @dp: DP context
  * @budget: Max number of descriptors to process in this NAPI poll cycle
@@ -436,7 +529,7 @@ int ath12k_wifi8_dp_process_tx_peer_telemetry(struct ath12k_dp *dp, int budget)
 	struct ath12k_dp_peer *dp_peer;
 	struct hal_srng *srng;
 	u16 stats_id, dp_peer_id;
-	u8 hw_link_id;
+	u8 hw_link_id, tid;
 	int num_descs = 0;
 
 	srng = &dp->hal->srng_list[dp_wifi8->tx_peer_telemetry_ring.ring_id];
@@ -461,6 +554,7 @@ int ath12k_wifi8_dp_process_tx_peer_telemetry(struct ath12k_dp *dp, int budget)
 
 		dp_peer_id = dp_hw_grp_wifi8->stats_id_map[stats_id].dp_peer_id;
 		hw_link_id = dp_hw_grp_wifi8->stats_id_map[stats_id].hw_link_id;
+		tid = dp_hw_grp_wifi8->stats_id_map[stats_id].tid;
 
 		if (dp_peer_id >= MAX_DP_PEER_LIST_SIZE) {
 			ath12k_dbg(ab, ATH12K_DBG_TELEMETRY,
@@ -482,6 +576,21 @@ int ath12k_wifi8_dp_process_tx_peer_telemetry(struct ath12k_dp *dp, int budget)
 		}
 
 		ath12k_wifi8_dp_update_tx_peer_telemetry(dp_peer, tx_desc);
+
+		/*
+		 * When VoW stats are enabled, the stats_id_map carries a
+		 * valid TID. Update per-TID pdev stats from the descriptor.
+		 */
+		if (tid < ATH12K_DATA_TID_MAX) {
+			struct ath12k_pdev_dp *dp_pdev;
+
+			dp_pdev = ath12k_dp_hw_grp_to_dp_pdev(dp_hw_grp,
+							      hw_link_id);
+			if (dp_pdev)
+				ath12k_wifi8_dp_update_tx_tid_telemetry(dp_pdev,
+									tx_desc,
+									tid);
+		}
 		rcu_read_unlock();
 
 next_tx_desc:
@@ -518,7 +627,7 @@ int ath12k_wifi8_dp_process_rx_peer_telemetry(struct ath12k_dp *dp, int budget)
 	struct ath12k_dp_peer *dp_peer;
 	struct hal_srng *srng;
 	u16 stats_id, dp_peer_id;
-	u8 hw_link_id;
+	u8 hw_link_id, tid;
 	int num_descs = 0;
 
 	srng = &dp->hal->srng_list[dp_wifi8->rx_peer_telemetry_ring.ring_id];
@@ -543,6 +652,7 @@ int ath12k_wifi8_dp_process_rx_peer_telemetry(struct ath12k_dp *dp, int budget)
 
 		dp_peer_id = dp_hw_grp_wifi8->stats_id_map[stats_id].dp_peer_id;
 		hw_link_id = dp_hw_grp_wifi8->stats_id_map[stats_id].hw_link_id;
+		tid = dp_hw_grp_wifi8->stats_id_map[stats_id].tid;
 
 		if (dp_peer_id >= MAX_DP_PEER_LIST_SIZE) {
 			ath12k_dbg(ab, ATH12K_DBG_TELEMETRY,
@@ -564,6 +674,21 @@ int ath12k_wifi8_dp_process_rx_peer_telemetry(struct ath12k_dp *dp, int budget)
 		}
 
 		ath12k_wifi8_dp_update_rx_peer_telemetry(dp_peer, rx_desc);
+
+		/*
+		 * When VoW stats are enabled, the stats_id_map carries a
+		 * valid TID. Update per-TID pdev stats from the descriptor.
+		 */
+		if (tid < ATH12K_DATA_TID_MAX) {
+			struct ath12k_pdev_dp *dp_pdev;
+
+			dp_pdev = ath12k_dp_hw_grp_to_dp_pdev(dp_hw_grp,
+							      hw_link_id);
+			if (dp_pdev)
+				ath12k_wifi8_dp_update_rx_tid_telemetry(dp_pdev,
+									rx_desc,
+									tid);
+		}
 		rcu_read_unlock();
 
 next_rx_desc:
