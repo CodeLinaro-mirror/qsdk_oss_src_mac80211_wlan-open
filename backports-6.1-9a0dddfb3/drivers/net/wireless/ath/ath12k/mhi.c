@@ -397,8 +397,10 @@ int ath12k_mhi_register(struct ath12k_pci *ab_pci)
 		goto free_controller;
 	}
 
+#ifndef PLATFORM_SDX
 	mhi_ctrl->rddm_prealloc = false;
 	mhi_ctrl->rddm_seg_len = SZ_4K;
+#endif
 
 	return 0;
 
@@ -617,9 +619,11 @@ out:
 		 * mode and is able to do RDDM, RDDM cookie would be set.
 		 * Dump SBL SRAM memory only if RDDM cookie is not set.
 		 */
+#ifndef PLATFORM_SDX
 #ifdef CPTCFG_ATHDEBUG
 		if (!mhi_scan_rddm_cookie(ab_pci->mhi_ctrl, MHI_DEVICE_RDDM_COOKIE))
 			athdbg_if_get_service(ab_pci->ab, ATHDBG_SRV_MHI_Q6_DUMP_BL_SRAM);
+#endif
 #endif
 	}
 	return ret;

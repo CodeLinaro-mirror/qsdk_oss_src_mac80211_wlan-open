@@ -3206,23 +3206,32 @@ static inline void ath12k_core_dma_unmap_page(struct device *dev, dma_addr_t han
 #endif
 }
 
+#ifndef PLATFORM_SDX
 static inline void ath12k_core_dmac_inv_range_no_dsb(const void *start, const void *end)
 {
-#ifndef PLATFORM_SDX85
 #ifndef CONFIG_IO_COHERENCY
 	dmac_inv_range_no_dsb(start, end);
 #endif
-#endif
 }
+#else
+static inline void ath12k_core_dmac_inv_range_no_dsb(const void *start, const void *end)
+{
+}
+#endif
 
+
+#ifndef PLATFORM_SDX
 static inline void ath12k_core_dmac_inv_range(const void *start, const void *end)
 {
-#ifndef PLATFORM_SDX85
 #ifndef CONFIG_IO_COHERENCY
 	dmac_inv_range(start, end);
 #endif
-#endif
 }
+#else
+static inline void ath12k_core_dmac_inv_range(const void *start, const void *end)
+{
+}
+#endif
 
 static inline void ath12k_core_dsb(void)
 {
@@ -3231,14 +3240,18 @@ static inline void ath12k_core_dsb(void)
 #endif
 }
 
+#ifndef PLATFORM_SDX
 static inline void ath12k_core_dmac_clean_range(const void *start, const void *end)
 {
-#ifndef PLATFORM_SDX85
 #ifndef CONFIG_IO_COHERENCY
 	dmac_clean_range(start, end);
 #endif
-#endif
 }
+#else
+static inline void ath12k_core_dmac_clean_range(const void *start, const void *end)
+{
+}
+#endif
 
 static inline struct ath12k_base *ath12k_pdev_to_ab(struct ath12k_pdev *pdev)
 {

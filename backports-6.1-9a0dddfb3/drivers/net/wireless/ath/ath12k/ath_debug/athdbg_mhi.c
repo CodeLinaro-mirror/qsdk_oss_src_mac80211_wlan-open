@@ -167,8 +167,10 @@ static bool athdbg_mhi_q6_scan_rddm_cookie(struct ath12k_base *ab,
 	mhi_ctrl = athdbg_mhi_get_mhi_ctrl(ab);
 	if (!mhi_ctrl)
 		return false;
-
+#ifndef PLATFORM_SDX
 	return mhi_scan_rddm_cookie(mhi_ctrl, cookie);
+#endif
+	return true;
 }
 
 static void athdbg_mhi_q6_debug_reg_dump(struct ath12k_base *ab)
@@ -179,7 +181,9 @@ static void athdbg_mhi_q6_debug_reg_dump(struct ath12k_base *ab)
 	if (!mhi_ctrl)
 		return;
 
+#ifndef PLATFORM_SDX
 	mhi_debug_reg_dump(mhi_ctrl);
+#endif
 }
 
 static int athdbg_mhi_q6_debug_read_pbl_data(struct ath12k_base *ab,

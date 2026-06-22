@@ -821,7 +821,7 @@ void athdbg_qmi_qdss_mem_free(struct ath12k_base *ab)
 
 #ifndef CONFIG_UPSTREAM_BUILD
 
-#ifdef PLATFORM_SDX85
+#ifdef PLATFORM_SDX
 	if (ab->dbg_qmi.qdss_mem_seg_len && ab->dbg_qmi.qdss_mem[0].v.ioaddr) {
 		dma_free_attrs(ab->dev,
 			       ab->dbg_qmi.qdss_mem[0].size,

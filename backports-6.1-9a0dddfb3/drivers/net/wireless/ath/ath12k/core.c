@@ -5743,7 +5743,7 @@ void ath12k_core_pci_link_speed(struct ath12k_base *ab, u16 link_speed,
 
 	ath12k_info(ab, "Link speed is %d and width is %d\n", link_speed, link_width);
 
-#ifndef PLATFORM_SDX85
+#ifndef PLATFORM_SDX
 	if (pcie_set_link_speed(root_port, link_speed))
 		ath12k_err(ab, "Failed to set the link speed\n");
 

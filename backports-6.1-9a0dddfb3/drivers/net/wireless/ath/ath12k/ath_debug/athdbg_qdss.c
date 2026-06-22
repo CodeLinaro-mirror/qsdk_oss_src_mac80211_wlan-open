@@ -60,7 +60,7 @@ int athdbg_qmi_alloc_qdss_mem(struct athdbg_qmi *dbg_qmi)
 			return -ENOMEM;
 		}
 
-#ifdef PLATFORM_SDX85
+#ifdef PLATFORM_SDX
 		ab->dbg_qmi.qdss_mem[0].v.ioaddr =
 			dma_alloc_attrs(ab->dev,
 					ab->dbg_qmi.qdss_mem[0].size,
