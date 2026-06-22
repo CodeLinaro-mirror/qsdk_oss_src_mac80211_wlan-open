@@ -13,6 +13,7 @@
 #include <linux/types.h>
 #include <linux/pci.h>
 #include <linux/uuid.h>
+#include <linux/sort.h>
 #include <linux/time.h>
 #include <linux/of.h>
 #include "core.h"
@@ -9148,6 +9149,18 @@ static int ath12k_copy_afc_power_event_fixed_info(struct ath12k_base *ab,
 	return 0;
 }
 
+static int ath12k_afc_freq_obj_cmp(const void *a, const void *b)
+{
+	const struct ath12k_afc_freq_obj *ra = a;
+	const struct ath12k_afc_freq_obj *rb = b;
+
+	if (ra->low_freq < rb->low_freq)
+		return -1;
+	if (ra->low_freq > rb->low_freq)
+		return 1;
+	return 0;
+}
+
 static int ath12k_wmi_afc_fill_freq_obj(struct ath12k_base *ab,
 					const void *ptr, u16 len,
 					struct ath12k_afc_info *afc)
@@ -9186,6 +9199,8 @@ static int ath12k_wmi_afc_fill_freq_obj(struct ath12k_base *ab,
 			   freq_obj[i].max_psd);
 	}
 
+	sort(freq_obj, afc_reg_info->num_freq_objs, sizeof(*freq_obj),
+	     ath12k_afc_freq_obj_cmp, NULL);
 	afc_reg_info->afc_freq_info = freq_obj;
 
 	return 0;
