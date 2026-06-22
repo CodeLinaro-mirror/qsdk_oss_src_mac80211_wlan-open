@@ -71,11 +71,9 @@ static void athdbg_uio_reset_rings(void)
 	}
 }
 
-int athdbg_uio_register(struct ath12k_base *ab)
+int athdbg_uio_register(void)
 {
 	int ret = 0;
-
-	mutex_init(&athdbg_base->req_lock);
 
 	/* Reset HOST rings before registering notifier to ensure clean
 	 * state on driver reload — prevents -ENOSPC on first write
@@ -93,7 +91,7 @@ int athdbg_uio_register(struct ath12k_base *ab)
 	return ret;
 }
 
-int athdbg_uio_unregister(struct ath12k_base *ab)
+int athdbg_uio_unregister(void)
 {
 	debug_uio_unregister_notifier(&athdbg_ss_handler_nb,
 				      DEBUG_UIO_DEV_HOST,

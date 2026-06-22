@@ -6433,12 +6433,14 @@ int ath12k_qmi_event_load_bdf(struct ath12k_qmi *qmi)
 	ret = ath12k_qmi_load_bdf_qmi(ab, ATH12K_QMI_BDF_TYPE_REGDB);
 	if (ret < 0) {
 		ath12k_warn(ab, "qmi failed to load regdb file:%d\n", ret);
+		ath12k_critical_failure_trigger(ab, ATH12K_BDF_LOAD_FAILURE);
 		return ret;
 	}
 
 	ret = ath12k_qmi_load_bdf_qmi(ab, ATH12K_QMI_BDF_TYPE_ELF);
 	if (ret < 0) {
 		ath12k_warn(ab, "qmi failed to load board data file:%d\n", ret);
+		ath12k_critical_failure_trigger(ab, ATH12K_BDF_LOAD_FAILURE);
 		return ret;
 	}
 
@@ -6450,8 +6452,10 @@ int ath12k_qmi_event_load_bdf(struct ath12k_qmi *qmi)
 
 	if (ab->hw_params->download_calib) {
 		ret = ath12k_qmi_load_bdf_qmi(ab, ATH12K_QMI_BDF_TYPE_CALIBRATION);
-		if (ret < 0)
+		if (ret < 0) {
 			ath12k_warn(ab, "qmi failed to load calibrated data :%d\n", ret);
+			ath12k_critical_failure_trigger(ab, ATH12K_BDF_LOAD_FAILURE);
+		}
 	}
 
 	if (ab->qmi.ext_fw_bin_download_support) {

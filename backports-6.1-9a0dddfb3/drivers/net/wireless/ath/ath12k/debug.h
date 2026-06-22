@@ -150,12 +150,25 @@ do {										\
 enum ath12k_crit_event {
 	ATH12K_CRIT_VAP_FAILURE = 0,
 	ATH12K_CRIT_CONNECTION_FAIL = 1,
-	ATH12K_CRIT_PEER_FAILURE = 3,
+	ATH12K_CRIT_PEER_FAILURE = 2,
+	ATH12K_FW_LOAD_FAILURE = 3,
+	ATH12K_BDF_LOAD_FAILURE = 4,
 };
 
+#ifdef CPTCFG_ATHDEBUG
 void athdbg_uio_critical_failure_trigger(struct ath12k_base *ab, uint32_t crit_enum);
 
 #define ath12k_critical_failure_trigger(ab, crit_enum) \
 	athdbg_uio_critical_failure_trigger(ab, crit_enum)
+
+#else
+
+#define ath12k_critical_failure_trigger(ab, crit_enum) \
+	do { \
+		(void)(ab); \
+		(void)(crit_enum); \
+	} while (0)
+
+#endif
 
 #endif /* _ATH12K_DEBUG_H_ */

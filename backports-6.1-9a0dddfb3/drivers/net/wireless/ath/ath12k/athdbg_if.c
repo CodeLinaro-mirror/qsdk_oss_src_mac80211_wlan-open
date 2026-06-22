@@ -6,7 +6,6 @@
 #include "ath_debug/athdbg_mhi.h"
 #include "ath_debug/athdbg_wmi_recording.h"
 #include "debug.h"
-#include "ath_debug/athdbg_uio.h"
 #include "mhi.h"
 #include "pci.h"
 
@@ -93,12 +92,6 @@ void athdbg_if_register(struct ath12k_base *ab)
 {
 	int ret;
 
-	#ifdef CPTCFG_ATHDEBUG_UIO_LOGGING
-	ret = athdbg_uio_register(ab);
-	if (ret)
-		pr_err("athdbg_if: ath_debug UIO register failed: %d\n", ret);
-	#endif
-
 	ret = athdbg_if_create_debugfs(ab);
 	if (ret) {
 		pr_err("athdbg_if: debugfs entry create failure %d", ret);
@@ -108,10 +101,6 @@ void athdbg_if_register(struct ath12k_base *ab)
 
 void athdbg_if_unregister(struct ath12k_base *ab)
 {
-	#ifdef CPTCFG_ATHDEBUG_UIO_LOGGING
-	athdbg_uio_unregister(ab);
-	#endif
-
 	athdbg_clear_minidump_info();
 	athdbg_base->dbg_to_ath_ops = NULL;
 }
