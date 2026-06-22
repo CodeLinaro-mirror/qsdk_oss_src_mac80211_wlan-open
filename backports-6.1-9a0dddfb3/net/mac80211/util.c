@@ -4258,7 +4258,7 @@ static void ieee80211_punct_bitmap_add(struct ieee80211_chanctx *ctx,
 	u32 start_freq;
 	int pos;
 
-	start_freq = ctx->conf.def.chan ? ctx->conf.def.chan->center_freq : 0;
+	start_freq = KHZ_TO_MHZ(cfg80211_get_start_freq(&ctx->conf.def, 1));
 	pos = (obj->center_freq - start_freq) / 20;
 
 	if (pos >= 0 && pos < IEEE80211_MAX_20MHZ_SUBCHANS)
@@ -4370,7 +4370,7 @@ void ieee80211_punct_radar_update(struct ieee80211_local *local,
 		  ctx, radar_bitmap);
 
 	radar_hit_ts = jiffies;
-	start_freq = chandef->chan->center_freq;
+	start_freq = KHZ_TO_MHZ(cfg80211_get_start_freq(chandef, 1));
 	for (bit = 0; bit < IEEE80211_MAX_20MHZ_SUBCHANS; bit++) {
 		struct ieee80211_punct_obj *new_obj, *existing_obj;
 
