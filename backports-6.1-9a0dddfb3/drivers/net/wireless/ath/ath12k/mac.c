@@ -25601,7 +25601,7 @@ ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 			       const struct cfg80211_bitrate_mask *mask)
 {
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
-	int he_num_rates, eht_num_rates;
+	int he_num_rates, eht_num_rates, uhr_num_rates;
 	struct ath12k_link_vif *arvif;
 	struct cfg80211_chan_def def;
 	struct ath12k *ar;
@@ -25613,6 +25613,8 @@ ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 	u8 he_gi = 0;
 	u8 eht_ltf = 0;
 	u8 eht_gi = 0;
+	u8 uhr_ltf = 0;
+	u8 uhr_gi = 0;
 	u8 uhr_elr;
 	u32 rate;
 	u8 sgi;
@@ -25636,11 +25638,14 @@ ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 	he_ltf = mask->control[band].he_ltf;
 	eht_gi = mask->control[band].eht_gi;
 	eht_ltf = mask->control[band].eht_ltf;
+	uhr_gi = mask->control[band].uhr_gi;
+	uhr_ltf = mask->control[band].uhr_ltf;
 
 	uhr_2xldpc = mask->control[band].uhr_2xldpc;
 
 	he_num_rates = ath12k_mac_bitrate_mask_num_he_rates(ar, band, mask);
 	eht_num_rates = ath12k_mac_bitrate_mask_num_eht_rates(ar, band, mask);
+	uhr_num_rates = ath12k_mac_bitrate_mask_num_uhr_rates(ar, band, mask);
 
 	if (ath12k_mac_is_single_rate_bitrate_mask(ar, band, mask)) {
 		rate = ath12k_mac_single_rate_hw_rate_code(ar, band, mask);
@@ -25671,6 +25676,16 @@ ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 				return ret;
 			}
 		}
+
+		if (uhr_num_rates) {
+			/* Use EHT LTF parameter ID for UHR */
+			ret = ath12k_mac_set_fixed_rate_gi_ltf(arvif, uhr_gi, uhr_ltf,
+							       WMI_VDEV_PARAM_EHT_LTF);
+			if (ret) {
+				ath12k_warn(ar->ab, "failed to set UHR fixed rate GI/LTF\n");
+				return ret;
+			}
+		}
 	} else {
 		ret = ath12k_mac_apply_vdev_ratemask(arvif, band, mask);
 		if (ret) {
@@ -25694,9 +25709,17 @@ ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 				return ret;
 			}
 		}
+
+		if (uhr_num_rates) {
+			ret = ath12k_mac_set_auto_rate_gi_ltf(arvif, uhr_gi, uhr_ltf);
+			if (ret) {
+				ath12k_warn(ar->ab, "failed to set UHR auto rate GI/LTF\n");
+				return ret;
+			}
+		}
 	}
 
-	if (!he_num_rates && !eht_num_rates) {
+	if (!he_num_rates && !eht_num_rates && !uhr_num_rates) {
 		vdev_param = WMI_VDEV_PARAM_SGI;
 		param_value = ath12k_mac_nlgi_to_wmigi(sgi);
 		ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
