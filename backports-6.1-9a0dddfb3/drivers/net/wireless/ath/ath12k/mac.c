@@ -344,6 +344,7 @@ ath12k_phymodes_uhr[NUM_NL80211_BANDS][ATH12K_CHAN_WIDTH_NUM] = {
 #define ATH12K_MAX_AR_LINK_IDX	5
 #define ATH12K_SCAN_ROC_CLEANUP_TIMEOUT_MS 3000  /* Timeout for ROC cleanup after scan */
 						 /*  vdev clean */
+#define ATH12K_DP_HW_STATS_REO_IDX	0
 
 static const u32 ath12k_smps_map[] = {
 	[WLAN_HT_CAP_SM_PS_STATIC] = WMI_PEER_SMPS_STATIC,
@@ -25083,6 +25084,7 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 	struct ath12k_base *ab;
 	struct ath12k_dp_peer *dp_peer;
 	struct ath12k_dp_peer_stats *peer_stats = NULL;
+	struct ath12k_dp_peer_rx_stats *rx_stats;
 	struct ath12k *ar;
 	bool db2dbm, stats_valid = false;
 	struct ath12k_dp_link_peer *link_peer;
@@ -25148,20 +25150,33 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 
 		is_ds_vif = ath12k_vif_to_ahvif(vif)->dp_vif.ppe_vp_type ==
 				PPE_VP_USER_TYPE_DS;
-		for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
-			/* PPE sync credits DS VIF WDS peer traffic only on
-			 * DP_REO_PPEDS_RING_IDX; skip lower ring indices to
-			 * avoid double-counting.
+
+		if (ath12k_dp_hw_peer_stats_enabled(&ar->dp)) {
+			/* When HW stats are enabled, recv_from_reo has all the
+			 * Rx traffic data stored in ATH12K_DP_HW_STATS_REO_IDX
+			 * for SFE or DS mode.
 			 */
-			if (dp_peer->use_4addr && is_ds_vif && i < DP_REO_PPEDS_RING_IDX)
-				continue;
-			link_sinfo->rx_bytes +=
-				peer_stats->rx[i].sent_to_stack.bytes +
-				peer_stats->rx[i].sent_to_stack_fast.bytes;
-			link_sinfo->rx_packets +=
-				peer_stats->rx[i].sent_to_stack.packets +
-				peer_stats->rx[i].sent_to_stack_fast.packets;
+			rx_stats = &peer_stats->rx[ATH12K_DP_HW_STATS_REO_IDX];
+			link_sinfo->rx_bytes += rx_stats->recv_from_reo.bytes;
+			link_sinfo->rx_packets += rx_stats->recv_from_reo.packets;
+		} else {
+			for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
+				/* PPE sync credits DS VIF WDS peer traffic only
+				 * on DP_REO_PPEDS_RING_IDX; skip lower ring
+				 * indices to avoid double-counting.
+				 */
+				if (dp_peer->use_4addr && is_ds_vif &&
+				    i < DP_REO_PPEDS_RING_IDX)
+					continue;
+				link_sinfo->rx_bytes +=
+					peer_stats->rx[i].sent_to_stack.bytes +
+					peer_stats->rx[i].sent_to_stack_fast.bytes;
+				link_sinfo->rx_packets +=
+					peer_stats->rx[i].sent_to_stack.packets +
+					peer_stats->rx[i].sent_to_stack_fast.packets;
+			}
 		}
+
 		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_BYTES);
 		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_PACKETS);
 
@@ -25210,8 +25225,11 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 	 * To fix this, override mac80211 counters with the driver's internal
 	 * peer statistics (derived from firmware) when extended RX stats
 	 * are enabled.
+	 *
+	 * When HW stats are enabled, this copy is not needed.
 	 */
-	if (ath12k_extd_rx_stats_enabled(&ar->dp)) {
+	if (ath12k_extd_rx_stats_enabled(&ar->dp) &&
+	    !ath12k_dp_hw_peer_stats_enabled(&ar->dp)) {
 		if (link_peer && link_peer->peer_stats.rx_stats) {
 			link_sinfo->rx_packets =
 				link_peer->peer_stats.rx_stats->num_msdu;
@@ -29985,6 +30003,7 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 	struct ath12k_dp_peer *peer;
 	struct ath12k_dp_link_peer *link_peer;
 	struct ath12k_dp_peer_stats *peer_stats;
+	struct ath12k_dp_peer_rx_stats *rx_stats;
 	unsigned long links_map = ahvif->links_map;
 	int link_id, i, stats_link_id;
 	struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
@@ -30064,28 +30083,44 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 				continue;
 			peer_stats = &peer->stats[stats_link_id];
 
-			for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
-				/* PPE sync credits DS VIF WDS peer traffic only on
-				 * DP_REO_PPEDS_RING_IDX. Skip lower ring indices
-				 * to avoid double-counting.
+			if (ath12k_dp_hw_peer_stats_enabled(&ar->dp)) {
+				/* When HW stats are enabled, recv_from_reo has
+				 * all the Rx traffic data stored in
+				 * ATH12K_DP_HW_STATS_REO_IDX for SFE or
+				 * DS mode.
 				 */
-				if (is_ds_vif && i < DP_REO_PPEDS_RING_IDX)
-					continue;
-				rx_packets +=
+				rx_stats = &peer_stats->rx[ATH12K_DP_HW_STATS_REO_IDX];
+				rx_packets += rx_stats->recv_from_reo.packets;
+				rx_bytes += rx_stats->recv_from_reo.bytes;
+			} else {
+				for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
+					/* PPE sync credits DS VIF WDS peer
+					 * traffic only on DP_REO_PPEDS_RING_IDX.
+					 * Skip lower ring indices to avoid
+					 * double-counting.
+					 */
+					if (is_ds_vif && i < DP_REO_PPEDS_RING_IDX)
+						continue;
+
+					rx_packets +=
 					(peer_stats->rx[i].sent_to_stack.packets +
 					 peer_stats->rx[i].sent_to_stack_fast.packets);
-				rx_bytes +=
+					rx_bytes +=
 					(peer_stats->rx[i].sent_to_stack.bytes +
 					 peer_stats->rx[i].sent_to_stack_fast.bytes);
-			}
+				}
 
-			if (ar && ath12k_extd_rx_stats_enabled(&ar->dp) && link_peer &&
-			    link_peer->peer_stats.rx_stats) {
-				/* Override PPEDS ring sent_to_stack with extended RX
-				 * monitor MSDU totals.
-				 */
-				rx_packets = link_peer->peer_stats.rx_stats->num_msdu;
-				rx_bytes = link_peer->peer_stats.rx_stats->num_msdu_bytes;
+				if (ar && ath12k_extd_rx_stats_enabled(&ar->dp) &&
+				    link_peer &&
+				    link_peer->peer_stats.rx_stats) {
+					/* Override PPEDS ring sent_to_stack with
+					 * extended RX monitor MSDU totals.
+					 */
+					rx_packets =
+					link_peer->peer_stats.rx_stats->num_msdu;
+					rx_bytes =
+					link_peer->peer_stats.rx_stats->num_msdu_bytes;
+				}
 			}
 
 			stats->rx_packets += rx_packets;
@@ -30104,7 +30139,8 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 	 * Accumulate hardware PPE DS ring stats on the master VIF
 	 */
 	if (ar && vif->type == NL80211_IFTYPE_AP &&
-	    !ath12k_extd_rx_stats_enabled(&ar->dp)) {
+	    !ath12k_extd_rx_stats_enabled(&ar->dp) &&
+	    !ath12k_dp_hw_peer_stats_enabled(&ar->dp)) {
 		vif_ppeds_rx = dp_vif->rx_stats[DP_REO_PPEDS_RING_IDX].ppeds_rx;
 		stats->rx_packets += vif_ppeds_rx.packets;
 		stats->rx_bytes += vif_ppeds_rx.bytes;
