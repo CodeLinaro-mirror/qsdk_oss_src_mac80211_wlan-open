@@ -360,9 +360,7 @@ fail_ppeds_detach:
 fail_nss_plugin_unregister:
 	ath12k_nss_plugin_unregister_ops(ab);
 
-#ifndef PLATFORM_SDX85
 fail_dp_bank_profiles_cleanup:
-#endif
 #endif
 	ath12k_dp_deinit_bank_profiles(ab);
 fail_hw_cc_cleanup:

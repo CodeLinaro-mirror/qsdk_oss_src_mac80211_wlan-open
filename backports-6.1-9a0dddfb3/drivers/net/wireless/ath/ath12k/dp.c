@@ -25,9 +25,8 @@
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #include "ppe.h"
 #endif
-#ifdef PLATFORM_SDX85
 #include "dp.h"
-#endif
+#include <linux/vmalloc.h>
 
 /* DSCP TID mapping as per RFC 8325
  * ===============================

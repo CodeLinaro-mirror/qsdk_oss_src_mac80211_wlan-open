@@ -906,14 +906,18 @@ out:
 
 #define HTT_META_DATA_ALIGNMENT 0x8
 
+#ifndef PLATFORM_SDX
 static inline void
 ath12k_core_dma_clean_range_no_dsb(const void *start, const void *end) {
 #ifndef CONFIG_IO_COHERENCY
-#ifndef PLATFORM_SDX85
 	dmac_clean_range_no_dsb(start, end);
 #endif
-#endif
 }
+#else
+static inline void
+ath12k_core_dma_clean_range_no_dsb(const void *start, const void *end) {
+}
+#endif
 
 /**
  * ath12k_wifi8_mcbc_get_gsn() - Atomically increment and return the multicast GSN
