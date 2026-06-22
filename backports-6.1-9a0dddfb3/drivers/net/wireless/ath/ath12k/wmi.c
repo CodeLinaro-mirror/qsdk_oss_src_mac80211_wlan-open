@@ -4978,7 +4978,6 @@ int ath12k_wmi_update_scan_chan_list(struct ath12k *ar,
 
                                ch->phy_mode = req_arg->chan_list.chan[0].phymode;
                                channel = req_channel;
-			       arg->append_chan_list = true;
                                found = true;
                        } else {
                                ch->mhz = channel->center_freq;
@@ -5788,12 +5787,12 @@ int ath12k_wmi_send_scan_chan_list_cmd(struct ath12k *ar,
 							 sizeof(*cmd));
 		cmd->pdev_id = cpu_to_le32(arg->pdev_id);
 		cmd->num_scan_chans = cpu_to_le32(num_send_chans);
-		if (num_sends || arg->append_chan_list)
+		if (num_sends)
 			cmd->flags |= cpu_to_le32(WMI_APPEND_TO_EXISTING_CHAN_LIST_FLAG);
 
 		ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
-			   "WMI no.of chan = %d len = %d pdev_id = %d num_sends = %d append_chan_list %d\n",
-			   num_send_chans, len, cmd->pdev_id, num_sends, arg->append_chan_list);
+			   "WMI no.of chan = %d len = %d pdev_id = %d num_sends = %d\n",
+			   num_send_chans, len, cmd->pdev_id, num_sends);
 
 		ptr = skb->data + sizeof(*cmd);
 
