@@ -35,7 +35,10 @@ const char *ath12k_dump_list[] = {
 	"ath12k_neighbor_peer",
 	"ath12k_set_neighbor_rx_params",
 	"ath12k_chan_eirp_obj",
-	"ath12k_dcs_wlan_interference"
+	"ath12k_dcs_wlan_interference",
+	"wmi_cmd_debug",
+	"wmi_cmd_comp_debug",
+	"wmi_event_debug"
 };
 
 struct list_head athdbg_minidump_list = LIST_HEAD_INIT(athdbg_minidump_list);
