@@ -461,17 +461,12 @@ extern struct ath12k_coredump_info ath12k_coredump_ram_info;
 #ifdef CONFIG_IO_COHERENCY
 int ath12k_core_config_iocoherency(struct ath12k_base *ab, bool enable)
 {
-	int ret = 0, num_elem, idx = 0;
+	int ret, num_elem, idx = 0;
 	struct tmel_secure_io secure_reg;
 
 	if (!ath12k_io_coherency_enabled) {
 		ath12k_err(ab, "io-coherency Disabled\n");
 		return 0;
-	}
-
-	if (!ab->dev || !ab->dev->of_node) {
-		ath12k_err(ab, "improper dts node\n");
-		return -ENODEV;
 	}
 
 	if (ab->in_coldboot_fwreset)
@@ -488,7 +483,7 @@ int ath12k_core_config_iocoherency(struct ath12k_base *ab, bool enable)
 		ret = of_property_read_u32_index(ab->dev->of_node, "secure-reg", idx++,
 						 &secure_reg.reg_addr);
 		if (ret) {
-			ath12k_err(ab, "failed to get addr %d\n", (idx - 1));
+			ath12k_err(ab, "failed to get the secure reg addr %d\n", (idx - 1));
 			goto err;
 		}
 
@@ -497,8 +492,7 @@ int ath12k_core_config_iocoherency(struct ath12k_base *ab, bool enable)
 							 &secure_reg.reg_val);
 
 			if (ret) {
-				ath12k_err(ab, "failed to get reg val %d\n",
-					   (idx - 1));
+				ath12k_err(ab, "failed to get the secure reg val %d\n", (idx - 1));
 				goto err;
 			}
 		} else {
@@ -508,28 +502,16 @@ int ath12k_core_config_iocoherency(struct ath12k_base *ab, bool enable)
 
 		ath12k_info(ab, "Configuring secure reg: 0x%x val: 0x%x\n",
 			    secure_reg.reg_addr, secure_reg.reg_val);
-		if (ab->hw_rev == ATH12K_HW_IPQ5424_HW10) {
-			ret = tmelcom_secure_io_write(&secure_reg,
-						      sizeof(struct tmel_secure_io));
-			if (ret) {
-				ath12k_err(ab, "Failed secure_reg settings\n");
-				goto err;
-			}
 
-		} else {
-			void __iomem *map_addr;
+		ret = tmelcom_secure_io_write(&secure_reg, sizeof(struct tmel_secure_io));
 
-			map_addr = ioremap(secure_reg.reg_addr,
-					   sizeof(uint32_t));
-			if (!map_addr) {
-				ret = -ENOMEM;
-				ath12k_err(ab, "Failed secure_reg mapping\n");
-				goto err;
-			}
-			writel(secure_reg.reg_val, map_addr);
-			iounmap(map_addr);
+		if (ret) {
+			ath12k_err(ab, "Failed to update secure_reg settings, ret = %d reg: 0x%x val: 0x%x\n",
+				   ret, secure_reg.reg_addr, secure_reg.reg_val);
+			goto err;
 		}
 	}
+
 err:
 	return ret;
 }
