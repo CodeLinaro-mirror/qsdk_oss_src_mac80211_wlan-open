@@ -52,6 +52,7 @@
 #define DP_TX_COMP_PPEDS_RING_SIZE	16384
 #define DP_PPE_WBM2SW_RING_SIZE	8192
 #define DP_TQM2PPE_RING_SIZE	8192
+#define DP_NUM_CLIENTS_MAX	64
 
 #define DP_REO_DST_RING0_SIZE	8192
 #define DP_REO_DST_RING1_SIZE	8192
@@ -79,6 +80,7 @@
 #define DP_TX_COMP_PPEDS_RING_SIZE	8192
 #define DP_PPE_WBM2SW_RING_SIZE	8192
 #define DP_TQM2PPE_RING_SIZE	8192
+#define DP_NUM_CLIENTS_MAX	56
 
 #define DP_REO_DST_RING0_SIZE	2048
 #define DP_REO_DST_RING1_SIZE	2048
@@ -108,6 +110,7 @@
 #define DP_TX_COMP_PPEDS_RING_SIZE	(ath12k_dp_ring_cfg->tx_comp_ppeds_ring_size)
 #define DP_PPE_WBM2SW_RING_SIZE		(ath12k_dp_ring_cfg->ppe_wbm2sw_ring_size)
 #define DP_TQM2PPE_RING_SIZE		(ath12k_dp_ring_cfg->tqm2ppe_ring_size)
+#define DP_NUM_CLIENTS_MAX (ath12k_dp_ring_cfg->dp_num_clients_max)
 
 #define DP_REO_DST_RING0_SIZE		(ath12k_dp_ring_cfg->reo_dst_ring_size[0])
 #define DP_REO_DST_RING1_SIZE		(ath12k_dp_ring_cfg->reo_dst_ring_size[1])
@@ -163,6 +166,7 @@
 #define DP_TX_COMP_PPEDS_RING_SIZE	ATH12K_DP_INI_GET(TX_COMP_PPEDS_RING_SIZE)
 #define DP_PPE_WBM2SW_RING_SIZE		ATH12K_DP_INI_GET(PPE_WBM2SW_RING_SIZE)
 #define DP_TQM2PPE_RING_SIZE		ATH12K_DP_INI_GET(TQM2PPE_RING_SIZE)
+#define DP_NUM_CLIENTS_MAX		ATH12K_DP_INI_GET(NUM_CLIENTS_MAX)
 
 #define DP_REO_DST_RING0_SIZE		ATH12K_DP_INI_GET(REO_DST_RING0_SIZE)
 #define DP_REO_DST_RING1_SIZE		ATH12K_DP_INI_GET(REO_DST_RING1_SIZE)
@@ -446,11 +450,6 @@ enum ath12k_dp_eapol_key_type {
 	DP_EAPOL_KEY_TYPE_MAX,
 };
 
-#if defined(CONFIG_ATH12K_MEM_PROFILE_256M) || defined(CPTCFG_ATH12K_MEM_PROFILE_256M)
-#define DP_NUM_CLIENTS_MAX 56
-#else
-#define DP_NUM_CLIENTS_MAX (ath12k_dp_ring_cfg->dp_num_clients_max)
-#endif
 #define DP_AVG_TIDS_PER_CLIENT 2
 #define DP_NUM_TIDS_MAX (DP_NUM_CLIENTS_MAX * DP_AVG_TIDS_PER_CLIENT)
 #define DP_AVG_MSDUS_PER_FLOW 128
