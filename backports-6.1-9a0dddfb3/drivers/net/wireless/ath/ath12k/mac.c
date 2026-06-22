@@ -27840,6 +27840,10 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 		}
 	}
 
+	if (test_bit(WMI_SERVICE_11BI_EPPKE_SUPPORT, ab->wmi_ab.svc_map))
+		wiphy_ext_feature_set(hw->wiphy,
+				      NL80211_EXT_FEATURE_ASSOC_FRAME_ENCRYPTION);
+
 	ath12k_reg_init(hw);
 
 	if (!is_raw_mode) {
