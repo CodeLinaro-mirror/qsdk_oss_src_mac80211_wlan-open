@@ -214,178 +214,134 @@ void ath12k_dp_aggr_per_pkt_rx_stats(struct ath12k_dp_peer_rx_stats *dst_rx_stat
 }
 
 /**
- * ath12k_dp_update_tx_ext_htt_aggr_stats - Aggregate HTT TX statistics
- * @dst: Destination HTT TX stats structure
- * @src: Source HTT TX stats structure to aggregate from
-*/
+ * ath12k_dp_update_tx_ppdu_stats_aggr - Aggregate extended HTT TX stats
+ * @dp_pdev: DP pdev handle
+ * @dst: Destination tx_ppdu_stats structure
+ * @src: Source tx_ppdu_stats structure
+ *
+ * Aggregates all fields of struct ath12k_htt_tx_ppdu_stats from src to dst.
+ * Gated by DP_ENABLE_TX_PPDU_STATS knob at call sites.
+ */
 void
-ath12k_dp_update_tx_ext_htt_aggr_stats(struct ath12k_pdev_dp *dp_pdev,
-				       struct ath12k_htt_tx_stats *dst_peer_stats,
-				       struct ath12k_htt_tx_stats *src_peer_stats)
+ath12k_dp_update_tx_ppdu_stats_aggr(struct ath12k_pdev_dp *dp_pdev,
+				    struct ath12k_htt_tx_ppdu_stats *dst_tx_ppdu_stats,
+				    struct ath12k_htt_tx_ppdu_stats *src_tx_ppdu_stats)
 {
-	int i, j, k;
+	int i, j;
 
-	if (!dst_peer_stats || !src_peer_stats)
+	if (!dst_tx_ppdu_stats || !src_tx_ppdu_stats)
 		return;
 
-	/* htt stats */
-	for (i = 0; i < ATH12K_STATS_TYPE_MAX; i++) {
-		for (j = 0; j < ATH12K_COUNTER_TYPE_MAX; j++) {
-			for (k = 0; k < ATH12K_LEGACY_NUM; k++) {
-				dst_peer_stats->stats[i].legacy[j][k] +=
-					src_peer_stats->stats[i].legacy[j][k];
-			}
-
-			for (k = 0; k < ATH12K_HT_MCS_NUM; k++) {
-				dst_peer_stats->stats[i].ht[j][k] +=
-					src_peer_stats->stats[i].ht[j][k];
-			}
-
-			for (k = 0; k < ATH12K_VHT_MCS_NUM; k++) {
-				dst_peer_stats->stats[i].vht[j][k] +=
-					src_peer_stats->stats[i].vht[j][k];
-			}
-
-			for (k = 0; k < ATH12K_HE_MCS_NUM; k++) {
-				dst_peer_stats->stats[i].he[j][k] +=
-					src_peer_stats->stats[i].he[j][k];
-			}
-
-			for (k = 0; k < ATH12K_EHT_MCS_NUM; k++) {
-				dst_peer_stats->stats[i].eht[j][k] +=
-					src_peer_stats->stats[i].eht[j][k];
-			}
-
-			for (k = 0; k < ATH12K_UHR_MCS_NUM; k++) {
-				dst_peer_stats->stats[i].uhr[j][k] +=
-					src_peer_stats->stats[i].uhr[j][k];
-			}
-
-			for (k = 0; k < ATH12K_BW_NUM; k++) {
-				dst_peer_stats->stats[i].bw[j][k] +=
-					src_peer_stats->stats[i].bw[j][k];
-			}
-
-			for (k = 0; k < ATH12K_NSS_NUM; k++) {
-				dst_peer_stats->stats[i].nss[j][k] +=
-					src_peer_stats->stats[i].nss[j][k];
-			}
-
-			for (k = 0; k < ATH12K_GI_NUM; k++) {
-				dst_peer_stats->stats[i].gi[j][k] +=
-					src_peer_stats->stats[i].gi[j][k];
-			}
-
-			for (k = 0; k < HTT_PPDU_STATS_PPDU_TYPE_MAX; k++) {
-				dst_peer_stats->stats[i].transmit_type[j][k] +=
-					src_peer_stats->stats[i].transmit_type[j][k];
-			}
-
-			for (k = 0; k < HAL_RX_RU_ALLOC_TYPE_MAX; k++) {
-				dst_peer_stats->stats[i].ru_loc[j][k] +=
-					src_peer_stats->stats[i].ru_loc[j][k];
-			}
-		}
-	}
-
-	dst_peer_stats->ba_fails += src_peer_stats->ba_fails;
-	dst_peer_stats->ack_fails += src_peer_stats->ack_fails;
-
 	/* TX Unicast Success */
-	dst_peer_stats->tx_ucast_success.num += src_peer_stats->tx_ucast_success.num;
-	dst_peer_stats->tx_ucast_success.bytes += src_peer_stats->tx_ucast_success.bytes;
+	dst_tx_ppdu_stats->tx_ucast_success.num +=
+		src_tx_ppdu_stats->tx_ucast_success.num;
+	dst_tx_ppdu_stats->tx_ucast_success.bytes +=
+		src_tx_ppdu_stats->tx_ucast_success.bytes;
 
 	/* TX PPDUs */
-	dst_peer_stats->tx_ppdus += src_peer_stats->tx_ppdus;
+	dst_tx_ppdu_stats->tx_ppdus += src_tx_ppdu_stats->tx_ppdus;
 
 	/* MPDU BASIC */
-	dst_peer_stats->tx_mpdus_success += src_peer_stats->tx_mpdus_success;
-	dst_peer_stats->tx_mpdus_tried += src_peer_stats->tx_mpdus_tried;
-	dst_peer_stats->retries_mpdu += src_peer_stats->retries_mpdu;
+	dst_tx_ppdu_stats->tx_mpdus_success += src_tx_ppdu_stats->tx_mpdus_success;
+	dst_tx_ppdu_stats->tx_mpdus_tried += src_tx_ppdu_stats->tx_mpdus_tried;
+	dst_tx_ppdu_stats->retries_mpdu += src_tx_ppdu_stats->retries_mpdu;
+
+	/* pkt_type: per-standard MCS success counts */
+	for (i = 0; i < DOT11_MAX; i++)
+		for (j = 0; j < MAX_MCS; j++)
+			dst_tx_ppdu_stats->pkt_type[i].mcs_count[j] +=
+				src_tx_ppdu_stats->pkt_type[i].mcs_count[j];
+
+	/* sgi_count: GI type success counts */
+	for (i = 0; i < ATH12K_GI_NUM; i++)
+		dst_tx_ppdu_stats->gi_count[i] += src_tx_ppdu_stats->gi_count[i];
+
+	/* nss: spatial stream success counts */
+	for (i = 0; i < ATH12K_NSS_NUM; i++)
+		dst_tx_ppdu_stats->nss[i] += src_tx_ppdu_stats->nss[i];
+
+	/* bw: bandwidth success counts */
+	for (i = 0; i < ATH12K_BW_NUM; i++)
+		dst_tx_ppdu_stats->bw[i] += src_tx_ppdu_stats->bw[i];
+
 
 	if (!ath12k_dp_advance_stats_enabled(dp_pdev))
 		return;
 
 	/* DEBUG/ADV */
-	dst_peer_stats->stbc += src_peer_stats->stbc;
-	dst_peer_stats->ldpc += src_peer_stats->ldpc;
+	dst_tx_ppdu_stats->stbc += src_tx_ppdu_stats->stbc;
+	dst_tx_ppdu_stats->ldpc += src_tx_ppdu_stats->ldpc;
 
 	/* WME AC Type Array */
-	for (i = 0; i < WME_AC_MAX; i++)
-		dst_peer_stats->wme_ac_type[i] += src_peer_stats->wme_ac_type[i];
-
-	/* WME AC Type Bytes Array */
-	for (i = 0; i < WME_AC_MAX; i++)
-		dst_peer_stats->wme_ac_type_bytes[i] +=
-			src_peer_stats->wme_ac_type_bytes[i];
-
-	/* Excess Retries Per AC Array */
-	for (i = 0; i < WME_AC_MAX; i++)
-		dst_peer_stats->excess_retries_per_ac[i] +=
-			src_peer_stats->excess_retries_per_ac[i];
+	for (i = 0; i < WME_AC_MAX; i++) {
+		dst_tx_ppdu_stats->wme_ac_type[i] +=
+			src_tx_ppdu_stats->wme_ac_type[i];
+		dst_tx_ppdu_stats->wme_ac_type_bytes[i] +=
+			src_tx_ppdu_stats->wme_ac_type_bytes[i];
+		dst_tx_ppdu_stats->excess_retries_per_ac[i] +=
+			src_tx_ppdu_stats->excess_retries_per_ac[i];
+	}
 
 	/* AMPDU/Non-AMPDU Counts */
-	dst_peer_stats->ampdu_cnt += src_peer_stats->ampdu_cnt;
-	dst_peer_stats->non_ampdu_cnt += src_peer_stats->non_ampdu_cnt;
-	dst_peer_stats->num_ppdu_cookie_valid += src_peer_stats->num_ppdu_cookie_valid;
+	dst_tx_ppdu_stats->ampdu_cnt += src_tx_ppdu_stats->ampdu_cnt;
+	dst_tx_ppdu_stats->non_ampdu_cnt += src_tx_ppdu_stats->non_ampdu_cnt;
+	dst_tx_ppdu_stats->num_ppdu_cookie_valid +=
+		src_tx_ppdu_stats->num_ppdu_cookie_valid;
 
-	dst_peer_stats->pream_punct_cnt += src_peer_stats->pream_punct_cnt;
+	dst_tx_ppdu_stats->pream_punct_cnt += src_tx_ppdu_stats->pream_punct_cnt;
 
 	/* RU Location Array */
 	for (i = 0; i < MAX_RU_LOCATIONS; i++) {
-		dst_peer_stats->ru_loc_mpdu_succ_tried[i].num_mpdu +=
-			src_peer_stats->ru_loc_mpdu_succ_tried[i].num_mpdu;
-		dst_peer_stats->ru_loc_mpdu_succ_tried[i].mpdu_tried +=
-			src_peer_stats->ru_loc_mpdu_succ_tried[i].mpdu_tried;
+		dst_tx_ppdu_stats->ru_loc_mpdu_succ_tried[i].num_mpdu +=
+			src_tx_ppdu_stats->ru_loc_mpdu_succ_tried[i].num_mpdu;
+		dst_tx_ppdu_stats->ru_loc_mpdu_succ_tried[i].mpdu_tried +=
+			src_tx_ppdu_stats->ru_loc_mpdu_succ_tried[i].mpdu_tried;
 	}
 
 	/* Transmit Type Array */
 	for (i = 0; i < MAX_TRANSMIT_TYPES; i++) {
-		dst_peer_stats->transmit_type_mpdu_succ_tried[i].num_mpdu +=
-			src_peer_stats->transmit_type_mpdu_succ_tried[i].num_mpdu;
-		dst_peer_stats->transmit_type_mpdu_succ_tried[i].mpdu_tried +=
-			src_peer_stats->transmit_type_mpdu_succ_tried[i].mpdu_tried;
+		dst_tx_ppdu_stats->transmit_type_mpdu_succ_tried[i].num_mpdu +=
+			src_tx_ppdu_stats->transmit_type_mpdu_succ_tried[i].num_mpdu;
+		dst_tx_ppdu_stats->transmit_type_mpdu_succ_tried[i].mpdu_tried +=
+			src_tx_ppdu_stats->transmit_type_mpdu_succ_tried[i].mpdu_tried;
 	}
 
 	/* SU BE PPDU Count */
 	for (i = 0; i < MAX_MCS; i++)
-		dst_peer_stats->su_be_ppdu_cnt.mcs_count[i] +=
-			src_peer_stats->su_be_ppdu_cnt.mcs_count[i];
+		dst_tx_ppdu_stats->su_be_ppdu_cnt.mcs_count[i] +=
+			src_tx_ppdu_stats->su_be_ppdu_cnt.mcs_count[i];
 
 	/* MU BE PPDU Count Array */
-	for (i = 0; i < TXRX_TYPE_MU_MAX; i++) {
+	for (i = 0; i < TXRX_TYPE_MU_MAX; i++)
 		for (j = 0; j < MAX_MCS; j++)
-			dst_peer_stats->mu_be_ppdu_cnt[i].mcs_count[j] +=
-				src_peer_stats->mu_be_ppdu_cnt[i].mcs_count[j];
-	}
+			dst_tx_ppdu_stats->mu_be_ppdu_cnt[i].mcs_count[j] +=
+				src_tx_ppdu_stats->mu_be_ppdu_cnt[i].mcs_count[j];
 
 	/* SU BN PPDU Count */
 	for (i = 0; i < MAX_MCS; i++)
-		dst_peer_stats->su_bn_ppdu_cnt.mcs_count[i] +=
-			src_peer_stats->su_bn_ppdu_cnt.mcs_count[i];
+		dst_tx_ppdu_stats->su_bn_ppdu_cnt.mcs_count[i] +=
+			src_tx_ppdu_stats->su_bn_ppdu_cnt.mcs_count[i];
 
 	/* MU BN PPDU Count Array */
-	for (i = 0; i < TXRX_TYPE_MU_MAX; i++) {
+	for (i = 0; i < TXRX_TYPE_MU_MAX; i++)
 		for (j = 0; j < MAX_MCS; j++)
-			dst_peer_stats->mu_bn_ppdu_cnt[i].mcs_count[j] +=
-				src_peer_stats->mu_bn_ppdu_cnt[i].mcs_count[j];
-	}
+			dst_tx_ppdu_stats->mu_bn_ppdu_cnt[i].mcs_count[j] +=
+				src_tx_ppdu_stats->mu_bn_ppdu_cnt[i].mcs_count[j];
 
 	/* Punctured BW Array */
 	for (i = 0; i < MAX_PUNCTURED_MODE; i++)
-		dst_peer_stats->punc_bw[i] += src_peer_stats->punc_bw[i];
+		dst_tx_ppdu_stats->punc_bw[i] += src_tx_ppdu_stats->punc_bw[i];
 
 	/* RTS/BAR/NDPA Counts */
-	dst_peer_stats->rts_success += src_peer_stats->rts_success;
-	dst_peer_stats->rts_failure += src_peer_stats->rts_failure;
-	dst_peer_stats->bar_cnt += src_peer_stats->bar_cnt;
-	dst_peer_stats->ndpa_cnt += src_peer_stats->ndpa_cnt;
+	dst_tx_ppdu_stats->rts_success += src_tx_ppdu_stats->rts_success;
+	dst_tx_ppdu_stats->rts_failure += src_tx_ppdu_stats->rts_failure;
+	dst_tx_ppdu_stats->bar_cnt += src_tx_ppdu_stats->bar_cnt;
+	dst_tx_ppdu_stats->ndpa_cnt += src_tx_ppdu_stats->ndpa_cnt;
 
 	/* TX MSDU Flush Reason Array */
 	for (i = 0; i < HTT_FLUSH_MAX; i++)
-		dst_peer_stats->tx_msdu_flush_rsn[i] +=
-			src_peer_stats->tx_msdu_flush_rsn[i];
-
+		dst_tx_ppdu_stats->tx_msdu_flush_rsn[i] +=
+			src_tx_ppdu_stats->tx_msdu_flush_rsn[i];
 }
 
 /**

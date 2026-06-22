@@ -6914,6 +6914,10 @@ static ssize_t ath12k_write_reset_dp_stats(struct file *file,
 				memset(tmp_peer->peer_stats.tx_stats, 0,
 				       sizeof(struct ath12k_htt_tx_stats));
 
+			if (tmp_peer->peer_stats.tx_ppdu_stats)
+				memset(tmp_peer->peer_stats.tx_ppdu_stats, 0,
+				       sizeof(struct ath12k_htt_tx_ppdu_stats));
+
 			if (tmp_peer->peer_stats.rx_stats)
 				memset(tmp_peer->peer_stats.rx_stats, 0,
 				       sizeof(struct ath12k_rx_peer_stats));
