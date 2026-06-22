@@ -17997,8 +17997,7 @@ int ath12k_mac_start(struct ath12k *ar)
 	lockdep_assert_held(&ah->hw_mutex);
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
-	if (ath12k_check_erp_power_down(ab->ag) &&
-	    !ath12k_hw_group_recovery_in_progress(ab->ag) &&
+	if (!ath12k_hw_group_recovery_in_progress(ab->ag) &&
 	    ar->pdev_suspend && !ab->powerup_triggered) {
 		ret = ath12k_mac_pdev_resume(ar);
 		if (ret) {
