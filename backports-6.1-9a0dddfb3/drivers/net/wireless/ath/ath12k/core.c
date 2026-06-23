@@ -4953,6 +4953,12 @@ static void ath12k_core_reset(struct work_struct *work)
 	ath12k_hif_mgmt_irq_disable(ab);
 	ath12k_core_disable_ext_irq_during_recovery(ab);
 	ath12k_hif_ce_irq_disable(ab);
+	/* Mode 1 (UMAC reset) disables PPEDS IRQs via ppeds_interrupt_stop()
+	 * in the pre_reset handler. Only disable them explicitly for Mode 0,
+	 * which skips that path entirely.
+	 */
+	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE0)
+		ath12k_hif_ppe_irq_disable(ab);
 	ab->is_reset = true;
 
 	if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE0)
