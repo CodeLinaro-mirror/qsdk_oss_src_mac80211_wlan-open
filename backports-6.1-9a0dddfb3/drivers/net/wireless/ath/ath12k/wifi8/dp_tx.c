@@ -1813,6 +1813,7 @@ ath12k_wifi8_dp_ext_desc_populate(struct ath12k_dp *dp,
 							 skb, ring_id))
 			goto fail_free_ext_desc;
 		tx_desc->is_from_sg = 1;
+		ext_data_len = msdu_info->data_len;
 		break;
 	default:
 		break;
