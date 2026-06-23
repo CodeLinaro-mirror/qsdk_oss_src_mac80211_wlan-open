@@ -1526,6 +1526,38 @@ u8 ath12k_mac_get_target_pdev_id(struct ath12k *ar)
 	return ath12k_mac_get_target_pdev_id_from_vif(arvif);
 }
 
+bool ath12k_mac_is_phya1_pdev(struct ath12k *ar)
+{
+	struct ath12k_base *ab = ar->ab;
+	u32 cur_phy_id = U32_MAX;
+	u32 other_phy_id;
+	int i;
+
+	if (ab->fw_pdev_count <= 1)
+		return false;
+
+	for (i = 0; i < ab->fw_pdev_count; i++) {
+		if (ab->fw_pdev[i].pdev_id == ar->pdev->pdev_id) {
+			cur_phy_id = ab->fw_pdev[i].phy_id;
+			break;
+		}
+	}
+
+	if (cur_phy_id == U32_MAX)
+		return false;
+
+	for (i = 0; i < ab->fw_pdev_count; i++) {
+		if (ab->fw_pdev[i].pdev_id == ar->pdev->pdev_id)
+			continue;
+
+		other_phy_id = ab->fw_pdev[i].phy_id;
+		if (cur_phy_id > other_phy_id)
+			return true;
+	}
+
+	return false;
+}
+
 static void ath12k_pdev_caps_update(struct ath12k *ar)
 {
 	struct ath12k_base *ab = ar->ab;

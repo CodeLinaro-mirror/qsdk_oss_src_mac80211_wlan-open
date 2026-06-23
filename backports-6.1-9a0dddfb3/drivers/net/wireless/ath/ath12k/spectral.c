@@ -150,8 +150,14 @@ struct ath12k_spectral_search_report {
 };
 
 static enum spectral_scan_mode
-ath12k_spectral_get_scan_mode_from_detector(u8 detector_id)
+ath12k_spectral_get_scan_mode_from_detector(struct ath12k *ar, u8 detector_id)
 {
+	if (ath12k_mac_is_phya1_pdev(ar)) {
+		if (detector_id == ATH12K_SPECTRAL_DETECTOR_PHYA1_NORMAL)
+			return SPECTRAL_SCAN_MODE_NORMAL;
+		return SPECTRAL_SCAN_MODE_INVALID;
+	}
+
 	switch (detector_id) {
 	case ATH12K_SPECTRAL_DETECTOR_NORMAL:
 		return SPECTRAL_SCAN_MODE_NORMAL;
@@ -162,11 +168,14 @@ ath12k_spectral_get_scan_mode_from_detector(u8 detector_id)
 	}
 }
 
-static u8 ath12k_spectral_get_detector_from_scan_mode(enum spectral_scan_mode smode)
+static u8 ath12k_spectral_get_detector_from_scan_mode(struct ath12k *ar,
+						      enum spectral_scan_mode smode)
 {
 	switch (smode) {
 	case SPECTRAL_SCAN_MODE_NORMAL:
-		return ATH12K_SPECTRAL_DETECTOR_NORMAL;
+		return ath12k_mac_is_phya1_pdev(ar) ?
+			ATH12K_SPECTRAL_DETECTOR_PHYA1_NORMAL :
+			ATH12K_SPECTRAL_DETECTOR_NORMAL;
 	case SPECTRAL_SCAN_MODE_AGILE:
 		return ATH12K_SPECTRAL_DETECTOR_AGILE;
 	default:
@@ -1032,7 +1041,7 @@ static int ath12k_spectral_fill_fft_sample(struct ath12k *ar,
 	fft_sample->detector_info.pri80ind = summary->primary80;
 	fft_sample->detector_info.blanking_status = summary->blanking_status;
 	fft_sample->spectral_mode =
-		ath12k_spectral_get_scan_mode_from_detector(search->detector_id);
+		ath12k_spectral_get_scan_mode_from_detector(ar, search->detector_id);
 	fft_sample->operating_bw =
 		ath12k_spectral_chwidth_to_nl(summary->meta.ch_width);
 	fft_sample->sscan_bw =
@@ -1194,14 +1203,14 @@ int ath12k_spectral_process_fft(struct ath12k *ar,
 	search.timestamp_war_offset = 0;
 
 	if (ar->spectral.mode < SPECTRAL_SCAN_MODE_MAX &&
-	    ath12k_spectral_get_detector_from_scan_mode(ar->spectral.mode) !=
+	    ath12k_spectral_get_detector_from_scan_mode(ar, ar->spectral.mode) !=
 							search.detector_id) {
 		ath12k_dbg(ab, ATH12K_DBG_SPECTRAL,
 			   "spectral detector mismatch: mode=%u detector=%u\n",
 			   ar->spectral.mode, search.detector_id);
 	}
 
-	smode = ath12k_spectral_get_scan_mode_from_detector(search.detector_id);
+	smode = ath12k_spectral_get_scan_mode_from_detector(ar, search.detector_id);
 	if (smode >= SPECTRAL_SCAN_MODE_MAX) {
 		ath12k_warn(ab, "invalid spectral mode %u\n", smode);
 		return -EINVAL;
