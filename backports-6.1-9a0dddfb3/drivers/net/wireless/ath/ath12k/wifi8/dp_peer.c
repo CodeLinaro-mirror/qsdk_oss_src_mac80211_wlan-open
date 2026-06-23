@@ -422,7 +422,9 @@ void ath12k_wifi8_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 	dp_hw_grp_wifi8->stats_id_map[dp_peer->stats_id].tid = ATH12K_INVALID_TID;
 	dp_hw_grp_wifi8->stats_id_map[dp_peer->stats_id].hw_link_id =
 		ATH12K_INVALID_LINK_ID;
-	clear_bit(dp_peer->stats_id, dp_hw_grp_wifi8->free_stats_id);
+
+	if (dp_peer->stats_id < ATH12K_MAX_STATS_ID)
+		clear_bit(dp_peer->stats_id, dp_hw_grp_wifi8->free_stats_id);
 
 	if (dp_peer->sta_id != ATH12K_STA_ID_INVALID)
 		clear_bit(dp_peer->sta_id, dp_hw->free_sta_id_map);
