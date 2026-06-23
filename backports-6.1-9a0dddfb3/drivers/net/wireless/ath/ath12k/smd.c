@@ -5,7 +5,6 @@
 
 #include <net/mac80211.h>
 #include <net/cfg80211.h>
-#include <linux/skb_wireless.h>
 #include <linux/etherdevice.h>
 
 #include "mac.h"
@@ -2176,3 +2175,273 @@ static void ath12k_smd_ctx_hw_rx_tid_cb(struct ath12k_dp *dp, void *cb_ctx,
 
 	ath12k_smd_ctx_hw_completion(smd_info, req, false, tid);
 }
+
+void ath12k_smd_parse_vendor_ctx(struct ieee80211_smd_ctx *ctx,
+				 struct ath12k_smd_ctx *drv_ctx)
+{
+	u16 ctx_ctrl, ctx_ctrl_expected;
+	const u8 *pos, *end;
+	u8 oui0, oui1, oui2;
+	u16 reo_bitmap_size;
+	u16 ctx_info_len;
+	u8 common_len;
+	u16 tlv_len;
+	u8 version;
+	u8 tid;
+
+	if (!ctx->drv_ctx || !ctx->drv_ctx_size)
+		goto fail;
+
+	ctx_ctrl_expected = (SMD_CTX_VENDOR_TLV_CTRL_DL_SN_PRESENT |
+			     SMD_CTX_VENDOR_TLV_CTRL_DL_PN_PRESENT |
+			     SMD_CTX_VENDOR_TLV_CTRL_UL_SN_PRESENT |
+			     SMD_CTX_VENDOR_TLV_CTRL_UL_PN_PRESENT |
+			     SMD_CTX_VENDOR_TLV_CTRL_DL_LSN_OFFSET_PRESENT);
+
+	pos = (const u8 *)ctx->drv_ctx;
+	end = pos + ctx->drv_ctx_size;
+
+	/* Minimal header sanity:
+	 *
+	 * TLV Tag (1 octet), TLV Length (2 octets), OUI (3 bytes), Version (1 octet),
+	 * Context Control (2 octets), Common Info (min 1 octet),
+	 * and Context Info (min 2 octets).
+	 */
+	if (end - pos < 1 + 2 + 3 + 1 + 2 + 1 + 2)
+		goto fail;
+
+	/* TLV Tag */
+	if (*pos != SMD_CTX_TLV_TYPE_VENDOR)
+		goto fail;
+	pos++;
+
+	/* TLV Length */
+	tlv_len = get_unaligned_le16(pos);
+	pos += 2;
+	if (tlv_len + 3 > ctx->drv_ctx_size)
+		goto fail;
+
+	/* Vendor OUI */
+	if (end - pos < 3)
+		goto fail;
+	oui0 = *pos++;
+	oui1 = *pos++;
+	oui2 = *pos++;
+	if (oui0 != 0x00 || oui1 != 0x13 || oui2 != 0x74)
+		goto fail;
+
+	/* Version */
+	if (end - pos < 1)
+		goto fail;
+	version = *pos++;
+	drv_ctx->vendor_ctx.version = version;
+
+	/* Only support v1 for now */
+	if (version != 1)
+		goto fail;
+
+	/* Context Control - Presence Bitmap */
+	if (end - pos < 2)
+		goto fail;
+	ctx_ctrl = get_unaligned_le16(pos);
+	if ((ctx_ctrl & ctx_ctrl_expected) != ctx_ctrl_expected)
+		ath12k_dbg(NULL, ATH12K_DBG_SMD,
+			   "SMD: Expected context: %04x but received context: %04x",
+			   ctx_ctrl_expected, ctx_ctrl);
+	pos += 2;
+
+	/* Common Info */
+	if (end - pos < 1)
+		goto fail;
+	common_len = *pos;
+	if (!common_len || end - pos < common_len)
+		goto fail;
+
+	/* remove Common Info Length */
+	pos++;
+	common_len--;
+
+	/* REO Bitmap Size */
+	if (ctx_ctrl & SMD_CTX_VENDOR_TLV_CTRL_UL_REO_BMAP_PRESENT) {
+		if (common_len < 2)
+			goto fail;
+		reo_bitmap_size = get_unaligned_le16(pos);
+		pos += 2;
+		if (reo_bitmap_size != sizeof(struct ath12k_smd_reo_bitmap))
+			goto fail;
+	} else {
+		reo_bitmap_size = 0;
+	}
+
+	/* Context Info Length */
+	if (end - pos < 2)
+		goto fail;
+	ctx_info_len = get_unaligned_le16(pos);
+	if (ctx_info_len < 2 || end - pos < ctx_info_len)
+		goto fail;
+
+	/* remove Context Info Length */
+	pos += 2;
+	ctx_info_len -= 2;
+
+	/* Tx Mgmt SN */
+	if (ctx_ctrl & SMD_CTX_VENDOR_TLV_CTRL_DL_SN_PRESENT) {
+		if (ctx_info_len < 2)
+			goto fail;
+		drv_ctx->vendor_ctx.ctx_v1.dl_mgmt_sn = get_unaligned_le16(pos);
+		pos += 2;
+		ctx_info_len -= 2;
+	}
+
+	/* Tx Mgmt PN */
+	if (ctx_ctrl & SMD_CTX_VENDOR_TLV_CTRL_DL_PN_PRESENT) {
+		if (ctx_info_len < ctx->pn_len)
+			goto fail;
+		memcpy(drv_ctx->vendor_ctx.ctx_v1.dl_mgmt_pn, pos, ctx->pn_len);
+		pos += ctx->pn_len;
+		ctx_info_len -= ctx->pn_len;
+	}
+
+	/* Rx Mgmt SN */
+	if (ctx_ctrl & SMD_CTX_VENDOR_TLV_CTRL_UL_SN_PRESENT) {
+		if (ctx_info_len < 2)
+			goto fail;
+		drv_ctx->vendor_ctx.ctx_v1.ul_mgmt_sn = get_unaligned_le16(pos);
+		pos += 2;
+		ctx_info_len -= 2;
+	}
+
+	/* Rx Mgmt PN */
+	if (ctx_ctrl & SMD_CTX_VENDOR_TLV_CTRL_UL_PN_PRESENT) {
+		if (ctx_info_len < ctx->pn_len)
+			goto fail;
+		memcpy(drv_ctx->vendor_ctx.ctx_v1.ul_mgmt_pn, pos, ctx->pn_len);
+		pos += ctx->pn_len;
+		ctx_info_len -= ctx->pn_len;
+	}
+
+	/* Tx Data LSN Offset(s) - for each set TID in tx.valid_tid_bmap */
+	if (ctx_ctrl & SMD_CTX_VENDOR_TLV_CTRL_DL_LSN_OFFSET_PRESENT) {
+		for_each_set_bit(tid, ctx->dl.valid_tid_bmap,
+				 IEEE80211_SMD_CTX_NUM_TIDS) {
+			if (ctx_info_len < 2)
+				goto fail;
+			drv_ctx->vendor_ctx.ctx_v1.dl_data_lsn_offset[tid] =
+				get_unaligned_le16(pos);
+			pos += 2;
+			ctx_info_len -= 2;
+		}
+	}
+
+	/* Rx Data REO Bitmap(s) - for each set TID in rx.valid_tid_bmap */
+	if (ctx_ctrl & SMD_CTX_VENDOR_TLV_CTRL_UL_REO_BMAP_PRESENT) {
+		for_each_set_bit(tid, ctx->ul.valid_tid_bmap,
+				 IEEE80211_SMD_CTX_NUM_TIDS) {
+			if (ctx_info_len < reo_bitmap_size)
+				goto fail;
+			memcpy(&drv_ctx->vendor_ctx.ctx_v1.ul_reo_bmap[tid], pos,
+			       reo_bitmap_size);
+			pos += reo_bitmap_size;
+			ctx_info_len -= reo_bitmap_size;
+		}
+	}
+
+	return;
+
+fail:
+	drv_ctx->vendor_ctx.version = SMD_CTX_VENDOR_INVALID_VERSION;
+}
+EXPORT_SYMBOL(ath12k_smd_parse_vendor_ctx);
+
+void ath12k_smd_ctx_get_tx_lsn_offset(struct ath12k_smd_ctx *drv_ctx,
+				      struct ath12k_tx_smd_ctx_per_tid *tid)
+{
+	/* @drv_ctx and @tid should not be NULL */
+
+	if (drv_ctx->vendor_ctx.version != 1) {
+		tid->lsn_offset = ATH12K_SMD_INVALID_MLSN_OFFSET;
+		return;
+	}
+
+	tid->lsn_offset = drv_ctx->vendor_ctx.ctx_v1.dl_data_lsn_offset[tid->tid];
+}
+EXPORT_SYMBOL(ath12k_smd_ctx_get_tx_lsn_offset);
+
+void ath12k_smd_get_vendor_ctx_bitmaps(struct ath12k_smd_ctx *drv_ctx,
+				       struct ath12k_rx_smd_ctx_per_tid *tid)
+{
+	struct ath12k_smd_reo_bitmap *bmap;
+
+	if (!drv_ctx || !tid)
+		return;
+
+	if (drv_ctx->vendor_ctx.version != 1)
+		return;
+
+	bmap = &drv_ctx->vendor_ctx.ctx_v1.ul_reo_bmap[tid->tid];
+
+	/* Copy 0..287 bits */
+	memcpy((void *)&tid->bitmap_287_0, (void *)&bmap->bitmap_287_0_grp,
+	       sizeof(tid->bitmap_287_0));
+
+	/* Copy 288..1023 bits */
+	memcpy((void *)&tid->bitmap_1023_288, (void *)&bmap->bitmap_1023_288_grp,
+	       sizeof(tid->bitmap_1023_288));
+}
+EXPORT_SYMBOL(ath12k_smd_get_vendor_ctx_bitmaps);
+
+int ath12k_smd_set_vendor_ctx(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
+			      struct ath12k_smd_ctx *ctx, struct ieee80211_sta *sta)
+{
+	struct ath12k_rx_smd_ctx_per_tid rx_tid = {};
+	struct ath12k_tx_smd_ctx_per_tid tx_tid = {};
+	u8 version = ctx->vendor_ctx.version;
+	u32 ba_win_size;
+	u16 _ssn;
+	int ret;
+	u8 tid;
+
+	switch (version) {
+	case 1:
+		/* Rx Mgmt context */
+		tid = ATH12K_SMD_RX_MGMT_TID;
+		rx_tid.tid = tid;
+		memcpy(rx_tid.peer_addr, sta->addr, ETH_ALEN);
+		rx_tid.ssn = ctx->vendor_ctx.ctx_v1.ul_mgmt_sn;
+		rx_tid.pn_len = ctx->pn_len;
+		if (rx_tid.pn_len) {
+			rx_tid.pn_31_0 =
+				get_unaligned_le32(&ctx->vendor_ctx.ctx_v1.ul_mgmt_pn[0]);
+			rx_tid.pn_47_32 =
+				get_unaligned_le16(&ctx->vendor_ctx.ctx_v1.ul_mgmt_pn[4]);
+		}
+		if (rx_tid.pn_len > 6)
+			rx_tid.pn_127_48_info = 1;
+		ath12k_dp_rx_peer_tid_ba_config(dp, tid, &ba_win_size, &_ssn);
+		rx_tid.ba_win_sz = ba_win_size;
+
+		ret = ath12k_dp_arch_peer_rx_tid_reo_update_for_smd(dp, dp_hw, sta->addr,
+								    &rx_tid);
+		if (ret)
+			return ret;
+
+		/* Tx Mgmt context */
+		tid = ATH12K_SMD_TX_MGMT_TID;
+		tx_tid.tid = tid;
+		tx_tid.ssn = ctx->vendor_ctx.ctx_v1.dl_mgmt_sn;
+		tx_tid.lsn_offset = ATH12K_SMD_INVALID_MLSN_OFFSET;
+		memcpy(tx_tid.pn_number, ctx->vendor_ctx.ctx_v1.dl_mgmt_pn,
+		       IEEE80211_MAX_PN_LEN);
+
+		ret = ath12k_dp_arch_peer_tx_tid_update_for_smd(dp, dp_hw, sta->addr,
+								&tx_tid);
+		if (ret)
+			return ret;
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_smd_set_vendor_ctx);
