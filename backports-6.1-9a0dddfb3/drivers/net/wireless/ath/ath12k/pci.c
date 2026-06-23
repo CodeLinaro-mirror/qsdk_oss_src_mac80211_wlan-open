@@ -244,7 +244,8 @@ static void ath12k_pci_sw_reset(struct ath12k_base *ab, bool power_on)
 	ath12k_pci_clear_dbg_registers(ab);
 
 	if (!power_on) {
-		if (test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags)) {
+		if (!ab->in_panic &&
+		    test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags)) {
 			/* Disable umcmn interrupt/timer before issuing reset */
 			ath12k_umcmn_irq_disable(ab);
 			ath12k_umcmn_timer_free(ab);
