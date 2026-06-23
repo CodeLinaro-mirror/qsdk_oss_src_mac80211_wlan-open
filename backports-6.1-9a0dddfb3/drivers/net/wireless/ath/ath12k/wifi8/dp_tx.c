@@ -77,8 +77,8 @@ int ath12k_wifi8_dp_tqm_cmd_send(struct ath12k_base *ab,
 				 void *ctx, struct hal_tqm_status *tqm_status))
 {
 	struct ath12k_dp *dp = ath12k_get_central_dp(ab->dp);
+	struct ath12k_dp_tqm_cmd *dp_cmd = NULL;
 	struct ath12k_dp_wifi8 *dp_wifi8;
-	struct ath12k_dp_tqm_cmd *dp_cmd;
 	struct hal_srng *cmd_ring;
 	int cmd_num;
 
@@ -92,30 +92,36 @@ int ath12k_wifi8_dp_tqm_cmd_send(struct ath12k_base *ab,
 	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
 		return 0;
 
+	if (callback_fn) {
+		dp_cmd = kzalloc(sizeof(*dp_cmd), GFP_ATOMIC);
+		if (!dp_cmd)
+			return -ENOMEM;
+
+		dp_cmd->cmd_type = type;
+		dp_cmd->handler = callback_fn;
+		memcpy(&dp_cmd->data, data, sizeof(*data));
+	}
+
 	cmd_ring = &ab->hal.srng_list[dp_wifi8->tqm_cmd_ring.ring_id];
 	cmd_num = ath12k_wifi8_hal_tqm_cmd_send(ab, cmd_ring, type, cmd);
 
 	//error, hence return error code
 	if (cmd_num < 0) {
 		ath12k_warn(ab, "Failed to send TQM command: %d", cmd_num);
+		kfree(dp_cmd);
 		return cmd_num;
 	}
 	//cmd_num starts from 1
 	if (cmd_num == 0) {
 		ath12k_warn(ab, "TQM command returned zero cmd_num");
+		kfree(dp_cmd);
 		return -EINVAL;
 	}
-	if (!callback_fn)
-		return 0;
-	dp_cmd = kzalloc(sizeof(*dp_cmd), GFP_ATOMIC);
 
 	if (!dp_cmd)
-		return -ENOMEM;
+		return 0;
 
 	dp_cmd->cmd_num = cmd_num;
-	dp_cmd->cmd_type = type;
-	dp_cmd->handler = callback_fn;
-	memcpy(&dp_cmd->data, data, sizeof(*data));
 	spin_lock_bh(&dp->tqm_cmd_lock);
 	list_add_tail(&dp_cmd->list, &dp->tqm_cmd_list);
 	spin_unlock_bh(&dp->tqm_cmd_lock);
