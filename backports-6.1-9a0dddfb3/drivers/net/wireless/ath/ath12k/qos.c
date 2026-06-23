@@ -19,6 +19,37 @@ struct ath12k_qos_ctx *ath12k_get_qos(struct ath12k_base *ab)
 }
 EXPORT_SYMBOL(ath12k_get_qos);
 
+bool ath12k_get_qos_params_delay_bound(struct ath12k_base *ab, u8 qos_id,
+				       u32 *delay_bound)
+{
+	struct ath12k_qos_ctx *qos_ctx;
+
+	if (qos_id >= QOS_PROFILES_MAX) {
+		ath12k_err(NULL, "Invalid qos id :%u\n", qos_id);
+		return false;
+	}
+
+	qos_ctx = ath12k_get_qos(ab);
+	if (!qos_ctx) {
+		ath12k_err(NULL, "QoS Context is NULL\n");
+		return false;
+	}
+
+	spin_lock_bh(&qos_ctx->profile_lock);
+	if (!qos_ctx->profiles[qos_id].ref_count) {
+		ath12k_err(NULL, "Qos ctx : %u profiles not present\n",
+			   qos_id);
+		spin_unlock_bh(&qos_ctx->profile_lock);
+		return false;
+	}
+
+	*delay_bound = qos_ctx->profiles[qos_id].params.msdu_delivery_info;
+	spin_unlock_bh(&qos_ctx->profile_lock);
+
+	return true;
+}
+EXPORT_SYMBOL(ath12k_get_qos_params_delay_bound);
+
 static
 bool ath12k_qos_validate_params(struct ath12k_base *ab,
 				struct ath12k_qos_params *params)

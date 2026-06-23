@@ -751,6 +751,7 @@ struct ath12k_mld_qos_stats {
 	u64 hwdelay_win_total;
 	struct fw_mpdu_stats svc_intval_stats;
 	struct fw_mpdu_stats burst_size_stats;
+	u32 queue_depth;
 };
 
 DECLARE_EWMA(avg_ack_rssi, 10, 8)
@@ -1828,4 +1829,20 @@ void ath12k_dp_tid_tx_stats_hist_init(struct ath12k_pdev_dp *dp_pdev);
 
 void ath12k_dp_accumulate_hist_stats(struct hist_stats *src_hist_stats,
 				     struct hist_stats *dst_hist_stats);
+
+void ath12k_qos_tx_enqueue_peer_stats(struct ath12k_dp_peer *mld_peer,
+				      u8 hw_link_id, u16 msduq_id,
+				      unsigned int len);
+
+void ath12k_sdwf_update_peer_mcs_stats(struct ath12k_dp_qos_tx_stats *qos_tx,
+				       struct hal_tx_status *ts);
+
+void ath12k_qos_stats_update(struct ath12k_dp_peer *mld_peer,
+			     u8 hw_link_id,
+			     struct ath12k *ar,
+			     struct sk_buff *skb,
+			     struct hal_tx_status *ts,
+			     struct ath12k_pdev_dp *dp_pdev,
+			     ktime_t timestamp,
+			     u32 hw_delay);
 #endif

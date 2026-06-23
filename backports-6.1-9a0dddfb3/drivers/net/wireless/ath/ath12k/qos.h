@@ -189,6 +189,8 @@ struct ath12k_tele_breach_params {
 };
 
 struct ath12k_qos_ctx *ath12k_get_qos(struct ath12k_base *ab);
+bool ath12k_get_qos_params_delay_bound(struct ath12k_base *ab, u8 qos_id,
+				       u32 *delay_bound);
 
 void ath12k_qos_set_default(struct ath12k_qos_params *param);
 u8 ath12k_qos_get_tid(struct ath12k_base *ab,
