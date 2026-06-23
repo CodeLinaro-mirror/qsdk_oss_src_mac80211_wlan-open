@@ -258,6 +258,8 @@ static inline u32 ath12k_uhr_gi_to_nl80211_uhr_gi(u8 sgi)
 	return ret;
 }
 
+void
+ath12k_dp_rx_update_eapol_stats(struct ath12k_dp *dp, struct sk_buff *msdu);
 int ath12k_dp_rx_ampdu_start(struct ath12k *ar,
 			     struct ieee80211_ampdu_params *params,
 			     u8 link_id);
