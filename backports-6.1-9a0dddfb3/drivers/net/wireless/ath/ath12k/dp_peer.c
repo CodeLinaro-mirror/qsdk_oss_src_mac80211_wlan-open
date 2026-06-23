@@ -8,6 +8,7 @@
 #include "dp_peer.h"
 #include "debug.h"
 #include "debugfs.h"
+#include "dp_stats.h"
 #include "telemetry_agent_if.h"
 #include "mac.h"
 #include "vendor.h"
@@ -1860,6 +1861,22 @@ int ath12k_dp_alloc_jitter_stats_peer(struct ath12k_dp_peer *dp_peer)
 	return 0;
 }
 
+static int ath12k_dp_peer_qos_stats_alloc(struct ath12k_dp_peer *dp_peer)
+{
+	dp_peer->mld_stats.mld_qos_stats =
+		kzalloc(sizeof(*dp_peer->mld_stats.mld_qos_stats) *
+			QOS_TID_MAX * QOS_TID_MDSUQ_MAX, GFP_ATOMIC);
+
+	if (!dp_peer->mld_stats.mld_qos_stats) {
+		ath12k_err(NULL,
+			   "failed to alloc qos_stats for peer %pM\n",
+			   dp_peer->addr);
+
+		return -ENOMEM;
+	}
+	return 0;
+}
+
 int ath12k_dp_peer_stats_alloc(struct ath12k_dp_peer *dp_peer,
 			       struct ath12k_pdev_dp *dp_pdev)
 {
@@ -1919,9 +1936,18 @@ int ath12k_dp_peer_stats_alloc(struct ath12k_dp_peer *dp_peer,
 		if (ret)
 			ath12k_warn(dp_pdev->ar->ab, "Failed to alloc proto stats.\n");
 	}
+	if (dp_pdev && (dp_pdev->dp_stats_mask & DP_ENABLE_QOS_STATS))
+		ret = ath12k_dp_peer_qos_stats_alloc(dp_peer);
+
 	return ret;
 }
 EXPORT_SYMBOL(ath12k_dp_peer_stats_alloc);
+
+void ath12k_dp_peer_qos_stats_free(struct ath12k_dp_peer *dp_peer)
+{
+	kfree(dp_peer->mld_stats.mld_qos_stats);
+	dp_peer->mld_stats.mld_qos_stats = NULL;
+}
 
 void ath12k_dp_peer_stats_free(struct ath12k_dp_peer *dp_peer)
 {
@@ -1941,6 +1967,8 @@ void ath12k_dp_peer_stats_free(struct ath12k_dp_peer *dp_peer)
 	dp_peer->mld_stats.sojourn_stats = NULL;
 
 	ath12k_dp_free_proto_stats_peer(dp_peer);
+
+	ath12k_dp_peer_qos_stats_free(dp_peer);
 }
 EXPORT_SYMBOL(ath12k_dp_peer_stats_free);
 

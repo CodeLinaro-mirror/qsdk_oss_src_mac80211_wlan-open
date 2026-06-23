@@ -879,6 +879,7 @@ struct ath12k_dp_mld_peer_stats {
 	struct ath12k_dp_peer_delay_stats *delay_stats;
 	struct ath12k_dp_peer_jitter_stats *jitter_stats;
 	struct ath12k_dp_peer_sojourn_stats *sojourn_stats;
+	struct ath12k_mld_qos_stats *mld_qos_stats;
 };
 
 struct ath12k_dp_link_peer_stats {
