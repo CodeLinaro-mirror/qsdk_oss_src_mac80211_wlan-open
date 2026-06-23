@@ -55,7 +55,6 @@ static void __ath12k_link_peer_free(struct ath12k_dp_link_peer *peer)
 {
 	kfree(peer->peer_stats.rx_stats);
 	kfree(peer->peer_stats.tx_stats);
-	kfree(peer->peer_stats.qos_stats);
 	ath12k_dp_peer_link_stats_free(peer);
 
 	kfree(peer);
@@ -1239,10 +1238,10 @@ bool ath12k_dp_qos_stats_alloc(struct ath12k *ar,
 			       struct ieee80211_vif *vif,
 			       struct ath12k_dp_link_peer *peer)
 {
-	struct ath12k_qos_stats *qos_stats = NULL;
+	struct ath12k_dp_link_peer_qos_stats *link_qos_stats = NULL;
 
 	/* already allocated */
-	if (peer->peer_stats.qos_stats)
+	if (peer->peer_stats.link_qos_stats)
 		return true;
 
 	if (vif->type != NL80211_IFTYPE_AP ||
@@ -1250,14 +1249,14 @@ bool ath12k_dp_qos_stats_alloc(struct ath12k *ar,
 	    !ath12k_debugfs_is_qos_stats_enabled(ar))
 		return false;
 
-	qos_stats = kzalloc(sizeof(*qos_stats), GFP_ATOMIC);
-	if (!qos_stats) {
+	link_qos_stats = kzalloc(sizeof(*link_qos_stats), GFP_ATOMIC);
+	if (!link_qos_stats) {
 		ath12k_err(ar->ab, "Peer QoS stats allocation failed for peer: %pM link_id: %u\n",
 			   peer->addr, peer->link_id);
 		return false;
 	}
 
-	peer->peer_stats.qos_stats = qos_stats;
+	peer->peer_stats.link_qos_stats = link_qos_stats;
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_QOS, "Peer QoS stats allocated for peer: %pM link_id: %u\n",
 		   peer->addr, peer->link_id);
@@ -1972,6 +1971,13 @@ void ath12k_dp_peer_stats_free(struct ath12k_dp_peer *dp_peer)
 }
 EXPORT_SYMBOL(ath12k_dp_peer_stats_free);
 
+static void ath12k_dp_qos_link_stats_alloc(struct ath12k_dp_link_peer *link_peer)
+{
+	link_peer->peer_stats.link_qos_stats =
+		kzalloc(sizeof(*link_peer->peer_stats.link_qos_stats),
+			GFP_ATOMIC);
+}
+
 int ath12k_dp_peer_link_stats_alloc(struct ath12k_dp_link_peer *link_peer,
 				    struct ath12k_pdev_dp *dp_pdev)
 {
@@ -1995,7 +2001,19 @@ int ath12k_dp_peer_link_stats_alloc(struct ath12k_dp_link_peer *link_peer,
 		}
 	}
 
+	if (dp_pdev && (dp_pdev->dp_stats_mask & DP_ENABLE_QOS_STATS)) {
+		ath12k_dp_qos_link_stats_alloc(link_peer);
+
+		if (!link_peer->peer_stats.link_qos_stats)
+			return -ENOMEM;
+	}
 	return 0;
+}
+
+static void ath12k_dp_qos_link_stats_free(struct ath12k_dp_link_peer *link_peer)
+{
+	kfree(link_peer->peer_stats.link_qos_stats);
+	link_peer->peer_stats.link_qos_stats = NULL;
 }
 
 void ath12k_dp_peer_link_stats_free(struct ath12k_dp_link_peer *link_peer)
@@ -2005,6 +2023,8 @@ void ath12k_dp_peer_link_stats_free(struct ath12k_dp_link_peer *link_peer)
 
 	kfree(link_peer->peer_stats.hw_link_stats);
 	link_peer->peer_stats.hw_link_stats = NULL;
+
+	ath12k_dp_qos_link_stats_free(link_peer);
 }
 
 int ath12k_dp_peer_set_param_by_dp_peer(void *ptr, enum ath12k_dp_peer_param param,
