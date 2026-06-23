@@ -1170,6 +1170,7 @@ enum wmi_tlv_event_id {
 	WMI_WLM_STATS_EVENTID,
 	WMI_CTRL_PATH_STATS_EVENTID,
 	WMI_HALPHY_STATS_CTRL_PATH_EVENTID,
+	WMI_ANOMALY_REPORT_EVENTID = 0x16012,
 	WMI_NLO_MATCH_EVENTID = WMI_TLV_CMD(WMI_GRP_NLO_OFL),
 	WMI_NLO_SCAN_COMPLETE_EVENTID,
 	WMI_APFIND_EVENTID,
@@ -2577,6 +2578,8 @@ enum wmi_tlv_tag {
 	WMI_TAG_PEER_UHR_NPCA_OP_PARAMS = 0x57D,
 	WMI_TAG_PEER_UHR_OMP_CMD = 0x57F,
 	WMI_TAG_PEER_UHR_OMP_NPCA_PARAMS,
+	WMI_TAG_ANOMALY_REPORT_HDR = 0x588,
+	WMI_TAG_ANOMALY_ENTRY = 0x589,
 	WMI_TAG_MAX
 };
 
@@ -10290,6 +10293,86 @@ struct wmi_energy_mgmt_oem_data_event {
 	__le32 content_type;
 	__le32 num_bytes_valid;
 } __packed;
+
+struct wmi_anomaly_report_hdr {
+	__le32 tlv_header;
+	__le32 pdev_id;        /* PDEV ID (common for all entries in batch) */
+};
+
+/*
+ * Context for WMI_ANOMALY_ID_VDEV_DELETE_REQUESTED_BEFORE_STOP
+ * (ID 0000–0999)
+ */
+struct wmi_anomaly_vdev_ctx_t {
+	__le32 vdev_state; /* Internal VDEV state at time of fault */
+	__le32 vdev_type;  /* VDEV type (AP/STA/IBSS/etc.) */
+};
+
+/*
+ * Context for WMI_ANOMALY_ID_DELETE_VDEV_BEFORE_DELETING_ALL_PEERS
+ * (ID 1000–1999)
+ */
+struct wmi_anomaly_peer_ctx_t {
+	__le32 peer_count; /* Number of peers still associated */
+	/* MAC address of first offending peer (lower 32 bits) */
+	__le32 peer_mac_addr_lo;
+	/* MAC address of first offending peer (upper 16 bits) */
+	__le32 peer_mac_addr_hi;
+	__le32 peer_state; /* Internal peer state at time of fault */
+};
+
+/*
+ * Context for WMI_ANOMALY_ID_BEACON_TEMPLATE_SANITY_FAILED
+ * (ID 2000–2999)
+ */
+struct wmi_anomaly_beacon_ctx_t {
+	__le32 bcn_buf_len;     /* Beacon buffer length that was received */
+	__le32 max_allowed_len; /* Maximum allowed beacon buffer length */
+	__le32 ie_offset;       /* IE offset at which sanity failed */
+	__le32 fail_reason;     /* Internal reason code for the failure */
+};
+
+/*
+ * Context for halPhy bucket groups
+ * (ID 5000–9999)
+ */
+struct wmi_anomaly_halphy_ctx_t {
+	__le32 phy_err_code; /* Hardware PHY error code at fault time */
+	__le32 chain_mask;   /* Active RX/TX chain mask at fault time */
+	__le32 cal_step;     /* Calibration step index; 0 if not applicable */
+	__le32 hw_status;    /* Raw hardware status register snapshot */
+};
+
+/*
+ * Context for uCode bucket groups
+ * (ID 10000–14999)
+ */
+struct wmi_anomaly_ucode_ctx_t {
+	__le32 ucode_pc;       /* uCode program counter at fault time */
+	__le32 sched_state;    /* Scheduler state machine value at fault time */
+	__le32 txrx_status;    /* TX/RX pipeline status register snapshot */
+	__le32 watchdog_count; /* Watchdog expiry count since last reset */
+};
+
+struct wmi_anomaly_entry_t {
+	__le32 tlv_header;
+	__le32 anomaly_id;     /* [31:1]=WMI_ANOMALY_ID  [0]=type(0=A/1=E) */
+	__le32 vdev_id;        /* Virtual Device ID (0xFFFFFFFF if N/A) */
+	__le32 priority;       /* WMI_ANOMALY_PRIORITY */
+	__le32 related_cmd_id; /* WMI_CMD_ID (0 if N/A) */
+	__le32 reserved[2];    /* for future use when needed */
+	union {
+		struct wmi_anomaly_vdev_ctx_t   vdev;    /* ID 0000–0999 */
+		struct wmi_anomaly_peer_ctx_t   peer;    /* ID 1000–1999 */
+		struct wmi_anomaly_beacon_ctx_t beacon;  /* ID 2000–2999 */
+		struct wmi_anomaly_halphy_ctx_t halphy;  /* ID 5000–9999 */
+		struct wmi_anomaly_ucode_ctx_t  ucode;   /* ID 10000–14999 */
+	} ctx;
+	/* NOTE:
+	 * No new fields can be added here - this restriction allows new fields
+	 * to be added to the end of the wmi_anomaly_xxx_ctx_t structs instead.
+	 */
+};
 
 /* each WMI cmd can hold 58 channel entries at most */
 #define ATH12K_WMI_MAX_NUM_CHAN_PER_CMD	58

@@ -12,6 +12,7 @@
 #include "athdbg_wmi_recording.h"
 #include "athdbg_uio.h"
 #include "../debug.h"
+#include "athdbg_netlink.h"
 
 MODULE_SOFTDEP("post: ath12k ath12k_wifi7");
 
@@ -233,6 +234,9 @@ static int __init athdbg_driver_init(void)
 		return -ENOMEM;
 	}
 
+	if (athdbg_netlink_init())
+		pr_err("athdbg_core: genl family register failed for FW_SS_HANDLER, netlink unavailable\n");
+
 	athdbg_create_minidump_struct_list();
 
 	INIT_WORK(&athdbg_base->dbg_wk, athdbg_process_request);
@@ -260,6 +264,7 @@ static void __exit athdbg_driver_exit(void)
 #ifdef CPTCFG_ATHDEBUG_UIO_LOGGING
 	athdbg_uio_unregister();
 #endif
+	athdbg_netlink_exit();
 	kfree(athdbg_base);
 }
 

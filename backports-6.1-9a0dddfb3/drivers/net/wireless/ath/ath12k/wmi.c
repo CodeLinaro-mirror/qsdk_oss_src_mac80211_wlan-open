@@ -30,6 +30,9 @@
 #ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/ini.h"
 #endif
+#ifdef CPTCFG_ATHDEBUG
+#include "athdbg_if.h"
+#endif
 #include "erp.h"
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 #include "qcn_extns/ipa/dp_ipa.h"
@@ -194,6 +197,13 @@ struct wmi_tlv_mgmt_rx_parse {
 		**bcast_ttlm_info;
 	u32 num_bcast_ttlm_info_count;
 	bool parse_bcast_ttlm_info_done;
+};
+
+struct ath12k_wmi_anomaly_parse {
+	const struct wmi_anomaly_report_hdr *hdr;
+	const void *ctx_ptr;
+	u16 ctx_len;
+	bool ctx_done;
 };
 
 static void
@@ -18466,6 +18476,108 @@ static void ath12k_wmi_pdev_nfcal_power_all_channels_event(struct ath12k_base *a
 	rcu_read_unlock();
 }
 
+static int ath12k_wmi_anomaly_tlv_parse(struct ath12k_base *ab, u16 tag, u16 len,
+					const void *ptr, void *data)
+{
+	struct ath12k_wmi_anomaly_parse *parse = data;
+
+	switch (tag) {
+	case WMI_TAG_ANOMALY_REPORT_HDR:
+		/* TLV#0, fixed 8 bytes */
+		if (!ptr || !len || len < sizeof(*parse->hdr) - sizeof(__le32))
+			return -EPROTO;
+		parse->hdr = ptr;
+		break;
+
+	case WMI_TAG_ARRAY_STRUCT:
+		/* TLV#1, context array: 0 (heartbeat) or 1 entry */
+		if (parse->ctx_done)
+			return -EPROTO;
+		parse->ctx_ptr = ptr;
+		parse->ctx_len = len;
+		parse->ctx_done = true;
+		break;
+
+	default:
+		return -EPROTO;
+	}
+
+	return 0;
+}
+
+static void ath12k_fw_anomaly_event(struct ath12k_base *ab, struct sk_buff *skb)
+{
+	struct ath12k_wmi_anomaly_parse parse = {};
+	const struct wmi_anomaly_entry_t *entries;
+	u32 num_entries, anomaly_id;
+	u16 entry_tag;
+	u32 i;
+	int ret;
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "Anomaly event received\n");
+	ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
+				  ath12k_wmi_anomaly_tlv_parse, &parse);
+	if (ret || !parse.hdr || !parse.ctx_done) {
+		ath12k_warn(ab, "invalid anomaly report tlv format ret=%d\n",
+			    ret);
+		return;
+	}
+
+	/* TLV#0: print anomaly report header */
+	ath12k_dbg(ab, ATH12K_DBG_WMI,
+		   "Anomaly TLV#0 hdr: pdev_id=%u\n",
+		   le32_to_cpu(*(const __le32 *)parse.hdr));
+	ath12k_dbg_dump(ab, ATH12K_DBG_WMI, "Anomaly TLV#0 hdr raw", "",
+			parse.hdr, sizeof(__le32));
+
+	/* Heartbeat: 0 entries */
+	if (parse.ctx_len == 0) {
+		ath12k_dbg(ab, ATH12K_DBG_WMI, "Anomaly event Heartbeat\n");
+		return;
+	}
+
+	if (parse.ctx_len % sizeof(*entries) != 0) {
+		ath12k_warn(ab, "Invalid anomaly ctx_len %u\n", parse.ctx_len);
+		return;
+	}
+
+	entries = (const struct wmi_anomaly_entry_t *)parse.ctx_ptr;
+	num_entries = parse.ctx_len / sizeof(*entries);
+
+	for (i = 0; i < num_entries; i++) {
+		entry_tag = le32_get_bits(entries[i].tlv_header, WMI_TLV_TAG);
+		if (entry_tag != WMI_TAG_ANOMALY_ENTRY) {
+			ath12k_warn(ab, "Invalid anomaly entry tag %u at index %u\n",
+				    entry_tag, i);
+			return;
+		}
+
+		anomaly_id = le32_to_cpu(entries[i].anomaly_id);
+
+		/* bit0 == 1 => Event type, ignore */
+		if (anomaly_id & BIT(0)) {
+			ath12k_dbg(ab, ATH12K_DBG_WMI, "Anomaly_id:Error type\n");
+			continue;
+		}
+
+		/* TLV#1: print anomaly entry fields */
+		ath12k_dbg(ab, ATH12K_DBG_WMI,
+			   "Anomaly TLV#1 entry[%u]: anomaly_id=0x%x vdev_id=%u priority=%u related_cmd_id=%u\n",
+			   i,
+			   le32_to_cpu(entries[i].anomaly_id),
+			   le32_to_cpu(entries[i].vdev_id),
+			   le32_to_cpu(entries[i].priority),
+			   le32_to_cpu(entries[i].related_cmd_id));
+		ath12k_dbg_dump(ab, ATH12K_DBG_WMI, "Anomaly TLV#1 entry raw", "",
+				&entries[i], sizeof(entries[i]) - sizeof(__le32));
+#ifdef CPTCFG_ATHDEBUG
+		/* bit0 == 0 => forward full original TLV payload */
+		athdbg_if_send_tlv(ab, WMI_ANOMALY_REPORT_EVENTID,
+				   skb->data, skb->len);
+#endif
+	}
+}
+
 static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
@@ -18745,6 +18857,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 		break;
 	case WMI_PDEV_NFCAL_POWER_ALL_CHANNELS_EVENTID:
 		ath12k_wmi_pdev_nfcal_power_all_channels_event(ab, skb);
+		break;
+	case WMI_ANOMALY_REPORT_EVENTID:
+		ath12k_fw_anomaly_event(ab, skb);
 		break;
 	default:
 		if (!ath12k_wmi_op_rx_extn(id, ab, skb))
