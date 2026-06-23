@@ -865,6 +865,13 @@ static void ieee80211_free_chanctx(struct ieee80211_local *local,
 		}
 	}
 
+	/* A DFS CAC timer may still be armed if disconnect or Stop AP happened
+	 * while CAC was in progress. Cancel both the hrtimer and its deferred work
+	 * before freeing the chanctx to avoid a use-after-free.
+	 */
+	hrtimer_cancel(&ctx->dfs_cac_timer);
+	wiphy_work_cancel(local->hw.wiphy, &ctx->dfs_cac_timer_work);
+
 	list_del_rcu(&ctx->list);
 	ieee80211_punct_obj_list_free(local, ctx);
 	ieee80211_del_chanctx(local, ctx, skip_idle_recalc);

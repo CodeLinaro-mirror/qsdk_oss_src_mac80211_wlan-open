@@ -244,6 +244,7 @@ struct ath12k_hw_ring_mask {
 	u8 ppeds_tx_cmpln[ATH12K_EXT_IRQ_NUM_MAX];
 #endif
 	u8 umac_dp_reset[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 umcmn_interrupts[ATH12K_EXT_IRQ_NUM_MAX];
 	u8 tx_exception[ATH12K_EXT_IRQ_NUM_MAX];
 	u8 tcl_status[ATH12K_EXT_IRQ_NUM_MAX];
 	u8 tqm_status[ATH12K_EXT_IRQ_NUM_MAX];
@@ -265,6 +266,12 @@ struct ath12k_cp_arch_ops {
 	int (*cu_mem_alloc)(struct ath12k *ar, struct ath12k_link_vif *arvif);
 	void (*cu_mem_free)(struct ath12k *ar, struct ath12k_link_vif *arvif);
 	void (*cu_notify)(struct ath12k *ar, struct ath12k_link_vif *arvif);
+};
+
+enum ath12k_umcmn_interrupt_handling {
+	UMCMN_INTERRUPT_DISABLE,
+	UMCMN_INTERRUPT_ENABLE,
+	UMCMN_INTERRUPT_POLL,
 };
 
 struct ath12k_hw_params {
@@ -387,6 +394,7 @@ struct ath12k_hw_params {
 	bool is_plink_preferable;
 	bool cfr_support;
 	bool cumac_support;
+	enum ath12k_umcmn_interrupt_handling support_umcmn_interrupts;
 	u32 cfr_dma_hdr_size;
 	u32 cfr_num_stream_bufs;
 	u32 cfr_stream_buf_size;

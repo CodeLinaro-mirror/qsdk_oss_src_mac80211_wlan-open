@@ -364,12 +364,11 @@ int ath12k_dp_peer_scs_data(struct ath12k_dp *dp,
 			    u8 scs_id,
 			    struct ath12k_dp_hw *dp_hw,
 			    u16 *msduq, u16 *qos_id,
-			    struct ath12k_dp_peer *dp_peer,
-			    u8 link_id);
+			    struct ath12k_dp_peer *dp_peer);
 u16 ath12k_dp_peer_scs_get_qos_id(struct ath12k_dp_peer_qos *qos, u8 scs_id);
 u16 ath12k_dp_peer_qos_msduq(struct ath12k_base *ab,
 			     struct ath12k_dp_peer_qos *qos,
-			     struct ath12k_dp_peer *dp_peer, u8 link_id,
+			     struct ath12k_dp_peer *dp_peer,
 			     struct ath12k_dp_hw *dp_hw,
 			     u16 qos_id, u8 svc_id);
 u16 dp_peer_msduq_qos_id(struct ath12k_base *ab,

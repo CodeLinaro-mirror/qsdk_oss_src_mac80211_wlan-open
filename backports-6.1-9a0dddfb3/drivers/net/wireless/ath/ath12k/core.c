@@ -1658,9 +1658,7 @@ static int ath12k_core_pdev_init(struct ath12k_base *ab)
 	ath12k_fse_init(ab);
 	ath12k_telemetry_init(ab);
 
-	/* Initialize SAWF/SDWF only if supported by the active memory profile */
-	if (ath12k_dp_ring_cfg->sdwf_support)
-		ath12k_dp_accel_cfg_init(ab);
+	ath12k_dp_accel_cfg_init(ab);
 
 	ath12k_thermal_register(ab);
 
@@ -1685,9 +1683,7 @@ void ath12k_core_pdev_deinit(struct ath12k_base *ab)
 	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
-	/* Deinitialize SAWF/SDWF only if it was initialized based on memory profile */
-	if (ath12k_dp_ring_cfg->sdwf_support)
-		ath12k_dp_accel_cfg_deinit(ab);
+	ath12k_dp_accel_cfg_deinit(ab);
 
 	ath12k_fse_deinit(ab);
 	ath12k_telemetry_deinit(ab);
@@ -4686,6 +4682,7 @@ void ath12k_core_trigger_partner_device_crash(struct ath12k_base *ab)
 		}
 	}
 }
+EXPORT_SYMBOL(ath12k_core_trigger_partner_device_crash);
 
 static void ath12k_partner_chip_power_state_info(struct ath12k_hw_group *ag,
 						 u8 power_state)
@@ -6257,6 +6254,7 @@ struct ath12k_hw_group *ath12k_core_get_ag(void)
 	mutex_unlock(&ath12k_hw_group_mutex);
 	return ag;
 }
+EXPORT_SYMBOL(ath12k_core_get_ag);
 
 int ath12k_core_init(struct ath12k_base *ab)
 {

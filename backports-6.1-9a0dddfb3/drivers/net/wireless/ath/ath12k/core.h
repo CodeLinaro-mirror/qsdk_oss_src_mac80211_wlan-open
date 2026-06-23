@@ -130,6 +130,7 @@
 #define ATH12K_PHY_6GHZ "phy03"
 #define ATH12K_PHY_6GHZ_LOW "phy03"
 #define ATH12K_PHY_6GHZ_HIGH "phy04"
+#define ATH12K_PHY_2GHZ_5GHZ "phy05"
 
 #ifdef CPTCFG_QCN_EXTN
 /* Scan radio uses a single PHY name for all bands */
@@ -774,6 +775,20 @@ struct ath12k_vap_cfg {
 	u32 vht_sgimask;
 	u32 vht80_rate;
 	u32 dis_lpi_ant_optimize;
+	/* Per-link EHT OFDMA/TXBF override */
+	bool eht_dl_ofdma_configured;
+	bool eht_dl_ofdma;
+	bool eht_ul_ofdma_configured;
+	bool eht_ul_ofdma;
+	bool eht_dl_ofdma_txbf_configured;
+	bool eht_dl_ofdma_txbf;
+	/* Per-link HE OFDMA/TXBF override */
+	bool he_dl_ofdma_configured;
+	bool he_dl_ofdma;
+	bool he_ul_ofdma_configured;
+	bool he_ul_ofdma;
+	bool he_dl_ofdma_txbf_configured;
+	bool he_dl_ofdma_txbf;
 };
 
 struct ath12k_rssi_deauth_config {
@@ -2632,6 +2647,8 @@ struct ath12k_base {
 
 	struct work_struct recovery_work;
 	struct ath12k_dp_umac_reset dp_umac_reset;
+	int umcmn_irq_num;
+	struct timer_list umcmn_timer;
 	bool early_cal_support;
 	bool powerup_triggered;
 	struct ath12k_wsi_info bypass_wsi_info;

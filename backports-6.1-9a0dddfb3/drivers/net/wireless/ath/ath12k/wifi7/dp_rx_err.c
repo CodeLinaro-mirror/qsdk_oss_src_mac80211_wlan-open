@@ -410,7 +410,6 @@ static bool ath12k_wifi7_dp_unauth_wds_err(struct ath12k_pdev_dp *dp_pdev,
 
 static inline void
 ath12k_dp_tid_wbm_err_stats(struct ath12k_pdev_dp *dp_pdev,
-					int ring_id,
 					u8 tid,
 					bool is_reo,
 					u32 error_code)
@@ -419,18 +418,14 @@ ath12k_dp_tid_wbm_err_stats(struct ath12k_pdev_dp *dp_pdev,
 
 	if (is_reo) {
 		if (error_code < HAL_REO_DEST_RING_ERROR_CODE_MAX)
-			DP_PDEV_TID_RX_REASON_INC(dp_pdev, ring_id, tid,
-						  reo_err.reo_code, error_code);
+			dp_pdev->tid_stats.tid_reo_err[tid].reo_code[error_code]++;
 		else
-			DP_PDEV_TID_RX_INC(dp_pdev, ring_id, tid,
-					   reo_err.reo_code_inv);
+			dp_pdev->tid_stats.tid_reo_err[tid].reo_code_inv++;
 	} else {
 		if (error_code < HAL_REO_ENTR_RING_RXDMA_ECODE_MAX)
-			DP_PDEV_TID_RX_REASON_INC(dp_pdev, ring_id, tid,
-						  rxdma_err.rxdma_code, error_code);
+			dp_pdev->tid_stats.tid_rxdma_err[tid].rxdma_code[error_code]++;
 		else
-			DP_PDEV_TID_RX_INC(dp_pdev, ring_id, tid,
-					   rxdma_err.rxdma_code_inv);
+			dp_pdev->tid_stats.tid_rxdma_err[tid].rxdma_code_inv++;
 	}
 }
 
@@ -604,8 +599,7 @@ ath12k_wifi7_dp_process_wbm_rx_packets(struct ath12k_dp *dp,
 						       hw_link_id);
 
 				if (vow_stats_needed)
-					ath12k_dp_tid_wbm_err_stats(dp_pdev, ring_id,
-								    tid, true,
+					ath12k_dp_tid_wbm_err_stats(dp_pdev, tid, true,
 								    error_code);
 			} else {
 				reason = WBM_ERR_DROP_INVALID_PUSH_REASON;
@@ -689,8 +683,7 @@ ath12k_wifi7_dp_process_wbm_rx_packets(struct ath12k_dp *dp,
 			}
 
 			if (vow_stats_needed)
-				ath12k_dp_tid_wbm_err_stats(dp_pdev, ring_id,
-							    tid, false,
+				ath12k_dp_tid_wbm_err_stats(dp_pdev, tid, false,
 							    error_code);
 
 			if (drop && msdu)

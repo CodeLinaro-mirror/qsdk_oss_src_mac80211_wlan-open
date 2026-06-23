@@ -1309,6 +1309,13 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 				ath12k_wifi8_umac_reset_handle_post_reset_complete,
 	.umac_reset_handle_init_recovery =
 				ath12k_wifi8_umac_reset_handle_init_recovery,
+	.umcmn_irq_config = ath12k_wifi8_umcmn_irq_config,
+	.umcmn_irq_free = ath12k_wifi8_umcmn_irq_free,
+	.umcmn_irq_enable = ath12k_wifi8_umcmn_irq_enable,
+	.umcmn_irq_disable = ath12k_wifi8_umcmn_irq_disable,
+	.umcmn_timer_config = ath12k_wifi8_umcmn_timer_config,
+	.umcmn_timer_enable = ath12k_wifi8_umcmn_timer_enable,
+	.umcmn_timer_free = ath12k_wifi8_umcmn_timer_free,
 	.dump_srng_stats = ath12k_wifi8_dump_srng_stats,
 	.dump_device_dp_stats = ath12k_wifi8_dump_device_dp_stats,
 	.reset_device_dp_stats = ath12k_wifi8_reset_device_dp_stats,

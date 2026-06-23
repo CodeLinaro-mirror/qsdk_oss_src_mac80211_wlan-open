@@ -1742,6 +1742,7 @@ struct hal_ops {
 	u32 (*hal_rx_h_mpdu_err)(struct hal_rx_desc *desc);
 	void (*hal_set_reg_writer_hptp_addr)(struct ath12k_base *ab,
 					     struct hal_srng *srng,
+					     int mac_id,
 					     int idx,
 					     enum hal_ring_type);
 };

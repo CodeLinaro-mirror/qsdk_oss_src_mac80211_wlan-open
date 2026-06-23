@@ -18,6 +18,7 @@
 #include "debugfs.h"
 #include "fw.h"
 #include "pcic.h"
+#include "umac_reset.h"
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
 #include <linux/iommu.h>
 #include "qcn_extns/ipa/dp_ipa.h"
@@ -243,10 +244,14 @@ static void ath12k_pci_sw_reset(struct ath12k_base *ab, bool power_on)
 	ath12k_pci_clear_dbg_registers(ab);
 
 	if (!power_on) {
-		if (test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags))
+		if (test_bit(ATH12K_FLAG_RECOVERY_Q6_BCR, &ab->dev_flags)) {
+			/* Disable umcmn interrupt/timer before issuing reset */
+			ath12k_umcmn_irq_disable(ab);
+			ath12k_umcmn_timer_free(ab);
 			ath12k_pci_q6_only_reset(ab);
-		else
+		} else {
 			ath12k_pci_soc_global_reset(ab);
+		}
 	}
 
 	ath12k_mhi_set_mhictrl_reset(ab);
@@ -1145,6 +1150,77 @@ static int ath12k_pci_panic_handler(struct ath12k_base *ab)
 	return NOTIFY_OK;
 }
 
+static int ath12k_get_umcmn_intr_offset(struct ath12k_base *ab)
+{
+	int i;
+
+	for (i = 0; i < ATH12K_EXT_IRQ_NUM_MAX; i++) {
+		if (ab->hw_params->ring_mask->umcmn_interrupts[i])
+			return i;
+	}
+	return -EINVAL;
+}
+
+static int ath12k_pci_umcmn_config_irq(struct ath12k_base *ab,
+				       irqreturn_t (*handler)(int irq, void *arg))
+{
+	u32 msi_data_start, msi_data_count, msi_irq_start;
+	unsigned int msi_data;
+	int irq, ret, intr_offset;
+
+	ret = ath12k_pcic_get_user_msi_assignment(ab, "DP", &msi_data_count,
+						  &msi_data_start, &msi_irq_start);
+	if (ret)
+		return ret;
+
+	intr_offset = ath12k_get_umcmn_intr_offset(ab);
+	if (intr_offset < 0)
+		return 0;
+
+	msi_data = (intr_offset % msi_data_count) + msi_irq_start;
+	irq = ath12k_hif_get_msi_irq(ab, msi_data);
+
+	ret = request_irq(irq, handler,
+			  IRQF_NO_SUSPEND, "umcmn_interrupts", ab);
+	if (ret) {
+		ath12k_err(ab, "failed to request irq for umcmn: %d\n", ret);
+		return ret;
+	}
+
+	ab->umcmn_irq_num = irq;
+
+	disable_irq_nosync(ab->umcmn_irq_num);
+
+	return 0;
+}
+
+static void ath12k_pci_umcmn_free_irq(struct ath12k_base *ab)
+{
+	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
+		return;
+
+	if (!ab->umcmn_irq_num)
+		return;
+
+	disable_irq_nosync(ab->umcmn_irq_num);
+	free_irq(ab->umcmn_irq_num, ab);
+	ab->umcmn_irq_num = 0;
+}
+
+static void ath12k_pci_umcmn_enable_irq(struct ath12k_base *ab)
+{
+	if (!ab->umcmn_irq_num)
+		return;
+	enable_irq(ab->umcmn_irq_num);
+}
+
+static void ath12k_pci_umcmn_disable_irq(struct ath12k_base *ab)
+{
+	if (!ab->umcmn_irq_num)
+		return;
+	disable_irq_nosync(ab->umcmn_irq_num);
+}
+
 static int ath12k_dp_umac_pci_config_irq(struct ath12k_base *ab)
 {
         u32 msi_data_start, msi_data_count, msi_irq_start;
@@ -1227,6 +1303,10 @@ static const struct ath12k_hif_ops ath12k_pci_hif_ops = {
 	.dp_umac_reset_irq_config = ath12k_dp_umac_pci_config_irq,
 	.dp_umac_reset_enable_irq = ath12k_pci_dp_umac_reset_enable_irq,
 	.dp_umac_reset_free_irq = ath12k_pci_dp_umac_reset_free_irq,
+	.umcmn_irq_config = ath12k_pci_umcmn_config_irq,
+	.umcmn_irq_free = ath12k_pci_umcmn_free_irq,
+	.umcmn_irq_enable = ath12k_pci_umcmn_enable_irq,
+	.umcmn_irq_disable = ath12k_pci_umcmn_disable_irq,
 	.get_iova = ath12k_pci_get_iova,
 	.mgmt_irq_setup = ath12k_pcic_mgmt_irq_config,
 	.mgmt_irq_cleanup = ath12k_pcic_mgmt_irq_free,

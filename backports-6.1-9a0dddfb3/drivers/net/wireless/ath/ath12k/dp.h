@@ -41,6 +41,7 @@
 #define HAL_SRNG_INT_TIMER_THRESHOLD_PPE2TCL 3
 #define HAL_SRNG_INT_TIMER_THRESHOLD_RX 200
 #define HAL_SRNG_INT_TIMER_THRESHOLD_TX 1000
+#define DP_UMCMN_INTR_HANDLING_DISABLE false
 
 #if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined(CPTCFG_ATH12K_MEM_PROFILE_512M)
 /* From 512M profile values */
@@ -186,6 +187,9 @@
 	ATH12K_DP_INI_GET(HAL_SRNG_INT_TIMER_THRESHOLD_RX)
 #define HAL_SRNG_INT_TIMER_THRESHOLD_TX \
 	ATH12K_DP_INI_GET(HAL_SRNG_INT_TIMER_THRESHOLD_TX)
+
+#define DP_UMCMN_INTR_HANDLING_DISABLE \
+	ATH12K_DP_INI_GET(UMCMN_INTR_HANDLING_DISABLE)
 
 #define DP_TCL_DATA_RING0_SIZE		ATH12K_DP_INI_GET(TCL_DATA_RING0_SIZE)
 #define DP_TCL_DATA_RING1_SIZE		ATH12K_DP_INI_GET(TCL_DATA_RING1_SIZE)
@@ -791,6 +795,13 @@ struct ath12k_dp_arch_ops {
 	void (*umac_reset_handle_post_reset_start)(struct ath12k_base *ab);
 	void (*umac_reset_handle_post_reset_complete)(struct ath12k_base *ab);
 	void (*umac_reset_handle_init_recovery)(struct ath12k_base *ab);
+	int (*umcmn_irq_config)(struct ath12k_base *ab);
+	void (*umcmn_irq_free)(struct ath12k_base *ab);
+	void (*umcmn_irq_enable)(struct ath12k_base *ab);
+	void (*umcmn_irq_disable)(struct ath12k_base *ab);
+	int (*umcmn_timer_config)(struct ath12k_base *ab);
+	void (*umcmn_timer_enable)(struct ath12k_base *ab);
+	void (*umcmn_timer_free)(struct ath12k_base *ab);
 
 	ssize_t (*dump_srng_stats)(struct ath12k_dp *dp, char *buf, int size);
 	ssize_t (*dump_device_dp_stats)(struct ath12k_dp *dp, char *buf, int size);

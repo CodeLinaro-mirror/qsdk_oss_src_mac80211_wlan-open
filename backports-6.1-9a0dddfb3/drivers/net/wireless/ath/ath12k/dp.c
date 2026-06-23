@@ -3487,6 +3487,24 @@ ath12k_dp_update_hw_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 	ath12k_dp_update_hw_peer_rx_stats(dp_pdev, peer, mld_stats);
 }
 
+/* ath12k_dp_override_ppeds_rx() - Override PPEDS ring sent_to_stack with
+ * extended RX monitor MSDU totals to account
+ * non PPE traffic also if extended rx stats is enabled.
+ * PPE sync credits DS VIF WDS peer traffic exclusively on DP_REO_PPEDS_RING_IDX.
+ */
+static void ath12k_dp_override_ppeds_rx(struct ath12k_dp_peer_stats *peer_stats,
+					struct ath12k_rx_peer_stats *rx_stats,
+					bool is_ds_wds_peer)
+{
+	if (!is_ds_wds_peer || !peer_stats || !rx_stats)
+		return;
+
+	peer_stats->rx[DP_REO_PPEDS_RING_IDX].sent_to_stack.packets =
+							rx_stats->num_msdu;
+	peer_stats->rx[DP_REO_PPEDS_RING_IDX].sent_to_stack.bytes =
+							rx_stats->num_msdu_bytes;
+}
+
 static void ath12k_dp_aggr_peer_stats(struct ath12k_link_vif *arvif,
 				      struct ath12k_dp_link_peer *link_peer,
 				      struct ath12k_dp_aggr_vif_stats *aggr_vif_stats,
@@ -3543,6 +3561,15 @@ static void ath12k_dp_aggr_peer_stats(struct ath12k_link_vif *arvif,
 							     src_hw_link_rx);
 		}
 	}
+	/* For non-WDS peers on a DS VIF, the PPE sync callback
+	 * does not populate the DS stats. Skip updating the counters
+	 *  from monitor as well for non wds cases. override only for
+	 *  the WDS peers.
+	 */
+	if (ath12k_extd_rx_stats_enabled(dp_pdev))
+		ath12k_dp_override_ppeds_rx(&aggr_vif_stats->peer_stats,
+					    link_peer_stats->rx_stats,
+					    is_ds_wds_peer);
 }
 
 /**
@@ -3977,9 +4004,13 @@ ath12k_dp_get_link_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 		}
 
 		/* Rx Mon stats */
-		if (ath12k_extd_rx_stats_enabled(dp_pdev))
+		if (ath12k_extd_rx_stats_enabled(dp_pdev)) {
 			ret = ath12k_update_peer_rx_mon_stats(link_peer,
 							      dst_stats);
+			ath12k_dp_override_ppeds_rx(&dp_peer->stats[hw_link_id],
+						    dst_stats,
+						    is_ds_wds_peer);
+		}
 	}
 	return ret;
 }
@@ -4075,6 +4106,7 @@ ath12k_dp_update_legacy_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 	ath12k_dp_update_hw_peer_stats(dp_pdev, peer, &telemetry_peer->mld_stats);
 
 	for (link_id = 0; link_id < ATH12K_DP_PEER_MAX_MLO_LINKS; link_id++) {
+		ath12k_update_ext_stats(dp_pdev, peer, link_id, link_stats);
 		ath12k_dp_aggr_per_pkt_peer_stats(dp_pdev,
 						  peer_stats,
 						  &peer->stats[link_id],
@@ -4082,8 +4114,10 @@ ath12k_dp_update_legacy_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 						  is_ds_wds_peer);
 		ath12k_dp_update_hw_link_stats(dp_pdev, peer, link_id,
 					       link_stats);
-		ath12k_update_ext_stats(dp_pdev, peer, link_id, link_stats);
 	}
+	if (ath12k_extd_rx_stats_enabled(dp_pdev))
+		ath12k_dp_override_ppeds_rx(peer_stats, link_stats->rx_stats,
+					    is_ds_wds_peer);
 }
 
 /**
@@ -4376,6 +4410,10 @@ ath12k_dp_get_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 						       dp_peer,
 						       stats_link_id,
 						       link_stats);
+			if (ath12k_extd_rx_stats_enabled(dp_pdev))
+				ath12k_dp_override_ppeds_rx(peer_stats,
+							    link_stats->rx_stats,
+							    ds_wds_peer);
 		}
 	} else {
 		/*
@@ -4414,6 +4452,13 @@ ath12k_dp_get_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 			ath12k_dp_aggr_rx_mon_stats(dp_pdev, dp_peer, link_stats);
 			ath12k_dp_update_hw_peer_stats(dp_pdev, dp_peer, mld_stats);
 			ath12k_dp_aggr_hw_link_stats(dp_pdev, dp_peer, link_stats);
+			/* Replace PPE-synced PPEDS ring counter with extended
+			 * RX monitor MSDU totals for DS VIF WDS peers in MLD.
+			 */
+			if (ath12k_extd_rx_stats_enabled(dp_pdev))
+				ath12k_dp_override_ppeds_rx(peer_stats,
+							    link_stats->rx_stats,
+							     ds_wds_peer);
 		}
 	}
 	return ret;

@@ -859,10 +859,11 @@ static bool hal_tx_ppe2tcl_ring_halt_done(struct ath12k_base *ab)
 
 static void ath12k_hal_srng_set_hp_tp_addr(struct ath12k_base *ab,
 					   struct hal_srng *srng,
+					   int mac_id,
 					   int idx,
 					   enum hal_ring_type ring_type)
 {
-	ab->hal.hal_ops->hal_set_reg_writer_hptp_addr(ab, srng, idx, ring_type);
+	ab->hal.hal_ops->hal_set_reg_writer_hptp_addr(ab, srng, mac_id, idx, ring_type);
 }
 
 int ath12k_hal_srng_setup_idx(struct ath12k_base *ab, enum hal_ring_type type,
@@ -935,7 +936,9 @@ int ath12k_hal_srng_setup_idx(struct ath12k_base *ab, enum hal_ring_type type,
 		} else {
 			idx = ring_id - HAL_SRNG_RING_ID_DMAC_CMN_ID_START;
 			if (srng->flags & HAL_SRNG_FLAGS_REG_WRITE_EN) {
-				ath12k_hal_srng_set_hp_tp_addr(ab, srng, idx, type);
+				ath12k_hal_srng_set_hp_tp_addr(ab, srng,
+							       mac_id, idx,
+							       type);
 			} else {
 				srng->u.src_ring.hp_addr = (void *)(hal->wrp.vaddr +
 						idx);
@@ -970,7 +973,9 @@ int ath12k_hal_srng_setup_idx(struct ath12k_base *ab, enum hal_ring_type type,
 			 */
 			idx = ring_id - HAL_SRNG_RING_ID_DMAC_CMN_ID_START;
 			if (srng->flags & HAL_SRNG_FLAGS_REG_WRITE_EN) {
-				ath12k_hal_srng_set_hp_tp_addr(ab, srng, idx, type);
+				ath12k_hal_srng_set_hp_tp_addr(ab, srng,
+							       mac_id, idx,
+							       type);
 			} else {
 				srng->u.dst_ring.tp_addr = (void *)(hal->wrp.vaddr +
 						idx);

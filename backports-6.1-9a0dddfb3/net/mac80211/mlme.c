@@ -1421,6 +1421,16 @@ ieee80211_sta_bw_reconfig_start_csa(struct ieee80211_link_data *link,
 	link->u.mgd.beacon_crc_valid = false;
 	link->u.mgd.csa.blocked_tx = csa_ie.mode;
 	link->u.mgd.csa.bw_reconfig = true;
+	link->u.mgd.csa.nol_hist_cac_pending = false;
+
+	if (!cfg80211_chandef_dfs_nol_clear(local->hw.wiphy,
+					    &csa_ie.chanreq.oper))
+		goto drop_connection;
+
+	if (cfg80211_chandef_dfs_nol_history(local->hw.wiphy,
+					     &csa_ie.chanreq.oper))
+		link->u.mgd.csa.nol_hist_cac_pending = true;
+
 	if (csa_ie.mode && !ieee80211_vif_is_mld(&sdata->vif))
 		ieee80211_vif_block_queues_csa(sdata);
 
@@ -2802,7 +2812,14 @@ static void ieee80211_chswitch_post_beacon(struct ieee80211_link_data *link)
 
 	WARN_ON(!link->conf->csa_active);
 
-	ieee80211_vif_unblock_queues_csa(sdata);
+	/*
+	 * When the CSA target channel needs NOL CAC, keep TX blocked.
+	 * TX is unblocked after CAC completes in ieee80211_dfs_cac_timer_work().
+	 */
+	if (link->u.mgd.csa.nol_hist_cac_pending && !ieee80211_vif_is_mld(&sdata->vif))
+		ieee80211_vif_block_queues_csa(sdata);
+	else
+		ieee80211_vif_unblock_queues_csa(sdata);
 
 	link->conf->csa_active = false;
 	link->u.mgd.csa.blocked_tx = false;
@@ -2872,6 +2889,7 @@ ieee80211_sta_abort_chanswitch(struct ieee80211_link_data *link)
 	link->conf->csa_active = false;
 	link->u.mgd.csa.blocked_tx = false;
 	link->u.mgd.csa.bw_reconfig = false;
+	link->u.mgd.csa.nol_hist_cac_pending = false;
 
 	drv_abort_channel_switch(link);
 }
@@ -3408,6 +3426,15 @@ ieee80211_sta_process_chanswitch(struct ieee80211_link_data *link,
 	link->u.mgd.beacon_crc_valid = false;
 	link->u.mgd.csa.blocked_tx = csa_ie.mode;
 	link->u.mgd.csa.bw_reconfig = false;
+	link->u.mgd.csa.nol_hist_cac_pending = false;
+
+	if (!cfg80211_chandef_dfs_nol_clear(local->hw.wiphy,
+					    &csa_ie.chanreq.oper))
+		goto drop_connection;
+
+	if (cfg80211_chandef_dfs_nol_history(local->hw.wiphy,
+					     &csa_ie.chanreq.oper))
+		link->u.mgd.csa.nol_hist_cac_pending = true;
 
 	if (csa_ie.mode && !ieee80211_vif_is_mld(&sdata->vif))
 		ieee80211_vif_block_queues_csa(sdata);
@@ -4010,6 +4037,32 @@ ieee80211_dfs_cac_handle_deferred_up_links(struct ieee80211_link_data *link)
 	}
 }
 
+static void
+ieee80211_handle_sta_dfs_cac_completion(struct ieee80211_sub_if_data *sdata,
+					struct ieee80211_link_data *link)
+{
+	/*
+	 * STA CSA-deferred NOL channel CAC complete: unblock TX
+	 * and bring the vdev up via BSS_CHANGED_STA_NOL_CAC_DONE.
+	 */
+	if (sdata->vif.type != NL80211_IFTYPE_STATION ||
+	    !link->u.mgd.csa.nol_hist_cac_pending)
+		return;
+
+	link->u.mgd.csa.nol_hist_cac_pending = false;
+	/*
+	 * Notify the driver to bring this link's vdev up
+	 * now that NOL-history CAC has completed. Use a
+	 * dedicated link-scoped flag so only this link's
+	 * link_info_changed op is called — avoiding the
+	 * MLD-wide vif_cfg_changed loop that would call
+	 * ath12k_bss_assoc() on already-up peer links.
+	 */
+	ieee80211_link_info_change_notify(sdata, link,
+					  BSS_CHANGED_STA_NOL_CAC_DONE);
+	ieee80211_vif_unblock_queues_csa(sdata);
+}
+
 void ieee80211_dfs_cac_timer_work(struct wiphy *wiphy, struct wiphy_work *work)
 {
 	struct ieee80211_chanctx *ctx =
@@ -4038,6 +4091,11 @@ void ieee80211_dfs_cac_timer_work(struct wiphy *wiphy, struct wiphy_work *work)
 
 
 	if (sdata->wdev.links[link->link_id].cac_started) {
+		if (sdata->vif.type == NL80211_IFTYPE_STATION &&
+		    link->u.mgd.csa.nol_hist_cac_pending) {
+			ieee80211_handle_sta_dfs_cac_completion(sdata, link);
+			goto send_event;
+		}
 		if (!link->conf->deferred_up) {
 #ifdef CPTCFG_QCN_EXTN
 			if (!cfg80211_support_bootup_cac(local->hw.wiphy))
@@ -4046,6 +4104,7 @@ void ieee80211_dfs_cac_timer_work(struct wiphy *wiphy, struct wiphy_work *work)
 		} else {
 			ieee80211_dfs_cac_handle_deferred_up_links(link);
 		}
+send_event:
 		cfg80211_cac_event(sdata->dev, &chandef,
 				   NL80211_RADAR_CAC_FINISHED,
 				   GFP_KERNEL, link->link_id);
@@ -4757,6 +4816,7 @@ static void ieee80211_set_disassoc(struct ieee80211_sub_if_data *sdata,
 	sdata->deflink.u.mgd.csa.waiting_bcn = false;
 	sdata->deflink.u.mgd.csa.ignored_same_chan = false;
 	sdata->deflink.u.mgd.csa.bw_reconfig = false;
+	sdata->deflink.u.mgd.csa.nol_hist_cac_pending = false;
 	ieee80211_vif_unblock_queues_csa(sdata);
 
 	/* existing TX TSPEC sessions no longer exist */
@@ -5132,6 +5192,7 @@ static void __ieee80211_disconnect(struct ieee80211_sub_if_data *sdata)
 	sdata->deflink.u.mgd.csa.waiting_bcn = false;
 	sdata->deflink.u.mgd.csa.blocked_tx = false;
 	sdata->deflink.u.mgd.csa.bw_reconfig = false;
+	sdata->deflink.u.mgd.csa.nol_hist_cac_pending = false;
 	ieee80211_vif_unblock_queues_csa(sdata);
 
 	ieee80211_report_disconnect(sdata, frame_buf, sizeof(frame_buf), tx,

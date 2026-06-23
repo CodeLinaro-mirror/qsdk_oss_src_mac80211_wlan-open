@@ -16,6 +16,7 @@
 #include "dp_rx.h"
 #include "debug.h"
 #include "hif.h"
+#include "hal.h"
 #include "dp.h"
 #include "umac_reset.h"
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
@@ -96,6 +97,98 @@ static const char *ath12k_umac_reset_state_to_str(enum ath12k_umac_reset_state s
 		return "UNKNOWN";
 	}
 }
+
+static int ath12k_umcmn_irq_config(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+
+	if (DP_UMCMN_INTR_HANDLING_DISABLE ||
+	    ab->hw_params->support_umcmn_interrupts != UMCMN_INTERRUPT_ENABLE)
+		return 0;
+
+	if (dp && dp->arch_ops && dp->arch_ops->umcmn_irq_config)
+		return dp->arch_ops->umcmn_irq_config(ab);
+
+	return 0;
+}
+
+static int ath12k_umcmn_timer_config(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+
+	if (DP_UMCMN_INTR_HANDLING_DISABLE ||
+	    ab->hw_params->support_umcmn_interrupts != UMCMN_INTERRUPT_POLL)
+		return 0;
+
+	if (dp && dp->arch_ops && dp->arch_ops->umcmn_timer_config)
+		return dp->arch_ops->umcmn_timer_config(ab);
+
+	return 0;
+}
+
+static void ath12k_umcmn_irq_free(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+
+	if (DP_UMCMN_INTR_HANDLING_DISABLE ||
+	    ab->hw_params->support_umcmn_interrupts != UMCMN_INTERRUPT_ENABLE)
+		return;
+
+	if (dp && dp->arch_ops && dp->arch_ops->umcmn_irq_free)
+		dp->arch_ops->umcmn_irq_free(ab);
+}
+
+void ath12k_umcmn_irq_disable(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+
+	if (DP_UMCMN_INTR_HANDLING_DISABLE ||
+	    ab->hw_params->support_umcmn_interrupts != UMCMN_INTERRUPT_ENABLE)
+		return;
+
+	if (dp && dp->arch_ops && dp->arch_ops->umcmn_irq_disable)
+		dp->arch_ops->umcmn_irq_disable(ab);
+}
+EXPORT_SYMBOL(ath12k_umcmn_irq_disable);
+
+void ath12k_umcmn_timer_free(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+
+	if (DP_UMCMN_INTR_HANDLING_DISABLE ||
+	    ab->hw_params->support_umcmn_interrupts != UMCMN_INTERRUPT_POLL)
+		return;
+
+	if (dp && dp->arch_ops && dp->arch_ops->umcmn_timer_free)
+		dp->arch_ops->umcmn_timer_free(ab);
+}
+EXPORT_SYMBOL(ath12k_umcmn_timer_free);
+
+void ath12k_umcmn_irq_enable(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+
+	if (DP_UMCMN_INTR_HANDLING_DISABLE ||
+	    ab->hw_params->support_umcmn_interrupts != UMCMN_INTERRUPT_ENABLE)
+		return;
+
+	if (dp && dp->arch_ops && dp->arch_ops->umcmn_irq_enable)
+		dp->arch_ops->umcmn_irq_enable(ab);
+}
+EXPORT_SYMBOL(ath12k_umcmn_irq_enable);
+
+void ath12k_umcmn_timer_enable(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+
+	if (DP_UMCMN_INTR_HANDLING_DISABLE ||
+	    ab->hw_params->support_umcmn_interrupts != UMCMN_INTERRUPT_POLL)
+		return;
+
+	if (dp && dp->arch_ops && dp->arch_ops->umcmn_timer_enable)
+		dp->arch_ops->umcmn_timer_enable(ab);
+}
+EXPORT_SYMBOL(ath12k_umcmn_timer_enable);
 
 static bool ath12k_umac_reset_validate_transition(struct ath12k_base *ab,
 						  enum ath12k_umac_reset_state from,
@@ -360,6 +453,18 @@ int ath12k_dp_umac_reset_init(struct ath12k_base *ab)
 	if (ret) {
 		ath12k_warn(ab, "Failed to register interrupt for UMAC RECOVERY\n");
 		goto shmem_free;
+	}
+
+	ret = ath12k_umcmn_irq_config(ab);
+	if (ret) {
+		ath12k_warn(ab, "Failed to register interrupt for UMCMN\n");
+		goto free_irq;
+	}
+
+	ret = ath12k_umcmn_timer_config(ab);
+	if (ret) {
+		ath12k_warn(ab, "Failed to configure timer for UMCMN\n");
+		goto free_irq;
 	}
 
 	ret = ath12k_htt_umac_reset_setup_cmd(ab);
@@ -1499,6 +1604,8 @@ void ath12k_dp_umac_reset_deinit(struct ath12k_base *ab)
 	umac_reset = &ab->dp_umac_reset;
 
 	ath12k_hif_dp_umac_reset_free_irq(ab);
+	ath12k_umcmn_irq_free(ab);
+	ath12k_umcmn_timer_free(ab);
 
 	if (umac_reset->shmem_vaddr_unaligned) {
 		dma_free_coherent(ab->dev,

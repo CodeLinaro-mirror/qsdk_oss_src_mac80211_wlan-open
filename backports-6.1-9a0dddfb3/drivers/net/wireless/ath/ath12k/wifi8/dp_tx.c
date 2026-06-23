@@ -366,7 +366,7 @@ ath12k_wifi8_dp_qos_update(struct ath12k_dp *dp, struct ath12k_pdev_dp *dp_pdev,
 		ret = ath12k_dp_peer_scs_data(dp,
 					      scs_id, dp_pdev->dp_hw,
 					      &msduq, &qos_id,
-					      dp_peer, link_id);
+					      dp_peer);
 		if (ret != 0) {
 			ath12k_err(dp->ab, "SCS Peer Data is NULL");
 			return;
@@ -2117,9 +2117,6 @@ void ath12k_wifi8_ucast_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 	u8 ring_id = 0;
 	u32 len = skb->len;
 	u8 tid = skb->priority & IEEE80211_QOS_CTL_TID_MASK;
-
-	if (unlikely(!arvif || !arvif->is_created))
-		goto fail;
 
 	/* Get DP pdev */
 	dp_pdev = ath12k_dp_to_dp_pdev(arvif->ar->ab->dp, dp_link_vif->pdev_idx);

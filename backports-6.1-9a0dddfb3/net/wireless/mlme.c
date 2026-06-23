@@ -1461,6 +1461,8 @@ void cfg80211_cac_event(struct net_device *netdev,
 	case NL80211_RADAR_CAC_ABORTED:
 		cfg80211_clear_cac_started(rdev, chandef, link_id,
 					   netdev->name);
+		if (wdev->iftype == NL80211_IFTYPE_STATION)
+			wdev->links[link_id].cac_started = false;
 		break;
 	case NL80211_RADAR_CAC_STARTED:
 		wdev->links[link_id].cac_started = true;

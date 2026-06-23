@@ -611,6 +611,9 @@ ath12k_mac_bw_to_mac80211_bw(enum ath12k_supported_bw bw)
 	case ATH12K_BW_160:
 		ret = RATE_INFO_BW_160;
 		break;
+	case ATH12K_BW_240:
+		ret = RATE_INFO_BW_160;
+		break;
 	case ATH12K_BW_320:
 		ret = RATE_INFO_BW_320;
 		break;
@@ -5464,17 +5467,28 @@ int ath12k_mac_set_he_txbf_conf(struct ath12k_link_vif *arvif)
 		if (link_conf->he_su_beamformee)
 			value |= u32_encode_bits(HE_SU_BFEE_ENABLE, HE_MODE_SU_TX_BFEE);
 	}
-	if (ar->he_dl_enabled)
+	/* Per-link override takes precedence when configured; radio-level is fallback */
+	if (arvif->vap_cfg.he_dl_ofdma_configured ?
+	    arvif->vap_cfg.he_dl_ofdma : ar->he_dl_enabled)
 		value |= u32_encode_bits(HE_DL_MUOFDMA_ENABLE, HE_MODE_DL_OFDMA);
-	if (ar->he_ul_enabled)
+	if (arvif->vap_cfg.he_ul_ofdma_configured ?
+	    arvif->vap_cfg.he_ul_ofdma : ar->he_ul_enabled)
 		value |= u32_encode_bits(HE_UL_MUOFDMA_ENABLE, HE_MODE_UL_OFDMA);
-	if (ar->he_dlbf_enabled)
+	if (arvif->vap_cfg.he_dl_ofdma_txbf_configured ?
+	    arvif->vap_cfg.he_dl_ofdma_txbf : ar->he_dlbf_enabled)
 		value |= u32_encode_bits(HE_DL_OFDMA_TXBF_ENABLE, HE_MODE_DL_OFDMA_TXBF);
-
 	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
-		   "[vdev_id : %u radio_idx : %u] Set HE TXBF config: DL=%d UL=%d DLBF=%d, value=0x%x\n",
-		   arvif->vdev_id, ar->radio_idx,
-		   ar->he_dl_enabled, ar->he_ul_enabled, ar->he_dlbf_enabled, value);
+		   "[v_id:%u]HE cfg: DL=%d(ovr=%d) UL=%d(ovr=%d) DLBF=%d(ovr=%d) val=0x%x\n",
+		   arvif->vdev_id,
+		   arvif->vap_cfg.he_dl_ofdma_configured ?
+		   arvif->vap_cfg.he_dl_ofdma : ar->he_dl_enabled,
+		   arvif->vap_cfg.he_dl_ofdma_configured,
+		   arvif->vap_cfg.he_ul_ofdma_configured ?
+		   arvif->vap_cfg.he_ul_ofdma : ar->he_ul_enabled,
+		   arvif->vap_cfg.he_ul_ofdma_configured,
+		   arvif->vap_cfg.he_dl_ofdma_txbf_configured ?
+		   arvif->vap_cfg.he_dl_ofdma_txbf : ar->he_dlbf_enabled,
+		   arvif->vap_cfg.he_dl_ofdma_txbf_configured, value);
 
 	ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id, param, value);
 	if (ret) {
@@ -5602,18 +5616,33 @@ int ath12k_mac_set_eht_txbf_conf(struct ath12k_link_vif *arvif)
 		if (link_conf->eht_su_beamformee)
 			value |= u32_encode_bits(EHT_SU_BFEE_ENABLE, EHT_MODE_SU_TX_BFEE);
 	}
-	if (ar->eht_dl_enabled)
+
+	/* Per-link override takes precedence when configured (bool pair pattern);
+	 * otherwise fall back to the radio-level debugfs setting.
+	 */
+	if (arvif->vap_cfg.eht_dl_ofdma_configured ?
+	    arvif->vap_cfg.eht_dl_ofdma : ar->eht_dl_enabled)
 		value |= u32_encode_bits(EHT_DL_MUOFDMA_ENABLE, EHT_MODE_DL_OFDMA);
-	if (ar->eht_ul_enabled)
+	if (arvif->vap_cfg.eht_ul_ofdma_configured ?
+	    arvif->vap_cfg.eht_ul_ofdma : ar->eht_ul_enabled)
 		value |= u32_encode_bits(EHT_UL_MUOFDMA_ENABLE, EHT_MODE_UL_OFDMA);
-	if (ar->eht_dlbf_enabled)
+	if (arvif->vap_cfg.eht_dl_ofdma_txbf_configured ?
+	    arvif->vap_cfg.eht_dl_ofdma_txbf : ar->eht_dlbf_enabled)
 		value |= u32_encode_bits(EHT_DL_OFDMA_TXBF_ENABLE,
-					EHT_MODE_DL_OFDMA_TXBF);
+					 EHT_MODE_DL_OFDMA_TXBF);
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
-		   "[vdev_id : %u radio_idx : %u] Set EHT TXBF config: DL=%d UL=%d DLBF=%d, value=0x%x\n",
-		   arvif->vdev_id, ar->radio_idx,
-		   ar->eht_dl_enabled, ar->eht_ul_enabled, ar->eht_dlbf_enabled, value);
+		   "[v_id:%u]EHT DL=%d(ovr=%d) UL=%d(ovr=%d) DLBF=%d(ovr=%d) val=0x%x\n",
+		   arvif->vdev_id,
+		   arvif->vap_cfg.eht_dl_ofdma_configured ?
+		   arvif->vap_cfg.eht_dl_ofdma : ar->eht_dl_enabled,
+		   arvif->vap_cfg.eht_dl_ofdma_configured,
+		   arvif->vap_cfg.eht_ul_ofdma_configured ?
+		   arvif->vap_cfg.eht_ul_ofdma : ar->eht_ul_enabled,
+		   arvif->vap_cfg.eht_ul_ofdma_configured,
+		   arvif->vap_cfg.eht_dl_ofdma_txbf_configured ?
+		   arvif->vap_cfg.eht_dl_ofdma_txbf : ar->eht_dlbf_enabled,
+		   arvif->vap_cfg.eht_dl_ofdma_txbf_configured, value);
 
 	ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id, param, value);
 	if (ret) {
@@ -9291,6 +9320,15 @@ skip_pending_cs_up:
 					 preamble, arvif->vdev_id);
 	}
 
+	if (changed & BSS_CHANGED_STA_NOL_CAC_DONE) {
+		if (vif->cfg.assoc && !arvif->is_up) {
+			ath12k_dp_arch_peer_assoc(ar->ab->dp, &ar->ah->dp_hw,
+						  &ahvif->dp_vif,
+						  vif->cfg.ap_addr);
+			ath12k_bss_assoc(ar, arvif, info);
+		}
+	}
+
 	if (changed & BSS_CHANGED_ASSOC) {
 		if (vif->cfg.assoc) {
 			ath12k_dp_arch_peer_assoc(ar->ab->dp, &ar->ah->dp_hw,
@@ -10002,6 +10040,13 @@ static int ath12k_start_scan(struct ath12k *ar,
 
 	ret = wait_for_completion_timeout(&ar->scan.started, 1 * HZ);
 	if (ret == 0) {
+		/* FW assertion right after scan start can trigger WARN_ON.
+		 * Skip the WARN_ON() and WMI scan_stop when CRASH_FLUSH is set -
+		 * the FW is already dead and WMI commands will be dropped.
+		 */
+		if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags))
+			return -ESHUTDOWN;
+
 		WARN_ON(1);
 		ret = ath12k_scan_stop(ar);
 		if (ret)
@@ -13343,7 +13388,7 @@ static int ath12k_mac_assign_link_sta(struct ath12k_hw *ah,
 								     false;
 	if (is_bridge_peer) {
 		eth_random_addr(arsta->addr);
-		ahsta->primary_link_id = link_id;
+		ath12k_sta_update_primary_link(ah->hw->wiphy, ahsta, link_id);
 	} else {
 		link_sta = wiphy_dereference(ah->hw->wiphy, sta->link[link_id]);
 		if (!link_sta)
@@ -13778,6 +13823,12 @@ static void ath12k_sta_migration_wk(struct work_struct *wk)
 
 	/* update the new primary link */
 	ahsta->primary_link_id = arsta->link_id;
+
+	val.primary_link_id = arsta->link_id;
+	ath12k_dp_peer_set_param_by_dp_peer(dp_peer,
+					    ATH12K_DP_PEER_PRIMARY_LINK_ID_PARAM,
+					    &val);
+
 	spin_unlock_bh(&pri_ar->arsta_lock);
 	ret = false;
 
@@ -14073,6 +14124,8 @@ static int ath12k_mac_reconfig_ahsta_links_mode0(struct ath12k_hw *ah,
 	struct ath12k *ar;
 	int ret;
 
+	lockdep_assert_wiphy(hw->wiphy);
+
 	links_to_unmap = ahsta->links_map;
 	/*
 	 * Link only 1 link at a time as addtional links are mapped
@@ -14110,7 +14163,7 @@ static int ath12k_mac_reconfig_ahsta_links_mode0(struct ath12k_hw *ah,
 	}
 
 	ahsta->assoc_link_id = link_to_assign;
-	ahsta->primary_link_id = link_to_assign;
+	ath12k_sta_update_primary_link(hw->wiphy, ahsta, link_to_assign);
 	arsta->is_assoc_link = true;
 	ath12k_dbg(NULL, ATH12K_DBG_MAC | ATH12K_DBG_BOOT,
 		   "mac reconfig assign link sta: link_id:%d sta link_map:0x%x vif link_map:0x%x sta valid links:%ld\n",
@@ -14261,7 +14314,8 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 			if (sta->mlo) {
 				arsta->is_assoc_link = true;
 				ahsta->assoc_link_id = link_id;
-				ahsta->primary_link_id = link_id;
+
+				ath12k_sta_update_primary_link(wiphy, ahsta, link_id);
 
 				init_completion(&ahsta->dp_migration_event);
 				INIT_WORK(&ahsta->migration_wk, ath12k_sta_migration_wk);
@@ -15169,7 +15223,8 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 								 ahsta->links_map);
 			if (pri_link_id == IEEE80211_MLD_MAX_NUM_LINKS) {
 				pri_link_id = ahsta->assoc_link_id;
-				ahsta->primary_link_id = pri_link_id;
+				ath12k_sta_update_primary_link(hw->wiphy, ahsta,
+							       pri_link_id);
 			} else {
 				arvif =
 				wiphy_dereference(hw->wiphy, ahvif->link[pri_link_id]);
@@ -15191,7 +15246,9 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 						goto skip_pri_link_selection;
 					}
 				}
-				ahsta->primary_link_id = pri_link_id;
+
+				ath12k_sta_update_primary_link(hw->wiphy, ahsta,
+							       pri_link_id);
 			}
 skip_pri_link_selection:
 			ath12k_dbg_level(NULL, ATH12K_DBG_MAC, ATH12K_DBG_L2,
@@ -21588,6 +21645,27 @@ beacon_tmpl_setup:
 	if (arvif->pending_csa_up)
 		return 0;
 
+	/*
+	 * STA vdev on a NOL-history CSA target: CAC must complete before
+	 * vdev_up. mac80211 will fire BSS_CHANGED_ASSOC once CAC passes,
+	 * which re-enters ath12k_bss_assoc() and issues vdev_up then.
+	 * Clear is_up here: for the MVR path no vdev_stop was issued, so
+	 * is_up was never cleared. ath12k_bss_assoc asserts !is_up on entry.
+	 */
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
+		struct ieee80211_sub_if_data *sdata = vif_to_sdata(ahvif->vif);
+		struct ieee80211_link_data *mgd_link;
+
+		rcu_read_lock();
+		mgd_link = rcu_dereference(sdata->link[arvif->link_id]);
+		if (mgd_link && mgd_link->u.mgd.csa.nol_hist_cac_pending) {
+			arvif->is_up = false;
+			rcu_read_unlock();
+			return 0;
+		}
+		rcu_read_unlock();
+	}
+
 	if (arvif->ahvif->vdev_type != WMI_VDEV_TYPE_MONITOR && !arvif->is_up)
 		return -EOPNOTSUPP;
 
@@ -21754,6 +21832,7 @@ ath12k_mac_multi_vdev_restart(struct ath12k *ar,
 	arg.vdev_start_arg.chan_radar = !!(chandef->chan->flags & IEEE80211_CHAN_RADAR);
 	arg.vdev_start_arg.passive = arg.vdev_start_arg.chan_radar;
 	arg.vdev_start_arg.freq2_radar = radar_enabled;
+	arg.vdev_start_arg.is_stadfs_en = !!ath12k_ar_to_hw(ar)->wiphy->sta_dfs_en;
 	arg.vdev_start_arg.passive |= !!(chandef->chan->flags & IEEE80211_CHAN_NO_IR);
 
 	if (test_bit(WMI_TLV_SERVICE_SW_PROG_DFS_SUPPORT, ar->ab->wmi_ab.svc_map) &&
@@ -29520,7 +29599,7 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 {
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
 	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
-	struct ath12k *ar;
+	struct ath12k *ar = NULL;
 	struct ath12k_link_vif *arvif;
 	struct ath12k_dp *dp;
 	struct ath12k_dp_peer *peer;
@@ -29536,7 +29615,8 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 	struct ath12k_dp_preserved_stats *del_stats;
 	struct ath12k_dp_pkt_info vif_ppeds_rx;
 	struct ieee80211_vif *master_vif;
-
+	u32 rx_packets;
+	u64 rx_bytes;
 
 	rcu_read_lock();
 	if (vif->type == NL80211_IFTYPE_AP_VLAN) {
@@ -29564,6 +29644,7 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 		 */
 		ath12k_mac_add_preserved_stats(stats, &dp_vif->link_vif_delete_stats);
 	}
+
 	is_ds_vif = (ahvif->dp_vif.ppe_vp_type == PPE_VP_USER_TYPE_DS);
 	for_each_set_bit(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
 		if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
@@ -29583,6 +29664,9 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 		}
 		spin_lock_bh(&dp->dp_lock);
 		list_for_each_entry(link_peer, &dp->peers, list)  {
+			rx_packets = 0;
+			rx_bytes = 0;
+
 			if (link_peer->vdev_id != arvif->vdev_id)
 				continue;
 			/* Isolate AP_VLAN stats to the specific WDS peer */
@@ -29607,13 +29691,26 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 				 */
 				if (is_ds_vif && i < DP_REO_PPEDS_RING_IDX)
 					continue;
-				stats->rx_packets +=
+				rx_packets +=
 					(peer_stats->rx[i].sent_to_stack.packets +
 					 peer_stats->rx[i].sent_to_stack_fast.packets);
-				stats->rx_bytes +=
+				rx_bytes +=
 					(peer_stats->rx[i].sent_to_stack.bytes +
 					 peer_stats->rx[i].sent_to_stack_fast.bytes);
 			}
+
+			if (ar && ath12k_extd_rx_stats_enabled(&ar->dp) && link_peer &&
+			    link_peer->peer_stats.rx_stats) {
+				/* Override PPEDS ring sent_to_stack with extended RX
+				 * monitor MSDU totals.
+				 */
+				rx_packets = link_peer->peer_stats.rx_stats->num_msdu;
+				rx_bytes = link_peer->peer_stats.rx_stats->num_msdu_bytes;
+			}
+
+			stats->rx_packets += rx_packets;
+			stats->rx_bytes += rx_bytes;
+
 			for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
 				stats->tx_packets += peer_stats->tx[i].comp_pkt.packets;
 				stats->tx_bytes   += peer_stats->tx[i].comp_pkt.bytes;
@@ -29626,7 +29723,8 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 	/*
 	 * Accumulate hardware PPE DS ring stats on the master VIF
 	 */
-	if (ar && vif->type == NL80211_IFTYPE_AP) {
+	if (ar && vif->type == NL80211_IFTYPE_AP &&
+	    !ath12k_extd_rx_stats_enabled(&ar->dp)) {
 		vif_ppeds_rx = dp_vif->rx_stats[DP_REO_PPEDS_RING_IDX].ppeds_rx;
 		stats->rx_packets += vif_ppeds_rx.packets;
 		stats->rx_bytes += vif_ppeds_rx.bytes;

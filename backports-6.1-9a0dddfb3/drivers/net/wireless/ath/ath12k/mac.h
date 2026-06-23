@@ -122,7 +122,8 @@ enum ath12k_supported_bw {
 	ATH12K_BW_40    = 1,
 	ATH12K_BW_80    = 2,
 	ATH12K_BW_160   = 3,
-	ATH12K_BW_320   = 4,
+	ATH12K_BW_240   = 4,
+	ATH12K_BW_320   = 5,
 };
 
 /* Below BW_GAIN should be added to the SNR value of every ppdu based on the
