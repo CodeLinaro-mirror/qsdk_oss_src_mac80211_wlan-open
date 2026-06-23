@@ -22372,7 +22372,7 @@ static struct genl_family nl80211_fam __ro_after_init = {
 	.n_small_ops = ARRAY_SIZE(nl80211_small_ops),
 #endif
 #if LINUX_VERSION_IS_GEQ(6,1,0)
-	.resv_start_op = NL80211_CMD_REMOVE_LINK_STA + 21,
+	.resv_start_op = NL80211_CMD_REMOVE_LINK_STA + 23,
 #endif
 	.mcgrps = nl80211_mcgrps,
 	.n_mcgrps = ARRAY_SIZE(nl80211_mcgrps),
