@@ -12009,9 +12009,12 @@ static void ath12k_vdev_start_resp_event(struct ath12k_base *ab, struct sk_buff 
 	status = le32_to_cpu(vdev_start_resp.status);
 
 	if (status) {
-		ath12k_warn(ab, "vdev start resp error status %d (%s)\n",
-			    status, ath12k_wmi_vdev_resp_print(status));
+		ath12k_warn(ab, "vdev start resp error status %d (%s) for vdev id %d\n",
+			    status, ath12k_wmi_vdev_resp_print(status),
+			    vdev_start_resp.vdev_id);
 		ar->last_wmi_vdev_start_status = status;
+		ath12k_critical_failure_trigger(ab, ATH12K_CRIT_VAP_FAILURE);
+		WARN_ON_ONCE(status);
 	}
 
 	complete(&ar->vdev_setup_done);
