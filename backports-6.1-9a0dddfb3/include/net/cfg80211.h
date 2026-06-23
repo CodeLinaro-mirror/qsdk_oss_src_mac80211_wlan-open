@@ -2316,6 +2316,7 @@ struct link_station_del_parameters {
  * @eml_cap: EML capabilities of this station
  * @link_sta_params: link related params.
  * @control_mic_pad: padding info for control frames
+ * @epp_peer: EPP peer indication
  */
 struct station_parameters {
 	struct net_device *vlan;
@@ -2344,6 +2345,7 @@ struct station_parameters {
 	u16 eml_cap;
 	struct link_station_parameters link_sta_params;
 	u8 control_mic_pad;
+	bool epp_peer;
 };
 
 /**
