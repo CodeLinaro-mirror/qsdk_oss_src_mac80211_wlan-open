@@ -12861,7 +12861,9 @@ static int nl80211_notify_radar_detection(struct sk_buff *skb,
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
 	struct wiphy *wiphy = wdev->wiphy;
 	struct cfg80211_chan_def chandef;
+	struct cfg80211_chan_def *oper_chandef;
 	enum nl80211_dfs_regions dfs_region;
+	int link_id = nl80211_link_id(info->attrs);
 	int err;
 
 	dfs_region = reg_get_dfs_region(wiphy);
@@ -12889,7 +12891,13 @@ static int nl80211_notify_radar_detection(struct sk_buff *skb,
 		return -EINVAL;
 	}
 
-	rdev_dfs_radar_process(rdev, &chandef);
+	oper_chandef = wdev_chandef(wdev, link_id);
+	if (oper_chandef && oper_chandef->chan &&
+	    chandef.chan == oper_chandef->chan &&
+	    chandef.width == oper_chandef->width &&
+	    chandef.center_freq1 == oper_chandef->center_freq1) {
+		rdev_dfs_radar_process(rdev, &chandef);
+	}
 
 	cfg80211_set_dfs_state(wiphy, &chandef, NL80211_DFS_UNAVAILABLE);
 
