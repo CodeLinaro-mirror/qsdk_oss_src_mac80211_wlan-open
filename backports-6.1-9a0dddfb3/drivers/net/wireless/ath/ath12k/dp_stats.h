@@ -272,6 +272,34 @@ enum ath12k_mu_packet_type {
 #define MAX_PUNCTURED_MODE	5
 #define RSSI_CHAIN_LEN		8
 
+/* Only following preamble types are supported for SU and MU PPDU stats */
+enum ath12k_rx_ppdu_proto {
+	ATH12K_RX_PPDU_PROTO_11AX = 0,
+	ATH12K_RX_PPDU_PROTO_11BE = 1,
+	ATH12K_RX_PPDU_PROTO_11BN = 2,
+	ATH12K_RX_PPDU_PROTO_MAX,
+};
+
+/**
+ * ath12k_preamble_to_rx_mon_proto_idx() - Map HAL preamble type to
+ *					   ATH12K_RX_PPDU_PROTO index
+ * Return: valid ATH12K_RX_PPDU_PROTO index, or ATH12K_RX_PPDU_PROTO_MAX if
+ *         the preamble type has no SU PPDU statistics entry.
+ */
+static inline u8 ath12k_preamble_to_rx_mon_proto_idx(u8 preamble_type)
+{
+	switch (preamble_type) {
+	case HAL_RX_PREAMBLE_11AX:
+		return ATH12K_RX_PPDU_PROTO_11AX;
+	case HAL_RX_PREAMBLE_11BE:
+		return ATH12K_RX_PPDU_PROTO_11BE;
+	case HAL_RX_PREAMBLE_11BN:
+		return ATH12K_RX_PPDU_PROTO_11BN;
+	default:
+		return ATH12K_RX_PPDU_PROTO_MAX;
+	}
+}
+
 #define TID_TO_WME_AC(_tid) (      \
 		(((_tid) == 0) || ((_tid) == 3)) ? WME_AC_BE : \
 		(((_tid) == 1) || ((_tid) == 2)) ? WME_AC_BK : \
@@ -1176,7 +1204,7 @@ struct ath12k_rx_peer_rate_stats {
 };
 
 struct ath12k_rx_peer_user_stats {
-	u64 ppdu_nss[HAL_RX_MAX_NSS];
+	u32 ppdu_nss[HAL_RX_MAX_NSS];
 	u32 mpdu_cnt_fcs_ok;
 	u32 mpdu_cnt_fcs_err;
 	struct pkt_type ppdu;
@@ -1354,15 +1382,14 @@ struct ath12k_dp_link_peer_rx_signal_stats {
  *                  (indexed by HAL_RX_RECEPTION_TYPE_MAX).
  * @ppdu_nss: Number of PPDUs received per spatial stream (indexed by HAL_RX_MAX_NSS).
  * @proto_type: MSDU packet counts per 802.11 protocol type (indexed by DOT11_MAX).
- * @wme_ac_type: MSDU packets and bytes per WME Access Category
+ * @wme_ac_type_pkts: MSDU packets and bytes per WME Access Category
  *               (Voice, Video, Best Effort, Background).
- * @su_ppdu_count: PPDU SU packet counts per MCS per 802.11 protocol type
- * @punc_bw: Number of MSDUs received per punctured bandwidth mode
- *           (indexed by MAX_PUNCTURED_MODE).
+ * @su_ppdu_count: SU PPDU packet counts per MCS.
+ * @punc_bw: Number of MSDUs received per punctured bandwidth mode.
  *
  * MU statistics:
- * @rx_mu: MU reception statistics per 802.11 protocol type and user type
- *         (indexed by DOT11_MAX and TXRX_TYPE_MU_MAX).
+ * @rx_mu: MU reception statistics per 802.11 protocol type and user type,
+ *         indexed by [ATH12K_RX_PPDU_PROTO_MAX][TXRX_TYPE_MU_MAX].
  *
  * Rate Stats :
  * @last_rx_rate: Last received data rate in kbps.
@@ -1406,14 +1433,16 @@ struct ath12k_rx_peer_stats {
 	/* Advance Stats */
 	u32 num_bar;
 	u32 num_ndpa;
-	u64 ppdu_reception[HAL_RX_RECEPTION_TYPE_MAX];
-	u64 ppdu_nss[HAL_RX_MAX_NSS];
+	u32 ppdu_reception[HAL_RX_RECEPTION_TYPE_MAX];
+	u32 ppdu_nss[HAL_RX_MAX_NSS];
 	struct pkt_type proto_type[DOT11_MAX];
-	struct ath12k_rx_peer_total_stats wme_ac_type[WME_NUM_AC];
-	struct pkt_type su_ppdu_count[DOT11_MAX];
+	u32 wme_ac_type_pkts[WME_NUM_AC];
+	u64 wme_ac_type_bytes[WME_NUM_AC];
+	struct pkt_type su_ppdu_count[ATH12K_RX_PPDU_PROTO_MAX];
 	u32 punc_bw[MAX_PUNCTURED_MODE];
 	/* MU stats */
-	struct ath12k_rx_peer_user_stats rx_mu[DOT11_MAX][TXRX_TYPE_MU_MAX];
+	struct ath12k_rx_peer_user_stats
+		rx_mu[ATH12K_RX_PPDU_PROTO_MAX][TXRX_TYPE_MU_MAX];
 	/* Rate stats */
 	u32 last_rx_rate;
 	u32 rnd_avg_rx_rate;

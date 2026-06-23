@@ -910,7 +910,9 @@ void ath12k_dp_mon_rx_update_advance_stats(struct ath12k_rx_peer_stats *rx_stats
 					   u32 num_msdu, u32 uid)
 {
 	struct hal_rx_user_status *user_stats = NULL;
+	struct ath12k_rx_peer_user_stats *mu = NULL;
 	u8 preamble_type, mcs, nss, ac, punc_mode, max_mcs, res_mcs, mu_type;
+	u8 proto_idx;
 	u32 byte_count, tid;
 
 	if (!rx_stats || !ppdu_info || uid >= HAL_MAX_UL_MU_USERS)
@@ -931,8 +933,8 @@ void ath12k_dp_mon_rx_update_advance_stats(struct ath12k_rx_peer_stats *rx_stats
 		return;
 
 	if (tid <= IEEE80211_NUM_TIDS && ac < WME_NUM_AC) {
-		rx_stats->wme_ac_type[ac].total_pkts += num_msdu;
-		rx_stats->wme_ac_type[ac].total_bytes += byte_count;
+		rx_stats->wme_ac_type_pkts[ac] += num_msdu;
+		rx_stats->wme_ac_type_bytes[ac] += byte_count;
 	}
 
 	if (punc_mode < MAX_PUNCTURED_MODE)
@@ -946,27 +948,28 @@ void ath12k_dp_mon_rx_update_advance_stats(struct ath12k_rx_peer_stats *rx_stats
 
 	rx_stats->proto_type[preamble_type].mcs_count[res_mcs] += num_msdu;
 
+	proto_idx = ath12k_preamble_to_rx_mon_proto_idx(preamble_type);
+
 	if (ppdu_info->reception_type == HAL_RX_RECEPTION_TYPE_SU) {
-		rx_stats->su_ppdu_count[preamble_type].mcs_count[res_mcs] += 1;
+		if (proto_idx < ATH12K_RX_PPDU_PROTO_MAX)
+			rx_stats->su_ppdu_count[proto_idx].mcs_count[res_mcs] += 1;
 		if (likely(nss) && (nss - 1) < HAL_RX_MAX_NSS)
 			rx_stats->ppdu_nss[nss - 1] += 1;
 	} else {
 		if (!user_stats)
 			return;
 
-		/* Assumes any non-SU and non-MU-MIMO reception is MU-OFDMA.
-		 * Update if new reception types are introduced.
-		 */
 		mu_type = (ppdu_info->reception_type == HAL_RX_RECEPTION_TYPE_MU_MIMO) ?
 			TXRX_TYPE_MU_MIMO : TXRX_TYPE_MU_OFDMA;
 
-		rx_stats->rx_mu[preamble_type][mu_type].mpdu_cnt_fcs_ok +=
-							user_stats->mpdu_cnt_fcs_ok;
-		rx_stats->rx_mu[preamble_type][mu_type].ppdu.mcs_count[res_mcs] += 1;
-		rx_stats->rx_mu[preamble_type][mu_type].mpdu_cnt_fcs_err +=
-							user_stats->mpdu_cnt_fcs_err;
-		if (likely(nss) && (nss - 1) < HAL_RX_MAX_NSS)
-			rx_stats->rx_mu[preamble_type][mu_type].ppdu_nss[nss - 1] += 1;
+		if (proto_idx < ATH12K_RX_PPDU_PROTO_MAX) {
+			mu = &rx_stats->rx_mu[proto_idx][mu_type];
+			mu->mpdu_cnt_fcs_ok += user_stats->mpdu_cnt_fcs_ok;
+			mu->ppdu.mcs_count[res_mcs] += 1;
+			mu->mpdu_cnt_fcs_err += user_stats->mpdu_cnt_fcs_err;
+			if (likely(nss) && (nss - 1) < HAL_RX_MAX_NSS)
+				mu->ppdu_nss[nss - 1] += 1;
+		}
 	}
 	rx_stats->ppdu_reception[ppdu_info->reception_type] += 1;
 }

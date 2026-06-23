@@ -5930,35 +5930,33 @@ static int ath12k_fill_peer_rx_per_pkt_stats_attrs(struct sk_buff *vendor_event,
 	return 0;
 }
 
-static int ath12k_vendor_fill_rx_wme_ac_stats(struct sk_buff *skb,
-					       struct ath12k_rx_peer_total_stats *ac_type)
+static int ath12k_vendor_fill_rx_wme_ac_stats_pkts(struct sk_buff *skb,
+						   u32 *wme_ac_type_pkts)
 {
-	struct nlattr *nla_ac;
 	int i;
 
 	for (i = 0; i < QCA_VENDOR_WLAN_TELEMETRY_RATE_WME_AC_MAX &&
 	     i < WME_NUM_AC; i++) {
-		nla_ac = nla_nest_start(skb, i + 1);
-		if (!nla_ac)
-			return -EMSGSIZE;
-
-		if (nla_put_u64_64bit(skb,
-				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_PKTS,
-				      ac_type[i].total_pkts,
-				      NL80211_ATTR_PAD)) {
+		if (nla_put_u32(skb, i + 1, wme_ac_type_pkts[i])) {
 			ath12k_err(NULL, "nla put failure: rx wme pkt attr error");
-			nla_nest_cancel(skb, nla_ac);
 			return -EMSGSIZE;
 		}
-		if (nla_put_u64_64bit(skb,
-				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKTINFO_BYTES,
-				      ac_type[i].total_bytes,
+	}
+	return 0;
+}
+
+static int ath12k_vendor_fill_rx_wme_ac_bytes(struct sk_buff *skb,
+					      u64 *wme_ac_type_bytes)
+{
+	int i;
+
+	for (i = 0; i < QCA_VENDOR_WLAN_TELEMETRY_RATE_WME_AC_MAX &&
+	     i < WME_NUM_AC; i++) {
+		if (nla_put_u64_64bit(skb, i + 1, wme_ac_type_bytes[i],
 				      NL80211_ATTR_PAD)) {
 			ath12k_err(NULL, "nla put failure: rx wme byte attr error");
-			nla_nest_cancel(skb, nla_ac);
 			return -EMSGSIZE;
 		}
-		nla_nest_end(skb, nla_ac);
 	}
 	return 0;
 }
@@ -6234,8 +6232,7 @@ static int ath12k_put_rx_mu_stats(struct sk_buff *skb,
 
 		for (j = 0; j < QCA_VENDOR_ATTR_WLAN_TELEMETRY_NSS_MAX &&
 		     j < HAL_RX_MAX_NSS; j++)
-			nla_put_u64_64bit(skb, j + 1, rx_mu[i].ppdu_nss[j],
-					  NL80211_ATTR_PAD);
+			nla_put_u32(skb, j + 1, rx_mu[i].ppdu_nss[j]);
 		nla_nest_end(skb, ppdu_nss);
 
 		mcs = nla_nest_start(skb,
@@ -6276,7 +6273,7 @@ static int ath12k_vendor_fill_rx_mon_stats(struct sk_buff *skb,
 	struct nlattr *reception_attr, *ru_attr;
 	struct nlattr *pkt_stats_attr, *byte_stats_attr, *signal_stat_attr;
 	struct nlattr *ppdu_nss_attr, *punc_bw_attr, *su_ppdu_cnt_attr;
-	struct nlattr *nla_wme, *ppdu_cnt_attr;
+	struct nlattr *nla_wme_pkts, *ppdu_cnt_attr, *nla_wme_bytes;
 	struct nlattr *pkt_type_attr, *mu_stats;
 	struct nlattr *pkt_type_nest, *pkt_type_mu_stats;
 	int i, j;
@@ -6492,8 +6489,7 @@ static int ath12k_vendor_fill_rx_mon_stats(struct sk_buff *skb,
 
 	for (i = 0; i < QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_RECEP_MAX &&
 	     i < HAL_RX_RECEPTION_TYPE_MAX; i++) {
-		if (nla_put_u64_64bit(skb, i + 1, rx_stats->ppdu_reception[i],
-				      NL80211_ATTR_PAD)) {
+		if (nla_put_u32(skb, i + 1, rx_stats->ppdu_reception[i])) {
 			nla_nest_cancel(skb, ppdu_cnt_attr);
 			return -EMSGSIZE;
 		}
@@ -6507,8 +6503,7 @@ static int ath12k_vendor_fill_rx_mon_stats(struct sk_buff *skb,
 
 	for (i = 0; i < QCA_VENDOR_ATTR_WLAN_TELEMETRY_NSS_MAX &&
 	     i < HAL_RX_MAX_NSS; i++) {
-		if (nla_put_u64_64bit(skb, i + 1, rx_stats->ppdu_nss[i],
-				      NL80211_ATTR_PAD)) {
+		if (nla_put_u32(skb, i + 1, rx_stats->ppdu_nss[i])) {
 			nla_nest_cancel(skb, ppdu_nss_attr);
 			return -EMSGSIZE;
 		}
@@ -6544,26 +6539,39 @@ static int ath12k_vendor_fill_rx_mon_stats(struct sk_buff *skb,
 	}
 	nla_nest_end(skb, pkt_type_attr);
 
-	/* WME AC stats (nested per AC) */
-	nla_wme = nla_nest_start(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_WME_AC_TYPE);
-	if (!nla_wme)
+	/* WME AC packet counts (flat u32 array, one per AC) */
+	nla_wme_pkts = nla_nest_start(skb,
+				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_WME_AC_TYPE_PKTS);
+	if (!nla_wme_pkts)
 		return -ENOBUFS;
 
-	if (ath12k_vendor_fill_rx_wme_ac_stats(skb, rx_stats->wme_ac_type)) {
-		nla_nest_cancel(skb, nla_wme);
+	if (ath12k_vendor_fill_rx_wme_ac_stats_pkts(skb, rx_stats->wme_ac_type_pkts)) {
+		nla_nest_cancel(skb, nla_wme_pkts);
 		return -EMSGSIZE;
 	}
-	nla_nest_end(skb, nla_wme);
+	nla_nest_end(skb, nla_wme_pkts);
+
+	/* WME AC byte counts (flat u64 array, one per AC) */
+	nla_wme_bytes = nla_nest_start(skb,
+				       QCA_VENDOR_ATTR_WLAN_TELEMETRY_WME_AC_TYPE_BYTES);
+	if (!nla_wme_bytes)
+		return -ENOBUFS;
+
+	if (ath12k_vendor_fill_rx_wme_ac_bytes(skb,
+					       rx_stats->wme_ac_type_bytes)) {
+		nla_nest_cancel(skb, nla_wme_bytes);
+		return -EMSGSIZE;
+	}
+	nla_nest_end(skb, nla_wme_bytes);
 
 	/* su_ppdu_cnt stats */
-
 	su_ppdu_cnt_attr = nla_nest_start(skb,
 					  QCA_VENDOR_ATTR_WLAN_TELEMETRY_SU_PPDU_COUNT);
 	if (!su_ppdu_cnt_attr)
 		return -EMSGSIZE;
 
-	for (i = 0; i < QCA_WLAN_VENDOR_ATTR_WLAN_TELEMETRY_RX_PKT_TYPE_MAX &&
-	     i < DOT11_MAX; i++) {
+	for (i = 0; i < (QCA_WLAN_VENDOR_ATTR_WLAN_TELEMETRY_RX_PPDU_PKT_TYPE_MAX) &&
+	     i < ATH12K_RX_PPDU_PROTO_MAX; i++) {
 		pkt_type_nest = nla_nest_start(skb, i + 1);
 		if (!pkt_type_nest) {
 			nla_nest_cancel(skb, su_ppdu_cnt_attr);
@@ -6603,8 +6611,8 @@ static int ath12k_vendor_fill_rx_mon_stats(struct sk_buff *skb,
 	if (!mu_stats)
 		return -EMSGSIZE;
 
-	for (i = 0; i < QCA_WLAN_VENDOR_ATTR_WLAN_TELEMETRY_RX_PKT_TYPE_MAX &&
-	     i < DOT11_MAX; i++) {
+	for (i = 0; i < QCA_WLAN_VENDOR_ATTR_WLAN_TELEMETRY_RX_PPDU_PKT_TYPE_MAX &&
+	     i < ATH12K_RX_PPDU_PROTO_MAX; i++) {
 		pkt_type_mu_stats = nla_nest_start(skb, i + 1);
 		if (!pkt_type_mu_stats)
 			return -EMSGSIZE;

@@ -3839,11 +3839,12 @@ ath12k_dp_aggregate_link_rx_mon_stats(struct ath12k_rx_peer_stats *dst,
 
 
 	for (i = 0; i < WME_NUM_AC; i++) {
-		dst->wme_ac_type[i].total_pkts += src->wme_ac_type[i].total_pkts;
-		dst->wme_ac_type[i].total_bytes += src->wme_ac_type[i].total_bytes;
+		dst->wme_ac_type_pkts[i] += src->wme_ac_type_pkts[i];
+		dst->wme_ac_type_bytes[i] += src->wme_ac_type_bytes[i];
 	}
 
-	for (i = 0; i < DOT11_MAX; i++) {
+	/* su_ppdu_count is sized ATH12K_RX_PPDU_PROTO_MAX (11AX/11BE/11BN) */
+	for (i = 0; i < ATH12K_RX_PPDU_PROTO_MAX; i++) {
 		for (j = 0; j < MAX_MCS; j++)
 			dst->su_ppdu_count[i].mcs_count[j] +=
 				src->su_ppdu_count[i].mcs_count[j];
@@ -3855,7 +3856,8 @@ ath12k_dp_aggregate_link_rx_mon_stats(struct ath12k_rx_peer_stats *dst,
 				src->proto_type[i].mcs_count[j];
 	}
 
-	for (k = 0; k < DOT11_MAX; k++) {
+	/* rx_mu first dimension is ATH12K_RX_PPDU_PROTO_MAX (11AX/11BE/11BN) */
+	for (k = 0; k < ATH12K_RX_PPDU_PROTO_MAX; k++) {
 		for (j = 0; j < TXRX_TYPE_MU_MAX; j++) {
 			for (i = 0; i < HAL_RX_MAX_NSS; i++)
 				dst->rx_mu[k][j].ppdu_nss[i] +=
