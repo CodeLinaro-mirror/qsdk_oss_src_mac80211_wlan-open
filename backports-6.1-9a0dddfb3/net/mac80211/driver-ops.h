@@ -2094,4 +2094,17 @@ drv_set_muedca_mode(struct ieee80211_local *local,
 }
 #endif /* CPTCFG_QCN_EXTN */
 
+static inline int drv_set_smd_ctx(struct ieee80211_local *local,
+				  struct ieee80211_sub_if_data *sdata,
+				  struct ieee80211_sta *sta,
+				  struct cfg80211_smd_transition_info *st_info)
+{
+	if (!sdata || !local->ops->set_smd_ctx)
+		return -EOPNOTSUPP;
+
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	return local->ops->set_smd_ctx(&local->hw, &sdata->vif, sta, st_info);
+}
+
 #endif /* __MAC80211_DRIVER_OPS */

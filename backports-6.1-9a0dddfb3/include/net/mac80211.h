@@ -5233,6 +5233,8 @@ struct ieee80211_ppe_vp_ds_params {
  *	release any resources allocated at PREPARE_RESP time.
  *	@current_sta is the current (serving AP) peer; @target_sta is the
  *	target AP peer (NULL for ABORT). @info carries per-phase parameters.
+ * @set_smd_ctx: Set the UHR SMD context for the non-AP MLD. This is used in
+ *	the target AP MLD side to program dynamic context.
  */
 struct ieee80211_ops {
 	void (*tx)(struct ieee80211_hw *hw,
@@ -5703,6 +5705,9 @@ struct ieee80211_ops {
 	int (*set_muedca_mode)(struct ieee80211_hw *hw, int radio_idx,
 			       u8 muedca_mode);
 #endif /* CPTCFG_QCN_EXTN */
+	int (*set_smd_ctx)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+			   struct ieee80211_sta *sta,
+			   struct cfg80211_smd_transition_info *st_info);
 };
 
 /**

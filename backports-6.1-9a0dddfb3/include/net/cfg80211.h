@@ -6045,6 +6045,7 @@ struct cfg80211_smd_transition_info {
  *	@params carries per-link update flags and NPCA settings.
  * @set_muedca_mode: Set the mode of setting MU EDCA parameters.
  * @uhr_link_reconf: Initiate SMD preparation with target AP MLD
+ * @set_smd_ctx: Set UHR SMD context data for the non-AP MLD.
  */
 struct cfg80211_ops {
 	int	(*suspend)(struct wiphy *wiphy, struct cfg80211_wowlan *wow);
@@ -6461,6 +6462,9 @@ struct cfg80211_ops {
 	int (*smd_roam)(struct wiphy *wiphy,
 			struct net_device *dev,
 			const struct cfg80211_smd_roam_req *req);
+	int	(*set_smd_ctx)(struct wiphy *wiphy, struct wireless_dev *wdev,
+			       const u8 *addr,
+			       struct cfg80211_smd_transition_info *st_info);
 };
 
 /*

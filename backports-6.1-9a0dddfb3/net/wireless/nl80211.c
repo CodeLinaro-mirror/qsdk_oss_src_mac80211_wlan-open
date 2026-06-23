@@ -727,6 +727,43 @@ nl80211_pcie_policy[NL80211_PCIE_ATTR_MAX + 1] = {
 	[NL80211_PCIE_ATTR_LANE] = { .type = NLA_U8 },
 };
 
+static struct nla_policy
+nl80211_smd_ctx_policy[NL80211_SMD_CTX_ATTR_MAX + 1] = {
+	[NL80211_SMD_CTX_ATTR_TYPE] = { .type = NLA_U8 },
+	[NL80211_SMD_CTX_ATTR_PN_LEN] = { .type = NLA_U8 },
+	[NL80211_SMD_CTX_ATTR_DL] = { .type = NLA_NESTED },
+	[NL80211_SMD_CTX_ATTR_UL] = { .type = NLA_NESTED },
+	[NL80211_SMD_CTX_ATTR_QOS] = { .type = NLA_NESTED },
+	[NL80211_SMD_CTX_ATTR_VENDOR] = { .type = NLA_BINARY },
+};
+
+static struct nla_policy
+nl80211_smd_ctx_dl_policy[NL80211_SMD_CTX_DL_ATTR_MAX + 1] = {
+	[NL80211_SMD_CTX_DL_ATTR_VALID_TID_BITMAP] = { .type = NLA_U8 },
+	[NL80211_SMD_CTX_DL_ATTR_SN] = { .type = NLA_NESTED },
+	[NL80211_SMD_CTX_DL_ATTR_PN] = { .type = NLA_BINARY },
+	[NL80211_SMD_CTX_DL_ATTR_BA_PARAMS] = { .type = NLA_NESTED },
+};
+
+static struct nla_policy
+nl80211_smd_ctx_ul_policy[NL80211_SMD_CTX_UL_ATTR_MAX + 1] = {
+	[NL80211_SMD_CTX_UL_ATTR_VALID_TID_BITMAP] = { .type = NLA_U8 },
+	[NL80211_SMD_CTX_UL_ATTR_SN] = { .type = NLA_NESTED },
+	[NL80211_SMD_CTX_UL_ATTR_PN] = { .type = NLA_NESTED },
+	[NL80211_SMD_CTX_UL_ATTR_BA_PARAMS] = { .type = NLA_NESTED },
+};
+
+static struct nla_policy
+nl80211_smd_ctx_ba_policy[NL80211_SMD_CTX_BA_ATTR_MAX + 1] = {
+	[NL80211_SMD_CTX_BA_ATTR_BUFF_SIZE] = { .type = NLA_U16 },
+	[NL80211_SMD_CTX_BA_ATTR_POLICY] = { .type = NLA_FLAG },
+	[NL80211_SMD_CTX_BA_ATTR_AMSDU_SUPPORT] = { .type = NLA_FLAG },
+	[NL80211_SMD_CTX_BA_ATTR_TIMEOUT] = { .type = NLA_U16 },
+	[NL80211_SMD_CTX_BA_ATTR_EXT_NO_FRAG] = { .type = NLA_FLAG },
+	[NL80211_SMD_CTX_BA_ATTR_EXT_FRAG_LEVEL] = { .type = NLA_U8 },
+	[NL80211_SMD_CTX_BA_ATTR_EXT_BUFF_SIZE] = { .type = NLA_U16 },
+};
+
 #if LINUX_VERSION_IS_GEQ(6,7,0)
 static const struct netlink_range_validation nl80211_punct_bitmap_range = {
 	.min = 0,
@@ -21224,6 +21261,200 @@ nla_fail:
 	return -EINVAL;
 }
 
+static void nl80211_set_smd_ctx_ba_params(struct nlattr *tb,
+					  struct ieee80211_smd_ctx_ba *ba_tids,
+					  unsigned long *valid_ctx_bmap)
+{
+	struct nlattr *ba_tb[NL80211_SMD_CTX_BA_ATTR_MAX + 1];
+	struct ieee80211_smd_ctx_ba *ba;
+	struct nlattr *ba_attr;
+	int rem, tid;
+
+	if (!tb)
+		return;
+
+	nla_for_each_nested(ba_attr, tb, rem) {
+		tid = nla_type(ba_attr) - 1;
+		if (tid >= IEEE80211_SMD_CTX_NUM_TIDS)
+			break;
+
+		if (nla_parse_nested(ba_tb, NL80211_SMD_CTX_BA_ATTR_MAX,
+				     ba_attr, nl80211_smd_ctx_ba_policy,
+				     NULL)) {
+			continue;
+		}
+
+		ba = &ba_tids[tid];
+
+		if (ba_tb[NL80211_SMD_CTX_BA_ATTR_BUFF_SIZE])
+			ba->buffer_size =
+				nla_get_u16(ba_tb[NL80211_SMD_CTX_BA_ATTR_BUFF_SIZE]);
+
+		ba->ba_policy = !!ba_tb[NL80211_SMD_CTX_BA_ATTR_POLICY];
+
+		ba->amsdu_supported = !!ba_tb[NL80211_SMD_CTX_BA_ATTR_AMSDU_SUPPORT];
+
+		if (ba_tb[NL80211_SMD_CTX_BA_ATTR_TIMEOUT])
+			ba->timeout = nla_get_u16(ba_tb[NL80211_SMD_CTX_BA_ATTR_TIMEOUT]);
+
+		ba->ext_no_frag = !!ba_tb[NL80211_SMD_CTX_BA_ATTR_EXT_NO_FRAG];
+
+		if (ba_tb[NL80211_SMD_CTX_BA_ATTR_EXT_FRAG_LEVEL])
+			ba->extfrag_level =
+				nla_get_u8(ba_tb[NL80211_SMD_CTX_BA_ATTR_EXT_FRAG_LEVEL]);
+
+		if (ba_tb[NL80211_SMD_CTX_BA_ATTR_EXT_BUFF_SIZE])
+			ba->ext_buffer_size =
+				nla_get_u16(ba_tb[NL80211_SMD_CTX_BA_ATTR_EXT_BUFF_SIZE]);
+
+		set_bit(IEEE80211_SMD_CTX_VALID_BA_PARAMS, valid_ctx_bmap);
+	}
+}
+
+static int nl80211_set_smd_ctx(struct sk_buff *skb, struct genl_info *info)
+{
+	struct cfg80211_registered_device *rdev = info->user_ptr[0];
+	struct nlattr *dl_tb[NL80211_SMD_CTX_DL_ATTR_MAX + 1];
+	struct nlattr *ul_tb[NL80211_SMD_CTX_UL_ATTR_MAX + 1];
+	struct cfg80211_smd_transition_info st_info = {};
+	struct nlattr *tb[NL80211_SMD_CTX_ATTR_MAX + 1];
+	struct net_device *dev = info->user_ptr[1];
+	struct wireless_dev *wdev = dev->ieee80211_ptr;
+	struct ieee80211_smd_ctx ctx;
+	struct nlattr *bmap_attr;
+	const u8 *addr;
+	u8 pn_len;
+
+	if (!rdev->ops->set_smd_ctx)
+		return -EOPNOTSUPP;
+
+	if (!info->attrs[NL80211_ATTR_MAC] || !info->attrs[NL80211_ATTR_SMD_CTX])
+		return -EINVAL;
+
+	addr = nla_data(info->attrs[NL80211_ATTR_MAC]);
+
+	if (nla_parse_nested(tb, NL80211_SMD_CTX_ATTR_MAX,
+			     info->attrs[NL80211_ATTR_SMD_CTX],
+			     nl80211_smd_ctx_policy, NULL))
+		return -EINVAL;
+
+	if (!tb[NL80211_SMD_CTX_ATTR_TYPE])
+		return -EINVAL;
+
+	memset(&ctx, 0, sizeof(ctx));
+
+	st_info.type = nla_get_u8(tb[NL80211_SMD_CTX_ATTR_TYPE]);
+	st_info.ctx = &ctx;
+
+	if (tb[NL80211_SMD_CTX_ATTR_PN_LEN]) {
+		pn_len = nla_get_u8(tb[NL80211_SMD_CTX_ATTR_PN_LEN]);
+		if (pn_len <= sizeof(ctx.dl.pn)) {
+			set_bit(IEEE80211_SMD_CTX_VALID_PN, ctx.valid_ctx_bmap);
+			ctx.pn_len = pn_len;
+		}
+	}
+
+	/* DL Context */
+	if (tb[NL80211_SMD_CTX_ATTR_DL]) {
+		if (nla_parse_nested(dl_tb, NL80211_SMD_CTX_DL_ATTR_MAX,
+				     tb[NL80211_SMD_CTX_ATTR_DL],
+				     nl80211_smd_ctx_dl_policy, NULL))
+			return -EINVAL;
+
+		bmap_attr = dl_tb[NL80211_SMD_CTX_DL_ATTR_VALID_TID_BITMAP];
+		if (bmap_attr)
+			bitmap_write(ctx.dl.valid_tid_bmap, nla_get_u8(bmap_attr),
+				     0, IEEE80211_SMD_CTX_NUM_TIDS);
+
+		if (dl_tb[NL80211_SMD_CTX_DL_ATTR_SN]) {
+			struct nlattr *sn_attr;
+			int rem, tid;
+
+			set_bit(IEEE80211_SMD_CTX_VALID_DL_SN, ctx.valid_ctx_bmap);
+
+			nla_for_each_nested(sn_attr, dl_tb[NL80211_SMD_CTX_DL_ATTR_SN],
+					    rem) {
+				tid = nla_type(sn_attr) - 1;
+				if (tid >= IEEE80211_SMD_CTX_NUM_TIDS)
+					break;
+
+				ctx.dl.sn[tid] = nla_get_u16(sn_attr);
+			}
+		}
+
+		if (dl_tb[NL80211_SMD_CTX_DL_ATTR_PN]) {
+			const u8 *pn_data =
+				nla_data(dl_tb[NL80211_SMD_CTX_DL_ATTR_PN]);
+
+			memcpy(ctx.dl.pn, pn_data, ctx.pn_len);
+		}
+
+		nl80211_set_smd_ctx_ba_params(dl_tb[NL80211_SMD_CTX_DL_ATTR_BA_PARAMS],
+					      ctx.dl.ba, ctx.valid_ctx_bmap);
+	}
+
+	/* UL Context */
+	if (tb[NL80211_SMD_CTX_ATTR_UL]) {
+		if (nla_parse_nested(ul_tb, NL80211_SMD_CTX_UL_ATTR_MAX,
+				     tb[NL80211_SMD_CTX_ATTR_UL],
+				     nl80211_smd_ctx_ul_policy, NULL))
+			return -EINVAL;
+
+		bmap_attr = ul_tb[NL80211_SMD_CTX_UL_ATTR_VALID_TID_BITMAP];
+		if (bmap_attr)
+			bitmap_write(ctx.ul.valid_tid_bmap, nla_get_u8(bmap_attr),
+				     0, IEEE80211_SMD_CTX_NUM_TIDS);
+
+		if (ul_tb[NL80211_SMD_CTX_UL_ATTR_SN]) {
+			struct nlattr *sn_attr;
+			int rem, tid;
+
+			set_bit(IEEE80211_SMD_CTX_VALID_UL_SN, ctx.valid_ctx_bmap);
+			nla_for_each_nested(sn_attr, ul_tb[NL80211_SMD_CTX_UL_ATTR_SN],
+					    rem) {
+				tid = nla_type(sn_attr) - 1;
+				if (tid >= IEEE80211_SMD_CTX_NUM_TIDS)
+					break;
+
+				ctx.ul.sn[tid] = nla_get_u16(sn_attr);
+			}
+		}
+
+		if (ul_tb[NL80211_SMD_CTX_UL_ATTR_PN]) {
+			struct nlattr *pn_attr;
+			int rem, tid;
+
+			nla_for_each_nested(pn_attr, ul_tb[NL80211_SMD_CTX_UL_ATTR_PN],
+					    rem) {
+				const u8 *pn_data = nla_data(pn_attr);
+
+				tid = nla_type(pn_attr) - 1;
+				if (tid >= IEEE80211_SMD_CTX_NUM_TIDS)
+					break;
+
+				memcpy(ctx.ul.pn[tid], pn_data, ctx.pn_len);
+			}
+		}
+
+		nl80211_set_smd_ctx_ba_params(ul_tb[NL80211_SMD_CTX_UL_ATTR_BA_PARAMS],
+					      ctx.ul.ba, ctx.valid_ctx_bmap);
+	}
+
+	/* QoS Context */
+	if (tb[NL80211_SMD_CTX_ATTR_QOS]) {
+		/* TODO: QoS parsing would go here - SCS/MSCS descriptors */
+		set_bit(IEEE80211_SMD_CTX_VALID_QOS, ctx.valid_ctx_bmap);
+	}
+
+	/* Vendor Context */
+	if (tb[NL80211_SMD_CTX_ATTR_VENDOR]) {
+		ctx.drv_ctx = nla_data(tb[NL80211_SMD_CTX_ATTR_VENDOR]);
+		ctx.drv_ctx_size = nla_len(tb[NL80211_SMD_CTX_ATTR_VENDOR]);
+	}
+
+	return rdev_set_smd_ctx(rdev, wdev, addr, &st_info);
+}
+
 #define NL80211_FLAG_NEED_WIPHY		0x01
 #define NL80211_FLAG_NEED_NETDEV	0x02
 #define NL80211_FLAG_NEED_RTNL		0x04
@@ -22727,6 +22958,12 @@ static const struct genl_small_ops nl80211_small_ops[] = {
 		.cmd = NL80211_CMD_SMD_ROAM,
 		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.doit = nl80211_smd_roam,
+		.flags = GENL_UNS_ADMIN_PERM,
+		.internal_flags = IFLAGS(NL80211_FLAG_NEED_NETDEV_UP),
+	},
+	{
+		.cmd = NL80211_CMD_SET_SMD_CTX,
+		.doit = nl80211_set_smd_ctx,
 		.flags = GENL_UNS_ADMIN_PERM,
 		.internal_flags = IFLAGS(NL80211_FLAG_NEED_NETDEV_UP),
 	},
