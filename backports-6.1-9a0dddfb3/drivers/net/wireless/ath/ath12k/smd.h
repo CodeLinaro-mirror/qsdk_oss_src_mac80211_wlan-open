@@ -13,6 +13,9 @@ struct ath12k_sta;
 struct ath12k_vif;
 struct ath12k_base;
 struct ath12k_smd_info;
+struct hal_reo_status;
+struct ath12k_dp;
+struct ath12k;
 
 /**
  * struct ath12k_smd_peer_assoc_ctx - SMD BSS transition peer assoc context
@@ -49,6 +52,14 @@ int ath12k_smd_uhr_smd_update(struct ieee80211_hw *hw,
 int ath12k_smd_remap_links_op(struct ath12k_vif *ahvif,
 			      struct ath12k_sta *ahsta_target,
 			      const struct ieee80211_uhr_link_reconfig_info *info);
+
+/* Threshold (in us) to reuse last received SMD context instead of
+ * pulling a fresh one.
+ */
+#define ATH12K_SMD_CTX_REUSE_THRESHOLD 500
+
+/* copy of ATH12K_DP_MAX_POSSIBLE_BA_WIN */
+#define ATH12K_SMD_BA_WIN_SIZE_MAX 0x400
 
 #define ATH12K_SMD_CTX_NUM_VALID_CTX    8
 #define ATH12K_SMD_CTX_VALID_DL_SN      0
@@ -150,6 +161,7 @@ struct ath12k_smd_ctx {
 };
 
 struct ath12k_smd_ctx_req {
+	enum ieee80211_uhr_link_reconf_resp_type type;
 	DECLARE_BITMAP(wait_for_1k_status_ctx, IEEE80211_MAX_NUM_TIDS);
 	bool tx_done; /* mark Tx HW block completion */
 	bool rx_done; /* mark Rx HW block completion */
@@ -160,7 +172,24 @@ struct ath12k_smd_ctx_req {
 	void (*handler)(struct ath12k_smd_info *smd_info, struct ath12k_smd_ctx_req *req);
 };
 
+struct ath12k_smd_ctx_tx_cb_per_tid {
+	u16 sn;
+	u16 lsn_offset;
+	u8 pn_len;
+	u8 pn[IEEE80211_CCMP_256_MIC_LEN];
+};
+
 int ath12k_smd_global_init(struct ath12k_base *ab);
 void ath12k_smd_global_deinit(void);
+
+static inline
+const char *ath12k_uhr_reconf_type_str(enum ieee80211_uhr_link_reconf_resp_type type)
+{
+	return type == IEEE80211_UHR_LINK_RECONF_TYPE_ST_PREP ? "Prep" : "Exec";
+}
+
+int ath12k_smd_collect_sta_session_ctx(struct ath12k *ar, struct sk_buff *skb);
+void ath12k_smd_update_ctx_to_stack(struct ath12k_smd_info *smd_info,
+				    struct ath12k_smd_ctx_req *req);
 
 #endif /* ATH12K_SMD_H */

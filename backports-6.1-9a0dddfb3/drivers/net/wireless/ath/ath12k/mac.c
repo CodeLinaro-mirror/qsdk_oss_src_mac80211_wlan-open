@@ -31732,3 +31732,42 @@ int ath12k_mac_op_sta_uhr_mode_update(struct ieee80211_hw *hw,
 	return ret;
 }
 EXPORT_SYMBOL(ath12k_mac_op_sta_uhr_mode_update);
+
+bool ath12k_mac_mgmt_need_smd_sta_session_ctx(struct sk_buff *skb)
+{
+	const struct ieee80211_mgmt *mgmt = (struct ieee80211_mgmt *)skb->data;
+	const struct ieee80211_rx_status *status = IEEE80211_SKB_RXCB(skb);
+	u8 category, action, uhr_reconf_type;
+	const u8 *buf;
+
+	if (!ieee80211_is_action(mgmt->frame_control))
+		return false;
+
+	/* SMD UHR Link Reconfiguration frames are unicast */
+	if (is_broadcast_ether_addr(mgmt->da))
+		return false;
+
+	buf = (const u8 *)&mgmt->u.action;
+
+	/* If the frame rx module did not strip CCMP header, adjust the buffer */
+	if (ieee80211_has_protected(mgmt->frame_control) &&
+	    !(status->flag & RX_FLAG_IV_STRIPPED))
+		buf += IEEE80211_CCMP_HDR_LEN;
+
+	category = *buf++;
+	action = *buf++;
+
+	if (category != WLAN_CATEGORY_PROTECTED_UHR ||
+	    action != WLAN_PROTECTED_UHR_ACTION_LINK_RECONFIG_REQ)
+		return false;
+
+	buf++; /* skip Dialog Token */
+	uhr_reconf_type = *buf++;
+
+	if (uhr_reconf_type != IEEE80211_UHR_LINK_RECONF_TYPE_ST_PREP &&
+	    uhr_reconf_type != IEEE80211_UHR_LINK_RECONF_TYPE_ST_EXEC)
+		return false;
+
+	return true;
+}
+EXPORT_SYMBOL(ath12k_mac_mgmt_need_smd_sta_session_ctx);

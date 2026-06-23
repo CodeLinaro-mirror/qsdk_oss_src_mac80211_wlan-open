@@ -349,8 +349,10 @@ static inline struct ath12k_dp *ath12k_get_central_dp(struct ath12k_dp *dp)
 
 int ath12k_wifi8_fetch_smd_ctx(struct ath12k_base *ab, struct ath12k_dp_hw *dp_hw,
 			       struct ath12k_dp_smd_ctx *ctx,
-			       void (*cb)(struct ath12k_dp *dp, void *ctx,
-					  struct hal_reo_status *reo_status));
+			       void (*rx_cb)(struct ath12k_dp *dp, void *ctx,
+					     struct hal_reo_status *reo_status),
+			       void (*tx_cb)(struct ath12k_dp *dp, void *ctx,
+					     u8 *addr, u8 tid));
 
 struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab);
 void ath12k_wifi8_dp_deinit(struct ath12k_dp *dp);

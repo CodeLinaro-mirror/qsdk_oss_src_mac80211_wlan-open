@@ -1168,8 +1168,10 @@ int ath12k_wifi8_dp_fetch_replenish_ring_id(struct ath12k_dp *dp)
 
 int ath12k_wifi8_fetch_smd_ctx(struct ath12k_base *ab, struct ath12k_dp_hw *dp_hw,
 			       struct ath12k_dp_smd_ctx *ctx,
-			       void (*cb)(struct ath12k_dp *dp, void *ctx,
-					  struct hal_reo_status *reo_status))
+			       void (*rx_cb)(struct ath12k_dp *dp, void *ctx,
+					     struct hal_reo_status *reo_status),
+			       void (*tx_cb)(struct ath12k_dp *dp, void *ctx,
+					     u8 *addr, u8 tid))
 {
 	struct ath12k_dp_peer *dp_peer;
 	struct ath12k_hal_reo_cmd cmd = {0};
@@ -1225,7 +1227,7 @@ int ath12k_wifi8_fetch_smd_ctx(struct ath12k_base *ab, struct ath12k_dp_hw *dp_h
 
 			descs[0].data = &smd_data;
 			descs[0].len = sizeof(smd_data);
-			descs[0].cb = cb;
+			descs[0].cb = rx_cb;
 			descs[1].data = rx_tid;
 			descs[1].len = sizeof(*rx_tid);
 
@@ -1236,7 +1238,8 @@ int ath12k_wifi8_fetch_smd_ctx(struct ath12k_base *ab, struct ath12k_dp_hw *dp_h
 			cmd_type = HAL_REO_CMD_GET_QUEUE_STATS;
 			ret = ath12k_wifi8_dp_reo_cmd_send_highprio(ab, &smd_data,
 								    sizeof(smd_data),
-								    cmd_type, &cmd, cb);
+								    cmd_type, &cmd,
+								    rx_cb);
 		}
 
 		if (ret) {
@@ -1265,7 +1268,7 @@ int ath12k_wifi8_fetch_smd_ctx(struct ath12k_base *ab, struct ath12k_dp_hw *dp_h
 
 	ret = ath12k_dp_peer_fetch_smd_tx_ctx(ab, dp_peer,
 					      ctx->in.tx_tid_bitmap,
-					      ctx->in.tx_tid_ba_size);
+					      ctx->in.tx_tid_ba_size, tx_cb);
 	if (ret) {
 		ath12k_warn(ab, "failed to fetch smd ctx tx queues, peer_id %d (%d)\n",
 			    dp_peer->peer_id, ret);

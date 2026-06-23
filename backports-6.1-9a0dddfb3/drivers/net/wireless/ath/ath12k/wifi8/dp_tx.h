@@ -43,6 +43,8 @@ struct ath12k_dp_tx_queue {
 	u16 cookie;
 	u8 hw_link_id;
 	u8 addr[ETH_ALEN];
+	void (*cb)(struct ath12k_dp *dp, void *ctx,
+		   u8 *addr, u8 tid);
 };
 struct ath12k_dp_tqm_cmd {
 	struct list_head list;

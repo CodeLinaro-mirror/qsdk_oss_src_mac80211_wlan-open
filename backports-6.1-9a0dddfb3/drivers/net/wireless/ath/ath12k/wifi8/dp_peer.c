@@ -1383,6 +1383,8 @@ void ath12k_dp_peer_get_mpdu_queues_stats_status(struct ath12k_dp *dp,
 						 struct hal_tqm_status *tqm_status)
 {
 	struct ath12k_base *ab = dp->ab;
+	struct ath12k_dp_tx_queue *data = (struct ath12k_dp_tx_queue *)ctx;
+	struct ath12k_smd_ctx_tx_cb_per_tid tx_ctx = {};
 
 	if (!tqm_status) {
 		ath12k_err(ab, "Error: TQM STATUS is not valid");
@@ -1393,13 +1395,24 @@ void ath12k_dp_peer_get_mpdu_queues_stats_status(struct ath12k_dp *dp,
 			   tqm_status->status_hdr.cmd_execution_status);
 		return;
 	}
+
+	tx_ctx.sn = tqm_status->mpduq_stats.max_lsn;
+	tx_ctx.lsn_offset = data->cookie;
+	tx_ctx.pn_len = 6;
+	memcpy(&tx_ctx.pn[0], &tqm_status->mpduq_stats.pn_31_0, sizeof(u32));
+	memcpy(&tx_ctx.pn[4], &tqm_status->mpduq_stats.pn_47_32, sizeof(u16));
+
+	if (data->cb)
+		data->cb(dp, &tx_ctx, data->addr, tqm_status->mpduq_stats.tid);
 }
 
 int ath12k_dp_tqm_get_mpdu_queue_stats(struct ath12k_base *ab,
 				       struct ath12k_dp_mpdu_q_info *sw_mpduq_ptr,
 				       struct ath12k_dp_peer *dp_peer,
 				       bool clear_stats,
-				       u16 cookie)
+				       u16 cookie,
+				       void (*cb)(struct ath12k_dp *dp, void *ctx,
+						  u8 *addr, u8 tid))
 {
 	struct ath12k_hal_tqm_cmd cmd = {0};
 	struct ath12k_dp_tx_queue data =  {0};
@@ -1414,6 +1427,7 @@ int ath12k_dp_tqm_get_mpdu_queue_stats(struct ath12k_base *ab,
 
 	data.peer_id = dp_peer->peer_id;
 	data.cookie = cookie;
+	data.cb = cb;
 	memcpy(&data.addr, dp_peer->addr, ETH_ALEN);
 
 	ret = ath12k_wifi8_dp_tqm_cmd_send(ab, HAL_TQM_GET_MPDUQ_STATS_BO, &cmd,
@@ -1431,7 +1445,9 @@ u16 ath12k_dp_peer_compute_max_lsn(u16 ba_size)
 int ath12k_dp_peer_fetch_smd_tx_ctx(struct ath12k_base *ab,
 				    struct ath12k_dp_peer *dp_peer,
 				    u32 tx_tid_bitmap,
-				    u16 *tx_tid_ba_win_size)
+				    u16 *tx_tid_ba_win_size,
+				    void (*cb)(struct ath12k_dp *dp, void *ctx,
+					       u8 *addr, u8 tid))
 {
 	struct ath12k_dp_tx_flow_info *tx_flow_info;
 	struct ath12k_dp_mpdu_q_info *sw_mpduq_ptr = NULL;
@@ -1475,7 +1491,7 @@ int ath12k_dp_peer_fetch_smd_tx_ctx(struct ath12k_base *ab,
 		/* fetch SN and PN */
 		ret = ath12k_dp_tqm_get_mpdu_queue_stats(ab, sw_mpduq_ptr,
 							 dp_peer, false,
-							 lsn_offset_tap);
+							 lsn_offset_tap, cb);
 		if (ret) {
 			ath12k_err(ab, "GET MPDUQ failed tid %d peer %pM id %d\n",
 				   tid, dp_peer->addr, dp_peer->peer_id);
@@ -1488,7 +1504,7 @@ int ath12k_dp_peer_fetch_smd_tx_ctx(struct ath12k_base *ab,
 	if (tx_tid_bitmap & BIT(ATH12K_SMD_TX_MGMT_TID)) {
 		sw_mpduq_ptr = tx_flow_info->mgmt_mpduq;
 		ret = ath12k_dp_tqm_get_mpdu_queue_stats(ab, sw_mpduq_ptr,
-							 dp_peer, false, 0);
+							 dp_peer, false, 0, cb);
 		if (ret) {
 			ath12k_err(ab, "GET MPDUQ failed tid %d peer %pM id %d\n",
 				   tid, dp_peer->addr, dp_peer->peer_id);

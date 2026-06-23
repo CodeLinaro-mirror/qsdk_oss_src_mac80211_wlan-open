@@ -929,4 +929,7 @@ struct ath12k_netstats_iter_ctx {
 	const u8 *peer_mac;
 	bool is_ds_vif;
 };
+
+bool ath12k_mac_mgmt_need_smd_sta_session_ctx(struct sk_buff *skb);
+
 #endif

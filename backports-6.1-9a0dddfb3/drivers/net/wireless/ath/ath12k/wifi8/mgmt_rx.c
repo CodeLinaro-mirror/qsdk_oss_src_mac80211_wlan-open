@@ -897,6 +897,10 @@ void ath12k_wifi8_mgmt_rx_deliver_mmpdu(struct ath12k_mgmt *mgmt,
 	rx_status = IEEE80211_SKB_RXCB(mmpdu);
 	*rx_status = *status;
 
+	if (ath12k_mac_mgmt_need_smd_sta_session_ctx(mmpdu) &&
+	    !ath12k_smd_collect_sta_session_ctx(partner_ar, mmpdu))
+		return;
+
 	ieee80211_rx_ni(hw, mmpdu);
 }
 
