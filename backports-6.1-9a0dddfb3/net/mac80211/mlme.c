@@ -1416,6 +1416,15 @@ ieee80211_sta_bw_reconfig_start_csa(struct ieee80211_link_data *link,
 		}
 	}
 
+	/*
+	 * If a NOL-history CAC is running on this link, abort it before
+	 * committing to the BW reconfig channel switch.
+	 */
+	if (link->u.mgd.csa.nol_hist_cac_pending ||
+	    sdata->wdev.links[link->link_id].cac_started)
+		ieee80211_handle_cac_stop(local->hw.wiphy, sdata, link,
+					  link->conf, NULL);
+
 	link->conf->csa_active = true;
 	link->u.mgd.csa.ignored_same_chan = false;
 	link->u.mgd.beacon_crc_valid = false;
@@ -2889,6 +2898,11 @@ ieee80211_sta_abort_chanswitch(struct ieee80211_link_data *link)
 	link->conf->csa_active = false;
 	link->u.mgd.csa.blocked_tx = false;
 	link->u.mgd.csa.bw_reconfig = false;
+
+	if (link->u.mgd.csa.nol_hist_cac_pending ||
+	    sdata->wdev.links[link->link_id].cac_started)
+		ieee80211_handle_cac_stop(local->hw.wiphy, sdata, link,
+					  link->conf, NULL);
 	link->u.mgd.csa.nol_hist_cac_pending = false;
 
 	drv_abort_channel_switch(link);
@@ -3420,6 +3434,16 @@ ieee80211_sta_process_chanswitch(struct ieee80211_link_data *link,
 			goto drop_connection;
 		}
 	}
+
+	/*
+	 * If a NOL-history CAC is running on this link, abort it before
+	 * committing to the new channel switch.  Cancels the CAC hrtimer
+	 * and sends NL80211_RADAR_CAC_ABORTED.
+	 */
+	if (link->u.mgd.csa.nol_hist_cac_pending ||
+	    sdata->wdev.links[link->link_id].cac_started)
+		ieee80211_handle_cac_stop(local->hw.wiphy, sdata, link,
+					  link->conf, NULL);
 
 	link->conf->csa_active = true;
 	link->u.mgd.csa.ignored_same_chan = false;
