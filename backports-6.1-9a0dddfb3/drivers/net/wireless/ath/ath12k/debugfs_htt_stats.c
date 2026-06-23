@@ -5681,6 +5681,18 @@ ath12k_htt_print_tx_selfgen_bn_stats_tlv(const void *tag_buf, u16 tag_len,
 	len += print_array_to_buf(buf, len, "manual_bn_mu_ulofdma_basic_trigger_err",
 			htt_stats_buf->manual_bn_mu_ulofdma_basic_trigger_err,
 			ATH12K_HTT_NUM_AC_WMM, "\n");
+	len += print_array_to_buf(buf, len, "sta_dps_bn_bsr_trigger",
+			htt_stats_buf->sta_dps_bn_bsr_trigger,
+			ATH12K_HTT_NUM_AC_WMM, "\n");
+	len += print_array_to_buf(buf, len, "sta_dps_bn_bsr_trigger_err",
+			htt_stats_buf->sta_dps_bn_bsr_trigger_err,
+			ATH12K_HTT_NUM_AC_WMM, "\n");
+	len += print_array_to_buf(buf, len, "sta_dps_bn_mu_rts_trigger",
+			htt_stats_buf->sta_dps_bn_mu_rts_trigger,
+			ATH12K_HTT_NUM_AC_WMM, "\n");
+	len += print_array_to_buf(buf, len, "sta_dps_bn_mu_rts_trigger_err",
+			htt_stats_buf->sta_dps_bn_mu_rts_trigger_err,
+			ATH12K_HTT_NUM_AC_WMM, "\n");
 
 	len += scnprintf(buf + len, buf_len - len, "bn_ul_mumimo_trigger = ");
 	for (i = 0; i < ATH12K_HTT_TX_NUM_BN_MUMIMO_USER_STATS; i++)
