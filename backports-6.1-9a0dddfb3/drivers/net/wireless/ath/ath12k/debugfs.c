@@ -7220,6 +7220,87 @@ void ath12k_hw_debugfs_register(struct ath12k_hw *ah)
 			&fops_reset_dp_tx_mon_stats);
 }
 
+static ssize_t ath12k_read_bcast_probe_rl_stats(struct file *file,
+						char __user *ubuf,
+						size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	struct ath12k_pdev_telemetry_stats *stats = &ar->dp.stats.telemetry_stats;
+	int len = 0, ret;
+	const int size = 512;
+
+	char *buf __free(kfree) = kzalloc(size, GFP_KERNEL);
+
+	if (!buf)
+		return -ENOMEM;
+
+	spin_lock_bh(&ar->data_lock);
+
+	len += scnprintf(buf + len, size - len,
+			 "Broadcast Probe Request Rate-Limit Stats:\n");
+	len += scnprintf(buf + len, size - len,
+			 "  enabled                    = %u\n",
+			 ar->bcast_probe_rl_enabled);
+	len += scnprintf(buf + len, size - len,
+			 "  rx_bcast_probe_req_total   = %u\n",
+			 stats->rx_probe_req_bc);
+	len += scnprintf(buf + len, size - len,
+			 "  rx_bc_prb_req_drop = %u\n",
+			 stats->rx_bc_prb_req_drop);
+	len += scnprintf(buf + len, size - len,
+			 "  suppress_window_ms         = %u\n",
+			 ATH12K_BCAST_PROBE_RL_WINDOW_MS);
+	len += scnprintf(buf + len, size - len,
+			 "  table_entries_live         = %u\n",
+			 ar->bcast_probe_rl_entries);
+	len += scnprintf(buf + len, size - len,
+			 "  table_entries_max          = %u\n",
+			 ATH12K_BCAST_PROBE_RL_MAX_ENTRIES);
+
+	spin_unlock_bh(&ar->data_lock);
+
+	len += scnprintf(buf + len, size - len,
+			 "Commands: echo enable/disable/reset > bcast_probe_rl_stats\n");
+
+	ret = simple_read_from_buffer(ubuf, count, ppos, buf, len);
+	return ret;
+}
+
+static ssize_t ath12k_write_bcast_probe_rl_stats(struct file *file,
+						 const char __user *ubuf,
+						 size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	char buf[20] = {0};
+
+	if (count > sizeof(buf) - 1)
+		return -EINVAL;
+
+	if (copy_from_user(buf, ubuf, count))
+		return -EFAULT;
+
+	spin_lock_bh(&ar->data_lock);
+
+	if (strncmp(buf, "enable", 6) == 0)
+		ar->bcast_probe_rl_enabled = true;
+	else if (strncmp(buf, "disable", 7) == 0)
+		ar->bcast_probe_rl_enabled = false;
+	else if (strncmp(buf, "reset", 5) == 0)
+		ar->dp.stats.telemetry_stats.rx_bc_prb_req_drop = 0;
+
+	spin_unlock_bh(&ar->data_lock);
+
+	return count;
+}
+
+static const struct file_operations fops_bcast_probe_rl_stats = {
+	.read  = ath12k_read_bcast_probe_rl_stats,
+	.write = ath12k_write_bcast_probe_rl_stats,
+	.open  = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 void ath12k_debugfs_register(struct ath12k *ar)
 {
 	struct ath12k_base *ab = ar->ab;
@@ -7295,6 +7376,9 @@ void ath12k_debugfs_register(struct ath12k *ar)
 
 	debugfs_create_file("set_tt_configs", 0600, ar->debug.debugfs_pdev, ar,
 			    &tt_configs);
+	debugfs_create_file("bcast_probe_rl_stats", 0644,
+			    ar->debug.debugfs_pdev, ar,
+			    &fops_bcast_probe_rl_stats);
 
 	ath12k_debugfs_htt_stats_register(ar);
 	ath12k_debugfs_fw_stats_register(ar);

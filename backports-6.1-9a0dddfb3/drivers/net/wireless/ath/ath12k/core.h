@@ -76,6 +76,25 @@
 /* Pending management packets threshold for dropping probe responses */
 #define ATH12K_PRB_RSP_DROP_THRESHOLD ((ATH12K_TX_MGMT_TARGET_MAX_SUPPORT_WMI * 3) / 4)
 
+/* Broadcast probe request per-STA rate-limiting */
+/* suppress window in ms */
+#define ATH12K_BCAST_PROBE_RL_WINDOW_MS		200
+/* 256 buckets */
+#define ATH12K_BCAST_PROBE_RL_HASH_BITS		8
+/* max table entries */
+#define ATH12K_BCAST_PROBE_RL_MAX_ENTRIES	1024
+/**
+ * struct ath12k_bcast_probe_rl_entry - per-STA rate-limit entry
+ * @addr:      STA MAC address (probe request SA / addr2)
+ * @last_seen: jiffies timestamp of last forwarded probe request
+ * @hnode:     hash table linkage (protected by ar->data_lock)
+ */
+struct ath12k_bcast_probe_rl_entry {
+	u8 addr[ETH_ALEN];
+	unsigned long last_seen;
+	struct hlist_node hnode;
+};
+
 /* SMBIOS type containing Board Data File Name Extension */
 #define ATH12K_SMBIOS_BDF_EXT_TYPE 0xF8
 
@@ -2205,6 +2224,13 @@ struct ath12k {
 	struct work_struct mvr_ch_switch_notify_work;
 	u32 mvr_ch_switch_notify_vdev_bm;
 	struct ath12k_peer_map_pending_event peer_map_event;
+	/* Broadcast probe request per-STA rate-limit table.
+	 * Suppresses duplicate broadcast probe requests from the same STA
+	 * within ATH12K_BCAST_PROBE_RL_WINDOW_MS milliseconds.
+	 */
+	DECLARE_HASHTABLE(bcast_probe_rl, ATH12K_BCAST_PROBE_RL_HASH_BITS);
+	bool bcast_probe_rl_enabled;
+	u32 bcast_probe_rl_entries;
 	struct ath12k_rf_path_ctx rf_path_ctx;
 
 	/* Cached IGMP/MLD TID override value (0=disabled, 1-7=TID) */

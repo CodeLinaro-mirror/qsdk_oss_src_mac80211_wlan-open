@@ -29975,6 +29975,10 @@ static int ath12k_mac_setup(struct ath12k *ar)
 	spin_lock_init(&ar->dp.ppdu_list_lock);
 	spin_lock_init(&ar->arsta_lock);
 	INIT_LIST_HEAD(&ar->arvifs);
+	spin_lock_bh(&ar->data_lock);
+	ath12k_bcast_probe_rl_init(ar);
+	ar->bcast_probe_rl_enabled = false;
+	spin_unlock_bh(&ar->data_lock);
 	spin_lock_bh(&ar->arsta_lock);
 	ret = ath12k_link_sta_hlist_init(ar);
 	spin_unlock_bh(&ar->arsta_lock);
@@ -30416,6 +30420,9 @@ void ath12k_mac_destroy(struct ath12k_hw_group *ag)
 			ath12k_link_sta_hlist_destroy(pdev->ar);
 			ath12k_link_sta_hlist_head_destroy(pdev->ar);
 			spin_unlock_bh(&pdev->ar->arsta_lock);
+			spin_lock_bh(&pdev->ar->data_lock);
+			ath12k_bcast_probe_rl_flush(pdev->ar);
+			spin_unlock_bh(&pdev->ar->data_lock);
 			pdev->ar = NULL;
 		}
 	}
