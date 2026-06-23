@@ -1896,10 +1896,14 @@ size_t ath12k_dp_get_req_entries_from_buf_ring(struct ath12k_base *ab,
 						uint8_t pool_type);
 void ath12k_dp_tx_ext_desc_free(struct ath12k_dp *dp,
 				struct ath12k_tx_desc_info *tx_desc);
+int ath12k_dp_bank_profiles_alloc(struct ath12k_base *ab);
+void ath12k_dp_bank_profiles_free(struct ath12k_base *ab);
 int ath12k_dp_init_bank_profiles(struct ath12k_base *ab);
 void ath12k_dp_deinit_bank_profiles(struct ath12k_base *ab);
 int ath12k_dp_cc_init(struct ath12k_base *ab);
-void ath12k_dp_cc_cleanup(struct ath12k_base *ab);
+void ath12k_dp_cc_deinit(struct ath12k_base *ab);
+int ath12k_dp_cc_rx_alloc(struct ath12k_base *ab);
+void ath12k_dp_cc_rx_free(struct ath12k_base *ab);
 int ath12k_wbm_idle_ring_alloc(struct ath12k_base *ab, u32 *n_link_desc);
 int ath12k_wbm_idle_ring_init(struct ath12k_base *ab);
 int ath12k_wbm_idle_ring_setup(struct ath12k_base *ab, u32 *n_link_desc);

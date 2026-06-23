@@ -289,9 +289,11 @@ static void ath12k_wifi8_dp_umac_deinit(struct ath12k_dp *dp)
 
 	if (ab->dp->ppe.ppe_ops && dp->ppe.ppe_ops->ath12k_ppeds_detach)
 		dp->ppe.ppe_ops->ath12k_ppeds_detach(ab);
-	ath12k_dp_cc_cleanup(ab);
+	ath12k_dp_cc_deinit(ab);
+	ath12k_dp_cc_rx_free(ab);
 	ath12k_wifi8_dp_reoq_lut_cleanup(ab);
 	ath12k_dp_deinit_bank_profiles(ab);
+	ath12k_dp_bank_profiles_free(ab);
 	ath12k_wifi8_dp_telemetry_ring_cleanup(ab);
 	ath12k_wifi8_dp_tx_ring_cleanup(ab);
 	ath12k_dp_srng_common_cleanup(ab);
@@ -426,17 +428,28 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 		return ret;
 	}
 
-	ret = ath12k_dp_cc_init(ab);
+	ret = ath12k_dp_cc_rx_alloc(ab);
+	if (ret) {
+		ath12k_warn(ab, "failed to alloc rx cookie converter %d\n", ret);
+		goto fail_link_desc_cleanup;
+	}
 
+	ret = ath12k_dp_cc_init(ab);
 	if (ret) {
 		ath12k_warn(ab, "failed to setup cookie converter %d\n", ret);
-		goto fail_link_desc_cleanup;
+		goto fail_hw_cc_rx_cleanup;
+	}
+
+	ret = ath12k_dp_bank_profiles_alloc(ab);
+	if (ret) {
+		ath12k_warn(ab, "failed to setup bank profiles %d\n", ret);
+		goto fail_hw_cc_deinit;
 	}
 
 	ret = ath12k_dp_init_bank_profiles(ab);
 	if (ret) {
 		ath12k_warn(ab, "failed to setup bank profiles %d\n", ret);
-		goto fail_hw_cc_cleanup;
+		goto fail_dp_bank_profiles_free;
 	}
 	ath12k_wifi8_hal_tx_configure_bank_register_default(ab);
 
@@ -629,8 +642,12 @@ fail_nss_plugin_unregister:
 fail_dp_bank_profiles_cleanup:
 #endif
 	ath12k_dp_deinit_bank_profiles(ab);
-fail_hw_cc_cleanup:
-	ath12k_dp_cc_cleanup(ab);
+fail_dp_bank_profiles_free:
+	ath12k_dp_bank_profiles_free(ab);
+fail_hw_cc_deinit:
+	ath12k_dp_cc_deinit(ab);
+fail_hw_cc_rx_cleanup:
+	ath12k_dp_cc_rx_free(ab);
 
 fail_link_desc_cleanup:
 	ath12k_dp_link_desc_cleanup(ab, dp->link_desc_banks,
