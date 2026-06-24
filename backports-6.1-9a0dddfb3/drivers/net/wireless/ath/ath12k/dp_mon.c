@@ -1698,50 +1698,63 @@ void ath12k_dp_mon_ppdu_rssi_update(struct ath12k_pdev_dp *dp_pdev,
 }
 EXPORT_SYMBOL(ath12k_dp_mon_ppdu_rssi_update);
 
-void ath12k_dp_rxdma_mon_buf_ring_free(struct ath12k_dp *dp,
-				       struct dp_rxdma_mon_ring *rx_ring)
-{
-	struct ath12k_base *ab = dp->ab;
-	struct sk_buff *skb;
-	int buf_id;
-
-	spin_lock_bh(&rx_ring->idr_lock);
-	idr_for_each_entry(&rx_ring->bufs_idr, skb, buf_id) {
-		idr_remove(&rx_ring->bufs_idr, buf_id);
-		/* TODO: Understand where internal driver does this dma_unmap
-		 * of rxdma_buffer.
-		 */
-		dma_unmap_single(ab->dev, ATH12K_SKB_RXCB(skb)->paddr,
-				 skb->len + skb_tailroom(skb), DMA_FROM_DEVICE);
-		dev_kfree_skb_any(skb);
-	}
-
-	idr_destroy(&rx_ring->bufs_idr);
-	spin_unlock_bh(&rx_ring->idr_lock);
-}
-EXPORT_SYMBOL(ath12k_dp_rxdma_mon_buf_ring_free);
-
-int ath12k_dp_mon_rx_srng_setup(struct ath12k_dp *dp)
+static
+int ath12k_dp_mon_rx_srng_alloc(struct ath12k_dp *dp)
 {
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
 	int ret;
 
-	ret = ath12k_dp_srng_setup(ab,
+	ret = ath12k_dp_srng_alloc(ab,
 				   &dp_mon->rxdma_mon_buf_ring.refill_buf_ring,
 				   HAL_RXDMA_MONITOR_BUF, 0, 0,
 				   dp_mon->mon_buf_ring_size);
 	if (ret) {
-		ath12k_warn(dp, "failed to setup HAL_RXDMA_MONITOR_BUF %d\n",
+		ath12k_warn(dp, "srng alloc failed for HAL_RXDMA_MONITOR_BUF %d\n",
 			    ret);
 		return ret;
 	}
 
 	return 0;
 }
+
+static
+int ath12k_dp_mon_rx_desc_pool_alloc(struct ath12k_dp *dp)
+{
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
+
+	spin_lock_init(&dp_mon->mon_desc_lock);
+	spin_lock_bh(&dp_mon->mon_desc_lock);
+	dp_mon->mon_desc_pool = kcalloc(dp_mon->mon_buf_ring_size,
+					sizeof(*dp_mon->mon_desc_pool),
+					GFP_ATOMIC);
+	if (!dp_mon->mon_desc_pool) {
+		spin_unlock_bh(&dp_mon->mon_desc_lock);
+		return -ENOMEM;
+	}
+	spin_unlock_bh(&dp_mon->mon_desc_lock);
+
+	return 0;
+}
+
+int ath12k_dp_mon_rx_srng_setup(struct ath12k_dp *dp)
+{
+	int ret;
+
+	ret = ath12k_dp_mon_rx_srng_alloc(dp);
+	if (ret)
+		return ret;
+
+	ret = ath12k_dp_mon_rx_desc_pool_alloc(dp);
+	if (ret)
+		return ret;
+
+	return 0;
+}
 EXPORT_SYMBOL(ath12k_dp_mon_rx_srng_setup);
 
-void ath12k_dp_mon_rx_srng_cleanup(struct ath12k_dp *dp)
+static
+void ath12k_dp_mon_rx_srng_free(struct ath12k_dp *dp)
 {
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
@@ -1751,31 +1764,44 @@ void ath12k_dp_mon_rx_srng_cleanup(struct ath12k_dp *dp)
 
 	ath12k_dp_srng_cleanup(ab, srng);
 }
-EXPORT_SYMBOL(ath12k_dp_mon_rx_srng_cleanup);
 
-int ath12k_dp_mon_rx_buf_setup(struct ath12k_dp *dp)
+static
+void ath12k_dp_mon_rx_desc_pool_free(struct ath12k_dp *dp)
 {
-	struct ath12k_base *ab = dp->ab;
 	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
-	struct dp_rxdma_mon_ring *rx_ring;
-	LIST_HEAD(list);
-	size_t req_entries;
-	int num_entries, ret = -EINVAL, i;
-	size_t ring_lvl = DP_RXDMA_MONITOR_DEFAULT_RING_FILL_LVL;
 
-	INIT_LIST_HEAD(&dp_mon->mon_desc_free_list);
-	spin_lock_init(&dp_mon->mon_desc_lock);
+	if (!dp_mon->mon_desc_pool)
+		return;
 
 	spin_lock_bh(&dp_mon->mon_desc_lock);
-	dp_mon->mon_desc_pool = kcalloc(dp_mon->mon_buf_ring_size,
-					sizeof(*dp_mon->mon_desc_pool),
-					GFP_ATOMIC);
+	kfree(dp_mon->mon_desc_pool);
+	dp_mon->mon_desc_pool = NULL;
+	spin_unlock_bh(&dp_mon->mon_desc_lock);
+}
+
+void ath12k_dp_mon_rx_srng_cleanup(struct ath12k_dp *dp)
+{
+	ath12k_dp_mon_rx_desc_pool_free(dp);
+	ath12k_dp_mon_rx_srng_free(dp);
+}
+EXPORT_SYMBOL(ath12k_dp_mon_rx_srng_cleanup);
+
+static
+int ath12k_dp_mon_rx_desc_pool_init(struct ath12k_dp *dp)
+{
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
+	int i;
+
+	INIT_LIST_HEAD(&dp_mon->mon_desc_free_list);
+
+	spin_lock_bh(&dp_mon->mon_desc_lock);
 	if (!dp_mon->mon_desc_pool) {
 		spin_unlock_bh(&dp_mon->mon_desc_lock);
-		ath12k_warn(dp, "failed to allocate memory for mon desc pool\n");
-		ret = -ENOMEM;
-		return ret;
+		return -EINVAL;
 	}
+
+	memset(dp_mon->mon_desc_pool, 0,
+	       dp_mon->mon_buf_ring_size * sizeof(*dp_mon->mon_desc_pool));
 
 	for (i = 0; i < dp_mon->mon_buf_ring_size; i++) {
 		dp_mon->mon_desc_pool[i].magic = ATH12K_MON_MAGIC_VALUE;
@@ -1785,6 +1811,20 @@ int ath12k_dp_mon_rx_buf_setup(struct ath12k_dp *dp)
 	}
 
 	spin_unlock_bh(&dp_mon->mon_desc_lock);
+
+	return 0;
+}
+
+static
+int ath12k_dp_mon_rx_buf_alloc(struct ath12k_dp *dp)
+{
+	struct ath12k_base *ab = dp->ab;
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
+	LIST_HEAD(list);
+	struct dp_rxdma_mon_ring *rx_ring;
+	size_t req_entries;
+	int num_entries, ret = -EINVAL;
+	size_t ring_lvl = DP_RXDMA_MONITOR_DEFAULT_RING_FILL_LVL;
 
 	rx_ring = &dp_mon->rxdma_mon_buf_ring;
 
@@ -1811,8 +1851,39 @@ int ath12k_dp_mon_rx_buf_setup(struct ath12k_dp *dp)
 
 	return ret;
 }
-EXPORT_SYMBOL(ath12k_dp_mon_rx_buf_setup);
 
+int ath12k_dp_mon_rx_ring_init(struct ath12k_dp *dp)
+{
+	struct ath12k_base *ab = dp->ab;
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
+	int ret;
+
+	ret = ath12k_dp_srng_init(ab,
+				  &dp_mon->rxdma_mon_buf_ring.refill_buf_ring,
+				  HAL_RXDMA_MONITOR_BUF, 0, 0);
+	if (ret) {
+		ath12k_warn(dp, "srng init failed for HAL_RXDMA_MONITOR_BUF %d\n",
+			    ret);
+		return ret;
+	}
+
+	ret = ath12k_dp_mon_rx_desc_pool_init(dp);
+	if (ret) {
+		ath12k_err(ab, "monitor rx desc pool init failed %d\n", ret);
+		return ret;
+	}
+
+	ret = ath12k_dp_mon_rx_buf_alloc(dp);
+	if (ret) {
+		ath12k_err(ab, "monitor rx buffer alloc failed %d\n", ret);
+		return ret;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_rx_ring_init);
+
+static
 void ath12k_dp_mon_rx_buf_free(struct ath12k_dp *dp)
 {
 	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
@@ -1842,12 +1913,14 @@ void ath12k_dp_mon_rx_buf_free(struct ath12k_dp *dp)
 reset_mon_desc:
 		ath12k_dp_mon_desc_reset(&dp_mon->mon_desc_pool[i]);
 	}
-
-	kfree(dp_mon->mon_desc_pool);
-	dp_mon->mon_desc_pool = NULL;
 	spin_unlock_bh(&dp_mon->mon_desc_lock);
 }
-EXPORT_SYMBOL(ath12k_dp_mon_rx_buf_free);
+
+void ath12k_dp_mon_rx_ring_deinit(struct ath12k_dp *dp)
+{
+	ath12k_dp_mon_rx_buf_free(dp);
+}
+EXPORT_SYMBOL(ath12k_dp_mon_rx_ring_deinit);
 
 int ath12k_dp_mon_rx_htt_srng_setup(struct ath12k_dp *dp)
 {
@@ -1878,14 +1951,23 @@ int ath12k_dp_mon_pdev_rx_srng_setup(struct ath12k_pdev_dp *dp_pdev,
 	int ret;
 
 	for (i = 0; i < dp->hw_params->num_rxdma_per_pdev; i++) {
-		ret = ath12k_dp_srng_setup(dp->ab,
+		ret = ath12k_dp_srng_alloc(dp->ab,
 					   &dp_pdev->dp_mon_pdev->rxdma_mon_dst_ring[i],
 					   HAL_RXDMA_MONITOR_DST,
 					   0, mac_id + i,
 					   dp_mon->mon_dst_ring_size);
 		if (ret) {
 			ath12k_warn(dp->ab,
-				    "failed to setup HAL_RXDMA_MONITOR_DST\n");
+				    "srng alloc is failed for  HAL_RXDMA_MONITOR_DST\n");
+			return ret;
+		}
+		ret = ath12k_dp_srng_init(dp->ab,
+					  &dp_pdev->dp_mon_pdev->rxdma_mon_dst_ring[i],
+					  HAL_RXDMA_MONITOR_DST,
+					  0, mac_id + i);
+		if (ret) {
+			ath12k_warn(dp->ab,
+				    "srng init is failed for HAL_RXDMA_MONITOR_DST\n");
 			return ret;
 		}
 	}
