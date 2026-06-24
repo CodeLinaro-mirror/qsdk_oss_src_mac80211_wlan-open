@@ -3729,8 +3729,10 @@ void ath12k_dp_get_pdev_stats(struct ath12k_pdev_dp *pdev,
 		aggr_vif_stats->link_peer_stats.rx_stats =
 					aggr_pdev_stats->link_peer_stats.rx_stats;
 		list_for_each_entry(arvif, &ar->arvifs, list) {
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 			is_ds_vif = (arvif->ahvif->dp_vif.ppe_vp_type ==
 					  PPE_VP_USER_TYPE_DS);
+#endif
 			ath12k_vif_iterate_peer(arvif, aggr_vif_stats, is_ds_vif);
 			/* Include deleted link peer stats stored at link VIF */
 			ath12k_dp_aggr_link_vif_del_stats(arvif, aggr_vif_stats);
@@ -3752,7 +3754,11 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 	unsigned long links_map = ahvif->links_map;
 	struct ath12k_dp_aggr_vif_stats *aggr_vif_stats =
 						&telemetry_vif->aggr_vif_stats;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	bool is_ds_vif = (ahvif->dp_vif.ppe_vp_type == PPE_VP_USER_TYPE_DS);
+#else
+	bool is_ds_vif = false;
+#endif
 
 	if (ath12k_dp_stats_enabled(&ar->dp) &&
 	    ath12k_dp_debug_stats_enabled(&ar->dp))

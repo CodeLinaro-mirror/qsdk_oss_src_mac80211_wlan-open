@@ -14,6 +14,9 @@
 #include "telemetry_agent_if.h"
 #include "vendor.h"
 #include "wmi.h"
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
+#include <linux/skbuff_ref.h>
+#endif
 
 static inline u32
 ath12k_dp_mon_rx_ul_ofdma_ru_size_to_width(enum ath12k_eht_ru_size ru_size)

@@ -6,6 +6,9 @@
 #include "dp_mon.h"
 #include "dp_tx_mon.h"
 #include "dp_mon_filter.h"
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
+#include <linux/skbuff_ref.h>
+#endif
 
 static void ath12k_dp_mon_tx_cleanup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev);
 
