@@ -5999,6 +5999,7 @@ enum nl80211_bss_status {
  * @NL80211_AUTHTYPE_FILS_SK: Fast Initial Link Setup shared key
  * @NL80211_AUTHTYPE_FILS_SK_PFS: Fast Initial Link Setup shared key with PFS
  * @NL80211_AUTHTYPE_FILS_PK: Fast Initial Link Setup public key
+ * @NL80211_AUTHTYPE_EPPKE: Enhanced Privacy Protection Key Exchange
  * @__NL80211_AUTHTYPE_NUM: internal
  * @NL80211_AUTHTYPE_MAX: maximum valid auth algorithm
  * @NL80211_AUTHTYPE_AUTOMATIC: determine automatically (if necessary by
@@ -6014,6 +6015,7 @@ enum nl80211_auth_type {
 	NL80211_AUTHTYPE_FILS_SK,
 	NL80211_AUTHTYPE_FILS_SK_PFS,
 	NL80211_AUTHTYPE_FILS_PK,
+	NL80211_AUTHTYPE_EPPKE,
 
 	/* keep last */
 	__NL80211_AUTHTYPE_NUM,
@@ -7458,6 +7460,10 @@ enum nl80211_feature_flags {
  * @NL80211_EXT_FEATURE_CIP_PADDING_SUPPORT: The driver supports inclusion of CIP padding
  * delay support.
  *
+ * @NL80211_EXT_FEATURE_EPPKE: Driver supports Enhanced Privacy Protection
+ *	Key Exchange (EPPKE) with user space SME (NL80211_CMD_AUTHENTICATE)
+ *	in non-AP STA mode.
+ *
  * @NL80211_EXT_FEATURE_ASSOC_FRAME_ENCRYPTION: Driver supports (Re)Association
  *	Request/Response frame encryption.
  *
@@ -7549,6 +7555,7 @@ enum nl80211_ext_feature_index {
 	NL80211_EXT_FEATURE_CIP_PADDING_SUPPORT,
 	NL80211_EXT_FEATURE_SMD_SUPPORT_AP,
 	NL80211_EXT_FEATURE_SMD_SUPPORT_DL_PKT_FRWRD,
+	NL80211_EXT_FEATURE_EPPKE,
 	NL80211_EXT_FEATURE_ASSOC_FRAME_ENCRYPTION,
 
 	/* add new features before the definition below */
