@@ -2474,7 +2474,7 @@ static int ath12k_core_complete_cumac_config(struct ath12k_hw_group *ag)
 	}
 
 	if (!test_bit(WMI_SERVICE_PDEV_SET_CUMAC_CHIP_CMD_SUPPORT,
-		      ab->wmi_ab.svc_map)) {
+		      ab->wmi_ab.svc_map) || ath12k_ftm_mode || !ag->mlo_capable) {
 		/* FW does not support the CUMAC chip WMI command; hardcode
 		 * chip id 0 as the CUMAC chip and skip the WMI send path.
 		 */
@@ -2485,7 +2485,7 @@ static int ath12k_core_complete_cumac_config(struct ath12k_hw_group *ag)
 		}
 
 		ath12k_dbg(ab, ATH12K_DBG_BOOT,
-			   "FW does not support CUMAC chip cmd, using chip id 0\n");
+			   "FTM mode or MLO not capable or FW does not support CUMAC chip cmd, using chip id 0\n");
 		ag->cumac_chip_id = 0;
 		ag->cumac_selected = true;
 		ab->is_cumac_chip = true;
