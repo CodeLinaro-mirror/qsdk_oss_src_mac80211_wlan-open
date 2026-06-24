@@ -1123,9 +1123,10 @@ void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
 							ppdu_info->peer_id);
 	ath12k_dp_mon_fill_rx_user_stats_peer_mac(peer, &ppdu_info->userstats[0]);
 	if (!peer) {
-		ath12k_dbg(pdev_dp->ar->ab, ATH12K_DBG_DATA,
-			   "failed to find the peer with monitor peer_id %d\n",
-			   ppdu_info->peer_id);
+		if (ppdu_info->peer_id != HAL_INVALID_PEERID)
+			ath12k_dbg(pdev_dp->ar->ab, ATH12K_DBG_DATA,
+				   "failed to find the peer with monitor peer_id %d\n",
+				   ppdu_info->peer_id);
 		/* BAR frames often have peer_id=0 so peer lookup fails.
 		 * Still update the pdev-level BAR counter so CTRL stats
 		 * are always accounted for.
@@ -1668,17 +1669,20 @@ void ath12k_dp_mon_ppdu_rx_time_update(struct ath12k_pdev_dp *dp_pdev,
 				       struct hal_rx_mon_ppdu_info *ppdu_info,
 				       bool is_stat)
 {
-       u32 num_users, uid;
+	u32 num_users, uid;
 
 	RCU_LOCKDEP_WARN(!rcu_read_lock_held(), "PPDU rx time update called without rcu lock\n");
 	lockdep_assert_held(&dp_pdev->dp->dp_lock);
 
-       num_users = ppdu_info->num_users;
-       if (num_users > HAL_MAX_UL_MU_USERS)
-               num_users = HAL_MAX_UL_MU_USERS;
+	num_users = ppdu_info->num_users;
+	if (num_users > HAL_MAX_UL_MU_USERS)
+		num_users = HAL_MAX_UL_MU_USERS;
 
-       for (uid = 0; uid < num_users; uid++)
-               ath12k_dp_mon_ppdu_per_user_rx_time_update(dp_pdev, ppdu_info, uid);
+	for (uid = 0; uid < num_users; uid++) {
+		if (ppdu_info->userstats[uid].sw_peer_id == HAL_INVALID_PEERID)
+			continue;
+		ath12k_dp_mon_ppdu_per_user_rx_time_update(dp_pdev, ppdu_info, uid);
+	}
 }
 EXPORT_SYMBOL(ath12k_dp_mon_ppdu_rx_time_update);
 
@@ -1692,6 +1696,8 @@ void ath12k_dp_mon_ppdu_rssi_update(struct ath12k_pdev_dp *dp_pdev,
 		num_users = HAL_MAX_UL_MU_USERS;
 
 	for (uid = 0; uid < num_users; uid++) {
+		if (ppdu_info->userstats[uid].sw_peer_id == HAL_INVALID_PEERID)
+			continue;
 		ath12k_dp_mon_per_user_ppdu_rssi_update(dp_pdev, ppdu_info, uid);
 		ath12k_dp_mon_link_peer_signal_stats(dp_pdev, ppdu_info, uid);
 	}
