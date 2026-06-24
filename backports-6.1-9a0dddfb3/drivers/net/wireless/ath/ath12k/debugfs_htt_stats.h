@@ -4288,6 +4288,7 @@ struct ath12k_htt_t2h_soc_txrx_stats_common_tlv {
 #define ATH12K_HTT_AST_MEC_INFO			BIT(14)
 #define ATH12K_HTT_AST_INTRA_BSS_INFO		BIT(15)
 
+#define ATH12K_HTT_AST_INFO1_TX_MON_OVERRIDE_STA	BIT(0)
 #define ATH12K_HTT_AST_INFO1_RX_MON_OVERRIDE_STA	BIT(1)
 
 struct ath12k_htt_ast_entry_tlv {

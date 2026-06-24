@@ -9201,9 +9201,12 @@ ath12k_htt_print_ast_entry_tlv(const void *tag_buf, u16 tag_len,
 			 u32_get_bits(ast_info, ATH12K_HTT_AST_MEC_INFO));
 	len += scnprintf(buf + len, buf_len - len, "intra_bss = %u\n",
 			 u32_get_bits(ast_info, ATH12K_HTT_AST_INTRA_BSS_INFO));
-	len += scnprintf(buf + len, buf_len - len, "rx_monitor_override_sta = %u\n\n",
+	len += scnprintf(buf + len, buf_len - len, "rx_monitor_override_sta = %u\n",
 			 u32_get_bits(ast_info1,
 				      ATH12K_HTT_AST_INFO1_RX_MON_OVERRIDE_STA));
+	len += scnprintf(buf + len, buf_len - len, "tx_monitor_override_sta = %u\n\n",
+			 u32_get_bits(ast_info1,
+				      ATH12K_HTT_AST_INFO1_TX_MON_OVERRIDE_STA));
 
 	stats_req->buf_len = len;
 }
