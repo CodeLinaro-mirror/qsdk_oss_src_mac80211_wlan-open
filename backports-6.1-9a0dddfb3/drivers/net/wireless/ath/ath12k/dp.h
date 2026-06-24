@@ -1244,6 +1244,9 @@ struct ath12k_dp_umac_reset {
 	/* SKB queues for deferred cleanup during UMAC reset */
 	struct sk_buff_head tx_skb_queue;
 	struct sk_buff_head rx_skb_queue;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	struct sk_buff_head ppeds_tx_skb_queue;
+#endif
 };
 
 #define HTT_T2H_EXT_STATS_INFO1_DONE	BIT(11)

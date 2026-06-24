@@ -1260,7 +1260,8 @@ int ath12k_wifi8_dp_ppeds_register_soc(struct ath12k_dp *dp, struct dp_ppe_ds_id
 			/*
 			 * Disable interrupt.
 			 */
-			disable_irq(ab->dp->ppe.ppeds_irq[ppe2tcl_irq_type]);
+			ath12k_hif_ppeds_irq_disable(ab, ppe2tcl_irq_type);
+
 			ppe2tcl_ring = &ab->hal.srng_list[ring_id];
 
 			ath12k_info(ab, "PPEDS:HBM auto_idx ring_id:%d ppe2tcl_ring:%p\n",
@@ -1283,7 +1284,8 @@ int ath12k_wifi8_dp_ppeds_register_soc(struct ath12k_dp *dp, struct dp_ppe_ds_id
 			/*
 			 * Disable interrupt.
 			 */
-			disable_irq(ab->dp->ppe.ppeds_irq[reo2ppe_irq_type]);
+			ath12k_hif_ppeds_irq_disable(ab, reo2ppe_irq_type);
+
 			ring_id = dp->ppe.reo2ppe_ring[ring_idx].ring_id;
 			reo2ppe_ring =  &ab->hal.srng_list[ring_id];
 
@@ -1522,19 +1524,21 @@ skip_ppeds_dp_srng_ring_alloc:
 
 	ath12k_hal_reo_config_reo2ppe_dest_info(ab);
 
-	ret = ath12k_dp_srng_setup(ab, &dp->ppe.tqm2ppe_txcmp_ring,
-					HAL_TQM2PPE,
-					PPEDS_TQM2PPE_TX_CMPLN_RING_NUM, 0,
-					DP_TQM2PPE_RING_SIZE);
-	if (ret) {
-		ath12k_err(ab,
+	if (dp->ppe.hw_buff_mgmt) {
+		ret = ath12k_dp_srng_setup(ab, &dp->ppe.tqm2ppe_txcmp_ring,
+				HAL_TQM2PPE,
+				PPEDS_TQM2PPE_TX_CMPLN_RING_NUM, 0,
+				DP_TQM2PPE_RING_SIZE);
+		if (ret) {
+			ath12k_err(ab,
 				"failed to set up wbm2sw ppeds tx completion ring :%d\n",
 				ret);
-		goto err;
-	}
+			goto err;
+		}
 
-	/* HBM */
-	tqm2ppe_ring = &ab->hal.srng_list[dp->ppe.tqm2ppe_txcmp_ring.ring_id];
+		/* HBM */
+		tqm2ppe_ring = &ab->hal.srng_list[dp->ppe.tqm2ppe_txcmp_ring.ring_id];
+	}
 
 	if (dp->ppe.txrx_hw_auto_idx) {
 		ret = ath12k_wifi8_dp_ppeds_register_soc(dp, &restore_idx);
@@ -1588,13 +1592,18 @@ void ath12k_wifi8_dp_ppeds_interrupt_stop(struct ath12k_base *ab)
 	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
-	ath12k_hif_ppeds_irq_disable(ab, PPEDS_IRQ_REO2PPE);
+	if (!ab->dp->ppe.hw_buff_mgmt)
+		ath12k_hif_ppeds_irq_disable(ab, PPEDS_IRQ_REO2PPE);
+
 	ath12k_hif_ppeds_irq_disable(ab, PPEDS_IRQ_TX_COMPLETION);
 }
 
 void ath12k_wifi8_dp_ppeds_interrupt_start(struct ath12k_base *ab)
 {
-	ath12k_hif_ppeds_irq_enable(ab, PPEDS_IRQ_REO2PPE);
+
+	if (!ab->dp->ppe.hw_buff_mgmt)
+		ath12k_hif_ppeds_irq_enable(ab, PPEDS_IRQ_REO2PPE);
+
 	ath12k_hif_ppeds_irq_enable(ab, PPEDS_IRQ_TX_COMPLETION);
 }
 
