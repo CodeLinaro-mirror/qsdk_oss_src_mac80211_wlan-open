@@ -1838,6 +1838,14 @@ enum qca_wlan_vendor_attr_tele_sdwftx {
 		QCA_WLAN_VENDOR_ATTR_TELE_SDWFTX_AFTER_LAST - 1,
 };
 
+/* SDWF MSDUQ dimension constants.
+ * QCA_WLAN_VENDOR_ATTR_TELE_SDWF_TID_MAX: number of QoS TIDs (= QOS_TID_MAX).
+ * QCA_WLAN_VENDOR_ATTR_TELE_SDWF_MSDUQ_PER_TID_MAX: number of MSDUQs per TID
+ *     (= QOS_TID_MDSUQ_MAX).
+ */
+#define QCA_WLAN_VENDOR_ATTR_TELE_SDWF_TID_MAX		8
+#define QCA_WLAN_VENDOR_ATTR_TELE_SDWF_MSDUQ_PER_TID_MAX	2
+
 /**
  * enum qca_wlan_vendor_attr_afc_response: Defines attributes to be used
  * with vendor command QCA_NL80211_VENDOR_SUBCMD_AFC_RESPONSE. These attributes
