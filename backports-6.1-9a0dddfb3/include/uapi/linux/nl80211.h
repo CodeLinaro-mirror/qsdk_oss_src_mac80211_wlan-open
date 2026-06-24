@@ -7458,6 +7458,9 @@ enum nl80211_feature_flags {
  * @NL80211_EXT_FEATURE_CIP_PADDING_SUPPORT: The driver supports inclusion of CIP padding
  * delay support.
  *
+ * @NL80211_EXT_FEATURE_ASSOC_FRAME_ENCRYPTION: Driver supports (Re)Association
+ *	Request/Response frame encryption.
+ *
  * @NUM_NL80211_EXT_FEATURES: number of extended features.
  * @MAX_NL80211_EXT_FEATURES: highest extended feature index.
  */
@@ -7546,6 +7549,7 @@ enum nl80211_ext_feature_index {
 	NL80211_EXT_FEATURE_CIP_PADDING_SUPPORT,
 	NL80211_EXT_FEATURE_SMD_SUPPORT_AP,
 	NL80211_EXT_FEATURE_SMD_SUPPORT_DL_PKT_FRWRD,
+	NL80211_EXT_FEATURE_ASSOC_FRAME_ENCRYPTION,
 
 	/* add new features before the definition below */
 	NUM_NL80211_EXT_FEATURES,
