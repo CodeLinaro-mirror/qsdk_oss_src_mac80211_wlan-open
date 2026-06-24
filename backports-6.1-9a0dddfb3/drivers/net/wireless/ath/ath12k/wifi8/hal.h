@@ -13,6 +13,7 @@
 #include "hal_rx.h"
 #include "hal_rx_desc.h"
 #include "umac_reset.h"
+#include "../dp_tx.h"
 
 extern const struct ath12k_hw_regs qcn9625_regs;
 
@@ -1981,8 +1982,33 @@ void ath12k_wifi8_hal_tx_set_ppe_vp_entry(struct ath12k_base *ab,
 					  u32 ppe_vp_idx, u32 vdev_id,
 					  u32 bank_id, u32 lmac_id);
 void ath12k_wifi8_hal_reo_config_reo2ppe_dest_info(struct ath12k_base *ab);
-void ath12k_wifi8_hal_tx_completion_process(struct hal_tqm2sw_completion_ring *desc,
-					    struct ath12k_dp_tx_comp_status *tx_comp_status);
+
+static __always_inline void
+ath12k_wifi8_hal_tx_completion_process(struct hal_tqm2sw_completion_ring *desc,
+				       struct ath12k_dp_tx_comp_status *tx_comp_status)
+{
+	u64 desc_va = 0;
+
+	tx_comp_status->buf_rel_source =
+		FIELD_GET(HAL_TQM2SW_COMPLETION_RING_INFO0_RELEASE_SOURCE_MODULE,
+			  desc->info0);
+	tx_comp_status->u.tqm_status =
+		       le32_get_bits(desc->info0,
+				     HAL_TQM2SW_COMPLETION_RING_INFO0_TQM_RELEASE_REASON);
+	tx_comp_status->tx_desc = NULL;
+
+	if (likely(HAL_TQM2SW_COMPLETION_RING_INFO3_COOKIE_CONVERSION_STATUS &
+		   desc->info3)) {
+		desc_va = ((u64)le32_to_cpu(desc->buf_addr_info.info1) << 32 |
+			   le32_to_cpu(desc->buf_addr_info.info0));
+		tx_comp_status->tx_desc = (struct ath12k_ppeds_tx_desc_info *)
+						((unsigned long)desc_va);
+	} else {
+		tx_comp_status->desc_id = u32_get_bits(desc->buf_addr_info.info1,
+						       BUFFER_ADDR_INFO1_SW_COOKIE);
+	}
+}
+
 void ath12k_wifi8_hal_hw_ase_init(struct ath12k_base *ab,
 				  struct ath12k_hal_ast_param *ast_param);
 

@@ -3348,6 +3348,7 @@ int ath12k_wifi8_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 	int i;
 #ifndef CONFIG_IO_COHERENCY
 	int valid_entries;
+	struct ath12k_wifi8_tx_status_entry *tx_status_entry_next;
 #endif
 	int orig_budget = budget;
 	struct ath12k_skb_cb *skb_cb;
@@ -3359,6 +3360,7 @@ int ath12k_wifi8_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
 	struct ath12k_wifi8_tx_status_entry *tx_status_entry;
 	struct ath12k_tx_sw_metadata *sw_metadata;
+	struct ath12k_tx_sw_metadata *sw_metadata_pf;
 	u8 n_entry = 0, idx = 0;
 	struct list_head desc_free_list;
 	struct hal_tqm2sw_completion_ring *tx_status;
@@ -3407,6 +3409,9 @@ int ath12k_wifi8_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 
 		tx_status_entry->tx_desc = tx_desc;
 
+#ifdef CONFIG_IO_COHERENCY
+		prefetch(tx_desc);
+#endif
 		n_entry++;
 		memcpy(&tx_status_entry->tx_status, tx_status, sizeof(*tx_status));
 		tx_status_entry++;
@@ -3422,18 +3427,18 @@ int ath12k_wifi8_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 	tx_status_entry = (struct ath12k_wifi8_tx_status_entry *)
 				dp_hw_grp->tx_status_buf[tx_status_idx];
 	for (i = 0; i < n_entry; i++) {
-		struct ath12k_wifi8_tx_status_entry *tx_status_entry_next;
-
 		sw_metadata = &tx_status_entry->sw_metadata;
 		tx_desc = tx_status_entry->tx_desc;
 		tx_status_entry++;
 
+#ifndef CONFIG_IO_COHERENCY
 		if ((i + 10) < n_entry) {
 			tx_status_entry_next = tx_status_entry + 8;
 
 			prefetch(tx_status_entry_next->tx_desc);
 			prefetch((tx_status_entry_next + 1));
 		}
+#endif
 
 		if (unlikely(!tx_desc->in_use)) {
 			sw_metadata->skb = NULL;
@@ -3557,10 +3562,22 @@ int ath12k_wifi8_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 			continue;
 		}
 
+		if (likely(n_entry >= 1)) {
+			sw_metadata_pf = &tx_status_entry->sw_metadata;
+			prefetchw(sw_metadata_pf->skb);
+		}
+
 		if ((sw_metadata->flags & DP_TX_DESC_FLAG_FAST) &&
 		    dp_pdev && !ath12k_dp_stats_enabled(dp_pdev)) {
 			if (likely(sw_metadata->flags & DP_TX_DESC_FLAG_RECYCLE)) {
+#ifndef CONFIG_IO_COHERENCY
 				__skb_queue_head(&free_list_head, sw_metadata->skb);
+#else
+				__skb_queue_tail(&free_list_head, sw_metadata->skb);
+				prefetch((uint8_t *)sw_metadata->skb + 64);
+				prefetch((uint8_t *)sw_metadata->skb + 128);
+				prefetch((uint8_t *)sw_metadata->skb + 192);
+#endif
 				sw_metadata->skb = NULL;
 				fast_flag = true;
 			}
