@@ -3213,6 +3213,10 @@ enum nl80211_commands {
  * @NL80211_ATTR_CU_TYPE: (u8) Critical Update type, see &enum nl80211_cu_type.
  *      Used with %NL80211_CMD_CRITICAL_UPDATE.
  *
+ * @NL80211_ATTR_EPP_PEER: A flag attribute to indicate if the peer
+ *	is an EPP STA. Used with %NL80211_CMD_NEW_STA and
+ *	%NL80211_CMD_ADD_LINK_STA
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  *
  * @NL80211_ATTR_CU_STATE: (u32) Current CU session state,
@@ -3868,6 +3872,7 @@ enum nl80211_attrs {
 	NL80211_ATTR_CU_TYPE,
 	NL80211_ATTR_CU_STATE,
 
+	NL80211_ATTR_EPP_PEER,
 	/* add attributes here, update the policy in nl80211.c */
 	__NL80211_ATTR_AFTER_LAST,
 	NUM_NL80211_ATTR = __NL80211_ATTR_AFTER_LAST,
