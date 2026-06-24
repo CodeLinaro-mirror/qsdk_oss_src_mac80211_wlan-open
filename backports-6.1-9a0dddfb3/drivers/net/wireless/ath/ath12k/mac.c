@@ -31683,6 +31683,7 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 	 */
 	if (ar && vif->type == NL80211_IFTYPE_AP &&
 	    !ath12k_extd_rx_stats_enabled(&ar->dp) &&
+	    !ath12k_dp_rx_ppdu_stats_enabled(&ar->dp) &&
 	    !ath12k_dp_hw_peer_stats_enabled(&ar->dp)) {
 		vif_ppeds_rx = dp_vif->rx_stats[DP_REO_PPEDS_RING_IDX].ppeds_rx;
 		stats->rx_packets += vif_ppeds_rx.packets;

@@ -3170,167 +3170,95 @@ static int ath12k_get_feat_sdwfdelay_attr_size(struct ath12k_telemetry_command *
  */
 static int ath12k_vendor_get_rx_mon_stats_size(void)
 {
-	struct ath12k_rx_peer_stats stats;
+	struct ath12k_rx_ppdu_stats stats;
 	int total_size = 0;
 	int payload_size;
-	int attr_size, payload_size_pkt, attr_size_pkt, payload_size_user;
+	int payload_size_pkt, attr_size_pkt, payload_size_user;
 	int attr_size_user, attr_size_type, attr_size_dot11;
 	int payload_size_ppdu_nss, payload_size_ppdu_mcs;
 	int attr_size_ppdu_nss, attr_size_ppdu_mcs, attr_signal_size;
-	int mcs_size, nss_size, gi_size, bw_size;
 
-	/* Basic counters */
-	total_size += nla_total_size_64bit(sizeof(stats.num_msdu));
+	/* Basic counters: num_msdu is u32; num_msdu_bytes and rx_duration are u64 */
+	total_size += nla_total_size(sizeof(stats.num_msdu));
 	total_size += nla_total_size_64bit(sizeof(stats.num_msdu_bytes));
-	total_size += nla_total_size_64bit(sizeof(stats.num_mpdu_fcs_ok));
-	total_size += nla_total_size_64bit(sizeof(stats.num_mpdu_fcs_err));
-	total_size += nla_total_size_64bit(sizeof(stats.tcp_msdu_count));
-	total_size += nla_total_size_64bit(sizeof(stats.udp_msdu_count));
-	total_size += nla_total_size_64bit(sizeof(stats.other_msdu_count));
-	total_size += nla_total_size_64bit(sizeof(stats.ampdu_msdu_count));
-	total_size += nla_total_size_64bit(sizeof(stats.non_ampdu_msdu_count));
-	total_size += nla_total_size_64bit(sizeof(stats.stbc_count));
-	total_size += nla_total_size_64bit(sizeof(stats.beamformed_count));
-	total_size += nla_total_size_64bit(sizeof(stats.dcm_count));
 	total_size += nla_total_size_64bit(sizeof(stats.rx_duration));
 
-	/* Coding count array */
-	payload_size = nla_total_size_64bit(sizeof(stats.coding_count[0])) *
-					    HAL_RX_SU_MU_CODING_MAX;
-	total_size += nla_total_size_nested(payload_size);
-
-	/* TID count array */
-	payload_size = nla_total_size_64bit(sizeof(stats.tid_count[0])) *
-					    (IEEE80211_NUM_TIDS + 1);
-	total_size += nla_total_size_nested(payload_size);
-
-	/* Preamble count array */
-	payload_size = nla_total_size_64bit(sizeof(stats.pream_cnt[0])) *
-					    HAL_RX_PREAMBLE_MAX;
-	total_size += nla_total_size_nested(payload_size);
-
-	/* Reception type array */
-	payload_size = nla_total_size_64bit(sizeof(stats.reception_type[0])) *
-					    HAL_RX_RECEPTION_TYPE_MAX;
-	total_size += nla_total_size_nested(payload_size);
-
-	/* RU allocation count array */
-	payload_size = nla_total_size_64bit(sizeof(stats.ru_alloc_cnt[0])) *
-					    HAL_RX_RU_ALLOC_TYPE_MAX;
-	total_size += nla_total_size_nested(payload_size);
-
-	/* Packet stats - nested rate stats structure */
-	attr_size = 0;
-
-	/* HT MCS array */
-	payload_size = nla_total_size_64bit(sizeof(stats.pkt_stats.ht_mcs_count[0])) *
-					    ATH12K_HT_MCS_NUM;
-	attr_size += nla_total_size_nested(payload_size);
-
-	/* VHT MCS array */
-	payload_size = nla_total_size_64bit(sizeof(stats.pkt_stats.vht_mcs_count[0])) *
-					    ATH12K_VHT_MCS_NUM;
-	attr_size += nla_total_size_nested(payload_size);
-
-	/* HE MCS array */
-	payload_size = nla_total_size_64bit(sizeof(stats.pkt_stats.he_mcs_count[0])) *
-					    ATH12K_HE_MCS_NUM;
-	attr_size += nla_total_size_nested(payload_size);
-
-	/* BE MCS array */
-	payload_size = nla_total_size_64bit(sizeof(stats.pkt_stats.be_mcs_count[0])) *
-					    ATH12K_EHT_MCS_NUM;
-	attr_size += nla_total_size_nested(payload_size);
-
-	/* BN (UHR/11BN) MCS array */
-	payload_size = nla_total_size_64bit(sizeof(stats.pkt_stats.bn_mcs_count[0])) *
-					    ATH12K_UHR_MCS_NUM;
-	attr_size += nla_total_size_nested(payload_size);
-
-	/* NSS array */
-	payload_size = nla_total_size_64bit(sizeof(stats.pkt_stats.nss_count[0])) *
-					    ATH12K_NSS_NUM;
-	attr_size += nla_total_size_nested(payload_size);
-
-	/* BW array */
-	payload_size = nla_total_size_64bit(sizeof(stats.pkt_stats.bw_count[0])) *
-					    ATH12K_BW_NUM;
-	attr_size += nla_total_size_nested(payload_size);
-
-	/* GI array */
-	payload_size = nla_total_size_64bit(sizeof(stats.pkt_stats.gi_count[0])) *
-					    ATH12K_GI_NUM;
-	attr_size += nla_total_size_nested(payload_size);
-
-	/* Legacy rates array */
-	payload_size = nla_total_size_64bit(sizeof(stats.pkt_stats.legacy_count[0])) *
-					    ATH12K_LEGACY_NUM;
-	attr_size += nla_total_size_nested(payload_size);
-
-	/* rx_rate array [BW][GI][NSS][MCS] */
-	mcs_size = nla_total_size_64bit(sizeof(stats.pkt_stats.rx_rate[0][0][0][0])) *
-					ATH12K_HT_MCS_NUM;
-	nss_size = nla_total_size_nested(mcs_size);
-	gi_size = nla_total_size_nested(nss_size * ATH12K_NSS_NUM);
-	bw_size = nla_total_size_nested(gi_size * ATH12K_GI_NUM);
-	attr_size += nla_total_size_nested(bw_size * ATH12K_BW_NUM);
-
-	/* Parent pkt_stats nest and Byte stats nest */
-	total_size += nla_total_size_nested(attr_size) * 2;
-
-	total_size += nla_total_size(sizeof(stats.num_msdu_retry_count));
-
-	total_size += nla_total_size_64bit(sizeof(stats.num_mpdus));
+	/* Basic and advanced counters (u32) */
+	total_size += nla_total_size(sizeof(stats.num_mpdu_fcs_ok));
+	total_size += nla_total_size(sizeof(stats.num_mpdu_fcs_err));
+	total_size += nla_total_size(sizeof(stats.non_ampdu_msdu_count));
+	total_size += nla_total_size(sizeof(stats.ampdu_msdu_count));
+	total_size += nla_total_size(sizeof(stats.num_mpdus));
+	total_size += nla_total_size(sizeof(stats.num_ppdus));
 	total_size += nla_total_size(sizeof(stats.num_mpdu_retry_count));
-
-	total_size += nla_total_size_64bit(sizeof(stats.num_ppdus));
-
+	total_size += nla_total_size(sizeof(stats.num_msdu_retry_count));
 	total_size += nla_total_size(sizeof(stats.num_bar));
 	total_size += nla_total_size(sizeof(stats.num_ndpa));
-
 	total_size += nla_total_size(sizeof(stats.last_rx_rate));
 	total_size += nla_total_size(sizeof(stats.rnd_avg_rx_rate));
 	total_size += nla_total_size(sizeof(stats.avg_rx_rate));
 	total_size += nla_total_size(sizeof(stats.rx_ratecode));
 
-	/* PPDU count array */
-	payload_size = nla_total_size(sizeof(stats.ppdu_reception[0]) *
-			HAL_RX_RECEPTION_TYPE_MAX);
+	/* reception_type array (u32) */
+	payload_size = nla_total_size(sizeof(stats.reception_type[0])) *
+					    HAL_RX_RECEPTION_TYPE_MAX;
 	total_size += nla_total_size_nested(payload_size);
 
-	/* PPDU nss array */
-	payload_size = nla_total_size(sizeof(stats.ppdu_nss[0]) *
-			HAL_RX_MAX_NSS);
+	/* ppdu_reception array (u32) */
+	payload_size = nla_total_size(sizeof(stats.ppdu_reception[0])) *
+					    HAL_RX_RECEPTION_TYPE_MAX;
 	total_size += nla_total_size_nested(payload_size);
 
-	/* punc bw array */
-	payload_size = nla_total_size(sizeof(stats.punc_bw[0]) *
-			MAX_PUNCTURED_MODE);
+	/* gi_count array (u32) */
+	payload_size = nla_total_size(sizeof(stats.gi_count[0])) *
+					    HAL_RX_GI_MAX;
 	total_size += nla_total_size_nested(payload_size);
 
-	/* wireless multimedia AC array */
-	payload_size = nla_total_size_64bit(sizeof(u64)) * 2; /* pkts + bytes */
-	attr_size += nla_total_size_nested(payload_size) * WME_NUM_AC;
-	total_size += nla_total_size_nested(attr_size);
+	/* nss_count array (u32) */
+	payload_size = nla_total_size(sizeof(stats.nss_count[0])) *
+					    HAL_RX_MAX_NSS;
+	total_size += nla_total_size_nested(payload_size);
 
-	/* su_ppdu_count stats */
+	/* ppdu_nss array (u32) */
+	payload_size = nla_total_size(sizeof(stats.ppdu_nss[0])) *
+					    HAL_RX_MAX_NSS;
+	total_size += nla_total_size_nested(payload_size);
+
+	/* bw_count array (u32) */
+	payload_size = nla_total_size(sizeof(stats.bw_count[0])) *
+					    HAL_RX_BW_MAX;
+	total_size += nla_total_size_nested(payload_size);
+
+	/* punc_bw array (u32) */
+	payload_size = nla_total_size(sizeof(stats.punc_bw[0])) *
+					    MAX_PUNCTURED_MODE;
+	total_size += nla_total_size_nested(payload_size);
+
+	/* proto_type stats (DOT11_MAX pkt_types - covers all preamble types) */
+	payload_size_pkt = nla_total_size(sizeof(u32)) *
+				QCA_VENDOR_WLAN_TELEMETRY_UHR_MCS_MAX;
+	attr_size_pkt   = nla_total_size_nested(payload_size_pkt);
+	attr_size_dot11 = attr_size_pkt * DOT11_MAX;
+	total_size     += nla_total_size_nested(attr_size_dot11);
+
+	/* wme_ac_type array (u32 pkts per AC) - attribute 21 */
+	payload_size = nla_total_size(sizeof(u32)) * WME_NUM_AC;
+	total_size += nla_total_size_nested(payload_size);
+
+	/* wme_ac_type_bytes array (u64 bytes per AC) - attribute 22 */
+	payload_size = nla_total_size_64bit(sizeof(u64)) * WME_NUM_AC;
+	total_size += nla_total_size_nested(payload_size);
+
+	/* su_ppdu_count stats (ATH12K_RX_PPDU_PROTO_MAX pkt_types) */
 	payload_size_pkt = nla_total_size(sizeof(u32)) *
 				QCA_VENDOR_WLAN_TELEMETRY_UHR_MCS_MAX;
 	attr_size_pkt   = nla_total_size_nested(payload_size_pkt);
 	attr_size_dot11 = attr_size_pkt *
-				QCA_WLAN_VENDOR_ATTR_WLAN_TELEMETRY_RX_PKT_TYPE_MAX;
+			  QCA_WLAN_VENDOR_ATTR_WLAN_TELEMETRY_RX_PPDU_PKT_TYPE_MAX;
 	total_size     += nla_total_size_nested(attr_size_dot11);
 
-	/* proto_type stats */
-	payload_size_pkt = nla_total_size(sizeof(u32)) *
-				QCA_VENDOR_WLAN_TELEMETRY_UHR_MCS_MAX;
-	attr_size_pkt   = nla_total_size_nested(payload_size_pkt);
-	attr_size_dot11 = attr_size_pkt *
-				QCA_WLAN_VENDOR_ATTR_WLAN_TELEMETRY_RX_PKT_TYPE_MAX;
-	total_size     += nla_total_size_nested(attr_size_dot11);
-
-	/* rx_mu stats*/
-	payload_size_ppdu_nss = nla_total_size(sizeof(u64)) *
+	/* rx_mu stats (ATH12K_RX_MU_PROTO_MAX entries) */
+	payload_size_ppdu_nss = nla_total_size(sizeof(u32)) *
 				QCA_VENDOR_ATTR_WLAN_TELEMETRY_NSS_MAX;
 	attr_size_ppdu_nss = nla_total_size_nested(payload_size_ppdu_nss);
 
@@ -3342,24 +3270,23 @@ static int ath12k_vendor_get_rx_mon_stats_size(void)
 		nla_total_size(sizeof(u32)) + /* mpdu_cnt_fcs_ok */
 		nla_total_size(sizeof(u32)) + /* mpdu_cnt_fcs_err */
 		attr_size_ppdu_nss +          /* ppdu nss */
-		attr_size_ppdu_mcs;           /* ppdu mcs*/
+		attr_size_ppdu_mcs;           /* ppdu mcs */
 
 	attr_size_user = nla_total_size_nested(payload_size_user);
 	attr_size_type = attr_size_user * QCA_VENDOR_WLAN_TELEMETRY_ATTR_USER_TYPE_MAX;
 	attr_size_dot11 = nla_total_size_nested(attr_size_type) *
-			   QCA_WLAN_VENDOR_ATTR_WLAN_TELEMETRY_RX_PKT_TYPE_MAX;
+			  QCA_WLAN_VENDOR_ATTR_WLAN_TELEMETRY_RX_PPDU_PKT_TYPE_MAX;
 	total_size += nla_total_size_nested(attr_size_dot11);
 
-	attr_signal_size  = nla_total_size_64bit(sizeof(stats.signal_stats.snr));
-	attr_signal_size += nla_total_size_64bit(sizeof(stats.signal_stats.snr_avg));
-	attr_signal_size += nla_total_size_64bit(sizeof(stats.signal_stats.snr_dp));
-	attr_signal_size += nla_total_size_64bit(sizeof(stats.signal_stats.snr_dp_avg));
-
-	attr_signal_size += nla_total_size_64bit(sizeof(stats.signal_stats.rssi));
-	attr_signal_size += nla_total_size_64bit(sizeof(stats.signal_stats.rssi_avg));
-	attr_signal_size += nla_total_size_64bit(sizeof(stats.signal_stats.rssi_dp));
-	attr_signal_size += nla_total_size_64bit(sizeof(stats.signal_stats.rssi_dp_avg));
-
+	/* signal stats */
+	attr_signal_size  = nla_total_size(sizeof(stats.signal_stats.snr));
+	attr_signal_size += nla_total_size(sizeof(stats.signal_stats.snr_avg));
+	attr_signal_size += nla_total_size(sizeof(stats.signal_stats.snr_dp));
+	attr_signal_size += nla_total_size(sizeof(stats.signal_stats.snr_dp_avg));
+	attr_signal_size += nla_total_size(sizeof(stats.signal_stats.rssi));
+	attr_signal_size += nla_total_size(sizeof(stats.signal_stats.rssi_avg));
+	attr_signal_size += nla_total_size(sizeof(stats.signal_stats.rssi_dp));
+	attr_signal_size += nla_total_size(sizeof(stats.signal_stats.rssi_dp_avg));
 	total_size += nla_total_size_nested(attr_signal_size);
 
 	/* Parent RX attr size */
@@ -6011,6 +5938,17 @@ static int ath12k_fill_peer_rx_per_pkt_stats_attrs(struct sk_buff *vendor_event,
 	return 0;
 }
 
+/**
+ * ath12k_vendor_fill_rx_wme_ac_stats_pkts() - Serialize WME AC packet counts
+ * @skb: Socket buffer for netlink message
+ * @wme_ac_type: Array of per-AC packet counts (u32[WME_NUM_AC])
+ *
+ * Fills a flat u32 array (one entry per AC, 1-based attribute IDs) into the
+ * already-started nest for QCA_VENDOR_ATTR_WLAN_TELEMETRY_WME_AC_TYPE (attr 22).
+ * The caller is responsible for nla_nest_start/end.
+ *
+ * Return: 0 on success, -EMSGSIZE if buffer space insufficient
+ */
 static int ath12k_vendor_fill_rx_wme_ac_stats_pkts(struct sk_buff *skb,
 						   u32 *wme_ac_type_pkts)
 {
@@ -6026,6 +5964,17 @@ static int ath12k_vendor_fill_rx_wme_ac_stats_pkts(struct sk_buff *skb,
 	return 0;
 }
 
+/**
+ * ath12k_vendor_fill_rx_wme_ac_bytes() - Serialize WME AC byte counts
+ * @skb: Socket buffer for netlink message
+ * @wme_ac_type_bytes: Array of per-AC byte counts (u64[WME_NUM_AC])
+ *
+ * Fills a flat u64 array (one entry per AC, 1-based attribute IDs) into the
+ * already-started nest for QCA_VENDOR_ATTR_WLAN_TELEMETRY_WME_AC_TYPE_BYTES
+ * (attr 23). The caller is responsible for nla_nest_start/end.
+ *
+ * Return: 0 on success, -EMSGSIZE if buffer space insufficient
+ */
 static int ath12k_vendor_fill_rx_wme_ac_bytes(struct sk_buff *skb,
 					      u64 *wme_ac_type_bytes)
 {
@@ -6074,219 +6023,6 @@ ath12k_vendor_fill_rx_signal_stats(struct sk_buff *skb,
 		return -EMSGSIZE;
 
 	return 0;
-}
-
-/**
- * ath12k_vendor_fill_rx_rate_stats() - Serialize RX rate statistics
- * @skb: Socket buffer for netlink message
- * @rate_stats: Pointer to rate statistics structure
- *
- * Serializes rate-specific RX statistics including MCS counts, NSS,
- * bandwidth, guard interval, legacy rates, and the 4D rx_rate array.
- *
- * Return: 0 on success, -EMSGSIZE if buffer space insufficient
- */
-static int ath12k_vendor_fill_rx_rate_stats(struct sk_buff *skb,
-					    struct ath12k_rx_peer_rate_stats *rate_stats)
-{
-	struct nlattr *rx_rate_attr, *bw_nest, *gi_nest, *nss_nest;
-	struct nlattr *legacy_attr, *ht_attr, *vht_attr, *he_attr;
-	struct nlattr *eht_attr, *uhr_attr, *bw_attr, *nss_attr, *gi_attr;
-	int i, bw, gi, nss;
-	u64 count;
-	const int max_mcs = QCA_VENDOR_WLAN_TELEMETRY_HT_MCS_MAX;
-
-	/* HT MCS counts */
-	ht_attr = nla_nest_start(skb,
-				 QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_MON_HT_CNT);
-	if (!ht_attr)
-		return -EMSGSIZE;
-
-	for (i = 0; i < QCA_VENDOR_WLAN_TELEMETRY_HT_MCS_MAX &&
-	     i < HAL_RX_MAX_MCS_HT + 1; i++) {
-		if (nla_put_u64_64bit(skb, (i + 1),
-				      rate_stats->ht_mcs_count[i],
-				      NL80211_ATTR_PAD))
-			return -EMSGSIZE;
-	}
-	nla_nest_end(skb, ht_attr);
-
-	/* VHT MCS counts */
-	vht_attr = nla_nest_start(skb,
-				  QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_MON_VHT_CNT);
-	if (!vht_attr)
-		return -EMSGSIZE;
-
-	for (i = 0; i < QCA_VENDOR_WLAN_TELEMETRY_VHT_MCS_MAX &&
-	     i < HAL_RX_MAX_MCS_VHT + 1; i++) {
-		if (nla_put_u64_64bit(skb, (i + 1),
-				      rate_stats->vht_mcs_count[i],
-				      NL80211_ATTR_PAD))
-			return -EMSGSIZE;
-	}
-	nla_nest_end(skb, vht_attr);
-
-	/* HE MCS counts */
-	he_attr = nla_nest_start(skb,
-				 QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_MON_HE_CNT);
-	if (!he_attr)
-		return -EMSGSIZE;
-
-	for (i = 0; i < QCA_VENDOR_WLAN_TELEMETRY_HE_MCS_MAX &&
-	     i < HAL_RX_MAX_MCS_HE + 1; i++) {
-		if (nla_put_u64_64bit(skb, (i + 1),
-				      rate_stats->he_mcs_count[i],
-				      NL80211_ATTR_PAD))
-			return -EMSGSIZE;
-	}
-	nla_nest_end(skb, he_attr);
-
-	/* EHT MCS counts */
-	eht_attr = nla_nest_start(skb,
-				  QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_MON_EHT_CNT);
-	if (!eht_attr)
-		return -EMSGSIZE;
-
-	for (i = 0; i < QCA_VENDOR_WLAN_TELEMETRY_EHT_MCS_MAX &&
-	     i < HAL_RX_MAX_MCS_BE + 1; i++) {
-		if (nla_put_u64_64bit(skb, (i + 1),
-				      rate_stats->be_mcs_count[i],
-				      NL80211_ATTR_PAD))
-			return -EMSGSIZE;
-	}
-	nla_nest_end(skb, eht_attr);
-
-	/* BN (UHR/11BN) MCS counts */
-	uhr_attr = nla_nest_start(skb,
-				 QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_MON_BN_CNT);
-	if (!uhr_attr)
-		return -EMSGSIZE;
-
-	for (i = 0; i < QCA_VENDOR_WLAN_TELEMETRY_UHR_MCS_MAX &&
-	     i < HAL_RX_MAX_MCS_BN + 1; i++) {
-		if (nla_put_u64_64bit(skb, (i + 1),
-				      rate_stats->bn_mcs_count[i],
-				      NL80211_ATTR_PAD))
-			return -EMSGSIZE;
-	}
-	nla_nest_end(skb, uhr_attr);
-
-	/* NSS counts */
-	nss_attr = nla_nest_start(skb,
-				  QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_MON_NSS_CNT);
-	if (!nss_attr)
-		return -EMSGSIZE;
-
-	for (i = 0; i < QCA_VENDOR_ATTR_WLAN_TELEMETRY_NSS_MAX &&
-	     i < HAL_RX_MAX_NSS; i++) {
-		if (nla_put_u64_64bit(skb, (i + 1),
-				      rate_stats->nss_count[i],
-				      NL80211_ATTR_PAD))
-			return -EMSGSIZE;
-	}
-	nla_nest_end(skb, nss_attr);
-
-	/* Bandwidth counts */
-	bw_attr = nla_nest_start(skb,
-				 QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_MON_BW_CNT);
-	if (!bw_attr)
-		return -EMSGSIZE;
-
-	for (i = 0; i < QCA_VENDOR_WLAN_TELEMETRY_BW_MAX &&
-	     i < HAL_RX_BW_MAX; i++) {
-		if (nla_put_u64_64bit(skb, (i + 1),
-				      rate_stats->bw_count[i],
-				      NL80211_ATTR_PAD))
-			return -EMSGSIZE;
-	}
-	nla_nest_end(skb, bw_attr);
-
-	/* Guard interval counts */
-	gi_attr = nla_nest_start(skb,
-				 QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_MON_GI_CNT);
-	if (!gi_attr)
-		return -EMSGSIZE;
-
-	for (i = 0; i < QCA_VENDOR_WLAN_TELEMETRY_GI_MAX &&
-	     i < HAL_RX_GI_MAX; i++) {
-		if (nla_put_u64_64bit(skb, (i + 1),
-				      rate_stats->gi_count[i],
-				      NL80211_ATTR_PAD))
-			return -EMSGSIZE;
-	}
-	nla_nest_end(skb, gi_attr);
-
-	/* Legacy rate counts */
-	legacy_attr = nla_nest_start(skb,
-				     QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_MON_LEGACY_CNT);
-	if (!legacy_attr)
-		return -EMSGSIZE;
-
-	for (i = 0; i < QCA_VENDOR_WLAN_TELEMETRY_LEGACY_MCS_MAX &&
-	     i < HAL_RX_MAX_NUM_LEGACY_RATES; i++) {
-		if (nla_put_u64_64bit(skb, (i + 1),
-				      rate_stats->legacy_count[i],
-				      NL80211_ATTR_PAD))
-			return -EMSGSIZE;
-	}
-	nla_nest_end(skb, legacy_attr);
-
-	/* 4D rx_rate array: [BW][GI][NSS][MCS] */
-	rx_rate_attr = nla_nest_start(skb,
-				      QCA_VENDOR_ATTR_RX_RATE_STATS_RX_MON_RATE);
-	if (!rx_rate_attr)
-		return -EMSGSIZE;
-
-	for (bw = 0; bw < QCA_VENDOR_WLAN_TELEMETRY_BW_MAX &&
-	     bw < HAL_RX_BW_MAX; bw++) {
-		bw_nest = nla_nest_start(skb, (bw + 1));
-		if (!bw_nest)
-			goto cancel_rx_rate;
-
-		for (gi = 0; gi < QCA_VENDOR_WLAN_TELEMETRY_GI_MAX &&
-		     gi < HAL_RX_GI_MAX; gi++) {
-			gi_nest = nla_nest_start(skb, (gi + 1));
-			if (!gi_nest)
-				goto cancel_bw;
-
-			for (nss = 0; nss < QCA_VENDOR_WLAN_TELEMETRY_NSS_MAX &&
-			     nss < HAL_RX_MAX_NSS; nss++) {
-				nss_nest = nla_nest_start(skb, (nss + 1));
-				if (!nss_nest)
-					goto cancel_gi;
-
-				for (i = 0; i < max_mcs &&
-				     i < HAL_RX_MAX_MCS_HT + 1; i++) {
-					count = rate_stats->rx_rate[bw][gi][nss][i];
-
-					/* Skip zero values to reduce size */
-					if (count == 0)
-						continue;
-
-					if (nla_put_u64_64bit(skb, (i + 1),
-							      count,
-							      NL80211_ATTR_PAD))
-						goto cancel_nss;
-				}
-				nla_nest_end(skb, nss_nest);
-			}
-			nla_nest_end(skb, gi_nest);
-		}
-		nla_nest_end(skb, bw_nest);
-	}
-	nla_nest_end(skb, rx_rate_attr);
-
-	return 0;
-
-cancel_nss:
-	nla_nest_cancel(skb, nss_nest);
-cancel_gi:
-	nla_nest_cancel(skb, gi_nest);
-cancel_bw:
-	nla_nest_cancel(skb, bw_nest);
-cancel_rx_rate:
-	nla_nest_cancel(skb, rx_rate_attr);
-	return -EMSGSIZE;
 }
 
 static int ath12k_put_rx_mu_stats(struct sk_buff *skb,
@@ -6346,13 +6082,13 @@ static int ath12k_put_rx_mu_stats(struct sk_buff *skb,
  * Return: 0 on success, -EMSGSIZE if buffer space insufficient
  */
 static int ath12k_vendor_fill_rx_mon_stats(struct sk_buff *skb,
-					   struct ath12k_rx_peer_stats *rx_stats,
+					   struct ath12k_rx_ppdu_stats *rx_stats,
 					   bool is_extended,
 					   int peer_type, struct ath12k *ar)
 {
-	struct nlattr *coding_attr, *tid_attr, *pream_attr;
-	struct nlattr *reception_attr, *ru_attr;
-	struct nlattr *pkt_stats_attr, *byte_stats_attr, *signal_stat_attr;
+	struct nlattr *recep_attr, *gi_count_attr, *nss_count_attr;
+	struct nlattr *bw_count_attr;
+	struct nlattr *signal_stat_attr;
 	struct nlattr *ppdu_nss_attr, *punc_bw_attr, *su_ppdu_cnt_attr;
 	struct nlattr *nla_wme_pkts, *ppdu_cnt_attr, *nla_wme_bytes;
 	struct nlattr *pkt_type_attr, *mu_stats;
@@ -6363,28 +6099,16 @@ static int ath12k_vendor_fill_rx_mon_stats(struct sk_buff *skb,
 	u32 val;
 
 	/* Basic counters */
-	if (nla_put_u64_64bit(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_NUM_MSDU,
-			      rx_stats->num_msdu, NL80211_ATTR_PAD) ||
-	    nla_put_u64_64bit(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_NUM_MPDU_FCS_OK,
-			      rx_stats->num_mpdu_fcs_ok, NL80211_ATTR_PAD) ||
-	   nla_put_u64_64bit(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_NUM_MPDU_FCS_ERR,
-			     rx_stats->num_mpdu_fcs_err, NL80211_ATTR_PAD) ||
-	   nla_put_u64_64bit(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_TCP_MSDU_COUNT,
-			     rx_stats->tcp_msdu_count, NL80211_ATTR_PAD) ||
-	   nla_put_u64_64bit(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_UDP_MSDU_COUNT,
-			     rx_stats->udp_msdu_count, NL80211_ATTR_PAD) ||
-	   nla_put_u64_64bit(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_OTHER_MSDU_COUNT,
-			     rx_stats->other_msdu_count, NL80211_ATTR_PAD) ||
-	   nla_put_u64_64bit(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_AMPDU_MSDU_COUNT,
-			     rx_stats->ampdu_msdu_count, NL80211_ATTR_PAD) ||
-	   nla_put_u64_64bit(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_NON_AMPDU_MSDU_COUNT,
-			     rx_stats->non_ampdu_msdu_count, NL80211_ATTR_PAD) ||
-	   nla_put_u64_64bit(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_STBC_COUNT,
-			     rx_stats->stbc_count, NL80211_ATTR_PAD) ||
-	   nla_put_u64_64bit(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_BEAMFORMED_COUNT,
-			     rx_stats->beamformed_count, NL80211_ATTR_PAD) ||
-	   nla_put_u64_64bit(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_DCM_COUNT,
-			     rx_stats->dcm_count, NL80211_ATTR_PAD)) {
+	if (nla_put_u32(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_NUM_MSDU,
+			rx_stats->num_msdu) ||
+	    nla_put_u32(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_NUM_MPDU_FCS_OK,
+			rx_stats->num_mpdu_fcs_ok) ||
+	    nla_put_u32(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_NUM_MPDU_FCS_ERR,
+			rx_stats->num_mpdu_fcs_err) ||
+	    nla_put_u32(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_NON_AMPDU_MSDU_COUNT,
+			rx_stats->non_ampdu_msdu_count) ||
+	    nla_put_u32(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_AMPDU_MSDU_COUNT,
+			rx_stats->ampdu_msdu_count)) {
 		ath12k_err(NULL, "nla failure: RX mon stats");
 		return -EMSGSIZE;
 	}
@@ -6398,133 +6122,73 @@ static int ath12k_vendor_fill_rx_mon_stats(struct sk_buff *skb,
 		}
 	}
 
-	/* Coding count array */
-	coding_attr = nla_nest_start(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_CODING_COUNT);
-	if (!coding_attr)
-		return -EMSGSIZE;
-
-	if (nla_put_u64_64bit(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_CODING_BCC,
-			      rx_stats->coding_count[HAL_RX_SU_MU_CODING_BCC],
-			      NL80211_ATTR_PAD) ||
-	    nla_put_u64_64bit(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_CODING_LDPC,
-			      rx_stats->coding_count[HAL_RX_SU_MU_CODING_LDPC],
-			      NL80211_ATTR_PAD)) {
-		nla_nest_cancel(skb, coding_attr);
-		return -EMSGSIZE;
-	}
-	nla_nest_end(skb, coding_attr);
-
-	/* TID count array */
-	tid_attr = nla_nest_start(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_TID_COUNT);
-	if (!tid_attr) {
-		ath12k_err(NULL, "nla nest failure: RX mon TID count");
-		return -EMSGSIZE;
-	}
-
-	for (i = 0; i < QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_TID_NON_QOS - 1 &&
-	     i < IEEE80211_NUM_TIDS + 1; i++) {
-		if (nla_put_u64_64bit(skb, (i + 1),
-				      rx_stats->tid_count[i],
-				      NL80211_ATTR_PAD)) {
-			nla_nest_cancel(skb, tid_attr);
-			return -EMSGSIZE;
-		}
-	}
-	/* Non-QoS TID */
-	if (nla_put_u64_64bit(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_TID_NON_QOS,
-			      rx_stats->tid_count[IEEE80211_NUM_TIDS],
-			      NL80211_ATTR_PAD)) {
-		nla_nest_cancel(skb, tid_attr);
-		return -EMSGSIZE;
-	}
-	nla_nest_end(skb, tid_attr);
-
-	/* Preamble count array */
-	pream_attr = nla_nest_start(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_PREAMBLE_COUNT);
-	if (!pream_attr) {
-		ath12k_err(NULL, "nla nest failure: RX mon preamble count");
-		return -EMSGSIZE;
-	}
-	for (i = 0; i < QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_PREAMBLE_MAX &&
-	     i < HAL_RX_PREAMBLE_MAX; i++) {
-		if (nla_put_u64_64bit(skb, (i + 1),
-				      rx_stats->pream_cnt[i],
-				      NL80211_ATTR_PAD)) {
-			nla_nest_cancel(skb, pream_attr);
-			return -EMSGSIZE;
-		}
-	}
-
-	nla_nest_end(skb, pream_attr);
-
 	/* Reception type array */
-	reception_attr = nla_nest_start(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_RECEP_TYPE);
-	if (!reception_attr) {
+	recep_attr = nla_nest_start(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_RECEPTION_TYPE);
+
+	if (!recep_attr) {
 		ath12k_err(NULL, "nla nest failure: RX mon reception type");
 		return -EMSGSIZE;
 	}
 	for (i = 0; i < QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_RECEP_MAX &&
 	     i < HAL_RX_RECEPTION_TYPE_MAX; i++) {
-		if (nla_put_u64_64bit(skb, (i + 1),
-				      rx_stats->reception_type[i],
-				      NL80211_ATTR_PAD)) {
-			nla_nest_cancel(skb, reception_attr);
+		if (nla_put_u32(skb, (i + 1), rx_stats->reception_type[i])) {
+			nla_nest_cancel(skb, recep_attr);
 			return -EMSGSIZE;
 		}
 	}
+	nla_nest_end(skb, recep_attr);
 
-	nla_nest_end(skb, reception_attr);
-
-	/* RU allocation count array */
-	ru_attr = nla_nest_start(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_RU_ALLOC_COUNT);
-	if (!ru_attr) {
-		ath12k_err(NULL, "nla nest failure: RX mon RU alloc count");
+	/* gi_count array */
+	gi_count_attr = nla_nest_start(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_GI_COUNT);
+	if (!gi_count_attr) {
+		ath12k_err(NULL, "nla nest failure: RX mon GI count");
 		return -EMSGSIZE;
 	}
-	for (i = 0; i < QCA_VENDOR_WLAN_TELEMETRY_RU_ALLOC_MAX &&
-	     i < HAL_RX_RU_ALLOC_TYPE_MAX; i++) {
-		if (nla_put_u64_64bit(skb, (i + 1),
-				      rx_stats->ru_alloc_cnt[i],
-				      NL80211_ATTR_PAD)) {
-			nla_nest_cancel(skb, ru_attr);
+	for (i = 0; i < QCA_VENDOR_WLAN_TELEMETRY_GI_MAX &&
+	     i < HAL_RX_GI_MAX; i++) {
+		if (nla_put_u32(skb, (i + 1), rx_stats->gi_count[i])) {
+			nla_nest_cancel(skb, gi_count_attr);
 			return -EMSGSIZE;
 		}
 	}
+	nla_nest_end(skb, gi_count_attr);
 
-	nla_nest_end(skb, ru_attr);
-
-	/* Packet statistics (nested rate stats) */
-	pkt_stats_attr = nla_nest_start(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_PKT_STATS);
-	if (!pkt_stats_attr) {
-		ath12k_err(NULL, "nla nest failure: RX mon packet stats");
+	/* nss_count array */
+	nss_count_attr = nla_nest_start(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_NSS_COUNT);
+	if (!nss_count_attr) {
+		ath12k_err(NULL, "nla nest failure: RX mon NSS count");
 		return -EMSGSIZE;
 	}
+	for (i = 0; i < QCA_VENDOR_ATTR_WLAN_TELEMETRY_NSS_MAX &&
+	     i < HAL_RX_MAX_NSS; i++) {
+		if (nla_put_u32(skb, (i + 1), rx_stats->nss_count[i])) {
+			nla_nest_cancel(skb, nss_count_attr);
+			return -EMSGSIZE;
+		}
+	}
+	nla_nest_end(skb, nss_count_attr);
 
-	if (ath12k_vendor_fill_rx_rate_stats(skb, &rx_stats->pkt_stats)) {
-		nla_nest_cancel(skb, pkt_stats_attr);
+	/* bw_count array */
+	bw_count_attr = nla_nest_start(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_BW_COUNT);
+	if (!bw_count_attr) {
+		ath12k_err(NULL, "nla nest failure: RX mon BW count");
 		return -EMSGSIZE;
 	}
-	nla_nest_end(skb, pkt_stats_attr);
-
-	/* Byte statistics (nested rate stats) */
-	byte_stats_attr = nla_nest_start(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_BYTE_STATS);
-	if (!byte_stats_attr) {
-		ath12k_err(NULL, "nla nest failure: RX mon byte stats");
-		return -EMSGSIZE;
+	for (i = 0; i < QCA_VENDOR_WLAN_TELEMETRY_BW_MAX &&
+	     i < HAL_RX_BW_MAX; i++) {
+		if (nla_put_u32(skb, (i + 1), rx_stats->bw_count[i])) {
+			nla_nest_cancel(skb, bw_count_attr);
+			return -EMSGSIZE;
+		}
 	}
-
-	if (ath12k_vendor_fill_rx_rate_stats(skb, &rx_stats->byte_stats)) {
-		nla_nest_cancel(skb, byte_stats_attr);
-		return -EMSGSIZE;
-	}
-	nla_nest_end(skb, byte_stats_attr);
+	nla_nest_end(skb, bw_count_attr);
 
 	if (nla_put_u64_64bit(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_NUM_MSDU_BYTES,
 			      rx_stats->num_msdu_bytes, NL80211_ATTR_PAD) ||
-	    nla_put_u64_64bit(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_NUM_MPDU,
-			      rx_stats->num_mpdus, NL80211_ATTR_PAD) ||
-	    nla_put_u64_64bit(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_NUM_PPDU,
-			      rx_stats->num_ppdus, NL80211_ATTR_PAD)) {
+	    nla_put_u32(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_NUM_MPDU,
+			rx_stats->num_mpdus) ||
+	    nla_put_u32(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_NUM_PPDU,
+			rx_stats->num_ppdus)) {
 		ath12k_err(NULL, "nla nest failure: RX mon basic bytes stats");
 		return -EMSGSIZE;
 	}
@@ -6535,7 +6199,6 @@ static int ath12k_vendor_fill_rx_mon_stats(struct sk_buff *skb,
 		ath12k_err(NULL, "nla nest failure: RX mon retry count stats");
 		return -EMSGSIZE;
 	}
-
 
 	signal_stat_attr = nla_nest_start(skb,
 					  QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_SIGNAL_STATS);
@@ -6551,7 +6214,7 @@ static int ath12k_vendor_fill_rx_mon_stats(struct sk_buff *skb,
 	}
 	nla_nest_end(skb, signal_stat_attr);
 
-	/* Extended stats placeholder */
+	/* Advanced stats - only reported when advance_stats is enabled */
 	if (!ath12k_dp_advance_stats_enabled(&ar->dp))
 		return 0;
 
@@ -6686,7 +6349,6 @@ static int ath12k_vendor_fill_rx_mon_stats(struct sk_buff *skb,
 	}
 	nla_nest_end(skb, punc_bw_attr);
 
-
 	/* RX MU stats */
 	mu_stats = nla_nest_start(skb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_MU);
 	if (!mu_stats)
@@ -6695,11 +6357,14 @@ static int ath12k_vendor_fill_rx_mon_stats(struct sk_buff *skb,
 	for (i = 0; i < QCA_WLAN_VENDOR_ATTR_WLAN_TELEMETRY_RX_PPDU_PKT_TYPE_MAX &&
 	     i < ATH12K_RX_PPDU_PROTO_MAX; i++) {
 		pkt_type_mu_stats = nla_nest_start(skb, i + 1);
-		if (!pkt_type_mu_stats)
+		if (!pkt_type_mu_stats) {
+			nla_nest_cancel(skb, mu_stats);
 			return -EMSGSIZE;
+		}
 
 		if (ath12k_put_rx_mu_stats(skb, rx_stats->rx_mu[i])) {
 			nla_nest_cancel(skb, pkt_type_mu_stats);
+			nla_nest_cancel(skb, mu_stats);
 			return -EMSGSIZE;
 		}
 		nla_nest_end(skb, pkt_type_mu_stats);
@@ -6855,8 +6520,8 @@ static int ath12k_fill_peer_rx_stats(struct ath12k *ar,
 {
 	struct nlattr *attr1;
 	struct nlattr *attr;
+	struct ath12k_rx_ppdu_stats *rx_mon_stats;
 	int ring_num;
-	struct ath12k_rx_peer_stats *rx_mon_stats;
 	bool is_hw_stats = false;
 
 	if (ath12k_dp_hw_peer_stats_enabled(&ar->dp))
@@ -6916,9 +6581,8 @@ static int ath12k_fill_peer_rx_stats(struct ath12k *ar,
 		return -EINVAL;
 	}
 
-	/* RX Monitor Stats - gated by extended stats flag */
-	if (link_peer_stats && ath12k_extd_rx_stats_enabled(&ar->dp)) {
-		rx_mon_stats = link_peer_stats->rx_stats;
+	if (link_peer_stats && ath12k_dp_rx_ppdu_stats_enabled(&ar->dp)) {
+		rx_mon_stats = link_peer_stats->rx_ppdu_stats;
 
 		if (!rx_mon_stats)
 			return 0;
@@ -7357,9 +7021,8 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 	struct ath12k *ar = &ahvif->ah->radio[0];
 	struct ath12k_dp_proto_stats_peer *proto = NULL;
 	struct ath12k_dp_mld_agg_latency_peer_stats *agg_mld_stats = NULL;
-	struct ath12k_rx_peer_stats *rx_mon_stats = NULL;
 	struct ath12k_dp_link_peer_qos_stats *qos_stats = NULL;
-
+	struct ath12k_rx_ppdu_stats *rx_mon_stats;
 	struct nlattr *attr;
 	int ret = -EINVAL;
 
@@ -7377,14 +7040,17 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 		goto out;
 
 	memset(rx_mon_stats, 0,
-	       sizeof(struct ath12k_rx_peer_stats));
-	telemetry_peer->link_peer_stats.rx_stats = rx_mon_stats;
+	       sizeof(struct ath12k_rx_ppdu_stats));
+	telemetry_peer->link_peer_stats.rx_ppdu_stats = rx_mon_stats;
 	telemetry_peer->peer_type = ATH12K_PEER_INVAL;
 
 	tx_ppdu_stats = vzalloc(sizeof(*tx_ppdu_stats));
-	if (!tx_ppdu_stats)
-		goto out;
 
+	if (!tx_ppdu_stats) {
+		vfree(rx_mon_stats);
+		vfree(telemetry_peer);
+		return -ENOMEM;
+	}
 	telemetry_peer->link_peer_stats.tx_ppdu_stats = tx_ppdu_stats;
 
 	if (ath12k_proto_stats_enabled(&ar->dp)) {
@@ -8546,7 +8212,7 @@ static int ath12k_prepare_vif_vendor_event(struct sk_buff *vendor_event,
 	struct ath12k_telemetry_dp_vif *telemetry_vif;
 	struct ath12k_dp_proto_stats_peer *peer_proto;
 	struct ath12k_dp_proto_stats_vif *vif_proto;
-	struct ath12k_rx_peer_stats *rx_mon_stats;
+	struct ath12k_rx_ppdu_stats *rx_mon_stats;
 	struct ath12k_htt_tx_ppdu_stats *tx_ppdu_stats;
 	struct ath12k_dp_link_peer_hw_stats *hw_link_stats;
 	struct ath12k_dp_peer_hw_stats *hw_stats;
@@ -8582,7 +8248,7 @@ static int ath12k_prepare_vif_vendor_event(struct sk_buff *vendor_event,
 		vfree(telemetry_vif);
 		return -ENOMEM;
 	}
-	telemetry_vif->aggr_vif_stats.link_peer_stats.rx_stats = rx_mon_stats;
+	telemetry_vif->aggr_vif_stats.link_peer_stats.rx_ppdu_stats = rx_mon_stats;
 
 	peer_proto = vzalloc(sizeof(*peer_proto));
 	if (!peer_proto) {
@@ -9611,7 +9277,7 @@ static int ath12k_prepare_radio_vendor_event(struct sk_buff *vendor_event,
 	struct ath12k *ar = dp_pdev->ar;
 	struct ath12k_base *ab = dp_pdev->ar->ab;
 	struct ath12k_htt_tx_ppdu_stats *tx_ppdu_stats;
-	struct ath12k_rx_peer_stats *rx_mon_stats;
+	struct ath12k_rx_ppdu_stats *rx_mon_stats;
 	struct ath12k_dp_aggr_pdev_tid_stats *flat_tid_stats;
 	struct ath12k_dp_link_peer_hw_stats *hw_link_stats;
 	struct ath12k_dp_peer_hw_stats *hw_stats;
@@ -9668,10 +9334,11 @@ static int ath12k_prepare_radio_vendor_event(struct sk_buff *vendor_event,
 
 	rx_mon_stats = vzalloc(sizeof(*rx_mon_stats));
 	if (!rx_mon_stats) {
+		vfree(tx_ppdu_stats);
 		vfree(telemetry_radio);
 		return -ENOMEM;
 	}
-	telemetry_radio->aggr_pdev_stats.link_peer_stats.rx_stats = rx_mon_stats;
+	telemetry_radio->aggr_pdev_stats.link_peer_stats.rx_ppdu_stats = rx_mon_stats;
 
 	if (ath12k_dp_hw_peer_stats_enabled(&ar->dp)) {
 		hw_link_stats = vzalloc(sizeof(*hw_link_stats));
