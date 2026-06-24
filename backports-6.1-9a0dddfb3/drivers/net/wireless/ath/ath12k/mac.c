@@ -6607,7 +6607,7 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 		  ath12k_wmi_migration_cmd_work);
 	INIT_LIST_HEAD(&arvif->peer_migrate_list);
 
-	ath12k_mac_init_arvif_extn(ahvif);
+	ath12k_mac_init_arvif_extn(ahvif, arvif);
 
 	arvif->bcast_rate_configured = false;
 
@@ -6799,8 +6799,8 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 		}
 	}
 
+	ath12k_mac_deinit_arvif_extn(arvif);
 	ath12k_mac_remove_link_interface_extn(arvif);
-
 	ath12k_debugfs_remove_interface(arvif);
 	ret = ath12k_mac_vdev_delete(ar, arvif);
 	if (ret)
@@ -20492,6 +20492,7 @@ err_dp_peer_del:
 
 err_vdev_del:
 	ath12k_wmi_vdev_delete(ar, arvif->vdev_id);
+	ath12k_mac_deinit_arvif_extn(arvif);
 	ath12k_debugfs_remove_interface(arvif);
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
 		ar->monitor_vdev_created = false;
