@@ -6707,7 +6707,15 @@ ath12k_mac_op_change_vif_links(struct ieee80211_hw *hw,
 		 * the selected arvif already started for ROC scan
 		 */
 
-		if (scan_arvif->is_scan_vif) {
+		/* Skip scan vif cleanup for link 0 if it is already scheduled
+		 * for removal via to_remove. The to_remove loop below handles
+		 * the scan arvif completely: stopping the vdev if started,
+		 * calling remove_link_interface and unassign_link_vif. Running
+		 * this block first would NULL ahvif->link[0] via
+		 * ath12k_mac_unassign_link_vif() before the to_remove loop
+		 * reads it, causing WARN_ON(!arvif) at the loop's NULL check.
+		 */
+		if (scan_arvif->is_scan_vif && !(to_remove & BIT(0))) {
 			arvif_ar = scan_arvif->ar;
 			if (WARN_ON(!arvif_ar))
 				return -EINVAL;
