@@ -65,6 +65,7 @@ const struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_dual_ring_ops = {
 	/* At Device Init/Exit */
 	.mon_tx_srng_alloc_setup = ath12k_dp_mon_tx_srng_alloc_setup,
 	.mon_tx_srng_cleanup = ath12k_dp_mon_tx_srng_cleanup,
+	.mon_tx_srng_init_setup = ath12k_dp_mon_tx_srng_init_setup,
 	/* Workqueue start/stop */
 	.mon_tx_wq_start = ath12k_dp_mon_tx_wq_start,
 	.mon_tx_wq_stop = ath12k_dp_mon_tx_wq_stop,

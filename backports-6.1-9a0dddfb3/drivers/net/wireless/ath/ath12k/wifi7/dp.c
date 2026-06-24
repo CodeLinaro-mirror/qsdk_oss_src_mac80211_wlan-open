@@ -343,7 +343,7 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 		goto fail_dp_mon_rx_deinit;
 	}
 
-	ret = ath12k_dp_mon_tx_srng_alloc(dp);
+	ret = ath12k_dp_mon_tx_srng_init(dp);
 	if (ret) {
 		ath12k_warn(ab, "Tx Mon: failed to setup rings ret = %d\n", ret);
 		goto fail_dp_mon_rx_deinit;
@@ -358,13 +358,10 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 	ret = ath12k_wifi7_dp_ipa_init(ab);
 	if (ret) {
 		ath12k_err(dp->ab, "IPA: ipa init failed");
-		goto fail_dp_mon_tx_srng_free;
+		goto fail_dp_mon_rx_deinit;
 	}
 
 	return 0;
-
-fail_dp_mon_tx_srng_free:
-	ath12k_dp_mon_tx_srng_free(dp);
 
 fail_dp_mon_rx_deinit:
 	ath12k_dp_mon_rx_deinit(dp);
@@ -422,7 +419,7 @@ static void ath12k_wifi7_dp_op_device_deinit(struct ath12k_dp *dp)
 	ath12k_dp_rx_reo_cmd_list_cleanup(ab);
 
 	ath12k_dp_mon_rx_deinit(dp);
-	ath12k_dp_mon_tx_srng_free(dp);
+	ath12k_dp_mon_tx_srng_deinit(dp);
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ath12k_nss_plugin_unregister_ops(ab);
@@ -729,6 +726,12 @@ struct ath12k_dp *ath12k_wifi7_dp_init(struct ath12k_base *ab)
 		goto dp_err;
 	}
 
+	ret = ath12k_dp_mon_tx_srng_alloc(dp);
+	if (ret) {
+		ath12k_warn(ab, "Tx Mon: failed to setup rings ret = %d\n", ret);
+		goto dp_err;
+	}
+
 	return dp;
 dp_err:
 	ath12k_wifi7_dp_deinit(dp);
@@ -738,6 +741,7 @@ dp_err:
 
 void ath12k_wifi7_dp_deinit(struct ath12k_dp *dp)
 {
+	ath12k_dp_mon_tx_srng_free(dp);
 	ath12k_dp_mon_rx_free(dp);
 	ath12k_dp_mon_deinit(dp);
 	ath12k_wifi7_dp_rx_ring_free(dp->ab);
