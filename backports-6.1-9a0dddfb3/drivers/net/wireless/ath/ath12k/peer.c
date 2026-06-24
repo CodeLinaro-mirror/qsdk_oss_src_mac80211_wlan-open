@@ -123,8 +123,9 @@ int ath12k_peer_del_tracker_init(struct ath12k_pdev *pdev)
 
 	pdev->peer_del_tracker = tracker;
 	atomic_set(&pdev->peer_del_tracker_entries, 0);
-	ath12k_dbg(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER,
-		   "peer deletion tracker initialized for pdev %d\n", pdev->pdev_id);
+	ath12k_dbg_level(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "peer deletion tracker initialized for pdev %d\n",
+			 pdev->pdev_id);
 
 	return 0;
 }
@@ -174,8 +175,8 @@ void ath12k_peer_del_tracker_destroy(struct ath12k_pdev *pdev)
 	kfree(tracker);
 	atomic_set(&pdev->peer_del_tracker_entries, 0);
 
-	ath12k_dbg(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER,
-		   "peer deletion tracker destroyed for pdev %d\n", pdev->pdev_id);
+	ath12k_dbg_level(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "peer deletion tracker destroyed for pdev %d\n", pdev->pdev_id);
 }
 
 /* Add a peer to the deletion tracking hash */
@@ -238,9 +239,9 @@ int ath12k_peer_del_tracker_add(struct ath12k_pdev *pdev, u32 vdev_id,
 
 	atomic_inc(&pdev->peer_del_tracker_entries);
 
-	ath12k_dbg(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER,
-		   "added peer %pM mld %pM vdev %d to deletion tracker with timer\n",
-		   addr, entry->mld_addr, vdev_id);
+	ath12k_dbg_level(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER, ATH12K_DBG_L2,
+			 "added peer %pM mld %pM vdev %d to deletion tracker with timer\n",
+			 addr, entry->mld_addr, vdev_id);
 
 	return 0;
 }
@@ -270,13 +271,15 @@ void ath12k_peer_del_tracker_remove(struct ath12k_pdev *pdev, u32 vdev_id, const
 		del_timer_sync(&entry->timer);
 
 		if (!is_zero_ether_addr(entry->mld_addr))
-			ath12k_dbg(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER,
-				   "removed peer %pM mld %pM vdev %d from deletion tracker and cancelled timer\n",
-				   addr, entry->mld_addr, vdev_id);
+			ath12k_dbg_level(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER,
+					 ATH12K_DBG_L2,
+					 "removed peer %pM mld %pM vdev %d from deletion tracker and cancelled timer\n",
+					 addr, entry->mld_addr, vdev_id);
 		else
-			ath12k_dbg(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER,
-				   "removed peer %pM vdev %d from deletion tracker and cancelled timer\n",
-				   addr, vdev_id);
+			ath12k_dbg_level(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER,
+					 ATH12K_DBG_L2,
+					 "removed peer %pM vdev %d from deletion tracker and cancelled timer\n",
+					 addr, vdev_id);
 
 		/* Wake up any waiters on hash_delete_queue */
 		wake_up_all(&tracker->hash_delete_queue);
@@ -360,9 +363,9 @@ int ath12k_peer_del_tracker_wait(struct ath12k_pdev *pdev, const u8 *addr,
 	if (!tracker)
 		return -EINVAL;
 
-	ath12k_dbg(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER,
-		   "waiting for peer %pM to be removed from deletion tracker (timeout %lu ms)\n",
-		   addr, timeout_ms);
+	ath12k_dbg_level(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER, ATH12K_DBG_L0,
+			 "waiting for peer %pM to be removed from deletion tracker (timeout %lu ms)\n",
+			 addr, timeout_ms);
 
 	ret = wait_event_timeout(tracker->hash_delete_queue,
 				 !ath12k_peer_del_tracker_check(pdev, addr,
@@ -375,8 +378,8 @@ int ath12k_peer_del_tracker_wait(struct ath12k_pdev *pdev, const u8 *addr,
 		return -ETIMEDOUT;
 	}
 
-	ath12k_dbg(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER,
-		   "peer %pM removed from deletion tracker\n", addr);
+	ath12k_dbg_level(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER, ATH12K_DBG_L0,
+			 "peer %pM removed from deletion tracker\n", addr);
 
 	return 0;
 }
@@ -397,8 +400,8 @@ int ath12k_peer_del_tracker_clear_vdev(struct ath12k_pdev *pdev, u32 vdev_id)
 	if (!atomic_read(&pdev->peer_del_tracker_entries))
 		return 0;
 
-	ath12k_dbg(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER,
-		   "clearing deletion tracker for vdev %d\n", vdev_id);
+	ath12k_dbg_level(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER, ATH12K_DBG_L0,
+			 "clearing deletion tracker for vdev %d\n", vdev_id);
 
 	max_entries = ar->max_num_stations;
 
@@ -435,9 +438,9 @@ int ath12k_peer_del_tracker_clear_vdev(struct ath12k_pdev *pdev, u32 vdev_id)
 					       tracker->mld_hash_params);
 		spin_unlock_bh(&tracker->lock);
 
-		ath12k_dbg(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER,
-			   "removed peer %pM from deletion tracker (vdev %d)\n",
-			   entry->addr, vdev_id);
+		ath12k_dbg_level(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER, ATH12K_DBG_L1,
+				 "removed peer %pM from deletion tracker (vdev %d)\n",
+				 entry->addr, vdev_id);
 
 		kfree_rcu(entry, rcu_head);
 		atomic_dec_if_positive(&pdev->peer_del_tracker_entries);
@@ -447,9 +450,9 @@ int ath12k_peer_del_tracker_clear_vdev(struct ath12k_pdev *pdev, u32 vdev_id)
 	if (count > 0)
 		wake_up_all(&tracker->hash_delete_queue);
 
-	ath12k_dbg(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER,
-		   "cleared %d peers from deletion tracker for vdev %d\n",
-		   count, vdev_id);
+	ath12k_dbg_level(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER, ATH12K_DBG_L0,
+			 "cleared %d peers from deletion tracker for vdev %d\n",
+			 count, vdev_id);
 
 	kfree(entries_to_remove);
 
@@ -470,8 +473,8 @@ int ath12k_peer_del_tracker_clear_pdev(struct ath12k_pdev *pdev)
 	if (!atomic_read(&pdev->peer_del_tracker_entries))
 		return 0;
 
-	ath12k_dbg(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER,
-		   "clearing deletion tracker for pdev %d\n", pdev->pdev_id);
+	ath12k_dbg_level(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER, ATH12K_DBG_L0,
+			 "clearing deletion tracker for pdev %d\n", pdev->pdev_id);
 
 	entries_to_remove = kcalloc(max_entries, sizeof(*entries_to_remove),
 				    GFP_KERNEL);
@@ -513,9 +516,9 @@ int ath12k_peer_del_tracker_clear_pdev(struct ath12k_pdev *pdev)
 	if (count > 0)
 		wake_up_all(&tracker->hash_delete_queue);
 
-	ath12k_dbg(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER,
-		   "cleared %d peers from deletion tracker for pdev %d\n",
-		   count, pdev->pdev_id);
+	ath12k_dbg_level(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER, ATH12K_DBG_L0,
+			 "cleared %d peers from deletion tracker for pdev %d\n",
+			 count, pdev->pdev_id);
 
 	kfree(entries_to_remove);
 
@@ -583,9 +586,9 @@ void ath12k_peer_cleanup(struct ath12k *ar, u32 vdev_id)
 	if (count > 0) {
 		ar->num_peers -= count;
 		ar->num_ml_peers -= ctx.num_ml_peers;
-		ath12k_dbg(ab, ATH12K_DBG_PEER,
-			   "cleaned up %d stale peers from vdev_id %d\n",
-			   count, vdev_id);
+		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L0,
+				 "cleaned up %d stale peers from vdev_id %d\n",
+				 count, vdev_id);
 	}
 }
 
@@ -780,9 +783,9 @@ static int ath12k_track_peer_delete(struct ath12k *ar,
 	if (!ret)
 		return 0;
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
-		   "peer %pM delete is pending, waiting for 3 seconds\n",
-		   addr);
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER, ATH12K_DBG_L0,
+			 "peer %pM delete is pending, waiting for 3 seconds\n",
+			 addr);
 
 	ret = ath12k_peer_del_tracker_wait(ar->pdev, addr,
 					   ATH12K_PEER_DEL_TRACKER_TIMEOUT_MS,
@@ -868,8 +871,9 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		return ret;
 	}
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_PEER, "[vdev_id : %u radio_idx : %u] peer created %pM\n",
-		   arg->vdev_id, ar->radio_idx, arg->peer_addr);
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER, ATH12K_DBG_L0,
+			 "[vdev_id : %u radio_idx : %u] peer created %pM\n",
+			 arg->vdev_id, ar->radio_idx, arg->peer_addr);
 
 	ar->num_peers++;
 
@@ -907,9 +911,9 @@ int ath12k_peer_dp_cp_link_peer_delete(struct ath12k_link_vif *arvif,
 	ath12k_dp_cp_link_peer_unassign(ar, arvif, ahsta, link_id, addr, update_bmap);
 
 	if (ml_peer_del_all && arvif->peer_del_all_enable) {
-		ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
-			   "Skipping peer delete for %pM due to peer_del_all:%d\n",
-			   addr, arvif->peer_del_all_enable);
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER, ATH12K_DBG_L2,
+				 "Skipping peer delete for %pM due to peer_del_all:%d\n",
+				 addr, arvif->peer_del_all_enable);
 		return 0;
 	}
 
@@ -1778,21 +1782,21 @@ int ath12k_peer_send_assoc_vendor_response(const struct ath12k_dp_link_peer *pee
 	struct ath12k *ar;
 
 	if (!peer) {
-		ath12k_dbg(NULL, ATH12K_DBG_PEER,
-			   "Invalid peer skipped assoc vendor response\n");
+		ath12k_dbg_level(NULL, ATH12K_DBG_PEER, ATH12K_DBG_L0,
+				 "Invalid peer skipped assoc vendor response\n");
 		return -EINVAL;
 	}
 
 	sta = ath12k_dp_link_peer_get_sta(peer);
 	if (!sta) {
-		ath12k_dbg(NULL, ATH12K_DBG_PEER,
-			   "Invalid sta skipped assoc vendor response\n");
+		ath12k_dbg_level(NULL, ATH12K_DBG_PEER, ATH12K_DBG_L0,
+				 "Invalid sta skipped assoc vendor response\n");
 		return -EINVAL;
 	}
 
 	if (peer->link_id < 0) {
-		ath12k_dbg(NULL, ATH12K_DBG_PEER,
-			   "Invalid peer link id skipped assoc vendor response\n");
+		ath12k_dbg_level(NULL, ATH12K_DBG_PEER, ATH12K_DBG_L0,
+				 "Invalid peer link id skipped assoc vendor response\n");
 		return -EINVAL;
 	}
 	rcu_read_lock();
@@ -1800,9 +1804,9 @@ int ath12k_peer_send_assoc_vendor_response(const struct ath12k_dp_link_peer *pee
 	arsta = ahsta->link[peer->link_id];
 	if (!(arsta && arsta->arvif)) {
 		rcu_read_unlock();
-		ath12k_dbg(NULL, ATH12K_DBG_PEER,
-			   "invalid arsta for peer: %pM skipped assoc vendor response\n",
-			   peer->addr);
+		ath12k_dbg_level(NULL, ATH12K_DBG_PEER, ATH12K_DBG_L0,
+				 "invalid arsta for peer: %pM skipped assoc vendor response\n",
+				 peer->addr);
 		return -EINVAL;
 	}
 

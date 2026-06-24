@@ -1057,10 +1057,10 @@ int ath12k_wifi8_peer_rx_tid_reo_update(struct ath12k *ar,
 
 	rx_tid->ba_win_sz = ba_win_sz;
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
-		   "rx tid queue update: tid=%u peer_id=%d peer=%pM link=%u ba_win=%u\n",
-		   rx_tid->tid, peer->peer_id, peer->addr,
-		   peer->link_id, rx_tid->ba_win_sz);
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "rx tid queue update: tid=%u peer_id=%d peer=%pM link=%u ba_win=%u\n",
+			 rx_tid->tid, peer->peer_id, peer->addr,
+			 peer->link_id, rx_tid->ba_win_sz);
 
 	return 0;
 }

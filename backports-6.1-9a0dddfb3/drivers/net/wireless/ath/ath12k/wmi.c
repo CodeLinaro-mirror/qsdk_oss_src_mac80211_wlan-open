@@ -2567,9 +2567,9 @@ int ath12k_wmi_send_peer_delete_cmd(struct ath12k *ar,
 			 ar->radio_idx, vdev_id,  peer_addr,
 			 ar->num_peers, mlo_hw_link_id_bitmap);
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
-		   "[vdev_id : %u radio_idx : %u] WMI peer delete peer_delete_send_mlo_hw_bitmap: 0x%x\n",
-		   vdev_id, ar->radio_idx, peer_delete_send_mlo_hw_bitmap);
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER, ATH12K_DBG_L0,
+			 "[vdev_id : %u radio_idx : %u] WMI peer delete peer_delete_send_mlo_hw_bitmap: 0x%x\n",
+			 vdev_id, ar->radio_idx, peer_delete_send_mlo_hw_bitmap);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_PEER_DELETE_CMDID);
 	if (ret) {
@@ -4550,11 +4550,12 @@ int ath12k_wmi_send_peer_assoc_cmd(struct ath12k *ar,
 			   ml_params->emlsr_trans_timeout_us);
 	}
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_PEER, "peer (%pM) ml flags %x mld_addr %pM logical_link_idx %u ml peer id %d ieee_link_id %u num_partner_links %d is_bridge_peer %d\n",
-		   arg->peer_mac, ml_params->flags, ml_params->mld_addr.addr,
-		   ml_params->logical_link_idx, ml_params->ml_peer_id,
-		   ml_params->ieee_link_id,
-		   arg->ml.num_partner_links, arg->ml.bridge_peer);
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER, ATH12K_DBG_L0,
+			 "peer (%pM) ml flags %x mld_addr %pM logical_link_idx %u ml peer id %d ieee_link_id %u num_partner_links %d is_bridge_peer %d\n",
+			 arg->peer_mac, ml_params->flags, ml_params->mld_addr.addr,
+			 ml_params->logical_link_idx, ml_params->ml_peer_id,
+			 ml_params->ieee_link_id,
+			 arg->ml.num_partner_links, arg->ml.bridge_peer);
 
 	ptr += sizeof(*ml_params);
 
@@ -4760,7 +4761,7 @@ send_holq:
 send:
 	ptr = ath12k_wmi_peer_assoc_v2_cmd(ar, ptr, arg, &cmd_id);
 
-	ath12k_dbg_level(ar->ab, ATH12K_DBG_WMI | ATH12K_DBG_MLME, ATH12K_DBG_L1,
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_WMI | ATH12K_DBG_MLME, ATH12K_DBG_L0,
 			 "wmi peer assoc vdev id %d assoc id %d peer mac %pM peer_flags %x rate_caps %x peer_caps %x listen_intval %d ht_caps %x max_mpdu %d nss %d phymode %d peer_mpdu_density %d vht_caps %x he cap_info %x he ops %x he cap_info_ext %x he phy %x %x %x peer_bw_rxnss_override %x peer_flags_ext %x eht mac_cap %x %x eht phy_cap %x %x %x peer_eht_ops %x uhr mac_cap %x %x uhr phy_cap %x sam_peer_id_valid %d sam_peer_id %x\n",
 			 cmd->vdev_id, cmd->peer_associd, arg->peer_mac,
 			 cmd->peer_flags, cmd->peer_rate_caps, cmd->peer_caps,
@@ -12894,8 +12895,8 @@ static void ath12k_kickout_iter_cb(struct ath12k *ar,
 	else
 		ieee80211_report_low_ack(sta, 10);
 
-	ath12k_dbg(ctx->ab, ATH12K_DBG_PEER, "peer sta kickout event %pM",
-		   arg->mac_addr);
+	ath12k_dbg_level(ctx->ab, ATH12K_DBG_PEER, ATH12K_DBG_L0,
+			 "peer sta kickout event %pM", arg->mac_addr);
 }
 
 static void ath12k_peer_sta_kickout_event(struct ath12k_base *ab, struct sk_buff *skb)
@@ -22628,8 +22629,8 @@ int ath12k_wmi_peer_delete_all(struct ath12k_link_vif *arvif)
 	cmd->vdev_id = cpu_to_le32(arvif->vdev_id);
 	cmd->peer_type_bitmap = 0;
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_PEER, "WMI VDEV Peer delete all for vdev_id:%d",
-		   arvif->vdev_id);
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_PEER, ATH12K_DBG_L0,
+			 "WMI VDEV Peer delete all for vdev_id:%d", arvif->vdev_id);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_VDEV_DELETE_ALL_PEER_CMDID);
 	if (ret) {
@@ -22743,8 +22744,9 @@ ath12k_wmi_delete_all_peer_resp_event(struct ath12k_base *ab, struct sk_buff *sk
 
 	rcu_read_unlock();
 
-	ath12k_dbg(ab, ATH12K_DBG_PEER, "Delete all peer response status:%d for vdev:%d\n",
-		   arg.status, arg.vdev_id);
+	ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L1,
+			 "Delete all peer response status:%d for vdev:%d\n",
+			 arg.status, arg.vdev_id);
 }
 
 int ath12k_wmi_vdev_rate_mask(struct ath12k *ar, struct wmi_vdev_ratemask_arg *arg)

@@ -1107,8 +1107,8 @@ int ath12k_dp_rx_ampdu_stop(struct ath12k *ar,
 	peer = ath12k_dp_link_peer_find_by_logical_link_id(dp_peer, link_id);
 	if (!peer) {
 		rcu_read_unlock();
-		ath12k_dbg(ab, ATH12K_DBG_PEER,
-			   "failed to find the peer to stop rx aggregation\n");
+		ath12k_dbg_level(ab, ATH12K_DBG_PEER, ATH12K_DBG_L0,
+				 "failed to find the peer to stop rx aggregation\n");
 		return -ENOENT;
 	}
 

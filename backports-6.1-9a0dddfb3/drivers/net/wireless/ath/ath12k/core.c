@@ -132,7 +132,8 @@ MODULE_PARM_DESC(probe_order, "Probe order (hex bitfield, 4-bit per device)");
 extern struct ath12k_ps_context ath12k_global_ps_ctx;
 #endif
 
-u64 ath12k_debug_mask = ATH12K_DBG_MAC | ATH12K_DBG_EAPOL | ATH12K_DBG_MLME;
+u64 ath12k_debug_mask = ATH12K_DBG_MAC | ATH12K_DBG_EAPOL |
+			ATH12K_DBG_MLME | ATH12K_DBG_PEER;
 module_param_named(debug_mask, ath12k_debug_mask, ullong, 0644);
 MODULE_PARM_DESC(debug_mask, "Debugging mask (64-bit)");
 EXPORT_SYMBOL(ath12k_debug_mask);
