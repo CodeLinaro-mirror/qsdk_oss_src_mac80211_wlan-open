@@ -858,7 +858,7 @@ struct ath12k_rssi_deauth_config {
 	s8 noise_floor_offset;
 } __packed;
 
-#define ATH12K_MAX_NUM_VDEVS 17
+#define ATH12K_MAX_NUM_VDEVS 18
 
 struct ath12k_mbssid_info {
 	int tx_vdev_id;

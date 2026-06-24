@@ -28,9 +28,10 @@ struct ath12k_link_vif;
 /* Num VDEVS per radio */
 #define TARGET_NUM_VDEVS		(ab->mem_params.num_vdevs)
 /* Maximum number of AP interfaces allowed per radio for MBSSID.
- * This excludes the monitor vdev included in TARGET_NUM_VDEVS.
+ * This excludes the monitor vdev + additional STA vdev included in
+ * TARGET_NUM_VDEVS.
  */
-#define ATH12K_MBSSID_MAX_INTERFACES	((ab->mem_params.num_vdevs) - 1)
+#define ATH12K_MBSSID_MAX_INTERFACES	((ab->mem_params.num_vdevs) - 2)
 
 /* Num of Bridge vdevs per radio */
 #define ATH12K_MAX_NUM_VDEVS_NLINK	(ab->mem_params.num_max_vdevs_nlink)
