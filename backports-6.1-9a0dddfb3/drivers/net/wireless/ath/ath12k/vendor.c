@@ -458,8 +458,6 @@ static int ath12k_vendor_apply_cmn_param_to_vdevs(struct ath12k_link_vif *arvif,
 	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_ENABLE_MCS15:
 		bss_conf->enable_mcs15 = val;
 		break;
-	default:
-		return -EINVAL;
 	}
 
 	return 0;
