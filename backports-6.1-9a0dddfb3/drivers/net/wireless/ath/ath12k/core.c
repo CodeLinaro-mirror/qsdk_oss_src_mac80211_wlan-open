@@ -3623,6 +3623,8 @@ int ath12k_core_radio_start(struct ath12k_hw *ah)
 
 	guard(mutex)(&ah->hw_mutex);
 
+	ah->state = ATH12K_HW_STATE_ON;
+
 	for_each_ar(ah, ar, i) {
 		if (!ath12k_ftm_mode && ar) {
 			if (ar->allocated_vdev_map || ar->ab->is_bypassed) {
@@ -3630,6 +3632,7 @@ int ath12k_core_radio_start(struct ath12k_hw *ah)
 			} else {
 				ret = ath12k_mac_start(ar);
 				if (ret) {
+					ah->state = ATH12K_HW_STATE_OFF;
 					ath12k_err(ar->ab, "mac radio start failed\n");
 					return ret;
 				}
@@ -3640,8 +3643,6 @@ int ath12k_core_radio_start(struct ath12k_hw *ah)
 
 		ar->ab->powerup_triggered = false;
 	}
-
-	ah->state = ATH12K_HW_STATE_ON;
 
 	if (test_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ag->flags))
 		clear_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ag->flags);
