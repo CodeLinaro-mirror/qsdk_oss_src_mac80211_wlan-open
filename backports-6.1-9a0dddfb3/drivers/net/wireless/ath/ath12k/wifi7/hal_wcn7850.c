@@ -422,7 +422,6 @@ void ath12k_wifi7_hal_extract_rx_desc_data_wcn7850(struct hal_rx_desc_data *rx_d
 		ath12k_wifi7_hal_rx_h_is_da_mcbc_wcn7850(rx_desc);
 	rx_desc_data->seq_no =
 		ath12k_wifi7_hal_rx_h_seq_no_wcn7850(rx_desc);
-	rx_desc_data->peer_id = ath12k_wifi7_hal_rx_h_peer_id_wcn7850(rx_desc);
 	rx_desc_data->err_bitmap =
 		ath12k_wifi7_hal_rx_h_mpdu_err_wcn7850(rx_desc);
 	rx_desc_data->is_decrypted =

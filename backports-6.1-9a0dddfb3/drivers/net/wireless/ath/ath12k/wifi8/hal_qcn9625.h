@@ -224,12 +224,6 @@ u8 ath12k_wifi8_hal_rx_h_to_ds_qcn9625(struct hal_rx_desc *desc)
 }
 
 static inline
-u16 ath12k_wifi8_hal_rx_h_peer_id_qcn9625(struct hal_rx_desc *desc)
-{
-	return __le16_to_cpu(desc->u.qcn9625_compact.mpdu_start.sw_peer_id);
-}
-
-static inline
 void ath12k_wifi8_hal_rx_desc_end_tlv_copy_qcn9625(struct hal_rx_desc *fdesc,
 						   struct hal_rx_desc *ldesc)
 {

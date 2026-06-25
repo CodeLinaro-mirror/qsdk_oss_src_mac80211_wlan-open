@@ -1785,13 +1785,15 @@ static int ath12k_wifi7_dp_rx_frag_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp_peer *peer;
 	struct ath12k_dp_rx_tid *rx_tid;
 	struct sk_buff *defrag_skb = NULL;
-	u32 peer_id = rx_desc_data->peer_id;
+	u32 peer_id;
 	u16 seqno, frag_no;
 	u8 tid = rx_desc_data->tid;
 	int ret = 0;
 	bool more_frags;
 	enum hal_encrypt_type enctype;
 
+	peer_id = le32_get_bits(ring_desc->rx_mpdu_info.peer_meta_data,
+				RX_MPDU_DESC_META_DATA_V1_PEER_ID);
 	frag_no = ath12k_wifi7_dp_rx_h_frag_no(ab, msdu);
 	more_frags = ath12k_wifi7_dp_rx_h_more_frags(ab, msdu);
 	seqno = rx_desc_data->seq_no;

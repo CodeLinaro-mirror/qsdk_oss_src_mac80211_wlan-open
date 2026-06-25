@@ -884,7 +884,6 @@ struct hal_rx_desc_data {
 	    fc_valid:1,
 	    is_ip_valid:1;
 	u16 msdu_len;
-	u16 peer_id;
 	u16 seq_no;
 	u8 snr;
 	u8 pkt_type;
