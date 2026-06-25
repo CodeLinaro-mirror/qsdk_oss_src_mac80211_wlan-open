@@ -312,8 +312,10 @@ void ath12k_dp_mon_deinit(struct ath12k_dp *dp);
 void ath12k_dp_cp_link_peer_unassign(struct ath12k *ar, struct ath12k_link_vif *arvif,
 				     struct ath12k_sta *ahsta, u8 link_id, u8 *addr,
 				     bool update_bmap);
-u16 ath12k_dp_peer_get_peer_id(struct ath12k_dp_hw *dp_hw, u8 *addr);
-u16 ath12k_dp_peer_get_sta_id(struct ath12k_dp_hw *dp_hw, u8 *addr);
+u16 ath12k_dp_peer_get_peer_id(struct ath12k_dp_hw *dp_hw, struct ieee80211_vif *vif,
+			       u8 *addr);
+u16 ath12k_dp_peer_get_sta_id(struct ath12k_dp_hw *dp_hw, struct ieee80211_vif *vif,
+			      u8 *addr);
 
 enum ath12k_dp_peer_param {
 	ATH12K_DP_PEER_PEERID_PARAM,
@@ -515,7 +517,7 @@ int ath12k_dp_link_peer_get_4addr_params(void *ptr, const u8 *addr,
 					 struct ath12k_4addr_params *params);
 int ath12k_dp_peer_set_key_config(struct ath12k_pdev_dp *dp_pdev, const u8 *addr,
 				  enum set_key_cmd cmd, struct ieee80211_key_conf *key,
-				  struct ieee80211_sta *sta,
+				  struct ieee80211_sta *sta, struct ieee80211_vif *vif,
 				  enum hal_encrypt_type *enctype);
 void ath12k_dp_peer_cleanup_all(struct ath12k *ar);
 void ath12k_dp_vif_peer_stats_update(struct ath12k_dp_hw *dp_hw,

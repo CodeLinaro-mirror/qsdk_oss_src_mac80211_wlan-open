@@ -1173,9 +1173,11 @@ int ath12k_dp_rx_peer_pn_replay_config(struct ath12k_link_vif *arvif,
 	spin_lock_bh(&dp_hw->peer_hash_lock);
 
 	if (sta)
-		dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, sta->addr);
+		dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, sta->addr,
+						      arvif->ahvif->vif);
 	else
-		dp_peer = ath12k_dp_vdev_peer_find(dp_hw, peer_addr, ar->hw_link_id);
+		dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, peer_addr,
+						      arvif->ahvif->vif);
 
 	if (!dp_peer) {
 		spin_unlock_bh(&dp_hw->peer_hash_lock);

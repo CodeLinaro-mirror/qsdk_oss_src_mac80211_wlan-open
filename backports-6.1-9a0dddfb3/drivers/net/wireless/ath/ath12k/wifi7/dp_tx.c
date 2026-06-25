@@ -1408,13 +1408,13 @@ static int ath12k_wifi7_mcbc_setup_encryption(struct ath12k_dp_vif *dp_vif,
 	if (unlikely(arvif->key_cipher == WMI_CIPHER_NONE))
 		return 0;
 
-	/* Find peer */
-	/* TODO: Handle scenario of same mac address across different vdevs */
 	spin_lock_bh(&dp_pdev->dp_hw->peer_hash_lock);
 	if (sta)
-		dp_peer = ath12k_dp_peer_find_by_addr(dp_pdev->dp_hw, sta->addr);
+		dp_peer = ath12k_dp_peer_find_by_addr(dp_pdev->dp_hw, sta->addr,
+						      ahvif->vif);
 	else
-		dp_peer = ath12k_dp_peer_find_by_addr(dp_pdev->dp_hw, arvif->bssid);
+		dp_peer = ath12k_dp_peer_find_by_addr(dp_pdev->dp_hw, arvif->bssid,
+						      ahvif->vif);
 
 	if (!dp_peer) {
 		spin_unlock_bh(&dp_pdev->dp_hw->peer_hash_lock);

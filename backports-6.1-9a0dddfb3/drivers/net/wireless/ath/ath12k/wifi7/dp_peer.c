@@ -196,7 +196,8 @@ int ath12k_wifi7_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 }
 
 void ath12k_wifi7_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 *addr,
-				 struct ieee80211_sta *sta, u8 hw_link_id)
+				 struct ieee80211_sta *sta, u8 hw_link_id,
+				 struct ieee80211_vif *vif)
 {
 	struct ath12k_dp_peer *dp_peer;
 	u16 peerid_index;
@@ -210,7 +211,7 @@ void ath12k_wifi7_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 		rcu_assign_pointer(ahsta->dp_peer, NULL);
 		dp_peer = ath12k_dp_peer_find_by_addr_and_sta(dp_hw, addr, sta);
 	} else {
-		dp_peer = ath12k_dp_vdev_peer_find(dp_hw, addr, hw_link_id);
+		dp_peer = ath12k_dp_peer_find_by_addr(dp_hw, addr, vif);
 	}
 
 	if (!dp_peer) {
