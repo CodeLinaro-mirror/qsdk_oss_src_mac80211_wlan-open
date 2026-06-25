@@ -1478,19 +1478,9 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
 		goto err_irq_affinity_cleanup;
 	}
 
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
-	ret = ath12k_dp_ipa_plugin_register_ops_extn(ab);
-	if (ret)
-		goto err_mhi_unregister;
-	ath12k_info(ab, "IPA: ipa plugin are registered");
-#endif
 	ret = ath12k_hal_srng_init(ab);
 	if (ret)
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
-		goto ipa_plugin_unregister;
-#else
 		goto err_mhi_unregister;
-#endif
 
 	ret = ath12k_ce_alloc_pipes(ab);
 	if (ret) {
@@ -1571,11 +1561,6 @@ err_ce_free:
 
 err_hal_srng_deinit:
 	ath12k_hal_srng_deinit(ab);
-
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
-ipa_plugin_unregister:
-	ath12k_dp_ipa_plugin_deregister_ops_extn(ab);
-#endif
 
 err_mhi_unregister:
 	ath12k_mhi_unregister(ab_pci);

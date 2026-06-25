@@ -2653,13 +2653,7 @@ core_pdev_create:
 			if (ath12k_enable_fwlog(ab))
 				ath12k_err(ab, "failed to enable fwlog: %d\n", ret);
 		}
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
-		ret = ath12k_dp_rxdma_buf_setup(ab);
-		if (ret) {
-			ath12k_warn(ab, "failed to setup rxdma ring\n");
-			goto err;
-		}
-#endif
+
 		ret = ath12k_dp_umac_reset_init(ab);
 		if (ret) {
 			mutex_unlock(&ab->core_lock);
@@ -2957,17 +2951,6 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 	if (is_ready)
 		*is_ready = hw_grp_ready;
 
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
-	if (IPA_CTX(ab)->ipa_ops &&
-	    IPA_CTX(ab)->ipa_ops->ipa_register_is_ipa_ready) {
-		ret = IPA_CTX(ab)->ipa_ops->ipa_register_is_ipa_ready
-			(ab);
-		if (ret) {
-			ath12k_warn(ab, "failed to check IPA readiness");
-			goto err_core_stop;
-		}
-	}
-#endif
 	if (hw_grp_ready) {
 		if (!ag->wsi_remap_in_progress) {
 			ret = ath12k_qmi_mlo_global_snapshot_mem_init(ab);
@@ -3162,9 +3145,7 @@ err_core_stop:
 
 		mutex_lock(&ab->core_lock);
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
-		if (IPA_CTX(ab)->ipa_ops &&
-		    IPA_CTX(ab)->ipa_ops->ipa_uc_ol_deinit)
-			IPA_CTX(ab)->ipa_ops->ipa_uc_ol_deinit(ab);
+		ath12k_dp_ipa_uc_ol_deinit(ab);
 #endif
 		ath12k_core_stop(ab);
 		mutex_unlock(&ab->core_lock);

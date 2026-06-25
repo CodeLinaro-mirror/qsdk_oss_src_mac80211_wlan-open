@@ -24,6 +24,9 @@
 #include "hal_wcn7850.h"
 #include "../debugfs.h"
 #include "../dp.h"
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#include "qcn_extns/ipa/dp_ipa.h"
+#endif
 
 static u32
 ath12k_fill_reo_drop_reason(enum hal_reo_dest_ring_error_code err_code)
