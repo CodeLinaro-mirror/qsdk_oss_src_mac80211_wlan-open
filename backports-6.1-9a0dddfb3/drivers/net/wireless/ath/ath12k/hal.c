@@ -563,18 +563,22 @@ void ath12k_hal_srng_dst_invalidate_entry(struct ath12k_dp *dp,
 
 	desc = srng->ring_base_vaddr + tp;
 	if (hp > tp) {
-		dma_sync_single_for_cpu(dp->dev, virt_to_phys(desc),
-					entries * srng->entry_size * sizeof(u32),
-					DMA_FROM_DEVICE);
+		if (srng->flags & HAL_SRNG_FLAGS_CACHED)
+			dma_sync_single_for_cpu(dp->dev, virt_to_phys(desc),
+						entries * srng->entry_size * sizeof(u32),
+						DMA_FROM_DEVICE);
 	} else {
 		entries = srng->ring_size - tp;
-		dma_sync_single_for_cpu(dp->dev, virt_to_phys(desc),
-					entries * sizeof(u32),
-					DMA_FROM_DEVICE);
+		if (srng->flags & HAL_SRNG_FLAGS_CACHED)
+			dma_sync_single_for_cpu(dp->dev, virt_to_phys(desc),
+						entries * sizeof(u32),
+						DMA_FROM_DEVICE);
 		entries = hp;
-		dma_sync_single_for_cpu(dp->dev, virt_to_phys(srng->ring_base_vaddr),
-					entries * sizeof(u32),
-					DMA_FROM_DEVICE);
+		if (srng->flags & HAL_SRNG_FLAGS_CACHED)
+			dma_sync_single_for_cpu(dp->dev,
+						virt_to_phys(srng->ring_base_vaddr),
+						entries * sizeof(u32),
+						DMA_FROM_DEVICE);
 	}
 }
 EXPORT_SYMBOL(ath12k_hal_srng_dst_invalidate_entry);
