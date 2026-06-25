@@ -1616,6 +1616,7 @@ enum wmi_tlv_vdev_param {
 	WMI_VDEV_PARAM_UL_LDPC = 0x8a,
 	WMI_VDEV_PARAM_UL_NSS,
 	WMI_VDEV_PARAM_UL_STBC,
+	WMI_VDEV_PARAM_UL_HE_LTF,
 	WMI_VDEV_PARAM_UL_PPDU_BW = 0x8e,
 	WMI_VDEV_PARAM_6GHZ_PARAMS = 0x99,
 	WMI_VDEV_PARAM_MLO_MAX_RECOM_ACTIVE_LINKS = 0xc1,
@@ -4927,6 +4928,11 @@ struct wmi_get_pdev_temperature_cmd {
 } __packed;
 
 struct wmi_get_pdev_nfcal_power_cmd {
+	__le32 tlv_header;
+	__le32 pdev_id;
+} __packed;
+
+struct wmi_pdev_check_cal_version_cmd {
 	__le32 tlv_header;
 	__le32 pdev_id;
 } __packed;
@@ -10630,6 +10636,7 @@ int ath12k_wmi_set_peer_param(struct ath12k *ar, const u8 *peer_addr,
 int ath12k_wmi_pdev_set_param(struct ath12k *ar, u32 param_id,
 			      u32 param_value, u8 pdev_id);
 int ath12k_wmi_send_pdev_set_rf_path_cmd(struct ath12k *ar, u32 rf_path);
+int ath12k_wmi_send_pdev_check_cal_version_cmd(struct ath12k *ar);
 int ath12k_wmi_pdev_set_ps_mode(struct ath12k *ar, int vdev_id, u32 enable);
 int ath12k_wmi_pdev_set_timer_for_mec(struct ath12k *ar, int vdev_id,
 				      u32 mec_timer);

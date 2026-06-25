@@ -3357,6 +3357,39 @@ int ath12k_wmi_send_pdev_get_nfcal_power_cmd(struct ath12k *ar)
 	return ret;
 }
 
+int ath12k_wmi_send_pdev_check_cal_version_cmd(struct ath12k *ar)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct wmi_pdev_check_cal_version_cmd *cmd;
+	struct sk_buff *skb;
+	int ret;
+
+	if (ar->ab->is_bypassed) {
+		ath12k_warn(ar->ab, "chip is bypassed, skip cal version check cmd\n");
+		return 0;
+	}
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_pdev_check_cal_version_cmd *)skb->data;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_PDEV_CHECK_CAL_VERSION_CMD,
+						 sizeof(*cmd));
+	cmd->pdev_id = cpu_to_le32(0);
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "WMI pdev check cal version pdev_id %d\n", ar->pdev->pdev_id);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_PDEV_CHECK_CAL_VERSION_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to send WMI_PDEV_CHECK_CAL_VERSION cmd\n");
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+
 int ath12k_wmi_send_bcn_offload_control_cmd(struct ath12k *ar,
 					    u32 vdev_id, u32 bcn_ctrl_op)
 {

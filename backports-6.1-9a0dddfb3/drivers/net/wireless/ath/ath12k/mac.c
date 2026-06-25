@@ -6534,6 +6534,9 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 
 	/* Initialize vap_cfg parameters to default values */
 	arvif->vap_cfg.bcn_tx_power = 255;
+	arvif->vap_cfg.he_ar_gi_ltf = IEEE80211_HE_AR_DEFAULT_LTF_SGI_COMBINATION;
+	arvif->vap_cfg.he_ar_ldpc = IEEE80211_HE_AR_LDPC_DEFAULT;
+	arvif->vap_cfg.he_rtsthrshld = IEEE80211_HEOP_RTS_THRESHOLD_DISABLED;
 
 	init_completion(&arvif->wmi_migration_event_resp);
 	INIT_WORK(&arvif->wmi_migration_cmd_work,
