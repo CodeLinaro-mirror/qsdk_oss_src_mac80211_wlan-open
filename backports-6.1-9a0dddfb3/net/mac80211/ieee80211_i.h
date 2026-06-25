@@ -1389,6 +1389,9 @@ struct ieee80211_link_data {
 	struct ieee80211_bss_conf *conf;
 
 	bool csa_block_tx;
+
+	/* per-TID RX AMSDU enable bitmap (bit N = TID N); 0xFF = all enabled */
+	u8 rx_amsdu_tid_bitmap;
 #ifdef CPTCFG_MAC80211_DEBUGFS
 	struct dentry *debugfs_dir;
 #endif
@@ -1570,9 +1573,6 @@ struct ieee80211_sub_if_data {
 	u32 rx_dropped;
 
 	int chan_hw_idx;
-
-	/* per-TID RX AMSDU enable bitmap (bit N = TID N); 0xFF = all enabled */
-	u8 rx_amsdu_tid_bitmap;
 
 	/* must be last, dynamically sized area in this! */
 	struct ieee80211_vif vif;
@@ -2120,18 +2120,46 @@ struct ieee80211_local {
 	bool wbrf_supported;
 };
 
-static inline bool
-ieee80211_get_rx_amsdu_for_tid(struct ieee80211_sub_if_data *sdata, u8 tid)
+static inline struct ieee80211_link_data *
+ieee80211_get_rx_amsdu_link(struct ieee80211_sub_if_data *sdata,
+			    unsigned int link_id)
 {
+	struct ieee80211_link_data *link;
+
 	if (!sdata)
-		return false;
-	if (tid >= IEEE80211_FIRST_TSPEC_TSID)
-		return true;
+		return NULL;
+
 	/* For AP_VLAN, the bitmap is managed on the parent AP sdata */
 	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN && sdata->bss)
 		sdata = container_of(sdata->bss,
 				     struct ieee80211_sub_if_data, u.ap);
-	return !!(sdata->rx_amsdu_tid_bitmap & BIT(tid));
+
+	if (!sdata->vif.valid_links)
+		return &sdata->deflink;
+
+	if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
+		return NULL;
+
+	link = rcu_dereference(sdata->link[link_id]);
+	return link ?: &sdata->deflink;
+}
+
+static inline bool
+ieee80211_get_rx_amsdu_for_tid(struct ieee80211_sub_if_data *sdata,
+			       unsigned int link_id, u8 tid)
+{
+	struct ieee80211_link_data *link;
+
+	if (!sdata)
+		return false;
+	if (tid >= IEEE80211_FIRST_TSPEC_TSID)
+		return true;
+
+	link = ieee80211_get_rx_amsdu_link(sdata, link_id);
+	if (!link)
+		return false;
+
+	return !!(link->rx_amsdu_tid_bitmap & BIT(tid));
 }
 
 struct ieee80211_queue_info {
@@ -2712,7 +2740,7 @@ void __ieee80211_start_rx_ba_session(struct sta_info *sta,
 				     u8 dialog_token, u16 timeout,
 				     u16 start_seq_num, u16 ba_policy, u16 tid,
 				     u16 buf_size, bool tx, bool auto_seq,
-				     const u8 addba_ext_data);
+				     int rx_link_id, const u8 addba_ext_data);
 void ieee80211_sta_tear_down_BA_sessions(struct sta_info *sta,
 					 enum ieee80211_agg_stop_reason reason);
 void ieee80211_process_delba(struct ieee80211_sub_if_data *sdata,
@@ -2725,7 +2753,7 @@ void ieee80211_process_addba_resp(struct ieee80211_local *local,
 void ieee80211_process_addba_request(struct ieee80211_local *local,
 				     struct sta_info *sta,
 				     struct ieee80211_mgmt *mgmt,
-				     size_t len);
+				     size_t len, int rx_link_id);
 
 static inline struct ieee80211_mgmt *
 ieee80211_mgmt_ba(struct sk_buff *skb, const u8 *da,

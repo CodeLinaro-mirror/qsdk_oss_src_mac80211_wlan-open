@@ -1645,6 +1645,7 @@ static void ieee80211_iface_process_skb(struct ieee80211_local *local,
 					struct sk_buff *skb)
 {
 	struct ieee80211_mgmt *mgmt = (void *)skb->data;
+	struct ieee80211_rx_status *rx_status = IEEE80211_SKB_RXCB(skb);
 
 	lockdep_assert_wiphy(local->hw.wiphy);
 
@@ -1658,7 +1659,8 @@ static void ieee80211_iface_process_skb(struct ieee80211_local *local,
 			switch (mgmt->u.action.u.addba_req.action_code) {
 			case WLAN_ACTION_ADDBA_REQ:
 				ieee80211_process_addba_request(local, sta,
-								mgmt, len);
+								mgmt, len,
+								rx_status->link_id);
 				break;
 			case WLAN_ACTION_ADDBA_RESP:
 				ieee80211_process_addba_resp(local, sta,

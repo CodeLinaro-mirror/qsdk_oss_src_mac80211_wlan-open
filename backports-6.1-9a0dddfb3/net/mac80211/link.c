@@ -119,6 +119,7 @@ void __ieee80211_link_init_data(struct ieee80211_sub_if_data *sdata,
 
 	link->sdata = sdata;
 	link->link_id = link_id;
+	link->rx_amsdu_tid_bitmap = 0xFF;
 	link->conf = link_conf;
 	link->ap_power_level = IEEE80211_UNSET_POWER_LEVEL;
 	link->user_power_level = local->user_power_level;
