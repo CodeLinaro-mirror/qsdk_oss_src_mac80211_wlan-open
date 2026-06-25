@@ -317,4 +317,140 @@ static inline int ieee80211_get_rnr_smd_id(struct ieee80211_rnr_uhr_params *uhr_
 	return uhr_params ? uhr_params->smd_id : -1;
 }
 
+/* IEEE Std 802.11bn Draft 1.5, (9.4.2.363) UHR Parameters Update element */
+
+/* Mode Tuple byte 0: bits [5:0] = Mode ID, bit 6 = Mode Enable, bit 7 = Mode Update */
+#define IEEE80211_UHR_PARAM_UPD_MODE_ID		0x3F
+#define IEEE80211_UHR_PARAM_UPD_MODE_ENABLE	0x40
+#define IEEE80211_UHR_PARAM_UPD_MODE_UPDATE	0x80
+
+/* IEEE Std 802.11bn Draft 1.5 - Mode ID values (Table 9-bb14) */
+#define IEEE80211_UHR_MODE_ID_DPS		0
+#define IEEE80211_UHR_MODE_ID_NPCA		1
+#define IEEE80211_UHR_MODE_ID_DUO		2
+#define IEEE80211_UHR_MODE_ID_PEDCA		3
+#define IEEE80211_UHR_MODE_ID_DBE		4
+#define IEEE80211_UHR_MODE_ID_AP_PUO		5
+#define IEEE80211_UHR_MODE_ID_ELR_RX		6
+
+struct ieee80211_uhr_mode_tuple {
+	u8 mode_ctrl;
+	/* mode_len and params[] are absent on the wire for AP_PUO and ELR_RX modes;
+	 * always use ieee80211_uhr_mode_tuple_size() to determine the actual
+	 * tuple size before accessing these fields.
+	 */
+	u8 mode_len;
+	u8 params[];
+} __packed;
+
+struct ieee80211_uhr_param_upd {
+	u8 countdown;
+	u8 variable[];
+} __packed;
+
+static inline int
+ieee80211_uhr_mode_tuple_size(const struct ieee80211_uhr_mode_tuple *tuple,
+			      const u8 *end)
+{
+	u8 mode_id;
+	bool enabled;
+	bool has_params;
+
+	if ((const u8 *)tuple >= end)
+		return -1;
+
+	mode_id = tuple->mode_ctrl & IEEE80211_UHR_PARAM_UPD_MODE_ID;
+	enabled = !!(tuple->mode_ctrl & IEEE80211_UHR_PARAM_UPD_MODE_ENABLE);
+
+	/* as per IEEE Std 802.11bn Draft 1.5, section 9.4.2.363,
+	 * DUO always carries params.
+	 * AP PUO and ELR Reception never carry Mode Length/params.
+	 * All other modes carry params only when enabled.
+	 */
+	has_params = mode_id != IEEE80211_UHR_MODE_ID_AP_PUO &&
+		     mode_id != IEEE80211_UHR_MODE_ID_ELR_RX &&
+		     (enabled || mode_id == IEEE80211_UHR_MODE_ID_DUO);
+
+	if (!has_params)
+		return offsetof(struct ieee80211_uhr_mode_tuple, mode_len);
+
+	if ((const u8 *)tuple + sizeof(*tuple) > end)
+		return -1;
+
+	/* NPCA params must be at least as large as the fixed info struct */
+	if (mode_id == IEEE80211_UHR_MODE_ID_NPCA &&
+	    tuple->mode_len < sizeof(struct ieee80211_uhr_npca_info))
+		return -1;
+
+	return sizeof(*tuple) + tuple->mode_len;
+}
+
+static inline const struct ieee80211_uhr_mode_tuple *
+ieee80211_uhr_first_mode_tuple(const struct ieee80211_uhr_mode_tuple *tuple,
+			       const u8 *end)
+{
+	if (ieee80211_uhr_mode_tuple_size(tuple, end) <= 0)
+		return NULL;
+	return tuple;
+}
+
+static inline const struct ieee80211_uhr_mode_tuple *
+ieee80211_uhr_next_mode_tuple(const struct ieee80211_uhr_mode_tuple *tuple,
+			      const u8 *end)
+{
+	int sz = ieee80211_uhr_mode_tuple_size(tuple, end);
+
+	if (sz <= 0)
+		return NULL;
+
+	tuple = (const void *)((const u8 *)tuple + sz);
+	if ((const u8 *)tuple >= end)
+		return NULL;
+
+	return ieee80211_uhr_first_mode_tuple(tuple, end);
+}
+
+/**
+ * ieee80211_uhr_for_each_mode_tuple - iterate over Mode Tuples in a
+ * UHR Parameters Update element Mode Tuple List
+ * @tuple: loop cursor, const struct ieee80211_uhr_mode_tuple *
+ * @data:  non-NULL pointer to the start of the Mode Tuple List (upd->variable)
+ * @len:   length of the Mode Tuple List in octets; 0 is valid (empty list,
+ *         zero iterations)
+ *
+ * Iterates over every Mode Tuple regardless of whether the Mode Enable bit
+ * is set or clear; callers must inspect tuple->mode_ctrl to distinguish the
+ * two cases.
+ *
+ * eee80211_uhr_next_mode_tuple() returns NULL on any error or
+ * when the end of the list is reached.
+ */
+#define ieee80211_uhr_for_each_mode_tuple(tuple, data, len)			\
+	for ((tuple) = ieee80211_uhr_first_mode_tuple((const void *)(data),	\
+					(const u8 *)(data) + (len));		\
+	     (tuple);								\
+	     (tuple) = ieee80211_uhr_next_mode_tuple((tuple),			\
+					(const u8 *)(data) + (len)))
+
+static inline bool
+ieee80211_uhr_param_upd_size_ok(const u8 *data, size_t len)
+{
+	const struct ieee80211_uhr_param_upd *upd = (const void *)data;
+	const struct ieee80211_uhr_mode_tuple *tuple;
+	const u8 *end = data + len;
+	int sz;
+
+	if (len < sizeof(*upd))
+		return false;
+
+	for (tuple = (void *)upd->variable; (const u8 *)tuple < end;
+	     tuple = (void *)((const u8 *)tuple + sz)) {
+		sz = ieee80211_uhr_mode_tuple_size(tuple, end);
+		if (sz <= 0)
+			return false;
+	}
+
+	return (const u8 *)tuple == end;
+}
+
 #endif /* LINUX_IEEE80211_UHR_H */
