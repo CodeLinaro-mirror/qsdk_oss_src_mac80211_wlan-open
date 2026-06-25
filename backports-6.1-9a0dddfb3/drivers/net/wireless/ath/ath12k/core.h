@@ -2451,6 +2451,12 @@ struct ath12k_internal_pci {
         u32 dp_irq_num[ATH12K_QCN6432_EXT_IRQ_GRP_NUM_MAX];
 };
 
+struct ath12k_mem_dev {
+	struct device dev;
+	bool dev_registered;
+	bool rmem_inited;
+};
+
 /* Master structure to hold the hw data which may be used in core module */
 struct ath12k_base {
 	enum ath12k_hw_rev hw_rev;
@@ -2754,6 +2760,8 @@ struct ath12k_base {
 
 
 	u32 cu_mem_cfg_mask;
+	struct ath12k_mem_dev qmi_mem_dev;
+	struct ath12k_mem_dev mlo_mem_dev;
 
 	bool map_event_required;
 

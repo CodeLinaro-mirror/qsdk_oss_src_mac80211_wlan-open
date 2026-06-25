@@ -59,6 +59,7 @@
 
 struct ath12k_base;
 struct ath12k_hw_group;
+struct ath12k_mem_dev;
 
 enum ath12k_target_mem_mode {
 	ATH12K_QMI_TARGET_MEM_MODE_DEFAULT = 0,
@@ -1025,4 +1026,9 @@ int ath12k_qmi_m3_dump_upload_done_ind_send(struct ath12k_base *ab,
 int ath12k_enable_fwlog(struct ath12k_base *ab);
 int ath12k_qmi_mlo_global_snapshot_mem_init(struct ath12k_base *ab);
 void ath12k_qmi_free_target_mem_chunk(struct ath12k_base *ab);
+#if defined(ATH12K_CMA_SUPPORT)
+int ath12k_memdev_init(struct ath12k_base *ab, struct ath12k_mem_dev *mem_dev,
+		       const char *name);
+void ath12k_memdev_deinit(struct ath12k_base *ab, struct ath12k_mem_dev *mem_dev);
+#endif
 #endif
