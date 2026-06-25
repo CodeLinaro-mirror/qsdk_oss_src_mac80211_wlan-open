@@ -10254,6 +10254,9 @@ enum ath12k_wmi_tpc_stats_ctl_array {
 enum ath12k_wmi_tpc_stats_events {
 	ATH12K_TPC_STATS_CONFIG_REG_PWR_EVENT,
 	ATH12K_TPC_STATS_RATES_EVENT1,
+	/* event 2: EHT rates array; UHR target powers are identical so the
+	 * host reuses this same array for all UHR preambles as well.
+	 */
 	ATH12K_TPC_STATS_RATES_EVENT2,
 	ATH12K_TPC_STATS_CTL_TABLE_EVENT
 };

@@ -1806,6 +1806,13 @@ static int ath12k_get_tpc_ctl_mode_idx(struct wmi_tpc_stats_arg *tpc_stats,
 		case WMI_TPC_PREAM_EHT320:
 			*mode_idx = ATH12K_TPC_STATS_CTL_MODE_HE_EHT320_5GHZ_6GHZ;
 			break;
+		/* TODO: UHR has distinct CTL powers from EHT at the HALPHY level.
+		 * New CTL mode indices for UHR (UHR20/40/80/.../320 and their
+		 * punctured variants) must be defined once FW confirms the index
+		 * values it uses when populating the CTL table.  Until then UHR
+		 * preambles default to the default LEGACY_5GHZ_6GHZ which
+		 * is conservative but not accurate.
+		 */
 		default:
 			/* for 5GHZ and 6GHZ, default case will be for OFDM */
 			*mode_idx = ATH12K_TPC_STATS_CTL_MODE_LEGACY_5GHZ_6GHZ;
@@ -1887,9 +1894,12 @@ static s16 ath12k_tpc_get_rate(struct ath12k *ar,
 	}
 
 	/* Below is the min calculation of ctl array, rates array and
-	 * regulator power table. tpc is minimum of all 3
+	 * regulator power table. tpc is minimum of all 3.
+	 * EHT and UHR share rates_array2 — FW sends one copy of MCS0-15
+	 * target powers for both preamble types.
 	 */
-	if (pream_bw >= WMI_TPC_PREAM_EHT20 && pream_bw <= WMI_TPC_PREAM_EHT320) {
+	if ((pream_bw >= WMI_TPC_PREAM_EHT20 && pream_bw <= WMI_TPC_PREAM_EHT320) ||
+	    (pream_bw >= WMI_TPC_PREAM_UHR20 && pream_bw <= WMI_TPC_PREAM_UHR320)) {
 		rate2 = tpc_stats->rates_array2.rate_array[eht_rate_idx];
 		if (is_mu)
 			rates = u32_get_bits(rate2, ATH12K_TPC_RATE_ARRAY_MU);
@@ -1984,6 +1994,23 @@ static u16 ath12k_get_ratecode(u16 pream_idx, u16 nss, u16 mcs_rate)
 		else
 			mcs_rate -= 2;
 		break;
+	case WMI_TPC_PREAM_UHR20:
+	case WMI_TPC_PREAM_UHR40:
+	case WMI_TPC_PREAM_UHR60:
+	case WMI_TPC_PREAM_UHR80:
+	case WMI_TPC_PREAM_UHR120:
+	case WMI_TPC_PREAM_UHR140:
+	case WMI_TPC_PREAM_UHR160:
+	case WMI_TPC_PREAM_UHR200:
+	case WMI_TPC_PREAM_UHR240:
+	case WMI_TPC_PREAM_UHR280:
+	case WMI_TPC_PREAM_UHR320:
+		mode_type = WMI_RATE_PREAMBLE_UHR;
+		if (mcs_rate == 0 || mcs_rate == 1)
+			mcs_rate += 14;
+		else
+			mcs_rate -= 2;
+		break;
 	default:
 		return mode_type;
 	}
@@ -2037,13 +2064,24 @@ static int ath12k_tpc_fill_pream(struct ath12k *ar, char *buf, int buf_len, int 
 		[WMI_TPC_PREAM_EHT40]   = "EHT40",
 		[WMI_TPC_PREAM_EHT60]   = "EHT60",
 		[WMI_TPC_PREAM_EHT80]   = "EHT80",
-		[WMI_TPC_PREAM_EHT120]   = "EHT120",
-		[WMI_TPC_PREAM_EHT140]   = "EHT140",
-		[WMI_TPC_PREAM_EHT160]   = "EHT160",
-		[WMI_TPC_PREAM_EHT200]   = "EHT200",
-		[WMI_TPC_PREAM_EHT240]   = "EHT240",
-		[WMI_TPC_PREAM_EHT280]   = "EHT280",
-		[WMI_TPC_PREAM_EHT320]   = "EHT320"};
+		[WMI_TPC_PREAM_EHT120]  = "EHT120",
+		[WMI_TPC_PREAM_EHT140]  = "EHT140",
+		[WMI_TPC_PREAM_EHT160]  = "EHT160",
+		[WMI_TPC_PREAM_EHT200]  = "EHT200",
+		[WMI_TPC_PREAM_EHT240]  = "EHT240",
+		[WMI_TPC_PREAM_EHT280]  = "EHT280",
+		[WMI_TPC_PREAM_EHT320]  = "EHT320",
+		[WMI_TPC_PREAM_UHR20]   = "UHR20",
+		[WMI_TPC_PREAM_UHR40]   = "UHR40",
+		[WMI_TPC_PREAM_UHR60]   = "UHR60",
+		[WMI_TPC_PREAM_UHR80]   = "UHR80",
+		[WMI_TPC_PREAM_UHR120]  = "UHR120",
+		[WMI_TPC_PREAM_UHR140]  = "UHR140",
+		[WMI_TPC_PREAM_UHR160]  = "UHR160",
+		[WMI_TPC_PREAM_UHR200]  = "UHR200",
+		[WMI_TPC_PREAM_UHR240]  = "UHR240",
+		[WMI_TPC_PREAM_UHR280]  = "UHR280",
+		[WMI_TPC_PREAM_UHR320]  = "UHR320"};
 
 	active_tx_chains = ar->num_tx_chains;
 
@@ -2107,7 +2145,8 @@ static int ath12k_tpc_stats_print(struct ath12k *ar,
 				  char *buf, size_t len,
 				  enum wmi_halphy_ctrl_path_stats_id type)
 {
-	u32 eht_idx = 0, pream_idx = 0, rate_pream_idx = 0, total_rates = 0, max_rix = 0;
+	u32 eht_idx = 0, uhr_idx = 0, pream_idx = 0, rate_pream_idx = 0, total_rates = 0;
+	u32 max_rix = 0;
 	u32 chan_freq, num_tx_chain, caps, i, j = 1;
 	size_t buf_len = ATH12K_TPC_STATS_BUF_SIZE;
 	u8 nss, active_tx_chains;
@@ -2141,7 +2180,19 @@ static int ath12k_tpc_stats_print(struct ath12k *ar,
 		[WMI_TPC_PREAM_EHT200]  = ATH12K_EHT_RATES,
 		[WMI_TPC_PREAM_EHT240]  = ATH12K_EHT_RATES,
 		[WMI_TPC_PREAM_EHT280]  = ATH12K_EHT_RATES,
-		[WMI_TPC_PREAM_EHT320]  = ATH12K_EHT_RATES};
+		[WMI_TPC_PREAM_EHT320]  = ATH12K_EHT_RATES,
+		/* UHR shares same MCS0-15 rate count as EHT */
+		[WMI_TPC_PREAM_UHR20]   = ATH12K_EHT_RATES,
+		[WMI_TPC_PREAM_UHR40]   = ATH12K_EHT_RATES,
+		[WMI_TPC_PREAM_UHR60]   = ATH12K_EHT_RATES,
+		[WMI_TPC_PREAM_UHR80]   = ATH12K_EHT_RATES,
+		[WMI_TPC_PREAM_UHR120]  = ATH12K_EHT_RATES,
+		[WMI_TPC_PREAM_UHR140]  = ATH12K_EHT_RATES,
+		[WMI_TPC_PREAM_UHR160]  = ATH12K_EHT_RATES,
+		[WMI_TPC_PREAM_UHR200]  = ATH12K_EHT_RATES,
+		[WMI_TPC_PREAM_UHR240]  = ATH12K_EHT_RATES,
+		[WMI_TPC_PREAM_UHR280]  = ATH12K_EHT_RATES,
+		[WMI_TPC_PREAM_UHR320]  = ATH12K_EHT_RATES};
 	static const u8 max_nss[WMI_TPC_PREAM_MAX] = {
 		[WMI_TPC_PREAM_CCK]     = ATH12K_NSS_1,
 		[WMI_TPC_PREAM_OFDM]    = ATH12K_NSS_1,
@@ -2165,7 +2216,19 @@ static int ath12k_tpc_stats_print(struct ath12k *ar,
 		[WMI_TPC_PREAM_EHT200]  = ATH12K_NSS_4,
 		[WMI_TPC_PREAM_EHT240]  = ATH12K_NSS_4,
 		[WMI_TPC_PREAM_EHT280]  = ATH12K_NSS_4,
-		[WMI_TPC_PREAM_EHT320]  = ATH12K_NSS_4};
+		[WMI_TPC_PREAM_EHT320]  = ATH12K_NSS_4,
+		/* UHR supports up to 5 chains on Trestles */
+		[WMI_TPC_PREAM_UHR20]   = ATH12K_NSS_5,
+		[WMI_TPC_PREAM_UHR40]   = ATH12K_NSS_5,
+		[WMI_TPC_PREAM_UHR60]   = ATH12K_NSS_5,
+		[WMI_TPC_PREAM_UHR80]   = ATH12K_NSS_5,
+		[WMI_TPC_PREAM_UHR120]  = ATH12K_NSS_5,
+		[WMI_TPC_PREAM_UHR140]  = ATH12K_NSS_5,
+		[WMI_TPC_PREAM_UHR160]  = ATH12K_NSS_5,
+		[WMI_TPC_PREAM_UHR200]  = ATH12K_NSS_5,
+		[WMI_TPC_PREAM_UHR240]  = ATH12K_NSS_5,
+		[WMI_TPC_PREAM_UHR280]  = ATH12K_NSS_5,
+		[WMI_TPC_PREAM_UHR320]  = ATH12K_NSS_5};
 
 	u16 rate_idx[WMI_TPC_PREAM_MAX] = {}, eht_rate_idx[WMI_TPC_PREAM_MAX] = {};
 	static const u8 pream_type[WMI_TPC_PREAM_MAX] = {
@@ -2191,7 +2254,19 @@ static int ath12k_tpc_stats_print(struct ath12k *ar,
 		[WMI_TPC_PREAM_EHT200]  = WMI_RATE_PREAMBLE_EHT,
 		[WMI_TPC_PREAM_EHT240]  = WMI_RATE_PREAMBLE_EHT,
 		[WMI_TPC_PREAM_EHT280]  = WMI_RATE_PREAMBLE_EHT,
-		[WMI_TPC_PREAM_EHT320]  = WMI_RATE_PREAMBLE_EHT};
+		[WMI_TPC_PREAM_EHT320]  = WMI_RATE_PREAMBLE_EHT,
+		/* UHR uses EHT preamble type so rates_array2 lookup is shared */
+		[WMI_TPC_PREAM_UHR20]   = WMI_RATE_PREAMBLE_EHT,
+		[WMI_TPC_PREAM_UHR40]   = WMI_RATE_PREAMBLE_EHT,
+		[WMI_TPC_PREAM_UHR60]   = WMI_RATE_PREAMBLE_EHT,
+		[WMI_TPC_PREAM_UHR80]   = WMI_RATE_PREAMBLE_EHT,
+		[WMI_TPC_PREAM_UHR120]  = WMI_RATE_PREAMBLE_EHT,
+		[WMI_TPC_PREAM_UHR140]  = WMI_RATE_PREAMBLE_EHT,
+		[WMI_TPC_PREAM_UHR160]  = WMI_RATE_PREAMBLE_EHT,
+		[WMI_TPC_PREAM_UHR200]  = WMI_RATE_PREAMBLE_EHT,
+		[WMI_TPC_PREAM_UHR240]  = WMI_RATE_PREAMBLE_EHT,
+		[WMI_TPC_PREAM_UHR280]  = WMI_RATE_PREAMBLE_EHT,
+		[WMI_TPC_PREAM_UHR320]  = WMI_RATE_PREAMBLE_EHT};
 
 	chan_freq = le32_to_cpu(tpc_stats->tpc_config.chan_freq);
 	num_tx_chain = le32_to_cpu(tpc_stats->tpc_config.num_tx_chain);
@@ -2258,7 +2333,9 @@ static int ath12k_tpc_stats_print(struct ath12k *ar,
 			    i == WMI_TPC_PREAM_HE80 ||
 			    i == WMI_TPC_PREAM_HE160 ||
 			    (i >= WMI_TPC_PREAM_EHT60 &&
-			     i <= WMI_TPC_PREAM_EHT320)) {
+			     i <= WMI_TPC_PREAM_EHT320) ||
+			    (i >= WMI_TPC_PREAM_UHR60 &&
+			     i <= WMI_TPC_PREAM_UHR320)) {
 				max_rix += max_nss[i] * max_rates[i];
 				continue;
 			}
@@ -2271,23 +2348,38 @@ static int ath12k_tpc_stats_print(struct ath12k *ar,
 
 		nss = (max_nss[i] < ar->num_tx_chains ? max_nss[i] : ar->num_tx_chains);
 
-		if (!(caps &
-		    (1 << ATH12K_TPC_STATS_SUPPORT_BE_PUNC))) {
+		if (!(caps & (1 << ATH12K_TPC_STATS_SUPPORT_BE_PUNC))) {
 			if (i == WMI_TPC_PREAM_EHT60 || i == WMI_TPC_PREAM_EHT120 ||
 			    i == WMI_TPC_PREAM_EHT140 || i == WMI_TPC_PREAM_EHT200 ||
-			    i == WMI_TPC_PREAM_EHT240 || i == WMI_TPC_PREAM_EHT280) {
+			    i == WMI_TPC_PREAM_EHT240 || i == WMI_TPC_PREAM_EHT280 ||
+			    i == WMI_TPC_PREAM_UHR60  || i == WMI_TPC_PREAM_UHR120 ||
+			    i == WMI_TPC_PREAM_UHR140 || i == WMI_TPC_PREAM_UHR200 ||
+			    i == WMI_TPC_PREAM_UHR240 || i == WMI_TPC_PREAM_UHR280) {
 				max_rix += max_nss[i] * max_rates[i];
 				continue;
 			}
 		}
 
-		len = ath12k_tpc_fill_pream(ar, buf, buf_len, len, i, max_rix, nss,
-					    max_rates[i], pream_type[i],
-					    type, rate_idx[i], eht_rate_idx[eht_idx]);
+		/* UHR and EHT share rates_array2. uhr_idx tracks position within
+		 * UHR preambles (0=UHR20..10=UHR320), mapping to the same
+		 * eht_rate_idx slots as EHT20..EHT320 respectively.
+		 */
+		if (i >= WMI_TPC_PREAM_UHR20 && i <= WMI_TPC_PREAM_UHR320) {
+			len = ath12k_tpc_fill_pream(ar, buf, buf_len, len, i, max_rix,
+						    nss, max_rates[i], pream_type[i],
+						    type, rate_idx[i],
+						    eht_rate_idx[uhr_idx]);
+			++uhr_idx;
+		} else {
+			len = ath12k_tpc_fill_pream(ar, buf, buf_len, len, i, max_rix,
+						    nss, max_rates[i], pream_type[i],
+						    type, rate_idx[i],
+						    eht_rate_idx[eht_idx]);
 
-		if (pream_type[i] == WMI_RATE_PREAMBLE_EHT)
-			/*For fetch the next index eht rates from rates array2*/
-			++eht_idx;
+			if (pream_type[i] == WMI_RATE_PREAMBLE_EHT)
+				/*For fetch the next index eht rates from rates array2*/
+				++eht_idx;
+		}
 
 		max_rix += max_nss[i] * max_rates[i];
 	}
@@ -2327,7 +2419,6 @@ static void ath12k_tpc_stats_fill(struct ath12k *ar,
 
 	ath12k_tpc_stats_print(ar, tpc_stats, buf, len,
 			       ar->debug.tpc_stats_type);
-
 	spin_unlock_bh(&ar->data_lock);
 }
 
