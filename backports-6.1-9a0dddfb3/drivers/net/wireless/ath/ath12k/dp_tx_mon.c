@@ -43,7 +43,7 @@ ath12k_dp_mon_tx_setup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev)
 	struct ath12k_base *ab = dp_pdev->dp->ab;
 	size_t alloc_size = sizeof(struct ath12k_dp_mon_ppdu_desc);
 	size_t status_desc_size;
-	int i;
+	int i, ret;
 	u32 mon_num_ppdu_desc = dp_mon->mon_num_ppdu_desc;
 	u32 mon_status_buf = ATH12K_DP_MON_STATUS_BUF;
 
@@ -59,53 +59,61 @@ ath12k_dp_mon_tx_setup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev)
 		return 0;
 	}
 
-	dp_pdev_tx_mon->tx_mon_ppdu_desc_pool = kcalloc(mon_num_ppdu_desc,
-						     alloc_size, GFP_KERNEL);
+	spin_lock_init(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
+
+	dp_pdev_tx_mon->tx_mon_ppdu_desc_pool =
+			kcalloc(mon_num_ppdu_desc,
+				sizeof(*dp_pdev_tx_mon->tx_mon_ppdu_desc_pool),
+				GFP_KERNEL);
+
 	if (unlikely(!dp_pdev_tx_mon->tx_mon_ppdu_desc_pool)) {
 		ath12k_warn(dp_pdev->dp->ab,
 			    "Failed to allocate monitor PPDU desc pool\n");
 		return -ENOMEM;
 	}
 
+	status_desc_size = sizeof(struct ath12k_dp_mon_status_desc) * mon_status_buf;
+
+	for (i = 0; i < mon_num_ppdu_desc; i++) {
+		dp_pdev_tx_mon->tx_mon_ppdu_desc_pool[i] =
+			kzalloc(sizeof(*dp_pdev_tx_mon->tx_mon_ppdu_desc_pool[i]),
+				GFP_KERNEL);
+		if (!dp_pdev_tx_mon->tx_mon_ppdu_desc_pool[i]) {
+			ath12k_warn(dp_pdev->dp,
+				    "Failed to allocate monitor PPDU desc pool\n");
+			ret = -ENOMEM;
+			goto fail;
+		}
+		/* Allocate status_desc array for each PPDU descriptor */
+		dp_pdev_tx_mon->tx_mon_ppdu_desc_pool[i]->status_desc =
+			kcalloc(mon_status_buf, sizeof(struct ath12k_dp_mon_status_desc),
+				GFP_KERNEL);
+		if (!dp_pdev_tx_mon->tx_mon_ppdu_desc_pool[i]->status_desc) {
+			ath12k_warn(ab,
+				    "Failed to allocate status_desc for PPDU desc %d\n",
+				    i);
+			ret = -ENOMEM;
+			goto fail;
+		}
+	}
 	ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
 		   "TX MON SETUP: Allocated PPDU desc pool at %p, size=%zu\n",
 		   dp_pdev_tx_mon->tx_mon_ppdu_desc_pool,
 		   alloc_size * mon_num_ppdu_desc);
 
-	status_desc_size = sizeof(struct ath12k_dp_mon_status_desc) * mon_status_buf;
-
-	/* Allocate status_desc array for each PPDU descriptor */
-	for (i = 0; i < mon_num_ppdu_desc; i++) {
-		dp_pdev_tx_mon->tx_mon_ppdu_desc_pool[i].status_desc =
-			kcalloc(mon_status_buf, sizeof(struct ath12k_dp_mon_status_desc),
-				GFP_KERNEL);
-		if (!dp_pdev_tx_mon->tx_mon_ppdu_desc_pool[i].status_desc) {
-			ath12k_warn(ab,
-				    "Failed to allocate status_desc for PPDU desc %d\n",
-				    i);
-			/* Free previously allocated status_desc arrays */
-			while (--i >= 0)
-				kfree
-				(dp_pdev_tx_mon->tx_mon_ppdu_desc_pool[i].status_desc);
-			kfree(dp_pdev_tx_mon->tx_mon_ppdu_desc_pool);
-			dp_pdev_tx_mon->tx_mon_ppdu_desc_pool = NULL;
-			return -ENOMEM;
-		}
-	}
 
 	ath12k_dbg(ab, ATH12K_DBG_DP_MON_TX,
 		   "TX MON SETUP: Allocated status_desc arrays, size=%zu per desc\n",
 		   status_desc_size);
 
-	spin_lock_init(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
 	INIT_LIST_HEAD(&dp_pdev_tx_mon->tx_mon_ppdu_desc_free_list);
 	INIT_LIST_HEAD(&dp_pdev_tx_mon->tx_mon_ppdu_desc_used_list);
 	INIT_LIST_HEAD(&dp_pdev_tx_mon->tx_mon_ppdu_desc_proc_list);
 
 	spin_lock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
 	for (i = 0; i < mon_num_ppdu_desc; i++) {
-		INIT_LIST_HEAD(&dp_pdev_tx_mon->tx_mon_ppdu_desc_pool[i].list);
-		list_add_tail(&dp_pdev_tx_mon->tx_mon_ppdu_desc_pool[i].list,
+		INIT_LIST_HEAD(&dp_pdev_tx_mon->tx_mon_ppdu_desc_pool[i]->list);
+		list_add_tail(&dp_pdev_tx_mon->tx_mon_ppdu_desc_pool[i]->list,
 			      &dp_pdev_tx_mon->tx_mon_ppdu_desc_free_list);
 		dp_mon_pdev->mon_stats.ppdu_desc_free++;
 	}
@@ -113,6 +121,9 @@ ath12k_dp_mon_tx_setup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev)
 	dp_pdev_tx_mon->tx_mon_ppdu_desc_initialized = true;
 
 	return 0;
+fail:
+	ath12k_dp_mon_tx_cleanup_ppdu_desc(dp_pdev);
+	return ret;
 }
 
 /**
@@ -189,9 +200,10 @@ free_vendor_tlv:
  * The function ensures safe cleanup by:
  * 1. Acquiring the descriptor pool spinlock to prevent concurrent access
  * 2. Freeing the dynamically allocated status_desc arrays for each descriptor
- * 3. Freeing the allocated descriptor pool memory using kfree()
- * 4. Setting the pool pointer to NULL to prevent dangling pointer access
- * 5. Releasing the spinlock after cleanup completion
+ * 3. Freeing the dynamically allocated tx_mon_ppdu_desc_pool[]
+ * 4. Freeing the allocated descriptor pool memory using kfree()
+ * 5. Setting the pool pointer to NULL to prevent dangling pointer access
+ * 6. Releasing the spinlock after cleanup completion
  *
  * Context: Called during TX monitor shutdown in process context
  * Locking: Uses tx_mon_ppdu_desc_lock for safe memory deallocation
@@ -202,8 +214,8 @@ static void ath12k_dp_mon_tx_cleanup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev)
 	struct ath12k_pdev_tx_mon *dp_pdev_tx_mon;
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
+	struct ath12k_dp_mon_ppdu_desc *tx_ppdu_desc;
 	int i;
-	u32 mon_num_ppdu_desc;
 
 	if (!dp_mon_pdev || !dp_mon_pdev->dp_pdev_tx_mon)
 		return;
@@ -211,21 +223,25 @@ static void ath12k_dp_mon_tx_cleanup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev)
 	dp_pdev_tx_mon = dp_mon_pdev->dp_pdev_tx_mon;
 
 	spin_lock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
-
-	if (dp_pdev_tx_mon->tx_mon_ppdu_desc_pool) {
-		mon_num_ppdu_desc = dp_mon->mon_num_ppdu_desc;
-
-		/* Free status_desc arrays for each PPDU descriptor */
-		for (i = 0; i < mon_num_ppdu_desc; i++) {
-			kfree(dp_pdev_tx_mon->tx_mon_ppdu_desc_pool[i].status_desc);
-			dp_pdev_tx_mon->tx_mon_ppdu_desc_pool[i].status_desc = NULL;
-		}
-
-		/* Free the PPDU descriptor pool itself */
-		kfree(dp_pdev_tx_mon->tx_mon_ppdu_desc_pool);
-		dp_pdev_tx_mon->tx_mon_ppdu_desc_pool = NULL;
+	if (!dp_pdev_tx_mon->tx_mon_ppdu_desc_pool) {
+		dp_pdev_tx_mon->tx_mon_ppdu_desc_initialized = false;
+		spin_unlock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
+		return;
 	}
 
+	for (i = 0; i < dp_mon->mon_num_ppdu_desc; i++) {
+		if (dp_pdev_tx_mon->tx_mon_ppdu_desc_pool[i]) {
+			tx_ppdu_desc = dp_pdev_tx_mon->tx_mon_ppdu_desc_pool[i];
+			/* Free status_desc arrays for each PPDU descriptor */
+			kfree(tx_ppdu_desc->status_desc);
+			dp_pdev_tx_mon->tx_mon_ppdu_desc_pool[i]->status_desc = NULL;
+			kfree(dp_pdev_tx_mon->tx_mon_ppdu_desc_pool[i]);
+		}
+		dp_pdev_tx_mon->tx_mon_ppdu_desc_pool[i] = NULL;
+	}
+
+	kfree(dp_pdev_tx_mon->tx_mon_ppdu_desc_pool);
+	dp_pdev_tx_mon->tx_mon_ppdu_desc_pool = NULL;
 	dp_pdev_tx_mon->tx_mon_ppdu_desc_initialized = false;
 	spin_unlock_bh(&dp_pdev_tx_mon->tx_mon_ppdu_desc_lock);
 }

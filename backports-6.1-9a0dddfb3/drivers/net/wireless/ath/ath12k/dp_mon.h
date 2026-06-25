@@ -740,7 +740,7 @@ struct ath12k_pdev_tx_mon {
 	struct workqueue_struct *txmon_wq;
 	struct work_struct txmon_work;
 	spinlock_t tx_mon_ppdu_desc_lock;
-	struct ath12k_dp_mon_ppdu_desc *tx_mon_ppdu_desc_pool;
+	struct ath12k_dp_mon_ppdu_desc **tx_mon_ppdu_desc_pool;
 	struct list_head tx_mon_desc_work_list;
 	struct list_head tx_mon_ppdu_desc_used_list;
 	struct list_head tx_mon_ppdu_desc_free_list;
@@ -882,7 +882,7 @@ struct ath12k_pdev_mon_dp {
 	struct ieee80211_rx_status rx_status;
 	struct ath12k_mon_data mon_data;
 	struct dp_mon_rx_filter **rx_filter;
-	struct ath12k_dp_mon_ppdu_desc *ppdu_desc_pool;
+	struct ath12k_dp_mon_ppdu_desc **ppdu_desc_pool;
 	struct list_head ppdu_desc_used_list;
 	struct list_head ppdu_desc_free_list;
 	struct list_head ppdu_desc_proc_list;
