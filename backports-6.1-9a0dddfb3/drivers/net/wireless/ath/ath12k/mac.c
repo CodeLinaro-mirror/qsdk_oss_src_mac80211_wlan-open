@@ -23323,7 +23323,7 @@ ath12k_mac_process_update_vif_chan(struct ath12k *ar,
 			/* should not happen */
 			return;
 	} else {
-		if (WARN_ON(n_vifs > TARGET_NUM_VDEVS))
+		if (WARN_ON(n_vifs > ath12k_core_get_total_num_vdevs(ab)))
 			/* should not happen */
 			return;
 	}

@@ -7741,6 +7741,9 @@ int ath12k_wmi_cmd_init(struct ath12k_base *ab)
 	ab->hw_params->wmi_init(ab, &arg.res_cfg);
 	ab->wow.wmi_conf_rx_decap_mode = arg.res_cfg.rx_decap_mode;
 
+	ath12k_info(ab, "WMI_INIT: num_vdevs=%u (num_radios=%u)\n",
+		    arg.res_cfg.num_vdevs, ab->num_radios);
+
 	arg.num_mem_chunks = wmi_ab->num_mem_chunks;
 	arg.hw_mode_id = wmi_ab->preferred_hw_mode;
 	arg.mem_chunks = wmi_ab->mem_chunks;
