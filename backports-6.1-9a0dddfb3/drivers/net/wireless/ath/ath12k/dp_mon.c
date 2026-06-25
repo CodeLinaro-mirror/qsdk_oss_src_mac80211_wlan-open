@@ -3386,19 +3386,26 @@ void ath12k_dp_ext_mon_process_request(struct ath12k_pdev_dp *dp_pdev,
 	if (dp_pdev->dp_mon_pdev->smart_mon_filter & DP_SMART_MON_VALID ||
 	    dp_pdev->dp_mon_pdev->smart_mon_state != ATH12K_DP_SMART_MON_DISABLED) {
 		ath12k_warn(dp_pdev->dp, "Failed, smart mon enabled\n");
+		resp->status_code = ATH12K_EXT_MON_FILTER_SETUP_FAIL;
 		return;
 	}
 
 	if ((smart_mon_profile == DP_SMART_MON_PROFILE_512M ||
 	     smart_mon_profile == DP_SMART_MON_PROFILE_256M) &&
-	    !ath12k_dp_ext_mon_is_mode_enabled(&req->filter.target_neighbor)) {
+	    req->cmd_type == QCA_VENDOR_EXT_MON_CMD_TYPE_SET_FILTER &&
+	    !req->filter.disable &&
+	    (ath12k_dp_ext_mon_is_mode_enabled(&req->filter.all_peer) ||
+	     ath12k_dp_ext_mon_is_mode_enabled(&req->filter.all_neighbor) ||
+	     ath12k_dp_ext_mon_is_mode_enabled(&req->filter.target_peer))) {
 		ath12k_warn(dp_pdev->dp,
 			    "Only target neighbor filter allowed on low mem profile\n");
+		resp->status_code = ATH12K_EXT_MON_FILTER_SETUP_FAIL;
 		return;
 	}
 
 	if (dp_pdev->dp_mon_pdev->nrp_enabled) {
 		ath12k_warn(dp_pdev->dp, "nrp enabled\n");
+		resp->status_code = ATH12K_EXT_MON_FILTER_SETUP_FAIL;
 		return;
 	}
 
