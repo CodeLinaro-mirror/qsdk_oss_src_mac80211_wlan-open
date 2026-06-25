@@ -17963,7 +17963,11 @@ static int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arv
 	if (!(skb_cb->flags & ATH12K_SKB_HW_80211_ENCAP)) {
 		if ((ieee80211_is_action(hdr->frame_control) ||
 		     ieee80211_is_deauth(hdr->frame_control) ||
-		     ieee80211_is_disassoc(hdr->frame_control)) &&
+		     ieee80211_is_disassoc(hdr->frame_control) ||
+		     ieee80211_is_assoc_req(hdr->frame_control) ||
+		     ieee80211_is_reassoc_req(hdr->frame_control) ||
+		     ieee80211_is_assoc_resp(hdr->frame_control) ||
+		     ieee80211_is_reassoc_resp(hdr->frame_control)) &&
 		     ieee80211_has_protected(hdr->frame_control)) {
 			if (!(skb_cb->flags & ATH12K_SKB_CIPHER_SET))
 				ath12k_warn(ab, "WMI protected management tx frame without ATH12K_SKB_CIPHER_SET");
