@@ -118,9 +118,6 @@ struct ath12k_spectral {
 	/* Protects enabled, mode, and scan_active */
 	spinlock_t lock;
 	struct rchan *rfs_scan;	/* relay(fs) channel for spectral scan */
-	struct dentry *scan_ctl;
-	struct dentry *scan_count;
-	struct dentry *scan_bins;
 	enum spectral_scan_mode mode;
 	struct ath12k_spectral_params     params;
 	struct ath12k_spectral_diag_stats diag;
@@ -160,14 +157,12 @@ struct ath12k_spectral {
 #ifdef CPTCFG_ATH12K_SPECTRAL
 
 struct ath12k_link_vif *ath12k_spectral_get_vdev(struct ath12k *ar);
-u32 ath12k_spectral_nl_bw_to_wmi(u8 nl_bw);
 int ath12k_spectral_nl80211_bw_to_idx(enum nl80211_chan_width bw);
 
 int ath12k_spectral_init(struct ath12k_base *ab);
 void ath12k_spectral_deinit(struct ath12k_base *ab);
 int ath12k_spectral_vif_stop(struct ath12k_link_vif *arvif);
 void ath12k_spectral_reset_buffer(struct ath12k *ar);
-enum spectral_scan_mode ath12k_spectral_get_mode(struct ath12k *ar);
 struct ath12k_dbring *ath12k_spectral_get_dbring(struct ath12k *ar);
 int ath12k_spectral_configure_scan_params(struct ath12k *ar,
 						  enum spectral_scan_mode mode);
@@ -195,12 +190,6 @@ static inline int ath12k_spectral_vif_stop(struct ath12k_link_vif *arvif)
 
 static inline void ath12k_spectral_reset_buffer(struct ath12k *ar)
 {
-}
-
-static inline
-enum spectral_scan_mode ath12k_spectral_get_mode(struct ath12k *ar)
-{
-	return SPECTRAL_SCAN_MODE_INVALID;
 }
 
 static inline

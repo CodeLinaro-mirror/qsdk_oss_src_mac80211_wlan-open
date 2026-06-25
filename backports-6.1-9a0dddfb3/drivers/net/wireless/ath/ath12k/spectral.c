@@ -527,211 +527,6 @@ int ath12k_spectral_configure_scan_params(struct ath12k *ar,
 	return 0;
 }
 
-static ssize_t ath12k_read_file_spec_scan_ctl(struct file *file,
-					      char __user *user_buf,
-					      size_t count, loff_t *ppos)
-{
-	struct ath12k *ar = file->private_data;
-	char *mode = "";
-	size_t len;
-	enum spectral_scan_mode spectral_mode;
-
-	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
-	spectral_mode = ar->spectral.mode;
-	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
-
-	switch (spectral_mode) {
-	case SPECTRAL_SCAN_MODE_AGILE:
-		mode = "agile";
-		break;
-	case SPECTRAL_SCAN_MODE_NORMAL:
-		mode = "normal";
-		break;
-	default:
-		mode = "disable";
-		break;
-	}
-
-	len = strlen(mode);
-	return simple_read_from_buffer(user_buf, count, ppos, mode, len);
-}
-
-static ssize_t ath12k_write_file_spec_scan_ctl(struct file *file,
-					       const char __user *user_buf,
-					       size_t count, loff_t *ppos)
-{
-	struct ath12k *ar = file->private_data;
-	char buf[32]  = {0};
-	ssize_t len;
-	int ret;
-
-	len = min(count, sizeof(buf) - 1);
-	if (copy_from_user(buf, user_buf, len))
-		return -EFAULT;
-
-	buf[len] = '\0';
-
-	guard(wiphy)(ath12k_ar_to_hw(ar)->wiphy);
-
-	if (strncmp("trigger", buf, 7) == 0) {
-		if (ar->spectral.mode < SPECTRAL_SCAN_MODE_MAX) {
-			/* reset the configuration to adopt possibly changed
-			 * debugfs parameters
-			 */
-			ret = ath12k_spectral_configure_scan_params(ar,
-								    ar->spectral.mode);
-			if (ret) {
-				ath12k_warn(ar->ab, "failed to reconfigure spectral scan: %d\n",
-					    ret);
-				goto unlock;
-			}
-
-			ret = ath12k_spectral_start_scan(ar);
-			if (ret) {
-				ath12k_warn(ar->ab, "failed to trigger spectral scan: %d\n",
-					    ret);
-			}
-		} else {
-			ret = -EINVAL;
-		}
-	} else if (strncmp("agile", buf, 5) == 0) {
-		ret = ath12k_spectral_configure_scan_params(ar,
-							    SPECTRAL_SCAN_MODE_AGILE);
-	} else if (strncmp("normal", buf, 6) == 0) {
-		ret = ath12k_spectral_configure_scan_params(ar,
-							    SPECTRAL_SCAN_MODE_NORMAL);
-	} else if (strncmp("disable", buf, 7) == 0) {
-		ret = ath12k_spectral_stop_scan(ar);
-	} else {
-		ret = -EINVAL;
-	}
-
-unlock:
-	if (ret)
-		return ret;
-
-	return count;
-}
-
-static const struct file_operations fops_scan_ctl = {
-	.read = ath12k_read_file_spec_scan_ctl,
-	.write = ath12k_write_file_spec_scan_ctl,
-	.open = simple_open,
-	.owner = THIS_MODULE,
-	.llseek = default_llseek,
-};
-
-static ssize_t ath12k_read_file_spectral_count(struct file *file,
-					       char __user *user_buf,
-					       size_t count, loff_t *ppos)
-{
-	struct ath12k *ar = file->private_data;
-	char buf[32];
-	size_t len = 0;
-	u32 spectral_count;
-
-	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
-	spectral_count = ar->spectral.params.scan_count;
-	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
-
-	len = scnprintf(buf, sizeof(buf) - len, "%d\n", spectral_count);
-	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
-}
-
-static ssize_t ath12k_write_file_spectral_count(struct file *file,
-						const char __user *user_buf,
-						size_t count, loff_t *ppos)
-{
-	struct ath12k *ar = file->private_data;
-	unsigned long val;
-	char buf[32] = {0};
-	ssize_t len;
-
-	len = min(count, sizeof(buf) - 1);
-	if (copy_from_user(buf, user_buf, len))
-		return -EFAULT;
-
-	buf[len] = '\0';
-	if (kstrtoul(buf, 0, &val))
-		return -EINVAL;
-
-	if (val > ATH12K_SPECTRAL_SCAN_COUNT_MAX)
-		return -EINVAL;
-
-	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
-	ar->spectral.params.scan_count = val;
-	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
-
-	return count;
-}
-
-static const struct file_operations fops_scan_count = {
-	.read = ath12k_read_file_spectral_count,
-	.write = ath12k_write_file_spectral_count,
-	.open = simple_open,
-	.owner = THIS_MODULE,
-	.llseek = default_llseek,
-};
-
-static ssize_t ath12k_read_file_spectral_bins(struct file *file,
-					      char __user *user_buf,
-					      size_t count, loff_t *ppos)
-{
-	struct ath12k *ar = file->private_data;
-	char buf[32];
-	unsigned int bins, fft_size;
-	size_t len = 0;
-
-	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
-
-	fft_size = ar->spectral.params.scan_fft_size;
-	bins = 1 << fft_size;
-
-	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
-
-	len = scnprintf(buf, sizeof(buf) - len, "%d\n", bins);
-	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
-}
-
-static ssize_t ath12k_write_file_spectral_bins(struct file *file,
-					       const char __user *user_buf,
-					       size_t count, loff_t *ppos)
-{
-	struct ath12k *ar = file->private_data;
-	unsigned long val;
-	char buf[32] = {0};
-	ssize_t len;
-
-	len = min(count, sizeof(buf) - 1);
-	if (copy_from_user(buf, user_buf, len))
-		return -EFAULT;
-
-	buf[len] = '\0';
-	if (kstrtoul(buf, 0, &val))
-		return -EINVAL;
-
-	if (val < ATH12K_SPECTRAL_ATH12K_MIN_BINS ||
-	    val > SPECTRAL_ATH12K_MAX_NUM_BINS)
-		return -EINVAL;
-
-	if (!is_power_of_2(val))
-		return -EINVAL;
-
-	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
-	ar->spectral.params.scan_fft_size = ilog2(val);
-	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
-
-	return count;
-}
-
-static const struct file_operations fops_scan_bins = {
-	.read = ath12k_read_file_spectral_bins,
-	.write = ath12k_write_file_spectral_bins,
-	.open = simple_open,
-	.owner = THIS_MODULE,
-	.llseek = default_llseek,
-};
-
 static int ath12k_spectral_pull_summary(struct ath12k *ar,
 					struct ath12k_wmi_dma_buf_release_meta_data_params *meta,
 					struct spectral_summary_fft_report *summary,
@@ -1577,15 +1372,6 @@ static inline void ath12k_spectral_ring_free(struct ath12k *ar)
 
 static inline void ath12k_spectral_debug_unregister(struct ath12k *ar)
 {
-	debugfs_remove(ar->spectral.scan_bins);
-	ar->spectral.scan_bins = NULL;
-
-	debugfs_remove(ar->spectral.scan_count);
-	ar->spectral.scan_count = NULL;
-
-	debugfs_remove(ar->spectral.scan_ctl);
-	ar->spectral.scan_ctl = NULL;
-
 	if (ar->spectral.rfs_scan) {
 		relay_close(ar->spectral.rfs_scan);
 		ar->spectral.rfs_scan = NULL;
@@ -1757,8 +1543,6 @@ void ath12k_spectral_deinit(struct ath12k_base *ab)
 
 static inline int ath12k_spectral_debug_register(struct ath12k *ar)
 {
-	int ret;
-
 	ar->spectral.rfs_scan = relay_open("spectral_scan",
 					   ar->debug.debugfs_pdev,
 					   ATH12K_SPECTRAL_SUB_BUFF_SIZE(ar->ab),
@@ -1781,48 +1565,11 @@ static inline int ath12k_spectral_debug_register(struct ath12k *ar)
 			   ar->debug.debugfs_pdev,
 			   &ar->spectral.num_sub_bufs);
 
-	ar->spectral.scan_ctl = debugfs_create_file("spectral_scan_ctl",
-						    0600,
-						    ar->debug.debugfs_pdev, ar,
-						    &fops_scan_ctl);
-	if (!ar->spectral.scan_ctl) {
-		ath12k_warn(ar->ab, "failed to open debugfs in pdev %d\n",
-			    ar->pdev_idx);
-		ret = -EINVAL;
-		goto debug_unregister;
-	}
-
-	ar->spectral.scan_count = debugfs_create_file("spectral_count",
-						      0600,
-						      ar->debug.debugfs_pdev, ar,
-						      &fops_scan_count);
-	if (!ar->spectral.scan_count) {
-		ath12k_warn(ar->ab, "failed to open debugfs in pdev %d\n",
-			    ar->pdev_idx);
-		ret = -EINVAL;
-		goto debug_unregister;
-	}
-
-	ar->spectral.scan_bins = debugfs_create_file("spectral_bins",
-						     0600,
-						     ar->debug.debugfs_pdev, ar,
-						     &fops_scan_bins);
-	if (!ar->spectral.scan_bins) {
-		ath12k_warn(ar->ab, "failed to open debugfs in pdev %d\n",
-			    ar->pdev_idx);
-		ret = -EINVAL;
-		goto debug_unregister;
-	}
-
 	debugfs_create_bool("spectral_dbr_buff_debug", 0600,
 			    ar->debug.debugfs_pdev,
 			    &ar->spectral.dbr_buff_debug);
 
 	return 0;
-
-debug_unregister:
-	ath12k_spectral_debug_unregister(ar);
-	return ret;
 }
 
 int ath12k_spectral_init(struct ath12k_base *ab)
@@ -1908,14 +1655,6 @@ int ath12k_spectral_init(struct ath12k_base *ab)
 deinit:
 	ath12k_spectral_deinit(ab);
 	return ret;
-}
-
-enum spectral_scan_mode ath12k_spectral_get_mode(struct ath12k *ar)
-{
-	if (ar->spectral.enabled)
-		return ar->spectral.mode;
-	else
-		return SPECTRAL_SCAN_MODE_INVALID;
 }
 
 struct ath12k_dbring *ath12k_spectral_get_dbring(struct ath12k *ar)
