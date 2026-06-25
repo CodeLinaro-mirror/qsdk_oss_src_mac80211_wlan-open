@@ -2411,7 +2411,7 @@ void ath12k_wifi8_dp_ppe2wbm_srng_free(struct ath12k_base *ab)
 		ath12k_dp_srng_cleanup(ab, &dp_wifi8->ppe2wbm_idle_buf_ring);
 }
 
-int ath12k_wifi8_dp_ppe2wbm_srng_setup(struct ath12k_base *ab)
+int ath12k_wifi8_dp_ppe2wbm_srng_alloc(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
@@ -2433,32 +2433,32 @@ int ath12k_wifi8_dp_ppe2wbm_srng_setup(struct ath12k_base *ab)
 	 * A dedicated SW2WBM refill ring is used for PPE refill.
 	 */
 	if (!dp_wifi8->dp_ppe2wbm_use_dedicated_pool) {
-		ret = ath12k_dp_srng_setup(ab,
-				&dp_wifi8->ppe2wbm_refill_ring[0],
-				HAL_WBM_BUF, DP_PPE2WBM_SFE_POOL_REFILL_RING_NUM, 0,
-				ath12k_ppeds_ppe2wbm_ring_size);
+		ret = ath12k_dp_srng_alloc(ab, &dp_wifi8->ppe2wbm_refill_ring[0],
+					   HAL_WBM_BUF,
+					   DP_PPE2WBM_SFE_POOL_REFILL_RING_NUM, 0,
+					   ath12k_ppeds_ppe2wbm_ring_size);
 		if (ret) {
-			ath12k_warn(ab, "failed to setup WBM refill ring\n");
+			ath12k_warn(ab, "failed to alloc WBM refill ring\n");
 			goto fail;
 		}
 	} else {
-		for (i = 0 ; i < DP_PPE2WBM_REFILL_RING_MAX; i++) {
-			ret = ath12k_dp_srng_setup(ab,
+		for (i = 0; i < DP_PPE2WBM_REFILL_RING_MAX; i++) {
+			ret = ath12k_dp_srng_alloc(ab,
 						   &dp_wifi8->ppe2wbm_refill_ring[i],
 						   HAL_PPE2WBM_BUF, i, 0,
 						   ath12k_ppeds_ppe2wbm_ring_size);
 			if (ret) {
-				ath12k_warn(ab, "failed to setup WBM refill ring\n");
+				ath12k_warn(ab, "failed to alloc WBM refill ring\n");
 				goto fail;
 			}
 		}
 
-		ret = ath12k_dp_srng_setup(ab,
+		ret = ath12k_dp_srng_alloc(ab,
 					   &dp_wifi8->ppe2wbm_idle_buf_ring,
 					   HAL_PPE2WBM_IDLE_BUF, 0, 0,
 					   DP_PPE2WBM_IDLE_BUF_RING_SIZE);
 		if (ret) {
-			ath12k_warn(ab, "failed to setup wbm idle buf ring\n");
+			ath12k_warn(ab, "failed to alloc wbm idle buf ring\n");
 			goto fail;
 		}
 	}
@@ -2467,6 +2467,47 @@ int ath12k_wifi8_dp_ppe2wbm_srng_setup(struct ath12k_base *ab)
 fail:
 	ath12k_wifi8_dp_ppe2wbm_srng_free(ab);
 	return ret;
+}
+
+int ath12k_wifi8_dp_ppe2wbm_srng_init(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+	int i, ret;
+
+	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
+		return 0;
+
+	if (!dp_wifi8->dp_ppe2wbm_use_dedicated_pool) {
+		ret = ath12k_dp_srng_init(ab,
+					  &dp_wifi8->ppe2wbm_refill_ring[0],
+					  HAL_WBM_BUF,
+					  DP_PPE2WBM_SFE_POOL_REFILL_RING_NUM, 0);
+		if (ret) {
+			ath12k_warn(ab, "failed to init WBM refill ring\n");
+			return ret;
+		}
+	} else {
+		for (i = 0; i < DP_PPE2WBM_REFILL_RING_MAX; i++) {
+			ret = ath12k_dp_srng_init(ab,
+						  &dp_wifi8->ppe2wbm_refill_ring[i],
+						  HAL_PPE2WBM_BUF, i, 0);
+			if (ret) {
+				ath12k_warn(ab, "failed to init WBM refill ring\n");
+				return ret;
+			}
+		}
+
+		ret = ath12k_dp_srng_init(ab,
+					  &dp_wifi8->ppe2wbm_idle_buf_ring,
+					  HAL_PPE2WBM_IDLE_BUF, 0, 0);
+		if (ret) {
+			ath12k_warn(ab, "failed to init wbm idle buf ring\n");
+			return ret;
+		}
+	}
+
+	return 0;
 }
 
 int ath12k_wifi8_dp_ppe2wbm_buf_ring_init(struct ath12k_base *ab)
@@ -3207,29 +3248,29 @@ void ath12k_wifi8_dp_rx_wbm_srng_free(struct ath12k_base *ab)
 	ath12k_dp_srng_cleanup(ab, &dp_wifi8->wbm_idle_buf_ring);
 }
 
-int ath12k_wifi8_dp_rx_wbm_srng_setup(struct ath12k_base *ab)
+int ath12k_wifi8_dp_rx_wbm_srng_alloc(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
 	int i, ret;
 
-	for (i = 0 ; i < DP_WBM_REFILL_RING_MAX; i++) {
-		ret = ath12k_dp_srng_setup(ab,
+	for (i = 0; i < DP_WBM_REFILL_RING_MAX; i++) {
+		ret = ath12k_dp_srng_alloc(ab,
 					   &dp_wifi8->wbm_refill_ring[i],
 					   HAL_WBM_BUF, i, 0,
 					   DP_WBM_REFILL_RING_SIZE);
 		if (ret) {
-			ath12k_warn(ab, "failed to setup WBM refill ring\n");
+			ath12k_warn(ab, "failed to alloc WBM refill ring\n");
 			goto fail;
 		}
 	}
 
-	ret = ath12k_dp_srng_setup(ab,
+	ret = ath12k_dp_srng_alloc(ab,
 				   &dp_wifi8->wbm_idle_buf_ring,
 				   HAL_WBM_IDLE_BUF, 0, 0,
 				   DP_WBM_IDLE_BUF_RING_SIZE);
 	if (ret) {
-		ath12k_warn(ab, "failed to setup wbm idle buf ring\n");
+		ath12k_warn(ab, "failed to alloc wbm idle buf ring\n");
 		goto fail;
 	}
 
@@ -3237,6 +3278,33 @@ int ath12k_wifi8_dp_rx_wbm_srng_setup(struct ath12k_base *ab)
 fail:
 	ath12k_wifi8_dp_rx_wbm_srng_free(ab);
 	return ret;
+}
+
+int ath12k_wifi8_dp_rx_wbm_srng_init(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+	int i, ret;
+
+	for (i = 0; i < DP_WBM_REFILL_RING_MAX; i++) {
+		ret = ath12k_dp_srng_init(ab,
+					  &dp_wifi8->wbm_refill_ring[i],
+					  HAL_WBM_BUF, i, 0);
+		if (ret) {
+			ath12k_warn(ab, "failed to init WBM refill ring\n");
+			return ret;
+		}
+	}
+
+	ret = ath12k_dp_srng_init(ab,
+				  &dp_wifi8->wbm_idle_buf_ring,
+				  HAL_WBM_IDLE_BUF, 0, 0);
+	if (ret) {
+		ath12k_warn(ab, "failed to init wbm idle buf ring\n");
+		return ret;
+	}
+
+	return 0;
 }
 
 int ath12k_wifi8_dp_rx_wbm_buf_ring_init(struct ath12k_base *ab)
@@ -3255,14 +3323,23 @@ int ath12k_wifi8_dp_rx_wbm_buf_ring_init(struct ath12k_base *ab)
 	return 0;
 }
 
-int ath12k_wifi8_dp_rx_fse_cmd_srng_setup(struct ath12k_base *ab)
+int ath12k_wifi8_dp_rx_fse_cmd_srng_alloc(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
 
-	return ath12k_dp_srng_setup(ab, &dp_wifi8->fse_cmd_ring,
+	return ath12k_dp_srng_alloc(ab, &dp_wifi8->fse_cmd_ring,
 				    HAL_RXOLE_FSE_CMD,
 				    0, 0, DP_FSE_CMD_RING_SIZE);
+}
+
+int ath12k_wifi8_dp_rx_fse_cmd_srng_init(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+
+	return ath12k_dp_srng_init(ab, &dp_wifi8->fse_cmd_ring,
+				   HAL_RXOLE_FSE_CMD, 0, 0);
 }
 
 void ath12k_wifi8_dp_rx_fse_cmd_srng_free(struct ath12k_base *ab)
@@ -3273,14 +3350,23 @@ void ath12k_wifi8_dp_rx_fse_cmd_srng_free(struct ath12k_base *ab)
 	ath12k_dp_srng_cleanup(ab, &dp_wifi8->fse_cmd_ring);
 }
 
-int ath12k_wifi8_dp_rx_reo_flush_srng_setup(struct ath12k_base *ab)
+int ath12k_wifi8_dp_rx_reo_flush_srng_alloc(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
 
-	return ath12k_dp_srng_setup(ab, &dp_wifi8->reo_flush_ring,
+	return ath12k_dp_srng_alloc(ab, &dp_wifi8->reo_flush_ring,
 				    HAL_REO_FLUSH,
 				    0, 0, DP_REO_FLUSH_RING_SIZE);
+}
+
+int ath12k_wifi8_dp_rx_reo_flush_srng_init(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+
+	return ath12k_dp_srng_init(ab, &dp_wifi8->reo_flush_ring,
+				   HAL_REO_FLUSH, 0, 0);
 }
 
 void ath12k_wifi8_dp_rx_reo_flush_srng_free(struct ath12k_base *ab)
@@ -3291,7 +3377,7 @@ void ath12k_wifi8_dp_rx_reo_flush_srng_free(struct ath12k_base *ab)
 	ath12k_dp_srng_cleanup(ab, &dp_wifi8->reo_flush_ring);
 }
 
-void ath12k_wifi8_dp_rx_ring_free(struct ath12k_base *ab)
+void ath12k_wifi8_dp_rx_ring_cleanup(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
@@ -3328,26 +3414,86 @@ static void ath12k_configure_wbm_rxdma_watermark(struct ath12k_base *ab)
 	}
 }
 
-int ath12k_wifi8_dp_rx_ring_setup(struct ath12k_base *ab)
+int ath12k_wifi8_dp_rx_ring_alloc(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+	int ret;
+
+	ret = ath12k_dp_rx_reo_alloc(ab);
+	if (ret) {
+		ath12k_err(ab, "failed to allocate reo destination rings: %d\n", ret);
+		return ret;
+	}
+
+	ret = ath12k_dp_srng_alloc(ab,
+				   &dp->reo_dst_ring[ATH12K_DP_RX_ROAMING_RING1],
+				   HAL_REO_DST_ROAMING,
+				   ATH12K_DP_RX_ROAMING_RING1, 0,
+				   DP_REO_ROAMING_RING_SIZE);
+	if (ret) {
+		ath12k_warn(ab, "failed to alloc reo_dst_ring[%d] for roaming :%d\n",
+			    ATH12K_DP_RX_ROAMING_RING1, ret);
+		return ret;
+	}
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	ret = ath12k_wifi8_dp_ppe2wbm_srng_alloc(ab);
+	if (ret) {
+		ath12k_warn(ab, "failed to alloc ppe2wbm refill and idle buf rings\n");
+		return ret;
+	}
+#endif
+
+	ret = ath12k_dp_srng_alloc(ab, &dp_wifi8->fse_cmd_ring,
+				   HAL_RXOLE_FSE_CMD, 0, 0, DP_FSE_CMD_RING_SIZE);
+	if (ret) {
+		ath12k_warn(ab, "failed to alloc fse_cmd ring :%d\n", ret);
+		return ret;
+	}
+
+	ret = ath12k_dp_srng_alloc(ab, &dp_wifi8->reo_high_prio_cmd_ring,
+				   HAL_REO_CMD, 1, 0, DP_REO_CMD_RING_SIZE);
+	if (ret) {
+		ath12k_warn(ab, "failed to alloc reo_high_prio_cmd ring :%d\n", ret);
+		return ret;
+	}
+
+	ret = ath12k_dp_srng_alloc(ab, &dp_wifi8->reo_flush_ring,
+				   HAL_REO_FLUSH, 0, 0, DP_REO_FLUSH_RING_SIZE);
+	if (ret) {
+		ath12k_warn(ab, "failed to alloc reo_flush_ring: %d\n", ret);
+		return ret;
+	}
+
+	ret = ath12k_wifi8_dp_rx_wbm_srng_alloc(ab);
+	if (ret) {
+		ath12k_warn(ab, "failed to alloc rx wbm refill and idle buf rings\n");
+		return ret;
+	}
+
+	return 0;
+}
+
+int ath12k_wifi8_dp_rx_ring_init(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
 	struct hal_srng *srng;
 	int ret;
 
-	ret = ath12k_dp_rx_reo_setup(ab);
+	ret = ath12k_dp_rx_reo_init(ab);
 	if (ret) {
 		ath12k_err(ab, "failed to initialize reo destination rings: %d\n", ret);
 		return ret;
 	}
 
-	ret = ath12k_dp_srng_setup(ab,
-				   &dp->reo_dst_ring[ATH12K_DP_RX_ROAMING_RING1],
-				   HAL_REO_DST_ROAMING,
-				   ATH12K_DP_RX_ROAMING_RING1, 0,
-				   DP_REO_ROAMING_RING_SIZE);
+	ret = ath12k_dp_srng_init(ab,
+				  &dp->reo_dst_ring[ATH12K_DP_RX_ROAMING_RING1],
+				  HAL_REO_DST_ROAMING,
+				  ATH12K_DP_RX_ROAMING_RING1, 0);
 	if (ret) {
-		ath12k_warn(ab, "failed to set up reo_dst_ring[%d] for roaming :%d\n",
+		ath12k_warn(ab, "failed to init reo_dst_ring[%d] for roaming :%d\n",
 			    ATH12K_DP_RX_ROAMING_RING1, ret);
 		return ret;
 	}
@@ -3355,23 +3501,24 @@ int ath12k_wifi8_dp_rx_ring_setup(struct ath12k_base *ab)
 	ath12k_configure_wbm_rxdma_watermark(ab);
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	ret = ath12k_wifi8_dp_ppe2wbm_srng_setup(ab);
+	ret = ath12k_wifi8_dp_ppe2wbm_srng_init(ab);
 	if (ret) {
-		ath12k_warn(ab, "failed to setup ppe2wbm refill and idle buf rings\n");
+		ath12k_warn(ab, "failed to init ppe2wbm refill and idle buf rings\n");
 		return ret;
 	}
 #endif
 
-	ret = ath12k_wifi8_dp_rx_fse_cmd_srng_setup(ab);
+	ret = ath12k_dp_srng_init(ab, &dp_wifi8->fse_cmd_ring,
+				  HAL_RXOLE_FSE_CMD, 0, 0);
 	if (ret) {
-		ath12k_warn(ab, "failed to set up fse_cmd ring :%d\n", ret);
+		ath12k_warn(ab, "failed to init fse_cmd ring :%d\n", ret);
 		return ret;
 	}
 
-	ret = ath12k_dp_srng_setup(ab, &dp_wifi8->reo_high_prio_cmd_ring,
-				   HAL_REO_CMD, 1, 0, DP_REO_CMD_RING_SIZE);
+	ret = ath12k_dp_srng_init(ab, &dp_wifi8->reo_high_prio_cmd_ring,
+				  HAL_REO_CMD, 1, 0);
 	if (ret) {
-		ath12k_warn(ab, "failed to set up reo_high_prio_cmd ring :%d\n", ret);
+		ath12k_warn(ab, "failed to init reo_high_prio_cmd ring :%d\n", ret);
 		return ret;
 	}
 
@@ -3379,18 +3526,19 @@ int ath12k_wifi8_dp_rx_ring_setup(struct ath12k_base *ab)
 	ath12k_wifi8_hal_reo_init_cmd_ring_offset(ab, srng,
 						  ATH12K_WIFI8_REO_CMD_HIGHPRI_START_NUM);
 
-	ret = ath12k_wifi8_dp_rx_reo_flush_srng_setup(ab);
+	ret = ath12k_dp_srng_init(ab, &dp_wifi8->reo_flush_ring,
+				  HAL_REO_FLUSH, 0, 0);
 	if (ret) {
-		ath12k_warn(ab, "failed to setup reo_flush_ring: %d\n", ret);
+		ath12k_warn(ab, "failed to init reo_flush_ring: %d\n", ret);
 		return ret;
 	}
 
 	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
 		return 0;
 
-	ret = ath12k_wifi8_dp_rx_wbm_srng_setup(ab);
+	ret = ath12k_wifi8_dp_rx_wbm_srng_init(ab);
 	if (ret) {
-		ath12k_warn(ab, "failed to setup rx wbm refill and idle buf rings\n");
+		ath12k_warn(ab, "failed to init rx wbm refill and idle buf rings\n");
 		return ret;
 	}
 

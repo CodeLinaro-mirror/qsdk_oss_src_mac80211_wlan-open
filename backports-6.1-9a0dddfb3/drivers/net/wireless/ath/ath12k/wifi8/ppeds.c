@@ -889,19 +889,6 @@ int ath12k_wifi8_ppeds_attach(struct ath12k_base *ab)
 	}
 
 	/*
-	 * Set the Auto index and hw buffer manager.
-	 */
-	if (ath12k_ppeds_txrx_hw_auto_idx &&
-		ab->dp->hw_params->ds_txrx_hw_auto_idx) {
-		ab->dp->ppe.txrx_hw_auto_idx = 1;
-	}
-
-	if (ath12k_ppeds_hw_buff_mgmt &&
-		ab->dp->hw_params->ds_hw_buff_mgmt) {
-		ab->dp->ppe.hw_buff_mgmt = 1;
-	}
-
-	/*
 	 * REO2PPE cookie conversion configuration.
 	 */
 	ab->hal.hal_ops->hal_ppeds_reo2ppe_cc_config(ab);
@@ -1415,19 +1402,14 @@ static int ath12k_wifi8_ppeds_dp_srng_init(struct ath12k_base *ab, struct dp_srn
 	return 0;
 }
 
-int ath12k_wifi8_dp_srng_ppeds_setup(struct ath12k_base *ab)
+int ath12k_wifi8_dp_srng_ppeds_alloc(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ab->dp;
-	struct dp_ppe_ds_idxs restore_idx = {0};
 	int ret, size;
 	uint8_t idx;
-	struct hal_srng *tqm2ppe_ring;
 
 	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
 		return 0;
-
-	if (ath12k_dp_umac_reset_in_progress(ab))
-		goto skip_ppeds_dp_srng_ring_alloc;
 
 	if (!(ath12k_ppeds_reo2ppe_rings_max) ||
 		(ath12k_ppeds_reo2ppe_rings_max > ATH12K_REO2PPE_MAX_RINGS) ||
@@ -1436,10 +1418,10 @@ int ath12k_wifi8_dp_srng_ppeds_setup(struct ath12k_base *ab)
 		ath12k_warn(ab, "Invalid ring max ppe2tcl:%d reo2ppe:%d\n",
 				ath12k_ppeds_ppe2tcl_rings_max,
 				ath12k_ppeds_reo2ppe_rings_max);
-		goto err;
+		return -EINVAL;
 	}
 
-	ath12k_info(ab, "PPEDS srng setup\n");
+	ath12k_info(ab, "PPEDS srng alloc\n");
 	for (idx = 0; idx < ath12k_ppeds_reo2ppe_rings_max; idx++) {
 		ath12k_info(ab, "PPEDS: Before alloc reo2ppe[%d] ring_id=%d\n",
 		       idx, dp->ppe.reo2ppe_ring[idx].ring_id);
@@ -1449,7 +1431,7 @@ int ath12k_wifi8_dp_srng_ppeds_setup(struct ath12k_base *ab)
 		if (ret) {
 			ath12k_warn(ab, "failed to set up reo2ppe ring:%d ring_num:%d\n",
 					ret, idx);
-			goto err;
+			return ret;
 		}
 		ath12k_info(ab, "PPEDS After alloc reo2ppe[%d] ring_id=%d paddr=%pad\n",
 				idx, dp->ppe.reo2ppe_ring[idx].ring_id,
@@ -1462,11 +1444,35 @@ int ath12k_wifi8_dp_srng_ppeds_setup(struct ath12k_base *ab)
 				0, DP_PPE2TCL_RING_SIZE);
 		if (ret) {
 			ath12k_warn(ab, "failed to set up ppe2tcl ring :%d\n", ret);
-			goto err;
+			return ret;
 		}
 		ath12k_info(ab, "PPEDS alloc ppe2tcl[%d] ring_id=%d paddr=%pad\n",
 				idx, dp->ppe.ppe2tcl_ring[idx].ring_id,
 				&dp->ppe.ppe2tcl_ring[idx].paddr);
+	}
+
+	if (dp->ppe.hw_buff_mgmt) {
+		ret = ath12k_dp_srng_alloc(ab, &dp->ppe.tqm2ppe_txcmp_ring,
+					   HAL_TQM2PPE,
+					   PPEDS_TQM2PPE_TX_CMPLN_RING_NUM, 0,
+					   DP_TQM2PPE_RING_SIZE);
+		if (ret) {
+			ath12k_err(ab,
+				   "failed to alloc wbm2sw ppeds tx completion ring :%d\n",
+				   ret);
+			return ret;
+		}
+	}
+
+	ret = ath12k_dp_srng_alloc(ab, &dp->ppe.ppeds_comp_ring.ppeds_txcmpl_ring,
+				   HAL_TX_COMPLETION,
+				   PPEDS_TX_CMPLN_RING_NUM, 0,
+				   DP_TX_COMP_PPEDS_RING_SIZE);
+	if (ret) {
+		ath12k_err(ab,
+			   "failed to alloc TQM2SW ppeds tx completion ring :%d\n",
+			   ret);
+		return ret;
 	}
 
 	size = sizeof(struct hal_tqm2sw_completion_ring) * DP_TX_COMP_PPEDS_RING_SIZE;
@@ -1474,12 +1480,23 @@ int ath12k_wifi8_dp_srng_ppeds_setup(struct ath12k_base *ab)
 	dp->ppe.ppeds_comp_ring.tx_status_tail = DP_TX_COMP_PPEDS_RING_SIZE - 1;
 	dp->ppe.ppeds_comp_ring.tx_status = kmalloc(size, GFP_KERNEL);
 
-skip_ppeds_dp_srng_ring_alloc:
 	if (!dp->ppe.ppeds_comp_ring.tx_status) {
 		ath12k_err(ab, "PPEDS tx status completion buffer alloc failed\n");
-		ret = -ENOMEM;
-		goto err;
+		return -ENOMEM;
 	}
+
+	return 0;
+}
+
+int ath12k_wifi8_dp_srng_ppeds_init(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ab->dp;
+	struct dp_ppe_ds_idxs restore_idx = {0};
+	int ret;
+	u8 idx;
+
+	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
+		return 0;
 
 	if (!dp->ppe.txrx_hw_auto_idx) {
 		ret = ath12k_wifi8_dp_ppeds_register_soc(dp, &restore_idx);
@@ -1522,19 +1539,15 @@ skip_ppeds_dp_srng_ring_alloc:
 	ath12k_hal_reo_config_reo2ppe_dest_info(ab);
 
 	if (dp->ppe.hw_buff_mgmt) {
-		ret = ath12k_dp_srng_setup(ab, &dp->ppe.tqm2ppe_txcmp_ring,
-				HAL_TQM2PPE,
-				PPEDS_TQM2PPE_TX_CMPLN_RING_NUM, 0,
-				DP_TQM2PPE_RING_SIZE);
+		ret = ath12k_dp_srng_init(ab, &dp->ppe.tqm2ppe_txcmp_ring,
+					  HAL_TQM2PPE,
+					  PPEDS_TQM2PPE_TX_CMPLN_RING_NUM, 0);
 		if (ret) {
 			ath12k_err(ab,
-				"failed to set up wbm2sw ppeds tx completion ring :%d\n",
+				"failed to init wbm2sw ppeds tx completion ring :%d\n",
 				ret);
 			goto err;
 		}
-
-		/* HBM */
-		tqm2ppe_ring = &ab->hal.srng_list[dp->ppe.tqm2ppe_txcmp_ring.ring_id];
 	}
 
 	if (dp->ppe.txrx_hw_auto_idx) {
@@ -1545,14 +1558,13 @@ skip_ppeds_dp_srng_ring_alloc:
 		}
 	}
 
-	ret = ath12k_dp_srng_setup(ab, &dp->ppe.ppeds_comp_ring.ppeds_txcmpl_ring,
-				   HAL_TX_COMPLETION,
-				   PPEDS_TX_CMPLN_RING_NUM, 0,
-				   DP_TX_COMP_PPEDS_RING_SIZE);
+	ret = ath12k_dp_srng_init(ab, &dp->ppe.ppeds_comp_ring.ppeds_txcmpl_ring,
+				  HAL_TX_COMPLETION,
+				  PPEDS_TX_CMPLN_RING_NUM, 0);
 	if (ret) {
 		ath12k_err(ab,
-			    "failed to set up TQM2SW ppeds tx completion ring :%d\n",
-			    ret);
+			   "failed to init TQM2SW ppeds tx completion ring :%d\n",
+			   ret);
 		goto err;
 	}
 
@@ -1579,6 +1591,9 @@ void ath12k_wifi8_dp_srng_ppeds_cleanup(struct ath12k_base *ab)
 
 	for (ring_idx = 0; ring_idx < ath12k_ppeds_reo2ppe_rings_max; ring_idx++)
 		ath12k_dp_srng_cleanup(ab, &dp->ppe.reo2ppe_ring[ring_idx]);
+
+	kfree(dp->ppe.ppeds_comp_ring.tx_status);
+	dp->ppe.ppeds_comp_ring.tx_status = NULL;
 
 	ath12k_dp_srng_cleanup(ab, &dp->ppe.ppeds_comp_ring.ppeds_txcmpl_ring);
 	ath12k_dp_srng_cleanup(ab, &dp->ppe.tqm2ppe_txcmp_ring);
@@ -1664,7 +1679,6 @@ struct ath12k_ppeds_arch_ops ath12k_wifi8_arch_ppeds_ops  = {
 	.ath12k_ppeds_attach = ath12k_wifi8_ppeds_attach,
 	.ath12k_ppeds_detach = ath12k_wifi8_ppeds_detach,
 	.ath12k_ppeds_register_soc = ath12k_wifi8_dp_ppeds_register_soc,
-	.ath12k_ppeds_srng_setup = ath12k_wifi8_dp_srng_ppeds_setup,
 	.ath12k_ppeds_srng_cleanup = ath12k_wifi8_dp_srng_ppeds_cleanup,
 	.ath12k_ppeds_interrupt_start = ath12k_wifi8_dp_ppeds_interrupt_start,
 	.ath12k_ppeds_interrupt_stop = ath12k_wifi8_dp_ppeds_interrupt_stop,

@@ -3379,7 +3379,113 @@ void ath12k_wifi8_dp_tx_ring_cleanup(struct ath12k_base *ab)
 	ath12k_dp_srng_cleanup(ab, &dp_wifi8->rx_ase_cmd_ring);
 }
 
-int ath12k_wifi8_dp_tx_ring_setup(struct ath12k_base *ab)
+int ath12k_wifi8_dp_tx_ring_alloc(struct ath12k_base *ab)
+{
+	int i, tx_comp_ring_num;
+	struct ath12k_dp *dp = ab->dp;
+	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
+	const struct ath12k_hal_tcl_to_cmp_rbm_map *map;
+	int ret;
+
+	for (i = 0; i < ab->hw_params->max_tx_ring; i++) {
+		map = ab->hal.tcl_to_cmp_rbm_map;
+		tx_comp_ring_num = map[i].cmp_ring_num;
+
+		ret = ath12k_dp_srng_alloc(ab, &dp->tx_ring[i].tcl_data_ring,
+					   HAL_TCL_DATA, i, 0,
+					   ath12k_dp_tcl_data_ring_size[i]);
+		if (ret) {
+			ath12k_warn(ab, "failed to set up tcl_data ring (%d) :%d\n",
+				    i, ret);
+			goto err;
+		}
+
+		ret = ath12k_dp_srng_alloc(ab, &dp->tx_ring[i].tcl_comp_ring,
+					   HAL_TX_COMPLETION, tx_comp_ring_num, 0,
+					   ath12k_dp_tx_comp_ring_size[i]);
+		if (ret) {
+			ath12k_warn(ab, "failed to set up tx_comp ring (%d) :%d\n",
+				    tx_comp_ring_num, ret);
+			goto err;
+		}
+	}
+
+	ret = ath12k_dp_srng_alloc(ab, &dp_wifi8->tx_exception, HAL_TX_EXCEPTION, 0, 0,
+				   DP_TX_EXCEPTION_RING_SIZE);
+	if (ret) {
+		ath12k_warn(ab, "failed to set up wbm2sw_release ring :%d\n", ret);
+		goto err;
+	}
+
+	ret = ath12k_dp_srng_alloc(ab, &dp_wifi8->tcl_status_ring, HAL_TCL_STATUS, 0, 0,
+				   DP_TCL_STATUS_RING_SIZE);
+	if (ret) {
+		ath12k_warn(ab, "failed to set up tcl_status ring :%d\n", ret);
+		goto err;
+	}
+
+	ret = ath12k_dp_srng_alloc(ab, &dp_wifi8->tcl_cmd_ring, HAL_TCL_CMD, 0, 0,
+				   DP_TCL_CMD_RING_SIZE);
+	if (ret) {
+		ath12k_warn(ab, "failed to set up tcl_cmd ring :%d\n", ret);
+		goto err;
+	}
+
+	ret = ath12k_dp_srng_alloc(ab, &dp_wifi8->tqm_cmd_ring, HAL_TQM_CMD, 0, 0,
+				   DP_TQM_CMD_RING_SIZE);
+	if (ret) {
+		ath12k_warn(ab, "failed to set up tqm command ring :%d\n", ret);
+		goto err;
+	}
+
+	ret = ath12k_wifi8_hal_tqm_cmd_staging_alloc(ab);
+	if (ret) {
+		ath12k_warn(ab, "failed to allocate tqm staging buffer :%d\n", ret);
+		goto err;
+	}
+
+	ret = ath12k_dp_srng_alloc(ab, &dp_wifi8->tqm_status_ring, HAL_TQM_STATUS, 0, 0,
+				   DP_TQM_STATUS_RING_SIZE);
+	if (ret) {
+		ath12k_warn(ab, "failed to set up tqm_status ring :%d\n", ret);
+		goto err;
+	}
+
+	ret = ath12k_dp_srng_alloc(ab, &dp_wifi8->rx_ase_cmd_ring, HAL_ASE_CMD_RING, 0, 0,
+				   DP_RX_ASE_CMD_RING_SIZE);
+	if (ret) {
+		ath12k_warn(ab, "failed to set up ase_cmd ring :%d\n", ret);
+		goto err;
+	}
+
+	ret = ath12k_dp_srng_alloc(ab, &dp_wifi8->sam_cmd_ring, HAL_SAM_CMD,
+				   0, 0, DP_SAM_CMD_RING_SIZE);
+	if (ret) {
+		ath12k_warn(ab, "failed to setup sam cmd ring: %d\n", ret);
+		goto err;
+	}
+
+	ret = ath12k_wifi8_hal_sam_cmd_staging_alloc(ab);
+	if (ret) {
+		ath12k_warn(ab, "failed to allocate sam staging buffer :%d\n", ret);
+		goto err;
+	}
+
+	ret = ath12k_dp_srng_alloc(ab, &dp_wifi8->sam_status_ring, HAL_SAM_STATUS,
+				   0, 0, DP_SAM_STATUS_RING_SIZE);
+	if (ret) {
+		ath12k_warn(ab, "failed to setup sam status ring: %d\n", ret);
+		goto err;
+	}
+
+	return 0;
+
+err:
+	ath12k_wifi8_dp_tx_ring_cleanup(ab);
+	return ret;
+}
+
+int ath12k_wifi8_dp_tx_ring_init(struct ath12k_base *ab)
 {
 	int i, tx_comp_ring_num;
 	struct ath12k_dp *dp = ab->dp;
@@ -3393,105 +3499,79 @@ int ath12k_wifi8_dp_tx_ring_setup(struct ath12k_base *ab)
 		tx_comp_ring_num = map[i].cmp_ring_num;
 		rbm_id = map[i].rbm_id;
 
-		ret = ath12k_dp_srng_setup(ab, &dp->tx_ring[i].tcl_data_ring,
-					   HAL_TCL_DATA, i, 0,
-					   ath12k_dp_tcl_data_ring_size[i]);
+		ret = ath12k_dp_srng_init(ab, &dp->tx_ring[i].tcl_data_ring,
+					  HAL_TCL_DATA, i, 0);
 		if (ret) {
-			ath12k_warn(ab, "failed to set up tcl_data ring (%d) :%d\n",
+			ath12k_warn(ab, "failed to init tcl_data ring (%d) :%d\n",
 				    i, ret);
-			goto err;
+			return ret;
 		}
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 		ath12k_hal_tx_config_rbm_mapping(ab, i, rbm_id, HAL_TCL_DATA);
 #endif
 
-		ret = ath12k_dp_srng_setup(ab, &dp->tx_ring[i].tcl_comp_ring,
-					   HAL_TX_COMPLETION, tx_comp_ring_num, 0,
-					   ath12k_dp_tx_comp_ring_size[i]);
+		ret = ath12k_dp_srng_init(ab, &dp->tx_ring[i].tcl_comp_ring,
+					  HAL_TX_COMPLETION, tx_comp_ring_num, 0);
 		if (ret) {
-			ath12k_warn(ab, "failed to set up tx_comp ring (%d) :%d\n",
+			ath12k_warn(ab, "failed to init tx_comp ring (%d) :%d\n",
 				    tx_comp_ring_num, ret);
-			goto err;
+			return ret;
 		}
 	}
 
-	ret = ath12k_dp_srng_setup(ab, &dp_wifi8->tx_exception, HAL_TX_EXCEPTION, 0, 0,
-				   DP_TX_EXCEPTION_RING_SIZE);
+	ret = ath12k_dp_srng_init(ab, &dp_wifi8->tx_exception, HAL_TX_EXCEPTION, 0, 0);
 	if (ret) {
-		ath12k_warn(ab, "failed to set up wbm2sw_release ring :%d\n",
-				ret);
-		goto err;
+		ath12k_warn(ab, "failed to init wbm2sw_release ring :%d\n", ret);
+		return ret;
 	}
 
-	ret = ath12k_dp_srng_setup(ab, &dp_wifi8->tcl_status_ring, HAL_TCL_STATUS, 0, 0,
-				   DP_TCL_STATUS_RING_SIZE);
+	ret = ath12k_dp_srng_init(ab, &dp_wifi8->tcl_status_ring, HAL_TCL_STATUS, 0, 0);
 	if (ret) {
-		ath12k_warn(ab, "failed to set up tcl_status ring :%d\n", ret);
-		goto err;
+		ath12k_warn(ab, "failed to init tcl_status ring :%d\n", ret);
+		return ret;
 	}
 
-	ret = ath12k_dp_srng_setup(ab, &dp_wifi8->tcl_cmd_ring, HAL_TCL_CMD, 0, 0,
-				   DP_TCL_CMD_RING_SIZE);
+	ret = ath12k_dp_srng_init(ab, &dp_wifi8->tcl_cmd_ring, HAL_TCL_CMD, 0, 0);
 	if (ret) {
-		ath12k_warn(ab, "failed to set up tcl_cmd ring :%d\n", ret);
-		goto err;
+		ath12k_warn(ab, "failed to init tcl_cmd ring :%d\n", ret);
+		return ret;
 	}
 
-	ret = ath12k_dp_srng_setup(ab, &dp_wifi8->tqm_cmd_ring, HAL_TQM_CMD, 0, 0,
-				   DP_TQM_CMD_RING_SIZE);
+	ret = ath12k_dp_srng_init(ab, &dp_wifi8->tqm_cmd_ring, HAL_TQM_CMD, 0, 0);
 	if (ret) {
-		ath12k_warn(ab, "failed to set up tqm command ring :%d\n", ret);
-		goto err;
+		ath12k_warn(ab, "failed to init tqm command ring :%d\n", ret);
+		return ret;
 	}
 
-	ret = ath12k_wifi8_hal_tqm_cmd_staging_alloc(ab);
+	ret = ath12k_dp_srng_init(ab, &dp_wifi8->tqm_status_ring, HAL_TQM_STATUS, 0, 0);
 	if (ret) {
-		ath12k_warn(ab, "failed to allocate tqm staging buffer :%d\n", ret);
-		goto err;
+		ath12k_warn(ab, "failed to init tqm_status ring :%d\n", ret);
+		return ret;
 	}
 
-	ret = ath12k_dp_srng_setup(ab, &dp_wifi8->tqm_status_ring, HAL_TQM_STATUS, 0, 0,
-				   DP_TQM_STATUS_RING_SIZE);
+	ret = ath12k_dp_srng_init(ab, &dp_wifi8->rx_ase_cmd_ring, HAL_ASE_CMD_RING, 0, 0);
 	if (ret) {
-		ath12k_warn(ab, "failed to set up tqm_status ring :%d\n", ret);
-		goto err;
-	}
-	ret = ath12k_dp_srng_setup(ab, &dp_wifi8->rx_ase_cmd_ring, HAL_ASE_CMD_RING, 0, 0,
-				   DP_RX_ASE_CMD_RING_SIZE);
-	if (ret) {
-		ath12k_warn(ab, "failed to set up ase_cmd ring :%d\n", ret);
-		goto err;
+		ath12k_warn(ab, "failed to init ase_cmd ring :%d\n", ret);
+		return ret;
 	}
 
-	ret = ath12k_dp_srng_setup(ab, &dp_wifi8->sam_cmd_ring, HAL_SAM_CMD,
-				   0, 0, DP_SAM_CMD_RING_SIZE);
+	ret = ath12k_dp_srng_init(ab, &dp_wifi8->sam_cmd_ring, HAL_SAM_CMD, 0, 0);
 	if (ret) {
-		ath12k_warn(ab, "failed to setup sam cmd ring: %d\n", ret);
-		goto err;
+		ath12k_warn(ab, "failed to init sam cmd ring: %d\n", ret);
+		return ret;
 	}
 
-	ret = ath12k_wifi8_hal_sam_cmd_staging_alloc(ab);
+	ret = ath12k_dp_srng_init(ab, &dp_wifi8->sam_status_ring, HAL_SAM_STATUS, 0, 0);
 	if (ret) {
-		ath12k_warn(ab, "failed to allocate sam staging buffer :%d\n", ret);
-		goto err;
-	}
-
-	ret = ath12k_dp_srng_setup(ab, &dp_wifi8->sam_status_ring, HAL_SAM_STATUS,
-				   0, 0, DP_SAM_STATUS_RING_SIZE);
-	if (ret) {
-		ath12k_warn(ab, "failed to setup sam status ring: %d\n", ret);
-		goto err;
+		ath12k_warn(ab, "failed to init sam status ring: %d\n", ret);
+		return ret;
 	}
 
 	/* Send clear command to reset SAM related structures.*/
 	ath12k_wifi8_hal_tx_sam_program_clear(ab);
 
 	return 0;
-
-err:
-	ath12k_wifi8_dp_tx_ring_cleanup(ab);
-	return ret;
 }
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT

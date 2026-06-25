@@ -100,6 +100,8 @@ ath12k_wifi8_dp_ppeds_get_vp_profile(struct ath12k_base *ab,
 int ath12k_wifi8_ppeds_attach_vif(struct ath12k_base *ab,
 				struct ath12k_vif *ahvif,
 				u32 vdev_id, int bank_id, u8 lmac_id);
+int ath12k_wifi8_dp_srng_ppeds_alloc(struct ath12k_base *ab);
+int ath12k_wifi8_dp_srng_ppeds_init(struct ath12k_base *ab);
 static inline struct ath12k_base *
 		ath12k_wifi8_ppeds_get_central_ab(struct ath12k_base *ab)
 {
