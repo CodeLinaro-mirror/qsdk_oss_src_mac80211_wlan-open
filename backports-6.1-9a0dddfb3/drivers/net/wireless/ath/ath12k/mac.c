@@ -3447,7 +3447,7 @@ static void ath12k_peer_assoc_h_crypto(struct ath12k *ar,
 		bss = cfg80211_get_bss(hw->wiphy, def.chan, info->bssid, NULL, 0,
 				       IEEE80211_BSS_TYPE_ANY, IEEE80211_PRIVACY_ANY);
 
-	if (arvif->rsnie_present || arvif->wpaie_present) {
+	if (!sta->epp_peer && (arvif->rsnie_present || arvif->wpaie_present)) {
 		if (sta->ft_auth)
 			arg->need_ptk_4_way = false;
 		else
@@ -3477,7 +3477,8 @@ static void ath12k_peer_assoc_h_crypto(struct ath12k *ar,
 	 * WMI_PEER_NEED_PTK_4_WAY flag to set on peer_flags, hence Allow
 	 * setting ptk_4_way for bridge peer.
 	 */
-	if (ar->supports_6ghz || rsnie || wpaie || arsta->is_bridge_peer) {
+	if (!sta->epp_peer && (ar->supports_6ghz || rsnie || wpaie ||
+			       arsta->is_bridge_peer)) {
 		ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
 			   "%s: rsn ie found\n", __func__);
 		if (sta->ft_auth)
