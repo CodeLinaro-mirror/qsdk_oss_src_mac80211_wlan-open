@@ -1349,12 +1349,6 @@ static void ath12k_core_power_down_device(struct ath12k_hw_group *ag,
 	if (!skip_power_down &&
 	    !test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags)) {
 		ab->qmi.num_radios = U8_MAX;
-		if (ab->is_cumac_chip) {
-			ab->is_cumac_chip = false;
-			ag->cumac_selected = false;
-			ag->cumac_chip_id = ATH12K_CUMAC_CHIP_ID_INVALID;
-		}
-		ab->cumac_configured = false;
 		ath12k_umac_reset_fallback_cleanup(ab);
 		ath12k_hif_mgmt_irq_disable(ab);
 		ath12k_hif_irq_disable(ab);
@@ -1366,6 +1360,12 @@ static void ath12k_core_power_down_device(struct ath12k_hw_group *ag,
 #endif
 		ath12k_qmi_firmware_stop(ab);
 		ath12k_core_cleanup(ab);
+		if (ab->is_cumac_chip) {
+			ab->is_cumac_chip = false;
+			ag->cumac_selected = false;
+			ag->cumac_chip_id = ATH12K_CUMAC_CHIP_ID_INVALID;
+		}
+		ab->cumac_configured = false;
 		total_vdevs = ath12k_core_get_total_num_vdevs(ab);
 		ab->free_vdev_map = (1LL << (ab->num_radios * total_vdevs)) - 1;
 		ab->free_vdev_stats_id_map = 0;
@@ -2319,6 +2319,7 @@ static int ath12k_select_cumac_chip(struct ath12k_hw_group *ag)
 	struct ath12k_base *partner_ab;
 	struct ath12k_base *cumac_ab = NULL;
 	int i, j;
+	u8 best_chip_prio;
 	enum ath12k_cumac_band preferred_cumac_band;
 	enum ath12k_cumac_band curr_band = ATH12K_CUMAC_BAND_NONE;
 	enum ath12k_cumac_band default_prio_band[] = {ATH12K_CUMAC_BAND_2GHZ,
@@ -2356,11 +2357,30 @@ static int ath12k_select_cumac_chip(struct ath12k_hw_group *ag)
 		max_prio_order = ARRAY_SIZE(default_prio_band);
 	}
 
+	if (ag->num_devices == 1) {
+		cumac_ab = ag->ab[0];
+		curr_band = ath12k_get_cumac_band(cumac_ab);
+		goto select_cumac;
+	}
+
+	best_chip_prio = U8_MAX;
+	for (i = 0; i < ag->num_devices; i++) {
+		partner_ab = ag->ab[i];
+		if (!partner_ab || partner_ab->is_bypassed)
+			continue;
+		if (partner_ab->hw_params->cumac_chip_priority &&
+		    (partner_ab->hw_params->cumac_chip_priority < best_chip_prio))
+			best_chip_prio = partner_ab->hw_params->cumac_chip_priority;
+	}
+
 	for (j = 0; j < max_prio_order; j++) {
 		preferred_cumac_band = prio_band[j];
 		for (i = 0; i < ag->num_devices; i++) {
 			partner_ab = ag->ab[i];
 			if (!partner_ab)
+				continue;
+
+			if (partner_ab->hw_params->cumac_chip_priority != best_chip_prio)
 				continue;
 
 			curr_band = ath12k_get_cumac_band(partner_ab);
@@ -2373,6 +2393,7 @@ static int ath12k_select_cumac_chip(struct ath12k_hw_group *ag)
 			break;
 	}
 
+select_cumac:
 	if (!cumac_ab)
 		return -EINVAL;
 
@@ -2433,10 +2454,43 @@ inline int ath12k_wait_for_cumac_completion(struct ath12k_hw_group *ag)
 
 static int ath12k_core_complete_cumac_config(struct ath12k_hw_group *ag)
 {
+	struct ath12k_base *ab = NULL;
 	int ret;
+	int i;
 
 	if (!ag->cumac_enabled)
 		return 0;
+
+	for (i = 0; i < ag->num_devices; i++) {
+		ab = ag->ab[i];
+		if (ab && !ab->is_bypassed)
+			break;
+		ab = NULL;
+	}
+
+	if (!ab) {
+		ath12k_err(NULL, "No valid device found for CUMAC config\n");
+		return -EINVAL;
+	}
+
+	if (!test_bit(WMI_SERVICE_PDEV_SET_CUMAC_CHIP_CMD_SUPPORT,
+		      ab->wmi_ab.svc_map)) {
+		/* FW does not support the CUMAC chip WMI command; hardcode
+		 * chip id 0 as the CUMAC chip and skip the WMI send path.
+		 */
+		ab = ag->ab[0];
+		if (!ab || ab->is_bypassed) {
+			ath12k_err(NULL, "CUMAC chip (device id 0) is unavailable or bypassed\n");
+			return -EINVAL;
+		}
+
+		ath12k_dbg(ab, ATH12K_DBG_BOOT,
+			   "FW does not support CUMAC chip cmd, using chip id 0\n");
+		ag->cumac_chip_id = 0;
+		ag->cumac_selected = true;
+		ab->is_cumac_chip = true;
+		return 0;
+	}
 
 	ret = ath12k_select_cumac_chip(ag);
 	if (ret) {
@@ -2871,6 +2925,12 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 		ath12k_err(ab, "Failed to initialize per radio INI data in driver\n");
 	else
 		ath12k_info(ab, "Initialized per radio INI data in driver\n");
+
+	/* Cache rf_switch_config INI value for use in WMI init and mac registration */
+	ab->rf_switch_config = ath12k_cfg_get(ab, ATH12K_CFG_RF_SWITCH_CONFIG) ? 1 : 0;
+	ath12k_info(ab, "rf_switch_config: %u (%s 5G range)\n",
+		    ab->rf_switch_config,
+		    ab->rf_switch_config ? "secondary/high" : "primary/full");
 
 	mutex_unlock(&ab->core_lock);
 

@@ -2018,7 +2018,11 @@ ath12k_wifi8_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	ath12k_wifi8_dp_dma_align_handler(central_dp, skb);
-	dma_map = ath12k_dp_tx_dma_map(central_dp, skb, msdu_info->data_len, tx_desc,
+
+	/* For multicast packets, map the full buffer since MCAST always uses the slow
+	 * path. skb->len includes any HTT metadata as well.
+	 */
+	dma_map = ath12k_dp_tx_dma_map(central_dp, skb, skb->len, tx_desc,
 				       msdu_info, skb_ctrl);
 
 	if (unlikely(!dma_map)) {
@@ -2547,8 +2551,13 @@ ath12k_wifi8_dp_tx_htt_tx_complete_buf(struct ath12k_dp *dp,
 	if (!peer || !ath12k_dp_link_peer_get_sta(peer))
 		ath12k_dbg(ab, ATH12K_DBG_DATA,
 			   "dp_tx: failed to find the peer with peer_id %d\n", peer_id);
-	else
+	else {
+		if (ts->status == HAL_WBM_TQM_REL_REASON_FRAME_ACKED &&
+		    !(info->flags & IEEE80211_TX_CTL_NO_ACK)) {
+			WRITE_ONCE(peer->peer_stats.last_ack, jiffies);
+		}
 		status.sta = ath12k_dp_link_peer_get_sta(peer);
+	}
 
 	if ((unlikely(ath12k_dp_stats_enabled(dp_pdev))) &&
 	    (unlikely(ath12k_debugfs_is_qos_stats_enabled(dp_pdev->ar)))) {
@@ -3011,6 +3020,14 @@ static void ath12k_wifi8_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 				ath12k_tid_tx_stats(ahvif, tid, msdu->len,
 						    ATH_TX_COMPLETED_PKTS);
 			}
+
+			/* Update peer level protocol stats at TX completion */
+			if (unlikely(ath12k_proto_stats_enabled(dp_pdev)))
+				ath12k_dp_tx_peer_update_proto_stats(peer,
+								     hw_link_id,
+								     msdu,
+								     TX_COMP,
+								     ring);
 		}
 	} else {
 		DP_DEVICE_STATS_INC(dp, tx_err.tx_comp_err[DP_TX_COMP_ERR_INVALID_PEER][ring], 1);
@@ -3092,6 +3109,11 @@ static void ath12k_wifi8_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 			   ts->peer_id);
 		drop_reason = DP_TX_COMP_ERR_INVALID_LINK_PEER;
 		goto exit;
+	}
+
+	if (ts->status == HAL_WBM_TQM_REL_REASON_FRAME_ACKED &&
+	    !(info->flags & IEEE80211_TX_CTL_NO_ACK)) {
+		WRITE_ONCE(link_peer->peer_stats.last_ack, jiffies);
 	}
 
 	status.sta = ath12k_dp_link_peer_get_sta(link_peer);
@@ -3707,8 +3729,6 @@ void ath12k_wifi8_dp_tx_ring_cleanup(struct ath12k_base *ab)
 	ath12k_dp_srng_cleanup(ab, &dp_wifi8->sam_status_ring);
 	ath12k_dp_srng_cleanup(ab, &dp_wifi8->sam_cmd_ring);
 	ath12k_dp_srng_cleanup(ab, &dp_wifi8->rx_ase_cmd_ring);
-	ath12k_dp_srng_cleanup(ab, &dp_wifi8->sam_status_ring);
-	ath12k_dp_srng_cleanup(ab, &dp_wifi8->sam_cmd_ring);
 }
 
 int ath12k_wifi8_dp_tx_ring_setup(struct ath12k_base *ab)

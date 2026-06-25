@@ -831,7 +831,8 @@ static void ieee80211_del_chanctx(struct ieee80211_local *local,
 {
 	lockdep_assert_wiphy(local->hw.wiphy);
 
-	drv_remove_chanctx(local, ctx);
+	if (ctx->driver_present)
+		drv_remove_chanctx(local, ctx);
 
 	if (!skip_idle_recalc)
 		ieee80211_recalc_idle(local);
@@ -1842,6 +1843,22 @@ static int ieee80211_vif_use_reserved_switch(struct ieee80211_local *local)
 		}
 
 		ctx->conf.radar_enabled = false;
+
+		/*
+		 * The reserved channel may have become DFS-unavailable after
+		 * reservation — e.g. radar was detected on it while the CSA
+		 * countdown was in progress.
+		 */
+		if (!cfg80211_chandef_dfs_nol_clear(local->hw.wiphy,
+						    &ctx->conf.def)) {
+			wiphy_info(local->hw.wiphy,
+				   "aborting CSA: reserved channel %u MHz is in NOL\n",
+				   ctx->conf.def.chan ?
+				   ctx->conf.def.chan->center_freq : 0);
+			err = -EINVAL;
+			goto err;
+		}
+
 		list_for_each_entry(link, &ctx->reserved_links,
 				    reserved_chanctx_list) {
 			if (ieee80211_link_has_in_place_reservation(link) &&

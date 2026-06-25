@@ -685,6 +685,7 @@ enum ath12k_dbg_htt_tlv_tag {
 	HTT_STATS_FTM_TAG				= 234,
 	HTT_STATS_PDEV_FTM_TPCCAL_EXT_TAG		= 235,
 	HTT_STATS_TX_PDEV_BN_RATE_TAG			= 236,
+	HTT_STATS_RX_PDEV_UL_MUMIMO_TRIG_BN_STATS_TAG   = 237,
 	HTT_STATS_PDEV_ANI_STATS_HIST_TAG		= 240,
 	HTT_STATS_ANI_SCALAR_TAG			= 241,
 	HTT_STATS_ANI_PKT_CNT_TAG			= 242,
@@ -3395,7 +3396,7 @@ struct ath12k_htt_tx_selfgen_be_err_stats_tlv {
 	__le32 be_bsr_trigger_err;
 	__le32 be_mu_bar_trigger_err;
 	__le32 be_mu_rts_trigger_err;
-	__le32 be_ulmumimo_trigger_err;
+	__le32 be_ul_mumimo_total_trigger_err;
 	__le32 be_mu_mimo_brp_err_num_cbf_rxd[ATH12K_HTT_TX_NUM_BE_MUMIMO_USER_STATS];
 	__le32 be_su_ndpa_flushed;
 	__le32 be_su_ndp_flushed;
@@ -3422,6 +3423,8 @@ struct ath12k_htt_tx_selfgen_bn_err_stats_tlv {
 	__le32 bn_mu_bar_trigger_partial_resp;
 	__le32 bn_mu_rts_trigger_blocked;
 	__le32 bn_bsr_trigger_blocked;
+	__le32 bn_ul_mumimo_total_trigger_err;
+	__le32 bn_ul_mumimo_trigger_err[ATH12K_HTT_TX_NUM_BN_MUMIMO_USER_STATS];
 } __packed;
 
 enum ath12k_htt_tx_selfgen_sch_tsflag_error_stats {
@@ -3488,7 +3491,8 @@ struct ath12k_htt_tx_selfgen_bn_sched_status_stats_tlv {
 	__le32 bn_mu_bar_sch_flag_err[ATH12K_HTT_TX_SELFGEN_SCH_TSFLAG_ERR_STATS];
 	__le32 bn_basic_trig_sch_status[ATH12K_HTT_TX_PDEV_STATS_NUM_TX_ERR_STATUS];
 	__le32 bn_basic_trig_sch_flag_err[ATH12K_HTT_TX_SELFGEN_SCH_TSFLAG_ERR_STATS];
-
+	__le32 bn_ulmumimo_trig_sch_status[ATH12K_HTT_TX_PDEV_STATS_NUM_TX_ERR_STATUS];
+	__le32 bn_ulmumimo_trig_sch_flag_err[ATH12K_HTT_TX_SELFGEN_SCH_TSFLAG_ERR_STATS];
 } __packed;
 
 struct ath12k_htt_tx_pdev_be_dl_mu_ofdma_sch_stats_tlv {
@@ -4422,7 +4426,58 @@ struct ath12k_htt_rx_pdev_ul_mumimo_trig_be_stats_tlv {
 	 * in response to basic trigger. Typically a data response is expected.
 	 */
 	__le32 be_ul_mumimo_basic_trigger_rx_qos_null_only;
-};
+} __packed;
+
+#define ATH12K_HTT_RX_PDEV_STATS_NUM_BN_BW_COUNTERS  5  /* 20,40,80,160,320 MHz */
+
+struct ath12k_htt_rx_pdev_ul_mumimo_trig_bn_stats_tlv {
+	__le32 mac_id__word;
+
+	/* Number of times UL MUMIMO RX packets received */
+	__le32 rx_11bn_ul_mumimo;
+
+	/* 11BE UHR UL MU-MIMO RX TB PPDU MCS stats */
+	__le32 bn_ul_mumimo_rx_mcs[ATH12K_HTT_RX_PDEV_STATS_NUM_BN_MCS_COUNTERS];
+	/* 11BE UHR UL MU-MIMO RX GI & LTF stats.
+	 * Index 0 indicates 1xLTF + 1.6 msec GI
+	 * Index 1 indicates 2xLTF + 1.6 msec GI
+	 * Index 2 indicates 4xLTF + 3.2 msec GI
+	 */
+	__le32 bn_ul_mumimo_rx_gi[ATH12K_HTT_RX_PDEV_STATS_NUM_GI_COUNTERS]
+				 [ATH12K_HTT_RX_PDEV_STATS_NUM_BN_MCS_COUNTERS];
+	/* 11BE UHR UL MU-MIMO RX TB PPDU NSS stats
+	 * (Increments the individual user NSS in the UL MU MIMO PPDU received)
+	 */
+	__le32 bn_ul_mumimo_rx_nss[ATH12K_HTT_RX_PDEV_STATS_ULMUMIMO_NUM_SPATIAL_STREAMS];
+	/* 11BE EHT UL MU-MIMO RX TB PPDU BW stats */
+	__le32 bn_ul_mumimo_rx_bw[ATH12K_HTT_RX_PDEV_STATS_NUM_BN_BW_COUNTERS];
+	/* Number of times UL MUMIMO TB PPDUs received with STBC */
+	__le32 bn_ul_mumimo_rx_stbc;
+	/* Number of times UL MUMIMO TB PPDUs received with LDPC */
+	__le32 bn_ul_mumimo_rx_ldpc;
+
+	/* RSSI in dBm for Rx TB PPDUs */
+	s8 bn_rx_ul_mumimo_chain_rssi_in_dbm
+				[ATH12K_HTT_RX_PDEV_STATS_ULMUMIMO_NUM_SPATIAL_STREAMS]
+				[ATH12K_HTT_RX_PDEV_STATS_NUM_BN_BW_COUNTERS];
+	/* Target RSSI programmed in UL MUMIMO triggers (units dBm) */
+	s8 bn_rx_ul_mumimo_target_rssi[ATH12K_HTT_RX_PDEV_MAX_ULMUMIMO_NUM_USER]
+				      [ATH12K_HTT_RX_PDEV_STATS_NUM_BN_BW_COUNTERS];
+	/* FD RSSI measured for Rx UL TB PPDUs (units dBm) */
+	s8 bn_rx_ul_mumimo_fd_rssi[ATH12K_HTT_RX_PDEV_MAX_ULMUMIMO_NUM_USER]
+				  [ATH12K_HTT_RX_PDEV_STATS_ULMUMIMO_NUM_SPATIAL_STREAMS];
+	/* Average pilot EVM measued for RX UL TB PPDU */
+	s8 bn_rx_ulmumimo_pilot_evm_db_mean[ATH12K_HTT_RX_PDEV_MAX_ULMUMIMO_NUM_USER]
+				[ATH12K_HTT_RX_PDEV_STATS_ULMUMIMO_NUM_SPATIAL_STREAMS];
+	/** Number of times UL MUMIMO TB PPDUs received in a punctured mode */
+	__le32 bn_rx_ul_mumimo_punctured_mode
+		[ATH12K_HTT_RX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS];
+	/**
+	 * Number of UHR UL MU-MIMO per-user responses containing only a QoS null
+	 * in response to basic trigger. Typically a data response is expected.
+	 */
+	__le32 bn_ul_mumimo_basic_trigger_rx_qos_null_only;
+} __packed;
 
 #define ATH12K_HTT_MAX_NUM_CHAN_ACC_LAT_INTR	9
 

@@ -938,7 +938,7 @@ int ath12k_wifi8_hal_tx_sam_peer_clear_cmd(struct ath12k_dp_wifi8 *dp_wifi8,
  */
 int ath12k_wifi8_hal_tx_sam_cmd_send(struct ath12k_base *ab, struct hal_srng *srng,
 				     int src_link_id, enum hal_tlv_tag_be type, int id,
-				     bool clear_all)
+				     bool clear_all, bool force)
 {
 	struct hal_tlv_64_hdr *sam_desc, *tlv_desc;
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(ab->dp);
@@ -950,7 +950,7 @@ int ath12k_wifi8_hal_tx_sam_cmd_send(struct ath12k_base *ab, struct hal_srng *sr
 		return -ENOMEM;
 	}
 
-	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
+	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags) && !force)
 		return 0;
 
 	spin_lock_bh(&srng->lock);
@@ -1010,14 +1010,14 @@ void ath12k_wifi8_hal_tx_sam_program_clear(struct ath12k_base *ab)
 	srng = &ab->hal.srng_list[dp_wifi8->sam_cmd_ring.ring_id];
 	ret = ath12k_wifi8_hal_tx_sam_cmd_send(ab, srng, -1,
 					       HAL_SAM_MPDU_QUEUE_CLEAR_PROGRAMMING_BO,
-					       -1, true);
+					       -1, true, true);
 
 	if (ret < 0)
 		ath12k_warn(ab, "failed to send SAM mpdu clear command: %d\n", ret);
 
 	ret = ath12k_wifi8_hal_tx_sam_cmd_send(ab, srng, -1,
 					       HAL_SAM_MSDU_QUEUE_CLEAR_PROGRAMMING_BO,
-					       -1, true);
+					       -1, true, true);
 
 	if (ret < 0)
 		ath12k_warn(ab, "failed to send SAM msdu clear command: %d\n", ret);
@@ -1029,7 +1029,7 @@ void ath12k_wifi8_hal_tx_sam_program_clear(struct ath12k_base *ab)
 	for (i = 0; i < HAL_TX_NUM_MAX_LINKS; i++) {
 		ret = ath12k_wifi8_hal_tx_sam_cmd_send(ab, srng, i,
 						       HAL_SAM_PEER_CLEAR_PROGRAMMING_BO,
-						       -1, true);
+						       -1, true, true);
 
 		if (ret < 0)
 			ath12k_warn(ab,
@@ -1161,3 +1161,65 @@ err:
 
 	return ret;
 }
+
+/**
+ * ath12k_wifi8_hal_tx_set_pcp_tid_map() - Write PCP-TID map to a single
+ *   wifi8 SOC TCL block.
+ * @ab:  Base structure identifying the single SOC to program.
+ * @map: 8-entry PCP-to-TID array; index = PCP (0-7), value = TID (0-7).
+ *
+ * Dumb register writer — no validation, no SOC iteration.
+ * SOC iteration is handled by the caller (ath12k_dp_program_pcp_tid_map).
+ */
+void ath12k_wifi8_hal_tx_set_pcp_tid_map(struct ath12k_base *ab, const u8 *map)
+{
+	u32 reg_val;
+
+	reg_val = u32_encode_bits(map[0], HAL_TCL_R0_PCP_TID_MAP_PCP_0) |
+		  u32_encode_bits(map[1], HAL_TCL_R0_PCP_TID_MAP_PCP_1) |
+		  u32_encode_bits(map[2], HAL_TCL_R0_PCP_TID_MAP_PCP_2) |
+		  u32_encode_bits(map[3], HAL_TCL_R0_PCP_TID_MAP_PCP_3) |
+		  u32_encode_bits(map[4], HAL_TCL_R0_PCP_TID_MAP_PCP_4) |
+		  u32_encode_bits(map[5], HAL_TCL_R0_PCP_TID_MAP_PCP_5) |
+		  u32_encode_bits(map[6], HAL_TCL_R0_PCP_TID_MAP_PCP_6) |
+		  u32_encode_bits(map[7], HAL_TCL_R0_PCP_TID_MAP_PCP_7);
+
+	ath12k_hif_write32(ab, HAL_TCL_R0_PCP_TID_MAP_ADDR, reg_val);
+}
+EXPORT_SYMBOL(ath12k_wifi8_hal_tx_set_pcp_tid_map);
+
+/**
+ * ath12k_wifi8_hal_tx_set_tid_map_precedence() - Write TID precedence to a
+ *   single wifi8 SOC TCL block.
+ * @ab:         Base structure identifying the single SOC to program.
+ * @precedence: Unified TID map precedence value (0 = DSCP, 1 = PCP).
+ *
+ * On wifi8 the unified userspace VAL maps directly to the hardware register
+ * value (no normalization required):
+ *   0 (DSCP) -> hw VAL 0: HLOS > DSCP > PCP
+ *   1 (PCP)  -> hw VAL 1: HLOS > PCP  > DSCP
+ *
+ * Any value other than 0 or 1 is rejected with ath12k_warn(); the register
+ * is not written.
+ *
+ * wifi8 register field is 1-bit (HAL_TCL_TID_MAP_PRTY_VAL_MASK = GENMASK(0,0)).
+ * SOC iteration is handled by the caller (ath12k_dp_program_tid_map_precedence).
+ */
+void ath12k_wifi8_hal_tx_set_tid_map_precedence(struct ath12k_base *ab,
+						const u8 precedence)
+{
+	u32 reg_val;
+
+	/*
+	 * Dumb register writer — no validation.
+	 * Validation (0 or 1 only) is performed by the caller (dp.c).
+	 *
+	 * wifi8 register field is 1-bit: HAL_TCL_TID_MAP_PRTY_VAL_MASK = GENMASK(0,0).
+	 * The unified VAL maps directly to the hardware value:
+	 *   0 (DSCP) -> hw VAL 0 (HLOS > DSCP > PCP)
+	 *   1 (PCP)  -> hw VAL 1 (HLOS > PCP  > DSCP)
+	 */
+	reg_val = u32_encode_bits(precedence, HAL_TCL_TID_MAP_PRTY_VAL_MASK);
+	ath12k_hif_write32(ab, HAL_TCL_R0_PCP_TID_MAP_PRTY_OFFSET, reg_val);
+}
+EXPORT_SYMBOL(ath12k_wifi8_hal_tx_set_tid_map_precedence);

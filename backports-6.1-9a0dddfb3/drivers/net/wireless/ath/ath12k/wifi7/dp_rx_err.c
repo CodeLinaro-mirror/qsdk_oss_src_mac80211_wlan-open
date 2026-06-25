@@ -323,6 +323,7 @@ static bool ath12k_wifi7_handle_null_queue(struct ath12k_pdev_dp *dp_pdev,
 {
 	struct rx_msdu_desc_info *rx_msdu_info = &spd_desc_l->rx_msdu_info;
 	bool is_mcbc = rx_msdu_info->da_is_mcbc;
+	bool ra_is_mcbc = is_mcbc;
 	bool is_4addr_sta = peer->vdev_type_4addr & BIT(NL80211_IFTYPE_STATION);
 	bool to_ds = rx_msdu_info->to_ds;
 	bool fr_ds = rx_msdu_info->fr_ds;
@@ -342,7 +343,10 @@ static bool ath12k_wifi7_handle_null_queue(struct ath12k_pdev_dp *dp_pdev,
 		if (is_4addr_sta && is_mcbc && !to_ds && !allow_3addr_mc)
 			return true;
 
-		if ((fr_ds && to_ds && peer && !peer->use_4addr) || is_mcbc) {
+		if (peer)
+			ra_is_mcbc = is_mcbc && !peer->is_reset_mcbc;
+
+		if ((fr_ds && to_ds && peer && !peer->use_4addr) || ra_is_mcbc) {
 			ath12k_wifi7_convert_n_deliver_nw_frame(dp_pdev,
 								spd_desc_l,
 								peer, rx_status,

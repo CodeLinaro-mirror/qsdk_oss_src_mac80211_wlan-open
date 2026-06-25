@@ -478,6 +478,8 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 	for (i = 0; i < HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX; i++)
 		ath12k_hal_tx_set_dscp_tid_map(ab, ath12k_default_dscp_tid_map, i);
 
+	ath12k_hal_tx_set_pcp_tid_map(ab, ath12k_default_pcp_tid_map);
+
 	ret = ath12k_wifi8_dp_rx_ring_setup(ab);
 	if (ret) {
 		ath12k_warn(ab, "rx allod failed ret = %d\n", ret);
@@ -648,6 +650,8 @@ void ath12k_wifi8_srng_hw_ring_disable(struct ath12k_base *ab)
 	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->reo_flush_ring);
 	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->tx_peer_telemetry_ring);
 	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->rx_peer_telemetry_ring);
+	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->sam_cmd_ring);
+	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->sam_status_ring);
 }
 
 static int ath12k_wifi8_dp_op_device_init(struct ath12k_dp *dp)
@@ -745,6 +749,9 @@ static struct ath12k_dp_hw_group *ath12k_wifi8_dp_hw_group_alloc(void)
 		dp_hw_grp_wifi8->stats_id_map[i].hw_link_id =
 			ATH12K_DP_HW_LINK_ID_INVALID;
 	}
+
+	memcpy(dp_hw_grp->pcp_tid_map, ath12k_default_pcp_tid_map,
+	       sizeof(dp_hw_grp->pcp_tid_map));
 
 	return dp_hw_grp;
 }

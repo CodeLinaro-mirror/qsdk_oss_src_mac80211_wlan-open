@@ -591,7 +591,7 @@ int ath12k_wifi7_dp_rx_h_undecap(struct ath12k_pdev_dp *dp_pdev,
 	u8 allow_3addr_mc = false;
 	struct ath12k_vif *ahvif;
 	u32 pkt_reason;
-	u8 is_mcbc;
+	u8 is_mcbc, ra_is_mcbc;
 	struct ieee80211_vif *vif;
 
 	ath12k_wifi7_dp_extract_rx_desc_data(dp, &rx_desc_data, desc, desc);
@@ -620,13 +620,16 @@ int ath12k_wifi7_dp_rx_h_undecap(struct ath12k_pdev_dp *dp_pdev,
 		status->flag |= RX_FLAG_8023;
 
 		is_mcbc = rx_msdu_info->da_is_mcbc;
+		ra_is_mcbc = is_mcbc;
+		if (peer)
+			ra_is_mcbc = is_mcbc && !peer->is_reset_mcbc;
 
 		/* mac80211 allows fast path only for authorized STA */
 		if (ehdr->h_proto == cpu_to_be16(ETH_P_PAE) ||
 		    enctype == HAL_ENCRYPT_TYPE_TKIP_MIC) {
 			ath12k_wifi7_dp_rx_h_undecap_eth(dp_pdev, msdu, enctype, status,
 							 tlv_info->mesh_ctrl_present,
-							 desc, is_mcbc, tid);
+							 desc, ra_is_mcbc, tid);
 			break;
 		}
 
@@ -663,7 +666,7 @@ int ath12k_wifi7_dp_rx_h_undecap(struct ath12k_pdev_dp *dp_pdev,
 		if (rx_msdu_info->fr_ds && rx_msdu_info->to_ds && peer && !peer->use_4addr) {
 			ath12k_wifi7_dp_rx_h_undecap_eth(dp_pdev, msdu, enctype, status,
 							 tlv_info->mesh_ctrl_present,
-							 desc, is_mcbc, tid);
+							 desc, ra_is_mcbc, tid);
 			break;
 		}
 
@@ -671,11 +674,11 @@ int ath12k_wifi7_dp_rx_h_undecap(struct ath12k_pdev_dp *dp_pdev,
 		/* PN for mcast packets will be validated in mac80211;
 		 * remove eth header and add 802.11 header.
 		 */
-		if (is_mcbc && decrypted)
+		if (ra_is_mcbc && decrypted)
 			ath12k_wifi7_dp_rx_h_undecap_eth(dp_pdev, msdu, enctype,
 							 status,
 							 tlv_info->mesh_ctrl_present,
-							 desc, is_mcbc, tid);
+							 desc, ra_is_mcbc, tid);
 		break;
 	case DP_RX_DECAP_TYPE_8023:
 		pkt_reason = ATH_RX_8023_PKTS;
@@ -1109,7 +1112,7 @@ ath12k_wifi7_dp_process_reo_rx_packets(struct ath12k_dp *dp,
 				prev_hw_link_id = 0xff;
 				continue;
 			}
-			is_delay_enabled = ath12k_dp_delay_stats_enabled(dp_pdev);
+			is_delay_enabled = ath12k_dp_latency_stats_enabled(dp_pdev);
 
 			tid_rx_stats_ring = &dp_pdev->tid_stats.tid_rx[ring_id][0];
 

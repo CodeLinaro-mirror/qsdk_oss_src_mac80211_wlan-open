@@ -1997,6 +1997,12 @@ ath12k_wifi8_dp_rx_process_msdu(struct ath12k_pdev_dp *dp_pdev,
 	rx_status->flag |= RX_FLAG_SKIP_MONITOR | RX_FLAG_DUP_VALIDATED;
 	DP_PEER_STATS_PKT_LEN(peer, rx, ring_id, sent_to_stack, link_id, 1, msdu_len);
 
+	if (peer && unlikely(ath12k_dp_stats_enabled(dp_pdev)) &&
+	    ath12k_proto_stats_enabled(dp_pdev) &&
+	    tlv_info->decap == DP_RX_DECAP_TYPE_ETHERNET2_DIX)
+		ath12k_dp_rx_update_protocol_stats(peer, link_id, msdu,
+						   RX_SENT_TO_STACK, ring_id);
+
 	return DP_RX_SUCCESS;
 
 free_out:

@@ -108,6 +108,9 @@ extern const struct ath12k_hw_version_map ath12k_wifi7_hw_ver_map[];
 #define HAL_TCL_PCP_TID_MAP_MASK	GENMASK(23, 0)
 /* bits [3:0]: precedence VAL (0-11) */
 #define HAL_TCL_TID_MAP_PRTY_VAL_MASK	GENMASK(3, 0)
+/* wifi7 hardware VAL encodings for the 4-bit precedence field */
+#define HAL_TCL_TID_MAP_PRTY_VAL_DSCP	0   /* DSCP > PCP > HLOS (S-VLAN first) */
+#define HAL_TCL_TID_MAP_PRTY_VAL_PCP	4   /* PCP  > DSCP > HLOS (S-VLAN first) */
 /* bits [7:5]: default TID (0-7) */
 #define HAL_TCL_TID_MAP_PRTY_DEF_MASK	GENMASK(7, 5)
 #define HAL_TCL_R0_PCP_TID_MAP_ADDR	(HAL_SEQ_WCSS_UMAC_TCL_REG \

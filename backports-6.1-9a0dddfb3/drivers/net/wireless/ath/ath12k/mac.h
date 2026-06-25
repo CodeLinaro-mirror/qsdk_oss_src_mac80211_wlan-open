@@ -573,8 +573,10 @@ int ath12k_mac_mlo_standby_teardown(struct ath12k_hw *ah, bool standby_teardown)
 void ath12k_mac_stop(struct ath12k *ar);
 bool ath12k_mac_validate_active_radio_count(struct ath12k_hw *ah);
 int ath12k_mac_pdev_suspend(struct ath12k *ar);
-int ath12k_mac_set_eht_txbf_conf(struct ath12k_link_vif *arvif);
-int ath12k_mac_set_he_txbf_conf(struct ath12k_link_vif *arvif);
+int ath12k_mac_set_eht_txbf_conf(struct ath12k_link_vif *arvif, u32 *val,
+				 bool is_cmn_param);
+int ath12k_mac_set_he_txbf_conf(struct ath12k_link_vif *arvif, u32 *val,
+				bool is_cmn_param);
 int ath12k_mac_pdev_resume(struct ath12k *ar);
 int ath12k_mac_op_set_monitor_flags(struct ieee80211_hw *hw,
 				    struct ieee80211_vif *vif, u32 flags);
@@ -861,6 +863,8 @@ void ath12k_mac_get_6ghz_power_mode_decision(
 
 u8 ath12k_get_nss_160mhz(struct ath12k *ar, u8 max_nss);
 u8 ath12k_get_nss_320mhz(struct ath12k *ar, u8 max_nss);
+int ath12k_mac_set_vht_txbf_conf(struct ath12k_link_vif *arvif,
+				 u32 *val);
 void ath12k_mac_ap_ps_recalc(struct ath12k *ar);
 void ath12k_ap_ps_recalc_work(struct wiphy *wiphy, struct wiphy_work *work);
 

@@ -1076,8 +1076,9 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 		memcpy(addr, peer->addr, ETH_ALEN);
 	}
 
-	if (pubsta && pubsta->valid_links) {
-		status->link_valid = 1;
+	if (pubsta) {
+		if (pubsta->valid_links)
+			status->link_valid = 1;
 		status->link_id = peer->hw_links[hw_link_id];
 
 		link_peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev,

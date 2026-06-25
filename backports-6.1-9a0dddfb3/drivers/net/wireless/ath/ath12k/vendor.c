@@ -297,6 +297,362 @@ ath12k_tid_map_prty_policy[QCA_WLAN_VENDOR_ATTR_TID_MAP_PRECEDENCE_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_TID_MAP_PRECEDENCE_TID_DEF] = { .type = NLA_U8 },
 };
 
+static const struct nla_policy
+ath12k_multi_bss_param_policy[QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAM_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAM_REF_BSS_IFINDEX] = {.type = NLA_U32,},
+	[QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAM_REF_BSS_LINKID] = { .type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAM_CONFIGS] = { .type = NLA_NESTED },
+};
+
+static const struct nla_policy
+ath12k_multi_bss_config_policy[QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAMS_INFO_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAM_ID] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAM_VAL_1] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAM_VAL_2] = { .type = NLA_U32 },
+};
+
+static int ath12k_vendor_send_multi_bss_vdev_param_wmi_cmd(struct ath12k_link_vif *arvif,
+							   u32 param_id, u32 param_value)
+
+{
+	u32 val, wmi_param_id = 0;
+	int ret = 0;
+
+	switch (param_id) {
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_BEACON_INT:
+		wmi_param_id =  WMI_VDEV_PARAM_BEACON_INTERVAL;
+		break;
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_VHT_MU_BFMER:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_VHT_SU_BFMER:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_VHT_SU_BFMEE:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_VHT_SOUNDING_DIM:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_VHT_BFMEE_STS:
+		ret = ath12k_mac_set_vht_txbf_conf(arvif, &val);
+		if (ret) {
+			ath12k_err(arvif->ar->ab,
+				   "failed to get vht txbf conf value for param:%u",
+				   param_id);
+			return ret;
+		}
+		param_value = val;
+		wmi_param_id = WMI_VDEV_PARAM_TXBF;
+		break;
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_EHT_BFME_SS_80:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_EHT_BFME_SS_160:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_EHT_BFME_SS_320:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_HE_SU_BFMER:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_HE_SU_BFMEE:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_HE_DL_MU_OFDMA:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_HE_DL_MU_OFDMA_BFER:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_HE_UL_MU_OFDMA:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_HE_MU_BEAMFORMER:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_HE_UL_MUMIMO:
+		ret = ath12k_mac_set_he_txbf_conf(arvif, &val, true);
+		if (ret) {
+			ath12k_err(arvif->ar->ab,
+				   "failed to get he txbf conf value for param:%u",
+				   param_id);
+			return ret;
+		}
+		param_value = val;
+		wmi_param_id = WMI_VDEV_PARAM_SET_HEMU_MODE;
+		break;
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_HE_RTS_THRESHOLD:
+		wmi_param_id = WMI_VDEV_PARAM_RTS_THRESHOLD;
+		break;
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_EHT_SU_BFMER:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_EHT_SU_BFMEE:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_EHT_MU_BFMER:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_EHT_DL_MU_OFDMA:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_EHT_UL_MU_OFDMA:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_EHT_DL_OFDMA_MUMIMO:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_EHT_UL_OFDMA_MUMIMO:
+		ret = ath12k_mac_set_eht_txbf_conf(arvif, &val, true);
+		if (ret) {
+			ath12k_err(arvif->ar->ab,
+				   "failed to get eht txbf conf value for param:%u",
+				   param_id);
+			return ret;
+		}
+		param_value = val;
+		wmi_param_id = WMI_VDEV_PARAM_SET_EHT_MU_MODE;
+		break;
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_EHT_LTF:
+		wmi_param_id = WMI_VDEV_PARAM_EHT_LTF;
+		break;
+	default:
+		ath12k_err(arvif->ar->ab, "param_id:%u not found", param_id);
+		return -EINVAL;
+	}
+
+	ret = ath12k_wmi_multi_vdev_set_param(arvif->ar, arvif->mbssid_info,
+					      wmi_param_id, param_value);
+	if (ret) {
+		ath12k_info(arvif->ar->ab,
+			    "failed multi vdev wmi for param_id:%u vdev_id:%u ret:%d",
+			    param_id, arvif->vdev_id, ret);
+	}
+
+	return ret;
+}
+
+static int ath12k_vendor_apply_cmn_param_to_vdevs(struct ath12k_link_vif *arvif,
+						  u32 param_id, u32 val)
+{
+	struct ieee80211_bss_conf *bss_conf =
+		ath12k_mac_get_link_bss_conf(arvif);
+
+	if (!bss_conf) {
+		ath12k_err(arvif->ar->ab, "unable to access bss link conf");
+		return -EINVAL;
+	}
+
+	switch (param_id) {
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_BEACON_INT:
+		bss_conf->beacon_int = val;
+		arvif->beacon_interval = val;
+		break;
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_VHT_MU_BFMER:
+		bss_conf->vht_mu_beamformer = val;
+		break;
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_VHT_SU_BFMER:
+		bss_conf->vht_su_beamformer = val;
+		break;
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_VHT_SU_BFMEE:
+		bss_conf->vht_su_beamformee = val;
+		break;
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_HE_SU_BFMER:
+		bss_conf->he_su_beamformer = val;
+		break;
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_HE_SU_BFMEE:
+		bss_conf->he_su_beamformee = val;
+		break;
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_HE_MU_BEAMFORMER:
+		bss_conf->he_mu_beamformer = val;
+		break;
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_HE_UL_MUMIMO:
+		bss_conf->he_full_ul_mumimo = val;
+		break;
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_HE_RTS_THRESHOLD:
+		bss_conf->frame_time_rts_th = val;
+		break;
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_EHT_SU_BFMER:
+		bss_conf->eht_su_beamformer = val;
+		break;
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_EHT_SU_BFMEE:
+		bss_conf->eht_su_beamformee = val;
+		break;
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_EHT_MU_BFMER:
+		bss_conf->eht_mu_beamformer = val;
+		break;
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_EHT_BFME_SS_80:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_EHT_BFME_SS_160:
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_EHT_BFME_SS_320:
+	/*
+	 * Setting these parameters to non-zero in userspace enables
+	 * EHT SU beamformee (SU_BFMEE)
+	 */
+		if (val > 0)
+			bss_conf->eht_su_beamformee = 1;
+		break;
+	case QCA_WLAN_VENDOR_MULTI_BSS_PARAM_ID_ENABLE_MCS15:
+		bss_conf->enable_mcs15 = val;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int ath12k_vendor_set_cmn_param(struct ath12k_link_vif *arvif,
+				       struct ath12k_vif *ahvif,
+				       u32 param_id, u32 value)
+{
+	struct ath12k_mbssid_info *mbssid_info = arvif->mbssid_info;
+	struct ieee80211_bss_conf *bss_conf =
+				ath12k_mac_get_link_bss_conf(arvif);
+	struct ath12k_link_vif *tmp_arvif;
+	struct ath12k *ar = arvif->ar;
+	int ret;
+
+	if (!ar) {
+		ath12k_err(NULL, "ar is NULL");
+		return -EINVAL;
+	}
+
+	if (!mbssid_info) {
+		ath12k_err(ar->ab, "mbssid_info NULL");
+		return -EINVAL;
+	}
+
+	if (!bss_conf || !bss_conf->mbssid_tx_vif) {
+		ath12k_err(ar->ab, "mbssid_tx_vif  NULL");
+		return -EINVAL;
+	}
+
+	if (bss_conf->nontransmitted) {
+		ath12k_err(ar->ab, "Non-Tx BSS not allowed");
+		return -EINVAL;
+	}
+
+	/* Set common param for Non-tx BSS */
+	list_for_each_entry(tmp_arvif, &ar->arvifs, list) {
+		if (!test_bit(tmp_arvif->vdev_id,
+			      mbssid_info->nontx_vdev_bmap))
+			continue;
+
+		ret = ath12k_vendor_apply_cmn_param_to_vdevs(tmp_arvif,
+							     param_id,
+							     value);
+		if (ret) {
+			ath12k_err(ar->ab,
+				   "Failed to apply cmn_param for Non-Tx vdev:%u",
+				   tmp_arvif->vdev_id);
+			return ret;
+		}
+	}
+
+	/* set common param for Tx BSS */
+	ret = ath12k_vendor_apply_cmn_param_to_vdevs(arvif, param_id, value);
+	if (ret) {
+		ath12k_err(ar->ab,
+			   "Failed to apply cmn_param for Tx vdev:%u",
+			   arvif->vdev_id);
+		return ret;
+	}
+
+	ret = ath12k_vendor_send_multi_bss_vdev_param_wmi_cmd(arvif,
+							      param_id,
+							      value);
+	return ret;
+}
+
+static int ath12k_vendor_set_multi_bss_param(struct wiphy *wiphy,
+					     struct wireless_dev *wdev,
+					     const void *data, int data_len)
+{
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAM_MAX + 1];
+	struct ieee80211_vif *vif;
+	struct ath12k_vif *ahvif;
+	struct ath12k_link_vif *arvif;
+	struct nlattr *param_attr;
+	u32 ref_bss_ifindex;
+	u8 ref_bss_link_id = 0;
+	int rem, ret;
+
+	if (!wdev || !wdev->netdev || !data || !data_len) {
+		ath12k_err(NULL, "multi_bss: wdev/netdev/data is NULL");
+		return -EINVAL;
+	}
+
+	vif = wdev_to_ieee80211_vif(wdev);
+	if (!vif) {
+		ath12k_err(NULL, "multi_bss: vif is NULL");
+		return -EINVAL;
+	}
+
+	if (vif->type != NL80211_IFTYPE_AP) {
+		ath12k_err(NULL,
+			   "multi_bss: This command is applicable only for AP mode");
+		return -EOPNOTSUPP;
+	}
+
+	ahvif = ath12k_vif_to_ahvif(vif);
+	arvif = &ahvif->deflink;
+
+	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAM_MAX, data,
+			data_len, ath12k_multi_bss_param_policy, NULL);
+	if (ret) {
+		ath12k_err(NULL, "failed to parse multi BSS params: %d", ret);
+		return ret;
+	}
+
+	if (!tb[QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAM_REF_BSS_IFINDEX] ||
+	    !tb[QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAM_CONFIGS]) {
+		ath12k_err(NULL,
+			   "mandatory multi BSS param attribute missing");
+		return -EINVAL;
+	}
+
+	ref_bss_ifindex =
+		nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAM_REF_BSS_IFINDEX]);
+
+	if (ieee80211_vif_is_mld(vif) &&
+	    tb[QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAM_REF_BSS_LINKID]) {
+		ref_bss_link_id =
+			nla_get_u8(tb
+				[QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAM_REF_BSS_LINKID]);
+		if (ref_bss_link_id >= IEEE80211_MLD_MAX_NUM_LINKS) {
+			ath12k_err(NULL, "invalid ref link id %u", ref_bss_link_id);
+			return -EINVAL;
+		}
+		arvif = wiphy_dereference(wiphy, ahvif->link[ref_bss_link_id]);
+	}
+
+	if (!arvif || !arvif->is_started) {
+		ath12k_err(NULL, "multi_bss: arvif is null or not started");
+		return -EINVAL;
+	}
+
+	nla_for_each_nested(param_attr,
+			    tb[QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAM_CONFIGS],
+			    rem) {
+		struct nlattr *param[QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAMS_INFO_MAX + 1];
+		u32 param_id, param_val_1, param_val_2;
+
+		ret = nla_parse_nested(param,
+				       QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAMS_INFO_MAX,
+				       param_attr,
+				       ath12k_multi_bss_config_policy,
+				       NULL);
+		if (ret) {
+			ath12k_err(arvif->ar->ab,
+				   "failed to parse multi BSS param config: %d",
+				   ret);
+			return ret;
+		}
+
+		if (!param[QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAM_ID] ||
+		    !param[QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAM_VAL_1]) {
+			ath12k_err(arvif->ar->ab,
+				   "mandatory multi BSS param config missing");
+			return -EINVAL;
+		}
+
+		param_id =
+			nla_get_u32(param[QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAM_ID]);
+		param_val_1 =
+			nla_get_u32(param[QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAM_VAL_1]);
+
+		if (param[QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAM_VAL_2]) {
+			param_val_2 =
+				nla_get_u32(param
+					[QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAM_VAL_2]);
+			ath12k_info(arvif->ar->ab,
+				    "multi BSS param ref_ifindex %u ref_link_id %u param_id %u param_val_1 %u param_val_2 %u",
+				    ref_bss_ifindex, ref_bss_link_id, param_id,
+				    param_val_1, param_val_2);
+		} else {
+			ath12k_info(arvif->ar->ab,
+				    "multi BSS param ref_ifindex %u ref_link_id %u param_id %u param_val_1 %u",
+				    ref_bss_ifindex, ref_bss_link_id, param_id,
+				    param_val_1);
+		}
+
+		ret = ath12k_vendor_set_cmn_param(arvif, ahvif, param_id,
+						  param_val_1);
+		if (ret) {
+			ath12k_err(arvif->ar->ab,
+				   "Failed to set param_id:%u and param_val:%u for multi bss",
+				   param_id, param_val_1);
+			return ret;
+		}
+	}
+
+	return ret;
+}
+
 /**
  * ath12k_vendor_repurpose_link() - Mark an MLO link for repurposing
  * @wiphy: wiphy device pointer
@@ -6946,7 +7302,7 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 		telemetry_peer->mld_stats.hw_stats = hw_stats;
 	}
 
-	if (ath12k_dp_delay_stats_enabled(&ar->dp)) {
+	if (ath12k_dp_latency_stats_enabled(&ar->dp)) {
 		delay = vzalloc(sizeof(*delay));
 
 		if (!delay) {
@@ -7105,7 +7461,7 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 		}
 	}
 
-	if (cmd->feat.feat_delay) {
+	if (cmd->feat.feat_delay && ath12k_dp_latency_stats_enabled(&ar->dp)) {
 		attr = nla_nest_start(vendor_event,
 				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_DELAY_EVENT);
 		if (attr) {
@@ -7123,7 +7479,7 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 		}
 	}
 
-	if (cmd->feat.feat_jitter) {
+	if (cmd->feat.feat_jitter && ath12k_dp_latency_stats_enabled(&ar->dp)) {
 		attr = nla_nest_start(vendor_event,
 				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_JITTER_EVENT);
 		if (attr) {
@@ -7141,7 +7497,7 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 		}
 	}
 
-	if (cmd->feat.feat_sojourn) {
+	if (cmd->feat.feat_sojourn && ath12k_dp_latency_stats_enabled(&ar->dp)) {
 		attr = nla_nest_start(vendor_event,
 				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_SOJOURN_EVENT);
 		if (attr) {
@@ -14626,8 +14982,8 @@ static int ath12k_vendor_set_tid_map_precedence(struct wiphy *wiphy,
 	}
 
 	prec_val = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_TID_MAP_PRECEDENCE_VAL]);
-	if (prec_val > 0xB) {
-		ath12k_err(NULL, "tid_map_prty: VAL=%u out of range (0-11)\n",
+	if (prec_val > ATH12K_DP_MAX_TID_PRECEDENCE_VAL) {
+		ath12k_err(NULL, "tid_map_prty: VAL=%u out of range (0=DSCP, 1=PCP)\n",
 			   prec_val);
 		return -EINVAL;
 	}
@@ -15961,6 +16317,7 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.doit = ath12k_vendor_tdma_schedule_config,
 		.policy = ath12k_vendor_tdma_schedule_policy,
 		.maxattr = QCA_WLAN_VENDOR_ATTR_TDMA_SCHEDULE_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_WDEV,
 	},
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
@@ -16041,6 +16398,14 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.maxattr        = QCA_WLAN_VENDOR_ATTR_SPECTRAL_SCAN_CONFIG_MAX,
 	},
 #endif /* CPTCFG_ATH12K_SPECTRAL */
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_SET_MULTI_BSS_PARAM,
+		.doit = ath12k_vendor_set_multi_bss_param,
+		.policy = ath12k_multi_bss_param_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_MULTI_BSS_PARAM_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV | WIPHY_VENDOR_CMD_NEED_WDEV,
+	},
 };
 
 static const struct nl80211_vendor_cmd_info ath12k_vendor_events[] = {
@@ -16139,6 +16504,10 @@ static const struct nl80211_vendor_cmd_info ath12k_vendor_events[] = {
 	[QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_COMPLETE_INDEX] = {
 		.vendor_id = QCA_NL80211_VENDOR_ID,
 		.subcmd = QCA_NL80211_VENDOR_SUBCMD_SPECTRAL_SCAN_COMPLETE,
+	},
+	[QCA_NL80211_VENDOR_SUBCMD_WLAN_NFCAL_POWER_EVENT_INDEX] = {
+		.vendor_id = QCA_NL80211_VENDOR_ID,
+		.subcmd = QCA_NL80211_VENDOR_SUBCMD_WLAN_NFCAL_POWER_EVENT,
 	},
 };
 

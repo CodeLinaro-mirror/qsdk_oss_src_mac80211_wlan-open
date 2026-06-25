@@ -1850,10 +1850,47 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 
 	link_conf->dps_assist_support = false;
 	if (params->uhr_oper) {
+		const struct ieee80211_uhr_npca_info *npca;
+		struct ieee80211_bss_npca_params npca_params = {};
+
 		if (!link_conf->eht_support)
 			return -EOPNOTSUPP;
 
 		link_conf->uhr_support = true;
+
+		npca = ieee80211_uhr_npca_info(params->uhr_oper);
+		if (npca) {
+			npca_params.min_dur_thresh =
+				le32_get_bits(npca->params,
+					      IEEE80211_UHR_NPCA_PARAMS_MIN_DUR_THRESH);
+			npca_params.switch_delay =
+				le32_get_bits(npca->params,
+					      IEEE80211_UHR_NPCA_PARAMS_SWITCH_DELAY);
+			npca_params.switch_back_delay =
+				le32_get_bits(npca->params,
+					IEEE80211_UHR_NPCA_PARAMS_SWITCH_BACK_DELAY);
+			npca_params.init_qsrc =
+				le32_get_bits(npca->params,
+					      IEEE80211_UHR_NPCA_PARAMS_INIT_QSRC);
+			npca_params.moplen =
+				le32_get_bits(npca->params,
+					      IEEE80211_UHR_NPCA_PARAMS_MOPLEN);
+			npca_params.enabled = true;
+		}
+
+		if (memcmp(&npca_params, &link->conf->npca, sizeof(npca_params))) {
+			link->conf->npca = npca_params;
+			changed |= BSS_CHANGED_NPCA;
+		}
+
+		link_conf->uhr_config.adv_notification_interval =
+			(params->uhr_cap->fixed.mac.mac_cap[3] &
+			 IEEE80211_UHR_MAC_CAP3_PARAM_UPD_ADV_NOTIF_INTV) >> 2;
+		link_conf->uhr_config.update_in_tim_interval =
+			((params->uhr_cap->fixed.mac.mac_cap[3] &
+			  IEEE80211_UHR_MAC_CAP3_UPD_IND_TIM_INTV_LOW) >> 5) |
+			((params->uhr_cap->fixed.mac.mac_cap[4] &
+			  IEEE80211_UHR_MAC_CAP4_UPD_IND_TIM_INTV_HIGH) << 3);
 	}
 
 	if (sdata->vif.type == NL80211_IFTYPE_AP &&
@@ -4307,23 +4344,6 @@ static int ieee80211_set_bitrate_mask(struct wiphy *wiphy,
 
 	if (!ieee80211_sdata_running(sdata))
 		return -ENETDOWN;
-
-	/*
-	 * If active validate the setting and reject it if it doesn't leave
-	 * at least one basic rate usable, since we really have to be able
-	 * to send something, and if we're an AP we have to be able to do
-	 * so at a basic rate so that all clients can receive it.
-	 */
-	if (rcu_access_pointer(sdata->vif.bss_conf.chanctx_conf) &&
-	    sdata->vif.bss_conf.chanreq.oper.chan) {
-		u32 basic_rates = sdata->vif.bss_conf.basic_rates;
-		enum nl80211_band band;
-
-		band = sdata->vif.bss_conf.chanreq.oper.chan->band;
-
-		if (!(mask->control[band].legacy & basic_rates))
-			return -EINVAL;
-	}
 
 	if (ieee80211_hw_check(&local->hw, HAS_RATE_CONTROL)) {
 		ret = drv_set_bitrate_mask(local, sdata, link_id, mask);
@@ -6958,6 +6978,40 @@ int ieee80211_dfs_abort_cac(struct wiphy *wiphy,
 	return 0;
 }
 
+static int ieee80211_uhr_mode_update(struct wiphy *wiphy,
+				     struct net_device *dev,
+				     struct cfg80211_uhr_mode_update_params *params)
+{
+	struct ieee80211_local *local = wiphy_priv(wiphy);
+	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+	struct link_sta_info *link_sta;
+	struct sta_info *sta, *found_sta = NULL;
+	int link_id;
+	int ret;
+
+	lockdep_assert_wiphy(wiphy);
+
+	/* Store the per-link params into the associated link_sta entries first */
+	list_for_each_entry(sta, &local->sta_list, list) {
+		if (sta->sdata != sdata)
+			continue;
+		found_sta = sta;
+		for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS; link_id++) {
+			link_sta = rcu_dereference_protected(sta->link[link_id],
+					lockdep_is_held(&local->hw.wiphy->mtx));
+			if (!link_sta)
+				continue;
+			if (params->npca_update[link_id])
+				link_sta->pub->npca = params->npca[link_id];
+		}
+		break;
+	}
+
+	/* Call the driver once after link_sta params are updated */
+	ret = drv_uhr_mode_update(local, sdata, found_sta);
+	return ret;
+}
+
 const struct cfg80211_ops mac80211_config_ops = {
 	.add_virtual_intf = ieee80211_add_iface,
 	.del_virtual_intf = ieee80211_del_iface,
@@ -7087,4 +7141,5 @@ const struct cfg80211_ops mac80211_config_ops = {
 	.get_6ghz_dev_deployment_type = ieee80211_get_6ghz_dev_deployment_type,
 	.ap_power_save = ieee80211_ap_power_save,
 	.abort_cac = ieee80211_dfs_abort_cac,
+	.uhr_mode_update = ieee80211_uhr_mode_update,
 };

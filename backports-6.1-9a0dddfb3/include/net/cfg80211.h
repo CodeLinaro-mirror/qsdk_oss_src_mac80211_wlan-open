@@ -915,7 +915,10 @@ struct key_params {
  *	width
  * @center_frequency_device: center frequency of the device @center_freq1 is
  *	the operating center frequency of the channel
-  */
+ * @npca_freq: primary channel frequency (MHz) for NPCA operation; 0 if NPCA
+ *	is not active
+ * @npca_puncture_bitmap: puncture bitmap for the NPCA channel; 0 if unused
+ */
 struct cfg80211_chan_def {
 	struct ieee80211_channel *chan;
 	enum nl80211_chan_width width;
@@ -927,6 +930,8 @@ struct cfg80211_chan_def {
 	u16 radar_bitmap;
 	enum nl80211_chan_width width_device;
 	u32 center_freq_device;
+	u32 npca_freq;
+	u16 npca_puncture_bitmap;
 };
 
 /**
@@ -2018,6 +2023,7 @@ struct cfg80211_ttlm_params {
  * @ttlm_params: tid-to-link mapping parameters
  * @dps_assist_disable: indicates AP to disable DPS Assist Support.
  * @smd_params: SMD params for a AP
+ * @uhr_cap: UHR capabilities element (or %NULL if not provided)
  */
 struct cfg80211_ap_settings {
 	struct cfg80211_chan_def chandef;
@@ -2045,6 +2051,7 @@ struct cfg80211_ap_settings {
 	const struct ieee80211_eht_cap_elem *eht_cap;
 	const struct ieee80211_eht_operation *eht_oper;
 	const struct ieee80211_uhr_operation *uhr_oper;
+	const struct ieee80211_uhr_cap_elem *uhr_cap;
 	bool ht_required, vht_required, he_required, sae_h2e_required;
 	bool twt_responder;
 	u32 flags;
@@ -5395,6 +5402,32 @@ struct cfg80211_ap_power_save_params {
 };
 
 /**
+ * struct cfg80211_uhr_npca_params - NPCA (Non-Primary Channel Access) params
+ * @enable: enable (true) or disable (false) NPCA feature
+ * @switch_delay: delay in ms before switching to non-primary channel
+ * @switch_back_delay: delay in ms before switching back to primary channel
+ */
+struct cfg80211_uhr_npca_params {
+	bool enable;
+	u8 switch_delay;
+	u8 switch_back_delay;
+};
+
+/**
+ * struct cfg80211_uhr_mode_update_params - UHR mode update parameters
+ *
+ * Parameters for the %NL80211_CMD_UHR_MODE_UPDATE command, used to
+ * configure per-link UHR mode parameters for an MLD VAP.
+ *
+ * @npca_update: per-link flags indicating which links have NPCA params to update
+ * @npca: per-link NPCA parameters, indexed by link ID
+ */
+struct cfg80211_uhr_mode_update_params {
+	bool npca_update[IEEE80211_MLD_MAX_NUM_LINKS];
+	struct cfg80211_uhr_npca_params npca[IEEE80211_MLD_MAX_NUM_LINKS];
+};
+
+/**
  * struct cfg80211_ops - backend description for wireless configuration
  *
  * This struct is registered by fullmac card drivers and/or wireless stacks
@@ -5834,6 +5867,8 @@ struct cfg80211_ap_power_save_params {
  *
  * @ap_power_save : Configure AP Power Save parameters
  * @abort_cac: Abort ongoing Channel Availability Check (CAC)
+ * @uhr_mode_update: Update per-link UHR mode parameters (NPCA) for an MLD.
+ *	@params carries per-link update flags and NPCA settings.
  * @set_muedca_mode: Set the mode of setting MU EDCA parameters.
  */
 struct cfg80211_ops {
@@ -6240,6 +6275,8 @@ struct cfg80211_ops {
 				 struct cfg80211_ap_power_save_params *params);
 	int (*abort_cac)(struct wiphy *wiphy, struct wireless_dev *wdev,
 			 int link_id);
+	int (*uhr_mode_update)(struct wiphy *wiphy, struct net_device *dev,
+			       struct cfg80211_uhr_mode_update_params *params);
 };
 
 /*

@@ -52,4 +52,5 @@ void athdbg_create_wmi_debugfs(struct dentry *dbg_dir,
 extern const struct file_operations debugfs_mask_fops;
 extern const struct file_operations debugfs_qdss_enable_fops;
 extern const struct file_operations debugfs_qdss_collect_fops;
+extern const struct file_operations debugfs_snapshot_fops;
 #endif

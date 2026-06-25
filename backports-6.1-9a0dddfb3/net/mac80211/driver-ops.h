@@ -1988,6 +1988,26 @@ static inline int drv_ap_power_save(struct ieee80211_local *local,
 	return ret;
 }
 
+static inline int drv_uhr_mode_update(struct ieee80211_local *local,
+				      struct ieee80211_sub_if_data *sdata,
+				      struct sta_info *sta)
+{
+	int ret = -EOPNOTSUPP;
+
+	might_sleep();
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	if (local->ops->uhr_mode_update) {
+		trace_drv_uhr_mode_update(local, sdata, sta);
+		ret = local->ops->uhr_mode_update(&local->hw,
+						  &sdata->vif,
+						  sta ? &sta->sta : NULL);
+	}
+
+	trace_drv_return_int(local, ret);
+	return ret;
+}
+
 #ifdef CPTCFG_QCN_EXTN
 static inline int
 drv_set_muedca_mode(struct ieee80211_local *local,

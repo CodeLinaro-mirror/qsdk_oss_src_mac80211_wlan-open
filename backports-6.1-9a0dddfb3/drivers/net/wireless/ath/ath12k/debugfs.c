@@ -5030,7 +5030,7 @@ static ssize_t ath12k_debugfs_dump_ppeds_stats(struct file *file,
 	len += scnprintf(buf + len, size - len, "\nSRNG_Ring_index_Dump:\n");
 
 	srng = &ab->hal.srng_list[ppe2tcl_ring_id];
-	if (srng) {
+	if (srng && srng->initialized) {
 		len += scnprintf(buf + len, size - len, "ppe2tcl_hp= 0x%x\n",
 				srng->u.src_ring.hp);
 		len += scnprintf(buf + len, size - len, "ppe2tcl_tp= 0x%x\n",
@@ -5038,7 +5038,7 @@ static ssize_t ath12k_debugfs_dump_ppeds_stats(struct file *file,
 	}
 
 	srng = &ab->hal.srng_list[reo2ppe_ring_id];
-	if (srng) {
+	if (srng && srng->initialized) {
 		len += scnprintf(buf + len, size - len, "reo2ppe_hp= 0x%x\n",
 				 *(volatile u32 *)(srng->u.dst_ring.hp_addr));
 		len += scnprintf(buf + len, size - len, "reo2ppe_tp= 0x%x\n",
@@ -6620,9 +6620,9 @@ static ssize_t ath12k_enable_ofdma_txbf(struct file *file,
 
 	list_for_each_entry(arvif, &ar->arvifs, list) {
 		if (!strcmp(mode, "eht"))
-			ath12k_mac_set_eht_txbf_conf(arvif);
+			ath12k_mac_set_eht_txbf_conf(arvif, NULL, false);
 		if (!strcmp(mode, "he"))
-			ath12k_mac_set_he_txbf_conf(arvif);
+			ath12k_mac_set_he_txbf_conf(arvif, NULL, false);
 	}
 unlock:
 	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
@@ -6893,7 +6893,7 @@ static ssize_t ath12k_write_reset_dp_stats(struct file *file,
 		}
 
 		dp_pdev = &ar->dp;
-		if (dp_pdev && ath12k_dp_delay_stats_enabled(dp_pdev)) {
+		if (dp_pdev && ath12k_dp_latency_stats_enabled(dp_pdev)) {
 			ath12k_dp_peer_reset_delay_stats(dp_peer);
 			ath12k_dp_peer_reset_jitter_stats(dp_peer);
 			ath12k_dp_peer_reset_sojourn_stats(dp_peer);

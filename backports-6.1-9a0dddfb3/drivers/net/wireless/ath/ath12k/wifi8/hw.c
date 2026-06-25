@@ -454,6 +454,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.en_qdsslog = true,
 		.support_fse = true,
 		.cumac_support = true,
+		.cumac_chip_priority = 1,
 		.support_umcmn_interrupts = UMCMN_INTERRUPT_POLL,
 		.alloc_cacheable_memory = true,
 		.spectral = {
@@ -573,6 +574,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.en_qdsslog = true,
 		.support_fse = true,
 		.cumac_support = true,
+		.cumac_chip_priority = 2,
 		.support_umcmn_interrupts = UMCMN_INTERRUPT_POLL,
 		.alloc_cacheable_memory = true,
 		.spectral = {
@@ -693,6 +695,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.en_qdsslog = true,
 		.support_fse = true,
 		.cumac_support = true,
+		.cumac_chip_priority = 1,
 		.support_umcmn_interrupts = UMCMN_INTERRUPT_ENABLE,
 		.alloc_cacheable_memory = true,
 		.spectral = {
@@ -823,10 +826,10 @@ ath12k_wifi8_mac_get_tx_link(struct ieee80211_sta *sta, struct ieee80211_vif *vi
 	struct ieee80211_bss_conf *bss_conf;
 	struct ath12k_link_sta *arsta;
 	struct ath12k_base *ab = NULL;
-	u8 user_link = link, link_id;
 	struct ath12k_sta *ahsta;
 	struct ath12k *ar = NULL;
 	unsigned long links;
+	u8 link_id;
 
 	/* Use the link id passed or the first available link */
 	if (!sta) {
@@ -907,8 +910,7 @@ ath12k_wifi8_mac_get_tx_link(struct ieee80211_sta *sta, struct ieee80211_vif *vi
 	 * the frame will be transmitted on master (primary) link. An individually
 	 * addressed mgmt frame can be transmitted on master link after peer assoc.
 	 */
-	if (user_link != IEEE80211_LINK_UNSPECIFIED ||
-	    ahsta->state <= IEEE80211_STA_ASSOC ||
+	if (ahsta->state <= IEEE80211_STA_ASSOC ||
 	    !ath12k_wifi8_mac_is_mgmt_link_agnostic(skb))
 		goto skip_link_agnostic_tx;
 

@@ -5357,6 +5357,40 @@ static void ath12k_peer_assoc_h_uhr(struct ath12k *ar,
 	       sizeof(uhr_cap->phy.cap));
 }
 
+static void ath12k_peer_assoc_h_npca(struct ath12k *ar,
+				     struct ath12k_link_vif *arvif,
+				     struct ath12k_link_sta *arsta,
+				     struct ath12k_wmi_peer_assoc_arg *arg,
+				     struct ieee80211_link_sta *link_sta)
+{
+	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(arsta->ahsta);
+	const struct ieee80211_sta_uhr_npca_info *npca_info;
+
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	if (!link_sta) {
+		ath12k_warn(ar->ab, "unable to access link sta in peer assoc npca for sta %pM link %u\n",
+			    sta->addr, arsta->link_id);
+		return;
+	}
+
+	if (!link_sta->uhr_cap.has_uhr)
+		return;
+
+	npca_info = &link_sta->npca_info;
+	if (!npca_info->npca_enabled)
+		return;
+
+	arg->npca.enabled = true;
+	arg->npca.npca_offset = link_sta->npca_offset;
+	arg->npca.npca_punct_bitmap = link_sta->npca_puncture_bitmap;
+	arg->npca.npca_min_dur_threshold = npca_info->npca_min_dur_threshold;
+	arg->npca.npca_switch_delay = npca_info->npca_switch_delay;
+	arg->npca.npca_switch_back_delay = npca_info->npca_switch_back_delay;
+	arg->npca.npca_initial_qsrc = npca_info->npca_initial_qsrc;
+	arg->npca.npca_moplen = npca_info->npca_moplen;
+}
+
 #ifndef CPTCFG_QCN_EXTN_MESH_SUPPORT
 static void ath12k_peer_assoc_prepare(struct ath12k *ar,
 				      struct ath12k_link_vif *arvif,
@@ -5393,6 +5427,7 @@ void ath12k_peer_assoc_prepare(struct ath12k *ar,
 	ath12k_peer_assoc_h_he_6ghz(ar, arvif, arsta, arg, link_sta);
 	ath12k_peer_assoc_h_eht(ar, arvif, arsta, arg, link_sta);
 	ath12k_peer_assoc_h_uhr(ar, arvif, arsta, arg, link_sta);
+	ath12k_peer_assoc_h_npca(ar, arvif, arsta, arg, link_sta);
 	ath12k_peer_assoc_h_qos(ar, arvif, arsta, arg);
 	ath12k_peer_assoc_h_smps(arsta, arg, link_sta);
 	ath12k_peer_assoc_h_mlo(arsta, arg);
@@ -5436,7 +5471,8 @@ static int ath12k_setup_peer_smps(struct ath12k *ar, struct ath12k_link_vif *arv
 					 ath12k_smps_map[smps]);
 }
 
-int ath12k_mac_set_he_txbf_conf(struct ath12k_link_vif *arvif)
+int ath12k_mac_set_he_txbf_conf(struct ath12k_link_vif *arvif, u32 *val,
+				bool is_cmn_param)
 {
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ath12k *ar = arvif->ar;
@@ -5489,6 +5525,12 @@ int ath12k_mac_set_he_txbf_conf(struct ath12k_link_vif *arvif)
 		   arvif->vap_cfg.he_dl_ofdma_txbf_configured ?
 		   arvif->vap_cfg.he_dl_ofdma_txbf : ar->he_dlbf_enabled,
 		   arvif->vap_cfg.he_dl_ofdma_txbf_configured, value);
+
+	/* For MBSSID enabled case wmi will be sent in ath12k_wmi_multi_vdev_set_param */
+	if (is_cmn_param) {
+		*val = value;
+		return 0;
+	}
 
 	ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id, param, value);
 	if (ret) {
@@ -5581,7 +5623,8 @@ static int ath12k_mac_vif_recalc_sta_he_txbf(struct ath12k *ar,
 	return 0;
 }
 
-int ath12k_mac_set_eht_txbf_conf(struct ath12k_link_vif *arvif)
+int ath12k_mac_set_eht_txbf_conf(struct ath12k_link_vif *arvif, u32 *val,
+				 bool is_cmn_param)
 {
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ath12k *ar = arvif->ar;
@@ -5643,6 +5686,12 @@ int ath12k_mac_set_eht_txbf_conf(struct ath12k_link_vif *arvif)
 		   arvif->vap_cfg.eht_dl_ofdma_txbf_configured ?
 		   arvif->vap_cfg.eht_dl_ofdma_txbf : ar->eht_dlbf_enabled,
 		   arvif->vap_cfg.eht_dl_ofdma_txbf_configured, value);
+
+	/* For MBSSID enabled case wmi will be sent in ath12k_wmi_multi_vdev_set_param */
+	if (is_cmn_param) {
+		*val = value;
+		return 0;
+	}
 
 	ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id, param, value);
 	if (ret) {
@@ -9209,13 +9258,13 @@ skip_pending_cs_up:
 
 	if (changed & BSS_CHANGED_BEACON_ENABLED) {
 		if (info->enable_beacon) {
-			ret = ath12k_mac_set_he_txbf_conf(arvif);
+			ret = ath12k_mac_set_he_txbf_conf(arvif, NULL, false);
 			if (ret)
 				ath12k_warn(ar->ab,
 					    "failed to set HE TXBF config for vdev: %d\n",
 					    arvif->vdev_id);
 
-			ret = ath12k_mac_set_eht_txbf_conf(arvif);
+			ret = ath12k_mac_set_eht_txbf_conf(arvif, NULL, false);
 			if (ret)
 				ath12k_warn(ar->ab,
 					    "failed to set EHT TXBF config for vdev: %d\n",
@@ -10724,7 +10773,9 @@ static int ath12k_mac_initiate_hw_scan(struct ieee80211_hw *hw,
 	}
 
 #ifdef CPTCFG_QCN_EXTN
-	ath12k_wmi_update_strict_passive_scan_extn(ar, arg);
+	ath12k_wmi_prepare_scan_req_extn(ar, arg,
+					 req->n_ssids ? req->ssids[0].ssid : NULL,
+					 req->n_ssids ? req->ssids[0].ssid_len : 0);
 #endif
 
 	ret = ath12k_start_scan(ar, arg);
@@ -16918,10 +16969,37 @@ static void ath12k_mac_copy_eht_cap(struct ath12k *ar,
 		ath12k_mac_copy_eht_ppe_thresh(&band_cap->eht_ppet, eht_cap);
 }
 
+static void
+ath12k_mac_parse_uhr_npca_fw_info(struct ieee80211_sta_uhr_npca_info *npca_info,
+				  u32 uhr_npca_cap_info)
+{
+	/* Firmware TLV bitfield layout (see ATH12K_WMI_UHR_NPCA_CAP_* in wmi.h):
+	 * bit  0:    npca_enabled
+	 * bits 4:1:  npca_min_dur_threshold
+	 * bits 10:5: npca_switch_delay
+	 * bits 16:11: npca_switch_back_delay
+	 * bits 18:17: npca_initial_qsrc
+	 * bit 19:   npca_moplen
+	 */
+	npca_info->npca_enabled =
+		u32_get_bits(uhr_npca_cap_info, BIT(0));
+	npca_info->npca_min_dur_threshold =
+		u32_get_bits(uhr_npca_cap_info, GENMASK(4, 1));
+	npca_info->npca_switch_delay =
+		u32_get_bits(uhr_npca_cap_info, GENMASK(10, 5));
+	npca_info->npca_switch_back_delay =
+		u32_get_bits(uhr_npca_cap_info, GENMASK(16, 11));
+	npca_info->npca_initial_qsrc =
+		u32_get_bits(uhr_npca_cap_info, GENMASK(18, 17));
+	npca_info->npca_moplen =
+		u32_get_bits(uhr_npca_cap_info, BIT(19));
+}
+
 static void ath12k_mac_copy_uhr_cap(struct ath12k *ar,
 				    struct ath12k_band_cap *band_cap,
 				    int iftype,
-				    struct ieee80211_sta_uhr_cap *uhr_cap)
+				    struct ieee80211_sta_uhr_cap *uhr_cap,
+				    struct ieee80211_sta_uhr_npca_info *npca_info)
 {
 	if (!(test_bit(WMI_TLV_SERVICE_11BN, ar->ab->wmi_ab.svc_map)))
 		return;
@@ -16933,6 +17011,9 @@ static void ath12k_mac_copy_uhr_cap(struct ath12k *ar,
 	       sizeof(uhr_cap->mac.mac_cap));
 	memcpy(&uhr_cap->phy.cap, band_cap->uhr_cap_phy_info,
 	       sizeof(uhr_cap->phy.cap));
+
+	ath12k_mac_parse_uhr_npca_fw_info(npca_info,
+					  band_cap->uhr_param_npca_info);
 
 	switch (iftype) {
 	case NL80211_IFTYPE_AP:
@@ -16985,7 +17066,7 @@ static int ath12k_mac_copy_sband_iftype_data(struct ath12k *ar,
 		ath12k_mac_copy_eht_cap(ar, band_cap, &he_cap->he_cap_elem, i,
 					&data[idx].eht_cap);
 		ath12k_mac_copy_uhr_cap(ar, band_cap, i,
-					&data[idx].uhr_cap);
+					&data[idx].uhr_cap, &data[idx].npca_info);
 		idx++;
 	}
 
@@ -20910,6 +20991,34 @@ ath12k_mac_mlo_get_vdev_args(struct ath12k_link_vif *arvif,
 	}
 }
 
+static void
+ath12k_mac_npca_get_vdev_args(struct ath12k_link_vif *arvif,
+			      const struct cfg80211_chan_def *chandef,
+			      struct wmi_npca_arg *npca_arg)
+{
+	struct ath12k_vif *ahvif = arvif->ahvif;
+	struct ieee80211_bss_conf *link_conf;
+	struct ath12k_base *ab = arvif->ar->ab;
+
+	link_conf = wiphy_dereference(ahvif->ah->hw->wiphy,
+				      ahvif->vif->link_conf[arvif->link_id]);
+	if (!link_conf) {
+		ath12k_err(ab, "link conf NULL");
+		return;
+	}
+
+	npca_arg->enabled = link_conf->npca.enabled;
+
+	npca_arg->npca_min_dur_threshold = link_conf->npca.min_dur_thresh;
+	npca_arg->npca_switch_delay = link_conf->npca.switch_delay;
+	npca_arg->npca_switch_back_delay = link_conf->npca.switch_back_delay;
+	npca_arg->npca_initial_qsrc = link_conf->npca.init_qsrc;
+	npca_arg->npca_moplen = link_conf->npca.moplen;
+
+	npca_arg->npca_freq = chandef->npca_freq;
+	npca_arg->npca_punct_bitmap = chandef->npca_puncture_bitmap;
+}
+
 void ath12k_agile_cac_abort_work(struct wiphy *wiphy,
 				 struct wiphy_work *work)
 {
@@ -21298,8 +21407,21 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 	else
 		arg.passive |= !!(chandef->chan->flags & IEEE80211_CHAN_NO_IR);
 
-	if (!restart)
+	if (!restart) {
 		ath12k_mac_mlo_get_vdev_args(arvif, &arg.ml);
+
+		if (link_conf && link_conf->uhr_support) {
+			arg.uhr_config.adv_notification_interval =
+				link_conf->uhr_config.adv_notification_interval;
+
+			/*TODO: currently hardcoded until finalized in
+			 * 802.11bn specification.
+			 */
+			arg.uhr_config.post_notification_interval = 10;
+			arg.uhr_config.update_in_tim_interval =
+				link_conf->uhr_config.update_in_tim_interval;
+		}
+	}
 
 	ath12k_dbg(ab, ATH12K_DBG_MAC,
 		   "[radio_idx : %u] mac vdev %d start center_freq %d phymode %s punct_bitmap 0x%x arg.is_stadfs_en:%d\n",
@@ -21308,6 +21430,9 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 		   ath12k_mac_phymode_str(arg.mode), arg.punct_bitmap, arg.is_stadfs_en);
 
 	arvif->peer_del_all_enable = false;
+
+	if (chandef && !is_bridge_vdev)
+		ath12k_mac_npca_get_vdev_args(arvif, chandef, &arg.npca);
 
 	ret = ath12k_wmi_vdev_start(ar, &arg, restart);
 	if (ret) {
@@ -24053,9 +24178,10 @@ static int ath12k_mac_apply_vdev_ratemask(struct ath12k_link_vif *arvif,
 	int ret = 0, nss, offset;
 	u64 lower64, higher64;
 	u16 mcs_map;
-	u32 mcs;
+	u32 mcs, legacy;
 	const u8 *ht_m;
 
+	legacy = mask->control[band].legacy;
 	ht_m = mask->control[band].ht_mcs;
 	vht_m = mask->control[band].vht_mcs;
 	he_m = mask->control[band].he_mcs;
@@ -24071,6 +24197,13 @@ static int ath12k_mac_apply_vdev_ratemask(struct ath12k_link_vif *arvif,
 					      WMI_FIXED_RATE_NONE);
 		arvif->fixed_rate_set = false;
 	}
+
+	/* Fill the vdev rate mask params for legacy rates */
+	arg.type = VDEV_RATEMASK_TYPE_CCK_OFDM;
+	arg.mask_lower32 = legacy;
+	ret = ath12k_wmi_vdev_rate_mask(arvif->ar, &arg);
+	if (ret)
+		return ret;
 
 	/* Fill the vdev rate mask params for HT from MCS mask */
 	arg.type = VDEV_RATEMASK_TYPE_HT;
@@ -30318,3 +30451,36 @@ int ath12k_mac_read_cu_mem(struct ath12k_link_vif *arvif, u16 offset, u32 *val)
 	return 0;
 }
 EXPORT_SYMBOL(ath12k_mac_read_cu_mem);
+
+int ath12k_mac_set_vht_txbf_conf(struct ath12k_link_vif *arvif, u32 *val)
+{
+	struct ath12k *ar = arvif->ar;
+	struct ieee80211_bss_conf *link_conf;
+	u32 value = 0;
+
+	link_conf = ath12k_mac_get_link_bss_conf(arvif);
+	if (!link_conf) {
+		ath12k_warn(ar->ab,
+			    "unable to access bss link conf in vht txbf conf\n");
+		return -EINVAL;
+	}
+
+	if (link_conf->vht_su_beamformer) {
+		value |= WMI_VDEV_PARAM_TXBF_SU_TX_BFER;
+
+		if (link_conf->vht_mu_beamformer)
+			value |= WMI_VDEV_PARAM_TXBF_MU_TX_BFER;
+	}
+
+	if (link_conf->vht_su_beamformee)
+		value |= WMI_VDEV_PARAM_TXBF_SU_TX_BFEE;
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+		   "set vdev %u VHT TXBF conf su_bfer %d su_bfee %d mu_bfer %d value 0x%x\n",
+		   arvif->vdev_id, link_conf->vht_su_beamformer,
+		   link_conf->vht_su_beamformee, link_conf->vht_mu_beamformer,
+		   value);
+	*val = value;
+
+	return 0;
+}

@@ -1648,7 +1648,7 @@ static int ieee80211_config_bw(struct ieee80211_link_data *link,
 
 	if (!ieee80211_hw_check(&sdata->local->hw, SKIP_CHANDEF_IDENTICAL_CHECK) &&
 	    !cfg80211_chandef_identical(&old_oper, &link->conf->chanreq.oper) &&
-	    (!sdata->wdev.valid_links ||
+	    ((!sdata->wdev.valid_links && link->link_id == 0) ||
 	     (sdata->wdev.valid_links & BIT(link->link_id)))) {
 		link->conf->chanreq.oper = old_oper;
 		return ieee80211_sta_bw_reconfig_start_csa(link, &chanreq.oper,
@@ -6116,6 +6116,9 @@ static bool ieee80211_assoc_config_link(struct ieee80211_link_data *link,
 						    elems->uhr_cap,
 						    elems->uhr_cap_len,
 						    link_sta);
+		ieee80211_uhr_npca_elem_to_sta_uhr_npca_info(sdata, sband,
+							     elems->uhr_operation,
+							     link_sta);
 
 		bss_conf->uhr_support = link_sta->pub->uhr_cap.has_uhr;
 	} else {

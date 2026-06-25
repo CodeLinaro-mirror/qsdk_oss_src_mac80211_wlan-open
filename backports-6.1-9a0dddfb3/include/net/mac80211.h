@@ -382,6 +382,7 @@ struct ieee80211_vif_chanctx_switch {
  * @BSS_CHANGED_STA_NOL_CAC_DONE: NOL history CAC status changed for a managed link
  *	This is used to indicate to the driver of the CAC completion for a
  *	channel marked with NOL history.
+ * @BSS_CHANGED_NPCA: NPCA (Non-Primary Channel Access) parameters changed.
  */
 enum ieee80211_bss_change {
 	BSS_CHANGED_ASSOC		= 1<<0,
@@ -427,6 +428,7 @@ enum ieee80211_bss_change {
 	BSS_CHANGED_LINK_ADV_TTLM	= BIT_ULL(41),
 	BSS_CHANGED_AP_DPS_ASSIST	= BIT_ULL(42),
 	BSS_CHANGED_STA_NOL_CAC_DONE	= BIT_ULL(43),
+	BSS_CHANGED_NPCA		= BIT_ULL(44),
 	/* when adding here, make sure to change ieee80211_reconfig */
 };
 
@@ -634,6 +636,35 @@ struct ieee80211_parsed_tpe {
 };
 
 /**
+ * struct ieee80211_bss_npca_params - BSS NPCA (Non-Primary Channel Access) parameters
+ * @min_dur_thresh: minimum duration threshold (4 bits)
+ * @switch_delay: delay before switching to non-primary channel (6 bits)
+ * @switch_back_delay: delay before switching back to primary channel (6 bits)
+ * @init_qsrc: initial quiet-start reference count (2 bits)
+ * @moplen: minimum PPDU length for NPCA eligibility (1 bit)
+ * @enabled: whether NPCA is active for this BSS
+ */
+struct ieee80211_bss_npca_params {
+	u32 min_dur_thresh:4,
+	    switch_delay:6,
+	    switch_back_delay:6,
+	    init_qsrc:2,
+	    moplen:1,
+	    enabled:1;
+};
+
+/**
+ * struct ieee80211_uhr_config - UHR critical-update interval configuration.
+ *
+ * @adv_notification_interval: advance notification interval value in TUs (0 = not set).
+ * @update_in_tim_interval: update in TIM interval value in TUs (0 = not set).
+ */
+struct ieee80211_uhr_config {
+	u8 adv_notification_interval;
+	u8 update_in_tim_interval;
+};
+
+/**
  * struct ieee80211_bss_conf - holds the BSS's changing parameters
  *
  * This structure keeps information about a BSS (and an association
@@ -811,6 +842,7 @@ struct ieee80211_parsed_tpe {
  * @beacon_tx_mode: Beacon Tx Mode setting.
  * @ml_max_rec_links: ML Max recommended links
  * @dps_assist_support: does this BSS support DPS Assist Support.
+ * @uhr_config: UHR critical-update interval configuration timers.
  * @smd_params: advertised SMD feature params.
  */
 struct ieee80211_bss_conf {
@@ -940,8 +972,10 @@ struct ieee80211_bss_conf {
 	u8 ml_max_rec_links;
 	bool is_cfp_enabled;
 	bool dps_assist_support;
+	struct ieee80211_uhr_config uhr_config;
 	enum nl80211_auth_type auth_type;
 	struct cfg80211_smd_params smd_params;
+	struct ieee80211_bss_npca_params npca;
 };
 
 /**
@@ -2770,6 +2804,10 @@ struct ieee80211_sta_aggregates {
  * @eht_cap: EHT capabilities of this STA
  * @uhr_cap: UHR capabilities of this STA
  * @punctured: RU Puncturing bitmap of this STA
+ * @npca_offset: NPCA primary channel offset from the primary channel, derived
+ *	from IEEE80211_UHR_NPCA_PARAMS_PRIMARY_CHAN_OFFS in the UHR operation Element
+ * @npca_puncture_bitmap: NPCA disabled sub-channel bitmap; 0 if the
+ *	DIS_SUBCH_BMAP_PRES flag is not set in the NPCA Element
  * @agg: per-link data for multi-link aggregation
  * @bandwidth: current bandwidth the station can receive with
  * @rx_nss: in HT/VHT, the maximum number of spatial streams the
@@ -2777,6 +2815,7 @@ struct ieee80211_sta_aggregates {
  *	notifications and capabilities. The value is only valid after
  *	the station moves to associated state.
  * @txpwr: the station tx power configuration
+ * @npca: current NPCA (Non-Primary Channel Access) parameters for this link
  *
  */
 struct ieee80211_link_sta {
@@ -2795,6 +2834,8 @@ struct ieee80211_link_sta {
 	struct ieee80211_sta_uhr_cap uhr_cap;
 	struct ieee80211_sta_uhr_npca_info npca_info;
 	u32 punctured;
+	u8 npca_offset;
+	u16 npca_puncture_bitmap;
 
 	struct ieee80211_sta_aggregates agg;
 
@@ -2802,6 +2843,8 @@ struct ieee80211_link_sta {
 	enum ieee80211_sta_rx_bandwidth bandwidth;
 	enum ieee80211_sta_rx_bandwidth sta_max_bandwidth;
 	struct ieee80211_sta_txpwr txpwr;
+
+	struct cfg80211_uhr_npca_params npca;
 };
 
 /**
@@ -5024,6 +5067,9 @@ struct ieee80211_ppe_vp_ds_params {
  * @get_6ghz_dev_deployment_type: Get the 6 GHz device deployment type.
  * @ap_power_save: Introduces infrastructure in mac80211 to support forwarding of
  *	AP Powersave configuration parameters from user space to driver.
+ * @uhr_mode_update: Update per-link UHR mode parameters (NPCA) for the
+ *	given station. Called after link_sta npca fields have been updated.
+ *	@sta may be NULL if no associated station was found.
  */
 struct ieee80211_ops {
 	void (*tx)(struct ieee80211_hw *hw,
@@ -5472,6 +5518,8 @@ struct ieee80211_ops {
 	int (*ap_power_save)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			     int link_id,
 			     struct cfg80211_ap_power_save_params *params);
+	int (*uhr_mode_update)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+			       struct ieee80211_sta *sta);
 #ifdef CPTCFG_QCN_EXTN
 	int (*set_muedca_mode)(struct ieee80211_hw *hw, int radio_idx,
 			       u8 muedca_mode);

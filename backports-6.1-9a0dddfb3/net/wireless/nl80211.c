@@ -1178,6 +1178,10 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_SMD_SUPPORT] = { .type = NLA_FLAG },
 	[NL80211_ATTR_SMD_AP] = { .type = NLA_FLAG },
 	[NL80211_ATTR_SMD_PARAMS] = { .type = NLA_NESTED },
+	[NL80211_ATTR_NPCA_PRIMARY_FREQ] = { .type = NLA_U32 },
+	[NL80211_ATTR_NPCA_PUNCT_BITMAP] =
+		NLA_POLICY_FULL_RANGE(NLA_U32, &nl80211_punct_bitmap_range),
+	[NL80211_ATTR_UHR_MODE_UPDATE_PARAMS] = { .type = NLA_NESTED },
 };
 
 /* policy for the key attributes */
@@ -1191,6 +1195,17 @@ static const struct nla_policy nl80211_key_policy[NL80211_KEY_MAX + 1] = {
 	[NL80211_KEY_TYPE] = NLA_POLICY_MAX(NLA_U32, NUM_NL80211_KEYTYPES - 1),
 	[NL80211_KEY_DEFAULT_TYPES] = { .type = NLA_NESTED },
 	[NL80211_KEY_MODE] = NLA_POLICY_RANGE(NLA_U8, 0, NL80211_KEY_SET_TX),
+};
+
+static const struct nla_policy
+nl80211_uhr_mode_update_policy[NL80211_UHR_MODE_UPDATE_ATTR_MAX + 1] = {
+	[NL80211_UHR_MODE_UPDATE_ATTR_LINK_ID] =
+		NLA_POLICY_RANGE(NLA_U8, 0, IEEE80211_MLD_MAX_NUM_LINKS - 1),
+	[NL80211_UHR_MODE_UPDATE_ATTR_NPCA_ENABLE] = { .type = NLA_FLAG },
+	[NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCH_DELAY] =
+		NLA_POLICY_RANGE(NLA_U8, 0, 63),
+	[NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCHBACK_DELAY] =
+		NLA_POLICY_RANGE(NLA_U8, 0, 63),
 };
 
 /* policy for the key default flags */
@@ -4165,6 +4180,25 @@ static int _nl80211_parse_chandef(struct cfg80211_registered_device *rdev,
 		chandef->radar_bitmap = radar_bitmap;
 	}
 
+	if (attrs[NL80211_ATTR_NPCA_PRIMARY_FREQ]) {
+		chandef->npca_freq = nla_get_u32(attrs[NL80211_ATTR_NPCA_PRIMARY_FREQ]);
+		if (!chandef->npca_freq) {
+			NL_SET_ERR_MSG_ATTR(extack,
+					    attrs[NL80211_ATTR_NPCA_PRIMARY_FREQ],
+					    "invalid NPCA primary channel");
+			return -EINVAL;
+		}
+
+		chandef->npca_puncture_bitmap =
+			nla_get_u32_default(attrs[NL80211_ATTR_NPCA_PUNCT_BITMAP],
+					    chandef->punctured);
+	} else if (attrs[NL80211_ATTR_NPCA_PUNCT_BITMAP]) {
+		NL_SET_ERR_MSG_ATTR(extack,
+				    attrs[NL80211_ATTR_NPCA_PUNCT_BITMAP],
+				    "NPCA puncturing only valid with NPCA");
+		return -EINVAL;
+	}
+
 	if (!cfg80211_chandef_valid(chandef)) {
 		NL_SET_ERR_MSG(extack, "invalid channel definition");
 		return -EINVAL;
@@ -4916,6 +4950,15 @@ int nl80211_send_chandef(struct sk_buff *msg, const struct cfg80211_chan_def *ch
 	if (nla_put_u32(msg, NL80211_ATTR_CENTER_FREQ_DEVICE,
 			chandef->center_freq_device) ||
 	    nla_put_u32(msg, NL80211_ATTR_CHANNEL_WIDTH_DEVICE, chandef->width_device))
+		return -ENOBUFS;
+
+	if (chandef->npca_freq &&
+	    nla_put_u32(msg, NL80211_ATTR_NPCA_PRIMARY_FREQ,
+			chandef->npca_freq))
+		return -ENOBUFS;
+	if (chandef->npca_puncture_bitmap &&
+	    nla_put_u32(msg, NL80211_ATTR_NPCA_PUNCT_BITMAP,
+			chandef->npca_puncture_bitmap))
 		return -ENOBUFS;
 
 	return 0;
@@ -7448,7 +7491,8 @@ static void nl80211_check_ap_rate_selectors(struct cfg80211_ap_settings *params,
  * HT/VHT requirements/capabilities, we parse them out of the IEs for the
  * benefit of drivers that rebuild IEs in the firmware.
  */
-static int nl80211_calculate_ap_params(struct cfg80211_ap_settings *params)
+static int nl80211_calculate_ap_params(struct cfg80211_ap_settings *params,
+				       struct nlattr **attrs)
 {
 	const struct cfg80211_beacon_data *bcn = &params->beacon;
 	size_t ies_len = bcn->tail_len;
@@ -7502,6 +7546,13 @@ static int nl80211_calculate_ap_params(struct cfg80211_ap_settings *params)
 		if (!ieee80211_uhr_oper_size_ok((const u8 *)params->uhr_oper,
 						cap->datalen - 1, true))
 			return -EINVAL;
+	}
+
+	if (params->uhr_oper &&
+	    attrs[NL80211_ATTR_UHR_CAPABILITY]) {
+		const struct ieee80211_uhr_cap_elem *uhr_cap =
+			nla_data(attrs[NL80211_ATTR_UHR_CAPABILITY]);
+		params->uhr_cap = uhr_cap;
 	}
 
 	return 0;
@@ -7737,6 +7788,28 @@ static int nl80211_parse_smd_params(struct nlattr *smd_params_attr,
 	return 0;
 }
 
+static int nl80211_check_npca(struct cfg80211_registered_device *rdev,
+			      const struct cfg80211_chan_def *chandef,
+			      enum nl80211_iftype iftype,
+			      struct netlink_ext_ack *extack)
+{
+	const struct ieee80211_supported_band *sband;
+	const struct ieee80211_sta_uhr_cap *uhr_cap;
+
+	if (!chandef->npca_freq)
+		return 0;
+
+	sband = rdev->wiphy.bands[chandef->chan->band];
+	uhr_cap = ieee80211_get_uhr_iftype_cap(sband, iftype);
+
+	if (uhr_cap &&
+	    (uhr_cap->mac.mac_cap[0] & IEEE80211_UHR_MAC_CAP0_NPCA_SUPP))
+		return 0;
+
+	NL_SET_ERR_MSG(extack, "NPCA not supported");
+	return -EINVAL;
+}
+
 static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 {
 	struct cfg80211_registered_device *rdev = info->user_ptr[0];
@@ -7941,6 +8014,10 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 	nl80211_ignore_cac_update_dfs_state(rdev, &params->chandef,
 					    wdev->iftype);
 #endif /* CPTCFG_QCA_LAB_TEST_FEATURES */
+	err = nl80211_check_npca(rdev, &params->chandef, wdev->iftype,
+				 info->extack);
+	if (err)
+		goto out;
 
 	beacon_check.iftype = wdev->iftype;
 	beacon_check.relax = true;
@@ -8039,7 +8116,7 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 	}
 
-	err = nl80211_calculate_ap_params(params);
+	err = nl80211_calculate_ap_params(params, info->attrs);
 	if (err)
 		goto out;
 
@@ -20438,6 +20515,75 @@ nla_ap_ps_fail:
 	return -ENOBUFS;
 }
 
+static int nl80211_uhr_mode_update(struct sk_buff *skb, struct genl_info *info)
+{
+	struct cfg80211_registered_device *rdev = info->user_ptr[0];
+	struct net_device *dev = info->user_ptr[1];
+	struct wireless_dev *wdev = dev->ieee80211_ptr;
+	struct cfg80211_uhr_mode_update_params params = {};
+	const struct ieee80211_sta_uhr_npca_info *npca_info;
+	struct nlattr *attr;
+	int rem;
+
+	if (!info->attrs[NL80211_ATTR_UHR_MODE_UPDATE_PARAMS])
+		return -EINVAL;
+
+	if (!wdev->valid_links)
+		return -EOPNOTSUPP;
+
+	npca_info = ieee80211_get_uhr_iftype_npca_info(
+		rdev->wiphy.bands[NL80211_BAND_6GHZ],
+		wdev->iftype);
+
+	if (!npca_info || npca_info->npca_enabled)
+		return -EOPNOTSUPP;
+
+	/*
+	 * NL80211_ATTR_UHR_MODE_UPDATE_PARAMS is a nested array where each
+	 * element contains per-link UHR mode parameters. Each element must
+	 * have NL80211_UHR_MODE_UPDATE_ATTR_LINK_ID plus optional NPCA
+	 * attributes.
+	 */
+	nla_for_each_nested(attr, info->attrs[NL80211_ATTR_UHR_MODE_UPDATE_PARAMS],
+			    rem) {
+		struct nlattr *tb[NL80211_UHR_MODE_UPDATE_ATTR_MAX + 1];
+		struct nlattr *sw_delay, *swbk_delay;
+		u8 link_id;
+		int err;
+
+		err = nla_parse_nested(tb, NL80211_UHR_MODE_UPDATE_ATTR_MAX,
+				       attr, nl80211_uhr_mode_update_policy,
+				       info->extack);
+		if (err)
+			return err;
+
+		if (!tb[NL80211_UHR_MODE_UPDATE_ATTR_LINK_ID])
+			return -EINVAL;
+
+		link_id = nla_get_u8(tb[NL80211_UHR_MODE_UPDATE_ATTR_LINK_ID]);
+		sw_delay = tb[NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCH_DELAY];
+		swbk_delay = tb[NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCHBACK_DELAY];
+
+		if (tb[NL80211_UHR_MODE_UPDATE_ATTR_NPCA_ENABLE] ||
+		    sw_delay || swbk_delay) {
+			params.npca_update[link_id] = true;
+
+			if (tb[NL80211_UHR_MODE_UPDATE_ATTR_NPCA_ENABLE])
+				params.npca[link_id].enable = true;
+
+			if (sw_delay)
+				params.npca[link_id].switch_delay =
+					nla_get_u8(sw_delay);
+
+			if (swbk_delay)
+				params.npca[link_id].switch_back_delay =
+					nla_get_u8(swbk_delay);
+		}
+	}
+
+	return rdev_uhr_mode_update(rdev, dev, &params);
+}
+
 static int nl80211_ap_power_save(struct sk_buff *skb, struct genl_info *info)
 {
 	struct cfg80211_registered_device *rdev = info->user_ptr[0];
@@ -21791,6 +21937,12 @@ static const struct genl_small_ops nl80211_small_ops[] = {
 		.flags = GENL_UNS_ADMIN_PERM,
 		.internal_flags = IFLAGS(NL80211_FLAG_NEED_NETDEV |
 					 NL80211_FLAG_MLO_VALID_LINK_ID),
+	},
+	{
+		.cmd = NL80211_CMD_UHR_MODE_UPDATE,
+		.doit = nl80211_uhr_mode_update,
+		.flags = GENL_UNS_ADMIN_PERM,
+		.internal_flags = IFLAGS(NL80211_FLAG_NEED_NETDEV_UP),
 	},
 };
 

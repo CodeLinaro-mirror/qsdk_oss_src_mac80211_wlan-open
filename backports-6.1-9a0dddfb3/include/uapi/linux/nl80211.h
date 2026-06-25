@@ -1403,6 +1403,17 @@
  *	can be used to configure %NL80211_ATTR_PCIE, NL80211_ATTR_DCVS,
  *	NL80211_ATTR_DPS_ASSIST and NL80211_ATTR_LOW_POWER_20MHZ.
  *
+ * @NL80211_CMD_UHR_MODE_UPDATE: Command to update UHR (Ultra High Reliability)
+ *	mode parameters on a per-link basis for an MLD.
+ *	Command requires %NL80211_ATTR_IFINDEX to identify the interface.
+ *	Per-link parameters are carried in %NL80211_ATTR_UHR_MODE_UPDATE_PARAMS,
+ *	a nested array where each element must contain
+ *	%NL80211_UHR_MODE_UPDATE_ATTR_LINK_ID to identify the link, plus
+ *	optional NPCA (Non-Primary Channel Access) feature parameters such as
+ *	%NL80211_UHR_MODE_UPDATE_ATTR_NPCA_ENABLE,
+ *	%NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCH_DELAY and
+ *	%NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCHBACK_DELAY.
+ *
  * @NL80211_CMD_MAX: highest used command number
  * @__NL80211_CMD_AFTER_LAST: internal use
  */
@@ -1686,6 +1697,8 @@ enum nl80211_commands {
 	NL80211_CMD_AP_POWER_SAVE,
 
 	NL80211_CMD_TRIGGER_SMD_DISCOVERY,
+
+	NL80211_CMD_UHR_MODE_UPDATE,
 
 	/* add new commands above here */
 
@@ -3101,6 +3114,14 @@ enum nl80211_commands {
  *	this feature during association. This is a flag attribute.
  *	Currently only supported in mac80211 drivers.
  *
+ * @NL80211_ATTR_NPCA_PRIMARY_FREQ: u32 attribute giving the primary channel
+ *	frequency (in MHz) for NPCA operation. Required when configuring NPCA.
+ *
+ * @NL80211_ATTR_NPCA_PUNCT_BITMAP: u32 attribute giving the puncture bitmap
+ *	for the NPCA channel. Optional; if absent, defaults to the primary
+ *	channel's puncture bitmap. Only valid together with
+ *	%NL80211_ATTR_NPCA_PRIMARY_FREQ.
+ *
  * @NL80211_ATTR_PCIE: Nested attributes associated with PCIe low power and
  *	gen/lane mode transitions. See &enum nl80211_pcie_attrs
  *
@@ -3117,6 +3138,11 @@ enum nl80211_commands {
  * @NL80211_ATTR_BEACON_TX_SYNC_SUPPORT: Flag attribute indicating that HW
  *	will transmit beacons for all bands at the same time (burst mode) if
  *	the beacon intervals are the same.
+ *
+ * @NL80211_ATTR_UHR_MODE_UPDATE_PARAMS: Nested attribute carrying per-link
+ *	UHR mode update parameters for %NL80211_CMD_UHR_MODE_UPDATE. Each
+ *	nested element contains a link ID and optional NPCA sub-attributes
+ *	(see &enum nl80211_uhr_mode_update_attrs).
  *
  * @NL80211_ATTR_MAX_CH_SWITCH_TIME: u32 attribute carrying the Switch Time
  *	field from the MCST (Max Channel Switch Time) element, indicating the
@@ -3788,6 +3814,8 @@ enum nl80211_attrs {
 
 	NL80211_ATTR_UHR_CAPABILITY,
 	NL80211_ATTR_DISABLE_UHR,
+	NL80211_ATTR_NPCA_PRIMARY_FREQ,
+	NL80211_ATTR_NPCA_PUNCT_BITMAP,
 
 	NL80211_ATTR_PCIE,
 	NL80211_ATTR_DCVS,
@@ -3816,6 +3844,8 @@ enum nl80211_attrs {
 	NL80211_ATTR_SMD_STA,
 	NL80211_ATTR_SMD_CONFIG,
 	NL80211_ATTR_SMD_TIMEOUT,
+
+	NL80211_ATTR_UHR_MODE_UPDATE_PARAMS,
 
 	/* add attributes here, update the policy in nl80211.c */
 
@@ -9380,6 +9410,42 @@ enum nl80211_dcvs_attrs {
 	/* keep last */
 	__NL80211_DCVS_ATTR_LAST,
 	NL80211_DCVS_ATTR_MAX = __NL80211_DCVS_ATTR_LAST - 1
+};
+
+/**
+ * enum nl80211_uhr_mode_update_attrs - UHR mode update attributes
+ *
+ * These attributes are used with %NL80211_ATTR_UHR_MODE_UPDATE_PARAMS
+ * in the %NL80211_CMD_UHR_MODE_UPDATE command to configure per-link
+ * UHR mode parameters for a non-AP MLD.
+ *
+ * @NL80211_UHR_MODE_UPDATE_ATTR_LINK_ID: (u8) Link ID identifying which
+ *	MLD link these parameters apply to. Required in every nested element.
+ *
+ * NPCA (Non-Primary Channel Access) feature attributes:
+ * @NL80211_UHR_MODE_UPDATE_ATTR_NPCA_ENABLE: (u8) Enable/disable NPCA
+ *	feature. 0 = disable, 1 = enable.
+ * @NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCH_DELAY: (u8) Delay in
+ *	milliseconds before switching to the non-primary channel.
+ * @NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCHBACK_DELAY: (u8) Delay in
+ *	milliseconds before switching back to the primary channel.
+ *
+ * @__NL80211_UHR_MODE_UPDATE_ATTR_LAST: internal use
+ * @NL80211_UHR_MODE_UPDATE_ATTR_MAX: highest UHR mode update attribute
+ */
+enum nl80211_uhr_mode_update_attrs {
+	__NL80211_UHR_MODE_UPDATE_ATTR_INVALID,
+
+	NL80211_UHR_MODE_UPDATE_ATTR_LINK_ID,
+
+	NL80211_UHR_MODE_UPDATE_ATTR_NPCA_ENABLE,
+	NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCH_DELAY,
+	NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCHBACK_DELAY,
+
+	/* keep last */
+	__NL80211_UHR_MODE_UPDATE_ATTR_LAST,
+	NL80211_UHR_MODE_UPDATE_ATTR_MAX =
+		__NL80211_UHR_MODE_UPDATE_ATTR_LAST - 1
 };
 
 /**enum nl80211_muedca_mode - MUEDCA mode
