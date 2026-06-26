@@ -20521,7 +20521,6 @@ static int nl80211_uhr_mode_update(struct sk_buff *skb, struct genl_info *info)
 	struct net_device *dev = info->user_ptr[1];
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
 	struct cfg80211_uhr_mode_update_params params = {};
-	const struct ieee80211_sta_uhr_npca_info *npca_info;
 	struct nlattr *attr;
 	int rem;
 
@@ -20529,13 +20528,6 @@ static int nl80211_uhr_mode_update(struct sk_buff *skb, struct genl_info *info)
 		return -EINVAL;
 
 	if (!wdev->valid_links)
-		return -EOPNOTSUPP;
-
-	npca_info = ieee80211_get_uhr_iftype_npca_info(
-		rdev->wiphy.bands[NL80211_BAND_6GHZ],
-		wdev->iftype);
-
-	if (!npca_info || npca_info->npca_enabled)
 		return -EOPNOTSUPP;
 
 	/*
@@ -20548,6 +20540,9 @@ static int nl80211_uhr_mode_update(struct sk_buff *skb, struct genl_info *info)
 			    rem) {
 		struct nlattr *tb[NL80211_UHR_MODE_UPDATE_ATTR_MAX + 1];
 		struct nlattr *sw_delay, *swbk_delay;
+		const struct ieee80211_sta_uhr_npca_info *npca_info;
+		struct cfg80211_internal_bss *intbss;
+		enum nl80211_band band;
 		u8 link_id;
 		int err;
 
@@ -20561,6 +20556,22 @@ static int nl80211_uhr_mode_update(struct sk_buff *skb, struct genl_info *info)
 			return -EINVAL;
 
 		link_id = nla_get_u8(tb[NL80211_UHR_MODE_UPDATE_ATTR_LINK_ID]);
+
+		if (!(wdev->valid_links & BIT(link_id)))
+			return -EINVAL;
+
+		/* Verify NPCA is supported on this link's band */
+		intbss = wdev->links[link_id].client.current_bss;
+		if (!intbss || !intbss->pub.channel)
+			return -EINVAL;
+
+		band = intbss->pub.channel->band;
+		npca_info =
+		ieee80211_get_uhr_iftype_npca_info(rdev->wiphy.bands[band],
+							       wdev->iftype);
+		if (!npca_info || !npca_info->npca_enabled)
+			return -EOPNOTSUPP;
+
 		sw_delay = tb[NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCH_DELAY];
 		swbk_delay = tb[NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCHBACK_DELAY];
 
