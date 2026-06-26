@@ -28,6 +28,7 @@
 #include "dp_mon.h"
 #include "me.h"
 #include "peer.h"
+#include <linux/vmalloc.h>
 
 static const struct nla_policy
 ath12k_wifi_config_policy[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1] = {

@@ -703,10 +703,12 @@ int ath12k_mac_op_set_mtu(struct ieee80211_hw *hw, struct ieee80211_vif *vif, in
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR || !wdev->netdev)
 		return 0;
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (ahvif->dp_vif.ppe_vp_type != ATH12K_INVALID_PPE_VP_TYPE &&
 	    ahvif->dp_vif.ppe_vp_num != ATH12K_INVALID_PPE_VP_NUM) {
 		ret = ath12k_vif_set_mtu(ahvif, mtu);
 	}
+#endif
 
 	return ret;
 }
@@ -20798,9 +20800,10 @@ ppe_vp_config:
 		vlan_iface = kzalloc(sizeof(*vlan_iface), GFP_ATOMIC);
 		if (!vlan_iface) {
 			ret = -ENOMEM;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 			if (ahvif->dp_vif.ppe_vp_type == PPE_VP_USER_TYPE_DS)
 				ret = ath12k_vif_update_vp_config(ahvif, PPE_VP_USER_TYPE_PASSIVE);
-
+#endif
 			if (ret)
 				return ret;
 		} else {
@@ -25845,9 +25848,10 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_PACKETS);
 		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_BYTES);
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 		is_ds_vif = ath12k_vif_to_ahvif(vif)->dp_vif.ppe_vp_type ==
 				PPE_VP_USER_TYPE_DS;
-
+#endif
 		if (ath12k_dp_hw_peer_stats_enabled(&ar->dp)) {
 			/* When HW stats are enabled, recv_from_reo has all the
 			 * Rx traffic data stored in ATH12K_DP_HW_STATS_REO_IDX
@@ -30744,7 +30748,9 @@ void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
 		ath12k_mac_add_preserved_stats(stats, &dp_vif->link_vif_delete_stats);
 	}
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	is_ds_vif = (ahvif->dp_vif.ppe_vp_type == PPE_VP_USER_TYPE_DS);
+#endif
 	for_each_set_bit(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
 		if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
 			continue;
