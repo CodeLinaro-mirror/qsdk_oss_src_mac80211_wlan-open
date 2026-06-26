@@ -909,4 +909,8 @@ void ath12k_mac_peer_assoc_prepare_smd(struct ath12k *ar,
 				       bool reassoc,
 				       struct ieee80211_link_sta *link_sta,
 				       const struct ath12k_smd_peer_assoc_ctx *ctx);
+
+enum wmi_phy_mode ath12k_mac_get_phymode(struct ath12k *ar,
+					 enum nl80211_band band,
+					 enum nl80211_chan_width width);
 #endif

@@ -15714,6 +15714,55 @@ int wmi_print_ctrl_path_awgn_stats_tlv(struct ath12k_base *ab, u16 len,
 	return 0;
 }
 
+int wmi_print_ctrl_path_blanking_stats_tlv(struct ath12k_base *ab, u16 len,
+					   const void *ptr, void *data)
+{
+	struct wmi_ctrl_path_stats_ev_parse_param *stats_buff =
+			(struct wmi_ctrl_path_stats_ev_parse_param *)data;
+	struct wmi_ctrl_path_blanking_stats *blanking_stats_skb =
+			(struct wmi_ctrl_path_blanking_stats *)ptr;
+	struct wmi_ctrl_path_blanking_stats *blanking_stats = NULL;
+	struct wmi_ctrl_path_stats_list *stats;
+	struct ath12k *ar = NULL;
+	int i;
+
+	for (i = 0; i < ab->num_radios; i++) {
+		struct ath12k_pdev *pdev = rcu_dereference(ab->pdevs_active[i]);
+
+		if (pdev && pdev->ar) {
+			ar = pdev->ar;
+			break;
+		}
+	}
+	if (!ar) {
+		ath12k_warn(ab, "Failed to get ar for wmi ctrl blanking stats\n");
+		return -EINVAL;
+	}
+
+	stats = kzalloc(sizeof(*stats), GFP_ATOMIC);
+	if (!stats)
+		return -ENOMEM;
+
+	blanking_stats = kzalloc(sizeof(*blanking_stats), GFP_ATOMIC);
+	if (!blanking_stats) {
+		kfree(stats);
+		return -ENOMEM;
+	}
+
+	memcpy(blanking_stats, blanking_stats_skb, sizeof(*blanking_stats));
+	stats->stats_ptr = blanking_stats;
+	stats->tagid = WMI_CTRL_PATH_BLANKING_STATS;
+	list_add_tail(&stats->list, &stats_buff->list);
+
+	spin_lock_bh(&ar->wmi_ctrl_path_stats_lock);
+	ath12k_wmi_crl_path_stats_list_free(ar,
+				&ar->debug.wmi_ctrl_path_stats.pdev_stats);
+	spin_unlock_bh(&ar->wmi_ctrl_path_stats_lock);
+	ar->debug.wmi_ctrl_path_stats_tagid = WMI_CTRL_PATH_BLANKING_STATS;
+	stats_buff->ar = ar;
+	return 0;
+}
+
 int wmi_print_ctrl_path_mem_stats_tlv(struct ath12k_base *ab, u16 len,
 				      const void *ptr, void *data)
 {
@@ -15892,6 +15941,9 @@ static int ath12k_wmi_ctrl_stats_subtlv_parser(struct ath12k_base *ab,
 	case WMI_CTRL_PATH_PMLO_STATS:
 	        ret = wmi_print_ctrl_path_pmlo_stats_tlv(ab, len, ptr, data);
 		break;
+	case WMI_CTRL_PATH_BLANKING_STATS:
+		ret = wmi_print_ctrl_path_blanking_stats_tlv(ab, len, ptr, data);
+		break;
 		/* Add case for newly wmi ctrl path added stats here */
 	default:
 		ath12k_warn(ab,
@@ -16009,6 +16061,7 @@ static void ath12k_wmi_ctrl_path_stats_event(struct ath12k_base *ab, struct sk_b
 	case WMI_CTRL_PATH_AWGN_STATS:
 	case WMI_CTRL_PATH_MEM_STATS:
 	case WMI_CTRL_PATH_AFC_STATS:
+	case WMI_CTRL_PATH_BLANKING_STATS:
 		break;
 	/* Add case for newly wmi ctrl path added stats here */
 	default:
@@ -19526,6 +19579,9 @@ ath12k_wmi_send_wmi_ctrl_stats_cmd(struct ath12k *ar,
 		break;
 	case WMI_REQ_CTRL_PATH_MEM_STAT:
 		ar->ctrl_mem_stats = true;
+		stats_id = (1 << arg->stats_id);
+		break;
+	case WMI_REQ_CTRL_PATH_BLANKING_STAT:
 		stats_id = (1 << arg->stats_id);
 		break;
 		/* Add case for newly wmi ctrl path stats here */

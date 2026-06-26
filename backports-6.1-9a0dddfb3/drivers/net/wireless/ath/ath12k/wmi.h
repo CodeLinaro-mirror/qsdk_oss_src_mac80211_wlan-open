@@ -1488,6 +1488,7 @@ enum wmi_tlv_pdev_param {
 	WMI_PDEV_PARAM_CTRL_FRAME_OBSS_PD_THRESHOLD = 0xD3,
 	WMI_PDEV_PARAM_TRUNCATE_SR = 0xD2,
 	WMI_PDEV_PARAM_OBSS_MIN_DURATION_CHECK_FOR_SR = 0xD1,
+	WMI_PDEV_PARAM_SET_SCAN_BLANKING_MODE = 0xE1,
 #ifdef CPTCFG_QCN_EXTN
 	WMI_PDEV_PARAM_SMART_ANTENNA_BEACON_ANTENNA = 0xFC,
 #endif
@@ -2529,6 +2530,7 @@ enum wmi_tlv_tag {
 	WMI_CTRL_PATH_PMLO_STATS = 0x479,
 	WMI_TAG_TDMA_SCHEDULE_REQUEST_CMD = 0x47f,
 	WMI_TAG_SCAN_BLANKING_PARAMS_INFO = 0x486,
+	WMI_CTRL_PATH_BLANKING_STATS = 0x493,
 	WMI_TAG_PDEV_SET_RF_PATH_CMD_FIXED_PARAM = 0x494,
 	WMI_TAG_PDEV_SET_RF_PATH_RESP_EVENT_FIXED_PARAM = 0x49E,
 	WMI_TAG_MLO_PRIMARY_LINK_PEER_MIGRATION_FIXED_PARAM = 0x4a3,
@@ -6759,6 +6761,11 @@ struct wmi_chan_info_event {
 	__le32 vdev_id;
 } __packed;
 
+struct wmi_scan_blanking_params_info {
+	__le32 blanking_duration;	/* scan_radio_blanking_duration */
+	__le32 blanking_count;		/* scan_radio_blanking_count */
+} __packed;
+
 struct ath12k_wmi_target_cap_arg {
 	u32 phy_capability;
 	u32 max_frag_entry;
@@ -7709,6 +7716,16 @@ struct wmi_ctrl_path_awgn_stats {
 	u32 awgn_cca_ack_blk_cnt;
 	u32 awgn_cca_ack_reset_cnt;
 	u32 awgn_int_bw_cnt[WMI_AWGN_MAX_BW];
+} __packed;
+
+struct wmi_ctrl_path_blanking_stats {
+	__le32 blanking_mode;
+	__le32 is_blanking_enabled;
+	__le32 gate_2g_enabled;
+	__le32 gate_5g_enabled;
+	__le32 gate_6g_enabled;
+	__le32 blanking_count;
+	__le32 blanking_duration;
 } __packed;
 
 struct wmi_ctrl_path_mem_stats_params {
@@ -9364,6 +9381,7 @@ enum  wmi_ctrl_path_stats_id {
  	WMI_REQ_CTRL_PATH_BTCOEX_STAT		= 8,
 	WMI_REQ_CTRL_PATH_AFC_STAT       	= 11,
 	WMI_REQ_CTRL_PATH_PMLO_STAT             = 12,
+	WMI_REQ_CTRL_PATH_BLANKING_STAT         = 15,
 };
 
 enum wmi_ctrl_path_stats_action {

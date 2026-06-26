@@ -10057,6 +10057,13 @@ static int ath12k_vendor_get_wifi_config_handler(struct wiphy *wiphy,
 				return ret;
 			}
 			break;
+		case ACFG_PARAM_RADIO_SCAN_BLANKING_MODE:
+			ret = ath12k_vendor_get_scan_blanking_mode_extn(wiphy, &value);
+			if (ret) {
+				ath12k_err(NULL, "Failed to get scan blanking mode\n");
+				return ret;
+			}
+			break;
 		default:
 			ath12k_dbg(NULL, ATH12K_DBG_CFG, "Un-supported generic command\n");
 			return -EOPNOTSUPP;
@@ -16794,6 +16801,10 @@ static const struct nl80211_vendor_cmd_info ath12k_vendor_events[] = {
 	[QCA_NL80211_VENDOR_SUBCMD_RF_PATH_MODE_INDEX] = {
 		.vendor_id = QCA_NL80211_VENDOR_ID,
 		.subcmd    = QCA_NL80211_VENDOR_SUBCMD_RF_PATH_MODE,
+	},
+	[QCA_NL80211_VENDOR_SUBCMD_SCAN_RADIO_CHAN_STATS_INDEX] = {
+		.vendor_id = QCA_NL80211_VENDOR_ID,
+		.subcmd = QCA_NL80211_VENDOR_SUBCMD_SCAN_RADIO_CHAN_STATS,
 	},
 };
 
