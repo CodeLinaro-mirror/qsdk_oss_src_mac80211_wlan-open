@@ -4163,6 +4163,29 @@ enum qca_vendor_wlan_telemetry_wbm_tqm_rel_reason {
 		QCA_VENDOR_ATTR_WBM_TQM_REL_REASON_AFTER_LAST - 1,
 };
 
+/**
+ * enum qca_vendor_wbm_tqm_rel_reason_ext - wifi8 HW TX reasons
+ * for pdev TID stats. Only populated when HW peer telemetry (wifi8) is active.
+ *
+ * @QCA_VENDOR_ATTR_TASC_REASON_HW_COMPLETION: HW TX completion (acked)
+ * @QCA_VENDOR_ATTR_TASC_REASON_HW_DROP1: HW TX drop reason 1
+ * @QCA_VENDOR_ATTR_TASC_REASON_HW_DROP2: HW TX drop reason 2
+ * @QCA_VENDOR_ATTR_TASC_REASON_HW_FAILED: HW TX failed
+ * @QCA_VENDOR_ATTR_WBM_TQM_REL_REASON_MAX_EXT: total size including HW stats
+ */
+enum qca_vendor_wbm_tqm_rel_reason_ext {
+	QCA_VENDOR_ATTR_TASC_REASON_HW_COMPLETION =
+		QCA_VENDOR_ATTR_WBM_TQM_REL_REASON_AFTER_LAST,
+	QCA_VENDOR_ATTR_TASC_REASON_HW_DROP1,
+	QCA_VENDOR_ATTR_TASC_REASON_HW_DROP2,
+	QCA_VENDOR_ATTR_TASC_REASON_HW_FAILED,
+
+	/* keep last */
+	QCA_VENDOR_ATTR_WBM_TQM_REL_REASON_AFTER_LAST_EXT,
+	QCA_VENDOR_ATTR_WBM_TQM_REL_REASON_MAX_EXT =
+		QCA_VENDOR_ATTR_WBM_TQM_REL_REASON_AFTER_LAST_EXT - 1,
+};
+
 enum qca_vendor_wlan_telemetry_tx_ingress_stats {
 	QCA_VENDOR_ATTR_TX_INGRESS_STATS_PKTINFO_RECV_FROM_STACK = 1,
 	QCA_VENDOR_ATTR_TX_INGRESS_STATS_PKTINFO_ENQ_TO_HW,
