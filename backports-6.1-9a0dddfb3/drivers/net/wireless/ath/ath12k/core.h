@@ -903,6 +903,7 @@ struct ath12k_link_vif {
 	bool is_link_removal_in_progress;
 	bool is_link_removal_update_pending;
 	struct ath12k_wmi_mlo_link_removal_event_params link_removal_data;
+	bool update_skip_link;
 	u8 map_id;
 	struct ath12k_qos_map *qos_map;
 	struct wiphy_work set_dscp_tid_work;

@@ -289,7 +289,8 @@ void ath12k_link_peer_get_sta_rate_info_stats(struct ath12k_dp_link_peer *link_p
 int ath12k_dp_mon_init(struct ath12k_dp *dp);
 void ath12k_dp_mon_deinit(struct ath12k_dp *dp);
 void ath12k_dp_cp_link_peer_unassign(struct ath12k *ar, struct ath12k_link_vif *arvif,
-				     struct ath12k_sta *ahsta, u8 link_id, u8 *addr);
+				     struct ath12k_sta *ahsta, u8 link_id, u8 *addr,
+				     bool update_bmap);
 u16 ath12k_dp_peer_get_peer_id(struct ath12k_dp_hw *dp_hw, u8 *addr);
 u16 ath12k_dp_peer_get_sta_id(struct ath12k_dp_hw *dp_hw, u8 *addr);
 

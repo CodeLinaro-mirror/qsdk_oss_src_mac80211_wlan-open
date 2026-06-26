@@ -17408,6 +17408,8 @@ static void ath12k_wmi_event_mlo_reconfig_link_removal(struct ath12k_base *ab,
 		}
 
 		arvif->is_link_removal_in_progress = false;
+		/* the arvif will eventually gets cleared hence no need to reset this*/
+		arvif->update_skip_link = true;
 	}
 
 	ret = ath12k_wmi_update_link_reconfig_remove_update(arvif, &ev);

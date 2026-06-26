@@ -928,7 +928,7 @@ static void __ath12k_dp_link_peer_unassign(struct ath12k *ar,
 void ath12k_dp_cp_link_peer_unassign(struct ath12k *ar,
 				     struct ath12k_link_vif *arvif,
 				     struct ath12k_sta *ahsta, u8 link_id,
-				     u8 *addr)
+				     u8 *addr, bool update_bmap)
 {
 	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
 	struct ath12k_dp *dp = dp_pdev->dp;
@@ -995,7 +995,10 @@ void ath12k_dp_cp_link_peer_unassign(struct ath12k *ar,
 
 	ahsta->links_map &= ~BIT(link_id);
 	ahsta->device_bitmap &= ~BIT(ab->wsi_info.index);
-	ahsta->mlo_hw_link_id_bitmap &= ~BIT(arvif->ar->pdev->hw_link_id);
+
+	if (update_bmap && arvif->update_skip_link)
+		ahsta->mlo_hw_link_id_bitmap &= ~BIT(arvif->ar->pdev->hw_link_id);
+
 	ahsta->free_logical_idx_map |= BIT(arsta->link_idx);
 	ahsta->num_peer--;
 	rcu_assign_pointer(ahsta->link[link_id], NULL);
