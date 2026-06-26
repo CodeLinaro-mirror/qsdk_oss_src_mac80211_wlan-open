@@ -230,7 +230,7 @@ struct ath12k_dp_peer {
 #endif
 	struct net_device *dev;
 	u16 stats_id;
-	u16 tid_stats_id[ATH12K_MAX_TIDS];
+	u16 tid_stats_id[ATH12K_DATA_TID_MAX];
 	u8 tx_encap_type;
 	u8 rx_decap_type;
 
