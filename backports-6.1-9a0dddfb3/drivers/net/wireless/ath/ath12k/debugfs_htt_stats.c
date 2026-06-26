@@ -66,6 +66,34 @@ print_array_to_buf(u8 *buf, u32 offset, const char *header,
 }
 
 static u32
+print_array_to_buf_s16(u8 *buf, u32 offset, const char *header, u32 stats_index,
+		       const s16 *array, u32 array_len, const char *footer)
+{
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
+	int index = 0;
+	u8 i;
+
+	if (header)
+		index += scnprintf(buf + offset, buf_len - offset, "%s = ", header);
+
+	for (i = 0; i < array_len; i++) {
+		index += scnprintf(buf + offset + index, (buf_len - offset) - index,
+				   " %u:%d,", stats_index++, array[i]);
+	}
+
+	index--;
+	if ((offset + index) < buf_len)
+		buf[offset + index] = '\0';
+
+	if (footer) {
+		index += scnprintf(buf + offset + index, (buf_len - offset) - index,
+				   "%s", footer);
+	}
+
+	return index;
+}
+
+static u32
 print_array_to_buf_s8(u8 *buf, u32 offset, const char *header, u32 stats_index,
 		      const s8 *array, u32 array_len, const char *footer)
 {
@@ -268,8 +296,8 @@ ath12k_htt_print_optional_configs_stats_tlv(const void *tag_buf, u16 tag_len,
 			 u32_get_bits(rxsop_config,
 				      HTT_STATS_OPT_CONF_RXSOP_ENABLE_BIT));
 	len += scnprintf(buf + len, buf_len - len,
-			 "RxSOP config value = %u\n",
-			 u32_get_bits(rxsop_config,
+			 "RxSOP config value = %d\n",
+			 (s8)u32_get_bits(rxsop_config,
 				      HTT_STATS_OPT_CONF_RXSOP_CONFIG_MASK));
 	len += scnprintf(buf + len, buf_len - len,
 			 "ABI max RG gain = %u dB\n",
@@ -8526,11 +8554,11 @@ ath12k_htt_print_phy_tpc_stats_tlv(const void *tag_buf, u16 tag_len,
 			 le32_to_cpu(htt_stats_buf->eirp_power));
 	len += scnprintf(buf + len, buf_len - len, "power_type_6ghz = %u\n",
 			 le32_to_cpu(htt_stats_buf->power_type_6ghz));
-	len += print_array_to_buf(buf, len, "max_reg_allowed_power",
-				  htt_stats_buf->max_reg_allowed_power,
+	len += print_array_to_buf_s16(buf, len, "max_reg_allowed_power", 0,
+				  (const s16 *)htt_stats_buf->max_reg_allowed_power,
 				  ATH12K_HTT_STATS_MAX_CHAINS, "\n");
-	len += print_array_to_buf(buf, len, "max_reg_allowed_power_6ghz",
-				  htt_stats_buf->max_reg_allowed_power_6ghz,
+	len += print_array_to_buf_s16(buf, len, "max_reg_allowed_power_6ghz", 0,
+				  (const s16 *)htt_stats_buf->max_reg_allowed_power_6ghz,
 				  ATH12K_HTT_STATS_MAX_CHAINS, "\n");
 	len += print_array_to_buf(buf, len, "sub_band_cfreq",
 				  htt_stats_buf->sub_band_cfreq,
@@ -8568,9 +8596,9 @@ ath12k_htt_print_phy_tpc_stats_tlv(const void *tag_buf, u16 tag_len,
 			j++;
 		}
 	}
-	len += print_array_to_buf(buf, len,
-		"tpc_stats :max_reg_only_allowed_power =",
-				  htt_stats_buf->max_reg_only_allowed_power,
+	len += print_array_to_buf_s16(buf, len,
+		"tpc_stats :max_reg_only_allowed_power =", 0,
+				  (const s16 *)htt_stats_buf->max_reg_only_allowed_power,
 				  ATH12K_HTT_STATS_MAX_CHAINS, "\n");
 	len += print_array_to_buf(buf, len, "tpc_stats : tx_num_chains",
 				  htt_stats_buf->tx_num_chains,
