@@ -3176,10 +3176,11 @@ static ssize_t ath12k_read_mld_stats(struct file *file,
 			"HTT Metadata Err", "TCL Desc NA", "TCL Desc Retry",
 			"Invalid Arvif Fast", "Invalid Pdev Fast",
 			"Max Tx Limit Fast", "Invalid ENCAP Fast",
-			"Bridge vdev", "Arsta NA", "Queue Stop",
-			"Feature Error", "HW Enqueue Fail",
+			"Bridge vdev", "Arsta NA", "Clone", "MHDR ERR",
+			"Feature Error", "Queue Stop", "HW Enqueue Fail",
 			"MCBC encryption Fail", "MCBC MSDU setup Fail",
-			"Mcast unconnected link", "FW Recovery"};
+			"Mcast unconnected link", "FW Recovery",
+			"SKB No Linear"};
 
 	if (!ahvif)
 		return -EINVAL;
@@ -9143,15 +9144,6 @@ void ath12k_debugfs_add_interface(struct ath12k_link_vif *arvif)
 	debugfs_create_file("btwt_remove_sta", 0200, arvif->debugfs_twt,
 			    arvif, &ath12k_fops_btwt_remove_sta);
 
-	if (!ahvif->mld_stats) {
-		ahvif->mld_stats = debugfs_create_file("mld_stats", 0600,
-						       vif->debugfs_dir,
-						       ahvif,
-						       &ath12k_fops_mld_stats);
-		if (IS_ERR(ahvif->mld_stats))
-			ahvif->mld_stats = NULL;
-	}
-
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (!ahvif->debugfs_rfs_core_mask) {
 		ahvif->debugfs_rfs_core_mask =
@@ -9175,6 +9167,15 @@ void ath12k_debugfs_add_interface(struct ath12k_link_vif *arvif)
 	 * label.
 	 */
 ap_and_sta_debugfs_file:
+	if (!ahvif->mld_stats) {
+		ahvif->mld_stats = debugfs_create_file("mld_stats", 0600,
+						       vif->debugfs_dir,
+						       ahvif,
+						       &ath12k_fops_mld_stats);
+		if (IS_ERR(ahvif->mld_stats))
+			ahvif->mld_stats = NULL;
+	}
+
 	if (ahvif->debugfs_primary_link)
 		return;
 
