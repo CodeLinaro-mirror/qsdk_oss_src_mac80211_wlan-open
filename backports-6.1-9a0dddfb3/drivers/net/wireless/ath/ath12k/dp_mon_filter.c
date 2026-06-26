@@ -233,6 +233,8 @@ void ath12k_dp_mon_rx_display_filters(struct ath12k_dp *dp,
 			   tlv_filter->fpmo_packet_ctrl_filter);
 		ath12k_dbg(ab, ATH12K_DBG_DATA, "fpmo_packet_data_filter: 0x%x",
 			   tlv_filter->fpmo_packet_data_filter);
+		ath12k_dbg(ab, ATH12K_DBG_DATA, "rx_mon_enable_hdr_per_ppdu: %d",
+			   tlv_filter->rx_mon_enable_hdr_per_ppdu);
 	}
 }
 EXPORT_SYMBOL(ath12k_dp_mon_rx_display_filters);
