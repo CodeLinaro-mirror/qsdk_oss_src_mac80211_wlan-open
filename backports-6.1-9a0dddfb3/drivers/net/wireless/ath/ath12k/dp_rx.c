@@ -475,24 +475,27 @@ static void ath12k_dp_rx_enqueue_free(struct ath12k_dp *dp,
  *
  * PPE-pool buffers must start on a page boundary so that the IPA SMMU mapping
  * covers the full buffer without straddling pages.  For DP_RX_PPE_POOL, allocate
- * an extra PAGE_SIZE bytes and advance skb->data to the next page boundary via
- * skb_reserve().  Regular pool buffers use the normal allocator.
+ * via alloc_skb to get PAGE_ALIGNED.
+ * Regular pool buffers use the normal allocator.
  */
 static struct sk_buff *ath12k_dp_alloc_rx_skb(struct ath12k_rx_desc_info *rx_desc)
 {
 	unsigned long pg_offset;
 	struct sk_buff *skb;
 
-	if (rx_desc->src_ring_type != DP_RX_PPE_POOL)
+	if (rx_desc->is_ppe_desc != DP_RX_PPE_POOL)
 		return ath12k_dp_alloc_skb(DP_RX_BUFFER_SIZE);
 
-	skb = dev_alloc_skb(DP_RX_BUFFER_SIZE + PAGE_SIZE);
+	skb = alloc_skb(ATH12K_IPA_DP_RX_BUF_SIZE, GFP_ATOMIC);
 	if (unlikely(!skb))
 		return NULL;
 
-	pg_offset = PAGE_ALIGN((unsigned long)skb->data) - (unsigned long)skb->data;
-	if (pg_offset)
-		skb_reserve(skb, pg_offset);
+	pg_offset = (unsigned long)skb->data & (PAGE_SIZE - 1);
+	if (pg_offset) {
+		dev_kfree_skb_any(skb);
+		skb = NULL;
+		ath12k_warn(ab, "IPA RX buf: Buf is not PAGE ALIGNED\n");
+	}
 
 	return skb;
 }
@@ -548,7 +551,7 @@ static int ath12k_dp_rx_ipa_smmu_buf_map(struct ath12k_base *ab,
 {
 	int ret;
 
-	if (!(rx_desc->src_ring_type == DP_RX_PPE_POOL && IPA_CTX(ab) &&
+	if (!(rx_desc->is_ppe_desc == DP_RX_PPE_POOL && IPA_CTX(ab) &&
 	      IPA_CTX(ab)->is_smmu_enabled &&
 	      IPA_CTX(ab)->ipa_init_state >= ATH12K_IPA_STATE_SETUP_DONE))
 		return 0;

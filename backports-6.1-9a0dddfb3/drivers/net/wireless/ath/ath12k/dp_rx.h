@@ -28,10 +28,10 @@ struct ath12k_sta;
 #define IPA_SET_RX_BUF_SMMU_MAP(...) ((void)0)
 #define IPA_SET_RX_BUF_SMMU_UNMAP(...) ((void)0)
 #define ATH12K_IPA_DMA_MAP_SINGLE(...) ((void)0)
-#endif
-
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#else
 #define ATH12K_IPA_RX_BUF_DMA_BITS	32
+/* LINUX_6.18 has custom slab of 3136 causing RX buffer non-page aligned */
+#define ATH12K_IPA_DP_RX_BUF_SIZE	3150
 #endif
 
 /* different supported pkt types for routing */
