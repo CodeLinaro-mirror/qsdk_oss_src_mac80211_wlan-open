@@ -4410,12 +4410,15 @@ enum nl80211_cu_type {
  *	has ended; the post notification window has elapsed.
  * @NL80211_CU_STATE_ECU_END: ECU session is complete; the driver has
  *	finished transmitting CU beacons and cleared the CU indication bit.
+ * @NL80211_CU_STATE_ABORT: ECU session was aborted before completion,
+ *	e.g. due to CSA or driver recovery.
  */
 enum nl80211_cu_state {
 	NL80211_CU_STATE_STARTED,
 	NL80211_CU_STATE_ADV_NOTIFICATION_END,
 	NL80211_CU_STATE_POST_NOTIFICATION_END,
 	NL80211_CU_STATE_ECU_END,
+	NL80211_CU_STATE_ABORT,
 };
 
 /**
