@@ -31548,6 +31548,7 @@ ath12k_mac_parse_uhr_params_update_element(struct ath12k_vif *ahvif,
 					    arvif->vdev_id, link_id);
 				return -EINVAL;
 			}
+			arg.mode_present_bitmap |= BIT(mode_id);
 			npca = (const struct ieee80211_uhr_npca_info *)tuple->params;
 			ath12k_mac_fill_npca_arg(arvif, enabled, npca,
 						 chanctx_conf, &arg);

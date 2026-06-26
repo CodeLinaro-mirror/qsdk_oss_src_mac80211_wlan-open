@@ -2590,7 +2590,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_SMD_ROAM_CONFIG_PARAMS = 0x55B,
 	WMI_TAG_SMD_ROAM_CONFIG_EVENT = 0x55C,
 	WMI_TAG_SMD_ROAM_PEER_TID_INFO = 0x55D,
-	WMI_TAG_UHR_AP_MODE_TUP_ENABLE_DISABLE_UPDATE_PARAM = 0x560,
+	WMI_TAG_UHR_AP_MODE_TUPLE_UPDATE_PARAM = 0x560,
 	WMI_ENERGY_MGMT_OEM_DATA_FIXED_PARAM = 0x56E,
 	WMI_ENERGY_MGMT_OEM_DATA_EVENT_FIXED_PARAM,
 	WMI_TAG_SHARED_CU_MEM_CONFIG = 0x577,
@@ -5043,14 +5043,18 @@ struct wmi_uhr_ap_elr_reception_params {
 #define WMI_ELR_MODE_UPDATE	BIT(1)
 
 /**
- * struct wmi_uhr_ap_mode_tuple_params - per-vdev mode enable/disable/update
+ * struct wmi_uhr_ap_mode_tuple_params - per-vdev mode valid/invalid
  *     bitmap for WMI_VDEV_UHR_CU_CMDID
  * @tlv_header: TLV tag
- *     (WMI_TAG_UHR_AP_MODE_TUPLE_ENABLE_DISABLE_UPDATE_PARAMS) and length
- * @vdev_id_mode_bitmap: Bits 0:7 = vdev_id; Bits 8:9 = DPS state;
- *     Bits 10:11 = NPCA state; Bits 12:13 = DUO state;
- *     Bits 14:15 = PEDCA state; Bits 16:17 = DBE state;
- *     Bits 18:19 = PUO state; Bits 20:21 = ELR state; Bits 22:31 reserved
+ *     (WMI_TAG_UHR_AP_MODE_TUPLE_PARAM) and length
+ * @vdev_id_mode_bitmap: Bits 0:7 = vdev_id;
+ *     Every feature gets 2 bits, when the value is set to 1, it is
+ *     considered as valid and when the value is set to 0, it is
+ *     considered as invalid by firmware.
+ *     Bits 8:9 = DPS state;
+ *      Bits 10:11 = NPCA state; Bits 12:13 = DUO state;
+ *      Bits 14:15 = PEDCA state; Bits 16:17 = DBE state;
+ *      Bits 18:19 = PUO state; Bits 20:21 = ELR state; Bits 22:31 reserved
  */
 struct wmi_uhr_ap_mode_tuple_params {
 	__le32 tlv_header;
@@ -5114,6 +5118,9 @@ struct ath12k_wmi_uhr_ap_npca_arg {
  * @puo: PUO parameters; always sent, Bit1 of mode_tuple_field gates firmware action
  * @elr: ELR reception parameters; always sent, Bit1 of mode_tuple_field
  *       gates firmware action
+ * @mode_present_bitmap: bitmask of mode IDs present in the received IE;
+ *     bit N set means IEEE80211_UHR_MODE_ID_* N was seen in the
+ *     ieee80211_uhr_for_each_mode_tuple() iteration
  */
 struct ath12k_wmi_vdev_uhr_cu_arg {
 	u32 vdev_id;
@@ -5124,6 +5131,7 @@ struct ath12k_wmi_vdev_uhr_cu_arg {
 	struct ath12k_wmi_uhr_ap_mode_arg dbe;
 	struct ath12k_wmi_uhr_ap_mode_arg puo;
 	struct ath12k_wmi_uhr_ap_mode_arg elr;
+	u32 mode_present_bitmap;
 };
 
 enum wmi_sta_ps_mode {
