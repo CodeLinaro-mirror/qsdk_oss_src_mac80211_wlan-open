@@ -1393,7 +1393,7 @@ static int ath12k_wifi7_mcbc_setup_encryption(struct ath12k_dp_vif *dp_vif,
 	struct ieee80211_key_conf *key;
 	struct ath12k *ar;
 
-	if (!is_eth)
+	if (!is_eth && !sta)
 		ath12k_mlo_mcast_update_tx_link_address(ahvif->vif, link_id,
 							skb, info->flags);
 	/* Get AR from link */
@@ -1528,37 +1528,55 @@ void ath12k_wifi7_mcbc_handler(struct ath12k_dp_vif *dp_vif,
 	/* Update entry statistics */
 	DP_STATS_INC_PKT(dp_vif, tx_i.recv_from_stack, 1, skb->len, ring_id);
 
-	/* Iterate through all active links */
-	for_each_set_bit(link_id, &links_map, IEEE80211_MLD_MAX_NUM_LINKS) {
+
+	/*
+	 * Iterate over links_map using explicit bitmap traversal.
+	 *
+	 * For gsn_valid case, only the first set link_id is processed.
+	 * For non-gsn_valid case, all valid (set) link_ids in the VIF
+	 * are iterated sequentially.
+	 *
+	 * find_first_bit() is used to get the initial link_id and
+	 * find_next_bit() is used to traverse remaining set bits.
+	 * The loop terminates when no more set bits are found
+	 * (i.e., link_id >= IEEE80211_MLD_MAX_NUM_LINKS).
+	 */
+
+	/*
+	 * Note: Bridge vdev are excluded in loop iteration.
+	 * For valid STA scenarios, the corresponding bridge link
+	 * will be selected and used instead.
+	 */
+
+	do {
 		struct ath12k_link_vif *arvif =
 			rcu_dereference(ahvif->link[link_id]);
 		struct ath12k *ar = NULL;
 
 		if (!arvif || !arvif->is_up) {
 			DP_STATS_INC(dp_vif,
-				     tx_i.drop[DP_TX_ENQ_DROP_INV_ARVIF],
-				     1, ring_id);
-			continue;
+					tx_i.drop[DP_TX_ENQ_DROP_INV_ARVIF],
+					1, ring_id);
+			goto next;
 		}
 
 		ar = arvif->ar;
 		dp_link_vif = &dp_vif->dp_link_vif[link_id];
-		/* Check if link is up */
+
 		if (!dp_link_vif) {
 			DP_STATS_INC(dp_vif,
 				     tx_i.drop[DP_TX_ENQ_DROP_INV_ARVIF],
 				     1, ring_id);
-			continue;
+			goto next;
 		}
 
-		/* Get DP pdev */
 		dp_pdev = ath12k_dp_to_dp_pdev(ar->ab->dp,
 					       dp_link_vif->pdev_idx);
 		if (!dp_pdev) {
 			DP_STATS_INC(dp_vif,
 				     tx_i.drop[DP_TX_ENQ_DROP_INV_PDEV],
 				     1, ring_id);
-			continue;
+			goto next;
 		}
 
 		if (unlikely(ath12k_dp_stats_enabled(dp_pdev)))
@@ -1568,7 +1586,6 @@ void ath12k_wifi7_mcbc_handler(struct ath12k_dp_vif *dp_vif,
 		ath12k_wifi7_dp_get_ring_id(dp_pdev->dp, &ring_id, skb);
 		dp = dp_pdev->dp;
 
-		/* Check recovery state */
 		if (ath12k_wifi7_tx_validate_recovery(dp->ab)) {
 			DP_STATS_INC(dp_vif,
 				     tx_i.drop[DP_TX_ENQ_DROP_FW_RECOVERY],
@@ -1576,19 +1593,18 @@ void ath12k_wifi7_mcbc_handler(struct ath12k_dp_vif *dp_vif,
 			return;
 		}
 
-		/* Copy SKB for this link */
 		if (is_eth) {
 			skb_new = skb_clone(skb, GFP_ATOMIC);
 			if (!skb_new)
-				continue;
+				goto next;
 		} else {
 			skb_new = skb_copy(skb, GFP_ATOMIC);
 			if (!skb_new)
-				continue;
+				goto next;
 		}
 
 		len = skb_new->len;
-		/* Setup encryption */
+
 		msdu_info.group_slot = -1;
 		msdu_info.mpsk_diff_encap = 0;
 		ret = ath12k_wifi7_mcbc_setup_encryption(dp_vif, dp_pdev,
@@ -1601,20 +1617,18 @@ void ath12k_wifi7_mcbc_handler(struct ath12k_dp_vif *dp_vif,
 			DP_STATS_INC(dp_vif,
 				     tx_i.drop[DP_TX_ENQ_DROP_MCBC_ENCRY_FAIL],
 				     1, ring_id);
-			continue;
+			goto next;
 		}
 
-		/* Setup MSDU info */
 		msdu_info.qos_nw_delay = qos_nw_delay;
 		ret = ath12k_wifi7_mcbc_setup_msdu_info(dp_link_vif, arsta, dp,
 							&msdu_info, gsn, gsn_valid,
 							skb_new, is_eth, htt_mesh);
 		if (ret < 0) {
 			dev_kfree_skb_any(skb_new);
-			continue;
+			goto next;
 		}
 
-		/* Process features based on bitmap */
 		feature_ret = ath12k_wifi7_dp_tx_process_features(dp_vif, dp_pdev,
 								  skb_new, &len,
 								  &msdu_info,
@@ -1623,32 +1637,42 @@ void ath12k_wifi7_mcbc_handler(struct ath12k_dp_vif *dp_vif,
 			if (feature_ret == DP_TX_RETURN)
 				break;
 
-			DP_STATS_INC(dp_vif, tx_i.drop[DP_TX_ENQ_DROP_FEAT_ERR],
+			DP_STATS_INC(dp_vif,
+				     tx_i.drop[DP_TX_ENQ_DROP_FEAT_ERR],
 				     1, ring_id);
 			dev_kfree_skb_any(skb_new);
-			continue;
+			goto next;
 		}
 
 		msdu_info.data_len = len;
+
 		if (gsn_valid)
-			msdu_info.vdev_id += HTT_TX_MLO_MCAST_HOST_REINJECT_BASE_VDEV_ID;
+			msdu_info.vdev_id +=
+				HTT_TX_MLO_MCAST_HOST_REINJECT_BASE_VDEV_ID;
 		else if (arvif->nawds_support && !msdu_info.lookup_override)
-			msdu_info.meta_data_flags |= u32_encode_bits(1,
-					HTT_TCL_META_DATA_HOST_INSPECTED_MISSION);
+			msdu_info.meta_data_flags |=
+				u32_encode_bits(1,
+						HTT_TCL_META_DATA_HOST_INSPECTED_MISSION);
 
 		err = ath12k_wifi7_dp_tx_mcast_send(dp_pdev, ahvif, dp_link_vif,
-						    ring_id, &msdu_info, gsn_valid,
-						    gsn, skb_new, arsta,
-						    skb_ctrl, htt_mesh);
+						    ring_id, &msdu_info,
+						    gsn_valid, gsn, skb_new,
+						    arsta, skb_ctrl, htt_mesh);
 
 		if (unlikely(err != DP_TX_ENQ_SUCCESS)) {
 			DP_STATS_INC(dp_vif, tx_i.drop[err], 1, ring_id);
 			dev_kfree_skb_any(skb_new);
-			continue;
+			goto next;
 		}
 
 		atomic_inc(&dp_pdev->num_tx_pending);
-	}
+
+next:
+		links_map &= ~BIT(link_id);
+		link_id = find_first_bit(&links_map,
+					 IEEE80211_MLD_MAX_NUM_LINKS);
+
+	} while (link_id < IEEE80211_MLD_MAX_NUM_LINKS);
 }
 
 /**
