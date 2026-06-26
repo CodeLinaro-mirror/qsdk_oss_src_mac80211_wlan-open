@@ -2109,7 +2109,9 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	 */
 	if (cfg80211_chandef_dfs_usable(local->hw.wiphy, &params->chandef) &&
 	    !cfg80211_chandef_dfs_available(local->hw.wiphy, &params->chandef))
-		ieee80211_bootup_cac_start_timer_extn(sdata, link, &params->chandef);
+		ieee80211_bootup_cac_start_timer_extn(sdata, link,
+						      &params->chandef,
+						      params->residual_cac_ms);
 #endif /* CPTCFG_QCN_EXTN */
 
 	return 0;
@@ -3543,7 +3545,7 @@ static int ieee80211_join_mesh(struct wiphy *wiphy, struct net_device *dev,
 	    !cfg80211_chandef_dfs_available(sdata->local->hw.wiphy,
 					    &setup->chandef))
 		ieee80211_bootup_cac_start_timer_extn(sdata, &sdata->deflink,
-						      &setup->chandef);
+						      &setup->chandef, 0);
 #endif /* CPTCFG_QCN_EXTN */
 
 	return ieee80211_start_mesh(sdata);
