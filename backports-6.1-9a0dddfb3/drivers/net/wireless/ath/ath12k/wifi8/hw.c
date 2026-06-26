@@ -906,34 +906,12 @@ ath12k_wifi8_mac_get_tx_link(struct ieee80211_sta *sta, struct ieee80211_vif *vi
 	if (!ieee80211_is_mgmt(hdr->frame_control))
 		return link;
 
-	if (ieee80211_is_action(hdr->frame_control))
-		pr_debug("SMD DBG get_tx_link: sta=%p ahsta=%p arvif=%p lid=%u lmap=0x%x link=%u pri=%u\n",
-			 sta, ahsta, ahsta->deflink.arvif, ahsta->deflink.link_id,
-			 ahsta->links_map, link, ahsta->primary_link_id);
-
 	if (ahsta->deflink.arvif && ahsta->deflink.arvif->ar) {
 		ar = ahsta->deflink.arvif->ar;
 		ab = ar->ab;
 	} else {
 		/* deflink.arvif is stale; derive ar/ab from the resolved link */
 		struct ath12k_link_sta *_arsta = rcu_dereference(ahsta->link[link]);
-
-		if (ieee80211_is_action(hdr->frame_control)) {
-			unsigned long _lmap = ahsta->links_map;
-			u8 _lid;
-
-			pr_debug("SMD DBG get_tx_link: deflink.arvif stale, using link[%u]\n",
-				 link);
-			for_each_set_bit(_lid, &_lmap, ATH12K_NUM_MAX_LINKS) {
-				struct ath12k_link_sta *_ls =
-					rcu_dereference(ahsta->link[_lid]);
-
-				pr_debug("SMD DBG get_tx_link: link[%u] arsta=%p arvif=%p ar=%p\n",
-					 _lid, _ls,
-					 _ls ? _ls->arvif : NULL,
-					 (_ls && _ls->arvif) ? _ls->arvif->ar : NULL);
-			}
-		}
 
 		if (_arsta && _arsta->arvif && _arsta->arvif->ar) {
 			ar = _arsta->arvif->ar;

@@ -5278,15 +5278,16 @@ static void ath12k_peer_assoc_h_mlo(struct ath12k_link_sta *arsta,
 		if (sta->reconf.added_links & BIT(arsta_p->link_id))
 			ml->ml_reconfig = ml->partner_info[i].mlo_link_add = true;
 
-		ath12k_dbg(arvif->ar->ab, ATH12K_DBG_MAC,
-			   "smd mlo peer_assoc: partner[%d] lid=%u v=%u hwl=%u a=%d u=%d del=%d add=%d\n",
-			   i, ml->partner_info[i].ieee_link_id,
-			   ml->partner_info[i].vdev_id,
-			   ml->partner_info[i].hw_link_id,
-			   ml->partner_info[i].assoc_link,
-			   ml->partner_info[i].primary_umac,
-			   ml->partner_info[i].mlo_link_del,
-			   ml->partner_info[i].mlo_link_add);
+		ath12k_dbg_level(arvif->ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
+				 "mlo peer_assoc: partner[%d] lid=%u v=%u hwl=%u logidx=%u a=%d u=%d del=%d add=%d\n",
+				 i, ml->partner_info[i].ieee_link_id,
+				 ml->partner_info[i].vdev_id,
+				 ml->partner_info[i].hw_link_id,
+				 ml->partner_info[i].logical_link_idx,
+				 ml->partner_info[i].assoc_link,
+				 ml->partner_info[i].primary_umac,
+				 ml->partner_info[i].mlo_link_del,
+				 ml->partner_info[i].mlo_link_add);
 
 		ml->num_partner_links++;
 
@@ -5470,12 +5471,12 @@ static void ath12k_mac_peer_assoc_h_mlo_smd(struct ath12k *ar,
 	ml->num_partner_links = 0;
 	ml->ml_reconfig = true;
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
-		   "smd mlo peer_assoc: ml->assoc_link: %d ml->primary_umac: %d self link_id=%u self_is_target=%d primary_link_id=%u mld_addr=%pM\n",
-		   ml->assoc_link, ml->primary_umac,
-		   arsta->link_id, self_is_target, primary_link_id,
-		   self_is_target ? ath12k_ahsta_to_sta(target_ahsta)->addr
-				  : ath12k_ahsta_to_sta(current_ahsta)->addr);
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
+			 "smd mlo peer_assoc: ml->assoc_link: %d ml->primary_umac: %d self link_id=%u self_is_target=%d primary_link_id=%u mld_addr=%pM\n",
+			 ml->assoc_link, ml->primary_umac,
+			 arsta->link_id, self_is_target, primary_link_id,
+			 self_is_target ? ath12k_ahsta_to_sta(target_ahsta)->addr
+			 : ath12k_ahsta_to_sta(current_ahsta)->addr);
 
 	if (self_is_target) {
 		/* Self is a target AP STA link → being added */
@@ -5536,15 +5537,15 @@ static void ath12k_mac_peer_assoc_h_mlo_smd(struct ath12k *ar,
 		ml->partner_info[i].ieee_link_id        = link_id;
 		ml->partner_info[i].mlo_link_add        = true;
 		ml->num_partner_links++;
-		ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
-			   "smd mlo peer_assoc: tgt partner[%d] link_id=%u vdev_id=%u hw_link_id=%u assoc_link=%d primary_umac=%d mlo_link_add=%d ieee_link_id=%u bridge_peer=%d\n",
-			   i, link_id, arvif_p->vdev_id,
-			   arvif_p->ar->pdev->hw_link_id,
-			   ml->partner_info[i].assoc_link,
-			   ml->partner_info[i].primary_umac,
-			   ml->partner_info[i].mlo_link_add,
-			   ml->partner_info[i].ieee_link_id,
-			   ml->partner_info[i].bridge_peer);
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
+				 "smd mlo peer_assoc: tgt partner[%d] link_id=%u vdev_id=%u hw_link_id=%u assoc_link=%d primary_umac=%d mlo_link_add=%d ieee_link_id=%u bridge_peer=%d\n",
+				 i, link_id, arvif_p->vdev_id,
+				 arvif_p->ar->pdev->hw_link_id,
+				 ml->partner_info[i].assoc_link,
+				 ml->partner_info[i].primary_umac,
+				 ml->partner_info[i].mlo_link_add,
+				 ml->partner_info[i].ieee_link_id,
+				 ml->partner_info[i].bridge_peer);
 		i++;
 	}
 
@@ -5574,25 +5575,25 @@ static void ath12k_mac_peer_assoc_h_mlo_smd(struct ath12k *ar,
 			ml->partner_info[i].ieee_link_id        = primary_link_id;
 			ml->partner_info[i].mlo_link_add        = true;
 			ml->num_partner_links++;
-			ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
-				   "smd mlo peer_assoc: dl_drain partner[%d] link_id=%u vdev_id=%u hw_link_id=%u assoc_link=%d primary_umac=%d mlo_link_add=%d ieee_link_id=%u bridge_peer=%d\n",
-				   i, primary_link_id, arvif_p->vdev_id,
-				   arvif_p->ar->pdev->hw_link_id,
-				   ml->partner_info[i].assoc_link,
-				   ml->partner_info[i].primary_umac,
-				   ml->partner_info[i].mlo_link_add,
-				   ml->partner_info[i].ieee_link_id,
-				   ml->partner_info[i].bridge_peer);
+			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
+					"smd mlo peer_assoc: dl_drain partner[%d] link_id=%u vdev_id=%u hw_link_id=%u assoc_link=%d primary_umac=%d mlo_link_add=%d ieee_link_id=%u bridge_peer=%d\n",
+					i, primary_link_id, arvif_p->vdev_id,
+					arvif_p->ar->pdev->hw_link_id,
+					ml->partner_info[i].assoc_link,
+					ml->partner_info[i].primary_umac,
+					ml->partner_info[i].mlo_link_add,
+					ml->partner_info[i].ieee_link_id,
+					ml->partner_info[i].bridge_peer);
 			i++;
 		}
 	}
 
 	rcu_read_unlock();
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
-		   "smd mlo peer_assoc: done self link_id=%u self_is_target=%d num_partner_links=%u ml_peer_id=%u peer_id_valid=%d\n",
-		   arsta->link_id, self_is_target, ml->num_partner_links,
-		   ml->ml_peer_id, ml->peer_id_valid);
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
+			 "smd mlo peer_assoc: done self link_id=%u self_is_target=%d num_partner_links=%u ml_peer_id=%u peer_id_valid=%d\n",
+			 arsta->link_id, self_is_target, ml->num_partner_links,
+			 ml->ml_peer_id, ml->peer_id_valid);
 }
 
 void ath12k_mac_peer_assoc_prepare_smd(struct ath12k *ar,
@@ -6294,9 +6295,9 @@ skip_vdev_up:
 				    "smd bss_assoc: rx_tid restore failed for %pM (non-fatal)\n",
 				    vif->cfg.ap_addr);
 
-		ath12k_dbg(ab, ATH12K_DBG_MAC,
-			   "smd bss_assoc: activated primary link %u hw_link_id %u\n",
-			   primary_link_id, arvif->ar->hw_link_id);
+		ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
+				 "smd bss_assoc: activated primary link %u hw_link_id %u\n",
+				 primary_link_id, arvif->ar->hw_link_id);
 	}
 
 	me_db = ath12k_me_db_get(dp_vif);
@@ -13273,17 +13274,7 @@ static void ath12k_mac_free_unassign_link_sta(struct ath12k_hw *ah,
 	ahsta->links_map &= ~BIT(link_id);
 	ahsta->device_bitmap &= ~BIT(ab->wsi_info.index);
 	ahsta->mlo_hw_link_id_bitmap &= ~BIT(arvif->ar->pdev->hw_link_id);
-	/* STA mode has exactly one peer per vdev (the BSS peer). The link_idx
-	 * field is a logical peer-slot index used only in AP mode to track
-	 * which positions in the vdev peer table are occupied. In STA mode
-	 * there is no slot contention, so link_idx is never allocated from
-	 * free_logical_idx_map — set to 0xFF to mark it invalid for the
-	 * entire lifetime of this arsta.
-	 */
-	if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_STA)
-		arsta->link_idx = 0xFF;
-	else
-		ahsta->free_logical_idx_map |= BIT(arsta->link_idx);
+	ahsta->free_logical_idx_map |= BIT(arsta->link_idx);
 	rcu_assign_pointer(ahsta->link[link_id], NULL);
 	synchronize_rcu();
 
@@ -13782,16 +13773,12 @@ static int ath12k_mac_assign_link_sta(struct ath12k_hw *ah,
 		return -ENOSPC;
 	}
 
-	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
-		arsta->link_idx = arvif->ar->hw_link_id;
-	} else {
-		/* Allocate a logical link index by selecting the first available bit
-		 * from the free logical index map
-		 */
-		link_idx = __ffs(ahsta->free_logical_idx_map);
-		ahsta->free_logical_idx_map &= ~BIT(link_idx);
-		arsta->link_idx = link_idx;
-	}
+	/* Allocate a logical link index by selecting the first available bit
+	 * from the free logical index map
+	 */
+	link_idx = __ffs(ahsta->free_logical_idx_map);
+	ahsta->free_logical_idx_map &= ~BIT(link_idx);
+	arsta->link_idx = link_idx;
 
 	arsta->link_id = link_id;
 	ath12k_mac_map_link_sta(ahsta, link_id);
@@ -14627,10 +14614,6 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 	 */
 	if (old_state == IEEE80211_STA_NOTEXIST &&
 	    new_state == IEEE80211_STA_NONE) {
-
-		ath12k_dbg(NULL, ATH12K_DBG_MAC,
-			   "sta_state NOTEXIST->NONE: sta %pM mlo %d valid_links 0x%lx\n",
-			   sta->addr, sta->mlo, sta->valid_links);
 		if (!ahsta->links_map) {
 			struct ath12k_ba_session_params rx_ba_save[ATH12K_SMD_NUM_TIDS];
 			struct ath12k_ba_session_params tx_ba_save[ATH12K_SMD_NUM_TIDS];
@@ -14726,17 +14709,19 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 					ahsta->assoc_link_id = link_id;
 					ath12k_sta_update_primary_link(wiphy, ahsta,
 								       link_id);
-					ath12k_dbg(NULL, ATH12K_DBG_MAC,
-						   "mac ML arsta %p STA %pM link_id=%u is assoc: %d assoc link id: %d primary: %d\n",
-						   arsta, sta->addr, link_id,
-						   arsta->is_assoc_link,
-						   ahsta->assoc_link_id,
-						   ahsta->primary_link_id);
+					ath12k_dbg_level(NULL,
+							 ATH12K_DBG_MAC, ATH12K_DBG_L2,
+							 "mac ML arsta %p STA %pM link_id=%u is assoc: %d assoc link id: %d primary: %d\n",
+							 arsta, sta->addr, link_id,
+							 arsta->is_assoc_link,
+							 ahsta->assoc_link_id,
+							 ahsta->primary_link_id);
 				} else {
-					ath12k_dbg(NULL, ATH12K_DBG_MAC,
-						   "mac ML STA %pM link_id=%u added as partner (assoc_link_id=%u links_map=0x%lx)\n",
-						   sta->addr, link_id,
-						   ahsta->assoc_link_id, links_map);
+					ath12k_dbg_level(NULL,
+							 ATH12K_DBG_MAC, ATH12K_DBG_L2,
+							 "mac ML STA %pM link_id=%u added as partner (assoc_link_id=%u links_map=0x%lx)\n",
+							 sta->addr, link_id,
+							 ahsta->assoc_link_id, links_map);
 				}
 
 				init_completion(&ahsta->dp_migration_event);
@@ -15576,9 +15561,9 @@ ath12k_mac_send_reconfig_peer_assoc(struct ath12k *ar,
 			   pi->assoc_link, pi->primary_umac);
 	}
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
-		   "mac PEER_ASSOC primary link %u (partners=%u)\n",
-		   primary_link_id, peer_arg->ml.num_partner_links);
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
+			 "mac PEER_ASSOC primary link %u (partners=%u)\n",
+			 primary_link_id, peer_arg->ml.num_partner_links);
 
 	ret = ath12k_wmi_send_peer_assoc_cmd(ar, peer_arg);
 	if (ret)
@@ -18623,12 +18608,6 @@ u8 ath12k_mac_get_tx_link(struct ieee80211_sta *sta, struct ieee80211_vif *vif,
 	if (!ieee80211_is_mgmt(hdr->frame_control))
 		return link;
 
-	if (ieee80211_is_action(hdr->frame_control))
-		ath12k_dbg(NULL, ATH12K_DBG_MAC,
-			   "SMD DBG get_tx_link: deflink.link_id=%d links_map=0x%x link=%d primary=%d\n",
-			   ahsta->deflink.link_id, ahsta->links_map, link,
-			   ahsta->primary_link_id);
-
 	if (ahsta->deflink.arvif && ahsta->deflink.arvif->ar) {
 		ab = ahsta->deflink.arvif->ar->ab;
 	} else if (ieee80211_is_action(hdr->frame_control)) {
@@ -18639,24 +18618,6 @@ u8 ath12k_mac_get_tx_link(struct ieee80211_sta *sta, struct ieee80211_vif *vif,
 			if (!arsta || !arsta->arvif || !arsta->arvif->ar)
 				continue;
 			ab = arsta->arvif->ar->ab;
-			ath12k_dbg(ab, ATH12K_DBG_MAC,
-				   "SMD DBG get_tx_link: deflink.arvif stale, using link[%d]\n",
-				   link_id);
-			{
-				unsigned long all_links = ahsta->links_map;
-				u8 l;
-				struct ath12k_link_sta *lst;
-
-				for_each_set_bit(l, &all_links, ATH12K_NUM_MAX_LINKS) {
-					lst = rcu_dereference(ahsta->link[l]);
-					ath12k_dbg(ab, ATH12K_DBG_MAC,
-						   "SMD DBG get_tx_link: link[%d] arsta=%p arvif=%p ar=%p\n",
-						   l, lst,
-						   lst ? lst->arvif : NULL,
-						   lst && lst->arvif ?
-						   lst->arvif->ar : NULL);
-				}
-			}
 			link = link_id;
 			break;
 		}
