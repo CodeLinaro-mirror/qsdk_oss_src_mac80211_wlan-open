@@ -1193,7 +1193,7 @@ static int ath12k_wifi8_mcbc_setup_encryption(struct ath12k_dp_vif *dp_vif,
 	struct ath12k *ar;
 	bool mpsk_enabled;
 
-	if (!is_eth)
+	if (!is_eth && !sta)
 		ath12k_mlo_mcast_update_tx_link_address(ahvif->vif, link_id,
 							skb, info->flags);
 	/* Get AR from link */
@@ -2292,60 +2292,73 @@ void ath12k_wifi8_mcbc_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 	/* Update entry statistics */
 	DP_STATS_INC_PKT(dp_vif, tx_i.recv_from_stack, 1, skb->len, ring_id);
 
-	/* Iterate through all active links.*/
-	for_each_set_bit(link_id, &links_map, IEEE80211_MLD_MAX_NUM_LINKS) {
-		struct ath12k_link_vif *arvif = rcu_dereference(ahvif->link[link_id]);
+	/*
+	 * Iterate over links_map using explicit bitmap traversal.
+	 *
+	 * For gsn_valid case, only the first set link_id is processed.
+	 * For non-gsn_valid case, all valid (set) link_ids in the VIF
+	 * are iterated sequentially.
+	 *
+	 * find_first_bit() is used to get the initial link_id and
+	 * find_next_bit() is used to traverse remaining set bits.
+	 * The loop terminates when no more set bits are found
+	 * (i.e., link_id >= IEEE80211_MLD_MAX_NUM_LINKS).
+	 */
+
+	do {
+		struct ath12k_link_vif *arvif =
+			rcu_dereference(ahvif->link[link_id]);
+		struct ath12k *ar = NULL;
 
 		if (!arvif || !arvif->is_up) {
 			DP_STATS_INC(dp_vif,
 				     tx_i.drop[DP_TX_ENQ_DROP_INV_ARVIF],
 				     1, ring_id);
-			continue;
+			goto next;
 		}
 
-		/* For MLO multicast, skip links with no associated stations. */
+		ar = arvif->ar;
+
+		/* For MLO multicast, skip links with no associated stations */
 		if (ath12k_wifi8_is_mpsk_enabled(ahvif) &&
 		    !(vlan_ahvif && vlan_ahvif->vif->type == NL80211_IFTYPE_AP_VLAN) &&
 		    gsn_valid) {
 			bool no_sta;
 
-			spin_lock_bh(&arvif->ar->data_lock);
+			spin_lock_bh(&ar->data_lock);
 			no_sta = (arvif->num_stations == 0);
-			spin_unlock_bh(&arvif->ar->data_lock);
+			spin_unlock_bh(&ar->data_lock);
 
 			if (no_sta) {
 				DP_STATS_INC(dp_vif,
 					     tx_i.drop[DP_TX_ENQ_DROP_MCAST_NO_LINK],
 					     1, ring_id);
-				continue;
+				goto next;
 			}
 		}
 
 		dp_link_vif = &dp_vif->dp_link_vif[link_id];
 
-		/* Check if link is up */
 		if (!dp_link_vif) {
 			DP_STATS_INC(dp_vif,
 				     tx_i.drop[DP_TX_ENQ_DROP_INV_ARVIF],
 				     1, ring_id);
-			continue;
+			goto next;
 		}
 
-		/* Get DP pdev */
-		dp_pdev = ath12k_dp_to_dp_pdev(arvif->ar->ab->dp,
+		dp_pdev = ath12k_dp_to_dp_pdev(ar->ab->dp,
 					       dp_link_vif->pdev_idx);
 
 		if (!dp_pdev) {
 			DP_STATS_INC(dp_vif,
 				     tx_i.drop[DP_TX_ENQ_DROP_INV_PDEV],
 				     1, ring_id);
-			continue;
+			goto next;
 		}
 
 		central_dp = ath12k_get_central_dp(dp_pdev->dp);
 		ath12k_wifi8_dp_get_ring_id(central_dp, &ring_id, skb);
 
-		/* Check recovery state */
 		if (ath12k_wifi8_tx_recovery_drop(central_dp->ab)) {
 			DP_STATS_INC(dp_vif,
 				     tx_i.drop[DP_TX_ENQ_DROP_FW_RECOVERY],
@@ -2353,32 +2366,32 @@ void ath12k_wifi8_mcbc_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 			return;
 		}
 
-		/* Copy SKB for this link */
-		if (is_eth)
+		if (is_eth) {
 			skb_new = skb_clone(skb, GFP_ATOMIC);
-		else
+			if (!skb_new)
+				goto next;
+		} else {
 			skb_new = skb_copy(skb, GFP_ATOMIC);
-
-		if (!skb_new)
-			continue;
+			if (!skb_new)
+				goto next;
+		}
 
 		len = skb_new->len;
 
-		/* Setup encryption.*/
 		msdu_info.group_slot = -1;
 		ret = ath12k_wifi8_mcbc_setup_encryption(dp_vif, dp_pdev,
 							 link_id, skb_new,
-							 is_sta, is_eth, &msdu_info,
+							 is_sta, is_eth,
+							 &msdu_info,
 							 vlan_ahvif, info, sta);
 		if (ret) {
 			dev_kfree_skb_any(skb_new);
 			DP_STATS_INC(dp_vif,
 				     tx_i.drop[DP_TX_ENQ_DROP_MCBC_ENCRY_FAIL],
 				     1, ring_id);
-			continue;
+			goto next;
 		}
 
-		/* Setup MSDU info.*/
 		msdu_info.qos_nw_delay = qos_nw_delay;
 		ret = ath12k_wifi8_mcbc_setup_msdu_info(arvif, dp_link_vif, arsta,
 							central_dp, &msdu_info, gsn,
@@ -2386,10 +2399,9 @@ void ath12k_wifi8_mcbc_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 							dp_pdev, vlan_ahvif);
 		if (ret < 0) {
 			dev_kfree_skb_any(skb_new);
-			continue;
+			goto next;
 		}
 
-		/* Process features based on bitmap.*/
 		feature_ret = ath12k_wifi8_dp_tx_process_features(dp_vif, dp_pdev,
 								  skb_new, &len,
 								  &msdu_info,
@@ -2399,10 +2411,11 @@ void ath12k_wifi8_mcbc_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 			if (feature_ret == DP_TX_RETURN)
 				break;
 
-			DP_STATS_INC(dp_vif, tx_i.drop[DP_TX_ENQ_DROP_FEAT_ERR],
+			DP_STATS_INC(dp_vif,
+				     tx_i.drop[DP_TX_ENQ_DROP_FEAT_ERR],
 				     1, ring_id);
 			dev_kfree_skb_any(skb_new);
-			continue;
+			goto next;
 		}
 
 		msdu_info.data_len = len;
@@ -2415,11 +2428,18 @@ void ath12k_wifi8_mcbc_handler(struct ath12k_dp_vif *dp_vif, u8 link_id,
 		if (unlikely(err != DP_TX_ENQ_SUCCESS)) {
 			DP_STATS_INC(dp_vif, tx_i.drop[err], 1, ring_id);
 			dev_kfree_skb_any(skb_new);
-			continue;
+			goto next;
 		}
 
 		atomic_inc(&dp_pdev->num_tx_pending);
-	}
+
+next:
+		links_map &= ~BIT(link_id);
+		link_id = find_first_bit(&links_map,
+					 IEEE80211_MLD_MAX_NUM_LINKS);
+
+	} while (link_id < IEEE80211_MLD_MAX_NUM_LINKS);
+
 }
 
 static inline void
