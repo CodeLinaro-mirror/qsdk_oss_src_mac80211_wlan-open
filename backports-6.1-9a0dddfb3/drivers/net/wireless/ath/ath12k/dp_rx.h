@@ -228,6 +228,8 @@ int ath12k_dp_rx_peer_pn_replay_config(struct ath12k_link_vif *arvif,
 				       enum set_key_cmd key_cmd,
 				       struct ieee80211_key_conf *key);
 void ath12k_dp_rx_peer_tid_cleanup(struct ath12k *ar, struct ath12k_dp_link_peer *peer);
+int ath12k_dp_rx_reo_alloc(struct ath12k_base *ab);
+int ath12k_dp_rx_reo_init(struct ath12k_base *ab);
 int ath12k_dp_rx_reo_setup(struct ath12k_base *ab);
 void ath12k_dp_rx_reo_cleanup(struct ath12k_base *ab);
 int ath12k_dp_rx_alloc(struct ath12k_base *ab);

@@ -2067,10 +2067,15 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab)
 	}
 
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
-	if (ab->ath12k_base_extn.ipa_ctx->ipa_ops &&
-	    ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_register_is_ipa_ready)
-		ret = ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_register_is_ipa_ready
-			(ab);
+	if (ab->ath12k_base_extn.ipa_ctx &&
+	    ab->ath12k_base_extn.ipa_ctx->ipa_ops &&
+	    ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_register_is_ipa_ready) {
+		ret = ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_register_is_ipa_ready(ab);
+		if (ret) {
+			ath12k_warn(ab, "failed to register IPA ready callback: %d\n", ret);
+			goto err_dp_free;
+		}
+	}
 
 	ret = ath12k_dp_rxdma_buf_setup(ab);
 	if (ret) {
@@ -2111,11 +2116,6 @@ err_core_stop:
 			continue;
 
 		mutex_lock(&ab->core_lock);
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
-		if (ab->ath12k_base_extn.ipa_ctx->ipa_ops &&
-		    ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_uc_ol_deinit)
-			ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_uc_ol_deinit(ab);
-#endif
 		ath12k_core_stop(ab);
 		mutex_unlock(&ab->core_lock);
 	}
