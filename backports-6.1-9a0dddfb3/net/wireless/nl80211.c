@@ -6705,6 +6705,13 @@ static bool uhr_set_mcs_mask(struct genl_info *info, struct wireless_dev *wdev,
 	/* MCS 14 is not defined in UHR as per Draft P802.11bn_D1.4*/
 	eht_mcs_mask[0] &= ~0x4000;
 
+	/* Update MCS 15 based on UHR PHY Capability */
+	if (uhr_cap->phy.cap[1] &
+	      IEEE80211_UHR_PHY_CAP1_MCS15_SUPP)
+		eht_mcs_mask[0] |= 0x8000;
+	else
+		eht_mcs_mask[0] &= ~0x8000;
+
 	memset(mcs, 0, sizeof(u32) * NL80211_UHR_NSS_MAX);
 	for (i = 0; i < NL80211_UHR_NSS_MAX; i++) {
 		tx_mcs_mask[i] = eht_mcs_mask[i];
@@ -6889,6 +6896,20 @@ static int nl80211_parse_tx_bitrate_mask(struct genl_info *info,
 
 		for (j = 0; j < NL80211_UHR_NSS_MAX; j++) {
 			mask->control[i].uhr_mcs[j] = mask->control[i].eht_mcs[j];
+			if (j == 0) {
+				/* MCS 14 is not defined in UHR as per
+				 * Draft P802.11bn_D1.4
+				 */
+				mask->control[i].uhr_mcs[0] &= ~0x4000;
+
+				/* Update MCS 15 based on UHR PHY Capability */
+				if (uhr_cap->phy.cap[1] &
+				    IEEE80211_UHR_PHY_CAP1_MCS15_SUPP)
+					mask->control[i].uhr_mcs[0] |= 0x8000;
+				else
+					mask->control[i].uhr_mcs[0] &= ~0x8000;
+			}
+
 			/* EHT-MCS 0-7 are mapped to UHR-MCS 0-7 and iMCS 17, 19, 20 */
 			if (mask->control[i].uhr_mcs[j] & 0xFF)
 				mask->control[i].uhr_mcs[j] |= 0x1A0000;
