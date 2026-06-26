@@ -1475,8 +1475,27 @@ void ath12k_wifi7_dp_mon_rx_process_mpdu_queue(struct ath12k_pdev_dp *dp_pdev,
 				}
 
 				last_idx = skb_shinfo(mpdu)->nr_frags - 1;
-				skb_coalesce_rx_frag(mpdu, last_idx,
-						     -fcs_len_left, 0);
+				if (fcs_len_left > 0) {
+					last_frag_size =
+					ath12k_dp_mon_get_frag_size_by_idx(dp,
+									   mpdu,
+									   last_idx);
+					if (last_frag_size <= fcs_len_left) {
+						ath12k_dp_mon_cnt_skb_and_frags(mpdu,
+										&num_skb,
+										&pkt_tlv);
+						mon_stats->num_skb_raw += num_skb;
+						mon_stats->num_frag_raw += pkt_tlv;
+						dev_kfree_skb_any(mpdu);
+						mon_stats->num_skb_free += num_skb;
+						mon_stats->pkt_tlv_free += pkt_tlv;
+						num_skb = 0;
+						pkt_tlv = 0;
+						goto next_mpdu;
+					}
+					skb_coalesce_rx_frag(mpdu, last_idx,
+							     -fcs_len_left, 0);
+				}
 			}
 			ath12k_dp_mon_cnt_skb_and_frags(mpdu, &num_skb,
 							&pkt_tlv);
