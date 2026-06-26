@@ -7435,9 +7435,15 @@ ath12k_wmi_copy_resource_config(struct ath12k_base *ab,
 			cpu_to_le32(1 <<
 				    WMI_RSRC_CFG_HOST_SIMULATE_RADAR_320_SUPPORTED);
 
-	if (test_bit(WMI_SERVICE_PDEV_SET_CUMAC_CHIP_CMD_SUPPORT, ab->wmi_ab.svc_map))
-		wmi_cfg->host_service_flags |=
-			cpu_to_le32(1 << WMI_RSRC_CFG_HOST_SVC_FLAG_CUMAC_CMD_SUPPORT_BIT);
+	/* Support CUMAC selection and initialization, only on when HW group is
+	 * MLO capable and in case of Non-FTM mode bring up.
+	 */
+	if (ab->ag->cumac_enabled && ab->ag->mlo_capable && !ath12k_ftm_mode) {
+		if (test_bit(WMI_SERVICE_PDEV_SET_CUMAC_CHIP_CMD_SUPPORT,
+			     ab->wmi_ab.svc_map))
+			wmi_cfg->host_service_flags |=
+				cpu_to_le32(1 << WMI_RSRC_CFG_HOST_SVC_FLAG_CUMAC_CMD_SUPPORT_BIT);
+	}
 
 #ifdef CPTCFG_QCN_EXTN
 	ath12k_wmi_set_hw_blocklist_host_service_flag_extn(ab, wmi_cfg, tg_cfg);
