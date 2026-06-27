@@ -1070,6 +1070,8 @@ void ath12k_wifi8_convert_n_deliver_nw_frame(struct ath12k_pdev_dp *dp_pdev,
 	rx_status = IEEE80211_SKB_RXCB(msdu);
 	*rx_status = *status;
 
+	ath12k_dp_rx_update_eapol_stats(dp_pdev->dp, msdu);
+
 	ieee80211_rx_napi(ath12k_dp_pdev_to_hw(dp_pdev), pubsta, msdu, napi);
 }
 
@@ -1156,6 +1158,7 @@ static bool ath12k_wifi8_handle_reo_route(struct ath12k_pdev_dp *dp_pdev,
 		fallthrough;
 	case DP_RX_DECAP_TYPE_RAW:
 	case DP_RX_DECAP_TYPE_NATIVE_WIFI:
+		ath12k_dp_rx_update_eapol_stats(dp_pdev->dp, spd_desc_l->msdu);
 		ath12k_wifi8_wbm_process_frame(dp_pdev, spd_desc_l,
 					       peer, rx_status,
 					       napi,
@@ -1272,6 +1275,7 @@ static bool ath12k_wifi8_dp_unauth_wds_err(struct ath12k_pdev_dp *dp_pdev,
 		if (!(llc->snap_type == cpu_to_be16(ETH_P_PAE) || is_null))
 			return true;
 
+		ath12k_dp_rx_update_eapol_stats(dp, msdu);
 		break;
 	default:
 		return true;
