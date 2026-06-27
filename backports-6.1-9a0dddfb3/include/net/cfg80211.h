@@ -1791,6 +1791,19 @@ struct cfg80211_critical_update_params {
 };
 
 /**
+ * cfg80211_cu_notify - notify user space of a CU session state transition
+ * @wdev: the wireless device
+ * @link_id: the link on which the state transition occurred
+ * @cu_state: new ECU state, see &enum nl80211_cu_state
+ *
+ * Sends a %NL80211_CMD_CRITICAL_UPDATE_NOTIFY event to user space.
+ * Called by mac80211 via ieee80211_cu_notify().
+ */
+void cfg80211_cu_notify(struct wireless_dev *wdev,
+			unsigned int link_id,
+			enum nl80211_cu_state cu_state);
+
+/**
  * struct cfg80211_beacon_data - beacon data
  * @link_id: the link ID for the AP MLD link sending this beacon
  * @head: head portion of beacon (before TIM IE)

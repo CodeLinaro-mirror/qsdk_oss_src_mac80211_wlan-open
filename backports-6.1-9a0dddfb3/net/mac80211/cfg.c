@@ -7416,3 +7416,27 @@ const struct cfg80211_ops mac80211_config_ops = {
 	.uhr_mode_update = ieee80211_uhr_mode_update,
 	.critical_update = ieee80211_critical_update_cmd,
 };
+
+void ieee80211_cu_notify(struct ieee80211_hw *hw,
+			 struct ieee80211_vif *vif,
+			 unsigned int link_id,
+			 enum nl80211_cu_state cu_state)
+{
+	struct ieee80211_sub_if_data *sdata = vif_to_sdata(vif);
+	struct ieee80211_link_data *link;
+	struct wireless_dev *wdev = &sdata->wdev;
+
+	if (WARN_ON(link_id >= IEEE80211_MLD_MAX_NUM_LINKS))
+		return;
+
+	trace_ieee80211_cu_notify(sdata, link_id, cu_state);
+
+	link = sdata_dereference(sdata->link[link_id], sdata);
+	if (!link)
+		return;
+
+	link->conf->cu_info.cu_in_progress =
+		(cu_state != NL80211_CU_STATE_ECU_END);
+	cfg80211_cu_notify(wdev, link_id, cu_state);
+}
+EXPORT_SYMBOL(ieee80211_cu_notify);

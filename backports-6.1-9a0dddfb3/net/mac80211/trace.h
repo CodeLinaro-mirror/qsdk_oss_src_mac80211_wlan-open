@@ -3629,6 +3629,31 @@ TRACE_EVENT(drv_critical_update,
 	)
 );
 
+TRACE_EVENT(ieee80211_cu_notify,
+	TP_PROTO(struct ieee80211_sub_if_data *sdata,
+		 unsigned int link_id,
+		 enum nl80211_cu_state cu_state),
+
+	TP_ARGS(sdata, link_id, cu_state),
+
+	TP_STRUCT__entry(
+		VIF_ENTRY
+		__field(unsigned int, link_id)
+		__field(u32, cu_state)
+	),
+
+	TP_fast_assign(
+		VIF_ASSIGN;
+		__entry->link_id  = link_id;
+		__entry->cu_state = cu_state;
+	),
+
+	TP_printk(
+		VIF_PR_FMT " link_id:%u cu_state:%u",
+		VIF_PR_ARG, __entry->link_id, __entry->cu_state
+	)
+);
+
 #ifdef CPTCFG_QCN_EXTN
 TRACE_EVENT(drv_set_muedca_mode,
 		TP_PROTO(struct ieee80211_local *local,
