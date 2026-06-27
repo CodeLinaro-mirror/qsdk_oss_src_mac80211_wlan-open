@@ -1861,14 +1861,6 @@ int ath12k_dp_rx_pkt_type_filter(struct ath12k *ar,
 	param.dst_ring_handler = ATH12K_WMI_PKTROUTE_USE_CCE;
 	param.route_type_bmap = 1 << pkt_type;
 
-	/* Do not program EAP CCE rule for hardwares that use other than REO_RELEASE_RING
-	 * as destination. This is a temporary fix for wifi8.
-	 */
-	if (param.dst_ring != ATH12K_REO_RELEASE_RING) {
-		ath12k_info(ar->ab, "EAP CCE dst=%u, not configuring", param.dst_ring);
-		return 0;
-	}
-
 	ret = ath12k_wmi_send_pdev_pkt_route(ar, &param);
 	if (ret)
 		ath12k_warn(ar->ab, "failed to configure pkt route %d", ret);
