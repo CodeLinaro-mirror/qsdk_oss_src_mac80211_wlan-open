@@ -207,6 +207,9 @@ struct ath12k_dp_smd_parked_rx_info {
 	struct completion flush_done;
 };
 
+void ath12k_dp_rx_tid_free_desc(struct ath12k_base *ab,
+				struct ath12k_dp_rx_tid *rx_tid);
+
 struct ath12k_dp_rx_reo_cache_flush_elem {
 	struct list_head list;
 	struct ath12k_dp_rx_tid data;

@@ -28,6 +28,22 @@
 #endif
 #include "vendor.h"
 
+void ath12k_dp_rx_tid_free_desc(struct ath12k_base *ab,
+				struct ath12k_dp_rx_tid *rx_tid)
+{
+	if (!ab->hw_params->alloc_cacheable_memory) {
+		dma_free_coherent(ab->dev, rx_tid->size, rx_tid->vaddr,
+				  rx_tid->paddr);
+		rx_tid->paddr = 0;
+	} else {
+		ath12k_core_dma_unmap_single(ab->dev, rx_tid->paddr, rx_tid->size,
+					     DMA_BIDIRECTIONAL);
+		kfree(rx_tid->vaddr);
+	}
+	rx_tid->vaddr = NULL;
+}
+EXPORT_SYMBOL(ath12k_dp_rx_tid_free_desc);
+
 void ath12k_tid_rx_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason)
 {
 	struct pcpu_netdev_tid_stats *tstats = this_cpu_ptr(ahvif->tstats);
@@ -774,10 +790,7 @@ void ath12k_dp_rx_reo_cmd_list_cleanup(struct ath12k_base *ab)
 		rx_tid = &cmd_queue->data;
 		if (rx_tid->vaddr) {
 			rx_tid->active = false;
-			ath12k_core_dma_unmap_single(ab->dev, rx_tid->paddr,
-					 rx_tid->size, DMA_BIDIRECTIONAL);
-			kfree(rx_tid->vaddr);
-			rx_tid->vaddr = NULL;
+			ath12k_dp_rx_tid_free_desc(ab, rx_tid);
 		}
 		kfree(cmd_queue);
 	}
@@ -800,10 +813,7 @@ void ath12k_dp_rx_reo_cmd_list_cleanup(struct ath12k_base *ab)
 		rx_tid = &cmd_cache->data;
 		if (rx_tid->vaddr) {
 			rx_tid->active = false;
-			ath12k_core_dma_unmap_single(ab->dev, rx_tid->paddr,
-						     rx_tid->size, DMA_BIDIRECTIONAL);
-			kfree(rx_tid->vaddr);
-			rx_tid->vaddr = NULL;
+			ath12k_dp_rx_tid_free_desc(ab, rx_tid);
 		}
 		kfree(cmd_cache);
 	}
@@ -827,10 +837,7 @@ free_desc:
 
 	if (rx_tid->vaddr) {
 		rx_tid->active = false;
-		ath12k_core_dma_unmap_single(dp->ab->dev, rx_tid->paddr, rx_tid->size,
-					     DMA_BIDIRECTIONAL);
-		kfree(rx_tid->vaddr);
-		rx_tid->vaddr = NULL;
+		ath12k_dp_rx_tid_free_desc(dp->ab, rx_tid);
 	}
 }
 EXPORT_SYMBOL(ath12k_dp_reo_cmd_free);

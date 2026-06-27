@@ -437,10 +437,7 @@ void ath12k_wifi8_dp_rx_tid_del_func(struct ath12k_dp *dp, void *ctx,
 	return;
 free_desc:
 	rx_tid->active = false;
-	ath12k_core_dma_unmap_single(ab->dev, rx_tid->paddr, rx_tid->size,
-				     DMA_BIDIRECTIONAL);
-	kfree(rx_tid->vaddr);
-	rx_tid->vaddr = NULL;
+	ath12k_dp_rx_tid_free_desc(ab, rx_tid);
 }
 
 static int ath12k_wifi8_peer_rx_tid_delete_handler(struct ath12k_base *ab,
@@ -2192,7 +2189,7 @@ int ath12k_wifi8_dp_alloc_reo_qdesc(struct ath12k_base *ab,
 	void *vaddr;
 	u32 hw_desc_sz;
 	dma_addr_t paddr;
-	int ret;
+	int __maybe_unused ret;
 
 	/* TODO: Optimize the memory allocation for qos tid based on
 	 * the actual BA window size in REO tid update path.
@@ -2202,32 +2199,57 @@ int ath12k_wifi8_dp_alloc_reo_qdesc(struct ath12k_base *ab,
 	else
 		hw_desc_sz = ath12k_wifi8_hal_reo_qdesc_size(DP_BA_WIN_SZ_MAX, tid);
 
+	if (!ab->hw_params->alloc_cacheable_memory) {
+		vaddr = dma_alloc_coherent(ab->dev, hw_desc_sz, &paddr, GFP_ATOMIC);
+		if (!vaddr)
+			return -ENOMEM;
+
+		*addr_aligned = vaddr;
+		ath12k_wifi8_hal_reo_qdesc_setup(*addr_aligned, tid, ba_win_sz, ssn,
+						 pn_type, stats_id);
+		rx_tid->vaddr = vaddr;
+		rx_tid->paddr = paddr;
+		rx_tid->size  = hw_desc_sz;
+
+		ath12k_dbg(ab, ATH12K_DBG_DP_RX,
+			   "REO qdesc alloc (SDX coherent): vaddr=%p paddr=%pad size=%u tid=%u\n",
+			   vaddr, &paddr, hw_desc_sz, tid);
+		return 0;
+	}
+
 	vaddr = kzalloc(hw_desc_sz + HAL_LINK_DESC_ALIGN - 1, GFP_ATOMIC);
 	if (!vaddr)
 		return -ENOMEM;
 
 	*addr_aligned = PTR_ALIGN(vaddr, HAL_LINK_DESC_ALIGN);
-	ath12k_wifi8_hal_reo_qdesc_setup(*addr_aligned, tid, ba_win_sz, ssn, pn_type,
-					 stats_id);
+	ath12k_wifi8_hal_reo_qdesc_setup(*addr_aligned, tid, ba_win_sz, ssn,
+					 pn_type, stats_id);
 #ifndef CONFIG_IO_COHERENCY
 	paddr = dma_map_single(ab->dev, *addr_aligned, hw_desc_sz,
 			       DMA_BIDIRECTIONAL);
 	ret = dma_mapping_error(ab->dev, paddr);
 	if (ret) {
+		ath12k_warn(ab, "failed to DMA-map REO qdesc tid %u: %d\n",
+			    tid, ret);
 		kfree(vaddr);
 		return ret;
 	}
 #else
 	paddr = virt_to_phys(*addr_aligned);
 	if (!paddr) {
+		ath12k_warn(ab, "virt_to_phys failed for REO qdesc tid %u\n",
+			    tid);
 		kfree(vaddr);
-		return ret;
+		return -ENOMEM;
 	}
-#endif
+#endif /* CONFIG_IO_COHERENCY */
 	rx_tid->vaddr = vaddr;
 	rx_tid->paddr = paddr;
-	rx_tid->size = hw_desc_sz;
+	rx_tid->size  = hw_desc_sz;
 
+	ath12k_dbg(ab, ATH12K_DBG_DP_RX,
+		   "REO qdesc alloc: vaddr=%p paddr=%pad size=%u tid=%u\n",
+		   vaddr, &paddr, hw_desc_sz, tid);
 	return 0;
 }
 
