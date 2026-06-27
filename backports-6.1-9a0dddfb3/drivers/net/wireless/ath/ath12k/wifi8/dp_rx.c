@@ -2022,9 +2022,11 @@ int ath12k_wifi8_dp_rx_process_reo_rings(struct ath12k_dp *dp,
 	u32 curr_tp = 0;
 	struct ath12k_rx_desc_info *sw_rx_desc = NULL;
 	struct list_head rx_desc_used_list;
+	struct list_head ppe2wbm_used_list;
 	bool first_sg_frame = true;
 
 	INIT_LIST_HEAD(&rx_desc_used_list);
+	INIT_LIST_HEAD(&ppe2wbm_used_list);
 
 	__ath12k_hal_srng_access_begin(srng);
 
@@ -2130,16 +2132,31 @@ int ath12k_wifi8_dp_rx_process_reo_rings(struct ath12k_dp *dp,
 		sw_rx_desc->in_use = 0;
 
 		total_msdu_reaped++;
-		list_add_tail(&sw_rx_desc->list, &rx_desc_used_list);
+		list_add_tail(&sw_rx_desc->list, sw_rx_desc->is_ppe_desc ?
+			      &ppe2wbm_used_list : &rx_desc_used_list);
 	}
 
 	ath12k_dsb();
 
 	__ath12k_hal_srng_access_end(ab, srng);
-	refill_srng = &ab->hal.srng_list[dp_wifi8->wbm_refill_ring[cpu_id %
-			DP_WBM_REFILL_RING_MAX].ring_id];
 
-	ath12k_dp_rx_bufs_replenish(dp, refill_srng, &rx_desc_used_list, false);
+	if (!list_empty(&ppe2wbm_used_list)) {
+		if (dp_wifi8->dp_ppe2wbm_use_dedicated_pool) {
+			ring_id = dp_wifi8->ppe2wbm_refill_ring
+				[PPE2WBM_SW_REFILL_RING].ring_id;
+			refill_srng = &ab->hal.srng_list[ring_id];
+			ath12k_dp_rx_bufs_replenish(dp, refill_srng,
+						    &ppe2wbm_used_list, false);
+		} else {
+			list_splice(&ppe2wbm_used_list, &rx_desc_used_list);
+		}
+	}
+
+	if (!list_empty(&rx_desc_used_list)) {
+		refill_srng = &ab->hal.srng_list[dp_wifi8->wbm_refill_ring[cpu_id %
+			DP_WBM_REFILL_RING_MAX].ring_id];
+		ath12k_dp_rx_bufs_replenish(dp, refill_srng, &rx_desc_used_list, false);
+	}
 
 	return total_msdu_reaped;
 }
