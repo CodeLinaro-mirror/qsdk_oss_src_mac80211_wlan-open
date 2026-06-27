@@ -1659,22 +1659,17 @@ struct ath12k_tx_desc_info *ath12k_dp_get_tx_desc(struct ath12k_dp *dp,
 EXPORT_SYMBOL(ath12k_dp_get_tx_desc);
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-static u8 *ath12k_dp_cc_find_desc(struct ath12k_base *ab, u32 cookie, bool is_rx)
+static u8 *ath12k_dp_cc_find_desc(struct ath12k_dp_hw_group *dp_hw_grp, u32 cookie)
 {
-	struct ath12k_dp *dp = ab->dp;
 	u16 spt_page_id, spt_idx;
 	u8 *spt_va;
 
 	spt_idx = u32_get_bits(cookie, ATH12K_DP_CC_COOKIE_SPT);
 	spt_page_id = u32_get_bits(cookie, ATH12K_DP_CC_COOKIE_PPT);
 
-	if (is_rx) {
-		if (WARN_ON(spt_page_id < dp->rx_ppt_base))
-			return NULL;
-		spt_page_id = spt_page_id - dp->rx_ppt_base;
-	}
+	/* PPEDS TX SPT pages are stored in dp_hw_grp->ppeds_spt_info */
+	spt_va = (u8 *)dp_hw_grp->ppeds_spt_info[spt_page_id].vaddr;
 
-	spt_va = (u8 *)dp->spt_info[spt_page_id].vaddr;
 	return (spt_va + spt_idx * sizeof(u64));
 }
 
@@ -1683,29 +1678,33 @@ struct ath12k_ppeds_tx_desc_info *ath12k_dp_get_ppeds_tx_desc(struct ath12k_base
 {
 	u8 *desc_addr_ptr;
 
-	desc_addr_ptr = ath12k_dp_cc_find_desc(ab, desc_id, false);
+	desc_addr_ptr = ath12k_dp_cc_find_desc(ab->dp->dp_hw_grp, desc_id);
 	return *(struct ath12k_ppeds_tx_desc_info **)desc_addr_ptr;
 }
 EXPORT_SYMBOL(ath12k_dp_get_ppeds_tx_desc);
-#endif
 
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-void ath12k_dp_ppeds_tx_cmem_init(struct ath12k_base *ab, struct ath12k_dp *dp)
+void ath12k_dp_ppeds_tx_cmem_init(struct ath12k_base *ab)
 {
+	struct ath12k_dp_hw_group *dp_hw_grp = ath12k_ab_to_dp(ab)->dp_hw_grp;
 	u32 cmem_base;
+	u32 ppt_val;
 	int i;
 
 	cmem_base = ab->qmi.dev_mem[ATH12K_QMI_DEVMEM_CMEM_INDEX].start;
 
 	for (i = ATH12K_PPEDS_TX_SPT_PAGE_OFFSET;
 	     i < (ATH12K_PPEDS_TX_SPT_PAGE_OFFSET + ATH12K_NUM_PPEDS_TX_SPT_PAGES); i++) {
+		ppt_val = dp_hw_grp->ppeds_spt_info[i].paddr >>
+			  ATH12K_SPT_4K_ALIGN_OFFSET;
 		/* Write to PPT in CMEM */
 		if (ab->hif.ops->cmem_write32)
-			ath12k_hif_cmem_write32(ab, cmem_base + ATH12K_PPT_ADDR_OFFSET(i),
-						dp->spt_info[i].paddr >> ATH12K_SPT_4K_ALIGN_OFFSET);
+			ath12k_hif_cmem_write32(ab,
+						cmem_base + ATH12K_PPT_ADDR_OFFSET(i),
+						ppt_val);
 		else
-			ath12k_hif_write32(ab, cmem_base + ATH12K_PPT_ADDR_OFFSET(i),
-					   dp->spt_info[i].paddr >> ATH12K_SPT_4K_ALIGN_OFFSET);
+			ath12k_hif_write32(ab,
+					   cmem_base + ATH12K_PPT_ADDR_OFFSET(i),
+					   ppt_val);
 	}
 }
 EXPORT_SYMBOL(ath12k_dp_ppeds_tx_cmem_init);
@@ -1713,15 +1712,15 @@ EXPORT_SYMBOL(ath12k_dp_ppeds_tx_cmem_init);
 void ath12k_dp_ppeds_tx_desc_cleanup(struct ath12k_base *ab)
 {
 	struct ath12k_ppeds_tx_desc_info *ppeds_tx_descs;
-	struct ath12k_dp *dp = ab->dp;
+	struct ath12k_dp_hw_group *dp_hw_grp = ath12k_ab_to_dp(ab)->dp_hw_grp;
 	struct sk_buff *skb;
 	int i, j;
 
 	/* PPEDS TX Descriptor cleanup */
-	spin_lock_bh(&dp->ppe.ppeds_tx_desc_lock);
+	spin_lock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
 
 	for (i = 0; i < ATH12K_NUM_PPEDS_TX_SPT_PAGES; i++) {
-		ppeds_tx_descs = dp->ppedstxbaddr[i];
+		ppeds_tx_descs = dp_hw_grp->ppedstxbaddr[i];
 
 		for (j = 0; j < ATH12K_MAX_SPT_ENTRIES; j++) {
 			if (!ppeds_tx_descs[j].in_use)
@@ -1743,32 +1742,81 @@ void ath12k_dp_ppeds_tx_desc_cleanup(struct ath12k_base *ab)
 			skb_queue_tail(&ab->dp_umac_reset.ppeds_tx_skb_queue, skb);
 
 			list_add_tail(&ppeds_tx_descs[j].list,
-					&dp->ppe.ppeds_tx_desc_free_list);
+				      &dp_hw_grp->ppeds_tx_desc_free_list);
 		}
 	}
 
-	dp->ppe.ppeds_tx_desc_reuse_list_len = 0;
+	dp_hw_grp->ppeds_tx_desc_reuse_list_len = 0;
 
-	spin_unlock_bh(&dp->ppe.ppeds_tx_desc_lock);
+	spin_unlock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
 }
 EXPORT_SYMBOL(ath12k_dp_ppeds_tx_desc_cleanup);
 
 int ath12k_dp_ppeds_cc_desc_cleanup(struct ath12k_base *ab)
 {
 	struct ath12k_ppeds_tx_desc_info *ppeds_tx_descs;
-	struct ath12k_dp *dp = ab->dp;
+	struct ath12k_dp_hw_group *dp_hw_grp = ath12k_ab_to_dp(ab)->dp_hw_grp;
 	struct sk_buff *skb;
 	int i, j;
 
-	if (!dp->ppedstxbaddr) {
+	if (!dp_hw_grp->ppedstxbaddr) {
 		ath12k_err(ab, "%s failed", __func__);
 		return -EINVAL;
 	}
 
-	spin_lock_bh(&dp->ppe.ppeds_tx_desc_lock);
+	spin_lock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
 
 	for (i = 0; i < ATH12K_NUM_PPEDS_TX_SPT_PAGES; i++) {
-		ppeds_tx_descs = dp->ppedstxbaddr[i];
+		ppeds_tx_descs = dp_hw_grp->ppedstxbaddr[i];
+
+		for (j = 0; j < ATH12K_MAX_SPT_ENTRIES; j++) {
+			if (!ppeds_tx_descs[j].in_use)
+				continue;
+
+			if (ppeds_tx_descs[j].device_id != ab->device_id)
+				continue;
+
+			skb = ppeds_tx_descs[j].skb;
+
+			if (!skb)
+				continue;
+
+			ppeds_tx_descs[j].skb = NULL;
+			ppeds_tx_descs[j].in_use = false;
+			ppeds_tx_descs[j].paddr = (dma_addr_t)NULL;
+			dev_kfree_skb_any(skb);
+			list_add_tail(&ppeds_tx_descs[j].list,
+				      &dp_hw_grp->ppeds_tx_desc_free_list);
+		}
+	}
+
+	dp_hw_grp->ppeds_tx_desc_reuse_list_len = 0;
+	spin_unlock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
+
+	ath12k_dbg(ab, ATH12K_DBG_PPE, "%s success\n", __func__);
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_dp_ppeds_cc_desc_cleanup);
+
+void ath12k_dp_ppeds_spt_free_and_deinit(struct ath12k_dp_hw_group *dp_hw_grp)
+{
+	struct ath12k_ppeds_tx_desc_info *ppeds_tx_descs;
+	struct sk_buff *skb;
+	int i, j;
+
+	if (!dp_hw_grp->ppeds_tx_desc_initialized)
+		return;
+
+	if (!dp_hw_grp->ppedstxbaddr)
+		goto free_spt;
+
+	spin_lock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
+
+	for (i = 0; i < ATH12K_NUM_PPEDS_TX_SPT_PAGES; i++) {
+		ppeds_tx_descs = dp_hw_grp->ppedstxbaddr[i];
+		if (!ppeds_tx_descs)
+			continue;
 
 		for (j = 0; j < ATH12K_MAX_SPT_ENTRIES; j++) {
 			skb = ppeds_tx_descs[j].skb;
@@ -1783,77 +1831,133 @@ int ath12k_dp_ppeds_cc_desc_cleanup(struct ath12k_base *ab)
 		}
 	}
 
-	dp->ppe.ppeds_tx_desc_reuse_list_len = 0;
+	dp_hw_grp->ppeds_tx_desc_reuse_list_len = 0;
 
 	for (i = 0; i < ATH12K_NUM_PPEDS_TX_SPT_PAGES; i++) {
-		if (!dp->ppedstxbaddr[i])
+		if (!dp_hw_grp->ppedstxbaddr[i])
 			continue;
 
-		kfree(dp->ppedstxbaddr[i]);
+		kfree(dp_hw_grp->ppedstxbaddr[i]);
+		dp_hw_grp->ppedstxbaddr[i] = NULL;
 	}
 
-	kfree(dp->ppedstxbaddr);
-	dp->ppedstxbaddr = NULL;
+	spin_unlock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
 
-	spin_unlock_bh(&dp->ppe.ppeds_tx_desc_lock);
+	kfree(dp_hw_grp->ppedstxbaddr);
+	dp_hw_grp->ppedstxbaddr = NULL;
 
-	ath12k_dbg(ab, ATH12K_DBG_PPE, "%s success\n", __func__);
+free_spt:
+	if (dp_hw_grp->ppeds_spt_info) {
+		for (i = 0; i < dp_hw_grp->ppeds_num_spt_pages; i++) {
+			if (!dp_hw_grp->ppeds_spt_info[i].vaddr)
+				continue;
+			ath12k_hal_dma_free_coherent(dp_hw_grp->ppeds_tx_spt_dev,
+						     ATH12K_PAGE_SIZE,
+						     dp_hw_grp->ppeds_spt_info[i].vaddr,
+						     dp_hw_grp->ppeds_spt_info[i].paddr);
+			dp_hw_grp->ppeds_spt_info[i].vaddr = NULL;
+		}
+		kfree(dp_hw_grp->ppeds_spt_info);
+		dp_hw_grp->ppeds_spt_info = NULL;
+	}
 
-	return 0;
+	dp_hw_grp->ppeds_tx_spt_dev = NULL;
+	dp_hw_grp->ppeds_tx_desc_initialized = false;
 }
-EXPORT_SYMBOL(ath12k_dp_ppeds_cc_desc_cleanup);
 
-int ath12k_dp_ppeds_cc_desc_init(struct ath12k_base *ab)
+int ath12k_dp_ppeds_spt_alloc_and_init(struct ath12k_base *ab)
 {
-	struct ath12k_dp *dp = ab->dp;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
 	struct ath12k_ppeds_tx_desc_info *ppeds_tx_descs;
-	struct ath12k_spt_info *ppeds_tx_spt_pages;
-	u32 i, j;
+	u32 i, j, ret = 0;
 	u32 ppt_idx;
 
-	INIT_LIST_HEAD(&dp->ppe.ppeds_tx_desc_free_list);
-	INIT_LIST_HEAD(&dp->ppe.ppeds_tx_desc_reuse_list);
-	spin_lock_init(&dp->ppe.ppeds_tx_desc_lock);
-	dp->ppe.ppeds_tx_desc_reuse_list_len = 0;
+	mutex_lock(&dp_hw_grp->ppeds_tx_init_lock);
 
-	dp->ppedstxbaddr = kmalloc_array(ATH12K_NUM_PPEDS_TX_SPT_PAGES,
-					 sizeof(struct ath12k_ppeds_tx_desc_info *),
-					 GFP_KERNEL);
-	if (!dp->ppedstxbaddr)
-		return -ENOMEM;
+	if (dp_hw_grp->ppeds_tx_desc_initialized)
+		goto unlock;
 
-	/* pointer to start of TX pages */
-	ppeds_tx_spt_pages = &dp->spt_info[ATH12K_PPEDS_TX_SPT_PAGE_OFFSET];
+	INIT_LIST_HEAD(&dp_hw_grp->ppeds_tx_desc_free_list);
+	INIT_LIST_HEAD(&dp_hw_grp->ppeds_tx_desc_reuse_list);
+	spin_lock_init(&dp_hw_grp->ppeds_tx_desc_lock);
+	dp_hw_grp->ppeds_tx_desc_reuse_list_len = 0;
 
-	spin_lock_bh(&dp->ppe.ppeds_tx_desc_lock);
+	dp_hw_grp->ppeds_num_spt_pages = ATH12K_NUM_PPEDS_TX_SPT_PAGES;
+
+	dp_hw_grp->ppeds_spt_info = kcalloc(dp_hw_grp->ppeds_num_spt_pages,
+					    sizeof(struct ath12k_spt_info),
+					    GFP_KERNEL);
+	if (!dp_hw_grp->ppeds_spt_info) {
+		ret = -ENOMEM;
+		goto unlock;
+	}
+
+	dp_hw_grp->ppeds_tx_spt_dev = ab->dev;
+
+	for (i = 0; i < dp_hw_grp->ppeds_num_spt_pages; i++) {
+		dp_hw_grp->ppeds_spt_info[i].vaddr =
+			ath12k_hal_dma_alloc_coherent(ab->dev, ATH12K_PAGE_SIZE,
+						      &dp_hw_grp->ppeds_spt_info[i].paddr,
+						      GFP_KERNEL);
+		if (!dp_hw_grp->ppeds_spt_info[i].vaddr) {
+			ret = -ENOMEM;
+			goto free;
+		}
+
+		if (dp_hw_grp->ppeds_spt_info[i].paddr & ATH12K_SPT_4K_ALIGN_CHECK) {
+			ath12k_warn(ab, "PPEDS SPT allocated memory is not 4K aligned");
+			ret = -EINVAL;
+			goto free;
+		}
+	}
+
+	dp_hw_grp->ppedstxbaddr =
+		kmalloc_array(ATH12K_NUM_PPEDS_TX_SPT_PAGES,
+			      sizeof(struct ath12k_ppeds_tx_desc_info *),
+			      GFP_KERNEL);
+	if (!dp_hw_grp->ppedstxbaddr) {
+		ret = -ENOMEM;
+		goto free;
+	}
+
+	spin_lock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
 	for (i = 0; i < ATH12K_NUM_PPEDS_TX_SPT_PAGES; i++) {
 		ppeds_tx_descs = kcalloc(ATH12K_MAX_SPT_ENTRIES, sizeof(*ppeds_tx_descs),
 					 GFP_ATOMIC);
 		if (!ppeds_tx_descs) {
-			spin_unlock_bh(&dp->ppe.ppeds_tx_desc_lock);
-			ath12k_dp_ppeds_cc_desc_cleanup(ab);
-			return -ENOMEM;
+			spin_unlock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
+			ret = -ENOMEM;
+			goto free;
 		}
-		dp->ppedstxbaddr[i] = &ppeds_tx_descs[0];
+		dp_hw_grp->ppedstxbaddr[i] = &ppeds_tx_descs[0];
 		for (j = 0; j < ATH12K_MAX_SPT_ENTRIES; j++) {
 			ppt_idx = ATH12K_PPEDS_TX_SPT_PAGE_OFFSET + i;
 			ppeds_tx_descs[j].desc_id = ath12k_dp_cc_cookie_gen(ppt_idx, j);
 			ppeds_tx_descs[j].in_use = false;
 			list_add_tail(&ppeds_tx_descs[j].list,
-				      &dp->ppe.ppeds_tx_desc_free_list);
+				      &dp_hw_grp->ppeds_tx_desc_free_list);
 			/* Update descriptor VA in SPT */
 			*(struct ath12k_ppeds_tx_desc_info **)
-				((u8 *)ppeds_tx_spt_pages[i].vaddr +
+				((u8 *)dp_hw_grp->ppeds_spt_info[i].vaddr +
 				 (j * sizeof(u64))) = &ppeds_tx_descs[j];
 		}
 	}
-	spin_unlock_bh(&dp->ppe.ppeds_tx_desc_lock);
+	spin_unlock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
+
+	dp_hw_grp->ppeds_tx_desc_initialized = true;
 
 	ath12k_dbg(ab, ATH12K_DBG_PPE, "%s success\n", __func__);
 
-	return 0;
+unlock:
+	mutex_unlock(&dp_hw_grp->ppeds_tx_init_lock);
+	return ret;
+
+free:
+	mutex_unlock(&dp_hw_grp->ppeds_tx_init_lock);
+	ath12k_dp_ppeds_spt_free_and_deinit(dp_hw_grp);
+	return ret;
 }
-EXPORT_SYMBOL(ath12k_dp_ppeds_cc_desc_init);
 #endif
 
 static int ath12k_dp_cmem_init(struct ath12k_base *ab, struct ath12k_dp *dp,
@@ -1870,14 +1974,12 @@ static int ath12k_dp_cmem_init(struct ath12k_base *ab, struct ath12k_dp *dp,
 		spt_info = dp->dp_hw_grp->spt_info;
 		start = ATH12K_TX_SPT_PAGE_OFFSET;
 		end = start + ATH12K_NUM_TX_SPT_PAGES;
-		j = 0;
 		break;
 	case ATH12K_DP_RX_DESC:
 		spt_info = dp->spt_info;
 		cmem_base += ATH12K_PPT_ADDR_OFFSET(dp->rx_ppt_base);
 		start = ATH12K_RX_SPT_PAGE_OFFSET;
 		end = start + ab->hw_params->num_rx_spt_pages;
-		j = ATH12K_NUM_PPEDS_TX_SPT_PAGES;
 		break;
 	default:
 		ath12k_err(ab, "invalid descriptor type %d in cmem init\n", type);
@@ -1885,7 +1987,7 @@ static int ath12k_dp_cmem_init(struct ath12k_base *ab, struct ath12k_dp *dp,
 	}
 
 	/* Write to PPT in CMEM */
-	for (i = start; i < end; i++, j++) {
+	for (i = start, j = 0; i < end; i++, j++) {
 		ppt_val = spt_info[j].paddr >> ATH12K_SPT_4K_ALIGN_OFFSET;
 
 		if (ab->hif.ops->cmem_write32 && ab->hif.bus == ATH12K_BUS_HYBRID)
@@ -1957,7 +2059,7 @@ static int ath12k_dp_cc_rx_desc_init(struct ath12k_base *ab)
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_rx_desc_info *rx_descs, **rx_desc_addr;
 	u32 i, j;
-	u32 ppt_idx, cookie_ppt_idx;
+	u32 cookie_ppt_idx;
 
 	dp->rxbaddr = kcalloc(ab->hw_params->num_rx_spt_pages,
 			      sizeof(*dp->rxbaddr), GFP_KERNEL);
@@ -1976,7 +2078,6 @@ static int ath12k_dp_cc_rx_desc_init(struct ath12k_base *ab)
 			return -ENOMEM;
 		}
 
-		ppt_idx = ATH12K_NUM_PPEDS_TX_SPT_PAGES + i;
 		cookie_ppt_idx = dp->rx_ppt_base + ATH12K_RX_SPT_PAGE_OFFSET + i;
 		dp->rxbaddr[i] = &rx_descs[0];
 
@@ -1987,8 +2088,7 @@ static int ath12k_dp_cc_rx_desc_init(struct ath12k_base *ab)
 			list_add_tail(&rx_descs[j].list, &dp->rx_desc_free_list);
 
 			/* Update descriptor VA in SPT */
-			rx_desc_addr = ath12k_dp_cc_get_desc_addr_ptr(dp->spt_info,
-								      ppt_idx, j);
+			rx_desc_addr = ath12k_dp_cc_get_desc_addr_ptr(dp->spt_info, i, j);
 			*rx_desc_addr = &rx_descs[j];
 		}
 	}
@@ -2019,8 +2119,7 @@ int ath12k_dp_cc_init(struct ath12k_base *ab)
 	INIT_LIST_HEAD(&dp->rx_desc_free_list);
 	spin_lock_init(&dp->rx_desc_lock);
 
-	dp->num_spt_pages = ab->hw_params->num_rx_spt_pages +
-			    ATH12K_NUM_PPEDS_TX_SPT_PAGES;
+	dp->num_spt_pages = ab->hw_params->num_rx_spt_pages;
 
 	if (dp->num_spt_pages > ATH12K_MAX_PPT_ENTRIES)
 		dp->num_spt_pages = ATH12K_MAX_PPT_ENTRIES;
@@ -2354,6 +2453,11 @@ void ath12k_dp_cmn_hw_group_unassign(struct ath12k_dp *dp,
 	if (dp_hw_grp->tx_desc_initialized && dp->dev == dp_hw_grp->tx_spt_dev)
 		ath12k_dp_tx_spt_free_and_deinit(dp_hw_grp);
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	if (dp_hw_grp->ppeds_tx_desc_initialized &&
+	    dp->dev == dp_hw_grp->ppeds_tx_spt_dev)
+		ath12k_dp_ppeds_spt_free_and_deinit(dp_hw_grp);
+#endif
 	dp_hw_grp->dp[dp->device_id] = NULL;
 	dp->dp_hw_grp = NULL;
 	dp->device_id = ATH12K_INVALID_DEVICE_ID;
@@ -2409,6 +2513,11 @@ void ath12k_dp_cmn_hw_group_assign(struct ath12k_dp *dp,
 		}
 	}
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	ret = ath12k_dp_ppeds_spt_alloc_and_init(ab);
+	if (ret)
+		ath12k_warn(ab, "failed to alloc and init PPEDS SPT pages %d\n", ret);
+#endif
 	ret = ath12k_dp_ipa_hw_group_init(ab, dp_hw_grp);
 	if (ret) {
 		ath12k_err(ab, "Failed to allocate IPA global context: %d\n", ret);

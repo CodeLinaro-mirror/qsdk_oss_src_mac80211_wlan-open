@@ -162,11 +162,6 @@ struct ath12k_ppe {
 	struct dp_srng reo2ppe_ring[ATH12K_REO2PPE_MAX_RINGS];
 	struct dp_srng ppe2tcl_ring[ATH12K_PPE2TCL_MAX_RINGS];
 	struct dp_ppeds_tx_comp_ring ppeds_comp_ring;
-	struct list_head ppeds_tx_desc_free_list;
-	struct list_head ppeds_tx_desc_reuse_list;
-	int ppeds_tx_desc_reuse_list_len;
-	/* protects the free and used desc lists */
-	spinlock_t ppeds_tx_desc_lock;
 	struct ath12k_dp_ppe_vp_profile ppe_vp_profile[PPE_VP_ENTRIES_MAX];
 	char ppeds_irq_name[MAX_PPEDS_IRQS][MAX_PPEDS_IRQ_NAME_LEN];
 	int ppeds_irq[MAX_PPEDS_IRQS];
@@ -247,7 +242,7 @@ void ath12k_dp_ppeds_interrupt_start(struct ath12k_base *ab);
 int ath12k_nss_plugin_register_ops(struct ath12k_base *ab);
 void ath12k_nss_plugin_unregister_ops(struct ath12k_base *ab);
 
-void ath12k_dp_ppeds_tx_release_desc_list_bulk(struct ath12k_dp *dp,
+void ath12k_dp_ppeds_tx_release_desc_list_bulk(struct ath12k_dp_hw_group *dp_hw_grp,
 					       struct list_head *local_list,
 					       int local_list_len,
 					       struct list_head *local_list_no_skb,

@@ -3661,8 +3661,8 @@ int ath12k_wifi8_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 	}
 	ath12k_hal_srng_access_dst_ring_end_nolock(status_ring);
 
-	ath12k_dp_ppeds_tx_release_desc_list_bulk(dp, &local_list, count,
-			&local_list_no_skb, list_no_skb_count);
+	ath12k_dp_ppeds_tx_release_desc_list_bulk(dp->dp_hw_grp, &local_list, count,
+						  &local_list_no_skb, list_no_skb_count);
 	return (count + list_no_skb_count);
 }
 
@@ -4094,13 +4094,13 @@ tx_buf_release:
 			ath12k_dp_tx_release_txbuf(dp, tx_desc, tx_desc->pool_id);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 		} else if (ppeds_tx_desc) {
-			spin_lock_bh(&dp->ppe.ppeds_tx_desc_lock);
+			spin_lock_bh(&dp->dp_hw_grp->ppeds_tx_desc_lock);
 			ppeds_tx_desc->in_use = false;
 			list_add_tail(&ppeds_tx_desc->list,
-				      &dp->ppe.ppeds_tx_desc_free_list);
+				      &dp->dp_hw_grp->ppeds_tx_desc_free_list);
 			skb = ppeds_tx_desc->skb;
 			ppeds_tx_desc->skb = NULL;
-			spin_unlock_bh(&dp->ppe.ppeds_tx_desc_lock);
+			spin_unlock_bh(&dp->dp_hw_grp->ppeds_tx_desc_lock);
 			dev_kfree_skb_any(skb);
 #endif
 		}
