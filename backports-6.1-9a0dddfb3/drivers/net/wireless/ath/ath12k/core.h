@@ -879,6 +879,8 @@ struct ath12k_link_vif {
 	u64 obss_color_bitmap;
 	struct wiphy_work update_obss_color_notify_work;
 	struct wiphy_work update_bcn_template_work;
+	enum nl80211_cu_state pending_cu_state;
+	struct wiphy_work uhr_cu_notify_work;
 	bool beacon_prot;
 	bool control_frame_prot;
 	u64 tbtt_offset;
