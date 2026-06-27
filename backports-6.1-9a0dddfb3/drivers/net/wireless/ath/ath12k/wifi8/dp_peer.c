@@ -231,6 +231,7 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 {
 	u8 i = 0, tid;
 	struct ath12k_dp_peer *dp_peer;
+	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
 	struct ath12k_dp_hw *dp_hw = &ah->dp_hw;
 	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8;
 	struct wireless_dev *wdev;
@@ -320,6 +321,9 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 
 	dp_peer->sec_type = HAL_ENCRYPT_TYPE_OPEN;
 	dp_peer->sec_type_grp = HAL_ENCRYPT_TYPE_OPEN;
+
+	dp_peer->tx_encap_type = ahvif->dp_vif.tx_encap_type;
+	dp_peer->rx_decap_type = ahvif->dp_vif.rx_decap_type;
 
 	for (i = 0; i < ATH12K_NUM_MAX_LINKS; i++)
 		dp_peer->l2h_link_map[i] = ATH12K_DP_HW_LINK_ID_INVALID;

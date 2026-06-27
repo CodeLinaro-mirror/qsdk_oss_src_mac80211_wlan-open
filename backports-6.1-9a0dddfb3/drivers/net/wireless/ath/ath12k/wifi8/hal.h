@@ -452,6 +452,7 @@ enum rdi_based_source_ring_selection {
 #define HAL_REO1_ERROR_RING_CFG_FOR_DEST_REO2SW6_ERR	GENMASK(9, 5)
 #define HAL_REO1_ERROR_RING_CFG_FOR_DEST_REO2SW9_ERR	GENMASK(24, 20)
 #define HAL_REO1_ERROR_RING_CFG_FOR_DEST_REO2PPE_ERR	GENMASK(29, 25)
+#define HAL_REO1_ERROR_RING_CFG_FOR_DEST_REO2SW6_ERR	GENMASK(9, 5)
 
 #define HAL_REO1_ERROR_RING_CFG_FOR_DEST_IX2		0x1c8c
 #define HAL_REO1_ERROR_RING_CFG_FOR_DEST_REO2PPE1_ERR	GENMASK(4, 0)
@@ -1615,7 +1616,7 @@ struct rx_mpdu_desc_info {
 	};
 };
 
-struct hal_rx_msdu_desc_info {
+struct rx_msdu_desc_info {
 	u32 first_msdu		        :  1,
 	    last_msdu			:  1,
 	    msdu_continuation           :  1,
@@ -1651,6 +1652,7 @@ struct hal_rx_spd_data {
 	union {
 		u64 info4;
 		u8 *vaddr;
+		struct ath12k_buffer_addr buf_addr;
 	};
 	union {
 		u64 info3;
@@ -1661,10 +1663,8 @@ struct hal_rx_spd_data {
 
 	union {
 		u32 info2;
-		struct hal_rx_msdu_desc_info rx_msdu_info;
+		struct rx_msdu_desc_info rx_msdu_info;
 	};
-
-	struct rx_tlv_info_1 tlv_info;
 
 	union {
 		u32 info0;
@@ -1676,6 +1676,7 @@ struct hal_rx_spd_data {
 			    c_tdma_lut_ptr		:  6;
 		};
 	};
+
 	union {
 		u32 info1;
 		struct {
@@ -1689,8 +1690,24 @@ struct hal_rx_spd_data {
 			    looping_count		:  4;
 		};
 	};
-	u64 rsvd1;
-	u64 rsvd2;
+
+	struct rx_tlv_info_1 tlv_info;
+
+	union {
+		u8 flags;
+		struct {
+			u8 first_sg_frame		: 1,
+			    last_sg_frame		: 1,
+			    is_frag			: 1,
+			    rsvd0			: 5;
+		};
+	};
+
+	u8	reserved_0;
+	u16	cce_metadata;
+	u32	reserved_1;
+
+	u64	reserved_2;
 } __packed;
 
 static_assert(sizeof(struct hal_rx_spd_data) == 64,

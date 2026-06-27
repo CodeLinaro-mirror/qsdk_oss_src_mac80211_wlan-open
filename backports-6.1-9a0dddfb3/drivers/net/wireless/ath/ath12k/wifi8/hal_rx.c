@@ -545,8 +545,7 @@ int ath12k_wifi8_hal_reo_rel_parse_err(struct ath12k_dp *dp, void *desc,
 	return 0;
 }
 
-void ath12k_wifi8_hal_rx_reo_ent_paddr_get(struct ath12k_base *ab,
-					   struct ath12k_buffer_addr *buff_addr,
+void ath12k_wifi8_hal_rx_reo_ent_paddr_get(struct ath12k_buffer_addr *buff_addr,
 					   dma_addr_t *paddr, u32 *cookie)
 {
 	*paddr = ((u64)(le32_get_bits(buff_addr->info1,

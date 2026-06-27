@@ -27,9 +27,12 @@ ath12k_wifi8-y += core.o \
 		  dp_tx_queue.o \
 		  dp_mon2.o \
 		  umac_reset.o \
-		  dp_telemetry.o
+		  dp_telemetry.o \
+		  dp_rx_err.o
 
-ath12k_wifi8-$(CPTCFG_QCN_EXTN) += qcn_extns/mgmt_rx_extn.o
+ath12k_wifi8-$(CPTCFG_QCN_EXTN) += qcn_extns/mgmt_rx_extn.o \
+                                    qcn_extns/dp_rx_extn.o
+
 ath12k_wifi8-$(CPTCFG_ATH12K_PPE_DS_SUPPORT) += ppeds.o
 ath12k_wifi8-$(CPTCFG_EXT_IPA_OFFLOAD) += qcn_extns/ipa/dp_ipa_fse.o \
 					  qcn_extns/ipa/dp_ipa.o
