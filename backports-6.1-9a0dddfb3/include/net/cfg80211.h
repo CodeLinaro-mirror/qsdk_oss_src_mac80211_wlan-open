@@ -1767,6 +1767,30 @@ struct cfg80211_set_cu_params {
 };
 
 /**
+ * struct cfg80211_cu_info - Critical Update session state
+ *
+ * @cu_type: type of Critical Update, see &enum nl80211_cu_type
+ * @cu_in_progress: a Critical Update session is currently active
+ */
+struct cfg80211_cu_info {
+	enum nl80211_cu_type cu_type;
+	bool cu_in_progress;
+};
+
+/**
+ * struct cfg80211_critical_update_params - parameters for a CU session
+ *
+ * @cu_info: Critical Update session info
+ * @elem: CU element blob to stitch into beacons (from %NL80211_ATTR_IE), may be NULL
+ * @elem_len: length of @elem in bytes
+ */
+struct cfg80211_critical_update_params {
+	struct cfg80211_cu_info cu_info;
+	const u8 *elem;
+	size_t elem_len;
+};
+
+/**
  * struct cfg80211_beacon_data - beacon data
  * @link_id: the link ID for the AP MLD link sending this beacon
  * @head: head portion of beacon (before TIM IE)
@@ -6398,6 +6422,9 @@ struct cfg80211_ops {
 			 int link_id);
 	int (*uhr_mode_update)(struct wiphy *wiphy, struct net_device *dev,
 			       struct cfg80211_uhr_mode_update_params *params);
+	int (*critical_update)(struct wiphy *wiphy, struct net_device *dev,
+			       unsigned int link_id,
+			       struct cfg80211_critical_update_params *params);
 	int (*uhr_link_reconf)(struct wiphy *wiphy,
 			       struct net_device *dev,
 			       struct cfg80211_smd_prepare_req *req);

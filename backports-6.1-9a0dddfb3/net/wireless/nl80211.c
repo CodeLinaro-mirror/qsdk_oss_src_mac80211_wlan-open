@@ -1182,6 +1182,7 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_NPCA_PUNCT_BITMAP] =
 		NLA_POLICY_FULL_RANGE(NLA_U32, &nl80211_punct_bitmap_range),
 	[NL80211_ATTR_UHR_MODE_UPDATE_PARAMS] = { .type = NLA_NESTED },
+	[NL80211_ATTR_CU_TYPE] = { .type = NLA_U8 },
 	[NL80211_ATTR_EPP_PEER] = { .type = NLA_FLAG },
 	[NL80211_ATTR_SMD_TARGET_MLD_ADDR] = NLA_POLICY_EXACT_LEN(ETH_ALEN),
 	[NL80211_ATTR_SMD_SNONCE] = { .type = NLA_BINARY, .len = 32 },
@@ -21295,6 +21296,42 @@ error:
 	return err;
 }
 
+static int nl80211_critical_update(struct sk_buff *skb,
+				   struct genl_info *info)
+{
+	struct cfg80211_registered_device *rdev = info->user_ptr[0];
+	struct net_device *dev = info->user_ptr[1];
+	unsigned int link_id = nl80211_link_id(info->attrs);
+	struct cfg80211_critical_update_params params = {};
+
+	if (dev->ieee80211_ptr->iftype != NL80211_IFTYPE_AP)
+		return -EOPNOTSUPP;
+
+	if (!rdev->ops->critical_update)
+		return -EOPNOTSUPP;
+
+	if (!info->attrs[NL80211_ATTR_CU_TYPE])
+		return -EINVAL;
+
+	params.cu_info.cu_type = nla_get_u8(info->attrs[NL80211_ATTR_CU_TYPE]);
+	if (params.cu_info.cu_type != NL80211_CU_TYPE_UHR_PARAMS)
+		return -EINVAL;
+
+	if (!info->attrs[NL80211_ATTR_IE])
+		return -EINVAL;
+
+	params.elem = nla_data(info->attrs[NL80211_ATTR_IE]);
+	params.elem_len = nla_len(info->attrs[NL80211_ATTR_IE]);
+
+	/* Require at least 5 bytes (elem ID + len +
+	 * elem ID extension + countdown + mode tuple list)
+	 */
+	if (params.elem_len < 5)
+		return -EINVAL;
+
+	return rdev_critical_update(rdev, dev, link_id, &params);
+}
+
 #define SELECTOR(__sel, name, value) \
 	((__sel) == (value)) ? NL80211_IFL_SEL_##name :
 int __missing_selector(void);
@@ -22364,6 +22401,13 @@ static const struct genl_small_ops nl80211_small_ops[] = {
 		.doit = nl80211_uhr_mode_update,
 		.flags = GENL_UNS_ADMIN_PERM,
 		.internal_flags = IFLAGS(NL80211_FLAG_NEED_NETDEV_UP),
+	},
+	{
+		.cmd = NL80211_CMD_CRITICAL_UPDATE,
+		.doit = nl80211_critical_update,
+		.flags = GENL_UNS_ADMIN_PERM,
+		.internal_flags = IFLAGS(NL80211_FLAG_NEED_NETDEV_UP |
+					 NL80211_FLAG_MLO_VALID_LINK_ID),
 	},
 	{
 		.cmd = NL80211_CMD_UHR_LINK_RECONFIG_REQ,

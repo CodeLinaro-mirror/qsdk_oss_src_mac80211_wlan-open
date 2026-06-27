@@ -7237,6 +7237,51 @@ static int ieee80211_uhr_mode_update(struct wiphy *wiphy,
 	return ret;
 }
 
+static int ieee80211_critical_update_cmd(struct wiphy *wiphy,
+					 struct net_device *dev,
+					 unsigned int link_id,
+					 struct cfg80211_critical_update_params *params)
+{
+	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+	struct ieee80211_link_data *link;
+	struct ieee80211_bss_conf *link_conf;
+	int ret;
+
+	if (!ieee80211_sdata_running(sdata))
+		return -ENETDOWN;
+
+	link = sdata_dereference(sdata->link[link_id], sdata);
+	if (!link)
+		return -ENOLINK;
+
+	link_conf = link->conf;
+
+	if (params->cu_info.cu_type == NL80211_CU_TYPE_UHR_PARAMS &&
+	    !link_conf->uhr_support)
+		return -EOPNOTSUPP;
+
+	if (params->cu_info.cu_type == NL80211_CU_TYPE_UHR_PARAMS &&
+	    !ieee80211_uhr_param_upd_size_ok(params->elem + 3,
+					      params->elem_len - 3))
+		return -EINVAL;
+
+	if (link_conf->cu_info.cu_in_progress &&
+	    params->cu_info.cu_type == link_conf->cu_info.cu_type)
+		return -EBUSY;
+
+	ret = drv_critical_update(sdata->local, sdata, link_id,
+				  params->cu_info.cu_type,
+				  params->elem, params->elem_len);
+
+	if (ret)
+		return ret;
+
+	link_conf->cu_info.cu_in_progress = true;
+	link_conf->cu_info.cu_type = params->cu_info.cu_type;
+
+	return ret;
+}
+
 const struct cfg80211_ops mac80211_config_ops = {
 	.add_virtual_intf = ieee80211_add_iface,
 	.del_virtual_intf = ieee80211_del_iface,
@@ -7369,4 +7414,5 @@ const struct cfg80211_ops mac80211_config_ops = {
 	.ap_power_save = ieee80211_ap_power_save,
 	.abort_cac = ieee80211_dfs_abort_cac,
 	.uhr_mode_update = ieee80211_uhr_mode_update,
+	.critical_update = ieee80211_critical_update_cmd,
 };

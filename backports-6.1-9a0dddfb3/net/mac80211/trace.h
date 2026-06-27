@@ -3599,6 +3599,36 @@ TRACE_EVENT(drv_uhr_mode_update,
 	)
 );
 
+TRACE_EVENT(drv_critical_update,
+	TP_PROTO(struct ieee80211_local *local,
+		 struct ieee80211_sub_if_data *sdata,
+		 unsigned int link_id,
+		 enum nl80211_cu_type cu_type,
+		 const u8 *ie, size_t ie_len),
+
+	TP_ARGS(local, sdata, link_id, cu_type, ie, ie_len),
+
+	TP_STRUCT__entry(LOCAL_ENTRY
+		VIF_ENTRY
+		__field(unsigned int, link_id)
+		__field(u32, cu_type)
+		__field(size_t, ie_len)
+	),
+
+	TP_fast_assign(LOCAL_ASSIGN;
+		VIF_ASSIGN;
+		__entry->link_id = link_id;
+		__entry->cu_type = cu_type;
+		__entry->ie_len  = ie_len;
+	),
+
+	TP_printk(LOCAL_PR_FMT VIF_PR_FMT
+		" link_id:%u cu_type:%u ie_len:%zu",
+		LOCAL_PR_ARG, VIF_PR_ARG,
+		__entry->link_id, __entry->cu_type, __entry->ie_len
+	)
+);
+
 #ifdef CPTCFG_QCN_EXTN
 TRACE_EVENT(drv_set_muedca_mode,
 		TP_PROTO(struct ieee80211_local *local,
