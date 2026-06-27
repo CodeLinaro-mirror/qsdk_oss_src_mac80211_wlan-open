@@ -123,6 +123,7 @@ struct dp_mon_tx_filter;
 struct ath12k_ext_mon_config;
 struct ath12k_dp_tx_ext_mon_config;
 struct ath12k_ext_mon_pkt_config;
+struct ath12k_dp_rx_ext_mon;
 
 struct ath12k_dp_mon_pad_params {
 	u32 frag_size;
@@ -248,6 +249,8 @@ struct ath12k_dp_arch_mon_ops {
 					const struct ath12k_ext_mon_config *req);
 	int (*ext_mon_alloc)(struct ath12k_pdev_dp *dp_pdev);
 	void (*ext_mon_free)(struct ath12k_pdev_dp *dp_pdev);
+	void (*ext_mon_setup_rx_filter)(struct htt_rx_ring_tlv_filter *tlv_filter,
+					const struct ath12k_dp_rx_ext_mon *rx_ext_mon);
 
 	/* Below are TxMonitor ops */
 	int (*mon_tx_srng_alloc_setup)(struct ath12k_dp *dp);
@@ -1012,6 +1015,7 @@ struct ath12k_dp_rx_ext_mon {
 	bool mo_enabled;
 	bool fpmo_enabled;
 	bool md_enabled;
+	bool short_pkt_en;
 	struct ath12k_ext_mon_pkt_config fp;
 	struct ath12k_ext_mon_pkt_config mo;
 	struct ath12k_ext_mon_pkt_config fpmo;

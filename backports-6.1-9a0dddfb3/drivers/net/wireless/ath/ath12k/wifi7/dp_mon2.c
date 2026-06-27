@@ -66,6 +66,7 @@ const struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_dual_ring_ops = {
 	.ext_mon_validate_request = ath12k_wifi7_dp_ext_mon_validate_request,
 	.ext_mon_alloc = ath12k_dp_ext_mon_alloc,
 	.ext_mon_free = ath12k_dp_ext_mon_free,
+	.ext_mon_setup_rx_filter = ath12k_wifi7_dp_ext_mon_setup_rx_filter,
 	/* Below are TxMonitor Ops */
 	/* At Device Init/Exit */
 	.mon_tx_srng_alloc_setup = ath12k_dp_mon_tx_srng_alloc_setup,
@@ -2391,4 +2392,44 @@ int ath12k_wifi7_dp_ext_mon_validate_request(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	return 0;
+}
+
+void
+ath12k_wifi7_dp_ext_mon_setup_rx_filter(struct htt_rx_ring_tlv_filter *tlv_filter,
+					const struct ath12k_dp_rx_ext_mon *rx_ext_mon)
+{
+	if (rx_ext_mon->fp_enabled && tlv_filter->fp_ctrl_filter) {
+		tlv_filter->enable_mo = 1;
+		tlv_filter->mo_mgmt_filter =
+			rx_ext_mon->mo.filter[ATH12K_EXT_MON_FRAME_MGMT];
+		tlv_filter->mo_ctrl_filter =
+			rx_ext_mon->mo.filter[ATH12K_EXT_MON_FRAME_CTRL];
+		tlv_filter->mo_data_filter =
+			rx_ext_mon->mo.filter[ATH12K_EXT_MON_FRAME_DATA];
+
+		tlv_filter->mo_ctrl_filter |= tlv_filter->fp_ctrl_filter;
+
+		if (tlv_filter->mo_mgmt_filter &&
+		    rx_ext_mon->mo.len[ATH12K_EXT_MON_FRAME_MGMT] ==
+				ATH12K_EXT_MON_LEN_FULL_PKT)
+			tlv_filter->mo_packet_mgmt_filter =
+					tlv_filter->mo_mgmt_filter;
+
+		if (tlv_filter->mo_ctrl_filter &&
+		    rx_ext_mon->mo.len[ATH12K_EXT_MON_FRAME_CTRL] ==
+				ATH12K_EXT_MON_LEN_FULL_PKT)
+			tlv_filter->mo_packet_ctrl_filter =
+					tlv_filter->mo_ctrl_filter;
+
+		if (tlv_filter->mo_data_filter &&
+		    rx_ext_mon->mo.len[ATH12K_EXT_MON_FRAME_DATA] ==
+				ATH12K_EXT_MON_LEN_FULL_PKT)
+			tlv_filter->mo_packet_data_filter =
+					tlv_filter->mo_data_filter;
+
+		if (tlv_filter->mo_packet_mgmt_filter ||
+		    tlv_filter->mo_packet_ctrl_filter ||
+		    tlv_filter->mo_packet_data_filter)
+			tlv_filter->enable_mo_packet = 1;
+	}
 }

@@ -57,6 +57,8 @@ const struct ath12k_dp_arch_mon_ops ath12k_wifi8_dp_arch_mon_dual_ring_ops = {
 	.rx_undecoded_metadata_reset_filter = NULL,
 	.rx_undecoded_metadata_capture_set = NULL,
 	.rx_undecoded_phy_err_mask_set = NULL,
+	.ext_mon_setup_rx_filter = ath12k_wifi8_dp_ext_mon_setup_rx_filter,
+
 	/* Below are TxMonitor Ops */
 	/* At Device Init/Exit */
 	.mon_tx_srng_alloc_setup = ath12k_dp_mon_tx_srng_alloc_setup,
@@ -279,13 +281,15 @@ ath12k_wifi8_dp_mon_parse_status_rx_hdr(struct ath12k_pdev_dp *dp_pdev,
 	struct hal_rx_mon_ppdu_info *ppdu_info = &pmon->mon_ppdu_info;
 	struct sk_buff *skb, *tmp_skb;
 	struct ath12k_pdev_mon_dp_stats *mon_stats = &dp_pdev->dp_mon_pdev->mon_stats;
+	struct ath12k_dp_rx_ext_mon *ext_mon_config =
+				dp_pdev->dp_mon_pdev->rx_ext_mon_config;
 	const void *tlv_data = tlv_parsed_hdr->data;
 	int offset, frag_len = tlv_parsed_hdr->len - ATH12K_MON_RX_PKT_OFFSET;
 	u8 user_id = ppdu_info->user_id;
 
 	offset = (const u8 *)tlv_data - (const u8 *)mon_buf;
 	offset += ATH12K_MON_RX_PKT_OFFSET;
-	if (unlikely(frag_len <= 0) || frag_len > DP_MON_RX_HDR_LEN) {
+	if (unlikely(frag_len <= 0) || frag_len > ATH12K_WIFI8_DP_MON_RX_HDR_LEN) {
 		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON,
 			   "invalid rx header length: %d", frag_len);
 		return 0;
@@ -302,7 +306,9 @@ ath12k_wifi8_dp_mon_parse_status_rx_hdr(struct ath12k_pdev_dp *dp_pdev,
 		mon_stats->num_skb_alloc++;
 		skb_queue_tail(&ppdu_info->mpdu_q[user_id], skb);
 
-		if (ppdu_info->mpdu_info[user_id].decap_type != DP_RX_DECAP_TYPE_RAW)
+		if (ppdu_info->mpdu_info[user_id].decap_type != DP_RX_DECAP_TYPE_RAW ||
+		    (ext_mon_config && ext_mon_config->enable &&
+				ext_mon_config->short_pkt_en))
 			ath12k_dp_mon_add_rx_frag(skb, mon_buf, offset, frag_len, true);
 
 		ppdu_info->mpdu_info[user_id].mpdu_start_received = true;
@@ -2114,4 +2120,82 @@ void ath12k_wifi8_htt_tx_mon_cfg_fill_extended_wmask(
 				 HTT_TX_FILTER_MASK_IN4_UPSTREAM_TLV_FLAGS3) |
 		le32_encode_bits(htt_tlv_filter->tx_mon_downstream_tlv_flags1,
 				 HTT_TX_FILTER_MASK_IN4_DOWNSTREAM_TLV_FLAGS1);
+}
+
+void
+ath12k_wifi8_dp_ext_mon_setup_rx_filter(struct htt_rx_ring_tlv_filter *tlv_filter,
+					const struct ath12k_dp_rx_ext_mon *rx_ext_mon)
+{
+	tlv_filter->rx_mon_fp_mgmt_hdrlen   = HTT_RX_HDR_LEN_64_BYTES;
+	tlv_filter->rx_mon_fp_ctrl_hdrlen   = HTT_RX_HDR_LEN_64_BYTES;
+	tlv_filter->rx_mon_fp_data_hdrlen   = HTT_RX_HDR_LEN_64_BYTES;
+	tlv_filter->rx_mon_fpmo_mgmt_hdrlen = HTT_RX_HDR_LEN_64_BYTES;
+	tlv_filter->rx_mon_fpmo_ctrl_hdrlen = HTT_RX_HDR_LEN_64_BYTES;
+	tlv_filter->rx_mon_fpmo_data_hdrlen = HTT_RX_HDR_LEN_64_BYTES;
+	tlv_filter->rx_mon_mo_mgmt_hdrlen   = HTT_RX_HDR_LEN_64_BYTES;
+	tlv_filter->rx_mon_mo_ctrl_hdrlen   = HTT_RX_HDR_LEN_64_BYTES;
+	tlv_filter->rx_mon_mo_data_hdrlen   = HTT_RX_HDR_LEN_64_BYTES;
+	tlv_filter->rx_mon_md_mgmt_hdrlen   = HTT_RX_HDR_LEN_64_BYTES;
+	tlv_filter->rx_mon_md_ctrl_hdrlen   = HTT_RX_HDR_LEN_64_BYTES;
+	tlv_filter->rx_mon_md_data_hdrlen   = HTT_RX_HDR_LEN_64_BYTES;
+
+	if (rx_ext_mon->fp_enabled) {
+		if (rx_ext_mon->fp.len[ATH12K_EXT_MON_FRAME_MGMT] !=
+				ATH12K_EXT_MON_LEN_FULL_PKT)
+			tlv_filter->rx_mon_fp_mgmt_hdrlen =
+				rx_ext_mon->fp.len[ATH12K_EXT_MON_FRAME_MGMT];
+		if (rx_ext_mon->fp.len[ATH12K_EXT_MON_FRAME_CTRL] !=
+				ATH12K_EXT_MON_LEN_FULL_PKT)
+			tlv_filter->rx_mon_fp_ctrl_hdrlen =
+				rx_ext_mon->fp.len[ATH12K_EXT_MON_FRAME_CTRL];
+		if (rx_ext_mon->fp.len[ATH12K_EXT_MON_FRAME_DATA] !=
+				ATH12K_EXT_MON_LEN_FULL_PKT)
+			tlv_filter->rx_mon_fp_data_hdrlen =
+				rx_ext_mon->fp.len[ATH12K_EXT_MON_FRAME_DATA];
+	}
+
+	if (rx_ext_mon->fpmo_enabled) {
+		if (rx_ext_mon->fpmo.len[ATH12K_EXT_MON_FRAME_MGMT] !=
+				ATH12K_EXT_MON_LEN_FULL_PKT)
+			tlv_filter->rx_mon_fpmo_mgmt_hdrlen =
+				rx_ext_mon->fpmo.len[ATH12K_EXT_MON_FRAME_MGMT];
+		if (rx_ext_mon->fpmo.len[ATH12K_EXT_MON_FRAME_CTRL] !=
+				ATH12K_EXT_MON_LEN_FULL_PKT)
+			tlv_filter->rx_mon_fpmo_ctrl_hdrlen =
+				rx_ext_mon->fpmo.len[ATH12K_EXT_MON_FRAME_CTRL];
+		if (rx_ext_mon->fpmo.len[ATH12K_EXT_MON_FRAME_DATA] !=
+				ATH12K_EXT_MON_LEN_FULL_PKT)
+			tlv_filter->rx_mon_fpmo_data_hdrlen =
+				rx_ext_mon->fpmo.len[ATH12K_EXT_MON_FRAME_DATA];
+	}
+
+	if (rx_ext_mon->mo_enabled) {
+		if (rx_ext_mon->mo.len[ATH12K_EXT_MON_FRAME_MGMT] !=
+				ATH12K_EXT_MON_LEN_FULL_PKT)
+			tlv_filter->rx_mon_mo_mgmt_hdrlen =
+				rx_ext_mon->mo.len[ATH12K_EXT_MON_FRAME_MGMT];
+		if (rx_ext_mon->mo.len[ATH12K_EXT_MON_FRAME_CTRL] !=
+				ATH12K_EXT_MON_LEN_FULL_PKT)
+			tlv_filter->rx_mon_mo_ctrl_hdrlen =
+				rx_ext_mon->mo.len[ATH12K_EXT_MON_FRAME_CTRL];
+		if (rx_ext_mon->mo.len[ATH12K_EXT_MON_FRAME_DATA] !=
+				ATH12K_EXT_MON_LEN_FULL_PKT)
+			tlv_filter->rx_mon_mo_data_hdrlen =
+				rx_ext_mon->mo.len[ATH12K_EXT_MON_FRAME_DATA];
+	}
+
+	if (rx_ext_mon->md_enabled) {
+		if (rx_ext_mon->md.len[ATH12K_EXT_MON_FRAME_MGMT] !=
+				ATH12K_EXT_MON_LEN_FULL_PKT)
+			tlv_filter->rx_mon_md_mgmt_hdrlen =
+				rx_ext_mon->md.len[ATH12K_EXT_MON_FRAME_MGMT];
+		if (rx_ext_mon->md.len[ATH12K_EXT_MON_FRAME_CTRL] !=
+				ATH12K_EXT_MON_LEN_FULL_PKT)
+			tlv_filter->rx_mon_md_ctrl_hdrlen =
+				rx_ext_mon->md.len[ATH12K_EXT_MON_FRAME_CTRL];
+		if (rx_ext_mon->md.len[ATH12K_EXT_MON_FRAME_DATA] !=
+				ATH12K_EXT_MON_LEN_FULL_PKT)
+			tlv_filter->rx_mon_md_data_hdrlen =
+				rx_ext_mon->md.len[ATH12K_EXT_MON_FRAME_DATA];
+	}
 }
