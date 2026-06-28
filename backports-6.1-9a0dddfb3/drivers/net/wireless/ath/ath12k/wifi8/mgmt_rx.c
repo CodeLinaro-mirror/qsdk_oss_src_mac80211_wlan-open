@@ -596,7 +596,7 @@ ath12k_wifi8_mgmt_rx_h_mpdu(struct ath12k_mgmt *mgmt, struct sk_buff *mmpdu,
 		arsta = ath12k_link_sta_find_by_addr(partner_ar, hdr->addr1);
 
 	/* Skip self-peer arsta: ahsta is NULL and enctype is not meaningful */
-	if (arsta && !arsta->is_self_peer)
+	if (arsta && arsta->ahsta && !arsta->is_self_peer)
 		enctype = arsta->ahsta->enctype;
 
 	spin_unlock_bh(&partner_ar->arsta_lock);
@@ -1308,7 +1308,7 @@ void ath12k_wifi8_mgmt_service_srng(struct ath12k_base *ab,
 #if LINUX_VERSION_IS_GEQ(6, 13, 0)
 void ath12k_wifi8_mgmt_workqueue(struct work_struct *w)
 {
-	struct ath12k_mgmt_irq_grp *irq_grp = from_work(irq_grp, work, intr_wq);
+	struct ath12k_mgmt_irq_grp *irq_grp = from_work(irq_grp, w, intr_wq);
 	struct ath12k_base *ab = irq_grp->ab;
 
 	if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags) ||
@@ -1344,7 +1344,7 @@ int ath12k_wifi8_mgmt_rx_refill_ring_setup(struct ath12k_base *ab)
 
 	/* WBM Idle Buffer ring */
 	ret = ath12k_mgmt_srng_setup(ab, &mgmt_wifi8->wbm_idle_buf_ring,
-				     HAL_WBM_BUF_MGMT, 0, 0,
+				     HAL_WBM_IDLE_BUF_MGMT, 0, 0,
 				     ATH12K_MGMT_IRQ_GRP_ID_INVALID,
 				     MGMT_WBM_IDLE_BUF_RING_SIZE);
 	if (ret) {
@@ -1354,7 +1354,7 @@ int ath12k_wifi8_mgmt_rx_refill_ring_setup(struct ath12k_base *ab)
 
 	/* WBM Refill ring */
 	ret = ath12k_mgmt_srng_setup(ab, &mgmt_wifi8->wbm_refill_ring,
-				     HAL_WBM_IDLE_BUF_MGMT, 0, 0,
+				     HAL_WBM_BUF_MGMT, 0, 0,
 				     ATH12K_MGMT_IRQ_GRP_ID_INVALID,
 				     MGMT_REFILL_RING_SIZE);
 	if (ret) {

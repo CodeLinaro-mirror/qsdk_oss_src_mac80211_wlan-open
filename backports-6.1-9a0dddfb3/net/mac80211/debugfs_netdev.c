@@ -20,6 +20,11 @@
 #include "rate.h"
 #include "debugfs.h"
 #include "debugfs_netdev.h"
+#include "qcn_extns/debugfs_bigtk.h"
+#include "qcn_extns/debugfs_gtk.h"
+#include "qcn_extns/debugfs_ptk.h"
+#include "qcn_extns/debugfs_igtk.h"
+#include "qcn_extns/debugfs_cigtk.h"
 #include "driver-ops.h"
 
 const char *rx_drop_reason_strings[RX_DROP_REASON_MAX] = {
@@ -1188,6 +1193,22 @@ static void add_common_files(struct ieee80211_sub_if_data *sdata)
 	if (sdata->vif.type != NL80211_IFTYPE_P2P_DEVICE &&
 	    sdata->vif.type != NL80211_IFTYPE_NAN)
 		DEBUGFS_ADD(aqm);
+
+	/* BIGTK (Beacon Integrity Group Temporal Key) get/set entries */
+	ieee80211_debugfs_bigtk_add(sdata);
+
+	/* GTK (Group Temporal Key) get/set entries */
+	ieee80211_debugfs_gtk_add(sdata);
+
+	/* PTK (Pairwise Temporal Key) get/set entries */
+	ieee80211_debugfs_ptk_add(sdata);
+
+	/* IGTK (Integrity Group Temporal Key) get/set entries */
+	ieee80211_debugfs_igtk_add(sdata);
+
+	/* CIGTK (Control Integrity Group Temporal Key) get/set entries */
+	ieee80211_debugfs_cigtk_add(sdata);
+
 }
 
 static void add_sta_files(struct ieee80211_sub_if_data *sdata)

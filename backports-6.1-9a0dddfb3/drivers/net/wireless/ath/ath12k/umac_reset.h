@@ -11,6 +11,10 @@
 #include "hif.h"
 #include "debug.h"
 bool ath12k_dp_umac_reset_in_progress(struct ath12k_base *ab);
+void ath12k_umcmn_irq_disable(struct ath12k_base *ab);
+void ath12k_umcmn_irq_enable(struct ath12k_base *ab);
+void ath12k_umcmn_timer_free(struct ath12k_base *ab);
+void ath12k_umcmn_timer_enable(struct ath12k_base *ab);
 /**
  * typedef umac_reset_handler_fn - Function pointer type for UMAC reset handlers
  * @ab: Pointer to ath12k_base structure

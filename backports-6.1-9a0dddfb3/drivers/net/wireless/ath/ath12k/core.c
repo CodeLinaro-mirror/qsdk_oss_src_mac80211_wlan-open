@@ -339,6 +339,7 @@ static void ath12k_detect_mem_profile(void)
 	ath12k_active_mem_profile = ATH12K_MEM_PROFILE_BALANCED;
 	ath12k_info(NULL, "ath12k: compile-time 512M profile -> BALANCED\n");
 #else
+#if LINUX_VERSION_IS_LESS(6,15,0)
 	if (strstr(saved_command_line, "mem-profile=optimized")) {
 		ath12k_active_mem_profile = ATH12K_MEM_PROFILE_OPTIMIZED;
 		ath12k_info(NULL, "ath12k: mem-profile=optimized -> OPTIMIZED\n");
@@ -352,6 +353,10 @@ static void ath12k_detect_mem_profile(void)
 		ath12k_active_mem_profile = ATH12K_MEM_PROFILE_DEFAULT;
 		ath12k_info(NULL, "ath12k: no mem-profile in cmdline -> DEFAULT\n");
 	}
+#else
+	ath12k_active_mem_profile = ATH12K_MEM_PROFILE_DEFAULT;
+	ath12k_info(NULL, "ath12k: no mem-profile in cmdline -> DEFAULT\n");
+#endif
 #endif
 
 	/* ath12k_active_mem_profile is always set to one of the three valid
@@ -1349,12 +1354,6 @@ static void ath12k_core_power_down_device(struct ath12k_hw_group *ag,
 	if (!skip_power_down &&
 	    !test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags)) {
 		ab->qmi.num_radios = U8_MAX;
-		if (ab->is_cumac_chip) {
-			ab->is_cumac_chip = false;
-			ag->cumac_selected = false;
-			ag->cumac_chip_id = ATH12K_CUMAC_CHIP_ID_INVALID;
-		}
-		ab->cumac_configured = false;
 		ath12k_umac_reset_fallback_cleanup(ab);
 		ath12k_hif_mgmt_irq_disable(ab);
 		ath12k_hif_irq_disable(ab);
@@ -1366,6 +1365,12 @@ static void ath12k_core_power_down_device(struct ath12k_hw_group *ag,
 #endif
 		ath12k_qmi_firmware_stop(ab);
 		ath12k_core_cleanup(ab);
+		if (ab->is_cumac_chip) {
+			ab->is_cumac_chip = false;
+			ag->cumac_selected = false;
+			ag->cumac_chip_id = ATH12K_CUMAC_CHIP_ID_INVALID;
+		}
+		ab->cumac_configured = false;
 		total_vdevs = ath12k_core_get_total_num_vdevs(ab);
 		ab->free_vdev_map = (1LL << (ab->num_radios * total_vdevs)) - 1;
 		ab->free_vdev_stats_id_map = 0;
@@ -1658,9 +1663,7 @@ static int ath12k_core_pdev_init(struct ath12k_base *ab)
 	ath12k_fse_init(ab);
 	ath12k_telemetry_init(ab);
 
-	/* Initialize SAWF/SDWF only if supported by the active memory profile */
-	if (ath12k_dp_ring_cfg->sdwf_support)
-		ath12k_dp_accel_cfg_init(ab);
+	ath12k_dp_accel_cfg_init(ab);
 
 	ath12k_thermal_register(ab);
 
@@ -1685,9 +1688,7 @@ void ath12k_core_pdev_deinit(struct ath12k_base *ab)
 	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
-	/* Deinitialize SAWF/SDWF only if it was initialized based on memory profile */
-	if (ath12k_dp_ring_cfg->sdwf_support)
-		ath12k_dp_accel_cfg_deinit(ab);
+	ath12k_dp_accel_cfg_deinit(ab);
 
 	ath12k_fse_deinit(ab);
 	ath12k_telemetry_deinit(ab);
@@ -2193,31 +2194,43 @@ int ath12k_core_pdev_enable_telemetry_stats(struct ath12k_base *ab)
 	return 0;
 }
 
-static enum ath12k_cumac_band ath12k_get_cumac_band(struct ath12k_base *ab)
+static bool ath12k_check_ab_preferred_band(struct ath12k_base *ab,
+					   enum ath12k_cumac_band preferred_band)
 {
-	u32 band;
+	u32 supported_band;
+	int i;
 
 	if (!ab || ab->num_radios == 0)
-		return ATH12K_CUMAC_BAND_NONE;
+		return false;
 
-	if (!ab->pdevs[0].cap.supported_bands)
-		return ATH12K_CUMAC_BAND_NONE;
+	for (i = 0; i < ab->num_radios; i++) {
+		supported_band = ab->pdevs[i].cap.supported_bands;
+		if (!supported_band)
+			continue;
 
-	band = ab->pdevs[0].cap.supported_bands;
-
-	if (band & WMI_HOST_WLAN_5GHZ_CAP) {
-		if (ab->hal_reg_cap[0].low_5ghz_chan >= ATH12K_MIN_6GHZ_FREQ &&
-		    ab->hal_reg_cap[0].high_5ghz_chan <= ATH12K_MAX_6GHZ_FREQ) {
-			return ATH12K_CUMAC_BAND_6GHZ;
-		} else {
-			return ATH12K_CUMAC_BAND_5GHZ;
+		switch (preferred_band) {
+		case ATH12K_CUMAC_BAND_2GHZ:
+			if (supported_band & WMI_HOST_WLAN_2GHZ_CAP)
+				return true;
+			break;
+		case ATH12K_CUMAC_BAND_5GHZ:
+			if ((supported_band & WMI_HOST_WLAN_5GHZ_CAP) &&
+			    !(ab->hal_reg_cap[i].low_5ghz_chan >= ATH12K_MIN_6GHZ_FREQ &&
+			      ab->hal_reg_cap[i].high_5ghz_chan <= ATH12K_MAX_6GHZ_FREQ))
+				return true;
+			break;
+		case ATH12K_CUMAC_BAND_6GHZ:
+			if ((supported_band & WMI_HOST_WLAN_5GHZ_CAP) &&
+			    ab->hal_reg_cap[i].low_5ghz_chan >= ATH12K_MIN_6GHZ_FREQ &&
+			    ab->hal_reg_cap[i].high_5ghz_chan <= ATH12K_MAX_6GHZ_FREQ)
+				return true;
+			break;
+		default:
+			break;
 		}
-	} else if (band & WMI_HOST_WLAN_2GHZ_CAP) {
-		return ATH12K_CUMAC_BAND_2GHZ;
 	}
 
-	ath12k_err(ab, "ab max bw supported is not mapped to 2GHz / 5GHz / 6GHz for CUMAC selection\n");
-	return ATH12K_CUMAC_BAND_NONE;
+	return false;
 }
 
 static int ath12k_core_send_cumac_chip(struct ath12k_hw_group *ag)
@@ -2323,8 +2336,8 @@ static int ath12k_select_cumac_chip(struct ath12k_hw_group *ag)
 	struct ath12k_base *partner_ab;
 	struct ath12k_base *cumac_ab = NULL;
 	int i, j;
-	enum ath12k_cumac_band preferred_cumac_band;
-	enum ath12k_cumac_band curr_band = ATH12K_CUMAC_BAND_NONE;
+	u8 best_chip_prio;
+	enum ath12k_cumac_band preferred_cumac_band = ATH12K_CUMAC_BAND_NONE;
 	enum ath12k_cumac_band default_prio_band[] = {ATH12K_CUMAC_BAND_2GHZ,
 						      ATH12K_CUMAC_BAND_5GHZ,
 						      ATH12K_CUMAC_BAND_6GHZ};
@@ -2360,6 +2373,21 @@ static int ath12k_select_cumac_chip(struct ath12k_hw_group *ag)
 		max_prio_order = ARRAY_SIZE(default_prio_band);
 	}
 
+	if (ag->num_devices == 1) {
+		cumac_ab = ag->ab[0];
+		goto select_cumac;
+	}
+
+	best_chip_prio = U8_MAX;
+	for (i = 0; i < ag->num_devices; i++) {
+		partner_ab = ag->ab[i];
+		if (!partner_ab || partner_ab->is_bypassed)
+			continue;
+		if (partner_ab->hw_params->cumac_chip_priority &&
+		    (partner_ab->hw_params->cumac_chip_priority < best_chip_prio))
+			best_chip_prio = partner_ab->hw_params->cumac_chip_priority;
+	}
+
 	for (j = 0; j < max_prio_order; j++) {
 		preferred_cumac_band = prio_band[j];
 		for (i = 0; i < ag->num_devices; i++) {
@@ -2367,8 +2395,11 @@ static int ath12k_select_cumac_chip(struct ath12k_hw_group *ag)
 			if (!partner_ab)
 				continue;
 
-			curr_band = ath12k_get_cumac_band(partner_ab);
-			if (preferred_cumac_band == curr_band) {
+			if (partner_ab->hw_params->cumac_chip_priority != best_chip_prio)
+				continue;
+
+			if (ath12k_check_ab_preferred_band(partner_ab,
+							   preferred_cumac_band)) {
 				cumac_ab = partner_ab;
 				break;
 			}
@@ -2377,6 +2408,7 @@ static int ath12k_select_cumac_chip(struct ath12k_hw_group *ag)
 			break;
 	}
 
+select_cumac:
 	if (!cumac_ab)
 		return -EINVAL;
 
@@ -2386,7 +2418,7 @@ static int ath12k_select_cumac_chip(struct ath12k_hw_group *ag)
 	ath12k_info(cumac_ab,
 		    "Selected CUMAC chip: chip_id=%d band=%d\n",
 		    cumac_ab->device_id,
-		    curr_band);
+		    preferred_cumac_band);
 
 	return 0;
 }
@@ -2437,10 +2469,43 @@ inline int ath12k_wait_for_cumac_completion(struct ath12k_hw_group *ag)
 
 static int ath12k_core_complete_cumac_config(struct ath12k_hw_group *ag)
 {
+	struct ath12k_base *ab = NULL;
 	int ret;
+	int i;
 
 	if (!ag->cumac_enabled)
 		return 0;
+
+	for (i = 0; i < ag->num_devices; i++) {
+		ab = ag->ab[i];
+		if (ab && !ab->is_bypassed)
+			break;
+		ab = NULL;
+	}
+
+	if (!ab) {
+		ath12k_err(NULL, "No valid device found for CUMAC config\n");
+		return -EINVAL;
+	}
+
+	if (!test_bit(WMI_SERVICE_PDEV_SET_CUMAC_CHIP_CMD_SUPPORT,
+		      ab->wmi_ab.svc_map) || ath12k_ftm_mode || !ag->mlo_capable) {
+		/* FW does not support the CUMAC chip WMI command; hardcode
+		 * chip id 0 as the CUMAC chip and skip the WMI send path.
+		 */
+		ab = ag->ab[0];
+		if (!ab || ab->is_bypassed) {
+			ath12k_err(NULL, "CUMAC chip (device id 0) is unavailable or bypassed\n");
+			return -EINVAL;
+		}
+
+		ath12k_dbg(ab, ATH12K_DBG_BOOT,
+			   "FTM mode or MLO not capable or FW does not support CUMAC chip cmd, using chip id 0\n");
+		ag->cumac_chip_id = 0;
+		ag->cumac_selected = true;
+		ab->is_cumac_chip = true;
+		return 0;
+	}
 
 	ret = ath12k_select_cumac_chip(ag);
 	if (ret) {
@@ -2603,13 +2668,7 @@ core_pdev_create:
 			if (ath12k_enable_fwlog(ab))
 				ath12k_err(ab, "failed to enable fwlog: %d\n", ret);
 		}
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
-		ret = ath12k_dp_rxdma_buf_setup(ab);
-		if (ret) {
-			ath12k_warn(ab, "failed to setup rxdma ring\n");
-			goto err;
-		}
-#endif
+
 		ret = ath12k_dp_umac_reset_init(ab);
 		if (ret) {
 			mutex_unlock(&ab->core_lock);
@@ -2876,6 +2935,12 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 	else
 		ath12k_info(ab, "Initialized per radio INI data in driver\n");
 
+	/* Cache rf_switch_config INI value for use in WMI init and mac registration */
+	ab->rf_switch_config = ath12k_cfg_get(ab, ATH12K_CFG_RF_SWITCH_CONFIG) ? 1 : 0;
+	ath12k_info(ab, "rf_switch_config: %u (%s 5G range)\n",
+		    ab->rf_switch_config,
+		    ab->rf_switch_config ? "secondary/high" : "primary/full");
+
 	mutex_unlock(&ab->core_lock);
 
 	ret = ath12k_dp_cmn_device_init(ab->dp);
@@ -2901,17 +2966,6 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 	if (is_ready)
 		*is_ready = hw_grp_ready;
 
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
-	if (IPA_CTX(ab)->ipa_ops &&
-	    IPA_CTX(ab)->ipa_ops->ipa_register_is_ipa_ready) {
-		ret = IPA_CTX(ab)->ipa_ops->ipa_register_is_ipa_ready
-			(ab);
-		if (ret) {
-			ath12k_warn(ab, "failed to check IPA readiness");
-			goto err_core_stop;
-		}
-	}
-#endif
 	if (hw_grp_ready) {
 		if (!ag->wsi_remap_in_progress) {
 			ret = ath12k_qmi_mlo_global_snapshot_mem_init(ab);
@@ -3106,9 +3160,7 @@ err_core_stop:
 
 		mutex_lock(&ab->core_lock);
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
-		if (IPA_CTX(ab)->ipa_ops &&
-		    IPA_CTX(ab)->ipa_ops->ipa_uc_ol_deinit)
-			IPA_CTX(ab)->ipa_ops->ipa_uc_ol_deinit(ab);
+		ath12k_dp_ipa_uc_ol_deinit(ab);
 #endif
 		ath12k_core_stop(ab);
 		mutex_unlock(&ab->core_lock);
@@ -3130,10 +3182,21 @@ exit:
 
 u8 ath12k_core_get_total_num_vdevs(struct ath12k_base *ab)
 {
-	if (ab->ag && ab->ag->num_devices >= ATH12K_MIN_NUM_DEVICES_NLINK)
-		return TARGET_NUM_VDEVS + TARGET_NUM_BRIDGE_VDEVS;
+	u8 num_vdevs = TARGET_NUM_VDEVS;
 
-	return TARGET_NUM_VDEVS;
+#ifdef CPTCFG_QCN_EXTN
+	if (ab && ab->cfg_ctx) {
+		u32 ini_val = ath12k_cfg_get(ab, ATH12K_CFG_NUM_VDEVS);
+
+		if (ini_val)
+			num_vdevs = (u8)ini_val;
+	}
+#endif
+
+	if (ab->ag && ab->ag->num_devices >= ATH12K_MIN_NUM_DEVICES_NLINK)
+		return num_vdevs + TARGET_NUM_BRIDGE_VDEVS;
+
+	return num_vdevs;
 }
 EXPORT_SYMBOL(ath12k_core_get_total_num_vdevs);
 
@@ -3179,9 +3242,9 @@ bool ath12k_core_is_vdev_limit_reached(struct ath12k *ar,
 		goto exit;
 	}
 
-	if (num_created_vdevs > (TARGET_NUM_VDEVS - 1)) {
+	if (num_created_vdevs > (total_num_vdevs - 1)) {
 		ath12k_err(ab, "failed to create vdev, reached max vdev limit %d [%d]\n",
-			   num_created_vdevs, TARGET_NUM_VDEVS);
+			   num_created_vdevs, total_num_vdevs);
 		ret = true;
 	}
 
@@ -3567,6 +3630,8 @@ int ath12k_core_radio_start(struct ath12k_hw *ah)
 
 	guard(mutex)(&ah->hw_mutex);
 
+	ah->state = ATH12K_HW_STATE_ON;
+
 	for_each_ar(ah, ar, i) {
 		if (!ath12k_ftm_mode && ar) {
 			if (ar->allocated_vdev_map || ar->ab->is_bypassed) {
@@ -3574,6 +3639,7 @@ int ath12k_core_radio_start(struct ath12k_hw *ah)
 			} else {
 				ret = ath12k_mac_start(ar);
 				if (ret) {
+					ah->state = ATH12K_HW_STATE_OFF;
 					ath12k_err(ar->ab, "mac radio start failed\n");
 					return ret;
 				}
@@ -3584,8 +3650,6 @@ int ath12k_core_radio_start(struct ath12k_hw *ah)
 
 		ar->ab->powerup_triggered = false;
 	}
-
-	ah->state = ATH12K_HW_STATE_ON;
 
 	if (test_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ag->flags))
 		clear_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ag->flags);
@@ -4270,9 +4334,8 @@ static void ath12k_reset_group_key_slots(struct ath12k_link_vif *arvif,
 	    ahvif->vif->type == NL80211_IFTYPE_AP_VLAN) {
 		vlan_iface = ahvif->vlan_iface;
 		if (vlan_iface && !vlan_iface->is_wds_4addr)
-			memset(vlan_iface->grp_key_slot_map[arvif->link_id],
-			       ATH12K_GROUP_KEY_SLOT_INVALID,
-			       sizeof(vlan_iface->grp_key_slot_map[arvif->link_id]));
+			vlan_iface->grp_key_slot[arvif->link_id] =
+				ATH12K_GROUP_KEY_SLOT_INVALID;
 	}
 }
 
@@ -4686,6 +4749,7 @@ void ath12k_core_trigger_partner_device_crash(struct ath12k_base *ab)
 		}
 	}
 }
+EXPORT_SYMBOL(ath12k_core_trigger_partner_device_crash);
 
 static void ath12k_partner_chip_power_state_info(struct ath12k_hw_group *ag,
 						 u8 power_state)
@@ -4847,15 +4911,6 @@ static void ath12k_core_reset(struct work_struct *work)
 
 	reset_count = atomic_inc_return(&ab->reset_count);
 
-#ifdef CPTCFG_ATHDEBUG
-	if (ab) {
-		ath12k_info(ab, "%s : collect minidump\n", __func__);
-		athdbg_if_get_service(ab, ATHDBG_SRV_COLLECT_MINIDUMP_REFERENCES);
-		if (ab->fw_recovery_support)
-			athdbg_if_get_service(ab, ATHDBG_SRV_DO_MINIDUMP);
-	}
-#endif
-
 	if (reset_count > 1) {
 		/* Sometimes it happened another reset worker before the previous one
 		 * completed, then the second reset worker will destroy the previous one,
@@ -4893,9 +4948,24 @@ static void ath12k_core_reset(struct work_struct *work)
 
 	mutex_lock(&ag->mutex);
 
+#if defined CPTCFG_ATHDEBUG && defined(CONFIG_QCA_MINIDUMP) &&\
+!defined(CONFIG_ATH12K_MEM_PROFILE_256M)
+	if (ab) {
+		ath12k_info(ab, "%s : collect minidump\n", __func__);
+		athdbg_if_get_service(ab, ATHDBG_SRV_COLLECT_MINIDUMP_REFERENCES);
+		if (ab->fw_recovery_support)
+			athdbg_if_get_service(ab, ATHDBG_SRV_DO_MINIDUMP);
+	}
+#endif
 	ath12k_hif_mgmt_irq_disable(ab);
 	ath12k_core_disable_ext_irq_during_recovery(ab);
 	ath12k_hif_ce_irq_disable(ab);
+	/* Mode 1 (UMAC reset) disables PPEDS IRQs via ppeds_interrupt_stop()
+	 * in the pre_reset handler. Only disable them explicitly for Mode 0,
+	 * which skips that path entirely.
+	 */
+	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE0)
+		ath12k_hif_ppe_irq_disable(ab);
 	ab->is_reset = true;
 
 	if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE0)
@@ -5132,6 +5202,9 @@ static struct ath12k_hw_group *ath12k_core_hw_group_alloc(struct ath12k_base *ab
 	INIT_WORK(&ag->reset_group_work, ath12k_core_update_userpd_state);
 	mutex_init(&ag->mutex);
 	mutex_init(&ag->dp_hw_grp->tx_init_lock);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	mutex_init(&ag->dp_hw_grp->ppeds_tx_init_lock);
+#endif
 	init_completion(&ag->umac_reset_complete);
 	init_completion(&ag->peer_cleanup_complete);
 	spin_lock_init(&ag->ahsta_lock);
@@ -5668,7 +5741,7 @@ void ath12k_core_pci_link_speed(struct ath12k_base *ab, u16 link_speed,
 
 	ath12k_info(ab, "Link speed is %d and width is %d\n", link_speed, link_width);
 
-#ifndef PLATFORM_SDX85
+#ifndef PLATFORM_SDX
 	if (pcie_set_link_speed(root_port, link_speed))
 		ath12k_err(ab, "Failed to set the link speed\n");
 
@@ -6257,6 +6330,7 @@ struct ath12k_hw_group *ath12k_core_get_ag(void)
 	mutex_unlock(&ath12k_hw_group_mutex);
 	return ag;
 }
+EXPORT_SYMBOL(ath12k_core_get_ag);
 
 int ath12k_core_init(struct ath12k_base *ab)
 {

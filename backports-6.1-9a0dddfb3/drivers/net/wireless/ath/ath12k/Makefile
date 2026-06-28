@@ -4,6 +4,7 @@ ath12k-y += core.o \
 	    hal.o \
 	    wmi.o \
 	    mac.o \
+	    smd.o \
 	    reg.o \
 	    htc.o \
 	    qmi.o \

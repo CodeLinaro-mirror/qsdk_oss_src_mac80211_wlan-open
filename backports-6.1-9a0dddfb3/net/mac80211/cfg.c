@@ -682,10 +682,18 @@ static int ieee80211_add_key(struct wiphy *wiphy, struct net_device *dev,
 		 * association has completed, this rejects that attempt
 		 * so it will set the key again after association.
 		 *
+		 * With (re)association frame encryption enabled, cfg80211
+		 * may deliver keys to mac80211 before the station has
+		 * associated. In that case, accept the key if the station
+		 * is an Enhanced Privacy Protection (EPP) peer.
+		 * If (re)association frame encryption support is not present,
+		 * cfg80211 will not allow key installation in non‑AP STA mode.
+		 *
 		 * TODO: accept the key if we have a station entry and
-		 *       add it to the device after the station.
+		 *	 add it to the device after the station associates.
 		 */
-		if (!sta || !test_sta_flag(sta, WLAN_STA_ASSOC)) {
+		if (!sta || (!sta->sta.epp_peer &&
+			     !test_sta_flag(sta, WLAN_STA_ASSOC))) {
 			ieee80211_key_free_unused(key);
 			return -ENOENT;
 		}
@@ -695,6 +703,8 @@ static int ieee80211_add_key(struct wiphy *wiphy, struct net_device *dev,
 	case NL80211_IFTYPE_STATION:
 		if (sdata->u.mgd.mfp != IEEE80211_MFP_DISABLED)
 			key->conf.flags |= IEEE80211_KEY_FLAG_RX_MGMT;
+		if (sdata->u.mgd.smd_ptk != IEEE80211_SMD_PTK_DISABLED)
+			key->conf.flags |= IEEE80211_KEY_FLAG_SMD_PTK;
 		break;
 	case NL80211_IFTYPE_AP:
 	case NL80211_IFTYPE_AP_VLAN:
@@ -1850,10 +1860,47 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 
 	link_conf->dps_assist_support = false;
 	if (params->uhr_oper) {
+		const struct ieee80211_uhr_npca_info *npca;
+		struct ieee80211_bss_npca_params npca_params = {};
+
 		if (!link_conf->eht_support)
 			return -EOPNOTSUPP;
 
 		link_conf->uhr_support = true;
+
+		npca = ieee80211_uhr_npca_info(params->uhr_oper);
+		if (npca) {
+			npca_params.min_dur_thresh =
+				le32_get_bits(npca->params,
+					      IEEE80211_UHR_NPCA_PARAMS_MIN_DUR_THRESH);
+			npca_params.switch_delay =
+				le32_get_bits(npca->params,
+					      IEEE80211_UHR_NPCA_PARAMS_SWITCH_DELAY);
+			npca_params.switch_back_delay =
+				le32_get_bits(npca->params,
+					IEEE80211_UHR_NPCA_PARAMS_SWITCH_BACK_DELAY);
+			npca_params.init_qsrc =
+				le32_get_bits(npca->params,
+					      IEEE80211_UHR_NPCA_PARAMS_INIT_QSRC);
+			npca_params.moplen =
+				le32_get_bits(npca->params,
+					      IEEE80211_UHR_NPCA_PARAMS_MOPLEN);
+			npca_params.enabled = true;
+		}
+
+		if (memcmp(&npca_params, &link->conf->npca, sizeof(npca_params))) {
+			link->conf->npca = npca_params;
+			changed |= BSS_CHANGED_NPCA;
+		}
+
+		link_conf->uhr_config.adv_notification_interval =
+			(params->uhr_cap->fixed.mac.mac_cap[3] &
+			 IEEE80211_UHR_MAC_CAP3_PARAM_UPD_ADV_NOTIF_INTV) >> 2;
+		link_conf->uhr_config.update_in_tim_interval =
+			((params->uhr_cap->fixed.mac.mac_cap[3] &
+			  IEEE80211_UHR_MAC_CAP3_UPD_IND_TIM_INTV_LOW) >> 5) |
+			((params->uhr_cap->fixed.mac.mac_cap[4] &
+			  IEEE80211_UHR_MAC_CAP4_UPD_IND_TIM_INTV_HIGH) << 3);
 	}
 
 	if (sdata->vif.type == NL80211_IFTYPE_AP &&
@@ -1882,6 +1929,17 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 			IEEE80211_HE_PHY_CAP2_UL_MU_FULL_MU_MIMO;
 	}
 
+	if (params->smd_params.smd_enabled) {
+		memcpy(&link_conf->smd_params.smd_identifier,
+		       params->smd_params.smd_identifier, ETH_ALEN);
+		link_conf->smd_params.smd_enabled = params->smd_params.smd_enabled;
+		link_conf->smd_params.smd_timeout = params->smd_params.smd_timeout;
+		link_conf->smd_params.dl_data_fwd = params->smd_params.dl_data_fwd;
+		link_conf->smd_params.max_num_of_peer_apmlds =
+			params->smd_params.max_num_of_peer_apmlds;
+		link_conf->smd_params.smd_type = params->smd_params.smd_type;
+		link_conf->smd_params.ptk_mode = params->smd_params.ptk_mode;
+	}
 
 	if (params->chandef.chan->band == NL80211_BAND_6GHZ)
 		link_conf->power_type =
@@ -2051,7 +2109,9 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	 */
 	if (cfg80211_chandef_dfs_usable(local->hw.wiphy, &params->chandef) &&
 	    !cfg80211_chandef_dfs_available(local->hw.wiphy, &params->chandef))
-		ieee80211_start_ap_bootup_cac_extn(sdata, link, params);
+		ieee80211_bootup_cac_start_timer_extn(sdata, link,
+						      &params->chandef,
+						      params->residual_cac_ms);
 #endif /* CPTCFG_QCN_EXTN */
 
 	return 0;
@@ -2631,6 +2691,9 @@ static int sta_apply_parameters(struct ieee80211_local *local,
 	sta->sta.eml_cap = params->link_sta_params.eml_cap;
 	sta->sta.control_mic_pad = params->control_mic_pad;
 
+	if (params->epp_peer)
+		sta->sta.epp_peer = true;
+
 	if (ieee80211_vif_is_mesh(&sdata->vif)) {
 		/*
 		 * In mesh mode, ASSOCIATED isn't part of the nl80211
@@ -2657,6 +2720,14 @@ static int sta_apply_parameters(struct ieee80211_local *local,
 	if (mask & BIT(NL80211_STA_FLAG_WME) &&
 	    local->hw.queues >= IEEE80211_NUM_ACS)
 		sta->sta.wme = set & BIT(NL80211_STA_FLAG_WME);
+
+	if (mask & BIT(NL80211_STA_FLAG_SMD)) {
+		if (set & BIT(NL80211_STA_FLAG_SMD)) {
+			set_sta_flag(sta, WLAN_STA_SMD);
+		} else {
+			clear_sta_flag(sta, WLAN_STA_SMD);
+		}
+	}
 
 	/* auth flags will be set later for TDLS,
 	 * and for unassociated stations that move to associated */
@@ -2696,6 +2767,15 @@ static int sta_apply_parameters(struct ieee80211_local *local,
 			set_sta_flag(sta, WLAN_STA_TDLS_PEER);
 		else
 			clear_sta_flag(sta, WLAN_STA_TDLS_PEER);
+	}
+
+	if (params->link_sta_params.smd_enabled) {
+		sta->sta.smd_params.smd_enabled = params->link_sta_params.smd_enabled;
+		if (params->link_sta_params.smd_mac_addr)
+			memcpy(sta->sta.smd_params.smd_identifier,
+			       params->link_sta_params.smd_mac_addr, ETH_ALEN);
+		sta->sta.smd_params.dl_data_fwd =
+			params->link_sta_params.smd_dl_data_fwd;
 	}
 
 	if (mask & BIT(NL80211_STA_FLAG_SPP_AMSDU))
@@ -3454,6 +3534,19 @@ static int ieee80211_join_mesh(struct wiphy *wiphy, struct net_device *dev,
 					 IEEE80211_CHANCTX_SHARED);
 	if (err)
 		return err;
+
+#ifdef CPTCFG_QCN_EXTN
+	/*
+	 * Boot-up CAC: Start the per-chanctx CAC timer for mesh on a 5G DFS
+	 * channel, mirroring what ieee80211_start_ap does for AP.
+	 */
+	if (cfg80211_chandef_dfs_usable(sdata->local->hw.wiphy,
+					&setup->chandef) &&
+	    !cfg80211_chandef_dfs_available(sdata->local->hw.wiphy,
+					    &setup->chandef))
+		ieee80211_bootup_cac_start_timer_extn(sdata, &sdata->deflink,
+						      &setup->chandef, 0);
+#endif /* CPTCFG_QCN_EXTN */
 
 	return ieee80211_start_mesh(sdata);
 }
@@ -4294,23 +4387,6 @@ static int ieee80211_set_bitrate_mask(struct wiphy *wiphy,
 
 	if (!ieee80211_sdata_running(sdata))
 		return -ENETDOWN;
-
-	/*
-	 * If active validate the setting and reject it if it doesn't leave
-	 * at least one basic rate usable, since we really have to be able
-	 * to send something, and if we're an AP we have to be able to do
-	 * so at a basic rate so that all clients can receive it.
-	 */
-	if (rcu_access_pointer(sdata->vif.bss_conf.chanctx_conf) &&
-	    sdata->vif.bss_conf.chanreq.oper.chan) {
-		u32 basic_rates = sdata->vif.bss_conf.basic_rates;
-		enum nl80211_band band;
-
-		band = sdata->vif.bss_conf.chanreq.oper.chan->band;
-
-		if (!(mask->control[band].legacy & basic_rates))
-			return -EINVAL;
-	}
 
 	if (ieee80211_hw_check(&local->hw, HAS_RATE_CONTROL)) {
 		ret = drv_set_bitrate_mask(local, sdata, link_id, mask);
@@ -6841,6 +6917,188 @@ ieee80211_assoc_ml_reconf(struct wiphy *wiphy, struct net_device *dev,
 		return ieee80211_mgd_assoc_ml_reconf(sdata, req);
 }
 
+static int ieee80211_mgd_st_prepare(struct ieee80211_sub_if_data *sdata,
+				    struct cfg80211_smd_prepare_req *req)
+{
+	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
+	struct ieee80211_mgd_assoc_data *assoc_data;
+	int target_slot, ret;
+
+	lockdep_assert_wiphy(sdata->local->hw.wiphy);
+
+	if (!ifmgd->associated) {
+		sdata_err(sdata, "smd: not associated, cannot prepare ST");
+		return -ENOTCONN;
+	}
+
+	if (is_zero_ether_addr(req->target_mld_addr)) {
+		sdata_err(sdata, "smd: invalid target MLD address");
+		return -EINVAL;
+	}
+
+	target_slot = ieee80211_smd_find_target_by_addr(sdata, req->target_mld_addr);
+	if (target_slot >= 0)
+		return -EEXIST;
+
+	if (ifmgd->num_prepared_targets >= ifmgd->max_prepared_targets) {
+		sdata_err(sdata, "smd: max concurrent preparations reached (%d)",
+			  ifmgd->max_prepared_targets);
+		return -ENOSPC;
+	}
+
+	assoc_data = ieee80211_smd_create_assoc_data(sdata, req);
+	if (!assoc_data) {
+		sdata_err(sdata, "smd: failed to create assoc_data");
+		return -ENOMEM;
+	}
+
+	target_slot = ieee80211_smd_add_prep_target(sdata,
+						    req->target_mld_addr,
+						    assoc_data);
+	if (target_slot < 0) {
+		sdata_err(sdata, "smd: failed to add target: %d", target_slot);
+		kfree(assoc_data);
+		return target_slot;
+	}
+
+	sdata->u.mgd.prep_targets[target_slot].exec_path = req->exec_path;
+	sdata->u.mgd.prep_targets[target_slot].no_dl_sn =
+		req->request_dl_sn_not_transferred;
+	sdata->u.mgd.prep_targets[target_slot].no_ul_sn =
+		req->request_ul_sn_not_transferred;
+	sdata->u.mgd.prep_targets[target_slot].is_preferred_target =
+		req->is_preferred_target;
+	ret = ieee80211_tx_smd_uhr_link_reconf(sdata, req->target_mld_addr,
+					       req, assoc_data);
+	if (ret) {
+		sdata_err(sdata, "smd: failed to send prep request: %d", ret);
+		ieee80211_smd_remove_prep_target(sdata, target_slot);
+		return ret;
+	}
+
+	if (assoc_data->smd_timeout)
+		ieee80211_smd_start_prep_timeout(sdata,
+						 &sdata->u.mgd.prep_targets[target_slot],
+						 assoc_data->smd_timeout);
+
+	return 0;
+}
+
+static int ieee80211_mgd_st_execute(struct ieee80211_sub_if_data *sdata,
+				    struct cfg80211_smd_prepare_req *req)
+{
+	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
+	int target_slot;
+	int ret;
+
+	lockdep_assert_wiphy(sdata->local->hw.wiphy);
+
+	if (!ifmgd->associated) {
+		sdata_info(sdata, "SMD EXEC: Not associated, cannot execute ST\n");
+		return -ENOTCONN;
+	}
+
+	if (is_zero_ether_addr(req->target_mld_addr)) {
+		sdata_err(sdata, "SMD EXEC: Invalid target MLD address\n");
+		return -EINVAL;
+	}
+
+	target_slot = ieee80211_smd_find_target_by_addr(sdata, req->target_mld_addr);
+	if (target_slot < 0) {
+		sdata_info(sdata, "SMD EXEC: Target %pM not found in prep array\n",
+			   req->target_mld_addr);
+		return -ENOENT;
+	}
+
+	/*
+	 * For ROAM ST (preferred target): ieee80211_smd_prep_activate() already
+	 * ran at PREP-response time — drv_info was freed, target is driver-ready.
+	 *
+	 * For SMD_EXECUTE (target becomes preferred now): drv_info is still set
+	 * from prep_setup.  Run driver activation before sending the EXEC frame.
+	 */
+	if (ifmgd->prep_targets[target_slot].drv_info) {
+		ret = ieee80211_smd_prep_activate(sdata,
+						  &ifmgd->prep_targets[target_slot]);
+		if (ret)
+			return ret;
+	}
+
+	ret = ieee80211_tx_smd_uhr_link_reconf(sdata, req->target_mld_addr, req, NULL);
+	if (ret) {
+		ieee80211_smd_prep_reset_target(sdata,
+						&ifmgd->prep_targets[target_slot],
+						WLAN_STATUS_UNSPECIFIED_FAILURE, 0);
+		return ret;
+	}
+
+	return 0;
+}
+
+static int
+ieee80211_uhr_link_reconf(struct wiphy *wiphy, struct net_device *dev,
+			  struct cfg80211_smd_prepare_req *req)
+{
+	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+
+	lockdep_assert_wiphy(sdata->local->hw.wiphy);
+
+	if (req->type == IEEE80211_UHR_LINK_RECONF_TYPE_ST_EXEC)
+		return ieee80211_mgd_st_execute(sdata, req);
+
+	return ieee80211_mgd_st_prepare(sdata, req);
+}
+
+static int ieee80211_smd_roam(struct wiphy *wiphy,
+			      struct net_device *dev,
+			      const struct cfg80211_smd_roam_req *req)
+{
+	struct ieee80211_local *local = wiphy_priv(wiphy);
+	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+	struct sta_info *sta = NULL;
+	u32 type;
+	u32 status = 0;
+
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	if (!req->num_links) {
+		sdata_err(sdata, "smd: num_links zero, no roam config sent");
+		return -EINVAL;
+	}
+
+	sta = sta_info_get_bss(sdata, req->link_macs[0]);
+	if (!sta)
+		return -ENOENT;
+
+	switch (req->type) {
+	case 0:
+		type = IEEE80211_SMD_ROAM_CONFIG_TYPE_PREP_REQ;
+		break;
+	case 1:
+		type = IEEE80211_SMD_ROAM_CONFIG_TYPE_PREP_RESP;
+		break;
+	case 2:
+		type = IEEE80211_SMD_ROAM_CONFIG_TYPE_EXEC_REQ;
+		break;
+	case 3:
+		type = IEEE80211_SMD_ROAM_CONFIG_TYPE_EXEC_RESP;
+		break;
+	case 4:
+		type = IEEE80211_SMD_ROAM_CONFIG_TYPE_DYNAMIC_CONTEXT;
+		break;
+	case 5:
+		type = IEEE80211_SMD_ROAM_CONFIG_TYPE_TERMINATION;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return drv_uhr_smd_update(local, sdata, &sta->sta, req->role, type,
+				  status, req->dl_sn_not_transferred,
+				  req->ul_sn_not_transferred,
+				  req->dl_drain_time);
+}
+
 static int
 ieee80211_set_epcs(struct wiphy *wiphy, struct net_device *dev, bool enable)
 {
@@ -6943,6 +7201,85 @@ int ieee80211_dfs_abort_cac(struct wiphy *wiphy,
 		ieee80211_dfs_cac_cancel(local, &chanctx_conf->def);
 
 	return 0;
+}
+
+static int ieee80211_uhr_mode_update(struct wiphy *wiphy,
+				     struct net_device *dev,
+				     struct cfg80211_uhr_mode_update_params *params)
+{
+	struct ieee80211_local *local = wiphy_priv(wiphy);
+	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+	struct link_sta_info *link_sta;
+	struct sta_info *sta, *found_sta = NULL;
+	int link_id;
+	int ret;
+
+	lockdep_assert_wiphy(wiphy);
+
+	/* Store the per-link params into the associated link_sta entries first */
+	list_for_each_entry(sta, &local->sta_list, list) {
+		if (sta->sdata != sdata)
+			continue;
+		found_sta = sta;
+		for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS; link_id++) {
+			link_sta = rcu_dereference_protected(sta->link[link_id],
+					lockdep_is_held(&local->hw.wiphy->mtx));
+			if (!link_sta)
+				continue;
+			if (params->npca_update[link_id])
+				link_sta->pub->npca = params->npca[link_id];
+		}
+		break;
+	}
+
+	/* Call the driver once after link_sta params are updated */
+	ret = drv_uhr_mode_update(local, sdata, found_sta);
+	return ret;
+}
+
+static int ieee80211_critical_update_cmd(struct wiphy *wiphy,
+					 struct net_device *dev,
+					 unsigned int link_id,
+					 struct cfg80211_critical_update_params *params)
+{
+	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+	struct ieee80211_link_data *link;
+	struct ieee80211_bss_conf *link_conf;
+	int ret;
+
+	if (!ieee80211_sdata_running(sdata))
+		return -ENETDOWN;
+
+	link = sdata_dereference(sdata->link[link_id], sdata);
+	if (!link)
+		return -ENOLINK;
+
+	link_conf = link->conf;
+
+	if (params->cu_info.cu_type == NL80211_CU_TYPE_UHR_PARAMS &&
+	    !link_conf->uhr_support)
+		return -EOPNOTSUPP;
+
+	if (params->cu_info.cu_type == NL80211_CU_TYPE_UHR_PARAMS &&
+	    !ieee80211_uhr_param_upd_size_ok(params->elem + 3,
+					      params->elem_len - 3))
+		return -EINVAL;
+
+	if (link_conf->cu_info.cu_in_progress &&
+	    params->cu_info.cu_type == link_conf->cu_info.cu_type)
+		return -EBUSY;
+
+	ret = drv_critical_update(sdata->local, sdata, link_id,
+				  params->cu_info.cu_type,
+				  params->elem, params->elem_len);
+
+	if (ret)
+		return ret;
+
+	link_conf->cu_info.cu_in_progress = true;
+	link_conf->cu_info.cu_type = params->cu_info.cu_type;
+
+	return ret;
 }
 
 const struct cfg80211_ops mac80211_config_ops = {
@@ -7067,6 +7404,8 @@ const struct cfg80211_ops mac80211_config_ops = {
 	.set_ttlm = ieee80211_set_ttlm,
 	.get_radio_mask = ieee80211_get_radio_mask,
 	.assoc_ml_reconf = ieee80211_assoc_ml_reconf,
+	.uhr_link_reconf = ieee80211_uhr_link_reconf,
+	.smd_roam = ieee80211_smd_roam,
 	.set_epcs = ieee80211_set_epcs,
 	.erp = ieee80211_erp,
 	.set_qos_mgmt_cfg = ieee80211_set_qos_mgmt_cfg,
@@ -7074,4 +7413,30 @@ const struct cfg80211_ops mac80211_config_ops = {
 	.get_6ghz_dev_deployment_type = ieee80211_get_6ghz_dev_deployment_type,
 	.ap_power_save = ieee80211_ap_power_save,
 	.abort_cac = ieee80211_dfs_abort_cac,
+	.uhr_mode_update = ieee80211_uhr_mode_update,
+	.critical_update = ieee80211_critical_update_cmd,
 };
+
+void ieee80211_cu_notify(struct ieee80211_hw *hw,
+			 struct ieee80211_vif *vif,
+			 unsigned int link_id,
+			 enum nl80211_cu_state cu_state)
+{
+	struct ieee80211_sub_if_data *sdata = vif_to_sdata(vif);
+	struct ieee80211_link_data *link;
+	struct wireless_dev *wdev = &sdata->wdev;
+
+	if (WARN_ON(link_id >= IEEE80211_MLD_MAX_NUM_LINKS))
+		return;
+
+	trace_ieee80211_cu_notify(sdata, link_id, cu_state);
+
+	link = sdata_dereference(sdata->link[link_id], sdata);
+	if (!link)
+		return;
+
+	link->conf->cu_info.cu_in_progress =
+		(cu_state != NL80211_CU_STATE_ECU_END);
+	cfg80211_cu_notify(wdev, link_id, cu_state);
+}
+EXPORT_SYMBOL(ieee80211_cu_notify);

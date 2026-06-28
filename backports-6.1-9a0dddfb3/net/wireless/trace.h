@@ -4164,6 +4164,23 @@ TRACE_EVENT(cfg80211_assoc_comeback,
 		  WDEV_PR_ARG, __entry->ap_addr, __entry->timeout)
 );
 
+TRACE_EVENT(cfg80211_smd_prep_done,
+	TP_PROTO(struct net_device *netdev, const u8 *ap_addr, u16 status),
+	TP_ARGS(netdev, ap_addr, status),
+	TP_STRUCT__entry(
+		NETDEV_ENTRY
+		MAC_ENTRY(ap_addr)
+		__field(u16, status)
+	),
+	TP_fast_assign(
+		NETDEV_ASSIGN;
+		MAC_ASSIGN(ap_addr, ap_addr);
+		__entry->status = status;
+	),
+	TP_printk(NETDEV_PR_FMT ", %pM, status: %u",
+		  NETDEV_PR_ARG, __entry->ap_addr, __entry->status)
+);
+
 DECLARE_EVENT_CLASS(link_station_add_mod,
 	TP_PROTO(struct wiphy *wiphy, struct net_device *netdev,
 		 struct link_station_parameters *params),
@@ -4477,6 +4494,81 @@ TRACE_EVENT(rdev_ap_power_save,
 		  __entry->config_type, __entry->pcie_gen, __entry->pcie_lane,
 		  __entry->dcvs_mode, __entry->dps_assist_enable,
 		  __entry->low_power_20mhz_enable)
+);
+
+TRACE_EVENT(rdev_uhr_mode_update,
+	TP_PROTO(struct wiphy *wiphy, struct net_device *dev,
+		 struct cfg80211_uhr_mode_update_params *params),
+
+	TP_ARGS(wiphy, dev, params),
+
+	TP_STRUCT__entry(
+		WIPHY_ENTRY
+		__string(name, dev->name)
+		__field(u16, npca_update_mask)
+	),
+
+	TP_fast_assign(
+		int i;
+		u16 npca_mask = 0;
+
+		WIPHY_ASSIGN;
+		__assign_str(name, dev->name);
+		for (i = 0; i < IEEE80211_MLD_MAX_NUM_LINKS; i++) {
+			if (params->npca_update[i])
+				npca_mask |= BIT(i);
+		}
+		__entry->npca_update_mask = npca_mask;
+	),
+
+	TP_printk(WIPHY_PR_FMT ", dev: %s, npca_links:0x%04x",
+		  WIPHY_PR_ARG, __get_str(name),
+		  __entry->npca_update_mask)
+);
+
+TRACE_EVENT(rdev_critical_update,
+	TP_PROTO(struct wiphy *wiphy, struct net_device *netdev,
+		  unsigned int link_id,
+		  struct cfg80211_critical_update_params *params),
+
+	TP_ARGS(wiphy, netdev, link_id, params),
+
+	TP_STRUCT__entry(WIPHY_ENTRY
+		NETDEV_ENTRY
+		__field(u32, link_id)
+		__field(u32, cu_type)
+		__field(size_t, elem_len)
+	),
+
+	TP_fast_assign(WIPHY_ASSIGN;
+		NETDEV_ASSIGN;
+		__entry->link_id = link_id;
+		__entry->cu_type = params->cu_info.cu_type;
+		__entry->elem_len = params->elem_len;
+	),
+
+	TP_printk(WIPHY_PR_FMT ", " NETDEV_PR_FMT
+		  ", link_id: %u cu_type: %u elem_len: %zu",
+		  WIPHY_PR_ARG, NETDEV_PR_ARG,
+		  __entry->link_id, __entry->cu_type, __entry->elem_len)
+);
+
+TRACE_EVENT(rdev_smd_prepare,
+	TP_PROTO(struct wiphy *wiphy, struct net_device *netdev,
+		 struct cfg80211_smd_prepare_req *req),
+	TP_ARGS(wiphy, netdev, req),
+	TP_STRUCT__entry(
+		WIPHY_ENTRY
+		NETDEV_ENTRY
+		MAC_ENTRY(target_mld_addr)
+	),
+	TP_fast_assign(
+		WIPHY_ASSIGN;
+		NETDEV_ASSIGN;
+		MAC_ASSIGN(target_mld_addr, req->target_mld_addr);
+	),
+	TP_printk(WIPHY_PR_FMT ", " NETDEV_PR_FMT ", target_mld: %pM",
+		  WIPHY_PR_ARG, NETDEV_PR_ARG, __entry->target_mld_addr)
 );
 #endif /* !__RDEV_OPS_TRACE || TRACE_HEADER_MULTI_READ */
 

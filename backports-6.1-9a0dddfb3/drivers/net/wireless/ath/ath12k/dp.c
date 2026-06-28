@@ -25,9 +25,8 @@
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #include "ppe.h"
 #endif
-#ifdef PLATFORM_SDX85
 #include "dp.h"
-#endif
+#include <linux/vmalloc.h>
 
 /* DSCP TID mapping as per RFC 8325
  * ===============================
@@ -131,7 +130,7 @@ EXPORT_SYMBOL(ath12k_dp_pcp_tid_map);
  * register writer with no validation.  All sanity checks are performed here:
  *
  *   1. dp_hw_grp must not be NULL.
- *   2. tid_map_precedence must be in range 0-11 (values 12-15 are HW reserved).
+ *   2. tid_map_precedence must be 0 (DSCP) or 1 (PCP).
  *   3. At least one non-NULL SOC with a valid ab pointer must exist.
  *   4. Each SOC's dp->ab must not be NULL before calling HAL.
  *
@@ -153,7 +152,7 @@ int ath12k_dp_tid_map_precedence(struct ath12k_dp_hw_group *dp_hw_grp)
 
 	if (dp_hw_grp->tid_map_precedence > ATH12K_DP_MAX_TID_PRECEDENCE_VAL) {
 		ath12k_err(NULL,
-			   "tid_map_prty: precedence=%u out of range (0-11)\n",
+			   "tid_map_prty: precedence=%u out of range (0=DSCP, 1=PCP)\n",
 			   dp_hw_grp->tid_map_precedence);
 		return -EINVAL;
 	}
@@ -247,6 +246,7 @@ void ath12k_dp_peer_cleanup(struct ath12k *ar, void *ptr, int vdev_id, const u8 
 	}
 
 	ath12k_dp_ipa_peer_notify(ar, peer, NULL, vdev_id, false);
+	ath12k_dp_arch_smd_clear_old_peer_rx_lut(dp, peer->dp_peer);
 
 	ath12k_dp_rx_peer_tid_cleanup(ar, peer);
 	crypto_free_shash(peer->dp_peer->tfm_mmic);
@@ -287,12 +287,7 @@ int ath12k_dp_peer_setup(struct ath12k *ar, void *ptr, struct ath12k_link_vif *a
 	if (ar->radio_cfg.pdev_to_reo_dest)
 		reo_dest = ar->radio_cfg.pdev_to_reo_dest;
 
-#ifdef CPTCFG_EXT_IPA_OFFLOAD
-	if (IPA_CTX(ab) && IPA_CTX(ab)->ipa_ops &&
-	    IPA_CTX(ab)->ipa_ops->ipa_set_default_routing)
-		reo_dest = IPA_CTX(ab)->ipa_ops->ipa_set_default_routing
-			(reo_dest);
-#endif
+	reo_dest = ath12k_dp_ipa_arch_op_rx_default_routing(ab, reo_dest);
 
 	ret = ath12k_wmi_set_peer_param(ar, addr, vdev_id,
 					WMI_PEER_SET_DEFAULT_ROUTING,
@@ -1664,22 +1659,17 @@ struct ath12k_tx_desc_info *ath12k_dp_get_tx_desc(struct ath12k_dp *dp,
 EXPORT_SYMBOL(ath12k_dp_get_tx_desc);
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-static u8 *ath12k_dp_cc_find_desc(struct ath12k_base *ab, u32 cookie, bool is_rx)
+static u8 *ath12k_dp_cc_find_desc(struct ath12k_dp_hw_group *dp_hw_grp, u32 cookie)
 {
-	struct ath12k_dp *dp = ab->dp;
 	u16 spt_page_id, spt_idx;
 	u8 *spt_va;
 
 	spt_idx = u32_get_bits(cookie, ATH12K_DP_CC_COOKIE_SPT);
 	spt_page_id = u32_get_bits(cookie, ATH12K_DP_CC_COOKIE_PPT);
 
-	if (is_rx) {
-		if (WARN_ON(spt_page_id < dp->rx_ppt_base))
-			return NULL;
-		spt_page_id = spt_page_id - dp->rx_ppt_base;
-	}
+	/* PPEDS TX SPT pages are stored in dp_hw_grp->ppeds_spt_info */
+	spt_va = (u8 *)dp_hw_grp->ppeds_spt_info[spt_page_id].vaddr;
 
-	spt_va = (u8 *)dp->spt_info[spt_page_id].vaddr;
 	return (spt_va + spt_idx * sizeof(u64));
 }
 
@@ -1688,29 +1678,33 @@ struct ath12k_ppeds_tx_desc_info *ath12k_dp_get_ppeds_tx_desc(struct ath12k_base
 {
 	u8 *desc_addr_ptr;
 
-	desc_addr_ptr = ath12k_dp_cc_find_desc(ab, desc_id, false);
+	desc_addr_ptr = ath12k_dp_cc_find_desc(ab->dp->dp_hw_grp, desc_id);
 	return *(struct ath12k_ppeds_tx_desc_info **)desc_addr_ptr;
 }
 EXPORT_SYMBOL(ath12k_dp_get_ppeds_tx_desc);
-#endif
 
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-void ath12k_dp_ppeds_tx_cmem_init(struct ath12k_base *ab, struct ath12k_dp *dp)
+void ath12k_dp_ppeds_tx_cmem_init(struct ath12k_base *ab)
 {
+	struct ath12k_dp_hw_group *dp_hw_grp = ath12k_ab_to_dp(ab)->dp_hw_grp;
 	u32 cmem_base;
+	u32 ppt_val;
 	int i;
 
 	cmem_base = ab->qmi.dev_mem[ATH12K_QMI_DEVMEM_CMEM_INDEX].start;
 
 	for (i = ATH12K_PPEDS_TX_SPT_PAGE_OFFSET;
 	     i < (ATH12K_PPEDS_TX_SPT_PAGE_OFFSET + ATH12K_NUM_PPEDS_TX_SPT_PAGES); i++) {
+		ppt_val = dp_hw_grp->ppeds_spt_info[i].paddr >>
+			  ATH12K_SPT_4K_ALIGN_OFFSET;
 		/* Write to PPT in CMEM */
 		if (ab->hif.ops->cmem_write32)
-			ath12k_hif_cmem_write32(ab, cmem_base + ATH12K_PPT_ADDR_OFFSET(i),
-						dp->spt_info[i].paddr >> ATH12K_SPT_4K_ALIGN_OFFSET);
+			ath12k_hif_cmem_write32(ab,
+						cmem_base + ATH12K_PPT_ADDR_OFFSET(i),
+						ppt_val);
 		else
-			ath12k_hif_write32(ab, cmem_base + ATH12K_PPT_ADDR_OFFSET(i),
-					   dp->spt_info[i].paddr >> ATH12K_SPT_4K_ALIGN_OFFSET);
+			ath12k_hif_write32(ab,
+					   cmem_base + ATH12K_PPT_ADDR_OFFSET(i),
+					   ppt_val);
 	}
 }
 EXPORT_SYMBOL(ath12k_dp_ppeds_tx_cmem_init);
@@ -1718,15 +1712,15 @@ EXPORT_SYMBOL(ath12k_dp_ppeds_tx_cmem_init);
 void ath12k_dp_ppeds_tx_desc_cleanup(struct ath12k_base *ab)
 {
 	struct ath12k_ppeds_tx_desc_info *ppeds_tx_descs;
-	struct ath12k_dp *dp = ab->dp;
+	struct ath12k_dp_hw_group *dp_hw_grp = ath12k_ab_to_dp(ab)->dp_hw_grp;
 	struct sk_buff *skb;
 	int i, j;
 
 	/* PPEDS TX Descriptor cleanup */
-	spin_lock_bh(&dp->ppe.ppeds_tx_desc_lock);
+	spin_lock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
 
 	for (i = 0; i < ATH12K_NUM_PPEDS_TX_SPT_PAGES; i++) {
-		ppeds_tx_descs = dp->ppedstxbaddr[i];
+		ppeds_tx_descs = dp_hw_grp->ppedstxbaddr[i];
 
 		for (j = 0; j < ATH12K_MAX_SPT_ENTRIES; j++) {
 			if (!ppeds_tx_descs[j].in_use)
@@ -1745,34 +1739,84 @@ void ath12k_dp_ppeds_tx_desc_cleanup(struct ath12k_base *ab)
 							   skb->len, DMA_TO_DEVICE,
 							   DMA_ATTR_SKIP_CPU_SYNC);
 
-			skb_queue_tail(&ab->dp_umac_reset.tx_skb_queue, skb);
+			skb_queue_tail(&ab->dp_umac_reset.ppeds_tx_skb_queue, skb);
 
-			list_add_tail(&ppeds_tx_descs[j].list, &dp->ppe.ppeds_tx_desc_free_list);
+			list_add_tail(&ppeds_tx_descs[j].list,
+				      &dp_hw_grp->ppeds_tx_desc_free_list);
 		}
 	}
 
-	dp->ppe.ppeds_tx_desc_reuse_list_len = 0;
+	dp_hw_grp->ppeds_tx_desc_reuse_list_len = 0;
 
-	spin_unlock_bh(&dp->ppe.ppeds_tx_desc_lock);
+	spin_unlock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
 }
 EXPORT_SYMBOL(ath12k_dp_ppeds_tx_desc_cleanup);
 
 int ath12k_dp_ppeds_cc_desc_cleanup(struct ath12k_base *ab)
 {
 	struct ath12k_ppeds_tx_desc_info *ppeds_tx_descs;
-	struct ath12k_dp *dp = ab->dp;
+	struct ath12k_dp_hw_group *dp_hw_grp = ath12k_ab_to_dp(ab)->dp_hw_grp;
 	struct sk_buff *skb;
 	int i, j;
 
-	if (!dp->ppedstxbaddr) {
+	if (!dp_hw_grp->ppedstxbaddr) {
 		ath12k_err(ab, "%s failed", __func__);
 		return -EINVAL;
 	}
 
-	spin_lock_bh(&dp->ppe.ppeds_tx_desc_lock);
+	spin_lock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
 
 	for (i = 0; i < ATH12K_NUM_PPEDS_TX_SPT_PAGES; i++) {
-		ppeds_tx_descs = dp->ppedstxbaddr[i];
+		ppeds_tx_descs = dp_hw_grp->ppedstxbaddr[i];
+
+		for (j = 0; j < ATH12K_MAX_SPT_ENTRIES; j++) {
+			if (!ppeds_tx_descs[j].in_use)
+				continue;
+
+			if (ppeds_tx_descs[j].device_id != ab->device_id)
+				continue;
+
+			skb = ppeds_tx_descs[j].skb;
+
+			if (!skb)
+				continue;
+
+			ppeds_tx_descs[j].skb = NULL;
+			ppeds_tx_descs[j].in_use = false;
+			ppeds_tx_descs[j].paddr = (dma_addr_t)NULL;
+			dev_kfree_skb_any(skb);
+			list_add_tail(&ppeds_tx_descs[j].list,
+				      &dp_hw_grp->ppeds_tx_desc_free_list);
+		}
+	}
+
+	dp_hw_grp->ppeds_tx_desc_reuse_list_len = 0;
+	spin_unlock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
+
+	ath12k_dbg(ab, ATH12K_DBG_PPE, "%s success\n", __func__);
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_dp_ppeds_cc_desc_cleanup);
+
+void ath12k_dp_ppeds_spt_free_and_deinit(struct ath12k_dp_hw_group *dp_hw_grp)
+{
+	struct ath12k_ppeds_tx_desc_info *ppeds_tx_descs;
+	struct sk_buff *skb;
+	int i, j;
+
+	if (!dp_hw_grp->ppeds_tx_desc_initialized)
+		return;
+
+	if (!dp_hw_grp->ppedstxbaddr)
+		goto free_spt;
+
+	spin_lock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
+
+	for (i = 0; i < ATH12K_NUM_PPEDS_TX_SPT_PAGES; i++) {
+		ppeds_tx_descs = dp_hw_grp->ppedstxbaddr[i];
+		if (!ppeds_tx_descs)
+			continue;
 
 		for (j = 0; j < ATH12K_MAX_SPT_ENTRIES; j++) {
 			skb = ppeds_tx_descs[j].skb;
@@ -1787,77 +1831,133 @@ int ath12k_dp_ppeds_cc_desc_cleanup(struct ath12k_base *ab)
 		}
 	}
 
-	dp->ppe.ppeds_tx_desc_reuse_list_len = 0;
+	dp_hw_grp->ppeds_tx_desc_reuse_list_len = 0;
 
 	for (i = 0; i < ATH12K_NUM_PPEDS_TX_SPT_PAGES; i++) {
-		if (!dp->ppedstxbaddr[i])
+		if (!dp_hw_grp->ppedstxbaddr[i])
 			continue;
 
-		kfree(dp->ppedstxbaddr[i]);
+		kfree(dp_hw_grp->ppedstxbaddr[i]);
+		dp_hw_grp->ppedstxbaddr[i] = NULL;
 	}
 
-	kfree(dp->ppedstxbaddr);
-	dp->ppedstxbaddr = NULL;
+	spin_unlock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
 
-	spin_unlock_bh(&dp->ppe.ppeds_tx_desc_lock);
+	kfree(dp_hw_grp->ppedstxbaddr);
+	dp_hw_grp->ppedstxbaddr = NULL;
 
-	ath12k_dbg(ab, ATH12K_DBG_PPE, "%s success\n", __func__);
+free_spt:
+	if (dp_hw_grp->ppeds_spt_info) {
+		for (i = 0; i < dp_hw_grp->ppeds_num_spt_pages; i++) {
+			if (!dp_hw_grp->ppeds_spt_info[i].vaddr)
+				continue;
+			ath12k_hal_dma_free_coherent(dp_hw_grp->ppeds_tx_spt_dev,
+						     ATH12K_PAGE_SIZE,
+						     dp_hw_grp->ppeds_spt_info[i].vaddr,
+						     dp_hw_grp->ppeds_spt_info[i].paddr);
+			dp_hw_grp->ppeds_spt_info[i].vaddr = NULL;
+		}
+		kfree(dp_hw_grp->ppeds_spt_info);
+		dp_hw_grp->ppeds_spt_info = NULL;
+	}
 
-	return 0;
+	dp_hw_grp->ppeds_tx_spt_dev = NULL;
+	dp_hw_grp->ppeds_tx_desc_initialized = false;
 }
-EXPORT_SYMBOL(ath12k_dp_ppeds_cc_desc_cleanup);
 
-int ath12k_dp_ppeds_cc_desc_init(struct ath12k_base *ab)
+int ath12k_dp_ppeds_spt_alloc_and_init(struct ath12k_base *ab)
 {
-	struct ath12k_dp *dp = ab->dp;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
 	struct ath12k_ppeds_tx_desc_info *ppeds_tx_descs;
-	struct ath12k_spt_info *ppeds_tx_spt_pages;
-	u32 i, j;
+	u32 i, j, ret = 0;
 	u32 ppt_idx;
 
-	INIT_LIST_HEAD(&dp->ppe.ppeds_tx_desc_free_list);
-	INIT_LIST_HEAD(&dp->ppe.ppeds_tx_desc_reuse_list);
-	spin_lock_init(&dp->ppe.ppeds_tx_desc_lock);
-	dp->ppe.ppeds_tx_desc_reuse_list_len = 0;
+	mutex_lock(&dp_hw_grp->ppeds_tx_init_lock);
 
-	dp->ppedstxbaddr = kmalloc_array(ATH12K_NUM_PPEDS_TX_SPT_PAGES,
-					 sizeof(struct ath12k_ppeds_tx_desc_info *),
-					 GFP_KERNEL);
-	if (!dp->ppedstxbaddr)
-		return -ENOMEM;
+	if (dp_hw_grp->ppeds_tx_desc_initialized)
+		goto unlock;
 
-	/* pointer to start of TX pages */
-	ppeds_tx_spt_pages = &dp->spt_info[ATH12K_PPEDS_TX_SPT_PAGE_OFFSET];
+	INIT_LIST_HEAD(&dp_hw_grp->ppeds_tx_desc_free_list);
+	INIT_LIST_HEAD(&dp_hw_grp->ppeds_tx_desc_reuse_list);
+	spin_lock_init(&dp_hw_grp->ppeds_tx_desc_lock);
+	dp_hw_grp->ppeds_tx_desc_reuse_list_len = 0;
 
-	spin_lock_bh(&dp->ppe.ppeds_tx_desc_lock);
+	dp_hw_grp->ppeds_num_spt_pages = ATH12K_NUM_PPEDS_TX_SPT_PAGES;
+
+	dp_hw_grp->ppeds_spt_info = kcalloc(dp_hw_grp->ppeds_num_spt_pages,
+					    sizeof(struct ath12k_spt_info),
+					    GFP_KERNEL);
+	if (!dp_hw_grp->ppeds_spt_info) {
+		ret = -ENOMEM;
+		goto unlock;
+	}
+
+	dp_hw_grp->ppeds_tx_spt_dev = ab->dev;
+
+	for (i = 0; i < dp_hw_grp->ppeds_num_spt_pages; i++) {
+		dp_hw_grp->ppeds_spt_info[i].vaddr =
+			ath12k_hal_dma_alloc_coherent(ab->dev, ATH12K_PAGE_SIZE,
+						      &dp_hw_grp->ppeds_spt_info[i].paddr,
+						      GFP_KERNEL);
+		if (!dp_hw_grp->ppeds_spt_info[i].vaddr) {
+			ret = -ENOMEM;
+			goto free;
+		}
+
+		if (dp_hw_grp->ppeds_spt_info[i].paddr & ATH12K_SPT_4K_ALIGN_CHECK) {
+			ath12k_warn(ab, "PPEDS SPT allocated memory is not 4K aligned");
+			ret = -EINVAL;
+			goto free;
+		}
+	}
+
+	dp_hw_grp->ppedstxbaddr =
+		kmalloc_array(ATH12K_NUM_PPEDS_TX_SPT_PAGES,
+			      sizeof(struct ath12k_ppeds_tx_desc_info *),
+			      GFP_KERNEL);
+	if (!dp_hw_grp->ppedstxbaddr) {
+		ret = -ENOMEM;
+		goto free;
+	}
+
+	spin_lock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
 	for (i = 0; i < ATH12K_NUM_PPEDS_TX_SPT_PAGES; i++) {
 		ppeds_tx_descs = kcalloc(ATH12K_MAX_SPT_ENTRIES, sizeof(*ppeds_tx_descs),
 					 GFP_ATOMIC);
 		if (!ppeds_tx_descs) {
-			spin_unlock_bh(&dp->ppe.ppeds_tx_desc_lock);
-			ath12k_dp_ppeds_cc_desc_cleanup(ab);
-			return -ENOMEM;
+			spin_unlock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
+			ret = -ENOMEM;
+			goto free;
 		}
-		dp->ppedstxbaddr[i] = &ppeds_tx_descs[0];
+		dp_hw_grp->ppedstxbaddr[i] = &ppeds_tx_descs[0];
 		for (j = 0; j < ATH12K_MAX_SPT_ENTRIES; j++) {
 			ppt_idx = ATH12K_PPEDS_TX_SPT_PAGE_OFFSET + i;
 			ppeds_tx_descs[j].desc_id = ath12k_dp_cc_cookie_gen(ppt_idx, j);
 			ppeds_tx_descs[j].in_use = false;
 			list_add_tail(&ppeds_tx_descs[j].list,
-				      &dp->ppe.ppeds_tx_desc_free_list);
+				      &dp_hw_grp->ppeds_tx_desc_free_list);
 			/* Update descriptor VA in SPT */
 			*(struct ath12k_ppeds_tx_desc_info **)
-				((u8 *)ppeds_tx_spt_pages[i].vaddr +
+				((u8 *)dp_hw_grp->ppeds_spt_info[i].vaddr +
 				 (j * sizeof(u64))) = &ppeds_tx_descs[j];
 		}
 	}
-	spin_unlock_bh(&dp->ppe.ppeds_tx_desc_lock);
+	spin_unlock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
+
+	dp_hw_grp->ppeds_tx_desc_initialized = true;
 
 	ath12k_dbg(ab, ATH12K_DBG_PPE, "%s success\n", __func__);
 
-	return 0;
+unlock:
+	mutex_unlock(&dp_hw_grp->ppeds_tx_init_lock);
+	return ret;
+
+free:
+	mutex_unlock(&dp_hw_grp->ppeds_tx_init_lock);
+	ath12k_dp_ppeds_spt_free_and_deinit(dp_hw_grp);
+	return ret;
 }
-EXPORT_SYMBOL(ath12k_dp_ppeds_cc_desc_init);
 #endif
 
 static int ath12k_dp_cmem_init(struct ath12k_base *ab, struct ath12k_dp *dp,
@@ -1874,14 +1974,12 @@ static int ath12k_dp_cmem_init(struct ath12k_base *ab, struct ath12k_dp *dp,
 		spt_info = dp->dp_hw_grp->spt_info;
 		start = ATH12K_TX_SPT_PAGE_OFFSET;
 		end = start + ATH12K_NUM_TX_SPT_PAGES;
-		j = 0;
 		break;
 	case ATH12K_DP_RX_DESC:
 		spt_info = dp->spt_info;
 		cmem_base += ATH12K_PPT_ADDR_OFFSET(dp->rx_ppt_base);
 		start = ATH12K_RX_SPT_PAGE_OFFSET;
 		end = start + ab->hw_params->num_rx_spt_pages;
-		j = ATH12K_NUM_PPEDS_TX_SPT_PAGES;
 		break;
 	default:
 		ath12k_err(ab, "invalid descriptor type %d in cmem init\n", type);
@@ -1889,7 +1987,7 @@ static int ath12k_dp_cmem_init(struct ath12k_base *ab, struct ath12k_dp *dp,
 	}
 
 	/* Write to PPT in CMEM */
-	for (i = start; i < end; i++, j++) {
+	for (i = start, j = 0; i < end; i++, j++) {
 		ppt_val = spt_info[j].paddr >> ATH12K_SPT_4K_ALIGN_OFFSET;
 
 		if (ab->hif.ops->cmem_write32 && ab->hif.bus == ATH12K_BUS_HYBRID)
@@ -1961,7 +2059,7 @@ static int ath12k_dp_cc_rx_desc_init(struct ath12k_base *ab)
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_rx_desc_info *rx_descs, **rx_desc_addr;
 	u32 i, j;
-	u32 ppt_idx, cookie_ppt_idx;
+	u32 cookie_ppt_idx;
 
 	dp->rxbaddr = kcalloc(ab->hw_params->num_rx_spt_pages,
 			      sizeof(*dp->rxbaddr), GFP_KERNEL);
@@ -1980,7 +2078,6 @@ static int ath12k_dp_cc_rx_desc_init(struct ath12k_base *ab)
 			return -ENOMEM;
 		}
 
-		ppt_idx = ATH12K_NUM_PPEDS_TX_SPT_PAGES + i;
 		cookie_ppt_idx = dp->rx_ppt_base + ATH12K_RX_SPT_PAGE_OFFSET + i;
 		dp->rxbaddr[i] = &rx_descs[0];
 
@@ -1991,8 +2088,7 @@ static int ath12k_dp_cc_rx_desc_init(struct ath12k_base *ab)
 			list_add_tail(&rx_descs[j].list, &dp->rx_desc_free_list);
 
 			/* Update descriptor VA in SPT */
-			rx_desc_addr = ath12k_dp_cc_get_desc_addr_ptr(dp->spt_info,
-								      ppt_idx, j);
+			rx_desc_addr = ath12k_dp_cc_get_desc_addr_ptr(dp->spt_info, i, j);
 			*rx_desc_addr = &rx_descs[j];
 		}
 	}
@@ -2023,8 +2119,7 @@ int ath12k_dp_cc_init(struct ath12k_base *ab)
 	INIT_LIST_HEAD(&dp->rx_desc_free_list);
 	spin_lock_init(&dp->rx_desc_lock);
 
-	dp->num_spt_pages = ab->hw_params->num_rx_spt_pages +
-			    ATH12K_NUM_PPEDS_TX_SPT_PAGES;
+	dp->num_spt_pages = ab->hw_params->num_rx_spt_pages;
 
 	if (dp->num_spt_pages > ATH12K_MAX_PPT_ENTRIES)
 		dp->num_spt_pages = ATH12K_MAX_PPT_ENTRIES;
@@ -2358,6 +2453,11 @@ void ath12k_dp_cmn_hw_group_unassign(struct ath12k_dp *dp,
 	if (dp_hw_grp->tx_desc_initialized && dp->dev == dp_hw_grp->tx_spt_dev)
 		ath12k_dp_tx_spt_free_and_deinit(dp_hw_grp);
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	if (dp_hw_grp->ppeds_tx_desc_initialized &&
+	    dp->dev == dp_hw_grp->ppeds_tx_spt_dev)
+		ath12k_dp_ppeds_spt_free_and_deinit(dp_hw_grp);
+#endif
 	dp_hw_grp->dp[dp->device_id] = NULL;
 	dp->dp_hw_grp = NULL;
 	dp->device_id = ATH12K_INVALID_DEVICE_ID;
@@ -2413,6 +2513,11 @@ void ath12k_dp_cmn_hw_group_assign(struct ath12k_dp *dp,
 		}
 	}
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	ret = ath12k_dp_ppeds_spt_alloc_and_init(ab);
+	if (ret)
+		ath12k_warn(ab, "failed to alloc and init PPEDS SPT pages %d\n", ret);
+#endif
 	ret = ath12k_dp_ipa_hw_group_init(ab, dp_hw_grp);
 	if (ret) {
 		ath12k_err(ab, "Failed to allocate IPA global context: %d\n", ret);
@@ -2560,12 +2665,14 @@ EXPORT_SYMBOL(ath12k_dp_umac_rx_desc_cleanup);
 void ath12k_dp_umac_tx_desc_cleanup(struct ath12k_base *ab)
 {
 	struct ath12k_tx_desc_info *tx_desc_info;
-	struct ath12k_dp *dp, *desc_dp;
+	struct ath12k_dp *dp;
 	struct sk_buff *skb;
 	int i, j, k, pool_id;
 	u32 tx_spt_page;
 	dp = ath12k_ab_to_dp(ab);
 	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
+	int cpu;
+	u32 *tx_desc_used_cnt;
 
 	/* TX Descriptor cleanup */
 	for (pool_id = 0; pool_id < ATH12K_HW_MAX_QUEUES; pool_id++) {
@@ -2584,14 +2691,6 @@ void ath12k_dp_umac_tx_desc_cleanup(struct ath12k_base *ab)
 				if (!skb)
 					continue;
 
-				if (tx_desc_info[k].hw_link_id < ATH12K_GROUP_MAX_RADIO) {
-					u8 hw_link_id = tx_desc_info[k].hw_link_id;
-					u8 device_id =
-						dp_hw_grp->hw_links[hw_link_id].device_id;
-					desc_dp = dp_hw_grp->dp[device_id];
-					if (desc_dp != dp)
-						continue;
-				}
 				tx_desc_info[k].skb = NULL;
 
 				/* Cleanup extension descriptor based on type */
@@ -2623,14 +2722,25 @@ void ath12k_dp_umac_tx_desc_cleanup(struct ath12k_base *ab)
 
 	rcu_read_lock();
 
-	for (i = 0; i < ab->num_radios; i++) {
-		struct ath12k_pdev_dp *dp_pdev = ath12k_dp_to_dp_pdev(dp, i);
+	for (j = 0; j < ATH12K_MAX_SOCS; j++) {
+		dp = dp_hw_grp->dp[j];
+		if (!dp)
+			continue;
 
-		if (dp_pdev)
-			atomic_set(&dp_pdev->num_tx_pending, 0);
+		for (i = 0; i < ab->num_radios; i++) {
+			struct ath12k_pdev_dp *dp_pdev = ath12k_dp_to_dp_pdev(dp, i);
+
+			if (dp_pdev)
+				atomic_set(&dp_pdev->num_tx_pending, 0);
+		}
 	}
 
 	rcu_read_unlock();
+
+	for_each_possible_cpu(cpu) {
+		tx_desc_used_cnt = per_cpu_ptr(dp_hw_grp->tx_desc_used_cnt, cpu);
+		*tx_desc_used_cnt = 0;
+	}
 }
 EXPORT_SYMBOL(ath12k_dp_umac_tx_desc_cleanup);
 
@@ -3487,6 +3597,24 @@ ath12k_dp_update_hw_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 	ath12k_dp_update_hw_peer_rx_stats(dp_pdev, peer, mld_stats);
 }
 
+/* ath12k_dp_override_ppeds_rx() - Override PPEDS ring sent_to_stack with
+ * extended RX monitor MSDU totals to account
+ * non PPE traffic also if extended rx stats is enabled.
+ * PPE sync credits DS VIF WDS peer traffic exclusively on DP_REO_PPEDS_RING_IDX.
+ */
+static void ath12k_dp_override_ppeds_rx(struct ath12k_dp_peer_stats *peer_stats,
+					struct ath12k_rx_peer_stats *rx_stats,
+					bool is_ds_wds_peer)
+{
+	if (!is_ds_wds_peer || !peer_stats || !rx_stats)
+		return;
+
+	peer_stats->rx[DP_REO_PPEDS_RING_IDX].sent_to_stack.packets =
+							rx_stats->num_msdu;
+	peer_stats->rx[DP_REO_PPEDS_RING_IDX].sent_to_stack.bytes =
+							rx_stats->num_msdu_bytes;
+}
+
 static void ath12k_dp_aggr_peer_stats(struct ath12k_link_vif *arvif,
 				      struct ath12k_dp_link_peer *link_peer,
 				      struct ath12k_dp_aggr_vif_stats *aggr_vif_stats,
@@ -3543,6 +3671,15 @@ static void ath12k_dp_aggr_peer_stats(struct ath12k_link_vif *arvif,
 							     src_hw_link_rx);
 		}
 	}
+	/* For non-WDS peers on a DS VIF, the PPE sync callback
+	 * does not populate the DS stats. Skip updating the counters
+	 *  from monitor as well for non wds cases. override only for
+	 *  the WDS peers.
+	 */
+	if (ath12k_extd_rx_stats_enabled(dp_pdev))
+		ath12k_dp_override_ppeds_rx(&aggr_vif_stats->peer_stats,
+					    link_peer_stats->rx_stats,
+					    is_ds_wds_peer);
 }
 
 /**
@@ -3697,8 +3834,10 @@ void ath12k_dp_get_pdev_stats(struct ath12k_pdev_dp *pdev,
 		aggr_vif_stats->link_peer_stats.rx_stats =
 					aggr_pdev_stats->link_peer_stats.rx_stats;
 		list_for_each_entry(arvif, &ar->arvifs, list) {
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 			is_ds_vif = (arvif->ahvif->dp_vif.ppe_vp_type ==
 					  PPE_VP_USER_TYPE_DS);
+#endif
 			ath12k_vif_iterate_peer(arvif, aggr_vif_stats, is_ds_vif);
 			/* Include deleted link peer stats stored at link VIF */
 			ath12k_dp_aggr_link_vif_del_stats(arvif, aggr_vif_stats);
@@ -3720,7 +3859,11 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 	unsigned long links_map = ahvif->links_map;
 	struct ath12k_dp_aggr_vif_stats *aggr_vif_stats =
 						&telemetry_vif->aggr_vif_stats;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	bool is_ds_vif = (ahvif->dp_vif.ppe_vp_type == PPE_VP_USER_TYPE_DS);
+#else
+	bool is_ds_vif = false;
+#endif
 
 	if (ath12k_dp_stats_enabled(&ar->dp) &&
 	    ath12k_dp_debug_stats_enabled(&ar->dp))
@@ -3977,9 +4120,13 @@ ath12k_dp_get_link_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 		}
 
 		/* Rx Mon stats */
-		if (ath12k_extd_rx_stats_enabled(dp_pdev))
+		if (ath12k_extd_rx_stats_enabled(dp_pdev)) {
 			ret = ath12k_update_peer_rx_mon_stats(link_peer,
 							      dst_stats);
+			ath12k_dp_override_ppeds_rx(&dp_peer->stats[hw_link_id],
+						    dst_stats,
+						    is_ds_wds_peer);
+		}
 	}
 	return ret;
 }
@@ -4058,32 +4205,6 @@ void ath12k_dp_aggr_rx_mon_stats(struct ath12k_pdev_dp *dp_pdev,
 						      rx_peer_stats);
 	}
 	rcu_read_unlock();
-}
-
-static void
-ath12k_dp_update_legacy_peer_stats(struct ath12k_pdev_dp *dp_pdev,
-				   struct ath12k_dp_peer *peer,
-				   struct ath12k_telemetry_dp_peer *telemetry_peer,
-				   struct ath12k_dp_peer_stats *peer_stats,
-				   struct ath12k_dp_link_peer_stats *link_stats,
-				   bool is_ds_wds_peer)
-{
-	u8 link_id;
-
-	telemetry_peer->peer_type = ATH12K_LEGACY_PEER;
-
-	ath12k_dp_update_hw_peer_stats(dp_pdev, peer, &telemetry_peer->mld_stats);
-
-	for (link_id = 0; link_id < ATH12K_DP_PEER_MAX_MLO_LINKS; link_id++) {
-		ath12k_dp_aggr_per_pkt_peer_stats(dp_pdev,
-						  peer_stats,
-						  &peer->stats[link_id],
-						  peer->is_vdev_peer,
-						  is_ds_wds_peer);
-		ath12k_dp_update_hw_link_stats(dp_pdev, peer, link_id,
-					       link_stats);
-		ath12k_update_ext_stats(dp_pdev, peer, link_id, link_stats);
-	}
 }
 
 /**
@@ -4264,7 +4385,7 @@ skip_delay:
 	return 0;
 }
 
-void ath12k_dp_get_sojourn_stats(struct ath12k *ar, struct ath12k_dp_peer *peer,
+void ath12k_dp_get_sojourn_stats(struct ath12k_dp_peer *peer,
 				 struct ath12k_dp_peer_stats *peer_stats)
 {
 	struct ath12k_dp_mld_peer_stats *mld_stats;
@@ -4282,7 +4403,7 @@ void ath12k_dp_get_sojourn_stats(struct ath12k *ar, struct ath12k_dp_peer *peer,
 	ath12k_dp_accumulate_sojourn_stats(sojourn, tid_sojourn);
 }
 
-void ath12k_dp_get_jitter_stats(struct ath12k *ar, struct ath12k_dp_peer *peer,
+void ath12k_dp_get_jitter_stats(struct ath12k_dp_peer *peer,
 				struct ath12k_dp_peer_stats *peer_stats)
 {
 	struct ath12k_dp_mld_peer_stats *mld_stats;
@@ -4300,7 +4421,7 @@ void ath12k_dp_get_jitter_stats(struct ath12k *ar, struct ath12k_dp_peer *peer,
 	ath12k_dp_accumulate_jitter_stats(jitter, tid_jitter);
 }
 
-void ath12k_dp_get_delay_stats(struct ath12k *ar, struct ath12k_dp_peer *peer,
+void ath12k_dp_get_delay_stats(struct ath12k_dp_peer *peer,
 			       struct ath12k_dp_peer_stats *peer_stats)
 {
 	struct ath12k_dp_mld_peer_stats *mld_stats;
@@ -4315,6 +4436,43 @@ void ath12k_dp_get_delay_stats(struct ath12k *ar, struct ath12k_dp_peer *peer,
 	all_rings_stats = peer_stats->delay;
 
 	ath12k_dp_accumulate_stats_per_tid(per_ring_stats, all_rings_stats);
+}
+
+static void
+ath12k_dp_update_legacy_peer_stats(struct ath12k_pdev_dp *dp_pdev,
+				   struct ath12k_dp_peer *peer,
+				   struct ath12k_telemetry_dp_peer *telemetry_peer,
+				   struct ath12k_dp_peer_stats *peer_stats,
+				   struct ath12k_dp_link_peer_stats *link_stats,
+				   bool is_ds_wds_peer)
+{
+	u8 link_id;
+
+	telemetry_peer->peer_type = ATH12K_LEGACY_PEER;
+
+	ath12k_dp_update_hw_peer_stats(dp_pdev, peer, &telemetry_peer->mld_stats);
+
+	for (link_id = 0; link_id < ATH12K_DP_PEER_MAX_MLO_LINKS; link_id++) {
+		ath12k_dp_aggr_per_pkt_peer_stats(dp_pdev,
+						  peer_stats,
+						  &peer->stats[link_id],
+						  peer->is_vdev_peer,
+						  is_ds_wds_peer);
+		ath12k_dp_update_hw_link_stats(dp_pdev, peer, link_id,
+					       link_stats);
+		ath12k_update_ext_stats(dp_pdev, peer, link_id, link_stats);
+	}
+
+	if (ath12k_extd_rx_stats_enabled(dp_pdev))
+		ath12k_dp_override_ppeds_rx(peer_stats, link_stats->rx_stats,
+					    is_ds_wds_peer);
+
+	if (ath12k_dp_stats_enabled(dp_pdev) &&
+	    ath12k_dp_latency_stats_enabled(dp_pdev)) {
+		ath12k_dp_get_delay_stats(peer, peer_stats);
+		ath12k_dp_get_jitter_stats(peer, peer_stats);
+		ath12k_dp_get_sojourn_stats(peer, peer_stats);
+	}
 }
 
 /*
@@ -4358,7 +4516,7 @@ ath12k_dp_get_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 		ath12k_err(NULL, "Error MLO peer with invalid link id");
 		return -EINVAL;
 	}
-	
+
 	ds_wds_peer = is_ds_vif && dp_peer->use_4addr;
 
 	/* Peer stats for requested link id */
@@ -4376,6 +4534,10 @@ ath12k_dp_get_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 						       dp_peer,
 						       stats_link_id,
 						       link_stats);
+			if (ath12k_extd_rx_stats_enabled(dp_pdev))
+				ath12k_dp_override_ppeds_rx(peer_stats,
+							    link_stats->rx_stats,
+							    ds_wds_peer);
 		}
 	} else {
 		/*
@@ -4414,6 +4576,20 @@ ath12k_dp_get_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 			ath12k_dp_aggr_rx_mon_stats(dp_pdev, dp_peer, link_stats);
 			ath12k_dp_update_hw_peer_stats(dp_pdev, dp_peer, mld_stats);
 			ath12k_dp_aggr_hw_link_stats(dp_pdev, dp_peer, link_stats);
+			/* Replace PPE-synced PPEDS ring counter with extended
+			 * RX monitor MSDU totals for DS VIF WDS peers in MLD.
+			 */
+			if (ath12k_extd_rx_stats_enabled(dp_pdev))
+				ath12k_dp_override_ppeds_rx(peer_stats,
+							    link_stats->rx_stats,
+							     ds_wds_peer);
+
+			if (ath12k_dp_stats_enabled(dp_pdev) &&
+			    ath12k_dp_latency_stats_enabled(dp_pdev)) {
+				ath12k_dp_get_delay_stats(dp_peer, peer_stats);
+				ath12k_dp_get_jitter_stats(dp_peer, peer_stats);
+				ath12k_dp_get_sojourn_stats(dp_peer, peer_stats);
+			}
 		}
 	}
 	return ret;

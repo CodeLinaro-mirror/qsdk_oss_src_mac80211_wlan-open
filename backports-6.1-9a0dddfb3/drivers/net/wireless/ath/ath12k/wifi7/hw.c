@@ -691,6 +691,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 			.fft_hdr_len = 0,
 			.max_fft_bins = 0,
 			.fragment_160mhz = false,
+			.supports_320mhz = false,
 		},
 		.supports_ap_ps = true,
 		.ftm_responder = true,
@@ -717,6 +718,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES_DEFAULT,
 		.peer_del_all_support = false,
+		.tlv_logger_support = ATH12K_TLV_LOGGER_DISABLED,
 	},
 	{
 		.name = "wcn7850 hw2.0",
@@ -833,6 +835,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES_DEFAULT,
 		.peer_del_all_support = false,
+		.tlv_logger_support = ATH12K_TLV_LOGGER_DISABLED,
 	},
 	{
 		.name = "qcn9274 hw2.0",
@@ -935,6 +938,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 			.fft_hdr_len = 24,
 			.max_fft_bins = 1024,
 			.fragment_160mhz = true,
+			.supports_320mhz = true,
 		},
 		.supports_ap_ps = true,
 		.support_ce_manual_poll=true,
@@ -962,6 +966,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES_DEFAULT,
 		.peer_del_all_support = false,
+		.tlv_logger_support = ATH12K_TLV_LOGGER_DISABLED,
 	},
 	{
 		.name = "ipq5332 hw1.0",
@@ -1052,6 +1057,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 			.fft_hdr_len = 24,
 			.max_fft_bins = 2048,
 			.fragment_160mhz = false,
+			.supports_320mhz = true,
 		},
 		.supports_ap_ps = true,
 		.support_ce_manual_poll=true,
@@ -1080,6 +1086,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES_DEFAULT,
 		.peer_del_all_support = false,
+		.tlv_logger_support = ATH12K_TLV_LOGGER_DISABLED,
 	},
 	{
 		.name = "qcn6432 hw1.0",
@@ -1149,6 +1156,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 			.fft_hdr_len = 24,
 			.max_fft_bins = 2048,
 			.fragment_160mhz = false,
+			.supports_320mhz = true,
 		},
 		.supports_ap_ps = true,
 		.support_ce_manual_poll=true,
@@ -1176,6 +1184,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES_DEFAULT,
 		.peer_del_all_support = false,
+		.tlv_logger_support = ATH12K_TLV_LOGGER_DISABLED,
 	},
 	{
 		.name = "ipq5424 hw1.0",
@@ -1266,6 +1275,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 			.fft_hdr_len = 24,
 			.max_fft_bins = 2048,
 			.fragment_160mhz = false,
+			.supports_320mhz = true,
 		},
 		.supports_ap_ps = true,
 		.support_ce_manual_poll=true,
@@ -1298,6 +1308,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.ext_irq_grp_num_max = ATH12K_EXT_IRQ_GRP_NUM_MAX,
 		.num_rx_spt_pages = ATH12K_NUM_RX_SPT_PAGES_DEFAULT,
 		.peer_del_all_support = false,
+		.tlv_logger_support = ATH12K_TLV_LOGGER_DISABLED,
 	},
 };
 

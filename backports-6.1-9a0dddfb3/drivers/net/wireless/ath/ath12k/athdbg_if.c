@@ -6,9 +6,9 @@
 #include "ath_debug/athdbg_mhi.h"
 #include "ath_debug/athdbg_wmi_recording.h"
 #include "debug.h"
-#include "ath_debug/athdbg_uio.h"
 #include "mhi.h"
 #include "pci.h"
+#include "ath_debug/athdbg_netlink.h"
 
 
 extern struct ath_debug_base *athdbg_base;
@@ -60,6 +60,8 @@ static int athdbg_if_create_debugfs(struct ath12k_base *ab)
 			goto out;
 
 		debugfs_create_file("dbgmask", 0644, athdbg_dir, partner_ab, &debugfs_mask_fops);
+		debugfs_create_file("snapshot", 0644, athdbg_dir,
+				    partner_ab, &debugfs_snapshot_fops);
 
 		athdbg_create_minidump_debugfs(athdbg_dir, partner_ab);
 
@@ -91,12 +93,6 @@ void athdbg_if_register(struct ath12k_base *ab)
 {
 	int ret;
 
-	#ifdef CPTCFG_ATHDEBUG_UIO_LOGGING
-	ret = athdbg_uio_register(ab);
-	if (ret)
-		pr_err("athdbg_if: ath_debug UIO register failed: %d\n", ret);
-	#endif
-
 	ret = athdbg_if_create_debugfs(ab);
 	if (ret) {
 		pr_err("athdbg_if: debugfs entry create failure %d", ret);
@@ -106,10 +102,6 @@ void athdbg_if_register(struct ath12k_base *ab)
 
 void athdbg_if_unregister(struct ath12k_base *ab)
 {
-	#ifdef CPTCFG_ATHDEBUG_UIO_LOGGING
-	athdbg_uio_unregister(ab);
-	#endif
-
 	athdbg_clear_minidump_info();
 	athdbg_base->dbg_to_ath_ops = NULL;
 }
@@ -169,4 +161,12 @@ void athdbg_if_setmask(u64 debug_mask)
 u64 athdbg_if_getmask(void)
 {
 	return ath12k_debug_mask;
+}
+
+void athdbg_if_send_tlv(struct ath12k_base *ab, u32 event_id,
+			const void *tlv_data, size_t tlv_len)
+{
+	if (!athdbg_base)
+		return;
+	athdbg_netlink_send(ab, event_id, tlv_data, tlv_len);
 }

@@ -10,6 +10,7 @@
 #include <net/mac80211.h>
 #include <net/cfg80211.h>
 #include "wmi.h"
+#include "smd.h"
 
 #include "../../net/mac80211/qcn_extns/cmn_extn.h"
 
@@ -112,6 +113,7 @@ struct ath12k_generic_iter {
 #define ATH12K_MIN_TX_POWER		-127
 #define ATH12K_PDEV_SUSPEND_TIMEOUT	(2 * HZ)
 #define ATH12K_PDEV_RESUME_TIMEOUT	(2 * HZ)
+#define ATH12K_RF_PATH_SWITCH_TIMEOUT	(3 * HZ)
 #define ATH12K_ERP_BRIDGE_VDEV_REMOVAL_THRESHOLD	2
 
 /* Default management Tx retry limit in firmware */
@@ -122,7 +124,8 @@ enum ath12k_supported_bw {
 	ATH12K_BW_40    = 1,
 	ATH12K_BW_80    = 2,
 	ATH12K_BW_160   = 3,
-	ATH12K_BW_320   = 4,
+	ATH12K_BW_240   = 4,
+	ATH12K_BW_320   = 5,
 };
 
 /* Below BW_GAIN should be added to the SNR value of every ppdu based on the
@@ -334,6 +337,7 @@ int ath12k_mac_vif_set_keepalive(struct ath12k_link_vif *arvif,
 				 enum wmi_sta_keepalive_method method,
 				 u32 interval);
 u8 ath12k_mac_get_target_pdev_id(struct ath12k *ar);
+bool ath12k_mac_is_phya1_pdev(struct ath12k *ar);
 int ath12k_mac_mlo_setup(struct ath12k_hw_group *ag);
 int ath12k_mac_mlo_ready(struct ath12k_hw_group *ag);
 int ath12k_mac_vdev_stop(struct ath12k_link_vif *arvif);
@@ -511,6 +515,24 @@ int ath12k_mac_op_erp(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 		      int link_id, struct cfg80211_erp_params *params);
 int ath12k_mac_mgmt_tx(struct ath12k *ar, struct sk_buff *skb,
 		       bool is_prb_rsp);
+int ath12k_mac_op_uhr_smd_update(struct ieee80211_hw *hw,
+				 struct ieee80211_vif *vif,
+				 struct ieee80211_sta *peer,
+				 u32 role,
+				 u32 type,
+				 u32 status,
+				 u32 dl_sn,
+				 u32 ul_sn,
+				 u32 dl_drain_time);
+int ath12k_mac_op_uhr_link_reconfig(struct ieee80211_hw *hw,
+				    struct ieee80211_vif *vif,
+				    struct ieee80211_sta *current_sta,
+				    struct ieee80211_sta *target_sta,
+				    enum ieee80211_uhr_link_reconfig_action action,
+				    struct ieee80211_uhr_link_reconfig_info *info);
+int ath12k_mac_op_smd_remap_links(struct ath12k_vif *ahvif,
+				  struct ath12k_sta *ahsta_target,
+				  const struct ieee80211_uhr_link_reconfig_info *info);
 void ath12k_mac_add_p2p_noa_ie(struct ath12k *ar,
 			       struct ieee80211_vif *vif,
 			       struct sk_buff *skb,
@@ -572,14 +594,29 @@ int ath12k_mac_mlo_standby_teardown(struct ath12k_hw *ah, bool standby_teardown)
 void ath12k_mac_stop(struct ath12k *ar);
 bool ath12k_mac_validate_active_radio_count(struct ath12k_hw *ah);
 int ath12k_mac_pdev_suspend(struct ath12k *ar);
-int ath12k_mac_set_eht_txbf_conf(struct ath12k_link_vif *arvif);
-int ath12k_mac_set_he_txbf_conf(struct ath12k_link_vif *arvif);
+int ath12k_mac_set_eht_txbf_conf(struct ath12k_link_vif *arvif, u32 *val,
+				 bool is_cmn_param);
+int ath12k_mac_set_he_txbf_conf(struct ath12k_link_vif *arvif, u32 *val,
+				bool is_cmn_param);
 int ath12k_mac_pdev_resume(struct ath12k *ar);
 int ath12k_mac_op_set_monitor_flags(struct ieee80211_hw *hw,
 				    struct ieee80211_vif *vif, u32 flags);
 int ath12k_mac_op_ap_power_save(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 				int link_id,
 				struct cfg80211_ap_power_save_params *params);
+int ath12k_mac_op_sta_uhr_mode_update(struct ieee80211_hw *hw,
+				      struct ieee80211_vif *vif,
+				      struct ieee80211_sta *sta);
+int ath12k_mac_op_critical_update(struct ieee80211_hw *hw,
+				  struct ieee80211_vif *vif,
+				  unsigned int link_id,
+				  enum nl80211_cu_type cu_type,
+				  const u8 *ie, size_t ie_len);
+void ath12k_mac_handle_pdev_uhr_cu_event(struct ath12k_base *ab,
+					 u32 pdev_id,
+					 const struct wmi_vdev_uhr_cu_status *status,
+					 u32 count);
+
 /* In the bitmap 0 indicates no puncturing and 1 indicated that sub channel is
  * punctured
  */
@@ -819,6 +856,7 @@ int ath12k_mac_vendor_send_disassoc_event(struct ath12k_link_sta *arsta,
 					  struct ieee80211_link_sta *link_sta);
 void ath12k_mac_update_freq_range(struct ath12k *ar,
 				  u32 freq_low, u32 freq_high);
+int ath12k_mac_handle_rf_path_switch(struct ath12k *ar, u32 rf_path_index);
 void ath12k_mac_ieee80211_free_txskb(struct ieee80211_hw *hw,
 				     struct sk_buff *skb,
 				     struct ath12k_pdev_dp *dp_pdev,
@@ -860,7 +898,29 @@ void ath12k_mac_get_6ghz_power_mode_decision(
 
 u8 ath12k_get_nss_160mhz(struct ath12k *ar, u8 max_nss);
 u8 ath12k_get_nss_320mhz(struct ath12k *ar, u8 max_nss);
+int ath12k_mac_set_vht_txbf_conf(struct ath12k_link_vif *arvif,
+				 u32 *val);
 void ath12k_mac_ap_ps_recalc(struct ath12k *ar);
 void ath12k_ap_ps_recalc_work(struct wiphy *wiphy, struct wiphy_work *work);
+int ath12k_setup_peer_smps(struct ath12k *ar, struct ath12k_link_vif *arvif,
+			   const u8 *addr,
+			   const struct ieee80211_sta_ht_cap *ht_cap,
+			   const struct ieee80211_he_6ghz_capa *he_6ghz_capa);
+int ath12k_mac_vif_recalc_sta_he_txbf(struct ath12k *ar,
+				      struct ath12k_link_vif *arvif,
+				      struct ieee80211_sta_he_cap *he_cap,
+				      int *hemode);
+u32 ath12k_mac_ieee80211_sta_bw_to_wmi(struct ath12k *ar,
+					struct ieee80211_link_sta *link_sta);
+void ath12k_mac_peer_assoc_prepare_smd(struct ath12k *ar,
+				       struct ath12k_link_vif *arvif,
+				       struct ath12k_link_sta *arsta,
+				       struct ath12k_wmi_peer_assoc_arg *arg,
+				       bool reassoc,
+				       struct ieee80211_link_sta *link_sta,
+				       const struct ath12k_smd_peer_assoc_ctx *ctx);
 
+enum wmi_phy_mode ath12k_mac_get_phymode(struct ath12k *ar,
+					 enum nl80211_band band,
+					 enum nl80211_chan_width width);
 #endif

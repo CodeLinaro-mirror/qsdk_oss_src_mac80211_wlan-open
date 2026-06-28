@@ -25,4 +25,6 @@ struct ath12k_dp_msdu_q_info
 				 u8 tid_num, u8 msduq_type, u8 mgmt_msduq_type);
 void ath12k_free_tx_msdu_flowq(struct ath12k_dp_hw_group *dp_hw_grp,
 			       struct ath12k_dp_msdu_q_info *sw_msduq_ptr);
+u8 ath12k_dp_get_chipid_bitmap(struct ath12k_dp_hw_group *dp_hw_grp,
+			       struct ath12k_dp_peer *dp_peer);
 #endif

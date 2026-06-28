@@ -526,21 +526,16 @@ int ath12k_wifi8_hal_reo_rel_parse_err(struct ath12k_dp *dp, void *desc,
 		rel_info->rx_desc =
 			(struct ath12k_rx_desc_info *)((unsigned long)desc_va);
 	} else {
-		val = le32_get_bits(reo_desc->buf_addr_info.info1,
-				    BUFFER_ADDR_INFO1_RET_BUF_MGR);
-		if (val != HAL_RX_BUF_RBM_SW5_BM) {
-			dp->device_stats.invalid_rbm++;
-			return -EINVAL;
-		}
-
 		rel_info->cookie = le32_get_bits(reo_desc->buf_addr_info.info1,
 						 BUFFER_ADDR_INFO1_SW_COOKIE);
-
-		rel_info->rx_desc = NULL;
-		ath12k_warn(ab, "CC did not happened on rx error %u", rel_info->cookie);
-		print_hex_dump(KERN_ERR, "rx error desc: ", DUMP_PREFIX_ADDRESS,
-			       32, 4, reo_desc, sizeof (*reo_desc), false);
-		BUG_ON(1);
+		rel_info->rx_desc = ath12k_dp_get_rx_desc(dp, rel_info->cookie);
+		if (!rel_info->rx_desc) {
+			ath12k_warn(ab, "CC did not happened on rx error %u",
+				    rel_info->cookie);
+			print_hex_dump(KERN_ERR, "rx error desc: ", DUMP_PREFIX_ADDRESS,
+				       32, 4, reo_desc, sizeof(*reo_desc), false);
+			BUG_ON(1);
+		}
 	}
 
 	rel_info->err_rel_src = rel_src;
@@ -550,8 +545,7 @@ int ath12k_wifi8_hal_reo_rel_parse_err(struct ath12k_dp *dp, void *desc,
 	return 0;
 }
 
-void ath12k_wifi8_hal_rx_reo_ent_paddr_get(struct ath12k_base *ab,
-					   struct ath12k_buffer_addr *buff_addr,
+void ath12k_wifi8_hal_rx_reo_ent_paddr_get(struct ath12k_buffer_addr *buff_addr,
 					   dma_addr_t *paddr, u32 *cookie)
 {
 	*paddr = ((u64)(le32_get_bits(buff_addr->info1,
@@ -1392,6 +1386,7 @@ void ath12k_wifi8_hal_reo_hw_setup(struct ath12k_base *ab)
 	val |= u32_encode_bits(10, HAL_REO1_ERROR_RING_CFG_FOR_DEST_REO2SW9_ERR);
 	val |= u32_encode_bits(8, HAL_REO1_ERROR_RING_CFG_FOR_DEST_REO2PPE_ERR);
 	val |= u32_encode_bits(8, HAL_REO1_ERROR_RING_CFG_FOR_DEST_REO2SW5_ERR);
+	val |= u32_encode_bits(8, HAL_REO1_ERROR_RING_CFG_FOR_DEST_REO2SW6_ERR);
 	ath12k_hif_write32(ab, reo_base + HAL_REO1_ERROR_RING_CFG_FOR_DEST_IX1, val);
 
 	val = ath12k_hif_read32(ab, reo_base + HAL_REO1_ERROR_RING_CFG_FOR_DEST_IX2);

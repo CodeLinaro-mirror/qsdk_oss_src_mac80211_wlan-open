@@ -61,6 +61,11 @@ struct ath12k_hif_ops {
 	int (*dp_umac_reset_irq_config)(struct ath12k_base *ab);
 	void (*dp_umac_reset_enable_irq)(struct ath12k_base *ab);
 	void (*dp_umac_reset_free_irq)(struct ath12k_base *ab);
+	int (*umcmn_irq_config)(struct ath12k_base *ab,
+				irqreturn_t (*handler)(int irq, void *arg));
+	void (*umcmn_irq_free)(struct ath12k_base *ab);
+	void (*umcmn_irq_enable)(struct ath12k_base *ab);
+	void (*umcmn_irq_disable)(struct ath12k_base *ab);
 	int (*get_iova)(struct ath12k_base *ab, u64 *addr, u64 *size);
 	int (*mgmt_irq_setup)(struct ath12k_base *ab, struct ath12k_mgmt *mgmt);
 	void (*mgmt_irq_cleanup)(struct ath12k_base *ab);
@@ -387,6 +392,33 @@ static inline void ath12k_hif_dp_umac_reset_free_irq(struct ath12k_base *ab)
         return;
 }
 
+static inline int ath12k_hif_umcmn_irq_config(struct ath12k_base *ab,
+					      irqreturn_t (*handler)(int irq, void *arg))
+{
+	if (ab->hif.ops->umcmn_irq_config)
+		return ab->hif.ops->umcmn_irq_config(ab, handler);
+
+	return 0;
+}
+
+static inline void ath12k_hif_umcmn_irq_free(struct ath12k_base *ab)
+{
+	if (ab->hif.ops->umcmn_irq_free)
+		ab->hif.ops->umcmn_irq_free(ab);
+}
+
+static inline void ath12k_hif_umcmn_irq_enable(struct ath12k_base *ab)
+{
+	if (ab->hif.ops->umcmn_irq_enable)
+		ab->hif.ops->umcmn_irq_enable(ab);
+}
+
+static inline void ath12k_hif_umcmn_irq_disable(struct ath12k_base *ab)
+{
+	if (ab->hif.ops->umcmn_irq_disable)
+		ab->hif.ops->umcmn_irq_disable(ab);
+}
+
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 static inline int ath12k_hif_ppeds_register_interrupts(struct ath12k_base *ab, int type, int vector,
 						       int ring_num)
@@ -427,6 +459,12 @@ static inline void ath12k_hif_ppeds_irq_disable(struct ath12k_base *ab, enum ppe
 		ab->hif.ops->ppeds_irq_disable(ab, type);
 }
 
+static inline void ath12k_hif_ppe_irq_disable(struct ath12k_base *ab)
+{
+	ath12k_hif_ppeds_irq_disable(ab, PPEDS_IRQ_PPE2TCL);
+	ath12k_hif_ppeds_irq_disable(ab, PPEDS_IRQ_REO2PPE);
+	ath12k_hif_ppeds_irq_disable(ab, PPEDS_IRQ_TX_COMPLETION);
+}
 
 static inline dma_addr_t ath12k_hif_ppeds_get_pci_window_umac_reg_paddr(
 				struct ath12k_base *ab, u32 offset)
@@ -454,6 +492,11 @@ static inline void ath12k_hif_ppeds_irq_enable(struct ath12k_base *ab, enum pped
 static inline void ath12k_hif_ppeds_irq_disable(struct ath12k_base *ab, enum ppeds_irq_type type)
 {
 }
+
+static inline void ath12k_hif_ppe_irq_disable(struct ath12k_base *ab)
+{
+}
+
 static inline dma_addr_t ath12k_hif_ppeds_get_pci_window_umac_reg_paddr(
 				struct ath12k_base *ab, u32 offset)
 {

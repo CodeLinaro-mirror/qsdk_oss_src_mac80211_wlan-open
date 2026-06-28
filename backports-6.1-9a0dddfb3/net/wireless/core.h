@@ -627,6 +627,8 @@ struct cfg80211_colocated_ap {
 	s8 psd_20;
 };
 
+void cfg80211_smd_prep_state_free(struct wireless_dev *wdev);
+
 #if IS_ENABLED(CPTCFG_CFG80211_KUNIT_TEST)
 #define EXPORT_SYMBOL_IF_CFG80211_KUNIT(sym) EXPORT_SYMBOL_IF_KUNIT(sym)
 #define VISIBLE_IF_CFG80211_KUNIT
@@ -638,6 +640,10 @@ int cfg80211_parse_colocated_ap(const struct cfg80211_bss_ies *ies,
 size_t cfg80211_gen_new_ie(const u8 *ie, size_t ielen,
 			   const u8 *subie, size_t subie_len,
 			   u8 *new_ie, size_t new_ie_len);
+
+void cfg80211_extract_smd_info(struct cfg80211_bss *bss,
+			       const u8 *ie, size_t ielen);
+
 #else
 #define EXPORT_SYMBOL_IF_CFG80211_KUNIT(sym)
 #define VISIBLE_IF_CFG80211_KUNIT static

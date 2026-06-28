@@ -1293,10 +1293,10 @@ ath12k_dp_mon_tx_setup_pktlog_hybrid(struct ath12k_pdev_dp *dp_pdev)
 		DP_MON_TX_FILTER_SRNG_TYPE_TXMON_DEST;
 	struct htt_tx_ring_tlv_filter *tx_tlv_filter;
 
-	if (!dp_mon_pdev || !dp_mon_pdev->tx_mon_filter)
+	if (!dp_mon_pdev || !dp_mon_pdev->dp_pdev_tx_mon->tx_mon_filter)
 		return;
 
-	if (dp_mon_pdev->tx_pktlog_hybrid) {
+	if (dp_mon_pdev->dp_pdev_tx_mon->tx_pktlog_hybrid) {
 		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DATA,
 			   "PKTLOG: Hybrid mode already configured\n");
 		return;
@@ -1339,7 +1339,7 @@ ath12k_dp_mon_tx_setup_pktlog_hybrid(struct ath12k_pdev_dp *dp_pdev)
 	tx_tlv_filter->tx_mon_data_pkt_dma_len = DP_TX_MON_MAX_DMA_LENGTH;
 	tx_tlv_filter->tx_mon_ctrl_pkt_dma_len = DP_TX_MON_MAX_DMA_LENGTH;
 
-	dp_mon_pdev->tx_mon_filter[mode][srng_type] = tx_filter;
+	dp_mon_pdev->dp_pdev_tx_mon->tx_mon_filter[mode][srng_type] = tx_filter;
 
 	ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
 		   "TX Monitor: Hybrid mode filter configured\n");
@@ -1361,10 +1361,11 @@ ath12k_dp_mon_tx_reset_pktlog_hybrid(struct ath12k_pdev_dp *dp_pdev)
 	enum dp_mon_tx_filter_srng_type srng_type =
 		DP_MON_TX_FILTER_SRNG_TYPE_TXMON_DEST;
 
-	if (!dp_mon_pdev || !dp_mon_pdev->tx_mon_filter)
+	if (!dp_mon_pdev || !dp_mon_pdev->dp_pdev_tx_mon ||
+	    !dp_mon_pdev->dp_pdev_tx_mon->tx_mon_filter)
 		return;
 
-	dp_mon_pdev->tx_mon_filter[mode][srng_type] = tx_filter;
+	dp_mon_pdev->dp_pdev_tx_mon->tx_mon_filter[mode][srng_type] = tx_filter;
 
 	ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_TX,
 		   "TX Monitor: Hybrid mode filter reset\n");
@@ -1401,20 +1402,24 @@ void ath12k_dp_mon_pktlog_config_filter(struct ath12k_pdev_dp *dp_pdev,
 		}
 
 		if (filter & ATH12K_PKTLOG_HYBRID) {
-			ath12k_dp_mon_tx_setup_pktlog_hybrid(dp_pdev);
-
-			if (!dp_mon_pdev->tx_monitor_started) {
-				ret = ath12k_dp_mon_tx_htt_src_ring_setup(dp);
-				if (ret) {
-					ath12k_warn(dp->ab,
-						    "Failed to setup HTT src ring: %d\n",
-						    ret);
-					ath12k_dp_mon_tx_reset_pktlog_hybrid(dp_pdev);
-					dp_mon_pdev->tx_pktlog_hybrid = false;
-					return;
+			if (!dp_mon_pdev->dp_pdev_tx_mon)
+				ath12k_warn(dp->ab, "TX mon pdev not initialized\n");
+			else {
+				ath12k_dp_mon_tx_setup_pktlog_hybrid(dp_pdev);
+				if (!dp_mon_pdev->dp_pdev_tx_mon->tx_monitor_started) {
+					ret = ath12k_dp_mon_tx_htt_src_ring_setup(dp);
+					if (ret) {
+						ath12k_warn(dp->ab, "Src ring fail:%d\n",
+							    ret);
+						ath12k_dp_mon_tx_reset_pktlog_hybrid(
+										dp_pdev);
+						dp_mon_pdev->dp_pdev_tx_mon
+							->tx_pktlog_hybrid = false;
+						return;
+					}
 				}
+				dp_mon_pdev->dp_pdev_tx_mon->tx_pktlog_hybrid = true;
 			}
-			dp_mon_pdev->tx_pktlog_hybrid = true;
 		}
 
 		switch (mode) {
@@ -1455,10 +1460,13 @@ void ath12k_dp_mon_pktlog_config_filter(struct ath12k_pdev_dp *dp_pdev,
 
 		if (filter & ATH12K_PKTLOG_HYBRID) {
 			ath12k_dp_mon_tx_reset_pktlog_hybrid(dp_pdev);
-			dp_mon_pdev->tx_pktlog_hybrid = false;
 
-			if (!dp_mon_pdev->tx_monitor_started)
-				ath12k_dp_mon_tx_htt_src_ring_cleanup(dp);
+			if (dp_mon_pdev->dp_pdev_tx_mon) {
+				dp_mon_pdev->dp_pdev_tx_mon->tx_pktlog_hybrid = false;
+
+				if (!dp_mon_pdev->dp_pdev_tx_mon->tx_monitor_started)
+					ath12k_dp_mon_tx_htt_src_ring_cleanup(dp);
+			}
 		}
 
 		switch (mode) {

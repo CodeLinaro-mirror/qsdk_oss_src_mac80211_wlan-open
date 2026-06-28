@@ -167,8 +167,10 @@ static bool athdbg_mhi_q6_scan_rddm_cookie(struct ath12k_base *ab,
 	mhi_ctrl = athdbg_mhi_get_mhi_ctrl(ab);
 	if (!mhi_ctrl)
 		return false;
-
+#ifndef PLATFORM_SDX
 	return mhi_scan_rddm_cookie(mhi_ctrl, cookie);
+#endif
+	return true;
 }
 
 static void athdbg_mhi_q6_debug_reg_dump(struct ath12k_base *ab)
@@ -179,7 +181,9 @@ static void athdbg_mhi_q6_debug_reg_dump(struct ath12k_base *ab)
 	if (!mhi_ctrl)
 		return;
 
+#ifndef PLATFORM_SDX
 	mhi_debug_reg_dump(mhi_ctrl);
+#endif
 }
 
 static int athdbg_mhi_q6_debug_read_pbl_data(struct ath12k_base *ab,
@@ -334,6 +338,7 @@ static int athdbg_mhi_q6_debug_read_misc_data(struct ath12k_base *ab,
 				QCN9224_GCC_RAMSS_CBCR);
 		break;
 	case QCN9625_DEVICE_ID:
+	case QCN9589_DEVICE_ID:
 		pbl_sbl_err->remap_bar_ctrl = athdbg_mhi_pci_read32(ab,
 				QCN9625_PCIE_PCIE_LOCAL_REG_REMAP_BAR_CTRL);
 		pbl_sbl_err->soc_rc_shadow_reg = athdbg_mhi_pci_read32(ab,
@@ -401,6 +406,7 @@ static void athdbg_mhi_q6_debug_collect_bl_data(struct ath12k_base *ab,
 			switch (pci_dev->device) {
 			case QCN9274_DEVICE_ID:
 			case QCN9625_DEVICE_ID:
+			case QCN9589_DEVICE_ID:
 				pbl_sbl_err->noc_tbl = qcn9274_noc_err_regs;
 				pbl_sbl_err->noc_len = ARRAY_SIZE(qcn9274_noc_err_regs);
 
@@ -582,7 +588,11 @@ void athdbg_mhi_q6_dump_bl_sram_mem(struct ath12k_base *ab)
 		sbl_data.sbl_log_start_reg = QCN9224_PCIE_BHI_ERRDBG2_REG;
 		sbl_data.sbl_log_size_shift = 0;
 
+#if LINUX_VERSION_IS_LESS(6,8,0)
 		if (mhi_ctrl && mhi_ctrl->major_version == 2)
+#else
+		if (mhi_ctrl)
+#endif
 			pbl_data.pbl_log_sram_start = QCN9224_v2_PBL_LOG_SRAM_START;
 		else
 			pbl_data.pbl_log_sram_start = QCN9224_PBL_LOG_SRAM_START;
@@ -593,8 +603,13 @@ void athdbg_mhi_q6_dump_bl_sram_mem(struct ath12k_base *ab)
 		pbl_data.pbl_bootstrap_status = QCN9224_PBL_BOOTSTRAP_STATUS;
 		break;
 	case QCN9625_DEVICE_ID:
+	case QCN9589_DEVICE_ID:
 		sbl_data.sbl_sram_start = QCN9625_SRAM_START;
-		sbl_data.sbl_sram_end = QCN9625_SRAM_END;
+		if (pci_dev->device == QCN9589_DEVICE_ID)
+			sbl_data.sbl_sram_end = QCN9589_SRAM_END;
+		else
+			sbl_data.sbl_sram_end = QCN9625_SRAM_END;
+
 		sbl_data.sbl_log_start_reg = QCN9224_PCIE_BHI_ERRDBG2_REG;
 		sbl_data.sbl_log_size_reg = QCN9224_PCIE_BHI_ERRDBG3_REG;
 		sbl_data.sbl_log_size_shift = 0;

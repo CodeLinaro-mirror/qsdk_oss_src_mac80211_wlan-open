@@ -498,6 +498,7 @@ struct ieee80211_sband_iftype_data {
 	struct ieee80211_he_6ghz_capa he_6ghz_capa;
 	struct ieee80211_sta_eht_cap eht_cap;
 	struct ieee80211_sta_uhr_cap uhr_cap;
+	struct ieee80211_sta_uhr_npca_info npca_info;
 	struct {
 		const u8 *data;
 		unsigned int len;
@@ -777,6 +778,26 @@ ieee80211_get_uhr_iftype_cap(const struct ieee80211_supported_band *sband,
 }
 
 /**
+ * ieee80211_get_uhr_iftype_npca_info - return UHR NPCA info for an sband's iftype
+ * @sband: the sband to search for the iftype on
+ * @iftype: enum nl80211_iftype
+ *
+ * Return: pointer to the struct ieee80211_sta_uhr_npca_info, or %NULL if none found
+ */
+static inline const struct ieee80211_sta_uhr_npca_info *
+ieee80211_get_uhr_iftype_npca_info(const struct ieee80211_supported_band *sband,
+				   enum nl80211_iftype iftype)
+{
+	const struct ieee80211_sband_iftype_data *data =
+		ieee80211_get_sband_iftype_data(sband, iftype);
+
+	if (data && data->uhr_cap.has_uhr)
+		return &data->npca_info;
+
+	return NULL;
+}
+
+/**
  * wiphy_read_of_freq_limits - read frequency limits from device tree
  *
  * @wiphy: the wireless device to get extra limits for
@@ -894,7 +915,10 @@ struct key_params {
  *	width
  * @center_frequency_device: center frequency of the device @center_freq1 is
  *	the operating center frequency of the channel
-  */
+ * @npca_freq: primary channel frequency (MHz) for NPCA operation; 0 if NPCA
+ *	is not active
+ * @npca_puncture_bitmap: puncture bitmap for the NPCA channel; 0 if unused
+ */
 struct cfg80211_chan_def {
 	struct ieee80211_channel *chan;
 	enum nl80211_chan_width width;
@@ -906,6 +930,8 @@ struct cfg80211_chan_def {
 	u16 radar_bitmap;
 	enum nl80211_chan_width width_device;
 	u32 center_freq_device;
+	u32 npca_freq;
+	u16 npca_puncture_bitmap;
 };
 
 /**
@@ -1401,6 +1427,19 @@ bool cfg80211_chandef_dfs_nol_clear(struct wiphy *wiphy,
 				    const struct cfg80211_chan_def *chandef);
 
 /**
+ * cfg80211_chandef_dfs_nol_history - check if any non-punctured sub-channel
+ *                                    has NOL history and is not yet available
+ * @wiphy: the wiphy to validate against
+ * @chandef: the channel definition to check
+ *
+ * Returns true if at least one sub-channel has IEEE80211_CHAN_NOL_HISTORY set
+ * and has not yet reached NL80211_DFS_AVAILABLE (CAC required before TX).
+ * Returns false if all sub-channels are clean.
+ */
+bool cfg80211_chandef_dfs_nol_history(struct wiphy *wiphy,
+				      const struct cfg80211_chan_def *chandef);
+
+/**
  * cfg80211_chandef_dfs_cac_time - get maximum dfs cac time traversing
  * through the entire channel width
  * @wiphy: the wiphy to validate against
@@ -1728,6 +1767,43 @@ struct cfg80211_set_cu_params {
 };
 
 /**
+ * struct cfg80211_cu_info - Critical Update session state
+ *
+ * @cu_type: type of Critical Update, see &enum nl80211_cu_type
+ * @cu_in_progress: a Critical Update session is currently active
+ */
+struct cfg80211_cu_info {
+	enum nl80211_cu_type cu_type;
+	bool cu_in_progress;
+};
+
+/**
+ * struct cfg80211_critical_update_params - parameters for a CU session
+ *
+ * @cu_info: Critical Update session info
+ * @elem: CU element blob to stitch into beacons (from %NL80211_ATTR_IE), may be NULL
+ * @elem_len: length of @elem in bytes
+ */
+struct cfg80211_critical_update_params {
+	struct cfg80211_cu_info cu_info;
+	const u8 *elem;
+	size_t elem_len;
+};
+
+/**
+ * cfg80211_cu_notify - notify user space of a CU session state transition
+ * @wdev: the wireless device
+ * @link_id: the link on which the state transition occurred
+ * @cu_state: new ECU state, see &enum nl80211_cu_state
+ *
+ * Sends a %NL80211_CMD_CRITICAL_UPDATE_NOTIFY event to user space.
+ * Called by mac80211 via ieee80211_cu_notify().
+ */
+void cfg80211_cu_notify(struct wireless_dev *wdev,
+			unsigned int link_id,
+			enum nl80211_cu_state cu_state);
+
+/**
  * struct cfg80211_beacon_data - beacon data
  * @link_id: the link ID for the AP MLD link sending this beacon
  * @head: head portion of beacon (before TIM IE)
@@ -1984,6 +2060,9 @@ struct cfg80211_ttlm_params {
  * @ttlm_params: tid-to-link mapping parameters
  * @dps_assist_disable: indicates AP to disable DPS Assist Support.
  * @smd_params: SMD params for a AP
+ * @uhr_cap: UHR capabilities element (or %NULL if not provided)
+ * @residual_cac_ms: residual CAC time in milliseconds, derived from
+ *	%NL80211_ATTR_MAX_CH_SWITCH_TIME for AP start
  */
 struct cfg80211_ap_settings {
 	struct cfg80211_chan_def chandef;
@@ -2011,6 +2090,7 @@ struct cfg80211_ap_settings {
 	const struct ieee80211_eht_cap_elem *eht_cap;
 	const struct ieee80211_eht_operation *eht_oper;
 	const struct ieee80211_uhr_operation *uhr_oper;
+	const struct ieee80211_uhr_cap_elem *uhr_cap;
 	bool ht_required, vht_required, he_required, sae_h2e_required;
 	bool twt_responder;
 	u32 flags;
@@ -2028,6 +2108,7 @@ struct cfg80211_ap_settings {
 	bool is_cfp_enabled;
 	bool dps_assist_disable;
 	struct cfg80211_smd_params smd_params;
+	u32 residual_cac_ms;
 };
 
 
@@ -2221,6 +2302,20 @@ struct link_station_parameters {
 	u16 mld_oper;
 	const struct ieee80211_uhr_cap_elem *uhr_capa;
 	u8 uhr_capa_len;
+	u8 *smd_mac_addr;
+	u8 smd_enabled;
+	u8 smd_dl_data_fwd;
+};
+
+#define NL80211_SMD_MAX_LINKS 16
+struct cfg80211_smd_roam_req {
+	u32 role;
+	u32 type;
+	bool dl_sn_not_transferred;
+	bool ul_sn_not_transferred;
+	u32 dl_drain_time;
+	u8 link_macs[NL80211_SMD_MAX_LINKS][ETH_ALEN];
+	u8 num_links;
 };
 
 /**
@@ -2275,6 +2370,7 @@ struct link_station_del_parameters {
  * @eml_cap: EML capabilities of this station
  * @link_sta_params: link related params.
  * @control_mic_pad: padding info for control frames
+ * @epp_peer: EPP peer indication
  */
 struct station_parameters {
 	struct net_device *vlan;
@@ -2303,6 +2399,7 @@ struct station_parameters {
 	u16 eml_cap;
 	struct link_station_parameters link_sta_params;
 	u8 control_mic_pad;
+	bool epp_peer;
 };
 
 /**
@@ -3778,6 +3875,107 @@ struct cfg80211_ml_reconf_req {
 	u16 rem_links;
 	u16 ext_mld_capa_ops;
 	const u8 *mld_addr;
+};
+
+/**
+ * struct cfg80211_smd_link_req - SMD link preparation request
+ * @link_id: Link ID
+ * @sta_addr: STA MAC address for this link
+ * @profile_data: Per-STA profile data (capabilities, etc.)
+ * @profile_len: Length of profile data
+ */
+struct cfg80211_smd_link_req {
+	u8 link_id;
+	u8 sta_addr[ETH_ALEN];
+	const u8 *profile_data;
+	size_t profile_len;
+};
+
+/**
+ * struct cfg80211_smd_prepare_req - SMD BSS Transition preparation request
+ * @type: Frame type: 0 = ST Preparation, 1 = ST Execution
+ * @target_mld_addr: Target AP MLD MAC address
+ * @dh_public_key: STA DH public key for PTK derivation (ST Prep only)
+ * @dh_public_key_len: Length of @dh_public_key in bytes
+ * @snonce: STA nonce for PTK derivation (ST Prep only)
+ * @snonce_len: Length of @snonce in bytes
+ * @request_dl_sn_not_transferred: Request DL sequence number not transferred
+ * @request_ul_sn_not_transferred: Request UL sequence number not transferred
+ * @scs_list: SCS prioritization list (optional, ST Prep only)
+ * @scs_list_len: Number of entries in @scs_list
+ * @dialog_token_valid: Whether @dialog_token is provided by userspace
+ * @dialog_token: Dialog token for matching Prep Request/Response
+ * @exec_path: ST Execution path:
+ *     0 = via current AP (SAP), 1 = direct to target (TAP)
+ * @dl_tid_bitmap: DL TID bitmap for traffic draining (ST Exec only)
+ * @is_preferred_target: Preferred target; triggers driver resource allocation
+ *     at PREP time
+ * @smd_params: SMD domain parameters (identifier, capabilities, timeout)
+ * @ml_reconf: ML reconfiguration request specifying links to add/remove
+ * @tx_link_id: MLO link ID on which to transmit the frame (-1 = any)
+ */
+struct cfg80211_smd_prepare_req {
+	u8 type;
+	u8 target_mld_addr[ETH_ALEN];
+	const u8 *dh_public_key;
+	size_t dh_public_key_len;
+	const u8 *snonce;
+	size_t snonce_len;
+	bool request_dl_sn_not_transferred;
+	bool request_ul_sn_not_transferred;
+	u8 *scs_list;
+	size_t scs_list_len;
+	bool dialog_token_valid;
+	u8 dialog_token;
+	u8 exec_path;
+	u8 dl_tid_bitmap;
+	bool is_preferred_target;
+	struct cfg80211_smd_params smd_params;
+	struct cfg80211_ml_reconf_req ml_reconf;
+	s8 tx_link_id;
+};
+
+/**
+ * struct cfg80211_uhr_reconfig_done - SMD preparation completion
+ * @buf: Raw frame buffer (complete UHR Link Reconfig Response frame)
+ * @len: Length of raw frame buffer
+ * @target_mld_addr: Target AP MLD MAC address
+ * @status_code: 802.11 status code (0=SUCCESS, other=REJECTED)
+ * @aid: AID assigned by target (if success)
+ * @prepared_links: Bitmask of successfully prepared links
+ * @transitioning_links: Bitmask of successfully transitioned links
+ * @links: Per-link information for prepared links
+ * @num_links: Number of links
+ * @anonce: AP nonce (if success)
+ * @target_dh_public_key: Target's DH public key (if success)
+ * @timeout_value_tu: Execution timeout in TUs (if success)
+ * @ba_info: BA parameters (if success)
+ * @scs_status: SCS acceptance status (if success)
+ * @mscs_status: MSCS acceptance status (if success)
+ * @link_transition_state: current link distribution state; one of
+ *	&enum nl80211_smd_link_transition_state.  Set by mac80211 in
+ *	each PREP and EXEC done notification.
+ */
+struct cfg80211_uhr_reconfig_done {
+	const u8 *buf;
+	size_t len;
+	u8 type;
+	u8 target_mld_addr[ETH_ALEN];
+	u16 status_code;
+	u16 aid;
+	u16 prepared_links;
+	u16 transitioning_links;
+	u8 anonce[32];
+	u8 target_dh_public_key[64];
+	u32 timeout_value_tu;
+	/* Minimal link info following ML Reconf pattern */
+	struct {
+		u8 link_id;
+		struct cfg80211_bss *bss;  /* Contains all BSS info */
+		u8 *addr;                  /* Link address */
+	} links[IEEE80211_MLD_MAX_NUM_LINKS];
+	int num_links;
+	enum nl80211_smd_link_transition_state link_transition_state;
 };
 
 /**
@@ -5361,6 +5559,32 @@ struct cfg80211_ap_power_save_params {
 };
 
 /**
+ * struct cfg80211_uhr_npca_params - NPCA (Non-Primary Channel Access) params
+ * @enable: enable (true) or disable (false) NPCA feature
+ * @switch_delay: delay in ms before switching to non-primary channel
+ * @switch_back_delay: delay in ms before switching back to primary channel
+ */
+struct cfg80211_uhr_npca_params {
+	bool enable;
+	u8 switch_delay;
+	u8 switch_back_delay;
+};
+
+/**
+ * struct cfg80211_uhr_mode_update_params - UHR mode update parameters
+ *
+ * Parameters for the %NL80211_CMD_UHR_MODE_UPDATE command, used to
+ * configure per-link UHR mode parameters for an MLD VAP.
+ *
+ * @npca_update: per-link flags indicating which links have NPCA params to update
+ * @npca: per-link NPCA parameters, indexed by link ID
+ */
+struct cfg80211_uhr_mode_update_params {
+	bool npca_update[IEEE80211_MLD_MAX_NUM_LINKS];
+	struct cfg80211_uhr_npca_params npca[IEEE80211_MLD_MAX_NUM_LINKS];
+};
+
+/**
  * struct cfg80211_ops - backend description for wireless configuration
  *
  * This struct is registered by fullmac card drivers and/or wireless stacks
@@ -5800,7 +6024,10 @@ struct cfg80211_ap_power_save_params {
  *
  * @ap_power_save : Configure AP Power Save parameters
  * @abort_cac: Abort ongoing Channel Availability Check (CAC)
+ * @uhr_mode_update: Update per-link UHR mode parameters (NPCA) for an MLD.
+ *	@params carries per-link update flags and NPCA settings.
  * @set_muedca_mode: Set the mode of setting MU EDCA parameters.
+ * @uhr_link_reconf: Initiate SMD preparation with target AP MLD
  */
 struct cfg80211_ops {
 	int	(*suspend)(struct wiphy *wiphy, struct cfg80211_wowlan *wow);
@@ -6206,6 +6433,17 @@ struct cfg80211_ops {
 				 struct cfg80211_ap_power_save_params *params);
 	int (*abort_cac)(struct wiphy *wiphy, struct wireless_dev *wdev,
 			 int link_id);
+	int (*uhr_mode_update)(struct wiphy *wiphy, struct net_device *dev,
+			       struct cfg80211_uhr_mode_update_params *params);
+	int (*critical_update)(struct wiphy *wiphy, struct net_device *dev,
+			       unsigned int link_id,
+			       struct cfg80211_critical_update_params *params);
+	int (*uhr_link_reconf)(struct wiphy *wiphy,
+			       struct net_device *dev,
+			       struct cfg80211_smd_prepare_req *req);
+	int (*smd_roam)(struct wiphy *wiphy,
+			struct net_device *dev,
+			const struct cfg80211_smd_roam_req *req);
 };
 
 /*
@@ -6306,6 +6544,10 @@ enum wiphy_flags {
 	WIPHY_FLAG_SUPPORTS_BEACON_TX_SYNC              = BIT(27),
 	WIPHY_FLAG_SUPPORTS_SMD				= BIT(28),
 };
+
+/* SMD Prepare Request flags */
+#define SMD_PREP_REQ_DL_SN_NOT_TRANSFERRED BIT(0)
+#define SMD_PREP_REQ_UL_SN_NOT_TRANSFERRED BIT(1)
 
 /**
  * struct ieee80211_iface_limit - limit on certain interface types
@@ -7358,6 +7600,7 @@ struct cfg80211_conn;
 struct cfg80211_internal_bss;
 struct cfg80211_cached_keys;
 struct cfg80211_cqm_config;
+struct cfg80211_smd_prep_state;
 
 /**
  * wiphy_lock - lock the wiphy
@@ -7772,6 +8015,8 @@ struct wireless_dev {
 		u8 reg_6g_power_mode;
 	} links[IEEE80211_MLD_MAX_NUM_LINKS];
 	u16 valid_links;
+
+	struct cfg80211_smd_prep_state *smd_prep;
 
 	u32 radio_mask;
 	bool critical_update;
@@ -9992,6 +10237,7 @@ void cfg80211_conn_failed(struct net_device *dev, const u8 *mac_addr,
  *	the rx info
  * @ttlm_expec_dur_update: Indicates whether expected duration update for TTLM
  *	element is present in the rx info
+ * @st_roaming_data: ST roaming data in skb extension
  */
 struct cfg80211_rx_info {
 	int freq;
@@ -10007,6 +10253,7 @@ struct cfg80211_rx_info {
 	bool link_removal_update;
 	bool ttlm_expec_dur_update;
 	u16 bitrate;
+	const struct ieee80211_smd_ctx *st_roaming_data;
 };
 
 /**
@@ -11329,6 +11576,116 @@ struct cfg80211_mlo_reconf_done_data {
 void cfg80211_mlo_reconf_add_done(struct net_device *dev,
 				  struct cfg80211_mlo_reconf_done_data *data);
 
+/**
+ * struct cfg80211_smd_prep_target - SMD preparation target state
+ * @valid: whether this target slot is in use
+ * @target_mld_addr: MAC address of target AP MLD
+ * @prepared_links: bitmask of links prepared for this target
+ * @transitioning_links: bitmask of links transitioning with this target
+ * @target_aid: AID assigned by target AP MLD
+ * @prepared_bss: BSS structures for prepared links
+ * @prep_timestamp: when preparation completed (jiffies)
+ * @context: per-target context (BA info, SCS/MSCS status, etc.)
+ */
+struct cfg80211_smd_prep_target {
+	bool valid;
+	u8 target_mld_addr[ETH_ALEN];
+	u16 prepared_links;
+	u16 transitioning_links;
+	u16 target_aid;
+	struct cfg80211_internal_bss *prepared_bss[IEEE80211_MLD_MAX_NUM_LINKS];
+	unsigned long prep_timestamp;
+
+	struct {
+		bool ba_info_present;
+		/* BA parameters, SCS/MSCS status, etc. can be added here */
+	} context;
+};
+
+/**
+ * struct cfg80211_smd_prep_state - SMD preparation state (dynamically allocated)
+ * @max_prep_targets: maximum number of targets from SMD IE
+ * @num_prep_targets: current number of prepared targets
+ * @in_smd_preparation: whether any target is prepared
+ * @all_prepared_links: union of all prepared links across targets
+ * @targets: variable-length array of preparation targets
+ */
+struct cfg80211_smd_prep_state {
+	u8 max_prep_targets;
+	u8 num_prep_targets;
+	bool in_smd_preparation;
+	u16 all_prepared_links;
+
+	/* Variable-length array based on max_prep_targets */
+	struct cfg80211_smd_prep_target targets[];
+};
+
+/**
+ * cfg80211_smd_prep_done - notify SMD ST Preparation completion
+ * @dev: network device
+ * @done: preparation completion data including raw frame buffer
+ *
+ * This function notifies cfg80211/userspace that SMD ST Preparation has
+ * completed. The raw frame buffer is passed to allow userspace to perform
+ * its own parsing and state management.
+ */
+void cfg80211_smd_prep_done(struct net_device *dev,
+			    struct cfg80211_uhr_reconfig_done *done);
+
+/**
+ * cfg80211_smd_execution_done - notify SMD execution completion
+ * @dev: network device
+ * @done: executiom completion data including raw frame buffer
+ *
+ * This function notifies cfg80211 that SMD execution has completed.
+ * On success, it updates the connection state and cleans up preparation state.
+ * On failure, it only cleans up preparation state.
+ */
+void cfg80211_smd_execution_done(struct net_device *dev,
+				 struct cfg80211_uhr_reconfig_done *done);
+
+/**
+ * cfg80211_uhr_reconfig_resp_done - Notify UHR Link Reconfig Response
+ * @dev: network device
+ * @done: UHR reconfig response data
+ *
+ * Handles both ST Prep and ST Exec responses. Distinguishes by data content:
+ * if @prepared_links is set with @links populated, handles as PREP (holds BSS).
+ * if @transitioning_links is set, handles as EXEC (transfers BSS to wdev).
+ * Notifies userspace with raw frame in both cases.
+ */
+void cfg80211_uhr_reconfig_resp_done(struct net_device *dev,
+				     struct cfg80211_uhr_reconfig_done *done);
+
+/**
+ * cfg80211_notify_smd_bss_transition - Notify SMD BSS transition event
+ * @dev: network device
+ * @target_mld_addr: Target AP MLD address
+ * @type: transition type (%NL80211_SMD_TRANSITION_COMPLETE or
+ *	  %NL80211_SMD_TRANSITION_ABORT)
+ * @status_code: Status code (0 for complete, abort reason for ABORT)
+ *
+ * COMPLETE: Called after DL drain, Updates wdev->links[].client.current_bss
+ *           for primary link, unholds BSS, cleans up prep state. Notifies
+ *           userspace
+ *
+ * ABORT: Releases all held BSS from PREP without updating wdev, Cleans up
+ *        prep state, notifies userspace
+ */
+void cfg80211_notify_smd_bss_transition(struct net_device *dev,
+					const u8 *target_mld_addr,
+					enum nl80211_smd_transition_type type,
+					u16 status_code);
+
+int cfg80211_smd_hold_prepared_bss(struct wireless_dev *wdev,
+				   const u8 *target_mld_addr,
+				   unsigned int link_id,
+				   struct cfg80211_bss *bss);
+int cfg80211_smd_transfer_bss(struct wireless_dev *wdev,
+			      const u8 *target_mld_addr,
+			      unsigned int link_id);
+void cfg80211_smd_cleanup_target(struct wireless_dev *wdev,
+				 const u8 *target_mld_addr);
 /**
  * cfg80211_schedule_channels_check - schedule regulatory check if needed
  * @wdev: the wireless device to check

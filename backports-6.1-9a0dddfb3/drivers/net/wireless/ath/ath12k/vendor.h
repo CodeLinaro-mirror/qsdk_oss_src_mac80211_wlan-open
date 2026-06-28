@@ -213,6 +213,9 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_SDWF_PEER_MSDUQ_EVENT = 528,
 	QCA_NL80211_VENDOR_SUBCMD_CHAIN_MASK_CHANGED = 529,
 	QCA_NL80211_VENDOR_SUBCMD_SET_MULTI_BSS_PARAM = 530,
+	QCA_NL80211_VENDOR_SUBCMD_WLAN_NFCAL_POWER_EVENT = 531,
+	QCA_NL80211_VENDOR_SUBCMD_RF_PATH_MODE = 532,
+	QCA_NL80211_VENDOR_SUBCMD_SCAN_RADIO_CHAN_STATS = 533,
 };
 
 /**
@@ -381,6 +384,9 @@ enum qca_nl80211_vendor_events {
 	 * %QCA_NL80211_VENDOR_SUBCMD_CHAIN_MASK_CHANGED.
 	 */
 	QCA_NL80211_VENDOR_SUBCMD_CHAIN_MASK_INDEX = 23,
+	QCA_NL80211_VENDOR_SUBCMD_WLAN_NFCAL_POWER_EVENT_INDEX = 24,
+	QCA_NL80211_VENDOR_SUBCMD_RF_PATH_MODE_INDEX = 25,
+	QCA_NL80211_VENDOR_SUBCMD_SCAN_RADIO_CHAN_STATS_INDEX = 26,
 };
 
 /**
@@ -1834,6 +1840,14 @@ enum qca_wlan_vendor_attr_tele_sdwftx {
 		QCA_WLAN_VENDOR_ATTR_TELE_SDWFTX_AFTER_LAST - 1,
 };
 
+/* SDWF MSDUQ dimension constants.
+ * QCA_WLAN_VENDOR_ATTR_TELE_SDWF_TID_MAX: number of QoS TIDs (= QOS_TID_MAX).
+ * QCA_WLAN_VENDOR_ATTR_TELE_SDWF_MSDUQ_PER_TID_MAX: number of MSDUQs per TID
+ *     (= QOS_TID_MDSUQ_MAX).
+ */
+#define QCA_WLAN_VENDOR_ATTR_TELE_SDWF_TID_MAX		8
+#define QCA_WLAN_VENDOR_ATTR_TELE_SDWF_MSDUQ_PER_TID_MAX	2
+
 /**
  * enum qca_wlan_vendor_attr_afc_response: Defines attributes to be used
  * with vendor command QCA_NL80211_VENDOR_SUBCMD_AFC_RESPONSE. These attributes
@@ -2119,6 +2133,63 @@ enum qca_nl80211_vendor_fw_recovery_attr {
 	QCA_WLAN_VENDOR_FW_RECOVERY_HW_LINK_ID = 2,
 	QCA_VENDOR_ATTR_FW_RECOVERY_AFTER_LAST,
 	QCA_VENDOR_ATTR_FW_RECOVERY_MAX = QCA_VENDOR_ATTR_FW_RECOVERY_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_nfcal_power_event - Vendor attributes for the
+ * %QCA_NL80211_VENDOR_SUBCMD_WLAN_NFCAL_POWER_EVENT vendor event.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_INVALID:
+ *     Invalid attribute (placeholder).
+ *
+ * @QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_HW_LINK_ID:
+ *     Mandatory attribute (u8) representing the hardware link ID on which
+ *     the noise floor calibration was performed.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_NFDBR:
+ *     Mandatory attribute (NLA_BINARY) containing an array of s8 values
+ *     representing the noise floor in dBr for each calibrated channel/chain.
+ *     The number of valid entries is indicated by
+ *     %QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_NUM_NFDBR_DBM.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_NFDBM:
+ *     Mandatory attribute (NLA_BINARY) containing an array of s8 values
+ *     representing the noise floor in dBm for each calibrated channel/chain.
+ *     The number of valid entries is indicated by
+ *     %QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_NUM_NFDBR_DBM.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_FREQNUM:
+ *     Mandatory attribute (NLA_BINARY) containing an array of u32 values
+ *     representing the frequency numbers (in MHz) for each calibrated channel.
+ *     The number of valid entries is indicated by
+ *     %QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_NUM_FREQ.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_NUM_NFDBR_DBM:
+ *     Mandatory attribute (u16) indicating the number of valid entries in the
+ *     %QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_NFDBR and
+ *     %QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_NFDBM arrays.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_NUM_FREQ:
+ *     Mandatory attribute (u16) indicating the number of valid entries in the
+ *     %QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_FREQNUM array.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_AFTER_LAST:
+ *     Internal marker for the end of attributes.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_MAX:
+ *     Maximum attribute index (for bounds checking).
+ */
+enum qca_wlan_vendor_attr_nfcal_power_event {
+	QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_HW_LINK_ID = 1,
+	QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_NFDBR = 2,
+	QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_NFDBM = 3,
+	QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_FREQNUM = 4,
+	QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_NUM_NFDBR_DBM = 5,
+	QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_NUM_FREQ = 6,
+	QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_MAX =
+		QCA_WLAN_VENDOR_ATTR_NFCAL_POWER_AFTER_LAST - 1,
 };
 
 /**
@@ -4177,6 +4248,13 @@ enum qca_vendor_wlan_telemetry_tx_ingress_enq_error {
 	QCA_VENDOR_ATTR_TX_INGRESS_ENQ_ARSTA_NA,
 	QCA_VENDOR_ATTR_TX_INGRESS_ENQ_DROP_CLONE,
 	QCA_VENDOR_ATTR_TX_INGRESS_ENQ_DROP_MHDR_ERR,
+	QCA_VENDOR_ATTR_TX_INGRESS_ENQ_DROP_FEAT_ERR,
+	QCA_VENDOR_ATTR_TX_INGRESS_ENQ_DROP_QUEUE_STOP,
+	QCA_VENDOR_ATTR_TX_INGRESS_ENQ_DROP_HW_ENQ_FAIL,
+	QCA_VENDOR_ATTR_TX_INGRESS_ENQ_DROP_MCBC_ENCRY_FAIL,
+	QCA_VENDOR_ATTR_TX_INGRESS_ENQ_DROP_MCBC_MSDU_INFO,
+	QCA_VENDOR_ATTR_TX_INGRESS_ENQ_DROP_FW_RECOVERY,
+	QCA_VENDOR_ATTR_TX_INGRESS_ENQ_DROP_SKB_NO_LINEAR,
 
 	QCA_VENDOR_ATTR_TX_INGRESS_ENQ_AFTER_LAST,
 	QCA_VENDOR_ATTR_TX_INGRESS_ENQ_ERR_MAX =
@@ -4324,6 +4402,22 @@ enum qca_vendor_vdev_param {
 	QCA_WLAN_VENDOR_VDEV_PARAM_EHT_UL_FIXED_RATE = 79,
 	QCA_WLAN_VENDOR_VDEV_PARAM_CHWIDTH = 80,
 	QCA_WLAN_VENDOR_VDEV_PARAM_EHT_LTF = 81,
+	/* Per-VAP EHT OFDMA/TXBF config (value: 0=disable, 1=enable) */
+	QCA_WLAN_VENDOR_VDEV_PARAM_EHT_DL_OFDMA_TXBF = 82,
+	QCA_WLAN_VENDOR_VDEV_PARAM_EHT_DL_OFDMA = 83,
+	QCA_WLAN_VENDOR_VDEV_PARAM_EHT_UL_OFDMA = 84,
+	/* Per-VAP HE OFDMA/TXBF config (value: 0=disable, 1=enable) */
+	QCA_WLAN_VENDOR_VDEV_PARAM_HE_DL_OFDMA_TXBF = 85,
+	QCA_WLAN_VENDOR_VDEV_PARAM_HE_DL_OFDMA = 86,
+	QCA_WLAN_VENDOR_VDEV_PARAM_HE_UL_OFDMA = 87,
+	QCA_WLAN_VENDOR_VDEV_PARAM_TLV_LOGGER_MODE = 88,
+	QCA_WLAN_VENDOR_VDEV_PARAM_HE_UL_LTF = 89,
+	QCA_WLAN_VENDOR_VDEV_PARAM_HE_LTF = 90,
+	QCA_WLAN_VENDOR_VDEV_PARAM_HE_AR_GI_LTF = 91,
+	QCA_WLAN_VENDOR_VDEV_PARAM_HE_AR_LDPC = 92,
+	QCA_WLAN_VENDOR_VDEV_PARAM_HE_RTSTHRSHLD = 93,
+	QCA_WLAN_VENDOR_VDEV_PARAM_HE_UL_MCS = 94,
+	QCA_WLAN_VENDOR_VDEV_PARAM_EHT_UL_MCS = 95,
 
 	/* Add new params above */
 	QCA_WLAN_VENDOR_VDEV_PARAM_LAST,
@@ -4430,6 +4524,8 @@ enum qca_vendor_radio_param {
 	QCA_WLAN_VENDOR_RADIO_PARAM_RX_FLOW_TAG_OP = 91,
 	QCA_WLAN_VENDOR_RADIO_PARAM_GET_CAC_STATE = 92,
 	QCA_WLAN_VENDOR_RADIO_PARAM_SCAN_STRICT_PASSIVE_PCH = 93,
+	QCA_WLAN_VENDOR_RADIO_PARAM_GET_NFCAL_POWER = 94,
+	QCA_WLAN_VENDOR_RADIO_PARAM_CAL_VER_CHECK = 95,
 
 	/* Add new params above */
 	QCA_WLAN_VENDOR_RADIO_PARAM_LAST,
@@ -4454,6 +4550,7 @@ enum qca_nl80211_vendor_config_generic_command {
 	QCA_WLAN_VENDOR_WIFI_PARAM_GET_NAV_OVERRIDE_CONFIG = 607,
 	QCA_WLAN_VENDOR_WIFI_PARAM_UL_OFDMA_RTD = 608,
 	QCA_WLAN_VENDOR_WIFI_PARAM_ALLOW_SCAN_ON_DFS_CHAN = 609,
+	QCA_WLAN_VENDOR_WIFI_PARAM_BSSID = 610,
 };
 
 enum qca_wlan_vendor_attr_sdwf_dev {
@@ -4974,7 +5071,9 @@ enum qca_vendor_wlan_home_offchan_tx_rx_pkt_status {
  * %QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_TX_PKT_STATUS.
  *
  * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_PKT_STATUS_ID: u8 attribute.
- *	Packet identifier/number for this transmission status (0-255).
+ *	Frame identifier supplied by userspace in the TX command (0-255),
+ *	echoed back so the application can correlate per-packet status with
+ *	the original request.
  *
  * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_PKT_STATUS_RESULT:
  * u8 attribute.
@@ -5118,6 +5217,10 @@ enum qca_vendor_wlan_home_offchan_tx_rx_event_tx_pkt_status_attr {
  *	qca_vendor_wlan_home_offchan_tx_rx_event_tx_pkt_status_attr.
  *	The array can contain up to the number of frames specified in
  *	%QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_NUM_FRAMES.
+ *
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_TX_IFINDEX: u32 attribute.
+ *	Interface index of the transmitting interface for the home/off-channel
+ *	TX/RX event. Used by the driver to indicate which netdev sent the frame.
  */
 enum qca_vendor_wlan_home_offchan_tx_rx_attr {
 	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_INVALID = 0,
@@ -5149,6 +5252,7 @@ enum qca_vendor_wlan_home_offchan_tx_rx_attr {
 	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_BLANKING_COUNT,
 	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_BLANKING_DURATION,
 	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_TX_PKT_STATUS,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_TX_IFINDEX,
 
 	/* keep last */
 	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_AFTER_LAST,
@@ -5200,6 +5304,12 @@ enum qca_vendor_wlan_home_offchan_tx_rx_attr {
  *
  * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME_DATA:
  *	Binary attribute. Contains the frame data to be transmitted.
+ *
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME_ID: u8 attribute.
+ *	Application-assigned identifier for this frame (0-255). The driver
+ *	caches this value and echoes it back in the per-packet TX status event
+ *	(%QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_PKT_STATUS_ID) so the
+ *	application can correlate completion status with the original request.
  */
 enum qca_vendor_wlan_home_offchan_tx_rx_frame_attr {
 	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME_INVALID = 0,
@@ -5210,11 +5320,42 @@ enum qca_vendor_wlan_home_offchan_tx_rx_frame_attr {
 	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME_POWER,
 	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME_TX_BEAMFORMING,
 	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME_DATA,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME_ID,
 
 	/* keep last */
 	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME_AFTER_LAST,
 	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME_MAX =
 		QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_scan_radio_chan_stats - Attributes for
+ * QCA_NL80211_VENDOR_SUBCMD_SCAN_RADIO_CHAN_STATS event.
+ *
+ * Sent by the driver per WMI chan_info event on a scan-radio pdev.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_SCAN_RADIO_CHAN_STATS_FREQ: u32, channel freq in MHz.
+ * @QCA_WLAN_VENDOR_ATTR_SCAN_RADIO_CHAN_STATS_BLANKING_VALID: u8, non-zero
+ *	when blanking parameters below are valid.
+ * @QCA_WLAN_VENDOR_ATTR_SCAN_RADIO_CHAN_STATS_BLANKING_COUNT: u32, number of
+ *	blanking events during the measurement period.
+ * @QCA_WLAN_VENDOR_ATTR_SCAN_RADIO_CHAN_STATS_BLANKING_DURATION: u32, total
+ *	blanking duration in microseconds.
+ * @QCA_WLAN_VENDOR_ATTR_SCAN_RADIO_CHAN_STATS_PHYMODE: NUL-terminated string,
+ *	current PHY mode of the scan radio home channel (e.g. "11AXHE80").
+ */
+enum qca_wlan_vendor_attr_scan_radio_chan_stats {
+	QCA_WLAN_VENDOR_ATTR_SCAN_RADIO_CHAN_STATS_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_SCAN_RADIO_CHAN_STATS_FREQ = 1,
+	QCA_WLAN_VENDOR_ATTR_SCAN_RADIO_CHAN_STATS_BLANKING_VALID = 2,
+	QCA_WLAN_VENDOR_ATTR_SCAN_RADIO_CHAN_STATS_BLANKING_COUNT = 3,
+	QCA_WLAN_VENDOR_ATTR_SCAN_RADIO_CHAN_STATS_BLANKING_DURATION = 4,
+	QCA_WLAN_VENDOR_ATTR_SCAN_RADIO_CHAN_STATS_PHYMODE = 5,
+
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_SCAN_RADIO_CHAN_STATS_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_SCAN_RADIO_CHAN_STATS_MAX =
+		QCA_WLAN_VENDOR_ATTR_SCAN_RADIO_CHAN_STATS_AFTER_LAST - 1,
 };
 
 /**
@@ -6742,9 +6883,10 @@ enum qca_wlan_vendor_sdwf_peer_msduq_svc_type {
 
 #define ATH_PARAM_MASK     0x1000
 enum ath_cfg_param_radio {
-	ACFG_PARAM_RADIO_TXCHAINMASK	      = 1  | ATH_PARAM_MASK,
-	ACFG_PARAM_RADIO_RXCHAINMASK	      = 2  | ATH_PARAM_MASK,
+	ACFG_PARAM_RADIO_TXCHAINMASK	      = 1   | ATH_PARAM_MASK,
+	ACFG_PARAM_RADIO_RXCHAINMASK	      = 2   | ATH_PARAM_MASK,
 	PARAM_RADIO_TXCHAINSOFT               = 361 | ATH_PARAM_MASK,
+	ACFG_PARAM_RADIO_SCAN_BLANKING_MODE   = 525 | ATH_PARAM_MASK,
 };
 
 enum qca_wlan_vendor_channel_width
@@ -6904,6 +7046,9 @@ struct ath12k_sdwf_msduq_evt_data {
 void
 ath12k_vendor_sdwf_msduq_send_event(struct ath12k *ar,
 				    const struct ath12k_sdwf_msduq_evt_data *e);
+struct ath12k_wmi_nfcal_power_event;
+int ath12k_vendor_nfcal_power_event(struct ath12k *ar,
+				    const struct ath12k_wmi_nfcal_power_event *param);
 
 /**
  * enum qca_wlan_vendor_multi_bss_param_id - multi bss parameters IDs
@@ -7036,4 +7181,54 @@ enum qca_wlan_vendor_attr_set_multi_bss_param {
  *          paths.
  */
 void ath12k_vendor_event_chain_mask_changed(struct ath12k *ar);
+
+/**
+ * enum qca_wlan_vendor_rf_path_mode - RF path configuration modes used as
+ * values for QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_INDEX.
+ *
+ * @QCA_WLAN_VENDOR_RF_PATH_MODE_5G_FULL_RANGE: Full 5G operating range
+ * (4890–5930 MHz, channels 36–177). The radio operates across the complete
+ * 5G band.
+ *
+ * @QCA_WLAN_VENDOR_RF_PATH_MODE_5G_HIGH_RANGE: High 5G operating range
+ * (5490–5930 MHz, channels 100–177). The radio operates on the upper
+ * portion of the 5G band only.
+ */
+enum qca_wlan_vendor_rf_path_mode {
+	QCA_WLAN_VENDOR_RF_PATH_MODE_5G_FULL_RANGE = 0,
+	QCA_WLAN_VENDOR_RF_PATH_MODE_5G_HIGH_RANGE = 1,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_rf_path_mode - Vendor attributes for
+ * QCA_NL80211_VENDOR_SUBCMD_RF_PATH_MODE.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_INDEX: u32 attribute.
+ * Value is one of enum qca_wlan_vendor_rf_path_mode.
+ * SET: desired RF path configuration for all eligible 5G non-6GHz radios.
+ * GET (attribute absent in command): driver returns the current active
+ *   mode via this attribute in the reply.
+ * EVENT: carried in the completion vendor event after a SET attempt,
+ *   regardless of success or failure. Indicates the RF path that was
+ *   requested. Check QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_STATUS for outcome.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_STATUS: u32 attribute.
+ * Carried in the completion vendor event after a SET attempt.
+ * 0 = switch completed successfully.
+ * Non-zero = switch failed; the RF path remains unchanged.
+ * Userspace should check this attribute to determine whether the
+ * requested RF path switch completed successfully before updating
+ * any local state.
+ */
+enum qca_wlan_vendor_attr_rf_path_mode {
+	QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_INDEX   = 1,
+	QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_STATUS  = 2,
+
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_MAX =
+		QCA_WLAN_VENDOR_ATTR_RF_PATH_MODE_AFTER_LAST - 1,
+};
+
 #endif

@@ -831,7 +831,8 @@ static void ieee80211_del_chanctx(struct ieee80211_local *local,
 {
 	lockdep_assert_wiphy(local->hw.wiphy);
 
-	drv_remove_chanctx(local, ctx);
+	if (ctx->driver_present)
+		drv_remove_chanctx(local, ctx);
 
 	if (!skip_idle_recalc)
 		ieee80211_recalc_idle(local);
@@ -865,6 +866,13 @@ static void ieee80211_free_chanctx(struct ieee80211_local *local,
 		}
 	}
 
+	/* A DFS CAC timer may still be armed if disconnect or Stop AP happened
+	 * while CAC was in progress. Cancel both the hrtimer and its deferred work
+	 * before freeing the chanctx to avoid a use-after-free.
+	 */
+	hrtimer_cancel(&ctx->dfs_cac_timer);
+	wiphy_work_cancel(local->hw.wiphy, &ctx->dfs_cac_timer_work);
+
 	list_del_rcu(&ctx->list);
 	ieee80211_punct_obj_list_free(local, ctx);
 	ieee80211_del_chanctx(local, ctx, skip_idle_recalc);
@@ -891,7 +899,7 @@ ieee80211_punct_obj_in_chanctx(struct ieee80211_punct_obj *obj,
 	if (!ctx->conf.def.chan || width < 0)
 		return false;
 
-	start_freq = ctx->conf.def.chan->center_freq;
+	start_freq = KHZ_TO_MHZ(cfg80211_get_start_freq(&ctx->conf.def, 1));
 	end_freq = start_freq + width;
 
 	return obj->center_freq >= start_freq && obj->center_freq < end_freq;
@@ -1305,6 +1313,9 @@ int ieee80211_link_unreserve_chanctx(struct ieee80211_link_data *link)
 			ctx->replace_ctx->replace_state =
 					IEEE80211_CHANCTX_REPLACE_NONE;
 
+			hrtimer_cancel(&ctx->dfs_cac_timer);
+			wiphy_work_cancel(sdata->local->hw.wiphy,
+					  &ctx->dfs_cac_timer_work);
 			list_del_rcu(&ctx->list);
 			kfree_rcu(ctx, rcu_head);
 		} else {
@@ -1835,6 +1846,22 @@ static int ieee80211_vif_use_reserved_switch(struct ieee80211_local *local)
 		}
 
 		ctx->conf.radar_enabled = false;
+
+		/*
+		 * The reserved channel may have become DFS-unavailable after
+		 * reservation — e.g. radar was detected on it while the CSA
+		 * countdown was in progress.
+		 */
+		if (!cfg80211_chandef_dfs_nol_clear(local->hw.wiphy,
+						    &ctx->conf.def)) {
+			wiphy_info(local->hw.wiphy,
+				   "aborting CSA: reserved channel %u MHz is in NOL\n",
+				   ctx->conf.def.chan ?
+				   ctx->conf.def.chan->center_freq : 0);
+			err = -EINVAL;
+			goto err;
+		}
+
 		list_for_each_entry(link, &ctx->reserved_links,
 				    reserved_chanctx_list) {
 			if (ieee80211_link_has_in_place_reservation(link) &&
@@ -2023,6 +2050,8 @@ static int ieee80211_vif_use_reserved_switch(struct ieee80211_local *local)
 		ctx->replace_ctx->replace_state =
 				IEEE80211_CHANCTX_REPLACE_NONE;
 
+		hrtimer_cancel(&ctx->dfs_cac_timer);
+		wiphy_work_cancel(local->hw.wiphy, &ctx->dfs_cac_timer_work);
 		list_del_rcu(&ctx->list);
 		kfree_rcu(ctx, rcu_head);
 	}
@@ -2462,3 +2491,60 @@ void ieee80211_iter_chan_contexts_atomic(
 	rcu_read_unlock();
 }
 EXPORT_SYMBOL_GPL(ieee80211_iter_chan_contexts_atomic);
+
+/**
+ * ieee80211_smd_link_assign_chanctx - Assign channel context for SMD target link
+ * @link: the link to assign channel context to
+ * @chanreq: the channel request with target channel info
+ * @mode: the channel context mode (shared/exclusive)
+ *
+ * Important: Always create a new chanctx rather than trying to find and reuse
+ * existing one. This is intentional for SMD because:
+ *   - The Target AP STA may be on a different channel than the current AP
+ *   - Even if on the same channel, width/center frequency may differ
+ *   - The primary link still uses current AP's chanctx - mixing would
+ *     cause incompatibility warning when ieee80211_recalc_chanctx_chantype()
+ *     runs
+ * Prerequisite:
+ *   - Link must not currently have a chanctx assigned
+ *   - chanreq must be properly populated (e.g. from ieee80211_prep_channel)
+ *
+ * Returns: 0 on success, negative error code on failure
+ */
+int ieee80211_smd_link_assign_chanctx(struct ieee80211_link_data *link,
+				      const struct ieee80211_chan_req *chanreq,
+				      enum ieee80211_chanctx_mode mode)
+{
+	struct ieee80211_sub_if_data *sdata = link->sdata;
+	struct ieee80211_local *local = sdata->local;
+	struct ieee80211_chanctx *ctx;
+	int radio_idx;
+	int ret;
+
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	if (!ieee80211_find_available_radio(local, chanreq,
+					    sdata->wdev.radio_mask,
+					    &radio_idx))
+		return -EBUSY;
+
+	ctx = ieee80211_new_chanctx(local, chanreq, mode,
+				    false, radio_idx);
+	if (IS_ERR(ctx))
+		return PTR_ERR(ctx);
+
+	ieee80211_link_update_chanreq(link, chanreq);
+
+	ret = ieee80211_assign_link_chanctx(link, ctx, false);
+	if (ret) {
+		if (ieee80211_chanctx_refcount(local, ctx) == 0) {
+			ieee80211_free_chanctx(local, ctx, false);
+			return ret;
+		}
+	}
+
+	ieee80211_recalc_smps_chanctx(local, ctx);
+	ieee80211_recalc_radar_chanctx(local, ctx);
+
+	return 0;
+}

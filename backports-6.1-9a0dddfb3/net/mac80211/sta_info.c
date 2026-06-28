@@ -17,6 +17,7 @@
 #include <linux/if_arp.h>
 #include <linux/timer.h>
 #include <linux/rtnetlink.h>
+#include <kunit/static_stub.h>
 
 #include <net/codel.h>
 #include <net/mac80211.h>
@@ -212,6 +213,8 @@ struct sta_info *sta_info_get(struct ieee80211_sub_if_data *sdata,
 	struct ieee80211_local *local = sdata->local;
 	struct rhlist_head *tmp;
 	struct sta_info *sta;
+
+	KUNIT_STATIC_STUB_REDIRECT(sta_info_get, sdata, addr);
 
 	rcu_read_lock();
 	for_each_sta_info(local, addr, sta, tmp) {
@@ -418,7 +421,7 @@ static void sta_remove_link(struct sta_info *sta, unsigned int link_id,
 		return;
 
 	if (unhash)
-		link_sta_info_hash_del(sta->local, link_sta);
+		WARN_ON_ONCE(link_sta_info_hash_del(sta->local, link_sta));
 
 	if (test_sta_flag(sta, WLAN_STA_INSERTED))
 		ieee80211_link_sta_debugfs_remove(link_sta);
@@ -3412,6 +3415,13 @@ int ieee80211_sta_allocate_link(struct sta_info *sta, unsigned int link_id)
 
 	sta_info_add_link(sta, link_id, &alloc->info, &alloc->sta);
 
+	/*
+	 * For post-insert STAs this adds debugfs immediately.
+	 * For pre-insert STAs (e.g. SMD target STA) sta->debugfs_dir is
+	 * not set yet, so ieee80211_link_sta_debugfs_add() returns silently.
+	 * sta_info_insert_finish() will call it for all non-NULL links after
+	 * setting up debugfs_dir.
+	 */
 	ieee80211_link_sta_debugfs_add(&alloc->info);
 
 	return 0;
@@ -3440,7 +3450,7 @@ int ieee80211_sta_activate_link(struct sta_info *sta, unsigned int link_id)
 	link_sta = rcu_dereference_protected(sta->link[link_id],
 					     lockdep_is_held(&sdata->local->hw.wiphy->mtx));
 
-	if (WARN_ON(old_links == new_links || !link_sta))
+	if (WARN_ON(!link_sta))
 		return -EINVAL;
 
 	rcu_read_lock();
@@ -3453,7 +3463,8 @@ int ieee80211_sta_activate_link(struct sta_info *sta, unsigned int link_id)
 	 */
 
 	if (exists) {
-		if (!sta->sta.reconf.matched_rem_links) {
+		if (!sta->sta.reconf.matched_rem_links &&
+		    !sdata->u.mgd.smd_transitioning_links) {
 			rcu_read_unlock();
 			return -EALREADY;
 		}
@@ -3504,9 +3515,7 @@ void ieee80211_sta_remove_link(struct sta_info *sta, unsigned int link_id,
 			       bool update)
 {
 	struct ieee80211_sub_if_data *sdata = sta->sdata;
-	struct link_sta_info *sta_info;
-	struct ieee80211_link_sta *link_sta;
-	u16 old_links = sta->sta.valid_links, n_link_id;
+	u16 old_links = sta->sta.valid_links;
 	bool unhash = true;
 
 	lockdep_assert_wiphy(sdata->local->hw.wiphy);
@@ -3528,61 +3537,13 @@ void ieee80211_sta_remove_link(struct sta_info *sta, unsigned int link_id,
 
 	sta_remove_link(sta, link_id, unhash);
 
-	/* If deflink is getting removed, then move the contents of the next
-	 * asosciated link to deflink and free the moved link memory
+	/* If deflink is being removed during SMD transition, the deflink
+	 * will be updated when the new primary link is activated.
+	 * The WARN below catches unintended non-SMD removal of deflink.
 	 */
-	if (sta->deflink.link_id == link_id) {
-		n_link_id = ffs(sta->sta.valid_links) - 1;
-
-		sta_info = rcu_access_pointer(sta->link[n_link_id]);
-		link_sta = rcu_access_pointer(sta->sta.link[n_link_id]);
-
-		if (sta_info && link_sta) {
-			struct ieee80211_sta_rx_stats __percpu *old_pcpu =
-				sta->deflink.pcpu_rx_stats;
-			struct ieee80211_sta_rx_stats __percpu *src_pcpu =
-				sta_info->pcpu_rx_stats;
-
-			sta->deflink.link_id = n_link_id;
-			sta->sta.deflink.link_id = n_link_id;
-
-			memcpy(&sta->deflink, sta_info, sizeof(*sta_info));
-			memcpy(&sta->sta.deflink, link_sta, sizeof(*link_sta));
-			sta->deflink.pub = &sta->sta.deflink;
-			/* Be explicit about the per-CPU stats pointer we adopt. */
-			sta->deflink.pcpu_rx_stats = src_pcpu;
-			ht_dbg_ratelimited(sta->sdata,
-					   "deflink move: from link_id=%d to deflink, src_pcpu=%p old_def_pcpu=%p",
-					   n_link_id, src_pcpu, old_pcpu);
-
-			/*
-			 * Transfer ownership of per-CPU RX stats to the new deflink.
-			 * After memcpy() above, deflink->pcpu_rx_stats now points to
-			 * the per-CPU area that belonged to the link we are about to free.
-			 * Avoid freeing that memory via sta_remove_link() by clearing the
-			 * pointer in the soon-to-be-freed link structure.
-			 */
-			sta_info->pcpu_rx_stats = NULL;
-			/* Free the old deflink per-CPU stats to avoid leaks. */
-			if (old_pcpu && old_pcpu != src_pcpu)
-				free_percpu(old_pcpu);
-			ht_dbg_ratelimited(sta->sdata,
-					   "deflink move: cleared old link pcpu pointer to avoid free");
-
-			/* Free the moved link memory */
-			sta_remove_link(sta, n_link_id, true);
-
-			/* Re-add the link id to valid_links */
-			sta->sta.valid_links |= BIT(n_link_id);
-
-			rcu_assign_pointer(sta->link[n_link_id], &sta->deflink);
-			rcu_assign_pointer(sta->sta.link[n_link_id],
-					   &sta->sta.deflink);
-
-			link_sta_info_hash_add(sdata->local, &sta->deflink);
-			ieee80211_link_sta_debugfs_add(&sta->deflink);
-		}
-	}
+	if (sta->deflink.link_id == link_id)
+		WARN_ONCE(!sta->sdata->u.mgd.smd_transitioning_links,
+			  "deflink removed outside SMD transition");
 }
 
 void ieee80211_sta_set_max_amsdu_subframes(struct sta_info *sta,
@@ -3617,3 +3578,118 @@ bool lockdep_sta_mutex_held(struct ieee80211_sta *pubsta)
 }
 EXPORT_SYMBOL(lockdep_sta_mutex_held);
 #endif
+
+/* Must be called after arvif remap and before ieee80211_sta_activate_link. */
+void
+ieee80211_smd_remap_sta_links(struct sta_info *target_sta,
+			      const s8 *tap_to_sap)
+{
+	struct ieee80211_local *local = target_sta->sdata->local;
+	struct link_sta_info *saved[IEEE80211_MLD_MAX_NUM_LINKS] = {};
+	u16 old_valid = target_sta->sta.valid_links;
+	u16 new_valid = 0;
+	int tap_link_id, sap_link_id;
+
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	/* Snapshot before modification: in-place swaps fail for cycles > 2. */
+	for (tap_link_id = 0; tap_link_id < IEEE80211_MLD_MAX_NUM_LINKS; tap_link_id++)
+		saved[tap_link_id] = rcu_dereference_protected(
+			target_sta->link[tap_link_id],
+			lockdep_is_held(&local->hw.wiphy->mtx));
+
+	/*
+	 * Both sta->link[] (mac80211 internal) and sta->sta.link[] (public, read
+	 * by ath12k for PEER_CREATE arsta->addr) must be remapped together.
+	 */
+	for (tap_link_id = 0; tap_link_id < IEEE80211_MLD_MAX_NUM_LINKS; tap_link_id++) {
+		sap_link_id = tap_to_sap[tap_link_id];
+		if (sap_link_id < 0 || sap_link_id == tap_link_id) {
+			if (sap_link_id == tap_link_id && (old_valid & BIT(sap_link_id)))
+				new_valid |= BIT(tap_link_id);
+			continue;
+		}
+
+		if (!saved[sap_link_id])
+			continue;
+
+		/* Remap internal mac80211 array */
+		rcu_assign_pointer(target_sta->link[tap_link_id], saved[sap_link_id]);
+		saved[sap_link_id]->link_id = tap_link_id;
+
+		/* Remap public ieee80211_sta array (read by ath12k for arsta->addr) */
+		rcu_assign_pointer(target_sta->sta.link[tap_link_id],
+				   saved[sap_link_id]->pub);
+		saved[sap_link_id]->pub->link_id = tap_link_id;
+
+		if (old_valid & BIT(sap_link_id))
+			new_valid |= BIT(tap_link_id);
+	}
+
+	/*
+	 * Null out source slots moved to a different tap_link_id; prevents duplicate
+	 * pointers for non-bijective maps without regressing bijective swaps.
+	 */
+	for (sap_link_id = 0; sap_link_id < IEEE80211_MLD_MAX_NUM_LINKS; sap_link_id++) {
+		int t;
+
+		if (tap_to_sap[sap_link_id] != sap_link_id)
+			continue;  /* main loop already wrote a new value here */
+
+		for (t = 0; t < IEEE80211_MLD_MAX_NUM_LINKS; t++) {
+			if (t != sap_link_id && tap_to_sap[t] == sap_link_id) {
+				rcu_assign_pointer(target_sta->link[sap_link_id], NULL);
+				rcu_assign_pointer(target_sta->sta.link[sap_link_id],
+						   NULL);
+				new_valid &= ~BIT(sap_link_id);
+				break;
+			}
+		}
+	}
+
+	target_sta->sta.valid_links = new_valid;
+
+	/*
+	 * Rename the STA-level link-N debugfs directories for all non-identity
+	 * remapped links.  Each remapped link_sta now has link_id = tap_link_id but
+	 * debugfs_dir still points to the old "link-{sap_link_id}" directory.
+	 *
+	 * A single combined remove+recreate loop fails for a full swap
+	 * (tap=0←sap=1, tap=1←sap=0): removing link-1 and trying to create
+	 * link-0 in the same pass hits "already present" because link-0 still
+	 * exists from the other remapped link that hasn't been removed yet.
+	 *
+	 * Two explicit passes avoid the conflict:
+	 * Pass 1: remove ALL old directories first.
+	 * Pass 2: recreate ALL new directories (using the updated link_id and
+	 *          valid_links = new_valid so ieee80211_link_sta_debugfs_add
+	 *          creates "link-{tap_link_id}" with the correct name).
+	 */
+	/* Pass 1: remove all old directories */
+	for (tap_link_id = 0; tap_link_id < IEEE80211_MLD_MAX_NUM_LINKS; tap_link_id++) {
+		struct link_sta_info *ls;
+
+		if (tap_to_sap[tap_link_id] < 0 || tap_to_sap[tap_link_id] == tap_link_id)
+			continue;
+
+		ls = rcu_dereference_protected(target_sta->link[tap_link_id],
+					       lockdep_is_held(&local->hw.wiphy->mtx));
+		if (ls && ls->debugfs_dir) {
+			debugfs_remove_recursive(ls->debugfs_dir);
+			ls->debugfs_dir = NULL;
+		}
+	}
+
+	/* Pass 2: recreate with new link_id = tap_link_id name */
+	for (tap_link_id = 0; tap_link_id < IEEE80211_MLD_MAX_NUM_LINKS; tap_link_id++) {
+		struct link_sta_info *ls;
+
+		if (tap_to_sap[tap_link_id] < 0 || tap_to_sap[tap_link_id] == tap_link_id)
+			continue;
+
+		ls = rcu_dereference_protected(target_sta->link[tap_link_id],
+					       lockdep_is_held(&local->hw.wiphy->mtx));
+		if (ls && !ls->debugfs_dir && ls->sta->debugfs_dir)
+			ieee80211_link_sta_debugfs_add(ls);
+	}
+}

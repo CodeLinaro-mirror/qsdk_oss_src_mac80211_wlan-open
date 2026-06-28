@@ -78,8 +78,8 @@ struct ath12k_dp_hw_link {
 #define ATH12K_RX_SPT_PAGE_OFFSET  \
 	(ATH12K_NUM_PPEDS_TX_SPT_PAGES + ATH12K_NUM_TX_SPT_PAGES)
 #define ATH12K_TX_SPT_OFFSET ATH12K_NUM_PPEDS_TX_SPT_PAGES
-#define ATH12K_RX_SPT_OFFSET (ATH12K_TX_SPT_PAGES_PER_POOL * ATH12K_HW_MAX_QUEUES)
-
+#define ATH12K_RX_SPT_OFFSET \
+	(ATH12K_NUM_PPEDS_TX_SPT_PAGES + ATH12K_NUM_TX_SPT_PAGES)
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #define ATH12K_NUM_PPEDS_TX_SPT_PAGES \
 	(ath12k_ppeds_desc_params.num_ppeds_desc / ATH12K_MAX_SPT_ENTRIES)
@@ -129,7 +129,10 @@ struct ath12k_dp_hw_link {
 #define DP_TOTAL_REO_DST_RINGS (DP_REO_DST_RING_MAX + DP_REO_ERR_RINGS_MAX)
 
 #define ATH12K_DP_PCP_TID_MAP_SIZE	8
-#define ATH12K_DP_MAX_TID_PRECEDENCE_VAL 11
+/* Unified TID map precedence: 0 = DSCP wins, 1 = PCP wins.
+ * HLOS is always present but implicitly enabled by other features.
+ */
+#define ATH12K_DP_MAX_TID_PRECEDENCE_VAL 1
 
 /* Hash table size: 2^11 = 2048 buckets for up to 2048 peers */
 #define ATH12K_DP_PEER_HASH_BITS 11
@@ -169,11 +172,42 @@ struct ath12k_dp_hw_group {
 	/* protects shared TX SPT page and descriptor pool initialization across SOCs */
 	struct mutex tx_init_lock;
 	struct device *tx_spt_dev;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	struct ath12k_ppeds_tx_desc_info **ppedstxbaddr;
+	struct list_head ppeds_tx_desc_free_list;
+	struct list_head ppeds_tx_desc_reuse_list;
+	int ppeds_tx_desc_reuse_list_len;
+	/* protects the ppeds free and reuse desc lists */
+	spinlock_t ppeds_tx_desc_lock;
+	bool ppeds_tx_desc_initialized;
+	/* protects shared PPEDS TX SPT page and descriptor pool init across SOCs */
+	struct mutex ppeds_tx_init_lock;
+	struct device *ppeds_tx_spt_dev;
+	struct ath12k_spt_info *ppeds_spt_info;
+	u32 ppeds_num_spt_pages;
+#endif
 	u8  pcp_tid_map[ATH12K_DP_PCP_TID_MAP_SIZE];
 	u8  tid_map_precedence;
 #ifdef CPTCFG_QCN_EXTN
 	struct ath12k_dp_hw_group_extn extn;
 #endif
+
+	/* ST (Seamless transition): single in-flight ext_ctx parking
+	 * Used for SLO where target peer doesn't exist during PREPARE.
+	 * For MLO, target peer exists so direct transfer is used instead.
+	 * SMD BSS Transition: parked Rx Q state (analogous to smd_parked_ext_ctx).
+	 * Allocated during PREP phase.
+	 * Consumed and freed during EXEC phase.
+	 * Protected by smd_transition_lock.
+	 */
+	spinlock_t smd_transition_lock;
+	struct ath12k_dp_peer_ext_ctx *smd_parked_ext_ctx;
+	struct ath12k_dp_smd_parked_rx_info *smd_parked_rx_info;
+	u8 smd_target_mld_addr[ETH_ALEN];
+	/* POC: Reuse peer_id to avoid TQM FLOW Q update */
+	u16 smd_old_peer_id;
+	/* true from EXEC_RESP until abort/complete */
+	bool smd_exec_in_progress;
 
 	/* Keep Last */
 	u8 arch_data[] __aligned(sizeof(void *));
@@ -269,7 +303,8 @@ void ath12k_link_peer_get_sta_rate_info_stats(struct ath12k_dp_link_peer *link_p
 int ath12k_dp_mon_init(struct ath12k_dp *dp);
 void ath12k_dp_mon_deinit(struct ath12k_dp *dp);
 void ath12k_dp_cp_link_peer_unassign(struct ath12k *ar, struct ath12k_link_vif *arvif,
-				     struct ath12k_sta *ahsta, u8 link_id, u8 *addr);
+				     struct ath12k_sta *ahsta, u8 link_id, u8 *addr,
+				     bool update_bmap);
 u16 ath12k_dp_peer_get_peer_id(struct ath12k_dp_hw *dp_hw, u8 *addr);
 u16 ath12k_dp_peer_get_sta_id(struct ath12k_dp_hw *dp_hw, u8 *addr);
 
@@ -282,6 +317,7 @@ enum ath12k_dp_peer_param {
 	ATH12K_DP_PEER_KEYS_PARAM,
 	ATH12K_DP_PEER_CLEAR_KEYS_PARAM,
 	ATH12K_DP_PEER_MAC_ADDR_PARAM,
+	ATH12K_DP_PEER_PRIMARY_LINK_ID_PARAM,
 	ATH12K_DP_PEER_MAX_PARAM,
 };
 
@@ -341,6 +377,7 @@ union ath12k_config_param {
 	u8 hw_link_id;
 	u8 tid_weight[ATH12K_DATA_TID_MAX];
 	struct ath12k_dp_link_peer_rate_info rate_info;
+	u8 primary_link_id;
 };
 
 /*

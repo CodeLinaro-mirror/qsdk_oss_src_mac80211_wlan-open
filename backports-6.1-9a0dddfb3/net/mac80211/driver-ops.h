@@ -619,6 +619,50 @@ int drv_sta_state(struct ieee80211_local *local,
 		  enum ieee80211_sta_state old_state,
 		  enum ieee80211_sta_state new_state);
 
+static inline int
+drv_uhr_smd_update(struct ieee80211_local *local,
+		   struct ieee80211_sub_if_data *sdata,
+		   struct ieee80211_sta *peer,
+		   u32 role, u32 type, u32 status,
+		   u32 dl_sn, u32 ul_sn, u32 dl_drain_time)
+{
+	int ret = -EOPNOTSUPP;
+
+	if (local->ops->uhr_smd_update)
+		ret = local->ops->uhr_smd_update(&local->hw, &sdata->vif,
+						 peer, role, type, status,
+						 dl_sn, ul_sn, dl_drain_time);
+
+	return ret;
+}
+
+static inline int
+drv_uhr_link_reconfig(struct ieee80211_local *local,
+		      struct ieee80211_sub_if_data *sdata,
+		      struct sta_info *current_sta,
+		      struct sta_info *target_sta,
+		      enum ieee80211_uhr_link_reconfig_action action,
+		      struct ieee80211_uhr_link_reconfig_info *info)
+{
+	int ret = -EOPNOTSUPP;
+
+	might_sleep();
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	sdata = get_bss_sdata(sdata);
+	if (!check_sdata_in_driver(sdata))
+		return -EIO;
+
+	if (local->ops->uhr_link_reconfig)
+		ret = local->ops->uhr_link_reconfig(&local->hw, &sdata->vif,
+						    &current_sta->sta,
+						    target_sta ? &target_sta->sta : NULL,
+						    action, info);
+	/* trace: TODO add DEFINE_EVENT for drv_uhr_link_reconfig in trace.h */
+	trace_drv_return_int(local, ret);
+	return ret;
+}
+
 __must_check
 int drv_sta_set_txpwr(struct ieee80211_local *local,
 		      struct ieee80211_sub_if_data *sdata,
@@ -1983,6 +2027,48 @@ static inline int drv_ap_power_save(struct ieee80211_local *local,
 		ret = local->ops->ap_power_save(&local->hw, sdata ? &sdata->vif : NULL,
 						link_id, params);
 	}
+
+	trace_drv_return_int(local, ret);
+	return ret;
+}
+
+static inline int drv_uhr_mode_update(struct ieee80211_local *local,
+				      struct ieee80211_sub_if_data *sdata,
+				      struct sta_info *sta)
+{
+	int ret = -EOPNOTSUPP;
+
+	might_sleep();
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	if (local->ops->uhr_mode_update) {
+		trace_drv_uhr_mode_update(local, sdata, sta);
+		ret = local->ops->uhr_mode_update(&local->hw,
+						  &sdata->vif,
+						  sta ? &sta->sta : NULL);
+	}
+
+	trace_drv_return_int(local, ret);
+	return ret;
+}
+
+static inline int drv_critical_update(struct ieee80211_local *local,
+				      struct ieee80211_sub_if_data *sdata,
+				      unsigned int link_id,
+				      enum nl80211_cu_type cu_type,
+				      const u8 *ie, size_t ie_len)
+{
+	int ret = -EOPNOTSUPP;
+
+	might_sleep();
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	trace_drv_critical_update(local, sdata, link_id, cu_type,
+				  ie, ie_len);
+	if (local->ops->critical_update)
+		ret = local->ops->critical_update(&local->hw, &sdata->vif,
+						  link_id, cu_type,
+						  ie, ie_len);
 
 	trace_drv_return_int(local, ret);
 	return ret;

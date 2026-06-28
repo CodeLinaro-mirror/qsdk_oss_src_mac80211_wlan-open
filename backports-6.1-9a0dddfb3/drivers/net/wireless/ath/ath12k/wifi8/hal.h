@@ -103,6 +103,9 @@ enum rdi_based_source_ring_selection {
 	SOURCE_RING_CTRL_UNUSED,
 	SOURCE_RING_CTRL_MGMT,
 	SOURCE_RING_CTRL_FW2,
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	SOURCE_RING_CTRL_IPA,
+#endif
 };
 
 /* calculate the register address from bar0 of shadow register x */
@@ -153,6 +156,36 @@ enum rdi_based_source_ring_selection {
 
 #define HAL_CE_WFSS_CE_REG_BASE                 0x1B80000
 #define HAL_DP_REG_WINDOW_OFFSET                0x00180000
+
+/*
+ * TCL register offsets for PCP-TID map and TID map precedence.
+ * These are relative to HAL_SEQ_WCSS_UMAC_TCL_REG.
+ */
+#define HAL_TCL_R0_PCP_TID_MAP_OFFSET		0x137C
+#define HAL_TCL_R0_TID_MAP_PRTY_OFFSET		0x13CC
+
+#define HAL_TCL_R0_PCP_TID_MAP_ADDR \
+	(HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL_R0_PCP_TID_MAP_OFFSET)
+#define HAL_TCL_R0_PCP_TID_MAP_PRTY_OFFSET \
+	(HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL_R0_TID_MAP_PRTY_OFFSET)
+
+/* wifi8 TID map precedence register field masks
+ * Register: UMAC_TCL_R0_TID_PCP_DSCP_PRIORITY (offset 0x13CC from TCL base)
+ *   Bit  0     : VAL  - TID priority order (0=DSCP>PCP, 1=PCP>DSCP)
+ *   Bits 3:1   : TID_DEF - Default TID when no TID is valid for an MSDU
+ */
+#define HAL_TCL_TID_MAP_PRTY_VAL_MASK		GENMASK(0, 0)
+#define HAL_TCL_TID_MAP_PRTY_TID_DEF_MASK	GENMASK(3, 1)
+
+/* PCP-TID map register bit-field masks (3 bits per PCP value, PCP0 at [2:0]) */
+#define HAL_TCL_R0_PCP_TID_MAP_PCP_0		GENMASK(2, 0)	/* 0x7      */
+#define HAL_TCL_R0_PCP_TID_MAP_PCP_1		GENMASK(5, 3)	/* 0x38     */
+#define HAL_TCL_R0_PCP_TID_MAP_PCP_2		GENMASK(8, 6)	/* 0x1c0    */
+#define HAL_TCL_R0_PCP_TID_MAP_PCP_3		GENMASK(11, 9)	/* 0xe00    */
+#define HAL_TCL_R0_PCP_TID_MAP_PCP_4		GENMASK(14, 12)	/* 0x7000   */
+#define HAL_TCL_R0_PCP_TID_MAP_PCP_5		GENMASK(17, 15)	/* 0x38000  */
+#define HAL_TCL_R0_PCP_TID_MAP_PCP_6		GENMASK(20, 18)	/* 0x1c0000 */
+#define HAL_TCL_R0_PCP_TID_MAP_PCP_7		GENMASK(23, 21)	/* 0xe00000 */
 
 #define HAL_TCL_SW_CONFIG_BANK_ADDR		0x00F130E0
 
@@ -419,8 +452,10 @@ enum rdi_based_source_ring_selection {
 
 #define HAL_REO1_ERROR_RING_CFG_FOR_DEST_IX1		0x1c88
 #define HAL_REO1_ERROR_RING_CFG_FOR_DEST_REO2SW5_ERR	GENMASK(4, 0)
+#define HAL_REO1_ERROR_RING_CFG_FOR_DEST_REO2SW6_ERR	GENMASK(9, 5)
 #define HAL_REO1_ERROR_RING_CFG_FOR_DEST_REO2SW9_ERR	GENMASK(24, 20)
 #define HAL_REO1_ERROR_RING_CFG_FOR_DEST_REO2PPE_ERR	GENMASK(29, 25)
+#define HAL_REO1_ERROR_RING_CFG_FOR_DEST_REO2SW6_ERR	GENMASK(9, 5)
 
 #define HAL_REO1_ERROR_RING_CFG_FOR_DEST_IX2		0x1c8c
 #define HAL_REO1_ERROR_RING_CFG_FOR_DEST_REO2PPE1_ERR	GENMASK(4, 0)
@@ -1129,10 +1164,12 @@ enum rdi_based_source_ring_selection {
 #define HAL_DMAC_DMCMN_ISR_S24_MASK			BIT(0)
 #define HAL_DMAC_DMCMN_ISR_S24_VALUE			1
 
+#define HAL_DMAC_DMCMN_ISR_WLAN_RX_OK			{0x3074, 0x6074}
 #define HAL_RING_PREFETCH_TIMER_ENABLE		3
 #define HAL_RING_PREFETCH_TIMER_DISABLE		0
 #define HAL_PMAC_RX_FLUSH_MIN_DURATION		200
 #define HAL_WSI_RESET_DELAY_USEC		100
+
 
 /* TQM miscelllaneous configuration 1 register address */
 #define HAL_TQM_MISC_CFG_1			0xeec
@@ -1582,7 +1619,7 @@ struct rx_mpdu_desc_info {
 	};
 };
 
-struct hal_rx_msdu_desc_info {
+struct rx_msdu_desc_info {
 	u32 first_msdu		        :  1,
 	    last_msdu			:  1,
 	    msdu_continuation           :  1,
@@ -1618,6 +1655,7 @@ struct hal_rx_spd_data {
 	union {
 		u64 info4;
 		u8 *vaddr;
+		struct ath12k_buffer_addr buf_addr;
 	};
 	union {
 		u64 info3;
@@ -1628,10 +1666,8 @@ struct hal_rx_spd_data {
 
 	union {
 		u32 info2;
-		struct hal_rx_msdu_desc_info rx_msdu_info;
+		struct rx_msdu_desc_info rx_msdu_info;
 	};
-
-	struct rx_tlv_info_1 tlv_info;
 
 	union {
 		u32 info0;
@@ -1643,6 +1679,7 @@ struct hal_rx_spd_data {
 			    c_tdma_lut_ptr		:  6;
 		};
 	};
+
 	union {
 		u32 info1;
 		struct {
@@ -1656,8 +1693,24 @@ struct hal_rx_spd_data {
 			    looping_count		:  4;
 		};
 	};
-	u64 rsvd1;
-	u64 rsvd2;
+
+	struct rx_tlv_info_1 tlv_info;
+
+	union {
+		u8 flags;
+		struct {
+			u8 first_sg_frame		: 1,
+			    last_sg_frame		: 1,
+			    is_frag			: 1,
+			    rsvd0			: 5;
+		};
+	};
+
+	u8	reserved_0;
+	u16	cce_metadata;
+	u32	reserved_1;
+
+	u64	reserved_2;
 } __packed;
 
 static_assert(sizeof(struct hal_rx_spd_data) == 64,

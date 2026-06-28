@@ -538,6 +538,7 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata, bool going_do
 	if (sdata->vif.type == NL80211_IFTYPE_STATION) {
 		sdata->deflink.u.mgd.csa.waiting_bcn = false;
 		sdata->deflink.u.mgd.csa.bw_reconfig = false;
+		sdata->deflink.u.mgd.csa.nol_hist_cac_pending = false;
 	}
 	ieee80211_vif_unblock_queues_csa(sdata);
 
@@ -1060,6 +1061,13 @@ static bool ieee80211_set_sdata_offload_flags(struct ieee80211_sub_if_data *sdat
 	} else {
 		flags &= ~IEEE80211_OFFLOAD_ENCAP_ENABLED;
 	}
+
+	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN &&
+	    ieee80211_hw_check(&local->hw, VLAN_GROUP_KEY_HW_OFFLOAD) &&
+	    (flags & IEEE80211_OFFLOAD_ENCAP_ENABLED))
+		flags |= IEEE80211_OFFLOAD_ENCAP_MCAST;
+	else if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN)
+		flags &= ~IEEE80211_OFFLOAD_ENCAP_MCAST;
 
 	if (ieee80211_hw_check(&local->hw, SUPPORTS_RX_DECAP_OFFLOAD) &&
 	    ieee80211_iftype_supports_hdr_offload(sdata->vif.type)) {
@@ -1637,6 +1645,7 @@ static void ieee80211_iface_process_skb(struct ieee80211_local *local,
 					struct sk_buff *skb)
 {
 	struct ieee80211_mgmt *mgmt = (void *)skb->data;
+	struct ieee80211_rx_status *rx_status = IEEE80211_SKB_RXCB(skb);
 
 	lockdep_assert_wiphy(local->hw.wiphy);
 
@@ -1650,7 +1659,8 @@ static void ieee80211_iface_process_skb(struct ieee80211_local *local,
 			switch (mgmt->u.action.u.addba_req.action_code) {
 			case WLAN_ACTION_ADDBA_REQ:
 				ieee80211_process_addba_request(local, sta,
-								mgmt, len);
+								mgmt, len,
+								rx_status->link_id);
 				break;
 			case WLAN_ACTION_ADDBA_RESP:
 				ieee80211_process_addba_resp(local, sta,
@@ -1735,6 +1745,18 @@ static void ieee80211_iface_process_skb(struct ieee80211_local *local,
 			case WLAN_PROTECTED_EHT_ACTION_EPCS_ENABLE_TEARDOWN:
 				ieee80211_process_epcs_teardown(sdata, mgmt,
 								skb->len);
+				break;
+			default:
+				break;
+			}
+		}
+	} else if (ieee80211_is_action(mgmt->frame_control) &&
+		   mgmt->u.action.category == WLAN_CATEGORY_PROTECTED_UHR) {
+		if (sdata->vif.type == NL80211_IFTYPE_STATION) {
+			switch (mgmt->u.action.u.uhr_link_reconf_resp.action_code) {
+			case WLAN_ACTION_UHR_LINK_RECONF_RESP:
+				ieee80211_process_uhr_reconf_resp(sdata, mgmt,
+								  skb->len);
 				break;
 			default:
 				break;

@@ -14,6 +14,9 @@
 #include "telemetry_agent_if.h"
 #include "vendor.h"
 #include "wmi.h"
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
+#include <linux/skbuff_ref.h>
+#endif
 
 static inline u32
 ath12k_dp_mon_rx_ul_ofdma_ru_size_to_width(enum ath12k_eht_ru_size ru_size)
@@ -746,6 +749,9 @@ static u8 ath12k_dp_rx_rate_convert_bw(u8 bw)
 		ret = RATE_INFO_BW_80;
 		break;
 	case CMN_BW_160MHZ:
+		ret = RATE_INFO_BW_160;
+		break;
+	case CMN_BW_240MHZ:
 		ret = RATE_INFO_BW_160;
 		break;
 	case CMN_BW_320MHZ:
@@ -1947,6 +1953,7 @@ EXPORT_SYMBOL(ath12k_dp_mon_cfg_init);
 int ath12k_dp_mon_init(struct ath12k_dp *dp)
 {
 	struct ath12k_dp_mon *dp_mon;
+	struct ath12k_dp_tx_mon *dp_tx_mon;
 
 	dp_mon = kzalloc(sizeof(*dp_mon), GFP_KERNEL);
 	if (!dp_mon)
@@ -1954,8 +1961,20 @@ int ath12k_dp_mon_init(struct ath12k_dp *dp)
 
 	dp_mon->dp = dp;
 	dp->dp_mon = dp_mon;
-	spin_lock_init(&dp_mon->tx_mon_desc_lock);
-	dp_mon->tx_mon_buf_ring_ready = false;
+
+	if (ath12k_dp_tx_mon_feature_eval(dp)) {
+		dp_tx_mon = kzalloc(sizeof(*dp_tx_mon), GFP_KERNEL);
+		if (!dp_tx_mon) {
+			dp->dp_mon = NULL;
+			kfree(dp_mon);
+			return -ENOMEM;
+		}
+
+		spin_lock_init(&dp_tx_mon->tx_mon_desc_lock);
+		INIT_LIST_HEAD(&dp_tx_mon->tx_mon_desc_free_list);
+		dp_tx_mon->tx_mon_buf_ring_ready = false;
+		dp_mon->dp_tx_mon = dp_tx_mon;
+	}
 
 	return 0;
 }
@@ -1963,8 +1982,11 @@ EXPORT_SYMBOL(ath12k_dp_mon_init);
 
 void ath12k_dp_mon_deinit(struct ath12k_dp *dp)
 {
-	if (dp->dp_mon)
+	if (dp->dp_mon) {
+		kfree(dp->dp_mon->dp_tx_mon);
+		dp->dp_mon->dp_tx_mon = NULL;
 		kfree(dp->dp_mon);
+	}
 	dp->dp_mon = NULL;
 }
 EXPORT_SYMBOL(ath12k_dp_mon_deinit);
@@ -1972,10 +1994,27 @@ EXPORT_SYMBOL(ath12k_dp_mon_deinit);
 int ath12k_dp_mon_pdev_alloc(struct ath12k_pdev_dp *dp_pdev)
 {
 	struct ath12k_pdev_mon_dp *dp_mon_pdev;
+	struct ath12k_pdev_tx_mon *dp_pdev_tx_mon;
 
 	dp_mon_pdev = kzalloc(sizeof(*dp_mon_pdev), GFP_KERNEL);
 	if (!dp_mon_pdev)
 		return -ENOMEM;
+
+	if (ath12k_dp_tx_mon_feature_eval(dp_pdev->dp)) {
+		struct ath12k_dp_mon *dp_mon = dp_pdev->dp->dp_mon;
+
+		if (dp_mon->dp_tx_mon) {
+			dp_pdev_tx_mon = kzalloc(sizeof(*dp_pdev_tx_mon), GFP_KERNEL);
+			if (!dp_pdev_tx_mon) {
+				kfree(dp_mon_pdev);
+				return -ENOMEM;
+			}
+
+			dp_mon_pdev->dp_pdev_tx_mon = dp_pdev_tx_mon;
+			dp_pdev_tx_mon->mon_pdev = dp_mon_pdev;
+			dp_pdev_tx_mon->dp_tx_mon = dp_mon->dp_tx_mon;
+		}
+	}
 
 	dp_mon_pdev->dp_pdev = dp_pdev;
 	dp_mon_pdev->dp_mon = dp_pdev->dp->dp_mon;
@@ -1992,6 +2031,8 @@ void ath12k_dp_mon_pdev_free(struct ath12k_pdev_dp *dp_pdev)
 {
 	ath12k_mac_cache_smart_mon_filter(dp_pdev,
 					  dp_pdev->dp_mon_pdev->smart_mon_filter);
+	kfree(dp_pdev->dp_mon_pdev->dp_pdev_tx_mon);
+	dp_pdev->dp_mon_pdev->dp_pdev_tx_mon = NULL;
 	kfree(dp_pdev->dp_mon_pdev);
 	dp_pdev->dp_mon_pdev = NULL;
 }
@@ -3348,19 +3389,26 @@ void ath12k_dp_ext_mon_process_request(struct ath12k_pdev_dp *dp_pdev,
 	if (dp_pdev->dp_mon_pdev->smart_mon_filter & DP_SMART_MON_VALID ||
 	    dp_pdev->dp_mon_pdev->smart_mon_state != ATH12K_DP_SMART_MON_DISABLED) {
 		ath12k_warn(dp_pdev->dp, "Failed, smart mon enabled\n");
+		resp->status_code = ATH12K_EXT_MON_FILTER_SETUP_FAIL;
 		return;
 	}
 
 	if ((smart_mon_profile == DP_SMART_MON_PROFILE_512M ||
 	     smart_mon_profile == DP_SMART_MON_PROFILE_256M) &&
-	    !ath12k_dp_ext_mon_is_mode_enabled(&req->filter.target_neighbor)) {
+	    req->cmd_type == QCA_VENDOR_EXT_MON_CMD_TYPE_SET_FILTER &&
+	    !req->filter.disable &&
+	    (ath12k_dp_ext_mon_is_mode_enabled(&req->filter.all_peer) ||
+	     ath12k_dp_ext_mon_is_mode_enabled(&req->filter.all_neighbor) ||
+	     ath12k_dp_ext_mon_is_mode_enabled(&req->filter.target_peer))) {
 		ath12k_warn(dp_pdev->dp,
 			    "Only target neighbor filter allowed on low mem profile\n");
+		resp->status_code = ATH12K_EXT_MON_FILTER_SETUP_FAIL;
 		return;
 	}
 
 	if (dp_pdev->dp_mon_pdev->nrp_enabled) {
 		ath12k_warn(dp_pdev->dp, "nrp enabled\n");
+		resp->status_code = ATH12K_EXT_MON_FILTER_SETUP_FAIL;
 		return;
 	}
 

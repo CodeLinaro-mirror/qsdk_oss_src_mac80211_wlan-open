@@ -30,6 +30,7 @@
 #include "dp_stats.h"
 #include "mgmt_rx.h"
 #include "telemetry_agent_if.h"
+#include <linux/vmalloc.h>
 
 #define SEGMENT_ID	GENMASK(1,0)
 #define CHRIP_ID	BIT(2)
@@ -235,6 +236,30 @@ static int print_btcoex_stats(char *buf, int size, void *stats_ptr)
 				btcoex_stats->wl_tx_req_cntr);
 	return len;
 }
+
+static int print_blanking_stats(char *buf, int size, void *stats_ptr)
+{
+	struct wmi_ctrl_path_blanking_stats *blanking_stats = stats_ptr;
+	int len = 0;
+
+	len += scnprintf(buf + len, size - len, "WMI_CTRL_PATH_BLANKING_STATS:\n");
+	len += scnprintf(buf + len, size - len, "blanking_mode = %u\n",
+			 le32_to_cpu(blanking_stats->blanking_mode));
+	len += scnprintf(buf + len, size - len, "is_blanking_enabled = %u\n",
+			 le32_to_cpu(blanking_stats->is_blanking_enabled));
+	len += scnprintf(buf + len, size - len, "gate_2g_enabled = %u\n",
+			 le32_to_cpu(blanking_stats->gate_2g_enabled));
+	len += scnprintf(buf + len, size - len, "gate_5g_enabled = %u\n",
+			 le32_to_cpu(blanking_stats->gate_5g_enabled));
+	len += scnprintf(buf + len, size - len, "gate_6g_enabled = %u\n",
+			 le32_to_cpu(blanking_stats->gate_6g_enabled));
+	len += scnprintf(buf + len, size - len, "blanking_count = %u\n",
+			 le32_to_cpu(blanking_stats->blanking_count));
+	len += scnprintf(buf + len, size - len, "blanking_duration(us) = %u\n",
+			 le32_to_cpu(blanking_stats->blanking_duration));
+	return len;
+}
+
 static int print_mem_stats(char *buf, int size, void *stats_ptr)
 {   struct wmi_ctrl_path_mem_stats_params *mem_stats = stats_ptr;
 	int len = 0;
@@ -3175,10 +3200,11 @@ static ssize_t ath12k_read_mld_stats(struct file *file,
 			"HTT Metadata Err", "TCL Desc NA", "TCL Desc Retry",
 			"Invalid Arvif Fast", "Invalid Pdev Fast",
 			"Max Tx Limit Fast", "Invalid ENCAP Fast",
-			"Bridge vdev", "Arsta NA", "Queue Stop",
-			"Feature Error", "HW Enqueue Fail",
+			"Bridge vdev", "Arsta NA", "Clone", "MHDR ERR",
+			"Feature Error", "Queue Stop", "HW Enqueue Fail",
 			"MCBC encryption Fail", "MCBC MSDU setup Fail",
-			"Mcast unconnected link", "FW Recovery"};
+			"Mcast unconnected link", "FW Recovery",
+			"SKB No Linear"};
 
 	if (!ahvif)
 		return -EINVAL;
@@ -4111,6 +4137,10 @@ static ssize_t ath12k_read_all_wmi_ctrl_path_stats(struct file *file,
 		case WMI_CTRL_PATH_AFC_STATS:
 			len += print_afc_stats(buf + len, size - len, stats->stats_ptr);
 			break;
+		case WMI_CTRL_PATH_BLANKING_STATS:
+			len += print_blanking_stats(buf + len, size - len,
+							stats->stats_ptr);
+			break;
 		default:
 			len += scnprintf(buf + len, size - len, "Unknown tagid: %u\n",
 					 stats->tagid);
@@ -5030,7 +5060,7 @@ static ssize_t ath12k_debugfs_dump_ppeds_stats(struct file *file,
 	len += scnprintf(buf + len, size - len, "\nSRNG_Ring_index_Dump:\n");
 
 	srng = &ab->hal.srng_list[ppe2tcl_ring_id];
-	if (srng) {
+	if (srng && srng->initialized) {
 		len += scnprintf(buf + len, size - len, "ppe2tcl_hp= 0x%x\n",
 				srng->u.src_ring.hp);
 		len += scnprintf(buf + len, size - len, "ppe2tcl_tp= 0x%x\n",
@@ -5038,7 +5068,7 @@ static ssize_t ath12k_debugfs_dump_ppeds_stats(struct file *file,
 	}
 
 	srng = &ab->hal.srng_list[reo2ppe_ring_id];
-	if (srng) {
+	if (srng && srng->initialized) {
 		len += scnprintf(buf + len, size - len, "reo2ppe_hp= 0x%x\n",
 				 *(volatile u32 *)(srng->u.dst_ring.hp_addr));
 		len += scnprintf(buf + len, size - len, "reo2ppe_tp= 0x%x\n",
@@ -6620,9 +6650,9 @@ static ssize_t ath12k_enable_ofdma_txbf(struct file *file,
 
 	list_for_each_entry(arvif, &ar->arvifs, list) {
 		if (!strcmp(mode, "eht"))
-			ath12k_mac_set_eht_txbf_conf(arvif);
+			ath12k_mac_set_eht_txbf_conf(arvif, NULL, false);
 		if (!strcmp(mode, "he"))
-			ath12k_mac_set_he_txbf_conf(arvif);
+			ath12k_mac_set_he_txbf_conf(arvif, NULL, false);
 	}
 unlock:
 	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
@@ -6792,16 +6822,18 @@ static void ath12k_dp_peer_clear_qos_stats(struct ath12k_dp_peer *dp_peer)
 	int link_id;
 
 	/* Clear MLD QOS stats */
-	memset(&dp_peer->mld_qos_stats, 0,
-	       sizeof(dp_peer->mld_qos_stats));
+	if (dp_peer->mld_stats.mld_qos_stats)
+		memset(dp_peer->mld_stats.mld_qos_stats, 0,
+		       sizeof(*dp_peer->mld_stats.mld_qos_stats) *
+		       QOS_TID_MAX * QOS_TID_MDSUQ_MAX);
 
 	rcu_read_lock();
 	/* Clear QOS stats for each link peer */
 	for (link_id = 0; link_id < ATH12K_DP_PEER_MAX_MLO_LINKS; link_id++) {
 		link_peer = ath12k_dp_link_peer_find_by_hw_link_id(dp_peer, link_id);
-		if (link_peer && link_peer->peer_stats.qos_stats)
-			memset(link_peer->peer_stats.qos_stats, 0,
-			       sizeof(*link_peer->peer_stats.qos_stats));
+		if (link_peer && link_peer->peer_stats.link_qos_stats)
+			memset(link_peer->peer_stats.link_qos_stats, 0,
+			       sizeof(*link_peer->peer_stats.link_qos_stats));
 	}
 	rcu_read_unlock();
 }
@@ -6893,7 +6925,7 @@ static ssize_t ath12k_write_reset_dp_stats(struct file *file,
 		}
 
 		dp_pdev = &ar->dp;
-		if (dp_pdev && ath12k_dp_delay_stats_enabled(dp_pdev)) {
+		if (dp_pdev && ath12k_dp_latency_stats_enabled(dp_pdev)) {
 			ath12k_dp_peer_reset_delay_stats(dp_peer);
 			ath12k_dp_peer_reset_jitter_stats(dp_peer);
 			ath12k_dp_peer_reset_sojourn_stats(dp_peer);
@@ -9140,15 +9172,6 @@ void ath12k_debugfs_add_interface(struct ath12k_link_vif *arvif)
 	debugfs_create_file("btwt_remove_sta", 0200, arvif->debugfs_twt,
 			    arvif, &ath12k_fops_btwt_remove_sta);
 
-	if (!ahvif->mld_stats) {
-		ahvif->mld_stats = debugfs_create_file("mld_stats", 0600,
-						       vif->debugfs_dir,
-						       ahvif,
-						       &ath12k_fops_mld_stats);
-		if (IS_ERR(ahvif->mld_stats))
-			ahvif->mld_stats = NULL;
-	}
-
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (!ahvif->debugfs_rfs_core_mask) {
 		ahvif->debugfs_rfs_core_mask =
@@ -9172,6 +9195,15 @@ void ath12k_debugfs_add_interface(struct ath12k_link_vif *arvif)
 	 * label.
 	 */
 ap_and_sta_debugfs_file:
+	if (!ahvif->mld_stats) {
+		ahvif->mld_stats = debugfs_create_file("mld_stats", 0600,
+						       vif->debugfs_dir,
+						       ahvif,
+						       &ath12k_fops_mld_stats);
+		if (IS_ERR(ahvif->mld_stats))
+			ahvif->mld_stats = NULL;
+	}
+
 	if (ahvif->debugfs_primary_link)
 		return;
 

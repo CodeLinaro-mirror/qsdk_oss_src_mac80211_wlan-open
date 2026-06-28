@@ -24,7 +24,7 @@ void ath12k_wifi7_hal_extract_rx_desc_data_qcn9274(struct hal_rx_desc_data *rx_d
 						   struct hal_rx_desc *rx_desc,
 						   struct hal_rx_desc *ldesc);
 void ath12k_wifi7_hal_extract_rx_spd_data_qcn9274(struct hal_rx_spd_data *rx_info,
-						  struct hal_rx_desc *rx_desc, int set);
+						  struct hal_rx_desc *rx_desc);
 static inline
 bool ath12k_wifi7_hal_rx_h_first_msdu_qcn9274(struct hal_rx_desc *desc)
 {

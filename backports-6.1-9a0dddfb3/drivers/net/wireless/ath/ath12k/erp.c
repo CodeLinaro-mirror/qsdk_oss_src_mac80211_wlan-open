@@ -228,7 +228,7 @@ static void ath12k_erp_config_pcie_speed_width(struct pci_dev *root,
 		   pci_name(root), enter ? pci->speed : 1, enter ? 1 : pci->speed,
 		   enter ? pci->width : 1, enter ? 1 : pci->width);
 
-#ifndef PLATFORM_SDX85
+#ifndef PLATFORM_SDX
 	if (enter) {
 		if (pci->speed != 1 && pcie_set_link_speed(root, 1))
 			ath12k_err(NULL, "failed to reduce PCIe speed\n");

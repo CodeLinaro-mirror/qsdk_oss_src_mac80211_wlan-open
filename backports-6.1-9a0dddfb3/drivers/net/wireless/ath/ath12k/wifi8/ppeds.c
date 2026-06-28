@@ -669,7 +669,7 @@ u32 ath12k_ppeds_wifi8_get_batched_tx_desc(int ds_node_id,
 					u32 headroom)
 {
 	struct ath12k_base *ab = ds_node_map[ds_node_id];
-	struct ath12k_dp *dp = ab->dp;
+	struct ath12k_dp_hw_group *dp_hw_grp = ab->dp->dp_hw_grp;
 	int i = 0;
 	int allocated = 0;
 	struct sk_buff *skb = NULL;
@@ -681,16 +681,18 @@ u32 ath12k_ppeds_wifi8_get_batched_tx_desc(int ds_node_id,
 #if LINUX_VERSION_IS_GEQ(4, 4, 0)
 	flags = flags & ~__GFP_KSWAPD_RECLAIM;
 #endif
-	spin_lock_bh(&dp->ppe.ppeds_tx_desc_lock);
 
-	list_for_each_entry_safe(desc, tmp, &dp->ppe.ppeds_tx_desc_reuse_list, list) {
+	spin_lock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
+
+	list_for_each_entry_safe(desc, tmp, &dp_hw_grp->ppeds_tx_desc_reuse_list, list) {
 		if (!num_buff_req)
 			break;
 
 		list_del(&desc->list);
 		desc->in_use = true;
+		desc->device_id = ab->device_id;
 
-		dp->ppe.ppeds_tx_desc_reuse_list_len--;
+		dp_hw_grp->ppeds_tx_desc_reuse_list_len--;
 
 		prefetch(list_next_entry(desc, list));
 		num_buff_req--;
@@ -703,16 +705,17 @@ u32 ath12k_ppeds_wifi8_get_batched_tx_desc(int ds_node_id,
 	}
 
 	if (!num_buff_req) {
-		spin_unlock_bh(&dp->ppe.ppeds_tx_desc_lock);
+		spin_unlock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
 		goto update_stats_and_ret;
 	}
 
-	list_for_each_entry_safe(desc, tmp, &dp->ppe.ppeds_tx_desc_free_list, list) {
+	list_for_each_entry_safe(desc, tmp, &dp_hw_grp->ppeds_tx_desc_free_list, list) {
 		if (!num_buff_req)
 			break;
 
 		list_del(&desc->list);
 		desc->in_use = true;
+		desc->device_id = ab->device_id;
 
 		if (likely(!desc->skb)) {
 		       /* In skb recycler, if recyler module allocates the buffers
@@ -724,7 +727,7 @@ u32 ath12k_ppeds_wifi8_get_batched_tx_desc(int ds_node_id,
 			if (unlikely(!skb)) {
 				desc->in_use = false;
 				list_add_tail(&desc->list,
-						&dp->ppe.ppeds_tx_desc_free_list);
+						&dp_hw_grp->ppeds_tx_desc_free_list);
 				break;
 			}
 
@@ -739,7 +742,6 @@ u32 ath12k_ppeds_wifi8_get_batched_tx_desc(int ds_node_id,
 
 			desc->skb = skb;
 			desc->paddr = paddr;
-			desc->in_use = true;
 		} else {
 			pr_warn("skb found in ppeds_tx_desc_free_list");
 		}
@@ -754,7 +756,7 @@ u32 ath12k_ppeds_wifi8_get_batched_tx_desc(int ds_node_id,
 		i++;
 	}
 
-	spin_unlock_bh(&dp->ppe.ppeds_tx_desc_lock);
+	spin_unlock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
 
 	dsb(st);
 
@@ -904,12 +906,7 @@ int ath12k_wifi8_ppeds_attach(struct ath12k_base *ab)
 	 */
 	ab->hal.hal_ops->hal_ppeds_reo2ppe_cc_config(ab);
 
-	ath12k_dp_ppeds_tx_cmem_init(ab, ab->dp);
-	ret = ath12k_dp_ppeds_cc_desc_init(ab);
-	if (ret) {
-		ath12k_err(ab, "Failed to allocate ppe-ds descriptors\n");
-		return -ENOMEM;
-	}
+	ath12k_dp_ppeds_tx_cmem_init(ab);
 
 	spin_lock_init(&ab->dp->ppe.ppe_vp_tbl_lock);
 
@@ -1260,7 +1257,8 @@ int ath12k_wifi8_dp_ppeds_register_soc(struct ath12k_dp *dp, struct dp_ppe_ds_id
 			/*
 			 * Disable interrupt.
 			 */
-			disable_irq(ab->dp->ppe.ppeds_irq[ppe2tcl_irq_type]);
+			ath12k_hif_ppeds_irq_disable(ab, ppe2tcl_irq_type);
+
 			ppe2tcl_ring = &ab->hal.srng_list[ring_id];
 
 			ath12k_info(ab, "PPEDS:HBM auto_idx ring_id:%d ppe2tcl_ring:%p\n",
@@ -1283,7 +1281,8 @@ int ath12k_wifi8_dp_ppeds_register_soc(struct ath12k_dp *dp, struct dp_ppe_ds_id
 			/*
 			 * Disable interrupt.
 			 */
-			disable_irq(ab->dp->ppe.ppeds_irq[reo2ppe_irq_type]);
+			ath12k_hif_ppeds_irq_disable(ab, reo2ppe_irq_type);
+
 			ring_id = dp->ppe.reo2ppe_ring[ring_idx].ring_id;
 			reo2ppe_ring =  &ab->hal.srng_list[ring_id];
 
@@ -1522,19 +1521,21 @@ skip_ppeds_dp_srng_ring_alloc:
 
 	ath12k_hal_reo_config_reo2ppe_dest_info(ab);
 
-	ret = ath12k_dp_srng_setup(ab, &dp->ppe.tqm2ppe_txcmp_ring,
-					HAL_TQM2PPE,
-					PPEDS_TQM2PPE_TX_CMPLN_RING_NUM, 0,
-					DP_TQM2PPE_RING_SIZE);
-	if (ret) {
-		ath12k_err(ab,
+	if (dp->ppe.hw_buff_mgmt) {
+		ret = ath12k_dp_srng_setup(ab, &dp->ppe.tqm2ppe_txcmp_ring,
+				HAL_TQM2PPE,
+				PPEDS_TQM2PPE_TX_CMPLN_RING_NUM, 0,
+				DP_TQM2PPE_RING_SIZE);
+		if (ret) {
+			ath12k_err(ab,
 				"failed to set up wbm2sw ppeds tx completion ring :%d\n",
 				ret);
-		goto err;
-	}
+			goto err;
+		}
 
-	/* HBM */
-	tqm2ppe_ring = &ab->hal.srng_list[dp->ppe.tqm2ppe_txcmp_ring.ring_id];
+		/* HBM */
+		tqm2ppe_ring = &ab->hal.srng_list[dp->ppe.tqm2ppe_txcmp_ring.ring_id];
+	}
 
 	if (dp->ppe.txrx_hw_auto_idx) {
 		ret = ath12k_wifi8_dp_ppeds_register_soc(dp, &restore_idx);
@@ -1588,13 +1589,18 @@ void ath12k_wifi8_dp_ppeds_interrupt_stop(struct ath12k_base *ab)
 	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
 		return;
 
-	ath12k_hif_ppeds_irq_disable(ab, PPEDS_IRQ_REO2PPE);
+	if (!ab->dp->ppe.hw_buff_mgmt)
+		ath12k_hif_ppeds_irq_disable(ab, PPEDS_IRQ_REO2PPE);
+
 	ath12k_hif_ppeds_irq_disable(ab, PPEDS_IRQ_TX_COMPLETION);
 }
 
 void ath12k_wifi8_dp_ppeds_interrupt_start(struct ath12k_base *ab)
 {
-	ath12k_hif_ppeds_irq_enable(ab, PPEDS_IRQ_REO2PPE);
+
+	if (!ab->dp->ppe.hw_buff_mgmt)
+		ath12k_hif_ppeds_irq_enable(ab, PPEDS_IRQ_REO2PPE);
+
 	ath12k_hif_ppeds_irq_enable(ab, PPEDS_IRQ_TX_COMPLETION);
 }
 

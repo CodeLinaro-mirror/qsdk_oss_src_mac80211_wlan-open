@@ -13,6 +13,10 @@
 struct ath12k_sta;
 
 #define DP_MAX_NWIFI_HDR_LEN	30
+#define MAX_TP_TIDS	8
+
+/* 17 tids for DP, 2 for mgmt, and 1 shared between DP and mgmt */
+#define ATH12K_MAX_TIDS 20
 
 #define ip_hdrlen(iph) ((iph)->ihl * 4)
 
@@ -26,6 +30,30 @@ struct ath12k_sta;
 #define IPA_SET_RX_BUF_SMMU_UNMAP(...) ((void)0)
 #define ATH12K_IPA_DMA_MAP_SINGLE(...) ((void)0)
 #endif
+
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#define ATH12K_IPA_RX_BUF_DMA_BITS	32
+#endif
+
+struct link_peer_rx_tid_stats {
+	u32 received_frm_reo_cnt                : 8,
+	    received_frm_reo_bytes              : 24;
+	u32 sent_to_stack_ucast                 : 8,
+	    sent_to_stack_ucast_bytes           : 24;
+	u32 sent_to_stack_ucast_fast            : 8,
+	    sent_to_stack_ucast_fast_bytes      : 24;
+	u32 sent_to_stack_mcast                 : 8,
+	    sent_to_stack_mcast_bytes           : 24;
+	u32 sent_to_stack_mcast_fast            : 8,
+	    sent_to_stack_mcast_fast_bytes      : 24;
+	u32 sg_cnt                              : 8,
+	    sg_bytes                            : 24;
+	u8 non_amsdu;
+	u8 amsdu;
+	u8 mpdu_retry;
+	u8 mcast_cnt;
+	u8 bcast_cnt;
+} __aligned(64);
 
 /* different supported pkt types for routing */
 enum ath12k_routing_pkt_type {
@@ -124,7 +152,7 @@ struct ath12k_dp_rx_tid {
 	u16 rx_frag_bitmap;
 
 	struct sk_buff_head rx_frags;
-	struct hal_reo_dest_ring *dst_ring_desc;
+	void *desc;
 
 	/* Timer info related to fragments */
 	struct timer_list frag_timer;
@@ -137,7 +165,50 @@ struct ath12k_dp_rx_tid {
 
 	/* Per-TID lock protecting concurrent access to this TID's state */
 	spinlock_t tid_lock;
+	void    *smd_ctx;
 };
+
+/**
+ * struct ath12k_dp_smd_parked_rx_info - Parked Rx Q state during SMD BSS transition
+ *
+ * Analogous to smd_parked_ext_ctx for the Tx side. Holds the rx_tid[] state
+ * from the old peer (Current AP) so it can be transferred to the new peer
+ * (Target AP) during EXEC phase, preserving BA session state and REO queue
+ * descriptors.
+ *
+ * The vaddr/paddr in each rx_tid[] entry point to the SAME DMA memory as the
+ * old peer — ownership is transferred, not copied. The frag_timer fields are
+ * NOT valid after parking (must be re-initialized on restore).
+ *
+ * Lifetime: allocated in ath12k_wifi8_dp_smd_prep_rx_tid(), freed in
+ * ath12k_wifi8_dp_smd_exec_rx_tid().
+ */
+struct ath12k_dp_smd_parked_rx_info {
+	/* Snapshot of rx_tid[] from old peer.
+	 * vaddr/paddr: DMA memory ownership transferred (not copied).
+	 * frag_timer: NOT valid — re-initialized on restore.
+	 * rx_frags: flushed before parking (in-flight fragments dropped).
+	 */
+	struct ath12k_dp_rx_tid rx_tid[ATH12K_MAX_TIDS];
+
+	/* MMIC crypto context — ownership transferred (not duplicated) */
+	struct crypto_shash *tfm_mmic;
+
+	/* Number of valid TIDs (from ab->hal.hal_params->num_tids) */
+	u8 num_tids;
+
+	/* Is this parked state valid and ready for EXEC restore? */
+	bool valid;
+
+	/* Completion for synchronous REO flush during PREP phase.
+	 * Signaled by ath12k_wifi8_dp_smd_rx_flush_done() callback when
+	 * the FLUSH_CACHE command completes.
+	 */
+	struct completion flush_done;
+};
+
+void ath12k_dp_rx_tid_free_desc(struct ath12k_base *ab,
+				struct ath12k_dp_rx_tid *rx_tid);
 
 struct ath12k_dp_rx_reo_cache_flush_elem {
 	struct list_head list;
@@ -258,6 +329,90 @@ static inline u32 ath12k_uhr_gi_to_nl80211_uhr_gi(u8 sgi)
 	return ret;
 }
 
+static inline bool
+is_ieee80211_frame_da_mcast(struct sk_buff *msdu)
+{
+	struct ieee80211_hdr *hdr;
+	u16 fc;
+	u8 *da;
+
+	hdr = (struct ieee80211_hdr *)msdu->data;
+
+	fc = le16_to_cpu(hdr->frame_control);
+
+	if (ieee80211_has_tods(fc) && ieee80211_has_fromds(fc)) {
+		/* WDS: DA = Address 3 */
+		da = hdr->addr3;
+	} else if (ieee80211_has_tods(fc)) {
+		/* STA -> DS: DA = Address 3 */
+		da = hdr->addr3;
+	} else {
+		/* DS -> STA or IBSS: DA = Address 1 */
+		da = hdr->addr1;
+	}
+
+	return(is_multicast_ether_addr(da) ? 1 : 0);
+}
+
+static inline bool
+ath12k_dp_err_drop_needed(enum hal_wbm_rel_src_module src,
+			  int reo_push_reason, int reo_error_code,
+			  int rxdma_push_reason, int rxdma_error_code)
+{
+	if (src == HAL_WBM_REL_SRC_MODULE_REO) {
+		int err_rsn = HAL_REO_DEST_RING_PUSH_REASON_ERR_DETECTED;
+		int add_zero = HAL_REO_DEST_RING_ERROR_CODE_DESC_ADDR_ZERO;
+		int rout_inst = HAL_REO_DEST_RING_PUSH_REASON_ROUTING_INSTRUCTION;
+
+		if (reo_push_reason == rout_inst ||
+		    (reo_push_reason == err_rsn && reo_error_code == add_zero))
+			return false;
+
+		return true;
+	}
+
+	if (src == HAL_WBM_REL_SRC_MODULE_RXDMA &&
+	    rxdma_push_reason == HAL_RXDMA_PUSH_REASON_ERR_DETECTED) {
+		switch (rxdma_error_code) {
+		case HAL_REO_ENTR_RING_RXDMA_ECODE_UNAUTH_WDS_ERR:
+		case HAL_REO_ENTR_RING_RXDMA_ECODE_MULTICAST_ECHO_ERR:
+		case HAL_REO_ENTR_RING_RXDMA_ECODE_DECRYPT_ERR:
+		case HAL_REO_ENTR_RING_RXDMA_ECODE_TKIP_MIC_ERR:
+			return false;
+		default:
+			return true;
+		}
+	}
+
+	return true;
+}
+
+static inline void
+ath12k_dp_rx_wbm_err_dev_free_skb(struct ath12k_dp *dp,
+				  struct sk_buff *msdu,
+				  enum ath12k_wbm_err_drop_reason drop_reason)
+{
+	DP_DEVICE_STATS_INC(dp, wbm_err.drop[drop_reason], 1);
+	if (msdu)
+		dev_kfree_skb_any(msdu);
+}
+
+void
+ath12k_dp_rx_update_eapol_stats(struct ath12k_dp *dp, struct sk_buff *msdu);
+void
+ath12k_dp_rx_update_vow_delay_stats(struct ath12k_pdev_dp *dp_pdev,
+				    struct link_peer_rx_tid_stats *stats,
+				    struct sk_buff *msdu,
+				    bool da_is_mcbc, u8 tid,
+				    struct ath12k_tid_rx_stats *tstats);
+int ath12k_dp_get_rx_frame_type(u8 rx_decap_type);
+bool ath12k_dp_rx_check_nwifi_hdr_len_valid(struct ath12k_dp *dp,
+					    u8 decap_type,
+					    struct sk_buff *msdu);
+u32 ath12k_fill_reo_drop_reason(enum hal_reo_dest_ring_error_code err_code);
+bool ath12k_dp_rx_h_mec_drop(struct ath12k_pdev_dp *dp_pdev,
+			     struct ath12k_vif *ahvif,
+			     int link_id, int peer_id);
 int ath12k_dp_rx_ampdu_start(struct ath12k *ar,
 			     struct ieee80211_ampdu_params *params,
 			     u8 link_id);
@@ -359,4 +514,17 @@ int ath12k_dp_rxdma_ring_sel_config(struct ath12k_base *ab);
 u16 ath12k_wifi7_dp_rx_get_peer_id(struct ath12k_base *ab,
 				   enum ath12k_peer_metadata_version ver,
 				   __le32 peer_metadata);
+void ath12k_dp_rx_frag_timer(struct timer_list *timer);
+void ath12k_dp_rx_update_stats(struct ath12k_pdev_dp *pdev,
+			       struct ath12k_dp_peer *peer,
+			       struct link_peer_rx_tid_stats *stats,
+			       int ring_id, u8 hw_link_id,
+			       u8 active_tid_mask);
+void
+ath12k_dp_rx_update_delay_stats(struct ath12k_dp_peer *peer, struct sk_buff *msdu,
+				u8 tid, u8 ring);
+void ath12k_dp_tid_wbm_err_stats(struct ath12k_pdev_dp *dp_pdev,
+				 u8 tid,
+				 bool is_reo,
+				 u32 error_code);
 #endif /* ATH12K_DP_RX_H */

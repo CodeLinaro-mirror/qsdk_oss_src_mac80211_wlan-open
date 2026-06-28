@@ -2141,14 +2141,21 @@ static int ath12k_svc_burst_stats_update(struct ath12k_base *ab,
 
 	q_id = q_type - QOS_TID_MDSUQ_MAX;
 
-	svc_intval_stats = &mld_peer->mld_qos_stats[tid][q_id].svc_intval_stats;
+	if (!mld_peer->mld_stats.mld_qos_stats)
+		return -ENODATA;
+
+	svc_intval_stats =
+		&mld_peer->mld_stats.mld_qos_stats[tid * QOS_TID_MDSUQ_MAX
+		+ q_id].svc_intval_stats;
 	if (!svc_intval_stats)
 		return -ENODATA;
 
 	svc_intval_stats->success_cnt += svc_int_success;
 	svc_intval_stats->failure_cnt += svc_int_fail;
 
-	burst_size_stats = &mld_peer->mld_qos_stats[tid][q_id].burst_size_stats;
+	burst_size_stats =
+		&mld_peer->mld_stats.mld_qos_stats[tid * QOS_TID_MDSUQ_MAX
+		+ q_id].burst_size_stats;
 	if (!burst_size_stats)
 		return -ENODATA;
 
@@ -2421,6 +2428,8 @@ void ath12k_dp_htt_htc_t2h_msg_handler(struct ath12k_base *ab,
 		ath12k_htt_pri_link_peer_migrate_indication(ab, skb);
 		break;
 	case HTT_T2H_MSG_TYPE_GLOBAL_PEER_ID_UNMAP:
+		ath12k_dbg(ab, ATH12K_DBG_PEER,
+			   "htt rx: HTT_T2H_MSG_TYPE_GLOBAL_PEER_ID_UNMAP received\n");
 		ath12k_dp_arch_peer_cleanup_indication(dp, skb);
 		break;
 	default:

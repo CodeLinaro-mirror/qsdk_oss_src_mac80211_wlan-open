@@ -52,4 +52,7 @@ void athdbg_create_wmi_debugfs(struct dentry *dbg_dir,
 extern const struct file_operations debugfs_mask_fops;
 extern const struct file_operations debugfs_qdss_enable_fops;
 extern const struct file_operations debugfs_qdss_collect_fops;
+extern const struct file_operations debugfs_snapshot_fops;
+void athdbg_if_send_tlv(struct ath12k_base *ab, u32 event_id,
+			const void *tlv_data, size_t tlv_len);
 #endif

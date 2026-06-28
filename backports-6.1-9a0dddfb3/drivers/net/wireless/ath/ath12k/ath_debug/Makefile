@@ -7,4 +7,5 @@ ath_debug-y += athdbg_core.o \
 			athdbg_qdss.o \
 			athdbg_mhi.o \
 			athdbg_uio.o \
-			athdbg_wmi_recording.o
+			athdbg_wmi_recording.o \
+			athdbg_netlink.o

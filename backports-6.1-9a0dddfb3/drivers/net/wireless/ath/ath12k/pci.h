@@ -126,7 +126,7 @@ struct ath12k_pci_device_family_ops {
 	struct ath12k_mgmt *(*mgmt_init)(struct ath12k_base *ab);
 	void (*mgmt_deinit)(struct ath12k_mgmt *mgmt);
 #ifdef CPTCFG_EXT_IPA_OFFLOAD
-	void (*ipa_init)(struct ath12k_base *ab);
+	int (*ipa_init)(struct ath12k_base *ab);
 #endif
 	void (*get_reset_reason)(struct ath12k_base *ab);
 };

@@ -19,6 +19,10 @@
 #include "dp_peer.h"
 #include "../wmi.h"
 #include "umac_reset.h"
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#include "qcn_extns/ipa/dp_ipa.h"
+#endif
+#include "../qcn_extns/ipa/dp_ipa_pub.h"
 
 static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 					struct ath12k_ext_irq_grp *irq_grp,
@@ -338,6 +342,12 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 		ab->dp->ppe.ppe_ops->ath12k_ppeds_interrupt_start(ab);
 #endif
 
+	ret = ath12k_dp_ipa_init(dp->ab);
+	if (ret) {
+		ath12k_err(dp->ab, "IPA: ipa init failed");
+		goto fail_dp_mon_rx_free;
+	}
+
 	return 0;
 
 fail_dp_mon_rx_free:
@@ -360,9 +370,7 @@ fail_ppeds_detach:
 fail_nss_plugin_unregister:
 	ath12k_nss_plugin_unregister_ops(ab);
 
-#ifndef PLATFORM_SDX85
 fail_dp_bank_profiles_cleanup:
-#endif
 #endif
 	ath12k_dp_deinit_bank_profiles(ab);
 fail_hw_cc_cleanup:

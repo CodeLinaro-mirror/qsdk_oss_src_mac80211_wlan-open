@@ -10,10 +10,12 @@
 #include "athdbg_minidump.h"
 #include "athdbg_mem.h"
 
+#if LINUX_VERSION_IS_LESS(6,8,0)
 #if !defined(CONFIG_DEBUG_MEM_USAGE)
 #undef kzalloc
 #undef kmalloc
 #undef kfree
+#endif
 #endif
 
 unsigned int athmem_stats_num_nodes;
@@ -526,7 +528,7 @@ static void athmem_create_object(unsigned long long ptr, size_t size,
 
 char *ath_minidump_update_free(void *ptr)
 {
-	if (!athmem_flag_init_done)
+	if (!athmem_flag_init_done || RB_EMPTY_ROOT(&athmem_obj_tree_root))
 		return NULL;
 
 	return athmem_delete_obj_full((unsigned long)ptr);

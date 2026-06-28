@@ -379,6 +379,10 @@ struct ieee80211_vif_chanctx_switch {
  * @BSS_CHANGED_LINK_ADV_TTLM: Advertised TID to Link mapping changed on link interface.
  *	This is used to indicate the driver to start the advertisement of TTLM on this AP
  *	link during start ap.
+ * @BSS_CHANGED_STA_NOL_CAC_DONE: NOL history CAC status changed for a managed link
+ *	This is used to indicate to the driver of the CAC completion for a
+ *	channel marked with NOL history.
+ * @BSS_CHANGED_NPCA: NPCA (Non-Primary Channel Access) parameters changed.
  */
 enum ieee80211_bss_change {
 	BSS_CHANGED_ASSOC		= 1<<0,
@@ -423,6 +427,8 @@ enum ieee80211_bss_change {
 	BSS_CHANGED_MLD_ADV_TTLM	= BIT_ULL(40),
 	BSS_CHANGED_LINK_ADV_TTLM	= BIT_ULL(41),
 	BSS_CHANGED_AP_DPS_ASSIST	= BIT_ULL(42),
+	BSS_CHANGED_STA_NOL_CAC_DONE	= BIT_ULL(43),
+	BSS_CHANGED_NPCA		= BIT_ULL(44),
 	/* when adding here, make sure to change ieee80211_reconfig */
 };
 
@@ -630,6 +636,35 @@ struct ieee80211_parsed_tpe {
 };
 
 /**
+ * struct ieee80211_bss_npca_params - BSS NPCA (Non-Primary Channel Access) parameters
+ * @min_dur_thresh: minimum duration threshold (4 bits)
+ * @switch_delay: delay before switching to non-primary channel (6 bits)
+ * @switch_back_delay: delay before switching back to primary channel (6 bits)
+ * @init_qsrc: initial quiet-start reference count (2 bits)
+ * @moplen: minimum PPDU length for NPCA eligibility (1 bit)
+ * @enabled: whether NPCA is active for this BSS
+ */
+struct ieee80211_bss_npca_params {
+	u32 min_dur_thresh:4,
+	    switch_delay:6,
+	    switch_back_delay:6,
+	    init_qsrc:2,
+	    moplen:1,
+	    enabled:1;
+};
+
+/**
+ * struct ieee80211_uhr_config - UHR critical-update interval configuration.
+ *
+ * @adv_notification_interval: advance notification interval value in TUs (0 = not set).
+ * @update_in_tim_interval: update in TIM interval value in TUs (0 = not set).
+ */
+struct ieee80211_uhr_config {
+	u8 adv_notification_interval;
+	u8 update_in_tim_interval;
+};
+
+/**
  * struct ieee80211_bss_conf - holds the BSS's changing parameters
  *
  * This structure keeps information about a BSS (and an association
@@ -807,7 +842,10 @@ struct ieee80211_parsed_tpe {
  * @beacon_tx_mode: Beacon Tx Mode setting.
  * @ml_max_rec_links: ML Max recommended links
  * @dps_assist_support: does this BSS support DPS Assist Support.
+ * @uhr_config: UHR critical-update interval configuration timers.
  * @smd_params: advertised SMD feature params.
+ * @cu_info: Critical Update session state, tracks the type and progress
+ *	of an ongoing Critical Update for this BSS link.
  */
 struct ieee80211_bss_conf {
 	struct ieee80211_vif *vif;
@@ -936,8 +974,11 @@ struct ieee80211_bss_conf {
 	u8 ml_max_rec_links;
 	bool is_cfp_enabled;
 	bool dps_assist_support;
+	struct ieee80211_uhr_config uhr_config;
+	struct cfg80211_cu_info cu_info;
 	enum nl80211_auth_type auth_type;
 	struct cfg80211_smd_params smd_params;
+	struct ieee80211_bss_npca_params npca;
 };
 
 /**
@@ -2529,6 +2570,13 @@ struct wireless_dev *ieee80211_vif_to_wdev_relaxed(struct ieee80211_vif *vif);
  *	number generation only
  * @IEEE80211_KEY_FLAG_SPP_AMSDU: SPP A-MSDUs can be used with this key
  *	(set by mac80211 from the sta->spp_amsdu flag)
+ * @IEEE80211_KEY_FLAG_SMD_PTK: This key was installed as part of an SMD BSS
+ *	Transition PTK derivation (§37.15, IEEE 802.11bn). mac80211 sets this
+ *	flag automatically when SMD PTK mode is enabled on the station.
+ *	When set: (1) the PTK0-rekey warning and BA session teardown are
+ *	suppressed — the AP switch is deliberate, not a security event;
+ *	(2) identical-key rejection is bypassed to allow reinstallation of
+ *	the derived PTK during transition completion.
  */
 enum ieee80211_key_flags {
 	IEEE80211_KEY_FLAG_GENERATE_IV_MGMT	= BIT(0),
@@ -2543,6 +2591,7 @@ enum ieee80211_key_flags {
 	IEEE80211_KEY_FLAG_NO_AUTO_TX		= BIT(9),
 	IEEE80211_KEY_FLAG_GENERATE_MMIE	= BIT(10),
 	IEEE80211_KEY_FLAG_SPP_AMSDU		= BIT(11),
+	IEEE80211_KEY_FLAG_SMD_PTK		= BIT(12),
 };
 
 /**
@@ -2662,6 +2711,131 @@ enum ieee80211_sta_state {
 };
 
 /**
+ * enum ieee80211_uhr_reconfig_action - UHR Link reconfiguration actions
+ *
+ * Actions for 802.11bn UHR link reconfiguration operations,
+ * including SMD BSS Transition.
+ *
+ * @IEEE80211_UHR_LINK_RECONFIG_PREPARE: Prepare partner links for transition.
+ *	Called after ST Prepare Response SUCCESS.
+ * @IEEE80211_UHR_LINK_RECONFIG_EXECUTE: Execute the BSS transition.
+ *	Called after ST Execution Response SUCCESS.
+ * @IEEE80211_UHR_LINK_RECONFIG_DYNAMIC_CONTEXT: Notify driver that all links
+ *	have completed transition to the target AP MLD and the association
+ *	context has been fully updated. Called after ieee80211_set_associated()
+ *	and old STA teardown in the DL drain completion path. At this point
+ *	current_sta is the newly-active (target) STA; target_sta is NULL.
+ * @IEEE80211_UHR_LINK_RECONFIG_ABORT: Abort transition and rollback.
+ *	Called on failure, timeout, or explicit abort.
+ */
+enum ieee80211_uhr_link_reconfig_action {
+	IEEE80211_UHR_LINK_RECONFIG_PREPARE_REQ,
+	IEEE80211_UHR_LINK_RECONFIG_PREPARE_RESP,
+	IEEE80211_UHR_LINK_RECONFIG_EXECUTE_REQ,
+	IEEE80211_UHR_LINK_RECONFIG_EXECUTE_RESP,
+	IEEE80211_UHR_LINK_RECONFIG_DYNAMIC_CONTEXT,
+	IEEE80211_UHR_LINK_RECONFIG_ABORT,
+	IEEE80211_UHR_LINK_RECONFIG_REMAP_LINKS,
+};
+
+/**
+ * struct ieee80211_uhr_link_transfer_info - Per-link transfer parameters
+ * @valid: Whether this link entry is valid
+ * @link_id: Link ID
+ * @target_bssid: Target AP BSSID for this link
+ * @link_conf: Pointer to target link's bss_conf, valid during callback only
+ * @beacon_int: Beacon interval
+ * @dtim_period: DTIM period
+ * @transfer_pn: Whether to transfer PN state
+ * @pn_rx: RX PN values per TID
+ * @pn_tx: TX PN value
+ * @transfer_sn: Whether to transfer sequence numbers
+ * @sn_rx: RX sequence numbers per TID
+ * @sn_tx: TX sequence numbers per TID
+ * @transfer_ba: Whether to transfer BA session state
+ * @ba_sessions: BA session parameters per TID
+ */
+struct ieee80211_uhr_link_transfer_info {
+	bool valid;
+	u8 link_id;
+	u8 target_bssid[ETH_ALEN];
+	struct ieee80211_bss_conf *link_conf;
+
+	bool transfer_pn;
+	u64 pn_rx[IEEE80211_NUM_TIDS];
+	u64 pn_tx;
+
+	bool transfer_sn;
+	u16 sn_rx[IEEE80211_NUM_TIDS];
+	u16 sn_tx[IEEE80211_NUM_TIDS];
+
+	bool transfer_ba;
+	struct {
+		u8 tid;
+		u16 buf_size;
+		u16 ssn;
+		u16 win_start;
+	} ba_sessions[IEEE80211_NUM_TIDS];
+};
+
+/**
+ * struct ieee80211_uhr_link_reconfig_info - UHR link reconfiguration parameters
+ * @transitioning_links: Bitmap of links being transitioned
+ * @primary_link_id: Primary Link ID (preserved during prep)
+ * @target_aid: AID for target AP MLD
+ * @target_ap_mld_addr: Target AP MLD address
+ * @dl_drain_time_tu: DL Drain period in TUs
+ * @links: Per-link configuration
+ */
+struct ieee80211_uhr_link_reconfig_info {
+	u16 target_aid;
+	u16 transitioning_links;
+	u8 primary_link_id;
+	u8 target_ap_mld_addr[ETH_ALEN];
+	u32 dl_drain_time_tu;
+	bool request_dl_sn_not_transferred;
+	bool request_ul_sn_not_transferred;
+
+	/*
+	 * REMAP_LINKS action: tap_to_sap_link[tap_lid] = sap_lid (-1 = unmapped).
+	 * Driver swaps ahvif->link[] pointers so ahvif->link[tap_lid] points to
+	 * the arvif that was previously at ahvif->link[sap_lid].
+	 */
+	s8 tap_to_sap_link[IEEE80211_MLD_MAX_NUM_LINKS];
+
+	struct ieee80211_uhr_link_transfer_info links[IEEE80211_MLD_MAX_NUM_LINKS];
+};
+
+/**
+ * ieee80211_smd_dl_drain_complete - Notify mac80211 of DL drain completion
+ * @vif: virtual interface
+ * @target_mld_addr: target AP MLD address
+ *
+ * Called by driver when the DL drain timer expires for the primary link
+ * during SMD BSS transition execution. This triggers mac80211 to complete
+ * Phase B (primary link swap) and Phase C (finalization) of the EXEC flow.
+ *
+ * Context: Must be called with wiphy mutex held.
+ */
+void ieee80211_smd_dl_drain_complete(struct ieee80211_vif *vif,
+				     const u8 *target_mld_addr);
+
+/**
+ * ieee80211_smd_dl_drain_complete_irqsafe - IRQ-safe DL drain completion notify
+ * @vif: virtual interface
+ * @target_mld_addr: target AP MLD address
+ *
+ * IRQ-safe version of ieee80211_smd_dl_drain_complete(). Can be called from
+ * any context including softirq/tasklet (e.g. WMI event handlers running in
+ * tasklet context). Internally schedules a wiphy_work that runs with the
+ * wiphy mutex held, then calls ieee80211_smd_dl_drain_complete().
+ *
+ * Context: Any context (IRQ-safe). No locks required.
+ */
+void ieee80211_smd_dl_drain_complete_irqsafe(struct ieee80211_vif *vif,
+					     const u8 *target_mld_addr);
+
+/**
  * enum ieee80211_sta_rx_bandwidth - station RX bandwidth
  * @IEEE80211_STA_RX_BW_20: station can only receive 20 MHz
  * @IEEE80211_STA_RX_BW_40: station can receive up to 40 MHz
@@ -2766,6 +2940,10 @@ struct ieee80211_sta_aggregates {
  * @eht_cap: EHT capabilities of this STA
  * @uhr_cap: UHR capabilities of this STA
  * @punctured: RU Puncturing bitmap of this STA
+ * @npca_offset: NPCA primary channel offset from the primary channel, derived
+ *	from IEEE80211_UHR_NPCA_PARAMS_PRIMARY_CHAN_OFFS in the UHR operation Element
+ * @npca_puncture_bitmap: NPCA disabled sub-channel bitmap; 0 if the
+ *	DIS_SUBCH_BMAP_PRES flag is not set in the NPCA Element
  * @agg: per-link data for multi-link aggregation
  * @bandwidth: current bandwidth the station can receive with
  * @rx_nss: in HT/VHT, the maximum number of spatial streams the
@@ -2773,6 +2951,7 @@ struct ieee80211_sta_aggregates {
  *	notifications and capabilities. The value is only valid after
  *	the station moves to associated state.
  * @txpwr: the station tx power configuration
+ * @npca: current NPCA (Non-Primary Channel Access) parameters for this link
  *
  */
 struct ieee80211_link_sta {
@@ -2789,7 +2968,10 @@ struct ieee80211_link_sta {
 	struct ieee80211_he_6ghz_capa he_6ghz_capa;
 	struct ieee80211_sta_eht_cap eht_cap;
 	struct ieee80211_sta_uhr_cap uhr_cap;
+	struct ieee80211_sta_uhr_npca_info npca_info;
 	u32 punctured;
+	u8 npca_offset;
+	u16 npca_puncture_bitmap;
 
 	struct ieee80211_sta_aggregates agg;
 
@@ -2797,6 +2979,8 @@ struct ieee80211_link_sta {
 	enum ieee80211_sta_rx_bandwidth bandwidth;
 	enum ieee80211_sta_rx_bandwidth sta_max_bandwidth;
 	struct ieee80211_sta_txpwr txpwr;
+
+	struct cfg80211_uhr_npca_params npca;
 };
 
 /**
@@ -2862,6 +3046,7 @@ struct ieee80211_link_sta {
  *	reconfiguration.
  * @control_mic_pad: Padding info for control frames
  * @smd_params: SMD parameters
+ * @epp_peer: Indicates that the peer is an EPP peer.
  */
 struct ieee80211_sta {
 	u8 addr[ETH_ALEN] __aligned(2);
@@ -2901,6 +3086,7 @@ struct ieee80211_sta {
 		u16 matched_rem_links;
 	} reconf;
 
+	bool is_uhr_link_reconf;
 	u16 eml_cap;
 	u16 mld_cap_op;
 	struct net_device *dev;
@@ -2908,6 +3094,8 @@ struct ieee80211_sta {
 	u8 control_mic_pad;
 
 	struct  cfg80211_peer_smd_params smd_params;
+
+	bool epp_peer;
 
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
@@ -5019,6 +5207,30 @@ struct ieee80211_ppe_vp_ds_params {
  * @get_6ghz_dev_deployment_type: Get the 6 GHz device deployment type.
  * @ap_power_save: Introduces infrastructure in mac80211 to support forwarding of
  *	AP Powersave configuration parameters from user space to driver.
+ * @uhr_mode_update: Update per-link UHR mode parameters (NPCA) for the
+ *	given station. Called after link_sta npca fields have been updated.
+ *	@sta may be NULL if no associated station was found.
+ * @critical_update: Initiate a Critical Update session on @link_id.
+ *	The driver or firmware must stitch @element into subsequent beacons and
+ *	set the CU indication bit for the CU window, then call ieee80211_cu_notify()
+ *	at each ECU phase boundary.
+ *
+ * @uhr_link_reconfig: Drive the UHR Link Reconfiguration state machine for
+ *	an SMD BSS Transition. Called at each phase of the transition:
+ *	@IEEE80211_UHR_LINK_RECONFIG_PREPARE_REQ — ST Prep Request sent;
+ *	@IEEE80211_UHR_LINK_RECONFIG_PREPARE_RESP — ST Prep Response received,
+ *	driver should allocate target vdev/peer resources;
+ *	@IEEE80211_UHR_LINK_RECONFIG_EXECUTE_REQ — ST Exec Request sent;
+ *	@IEEE80211_UHR_LINK_RECONFIG_EXECUTE_RESP — ST Exec Response received,
+ *	driver should commit the link switch;
+ *	@IEEE80211_UHR_LINK_RECONFIG_DYNAMIC_CONTEXT — post-transition context
+ *	update (group key, dynamic BA parameters);
+ *	@IEEE80211_UHR_LINK_RECONFIG_REMAP_LINKS — remap vdev link IDs from SAP
+ *	to TAP space for diff-links transitions;
+ *	@IEEE80211_UHR_LINK_RECONFIG_ABORT — transition aborted, driver should
+ *	release any resources allocated at PREPARE_RESP time.
+ *	@current_sta is the current (serving AP) peer; @target_sta is the
+ *	target AP peer (NULL for ABORT). @info carries per-phase parameters.
  */
 struct ieee80211_ops {
 	void (*tx)(struct ieee80211_hw *hw,
@@ -5139,6 +5351,17 @@ struct ieee80211_ops {
 			 struct ieee80211_sta *sta,
 			 enum ieee80211_sta_state old_state,
 			 enum ieee80211_sta_state new_state);
+	int (*uhr_smd_update)(struct ieee80211_hw *hw,
+			      struct ieee80211_vif *vif,
+			      struct ieee80211_sta *peer,
+			      u32 role, u32 type, u32 status,
+			      u32 dl_sn, u32 ul_sn, u32 dl_drain_time);
+	int (*uhr_link_reconfig)(struct ieee80211_hw *hw,
+				 struct ieee80211_vif *vif,
+				 struct ieee80211_sta *current_sta,
+				 struct ieee80211_sta *target_sta,
+				 enum ieee80211_uhr_link_reconfig_action action,
+				 struct ieee80211_uhr_link_reconfig_info *info);
 	void (*sta_pre_rcu_remove)(struct ieee80211_hw *hw,
 				   struct ieee80211_vif *vif,
 				   struct ieee80211_sta *sta);
@@ -5467,6 +5690,13 @@ struct ieee80211_ops {
 	int (*ap_power_save)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			     int link_id,
 			     struct cfg80211_ap_power_save_params *params);
+	int (*uhr_mode_update)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+			       struct ieee80211_sta *sta);
+	int (*critical_update)(struct ieee80211_hw *hw,
+			       struct ieee80211_vif *vif,
+			       unsigned int link_id,
+			       enum nl80211_cu_type cu_type,
+			       const u8 *ie, size_t ie_len);
 #ifdef CPTCFG_QCN_EXTN
 	int (*set_muedca_mode)(struct ieee80211_hw *hw, int radio_idx,
 			       u8 muedca_mode);
@@ -7899,6 +8129,20 @@ ieee80211_get_uhr_iftype_cap_vif(const struct ieee80211_supported_band *sband,
 }
 
 /**
+ * ieee80211_get_uhr_iftype_npca_info_vif - return UHR NPCA info for sband/vif
+ * @sband: the sband to search for the iftype on
+ * @vif: the vif to get the iftype from
+ *
+ * Return: pointer to the struct ieee80211_sta_uhr_npca_info, or %NULL if none found
+ */
+static inline const struct ieee80211_sta_uhr_npca_info *
+ieee80211_get_uhr_iftype_npca_info_vif(const struct ieee80211_supported_band *sband,
+					struct ieee80211_vif *vif)
+{
+	return ieee80211_get_uhr_iftype_npca_info(sband, ieee80211_vif_type_p2p(vif));
+}
+
+/**
  * ieee80211_update_mu_groups - set the VHT MU-MIMO groud data
  *
  * @vif: the specified virtual interface
@@ -8631,6 +8875,23 @@ mesh_nss_offld_proxy_path_exp_update(struct ieee80211_vif *vif, u8* da,
 void ieee80211_critical_update(struct ieee80211_vif *vif, unsigned int link_id,
 				bool critical_flag, u8 bpcc);
 
+/**
+ * ieee80211_cu_notify - notify mac80211 of a UHR ECU state transition
+ * @hw: pointer to the hardware
+ * @vif: virtual interface
+ * @link_id: the link on which the state transition occurred
+ * @cu_state: new ECU state, see &enum nl80211_cu_state
+ *
+ * Called by the driver at each ECU phase boundary. mac80211 updates
+ * @link_conf->cu_in_progress accordingly and forwards a
+ * %NL80211_CMD_CRITICAL_UPDATE_NOTIFY event carrying %NL80211_ATTR_CU_STATE
+ * to user space. On %NL80211_CU_STATE_ECU_END the CU session is cleared.
+ */
+void ieee80211_cu_notify(struct ieee80211_hw *hw,
+			 struct ieee80211_vif *vif,
+			 unsigned int link_id,
+			 enum nl80211_cu_state cu_state);
+
 /*
  * ieee80211_gstrings_stats - stats for ethtool interface
  */
@@ -8790,4 +9051,19 @@ void ieee80211_enable_offchan_packet_capture(struct ieee80211_vif *vif,
  * @enable: enable/disable extended monitor indication
  */
 void ieee80211_enable_ext_monitor(struct ieee80211_vif *vif, bool enable);
+
+enum ieee80211_smd_roam_config_types {
+	IEEE80211_SMD_ROAM_CONFIG_TYPE_PREP_REQ		= 0,
+	IEEE80211_SMD_ROAM_CONFIG_TYPE_PREP_RESP	= 1,
+	IEEE80211_SMD_ROAM_CONFIG_TYPE_EXEC_REQ		= 2,
+	IEEE80211_SMD_ROAM_CONFIG_TYPE_EXEC_RESP	= 3,
+	IEEE80211_SMD_ROAM_CONFIG_TYPE_DYNAMIC_CONTEXT	= 4,
+	IEEE80211_SMD_ROAM_CONFIG_TYPE_TERMINATION	= 5,
+};
+
+enum ieee80211_smd_roam_role {
+	IEEE80211_SMD_ROAM_ROLE_SERVING_AP = 1,
+	IEEE80211_SMD_ROAM_ROLE_TARGET_AP  = 2,
+	IEEE80211_SMD_ROAM_ROLE_STA        = 3,
+};
 #endif /* MAC80211_H */

@@ -130,6 +130,7 @@
 #define ATH12K_PHY_6GHZ "phy03"
 #define ATH12K_PHY_6GHZ_LOW "phy03"
 #define ATH12K_PHY_6GHZ_HIGH "phy04"
+#define ATH12K_PHY_2GHZ_5GHZ "phy05"
 
 #ifdef CPTCFG_QCN_EXTN
 /* Scan radio uses a single PHY name for all bands */
@@ -349,6 +350,7 @@ enum ath12k_skb_flags {
 	ATH12K_SKB_MESH_RX_INFO = BIT(8),
 	ATH12K_SKB_MGMT_MLO_PARAMS = BIT(9),
 	ATH12K_SKB_MCAST_LINK_BMAP_VALID = BIT(10),
+	ATH12K_SKB_MGMT_SMD_HI_PRI = BIT(11),
 };
 
 struct ath12k_skb_cb {
@@ -762,6 +764,11 @@ struct ath12k_vap_cfg {
 	u32 eht_ul_ppdu_bw;
 	u32 eht_ul_shortgi;
 	u32 eht_ul_stbc;
+	u32 he_ltf;
+	u32 he_ul_ltf;
+	u32 he_ar_gi_ltf;
+	u32 he_ar_ldpc;
+	u32 he_rtsthrshld;
 	u32 enablertscts;
 	u32 he_dcm;
 	u32 he_extrange;
@@ -774,6 +781,20 @@ struct ath12k_vap_cfg {
 	u32 vht_sgimask;
 	u32 vht80_rate;
 	u32 dis_lpi_ant_optimize;
+	/* Per-link EHT OFDMA/TXBF override */
+	bool eht_dl_ofdma_configured;
+	bool eht_dl_ofdma;
+	bool eht_ul_ofdma_configured;
+	bool eht_ul_ofdma;
+	bool eht_dl_ofdma_txbf_configured;
+	bool eht_dl_ofdma_txbf;
+	/* Per-link HE OFDMA/TXBF override */
+	bool he_dl_ofdma_configured;
+	bool he_dl_ofdma;
+	bool he_ul_ofdma_configured;
+	bool he_ul_ofdma;
+	bool he_dl_ofdma_txbf_configured;
+	bool he_dl_ofdma_txbf;
 };
 
 struct ath12k_rssi_deauth_config {
@@ -858,6 +879,8 @@ struct ath12k_link_vif {
 	u64 obss_color_bitmap;
 	struct wiphy_work update_obss_color_notify_work;
 	struct wiphy_work update_bcn_template_work;
+	enum nl80211_cu_state pending_cu_state;
+	struct wiphy_work uhr_cu_notify_work;
 	bool beacon_prot;
 	bool control_frame_prot;
 	u64 tbtt_offset;
@@ -882,6 +905,7 @@ struct ath12k_link_vif {
 	bool is_link_removal_in_progress;
 	bool is_link_removal_update_pending;
 	struct ath12k_wmi_mlo_link_removal_event_params link_removal_data;
+	bool update_skip_link;
 	u8 map_id;
 	struct ath12k_qos_map *qos_map;
 	struct wiphy_work set_dscp_tid_work;
@@ -943,7 +967,7 @@ struct ath12k_vlan_iface {
 	struct ieee80211_vif *parent_vif;
 	bool attach_link_done;
 	int ppe_vp_profile_idx[ATH12K_NUM_MAX_LINKS];
-	u8 grp_key_slot_map[ATH12K_NUM_MAX_LINKS][WMI_MAX_KEY_INDEX + 1];
+	u8 grp_key_slot[ATH12K_NUM_MAX_LINKS];
 	bool is_wds_4addr;
 };
 
@@ -1165,6 +1189,13 @@ struct ath12k_vif {
 	struct ieee80211_chanctx_conf chanctx;
 	struct ath12k_reg_tpc_power_info reg_tpc_info;
 	struct ath12k_event_queue event_queue;
+	/* SMD BSS Transition state */
+	struct {
+		bool exec_in_progress;
+		u8 target_mld_addr[ETH_ALEN];
+		u16 transitioning_links;
+		u8 primary_link_id;
+	} smd;
 };
 
 struct ath12k_vif_iter {
@@ -1301,6 +1332,20 @@ struct ath12k_sta_migration_data {
 	int ppe_vp_num;
 };
 
+enum ath12k_smd_tid {
+	ATH12K_SMD_TX_MGMT_TID = 15,
+	ATH12K_SMD_RX_MGMT_TID = 16,
+};
+
+#define ATH12K_SMD_NUM_TIDS WMI_SMD_NUM_TIDS
+struct ath12k_ba_session_params {
+	u16  buf_size;
+	u16  ssn;
+	u16  timeout;
+	bool amsdu;
+	bool valid;
+};
+
 struct ath12k_sta {
 	struct ath12k_vif *ahvif;
 	enum hal_pn_type pn_type;
@@ -1351,6 +1396,9 @@ struct ath12k_sta {
 	struct ath12k_sta_extn ahsta_extn;
 #endif
 	u16 free_logical_idx_map;
+
+	struct ath12k_ba_session_params rx_ba_params[ATH12K_SMD_NUM_TIDS];
+	struct ath12k_ba_session_params tx_ba_params[ATH12K_SMD_NUM_TIDS];
 
 	/* Opaque RCU pointer to ath12k_dp_peer */
 	void __rcu *dp_peer;
@@ -1665,9 +1713,24 @@ struct ath12k_radio_cfg {
 	u32 regdomain;
 	bool chan144_enabled;
 	u32 pdev_to_reo_dest;
+	u32 cal_ver_check;
 #ifdef CPTCFG_QCN_EXTN
 	struct ath12k_radio_cfg_extn radio_cfg_extn;
 #endif
+};
+
+/**
+ * enum ath12k_rf_path_index - internal RF path operating range selection
+ * @ATH12K_RF_PATH_FULL_RANGE: Primary path — full 5G operating range
+ * @ATH12K_RF_PATH_HIGH_RANGE: Secondary path — high 5G operating range only
+ *
+ * Used as the value of ath12k_rf_path_ctx.current_index and for internal
+ * comparisons in mac.c and reg.c.  Vendor-facing code in vendor.c uses the
+ * parallel qca_wlan_vendor_rf_path_mode enum which has identical values.
+ */
+enum ath12k_rf_path_index {
+	ATH12K_RF_PATH_FULL_RANGE = 0,
+	ATH12K_RF_PATH_HIGH_RANGE = 1,
 };
 
 /**
@@ -1717,6 +1780,28 @@ struct ath12k_cu_mem {
 	__le32 uhr_ebpcc;
 	__le32 max_chan_switch_time;
 } __packed;
+
+/**
+ * struct ath12k_rf_path_ctx - per-radio RF path switch state
+ * @current_index: active RF path index
+ * @target_index: requested RF path index
+ * @freq_low:  active 5G lower bound in MHz for the current RF path
+ * @freq_high: active 5G upper bound in MHz for the current RF path
+ * @rf_switch_done: signals FW response received
+ * @is_switch_in_progress: true while RF path switch is in progress
+ * @is_fw_resp_success: FW reported switch success
+ * @supported: true if radio advertised valid EXT2 secondary 5G caps
+ */
+struct ath12k_rf_path_ctx {
+	u32  current_index;
+	u32  target_index;
+	u32  freq_low;
+	u32  freq_high;
+	struct completion rf_switch_done;
+	bool is_switch_in_progress;
+	bool is_fw_resp_success;
+	bool supported;
+};
 
 struct ath12k {
 	struct ath12k_base *ab;
@@ -1999,7 +2084,13 @@ struct ath12k {
 	struct work_struct mvr_ch_switch_notify_work;
 	u32 mvr_ch_switch_notify_vdev_bm;
 	struct ath12k_peer_map_pending_event peer_map_event;
+	struct ath12k_rf_path_ctx rf_path_ctx;
 };
+
+static inline bool ath12k_is_rf_path_switch_supported(struct ath12k *ar)
+{
+	return ar->rf_path_ctx.supported;
+}
 
 struct ath12k_6ghz_sp_reg_rule {
 	int num_6ghz_sp_rule;
@@ -2068,6 +2159,7 @@ struct ath12k_band_cap {
 	u32 eht_cap_phy_info[WMI_MAX_EHTCAP_PHY_SIZE];
 	u32 uhr_cap_mac_info[WMI_MAX_UHRCAP_MAC_SIZE];
 	u32 uhr_cap_phy_info[WMI_MAX_UHRCAP_PHY_SIZE];
+	u32 uhr_param_npca_info;
 	u32 eht_mcs_20_only;
 	u32 eht_mcs_80;
 	u32 eht_mcs_160;
@@ -2098,6 +2190,18 @@ struct ath12k_pdev_cap {
 	u8 max_tx_nss;
 	u8 max_rx_nss;
 	u32 scan_radio_caps;
+};
+
+struct ath12k_smd_update_work {
+	struct work_struct work;
+	struct ieee80211_hw *hw;
+	struct ath12k_vif *ahvif;
+
+	u16 link_bitmap;
+	u32 role, type, status;
+	u32 dl_sn, ul_sn, dl_drain_time;
+
+	u8 peer_addr[ETH_ALEN];
 };
 
 #define ATH12K_SCAN_RADIO_CAP_SUPPORTED   BIT(0)
@@ -2350,6 +2454,12 @@ struct ath12k_internal_pci {
         u32 dp_irq_num[ATH12K_QCN6432_EXT_IRQ_GRP_NUM_MAX];
 };
 
+struct ath12k_mem_dev {
+	struct device dev;
+	bool dev_registered;
+	bool rmem_inited;
+};
+
 /* Master structure to hold the hw data which may be used in core module */
 struct ath12k_base {
 	enum ath12k_hw_rev hw_rev;
@@ -2428,6 +2538,10 @@ struct ath12k_base {
 	struct ath12k_pdev __rcu *pdevs_active[MAX_RADIOS];
 
 	struct ath12k_wmi_hal_reg_capabilities_ext_arg hal_reg_cap[MAX_RADIOS];
+	/* Secondary RF path freq caps from SERVICE_READY_EXT2 (rf_switch_config) */
+	struct ath12k_wmi_hal_reg_capabilities_ext2_arg hal_reg_cap_ext2[MAX_RADIOS];
+	/* Boot-time RF path selection from rf_switch_config INI parameter. */
+	enum ath12k_rf_path_index rf_switch_config;
 	unsigned long long free_vdev_map;
 	unsigned long long free_vdev_stats_id_map;
 	wait_queue_head_t peer_mapping_wq;
@@ -2632,6 +2746,8 @@ struct ath12k_base {
 
 	struct work_struct recovery_work;
 	struct ath12k_dp_umac_reset dp_umac_reset;
+	int umcmn_irq_num;
+	struct timer_list umcmn_timer;
 	bool early_cal_support;
 	bool powerup_triggered;
 	struct ath12k_wsi_info bypass_wsi_info;
@@ -2647,6 +2763,8 @@ struct ath12k_base {
 
 
 	u32 cu_mem_cfg_mask;
+	struct ath12k_mem_dev qmi_mem_dev;
+	struct ath12k_mem_dev mlo_mem_dev;
 
 	bool map_event_required;
 
@@ -3142,23 +3260,32 @@ static inline void ath12k_core_dma_unmap_page(struct device *dev, dma_addr_t han
 #endif
 }
 
+#ifndef PLATFORM_SDX
 static inline void ath12k_core_dmac_inv_range_no_dsb(const void *start, const void *end)
 {
-#ifndef PLATFORM_SDX85
 #ifndef CONFIG_IO_COHERENCY
 	dmac_inv_range_no_dsb(start, end);
 #endif
-#endif
 }
+#else
+static inline void ath12k_core_dmac_inv_range_no_dsb(const void *start, const void *end)
+{
+}
+#endif
 
+
+#ifndef PLATFORM_SDX
 static inline void ath12k_core_dmac_inv_range(const void *start, const void *end)
 {
-#ifndef PLATFORM_SDX85
 #ifndef CONFIG_IO_COHERENCY
 	dmac_inv_range(start, end);
 #endif
-#endif
 }
+#else
+static inline void ath12k_core_dmac_inv_range(const void *start, const void *end)
+{
+}
+#endif
 
 static inline void ath12k_core_dsb(void)
 {
@@ -3167,14 +3294,18 @@ static inline void ath12k_core_dsb(void)
 #endif
 }
 
+#ifndef PLATFORM_SDX
 static inline void ath12k_core_dmac_clean_range(const void *start, const void *end)
 {
-#ifndef PLATFORM_SDX85
 #ifndef CONFIG_IO_COHERENCY
 	dmac_clean_range(start, end);
 #endif
-#endif
 }
+#else
+static inline void ath12k_core_dmac_clean_range(const void *start, const void *end)
+{
+}
+#endif
 
 static inline struct ath12k_base *ath12k_pdev_to_ab(struct ath12k_pdev *pdev)
 {

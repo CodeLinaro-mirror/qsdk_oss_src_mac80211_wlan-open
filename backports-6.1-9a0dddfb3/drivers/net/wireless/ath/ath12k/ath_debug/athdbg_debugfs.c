@@ -7,11 +7,14 @@
 #include "athdbg_minidump.h"
 #include "athdbg_wmi_recording.h"
 
+#define ATHDBG_SNAPSHOT_BUF_SIZE 64
+
 extern struct ath_debug_base *athdbg_base;
 const struct file_operations debugfs_req_fops;
 const struct file_operations debugfs_mask_fops;
 const struct file_operations debugfs_qdss_enable_fops;
 const struct file_operations debugfs_qdss_collect_fops;
+const struct file_operations debugfs_snapshot_fops;
 
 #if !defined(CPTCFG_MAC80211_ATHMEMDEBUG) && defined(CONFIG_QCA_MINIDUMP)
 static ssize_t athdbg_minidump_read(struct file *file, char __user *user_buf,
@@ -205,6 +208,51 @@ const struct file_operations debugfs_mask_fops = {
 	.owner = THIS_MODULE,
 };
 EXPORT_SYMBOL(debugfs_mask_fops);
+
+static atomic_t athdbg_snapshot_enabled = ATOMIC_INIT(0);
+
+static ssize_t athdbg_snapshot_read(struct file *file, char __user *user_buf,
+				    size_t count, loff_t *ppos)
+{
+	char buf[ATHDBG_SNAPSHOT_BUF_SIZE];
+	int len;
+
+	len = scnprintf(buf, sizeof(buf), "%d\n",
+			atomic_read(&athdbg_snapshot_enabled));
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t athdbg_snapshot_write(struct file *file,
+				     const char __user *user_buf,
+				     size_t count, loff_t *ppos)
+{
+	char buf[8] = {0};
+	u32 val;
+	int ret;
+
+	ret = simple_write_to_buffer(buf, sizeof(buf) - 1, ppos, user_buf, count);
+	if (ret <= 0)
+		return ret;
+
+	buf[ret] = '\0';
+	strim(buf);
+
+	if (kstrtou32(buf, 0, &val))
+		return -EINVAL;
+
+	atomic_set(&athdbg_snapshot_enabled, val ? 1 : 0);
+	pr_info("athdbg: snapshot collection %s\n", val ? "enabled" : "disabled");
+
+	return count;
+}
+
+const struct file_operations debugfs_snapshot_fops = {
+	.read  = athdbg_snapshot_read,
+	.write = athdbg_snapshot_write,
+	.open  = simple_open,
+	.owner = THIS_MODULE,
+};
+EXPORT_SYMBOL(debugfs_snapshot_fops);
 
 static ssize_t athdbg_qdss_enable_read(struct file *file,
 				       char __user *user_buf,

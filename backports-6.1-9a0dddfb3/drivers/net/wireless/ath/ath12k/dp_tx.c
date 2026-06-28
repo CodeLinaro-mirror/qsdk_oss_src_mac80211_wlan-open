@@ -45,33 +45,19 @@ void ath12k_tid_tx_drop_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 rea
 EXPORT_SYMBOL(ath12k_tid_tx_drop_stats);
 
 int ath12k_dp_tx_get_mcast_group_slot(struct ath12k_vif *vlan_ahvif,
-				      u8 link_id,
-				      struct ieee80211_tx_info *info)
+				      u8 link_id)
 {
-	struct ath12k_vlan_iface *vif_vlan;
-	struct ieee80211_key_conf *hw_key;
-	u8 keyidx;
 	int slot;
 
 	if (!vlan_ahvif || !vlan_ahvif->vlan_iface ||
-	    vlan_ahvif->vlan_iface->is_wds_4addr || !info)
+	    vlan_ahvif->vlan_iface->is_wds_4addr)
 		return -1;
 
 	if (link_id >= ATH12K_NUM_MAX_LINKS)
 		return -1;
 
-	hw_key = info->control.hw_key;
-	if (!hw_key || (hw_key->flags & IEEE80211_KEY_FLAG_PAIRWISE))
-		return -1;
-
-	keyidx = hw_key->keyidx;
-	if (keyidx > WMI_MAX_KEY_INDEX)
-		return -1;
-
-	vif_vlan = vlan_ahvif->vlan_iface;
-	slot = vif_vlan->grp_key_slot_map[link_id][keyidx];
-	if (slot == ATH12K_GROUP_KEY_SLOT_INVALID ||
-	    slot <= 0 || slot >= ATH12K_GROUP_KEYS_NUM_MAX)
+	slot = vlan_ahvif->vlan_iface->grp_key_slot[link_id];
+	if (slot <= 0 || slot >= ATH12K_GROUP_KEYS_NUM_MAX)
 		return -1;
 
 	return slot;
@@ -80,7 +66,7 @@ EXPORT_SYMBOL(ath12k_dp_tx_get_mcast_group_slot);
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 void
-ath12k_dp_ppeds_tx_release_desc_list_bulk(struct ath12k_dp *dp,
+ath12k_dp_ppeds_tx_release_desc_list_bulk(struct ath12k_dp_hw_group *dp_hw_grp,
 					  struct list_head *local_list,
 					  int local_list_len,
 					  struct list_head *local_list_no_skb,
@@ -93,7 +79,7 @@ ath12k_dp_ppeds_tx_release_desc_list_bulk(struct ath12k_dp *dp,
 	int count = 0;
 	struct list_head local_list_for_reuse;
 
-	spin_lock_bh(&dp->ppe.ppeds_tx_desc_lock);
+	spin_lock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
 
 	if (unlikely(list_no_skb_count)) {
 		list_for_each_entry_safe(desc, tmp, local_list_no_skb, list) {
@@ -101,16 +87,16 @@ ath12k_dp_ppeds_tx_release_desc_list_bulk(struct ath12k_dp *dp,
 			desc->in_use = false;
 		}
 
-		list_splice_tail(local_list_no_skb, &dp->ppe.ppeds_tx_desc_free_list);
+		list_splice_tail(local_list_no_skb, &dp_hw_grp->ppeds_tx_desc_free_list);
 	}
 
 	hotlist_remaining_len = ath12k_ppeds_desc_params.ppeds_hotlist_len -
-						dp->ppe.ppeds_tx_desc_reuse_list_len;
+						dp_hw_grp->ppeds_tx_desc_reuse_list_len;
 
 	if (likely(hotlist_remaining_len >= local_list_len)) {
-		list_splice_tail(local_list, &dp->ppe.ppeds_tx_desc_reuse_list);
-		dp->ppe.ppeds_tx_desc_reuse_list_len += local_list_len;
-		spin_unlock_bh(&dp->ppe.ppeds_tx_desc_lock);
+		list_splice_tail(local_list, &dp_hw_grp->ppeds_tx_desc_reuse_list);
+		dp_hw_grp->ppeds_tx_desc_reuse_list_len += local_list_len;
+		spin_unlock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
 		return;
 	}
 
@@ -138,9 +124,10 @@ ath12k_dp_ppeds_tx_release_desc_list_bulk(struct ath12k_dp *dp,
 		/* cut the local_list into local_list_for_reuse and local_list */
 		list_cut_position(&local_list_for_reuse, local_list, &last_desc->list);
 
-		/* merge local_list_for_reuse into global dp->ppe.ppeds_tx_desc_reuse_list */
-		list_splice_tail(&local_list_for_reuse, &dp->ppe.ppeds_tx_desc_reuse_list);
-		dp->ppe.ppeds_tx_desc_reuse_list_len += count + 1;
+		/* merge local_list_for_reuse into global ppeds_tx_desc_reuse_list */
+		list_splice_tail(&local_list_for_reuse,
+				 &dp_hw_grp->ppeds_tx_desc_reuse_list);
+		dp_hw_grp->ppeds_tx_desc_reuse_list_len += count + 1;
 	}
 
 skip_reuse_list:
@@ -163,9 +150,9 @@ skip_reuse_list:
 	}
 
 	/* Add the remaining descriptors to the free list */
-	list_splice_tail(local_list, &dp->ppe.ppeds_tx_desc_free_list);
+	list_splice_tail(local_list, &dp_hw_grp->ppeds_tx_desc_free_list);
 
-	spin_unlock_bh(&dp->ppe.ppeds_tx_desc_lock);
+	spin_unlock_bh(&dp_hw_grp->ppeds_tx_desc_lock);
 
 	dev_kfree_skb_list_fast(&free_list_head);
 }
@@ -186,7 +173,6 @@ void ath12k_dp_ppeds_tx_comp_get_desc(struct ath12k_base *ab,
 }
 EXPORT_SYMBOL(ath12k_dp_ppeds_tx_comp_get_desc);
 
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 void ath12k_hal_srng_ppeds_dst_inv_entry(struct ath12k_base *ab,
 					 struct hal_srng *srng, int entries)
 {
@@ -217,7 +203,6 @@ void ath12k_hal_srng_ppeds_dst_inv_entry(struct ath12k_base *ab,
 	dsb(st);
 }
 EXPORT_SYMBOL(ath12k_hal_srng_ppeds_dst_inv_entry);
-#endif
 
 u16 dp_sawf_msduq_peer_id_set(u16 peer_id, u8 msduq)
 {
@@ -476,6 +461,21 @@ void *ath12k_dp_metadata_align_skb(struct sk_buff *skb, u8 tail_len)
 	return metadata;
 }
 EXPORT_SYMBOL(ath12k_dp_metadata_align_skb);
+
+void *ath12k_dp_metadata_align_skb_head(struct sk_buff *skb, u8 head_len)
+{
+	void *metadata;
+
+	if (unlikely(skb_cow_head(skb, head_len)))
+		return NULL;
+
+	skb_push(skb, head_len);
+	metadata = skb->data;
+	memset(metadata, 0, head_len);
+
+	return metadata;
+}
+EXPORT_SYMBOL(ath12k_dp_metadata_align_skb_head);
 
 static void ath12k_dp_tx_move_payload(struct sk_buff *skb,
 				      unsigned long delta,
@@ -930,7 +930,7 @@ void ath12k_dp_tx_stats_update_pre_enqueue(struct ath12k_pdev_dp *dp_pdev,
 						 TX_RECV_FROM_STACK, ring_id);
 	}
 
-	if (ath12k_dp_delay_stats_enabled(dp_pdev) ||
+	if (ath12k_dp_latency_stats_enabled(dp_pdev) ||
 	    ath12k_dp_vow_stats_enabled(dp_pdev) ||
 	    unlikely(skb->mark & SDWF_VALID_MASK))
 		__net_timestamp(skb);
@@ -1056,7 +1056,7 @@ void ath12k_dp_tx_stats_post_enqueue(struct ath12k_dp *dp,
 				    ATH_TX_UNICAST_PKTS);
 	}
 
-	if (ath12k_dp_delay_stats_enabled(dp_pdev) ||
+	if (ath12k_dp_latency_stats_enabled(dp_pdev) ||
 	    ath12k_dp_vow_stats_enabled(dp_pdev))
 		tx_desc->hw_enqueue_tstamp = (u32)ktime_to_us(ktime_get_real());
 }

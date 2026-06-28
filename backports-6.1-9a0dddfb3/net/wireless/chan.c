@@ -712,12 +712,17 @@ static void cfg80211_set_chans_dfs_state(struct wiphy *wiphy, u32 center_freq,
 			if (radar_bitmap & 1 << i) {
 				c->dfs_state = dfs_state;
 				c->dfs_state_entered = jiffies;
+				if (wiphy->sta_dfs_en)
+					c->flags |= IEEE80211_CHAN_NOL_HISTORY;
 			}
 		}
 		else {
 			c->dfs_state = dfs_state;
 			c->dfs_state_entered = jiffies;
 			c->dfs_state_last_available = jiffies;
+			if (dfs_state == NL80211_DFS_UNAVAILABLE &&
+			    wiphy->sta_dfs_en)
+				c->flags |= IEEE80211_CHAN_NOL_HISTORY;
 		}
 	}
 }
@@ -1161,6 +1166,38 @@ bool cfg80211_chandef_dfs_nol_clear(struct wiphy *wiphy,
 	return true;
 }
 EXPORT_SYMBOL(cfg80211_chandef_dfs_nol_clear);
+
+/**
+ * cfg80211_chandef_dfs_nol_history - check if any non-punctured sub-channel
+ *                                    has NOL history and is not yet available
+ * @wiphy:    wiphy
+ * @chandef:  target channel definition (punctured bitmap respected)
+ *
+ * Returns true if at least one sub-channel carries IEEE80211_CHAN_NOL_HISTORY
+ * and has not yet reached NL80211_DFS_AVAILABLE, meaning a CAC must complete
+ * before TX is permitted.  Returns false if all sub-channels are clean.
+ */
+bool cfg80211_chandef_dfs_nol_history(struct wiphy *wiphy,
+				      const struct cfg80211_chan_def *chandef)
+{
+	struct ieee80211_channel *c;
+
+	if (WARN_ON(!cfg80211_chandef_valid(chandef)))
+		return false;
+
+	for_each_subchan(chandef, freq, cf) {
+		c = ieee80211_get_channel_khz(wiphy, freq);
+		if (!c || !(c->flags & IEEE80211_CHAN_RADAR))
+			continue;
+
+		if ((c->flags & IEEE80211_CHAN_NOL_HISTORY) &&
+		    c->dfs_state != NL80211_DFS_AVAILABLE)
+			return true;
+	}
+
+	return false;
+}
+EXPORT_SYMBOL(cfg80211_chandef_dfs_nol_history);
 
 bool cfg80211_chandef_dfs_usable(struct wiphy *wiphy,
 				 const struct cfg80211_chan_def *chandef)

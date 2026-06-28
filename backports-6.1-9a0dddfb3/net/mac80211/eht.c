@@ -83,7 +83,9 @@ ieee80211_eht_cap_ie_to_sta_eht_cap(struct ieee80211_sub_if_data *sdata,
 	 * since the EHT MCS NSS size was calculated based on the original
 	 * HE capability IE (before modification).
 	 */
-	if (link_sta->pub->he_cap.has_he &&
+	if (link_sta->pub->he_cap.has_he && he_cap_ie_elem &&
+	    (he_cap_ie_elem->phy_cap_info[0] &
+	     IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_160MHZ_IN_5G) &&
 	    !(link_sta->pub->he_cap.he_cap_elem.phy_cap_info[0] &
 	      IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_160MHZ_IN_5G)) {
 		/* Clear 160MHz MCS fields in EHT capability */

@@ -982,8 +982,8 @@ int ath12k_dp_ast_entry_create(struct ath12k_dp_hw_group *dp_hw_grp,
 	ret = ath12k_ast_entry_rhash_add(dp_hw_grp, sw_ast_entry);
 	if (ret) {
 		ast_stats->hash_tbl_add_fail++;
-		ath12k_err(NULL, "Failed to add SW AST entry to hash table index = %u\n",
-			   ast_index);
+		ath12k_err(NULL, "Failed to add SW AST entry to hash table index = %u ret: %d\n",
+			   ast_index, ret);
 		ast_base->ast_entries[ast_index] = NULL;
 		/* Clear the entry flags before freeing */
 		sw_ast_entry->ast_entry_flags = ATH12K_AST_ENTRY_EMPTY_FLAGS;

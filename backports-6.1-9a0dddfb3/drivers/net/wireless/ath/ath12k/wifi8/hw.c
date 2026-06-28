@@ -24,6 +24,7 @@
 #include "../testmode.h"
 #include "../dp_peer.h"
 #include "../dp_tx.h"
+#include "../mac.h"
 #include "dp_tx.h"
 #include "dp.h"
 #include "hal_qcn9625.h"
@@ -142,6 +143,7 @@ ath12k_dp_peer_migration_qcn9625(struct ath12k_link_vif *arvif,
 
 		/* Update to new primary link */
 		ahsta->primary_link_id = peer_node->pri_link_id;
+		ml_peer->primary_link_id = peer_node->pri_link_id;
 
 		/* Set new primary link flags */
 		arsta = rcu_dereference(ahsta->link[peer_node->pri_link_id]);
@@ -185,6 +187,7 @@ static const struct ath12k_hw_ops qcn9625_ops = {
  * Group 10,11 : Monitor destination(TX,RX)
  * Group 12: Monitor buffer(TX,RX)
  * Group 13: Roaming RX ring
+ * Group 18: UMCMN interrupts
  * Group 19-21: PPE interrupts
  * Group 22: UMAC reset
  */
@@ -210,7 +213,11 @@ static struct ath12k_hw_ring_mask ath12k_wifi8_hw_ring_mask_qcn9625 = {
 		ATH12K_WIFI8_REGULAR_RX_RING_MASK(2),
 		ATH12K_WIFI8_REGULAR_RX_RING_MASK(3),
 		0, 0, 0,
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+		0,
+#else
 		ATH12K_WIFI8_REGULAR_RX_RING_MASK(4),
+#endif
 		0,
 		BIT(ATH12K_DP_RX_ROAMING_RING1),
 	},
@@ -313,7 +320,15 @@ static struct ath12k_hw_ring_mask ath12k_wifi8_hw_ring_mask_qcn9625 = {
 		0,
 		ATH12K_RX_PEER_TELEMETRY_RING_MASK
 	},
-
+	/* Group 18 */
+	.umcmn_interrupts = {
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		0, 0,
+		ATH12K_UMCMN_INTR_MASK_0,
+	},
 	/* Group 19-21 */
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	.ppe2tcl = {
@@ -434,7 +449,11 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 
 		.iova_mask = 0,
 
+#ifdef PLATFORM_SDX
+		.supports_aspm = false,
+#else
 		.supports_aspm = true,
+#endif
 
 		.current_cc_support = false,
 
@@ -444,6 +463,8 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.en_qdsslog = true,
 		.support_fse = true,
 		.cumac_support = true,
+		.cumac_chip_priority = 1,
+		.support_umcmn_interrupts = UMCMN_INTERRUPT_POLL,
 		.alloc_cacheable_memory = true,
 		.spectral = {
 			.fft_sz = 7,
@@ -453,6 +474,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 			.fft_hdr_len = 24,
 			.max_fft_bins = 2048,
 			.fragment_160mhz = true,
+			.supports_320mhz = true,
 		},
 		.supports_ap_ps = true,
 		.support_ce_manual_poll = true,
@@ -562,6 +584,8 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.en_qdsslog = true,
 		.support_fse = true,
 		.cumac_support = true,
+		.cumac_chip_priority = 2,
+		.support_umcmn_interrupts = UMCMN_INTERRUPT_POLL,
 		.alloc_cacheable_memory = true,
 		.spectral = {
 			.fft_sz = 7,
@@ -571,6 +595,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 			.fft_hdr_len = 24,
 			.max_fft_bins = 2048,
 			.fragment_160mhz = true,
+			.supports_320mhz = true,
 		},
 		.supports_ap_ps = true,
 		.support_ce_manual_poll = true,
@@ -671,8 +696,11 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 
 		.iova_mask = 0,
 
+#ifdef PLATFORM_SDX
+		.supports_aspm = false,
+#else
 		.supports_aspm = true,
-
+#endif
 		.current_cc_support = false,
 
 		.ce_ie_addr = NULL,
@@ -681,6 +709,8 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.en_qdsslog = true,
 		.support_fse = true,
 		.cumac_support = true,
+		.cumac_chip_priority = 1,
+		.support_umcmn_interrupts = UMCMN_INTERRUPT_ENABLE,
 		.alloc_cacheable_memory = true,
 		.spectral = {
 			.fft_sz = 7,
@@ -690,6 +720,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 			.fft_hdr_len = 24,
 			.max_fft_bins = 2048,
 			.fragment_160mhz = true,
+			.supports_320mhz = true,
 		},
 		.supports_ap_ps = true,
 		.support_ce_manual_poll = true,
@@ -770,6 +801,15 @@ static bool ath12k_wifi8_mac_is_mgmt_action_link_agnostic(struct sk_buff *skb)
 			return false;
 		}
 		break;
+	case WLAN_CATEGORY_PROTECTED_UHR: {
+		u8 type = *(++buf);
+
+		if (type == IEEE80211_UHR_LINK_RECONF_TYPE_ST_EXEC)
+			return false;
+		else
+			return true;
+		break;
+	}
 	default:
 		/* Extend as per feature addition */
 		break;
@@ -810,10 +850,10 @@ ath12k_wifi8_mac_get_tx_link(struct ieee80211_sta *sta, struct ieee80211_vif *vi
 	struct ieee80211_bss_conf *bss_conf;
 	struct ath12k_link_sta *arsta;
 	struct ath12k_base *ab = NULL;
-	u8 user_link = link, link_id;
 	struct ath12k_sta *ahsta;
 	struct ath12k *ar = NULL;
 	unsigned long links;
+	u8 link_id;
 
 	/* Use the link id passed or the first available link */
 	if (!sta) {
@@ -853,15 +893,52 @@ ath12k_wifi8_mac_get_tx_link(struct ieee80211_sta *sta, struct ieee80211_vif *vi
 		return ahsta->primary_link_id;
 
 	/* 802.11 frame cases */
-	if (link == IEEE80211_LINK_UNSPECIFIED)
+	if (link == IEEE80211_LINK_UNSPECIFIED) {
 		link = ahsta->deflink.link_id;
+		/* deflink.link_id may be stale (255) after a link is removed from
+		 * the serving-AP STA during SMD transition. Fall back to
+		 * primary_link_id which is stable for the lifetime of the session.
+		 */
+		if (link >= ATH12K_NUM_MAX_LINKS || !(ahsta->links_map & BIT(link)))
+			link = ahsta->primary_link_id;
+	}
 
 	if (!ieee80211_is_mgmt(hdr->frame_control))
 		return link;
 
-	if (ahsta->deflink.arvif->ar) {
+	if (ieee80211_is_action(hdr->frame_control))
+		pr_debug("SMD DBG get_tx_link: sta=%p ahsta=%p arvif=%p lid=%u lmap=0x%x link=%u pri=%u\n",
+			 sta, ahsta, ahsta->deflink.arvif, ahsta->deflink.link_id,
+			 ahsta->links_map, link, ahsta->primary_link_id);
+
+	if (ahsta->deflink.arvif && ahsta->deflink.arvif->ar) {
 		ar = ahsta->deflink.arvif->ar;
 		ab = ar->ab;
+	} else {
+		/* deflink.arvif is stale; derive ar/ab from the resolved link */
+		struct ath12k_link_sta *_arsta = rcu_dereference(ahsta->link[link]);
+
+		if (ieee80211_is_action(hdr->frame_control)) {
+			unsigned long _lmap = ahsta->links_map;
+			u8 _lid;
+
+			pr_debug("SMD DBG get_tx_link: deflink.arvif stale, using link[%u]\n",
+				 link);
+			for_each_set_bit(_lid, &_lmap, ATH12K_NUM_MAX_LINKS) {
+				struct ath12k_link_sta *_ls =
+					rcu_dereference(ahsta->link[_lid]);
+
+				pr_debug("SMD DBG get_tx_link: link[%u] arsta=%p arvif=%p ar=%p\n",
+					 _lid, _ls,
+					 _ls ? _ls->arvif : NULL,
+					 (_ls && _ls->arvif) ? _ls->arvif->ar : NULL);
+			}
+		}
+
+		if (_arsta && _arsta->arvif && _arsta->arvif->ar) {
+			ar = _arsta->arvif->ar;
+			ab = ar->ab;
+		}
 	}
 
 	if (test_bit(ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED, &ab->ag->flags) &&
@@ -894,8 +971,7 @@ ath12k_wifi8_mac_get_tx_link(struct ieee80211_sta *sta, struct ieee80211_vif *vi
 	 * the frame will be transmitted on master (primary) link. An individually
 	 * addressed mgmt frame can be transmitted on master link after peer assoc.
 	 */
-	if (user_link != IEEE80211_LINK_UNSPECIFIED ||
-	    ahsta->state <= IEEE80211_STA_ASSOC ||
+	if (ahsta->state <= IEEE80211_STA_ASSOC ||
 	    !ath12k_wifi8_mac_is_mgmt_link_agnostic(skb))
 		goto skip_link_agnostic_tx;
 
@@ -1306,6 +1382,8 @@ static const struct ieee80211_ops ath12k_ops_wifi8 = {
 	.change_sta_links               = ath12k_mac_op_change_sta_links,
 	.can_activate_links             = ath12k_mac_op_can_activate_links,
 	.set_dscp_tid                   = ath12k_mac_op_set_dscp_tid,
+	.uhr_link_reconfig              = ath12k_mac_op_uhr_link_reconfig,
+	.uhr_smd_update			= ath12k_mac_op_uhr_smd_update,
 #ifdef CONFIG_PM
 	.suspend			= ath12k_wow_op_suspend,
 	.resume				= ath12k_wow_op_resume,
@@ -1337,6 +1415,8 @@ static const struct ieee80211_ops ath12k_ops_wifi8 = {
 	.get_6ghz_dev_deployment_type	= ath12k_mac_op_get_6ghz_dev_deployment_type,
 	.ap_power_save                  = ath12k_mac_op_ap_power_save,
 	.set_monitor_flags		= ath12k_mac_op_set_monitor_flags,
+	.uhr_mode_update		= ath12k_mac_op_sta_uhr_mode_update,
+	.critical_update		= ath12k_mac_op_critical_update,
 };
 
 int ath12k_wifi8_hw_init(struct ath12k_base *ab)

@@ -79,6 +79,8 @@ void ath12k_wifi8_wmi_init_qcn9625(struct ath12k_base *ab,
 	config->max_beacon_size = ath12k_cfg_get(ab, ATH12K_CFG_AP_MAX_MGMT_FRM_SZ);
 	config->max_num_group_keys = ATH12K_GROUP_KEYS_NUM_MAX;
 	config->rep_ul_resp = ath12k_cfg_get(ab, ATH12K_CFG_REP_UL_RESP);
+	config->host_reo_mgmt_support =
+		!ath12k_cfg_get(ab, ATH12K_CFG_REO_MGMT_PATH_DISABLE);
 }
 
 void ath12k_wifi8_cu_notify(struct ath12k *ar,

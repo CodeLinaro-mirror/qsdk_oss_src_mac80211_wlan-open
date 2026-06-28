@@ -13,6 +13,8 @@
 #include <linux/vmalloc.h>
 #endif
 
+#include <linux/vmalloc.h>
+
 extern struct ath_debug_base *athdbg_base;
 
 struct athdbg_qdss_trace_mem_seg {
@@ -29,11 +31,13 @@ struct athdbg_qmi_event_qdss_trace_save_data {
 int athdbg_qmi_alloc_qdss_mem(struct athdbg_qmi *dbg_qmi)
 {
 	struct ath12k_base *ab = container_of(dbg_qmi, struct ath12k_base, dbg_qmi);
+#if defined(CONFIG_UPSTREAM_BUILD) || defined(ATH12K_CMA_SUPPORT)
+	struct target_mem_chunk *chunk;
+	struct device *dev = ab->qmi_mem_dev.rmem_inited ?
+			     &ab->qmi_mem_dev.dev : ab->dev;
+#else
 	struct reserved_mem *ddr_rmem = NULL;
 	const struct athdbg_to_ath12k_ops *dbg_to_ath_ops = athdbg_base->dbg_to_ath_ops;
-#ifdef CONFIG_UPSTREAM_BUILD
-	struct target_mem_chunk *chunk;
-#endif
 
 	if (dbg_to_ath_ops && dbg_to_ath_ops->get_reserved_mem_by_name)
 		ddr_rmem = dbg_to_ath_ops->get_reserved_mem_by_name(ab, "host-ddr-mem");
@@ -42,6 +46,7 @@ int athdbg_qmi_alloc_qdss_mem(struct athdbg_qmi *dbg_qmi)
 		pr_err("host-ddr-mem not available in dts\n");
 		return -ENODEV;
 	}
+#endif
 
 	if (ab->dbg_qmi.qdss_mem_seg_len > 1) {
 		pr_err("%s: FW requests %d segments, max allowed is 1\n",
@@ -51,7 +56,7 @@ int athdbg_qmi_alloc_qdss_mem(struct athdbg_qmi *dbg_qmi)
 
 	switch (ab->dbg_qmi.qdss_mem[0].type) {
 	case QDSS_ETR_MEM_REGION_TYPE:
-#ifndef CONFIG_UPSTREAM_BUILD
+#if !defined(CONFIG_UPSTREAM_BUILD) && !defined(ATH12K_CMA_SUPPORT)
 		if (ab->dbg_qmi.qdss_mem[0].size > QMI_Q6_QDSS_ETR_SIZE ||
 		    ab->dbg_qmi.qdss_mem[0].size >
 		    ddr_rmem->size - ab->host_ddr_fixed_mem_off) {
@@ -60,7 +65,7 @@ int athdbg_qmi_alloc_qdss_mem(struct athdbg_qmi *dbg_qmi)
 			return -ENOMEM;
 		}
 
-#ifdef PLATFORM_SDX85
+#ifdef PLATFORM_SDX
 		ab->dbg_qmi.qdss_mem[0].v.ioaddr =
 			dma_alloc_attrs(ab->dev,
 					ab->dbg_qmi.qdss_mem[0].size,
@@ -85,7 +90,7 @@ int athdbg_qmi_alloc_qdss_mem(struct athdbg_qmi *dbg_qmi)
 #endif
 #else
 		chunk = &ab->dbg_qmi.qdss_mem[0];
-		chunk->v.ioaddr = dma_alloc_coherent(ab->dev,
+		chunk->v.ioaddr = dma_alloc_coherent(dev,
 						     chunk->size,
 						     &chunk->paddr,
 						     GFP_KERNEL | __GFP_NOWARN);

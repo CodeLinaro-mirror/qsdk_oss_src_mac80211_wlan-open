@@ -28,6 +28,22 @@
 #endif
 #include "vendor.h"
 
+void ath12k_dp_rx_tid_free_desc(struct ath12k_base *ab,
+				struct ath12k_dp_rx_tid *rx_tid)
+{
+	if (!ab->hw_params->alloc_cacheable_memory) {
+		dma_free_coherent(ab->dev, rx_tid->size, rx_tid->vaddr,
+				  rx_tid->paddr);
+		rx_tid->paddr = 0;
+	} else {
+		ath12k_core_dma_unmap_single(ab->dev, rx_tid->paddr, rx_tid->size,
+					     DMA_BIDIRECTIONAL);
+		kfree(rx_tid->vaddr);
+	}
+	rx_tid->vaddr = NULL;
+}
+EXPORT_SYMBOL(ath12k_dp_rx_tid_free_desc);
+
 void ath12k_tid_rx_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason)
 {
 	struct pcpu_netdev_tid_stats *tstats = this_cpu_ptr(ahvif->tstats);
@@ -469,6 +485,138 @@ static void ath12k_dp_rx_enqueue_free(struct ath12k_dp *dp,
 	spin_unlock_bh(&dp->rx_desc_lock);
 }
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+/**
+ * ath12k_dp_alloc_rx_skb() - Allocate an RX skb, page-aligned for PPE pool buffers.
+ *
+ * PPE-pool buffers must start on a page boundary so that the IPA SMMU mapping
+ * covers the full buffer without straddling pages.  For DP_RX_PPE_POOL, allocate
+ * an extra PAGE_SIZE bytes and advance skb->data to the next page boundary via
+ * skb_reserve().  Regular pool buffers use the normal allocator.
+ */
+static struct sk_buff *ath12k_dp_alloc_rx_skb(struct ath12k_rx_desc_info *rx_desc)
+{
+	unsigned long pg_offset;
+	struct sk_buff *skb;
+
+	if (rx_desc->src_ring_type != DP_RX_PPE_POOL)
+		return ath12k_dp_alloc_skb(DP_RX_BUFFER_SIZE);
+
+	skb = dev_alloc_skb(DP_RX_BUFFER_SIZE + PAGE_SIZE);
+	if (unlikely(!skb))
+		return NULL;
+
+	pg_offset = PAGE_ALIGN((unsigned long)skb->data) - (unsigned long)skb->data;
+	if (pg_offset)
+		skb_reserve(skb, pg_offset);
+
+	return skb;
+}
+
+/**
+ * ath12k_dp_rx_ipa_dma_mask_save() - Restrict DMA mask to 32 bits for IPA+SMMU.
+ *
+ * When IPA+SMMU is active every RX buffer must reside within 32-bit DMA space.
+ * Save the current mask and apply the narrower one; restore with
+ * ath12k_dp_rx_ipa_dma_mask_restore() after the alloc loop.
+ */
+static void ath12k_dp_rx_ipa_dma_mask_save(struct ath12k_base *ab,
+					   struct ath12k_dp *dp,
+					   u64 *saved_mask, bool *mask_set)
+{
+	if (!IPA_CTX(ab) || !IPA_CTX(ab)->is_smmu_enabled)
+		return;
+
+	*saved_mask = dma_get_mask(dp->dev);
+	if (!dma_set_mask(dp->dev, DMA_BIT_MASK(ATH12K_IPA_RX_BUF_DMA_BITS)))
+		*mask_set = true;
+	else
+		ath12k_warn(ab,
+			    "IPA RX bufs: failed to set %u-bit DMA mask; SMMU faults likely\n",
+			    ATH12K_IPA_RX_BUF_DMA_BITS);
+}
+
+/**
+ * ath12k_dp_rx_ipa_dma_mask_restore() - Restore the DMA mask saved by
+ *                                        ath12k_dp_rx_ipa_dma_mask_save().
+ */
+static void ath12k_dp_rx_ipa_dma_mask_restore(struct ath12k_dp *dp,
+					      u64 saved_mask, bool mask_set)
+{
+	if (mask_set)
+		dma_set_mask(dp->dev, saved_mask);
+}
+
+/**
+ * ath12k_dp_rx_ipa_smmu_buf_map() - Map a PPE-pool RX buffer into IPA SMMU domain.
+ *
+ * Called after the WLAN DMA map succeeds for a DP_RX_PPE_POOL buffer.
+ * On failure, rolls back the SMMU map, the WLAN DMA map, and frees the skb,
+ * leaving rx_desc in a clean state for the caller to break out of the loop.
+ *
+ * Returns 0 on success, negative errno on failure.
+ */
+static int ath12k_dp_rx_ipa_smmu_buf_map(struct ath12k_base *ab,
+					 struct ath12k_dp *dp,
+					 struct ath12k_rx_desc_info *rx_desc,
+					 struct sk_buff *skb,
+					 dma_addr_t paddr)
+{
+	int ret;
+
+	if (!(rx_desc->src_ring_type == DP_RX_PPE_POOL && IPA_CTX(ab) &&
+	      IPA_CTX(ab)->is_smmu_enabled &&
+	      IPA_CTX(ab)->ipa_init_state >= ATH12K_IPA_STATE_SETUP_DONE))
+		return 0;
+
+	ATH12K_SKB_CB(skb)->paddr = paddr;
+	ret = ath12k_dp_ipa_handle_buf_smmu_map_unmap(ab, skb, DP_RX_BUFFER_SIZE,
+						      1, IPA_CTX(ab)->hdl);
+	if (unlikely(ret)) {
+		ath12k_warn(ab, "IPA SMMU map failed for RX buf: %d\n", ret);
+		ath12k_dp_ipa_handle_buf_smmu_map_unmap(ab, skb, DP_RX_BUFFER_SIZE,
+							false, IPA_CTX(ab)->hdl);
+		ath12k_core_dma_unmap_single(dp->dev, paddr, DP_RX_BUFFER_SIZE,
+					     DMA_FROM_DEVICE);
+		ATH12K_SKB_CB(skb)->paddr = 0;
+		rx_desc->skb = NULL;
+		rx_desc->paddr = 0;
+		rx_desc->vaddr = NULL;
+		dev_kfree_skb_any(skb);
+	}
+
+	return ret;
+}
+
+#else /* !CPTCFG_EXT_IPA_OFFLOAD */
+
+static inline struct sk_buff *ath12k_dp_alloc_rx_skb(struct ath12k_rx_desc_info *rx_desc)
+{
+	return ath12k_dp_alloc_skb(DP_RX_BUFFER_SIZE);
+}
+
+static inline void ath12k_dp_rx_ipa_dma_mask_save(struct ath12k_base *ab,
+						   struct ath12k_dp *dp,
+						   u64 *saved_mask, bool *mask_set)
+{
+}
+
+static inline void ath12k_dp_rx_ipa_dma_mask_restore(struct ath12k_dp *dp,
+						      u64 saved_mask, bool mask_set)
+{
+}
+
+static inline int ath12k_dp_rx_ipa_smmu_buf_map(struct ath12k_base *ab,
+						 struct ath12k_dp *dp,
+						 struct ath12k_rx_desc_info *rx_desc,
+						 struct sk_buff *skb,
+						 dma_addr_t paddr)
+{
+	return 0;
+}
+
+#endif /* CPTCFG_EXT_IPA_OFFLOAD */
+
 /* Returns number of Rx buffers replenished */
 void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 				 struct hal_srng *srng,
@@ -485,19 +633,24 @@ void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 	/* Check if descriptors are already initialized (reuse mode) */
 	if (reuse) {
 		/* Count entries for reuse */
-		list_for_each_entry_safe(rx_desc, tmp_rx_desc, used_list, list) {
+		list_for_each_entry(rx_desc, used_list, list)
 			allocated_entries++;
-		}
 	} else {
 		/* Normal mode: allocate and initialize new descriptors */
+		u64 ipa_saved_mask = 0;
+		bool ipa_mask_set = false;
+
+		ath12k_dp_rx_ipa_dma_mask_save(ab, dp, &ipa_saved_mask, &ipa_mask_set);
+
 		list_for_each_entry_safe(rx_desc, tmp_rx_desc, used_list, list) {
-			skb = ath12k_dp_alloc_skb(DP_RX_BUFFER_SIZE);
+			skb = ath12k_dp_alloc_rx_skb(rx_desc);
 			if (unlikely(!skb))
 				break;
 
 			rx_desc->skb = skb;
 			rx_desc->vaddr = skb->data;
 			rx_desc->is_frag = 0;
+			rx_desc->in_use = true;
 
 			paddr = ath12k_dp_rx_buffer_map(dp, rx_desc);
 
@@ -512,7 +665,15 @@ void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 
 			rx_desc->paddr = paddr;
 			allocated_entries++;
+
+			if (unlikely(ath12k_dp_rx_ipa_smmu_buf_map(ab, dp, rx_desc,
+								   skb, paddr))) {
+				allocated_entries--;
+				break;
+			}
 		}
+
+		ath12k_dp_rx_ipa_dma_mask_restore(dp, ipa_saved_mask, ipa_mask_set);
 		ath12k_dsb();
 	}
 
@@ -531,7 +692,6 @@ void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 
 		allocated_entries--;
 
-		rx_desc->in_use = 1;
 		ath12k_hal_rx_buf_addr_info_set(desc, rx_desc->paddr, rx_desc->cookie, mgr);
 	}
 
@@ -542,7 +702,6 @@ out:
 
 	if (unlikely(!list_empty(used_list)))
 		ath12k_dp_rx_enqueue_free(dp, used_list, reuse);
-
 }
 EXPORT_SYMBOL(ath12k_dp_rx_bufs_replenish);
 
@@ -631,10 +790,7 @@ void ath12k_dp_rx_reo_cmd_list_cleanup(struct ath12k_base *ab)
 		rx_tid = &cmd_queue->data;
 		if (rx_tid->vaddr) {
 			rx_tid->active = false;
-			ath12k_core_dma_unmap_single(ab->dev, rx_tid->paddr,
-					 rx_tid->size, DMA_BIDIRECTIONAL);
-			kfree(rx_tid->vaddr);
-			rx_tid->vaddr = NULL;
+			ath12k_dp_rx_tid_free_desc(ab, rx_tid);
 		}
 		kfree(cmd_queue);
 	}
@@ -657,10 +813,7 @@ void ath12k_dp_rx_reo_cmd_list_cleanup(struct ath12k_base *ab)
 		rx_tid = &cmd_cache->data;
 		if (rx_tid->vaddr) {
 			rx_tid->active = false;
-			ath12k_core_dma_unmap_single(ab->dev, rx_tid->paddr,
-						     rx_tid->size, DMA_BIDIRECTIONAL);
-			kfree(rx_tid->vaddr);
-			rx_tid->vaddr = NULL;
+			ath12k_dp_rx_tid_free_desc(ab, rx_tid);
 		}
 		kfree(cmd_cache);
 	}
@@ -684,10 +837,7 @@ free_desc:
 
 	if (rx_tid->vaddr) {
 		rx_tid->active = false;
-		ath12k_core_dma_unmap_single(dp->ab->dev, rx_tid->paddr, rx_tid->size,
-					     DMA_BIDIRECTIONAL);
-		kfree(rx_tid->vaddr);
-		rx_tid->vaddr = NULL;
+		ath12k_dp_rx_tid_free_desc(dp->ab, rx_tid);
 	}
 }
 EXPORT_SYMBOL(ath12k_dp_reo_cmd_free);
@@ -701,17 +851,17 @@ void ath12k_dp_rx_frags_cleanup(struct ath12k_dp_rx_tid *rx_tid,
 
 	lockdep_assert_held(&rx_tid->tid_lock);
 
-	if (rx_tid->dst_ring_desc) {
+	if (rx_tid->desc) {
 		if (rel_link_desc) {
 			bm_act = HAL_WBM_REL_BM_ACT_PUT_IN_IDLE;
 			buf_addr_info =
-				(struct ath12k_buffer_addr *)rx_tid->dst_ring_desc;
+				(struct ath12k_buffer_addr *)rx_tid->desc;
 			ath12k_dp_arch_rx_link_desc_return(dp, buf_addr_info,
 							   bm_act);
 		}
 
-		kfree(rx_tid->dst_ring_desc);
-		rx_tid->dst_ring_desc = NULL;
+		kfree(rx_tid->desc);
+		rx_tid->desc = NULL;
 	}
 
 	rx_tid->cur_sn = 0;
@@ -1076,8 +1226,9 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 		memcpy(addr, peer->addr, ETH_ALEN);
 	}
 
-	if (pubsta && pubsta->valid_links) {
-		status->link_valid = 1;
+	if (pubsta) {
+		if (pubsta->valid_links)
+			status->link_valid = 1;
 		status->link_id = peer->hw_links[hw_link_id];
 
 		link_peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev,
@@ -1144,7 +1295,7 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 }
 EXPORT_SYMBOL(ath12k_dp_rx_deliver_msdu);
 
-static void ath12k_dp_rx_frag_timer(struct timer_list *timer)
+void ath12k_dp_rx_frag_timer(struct timer_list *timer)
 {
 	struct ath12k_dp_rx_tid *rx_tid = from_timer(rx_tid, timer, frag_timer);
 
@@ -1157,6 +1308,7 @@ static void ath12k_dp_rx_frag_timer(struct timer_list *timer)
 	ath12k_dp_rx_frags_cleanup(rx_tid, true);
 	spin_unlock_bh(&rx_tid->tid_lock);
 }
+EXPORT_SYMBOL(ath12k_dp_rx_frag_timer);
 
 int ath12k_dp_rx_peer_frag_setup(struct ath12k *ar,
 				 struct ath12k_dp_link_peer *peer,
@@ -1342,6 +1494,7 @@ int ath12k_dp_rx_flow_add_entry(struct ath12k_base *ab,
 out:
 	return ret;
 }
+EXPORT_SYMBOL(ath12k_dp_rx_flow_add_entry);
 
 int ath12k_dp_rx_flow_delete_entry(struct ath12k_base *ab,
 				   struct rx_flow_info *flow_info)
@@ -1387,6 +1540,7 @@ int ath12k_dp_rx_flow_delete_entry(struct ath12k_base *ab,
 out:
 	return ret;
 }
+EXPORT_SYMBOL(ath12k_dp_rx_flow_delete_entry);
 
 int ath12k_dp_rx_flow_delete_all_entries(struct ath12k_base *ab)
 {
@@ -1714,14 +1868,6 @@ int ath12k_dp_rx_pkt_type_filter(struct ath12k *ar,
 	param.dst_ring_handler = ATH12K_WMI_PKTROUTE_USE_CCE;
 	param.route_type_bmap = 1 << pkt_type;
 
-	/* Do not program EAP CCE rule for hardwares that use other than REO_RELEASE_RING
-	 * as destination. This is a temporary fix for wifi8.
-	 */
-	if (param.dst_ring != ATH12K_REO_RELEASE_RING) {
-		ath12k_info(ar->ab, "EAP CCE dst=%u, not configuring", param.dst_ring);
-		return 0;
-	}
-
 	ret = ath12k_wmi_send_pdev_pkt_route(ar, &param);
 	if (ret)
 		ath12k_warn(ar->ab, "failed to configure pkt route %d", ret);
@@ -1770,6 +1916,7 @@ void ath12k_dp_rx_peer_tid_ba_config(struct ath12k_dp *dp, u8 tid, u32 *ba_win_s
 		dp->ab->hw_params->hw_ops->rx_peer_ba_config(dp->ab, tid, ba_win_size,
 							    ssn);
 }
+EXPORT_SYMBOL(ath12k_dp_rx_peer_tid_ba_config);
 
 bool ath12k_dp_rx_peer_tid_skip_pn_replay(struct ath12k_dp *dp, u8 tid)
 {
@@ -1786,3 +1933,435 @@ int ath12k_dp_rxdma_ring_sel_config(struct ath12k_base *ab)
 
 	return 0;
 }
+
+void
+ath12k_dp_rx_update_eapol_stats(struct ath12k_dp *dp, struct sk_buff *msdu)
+{
+	enum ath12k_dp_eapol_key_type subtype;
+	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)msdu->data;
+	size_t hdr_len = ieee80211_hdrlen(hdr->frame_control);
+	struct ath12k_dp_rx_rfc1042_hdr *llc =
+		(struct ath12k_dp_rx_rfc1042_hdr *)(msdu->data + hdr_len);
+
+	if (llc->snap_type == cpu_to_be16(ETH_P_PAE)) {
+		dp->device_stats.rx_eapol[dp->device_id]++;
+		subtype = ath12k_dp_get_eapol_subtype(msdu->data + hdr_len +
+						      LLC_SNAP_HDR_LEN);
+		if (subtype != DP_EAPOL_KEY_TYPE_MAX && subtype > 0) {
+			dp->device_stats.rx_eapol_type[subtype - 1][dp->device_id]++;
+			ath12k_dbg_level(dp->ab, ATH12K_DBG_EAPOL, ATH12K_DBG_L0,
+					 "Received %s%d EAPOL frame from STA %pM\n",
+					 subtype <= 4 ? "M" : "G",
+					 subtype <= 4 ? subtype : (subtype - 4),
+					 hdr->addr2);
+		}
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_rx_update_eapol_stats);
+
+void
+ath12k_dp_rx_update_delay_stats(struct ath12k_dp_peer *peer, struct sk_buff *msdu,
+				u8 tid, u8 ring)
+{
+	u32 current_ts, rx_delay;
+	struct ath12k_dp_peer_delay_stats *delay_stats;
+	struct ath12k_dp_peer_delay_tid_stats *delay_tid_stats;
+
+	delay_stats = peer->mld_stats.delay_stats;
+
+	if (!delay_stats)
+		return;
+
+	delay_tid_stats = &delay_stats->delay_tid_stats[tid][ring];
+	current_ts = (u32)ktime_to_ms(ktime_get_real());
+
+	rx_delay = current_ts - (u32)ktime_to_ms(msdu->tstamp);
+	ath12k_dp_update_hist_stats(&delay_tid_stats->rx_delay.to_stack_delay,
+				    rx_delay);
+}
+EXPORT_SYMBOL(ath12k_dp_rx_update_delay_stats);
+
+void
+ath12k_dp_rx_update_vow_delay_stats(struct ath12k_pdev_dp *dp_pdev,
+				    struct link_peer_rx_tid_stats *stats,
+				    struct sk_buff *msdu,
+				    bool da_is_mcbc, u8 tid,
+				    struct ath12k_tid_rx_stats *tid_stats_ring)
+{
+	u32 current_ts;
+	u32 reap_delay, intfrm_delay;
+	struct ath12k_tid_rx_stats *tid_rx_stats;
+	const u8 *da = NULL;
+
+	/* Use cached pointer with offset for TID */
+	tid_rx_stats = &tid_stats_ring[tid];
+
+	current_ts = (u32)ktime_to_ms(ktime_get_real());
+
+	reap_delay = current_ts - (u32)ktime_to_ms(msdu->tstamp);
+	ath12k_dp_update_hist_stats(&tid_rx_stats->to_stack_delay, reap_delay);
+
+	if (dp_pdev->prev_rx_timestamp) {
+		intfrm_delay = current_ts - dp_pdev->prev_rx_timestamp;
+		ath12k_dp_update_hist_stats(&tid_rx_stats->intfrm_delay, intfrm_delay);
+	}
+	dp_pdev->prev_rx_timestamp = current_ts;
+
+	if (da_is_mcbc) {
+		stats->mcast_cnt++;
+		da = ((struct ethhdr *)msdu->data)->h_dest;
+		if (da) {
+			if (is_broadcast_ether_addr(da))
+				stats->bcast_cnt++;
+		}
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_rx_update_vow_delay_stats);
+
+static void
+ath12k_dp_rx_update_peer_stats(struct ath12k_pdev_dp *pdev,
+			       struct ath12k_dp_peer *peer,
+			       struct link_peer_rx_tid_stats *stats,
+			       int ring_id, u8 hw_link_id,
+			       u8 active_tid_mask)
+{
+	int i;
+	struct ath12k_dp_peer_stats *pstats = NULL;
+	struct ath12k_dp_peer_rx_stats *rx = NULL;
+
+	hw_link_id = ath12k_dp_validate_hw_link_id(hw_link_id);
+	pstats = &peer->stats[hw_link_id];
+	rx = &pstats->rx[ring_id];
+
+	for (i = 0; i < MAX_TP_TIDS; i++) {
+		if (!(active_tid_mask & (1 << i))) {
+			stats++;
+			continue;
+		}
+
+		rx->recv_from_reo.packets += stats->received_frm_reo_cnt;
+		rx->recv_from_reo.bytes += stats->received_frm_reo_bytes;
+
+		/* ideally we should have both ucast and mcast pkts sent to stack
+		 * stats rather than just one sent_to_stack_fast stats
+		 */
+		rx->sent_to_stack_fast.packets += stats->sent_to_stack_ucast_fast +
+						stats->sent_to_stack_mcast_fast;
+
+		rx->sent_to_stack_fast.bytes += stats->sent_to_stack_ucast_fast_bytes +
+						stats->sent_to_stack_mcast_fast_bytes;
+
+		rx->sent_to_stack_ucast_fast.packets += stats->sent_to_stack_ucast_fast;
+		rx->sent_to_stack_ucast_fast.bytes += stats->sent_to_stack_ucast_fast_bytes;
+		rx->sent_to_stack_mcast_fast.packets += stats->sent_to_stack_mcast_fast;
+		rx->sent_to_stack_mcast_fast.bytes += stats->sent_to_stack_mcast_fast_bytes;
+
+		rx->msdu_part_of_amsdu += stats->amsdu;
+		rx->non_amsdu += stats->non_amsdu;
+		rx->mpdu_retry += stats->mpdu_retry;
+
+		if (stats->sent_to_stack_ucast) {
+			rx->ucast.packets += stats->sent_to_stack_ucast;
+			rx->ucast.bytes += stats->sent_to_stack_ucast_bytes;
+
+			/* ideally we should have both ucast and mcast pkts sent to stack
+			 * stats rather than just one sent_to_stack stats.
+			 */
+			rx->sent_to_stack.packets += stats->sent_to_stack_ucast;
+			rx->sent_to_stack.bytes +=  stats->sent_to_stack_ucast_bytes;
+		}
+
+		if (stats->sent_to_stack_mcast) {
+			rx->mcast.packets += stats->sent_to_stack_mcast;
+			rx->mcast.bytes += stats->sent_to_stack_mcast_bytes;
+
+			/* ideally we should have both ucast and mcast pkts sent to stack
+			 * stats rather than just one sent_to_stack stats.
+			 */
+			rx->sent_to_stack.packets += stats->sent_to_stack_mcast;
+			rx->sent_to_stack.bytes +=  stats->sent_to_stack_mcast_bytes;
+		}
+
+		if (stats->sg_cnt) {
+			rx->sg.packets += stats->sg_cnt;
+			rx->sg.bytes += stats->sg_bytes;
+		}
+		stats++;
+	}
+}
+
+static void
+ath12k_dp_rx_update_vif_stats(struct ath12k_pdev_dp *pdev,
+			      struct ath12k_dp_peer *peer,
+			      struct link_peer_rx_tid_stats *stats,
+			      int ring_id, u8 hw_link_id,
+			      u8 active_tid_mask)
+{
+	int i;
+	struct pcpu_netdev_tid_stats *tstats;
+	struct ieee80211_vif *vif;
+	struct ath12k_vif *ahvif;
+
+	if (ath12k_dp_stats_enabled(pdev) && ath12k_tid_stats_enabled(pdev)) {
+		vif = ath12k_dp_peer_get_vif(peer);
+		ahvif = ath12k_vif_to_ahvif(vif);
+
+		tstats = this_cpu_ptr(ahvif->tstats);
+		u64_stats_update_begin(&tstats->syncp);
+		for (i = 0; i < MAX_TP_TIDS; i++) {
+			if (!(active_tid_mask & (1 << i))) {
+				stats++;
+				continue;
+			}
+
+			tstats->tid_stats[i].rx_pkt_stats[ATH_RX_REO_PKTS] +=
+						stats->received_frm_reo_cnt;
+			tstats->tid_stats[i].rx_pkt_bytes[ATH_RX_REO_PKTS] +=
+						stats->received_frm_reo_bytes;
+
+			if (peer->rx_decap_type == DP_RX_DECAP_TYPE_ETHERNET2_DIX) {
+				tstats->tid_stats[i].rx_pkt_stats[ATH_RX_ETH_PKTS] +=
+					stats->sent_to_stack_ucast_fast +
+					stats->sent_to_stack_mcast_fast +
+					stats->sent_to_stack_ucast +
+					stats->sent_to_stack_mcast;
+				tstats->tid_stats[i].rx_pkt_bytes[ATH_RX_ETH_PKTS] +=
+					stats->sent_to_stack_ucast_fast_bytes +
+					stats->sent_to_stack_mcast_fast_bytes +
+					stats->sent_to_stack_ucast_bytes +
+					stats->sent_to_stack_mcast_bytes;
+			} else if (peer->rx_decap_type == DP_RX_DECAP_TYPE_NATIVE_WIFI) {
+				tstats->tid_stats[i].rx_pkt_stats[ATH_RX_NATIVE_WIFI_PKTS] +=
+					stats->sent_to_stack_ucast +
+					stats->sent_to_stack_mcast;
+				tstats->tid_stats[i].rx_pkt_bytes[ATH_RX_NATIVE_WIFI_PKTS] +=
+					stats->sent_to_stack_ucast_bytes +
+					stats->sent_to_stack_mcast_bytes;
+			} else {
+				tstats->tid_stats[i].rx_pkt_stats[ATH_RX_RAW_PKTS] +=
+					stats->sent_to_stack_ucast +
+					stats->sent_to_stack_mcast;
+				tstats->tid_stats[i].rx_pkt_bytes[ATH_RX_RAW_PKTS] +=
+					stats->sent_to_stack_ucast_bytes +
+					stats->sent_to_stack_mcast_bytes;
+			}
+			tstats->tid_stats[i].rx_pkt_stats[ATH_RX_TOTAL_OUT_PKTS] +=
+						stats->sent_to_stack_ucast +
+						stats->sent_to_stack_mcast;
+			tstats->tid_stats[i].rx_pkt_bytes[ATH_RX_TOTAL_OUT_PKTS] +=
+						stats->sent_to_stack_ucast_bytes +
+						stats->sent_to_stack_mcast_bytes;
+
+			stats++;
+		}
+		u64_stats_update_end(&tstats->syncp);
+	}
+}
+
+static void
+ath12k_dp_rx_update_wmm_stats(struct ath12k_pdev_dp *pdev,
+			      struct ath12k_dp_peer *peer,
+			      struct link_peer_rx_tid_stats *stats,
+			      int ring_id, u8 hw_link_id,
+			      u8 active_tid_mask)
+{
+	int i;
+	struct ieee80211_vif *vif;
+	struct ath12k_vif *ahvif;
+	enum wme_ac ac;
+
+	vif = ath12k_dp_peer_get_vif(peer);
+	ahvif = ath12k_vif_to_ahvif(vif);
+
+	/* update of wmm stats happens at both dp_pdev and athvif level */
+	for (i = 0; i < MAX_TP_TIDS; i++) {
+		if (!(active_tid_mask & (1 << i))) {
+			stats++;
+			continue;
+		}
+
+		ac = ath12k_tid_to_ac(i > ATH12K_DSCP_PRIORITY ? 0 : i);
+
+		pdev->wmm_stats.total_wmm_rx_pkts[ac]++;
+		ahvif->wmm_stats.total_wmm_rx_pkts[ac]++;
+
+		stats++;
+	}
+}
+
+static void
+ath12k_dp_rx_update_vow_stats(struct ath12k_pdev_dp *pdev,
+			      struct link_peer_rx_tid_stats *stats,
+			      int ring_id, u8 active_tid_mask)
+{
+	struct ath12k_tid_rx_stats *tid_rx_stats;
+	int i;
+
+	if (!ath12k_dp_stats_enabled(pdev) ||
+	    !ath12k_dp_vow_stats_enabled(pdev))
+		return;
+
+	for (i = 0; i < MAX_TP_TIDS; i++, stats++) {
+		if (!(active_tid_mask & (1 << i)))
+			continue;
+
+		tid_rx_stats = &pdev->tid_stats.tid_rx[ring_id][i];
+		tid_rx_stats->msdu_cnt           += stats->received_frm_reo_cnt;
+		tid_rx_stats->mcast_msdu_cnt     += stats->mcast_cnt;
+		tid_rx_stats->bcast_msdu_cnt     += stats->bcast_cnt;
+		tid_rx_stats->delivered_to_stack += stats->sent_to_stack_ucast +
+					   stats->sent_to_stack_mcast +
+					   stats->sent_to_stack_ucast_fast +
+					   stats->sent_to_stack_mcast_fast;
+	}
+}
+
+void
+ath12k_dp_rx_update_stats(struct ath12k_pdev_dp *pdev,
+			  struct ath12k_dp_peer *peer,
+			  struct link_peer_rx_tid_stats *stats,
+			  int ring_id, u8 hw_link_id,
+			  u8 active_tid_mask)
+{
+	ath12k_dp_rx_update_peer_stats(pdev, peer, stats, ring_id, hw_link_id,
+				       active_tid_mask);
+
+	ath12k_dp_rx_update_vif_stats(pdev, peer, stats, ring_id, hw_link_id,
+				      active_tid_mask);
+
+	ath12k_dp_rx_update_wmm_stats(pdev, peer, stats, ring_id, hw_link_id,
+				      active_tid_mask);
+
+	ath12k_dp_rx_update_vow_stats(pdev, stats, ring_id, active_tid_mask);
+}
+EXPORT_SYMBOL(ath12k_dp_rx_update_stats);
+
+bool ath12k_dp_rx_h_mec_drop(struct ath12k_pdev_dp *dp_pdev,
+			     struct ath12k_vif *ahvif,
+			     int link_id, int peer_id)
+
+{
+	struct ath12k_dp *dp = dp_pdev->dp;
+	struct ath12k_base *ab = dp->ab;
+
+	struct ath12k_link_vif *arvif = rcu_dereference(ahvif->link[link_id]);
+
+	if (!arvif)
+		return true;
+
+	if (ahvif->vif && ahvif->vif->type != NL80211_IFTYPE_STATION) {
+		ath12k_warn(ab, "vif type is not station for peer with peer_id %u\n",
+			    peer_id);
+		goto drop;
+	}
+
+	arvif->link_stats.rx_dropped++;
+drop:
+	return true;
+}
+EXPORT_SYMBOL(ath12k_dp_rx_h_mec_drop);
+
+u32 ath12k_fill_reo_drop_reason(enum hal_reo_dest_ring_error_code err_code)
+{
+	switch (err_code) {
+	case HAL_REO_DEST_RING_ERROR_CODE_DESC_ADDR_ZERO:
+		return ATH_RX_DESC_ADDR_ZERO;
+	case HAL_REO_DEST_RING_ERROR_CODE_DESC_INVALID:
+		return ATH_RX_DESC_INVALID;
+	case HAL_REO_DEST_RING_ERROR_CODE_AMPDU_IN_NON_BA:
+		return ATH_RX_NON_BA;
+	case HAL_REO_DEST_RING_ERROR_CODE_NON_BA_DUPLICATE:
+		return ATH_RX_NON_BA_DUP;
+	case HAL_REO_DEST_RING_ERROR_CODE_BA_DUPLICATE:
+		return ATH_RX_BA_DUP;
+	case HAL_REO_DEST_RING_ERROR_CODE_FRAME_2K_JUMP:
+	case HAL_REO_DEST_RING_ERROR_CODE_BAR_2K_JUMP:
+		return ATH_RX_2K_JUMP;
+	case HAL_REO_DEST_RING_ERROR_CODE_FRAME_OOR:
+	case HAL_REO_DEST_RING_ERROR_CODE_BAR_OOR:
+		return ATH_RX_ERR_OOR;
+	case  HAL_REO_DEST_RING_ERROR_CODE_NO_BA_SESSION:
+		return ATH_RX_NO_BA;
+	case HAL_REO_DEST_RING_ERROR_CODE_FRAME_SN_EQUALS_SSN:
+		return ATH_RX_EQUALS_SSN;
+	case HAL_REO_DEST_RING_ERROR_CODE_2K_ERR_FLAG_SET:
+	case HAL_REO_DEST_RING_ERROR_CODE_PN_ERR_FLAG_SET:
+		return ATH_RX_ERR_FLAG_SET;
+	case HAL_REO_DEST_RING_ERROR_CODE_DESC_BLOCKED:
+		return ATH_RX_DESC_BLOCKED;
+	case HAL_REO_DEST_RING_ERROR_CODE_PN_CHECK_FAILED:
+		return ATH_RX_PN_FAIL;
+	default:
+		return ATH_RX_ERR_UNKNOWN;
+	}
+}
+EXPORT_SYMBOL(ath12k_fill_reo_drop_reason);
+
+bool ath12k_dp_rx_check_nwifi_hdr_len_valid(struct ath12k_dp *dp,
+					    u8 decap_type,
+					    struct sk_buff *msdu)
+{
+	struct ieee80211_hdr *hdr;
+	u32 hdr_len;
+
+	if (decap_type != DP_RX_DECAP_TYPE_NATIVE_WIFI)
+		return true;
+
+	hdr = (struct ieee80211_hdr *)msdu->data;
+	hdr_len = ieee80211_hdrlen(hdr->frame_control);
+
+	if ((likely(hdr_len <= DP_MAX_NWIFI_HDR_LEN)))
+		return true;
+
+	dp->device_stats.invalid_rbm++;
+
+	if (ath12k_rx_nwifi_err_dump)
+		WARN_ON_ONCE(1);
+
+	return false;
+}
+EXPORT_SYMBOL(ath12k_dp_rx_check_nwifi_hdr_len_valid);
+
+int ath12k_dp_get_rx_frame_type(u8 rx_decap_type)
+{
+	u32 pkt_reason = 0;
+
+	switch (rx_decap_type) {
+	case DP_RX_DECAP_TYPE_NATIVE_WIFI:
+		pkt_reason = ATH_RX_NATIVE_WIFI_PKTS;
+		break;
+	case DP_RX_DECAP_TYPE_RAW:
+		pkt_reason = ATH_RX_RAW_PKTS;
+		break;
+	case DP_RX_DECAP_TYPE_ETHERNET2_DIX:
+		pkt_reason = ATH_RX_ETH_PKTS;
+		break;
+	case DP_RX_DECAP_TYPE_8023:
+		pkt_reason = ATH_RX_8023_PKTS;
+		break;
+	}
+
+	return pkt_reason;
+}
+EXPORT_SYMBOL(ath12k_dp_get_rx_frame_type);
+
+void ath12k_dp_tid_wbm_err_stats(struct ath12k_pdev_dp *dp_pdev,
+				 u8 tid,
+				 bool is_reo,
+				 u32 error_code)
+{
+	tid = ath12k_vow_tid_validate(tid);
+
+	if (is_reo) {
+		if (error_code < HAL_REO_DEST_RING_ERROR_CODE_MAX)
+			dp_pdev->tid_stats.tid_reo_err[tid].reo_code[error_code]++;
+		else
+			dp_pdev->tid_stats.tid_reo_err[tid].reo_code_inv++;
+	} else {
+		if (error_code < HAL_REO_ENTR_RING_RXDMA_ECODE_MAX)
+			dp_pdev->tid_stats.tid_rxdma_err[tid].rxdma_code[error_code]++;
+		else
+			dp_pdev->tid_stats.tid_rxdma_err[tid].rxdma_code_inv++;
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_tid_wbm_err_stats);

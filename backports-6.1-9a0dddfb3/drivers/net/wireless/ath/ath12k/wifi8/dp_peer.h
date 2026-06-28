@@ -12,6 +12,7 @@
 #include "dp_tx_flow_info.h"
 
 #define ATH12K_SMD_MGMT_TID	15
+
 struct peer_assoc_flowq_params;
 struct ath12k_dp_peer_ext_ctx {
 	struct ath12k_dp_tx_flow_info tx_flow_info;
@@ -71,4 +72,18 @@ int ath12k_wifi8_peer_tx_tid_update_for_smd(struct ath12k_base *ab,
 					    struct ath12k_dp_hw *dp_hw,
 					    const u8 *peer_addr,
 					    struct ath12k_tx_smd_ctx_per_tid *tx_tid_ctx);
+int ath12k_wifi8_dp_smd_prep_transfer_ext_ctx(
+	struct ath12k_dp *dp,
+	struct ath12k_dp_peer *current_dp_peer,
+	const u8 *target_mld_addr,
+	u16 transitioning_links);
+void ath12k_wifi8_dp_smd_exec_activate_links(
+	struct ath12k_dp *dp,
+	struct ath12k_dp_hw *dp_hw,
+	struct ath12k_dp_vif *dp_vif,
+	const u8 *addr,
+	u16 active_links);
+int ath12k_wifi8_peer_tx_tid_sn_reset(struct ath12k_base *ab,
+				      struct ath12k_dp_hw *dp_hw,
+				      const u8 *peer_addr);
 #endif

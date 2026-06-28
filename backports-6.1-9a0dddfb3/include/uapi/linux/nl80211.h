@@ -1403,6 +1403,46 @@
  *	can be used to configure %NL80211_ATTR_PCIE, NL80211_ATTR_DCVS,
  *	NL80211_ATTR_DPS_ASSIST and NL80211_ATTR_LOW_POWER_20MHZ.
  *
+ * @NL80211_CMD_UHR_MODE_UPDATE: Command to update UHR (Ultra High Reliability)
+ *	mode parameters on a per-link basis for an MLD.
+ *	Command requires %NL80211_ATTR_IFINDEX to identify the interface.
+ *	Per-link parameters are carried in %NL80211_ATTR_UHR_MODE_UPDATE_PARAMS,
+ *	a nested array where each element must contain
+ *	%NL80211_UHR_MODE_UPDATE_ATTR_LINK_ID to identify the link, plus
+ *	optional NPCA (Non-Primary Channel Access) feature parameters such as
+ *	%NL80211_UHR_MODE_UPDATE_ATTR_NPCA_ENABLE,
+ *	%NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCH_DELAY and
+ *	%NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCHBACK_DELAY.
+ *
+ * @NL80211_CMD_CRITICAL_UPDATE: Command sent by hostapd to initiate a
+ *	Critical Update (CU) session on an AP link. Requires
+ *	%NL80211_ATTR_IFINDEX, %NL80211_ATTR_MLO_LINK_ID,
+ *	%NL80211_ATTR_CU_TYPE, and
+ *	%NL80211_ATTR_IE carrying the CU element to be stitched into beacons.
+ *
+ * @NL80211_CMD_CRITICAL_UPDATE_NOTIFY: Event sent by the kernel to notify
+ *	user space of CU lifecycle transitions on an AP link.
+ *	Carries %NL80211_ATTR_CU_STATE indicating the current ECU phase.
+ *
+ * @NL80211_CMD_UHR_LINK_RECONFIG_REQ: Send a UHR Link Reconfiguration
+ *	Request frame to the target AP MLD.  Used for both ST Preparation
+ *	(type=0) and ST Execution (type=1).  Carries
+ *	%NL80211_ATTR_IFINDEX, %NL80211_ATTR_UHR_RECONFIG_TYPE, and
+ *	%NL80211_ATTR_SMD_TARGET_MLD_ADDR.
+ *
+ * @NL80211_CMD_UHR_LINK_RECONFIG_RESP: Unsolicited event from the driver
+ *	carrying the raw UHR Link Reconfiguration Response frame received from
+ *	the target AP.  Carries %NL80211_ATTR_FRAME.  Userspace parses ANonce,
+ *	DH public key, and link status from the frame.
+ *
+ * @NL80211_CMD_SMD_TRANSITION_DONE: Event indicating completion of an SMD
+ *	BSS Transition phase.  Phase is identified by
+ *	%NL80211_ATTR_SMD_TRANSITION_TYPE; link state by
+ *	%NL80211_ATTR_SMD_LINK_TRANSITION_STATE.
+ *
+ * @NL80211_CMD_SMD_ROAM: Event indicating an SMD roam has completed.
+ *	Carries %NL80211_ATTR_SMD_TARGET_MLD_ADDR and status information.
+ *
  * @NL80211_CMD_MAX: highest used command number
  * @__NL80211_CMD_AFTER_LAST: internal use
  */
@@ -1686,6 +1726,16 @@ enum nl80211_commands {
 	NL80211_CMD_AP_POWER_SAVE,
 
 	NL80211_CMD_TRIGGER_SMD_DISCOVERY,
+
+	NL80211_CMD_UHR_MODE_UPDATE,
+	NL80211_CMD_CRITICAL_UPDATE,
+	NL80211_CMD_CRITICAL_UPDATE_NOTIFY,
+
+	NL80211_CMD_UHR_LINK_RECONFIG_REQ,
+	NL80211_CMD_UHR_LINK_RECONFIG_RESP,
+
+	NL80211_CMD_SMD_TRANSITION_DONE,
+	NL80211_CMD_SMD_ROAM,
 
 	/* add new commands above here */
 
@@ -3101,6 +3151,14 @@ enum nl80211_commands {
  *	this feature during association. This is a flag attribute.
  *	Currently only supported in mac80211 drivers.
  *
+ * @NL80211_ATTR_NPCA_PRIMARY_FREQ: u32 attribute giving the primary channel
+ *	frequency (in MHz) for NPCA operation. Required when configuring NPCA.
+ *
+ * @NL80211_ATTR_NPCA_PUNCT_BITMAP: u32 attribute giving the puncture bitmap
+ *	for the NPCA channel. Optional; if absent, defaults to the primary
+ *	channel's puncture bitmap. Only valid together with
+ *	%NL80211_ATTR_NPCA_PRIMARY_FREQ.
+ *
  * @NL80211_ATTR_PCIE: Nested attributes associated with PCIe low power and
  *	gen/lane mode transitions. See &enum nl80211_pcie_attrs
  *
@@ -3173,7 +3231,86 @@ enum nl80211_commands {
  * @NL80211_ATTR_SMD_TIMEOUT: u8 attribute indicating the timeout
  *	for the SMD preparation state for a STA.
  *
+ * @NL80211_ATTR_UHR_MODE_UPDATE_PARAMS: Nested attribute carrying per-link
+ *	UHR mode update parameters for %NL80211_CMD_UHR_MODE_UPDATE. Each
+ *	nested element contains a link ID and optional NPCA sub-attributes
+ *	(see &enum nl80211_uhr_mode_update_attrs).
+ *
+ * @NL80211_ATTR_CU_TYPE: (u8) Critical Update type, see &enum nl80211_cu_type.
+ *      Used with %NL80211_CMD_CRITICAL_UPDATE.
+ *
+ * @NL80211_ATTR_EPP_PEER: A flag attribute to indicate if the peer
+ *	is an EPP STA. Used with %NL80211_CMD_NEW_STA and
+ *	%NL80211_CMD_ADD_LINK_STA
+ *
+ * @NL80211_ATTR_CU_STATE: (u32) Current CU session state,
+ *	see &enum nl80211_cu_state. Carried in
+ *	%NL80211_CMD_CRITICAL_UPDATE_NOTIFY events.
+ *
+ * @NL80211_ATTR_EPP_PEER: A flag attribute to indicate if the peer is an EPP
+ *	STA. Used with %NL80211_CMD_NEW_STA and %NL80211_CMD_ADD_LINK_STA
+ *
+ * @NL80211_ATTR_SMD_TARGET_MLD_ADDR: Binary attribute containing the 6-byte
+ *	MAC address of the target AP MLD for SMD BSS Transition.
+ *
+ * @NL80211_ATTR_SMD_SNONCE: Binary attribute containing the STA nonce
+ *	(SNonce) used for PTK derivation during ST Preparation.
+ *
+ * @NL80211_ATTR_SMD_ANONCE: Binary attribute containing the AP nonce
+ *	(ANonce) returned by the target AP in the ST Prep Response.
+ *
+ * @NL80211_ATTR_SMD_SCS_LIST: Binary attribute containing the SCS
+ *	prioritization list for the SMD BSS Transition.
+ *
+ * @NL80211_ATTR_SMD_AID: u16 attribute containing the AID assigned by
+ *	the target AP upon successful ST Preparation.
+ *
+ * @NL80211_ATTR_SMD_DH_PUBLIC_KEY: Binary attribute containing the
+ *	Diffie-Hellman public key used for PTK derivation.
+ *
+ * @NL80211_ATTR_SMD_TRANSITION_TYPE: u8 attribute identifying the SMD BSS
+ *	Transition phase.  Values defined in &enum nl80211_smd_transition_type.
+ *
+ * @NL80211_ATTR_PEER_SMD_ENABLED: Flag indicating a peer STA has SMD enabled.
+ *
+ * @NL80211_ATTR_PEER_SMD_MAC_ADDR: Binary attribute with the 6-byte MAC
+ *	address of the SMD-capable peer STA.
+ *
+ * @NL80211_ATTR_PEER_SMD_DL_DATA_FWD: Flag indicating the peer STA supports
+ *	DL data forwarding within the SMD domain.
+ *
+ * @NL80211_ATTR_UHR_RECONFIG_TYPE: u8 attribute specifying the UHR Link
+ *	Reconfiguration frame type: 0 = ST Preparation, 1 = ST Execution.
+ *
+ * @NL80211_ATTR_SMD_EXEC_PATH: u8 attribute specifying the ST Execution path:
+ *	0 = via current AP (SAP), 1 = direct to target AP (TAP).
+ *
+ * @NL80211_ATTR_SMD_DL_TID_BITMAP: u8 attribute containing the DL TID bitmap
+ *	for traffic draining during ST Execution.
+ *
+ * @NL80211_ATTR_SMD_ROLE: u8 attribute indicating the SMD role of the device.
+ *
+ * @NL80211_ATTR_SMD_TYPE: u8 attribute indicating the SMD domain type.
+ *
+ * @NL80211_ATTR_SMD_DL_SN_NOT_TRANSFERRED: Flag requesting that the DL
+ *	sequence number is not transferred to the target AP.
+ *
+ * @NL80211_ATTR_SMD_UL_SN_NOT_TRANSFERRED: Flag requesting that the UL
+ *	sequence number is not transferred to the target AP.
+ *
+ * @NL80211_ATTR_SMD_DL_DRAIN_TIME: u16 attribute specifying the DL drain
+ *	timeout in TUs granted by the target AP in the ST Exec Response.
+ *
+ * @NL80211_ATTR_SMD_PREFERRED_TARGET: Flag marking this target as the
+ *	preferred transition target; triggers driver resource allocation at
+ *	PREP-response time rather than deferring to EXEC time.
+ *
+ * @NL80211_ATTR_SMD_LINK_TRANSITION_STATE: u8 attribute carrying the current
+ *	link distribution state.  Values defined in
+ *	&enum nl80211_smd_link_transition_state.
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
+ *
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
  */
@@ -3788,6 +3925,8 @@ enum nl80211_attrs {
 
 	NL80211_ATTR_UHR_CAPABILITY,
 	NL80211_ATTR_DISABLE_UHR,
+	NL80211_ATTR_NPCA_PRIMARY_FREQ,
+	NL80211_ATTR_NPCA_PUNCT_BITMAP,
 
 	NL80211_ATTR_PCIE,
 	NL80211_ATTR_DCVS,
@@ -3817,8 +3956,44 @@ enum nl80211_attrs {
 	NL80211_ATTR_SMD_CONFIG,
 	NL80211_ATTR_SMD_TIMEOUT,
 
-	/* add attributes here, update the policy in nl80211.c */
+	NL80211_ATTR_UHR_MODE_UPDATE_PARAMS,
+	NL80211_ATTR_CU_TYPE,
+	NL80211_ATTR_CU_STATE,
 
+	NL80211_ATTR_EPP_PEER,
+
+	NL80211_ATTR_SMD_TARGET_MLD_ADDR,
+	NL80211_ATTR_SMD_SNONCE,
+	NL80211_ATTR_SMD_ANONCE,
+	NL80211_ATTR_SMD_SCS_LIST,
+	NL80211_ATTR_SMD_AID,
+	NL80211_ATTR_SMD_DH_PUBLIC_KEY,
+
+	NL80211_ATTR_SMD_TRANSITION_TYPE,
+
+	NL80211_ATTR_PEER_SMD_ENABLED,
+	NL80211_ATTR_PEER_SMD_MAC_ADDR,
+	NL80211_ATTR_PEER_SMD_DL_DATA_FWD,
+
+	NL80211_ATTR_UHR_RECONFIG_TYPE,
+
+	NL80211_ATTR_SMD_EXEC_PATH,
+	NL80211_ATTR_SMD_DL_TID_BITMAP,
+
+	NL80211_ATTR_SMD_ROLE,
+	NL80211_ATTR_SMD_TYPE,
+	NL80211_ATTR_SMD_DL_SN_NOT_TRANSFERRED,
+	NL80211_ATTR_SMD_UL_SN_NOT_TRANSFERRED,
+	NL80211_ATTR_SMD_DL_DRAIN_TIME,
+
+	NL80211_ATTR_SMD_STA_LINK_MACS,
+	NL80211_ATTR_SMD_STA_LINK_MAC,
+
+	NL80211_ATTR_SMD_PREFERRED_TARGET,
+
+	NL80211_ATTR_SMD_LINK_TRANSITION_STATE,
+
+	/* add attributes here, update the policy in nl80211.c */
 	__NL80211_ATTR_AFTER_LAST,
 	NUM_NL80211_ATTR = __NL80211_ATTR_AFTER_LAST,
 	NL80211_ATTR_MAX = __NL80211_ATTR_AFTER_LAST - 1
@@ -4198,6 +4373,39 @@ enum nl80211_uhr_elr_config {
 enum nl80211_uhr_2xldpc {
 	NL80211_UHR_2XLDPC_DISABLE,
 	NL80211_UHR_2XLDPC_ENABLE,
+};
+
+/**
+ * enum nl80211_cu_type - Critical Update session type
+ *
+ * @NL80211_CU_TYPE_UHR_PARAMS: UHR parameter update (IEEE 802.11bn).
+ *	The CU element is a UHR Params Update element passed in
+ *	%NL80211_ATTR_IE.
+ */
+enum nl80211_cu_type {
+	NL80211_CU_TYPE_UHR_PARAMS,
+};
+
+/**
+ * enum nl80211_cu_state - UHR Enhanced Critical Update (ECU) state
+ *
+ * Reflects the IEEE 802.11bn ECU state machine phases reported via
+ * %NL80211_CMD_CRITICAL_UPDATE_NOTIFY.
+ *
+ * @NL80211_CU_STATE_STARTED: ECU session has started; the driver is
+ *	transmitting beacons with the CU element and indication bit set.
+ * @NL80211_CU_STATE_ADV_NOTIFICATION_END: Advance notification phase
+ *	has ended; the advance notification window has elapsed.
+ * @NL80211_CU_STATE_POST_NOTIFICATION_END: Post notification phase
+ *	has ended; the post notification window has elapsed.
+ * @NL80211_CU_STATE_ECU_END: ECU session is complete; the driver has
+ *	finished transmitting CU beacons and cleared the CU indication bit.
+ */
+enum nl80211_cu_state {
+	NL80211_CU_STATE_STARTED,
+	NL80211_CU_STATE_ADV_NOTIFICATION_END,
+	NL80211_CU_STATE_POST_NOTIFICATION_END,
+	NL80211_CU_STATE_ECU_END,
 };
 
 /**
@@ -4649,6 +4857,8 @@ enum nl80211_mpath_info {
  *	capabilities element
  * @NL80211_BAND_IFTYPE_ATTR_UHR_CAP_PHY: UHR PHY capabilities as in UHR
  *	capabilities element
+ * @NL80211_BAND_IFTYPE_ATTR_UHR_CAP_NPCA: UHR NPCA parameters as a
+ *	&struct ieee80211_sta_uhr_npca_info
  * @__NL80211_BAND_IFTYPE_ATTR_AFTER_LAST: internal use
  * @NL80211_BAND_IFTYPE_ATTR_MAX: highest band attribute currently defined
  */
@@ -4668,6 +4878,7 @@ enum nl80211_band_iftype_attr {
 	NL80211_BAND_IFTYPE_ATTR_EHT_CAP_PPE,
 	NL80211_BAND_IFTYPE_ATTR_UHR_CAP_MAC,
 	NL80211_BAND_IFTYPE_ATTR_UHR_CAP_PHY,
+	NL80211_BAND_IFTYPE_ATTR_UHR_CAP_NPCA,
 
 	/* keep last */
 	__NL80211_BAND_IFTYPE_ATTR_AFTER_LAST,
@@ -5913,6 +6124,7 @@ enum nl80211_bss_status {
  * @NL80211_AUTHTYPE_FILS_SK: Fast Initial Link Setup shared key
  * @NL80211_AUTHTYPE_FILS_SK_PFS: Fast Initial Link Setup shared key with PFS
  * @NL80211_AUTHTYPE_FILS_PK: Fast Initial Link Setup public key
+ * @NL80211_AUTHTYPE_EPPKE: Enhanced Privacy Protection Key Exchange
  * @__NL80211_AUTHTYPE_NUM: internal
  * @NL80211_AUTHTYPE_MAX: maximum valid auth algorithm
  * @NL80211_AUTHTYPE_AUTOMATIC: determine automatically (if necessary by
@@ -5928,6 +6140,7 @@ enum nl80211_auth_type {
 	NL80211_AUTHTYPE_FILS_SK,
 	NL80211_AUTHTYPE_FILS_SK_PFS,
 	NL80211_AUTHTYPE_FILS_PK,
+	NL80211_AUTHTYPE_EPPKE,
 
 	/* keep last */
 	__NL80211_AUTHTYPE_NUM,
@@ -7372,6 +7585,13 @@ enum nl80211_feature_flags {
  * @NL80211_EXT_FEATURE_CIP_PADDING_SUPPORT: The driver supports inclusion of CIP padding
  * delay support.
  *
+ * @NL80211_EXT_FEATURE_EPPKE: Driver supports Enhanced Privacy Protection
+ *	Key Exchange (EPPKE) with user space SME (NL80211_CMD_AUTHENTICATE)
+ *	in non-AP STA mode.
+ *
+ * @NL80211_EXT_FEATURE_ASSOC_FRAME_ENCRYPTION: Driver supports (Re)Association
+ *	Request/Response frame encryption.
+ *
  * @NUM_NL80211_EXT_FEATURES: number of extended features.
  * @MAX_NL80211_EXT_FEATURES: highest extended feature index.
  */
@@ -7460,6 +7680,8 @@ enum nl80211_ext_feature_index {
 	NL80211_EXT_FEATURE_CIP_PADDING_SUPPORT,
 	NL80211_EXT_FEATURE_SMD_SUPPORT_AP,
 	NL80211_EXT_FEATURE_SMD_SUPPORT_DL_PKT_FRWRD,
+	NL80211_EXT_FEATURE_EPPKE,
+	NL80211_EXT_FEATURE_ASSOC_FRAME_ENCRYPTION,
 
 	/* add new features before the definition below */
 	NUM_NL80211_EXT_FEATURES,
@@ -9379,6 +9601,42 @@ enum nl80211_dcvs_attrs {
 	NL80211_DCVS_ATTR_MAX = __NL80211_DCVS_ATTR_LAST - 1
 };
 
+/**
+ * enum nl80211_uhr_mode_update_attrs - UHR mode update attributes
+ *
+ * These attributes are used with %NL80211_ATTR_UHR_MODE_UPDATE_PARAMS
+ * in the %NL80211_CMD_UHR_MODE_UPDATE command to configure per-link
+ * UHR mode parameters for a non-AP MLD.
+ *
+ * @NL80211_UHR_MODE_UPDATE_ATTR_LINK_ID: (u8) Link ID identifying which
+ *	MLD link these parameters apply to. Required in every nested element.
+ *
+ * NPCA (Non-Primary Channel Access) feature attributes:
+ * @NL80211_UHR_MODE_UPDATE_ATTR_NPCA_ENABLE: (u8) Enable/disable NPCA
+ *	feature. 0 = disable, 1 = enable.
+ * @NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCH_DELAY: (u8) Delay in
+ *	milliseconds before switching to the non-primary channel.
+ * @NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCHBACK_DELAY: (u8) Delay in
+ *	milliseconds before switching back to the primary channel.
+ *
+ * @__NL80211_UHR_MODE_UPDATE_ATTR_LAST: internal use
+ * @NL80211_UHR_MODE_UPDATE_ATTR_MAX: highest UHR mode update attribute
+ */
+enum nl80211_uhr_mode_update_attrs {
+	__NL80211_UHR_MODE_UPDATE_ATTR_INVALID,
+
+	NL80211_UHR_MODE_UPDATE_ATTR_LINK_ID,
+
+	NL80211_UHR_MODE_UPDATE_ATTR_NPCA_ENABLE,
+	NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCH_DELAY,
+	NL80211_UHR_MODE_UPDATE_ATTR_NPCA_SWITCHBACK_DELAY,
+
+	/* keep last */
+	__NL80211_UHR_MODE_UPDATE_ATTR_LAST,
+	NL80211_UHR_MODE_UPDATE_ATTR_MAX =
+		__NL80211_UHR_MODE_UPDATE_ATTR_LAST - 1
+};
+
 /**enum nl80211_muedca_mode - MUEDCA mode
  *
  * @NL80211_MUEDCA_USER_MODE: User mode
@@ -9395,6 +9653,66 @@ enum nl80211_muedca_mode {
 	/* keep last */
 	__NL80211_MUEDCA_AFTER_LAST,
 	NL80211_MUEDCA_MAX = __NL80211_MUEDCA_AFTER_LAST - 1
+};
+
+/*
+ * enum nl80211_smd_transition_type - SMD BSS Transition phase type
+ *
+ * Used with %NL80211_ATTR_SMD_TRANSITION_TYPE to identify which phase
+ * of the SMD BSS Transition completed.
+ *
+ * @NL80211_SMD_TRANSITION_PREP: ST Prep Response received. Notification
+ *	contains raw frame via %NL80211_ATTR_FRAME. Userspace parses ANonce,
+ *	DH Key, prepared links from frame and derives PTK
+ *
+ * @NL80211_SMD_TRANSITION_EXEC: ST Exec Response received. Notification
+ *	constains raw frame via %NL80211_ATTR_FRAME. Userspace parses Group
+ *	Key Data from frame and installs GTK for transitioning links.
+ *
+ * @NL80211_SMD_TRANSITION_COMPLETE: Primary link switch complete after
+ *	DL drain. Status-only notification (no frame). Userspace installs
+ *	PTK and GTK for the primary link.
+ *
+ * @NL80211_SMD_TRANSITION_ABORT: Transition aborted (timeout or failure).
+ *	Status-only notification (no frame). Status code indicates reason.
+ *
+ */
+enum nl80211_smd_transition_type {
+	NL80211_SMD_TRANSITION_PREP,
+	NL80211_SMD_TRANSITION_EXEC,
+	NL80211_SMD_TRANSITION_COMPLETE,
+	NL80211_SMD_TRANSITION_ABORT,
+};
+
+/**
+ * enum nl80211_smd_link_transition_state - SMD BSS Transition link distribution
+ *
+ * Carried in %NL80211_ATTR_SMD_LINK_TRANSITION_STATE in PREP and EXEC done
+ * events.  Describes where links sit relative to the Serving AP (SAP) and
+ * Target AP (TAP) at the time the event is delivered.
+ *
+ * @NL80211_SMD_LINK_STATE_PENDING: No radio switches have occurred yet.
+ *	mac80211 state has been set up but the driver has not committed any
+ *	vdev or peer resources to the target.  PTK has been derived but must
+ *	not be installed until the state advances to %PARTIAL or %DL_DRAIN.
+ *
+ * @NL80211_SMD_LINK_STATE_PARTIAL: Partner links have been moved to the
+ *	Target AP (VDEV_START and PEER_CREATE issued).  The primary (DL-drain)
+ *	link is still at the Serving AP.  PTK may be installed for the
+ *	transitioning links reported in %NL80211_ATTR_SMD_TRANSITIONING_LINKS.
+ *
+ * @NL80211_SMD_LINK_STATE_DL_DRAIN: All non-primary links are at the Target
+ *	AP.  The primary link is draining DL traffic.  PTK for partner links
+ *	that were not yet installed should be installed now.
+ *
+ * @NL80211_SMD_LINK_STATE_COMPLETE: All links have moved to the Target AP.
+ *	PTK for any remaining links (including primary) must be installed.
+ */
+enum nl80211_smd_link_transition_state {
+	NL80211_SMD_LINK_STATE_PENDING,
+	NL80211_SMD_LINK_STATE_PARTIAL,
+	NL80211_SMD_LINK_STATE_DL_DRAIN,
+	NL80211_SMD_LINK_STATE_COMPLETE,
 };
 
 #endif /* __LINUX_NL80211_H */

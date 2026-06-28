@@ -226,7 +226,7 @@ enum ath12k_dp_debug_stats_mask {
 	DP_ENABLE_ADVANCE_STATS  = 0x00000020,
 	DP_ENABLE_PROTO_STATS    = 0x00000030,
 	DP_ENABLE_VOW_STATS      = 0x00000040,
-	DP_ENABLE_DELAY_STATS    = 0x00000080,
+	DP_ENABLE_LATENCY_STATS    = 0x00000080,
 	DP_ENABLE_QOS_STATS      = 0x80000000,
 };
 
@@ -537,35 +537,6 @@ struct msduq_tx_stats {
 	struct pkt_type pkt_type[DOT11_MAX];
 };
 
-struct tx_stats {
-	struct dp_pkt_info tx_success;
-	struct dp_pkt_info tx_failed;
-	struct dp_pkt_info tx_ingress;
-	struct {
-		struct dp_pkt_info fw_rem;
-		u32 fw_rem_notx;
-		u32 fw_rem_tx;
-		u32 age_out;
-		u32 fw_reason1;
-		u32 fw_reason2;
-		u32 fw_reason3;
-		u32 fw_rem_queue_disable;
-		u32 fw_rem_no_match;
-		u32 drop_threshold;
-		u32 drop_link_desc_na;
-		u32 invalid_drop;
-		u32 mcast_vdev_drop;
-		u32 invalid_rr;
-	} dropped;
-	u32 queue_depth;
-	u32 total_retries_count;
-	u32 retry_count;
-	u32 multiple_retry_count;
-	u32 failed_retry_count;
-	u16 reinject_pkt;
-	struct pkt_type pkt_type[DOT11_MAX];
-};
-
 enum hist_bucket_index {
 	HIST_BUCKET_0,
 	HIST_BUCKET_1,
@@ -607,13 +578,6 @@ struct hist_stats {
 	u32 max;
 	u32 min;
 	u32 avg;
-};
-
-struct delay_stats {
-	struct hist_stats delay_hist;
-	u32 invalid_delay_pkts;
-	u64 delay_success;
-	u64 delay_failure;
 };
 
 /**
@@ -665,8 +629,6 @@ struct ath12k_rxdma_error_stats {
  * @mcast_msdu_cnt: Num Mcast Msdus received from HW
  * @bcast_msdu_cnt: Num Bcast Msdus received from HW
  * @delivered_to_stack: packets delivered to stack
- * @reo_err: REO error statistics
- * @rxdma_err: RXDMA error statistics
  */
 struct ath12k_tid_rx_stats {
 	struct hist_stats to_stack_delay;
@@ -676,8 +638,6 @@ struct ath12k_tid_rx_stats {
 	u32 bcast_msdu_cnt;
 	u32 delivered_to_stack;
 	u32 fail_cnt[DP_TID_RX_SW_DROP_MAX];
-	struct ath12k_reo_error_stats reo_err;
-	struct ath12k_rxdma_error_stats rxdma_err;
 };
 
 /**
@@ -702,26 +662,84 @@ struct ath12k_tid_tx_stats {
  * struct ath12k_dp_pdev_tid_stats - VoW TID statistics
  * @tid_tx: Per-ring, per-TID TX statistics [ring][tid]
  * @tid_rx: Per-ring, per-TID RX statistics [ring][tid]
+ * @tid_reo_err: Per-TID REO error statistics [tid]
+ * @tid_rxdma_err: Per-TID RXDMA error statistics [tid]
  */
 struct ath12k_dp_pdev_tid_stats {
 	struct ath12k_tid_tx_stats tid_tx[DP_TCL_NUM_RING_MAX][VOW_DATA_TID_MAX];
 	struct ath12k_tid_rx_stats tid_rx[DP_REO_DST_RING_MAX][VOW_DATA_TID_MAX];
+	struct ath12k_reo_error_stats tid_reo_err[VOW_DATA_TID_MAX];
+	struct ath12k_rxdma_error_stats tid_rxdma_err[VOW_DATA_TID_MAX];
 };
 
 /**
  * struct ath12k_dp_aggr_pdev_tid_stats
  * @tid_tx: per-TID TX statistics [tid]
  * @tid_rx: per-TID RX statistics [tid]
+ * @tid_reo_err: Per-TID REO error statistics [tid]
+ * @tid_rxdma_err: Per-TID RXDMA error statistics [tid]
  * Per-TID stats aggregated across rings
  */
 struct ath12k_dp_aggr_pdev_tid_stats {
 	struct ath12k_tid_tx_stats tid_tx[VOW_DATA_TID_MAX];
 	struct ath12k_tid_rx_stats tid_rx[VOW_DATA_TID_MAX];
+	struct ath12k_reo_error_stats tid_reo_err[VOW_DATA_TID_MAX];
+	struct ath12k_rxdma_error_stats tid_rxdma_err[VOW_DATA_TID_MAX];
 };
 
-struct ath12k_qos_stats {
-	struct tx_stats qos_tx[QOS_TID_MAX][QOS_TID_MDSUQ_MAX];
-	struct delay_stats qos_delay[QOS_TID_MAX][QOS_TID_MDSUQ_MAX];
+struct ath12k_dp_qos_tx_stats {
+	struct dp_pkt_info tx_success;
+	struct dp_pkt_info tx_failed;
+	struct dp_pkt_info tx_ingress;
+	struct {
+		struct dp_pkt_info fw_rem;
+		u32 fw_rem_notx;
+		u32 fw_rem_tx;
+		u32 age_out;
+		u32 fw_reason1;
+		u32 fw_reason2;
+		u32 fw_reason3;
+		u32 fw_rem_queue_disable;
+		u32 fw_rem_no_match;
+		u32 drop_threshold;
+		u32 drop_link_desc_na;
+		u32 invalid_drop;
+		u32 mcast_vdev_drop;
+		u32 invalid_rr;
+	} dropped;
+	struct fw_mpdu_stats svc_intval_stats;
+	struct fw_mpdu_stats burst_size_stats;
+	u32 queue_depth;
+	u32 throughput;
+	u32 ingress_rate;
+	u32 min_throughput;
+	u32 max_throughput;
+	u32 avg_throughput;
+	u32 per;
+	u32 retries_pct;
+	u32 total_retries_count;
+	u32 retry_count;
+	u32 multiple_retry_count;
+	u32 failed_retry_count;
+	u16 reinject_pkt;
+	struct pkt_type pkt_type[DOT11_MAX];
+};
+
+struct ath12k_dp_qos_delay_stats {
+	struct hist_stats delay_hist;
+	u32 nwdelay_avg;
+	u32 swdelay_avg;
+	u32 hwdelay_avg;
+	u32 invalid_delay_pkts;
+	u32 delay_success;
+	u32 delay_failure;
+};
+
+struct ath12k_dp_link_peer_qos_stats {
+	struct ath12k_dp_qos_tx_stats tx[QOS_TID_MAX][QOS_TID_MDSUQ_MAX];
+	struct ath12k_dp_qos_delay_stats delay[QOS_TID_MAX][QOS_TID_MDSUQ_MAX];
+	u8 tid;
+	u8 msduq;
 };
 
 struct ath12k_mld_qos_stats {
@@ -733,6 +751,7 @@ struct ath12k_mld_qos_stats {
 	u64 hwdelay_win_total;
 	struct fw_mpdu_stats svc_intval_stats;
 	struct fw_mpdu_stats burst_size_stats;
+	u32 queue_depth;
 };
 
 DECLARE_EWMA(avg_ack_rssi, 10, 8)
@@ -875,13 +894,14 @@ struct ath12k_dp_mld_peer_stats {
 	struct ath12k_dp_peer_delay_stats *delay_stats;
 	struct ath12k_dp_peer_jitter_stats *jitter_stats;
 	struct ath12k_dp_peer_sojourn_stats *sojourn_stats;
+	struct ath12k_mld_qos_stats *mld_qos_stats;
 };
 
 struct ath12k_dp_link_peer_stats {
 	struct ath12k_htt_tx_stats *tx_stats;
 	struct ath12k_rx_peer_stats *rx_stats;
 	struct ath12k_dp_mon_peer_stats dp_mon_stats;
-	struct ath12k_qos_stats *qos_stats;
+	struct ath12k_dp_link_peer_qos_stats *link_qos_stats;
 	struct ath12k_dp_link_peer_hw_stats *hw_link_stats;
 	unsigned long last_ack;
 	unsigned long last_rx;
@@ -933,66 +953,6 @@ struct ath12k_dp_peer_tx_stats {
 	struct ath12k_dp_pkt_info bcast;
 };
 
-struct ath12k_tele_qos_tx {
-	struct dp_pkt_info tx_success;
-	struct dp_pkt_info tx_failed;
-	struct dp_pkt_info tx_ingress;
-	struct {
-		struct dp_pkt_info fw_rem;
-		u32 fw_rem_notx;
-		u32 fw_rem_tx;
-		u32 age_out;
-		u32 fw_reason1;
-		u32 fw_reason2;
-		u32 fw_reason3;
-		u32 fw_rem_queue_disable;
-		u32 fw_rem_no_match;
-		u32 drop_threshold;
-		u32 drop_link_desc_na;
-		u32 invalid_drop;
-		u32 mcast_vdev_drop;
-		u32 invalid_rr;
-	} dropped;
-	struct fw_mpdu_stats svc_intval_stats;
-	struct fw_mpdu_stats burst_size_stats;
-	u32 queue_depth;
-	u32 throughput;
-	u32 ingress_rate;
-	u32 min_throughput;
-	u32 max_throughput;
-	u32 avg_throughput;
-	u32 per;
-	u32 retries_pct;
-	u32 total_retries_count;
-	u32 retry_count;
-	u32 multiple_retry_count;
-	u32 failed_retry_count;
-	u16 reinject_pkt;
-	struct pkt_type pkt_type[DOT11_MAX];
-};
-
-struct ath12k_tele_qos_delay {
-	struct hist_stats delay_hist;
-	u32 nwdelay_avg;
-	u32 swdelay_avg;
-	u32 hwdelay_avg;
-	u32 invalid_delay_pkts;
-	u64 delay_success;
-	u64 delay_failure;
-};
-
-struct ath12k_tele_qos_tx_ctx {
-	struct ath12k_tele_qos_tx tx[QOS_TID_MAX][QOS_TID_MDSUQ_MAX];
-	u8 tid;
-	u8 msduq;
-};
-
-struct ath12k_tele_qos_delay_ctx {
-	struct ath12k_tele_qos_delay delay[QOS_TID_MAX][QOS_TID_MDSUQ_MAX];
-	u8 tid;
-	u8 msduq;
-};
-
 struct ath12k_dp_proto_stats {
 	u64 l3[DP_PKT_TYPE_L3_MAX];
 	u64 l4[DP_PKT_TYPE_L4_MAX];
@@ -1024,8 +984,6 @@ struct ath12k_dp_peer_stats {
 	struct ath12k_dp_peer_tx_stats tx[DP_TCL_NUM_RING_MAX];
 	struct ath12k_dp_peer_rx_stats rx[DP_REO_DST_RING_MAX];
 	struct ath12k_wbm_rx_stats wbm_err;
-	struct ath12k_tele_qos_tx_ctx tx_ctx;
-	struct ath12k_tele_qos_delay_ctx delay_ctx;
 	struct ath12k_dp_proto_stats_peer *proto;
 	struct ath12k_dp_peer_tid_agg_delay_stats *delay;
 	struct ath12k_dp_peer_tid_agg_jitter_stats *jitter;
@@ -1871,4 +1829,20 @@ void ath12k_dp_tid_tx_stats_hist_init(struct ath12k_pdev_dp *dp_pdev);
 
 void ath12k_dp_accumulate_hist_stats(struct hist_stats *src_hist_stats,
 				     struct hist_stats *dst_hist_stats);
+
+void ath12k_qos_tx_enqueue_peer_stats(struct ath12k_dp_peer *mld_peer,
+				      u8 hw_link_id, u16 msduq_id,
+				      unsigned int len);
+
+void ath12k_sdwf_update_peer_mcs_stats(struct ath12k_dp_qos_tx_stats *qos_tx,
+				       struct hal_tx_status *ts);
+
+void ath12k_qos_stats_update(struct ath12k_dp_peer *mld_peer,
+			     u8 hw_link_id,
+			     struct ath12k *ar,
+			     struct sk_buff *skb,
+			     struct hal_tx_status *ts,
+			     struct ath12k_pdev_dp *dp_pdev,
+			     ktime_t timestamp,
+			     u32 hw_delay);
 #endif

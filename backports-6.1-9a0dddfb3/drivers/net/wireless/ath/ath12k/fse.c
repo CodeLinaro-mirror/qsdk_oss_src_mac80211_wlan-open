@@ -13,6 +13,7 @@
 bool ath12k_fse_enable = true;
 module_param_named(fse, ath12k_fse_enable, bool, 0444);
 MODULE_PARM_DESC(fse, "Enable FSE feature (Default: true)");
+EXPORT_SYMBOL(ath12k_fse_enable);
 
 static const struct ath_fse_ops ath_fse_ops_obj = {
 	.fse_rule_add = ath12k_sfe_add_flow_entry,

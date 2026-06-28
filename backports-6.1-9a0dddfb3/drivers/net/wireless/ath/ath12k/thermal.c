@@ -599,7 +599,8 @@ int ath12k_thermal_set_throttling(struct ath12k *ar, u32 throttle_state)
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
-	if (ah->state != ATH12K_HW_STATE_ON)
+	if (ah->state != ATH12K_HW_STATE_ON &&
+	    ah->state != ATH12K_HW_STATE_RESTARTED)
 		return 0;
 
 	memset(&param, 0, sizeof(param));

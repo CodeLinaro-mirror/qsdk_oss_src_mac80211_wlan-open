@@ -169,6 +169,8 @@ void ieee80211_set_default_control_key(struct ieee80211_link_data *link,
 				       int idx);
 void ieee80211_remove_link_keys(struct ieee80211_link_data *link,
 				struct list_head *keys);
+void ieee80211_smd_remap_link_keys(struct ieee80211_sub_if_data *sdata,
+				   const s8 *sap_to_tap_link);
 void ieee80211_free_key_list(struct ieee80211_local *local,
 			     struct list_head *keys);
 void ieee80211_free_keys(struct ieee80211_sub_if_data *sdata,

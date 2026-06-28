@@ -1592,6 +1592,20 @@ struct ieee80211_mgmt {
 					u8 dialog_token;
 					__le16 status_code;
 				} __packed epcs_resp;
+				struct {
+					u8 action_code;
+					u8 dialog_token;
+					u8 type;
+					u8 variable[];
+				} __packed uhr_link_reconf_req;
+				struct {
+					u8 action_code;
+					u8 dialog_token;
+					u8 type;
+					__le16 status_code;
+					u8 count;
+					u8 variable[];
+				} __packed uhr_link_reconf_resp;
 			} u;
 		} __packed action;
 		DECLARE_FLEX_ARRAY(u8, body); /* Generic frame body */
@@ -3453,6 +3467,7 @@ ieee80211_bandwidth_indication_size_ok(const u8 *data, u8 len)
 #define WLAN_AUTH_FILS_SK 4
 #define WLAN_AUTH_FILS_SK_PFS 5
 #define WLAN_AUTH_FILS_PK 6
+#define WLAN_AUTH_EPPKE 9
 #define WLAN_AUTH_LEAP 128
 
 #define WLAN_AUTH_CHALLENGE_LEN 128
@@ -3677,6 +3692,10 @@ enum ieee80211_reasoncode {
 	WLAN_REASON_MESH_CHAN_REGULATORY = 65,
 	WLAN_REASON_MESH_CHAN = 66,
 };
+
+/* UHR Action Frame Categories and Types */
+#define WLAN_ACTION_UHR_LINK_RECONF_REQ  0
+#define WLAN_ACTION_UHR_LINK_RECONF_RESP 1
 
 /* SMD BSS Transition Parameters Element */
 
@@ -4060,6 +4079,12 @@ enum ieee80211_protected_eht_actioncode {
 enum ieee80211_protected_uhr_actioncode {
 	WLAN_PROTECTED_UHR_ACTION_LINK_RECONFIG_REQ = 0,
 	WLAN_PROTECTED_UHR_ACTION_LINK_RECONFIG_RESP = 1,
+	WLAN_PROTECTED_UHR_ACTION_LINK_RECONFIG_NOTIF = 2,
+};
+
+enum ieee80211_uhr_link_reconf_resp_type {
+	IEEE80211_UHR_LINK_RECONF_TYPE_ST_PREP = 0,
+	IEEE80211_UHR_LINK_RECONF_TYPE_ST_EXEC = 1,
 };
 
 /* Security key length */
@@ -5249,11 +5274,11 @@ struct ieee80211_mle_preq_common_info {
 	u8 variable[];
 } __packed;
 
-#define IEEE80211_MLC_RECONF_PRES_MLD_MAC_ADDR		0x0010
-#define IEEE80211_MLC_RECONF_PRES_EML_CAPA		0x0020
-#define IEEE80211_MLC_RECONF_PRES_MLD_CAPA_OP		0x0040
-#define IEEE80211_MLC_RECONF_PRES_EXT_MLD_CAPA_OP	0x0080
-#define IEEE80211_MLC_RECONF_PRES_TARGET_AP_MLD_MAC_ADDR BIT(8)
+#define IEEE80211_MLC_RECONF_PRES_MLD_MAC_ADDR		 0x0010
+#define IEEE80211_MLC_RECONF_PRES_EML_CAPA		 0x0020
+#define IEEE80211_MLC_RECONF_PRES_MLD_CAPA_OP		 0x0040
+#define IEEE80211_MLC_RECONF_PRES_EXT_MLD_CAPA_OP	 0x0080
+#define IEEE80211_MLC_RECONF_PRES_TARGET_AP_MLD_MAC_ADDR 0x0100
 
 /* no fixed fields in RECONF */
 

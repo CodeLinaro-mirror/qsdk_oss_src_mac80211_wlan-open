@@ -28,7 +28,11 @@ static void ath12k_pktlog_release(struct ath12k_pktlog *pktlog)
 	for (vaddr = vaddr_start; vaddr < vaddr_end; vaddr += PAGE_SIZE) {
 		page = vmalloc_to_page((const void *)vaddr);
 		if (page)
+#if LINUX_VERSION_IS_LESS(6,8,0)
 			clear_bit(PG_reserved, &page->flags);
+#else
+			ClearPageReserved(page);
+#endif
 	}
 
 	vfree(pktlog->buf);
@@ -60,7 +64,11 @@ static int ath12k_alloc_pktlog_buf(struct ath12k *ar)
 	for (vaddr = vaddr_start; vaddr < vaddr_end; vaddr += PAGE_SIZE) {
 		page = vmalloc_to_page((const void *)vaddr);
 		if (page)
+#if LINUX_VERSION_IS_LESS(6,8,0)
 			set_bit(PG_reserved, &page->flags);
+#else
+			SetPageReserved(page);
+#endif
 	}
 
 	return 0;

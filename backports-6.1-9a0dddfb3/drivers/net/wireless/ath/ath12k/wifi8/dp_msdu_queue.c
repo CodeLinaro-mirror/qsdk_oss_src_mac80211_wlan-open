@@ -79,7 +79,8 @@ void ath12k_wifi8_clear_msduq_sam_id(struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_
 			ret = ath12k_wifi8_hal_tx_sam_cmd_send
 						(ab, srng, -1,
 						 HAL_SAM_MSDU_QUEUE_CLEAR_PROGRAMMING_BO,
-						 sw_msduq_ptr->msduq_sam_id, false);
+						 sw_msduq_ptr->msduq_sam_id, false,
+						 false);
 
 			if (ret < 0)
 				ath12k_warn(ab,
@@ -240,7 +241,6 @@ int ath12k_init_tx_msdu_flowq(struct ath12k_dp_hw_group *dp_hw_grp,
 						    &ti);
 }
 
-static inline
 u8 ath12k_dp_get_chipid_bitmap(struct ath12k_dp_hw_group *dp_hw_grp,
 			       struct ath12k_dp_peer *dp_peer)
 {

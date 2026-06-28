@@ -735,8 +735,19 @@ struct hal_tx_status {
 	u16 tones;
 	u8 ofdma;
 	bool acked;
-	u32 buffer_timestamp;
-	u32 tsf;
+	union delay {
+		struct timestamp {
+			u32 buffer_timestamp;
+			u32 tsf;
+		} ts;
+		struct latency {
+			u32 nw_latency		: 12,
+			    nw_latency_valid	:  1,
+			    stream_id		:  8,
+			    stream_id_valid	:  1;
+			u32 wifi_sched_latency	: 12;
+		} hw;
+	} delay_stats;
 	u8 transmit_cnt;
 	u8 first_msdu;
 	u8 last_msdu;
@@ -1626,7 +1637,7 @@ struct hal_ops {
 				     struct hal_rx_desc *rx_desc,
 				     struct hal_rx_desc *ldesc);
 	void (*extract_rx_spd_data)(struct hal_rx_spd_data *rx_info,
-				    struct hal_rx_desc *rx_desc, int set);
+				    struct hal_rx_desc *rx_desc);
 	void (*ce_dst_setup)(struct ath12k_base *ab,
 			     struct hal_srng *srng, int ring_num);
 	void (*set_umac_srng_ptr_addr)(struct ath12k_base *ab,
@@ -1731,6 +1742,7 @@ struct hal_ops {
 	u32 (*hal_rx_h_mpdu_err)(struct hal_rx_desc *desc);
 	void (*hal_set_reg_writer_hptp_addr)(struct ath12k_base *ab,
 					     struct hal_srng *srng,
+					     int mac_id,
 					     int idx,
 					     enum hal_ring_type);
 };

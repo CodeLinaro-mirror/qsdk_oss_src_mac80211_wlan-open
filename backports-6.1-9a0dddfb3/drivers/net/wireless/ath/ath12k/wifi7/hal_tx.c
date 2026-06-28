@@ -233,17 +233,39 @@ EXPORT_SYMBOL(ath12k_wifi7_hal_tx_set_pcp_tid_map);
  * (GENMASK(3,0)).  Iterates all dp_hw_grp->dp[] entries and writes to every
  * non-NULL SOC via ath12k_hif_write32().
  */
+/*
+ * wifi7 TID map precedence hardware register values.
+ *
+ * The unified userspace VAL (0=DSCP, 1=PCP) is mapped to the wifi7
+ * 4-bit hardware register value:
+ *   0 (DSCP) → hw VAL 0: DSCP > PCP > HLOS (S-VLAN first)
+ *   1 (PCP)  → hw VAL 4: PCP > DSCP > HLOS (S-VLAN first)
+ *
+ * HLOS is always present but implicitly enabled by other features;
+ * it is not user-configurable.
+ */
+static const u8 ath12k_wifi7_prec_val_map[2] = {
+	[0] = HAL_TCL_TID_MAP_PRTY_VAL_DSCP,  /* (DSCP > PCP > HLOS, S-VLAN first) */
+	[1] = HAL_TCL_TID_MAP_PRTY_VAL_PCP,   /* (PCP > DSCP > HLOS, S-VLAN first) */
+};
+
 void ath12k_wifi7_hal_tx_set_tid_map_precedence(struct ath12k_base *ab,
 						const u8 precedence)
 {
 	u32 reg_val;
 
 	/*
-	 * Encode the precedence value into bits [3:0].
-	 * u32_encode_bits() uses HAL_TCL_TID_MAP_PRTY_VAL_MASK = GENMASK(3,0)
-	 * and WARNs if tid_map_precedence overflows the 4-bit field.
+	 * Dumb register writer — no validation.
+	 * Validation (0 or 1 only) is performed by the caller (dp.c).
+	 *
+	 * Map unified userspace VAL to wifi7 hardware register value:
+	 *   0 (DSCP) → hw VAL 0 (DSCP > PCP > HLOS, S-VLAN first)
+	 *   1 (PCP)  → hw VAL 4 (PCP > DSCP > HLOS, S-VLAN first)
+	 *
+	 * u32_encode_bits() uses HAL_TCL_TID_MAP_PRTY_VAL_MASK = GENMASK(3,0).
 	 */
-	reg_val = u32_encode_bits(precedence, HAL_TCL_TID_MAP_PRTY_VAL_MASK);
+	reg_val = u32_encode_bits(ath12k_wifi7_prec_val_map[precedence],
+				  HAL_TCL_TID_MAP_PRTY_VAL_MASK);
 
 	ath12k_hif_write32(ab, HAL_TCL_R0_PCP_TID_MAP_PRTY_OFFSET, reg_val);
 }

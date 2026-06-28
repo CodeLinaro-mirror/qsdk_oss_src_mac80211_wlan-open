@@ -122,10 +122,13 @@ void ath12k_wifi7_umac_reset_handle_pre_reset_wrapper(struct ath12k_base *ab)
 
 static void ath12k_wifi7_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 {
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
 	struct ath12k_dp *dp;
 	int i, n_link_desc, ret;
 	struct hal_srng *srng = NULL;
 	unsigned long end;
+	bool is_initiator_chip = (mlo_umac_reset->initiator_chip == ab->device_id);
 
 	ath12k_dp_srng_hw_ring_disable(ab);
 
@@ -160,11 +163,13 @@ static void ath12k_wifi7_umac_reset_handle_post_reset_start(struct ath12k_base *
 	if (ret)
 		ath12k_warn(ab, "failed to setup rx_refill_buf_ring\n");
 
-	ath12k_dp_umac_tx_desc_cleanup(ab);
+	if (is_initiator_chip)
+		ath12k_dp_umac_tx_desc_cleanup(ab);
+
 	ath12k_dp_umac_rx_desc_cleanup(ab);
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
+	if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags) && is_initiator_chip)
 		ath12k_dp_ppeds_tx_desc_cleanup(ab);
 #endif
 
@@ -218,6 +223,12 @@ static void ath12k_wifi7_post_reset_task(struct ath12k_base *ab)
 	/* Free all saved RX SKBs */
 	while ((skb = skb_dequeue(&umac_reset->rx_skb_queue)) != NULL)
 		dev_kfree_skb_any(skb);
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	/* Free all saved TX SKBs */
+	while ((skb = skb_dequeue(&umac_reset->ppeds_tx_skb_queue)) != NULL)
+		dev_kfree_skb_any(skb);
+#endif
 
 	/* If ring was not replenished completely due to insufficient
 	 * rx descs in use during umac reset, we take care of replenishing

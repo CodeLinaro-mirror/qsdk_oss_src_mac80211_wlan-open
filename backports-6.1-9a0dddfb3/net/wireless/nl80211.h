@@ -138,4 +138,18 @@ int nl80211_send_mscs_flow_info(struct cfg80211_registered_device *rdev,
 				struct cfg80211_qm_tclas4_params flow_params,
 				u8 tid);
 
+void nl80211_smd_prep_done(struct net_device *dev,
+			   struct cfg80211_uhr_reconfig_done *data);
+
+void nl80211_smd_exec_done(struct net_device *dev,
+			   struct cfg80211_uhr_reconfig_done *data);
+
+void nl80211_uhr_reconf_done(struct net_device *dev,
+			     struct cfg80211_uhr_reconfig_done *data);
+
+void nl80211_notify_smd_bss_transition(struct net_device *dev,
+				       const u8 *target_mld_addr,
+				       enum nl80211_smd_transition_type type,
+				       u16 status_code);
+
 #endif /* __NET_WIRELESS_NL80211_H */

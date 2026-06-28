@@ -54,26 +54,6 @@ struct dp_rx_fse {
 	bool is_valid;
 };
 
-struct link_peer_rx_tid_stats {
-	u32 received_frm_reo_cnt		: 8,
-	    received_frm_reo_bytes		: 24;
-	u32 sent_to_stack_ucast			: 8,
-	    sent_to_stack_ucast_bytes		: 24;
-	u32 sent_to_stack_ucast_fast		: 8,
-	    sent_to_stack_ucast_fast_bytes	: 24;
-	u32 sent_to_stack_mcast			: 8,
-	    sent_to_stack_mcast_bytes		: 24;
-	u32 sent_to_stack_mcast_fast		: 8,
-	    sent_to_stack_mcast_fast_bytes	: 24;
-	u32 sg_cnt				: 8,
-	    sg_bytes				: 24;
-	u8 non_amsdu;
-	u8 amsdu;
-	u8 mpdu_retry;
-	u8 mcast_cnt;
-	u8 bcast_cnt;
-} __aligned(64);
-
 bool ath12k_dp_rx_check_nwifi_hdr_len_valid(struct ath12k_dp *dp,
 					    u8 decap_type,
 					    struct sk_buff *msdu);
@@ -126,9 +106,9 @@ void ath12k_wifi7_dp_rx_fst_detach(struct ath12k_dp *dp, struct dp_rx_fst *fst);
 static inline
 void ath12k_wifi7_dp_extract_rx_spd_data(struct ath12k_hal *hal,
 					 struct hal_rx_spd_data *rx_info,
-					 struct hal_rx_desc *rx_desc, int set)
+					 struct hal_rx_desc *rx_desc)
 {
-	hal->hal_ops->extract_rx_spd_data(rx_info, rx_desc, set);
+	hal->hal_ops->extract_rx_spd_data(rx_info, rx_desc);
 }
 
 static inline
@@ -242,223 +222,6 @@ void ath12k_wifi7_dp_rx_desc_get_crypto_header(struct ath12k_base *ab,
 {
 	ab->hw_params->hal_ops->rx_desc_get_crypto_header(desc, crypto_hdr,
 			enctype);
-}
-
-static inline void
-ath12k_wifi7_dp_rx_update_peer_stats(struct ath12k_pdev_dp *pdev,
-				     struct ath12k_dp_peer *peer,
-				     struct link_peer_rx_tid_stats *stats,
-				     int ring_id, u8 hw_link_id,
-				     u8 active_tid_mask)
-{
-	int i;
-	struct ath12k_dp_peer_stats *pstats = NULL;
-	struct ath12k_dp_peer_rx_stats *rx = NULL;
-
-	hw_link_id = ath12k_dp_validate_hw_link_id(hw_link_id);
-	pstats = &peer->stats[hw_link_id];
-	rx = &pstats->rx[ring_id];
-
-	for (i = 0; i < MAX_TP_TIDS; i++) {
-		if (!(active_tid_mask & (1 << i))) {
-			stats++;
-			continue;
-		}
-
-		rx->recv_from_reo.packets += stats->received_frm_reo_cnt;
-		rx->recv_from_reo.bytes += stats->received_frm_reo_bytes;
-
-		/* ideally we should have both ucast and mcast pkts sent to stack
-		 * stats rather than just one sent_to_stack_fast stats
-		 */
-		rx->sent_to_stack_fast.packets += stats->sent_to_stack_ucast_fast +
-						stats->sent_to_stack_mcast_fast;
-
-		rx->sent_to_stack_fast.bytes += stats->sent_to_stack_ucast_fast_bytes +
-						stats->sent_to_stack_mcast_fast_bytes;
-
-		rx->sent_to_stack_ucast_fast.packets += stats->sent_to_stack_ucast_fast;
-		rx->sent_to_stack_ucast_fast.bytes += stats->sent_to_stack_ucast_fast_bytes;
-		rx->sent_to_stack_mcast_fast.packets += stats->sent_to_stack_mcast_fast;
-		rx->sent_to_stack_mcast_fast.bytes += stats->sent_to_stack_mcast_fast_bytes;
-
-		rx->msdu_part_of_amsdu += stats->amsdu;
-		rx->non_amsdu += stats->non_amsdu;
-		rx->mpdu_retry += stats->mpdu_retry;
-
-		if (stats->sent_to_stack_ucast) {
-			rx->ucast.packets += stats->sent_to_stack_ucast;
-			rx->ucast.bytes += stats->sent_to_stack_ucast_bytes;
-
-			/* ideally we should have both ucast and mcast pkts sent to stack
-			 * stats rather than just one sent_to_stack stats.
-			 */
-			rx->sent_to_stack.packets += stats->sent_to_stack_ucast;
-			rx->sent_to_stack.bytes +=  stats->sent_to_stack_ucast_bytes;
-		}
-
-		if (stats->sent_to_stack_mcast) {
-			rx->mcast.packets += stats->sent_to_stack_mcast;
-			rx->mcast.bytes += stats->sent_to_stack_mcast_bytes;
-
-			/* ideally we should have both ucast and mcast pkts sent to stack
-			 * stats rather than just one sent_to_stack stats.
-			 */
-			rx->sent_to_stack.packets += stats->sent_to_stack_mcast;
-			rx->sent_to_stack.bytes +=  stats->sent_to_stack_mcast_bytes;
-		}
-
-		if (stats->sg_cnt) {
-			rx->sg.packets += stats->sg_cnt;
-			rx->sg.bytes += stats->sg_bytes;
-		}
-		stats++;
-	}
-}
-
-static inline void
-ath12k_wifi7_dp_rx_update_vif_stats(struct ath12k_pdev_dp *pdev,
-				    struct ath12k_dp_peer *peer,
-				    struct link_peer_rx_tid_stats *stats,
-				    int ring_id, u8 hw_link_id,
-				    u8 active_tid_mask)
-{
-	int i;
-	struct pcpu_netdev_tid_stats *tstats;
-	struct ieee80211_vif *vif;
-	struct ath12k_vif *ahvif;
-
-	if (ath12k_dp_stats_enabled(pdev) && ath12k_tid_stats_enabled(pdev)) {
-		vif = ath12k_dp_peer_get_vif(peer);
-		ahvif = ath12k_vif_to_ahvif(vif);
-
-		tstats = this_cpu_ptr(ahvif->tstats);
-		u64_stats_update_begin(&tstats->syncp);
-		for (i = 0; i < MAX_TP_TIDS; i++) {
-			if (!(active_tid_mask & (1 << i))) {
-				stats++;
-				continue;
-			}
-
-			tstats->tid_stats[i].rx_pkt_stats[ATH_RX_REO_PKTS] +=
-						stats->received_frm_reo_cnt;
-			tstats->tid_stats[i].rx_pkt_bytes[ATH_RX_REO_PKTS] +=
-						stats->received_frm_reo_bytes;
-
-			if (peer->rx_decap_type == DP_RX_DECAP_TYPE_ETHERNET2_DIX) {
-				tstats->tid_stats[i].rx_pkt_stats[ATH_RX_ETH_PKTS] +=
-					stats->sent_to_stack_ucast_fast +
-					stats->sent_to_stack_mcast_fast +
-					stats->sent_to_stack_ucast +
-					stats->sent_to_stack_mcast;
-				tstats->tid_stats[i].rx_pkt_bytes[ATH_RX_ETH_PKTS] +=
-					stats->sent_to_stack_ucast_fast_bytes +
-					stats->sent_to_stack_mcast_fast_bytes +
-					stats->sent_to_stack_ucast_bytes +
-					stats->sent_to_stack_mcast_bytes;
-			} else if (peer->rx_decap_type == DP_RX_DECAP_TYPE_NATIVE_WIFI) {
-				tstats->tid_stats[i].rx_pkt_stats[ATH_RX_NATIVE_WIFI_PKTS] +=
-					stats->sent_to_stack_ucast +
-					stats->sent_to_stack_mcast;
-				tstats->tid_stats[i].rx_pkt_bytes[ATH_RX_NATIVE_WIFI_PKTS] +=
-					stats->sent_to_stack_ucast_bytes +
-					stats->sent_to_stack_mcast_bytes;
-			} else {
-				tstats->tid_stats[i].rx_pkt_stats[ATH_RX_RAW_PKTS] +=
-					stats->sent_to_stack_ucast +
-					stats->sent_to_stack_mcast;
-				tstats->tid_stats[i].rx_pkt_bytes[ATH_RX_RAW_PKTS] +=
-					stats->sent_to_stack_ucast_bytes +
-					stats->sent_to_stack_mcast_bytes;
-			}
-			tstats->tid_stats[i].rx_pkt_stats[ATH_RX_TOTAL_OUT_PKTS] +=
-						stats->sent_to_stack_ucast +
-						stats->sent_to_stack_mcast;
-			tstats->tid_stats[i].rx_pkt_bytes[ATH_RX_TOTAL_OUT_PKTS] +=
-						stats->sent_to_stack_ucast_bytes +
-						stats->sent_to_stack_mcast_bytes;
-
-			stats++;
-		}
-		u64_stats_update_end(&tstats->syncp);
-	}
-}
-
-static inline void
-ath12k_wifi7_dp_rx_update_wmm_stats(struct ath12k_pdev_dp *pdev,
-				    struct ath12k_dp_peer *peer,
-				    struct link_peer_rx_tid_stats *stats,
-				    int ring_id, u8 hw_link_id,
-				    u8 active_tid_mask)
-{
-	int i;
-	struct ieee80211_vif *vif;
-	struct ath12k_vif *ahvif;
-	enum wme_ac ac;
-
-	vif = ath12k_dp_peer_get_vif(peer);
-	ahvif = ath12k_vif_to_ahvif(vif);
-
-	/* update of wmm stats happens at both dp_pdev and athvif level */
-	for (i = 0; i < MAX_TP_TIDS; i++) {
-		if (!(active_tid_mask & (1 << i))) {
-			stats++;
-			continue;
-		}
-
-		ac = ath12k_tid_to_ac(i > ATH12K_DSCP_PRIORITY ? 0 : i);
-
-		pdev->wmm_stats.total_wmm_rx_pkts[ac]++;
-		ahvif->wmm_stats.total_wmm_rx_pkts[ac]++;
-
-		stats++;
-	}
-}
-
-static inline void
-ath12k_wifi7_dp_rx_update_vow_stats(struct ath12k_pdev_dp *pdev,
-				    struct link_peer_rx_tid_stats *stats,
-				    int ring_id, u8 active_tid_mask)
-{
-	struct ath12k_tid_rx_stats *tid_rx_stats;
-	int i;
-
-	if (!ath12k_dp_stats_enabled(pdev) ||
-	    !ath12k_dp_vow_stats_enabled(pdev))
-		return;
-
-	for (i = 0; i < MAX_TP_TIDS; i++, stats++) {
-		if (!(active_tid_mask & (1 << i)))
-			continue;
-
-		tid_rx_stats = &pdev->tid_stats.tid_rx[ring_id][i];
-		tid_rx_stats->msdu_cnt           += stats->received_frm_reo_cnt;
-		tid_rx_stats->mcast_msdu_cnt     += stats->mcast_cnt;
-		tid_rx_stats->bcast_msdu_cnt     += stats->bcast_cnt;
-		tid_rx_stats->delivered_to_stack += stats->sent_to_stack_ucast +
-					   stats->sent_to_stack_mcast +
-					   stats->sent_to_stack_ucast_fast +
-					   stats->sent_to_stack_mcast_fast;
-	}
-}
-
-static inline void
-ath12k_wifi7_dp_rx_update_stats(struct ath12k_pdev_dp *pdev,
-				struct ath12k_dp_peer *peer,
-				struct link_peer_rx_tid_stats *stats,
-				int ring_id, u8 hw_link_id,
-				u8 active_tid_mask)
-{
-	ath12k_wifi7_dp_rx_update_peer_stats(pdev, peer, stats, ring_id, hw_link_id,
-					     active_tid_mask);
-
-	ath12k_wifi7_dp_rx_update_vif_stats(pdev, peer, stats, ring_id, hw_link_id,
-					    active_tid_mask);
-
-	ath12k_wifi7_dp_rx_update_wmm_stats(pdev, peer, stats, ring_id, hw_link_id,
-					    active_tid_mask);
-
-	ath12k_wifi7_dp_rx_update_vow_stats(pdev, stats, ring_id, active_tid_mask);
 }
 
 static void ath12k_wifi7_dp_rx_h_undecap_nwifi(struct ath12k_pdev_dp *dp_pdev,
@@ -609,31 +372,6 @@ void ath12k_wifi7_copy_tlv_info(struct rx_tlv_info_1 *prev_tlv_info,
 	prev_tlv_info->decap = tlv_info->decap;
 }
 
-static inline bool
-is_ieee80211_frame_mcast(struct sk_buff *msdu)
-{
-	struct ieee80211_hdr *hdr;
-	u16 fc;
-	u8 *da;
-
-	hdr = (struct ieee80211_hdr *)msdu->data;
-
-	fc = le16_to_cpu(hdr->frame_control);
-
-	if (ieee80211_has_tods(fc) && ieee80211_has_fromds(fc)) {
-		/* WDS: DA = Address 3 */
-		da = hdr->addr3;
-	} else if (ieee80211_has_tods(fc)) {
-		/* STA -> DS: DA = Address 3 */
-		da = hdr->addr3;
-	} else {
-		/* DS -> STA or IBSS: DA = Address 1 */
-		da = hdr->addr1;
-	}
-
-	return(is_multicast_ether_addr(da) ? 1 : 0);
-}
-
 static inline
 int ath12k_wifi7_deliver_raw_frame(struct ath12k_pdev_dp *dp_pdev,
 				   struct hal_rx_spd_data *rx_spd,
@@ -656,7 +394,7 @@ int ath12k_wifi7_deliver_raw_frame(struct ath12k_pdev_dp *dp_pdev,
 	bool ra_mcbc = rx_spd->rx_msdu_info.da_is_mcbc &&
 				!peer->is_reset_mcbc;
 
-	is_mcbc = is_ieee80211_frame_mcast(msdu);
+	is_mcbc = is_ieee80211_frame_da_mcast(msdu);
 
 	hal = dp_pdev->dp->hal;
 
@@ -681,8 +419,7 @@ int ath12k_wifi7_deliver_raw_frame(struct ath12k_pdev_dp *dp_pdev,
 
 	msdu->priority = rx_mpdu_info->tid;
 
-	ath12k_wifi7_dp_extract_rx_spd_data(hal,
-					    rx_spd, rx_tlv_hdr, 1);
+	ath12k_wifi7_dp_extract_rx_spd_data(hal, rx_spd, rx_tlv_hdr);
 
 	decrypted = ath12k_hal_rx_h_is_decrypted(hal, rx_tlv_hdr);
 
@@ -786,7 +523,7 @@ int ath12k_wifi7_deliver_nwifi_frame(struct ath12k_pdev_dp *dp_pdev,
 
 	ath12k_wifi7_dp_extract_rx_spd_data(hal,
 					    rx_spd,
-					    (struct hal_rx_desc *)rx_tlv_hdr, 1);
+					    (struct hal_rx_desc *)rx_tlv_hdr);
 
 	/* copy from scratch_pad to ieee80211_rx_status */
 	tlv_info = &rx_spd->tlv_info;
@@ -865,8 +602,7 @@ int ath12k_wifi7_deliver_ethernet_frame(struct ath12k_pdev_dp *dp_pdev,
 	 * Note: Radio params (ie: band, nss, sgi etc...) remain same
 	 */
 	ath12k_wifi7_dp_extract_rx_spd_data(hal, rx_spd,
-					    (struct hal_rx_desc *)rx_tlv_hdr,
-					    1);
+					    (struct hal_rx_desc *)rx_tlv_hdr);
 
 	tlv_info = &rx_spd->tlv_info;
 
@@ -906,7 +642,7 @@ int ath12k_wifi7_deliver_ethernet_frame(struct ath12k_pdev_dp *dp_pdev,
 	 */
 	if (!peer->use_4addr &&
 	    (rx_spd->rx_msdu_info.fr_ds && rx_spd->rx_msdu_info.to_ds)) {
-		ath12k_wifi7_convert_eth_2_80211_frame(rx_spd);
+		ath12k_dp_convert_eth_2_80211_frame(rx_spd);
 		status->flag &= ~RX_FLAG_8023;
 	}
 

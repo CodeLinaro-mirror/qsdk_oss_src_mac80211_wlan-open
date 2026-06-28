@@ -10,7 +10,9 @@
 #include "athdbg_minidump.h"
 #include "athdbg_core.h"
 #include "athdbg_wmi_recording.h"
+#include "athdbg_uio.h"
 #include "../debug.h"
+#include "athdbg_netlink.h"
 
 MODULE_SOFTDEP("post: ath12k ath12k_wifi7");
 
@@ -232,11 +234,22 @@ static int __init athdbg_driver_init(void)
 		return -ENOMEM;
 	}
 
+	if (athdbg_netlink_init())
+		pr_err("athdbg_core: genl family register failed for FW_SS_HANDLER, netlink unavailable\n");
+
 	athdbg_create_minidump_struct_list();
 
 	INIT_WORK(&athdbg_base->dbg_wk, athdbg_process_request);
 	INIT_LIST_HEAD(&athdbg_base->req_list);
 	mutex_init(&athdbg_base->req_lock);
+	mutex_init(&athdbg_base->uio_lock);
+
+#ifdef CPTCFG_ATHDEBUG_UIO_LOGGING
+	if (athdbg_uio_register()) {
+		pr_err("athdbg_core: UIO register failed: %d\n", ret);
+		return -EINVAL;
+	}
+#endif
 
 	return 0;
 }
@@ -248,6 +261,10 @@ static void __exit athdbg_driver_exit(void)
 	athdbg_clear_minidump_struct_list();
 	cancel_work_sync(&athdbg_base->dbg_wk);
 	destroy_workqueue(athdbg_base->dbg_wq);
+#ifdef CPTCFG_ATHDEBUG_UIO_LOGGING
+	athdbg_uio_unregister();
+#endif
+	athdbg_netlink_exit();
 	kfree(athdbg_base);
 }
 

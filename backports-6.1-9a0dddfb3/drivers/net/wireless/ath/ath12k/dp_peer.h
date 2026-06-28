@@ -17,8 +17,6 @@
 #define ATH12K_DP_PEER_ID_INVALID              0xFFFF
 #define ATH12K_3LINK_MLO_MAX_STA_LINKS         3
 
-/* 17 tids for DP, 2 for mgmt, and 1 shared between DP and mgmt */
-#define ATH12K_MAX_TIDS 20
 
 struct ath12k_dp_link_vif;
 struct ath12k_dp_peer_ext_ctx;
@@ -180,6 +178,22 @@ struct ath12k_dp_peer {
 	u32 peer_links_map;
 	bool primary_link_frag_setup;
 
+	/*
+	 * Bitmask of TIDs whose REO LUT entries are still active after
+	 * smd_prep_rx_tid() during SMD BSS Transition PREP phase.
+	 *
+	 * During PREP the old peer's rx_tid[] DMA descriptors are parked
+	 * (vaddr/paddr zeroed, active=false) but the REO LUT entries are
+	 * intentionally kept alive so the Serving AP can continue delivering
+	 * DL frames on the primary link during Phase B (DL drain window).
+	 *
+	 * Set in ath12k_wifi8_dp_smd_prep_rx_tid().
+	 * Cleared (and LUT entries removed) in
+	 * ath12k_wifi8_dp_smd_clear_old_peer_rx_lut() which is called from
+	 * ath12k_dp_peer_cleanup() when the old peer is torn down in Phase C.
+	 */
+	u32 smd_lut_active_tids;
+
 	enum hal_pn_type pn_type;
 
 	/* Lock for protection of keys */
@@ -196,7 +210,6 @@ struct ath12k_dp_peer {
 	u16 sec_type_grp;
 	u8 vdev_type_4addr;
 	bool is_reset_mcbc;
-	struct ath12k_mld_qos_stats mld_qos_stats[QOS_TID_MAX][QOS_TID_MDSUQ_MAX];
 	struct ath12k_dp_mld_peer_stats mld_stats;
 	bool qos_stats_lvl;
 
@@ -364,12 +377,11 @@ int ath12k_dp_peer_scs_data(struct ath12k_dp *dp,
 			    u8 scs_id,
 			    struct ath12k_dp_hw *dp_hw,
 			    u16 *msduq, u16 *qos_id,
-			    struct ath12k_dp_peer *dp_peer,
-			    u8 link_id);
+			    struct ath12k_dp_peer *dp_peer);
 u16 ath12k_dp_peer_scs_get_qos_id(struct ath12k_dp_peer_qos *qos, u8 scs_id);
 u16 ath12k_dp_peer_qos_msduq(struct ath12k_base *ab,
 			     struct ath12k_dp_peer_qos *qos,
-			     struct ath12k_dp_peer *dp_peer, u8 link_id,
+			     struct ath12k_dp_peer *dp_peer,
 			     struct ath12k_dp_hw *dp_hw,
 			     u16 qos_id, u8 svc_id);
 u16 dp_peer_msduq_qos_id(struct ath12k_base *ab,

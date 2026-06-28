@@ -231,7 +231,7 @@ free:
 
 static void ieee80211_send_addba_resp(struct sta_info *sta, u8 *da, u16 tid,
 				      u8 dialog_token, u16 status, u16 policy,
-				      u16 buf_size, u16 timeout,
+				      u16 buf_size, u16 timeout, int rx_link_id,
 				      const u8 req_addba_ext_data)
 {
 	struct ieee80211_sub_if_data *sdata = sta->sdata;
@@ -242,9 +242,21 @@ static void ieee80211_send_addba_resp(struct sta_info *sta, u8 *da, u16 tid,
 	u16 capab;
 	struct ieee80211_link_data *link;
 	u8 link_id;
+	unsigned int rx_amsdu_link_id = 0;
 
-	if (amsdu && !ieee80211_get_rx_amsdu_for_tid(sdata, tid))
-		amsdu = false;
+	if (sdata->vif.valid_links && sta) {
+		rx_amsdu_link_id = sta->deflink.link_id;
+
+		if (rx_link_id >= 0 && rx_link_id < IEEE80211_MLD_MAX_NUM_LINKS)
+			rx_amsdu_link_id = rx_link_id;
+	}
+
+	if (amsdu) {
+		rcu_read_lock();
+		if (!ieee80211_get_rx_amsdu_for_tid(sdata, rx_amsdu_link_id, tid))
+			amsdu = false;
+		rcu_read_unlock();
+	}
 
 	skb = dev_alloc_skb(sizeof(*mgmt) +
 		    2 + sizeof(struct ieee80211_addba_ext_ie) +
@@ -309,7 +321,7 @@ void __ieee80211_start_rx_ba_session(struct sta_info *sta,
 				     u8 dialog_token, u16 timeout,
 				     u16 start_seq_num, u16 ba_policy, u16 tid,
 				     u16 buf_size, bool tx, bool auto_seq,
-				     const u8 addba_ext_data)
+				     int rx_link_id, const u8 addba_ext_data)
 {
 	struct ieee80211_local *local = sta->sdata->local;
 	struct tid_ampdu_rx *tid_agg_rx;
@@ -524,13 +536,13 @@ end:
 	if (tx)
 		ieee80211_send_addba_resp(sta, sta->sta.addr, tid,
 					  dialog_token, status, 1, buf_size,
-					  timeout, addba_ext_data);
+					  timeout, rx_link_id, addba_ext_data);
 }
 
 void ieee80211_process_addba_request(struct ieee80211_local *local,
 				     struct sta_info *sta,
 				     struct ieee80211_mgmt *mgmt,
-				     size_t len)
+				     size_t len, int rx_link_id)
 {
 	u16 capab, tid, timeout, ba_policy, buf_size, start_seq_num;
 	u8 dialog_token, addba_ext_data;
@@ -556,7 +568,8 @@ void ieee80211_process_addba_request(struct ieee80211_local *local,
 
 	__ieee80211_start_rx_ba_session(sta, dialog_token, timeout,
 					start_seq_num, ba_policy, tid,
-					buf_size, true, false, addba_ext_data);
+					buf_size, true, false, rx_link_id,
+					addba_ext_data);
 }
 
 void ieee80211_manage_rx_ba_offl(struct ieee80211_vif *vif,

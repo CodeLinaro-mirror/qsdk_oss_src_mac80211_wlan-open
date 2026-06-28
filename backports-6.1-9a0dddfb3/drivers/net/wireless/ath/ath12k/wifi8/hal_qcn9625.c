@@ -363,6 +363,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.mac_type = ATH12K_HAL_SRNG_PMAC,
 		.ring_dir = HAL_SRNG_DIR_SRC,
 		.max_size = HAL_RXDMA_RING_MAX_SIZE_BE,
+		.reg_writer_en = true,
 	},
 	[HAL_RXDMA_MONITOR_DST] = {
 		.start_ring_id = HAL_SRNG_RING_ID_WMAC1_SW2RXMON_BUF0,
@@ -381,6 +382,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.mac_type = ATH12K_HAL_SRNG_PMAC,
 		.ring_dir = HAL_SRNG_DIR_DST,
 		.max_size = HAL_RXDMA_RING_MAX_SIZE_BE,
+		.reg_writer_en = true,
 	},
 	[HAL_WBM_BUF_MGMT] = {
 		.start_ring_id = HAL_SRNG_RING_ID_WBM_BUF_MGMT,
@@ -1196,24 +1198,33 @@ void ath12k_wifi8_hal_extract_rx_desc_data_qcn9625(struct hal_rx_desc_data *rx_d
 }
 
 void ath12k_wifi8_hal_extract_rx_spd_data_qcn9625(struct hal_rx_spd_data *rx_info,
-						  struct hal_rx_desc *rx_desc, int set)
+						  struct hal_rx_desc *rx_desc)
 {
-	if (set == 0) {
-		rx_info->tlv_info.decap =
-			ath12k_wifi8_hal_rx_h_decap_type_qcn9625(rx_desc);
-		rx_info->tlv_info.mesh_ctrl_present =
-			ath12k_wifi8_hal_rx_h_mesh_ctl_present_qcn9625(rx_desc);
-	} else if (set == 1) {
-		rx_info->tlv_info.freq = ath12k_wifi8_hal_rx_h_freq_qcn9625(rx_desc);
-		rx_info->tlv_info.pkt_type =
-			ath12k_wifi8_hal_rx_h_pkt_type_qcn9625(rx_desc);
-		rx_info->tlv_info.bw = ath12k_wifi8_hal_rx_h_rx_bw_qcn9625(rx_desc);
-		rx_info->tlv_info.rate_mcs =
-			ath12k_wifi8_hal_rx_h_rate_mcs_qcn9625(rx_desc);
-		rx_info->tlv_info.nss =
-			hweight8(ath12k_wifi8_hal_rx_h_nss_qcn9625(rx_desc));
-		rx_info->tlv_info.sgi = ath12k_wifi8_hal_rx_h_sgi_qcn9625(rx_desc);
-	}
+	__le32 flow_idx_info = rx_desc->u.qcn9625_compact.msdu_end.info8;
+
+	rx_info->tlv_info.decap =
+		ath12k_wifi8_hal_rx_h_decap_type_qcn9625(rx_desc);
+	rx_info->tlv_info.mesh_ctrl_present =
+		ath12k_wifi8_hal_rx_h_mesh_ctl_present_qcn9625(rx_desc);
+	rx_info->tlv_info.freq = ath12k_wifi8_hal_rx_h_freq_qcn9625(rx_desc);
+	rx_info->tlv_info.pkt_type =
+		ath12k_wifi8_hal_rx_h_pkt_type_qcn9625(rx_desc);
+	rx_info->tlv_info.bw = ath12k_wifi8_hal_rx_h_rx_bw_qcn9625(rx_desc);
+	rx_info->tlv_info.rate_mcs =
+		ath12k_wifi8_hal_rx_h_rate_mcs_qcn9625(rx_desc);
+	rx_info->tlv_info.nss =
+		hweight8(ath12k_wifi8_hal_rx_h_nss_qcn9625(rx_desc));
+	rx_info->tlv_info.sgi = ath12k_wifi8_hal_rx_h_sgi_qcn9625(rx_desc);
+	rx_info->cce_metadata =
+		__le16_to_cpu(rx_desc->u.qcn9625_compact.msdu_end.cce_metadata);
+
+	rx_info->rx_mpdu_info.flow_idx_timeout =
+		le32_get_bits(flow_idx_info, RX_MSDU_END_INFO8_FLOW_IDX_TIMEOUT);
+	rx_info->rx_mpdu_info.flow_idx_invalid =
+		le32_get_bits(flow_idx_info, RX_MSDU_END_INFO8_FLOW_IDX_INVALID);
+	rx_info->rx_mpdu_info.flow_info.flow_metadata =
+		le16_get_bits(rx_desc->u.qcn9625_compact.msdu_end.fse_metadata,
+			      ATH12K_DP_RX_FSE_FLOW_METADATA_MASK);
 }
 
 static int ath12k_wifi8_hal_srng_create_config_qcn9625(struct ath12k_hal *hal)
@@ -1463,6 +1474,42 @@ ath12k_wifi8_hal_tcl_to_cmp_rbm_map_qcn9625[] = {
 	}
 };
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+static const struct ath12k_hal_rdi_mapping ath12k_wifi8_hal_rdi_mapping_qcn9625[] = {
+	{ DESTINATION_RING_CTRL_SW0, SOURCE_RING_CTRL_SFE }, /* 0 - DP ERR */
+	{ DESTINATION_RING_CTRL_SW1, SOURCE_RING_CTRL_SFE }, /* 1 - DP REO1 */
+	{ DESTINATION_RING_CTRL_SW2, SOURCE_RING_CTRL_SFE }, /* 2 - DP REO2 */
+	{ DESTINATION_RING_CTRL_SW3, SOURCE_RING_CTRL_SFE }, /* 3 - DP REO3 */
+	{ DESTINATION_RING_CTRL_SW4, SOURCE_RING_CTRL_SFE }, /* 4 - DP REO4 */
+	{ DESTINATION_RING_CTRL_SW5, SOURCE_RING_CTRL_IPA }, /* 5 - IPA RING1 */
+	{ DESTINATION_RING_CTRL_SW6, SOURCE_RING_CTRL_SFE }, /* 6 - DP REO6 */
+	{ DESTINATION_RING_CTRL_SW7, SOURCE_RING_CTRL_SFE }, /* 7 - DP HP */
+	{ DESTINATION_RING_CTRL_SW8, SOURCE_RING_CTRL_MGMT }, /* 8 - MGMT ERR */
+	{ DESTINATION_RING_CTRL_SW9, SOURCE_RING_CTRL_MGMT}, /* 9 - MGMT RX */
+	{ DESTINATION_RING_CTRL_SW11, SOURCE_RING_CTRL_MGMT}, /* 10 - MGMT HP */
+	{ DESTINATION_RING_CTRL_PPE, SOURCE_RING_CTRL_PPE}, /* 11 - reo2ppe */
+	{ DESTINATION_RING_CTRL_PPE1, SOURCE_RING_CTRL_PPE}, /* 12 - reo2ppe */
+	{ DESTINATION_RING_CTRL_PPE2, SOURCE_RING_CTRL_PPE}, /* 13 - reo2ppe */
+	{ 0, 0}, /* 14 - Reserved */
+	{ 0, 0}, /* 15 - Reserved */
+	{ DESTINATION_RING_CTRL_SW1, SOURCE_RING_CTRL_SFE }, /* 16 */
+	{ DESTINATION_RING_CTRL_SW2, SOURCE_RING_CTRL_SFE }, /* 17 */
+	{ DESTINATION_RING_CTRL_SW3, SOURCE_RING_CTRL_SFE }, /* 18 */
+	{ DESTINATION_RING_CTRL_SW1, SOURCE_RING_CTRL_SFE }, /* 19 */
+	{ DESTINATION_RING_CTRL_SW2, SOURCE_RING_CTRL_SFE }, /* 20 */
+	{ DESTINATION_RING_CTRL_SW3, SOURCE_RING_CTRL_SFE }, /* 21 */
+	{ DESTINATION_RING_CTRL_SW1, SOURCE_RING_CTRL_SFE }, /* 22 */
+	{ DESTINATION_RING_CTRL_SW2, SOURCE_RING_CTRL_SFE }, /* 23 */
+	{ DESTINATION_RING_CTRL_SW3, SOURCE_RING_CTRL_SFE }, /* 24 */
+	{ DESTINATION_RING_CTRL_SW1, SOURCE_RING_CTRL_SFE }, /* 25 */
+	{ DESTINATION_RING_CTRL_SW2, SOURCE_RING_CTRL_SFE }, /* 26 */
+	{ DESTINATION_RING_CTRL_SW3, SOURCE_RING_CTRL_SFE }, /* 27 */
+	{ DESTINATION_RING_CTRL_SW1, SOURCE_RING_CTRL_SFE }, /* 28 */
+	{ DESTINATION_RING_CTRL_SW2, SOURCE_RING_CTRL_SFE }, /* 29 */
+	{ DESTINATION_RING_CTRL_SW3, SOURCE_RING_CTRL_SFE }, /* 30 */
+	{ DESTINATION_RING_CTRL_SW1, SOURCE_RING_CTRL_SFE }, /* 31 */
+};
+#else
 static const struct ath12k_hal_rdi_mapping ath12k_wifi8_hal_rdi_mapping_qcn9625[] = {
 	{ DESTINATION_RING_CTRL_SW0, SOURCE_RING_CTRL_SFE }, /* 0 - DP ERR */
 	{ DESTINATION_RING_CTRL_SW1, SOURCE_RING_CTRL_SFE }, /* 1 - DP REO1 */
@@ -1497,6 +1544,7 @@ static const struct ath12k_hal_rdi_mapping ath12k_wifi8_hal_rdi_mapping_qcn9625[
 	{ DESTINATION_RING_CTRL_SW3, SOURCE_RING_CTRL_SFE }, /* 30 */
 	{ DESTINATION_RING_CTRL_SW1, SOURCE_RING_CTRL_SFE }, /* 31 */
 };
+#endif /* CPTCFG_EXT_IPA_OFFLOAD */
 
 static int ath12k_wifi8_hal_init_qcn9625(struct ath12k_hal *hal, u8 hw_version)
 {
@@ -1535,6 +1583,7 @@ static void ath12k_wifi8_hal_deinit_qcn9625(struct ath12k_hal *hal)
 
 static void ath12k_wifi8_hal_set_reg_writer_hptp_addr(struct ath12k_base *ab,
 						      struct hal_srng *srng,
+						      int mac_id,
 						      int idx,
 						      enum hal_ring_type ring_type)
 {
@@ -1547,7 +1596,10 @@ static void ath12k_wifi8_hal_set_reg_writer_hptp_addr(struct ath12k_base *ab,
 		break;
 
 	case HAL_RXDMA_MONITOR_DST:
-		offset = HAL_REG_WRITER_RXMON_M0_MON2SW_DEST_RING;
+		if (mac_id == 0)
+			offset = HAL_REG_WRITER_RXMON_M0_MON2SW_DEST_RING;
+		else
+			offset = HAL_REG_WRITER_RXMON_M1_MON2SW_DEST_RING;
 		break;
 
 	case HAL_TX_MONITOR_BUF:
@@ -1555,7 +1607,10 @@ static void ath12k_wifi8_hal_set_reg_writer_hptp_addr(struct ath12k_base *ab,
 		break;
 
 	case HAL_TX_MONITOR_DST:
-		offset = HAL_REG_WRITER_TXMON_M0_MON2SW_DEST_RING;
+		if (mac_id == 0)
+			offset = HAL_REG_WRITER_TXMON_M0_MON2SW_DEST_RING;
+		else
+			offset = HAL_REG_WRITER_TXMON_M1_MON2SW_DEST_RING;
 		break;
 
 	case HAL_ASE_STATUS_RING:
@@ -1616,6 +1671,8 @@ const struct hal_ops hal_qcn9625_ops = {
 	.set_link_desc_addr = ath12k_wifi8_hal_set_link_desc_addr,
 	.tx_set_dscp_tid_map = ath12k_wifi8_hal_tx_set_dscp_tid_map,
 	.tx_update_dscp_tid_map = ath12k_wifi8_hal_tx_update_dscp_tid_map,
+	.tx_set_pcp_tid_map = ath12k_wifi8_hal_tx_set_pcp_tid_map,
+	.tx_set_tid_map_precedence = ath12k_wifi8_hal_tx_set_tid_map_precedence,
 	.tx_configure_bank_register =
 				ath12k_wifi8_hal_tx_configure_bank_register,
 	.write_reoq_lut_addr = ath12k_wifi8_hal_write_reoq_lut_addr,

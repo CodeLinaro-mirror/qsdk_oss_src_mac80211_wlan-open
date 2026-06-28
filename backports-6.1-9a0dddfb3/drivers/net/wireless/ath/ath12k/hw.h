@@ -244,6 +244,7 @@ struct ath12k_hw_ring_mask {
 	u8 ppeds_tx_cmpln[ATH12K_EXT_IRQ_NUM_MAX];
 #endif
 	u8 umac_dp_reset[ATH12K_EXT_IRQ_NUM_MAX];
+	u8 umcmn_interrupts[ATH12K_EXT_IRQ_NUM_MAX];
 	u8 tx_exception[ATH12K_EXT_IRQ_NUM_MAX];
 	u8 tcl_status[ATH12K_EXT_IRQ_NUM_MAX];
 	u8 tqm_status[ATH12K_EXT_IRQ_NUM_MAX];
@@ -265,6 +266,12 @@ struct ath12k_cp_arch_ops {
 	int (*cu_mem_alloc)(struct ath12k *ar, struct ath12k_link_vif *arvif);
 	void (*cu_mem_free)(struct ath12k *ar, struct ath12k_link_vif *arvif);
 	void (*cu_notify)(struct ath12k *ar, struct ath12k_link_vif *arvif);
+};
+
+enum ath12k_umcmn_interrupt_handling {
+	UMCMN_INTERRUPT_DISABLE,
+	UMCMN_INTERRUPT_ENABLE,
+	UMCMN_INTERRUPT_POLL,
 };
 
 struct ath12k_hw_params {
@@ -313,6 +320,7 @@ struct ath12k_hw_params {
 		u8 fft_hdr_len;
 		u16 max_fft_bins;
 		bool fragment_160mhz;
+		bool supports_320mhz;
 	} spectral;
 
 	u16 interface_modes;
@@ -387,6 +395,8 @@ struct ath12k_hw_params {
 	bool is_plink_preferable;
 	bool cfr_support;
 	bool cumac_support;
+	u8 cumac_chip_priority;
+	enum ath12k_umcmn_interrupt_handling support_umcmn_interrupts;
 	u32 cfr_dma_hdr_size;
 	u32 cfr_num_stream_bufs;
 	u32 cfr_stream_buf_size;
@@ -395,6 +405,7 @@ struct ath12k_hw_params {
 	const char *board_magic;
 	u32 num_rx_spt_pages;
 	bool peer_del_all_support;
+	u8 tlv_logger_support;
 };
 
 struct ath12k_hw_ops {
@@ -472,6 +483,13 @@ enum ath12k_bd_ie_type {
 	ATH12K_BD_IE_REGDB = 1,
 	/* contains sub IEs of enum ath12k_bd_ie_rxgainlut_type */
 	ATH12K_BD_IE_RXGAINLUT = 2,
+};
+
+enum ath12k_dp_mon_tlv_logger_support {
+	ATH12K_TLV_LOGGER_DISABLED = 0,
+	ATH12K_TLV_LOGGER_RX_ENABLED = 1,
+	ATH12K_TLV_LOGGER_TX_ENABLED = 2,
+	ATH12K_TLV_LOGGER_RX_TX_ENABLED = 3,
 };
 
 static inline const char *ath12k_bd_ie_type_str(enum ath12k_bd_ie_type type)

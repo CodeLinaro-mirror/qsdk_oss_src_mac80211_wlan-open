@@ -27,7 +27,9 @@
 #include "umac_reset.h"
 #include "mgmt_rx.h"
 #include "dp_peer.h"
+#include "hal_queue.h"
 #include "ppeds.h"
+#include "../qcn_extns/ipa/dp_ipa_pub.h"
 
 extern struct ppe_ds_wlan_ops_v2 ppeds_wifi8_wlanops_v2;
 
@@ -478,6 +480,8 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 	for (i = 0; i < HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX; i++)
 		ath12k_hal_tx_set_dscp_tid_map(ab, ath12k_default_dscp_tid_map, i);
 
+	ath12k_hal_tx_set_pcp_tid_map(ab, ath12k_default_pcp_tid_map);
+
 	ret = ath12k_wifi8_dp_rx_ring_setup(ab);
 	if (ret) {
 		ath12k_warn(ab, "rx allod failed ret = %d\n", ret);
@@ -568,10 +572,16 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 	}
 #endif
 
-
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ab->dp->ppe.ppe_ops->ath12k_ppeds_interrupt_start(ab);
 #endif
+
+	ret = ath12k_dp_ipa_init(ab);
+	if (ret) {
+		ath12k_err(ab, "IPA: ipa init failed");
+		goto fail_congestion_control;
+	}
+
 	dp_wifi8->init_done = true;
 	ath12k_info(ab, "CUMAC init successful");
 	return 0;
@@ -616,9 +626,7 @@ fail_ppeds_detach:
 fail_nss_plugin_unregister:
 	ath12k_nss_plugin_unregister_ops(ab);
 
-#ifndef PLATFORM_SDX85
 fail_dp_bank_profiles_cleanup:
-#endif
 #endif
 	ath12k_dp_deinit_bank_profiles(ab);
 fail_hw_cc_cleanup:
@@ -648,6 +656,8 @@ void ath12k_wifi8_srng_hw_ring_disable(struct ath12k_base *ab)
 	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->reo_flush_ring);
 	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->tx_peer_telemetry_ring);
 	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->rx_peer_telemetry_ring);
+	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->sam_cmd_ring);
+	ath12k_dp_srng_hw_disable(ab, &dp_wifi8->sam_status_ring);
 }
 
 static int ath12k_wifi8_dp_op_device_init(struct ath12k_dp *dp)
@@ -745,6 +755,14 @@ static struct ath12k_dp_hw_group *ath12k_wifi8_dp_hw_group_alloc(void)
 		dp_hw_grp_wifi8->stats_id_map[i].hw_link_id =
 			ATH12K_DP_HW_LINK_ID_INVALID;
 	}
+
+	memcpy(dp_hw_grp->pcp_tid_map, ath12k_default_pcp_tid_map,
+	       sizeof(dp_hw_grp->pcp_tid_map));
+	/* Initialize SMD transition lock */
+	spin_lock_init(&dp_hw_grp->smd_transition_lock);
+	dp_hw_grp->smd_parked_ext_ctx = NULL;
+	dp_hw_grp->smd_old_peer_id = 0;
+	eth_zero_addr(dp_hw_grp->smd_target_mld_addr);
 
 	return dp_hw_grp;
 }
@@ -1309,6 +1327,13 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 				ath12k_wifi8_umac_reset_handle_post_reset_complete,
 	.umac_reset_handle_init_recovery =
 				ath12k_wifi8_umac_reset_handle_init_recovery,
+	.umcmn_irq_config = ath12k_wifi8_umcmn_irq_config,
+	.umcmn_irq_free = ath12k_wifi8_umcmn_irq_free,
+	.umcmn_irq_enable = ath12k_wifi8_umcmn_irq_enable,
+	.umcmn_irq_disable = ath12k_wifi8_umcmn_irq_disable,
+	.umcmn_timer_config = ath12k_wifi8_umcmn_timer_config,
+	.umcmn_timer_enable = ath12k_wifi8_umcmn_timer_enable,
+	.umcmn_timer_free = ath12k_wifi8_umcmn_timer_free,
 	.dump_srng_stats = ath12k_wifi8_dump_srng_stats,
 	.dump_device_dp_stats = ath12k_wifi8_dump_device_dp_stats,
 	.reset_device_dp_stats = ath12k_wifi8_reset_device_dp_stats,
@@ -1326,6 +1351,13 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.dump_congestion_ctrl_stats = ath12k_wifi8_dp_tx_dump_congestion_ctrl_stats,
 	.dump_congestion_recovery_hist = ath12k_wifi8_dp_tx_dump_congestion_recovery_hist,
 	.set_congestion_ctrl_param = ath12k_wifi8_dp_tx_set_congestion_ctrl_param,
+	.dp_smd_prep_transfer_ext_ctx = ath12k_wifi8_dp_smd_prep_transfer_ext_ctx,
+	.dp_smd_exec_activate_links = ath12k_wifi8_dp_smd_exec_activate_links,
+	.dp_smd_prep_rx_tid = ath12k_wifi8_dp_smd_prep_rx_tid,
+	.dp_smd_exec_rx_tid = ath12k_wifi8_dp_smd_exec_rx_tid,
+	.dp_smd_clear_old_peer_rx_lut = ath12k_wifi8_dp_smd_clear_old_peer_rx_lut,
+	.peer_tx_tid_sn_reset = ath12k_wifi8_peer_tx_tid_sn_reset,
+	.peer_rx_tid_svld_reset = ath12k_wifi8_peer_rx_tid_svld_reset,
 };
 
 struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab)

@@ -8,6 +8,7 @@
 
 #include "../core.h"
 #include "../umac_reset.h"
+#include "hal.h"
 
 /* WiFi8-specific UMAC reset function declarations */
 void ath12k_wifi8_umac_reset_handle_pre_reset(struct ath12k_base *ab);
@@ -17,6 +18,47 @@ void ath12k_wifi8_umac_reset_handle_init_recovery(struct ath12k_base *ab);
 int ath12k_cumac_hw_pre_reset(struct ath12k_base *ab);
 int ath12k_cumac_hw_post_reset(struct ath12k_base *ab);
 int ath12k_cumac_hw_reset(struct ath12k_base *ab);
+int ath12k_wifi8_umcmn_irq_config(struct ath12k_base *ab);
+void ath12k_wifi8_umcmn_irq_free(struct ath12k_base *ab);
+void ath12k_wifi8_umcmn_irq_enable(struct ath12k_base *ab);
+void ath12k_wifi8_umcmn_irq_disable(struct ath12k_base *ab);
+int ath12k_wifi8_umcmn_timer_config(struct ath12k_base *ab);
+void ath12k_wifi8_umcmn_timer_enable(struct ath12k_base *ab);
+void ath12k_wifi8_umcmn_timer_free(struct ath12k_base *ab);
+
+#define ATH12K_UMCMN_TIMER_INTERVAL_MS 100
+
+#define HAL_UMAC_UMCMN_R0_ISR_P			0xF1E034
+#define HAL_UMAC_UMCMN_R0_ISR_S0		0xF1E038
+#define HAL_UMAC_UMCMN_R0_ISR_S2		0xF1E03C
+#define HAL_UMAC_UMCMN_R0_ISR_S3		0xF1E040
+#define HAL_UMAC_UMCMN_R0_ISR_S4		0xF1E044
+#define HAL_UMAC_UMCMN_R0_ISR_S5		0xF1E048
+#define HAL_UMAC_UMCMN_R0_ISR_S6		0xF1E04C
+#define HAL_UMAC_UMCMN_R0_ISR_S7		0xF1E050
+#define HAL_UMAC_UMCMN_R0_ISR_S8		0xF1E054
+#define HAL_UMAC_UMCMN_R0_ISR_S9		0xF1E058
+#define HAL_UMAC_UMCMN_R0_ISR_S10		0xF1E05C
+#define HAL_UMAC_UMCMN_R0_ISR_S11		0xF1E060
+#define HAL_UMAC_UMCMN_R0_ISR_S12		0xF1E064
+#define HAL_UMAC_UMCMN_R0_ISR_S13		0xF1E068
+#define HAL_UMAC_UMCMN_R0_ISR_S14		0xF1E06C
+#define HAL_UMAC_UMCMN_R0_ISR_S15		0xF1E070
+#define HAL_UMAC_UMCMN_R0_ISR_S16		0xF1E074
+#define HAL_UMAC_UMCMN_R0_ISR_S17		0xF1E078
+#define HAL_UMAC_UMCMN_R0_ISR_S18		0xF1E230
+#define HAL_UMAC_UMCMN_R0_ISR_S19		0xF1E234
+#define HAL_UMAC_UMCMN_R0_ISR_S20		0xF1E238
+#define HAL_UMAC_UMCMN_R0_ISR_S21		0xF1E23C
+#define HAL_UMAC_UMCMN_R0_ISR_S22		0xF1E240
+#define HAL_UMAC_UMCMN_R0_ISR_S23		0xF1E244
+#define HAL_UMAC_UMCMN_R0_ISR_S24		0xF1E248
+#define HAL_UMAC_UMCMN_R0_ISR_S25		0xF1E24C
+#define HAL_UMAC_UMCMN_R0_ISR_S26		0xF1E250
+#define HAL_UMAC_UMCMN_R0_ISR_S27		0xF1E254
+#define HAL_UMAC_UMCMN_R0_ISR_S28		0xF1E258
+#define HAL_UMAC_UMCMN_R0_ISR_S29		0xF1E25C
+#define HAL_UMAC_UMCMN_R0_ISR_S30		0xF1E260
 
 /* CUMAC HW Reset Step Enumerations */
 
