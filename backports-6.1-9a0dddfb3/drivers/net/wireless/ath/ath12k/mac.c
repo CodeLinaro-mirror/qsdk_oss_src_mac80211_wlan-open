@@ -7265,14 +7265,79 @@ static void ath12k_mac_non_srg_th_config(struct ath12k *ar,
 	*param_val |= (non_srg_th & GENMASK(7, 0));
 }
 
+static u8 ath12k_mac_get_obss_pd_tx_pwr_ref(struct ath12k *ar,
+					    struct ieee80211_vif *vif,
+					    struct ieee80211_bss_conf *info)
+{
+	const struct ieee80211_sta_he_cap *he_cap;
+	struct ieee80211_supported_band *sband;
+	struct ieee80211_channel *chan;
+	u16 tx_mcs_80;
+	u8 mcs_3ss;
+
+	if (!info->chanctx_conf || !info->chanctx_conf->def.chan)
+		return ATH12K_OBSS_PD_TX_PWR_REF_DEFAULT;
+
+	chan = info->chanctx_conf->def.chan;
+	sband = ar->ah->hw->wiphy->bands[chan->band];
+	if (!sband)
+		return ATH12K_OBSS_PD_TX_PWR_REF_DEFAULT;
+
+	he_cap = ieee80211_get_he_iftype_cap_vif(sband, vif);
+	if (!he_cap)
+		return ATH12K_OBSS_PD_TX_PWR_REF_DEFAULT;
+
+	tx_mcs_80 = le16_to_cpu(he_cap->he_mcs_nss_supp.tx_mcs_80);
+	mcs_3ss = (tx_mcs_80 >> 4) & 0x3;
+
+	return mcs_3ss == IEEE80211_HE_MCS_NOT_SUPPORTED ?
+		ATH12K_OBSS_PD_TX_PWR_REF_3SS_UNSUPPORTED :
+		ATH12K_OBSS_PD_TX_PWR_REF_DEFAULT;
+}
+
+static s8 ath12k_mac_get_obss_pd_txpower(struct ath12k *ar,
+					 struct ieee80211_bss_conf *info)
+{
+	struct ath12k_link_vif *arvif;
+	int txpower = -1;
+
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	list_for_each_entry(arvif, &ar->arvifs, list) {
+		if (arvif->txpower <= 0)
+			continue;
+
+		if (txpower == -1)
+			txpower = arvif->txpower;
+		else
+			txpower = min(txpower, arvif->txpower);
+	}
+
+	if (txpower == -1)
+		txpower = info->txpower;
+
+	txpower = clamp_t(int, txpower, ar->min_tx_power, ar->max_tx_power);
+
+	return txpower;
+}
+
 static void ath12k_mac_srg_th_config(struct ath12k *ar,
+				     struct ieee80211_vif *vif,
+				     struct ieee80211_bss_conf *info,
 				     struct ieee80211_he_obss_pd *he_obss_pd,
 				     u32 *param_val)
 {
-	s8 srg_th = 0;
+	s8 srg_min_th, srg_max_th, srg_th = 0;
+	s8 txpower, tx_pwr_ref;
 
 	if (he_obss_pd->sr_ctrl & IEEE80211_HE_SPR_SRG_INFORMATION_PRESENT) {
-		srg_th = ATH12K_OBSS_PD_MAX_THRESHOLD + he_obss_pd->max_offset;
+		srg_min_th = ATH12K_OBSS_PD_MAX_THRESHOLD + he_obss_pd->min_offset;
+		srg_max_th = ATH12K_OBSS_PD_MAX_THRESHOLD + he_obss_pd->max_offset;
+		txpower = ath12k_mac_get_obss_pd_txpower(ar, info);
+		tx_pwr_ref = ath12k_mac_get_obss_pd_tx_pwr_ref(ar, vif, info);
+
+		srg_th = srg_min_th + tx_pwr_ref - txpower;
+		srg_th = clamp_t(s8, srg_th, srg_min_th, srg_max_th);
 		*param_val |= ATH12K_OBSS_PD_SRG_EN;
 	}
 
@@ -7288,6 +7353,8 @@ static void ath12k_mac_srg_th_config(struct ath12k *ar,
 }
 
 static int ath12k_mac_config_obss_pd(struct ath12k *ar,
+				     struct ieee80211_vif *vif,
+				     struct ieee80211_bss_conf *info,
 				     struct ieee80211_he_obss_pd *he_obss_pd)
 {
 	u32 bitmap[2], param_id, param_val, pdev_id;
@@ -7311,7 +7378,7 @@ static int ath12k_mac_config_obss_pd(struct ath12k *ar,
 	ath12k_mac_non_srg_th_config(ar, he_obss_pd, &param_val);
 
 	/* Preparing SRG OBSS PD Threshold Configurations */
-	ath12k_mac_srg_th_config(ar, he_obss_pd, &param_val);
+	ath12k_mac_srg_th_config(ar, vif, info, he_obss_pd, &param_val);
 
 	ret = ath12k_wmi_pdev_set_param(ar, param_id, param_val, pdev_id);
 	if (ret) {
@@ -9896,6 +9963,15 @@ skip_pending_cs_up:
 				    "failed to recalc txpower for vdev %u: %d\n",
 				    arvif->vdev_id, ret);
 		} else if (vif->type == NL80211_IFTYPE_AP) {
+			if (info->he_obss_pd.enable) {
+				ret = ath12k_mac_config_obss_pd(ar, vif, info,
+							       &info->he_obss_pd);
+				if (ret)
+					ath12k_warn(ar->ab,
+						    "failed to update obss pd threshold for vdev %u: %d\n",
+						    arvif->vdev_id, ret);
+			}
+
 			/* Query TPC IE only when txpower recalc succeeded. */
 			ret = ath12k_wmi_send_vdev_get_tpc_ie_power(
 					ar, arvif->vdev_id,
@@ -9988,7 +10064,7 @@ skip_pending_cs_up:
 	}
 
 	if (changed & BSS_CHANGED_HE_OBSS_PD)
-		ath12k_mac_config_obss_pd(ar, &info->he_obss_pd);
+		ath12k_mac_config_obss_pd(ar, vif, info, &info->he_obss_pd);
 
 	if (changed & BSS_CHANGED_HE_BSS_COLOR) {
 		color_collision_detect = (info->he_bss_color.enabled &&
