@@ -2271,7 +2271,7 @@ ath12k_wifi7_dp_tx_htt_tx_complete_buf(struct ath12k_dp *dp,
 	struct ath12k_skb_cb *skb_cb;
 	struct ieee80211_vif *vif = NULL;
 	struct ath12k_vif *ahvif = NULL;
-	struct ath12k_dp_link_peer *peer;
+	struct ath12k_dp_link_peer *link_peer = NULL;
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_pdev_dp *dp_pdev;
 	struct ethhdr *eth;
@@ -2334,15 +2334,19 @@ ath12k_wifi7_dp_tx_htt_tx_complete_buf(struct ath12k_dp *dp,
 		}
 	}
 
-	peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev, peer_id);
-	if (!peer || !ath12k_dp_link_peer_get_sta(peer))
+	if (!dp_peer || !ath12k_dp_peer_get_sta(dp_peer))
 		ath12k_dbg(ab, ATH12K_DBG_DATA,
 			   "dp_tx: failed to find the peer with peer_id %d\n", peer_id);
 	else {
 		if (ts->status == HAL_WBM_TQM_REL_REASON_FRAME_ACKED &&
-		    !(info->flags & IEEE80211_TX_CTL_NO_ACK))
-			WRITE_ONCE(peer->peer_stats.last_ack, jiffies);
-		status.sta = ath12k_dp_link_peer_get_sta(peer);
+		    !(info->flags & IEEE80211_TX_CTL_NO_ACK)) {
+			link_peer = ath12k_dp_link_peer_find_by_hw_link_id
+							(dp_peer, dp_pdev->hw_link_id);
+			if (link_peer)
+				WRITE_ONCE(link_peer->peer_stats.last_ack, jiffies);
+		}
+
+		status.sta = ath12k_dp_peer_get_sta(dp_peer);
 	}
 
 	if (unlikely(ath12k_dp_stats_enabled(dp_pdev))) {
@@ -2356,7 +2360,7 @@ ath12k_wifi7_dp_tx_htt_tx_complete_buf(struct ath12k_dp *dp,
 						hw_delay);
 			}
 		if (unlikely(ath12k_dp_latency_stats_enabled(dp_pdev)))
-			ath12k_dp_tx_update_peer_latency_stats(dp_pdev, peer->dp_peer,
+			ath12k_dp_tx_update_peer_latency_stats(dp_pdev, dp_peer,
 							       ts, ring,
 							       sw_metadata);
 	}
@@ -2388,7 +2392,7 @@ ath12k_wifi7_dp_tx_htt_tx_complete_buf(struct ath12k_dp *dp,
 			status.link_valid = 1;
 			status.link_id =
 				ath12k_dp_peer_convert_hw_to_logical_link_id(
-								peer->dp_peer,
+								dp_peer,
 								link_id);
 		}
 		ieee80211_tx_status_ext(ath12k_dp_pdev_to_hw(dp_pdev), &status);
