@@ -4929,6 +4929,8 @@ static int nl80211_send_iface(struct sk_buff *msg, u32 portid, u32 seq, int flag
 {
 	struct net_device *dev = wdev->netdev;
 	void *hdr;
+	bool show_pwr_mode = (wdev->iftype != NL80211_IFTYPE_MONITOR &&
+			      wdev->iftype != NL80211_IFTYPE_AP_VLAN);
 
 	lockdep_assert_wiphy(&rdev->wiphy);
 
@@ -5029,7 +5031,9 @@ static int nl80211_send_iface(struct sk_buff *msg, u32 portid, u32 seq, int flag
 			if (ret == 0 && nl80211_send_chandef(msg, &chandef))
 				goto nla_put_failure;
 
-			if (chandef.chan && chandef.chan->band == NL80211_BAND_6GHZ) {
+			if (chandef.chan &&
+			    chandef.chan->band == NL80211_BAND_6GHZ &&
+			    show_pwr_mode) {
 				if (nla_put_u8(msg, NL80211_ATTR_6G_REG_POWER_MODE,
 					       rdev_get_ap_6ghz_pwr_mode(rdev, wdev,
 									 link_id)))
@@ -5058,7 +5062,9 @@ static int nl80211_send_iface(struct sk_buff *msg, u32 portid, u32 seq, int flag
 			if (ret == 0 && nl80211_send_chandef(msg, &chandef))
 				goto nla_put_failure;
 
-			if (chandef.chan && chandef.chan->band == NL80211_BAND_6GHZ) {
+			if (chandef.chan &&
+			    chandef.chan->band == NL80211_BAND_6GHZ &&
+			    show_pwr_mode) {
 				if (nla_put_u8(msg, NL80211_ATTR_6G_REG_POWER_MODE,
 					       rdev_get_ap_6ghz_pwr_mode(rdev,
 									 wdev, 0)))
