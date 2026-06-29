@@ -22,7 +22,9 @@
 #include "rate.h"
 #include "mesh.h"
 #include "wme.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/cmn_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 
 /*
  * When IEEE80211_HW_BATCH_CSA is set, mac80211 waits up to this many

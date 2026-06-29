@@ -35,7 +35,9 @@
 #include "sta_info.h"
 #include "debug.h"
 #include "drop.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/cmn_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 
 #ifdef CPTCFG_MAC80211_NSS_SUPPORT
 #include <nss_api_if.h>
@@ -141,7 +143,9 @@ struct ieee80211_bss {
 	bool wmm_used;
 	bool uapsd_supported;
 
+#ifdef CPTCFG_QCN_EXTN
 	struct ieee80211_bss_extn bss_extn;
+#endif /* CPTCFG_QCN_EXTN */
 
 #define IEEE80211_MAX_SUPP_RATES 32
 	u8 supp_rates[IEEE80211_MAX_SUPP_RATES];
@@ -1841,7 +1845,9 @@ struct ieee80211_local {
 
 	const struct ieee80211_ops *ops;
 
+#ifdef CPTCFG_QCN_EXTN
 	const struct ieee80211_ops_extn *ops_extn;
+#endif /* CPTCFG_QCN_EXTN */
 
 	/*
 	 * private workqueue to mac80211. mac80211 makes this accessible
@@ -2250,7 +2256,9 @@ struct ieee802_11_elems {
 	size_t total_len;
 	u32 crc;
 
+#ifdef CPTCFG_QCN_EXTN
 	struct ieee802_11_elems_extn elems_extn;
+#endif /* CPTCFG_QCN_EXTN */
 
 	/* pointers to IEs */
 	const struct ieee80211_tdls_lnkie *lnk_id;

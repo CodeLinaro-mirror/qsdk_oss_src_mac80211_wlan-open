@@ -883,9 +883,11 @@ ieee80211_rx_monitor(struct ieee80211_local *local, struct sk_buff *origskb,
 	unsigned int min_head_len;
 	bool tid_stats_disable = local->hw.tid_stats_disable;
 	int hw_idx = -1;
+#ifdef CPTCFG_QCN_EXTN
 	struct ieee80211_ext_mon_rx_event_extn rx_event;
 	enum ieee80211_ext_mon_event_type_extn ext_mon_evt =
 				IEEE80211_EXT_MON_POST_RTAP;
+#endif /* CPTCFG_QCN_EXTN */
 
 	if (WARN_ON_ONCE(status->flag & RX_FLAG_RADIOTAP_TLV_AT_END &&
 			 !skb_mac_header_was_set(origskb))) {
@@ -1004,14 +1006,17 @@ ieee80211_rx_monitor(struct ieee80211_local *local, struct sk_buff *origskb,
 			ieee80211_rx_stats_reason(prev_sdata, skb->len,
 						  status->tid,
 						  RX_TOTAL_PKTS);
-		if ((prev_sdata->flags & IEEE80211_SDATA_EXT_MONITOR_ENABLED) &&
+#ifdef CPTCFG_QCN_EXTN
+                if ((prev_sdata->flags & IEEE80211_SDATA_EXT_MONITOR_ENABLED) &&
 		    ieee80211_ext_mon_rx_notifier_has_listeners_extn()) {
 			rx_event.mpdu = skb;
 			rx_event.hw = &local->hw;
 			ieee80211_ext_mon_rx_notifier_call_extn(ext_mon_evt,
 								&rx_event);
 			dev_kfree_skb(skb);
-		} else {
+		} else
+#endif /* CPTCFG_QCN_EXTN */
+		{
 			if (!tid_stats_disable)
 				ieee80211_rx_stats_reason(prev_sdata, skb->len,
 							  status->tid,
@@ -1035,6 +1040,7 @@ ieee80211_rx_monitor(struct ieee80211_local *local, struct sk_buff *origskb,
 				ieee80211_rx_stats_reason(prev_sdata, skb->len,
 							  status->tid,
 							  RX_TOTAL_PKTS);
+#ifdef CPTCFG_QCN_EXTN
 			if ((prev_sdata->flags & IEEE80211_SDATA_EXT_MONITOR_ENABLED) &&
 			    ieee80211_ext_mon_rx_notifier_has_listeners_extn()) {
 				rx_event.mpdu = skb;
@@ -1042,7 +1048,9 @@ ieee80211_rx_monitor(struct ieee80211_local *local, struct sk_buff *origskb,
 				ieee80211_ext_mon_rx_notifier_call_extn(ext_mon_evt,
 									&rx_event);
 				dev_kfree_skb(skb);
-			} else {
+			} else
+#endif /* CPTCFG_QCN_EXTN */
+			{
 				if (!tid_stats_disable)
 					ieee80211_rx_stats_reason(prev_sdata, skb->len,
 								  status->tid,

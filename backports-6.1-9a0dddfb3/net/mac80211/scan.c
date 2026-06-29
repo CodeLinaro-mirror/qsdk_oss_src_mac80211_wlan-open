@@ -23,7 +23,9 @@
 
 #include "ieee80211_i.h"
 #include "driver-ops.h"
+#ifdef CPTCFG_QCN_EXTN
 #include "qcn_extns/cmn_extn.h"
+#endif /* CPTCFG_QCN_EXTN */
 #include "mesh.h"
 
 #define IEEE80211_PROBE_DELAY (HZ / 33)
@@ -162,7 +164,9 @@ void ieee80211_inform_bss(struct wiphy *wiphy,
 	else
 		bss->vht_cap_info = 0;
 
+#ifdef CPTCFG_QCN_EXTN
 	ieee80211_inform_bss_extn(cbss, elems);
+#endif /* CPTCFG_QCN_EXTN */
 
 	/* Extract SMD information if present */
 	if (elems->smd_info) {
