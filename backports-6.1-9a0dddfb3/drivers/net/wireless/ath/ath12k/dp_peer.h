@@ -129,8 +129,6 @@ struct ath12k_dp_link_peer {
 	u32 atf_actual_duration;
 	u32 atf_actual_ul_duration;
 
-	bool is_assigned;
-
 	struct ath12k_dp_link_peer_rx_signal_stats signal_stats;
 	/* Generic Event Mechanism */
 	struct ath12k_peer_event event;
