@@ -10312,27 +10312,30 @@ int ath12k_vendor_trigg_pri_link_migrate(struct wiphy *wiphy,
 	if (!vif->valid_links)
 		return -EOPNOTSUPP;
 
-	if (data_len > ETH_ALEN) {
-		ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MAX, data, data_len,
-				ath12k_pri_link_migrate_policy, NULL);
-		if (ret) {
-			ath12k_err(NULL, "Invalid attribute in %s %d\n", __func__, ret);
-			return ret;
-		}
-
-		if (tb[QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MLD_MAC_ADDR] &&
-		    (nla_len(tb[QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MLD_MAC_ADDR]) == ETH_ALEN)) {
-			memcpy(mac_addr,
-			       nla_data(tb[QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MLD_MAC_ADDR]),
-			       ETH_ALEN);
-		} else {
-			ath12k_err(NULL, "invalid MAC address %s\n", mac_addr);
-			return -EINVAL;
-		}
-		link_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_NEW_PRI_LINK_ID]);
-	} else {
-		link_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_NEW_PRI_LINK_ID]);
+	if (!data || !data_len) {
+		ath12k_err(NULL, "Invalid data length data ptr: %pK ", data);
+		return -EINVAL;
 	}
+
+	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MAX, data, data_len,
+			ath12k_pri_link_migrate_policy, NULL);
+	if (ret) {
+		ath12k_err(NULL, "Invalid attribute in primary link migrate");
+		return ret;
+	}
+
+	if (!tb[QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MLD_MAC_ADDR] ||
+	    !tb[QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_NEW_PRI_LINK_ID])
+		return -EINVAL;
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MLD_MAC_ADDR] &&
+	    (nla_len(tb[QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MLD_MAC_ADDR]) == ETH_ALEN)) {
+		memcpy(mac_addr,
+		       nla_data(tb[QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MLD_MAC_ADDR]),
+		       ETH_ALEN);
+	}
+
+	link_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_NEW_PRI_LINK_ID]);
 
 	ahvif = (struct ath12k_vif *)vif->drv_priv;
 	if (!ahvif)
@@ -10345,9 +10348,7 @@ int ath12k_vendor_trigg_pri_link_migrate(struct wiphy *wiphy,
 	arg.link_id = link_id;
 	memcpy(arg.addr, mac_addr, ETH_ALEN);
 
-	wiphy_lock(wiphy);
 	ret = ath12k_mac_process_link_migrate_req(ahvif, &arg);
-	wiphy_unlock(wiphy);
 
 	if (ret)
 		ath12k_info(NULL,
