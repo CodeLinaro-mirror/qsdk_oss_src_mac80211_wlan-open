@@ -1281,56 +1281,6 @@ bool ath12k_arsta_itr_on_ab_by_addr(struct ath12k_base *ab, const u8 *addr,
 }
 EXPORT_SYMBOL(ath12k_arsta_itr_on_ab_by_addr);
 
-/**
- * ath12k_arsta_itr_on_ab_by_addr_bh - iterate over all radios to find and act
- *                                     on a link STA matching @addr from
- *                                     BH-disabled context
- * @ab:   base device whose radios are searched
- * @addr: link MAC address to look up
- * @cb:   callback invoked for the first matching arsta on each radio;
- *        called with ar->arsta_lock held.
- * @data: opaque context forwarded verbatim to @cb
- *
- * Acquires rcu_read_lock() for the duration of the walk. The caller must
- * not sleep inside @cb.
- *
- * Returns %true if a matching arsta was found and @cb was invoked,
- * %false otherwise.
- */
-bool ath12k_arsta_itr_on_ab_by_addr_bh(struct ath12k_base *ab, const u8 *addr,
-				       ath12k_arsta_iter_cb cb, void *data)
-{
-	struct ath12k_pdev *pdev;
-	struct ath12k *ar;
-	struct ath12k_link_sta *arsta;
-	int i;
-
-	rcu_read_lock();
-	for (i = 0; i < ab->num_radios; i++) {
-		pdev = rcu_dereference(ab->pdevs_active[i]);
-		if (!pdev || !pdev->ar)
-			continue;
-
-		ar = pdev->ar;
-
-		spin_lock(&ar->arsta_lock);
-		arsta = ath12k_link_sta_find_by_addr(ar, addr);
-		if (!arsta) {
-			spin_unlock(&ar->arsta_lock);
-			continue;
-		}
-
-		cb(ar, arsta, data);
-		spin_unlock(&ar->arsta_lock);
-		rcu_read_unlock();
-		return true;
-	}
-	rcu_read_unlock();
-
-	return false;
-}
-EXPORT_SYMBOL(ath12k_arsta_itr_on_ab_by_addr_bh);
-
 /* ahsta (ath12k_sta) group-level hashtable */
 static u32 ath12k_sta_hash_idx(struct ath12k_hw_group *ag, const u8 *addr)
 {

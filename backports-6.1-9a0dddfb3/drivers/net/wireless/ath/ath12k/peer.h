@@ -187,14 +187,6 @@ typedef int (*ath12k_arsta_vdev_iter_cb)(struct ath12k *ar,
 
 bool ath12k_arsta_itr_on_ab_by_addr(struct ath12k_base *ab, const u8 *addr,
 				    ath12k_arsta_iter_cb cb, void *data);
-
-/**
- * Searches all radios and invokes @cb for the first matching arsta.
- * Returns true if found, false otherwise. Must be called from BH-disabled context.
- */
-bool ath12k_arsta_itr_on_ab_by_addr_bh(struct ath12k_base *ab, const u8 *addr,
-				       ath12k_arsta_iter_cb cb, void *data);
-
 int ath12k_arsta_itr_on_ar_by_vdev_id(struct ath12k *ar, u32 vdev_id,
 				      ath12k_arsta_vdev_iter_cb cb, void *data);
 /* ahsta (ath12k_sta) group-level hashtable */
