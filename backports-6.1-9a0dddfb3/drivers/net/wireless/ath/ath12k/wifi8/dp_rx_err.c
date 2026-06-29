@@ -541,7 +541,7 @@ ath12k_wifi8_dp_rx_h_defrag_reo_reinject(struct ath12k_dp *dp,
 	end = defrag_skb->data + DP_RX_BUFFER_SIZE;
 	ath12k_core_dmac_clean_range(defrag_skb->data, end);
 
-	buf_paddr = virt_to_phys(defrag_skb->data);
+	ATH12K_DMA_MAP_SINGLE(ab, defrag_skb, buf_paddr);
 	if (!buf_paddr)
 		return -ENOMEM;
 
@@ -635,8 +635,8 @@ err_free_desc:
 	list_add_tail(&desc_info->list, &dp->rx_desc_free_list);
 	spin_unlock_bh(&dp->rx_desc_lock);
 err_unmap_dma:
-	ath12k_core_dma_unmap_single(ab->dev, buf_paddr, DP_RX_BUFFER_SIZE,
-				     DMA_TO_DEVICE);
+	ATH12K_DMA_UNMAP_SINGLE(ab->dev, buf_paddr, DP_RX_BUFFER_SIZE,
+				DMA_FROM_DEVICE);
 	return ret;
 }
 

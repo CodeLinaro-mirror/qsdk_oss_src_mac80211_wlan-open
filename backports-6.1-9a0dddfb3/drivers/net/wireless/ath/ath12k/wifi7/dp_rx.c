@@ -1683,8 +1683,8 @@ err_free_desc:
 	spin_unlock_bh(&dp->rx_desc_lock);
 err_unmap_dma:
 	IPA_SET_RX_BUF_SMMU_UNMAP(ab, defrag_skb, false);
-	ath12k_core_dma_unmap_single(ab->dev, buf_paddr, DP_RX_BUFFER_SIZE,
-				     DMA_TO_DEVICE);
+	ATH12K_DMA_UNMAP_SINGLE(ab->dev, buf_paddr, DP_RX_BUFFER_SIZE,
+				DMA_FROM_DEVICE);
 	return ret;
 }
 
