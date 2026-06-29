@@ -2513,6 +2513,9 @@ void ath12k_dp_cmn_hw_group_assign(struct ath12k_dp *dp,
 		}
 	}
 
+#ifdef CPTCFG_QCN_EXTN
+	ath12k_dp_tx_hw_group_extn_init(dp_hw_grp);
+#endif
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ret = ath12k_dp_ppeds_spt_alloc_and_init(ab);
 	if (ret)
