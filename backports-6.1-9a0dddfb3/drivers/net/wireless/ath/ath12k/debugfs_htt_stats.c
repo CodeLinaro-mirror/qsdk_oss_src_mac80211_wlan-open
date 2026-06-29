@@ -4198,9 +4198,11 @@ ath12k_htt_print_tx_pdev_stats_sched_per_txq_tlv(const void *tag_buf,
 			 "num_allowed_second_sched_cmd_for_combining = %u\n",
 			 le32_to_cpu
 			 (htt_stats_buf->num_allowed_second_command_for_combining));
-	len += scnprintf(buf + len, buf_len - len, "num_aborted_first_sched_cmd = %u\n",
+	len += scnprintf(buf + len, buf_len - len,
+			 "num_aborted_comb_first_sched_cmd = %u\n",
 			 le32_to_cpu(htt_stats_buf->num_aborted_first_sched_command));
-	len += scnprintf(buf + len, buf_len - len, "num_aborted_second_sched_cmd = %u\n",
+	len += scnprintf(buf + len, buf_len - len,
+			 "num_aborted_comb_second_sched_cmd = %u\n",
 			 le32_to_cpu(htt_stats_buf->num_aborted_second_sched_command));
 	len += scnprintf(buf + len, buf_len - len,
 			 "total_combined_sched_cmds_success = %u\n",
@@ -9605,7 +9607,13 @@ ath12k_htt_print_pdev_sched_algo_ofdma_stats_tlv(const void *tag_buf, u16 tag_le
 				  ATH12K_HTT_NUM_AC_WMM, "\n");
 	len += print_array_to_buf(buf, len, "running_ul_scheduler_due_to_skip_dl",
 				  htt_stats_buf->running_ul_scheduler_due_to_skip_dl,
-				  ATH12K_HTT_NUM_AC_WMM, "\n\n");
+				  ATH12K_HTT_NUM_AC_WMM, "\n");
+	len += print_array_to_buf(buf, len, "abort_reason_comb_first_cmd",
+				  htt_stats_buf->abort_reason_comb_first_cmd,
+				  ATH12K_FIRST_CMD_ABORT_RESERVED1, "\n");
+	len += print_array_to_buf(buf, len, "abort_reason_comb_second_cmd",
+				  htt_stats_buf->abort_reason_comb_second_cmd,
+				  ATH12K_SECOND_CMD_ABORT_RESERVED1, "\n\n");
 
 	stats_req->buf_len = len;
 }
