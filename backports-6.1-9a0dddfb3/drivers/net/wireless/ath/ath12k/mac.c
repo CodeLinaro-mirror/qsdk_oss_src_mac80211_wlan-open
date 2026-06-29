@@ -17503,6 +17503,23 @@ static void ath12k_mac_copy_eht_cap(struct ath12k *ar,
 			~IEEE80211_EHT_PHY_CAP4_PART_BW_DL_MU_MIMO;
 		eht_cap_elem->phy_cap_info[5] &=
 			~IEEE80211_EHT_PHY_CAP5_TX_LESS_242_TONE_RU_SUPP;
+		/* Enable MCS15 support bits in EHT PHY cap based on BW
+		 * capability reported by firmware.
+		 */
+		if (band_cap->eht_mcs_80)
+			eht_cap_elem->phy_cap_info[6] |=
+				IEEE80211_EHT_PHY_CAP6_MCS15_SUPP_80MHZ;
+		if (band_cap->eht_mcs_160)
+			eht_cap_elem->phy_cap_info[6] |=
+				IEEE80211_EHT_PHY_CAP6_MCS15_SUPP_160MHZ;
+		if (band_cap->eht_mcs_320)
+			eht_cap_elem->phy_cap_info[6] |=
+				IEEE80211_EHT_PHY_CAP6_MCS15_SUPP_320MHZ;
+		/* Enable MCS14 support bit in EHT PHY cap. Hostapd need
+		 * separate enablement per BSS.
+		 */
+		eht_cap_elem->phy_cap_info[6] |=
+				IEEE80211_EHT_PHY_CAP6_EHT_DUP_6GHZ_SUPP;
 		break;
 	case NL80211_IFTYPE_STATION:
 		eht_cap_elem->phy_cap_info[7] &=
@@ -17513,6 +17530,21 @@ static void ath12k_mac_copy_eht_cap(struct ath12k *ar,
 			~(IEEE80211_EHT_PHY_CAP7_MU_BEAMFORMER_80MHZ |
 			  IEEE80211_EHT_PHY_CAP7_MU_BEAMFORMER_160MHZ |
 			  IEEE80211_EHT_PHY_CAP7_MU_BEAMFORMER_320MHZ);
+		/* Enable MCS15 support bits in EHT PHY cap based on BW
+		 * capability reported by firmware.
+		 */
+		if (band_cap->eht_mcs_80)
+			eht_cap_elem->phy_cap_info[6] |=
+				IEEE80211_EHT_PHY_CAP6_MCS15_SUPP_80MHZ;
+		if (band_cap->eht_mcs_160)
+			eht_cap_elem->phy_cap_info[6] |=
+				IEEE80211_EHT_PHY_CAP6_MCS15_SUPP_160MHZ;
+		if (band_cap->eht_mcs_320)
+			eht_cap_elem->phy_cap_info[6] |=
+				IEEE80211_EHT_PHY_CAP6_MCS15_SUPP_320MHZ;
+		/* Enable MCS14 support bit in EHT PHY cap. */
+		eht_cap_elem->phy_cap_info[6] |=
+				IEEE80211_EHT_PHY_CAP6_EHT_DUP_6GHZ_SUPP;
 		break;
 	case NL80211_IFTYPE_MESH_POINT:
 		ath12k_mac_filter_eht_cap_mesh(eht_cap_elem);
