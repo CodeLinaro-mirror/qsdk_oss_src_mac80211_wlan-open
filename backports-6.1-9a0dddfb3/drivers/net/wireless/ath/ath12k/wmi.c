@@ -21011,9 +21011,13 @@ void ath12k_wmi_peer_chan_width_switch_work(struct wiphy *wiphy, struct wiphy_wo
 	struct ath12k *ar = arvif->ar;
 	struct ath12k_peer_ch_width_switch_data *data;
 	struct wmi_peer_chan_width_switch_arg arg;
+	struct ath12k_link_sta *arsta;
+	union ath12k_config_param val;
+	void *dp_peer;
+	const u8 *peer_addr;
 	unsigned long time_left = 0;
 	int count_left, curr_count, max_count_per_cmd = ar->ab->chwidth_num_peer_caps;
-	int cmd_num = 0, ret;
+	int cmd_num = 0, valid, i, ret;
 
 	/* possible that the worker got scheduled after complete was triggered. In
 	 * this case we don't wait for timeout
@@ -21034,6 +21038,44 @@ void ath12k_wmi_peer_chan_width_switch_work(struct wiphy *wiphy, struct wiphy_wo
 send_cmd:
 
 	data = arvif->peer_ch_width_switch_data;
+
+	/* Filter out peers that have not completed firmware association.
+	 * Peer data may have been queued while associated but the peer could
+	 * have been deleted and reconnected without completing assoc by the
+	 * time this work runs. Compact the array in-place before batching.
+	 */
+	valid = 0;
+	for (i = 0; i < data->count; i++) {
+		peer_addr = data->peer_arg[i].mac_addr.addr;
+
+		spin_lock_bh(&ar->arsta_lock);
+		arsta = ath12k_link_sta_find_by_addr(ar, peer_addr);
+		spin_unlock_bh(&ar->arsta_lock);
+
+		if (!arsta) {
+			ath12k_info(ar->ab,
+				    "wmi skip chan width switch, arsta not found for peer %pM\n",
+				    peer_addr);
+			continue;
+		}
+
+		dp_peer = ath12k_sta_get_dp_peer_wiphy_locked(wiphy, arsta->ahsta);
+		if (!dp_peer)
+			continue;
+
+		memset(&val, 0, sizeof(val));
+		if (ath12k_dp_link_peer_get_param_by_dp_peer_and_link_id(dp_peer,
+				arsta->link_id, ATH12K_DP_LINK_PEER_ASSOC_PARAM,
+				&val) || !val.assoc_success) {
+			ath12k_info(ar->ab,
+				    "wmi skip chan width switch for non-assoc peer %pM\n",
+				    peer_addr);
+			continue;
+		}
+
+		data->peer_arg[valid++] = data->peer_arg[i];
+	}
+	data->count = valid;
 
 	spin_lock_bh(&ar->data_lock);
 	arg.vdev_var = arvif->vdev_id;
